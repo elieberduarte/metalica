@@ -109,10 +109,40 @@ biapoiada, e o diagrama delas aparece sobre uma **peça típica** de cada elemen
   barras editáveis, e chapas voltam como chapas. O resto vira sólido livre. O editor
   mostra um relatório do que foi reconhecido e do que ficou de fora.
 
+## Detalhamento de peças a partir de um IFC
+
+Para produção a partir de um modelo de detalhamento de terceiros (TecnoMETAL, Tekla,
+Advance Steel), o sistema lê o IFC e entrega, em `projetos/<nome>/detalhamento/`:
+
+- **`detalhamento.dxf`**, um arquivo único em milímetro e 1:1 com o desenho de cada
+  posição numa célula, agrupadas por tipo: contorno e furos nas camadas `ACO` e `FURO`
+  (o que a máquina de corte lê), cotas, marca, material e quantidade nas camadas `COTA`
+  e `TEXTO` (que o operador desliga), moldura das células em `AUXILIAR`;
+- **`romaneio.csv`** com posição, conjuntos, tipo, perfil, material, quantidade,
+  dimensões, furos e peso, mais os parafusos, que só entram na lista;
+- **`relatorio.json`** com o que foi reconhecido e as posições com ressalva.
+
+```bash
+python -m saida.detalhamento caminho/do/modelo.ifc            # grava em projetos/<nome>/detalhamento/
+python -m saida.detalhamento caminho/do/modelo.ifc pasta --png  # também uma imagem de conferência
+```
+
+No editor 3D, **IFC → Detalhar peças de um IFC…** faz o mesmo e mostra os links e as
+ressalvas. As peças são agrupadas pela marca de posição (`Part Mark`) e o desenho é
+reconstruído da malha, porque esses exportadores escrevem toda a geometria como Brep
+facetado, sem perfil paramétrico: contorno e furos (redondos e oblongos) vêm das arestas
+de borda da face, a seção vem do corte da malha ao longo do eixo, o comprimento é a
+extensão no eixo e as pontas cortadas fora do esquadro saem com o ângulo. Barra redonda
+dobrada (gancho, chumbador) recebe o comprimento desenvolvido pelo volume. O que o
+módulo não resolve fica dito na célula e no relatório: chapa dobrada sem
+desenvolvimento, barra curva ou dobrada sem comprimento de corte, recorte que não é
+furo redondo nem oblongo desenhado como polilinha.
+
 ## O que sai
 
 | Entrega | Formato | Onde |
 |---|---|---|
+| Detalhamento de peças de um IFC | DXF único, CSV e JSON | `projetos/<nome>/detalhamento/` |
 | Memorial de cálculo | PDF, cerca de 50 páginas | `projetos/<nome>/memorial/` |
 | Desenhos | 11 arquivos DXF (R12, abrem em qualquer CAD), do pórtico ao nó de contraventamento, mais os diagramas de M, V e N e o quadro de verificações | `projetos/<nome>/desenhos/` |
 | Pranchas | PDF A1, A2 ou A3 com carimbo; a folha sai da escala em que cada desenho foi cotado | `projetos/<nome>/pranchas/` |
@@ -146,6 +176,7 @@ sistema/
 │   ├── exportar.py       documento 3D para IFC4
 │   └── importar.py       IFC para documento 3D
 ├── saida/                memorial, desenhos DXF, pranchas, lista
+│   └── detalhamento.py   peças de um IFC para produção (DXF único e romaneio)
 ├── web/                  interface de dimensionamento (HTML, CSS e JS puros)
 │   ├── editor3d/         editor 3D: núcleo e ferramentas
 │   └── lib/              Three.js r160, servido localmente

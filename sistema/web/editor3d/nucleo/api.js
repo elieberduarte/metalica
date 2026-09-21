@@ -85,6 +85,14 @@ export class Api {
                   { nome: arquivo.name, conteudo_b64 });
   }
 
+  /** Detalhamento de peças para produção: o servidor devolve os links do DXF único,
+   *  do romaneio e do relatório. Não mexe no documento aberto. */
+  async detalharIFC(arquivo) {
+    const conteudo_b64 = await paraBase64(arquivo);
+    return postar(this._r('/api/modelo/ifc/detalhar'),
+                  { nome: arquivo.name, conteudo_b64 });
+  }
+
   /** Dimensiona o galpão e devolve o modelo 3D correspondente. */
   doGalpao(dados) { return postar(this._r('/api/modelo/do-galpao'), { dados }); }
 

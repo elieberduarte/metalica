@@ -12,6 +12,7 @@ Rotas da API:
     GET  /api/catalogo              perfis, aços, parafusos, eletrodos, cidades
     POST /api/dimensionar           recebe DadosGalpao, devolve ProjetoGalpao em JSON
     POST /api/gerar                 gera memorial, DXF, pranchas e lista de material
+    POST /api/modelo/ifc/detalhar   IFC recebido → DXF de produção, romaneio e relatório
     GET  /api/projetos              lista projetos salvos
     POST /api/projetos              salva um projeto (JSON de entrada)
     GET  /api/projetos/<nome>       carrega um projeto salvo
@@ -363,6 +364,19 @@ def inspecionar_ifc(corpo: dict) -> dict:
     return imp.inspecionar(destino)
 
 
+def detalhar_ifc(corpo: dict) -> dict:
+    """Detalhamento de peças para produção: DXF único, romaneio e relatório."""
+    from saida import detalhamento
+    destino = _gravar_ifc_recebido(corpo, "detalhar.ifc")
+    nome = _slug(os.path.splitext(os.path.basename(corpo.get("nome") or "modelo"))[0])
+    pasta = os.path.join(PROJETOS, nome, "detalhamento")
+    rel = detalhamento.gerar(destino, pasta)
+    rel["arquivos"] = {k: _descrever_arquivo(v, pasta) for k, v in rel["arquivos"].items()}
+    rel["arquivos"]["relatorio"] = _descrever_arquivo(os.path.join(pasta, "relatorio.json"), pasta)
+    rel["pasta"] = pasta
+    return rel
+
+
 def modelo_do_galpao(corpo: dict) -> dict:
     from nucleo3d import de_projeto
     from nucleo.galpao import dimensionar as calcular
@@ -526,6 +540,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(importar_ifc(corpo))
             if rota == "/api/modelo/ifc/inspecionar":
                 return self._json(inspecionar_ifc(corpo))
+            if rota == "/api/modelo/ifc/detalhar":
+                return self._json(detalhar_ifc(corpo))
             if rota == "/api/modelo/do-galpao":
                 return self._json(modelo_do_galpao(corpo))
             if rota == "/api/modelo/analise":

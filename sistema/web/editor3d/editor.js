@@ -949,6 +949,10 @@ export class Editor {
     const modo = this._modoArquivo || 'importar';
     this.dica(`${modo === 'importar' ? 'Importando' : 'Lendo'} ${arquivo.name}…`);
     try {
+      if (modo === 'detalhar') {
+        await this._detalharIFC(arquivo);
+        return;
+      }
       if (modo === 'inspecionar') {
         const r = await this.api.inspecionarIFC(arquivo);
         const pre = el('pre', { style: 'font:12px var(--mono);white-space:pre-wrap;margin:0' },
@@ -969,6 +973,40 @@ export class Editor {
     }
   }
 
+  /** Detalhamento para produção: mostra o resumo, os links dos arquivos e as peças
+   *  com ressalva. O arquivo pode ter dezenas de megabytes, então avisa que demora. */
+  async _detalharIFC(arquivo) {
+    this.dica(`Detalhando as peças de ${arquivo.name}… (um arquivo grande leva um minuto)`);
+    const r = await this.api.detalharIFC(arquivo);
+    const arq = r.arquivos || {};
+    const link = (chave, rotulo) => arq[chave]
+      ? el('a', { href: arq[chave].url, download: arq[chave].nome || true, texto: rotulo })
+      : el('span', { texto: rotulo });
+    const classes = Object.entries(r.por_classe || {}).map(([c, n]) => `${c}: ${n}`).join(' · ');
+    const corpo = el('div', {},
+      el('p', {}, `${numero(r.posicoes)} posições, ${numero(r.pecas)} peças, ` +
+                  `${numero(r.peso_total_kg, 1)} kg. ${classes}`),
+      el('p', {}, 'Arquivos: ', link('dxf', 'DXF de produção'), ' · ',
+                  link('romaneio', 'romaneio (CSV)'), ' · ', link('relatorio', 'relatório (JSON)')),
+      el('p', { class: 'nota' }, 'O DXF é único, em milímetro e 1:1: camadas ACO e FURO ' +
+        'têm a geometria de corte; COTA e TEXTO, a anotação; AUXILIAR, a moldura das células.'));
+    const ressalvas = r.com_ressalva || [];
+    if (ressalvas.length) {
+      const lista = el('ul', { style: 'max-height:40vh;overflow:auto;font:12px var(--mono);padding-left:1.2em' },
+        ...ressalvas.map(p => el('li', {}, el('b', { texto: `${p.marca} ${p.perfil}` }),
+                                          ': ' + (p.observacoes || []).join('; '))));
+      corpo.append(el('p', {}, el('b', { texto: `${ressalvas.length} posição(ões) com ressalva` }),
+                                ' — confira antes de mandar cortar:'), lista);
+    }
+    const acessorios = Object.entries(r.acessorios || {});
+    if (acessorios.length) {
+      corpo.append(el('p', { class: 'nota' }, 'Só no romaneio: ' +
+        acessorios.map(([n, q]) => `${n} ×${q}`).join(', ')));
+    }
+    await this.dialogo({ titulo: `Detalhamento de ${arquivo.name}`, corpo, ok: null });
+    this.dica(`Detalhamento de ${arquivo.name} pronto: ${numero(r.posicoes)} posições.`);
+  }
+
   // ------------------------------------------------------------ interface
 
   _ligarMenus() {
@@ -981,6 +1019,7 @@ export class Editor {
       'do-galpao': () => this.dialogoGalpao(),
       'importar-ifc': () => { this._modoArquivo = 'importar'; this.el.arquivoIfc.click(); },
       'inspecionar-ifc': () => { this._modoArquivo = 'inspecionar'; this.el.arquivoIfc.click(); },
+      'detalhar-ifc': () => { this._modoArquivo = 'detalhar'; this.el.arquivoIfc.click(); },
       'exportar-ifc': () => this.exportarIFC(),
       desfazer: () => this.desfazer(),
       refazer: () => this.refazer(),
