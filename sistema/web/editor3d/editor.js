@@ -49,6 +49,12 @@ const GRANDEZAS_PADRAO = [
 const RAMPA_ESFORCOS = ['#2c6fbb', '#3fa9c9', '#7ec97a', '#f2c24a', '#e8743b', '#c0392b'];
 const RAMPA_APROVEITAMENTO = ['#2f9e5f', '#8dc63f', '#f2c24a', '#e8743b', '#c0392b'];
 
+// Cores de grupo (conjunto, posição, perfil): vinte tons de saturação média, que se
+// distinguem entre si e do azul da seleção nos dois temas. Repetem a partir da 21ª.
+const PALETA_GRUPOS = ['#d94a4a', '#2f9e5f', '#3d6fd6', '#e08a1e', '#8e44ad', '#17a2b8',
+  '#c2185b', '#7cb342', '#f4c20d', '#6d4c41', '#00897b', '#5c6bc0', '#ef6c00', '#4db6ac',
+  '#ad1457', '#9e9d24', '#1e88e5', '#e64a19', '#546e7a', '#8d6e63'];
+
 const $ = (sel, raiz = document) => raiz.querySelector(sel);
 
 /** Cria um elemento com atributos e filhos, sem innerHTML para dados do usuário. */
@@ -1546,6 +1552,7 @@ export class Editor {
   _painelCamadas() {
     const raiz = this.el.camadas;
     raiz.replaceChildren();
+    raiz.append(this._seletorCorPor());
     const cont = this.documento.contagemPorCamada();
     const lista = el('div', { class: 'lista-linhas' });
     const olho = (vis) => vis
@@ -1594,6 +1601,93 @@ export class Editor {
       }
     } }));
     raiz.append(acoes);
+  }
+
+  // ------------------------------------------------------------ cor por grupo
+
+  /** Chave de agrupamento de uma entidade no modo pedido, ou null quando não tem. */
+  _chaveDeGrupo(ent, modo) {
+    const marcas = (ent.atributos && ent.atributos.marcas) || {};
+    switch (modo) {
+      case 'conjunto': return marcas.conjunto || null;
+      case 'posicao': return marcas.posicao || null;
+      case 'perfil': return ent.perfil || marcas.perfil || ent.nome || null;
+      case 'tipo': return (ent.atributos && ent.atributos.tipo_ifc) || ent.papel || ent.tipo || null;
+      default: return null;
+    }
+  }
+
+  /**
+   * Pinta o modelo por grupo (conjunto de montagem, posição, perfil ou tipo IFC), com
+   * uma cor por chave. Entra pela mesma porta do mapa de esforços, `definirCorPorValor`,
+   * então liga-se um ou outro: pedir um grupo esconde a análise, e mostrar a análise
+   * volta este seletor ao padrão. A paleta é atribuída na ordem em que as chaves
+   * aparecem e fica guardada, para a legenda e a cena concordarem.
+   */
+  _aplicarCorPor() {
+    const modo = this.corPor || 'padrao';
+    if (modo === 'padrao') {
+      this._coresGrupo = null;
+      if (!(this.analiseEstado && this.analiseEstado.ligado)) this.cena.definirCorPorValor(null);
+      return;
+    }
+    if (this.analiseEstado && this.analiseEstado.ligado) this._mostrarAnalise(false);
+    const cores = new Map();
+    this._coresGrupo = cores;
+    this.cena.definirCorPorValor((ent) => {
+      const chave = this._chaveDeGrupo(ent, modo);
+      if (chave == null) return null;
+      if (!cores.has(chave)) cores.set(chave, PALETA_GRUPOS[cores.size % PALETA_GRUPOS.length]);
+      return cores.get(chave);
+    });
+  }
+
+  _seletorCorPor() {
+    const modo = this.corPor || 'padrao';
+    const opcoes = [['padrao', 'camada e material'], ['conjunto', 'conjunto de montagem'],
+                    ['posicao', 'posição (marca da peça)'], ['perfil', 'perfil'], ['tipo', 'tipo IFC']];
+    const sel = el('select', { title: 'Pinta cada peça pela cor do grupo a que pertence' },
+      ...opcoes.map(([v, t]) => el('option', { value: v, texto: t, selected: v === modo ? 'selected' : undefined })));
+    sel.value = modo;
+    sel.addEventListener('change', () => {
+      this.corPor = sel.value;
+      this._aplicarCorPor();
+      this._agendarPaineis('camadas');
+      this.dica(sel.value === 'padrao' ? 'Cores de camada e material.'
+                                       : `Peças pintadas por ${opcoes.find(o => o[0] === sel.value)[1]}.`);
+    });
+    const caixa = el('div', { class: 'cor-por' }, el('label', { texto: 'Colorir por' }), sel);
+    if (modo === 'padrao') return caixa;
+
+    // legenda: uma linha por grupo, com contagem; clique seleciona, duplo clique enquadra
+    const grupos = new Map();
+    for (const ent of this.documento.entidades.values()) {
+      const chave = this._chaveDeGrupo(ent, modo);
+      if (chave == null) continue;
+      if (!grupos.has(chave)) grupos.set(chave, []);
+      grupos.get(chave).push(ent.id);
+    }
+    const cores = this._coresGrupo || new Map();
+    const chaves = [...grupos.keys()].sort((a, b) =>
+      String(a).localeCompare(String(b), 'pt-BR', { numeric: true }));
+    const lista = el('div', { class: 'lista-linhas legenda-grupos' });
+    const LIMITE = 400;
+    for (const chave of chaves.slice(0, LIMITE)) {
+      if (!cores.has(chave)) cores.set(chave, PALETA_GRUPOS[cores.size % PALETA_GRUPOS.length]);
+      const ids = grupos.get(chave);
+      const linha = el('div', { class: 'linha', title: 'Clique: selecionar o grupo · Shift: somar · duplo clique: enquadrar' },
+        el('span', { class: 'amostra', style: `background:${cores.get(chave)}` }),
+        el('span', { class: 'nome', texto: String(chave) }),
+        el('span', { class: 'contagem', texto: numero(ids.length) }));
+      linha.addEventListener('click', (ev) => (ev.shiftKey ? this.selecao.somar(ids) : this.selecao.definir(ids)));
+      linha.addEventListener('dblclick', () => { this.selecao.definir(ids); this.camera.zoomSelecao(ids); });
+      lista.append(linha);
+    }
+    const semGrupo = this.documento.entidades.size - [...grupos.values()].reduce((s, v) => s + v.length, 0);
+    caixa.append(el('div', { class: 'nota-grupos', texto:
+      `${numero(grupos.size)} grupo(s)` + (semGrupo ? ` · ${numero(semGrupo)} peça(s) sem ${modo} ficam em cinza` : '') +
+      (chaves.length > LIMITE ? ` · legenda mostra os ${LIMITE} primeiros` : '') }), lista);
+    return caixa;
   }
 
   async _novaCamada() {
@@ -1737,6 +1831,12 @@ export class Editor {
   _mostrarAnalise(ligado) {
     if (!this.analise) return;
     this.analiseEstado.ligado = !!ligado;
+    if (ligado && this.corPor && this.corPor !== 'padrao') {
+      // o mapa e a cor por grupo usam a mesma pintura: vale o que foi pedido por último
+      this.corPor = 'padrao';
+      this._coresGrupo = null;
+      this._agendarPaineis('camadas');
+    }
     this._comMapa(m => (ligado ? m.ligar() : m.desligar()));
     this.el.painelAnalise.hidden = !ligado;
     // Camadas e materiais cedem altura enquanto a análise está na tela: a coluna inteira

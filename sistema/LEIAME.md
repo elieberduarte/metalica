@@ -108,6 +108,13 @@ biapoiada, e o diagrama delas aparece sobre uma **peça típica** de cada elemen
 - Na importação, pilares, vigas e barras cujo perfil casa com o catálogo voltam como
   barras editáveis, e chapas voltam como chapas. O resto vira sólido livre. O editor
   mostra um relatório do que foi reconhecido e do que ficou de fora.
+- Arquivo sem camadas (TecnoMETAL, Tekla sem configuração) recebe camadas pelo que a
+  peça é: Telhas, Chapas, Parafusos, Tirantes, Pilares, Vigas e Barras, para dar para
+  ocultar as telhas e ver a estrutura. Cada peça guarda as marcas de conjunto, posição
+  e perfil do exportador.
+- **Colorir por**, no painel Camadas, pinta o modelo por conjunto de montagem, posição,
+  perfil ou tipo IFC, com legenda: clique num grupo seleciona as peças dele, duplo
+  clique enquadra. Peças sem a marca ficam em cinza.
 
 ## Detalhamento de peças a partir de um IFC
 

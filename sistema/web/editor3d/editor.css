@@ -449,6 +449,15 @@ kbd {
   letter-spacing: .06em; color: var(--texto3); font-weight: 600;
 }
 
+/* "Colorir por" no painel de camadas: seletor em cima, legenda dos grupos embaixo */
+.cor-por { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 8px; }
+.cor-por > label { font-size: 12px; color: var(--texto3); }
+.cor-por > select { flex: 1 1 120px; min-width: 0; font-size: 12px; }
+.cor-por .nota-grupos { flex-basis: 100%; font-size: 11px; color: var(--texto3); margin-top: 2px; }
+.cor-por .legenda-grupos { flex-basis: 100%; max-height: 220px; overflow: auto; }
+.cor-por .legenda-grupos .linha { cursor: pointer; }
+.cor-por .legenda-grupos .amostra { cursor: default; }
+
 .acoes-painel { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
 .acoes-painel button {
   background: var(--painel2); border: 1px solid var(--borda); border-radius: var(--raio-p);

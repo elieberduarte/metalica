@@ -1076,3 +1076,40 @@ class TestInspecionar(Asserts):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# ---------------------------------------------------- camadas por tipo e marcas
+
+def test_camada_semantica_para_arquivo_sem_camadas():
+    from ifc.importar import camada_semantica, CAMADAS_SEMANTICAS
+    # o TecnoMETAL grava telha como viga ou pilar e parafuso como proxy: o nome manda
+    assert camada_semantica("IFCBEAM", "TELHA TP40 0.50MM") == "Telhas"
+    assert camada_semantica("IFCCOLUMN", "TELHA TP40 0.50MM") == "Telhas"
+    assert camada_semantica("IFCBUILDINGELEMENTPROXY", "BOLT (A) 12x35") == "Parafusos"
+    assert camada_semantica("IFCMECHANICALFASTENER", "") == "Parafusos"
+    assert camada_semantica("IFCPLATE", "PLATE 130x50x3") == "Chapas"
+    assert camada_semantica("IFCBEAM", "FE RED 3/8''") == "Tirantes"
+    assert camada_semantica("IFCCOLUMN", "U100X60X3.04") == "Pilares"
+    assert camada_semantica("IFCBEAM", "U150X50X2.28") == "Vigas"
+    assert camada_semantica("IFCMEMBER", "L 2 1/2'' X 1/4''") == "Barras"
+    assert camada_semantica("IFCWALL", "Parede") == ""          # cai no pavimento
+    for nome in ("Telhas", "Chapas", "Parafusos", "Tirantes", "Pilares", "Vigas", "Barras"):
+        assert nome in CAMADAS_SEMANTICAS
+
+
+def test_marcas_de_pset_e_descricao():
+    from ifc.importar import marcas_de
+    pset = {"Steel & Graphics Common": {"Part Mark": "P93", "Assembly Mark": "M86",
+                                        "Grade": "CIVIL 300", "Profile": "U92X40X2.25"}}
+    m = marcas_de("U92X40X2.25", "Mark:M86 Pos:P93 Material:CIVIL 300", pset)
+    assert m == {"posicao": "P93", "conjunto": "M86", "perfil": "U92X40X2.25"}, m
+    # sem pset, a descrição do TecnoMETAL ainda dá conjunto e posição
+    m = marcas_de("PLATE 132x43x3", "Mark:M86 Pos:P76 Material:CIVIL 300", {})
+    assert m == {"posicao": "P76", "conjunto": "M86", "perfil": "PLATE 132x43x3"}, m
+    # parafuso do TecnoMETAL: "Mark: Pos:" vazio não pode virar conjunto "Pos"
+    m = marcas_de("BOLT (A) 12x35", "Mark: Pos:", {})
+    assert m == {"perfil": "BOLT (A) 12x35"}, m
+    # Tekla
+    m = marcas_de("HEA200", "", {"Tekla Common": {"PART_POS": "p12", "ASSEMBLY_POS": "A3"}})
+    assert m["posicao"] == "p12" and m["conjunto"] == "A3" and m["perfil"] == "HEA200"
+    assert marcas_de("", "", {}) == {}

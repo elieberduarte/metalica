@@ -46,6 +46,7 @@ Limitações conhecidas (todas registram aviso no relatório):
 """
 import math
 import os
+import re
 import sys
 import time
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -58,7 +59,8 @@ from ifc.step import Arquivo, Entidade, Ref, Tipado, ler                # noqa: 
 from nucleo3d.modelo import (Barra, Camada, Chapa, Documento,          # noqa: E402
                              Material, Solido)
 
-__all__ = ["importar", "inspecionar", "Importador", "LIMITACOES"]
+__all__ = ["importar", "inspecionar", "Importador", "LIMITACOES", "camada_semantica",
+           "marcas_de", "CAMADAS_SEMANTICAS"]
 
 LIMITACOES = [
     "IfcAdvancedBrep, NURBS e superfícies de revolução entram como caixa envolvente",
@@ -1356,15 +1358,26 @@ class Importador:
         return ""
 
     def _camada_do_elemento(self, corpo: Optional[Entidade], todas: List[Entidade],
-                            propriedades: dict, camada_espacial: str) -> str:
-        """Camada de apresentação > Pset_MetalicaCalculo.Camada > nome do pavimento."""
+                            propriedades: dict, camada_espacial: str,
+                            tipo: str = "", nome_elemento: str = "") -> str:
+        """Camada de apresentação > Pset_MetalicaCalculo.Camada > tipo da peça > pavimento.
+
+        Exportadores de detalhamento (TecnoMETAL, Tekla sem configuração) não escrevem
+        camada nenhuma, e um galpão inteiro cairia no nome do pavimento. Nesse caso a
+        camada vem do que a peça é — telha, chapa, parafuso, tirante, pilar, viga — que
+        é a divisão que o usuário precisa para ocultar as telhas e ver a estrutura."""
         reps = ([corpo] if corpo is not None else []) + [r for r in todas if r is not corpo]
         nome = self.camada_apresentacao(reps)
         origem = "apresentacao"
         if not nome:
             valor = ((propriedades or {}).get("Pset_MetalicaCalculo") or {}).get("Camada")
             nome = valor.strip() if isinstance(valor, str) else ""
-            origem = "pset" if nome else "pavimento"
+            origem = "pset" if nome else ""
+        if not nome:
+            nome = camada_semantica(tipo, nome_elemento)
+            origem = "tipo" if nome else "pavimento"
+            if nome and nome not in self.doc.camadas:
+                self.doc.camadas[nome] = Camada(nome=nome, cor=CAMADAS_SEMANTICAS[nome])
         self.origem_camada[origem] = self.origem_camada.get(origem, 0) + 1
         return nome or camada_espacial
 
@@ -2018,6 +2031,14 @@ class Importador:
                         "barra editável (ver 'barras_como_solido'); motivo mais comum: %s"
                         % (len(self.barras_como_solido), principal))
 
+        # as camadas padrão do documento (Estrutura, Terças…) só servem ao galpão
+        # dimensionado; num modelo importado ficariam vazias no painel, entre as que
+        # importam. Some as que não receberam peça, desde que sobre alguma
+        usadas = {e.camada for e in self.doc.entidades.values()}
+        if usadas:
+            for nome in [n for n in self.doc.camadas if n not in usadas]:
+                del self.doc.camadas[nome]
+
         self.doc.metadados["importacao"] = {
             "arquivo": os.path.basename(self.arq.caminho),
             "schema": self.arq.schema,
@@ -2092,15 +2113,17 @@ class Importador:
         corpo, todas = self.representacao_de(prod)
         global_id = str(prod.arg(0) or "")
         nome = str(prod.arg(2) or "")
+        descricao = str(prod.arg(3) or "")
         propriedades = self.propriedades_de(prod)
         material, material_ifc = self.material_de(prod, corpo, propriedades)
+        marcas = marcas_de(nome, descricao, propriedades)
 
         if corpo is None:
             if todas:
                 self.avisar("elemento %s (%s) tem representação sem corpo utilizável"
                             % (nome or global_id, nome_ifc(tipo)))
             return
-        camada = self._camada_do_elemento(corpo, todas, propriedades, camada)
+        camada = self._camada_do_elemento(corpo, todas, propriedades, camada, tipo, nome)
 
         # objeto paramétrico primeiro: barra (viga, pilar, membro) ou chapa
         e_chapa = tipo in ("IFCPLATE", "IFCPLATESTANDARDCASE")
@@ -2130,6 +2153,8 @@ class Importador:
             parametrica.atributos["origem_ifc"] = global_id
             if propriedades:
                 parametrica.atributos["propriedades"] = propriedades
+            if marcas:
+                parametrica.atributos["marcas"] = marcas
             self.doc.add(parametrica)
             return
 
@@ -2154,7 +2179,73 @@ class Importador:
             solido.atributos["predefinido_ifc"] = str(predefinido)
         if propriedades:
             solido.atributos["propriedades"] = propriedades
+        if marcas:
+            solido.atributos["marcas"] = marcas
         self.doc.add(solido)
+
+
+#: Camadas atribuídas pelo tipo da peça quando o arquivo não traz camada nenhuma.
+CAMADAS_SEMANTICAS = {
+    "Telhas": "#9aa4b2", "Chapas": "#b8860b", "Parafusos": "#7a5c3a",
+    "Tirantes": "#2e8b57", "Pilares": "#4b5563", "Vigas": "#0b3d91", "Barras": "#6a7f99",
+}
+
+_RE_TELHA = re.compile(r"TELHA|TP\s*\d{2}|TRAPEZ|ONDUL", re.I)
+_RE_PARAFUSO = re.compile(r"\bBOLT\b|PARAF|\bNUT\b|PORCA|ARRUELA|WASHER", re.I)
+_RE_TIRANTE = re.compile(r"FE\s*RED|BARRA\s*ROSC|REDOND|VERG|TIRANTE", re.I)
+
+
+def camada_semantica(tipo: str, nome: str) -> str:
+    """Camada pelo que a peça é, para arquivos sem camada (TecnoMETAL, Tekla).
+
+    O nome da peça manda antes do tipo: o TecnoMETAL grava telha como IfcBeam e
+    IfcColumn, e parafuso como IfcBuildingElementProxy."""
+    t = (tipo or "").upper()
+    n = nome or ""
+    if _RE_TELHA.search(n):
+        return "Telhas"
+    if t in ("IFCPLATE", "IFCPLATESTANDARDCASE"):
+        return "Chapas"
+    if t in ("IFCMECHANICALFASTENER", "IFCFASTENER") or _RE_PARAFUSO.search(n):
+        return "Parafusos"
+    if _RE_TIRANTE.search(n):
+        return "Tirantes"
+    if t in ("IFCCOLUMN", "IFCCOLUMNSTANDARDCASE"):
+        return "Pilares"
+    if t in ("IFCBEAM", "IFCBEAMSTANDARDCASE"):
+        return "Vigas"
+    if t in ("IFCMEMBER", "IFCMEMBERSTANDARDCASE"):
+        return "Barras"
+    return ""
+
+
+def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
+    """Marcas de conjunto, posição e perfil da peça, para agrupar no editor.
+
+    Lê o pset do TecnoMETAL ("Steel & Graphics Common": Part Mark, Assembly Mark,
+    Profile), os do Tekla (PART_POS, ASSEMBLY_POS, PROFILE) e, na falta deles, a
+    descrição "Mark:M86 Pos:P93 Material:CIVIL 300" que o TecnoMETAL também grava."""
+    achado = {}
+    chaves = {"posicao": ("Part Mark", "PART_POS", "Part Position", "Posicao"),
+              "conjunto": ("Assembly Mark", "ASSEMBLY_POS", "Assembly Position", "Conjunto"),
+              "perfil": ("Profile", "PROFILE", "Perfil")}
+    for pset in (propriedades or {}).values():
+        if not isinstance(pset, dict):
+            continue
+        for campo, nomes in chaves.items():
+            for k in nomes:
+                v = pset.get(k)
+                if isinstance(v, str) and v.strip() and campo not in achado:
+                    achado[campo] = re.sub(r"\s+", " ", v).strip()
+    for campo, chave in (("posicao", "Pos"), ("conjunto", "Mark")):
+        if campo not in achado:
+            # "Mark: Pos:" (parafuso sem marca) não pode virar conjunto "Pos:"
+            m = re.search(chave + r"\s*:\s*([^\s:]+)(?=\s|$)", descricao or "")
+            if m:
+                achado[campo] = m.group(1)
+    if "perfil" not in achado and nome and nome.strip():
+        achado["perfil"] = re.sub(r"\s+", " ", nome).strip()
+    return achado
 
 
 #: Tipos de produto varridos na busca por elementos órfãos.
