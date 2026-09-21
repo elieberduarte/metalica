@@ -1,0 +1,6 @@
+﻿Perfil;Material;Massa (kg/m);Comprimento necessário (m);Peso (kg);Barras de 6 m;Barras de 12 m;Comprimento comprado (m);Peso comprado (kg);Perda de corte (%);Observação
+W 250×32,7;ASTM A572 Gr.50;32,70;180,90;5915,4;0;18;216,00;7063,2;19,4;
+Ue 200×75×20×2,00;CF-26 (NBR 6650);6,00;800,00;4800,0;160;0;960,00;5760,0;20,0;
+W 410×38,8;ASTM A572 Gr.50;38,80;108,00;4190,4;18;0;108,00;4190,4;0,0;
+Barra redonda ø 20 mm;ASTM A572 Gr.50;2,47;263,40;650,6;0;36;432,00;1065,4;64,0;perda alta: avaliar compra em comprimento especial
+Barra ø 16 mm;ASTM A36;1,58;179,20;283,1;0;16;192,00;303,0;7,1;

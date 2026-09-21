@@ -1,0 +1,1529 @@
+<h1 class="cap"><small>Capítulo 7</small>Dimensionamento de elementos segundo a NBR 8800:2008</h1>
+<div class="objetivos"><div class="tit">O que você vai aprender neste capítulo</div>
+<ul>
+<li>A lógica dos estados-limites (S<sub>d</sub> ≤ R<sub>d</sub>) e o papel dos coeficientes γ<sub>a1</sub> = 1,10 e γ<sub>a2</sub> = 1,35.</li>
+<li>Por que chapas finas flambam antes de escoar e como classificar uma seção (compacta, semicompacta, esbelta).</li>
+<li>Dimensionar barras tracionadas (seção bruta, seção líquida, coeficiente C<sub>t</sub>) e comprimidas (curva χ, fator Q, comprimento de flambagem KL).</li>
+<li>Dimensionar vigas à flexão (M<sub>pl</sub>, FLA, FLM, FLT, C<sub>b</sub>) e ao cisalhamento, e verificar flechas e vibração.</li>
+<li>Verificar pilares de pórticos à flexo-compressão com as equações de interação e entender os efeitos de 2ª ordem.</li>
+<li>Noções de vigas mistas, perfis formados a frio (NBR 14762) e uso responsável de software.</li>
+<li>Usar tabelas rápidas de pré-dimensionamento de vigas e pilares em perfis W.</li>
+</ul></div>
+
+<p>Nos capítulos anteriores vimos os materiais, os perfis, as cargas e os sistemas estruturais. Agora chegamos ao coração do projeto: <strong>dimensionar</strong>, isto é, provar com números que cada barra aguenta o que vai receber, com a margem de segurança que a norma exige. A norma brasileira que rege o assunto para perfis laminados e soldados é a <strong>NBR 8800:2008</strong> ("Projeto de estruturas de aço e de estruturas mistas de aço e concreto de edifícios"). Este capítulo segue a sequência da norma, mas cada tema começa com a explicação intuitiva do fenômeno — se você entende <em>por que</em> uma barra falha, as fórmulas deixam de ser decoreba e viram ferramenta.</p>
+
+<div class="box atencao"><div class="tit">Unidades adotadas neste capítulo</div>
+<p>Forças em <strong>kN</strong>, comprimentos em <strong>cm</strong>, tensões em <strong>kN/cm²</strong> (1 kN/cm² = 10 MPa). Assim, E = 200 000 MPa = <strong>20 000 kN/cm²</strong>; ASTM A36: f<sub>y</sub> = <strong>25 kN/cm²</strong>, f<sub>u</sub> = 40 kN/cm²; ASTM A572 Gr.50: f<sub>y</sub> = <strong>34,5 kN/cm²</strong>, f<sub>u</sub> = 45 kN/cm². Momentos saem em kN·cm (divida por 100 para kN·m). Misturar mm com cm é o erro numérico mais comum do dimensionamento — confira sempre.</p></div>
+
+<h2>7.1 Filosofia de dimensionamento: S<sub>d</sub> ≤ R<sub>d</sub> <span class="nivel b">Básico</span></h2>
+<p>Imagine uma corda segurando um balde. O balde puxa com uma certa força (a <em>solicitação</em>) e a corda aguenta até uma certa força (a <em>resistência</em>). Segurança é garantir que a resistência é maior que a solicitação. Mas nem a carga nem a resistência são conhecidas com exatidão: o balde pode encher mais do que o previsto e a corda pode ter um fio defeituoso. Por isso a norma <strong>majora</strong> as cargas e <strong>minora</strong> as resistências, e só então compara as duas:</p>
+<div class="formula">S<sub>d</sub> ≤ R<sub>d</sub><span class="n">(7.1)</span></div>
+<ul class="onde">
+<li>S<sub>d</sub> = esforço solicitante de cálculo (N<sub>Sd</sub>, M<sub>Sd</sub>, V<sub>Sd</sub>…), obtido da análise estrutural com as cargas já multiplicadas pelos coeficientes γ<sub>f</sub> das combinações (ver Capítulo 5);</li>
+<li>R<sub>d</sub> = esforço resistente de cálculo (N<sub>Rd</sub>, M<sub>Rd</sub>, V<sub>Rd</sub>…) = resistência nominal dividida por um coeficiente γ<sub>a</sub>.</li></ul>
+<p>Esse é o <strong>método dos estados-limites</strong>. Um <em>estado-limite</em> é uma situação a partir da qual a estrutura deixa de cumprir sua função. A norma separa dois grupos:</p>
+<ul>
+<li><strong>Estados-limites últimos (ELU)</strong> – ligados à segurança: ruína ou colapso, por escoamento, ruptura, flambagem, instabilidade global, fadiga. Verificam-se com as <em>combinações últimas</em> (cargas majoradas, tipicamente 1,4·G + 1,4·Q ou 1,25·G + 1,5·Q, conforme o caso) e resistências minoradas por γ<sub>a1</sub> ou γ<sub>a2</sub>.</li>
+<li><strong>Estados-limites de serviço (ELS)</strong> – ligados ao conforto e ao funcionamento: flechas excessivas, vibração, fissuração de alvenarias, deslocamentos que travam portas ou trincam fachadas. Verificam-se com as <em>combinações de serviço</em> (cargas praticamente sem majoração, com fatores ψ de redução das variáveis) e sem minorar a resistência — aqui interessa a rigidez (E·I), não a resistência.</li></ul>
+
+<table class="tab"><caption>Tabela 7.1 – Coeficientes de ponderação das resistências da NBR 8800:2008 (combinações normais)</caption>
+<thead><tr><th>Coeficiente</th><th>Valor</th><th>Quando usar</th><th>Ideia por trás</th></tr></thead>
+<tbody>
+<tr><td class="c">γ<sub>a1</sub></td><td class="c"><strong>1,10</strong></td><td class="l">Estados-limites de <strong>escoamento</strong>, flambagem e instabilidade (N<sub>t,Rd</sub> da seção bruta, N<sub>c,Rd</sub>, M<sub>Rd</sub>, V<sub>Rd</sub>)</td><td class="l">O escoamento é um modo dúctil e "avisa": a peça deforma muito antes de romper. Margem menor.</td></tr>
+<tr><td class="c">γ<sub>a2</sub></td><td class="c"><strong>1,35</strong></td><td class="l">Estados-limites de <strong>ruptura</strong> (seção líquida de barras tracionadas, cisalhamento de bloco, ruptura de parafusos e soldas – γ<sub>w2</sub>)</td><td class="l">A ruptura é frágil e repentina, além de depender de f<sub>u</sub>, mais dispersa que f<sub>y</sub>. Margem maior.</td></tr>
+<tr><td class="c">γ<sub>c</sub></td><td class="c">1,40</td><td class="l">Concreto (vigas e pilares mistos)</td><td class="l">Material mais heterogêneo.</td></tr>
+<tr><td class="c">γ<sub>s</sub></td><td class="c">1,15</td><td class="l">Aço de armadura em elementos mistos</td><td class="l">Igual à NBR 6118.</td></tr>
+</tbody></table>
+<p>Em <strong>combinações excepcionais</strong> (impacto, sismo, incêndio) a norma permite γ<sub>a1</sub> = γ<sub>a2</sub> = 1,00, porque a probabilidade de a ação ocorrer junto com o pior material é remota. Na dúvida, use os valores da tabela.</p>
+
+<h3>7.1.1 O roteiro de verificação de uma barra</h3>
+<p>Qualquer barra de aço — tirante, pilar, viga, banzo de treliça — passa pelo mesmo roteiro (Figura 7.1). Primeiro se obtêm os esforços de cálculo; depois se escolhe um perfil e um aço; classifica-se a seção quanto à flambagem local; calculam-se as resistências para cada esforço presente (tração, compressão, flexão, cortante, combinações); verifica-se S<sub>d</sub> ≤ R<sub>d</sub>; e por fim verificam-se os estados-limites de serviço. Se algo falha, troca-se o perfil (ou acrescentam-se travamentos) e repete-se o ciclo. Nas seções seguintes cada caixa do fluxograma vira um item.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 430" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s7_1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- caixa 1 -->
+<rect x="230" y="10" width="300" height="44" rx="4" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="380" y="28" text-anchor="middle" font-weight="bold" fill="#0b3d91">1. Análise estrutural → esforços de cálculo</text>
+<text x="380" y="45" text-anchor="middle">N<tspan baseline-shift="sub" font-size="9">Sd</tspan>, M<tspan baseline-shift="sub" font-size="9">Sd</tspan>, V<tspan baseline-shift="sub" font-size="9">Sd</tspan> (combinações últimas, γ<tspan baseline-shift="sub" font-size="9">f</tspan>)</text>
+<line x1="380" y1="54" x2="380" y2="72" stroke="#333" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<!-- caixa 2 -->
+<rect x="230" y="74" width="300" height="36" rx="4" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="380" y="97" text-anchor="middle" font-weight="bold" fill="#0b3d91">2. Escolher perfil e aço (f<tspan baseline-shift="sub" font-size="9">y</tspan>, f<tspan baseline-shift="sub" font-size="9">u</tspan>)</text>
+<line x1="380" y1="110" x2="380" y2="128" stroke="#333" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<!-- caixa 3 -->
+<rect x="200" y="130" width="360" height="44" rx="4" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="380" y="148" text-anchor="middle" font-weight="bold" fill="#0b3d91">3. Classificar a seção (relações b/t – item 7.2)</text>
+<text x="380" y="165" text-anchor="middle">compacta · semicompacta · esbelta → fator Q, FLA, FLM</text>
+<line x1="380" y1="174" x2="380" y2="192" stroke="#333" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<!-- linha horizontal de distribuição -->
+<line x1="120" y1="192" x2="640" y2="192" stroke="#333" stroke-width="1.5"/>
+<line x1="120" y1="192" x2="120" y2="206" stroke="#333" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<line x1="293" y1="192" x2="293" y2="206" stroke="#333" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<line x1="467" y1="192" x2="467" y2="206" stroke="#333" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<line x1="640" y1="192" x2="640" y2="206" stroke="#333" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<!-- 4 caixas de resistência -->
+<rect x="40" y="208" width="160" height="60" rx="4" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<text x="120" y="226" text-anchor="middle" font-weight="bold">Tração (7.3)</text>
+<text x="120" y="243" text-anchor="middle" font-size="11">escoamento A<tspan baseline-shift="sub" font-size="8">g</tspan>·f<tspan baseline-shift="sub" font-size="8">y</tspan>/γ<tspan baseline-shift="sub" font-size="8">a1</tspan></text>
+<text x="120" y="259" text-anchor="middle" font-size="11">ruptura A<tspan baseline-shift="sub" font-size="8">e</tspan>·f<tspan baseline-shift="sub" font-size="8">u</tspan>/γ<tspan baseline-shift="sub" font-size="8">a2</tspan></text>
+<rect x="213" y="208" width="160" height="60" rx="4" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<text x="293" y="226" text-anchor="middle" font-weight="bold">Compressão (7.4)</text>
+<text x="293" y="243" text-anchor="middle" font-size="11">KL/r ≤ 200 → λ<tspan baseline-shift="sub" font-size="8">0</tspan> → χ</text>
+<text x="293" y="259" text-anchor="middle" font-size="11">χ·Q·A<tspan baseline-shift="sub" font-size="8">g</tspan>·f<tspan baseline-shift="sub" font-size="8">y</tspan>/γ<tspan baseline-shift="sub" font-size="8">a1</tspan></text>
+<rect x="387" y="208" width="160" height="60" rx="4" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<text x="467" y="226" text-anchor="middle" font-weight="bold">Flexão + cortante (7.5, 7.6)</text>
+<text x="467" y="243" text-anchor="middle" font-size="11">FLA · FLM · FLT (L<tspan baseline-shift="sub" font-size="8">b</tspan>, C<tspan baseline-shift="sub" font-size="8">b</tspan>)</text>
+<text x="467" y="259" text-anchor="middle" font-size="11">V<tspan baseline-shift="sub" font-size="8">Rd</tspan> = 0,6·A<tspan baseline-shift="sub" font-size="8">w</tspan>·f<tspan baseline-shift="sub" font-size="8">y</tspan>/γ<tspan baseline-shift="sub" font-size="8">a1</tspan></text>
+<rect x="560" y="208" width="160" height="60" rx="4" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<text x="640" y="226" text-anchor="middle" font-weight="bold">Esforços combinados (7.7)</text>
+<text x="640" y="243" text-anchor="middle" font-size="11">N + M: equações de interação</text>
+<text x="640" y="259" text-anchor="middle" font-size="11">efeitos de 2ª ordem (B<tspan baseline-shift="sub" font-size="8">1</tspan>, B<tspan baseline-shift="sub" font-size="8">2</tspan>)</text>
+<!-- coletor -->
+<line x1="120" y1="268" x2="120" y2="284" stroke="#333" stroke-width="1.5"/>
+<line x1="293" y1="268" x2="293" y2="284" stroke="#333" stroke-width="1.5"/>
+<line x1="467" y1="268" x2="467" y2="284" stroke="#333" stroke-width="1.5"/>
+<line x1="640" y1="268" x2="640" y2="284" stroke="#333" stroke-width="1.5"/>
+<line x1="120" y1="284" x2="640" y2="284" stroke="#333" stroke-width="1.5"/>
+<line x1="380" y1="284" x2="380" y2="298" stroke="#333" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<!-- losango -->
+<polygon points="380,300 470,332 380,364 290,332" fill="#fff7d6" stroke="#b8860b" stroke-width="1.5"/>
+<text x="380" y="328" text-anchor="middle" font-weight="bold">ELU: S<tspan baseline-shift="sub" font-size="9">d</tspan> ≤ R<tspan baseline-shift="sub" font-size="9">d</tspan> ?</text>
+<text x="380" y="346" text-anchor="middle" font-size="11">(todos os esforços)</text>
+<!-- não -->
+<line x1="290" y1="332" x2="140" y2="332" stroke="#c0392b" stroke-width="1.5"/>
+<text x="215" y="326" text-anchor="middle" fill="#c0392b" font-weight="bold">NÃO</text>
+<rect x="30" y="312" width="110" height="40" rx="4" fill="#fdecec" stroke="#c0392b" stroke-width="1.5"/>
+<text x="85" y="329" text-anchor="middle" font-size="11">aumentar perfil,</text>
+<text x="85" y="344" text-anchor="middle" font-size="11">travar ou mudar aço</text>
+<line x1="85" y1="312" x2="85" y2="92" stroke="#c0392b" stroke-width="1.5"/>
+<line x1="85" y1="92" x2="228" y2="92" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<!-- sim -->
+<line x1="470" y1="332" x2="520" y2="332" stroke="#2e8b57" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<text x="495" y="326" text-anchor="middle" fill="#2e8b57" font-weight="bold">SIM</text>
+<rect x="522" y="306" width="210" height="52" rx="4" fill="#e9f7ec" stroke="#2e8b57" stroke-width="1.5"/>
+<text x="627" y="324" text-anchor="middle" font-weight="bold" fill="#1f6b41">ELS (7.9): flecha, deslocamento,</text>
+<text x="627" y="340" text-anchor="middle" font-weight="bold" fill="#1f6b41">vibração (cargas de serviço)</text>
+<text x="627" y="353" text-anchor="middle" font-size="10">falhou? → aumentar rigidez (I) ou contraflecha</text>
+<line x1="627" y1="358" x2="627" y2="382" stroke="#333" stroke-width="1.5" marker-end="url(#s7_1)"/>
+<rect x="522" y="384" width="210" height="36" rx="4" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="627" y="407" text-anchor="middle" font-weight="bold" fill="#0b3d91">OK → detalhar ligações (Caps. 8 e 9)</text>
+</svg>
+<figcaption><b>Figura 7.1</b> – Fluxograma de verificação de uma barra de aço segundo a NBR 8800:2008. Os números entre parênteses indicam a seção deste capítulo.</figcaption>
+</figure>
+
+<div class="box dica"><div class="tit">Regra de bolso: onde entra cada γ</div>
+<p>Pergunte "como essa peça falharia?". Se a resposta é "deformando muito" (escoamento, flambagem), divida por <strong>1,10</strong>. Se é "quebrando de repente" (ruptura na seção com furos, rasgamento, ruptura de solda ou parafuso), divida por <strong>1,35</strong>. Flechas e vibrações não dividem por nada: usam cargas de serviço e rigidez real.</p></div>
+
+<h2>7.2 Classificação de seções e flambagem local <span class="nivel i">Intermediário</span></h2>
+<p>Pegue uma folha de papel de pé e aperte-a de cima para baixo: ela "enruga" com uma força mínima. Agora dobre-a várias vezes até virar um bloco grosso: precisa de muito mais força. O material é o mesmo — o que mudou foi a <strong>esbeltez</strong> da chapa. Um perfil de aço é feito de chapas (mesas e alma) e cada uma delas pode enrugar localmente sob compressão antes que o aço chegue ao escoamento. Esse fenômeno é a <strong>flambagem local</strong> (Figura 7.2). Quando ela ocorre, a chapa deixa de contribuir plenamente e a barra resiste menos do que "área × f<sub>y</sub>" indicaria.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 266" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h7_2" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s7_2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker></defs>
+<!-- (a) FLM: seção I com mesa comprimida ondulando -->
+<g transform="translate(30,36)">
+<text x="100" y="-20" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Flambagem local da mesa (FLM)</text>
+<path d="M30 20 h140 v14 h-63 v112 h63 v14 h-140 v-14 h63 v-112 h-63 z" fill="url(#h7_2)" stroke="#333" stroke-width="1.5"/>
+<!-- mesa deformada (tracejada) -->
+<path d="M30 34 q35 -22 70 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M100 34 q35 -22 70 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M30 20 q35 -22 70 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M100 20 q35 -22 70 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<!-- setas de compressão -->
+<line x1="55" y1="-2" x2="55" y2="12" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_2)"/>
+<line x1="145" y1="-2" x2="145" y2="12" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_2)"/>
+<text x="100" y="-4" text-anchor="middle" font-size="11" fill="#c0392b">compressão</text>
+<!-- cota b e t -->
+<line x1="100" y1="56" x2="170" y2="56" stroke="#555" stroke-width="1"/>
+<line x1="100" y1="50" x2="100" y2="60" stroke="#555" stroke-width="1"/><line x1="170" y1="50" x2="170" y2="60" stroke="#555" stroke-width="1"/>
+<text x="135" y="70" text-anchor="middle" font-size="11">b = b<tspan baseline-shift="sub" font-size="8">f</tspan>/2</text>
+<line x1="180" y1="20" x2="180" y2="34" stroke="#555" stroke-width="1"/>
+<text x="185" y="31" font-size="11">t = t<tspan baseline-shift="sub" font-size="8">f</tspan></text>
+<text x="100" y="190" text-anchor="middle" font-size="11">elemento AL: uma borda livre</text>
+</g>
+<!-- (b) FLA: alma ondulando -->
+<g transform="translate(280,36)">
+<text x="100" y="-20" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Flambagem local da alma (FLA)</text>
+<path d="M30 20 h140 v14 h-63 v112 h63 v14 h-140 v-14 h63 v-112 h-63 z" fill="url(#h7_2)" stroke="#333" stroke-width="1.5"/>
+<path d="M107 34 q30 28 0 56 q-30 28 0 56" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M93 34 q30 28 0 56 q-30 28 0 56" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="100" y1="-2" x2="100" y2="12" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_2)"/>
+<text x="100" y="-4" text-anchor="middle" font-size="11" fill="#c0392b">compressão</text>
+<line x1="45" y1="34" x2="45" y2="146" stroke="#555" stroke-width="1"/>
+<line x1="40" y1="34" x2="50" y2="34" stroke="#555" stroke-width="1"/><line x1="40" y1="146" x2="50" y2="146" stroke="#555" stroke-width="1"/>
+<text x="38" y="94" text-anchor="end" font-size="11">h</text>
+<text x="128" y="94" font-size="11">t<tspan baseline-shift="sub" font-size="8">w</tspan></text>
+<text x="100" y="190" text-anchor="middle" font-size="11">elemento AA: duas bordas apoiadas</text>
+</g>
+<!-- (c) vista longitudinal das ondas -->
+<g transform="translate(530,36)">
+<text x="100" y="-20" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c) Ondas ao longo da barra</text>
+<rect x="20" y="20" width="160" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<path d="M20 50 q20 -22 40 0 t40 0 t40 0 t40 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="5" y1="50" x2="18" y2="50" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_2)"/>
+<line x1="195" y1="50" x2="182" y2="50" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_2)"/>
+<line x1="20" y1="96" x2="60" y2="96" stroke="#555" stroke-width="1"/>
+<line x1="20" y1="90" x2="20" y2="102" stroke="#555" stroke-width="1"/><line x1="60" y1="90" x2="60" y2="102" stroke="#555" stroke-width="1"/>
+<text x="40" y="112" text-anchor="middle" font-size="10">≈ largura b</text>
+<text x="100" y="140" text-anchor="middle" font-size="11">a chapa "enruga" em ondas curtas;</text>
+<text x="100" y="156" text-anchor="middle" font-size="11">quanto maior b/t, menor a tensão</text>
+<text x="100" y="172" text-anchor="middle" font-size="11">crítica σ<tspan baseline-shift="sub" font-size="8">cr</tspan> = k·π²·E / [12(1−ν²)(b/t)²]</text>
+<text x="100" y="190" text-anchor="middle" font-size="11">(vista superior da chapa)</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.2</b> – Flambagem local: (a) as bordas livres da mesa comprimida ondulam; (b) a alma, apoiada nas duas mesas, forma ondas alternadas; (c) a tensão crítica cai com o quadrado da relação largura/espessura.</figcaption>
+</figure>
+
+<h3>7.2.1 Elementos AL e AA e o parâmetro b/t</h3>
+<p>A NBR 8800 (Anexo F e Tabelas F.1/G.1) divide as chapas que compõem o perfil em dois tipos: <strong>AL</strong> (apoiado-livre: uma borda ligada ao resto do perfil e a outra livre — a metade da mesa de um I, a aba de uma cantoneira, a mesa de um U) e <strong>AA</strong> (apoiado-apoiado: as duas bordas ligadas — a alma de um I ou U, as paredes de um tubo retangular). Para cada chapa define-se o <strong>parâmetro de esbeltez λ = b/t</strong>, com b e t medidos como mostra a Figura 7.3. Para perfis laminados, a norma permite tomar na alma a altura livre entre os raios de concordância; na prática usa-se h = d − 2t<sub>f</sub> (ligeiramente a favor da segurança).</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 226" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h7_3" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- Perfil I -->
+<g transform="translate(42,36)">
+<text x="80" y="-18" text-anchor="middle" font-weight="bold" fill="#0b3d91">Perfil I / H</text>
+<path d="M20 15 h120 v14 h-54 v100 h54 v14 h-120 v-14 h54 v-100 h-54 z" fill="url(#h7_3)" stroke="#333" stroke-width="1.5"/>
+<line x1="80" y1="8" x2="140" y2="8" stroke="#0b3d91" stroke-width="1.2"/>
+<line x1="80" y1="4" x2="80" y2="12" stroke="#0b3d91" stroke-width="1"/><line x1="140" y1="4" x2="140" y2="12" stroke="#0b3d91" stroke-width="1"/>
+<text x="110" y="-2" text-anchor="middle" font-size="10" fill="#0b3d91">b = b<tspan baseline-shift="sub" font-size="7">f</tspan>/2 (AL)</text>
+<line x1="8" y1="29" x2="8" y2="129" stroke="#0b3d91" stroke-width="1.2"/>
+<line x1="4" y1="29" x2="12" y2="29" stroke="#0b3d91" stroke-width="1"/><line x1="4" y1="129" x2="12" y2="129" stroke="#0b3d91" stroke-width="1"/>
+<text x="-2" y="82" text-anchor="end" font-size="10" fill="#0b3d91">h (AA)</text>
+<text x="80" y="165" text-anchor="middle" font-size="10">mesa: b/t = b<tspan baseline-shift="sub" font-size="7">f</tspan>/(2t<tspan baseline-shift="sub" font-size="7">f</tspan>)</text>
+<text x="80" y="180" text-anchor="middle" font-size="10">alma: h/t<tspan baseline-shift="sub" font-size="7">w</tspan></text>
+</g>
+<!-- Perfil U -->
+<g transform="translate(230,36)">
+<text x="70" y="-18" text-anchor="middle" font-weight="bold" fill="#0b3d91">Perfil U</text>
+<path d="M20 15 h90 v14 h-76 v100 h76 v14 h-90 z" fill="url(#h7_3)" stroke="#333" stroke-width="1.5"/>
+<line x1="20" y1="8" x2="110" y2="8" stroke="#0b3d91" stroke-width="1.2"/>
+<line x1="20" y1="4" x2="20" y2="12" stroke="#0b3d91" stroke-width="1"/><line x1="110" y1="4" x2="110" y2="12" stroke="#0b3d91" stroke-width="1"/>
+<text x="65" y="-2" text-anchor="middle" font-size="10" fill="#0b3d91">b = b<tspan baseline-shift="sub" font-size="7">f</tspan> (AL)</text>
+<line x1="8" y1="29" x2="8" y2="129" stroke="#0b3d91" stroke-width="1.2"/>
+<line x1="4" y1="29" x2="12" y2="29" stroke="#0b3d91" stroke-width="1"/><line x1="4" y1="129" x2="12" y2="129" stroke="#0b3d91" stroke-width="1"/>
+<text x="-2" y="82" text-anchor="end" font-size="10" fill="#0b3d91">h (AA)</text>
+<text x="65" y="165" text-anchor="middle" font-size="10">mesa: b<tspan baseline-shift="sub" font-size="7">f</tspan>/t<tspan baseline-shift="sub" font-size="7">f</tspan> (toda a largura)</text>
+<text x="65" y="180" text-anchor="middle" font-size="10">alma: h/t<tspan baseline-shift="sub" font-size="7">w</tspan></text>
+</g>
+<!-- Cantoneira -->
+<g transform="translate(408,36)">
+<text x="65" y="-18" text-anchor="middle" font-weight="bold" fill="#0b3d91">Cantoneira L</text>
+<path d="M20 15 h14 v100 h96 v14 h-110 z" fill="url(#h7_3)" stroke="#333" stroke-width="1.5"/>
+<line x1="20" y1="140" x2="130" y2="140" stroke="#0b3d91" stroke-width="1.2"/>
+<line x1="20" y1="136" x2="20" y2="144" stroke="#0b3d91" stroke-width="1"/><line x1="130" y1="136" x2="130" y2="144" stroke="#0b3d91" stroke-width="1"/>
+<text x="75" y="154" text-anchor="middle" font-size="10" fill="#0b3d91">b (aba inteira, AL)</text>
+<line x1="8" y1="15" x2="8" y2="129" stroke="#0b3d91" stroke-width="1.2"/>
+<line x1="4" y1="15" x2="12" y2="15" stroke="#0b3d91" stroke-width="1"/><line x1="4" y1="129" x2="12" y2="129" stroke="#0b3d91" stroke-width="1"/>
+<text x="-2" y="75" text-anchor="end" font-size="10" fill="#0b3d91">b</text>
+<text x="40" y="70" font-size="10">t</text>
+<text x="70" y="180" text-anchor="middle" font-size="10">abas: b/t (as duas são AL)</text>
+</g>
+<!-- Tubo retangular -->
+<g transform="translate(582,36)">
+<text x="80" y="-18" text-anchor="middle" font-weight="bold" fill="#0b3d91">Tubo retangular</text>
+<rect x="20" y="15" width="120" height="114" rx="14" fill="url(#h7_3)" stroke="#333" stroke-width="1.5"/>
+<rect x="34" y="29" width="92" height="86" rx="6" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<line x1="41" y1="8" x2="119" y2="8" stroke="#0b3d91" stroke-width="1.2"/>
+<line x1="41" y1="4" x2="41" y2="12" stroke="#0b3d91" stroke-width="1"/><line x1="119" y1="4" x2="119" y2="12" stroke="#0b3d91" stroke-width="1"/>
+<text x="80" y="-2" text-anchor="middle" font-size="10" fill="#0b3d91">b = B − 3t (AA)</text>
+<text x="27" y="75" font-size="10">t</text>
+<text x="80" y="165" text-anchor="middle" font-size="10">paredes: (B − 3t)/t, (H − 3t)/t</text>
+<text x="80" y="180" text-anchor="middle" font-size="10">(todas AA – mais eficientes)</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.3</b> – Como medir b e t em cada tipo de elemento. AL = uma borda livre (mais sensível à flambagem local); AA = duas bordas apoiadas.</figcaption>
+</figure>
+
+<h3>7.2.2 Limites λ<sub>p</sub> e λ<sub>r</sub>: compacta, semicompacta e esbelta</h3>
+<p>Para cada elemento a norma dá dois limites de b/t. Se a chapa é robusta o bastante para <em>plastificar totalmente</em> antes de flambar, a seção é <strong>compacta</strong> (λ ≤ λ<sub>p</sub>) e pode desenvolver o momento de plastificação M<sub>pl</sub>. Se a chapa flamba só depois de atingir o início do escoamento na fibra mais afastada, mas antes de plastificar tudo, a seção é <strong>semicompacta</strong> (λ<sub>p</sub> &lt; λ ≤ λ<sub>r</sub>) e a resistência é interpolada. Se a chapa flamba ainda em regime elástico, a seção é <strong>esbelta</strong> (λ &gt; λ<sub>r</sub>) e a resistência cai com 1/λ² — típico de perfis soldados de chapa fina e de perfis formados a frio (item 7.11).</p>
+
+<table class="tab"><caption>Tabela 7.2 – Limites de esbeltez local para perfis I e H laminados (NBR 8800:2008, Tabelas F.1 e G.1)</caption>
+<thead><tr><th>Elemento</th><th>Solicitação</th><th>λ = b/t</th><th>λ<sub>p</sub> (limite compacta)</th><th>λ<sub>r</sub> (limite semicompacta)</th></tr></thead>
+<tbody>
+<tr><td class="l">Mesa (AL)</td><td class="l">Flexão (FLM)</td><td class="c">b<sub>f</sub>/(2t<sub>f</sub>)</td><td class="c">0,38·√(E/f<sub>y</sub>)</td><td class="c">0,83·√(E/(f<sub>y</sub> − σ<sub>r</sub>)), σ<sub>r</sub> = 0,3f<sub>y</sub> (laminado)</td></tr>
+<tr><td class="l">Alma (AA)</td><td class="l">Flexão (FLA)</td><td class="c">h/t<sub>w</sub></td><td class="c">3,76·√(E/f<sub>y</sub>)</td><td class="c">5,70·√(E/f<sub>y</sub>)</td></tr>
+<tr><td class="l">Mesa (AL)</td><td class="l">Compressão axial (Q<sub>s</sub>)</td><td class="c">b<sub>f</sub>/(2t<sub>f</sub>)</td><td class="c">—</td><td class="c">0,56·√(E/f<sub>y</sub>) (acima disso Q<sub>s</sub> &lt; 1)</td></tr>
+<tr><td class="l">Alma (AA)</td><td class="l">Compressão axial (Q<sub>a</sub>)</td><td class="c">h/t<sub>w</sub></td><td class="c">—</td><td class="c">1,49·√(E/f<sub>y</sub>) (acima disso Q<sub>a</sub> &lt; 1)</td></tr>
+<tr><td class="l">Alma (AA)</td><td class="l">Cisalhamento</td><td class="c">h/t<sub>w</sub></td><td class="c">1,10·√(k<sub>v</sub>E/f<sub>y</sub>)</td><td class="c">1,37·√(k<sub>v</sub>E/f<sub>y</sub>)</td></tr>
+<tr><td class="l">Parede de tubo retangular (AA)</td><td class="l">Compressão axial</td><td class="c">(B − 3t)/t</td><td class="c">—</td><td class="c">1,40·√(E/f<sub>y</sub>)</td></tr>
+<tr><td class="l">Aba de cantoneira (AL)</td><td class="l">Compressão axial</td><td class="c">b/t</td><td class="c">—</td><td class="c">0,45·√(E/f<sub>y</sub>)</td></tr>
+</tbody></table>
+<p>O termo σ<sub>r</sub> é a <strong>tensão residual</strong> de laminação/solda (≈ 30 % de f<sub>y</sub> em laminados): o perfil já sai da usina com partes comprimidas e partes tracionadas, o que antecipa o escoamento das fibras comprimidas. A Tabela 7.3 traz os limites já calculados para os dois aços mais usados — guarde-a, pois será consultada em todo o capítulo.</p>
+
+<table class="tab"><caption>Tabela 7.3 – Limites numéricos de b/t para perfis I laminados (E = 20 000 kN/cm²)</caption>
+<thead><tr><th>Elemento / solicitação</th><th>Parâmetro</th><th colspan="2">ASTM A36 (f<sub>y</sub> = 25 kN/cm²)</th><th colspan="2">ASTM A572 Gr.50 (f<sub>y</sub> = 34,5 kN/cm²)</th></tr>
+<tr><th></th><th></th><th>λ<sub>p</sub></th><th>λ<sub>r</sub></th><th>λ<sub>p</sub></th><th>λ<sub>r</sub></th></tr></thead>
+<tbody>
+<tr><td class="l">√(E/f<sub>y</sub>)</td><td class="c">—</td><td class="c" colspan="2">28,28</td><td class="c" colspan="2">24,08</td></tr>
+<tr><td class="l">Mesa em flexão (FLM)</td><td class="c">b<sub>f</sub>/(2t<sub>f</sub>)</td><td class="c"><strong>10,7</strong></td><td class="c">28,1</td><td class="c"><strong>9,15</strong></td><td class="c">23,9</td></tr>
+<tr><td class="l">Alma em flexão (FLA)</td><td class="c">h/t<sub>w</sub></td><td class="c"><strong>106</strong></td><td class="c">161</td><td class="c"><strong>90,5</strong></td><td class="c">137</td></tr>
+<tr><td class="l">Mesa em compressão axial (Q<sub>s</sub> = 1 até…)</td><td class="c">b<sub>f</sub>/(2t<sub>f</sub>)</td><td class="c">—</td><td class="c"><strong>15,8</strong></td><td class="c">—</td><td class="c"><strong>13,5</strong></td></tr>
+<tr><td class="l">Alma em compressão axial (Q<sub>a</sub> = 1 até…)</td><td class="c">h/t<sub>w</sub></td><td class="c">—</td><td class="c"><strong>42,1</strong></td><td class="c">—</td><td class="c"><strong>35,9</strong></td></tr>
+<tr><td class="l">Alma em cisalhamento (k<sub>v</sub> = 5)</td><td class="c">h/t<sub>w</sub></td><td class="c"><strong>69,6</strong></td><td class="c">86,6</td><td class="c"><strong>59,2</strong></td><td class="c">73,8</td></tr>
+<tr><td class="l">Parede de tubo retangular em compressão</td><td class="c">(B − 3t)/t</td><td class="c">—</td><td class="c"><strong>39,6</strong></td><td class="c">—</td><td class="c"><strong>33,7</strong></td></tr>
+<tr><td class="l">Aba de cantoneira em compressão</td><td class="c">b/t</td><td class="c">—</td><td class="c"><strong>12,7</strong></td><td class="c">—</td><td class="c"><strong>10,8</strong></td></tr>
+</tbody></table>
+
+<div class="box atencao"><div class="tit">Aço mais forte = limites mais apertados</div>
+<p>Repare que os limites caem quando f<sub>y</sub> sobe: uma mesa que é compacta em A36 pode ser semicompacta em A572. Isso acontece porque a flambagem depende de E (igual para todos os aços), enquanto o escoamento depende de f<sub>y</sub>. Trocar o aço por um "melhor" nem sempre dá o ganho esperado em perfis esbeltos.</p></div>
+
+<div class="box exemplo"><div class="tit">Exemplo 7.1 – Classificação do perfil W 310×38,7</div>
+<p>Dados de catálogo (Gerdau): d = 310 mm, b<sub>f</sub> = 165 mm, t<sub>w</sub> = 5,8 mm, t<sub>f</sub> = 9,7 mm. Classificar para flexão e para compressão axial nos aços A36 e A572 Gr.50.</p>
+<div class="passo"><strong>Passo 1 – Mesa:</strong> b/t = b<sub>f</sub>/(2t<sub>f</sub>) = 165/(2 × 9,7) = <strong>8,51</strong>.</div>
+<div class="passo"><strong>Passo 2 – Alma:</strong> h = d − 2t<sub>f</sub> = 310 − 19,4 = 290,6 mm → h/t<sub>w</sub> = 290,6/5,8 = <strong>50,1</strong>.</div>
+<div class="passo"><strong>Passo 3 – Flexão (Tabela 7.3):</strong> mesa 8,51 ≤ 10,7 (A36) e ≤ 9,15 (A572) → compacta nos dois aços; alma 50,1 ≤ 106 e ≤ 90,5 → compacta. <strong>Seção compacta à flexão</strong>: pode usar M<sub>pl</sub> = Z<sub>x</sub>·f<sub>y</sub>.</div>
+<div class="passo"><strong>Passo 4 – Compressão axial:</strong> mesa 8,51 ≤ 15,8 e ≤ 13,5 → Q<sub>s</sub> = 1,0. Alma 50,1 &gt; 42,1 (A36) e &gt; 35,9 (A572) → <strong>a alma é esbelta sob compressão uniforme</strong>: será preciso calcular Q<sub>a</sub> &lt; 1 (ver Exemplo 7.6). É comum em perfis W "de viga" (alma alta e fina) quando usados como pilar.</div>
+<div class="passo"><strong>Conclusão:</strong> ótimo como viga (compacto), mas como pilar perde uma parte da área da alma. Perfis "de coluna" (W 200×46,1, W 250×73, W 310×97, série H) têm alma mais grossa e Q = 1.</div>
+</div>
+
+<h2>7.3 Barras tracionadas <span class="nivel b">Básico</span></h2>
+<p>A tração é o esforço mais "amigável" do aço: a barra estica, não flamba e o material trabalha inteiro. Aparecem tracionados os tirantes, pendurais, contraventamentos, diagonais e banzos inferiores de treliças. Mesmo assim há duas maneiras de a barra falhar, e as duas devem ser verificadas (NBR 8800, item 5.2):</p>
+<ol>
+<li><strong>Escoamento da seção bruta</strong>: em qualquer trecho longe das ligações, toda a área A<sub>g</sub> chega a f<sub>y</sub>. A barra alonga muito (é um modo dúctil) → γ<sub>a1</sub> = 1,10.</li>
+<li><strong>Ruptura da seção líquida</strong>: na região dos furos a área é menor e a tensão concentra; como o trecho é curto, o alongamento é pequeno e a barra rompe em f<sub>u</sub> sem grande aviso → γ<sub>a2</sub> = 1,35.</li></ol>
+<div class="formula">N<sub>t,Rd</sub> = A<sub>g</sub> · f<sub>y</sub> / γ<sub>a1</sub> &nbsp;&nbsp;&nbsp;(escoamento da seção bruta)<span class="n">(7.2)</span></div>
+<div class="formula">N<sub>t,Rd</sub> = A<sub>e</sub> · f<sub>u</sub> / γ<sub>a2</sub> &nbsp;&nbsp;&nbsp;(ruptura da seção líquida), com A<sub>e</sub> = C<sub>t</sub> · A<sub>n</sub><span class="n">(7.3)</span></div>
+<ul class="onde">
+<li>A<sub>g</sub> = área bruta da seção (cm²); A<sub>n</sub> = área líquida (descontados os furos); A<sub>e</sub> = área líquida efetiva;</li>
+<li>C<sub>t</sub> = coeficiente de redução por não uniformidade de tensões ("shear lag");</li>
+<li>f<sub>y</sub>, f<sub>u</sub> = resistências ao escoamento e à ruptura (kN/cm²). A resistência da barra é o <strong>menor</strong> dos dois valores.</li></ul>
+
+<h3>7.3.1 Área líquida e furos em ziguezague</h3>
+<p>Para descontar um furo, a norma manda usar o diâmetro do furo <strong>mais 2 mm</strong> (para levar em conta o dano na borda causado pelo puncionamento). Como o furo-padrão tem diâmetro d + 1,5 mm (d = diâmetro do parafuso), <strong>desconta-se d + 3,5 mm</strong> por furo. Se os furos estão alinhados numa mesma seção transversal (Figura 7.4a), A<sub>n</sub> = A<sub>g</sub> − n·(d + 3,5 mm)·t. Se os furos estão <strong>desencontrados (ziguezague)</strong>, a ruptura pode seguir uma linha inclinada passando por vários furos (Figura 7.4b); para cada trecho inclinado soma-se de volta a parcela <strong>s²/(4g)</strong>, em que s é o espaçamento longitudinal e g o transversal entre furos consecutivos. Calculam-se todas as linhas de ruptura possíveis e adota-se a menor A<sub>n</sub>.</p>
+<div class="formula">A<sub>n</sub> = [ b − Σ(d + 3,5 mm) + Σ s²/(4g) ] · t<span class="n">(7.4)</span></div>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s7_4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="c7_4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker></defs>
+<!-- (a) furos alinhados -->
+<g transform="translate(20,20)">
+<text x="160" y="-6" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Furos alinhados – seção 1-1</text>
+<rect x="20" y="20" width="280" height="120" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle cx="160" cy="50" r="8" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="160" cy="110" r="8" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="230" cy="50" r="8" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="230" cy="110" r="8" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<line x1="160" y1="16" x2="160" y2="152" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="6 3"/>
+<text x="160" y="164" text-anchor="middle" fill="#c0392b" font-size="11">1</text>
+<text x="160" y="10" text-anchor="middle" fill="#c0392b" font-size="11">1</text>
+<line x1="5" y1="80" x2="18" y2="80" stroke="#c0392b" stroke-width="2" marker-start="url(#s7_4)"/>
+<line x1="302" y1="80" x2="315" y2="80" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_4)"/>
+<text x="10" y="70" fill="#c0392b" font-size="11">N</text><text x="300" y="70" fill="#c0392b" font-size="11">N</text>
+<line x1="330" y1="20" x2="330" y2="140" stroke="#555" stroke-width="1" marker-start="url(#c7_4)" marker-end="url(#c7_4)"/>
+<text x="336" y="84" font-size="11">b</text>
+<text x="160" y="190" text-anchor="middle" font-size="11">A<tspan baseline-shift="sub" font-size="8">n</tspan> = [b − 2·(d + 3,5 mm)]·t</text>
+</g>
+<!-- (b) ziguezague -->
+<g transform="translate(400,20)">
+<text x="160" y="-6" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Furos em ziguezague – seção 2-2</text>
+<rect x="20" y="20" width="280" height="120" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle cx="130" cy="45" r="8" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="180" cy="80" r="8" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="130" cy="115" r="8" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="230" cy="45" r="8" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="230" cy="115" r="8" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<polyline points="130,16 130,45 180,80 130,115 130,152" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="6 3"/>
+<text x="130" y="164" text-anchor="middle" fill="#c0392b" font-size="11">2</text>
+<text x="130" y="10" text-anchor="middle" fill="#c0392b" font-size="11">2</text>
+<!-- cotas s e g -->
+<line x1="130" y1="128" x2="180" y2="128" stroke="#555" stroke-width="1" marker-start="url(#c7_4)" marker-end="url(#c7_4)"/>
+<text x="155" y="140" text-anchor="middle" font-size="11">s</text>
+<line x1="262" y1="45" x2="262" y2="80" stroke="#555" stroke-width="1" marker-start="url(#c7_4)" marker-end="url(#c7_4)"/>
+<text x="270" y="66" font-size="11">g</text>
+<line x1="262" y1="80" x2="262" y2="115" stroke="#555" stroke-width="1" marker-start="url(#c7_4)" marker-end="url(#c7_4)"/>
+<text x="270" y="102" font-size="11">g</text>
+<line x1="5" y1="80" x2="18" y2="80" stroke="#c0392b" stroke-width="2" marker-start="url(#s7_4)"/>
+<line x1="302" y1="80" x2="315" y2="80" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_4)"/>
+<text x="160" y="190" text-anchor="middle" font-size="11">A<tspan baseline-shift="sub" font-size="8">n</tspan> = [b − 3·(d + 3,5 mm) + 2·s²/(4g)]·t</text>
+<text x="160" y="206" text-anchor="middle" font-size="11">(comparar com a seção reta pelos 2 furos: b − 2·(d + 3,5))</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.4</b> – Área líquida de uma chapa tracionada: (a) furos na mesma seção; (b) furos desencontrados — a linha de ruptura inclinada desconta três furos mas recupera s²/(4g) em cada trecho inclinado.</figcaption>
+</figure>
+
+<h3>7.3.2 Coeficiente C<sub>t</sub> e a excentricidade da ligação</h3>
+<p>Quando só parte da seção está ligada — por exemplo, uma cantoneira parafusada por uma única aba — a força precisa "fazer a curva" para chegar à aba solta, e nas proximidades da ligação a aba não ligada quase não trabalha (Figura 7.5). A área efetiva é então menor que a área líquida: A<sub>e</sub> = C<sub>t</sub>·A<sub>n</sub>. A NBR 8800 (item 5.2.5) dá C<sub>t</sub> pela expressão <strong>C<sub>t</sub> = 1 − e<sub>c</sub>/ℓ<sub>c</sub></strong>, em que e<sub>c</sub> é a distância do centro de gravidade da seção ao plano da ligação e ℓ<sub>c</sub> o comprimento da ligação (distância entre o primeiro e o último parafuso, ou comprimento da solda). Ligações longas "puxam" melhor a aba solta (C<sub>t</sub> maior).</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 230" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h7_5" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s7_5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="c7_5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker></defs>
+<!-- (a) seção transversal -->
+<g transform="translate(30,20)">
+<text x="120" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Seção: excentricidade e<tspan baseline-shift="sub" font-size="9">c</tspan></text>
+<!-- chapa de ligação (gusset) vertical -->
+<rect x="40" y="20" width="12" height="150" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="46" y="188" text-anchor="middle" font-size="10">chapa</text>
+<!-- cantoneira: aba vertical colada na chapa, aba horizontal para a direita -->
+<path d="M52 30 h14 v100 h96 v14 h-110 z" fill="url(#h7_5)" stroke="#333" stroke-width="1.5"/>
+<!-- parafuso atravessando -->
+<rect x="34" y="72" width="38" height="8" fill="#444"/>
+<circle cx="30" cy="76" r="0" fill="#444"/>
+<!-- CG -->
+<circle cx="86" cy="106" r="3" fill="#0b3d91"/>
+<text x="94" y="110" font-size="11" fill="#0b3d91">G</text>
+<!-- cota ec -->
+<line x1="52" y1="120" x2="86" y2="120" stroke="#555" stroke-width="1" marker-start="url(#c7_5)" marker-end="url(#c7_5)"/>
+<text x="69" y="134" text-anchor="middle" font-size="11">e<tspan baseline-shift="sub" font-size="8">c</tspan></text>
+<text x="120" y="60" font-size="10">aba livre: quase não</text>
+<text x="120" y="74" font-size="10">trabalha perto da ligação</text>
+<line x1="150" y1="126" x2="150" y2="160" stroke="#555" stroke-width="1"/>
+<text x="150" y="176" text-anchor="middle" font-size="10">aba ligada</text>
+</g>
+<!-- (b) vista lateral -->
+<g transform="translate(330,20)">
+<text x="200" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Vista: comprimento da ligação ℓ<tspan baseline-shift="sub" font-size="9">c</tspan></text>
+<!-- chapa -->
+<rect x="20" y="40" width="160" height="110" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- cantoneira (aba ligada vista de lado) -->
+<rect x="90" y="60" width="300" height="52" fill="url(#h7_5)" stroke="#333" stroke-width="1.5"/>
+<line x1="90" y1="74" x2="390" y2="74" stroke="#333" stroke-width="1" stroke-dasharray="4 3"/>
+<!-- parafusos -->
+<circle cx="120" cy="86" r="7" fill="#444"/><circle cx="160" cy="86" r="7" fill="#444"/>
+<!-- força -->
+<line x1="392" y1="86" x2="420" y2="86" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_5)"/>
+<text x="408" y="78" fill="#c0392b" font-size="11">N</text>
+<!-- cota lc -->
+<line x1="120" y1="128" x2="160" y2="128" stroke="#555" stroke-width="1" marker-start="url(#c7_5)" marker-end="url(#c7_5)"/>
+<text x="140" y="142" text-anchor="middle" font-size="11">ℓ<tspan baseline-shift="sub" font-size="8">c</tspan></text>
+<!-- linhas de fluxo de tensão (curvas) -->
+<path d="M380 68 q-120 0 -200 12" fill="none" stroke="#0b3d91" stroke-width="1" stroke-dasharray="3 2"/>
+<path d="M380 104 q-120 0 -200 -12" fill="none" stroke="#0b3d91" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="290" y="175" text-anchor="middle" font-size="11">C<tspan baseline-shift="sub" font-size="8">t</tspan> = 1 − e<tspan baseline-shift="sub" font-size="8">c</tspan>/ℓ<tspan baseline-shift="sub" font-size="8">c</tspan></text>
+<text x="290" y="192" text-anchor="middle" font-size="10">(ligação curta → C<tspan baseline-shift="sub" font-size="7">t</tspan> pequeno; 3 ou mais parafusos ajudam)</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.5</b> – "Shear lag" numa cantoneira ligada por uma aba: a excentricidade e<sub>c</sub> entre o centro de gravidade e o plano da ligação reduz a área efetiva; ligações mais longas (ℓ<sub>c</sub>) reduzem o efeito.</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 7.4 – Coeficiente C<sub>t</sub> (NBR 8800:2008, item 5.2.5) e valores usuais</caption>
+<thead><tr><th>Situação</th><th>C<sub>t</sub></th><th>Observação</th></tr></thead>
+<tbody>
+<tr><td class="l">Todos os elementos da seção ligados (chapa com furos, perfil I ligado pelas duas mesas e alma, barra redonda)</td><td class="c">1,0</td><td class="l">Não há shear lag; A<sub>e</sub> = A<sub>n</sub>.</td></tr>
+<tr><td class="l">Chapa plana ligada só por soldas longitudinais nas bordas (comprimento ℓ, largura b)</td><td class="c">1,0 / 0,87 / 0,75</td><td class="l">ℓ ≥ 2b / 1,5b ≤ ℓ &lt; 2b / b ≤ ℓ &lt; 1,5b.</td></tr>
+<tr><td class="l">Perfis com parte da seção ligada (cantoneiras, U, I ligados só pelas mesas ou só pela alma)</td><td class="c">1 − e<sub>c</sub>/ℓ<sub>c</sub></td><td class="l">e<sub>c</sub> = distância do CG ao plano da ligação (para I ligado pelas mesas, use o CG da meia seção – um T); ℓ<sub>c</sub> = comprimento da ligação. A norma admite C<sub>t</sub> ≥ 0,60 para cantoneiras e perfis usuais. </td></tr>
+<tr><td class="l">Valores típicos de projeto (referência AISC)</td><td class="c">0,60 a 0,90</td><td class="l">Cantoneira simples com 2–3 parafusos ≈ 0,60; com 4 ou mais ≈ 0,80; perfil I ligado pelas mesas com 3+ parafusos por linha e b<sub>f</sub> ≥ 2d/3 ≈ 0,90; caso contrário ≈ 0,85.</td></tr>
+</tbody></table>
+
+<h3>7.3.3 Esbeltez limite e barras rosqueadas</h3>
+<p>Barra tracionada não flamba, mas uma barra muito esbelta vibra, embarriga com o peso próprio e "chacoalha" com o vento. Por isso a norma recomenda <strong>L/r ≤ 300</strong> (r = raio de giração mínimo). O limite não se aplica a <strong>barras redondas pré-tensionadas</strong> (tirantes com esticador), justamente as mais usadas em contraventamento de cobertura. Em barras redondas rosqueadas a parte rosqueada tem área menor: a norma manda tomar A<sub>e</sub> = 0,75·A<sub>g</sub> na rosca (item 5.2.8), com γ<sub>a2</sub>.</p>
+
+<div class="box exemplo"><div class="tit">Exemplo 7.2 – Tirante em cantoneira L 2"×1/4" com 2 parafusos de 1/2"</div>
+<p>Cantoneira L 50,8×50,8×6,35 mm em aço A36 (f<sub>y</sub> = 25, f<sub>u</sub> = 40 kN/cm²), ligada a uma chapa por uma aba com 2 parafusos ø 1/2" (12,7 mm) em furos-padrão, espaçados 60 mm. Catálogo: A<sub>g</sub> = 6,06 cm², r<sub>mín</sub> = 0,99 cm, distância do CG à face da aba x = 1,50 cm. Comprimento 2,8 m. Determinar N<sub>t,Rd</sub>.</p>
+<div class="passo"><strong>Passo 1 – Escoamento da seção bruta (eq. 7.2):</strong> N<sub>t,Rd</sub> = 6,06 × 25 / 1,10 = <strong>137,7 kN</strong>.</div>
+<div class="passo"><strong>Passo 2 – Área líquida:</strong> um furo por seção; desconto = d + 3,5 mm = 12,7 + 3,5 = 16,2 mm = 1,62 cm. A<sub>n</sub> = 6,06 − 1,62 × 0,635 = 6,06 − 1,03 = <strong>5,03 cm²</strong>.</div>
+<div class="passo"><strong>Passo 3 – Coeficiente C<sub>t</sub>:</strong> e<sub>c</sub> = 1,50 cm; ℓ<sub>c</sub> = 6,0 cm (distância entre os dois parafusos). C<sub>t</sub> = 1 − 1,50/6,0 = <strong>0,75</strong>. A<sub>e</sub> = 0,75 × 5,03 = 3,77 cm².</div>
+<div class="passo"><strong>Passo 4 – Ruptura da seção líquida (eq. 7.3):</strong> N<sub>t,Rd</sub> = 3,77 × 40 / 1,35 = <strong>111,8 kN</strong>.</div>
+<div class="passo"><strong>Passo 5 – Esbeltez:</strong> L/r = 280/0,99 = 283 ≤ 300 → OK (no limite; barras mais longas pediriam cantoneira maior).</div>
+<div class="passo"><strong>Resultado:</strong> N<sub>t,Rd</sub> = <strong>111,8 kN</strong> (governa a ruptura da seção líquida). Observe que a ligação "come" 19 % da capacidade da barra: com 3 parafusos (ℓ<sub>c</sub> = 12 cm) C<sub>t</sub> subiria para 0,875 e N<sub>t,Rd</sub> para 130 kN. Faltam ainda as verificações da ligação (parafusos, esmagamento, bloco – Capítulo 8).</div>
+</div>
+
+<div class="box exemplo"><div class="tit">Exemplo 7.3 – Barra redonda de contraventamento ø 16 mm</div>
+<p>Barra redonda lisa de aço A36, ø 16 mm, com extremidades rosqueadas e esticador, usada como diagonal de contraventamento de cobertura com 4,5 m de comprimento.</p>
+<div class="passo"><strong>Passo 1 – Área bruta:</strong> A<sub>g</sub> = π × 1,6²/4 = <strong>2,01 cm²</strong>.</div>
+<div class="passo"><strong>Passo 2 – Escoamento:</strong> N<sub>t,Rd</sub> = 2,01 × 25 / 1,10 = <strong>45,7 kN</strong>.</div>
+<div class="passo"><strong>Passo 3 – Ruptura na rosca:</strong> A<sub>e</sub> = 0,75 × 2,01 = 1,51 cm² (C<sub>t</sub> = 1,0). N<sub>t,Rd</sub> = 1,51 × 40 / 1,35 = <strong>44,7 kN</strong> ← governa.</div>
+<div class="passo"><strong>Passo 4 – Esbeltez:</strong> r = d/4 = 0,4 cm → L/r = 450/0,4 = 1 125 ≫ 300. A barra <strong>só é aceitável porque é pré-tensionada</strong> pelo esticador (a norma dispensa o limite nesse caso). Sem esticador, o limite 300 daria L ≤ 1,2 m — inviável; daí o uso de esticadores ou de cantoneiras/tubos em diagonais longas.</div>
+<div class="passo"><strong>Resultado:</strong> N<sub>t,Rd</sub> ≈ <strong>44,7 kN</strong> (≈ 4,5 tf). Regra prática: barra redonda A36 resiste ≈ 22 kN por cm² de área bruta (≈ 0,175·d² kN com d em mm).</div>
+</div>
+
+<div class="box dica"><div class="tit">Regras de bolso – tração</div>
+<p>• Chapa ou perfil A36 sem furos: ≈ 22,7 kN por cm² de área (25/1,10). A572: ≈ 31,4 kN/cm².<br>• Com furos e ligação por uma aba, conte com 70–80 % disso.<br>• Tirante redondo: a rosca manda; use barra com rosca laminada ou luva/esticador de área maior quando a economia importar.<br>• Não esqueça o <strong>cisalhamento de bloco</strong> na ligação (Capítulo 8) — costuma governar em cantoneiras com poucos parafusos.</p></div>
+
+<h2>7.4 Barras comprimidas <span class="nivel i">Intermediário</span></h2>
+<p>Comprima uma régua de plástico pelas pontas: bem antes de o material "esmagar", ela se curva de repente para o lado. Isso é <strong>flambagem</strong>, e é o que governa quase todo pilar, escora e diagonal comprimida de aço. A carga que provoca a flambagem elástica de uma barra ideal foi deduzida por Euler em 1744:</p>
+<div class="formula">N<sub>e</sub> = π² · E · I / (K·L)²<span class="n">(7.5)</span></div>
+<ul class="onde"><li>I = momento de inércia em torno do eixo em que a barra flamba (cm⁴); L = comprimento da barra (cm);</li>
+<li>K = coeficiente de flambagem, que transforma L no <strong>comprimento de flambagem KL</strong> (distância entre pontos de inflexão da barra deformada).</li></ul>
+<p>Duas coisas saltam da fórmula: (1) não aparece f<sub>y</sub> — uma barra esbelta flamba com a mesma carga seja o aço A36 ou A572; (2) a carga cai com o <em>quadrado</em> do comprimento — dobrar o comprimento de flambagem divide a carga por quatro. Por isso travar um pilar no meio da altura (reduzindo KL à metade) é a forma mais barata de ganhar capacidade.</p>
+
+<h3>7.4.1 Comprimento de flambagem e o coeficiente K</h3>
+<p>O valor de K depende de como as extremidades estão presas (Figura 7.6, Tabela 7.5). Extremidades engastadas "seguram" a barra e diminuem KL; extremidades livres para se deslocar lateralmente (pórticos sem contraventamento) aumentam muito o KL. Os valores "recomendados" são um pouco maiores que os teóricos porque engastes perfeitos não existem na prática.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h7_6" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s7_6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker></defs>
+<!-- caso (a) engastada-engastada K=0,5 -->
+<g transform="translate(20,20)">
+<text x="55" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a)</text>
+<rect x="30" y="14" width="50" height="12" fill="url(#h7_6)" stroke="#333" stroke-width="1.5"/>
+<rect x="30" y="204" width="50" height="12" fill="url(#h7_6)" stroke="#333" stroke-width="1.5"/>
+<line x1="55" y1="26" x2="55" y2="204" stroke="#333" stroke-width="2"/>
+<path d="M55 26 C55 70 75 90 75 115 C75 140 55 160 55 204" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="55" y1="-2" x2="55" y2="12" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_6)"/>
+<line x1="100" y1="70" x2="100" y2="160" stroke="#555" stroke-width="1"/>
+<line x1="96" y1="70" x2="104" y2="70" stroke="#555" stroke-width="1"/><line x1="96" y1="160" x2="104" y2="160" stroke="#555" stroke-width="1"/>
+<text x="106" y="118" font-size="10">0,5L</text>
+<text x="55" y="238" text-anchor="middle" font-size="11">engaste – engaste</text>
+<text x="55" y="254" text-anchor="middle" font-size="11">K = 0,5 (teórico)</text>
+<text x="55" y="270" text-anchor="middle" font-size="11" font-weight="bold">K = 0,65 (recom.)</text>
+</g>
+<!-- (b) engastada-rotulada K=0,7 -->
+<g transform="translate(145,20)">
+<text x="55" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b)</text>
+<polygon points="55,14 45,26 65,26" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<rect x="30" y="204" width="50" height="12" fill="url(#h7_6)" stroke="#333" stroke-width="1.5"/>
+<line x1="55" y1="26" x2="55" y2="204" stroke="#333" stroke-width="2"/>
+<path d="M55 26 C70 60 80 100 70 140 C64 165 55 185 55 204" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="55" y1="-2" x2="55" y2="12" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_6)"/>
+<line x1="100" y1="26" x2="100" y2="151" stroke="#555" stroke-width="1"/>
+<line x1="96" y1="26" x2="104" y2="26" stroke="#555" stroke-width="1"/><line x1="96" y1="151" x2="104" y2="151" stroke="#555" stroke-width="1"/>
+<text x="106" y="92" font-size="10">0,7L</text>
+<text x="55" y="238" text-anchor="middle" font-size="11">engaste – rótula</text>
+<text x="55" y="254" text-anchor="middle" font-size="11">K = 0,7 (teórico)</text>
+<text x="55" y="270" text-anchor="middle" font-size="11" font-weight="bold">K = 0,8 (recom.)</text>
+</g>
+<!-- (c) rotulada-rotulada K=1 -->
+<g transform="translate(270,20)">
+<text x="55" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c)</text>
+<polygon points="55,14 45,26 65,26" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<polygon points="55,216 45,204 65,204" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<line x1="55" y1="26" x2="55" y2="204" stroke="#333" stroke-width="2"/>
+<path d="M55 26 C85 80 85 150 55 204" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="55" y1="-2" x2="55" y2="12" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_6)"/>
+<line x1="100" y1="26" x2="100" y2="204" stroke="#555" stroke-width="1"/>
+<line x1="96" y1="26" x2="104" y2="26" stroke="#555" stroke-width="1"/><line x1="96" y1="204" x2="104" y2="204" stroke="#555" stroke-width="1"/>
+<text x="106" y="118" font-size="10">L</text>
+<text x="55" y="238" text-anchor="middle" font-size="11">rótula – rótula</text>
+<text x="55" y="254" text-anchor="middle" font-size="11">K = 1,0 (teórico)</text>
+<text x="55" y="270" text-anchor="middle" font-size="11" font-weight="bold">K = 1,0 (recom.)</text>
+</g>
+<!-- (d) engastada - engaste deslizante K=1 -->
+<g transform="translate(395,20)">
+<text x="55" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(d)</text>
+<rect x="30" y="14" width="50" height="12" fill="url(#h7_6)" stroke="#333" stroke-width="1.5"/>
+<circle cx="40" cy="8" r="4" fill="#fff" stroke="#333" stroke-width="1"/><circle cx="70" cy="8" r="4" fill="#fff" stroke="#333" stroke-width="1"/>
+<line x1="20" y1="3" x2="90" y2="3" stroke="#333" stroke-width="1.5"/>
+<rect x="30" y="204" width="50" height="12" fill="url(#h7_6)" stroke="#333" stroke-width="1.5"/>
+<line x1="55" y1="26" x2="55" y2="204" stroke="#333" stroke-width="2"/>
+<path d="M85 26 C85 90 55 130 55 204" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="85" y1="-6" x2="85" y2="10" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_6)"/>
+<text x="55" y="238" text-anchor="middle" font-size="11">engaste – engaste</text>
+<text x="55" y="252" text-anchor="middle" font-size="10">(topo desliza, não gira)</text>
+<text x="55" y="270" text-anchor="middle" font-size="11" font-weight="bold">K = 1,0 / 1,2</text>
+</g>
+<!-- (e) engastada-livre K=2 -->
+<g transform="translate(520,20)">
+<text x="55" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(e)</text>
+<rect x="30" y="204" width="50" height="12" fill="url(#h7_6)" stroke="#333" stroke-width="1.5"/>
+<line x1="55" y1="26" x2="55" y2="204" stroke="#333" stroke-width="2"/>
+<path d="M95 26 C95 100 65 150 55 204" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="95" y1="-6" x2="95" y2="10" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_6)"/>
+<text x="55" y="238" text-anchor="middle" font-size="11">engaste – livre</text>
+<text x="55" y="252" text-anchor="middle" font-size="10">(poste, bandeira)</text>
+<text x="55" y="270" text-anchor="middle" font-size="11" font-weight="bold">K = 2,0 / 2,1</text>
+</g>
+<!-- (f) rotulada - engaste deslizante K=2 -->
+<g transform="translate(645,20)">
+<text x="55" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(f)</text>
+<rect x="30" y="14" width="50" height="12" fill="url(#h7_6)" stroke="#333" stroke-width="1.5"/>
+<circle cx="40" cy="8" r="4" fill="#fff" stroke="#333" stroke-width="1"/><circle cx="70" cy="8" r="4" fill="#fff" stroke="#333" stroke-width="1"/>
+<line x1="20" y1="3" x2="90" y2="3" stroke="#333" stroke-width="1.5"/>
+<polygon points="55,216 45,204 65,204" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<line x1="55" y1="26" x2="55" y2="204" stroke="#333" stroke-width="2"/>
+<path d="M90 26 C90 80 75 140 55 204" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="90" y1="-6" x2="90" y2="10" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_6)"/>
+<text x="55" y="238" text-anchor="middle" font-size="11">rótula – topo deslizante</text>
+<text x="55" y="252" text-anchor="middle" font-size="10">(pórtico não contraventado)</text>
+<text x="55" y="270" text-anchor="middle" font-size="11" font-weight="bold">K = 2,0 / 2,0</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.6</b> – Os seis casos clássicos de condições de extremidade e o comprimento de flambagem KL (linha tracejada = forma flambada). Casos (d), (e) e (f) têm o topo livre para se deslocar lateralmente: são os "pórticos deslocáveis".</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 7.5 – Coeficiente de flambagem K (NBR 8800:2008, Anexo E)</caption>
+<thead><tr><th>Caso</th><th>Extremidades</th><th>Translação do topo</th><th>K teórico</th><th>K recomendado</th><th>Exemplo prático</th></tr></thead>
+<tbody>
+<tr><td class="c">(a)</td><td class="l">Engastada – engastada</td><td class="c">impedida</td><td class="c">0,5</td><td class="c"><strong>0,65</strong></td><td class="l">Pilar entre lajes rígidas com ligações engastadas e prédio contraventado</td></tr>
+<tr><td class="c">(b)</td><td class="l">Engastada – rotulada</td><td class="c">impedida</td><td class="c">0,7</td><td class="c"><strong>0,80</strong></td><td class="l">Pilar engastado na base, rotulado no topo, com contraventamento</td></tr>
+<tr><td class="c">(c)</td><td class="l">Rotulada – rotulada</td><td class="c">impedida</td><td class="c">1,0</td><td class="c"><strong>1,0</strong></td><td class="l">Barra de treliça, pilar birrotulado contraventado, escora – <em>caso padrão</em></td></tr>
+<tr><td class="c">(d)</td><td class="l">Engastada – engastada</td><td class="c">livre</td><td class="c">1,0</td><td class="c"><strong>1,2</strong></td><td class="l">Pilar de pórtico com vigas muito rígidas, sem contraventamento</td></tr>
+<tr><td class="c">(e)</td><td class="l">Engastada – livre</td><td class="c">livre</td><td class="c">2,0</td><td class="c"><strong>2,1</strong></td><td class="l">Poste, pilar em balanço, coluna de mezanino sem travamento no topo</td></tr>
+<tr><td class="c">(f)</td><td class="l">Rotulada – engastada</td><td class="c">livre</td><td class="c">2,0</td><td class="c"><strong>2,0</strong></td><td class="l">Pilar de pórtico rotulado na base, sem contraventamento</td></tr>
+</tbody></table>
+<div class="box norma"><div class="tit">NBR 8800 e o K em pórticos</div>
+<p>Para pórticos analisados com os efeitos de 2ª ordem (método B<sub>1</sub>-B<sub>2</sub> ou análise não linear, item 7.7), a NBR 8800 permite adotar <strong>K = 1,0</strong> em todas as barras, porque a instabilidade global já está considerada nos esforços amplificados. K &gt; 1 só é necessário quando se faz análise de 1ª ordem simples em pórticos deslocáveis (uso cada vez mais raro). Em treliças e barras contraventadas, K = 1,0 é a regra.</p></div>
+
+<h3>7.4.2 Índice de esbeltez reduzido e a curva χ</h3>
+<p>Barras reais não são perfeitas: têm curvatura inicial, tensões residuais e carga um pouco excêntrica. Por isso a carga real de colapso fica abaixo da de Euler, sobretudo na faixa intermediária de esbeltez. A NBR 8800 resolve isso com uma única <strong>curva de flambagem</strong> (Figura 7.7) que dá o <strong>fator de redução χ</strong> em função do <strong>índice de esbeltez reduzido λ<sub>0</sub></strong>:</p>
+<div class="formula">λ<sub>0</sub> = √( Q · A<sub>g</sub> · f<sub>y</sub> / N<sub>e</sub> ) = (KL/r) / π · √( Q · f<sub>y</sub> / E )<span class="n">(7.6)</span></div>
+<div class="formula">χ = 0,658<sup>λ<sub>0</sub>²</sup> &nbsp;se λ<sub>0</sub> ≤ 1,5 &nbsp;&nbsp;&nbsp;&nbsp; χ = 0,877 / λ<sub>0</sub>² &nbsp;se λ<sub>0</sub> &gt; 1,5<span class="n">(7.7)</span></div>
+<div class="formula">N<sub>c,Rd</sub> = χ · Q · A<sub>g</sub> · f<sub>y</sub> / γ<sub>a1</sub><span class="n">(7.8)</span></div>
+<ul class="onde">
+<li>KL/r = índice de esbeltez (r = raio de giração no eixo considerado; usar o maior KL/r entre os eixos x e y) — a norma limita <strong>KL/r ≤ 200</strong>;</li>
+<li>Q = fator de redução por flambagem local (1,0 para seções compactas em compressão; ver 7.4.3);</li>
+<li>N<sub>e</sub> = menor força de flambagem elástica (por flexão em x, por flexão em y ou por torção/flexo-torção).</li></ul>
+<p>Leia λ<sub>0</sub> assim: é a raiz da razão entre a carga de escoamento (Q·A<sub>g</sub>·f<sub>y</sub>) e a carga de Euler (N<sub>e</sub>). Se λ<sub>0</sub> é pequeno (barra curta e robusta), χ ≈ 1 e a barra escoa. Se λ<sub>0</sub> é grande (barra longa e fina), a curva se aproxima de Euler (0,877/λ<sub>0</sub>² ≈ 0,877 × N<sub>e</sub>/(A<sub>g</sub>f<sub>y</sub>)). Em λ<sub>0</sub> = 1,0 a barra resiste só 66 % da carga de escoamento; em λ<sub>0</sub> = 1,5, apenas 39 %.</p>
+
+<figure class="fig p90">
+<img src="fig/cap07_curva_chi.png" alt="Curva de flambagem χ × λ0">
+<figcaption><b>Figura 7.7</b> – Curva de flambagem única da NBR 8800:2008 comparada com a hipérbole de Euler. Pontos marcados: λ<sub>0</sub> = 0,5; 1,0; 1,226 (Exemplo 7.4); 1,5 e 2,0.</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 7.6 – Fator de redução χ em função do índice de esbeltez reduzido λ<sub>0</sub> (NBR 8800:2008, item 5.3.3)</caption>
+<thead><tr><th>λ<sub>0</sub></th><th>χ</th><th>λ<sub>0</sub></th><th>χ</th><th>λ<sub>0</sub></th><th>χ</th></tr></thead>
+<tbody>
+<tr><td class="c">0,0</td><td class="c">1,000</td><td class="c">1,1</td><td class="c">0,603</td><td class="c">2,2</td><td class="c">0,181</td></tr>
+<tr><td class="c">0,1</td><td class="c">0,996</td><td class="c">1,2</td><td class="c">0,547</td><td class="c">2,3</td><td class="c">0,166</td></tr>
+<tr><td class="c">0,2</td><td class="c">0,983</td><td class="c">1,3</td><td class="c">0,493</td><td class="c">2,4</td><td class="c">0,152</td></tr>
+<tr><td class="c">0,3</td><td class="c">0,963</td><td class="c">1,4</td><td class="c">0,440</td><td class="c">2,5</td><td class="c">0,140</td></tr>
+<tr><td class="c">0,4</td><td class="c">0,935</td><td class="c">1,5</td><td class="c">0,390</td><td class="c">2,6</td><td class="c">0,130</td></tr>
+<tr><td class="c">0,5</td><td class="c">0,901</td><td class="c">1,6</td><td class="c">0,343</td><td class="c">2,7</td><td class="c">0,120</td></tr>
+<tr><td class="c">0,6</td><td class="c">0,860</td><td class="c">1,7</td><td class="c">0,303</td><td class="c">2,8</td><td class="c">0,112</td></tr>
+<tr><td class="c">0,7</td><td class="c">0,815</td><td class="c">1,8</td><td class="c">0,271</td><td class="c">2,9</td><td class="c">0,104</td></tr>
+<tr><td class="c">0,8</td><td class="c">0,765</td><td class="c">1,9</td><td class="c">0,243</td><td class="c">3,0</td><td class="c">0,097</td></tr>
+<tr><td class="c">0,9</td><td class="c">0,712</td><td class="c">2,0</td><td class="c">0,219</td><td class="c"></td><td class="c"></td></tr>
+<tr><td class="c">1,0</td><td class="c">0,658</td><td class="c">2,1</td><td class="c">0,199</td><td class="c"></td><td class="c"></td></tr>
+</tbody></table>
+
+<div class="box dica"><div class="tit">Regras de bolso – compressão</div>
+<p>• Para A572 (f<sub>y</sub> = 34,5): λ<sub>0</sub> ≈ KL/r ÷ 75,6 (com Q = 1). Para A36: λ<sub>0</sub> ≈ KL/r ÷ 88,9.<br>• Em A572: KL/r ≈ 50 → χ ≈ 0,83; KL/r ≈ 100 → χ ≈ 0,48; KL/r ≈ 150 → χ ≈ 0,22; KL/r = 200 → χ ≈ 0,13. A partir de λ<sub>0</sub> ≈ 1,5 (KL/r ≈ 115 em A572), trocar por aço mais forte quase não ajuda.<br>• Pilares de edifícios ficam bem entre KL/r = 40 e 80; barras de treliça entre 60 e 120; não passe de 200 (e de 300 em tração).</p></div>
+
+<h3>7.4.3 Fator Q: flambagem local em barras comprimidas</h3>
+<p>Quando alguma chapa do perfil ultrapassa o limite de b/t da Tabela 7.2/7.3 para compressão axial, ela flamba localmente antes de a barra escoar e a área que "trabalha" é menor. A NBR 8800 (Anexo F) traduz isso no fator <strong>Q = Q<sub>s</sub> · Q<sub>a</sub></strong>:</p>
+<ul>
+<li><strong>Q<sub>s</sub></strong> (elementos AL – mesas de I, abas de L e U): é uma redução de tensão. Para mesas de perfis I laminados: Q<sub>s</sub> = 1,0 se b/t ≤ 0,56√(E/f<sub>y</sub>); Q<sub>s</sub> = 1,415 − 0,74·(b/t)·√(f<sub>y</sub>/E) se 0,56√(E/f<sub>y</sub>) &lt; b/t ≤ 1,03√(E/f<sub>y</sub>); Q<sub>s</sub> = 0,69·E/[f<sub>y</sub>·(b/t)²] acima disso. Para abas de cantoneiras os limites são 0,45 e 0,91√(E/f<sub>y</sub>), com Q<sub>s</sub> = 1,340 − 0,76·(b/t)·√(f<sub>y</sub>/E) na faixa intermediária.</li>
+<li><strong>Q<sub>a</sub></strong> (elementos AA – almas de I e U, paredes de tubos): é uma redução de área. Calcula-se uma <strong>largura efetiva</strong> b<sub>ef</sub> para cada elemento AA esbelto e Q<sub>a</sub> = A<sub>ef</sub>/A<sub>g</sub>, com A<sub>ef</sub> = A<sub>g</sub> − Σ(b − b<sub>ef</sub>)·t:</li></ul>
+<div class="formula">b<sub>ef</sub> = 1,92 · t · √(E/σ) · [ 1 − (c<sub>a</sub>/(b/t)) · √(E/σ) ] ≤ b<span class="n">(7.9)</span></div>
+<ul class="onde"><li>c<sub>a</sub> = 0,34 para almas e elementos AA em geral; 0,38 para mesas/almas de tubos retangulares;</li>
+<li>σ = tensão que pode atuar no elemento, igual a χ·f<sub>y</sub> (processo iterativo) ou, <strong>conservadoramente, σ = f<sub>y</sub></strong> — é o que faremos aqui.</li></ul>
+
+<div class="box exemplo"><div class="tit">Exemplo 7.6 (antecipado) – Fator Q do W 310×38,7 em A572 Gr.50</div>
+<p>No Exemplo 7.1 vimos que a alma desse perfil (h/t<sub>w</sub> = 50,1) supera o limite 35,9 para compressão axial. Calcular Q.</p>
+<div class="passo"><strong>Passo 1 – Mesa:</strong> b/t = 8,51 ≤ 13,5 → <strong>Q<sub>s</sub> = 1,0</strong>.</div>
+<div class="passo"><strong>Passo 2 – Largura efetiva da alma (eq. 7.9)</strong>, com σ = f<sub>y</sub> = 34,5 kN/cm², t = 0,58 cm, b = h = 29,06 cm, b/t = 50,1, √(E/f<sub>y</sub>) = 24,08:<br>
+1,92 × 0,58 × 24,08 = 26,81 cm; &nbsp; 0,34/50,1 × 24,08 = 0,163;<br>
+b<sub>ef</sub> = 26,81 × (1 − 0,163) = <strong>22,4 cm</strong> &lt; 29,06 cm → parte da alma "não trabalha".</div>
+<div class="passo"><strong>Passo 3 – Área efetiva:</strong> A<sub>ef</sub> = 49,7 − (29,06 − 22,4) × 0,58 = 49,7 − 3,84 = 45,9 cm² → <strong>Q<sub>a</sub> = 45,9/49,7 = 0,923</strong>.</div>
+<div class="passo"><strong>Resultado:</strong> Q = 1,0 × 0,923 = <strong>0,923</strong>: o perfil perde cerca de 8 % da capacidade à compressão por flambagem local da alma. Em A36 (b<sub>ef</sub> = 25,5 cm) o efeito seria menor (Q ≈ 0,96).</div>
+</div>
+
+<h3>7.4.4 Flambagem por torção e por flexo-torção</h3>
+<p>Além de fletir, uma barra comprimida pode <strong>girar</strong> em torno do próprio eixo (flambagem por torção) ou fletir e girar ao mesmo tempo (flexo-torção). Isso importa em seções com <strong>pouca rigidez à torção e centro de cisalhamento fora do centro de gravidade</strong>: cantoneiras simples, perfis T, perfis U e perfis formados a frio de chapa fina (Figura 7.8). Nesses casos a NBR 8800 (Anexo E) manda calcular também N<sub>ez</sub> (torção) ou N<sub>eyz</sub> (flexo-torção) e usar o <strong>menor</strong> N<sub>e</sub> na eq. 7.6. Perfis I e H duplamente simétricos e tubos praticamente nunca são governados por torção quando KL/r é o mesmo nos dois eixos, e os catálogos geralmente já indicam a capacidade considerando o modo crítico. Para cantoneiras simples ligadas por uma aba (diagonais de treliça), a norma oferece um procedimento simplificado (item E.1.4) que substitui a flexo-torção por um KL/r equivalente majorado.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 210" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h7_8" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s7_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker></defs>
+<!-- (a) cantoneira -->
+<g transform="translate(20,15)">
+<text x="110" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Cantoneira – flexo-torção</text>
+<path d="M40 20 h14 v96 h96 v14 h-110 z" fill="url(#h7_8)" stroke="#333" stroke-width="1.5"/>
+<g transform="rotate(-14 47 123)"><path d="M40 20 h14 v96 h96 v14 h-110 z" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/></g>
+<circle cx="47" cy="123" r="3.5" fill="#0b3d91"/><text x="26" y="140" font-size="10" fill="#0b3d91">CC</text>
+<circle cx="76" cy="94" r="3" fill="#333"/><text x="82" y="90" font-size="10">G</text>
+<path d="M80 150 a40 40 0 0 1 60 -10" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_8)"/>
+<text x="110" y="180" text-anchor="middle" font-size="10">gira em torno do centro de</text>
+<text x="110" y="194" text-anchor="middle" font-size="10">cisalhamento CC (canto das abas)</text>
+</g>
+<!-- (b) perfil T -->
+<g transform="translate(270,15)">
+<text x="110" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Perfil T – flexo-torção</text>
+<path d="M40 20 h140 v14 h-63 v96 h-14 v-96 h-63 z" fill="url(#h7_8)" stroke="#333" stroke-width="1.5"/>
+<g transform="rotate(12 110 27)"><path d="M40 20 h140 v14 h-63 v96 h-14 v-96 h-63 z" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/></g>
+<circle cx="110" cy="27" r="3.5" fill="#0b3d91"/><text x="118" y="14" font-size="10" fill="#0b3d91">CC</text>
+<circle cx="110" cy="60" r="3" fill="#333"/><text x="118" y="64" font-size="10">G</text>
+<text x="110" y="180" text-anchor="middle" font-size="10">CC na mesa, G abaixo:</text>
+<text x="110" y="194" text-anchor="middle" font-size="10">a alma "abana" (banzos de treliça em T)</text>
+</g>
+<!-- (c) perfil I: só flexão -->
+<g transform="translate(520,15)">
+<text x="110" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c) Perfil I / tubo – flexão</text>
+<path d="M50 20 h120 v14 h-53 v82 h53 v14 h-120 v-14 h53 v-82 h-53 z" fill="url(#h7_8)" stroke="#333" stroke-width="1.5"/>
+<circle cx="110" cy="75" r="3.5" fill="#0b3d91"/><text x="118" y="70" font-size="10" fill="#0b3d91">G = CC</text>
+<path d="M50 20 h120 v14 h-53 v82 h53 v14 h-120 v-14 h53 v-82 h-53 z" transform="translate(22,0)" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="110" y1="150" x2="132" y2="150" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_8)"/>
+<text x="110" y="180" text-anchor="middle" font-size="10">G coincide com CC: flamba por flexão</text>
+<text x="110" y="194" text-anchor="middle" font-size="10">(em torno do eixo de menor inércia y)</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.8</b> – Modos de flambagem global: seções com centro de cisalhamento (CC) afastado do centro de gravidade (G) tendem a flambar girando; seções duplamente simétricas flambam por flexão pura.</figcaption>
+</figure>
+
+<div class="box exemplo"><div class="tit">Exemplo 7.4 – Pilar W 250×73 com 6 m, K = 1,0, aço A572 Gr.50</div>
+<p>Pilar birrotulado, contraventado nas duas direções apenas nas extremidades (KL<sub>x</sub> = KL<sub>y</sub> = 600 cm). Catálogo Gerdau: d = 253, b<sub>f</sub> = 254, t<sub>w</sub> = 8,6, t<sub>f</sub> = 14,2 mm; A<sub>g</sub> = 92,7 cm²; I<sub>x</sub> = 11 317 cm⁴; I<sub>y</sub> = 3 883 cm⁴; r<sub>x</sub> = 11,05 cm; r<sub>y</sub> = 6,47 cm (= √(3 883/92,7)). Determinar N<sub>c,Rd</sub>.</p>
+<div class="passo"><strong>Passo 1 – Flambagem local (Tabela 7.3, A572):</strong> mesa b/t = 254/(2 × 14,2) = 8,94 ≤ 13,5 → Q<sub>s</sub> = 1; alma h/t<sub>w</sub> = (253 − 28,4)/8,6 = 26,1 ≤ 35,9 → Q<sub>a</sub> = 1. <strong>Q = 1,0</strong>.</div>
+<div class="passo"><strong>Passo 2 – Esbeltez:</strong> KL/r<sub>x</sub> = 600/11,05 = 54,3; KL/r<sub>y</sub> = 600/6,47 = <strong>92,7</strong> (governa o eixo y, de menor inércia) ≤ 200 → OK.</div>
+<div class="passo"><strong>Passo 3 – Carga de Euler (eq. 7.5):</strong> N<sub>ey</sub> = π² × 20 000 × 3 883 / 600² = 766,4 × 10⁶ / 360 000 = <strong>2 129 kN</strong>.</div>
+<div class="passo"><strong>Passo 4 – λ<sub>0</sub> (eq. 7.6):</strong> λ<sub>0</sub> = √(1,0 × 92,7 × 34,5 / 2 129) = √(1,502) = <strong>1,226</strong> (ou 92,7/π × √(34,5/20 000) = 29,51 × 0,04153 = 1,226 ✓).</div>
+<div class="passo"><strong>Passo 5 – χ (eq. 7.7):</strong> λ<sub>0</sub> ≤ 1,5 → χ = 0,658<sup>1,226²</sup> = 0,658<sup>1,503</sup> = <strong>0,533</strong> (Tabela 7.6: entre 0,547 e 0,493 ✓).</div>
+<div class="passo"><strong>Passo 6 – Resistência (eq. 7.8):</strong> N<sub>c,Rd</sub> = 0,533 × 1,0 × 92,7 × 34,5 / 1,10 = <strong>1 550 kN</strong> (≈ 155 tf).</div>
+<div class="passo"><strong>Comentário:</strong> a barra usa só 53 % de sua capacidade de escoamento (92,7 × 34,5/1,1 = 2 907 kN). Se houvesse uma viga travando o pilar no meio da altura na direção fraca (KL<sub>y</sub> = 300 cm), KL/r<sub>y</sub> cairia para 46,4, o eixo x passaria a governar (54,3 → λ<sub>0</sub> = 0,718, χ = 0,806) e N<sub>c,Rd</sub> subiria para 2 343 kN — 50 % a mais sem gastar um quilo de aço no pilar.</div>
+</div>
+
+<div class="box exemplo"><div class="tit">Exemplo 7.5 – Banzo comprimido em tubo quadrado 100×100×4,75 mm, L = 2,5 m</div>
+<p>Banzo superior de treliça de cobertura em tubo quadrado (aço VMB 250, f<sub>y</sub> = 25 kN/cm²), com nós a cada 2,5 m nos dois planos (K = 1,0). Catálogo (aprox.): A<sub>g</sub> = 17,5 cm², I = 267 cm⁴, r = 3,91 cm.</p>
+<div class="passo"><strong>Passo 1 – Flambagem local:</strong> (B − 3t)/t = (100 − 14,25)/4,75 = 18,1 ≤ 1,40 × √(20 000/25) = 39,6 → <strong>Q = 1,0</strong>.</div>
+<div class="passo"><strong>Passo 2 – Esbeltez:</strong> KL/r = 250/3,91 = 63,9 ≤ 200 → OK.</div>
+<div class="passo"><strong>Passo 3 – λ<sub>0</sub>:</strong> λ<sub>0</sub> = 63,9/π × √(25/20 000) = 20,35 × 0,03536 = <strong>0,720</strong>.</div>
+<div class="passo"><strong>Passo 4 – χ:</strong> χ = 0,658<sup>0,720²</sup> = 0,658<sup>0,518</sup> = <strong>0,805</strong>.</div>
+<div class="passo"><strong>Passo 5 – Resistência:</strong> N<sub>c,Rd</sub> = 0,805 × 1,0 × 17,5 × 25 / 1,10 = <strong>320 kN</strong> (≈ 32 tf).</div>
+<div class="passo"><strong>Comentário:</strong> quase a mesma área em cantoneira dupla 2L 2½"×1/4" (A ≈ 15,4 cm², r<sub>x</sub> ≈ 1,96 cm) teria KL/r ≈ 128, λ<sub>0</sub> ≈ 1,44, χ ≈ 0,42 e N<sub>c,Rd</sub> ≈ 148 kN — menos da metade. O tubo, por ter o material afastado do centro (r grande) e boa rigidez à torção, é muito mais eficiente em compressão, o que compensa seu preço mais alto por quilo.</div>
+</div>
+
+<h2>7.5 Vigas: flexão <span class="nivel i">Intermediário</span></h2>
+<p>Uma viga trabalha "dobrando": as fibras de cima encurtam (compressão) e as de baixo esticam (tração). O aço resiste bem aos dois — o problema, de novo, é a <strong>instabilidade</strong> da parte comprimida. Uma viga de aço pode falhar de três maneiras principais, e a NBR 8800 (Anexo G) exige verificar as três: a mesa comprimida flamba localmente (<strong>FLM</strong>), a alma flamba localmente (<strong>FLA</strong>), ou a viga inteira "tomba" de lado (<strong>FLT</strong> – flambagem lateral com torção). Se nenhuma delas acontece, a viga atinge o máximo que o material permite: a <strong>plastificação total da seção</strong>.</p>
+
+<h3>7.5.1 Momento de plastificação</h3>
+<p>Em regime elástico, as tensões variam linearmente da linha neutra até as bordas (Figura 7.9a). Quando a borda mais afastada atinge f<sub>y</sub>, temos o <em>momento de início de escoamento</em> M<sub>y</sub> = W·f<sub>y</sub> (W = módulo elástico). Mas a viga não para aí: o aço escoa e as fibras internas vão sendo mobilizadas até que toda a seção esteja em f<sub>y</sub> (Figura 7.9c). Esse é o <strong>momento de plastificação</strong>:</p>
+<div class="formula">M<sub>pl</sub> = Z · f<sub>y</sub><span class="n">(7.10)</span></div>
+<ul class="onde"><li>Z = módulo plástico da seção (cm³) = soma dos momentos estáticos das duas metades da área em relação à linha neutra plástica; para perfis I, Z ≈ 1,10 a 1,15·W (o catálogo dá Z<sub>x</sub> e Z<sub>y</sub>).</li></ul>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 230" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h7_9" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s7_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker></defs>
+<!-- seção I -->
+<g transform="translate(20,25)">
+<text x="70" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">Seção</text>
+<path d="M10 20 h120 v14 h-53 v102 h53 v14 h-120 v-14 h53 v-102 h-53 z" fill="url(#h7_9)" stroke="#333" stroke-width="1.5"/>
+<line x1="0" y1="85" x2="140" y2="85" stroke="#0b3d91" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="70" y="182" text-anchor="middle" font-size="10">LN (linha neutra)</text>
+</g>
+<!-- (a) elástico -->
+<g transform="translate(200,25)">
+<text x="70" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Elástico</text>
+<line x1="70" y1="20" x2="70" y2="150" stroke="#333" stroke-width="1"/>
+<polygon points="70,20 30,20 70,85" fill="#fdecec" stroke="#c0392b" stroke-width="1.5"/>
+<polygon points="70,85 110,150 70,150" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="28" y="14" text-anchor="middle" font-size="10">σ &lt; f<tspan baseline-shift="sub" font-size="7">y</tspan></text>
+<text x="14" y="52" font-size="10" fill="#c0392b">compr.</text>
+<text x="114" y="140" font-size="10" fill="#0b3d91">tração</text>
+<text x="70" y="172" text-anchor="middle" font-size="10">M &lt; M<tspan baseline-shift="sub" font-size="7">y</tspan></text>
+<text x="70" y="188" text-anchor="middle" font-size="10">tensão linear</text>
+</g>
+<!-- (b) início escoamento -->
+<g transform="translate(380,25)">
+<text x="70" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Início do escoamento</text>
+<line x1="70" y1="20" x2="70" y2="150" stroke="#333" stroke-width="1"/>
+<polygon points="70,20 20,20 70,85" fill="#fdecec" stroke="#c0392b" stroke-width="1.5"/>
+<polygon points="70,85 120,150 70,150" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="20" y="14" text-anchor="middle" font-size="10">σ = f<tspan baseline-shift="sub" font-size="7">y</tspan></text>
+<text x="120" y="164" text-anchor="middle" font-size="10">f<tspan baseline-shift="sub" font-size="7">y</tspan></text>
+<text x="70" y="180" text-anchor="middle" font-size="10">M<tspan baseline-shift="sub" font-size="7">y</tspan> = W·f<tspan baseline-shift="sub" font-size="7">y</tspan></text>
+<text x="70" y="196" text-anchor="middle" font-size="10">(só a borda escoou)</text>
+</g>
+<!-- (c) plástico -->
+<g transform="translate(560,25)">
+<text x="70" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c) Plastificação total</text>
+<line x1="70" y1="20" x2="70" y2="150" stroke="#333" stroke-width="1"/>
+<rect x="20" y="20" width="50" height="65" fill="#fdecec" stroke="#c0392b" stroke-width="1.5"/>
+<rect x="70" y="85" width="50" height="65" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="20" y="14" text-anchor="middle" font-size="10">f<tspan baseline-shift="sub" font-size="7">y</tspan></text>
+<text x="120" y="164" text-anchor="middle" font-size="10">f<tspan baseline-shift="sub" font-size="7">y</tspan></text>
+<line x1="45" y1="52" x2="95" y2="52" stroke="#c0392b" stroke-width="1.5" marker-start="url(#s7_9)"/>
+<line x1="45" y1="118" x2="95" y2="118" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_9)"/>
+<text x="102" y="56" font-size="10" fill="#c0392b">C</text><text x="34" y="122" font-size="10" fill="#c0392b">T</text>
+<text x="70" y="180" text-anchor="middle" font-size="10">M<tspan baseline-shift="sub" font-size="7">pl</tspan> = Z·f<tspan baseline-shift="sub" font-size="7">y</tspan> ≈ 1,12·M<tspan baseline-shift="sub" font-size="7">y</tspan></text>
+<text x="70" y="196" text-anchor="middle" font-size="10">(rótula plástica)</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.9</b> – Evolução das tensões numa seção I fletida: do regime elástico (a) até a plastificação total (c). A resistência de cálculo máxima de uma viga é M<sub>pl</sub>/γ<sub>a1</sub>, alcançável só por seções compactas bem travadas.</figcaption>
+</figure>
+
+<p>Com a seção compacta e a mesa comprimida impedida de se deslocar lateralmente (por exemplo, por uma laje de concreto ligada à viga), a resistência é simplesmente:</p>
+<div class="formula">M<sub>Rd</sub> = M<sub>pl</sub> / γ<sub>a1</sub> = Z · f<sub>y</sub> / 1,10 &nbsp;&nbsp;&nbsp;(seção compacta, L<sub>b</sub> ≤ L<sub>p</sub>)<span class="n">(7.11)</span></div>
+<p>A norma impõe ainda o teto <strong>M<sub>Rd</sub> ≤ 1,5·W·f<sub>y</sub>/γ<sub>a1</sub></strong>, para evitar deformações plásticas excessivas em serviço em seções com Z/W muito alto (barras retangulares maciças, alguns perfis formados a frio). Para perfis I (Z/W ≈ 1,12) esse limite nunca governa.</p>
+
+<h3>7.5.2 Os três estados-limites: FLA, FLM e FLT</h3>
+<p>A Figura 7.10 ilustra os três modos. FLA e FLM são a flambagem local já vista no item 7.2, agora sob a distribuição de tensões da flexão: só a metade comprimida da alma e a mesa comprimida importam. FLT é diferente: é um modo <em>global</em>. A mesa comprimida se comporta como um "pilar" que quer flambar para o lado, mas está presa à mesa tracionada pela alma; o resultado é que a viga se desloca lateralmente <em>e</em> gira ao mesmo tempo (Figura 7.10c). Quanto maior o trecho sem travamento lateral <strong>L<sub>b</sub></strong>, menor o momento que a viga aguenta.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h7_10" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s7_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker></defs>
+<!-- (a) FLA -->
+<g transform="translate(15,20)">
+<text x="90" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) FLA – alma</text>
+<path d="M30 20 h120 v14 h-53 v112 h53 v14 h-120 v-14 h53 v-112 h-53 z" fill="url(#h7_10)" stroke="#333" stroke-width="1.5"/>
+<!-- só a metade comprimida ondula -->
+<path d="M97 34 q22 20 0 40 q-10 10 -4 20" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M83 34 q22 20 0 40 q-10 10 -4 20" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="20" y1="100" x2="160" y2="100" stroke="#0b3d91" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="164" y="104" font-size="10" fill="#0b3d91">LN</text>
+<text x="90" y="200" text-anchor="middle" font-size="10">metade comprimida da alma</text>
+<text x="90" y="214" text-anchor="middle" font-size="10">flamba; λ = h/t<tspan baseline-shift="sub" font-size="7">w</tspan></text>
+</g>
+<!-- (b) FLM -->
+<g transform="translate(215,20)">
+<text x="90" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) FLM – mesa comprimida</text>
+<path d="M30 20 h120 v14 h-53 v112 h53 v14 h-120 v-14 h53 v-112 h-53 z" fill="url(#h7_10)" stroke="#333" stroke-width="1.5"/>
+<path d="M30 20 q30 -20 60 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M90 20 q30 -20 60 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M30 34 q30 -20 60 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M90 34 q30 -20 60 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="90" y="200" text-anchor="middle" font-size="10">bordas livres da mesa ondulam;</text>
+<text x="90" y="214" text-anchor="middle" font-size="10">λ = b<tspan baseline-shift="sub" font-size="7">f</tspan>/(2t<tspan baseline-shift="sub" font-size="7">f</tspan>)</text>
+</g>
+<!-- (c) FLT -->
+<g transform="translate(415,20)">
+<text x="175" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c) FLT – flambagem lateral com torção</text>
+<!-- seção original e deslocada/girada -->
+<path d="M30 20 h120 v14 h-53 v112 h53 v14 h-120 v-14 h53 v-112 h-53 z" fill="url(#h7_10)" stroke="#333" stroke-width="1.5"/>
+<g transform="translate(38,-4) rotate(-12 90 160)"><path d="M30 20 h120 v14 h-53 v112 h53 v14 h-120 v-14 h53 v-112 h-53 z" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/></g>
+<line x1="92" y1="13" x2="152" y2="13" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_10)"/>
+<text x="158" y="17" font-size="10" fill="#c0392b">u (lateral)</text>
+<path d="M60 175 a50 50 0 0 0 60 8" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_10)"/>
+<text x="95" y="204" text-anchor="middle" font-size="10" fill="#c0392b">φ (giro)</text>
+<!-- planta: mesa comprimida entre travamentos -->
+<rect x="190" y="60" width="160" height="14" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<path d="M190 67 q80 -30 160 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<line x1="190" y1="44" x2="190" y2="90" stroke="#333" stroke-width="2"/>
+<line x1="350" y1="44" x2="350" y2="90" stroke="#333" stroke-width="2"/>
+<text x="190" y="104" text-anchor="middle" font-size="10">travamento</text>
+<text x="350" y="104" text-anchor="middle" font-size="10">travamento</text>
+<line x1="190" y1="118" x2="350" y2="118" stroke="#555" stroke-width="1"/>
+<line x1="190" y1="113" x2="190" y2="123" stroke="#555" stroke-width="1"/><line x1="350" y1="113" x2="350" y2="123" stroke="#555" stroke-width="1"/>
+<text x="270" y="134" text-anchor="middle" font-size="11">L<tspan baseline-shift="sub" font-size="8">b</tspan> (comprimento destravado)</text>
+<text x="270" y="160" text-anchor="middle" font-size="10">planta da mesa comprimida:</text>
+<text x="270" y="174" text-anchor="middle" font-size="10">ela "flamba" como um pilar,</text>
+<text x="270" y="188" text-anchor="middle" font-size="10">arrastando a seção em giro</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.10</b> – Estados-limites de uma viga fletida: (a) flambagem local da alma; (b) flambagem local da mesa comprimida; (c) flambagem lateral com torção — a seção se desloca (u) e gira (φ) entre dois pontos de travamento distantes L<sub>b</sub>.</figcaption>
+</figure>
+
+<p>Para cada um dos três modos a norma usa a <strong>mesma estrutura de cálculo</strong>: define um parâmetro de esbeltez λ e dois limites λ<sub>p</sub> e λ<sub>r</sub>; abaixo de λ<sub>p</sub> a resistência é M<sub>pl</sub>; entre λ<sub>p</sub> e λ<sub>r</sub> interpola-se linearmente entre M<sub>pl</sub> e M<sub>r</sub> (momento em que a fibra comprimida chega a f<sub>y</sub> − σ<sub>r</sub>); acima de λ<sub>r</sub> usa-se o momento crítico elástico M<sub>cr</sub>. A resistência da viga é a <strong>menor</strong> das três, dividida por γ<sub>a1</sub>.</p>
+<div class="formula"><span class="n">(7.12)</span>M<sub>Rd</sub> = M<sub>pl</sub>/γ<sub>a1</sub> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(λ ≤ λ<sub>p</sub>)<br>M<sub>Rd</sub> = [M<sub>pl</sub> − (M<sub>pl</sub> − M<sub>r</sub>)·(λ − λ<sub>p</sub>)/(λ<sub>r</sub> − λ<sub>p</sub>)]/γ<sub>a1</sub> &nbsp;&nbsp;&nbsp;(λ<sub>p</sub> &lt; λ ≤ λ<sub>r</sub>)<br>M<sub>Rd</sub> = M<sub>cr</sub>/γ<sub>a1</sub> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(λ &gt; λ<sub>r</sub>)</div>
+<ul class="onde"><li>M<sub>r</sub> = (f<sub>y</sub> − σ<sub>r</sub>)·W = <strong>0,7·f<sub>y</sub>·W</strong> para FLT e FLM de perfis laminados (σ<sub>r</sub> = 0,3f<sub>y</sub>); M<sub>r</sub> = f<sub>y</sub>·W para FLA;</li>
+<li>FLM e FLA: λ, λ<sub>p</sub> e λ<sub>r</sub> da Tabela 7.2; para FLM esbelta em laminados, M<sub>cr</sub> = 0,69·E·W/λ²; alma esbelta (FLA com λ &gt; λ<sub>r</sub>) sai do Anexo G e vai para o Anexo H (vigas de alma esbelta);</li>
+<li>FLT: λ = L<sub>b</sub>/r<sub>y</sub>, com λ<sub>p</sub>, λ<sub>r</sub> e M<sub>cr</sub> dados a seguir.</li></ul>
+
+<h3>7.5.3 FLT: L<sub>p</sub>, L<sub>r</sub>, C<sub>b</sub> e M<sub>cr</sub></h3>
+<p>Para perfis I e H duplamente simétricos fletidos em torno do eixo de maior inércia, a NBR 8800 (Tabela G.1) define:</p>
+<div class="formula">L<sub>p</sub> = 1,76 · r<sub>y</sub> · √(E/f<sub>y</sub>)<span class="n">(7.13)</span></div>
+<div class="formula">λ<sub>r</sub> = L<sub>r</sub>/r<sub>y</sub> = [1,38·√(I<sub>y</sub>·J) / (r<sub>y</sub>·J·β<sub>1</sub>)] · √( 1 + √(1 + 27·C<sub>w</sub>·β<sub>1</sub>²/I<sub>y</sub>) ), &nbsp; β<sub>1</sub> = 0,7·f<sub>y</sub>·W<sub>x</sub>/(E·J)<span class="n">(7.14)</span></div>
+<div class="formula">M<sub>cr</sub> = C<sub>b</sub> · (π²·E·I<sub>y</sub>/L<sub>b</sub>²) · √( (C<sub>w</sub>/I<sub>y</sub>) · (1 + 0,039·J·L<sub>b</sub>²/C<sub>w</sub>) ) ≤ M<sub>pl</sub><span class="n">(7.15)</span></div>
+<ul class="onde">
+<li>L<sub>b</sub> = distância entre pontos de contenção lateral da mesa comprimida (cm);</li>
+<li>J = constante de torção (cm⁴) ≈ Σ(b·t³)/3; C<sub>w</sub> = constante de empenamento (cm⁶) ≈ I<sub>y</sub>·(d − t<sub>f</sub>)²/4 — ambos tabelados nos catálogos, assim como <strong>L<sub>p</sub> e L<sub>r</sub></strong> para cada aço;</li>
+<li>C<sub>b</sub> = fator de modificação para diagrama de momento não uniforme (≥ 1,0).</li></ul>
+<p>Na faixa intermediária (L<sub>p</sub> &lt; L<sub>b</sub> ≤ L<sub>r</sub>) o resultado da interpolação (eq. 7.12) é multiplicado por C<sub>b</sub>, sempre respeitando o teto M<sub>pl</sub>. Repare em L<sub>p</sub>: para A572, L<sub>p</sub> ≈ 42·r<sub>y</sub>; um W 360×51 (r<sub>y</sub> = 3,87 cm) plastifica plenamente só se travado a cada 1,64 m. Vigas sem laje — terças, vigas de cobertura, vigas de rolamento, vigas de mezanino com piso de madeira ou grade — quase sempre caem na faixa intermediária ou elástica, e é aí que se esconde o erro mais grave de quem dimensiona "por tabela" sem olhar o L<sub>b</sub>.</p>
+
+<h4>O fator C<sub>b</sub></h4>
+<p>As fórmulas de M<sub>cr</sub> foram deduzidas para momento fletor <em>constante</em> ao longo de L<sub>b</sub> — o caso mais desfavorável, porque toda a mesa está igualmente comprimida. Quando o momento varia (o que é a regra), apenas parte do trecho está muito solicitada e a viga aguenta mais. O fator C<sub>b</sub> corrige isso:</p>
+<div class="formula">C<sub>b</sub> = 12,5·M<sub>máx</sub> / (2,5·M<sub>máx</sub> + 3·M<sub>A</sub> + 4·M<sub>B</sub> + 3·M<sub>C</sub>) ≤ 3,0<span class="n">(7.16)</span></div>
+<ul class="onde"><li>M<sub>máx</sub> = momento máximo (em valor absoluto) no trecho destravado; M<sub>A</sub>, M<sub>B</sub>, M<sub>C</sub> = momentos (absolutos) a 1/4, 1/2 e 3/4 do trecho destravado. Em balanços com extremidade livre, C<sub>b</sub> = 1,0.</li></ul>
+
+<figure class="fig">
+<svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><marker id="s7_11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker></defs>
+<!-- (a) momento uniforme -->
+<g transform="translate(10,15)">
+<text x="70" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) uniforme</text>
+<line x1="10" y1="30" x2="130" y2="30" stroke="#333" stroke-width="2.5"/>
+<polygon points="10,30 4,40 16,40" fill="#fff" stroke="#333" stroke-width="1.2"/><polygon points="130,30 124,40 136,40" fill="#fff" stroke="#333" stroke-width="1.2"/>
+<path d="M2 20 a10 10 0 1 0 8 6" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_11)"/>
+<path d="M138 20 a10 10 0 1 1 -8 6" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_11)"/>
+<line x1="10" y1="70" x2="130" y2="70" stroke="#555" stroke-width="1"/>
+<rect x="10" y="70" width="120" height="40" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.2"/>
+<text x="70" y="128" text-anchor="middle">M<tspan baseline-shift="sub" font-size="8">A</tspan>=M<tspan baseline-shift="sub" font-size="8">B</tspan>=M<tspan baseline-shift="sub" font-size="8">C</tspan>=M</text>
+<text x="70" y="150" text-anchor="middle" font-weight="bold" font-size="12">C<tspan baseline-shift="sub" font-size="8">b</tspan> = 1,00</text>
+</g>
+<!-- (b) distribuída -->
+<g transform="translate(165,15)">
+<text x="70" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) distribuída</text>
+<line x1="10" y1="30" x2="130" y2="30" stroke="#333" stroke-width="2.5"/>
+<polygon points="10,30 4,40 16,40" fill="#fff" stroke="#333" stroke-width="1.2"/><polygon points="130,30 124,40 136,40" fill="#fff" stroke="#333" stroke-width="1.2"/>
+<line x1="10" y1="12" x2="130" y2="12" stroke="#c0392b" stroke-width="1.2"/>
+<line x1="20" y1="12" x2="20" y2="27" stroke="#c0392b" stroke-width="1.2" marker-end="url(#s7_11)"/><line x1="50" y1="12" x2="50" y2="27" stroke="#c0392b" stroke-width="1.2" marker-end="url(#s7_11)"/><line x1="80" y1="12" x2="80" y2="27" stroke="#c0392b" stroke-width="1.2" marker-end="url(#s7_11)"/><line x1="110" y1="12" x2="110" y2="27" stroke="#c0392b" stroke-width="1.2" marker-end="url(#s7_11)"/>
+<line x1="10" y1="70" x2="130" y2="70" stroke="#555" stroke-width="1"/>
+<path d="M10 70 Q70 150 130 70 z" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.2"/>
+<text x="70" y="128" text-anchor="middle">L<tspan baseline-shift="sub" font-size="8">b</tspan> = vão inteiro</text>
+<text x="70" y="150" text-anchor="middle" font-weight="bold" font-size="12">C<tspan baseline-shift="sub" font-size="8">b</tspan> = 1,14</text>
+</g>
+<!-- (c) concentrada -->
+<g transform="translate(320,15)">
+<text x="70" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c) concentrada no meio</text>
+<line x1="10" y1="30" x2="130" y2="30" stroke="#333" stroke-width="2.5"/>
+<polygon points="10,30 4,40 16,40" fill="#fff" stroke="#333" stroke-width="1.2"/><polygon points="130,30 124,40 136,40" fill="#fff" stroke="#333" stroke-width="1.2"/>
+<line x1="70" y1="8" x2="70" y2="27" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_11)"/>
+<line x1="10" y1="70" x2="130" y2="70" stroke="#555" stroke-width="1"/>
+<polygon points="10,70 70,110 130,70" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.2"/>
+<text x="70" y="128" text-anchor="middle">L<tspan baseline-shift="sub" font-size="8">b</tspan> = vão inteiro</text>
+<text x="70" y="150" text-anchor="middle" font-weight="bold" font-size="12">C<tspan baseline-shift="sub" font-size="8">b</tspan> = 1,32</text>
+</g>
+<!-- (d) linear M -> 0 -->
+<g transform="translate(475,15)">
+<text x="70" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(d) linear até zero</text>
+<line x1="10" y1="30" x2="130" y2="30" stroke="#333" stroke-width="2.5"/>
+<polygon points="10,30 4,40 16,40" fill="#fff" stroke="#333" stroke-width="1.2"/><polygon points="130,30 124,40 136,40" fill="#fff" stroke="#333" stroke-width="1.2"/>
+<path d="M2 20 a10 10 0 1 0 8 6" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_11)"/>
+<line x1="10" y1="70" x2="130" y2="70" stroke="#555" stroke-width="1"/>
+<polygon points="10,70 10,110 130,70" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.2"/>
+<text x="70" y="128" text-anchor="middle">(trecho de pilar/pórtico)</text>
+<text x="70" y="150" text-anchor="middle" font-weight="bold" font-size="12">C<tspan baseline-shift="sub" font-size="8">b</tspan> = 1,67</text>
+</g>
+<!-- (e) curvatura reversa -->
+<g transform="translate(630,15)">
+<text x="70" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(e) curvatura reversa</text>
+<line x1="10" y1="30" x2="130" y2="30" stroke="#333" stroke-width="2.5"/>
+<polygon points="10,30 4,40 16,40" fill="#fff" stroke="#333" stroke-width="1.2"/><polygon points="130,30 124,40 136,40" fill="#fff" stroke="#333" stroke-width="1.2"/>
+<path d="M2 20 a10 10 0 1 0 8 6" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_11)"/>
+<path d="M138 40 a10 10 0 1 1 -8 -6" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_11)"/>
+<line x1="10" y1="90" x2="130" y2="90" stroke="#555" stroke-width="1"/>
+<polygon points="10,90 10,60 130,120 130,90" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.2"/>
+<text x="70" y="140" text-anchor="middle">(viga contínua, pórtico)</text>
+<text x="70" y="160" text-anchor="middle" font-weight="bold" font-size="12">C<tspan baseline-shift="sub" font-size="8">b</tspan> = 2,27</text>
+</g>
+<text x="390" y="192" text-anchor="middle" font-size="10" fill="#555">Diagramas de momento no trecho destravado L<tspan baseline-shift="sub" font-size="7">b</tspan> (apoios = pontos de contenção lateral)</text>
+</svg>
+<figcaption><b>Figura 7.11</b> – Valores de C<sub>b</sub> pela eq. 7.16 para diagramas de momento usuais no trecho destravado. Quanto mais "pontudo" o diagrama, maior C<sub>b</sub>.</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 7.7 – Valores de C<sub>b</sub> (eq. 7.16) para casos frequentes</caption>
+<thead><tr><th>Situação no trecho destravado L<sub>b</sub></th><th>M<sub>A</sub> : M<sub>B</sub> : M<sub>C</sub> (÷ M<sub>máx</sub>)</th><th>C<sub>b</sub></th></tr></thead>
+<tbody>
+<tr><td class="l">Momento uniforme (caso básico, sempre seguro)</td><td class="c">1 : 1 : 1</td><td class="c">1,00</td></tr>
+<tr><td class="l">Viga biapoiada, carga distribuída, sem travamento intermediário</td><td class="c">0,75 : 1 : 0,75</td><td class="c">1,14</td></tr>
+<tr><td class="l">Viga biapoiada, carga distribuída, travada no meio do vão (cada metade)</td><td class="c">0,44 : 0,75 : 0,94</td><td class="c">1,30</td></tr>
+<tr><td class="l">Viga biapoiada, carga distribuída, travada nos terços (trecho central)</td><td class="c">0,97 : 1 : 0,97</td><td class="c">1,01</td></tr>
+<tr><td class="l">Viga biapoiada, carga concentrada no meio, sem travamento</td><td class="c">0,5 : 1 : 0,5</td><td class="c">1,32</td></tr>
+<tr><td class="l">Momento linear de M a 0 (extremo de pilar, trecho junto ao apoio)</td><td class="c">0,75 : 0,5 : 0,25</td><td class="c">1,67</td></tr>
+<tr><td class="l">Momento linear de M a −M (curvatura reversa, ponto de inflexão no meio)</td><td class="c">0,5 : 0 : 0,5</td><td class="c">2,27</td></tr>
+<tr><td class="l">Balanço com extremidade livre (sem travamento)</td><td class="c">—</td><td class="c">1,00</td></tr>
+</tbody></table>
+
+<figure class="fig p90">
+<img src="fig/cap07_flt.png" alt="Momento resistente × comprimento destravado para W 360×51">
+<figcaption><b>Figura 7.12</b> – Momento resistente de cálculo do W 360×51 (A572 Gr.50) em função de L<sub>b</sub>, para três valores de C<sub>b</sub>. Propriedades conforme catálogo: Z<sub>x</sub> = 899 cm³, W<sub>x</sub> = 801 cm³, I<sub>y</sub> = 968 cm⁴, r<sub>y</sub> = 3,87 cm, J = 24,7 cm⁴, C<sub>w</sub> ≈ 285 000 cm⁶.</figcaption>
+</figure>
+
+<div class="box atencao"><div class="tit">O que conta como "contenção lateral"?</div>
+<p>Só vale como ponto de travamento algo que realmente impeça o deslocamento lateral <strong>da mesa comprimida</strong> ou o giro da seção: laje de concreto ligada por conectores ou chumbada, vigas transversais ligadas nas duas mesas ou com enrijecedor, mãos-francesas, contraventamento horizontal. Terças simplesmente apoiadas sobre a mesa <em>superior</em> travam a mesa superior — ótimo para momento positivo, mas <strong>não travam a mesa inferior</strong>, que é a comprimida sob sucção de vento ou sobre apoios de vigas contínuas. Telha ou steel deck fixados com parafusos autobrocantes fornecem contenção parcial (diafragma) que a maioria dos projetistas não conta a favor sem justificativa.</p></div>
+
+<div class="box exemplo"><div class="tit">Exemplo 7.7 – Viga de piso W 360×51, L = 7 m, laje travando a mesa comprimida</div>
+<p>Viga biapoiada de piso, aço A572 Gr.50, carga distribuída de cálculo q<sub>d</sub> = 25 kN/m (carga de serviço q<sub>s</sub> = 17 kN/m), com a laje ligada à mesa superior (L<sub>b</sub> = 0). Catálogo: d = 355, b<sub>f</sub> = 171, t<sub>w</sub> = 7,2, t<sub>f</sub> = 11,6 mm; A<sub>g</sub> = 64,8 cm²; I<sub>x</sub> = 14 222 cm⁴; W<sub>x</sub> = 801 cm³; Z<sub>x</sub> = 899 cm³. Verificar momento, cortante e flecha.</p>
+<div class="passo"><strong>Passo 1 – Esforços de cálculo:</strong> M<sub>Sd</sub> = q<sub>d</sub>L²/8 = 25 × 7²/8 = <strong>153,1 kN·m</strong> = 15 313 kN·cm; V<sub>Sd</sub> = q<sub>d</sub>L/2 = 25 × 7/2 = <strong>87,5 kN</strong>.</div>
+<div class="passo"><strong>Passo 2 – Classificação (Tabela 7.3, A572):</strong> mesa 171/(2 × 11,6) = 7,37 ≤ 9,15 ✓; alma h/t<sub>w</sub> = (355 − 23,2)/7,2 = 46,1 ≤ 90,5 ✓ → <strong>compacta</strong>. FLT não se aplica (L<sub>b</sub> = 0 ≤ L<sub>p</sub>).</div>
+<div class="passo"><strong>Passo 3 – Momento resistente (eq. 7.11):</strong> M<sub>pl</sub> = 899 × 34,5 = 31 016 kN·cm; M<sub>Rd</sub> = 31 016/1,10 = 28 196 kN·cm ≈ <strong>282 kN·m</strong>. Teto: 1,5 × 801 × 34,5/1,10 = 37 683 kN·cm → não governa. Verificação: 153,1/282 = <strong>0,54 ≤ 1,0 ✓</strong>.</div>
+<div class="passo"><strong>Passo 4 – Cortante (item 7.6):</strong> A<sub>w</sub> = d·t<sub>w</sub> = 35,5 × 0,72 = 25,6 cm²; h/t<sub>w</sub> = 46,1 ≤ λ<sub>p</sub> = 59,2 → V<sub>Rd</sub> = 0,60 × 25,6 × 34,5/1,10 = <strong>481 kN</strong> ≫ 87,5 kN ✓ (18 %).</div>
+<div class="passo"><strong>Passo 5 – Flecha (ELS), carga de serviço q<sub>s</sub> = 17 kN/m = 0,17 kN/cm:</strong> δ = 5·q<sub>s</sub>·L⁴/(384·E·I<sub>x</sub>) = 5 × 0,17 × 700⁴ / (384 × 20 000 × 14 222) = 2,041 × 10¹¹ / 1,092 × 10¹¹ = <strong>1,87 cm</strong>. Limite L/350 = 700/350 = 2,00 cm → <strong>✓ (93 %)</strong>.</div>
+<div class="passo"><strong>Conclusão:</strong> a viga usa 54 % do momento mas 93 % da flecha — <strong>a rigidez governa</strong>, situação típica de vigas de piso com vão acima de 6 m. Um W 360×44 (I<sub>x</sub> = 12 258 cm⁴) daria δ = 2,17 cm &gt; 2,0 e seria reprovado por flecha, mesmo passando com folga no momento (M<sub>Rd</sub> = 246 kN·m). Se a laje não travasse a mesa comprimida, o resultado mudaria completamente (Exemplo 7.8).</div>
+</div>
+
+<div class="box exemplo"><div class="tit">Exemplo 7.8 – A mesma viga sem laje, travada lateralmente só no meio do vão (L<sub>b</sub> = 3,5 m)</div>
+<p>Mesmo W 360×51 (A572), q<sub>d</sub> = 25 kN/m, L = 7 m, mas agora com piso de grade metálica que não trava a viga; existe uma viga transversal ligada às duas mesas no meio do vão. Catálogo: r<sub>y</sub> = 3,87 cm, I<sub>y</sub> = 968 cm⁴, J = 24,7 cm⁴, C<sub>w</sub> = 285 000 cm⁶.</p>
+<div class="passo"><strong>Passo 1 – L<sub>p</sub> (eq. 7.13):</strong> L<sub>p</sub> = 1,76 × 3,87 × √(20 000/34,5) = 1,76 × 3,87 × 24,08 = <strong>164 cm</strong>. Como L<sub>b</sub> = 350 &gt; 164, a plastificação total não é garantida.</div>
+<div class="passo"><strong>Passo 2 – L<sub>r</sub> (eq. 7.14):</strong> β<sub>1</sub> = 0,7 × 34,5 × 801/(20 000 × 24,7) = 19 344/494 000 = 0,03916 cm⁻¹.<br>
+√(I<sub>y</sub>·J) = √(968 × 24,7) = 154,6; &nbsp; 27·C<sub>w</sub>·β<sub>1</sub>²/I<sub>y</sub> = 27 × 285 000 × 0,03916²/968 = 12,19;<br>
+λ<sub>r</sub> = [1,38 × 154,6/(3,87 × 24,7 × 0,03916)] × √(1 + √(13,19)) = 57,0 × 2,152 = 122,7 → <strong>L<sub>r</sub> = 122,7 × 3,87 = 475 cm</strong> (catálogo: ≈ 4,7 m ✓).<br>
+Como 164 &lt; 350 ≤ 475 → <strong>regime inelástico</strong> (interpolação).</div>
+<div class="passo"><strong>Passo 3 – C<sub>b</sub> (eq. 7.16)</strong> no trecho de 0 a 3,5 m (apoio ao meio do vão). Momentos M(x) = q·x·(L − x)/2: em x = 0,875 m: M<sub>A</sub> = 67,0; x = 1,75 m: M<sub>B</sub> = 114,8; x = 2,625 m: M<sub>C</sub> = 143,6; M<sub>máx</sub> = 153,1 kN·m.<br>
+C<sub>b</sub> = 12,5 × 153,1/(2,5 × 153,1 + 3 × 67,0 + 4 × 114,8 + 3 × 143,6) = 1 913,8/1 473,9 = <strong>1,30</strong>.</div>
+<div class="passo"><strong>Passo 4 – Momento resistente (eq. 7.12 × C<sub>b</sub>):</strong> M<sub>r</sub> = 0,7 × 34,5 × 801 = 19 344 kN·cm; M<sub>pl</sub> = 31 016 kN·cm.<br>
+M<sub>n</sub> = 1,30 × [31 016 − (31 016 − 19 344) × (350 − 164)/(475 − 164)] = 1,30 × [31 016 − 11 672 × 0,598] = 1,30 × 24 036 = 31 247 &gt; M<sub>pl</sub> → adota-se M<sub>pl</sub>.<br>
+M<sub>Rd</sub> = 31 016/1,10 = <strong>282 kN·m</strong> ≥ 153,1 ✓ (0,54).</div>
+<div class="passo"><strong>Passo 5 – E se C<sub>b</sub> fosse ignorado (C<sub>b</sub> = 1,0)?</strong> M<sub>Rd</sub> = 24 036/1,10 = <strong>218 kN·m</strong> ≥ 153,1 ✓ (0,70). Ainda passa, com margem bem menor.</div>
+<div class="passo"><strong>Passo 6 – E sem nenhum travamento (L<sub>b</sub> = 7 m &gt; L<sub>r</sub>)?</strong> Regime elástico (eq. 7.15) com C<sub>b</sub> = 1,14: π²·E·I<sub>y</sub>/L<sub>b</sub>² = π² × 20 000 × 968/700² = 390,0 kN·cm; √[(285 000/968)·(1 + 0,039 × 24,7 × 700²/285 000)] = √(294,4 × 2,656) = 27,96; M<sub>cr</sub> = 1,14 × 390,0 × 27,96 = 12 431 kN·cm; M<sub>Rd</sub> = 12 431/1,10 = <strong>113 kN·m &lt; 153,1 → REPROVADA</strong> (1,35). A mesma viga que sobrava 46 % com laje <strong>não passa</strong> se ficar solta em 7 m — veja a curva da Figura 7.12.</div>
+</div>
+
+<div class="box dica"><div class="tit">Regras de bolso – vigas</div>
+<p>• Altura econômica de viga de piso: d ≈ L/20 a L/25 (biapoiada); de cobertura: L/25 a L/30; de rolamento: L/10 a L/12.<br>• Perfil W A572 travado: M<sub>Rd</sub> (kN·m) ≈ 0,31·Z<sub>x</sub> (cm³); A36: ≈ 0,23·Z<sub>x</sub>.<br>• Flecha de viga biapoiada com carga distribuída: δ (cm) ≈ 0,65·q<sub>s</sub>·L⁴/I<sub>x</sub>, com q<sub>s</sub> em kN/m, L em m e I<sub>x</sub> em cm⁴ (Exemplo 7.7: 0,65 × 17 × 7⁴/14 222 = 1,87 cm ✓).<br>• Sem laje, trave a mesa comprimida a cada 40·r<sub>y</sub> (A572) ou 50·r<sub>y</sub> (A36) para usar M<sub>pl</sub>.</p></div>
+
+<h2>7.6 Cisalhamento <span class="nivel i">Intermediário</span></h2>
+<p>Além de fletir, a viga precisa transmitir a força cortante até os apoios. Em perfis I quem faz esse serviço é a <strong>alma</strong>: as mesas praticamente não resistem a cortante. Numa alma robusta a falha é por escoamento ao cisalhamento, a uma tensão τ<sub>y</sub> ≈ 0,6·f<sub>y</sub>; numa alma alta e fina, a falha é a <strong>flambagem da alma por cisalhamento</strong>, na qual aparecem ondas diagonais a 45° (a compressão diagonal que acompanha o cisalhamento é que flamba a chapa — Figura 7.13). A NBR 8800 (item 5.4.3) usa, de novo, o esquema λ / λ<sub>p</sub> / λ<sub>r</sub>:</p>
+<div class="formula">V<sub>pl</sub> = 0,60 · A<sub>w</sub> · f<sub>y</sub>, &nbsp; A<sub>w</sub> = d · t<sub>w</sub><span class="n">(7.17)</span></div>
+<div class="formula">λ = h/t<sub>w</sub>; &nbsp; λ<sub>p</sub> = 1,10·√(k<sub>v</sub>·E/f<sub>y</sub>); &nbsp; λ<sub>r</sub> = 1,37·√(k<sub>v</sub>·E/f<sub>y</sub>)<span class="n">(7.18)</span></div>
+<div class="formula"><span class="n">(7.19)</span>V<sub>Rd</sub> = V<sub>pl</sub>/γ<sub>a1</sub> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(λ ≤ λ<sub>p</sub>)<br>V<sub>Rd</sub> = (λ<sub>p</sub>/λ)·V<sub>pl</sub>/γ<sub>a1</sub> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(λ<sub>p</sub> &lt; λ ≤ λ<sub>r</sub>)<br>V<sub>Rd</sub> = 1,24·(λ<sub>p</sub>/λ)²·V<sub>pl</sub>/γ<sub>a1</sub> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(λ &gt; λ<sub>r</sub>)</div>
+<ul class="onde">
+<li>d = altura total do perfil; h = altura livre da alma (entre mesas); t<sub>w</sub> = espessura da alma — em cm;</li>
+<li>k<sub>v</sub> = coeficiente de flambagem por cisalhamento: <strong>5,0</strong> sem enrijecedores transversais (ou com a/h &gt; 3); com enrijecedores espaçados a: k<sub>v</sub> = 5 + 5/(a/h)²;</li>
+<li>Para A572: λ<sub>p</sub> = 59,2 e λ<sub>r</sub> = 73,8; para A36: 69,6 e 86,6 (k<sub>v</sub> = 5, Tabela 7.3).</li></ul>
+<p>Todos os perfis W laminados têm h/t<sub>w</sub> abaixo de λ<sub>p</sub> — o cortante quase nunca governa neles, a não ser em vigas muito curtas e carregadas (vigas de transição, consolos) ou em furos e recortes de alma. Já os <strong>perfis soldados</strong> altos (VS, CVS) e as vigas de alma esbelta costumam cair nos regimes intermediário ou elástico: aí entram os <strong>enrijecedores transversais</strong>, chapas soldadas perpendicularmente à alma que dividem a alma em painéis menores (a/h ≤ 3), elevam k<sub>v</sub> e, no chamado <em>campo de tração</em> (Anexo H da norma), permitem que a alma continue trabalhando como a diagonal de uma treliça mesmo depois de flambar. Enrijecedores também são obrigatórios sob cargas concentradas elevadas e nos apoios (enrijecedores de apoio), para evitar o enrugamento ou o esmagamento local da alma (item 5.7 da norma).</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 258" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s7_13" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="c7_13" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker></defs>
+<!-- viga em elevação -->
+<rect x="40" y="40" width="600" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="172" width="600" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="52" width="600" height="120" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- enrijecedores -->
+<rect x="38" y="52" width="6" height="120" fill="#7a3e00"/>
+<rect x="188" y="52" width="6" height="120" fill="#7a3e00"/>
+<rect x="338" y="52" width="6" height="120" fill="#7a3e00"/>
+<rect x="488" y="52" width="6" height="120" fill="#7a3e00"/>
+<rect x="636" y="52" width="6" height="120" fill="#7a3e00"/>
+<!-- apoio -->
+<polygon points="41,184 31,198 51,198" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<polygon points="639,184 629,198 649,198" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<!-- campo de tração diagonal nos painéis -->
+<g stroke="#0b3d91" stroke-width="1.2" stroke-dasharray="5 3" fill="none">
+<line x1="50" y1="168" x2="182" y2="56"/><line x1="70" y1="168" x2="188" y2="70"/><line x1="44" y1="150" x2="160" y2="56"/>
+<line x1="200" y1="168" x2="332" y2="56"/><line x1="220" y1="168" x2="338" y2="70"/><line x1="194" y1="150" x2="310" y2="56"/>
+</g>
+<g stroke="#0b3d91" stroke-width="1.2" stroke-dasharray="5 3" fill="none">
+<line x1="350" y1="56" x2="482" y2="168"/><line x1="370" y1="56" x2="488" y2="154"/><line x1="344" y1="74" x2="460" y2="168"/>
+<line x1="500" y1="56" x2="632" y2="168"/><line x1="520" y1="56" x2="636" y2="154"/><line x1="494" y1="74" x2="610" y2="168"/>
+</g>
+<!-- ondas de flambagem por cisalhamento (painel 1) -->
+<path d="M60 150 q30 -40 60 -30 q30 10 50 -50" fill="none" stroke="#c0392b" stroke-width="1.5"/>
+<!-- cargas -->
+<line x1="340" y1="10" x2="340" y2="36" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_13)"/>
+<text x="352" y="22" fill="#c0392b" font-size="11">P</text>
+<!-- cotas -->
+<line x1="194" y1="205" x2="338" y2="205" stroke="#555" stroke-width="1" marker-start="url(#c7_13)" marker-end="url(#c7_13)"/>
+<text x="266" y="219" text-anchor="middle" font-size="11">a (espaçamento dos enrijecedores)</text>
+<line x1="665" y1="52" x2="665" y2="172" stroke="#555" stroke-width="1" marker-start="url(#c7_13)" marker-end="url(#c7_13)"/>
+<text x="672" y="116" font-size="11">h</text>
+<text x="700" y="50" font-size="10">t<tspan baseline-shift="sub" font-size="7">w</tspan> (alma)</text>
+<!-- rótulos -->
+<text x="191" y="34" text-anchor="middle" font-size="10" fill="#7a3e00">enrijecedor transversal</text>
+<text x="640" y="34" text-anchor="middle" font-size="10" fill="#7a3e00">enrijecedor de apoio</text>
+<text x="34" y="34" font-size="10" fill="#7a3e00">enrijecedor de apoio</text>
+<!-- legenda (fora dos painéis, que já estão cheios de linhas) -->
+<path d="M44 244 q18 -12 36 0" fill="none" stroke="#c0392b" stroke-width="1.5"/>
+<text x="88" y="248" font-size="10" fill="#c0392b">ondas de flambagem por cisalhamento</text>
+<line x1="330" y1="252" x2="366" y2="238" stroke="#0b3d91" stroke-width="1.2" stroke-dasharray="5 3"/>
+<text x="374" y="248" font-size="10" fill="#0b3d91">campo de tração (diagonais ≈ 45°)</text>
+</svg>
+<figcaption><b>Figura 7.13</b> – Viga de alma esbelta com enrijecedores transversais: os painéis entre enrijecedores flambam em ondas diagonais e depois resistem por "campo de tração", como diagonais de uma treliça (as mesas são os banzos e os enrijecedores, os montantes comprimidos).</figcaption>
+</figure>
+
+<div class="box exemplo"><div class="tit">Exemplo 7.9 – Cortante em viga laminada e em viga soldada</div>
+<p><strong>(a)</strong> W 410×46,1 em A572 Gr.50 (d = 403, t<sub>w</sub> = 7,0, t<sub>f</sub> = 11,2 mm) com V<sub>Sd</sub> = 320 kN.</p>
+<div class="passo"><strong>Passo 1:</strong> A<sub>w</sub> = 40,3 × 0,70 = 28,2 cm²; V<sub>pl</sub> = 0,60 × 28,2 × 34,5 = 584 kN.</div>
+<div class="passo"><strong>Passo 2:</strong> λ = h/t<sub>w</sub> = (403 − 22,4)/7,0 = 54,4 ≤ λ<sub>p</sub> = 59,2 → escoamento: V<sub>Rd</sub> = 584/1,10 = <strong>531 kN</strong> ≥ 320 ✓ (0,60).</div>
+<p><strong>(b)</strong> Viga soldada VS de 600 mm de altura com alma de 4,75 mm (h = 580 mm), sem enrijecedores, A572.</p>
+<div class="passo"><strong>Passo 1:</strong> λ = 58,0/0,475 = 122 &gt; λ<sub>r</sub> = 73,8 → regime elástico. V<sub>pl</sub> = 0,60 × (60 × 0,475) × 34,5 = 590 kN.</div>
+<div class="passo"><strong>Passo 2:</strong> V<sub>Rd</sub> = 1,24 × (59,2/122)² × 590/1,10 = 1,24 × 0,2355 × 536 = <strong>156 kN</strong> — apenas 26 % do valor de escoamento. Com enrijecedores a cada a = h (a/h = 1): k<sub>v</sub> = 5 + 5/1² = 10, λ<sub>p</sub> = 1,10 × √(10 × 20 000/34,5) = 83,7 e λ<sub>r</sub> = 104; ainda λ &gt; λ<sub>r</sub>, e V<sub>Rd</sub> = 1,24 × (83,7/122)² × 536 = 313 kN (o dobro) — sem contar o ganho adicional do campo de tração do Anexo H. Alternativa: alma de 8 mm (λ = 58/0,8 = 72,5, regime intermediário) → V<sub>Rd</sub> = (59,2/72,5) × 0,60 × 60 × 0,8 × 34,5/1,10 = 0,817 × 903 = 738 kN.</div>
+<div class="passo"><strong>Lição:</strong> em perfil laminado, o cortante raramente manda; em viga soldada de alma fina, a alma pode valer menos de um terço de sua capacidade plástica se não for enrijecida.</div>
+</div>
+
+<div class="box atencao"><div class="tit">Interação momento × cortante e furos na alma</div>
+<p>A NBR 8800 dispensa a verificação combinada M–V quando V<sub>Sd</sub> ≤ 0,5·V<sub>Rd</sub> (vigas laminadas usuais). Em vigas de alma esbelta com campo de tração, aplica-se a interação do Anexo H. Recortes em vigas (para passagem de dutos) e "vigas alveolares/casteladas" exigem verificação específica da alma remanescente ao cortante e ao momento local (efeito Vierendeel) — não use a tabela de V<sub>Rd</sub> do perfil cheio.</p></div>
+
+<h2>7.7 Flexão composta: flexo-compressão e flexo-tração <span class="nivel a">Avançado</span></h2>
+<p>Poucas barras reais recebem só força axial ou só momento. O pilar de um pórtico de galpão, por exemplo, comprime (peso da cobertura) e flete (vento, engastamento com a viga). Um banzo de treliça com carga aplicada fora do nó comprime e flete. Como combinar? A ideia intuitiva é que cada esforço "consome" uma fração da capacidade da barra e a soma das frações não pode passar de 100 %. A NBR 8800 (item 5.5.1) usa duas retas de interação (Figura 7.14):</p>
+<div class="formula">Para N<sub>Sd</sub>/N<sub>Rd</sub> ≥ 0,2: &nbsp; N<sub>Sd</sub>/N<sub>Rd</sub> + (8/9)·( M<sub>x,Sd</sub>/M<sub>x,Rd</sub> + M<sub>y,Sd</sub>/M<sub>y,Rd</sub> ) ≤ 1,0<span class="n">(7.20)</span></div>
+<div class="formula">Para N<sub>Sd</sub>/N<sub>Rd</sub> &lt; 0,2: &nbsp; N<sub>Sd</sub>/(2·N<sub>Rd</sub>) + ( M<sub>x,Sd</sub>/M<sub>x,Rd</sub> + M<sub>y,Sd</sub>/M<sub>y,Rd</sub> ) ≤ 1,0<span class="n">(7.21)</span></div>
+<ul class="onde">
+<li>N<sub>Rd</sub> = N<sub>c,Rd</sub> (compressão, item 7.4, com o KL/r crítico) ou N<sub>t,Rd</sub> (tração, item 7.3);</li>
+<li>M<sub>x,Rd</sub>, M<sub>y,Rd</sub> = momentos resistentes em cada eixo (item 7.5, incluindo FLT com o L<sub>b</sub> real);</li>
+<li>N<sub>Sd</sub>, M<sub>Sd</sub> = esforços de cálculo <strong>já incluindo os efeitos de 2ª ordem</strong>.</li></ul>
+<p>A forma "quebrada" do diagrama reflete a física: com pouca força axial (abaixo de 20 %), o momento quase não é prejudicado (a seção plastifica com uma pequena migração da linha neutra); com muita força axial, cada unidade de N tira mais capacidade de momento. Na <strong>flexo-tração</strong> as mesmas equações se aplicam com N<sub>t,Rd</sub>; a tração até ajuda contra a FLT, mas a norma não permite contar com isso de forma simplificada.</p>
+
+<figure class="fig p75">
+<svg viewBox="0 0 600 420" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s7_14" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- eixos: origem (80,360); x até 520 (1,0 = 400 px), y até 40 (1,0 = 320 px) -->
+<line x1="80" y1="360" x2="540" y2="360" stroke="#333" stroke-width="1.5" marker-end="url(#s7_14)"/>
+<line x1="80" y1="360" x2="80" y2="30" stroke="#333" stroke-width="1.5" marker-end="url(#s7_14)"/>
+<text x="545" y="380" text-anchor="end" font-size="12">M<tspan baseline-shift="sub" font-size="9">Sd</tspan> / M<tspan baseline-shift="sub" font-size="9">Rd</tspan></text>
+<text x="30" y="30" font-size="12">N<tspan baseline-shift="sub" font-size="9">Sd</tspan> / N<tspan baseline-shift="sub" font-size="9">Rd</tspan></text>
+<!-- grade -->
+<g stroke="#ddd" stroke-width="1">
+<line x1="160" y1="360" x2="160" y2="40"/><line x1="240" y1="360" x2="240" y2="40"/><line x1="320" y1="360" x2="320" y2="40"/><line x1="400" y1="360" x2="400" y2="40"/><line x1="480" y1="360" x2="480" y2="40"/>
+<line x1="80" y1="296" x2="480" y2="296"/><line x1="80" y1="232" x2="480" y2="232"/><line x1="80" y1="168" x2="480" y2="168"/><line x1="80" y1="104" x2="480" y2="104"/><line x1="80" y1="40" x2="480" y2="40"/>
+</g>
+<g font-size="10" fill="#555">
+<text x="160" y="374" text-anchor="middle">0,2</text><text x="240" y="374" text-anchor="middle">0,4</text><text x="320" y="374" text-anchor="middle">0,6</text><text x="400" y="374" text-anchor="middle">0,8</text><text x="480" y="374" text-anchor="middle">1,0</text>
+<text x="72" y="300" text-anchor="end">0,2</text><text x="72" y="236" text-anchor="end">0,4</text><text x="72" y="172" text-anchor="end">0,6</text><text x="72" y="108" text-anchor="end">0,8</text><text x="72" y="44" text-anchor="end">1,0</text>
+</g>
+<!-- região segura: polígono (0,0)-(1,0)-(0.9,0.2)-(0,1) -->
+<polygon points="80,360 480,360 440,296 80,40" fill="#e9f7ec" stroke="none"/>
+<!-- curva de interação -->
+<polyline points="480,360 440,296 80,40" fill="none" stroke="#0b3d91" stroke-width="2.5"/>
+<!-- ponto de quebra -->
+<circle cx="440" cy="296" r="4" fill="#0b3d91"/>
+<text x="448" y="286" font-size="10" fill="#0b3d91">(0,9 ; 0,2)</text>
+<line x1="80" y1="296" x2="440" y2="296" stroke="#0b3d91" stroke-width="1" stroke-dasharray="4 3"/>
+<!-- rótulos das equações -->
+<text x="300" y="130" font-size="11" fill="#0b3d91">N/N<tspan baseline-shift="sub" font-size="8">Rd</tspan> + (8/9)·M/M<tspan baseline-shift="sub" font-size="8">Rd</tspan> = 1</text>
+<text x="300" y="146" font-size="10" fill="#0b3d91">(N/N<tspan baseline-shift="sub" font-size="7">Rd</tspan> ≥ 0,2)</text>
+<text x="330" y="340" font-size="11" fill="#0b3d91">N/(2N<tspan baseline-shift="sub" font-size="8">Rd</tspan>) + M/M<tspan baseline-shift="sub" font-size="8">Rd</tspan> = 1</text>
+<text x="330" y="354" font-size="10" fill="#0b3d91">(N/N<tspan baseline-shift="sub" font-size="7">Rd</tspan> &lt; 0,2)</text>
+<text x="180" y="230" font-size="12" fill="#1f6b41" font-weight="bold">REGIÃO SEGURA</text>
+<text x="380" y="80" font-size="12" fill="#a12a1f" font-weight="bold">INSEGURO</text>
+<!-- ponto do exemplo 7.10: M/MRd=0.466 -> x=80+0.466*400=266; N/NRd=0.096 -> y=360-0.096*320=329 -->
+<circle cx="266" cy="329" r="5" fill="#c0392b"/>
+<text x="274" y="322" font-size="10" fill="#c0392b">Ex. 7.10 (0,47 ; 0,10)</text>
+<!-- linha só flexão / só compressão -->
+<text x="470" y="398" text-anchor="middle" font-size="10">só flexão</text>
+<text x="112" y="52" font-size="10">só compressão</text>
+</svg>
+<figcaption><b>Figura 7.14</b> – Diagrama de interação N–M da NBR 8800:2008 (eqs. 7.20 e 7.21). Qualquer par (M<sub>Sd</sub>/M<sub>Rd</sub>, N<sub>Sd</sub>/N<sub>Rd</sub>) dentro da região verde está aprovado; o ponto marcado é o pilar do Exemplo 7.10.</figcaption>
+</figure>
+
+<h3>7.7.1 Efeitos de 2ª ordem: P-δ e P-Δ</h3>
+<p>Quando uma barra comprimida também se curva (por um momento aplicado), a força axial passa a atuar com um braço de alavanca igual à flecha e gera <em>mais</em> momento, que gera mais flecha, e assim por diante. Esse acréscimo é o <strong>efeito de 2ª ordem</strong>. A NBR 8800 (item 4.9.7 e Anexo D) distingue dois tipos (Figura 7.15):</p>
+<ul>
+<li><strong>P-δ (local)</strong>: dentro da barra, entre seus nós. É levado em conta pelo coeficiente <strong>B<sub>1</sub></strong> = C<sub>m</sub>/(1 − N<sub>Sd</sub>/N<sub>e</sub>) ≥ 1,0, que amplifica os momentos que não produzem deslocamento lateral dos nós. C<sub>m</sub> = 0,60 − 0,40·(M<sub>1</sub>/M<sub>2</sub>) para barras sem carga transversal entre nós (M<sub>1</sub>/M<sub>2</sub> = razão entre os momentos de extremidade, positiva em curvatura reversa); C<sub>m</sub> = 1,0 com carga transversal.</li>
+<li><strong>P-Δ (global)</strong>: da estrutura inteira, quando os nós se deslocam lateralmente (pórticos deslocáveis). Coeficiente <strong>B<sub>2</sub></strong> = 1/[1 − (1/R<sub>s</sub>)·(Δ<sub>h</sub>/h)·(ΣN<sub>Sd</sub>/ΣH<sub>Sd</sub>)], que amplifica os momentos devidos às cargas horizontais; R<sub>s</sub> = 0,85 em pórticos rígidos. A norma classifica a estrutura como de <em>pequena deslocabilidade</em> (B<sub>2</sub> ≤ 1,1), <em>média</em> (1,1 &lt; B<sub>2</sub> ≤ 1,4) ou <em>grande</em> (B<sub>2</sub> &gt; 1,4, quando exige análise rigorosa).</li></ul>
+<p>Os momentos de cálculo ficam M<sub>Sd</sub> = B<sub>1</sub>·M<sub>nt</sub> + B<sub>2</sub>·M<sub>lt</sub> (nt = "no translation", lt = "lateral translation"). Além disso a norma exige aplicar <strong>imperfeições geométricas</strong> (força horizontal nocional de 0,3 % das cargas gravitacionais em cada piso) e reduzir a rigidez (0,8·E·I) na análise de estruturas de média/grande deslocabilidade. Todos os programas comerciais fazem isso automaticamente quando se pede "análise de 2ª ordem" ou "P-Delta" — mas o engenheiro deve <em>saber que pediu</em>, conferir B<sub>2</sub> e garantir que as cargas nocionais e a redução de rigidez foram incluídas.</p>
+
+<figure class="fig p75">
+<svg viewBox="0 0 620 320" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h7_15" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s7_15" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="c7_15" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker></defs>
+<!-- (a) P-delta -->
+<g transform="translate(20,20)">
+<text x="120" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) P-δ – efeito local (B<tspan baseline-shift="sub" font-size="9">1</tspan>)</text>
+<polygon points="120,22 110,34 130,34" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<polygon points="120,246 110,234 130,234" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<rect x="100" y="246" width="40" height="8" fill="url(#h7_15)" stroke="#333" stroke-width="1"/>
+<line x1="120" y1="34" x2="120" y2="234" stroke="#333" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M120 34 C160 100 160 170 120 234" fill="none" stroke="#333" stroke-width="2.5"/>
+<line x1="120" y1="0" x2="120" y2="20" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_15)"/>
+<text x="132" y="14" fill="#c0392b" font-size="11">P</text>
+<line x1="120" y1="134" x2="150" y2="134" stroke="#555" stroke-width="1" marker-start="url(#c7_15)" marker-end="url(#c7_15)"/>
+<text x="140" y="128" font-size="11">δ</text>
+<!-- carga transversal -->
+<line x1="60" y1="134" x2="112" y2="134" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_15)"/>
+<text x="70" y="126" fill="#c0392b" font-size="10">H (ou M)</text>
+<text x="120" y="272" text-anchor="middle" font-size="10">nós fixos: P × δ amplifica o momento</text>
+<text x="120" y="286" text-anchor="middle" font-size="10">M<tspan baseline-shift="sub" font-size="7">Sd</tspan> = B<tspan baseline-shift="sub" font-size="7">1</tspan>·M<tspan baseline-shift="sub" font-size="7">nt</tspan>, B<tspan baseline-shift="sub" font-size="7">1</tspan> = C<tspan baseline-shift="sub" font-size="7">m</tspan>/(1 − N<tspan baseline-shift="sub" font-size="7">Sd</tspan>/N<tspan baseline-shift="sub" font-size="7">e</tspan>)</text>
+</g>
+<!-- (b) P-Delta -->
+<g transform="translate(320,20)">
+<text x="140" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) P-Δ – efeito global (B<tspan baseline-shift="sub" font-size="9">2</tspan>)</text>
+<!-- pórtico original tracejado -->
+<g stroke="#333" stroke-width="1" stroke-dasharray="4 3" fill="none">
+<line x1="60" y1="234" x2="60" y2="60"/><line x1="220" y1="234" x2="220" y2="60"/><line x1="60" y1="60" x2="220" y2="60"/>
+</g>
+<!-- pórtico deslocado -->
+<path d="M60 234 C60 150 80 120 100 60" fill="none" stroke="#333" stroke-width="2.5"/>
+<path d="M220 234 C220 150 240 120 260 60" fill="none" stroke="#333" stroke-width="2.5"/>
+<line x1="100" y1="60" x2="260" y2="60" stroke="#333" stroke-width="2.5"/>
+<rect x="40" y="234" width="40" height="8" fill="url(#h7_15)" stroke="#333" stroke-width="1"/>
+<rect x="200" y="234" width="40" height="8" fill="url(#h7_15)" stroke="#333" stroke-width="1"/>
+<!-- cargas -->
+<line x1="100" y1="26" x2="100" y2="46" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_15)"/>
+<line x1="260" y1="26" x2="260" y2="46" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_15)"/>
+<text x="180" y="38" text-anchor="middle" fill="#c0392b" font-size="11">ΣN (cargas verticais)</text>
+<line x1="20" y1="60" x2="90" y2="60" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_15)"/>
+<text x="20" y="52" fill="#c0392b" font-size="10">ΣH (vento)</text>
+<!-- delta -->
+<line x1="220" y1="44" x2="260" y2="44" stroke="#555" stroke-width="1" marker-start="url(#c7_15)" marker-end="url(#c7_15)"/>
+<text x="240" y="40" text-anchor="middle" font-size="11">Δ</text>
+<line x1="280" y1="60" x2="280" y2="234" stroke="#555" stroke-width="1" marker-start="url(#c7_15)" marker-end="url(#c7_15)"/>
+<text x="288" y="150" font-size="11">h</text>
+<text x="150" y="272" text-anchor="middle" font-size="10">nós se deslocam: ΣN × Δ gera momento extra</text>
+<text x="150" y="286" text-anchor="middle" font-size="10">M<tspan baseline-shift="sub" font-size="7">Sd</tspan> = B<tspan baseline-shift="sub" font-size="7">1</tspan>·M<tspan baseline-shift="sub" font-size="7">nt</tspan> + B<tspan baseline-shift="sub" font-size="7">2</tspan>·M<tspan baseline-shift="sub" font-size="7">lt</tspan></text>
+</g>
+</svg>
+<figcaption><b>Figura 7.15</b> – Efeitos de 2ª ordem: (a) P-δ, a flecha da própria barra cria momento adicional; (b) P-Δ, o deslocamento lateral do pórtico faz as cargas verticais produzirem momento nos pilares.</figcaption>
+</figure>
+
+<div class="box exemplo"><div class="tit">Exemplo 7.10 – Pilar de pórtico de galpão W 310×38,7 com N<sub>Sd</sub> = 120 kN e M<sub>Sd</sub> = 90 kN·m</div>
+<p>Pilar de pórtico de galpão, altura 6 m, aço A572 Gr.50, engastado na base e ligado rigidamente à viga de cobertura. Esforços de cálculo <strong>já amplificados</strong> pela análise de 2ª ordem (B<sub>1</sub>, B<sub>2</sub>): N<sub>Sd</sub> = 120 kN (compressão), M<sub>x,Sd</sub> = 90 kN·m (na base). Terças de fechamento com mãos-francesas travam as duas mesas a cada 1,5 m (KL<sub>y</sub> = L<sub>b</sub> = 150 cm); no plano do pórtico, K<sub>x</sub> = 1,0 (análise de 2ª ordem feita) com KL<sub>x</sub> = 600 cm. Catálogo: A<sub>g</sub> = 49,7 cm², r<sub>x</sub> = 13,14 cm, r<sub>y</sub> = 3,82 cm, Z<sub>x</sub> = 615 cm³, W<sub>x</sub> = 554 cm³.</p>
+<div class="passo"><strong>Passo 1 – N<sub>c,Rd</sub>:</strong> do Exemplo 7.6, Q = 0,923. KL/r<sub>x</sub> = 600/13,14 = 45,7; KL/r<sub>y</sub> = 150/3,82 = 39,3 → governa x (45,7 ≤ 200 ✓).<br>
+λ<sub>0</sub> = 45,7/π × √(0,923 × 34,5/20 000) = 14,55 × 0,03990 = 0,580; χ = 0,658<sup>0,580²</sup> = 0,658<sup>0,336</sup> = 0,869.<br>
+N<sub>c,Rd</sub> = 0,869 × 0,923 × 49,7 × 34,5/1,10 = <strong>1 249 kN</strong>.</div>
+<div class="passo"><strong>Passo 2 – M<sub>x,Rd</sub>:</strong> seção compacta à flexão (Exemplo 7.1). L<sub>p</sub> = 1,76 × 3,82 × 24,08 = 162 cm ≥ L<sub>b</sub> = 150 cm → sem FLT. M<sub>Rd</sub> = 615 × 34,5/1,10 = 19 289 kN·cm = <strong>193 kN·m</strong>.</div>
+<div class="passo"><strong>Passo 3 – Interação:</strong> N<sub>Sd</sub>/N<sub>Rd</sub> = 120/1 249 = 0,096 &lt; 0,2 → usar eq. 7.21:<br>
+0,096/2 + 90/193 = 0,048 + 0,466 = <strong>0,514 ≤ 1,0 ✓</strong> (ponto na Figura 7.14).</div>
+<div class="passo"><strong>Passo 4 – Sensibilidade:</strong> se a análise fosse só de 1ª ordem e o pórtico fosse tratado com K<sub>x</sub> = 2,0 (caso f da Tabela 7.5): KL/r<sub>x</sub> = 91,3 → λ<sub>0</sub> = 1,16, χ = 0,570, N<sub>c,Rd</sub> = 819 kN → 120/819 = 0,147 &lt; 0,2 → 0,073 + 0,466 = 0,54 ✓. Ainda passa, mas note que o "K" e o "B<sub>2</sub>" são duas formas de tratar o mesmo fenômeno — nunca use os dois ao mesmo tempo (contaria a 2ª ordem em dobro), nem nenhum deles (a ignoraria).</div>
+<div class="passo"><strong>Comentário:</strong> em galpões o pilar trabalha muito mais à flexão do que à compressão; a folga de 49 % é para a combinação com vento de sucção (que inverte o momento e comprime a mesa <em>interna</em>, muitas vezes menos travada: verifique também essa combinação com o L<sub>b</sub> correspondente).</div>
+</div>
+
+<h2>7.8 Torção <span class="nivel a">Avançado</span></h2>
+<p>Torção é o esforço que tenta girar a barra em torno do próprio eixo — o que acontece numa viga de borda que recebe a laje só de um lado, numa viga que sustenta uma marquise em balanço lateral, ou num perfil carregado fora do centro de cisalhamento. Seções <strong>fechadas</strong> (tubos) resistem à torção pelo <em>fluxo de cisalhamento</em> contínuo ao longo do contorno: são extraordinariamente rígidas. Seções <strong>abertas</strong> (I, U, L) resistem só pela torção de Saint-Venant das chapas individuais (J ≈ Σb·t³/3, um número pequeno) e pelo <em>empenamento</em> das mesas (C<sub>w</sub>): são flexíveis e desenvolvem tensões normais adicionais nas mesas, difíceis de calcular à mão (Figura 7.16).</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h7_16" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s7_16" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker></defs>
+<!-- (a) tubo fechado -->
+<g transform="translate(30,20)">
+<text x="110" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Seção fechada (tubo)</text>
+<rect x="30" y="20" width="160" height="130" rx="14" fill="url(#h7_16)" stroke="#333" stroke-width="1.5"/>
+<rect x="46" y="36" width="128" height="98" rx="6" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<!-- fluxo de cisalhamento: setas ao longo do contorno -->
+<g stroke="#c0392b" stroke-width="2" fill="none">
+<line x1="60" y1="28" x2="150" y2="28" marker-end="url(#s7_16)"/>
+<line x1="182" y1="50" x2="182" y2="120" marker-end="url(#s7_16)"/>
+<line x1="160" y1="142" x2="70" y2="142" marker-end="url(#s7_16)"/>
+<line x1="38" y1="120" x2="38" y2="50" marker-end="url(#s7_16)"/>
+</g>
+<text x="110" y="90" text-anchor="middle" font-size="10">fluxo de cisalhamento</text>
+<text x="110" y="104" text-anchor="middle" font-size="10">contínuo: J = 4A<tspan baseline-shift="sub" font-size="7">m</tspan>²·t/p</text>
+<text x="110" y="175" text-anchor="middle" font-size="10">tubo 100×100×4,75: J ≈ 410 cm⁴</text>
+<text x="110" y="190" text-anchor="middle" font-size="10">rígido e eficiente à torção</text>
+</g>
+<!-- (b) perfil I aberto -->
+<g transform="translate(290,20)">
+<text x="110" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Seção aberta (perfil I)</text>
+<path d="M40 20 h140 v14 h-63 v102 h63 v14 h-140 v-14 h63 v-102 h-63 z" fill="url(#h7_16)" stroke="#333" stroke-width="1.5"/>
+<!-- fluxo vai e volta em cada chapa -->
+<g stroke="#c0392b" stroke-width="1.5" fill="none">
+<line x1="50" y1="24" x2="170" y2="24" marker-end="url(#s7_16)"/>
+<line x1="170" y1="31" x2="50" y2="31" marker-end="url(#s7_16)"/>
+<line x1="50" y1="154" x2="170" y2="154" marker-end="url(#s7_16)"/>
+<line x1="170" y1="161" x2="50" y2="161" marker-end="url(#s7_16)"/>
+<line x1="113" y1="44" x2="113" y2="126" marker-end="url(#s7_16)"/>
+<line x1="107" y1="126" x2="107" y2="44" marker-end="url(#s7_16)"/>
+</g>
+<text x="110" y="92" text-anchor="middle" font-size="10" transform="translate(50,0)">vai e volta</text>
+<text x="110" y="106" text-anchor="middle" font-size="10" transform="translate(50,0)">em cada chapa</text>
+<text x="110" y="175" text-anchor="middle" font-size="10">W 310×38,7: J ≈ 15 cm⁴ (≈ 30× menor)</text>
+<text x="110" y="190" text-anchor="middle" font-size="10">flexível; mesas empenam (C<tspan baseline-shift="sub" font-size="7">w</tspan>)</text>
+</g>
+<!-- (c) como evitar -->
+<g transform="translate(540,20)">
+<text x="100" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c) Evitar torção em I</text>
+<!-- viga I com carga excêntrica -->
+<path d="M50 20 h100 v10 h-45 v80 h45 v10 h-100 v-10 h45 v-80 h-45 z" fill="url(#h7_16)" stroke="#333" stroke-width="1.5"/>
+<line x1="140" y1="0" x2="140" y2="16" stroke="#c0392b" stroke-width="2" marker-end="url(#s7_16)"/>
+<text x="150" y="12" fill="#c0392b" font-size="10">P excêntrica</text>
+<path d="M60 125 a45 45 0 0 0 80 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#s7_16)"/>
+<text x="100" y="159" text-anchor="middle" font-size="10">a viga gira</text>
+<text x="100" y="175" text-anchor="middle" font-size="10">soluções: levar a carga ao CC,</text>
+<text x="100" y="190" text-anchor="middle" font-size="10">travar com vigas transversais,</text>
+<text x="100" y="205" text-anchor="middle" font-size="10">fechar a seção ou usar tubo</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.16</b> – Torção: o tubo resiste com um fluxo de cisalhamento contínuo; no perfil I as tensões "vão e voltam" em cada chapa e a rigidez é dezenas de vezes menor. Em perfis abertos a regra é evitar a torção no detalhamento.</figcaption>
+</figure>
+
+<p>A NBR 8800 (item 5.5.2 e Anexo H) trata a torção de forma sucinta: para seções tubulares dá a resistência T<sub>Rd</sub> = 0,6·f<sub>y</sub>·W<sub>T</sub>/γ<sub>a1</sub> (com verificação de flambagem da parede); para seções abertas exige análise das tensões de torção uniforme e de empenamento combinadas com as demais (item H.4), o que na prática se faz com programas ou com a teoria de Vlasov. O conselho de projeto é simples: <strong>não torça perfis I</strong>. Faça a carga chegar pelo centro de cisalhamento (por exemplo, apoiando a laje sobre as duas mesas ou usando cantoneiras de apoio), acrescente vigas transversais que impeçam o giro, ou troque por um tubo ou por uma seção caixão (dois U soldados, I com chapas laterais).</p>
+
+<h2>7.9 Estados-limites de serviço <span class="nivel b">Básico</span></h2>
+<p>Uma viga pode estar perfeitamente segura e mesmo assim ser um problema: o piso "balança" ao caminhar, o forro trinca, as portas emperram, a água empoça na cobertura, a ponte rolante trava nos trilhos. Esses são os estados-limites de serviço (ELS). Eles se verificam com <strong>cargas de serviço</strong> (combinações quase-permanentes ou frequentes, sem majoração), com a rigidez elástica da estrutura, e são comparados com os <strong>deslocamentos máximos do Anexo C</strong> da NBR 8800 (Tabela 7.8). Muitos desses limites são "de conforto" e podem ser negociados com o cliente; outros (alvenaria, ponte rolante) são condições de funcionamento e devem ser respeitados à risca.</p>
+
+<table class="tab"><caption>Tabela 7.8 – Deslocamentos máximos (NBR 8800:2008, Anexo C, Tabela C.1 – resumo)</caption>
+<thead><tr><th>Elemento</th><th>Limite</th><th>Observação</th></tr></thead>
+<tbody>
+<tr><td class="l">Travessas de fechamento (vento)</td><td class="c">L/120</td><td class="l">Deslocamento perpendicular ao plano; L/180 com fechamento em alvenaria ou vidro.</td></tr>
+<tr><td class="l">Terças de cobertura – ações variáveis (sobrecarga, vento)</td><td class="c">L/180</td><td class="l">L/120 para vento de sucção. Com telhas de fibrocimento ou forro, verificar também L/250 para carga total.</td></tr>
+<tr><td class="l">Vigas de cobertura</td><td class="c">L/250</td><td class="l">Cuidado com empoçamento em coberturas de baixa inclinação.</td></tr>
+<tr><td class="l">Vigas de piso</td><td class="c">L/350</td><td class="l">Carga total (permanente + variável) para flecha; ver também vibração.</td></tr>
+<tr><td class="l">Vigas de piso que suportam paredes de alvenaria, vidro ou revestimentos frágeis</td><td class="c">L/500</td><td class="l">Considerar só a flecha das cargas aplicadas após a execução da parede; muitos projetistas limitam também a 10–15 mm absolutos.</td></tr>
+<tr><td class="l">Vigas de rolamento – deslocamento vertical (cargas móveis, sem impacto)</td><td class="c">L/600</td><td class="l">Pontes rolantes de capacidade &lt; 200 kN; L/800 para capacidade ≥ 200 kN; L/1000 para pontes siderúrgicas.</td></tr>
+<tr><td class="l">Vigas de rolamento – deslocamento horizontal</td><td class="c">L/400</td><td class="l">Devido às forças transversais da ponte.</td></tr>
+<tr><td class="l">Pilares – deslocamento horizontal no topo (edifícios)</td><td class="c">H/300</td><td class="l">H = altura total; para galpões com fechamento em alvenaria, H/300 nas empenas.</td></tr>
+<tr><td class="l">Deslocamento horizontal relativo entre dois pisos consecutivos</td><td class="c">h/400</td><td class="l">h = pé-direito; edifícios altos ou com fechamentos frágeis costumam adotar h/500.</td></tr>
+<tr><td class="l">Galpões com ponte rolante – deslocamento horizontal no nível da viga de rolamento</td><td class="c">H/400</td><td class="l">H/200 em galpões sem ponte rolante (com fechamento flexível).</td></tr>
+<tr><td class="l">Vigas em balanço</td><td class="c">2 × os limites acima com L = comprimento do balanço</td><td class="l">Usar 2L como vão equivalente.</td></tr>
+</tbody></table>
+
+<h3>7.9.1 Vibração em pisos</h3>
+<p>Pisos de aço leves e com grandes vãos podem passar na flecha e ainda assim ser desconfortáveis: cada passo excita uma vibração perceptível. A NBR 8800 (Anexo L) recomenda que a <strong>frequência natural</strong> do piso seja superior a <strong>3 Hz</strong> em qualquer caso, preferivelmente <strong>≥ 4 Hz</strong> para pisos de escritórios e residências (e maiores em ginásios e pisos com atividades rítmicas). A frequência de uma viga biapoiada pode ser estimada pela flecha δ (em mm) sob a carga permanente mais a parcela quase-permanente da sobrecarga:</p>
+<div class="formula">f ≈ 18 / √δ &nbsp;&nbsp;(f em Hz, δ em mm)<span class="n">(7.22)</span></div>
+<p>Assim, δ = 5 mm → f ≈ 8 Hz (ótimo); δ = 10 mm → 5,7 Hz; δ = 20 mm → 4,0 Hz (limite); δ = 30 mm → 3,3 Hz (desconfortável). Repare que uma viga de piso com 7 m e flecha total de 20 mm (L/350) está exatamente no limite de conforto — a exigência L/350 não é por acaso. Para vigas mais longas, vigas secundárias sobre principais (a flecha soma-se) ou pisos sem paredes divisórias que amorteçam, faça a análise completa do Anexo L (aceleração de pico versus limite de percepção).</p>
+
+<h3>7.9.2 Contraflecha</h3>
+<p>Quando a flecha da carga permanente é grande (vigas de cobertura longas, treliças, vigas mistas antes da cura do concreto), fabrica-se a viga com uma curvatura para cima igual a essa flecha — a <strong>contraflecha</strong>. Assim a viga fica reta depois de carregada, e a flecha "visível" é só a da carga variável. A NBR 8800 permite descontar a contraflecha na verificação dos deslocamentos, mas recomenda que ela não ultrapasse a flecha da carga permanente (uma viga que fica "corcunda" incomoda tanto quanto uma que embarriga). Valores usuais: L/500 a L/300; contraflechas menores que 15–20 mm não valem a pena (a tolerância de fabricação é da mesma ordem). Indique-a claramente nos desenhos de fabricação, pois a viga precisa ser calandrada ou pré-deformada com calor na fábrica.</p>
+
+<div class="box dica"><div class="tit">Quando é a rigidez que manda</div>
+<p>Vãos grandes com cargas leves (coberturas, mezaninos, passarelas) e vigas de piso acima de 6–7 m tendem a ser governados por flecha ou vibração, não por resistência. Nesses casos, trocar A36 por A572 não ajuda em nada (E é o mesmo); ajuda aumentar a altura do perfil (I cresce com d²), usar viga mista com a laje (I sobe 2 a 3 vezes), contraflecha, ou reduzir o vão com um apoio intermediário. Antes de escolher o perfil pela tabela de M<sub>Rd</sub>, olhe a coluna da flecha (Tabela 7.11).</p></div>
+
+<h2>7.10 Vigas mistas aço-concreto: noções <span class="nivel a">Avançado</span></h2>
+<p>Numa viga de piso comum, a laje de concreto apenas "descansa" sobre a viga: cada uma flete por conta própria e há escorregamento entre elas. Se ligarmos as duas com <strong>conectores de cisalhamento</strong> (os "studs", pinos com cabeça soldados à mesa superior — Figura 7.17), laje e viga passam a trabalhar como <strong>uma única seção</strong>: o concreto, que é bom em compressão, assume a mesa comprimida, e o aço fica quase todo tracionado. O ganho é enorme: em vigas de piso típicas, a resistência sobe 40 a 80 % e a rigidez (flecha) melhora 2 a 3 vezes em relação à viga de aço isolada. É a solução padrão em edifícios de múltiplos andares com laje em <strong>steel deck</strong> (forma de aço incorporada) e a NBR 8800 a trata em detalhe nos Anexos O e P.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h7_17" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<pattern id="p7_17" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#777"/><circle cx="6" cy="6" r="1" fill="#777"/></pattern>
+<marker id="c7_17" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker>
+<marker id="s7_17" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker></defs>
+<!-- (a) seção transversal -->
+<g transform="translate(20,20)">
+<text x="230" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Seção mista com laje em steel deck</text>
+<!-- laje: capa de concreto + nervuras -->
+<rect x="20" y="30" width="420" height="34" fill="#c8c8c8" stroke="#333" stroke-width="1.5"/>
+<rect x="20" y="30" width="420" height="34" fill="url(#p7_17)"/>
+<!-- nervuras trapezoidais -->
+<g fill="#c8c8c8" stroke="#333" stroke-width="1.5">
+<polygon points="40,64 60,64 66,94 34,94"/><polygon points="120,64 140,64 146,94 114,94"/><polygon points="200,64 220,64 226,94 194,94"/><polygon points="280,64 300,64 306,94 274,94"/><polygon points="360,64 380,64 386,94 354,94"/>
+</g>
+<g fill="url(#p7_17)"><polygon points="40,64 60,64 66,94 34,94"/><polygon points="120,64 140,64 146,94 114,94"/><polygon points="200,64 220,64 226,94 194,94"/><polygon points="280,64 300,64 306,94 274,94"/><polygon points="360,64 380,64 386,94 354,94"/></g>
+<!-- steel deck (linha grossa sob o concreto) -->
+<polyline points="20,64 34,64 34,94 66,94 66,64 114,64 114,94 146,94 146,64 194,64 194,94 226,94 226,64 274,64 274,94 306,94 306,64 354,64 354,94 386,94 386,64 440,64" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<!-- stud -->
+<rect x="216" y="44" width="6" height="52" fill="#444"/>
+<rect x="211" y="40" width="16" height="6" fill="#444"/>
+<!-- perfil I -->
+<path d="M160 96 h100 v10 h-46 v100 h46 v10 h-100 v-10 h46 v-100 h-46 z" fill="url(#h7_17)" stroke="#333" stroke-width="1.5"/>
+<!-- largura efetiva -->
+<line x1="20" y1="14" x2="440" y2="14" stroke="#555" stroke-width="1" marker-start="url(#c7_17)" marker-end="url(#c7_17)"/>
+<text x="230" y="10" text-anchor="middle" font-size="11">b<tspan baseline-shift="sub" font-size="8">ef</tspan> ≤ L/8 para cada lado (e ≤ metade da distância à viga vizinha)</text>
+<!-- rótulos -->
+<text x="20" y="250" font-size="10">laje de concreto (capa + nervuras)</text>
+<text x="20" y="264" font-size="10" fill="#0b3d91">forma steel deck (fôrma incorporada)</text>
+<line x1="222" y1="40" x2="300" y2="24" stroke="#555" stroke-width="1"/>
+<text x="304" y="26" font-size="10">conector stud (ø 19 mm, soldado através da fôrma)</text>
+<text x="300" y="160" font-size="10">viga de aço (perfil I)</text>
+<text x="300" y="174" font-size="10">quase toda tracionada</text>
+</g>
+<!-- (b) distribuição plástica -->
+<g transform="translate(520,20)">
+<text x="110" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Tensões (interação total)</text>
+<line x1="110" y1="30" x2="110" y2="216" stroke="#333" stroke-width="1"/>
+<rect x="60" y="30" width="50" height="26" fill="#c8c8c8" stroke="#c0392b" stroke-width="1.5"/>
+<text x="56" y="38" text-anchor="end" font-size="10">0,85f<tspan baseline-shift="sub" font-size="7">cd</tspan></text>
+<line x1="20" y1="56" x2="200" y2="56" stroke="#0b3d91" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="150" y="52" font-size="10" fill="#0b3d91">LNP na laje</text>
+<rect x="110" y="96" width="50" height="120" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="166" y="160" font-size="10">f<tspan baseline-shift="sub" font-size="7">yd</tspan> (tração)</text>
+<line x1="85" y1="43" x2="140" y2="43" stroke="#c0392b" stroke-width="1.5" marker-start="url(#s7_17)"/>
+<text x="146" y="38" font-size="10" fill="#c0392b">C = 0,85f<tspan baseline-shift="sub" font-size="7">cd</tspan>·b<tspan baseline-shift="sub" font-size="7">ef</tspan>·a</text>
+<line x1="85" y1="156" x2="135" y2="156" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_17)"/>
+<text x="80" y="160" text-anchor="end" font-size="10" fill="#c0392b">T = A<tspan baseline-shift="sub" font-size="7">a</tspan>·f<tspan baseline-shift="sub" font-size="7">yd</tspan></text>
+<line x1="30" y1="43" x2="30" y2="156" stroke="#555" stroke-width="1" marker-start="url(#c7_17)" marker-end="url(#c7_17)"/>
+<text x="26" y="104" text-anchor="end" font-size="10">z</text>
+<text x="110" y="240" text-anchor="middle" font-size="10">M<tspan baseline-shift="sub" font-size="7">Rd</tspan> = T·z = A<tspan baseline-shift="sub" font-size="7">a</tspan>·f<tspan baseline-shift="sub" font-size="7">yd</tspan>·z</text>
+<text x="110" y="256" text-anchor="middle" font-size="10">(braço z ≫ o da viga isolada)</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.17</b> – Viga mista: (a) a laje com steel deck é ligada à viga por conectores stud e passa a formar a mesa comprimida da seção; (b) na interação total a linha neutra plástica (LNP) fica na laje e todo o perfil trabalha à tração com um braço de alavanca grande.</figcaption>
+</figure>
+
+<p>Conceitos essenciais (NBR 8800, seção O):</p>
+<ul>
+<li><strong>Largura efetiva b<sub>ef</sub></strong>: só uma faixa da laje colabora com a viga — de cada lado, o menor entre L/8 (L = vão da viga), metade da distância até a viga vizinha e a distância até a borda da laje.</li>
+<li><strong>Interação total</strong>: há conectores suficientes para transmitir toda a força de compressão da laje (ou toda a tração do perfil, o que for menor). M<sub>Rd</sub> sai do equilíbrio plástico de blocos de tensão (Figura 7.17b). <strong>Interação parcial</strong>: menos conectores (mínimo de 40 % do total), com escorregamento controlado; a resistência é intermediária e o cálculo, um pouco mais longo. É econômica quando a viga é governada por flecha ou quando o número de nervuras limita a quantidade de studs.</li>
+<li><strong>Conectores stud</strong>: os mais comuns têm 19 mm (3/4") de diâmetro e 100–130 mm de altura, soldados por arco com pistola própria, inclusive através da chapa do steel deck. Resistência de cálculo de um stud ≈ 60–85 kN dependendo do concreto e da posição na nervura. Perfis U laminados soldados à mesa também servem de conector.</li>
+<li><strong>Construção escorada ou não escorada</strong>: se a viga não for escorada durante a concretagem, o perfil de aço sozinho deve suportar o peso do concreto fresco + fôrma + 1 kN/m² de trabalho, com o L<sub>b</sub> que existir nessa fase (a laje ainda não trava a mesa!). A flecha dessa fase costuma exigir contraflecha.</li>
+<li><strong>Momento negativo</strong> (vigas contínuas, apoios): o concreto fissura e só a armadura da laje dentro de b<sub>ef</sub> colabora; a mesa inferior comprimida pode sofrer FLT distorcional — assunto avançado.</li>
+<li><strong>Vibração</strong>: a seção mista é muito mais rígida, o que resolve a maioria dos problemas de vibração de pisos; ainda assim, vãos acima de 9–10 m em escritórios abertos merecem a análise do Anexo L.</li></ul>
+<div class="box dica"><div class="tit">Ordem de grandeza</div>
+<p>Um W 410×53 A572 isolado e travado tem M<sub>Rd</sub> ≈ 330 kN·m e I<sub>x</sub> = 18 734 cm⁴. Como viga mista com laje de 130 mm em steel deck, b<sub>ef</sub> = 2 m e interação total, M<sub>Rd</sub> sobe para ≈ 520–560 kN·m e a inércia efetiva para ≈ 45 000–55 000 cm⁴. Ou seja: o mesmo perfil vence vãos 30 % maiores ou cargas 60 % maiores, pelo custo de 40 a 60 studs.</p></div>
+
+<h2>7.11 Perfis formados a frio (NBR 14762:2010) <span class="nivel a">Avançado</span></h2>
+<p>Terças Ue, travessas, perfis de light steel framing, montantes de treliças leves e a maior parte dos perfis de serralheria são <strong>formados a frio</strong> de chapa fina (0,8 a 6 mm, tipicamente 1,5 a 3 mm). A NBR 8800 não se aplica a eles: a norma é a <strong>NBR 14762:2010</strong>. O cálculo é diferente por três razões: (1) as chapas são tão finas que a flambagem local acontece <em>sempre</em>, bem antes do escoamento — não existe "seção compacta"; (2) as dobras e enrijecedores de borda criam um modo de flambagem próprio, o <strong>distorcional</strong>, em que a mesa e o enrijecedor giram em conjunto em torno da dobra; (3) as seções são abertas, de baixa rigidez à torção e com o centro de cisalhamento fora da seção, de modo que a flambagem global costuma ser por flexo-torção (Figura 7.18).</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 760 252" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s7_18" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker></defs>
+<!-- (a) local -->
+<g transform="translate(20,20)">
+<text x="110" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Local</text>
+<!-- Ue: alma à esquerda x=60, mesas 60->160, enrijecedores 160->y -->
+<path d="M60 20 h100 v30 M60 20 v160 h100 v-30" fill="none" stroke="#333" stroke-width="5" stroke-linejoin="round"/>
+<!-- deformada local: alma ondula, mesas ondulam, dobras fixas -->
+<path d="M60 20 q22 40 0 80 q-22 40 0 80" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M60 20 q50 -14 100 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M60 180 q50 14 100 0" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="110" y="208" text-anchor="middle" font-size="10">chapas ondulam entre as dobras;</text>
+<text x="110" y="222" text-anchor="middle" font-size="10">dobras ficam retas (meia-onda ≈ largura)</text>
+</g>
+<!-- (b) distorcional -->
+<g transform="translate(270,20)">
+<text x="110" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Distorcional</text>
+<path d="M60 20 h100 v30 M60 20 v160 h100 v-30" fill="none" stroke="#333" stroke-width="5" stroke-linejoin="round"/>
+<!-- mesa+enrijecedor giram em torno da dobra mesa-alma -->
+<g transform="rotate(-9 60 20)"><path d="M60 20 h100 v30" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/></g>
+<g transform="rotate(9 60 180)"><path d="M60 180 h100 v-30" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/></g>
+<path d="M128 14 a30 30 0 0 0 -22 -8" fill="none" stroke="#c0392b" stroke-width="1.2" marker-end="url(#s7_18)"/>
+<text x="110" y="208" text-anchor="middle" font-size="10">mesa + enrijecedor giram em torno</text>
+<text x="110" y="222" text-anchor="middle" font-size="10">da dobra com a alma (meia-onda ≈ 3–8 h)</text>
+</g>
+<!-- (c) global -->
+<g transform="translate(520,20)">
+<text x="110" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c) Global (flexo-torção)</text>
+<path d="M60 20 h100 v30 M60 20 v160 h100 v-30" fill="none" stroke="#333" stroke-width="5" stroke-linejoin="round"/>
+<g transform="translate(24,4) rotate(-6 20 100)"><path d="M60 20 h100 v30 M60 20 v160 h100 v-30" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3" stroke-linejoin="round"/></g>
+<circle cx="20" cy="100" r="3.5" fill="#0b3d91"/><text x="8" y="118" font-size="10" fill="#0b3d91">CC</text>
+<line x1="60" y1="100" x2="86" y2="100" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s7_18)"/>
+<text x="110" y="208" text-anchor="middle" font-size="10">seção inteira translada e gira em torno</text>
+<text x="110" y="222" text-anchor="middle" font-size="10">do centro de cisalhamento (meia-onda = KL)</text>
+</g>
+</svg>
+<figcaption><b>Figura 7.18</b> – Os três modos de flambagem de um perfil Ue formado a frio (linha tracejada = forma deformada). O dimensionamento pela NBR 14762 precisa considerar os três e a interação entre eles.</figcaption>
+</figure>
+
+<p>A NBR 14762 oferece dois caminhos de cálculo:</p>
+<ul>
+<li><strong>Método da Largura Efetiva (MLE)</strong>: cada chapa esbelta é substituída por uma largura efetiva b<sub>ef</sub> (a mesma ideia da eq. 7.9, agora aplicada a todas as chapas e com coeficientes k que dependem dos apoios e da distribuição de tensões). Obtêm-se A<sub>ef</sub> e W<sub>ef</sub> da seção reduzida, com os quais se calculam N<sub>c,Rd</sub> = χ·A<sub>ef</sub>·f<sub>y</sub>/γ e M<sub>Rd</sub> = χ<sub>FLT</sub>·W<sub>ef</sub>·f<sub>y</sub>/γ (γ = 1,10 para escoamento e instabilidade). A flambagem distorcional é verificada à parte. É trabalhoso à mão, mas transparente.</li>
+<li><strong>Método da Resistência Direta (MRD)</strong>: não reduz a seção; usa a seção bruta e as tensões críticas elásticas de flambagem local, distorcional e global (obtidas por análise numérica, por exemplo com o programa gratuito CUFSM, de faixas finitas), e aplica curvas de resistência para cada modo. É o método mais moderno e o mais usado nos programas.</li></ul>
+<p>Um detalhe que surpreende quem vem do aço laminado: em terças e travessas, o vento de <strong>sucção</strong> comprime a mesa <em>livre</em> (a que não está presa à telha), e a resistência nessa situação pode ser menos da metade da resistência para carga gravitacional. Por isso as terças têm <strong>correntes (tirantes)</strong> a cada 1/2 ou 1/3 do vão — elas reduzem o L<sub>b</sub> da mesa livre e a flambagem distorcional. Tabelas de catálogo assumem uma configuração de correntes; confira.</p>
+
+<table class="tab"><caption>Tabela 7.9 – Capacidade indicativa de terças Ue (aço CF-26 / ZAR-260, f<sub>y</sub> = 26 kN/cm²) – carga distribuída de cálculo q<sub>d</sub> (kN/m), viga biapoiada, carga gravitacional, com correntes a cada 1/3 do vão. Calculada com M<sub>Rd</sub> = 0,95·W<sub>x</sub>·f<sub>y</sub>/1,10 e flecha L/180 (q<sub>serviço</sub> = q<sub>d</sub>/1,4), com as propriedades da Tabela 17.3; células marcadas com <sup>δ</sup> são governadas pela flecha</caption>
+<thead><tr><th>Perfil Ue (mm)</th><th>Massa (kg/m)</th><th>Vão 5 m</th><th>Vão 6 m</th><th>Vão 7 m</th><th>Vão 8 m</th></tr></thead>
+<tbody>
+<tr><td class="l">Ue 150×60×20×2,00</td><td class="c">4,6</td><td class="c">2,0<sup>δ</sup></td><td class="c">1,2<sup>δ</sup></td><td class="c">0,7<sup>δ</sup></td><td class="c">0,5<sup>δ</sup></td></tr>
+<tr><td class="l">Ue 200×75×20×2,00</td><td class="c">6,0</td><td class="c">3,4</td><td class="c">2,3</td><td class="c">1,6<sup>δ</sup></td><td class="c">1,1<sup>δ</sup></td></tr>
+<tr><td class="l">Ue 200×75×20×2,65</td><td class="c">7,9</td><td class="c">4,5</td><td class="c">3,1</td><td class="c">2,2<sup>δ</sup></td><td class="c">1,4<sup>δ</sup></td></tr>
+<tr><td class="l">Ue 250×85×25×2,65</td><td class="c">9,5</td><td class="c">6,3</td><td class="c">4,3</td><td class="c">3,2</td><td class="c">2,4</td></tr>
+<tr><td class="l">Ue 300×85×25×3,00</td><td class="c">12,0</td><td class="c">8,8</td><td class="c">6,1</td><td class="c">4,5</td><td class="c">3,4</td></tr>
+</tbody></table>
+<div class="box atencao"><div class="tit">Os valores da Tabela 7.9 são orientativos</div>
+<p>Foram calculados com o esquema simples acima (momento e flecha L/180) e servem apenas para <strong>pré-dimensionamento</strong>. A capacidade real depende do aço, do número e posição das correntes, da fixação da telha, da continuidade (terças contínuas ou com luvas ganham 20–40 %) e, sobretudo, do <strong>vento de sucção</strong>, que muitas vezes governa com valores bem menores que os tabelados — nele a mesa comprimida é a livre. O dimensionamento final deve seguir a NBR 14762 ou a tabela do fabricante para a configuração exata. Repare que a partir de 7 m a flecha já manda nos perfis mais leves (células com <sup>δ</sup>).</p></div>
+
+<h2>7.12 Tabelas rápidas de pré-dimensionamento <span class="nivel i">Intermediário</span></h2>
+<p>As tabelas seguintes foram calculadas com as expressões deste capítulo (E = 20 000 kN/cm², γ<sub>a1</sub> = 1,10), a partir de propriedades de catálogo Gerdau dos perfis W mais usados no Brasil. Elas servem para escolher rapidamente um perfil e para conferir a ordem de grandeza da saída de um programa. <strong>Os valores de catálogo devem ser conferidos</strong> na edição vigente do fabricante antes do projeto final; propriedades como Z<sub>x</sub> podem diferir 1–2 % entre edições.</p>
+<p>Na <strong>Tabela 7.10</strong>, M<sub>Rd</sub> vale para mesa comprimida contida continuamente (L<sub>b</sub> = 0). Perfis marcados com * têm mesa semicompacta no aço indicado e já estão com a redução por FLM aplicada (o caso do W 200×46,1 e do W 310×97 em A572, perfis "de coluna" com mesas largas). V<sub>Rd</sub> vale para alma sem furos e sem enrijecedores.</p>
+
+<table class="tab small"><caption>Tabela 7.10 – Momento resistente M<sub>Rd</sub> (L<sub>b</sub> = 0, mesa comprimida contida) e força cortante resistente V<sub>Rd</sub> de perfis W laminados (valores de catálogo Gerdau; conferir)</caption>
+<thead><tr><th rowspan="2">Perfil</th><th rowspan="2">A<sub>g</sub><br>(cm²)</th><th rowspan="2">Z<sub>x</sub><br>(cm³)</th><th rowspan="2">I<sub>x</sub><br>(cm⁴)</th><th colspan="2">ASTM A36 (f<sub>y</sub> = 25 kN/cm²)</th><th colspan="2">ASTM A572 Gr.50 (f<sub>y</sub> = 34,5 kN/cm²)</th></tr><tr><th>M<sub>Rd</sub> (kN·m)</th><th>V<sub>Rd</sub> (kN)</th><th>M<sub>Rd</sub> (kN·m)</th><th>V<sub>Rd</sub> (kN)</th></tr></thead>
+<tbody>
+<tr><td class="l">W 150×13,0</td><td class="c">16,6</td><td class="c">96</td><td class="c">635</td><td class="c">22</td><td class="c">87</td><td class="c">29*</td><td class="c">120</td></tr>
+<tr><td class="l">W 150×18,0</td><td class="c">23,4</td><td class="c">139</td><td class="c">939</td><td class="c">32</td><td class="c">121</td><td class="c">44</td><td class="c">167</td></tr>
+<tr><td class="l">W 150×24,0</td><td class="c">31,5</td><td class="c">198</td><td class="c">1 384</td><td class="c">45</td><td class="c">144</td><td class="c">62</td><td class="c">199</td></tr>
+<tr><td class="l">W 150×29,8</td><td class="c">38,5</td><td class="c">248</td><td class="c">1 739</td><td class="c">56</td><td class="c">141</td><td class="c">78</td><td class="c">195</td></tr>
+<tr><td class="l">W 200×15,0</td><td class="c">19,4</td><td class="c">148</td><td class="c">1 305</td><td class="c">34</td><td class="c">117</td><td class="c">46*</td><td class="c">162</td></tr>
+<tr><td class="l">W 200×19,3</td><td class="c">25,1</td><td class="c">191</td><td class="c">1 686</td><td class="c">43</td><td class="c">161</td><td class="c">60</td><td class="c">222</td></tr>
+<tr><td class="l">W 200×22,5</td><td class="c">29,0</td><td class="c">226</td><td class="c">2 029</td><td class="c">51</td><td class="c">174</td><td class="c">71</td><td class="c">240</td></tr>
+<tr><td class="l">W 200×26,6</td><td class="c">34,2</td><td class="c">282</td><td class="c">2 611</td><td class="c">64</td><td class="c">164</td><td class="c">89</td><td class="c">226</td></tr>
+<tr><td class="l">W 200×31,3</td><td class="c">40,3</td><td class="c">339</td><td class="c">3 168</td><td class="c">77</td><td class="c">183</td><td class="c">106</td><td class="c">253</td></tr>
+<tr><td class="l">W 200×35,9</td><td class="c">45,7</td><td class="c">379</td><td class="c">3 437</td><td class="c">86</td><td class="c">170</td><td class="c">119</td><td class="c">235</td></tr>
+<tr><td class="l">W 200×46,1</td><td class="c">58,6</td><td class="c">495</td><td class="c">4 543</td><td class="c">113</td><td class="c">199</td><td class="c">155*</td><td class="c">275</td></tr>
+<tr><td class="l">W 250×22,3</td><td class="c">28,9</td><td class="c">268</td><td class="c">2 939</td><td class="c">61</td><td class="c">201</td><td class="c">84</td><td class="c">277</td></tr>
+<tr><td class="l">W 250×25,3</td><td class="c">32,6</td><td class="c">311</td><td class="c">3 473</td><td class="c">71</td><td class="c">214</td><td class="c">98</td><td class="c">295</td></tr>
+<tr><td class="l">W 250×32,7</td><td class="c">42,1</td><td class="c">428</td><td class="c">4 937</td><td class="c">97</td><td class="c">215</td><td class="c">134</td><td class="c">296</td></tr>
+<tr><td class="l">W 250×38,5</td><td class="c">49,6</td><td class="c">518</td><td class="c">6 057</td><td class="c">118</td><td class="c">236</td><td class="c">162</td><td class="c">325</td></tr>
+<tr><td class="l">W 250×44,8</td><td class="c">57,6</td><td class="c">606</td><td class="c">7 158</td><td class="c">138</td><td class="c">276</td><td class="c">190</td><td class="c">380</td></tr>
+<tr><td class="l">W 250×73,0</td><td class="c">92,7</td><td class="c">985</td><td class="c">11 317</td><td class="c">224</td><td class="c">297</td><td class="c">309</td><td class="c">409</td></tr>
+<tr><td class="l">W 310×23,8</td><td class="c">30,7</td><td class="c">333</td><td class="c">4 346</td><td class="c">76</td><td class="c">233</td><td class="c">105</td><td class="c">321</td></tr>
+<tr><td class="l">W 310×28,3</td><td class="c">36,5</td><td class="c">412</td><td class="c">5 500</td><td class="c">94</td><td class="c">253</td><td class="c">129</td><td class="c">349</td></tr>
+<tr><td class="l">W 310×32,7</td><td class="c">42,1</td><td class="c">485</td><td class="c">6 570</td><td class="c">110</td><td class="c">282</td><td class="c">152</td><td class="c">389</td></tr>
+<tr><td class="l">W 310×38,7</td><td class="c">49,7</td><td class="c">615</td><td class="c">8 581</td><td class="c">140</td><td class="c">245</td><td class="c">193</td><td class="c">338</td></tr>
+<tr><td class="l">W 310×44,5</td><td class="c">57,2</td><td class="c">713</td><td class="c">9 997</td><td class="c">162</td><td class="c">282</td><td class="c">224</td><td class="c">389</td></tr>
+<tr><td class="l">W 310×52,0</td><td class="c">67,0</td><td class="c">842</td><td class="c">11 909</td><td class="c">191</td><td class="c">329</td><td class="c">264</td><td class="c">453</td></tr>
+<tr><td class="l">W 310×97,0</td><td class="c">123,6</td><td class="c">1 594</td><td class="c">22 284</td><td class="c">362</td><td class="c">416</td><td class="c">491*</td><td class="c">574</td></tr>
+<tr><td class="l">W 360×32,9</td><td class="c">42,1</td><td class="c">548</td><td class="c">8 358</td><td class="c">124</td><td class="c">276</td><td class="c">172</td><td class="c">381</td></tr>
+<tr><td class="l">W 360×39,0</td><td class="c">50,2</td><td class="c">668</td><td class="c">10 331</td><td class="c">152</td><td class="c">313</td><td class="c">209</td><td class="c">432</td></tr>
+<tr><td class="l">W 360×44,0</td><td class="c">57,7</td><td class="c">784</td><td class="c">12 258</td><td class="c">178</td><td class="c">330</td><td class="c">246</td><td class="c">456</td></tr>
+<tr><td class="l">W 360×51,0</td><td class="c">64,8</td><td class="c">900</td><td class="c">14 222</td><td class="c">204</td><td class="c">349</td><td class="c">282</td><td class="c">481</td></tr>
+<tr><td class="l">W 360×57,8</td><td class="c">72,5</td><td class="c">1 015</td><td class="c">16 143</td><td class="c">231</td><td class="c">386</td><td class="c">318</td><td class="c">532</td></tr>
+<tr><td class="l">W 360×64,0</td><td class="c">81,7</td><td class="c">1 145</td><td class="c">17 890</td><td class="c">260</td><td class="c">364</td><td class="c">359</td><td class="c">503</td></tr>
+<tr><td class="l">W 360×72,0</td><td class="c">91,3</td><td class="c">1 286</td><td class="c">20 169</td><td class="c">292</td><td class="c">410</td><td class="c">403</td><td class="c">566</td></tr>
+<tr><td class="l">W 410×38,8</td><td class="c">50,3</td><td class="c">737</td><td class="c">12 777</td><td class="c">167</td><td class="c">348</td><td class="c">231</td><td class="c">478</td></tr>
+<tr><td class="l">W 410×46,1</td><td class="c">59,2</td><td class="c">891</td><td class="c">15 690</td><td class="c">203</td><td class="c">385</td><td class="c">279</td><td class="c">531</td></tr>
+<tr><td class="l">W 410×53,0</td><td class="c">68,4</td><td class="c">1 052</td><td class="c">18 734</td><td class="c">239</td><td class="c">412</td><td class="c">330</td><td class="c">569</td></tr>
+<tr><td class="l">W 410×60,0</td><td class="c">76,2</td><td class="c">1 202</td><td class="c">21 707</td><td class="c">273</td><td class="c">427</td><td class="c">377</td><td class="c">590</td></tr>
+<tr><td class="l">W 460×52,0</td><td class="c">66,6</td><td class="c">1 096</td><td class="c">21 370</td><td class="c">249</td><td class="c">466</td><td class="c">344</td><td class="c">644</td></tr>
+<tr><td class="l">W 460×60,0</td><td class="c">76,2</td><td class="c">1 292</td><td class="c">25 652</td><td class="c">294</td><td class="c">496</td><td class="c">405</td><td class="c">685</td></tr>
+<tr><td class="l">W 460×68,0</td><td class="c">87,6</td><td class="c">1 495</td><td class="c">29 851</td><td class="c">340</td><td class="c">570</td><td class="c">469</td><td class="c">786</td></tr>
+<tr><td class="l">W 460×74,0</td><td class="c">94,9</td><td class="c">1 657</td><td class="c">33 415</td><td class="c">377</td><td class="c">561</td><td class="c">520</td><td class="c">774</td></tr>
+<tr><td class="l">W 460×82,0</td><td class="c">104,7</td><td class="c">1 836</td><td class="c">37 157</td><td class="c">417</td><td class="c">621</td><td class="c">576</td><td class="c">857</td></tr>
+<tr><td class="l">W 530×66,0</td><td class="c">83,6</td><td class="c">1 558</td><td class="c">34 971</td><td class="c">354</td><td class="c">637</td><td class="c">489</td><td class="c">879</td></tr>
+<tr><td class="l">W 530×74,0</td><td class="c">95,1</td><td class="c">1 805</td><td class="c">40 969</td><td class="c">410</td><td class="c">700</td><td class="c">566</td><td class="c">966</td></tr>
+<tr><td class="l">W 530×85,0</td><td class="c">107,7</td><td class="c">2 100</td><td class="c">48 453</td><td class="c">477</td><td class="c">751</td><td class="c">659</td><td class="c">1 037</td></tr>
+<tr><td class="l">W 530×92,0</td><td class="c">117,6</td><td class="c">2 360</td><td class="c">55 157</td><td class="c">536</td><td class="c">741</td><td class="c">740</td><td class="c">1 023</td></tr>
+<tr><td class="l">W 610×101</td><td class="c">130,3</td><td class="c">2 923</td><td class="c">77 003</td><td class="c">664</td><td class="c">863</td><td class="c">917</td><td class="c">1 191</td></tr>
+<tr><td class="l">W 610×113</td><td class="c">145,3</td><td class="c">3 313</td><td class="c">88 196</td><td class="c">753</td><td class="c">929</td><td class="c">1 039</td><td class="c">1 281</td></tr>
+<tr><td class="l">W 610×125</td><td class="c">160,1</td><td class="c">3 697</td><td class="c">99 184</td><td class="c">840</td><td class="c">993</td><td class="c">1 160</td><td class="c">1 370</td></tr>
+<tr><td class="l">W 610×140</td><td class="c">179,3</td><td class="c">4 173</td><td class="c">112 619</td><td class="c">948</td><td class="c">1 102</td><td class="c">1 309</td><td class="c">1 521</td></tr>
+</tbody></table>
+
+<p>A <strong>Tabela 7.11</strong> responde à pergunta prática "quanto essa viga aguenta por metro, nesse vão?". Para cada célula foram calculados dois limites — o de momento (q<sub>d</sub> = 8·M<sub>Rd</sub>/L²) e o de flecha (δ = L/350 sob a carga de serviço q<sub>d</sub>/1,4) — e adotado o menor. Células com <sup>M</sup> são governadas pelo momento; as demais, pela flecha. Observe como a flecha domina quase tudo acima de 5 m: por isso a escolha da viga de piso começa pela inércia. Para vigas de cobertura (L/250) multiplique os valores governados por flecha por 1,4; para vigas com alvenaria (L/500) divida por 1,43. Perfis com "–" não são adequados ao vão.</p>
+
+<table class="tab small"><caption>Tabela 7.11 – Carga distribuída de cálculo máxima q<sub>d</sub> (kN/m) em vigas biapoiadas com contenção lateral contínua – aço A572 Gr.50, limitada por flecha L/350 (carga de serviço = q<sub>d</sub>/1,4) ou por momento (células marcadas com <sup>M</sup>)</caption>
+<thead><tr><th rowspan="2">Perfil</th><th colspan="6">Vão L (m)</th></tr><tr><th>4</th><th>5</th><th>6</th><th>8</th><th>10</th><th>12</th></tr></thead>
+<tbody>
+<tr><td class="l">W 150×13,0</td><td class="c">6,1</td><td class="c">3,1</td><td class="c">1,8</td><td class="c">–</td><td class="c">–</td><td class="c">–</td></tr>
+<tr><td class="l">W 150×18,0</td><td class="c">9,0</td><td class="c">4,6</td><td class="c">2,7</td><td class="c">1,1</td><td class="c">–</td><td class="c">–</td></tr>
+<tr><td class="l">W 150×24,0</td><td class="c">13,3</td><td class="c">6,8</td><td class="c">3,9</td><td class="c">1,7</td><td class="c">–</td><td class="c">–</td></tr>
+<tr><td class="l">W 200×15,0</td><td class="c">12,5</td><td class="c">6,4</td><td class="c">3,7</td><td class="c">1,6</td><td class="c">–</td><td class="c">–</td></tr>
+<tr><td class="l">W 200×19,3</td><td class="c">16,2</td><td class="c">8,3</td><td class="c">4,8</td><td class="c">2,0</td><td class="c">1,0</td><td class="c">–</td></tr>
+<tr><td class="l">W 200×22,5</td><td class="c">19,5</td><td class="c">10,0</td><td class="c">5,8</td><td class="c">2,4</td><td class="c">1,2</td><td class="c">–</td></tr>
+<tr><td class="l">W 200×26,6</td><td class="c">25,1</td><td class="c">12,8</td><td class="c">7,4</td><td class="c">3,1</td><td class="c">1,6</td><td class="c">–</td></tr>
+<tr><td class="l">W 200×31,3</td><td class="c">30,4</td><td class="c">15,6</td><td class="c">9,0</td><td class="c">3,8</td><td class="c">1,9</td><td class="c">1,1</td></tr>
+<tr><td class="l">W 250×22,3</td><td class="c">28,2</td><td class="c">14,4</td><td class="c">8,4</td><td class="c">3,5</td><td class="c">1,8</td><td class="c">1,0</td></tr>
+<tr><td class="l">W 250×25,3</td><td class="c">33,3</td><td class="c">17,1</td><td class="c">9,9</td><td class="c">4,2</td><td class="c">2,1</td><td class="c">1,2</td></tr>
+<tr><td class="l">W 250×32,7</td><td class="c">47,4</td><td class="c">24,3</td><td class="c">14,0</td><td class="c">5,9</td><td class="c">3,0</td><td class="c">1,8</td></tr>
+<tr><td class="l">W 250×38,5</td><td class="c">58,1</td><td class="c">29,8</td><td class="c">17,2</td><td class="c">7,3</td><td class="c">3,7</td><td class="c">2,2</td></tr>
+<tr><td class="l">W 250×44,8</td><td class="c">68,7</td><td class="c">35,2</td><td class="c">20,4</td><td class="c">8,6</td><td class="c">4,4</td><td class="c">2,5</td></tr>
+<tr><td class="l">W 310×28,3</td><td class="c">52,8</td><td class="c">27,0</td><td class="c">15,6</td><td class="c">6,6</td><td class="c">3,4</td><td class="c">2,0</td></tr>
+<tr><td class="l">W 310×32,7</td><td class="c">63,1</td><td class="c">32,3</td><td class="c">18,7</td><td class="c">7,9</td><td class="c">4,0</td><td class="c">2,3</td></tr>
+<tr><td class="l">W 310×38,7</td><td class="c">82,4</td><td class="c">42,2</td><td class="c">24,4</td><td class="c">10,3</td><td class="c">5,3</td><td class="c">3,1</td></tr>
+<tr><td class="l">W 310×44,5</td><td class="c">96,0</td><td class="c">49,1</td><td class="c">28,4</td><td class="c">12,0</td><td class="c">6,1</td><td class="c">3,6</td></tr>
+<tr><td class="l">W 310×52,0</td><td class="c">114</td><td class="c">58,5</td><td class="c">33,9</td><td class="c">14,3</td><td class="c">7,3</td><td class="c">4,2</td></tr>
+<tr><td class="l">W 360×32,9</td><td class="c">80,2</td><td class="c">41,1</td><td class="c">23,8</td><td class="c">10,0</td><td class="c">5,1</td><td class="c">3,0</td></tr>
+<tr><td class="l">W 360×39,0</td><td class="c">99,2</td><td class="c">50,8</td><td class="c">29,4</td><td class="c">12,4</td><td class="c">6,3</td><td class="c">3,7</td></tr>
+<tr><td class="l">W 360×44,0</td><td class="c">118</td><td class="c">60,3</td><td class="c">34,9</td><td class="c">14,7</td><td class="c">7,5</td><td class="c">4,4</td></tr>
+<tr><td class="l">W 360×51,0</td><td class="c">137</td><td class="c">69,9</td><td class="c">40,5</td><td class="c">17,1</td><td class="c">8,7</td><td class="c">5,1</td></tr>
+<tr><td class="l">W 360×57,8</td><td class="c">155</td><td class="c">79,3</td><td class="c">45,9</td><td class="c">19,4</td><td class="c">9,9</td><td class="c">5,7</td></tr>
+<tr><td class="l">W 410×46,1</td><td class="c">140<sup>M</sup></td><td class="c">77,1</td><td class="c">44,6</td><td class="c">18,8</td><td class="c">9,6</td><td class="c">5,6</td></tr>
+<tr><td class="l">W 410×53,0</td><td class="c">165<sup>M</sup></td><td class="c">92,1</td><td class="c">53,3</td><td class="c">22,5</td><td class="c">11,5</td><td class="c">6,7</td></tr>
+<tr><td class="l">W 410×60,0</td><td class="c">188<sup>M</sup></td><td class="c">107</td><td class="c">61,7</td><td class="c">26,0</td><td class="c">13,3</td><td class="c">7,7</td></tr>
+<tr><td class="l">W 460×52,0</td><td class="c">172<sup>M</sup></td><td class="c">105</td><td class="c">60,8</td><td class="c">25,6</td><td class="c">13,1</td><td class="c">7,6</td></tr>
+<tr><td class="l">W 460×60,0</td><td class="c">203<sup>M</sup></td><td class="c">126</td><td class="c">73,0</td><td class="c">30,8</td><td class="c">15,8</td><td class="c">9,1</td></tr>
+<tr><td class="l">W 460×68,0</td><td class="c">235<sup>M</sup></td><td class="c">147</td><td class="c">84,9</td><td class="c">35,8</td><td class="c">18,3</td><td class="c">10,6</td></tr>
+<tr><td class="l">W 460×74,0</td><td class="c">260<sup>M</sup></td><td class="c">164</td><td class="c">95,0</td><td class="c">40,1</td><td class="c">20,5</td><td class="c">11,9</td></tr>
+<tr><td class="l">W 460×82,0</td><td class="c">288<sup>M</sup></td><td class="c">183</td><td class="c">106</td><td class="c">44,6</td><td class="c">22,8</td><td class="c">13,2</td></tr>
+<tr><td class="l">W 530×66,0</td><td class="c">244<sup>M</sup></td><td class="c">156<sup>M</sup></td><td class="c">99,5</td><td class="c">42,0</td><td class="c">21,5</td><td class="c">12,4</td></tr>
+<tr><td class="l">W 530×74,0</td><td class="c">283<sup>M</sup></td><td class="c">181<sup>M</sup></td><td class="c">117</td><td class="c">49,2</td><td class="c">25,2</td><td class="c">14,6</td></tr>
+<tr><td class="l">W 530×85,0</td><td class="c">329<sup>M</sup></td><td class="c">211<sup>M</sup></td><td class="c">138</td><td class="c">58,1</td><td class="c">29,8</td><td class="c">17,2</td></tr>
+<tr><td class="l">W 530×92,0</td><td class="c">370<sup>M</sup></td><td class="c">237<sup>M</sup></td><td class="c">157</td><td class="c">66,2</td><td class="c">33,9</td><td class="c">19,6</td></tr>
+<tr><td class="l">W 610×101</td><td class="c">458<sup>M</sup></td><td class="c">293<sup>M</sup></td><td class="c">204<sup>M</sup></td><td class="c">92,4</td><td class="c">47,3</td><td class="c">27,4</td></tr>
+<tr><td class="l">W 610×113</td><td class="c">520<sup>M</sup></td><td class="c">332<sup>M</sup></td><td class="c">231<sup>M</sup></td><td class="c">106</td><td class="c">54,2</td><td class="c">31,4</td></tr>
+<tr><td class="l">W 610×125</td><td class="c">580<sup>M</sup></td><td class="c">371<sup>M</sup></td><td class="c">258<sup>M</sup></td><td class="c">119</td><td class="c">60,9</td><td class="c">35,3</td></tr>
+<tr><td class="l">W 610×140</td><td class="c">654<sup>M</sup></td><td class="c">419<sup>M</sup></td><td class="c">291<sup>M</sup></td><td class="c">135</td><td class="c">69,2</td><td class="c">40,0</td></tr>
+</tbody></table>
+
+<p>A <strong>Tabela 7.12</strong> dá a força axial resistente de pilares W em A572 Gr.50 para o caso mais comum: KL igual nas duas direções (a flambagem ocorre em torno do eixo y). Se o pilar for travado na direção fraca em altura intermediária, entre com o KL<sub>y</sub> reduzido e confira também KL<sub>x</sub>/r<sub>x</sub>. Os perfis W 250×32,7 e W 310×38,7 são "de viga" (alma fina): o fator Q &lt; 1 já está incluído; observe como rendem pouco como pilares acima de 5 m em comparação com os perfis "de coluna" (W 200×46,1, W 250×73, W 310×97).</p>
+
+<table class="tab"><caption>Tabela 7.12 – Força axial resistente de compressão N<sub>c,Rd</sub> (kN) de pilares W – aço A572 Gr.50, flambagem em torno do eixo de menor inércia (KL igual nas duas direções)</caption>
+<thead><tr><th rowspan="2">Perfil</th><th rowspan="2">A<sub>g</sub> (cm²)</th><th rowspan="2">r<sub>y</sub> (cm)</th><th rowspan="2">Q</th><th colspan="5">KL (m)</th></tr><tr><th>3</th><th>4</th><th>5</th><th>6</th><th>8</th></tr></thead>
+<tbody>
+<tr><td class="l">W 200×46,1</td><td class="c">58,6</td><td class="c">5,12</td><td class="c">1,00</td><td class="c">1 430</td><td class="c">1 176</td><td class="c">915</td><td class="c">672</td><td class="c">378</td></tr>
+<tr><td class="l">W 250×32,7</td><td class="c">42,1</td><td class="c">3,35</td><td class="c">0,976</td><td class="c">727</td><td class="c">465</td><td class="c">297</td><td class="c">207</td><td class="c">116</td></tr>
+<tr><td class="l">W 250×73,0</td><td class="c">92,7</td><td class="c">6,47</td><td class="c">1,00</td><td class="c">2 484</td><td class="c">2 198</td><td class="c">1 878</td><td class="c">1 550</td><td class="c">954</td></tr>
+<tr><td class="l">W 310×38,7</td><td class="c">49,7</td><td class="c">3,82</td><td class="c">0,923</td><td class="c">948</td><td class="c">686</td><td class="c">457</td><td class="c">317</td><td class="c">178</td></tr>
+<tr><td class="l">W 310×97,0</td><td class="c">123,6</td><td class="c">7,68</td><td class="c">1,00</td><td class="c">3 467</td><td class="c">3 179</td><td class="c">2 843</td><td class="c">2 480</td><td class="c">1 753</td></tr>
+</tbody></table>
+
+<div class="box dica"><div class="tit">Como usar as tabelas num pré-projeto</div>
+<p>1) Estime a carga de cálculo por metro na viga (área de influência × carga de piso × 1,4, mais peso próprio). 2) Na Tabela 7.11, na coluna do vão, desça até achar um valor maior que sua carga — esse é o perfil mínimo por flecha/momento. 3) Confira V<sub>Rd</sub> na Tabela 7.10 (raramente governa). 4) Se a viga não tiver laje travando a mesa, <strong>não use a Tabela 7.10</strong>: calcule com L<sub>b</sub> (Exemplo 7.8) ou use as tabelas de M<sub>Rd</sub> × L<sub>b</sub> do catálogo. 5) Para pilares, some as cargas dos pavimentos, aplique 1,4 e entre na Tabela 7.12 com o KL da direção fraca; se houver momento (pórtico), reserve 40–60 % da capacidade para a flexão.</p></div>
+
+<h2>7.13 Uso de software e responsabilidade técnica <span class="nivel b">Básico</span></h2>
+<p>Praticamente todo projeto de estrutura metálica hoje é analisado e dimensionado com programas. Eles resolvem a análise (esforços, deslocamentos, 2ª ordem), verificam as barras pelas normas escolhidas e, alguns, detalham ligações e geram desenhos. Os mais usados no Brasil estão na Tabela 7.13. O que o programa <em>não</em> faz é decidir o sistema estrutural, definir as cargas, escolher os vínculos, interpretar as condições de travamento lateral (L<sub>b</sub>!) e avaliar se os resultados fazem sentido — e essas são exatamente as fontes da maioria dos erros graves.</p>
+
+<table class="tab"><caption>Tabela 7.13 – Programas usuais para estruturas metálicas no Brasil</caption>
+<thead><tr><th>Programa</th><th>Origem</th><th>Ponto forte</th><th>Normas de aço</th></tr></thead>
+<tbody>
+<tr><td class="l">SAP2000 / ETABS (CSI)</td><td class="c">EUA</td><td class="l">Análise geral (linear, não linear, dinâmica); muito difundido; dimensionamento por AISC 360 e outras</td><td class="l">AISC, Eurocode, entre outras (sem NBR 8800 nativa; AISC 360 é próxima)</td></tr>
+<tr><td class="l">Autodesk Robot Structural Analysis</td><td class="c">França/EUA</td><td class="l">Integração BIM (Revit), análise e verificação de barras e ligações</td><td class="l">Eurocode 3, AISC, inclui verificação pela NBR 8800</td></tr>
+<tr><td class="l">STRAP</td><td class="c">Israel</td><td class="l">Análise e dimensionamento, popular em escritórios brasileiros</td><td class="l">NBR 8800, AISC, Eurocode</td></tr>
+<tr><td class="l">TQS – Metálicas / mCalc (STABILE)</td><td class="c">Brasil</td><td class="l">Nacionais; mCalc3D, mCalcPerfis e mCalcLig para análise, perfis formados a frio (NBR 14762) e ligações; TQS integra com concreto</td><td class="l">NBR 8800, NBR 14762</td></tr>
+<tr><td class="l">CYPE 3D / CYPECAD</td><td class="c">Espanha</td><td class="l">Edifícios e galpões, ligações, saída de desenhos; interface completa em português</td><td class="l">NBR 8800, NBR 14762, Eurocode</td></tr>
+<tr><td class="l">Dlubal RFEM / RSTAB</td><td class="c">Alemanha</td><td class="l">Elementos finitos, estabilidade, formados a frio, análise avançada</td><td class="l">Eurocode, AISC, entre outras (NBR 8800 em módulos)</td></tr>
+<tr><td class="l">Tekla Structures / Advance Steel</td><td class="c">Finlândia / Alemanha</td><td class="l">Modelagem 3D e detalhamento de fabricação (não dimensionam barras)</td><td class="l">—</td></tr>
+<tr><td class="l">Planilhas próprias e programas de perfis (Gerdau, CBCA)</td><td class="c">—</td><td class="l">Verificações isoladas de barras e ligações; conferência rápida</td><td class="l">NBR 8800</td></tr>
+</tbody></table>
+<p><strong>O que o engenheiro deve conferir "à mão"</strong> em qualquer projeto: (1) somatório das reações = somatório das cargas aplicadas (o erro de unidade aparece aqui); (2) o momento e a flecha de uma viga típica pelas fórmulas simples deste capítulo — devem bater com o programa em ±5 %; (3) o KL/r e o L<sub>b</sub> adotados pelo programa para as barras mais críticas — o padrão de muitos programas é L<sub>b</sub> = comprimento da barra ou L<sub>b</sub> = 0, e os dois podem estar errados; (4) se a análise de 2ª ordem e as imperfeições foram ativadas em pórticos; (5) o coeficiente B<sub>2</sub> ou o deslocamento horizontal do pórtico; (6) se os vínculos (rótula/engaste) do modelo correspondem ao que a ligação detalhada realmente faz; (7) se o vento de sucção foi considerado com o L<sub>b</sub> da mesa inferior. Um índice de utilização de 0,99 em todas as barras não é sinal de projeto econômico, e sim de um projeto sem margem para as inevitáveis alterações de obra.</p>
+<div class="box norma"><div class="tit">Responsabilidade técnica</div>
+<p>O programa é uma ferramenta; a <strong>responsabilidade pelo projeto é do engenheiro</strong> que assina a ART/RRT, pela Lei 5.194/66 e pelas resoluções do CONFEA. A NBR 8800 (item 4.10) exige que a memória de cálculo apresente as hipóteses, as ações, o modelo e os resultados de forma que outro profissional possa verificá-los. Guarde os arquivos do modelo, a versão do programa e um resumo das verificações manuais. Resultados de programas não homologados para a NBR 8800 (por exemplo, verificação pela AISC) devem ser justificados — as diferenças são pequenas nos elementos principais, mas existem nos coeficientes γ e em alguns limites.</p></div>
+
+<div class="resumo"><div class="tit">Resumo do capítulo</div>
+<ul>
+<li><strong>Estados-limites</strong>: S<sub>d</sub> ≤ R<sub>d</sub>. γ<sub>a1</sub> = 1,10 para escoamento e instabilidade; γ<sub>a2</sub> = 1,35 para ruptura. ELS com cargas de serviço e sem minoração.</li>
+<li><strong>Flambagem local</strong>: classifique cada chapa por b/t (Tabela 7.3). Compacta → M<sub>pl</sub>; semicompacta → interpolação; esbelta → M<sub>cr</sub>. Em compressão, alma esbelta → Q<sub>a</sub> &lt; 1.</li>
+<li><strong>Tração</strong>: menor entre A<sub>g</sub>f<sub>y</sub>/1,10 e C<sub>t</sub>A<sub>n</sub>f<sub>u</sub>/1,35; furo = d + 3,5 mm; ziguezague + s²/4g; L/r ≤ 300 (exceto barras pré-tensionadas); rosca: 0,75A<sub>g</sub>.</li>
+<li><strong>Compressão</strong>: N<sub>c,Rd</sub> = χ·Q·A<sub>g</sub>·f<sub>y</sub>/1,10, com λ<sub>0</sub> = (KL/r)/π·√(Qf<sub>y</sub>/E) e χ = 0,658<sup>λ<sub>0</sub>²</sup> (≤ 1,5) ou 0,877/λ<sub>0</sub>²; KL/r ≤ 200. Reduzir KL (travar) vale mais que aumentar o perfil.</li>
+<li><strong>Flexão</strong>: M<sub>Rd</sub> = mín(FLA, FLM, FLT)/1,10, teto M<sub>pl</sub>/1,10 e 1,5Wf<sub>y</sub>/1,10. FLT depende de L<sub>b</sub>: L<sub>p</sub> = 1,76r<sub>y</sub>√(E/f<sub>y</sub>), L<sub>r</sub> tabelado, C<sub>b</sub> ≥ 1 ajuda. Sem laje, L<sub>b</sub> muda tudo.</li>
+<li><strong>Cisalhamento</strong>: V<sub>Rd</sub> = 0,6·d·t<sub>w</sub>·f<sub>y</sub>/1,10 para h/t<sub>w</sub> ≤ 59 (A572) ou 70 (A36); almas esbeltas caem com (λ<sub>p</sub>/λ) e (λ<sub>p</sub>/λ)²; enrijecedores ajudam.</li>
+<li><strong>Flexo-compressão</strong>: N/N<sub>Rd</sub> + 8/9(M/M<sub>Rd</sub>) ≤ 1 (N/N<sub>Rd</sub> ≥ 0,2) ou N/2N<sub>Rd</sub> + M/M<sub>Rd</sub> ≤ 1, com esforços de 2ª ordem (B<sub>1</sub>, B<sub>2</sub>) e K = 1,0.</li>
+<li><strong>Serviço</strong>: pisos L/350, cobertura L/250, terças L/180, alvenaria L/500, rolamento L/600–L/800, pilares H/300, entre pisos h/400, ponte rolante H/400; f ≥ 3–4 Hz (f ≈ 18/√δ<sub>mm</sub>).</li>
+<li><strong>Vigas mistas</strong> multiplicam a rigidez por 2–3; <strong>formados a frio</strong> seguem a NBR 14762 (local + distorcional + global; cuidado com sucção).</li>
+<li><strong>Software</strong> analisa; o engenheiro define cargas, vínculos, L<sub>b</sub>, K e confere a ordem de grandeza — e assina.</li>
+</ul></div>
+
+<h3>Lista de verificação – dimensionamento de uma barra</h3>
+<ul class="chk">
+<li>Esforços de cálculo obtidos com as combinações últimas corretas (γ<sub>f</sub>), incluindo vento de sucção e combinações com carga permanente mínima?</li>
+<li>Unidades coerentes (kN, cm, kN/cm²) e f<sub>y</sub>/f<sub>u</sub> do aço realmente especificado?</li>
+<li>Seção classificada (b/t da mesa e da alma) para flexão e para compressão?</li>
+<li>Tração: seção bruta e seção líquida (furos d + 3,5 mm, ziguezague), C<sub>t</sub> pela excentricidade da ligação, L/r ≤ 300?</li>
+<li>Compressão: K adequado ao vínculo real (ou K = 1 com 2ª ordem), KL/r nos dois eixos ≤ 200, Q para chapas esbeltas, flexo-torção em L, T e U?</li>
+<li>Flexão: L<sub>b</sub> real da mesa comprimida (em cada combinação!), L<sub>p</sub>/L<sub>r</sub>, C<sub>b</sub>, teto 1,5Wf<sub>y</sub>?</li>
+<li>Cortante: h/t<sub>w</sub> versus λ<sub>p</sub>; furos e recortes na alma; enrijecedores de apoio e sob cargas concentradas?</li>
+<li>Interação N–M com esforços amplificados (B<sub>1</sub>, B<sub>2</sub>) e imperfeições (cargas nocionais)?</li>
+<li>Flecha e deslocamentos com cargas de serviço versus Anexo C; vibração (f ≥ 3–4 Hz); contraflecha indicada no desenho?</li>
+<li>Fase construtiva (viga mista não escorada, montagem) verificada com o L<sub>b</sub> dessa fase?</li>
+<li>Resultado conferido à mão (reações, M, δ de uma viga típica) e memória de cálculo arquivada?</li>
+</ul>
+
+<h3>Erros comuns</h3>
+<ul>
+<li><strong>Esquecer a FLT em vigas sem laje</strong> (terças, vigas de cobertura, mezaninos com grade, vigas de rolamento) — usar M<sub>pl</sub> quando L<sub>b</sub> ≫ L<sub>p</sub>. O Exemplo 7.8 mostrou uma viga com 46 % de folga que passa a 35 % <em>acima</em> da capacidade.</li>
+<li><strong>K errado</strong>: K = 1,0 em pilar em balanço (K = 2,1), ou K = 2,0 somado a uma análise de 2ª ordem (dupla contagem).</li>
+<li><strong>Esquecer a sucção do vento</strong>, que comprime a mesa inferior (não travada) das vigas e terças e inverte os esforços de pilares e diagonais.</li>
+<li><strong>Misturar unidades</strong>: mm com cm (erro de 10× na área, 10⁴× na inércia), kN·m com kN·cm, MPa com kN/cm².</li>
+<li><strong>Usar tabelas de catálogo fora das hipóteses</strong> (aço diferente, L<sub>b</sub> diferente, sem correntes nas terças).</li>
+<li><strong>Verificar só a barra e esquecer a ligação</strong>: a ligação frequentemente governa (bloco de cisalhamento, C<sub>t</sub>, parafusos) — Capítulo 8.</li>
+<li><strong>Confiar no "verde" do programa</strong> sem conferir vínculos, L<sub>b</sub>, 2ª ordem e a soma das reações.</li>
+<li><strong>Ignorar a rigidez</strong>: escolher a viga pelo momento e descobrir na obra que o piso vibra ou a alvenaria trincou.</li>
+</ul>

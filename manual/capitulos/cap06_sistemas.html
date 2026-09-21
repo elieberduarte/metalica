@@ -1,0 +1,1039 @@
+<h1 class="cap"><small>Capítulo 6</small>Sistemas estruturais e concepção</h1>
+<div class="objetivos"><div class="tit">O que você vai aprender neste capítulo</div>
+<ul>
+<li>Como as cargas "caminham" da telha até a fundação — e por que cada elemento existe.</li>
+<li>Os sistemas de galpões: pórticos de alma cheia, pórticos treliçados, tipos de tesoura e de cobertura, terças, longarinas e suas proporções usuais.</li>
+<li>Contraventamentos: para que servem, onde ficam e como levam o vento até a fundação.</li>
+<li>Estabilidade global: pórtico rígido × contraventado, base rotulada × engastada, efeitos de 2ª ordem (P-Δ) e a classificação de deslocabilidade da NBR 8800.</li>
+<li>Edifícios de múltiplos andares, vigas mistas, ligações e sua influência, mezaninos, pontes rolantes, plataformas industriais, grandes vãos.</li>
+<li>Um roteiro de concepção passo a passo, tabelas de pré-dimensionamento e a lista dos erros de concepção mais comuns.</li>
+</ul></div>
+
+<p>Conceber é decidir <em>o que</em> vai existir antes de calcular <em>quanto</em>. Uma boa concepção — caminho de cargas claro, vãos e modulação coerentes, contraventamento completo, ligações compatíveis com o modelo — produz estruturas leves, fáceis de fabricar e de montar. Uma concepção ruim não se conserta com cálculo: a estrutura fica pesada, ou, pior, fica com um elo faltando na cadeia de transmissão das cargas. Este capítulo mostra os sistemas mais usados em aço no Brasil e os critérios para escolhê-los.</p>
+
+<h2>6.1 O caminho das cargas <span class="nivel b">Básico</span></h2>
+<p>Toda carga aplicada à edificação precisa de um caminho contínuo até o solo. Pensar nesse caminho, elemento por elemento, é a ferramenta mais poderosa da concepção: cada barra existe para receber uma carga de alguém e entregá-la a alguém. Em um galpão típico (Figura 6.1), as cargas gravitacionais percorrem: telha → terça → tesoura ou viga de pórtico → pilar → chapa de base e chumbadores → bloco de fundação → solo. O vento nas paredes segue: telha de fechamento → longarina → pilar (ou coluna de oitão) → e daí, conforme a direção, para o pórtico (vento transversal) ou para o contraventamento (vento longitudinal) → fundação.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 360" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="f6_1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<pattern id="h6_1" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<pattern id="c6_1" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#777"/><circle cx="6" cy="6" r="1" fill="#777"/></pattern></defs>
+<!-- solo e blocos -->
+<line x1="40" y1="300" x2="720" y2="300" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="300" width="680" height="50" fill="url(#h6_1)" opacity="0.5"/>
+<rect x="110" y="290" width="80" height="50" fill="url(#c6_1)" stroke="#333" stroke-width="1.5"/>
+<rect x="570" y="290" width="80" height="50" fill="url(#c6_1)" stroke="#333" stroke-width="1.5"/>
+<!-- pilares -->
+<rect x="142" y="140" width="16" height="150" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="602" y="140" width="16" height="150" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="132" y="284" width="36" height="6" fill="#444"/><rect x="592" y="284" width="36" height="6" fill="#444"/>
+<!-- tesoura -->
+<polygon points="150,140 380,80 610,140 610,120 380,60 150,120" fill="none" stroke="#333" stroke-width="3"/>
+<line x1="150" y1="140" x2="610" y2="140" stroke="#333" stroke-width="3"/>
+<g stroke="#333" stroke-width="1.5">
+<line x1="208" y1="140" x2="208" y2="105"/><line x1="265" y1="140" x2="265" y2="90"/><line x1="323" y1="140" x2="323" y2="75"/><line x1="380" y1="140" x2="380" y2="60"/><line x1="437" y1="140" x2="437" y2="75"/><line x1="495" y1="140" x2="495" y2="90"/><line x1="552" y1="140" x2="552" y2="105"/>
+<line x1="150" y1="140" x2="208" y2="105"/><line x1="208" y1="140" x2="265" y2="90"/><line x1="265" y1="140" x2="323" y2="75"/><line x1="323" y1="140" x2="380" y2="60"/>
+<line x1="610" y1="140" x2="552" y2="105"/><line x1="552" y1="140" x2="495" y2="90"/><line x1="495" y1="140" x2="437" y2="75"/><line x1="437" y1="140" x2="380" y2="60"/>
+</g>
+<!-- terças (em corte: pequenos retângulos sobre o banzo superior) -->
+<g fill="#0b3d91">
+<rect x="203" y="97" width="10" height="8" transform="rotate(-14.6 208 105)"/><rect x="260" y="82" width="10" height="8" transform="rotate(-14.6 265 90)"/><rect x="318" y="67" width="10" height="8" transform="rotate(-14.6 323 75)"/><rect x="375" y="52" width="10" height="8"/>
+<rect x="432" y="67" width="10" height="8" transform="rotate(14.6 437 75)"/><rect x="490" y="82" width="10" height="8" transform="rotate(14.6 495 90)"/><rect x="547" y="97" width="10" height="8" transform="rotate(14.6 552 105)"/>
+</g>
+<!-- telha -->
+<polyline points="140,116 380,52 620,116" fill="none" stroke="#8a94a6" stroke-width="4"/>
+<!-- setas do caminho -->
+<g stroke="#c0392b" stroke-width="2" marker-end="url(#f6_1)">
+<line x1="300" y1="20" x2="300" y2="42"/><line x1="340" y1="12" x2="340" y2="32"/><line x1="260" y1="30" x2="260" y2="52"/>
+<line x1="500" y1="20" x2="500" y2="42"/><line x1="460" y1="12" x2="460" y2="32"/><line x1="540" y1="30" x2="540" y2="52"/>
+<line x1="150" y1="160" x2="150" y2="200"/><line x1="610" y1="160" x2="610" y2="200"/>
+<line x1="150" y1="240" x2="150" y2="278"/><line x1="610" y1="240" x2="610" y2="278"/>
+<line x1="150" y1="305" x2="150" y2="335"/><line x1="610" y1="305" x2="610" y2="335"/>
+</g>
+<!-- rótulos numerados -->
+<circle cx="40" cy="60" r="11" fill="#0b3d91"/><text x="40" y="64" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">1</text>
+<text x="56" y="64" font-size="12">telha (kN/m²)</text>
+<circle cx="40" cy="88" r="11" fill="#0b3d91"/><text x="40" y="92" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">2</text>
+<text x="56" y="92" font-size="12">terça (kN/m)</text>
+<circle cx="40" cy="152" r="11" fill="#0b3d91"/><text x="40" y="156" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">3</text>
+<text x="56" y="156" font-size="12">tesoura</text>
+<circle cx="40" cy="205" r="11" fill="#0b3d91"/><text x="40" y="209" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">4</text>
+<text x="56" y="209" font-size="12">pilar (N + M)</text>
+<circle cx="40" cy="262" r="11" fill="#0b3d91"/><text x="40" y="266" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">5</text>
+<text x="56" y="266" font-size="12">base</text>
+<circle cx="40" cy="325" r="11" fill="#0b3d91"/><text x="40" y="329" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">6</text>
+<text x="14" y="352" font-size="12">bloco / sapata → solo</text>
+<text x="380" y="180" text-anchor="middle" font-size="12" fill="#c0392b" font-weight="bold">telha → terça → tesoura (kN nos nós) → pilar → base → fundação</text>
+<text x="380" y="200" text-anchor="middle" font-size="11" fill="#555">cada elemento recebe de quem está acima e entrega a quem está abaixo</text>
+<text x="654" y="209" font-size="12" fill="#555">reação da tesoura</text>
+<text x="654" y="266" font-size="12" fill="#555">N, V, (M)</text>
+</svg>
+<figcaption><b>Figura 6.1</b> – Caminho das cargas gravitacionais em um galpão: da telha à fundação, passando por terças, tesoura, pilares e bases. As cargas concentram-se ao descer: kN/m² na telha, kN/m na terça, kN nos nós da tesoura e centenas de kN na base.</figcaption>
+</figure>
+
+<figure class="fig">
+<svg viewBox="0 0 760 362" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="v6_2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker>
+<marker id="f6_2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<pattern id="h6_2" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- (a) vento transversal - corte -->
+<text x="190" y="20" text-anchor="middle" font-weight="bold" font-size="13">(a) Vento transversal → pórtico</text>
+<line x1="30" y1="270" x2="350" y2="270" stroke="#333" stroke-width="1.5"/>
+<rect x="30" y="270" width="320" height="8" fill="url(#h6_2)"/>
+<path d="M90 270 L90 130 L190 100 L290 130 L290 270" fill="none" stroke="#333" stroke-width="5"/>
+<!-- longarinas em corte -->
+<g fill="#0b3d91"><rect x="82" y="160" width="8" height="8"/><rect x="82" y="200" width="8" height="8"/><rect x="82" y="240" width="8" height="8"/></g>
+<!-- fechamento -->
+<line x1="80" y1="130" x2="80" y2="270" stroke="#8a94a6" stroke-width="3"/>
+<g stroke="#0b3d91" stroke-width="2" marker-end="url(#v6_2)">
+<line x1="30" y1="150" x2="72" y2="150"/><line x1="30" y1="190" x2="72" y2="190"/><line x1="30" y1="230" x2="72" y2="230"/>
+</g>
+<text x="50" y="138" text-anchor="middle" fill="#0b3d91" font-weight="bold">vento</text>
+<text x="130" y="165" font-size="11" fill="#333">fechamento → longarina →</text>
+<text x="130" y="180" font-size="11" fill="#333">pilar → pórtico (flexão) →</text>
+<text x="130" y="195" font-size="11" fill="#333">base → fundação</text>
+<path d="M95 250 Q100 180 130 140" fill="none" stroke="#c0392b" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#f6_2)"/>
+<path d="M170 105 Q230 100 285 125" fill="none" stroke="#c0392b" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#f6_2)"/>
+<line x1="290" y1="150" x2="290" y2="262" stroke="#c0392b" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#f6_2)"/>
+<text x="190" y="300" text-anchor="middle" font-size="11" fill="#555">o pórtico resiste no seu próprio plano (ligações rígidas ou base engastada)</text>
+<!-- (b) vento longitudinal - elevação lateral -->
+<text x="560" y="20" text-anchor="middle" font-weight="bold" font-size="13">(b) Vento longitudinal → contraventamento</text>
+<line x1="400" y1="270" x2="740" y2="270" stroke="#333" stroke-width="1.5"/>
+<rect x="400" y="270" width="340" height="8" fill="url(#h6_2)"/>
+<!-- pilares em elevação (5 pórticos) -->
+<g stroke="#333" stroke-width="4">
+<line x1="430" y1="270" x2="430" y2="130"/><line x1="500" y1="270" x2="500" y2="130"/><line x1="570" y1="270" x2="570" y2="130"/><line x1="640" y1="270" x2="640" y2="130"/><line x1="710" y1="270" x2="710" y2="130"/>
+<line x1="430" y1="130" x2="710" y2="130"/>
+</g>
+<!-- X vertical no primeiro e último vão -->
+<g stroke="#0b3d91" stroke-width="2.5">
+<line x1="430" y1="130" x2="500" y2="270"/><line x1="500" y1="130" x2="430" y2="270"/>
+<line x1="640" y1="130" x2="710" y2="270"/><line x1="710" y1="130" x2="640" y2="270"/>
+</g>
+<!-- X de cobertura (representado acima da linha do beiral) -->
+<g stroke="#0b3d91" stroke-width="2">
+<line x1="430" y1="130" x2="500" y2="90"/><line x1="500" y1="130" x2="430" y2="90"/><line x1="640" y1="130" x2="710" y2="90"/><line x1="710" y1="130" x2="640" y2="90"/>
+<line x1="430" y1="90" x2="710" y2="90"/>
+</g>
+<text x="570" y="82" text-anchor="middle" font-size="11" fill="#0b3d91">plano da cobertura (X de cobertura + terças de travamento)</text>
+<!-- vento no oitão -->
+<g stroke="#0b3d91" stroke-width="2" marker-end="url(#v6_2)">
+<line x1="380" y1="110" x2="422" y2="110"/><line x1="380" y1="170" x2="422" y2="170"/><line x1="380" y1="230" x2="422" y2="230"/>
+</g>
+<text x="400" y="98" text-anchor="middle" fill="#0b3d91" font-weight="bold">vento</text>
+<text x="400" y="255" text-anchor="middle" fill="#0b3d91" font-size="11">oitão</text>
+<!-- caminho -->
+<path d="M440 110 L470 100" fill="none" stroke="#c0392b" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#f6_2)"/>
+<path d="M470 150 L490 250" fill="none" stroke="#c0392b" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#f6_2)"/>
+<text x="570" y="294" text-anchor="middle" font-size="10" fill="#333">oitão → colunas de oitão → X da cobertura →</text>
+<text x="570" y="308" text-anchor="middle" font-size="10" fill="#333">X vertical → base → fundação</text>
+<text x="570" y="328" text-anchor="middle" font-size="10" fill="#555">sem os X, o galpão "tomba" como um baralho na direção longitudinal</text>
+<text x="380" y="352" text-anchor="middle" font-size="10" fill="#555">Linhas tracejadas vermelhas: caminho da força de vento até a fundação.</text>
+</svg>
+<figcaption><b>Figura 6.2</b> – Caminho do vento: (a) transversal, resistido pelos pórticos no seu plano; (b) longitudinal, levado do oitão pelo contraventamento de cobertura até os X verticais entre pilares e as fundações.</figcaption>
+</figure>
+
+<div class="box"><div class="tit">Conceito – a pergunta que resolve 80 % da concepção</div>
+<p>Para cada carga (peso, vento em cada direção, ponte rolante, frenagem), pergunte: "quem recebe isso? e entrega a quem?" até chegar ao solo. Se em algum ponto a resposta é "ninguém" ou "a telha segura", falta um elemento. Esse exercício revela terças sem correntes, tesouras sem travamento lateral, oitões sem colunas, galpões sem X vertical — os erros mais comuns da seção 6.10.</p></div>
+
+<h2>6.2 Galpões: sistemas estruturais <span class="nivel b">Básico</span></h2>
+<p>O galpão é a estrutura de aço mais construída no Brasil: indústrias, centros de distribuição, supermercados, ginásios, agroindústria. A estrutura principal é uma sequência de <strong>pórticos transversais</strong> (vão L, espaçados de 5 a 8 m), unidos pelas terças, longarinas e contraventamentos. Dois grandes sistemas dividem o mercado (Figura 6.3):</p>
+<ul>
+<li><strong>Pórtico de alma cheia:</strong> vigas e pilares em perfis I (laminados W ou soldados VS/CVS), com ligações rígidas viga-pilar e mísulas (reforços em cunha) nos cantos, onde o momento é máximo. Fabricação simples, poucas peças, montagem rápida, aparência limpa. Econômico até vãos de 25–35 m; acima disso fica pesado. Altura da viga h ≈ L/25 a L/35 (com mísula), pilares com h de 300 a 600 mm. Perfis de alma esbelta e inércia variável (VS "cônicos") são comuns em fabricantes especializados.</li>
+<li><strong>Pórtico treliçado (tesoura + pilares):</strong> a viga é uma treliça (tesoura) apoiada em pilares de perfil I ou treliçados. Mais leve para vãos grandes (20–60 m), permite passagem de instalações, mas tem muitas peças (mais mão de obra de fabricação) e maior altura. Altura da treliça h ≈ L/12 a L/15 (tesouras de duas águas: altura no meio; treliças de banzos paralelos: L/15 a L/20).</li>
+</ul>
+
+<figure class="fig">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="c6_3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h6_3" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- (a) alma cheia -->
+<text x="190" y="20" text-anchor="middle" font-weight="bold" font-size="13">(a) Pórtico de alma cheia (perfis I) com mísulas</text>
+<line x1="20" y1="260" x2="360" y2="260" stroke="#333" stroke-width="1.5"/>
+<rect x="20" y="260" width="340" height="8" fill="url(#h6_3)"/>
+<!-- pilares -->
+<rect x="50" y="130" width="14" height="130" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="316" y="130" width="14" height="130" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- vigas inclinadas (espessura 14) -->
+<polygon points="50,130 190,90 330,130 330,116 190,76 50,116" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- mísulas -->
+<polygon points="64,130 64,175 120,116" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="316,130 316,175 260,116" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="175,90 205,90 190,108" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="110" y="200" font-size="11" fill="#0b3d91">mísula (canto: M máx)</text>
+<line x1="108" y1="196" x2="90" y2="160" stroke="#0b3d91" stroke-width="1"/>
+<text x="190" y="125" text-anchor="middle" font-size="11" fill="#0b3d91">mísula de cumeeira</text>
+<text x="34" y="200" font-size="11" fill="#555" transform="rotate(-90 34 200)" text-anchor="middle">pilar W / VS</text>
+<rect x="40" y="254" width="34" height="6" fill="#444"/><rect x="306" y="254" width="34" height="6" fill="#444"/>
+<text x="190" y="284" text-anchor="middle" font-size="11" fill="#555">base rotulada ou engastada</text>
+<line x1="50" y1="240" x2="330" y2="240" stroke="#555" stroke-width="1" marker-start="url(#c6_3)" marker-end="url(#c6_3)"/>
+<text x="190" y="232" text-anchor="middle" font-size="11" fill="#555">L = 15 a 35 m · h<tspan baseline-shift="sub" font-size="8">viga</tspan> ≈ L/25–L/35</text>
+<!-- (b) treliçado -->
+<text x="570" y="20" text-anchor="middle" font-weight="bold" font-size="13">(b) Pórtico treliçado (tesoura sobre pilares)</text>
+<line x1="400" y1="260" x2="740" y2="260" stroke="#333" stroke-width="1.5"/>
+<rect x="400" y="260" width="340" height="8" fill="url(#h6_3)"/>
+<rect x="430" y="140" width="14" height="120" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="696" y="140" width="14" height="120" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- tesoura -->
+<polyline points="437,140 570,80 703,140" fill="none" stroke="#333" stroke-width="3"/>
+<line x1="437" y1="140" x2="703" y2="140" stroke="#333" stroke-width="3"/>
+<g stroke="#333" stroke-width="1.3">
+<line x1="481" y1="140" x2="481" y2="120"/><line x1="525" y1="140" x2="525" y2="100"/><line x1="570" y1="140" x2="570" y2="80"/><line x1="615" y1="140" x2="615" y2="100"/><line x1="659" y1="140" x2="659" y2="120"/>
+<line x1="437" y1="140" x2="481" y2="120"/><line x1="481" y1="140" x2="525" y2="100"/><line x1="525" y1="140" x2="570" y2="80"/>
+<line x1="703" y1="140" x2="659" y2="120"/><line x1="659" y1="140" x2="615" y2="100"/><line x1="615" y1="140" x2="570" y2="80"/>
+</g>
+<!-- mãos francesas -->
+<line x1="444" y1="150" x2="470" y2="140" stroke="#333" stroke-width="1.3"/><line x1="696" y1="150" x2="670" y2="140" stroke="#333" stroke-width="1.3"/>
+<rect x="420" y="254" width="34" height="6" fill="#444"/><rect x="686" y="254" width="34" height="6" fill="#444"/>
+<text x="600" y="70" font-size="11" fill="#0b3d91">banzo superior</text>
+<text x="560" y="158" font-size="11" fill="#0b3d91">banzo inferior</text>
+<text x="495" y="112" font-size="11" fill="#0b3d91" text-anchor="end">diagonais</text>
+<text x="668" y="100" font-size="11" fill="#0b3d91">montantes</text>
+<line x1="672" y1="104" x2="660" y2="122" stroke="#0b3d91" stroke-width="0.9"/>
+<text x="460" y="165" font-size="10" fill="#555">mão francesa</text>
+<line x1="437" y1="240" x2="703" y2="240" stroke="#555" stroke-width="1" marker-start="url(#c6_3)" marker-end="url(#c6_3)"/>
+<text x="570" y="232" text-anchor="middle" font-size="11" fill="#555">L = 20 a 60 m · h<tspan baseline-shift="sub" font-size="8">treliça</tspan> ≈ L/12–L/15</text>
+<line x1="735" y1="80" x2="735" y2="140" stroke="#555" stroke-width="1" marker-start="url(#c6_3)" marker-end="url(#c6_3)"/>
+<text x="744" y="113" font-size="11" fill="#555">h</text>
+<text x="570" y="284" text-anchor="middle" font-size="10" fill="#555">ligação tesoura-pilar rotulada (pilar engastado) ou rígida (mão francesa)</text>
+</svg>
+<figcaption><b>Figura 6.3</b> – Os dois sistemas mais usados em galpões: (a) pórtico de alma cheia com mísulas nos cantos e na cumeeira; (b) tesoura treliçada sobre pilares.</figcaption>
+</figure>
+
+<h3>6.2.1 Tipos de tesoura e formas de cobertura</h3>
+<p>A geometria da treliça é escolhida pelo vão, pela inclinação do telhado e pelo tipo de carga. As mais comuns (Figura 6.4): <strong>Howe</strong> (diagonais comprimidas, montantes tracionados — boa quando as diagonais são curtas), <strong>Pratt</strong> (diagonais tracionadas, montantes comprimidos — a mais eficiente para cargas gravitacionais em aço, pois as barras compridas são as tracionadas), <strong>Warren</strong> (só diagonais, alternando tração e compressão; menos barras e nós, muito usada em banzos paralelos e treliças tubulares), <strong>Fink ou polonceau</strong> (para telhados inclinados, subdivide os banzos comprimidos), <strong>arco treliçado</strong> (vãos grandes, forma acompanha o diagrama de momentos) e treliça de <strong>banzos paralelos</strong> (coberturas planas, mezaninos, vigas de grande vão). A altura no meio do vão fica entre L/12 e L/15 para tesouras de duas águas; ângulos de diagonal entre 35° e 55°; nós a cada 1,5–3,0 m, coincidindo de preferência com as terças.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h6_4" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- Howe -->
+<g transform="translate(20,20)">
+<text x="115" y="12" text-anchor="middle" font-weight="bold">Howe</text>
+<polyline points="10,90 115,35 220,90" fill="none" stroke="#333" stroke-width="2.5"/>
+<line x1="10" y1="90" x2="220" y2="90" stroke="#333" stroke-width="2.5"/>
+<g stroke="#333" stroke-width="1.3"><line x1="45" y1="90" x2="45" y2="72"/><line x1="80" y1="90" x2="80" y2="53"/><line x1="115" y1="90" x2="115" y2="35"/><line x1="150" y1="90" x2="150" y2="53"/><line x1="185" y1="90" x2="185" y2="72"/>
+<line x1="45" y1="90" x2="80" y2="53"/><line x1="80" y1="90" x2="115" y2="35"/><line x1="185" y1="90" x2="150" y2="53"/><line x1="150" y1="90" x2="115" y2="35"/><line x1="45" y1="72" x2="10" y2="90"/><line x1="185" y1="72" x2="220" y2="90"/></g>
+<text x="115" y="108" text-anchor="middle" font-size="10" fill="#555">diagonais comprimidas, montantes tracionados</text>
+</g>
+<!-- Pratt -->
+<g transform="translate(270,20)">
+<text x="115" y="12" text-anchor="middle" font-weight="bold">Pratt</text>
+<polyline points="10,90 115,35 220,90" fill="none" stroke="#333" stroke-width="2.5"/>
+<line x1="10" y1="90" x2="220" y2="90" stroke="#333" stroke-width="2.5"/>
+<g stroke="#333" stroke-width="1.3"><line x1="45" y1="90" x2="45" y2="72"/><line x1="80" y1="90" x2="80" y2="53"/><line x1="115" y1="90" x2="115" y2="35"/><line x1="150" y1="90" x2="150" y2="53"/><line x1="185" y1="90" x2="185" y2="72"/>
+<line x1="45" y1="72" x2="80" y2="90"/><line x1="80" y1="53" x2="115" y2="90"/><line x1="185" y1="72" x2="150" y2="90"/><line x1="150" y1="53" x2="115" y2="90"/></g>
+<text x="115" y="108" text-anchor="middle" font-size="10" fill="#555">diagonais tracionadas, montantes comprimidos</text>
+</g>
+<!-- Warren -->
+<g transform="translate(520,20)">
+<text x="115" y="12" text-anchor="middle" font-weight="bold">Warren (banzos paralelos)</text>
+<line x1="10" y1="45" x2="220" y2="45" stroke="#333" stroke-width="2.5"/>
+<line x1="10" y1="90" x2="220" y2="90" stroke="#333" stroke-width="2.5"/>
+<polyline points="10,90 36,45 62,90 88,45 114,90 140,45 166,90 192,45 220,90" fill="none" stroke="#333" stroke-width="1.3"/>
+<line x1="10" y1="45" x2="10" y2="90" stroke="#333" stroke-width="1.3"/><line x1="220" y1="45" x2="220" y2="90" stroke="#333" stroke-width="1.3"/>
+<text x="115" y="108" text-anchor="middle" font-size="10" fill="#555">só diagonais, alternando T e C; poucos nós</text>
+</g>
+<!-- Fink -->
+<g transform="translate(20,150)">
+<text x="115" y="12" text-anchor="middle" font-weight="bold">Fink / Polonceau</text>
+<polyline points="10,90 115,30 220,90" fill="none" stroke="#333" stroke-width="2.5"/>
+<line x1="10" y1="90" x2="220" y2="90" stroke="#333" stroke-width="2.5"/>
+<g stroke="#333" stroke-width="1.3">
+<line x1="62" y1="60" x2="80" y2="90"/><line x1="80" y1="90" x2="115" y2="30"/><line x1="115" y1="30" x2="150" y2="90"/><line x1="150" y1="90" x2="168" y2="60"/>
+<line x1="36" y1="75" x2="50" y2="90"/><line x1="50" y1="90" x2="62" y2="60"/><line x1="194" y1="75" x2="180" y2="90"/><line x1="180" y1="90" x2="168" y2="60"/>
+<line x1="88" y1="45" x2="80" y2="90"/><line x1="142" y1="45" x2="150" y2="90"/></g>
+<text x="115" y="108" text-anchor="middle" font-size="10" fill="#555">subdivide o banzo comprimido; telhados inclinados</text>
+</g>
+<!-- Arco -->
+<g transform="translate(270,150)">
+<text x="115" y="12" text-anchor="middle" font-weight="bold">Arco treliçado</text>
+<path d="M10 90 Q115 -10 220 90" fill="none" stroke="#333" stroke-width="2.5"/>
+<path d="M10 90 Q115 20 220 90" fill="none" stroke="#333" stroke-width="2.5"/>
+<g stroke="#333" stroke-width="1.3">
+<line x1="40" y1="62" x2="43" y2="74"/><line x1="70" y1="45" x2="76" y2="58"/><line x1="100" y1="37" x2="106" y2="50"/><line x1="130" y1="37" x2="124" y2="50"/><line x1="160" y1="45" x2="154" y2="58"/><line x1="190" y1="62" x2="187" y2="74"/>
+<line x1="43" y1="74" x2="70" y2="45"/><line x1="76" y1="58" x2="100" y2="37"/><line x1="106" y1="50" x2="130" y2="37"/><line x1="124" y1="50" x2="160" y2="45"/><line x1="154" y1="58" x2="190" y2="62"/></g>
+<text x="115" y="108" text-anchor="middle" font-size="10" fill="#555">vãos de 30 a 100 m; forma segue o momento</text>
+</g>
+<!-- Banzos paralelos Pratt (treliça de mezanino/cobertura plana) -->
+<g transform="translate(520,150)">
+<text x="115" y="12" text-anchor="middle" font-weight="bold">Treliça plana (Pratt paralela)</text>
+<line x1="10" y1="45" x2="220" y2="45" stroke="#333" stroke-width="2.5"/>
+<line x1="10" y1="90" x2="220" y2="90" stroke="#333" stroke-width="2.5"/>
+<g stroke="#333" stroke-width="1.3">
+<line x1="10" y1="45" x2="10" y2="90"/><line x1="52" y1="45" x2="52" y2="90"/><line x1="94" y1="45" x2="94" y2="90"/><line x1="136" y1="45" x2="136" y2="90"/><line x1="178" y1="45" x2="178" y2="90"/><line x1="220" y1="45" x2="220" y2="90"/>
+<line x1="10" y1="45" x2="52" y2="90"/><line x1="52" y1="45" x2="94" y2="90"/><line x1="220" y1="45" x2="178" y2="90"/><line x1="178" y1="45" x2="136" y2="90"/><line x1="94" y1="45" x2="115" y2="67"/><line x1="136" y1="45" x2="115" y2="67"/><line x1="115" y1="67" x2="115" y2="90"/></g>
+<text x="115" y="108" text-anchor="middle" font-size="10" fill="#555">coberturas planas, mezaninos, vigas de 15–40 m</text>
+</g>
+<!-- formas de cobertura -->
+<g transform="translate(20,285)">
+<text x="115" y="12" text-anchor="middle" font-weight="bold">Duas águas / uma água</text>
+<polyline points="10,80 10,45 70,25 130,45 130,80" fill="none" stroke="#333" stroke-width="2.5"/>
+<polyline points="150,80 150,50 220,30 220,80" fill="none" stroke="#333" stroke-width="2.5"/>
+<text x="70" y="98" text-anchor="middle" font-size="10" fill="#555">i = 5–15 %</text><text x="185" y="98" text-anchor="middle" font-size="10" fill="#555">uma água: L ≤ 15 m</text>
+</g>
+<g transform="translate(270,285)">
+<text x="115" y="12" text-anchor="middle" font-weight="bold">Shed (dente de serra)</text>
+<polyline points="10,80 10,45 60,25 60,45 110,25 110,45 160,25 160,45 210,25 210,80" fill="none" stroke="#333" stroke-width="2.5"/>
+<g stroke="#8a94a6" stroke-width="1.3"><line x1="60" y1="45" x2="10" y2="45"/><line x1="110" y1="45" x2="60" y2="45"/><line x1="160" y1="45" x2="110" y2="45"/><line x1="210" y1="45" x2="160" y2="45"/></g>
+<text x="115" y="98" text-anchor="middle" font-size="10" fill="#555">iluminação natural pelas faces verticais (voltadas ao sul)</text>
+</g>
+<g transform="translate(520,285)">
+<text x="115" y="12" text-anchor="middle" font-weight="bold">Múltiplas naves</text>
+<polyline points="10,80 10,45 60,28 110,45 160,28 210,45 210,80" fill="none" stroke="#333" stroke-width="2.5"/>
+<line x1="110" y1="45" x2="110" y2="80" stroke="#333" stroke-width="2.5"/>
+<line x1="10" y1="80" x2="210" y2="80" stroke="#333" stroke-width="1"/>
+<text x="115" y="98" text-anchor="middle" font-size="10" fill="#555">calha interna: risco de infiltração e acúmulo</text>
+</g>
+</svg>
+<figcaption><b>Figura 6.4</b> – Tipos de tesoura (Howe, Pratt, Warren, Fink, arco, banzos paralelos) e formas de cobertura (duas águas, uma água, shed, múltiplas naves).</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 6.1 – Relações e valores usuais em galpões</caption>
+<thead><tr><th>Item</th><th>Valor usual</th><th>Comentário</th></tr></thead>
+<tbody>
+<tr><td class="l">Vão dos pórticos L</td><td class="c">15–40 m (alma cheia até ≈ 35; treliça até 60)</td><td class="l">Vãos maiores: treliças espaciais, arcos</td></tr>
+<tr><td class="l">Espaçamento entre pórticos</td><td class="c">5–8 m (mais comum 6 m)</td><td class="l">Determina o vão das terças; acima de 8 m as terças ficam pesadas ou treliçadas</td></tr>
+<tr><td class="l">Pé-direito (beiral)</td><td class="c">6–12 m</td><td class="l">Logística: 9–12 m; com ponte rolante: altura do gancho + 2–3 m</td></tr>
+<tr><td class="l">Inclinação do telhado</td><td class="c">5–15 % (3° a 8,5°) telha metálica; ≥ 10 % fibrocimento; sanduíche ≥ 5 %</td><td class="l">Abaixo de 5 % há risco de empoçamento e infiltração nas sobreposições</td></tr>
+<tr><td class="l">Altura da viga de pórtico de alma cheia</td><td class="c">L/25–L/35 (com mísula L/35–L/45)</td><td class="l">Mísula com comprimento ≈ L/10 e altura no canto ≈ 1,5 a 2 × h da viga</td></tr>
+<tr><td class="l">Altura da tesoura no meio do vão</td><td class="c">L/12–L/15</td><td class="l">Banzos paralelos: L/15–L/20; altura mínima no apoio ≈ 0,5–1,0 m</td></tr>
+<tr><td class="l">Altura do pilar de alma cheia</td><td class="c">H/15–H/25 (250–600 mm)</td><td class="l">Pilares treliçados para H &gt; 12 m ou com ponte rolante pesada</td></tr>
+<tr><td class="l">Espaçamento das terças</td><td class="c">1,2–2,0 m (telha metálica 0,5 mm: ≤ 1,7 m; sanduíche: até 2,5 m)</td><td class="l">Limitado pela telha (flecha e carga de sucção); consultar catálogo</td></tr>
+<tr><td class="l">Terças – perfil</td><td class="c">Ue (enrijecido) 150–300 mm, chapa 2,0–3,0 mm; Z para sistema contínuo</td><td class="l">Vão 6 m: Ue 200 × 75 × 25 × 2,65 (biapoiada); Ue 150 se contínua com luvas</td></tr>
+<tr><td class="l">Correntes (tirantes) das terças</td><td class="c">1 linha (L/2) para vãos &lt; 6 m; 2 linhas (L/3) para 6–9 m</td><td class="l">Barra redonda ø 12,5–16 mm ou cantoneira; sempre com "mão francesa" na cumeeira</td></tr>
+<tr><td class="l">Contraventamento de cobertura</td><td class="c">X nos vãos extremos e a cada 30–40 m; barras ø 16–25 mm ou cantoneiras</td><td class="l">Vãos entre X: terças de travamento (struts) ligam os demais pórticos</td></tr>
+<tr><td class="l">Consumo de aço</td><td class="c">15–30 kg/m² (leve, sem ponte); 30–50 (com mezanino ou ponte leve); 50–80 (ponte pesada)</td><td class="l">Ver Tabela 6.5</td></tr>
+</tbody></table>
+
+<h3>6.2.2 Terças e longarinas</h3>
+<p>As <strong>terças</strong> são as vigas que apoiam a telha e a levam aos pórticos. No Brasil são quase sempre perfis formados a frio (U enrijecido "Ue" ou Z), com vãos de 5 a 8 m e espaçamento de 1,2 a 2,0 m. Como a telha só trava a mesa superior, e o vento de sucção comprime a mesa inferior (Capítulo 5), as terças recebem <strong>correntes</strong> (tirantes de barra redonda ou cantoneira) no meio ou nos terços do vão, que reduzem o comprimento de flambagem lateral e a flexão no eixo fraco (componente da carga paralela ao telhado). Na cumeeira, as correntes das duas águas são ligadas por uma "mão francesa" ou um contraventamento de cumeeira que fecha o sistema e leva a componente inclinada ao pórtico.</p>
+<p>As terças podem ser <strong>biapoiadas</strong> (uma peça por vão, ligação por chapas ao pórtico) ou <strong>contínuas</strong>, com emendas por transpasse (perfis Z aninhados) ou por <strong>luvas/sleeves</strong> (um trecho de perfil maior que abraça a emenda sobre o apoio). A continuidade reduz o momento no vão (qL²/8 → ≈ qL²/10) e a flecha (até 2–3 vezes), permitindo um perfil menor, mas gera momento negativo sobre os apoios e exige emendas bem detalhadas. Regra: para galpões com muitos pórticos iguais, o sistema contínuo com luvas compensa; para poucos vãos, biapoiadas.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 342" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="c6_6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h6_6" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- (a) planta -->
+<text x="230" y="20" text-anchor="middle" font-weight="bold" font-size="13">(a) Planta da cobertura: terças, correntes e cumeeira</text>
+<!-- pórticos -->
+<g stroke="#333" stroke-width="5"><line x1="60" y1="40" x2="60" y2="290"/><line x1="230" y1="40" x2="230" y2="290"/><line x1="400" y1="40" x2="400" y2="290"/></g>
+<text x="60" y="308" text-anchor="middle" font-size="11">pórtico 1</text><text x="230" y="308" text-anchor="middle" font-size="11">pórtico 2</text><text x="400" y="308" text-anchor="middle" font-size="11">pórtico 3</text>
+<!-- cumeeira -->
+<line x1="60" y1="165" x2="400" y2="165" stroke="#333" stroke-width="2" stroke-dasharray="8 4"/>
+<text x="66" y="160" font-size="10" fill="#555">cumeeira</text>
+<!-- terças -->
+<g stroke="#0b3d91" stroke-width="2.5">
+<line x1="60" y1="60" x2="400" y2="60"/><line x1="60" y1="95" x2="400" y2="95"/><line x1="60" y1="130" x2="400" y2="130"/>
+<line x1="60" y1="200" x2="400" y2="200"/><line x1="60" y1="235" x2="400" y2="235"/><line x1="60" y1="270" x2="400" y2="270"/>
+</g>
+<text x="415" y="64" font-size="11" fill="#0b3d91">terças Ue</text>
+<!-- correntes a L/3 -->
+<g stroke="#c0392b" stroke-width="1.5">
+<line x1="117" y1="60" x2="117" y2="130"/><line x1="173" y1="60" x2="173" y2="130"/><line x1="287" y1="60" x2="287" y2="130"/><line x1="343" y1="60" x2="343" y2="130"/>
+<line x1="117" y1="200" x2="117" y2="270"/><line x1="173" y1="200" x2="173" y2="270"/><line x1="287" y1="200" x2="287" y2="270"/><line x1="343" y1="200" x2="343" y2="270"/>
+</g>
+<!-- ligação na cumeeira (mão francesa em X) -->
+<g stroke="#c0392b" stroke-width="1.5">
+<line x1="117" y1="130" x2="130" y2="200"/><line x1="117" y1="200" x2="130" y2="130"/>
+<line x1="173" y1="130" x2="186" y2="200"/><line x1="173" y1="200" x2="186" y2="130"/>
+<line x1="287" y1="130" x2="300" y2="200"/><line x1="287" y1="200" x2="300" y2="130"/>
+<line x1="343" y1="130" x2="356" y2="200"/><line x1="343" y1="200" x2="356" y2="130"/>
+</g>
+<text x="117" y="50" text-anchor="middle" font-size="10" fill="#c0392b">correntes</text>
+<text x="173" y="50" text-anchor="middle" font-size="10" fill="#c0392b">(L/3)</text>
+<text x="230" y="332" text-anchor="middle" font-size="10" fill="#c0392b">X vermelhos na cumeeira (mão francesa): fecham o sistema de correntes</text>
+<!-- cota L -->
+<line x1="60" y1="35" x2="230" y2="35" stroke="#555" stroke-width="1" marker-start="url(#c6_6)" marker-end="url(#c6_6)"/>
+<text x="145" y="31" text-anchor="middle" font-size="10" fill="#555">L = 6 m</text>
+<line x1="30" y1="60" x2="30" y2="95" stroke="#555" stroke-width="1" marker-start="url(#c6_6)" marker-end="url(#c6_6)"/>
+<text x="26" y="82" text-anchor="end" font-size="10" fill="#555">s</text>
+<!-- (b) terça contínua com luva -->
+<text x="600" y="20" text-anchor="middle" font-weight="bold" font-size="13">(b) Terça contínua com luva (sleeve)</text>
+<!-- elevação: viga do pórtico em corte -->
+<rect x="590" y="110" width="20" height="60" fill="url(#h6_6)" stroke="#333" stroke-width="1.5"/>
+<text x="618" y="146" font-size="10" fill="#555">viga do pórtico</text>
+<!-- terças (elevação) -->
+<rect x="470" y="86" width="128" height="20" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="602" y="86" width="128" height="20" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- luva -->
+<rect x="550" y="82" width="100" height="28" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<g fill="#444"><circle cx="565" cy="96" r="2.5"/><circle cx="580" cy="96" r="2.5"/><circle cx="620" cy="96" r="2.5"/><circle cx="635" cy="96" r="2.5"/></g>
+<!-- suporte (chapa) -->
+<rect x="592" y="106" width="16" height="6" fill="#444"/>
+<text x="600" y="70" text-anchor="middle" font-size="11" fill="#0b3d91">luva: perfil maior abraçando a emenda</text>
+<text x="600" y="188" text-anchor="middle" font-size="10" fill="#555">parafusos ø 12,5–16 mm; emenda a 0–0,2 L do apoio</text>
+<!-- diagrama comparativo -->
+<text x="600" y="208" text-anchor="middle" font-size="11" font-weight="bold">Momentos: biapoiada × contínua</text>
+<line x1="470" y1="245" x2="730" y2="245" stroke="#333" stroke-width="1"/>
+<path d="M470 245 Q535 305 600 245 Q665 305 730 245" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M470 245 Q535 290 600 225 Q665 290 730 245" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<text x="535" y="292" text-anchor="middle" font-size="10" fill="#c0392b">qL²/8</text>
+<text x="665" y="257" text-anchor="middle" font-size="10" fill="#0b3d91">≈ qL²/10</text>
+<text x="612" y="218" font-size="10" fill="#0b3d91">− qL²/8 (apoio)</text>
+<text x="600" y="332" text-anchor="middle" font-size="10" fill="#555">contínua: M no vão e flecha menores; M negativo na emenda</text>
+</svg>
+<figcaption><b>Figura 6.5</b> – (a) Planta de cobertura com terças, correntes a cada terço do vão e travamento na cumeeira; (b) terça contínua com luva sobre o apoio e a comparação dos diagramas de momento.</figcaption>
+</figure>
+
+<p>As <strong>longarinas</strong> (ou travessas de fechamento) fazem para as paredes o que as terças fazem para o telhado: recebem o vento da telha de fechamento e o entregam aos pilares. São perfis Ue ou Z de 150 a 250 mm, espaçados de 1,5 a 2,5 m, com vão igual ao dos pórticos; como trabalham em flexão horizontal e ainda sustentam o peso da telha (flexão no eixo fraco), recebem <strong>pendurais</strong> (tirantes verticais) no meio do vão ligados à terça de beiral ou à viga do pórtico. A longarina do beiral (ou uma viga-calha) costuma ser mais robusta, pois recebe também a calha e o travamento dos pilares. As <strong>colunas de oitão</strong> (pilares intermediários nas fachadas de extremidade, a cada 5–8 m) apoiam as longarinas do oitão e levam o vento à base e ao plano da cobertura.</p>
+
+<h2>6.3 Contraventamentos <span class="nivel i">Intermediário</span></h2>
+<p>Um pórtico é rígido no seu próprio plano, mas na direção perpendicular (longitudinal do galpão) os pilares são apenas peças soltas ligadas por terças — como um baralho em pé. Os <strong>contraventamentos</strong> são os elementos que dão rigidez nessa direção. Suas três funções:</p>
+<ol>
+<li><strong>Estabilidade global:</strong> impedir o "tombamento" longitudinal e garantir que a estrutura montada seja estável mesmo antes das telhas — o contraventamento é também o que estabiliza a obra durante a montagem.</li>
+<li><strong>Transmitir o vento longitudinal:</strong> do oitão (colunas de oitão) ao plano da cobertura (X de cobertura), deste aos X verticais entre pilares, e destes às fundações (Figura 6.2b).</li>
+<li><strong>Reduzir comprimentos de flambagem:</strong> os pontos de contraventamento travam os banzos comprimidos das tesouras, as mesas das vigas de pórtico e os pilares no eixo fraco. Uma barra de contraventamento com força "zero" no cálculo do vento ainda é essencial como travamento.</li>
+</ol>
+
+<figure class="fig">
+<svg viewBox="0 0 760 458" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="v6_7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker>
+<marker id="f6_7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<pattern id="h6_7" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- PLANTA -->
+<text x="380" y="18" text-anchor="middle" font-weight="bold" font-size="13">(a) Planta da cobertura – contraventamento em X e terças de travamento (struts)</text>
+<!-- pórticos: 11 linhas verticais, de x=60 a 700 a cada 64 -->
+<g stroke="#333" stroke-width="3">
+<line x1="60" y1="40" x2="60" y2="200"/><line x1="124" y1="40" x2="124" y2="200"/><line x1="188" y1="40" x2="188" y2="200"/><line x1="252" y1="40" x2="252" y2="200"/><line x1="316" y1="40" x2="316" y2="200"/><line x1="380" y1="40" x2="380" y2="200"/><line x1="444" y1="40" x2="444" y2="200"/><line x1="508" y1="40" x2="508" y2="200"/><line x1="572" y1="40" x2="572" y2="200"/><line x1="636" y1="40" x2="636" y2="200"/><line x1="700" y1="40" x2="700" y2="200"/>
+</g>
+<!-- beirais e cumeeira -->
+<line x1="60" y1="40" x2="700" y2="40" stroke="#333" stroke-width="1.5"/><line x1="60" y1="200" x2="700" y2="200" stroke="#333" stroke-width="1.5"/>
+<line x1="60" y1="120" x2="700" y2="120" stroke="#333" stroke-width="1" stroke-dasharray="6 3"/>
+<!-- struts (terças de travamento) nas linhas 40, 80, 120, 160, 200 -->
+<g stroke="#0b3d91" stroke-width="2">
+<line x1="60" y1="80" x2="700" y2="80"/><line x1="60" y1="160" x2="700" y2="160"/>
+</g>
+<!-- X nos vãos 1, 5-6 (centro) e 10 -->
+<g stroke="#c0392b" stroke-width="1.8">
+<line x1="60" y1="40" x2="124" y2="80"/><line x1="60" y1="80" x2="124" y2="40"/><line x1="60" y1="80" x2="124" y2="120"/><line x1="60" y1="120" x2="124" y2="80"/><line x1="60" y1="120" x2="124" y2="160"/><line x1="60" y1="160" x2="124" y2="120"/><line x1="60" y1="160" x2="124" y2="200"/><line x1="60" y1="200" x2="124" y2="160"/>
+<line x1="380" y1="40" x2="444" y2="80"/><line x1="380" y1="80" x2="444" y2="40"/><line x1="380" y1="80" x2="444" y2="120"/><line x1="380" y1="120" x2="444" y2="80"/><line x1="380" y1="120" x2="444" y2="160"/><line x1="380" y1="160" x2="444" y2="120"/><line x1="380" y1="160" x2="444" y2="200"/><line x1="380" y1="200" x2="444" y2="160"/>
+<line x1="636" y1="40" x2="700" y2="80"/><line x1="636" y1="80" x2="700" y2="40"/><line x1="636" y1="80" x2="700" y2="120"/><line x1="636" y1="120" x2="700" y2="80"/><line x1="636" y1="120" x2="700" y2="160"/><line x1="636" y1="160" x2="700" y2="120"/><line x1="636" y1="160" x2="700" y2="200"/><line x1="636" y1="200" x2="700" y2="160"/>
+</g>
+<!-- vento no oitão -->
+<g stroke="#0b3d91" stroke-width="2" marker-end="url(#v6_7)">
+<line x1="20" y1="60" x2="52" y2="60"/><line x1="20" y1="120" x2="52" y2="120"/><line x1="20" y1="180" x2="52" y2="180"/>
+</g>
+<text x="22" y="215" font-size="10" fill="#0b3d91">vento (oitão)</text>
+<line x1="300" y1="206" x2="300" y2="164" stroke="#0b3d91" stroke-width="0.9"/>
+<text x="92" y="228" text-anchor="middle" font-size="10" fill="#c0392b">X de cobertura</text>
+<text x="412" y="228" text-anchor="middle" font-size="10" fill="#c0392b">X central (a cada 30–40 m)</text>
+<text x="668" y="228" text-anchor="middle" font-size="10" fill="#c0392b">X de cobertura</text>
+<text x="300" y="215" text-anchor="middle" font-size="10" fill="#0b3d91">strut: leva o vento de pórtico em pórtico até o X</text>
+<text x="380" y="248" text-anchor="middle" font-size="11" fill="#555">Os X trabalham como treliça horizontal: as terças/struts são os montantes; as diagonais (barras redondas) só resistem à tração.</text>
+<!-- ELEVAÇÃO LATERAL -->
+<text x="380" y="278" text-anchor="middle" font-weight="bold" font-size="13">(b) Elevação lateral – X verticais entre pilares, alinhados com os X de cobertura</text>
+<line x1="60" y1="400" x2="700" y2="400" stroke="#333" stroke-width="1.5"/>
+<rect x="60" y="400" width="640" height="6" fill="url(#h6_7)"/>
+<g stroke="#333" stroke-width="3">
+<line x1="60" y1="300" x2="60" y2="400"/><line x1="124" y1="300" x2="124" y2="400"/><line x1="188" y1="300" x2="188" y2="400"/><line x1="252" y1="300" x2="252" y2="400"/><line x1="316" y1="300" x2="316" y2="400"/><line x1="380" y1="300" x2="380" y2="400"/><line x1="444" y1="300" x2="444" y2="400"/><line x1="508" y1="300" x2="508" y2="400"/><line x1="572" y1="300" x2="572" y2="400"/><line x1="636" y1="300" x2="636" y2="400"/><line x1="700" y1="300" x2="700" y2="400"/>
+<line x1="60" y1="300" x2="700" y2="300"/>
+</g>
+<g stroke="#c0392b" stroke-width="1.8">
+<line x1="60" y1="300" x2="124" y2="400"/><line x1="60" y1="400" x2="124" y2="300"/>
+<line x1="380" y1="300" x2="444" y2="400"/><line x1="380" y1="400" x2="444" y2="300"/>
+<line x1="636" y1="300" x2="700" y2="400"/><line x1="636" y1="400" x2="700" y2="300"/>
+</g>
+<line x1="60" y1="300" x2="700" y2="300" stroke="#0b3d91" stroke-width="2"/>
+<text x="250" y="296" font-size="10" fill="#0b3d91">viga de beiral / terça de travamento (comprimida)</text>
+<line x1="92" y1="345" x2="92" y2="392" stroke="#c0392b" stroke-width="2" stroke-dasharray="4 2" marker-end="url(#f6_7)"/>
+<text x="60" y="422" font-size="10" fill="#c0392b">força para a base:</text>
+<text x="60" y="435" font-size="10" fill="#c0392b">tração + compressão nos pilares</text>
+<text x="60" y="448" font-size="10" fill="#c0392b">e cisalhamento nos chumbadores</text>
+<text x="700" y="422" text-anchor="end" font-size="10" fill="#555">X vertical pode ser substituído por</text>
+<text x="700" y="435" text-anchor="end" font-size="10" fill="#555">"portal" (pórtico longitudinal rígido)</text>
+<text x="700" y="448" text-anchor="end" font-size="10" fill="#555">onde há portões na lateral</text>
+</svg>
+<figcaption><b>Figura 6.6</b> – Contraventamento de um galpão: (a) em planta, X de cobertura nos vãos extremos e central, com terças de travamento levando o vento de todos os pórticos até os X; (b) em elevação, X verticais entre pilares nos mesmos vãos, fechando o caminho até a fundação.</figcaption>
+</figure>
+
+<p><strong>Onde colocar os X.</strong> Nos vãos extremos (perto dos oitões, onde o vento entra) e, para galpões longos, em vãos intermediários a cada 30–40 m — também para limitar os efeitos de temperatura, que precisam de um ponto "fixo" para se dissipar dos dois lados. O X de cobertura e o X vertical devem estar <strong>no mesmo vão</strong>, senão a força do vento fica sem caminho entre o telhado e a parede. Quando um portão lateral impede o X vertical, usa-se um <strong>portal de vento</strong> (pórtico longitudinal com ligações rígidas) ou um X em "K" acima da porta.</p>
+<p><strong>Portal de vento e viga de tapamento do oitão.</strong> No oitão, as colunas de oitão entregam metade do vento à base e metade ao topo — que precisa de uma viga horizontal (a viga de tapamento, ou a própria terça de beiral/banzo inferior da tesoura) para levar a força até os X de cobertura. Em galpões que serão ampliados, o oitão é feito com um pórtico completo (tesoura + pilares) e as colunas de oitão passam a ser apenas suportes das longarinas.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 292" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="v6_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker>
+<marker id="f6_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<pattern id="h6_8" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<text x="350" y="18" text-anchor="middle" font-weight="bold" font-size="13">Elevação do oitão (vista de frente)</text>
+<line x1="40" y1="240" x2="660" y2="240" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="240" width="620" height="6" fill="url(#h6_8)"/>
+<!-- pórtico de oitão -->
+<polyline points="90,240 90,120 350,60 610,120 610,240" fill="none" stroke="#333" stroke-width="4"/>
+<line x1="90" y1="120" x2="610" y2="120" stroke="#333" stroke-width="3"/>
+<!-- colunas de oitão -->
+<g stroke="#0b3d91" stroke-width="3">
+<line x1="220" y1="240" x2="220" y2="90"/><line x1="350" y1="240" x2="350" y2="60"/><line x1="480" y1="240" x2="480" y2="90"/>
+</g>
+<text x="220" y="258" text-anchor="middle" font-size="10" fill="#0b3d91">coluna de oitão</text><text x="350" y="258" text-anchor="middle" font-size="10" fill="#0b3d91">coluna de oitão</text><text x="480" y="258" text-anchor="middle" font-size="10" fill="#0b3d91">coluna de oitão</text>
+<!-- longarinas -->
+<g stroke="#555" stroke-width="1.5">
+<line x1="90" y1="150" x2="610" y2="150"/><line x1="90" y1="180" x2="610" y2="180"/><line x1="90" y1="210" x2="610" y2="210"/>
+</g>
+<text x="625" y="184" font-size="10" fill="#555">longarinas</text>
+<!-- viga de tapamento (banzo inferior/terça de beiral) -->
+<text x="350" y="276" text-anchor="middle" font-size="10" fill="#c0392b">a viga de tapamento no beiral (ou o banzo inferior da tesoura) leva o vento ao X de cobertura</text>
+<!-- vento (setas saindo do papel: representar com círculos com ponto) -->
+<g fill="none" stroke="#0b3d91" stroke-width="1.5">
+<circle cx="155" cy="165" r="7"/><circle cx="285" cy="165" r="7"/><circle cx="415" cy="165" r="7"/><circle cx="545" cy="165" r="7"/>
+<circle cx="155" cy="200" r="7"/><circle cx="285" cy="200" r="7"/><circle cx="415" cy="200" r="7"/><circle cx="545" cy="200" r="7"/>
+</g>
+<g fill="#0b3d91"><circle cx="155" cy="165" r="2"/><circle cx="285" cy="165" r="2"/><circle cx="415" cy="165" r="2"/><circle cx="545" cy="165" r="2"/><circle cx="155" cy="200" r="2"/><circle cx="285" cy="200" r="2"/><circle cx="415" cy="200" r="2"/><circle cx="545" cy="200" r="2"/></g>
+<text x="28" y="169" font-size="10" fill="#0b3d91">vento ⊙</text>
+<!-- caminho: setas nas colunas para cima e para baixo -->
+<g stroke="#c0392b" stroke-width="2" marker-end="url(#f6_8)">
+<line x1="232" y1="165" x2="232" y2="128"/><line x1="232" y1="195" x2="232" y2="232"/>
+<line x1="492" y1="165" x2="492" y2="128"/><line x1="492" y1="195" x2="492" y2="232"/>
+</g>
+<text x="245" y="140" font-size="10" fill="#c0392b">≈ ½ para o topo</text>
+<text x="245" y="228" font-size="10" fill="#c0392b">≈ ½ para a base</text>
+<text x="350" y="40" text-anchor="middle" font-size="10" fill="#555">as colunas de oitão devem ter ligação no topo que deslize verticalmente (furo oblongo) para não receber carga da tesoura</text>
+</svg>
+<figcaption><b>Figura 6.7</b> – Oitão: as colunas de oitão recebem o vento das longarinas e o dividem entre a base e a viga de tapamento no topo, que o conduz ao contraventamento de cobertura.</figcaption>
+</figure>
+
+<div class="box dica"><div class="tit">Regras de bolso para contraventamentos</div>
+<ul>
+<li>Diagonais em X de barras redondas (ø 16–25 mm) com esticadores trabalham só à tração — dimensione uma diagonal para toda a força do painel. Cantoneiras ou tubos podem trabalhar também à compressão (λ ≤ 200).</li>
+<li>Ângulo das diagonais entre 30° e 60°; painéis muito alongados exigem subdivisão.</li>
+<li>Força mínima de travamento para estabilizar uma barra comprimida: ≈ 1 a 2 % da força de compressão da barra travada; rigidez também importa (NBR 8800, Anexo D em estudo / AISC Apêndice 6).</li>
+<li>Nunca interrompa o caminho: X de cobertura e X vertical no mesmo vão, e viga/terça de travamento em toda a extensão ligando os pórticos.</li>
+</ul></div>
+
+<h2>6.4 Estabilidade global e efeitos de 2ª ordem <span class="nivel i">Intermediário</span></h2>
+<h3>6.4.1 Pórtico rígido × pórtico rotulado contraventado</h3>
+<p>No plano do pórtico, a estabilidade lateral pode vir de dois mecanismos (Figura 6.8): <strong>ligações rígidas</strong> viga-pilar (o pórtico resiste ao vento por flexão dos pilares e da viga — é o caso dos pórticos de alma cheia com mísulas e dos pórticos de edifícios "rígidos") ou <strong>contraventamento</strong> no próprio plano (diagonais entre pilares, ou parede/núcleo de concreto), com ligações viga-pilar rotuladas e mais baratas. A NBR 8800 chama o primeiro de estrutura <em>deslocável</em> por natureza e o segundo de <em>indeslocável</em> quando o contraventamento é suficientemente rígido. Pórticos rígidos são mais flexíveis (deslocamento horizontal maior, efeitos de 2ª ordem maiores) e exigem ligações caras; pórticos contraventados são mais rígidos e econômicos, mas as diagonais atrapalham portas, janelas e passagens.</p>
+
+<h3>6.4.2 Base rotulada × base engastada</h3>
+<p>A base do pilar pode ser <strong>rotulada</strong> (chapa fina, dois chumbadores no eixo, bloco pequeno; o pilar gira livremente e o momento na base é zero) ou <strong>engastada</strong> (chapa espessa, quatro ou mais chumbadores afastados, às vezes com enrijecedores; o momento vai para a fundação). Engastar reduz o deslocamento horizontal do topo (para cerca de 1/4, no pórtico simples) e o momento nos cantos do pórtico, permitindo vigas e pilares mais leves — mas transfere momento à fundação, que fica maior e mais cara, e depende de solo capaz de resistir sem girar. Regra prática: em galpões com pé-direito até 8–9 m e sem ponte rolante, base rotulada com pórtico rígido; com ponte rolante, pé-direito alto ou pilares treliçados, base engastada (o pilar trabalha como balanço e a tesoura pode ser rotulada nos apoios). Em qualquer caso, o detalhe da base (Capítulo 10) deve corresponder à hipótese do cálculo.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="v6_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker>
+<marker id="f6_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<pattern id="h6_9" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- (a) rígido base rotulada -->
+<g transform="translate(0,0)">
+<text x="125" y="18" text-anchor="middle" font-weight="bold">(a) Pórtico rígido, bases rotuladas</text>
+<line x1="20" y1="200" x2="230" y2="200" stroke="#333" stroke-width="1.5"/><rect x="20" y="200" width="210" height="6" fill="url(#h6_9)"/>
+<path d="M60 200 L60 70 L190 70 L190 200" fill="none" stroke="#333" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M60 200 Q66 120 86 70 L216 70 Q196 120 190 200" fill="none" stroke="#333" stroke-width="4"/>
+<circle cx="60" cy="200" r="5" fill="#fff" stroke="#333" stroke-width="1.5"/><circle cx="190" cy="200" r="5" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<rect x="82" y="66" width="8" height="8" fill="#c0392b"/><rect x="208" y="66" width="8" height="8" fill="#c0392b"/>
+<line x1="20" y1="70" x2="76" y2="70" stroke="#0b3d91" stroke-width="2" marker-end="url(#v6_9)"/>
+<text x="30" y="60" fill="#0b3d91" font-size="11">H</text>
+<line x1="60" y1="52" x2="86" y2="52" stroke="#555" stroke-width="1" marker-start="url(#f6_9)" marker-end="url(#f6_9)"/>
+<text x="73" y="46" text-anchor="middle" font-size="10" fill="#555">Δ</text>
+<text x="125" y="222" text-anchor="middle" font-size="10" fill="#333">ligações rígidas (■) resistem por flexão</text>
+<text x="125" y="236" text-anchor="middle" font-size="10" fill="#555">Δ grande; base só com N e V; fundação pequena</text>
+</g>
+<!-- (b) rotulado contraventado -->
+<g transform="translate(255,0)">
+<text x="125" y="18" text-anchor="middle" font-weight="bold">(b) Pórtico rotulado + contraventado</text>
+<line x1="20" y1="200" x2="230" y2="200" stroke="#333" stroke-width="1.5"/><rect x="20" y="200" width="210" height="6" fill="url(#h6_9)"/>
+<path d="M60 200 L60 70 L190 70 L190 200" fill="none" stroke="#333" stroke-width="4"/>
+<circle cx="60" cy="70" r="5" fill="#fff" stroke="#333" stroke-width="1.5"/><circle cx="190" cy="70" r="5" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="60" cy="200" r="5" fill="#fff" stroke="#333" stroke-width="1.5"/><circle cx="190" cy="200" r="5" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<line x1="60" y1="70" x2="190" y2="200" stroke="#c0392b" stroke-width="2"/><line x1="60" y1="200" x2="190" y2="70" stroke="#c0392b" stroke-width="2"/>
+<line x1="20" y1="70" x2="52" y2="70" stroke="#0b3d91" stroke-width="2" marker-end="url(#v6_9)"/>
+<text x="30" y="60" fill="#0b3d91" font-size="11">H</text>
+<text x="125" y="222" text-anchor="middle" font-size="10" fill="#333">diagonais (treliça vertical) resistem por N</text>
+<text x="125" y="236" text-anchor="middle" font-size="10" fill="#555">Δ pequeno; ligações simples; diagonais ocupam o vão</text>
+</g>
+<!-- (c) base engastada -->
+<g transform="translate(510,0)">
+<text x="125" y="18" text-anchor="middle" font-weight="bold">(c) Pórtico com bases engastadas</text>
+<line x1="20" y1="200" x2="230" y2="200" stroke="#333" stroke-width="1.5"/><rect x="20" y="200" width="210" height="6" fill="url(#h6_9)"/>
+<path d="M60 200 L60 70 L190 70 L190 200" fill="none" stroke="#333" stroke-width="1.5" stroke-dasharray="4 3"/>
+<path d="M60 200 Q60 130 72 70 L202 70 Q190 130 190 200" fill="none" stroke="#333" stroke-width="4"/>
+<rect x="44" y="196" width="32" height="8" fill="#444"/><rect x="174" y="196" width="32" height="8" fill="#444"/>
+<rect x="40" y="204" width="40" height="18" fill="#c8c8c8" stroke="#333" stroke-width="1"/><rect x="170" y="204" width="40" height="18" fill="#c8c8c8" stroke="#333" stroke-width="1"/>
+<rect x="68" y="66" width="8" height="8" fill="#c0392b"/><rect x="198" y="66" width="8" height="8" fill="#c0392b"/>
+<line x1="20" y1="70" x2="64" y2="70" stroke="#0b3d91" stroke-width="2" marker-end="url(#v6_9)"/>
+<text x="30" y="60" fill="#0b3d91" font-size="11">H</text>
+<path d="M30 185 A22 22 0 0 1 48 170" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#f6_9)"/>
+<text x="22" y="165" fill="#c0392b" font-size="10">M</text>
+<line x1="60" y1="52" x2="72" y2="52" stroke="#555" stroke-width="1" marker-start="url(#f6_9)" marker-end="url(#f6_9)"/>
+<text x="66" y="46" text-anchor="middle" font-size="10" fill="#555">Δ/4</text>
+<text x="125" y="236" text-anchor="middle" font-size="10" fill="#333">Δ ≈ ¼ de (a); pilares e vigas mais leves</text>
+<text x="125" y="250" text-anchor="middle" font-size="10" fill="#555">M na base → bloco maior, chumbadores à tração</text>
+</g>
+<text x="380" y="290" text-anchor="middle" font-size="11" fill="#333">Deslocamento horizontal limite (NBR 8800, Anexo C): H/300 em galpões sem ponte rolante; H/400 com ponte rolante.</text>
+<text x="380" y="310" text-anchor="middle" font-size="11" fill="#555">O modelo de cálculo (rótula ou engaste) só vale se o detalhe da ligação e a fundação forem capazes de reproduzi-lo.</text>
+</svg>
+<figcaption><b>Figura 6.8</b> – Três formas de estabilizar um pórtico no seu plano: ligações rígidas com base rotulada, ligações rotuladas com contraventamento, e bases engastadas. A escolha define o deslocamento Δ, o custo das ligações e o tamanho das fundações.</figcaption>
+</figure>
+
+<h3>6.4.3 Efeitos de 2ª ordem (P-Δ) e a classificação da NBR 8800</h3>
+<p>Quando o pórtico se desloca lateralmente de Δ sob o vento, as cargas verticais P dos pilares passam a atuar com uma excentricidade Δ em relação à base — gerando um momento adicional P·Δ que aumenta o deslocamento, que aumenta o momento, e assim por diante (Figura 6.9). Esse é o <strong>efeito global de 2ª ordem</strong> (P-Δ); existe também o efeito local (P-δ) ao longo da barra curvada. Em estruturas rígidas o acréscimo é desprezível; em estruturas flexíveis e muito carregadas pode ser de 20 a 50 % — ou levar à instabilidade. A NBR 8800 (item 4.9) classifica a estrutura pela relação entre o deslocamento de 2ª ordem e o de 1ª ordem (Δ<sub>2</sub>/Δ<sub>1</sub>), aproximada pelo coeficiente B<sub>2</sub>:</p>
+<div class="formula">B<sub>2</sub> = 1 / [1 − (1/R<sub>s</sub>) · (Δ<sub>h</sub>/h) · (ΣN<sub>Sd</sub>/ΣH<sub>Sd</sub>)]<span class="n">(6.1)</span></div>
+<ul class="onde"><li>Δ<sub>h</sub> = deslocamento horizontal relativo entre os níveis (1ª ordem, combinação de cálculo); h = altura do andar</li><li>ΣN<sub>Sd</sub> = soma das cargas verticais de cálculo no andar; ΣH<sub>Sd</sub> = força horizontal de cálculo que produz Δ<sub>h</sub></li><li>R<sub>s</sub> = 0,85 em estruturas onde a rigidez vem de pórticos rígidos; 1,0 nas demais</li></ul>
+<ul>
+<li><strong>Pequena deslocabilidade:</strong> B<sub>2</sub> ≤ 1,10 — pode-se fazer análise de 1ª ordem (com as imperfeições geométricas por forças nocionais 0,3 % das cargas gravitacionais).</li>
+<li><strong>Média deslocabilidade:</strong> 1,10 &lt; B<sub>2</sub> ≤ 1,40 — análise de 2ª ordem obrigatória (o método B<sub>1</sub>-B<sub>2</sub> de amplificação dos esforços é aceito), com redução de rigidez (0,8·EI, 0,8·EA) e forças nocionais.</li>
+<li><strong>Grande deslocabilidade:</strong> B<sub>2</sub> &gt; 1,40 — análise rigorosa de 2ª ordem, incluindo imperfeições iniciais e redução de rigidez; na prática, é sinal de que a estrutura precisa ser enrijecida (contraventar, engastar bases).</li>
+</ul>
+
+<figure class="fig p75">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="v6_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker>
+<marker id="f6_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="c6_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h6_10" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<line x1="40" y1="250" x2="400" y2="250" stroke="#333" stroke-width="1.5"/><rect x="40" y="250" width="360" height="6" fill="url(#h6_10)"/>
+<!-- pórtico indeformado -->
+<path d="M100 250 L100 80 L330 80 L330 250" fill="none" stroke="#333" stroke-width="1.5" stroke-dasharray="4 3"/>
+<!-- deformado -->
+<path d="M100 250 Q104 150 150 80 L380 80 Q334 150 330 250" fill="none" stroke="#333" stroke-width="4"/>
+<rect x="84" y="246" width="32" height="8" fill="#444"/><rect x="314" y="246" width="32" height="8" fill="#444"/>
+<!-- cargas P -->
+<line x1="150" y1="30" x2="150" y2="74" stroke="#c0392b" stroke-width="2.5" marker-end="url(#f6_10)"/>
+<line x1="380" y1="30" x2="380" y2="74" stroke="#c0392b" stroke-width="2.5" marker-end="url(#f6_10)"/>
+<text x="150" y="24" text-anchor="middle" fill="#c0392b" font-weight="bold">P</text><text x="380" y="24" text-anchor="middle" fill="#c0392b" font-weight="bold">P</text>
+<!-- H -->
+<line x1="60" y1="80" x2="140" y2="80" stroke="#0b3d91" stroke-width="2.5" marker-end="url(#v6_10)"/>
+<text x="70" y="70" fill="#0b3d91" font-weight="bold">H</text>
+<!-- Δ -->
+<line x1="100" y1="60" x2="150" y2="60" stroke="#555" stroke-width="1" marker-start="url(#c6_10)" marker-end="url(#c6_10)"/>
+<text x="125" y="54" text-anchor="middle" font-size="11" fill="#555">Δ</text>
+<line x1="100" y1="80" x2="100" y2="56" stroke="#555" stroke-width="1"/>
+<!-- linha de ação de P deslocada -->
+<line x1="150" y1="80" x2="150" y2="250" stroke="#c0392b" stroke-width="1" stroke-dasharray="3 2"/>
+<line x1="100" y1="235" x2="150" y2="235" stroke="#c0392b" stroke-width="1" marker-start="url(#c6_10)" marker-end="url(#c6_10)"/>
+<text x="125" y="230" text-anchor="middle" font-size="10" fill="#c0392b">Δ</text>
+<text x="220" y="170" text-anchor="middle" font-size="12" fill="#333">M<tspan baseline-shift="sub" font-size="9">base</tspan> = H·h + P·Δ</text>
+<text x="220" y="190" text-anchor="middle" font-size="11" fill="#c0392b">P·Δ = efeito de 2ª ordem</text>
+<!-- texto direito -->
+<text x="560" y="60" text-anchor="middle" font-weight="bold" font-size="12">Classificação NBR 8800</text>
+<text x="560" y="90" text-anchor="middle" font-size="12">B<tspan baseline-shift="sub" font-size="9">2</tspan> ≈ Δ<tspan baseline-shift="sub" font-size="9">2ª ordem</tspan> / Δ<tspan baseline-shift="sub" font-size="9">1ª ordem</tspan></text>
+<rect x="440" y="110" width="240" height="28" fill="#e9f7ec" stroke="#2e8b57" stroke-width="1"/>
+<text x="560" y="129" text-anchor="middle" font-size="11">B<tspan baseline-shift="sub" font-size="8">2</tspan> ≤ 1,10 → pequena deslocabilidade</text>
+<rect x="440" y="146" width="240" height="28" fill="#fff7d6" stroke="#b8860b" stroke-width="1"/>
+<text x="560" y="165" text-anchor="middle" font-size="11">1,10 &lt; B<tspan baseline-shift="sub" font-size="8">2</tspan> ≤ 1,40 → média (2ª ordem)</text>
+<rect x="440" y="182" width="240" height="28" fill="#fdecec" stroke="#c0392b" stroke-width="1"/>
+<text x="560" y="201" text-anchor="middle" font-size="11">B<tspan baseline-shift="sub" font-size="8">2</tspan> &gt; 1,40 → grande (enrijecer!)</text>
+<text x="560" y="240" text-anchor="middle" font-size="10" fill="#555">galpões contraventados: B<tspan baseline-shift="sub" font-size="8">2</tspan> ≈ 1,0–1,1</text>
+<text x="560" y="255" text-anchor="middle" font-size="10" fill="#555">pórticos rígidos de alma cheia: 1,1–1,3</text>
+<text x="560" y="270" text-anchor="middle" font-size="10" fill="#555">edifícios altos de pórticos rígidos: 1,2–1,5</text>
+<text x="220" y="285" text-anchor="middle" font-size="10" fill="#555">Δ cresce → P·Δ cresce → Δ cresce mais… converge se a estrutura é rígida o bastante</text>
+</svg>
+<figcaption><b>Figura 6.9</b> – Efeito P-Δ: o deslocamento lateral faz as cargas verticais gerarem momentos adicionais. O coeficiente B<sub>2</sub> mede a importância desse efeito e define o tipo de análise exigido pela NBR 8800.</figcaption>
+</figure>
+
+<h2>6.5 Edifícios de múltiplos andares <span class="nivel i">Intermediário</span></h2>
+<h3>6.5.1 Sistemas de estabilização</h3>
+<p>Em edifícios, as cargas de piso são grandes e os pisos funcionam como diafragmas rígidos (lajes) que distribuem o vento entre os elementos verticais de contraventamento. Os sistemas (Figura 6.10 e Tabela 6.2): <strong>pórticos rígidos</strong> (todas ou algumas ligações viga-pilar rígidas — livres de diagonais, mas caros e flexíveis; usual até 15–20 andares), <strong>pórticos contraventados</strong> (diagonais em X, K ou V invertido em alguns vãos, em geral nas fachadas ou em torno de escadas e elevadores; ligações rotuladas; econômico e rígido), <strong>núcleo de concreto</strong> (caixa de escadas/elevadores em concreto armado resiste a todo o vento; a estrutura de aço só leva cargas verticais — a solução mais comum em edifícios comerciais de aço no Brasil) e <strong>sistemas tubulares</strong> (pilares muito próximos na fachada formando um "tubo" — edifícios muito altos). Sistemas mistos combinam dois deles (núcleo + pórticos de fachada, com <em>outriggers</em> nos edifícios altos).</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h6_11" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<pattern id="c6_11" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#777"/><circle cx="6" cy="6" r="1" fill="#777"/></pattern>
+<marker id="v6_11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker></defs>
+<!-- (a) pórtico rígido -->
+<g transform="translate(10,0)">
+<text x="85" y="16" text-anchor="middle" font-weight="bold" font-size="11">(a) Pórticos rígidos</text>
+<line x1="10" y1="230" x2="160" y2="230" stroke="#333" stroke-width="1.5"/>
+<g stroke="#333" stroke-width="3"><line x1="30" y1="230" x2="30" y2="40"/><line x1="85" y1="230" x2="85" y2="40"/><line x1="140" y1="230" x2="140" y2="40"/>
+<line x1="30" y1="40" x2="140" y2="40"/><line x1="30" y1="88" x2="140" y2="88"/><line x1="30" y1="136" x2="140" y2="136"/><line x1="30" y1="184" x2="140" y2="184"/></g>
+<g fill="#c0392b"><rect x="27" y="37" width="6" height="6"/><rect x="82" y="37" width="6" height="6"/><rect x="137" y="37" width="6" height="6"/><rect x="27" y="85" width="6" height="6"/><rect x="82" y="85" width="6" height="6"/><rect x="137" y="85" width="6" height="6"/><rect x="27" y="133" width="6" height="6"/><rect x="82" y="133" width="6" height="6"/><rect x="137" y="133" width="6" height="6"/><rect x="27" y="181" width="6" height="6"/><rect x="82" y="181" width="6" height="6"/><rect x="137" y="181" width="6" height="6"/></g>
+<text x="85" y="250" text-anchor="middle" font-size="10" fill="#555">ligações rígidas (■); sem diagonais</text>
+<text x="85" y="263" text-anchor="middle" font-size="10" fill="#555">flexível; até ≈ 15–20 pav.</text>
+</g>
+<!-- (b) contraventado -->
+<g transform="translate(200,0)">
+<text x="85" y="16" text-anchor="middle" font-weight="bold" font-size="11">(b) Contraventado</text>
+<line x1="10" y1="230" x2="160" y2="230" stroke="#333" stroke-width="1.5"/>
+<g stroke="#333" stroke-width="3"><line x1="30" y1="230" x2="30" y2="40"/><line x1="85" y1="230" x2="85" y2="40"/><line x1="140" y1="230" x2="140" y2="40"/>
+<line x1="30" y1="40" x2="140" y2="40"/><line x1="30" y1="88" x2="140" y2="88"/><line x1="30" y1="136" x2="140" y2="136"/><line x1="30" y1="184" x2="140" y2="184"/></g>
+<g stroke="#c0392b" stroke-width="2"><line x1="85" y1="40" x2="140" y2="88"/><line x1="140" y1="40" x2="85" y2="88"/><line x1="85" y1="88" x2="140" y2="136"/><line x1="140" y1="88" x2="85" y2="136"/><line x1="85" y1="136" x2="140" y2="184"/><line x1="140" y1="136" x2="85" y2="184"/><line x1="85" y1="184" x2="140" y2="230"/><line x1="140" y1="184" x2="85" y2="230"/></g>
+<text x="85" y="250" text-anchor="middle" font-size="10" fill="#555">X, K ou V em vãos escolhidos</text>
+<text x="85" y="263" text-anchor="middle" font-size="10" fill="#555">rígido e econômico; ligações simples</text>
+</g>
+<!-- (c) núcleo -->
+<g transform="translate(390,0)">
+<text x="85" y="16" text-anchor="middle" font-weight="bold" font-size="11">(c) Núcleo de concreto</text>
+<line x1="10" y1="230" x2="160" y2="230" stroke="#333" stroke-width="1.5"/>
+<rect x="70" y="40" width="30" height="190" fill="url(#c6_11)" stroke="#333" stroke-width="1.5"/>
+<g stroke="#333" stroke-width="3"><line x1="30" y1="230" x2="30" y2="40"/><line x1="140" y1="230" x2="140" y2="40"/>
+<line x1="30" y1="40" x2="70" y2="40"/><line x1="30" y1="88" x2="70" y2="88"/><line x1="30" y1="136" x2="70" y2="136"/><line x1="30" y1="184" x2="70" y2="184"/>
+<line x1="100" y1="40" x2="140" y2="40"/><line x1="100" y1="88" x2="140" y2="88"/><line x1="100" y1="136" x2="140" y2="136"/><line x1="100" y1="184" x2="140" y2="184"/></g>
+<line x1="0" y1="64" x2="26" y2="64" stroke="#0b3d91" stroke-width="2" marker-end="url(#v6_11)"/>
+<text x="85" y="250" text-anchor="middle" font-size="10" fill="#555">núcleo (escada/elevador) leva o vento</text>
+<text x="85" y="263" text-anchor="middle" font-size="10" fill="#555">aço só com cargas verticais; muito usado</text>
+</g>
+<!-- (d) tubular -->
+<g transform="translate(580,0)">
+<text x="85" y="16" text-anchor="middle" font-weight="bold" font-size="11">(d) Tubular (fachada)</text>
+<line x1="10" y1="230" x2="160" y2="230" stroke="#333" stroke-width="1.5"/>
+<g stroke="#333" stroke-width="2.5"><line x1="30" y1="230" x2="30" y2="40"/><line x1="52" y1="230" x2="52" y2="40"/><line x1="74" y1="230" x2="74" y2="40"/><line x1="96" y1="230" x2="96" y2="40"/><line x1="118" y1="230" x2="118" y2="40"/><line x1="140" y1="230" x2="140" y2="40"/>
+<line x1="30" y1="40" x2="140" y2="40"/><line x1="30" y1="88" x2="140" y2="88"/><line x1="30" y1="136" x2="140" y2="136"/><line x1="30" y1="184" x2="140" y2="184"/></g>
+<text x="85" y="250" text-anchor="middle" font-size="10" fill="#555">pilares próximos + vigas altas</text>
+<text x="85" y="263" text-anchor="middle" font-size="10" fill="#555">edifícios muito altos (&gt; 40 pav.)</text>
+</g>
+</svg>
+<figcaption><b>Figura 6.10</b> – Sistemas de estabilização de edifícios de múltiplos andares em aço: pórticos rígidos, contraventados, núcleo de concreto e tubular.</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 6.2 – Sistemas de estabilização de edifícios: comparação</caption>
+<thead><tr><th>Sistema</th><th>Faixa usual</th><th>Vantagens</th><th>Desvantagens</th></tr></thead>
+<tbody>
+<tr><td class="l">Pórticos rígidos</td><td class="c">até 15–20 pav.</td><td class="l">Plantas livres, sem diagonais nem paredes estruturais; flexibilidade arquitetônica</td><td class="l">Ligações rígidas caras (chapa de topo, soldas de campo); maior consumo; deslocamentos e P-Δ maiores; pilares fletidos</td></tr>
+<tr><td class="l">Contraventado (X, K, V invertido)</td><td class="c">até 30–40 pav.</td><td class="l">Muito rígido; ligações rotuladas baratas; montagem rápida; menor consumo</td><td class="l">Diagonais interferem em aberturas; concentra esforços nos pilares dos painéis (fundações)</td></tr>
+<tr><td class="l">Núcleo / paredes de concreto</td><td class="c">até 40–50 pav.</td><td class="l">Aproveita a caixa de escada/elevador; aço só com cargas verticais (ligações simples)</td><td class="l">Duas tecnologias na obra; compatibilizar cronograma (núcleo à frente); ligações aço-concreto com tolerâncias</td></tr>
+<tr><td class="l">Tubular / outrigger</td><td class="c">&gt; 40 pav.</td><td class="l">Eficiência máxima para edifícios muito altos</td><td class="l">Pilares de fachada muito próximos; projeto especializado</td></tr>
+</tbody></table>
+
+<h3>6.5.2 Pisos: vigas mistas, steel deck, vigas principais e secundárias</h3>
+<p>O piso típico do edifício de aço brasileiro é a <strong>laje mista com fôrma de aço incorporada (steel deck)</strong>: uma chapa de aço galvanizado trapezoidal (0,80–1,25 mm, altura 75 mm) que serve de fôrma para o concreto e depois trabalha como armadura positiva. Sobre ela, 12 a 15 cm de altura total de laje, vãos de 2,5 a 4,0 m entre vigas sem escoramento. As vigas sob a laje recebem <strong>conectores de cisalhamento</strong> (pinos com cabeça "stud bolt" ø 19 mm soldados através da fôrma, ou perfis U) que fazem a laje trabalhar junto com o perfil como <strong>viga mista</strong>: a laje é a mesa comprimida, o perfil de aço resiste à tração. Ganho típico: 30–50 % de capacidade e 2–3 vezes a rigidez, com o mesmo perfil — ou um perfil 20–30 % mais leve (Figura 6.11; dimensionamento no Capítulo 7).</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h6_12" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<pattern id="c6_12" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="#777"/><circle cx="6" cy="6" r="1.1" fill="#777"/></pattern>
+<marker id="d6_12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<text x="350" y="18" text-anchor="middle" font-weight="bold" font-size="13">Corte transversal de viga mista com laje steel deck</text>
+<!-- concreto (com nervuras): capa de y=60 a 90; nervuras entre 90 e 120 -->
+<path d="M60 60 L640 60 L640 90 L620 90 L600 120 L560 120 L540 90 L500 90 L480 120 L440 120 L420 90 L380 90 L360 120 L320 120 L300 90 L260 90 L240 120 L200 120 L180 90 L140 90 L120 120 L80 120 L60 90 Z" fill="url(#c6_12)" stroke="#333" stroke-width="1.5"/>
+<!-- fôrma steel deck (linha mais grossa acompanhando a parte inferior) -->
+<path d="M60 90 L80 120 L120 120 L140 90 L180 90 L200 120 L240 120 L260 90 L300 90 L320 120 L360 120 L380 90 L420 90 L440 120 L480 120 L500 90 L540 90 L560 120 L600 120 L620 90 L640 90" fill="none" stroke="#0b3d91" stroke-width="2.5"/>
+<!-- tela -->
+<line x1="70" y1="72" x2="630" y2="72" stroke="#555" stroke-width="1" stroke-dasharray="6 3"/>
+<!-- viga I -->
+<rect x="290" y="120" width="120" height="10" fill="url(#h6_12)" stroke="#333" stroke-width="1.5"/>
+<rect x="345" y="130" width="10" height="120" fill="url(#h6_12)" stroke="#333" stroke-width="1.5"/>
+<rect x="290" y="250" width="120" height="10" fill="url(#h6_12)" stroke="#333" stroke-width="1.5"/>
+<!-- conector stud -->
+<rect x="346" y="82" width="8" height="38" fill="#444"/><rect x="341" y="76" width="18" height="7" fill="#444"/>
+<!-- rótulos -->
+<text x="130" y="52" font-size="11" fill="#333">capa de concreto 5–7 cm + tela soldada</text>
+<text x="500" y="52" font-size="11" fill="#333">altura total 12–15 cm</text>
+<text x="80" y="140" font-size="11" fill="#0b3d91">fôrma steel deck</text>
+<text x="80" y="154" font-size="11" fill="#0b3d91">(0,80–1,25 mm; h = 75 mm)</text>
+<text x="420" y="150" font-size="11" fill="#333">conector "stud" ø 19 mm, soldado através da fôrma</text>
+<line x1="418" y1="146" x2="356" y2="84" stroke="#333" stroke-width="1"/>
+<text x="425" y="190" font-size="11" fill="#333">perfil W (viga secundária)</text>
+<text x="425" y="205" font-size="11" fill="#555">trabalha à tração na viga mista</text>
+<text x="420" y="240" font-size="11" fill="#555">mesa inferior: sem travamento (verificar FLT</text>
+<text x="420" y="254" font-size="11" fill="#555">só na fase de construção e sob M negativo)</text>
+<!-- largura efetiva -->
+<line x1="180" y1="40" x2="520" y2="40" stroke="#555" stroke-width="1" marker-start="url(#d6_12)" marker-end="url(#d6_12)"/>
+<text x="350" y="36" text-anchor="middle" font-size="10" fill="#555">largura efetiva b ≤ L/4 (mesa comprimida de concreto)</text>
+<!-- altura da viga -->
+<line x1="270" y1="120" x2="270" y2="260" stroke="#555" stroke-width="1" marker-start="url(#d6_12)" marker-end="url(#d6_12)"/>
+<text x="262" y="195" text-anchor="end" font-size="10" fill="#555">h ≈ L/20–L/24</text>
+<text x="350" y="285" text-anchor="middle" font-size="11" fill="#555">Sem escoramento, o perfil sozinho sustenta o concreto fresco (verificar na construção); depois, a seção mista resiste às cargas de uso.</text>
+</svg>
+<figcaption><b>Figura 6.11</b> – Viga mista: laje com fôrma steel deck ligada ao perfil de aço por conectores de cisalhamento. A laje faz o papel de mesa comprimida e o perfil resiste à tração.</figcaption>
+</figure>
+
+<p>A hierarquia do piso é: laje (vão 2,5–4 m) → <strong>vigas secundárias</strong> (paralelas, espaçadas de 2,5–4 m, vãos 8–12 m, perfis W 310–460) → <strong>vigas principais</strong> (recebem as secundárias, vãos 6–10 m, W 410–610) → pilares. As secundárias são normalmente as de maior vão (viga mista aproveita melhor), e as principais as mais curtas. Modulação típica: pilares a cada 6–12 m em uma direção e 8–15 m na outra; pé-direito 3,0–4,0 m (comercial 3,6–4,0 m para passar dutos sob as vigas — ou abrir furos nas almas). Escadas, elevadores e shafts são posicionados em núcleos que, sempre que possível, coincidem com o sistema de contraventamento.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="d6_13" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="c6_13" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="#777"/><circle cx="6" cy="6" r="1.1" fill="#777"/></pattern></defs>
+<text x="350" y="18" text-anchor="middle" font-weight="bold" font-size="13">Planta de um pavimento típico (módulo 9 × 12 m)</text>
+<!-- pilares: grid x = 80, 260, 440, 620 (9 m = 180 px); y = 60, 180, 300?? use y = 50, 170, 290 (12 m = 120 px? keep proportional 9:12 -> 135:180) -->
+<!-- usar x: 80,215,350,485,620 (9m=135px) ; y: 50,230 (12m=180px) -->
+<g fill="#333">
+<rect x="74" y="44" width="12" height="12"/><rect x="209" y="44" width="12" height="12"/><rect x="344" y="44" width="12" height="12"/><rect x="479" y="44" width="12" height="12"/><rect x="614" y="44" width="12" height="12"/>
+<rect x="74" y="224" width="12" height="12"/><rect x="209" y="224" width="12" height="12"/><rect x="344" y="224" width="12" height="12"/><rect x="479" y="224" width="12" height="12"/><rect x="614" y="224" width="12" height="12"/>
+</g>
+<!-- vigas principais (horizontais, entre pilares na direção x = 9 m) -->
+<g stroke="#0b3d91" stroke-width="5"><line x1="80" y1="50" x2="620" y2="50"/><line x1="80" y1="230" x2="620" y2="230"/></g>
+<!-- vigas principais verticais 12 m ligando pilares -->
+<g stroke="#0b3d91" stroke-width="5"><line x1="80" y1="50" x2="80" y2="230"/><line x1="215" y1="50" x2="215" y2="230"/><line x1="350" y1="50" x2="350" y2="230"/><line x1="485" y1="50" x2="485" y2="230"/><line x1="620" y1="50" x2="620" y2="230"/></g>
+<!-- vigas secundárias: paralelas ao vão de 12 m? Não: secundárias vencem 12 m (vertical) espaçadas 3 m (45 px) -->
+<g stroke="#2e8b57" stroke-width="2.5">
+<line x1="125" y1="50" x2="125" y2="230"/><line x1="170" y1="50" x2="170" y2="230"/>
+<line x1="260" y1="50" x2="260" y2="230"/><line x1="305" y1="50" x2="305" y2="230"/>
+<line x1="395" y1="50" x2="395" y2="230"/><line x1="440" y1="50" x2="440" y2="230"/>
+<line x1="530" y1="50" x2="530" y2="230"/><line x1="575" y1="50" x2="575" y2="230"/>
+</g>
+<!-- núcleo -->
+<rect x="360" y="60" width="115" height="80" fill="url(#c6_13)" stroke="#333" stroke-width="2"/>
+<text x="417" y="96" text-anchor="middle" font-size="10">núcleo</text><text x="417" y="110" text-anchor="middle" font-size="10">(escada/elevador)</text>
+<!-- X de contraventamento na fachada (representado em planta como traço) -->
+<line x1="215" y1="50" x2="350" y2="50" stroke="#c0392b" stroke-width="5"/>
+<text x="282" y="42" text-anchor="middle" font-size="10" fill="#c0392b">vão contraventado (fachada)</text>
+<!-- sentido do steel deck -->
+<g stroke="#8a94a6" stroke-width="1" stroke-dasharray="3 3">
+<line x1="90" y1="120" x2="205" y2="120"/><line x1="90" y1="160" x2="205" y2="160"/>
+</g>
+<text x="147" y="150" text-anchor="middle" font-size="9" fill="#8a94a6">steel deck (vão 3 m)</text>
+<!-- cotas -->
+<line x1="80" y1="265" x2="215" y2="265" stroke="#555" stroke-width="1" marker-start="url(#d6_13)" marker-end="url(#d6_13)"/>
+<text x="147" y="280" text-anchor="middle" font-size="10" fill="#555">9,0 m (viga principal)</text>
+<line x1="650" y1="50" x2="650" y2="230" stroke="#555" stroke-width="1" marker-start="url(#d6_13)" marker-end="url(#d6_13)"/>
+<text x="656" y="143" font-size="10" fill="#555">12,0 m</text>
+<line x1="125" y1="250" x2="170" y2="250" stroke="#555" stroke-width="1" marker-start="url(#d6_13)" marker-end="url(#d6_13)"/>
+<text x="147" y="247" text-anchor="middle" font-size="9" fill="#555">3,0 m</text>
+<!-- legenda -->
+<text x="80" y="305" font-size="10" fill="#0b3d91">■ viga principal (W 410–610, ligada ao pilar)</text>
+<text x="340" y="305" font-size="10" fill="#2e8b57">■ viga secundária mista (W 310–460, vão 12 m, a cada 3 m)</text>
+<text x="80" y="322" font-size="10" fill="#333">■ pilar (W/HP 250–360 ou tubo preenchido)</text>
+<text x="340" y="322" font-size="10" fill="#c0392b">■ painel contraventado / núcleo: resistem ao vento</text>
+</svg>
+<figcaption><b>Figura 6.12</b> – Planta típica de piso de edifício de aço: vigas secundárias mistas de maior vão apoiadas em vigas principais mais curtas, núcleo e painéis contraventados nas fachadas.</figcaption>
+</figure>
+
+<h3>6.5.3 Pilares</h3>
+<p>Os pilares de edifícios são perfis <strong>W/HP</strong> (série "H", com mesas largas: W 250 × 73–115, W 310 × 97–179, W 360 × 110–216 — bons raios de giração nos dois eixos), <strong>tubos</strong> retangulares ou circulares (estética, mesma rigidez em todas as direções, mas ligações mais complicadas) e <strong>pilares mistos</strong>: tubo preenchido com concreto ou perfil I revestido/parcialmente revestido — aumentam a capacidade em 50–100 %, melhoram a resistência ao fogo e a rigidez, ao custo de concretagem em obra (Capítulo 7). Os pilares são fabricados em tramos de 2 ou 3 andares (até ≈ 12 m, limitação de transporte) emendados a 1,0–1,2 m acima do piso.</p>
+
+<h3>6.5.4 Ligações e sua influência no comportamento</h3>
+<p>A ligação viga-pilar define se o pórtico é rígido, articulado ou algo entre os dois. A NBR 8800 classifica pela <strong>rigidez rotacional</strong> (curva momento-rotação, Figura 6.13): <strong>rígida</strong> quando mantém o ângulo entre viga e pilar (chapa de topo estendida com parafusos protendidos, soldas de mesa; rigidez inicial S<sub>i</sub> ≥ 25·EI/L da viga), <strong>flexível/rotulada</strong> quando transmite cortante mas praticamente nenhum momento (dupla cantoneira na alma, chapa simples, cantoneira de assento; S<sub>i</sub> ≤ 0,5·EI/L) e <strong>semirrígida</strong> no intervalo intermediário — comportamento real da maioria das ligações parafusadas, que pode ser explorado no cálculo, mas exige caracterizar a curva M-φ (ensaios, método das componentes do Eurocode 3). O erro clássico é modelar como rotulada uma ligação que na prática é semirrígida e transmite momento ao pilar sem que ele tenha sido verificado — ou modelar como rígida uma ligação parafusada que gira e faz o edifício deslocar-se mais do que o previsto.</p>
+
+<figure class="fig p75">
+<svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="c6_14" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<line x1="80" y1="260" x2="660" y2="260" stroke="#333" stroke-width="1.5" marker-end="url(#c6_14)"/>
+<line x1="80" y1="260" x2="80" y2="30" stroke="#333" stroke-width="1.5" marker-end="url(#c6_14)"/>
+<text x="650" y="280" text-anchor="end" font-size="12">rotação relativa φ (rad)</text>
+<text x="92" y="40" font-size="12">M (momento transmitido)</text>
+<!-- Mp da viga -->
+<line x1="80" y1="70" x2="640" y2="70" stroke="#555" stroke-width="1" stroke-dasharray="6 3"/>
+<text x="635" y="64" text-anchor="end" font-size="11" fill="#555">M<tspan baseline-shift="sub" font-size="8">p</tspan> da viga (plastificação)</text>
+<!-- rígida -->
+<path d="M80 260 L115 90 C130 70 200 66 300 70" fill="none" stroke="#0b3d91" stroke-width="3"/>
+<text x="230" y="95" fill="#0b3d91" font-weight="bold" font-size="12">rígida (chapa de topo estendida, soldada)</text>
+<!-- semirrígida -->
+<path d="M80 260 L200 160 C260 120 360 110 480 108" fill="none" stroke="#d98e04" stroke-width="3"/>
+<text x="330" y="140" fill="#b8860b" font-weight="bold" font-size="12">semirrígida (chapa de topo curta, cantoneiras de mesa)</text>
+<!-- flexível -->
+<path d="M80 260 L400 232 C500 224 600 222 640 222" fill="none" stroke="#2e8b57" stroke-width="3"/>
+<text x="655" y="253" text-anchor="end" fill="#1f6b41" font-weight="bold" font-size="11">flexível / rotulada (cantoneiras na alma, chapa simples)</text>
+<!-- linhas de classificação -->
+<line x1="80" y1="260" x2="160" y2="50" stroke="#0b3d91" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="165" y="50" font-size="10" fill="#0b3d91">S<tspan baseline-shift="sub" font-size="7">i</tspan> = 25 EI/L</text>
+<line x1="80" y1="260" x2="640" y2="200" stroke="#2e8b57" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="560" y="192" font-size="10" fill="#2e8b57">S<tspan baseline-shift="sub" font-size="7">i</tspan> = 0,5 EI/L</text>
+<text x="350" y="305" text-anchor="middle" font-size="11" fill="#555">Classificação NBR 8800 pela rigidez inicial S<tspan baseline-shift="sub" font-size="8">i</tspan> = M/φ em relação à rigidez EI/L da viga; entre as duas retas, a ligação é semirrígida.</text>
+</svg>
+<figcaption><b>Figura 6.13</b> – Curvas momento-rotação de ligações viga-pilar: rígida, semirrígida e flexível. A mesma viga com ligações rígidas tem momento no vão e flecha muito menores — mas o pilar e a ligação precisam absorver o momento.</figcaption>
+</figure>
+
+<h2>6.6 Mezaninos, plataformas e estruturas industriais <span class="nivel b">Básico</span></h2>
+<p><strong>Mezaninos</strong> são pisos intermediários dentro de galpões ou lojas: comerciais (SC 2,5–4,0 kN/m²) ou industriais (5,0 kN/m² ou mais, com estoque e equipamentos). A estrutura é a mesma de um pavimento: vigas W secundárias a cada 2,0–3,0 m, vigas principais nos pilares (próprios, ou os do galpão quando previstos), piso em <strong>steel deck + concreto</strong> (o mais comum: rígido, sem vibração, resiste ao fogo), <strong>chapa xadrez</strong> (4,75–6,3 mm sobre vigas a cada 0,8–1,2 m; leve, mas vibra e faz barulho) ou <strong>grade de piso</strong> (áreas industriais que precisam de ventilação e passagem de luz e água). Pé-direito livre sob o mezanino ≥ 2,5–3,0 m; guarda-corpo obrigatório (NR-12/NBR 14718: 1,1 m, carga horizontal 1,0 kN/m); escadas com inclinação 30–38° e degraus de 28–30 cm.</p>
+<p><strong>Plataformas e estruturas industriais</strong> (suportes de equipamentos, pipe racks, torres de processo, casas de máquinas) têm cargas concentradas pesadas, vibração, acessos e muitas modificações ao longo da vida. Regras: usar perfis I e tubos (fácil de ligar), contraventar em três direções (a laje "diafragma" muitas vezes não existe — piso de grade), prever sobrecarga de manutenção e cargas de teste hidrostático em tubulações (tubo cheio de água), e considerar o ataque químico (pintura ou galvanização reforçadas). <strong>Pipe racks</strong> são pórticos transversais em "T" ou "H" a cada 6–8 m, com vigas longitudinais nos vãos contraventados, projetados para o peso das tubulações cheias (regra de bolso: 1,0–2,0 kN/m² por nível de tubulação) mais as forças de atrito e de ancoragem.</p>
+
+<h2>6.7 Pontes rolantes e caminhos de rolamento <span class="nivel i">Intermediário</span></h2>
+<p>A ponte rolante muda a concepção do galpão: os pilares precisam ser mais rígidos (limite H/400 no topo e L/400 na viga), a base costuma ser engastada, o contraventamento longitudinal recebe a frenagem e o caminho de rolamento passa a ser um sistema à parte (Figura 6.14). A <strong>viga de rolamento</strong> é um perfil I (laminado W ou soldado) com o trilho fixado sobre a mesa superior; para pontes pesadas, a mesa superior é reforçada com um perfil U (que resiste à força horizontal transversal H<sub>T</sub> junto com a mesa) ou com uma treliça horizontal de freio. A viga apoia-se em <strong>consoles</strong> (mísulas) soldados aos pilares ou em um "pilar escalonado" (o tramo inferior mais largo). Ligações e detalhes devem ser projetados à <strong>fadiga</strong>: pontes com mais de 20 000 ciclos exigem categorias de detalhe adequadas (evitar soldas transversais na mesa tracionada, enrijecedores soldados à mesa inferior e furos desnecessários; Capítulo 15). Regras práticas: vão da viga de rolamento = espaçamento dos pórticos (6–8 m; biapoiada é preferível à contínua por causa da fadiga e dos recalques); altura h ≈ L/10 a L/12; trilho TR 25–37 ou barra quadrada 50–60 mm para pontes leves; folga entre gancho e tesoura de 1,0–1,5 m.</p>
+
+<figure class="fig p75">
+<svg viewBox="0 0 700 360" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h6_15" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="f6_15" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="d6_15" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- pilar (seção I visto de lado: retângulo) -->
+<rect x="120" y="40" width="40" height="300" fill="url(#h6_15)" stroke="#333" stroke-width="1.5"/>
+<text x="140" y="352" text-anchor="middle" font-size="11">pilar</text>
+<!-- console -->
+<polygon points="160,200 260,200 260,230 160,290" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="160" y="196" width="100" height="8" fill="url(#h6_15)" stroke="#333" stroke-width="1"/>
+<text x="230" y="262" font-size="11" fill="#333">console (mísula)</text>
+<text x="230" y="276" font-size="11" fill="#555">soldado ao pilar; verificar fadiga</text>
+<!-- viga de rolamento: I com mesa superior + U -->
+<rect x="185" y="184" width="130" height="12" fill="url(#h6_15)" stroke="#333" stroke-width="1.5"/>
+<rect x="245" y="90" width="10" height="94" fill="url(#h6_15)" stroke="#333" stroke-width="1.5"/>
+<rect x="185" y="78" width="130" height="12" fill="url(#h6_15)" stroke="#333" stroke-width="1.5"/>
+<!-- U de reforço deitado sobre a mesa superior -->
+<path d="M175 78 L175 60 L183 60 L183 74 L317 74 L317 60 L325 60 L325 78 Z" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- trilho -->
+<rect x="238" y="48" width="24" height="12" fill="#444"/><rect x="243" y="36" width="14" height="12" fill="#444"/><rect x="236" y="30" width="28" height="6" fill="#444"/>
+<!-- roda -->
+<circle cx="250" cy="14" r="14" fill="#8a94a6" stroke="#333" stroke-width="1.5"/>
+<!-- forças -->
+<line x1="250" y1="0" x2="250" y2="0" stroke="none"/>
+<line x1="330" y1="40" x2="272" y2="40" stroke="#c0392b" stroke-width="2" marker-end="url(#f6_15)"/>
+<text x="336" y="44" font-size="11" fill="#c0392b">H<tspan baseline-shift="sub" font-size="8">T</tspan> (transversal)</text>
+<line x1="290" y1="6" x2="290" y2="26" stroke="#c0392b" stroke-width="2" marker-end="url(#f6_15)"/>
+<text x="300" y="14" font-size="11" fill="#c0392b">R<tspan baseline-shift="sub" font-size="8">v</tspan> × 1,25</text>
+<!-- rótulos -->
+<text x="345" y="66" font-size="11" fill="#333">perfil U soldado à mesa superior:</text>
+<text x="345" y="80" font-size="11" fill="#555">resiste a H<tspan baseline-shift="sub" font-size="8">T</tspan> e trava a mesa comprimida</text>
+<text x="345" y="120" font-size="11" fill="#333">viga de rolamento: perfil I, h ≈ L/10–L/12</text>
+<text x="345" y="134" font-size="11" fill="#555">biapoiada, vão = espaçamento dos pórticos</text>
+<text x="345" y="160" font-size="11" fill="#333">trilho TR 25–37 fixado com grampos</text>
+<text x="345" y="174" font-size="11" fill="#555">(nunca soldado à mesa: fadiga e troca)</text>
+<text x="345" y="200" font-size="11" fill="#333">apoio: chapa + parafusos, com folga</text>
+<text x="345" y="214" font-size="11" fill="#555">para ajuste de nivelamento do trilho</text>
+<!-- enrijecedor de apoio -->
+<rect x="195" y="90" width="6" height="94" fill="url(#h6_15)" stroke="#333" stroke-width="1"/>
+<rect x="299" y="90" width="6" height="94" fill="url(#h6_15)" stroke="#333" stroke-width="1"/>
+<text x="345" y="240" font-size="11" fill="#333">enrijecedores de apoio (não soldar</text>
+<text x="345" y="254" font-size="11" fill="#555">à mesa tracionada: detalhe de fadiga)</text>
+<!-- cotas -->
+<line x1="60" y1="60" x2="60" y2="340" stroke="#555" stroke-width="1" marker-start="url(#d6_15)" marker-end="url(#d6_15)"/>
+<text x="52" y="205" text-anchor="end" font-size="10" fill="#555">altura</text><text x="52" y="218" text-anchor="end" font-size="10" fill="#555">do trilho</text>
+<text x="345" y="300" font-size="11" fill="#333">limites: flecha vertical L/600–L/1000;</text>
+<text x="345" y="314" font-size="11" fill="#333">horizontal L/400; pilar H/400</text>
+<text x="345" y="340" font-size="11" fill="#555">pontes &gt; 20 000 ciclos: projetar à fadiga (Cap. 15)</text>
+</svg>
+<figcaption><b>Figura 6.14</b> – Caminho de rolamento: viga de rolamento com perfil U de reforço na mesa superior, trilho, console soldado ao pilar e as forças das rodas. Os detalhes são governados pela fadiga.</figcaption>
+</figure>
+
+<h2>6.8 Grandes vãos, torres, passarelas <span class="nivel a">Avançado</span></h2>
+<p>Para coberturas de <strong>grandes vãos</strong> (ginásios, aeroportos, centros de convenções, 40 a 120 m): <em>treliças espaciais</em> (malhas tridimensionais de barras tubulares e nós esféricos ou estampados, altura L/20–L/30, muito leves e com aparência limpa, mas sensíveis à falha de um nó), <em>arcos treliçados</em> (trabalham majoritariamente à compressão — o empuxo horizontal nas bases precisa de tirantes ou fundações capazes), <em>vigas treliçadas de grande altura</em> (L/10–L/12, com 3–6 m de altura, permitindo passagem interna), e <em>tensoestruturas</em> (membranas e cabos, forma definida pela protensão — projeto altamente especializado). O peso próprio e o vento (sucção, com pressão dinâmica maior devido à altura) dominam, e os efeitos de temperatura e de montagem (sequência, escoramentos, içamento de módulos) fazem parte do projeto. <strong>Torres e postes</strong> (telecomunicações, linhas de transmissão, iluminação) são treliças espaciais de cantoneiras ou tubos, ou postes tubulares poligonais, governados por vento (com efeitos dinâmicos e coeficientes de arrasto por barra — NBR 6123 e NBR 8850) e fadiga. <strong>Passarelas</strong> (pedestres) têm vãos de 15–60 m em vigas, treliças ou estaiadas; além da resistência, a vibração vertical (frequência ≥ 3 Hz, ou análise dinâmica) e lateral (≥ 1,5 Hz) governa o projeto, junto com guarda-corpos, drenagem e acessibilidade (NBR 9050).</p>
+
+<h2>6.9 Concepção passo a passo <span class="nivel i">Intermediário</span></h2>
+<ol>
+<li><strong>Dados de entrada:</strong> uso, dimensões (vão, comprimento, pé-direito, alturas livres), cargas especiais (pontes rolantes, equipamentos, mezaninos), local (V<sub>0</sub>, rugosidade, solo), condicionantes (portões, ampliações futuras, iluminação, ventilação), prazo e logística (transporte de peças, acesso de guindaste).</li>
+<li><strong>Escolha do sistema:</strong> alma cheia × treliçado; base rotulada × engastada; forma da cobertura; tipo de fechamento; sistema de terças. Use a Tabela 6.3 e o consumo esperado (Tabela 6.5) para comparar alternativas.</li>
+<li><strong>Modulação:</strong> espaçamento dos pórticos (5–8 m; múltiplos que fechem o comprimento), posição dos X, vãos das terças e longarinas, colunas de oitão, juntas de dilatação (a cada 60–100 m).</li>
+<li><strong>Pré-dimensionamento:</strong> com as regras da Tabela 6.4, atribua perfis iniciais a terças, vigas, tesouras, pilares e contraventos; estime o peso próprio.</li>
+<li><strong>Análise e verificação:</strong> monte as combinações (Capítulo 5), analise (programa ou tabelas), verifique ELU e ELS (Capítulo 7), ajuste perfis, confira o peso estimado.</li>
+<li><strong>Detalhamento:</strong> ligações compatíveis com o modelo (Capítulos 8 e 9), bases (Capítulo 10), fabricação e montagem (Capítulos 11 e 13), proteção (Capítulo 12).</li>
+</ol>
+
+<div class="box exemplo"><div class="tit">Exemplo 6.1 – Concepção de um galpão industrial de 25 × 60 m</div>
+<p><b>Dados:</b> galpão para indústria leve (montagem), vão livre 25 m, comprimento 60 m, pé-direito 8 m no beiral, sem ponte rolante (prever talha monovia de 2 t no futuro), portões de 5 × 5 m nos dois oitões, fechamento em telha metálica, cobertura em telha termoacústica, local com V<sub>0</sub> = 42 m/s, categoria III, solo com boa capacidade (sapatas). Ampliação futura em um dos oitões.</p>
+<div class="passo"><b>Passo 1 – Sistema.</b> Vão de 25 m está no limite econômico da alma cheia e é confortável para a treliça. Decisão: <b>pórtico de alma cheia com mísulas</b> (perfis VS soldados de inércia variável ou W laminados), pela rapidez de fabricação e aparência limpa; base rotulada (pé-direito 8 m, sem ponte) — se a talha futura exigir, a base pode ser detalhada como engastada desde já, com custo pequeno nas sapatas. Alternativa avaliada: tesoura Pratt h = 2,0 m sobre pilares W — mais leve em ≈ 10 %, mas com 3 vezes mais peças e nós.</div>
+<div class="passo"><b>Passo 2 – Modulação.</b> 60 m / 6 m = <b>10 vãos, 11 pórticos</b>. Espaçamento de 6 m é o ideal para terças Ue de 200 mm. Cobertura duas águas com inclinação 10 % (θ ≈ 5,7°): altura da cumeeira = 8 + 1,25 = 9,25 m; comprimento de cada água ≈ 12,56 m → 8 espaçamentos de ≈ 1,57 m (9 linhas de terça por água, contando beiral e cumeeira) (telha termoacústica admite até 2,5 m, mas 1,7 m reduz a flecha da telha e da terça). Longarinas a cada 2,0 m (4 linhas + viga de beiral). Colunas de oitão a cada 6,25 m (3 por oitão, com pórtico completo no oitão da ampliação). Contraventamento em X de cobertura e vertical nos vãos 1, 5 e 10 (extremos e meio: 30 m entre X). Junta de dilatação: não é necessária (60 m).</div>
+<div class="passo"><b>Passo 3 – Pré-dimensionamento.</b> Viga do pórtico: h ≈ L/30 = 830 mm → VS 800 × (mesas 200 × 9,5, alma 6,3) com mísulas de 2,5 m nos cantos chegando a 1 200 mm, ou W 610 × 101 com mísula. Pilares: h ≈ H/20 = 400 mm → W 410 × 60 a 75 (verificar deslocamento H/300 = 27 mm). Terças: Ue 200 × 75 × 25 × 2,65 mm contínuas com luvas, correntes ø 12,5 mm a cada L/3. Longarinas: Ue 200 × 2,25 com pendurais. Contraventos: barras ø 20 mm com esticadores (cobertura) e ø 25 mm (vertical). Colunas de oitão: W 250 × 32,7 (vão 8 m à flexão por vento, com furo oblongo no topo).</div>
+<div class="passo"><b>Passo 4 – Estimativa de peso.</b> Pela Tabela 6.5, galpão de alma cheia leve: ≈ 25 kg/m² × 1 500 m² = <b>≈ 37 t</b> (pórticos ≈ 15 kg/m², terças/longarinas ≈ 6, contraventos e colunas de oitão ≈ 2, ligações e diversos ≈ 2). Ordem de grandeza para orçamento; o cálculo definitivo (Capítulos 7 a 9) confirma.</div>
+<div class="passo"><b>Passo 5 – Verificações críticas a lembrar.</b> (1) Sucção do vento com C<sub>pi</sub> = +0,5 (portão aberto no oitão) → terças, fixação da telha, banzo/mesa inferior da viga do pórtico (travar a mesa inferior com mãos francesas a partir das terças, a cada 2 terças); (2) deslocamento horizontal do pórtico sob vento (H/300) — se não passar, engastar as bases; (3) tração nos chumbadores na combinação 1,0·PP + 1,4·V; (4) talha futura: reservar carga de 30 kN nas vigas do pórtico e verificar o efeito de sobrecarga na modulação escolhida.</div></div>
+
+<figure class="fig">
+<svg viewBox="0 0 760 345" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><marker id="d6_16" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<text x="380" y="18" text-anchor="middle" font-weight="bold" font-size="13">Planta de estrutura – galpão 25 × 60 m do Exemplo 6.1 (escala 1 m = 10 px)</text>
+<!-- contorno: 60 m = 600 px (x 80–680); 25 m = 250 px (y 40–290) -->
+<rect x="80" y="40" width="600" height="250" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<!-- pórticos a cada 60 px -->
+<g stroke="#0b3d91" stroke-width="3">
+<line x1="80" y1="40" x2="80" y2="290"/><line x1="140" y1="40" x2="140" y2="290"/><line x1="200" y1="40" x2="200" y2="290"/><line x1="260" y1="40" x2="260" y2="290"/><line x1="320" y1="40" x2="320" y2="290"/><line x1="380" y1="40" x2="380" y2="290"/><line x1="440" y1="40" x2="440" y2="290"/><line x1="500" y1="40" x2="500" y2="290"/><line x1="560" y1="40" x2="560" y2="290"/><line x1="620" y1="40" x2="620" y2="290"/><line x1="680" y1="40" x2="680" y2="290"/>
+</g>
+<!-- pilares -->
+<g fill="#333">
+<rect x="76" y="36" width="8" height="8"/><rect x="136" y="36" width="8" height="8"/><rect x="196" y="36" width="8" height="8"/><rect x="256" y="36" width="8" height="8"/><rect x="316" y="36" width="8" height="8"/><rect x="376" y="36" width="8" height="8"/><rect x="436" y="36" width="8" height="8"/><rect x="496" y="36" width="8" height="8"/><rect x="556" y="36" width="8" height="8"/><rect x="616" y="36" width="8" height="8"/><rect x="676" y="36" width="8" height="8"/>
+<rect x="76" y="286" width="8" height="8"/><rect x="136" y="286" width="8" height="8"/><rect x="196" y="286" width="8" height="8"/><rect x="256" y="286" width="8" height="8"/><rect x="316" y="286" width="8" height="8"/><rect x="376" y="286" width="8" height="8"/><rect x="436" y="286" width="8" height="8"/><rect x="496" y="286" width="8" height="8"/><rect x="556" y="286" width="8" height="8"/><rect x="616" y="286" width="8" height="8"/><rect x="676" y="286" width="8" height="8"/>
+<!-- colunas de oitão -->
+<rect x="76" y="98" width="8" height="8"/><rect x="76" y="161" width="8" height="8"/><rect x="76" y="223" width="8" height="8"/>
+<rect x="676" y="98" width="8" height="8"/><rect x="676" y="161" width="8" height="8"/><rect x="676" y="223" width="8" height="8"/>
+</g>
+<!-- cumeeira -->
+<line x1="80" y1="165" x2="680" y2="165" stroke="#333" stroke-width="1" stroke-dasharray="8 4"/>
+<!-- terças (8 por água: linhas a cada 17 px) -->
+<g stroke="#8a94a6" stroke-width="0.8">
+<line x1="80" y1="56" x2="680" y2="56"/><line x1="80" y1="71" x2="680" y2="71"/><line x1="80" y1="87" x2="680" y2="87"/><line x1="80" y1="102" x2="680" y2="102"/><line x1="80" y1="118" x2="680" y2="118"/><line x1="80" y1="134" x2="680" y2="134"/><line x1="80" y1="149" x2="680" y2="149"/>
+<line x1="80" y1="181" x2="680" y2="181"/><line x1="80" y1="196" x2="680" y2="196"/><line x1="80" y1="212" x2="680" y2="212"/><line x1="80" y1="227" x2="680" y2="227"/><line x1="80" y1="243" x2="680" y2="243"/><line x1="80" y1="259" x2="680" y2="259"/><line x1="80" y1="274" x2="680" y2="274"/>
+</g>
+<!-- X de cobertura nos vãos 1, 5, 10 -->
+<g stroke="#c0392b" stroke-width="1.5">
+<line x1="80" y1="40" x2="140" y2="102"/><line x1="80" y1="102" x2="140" y2="40"/><line x1="80" y1="102" x2="140" y2="165"/><line x1="80" y1="165" x2="140" y2="102"/><line x1="80" y1="165" x2="140" y2="227"/><line x1="80" y1="227" x2="140" y2="165"/><line x1="80" y1="227" x2="140" y2="290"/><line x1="80" y1="290" x2="140" y2="227"/>
+<line x1="320" y1="40" x2="380" y2="102"/><line x1="320" y1="102" x2="380" y2="40"/><line x1="320" y1="102" x2="380" y2="165"/><line x1="320" y1="165" x2="380" y2="102"/><line x1="320" y1="165" x2="380" y2="227"/><line x1="320" y1="227" x2="380" y2="165"/><line x1="320" y1="227" x2="380" y2="290"/><line x1="320" y1="290" x2="380" y2="227"/>
+<line x1="620" y1="40" x2="680" y2="102"/><line x1="620" y1="102" x2="680" y2="40"/><line x1="620" y1="102" x2="680" y2="165"/><line x1="620" y1="165" x2="680" y2="102"/><line x1="620" y1="165" x2="680" y2="227"/><line x1="620" y1="227" x2="680" y2="165"/><line x1="620" y1="227" x2="680" y2="290"/><line x1="620" y1="290" x2="680" y2="227"/>
+</g>
+<!-- struts -->
+<g stroke="#0b3d91" stroke-width="1.5"><line x1="80" y1="102" x2="680" y2="102"/><line x1="80" y1="227" x2="680" y2="227"/></g>
+<!-- X vertical (símbolo nas laterais) -->
+<g stroke="#c0392b" stroke-width="2"><line x1="80" y1="28" x2="140" y2="36"/><line x1="80" y1="36" x2="140" y2="28"/><line x1="320" y1="28" x2="380" y2="36"/><line x1="320" y1="36" x2="380" y2="28"/><line x1="620" y1="28" x2="680" y2="36"/><line x1="620" y1="36" x2="680" y2="28"/>
+<line x1="80" y1="294" x2="140" y2="302"/><line x1="80" y1="302" x2="140" y2="294"/><line x1="320" y1="294" x2="380" y2="302"/><line x1="320" y1="302" x2="380" y2="294"/><line x1="620" y1="294" x2="680" y2="302"/><line x1="620" y1="302" x2="680" y2="294"/></g>
+<!-- portões -->
+<rect x="70" y="140" width="10" height="50" fill="#fff" stroke="#7a3e00" stroke-width="1.5"/><rect x="680" y="140" width="10" height="50" fill="#fff" stroke="#7a3e00" stroke-width="1.5"/>
+<text x="60" y="168" text-anchor="end" font-size="10" fill="#7a3e00">portão 5 × 5</text>
+<text x="700" y="168" font-size="10" fill="#7a3e00">portão 5 × 5</text>
+<!-- cotas -->
+<line x1="80" y1="312" x2="140" y2="312" stroke="#555" stroke-width="1" marker-start="url(#d6_16)" marker-end="url(#d6_16)"/>
+<text x="110" y="325" text-anchor="middle" font-size="10" fill="#555">6,0 m</text>
+<line x1="380" y1="312" x2="680" y2="312" stroke="#555" stroke-width="1" marker-start="url(#d6_16)" marker-end="url(#d6_16)"/>
+<text x="530" y="325" text-anchor="middle" font-size="10" fill="#555">10 vãos × 6,0 m = 60,0 m</text>
+<line x1="712" y1="40" x2="712" y2="290" stroke="#555" stroke-width="1" marker-start="url(#d6_16)" marker-end="url(#d6_16)"/>
+<text x="720" y="147" font-size="10" fill="#555">25,0 m</text>
+<!-- legenda -->
+<text x="160" y="340" font-size="10" fill="#0b3d91">■ pórtico VS / strut</text>
+<text x="300" y="340" font-size="10" fill="#c0392b">■ X de cobertura e X vertical (vãos 1, 5, 10)</text>
+<text x="150" y="33" font-size="9" fill="#555">terças Ue 200 a cada 1,57 m</text>
+<text x="430" y="33" font-size="9" fill="#555">8 espaçamentos por água</text>
+<text x="510" y="340" font-size="10" fill="#555">– – – cumeeira (i = 10 %)</text>
+</svg>
+<figcaption><b>Figura 6.15</b> – Planta de estrutura do galpão 25 × 60 m do Exemplo 6.1: 11 pórticos a cada 6 m, terças a cada 1,57 m, X de cobertura e X verticais nos vãos 1, 5 e 10, colunas de oitão e portões nos oitões.</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 6.3 – Escolha do sistema estrutural para galpões (orientação)</caption>
+<thead><tr><th>Situação</th><th>Sistema recomendado</th><th>Base</th></tr></thead>
+<tbody>
+<tr><td class="l">Vão ≤ 20 m, pé-direito ≤ 8 m, sem ponte</td><td class="l">Pórtico de alma cheia (W laminado) ou tesoura leve; terças Ue 150–200</td><td class="l">Rotulada</td></tr>
+<tr><td class="l">Vão 20–35 m, sem ponte</td><td class="l">Pórtico de alma cheia VS com mísulas (rapidez) ou tesoura Pratt/Warren (leveza)</td><td class="l">Rotulada; engastada se H &gt; 9 m</td></tr>
+<tr><td class="l">Vão 35–60 m</td><td class="l">Tesoura treliçada (h = L/12) ou arco treliçado; pilares treliçados ou VS</td><td class="l">Engastada</td></tr>
+<tr><td class="l">Ponte rolante até 10 t</td><td class="l">Pórtico de alma cheia ou tesoura; consoles nos pilares; pilar W robusto</td><td class="l">Engastada</td></tr>
+<tr><td class="l">Ponte rolante &gt; 10 t ou várias pontes</td><td class="l">Pilares escalonados ou treliçados; caminho de rolamento com viga de freio; tesoura</td><td class="l">Engastada, sapatas/blocos com estacas</td></tr>
+<tr><td class="l">Múltiplas naves</td><td class="l">Pilares internos comuns às naves; calhas internas com dimensionamento hidráulico e transbordo</td><td class="l">Conforme altura</td></tr>
+<tr><td class="l">Cobertura com iluminação natural</td><td class="l">Shed (tesouras assimétricas) ou domus/telhas translúcidas em duas águas</td><td class="l">—</td></tr>
+</tbody></table>
+
+<table class="tab"><caption>Tabela 6.4 – Regras de bolso para pré-dimensionamento</caption>
+<thead><tr><th>Elemento</th><th>Regra</th><th>Exemplo</th></tr></thead>
+<tbody>
+<tr><td class="l">Viga W biapoiada de piso (mista)</td><td class="l">h ≈ L/20 a L/25 (mista); L/16 a L/20 (não mista)</td><td class="l">L = 10 m → W 410–530 (mista); W 530–610 (não mista)</td></tr>
+<tr><td class="l">Viga W de cobertura / pórtico</td><td class="l">h ≈ L/25 a L/35 com mísula; peso ≈ 0,8–1,2 × L (kg/m, L em m) para vãos de 15–30 m</td><td class="l">L = 25 m → h ≈ 800 mm; ≈ 25 kg/m² de projeção</td></tr>
+<tr><td class="l">Treliça de cobertura</td><td class="l">h ≈ L/12 a L/15 (duas águas); L/15 a L/20 (paralela); banzos em U duplo, cantoneiras duplas ou tubos</td><td class="l">L = 30 m → h ≈ 2,0–2,5 m</td></tr>
+<tr><td class="l">Terça Ue</td><td class="l">h ≈ L/30 a L/35; vão 6 m com s = 1,5–1,8 m → Ue 200 × 2,65; vão 7,5 m → Ue 250 × 2,65–3,0; vão 9 m → Ue 300 ou treliçada</td><td class="l">Sucção de 1,0 kN/m² e s = 1,7 m: Ue 200 × 2,65 contínua com correntes a L/3</td></tr>
+<tr><td class="l">Longarina de fechamento</td><td class="l">h ≈ L/35 a L/40; vão 6 m → Ue 150–200; com pendural no meio</td><td class="l">Vento 0,9 kN/m², s = 2 m → Ue 200 × 2,25</td></tr>
+<tr><td class="l">Pilar de galpão (alma cheia)</td><td class="l">h ≈ H/15 a H/25; W 310 a 460 para H = 6–9 m sem ponte; W 460–610 com ponte ou H &gt; 9 m</td><td class="l">H = 8 m, vão 25 m → W 410 × 60–75</td></tr>
+<tr><td class="l">Pilar de edifício</td><td class="l">N ≈ área de influência × carga por piso (≈ 10 kN/m² de cálculo) × nº de pisos; A<sub>g</sub> ≈ N / (0,6·f<sub>y</sub>/1,1) para pré-dimensionar</td><td class="l">36 m² × 10 × 6 pisos = 2 160 kN → A ≈ 160 cm² → W 310 × 129</td></tr>
+<tr><td class="l">Contraventamento</td><td class="l">Barra redonda ø 16–25 mm (tração); cantoneira L 64 × 4,8 a L 100 × 8 (tração/compressão, λ ≤ 200); tubos para vãos &gt; 8 m</td><td class="l">Força de 60 kN → ø 20 mm (A = 3,1 cm², N<sub>Rd</sub> ≈ 70 kN)</td></tr>
+<tr><td class="l">Chumbadores (base rotulada)</td><td class="l">2 a 4 × ø 19–25 mm; tração pela combinação de sucção</td><td class="l">Levantamento de 80 kN → 4 × ø 19 mm</td></tr>
+</tbody></table>
+
+<table class="tab"><caption>Tabela 6.5 – Consumo de aço por tipologia (valores típicos de mercado, por m² de área construída ou de projeção)</caption>
+<thead><tr><th>Tipologia</th><th>kg/m²</th><th>Observações</th></tr></thead>
+<tbody>
+<tr><td class="l">Galpão leve, vão 15–20 m, sem ponte rolante</td><td class="c">15–22</td><td class="l">Tesouras leves ou W laminados; terças Ue</td></tr>
+<tr><td class="l">Galpão vão 20–30 m, alma cheia (VS) ou treliçado</td><td class="c">20–30</td><td class="l">Inclui terças, longarinas e contraventos; sem fechamento</td></tr>
+<tr><td class="l">Galpão vão 30–40 m</td><td class="c">28–40</td><td class="l">Treliças; pilares mais altos</td></tr>
+<tr><td class="l">Galpão com ponte rolante 5–10 t</td><td class="c">35–55</td><td class="l">Vigas de rolamento, consoles e pilares mais pesados</td></tr>
+<tr><td class="l">Galpão com ponte rolante 20–50 t</td><td class="c">55–90</td><td class="l">Pilares treliçados/escalonados; fadiga</td></tr>
+<tr><td class="l">Mezanino com steel deck (só o aço)</td><td class="c">25–40</td><td class="l">Por m² de mezanino; mais 2,5–3,0 kN/m² de laje</td></tr>
+<tr><td class="l">Edifício comercial 4–15 pav., vigas mistas + núcleo de concreto</td><td class="c">40–70</td><td class="l">Por m² de piso; vãos de 8–12 m</td></tr>
+<tr><td class="l">Edifício de pórticos rígidos, sem núcleo</td><td class="c">60–90</td><td class="l">Ligações rígidas e pilares fletidos</td></tr>
+<tr><td class="l">Cobertura de grande vão (treliça espacial, 40–80 m)</td><td class="c">25–45</td><td class="l">Só a estrutura da cobertura</td></tr>
+<tr><td class="l">Passarela de pedestres (vão 20–40 m)</td><td class="c">150–300 kg/m de passarela</td><td class="l">Incluindo guarda-corpo</td></tr>
+</tbody></table>
+
+<h2>6.10 Erros de concepção mais comuns <span class="nivel b">Básico</span></h2>
+<div class="box atencao"><div class="tit">Lista de verificação de concepção — o que não pode faltar</div>
+<ol>
+<li><strong>Falta de contraventamento</strong> longitudinal (X de cobertura e/ou vertical), ou X de cobertura em um vão e X vertical em outro — o vento longitudinal fica sem caminho; galpões "tombam" na montagem.</li>
+<li><strong>Terças sem correntes</strong> (ou com correntes sem fechamento na cumeeira) — flambagem lateral sob sucção e flecha lateral pela componente inclinada.</li>
+<li><strong>Tesoura ou viga sem travamento lateral do banzo/mesa comprimida</strong>: banzo superior travado só por terças "encostadas" (não ligadas), banzo inferior sem mãos francesas para o caso de sucção.</li>
+<li><strong>Colunas de oitão ligadas rigidamente à tesoura</strong> (viram apoio e recebem carga não prevista) ou oitão sem colunas (longarinas com vão de 25 m).</li>
+<li><strong>Base "rotulada" no cálculo, mas detalhada como engaste</strong> (ou o contrário); base sem chave de cisalhamento ou sem chumbadores capazes de resistir ao cisalhamento e à tração de levantamento; grout esquecido.</li>
+<li><strong>Ligações incompatíveis com o modelo</strong>: pórtico "rígido" com ligação de cantoneiras na alma; viga "biapoiada" soldada nas mesas ao pilar.</li>
+<li><strong>Vigas de rolamento contínuas</strong> sobre consoles com detalhes de fadiga ruins (enrijecedores soldados à mesa tracionada, trilho soldado); pilares sem verificação de H/400.</li>
+<li><strong>Inclinação de telhado insuficiente</strong> (&lt; 5 %) com telhas sobrepostas; calhas internas sem extravasor; pontos de empoçamento em coberturas planas (instabilidade por acúmulo de água — "ponding").</li>
+<li><strong>Esquecer juntas de dilatação</strong> em galpões acima de 80–100 m, ou colocar X nos dois extremos sem ponto de dissipação — barras de contraventamento flambam ou rompem com a temperatura.</li>
+<li><strong>Modulação incompatível com transporte e montagem</strong>: peças com mais de 12–13 m (ou 3 m de altura) sem emenda prevista; tesouras sem pontos de içamento; vigas de 25 m em um único tramo.</li>
+<li><strong>Ignorar a sequência de montagem</strong>: estrutura instável antes de receber o X ou a laje; laje mista sem escoramento fora do vão admissível da fôrma.</li>
+<li><strong>Ampliações futuras não previstas</strong>: pórtico de oitão como pórtico completo, pilares com furos para ligações futuras, fundações com folga.</li>
+</ol></div>
+
+<div class="box dica"><div class="tit">Regras de bolso do capítulo</div>
+<ul>
+<li>Espaçamento de pórticos 6 m; terças a cada 1,5–1,8 m; longarinas a cada 2,0 m; correntes a L/3; X a cada 30–40 m e nos extremos.</li>
+<li>Alturas: viga de pórtico L/30, treliça L/12–L/15, terça L/32, viga de piso mista L/22, viga de rolamento L/10.</li>
+<li>Inclinação 10 % é o "padrão" para telha metálica; 5 % só com telhas zipadas/sanduíche e projeto de drenagem.</li>
+<li>Peso: galpão leve 20–30 kg/m²; com ponte 40–70; edifício 40–80.</li>
+<li>Base rotulada até 8–9 m de pé-direito sem ponte; engastada com ponte rolante ou pilar alto.</li>
+<li>Toda barra comprimida precisa de um travamento com ≈ 2 % da sua força; toda carga precisa de um caminho até o solo.</li>
+</ul></div>
+
+<div class="resumo"><div class="tit">Resumo do capítulo</div><ul>
+<li>Concepção = definir o caminho das cargas: telha → terça → tesoura/viga → pilar → base → fundação; vento → fechamento → longarina → pilar → pórtico (transversal) ou contraventamento (longitudinal) → fundação.</li>
+<li>Galpões: pórtico de alma cheia com mísulas (rápido, até ≈ 35 m; h ≈ L/25–L/35) ou treliçado (leve, 20–60 m; h ≈ L/12–L/15). Tesouras Howe, Pratt (a mais eficiente), Warren, Fink, arco; coberturas de duas águas, uma água, shed, múltiplas naves; inclinação 5–15 %; pórticos a cada 5–8 m.</li>
+<li>Terças Ue 150–300 com vãos de 5–8 m, correntes a L/2 ou L/3, biapoiadas ou contínuas com luvas; longarinas com pendurais; colunas de oitão.</li>
+<li>Contraventamentos estabilizam, levam o vento longitudinal à fundação e travam barras comprimidas: X de cobertura + X vertical no mesmo vão, terças de travamento, portal de vento e viga de tapamento no oitão.</li>
+<li>Estabilidade global: pórtico rígido × rotulado contraventado; base rotulada × engastada (Δ ≈ 4 × menor, mas momento na fundação). Efeito P-Δ e coeficiente B<sub>2</sub>: ≤ 1,10 pequena, ≤ 1,40 média, &gt; 1,40 grande deslocabilidade.</li>
+<li>Edifícios: pórticos rígidos, contraventados, núcleo de concreto (o mais usado) ou tubulares; pisos com steel deck e vigas mistas com conectores; secundárias de maior vão sobre principais mais curtas; modulação 6–12 m; ligações rígidas, semirrígidas ou flexíveis conforme a curva M-φ.</li>
+<li>Mezaninos (steel deck, chapa xadrez, grade), pipe racks e plataformas: contraventar em três direções e prever cargas de manutenção e de teste. Pontes rolantes: viga de rolamento com U de reforço, consoles, base engastada, H/400, fadiga.</li>
+<li>Roteiro: dados → sistema → modulação → pré-dimensionamento (Tabela 6.4) → verificação → detalhamento. Galpão 25 × 60 m: 11 pórticos VS a cada 6 m, terças Ue 200 a 1,57 m, X nos vãos 1, 5 e 10, ≈ 37 t de aço.</li>
+</ul></div>
+
+<ul class="chk">
+<li>Cada carga tem caminho contínuo até a fundação (gravidade, vento nas duas direções, frenagem)?</li>
+<li>X de cobertura e X vertical no mesmo vão; terças de travamento ligando todos os pórticos; colunas de oitão com ligação deslizante no topo?</li>
+<li>Terças com correntes e travamento de cumeeira; banzo/mesa inferior travado para sucção?</li>
+<li>Modelo (rótula/engaste, rígido/flexível) compatível com os detalhes de ligação e de base?</li>
+<li>Deslocabilidade verificada (B<sub>2</sub>) e limites de deslocamento atendidos (H/300, H/400 com ponte)?</li>
+<li>Peças transportáveis (≤ 12–13 m), sequência de montagem estável, juntas de dilatação e ampliações previstas?</li>
+</ul>

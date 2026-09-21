@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>Lista de material — Galpao Exemplo</title>
+<style>/* =========================================================================
+   Memorial de cálculo — folha de estilo de impressão (Paged.js + Chrome)
+   Documento técnico de projeto: capa de identificação, cabeçalho corrido,
+   rodapé com paginação, tabelas densas e caixas de verificação.
+   Usada também pela lista de material (mesma identidade visual).
+   ========================================================================= */
+
+@page {
+  size: A4;
+  margin: 20mm 16mm 16mm 18mm;
+  @top-left {
+    content: string(obra);
+    font-family: Arial, Helvetica, sans-serif; font-size: 7.5pt; color: #555;
+  }
+  @top-right {
+    content: string(capitulo);
+    font-family: Arial, Helvetica, sans-serif; font-size: 7.5pt; color: #555;
+  }
+  @bottom-left {
+    content: "Memorial de cálculo — documento gerado automaticamente; confira e assine.";
+    font-family: Arial, Helvetica, sans-serif; font-size: 7pt; color: #777;
+  }
+  @bottom-right {
+    content: counter(page) " / " counter(pages);
+    font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #333;
+  }
+}
+@page capa {
+  margin: 0;
+  @top-left { content: none } @top-right { content: none }
+  @bottom-left { content: none } @bottom-right { content: none }
+}
+@page sumario { @top-right { content: "Sumário" } }
+
+:root {
+  --azul: #0b3d91; --azul2: #1f5fbf; --azulc: #123a7a;
+  --cinza: #555; --linha: #b9c5da; --claro: #eef3fb;
+  --ok: #1f7a41; --okbg: #e9f7ec; --nao: #a5231a; --naobg: #fdecec;
+  --alerta: #8a6508; --alertabg: #fff7d6;
+}
+* { box-sizing: border-box }
+html, body { margin: 0; padding: 0 }
+body {
+  font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
+  font-size: 9.5pt; line-height: 1.38; color: #17181a;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+
+h1, h2, h3, h4 { font-family: Arial, Helvetica, sans-serif; color: var(--azul);
+                 line-height: 1.18; break-after: avoid; page-break-after: avoid }
+h1.cap {
+  font-size: 19pt; margin: 0 0 4mm 0; padding: 0 0 2.5mm 0;
+  border-bottom: 2.5px solid var(--azul);
+}
+h1.cap .num { color: var(--azul2); margin-right: 3mm }
+h1.cap .tit { string-set: capitulo content() }
+h2 { font-size: 13pt; margin: 6mm 0 2mm 0; padding-left: 2.5mm;
+     border-left: 4px solid var(--azul2) }
+h3 { font-size: 10.5pt; margin: 4mm 0 1.5mm 0; color: var(--azulc) }
+h4 { font-size: 9.8pt; margin: 3mm 0 1mm 0; color: #33363c }
+p { margin: 0 0 2mm 0; text-align: justify; hyphens: auto; orphans: 3; widows: 3 }
+ul, ol { margin: 0 0 2.5mm 0; padding-left: 6mm }
+li { margin-bottom: .8mm }
+strong { color: #000 }
+sup, sub { line-height: 0 }
+a { color: inherit; text-decoration: none }
+.mono, code { font-family: Consolas, "Courier New", monospace; font-size: 8.6pt }
+.pequeno { font-size: 8.2pt; color: var(--cinza) }
+.quebra { break-before: page; page-break-before: always }
+section.capitulo { break-before: page; page-break-before: always }
+hr { border: 0; border-top: 1px solid var(--linha); margin: 4mm 0 }
+
+/* ------------------------------- Capa ---------------------------------- */
+.capa {
+  page: capa; width: 210mm; height: 297mm; position: relative; overflow: hidden;
+  color: #14181f; background: #fff;
+}
+.capa .faixa {
+  position: absolute; left: 0; right: 0; top: 0; height: 62mm;
+  background: linear-gradient(150deg, #0b3d91 0%, #123a7a 60%, #1f5fbf 100%);
+  color: #fff;
+}
+.capa .faixa .sup { position: absolute; left: 18mm; top: 16mm; font-size: 10pt;
+  letter-spacing: .22em; text-transform: uppercase; opacity: .88 }
+.capa .faixa h1 { position: absolute; left: 18mm; right: 18mm; top: 26mm;
+  color: #fff; font-size: 28pt; margin: 0; border: 0; line-height: 1.05 }
+.capa .faixa .sub { position: absolute; left: 18mm; right: 18mm; top: 46mm;
+  font-size: 11pt; opacity: .92 }
+.capa .obra { position: absolute; left: 18mm; right: 18mm; top: 74mm }
+.capa .obra .nome { font-size: 20pt; color: var(--azul); font-weight: bold;
+  line-height: 1.15; margin-bottom: 3mm; string-set: obra content() }
+.capa .obra .linha { font-size: 11pt; color: #33363c; margin-bottom: 1.2mm }
+.capa .obra .linha b { color: var(--azul); display: inline-block; min-width: 34mm }
+.capa .resumo-obra { position: absolute; left: 18mm; right: 18mm; top: 118mm;
+  border: 1px solid var(--linha); border-top: 4px solid var(--azul2);
+  background: #fafcff; padding: 4mm 5mm }
+.capa .resumo-obra .t { font-weight: bold; color: var(--azul); font-size: 10.5pt;
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2.5mm }
+.capa .resumo-obra table { width: 100%; border-collapse: collapse; font-size: 9.5pt }
+.capa .resumo-obra td { padding: 1.1mm 2mm; border-bottom: 1px dotted #c9d3e6 }
+.capa .resumo-obra td.k { color: #4a4f57; width: 45% }
+.capa .resumo-obra td.v { font-weight: bold; color: #14181f; text-align: right }
+.capa .esquema { position: absolute; left: 18mm; right: 18mm; top: 196mm;
+  height: 62mm; display: flex; align-items: center; justify-content: center }
+.capa .esquema svg { max-width: 100%; max-height: 62mm; height: auto }
+.capa .rodape { position: absolute; left: 18mm; right: 18mm; bottom: 16mm;
+  border-top: 2px solid var(--azul); padding-top: 3mm; font-size: 8.5pt;
+  color: #4a4f57 }
+.capa .rodape .aviso { color: var(--nao); font-weight: bold }
+
+/* ------------------------------ Sumário -------------------------------- */
+.sumario { page: sumario; break-before: page }
+.sumario h1 { font-size: 19pt; border-bottom: 2.5px solid var(--azul);
+  padding-bottom: 2.5mm; margin: 0 0 4mm 0 }
+.sumario ol { list-style: none; padding: 0; margin: 0 }
+.sumario li { display: flex; align-items: baseline }
+.sumario li.n1 { margin: 2.4mm 0 .6mm 0; font-weight: bold; font-size: 10pt;
+  color: var(--azul) }
+.sumario li.n2 { margin: .4mm 0 .4mm 7mm; font-size: 9pt; color: #33363c }
+.sumario li .pt { flex: 1; border-bottom: 1px dotted #9aa4b2; margin: 0 2mm;
+  height: .85em }
+.sumario li .pg::after { content: target-counter(attr(href url), page) }
+
+/* ------------------------------ Tabelas -------------------------------- */
+table.tab { width: 100%; border-collapse: collapse; font-size: 8.6pt;
+  margin: 1.5mm 0 3.5mm 0; table-layout: fixed }
+table.tab caption { caption-side: top; text-align: left; font-weight: bold;
+  color: var(--azul); font-size: 9pt; margin-bottom: 1mm }
+table.tab th { background: var(--azul); color: #fff; padding: 1.2mm 1.6mm;
+  text-align: center; font-weight: bold; border: 1px solid #8fa4c8;
+  word-wrap: break-word; overflow-wrap: anywhere }
+table.tab td { padding: 1.1mm 1.6mm; border: 1px solid var(--linha);
+  vertical-align: top; word-wrap: break-word; overflow-wrap: anywhere }
+table.tab tr:nth-child(even) td { background: #f5f8fd }
+table.tab td.l, table.tab th.l { text-align: left }
+table.tab td.c, table.tab th.c { text-align: center }
+table.tab td.r, table.tab th.r { text-align: right }
+table.tab td.b { font-weight: bold }
+table.tab tr { break-inside: avoid; page-break-inside: avoid }
+table.tab thead { display: table-header-group }
+table.tab tfoot td { background: var(--claro); font-weight: bold }
+table.tab.small { font-size: 7.6pt }
+table.tab.small th, table.tab.small td { padding: .8mm 1.1mm }
+table.tab.auto { table-layout: auto }
+table.tab td.ok { color: var(--ok); font-weight: bold }
+table.tab td.nao { color: var(--nao); font-weight: bold }
+
+/* -------------------- Memória de cálculo passo a passo ------------------ */
+table.passos { width: 100%; border-collapse: collapse; font-size: 8.4pt;
+  margin: 1.2mm 0 3mm 0; table-layout: fixed }
+table.passos th { background: #dfe8f7; color: var(--azulc); font-size: 7.8pt;
+  padding: .9mm 1.4mm; border: 1px solid var(--linha); text-align: left;
+  text-transform: uppercase; letter-spacing: .04em }
+table.passos td { padding: 1mm 1.4mm; border: 1px solid var(--linha);
+  vertical-align: top; word-wrap: break-word; overflow-wrap: anywhere }
+table.passos td.txt { width: 27% }
+table.passos td.frm { width: 24%; font-family: "Cambria Math", "Times New Roman", serif;
+  font-size: 9pt; color: var(--azulc) }
+table.passos td.cta { width: 27%; font-family: "Cambria Math", "Times New Roman", serif;
+  font-size: 8.8pt }
+table.passos td.val { width: 13%; text-align: right; font-weight: bold;
+  white-space: normal }
+table.passos td.nrm { width: 9%; font-size: 7.2pt; color: var(--cinza) }
+table.passos tr { break-inside: avoid; page-break-inside: avoid }
+table.passos thead { display: table-header-group }
+
+/* --------------------------- Verificações ------------------------------ */
+.verif { border: 1px solid var(--linha); border-left: 5px solid var(--azul2);
+  margin: 3mm 0 4mm 0; background: #fff; break-inside: avoid-page }
+.verif > .cab { display: flex; align-items: baseline; gap: 3mm;
+  background: var(--claro); padding: 1.6mm 3mm; border-bottom: 1px solid var(--linha) }
+.verif > .cab .t { font-weight: bold; color: var(--azulc); font-size: 9.6pt; flex: 1 }
+.verif > .cab .n { font-size: 7.6pt; color: var(--cinza) }
+.verif > .corpo { padding: 2mm 3mm 2.5mm 3mm }
+.verif.reprova { border-left-color: var(--nao) }
+.verif.reprova > .cab { background: var(--naobg) }
+.verif.dispensada { border-left-color: #9aa4b2 }
+.verif.dispensada > .cab { background: #f1f3f6 }
+.verif .obs { font-size: 8.3pt; color: #44484f; margin: 1mm 0 0 0;
+  border-left: 2px solid var(--linha); padding-left: 2mm }
+
+.selo { display: inline-block; padding: .5mm 2mm; border-radius: 2px;
+  font-size: 8pt; font-weight: bold; white-space: nowrap }
+.selo.ok { background: var(--okbg); color: var(--ok); border: 1px solid #a8d8b9 }
+.selo.nao { background: var(--naobg); color: var(--nao); border: 1px solid #e8b4b0 }
+.selo.na { background: #f1f3f6; color: #5b626c; border: 1px solid #cfd5de }
+
+.resultado { display: flex; gap: 2mm; align-items: stretch; margin: 1.5mm 0 0 0;
+  font-size: 8.6pt; flex-wrap: wrap }
+.resultado .c { flex: 1 1 0; min-width: 26mm; border: 1px solid var(--linha);
+  background: #fafcff; padding: 1.2mm 2mm; text-align: center }
+.resultado .c .k { font-size: 7.2pt; color: var(--cinza); text-transform: uppercase;
+  letter-spacing: .05em }
+.resultado .c .v { font-size: 10pt; font-weight: bold; color: var(--azulc) }
+.resultado .c .u { font-size: 7.2pt; color: var(--cinza) }
+.barra { height: 3.2mm; background: #e3e9f3; border: 1px solid var(--linha);
+  position: relative; margin: 1.5mm 0 .8mm 0 }
+.barra i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ok);
+  display: block }
+.barra.reprova i { background: var(--nao) }
+.barra .lim { position: absolute; top: -1mm; bottom: -1mm; width: 1px;
+  background: #444 }
+
+/* ------------------------------ Caixas --------------------------------- */
+.box { border: 1px solid var(--linha); border-left: 5px solid var(--azul2);
+  background: var(--claro); padding: 2mm 3mm; margin: 2.5mm 0 3mm 0;
+  break-inside: avoid; font-size: 9pt }
+.box .t { font-weight: bold; color: var(--azul); margin-bottom: .8mm }
+.box p:last-child { margin-bottom: 0 }
+.box.norma { border-left-color: #b8860b; background: var(--alertabg) }
+.box.norma .t { color: var(--alerta) }
+.box.atencao { border-left-color: var(--nao); background: var(--naobg) }
+.box.atencao .t { color: var(--nao) }
+.box.ok { border-left-color: var(--ok); background: var(--okbg) }
+.box.ok .t { color: var(--ok) }
+
+/* ------------------------------ Figuras -------------------------------- */
+figure.fig { margin: 3mm 0 4mm 0; text-align: center; break-inside: avoid;
+  page-break-inside: avoid }
+figure.fig svg { max-width: 100%; height: auto; display: block; margin: 0 auto }
+figure.fig.p60 svg { max-width: 60% } figure.fig.p75 svg { max-width: 75% }
+figure.fig.p85 svg { max-width: 85% }
+figure.fig figcaption { font-size: 8.2pt; color: #3a3e45; margin-top: 1.2mm;
+  text-align: center }
+figure.fig figcaption b { color: var(--azul) }
+
+/* --------------------------- Assinatura -------------------------------- */
+.assinatura { margin-top: 18mm; text-align: center; break-inside: avoid }
+.assinatura .linha { width: 95mm; margin: 0 auto; border-top: 1px solid #222;
+  padding-top: 1.5mm }
+.assinatura .nome { font-weight: bold; font-size: 10.5pt }
+.assinatura .crea { font-size: 9pt; color: #33363c }
+.assinatura .data { margin-top: 8mm; font-size: 9.5pt }
+
+/* ----------------------- Lista de material (PDF) ----------------------- */
+body.lista table.tab { font-size: 7.8pt }
+body.lista table.tab.romaneio { font-size: 7.2pt }
+body.lista table.tab.romaneio td, body.lista table.tab.romaneio th {
+  padding: .7mm 1mm }
+
+.pagedjs_page { background: #fff }
+
+.cabdoc .tit { string-set: capitulo content() }
+@page {
+  @top-left { content: "Galpao Exemplo" }
+  @bottom-left { content: "Lista de material — quantidades de projeto básico; "
+                           "o romaneio de fabricação prevalece." }
+  @bottom-right { content: counter(page) }
+}
+</style>
+<script>window.PagedConfig={auto:true, after:function(){
+  document.documentElement.setAttribute("data-paged","done");}};</script>
+<script src="file:///C%3A/Users/Schneider%20e%20Costa/OneDrive/%C3%81rea%20de%20Trabalho/APLICATIVOS/Met%C3%A1lica/manual/lib/paged.polyfill.js"></script>
+</head><body class="lista">
+<div class="lista-doc">
+<div class="cabdoc">
+  <h1 class="cap"><span class="tit">Lista de material e orçamento</span></h1>
+  <table class="tab auto" style="font-size:9pt">
+    <tbody>
+      <tr><td class="l b" style="width:22%">Obra</td><td class="l">Galpao Exemplo</td>
+          <td class="l b" style="width:18%">Cliente</td><td class="l">Cliente Exemplo Ltda</td></tr>
+      <tr><td class="l b">Local</td><td class="l">Chapeco / SC</td>
+          <td class="l b">Data</td><td class="l">11/09/2026</td></tr>
+      <tr><td class="l b">Galpão</td>
+          <td class="l">20,0 × 40,0 m, pé-direito
+              6,0 m — 800 m²</td>
+          <td class="l b">Responsável</td><td class="l">Eng. Responsavel Tecnico</td></tr>
+    </tbody></table>
+</div>
+
+<h2>1. Romaneio por marca</h2>
+<table class="tab small romaneio"><caption>Quadro 1 — Romaneio por marca</caption><colgroup><col style="width:7%"><col style="width:26%"><col style="width:17%"><col style="width:12%"><col style="width:7%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:7%"></colgroup><thead><tr><th>Marca</th><th>Descrição</th><th>Perfil</th><th>Material</th><th>Qtd.</th><th>Comp. (m)</th><th>Peso un. (kg)</th><th>Peso tot. (kg)</th><th>Pintura (m²)</th></tr></thead><tbody><tr><td class="c b">P1</td><td class="l">Pilar do pórtico</td><td class="l">W 410×38,8</td><td class="l">ASTM A572 Gr.50</td><td class="c">18</td><td class="r">6,00</td><td class="r">232,8</td><td class="r b">4 190</td><td class="r">145,3</td></tr><tr><td class="c b">V1</td><td class="l">Viga do pórtico (uma água)</td><td class="l">W 250×32,7</td><td class="l">ASTM A572 Gr.50</td><td class="c">18</td><td class="r">10,05</td><td class="r">328,6</td><td class="r b">5 915</td><td class="r">196,8</td></tr><tr><td class="c b">T1</td><td class="l">Terça</td><td class="l">Ue 200×75×20×2,00</td><td class="l">CF-26 (NBR 6650)</td><td class="c">112</td><td class="r">5,00</td><td class="r">30,0</td><td class="r b">3 360</td><td class="r">338,8</td></tr><tr><td class="c b">TC</td><td class="l">Corrente/tirante de terça ø 16 mm</td><td class="l">Barra ø 16 mm</td><td class="l">ASTM A36</td><td class="c">112</td><td class="r">1,60</td><td class="r">2,5</td><td class="r b">283</td><td class="r">—</td></tr><tr><td class="c b">L1</td><td class="l">Longarina de fechamento</td><td class="l">Ue 200×75×20×2,00</td><td class="l">CF-26 (NBR 6650)</td><td class="c">48</td><td class="r">5,00</td><td class="r">30,0</td><td class="r b">1 440</td><td class="r">145,2</td></tr><tr><td class="c b">CC</td><td class="l">Diagonal de contraventamento de cobertura</td><td class="l">Barra redonda ø 20 mm</td><td class="l">ASTM A572 Gr.50</td><td class="c">24</td><td class="r">7,07</td><td class="r">17,5</td><td class="r b">419</td><td class="r">10,7</td></tr><tr><td class="c b">CV</td><td class="l">Diagonal de contraventamento vertical</td><td class="l">Barra redonda ø 20 mm</td><td class="l">ASTM A572 Gr.50</td><td class="c">12</td><td class="r">7,81</td><td class="r">19,3</td><td class="r b">232</td><td class="r">5,9</td></tr><tr><td class="c b">CH</td><td class="l">Chapas de ligação, bases e enrijecedores</td><td class="l">Chapa</td><td class="l">ASTM A36</td><td class="c">1</td><td class="r">—</td><td class="r">792,0</td><td class="r b">792</td><td class="r">19,8</td></tr><tr><td class="c b">PF</td><td class="l">Parafusos, chumbadores e acessórios</td><td class="l">Diversos</td><td class="l">ASTM A325</td><td class="c">1</td><td class="r">—</td><td class="r">475,2</td><td class="r b">475</td><td class="r">—</td></tr><tr><td class="c"></td><td class="l b">TOTAL</td><td class="l"></td><td class="l"></td><td class="c"></td><td class="r"></td><td class="r"></td><td class="r b">17 107</td><td class="r b">862</td></tr></tbody></table><p class="pequeno"><b>Observações do romaneio</b></p><ul class="pequeno"><li><b>CH</b> — estimativa de 5 % do peso dos perfis</li><li><b>PF</b> — estimativa de 3 % do peso dos perfis</li></ul>
+<h2>2. Resumo por tipo de peça</h2>
+<table class="tab small"><caption>Quadro 2 — Resumo por tipo de peça</caption><colgroup><col style="width:52%"><col style="width:16%"><col style="width:16%"><col style="width:16%"></colgroup><thead><tr><th>Tipo de peça</th><th>Peso (kg)</th><th>% do total</th><th>kg/m²</th></tr></thead><tbody><tr><td class="l">Pilar do pórtico</td><td class="r">4 190</td><td class="c">24,5</td><td class="r">5,24</td></tr><tr><td class="l">Viga do pórtico</td><td class="r">5 915</td><td class="c">34,6</td><td class="r">7,39</td></tr><tr><td class="l">Terça</td><td class="r">3 360</td><td class="c">19,6</td><td class="r">4,20</td></tr><tr><td class="l">Corrente/tirante de terça ø 16 mm</td><td class="r">283</td><td class="c">1,7</td><td class="r">0,35</td></tr><tr><td class="l">Longarina de fechamento</td><td class="r">1 440</td><td class="c">8,4</td><td class="r">1,80</td></tr><tr><td class="l">Diagonal de contraventamento de cobertura</td><td class="r">419</td><td class="c">2,4</td><td class="r">0,52</td></tr><tr><td class="l">Diagonal de contraventamento vertical</td><td class="r">232</td><td class="c">1,4</td><td class="r">0,29</td></tr><tr><td class="l">Chapas de ligação, bases e enrijecedores</td><td class="r">792</td><td class="c">4,6</td><td class="r">0,99</td></tr><tr><td class="l">Parafusos, chumbadores e acessórios</td><td class="r">475</td><td class="c">2,8</td><td class="r">0,59</td></tr><tr><td class="l b">TOTAL</td><td class="r b">17 107</td><td class="c b">100,0</td><td class="r b">21,38</td></tr></tbody></table>
+<h2>3. Resumo de compra por perfil</h2>
+<p>Comprimentos comerciais de 6 e
+12 m. Para cada comprimento de peça adota-se a barra
+que deixa a menor sobra, contando 5 mm de espessura de corte
+por serrada. A coluna "perda de corte" é a diferença entre o que se compra e o que a
+estrutura consome.</p>
+<table class="tab small"><caption>Quadro 3 — Resumo de compra por perfil (barras comerciais de 6 e 12 m)</caption><colgroup><col style="width:19%"><col style="width:13%"><col style="width:7%"><col style="width:11%"><col style="width:8%"><col style="width:8%"><col style="width:11%"><col style="width:12%"><col style="width:11%"></colgroup><thead><tr><th>Perfil</th><th>Material</th><th>kg/m</th><th>Necessário (m)</th><th>Barras 6 m</th><th>Barras 12 m</th><th>Comprado (m)</th><th>Peso comprado (kg)</th><th>Perda de corte</th></tr></thead><tbody><tr><td class="l">W 250×32,7</td><td class="l">ASTM A572 Gr.50</td><td class="r">32,70</td><td class="r">180,9</td><td class="c">0</td><td class="c">18</td><td class="r">216,0</td><td class="r">7 063</td><td class="c">19,4 %</td></tr><tr><td class="l">Ue 200×75×20×2,00</td><td class="l">CF-26 (NBR 6650)</td><td class="r">6,00</td><td class="r">800,0</td><td class="c">160</td><td class="c">0</td><td class="r">960,0</td><td class="r">5 760</td><td class="c">20,0 %</td></tr><tr><td class="l">W 410×38,8</td><td class="l">ASTM A572 Gr.50</td><td class="r">38,80</td><td class="r">108,0</td><td class="c">18</td><td class="c">0</td><td class="r">108,0</td><td class="r">4 190</td><td class="c">0,0 %</td></tr><tr><td class="l">Barra redonda ø 20 mm</td><td class="l">ASTM A572 Gr.50</td><td class="r">2,47</td><td class="r">263,4</td><td class="c">0</td><td class="c">36</td><td class="r">432,0</td><td class="r">1 065</td><td class="c">64,0 %</td></tr><tr><td class="l">Barra ø 16 mm</td><td class="l">ASTM A36</td><td class="r">1,58</td><td class="r">179,2</td><td class="c">0</td><td class="c">16</td><td class="r">192,0</td><td class="r">303</td><td class="c">7,1 %</td></tr></tbody></table>
+<h2>4. Consumo e pintura</h2>
+<table class="tab small"><caption>Quadro 4 — Resumo de consumo</caption><colgroup><col style="width:68%"><col style="width:32%"></colgroup><thead><tr><th>Grandeza</th><th>Valor</th></tr></thead><tbody><tr><td class="l">Peso total da estrutura</td><td class="r">17 107 kg</td></tr><tr><td class="l">Área coberta</td><td class="r">800 m²</td></tr><tr><td class="l">Consumo de aço</td><td class="r">21,4 kg/m²</td></tr><tr><td class="l">Área a pintar (peças pintadas)</td><td class="r">862 m²</td></tr><tr><td class="l">Área galvanizada (terças, longarinas, correntes)</td><td class="r">9 m²</td></tr><tr><td class="l">Volume total de tinta (todas as demãos)</td><td class="r">272 L</td></tr></tbody></table>
+<table class="tab small"><caption>Quadro 5 — Volume de tinta estimado por demão</caption><colgroup><col style="width:36%"><col style="width:13%"><col style="width:13%"><col style="width:15%"><col style="width:11%"><col style="width:12%"></colgroup><thead><tr><th>Demão</th><th>Espessura seca</th><th>Sólidos (vol.)</th><th>Perda de aplicação</th><th>L/m²</th><th>Volume (L)</th></tr></thead><tbody><tr><td class="l">Primer epóxi bicomponente</td><td class="c">80 µm</td><td class="c">60 %</td><td class="c">30 %</td><td class="r">0,173</td><td class="r">150</td></tr><tr><td class="l">Acabamento poliuretano acrílico alifático</td><td class="c">60 µm</td><td class="c">55 %</td><td class="c">30 %</td><td class="r">0,142</td><td class="r">122</td></tr><tr><td class="l b">TOTAL</td><td class="c"></td><td class="c"></td><td class="c"></td><td class="r"></td><td class="r b">272</td></tr></tbody></table>
+<p class="pequeno">Esquema de pintura adotado na estimativa (ISO 12944, categoria C3 —
+manual, item 16.13): jateamento Sa 2½, primer epóxi 80 µm e acabamento poliuretano
+acrílico alifático 60 µm. Terças, longarinas, correntes e parafusos entregues
+galvanizados, e por isso fora da área a pintar.</p>
+<h2>5. Orçamento</h2>
+<table class="tab small"><caption>Quadro 6 — Estimativa de custo da estrutura</caption><colgroup><col style="width:27%"><col style="width:9%"><col style="width:14%"><col style="width:8%"><col style="width:42%"></colgroup><thead><tr><th>Parcela</th><th>R$/kg</th><th>Valor (R$)</th><th>% do total</th><th>Observação</th></tr></thead><tbody><tr><td class="l">Material (perfis, chapas, parafusos)</td><td class="r">7,50</td><td class="r">128 300,25</td><td class="c">44 %</td><td class="l">Perfis W ≈ 6,5–8; Ue galvanizado ≈ 8–9; parafusos e chumbadores ≈ 20–30 R$/kg</td></tr><tr><td class="l">Fabricação (corte, furação, solda, montagem em oficina)</td><td class="r">4,50</td><td class="r">76 980,15</td><td class="c">26 %</td><td class="l">3–6 R$/kg; peças repetitivas e parafusadas baixam o valor</td></tr><tr><td class="l">Pintura / galvanização</td><td class="r">2,00</td><td class="r">34 213,40</td><td class="c">12 %</td><td class="l">1,5–3 R$/kg conforme o sistema (C2: 1,5; C3 epóxi/PU: 2,5–3)</td></tr><tr><td class="l">Transporte e montagem</td><td class="r">3,00</td><td class="r">51 320,10</td><td class="c">18 %</td><td class="l">2,5–4 R$/kg; distância e altura influem</td></tr><tr><td class="l b">TOTAL da estrutura</td><td class="r b">17,00</td><td class="r b">290 813,90</td><td class="c b">100 %</td><td class="l b">≈ R$ 364/m² de área coberta</td></tr></tbody></table>
+<div class="box norma"><div class="t">Natureza dos valores</div>
+<p>Valores indicativos (manual, Tabela 16.6): mercado brasileiro, ordem de grandeza 2025–2026, sem impostos específicos e sem telhas, fundações e piso. Não substitui cotação. A repartição por parcela segue a Tabela 16.6 do manual
+(material 44 %, fabricação
+26 %, pintura 12 % e
+montagem 18 %) aplicada sobre o custo unitário informado
+no projeto, de R$ 17,00/kg instalado.</p></div>
+<p class="pequeno">Documento gerado em 11/09/2026. Quantidades de projeto básico: o romaneio
+de fabricação prevalece sobre esta lista.</p>
+</div>
+</body></html>

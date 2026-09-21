@@ -1,0 +1,114 @@
+/* ===== Manual de Estruturas Metálicas – estilo de impressão ===== */
+@page {
+  size: A4;
+  margin: 22mm 18mm 20mm 18mm;
+  @top-left { content: "Manual Prático de Estruturas Metálicas"; font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color:#666; }
+  @top-right { content: string(capitulo); font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color:#666; }
+  @bottom-center { content: counter(page); font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color:#444; }
+}
+@page capa { margin: 0; @top-left{content:none} @top-right{content:none} @bottom-center{content:none} }
+@page sumario { @top-right{content:"Sumário"} }
+
+:root{
+  --azul:#0b3d91; --azul2:#1f5fbf; --cinza:#555; --claro:#eef3fb; --amarelo:#fff7d6; --verde:#e9f7ec; --verm:#fdecec;
+  --aco:#8a94a6; --acoEsc:#4b5563; --hachura:#9aa4b2;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family: Arial, Helvetica, "Liberation Sans", sans-serif; font-size:10.5pt; line-height:1.45; color:#1a1a1a;}
+h1,h2,h3,h4{font-family: Arial, Helvetica, sans-serif; color:var(--azul); line-height:1.2; break-after:avoid}
+h1.cap{font-size:26pt; margin:0 0 4mm 0; padding-top:6mm; border-bottom:3px solid var(--azul); padding-bottom:3mm}
+h1.cap span.tit{string-set: capitulo content()}
+h1.cap small{display:block; font-size:11pt; color:var(--cinza); font-weight:normal; letter-spacing:.12em; text-transform:uppercase; margin-bottom:2mm}
+h2{font-size:15.5pt; margin:8mm 0 2.5mm 0; border-left:5px solid var(--azul2); padding-left:3mm}
+h3{font-size:12.5pt; margin:5mm 0 2mm 0; color:#123a7a}
+h4{font-size:11pt; margin:4mm 0 1.5mm 0; color:#333}
+p{margin:0 0 2.6mm 0; text-align:justify; hyphens:auto; orphans:3; widows:3}
+ul,ol{margin:0 0 3mm 0; padding-left:6mm}
+li{margin-bottom:1.2mm}
+strong{color:#000}
+code,.mono{font-family: Consolas, "Courier New", monospace; font-size:9.5pt}
+sup,sub{line-height:0}
+a{color:var(--azul2); text-decoration:none}
+
+/* ---- Figuras ---- */
+figure.fig{margin:4mm auto 5mm auto; text-align:center; break-inside:avoid; page-break-inside:avoid; width:100%}
+figure.fig svg{max-width:100%; height:auto; display:block; margin:0 auto}
+figure.fig img{max-width:100%; height:auto; display:block; margin:0 auto}
+figure.fig.p60 svg, figure.fig.p60 img{width:60%}
+figure.fig.p75 svg, figure.fig.p75 img{width:75%}
+figure.fig.p90 svg, figure.fig.p90 img{width:90%}
+figure.fig figcaption{font-size:9pt; color:#333; margin-top:1.5mm; text-align:center; padding:0 6mm}
+figure.fig figcaption b{color:var(--azul)}
+.fig-row{display:flex; gap:4mm; justify-content:center; align-items:flex-start; break-inside:avoid}
+.fig-row figure.fig{flex:1 1 0; margin-top:2mm}
+
+/* ---- Tabelas ---- */
+table.tab{width:100%; border-collapse:collapse; font-size:9pt; margin:2mm 0 4mm 0; break-inside:auto}
+table.tab caption{caption-side:top; text-align:left; font-weight:bold; color:var(--azul); font-size:9.5pt; margin-bottom:1.2mm}
+table.tab th{background:var(--azul); color:#fff; padding:1.6mm 2mm; text-align:center; font-weight:bold; border:1px solid #c9d3e6}
+table.tab td{padding:1.4mm 2mm; border:1px solid #c9d3e6; vertical-align:top}
+table.tab tr:nth-child(even) td{background:#f5f8fd}
+table.tab td.l{text-align:left}
+table.tab td.c{text-align:center}
+table.tab td.r{text-align:right}
+table.tab tr{break-inside:avoid}
+table.tab thead{display:table-header-group}
+table.tab.small{font-size:8pt}
+table.tab.small th, table.tab.small td{padding:1mm 1.4mm}
+
+/* ---- Caixas ---- */
+.box{border:1px solid #c9d3e6; border-left:6px solid var(--azul2); background:var(--claro); padding:2.5mm 3.5mm; margin:3mm 0 4mm 0; break-inside:avoid; border-radius:2px}
+.box .tit{font-weight:bold; color:var(--azul); margin-bottom:1mm; font-size:10.5pt}
+.box p:last-child{margin-bottom:0}
+.box.dica{border-left-color:#2e8b57; background:var(--verde)} .box.dica .tit{color:#1f6b41}
+.box.atencao{border-left-color:#c0392b; background:var(--verm)} .box.atencao .tit{color:#a12a1f}
+.box.norma{border-left-color:#b8860b; background:var(--amarelo)} .box.norma .tit{color:#8a6508}
+.box.exemplo{border-left-color:#6a3fb5; background:#f3eefc} .box.exemplo .tit{color:#4f2c8f}
+.box.exemplo .passo{margin:1.5mm 0; padding-left:3mm; border-left:2px dotted #b39ddb}
+.formula{font-family:"Cambria Math", "Times New Roman", serif; font-size:11.5pt; text-align:center; margin:2.5mm 0; padding:1.5mm; break-inside:avoid}
+.formula .n{float:right; font-family:Arial; font-size:9pt; color:#666}
+.onde{font-size:9.3pt; margin:0 0 3mm 4mm}
+.onde li{margin-bottom:.4mm}
+.dois-col{column-count:2; column-gap:6mm}
+.resumo{border:1px solid var(--azul); padding:3mm 4mm; margin:5mm 0; background:#fafcff; break-inside:avoid}
+.resumo .tit{font-weight:bold; color:var(--azul); text-transform:uppercase; letter-spacing:.06em; font-size:9.5pt; margin-bottom:1.5mm}
+.objetivos{background:#fff; border:1px dashed var(--azul2); padding:2.5mm 3.5mm; margin:0 0 5mm 0; font-size:9.8pt}
+.objetivos .tit{font-weight:bold; color:var(--azul2); margin-bottom:1mm}
+.chk li{list-style:none; position:relative; padding-left:6mm}
+.chk li::before{content:"☐"; position:absolute; left:0; top:0; color:var(--azul2)}
+.nivel{display:inline-block; font-size:8pt; padding:.3mm 2mm; border-radius:3px; color:#fff; vertical-align:middle; margin-left:2mm}
+.nivel.b{background:#2e8b57} .nivel.i{background:#d98e04} .nivel.a{background:#a12a1f}
+hr{border:0; border-top:1px solid #c9d3e6; margin:5mm 0}
+.quebra{break-before:page}
+section.capitulo{break-before:page}
+
+/* ---- Capa ---- */
+.capa{page:capa; height:297mm; width:210mm; background:linear-gradient(160deg,#0b3d91 0%,#123a7a 55%,#1f5fbf 100%); color:#fff; position:relative; overflow:hidden;}
+.capa .grid{position:absolute; inset:0; opacity:.14}
+.capa .titulo{position:absolute; left:20mm; top:70mm; right:20mm}
+.capa .titulo .sup{font-size:13pt; letter-spacing:.25em; text-transform:uppercase; opacity:.85}
+.capa .titulo h1{font-size:42pt; color:#fff; line-height:1.05; margin:4mm 0 6mm 0; border:0; padding:0}
+.capa .titulo .sub{font-size:14pt; opacity:.92; max-width:150mm; line-height:1.4}
+.capa .rodape{position:absolute; left:20mm; bottom:22mm; right:20mm; font-size:10pt; opacity:.85; border-top:1px solid rgba(255,255,255,.4); padding-top:4mm}
+.capa .ilustra{position:absolute; right:14mm; bottom:50mm; width:110mm; opacity:.95}
+
+/* ---- Sumário ---- */
+.sumario{page:sumario; break-before:page}
+.sumario h1{font-size:24pt; border-bottom:3px solid var(--azul); padding-bottom:3mm; margin-top:6mm}
+.sumario ol{list-style:none; padding:0; margin:0}
+.sumario li.n1{display:flex; align-items:baseline; margin:2.2mm 0 .6mm 0; font-weight:bold; font-size:10.5pt}
+.sumario li.n2{display:flex; align-items:baseline; margin:.3mm 0 .3mm 8mm; font-size:9.5pt; color:#333}
+.sumario li .pt{flex:1; border-bottom:1px dotted #999; margin:0 2mm; height:.9em}
+.sumario li .pg::after{content: target-counter(attr(href url), page)}
+.sumario li a{color:inherit}
+
+/* ---- Frontispício / apresentação ---- */
+.apresentacao{break-before:page}
+.apresentacao h1{font-size:22pt; border-bottom:3px solid var(--azul); padding-bottom:3mm; margin-top:6mm}
+.trilha{display:flex; gap:3mm; flex-wrap:wrap; margin:3mm 0}
+.trilha .card{flex:1 1 44%; border:1px solid #c9d3e6; border-top:4px solid var(--azul2); padding:2.5mm 3mm; font-size:9.5pt; background:#fff}
+.trilha .card b{color:var(--azul)}
+
+/* Paged.js */
+.pagedjs_page{background:#fff}

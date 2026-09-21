@@ -1,0 +1,1256 @@
+<h1 class="cap"><small>Capítulo 14</small>Catálogo de detalhes construtivos práticos</h1>
+<div class="objetivos"><div class="tit">O que você vai aprender neste capítulo</div>
+<ul><li>Reconhecer, desenhar e dimensionar "de forma prática" os detalhes que aparecem em quase toda obra metálica: apoios de terças, correntes, contraventamentos, nós de treliça, enrijecedores, mísulas, emendas, bases e aberturas em alma.</li>
+<li>Dimensões usuais de escadas, guarda-corpos, pisos de grade, telhas, calhas, rufos e juntas de dilatação, com as normas que as regem (NBR 9077, NBR 14718, NR-12, NBR 10844).</li>
+<li>Detalhar pensando em fabricação, montagem, drenagem e galvanização: folgas, furos oblongos, acesso de chave, furos de respiro.</li>
+<li>Os erros de detalhamento mais comuns e como evitá-los.</li></ul></div>
+
+<p>Um projeto estrutural bem calculado pode fracassar em um detalhe mal resolvido: uma terça soldada sem folga que não entra na obra, um tirante sem esticador que fica frouxo, um enrijecedor esquecido sob a carga concentrada, um furo redondo onde o apoio precisava deslizar. Este capítulo é um <strong>catálogo visual</strong>: cada detalhe é apresentado com um desenho em elevação e/ou corte, as cotas típicas, um roteiro de dimensionamento simplificado e os erros mais frequentes. Ele complementa os capítulos de ligações (Capítulo 8), fabricação (Capítulo 11), proteção (Capítulo 12) e montagem (Capítulo 13). As dimensões indicadas são <em>valores típicos de projeto</em>; a verificação final é sempre feita pelos métodos dos capítulos de cálculo.</p>
+
+<h2>14.1 Terças, correntes e longarinas <span class="nivel b">Básico</span></h2>
+<h3>14.1.1 Apoio de terça Ue sobre viga ou tesoura</h3>
+<p><strong>Para que serve.</strong> Transferir a reação da terça (gravidade e sucção do vento) para a viga do pórtico ou o banzo superior da tesoura, mantendo a terça na inclinação do telhado e sem impedir a montagem. A solução padrão é a <strong>chapa de terça</strong> ("suporte" ou "cadeira"): uma chapa dobrada em L ou uma cantoneira soldada à mesa superior da viga, com furos para parafusar a alma da terça.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_1" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s14_1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- ELEVAÇÃO (vista ao longo da viga) -->
+<text x="180" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">ELEVAÇÃO (corte transversal à terça)</text>
+<g transform="translate(40,40)">
+<!-- viga W: mesa superior inclinada 10% -->
+<polygon points="20,150 300,122 300,134 20,162" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="152,162 168,160 168,250 152,250" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="20,250 300,250 300,262 20,262" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="230" y="205" font-size="11" fill="#555">viga do pórtico (W)</text>
+<!-- chapa de terça (L dobrado) -->
+<polygon points="150,140 160,139 160,40 150,40" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="115,144.5 195,136.5 195,142.5 115,150.5" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- solda -->
+<polygon points="115,150.5 105,151.5 115,157" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="195,142.5 205,141.5 195,149" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- terça Ue -->
+<g transform="translate(160,40) rotate(-5.7)">
+<polygon points="0,0 0,100 45,100 45,88 8,88 8,12 45,12 45,0" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<line x1="45" y1="0" x2="45" y2="12" stroke="#0b3d91" stroke-width="2"/>
+<line x1="45" y1="88" x2="45" y2="100" stroke="#0b3d91" stroke-width="2"/>
+<circle cx="4" cy="35" r="4" fill="#444"/><circle cx="4" cy="65" r="4" fill="#444"/>
+</g>
+<!-- furos oblongos na chapa -->
+<rect x="151" y="70" width="8" height="14" rx="4" fill="#fff" stroke="#333" stroke-width="1"/>
+<rect x="151" y="100" width="8" height="14" rx="4" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- cotas -->
+<line x1="230" y1="40" x2="230" y2="140" stroke="#555" stroke-width="1" marker-start="url(#s14_1)" marker-end="url(#s14_1)"/>
+<text x="236" y="95" font-size="11" fill="#555">h<tspan baseline-shift="sub" font-size="9">ch</tspan> ≈ 0,7–0,8 h<tspan baseline-shift="sub" font-size="9">terça</tspan></text>
+<line x1="115" y1="175" x2="195" y2="175" stroke="#555" stroke-width="1" marker-start="url(#s14_1)" marker-end="url(#s14_1)"/>
+<text x="155" y="190" text-anchor="middle" font-size="11" fill="#555">largura ≈ b<tspan baseline-shift="sub" font-size="9">f</tspan>/2 a b<tspan baseline-shift="sub" font-size="9">f</tspan></text>
+<text x="10" y="120" font-size="11" fill="#555">chapa dobrada</text>
+<text x="10" y="133" font-size="11" fill="#555">t = 4,75–6,3 mm</text>
+<line x1="70" y1="128" x2="148" y2="110" stroke="#555" stroke-width="1"/>
+<text x="215" y="60" font-size="11" fill="#0b3d91">terça Ue</text>
+<text x="228" y="150" font-size="10" fill="#7a3e00">solda filete 5 mm</text>
+<line x1="226" y1="147" x2="205" y2="146" stroke="#7a3e00" stroke-width="1"/>
+</g>
+<!-- CORTE / VISTA LATERAL -->
+<text x="560" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">VISTA LATERAL (ao longo da terça)</text>
+<g transform="translate(420,40)">
+<rect x="0" y="150" width="300" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="150" y="200" text-anchor="middle" font-size="11" fill="#555">mesa superior da viga</text>
+<!-- chapa de terça vista de frente -->
+<rect x="110" y="40" width="80" height="110" fill="url(#h14_1)" stroke="#333" stroke-width="1.5"/>
+<!-- furos oblongos -->
+<rect x="135" y="60" width="30" height="12" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+<rect x="135" y="100" width="30" height="12" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+<circle cx="150" cy="66" r="4" fill="#444"/><circle cx="150" cy="106" r="4" fill="#444"/>
+<!-- terças (oculta) -->
+<rect x="-5" y="30" width="152" height="100" fill="none" stroke="#0b3d91" stroke-width="1.5" stroke-dasharray="4 3"/>
+<rect x="153" y="30" width="152" height="100" fill="none" stroke="#0b3d91" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="70" y="25" text-anchor="middle" font-size="11" fill="#0b3d91">terça 1</text>
+<text x="230" y="25" text-anchor="middle" font-size="11" fill="#0b3d91">terça 2</text>
+<!-- cotas -->
+<line x1="147" y1="135" x2="153" y2="135" stroke="#c0392b" stroke-width="1"/>
+<text x="150" y="147" text-anchor="middle" font-size="10" fill="#c0392b">folga 10–20 mm</text>
+<line x1="135" y1="80" x2="165" y2="80" stroke="#555" stroke-width="1" marker-start="url(#s14_1)" marker-end="url(#s14_1)"/>
+<text x="200" y="84" font-size="10" fill="#555">oblongo d+2 × (d+10) mm</text>
+<line x1="110" y1="175" x2="190" y2="175" stroke="#555" stroke-width="1" marker-start="url(#s14_1)" marker-end="url(#s14_1)"/>
+<text x="150" y="188" text-anchor="middle" font-size="11" fill="#555">80–150 mm</text>
+<text x="150" y="215" text-anchor="middle" font-size="11" fill="#333">2 parafusos ø 1/2" ou 5/8" (A307/A325)</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.1</b> – Apoio de terça Ue sobre a viga do pórtico com chapa de terça: elevação (chapa dobrada soldada à mesa, terça parafusada pela alma) e vista lateral (furos oblongos para absorver tolerâncias; folga entre terças no apoio simples).</figcaption>
+</figure>
+<p><strong>Como dimensionar de forma prática.</strong> A reação típica de uma terça de galpão é pequena (2 a 8 kN), portanto a chapa raramente é crítica: use espessura 4,75 a 6,3 mm (ou cantoneira L 2"×3/16"), altura de 70 a 80 % da altura da terça (para que os parafusos fiquem na região central da alma) e dois parafusos ø 1/2" ou 5/8". Verifique apenas: (a) cisalhamento e esmagamento dos parafusos na alma fina da terça (t = 2,0–3,0 mm: a alma é que manda — esmagamento R<sub>d</sub> = 2,4·d·t·f<sub>u</sub>/γ<sub>a2</sub>); (b) a solda de filete da chapa à mesa (5 mm de dois lados resolve). Terças contínuas ou com luva devem ter a chapa alta o suficiente para receber os parafusos das duas peças sobrepostas (ver Figura 14.3).</p>
+<div class="box atencao"><div class="tit">Erros comuns</div><p>(1) Soldar a terça diretamente na tesoura em campo: além de queimar a galvanização, impede ajuste e faz a terça trabalhar como "contraventamento" não previsto. (2) Furos redondos justos na chapa: com as tolerâncias de fabricação do pórtico (± 5 mm) os furos não coincidem — use oblongos na chapa (nunca na terça). (3) Chapa muito baixa: os parafusos ficam junto à mesa da terça e a alma rasga por esmagamento. (4) Esquecer que a terça de beiral e a de cumeeira têm reações e cargas diferentes das demais (apoio do fechamento, tirante de cumeeira).</p></div>
+
+<h3>14.1.2 Correntes (tirantes de terças) e tirante de cumeeira</h3>
+<p><strong>Para que serve.</strong> As terças trabalham em <em>flexão oblíqua</em>: a componente da carga paralela ao telhado (≈ 10 % em telhados de 10 %) flete o perfil no eixo de menor inércia, e a mesa livre (inferior) pode flambar lateralmente sob sucção de vento. As <strong>correntes</strong> (barras redondas ø 10–16 mm, ou cantoneiras L 1"×1/8") ligam as terças entre si nos terços ou no meio do vão, reduzindo o vão de flexão lateral (L<sub>b</sub> = 2,5 m para vão de 5 m) e "pendurando" cada terça na de cima. A carga acumulada chega à cumeeira, onde o <strong>tirante de cumeeira</strong> (em V, ligando as duas terças de cumeeira ou a terça de cumeeira à viga) fecha o sistema.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s14_2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- vista em planta de um vão -->
+<text x="200" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">PLANTA DE UMA ÁGUA (vão de 5 m)</text>
+<g transform="translate(30,30)">
+<rect x="0" y="0" width="340" height="16" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="230" width="340" height="16" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="170" y="12" text-anchor="middle" font-size="10">viga do pórtico A</text>
+<text x="170" y="242" text-anchor="middle" font-size="10">viga do pórtico B</text>
+<!-- terças -->
+<g stroke="#0b3d91" stroke-width="3">
+<line x1="30" y1="16" x2="30" y2="230"/><line x1="90" y1="16" x2="90" y2="230"/><line x1="150" y1="16" x2="150" y2="230"/><line x1="210" y1="16" x2="210" y2="230"/><line x1="270" y1="16" x2="270" y2="230"/><line x1="330" y1="16" x2="330" y2="230"/>
+</g>
+<text x="30" y="262" text-anchor="middle" font-size="10">beiral</text><text x="330" y="262" text-anchor="middle" font-size="10">cumeeira</text>
+<!-- correntes no meio do vão -->
+<g stroke="#c0392b" stroke-width="1.5">
+<line x1="30" y1="123" x2="90" y2="123"/><line x1="90" y1="123" x2="150" y2="123"/><line x1="150" y1="123" x2="210" y2="123"/><line x1="210" y1="123" x2="270" y2="123"/><line x1="270" y1="123" x2="330" y2="123"/>
+<!-- tirante de cumeeira em V -->
+<line x1="270" y1="123" x2="330" y2="80"/><line x1="270" y1="123" x2="330" y2="166"/>
+</g>
+<!-- esticadores -->
+<rect x="115" y="119" width="10" height="8" fill="#444"/><rect x="235" y="119" width="10" height="8" fill="#444"/>
+<text x="120" y="112" text-anchor="middle" font-size="10" fill="#c0392b">esticador</text>
+<line x1="0" y1="123" x2="0" y2="16" stroke="#555" stroke-width="1" marker-start="url(#s14_2)" marker-end="url(#s14_2)"/>
+<text x="-4" y="70" font-size="10" fill="#555" transform="rotate(-90,-4,70)" text-anchor="middle">L/2 = 2,5 m</text>
+<line x1="30" y1="285" x2="90" y2="285" stroke="#555" stroke-width="1" marker-start="url(#s14_2)" marker-end="url(#s14_2)" transform="translate(0,-10)"/>
+<text x="60" y="270" text-anchor="middle" font-size="10" fill="#555">1,5–1,7 m</text>
+<text x="295" y="70" font-size="10" fill="#c0392b">tirante de cumeeira (V)</text>
+</g>
+<!-- corte da terça mostrando posição da corrente -->
+<text x="580" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">CORTE: posição na altura</text>
+<g transform="translate(470,40)">
+<polygon points="40,0 40,140 100,140 100,124 52,124 52,16 100,16 100,0" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<line x1="100" y1="0" x2="100" y2="16" stroke="#0b3d91" stroke-width="2"/><line x1="100" y1="124" x2="100" y2="140" stroke="#0b3d91" stroke-width="2"/>
+<!-- corrente barra redonda passando pela alma -->
+<line x1="-20" y1="60" x2="46" y2="60" stroke="#c0392b" stroke-width="3"/>
+<line x1="52" y1="60" x2="160" y2="60" stroke="#c0392b" stroke-width="3"/>
+<rect x="30" y="54" width="10" height="12" fill="#444"/><rect x="52" y="54" width="10" height="12" fill="#444"/>
+<text x="120" y="55" font-size="10" fill="#444">porca + contraporca</text>
+<line x1="20" y1="0" x2="20" y2="60" stroke="#555" stroke-width="1" marker-start="url(#s14_2)" marker-end="url(#s14_2)"/>
+<text x="0" y="35" font-size="10" fill="#555" text-anchor="end">≈ h/3</text>
+<text x="105" y="135" font-size="10" fill="#555">alternativa: cantoneira</text>
+<text x="105" y="148" font-size="10" fill="#555">L 1"×1/8" parafusada</text>
+<line x1="-20" y1="175" x2="180" y2="175" stroke="#333" stroke-width="1"/>
+<text x="80" y="195" text-anchor="middle" font-size="10">ø 10–16 mm, rosca nas pontas</text>
+<text x="80" y="208" text-anchor="middle" font-size="10">(furo na alma ø d + 2 mm)</text>
+<text x="80" y="228" text-anchor="middle" font-size="10" fill="#c0392b">Em telhados com forro/pé-direito alto:</text>
+<text x="80" y="241" text-anchor="middle" font-size="10" fill="#c0392b">2 correntes (h/4 e 3h/4) travam a torção</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.2</b> – Correntes de terças: em planta (uma linha no meio do vão de 5 m, tirante de cumeeira em V) e em corte (barra redonda passando pela alma, no terço superior; esticador ou porca/contraporca).</figcaption>
+</figure>
+<p><strong>Como dimensionar.</strong> A força na corrente é a soma das componentes paralelas ao telhado das cargas de todas as terças abaixo dela: F = Σ (q<sub>terça</sub> · L<sub>vão</sub> · sen θ). Para um galpão de 10 % (sen θ ≈ 0,10) com 7 terças de 5 m carregadas com 0,8 kN/m, a corrente junto à cumeeira recebe F ≈ 7 × 0,8 × 5 × 0,10 = 2,8 kN, valor irrisório frente à resistência de uma barra ø 12,5 mm (N<sub>t,Rd</sub> ≈ 0,75·1,23·40/1,35 ≈ 27 kN na rosca). O diâmetro é, na prática, definido pela rigidez e pela robustez de montagem: ø 12,5 mm para vãos até 6 m e ø 16 mm acima disso. O tirante de cumeeira recebe 2F (uma corrente de cada água) e trabalha com inclinação; use o mesmo diâmetro e verifique a chapa/terça de cumeeira à flexão lateral. Com correntes a cada 2,5 m o comprimento destravado da mesa livre cai para L<sub>b</sub> = 2,5 m, o que é a hipótese usada no dimensionamento das terças (Capítulos 7 e 16).</p>
+<div class="box dica"><div class="tit">Regra de bolso</div><p>Vão da terça até 4 m: uma corrente no meio; 4 a 7 m: duas correntes nos terços; acima de 7 m, use terça treliçada ou reduza o vão. Correntes <em>sempre com esticador</em> (ou rosca longa com porca e contraporca): barra frouxa não trava nada. E lembre: a corrente "sobe" a carga até a cumeeira — sem o tirante de cumeeira o sistema é inútil.</p></div>
+
+<h3>14.1.3 Terças contínuas com luvas (sleeves) e sobreposição</h3>
+<p>Terças simplesmente apoiadas desperdiçam material: o momento no vão é wL²/8. Tornando-as <strong>contínuas</strong> (momento de apoio wL²/8 ou menor com continuidade parcial, vão ≈ wL²/12 a wL²/14), reduz-se o perfil ou aumenta-se o vão, e a flecha cai a cerca de 40 % da viga isostática. Há duas maneiras (Figura 14.3): a <strong>sobreposição</strong> (as terças se cruzam sobre o apoio, encaixadas uma dentro da outra por 10 a 15 % do vão de cada lado) e a <strong>luva</strong> (sleeve): um pedaço curto do mesmo perfil, ou de perfil um número maior, que envolve a emenda com 4 parafusos de cada lado.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 760 248" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s14_3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<text x="190" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) SOBREPOSIÇÃO (overlap)</text>
+<g transform="translate(20,40)">
+<rect x="150" y="100" width="60" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="172" y="112" width="16" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+
+<rect x="150" y="30" width="30" height="70" fill="url(#h14_1)" stroke="#333" stroke-width="1"/>
+<!-- terça 1 -->
+<rect x="0" y="35" width="240" height="60" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<!-- terça 2 (encaixada) -->
+<rect x="120" y="38" width="240" height="54" fill="none" stroke="#1f5fbf" stroke-width="2" stroke-dasharray="6 3"/>
+<circle cx="140" cy="52" r="3.5" fill="#444"/><circle cx="140" cy="78" r="3.5" fill="#444"/>
+<circle cx="220" cy="52" r="3.5" fill="#444"/><circle cx="220" cy="78" r="3.5" fill="#444"/>
+<circle cx="160" cy="65" r="3.5" fill="#444"/><circle cx="200" cy="65" r="3.5" fill="#444"/>
+<line x1="120" y1="12" x2="240" y2="12" stroke="#555" stroke-width="1" marker-start="url(#s14_3)" marker-end="url(#s14_3)"/>
+<text x="180" y="8" text-anchor="middle" font-size="10" fill="#555">2 × (0,10 a 0,15) L</text>
+<text x="60" y="110" font-size="10" fill="#0b3d91">terça A</text><text x="290" y="110" font-size="10" fill="#1f5fbf">terça B (encaixada)</text>
+</g>
+<text x="570" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) LUVA (sleeve)</text>
+<g transform="translate(400,40)">
+<rect x="150" y="100" width="60" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="172" y="112" width="16" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="150" y="30" width="30" height="70" fill="url(#h14_1)" stroke="#333" stroke-width="1"/>
+<rect x="0" y="35" width="175" height="60" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<rect x="185" y="35" width="175" height="60" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<rect x="100" y="32" width="160" height="66" fill="none" stroke="#c0392b" stroke-width="2"/>
+<g fill="#444"><circle cx="115" cy="50" r="3.5"/><circle cx="115" cy="80" r="3.5"/><circle cx="140" cy="50" r="3.5"/><circle cx="140" cy="80" r="3.5"/><circle cx="220" cy="50" r="3.5"/><circle cx="220" cy="80" r="3.5"/><circle cx="245" cy="50" r="3.5"/><circle cx="245" cy="80" r="3.5"/></g>
+<line x1="175" y1="60" x2="185" y2="60" stroke="#c0392b" stroke-width="1"/>
+<text x="180" y="125" text-anchor="middle" font-size="10" fill="#c0392b">folga 10 mm</text>
+<line x1="100" y1="12" x2="260" y2="12" stroke="#555" stroke-width="1" marker-start="url(#s14_3)" marker-end="url(#s14_3)"/>
+<text x="180" y="8" text-anchor="middle" font-size="10" fill="#555">luva: 0,6 a 1,0 m (4 + 4 parafusos)</text>
+<text x="180" y="140" text-anchor="middle" font-size="10" fill="#c0392b">luva = mesmo perfil ou 1 nº maior</text>
+</g>
+<text x="380" y="236" text-anchor="middle" font-size="11" fill="#333">Os parafusos da emenda (M12–M16) transmitem o momento de continuidade: verifique-os ao binário M/(0,7 h) e a alma ao esmagamento.</text>
+</svg>
+<figcaption><b>Figura 14.3</b> – Terças contínuas: (a) sobreposição das peças sobre o apoio; (b) luva de perfil igual ou maior envolvendo a emenda. Nos dois casos a chapa de terça deve ser alta o suficiente para receber os dois grupos de parafusos.</figcaption>
+</figure>
+<p><strong>Dimensionamento prático.</strong> Com sobreposição de 10 % do vão para cada lado (0,5 m em vão de 5 m) a seção sobre o apoio tem inércia dupla e a terça pode ser calculada como contínua. Os parafusos da sobreposição transmitem o momento de apoio por binário: em uma terça Ue 200 com M<sub>apoio</sub> ≈ 4 kN·m, F = 4/(0,7·0,20) ≈ 29 kN, o que dá 4 parafusos M12 8.8 (F<sub>v,Rd</sub> ≈ 27 kN cada) — a alma de 2,0–2,65 mm, ao esmagamento (2,4·1,2·0,265·41/1,35 ≈ 23 kN por parafuso), costuma governar. Em luva, dimensione-a para o mesmo momento e não esqueça de que a luva pode ficar 2 mm "solta" dentro da terça; prefira luva de perfil um número maior encaixada por fora.</p>
+
+<h3>14.1.4 Longarina de fechamento e mão-francesa</h3>
+<p>As <strong>longarinas</strong> (girts) são as "terças da parede": perfis Ue apoiados nos pilares que recebem a telha de fechamento e o vento (pressão e sucção). A diferença é que a carga principal é horizontal, e a longarina flete no eixo forte, enquanto o peso próprio da telha e do perfil flete o eixo fraco e, com o tempo, faz a longarina "embarrigar". O remédio é a <strong>mão-francesa</strong> (Figura 14.4): um tirante inclinado (barra ø 12,5 mm ou cantoneira L 1½"×3/16") que pendura a longarina no pilar ou na longarina superior, reduzindo o vão de flexão vertical. O mesmo elemento, usado na cobertura, liga a terça à mesa inferior da viga do pórtico e trava lateralmente essa mesa (L<sub>b</sub> da mesa comprimida sob sucção — Capítulo 16).</p>
+<figure class="fig p90">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s14_4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<text x="190" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) LONGARINAS na parede (elevação)</text>
+<g transform="translate(20,30)">
+<rect x="20" y="0" width="16" height="220" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="320" y="0" width="16" height="220" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="28" y="235" text-anchor="middle" font-size="10">pilar</text><text x="328" y="235" text-anchor="middle" font-size="10">pilar</text>
+<g stroke="#0b3d91" stroke-width="4"><line x1="36" y1="50" x2="320" y2="50"/><line x1="36" y1="110" x2="320" y2="110"/><line x1="36" y1="170" x2="320" y2="170"/></g>
+<text x="178" y="45" text-anchor="middle" font-size="10" fill="#0b3d91">longarina Ue (topo)</text>
+<!-- mão-francesa no meio do vão: tirante da longarina superior às inferiores -->
+<g stroke="#c0392b" stroke-width="2"><line x1="178" y1="50" x2="178" y2="170"/></g>
+<rect x="174" y="76" width="8" height="10" fill="#444"/><rect x="174" y="136" width="8" height="10" fill="#444"/>
+<text x="185" y="90" font-size="10" fill="#c0392b">pendural ø 12,5 (mão-francesa</text>
+<text x="185" y="102" font-size="10" fill="#c0392b">vertical / sag rod)</text>
+<!-- mão-francesa inclinada no pilar -->
+<g stroke="#c0392b" stroke-width="2"><line x1="36" y1="20" x2="90" y2="110"/></g>
+<text x="60" y="130" font-size="10" fill="#c0392b">mão-francesa inclinada</text>
+<text x="60" y="142" font-size="10" fill="#c0392b">(L 1½"×3/16", 45°)</text>
+<line x1="36" y1="200" x2="320" y2="200" stroke="#555" stroke-width="1" marker-start="url(#s14_4)" marker-end="url(#s14_4)"/>
+<text x="178" y="215" text-anchor="middle" font-size="10" fill="#555">vão 5–6 m; espaçamento vertical 1,5–2,0 m</text>
+</g>
+<text x="570" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) MÃO-FRANCESA na cobertura (corte)</text>
+<g transform="translate(420,30)">
+<!-- viga W em corte (mesas) -->
+<rect x="120" y="60" width="90" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="158" y="70" width="14" height="120" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="120" y="190" width="90" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="230" y="130" font-size="10" fill="#555">viga do pórtico</text>
+<!-- terça sobre a viga (corte) -->
+<polygon points="20,50 20,10 60,10 60,18 26,18 26,42 60,42 60,50" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<polygon points="250,50 250,10 290,10 290,18 256,18 256,42 290,42 290,50" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<text x="40" y="5" text-anchor="middle" font-size="10" fill="#0b3d91">terça</text>
+<!-- mãos-francesas -->
+<g stroke="#c0392b" stroke-width="2.5"><line x1="30" y1="45" x2="160" y2="190"/><line x1="280" y1="45" x2="170" y2="190"/></g>
+<circle cx="150" cy="180" r="3.5" fill="#444"/><circle cx="180" cy="180" r="3.5" fill="#444"/>
+<circle cx="40" cy="55" r="3.5" fill="#444"/><circle cx="270" cy="55" r="3.5" fill="#444"/>
+<text x="80" y="230" text-anchor="middle" font-size="10" fill="#c0392b">L 1½"×3/16" parafusada</text>
+<text x="80" y="243" text-anchor="middle" font-size="10" fill="#c0392b">na alma da terça e em chapa</text>
+<text x="80" y="256" text-anchor="middle" font-size="10" fill="#c0392b">soldada à mesa inferior</text>
+<text x="240" y="230" text-anchor="middle" font-size="10" fill="#333">trava a mesa inferior:</text>
+<text x="240" y="243" text-anchor="middle" font-size="10" fill="#333">L<tspan baseline-shift="sub" font-size="8">b</tspan> = distância entre mãos-francesas</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.4</b> – (a) Longarinas de fechamento com pendural no meio do vão e mão-francesa inclinada junto ao pilar; (b) mão-francesa de cobertura em corte: par de cantoneiras da terça à mesa inferior da viga, travando-a contra a flambagem lateral.</figcaption>
+</figure>
+<p><strong>Dimensionamento prático.</strong> A força de travamento de uma mão-francesa de cobertura é pequena: a NBR 8800 e a prática internacional adotam cerca de <strong>2 % da força na mesa comprimida</strong> (F<sub>br</sub> ≈ 0,02·M<sub>Sd</sub>/h). Para M<sub>Sd</sub> = 190 kN·m em viga de 350 mm, F<sub>br</sub> ≈ 0,02 × 190/0,34 ≈ 11 kN — uma L 1½"×3/16" com um parafuso ø 1/2" em cada ponta resolve. Coloque mãos-francesas em <em>todas</em> as terças nos 20 % iniciais do vão junto ao joelho (onde o momento negativo comprime a mesa inferior) e a cada duas terças no restante. Na parede, o pendural recebe o peso da telha e das longarinas abaixo dele: F = Σ (g · L); ø 12,5 mm é o padrão.</p>
+
+<h2>14.2 Contraventamentos <span class="nivel i">Intermediário</span></h2>
+<h3>14.2.1 Contraventamento de cobertura em X</h3>
+<p><strong>Para que serve.</strong> Levar o vento que atua nos oitões (e as forças de estabilização dos pórticos) até os contraventamentos verticais das paredes, formando no plano do telhado uma treliça horizontal cujos banzos são as vigas de dois pórticos vizinhos, os montantes são as terças/escoras e as diagonais são as barras em X. Duas famílias de solução: <strong>barras redondas com esticador</strong> (só tração, leves e baratas, ø 16–25 mm) e <strong>cantoneiras com chapa gusset</strong> (tração e, se esbeltez permitir, compressão; mais rígidas, melhor para galpões com ponte rolante ou grandes vãos).</p>
+<figure class="fig">
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_5" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s14_5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<text x="180" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) BARRAS REDONDAS + ESTICADOR (planta)</text>
+<g transform="translate(20,30)">
+<rect x="0" y="0" width="330" height="14" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="190" width="330" height="14" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="165" y="11" text-anchor="middle" font-size="9">viga do pórtico 1</text><text x="165" y="201" text-anchor="middle" font-size="9">viga do pórtico 2</text>
+<g stroke="#0b3d91" stroke-width="3"><line x1="20" y1="14" x2="20" y2="190"/><line x1="165" y1="14" x2="165" y2="190"/><line x1="310" y1="14" x2="310" y2="190"/></g>
+<text x="20" y="215" text-anchor="middle" font-size="9">escora / terça</text>
+<g stroke="#c0392b" stroke-width="2"><line x1="20" y1="14" x2="165" y2="190"/><line x1="20" y1="190" x2="165" y2="14"/><line x1="165" y1="14" x2="310" y2="190"/><line x1="165" y1="190" x2="310" y2="14"/></g>
+<rect x="60" y="56" width="14" height="8" fill="#444" transform="rotate(50,67,60)"/><rect x="205" y="56" width="14" height="8" fill="#444" transform="rotate(50,212,60)"/>
+<text x="92" y="45" font-size="10" fill="#c0392b">esticador (tensor)</text>
+<!-- cotas -->
+<line x1="-8" y1="14" x2="-8" y2="190" stroke="#555" stroke-width="1" marker-start="url(#s14_5)" marker-end="url(#s14_5)"/>
+<text x="-12" y="105" font-size="10" fill="#555" transform="rotate(-90,-12,105)" text-anchor="middle">vão 5–6 m</text>
+<line x1="20" y1="228" x2="165" y2="228" stroke="#555" stroke-width="1" marker-start="url(#s14_5)" marker-end="url(#s14_5)"/>
+<text x="92" y="243" text-anchor="middle" font-size="10" fill="#555">painel ≈ vão (diagonal a 35–55°)</text>
+<text x="165" y="265" text-anchor="middle" font-size="10">Barras ø 16–25 mm, só tração: uma diagonal trabalha, a outra afrouxa.</text>
+<text x="165" y="279" text-anchor="middle" font-size="10">Ligação: chapa de 8–9,5 mm soldada na mesa, furo ø d+2, porca + contraporca.</text>
+</g>
+<text x="565" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) NÓ COM CANTONEIRA DUPLA E GUSSET</text>
+<g transform="translate(400,30)">
+<!-- mesa da viga vista em planta -->
+<rect x="0" y="100" width="330" height="30" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="165" y="120" text-anchor="middle" font-size="10">mesa da viga (planta)</text>
+<!-- gusset -->
+<polygon points="100,100 230,100 210,30 120,30" fill="url(#h14_5)" stroke="#333" stroke-width="1.5"/>
+<!-- solda gusset-mesa -->
+<line x1="100" y1="100" x2="230" y2="100" stroke="#7a3e00" stroke-width="3"/>
+<!-- cantoneiras duplas (diagonais) -->
+<g stroke="#0b3d91" stroke-width="10" stroke-linecap="butt"><line x1="165" y1="100" x2="60" y2="-10"/><line x1="165" y1="100" x2="270" y2="-10"/></g>
+<g stroke="#fff" stroke-width="2"><line x1="165" y1="100" x2="60" y2="-10"/><line x1="165" y1="100" x2="270" y2="-10"/></g>
+<!-- escora -->
+<line x1="165" y1="100" x2="165" y2="-15" stroke="#0b3d91" stroke-width="8"/>
+<!-- parafusos -->
+<g fill="#444"><circle cx="140" cy="74" r="3.5"/><circle cx="125" cy="58" r="3.5"/><circle cx="190" cy="74" r="3.5"/><circle cx="205" cy="58" r="3.5"/><circle cx="165" cy="55" r="3.5"/><circle cx="165" cy="38" r="3.5"/></g>
+<!-- ponto de trabalho -->
+<circle cx="165" cy="100" r="4" fill="#c0392b"/>
+<text x="175" y="145" font-size="10" fill="#c0392b">ponto de trabalho (PT): eixos das barras</text>
+<text x="175" y="157" font-size="10" fill="#c0392b">se cruzam sobre o eixo da mesa</text>
+<line x1="165" y1="140" x2="165" y2="104" stroke="#c0392b" stroke-width="1"/>
+<text x="245" y="45" font-size="10">gusset t = 8–9,5 mm</text>
+<text x="20" y="45" font-size="10" fill="#0b3d91">2 L 2"×3/16"</text>
+<text x="20" y="57" font-size="10" fill="#0b3d91">(ou L simples)</text>
+<text x="165" y="185" text-anchor="middle" font-size="10">Parafusos ø 5/8"–3/4"; distância ao PT mínima para acesso de chave;</text>
+<text x="165" y="199" text-anchor="middle" font-size="10">a linha de parafusos da diagonal comprimida fica ≥ 2 t do bordo livre do gusset.</text>
+<text x="165" y="225" text-anchor="middle" font-size="10" fill="#333">Escora (montante) tubular ou terça reforçada nos nós.</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.5</b> – Contraventamento de cobertura: (a) X de barras redondas com esticadores entre pórticos; (b) nó em cantoneira dupla parafusada em gusset soldado à mesa, com as diagonais e a escora concorrendo no ponto de trabalho.</figcaption>
+</figure>
+<p><strong>Como dimensionar.</strong> Calcule a força horizontal de vento no oitão que chega ao nível da cobertura (≈ metade da altura do oitão × largura × pressão), divida entre os dois lados e trate o X como treliça: a força na diagonal é F = V/sen α (α = ângulo com o banzo). Barra redonda: N<sub>t,Rd</sub> = 0,75·A<sub>b</sub>·f<sub>u</sub>/1,35 na rosca (≈ 45 kN para ø 16 mm em aço f<sub>u</sub> = 400 MPa; 70 kN para ø 20 mm). Cantoneira: escoamento da seção bruta e ruptura da seção líquida com C<sub>t</sub> = 0,75 (uma aba ligada). Limite de esbeltez: barras redondas não têm limite; cantoneiras tracionadas, λ ≤ 300 (recomendação da NBR 8800) — ligue os X no cruzamento para reduzir L pela metade. Os esticadores devem ter resistência igual à da barra (esticador forjado classe ≥ da barra) e ficar acessíveis após a montagem da telha.</p>
+
+<h3>14.2.2 Contraventamento vertical: X, K e V invertido, e o "ponto de trabalho"</h3>
+<p>Nas paredes laterais o contraventamento vertical recebe a reação da treliça de cobertura e a leva às fundações. O <strong>X</strong> é o mais eficiente (só tração, cantoneiras L 2½" a 3"), mas fecha o vão; o <strong>K</strong> e o <strong>V invertido</strong> (chevron) permitem portas e janelas, mas exigem barras que resistam à compressão (tubos ou cantoneiras duplas) e uma viga/longarina forte no vértice. A Figura 14.6 mostra as três formas e o detalhe mais importante de qualquer nó contraventado: as linhas de eixo das barras devem se cruzar em um único <strong>ponto de trabalho</strong> (PT), sobre o eixo do pilar ou da viga. Quando o projetista "afasta" a diagonal para ganhar espaço de chave, surge uma excentricidade e e um momento M = N·e que o pilar e a ligação não foram calculados para resistir.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 345" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_6" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s14_6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- três esquemas -->
+<g transform="translate(15,30)">
+<text x="60" y="-12" text-anchor="middle" font-weight="bold" fill="#0b3d91">X</text>
+<rect x="0" y="0" width="10" height="150" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="110" y="0" width="10" height="150" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="0" width="120" height="8" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<g stroke="#c0392b" stroke-width="2"><line x1="5" y1="4" x2="115" y2="150"/><line x1="115" y1="4" x2="5" y2="150"/></g>
+<text x="60" y="170" text-anchor="middle" font-size="10">só tração (L simples)</text>
+</g>
+<g transform="translate(160,30)">
+<text x="60" y="-12" text-anchor="middle" font-weight="bold" fill="#0b3d91">K</text>
+<rect x="0" y="0" width="10" height="150" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="110" y="0" width="10" height="150" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="0" width="120" height="8" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<g stroke="#c0392b" stroke-width="2"><line x1="5" y1="4" x2="115" y2="77"/><line x1="5" y1="150" x2="115" y2="77"/></g>
+<text x="60" y="170" text-anchor="middle" font-size="10">tração + compressão</text>
+</g>
+<g transform="translate(305,30)">
+<text x="60" y="-12" text-anchor="middle" font-weight="bold" fill="#0b3d91">V invertido</text>
+<rect x="0" y="0" width="10" height="150" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="110" y="0" width="10" height="150" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="0" width="120" height="8" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<g stroke="#c0392b" stroke-width="2"><line x1="5" y1="150" x2="60" y2="4"/><line x1="115" y1="150" x2="60" y2="4"/></g>
+<rect x="30" y="100" width="60" height="50" fill="none" stroke="#333" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="60" y="130" text-anchor="middle" font-size="9">porta</text>
+<text x="60" y="170" text-anchor="middle" font-size="10">viga do vértice forte</text>
+</g>
+<!-- nó certo -->
+<g transform="translate(460,25)">
+<text x="65" y="-7" text-anchor="middle" font-weight="bold" fill="#2e8b57">NÓ CORRETO</text>
+<rect x="0" y="130" width="130" height="14" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="55" y="0" width="14" height="130" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="69,130 130,130 130,90" fill="url(#h14_6)" stroke="#333" stroke-width="1.2"/>
+<line x1="62" y1="137" x2="150" y2="55" stroke="#c0392b" stroke-width="6"/>
+<line x1="62" y1="0" x2="62" y2="150" stroke="#333" stroke-width="0.8" stroke-dasharray="6 3"/>
+<line x1="0" y1="137" x2="130" y2="137" stroke="#333" stroke-width="0.8" stroke-dasharray="6 3"/>
+<circle cx="62" cy="137" r="4" fill="#2e8b57"/>
+<text x="10" y="165" font-size="10" fill="#2e8b57">PT: eixo do pilar ∩ eixo da viga ∩ eixo da diagonal</text>
+</g>
+<g transform="translate(460,225)">
+<text x="65" y="-4" text-anchor="middle" font-weight="bold" fill="#c0392b">NÓ EXCÊNTRICO (erro)</text>
+<rect x="0" y="70" width="130" height="14" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="55" y="0" width="14" height="70" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="69,70 130,70 130,30 90,30" fill="url(#h14_6)" stroke="#333" stroke-width="1.2"/>
+<line x1="110" y1="77" x2="180" y2="15" stroke="#c0392b" stroke-width="6"/>
+<line x1="110" y1="77" x2="62" y2="77" stroke="#c0392b" stroke-width="1" stroke-dasharray="3 2"/>
+<line x1="62" y1="77" x2="110" y2="77" stroke="#555" stroke-width="1" marker-start="url(#s14_6)" marker-end="url(#s14_6)"/>
+<text x="86" y="95" text-anchor="middle" font-size="10" fill="#c0392b">e</text>
+<circle cx="62" cy="77" r="3" fill="#2e8b57"/>
+<text x="150" y="60" font-size="10" fill="#c0392b">M = N·e</text>
+<text x="150" y="73" font-size="10" fill="#c0392b">no pilar e no gusset</text>
+</g>
+<text x="230" y="240" text-anchor="middle" font-size="10">Ângulo ideal das diagonais: 35° a 55°. Barras comprimidas: λ ≤ 200.</text>
+<text x="230" y="256" text-anchor="middle" font-size="10">Gusset 8–12,5 mm, soldado ao pilar e à viga; parafusos ø 3/4" A325.</text>
+<text x="230" y="272" text-anchor="middle" font-size="10">Se a excentricidade for inevitável (espaço de chave), calcule M = N·e e</text>
+<text x="230" y="288" text-anchor="middle" font-size="10">reforce o gusset e o pilar para ele — nunca a ignore.</text>
+</svg>
+<figcaption><b>Figura 14.6</b> – Contraventamento vertical em X, K e V invertido, e o detalhe do nó: à direita, ponto de trabalho correto (eixos concorrentes) e o erro da diagonal deslocada, que introduz o momento N·e.</figcaption>
+</figure>
+<div class="box norma"><div class="tit">NBR 8800 – esbeltez e forças de contraventamento</div><p>Barras comprimidas: λ = KL/r ≤ 200; barras tracionadas: λ ≤ 300 (recomendação; não vale para barras redondas). A força de projeto de um contraventamento de nó de barra comprimida pode ser tomada como 1 a 2 % da força de compressão travada, com rigidez mínima conforme o Anexo D da norma (ou AISC 360, Apêndice 6). Contraventamentos "de estabilização" não dispensam o cálculo do vento: dimensione para o maior dos dois.</p></div>
+
+<h2>14.3 Nós de treliça, enrijecedores e mísulas <span class="nivel i">Intermediário</span></h2>
+<h3>14.3.1 Nó de treliça com chapa gusset</h3>
+<p>Em tesouras e vigas treliçadas de galpão, o banzo costuma ser um <strong>T</strong> (meio W cortado) ou uma <strong>cantoneira dupla</strong> (2 L costas com costas, com chapas espaçadoras), e as diagonais/montantes são cantoneiras simples ou duplas. O nó (Figura 14.7) reúne todas as barras numa chapa gusset soldada ou parafusada à alma do T (ou inserida entre as cantoneiras do banzo). Regras: eixos das barras concorrendo no PT sobre o eixo do banzo (em cantoneiras usa-se a linha da furação, a "linha de gramil", como eixo de trabalho, o que gera pequena excentricidade admitida pela norma para barras leves); comprimento de solda de cada diagonal calculado para a força N (filete de 5 mm nos dois bordos da aba: R ≈ 7,6 kN/cm por bordo); espessura do gusset ≥ maior espessura das cantoneiras e ≥ 8 mm; a chapa deve ter "corpo" para a compressão da diagonal (verifique a faixa de Whitmore, largura = w + 2·L<sub>solda</sub>·tan 30°, como coluna curta).</p>
+<figure class="fig p90">
+<svg viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_7" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s14_7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<text x="200" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) BANZO EM T + DIAGONAIS SOLDADAS</text>
+<g transform="translate(20,40)">
+<!-- banzo T: mesa (vista) + alma -->
+<rect x="0" y="0" width="360" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="12" width="360" height="30" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="40" y="33" font-size="10">alma do T (meio W)</text>
+<!-- gusset saindo da alma -->
+<polygon points="110,42 250,42 220,110 140,110" fill="url(#h14_7)" stroke="#333" stroke-width="1.5"/>
+<!-- diagonais (cantoneiras) -->
+<g stroke="#0b3d91" stroke-width="9"><line x1="180" y1="6" x2="80" y2="170"/><line x1="180" y1="6" x2="280" y2="170"/></g>
+<line x1="180" y1="6" x2="180" y2="180" stroke="#0b3d91" stroke-width="7"/>
+<!-- soldas nas abas (linhas marrons) -->
+<g stroke="#7a3e00" stroke-width="2.5"><line x1="160" y1="45" x2="130" y2="95"/><line x1="176" y1="55" x2="150" y2="100"/><line x1="200" y1="45" x2="230" y2="95"/><line x1="184" y1="55" x2="210" y2="100"/><line x1="176" y1="50" x2="176" y2="108"/><line x1="184" y1="50" x2="184" y2="108"/></g>
+<!-- eixos -->
+<g stroke="#c0392b" stroke-width="0.8" stroke-dasharray="5 3"><line x1="0" y1="21" x2="360" y2="21"/><line x1="180" y1="21" x2="70" y2="195"/><line x1="180" y1="21" x2="290" y2="195"/></g>
+<circle cx="180" cy="21" r="4" fill="#c0392b"/>
+<text x="192" y="18" font-size="10" fill="#c0392b">PT no eixo do banzo</text>
+<text x="290" y="120" font-size="10">gusset 8–9,5 mm</text>
+<text x="20" y="140" font-size="10" fill="#0b3d91">diagonal L (1 ou 2)</text>
+<text x="20" y="153" font-size="10" fill="#0b3d91">montante L</text>
+<line x1="130" y1="115" x2="160" y2="65" stroke="#555" stroke-width="1" marker-start="url(#s14_7)" marker-end="url(#s14_7)"/>
+<text x="95" y="120" font-size="9" fill="#555">L<tspan baseline-shift="sub" font-size="7">w</tspan></text>
+<text x="180" y="215" text-anchor="middle" font-size="10">L<tspan baseline-shift="sub" font-size="8">w</tspan> = N / (2 × R<tspan baseline-shift="sub" font-size="8">filete</tspan>) ; mínimo 40 mm e 4 × perna</text>
+</g>
+<text x="580" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) CANTONEIRA DUPLA + GUSSET PARAFUSADO</text>
+<g transform="translate(430,40)">
+<!-- corte do banzo 2L com gusset -->
+<polygon points="60,0 60,60 68,60 68,8 120,8 120,0" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="140,0 140,8 192,8 192,60 200,60 200,0" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="120" y="0" width="20" height="120" fill="url(#h14_7)" stroke="#333" stroke-width="1.5"/>
+<text x="130" y="140" text-anchor="middle" font-size="10">gusset entre as L</text>
+<text x="10" y="30" font-size="10">2 L banzo</text>
+<line x1="68" y1="35" x2="120" y2="35" stroke="#555" stroke-width="1" marker-start="url(#s14_7)" marker-end="url(#s14_7)"/>
+<text x="94" y="30" text-anchor="middle" font-size="9" fill="#555">t<tspan baseline-shift="sub" font-size="7">g</tspan></text>
+<!-- vista com parafusos -->
+<g transform="translate(0,160)">
+<rect x="0" y="0" width="300" height="24" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="90,24 210,24 190,90 110,90" fill="url(#h14_7)" stroke="#333" stroke-width="1.5"/>
+<line x1="150" y1="12" x2="60" y2="130" stroke="#0b3d91" stroke-width="9"/><line x1="150" y1="12" x2="240" y2="130" stroke="#0b3d91" stroke-width="9"/>
+<g fill="#444"><circle cx="125" cy="45" r="3.5"/><circle cx="110" cy="65" r="3.5"/><circle cx="175" cy="45" r="3.5"/><circle cx="190" cy="65" r="3.5"/></g>
+<circle cx="150" cy="12" r="4" fill="#c0392b"/>
+<text x="230" y="60" font-size="10">2–3 parafusos ø 5/8" por barra</text>
+<text x="230" y="73" font-size="10">gramil g ≥ 2,7 d; borda ≥ 1,5 d</text>
+</g>
+</g>
+</svg>
+<figcaption><b>Figura 14.7</b> – Nó de treliça: (a) banzo em T com diagonais de cantoneira soldadas ao gusset (comprimento de solda L<sub>w</sub> por aba); (b) banzo de cantoneira dupla com gusset inserido e diagonais parafusadas.</figcaption>
+</figure>
+
+<h3>14.3.2 Enrijecedores de alma</h3>
+<p><strong>Para que servem.</strong> A alma de um perfil W é fina (6 a 10 mm) e não foi feita para receber cargas concentradas: sob uma reação de apoio, uma carga de pilar, a mesa de uma viga que chega ou o ponto de aplicação de uma mísula, ela pode <em>enrugar</em> (web crippling), <em>escoar localmente</em> ou <em>flambar</em>. O <strong>enrijecedor transversal</strong> (par de chapas soldadas à alma e às mesas, Figura 14.8) transforma essa região em uma coluna curta. Enrijecedores <strong>intermediários</strong> (a cada a ≈ 1 a 1,5 h) aumentam a resistência ao cisalhamento de almas esbeltas (h/t<sub>w</sub> > 70 em vigas soldadas altas) e <strong>longitudinais</strong> (a 0,2 h da mesa comprimida) combatem a flambagem por flexão de almas com h/t<sub>w</sub> > 150 (vigas de ponte, vigas de rolamento pesadas).</p>
+<figure class="fig p90">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_8" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s14_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<text x="150" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">CORTE (seção)</text>
+<g transform="translate(40,35)">
+<!-- perfil W em corte -->
+<rect x="20" y="0" width="200" height="14" fill="url(#h14_8)" stroke="#333" stroke-width="1.5"/>
+<rect x="112" y="14" width="16" height="180" fill="url(#h14_8)" stroke="#333" stroke-width="1.5"/>
+<rect x="20" y="194" width="200" height="14" fill="url(#h14_8)" stroke="#333" stroke-width="1.5"/>
+<!-- enrijecedores (par) com recorte -->
+<polygon points="128,26 128,182 210,182 210,26" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="112,26 112,182 30,182 30,26" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- recortes nos cantos (chanfros 20 mm) -->
+<polygon points="128,14 128,26 140,26" fill="#fff" stroke="#333" stroke-width="1"/><polygon points="128,194 128,182 140,182" fill="#fff" stroke="#333" stroke-width="1"/>
+<polygon points="112,14 112,26 100,26" fill="#fff" stroke="#333" stroke-width="1"/><polygon points="112,194 112,182 100,182" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- solda mesa-alma (raio) -->
+<g fill="#e0a86a" stroke="#7a3e00" stroke-width="1"><polygon points="128,14 136,14 128,22"/><polygon points="112,14 104,14 112,22"/><polygon points="128,194 136,194 128,186"/><polygon points="112,194 104,194 112,186"/></g>
+<!-- soldas enrijecedor-alma -->
+<g fill="#e0a86a" stroke="#7a3e00" stroke-width="1"><polygon points="128,60 134,60 128,66"/><polygon points="128,120 134,120 128,126"/><polygon points="112,60 106,60 112,66"/><polygon points="112,120 106,120 112,126"/></g>
+<!-- cotas -->
+<line x1="128" y1="230" x2="210" y2="230" stroke="#555" stroke-width="1" marker-start="url(#s14_8)" marker-end="url(#s14_8)"/>
+<text x="169" y="245" text-anchor="middle" font-size="10" fill="#555">b<tspan baseline-shift="sub" font-size="8">s</tspan> ≈ b<tspan baseline-shift="sub" font-size="8">f</tspan>/2 − t<tspan baseline-shift="sub" font-size="8">w</tspan>/2 (−10 mm)</text>
+<line x1="240" y1="26" x2="240" y2="182" stroke="#555" stroke-width="1" marker-start="url(#s14_8)" marker-end="url(#s14_8)"/>
+<text x="246" y="108" font-size="10" fill="#555">h − 2 × recorte</text>
+<text x="150" y="40" font-size="10" fill="#c0392b">recorte 20–25 mm</text>
+<line x1="148" y1="36" x2="136" y2="24" stroke="#c0392b" stroke-width="1"/>
+<text x="150" y="165" font-size="10" fill="#7a3e00">filete 5–6 mm</text>
+<text x="150" y="178" font-size="10" fill="#7a3e00">(contínuo ou intermitente)</text>
+<text x="-10" y="108" font-size="10" fill="#333">t<tspan baseline-shift="sub" font-size="8">s</tspan> ≥ t<tspan baseline-shift="sub" font-size="8">f</tspan>/2</text>
+<text x="-10" y="121" font-size="10" fill="#333">e ≥ b<tspan baseline-shift="sub" font-size="8">s</tspan>/16</text>
+</g>
+<text x="560" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">ELEVAÇÃO: onde colocar</text>
+<g transform="translate(400,35)">
+<rect x="0" y="40" width="340" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="150" width="340" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="50" width="340" height="100" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- apoio -->
+<rect x="20" y="160" width="40" height="14" fill="#c8c8c8" stroke="#333" stroke-width="1"/>
+<!-- enrijecedores -->
+<g fill="#d9dee7" stroke="#333" stroke-width="1.5"><rect x="36" y="50" width="8" height="100"/><rect x="196" y="50" width="8" height="100"/><rect x="116" y="50" width="6" height="100"/><rect x="276" y="50" width="6" height="100"/></g>
+<!-- carga concentrada -->
+<line x1="200" y1="5" x2="200" y2="38" stroke="#c0392b" stroke-width="2" marker-end="url(#s14_8)"/>
+<text x="200" y="0" text-anchor="middle" font-size="10" fill="#c0392b">P (pilar, viga, mísula)</text>
+<text x="40" y="190" text-anchor="middle" font-size="10">no apoio</text>
+<text x="200" y="190" text-anchor="middle" font-size="10">sob carga</text>
+<text x="119" y="205" text-anchor="middle" font-size="10" fill="#555">intermediários</text>
+<text x="119" y="218" text-anchor="middle" font-size="10" fill="#555">(a ≈ 1–1,5 h) só se h/t<tspan baseline-shift="sub" font-size="8">w</tspan> alto</text>
+<!-- longitudinal -->
+<line x1="0" y1="70" x2="340" y2="70" stroke="#0b3d91" stroke-width="3" stroke-dasharray="8 4"/>
+<text x="250" y="66" font-size="10" fill="#0b3d91">longitudinal a 0,2 h (raro)</text>
+</g>
+<text x="380" y="285" text-anchor="middle" font-size="10">Regra: enrijecedor obrigatório onde uma força concentrada ultrapassa a resistência da alma (escoamento local: f<tspan baseline-shift="sub" font-size="8">y</tspan>·t<tspan baseline-shift="sub" font-size="8">w</tspan>·(l<tspan baseline-shift="sub" font-size="8">b</tspan> + 5 k) — NBR 8800 5.7).</text>
+</svg>
+<figcaption><b>Figura 14.8</b> – Enrijecedores transversais de alma: seção com dimensões práticas (largura ≈ b<sub>f</sub>/2 − t<sub>w</sub>/2, espessura ≥ t<sub>f</sub>/2, recorte no canto para não cruzar a solda mesa–alma) e elevação com as posições típicas (apoios, sob cargas concentradas, intermediários e longitudinal).</figcaption>
+</figure>
+<p><strong>Dimensionamento prático.</strong> (1) Verifique a alma sem enrijecedor pelas expressões da NBR 8800 (escoamento local, enrugamento, flambagem lateral e flambagem por compressão da alma). (2) Se alguma falhar, o par de enrijecedores é calculado como uma <em>coluna cruciforme</em>: área = 2·b<sub>s</sub>·t<sub>s</sub> + 25·t<sub>w</sub>² (no apoio: 12·t<sub>w</sub>²), comprimento de flambagem 0,75 h, e a solda ao longo da alma deve transmitir a força P (filete 5 mm de cada lado: 4 cordões × 7,6 kN/cm × comprimento). (3) Ajuste: enrijecedor de apoio "encostado" (fitted) na mesa carregada, com esmagamento verificado; enrijecedor sob carga que vem de cima deve tocar a mesa superior. Dimensões práticas: t<sub>s</sub> = 8 mm para perfis até W 360, 9,5–12,5 mm para W 460 a W 610; recorte de 20–25 mm × 45° no canto interno para passar pela solda/raio da mesa.</p>
+
+<h3>14.3.3 Mísula (haunch) de pórtico</h3>
+<p>No joelho de um pórtico de alma cheia, o momento é 1,5 a 3 vezes maior que no vão. Em vez de aumentar toda a viga, adiciona-se uma <strong>mísula</strong>: um pedaço do mesmo perfil W cortado em diagonal, soldado sob a viga (Figura 14.9), que dobra a altura útil junto ao pilar e ainda aumenta o braço de alavanca da ligação com chapa de topo, reduzindo a força nos parafusos. Comprimento típico: 10 a 15 % do vão (1,5 a 2,5 m); altura na raiz: 0,8 a 1,0 vezes a altura da viga (o corte diagonal de um perfil W de mesmo d dá exatamente h<sub>m</sub> ≈ d − t<sub>f</sub>).</p>
+<figure class="fig p90">
+<svg viewBox="0 0 760 345" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_9" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s14_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<g transform="translate(30,32)">
+<!-- pilar -->
+<rect x="0" y="0" width="14" height="290" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="60" y="0" width="14" height="290" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="14" y="0" width="46" height="290" fill="#fff" stroke="#333" stroke-width="1"/>
+<text x="37" y="285" text-anchor="middle" font-size="10">pilar W</text>
+<!-- enrijecedores do pilar nos níveis das mesas -->
+<rect x="14" y="52" width="46" height="8" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<rect x="14" y="95" width="46" height="8" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<rect x="14" y="182" width="46" height="8" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<text x="90" y="130" font-size="9" fill="#333" transform="rotate(-90,90,130)">enrijecedores</text>
+<!-- chapa de topo -->
+<rect x="74" y="40" width="12" height="160" fill="url(#h14_9)" stroke="#333" stroke-width="1.5"/>
+<!-- viga inclinada 10% : mesas -->
+<g transform="translate(86,0) skewY(-5.7)">
+<rect x="0" y="52" width="600" height="8" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="95" width="600" height="8" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="60" width="600" height="35" fill="#fff" stroke="#333" stroke-width="1"/>
+</g>
+<!-- mísula: triângulo sob a viga -->
+<g transform="translate(86,0)">
+<polygon points="0,100 0,182 250,110 250,100" fill="#fff" stroke="#333" stroke-width="1"/>
+<polygon points="0,182 0,190 250,116 250,110" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- enrijecedor no fim da mísula -->
+<rect x="244" y="60" width="6" height="52" fill="#d9dee7" stroke="#333" stroke-width="1.2" transform="skewY(-5.7) translate(0,1)"/>
+<text x="125" y="150" text-anchor="middle" font-size="10">mísula: W cortado em diagonal</text>
+<text x="125" y="163" text-anchor="middle" font-size="10">(mesmo perfil da viga)</text>
+<line x1="0" y1="215" x2="250" y2="215" stroke="#555" stroke-width="1" marker-start="url(#s14_9)" marker-end="url(#s14_9)"/>
+<text x="125" y="230" text-anchor="middle" font-size="10" fill="#555">L<tspan baseline-shift="sub" font-size="8">m</tspan> = 0,10–0,15 L (1,8 m no cap. 16)</text>
+<line x1="-30" y1="52" x2="-30" y2="190" stroke="#555" stroke-width="1" marker-start="url(#s14_9)" marker-end="url(#s14_9)"/>
+<text x="-36" y="125" font-size="10" fill="#555" transform="rotate(-90,-36,125)" text-anchor="middle">≈ 2 d</text>
+<text x="300" y="60" font-size="10" fill="#333">viga W (10 %)</text>
+<text x="255" y="135" font-size="10" fill="#c0392b">enrijecedor no fim</text>
+<text x="255" y="148" font-size="10" fill="#c0392b">da mísula (obrigatório)</text>
+</g>
+<!-- parafusos na chapa de topo -->
+<g fill="#444"><circle cx="80" cy="46" r="3.5"/><circle cx="80" cy="66" r="3.5"/><circle cx="80" cy="88" r="3.5"/><circle cx="80" cy="108" r="3.5"/><circle cx="80" cy="170" r="3.5"/><circle cx="80" cy="194" r="3.5"/></g>
+<text x="130" y="-4" font-size="10">chapa de topo estendida: 8 parafusos ø 3/4" (2 fileiras fora e dentro de cada mesa)</text>
+<text x="120" y="264" font-size="10">solda mesas–chapa: penetração total ou filete ≥ 8 mm nos dois lados</text>
+<!-- solda mesa inferior mísula -->
+<polygon points="86,190 74,190 86,200" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="120" y="250" font-size="10" fill="#7a3e00">filete mísula–viga: 5–6 mm contínuo (alma da mísula na mesa inferior da viga)</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.9</b> – Mísula de pórtico: perfil W cortado em diagonal soldado sob a viga, chapa de topo estendida com 8 parafusos, enrijecedores no pilar alinhados com as mesas e enrijecedor obrigatório no fim da mísula (ponto de mudança de direção da mesa inferior).</figcaption>
+</figure>
+<p><strong>Dimensionamento prático.</strong> A mísula é verificada em três seções: (a) na raiz (face do pilar), como seção I de altura ≈ 2 d, geralmente com módulo elástico porque a alma fica esbelta (h/t<sub>w</sub> ≈ 100); (b) no fim da mísula, onde a viga volta a ser o perfil simples e o momento já caiu 40 a 60 %; (c) a mesa inferior da mísula, que muda de direção no fim da mísula e gera uma força de desvio F = N<sub>mesa</sub>·sen α que exige o enrijecedor ali (é o ponto em que mísulas sem enrijecedor "abrem"). Cheque também a flambagem lateral da mesa inferior comprimida (momento negativo): mão-francesa na primeira terça a partir do pilar e, se possível, na terça sobre o fim da mísula. O Capítulo 16 traz o cálculo numérico completo.</p>
+
+<h2>14.4 Emendas de pilares e vigas <span class="nivel i">Intermediário</span></h2>
+<h3>14.4.1 Emenda de pilar</h3>
+<p>Pilares são fabricados em peças de até 12 m (transporte) e emendados a 0,6 a 1,2 m acima do nível do piso (altura cômoda para parafusar, sem interferir com as vigas). A <strong>emenda com chapa de topo</strong> (Figura 14.10a) é a mais simples: duas chapas fresadas ou soldadas às extremidades, parafusadas entre si; a compressão passa por contato (as chapas devem ser planas — usinadas ou "de apoio total"), e os parafusos respondem por tração de flexão, cisalhamento e forças de montagem. A <strong>emenda com talas</strong> (Figura 14.10b) usa chapas parafusadas nas mesas e na alma; é mais trabalhosa, mas não exige usinagem e resolve peças de alturas diferentes com <strong>chapas de enchimento</strong> (shims) — Figura 14.10c.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 322" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_10" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s14_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- (a) chapa de topo -->
+<g transform="translate(20,30)">
+<text x="100" y="-12" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) chapa de topo</text>
+<rect x="60" y="0" width="12" height="110" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="128" y="0" width="12" height="110" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="72" y="0" width="56" height="110" fill="#fff" stroke="#333" stroke-width="1"/>
+<rect x="40" y="110" width="120" height="10" fill="url(#h14_10)" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="122" width="120" height="10" fill="url(#h14_10)" stroke="#333" stroke-width="1.5"/>
+<rect x="60" y="132" width="12" height="110" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="128" y="132" width="12" height="110" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="72" y="132" width="56" height="110" fill="#fff" stroke="#333" stroke-width="1"/>
+<g fill="#444"><rect x="46" y="106" width="6" height="30"/><rect x="148" y="106" width="6" height="30"/><rect x="80" y="106" width="6" height="30"/><rect x="114" y="106" width="6" height="30"/></g>
+<line x1="170" y1="110" x2="170" y2="132" stroke="#555" stroke-width="1" marker-start="url(#s14_10)" marker-end="url(#s14_10)"/>
+<text x="176" y="125" font-size="9" fill="#555">2 × 19–25 mm</text>
+<text x="100" y="262" text-anchor="middle" font-size="10">compressão por contato;</text>
+<text x="100" y="275" text-anchor="middle" font-size="10">4–8 parafusos ø 3/4"–7/8"</text>
+<g fill="#e0a86a" stroke="#7a3e00" stroke-width="1"><polygon points="60,110 52,110 60,102"/><polygon points="140,110 148,110 140,102"/><polygon points="60,132 52,132 60,140"/><polygon points="140,132 148,132 140,140"/></g>
+</g>
+<!-- (b) talas -->
+<g transform="translate(280,30)">
+<text x="100" y="-12" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) talas parafusadas</text>
+<rect x="60" y="0" width="12" height="118" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="128" y="0" width="12" height="118" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="72" y="0" width="56" height="118" fill="#fff" stroke="#333" stroke-width="1"/>
+<rect x="60" y="124" width="12" height="118" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="128" y="124" width="12" height="118" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="72" y="124" width="56" height="118" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- talas externas das mesas -->
+<rect x="48" y="60" width="12" height="122" fill="url(#h14_10)" stroke="#333" stroke-width="1.5"/><rect x="140" y="60" width="12" height="122" fill="url(#h14_10)" stroke="#333" stroke-width="1.5"/>
+<!-- tala da alma (vista) -->
+<rect x="80" y="80" width="40" height="82" fill="none" stroke="#333" stroke-width="1.5" stroke-dasharray="4 3"/>
+<g fill="#444"><rect x="44" y="72" width="20" height="5"/><rect x="44" y="96" width="20" height="5"/><rect x="44" y="146" width="20" height="5"/><rect x="44" y="170" width="20" height="5"/><rect x="136" y="72" width="20" height="5"/><rect x="136" y="96" width="20" height="5"/><rect x="136" y="146" width="20" height="5"/><rect x="136" y="170" width="20" height="5"/></g>
+<g fill="#444"><circle cx="92" cy="96" r="3"/><circle cx="108" cy="96" r="3"/><circle cx="92" cy="146" r="3"/><circle cx="108" cy="146" r="3"/></g>
+<line x1="72" y1="121" x2="128" y2="121" stroke="#c0392b" stroke-width="1"/>
+<text x="165" y="125" font-size="9" fill="#c0392b">folga 6 mm</text>
+<text x="100" y="262" text-anchor="middle" font-size="10">talas de mesa t ≈ t<tspan baseline-shift="sub" font-size="8">f</tspan> (dois lados</text>
+<text x="100" y="275" text-anchor="middle" font-size="10">se possível); tala de alma para V</text>
+</g>
+<!-- (c) alturas diferentes -->
+<g transform="translate(540,30)">
+<text x="100" y="-12" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c) alturas diferentes</text>
+<!-- pilar inferior maior -->
+<rect x="50" y="124" width="12" height="118" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="138" y="124" width="12" height="118" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="62" y="124" width="76" height="118" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- pilar superior menor -->
+<rect x="66" y="0" width="12" height="118" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="122" y="0" width="12" height="118" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="78" y="0" width="44" height="118" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- talas externas + enchimento -->
+<rect x="38" y="60" width="12" height="122" fill="url(#h14_10)" stroke="#333" stroke-width="1.5"/><rect x="150" y="60" width="12" height="122" fill="url(#h14_10)" stroke="#333" stroke-width="1.5"/>
+<rect x="50" y="60" width="16" height="58" fill="#c0392b" fill-opacity="0.35" stroke="#c0392b" stroke-width="1"/><rect x="134" y="60" width="16" height="58" fill="#c0392b" fill-opacity="0.35" stroke="#c0392b" stroke-width="1"/>
+<text x="100" y="75" text-anchor="middle" font-size="9" fill="#c0392b">chapa de</text><text x="100" y="86" text-anchor="middle" font-size="9" fill="#c0392b">enchimento</text>
+<g fill="#444"><rect x="34" y="72" width="36" height="5"/><rect x="34" y="96" width="36" height="5"/><rect x="34" y="146" width="20" height="5"/><rect x="34" y="170" width="20" height="5"/><rect x="130" y="72" width="36" height="5"/><rect x="130" y="96" width="36" height="5"/><rect x="146" y="146" width="20" height="5"/><rect x="146" y="170" width="20" height="5"/></g>
+<text x="100" y="262" text-anchor="middle" font-size="10">enchimento ≥ 6 mm: acrescente</text>
+<text x="100" y="275" text-anchor="middle" font-size="10">parafusos (NBR 8800 6.3.9) ou solde-o</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.10</b> – Emendas de pilar: (a) chapas de topo parafusadas com transmissão por contato; (b) talas de mesa e de alma parafusadas; (c) pilares de alturas diferentes emendados com talas externas e chapas de enchimento.</figcaption>
+</figure>
+<p><strong>Dimensionamento prático.</strong> Emenda deve resistir aos esforços da seção (N, M, V) e, por boa prática, a pelo menos 50 % da resistência da peça (as normas de projeto sísmico exigem mais). Com chapa de topo: parafusos à tração pelo binário M/(d − t<sub>f</sub>) descontada a compressão N (se houver tração líquida), chapa ≥ 19 mm, verificação de alavanca. Com talas: força na tala de mesa F = M/(d − t<sub>f</sub>) ± N/2, número de parafusos por cisalhamento (dois planos se houver talas interna e externa), tala de alma para o cortante; deixe folga de 6 mm entre as peças e use furos-padrão. Quando o pilar superior é menor, prefira mudar de perfil em uma emenda com chapa de topo e enrijecedores no pilar inferior alinhados com as mesas do superior (as mesas do pilar de cima "pisam" na alma de baixo — que precisa de enrijecedor).</p>
+
+<h3>14.4.2 Emenda de viga</h3>
+<p>Vigas longas (acima de 12 m) ou vigas contínuas são emendadas de preferência nos pontos de momento baixo (a 0,2 L dos apoios em vigas contínuas). Duas soluções (Figura 14.11): <strong>talas parafusadas</strong> — talas de mesa (externa e, se houver espaço, interna) para o momento e par de talas de alma para o cortante — e <strong>solda de penetração total</strong> de topo, feita em oficina com cobre-junta (backing) ou em campo com cuidados (posição, pré-aquecimento para t ≥ 25 mm, ensaio por ultrassom).</p>
+<figure class="fig">
+<svg viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_11" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s14_11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<g transform="translate(20,30)">
+<text x="190" y="-12" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) talas parafusadas (elevação)</text>
+<rect x="0" y="40" width="186" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="194" y="40" width="186" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="150" width="186" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="194" y="150" width="186" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="50" width="186" height="100" fill="#fff" stroke="#333" stroke-width="1"/><rect x="194" y="50" width="186" height="100" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- talas de mesa externas -->
+<rect x="90" y="30" width="200" height="10" fill="url(#h14_11)" stroke="#333" stroke-width="1.5"/><rect x="90" y="160" width="200" height="10" fill="url(#h14_11)" stroke="#333" stroke-width="1.5"/>
+<!-- talas de alma -->
+<rect x="130" y="65" width="120" height="70" fill="url(#h14_11)" stroke="#333" stroke-width="1.5"/>
+<g fill="#444"><circle cx="150" cy="80" r="3.5"/><circle cx="150" cy="100" r="3.5"/><circle cx="150" cy="120" r="3.5"/><circle cx="170" cy="80" r="3.5"/><circle cx="170" cy="100" r="3.5"/><circle cx="170" cy="120" r="3.5"/><circle cx="210" cy="80" r="3.5"/><circle cx="210" cy="100" r="3.5"/><circle cx="210" cy="120" r="3.5"/><circle cx="230" cy="80" r="3.5"/><circle cx="230" cy="100" r="3.5"/><circle cx="230" cy="120" r="3.5"/></g>
+<g fill="#444"><rect x="104" y="28" width="5" height="24"/><rect x="128" y="28" width="5" height="24"/><rect x="152" y="28" width="5" height="24"/><rect x="224" y="28" width="5" height="24"/><rect x="248" y="28" width="5" height="24"/><rect x="272" y="28" width="5" height="24"/><rect x="104" y="148" width="5" height="24"/><rect x="128" y="148" width="5" height="24"/><rect x="152" y="148" width="5" height="24"/><rect x="224" y="148" width="5" height="24"/><rect x="248" y="148" width="5" height="24"/><rect x="272" y="148" width="5" height="24"/></g>
+<line x1="186" y1="100" x2="194" y2="100" stroke="#c0392b" stroke-width="1"/>
+<text x="190" y="195" text-anchor="middle" font-size="10" fill="#c0392b">folga 6–10 mm</text>
+<text x="190" y="215" text-anchor="middle" font-size="10">F<tspan baseline-shift="sub" font-size="8">mesa</tspan> = M/(d − t<tspan baseline-shift="sub" font-size="8">f</tspan>) → n parafusos por cisalhamento</text>
+<text x="190" y="229" text-anchor="middle" font-size="10">talas de alma: V (e a parcela de M da alma, ≈ I<tspan baseline-shift="sub" font-size="8">w</tspan>/I)</text>
+<text x="190" y="243" text-anchor="middle" font-size="10">parafusos A325 com protensão (ligação por atrito) evitam escorregamento</text>
+</g>
+<g transform="translate(450,30)">
+<text x="150" y="-12" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) solda de penetração total</text>
+<!-- chapas com chanfro V -->
+<rect x="0" y="60" width="130" height="24" fill="url(#h14_11)" stroke="#333" stroke-width="1.5"/>
+<rect x="170" y="60" width="130" height="24" fill="url(#h14_11)" stroke="#333" stroke-width="1.5"/>
+<polygon points="130,60 170,60 152,84 148,84" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.2"/>
+<rect x="130" y="84" width="40" height="6" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<rect x="120" y="90" width="60" height="6" fill="#c8c8c8" stroke="#333" stroke-width="1"/>
+<text x="150" y="112" text-anchor="middle" font-size="10">cobre-junta (backing) 6 × 40 mm</text>
+<line x1="130" y1="50" x2="170" y2="50" stroke="#555" stroke-width="1" marker-start="url(#s14_11)" marker-end="url(#s14_11)"/>
+<text x="150" y="45" text-anchor="middle" font-size="9" fill="#555">chanfro V 45–60°, abertura 6 mm</text>
+<text x="150" y="140" text-anchor="middle" font-size="10">resistência = da chapa (metal base);</text>
+<text x="150" y="154" text-anchor="middle" font-size="10">eletrodo E70; inspeção por US/RX;</text>
+<text x="150" y="168" text-anchor="middle" font-size="10">em campo: posição plana, cobre-junta,</text>
+<text x="150" y="182" text-anchor="middle" font-size="10">pré-aquecimento se t ≥ 25 mm ou aço Gr 50.</text>
+<text x="150" y="210" text-anchor="middle" font-size="10" fill="#c0392b">Nunca emende mesas e alma no mesmo</text>
+<text x="150" y="224" text-anchor="middle" font-size="10" fill="#c0392b">plano em vigas de rolamento (fadiga):</text>
+<text x="150" y="238" text-anchor="middle" font-size="10" fill="#c0392b">desloque as emendas e esmerilhe o reforço.</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.11</b> – Emenda de viga: (a) talas de mesa e de alma parafusadas; (b) emenda soldada de topo com penetração total sobre cobre-junta.</figcaption>
+</figure>
+
+<h2>14.5 Vigas sobre pilares, marquises e aberturas na alma <span class="nivel i">Intermediário</span></h2>
+<h3>14.5.1 Viga contínua passando sobre o pilar e viga em balanço (marquise)</h3>
+<p>Em mezaninos e coberturas é comum a viga <strong>passar contínua</strong> sobre o pilar (Figura 14.12a): o pilar termina em uma chapa de topo parafusada à mesa inferior da viga; a viga recebe <strong>par de enrijecedores</strong> alinhados com as mesas do pilar, porque a reação concentrada sobe pela alma. A ligação é articulada para o pilar (rótula) — a estabilidade horizontal vem de contraventamento ou de outro pórtico. O <strong>balanço</strong> da marquise (Figura 14.12b) é a extensão dessa viga além do último pilar; dimensione o balanço para M = wL<sub>b</sub>²/2 e para a <em>sucção de vento</em> no beiral (que inverte o momento), verifique a flecha na ponta (L<sub>b</sub>/180 ou menor por estética) e ancore o trecho interno contra o levantamento.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_12" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s14_12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<g transform="translate(20,30)">
+<text x="170" y="-12" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) viga contínua sobre pilar</text>
+<!-- viga -->
+<rect x="0" y="40" width="340" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="0" y="130" width="340" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="0" y="50" width="340" height="80" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- enrijecedores -->
+<rect x="134" y="50" width="8" height="80" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="198" y="50" width="8" height="80" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- chapa de topo do pilar -->
+<rect x="120" y="140" width="100" height="12" fill="url(#h14_12)" stroke="#333" stroke-width="1.5"/>
+<!-- pilar -->
+<rect x="136" y="152" width="8" height="80" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="196" y="152" width="8" height="80" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="144" y="152" width="52" height="80" fill="#fff" stroke="#333" stroke-width="1"/>
+<g fill="#444"><rect x="126" y="128" width="5" height="26"/><rect x="209" y="128" width="5" height="26"/></g>
+<text x="170" y="250" text-anchor="middle" font-size="10">pilar W (chapa 16–19 mm, 4 parafusos)</text>
+<text x="240" y="100" font-size="10" fill="#c0392b">enrijecedores alinhados</text>
+<text x="240" y="113" font-size="10" fill="#c0392b">com as mesas do pilar</text>
+<line x1="238" y1="96" x2="206" y2="90" stroke="#c0392b" stroke-width="1"/>
+<text x="60" y="90" font-size="10">viga contínua: M<tspan baseline-shift="sub" font-size="8">apoio</tspan> ≈ wL²/10</text>
+</g>
+<g transform="translate(400,30)">
+<text x="170" y="-12" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) balanço / marquise</text>
+<rect x="0" y="40" width="340" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="0" y="130" width="340" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="0" y="50" width="340" height="80" fill="#fff" stroke="#333" stroke-width="1"/>
+<rect x="196" y="140" width="8" height="90" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="256" y="140" width="8" height="90" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="204" y="140" width="52" height="90" fill="#fff" stroke="#333" stroke-width="1"/>
+<rect x="194" y="50" width="8" height="80" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="258" y="50" width="8" height="80" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- cargas -->
+<g stroke="#c0392b" stroke-width="1.5"><line x1="20" y1="10" x2="20" y2="36"/><line x1="60" y1="10" x2="60" y2="36"/><line x1="100" y1="10" x2="100" y2="36"/><line x1="140" y1="10" x2="140" y2="36"/><line x1="180" y1="10" x2="180" y2="36"/></g>
+<line x1="0" y1="10" x2="196" y2="10" stroke="#c0392b" stroke-width="1.5"/>
+<text x="100" y="5" text-anchor="middle" font-size="10" fill="#c0392b">g + q (e sucção de vento ↑)</text>
+<line x1="0" y1="160" x2="196" y2="160" stroke="#555" stroke-width="1" marker-start="url(#s14_12)" marker-end="url(#s14_12)"/>
+<text x="98" y="175" text-anchor="middle" font-size="10" fill="#555">L<tspan baseline-shift="sub" font-size="8">b</tspan> ≤ 0,3–0,4 do vão interno</text>
+<text x="98" y="195" text-anchor="middle" font-size="10">M = wL<tspan baseline-shift="sub" font-size="8">b</tspan>²/2 ; δ = wL<tspan baseline-shift="sub" font-size="8">b</tspan>⁴/(8EI) + rotação no apoio</text>
+<text x="98" y="209" text-anchor="middle" font-size="10">mesa superior comprimida sem terça: verifique FLT (C<tspan baseline-shift="sub" font-size="8">b</tspan> de balanço)</text>
+<text x="270" y="250" text-anchor="middle" font-size="10">apoio interno ancorado</text>
+<text x="270" y="263" text-anchor="middle" font-size="10">contra levantamento</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.12</b> – (a) Viga contínua apoiada sobre o pilar por chapa de topo, com enrijecedores alinhados às mesas do pilar; (b) marquise em balanço: cargas, momento e cuidados com sucção e flecha.</figcaption>
+</figure>
+
+<h3>14.5.2 Abertura na alma para passagem de dutos</h3>
+<p>Instalações (dutos de ar, eletrocalhas, tubulações) muitas vezes precisam atravessar as vigas de piso. Uma abertura na alma reduz a resistência ao cisalhamento (a alma <em>é</em> a área de cisalhamento) e cria uma "viga Vierendeel" local. Regras práticas consagradas (AISC Design Guide 2 e prática nacional), ilustradas na Figura 14.13: diâmetro ou altura da abertura ≤ 0,5 h (0,6 h com reforço); comprimento de abertura retangular ≤ 1,5 vezes sua altura, cantos com raio ≥ 2 t<sub>w</sub> (nunca cantos vivos); posicionar no <strong>terço médio da altura</strong> e nas regiões de <strong>baixo cortante</strong> (afastar ≥ h do apoio e ≥ h de cargas concentradas); distância entre aberturas ≥ 2 h (ou 2 × comprimento). Sem reforço só quando a abertura é pequena (≤ 0,3 h) e o cortante ali é ≤ 30 % do V<sub>Rd</sub>; caso contrário, <strong>reforço</strong> com chapas horizontais acima e abaixo (área de cada uma ≈ área da alma removida × 0,5) ou cantoneiras/anel, estendidas ≥ 0,3 × comprimento além da borda.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_13" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s14_13" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<g transform="translate(20,30)">
+<rect x="0" y="30" width="700" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="0" y="170" width="700" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="0" y="40" width="700" height="130" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- apoio esquerdo -->
+<polygon points="0,180 -12,200 12,200" fill="#c8c8c8" stroke="#333" stroke-width="1"/>
+<!-- abertura circular com reforço anel -->
+<circle cx="230" cy="105" r="33" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="230" cy="105" r="42" fill="none" stroke="#7a3e00" stroke-width="5"/>
+<text x="230" y="150" text-anchor="middle" font-size="10">ø ≤ 0,5 h (anel ou chapa)</text>
+<!-- abertura retangular com chapas -->
+<rect x="440" y="80" width="90" height="52" rx="8" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<rect x="405" y="66" width="160" height="10" fill="url(#h14_13)" stroke="#333" stroke-width="1.2"/><rect x="405" y="136" width="160" height="10" fill="url(#h14_13)" stroke="#333" stroke-width="1.2"/>
+<text x="485" y="160" text-anchor="middle" font-size="10">a<tspan baseline-shift="sub" font-size="8">o</tspan> ≤ 1,5 h<tspan baseline-shift="sub" font-size="8">o</tspan>; h<tspan baseline-shift="sub" font-size="8">o</tspan> ≤ 0,5 h; r ≥ 2 t<tspan baseline-shift="sub" font-size="8">w</tspan></text>
+<!-- cotas -->
+<line x1="0" y1="215" x2="197" y2="215" stroke="#555" stroke-width="1" marker-start="url(#s14_13)" marker-end="url(#s14_13)"/>
+<text x="98" y="210" text-anchor="middle" font-size="10" fill="#555">≥ h do apoio (zona de cortante alto)</text>
+<line x1="272" y1="215" x2="405" y2="215" stroke="#555" stroke-width="1" marker-start="url(#s14_13)" marker-end="url(#s14_13)"/>
+<text x="338" y="210" text-anchor="middle" font-size="10" fill="#555">≥ 2 h entre aberturas</text>
+<line x1="405" y1="55" x2="440" y2="55" stroke="#555" stroke-width="1" marker-start="url(#s14_13)" marker-end="url(#s14_13)"/>
+<text x="422" y="50" text-anchor="middle" font-size="9" fill="#555">≥ 0,3 a<tspan baseline-shift="sub" font-size="7">o</tspan></text>
+<line x1="720" y1="30" x2="720" y2="180" stroke="#555" stroke-width="1" marker-start="url(#s14_13)" marker-end="url(#s14_13)"/>
+<text x="726" y="108" font-size="10" fill="#555">h</text>
+<text x="640" y="110" text-anchor="middle" font-size="10" fill="#c0392b">terço médio</text>
+<line x1="600" y1="83" x2="680" y2="83" stroke="#c0392b" stroke-width="0.8" stroke-dasharray="4 3"/><line x1="600" y1="127" x2="680" y2="127" stroke="#c0392b" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text x="120" y="110" text-anchor="middle" font-size="10" fill="#c0392b">NÃO furar aqui</text>
+<text x="120" y="123" text-anchor="middle" font-size="10" fill="#c0392b">(V máximo)</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.13</b> – Aberturas na alma de viga para dutos: posição no terço médio e longe dos apoios, dimensões máximas, reforço com anel (circular) ou chapas horizontais (retangular) estendidas além da abertura.</figcaption>
+</figure>
+<div class="box dica"><div class="tit">Furo pequeno, sem cálculo?</div><p>Furos até 100 mm em vigas com h ≥ 400 mm, no terço médio da altura e no terço médio do vão, com cortante baixo, são normalmente aceitos sem reforço — mas <em>sempre</em> registrados no projeto. Furo aberto na obra "com maçarico" pelo instalador, sem avisar o projetista, é uma das causas clássicas de patologia (Capítulo 15).</p></div>
+
+<h2>14.6 Apoios de laje e de vigas em concreto <span class="nivel b">Básico</span></h2>
+<h3>14.6.1 Laje steel deck sobre viga metálica</h3>
+<p>A fôrma de aço incorporada (steel deck, Capítulo 3) apoia-se nas mesas superiores das vigas com apoio mínimo de 40 mm (50 mm em juntas de painéis) e é fixada por parafusos autobrocantes ou pinos a pólvora a cada 300 mm, ou pelos próprios <strong>conectores de cisalhamento</strong> (stud ø 19 mm, soldados através da fôrma). Nas bordas da laje, uma <strong>cantoneira de borda</strong> (L 50×50×3 ou chapa dobrada) fecha o concreto e serve de fôrma lateral; nas extremidades das nervuras, um <strong>fechamento de borda</strong> (chapa dobrada "tampa de nervura") impede a fuga da nata. A Figura 14.14 resume o detalhe.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_14" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<pattern id="c14_14" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#c8c8c8"/><circle cx="2" cy="2" r="0.9" fill="#555"/><circle cx="6" cy="6" r="0.9" fill="#555"/></pattern>
+<marker id="s14_14" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<g transform="translate(30,20)">
+<!-- viga W corte -->
+<rect x="200" y="120" width="120" height="10" fill="url(#h14_14)" stroke="#333" stroke-width="1.5"/>
+<rect x="254" y="130" width="12" height="90" fill="url(#h14_14)" stroke="#333" stroke-width="1.5"/>
+<rect x="200" y="220" width="120" height="10" fill="url(#h14_14)" stroke="#333" stroke-width="1.5"/>
+<!-- steel deck trapezoidal (perfil) -->
+<path d="M40 120 L60 120 L70 95 L110 95 L120 120 L160 120 L170 95 L210 95 L220 120 L260 120 L270 95 L310 95 L320 120 L360 120 L370 95 L410 95 L420 120 L460 120 L470 95 L510 95 L520 120 L560 120" fill="none" stroke="#333" stroke-width="2"/>
+<!-- concreto -->
+<path d="M40 120 L60 120 L70 95 L110 95 L120 120 L160 120 L170 95 L210 95 L220 120 L260 120 L270 95 L310 95 L320 120 L360 120 L370 95 L410 95 L420 120 L460 120 L470 95 L510 95 L520 120 L560 120 L560 40 L40 40 Z" fill="url(#c14_14)" stroke="#333" stroke-width="1.2"/>
+<!-- tela -->
+<line x1="45" y1="62" x2="555" y2="62" stroke="#444" stroke-width="1" stroke-dasharray="6 3"/>
+<text x="600" y="66" font-size="10">tela soldada</text>
+<!-- stud -->
+<rect x="256" y="72" width="8" height="48" fill="#444"/><rect x="250" y="66" width="20" height="8" rx="2" fill="#444"/>
+<text x="590" y="90" font-size="10">stud ø 19 × 100–120</text>
+<line x1="598" y1="87" x2="272" y2="70" stroke="#555" stroke-width="0.8"/>
+<!-- cantoneira de borda -->
+<polygon points="560,120 560,40 566,40 566,114 596,114 596,120" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="600" y="150" font-size="10">cantoneira de borda</text>
+<text x="600" y="163" font-size="10">L 50×50×3</text>
+<!-- fechamento borda nervura -->
+<rect x="38" y="95" width="4" height="25" fill="#c0392b"/>
+<text x="10" y="150" font-size="10" fill="#c0392b">tampa de nervura</text>
+<!-- cotas -->
+<line x1="580" y1="40" x2="580" y2="120" stroke="#555" stroke-width="1" marker-start="url(#s14_14)" marker-end="url(#s14_14)"/>
+<text x="586" y="45" font-size="9" fill="#555">h 110–150</text>
+<line x1="600" y1="95" x2="600" y2="120" stroke="#555" stroke-width="1" marker-start="url(#s14_14)" marker-end="url(#s14_14)"/>
+<line x1="200" y1="145" x2="254" y2="145" stroke="#555" stroke-width="1" marker-start="url(#s14_14)" marker-end="url(#s14_14)"/>
+<text x="227" y="160" text-anchor="middle" font-size="9" fill="#555">apoio ≥ 40 mm</text>
+<text x="360" y="200" font-size="10">fixação da fôrma à mesa: autobrocante ø 5,5 ou pino</text>
+<text x="360" y="214" font-size="10">a cada 300 mm; stud soldado através da fôrma</text>
+<text x="360" y="228" font-size="10">exige mesa limpa, seca e sem pintura no local.</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.14</b> – Apoio de laje steel deck em viga metálica: fôrma trapezoidal, conector stud soldado através da fôrma, tela soldada, cantoneira de borda e tampa de nervura.</figcaption>
+</figure>
+<p><strong>Dimensionamento prático.</strong> A fôrma vence vãos de 2,5 a 3,5 m sem escoramento (consulte a tabela do fabricante para espessura 0,80–1,25 mm); o número de studs vem do cálculo da viga mista (Capítulo 7): n = V<sub>h</sub>/Q<sub>Rd</sub>, com Q<sub>Rd</sub> ≈ 60–75 kN para stud ø 19 mm em concreto C25 com fôrma perpendicular (fator de redução por nervura). Coloque um stud por nervura (espaçamento ≈ 300 mm) como padrão e, se faltar, dois por nervura junto aos apoios. A cantoneira de borda em balanço não é estrutural: a laje precisa de viga de borda ou a fôrma deve ir até uma viga.</p>
+
+<h3>14.6.2 Apoio de viga metálica em parede ou pilar de concreto</h3>
+<p>Quando a viga de aço se apoia em alvenaria estrutural, parede ou pilar de concreto, a reação precisa ser distribuída por uma <strong>chapa de apoio</strong> (Figura 14.15) e a viga precisa ser <strong>ancorada</strong> contra deslocamentos (chumbadores) sem, no entanto, impedir a rotação e a dilatação da viga — daí os furos oblongos na mesa. Comprimento de apoio (na direção da viga) ≥ 100 mm em concreto e ≥ 150–200 mm em alvenaria; largura ≥ b<sub>f</sub>.</p>
+<figure class="fig p75">
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h14_15" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<pattern id="c14_15" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#c8c8c8"/><circle cx="2" cy="2" r="0.9" fill="#555"/><circle cx="6" cy="6" r="0.9" fill="#555"/></pattern>
+<marker id="s14_15" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<g transform="translate(20,20)">
+<!-- pilar/parede de concreto -->
+<rect x="0" y="120" width="200" height="110" fill="url(#c14_15)" stroke="#333" stroke-width="1.5"/>
+<text x="100" y="215" text-anchor="middle" font-size="10">concreto / alvenaria</text>
+<!-- grout -->
+<rect x="30" y="104" width="150" height="6" fill="#e6e6e6" stroke="#333" stroke-width="1"/>
+<!-- chapa de apoio -->
+<rect x="30" y="92" width="150" height="12" fill="url(#h14_15)" stroke="#333" stroke-width="1.5"/>
+<!-- chumbadores -->
+<g fill="#444"><rect x="60" y="70" width="6" height="90"/><rect x="144" y="70" width="6" height="90"/></g>
+<path d="M60 160 L60 170 L75 170" fill="none" stroke="#444" stroke-width="5"/><path d="M150 160 L150 170 L135 170" fill="none" stroke="#444" stroke-width="5"/>
+<rect x="55" y="70" width="16" height="6" fill="#444"/><rect x="139" y="70" width="16" height="6" fill="#444"/>
+<!-- viga (elevação) -->
+<rect x="80" y="82" width="420" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="80" y="0" width="420" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="80" y="10" width="420" height="72" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- enrijecedor de apoio -->
+<rect x="102" y="10" width="7" height="72" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<!-- furos oblongos (vista de topo da mesa) -->
+<g transform="translate(300,140)">
+<rect x="0" y="0" width="150" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="25" y="22" width="26" height="14" rx="7" fill="#fff" stroke="#333" stroke-width="1.2"/><rect x="99" y="22" width="26" height="14" rx="7" fill="#fff" stroke="#333" stroke-width="1.2"/>
+<text x="75" y="80" text-anchor="middle" font-size="10">mesa inferior: furos oblongos (d+2) × (d+20)</text>
+<text x="75" y="93" text-anchor="middle" font-size="10">no sentido da viga → livre dilatação</text>
+</g>
+<!-- cotas -->
+<line x1="30" y1="118" x2="180" y2="118" stroke="#555" stroke-width="1" marker-start="url(#s14_15)" marker-end="url(#s14_15)"/>
+<text x="30" y="132" font-size="9" fill="#555">chapa ≥ 100 (concreto) / 150–200 mm (alvenaria)</text>
+<text x="230" y="120" font-size="10">grout 20–30 mm</text>
+<line x1="228" y1="117" x2="182" y2="107" stroke="#555" stroke-width="0.8"/>
+<text x="230" y="50" font-size="10">enrijecedor de apoio sobre a chapa</text>
+<text x="230" y="63" font-size="10">(reação concentrada na alma)</text>
+<text x="210" y="165" font-size="10" fill="#444">2 chumbadores ø 5/8"–3/4" com gancho</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.15</b> – Apoio de viga metálica em pilar/parede de concreto: chapa de apoio sobre grout, chumbadores com gancho e furos oblongos na mesa para permitir rotação e dilatação; enrijecedor de apoio na viga.</figcaption>
+</figure>
+<p><strong>Dimensionamento prático.</strong> Pressão no concreto: R/(B·N) ≤ 0,85 f<sub>ck</sub>/γ<sub>c</sub> (ou, em alvenaria, ≤ 0,2–0,4 MPa conforme o bloco — quase sempre é a alvenaria que define a chapa). Espessura da chapa pela flexão do balanço além da mesa: t = √(2·p·m²·γ<sub>a1</sub>/f<sub>y</sub>), com m = balanço da chapa e p a pressão. Verifique a alma da viga ao enrugamento (l<sub>b</sub> = comprimento de apoio) e coloque enrijecedor se falhar. Chumbadores: ø 5/8" a 3/4", comprimento de ancoragem ≥ 15 d com gancho, apenas para posicionamento e para a força horizontal de vento/frenagem.</p>
+
+<h2>14.7 Escadas, guarda-corpos e pisos de grade <span class="nivel b">Básico</span></h2>
+<h3>14.7.1 Escadas metálicas</h3>
+<p>Escadas industriais e de acesso são quase sempre metálicas: <strong>longarinas</strong> em U laminado (U 6" a 10") ou chapa dobrada (200 a 300 mm de altura, 4,75–6,3 mm), <strong>degraus</strong> de grade eletrofundida (25×3 ou 32×3) com nariz antiderrapante ou de chapa xadrez (3,0–4,75 mm) dobrada em U, <strong>patamar</strong> a cada 3,2 m de desnível (NBR 9077) e guarda-corpo nos dois lados. As dimensões são regidas pela NBR 9077 (saídas de emergência), NR-12 (máquinas) e NR-35 (trabalho em altura). A Figura 14.16 resume os números; a Tabela 14.1 traz os limites.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s14_16" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h14_16" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<g transform="translate(20,20)">
+<text x="190" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) ESCADA COMUM (corte pela longarina)</text>
+<!-- longarina inclinada 34° (p=290, e=175 -> 31°) desenhada -->
+<polygon points="20,290 300,110 300,96 20,276" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- degraus -->
+<g fill="#d9dee7" stroke="#333" stroke-width="1.2">
+<rect x="40" y="252" width="56" height="8"/><rect x="96" y="216" width="56" height="8"/><rect x="152" y="180" width="56" height="8"/><rect x="208" y="144" width="56" height="8"/><rect x="264" y="108" width="56" height="8"/>
+</g>
+<!-- patamar -->
+<rect x="300" y="96" width="80" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="340" y="90" text-anchor="middle" font-size="10">patamar ≥ largura</text>
+<!-- cotas: piso e espelho -->
+<line x1="96" y1="270" x2="152" y2="270" stroke="#555" stroke-width="1" marker-start="url(#s14_16)" marker-end="url(#s14_16)"/>
+<text x="124" y="285" text-anchor="middle" font-size="10" fill="#555">p = 28–30 cm</text>
+<line x1="160" y1="216" x2="160" y2="180" stroke="#555" stroke-width="1" marker-start="url(#s14_16)" marker-end="url(#s14_16)"/>
+<text x="168" y="202" font-size="10" fill="#555">e = 16–18 cm</text>
+<!-- ângulo -->
+<path d="M60 264 A40 40 0 0 0 55 290" fill="none" stroke="#c0392b" stroke-width="1"/>
+<text x="70" y="300" font-size="10" fill="#c0392b">30–38°</text>
+<line x1="20" y1="300" x2="150" y2="300" stroke="#333" stroke-width="1"/>
+<!-- guarda-corpo -->
+<g stroke="#0b3d91" stroke-width="3"><line x1="68" y1="252" x2="68" y2="172"/><line x1="236" y1="144" x2="236" y2="64"/><line x1="68" y1="172" x2="236" y2="64"/></g>
+<line x1="68" y1="212" x2="236" y2="104" stroke="#0b3d91" stroke-width="2"/>
+<line x1="245" y1="144" x2="245" y2="64" stroke="#555" stroke-width="1" marker-start="url(#s14_16)" marker-end="url(#s14_16)"/>
+<text x="250" y="126" font-size="10" fill="#555">1,10 m (NBR 9077: ≥ 0,92)</text>
+<text x="200" y="215" font-size="10">2e + p = 63–65 cm (Blondel)</text>
+<text x="200" y="228" font-size="10">largura ≥ 1,20 m (emergência)</text>
+<text x="200" y="241" font-size="10">≥ 0,80 m (industrial, NR-12)</text>
+<text x="200" y="258" font-size="10">longarina U 8"/chapa 250×6,3</text>
+<text x="200" y="271" font-size="10">degrau grade 25×3 c/ nariz</text>
+</g>
+<g transform="translate(530,20)">
+<text x="100" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) ESCADA MARINHEIRO</text>
+<!-- montantes -->
+<g stroke="#333" stroke-width="4"><line x1="90" y1="20" x2="90" y2="300"/><line x1="150" y1="20" x2="150" y2="300"/></g>
+<!-- degraus -->
+<g stroke="#333" stroke-width="3"><line x1="90" y1="40" x2="150" y2="40"/><line x1="90" y1="70" x2="150" y2="70"/><line x1="90" y1="100" x2="150" y2="100"/><line x1="90" y1="130" x2="150" y2="130"/><line x1="90" y1="160" x2="150" y2="160"/><line x1="90" y1="190" x2="150" y2="190"/><line x1="90" y1="220" x2="150" y2="220"/><line x1="90" y1="250" x2="150" y2="250"/><line x1="90" y1="280" x2="150" y2="280"/></g>
+<!-- gaiola (arcos) -->
+<g fill="none" stroke="#0b3d91" stroke-width="2"><path d="M50 60 A70 40 0 0 1 190 60"/><path d="M50 120 A70 40 0 0 1 190 120"/><path d="M50 180 A70 40 0 0 1 190 180"/></g>
+<g stroke="#0b3d91" stroke-width="1.5"><line x1="50" y1="60" x2="50" y2="180"/><line x1="190" y1="60" x2="190" y2="180"/><line x1="120" y1="20" x2="120" y2="140"/></g>
+<line x1="90" y1="300" x2="150" y2="300" stroke="#333" stroke-width="1"/>
+<line x1="200" y1="180" x2="200" y2="300" stroke="#555" stroke-width="1" marker-start="url(#s14_16)" marker-end="url(#s14_16)"/>
+<text x="206" y="245" font-size="10" fill="#555">2,0 m</text>
+<line x1="160" y1="220" x2="160" y2="250" stroke="#555" stroke-width="1" marker-start="url(#s14_16)" marker-end="url(#s14_16)"/>
+<text x="166" y="238" font-size="10" fill="#555">25–30 cm</text>
+<line x1="90" y1="310" x2="150" y2="310" stroke="#555" stroke-width="1" marker-start="url(#s14_16)" marker-end="url(#s14_16)"/>
+<text x="120" y="325" text-anchor="middle" font-size="10" fill="#555">40–60 cm</text>
+<text x="-60" y="60" font-size="9">gaiola: aros ø 700,</text>
+<text x="-60" y="72" font-size="9">a cada 1,5 m,</text>
+<text x="-60" y="84" font-size="9">5–7 barras 50×6</text>
+<text x="-60" y="110" font-size="9">montante L 2"×1/4"</text>
+<text x="-60" y="122" font-size="9">ou chata 50×8;</text>
+<text x="-60" y="134" font-size="9">degrau ø 20–25</text>
+<text x="-60" y="160" font-size="9">patamar a cada</text><text x="-60" y="172" font-size="9">6–9 m (NR-35)</text><text x="-60" y="196" font-size="9">gaiola a partir</text><text x="-60" y="208" font-size="9">de 2,0 m (NR-12)</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.16</b> – (a) Escada comum: piso, espelho, inclinação, Blondel, largura e guarda-corpo; (b) escada marinheiro com guarda-corpo tipo gaiola obrigatório a partir de 2,0 m de altura.</figcaption>
+</figure>
+<table class="tab small"><caption>Tabela 14.1 – Dimensões usuais de escadas metálicas (NBR 9077, NR-12, NR-35 e prática industrial)</caption>
+<thead><tr><th>Grandeza</th><th>Escada de emergência / uso geral</th><th>Escada industrial (acesso a equipamentos)</th><th>Escada marinheiro</th></tr></thead>
+<tbody>
+<tr><td class="l">Espelho e</td><td class="c">16–18 cm (máx. 18)</td><td class="c">até 20–22 cm (NR-12: ≤ 25)</td><td class="c">25–30 cm entre degraus</td></tr>
+<tr><td class="l">Piso p</td><td class="c">28–32 cm (mín. 28; 2e + p = 63–65)</td><td class="c">22–28 cm (nariz ≥ 2 cm)</td><td class="c">—</td></tr>
+<tr><td class="l">Inclinação</td><td class="c">30–38°</td><td class="c">até 45° (50° com degrau "escada de navio")</td><td class="c">75–90°</td></tr>
+<tr><td class="l">Largura livre</td><td class="c">≥ 1,20 m (1,10 m em edif. existentes)</td><td class="c">≥ 0,80 m (0,60 m em acesso ocasional)</td><td class="c">0,40–0,60 m entre montantes</td></tr>
+<tr><td class="l">Patamar</td><td class="c">a cada 3,2 m de desnível; comprimento ≥ largura</td><td class="c">a cada 3,7 m</td><td class="c">a cada 6–9 m com plataforma</td></tr>
+<tr><td class="l">Guarda-corpo</td><td class="c">1,10 m; travessa a 0,70 m; rodapé 0,20 m</td><td class="c">idem (NR-12)</td><td class="c">gaiola ø 0,70 m acima de 2,0 m</td></tr>
+<tr><td class="l">Carga de cálculo</td><td class="c">3,0 kN/m² (NBR 6120)</td><td class="c">3,0 kN/m² ou 2 × 1,5 kN concentrados</td><td class="c">1,5 kN por degrau</td></tr>
+<tr><td class="l">Flecha</td><td class="c">L/250 nas longarinas</td><td class="c">L/250</td><td class="c">—</td></tr>
+</tbody></table>
+<p><strong>Dimensionamento prático.</strong> A longarina é uma viga inclinada biapoiada: w = (peso próprio ≈ 0,5–0,8 kN/m² + sobrecarga 3,0 kN/m²) × metade da largura; M = w·L<sub>h</sub>²/8 sobre a <em>projeção horizontal</em> L<sub>h</sub>. Para uma escada de 1,20 m com 4 m de desnível (L<sub>h</sub> ≈ 6 m): w ≈ 3,7 × 0,6 = 2,2 kN/m → M<sub>d</sub> ≈ 1,4 × 2,2 × 36/8 ≈ 14 kN·m — um U 8" (W<sub>x</sub> = 133 cm³) resolve com folga; a flecha (L/250) é o que costuma governar. O degrau de grade é calculado como viga biapoiada entre longarinas com 1,5 kN no meio ou 3 kN/m² (Tabela 14.2). Ligação degrau–longarina: soldada em oficina ou parafusada em cantoneira (facilita a galvanização e a troca).</p>
+
+<h3>14.7.2 Guarda-corpo</h3>
+<p>O guarda-corpo (NBR 14718 para edificações; NR-12 e NR-35 para indústria) tem <strong>altura mínima de 1,10 m</strong>, uma <strong>travessa intermediária a 0,70 m</strong> (ou fechamento sem vãos maiores que 11 cm em edifícios com crianças) e <strong>rodapé de 0,20 m</strong> em plataformas industriais (impede queda de objetos). Montantes de tubo ø 1½" (42,4 × 3 mm) ou ø 2" a cada 1,20–1,50 m, corrimão ø 1½", travessa ø 1" a 1¼".</p>
+<figure class="fig p75">
+<svg viewBox="0 0 700 230" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s14_17" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h14_17" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<g transform="translate(40,20)">
+<!-- piso de grade -->
+<rect x="0" y="180" width="480" height="10" fill="url(#h14_17)" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="190" width="480" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="240" y="220" text-anchor="middle" font-size="10">viga de borda / piso</text>
+<!-- montantes -->
+<g stroke="#0b3d91" stroke-width="6"><line x1="60" y1="180" x2="60" y2="20"/><line x1="240" y1="180" x2="240" y2="20"/><line x1="420" y1="180" x2="420" y2="20"/></g>
+<!-- corrimão e travessa -->
+<line x1="30" y1="20" x2="450" y2="20" stroke="#0b3d91" stroke-width="7"/>
+<line x1="30" y1="78" x2="450" y2="78" stroke="#0b3d91" stroke-width="5"/>
+<!-- rodapé -->
+<rect x="30" y="151" width="420" height="29" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<!-- chapa de base do montante -->
+<g fill="#444"><rect x="48" y="176" width="24" height="4"/><rect x="228" y="176" width="24" height="4"/><rect x="408" y="176" width="24" height="4"/></g>
+<!-- cotas -->
+<line x1="500" y1="20" x2="500" y2="180" stroke="#555" stroke-width="1" marker-start="url(#s14_17)" marker-end="url(#s14_17)"/>
+<text x="506" y="100" font-size="11" fill="#555">1,10 m</text>
+<line x1="530" y1="78" x2="530" y2="180" stroke="#555" stroke-width="1" marker-start="url(#s14_17)" marker-end="url(#s14_17)"/>
+<text x="536" y="135" font-size="11" fill="#555">0,70 m</text>
+<line x1="560" y1="151" x2="560" y2="180" stroke="#555" stroke-width="1" marker-start="url(#s14_17)" marker-end="url(#s14_17)"/>
+<text x="566" y="170" font-size="11" fill="#555">0,20 m</text>
+<line x1="60" y1="5" x2="240" y2="5" stroke="#555" stroke-width="1" marker-start="url(#s14_17)" marker-end="url(#s14_17)"/>
+<text x="150" y="1" text-anchor="middle" font-size="10" fill="#555">1,20–1,50 m</text>
+<text x="90" y="40" font-size="10" fill="#0b3d91">corrimão tubo ø 1½" (42,4×3,0)</text>
+<text x="90" y="98" font-size="10" fill="#0b3d91">travessa ø 1" a 1¼"</text>
+<text x="90" y="168" font-size="10">rodapé chapa 200×3 (ou chata 200×4,75)</text>
+<text x="250" y="130" font-size="10">montante ø 1½"–2", chapa de base</text>
+<text x="250" y="143" font-size="10">100×100×8 com 2–4 parafusos ø 1/2"</text>
+<!-- carga -->
+<line x1="330" y1="20" x2="380" y2="20" stroke="#c0392b" stroke-width="2" marker-end="url(#s14_17)"/>
+<text x="345" y="14" font-size="10" fill="#c0392b">≥ 0,8 kN/m (NBR 6120) horizontal</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.17</b> – Guarda-corpo industrial cotado: altura 1,10 m, travessa intermediária a 0,70 m, rodapé de 0,20 m, montantes tubulares a cada 1,20–1,50 m com chapa de base parafusada.</figcaption>
+</figure>
+<p><strong>Dimensionamento prático.</strong> Carga horizontal de 0,8 kN/m no corrimão (NBR 6120; 1,0 kN/m em áreas de concentração de pessoas) ou 1,0 kN concentrado. Montante de tubo ø 1½" × 3,0 mm (W ≈ 3,2 cm³), a cada 1,5 m: M = 0,8 × 1,5 × 1,10 = 1,32 kN·m → σ = 132/3,2 = 41 kN/cm² > f<sub>y</sub> — <strong>não passa</strong>; use ø 2" × 3,0 (W ≈ 6,3 cm³: σ = 21 kN/cm² ✓) com ø 1½" × 3,6 (W ≈ 3,9 cm³) seria preciso reduzir o espaçamento a ≈ 1,0 m. A chapa de base e os parafusos recebem o mesmo momento: 2 parafusos ø 1/2" com braço 80 mm → 16,5 kN de tração cada ✓ (A307: F<sub>t,Rd</sub> = 29,2 kN, Tabela 8.6). O erro mais comum é o montante ø 1½" fininho (t = 2 mm) a cada 2 m: flecha excessiva e sensação de insegurança.</p>
+
+<h3>14.7.3 Piso de grade (grating)</h3>
+<p>A grade eletrofundida ou prensada é formada por <strong>barras portantes</strong> (chatas 25×3, 32×3, 38×3 mm, a cada 30 mm) e <strong>barras de ligação</strong> (redondas torcidas a cada 100 mm). As barras portantes vão <em>na direção do vão</em> (apoiadas nas vigas ou cantoneiras); a grade é fixada por <strong>grampos</strong> (clips) parafusados — no mínimo 4 por painel — nunca soldada em obra (galvanização). Painéis padrão de 1,0 × 6,0 m cortados na medida; bordas com barra chata soldada. A Tabela 14.2 dá vãos indicativos.</p>
+<figure class="fig p75">
+<svg viewBox="0 0 700 210" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s14_18" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h14_18" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<g transform="translate(20,20)">
+<text x="150" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">PLANTA</text>
+<rect x="0" y="15" width="300" height="150" fill="none" stroke="#333" stroke-width="1.5"/>
+<g stroke="#333" stroke-width="2"><line x1="0" y1="35" x2="300" y2="35"/><line x1="0" y1="55" x2="300" y2="55"/><line x1="0" y1="75" x2="300" y2="75"/><line x1="0" y1="95" x2="300" y2="95"/><line x1="0" y1="115" x2="300" y2="115"/><line x1="0" y1="135" x2="300" y2="135"/><line x1="0" y1="155" x2="300" y2="155"/></g>
+<g stroke="#8a94a6" stroke-width="1"><line x1="60" y1="15" x2="60" y2="165"/><line x1="120" y1="15" x2="120" y2="165"/><line x1="180" y1="15" x2="180" y2="165"/><line x1="240" y1="15" x2="240" y2="165"/></g>
+<!-- vigas de apoio -->
+<rect x="-14" y="10" width="14" height="160" fill="url(#h14_18)" stroke="#333" stroke-width="1.2"/><rect x="300" y="10" width="14" height="160" fill="url(#h14_18)" stroke="#333" stroke-width="1.2"/>
+<!-- grampos -->
+<g fill="#c0392b"><rect x="2" y="40" width="10" height="10"/><rect x="288" y="40" width="10" height="10"/><rect x="2" y="130" width="10" height="10"/><rect x="288" y="130" width="10" height="10"/></g>
+<text x="150" y="182" text-anchor="middle" font-size="9">barras portantes (chatas 25–38 × 3) no sentido do vão;</text><text x="150" y="193" text-anchor="middle" font-size="9">barras de ligação ø 6 torcidas a cada 100 mm</text>
+<line x1="0" y1="200" x2="300" y2="200" stroke="#555" stroke-width="1" marker-start="url(#s14_18)" marker-end="url(#s14_18)" transform="translate(0,-5)"/>
+<text x="150" y="208" text-anchor="middle" font-size="10" fill="#555">vão L (apoio ≥ 30 mm em cada lado)</text>
+<text x="20" y="48" font-size="9" fill="#c0392b">grampo</text>
+</g>
+<g transform="translate(400,20)">
+<text x="130" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">CORTE (grampo de fixação)</text>
+<!-- viga mesa -->
+<rect x="0" y="120" width="260" height="10" fill="url(#h14_18)" stroke="#333" stroke-width="1.5"/>
+<!-- barras portantes em corte -->
+<g fill="#d9dee7" stroke="#333" stroke-width="1.2"><rect x="30" y="88" width="3" height="32"/><rect x="60" y="88" width="3" height="32"/><rect x="90" y="88" width="3" height="32"/><rect x="120" y="88" width="3" height="32"/><rect x="150" y="88" width="3" height="32"/><rect x="180" y="88" width="3" height="32"/><rect x="210" y="88" width="3" height="32"/></g>
+<!-- grampo -->
+<path d="M100 88 L100 80 L115 80 L115 130 L120 134" fill="none" stroke="#c0392b" stroke-width="3"/>
+<rect x="104" y="80" width="6" height="55" fill="#444"/>
+<text x="130" y="70" font-size="10" fill="#c0392b">grampo tipo "J" ou sela + parafuso M8</text>
+<line x1="30" y1="150" x2="60" y2="150" stroke="#555" stroke-width="1" marker-start="url(#s14_18)" marker-end="url(#s14_18)"/>
+<text x="45" y="165" text-anchor="middle" font-size="10" fill="#555">30 mm</text>
+<line x1="240" y1="88" x2="240" y2="120" stroke="#555" stroke-width="1" marker-start="url(#s14_18)" marker-end="url(#s14_18)"/>
+<text x="246" y="108" font-size="10" fill="#555">25–38</text>
+<text x="130" y="190" text-anchor="middle" font-size="10">≥ 4 grampos por painel; galvanizado a fogo</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.18</b> – Piso de grade: barras portantes na direção do vão, apoio mínimo de 30 mm e fixação por grampos parafusados (sem solda em obra).</figcaption>
+</figure>
+<table class="tab small"><caption>Tabela 14.2 – Vão máximo indicativo de grade de piso (barras portantes a cada 30 mm, malha 30 × 100 mm, aço f<sub>y</sub> = 250 MPa, flecha ≤ L/200 e ≤ 10 mm) – conferir com o fabricante</caption>
+<thead><tr><th>Barra portante</th><th>Massa (kg/m²)</th><th>Carga 3 kN/m² (passarela)</th><th>Carga 5 kN/m² (indústria)</th><th>Carga 7,5 kN/m²</th><th>Carga concentrada 4,5 kN (carrinho)</th></tr></thead>
+<tbody>
+<tr><td class="l">25 × 3 mm</td><td class="c">≈ 28</td><td class="c">1,10 m</td><td class="c">0,95 m</td><td class="c">0,80 m</td><td class="c">0,75 m</td></tr>
+<tr><td class="l">32 × 3 mm</td><td class="c">≈ 33</td><td class="c">1,40 m</td><td class="c">1,20 m</td><td class="c">1,05 m</td><td class="c">0,95 m</td></tr>
+<tr><td class="l">38 × 3 mm</td><td class="c">≈ 38</td><td class="c">1,65 m</td><td class="c">1,40 m</td><td class="c">1,25 m</td><td class="c">1,10 m</td></tr>
+<tr><td class="l">50 × 5 mm</td><td class="c">≈ 65</td><td class="c">2,40 m</td><td class="c">2,05 m</td><td class="c">1,80 m</td><td class="c">1,60 m</td></tr>
+</tbody></table>
+<p><strong>Verificação rápida de uma barra portante</strong> (25 × 3, vão 1,0 m, 5 kN/m²): cada barra recebe w = 5 × 0,03 = 0,15 kN/m; M = 0,15 × 1²/8 = 0,019 kN·m = 1,9 kN·cm; W = 0,3 × 2,5²/6 = 0,31 cm³; σ = 6,1 kN/cm² (≪ 25 ✓); flecha = 5·0,0015·100⁴/(384·20000·0,39) = 0,25 cm ≈ L/400 ✓ (I = 0,3 × 2,5³/12 = 0,39 cm⁴). Como se vê, é a flecha e a sensação de "piso mole" que limitam o vão, não a tensão.</p>
+
+<h2>14.8 Telhas, calhas, rufos e juntas de dilatação <span class="nivel b">Básico</span></h2>
+<h3>14.8.1 Fechamento em telha metálica</h3>
+<p>A telha trapezoidal (TP40, TP25) ou ondulada de aço galvanizado/galvalume (0,43–0,65 mm; 0,50 mm é o padrão) é fixada às terças por <strong>parafusos autobrocantes</strong> com arruela de vedação EPDM, colocados <strong>na onda alta</strong> (crista) — nunca na baixa, por onde escorre a água — em cada onda nas terças de beiral e cumeeira e em ondas alternadas nas demais; nas <strong>zonas de canto e borda</strong> (onde a sucção chega a 2–3 vezes a média), em todas as ondas. Sobreposição lateral de uma onda (com selante em inclinações baixas) e longitudinal de 200 mm (≥ 300 mm abaixo de 10 %), sempre com selante ou fita butílica. <strong>Inclinação mínima</strong>: 5 % para trapezoidal (com telha inteira no comprimento) e 10 % para ondulada; use 3 % apenas com telhas zipadas (standing seam). A Figura 14.19 reúne os detalhes de calha, rufo, cumeeira e rincão.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s14_19" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- (a) fixação -->
+<g transform="translate(15,25)">
+<text x="120" y="-8" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) fixação e sobreposição</text>
+<path d="M0 80 L20 80 L30 60 L60 60 L70 80 L100 80 L110 60 L140 60 L150 80 L180 80 L190 60 L220 60 L230 80 L250 80" fill="none" stroke="#333" stroke-width="2"/>
+<path d="M180 80 L190 60 L220 60 L230 80 L250 80" fill="none" stroke="#0b3d91" stroke-width="3"/>
+<!-- terça -->
+<rect x="20" y="82" width="230" height="8" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<!-- parafusos na crista -->
+<g stroke="#444" stroke-width="3"><line x1="45" y1="48" x2="45" y2="86"/><line x1="125" y1="48" x2="125" y2="86"/><line x1="205" y1="48" x2="205" y2="86"/></g>
+<g fill="#444"><rect x="40" y="46" width="10" height="5"/><rect x="120" y="46" width="10" height="5"/><rect x="200" y="46" width="10" height="5"/></g>
+<text x="45" y="40" text-anchor="middle" font-size="9">autobrocante ø 5,5 + EPDM</text>
+<text x="230" y="105" text-anchor="end" font-size="9" fill="#0b3d91">sobreposição lateral: 1 onda + selante</text>
+<line x1="180" y1="95" x2="190" y2="95" stroke="#0b3d91" stroke-width="1"/>
+<text x="120" y="125" text-anchor="middle" font-size="9">Longitudinal: 200 mm (≥ 10 %) / 300 mm (5–10 %)</text>
+<text x="120" y="138" text-anchor="middle" font-size="9">Inclinação mín.: 5 % trapezoidal, 10 % ondulada</text>
+<text x="120" y="151" text-anchor="middle" font-size="9" fill="#c0392b">Parafuso na onda baixa = infiltração</text>
+</g>
+<!-- (b) calha e rufo -->
+<g transform="translate(290,25)">
+<text x="110" y="-8" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) beiral: calha + platibanda/rufo</text>
+<!-- telha inclinada -->
+<line x1="60" y1="70" x2="200" y2="56" stroke="#333" stroke-width="3"/>
+<rect x="150" y="60" width="40" height="8" fill="#d9dee7" stroke="#333" stroke-width="1" transform="rotate(-5.7,170,64)"/>
+<!-- calha -->
+<path d="M20 60 L20 100 L70 100 L70 76" fill="none" stroke="#0b3d91" stroke-width="2.5"/>
+<text x="45" y="118" text-anchor="middle" font-size="9" fill="#0b3d91">calha</text>
+<line x1="20" y1="110" x2="70" y2="110" stroke="#555" stroke-width="1" marker-start="url(#s14_19)" marker-end="url(#s14_19)" transform="translate(0,20)"/>
+<text x="45" y="145" text-anchor="middle" font-size="9" fill="#555">b</text>
+<!-- platibanda -->
+<rect x="0" y="20" width="16" height="130" fill="#c8c8c8" stroke="#333" stroke-width="1.2"/>
+<!-- rufo -->
+<path d="M-4 20 L20 20 L20 28" fill="none" stroke="#c0392b" stroke-width="2.5"/>
+<path d="M16 24 L24 60" fill="none" stroke="#c0392b" stroke-width="2"/>
+<text x="30" y="20" font-size="9" fill="#c0392b">rufo / pingadeira</text>
+<text x="8" y="165" text-anchor="middle" font-size="9">platibanda</text>
+<!-- pingadeira interna da calha -->
+<text x="100" y="95" font-size="9">telha avança ≥ 50 mm</text>
+<text x="100" y="108" font-size="9">sobre a calha</text>
+<text x="110" y="185" text-anchor="middle" font-size="9">calha: borda externa 20–30 mm mais</text>
+<text x="110" y="198" text-anchor="middle" font-size="9">baixa que a interna (transborda p/ fora);</text>
+<text x="110" y="211" text-anchor="middle" font-size="9">extravasor; caimento 0,5 %; bocal a cada ≤ 20 m</text>
+</g>
+<!-- (c) cumeeira -->
+<g transform="translate(540,25)">
+<text x="100" y="-8" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c) cumeeira e rincão</text>
+<line x1="10" y1="80" x2="100" y2="60" stroke="#333" stroke-width="3"/><line x1="100" y1="60" x2="190" y2="80" stroke="#333" stroke-width="3"/>
+<path d="M30 74 L100 50 L170 74" fill="none" stroke="#0b3d91" stroke-width="2.5"/>
+<text x="100" y="42" text-anchor="middle" font-size="9" fill="#0b3d91">cumeeira (chapa dobrada) com</text>
+<text x="100" y="33" text-anchor="middle" font-size="9" fill="#0b3d91">aba ≥ 200 mm e fechamento de onda</text>
+<rect x="55" y="78" width="30" height="8" fill="#d9dee7" stroke="#333" stroke-width="1" transform="rotate(-12,70,82)"/><rect x="115" y="78" width="30" height="8" fill="#d9dee7" stroke="#333" stroke-width="1" transform="rotate(12,130,82)"/>
+<text x="100" y="105" text-anchor="middle" font-size="9">terças de cumeeira (2)</text>
+<!-- rincão -->
+<path d="M20 160 L60 190 L100 160" fill="none" stroke="#333" stroke-width="3"/>
+<path d="M40 175 L60 190 L80 175" fill="none" stroke="#c0392b" stroke-width="3"/>
+<path d="M60 190 L60 204" fill="none" stroke="#c0392b" stroke-width="2"/>
+<text x="120" y="175" font-size="9" fill="#c0392b">rincão (água-furtada):</text>
+<text x="120" y="188" font-size="9" fill="#c0392b">calha em V, b ≥ 300 mm,</text>
+<text x="120" y="201" font-size="9" fill="#c0392b">telha sobreposta ≥ 150 mm</text>
+<text x="100" y="230" text-anchor="middle" font-size="9">Cumeeira e rufos: mesmo material da telha</text>
+<text x="100" y="243" text-anchor="middle" font-size="9">(evitar par galvânico Al/aço)</text>
+</g>
+<text x="380" y="300" text-anchor="middle" font-size="10">Espessuras: telha 0,50 mm (0,43 mín.); calhas e rufos 0,65–0,80 mm galvanizado ou 0,8 mm alumínio; calhas industriais grandes: chapa 2,0–3,0 mm.</text>
+<text x="380" y="316" text-anchor="middle" font-size="10">Vãos máximos de telha TP40 0,50 mm: ≈ 1,80 m (vento 1,0 kN/m², contínua em 3 apoios); 1,50 m nas bordas/cantos.</text>
+</svg>
+<figcaption><b>Figura 14.19</b> – Fechamento em telha metálica: (a) fixação na onda alta e sobreposições; (b) beiral com calha, platibanda e rufo; (c) cumeeira e rincão.</figcaption>
+</figure>
+<table class="tab small"><caption>Tabela 14.3 – Dimensão indicativa de calhas retangulares em função da área de captação (intensidade 150 mm/h, NBR 10844; caimento 0,5 %; bocal de ø 100 mm a cada ≤ 20 m) – conferir com projeto hidráulico</caption>
+<thead><tr><th>Área de cobertura contribuinte (m²)</th><th>Vazão de projeto (L/min)</th><th>Calha b × h (mm)</th><th>Nº de condutores ø 100 mm (ou ø 150)</th></tr></thead>
+<tbody>
+<tr><td class="c">até 100</td><td class="c">250</td><td class="c">200 × 150</td><td class="c">1</td></tr>
+<tr><td class="c">100 – 200</td><td class="c">500</td><td class="c">250 × 150</td><td class="c">2 (1 × ø 150)</td></tr>
+<tr><td class="c">200 – 400</td><td class="c">1 000</td><td class="c">300 × 200</td><td class="c">3 (2 × ø 150)</td></tr>
+<tr><td class="c">400 – 600</td><td class="c">1 500</td><td class="c">400 × 250</td><td class="c">4 (3 × ø 150)</td></tr>
+<tr><td class="c">600 – 1 000</td><td class="c">2 500</td><td class="c">500 × 300</td><td class="c">6 (4 × ø 150)</td></tr>
+</tbody></table>
+<p>Vazão Q = I·A/60 (I = 150 mm/h → Q = 2,5 L/min por m²). A capacidade de uma calha retangular com caimento 0,5 % pode ser estimada por Manning (n = 0,011) ou pela regra prática: área da seção (cm²) ≈ 2,5 × área de captação (m²) para calhas até 30 m de comprimento. Lembre que a calha de um galpão de 40 m × 10 m de água (400 m²) recebe 1 000 L/min em chuva forte: uma calha subdimensionada transborda <em>para dentro</em> se a borda interna for a mais baixa — por isso a borda externa é sempre a mais baixa, e com extravasores.</p>
+
+<h3>14.8.2 Juntas de dilatação</h3>
+<p>Uma estrutura de 100 m de comprimento, com ΔT = 30 °C, se alonga ΔL = α·L·ΔT = 1,2×10⁻⁵ × 100 000 × 30 = 36 mm. Se isso for impedido, surge uma força N = E·A·α·ΔT — em um pilar W 360×44,6, 200 000 × 5 770 × 1,2×10⁻⁵ × 30 ≈ 415 kN — suficiente para romper ligações e trincar bases. Por isso, galpões e edifícios metálicos recebem <strong>juntas de dilatação a cada 80 a 120 m</strong> (menos, ≈ 60 m, em estruturas expostas ao sol sem isolamento; mais, com cálculo, em estruturas fechadas e climatizadas). Duas soluções (Figura 14.20): <strong>pilar duplo</strong> (dois pórticos independentes separados 50–100 mm, com telha e calha sobrepostas com folga) ou <strong>apoio deslizante</strong> (a viga de um lado apoia no pilar do outro por furos oblongos e chapa de deslizamento de PTFE/aço inox ou simplesmente folga com parafuso em oblongo longo).</p>
+<figure class="fig p90">
+<svg viewBox="0 0 760 268" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s14_20" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h14_20" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<g transform="translate(20,42)">
+<text x="170" y="-24" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) pilar duplo</text>
+<rect x="120" y="30" width="30" height="180" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="190" y="30" width="30" height="180" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="20" width="150" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="190" y="20" width="150" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="100" y="210" width="140" height="20" fill="#c8c8c8" stroke="#333" stroke-width="1.2"/>
+<text x="170" y="245" text-anchor="middle" font-size="10">bloco/sapata comum</text>
+<line x1="150" y1="120" x2="190" y2="120" stroke="#555" stroke-width="1" marker-start="url(#s14_20)" marker-end="url(#s14_20)"/>
+<text x="170" y="112" text-anchor="middle" font-size="10" fill="#555">50–100</text>
+<!-- telha sobreposta -->
+<path d="M0 8 L165 8" fill="none" stroke="#0b3d91" stroke-width="2.5"/><path d="M155 2 L340 2" fill="none" stroke="#0b3d91" stroke-width="2.5"/>
+<text x="170" y="-8" text-anchor="middle" font-size="9" fill="#0b3d91">telha sobreposta com folga</text>
+<text x="60" y="60" font-size="10">pórtico A</text><text x="240" y="60" font-size="10">pórtico B</text>
+<text x="20" y="150" font-size="10">cada trecho tem seu próprio</text><text x="20" y="163" font-size="10">contraventamento vertical</text>
+</g>
+<g transform="translate(420,42)">
+<text x="160" y="-24" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) apoio deslizante (furos oblongos)</text>
+<rect x="140" y="40" width="30" height="170" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- console -->
+<rect x="170" y="80" width="60" height="10" fill="url(#h14_20)" stroke="#333" stroke-width="1.5"/>
+<polygon points="170,90 230,90 170,130" fill="url(#h14_20)" stroke="#333" stroke-width="1.2"/>
+<!-- viga com chapa de deslizamento -->
+<rect x="185" y="66" width="150" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="185" y="76" width="60" height="4" fill="#0b3d91"/>
+<text x="250" y="58" font-size="9">viga B: mesa com oblongo longo</text>
+<rect x="196" y="63" width="36" height="14" rx="7" fill="#fff" stroke="#333" stroke-width="1.2"/>
+<circle cx="214" cy="70" r="4" fill="#444"/>
+<line x1="196" y1="100" x2="232" y2="100" stroke="#555" stroke-width="1" marker-start="url(#s14_20)" marker-end="url(#s14_20)"/>
+<text x="214" y="114" text-anchor="middle" font-size="9" fill="#555">ΔL + 2·10 mm</text>
+<text x="0" y="80" font-size="10">viga A ligada</text><text x="0" y="93" font-size="10">normalmente</text>
+<rect x="0" y="66" width="140" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="160" y="150" text-anchor="middle" font-size="9">chapa de deslizamento PTFE/inox (ou</text>
+<text x="160" y="163" text-anchor="middle" font-size="9">aço-aço engraxado); porca com folga + contraporca</text>
+<text x="160" y="190" text-anchor="middle" font-size="9" fill="#c0392b">Terças, longarinas, calhas e contraventos</text>
+<text x="160" y="203" text-anchor="middle" font-size="9" fill="#c0392b">também devem ser interrompidos na junta!</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.20</b> – Junta de dilatação: (a) pilar duplo sobre fundação comum; (b) apoio deslizante com furo oblongo e chapa de deslizamento. Em ambos, todos os elementos longitudinais (terças, calhas, contraventos) são interrompidos.</figcaption>
+</figure>
+
+<h2>14.9 Detalhes de drenagem, galvanização, fabricação e montagem <span class="nivel i">Intermediário</span></h2>
+<p>A corrosão começa onde a água para (Capítulo 12 e 15). O detalhista tem grande poder de evitá-la: perfis U e cantoneiras devem ser orientados <em>para não formar bandeja</em>; tubos e caixões fechados hermeticamente (tampas soldadas) ou com furo de dreno no ponto baixo; bases de pilar acima do piso (pedestal de 100–150 mm) e nunca "afogadas" no concreto; sem frestas capilares entre chapas (solda contínua ou selante). Para a galvanização a fogo, cada compartimento fechado precisa de <strong>furos de respiro e de escoamento</strong> (senão explode no banho de zinco a 450 °C) — Figura 14.21.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 272" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s14_21" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h14_21" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<g transform="translate(20,25)">
+<text x="100" y="-8" text-anchor="middle" font-weight="bold" fill="#c0392b">ERRADO</text>
+<!-- U para cima (bandeja) -->
+<path d="M10 30 L10 80 L70 80 L70 30" fill="none" stroke="#333" stroke-width="3"/>
+<path d="M13 65 L67 65 L67 78 L13 78 Z" fill="#8fbbe0"/>
+<text x="40" y="100" text-anchor="middle" font-size="9">U "bandeja"</text>
+<!-- tubo aberto -->
+<rect x="110" y="30" width="30" height="60" fill="none" stroke="#333" stroke-width="3"/>
+<rect x="113" y="70" width="24" height="18" fill="#8fbbe0"/>
+<text x="125" y="105" text-anchor="middle" font-size="9">tubo aberto</text>
+<!-- base afogada -->
+<rect x="170" y="20" width="20" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="150" y="60" width="60" height="30" fill="#c8c8c8" stroke="#333" stroke-width="1.2"/>
+<text x="180" y="105" text-anchor="middle" font-size="9">base no piso</text>
+</g>
+<g transform="translate(270,25)">
+<text x="100" y="-8" text-anchor="middle" font-weight="bold" fill="#2e8b57">CERTO</text>
+<path d="M10 80 L10 30 L70 30 L70 80" fill="none" stroke="#333" stroke-width="3"/>
+<text x="40" y="100" text-anchor="middle" font-size="9">U para baixo</text>
+<rect x="110" y="30" width="30" height="60" fill="none" stroke="#333" stroke-width="3"/>
+<rect x="107" y="26" width="36" height="5" fill="#333"/>
+<circle cx="125" cy="86" r="2.5" fill="#fff" stroke="#333" stroke-width="1"/>
+<text x="125" y="105" text-anchor="middle" font-size="9">tampado</text>
+<rect x="170" y="10" width="20" height="50" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="160" y="60" width="40" height="8" fill="url(#h14_21)" stroke="#333" stroke-width="1"/>
+<rect x="150" y="68" width="60" height="22" fill="#c8c8c8" stroke="#333" stroke-width="1.2"/>
+<line x1="215" y1="68" x2="215" y2="90" stroke="#555" stroke-width="1" marker-start="url(#s14_21)" marker-end="url(#s14_21)"/>
+<text x="220" y="82" font-size="9" fill="#555">pedestal 100–150</text>
+<text x="180" y="105" text-anchor="middle" font-size="9">base elevada</text>
+</g>
+<g transform="translate(20,165)">
+<text x="360" y="-8" text-anchor="middle" font-weight="bold" fill="#0b3d91">FUROS DE RESPIRO E ESCOAMENTO PARA GALVANIZAÇÃO (dois exemplos)</text>
+<!-- tubo com chapas de topo -->
+<rect x="0" y="10" width="220" height="40" fill="none" stroke="#333" stroke-width="2.5"/>
+<rect x="-6" y="0" width="6" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.2"/><rect x="220" y="0" width="6" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<circle cx="12" cy="18" r="4" fill="#fff" stroke="#c0392b" stroke-width="1.5"/><circle cx="208" cy="42" r="4" fill="#fff" stroke="#c0392b" stroke-width="1.5"/>
+<text x="110" y="73" text-anchor="middle" font-size="9">tubo com chapas de topo: furos diagonalmente</text><text x="110" y="84" text-anchor="middle" font-size="9">opostos, ø ≥ 10 mm (≈ 25 % da área do tubo)</text>
+<!-- caixão de chapas / enrijecedor fechado -->
+<rect x="330" y="0" width="200" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/><rect x="330" y="48" width="200" height="12" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="380" y="12" width="8" height="36" fill="#d9dee7" stroke="#333" stroke-width="1.2"/><rect x="470" y="12" width="8" height="36" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<polygon points="380,12 388,12 388,18 380,18" fill="#fff" stroke="#c0392b" stroke-width="1.2"/><polygon points="470,42 478,42 478,48 470,48" fill="#fff" stroke="#c0392b" stroke-width="1.2"/>
+<text x="430" y="73" text-anchor="middle" font-size="9">enrijecedores entre mesas: recorte de canto 20 mm</text><text x="430" y="84" text-anchor="middle" font-size="9">(respiro em cima, dreno embaixo)</text>
+<text x="360" y="100" text-anchor="middle" font-size="9" fill="#c0392b">Regra: nenhum bolsão fechado; furos visíveis para o galvanizador conferir; peça ≤ dimensões da cuba.</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.21</b> – Detalhes contra acúmulo de água (orientação de perfis, tubos tampados, base sobre pedestal) e dois exemplos de furos de respiro/escoamento para galvanização a fogo.</figcaption>
+</figure>
+<p><strong>Detalhes que facilitam fabricação e montagem.</strong> O detalhe deve ser <em>montável</em>: parafusos precisam de espaço para a chave (Figura 14.22 e Tabela 17.9 do Anexo G); as peças precisam de <strong>folga de montagem</strong> (viga entre dois pilares: comprimento = vão − 2 × 10 mm; chapas de topo: folga de 2–3 mm coberta por calços); chanfros e rebaixos devem ser padronizados (chanfro de solda 45° ou 30°/60° conforme AWS); furos-padrão (d + 1,5 mm) só onde a precisão é garantida — em ligações de campo secundárias, prefira oblongos curtos; ligações de campo parafusadas, de oficina soldadas; peças "iguais mas espelhadas" identificadas (marca com sufixo E/D); e as ligações mais pesadas na parte inferior da peça (o montador trabalha do andaime).</p>
+<figure class="fig p75">
+<svg viewBox="0 0 700 220" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s14_22" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h14_22" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<g transform="translate(30,20)">
+<text x="160" y="0" text-anchor="middle" font-weight="bold" fill="#0b3d91">ESPAÇO PARA CHAVE (planta da ligação)</text>
+<!-- pilar mesa+alma em planta -->
+<rect x="0" y="80" width="12" height="100" fill="url(#h14_22)" stroke="#333" stroke-width="1.5"/>
+<rect x="12" y="124" width="140" height="12" fill="url(#h14_22)" stroke="#333" stroke-width="1.5"/>
+<rect x="152" y="80" width="12" height="100" fill="url(#h14_22)" stroke="#333" stroke-width="1.5"/>
+<text x="82" y="200" text-anchor="middle" font-size="10">pilar W (planta)</text>
+<!-- chapa de topo da viga encostada na mesa direita -->
+<rect x="164" y="60" width="14" height="140" fill="url(#h14_22)" stroke="#333" stroke-width="1.5"/>
+<!-- parafusos com porca -->
+<g fill="#444"><rect x="150" y="98" width="30" height="6"/><rect x="150" y="156" width="30" height="6"/></g>
+<polygon points="140,94 152,94 152,108 140,108" fill="#666"/><polygon points="140,152 152,152 152,166 140,166" fill="#666"/>
+<!-- chave (soquete) -->
+<circle cx="146" cy="101" r="15" fill="none" stroke="#c0392b" stroke-width="2"/>
+<line x1="12" y1="101" x2="131" y2="101" stroke="#555" stroke-width="1" marker-start="url(#s14_22)" marker-end="url(#s14_22)"/>
+<text x="70" y="96" text-anchor="middle" font-size="9" fill="#555">livre ≥ C<tspan baseline-shift="sub" font-size="7">1</tspan></text>
+<line x1="146" y1="136" x2="146" y2="152" stroke="#555" stroke-width="1" marker-start="url(#s14_22)" marker-end="url(#s14_22)"/>
+<text x="120" y="147" text-anchor="end" font-size="9" fill="#555">≥ C<tspan baseline-shift="sub" font-size="7">1</tspan> à alma</text>
+<text x="200" y="90" font-size="10">C<tspan baseline-shift="sub" font-size="8">1</tspan> = distância mínima do eixo do parafuso</text>
+<text x="200" y="103" font-size="10">a um obstáculo (alma, mesa, enrijecedor):</text>
+<text x="200" y="120" font-size="10">ø 1/2": 22 mm · ø 5/8": 26 mm · ø 3/4": 32 mm</text>
+<text x="200" y="133" font-size="10">ø 7/8": 36 mm · ø 1": 41 mm (chave manual)</text>
+<text x="200" y="146" font-size="10">pistola pneumática: + 10 a 15 mm</text>
+<text x="200" y="166" font-size="10" fill="#c0392b">Gabarito (gauge) usual da mesa do pilar:</text>
+<text x="200" y="179" font-size="10" fill="#c0392b">W 200: 100 mm; W 250–360: 100–140 mm</text>
+<text x="200" y="192" font-size="10" fill="#c0392b">(≥ t<tspan baseline-shift="sub" font-size="8">w</tspan> + 2 C<tspan baseline-shift="sub" font-size="8">1</tspan>)</text>
+</g>
+</svg>
+<figcaption><b>Figura 14.22</b> – Espaço para chave: distância livre C<sub>1</sub> do eixo do parafuso à alma, mesa ou enrijecedor, e gabarito mínimo entre fileiras de parafusos na mesa do pilar.</figcaption>
+</figure>
+<p><strong>Cantoneiras de fixação de alvenaria e vidro.</strong> Paredes de alvenaria apoiadas em vigas metálicas de fechamento precisam de <em>ferro-cabelo</em> ou cantoneiras L 2"×3/16" soldadas ao pilar a cada 60 cm (travamento lateral da parede) e de uma cantoneira de apoio contínua (L 3"×1/4") quando a alvenaria fica fora da mesa da viga. Caixilhos e vidros (pele de vidro) usam insertos/cantoneiras com furos oblongos em duas direções para o ajuste de ± 20 mm da estrutura de aço em relação à esquadria — sempre com tolerância de montagem prevista pelo fornecedor da fachada.</p>
+
+<h2>14.10 Tabela-resumo e erros de detalhamento <span class="nivel b">Básico</span></h2>
+<table class="tab small"><caption>Tabela 14.4 – Detalhe × quando usar × dimensão típica</caption>
+<thead><tr><th>Detalhe</th><th>Quando usar</th><th>Dimensão típica</th><th>Ver</th></tr></thead>
+<tbody>
+<tr><td class="l">Chapa de terça</td><td class="l">Toda terça Ue sobre viga/tesoura</td><td class="l">t 4,75–6,3 mm; h ≈ 0,75 h<sub>terça</sub>; 2 parafusos ø 1/2"–5/8"; oblongos</td><td class="c">14.1</td></tr>
+<tr><td class="l">Corrente de terça</td><td class="l">Vão &gt; 3 m; sempre em telhados</td><td class="l">ø 12,5–16 mm com esticador; 1 (L ≤ 4 m) ou 2 linhas; tirante de cumeeira</td><td class="c">14.2</td></tr>
+<tr><td class="l">Luva / sobreposição</td><td class="l">Terças contínuas, vãos ≥ 6 m</td><td class="l">Sobreposição 0,10–0,15 L cada lado; luva 0,6–1,0 m, 4 + 4 parafusos</td><td class="c">14.3</td></tr>
+<tr><td class="l">Mão-francesa</td><td class="l">Mesa inferior comprimida (joelho e sucção); longarinas</td><td class="l">L 1½"×3/16" ou ø 12,5; nas terças a cada 1,6–3,2 m</td><td class="c">14.4</td></tr>
+<tr><td class="l">X de cobertura</td><td class="l">Vãos extremos e a cada ≤ 30 m</td><td class="l">ø 16–25 mm + esticador, ou L 2"×3/16" com gusset 8 mm</td><td class="c">14.5</td></tr>
+<tr><td class="l">X / K vertical</td><td class="l">Mesmos vãos do X de cobertura</td><td class="l">L 2½"–3"×1/4"; tubos ø 76–114 se comprimidos; gusset 9,5 mm</td><td class="c">14.6</td></tr>
+<tr><td class="l">Gusset de treliça</td><td class="l">Todo nó de tesoura em L/T</td><td class="l">t 8–9,5 mm; solda 5 mm; Whitmore</td><td class="c">14.7</td></tr>
+<tr><td class="l">Enrijecedor transversal</td><td class="l">Apoios, cargas concentradas, mísulas, pilar sobre viga</td><td class="l">b ≈ b<sub>f</sub>/2 − t<sub>w</sub>/2; t ≥ t<sub>f</sub>/2 (8–12,5 mm); recorte 20 mm</td><td class="c">14.8</td></tr>
+<tr><td class="l">Mísula</td><td class="l">Pórticos de alma cheia, L ≥ 15 m</td><td class="l">L<sub>m</sub> = 0,10–0,15 L; altura na raiz ≈ d; enrijecedor no fim</td><td class="c">14.9</td></tr>
+<tr><td class="l">Emenda de pilar</td><td class="l">Peças &gt; 12 m; a 0,6–1,2 m do piso</td><td class="l">Chapas 19–25 mm, 4–8 parafusos ø 3/4"–7/8"; ou talas t ≈ t<sub>f</sub></td><td class="c">14.10</td></tr>
+<tr><td class="l">Emenda de viga</td><td class="l">A 0,2 L dos apoios (vigas contínuas)</td><td class="l">Talas de mesa + alma; ou penetração total com cobre-junta</td><td class="c">14.11</td></tr>
+<tr><td class="l">Abertura na alma</td><td class="l">Dutos em vigas de piso</td><td class="l">ø ≤ 0,5 h; ≥ h do apoio; reforço com chapas ou anel</td><td class="c">14.13</td></tr>
+<tr><td class="l">Stud / borda de deck</td><td class="l">Vigas mistas</td><td class="l">Stud ø 19 × 100–120 a cada 300; L 50×50×3 de borda</td><td class="c">14.14</td></tr>
+<tr><td class="l">Chapa de apoio em concreto</td><td class="l">Vigas sobre alvenaria/concreto</td><td class="l">Apoio ≥ 100 (concreto)/150–200 mm (alvenaria); 2 chumbadores ø 5/8"; oblongos</td><td class="c">14.15</td></tr>
+<tr><td class="l">Escada</td><td class="l">—</td><td class="l">e 16–18, p 28–30 cm; 30–38°; largura 1,20 (0,80 industrial)</td><td class="c">14.16</td></tr>
+<tr><td class="l">Guarda-corpo</td><td class="l">Desnível &gt; 1,0 m (NR-12: &gt; 1,0 m; NBR 14718)</td><td class="l">h 1,10; travessa 0,70; rodapé 0,20; tubo ø 1½"–2"</td><td class="c">14.17</td></tr>
+<tr><td class="l">Grade de piso</td><td class="l">Passarelas, plataformas</td><td class="l">25×3 a 38×3; vão 1,0–1,6 m; 4 grampos/painel</td><td class="c">14.18</td></tr>
+<tr><td class="l">Calha</td><td class="l">Todo beiral</td><td class="l">Ver Tabela 14.3; chapa 0,65–0,8 mm; caimento 0,5 %</td><td class="c">14.19</td></tr>
+<tr><td class="l">Junta de dilatação</td><td class="l">A cada 80–120 m</td><td class="l">Pilar duplo (folga 50–100 mm) ou oblongo de ΔL + 20 mm</td><td class="c">14.20</td></tr>
+<tr><td class="l">Furos de respiro</td><td class="l">Peças galvanizadas fechadas</td><td class="l">ø ≥ 10 mm, opostos; recortes de 20 mm nos enrijecedores</td><td class="c">14.21</td></tr>
+<tr><td class="l">Espaço para chave</td><td class="l">Toda ligação parafusada</td><td class="l">C<sub>1</sub> = 22–41 mm (ø 1/2"–1"); gabarito ≥ t<sub>w</sub> + 2 C<sub>1</sub></td><td class="c">14.22</td></tr>
+</tbody></table>
+
+<table class="tab"><caption>Tabela 14.5 – Erros de detalhamento mais comuns, consequência e correção</caption>
+<thead><tr><th>Erro</th><th>Consequência</th><th>Correção</th></tr></thead>
+<tbody>
+<tr><td class="l">Excentricidade no nó de contraventamento (eixos não concorrem no PT)</td><td class="l">Momento N·e no pilar e no gusset; flexão de parafusos; trincas</td><td class="l">Alinhar eixos; se impossível, calcular M = N·e e reforçar</td></tr>
+<tr><td class="l">Enrijecedor faltando sob carga concentrada / sobre apoio</td><td class="l">Enrugamento ou escoamento da alma; mesa "afunda"</td><td class="l">Par de enrijecedores (Fig. 14.8); verificar NBR 8800 5.7</td></tr>
+<tr><td class="l">Terça soldada na tesoura sem folga de montagem</td><td class="l">Não encaixa; solda de campo destrói a galvanização; sem ajuste</td><td class="l">Chapa de terça parafusada com oblongo; folga 10–20 mm</td></tr>
+<tr><td class="l">Tirante/corrente sem esticador</td><td class="l">Barra frouxa não trava a terça; flambagem lateral sob sucção</td><td class="l">Esticador ou rosca longa com porca e contraporca</td></tr>
+<tr><td class="l">Furo-padrão onde precisava oblongo</td><td class="l">Não monta; "abre-se com maçarico" na obra (furo irregular, esmagamento)</td><td class="l">Oblongo nas ligações secundárias, apoios deslizantes e juntas</td></tr>
+<tr><td class="l">Parafuso inacessível (sem espaço para a chave)</td><td class="l">Parafuso não apertado ou trocado por solda improvisada</td><td class="l">Respeitar C<sub>1</sub>; mudar gabarito; usar parafuso pelo outro lado</td></tr>
+<tr><td class="l">Mísula sem enrijecedor no fim</td><td class="l">Força de desvio da mesa inferior enruga a alma</td><td class="l">Enrijecedor no ponto de mudança de direção</td></tr>
+<tr><td class="l">Perfil U ou cantoneira em "bandeja"</td><td class="l">Água parada, corrosão acelerada</td><td class="l">Girar o perfil; furos de dreno ø 10 mm</td></tr>
+<tr><td class="l">Base de pilar no nível do piso ou abaixo</td><td class="l">Corrosão da base (patologia nº 1 em galpões)</td><td class="l">Pedestal 100–150 mm; grout; proteção da base</td></tr>
+<tr><td class="l">Guarda-corpo com montante fino e espaçado</td><td class="l">Flecha grande, insegurança, não atende 0,8 kN/m</td><td class="l">ø 2"×3,0 a cada ≤ 1,5 m; base com 4 parafusos</td></tr>
+<tr><td class="l">Grade solta / apoio &lt; 30 mm / portante no sentido errado</td><td class="l">Painel vira, cai, vibra</td><td class="l">Portantes na direção do vão; 4 grampos; apoio ≥ 30 mm</td></tr>
+<tr><td class="l">Parafuso da telha na onda baixa</td><td class="l">Infiltração, corrosão da terça</td><td class="l">Fixar na crista com arruela EPDM</td></tr>
+</tbody></table>
+
+<div class="resumo"><div class="tit">Resumo do capítulo</div><ul>
+<li>Detalhes bons têm três qualidades: caminho de carga claro (eixos concorrentes, enrijecedores onde há força concentrada), tolerância à imprecisão (folgas, oblongos onde não há atrito) e durabilidade (sem bandejas, sem frestas, bases elevadas).</li>
+<li>Terças: chapa de terça parafusada com oblongos; correntes a cada ≤ 2,5–3 m com esticador e tirante de cumeeira; continuidade por sobreposição ou luva reduz perfis e flechas.</li>
+<li>Contraventamentos: X de barras redondas (só tração) ou cantoneiras com gusset; nós no ponto de trabalho; λ ≤ 200 (compressão) e 300 (tração).</li>
+<li>Enrijecedores: largura ≈ b<sub>f</sub>/2 − t<sub>w</sub>/2, espessura ≥ t<sub>f</sub>/2, recorte no canto; obrigatórios sob cargas concentradas e no fim das mísulas.</li>
+<li>Mísula = 10–15 % do vão; emendas de pilar a 0,6–1,2 m do piso; emendas de viga a 0,2 L; aberturas na alma ≤ 0,5 h, no terço médio, longe dos apoios, com reforço.</li>
+<li>Escadas: e = 16–18 cm, p = 28–30 cm, 2e + p = 63–65 cm, 30–38°, largura 1,20 m (0,80 m industrial), gaiola acima de 2 m. Guarda-corpo 1,10 / 0,70 / 0,20 m. Grade 25×3 a 38×3 com 4 grampos.</li>
+<li>Telhas fixadas na onda alta, inclinação ≥ 5 % (trapezoidal) / 10 % (ondulada); calhas pela Tabela 14.3 com borda externa mais baixa; juntas de dilatação a cada 80–120 m.</li>
+<li>Galvanização exige furos de respiro; montagem exige espaço de chave e folgas — cheque a Tabela 14.5 antes de liberar qualquer desenho.</li>
+</ul></div>
+<ul class="chk">
+<li>Todo nó de contraventamento tem eixos concorrentes no ponto de trabalho?</li>
+<li>Há enrijecedores em todos os apoios, cargas concentradas, mísulas e pilares sobre vigas?</li>
+<li>Terças com chapa de terça, oblongos, correntes com esticador e tirante de cumeeira?</li>
+<li>Mãos-francesas nas terças junto ao joelho e a cada duas terças no vão?</li>
+<li>Furos oblongos nos apoios deslizantes, juntas e ligações secundárias?</li>
+<li>Espaço de chave verificado em todas as ligações parafusadas (C<sub>1</sub>)?</li>
+<li>Peças galvanizadas com furos de respiro e drenagem; nenhum perfil em bandeja; bases sobre pedestal?</li>
+<li>Escadas, guarda-corpos e grades conforme NBR 9077 / NBR 14718 / NR-12?</li>
+<li>Calhas dimensionadas (Tabela 14.3), telhas na inclinação mínima, juntas de dilatação a cada ≤ 120 m?</li>
+</ul>

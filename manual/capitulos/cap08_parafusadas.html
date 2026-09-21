@@ -1,0 +1,1630 @@
+<h1 class="cap"><small>Capítulo 8</small>Ligações parafusadas</h1>
+<div class="objetivos"><div class="tit">O que você vai aprender neste capítulo</div>
+<ul>
+<li>Por que as ligações são o ponto crítico de uma estrutura metálica e o que custa errar nelas.</li>
+<li>Tipos de parafusos (A307, A325, A490, ISO 4.6/8.8/10.9), como reconhecê-los pela cabeça e como escolher porcas e arruelas.</li>
+<li>Furos, espaçamentos, distâncias à borda e gabaritos usuais em cantoneiras e perfis W.</li>
+<li>Como o parafuso trabalha: cisalhamento simples e duplo, tração, ligação por apoio e por atrito.</li>
+<li>As fórmulas da NBR 8800 para cisalhamento, tração, esmagamento e bloco de cisalhamento — com tabelas prontas.</li>
+<li>As oito ligações parafusadas mais comuns desenhadas em elevação e corte.</li>
+<li>Três exemplos resolvidos e as regras de aperto, inspeção e os erros mais frequentes de obra.</li>
+</ul></div>
+
+<h2>8.1 Por que as ligações são o ponto crítico <span class="nivel b">Básico</span></h2>
+<p>Uma estrutura metálica é um conjunto de peças lineares (vigas, pilares, barras de treliça) que só funciona quando essas peças estão bem unidas. As <strong>ligações</strong> são os pontos onde os esforços mudam de peça: a força que desce pela viga precisa "atravessar" parafusos, chapas e soldas para chegar ao pilar. Nesse caminho, o fluxo de tensões se concentra em áreas pequenas, aparecem excentricidades, furos reduzem a seção e a qualidade depende de mãos humanas (do furador, do soldador, do montador). Por isso, levantamentos de acidentes em estruturas de aço mostram, de forma consistente, que <strong>a maior parte das falhas estruturais começa nas ligações</strong> — não no meio das barras. Estudos clássicos sobre colapsos (por exemplo, os levantamentos que deram origem às diretrizes do AISC e do Eurocódigo) atribuem entre 40 % e 60 % dos casos a erros de projeto, detalhamento ou execução de ligações.</p>
+<p>Há também uma razão econômica: embora as ligações representem poucos por cento do peso da estrutura, elas consomem tipicamente <strong>25 % a 35 % do custo de fabricação</strong> (corte de chapas, furação, solda de gusset, controle de qualidade) e boa parte do tempo de montagem. Um detalhe mal pensado — furo que não bate, parafuso inacessível para a chave, solda de campo em posição sobre-cabeça — custa horas de obra e, no limite, compromete a segurança.</p>
+<div class="box"><div class="tit">Conceito – o "caminho da carga"</div>
+<p>Ao analisar qualquer ligação, siga mentalmente a força: ela sai da alma da viga, passa para as cantoneiras por <em>apoio</em> nos furos, atravessa os parafusos por <em>cisalhamento</em>, entra na mesa do pilar por <em>apoio</em> novamente e finalmente se espalha no pilar. Cada trecho desse caminho é um estado-limite a verificar. Se você conseguir descrever o caminho da carga, consegue dimensionar a ligação.</p></div>
+
+<h2>8.2 Parafusos: tipos, marcações e acessórios <span class="nivel b">Básico</span></h2>
+<h3>8.2.1 Anatomia do parafuso estrutural</h3>
+<p>Um parafuso estrutural é composto por cabeça sextavada, fuste liso, trecho roscado, porca e arruela(s). O trecho de fuste que fica dentro das chapas apertadas chama-se <strong>pega</strong> (em inglês, <em>grip</em>). O comprimento do parafuso deve ser escolhido de modo que, depois do aperto, a rosca ultrapasse a porca em pelo menos dois fios e — preferencialmente — o trecho roscado não fique dentro do plano de corte (Figura 8.1).</p>
+<figure class="fig p90">
+<svg viewBox="0 0 740 270" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_1" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- chapas -->
+<rect x="215" y="55" width="30" height="150" fill="url(#h8_1)" stroke="#333" stroke-width="1.5"/>
+<rect x="245" y="55" width="36" height="150" fill="url(#h8_1)" stroke="#333" stroke-width="1.5"/>
+<!-- furo (folga) -->
+<rect x="215" y="112" width="66" height="36" fill="#fff" stroke="none"/>
+<!-- cabeça -->
+<rect x="178" y="95" width="37" height="70" fill="#444" stroke="#333" stroke-width="1.5"/>
+<line x1="192" y1="95" x2="192" y2="165" stroke="#777" stroke-width="1"/>
+<!-- fuste -->
+<rect x="215" y="115" width="200" height="30" fill="#666" stroke="#333" stroke-width="1.5"/>
+<!-- rosca -->
+<g stroke="#ddd" stroke-width="1">
+<line x1="318" y1="116" x2="326" y2="144"/><line x1="326" y1="116" x2="334" y2="144"/><line x1="334" y1="116" x2="342" y2="144"/><line x1="342" y1="116" x2="350" y2="144"/><line x1="350" y1="116" x2="358" y2="144"/><line x1="358" y1="116" x2="366" y2="144"/><line x1="366" y1="116" x2="374" y2="144"/><line x1="374" y1="116" x2="382" y2="144"/><line x1="382" y1="116" x2="390" y2="144"/><line x1="390" y1="116" x2="398" y2="144"/><line x1="398" y1="116" x2="406" y2="144"/><line x1="406" y1="116" x2="414" y2="144"/>
+</g>
+<!-- arruela -->
+<rect x="281" y="88" width="7" height="84" fill="#999" stroke="#333" stroke-width="1.5"/>
+<!-- porca -->
+<rect x="288" y="95" width="34" height="70" fill="#444" stroke="#333" stroke-width="1.5"/>
+<line x1="302" y1="95" x2="302" y2="165" stroke="#777" stroke-width="1"/>
+<!-- rótulos -->
+<text x="196" y="45" text-anchor="middle" fill="#0b3d91">cabeça</text>
+<text x="196" y="80" text-anchor="middle" font-size="10" fill="#333">marcações</text>
+<line x1="196" y1="83" x2="196" y2="94" stroke="#555" stroke-width="1"/>
+<text x="305" y="45" text-anchor="middle" fill="#0b3d91">porca</text>
+<line x1="305" y1="50" x2="305" y2="94" stroke="#555" stroke-width="1"/>
+<text x="332" y="204" fill="#0b3d91">arruela</text>
+<line x1="284" y1="173" x2="328" y2="200" stroke="#555" stroke-width="1"/>
+<text x="230" y="45" text-anchor="middle" font-size="11" fill="#333">t₁</text>
+<text x="263" y="45" text-anchor="middle" font-size="11" fill="#333">t₂</text>
+<text x="368" y="105" text-anchor="middle" fill="#0b3d91">rosca</text>
+<text x="255" y="108" text-anchor="middle" font-size="10" fill="#333">fuste liso</text>
+<!-- cota d -->
+<line x1="440" y1="115" x2="440" y2="145" stroke="#555" stroke-width="1" marker-start="url(#s8_1)" marker-end="url(#s8_1)"/>
+<line x1="415" y1="115" x2="446" y2="115" stroke="#555" stroke-width="1"/><line x1="415" y1="145" x2="446" y2="145" stroke="#555" stroke-width="1"/>
+<text x="455" y="134" font-size="12" fill="#333">d</text>
+<!-- cota pega -->
+<line x1="215" y1="222" x2="281" y2="222" stroke="#555" stroke-width="1" marker-start="url(#s8_1)" marker-end="url(#s8_1)"/>
+<line x1="215" y1="207" x2="215" y2="228" stroke="#555" stroke-width="1"/><line x1="281" y1="175" x2="281" y2="228" stroke="#555" stroke-width="1"/>
+<text x="248" y="240" text-anchor="middle" font-size="11" fill="#333">pega (grip) = t₁ + t₂</text>
+<!-- cota comprimento -->
+<line x1="215" y1="255" x2="415" y2="255" stroke="#555" stroke-width="1" marker-start="url(#s8_1)" marker-end="url(#s8_1)"/>
+<line x1="415" y1="150" x2="415" y2="260" stroke="#555" stroke-width="1"/>
+<text x="330" y="268" text-anchor="middle" font-size="11" fill="#333">comprimento nominal L (abaixo da cabeça)</text>
+<!-- cota sobra -->
+<line x1="322" y1="170" x2="415" y2="170" stroke="#555" stroke-width="1" marker-start="url(#s8_1)" marker-end="url(#s8_1)"/>
+<text x="368" y="184" text-anchor="middle" font-size="10" fill="#333">sobra ≥ 2 fios</text>
+<!-- lado direito: legenda -->
+<text x="560" y="70" font-size="12" fill="#333" font-weight="bold">Regras práticas</text>
+<text x="560" y="90" font-size="11" fill="#333">• L = pega + espessura da</text>
+<text x="570" y="105" font-size="11" fill="#333">porca + arruela + 2 fios</text>
+<text x="560" y="125" font-size="11" fill="#333">• Rosca fora do plano</text>
+<text x="570" y="140" font-size="11" fill="#333">de corte quando possível</text>
+<text x="560" y="160" font-size="11" fill="#333">• Arruela sob a parte</text>
+<text x="570" y="175" font-size="11" fill="#333">que gira no aperto</text>
+<text x="560" y="195" font-size="11" fill="#333">• Furo = d + 1,5 mm</text>
+<text x="570" y="210" font-size="11" fill="#333">(furo-padrão)</text>
+<!-- linha de furo -->
+<line x1="215" y1="112" x2="281" y2="112" stroke="#333" stroke-width="1"/><line x1="215" y1="148" x2="281" y2="148" stroke="#333" stroke-width="1"/>
+</svg>
+<figcaption><b>Figura 8.1</b> – Anatomia do parafuso estrutural em corte: cabeça, fuste liso, rosca, porca, arruela, pega e sobra de rosca.</figcaption>
+</figure>
+
+<h3>8.2.2 Classes de parafusos</h3>
+<p>Existem duas famílias de parafusos estruturais: os <strong>comuns</strong> (baixo carbono, sem tratamento térmico) e os de <strong>alta resistência</strong> (aço-liga temperado e revenido). A norma NBR 8800 aceita ambos, com regras diferentes de uso:</p>
+<ul>
+<li><strong>ASTM A307</strong> – parafuso comum, f<sub>ub</sub> = 415 MPa. Barato, usado em ligações secundárias (terças, fechamentos, guarda-corpos, plataformas leves). Nunca pode ser usado em ligação por atrito nem em ligações sujeitas a fadiga ou vibração. Aperta-se apenas com chave comum ("aperto de contato").</li>
+<li><strong>ASTM A325</strong> – alta resistência, aço médio carbono temperado, f<sub>ub</sub> = 825 MPa para d ≤ 24 mm (725 MPa para d &gt; 24 mm). É o parafuso padrão da construção metálica brasileira. Existe na versão tipo 1 (comum) e tipo 3 (patinável, para aços COR). Pode ser galvanizado a fogo.</li>
+<li><strong>ASTM A490</strong> – alta resistência, aço-liga, f<sub>ub</sub> = 1 035 MPa. Usado quando se quer menos parafusos ou em ligações muito carregadas. <strong>Não pode ser galvanizado a fogo</strong> (fragilização por hidrogênio) e <strong>não pode ser reaproveitado</strong> após protendido.</li>
+<li><strong>ISO 898-1 – classes 4.6, 5.8, 8.8 e 10.9</strong> (parafusos métricos). O código informa a resistência: o primeiro número × 100 = f<sub>ub</sub> em MPa; o produto dos dois números × 10 = f<sub>yb</sub>. Assim, 8.8 → f<sub>ub</sub> = 800 MPa e f<sub>yb</sub> = 640 MPa; 10.9 → 1 000 / 900 MPa; 4.6 → 400 / 240 MPa. A classe 8.8 é o equivalente prático do A325 e a 10.9 do A490; a 4.6 equivale ao A307.</li>
+</ul>
+<p>A cabeça do parafuso traz a <strong>identificação</strong> obrigatória (Figura 8.2): o A325 tem três traços radiais e a inscrição "A325"; o A490 traz "A490"; os métricos trazem a classe ("8.8", "10.9") em relevo; o A307 costuma ter apenas a marca do fabricante (ou "307A"). As porcas também são identificadas: para A325 usam-se porcas ASTM A563 grau C ou DH (ou A194 2H); para A490, obrigatoriamente DH ou 2H; para métricos 8.8, porcas classe 8; para 10.9, porcas classe 10.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 740 190" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<g transform="translate(70,75)">
+<polygon points="-52,0 -26,-45 26,-45 52,0 26,45 -26,45" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle r="30" fill="none" stroke="#555" stroke-width="1"/>
+<text y="5" text-anchor="middle" font-size="12" font-weight="bold" fill="#333">XYZ</text>
+<text y="70" text-anchor="middle" font-size="12" fill="#0b3d91">ASTM A307</text>
+<text y="86" text-anchor="middle" font-size="10" fill="#333">só marca do fabricante</text>
+</g>
+<g transform="translate(200,75)">
+<polygon points="-52,0 -26,-45 26,-45 52,0 26,45 -26,45" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle r="30" fill="none" stroke="#555" stroke-width="1"/>
+<line x1="0" y1="-8" x2="0" y2="-27" stroke="#333" stroke-width="2.5"/>
+<line x1="0" y1="-8" x2="16.5" y2="20" stroke="#333" stroke-width="2.5"/>
+<line x1="0" y1="-8" x2="-16.5" y2="20" stroke="#333" stroke-width="2.5"/>
+<text x="0" y="30" text-anchor="middle" font-size="9" font-weight="bold" fill="#333">A325</text>
+<text y="70" text-anchor="middle" font-size="12" fill="#0b3d91">ASTM A325</text>
+<text y="86" text-anchor="middle" font-size="10" fill="#333">3 traços radiais + "A325"</text>
+</g>
+<g transform="translate(330,75)">
+<polygon points="-52,0 -26,-45 26,-45 52,0 26,45 -26,45" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle r="30" fill="none" stroke="#555" stroke-width="1"/>
+<text y="-4" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">A490</text>
+<text y="14" text-anchor="middle" font-size="9" fill="#333">XYZ</text>
+<text y="70" text-anchor="middle" font-size="12" fill="#0b3d91">ASTM A490</text>
+<text y="86" text-anchor="middle" font-size="10" fill="#333">"A490" + fabricante</text>
+</g>
+<g transform="translate(460,75)">
+<polygon points="-52,0 -26,-45 26,-45 52,0 26,45 -26,45" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle r="30" fill="none" stroke="#555" stroke-width="1"/>
+<text y="5" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">4.6</text>
+<text y="70" text-anchor="middle" font-size="12" fill="#0b3d91">ISO 4.6</text>
+<text y="86" text-anchor="middle" font-size="10" fill="#333">comum (≈ A307)</text>
+</g>
+<g transform="translate(590,75)">
+<polygon points="-52,0 -26,-45 26,-45 52,0 26,45 -26,45" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle r="30" fill="none" stroke="#555" stroke-width="1"/>
+<text y="5" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">8.8</text>
+<text y="70" text-anchor="middle" font-size="12" fill="#0b3d91">ISO 8.8</text>
+<text y="86" text-anchor="middle" font-size="10" fill="#333">alta resistência (≈ A325)</text>
+</g>
+<g transform="translate(690,75)">
+<polygon points="-42,0 -21,-36 21,-36 42,0 21,36 -21,36" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle r="24" fill="none" stroke="#555" stroke-width="1"/>
+<text y="5" text-anchor="middle" font-size="12" font-weight="bold" fill="#333">10.9</text>
+<text y="70" text-anchor="middle" font-size="12" fill="#0b3d91">ISO 10.9</text>
+<text y="86" text-anchor="middle" font-size="10" fill="#333">(≈ A490)</text>
+</g>
+<text x="370" y="180" text-anchor="middle" font-size="11" fill="#333">Porcas: A563 C/DH ou A194 2H (A325); DH/2H obrigatória com A490; classe 8 com 8.8; classe 10 com 10.9</text>
+</svg>
+<figcaption><b>Figura 8.2</b> – Marcações na cabeça dos parafusos: é o único jeito seguro de saber a classe de um parafuso já instalado.</figcaption>
+</figure>
+
+<h3>8.2.3 Porcas, arruelas e travamento</h3>
+<p>A <strong>arruela lisa</strong> (endurecida, ASTM F436, para alta resistência) tem três funções: distribuir a pressão sob a cabeça ou porca, proteger a chapa (especialmente pintada ou galvanizada) e reduzir o atrito durante o aperto por rotação. A NBR 8800 exige arruela sob o elemento que gira (cabeça ou porca) nas ligações por atrito e nas de A490 sempre; em furos alargados e oblongos, arruela em ambos os lados, e chapa de reforço (ou arruela grossa 8 mm) sobre furos oblongos longos.</p>
+<p><strong>Arruela de pressão</strong> (mola) só faz sentido em parafusos comuns de ligações secundárias sujeitas a vibração leve (fechamentos, plataformas). <strong>Nunca use arruela de pressão com A325/A490</strong>: ela se achata com a protensão, não contribui em nada e pode quebrar. Em parafusos de alta resistência devidamente protendidos, o próprio atrito nos filetes impede o afrouxamento. Quando se exige travamento adicional (equipamentos vibratórios, guindastes, pontes rolantes), use <strong>contraporca</strong>, porca autotravante (com inserto de náilon, ou tipo "prevailing torque"), ou deformação da rosca após o aperto.</p>
+
+<h3>8.2.4 Diâmetros usuais e áreas</h3>
+<p>No Brasil ainda predominam os diâmetros em polegadas (herança das normas ASTM), embora perfis e chapas sejam métricos. A Tabela 8.1 lista os diâmetros correntes com a área bruta A<sub>b</sub> (usada nas fórmulas da NBR 8800) e a área na rosca (área resistente à tração, usada em normas ISO e pelos fabricantes). Note que a NBR 8800 usa A<sub>b</sub> com coeficientes que já embutem a redução da rosca (0,75 para tração; 0,4 para corte com rosca no plano).</p>
+<table class="tab"><caption>Tabela 8.1 – Diâmetros usuais de parafusos estruturais, áreas e distâncias recomendadas (calculado)</caption><thead><tr><th>Diâmetro nominal</th><th>d (mm)</th><th>A<sub>b</sub> bruta (cm²)</th><th>Área na rosca (cm²)</th><th>Rosca / bruta</th><th>Borda usual 1,5d–2d (mm)</th><th>Espaçamento 3d (mm)</th></tr></thead><tbody><tr><td class="c"><b>1/2"</b></td><td class="c">12,70</td><td class="c">1,27</td><td class="c">0,92</td><td class="c">72 %</td><td class="c">19–25</td><td class="c">38</td></tr><tr><td class="c"><b>5/8"</b></td><td class="c">15,88</td><td class="c">1,98</td><td class="c">1,46</td><td class="c">74 %</td><td class="c">24–32</td><td class="c">48</td></tr><tr><td class="c"><b>3/4"</b></td><td class="c">19,05</td><td class="c">2,85</td><td class="c">2,15</td><td class="c">76 %</td><td class="c">29–38</td><td class="c">57</td></tr><tr><td class="c"><b>7/8"</b></td><td class="c">22,23</td><td class="c">3,88</td><td class="c">2,98</td><td class="c">77 %</td><td class="c">33–44</td><td class="c">67</td></tr><tr><td class="c"><b>1"</b></td><td class="c">25,40</td><td class="c">5,07</td><td class="c">3,91</td><td class="c">77 %</td><td class="c">38–51</td><td class="c">76</td></tr><tr><td class="c"><b>M12</b></td><td class="c">12,00</td><td class="c">1,13</td><td class="c">0,84</td><td class="c">75 %</td><td class="c">18–24</td><td class="c">36</td></tr><tr><td class="c"><b>M16</b></td><td class="c">16,00</td><td class="c">2,01</td><td class="c">1,57</td><td class="c">78 %</td><td class="c">24–32</td><td class="c">48</td></tr><tr><td class="c"><b>M20</b></td><td class="c">20,00</td><td class="c">3,14</td><td class="c">2,45</td><td class="c">78 %</td><td class="c">30–40</td><td class="c">60</td></tr><tr><td class="c"><b>M24</b></td><td class="c">24,00</td><td class="c">4,52</td><td class="c">3,53</td><td class="c">78 %</td><td class="c">36–48</td><td class="c">72</td></tr></tbody></table>
+<div class="box dica"><div class="tit">Regra de bolso – qual diâmetro usar?</div>
+<p>Ligações de terças, fechamentos e plataformas leves: 1/2" (M12) A307 ou A325. Ligações de vigas e treliças de edifícios: <strong>3/4" (M20) A325</strong> é o "padrão de mercado" — chave, furadeira e estoque todos preparados. Ligações pesadas (pilares, emendas de vigas de ponte rolante, bases): 7/8" e 1". Evite misturar muitos diâmetros na mesma obra: cada diâmetro é um conjunto diferente de chave, broca e torque.</p></div>
+
+<h2>8.3 Furos, espaçamentos e distâncias à borda <span class="nivel b">Básico</span></h2>
+<h3>8.3.1 Tipos de furo</h3>
+<p>A NBR 8800 (Tabela 11) define quatro tipos de furo (Figura 8.3 e Tabela 8.2). O <strong>furo-padrão</strong> tem folga de 1,5 mm sobre o diâmetro do parafuso (para d ≤ 24 mm; 3 mm para d ≥ 27 mm) e é o único que pode ser usado sem restrições. Os <strong>furos alargados</strong> e <strong>oblongos</strong> facilitam a montagem (absorvem desvios de fabricação e de locação de chumbadores), mas exigem ligação por atrito ou, nos oblongos, que a carga seja perpendicular ao rasgo. Furos são executados por broca ou por punção (chapas até ≈ 19 mm em aço A36); <strong>nunca por maçarico</strong>, que deixa bordas irregulares e endurecidas que iniciam trincas.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 740 240" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s8_3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- padrão -->
+<g transform="translate(95,100)">
+<rect x="-70" y="-85" width="140" height="170" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle r="31" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle r="28.5" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="3 2"/>
+<line x1="-31" y1="-45" x2="31" y2="-45" stroke="#555" stroke-width="1" marker-start="url(#s8_3)" marker-end="url(#s8_3)"/>
+<line x1="-31" y1="-31" x2="-31" y2="-50" stroke="#555" stroke-width="1"/><line x1="31" y1="-31" x2="31" y2="-50" stroke="#555" stroke-width="1"/>
+<text y="-52" text-anchor="middle" font-size="11" fill="#333">d + 1,5</text>
+<text y="108" text-anchor="middle" fill="#0b3d91" font-weight="bold">Padrão</text>
+<text y="124" text-anchor="middle" font-size="10" fill="#333">ø 20,5 para 3/4"</text>
+</g>
+<!-- alargado -->
+<g transform="translate(275,100)">
+<rect x="-70" y="-85" width="140" height="170" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle r="36" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle r="28.5" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="3 2"/>
+<line x1="-36" y1="-48" x2="36" y2="-48" stroke="#555" stroke-width="1" marker-start="url(#s8_3)" marker-end="url(#s8_3)"/>
+<line x1="-36" y1="-36" x2="-36" y2="-53" stroke="#555" stroke-width="1"/><line x1="36" y1="-36" x2="36" y2="-53" stroke="#555" stroke-width="1"/>
+<text y="-55" text-anchor="middle" font-size="11" fill="#333">d + 5</text>
+<text y="108" text-anchor="middle" fill="#0b3d91" font-weight="bold">Alargado</text>
+<text y="124" text-anchor="middle" font-size="10" fill="#333">ø 24 para 3/4"</text>
+</g>
+<!-- oblongo curto -->
+<g transform="translate(455,100)">
+<rect x="-70" y="-85" width="140" height="170" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="-31" y="-38" width="62" height="76" rx="31" ry="31" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle r="28.5" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="3 2"/>
+<line x1="-31" y1="-50" x2="31" y2="-50" stroke="#555" stroke-width="1" marker-start="url(#s8_3)" marker-end="url(#s8_3)"/>
+<text y="-56" text-anchor="middle" font-size="11" fill="#333">d + 1,5</text>
+<line x1="48" y1="-38" x2="48" y2="38" stroke="#555" stroke-width="1" marker-start="url(#s8_3)" marker-end="url(#s8_3)"/>
+<line x1="31" y1="-38" x2="53" y2="-38" stroke="#555" stroke-width="1"/><line x1="31" y1="38" x2="53" y2="38" stroke="#555" stroke-width="1"/>
+<text x="52" y="4" font-size="11" fill="#333">d+6</text>
+<text y="108" text-anchor="middle" fill="#0b3d91" font-weight="bold">Oblongo curto</text>
+<text y="124" text-anchor="middle" font-size="10" fill="#333">20,5 × 25 para 3/4"</text>
+</g>
+<!-- oblongo longo -->
+<g transform="translate(635,100)">
+<rect x="-70" y="-85" width="140" height="170" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="-31" y="-72" width="62" height="144" rx="31" ry="31" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle r="28.5" fill="none" stroke="#444" stroke-width="1" stroke-dasharray="3 2"/>
+<line x1="48" y1="-72" x2="48" y2="72" stroke="#555" stroke-width="1" marker-start="url(#s8_3)" marker-end="url(#s8_3)"/>
+<line x1="31" y1="-72" x2="53" y2="-72" stroke="#555" stroke-width="1"/><line x1="31" y1="72" x2="53" y2="72" stroke="#555" stroke-width="1"/>
+<text x="52" y="4" font-size="11" fill="#333">2,5d</text>
+<text y="108" text-anchor="middle" fill="#0b3d91" font-weight="bold">Oblongo longo</text>
+<text y="124" text-anchor="middle" font-size="10" fill="#333">20,5 × 48 para 3/4"</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.3</b> – Tipos de furo da NBR 8800 (Tabela 11) para parafuso de 3/4" (escala aproximada); o círculo tracejado é o parafuso.</figcaption>
+</figure>
+<table class="tab"><caption>Tabela 8.2 – Dimensões máximas de furos (NBR 8800, Tabela 11) e condições de uso</caption>
+<thead><tr><th>Tipo de furo</th><th>d ≤ 24 mm</th><th>d ≥ 27 mm</th><th>Quando usar</th></tr></thead>
+<tbody>
+<tr><td class="l"><b>Padrão</b> (ø)</td><td class="c">d + 1,5</td><td class="c">d + 3</td><td class="l">Uso geral; único permitido sem restrição em ligações por apoio.</td></tr>
+<tr><td class="l"><b>Alargado</b> (ø)</td><td class="c">d + 5</td><td class="c">d + 8</td><td class="l">Somente ligação por atrito; arruela endurecida sobre o furo. Facilita montagem.</td></tr>
+<tr><td class="l"><b>Oblongo curto</b> (largura × compr.)</td><td class="c">(d + 1,5) × (d + 6)</td><td class="c">(d + 3) × (d + 10)</td><td class="l">Apoio (carga ⊥ ao rasgo) ou atrito (qualquer direção). Ajuste de montagem.</td></tr>
+<tr><td class="l"><b>Oblongo longo</b></td><td class="c">(d + 1,5) × 2,5d</td><td class="c">(d + 3) × 2,5d</td><td class="l">Só em uma das partes ligadas; apoio com carga ⊥ ao rasgo ou atrito; chapa de reforço ≥ 8 mm sobre o furo.</td></tr>
+</tbody></table>
+
+<h3>8.3.2 Espaçamento entre furos</h3>
+<p>Parafusos muito próximos concorrem pela mesma chapa (o rasgamento entre furos governa) e não deixam espaço para a chave. A NBR 8800 fixa o <strong>espaçamento mínimo</strong> entre centros de furos em <strong>2,7d</strong>, e recomenda <strong>3d</strong>. Na prática de detalhamento usa-se 3d arredondado: 40 mm para 1/2", 50 mm para 5/8", <strong>60 a 76 mm para 3/4"</strong>, 70 a 80 mm para 7/8" e 80 a 90 mm para 1". O <strong>espaçamento máximo</strong> em elementos comprimidos ou pintados é 24t ≤ 300 mm (t = espessura da chapa mais fina) e, em aços patináveis expostos, 14t ≤ 180 mm — para garantir contato e evitar corrosão entre chapas.</p>
+<h3>8.3.3 Distância à borda</h3>
+<p>Do centro do furo até a borda da chapa deve haver uma distância mínima que depende do diâmetro e do <strong>tipo de borda</strong> (Tabela 8.3): bordas laminadas ou cortadas com serra são regulares e exigem menos; bordas cortadas com tesoura (guilhotina) ou maçarico têm microtrincas e endurecimento, e exigem mais. A distância máxima à borda é <strong>12t ≤ 150 mm</strong>, para que a chapa não abra e não retenha umidade.</p>
+<table class="tab"><caption>Tabela 8.3 – Distância mínima do centro do furo-padrão à borda (NBR 8800, Tabela 14) e valores máximos</caption>
+<thead><tr><th>Diâmetro d</th><th>Borda laminada ou cortada com serra (mm)</th><th>Borda cortada com tesoura ou maçarico (mm)</th><th>Máximo</th></tr></thead>
+<tbody>
+<tr><td class="c">1/2" (12,7)</td><td class="c">19</td><td class="c">22</td><td class="c" rowspan="8">12t ≤ 150 mm</td></tr>
+<tr><td class="c">5/8" (15,9) / M16</td><td class="c">22</td><td class="c">28</td></tr>
+<tr><td class="c">3/4" (19,1) / M20</td><td class="c">26</td><td class="c">32 (M20: 34)</td></tr>
+<tr><td class="c">7/8" (22,2) / M22</td><td class="c">28</td><td class="c">38</td></tr>
+<tr><td class="c">1" (25,4) / M24</td><td class="c">31 (M24: 30)</td><td class="c">44 (M24: 42)</td></tr>
+<tr><td class="c">1 1/8" (28,6) / M27</td><td class="c">38 (M27: 34)</td><td class="c">51 (M27: 48)</td></tr>
+<tr><td class="c">1 1/4" (31,8) / M30</td><td class="c">41 (M30: 38)</td><td class="c">57 (M30: 52)</td></tr>
+<tr><td class="c">M36</td><td class="c">46</td><td class="c">64</td></tr>
+</tbody></table>
+<p>Na prática de projeto, adota-se com folga: <strong>distância à borda = 1,5d a 2d</strong> (30 a 40 mm para 3/4") e, na direção da força, pelo menos 1,75d para que o esmagamento não seja limitado pelo rasgamento (ver 8.5.3).</p>
+
+<h3>8.3.4 Gabaritos ("gauges") usuais</h3>
+<p>Em cantoneiras e mesas de perfis W, a posição da linha de furos não é livre: precisa deixar espaço para a cabeça do parafuso e a chave, sem invadir o raio de concordância. Essas distâncias padronizadas chamam-se <strong>gabaritos</strong> (Figura 8.4 e Tabela 8.4). Usá-los evita retrabalho e permite que o fabricante fure em linha de produção.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_4" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="s8_4r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<!-- (a) chapa com furos -->
+<rect x="40" y="70" width="300" height="170" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<g fill="#fff" stroke="#333" stroke-width="1.5">
+<circle cx="110" cy="120" r="10"/><circle cx="190" cy="120" r="10"/><circle cx="270" cy="120" r="10"/>
+<circle cx="110" cy="190" r="10"/><circle cx="190" cy="190" r="10"/><circle cx="270" cy="190" r="10"/>
+</g>
+<!-- linhas de centro -->
+<line x1="90" y1="120" x2="300" y2="120" stroke="#555" stroke-width=".7" stroke-dasharray="8 3 2 3"/>
+<line x1="90" y1="190" x2="300" y2="190" stroke="#555" stroke-width=".7" stroke-dasharray="8 3 2 3"/>
+<!-- força -->
+<line x1="360" y1="155" x2="420" y2="155" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_4r)"/>
+<text x="392" y="145" text-anchor="middle" fill="#c0392b" font-size="12">N</text>
+<!-- cotas s -->
+<line x1="110" y1="50" x2="190" y2="50" stroke="#555" stroke-width="1" marker-start="url(#s8_4)" marker-end="url(#s8_4)"/>
+<line x1="190" y1="50" x2="270" y2="50" stroke="#555" stroke-width="1" marker-start="url(#s8_4)" marker-end="url(#s8_4)"/>
+<line x1="110" y1="45" x2="110" y2="108" stroke="#555" stroke-width="1"/><line x1="190" y1="45" x2="190" y2="108" stroke="#555" stroke-width="1"/><line x1="270" y1="45" x2="270" y2="108" stroke="#555" stroke-width="1"/>
+<text x="150" y="42" text-anchor="middle" font-size="11" fill="#333">s ≥ 2,7d (use 3d)</text>
+<text x="230" y="42" text-anchor="middle" font-size="11" fill="#333">s</text>
+<!-- cota e1 -->
+<line x1="40" y1="262" x2="110" y2="262" stroke="#555" stroke-width="1" marker-start="url(#s8_4)" marker-end="url(#s8_4)"/>
+<line x1="40" y1="242" x2="40" y2="267" stroke="#555" stroke-width="1"/><line x1="110" y1="202" x2="110" y2="267" stroke="#555" stroke-width="1"/>
+<text x="75" y="280" text-anchor="middle" font-size="11" fill="#333">e₁ (borda na direção da força)</text>
+<!-- cota e2 -->
+<line x1="20" y1="70" x2="20" y2="120" stroke="#555" stroke-width="1" marker-start="url(#s8_4)" marker-end="url(#s8_4)"/>
+<line x1="15" y1="70" x2="38" y2="70" stroke="#555" stroke-width="1"/><line x1="15" y1="120" x2="98" y2="120" stroke="#555" stroke-width="1"/>
+<text x="12" y="100" text-anchor="end" font-size="11" fill="#333">e₂</text>
+<!-- cota g -->
+<line x1="320" y1="120" x2="320" y2="190" stroke="#555" stroke-width="1" marker-start="url(#s8_4)" marker-end="url(#s8_4)"/>
+<text x="326" y="160" font-size="11" fill="#333">g</text>
+<text x="190" y="228" text-anchor="middle" font-size="11" fill="#333">t (chapa)</text>
+<text x="190" y="30" text-anchor="middle" font-size="12" fill="#0b3d91" font-weight="bold">(a) chapa: s, e₁, e₂ e g</text>
+<!-- (b) cantoneira -->
+<g transform="translate(470,70)">
+<text x="45" y="-40" text-anchor="middle" font-size="12" fill="#0b3d91" font-weight="bold">(b) cantoneira</text>
+<path d="M0 0 L0 130 L110 130 L110 112 L18 112 L18 0 Z" fill="url(#h8_4)" stroke="#333" stroke-width="1.5"/>
+<!-- furo na aba vertical (posição g do talão) -->
+<rect x="0" y="52" width="18" height="8" fill="#fff" stroke="#333" stroke-width="1"/>
+<line x1="-6" y1="56" x2="24" y2="56" stroke="#555" stroke-width=".8" stroke-dasharray="6 2 2 2"/>
+<!-- furo na aba horizontal -->
+<rect x="68" y="112" width="8" height="18" fill="#fff" stroke="#333" stroke-width="1"/>
+<!-- cota g vertical -->
+<line x1="-28" y1="0" x2="-28" y2="56" stroke="#555" stroke-width="1" marker-start="url(#s8_4)" marker-end="url(#s8_4)"/>
+<line x1="-33" y1="0" x2="-2" y2="0" stroke="#555" stroke-width="1"/>
+<text x="-34" y="32" text-anchor="end" font-size="11" fill="#333">g</text>
+<!-- cota g horizontal -->
+<line x1="0" y1="152" x2="72" y2="152" stroke="#555" stroke-width="1" marker-start="url(#s8_4)" marker-end="url(#s8_4)"/>
+<line x1="0" y1="132" x2="0" y2="157" stroke="#555" stroke-width="1"/><line x1="72" y1="132" x2="72" y2="157" stroke="#555" stroke-width="1"/>
+<text x="36" y="170" text-anchor="middle" font-size="11" fill="#333">g (do talão)</text>
+<text x="60" y="80" font-size="10" fill="#333">aba b</text>
+</g>
+<!-- (c) perfil W -->
+<g transform="translate(620,70)">
+<text x="65" y="-40" text-anchor="middle" font-size="12" fill="#0b3d91" font-weight="bold">(c) mesa de W</text>
+<path d="M0 0 L130 0 L130 14 L74 14 L74 116 L130 116 L130 130 L0 130 L0 116 L56 116 L56 14 L0 14 Z" fill="url(#h8_4)" stroke="#333" stroke-width="1.5"/>
+<rect x="22" y="0" width="8" height="14" fill="#fff" stroke="#333" stroke-width="1"/>
+<rect x="100" y="0" width="8" height="14" fill="#fff" stroke="#333" stroke-width="1"/>
+<line x1="26" y1="-8" x2="26" y2="20" stroke="#555" stroke-width=".8" stroke-dasharray="6 2 2 2"/>
+<line x1="104" y1="-8" x2="104" y2="20" stroke="#555" stroke-width=".8" stroke-dasharray="6 2 2 2"/>
+<line x1="26" y1="-22" x2="104" y2="-22" stroke="#555" stroke-width="1" marker-start="url(#s8_4)" marker-end="url(#s8_4)"/>
+<text x="65" y="-26" text-anchor="middle" font-size="11" fill="#333">g (mesa)</text>
+<text x="65" y="70" text-anchor="middle" font-size="10" fill="#333">alma</text>
+<line x1="0" y1="150" x2="130" y2="150" stroke="#555" stroke-width="1" marker-start="url(#s8_4)" marker-end="url(#s8_4)"/>
+<line x1="0" y1="132" x2="0" y2="155" stroke="#555" stroke-width="1"/><line x1="130" y1="132" x2="130" y2="155" stroke="#555" stroke-width="1"/>
+<text x="65" y="168" text-anchor="middle" font-size="11" fill="#333">b<tspan baseline-shift="sub" font-size="9">f</tspan></text>
+</g>
+</svg>
+<figcaption><b>Figura 8.4</b> – Espaçamento s, distâncias à borda e₁/e₂ e gabaritos g em chapa, cantoneira e mesa de perfil W.</figcaption>
+</figure>
+<table class="tab"><caption>Tabela 8.4 – Gabaritos usuais de furação (valores de detalhamento corrente; confirme o espaço para a chave)</caption>
+<thead><tr><th>Elemento</th><th>Dimensão</th><th>Gabarito g (mm)</th><th>Diâmetro máximo usual</th></tr></thead>
+<tbody>
+<tr><td class="l" rowspan="5">Cantoneira (do talão)</td><td class="c">L 2" (50,8)</td><td class="c">29</td><td class="c">5/8"</td></tr>
+<tr><td class="c">L 2 1/2" (63,5)</td><td class="c">35</td><td class="c">3/4"</td></tr>
+<tr><td class="c">L 3" (76,2)</td><td class="c">44</td><td class="c">7/8"</td></tr>
+<tr><td class="c">L 4" (101,6)</td><td class="c">64</td><td class="c">1"</td></tr>
+<tr><td class="c">L 5" (127) / L 6" (152)</td><td class="c">76 / 89 (ou 2 linhas: 57 + 64)</td><td class="c">1"</td></tr>
+<tr><td class="l" rowspan="4">Mesa de W (entre furos)</td><td class="c">b<sub>f</sub> = 100–105</td><td class="c">55</td><td class="c">5/8"</td></tr>
+<tr><td class="c">b<sub>f</sub> = 125–170</td><td class="c">70–90</td><td class="c">3/4"</td></tr>
+<tr><td class="c">b<sub>f</sub> = 200–260</td><td class="c">120–140</td><td class="c">7/8"–1"</td></tr>
+<tr><td class="c">b<sub>f</sub> ≥ 300</td><td class="c">140 (ou 2 linhas por lado)</td><td class="c">1"</td></tr>
+<tr><td class="l">Alma de W (ligação flexível)</td><td class="c">—</td><td class="c">linha única a 50–65 da face do apoio; passo vertical 76</td><td class="c">3/4"</td></tr>
+</tbody></table>
+
+
+<h2>8.4 Como o parafuso trabalha <span class="nivel b">Básico</span></h2>
+<h3>8.4.1 Cisalhamento simples e duplo, tração e combinação</h3>
+<p>Um parafuso pode ser solicitado de três maneiras (Figura 8.5). No <strong>cisalhamento</strong>, as chapas tendem a deslizar uma sobre a outra e "cortam" o fuste no plano de contato entre elas. Se há apenas duas chapas (junta sobreposta), há <strong>um plano de corte</strong> — cisalhamento simples. Se a chapa central é abraçada por duas talas, há <strong>dois planos de corte</strong> — cisalhamento duplo — e cada parafuso resiste ao dobro. Na <strong>tração</strong>, a força é paralela ao eixo do parafuso, que trabalha como uma barra roscada (ex.: pendurais, chapas de topo, flanges). Na <strong>tração + cisalhamento</strong>, as duas solicitações ocorrem juntas (ex.: mísula parafusada na mesa do pilar) e se combinam por uma curva de interação.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_5" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<!-- (a) cisalhamento simples -->
+<g transform="translate(20,40)">
+<text x="85" y="-15" text-anchor="middle" fill="#0b3d91" font-weight="bold">(a) Corte simples</text>
+<rect x="10" y="60" width="110" height="16" fill="url(#h8_5)" stroke="#333" stroke-width="1.5"/>
+<rect x="60" y="76" width="110" height="16" fill="url(#h8_5)" stroke="#333" stroke-width="1.5"/>
+<rect x="82" y="40" width="16" height="70" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="78" y="40" width="24" height="10" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="78" y="102" width="24" height="10" fill="#444" stroke="#333" stroke-width="1"/>
+<line x1="60" y1="76" x2="120" y2="76" stroke="#c0392b" stroke-width="2" stroke-dasharray="4 2"/>
+<line x1="10" y1="68" x2="-20" y2="68" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_5)"/>
+<line x1="170" y1="84" x2="200" y2="84" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_5)"/>
+<text x="90" y="135" text-anchor="middle" font-size="11" fill="#333">1 plano de corte</text>
+<text x="90" y="150" text-anchor="middle" font-size="11" fill="#333">F<tspan baseline-shift="sub" font-size="9">v,Rd</tspan> × 1</text>
+</g>
+<!-- (b) corte duplo -->
+<g transform="translate(240,40)">
+<text x="85" y="-15" text-anchor="middle" fill="#0b3d91" font-weight="bold">(b) Corte duplo</text>
+<rect x="60" y="52" width="110" height="14" fill="url(#h8_5)" stroke="#333" stroke-width="1.5"/>
+<rect x="10" y="66" width="110" height="20" fill="url(#h8_5)" stroke="#333" stroke-width="1.5"/>
+<rect x="60" y="86" width="110" height="14" fill="url(#h8_5)" stroke="#333" stroke-width="1.5"/>
+<rect x="82" y="32" width="16" height="86" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="78" y="32" width="24" height="10" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="78" y="110" width="24" height="10" fill="#444" stroke="#333" stroke-width="1"/>
+<line x1="60" y1="66" x2="120" y2="66" stroke="#c0392b" stroke-width="2" stroke-dasharray="4 2"/>
+<line x1="60" y1="86" x2="120" y2="86" stroke="#c0392b" stroke-width="2" stroke-dasharray="4 2"/>
+<line x1="10" y1="76" x2="-20" y2="76" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_5)"/>
+<line x1="170" y1="59" x2="200" y2="59" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_5)"/>
+<line x1="170" y1="93" x2="200" y2="93" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_5)"/>
+<text x="90" y="135" text-anchor="middle" font-size="11" fill="#333">2 planos de corte (talas)</text>
+<text x="90" y="150" text-anchor="middle" font-size="11" fill="#333">F<tspan baseline-shift="sub" font-size="9">v,Rd</tspan> × 2</text>
+</g>
+<!-- (c) tração -->
+<g transform="translate(470,40)">
+<text x="60" y="-15" text-anchor="middle" fill="#0b3d91" font-weight="bold">(c) Tração</text>
+<rect x="10" y="40" width="100" height="14" fill="url(#h8_5)" stroke="#333" stroke-width="1.5"/>
+<rect x="10" y="54" width="100" height="14" fill="url(#h8_5)" stroke="#333" stroke-width="1.5"/>
+<rect x="52" y="20" width="16" height="70" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="48" y="20" width="24" height="10" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="48" y="80" width="24" height="10" fill="#444" stroke="#333" stroke-width="1"/>
+<line x1="30" y1="40" x2="30" y2="10" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_5)"/>
+<line x1="90" y1="40" x2="90" y2="10" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_5)"/>
+<line x1="30" y1="68" x2="30" y2="100" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_5)"/>
+<line x1="90" y1="68" x2="90" y2="100" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_5)"/>
+<text x="60" y="135" text-anchor="middle" font-size="11" fill="#333">força no eixo</text>
+<text x="60" y="150" text-anchor="middle" font-size="11" fill="#333">F<tspan baseline-shift="sub" font-size="9">t,Rd</tspan></text>
+</g>
+<!-- (d) tração + corte -->
+<g transform="translate(610,40)">
+<text x="70" y="-15" text-anchor="middle" fill="#0b3d91" font-weight="bold">(d) Tração + corte</text>
+<rect x="20" y="10" width="14" height="110" fill="url(#h8_5)" stroke="#333" stroke-width="1.5"/>
+<rect x="34" y="20" width="12" height="80" fill="url(#h8_5)" stroke="#333" stroke-width="1.5"/>
+<path d="M46 30 L110 30 L110 42 L58 42 L58 90 L46 90 Z" fill="url(#h8_5)" stroke="#333" stroke-width="1.5"/>
+<rect x="10" y="32" width="46" height="9" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="10" y="78" width="46" height="9" fill="#444" stroke="#333" stroke-width="1"/>
+<line x1="95" y1="30" x2="95" y2="0" stroke="#c0392b" stroke-width="2" marker-start="url(#s8_5)"/>
+<text x="112" y="14" font-size="11" fill="#c0392b">V</text>
+<text x="70" y="135" text-anchor="middle" font-size="11" fill="#333">mísula: parafusos de cima</text>
+<text x="70" y="150" text-anchor="middle" font-size="11" fill="#333">tracionados + todos cortados</text>
+</g>
+<text x="380" y="235" text-anchor="middle" font-size="11" fill="#555">Linhas tracejadas vermelhas = planos de corte. A NBR 8800 calcula 1 plano por vez e multiplica pelo número de planos.</text>
+</svg>
+<figcaption><b>Figura 8.5</b> – Tipos de solicitação no parafuso: corte simples, corte duplo, tração e tração combinada com corte.</figcaption>
+</figure>
+
+<h3>8.4.2 Plano de corte na rosca ou fora da rosca</h3>
+<p>A área que resiste ao corte é a área do fuste <em>no plano de corte</em>. Se a rosca atravessa esse plano, a área efetiva cai para ≈ 75 % da área bruta (Figura 8.6). A NBR 8800 trata isso com dois coeficientes: <strong>0,4</strong> quando a rosca está no plano de corte (ou quando não se sabe) e <strong>0,5</strong> quando o plano de corte está garantidamente no fuste liso. Em projeto, a decisão prática é: <em>assuma rosca no plano de corte</em> (0,4), salvo se você controlar rigorosamente o comprimento dos parafusos na obra — e lembre-se de que o A307 usa sempre 0,4.</p>
+<figure class="fig p75">
+<svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h8_6" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<g transform="translate(40,30)">
+<text x="130" y="-10" text-anchor="middle" fill="#0b3d91" font-weight="bold">(a) Rosca no plano de corte → 0,4·A<tspan baseline-shift="sub" font-size="9">b</tspan>·f<tspan baseline-shift="sub" font-size="9">ub</tspan></text>
+<rect x="90" y="30" width="30" height="110" fill="url(#h8_6)" stroke="#333" stroke-width="1.5"/>
+<rect x="120" y="30" width="34" height="110" fill="url(#h8_6)" stroke="#333" stroke-width="1.5"/>
+<rect x="90" y="72" width="64" height="28" fill="#fff"/>
+<rect x="55" y="60" width="35" height="52" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="90" y="74" width="150" height="24" fill="#666" stroke="#333" stroke-width="1.5"/>
+<g stroke="#ddd" stroke-width="1">
+<line x1="100" y1="75" x2="106" y2="97"/><line x1="108" y1="75" x2="114" y2="97"/><line x1="116" y1="75" x2="122" y2="97"/><line x1="124" y1="75" x2="130" y2="97"/><line x1="132" y1="75" x2="138" y2="97"/><line x1="140" y1="75" x2="146" y2="97"/><line x1="148" y1="75" x2="154" y2="97"/><line x1="156" y1="75" x2="162" y2="97"/><line x1="164" y1="75" x2="170" y2="97"/><line x1="172" y1="75" x2="178" y2="97"/><line x1="180" y1="75" x2="186" y2="97"/><line x1="188" y1="75" x2="194" y2="97"/><line x1="196" y1="75" x2="202" y2="97"/><line x1="204" y1="75" x2="210" y2="97"/><line x1="212" y1="75" x2="218" y2="97"/><line x1="220" y1="75" x2="226" y2="97"/>
+</g>
+<rect x="154" y="60" width="32" height="52" fill="#444" stroke="#333" stroke-width="1"/>
+<line x1="120" y1="20" x2="120" y2="150" stroke="#c0392b" stroke-width="2" stroke-dasharray="5 3"/>
+<text x="120" y="165" text-anchor="middle" font-size="11" fill="#c0392b">plano de corte na rosca</text>
+<text x="200" y="60" text-anchor="middle" font-size="10" fill="#333">rosca longa</text>
+</g>
+<g transform="translate(380,30)">
+<text x="130" y="-10" text-anchor="middle" fill="#0b3d91" font-weight="bold">(b) Rosca fora do plano → 0,5·A<tspan baseline-shift="sub" font-size="9">b</tspan>·f<tspan baseline-shift="sub" font-size="9">ub</tspan></text>
+<rect x="90" y="30" width="30" height="110" fill="url(#h8_6)" stroke="#333" stroke-width="1.5"/>
+<rect x="120" y="30" width="34" height="110" fill="url(#h8_6)" stroke="#333" stroke-width="1.5"/>
+<rect x="90" y="72" width="64" height="28" fill="#fff"/>
+<rect x="55" y="60" width="35" height="52" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="90" y="74" width="150" height="24" fill="#666" stroke="#333" stroke-width="1.5"/>
+<g stroke="#ddd" stroke-width="1">
+<line x1="160" y1="75" x2="166" y2="97"/><line x1="168" y1="75" x2="174" y2="97"/><line x1="176" y1="75" x2="182" y2="97"/><line x1="184" y1="75" x2="190" y2="97"/><line x1="192" y1="75" x2="198" y2="97"/><line x1="200" y1="75" x2="206" y2="97"/><line x1="208" y1="75" x2="214" y2="97"/><line x1="216" y1="75" x2="222" y2="97"/><line x1="224" y1="75" x2="230" y2="97"/>
+</g>
+<rect x="154" y="60" width="32" height="52" fill="#444" stroke="#333" stroke-width="1"/>
+<line x1="120" y1="20" x2="120" y2="150" stroke="#c0392b" stroke-width="2" stroke-dasharray="5 3"/>
+<text x="120" y="165" text-anchor="middle" font-size="11" fill="#c0392b">plano de corte no fuste liso</text>
+<text x="200" y="60" text-anchor="middle" font-size="10" fill="#333">rosca curta</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.6</b> – Posição da rosca em relação ao plano de corte: com a rosca no plano, a NBR 8800 reduz a resistência de 0,5 para 0,4·A<sub>b</sub>·f<sub>ub</sub>.</figcaption>
+</figure>
+
+<h3>8.4.3 Ligação tipo apoio × tipo atrito</h3>
+<p>Há dois modos de transmitir uma força de cisalhamento por parafusos (Figura 8.7):</p>
+<ul>
+<li><strong>Ligação por apoio (contato)</strong>: as chapas deslizam a folga do furo (≈ 1,5 mm) até o fuste encostar na parede do furo; a força passa por <em>esmagamento</em> chapa–parafuso e <em>corte</em> do fuste. É o caso geral, mais econômico, permitido com A307, A325 e A490; o aperto pode ser apenas de contato (<em>snug tight</em>).</li>
+<li><strong>Ligação por atrito</strong>: os parafusos de alta resistência são <em>protendidos</em> (tracionados a ≈ 70 % da sua ruptura); a força é transmitida pelo <em>atrito</em> entre as chapas comprimidas e não há deslizamento em serviço. Exige A325 ou A490, controle rigoroso do aperto e superfícies de contato preparadas (sem pintura ou com pintura qualificada, sem óleo nem carepa solta).</li>
+</ul>
+<p>A NBR 8800 exige ligação por atrito quando: (1) há cargas <strong>cíclicas ou de fadiga</strong> com inversão de esforços (pontes rolantes, suportes de equipamentos vibratórios, pontes); (2) usam-se <strong>furos alargados</strong> ou oblongos com carga na direção do rasgo; (3) o deslizamento comprometeria o funcionamento (emendas de pilares em edifícios altos, ligações de contraventamento importantes, ligações sísmicas). Nos demais casos, a ligação por apoio é suficiente. Mesmo em ligações por apoio, é obrigatório protender os parafusos A325/A490 em emendas de pilares altos, ligações de vigas de ponte rolante, e sempre com A490 sob tração.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 740 240" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_7" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="s8_7b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker>
+</defs>
+<g transform="translate(30,30)">
+<text x="150" y="-8" text-anchor="middle" fill="#0b3d91" font-weight="bold">(a) Por apoio (contato)</text>
+<rect x="30" y="70" width="180" height="22" fill="url(#h8_7)" stroke="#333" stroke-width="1.5"/>
+<rect x="110" y="92" width="180" height="22" fill="url(#h8_7)" stroke="#333" stroke-width="1.5"/>
+<!-- furos com folga: parafuso encostado à esquerda no furo da chapa de cima e à direita no de baixo -->
+<rect x="150" y="70" width="34" height="22" fill="#fff"/>
+<rect x="156" y="92" width="34" height="22" fill="#fff"/>
+<rect x="156" y="40" width="28" height="104" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="150" y="40" width="40" height="12" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="150" y="132" width="40" height="12" fill="#444" stroke="#333" stroke-width="1"/>
+<!-- tensões de esmagamento -->
+<g stroke="#c0392b" stroke-width="1.5">
+<line x1="140" y1="74" x2="155" y2="74" marker-end="url(#s8_7)"/><line x1="140" y1="81" x2="155" y2="81" marker-end="url(#s8_7)"/><line x1="140" y1="88" x2="155" y2="88" marker-end="url(#s8_7)"/>
+<line x1="200" y1="96" x2="185" y2="96" marker-end="url(#s8_7)"/><line x1="200" y1="103" x2="185" y2="103" marker-end="url(#s8_7)"/><line x1="200" y1="110" x2="185" y2="110" marker-end="url(#s8_7)"/>
+</g>
+<line x1="30" y1="81" x2="0" y2="81" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_7)"/>
+<line x1="290" y1="103" x2="320" y2="103" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_7)"/>
+<text x="150" y="170" text-anchor="middle" font-size="11" fill="#333">chapas deslizam a folga → fuste encosta no furo</text>
+<text x="150" y="186" text-anchor="middle" font-size="11" fill="#333">verifica-se corte do fuste e esmagamento da chapa</text>
+<text x="150" y="202" text-anchor="middle" font-size="11" fill="#333">aperto de contato basta (A307, A325, A490)</text>
+</g>
+<g transform="translate(400,30)">
+<text x="150" y="-8" text-anchor="middle" fill="#0b3d91" font-weight="bold">(b) Por atrito (protendida)</text>
+<rect x="30" y="70" width="180" height="22" fill="url(#h8_7)" stroke="#333" stroke-width="1.5"/>
+<rect x="110" y="92" width="180" height="22" fill="url(#h8_7)" stroke="#333" stroke-width="1.5"/>
+<rect x="152" y="70" width="34" height="44" fill="#fff"/>
+<rect x="156" y="40" width="26" height="104" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="148" y="40" width="42" height="12" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="148" y="132" width="42" height="12" fill="#444" stroke="#333" stroke-width="1"/>
+<!-- força de protensão -->
+<line x1="169" y1="30" x2="169" y2="52" stroke="#0b3d91" stroke-width="2" marker-end="url(#s8_7b)"/>
+<line x1="169" y1="154" x2="169" y2="132" stroke="#0b3d91" stroke-width="2" marker-end="url(#s8_7b)"/>
+<text x="185" y="28" font-size="11" fill="#0b3d91">F<tspan baseline-shift="sub" font-size="9">Tb</tspan> (protensão)</text>
+<text x="185" y="162" font-size="11" fill="#0b3d91">F<tspan baseline-shift="sub" font-size="9">Tb</tspan></text>
+<!-- atrito na interface -->
+<g stroke="#0b3d91" stroke-width="1.5">
+<line x1="115" y1="92" x2="135" y2="92" marker-end="url(#s8_7b)"/><line x1="200" y1="92" x2="180" y2="92" marker-end="url(#s8_7b)"/>
+</g>
+<text x="238" y="88" font-size="10" fill="#0b3d91">μ·F<tspan baseline-shift="sub" font-size="8">Tb</tspan></text>
+<line x1="30" y1="81" x2="0" y2="81" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_7)"/>
+<line x1="290" y1="103" x2="320" y2="103" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_7)"/>
+<text x="150" y="186" text-anchor="middle" font-size="11" fill="#333">sem deslizamento: força passa por atrito nas faces</text>
+<text x="150" y="202" text-anchor="middle" font-size="11" fill="#333">só A325/A490 protendidos; superfície preparada</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.7</b> – Mecanismos de transmissão: por apoio (fuste encosta no furo) e por atrito (chapas comprimidas pela protensão F<sub>Tb</sub>).</figcaption>
+</figure>
+<p>A <strong>força de protensão mínima</strong> F<sub>Tb</sub> é 70 % da resistência mínima à tração do parafuso (Tabela 8.5). A resistência ao deslizamento de um parafuso em ligação por atrito, pela NBR 8800, é:</p>
+<div class="formula">F<sub>f,Rd</sub> = 1,13 · μ · C<sub>h</sub> · F<sub>Tb</sub> · n<sub>s</sub> / γ<sub>e</sub><span class="n">(8.1)</span></div>
+<ul class="onde">
+<li>μ = coeficiente de atrito médio: <strong>0,35</strong> para superfície classe A (limpa, com carepa removida por jateamento ou com revestimento classe A), <strong>0,50</strong> para classe B (jateada, com ou sem revestimento classe B) e <strong>0,20</strong> para superfícies galvanizadas com rugosidade ou pintadas com tinta não qualificada (valor conservador);</li>
+<li>C<sub>h</sub> = 1,0 para furos-padrão; 0,85 para alargados e oblongos curtos; 0,70 oblongos longos com carga ⊥ e 0,60 com carga ∥;</li>
+<li>n<sub>s</sub> = número de planos de deslizamento; γ<sub>e</sub> = 1,20 (estado-limite de serviço) ou 1,35 (estado-limite último, furos alargados/oblongos).</li>
+</ul>
+<table class="tab"><caption>Tabela 8.5 – Força de protensão mínima F<sub>Tb</sub> (kN) = 70 % da resistência mínima à tração (NBR 8800, Tabela 15)</caption><thead><tr><th>Diâmetro</th><th>A325</th><th>A490</th><th>Diâmetro</th><th>A325</th><th>A490</th></tr></thead><tbody><tr><td class="c">1/2"</td><td class="c">53</td><td class="c">66</td><td class="c">M16</td><td class="c">91</td><td class="c">114</td></tr><tr><td class="c">5/8"</td><td class="c">85</td><td class="c">106</td><td class="c">M20</td><td class="c">142</td><td class="c">179</td></tr><tr><td class="c">3/4"</td><td class="c">125</td><td class="c">156</td><td class="c">M22</td><td class="c">176</td><td class="c">221</td></tr><tr><td class="c">7/8"</td><td class="c">173</td><td class="c">218</td><td class="c">M24</td><td class="c">205</td><td class="c">257</td></tr><tr><td class="c">1"</td><td class="c">227</td><td class="c">285</td><td class="c">M27</td><td class="c">267</td><td class="c">334</td></tr><tr><td class="c">1 1/8"</td><td class="c">250</td><td class="c">356</td><td class="c">M30</td><td class="c">326</td><td class="c">408</td></tr><tr><td class="c">1 1/4"</td><td class="c">317</td><td class="c">454</td><td class="c">—</td><td class="c">—</td><td class="c">—</td></tr></tbody></table>
+<div class="box atencao"><div class="tit">Atenção – atrito não dispensa a verificação por apoio</div>
+<p>Mesmo em ligação por atrito, a NBR 8800 exige verificar também o parafuso ao corte e a chapa ao esmagamento (tipo apoio) no estado-limite último. O atrito é uma verificação <em>adicional</em> de serviço (não deslizar), não um substituto. Além disso, a pintura nas superfícies de contato de uma ligação por atrito precisa ser ensaiada (classe A/B) ou removida — tinta comum reduz μ para menos da metade.</p></div>
+
+<h2>8.5 Resistências de cálculo pela NBR 8800 <span class="nivel i">Intermediário</span></h2>
+<p>Trabalharemos em <strong>kN e cm</strong>: f<sub>u</sub> do aço A36 = 40 kN/cm²; f<sub>y</sub> = 25 kN/cm²; f<sub>ub</sub> do A325 = 82,5 kN/cm² (d ≤ 24 mm); A490 = 103,5 kN/cm²; A307 = 41,5 kN/cm²; γ<sub>a2</sub> = 1,35 (ruptura); γ<sub>a1</sub> = 1,10 (escoamento).</p>
+<h3>8.5.1 Cisalhamento do parafuso</h3>
+<div class="formula">F<sub>v,Rd</sub> = 0,4 · A<sub>b</sub> · f<sub>ub</sub> / γ<sub>a2</sub> &nbsp;&nbsp;(rosca no plano de corte, ou A307)<span class="n">(8.2a)</span></div>
+<div class="formula">F<sub>v,Rd</sub> = 0,5 · A<sub>b</sub> · f<sub>ub</sub> / γ<sub>a2</sub> &nbsp;&nbsp;(rosca fora do plano de corte)<span class="n">(8.2b)</span></div>
+<p>por plano de corte; para corte duplo multiplique por 2. Exemplo: 3/4" A325, rosca no plano: F<sub>v,Rd</sub> = 0,4 · 2,85 · 82,5 / 1,35 = <strong>69,7 kN</strong> por plano.</p>
+<h3>8.5.2 Tração do parafuso</h3>
+<div class="formula">F<sub>t,Rd</sub> = 0,75 · A<sub>b</sub> · f<sub>ub</sub> / γ<sub>a2</sub><span class="n">(8.3)</span></div>
+<p>O 0,75 representa a relação entre a área na rosca e a área bruta. Para 3/4" A325: F<sub>t,Rd</sub> = 0,75 · 2,85 · 82,5 / 1,35 = <strong>130,6 kN</strong>. A Tabela 8.6 reúne os valores prontos.</p>
+<table class="tab"><caption>Tabela 8.6 – Resistências de cálculo por parafuso (kN, por plano de corte), NBR 8800, γ<sub>a2</sub> = 1,35 (calculado)</caption><thead><tr><th rowspan="2">Diâmetro</th><th rowspan="2">A<sub>b</sub> (cm²)</th><th colspan="2">A307 (f<sub>ub</sub> = 41,5)</th><th colspan="3">A325 (f<sub>ub</sub> = 82,5)</th><th colspan="3">A490 (f<sub>ub</sub> = 103,5)</th></tr><tr><th>F<sub>v,Rd</sub> (0,4)</th><th>F<sub>t,Rd</sub></th><th>F<sub>v,Rd</sub> rosca no plano (0,4)</th><th>F<sub>v,Rd</sub> rosca fora (0,5)</th><th>F<sub>t,Rd</sub> (0,75)</th><th>F<sub>v,Rd</sub> rosca no plano (0,4)</th><th>F<sub>v,Rd</sub> rosca fora (0,5)</th><th>F<sub>t,Rd</sub> (0,75)</th></tr></thead><tbody><tr><td class="c"><b>1/2"</b></td><td class="c">1,27</td><td class="c">15,6</td><td class="c">29,2</td><td class="c">31,0</td><td class="c">38,7</td><td class="c">58,1</td><td class="c">38,8</td><td class="c">48,6</td><td class="c">72,8</td></tr><tr><td class="c"><b>5/8"</b></td><td class="c">1,98</td><td class="c">24,3</td><td class="c">45,6</td><td class="c">48,4</td><td class="c">60,5</td><td class="c">90,7</td><td class="c">60,7</td><td class="c">75,9</td><td class="c">113,8</td></tr><tr><td class="c"><b>3/4"</b></td><td class="c">2,85</td><td class="c">35,0</td><td class="c">65,7</td><td class="c">69,7</td><td class="c">87,1</td><td class="c">130,6</td><td class="c">87,4</td><td class="c">109,3</td><td class="c">163,9</td></tr><tr><td class="c"><b>7/8"</b></td><td class="c">3,88</td><td class="c">47,7</td><td class="c">89,4</td><td class="c">94,8</td><td class="c">118,5</td><td class="c">177,8</td><td class="c">119,0</td><td class="c">148,7</td><td class="c">223,1</td></tr><tr><td class="c"><b>1"*</b></td><td class="c">5,07</td><td class="c">62,3</td><td class="c">116,8</td><td class="c">108,8</td><td class="c">136,1</td><td class="c">204,1</td><td class="c">155,4</td><td class="c">194,2</td><td class="c">291,4</td></tr><tr><td class="c"><b>M12</b></td><td class="c">1,13</td><td class="c">13,9</td><td class="c">26,1</td><td class="c">27,6</td><td class="c">34,6</td><td class="c">51,8</td><td class="c">34,7</td><td class="c">43,4</td><td class="c">65,0</td></tr><tr><td class="c"><b>M16</b></td><td class="c">2,01</td><td class="c">24,7</td><td class="c">46,4</td><td class="c">49,1</td><td class="c">61,4</td><td class="c">92,2</td><td class="c">61,7</td><td class="c">77,1</td><td class="c">115,6</td></tr><tr><td class="c"><b>M20</b></td><td class="c">3,14</td><td class="c">38,6</td><td class="c">72,4</td><td class="c">76,8</td><td class="c">96,0</td><td class="c">144,0</td><td class="c">96,3</td><td class="c">120,4</td><td class="c">180,6</td></tr><tr><td class="c"><b>M24</b></td><td class="c">4,52</td><td class="c">55,6</td><td class="c">104,3</td><td class="c">110,6</td><td class="c">138,2</td><td class="c">207,3</td><td class="c">138,7</td><td class="c">173,4</td><td class="c">260,1</td></tr></tbody></table><p style="font-size:9pt;color:#555;margin-top:-2mm">* Para 1" (d &gt; 24 mm) a NBR 8800 adota f<sub>ub</sub> = 72,5 kN/cm² para o A325. Valores métricos calculados com f<sub>ub</sub> de A325/A490; para ISO 8.8 (80 kN/cm²) e 10.9 (100 kN/cm²) multiplique por 0,97. Corte duplo: multiplique F<sub>v,Rd</sub> por 2.</p>
+<h3>8.5.3 Esmagamento e rasgamento da chapa</h3>
+<p>O fuste comprime a parede do furo (<strong>esmagamento</strong>); se a chapa é fina ou o furo está perto da borda (ou de outro furo), a chapa pode <strong>rasgar</strong> entre o furo e a borda. A NBR 8800 unifica os dois fenômenos em uma fórmula (8.4) que depende da distância livre l<sub>f</sub> (Figura 8.8): entre a borda do furo e a borda da chapa, ou entre bordas de furos consecutivos, na direção da força. Para furos-padrão, quando a deformação do furo em serviço é uma limitação de projeto (caso usual):</p>
+<div class="formula">F<sub>c,Rd</sub> = 1,2 · l<sub>f</sub> · t · f<sub>u</sub> / γ<sub>a2</sub> &nbsp;≤&nbsp; 2,4 · d · t · f<sub>u</sub> / γ<sub>a2</sub><span class="n">(8.4)</span></div>
+<ul class="onde"><li>l<sub>f</sub> = distância livre na direção da força (cm): l<sub>f</sub> = e₁ − d<sub>h</sub>/2 na borda; l<sub>f</sub> = s − d<sub>h</sub> entre furos (d<sub>h</sub> = diâmetro do furo);</li>
+<li>t = espessura da chapa (cm); d = diâmetro do parafuso (cm); f<sub>u</sub> = resistência à ruptura da <em>chapa</em> (não do parafuso).</li>
+<li>Se a deformação do furo não for limitação: 1,5·l<sub>f</sub>·t·f<sub>u</sub> ≤ 3,0·d·t·f<sub>u</sub>. Em furos oblongos longos com carga ⊥: 1,0·l<sub>f</sub>·t·f<sub>u</sub> ≤ 2,0·d·t·f<sub>u</sub>.</li></ul>
+<p>O limite 2,4·d·t·f<sub>u</sub> é atingido quando l<sub>f</sub> ≥ 2d, ou seja, e₁ ≥ 2d + d<sub>h</sub>/2 ≈ 2,5d na borda e s ≥ 3d + 1,5 mm entre furos. Por isso o "3d" de espaçamento e "2,5d" de borda são os valores que <em>aproveitam todo o parafuso</em>.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<marker id="s8_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="s8_8r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<!-- chapa em planta -->
+<rect x="60" y="60" width="330" height="120" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle cx="130" cy="120" r="16" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="250" cy="120" r="16" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="130" cy="120" r="14" fill="#666" stroke="#333" stroke-width="1"/>
+<circle cx="250" cy="120" r="14" fill="#666" stroke="#333" stroke-width="1"/>
+<!-- zona de esmagamento (meia-lua) -->
+<path d="M130 106 A14 14 0 0 0 130 134 Z" fill="#c0392b" opacity=".55"/>
+<path d="M250 106 A14 14 0 0 0 250 134 Z" fill="#c0392b" opacity=".55"/>
+<!-- força -->
+<line x1="390" y1="120" x2="440" y2="120" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_8r)"/>
+<text x="415" y="110" text-anchor="middle" fill="#c0392b">N</text>
+<line x1="20" y1="120" x2="58" y2="120" stroke="#c0392b" stroke-width="2.5" marker-start="url(#s8_8r)"/>
+<!-- lf borda -->
+<line x1="60" y1="40" x2="114" y2="40" stroke="#555" stroke-width="1" marker-start="url(#s8_8)" marker-end="url(#s8_8)"/>
+<line x1="60" y1="35" x2="60" y2="58" stroke="#555" stroke-width="1"/><line x1="114" y1="35" x2="114" y2="110" stroke="#555" stroke-width="1"/>
+<text x="87" y="32" text-anchor="middle" font-size="11" fill="#333">l<tspan baseline-shift="sub" font-size="9">f</tspan> (borda)</text>
+<!-- lf entre furos -->
+<line x1="146" y1="40" x2="234" y2="40" stroke="#555" stroke-width="1" marker-start="url(#s8_8)" marker-end="url(#s8_8)"/>
+<line x1="146" y1="35" x2="146" y2="110" stroke="#555" stroke-width="1"/><line x1="234" y1="35" x2="234" y2="110" stroke="#555" stroke-width="1"/>
+<text x="190" y="32" text-anchor="middle" font-size="11" fill="#333">l<tspan baseline-shift="sub" font-size="9">f</tspan> = s − d<tspan baseline-shift="sub" font-size="9">h</tspan></text>
+<!-- e1 e s -->
+<line x1="60" y1="205" x2="130" y2="205" stroke="#555" stroke-width="1" marker-start="url(#s8_8)" marker-end="url(#s8_8)"/>
+<line x1="130" y1="205" x2="250" y2="205" stroke="#555" stroke-width="1" marker-start="url(#s8_8)" marker-end="url(#s8_8)"/>
+<line x1="60" y1="182" x2="60" y2="210" stroke="#555" stroke-width="1"/><line x1="130" y1="138" x2="130" y2="210" stroke="#555" stroke-width="1"/><line x1="250" y1="138" x2="250" y2="210" stroke="#555" stroke-width="1"/>
+<text x="95" y="222" text-anchor="middle" font-size="11" fill="#333">e₁</text>
+<text x="190" y="222" text-anchor="middle" font-size="11" fill="#333">s</text>
+<text x="330" y="90" font-size="10" fill="#333">t = espessura</text>
+<!-- direita: modos -->
+<g transform="translate(480,50)">
+<text x="110" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Modos de falha da chapa</text>
+<!-- ovalização -->
+<rect x="0" y="15" width="100" height="70" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<path d="M38 50 m-16 0 a16 14 0 1 0 32 0 a16 14 0 1 0 -32 0" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="44" cy="50" r="13" fill="#666"/>
+<text x="50" y="102" text-anchor="middle" font-size="10" fill="#333">esmagamento</text>
+<text x="50" y="114" text-anchor="middle" font-size="10" fill="#333">(furo ovaliza)</text>
+<!-- rasgamento -->
+<rect x="120" y="15" width="100" height="70" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle cx="150" cy="50" r="13" fill="#666" stroke="#333" stroke-width="1"/>
+<line x1="137" y1="42" x2="120" y2="38" stroke="#c0392b" stroke-width="2"/>
+<line x1="137" y1="58" x2="120" y2="62" stroke="#c0392b" stroke-width="2"/>
+<text x="170" y="102" text-anchor="middle" font-size="10" fill="#333">rasgamento</text>
+<text x="170" y="114" text-anchor="middle" font-size="10" fill="#333">(l<tspan baseline-shift="sub" font-size="8">f</tspan> pequeno)</text>
+<text x="110" y="145" text-anchor="middle" font-size="10" fill="#555">F<tspan baseline-shift="sub" font-size="8">c,Rd</tspan> = 1,2·l<tspan baseline-shift="sub" font-size="8">f</tspan>·t·f<tspan baseline-shift="sub" font-size="8">u</tspan>/γ ≤ 2,4·d·t·f<tspan baseline-shift="sub" font-size="8">u</tspan>/γ</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.8</b> – Distância livre l<sub>f</sub> na direção da força (borda e entre furos) e os dois modos de falha da chapa: esmagamento e rasgamento.</figcaption>
+</figure>
+<table class="tab"><caption>Tabela 8.7 – Esmagamento máximo F<sub>c,Rd</sub> = 2,4·d·t·f<sub>u</sub>/γ<sub>a2</sub> por parafuso em chapa A36 (f<sub>u</sub> = 40 kN/cm²), kN (calculado)</caption><thead><tr><th>Diâmetro</th><th>Por mm de espessura (kN/mm)</th><th>t = 6,3 mm</th><th>t = 8,0 mm</th><th>t = 9,5 mm</th><th>t = 12,5 mm</th><th>t = 16,0 mm</th><th>l<sub>f</sub> mínimo p/ valor pleno (mm)</th></tr></thead><tbody><tr><td class="c"><b>1/2"</b></td><td class="c">9,03</td><td class="c">56,9</td><td class="c">72,2</td><td class="c">85,8</td><td class="c">112,9</td><td class="c">144,5</td><td class="c">25</td></tr><tr><td class="c"><b>5/8"</b></td><td class="c">11,29</td><td class="c">71,1</td><td class="c">90,3</td><td class="c">107,2</td><td class="c">141,1</td><td class="c">180,6</td><td class="c">32</td></tr><tr><td class="c"><b>3/4"</b></td><td class="c">13,55</td><td class="c">85,3</td><td class="c">108,4</td><td class="c">128,7</td><td class="c">169,3</td><td class="c">216,7</td><td class="c">38</td></tr><tr><td class="c"><b>7/8"</b></td><td class="c">15,80</td><td class="c">99,6</td><td class="c">126,4</td><td class="c">150,1</td><td class="c">197,6</td><td class="c">252,9</td><td class="c">44</td></tr><tr><td class="c"><b>1"</b></td><td class="c">18,06</td><td class="c">113,8</td><td class="c">144,5</td><td class="c">171,6</td><td class="c">225,8</td><td class="c">289,0</td><td class="c">51</td></tr><tr><td class="c"><b>M12</b></td><td class="c">8,53</td><td class="c">53,8</td><td class="c">68,3</td><td class="c">81,1</td><td class="c">106,7</td><td class="c">136,5</td><td class="c">24</td></tr><tr><td class="c"><b>M16</b></td><td class="c">11,38</td><td class="c">71,7</td><td class="c">91,0</td><td class="c">108,1</td><td class="c">142,2</td><td class="c">182,0</td><td class="c">32</td></tr><tr><td class="c"><b>M20</b></td><td class="c">14,22</td><td class="c">89,6</td><td class="c">113,8</td><td class="c">135,1</td><td class="c">177,8</td><td class="c">227,6</td><td class="c">40</td></tr><tr><td class="c"><b>M24</b></td><td class="c">17,07</td><td class="c">107,5</td><td class="c">136,5</td><td class="c">162,1</td><td class="c">213,3</td><td class="c">273,1</td><td class="c">48</td></tr></tbody></table><p style="font-size:9pt;color:#555;margin-top:-2mm">Se l<sub>f</sub> for menor que o valor da última coluna, use F<sub>c,Rd</sub> = 1,2·l<sub>f</sub>·t·f<sub>u</sub>/γ<sub>a2</sub> = 3,56 kN por mm de espessura e por cm de l<sub>f</sub> (A36). Para A572 Gr.50 (f<sub>u</sub> = 45) multiplique por 1,125.</p>
+<h3>8.5.4 Interação tração–cisalhamento</h3>
+<p>Quando o parafuso é simultaneamente tracionado e cortado, a NBR 8800 exige a verificação de uma curva de interação elíptica (Figura 8.9):</p>
+<div class="formula">(F<sub>t,Sd</sub> / F<sub>t,Rd</sub>)² + (F<sub>v,Sd</sub> / F<sub>v,Rd</sub>)² ≤ 1,0<span class="n">(8.5)</span></div>
+<p>Na prática, se uma das solicitações for menor que 20 % da respectiva resistência, a interação pode ser desprezada. Em ligações por atrito com tração, a força de tração reduz a compressão entre as chapas e, portanto, a resistência ao deslizamento é multiplicada por (1 − F<sub>t,Sd</sub>/(1,13·F<sub>Tb</sub>)).</p>
+<figure class="fig p60">
+<svg viewBox="0 0 520 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s8_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<line x1="70" y1="280" x2="470" y2="280" stroke="#333" stroke-width="1.5" marker-end="url(#s8_9)"/>
+<line x1="70" y1="280" x2="70" y2="30" stroke="#333" stroke-width="1.5" marker-end="url(#s8_9)"/>
+<!-- elipse: raio 300 em x (de 70 a 370) e 230 em y (280 a 50) -->
+<path d="M370 280 A300 230 0 0 0 70 50" fill="none" stroke="#0b3d91" stroke-width="2.5"/>
+<path d="M370 280 A300 230 0 0 0 70 50 L70 280 Z" fill="#0b3d91" opacity=".08"/>
+<line x1="370" y1="280" x2="370" y2="288" stroke="#333"/><text x="370" y="302" text-anchor="middle">1,0</text>
+<line x1="220" y1="280" x2="220" y2="288" stroke="#333"/><text x="220" y="302" text-anchor="middle">0,5</text>
+<line x1="62" y1="50" x2="70" y2="50" stroke="#333"/><text x="56" y="54" text-anchor="end">1,0</text>
+<line x1="62" y1="165" x2="70" y2="165" stroke="#333"/><text x="56" y="169" text-anchor="end">0,5</text>
+<text x="290" y="322" text-anchor="middle" font-size="12">F<tspan baseline-shift="sub" font-size="9">v,Sd</tspan> / F<tspan baseline-shift="sub" font-size="9">v,Rd</tspan> (cisalhamento)</text>
+<text x="22" y="160" text-anchor="middle" font-size="12" transform="rotate(-90 22 160)">F<tspan baseline-shift="sub" font-size="9">t,Sd</tspan> / F<tspan baseline-shift="sub" font-size="9">t,Rd</tspan> (tração)</text>
+<text x="160" y="140" text-anchor="middle" font-size="12" fill="#0b3d91">região segura</text>
+<text x="400" y="215" text-anchor="middle" font-size="11" fill="#0b3d91">(F<tspan baseline-shift="sub" font-size="8">t</tspan>/F<tspan baseline-shift="sub" font-size="8">t,Rd</tspan>)² + (F<tspan baseline-shift="sub" font-size="8">v</tspan>/F<tspan baseline-shift="sub" font-size="8">v,Rd</tspan>)² = 1</text>
+<!-- ponto de exemplo -->
+<circle cx="250" cy="119" r="5" fill="#c0392b"/>
+<text x="262" y="112" font-size="11" fill="#c0392b">ex.: F<tspan baseline-shift="sub" font-size="8">v</tspan>/F<tspan baseline-shift="sub" font-size="8">v,Rd</tspan> = 0,60; F<tspan baseline-shift="sub" font-size="8">t</tspan>/F<tspan baseline-shift="sub" font-size="8">t,Rd</tspan> = 0,70</text><text x="262" y="126" font-size="11" fill="#c0392b">0,36 + 0,49 = 0,85 ≤ 1 ✓</text>
+<!-- zonas 20% -->
+<line x1="130" y1="280" x2="130" y2="50" stroke="#555" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="100" y="70" text-anchor="middle" font-size="9" fill="#555">0,2</text>
+</svg>
+<figcaption><b>Figura 8.9</b> – Curva de interação tração–cisalhamento do parafuso (NBR 8800): o ponto de cálculo deve ficar dentro da elipse.</figcaption>
+</figure>
+
+<h3>8.5.5 Bloco de cisalhamento (colapso por rasgamento)</h3>
+<p>Em ligações com poucos parafusos concentrados perto da extremidade da peça, a chapa pode se romper arrancando um "bloco" delimitado pela linha dos furos: uma face cisalhada (paralela à força) e uma face tracionada (perpendicular). A Figura 8.10 mostra os dois casos clássicos — chapa gusset/cantoneira tracionada e alma de viga com recorte (<em>cope</em>) — e a NBR 8800 fornece:</p>
+<div class="formula">R<sub>d</sub> = (0,6 · f<sub>u</sub> · A<sub>nv</sub> + C<sub>ts</sub> · f<sub>u</sub> · A<sub>nt</sub>) / γ<sub>a2</sub> &nbsp;≤&nbsp; (0,6 · f<sub>y</sub> · A<sub>gv</sub> + C<sub>ts</sub> · f<sub>u</sub> · A<sub>nt</sub>) / γ<sub>a2</sub><span class="n">(8.6)</span></div>
+<ul class="onde">
+<li>A<sub>gv</sub>, A<sub>nv</sub> = áreas bruta e líquida sujeitas a cisalhamento (descontando os furos: cada furo conta d<sub>h</sub> + 2 mm; furo de extremidade conta 0,5 furo);</li>
+<li>A<sub>nt</sub> = área líquida sujeita a tração; C<sub>ts</sub> = 1,0 se a tensão de tração é uniforme (chapas, cantoneiras com uma linha de furos) e 0,5 se não uniforme (alma de viga recortada, cantoneira com duas linhas).</li></ul>
+<figure class="fig p90">
+<svg viewBox="0 0 740 260" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_10" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<!-- (a) chapa tracionada -->
+<g transform="translate(20,30)">
+<text x="160" y="-8" text-anchor="middle" fill="#0b3d91" font-weight="bold">(a) Chapa / cantoneira tracionada</text>
+<rect x="0" y="40" width="330" height="120" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- bloco -->
+<path d="M0 110 L200 110 L200 160 L0 160 Z" fill="#c0392b" opacity=".18"/>
+<g fill="#fff" stroke="#333" stroke-width="1.5">
+<circle cx="60" cy="110" r="10"/><circle cx="130" cy="110" r="10"/><circle cx="200" cy="110" r="10"/>
+</g>
+<line x1="0" y1="110" x2="200" y2="110" stroke="#c0392b" stroke-width="2.5"/>
+<line x1="200" y1="110" x2="200" y2="160" stroke="#0b3d91" stroke-width="2.5"/>
+<text x="100" y="100" text-anchor="middle" font-size="11" fill="#c0392b">face cisalhada A<tspan baseline-shift="sub" font-size="8">gv</tspan>, A<tspan baseline-shift="sub" font-size="8">nv</tspan></text>
+<text x="255" y="140" text-anchor="middle" font-size="11" fill="#0b3d91">face tracionada A<tspan baseline-shift="sub" font-size="8">nt</tspan></text>
+<line x1="330" y1="100" x2="380" y2="100" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_10)"/>
+<text x="356" y="90" text-anchor="middle" fill="#c0392b">N</text>
+<text x="100" y="185" text-anchor="middle" font-size="11" fill="#333">bloco arrancado (hachura vermelha)</text>
+<text x="165" y="205" text-anchor="middle" font-size="11" fill="#333">C<tspan baseline-shift="sub" font-size="8">ts</tspan> = 1,0 (tração uniforme)</text>
+</g>
+<!-- (b) alma de viga recortada -->
+<g transform="translate(430,30)">
+<text x="150" y="-8" text-anchor="middle" fill="#0b3d91" font-weight="bold">(b) Alma de viga com recorte</text>
+<!-- viga: mesa inferior, alma, recorte superior -->
+<path d="M40 40 L300 40 L300 200 L0 200 L0 80 L40 80 Z" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="188" width="300" height="12" fill="url(#h8_10)" stroke="#333" stroke-width="1"/>
+<rect x="40" y="40" width="260" height="12" fill="url(#h8_10)" stroke="#333" stroke-width="1"/>
+<text x="20" y="70" text-anchor="middle" font-size="10" fill="#333">recorte</text>
+<!-- furos -->
+<g fill="#fff" stroke="#333" stroke-width="1.5">
+<circle cx="45" cy="105" r="9"/><circle cx="45" cy="135" r="9"/><circle cx="45" cy="165" r="9"/>
+</g>
+<path d="M0 80 L45 80 L45 165 L0 165 Z" fill="#c0392b" opacity=".18"/>
+<line x1="45" y1="80" x2="45" y2="165" stroke="#c0392b" stroke-width="2.5"/>
+<line x1="0" y1="165" x2="45" y2="165" stroke="#0b3d91" stroke-width="2.5"/>
+<text x="120" y="120" font-size="11" fill="#c0392b">A<tspan baseline-shift="sub" font-size="8">nv</tspan> (vertical)</text>
+<text x="60" y="182" font-size="11" fill="#0b3d91">A<tspan baseline-shift="sub" font-size="8">nt</tspan></text>
+<line x1="22" y1="210" x2="22" y2="235" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_10)"/>
+<text x="40" y="232" fill="#c0392b">V</text>
+<text x="180" y="225" text-anchor="middle" font-size="11" fill="#333">C<tspan baseline-shift="sub" font-size="8">ts</tspan> = 0,5 (tração não uniforme)</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.10</b> – Bloco de cisalhamento: face cisalhada ao longo da linha de furos e face tracionada até a borda.</figcaption>
+</figure>
+<div class="box dica"><div class="tit">Regra de bolso – ordem das verificações em ligação parafusada por apoio</div>
+<p>1) Corte do parafuso (× planos); 2) esmagamento/rasgamento em <em>cada</em> chapa atravessada (some os parafusos, cada um com seu l<sub>f</sub>); 3) bloco de cisalhamento na peça e na chapa de ligação; 4) área líquida da peça tracionada (Cap. 7); 5) resistência do elemento de ligação (chapa, cantoneira) ao cisalhamento e flexão; 6) solda ou parafusos do outro lado. A resistência da ligação é a <strong>menor</strong> de todas.</p></div>
+
+
+<h2>8.6 Ligações parafusadas típicas <span class="nivel i">Intermediário</span></h2>
+<p>As figuras a seguir mostram, em elevação e em corte/planta, as oito ligações parafusadas mais frequentes em galpões e edifícios. Observe em cada uma o caminho da carga, os elementos de ligação (cantoneira, chapa, tala, gusset) e a posição dos parafusos. As dimensões indicadas são as usuais de detalhamento e servem de ponto de partida.</p>
+
+<h3>8.6.1 Viga–pilar e viga–viga com dupla cantoneira de alma (flexível)</h3>
+<p>É a ligação flexível clássica: duas cantoneiras (normalmente L 76×7,9 ou L 89×7,9) abraçam a alma da viga e são parafusadas à mesa do pilar (ou à alma da viga principal). Transmite só cortante; a rotação da extremidade é permitida pela flexibilidade das abas. Comprimento das cantoneiras ≥ metade da altura da viga, para dar estabilidade lateral. Quando a viga secundária chega a uma viga principal de mesma altura, recorta-se a mesa superior (<em>cope</em>) — e o bloco de cisalhamento da alma passa a ser crítico (Figura 8.11).</p>
+<figure class="fig">
+<svg viewBox="0 0 760 352" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_11" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- ===== ELEVAÇÃO ===== -->
+<g transform="translate(40,25)">
+<text x="180" y="-5" text-anchor="middle" fill="#0b3d91" font-weight="bold">Elevação</text>
+<!-- pilar: mesa e alma -->
+<rect x="0" y="0" width="40" height="300" fill="#eef1f6" stroke="none"/>
+<rect x="40" y="0" width="12" height="300" fill="url(#h8_11)" stroke="#333" stroke-width="1.5"/>
+<text x="20" y="150" text-anchor="middle" font-size="10" fill="#333" transform="rotate(-90 20 150)">pilar</text>
+<!-- viga -->
+<rect x="58" y="40" width="290" height="213" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="58" y="40" width="290" height="7" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<rect x="58" y="246" width="290" height="7" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<text x="250" y="140" font-size="11" fill="#333">alma da viga W 360×51</text>
+<text x="250" y="36" font-size="10" fill="#333">mesa superior</text>
+<!-- cantoneira (aba na alma, vista de face) -->
+<rect x="52" y="80" width="46" height="127" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="52" y="80" width="5" height="127" fill="#9aa4b2" stroke="#333" stroke-width="1"/>
+<!-- parafusos na alma -->
+<g fill="#444" stroke="#333" stroke-width="1">
+<circle cx="78" cy="98" r="6"/><circle cx="78" cy="144" r="6"/><circle cx="78" cy="190" r="6"/>
+</g>
+<!-- parafusos no pilar (ocultos) -->
+<g fill="none" stroke="#444" stroke-width="1" stroke-dasharray="3 2">
+<rect x="30" y="94" width="36" height="8"/><rect x="30" y="140" width="36" height="8"/><rect x="30" y="186" width="36" height="8"/>
+</g>
+<!-- cotas verticais -->
+<line x1="-18" y1="80" x2="-18" y2="98" stroke="#555" stroke-width="1" marker-start="url(#s8_11)" marker-end="url(#s8_11)"/>
+<line x1="-18" y1="98" x2="-18" y2="144" stroke="#555" stroke-width="1" marker-start="url(#s8_11)" marker-end="url(#s8_11)"/>
+<line x1="-18" y1="144" x2="-18" y2="190" stroke="#555" stroke-width="1" marker-start="url(#s8_11)" marker-end="url(#s8_11)"/>
+<line x1="-18" y1="190" x2="-18" y2="207" stroke="#555" stroke-width="1" marker-start="url(#s8_11)" marker-end="url(#s8_11)"/>
+<line x1="-24" y1="80" x2="-2" y2="80" stroke="#555" stroke-width="1"/><line x1="-24" y1="207" x2="-2" y2="207" stroke="#555" stroke-width="1"/>
+<line x1="-24" y1="98" x2="-2" y2="98" stroke="#555" stroke-width="1"/><line x1="-24" y1="144" x2="-2" y2="144" stroke="#555" stroke-width="1"/><line x1="-24" y1="190" x2="-2" y2="190" stroke="#555" stroke-width="1"/>
+<text x="-27" y="92" text-anchor="end" font-size="10" fill="#333">30</text>
+<text x="-27" y="124" text-anchor="end" font-size="10" fill="#333">76</text>
+<text x="-27" y="170" text-anchor="end" font-size="10" fill="#333">76</text>
+<text x="-27" y="202" text-anchor="end" font-size="10" fill="#333">30</text>
+<!-- cota gabarito -->
+<line x1="52" y1="225" x2="78" y2="225" stroke="#555" stroke-width="1" marker-start="url(#s8_11)" marker-end="url(#s8_11)"/>
+<line x1="78" y1="196" x2="78" y2="230" stroke="#555" stroke-width="1"/>
+<text x="76" y="240" text-anchor="middle" font-size="10" fill="#333">g = 44</text>
+<!-- folga -->
+<line x1="52" y1="270" x2="58" y2="270" stroke="#555" stroke-width="1"/>
+<text x="90" y="274" font-size="10" fill="#333">folga 10–12 mm</text>
+<line x1="58" y1="253" x2="58" y2="275" stroke="#555" stroke-width="1"/>
+<!-- rótulos -->
+<text x="215" y="72" font-size="10" fill="#0b3d91">2 L 76×76×7,9 (cada lado)</text>
+<line x1="213" y1="69" x2="98" y2="90" stroke="#555" stroke-width="1"/>
+<text x="215" y="205" font-size="10" fill="#0b3d91">3 ø 3/4" A325 (corte duplo)</text>
+<line x1="213" y1="201" x2="86" y2="191" stroke="#555" stroke-width="1"/>
+<text x="-5" y="318" font-size="10" fill="#0b3d91">3 ø 3/4" no pilar (corte simples, cada aba)</text>
+<line x1="40" y1="305" x2="46" y2="195" stroke="#555" stroke-width="1"/>
+<!-- marca de corte -->
+<line x1="200" y1="10" x2="200" y2="290" stroke="#333" stroke-width="1" stroke-dasharray="10 4"/>
+<text x="206" y="20" font-size="11" font-weight="bold" fill="#333">A</text>
+<text x="206" y="300" font-size="11" font-weight="bold" fill="#333">A</text>
+</g>
+<!-- ===== CORTE A-A (planta) ===== -->
+<g transform="translate(430,45)">
+<text x="150" y="-25" text-anchor="middle" fill="#0b3d91" font-weight="bold">Corte A–A (planta)</text>
+<!-- pilar: alma e mesa -->
+<rect x="0" y="130" width="40" height="6" fill="url(#h8_11)" stroke="#333" stroke-width="1"/>
+<rect x="40" y="20" width="12" height="226" fill="url(#h8_11)" stroke="#333" stroke-width="1.5"/>
+<text x="20" y="120" text-anchor="middle" font-size="10" fill="#333">alma pilar</text>
+<!-- alma da viga -->
+<rect x="58" y="131" width="250" height="5" fill="url(#h8_11)" stroke="#333" stroke-width="1.5"/>
+<text x="230" y="125" text-anchor="middle" font-size="10" fill="#333">alma da viga (t<tspan baseline-shift="sub" font-size="8">w</tspan> = 7,2)</text>
+<!-- mesa da viga (projeção) -->
+<rect x="58" y="82" width="250" height="103" fill="none" stroke="#999" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="230" y="178" text-anchor="middle" font-size="9" fill="#777">mesa da viga (projeção, b<tspan baseline-shift="sub" font-size="7">f</tspan> = 171)</text>
+<!-- cantoneira superior -->
+<rect x="52" y="126" width="46" height="5" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="52" y="85" width="5" height="46" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<!-- cantoneira inferior -->
+<rect x="52" y="136" width="46" height="5" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="52" y="136" width="5" height="46" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<!-- parafuso na alma (vertical) -->
+<rect x="75" y="113" width="6" height="42" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="70" y="113" width="16" height="8" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="70" y="147" width="16" height="8" fill="#444" stroke="#333" stroke-width="1"/>
+<!-- parafusos no pilar (horizontais) -->
+<rect x="30" y="102" width="40" height="6" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="24" y="99" width="8" height="12" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="57" y="99" width="8" height="12" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="30" y="160" width="40" height="6" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="24" y="157" width="8" height="12" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="57" y="157" width="8" height="12" fill="#444" stroke="#333" stroke-width="1"/>
+<!-- cotas -->
+<line x1="52" y1="210" x2="98" y2="210" stroke="#555" stroke-width="1" marker-start="url(#s8_11)" marker-end="url(#s8_11)"/>
+<line x1="98" y1="143" x2="98" y2="215" stroke="#555" stroke-width="1"/><line x1="52" y1="184" x2="52" y2="215" stroke="#555" stroke-width="1"/>
+<text x="75" y="226" text-anchor="middle" font-size="10" fill="#333">aba 76</text>
+<line x1="120" y1="85" x2="120" y2="105" stroke="#555" stroke-width="1" marker-start="url(#s8_11)" marker-end="url(#s8_11)"/>
+<line x1="100" y1="85" x2="125" y2="85" stroke="#555" stroke-width="1"/><line x1="100" y1="105" x2="125" y2="105" stroke="#555" stroke-width="1"/>
+<text x="128" y="99" font-size="10" fill="#333">g = 44 (do talão)</text>
+<text x="160" y="245" text-anchor="middle" font-size="10" fill="#0b3d91">parafusos no pilar trabalham em corte simples;</text>
+<text x="160" y="258" text-anchor="middle" font-size="10" fill="#0b3d91">na alma, em corte duplo</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.11</b> – Ligação flexível viga–pilar com dupla cantoneira de alma: elevação e corte em planta (cotas em mm).</figcaption>
+</figure>
+
+<h3>8.6.2 Chapa simples soldada ao pilar ("chapa de cisalhamento")</h3>
+<p>Uma única chapa (t = 8 a 12,5 mm) é soldada de fábrica à mesa ou à alma do pilar com filete dos dois lados; em obra, a viga é encostada e parafusada com uma linha de parafusos (Figura 8.12). É a ligação mais barata e rápida de montar — o montador apoia a viga na chapa e coloca os parafusos com uma única chave. A linha de parafusos fica a 50–75 mm do pilar (distância <em>a</em>), e a flexibilidade vem da rotação da viga em torno dos parafusos; a chapa deve ser verificada à flexão pela excentricidade V·a e os parafusos ao corte excêntrico. A alma da viga fica deslocada do eixo do pilar em t<sub>p</sub>/2 + t<sub>w</sub>/2, o que precisa aparecer no desenho de fabricação.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_12" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<g transform="translate(30,25)">
+<text x="170" y="-5" text-anchor="middle" fill="#0b3d91" font-weight="bold">Elevação</text>
+<rect x="0" y="0" width="40" height="270" fill="#eef1f6"/>
+<rect x="40" y="0" width="12" height="270" fill="url(#h8_12)" stroke="#333" stroke-width="1.5"/>
+<rect x="58" y="40" width="270" height="200" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="58" y="40" width="270" height="7" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<rect x="58" y="233" width="270" height="7" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<!-- chapa -->
+<rect x="52" y="75" width="66" height="132" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<!-- solda (linha) -->
+<line x1="52" y1="75" x2="52" y2="207" stroke="#7a3e00" stroke-width="4"/>
+<g fill="#444" stroke="#333" stroke-width="1">
+<circle cx="90" cy="98" r="6"/><circle cx="90" cy="141" r="6"/><circle cx="90" cy="184" r="6"/>
+</g>
+<line x1="52" y1="225" x2="90" y2="225" stroke="#555" stroke-width="1" marker-start="url(#s8_12)" marker-end="url(#s8_12)"/>
+<line x1="90" y1="190" x2="90" y2="230" stroke="#555" stroke-width="1"/><line x1="52" y1="208" x2="52" y2="230" stroke="#555" stroke-width="1"/>
+<text x="71" y="255" text-anchor="middle" font-size="10" fill="#333">a = 50–75</text>
+<text x="135" y="72" font-size="10" fill="#0b3d91">chapa 100×9,5 × 220</text>
+<line x1="133" y1="75" x2="118" y2="85" stroke="#555" stroke-width="1"/>
+<text x="135" y="200" font-size="10" fill="#0b3d91">3 ø 3/4" A325</text>
+<line x1="133" y1="195" x2="97" y2="186" stroke="#555" stroke-width="1"/>
+<text x="-5" y="290" font-size="10" fill="#7a3e00">filete 6 mm, dois lados, de fábrica</text>
+<line x1="46" y1="278" x2="51" y2="210" stroke="#555" stroke-width="1"/>
+<text x="230" y="140" text-anchor="middle" font-size="11" fill="#333">viga</text>
+<line x1="200" y1="15" x2="200" y2="265" stroke="#333" stroke-width="1" stroke-dasharray="10 4"/>
+<text x="206" y="22" font-size="11" font-weight="bold">B</text><text x="206" y="275" font-size="11" font-weight="bold">B</text>
+</g>
+<g transform="translate(420,55)">
+<text x="140" y="-35" text-anchor="middle" fill="#0b3d91" font-weight="bold">Corte B–B (planta)</text>
+<rect x="0" y="122" width="40" height="6" fill="url(#h8_12)" stroke="#333" stroke-width="1"/>
+<rect x="40" y="20" width="12" height="210" fill="url(#h8_12)" stroke="#333" stroke-width="1.5"/>
+<!-- chapa vertical em planta -->
+<rect x="52" y="122" width="66" height="6" fill="url(#h8_12)" stroke="#333" stroke-width="1.5"/>
+<!-- filetes -->
+<polygon points="52,122 60,122 52,114" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="52,128 60,128 52,136" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- alma da viga (deslocada) -->
+<rect x="58" y="128" width="220" height="5" fill="url(#h8_12)" stroke="#333" stroke-width="1.5"/>
+<rect x="58" y="78" width="220" height="100" fill="none" stroke="#999" stroke-width="1" stroke-dasharray="4 3"/>
+<!-- parafuso -->
+<rect x="87" y="106" width="6" height="42" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="82" y="104" width="16" height="7" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="82" y="141" width="16" height="7" fill="#444" stroke="#333" stroke-width="1"/>
+<!-- eixo pilar -->
+<line x1="-5" y1="125" x2="290" y2="125" stroke="#555" stroke-width=".7" stroke-dasharray="10 3 2 3"/>
+<text x="230" y="118" font-size="9" fill="#555">eixo do pilar</text>
+<line x1="250" y1="125" x2="250" y2="130.5" stroke="#555" stroke-width="1"/>
+<text x="256" y="145" font-size="9" fill="#333">desvio t<tspan baseline-shift="sub" font-size="7">p</tspan>/2 + t<tspan baseline-shift="sub" font-size="7">w</tspan>/2</text>
+<text x="140" y="70" text-anchor="middle" font-size="10" fill="#333">mesa da viga (projeção)</text>
+<text x="140" y="200" text-anchor="middle" font-size="10" fill="#0b3d91">chapa soldada ao pilar; viga parafusada à chapa</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.12</b> – Ligação com chapa simples (single plate): a chapa é soldada de fábrica ao pilar e a viga é parafusada em obra; note o desvio da alma em relação ao eixo.</figcaption>
+</figure>
+
+<h3>8.6.3 Chapa de topo (end plate) rígida com enrijecedores</h3>
+<p>Na ligação com chapa de topo, a viga recebe de fábrica uma chapa grossa (16 a 32 mm) soldada em toda a sua extremidade — solda de penetração total nas mesas e filete na alma. Em obra, a chapa é parafusada à mesa do pilar com 2 linhas de parafusos protendidos (A325/A490), com pelo menos uma linha externa à mesa tracionada (<em>chapa estendida</em>). O momento é transmitido pelo binário: a mesa tracionada puxa os parafusos, a mesa comprimida empurra a chapa contra o pilar. Para a ligação ser rígida de fato, o pilar precisa de <strong>enrijecedores</strong> na alma, alinhados com as mesas da viga, e às vezes chapa de reforço de alma (Figura 8.13). Com a chapa fina, o <em>efeito alavanca</em> aumenta a tração nos parafusos (ver 8.7.3).</p>
+<figure class="fig">
+<svg viewBox="0 0 760 348" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_13" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_13" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<g transform="translate(30,25)">
+<text x="180" y="-5" text-anchor="middle" fill="#0b3d91" font-weight="bold">Elevação</text>
+<!-- pilar: mesa distante, alma, mesa próxima -->
+<rect x="0" y="0" width="10" height="300" fill="url(#h8_13)" stroke="#333" stroke-width="1"/>
+<rect x="10" y="0" width="30" height="300" fill="#eef1f6" stroke="none"/>
+<rect x="40" y="0" width="12" height="300" fill="url(#h8_13)" stroke="#333" stroke-width="1.5"/>
+<!-- enrijecedores do pilar -->
+<rect x="10" y="66" width="30" height="8" fill="url(#h8_13)" stroke="#333" stroke-width="1"/>
+<rect x="10" y="226" width="30" height="8" fill="url(#h8_13)" stroke="#333" stroke-width="1"/>
+<text x="0" y="316" font-size="10" fill="#0b3d91">enrijecedores do pilar alinhados com as mesas da viga</text>
+<line x1="22" y1="310" x2="25" y2="236" stroke="#555" stroke-width="1"/>
+<!-- chapa de topo -->
+<rect x="52" y="30" width="13" height="240" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<!-- viga -->
+<rect x="65" y="66" width="270" height="168" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="65" y="66" width="270" height="8" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<rect x="65" y="226" width="270" height="8" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<!-- soldas de penetração nas mesas -->
+<polygon points="65,66 72,66 65,74" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="65,74 72,74 65,66" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="65,226 72,226 65,234" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<line x1="65" y1="74" x2="65" y2="226" stroke="#7a3e00" stroke-width="3"/>
+<!-- enrijecedor da chapa estendida -->
+<polygon points="65,66 65,36 95,66" fill="#c5ccd8" stroke="#333" stroke-width="1.2"/>
+<!-- parafusos (horizontais, vista lateral) -->
+<g fill="#444" stroke="#333" stroke-width="1">
+<rect x="28" y="46" width="46" height="6"/><rect x="22" y="43" width="8" height="12"/><rect x="65" y="43" width="8" height="12"/>
+<rect x="28" y="88" width="46" height="6"/><rect x="22" y="85" width="8" height="12"/><rect x="65" y="85" width="8" height="12"/>
+<rect x="28" y="206" width="46" height="6"/><rect x="22" y="203" width="8" height="12"/><rect x="65" y="203" width="8" height="12"/>
+<rect x="28" y="248" width="46" height="6"/><rect x="22" y="245" width="8" height="12"/><rect x="65" y="245" width="8" height="12"/>
+</g>
+<!-- momento -->
+<path d="M300 110 A40 40 0 0 1 300 190" fill="none" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_13)"/>
+<text x="318" y="155" fill="#c0392b" font-size="12">M</text>
+<!-- forças de binário -->
+<line x1="130" y1="58" x2="180" y2="58" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_13)"/>
+<text x="185" y="62" font-size="10" fill="#c0392b">T (mesa tracionada)</text>
+<line x1="180" y1="244" x2="130" y2="244" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_13)"/>
+<text x="185" y="248" font-size="10" fill="#c0392b">C (mesa comprimida)</text>
+<text x="110" y="290" font-size="10" fill="#0b3d91">chapa de topo estendida t = 19–25 mm</text>
+<line x1="108" y1="285" x2="66" y2="262" stroke="#555" stroke-width="1"/>
+<text x="180" y="150" text-anchor="middle" font-size="11" fill="#333">viga</text>
+<text x="110" y="14" font-size="9" fill="#7a3e00">solda de penetração total nas mesas; filete na alma</text>
+<line x1="108" y1="17" x2="70" y2="62" stroke="#555" stroke-width="1"/>
+<line x1="330" y1="30" x2="330" y2="290" stroke="#333" stroke-width="1" stroke-dasharray="10 4"/>
+<text x="336" y="40" font-size="11" font-weight="bold">C</text><text x="336" y="300" font-size="11" font-weight="bold">C</text>
+</g>
+<g transform="translate(430,55)">
+<text x="150" y="-35" text-anchor="middle" fill="#0b3d91" font-weight="bold">Corte C–C (nível da mesa superior)</text>
+<rect x="0" y="122" width="40" height="6" fill="url(#h8_13)" stroke="#333" stroke-width="1"/>
+<rect x="40" y="15" width="12" height="220" fill="url(#h8_13)" stroke="#333" stroke-width="1.5"/>
+<!-- enrijecedores no pilar (planta) -->
+<rect x="0" y="60" width="40" height="8" fill="none" stroke="#999" stroke-width="1" stroke-dasharray="3 2"/>
+<!-- chapa de topo -->
+<rect x="52" y="40" width="13" height="170" fill="url(#h8_13)" stroke="#333" stroke-width="1.5"/>
+<!-- mesa da viga vista de cima -->
+<rect x="65" y="74" width="230" height="102" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<line x1="65" y1="125" x2="295" y2="125" stroke="#555" stroke-width=".7" stroke-dasharray="8 3 2 3"/>
+<!-- solda de penetração (mesa) -->
+<rect x="65" y="74" width="5" height="102" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- parafusos (2 por linha) -->
+<g fill="#444" stroke="#333" stroke-width="1">
+<rect x="28" y="52" width="46" height="6"/><rect x="22" y="49" width="8" height="12"/><rect x="65" y="49" width="8" height="12"/>
+<rect x="28" y="192" width="46" height="6"/><rect x="22" y="189" width="8" height="12"/><rect x="65" y="189" width="8" height="12"/>
+</g>
+<!-- cota gauge -->
+<line x1="110" y1="55" x2="110" y2="195" stroke="#555" stroke-width="1" marker-start="url(#s8_13)" marker-end="url(#s8_13)"/>
+<text x="118" y="128" font-size="10" fill="#333">g = 100–140</text>
+<text x="180" y="100" text-anchor="middle" font-size="10" fill="#333">mesa da viga</text>
+<text x="150" y="245" text-anchor="middle" font-size="10" fill="#0b3d91">chapa de topo 200–250 mm de largura; parafusos protendidos</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.13</b> – Ligação rígida com chapa de topo estendida: binário T–C, parafusos protendidos e enrijecedores na alma do pilar.</figcaption>
+</figure>
+
+<h3>8.6.4 Emenda de viga com talas de mesa e de alma</h3>
+<p>Quando a viga é maior que o comprimento de transporte (≈ 12 m) ou quando se quer emendar peças em obra sem solda, usa-se a emenda parafusada com <strong>talas</strong> (chapas de cobrejunta): as talas de mesa transmitem o momento (binário nas mesas), as talas de alma (sempre em par, uma de cada lado) transmitem o cortante e a parcela de momento da alma (Figura 8.14). A emenda deve ficar longe das seções de momento máximo e, pela NBR 8800, deve ser dimensionada para os esforços da seção e, no mínimo, para 50 % da resistência da barra ou o esforço solicitante multiplicado por 1,0 — o projetista deve indicar. Parafusos: normalmente protendidos, pois o deslizamento da emenda gera flechas adicionais.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_14" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_14" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<g transform="translate(20,30)">
+<text x="220" y="-8" text-anchor="middle" fill="#0b3d91" font-weight="bold">Elevação</text>
+<!-- vigas -->
+<rect x="0" y="50" width="214" height="180" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="226" y="50" width="214" height="180" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="50" width="214" height="9" fill="#b8c0cf" stroke="#333" stroke-width="1"/><rect x="226" y="50" width="214" height="9" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<rect x="0" y="221" width="214" height="9" fill="#b8c0cf" stroke="#333" stroke-width="1"/><rect x="226" y="221" width="214" height="9" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<!-- talas de mesa (vista lateral: chapa acima da mesa superior e abaixo da inferior) -->
+<rect x="90" y="42" width="260" height="8" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="90" y="230" width="260" height="8" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<!-- parafusos de mesa (vista lateral: cabeça em cima, porca abaixo da mesa) -->
+<g fill="#444" stroke="#333" stroke-width="1">
+<rect x="110" y="34" width="14" height="8"/><rect x="150" y="34" width="14" height="8"/><rect x="190" y="34" width="14" height="8"/>
+<rect x="236" y="34" width="14" height="8"/><rect x="276" y="34" width="14" height="8"/><rect x="316" y="34" width="14" height="8"/>
+<rect x="110" y="59" width="14" height="8"/><rect x="150" y="59" width="14" height="8"/><rect x="190" y="59" width="14" height="8"/>
+<rect x="236" y="59" width="14" height="8"/><rect x="276" y="59" width="14" height="8"/><rect x="316" y="59" width="14" height="8"/>
+<rect x="110" y="238" width="14" height="8"/><rect x="150" y="238" width="14" height="8"/><rect x="190" y="238" width="14" height="8"/>
+<rect x="236" y="238" width="14" height="8"/><rect x="276" y="238" width="14" height="8"/><rect x="316" y="238" width="14" height="8"/>
+<rect x="110" y="213" width="14" height="8"/><rect x="150" y="213" width="14" height="8"/><rect x="190" y="213" width="14" height="8"/>
+<rect x="236" y="213" width="14" height="8"/><rect x="276" y="213" width="14" height="8"/><rect x="316" y="213" width="14" height="8"/>
+</g>
+<!-- tala de alma -->
+<rect x="140" y="85" width="160" height="110" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<g fill="#444" stroke="#333" stroke-width="1">
+<circle cx="170" cy="105" r="6"/><circle cx="200" cy="105" r="6"/><circle cx="240" cy="105" r="6"/><circle cx="270" cy="105" r="6"/>
+<circle cx="170" cy="140" r="6"/><circle cx="200" cy="140" r="6"/><circle cx="240" cy="140" r="6"/><circle cx="270" cy="140" r="6"/>
+<circle cx="170" cy="175" r="6"/><circle cx="200" cy="175" r="6"/><circle cx="240" cy="175" r="6"/><circle cx="270" cy="175" r="6"/>
+</g>
+<!-- folga -->
+<line x1="214" y1="245" x2="226" y2="245" stroke="#555" stroke-width="1"/>
+<text x="220" y="262" text-anchor="middle" font-size="9" fill="#333">folga ≈ 10</text>
+<!-- rótulos -->
+<text x="60" y="30" font-size="10" fill="#0b3d91">tala de mesa (transmite M)</text>
+<line x1="95" y1="33" x2="100" y2="42" stroke="#555" stroke-width="1"/>
+<text x="330" y="120" font-size="10" fill="#0b3d91">talas de alma, 2 × (transmitem V)</text>
+<line x1="328" y1="116" x2="300" y2="110" stroke="#555" stroke-width="1"/>
+<text x="60" y="140" text-anchor="middle" font-size="11" fill="#333">viga 1</text>
+<text x="380" y="180" text-anchor="middle" font-size="11" fill="#333">viga 2</text>
+<line x1="330" y1="10" x2="330" y2="270" stroke="#333" stroke-width="1" stroke-dasharray="10 4"/>
+<text x="336" y="18" font-size="11" font-weight="bold">D</text><text x="336" y="280" font-size="11" font-weight="bold">D</text>
+</g>
+<g transform="translate(540,30)">
+<text x="95" y="-8" text-anchor="middle" fill="#0b3d91" font-weight="bold">Corte D–D</text>
+<!-- seção I -->
+<path d="M20 58 L170 58 L170 67 L99 67 L99 213 L170 213 L170 222 L20 222 L20 213 L91 213 L91 67 L20 67 Z" fill="url(#h8_14)" stroke="#333" stroke-width="1.5"/>
+<!-- talas de mesa externas -->
+<rect x="20" y="50" width="150" height="8" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="20" y="222" width="150" height="8" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<!-- talas de mesa internas (2 por mesa) -->
+<rect x="20" y="67" width="60" height="7" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="110" y="67" width="60" height="7" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="20" y="206" width="60" height="7" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="110" y="206" width="60" height="7" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<!-- talas de alma -->
+<rect x="84" y="85" width="7" height="110" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="99" y="85" width="7" height="110" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<!-- parafusos de mesa (verticais) -->
+<g fill="#444" stroke="#333" stroke-width="1">
+<rect x="47" y="42" width="6" height="40"/><rect x="42" y="42" width="16" height="7"/><rect x="42" y="75" width="16" height="7"/>
+<rect x="137" y="42" width="6" height="40"/><rect x="132" y="42" width="16" height="7"/><rect x="132" y="75" width="16" height="7"/>
+<rect x="47" y="198" width="6" height="40"/><rect x="42" y="198" width="16" height="7"/><rect x="42" y="231" width="16" height="7"/>
+<rect x="137" y="198" width="6" height="40"/><rect x="132" y="198" width="16" height="7"/><rect x="132" y="231" width="16" height="7"/>
+<!-- parafusos de alma (horizontais) -->
+<rect x="76" y="102" width="38" height="6"/><rect x="70" y="99" width="7" height="12"/><rect x="113" y="99" width="7" height="12"/>
+<rect x="76" y="137" width="38" height="6"/><rect x="70" y="134" width="7" height="12"/><rect x="113" y="134" width="7" height="12"/>
+<rect x="76" y="172" width="38" height="6"/><rect x="70" y="169" width="7" height="12"/><rect x="113" y="169" width="7" height="12"/>
+</g>
+<text x="95" y="255" text-anchor="middle" font-size="10" fill="#333">talas internas de mesa (opcionais)</text>
+<text x="95" y="270" text-anchor="middle" font-size="10" fill="#333">dobram os planos de corte</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.14</b> – Emenda parafusada de viga: talas de mesa (momento) e talas duplas de alma (cortante); corte mostrando talas externas e internas.</figcaption>
+</figure>
+
+<h3>8.6.5 Terça Ue com chapa de terça e correntes</h3>
+<p>Nas coberturas, as terças de perfil formado a frio (U enrijecido "Ue" ou Z) apoiam nas tesouras ou vigas de cobertura por meio de uma <strong>chapa de terça</strong> (suporte de terça): uma chapa de 6,3 a 8 mm soldada de fábrica ao banzo superior, com dois furos para parafusos 1/2" ou 5/8" (normalmente A307 ou A325 sem protensão). As <strong>correntes</strong> (tirantes de barra redonda ø 10–12 mm ou cantoneira) ligam as terças entre si no meio do vão e reduzem o vão de flexão no plano da cobertura (eixo de menor inércia) e o comprimento de flambagem lateral (Figura 8.15). Na cumeeira, a corrente rígida ou a "mão francesa" fecha o sistema.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_15" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_15" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<g transform="translate(30,25)">
+<text x="150" y="-5" text-anchor="middle" fill="#0b3d91" font-weight="bold">(a) Seção transversal no apoio</text>
+<!-- banzo/viga: mesa superior e alma -->
+<rect x="20" y="190" width="260" height="10" fill="url(#h8_15)" stroke="#333" stroke-width="1.5"/>
+<rect x="146" y="200" width="8" height="60" fill="url(#h8_15)" stroke="#333" stroke-width="1.5"/>
+<text x="230" y="240" font-size="10" fill="#333">viga / banzo</text>
+<text x="230" y="254" font-size="10" fill="#333">da tesoura</text>
+<!-- chapa de terça -->
+<rect x="150" y="70" width="7" height="120" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<polygon points="150,190 142,190 150,182" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="157,190 165,190 157,182" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- terça Ue: alma encostada na chapa (à esquerda), mesas para a esquerda, enrijecedores -->
+<path d="M150 70 L150 190 L146 190 L146 76 L90 76 L90 92 L94 92 L94 80 L146 80 Z" fill="none" stroke="#333" stroke-width="0"/>
+<path d="M146 70 L90 70 L90 92 L96 92 L96 76 L140 76 L140 184 L96 184 L96 168 L90 168 L90 190 L146 190 Z" fill="url(#h8_15)" stroke="#333" stroke-width="1.5"/>
+<text x="118" y="135" text-anchor="middle" font-size="10" fill="#333">Ue</text>
+<text x="60" y="140" text-anchor="end" font-size="10" fill="#0b3d91">terça Ue 200×75×20×2,65</text>
+<line x1="62" y1="136" x2="92" y2="130" stroke="#555" stroke-width="1"/>
+<!-- parafusos -->
+<g fill="#444" stroke="#333" stroke-width="1">
+<rect x="132" y="102" width="34" height="5"/><rect x="128" y="99" width="6" height="11"/><rect x="163" y="99" width="6" height="11"/>
+<rect x="132" y="152" width="34" height="5"/><rect x="128" y="149" width="6" height="11"/><rect x="163" y="149" width="6" height="11"/>
+</g>
+<text x="180" y="108" font-size="10" fill="#0b3d91">2 ø 1/2" A307</text>
+<text x="180" y="80" font-size="10" fill="#0b3d91">chapa de terça 6,3 mm</text>
+<line x1="178" y1="83" x2="158" y2="90" stroke="#555" stroke-width="1"/>
+<text x="180" y="176" font-size="10" fill="#7a3e00">filete 5 mm, 2 lados</text>
+<!-- telha -->
+<path d="M40 52 Q60 40 80 52 T120 52 T160 52 T200 52" fill="none" stroke="#999" stroke-width="1.5"/>
+<text x="230" y="56" font-size="9" fill="#777">telha</text>
+</g>
+<g transform="translate(400,25)">
+<text x="170" y="-5" text-anchor="middle" fill="#0b3d91" font-weight="bold">(b) Planta da cobertura</text>
+<!-- tesouras (verticais) -->
+<rect x="20" y="10" width="14" height="250" fill="url(#h8_15)" stroke="#333" stroke-width="1.5"/>
+<rect x="306" y="10" width="14" height="250" fill="url(#h8_15)" stroke="#333" stroke-width="1.5"/>
+<text x="27" y="275" text-anchor="middle" font-size="10" fill="#333">tesoura</text>
+<text x="313" y="275" text-anchor="middle" font-size="10" fill="#333">tesoura</text>
+<!-- terças (horizontais) -->
+<g fill="#d9dee7" stroke="#333" stroke-width="1.5">
+<rect x="0" y="40" width="340" height="12"/><rect x="0" y="110" width="340" height="12"/><rect x="0" y="180" width="340" height="12"/><rect x="0" y="240" width="340" height="12"/>
+</g>
+<text x="60" y="35" font-size="9" fill="#333">terça</text>
+<!-- chapas de terça (pequenos retângulos) -->
+<g fill="#c5ccd8" stroke="#333" stroke-width="1">
+<rect x="22" y="34" width="10" height="24"/><rect x="22" y="104" width="10" height="24"/><rect x="22" y="174" width="10" height="24"/><rect x="22" y="234" width="10" height="24"/>
+<rect x="308" y="34" width="10" height="24"/><rect x="308" y="104" width="10" height="24"/><rect x="308" y="174" width="10" height="24"/><rect x="308" y="234" width="10" height="24"/>
+</g>
+<!-- correntes no meio do vão -->
+<g stroke="#0b3d91" stroke-width="2">
+<line x1="170" y1="52" x2="170" y2="110"/><line x1="170" y1="122" x2="170" y2="180"/><line x1="170" y1="192" x2="170" y2="240"/>
+</g>
+<!-- corrente rígida (cumeeira) em diagonal -->
+<line x1="170" y1="40" x2="150" y2="10" stroke="#0b3d91" stroke-width="2.5"/><line x1="170" y1="40" x2="190" y2="10" stroke="#0b3d91" stroke-width="2.5"/>
+<text x="200" y="20" font-size="9" fill="#0b3d91">corrente rígida / cumeeira</text>
+<text x="180" y="150" font-size="10" fill="#0b3d91">correntes ø 12 mm</text>
+<text x="180" y="163" font-size="10" fill="#0b3d91">(barra roscada + porcas)</text>
+<!-- cota do vão -->
+<line x1="34" y1="215" x2="306" y2="215" stroke="#555" stroke-width="1" marker-start="url(#s8_15)" marker-end="url(#s8_15)"/>
+<text x="240" y="211" text-anchor="middle" font-size="10" fill="#333">vão da terça L (5–7 m)</text>
+<line x1="34" y1="228" x2="170" y2="228" stroke="#555" stroke-width="1" marker-start="url(#s8_15)" marker-end="url(#s8_15)"/>
+<text x="102" y="238" text-anchor="middle" font-size="9" fill="#333">L/2 (ou L/3 com 2 linhas)</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.15</b> – Apoio de terça Ue em chapa de terça soldada ao banzo, e planta mostrando as correntes que travam as terças no meio do vão.</figcaption>
+</figure>
+
+<h3>8.6.6 Tirante ou contraventamento em cantoneira com chapa gusset</h3>
+<p>Diagonais de contraventamento (cantoneira simples ou dupla, barra chata, tubo) chegam ao nó por meio de uma <strong>chapa gusset</strong> soldada ao pilar e/ou à viga (Figura 8.16). O princípio de detalhamento é fazer as <strong>linhas de trabalho</strong> (eixos dos centros de gravidade das barras, ou linhas de furação nas cantoneiras) se cruzarem no <strong>ponto de trabalho</strong> — a interseção dos eixos de viga e pilar —, evitando momentos parasitas. A cantoneira simples ligada por uma aba tem tração excêntrica: pela NBR 8800 aplica-se o coeficiente C<sub>t</sub> = 1 − e<sub>c</sub>/l<sub>c</sub> na área líquida efetiva, e a resistência da ligação inclui cisalhamento dos parafusos, esmagamento, bloco de cisalhamento na cantoneira e no gusset, e a seção de Whitmore do gusset.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 720 368" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_16" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_16" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="s8_16c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<g transform="translate(20,20)">
+<rect x="20" y="0" width="50" height="330" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="20" y="0" width="8" height="330" fill="#b8c0cf" stroke="#333" stroke-width="1"/><rect x="62" y="0" width="8" height="330" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<text x="45" y="320" text-anchor="middle" font-size="10" fill="#333">pilar</text>
+<rect x="70" y="30" width="330" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="70" y="30" width="330" height="7" fill="#b8c0cf" stroke="#333" stroke-width="1"/><rect x="70" y="83" width="330" height="7" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<text x="340" y="52" font-size="10" fill="#333">viga</text>
+<polygon points="70,90 300,90 300,150 160,290 70,290" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<line x1="70" y1="90" x2="70" y2="290" stroke="#7a3e00" stroke-width="4"/>
+<line x1="70" y1="90" x2="300" y2="90" stroke="#7a3e00" stroke-width="4"/>
+<text x="80" y="270" font-size="10" fill="#0b3d91">gusset 9,5 mm</text>
+<text x="80" y="284" font-size="10" fill="#7a3e00">soldado (filete 6)</text>
+<line x1="45" y1="0" x2="45" y2="330" stroke="#555" stroke-width=".8" stroke-dasharray="10 3 2 3"/>
+<line x1="20" y1="60" x2="400" y2="60" stroke="#555" stroke-width=".8" stroke-dasharray="10 3 2 3"/>
+<line x1="45" y1="60" x2="315" y2="330" stroke="#555" stroke-width=".8" stroke-dasharray="10 3 2 3"/>
+<g transform="translate(45,60) rotate(45)">
+<rect x="70" y="-22" width="290" height="44" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="70" y="-22" width="290" height="5" fill="#9aa4b2" stroke="#333" stroke-width="1"/>
+<g fill="#444" stroke="#333" stroke-width="1">
+<circle cx="120" cy="2" r="6"/><circle cx="176" cy="2" r="6"/><circle cx="232" cy="2" r="6"/>
+</g>
+<text x="270" y="-8" font-size="10" fill="#0b3d91">L 76×76×7,9</text>
+<line x1="300" y1="2" x2="300" y2="48" stroke="#333" stroke-width="1" stroke-dasharray="8 3"/>
+<text x="306" y="54" font-size="10" font-weight="bold">E</text>
+<line x1="120" y1="-40" x2="176" y2="-40" stroke="#555" stroke-width="1" marker-start="url(#s8_16c)" marker-end="url(#s8_16c)"/>
+<text x="148" y="-45" text-anchor="middle" font-size="9">76 (3d)</text>
+</g>
+<circle cx="45" cy="60" r="4" fill="#c0392b"/>
+<text x="140" y="20" font-size="10" fill="#c0392b">ponto de trabalho (PT): eixos de viga, pilar e diagonal se cruzam</text>
+<line x1="138" y1="23" x2="50" y2="57" stroke="#c0392b" stroke-width="1"/>
+<line x1="335" y1="295" x2="375" y2="335" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_16)"/>
+<text x="382" y="318" font-size="12" fill="#c0392b">N<tspan baseline-shift="sub" font-size="9">Sd</tspan></text>
+</g>
+<g transform="translate(560,120)">
+<text x="60" y="-10" text-anchor="middle" fill="#0b3d91" font-weight="bold">Corte E</text>
+<rect x="55" y="0" width="7" height="130" fill="url(#h8_16)" stroke="#333" stroke-width="1.5"/>
+<path d="M55 20 L48 20 L48 110 L0 110 L0 103 L41 103 L41 20 Z" fill="url(#h8_16)" stroke="#333" stroke-width="1.5"/>
+<rect x="38" y="60" width="32" height="6" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="32" y="57" width="7" height="12" fill="#444" stroke="#333" stroke-width="1"/><rect x="69" y="57" width="7" height="12" fill="#444" stroke="#333" stroke-width="1"/>
+<text x="95" y="66" font-size="10" fill="#333">gusset</text>
+<text x="20" y="98" font-size="10" fill="#333">L</text>
+<line x1="80" y1="20" x2="80" y2="63" stroke="#555" stroke-width="1" marker-start="url(#s8_16c)" marker-end="url(#s8_16c)"/>
+<text x="84" y="45" font-size="9" fill="#333">g</text>
+<text x="60" y="150" text-anchor="middle" font-size="9" fill="#333">tração excêntrica:</text>
+<text x="60" y="163" text-anchor="middle" font-size="9" fill="#333">C<tspan baseline-shift="sub" font-size="7">t</tspan> = 1 − e<tspan baseline-shift="sub" font-size="7">c</tspan>/l<tspan baseline-shift="sub" font-size="7">c</tspan></text>
+</g>
+</svg>
+<figcaption><b>Figura 8.16</b> – Diagonal de contraventamento em cantoneira ligada a chapa gusset: linhas de trabalho concorrendo no ponto de trabalho e corte pela cantoneira.</figcaption>
+</figure>
+
+<h3>8.6.7 Apoio de tesoura no pilar</h3>
+<p>Em galpões, a tesoura (treliça) apoia no topo do pilar por meio de uma <strong>chapa de apoio</strong> soldada ao nó de apoio da tesoura (gusset do banzo inferior) e parafusada à <strong>chapa de topo do pilar</strong> (Figura 8.17). Com 2 parafusos no eixo, a ligação é rotulada (tesoura simplesmente apoiada, pilar engastado na base). Com 4 parafusos e chapa mais rígida, a ligação transmite algum momento e passa a compor um pórtico — o modelo de cálculo deve refletir a escolha. Furos oblongos em uma das chapas de apoio (nunca nas duas) acomodam a variação térmica e as tolerâncias de vão.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_17" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_17" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<g transform="translate(30,20)">
+<text x="200" y="-2" text-anchor="middle" fill="#0b3d91" font-weight="bold">Elevação</text>
+<!-- pilar W (mesas vistas de lado) -->
+<rect x="120" y="190" width="90" height="90" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="120" y="190" width="8" height="90" fill="#b8c0cf" stroke="#333" stroke-width="1"/><rect x="202" y="190" width="8" height="90" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<text x="165" y="245" text-anchor="middle" font-size="10" fill="#333">pilar W</text>
+<!-- chapa de topo do pilar -->
+<rect x="100" y="180" width="130" height="10" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<polygon points="128,180 128,174 134,180" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="202,180 202,174 196,180" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- chapa de apoio da tesoura -->
+<rect x="100" y="170" width="130" height="10" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<!-- gusset da tesoura -->
+<polygon points="120,170 120,110 260,60 400,60 400,90 210,170" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<!-- solda gusset-chapa -->
+<polygon points="120,170 112,170 120,162" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="210,170 218,170 210,162" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- banzo inferior 2L -->
+<rect x="240" y="66" width="200" height="22" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<g fill="#444" stroke="#333" stroke-width="1"><circle cx="300" cy="77" r="5"/><circle cx="340" cy="77" r="5"/><circle cx="380" cy="77" r="5"/></g>
+<text x="380" y="52" font-size="10" fill="#0b3d91">banzo inferior 2L</text>
+<!-- diagonal / montante -->
+<g transform="translate(150,150) rotate(-60)">
+<rect x="0" y="-11" width="150" height="22" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<g fill="#444" stroke="#333" stroke-width="1"><circle cx="30" cy="0" r="5"/><circle cx="60" cy="0" r="5"/></g>
+</g>
+<text x="60" y="60" font-size="10" fill="#0b3d91">montante / diagonal 2L</text>
+<line x1="120" y1="63" x2="180" y2="95" stroke="#555" stroke-width="1"/>
+<!-- parafusos verticais através das 2 chapas -->
+<g fill="#444" stroke="#333" stroke-width="1">
+<rect x="107" y="162" width="6" height="36"/><rect x="102" y="162" width="16" height="7"/><rect x="102" y="191" width="16" height="7"/>
+<rect x="217" y="162" width="6" height="36"/><rect x="212" y="162" width="16" height="7"/><rect x="212" y="191" width="16" height="7"/>
+</g>
+<text x="240" y="205" font-size="10" fill="#0b3d91">2 ø 3/4" A325 (rótula)</text>
+<text x="240" y="219" font-size="10" fill="#0b3d91">ou 4 (semirrígida)</text>
+<text x="240" y="240" font-size="10" fill="#0b3d91">chapa de topo do pilar</text>
+<line x1="238" y1="236" x2="230" y2="186" stroke="#555" stroke-width="1"/>
+<text x="0" y="180" font-size="10" fill="#0b3d91">chapa de apoio</text>
+<text x="0" y="193" font-size="10" fill="#0b3d91">da tesoura</text>
+<line x1="70" y1="183" x2="100" y2="175" stroke="#555" stroke-width="1"/>
+<text x="290" y="130" font-size="10" fill="#0b3d91">gusset de apoio</text>
+<!-- reação -->
+<line x1="165" y1="140" x2="165" y2="100" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_17)"/>
+<text x="175" y="120" font-size="11" fill="#c0392b">R</text>
+</g>
+<g transform="translate(520,60)">
+<text x="80" y="-10" text-anchor="middle" fill="#0b3d91" font-weight="bold">Corte F (banzo 2L)</text>
+<rect x="75" y="0" width="8" height="120" fill="url(#h8_17)" stroke="#333" stroke-width="1.5"/>
+<path d="M75 20 L68 20 L68 100 L20 100 L20 93 L61 93 L61 20 Z" fill="url(#h8_17)" stroke="#333" stroke-width="1.5"/>
+<path d="M83 20 L90 20 L90 100 L138 100 L138 93 L97 93 L97 20 Z" fill="url(#h8_17)" stroke="#333" stroke-width="1.5"/>
+<rect x="58" y="55" width="42" height="6" fill="#444" stroke="#333" stroke-width="1"/>
+<rect x="51" y="52" width="8" height="12" fill="#444" stroke="#333" stroke-width="1"/><rect x="99" y="52" width="8" height="12" fill="#444" stroke="#333" stroke-width="1"/>
+<text x="80" y="140" text-anchor="middle" font-size="10" fill="#333">gusset entre as duas L</text>
+<text x="80" y="154" text-anchor="middle" font-size="10" fill="#333">(corte duplo)</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.17</b> – Apoio de tesoura no topo do pilar: chapa de apoio soldada ao gusset da tesoura e parafusada à chapa de topo do pilar.</figcaption>
+</figure>
+
+<h3>8.6.8 Ligação aparafusada de tubo com flange</h3>
+<p>Tubos circulares e retangulares (torres, mastros, pilares de marquise, banzos de treliças tubulares) são emendados por <strong>flanges</strong>: chapas anulares soldadas na extremidade de cada tubo e parafusadas entre si (Figura 8.18). Quando há tração (torres, vento), os parafusos trabalham à tração com efeito alavanca; usam-se <strong>nervuras</strong> (enrijecedores radiais) para reduzir a flexão do flange. Espessura típica do flange: 1,5 a 2,5 vezes a parede do tubo; parafusos de 5/8" a 1", em número par (4, 6, 8, 12), distribuídos uniformemente. O acabamento do corte do tubo deve ser esquadrejado para o flange ficar perpendicular ao eixo — desalinhamento de 1° em um tubo de 6 m gera 10 cm de desvio na ponta.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_18" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_18" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<g transform="translate(40,20)">
+<text x="150" y="-2" text-anchor="middle" fill="#0b3d91" font-weight="bold">Elevação (corte)</text>
+<!-- tubo superior -->
+<rect x="100" y="10" width="8" height="110" fill="url(#h8_18)" stroke="#333" stroke-width="1.5"/>
+<rect x="192" y="10" width="8" height="110" fill="url(#h8_18)" stroke="#333" stroke-width="1.5"/>
+<rect x="108" y="10" width="84" height="110" fill="#eef1f6" stroke="none"/>
+<!-- flange superior -->
+<rect x="50" y="120" width="200" height="12" fill="url(#h8_18)" stroke="#333" stroke-width="1.5"/>
+<!-- flange inferior -->
+<rect x="50" y="132" width="200" height="12" fill="url(#h8_18)" stroke="#333" stroke-width="1.5"/>
+<!-- tubo inferior -->
+<rect x="100" y="144" width="8" height="110" fill="url(#h8_18)" stroke="#333" stroke-width="1.5"/>
+<rect x="192" y="144" width="8" height="110" fill="url(#h8_18)" stroke="#333" stroke-width="1.5"/>
+<rect x="108" y="144" width="84" height="110" fill="#eef1f6" stroke="none"/>
+<!-- soldas tubo-flange (filete todo em volta) -->
+<polygon points="100,120 92,120 100,112" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="200,120 208,120 200,112" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="100,144 92,144 100,152" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="200,144 208,144 200,152" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- nervuras -->
+<polygon points="92,120 92,80 60,120" fill="url(#h8_18)" stroke="#333" stroke-width="1.2"/>
+<polygon points="208,120 208,80 240,120" fill="url(#h8_18)" stroke="#333" stroke-width="1.2"/>
+<polygon points="92,144 92,184 60,144" fill="url(#h8_18)" stroke="#333" stroke-width="1.2"/>
+<polygon points="208,144 208,184 240,144" fill="url(#h8_18)" stroke="#333" stroke-width="1.2"/>
+<!-- parafusos -->
+<g fill="#444" stroke="#333" stroke-width="1">
+<rect x="70" y="104" width="6" height="56"/><rect x="64" y="104" width="18" height="8"/><rect x="64" y="152" width="18" height="8"/>
+<rect x="224" y="104" width="6" height="56"/><rect x="218" y="104" width="18" height="8"/><rect x="218" y="152" width="18" height="8"/>
+</g>
+<text x="260" y="60" font-size="10" fill="#0b3d91">tubo ø 168×6,4</text>
+<text x="260" y="100" font-size="10" fill="#0b3d91">nervura 8 mm</text>
+<line x1="258" y1="96" x2="232" y2="100" stroke="#555" stroke-width="1"/>
+<text x="260" y="135" font-size="10" fill="#0b3d91">flanges t = 16 mm</text>
+<text x="260" y="175" font-size="10" fill="#0b3d91">parafusos ø 3/4" A325</text>
+<text x="0" y="135" font-size="10" fill="#7a3e00">filete</text>
+<text x="0" y="148" font-size="10" fill="#7a3e00">todo em volta</text>
+<line x1="150" y1="0" x2="150" y2="270" stroke="#555" stroke-width=".7" stroke-dasharray="10 3 2 3"/>
+</g>
+<g transform="translate(450,150)">
+<text x="0" y="-125" text-anchor="middle" fill="#0b3d91" font-weight="bold">Planta do flange</text>
+<circle r="105" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle r="52" fill="#eef1f6" stroke="#333" stroke-width="1.5"/>
+<circle r="48" fill="none" stroke="#333" stroke-width="1.5"/>
+<circle r="80" fill="none" stroke="#555" stroke-width=".8" stroke-dasharray="6 3"/>
+<g fill="#fff" stroke="#333" stroke-width="1.5">
+<circle cx="80" cy="0" r="7"/><circle cx="-80" cy="0" r="7"/><circle cx="0" cy="80" r="7"/><circle cx="0" cy="-80" r="7"/>
+<circle cx="56.6" cy="56.6" r="7"/><circle cx="-56.6" cy="56.6" r="7"/><circle cx="56.6" cy="-56.6" r="7"/><circle cx="-56.6" cy="-56.6" r="7"/>
+</g>
+<!-- nervuras em planta -->
+<g stroke="#333" stroke-width="1.2" fill="#c5ccd8">
+<rect x="50" y="-3" width="30" height="6" transform="rotate(22.5)"/><rect x="50" y="-3" width="30" height="6" transform="rotate(67.5)"/><rect x="50" y="-3" width="30" height="6" transform="rotate(112.5)"/><rect x="50" y="-3" width="30" height="6" transform="rotate(157.5)"/>
+<rect x="50" y="-3" width="30" height="6" transform="rotate(202.5)"/><rect x="50" y="-3" width="30" height="6" transform="rotate(247.5)"/><rect x="50" y="-3" width="30" height="6" transform="rotate(292.5)"/><rect x="50" y="-3" width="30" height="6" transform="rotate(337.5)"/>
+</g>
+<line x1="-105" y1="120" x2="105" y2="120" stroke="#555" stroke-width="1" marker-start="url(#s8_18)" marker-end="url(#s8_18)"/>
+<text x="0" y="135" text-anchor="middle" font-size="10" fill="#333">D<tspan baseline-shift="sub" font-size="8">flange</tspan> ≈ D + 2·(2,5d + 25)</text>
+<text x="0" y="-92" text-anchor="middle" font-size="9" fill="#555">círculo de parafusos</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.18</b> – Emenda de tubo com flanges e nervuras: corte em elevação e planta do flange com 8 parafusos.</figcaption>
+</figure>
+
+<h3>8.6.9 Classificação: rígida, flexível e semirrígida</h3>
+<p>Toda ligação viga–pilar tem um comportamento momento–rotação (Figura 8.19). A ligação <strong>rígida</strong> mantém o ângulo entre viga e pilar e transmite todo o momento; a <strong>flexível</strong> (rotulada) gira livremente e transmite só cortante; a <strong>semirrígida</strong> fica no meio. A NBR 8800 classifica pela rigidez inicial S<sub>i</sub> comparada com a rigidez da viga E·I<sub>v</sub>/L<sub>v</sub>: <strong>rígida se S<sub>i</sub> ≥ 25·E·I<sub>v</sub>/L<sub>v</sub></strong> (em estruturas contraventadas); <strong>flexível se S<sub>i</sub> ≤ 0,5·E·I<sub>v</sub>/L<sub>v</sub></strong>; semirrígida entre os dois limites — e nesse caso a rigidez da ligação precisa entrar no modelo de análise. O erro mais comum de modelagem é calcular a viga como biapoiada, mas detalhar uma ligação que "prende" a extremidade (chapa de topo grossa, cantoneiras de mesa): o momento aparece, a ligação não foi dimensionada para ele e trinca.</p>
+<figure class="fig p75">
+<svg viewBox="0 0 620 340" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s8_19" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<line x1="70" y1="290" x2="590" y2="290" stroke="#333" stroke-width="1.5" marker-end="url(#s8_19)"/>
+<line x1="70" y1="290" x2="70" y2="30" stroke="#333" stroke-width="1.5" marker-end="url(#s8_19)"/>
+<text x="330" y="318" text-anchor="middle">rotação relativa θ (rad)</text>
+<text x="22" y="160" text-anchor="middle" transform="rotate(-90 22 160)">momento M (kN·m)</text>
+<!-- Mp da viga -->
+<line x1="70" y1="70" x2="580" y2="70" stroke="#555" stroke-width="1" stroke-dasharray="6 3"/>
+<text x="500" y="64" font-size="11" fill="#555">M<tspan baseline-shift="sub" font-size="8">pl</tspan> da viga</text>
+<!-- rígida -->
+<path d="M70 290 L120 95 Q150 72 300 72 L560 72" fill="none" stroke="#0b3d91" stroke-width="2.5"/>
+<text x="150" y="60" fill="#0b3d91" font-weight="bold">Rígida (chapa de topo, soldada)</text>
+<!-- semirrígida -->
+<path d="M70 290 L200 190 Q300 140 560 130" fill="none" stroke="#d98e04" stroke-width="2.5"/>
+<text x="380" y="120" fill="#d98e04" font-weight="bold">Semirrígida (cantoneiras de mesa e alma)</text>
+<!-- flexível -->
+<path d="M70 290 L300 268 Q450 258 560 255" fill="none" stroke="#2e8b57" stroke-width="2.5"/>
+<text x="334" y="228" fill="#2e8b57" font-weight="bold">Flexível (dupla cantoneira, chapa simples)</text>
+<!-- limites NBR -->
+<line x1="70" y1="290" x2="140" y2="70" stroke="#0b3d91" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="150" y="96" font-size="9" fill="#0b3d91">← S<tspan baseline-shift="sub" font-size="7">i</tspan> = 25·EI<tspan baseline-shift="sub" font-size="7">v</tspan>/L<tspan baseline-shift="sub" font-size="7">v</tspan></text>
+<line x1="70" y1="290" x2="560" y2="240" stroke="#2e8b57" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="470" y="280" font-size="9" fill="#2e8b57">S<tspan baseline-shift="sub" font-size="7">i</tspan> = 0,5·EI<tspan baseline-shift="sub" font-size="7">v</tspan>/L<tspan baseline-shift="sub" font-size="7">v</tspan></text>
+<!-- linha da viga -->
+<line x1="70" y1="150" x2="330" y2="290" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="8 3"/>
+<rect x="196" y="245" width="130" height="13" fill="#fff"/>
+<text x="200" y="255" font-size="10" fill="#c0392b">linha da viga (carga fixa)</text>
+<text x="58" y="154" text-anchor="end" font-size="9" fill="#c0392b">M<tspan baseline-shift="sub" font-size="7">eng</tspan></text>
+<text x="330" y="305" text-anchor="middle" font-size="9" fill="#c0392b">θ<tspan baseline-shift="sub" font-size="7">rót</tspan></text>
+</svg>
+<figcaption><b>Figura 8.19</b> – Curvas momento–rotação típicas e limites de classificação da NBR 8800; a "linha da viga" mostra o momento que cada ligação realmente atrai.</figcaption>
+</figure>
+
+
+<h2>8.7 Dimensionamento: exemplos resolvidos <span class="nivel a">Avançado</span></h2>
+<h3>8.7.1 Exemplo 1 – Ligação flexível viga–pilar com dupla cantoneira</h3>
+<div class="box exemplo"><div class="tit">Exemplo 8.1 – Viga W 360×51 ligada à mesa do pilar com 2 L 76×76×7,9 e 3 parafusos 3/4" A325 por lado; V<sub>Sd</sub> = 120 kN</div>
+<p><strong>Dados.</strong> Viga W 360×51 (d = 355 mm, b<sub>f</sub> = 171 mm, t<sub>f</sub> = 11,6 mm, <strong>t<sub>w</sub> = 7,2 mm</strong>), aço A36 (f<sub>y</sub> = 25, f<sub>u</sub> = 40 kN/cm²). Cantoneiras L 76×76×7,9 (t = 7,9 mm), A36, comprimento 212 mm, furação: 30 + 76 + 76 + 30 mm, gabarito 44 mm do talão. Parafusos 3/4" A325 (A<sub>b</sub> = 2,85 cm², f<sub>ub</sub> = 82,5 kN/cm²), rosca no plano de corte (hipótese conservadora), furos-padrão d<sub>h</sub> = 20,5 mm. Ligação por apoio, aperto de contato. Geometria na Figura 8.20.</p>
+<div class="passo"><b>Passo 1 – Parafusos na alma da viga (corte duplo).</b><br>
+F<sub>v,Rd</sub> = 0,4 · 2,85 · 82,5 / 1,35 = 69,7 kN por plano → corte duplo: 2 × 69,7 = 139,3 kN por parafuso.<br>
+3 parafusos: 3 × 139,3 = <strong>418 kN ≥ 120 kN ✓</strong> (utilização 29 %).</div>
+<div class="passo"><b>Passo 2 – Parafusos na mesa do pilar (corte simples, 3 em cada aba = 6).</b><br>
+6 × 69,7 = <strong>418 kN ≥ 120 kN ✓</strong>. (A excentricidade do cortante em relação a essa linha, de ≈ 44 mm, gera pequena tração nos parafusos superiores; para ligações flexíveis usuais ela é absorvida pela flexibilidade das abas e costuma ser desprezada quando g ≤ 65 mm.)</div>
+<div class="passo"><b>Passo 3 – Esmagamento na alma da viga (t<sub>w</sub> = 0,72 cm).</b><br>
+Limite superior por parafuso: 2,4 · d · t · f<sub>u</sub>/γ<sub>a2</sub> = 2,4 · 1,905 · 0,72 · 40 / 1,35 = 97,5 kN.<br>
+Furos internos: l<sub>f</sub> = s − d<sub>h</sub> = 76 − 20,5 = 55,5 mm → 1,2 · 5,55 · 0,72 · 40/1,35 = 142 kN &gt; 97,5 → vale <strong>97,5 kN</strong>.<br>
+Furo de extremidade: a viga tem sua extremidade a 35 mm do primeiro furo (viga sem recorte, borda cortada a serra): l<sub>f</sub> = 35 − 20,5/2 = 24,7 mm → 1,2 · 2,47 · 0,72 · 40/1,35 = <strong>63,3 kN</strong>.<br>
+Total na alma: 63,3 + 2 × 97,5 = <strong>258 kN ≥ 120 kN ✓</strong>.</div>
+<div class="passo"><b>Passo 4 – Esmagamento nas cantoneiras (t = 0,79 cm, 2 cantoneiras).</b><br>
+Limite: 2,4 · 1,905 · 0,79 · 40/1,35 = 107,0 kN por parafuso e por cantoneira.<br>
+Furo de extremidade (30 mm da ponta da cantoneira): l<sub>f</sub> = 30 − 10,25 = 19,7 mm → 1,2 · 1,97 · 0,79 · 40/1,35 = 55,4 kN.<br>
+Total: 2 × (55,4 + 2 × 107,0) = <strong>539 kN ✓</strong>. Na aba do pilar cada cantoneira recebe V/2 = 60 kN e o esmagamento é igual (mesma cantoneira) — e a mesa do pilar é mais grossa, logo não governa.</div>
+</div>
+<div class="box exemplo"><div class="tit">Exemplo 8.1 (continuação) – bloco de cisalhamento, cisalhamento das cantoneiras e alternativa soldada</div>
+<div class="passo"><b>Passo 5 – Bloco de cisalhamento na cantoneira (aba na alma).</b><br>
+Face cisalhada: da ponta da cantoneira ao último furo: 30 + 76 + 76 = 182 mm; A<sub>gv</sub> = 18,2 · 0,79 = 14,38 cm²; A<sub>nv</sub> = (18,2 − 2,5 · 2,25) · 0,79 = 9,93 cm² (2,5 furos de 20,5 + 2 = 22,5 mm: dois inteiros e meio furo na extremidade).<br>
+Face tracionada: da linha de furos à borda da aba: 76 − 44 = 32 mm; A<sub>nt</sub> = (3,2 − 1,125) · 0,79 = 1,64 cm². C<sub>ts</sub> = 1,0.<br>
+R<sub>d</sub> = (0,6 · 40 · 9,93 + 1,0 · 40 · 1,64)/1,35 = 225 kN ≤ (0,6 · 25 · 14,38 + 40 · 1,64)/1,35 = <strong>208 kN</strong> (governa o escoamento na face cisalhada).<br>
+Duas cantoneiras: 2 × 208 = <strong>417 kN ≥ 120 kN ✓</strong>.</div>
+<div class="passo"><b>Passo 6 – Bloco de cisalhamento na alma da viga.</b><br>
+Sem recorte de mesa a alma não tem bloco livre. Se a viga tivesse a mesa superior recortada (ligação viga–viga), com 35 mm da extremidade ao primeiro furo e 40 mm da linha de furos à borda do recorte: A<sub>gv</sub> = (35 + 152) · 0,72/100 = 13,46 cm²; A<sub>nv</sub> = (18,7 − 2,5 · 2,25) · 0,72 = 9,41 cm²; A<sub>nt</sub> = (4,0 − 1,125) · 0,72 = 2,07 cm²; C<sub>ts</sub> = 0,5: R<sub>d</sub> = (0,6 · 40 · 9,41 + 0,5 · 40 · 2,07)/1,35 = 198 kN ≤ (0,6 · 25 · 13,46 + 0,5 · 40 · 2,07)/1,35 = <strong>180 kN ✓</strong>. Ainda assim atende, mas veja como o recorte reduz a reserva.</div>
+<div class="passo"><b>Passo 7 – Cisalhamento das cantoneiras (escoamento e ruptura da seção).</b><br>
+Bruta: 2 × 0,6 · 25 · (21,2 · 0,79)/1,10 = 2 × 228 = 457 kN ✓. Líquida: 2 × 0,6 · 40 · (21,2 − 3 · 2,25) · 0,79 / 1,35 = 2 × 203 = 406 kN ✓.</div>
+<div class="passo"><b>Passo 8 – Alternativa: cantoneiras soldadas ao pilar.</b><br>
+Se as abas fossem soldadas à mesa do pilar em vez de parafusadas, um filete de 6 mm E70 em cada aba (dois cordões verticais de 212 mm, mais retornos) resiste, pela Tabela 9.5, a ≈ 8,2 kN/cm × 2 × 21,2 = 348 kN ≥ 120 kN ✓ (ver Capítulo 9 para o cálculo do filete sob cortante excêntrico).</div>
+<p><strong>Conclusão:</strong> a ligação resiste a 120 kN com folga; o elemento mais solicitado é o esmagamento da alma (258 kN, utilização 46 %). A ligação com 3 parafusos 3/4" A325 e L 76×7,9 é adequada para vigas W 310 a W 410 com cortantes até ≈ 180–200 kN, o que explica ser o detalhe "padrão" dos fabricantes.</p></div>
+<figure class="fig p90">
+<svg viewBox="0 0 720 315" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_20" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_20" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="s8_20r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<!-- cantoneira em vista (aba na alma) escala 0,7 px/mm -->
+<g transform="translate(60,45)">
+<text x="60" y="-28" text-anchor="middle" fill="#0b3d91" font-weight="bold">Cantoneira L 76×7,9 (aba na alma)</text>
+<rect x="0" y="0" width="53" height="148" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="0" width="6" height="148" fill="#9aa4b2" stroke="#333" stroke-width="1"/>
+<g fill="#fff" stroke="#333" stroke-width="1.5"><circle cx="31" cy="21" r="7"/><circle cx="31" cy="74" r="7"/><circle cx="31" cy="127" r="7"/></g>
+<!-- bloco de cisalhamento -->
+<path d="M31 21 L31 148 L53 148 L53 127 L31 127" fill="none" stroke="#c0392b" stroke-width="2" stroke-dasharray="4 2"/>
+<path d="M31 21 L53 21 L53 127 L31 127 Z" fill="#c0392b" opacity=".12"/>
+<!-- cotas -->
+<line x1="-20" y1="0" x2="-20" y2="21" stroke="#555" stroke-width="1" marker-start="url(#s8_20)" marker-end="url(#s8_20)"/>
+<line x1="-20" y1="21" x2="-20" y2="74" stroke="#555" stroke-width="1" marker-start="url(#s8_20)" marker-end="url(#s8_20)"/>
+<line x1="-20" y1="74" x2="-20" y2="127" stroke="#555" stroke-width="1" marker-start="url(#s8_20)" marker-end="url(#s8_20)"/>
+<line x1="-20" y1="127" x2="-20" y2="148" stroke="#555" stroke-width="1" marker-start="url(#s8_20)" marker-end="url(#s8_20)"/>
+<text x="-26" y="14" text-anchor="end" font-size="10">30</text><text x="-26" y="51" text-anchor="end" font-size="10">76</text><text x="-26" y="104" text-anchor="end" font-size="10">76</text><text x="-26" y="142" text-anchor="end" font-size="10">30</text>
+<line x1="0" y1="165" x2="31" y2="165" stroke="#555" stroke-width="1" marker-start="url(#s8_20)" marker-end="url(#s8_20)"/>
+<line x1="31" y1="165" x2="53" y2="165" stroke="#555" stroke-width="1" marker-start="url(#s8_20)" marker-end="url(#s8_20)"/>
+<text x="15" y="180" text-anchor="middle" font-size="10">44</text><text x="42" y="180" text-anchor="middle" font-size="10">32</text>
+<text x="26" y="200" text-anchor="middle" font-size="10">76</text>
+<line x1="0" y1="190" x2="53" y2="190" stroke="#555" stroke-width="1" marker-start="url(#s8_20)" marker-end="url(#s8_20)"/>
+<text x="70" y="90" font-size="10" fill="#c0392b">bloco</text>
+<text x="70" y="103" font-size="10" fill="#c0392b">A<tspan baseline-shift="sub" font-size="8">gv</tspan> = 18,2 × 0,79</text>
+<text x="70" y="116" font-size="10" fill="#c0392b">A<tspan baseline-shift="sub" font-size="8">nt</tspan> = (3,2 − 1,13) × 0,79</text>
+<text x="70" y="140" font-size="10" fill="#333">t = 7,9</text>
+</g>
+<!-- alma da viga: extremidade e furos -->
+<g transform="translate(330,45)">
+<text x="130" y="-30" text-anchor="middle" fill="#0b3d91" font-weight="bold">Alma da viga (t<tspan baseline-shift="sub" font-size="9">w</tspan> = 7,2) – esmagamento</text>
+<rect x="0" y="-5" width="260" height="215" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="-5" width="260" height="8" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<rect x="0" y="202" width="260" height="8" fill="#b8c0cf" stroke="#333" stroke-width="1"/>
+<g fill="#fff" stroke="#333" stroke-width="1.5"><circle cx="25" cy="50" r="7"/><circle cx="25" cy="103" r="7"/><circle cx="25" cy="156" r="7"/></g>
+<!-- lf borda -->
+<line x1="0" y1="30" x2="18" y2="30" stroke="#555" stroke-width="1" marker-start="url(#s8_20)" marker-end="url(#s8_20)"/>
+<text x="40" y="26" font-size="10" fill="#333">l<tspan baseline-shift="sub" font-size="8">f</tspan> = 35 − 10,3 = 24,7 → 63,3 kN</text>
+<line x1="0" y1="-14" x2="25" y2="-14" stroke="#555" stroke-width="1" marker-start="url(#s8_20)" marker-end="url(#s8_20)"/>
+<text x="40" y="-11" font-size="10">35</text>
+<line x1="60" y1="57" x2="60" y2="96" stroke="#555" stroke-width="1" marker-start="url(#s8_20)" marker-end="url(#s8_20)"/>
+<text x="66" y="80" font-size="10" fill="#333">l<tspan baseline-shift="sub" font-size="8">f</tspan> = 76 − 20,5 = 55,5 → 97,5 kN (limite 2,4dtf<tspan baseline-shift="sub" font-size="8">u</tspan>)</text>
+<text x="66" y="133" font-size="10" fill="#333">97,5 kN</text>
+<text x="66" y="186" font-size="10" fill="#333">Σ = 63,3 + 97,5 + 97,5 = 258 kN</text>
+<line x1="130" y1="230" x2="130" y2="260" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_20r)"/>
+<text x="150" y="255" fill="#c0392b" font-size="12">V<tspan baseline-shift="sub" font-size="9">Sd</tspan> = 120 kN</text>
+<text x="-8" y="240" font-size="10" fill="#333">extremidade da viga (corte a serra)</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.20</b> – Geometria do Exemplo 8.1: cantoneira com o bloco de cisalhamento e alma da viga com as distâncias l<sub>f</sub> para esmagamento.</figcaption>
+</figure>
+
+<h3>8.7.2 Exemplo 2 – Emenda de tirante tracionado</h3>
+<div class="box exemplo"><div class="tit">Exemplo 8.2 – Tirante em chapa 120 × 8 mm (A36) emendado com talas duplas 2 × (120 × 6 mm) e 4 parafusos 5/8" A325 por lado; N<sub>Sd</sub> = 180 kN</div>
+<p><strong>Geometria.</strong> Parafusos em 2 linhas de 2 (gabarito g = 60 mm entre linhas, passo s = 50 mm, distância à extremidade e₁ = 30 mm, à borda lateral e₂ = 30 mm). d = 15,9 mm; A<sub>b</sub> = 1,98 cm²; d<sub>h</sub> = 17,5 mm (17,4 adotado nas contas); largura de furo para área líquida = d<sub>h</sub> + 2 = 19,4 mm.</p>
+<div class="passo"><b>1. Verificações geométricas.</b> s = 50 ≥ 2,7 · 15,9 = 43 ✓ (≈ 3d = 48 ✓); e₁ = 30 ≥ 22 (borda serrada) ✓; e₂ = 30 ≥ 22 ✓; e ≤ 12 · 6 = 72 ✓.</div>
+<div class="passo"><b>2. Corte dos parafusos (corte duplo, rosca no plano).</b> F<sub>v,Rd</sub> = 0,4 · 1,98 · 82,5/1,35 = 48,4 kN/plano → 96,8 kN por parafuso → 4 × 96,8 = <strong>387 kN ≥ 180 ✓</strong>.</div>
+<div class="passo"><b>3. Esmagamento na chapa do tirante (t = 8 mm).</b> Limite: 2,4 · 1,59 · 0,8 · 40/1,35 = 90,3 kN. Furos de extremidade: l<sub>f</sub> = 30 − 8,7 = 21,3 mm → 1,2 · 2,13 · 0,8 · 40/1,35 = 60,6 kN. Furos internos: l<sub>f</sub> = 50 − 17,4 = 32,6 mm → 92,7 &gt; 90,3 → 90,3 kN. Total: 2 × 60,6 + 2 × 90,3 = <strong>302 kN ✓</strong>. Nas talas (2 × 6 = 12 mm): 302 × 12/8 = 453 kN ✓.</div>
+<div class="passo"><b>4. Área líquida do tirante.</b> A<sub>n</sub> = (12,0 − 2 · 1,94) · 0,8 = 6,50 cm²; C<sub>t</sub> = 1,0 (chapa); N<sub>t,Rd</sub> = 6,50 · 40/1,35 = <strong>192,5 kN ≥ 180 ✓</strong>. Escoamento bruto: 9,6 · 25/1,10 = 218 kN ✓. Talas: A<sub>n</sub> = 2 · (12,0 − 3,88) · 0,6 = 9,74 cm² → 289 kN ✓.</div>
+<div class="passo"><b>5. Bloco de cisalhamento no tirante</b> (bloco entre as duas linhas, rasgando ao longo delas): A<sub>gv</sub> = 2 · (30 + 50) · 8/100 = 12,80 cm²; A<sub>nv</sub> = 2 · (80 − 1,5 · 19,4) · 0,8/10 = 8,14 cm²; A<sub>nt</sub> = (60 − 19,4) · 0,8/10 = 3,25 cm²; C<sub>ts</sub> = 1,0.<br>
+R<sub>d</sub> = (0,6 · 40 · 8,14 + 40 · 3,25)/1,35 = 241 kN ≤ (0,6 · 25 · 12,80 + 40 · 3,25)/1,35 = <strong>238 kN ≥ 180 ✓</strong>.</div>
+<p><strong>Conclusão:</strong> governa a ruptura da seção líquida do tirante (192,5 kN, utilização 94 %). Se a força crescesse, a solução seria alargar a chapa (140 mm) — não adicionar parafusos. Observe que os parafusos estão com 47 % de utilização: em ligações tracionadas de chapas finas, é a chapa que manda.</p></div>
+
+<h3>8.7.3 Exemplo 3 – Ligação tracionada com chapa de topo e efeito alavanca</h3>
+<p>Quando uma chapa parafusada é tracionada (pendural em T, chapa de topo, flange de tubo), ela flete entre os parafusos e a alma; se for fina, as bordas da chapa se apoiam no elemento oposto e funcionam como ponto de apoio de uma alavanca: a força no parafuso passa a ser T + Q, em que Q é a <strong>força de alavanca</strong> (<em>prying</em>), que pode chegar a 30–50 % de T (Figura 8.21). Há duas estratégias: calcular Q (métodos do AISC / Eurocódigo) ou <strong>eliminar o efeito</strong> adotando uma chapa espessa o suficiente para que ela não toque o apoio antes de o parafuso romper.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_21" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_21" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="s8_21c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<g transform="translate(30,40)">
+<text x="150" y="-26" text-anchor="middle" fill="#0b3d91" font-weight="bold">(a) Chapa fina: efeito alavanca</text>
+<!-- apoio (mesa) -->
+<rect x="20" y="150" width="270" height="14" fill="url(#h8_21)" stroke="#333" stroke-width="1.5"/>
+<!-- chapa fletida (T) -->
+<path d="M30 150 Q80 128 130 128 L140 128 L140 20 L160 20 L160 128 L170 128 Q220 128 270 150 L270 140 Q220 118 170 118 L170 20 L130 20 L130 118 Q80 118 30 140 Z" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- parafusos -->
+<g fill="#444" stroke="#333" stroke-width="1">
+<rect x="82" y="110" width="7" height="66"/><rect x="76" y="104" width="19" height="8"/><rect x="76" y="168" width="19" height="8"/>
+<rect x="211" y="110" width="7" height="66"/><rect x="205" y="104" width="19" height="8"/><rect x="205" y="168" width="19" height="8"/>
+</g>
+<!-- forças -->
+<line x1="150" y1="20" x2="150" y2="-10" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_21)"/>
+<text x="158" y="-2" fill="#c0392b" font-size="12">2T</text>
+<line x1="32" y1="180" x2="32" y2="152" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_21)"/>
+<text x="10" y="195" fill="#c0392b" font-size="11">Q</text>
+<line x1="268" y1="180" x2="268" y2="152" stroke="#c0392b" stroke-width="2" marker-end="url(#s8_21)"/>
+<text x="262" y="195" fill="#c0392b" font-size="11">Q</text>
+<text x="86" y="200" text-anchor="middle" font-size="11" fill="#c0392b">parafuso: T + Q</text>
+<text x="214" y="200" text-anchor="middle" font-size="11" fill="#c0392b">T + Q</text>
+<!-- cotas b e a -->
+<line x1="86" y1="215" x2="130" y2="215" stroke="#555" stroke-width="1" marker-start="url(#s8_21c)" marker-end="url(#s8_21c)"/>
+<text x="108" y="230" text-anchor="middle" font-size="10">b</text>
+<line x1="32" y1="215" x2="86" y2="215" stroke="#555" stroke-width="1" marker-start="url(#s8_21c)" marker-end="url(#s8_21c)"/>
+<text x="59" y="230" text-anchor="middle" font-size="10">a</text>
+<text x="150" y="70" text-anchor="middle" font-size="10" fill="#333">alma</text>
+</g>
+<g transform="translate(400,40)">
+<text x="150" y="-26" text-anchor="middle" fill="#0b3d91" font-weight="bold">(b) Chapa espessa: sem alavanca</text>
+<rect x="20" y="150" width="270" height="14" fill="url(#h8_21)" stroke="#333" stroke-width="1.5"/>
+<path d="M30 150 L130 150 L130 20 L170 20 L170 150 L270 150 L270 124 L170 124 L170 20 L130 20 L130 124 L30 124 Z" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="30" y="124" width="240" height="26" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="130" y="20" width="40" height="104" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<g fill="#444" stroke="#333" stroke-width="1">
+<rect x="82" y="110" width="7" height="66"/><rect x="76" y="104" width="19" height="8"/><rect x="76" y="168" width="19" height="8"/>
+<rect x="211" y="110" width="7" height="66"/><rect x="205" y="104" width="19" height="8"/><rect x="205" y="168" width="19" height="8"/>
+</g>
+<line x1="150" y1="20" x2="150" y2="-10" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s8_21)"/>
+<text x="158" y="-2" fill="#c0392b" font-size="12">2T</text>
+<text x="86" y="200" text-anchor="middle" font-size="11" fill="#2e8b57">parafuso: T</text>
+<text x="214" y="200" text-anchor="middle" font-size="11" fill="#2e8b57">T</text>
+<text x="150" y="225" text-anchor="middle" font-size="10" fill="#333">t ≥ t<tspan baseline-shift="sub" font-size="8">min</tspan> → bordas não tocam → Q = 0</text>
+<text x="150" y="70" text-anchor="middle" font-size="10" fill="#333">alma</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.21</b> – Efeito alavanca em chapa tracionada: a chapa fina se apoia nas bordas e gera a força adicional Q nos parafusos; a chapa espessa elimina o efeito.</figcaption>
+</figure>
+<div class="box exemplo"><div class="tit">Exemplo 8.3 – Pendural em T: 2 parafusos 3/4" A325 tracionados por T<sub>Sd</sub> = 100 kN (50 kN cada); definir a espessura da chapa para eliminar o efeito alavanca</div>
+<p><strong>Dados.</strong> Distância do eixo do parafuso à face da alma b = 40 mm; largura tributária por parafuso p = 80 mm; chapa A36 (f<sub>y</sub> = 25 kN/cm²). d = 19,05 mm.</p>
+<div class="passo"><b>1. Resistência do parafuso à tração.</b> F<sub>t,Rd</sub> = 0,75 · 2,85 · 82,5/1,35 = <strong>130,6 kN ≥ 50 kN ✓</strong> (sem alavanca). Se houvesse alavanca com Q = 0,4T = 20 kN, a solicitação seria 70 kN — ainda ✓, mas com parafusos menores (5/8": 90,7 kN) a folga desapareceria rapidamente.</div>
+<div class="passo"><b>2. Espessura mínima para eliminar a alavanca</b> (expressão simplificada de origem no AISC, adaptada ao formato da NBR 8800 com escoamento da chapa e γ<sub>a1</sub>):<br>
+<span class="formula" style="display:block">t<sub>min</sub> = √( 4 · T · b' · γ<sub>a1</sub> / (p · f<sub>y</sub>) ), com b' = b − d/2</span>
+b' = 40 − 9,5 = 30,5 mm = 3,05 cm; t<sub>min</sub> = √(4 · 50 · 3,05 · 1,10 / (8,0 · 25)) = √(3,36) = 1,83 cm → <strong>chapa de 19 mm (3/4")</strong>.</div>
+<div class="passo"><b>3. Alternativa: aproximar os parafusos da alma.</b> Com b = 30 mm (mínimo para a chave de 3/4"): b' = 20,5 mm → t<sub>min</sub> = √(4 · 50 · 2,05 · 1,10/200) = 1,50 cm → <strong>chapa de 16 mm</strong>. Aproximar os parafusos da alma é sempre a medida mais eficiente contra o efeito alavanca.</div>
+<p><strong>Conclusão:</strong> chapa de 16 mm com parafusos a 30 mm da alma, ou 19 mm com parafusos a 40 mm. Com chapa de 9,5 mm (usual em "T" improvisados), a alavanca seria inevitável e os parafusos poderiam ter tração 40–60 % maior que a calculada — causa comum de ruptura de pendurais.</p></div>
+
+<h2>8.8 Montagem: aperto, inspeção e erros comuns <span class="nivel i">Intermediário</span></h2>
+<h3>8.8.1 Aperto inicial e aperto final</h3>
+<p>Toda ligação começa com o <strong>aperto inicial de contato</strong> (<em>snug tight</em>): as chapas são levadas a contato firme com uma chave comum, com o esforço total de um homem, ou com poucos impactos de chave pneumática. Para ligações por apoio com A307 ou A325 sem exigência de protensão, esse é o aperto final. Quando a protensão é exigida (ligações por atrito, tração em A490, cargas cíclicas), aplica-se o <strong>aperto final</strong> por um dos métodos abaixo — sempre partindo do aperto de contato de todos os parafusos da ligação, e progredindo do centro (parte mais rígida) para as bordas.</p>
+<ul>
+<li><strong>Rotação da porca</strong> (o método mais confiável e barato): após o aperto de contato, marca-se a porca e a chapa com giz ou tinta e gira-se a porca a fração de volta da Tabela 8.8. A rotação alonga o parafuso até a protensão, independentemente da lubrificação.</li>
+<li><strong>Chave calibrada / torquímetro</strong>: o torque necessário depende fortemente do atrito da rosca (lubrificação, galvanização, sujeira) — varia ± 30 %. A NBR 8800 só admite com calibração diária em dispositivo que meça a tração (célula tipo Skidmore), com pelo menos 3 parafusos do lote. A Tabela 8.9 traz valores <em>indicativos</em> para conferência de campo, não para aceitação.</li>
+<li><strong>Arruela indicadora de tração (DTI)</strong>: arruela com saliências que se esmagam sob a protensão; a folga residual medida com lâmina de 0,4 mm (0,015") indica a protensão atingida (Figura 8.22).</li>
+<li><strong>Parafuso de controle de tração (TC / "twist-off")</strong>: parafuso com ponta estriada que se rompe por torção quando a protensão é atingida; exige chave elétrica específica; inspeção visual imediata (ponta arrancada).</li>
+</ul>
+<table class="tab"><caption>Tabela 8.8 – Rotação da porca a partir do aperto de contato (NBR 8800 / RCSC; faces perpendiculares ao eixo do parafuso)</caption>
+<thead><tr><th>Comprimento do parafuso L (abaixo da cabeça)</th><th>Rotação</th><th>Tolerância</th></tr></thead>
+<tbody>
+<tr><td class="c">L ≤ 4d</td><td class="c"><b>1/3 de volta</b> (120°)</td><td class="c">± 30°</td></tr>
+<tr><td class="c">4d &lt; L ≤ 8d</td><td class="c"><b>1/2 volta</b> (180°)</td><td class="c">± 30°</td></tr>
+<tr><td class="c">8d &lt; L ≤ 12d</td><td class="c"><b>2/3 de volta</b> (240°)</td><td class="c">± 45°</td></tr>
+<tr><td class="l" colspan="3">Se uma face é inclinada até 1:20 (sem arruela biselada), acrescente 1/6 de volta; se ambas, 1/3 de volta. Para L &gt; 12d, determinar por ensaio.</td></tr>
+</tbody></table>
+<table class="tab"><caption>Tabela 8.9 – Torque indicativo para atingir a protensão mínima (parafusos A325 tipo 1): T ≈ k·d·F<sub>Tb</sub>, com k ≈ 0,135 para rosca limpa e levemente lubrificada e k ≈ 0,20 para rosca seca ou galvanizada (valores entre parênteses)</caption>
+<thead><tr><th>Diâmetro</th><th>F<sub>Tb</sub> (kN)</th><th>Torque aprox. (N·m)</th><th>Torque aprox. (kgf·m)</th><th>Observação</th></tr></thead>
+<tbody>
+<tr><td class="c">1/2"</td><td class="c">53</td><td class="c">≈ 90 (130)</td><td class="c">9 (13)</td><td class="l" rowspan="5">Valores entre parênteses: rosca seca/galvanizada (atrito maior). Variação real ± 30 %; nunca use torque como critério de aceitação sem calibração. Chave de impacto pneumática de 3/4" ou 1" para 7/8" e 1".</td></tr>
+<tr><td class="c">5/8"</td><td class="c">85</td><td class="c">≈ 180 (270)</td><td class="c">18 (27)</td></tr>
+<tr><td class="c">3/4"</td><td class="c">125</td><td class="c">≈ 320 (480)</td><td class="c">32 (48)</td></tr>
+<tr><td class="c">7/8"</td><td class="c">173</td><td class="c">≈ 500 (770)</td><td class="c">50 (77)</td></tr>
+<tr><td class="c">1"</td><td class="c">227</td><td class="c">≈ 750 (1 150)</td><td class="c">75 (115)</td></tr>
+</tbody></table>
+<figure class="fig">
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h8_22" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s8_22" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<!-- (a) rotação da porca -->
+<g transform="translate(20,20)">
+<text x="110" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(a) Rotação da porca</text>
+<g transform="translate(60,90)">
+<polygon points="-40,0 -20,-35 20,-35 40,0 20,35 -20,35" fill="#444" stroke="#333" stroke-width="1.5"/>
+<circle r="14" fill="#666" stroke="#333"/>
+<line x1="0" y1="-35" x2="0" y2="-55" stroke="#c0392b" stroke-width="3"/>
+<line x1="0" y1="-52" x2="0" y2="-62" stroke="#c0392b" stroke-width="3"/>
+<text x="0" y="60" text-anchor="middle" font-size="10">contato: marca alinhada</text>
+</g>
+<g transform="translate(170,90)">
+<polygon points="-40,0 -20,-35 20,-35 40,0 20,35 -20,35" fill="#444" stroke="#333" stroke-width="1.5" transform="rotate(180)"/>
+<circle r="14" fill="#666" stroke="#333"/>
+<line x1="0" y1="-52" x2="0" y2="-62" stroke="#c0392b" stroke-width="3"/>
+<line x1="0" y1="35" x2="0" y2="55" stroke="#c0392b" stroke-width="3"/>
+<path d="M-45 -20 A50 50 0 0 1 45 -20" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s8_22)"/>
+<text x="0" y="60" text-anchor="middle" font-size="10">final: 1/2 volta (180°)</text>
+</g>
+<text x="115" y="180" text-anchor="middle" font-size="10" fill="#333">marcas de giz na porca, no fuste e na chapa</text>
+<text x="115" y="194" text-anchor="middle" font-size="10" fill="#333">→ inspeção visual da rotação</text>
+</g>
+<!-- (b) DTI -->
+<g transform="translate(280,20)">
+<text x="110" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(b) Arruela indicadora (DTI)</text>
+<!-- chapa -->
+<rect x="20" y="100" width="180" height="16" fill="url(#h8_22)" stroke="#333" stroke-width="1.5"/>
+<!-- DTI com saliências (antes) -->
+<g transform="translate(60,0)">
+<rect x="-30" y="92" width="60" height="8" fill="#999" stroke="#333" stroke-width="1"/>
+<path d="M-24 92 l4 -6 l4 6 M-8 92 l4 -6 l4 6 M8 92 l4 -6 l4 6 M20 92 l4 -6 l4 6" fill="none" stroke="#333" stroke-width="1.5"/>
+<rect x="-32" y="60" width="64" height="26" fill="#444" stroke="#333" stroke-width="1.5"/>
+<rect x="-8" y="86" width="16" height="60" fill="#666" stroke="#333" stroke-width="1"/>
+<rect x="-8" y="116" width="16" height="30" fill="#666"/>
+<text x="-5" y="165" text-anchor="middle" font-size="10">antes: folga ≈ 1 mm</text>
+</g>
+<g transform="translate(160,0)">
+<rect x="-30" y="92" width="60" height="8" fill="#999" stroke="#333" stroke-width="1"/>
+<path d="M-24 92 l4 -1.5 l4 1.5 M-8 92 l4 -1.5 l4 1.5 M8 92 l4 -1.5 l4 1.5 M20 92 l4 -1.5 l4 1.5" fill="none" stroke="#333" stroke-width="1.5"/>
+<rect x="-32" y="66" width="64" height="26" fill="#444" stroke="#333" stroke-width="1.5"/>
+<rect x="-8" y="116" width="16" height="30" fill="#666"/>
+<text x="8" y="165" text-anchor="middle" font-size="10">após: folga &lt; 0,4 mm</text>
+</g>
+<text x="110" y="190" text-anchor="middle" font-size="10" fill="#333">lâmina de 0,4 mm não entra → protensão OK</text>
+</g>
+<!-- (c) TC -->
+<g transform="translate(530,20)">
+<text x="105" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(c) Parafuso TC (twist-off)</text>
+<rect x="20" y="70" width="60" height="40" fill="#444" stroke="#333" stroke-width="1.5"/>
+<rect x="80" y="82" width="70" height="16" fill="#666" stroke="#333" stroke-width="1.5"/>
+<rect x="115" y="72" width="26" height="36" fill="#444" stroke="#333" stroke-width="1.5"/>
+<rect x="141" y="76" width="6" height="28" fill="#999" stroke="#333" stroke-width="1"/>
+<!-- ponta estriada -->
+<rect x="150" y="84" width="10" height="12" fill="#888" stroke="#333" stroke-width="1"/>
+<rect x="160" y="82" width="26" height="16" fill="#aaa" stroke="#333" stroke-width="1.5"/>
+<g stroke="#333" stroke-width="1"><line x1="166" y1="82" x2="166" y2="98"/><line x1="172" y1="82" x2="172" y2="98"/><line x1="178" y1="82" x2="178" y2="98"/></g>
+<text x="150" y="128" text-anchor="middle" font-size="10">pescoço calibrado</text>
+<line x1="155" y1="118" x2="155" y2="98" stroke="#555" stroke-width="1"/>
+<text x="173" y="68" text-anchor="middle" font-size="10">ponta estriada</text>
+<text x="105" y="165" text-anchor="middle" font-size="10" fill="#333">chave de duplo soquete gira a porca</text>
+<text x="105" y="179" text-anchor="middle" font-size="10" fill="#333">contra a ponta; ponta rompe na protensão</text>
+<text x="105" y="193" text-anchor="middle" font-size="10" fill="#333">→ inspeção: ponta arrancada = apertado</text>
+</g>
+</svg>
+<figcaption><b>Figura 8.22</b> – Três métodos de aperto controlado: rotação da porca com marcação, arruela indicadora de tração (DTI) e parafuso de controle de tração (TC).</figcaption>
+</figure>
+<h3>8.8.2 Inspeção e marcação</h3>
+<p>Antes do aperto: conferir classe (marcação na cabeça), diâmetro, comprimento (sobra de rosca), arruelas, limpeza das superfícies (atrito), alinhamento dos furos (nunca alargar por maçarico; use alargador ou mandril, e o furo alargado passa a exigir arruela e parafuso maior). Durante: sequência do centro para as bordas; reaperto de contato após o primeiro ciclo (o aperto de uns afrouxa outros). Depois: <strong>marcar com tinta</strong> cada parafuso conferido (por exemplo, um traço na porca e na chapa); o inspetor verifica a rotação pelas marcas de giz, a folga da DTI ou as pontas TC arrancadas, e uma amostra de 10 % (mínimo 2 parafusos por ligação) com chave calibrada quando exigido. Parafusos A490 e A325 galvanizados que foram protendidos e soltos <strong>não podem ser reutilizados</strong>; A325 pretos podem ser reapertados uma vez, se não houver sinais de escoamento.</p>
+<h3>8.8.3 Erros comuns de obra e de projeto</h3>
+<table class="tab"><caption>Tabela 8.10 – Erros frequentes em ligações parafusadas e como evitá-los</caption>
+<thead><tr><th>Erro</th><th>Consequência</th><th>Prevenção / correção</th></tr></thead>
+<tbody>
+<tr><td class="l"><b>Parafuso curto</b> (porca sem fios sobrando)</td><td class="l">Porca não engaja todos os filetes; tração resistente cai; afrouxa.</td><td class="l">Tabela de comprimentos por pega no desenho de montagem; sobra ≥ 2 fios; conferir na inspeção.</td></tr>
+<tr><td class="l"><b>Rosca no plano de corte</b> não considerada (calculado com 0,5)</td><td class="l">Resistência ao corte 20 % menor que a admitida.</td><td class="l">Projetar com 0,4, salvo controle rigoroso de comprimento e pega.</td></tr>
+<tr><td class="l"><b>Furo alargado a maçarico</b> na montagem</td><td class="l">Bordas irregulares e temperadas; concentração de tensão; esmagamento reduzido; inaceitável por norma.</td><td class="l">Alargar com alargador/mandril; se o desvio &gt; 3 mm, refazer a peça ou usar chapa de enchimento e parafuso maior com aprovação do projetista.</td></tr>
+<tr><td class="l"><b>Misturar classes</b> (A307 onde se previu A325, porca comum em A490)</td><td class="l">Resistência metade da prevista; porca escoa antes do parafuso.</td><td class="l">Conferir marcações; comprar conjunto (parafuso + porca + arruela) certificado; segregar no almoxarifado.</td></tr>
+<tr><td class="l"><b>Arruela de pressão</b> em parafuso de alta resistência</td><td class="l">Achata e quebra; não indica nem garante nada; impede o aperto correto.</td><td class="l">Só arruela lisa endurecida F436 em A325/A490.</td></tr>
+<tr><td class="l"><b>Reaproveitar A490</b> ou A325 galvanizado já protendido</td><td class="l">Parafuso já plastificou; nova protensão pode romper ou ficar abaixo do mínimo.</td><td class="l">Descartar; A325 preto: no máximo uma reutilização.</td></tr>
+<tr><td class="l"><b>Superfície pintada</b> em ligação por atrito</td><td class="l">μ cai de 0,35 para ≈ 0,15; ligação desliza.</td><td class="l">Mascarar as faces de contato antes da pintura ou usar tinta com ensaio de classe A/B.</td></tr>
+<tr><td class="l"><b>Sem acesso para a chave</b> (parafuso muito perto de mesa ou enrijecedor)</td><td class="l">Impossível apertar; montador "aperta como dá".</td><td class="l">Respeitar gabaritos; conferir espaço de chave (≈ 1,5d de cada lado do eixo + altura da chave).</td></tr>
+<tr><td class="l"><b>Aperto sem sequência</b> (de fora para dentro)</td><td class="l">Chapas ficam com folga no centro; protensão perdida em parafusos já apertados.</td><td class="l">Aperto de contato geral → aperto final do centro para as bordas → conferência.</td></tr>
+<tr><td class="l"><b>Parafuso em furo oblongo com carga no sentido do rasgo</b> sem protensão</td><td class="l">Ligação escorrega; deslocamentos e ruído.</td><td class="l">Oblongo ⊥ à força ou ligação por atrito.</td></tr>
+</tbody></table>
+<div class="box atencao"><div class="tit">Atenção – furos que não batem</div>
+<p>Desalinhamento de furos é o problema de montagem mais comum. Até 2 mm, o pino de montagem (<em>drift pin</em>) cônico alinha as chapas sem dano. Acima disso, não force com marreta nem abra com maçarico: registre a não conformidade, meça, e peça ao projetista a solução (alargador para o próximo diâmetro, novo furo, chapa nova). Um furo alargado a maçarico é praticamente impossível de recuperar.</p></div>
+
+<h2>8.9 Checklist e resumo <span class="nivel b">Básico</span></h2>
+<ul class="chk">
+<li>Tipo de ligação coerente com o modelo de análise (flexível / rígida / semirrígida)?</li>
+<li>Classe do parafuso definida (A307 só secundárias; A325 padrão; A490 sem galvanização) e marcada nos desenhos?</li>
+<li>Furos-padrão (d + 1,5 mm); alargados/oblongos só onde permitido, com arruela endurecida e atrito?</li>
+<li>Espaçamento ≥ 2,7d (3d usual), borda ≥ Tabela 8.3 (≈ 1,5–2d), máximo 12t ≤ 150 mm?</li>
+<li>Gabaritos das cantoneiras e mesas respeitados; espaço para a chave?</li>
+<li>Verificados: corte do parafuso (planos, rosca), esmagamento/rasgamento em cada chapa, bloco de cisalhamento, área líquida, elemento de ligação e solda do outro lado?</li>
+<li>Ligação por atrito onde há fadiga, inversão de carga, furos alargados ou deslizamento inadmissível? Superfícies de contato especificadas?</li>
+<li>Método de aperto definido (contato / rotação / DTI / TC) e comprimento do parafuso tabelado por pega?</li>
+<li>Efeito alavanca considerado (espessura da chapa ou Q calculado) em chapas tracionadas?</li>
+<li>Plano de inspeção: marcações, amostragem, registro; parafusos apertados marcados com tinta?</li>
+</ul>
+<div class="resumo"><div class="tit">Resumo do capítulo</div><ul>
+<li>Ligações são o ponto crítico: concentram tensões, dependem de execução e custam ≈ 30 % da fabricação. Siga sempre o caminho da carga.</li>
+<li>Parafusos: A307 (comum, 415 MPa), A325 (825 MPa, padrão), A490 (1 035 MPa, sem galvanização, sem reuso); métricos 4.6 / 8.8 / 10.9 equivalentes. Reconheça pela marcação da cabeça.</li>
+<li>Furo-padrão d + 1,5 mm; espaçamento 3d; borda 1,5–2d (Tabela 8.3); gabaritos usuais 44 mm em L 76, 70–140 mm em mesas de W.</li>
+<li>Resistências NBR 8800 (kN, cm): F<sub>v,Rd</sub> = 0,4 (ou 0,5)·A<sub>b</sub>·f<sub>ub</sub>/1,35; F<sub>t,Rd</sub> = 0,75·A<sub>b</sub>·f<sub>ub</sub>/1,35; F<sub>c,Rd</sub> = 1,2·l<sub>f</sub>·t·f<sub>u</sub>/1,35 ≤ 2,4·d·t·f<sub>u</sub>/1,35; bloco de cisalhamento (0,6·f<sub>u</sub>·A<sub>nv</sub> + C<sub>ts</sub>·f<sub>u</sub>·A<sub>nt</sub>)/1,35 ≤ (0,6·f<sub>y</sub>·A<sub>gv</sub> + C<sub>ts</sub>·f<sub>u</sub>·A<sub>nt</sub>)/1,35.</li>
+<li>Parafuso 3/4" A325: 69,7 kN por plano de corte (rosca no plano), 130,6 kN à tração; esmagamento em A36 ≈ 13,5 kN por mm de chapa.</li>
+<li>Ligação por atrito (μ = 0,35 classe A; 0,20 pintada) só com A325/A490 protendidos a 70 % da ruptura (3/4": 125 kN); obrigatória sob fadiga, inversão de carga e furos alargados.</li>
+<li>Ligações típicas: dupla cantoneira e chapa simples (flexíveis); chapa de topo com enrijecedores (rígida); talas de mesa e alma (emenda); chapa de terça; gusset; apoio de tesoura; flange de tubo.</li>
+<li>Em chapas tracionadas, o efeito alavanca pode aumentar 30–50 % a força no parafuso: use chapa espessa e parafusos próximos da alma.</li>
+<li>Aperto: contato para apoio; rotação da porca (1/3 – 1/2 – 2/3 de volta) para protensão; torque só como indicação; DTI e TC facilitam a inspeção. Marque todo parafuso conferido.</li>
+</ul></div>

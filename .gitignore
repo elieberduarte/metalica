@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Dados de clientes e arquivos recebidos (não publicar)
+Projeto/
+*.ifc
+!sistema/testes/dados_ifc/*.ifc
+
+# Saídas geradas pelo sistema e pelos verificadores
+sistema/projetos/*
+!sistema/projetos/galpao-exemplo/
+sistema/projetos/galpao-exemplo/ifc/
+manual/build/
+
+# Sistema operacional e editores
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

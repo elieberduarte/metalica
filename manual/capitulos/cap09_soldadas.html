@@ -1,0 +1,1447 @@
+<h1 class="cap"><small>Capítulo 9</small>Ligações soldadas</h1>
+<div class="objetivos"><div class="tit">O que você vai aprender neste capítulo</div>
+<ul>
+<li>O que acontece fisicamente numa solda: arco, poça de fusão, metal de adição, penetração e zona termicamente afetada.</li>
+<li>Os processos de soldagem da construção metálica (eletrodo revestido, MIG/MAG, arame tubular, arco submerso) e quando usar cada um.</li>
+<li>Consumíveis: como ler E6013, E7018, ER70S-6, E71T-1 e como casá-los com o aço.</li>
+<li>Tipos de junta, de solda e de chanfro; posições de soldagem; a simbologia AWS que aparece nos desenhos.</li>
+<li>Geometria do filete (perna, garganta), dimensões mínimas e máximas, e as resistências da NBR 8800 — com tabela pronta por centímetro de solda.</li>
+<li>Três exemplos resolvidos: cantoneira tracionada, mísula sob momento e composição de perfil soldado.</li>
+<li>Distorções, pré-aquecimento, defeitos e suas causas, ensaios de inspeção, qualificação de procedimentos e soldadores, soldagem em campo e segurança.</li>
+</ul></div>
+
+<h2>9.1 Fundamentos: o que é uma solda <span class="nivel b">Básico</span></h2>
+<p>Soldar é unir duas peças metálicas <strong>fundindo-as localmente</strong>, com ou sem metal de adição, de modo que, após a solidificação, formem um só corpo contínuo. Na construção metálica usa-se quase exclusivamente a <strong>soldagem a arco elétrico</strong>: um arco (descarga elétrica de 3 000 a 6 000 °C) é aberto entre um eletrodo e a peça; o calor funde a ponta do eletrodo e uma pequena região do metal base, formando a <strong>poça de fusão</strong>; o soldador desloca a poça ao longo da junta e, atrás dela, o metal solidifica formando o <strong>cordão</strong>. Como o aço líquido reage com o oxigênio e o nitrogênio do ar (formando óxidos e poros), a poça precisa ser <strong>protegida</strong> — por um gás gerado pelo revestimento do eletrodo, por um gás de cilindro (CO₂, argônio) ou por um fluxo granulado (Figura 9.1).</p>
+<figure class="fig p90">
+<svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_1" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<radialGradient id="g9_1" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fff3b0"/><stop offset="60%" stop-color="#f39c12"/><stop offset="100%" stop-color="#c0392b"/></radialGradient>
+</defs>
+<!-- metal base -->
+<rect x="40" y="200" width="640" height="60" fill="url(#h9_1)" stroke="#333" stroke-width="1.5"/>
+<text x="600" y="235" font-size="12" fill="#333">metal base</text>
+<!-- cordão solidificado (à esquerda) -->
+<path d="M60 200 Q100 170 260 176 Q300 178 320 200 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.5"/>
+<!-- escória sobre o cordão -->
+<path d="M60 200 Q100 162 250 168 Q290 170 305 190" fill="none" stroke="#555" stroke-width="5" opacity=".6"/>
+<text x="130" y="150" font-size="11" fill="#555">escória (remover entre passes)</text>
+<line x1="150" y1="153" x2="160" y2="166" stroke="#555" stroke-width="1"/>
+<!-- poça de fusão -->
+<ellipse cx="350" cy="198" rx="45" ry="16" fill="url(#g9_1)" stroke="#c0392b" stroke-width="1"/>
+<text x="350" y="285" text-anchor="middle" font-size="11" fill="#c0392b">poça de fusão (metal líquido)</text>
+<line x1="350" y1="273" x2="350" y2="214" stroke="#c0392b" stroke-width="1"/>
+<!-- arco -->
+<path d="M335 185 Q350 150 372 140 Q360 165 375 186 Z" fill="#fff3b0" stroke="#f39c12" stroke-width="1.5"/>
+<text x="410" y="170" font-size="11" fill="#333">arco elétrico</text>
+<text x="410" y="184" font-size="10" fill="#333">(3 000–6 000 °C)</text>
+<!-- eletrodo inclinado -->
+<g transform="translate(372,140) rotate(-65)">
+<rect x="0" y="-8" width="200" height="16" fill="#999" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="-13" width="200" height="5" fill="#c9b79c" stroke="#333" stroke-width="1"/>
+<rect x="0" y="8" width="200" height="5" fill="#c9b79c" stroke="#333" stroke-width="1"/>
+<rect x="200" y="-8" width="40" height="16" fill="#333"/>
+</g>
+<text x="470" y="60" font-size="11" fill="#333">alma metálica (metal de adição)</text>
+<line x1="468" y1="63" x2="446" y2="72" stroke="#555" stroke-width="1"/>
+<text x="470" y="40" font-size="11" fill="#333">revestimento (gera gás + escória)</text>
+<line x1="468" y1="43" x2="456" y2="52" stroke="#555" stroke-width="1"/>
+<text x="560" y="115" font-size="11" fill="#333">porta-eletrodo</text>
+<!-- gás de proteção -->
+<path d="M330 175 Q320 160 325 145" fill="none" stroke="#7fb3d5" stroke-width="2" stroke-dasharray="3 2"/>
+<path d="M382 178 Q395 165 392 150" fill="none" stroke="#7fb3d5" stroke-width="2" stroke-dasharray="3 2"/>
+<text x="250" y="130" font-size="11" fill="#2e86c1">gás de proteção</text>
+<line x1="300" y1="133" x2="322" y2="150" stroke="#2e86c1" stroke-width="1"/>
+<!-- gotas -->
+<circle cx="360" cy="165" r="4" fill="#f39c12"/><circle cx="352" cy="178" r="3" fill="#f39c12"/>
+<!-- sentido -->
+<line x1="230" y1="110" x2="150" y2="110" stroke="#333" stroke-width="1.5" marker-end="url(#s9_1)"/>
+<text x="190" y="102" text-anchor="middle" font-size="11" fill="#333">sentido de soldagem</text>
+<!-- penetração -->
+<path d="M60 200 Q100 218 260 214 Q300 213 320 200" fill="none" stroke="#7a3e00" stroke-width="1.5" stroke-dasharray="4 2"/>
+<text x="200" y="240" font-size="11" fill="#7a3e00">penetração</text>
+<line x1="200" y1="230" x2="190" y2="215" stroke="#7a3e00" stroke-width="1"/>
+<text x="90" y="192" font-size="11" fill="#7a3e00">cordão solidificado</text>
+</svg>
+<figcaption><b>Figura 9.1</b> – Soldagem com eletrodo revestido: arco, poça de fusão protegida pelo gás do revestimento, cordão solidificado sob a escória.</figcaption>
+</figure>
+<p>O corte transversal de uma solda pronta (Figura 9.2) revela três regiões: o <strong>metal de solda</strong> (mistura do metal de adição com o metal base fundido), a <strong>zona termicamente afetada – ZTA</strong> (metal base que não fundiu mas foi aquecido acima de ≈ 700 °C e teve sua microestrutura alterada: grãos grosseiros, possível têmpera) e o metal base inalterado. A ZTA é normalmente o ponto mais frágil da junta: é onde surgem trincas a frio por hidrogênio em aços de maior carbono ou espessuras grandes — por isso existem o pré-aquecimento e os eletrodos de baixo hidrogênio. Outros termos da figura: <strong>penetração</strong> (profundidade até onde o metal base fundiu), <strong>reforço</strong> (excesso de metal acima da superfície), <strong>raiz</strong> (fundo da junta), <strong>face</strong> e <strong>margem</strong> (linha de encontro solda–chapa).</p>
+<figure class="fig p75">
+<svg viewBox="0 0 640 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_2" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- chapas (junta de topo em V) -->
+<path d="M40 110 L250 110 L285 190 L40 190 Z" fill="url(#h9_2)" stroke="#333" stroke-width="1.5"/>
+<path d="M600 110 L390 110 L355 190 L600 190 Z" fill="url(#h9_2)" stroke="#333" stroke-width="1.5"/>
+<!-- ZTA -->
+<path d="M250 110 L215 110 L255 190 L285 190 Z" fill="#f5cba7" stroke="none"/>
+<path d="M390 110 L425 110 L385 190 L355 190 Z" fill="#f5cba7" stroke="none"/>
+<!-- metal de solda -->
+<path d="M250 110 Q320 92 390 110 L355 190 Q320 200 285 190 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.5"/>
+<!-- linhas de passes -->
+<path d="M262 138 Q320 128 378 138" fill="none" stroke="#7a3e00" stroke-width=".8"/>
+<path d="M272 162 Q320 154 368 162" fill="none" stroke="#7a3e00" stroke-width=".8"/>
+<!-- rótulos -->
+<text x="320" y="80" text-anchor="middle" font-size="11" fill="#7a3e00">reforço (face)</text>
+<line x1="320" y1="84" x2="320" y2="98" stroke="#7a3e00" stroke-width="1"/>
+<text x="320" y="225" text-anchor="middle" font-size="11" fill="#7a3e00">raiz (reforço de raiz)</text>
+<line x1="320" y1="214" x2="320" y2="200" stroke="#7a3e00" stroke-width="1"/>
+<text x="320" y="152" text-anchor="middle" font-size="11" fill="#5a2d00" font-weight="bold">metal de solda</text>
+<text x="320" y="166" text-anchor="middle" font-size="9" fill="#5a2d00">(3 passes)</text>
+<text x="150" y="60" text-anchor="middle" font-size="11" fill="#b9770e">ZTA – zona termicamente afetada</text>
+<line x1="200" y1="64" x2="240" y2="120" stroke="#b9770e" stroke-width="1"/>
+<line x1="200" y1="64" x2="400" y2="120" stroke="#b9770e" stroke-width="1"/>
+<text x="120" y="155" text-anchor="middle" font-size="11" fill="#333">metal base</text>
+<text x="520" y="155" text-anchor="middle" font-size="11" fill="#333">metal base</text>
+<text x="470" y="245" font-size="11" fill="#333">linha de fusão</text>
+<line x1="468" y1="240" x2="370" y2="175" stroke="#555" stroke-width="1"/>
+<text x="120" y="245" font-size="11" fill="#333">margem (pé da solda)</text>
+<line x1="200" y1="240" x2="250" y2="112" stroke="#555" stroke-width="1"/>
+<!-- cota espessura -->
+<line x1="20" y1="110" x2="20" y2="190" stroke="#555" stroke-width="1" marker-start="url(#s9_2)" marker-end="url(#s9_2)"/>
+<text x="14" y="154" text-anchor="end" font-size="11">t</text>
+<!-- penetração total -->
+<text x="320" y="275" text-anchor="middle" font-size="11" fill="#333">solda de topo com penetração total: o metal de solda atravessa toda a espessura t</text>
+</svg>
+<figcaption><b>Figura 9.2</b> – Corte transversal de uma solda de topo em V com três passes: metal de solda, ZTA, linha de fusão, reforço e raiz.</figcaption>
+</figure>
+<div class="box"><div class="tit">Conceito – energia de soldagem (aporte térmico)</div>
+<p>A quantidade de calor por unidade de comprimento, H = (V · I · 60)/(v · 1 000) em kJ/mm (V em volts, I em ampères, v = velocidade em mm/min), controla quase tudo: penetração, largura da ZTA, velocidade de resfriamento (e portanto dureza e trincas), distorção. Cordões pequenos em chapa grossa resfriam muito rápido (têmpera na ZTA); cordões enormes em chapa fina distorcem. Por isso a EPS (procedimento de soldagem) fixa faixas de corrente, tensão e velocidade.</p></div>
+
+<h2>9.2 Processos de soldagem <span class="nivel b">Básico</span></h2>
+<p>Os quatro processos que dominam a construção metálica (Figura 9.3 e Tabela 9.1) diferem pela forma do eletrodo e pelo tipo de proteção:</p>
+<ul>
+<li><strong>SMAW – eletrodo revestido</strong> ("solda elétrica", "eletrodo"): vareta metálica com revestimento mineral que, ao queimar, gera o gás protetor e a escória. Equipamento barato e portátil, funciona com vento e em qualquer posição, mas tem baixa taxa de deposição (1–2 kg/h), exige troca de eletrodo a cada 30–40 cm de cordão e remoção de escória. É o processo de <strong>campo</strong> por excelência. Eletrodos mais comuns: <strong>E6013</strong> (rutílico, fácil de soldar, uso geral leve, não é baixo hidrogênio) e <strong>E7018</strong> (básico, baixo hidrogênio, obrigatório em soldas estruturais de responsabilidade, chapas ≥ 19 mm, aços A572 e patináveis). O código AWS: "E" = eletrodo; os dois primeiros dígitos = resistência mínima à tração do metal depositado em ksi (60 → 415 MPa; 70 → 485 MPa); o terceiro = posições (1 = todas; 2 = plana e horizontal); o último = tipo de revestimento e corrente (3 = rutílico CA/CC; 8 = básico baixo hidrogênio com pó de ferro, CC+ ou CA).</li>
+<li><strong>GMAW – MIG/MAG</strong> (arame sólido com gás de cilindro): arame contínuo ER70S-6 alimentado por tocha; proteção por CO₂ puro (MAG, barato, mais respingos) ou mistura Ar + 8–25 % CO₂ (arco mais estável, menos respingos). Alta produtividade (3–6 kg/h), sem escória, fácil de automatizar — é o processo de <strong>fábrica</strong> para filetes e chanfros médios. Sensível ao vento (o gás é soprado; limite ≈ 2 m/s) e à falta de fusão em modo curto-circuito em chapas grossas.</li>
+<li><strong>FCAW – arame tubular</strong>: arame oco com fluxo interno; existe a versão com gás (E71T-1, CO₂ ou mistura) e a autoprotegida (E71T-11, E71T-8, sem gás, tolerante ao vento). Combina a produtividade do MIG (4–8 kg/h) com a capacidade de todas as posições e ótima penetração; é o processo que mais cresce em fábrica e em campo (torres, pontes, edifícios altos). Gera escória fina.</li>
+<li><strong>SAW – arco submerso</strong>: o arco fica coberto por um fluxo granulado; arame sólido grosso (2,4–4,8 mm), correntes de 400–1 000 A, deposição altíssima (10–20 kg/h), sem radiação visível. Só em posição plana e mecanizado: é o processo dos <strong>perfis soldados</strong> (VS, CS, CVS), vigas de ponte e chapas grossas.</li>
+<li><strong>GTAW – TIG</strong>: eletrodo de tungstênio não consumível e vareta separada, com argônio. Solda de altíssima qualidade, mas lenta (0,5 kg/h); em estruturas só em tubos de parede fina, inox, alumínio e passes de raiz de tubulações.</li>
+</ul>
+<figure class="fig">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_3" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+</defs>
+<!-- SMAW -->
+<g transform="translate(10,20)">
+<text x="90" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">SMAW – eletrodo revestido</text>
+<rect x="10" y="190" width="160" height="30" fill="url(#h9_3)" stroke="#333" stroke-width="1.5"/>
+<path d="M20 190 Q60 172 100 180 L100 190 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M20 190 Q60 168 95 176" fill="none" stroke="#555" stroke-width="4" opacity=".6"/>
+<ellipse cx="108" cy="188" rx="14" ry="6" fill="#f39c12"/>
+<g transform="translate(112,180) rotate(-70)">
+<rect x="0" y="-5" width="120" height="10" fill="#999" stroke="#333"/>
+<rect x="0" y="-8" width="120" height="3" fill="#c9b79c"/><rect x="0" y="5" width="120" height="3" fill="#c9b79c"/>
+<rect x="120" y="-6" width="30" height="12" fill="#333"/>
+</g>
+<text x="90" y="245" text-anchor="middle" font-size="10">vareta 350–450 mm; troca a cada</text>
+<text x="90" y="258" text-anchor="middle" font-size="10">30–40 cm; escória a remover</text>
+<text x="90" y="274" text-anchor="middle" font-size="10" fill="#2e8b57">campo, vento OK, 1–2 kg/h</text>
+</g>
+<!-- GMAW -->
+<g transform="translate(200,20)">
+<text x="90" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">GMAW – MIG/MAG</text>
+<rect x="10" y="190" width="160" height="30" fill="url(#h9_3)" stroke="#333" stroke-width="1.5"/>
+<path d="M20 190 Q60 172 100 180 L100 190 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<ellipse cx="108" cy="188" rx="14" ry="6" fill="#f39c12"/>
+<!-- tocha -->
+<g transform="translate(112,180) rotate(-75)">
+<rect x="0" y="-9" width="70" height="18" fill="#c0392b" stroke="#333"/>
+<rect x="70" y="-12" width="60" height="24" fill="#555" stroke="#333"/>
+<line x1="-10" y1="0" x2="70" y2="0" stroke="#999" stroke-width="2"/>
+<path d="M130 0 Q160 10 180 40" fill="none" stroke="#333" stroke-width="4"/>
+</g>
+<path d="M92 176 Q88 160 95 150" fill="none" stroke="#7fb3d5" stroke-width="2" stroke-dasharray="3 2"/>
+<path d="M124 176 Q130 160 124 150" fill="none" stroke="#7fb3d5" stroke-width="2" stroke-dasharray="3 2"/>
+<text x="30" y="150" font-size="9" fill="#2e86c1">gás CO₂ / Ar+CO₂</text>
+<text x="90" y="245" text-anchor="middle" font-size="10">arame sólido ER70S-6 (0,8–1,2 mm)</text>
+<text x="90" y="258" text-anchor="middle" font-size="10">contínuo; sem escória</text>
+<text x="90" y="274" text-anchor="middle" font-size="10" fill="#c0392b">fábrica; sensível ao vento; 3–6 kg/h</text>
+</g>
+<!-- FCAW -->
+<g transform="translate(390,20)">
+<text x="90" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">FCAW – arame tubular</text>
+<rect x="10" y="190" width="160" height="30" fill="url(#h9_3)" stroke="#333" stroke-width="1.5"/>
+<path d="M20 190 Q60 172 100 180 L100 190 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M20 190 Q60 170 95 177" fill="none" stroke="#555" stroke-width="2.5" opacity=".6"/>
+<ellipse cx="108" cy="188" rx="14" ry="6" fill="#f39c12"/>
+<g transform="translate(112,180) rotate(-75)">
+<rect x="0" y="-9" width="70" height="18" fill="#c0392b" stroke="#333"/>
+<rect x="70" y="-12" width="60" height="24" fill="#555" stroke="#333"/>
+<rect x="-10" y="-2.5" width="80" height="5" fill="#999" stroke="#333" stroke-width=".5"/>
+<line x1="-10" y1="0" x2="70" y2="0" stroke="#e0a86a" stroke-width="2"/>
+<path d="M130 0 Q160 10 180 40" fill="none" stroke="#333" stroke-width="4"/>
+</g>
+<text x="20" y="150" font-size="9" fill="#333">arame oco com fluxo</text>
+<text x="90" y="245" text-anchor="middle" font-size="10">E71T-1 (com gás) ou</text>
+<text x="90" y="258" text-anchor="middle" font-size="10">E71T-11 (autoprotegido)</text>
+<text x="90" y="274" text-anchor="middle" font-size="10" fill="#2e8b57">fábrica e campo; 4–8 kg/h</text>
+</g>
+<!-- SAW -->
+<g transform="translate(580,20)">
+<text x="90" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">SAW – arco submerso</text>
+<rect x="10" y="190" width="160" height="30" fill="url(#h9_3)" stroke="#333" stroke-width="1.5"/>
+<path d="M20 190 Q60 168 100 178 L100 190 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- fluxo granulado -->
+<path d="M70 190 Q100 150 150 190 Z" fill="#d7ccc8" stroke="#8d6e63" stroke-width="1"/>
+<g fill="#8d6e63"><circle cx="95" cy="180" r="1.5"/><circle cx="110" cy="172" r="1.5"/><circle cx="125" cy="180" r="1.5"/><circle cx="105" cy="185" r="1.5"/><circle cx="135" cy="186" r="1.5"/></g>
+<!-- arame vertical + tremonha -->
+<rect x="106" y="90" width="4" height="80" fill="#999" stroke="#333" stroke-width=".5"/>
+<rect x="96" y="80" width="24" height="24" fill="#555" stroke="#333"/>
+<path d="M130 90 L150 90 L145 130 L138 130 Z" fill="#d7ccc8" stroke="#8d6e63"/>
+<text x="150" y="150" font-size="9" fill="#8d6e63" text-anchor="middle">fluxo</text>
+<text x="40" y="130" font-size="9" fill="#333">arco coberto</text>
+<text x="40" y="142" font-size="9" fill="#333">(sem luz visível)</text>
+<text x="90" y="245" text-anchor="middle" font-size="10">arame 2,4–4,8 mm, 400–1 000 A</text>
+<text x="90" y="258" text-anchor="middle" font-size="10">mecanizado, só posição plana</text>
+<text x="90" y="274" text-anchor="middle" font-size="10" fill="#c0392b">fábrica (perfis soldados); 10–20 kg/h</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.3</b> – Os quatro processos da construção metálica: eletrodo revestido, MIG/MAG, arame tubular e arco submerso.</figcaption>
+</figure>
+<table class="tab small"><caption>Tabela 9.1 – Comparação dos processos de soldagem a arco na construção metálica (valores típicos)</caption>
+<thead><tr><th>Característica</th><th>SMAW (eletrodo revestido)</th><th>GMAW (MIG/MAG)</th><th>FCAW (arame tubular)</th><th>SAW (arco submerso)</th><th>GTAW (TIG)</th></tr></thead>
+<tbody>
+<tr><td class="l">Taxa de deposição (kg/h)</td><td class="c">1–2</td><td class="c">3–6</td><td class="c">4–8</td><td class="c">10–20</td><td class="c">0,3–0,8</td></tr>
+<tr><td class="l">Fator de operação (arco aberto)</td><td class="c">20–30 %</td><td class="c">40–60 %</td><td class="c">40–60 %</td><td class="c">80–100 %</td><td class="c">20–30 %</td></tr>
+<tr><td class="l">Posições</td><td class="c">todas</td><td class="c">todas (curto-circuito); plana/horizontal (spray)</td><td class="c">todas</td><td class="c">plana (1G/1F) e horizontal com dispositivo</td><td class="c">todas</td></tr>
+<tr><td class="l">Sensibilidade ao vento</td><td class="c">baixa (até ≈ 8 m/s)</td><td class="c">alta (limite ≈ 2 m/s)</td><td class="c">com gás: alta; autoprotegido: baixa</td><td class="c">nula</td><td class="c">alta</td></tr>
+<tr><td class="l">Uso predominante</td><td class="c">campo, reparos, posições difíceis</td><td class="c">fábrica: filetes, chapas finas e médias</td><td class="c">fábrica e campo: estruturas pesadas</td><td class="c">fábrica: perfis soldados, chapas grossas</td><td class="c">tubos finos, inox, raiz</td></tr>
+<tr><td class="l">Custo do equipamento</td><td class="c">baixo</td><td class="c">médio</td><td class="c">médio</td><td class="c">alto</td><td class="c">médio</td></tr>
+<tr><td class="l">Custo por kg depositado</td><td class="c">alto (mão de obra)</td><td class="c">baixo</td><td class="c">médio</td><td class="c">muito baixo</td><td class="c">muito alto</td></tr>
+<tr><td class="l">Escória / limpeza</td><td class="c">sim, pesada</td><td class="c">não (respingos)</td><td class="c">leve</td><td class="c">sim (fluxo recuperável)</td><td class="c">não</td></tr>
+<tr><td class="l">Habilidade exigida</td><td class="c">alta</td><td class="c">média</td><td class="c">média</td><td class="c">operador de máquina</td><td class="c">muito alta</td></tr>
+<tr><td class="l">Hidrogênio difusível</td><td class="c">alto (6013) / baixo (7018 seco)</td><td class="c">baixo</td><td class="c">baixo a médio</td><td class="c">baixo (fluxo seco)</td><td class="c">muito baixo</td></tr>
+</tbody></table>
+
+<h3>9.2.1 Consumíveis e compatibilidade com o metal base</h3>
+<p>Os consumíveis são classificados pelas normas AWS: <strong>A5.1</strong> (eletrodos revestidos de aço carbono), <strong>A5.18</strong> (arames sólidos GMAW/GTAW), <strong>A5.20</strong> (arames tubulares FCAW), <strong>A5.17</strong> (arame + fluxo SAW) e <strong>A5.5</strong> (eletrodos de baixa liga, ex.: E8018-W para aços patináveis). A regra de compatibilidade ("<em>matching</em>") é escolher o metal de adição com resistência igual ou levemente superior à do metal base: para <strong>A36, MR250, A572 Gr.50, AR350</strong> usa-se a classe <strong>E70 / ER70S / E71T</strong> (485 MPa); para A588/COR expostos sem pintura, E8018-W ou ER80S-W (que depositam cobre e níquel, patinam junto). O E60 (E6013) é aceitável apenas em A36 em soldas de filete secundárias — a NBR 8800 exige eletrodo compatível e o AWS D1.1 (Tabela 3.1) lista os pares aprovados.</p>
+<table class="tab small"><caption>Tabela 9.2 – Consumíveis usuais e leitura da classificação AWS</caption>
+<thead><tr><th>Classificação</th><th>Processo / norma</th><th>Leitura do código</th><th>f<sub>w</sub> (MPa)</th><th>Uso recomendado</th><th>Cuidados</th></tr></thead>
+<tbody>
+<tr><td class="c"><b>E6013</b></td><td class="c">SMAW / A5.1</td><td class="l">E = eletrodo; 60 = 60 ksi; 1 = todas as posições; 3 = rutílico, CA ou CC</td><td class="c">415</td><td class="l">Serralheria, fechamentos, soldas secundárias em A36 até 12 mm</td><td class="l">Não é baixo hidrogênio; não usar em chapas grossas nem aços ≥ 350 MPa</td></tr>
+<tr><td class="c"><b>E7018</b></td><td class="c">SMAW / A5.1</td><td class="l">70 ksi; 1 = todas as posições; 8 = básico baixo H₂ com pó de ferro, CC+ (ou CA)</td><td class="c">485</td><td class="l">Toda solda estrutural com eletrodo revestido; A36, A572, patináveis (E7018-W ou E8018-W)</td><td class="l">Secagem em estufa 260–430 °C por 1–2 h; manter em estufa portátil a 120 °C; exposto ao ar ≤ 4 h (ou 2 h se úmido)</td></tr>
+<tr><td class="c"><b>ER70S-6</b></td><td class="c">GMAW / A5.18</td><td class="l">ER = eletrodo/vareta; 70 ksi; S = sólido; 6 = alto teor de Si e Mn (desoxidante, tolera carepa)</td><td class="c">485</td><td class="l">Filetes e chanfros em fábrica; A36 a A572 Gr.50</td><td class="l">Gás: CO₂ (mais penetração, respingo) ou Ar + 15–25 % CO₂; proteger do vento; arames não podem oxidar</td></tr>
+<tr><td class="c"><b>E71T-1</b> (E71T-1C/M)</td><td class="c">FCAW / A5.20</td><td class="l">70 ksi; 1 = todas as posições; T = tubular; 1 = rutílico com gás (C = CO₂; M = mistura)</td><td class="c">485</td><td class="l">Estruturas pesadas em fábrica e campo, posições vertical e sobre-cabeça</td><td class="l">Requer gás; remover escória fina; arames ficam higroscópicos se mal armazenados</td></tr>
+<tr><td class="c"><b>E71T-11 / E71T-8</b></td><td class="c">FCAW-S / A5.20</td><td class="l">autoprotegido (sem gás); 11 = uso geral; 8 = baixo H₂, tenacidade garantida</td><td class="c">485</td><td class="l">Campo com vento (torres, telhados, reparos)</td><td class="l">T-11 limitado a chapas ≤ 12 mm e a passes únicos em alguns casos; ver ficha do fabricante</td></tr>
+<tr><td class="c"><b>F7A2-EM12K</b></td><td class="c">SAW / A5.17</td><td class="l">F = fluxo; 7 = 70 ksi; A = como soldado; 2 = tenacidade a −20 °F; EM12K = arame médio Mn, silício-morto</td><td class="c">485</td><td class="l">Perfis soldados, vigas de ponte, chapas grossas em fábrica</td><td class="l">Fluxo seco (estufa); passes mecanizados; só posição plana</td></tr>
+<tr><td class="c"><b>E8018-W2 / ER80S-W</b></td><td class="c">SMAW / A5.5 ; GMAW / A5.28</td><td class="l">80 ksi; W = liga patinável (Cu, Ni, Cr)</td><td class="c">550</td><td class="l">Aços A588, COR 420, USI-SAC expostos sem pintura</td><td class="l">Necessário só na camada exposta; passes internos podem ser E70</td></tr>
+</tbody></table>
+<div class="box atencao"><div class="tit">Atenção – o eletrodo E7018 e a umidade</div>
+<p>O revestimento básico do E7018 absorve umidade do ar; a água se decompõe no arco e libera hidrogênio, que migra para a ZTA e causa <strong>trincas a frio</strong> horas depois de a solda esfriar. Regra: latas lacradas podem ir para a estufa portátil (120 °C) direto; latas abertas ou eletrodos expostos por mais de 4 h precisam de <strong>ressecagem a 260–430 °C por 1 a 2 h</strong> (uma vez só — ressecar duas vezes danifica o revestimento). O soldador deve carregar apenas a quantidade de 1–2 h de trabalho no cochicho/estufa de cintura. Eletrodo E7018 "jogado" na caixa de ferramentas não é E7018: é uma fonte de trincas.</p></div>
+
+
+<h2>9.3 Juntas, tipos de solda e posições <span class="nivel b">Básico</span></h2>
+<h3>9.3.1 Tipos de junta</h3>
+<p>A <strong>junta</strong> é a maneira como as peças se encontram; a <strong>solda</strong> é o que se deposita nela. A AWS define cinco juntas básicas (Figura 9.4): <strong>de topo</strong> (peças no mesmo plano, bordas frente a frente), <strong>em T</strong> (uma peça perpendicular à face da outra — a mais comum em estruturas: alma–mesa, enrijecedores, chapas de ligação), <strong>de canto</strong> (bordas formando um L), <strong>sobreposta</strong> (peças paralelas com faces em contato — talas, chapas de terça, cantoneiras em gusset) e <strong>de borda</strong> (bordas paralelas, raro em estruturas).</p>
+<figure class="fig p90">
+<svg viewBox="0 0 740 190" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h9_4" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- topo -->
+<g transform="translate(20,30)">
+<rect x="0" y="60" width="55" height="16" fill="url(#h9_4)" stroke="#333" stroke-width="1.5"/>
+<rect x="65" y="60" width="55" height="16" fill="url(#h9_4)" stroke="#333" stroke-width="1.5"/>
+<path d="M55 60 Q60 52 65 60 L65 76 Q60 84 55 76 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="60" y="115" text-anchor="middle" fill="#0b3d91" font-weight="bold">De topo</text>
+<text x="60" y="131" text-anchor="middle" font-size="10">emendas de chapa,</text><text x="60" y="144" text-anchor="middle" font-size="10">mesas de vigas</text>
+</g>
+<!-- T -->
+<g transform="translate(165,30)">
+<rect x="0" y="60" width="120" height="16" fill="url(#h9_4)" stroke="#333" stroke-width="1.5"/>
+<rect x="52" y="0" width="16" height="60" fill="url(#h9_4)" stroke="#333" stroke-width="1.5"/>
+<polygon points="52,60 52,46 38,60" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="68,60 68,46 82,60" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="60" y="115" text-anchor="middle" fill="#0b3d91" font-weight="bold">Em T</text>
+<text x="60" y="131" text-anchor="middle" font-size="10">alma–mesa,</text><text x="60" y="144" text-anchor="middle" font-size="10">enrijecedores</text>
+</g>
+<!-- canto -->
+<g transform="translate(310,30)">
+<rect x="20" y="60" width="100" height="16" fill="url(#h9_4)" stroke="#333" stroke-width="1.5"/>
+<rect x="20" y="0" width="16" height="60" fill="url(#h9_4)" stroke="#333" stroke-width="1.5"/>
+<polygon points="36,60 36,46 50,60" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M20 60 L20 76 Q10 70 8 60 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="65" y="115" text-anchor="middle" fill="#0b3d91" font-weight="bold">De canto</text>
+<text x="65" y="131" text-anchor="middle" font-size="10">caixões, perfis</text><text x="65" y="144" text-anchor="middle" font-size="10">tubulares soldados</text>
+</g>
+<!-- sobreposta -->
+<g transform="translate(455,30)">
+<rect x="0" y="60" width="90" height="14" fill="url(#h9_4)" stroke="#333" stroke-width="1.5"/>
+<rect x="45" y="46" width="90" height="14" fill="url(#h9_4)" stroke="#333" stroke-width="1.5"/>
+<polygon points="45,46 45,60 31,60" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="90,60 90,74 104,60" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="67" y="115" text-anchor="middle" fill="#0b3d91" font-weight="bold">Sobreposta</text>
+<text x="67" y="131" text-anchor="middle" font-size="10">talas, gussets,</text><text x="67" y="144" text-anchor="middle" font-size="10">chapas de terça</text>
+</g>
+<!-- borda -->
+<g transform="translate(615,30)">
+<rect x="30" y="10" width="14" height="66" fill="url(#h9_4)" stroke="#333" stroke-width="1.5"/>
+<rect x="46" y="10" width="14" height="66" fill="url(#h9_4)" stroke="#333" stroke-width="1.5"/>
+<path d="M30 10 Q45 -2 60 10 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="45" y="115" text-anchor="middle" fill="#0b3d91" font-weight="bold">De borda</text>
+<text x="45" y="131" text-anchor="middle" font-size="10">chapas finas,</text><text x="45" y="144" text-anchor="middle" font-size="10">raro em estruturas</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.4</b> – Os cinco tipos básicos de junta e exemplos de uso em estruturas.</figcaption>
+</figure>
+
+<h3>9.3.2 Tipos de solda: filete, chanfro, tampão e rasgo</h3>
+<p>A <strong>solda de filete</strong> tem seção aproximadamente triangular e é depositada no canto entre duas superfícies (juntas em T, de canto e sobrepostas). Não exige preparação das bordas, é rápida e barata: responde por mais de 80 % das soldas de uma estrutura. A <strong>solda de chanfro</strong> (ou de entalhe, "groove") preenche uma abertura preparada nas bordas — é a solda das juntas de topo e das juntas em T que precisam transmitir toda a resistência da chapa. Ela pode ser de <strong>penetração total</strong> (PJP em inglês é parcial; CJP é total — o metal de solda atravessa toda a espessura, com passe de raiz, goivagem e passe pelo verso ou cobre-junta) ou de <strong>penetração parcial</strong> (só parte da espessura). As <strong>soldas de tampão</strong> (furo circular preenchido) e <strong>em rasgo</strong> (furo alongado) transmitem cisalhamento entre chapas sobrepostas quando não há borda acessível para filete — por exemplo, chapas de reforço de alma (Figura 9.6).</p>
+<p>A Figura 9.5 mostra os chanfros usuais e os termos da preparação: <strong>ângulo do chanfro</strong> (60° em V para SMAW; 45° em ½V; 30–45° em U/J), <strong>nariz</strong> (parte não chanfrada, 1–3 mm, evita que a raiz "queime"), <strong>abertura de raiz</strong> (0–3 mm; até 6–10 mm com cobre-junta) e <strong>cobre-junta</strong> (chapa ou barra no verso que sustenta a poça no primeiro passe e permite penetração total por um só lado). Chanfros duplos (X, K, duplo U) reduzem o volume de solda em chapas grossas (≥ 20 mm) e equilibram a distorção, mas exigem acesso pelos dois lados.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_5" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- V com cotas (grande) -->
+<g transform="translate(20,20)">
+<text x="110" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Chanfro em V (preparação)</text>
+<path d="M0 30 L80 30 L106 78 L106 90 L0 90 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.5"/>
+<path d="M220 30 L140 30 L114 78 L114 90 L220 90 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.5"/>
+<!-- cobre-junta -->
+<rect x="70" y="90" width="80" height="8" fill="#c5ccd8" stroke="#333" stroke-width="1"/>
+<!-- ângulo -->
+<path d="M96 58 A22 22 0 0 1 124 58" fill="none" stroke="#555" stroke-width="1"/>
+<text x="110" y="52" text-anchor="middle" font-size="10">α = 60°</text>
+<!-- nariz -->
+<line x1="130" y1="78" x2="130" y2="90" stroke="#555" stroke-width="1" marker-start="url(#s9_5)" marker-end="url(#s9_5)"/>
+<text x="136" y="88" font-size="10">nariz 1–3</text>
+<!-- abertura de raiz -->
+<line x1="106" y1="108" x2="114" y2="108" stroke="#555" stroke-width="1"/>
+<line x1="106" y1="98" x2="106" y2="112" stroke="#555" stroke-width="1"/><line x1="114" y1="98" x2="114" y2="112" stroke="#555" stroke-width="1"/>
+<text x="110" y="126" text-anchor="middle" font-size="10">abertura de raiz 0–3 (até 8 com cobre-junta)</text>
+<text x="180" y="106" font-size="10" fill="#333">cobre-junta</text>
+<line x1="178" y1="103" x2="150" y2="95" stroke="#555" stroke-width="1"/>
+<line x1="-12" y1="30" x2="-12" y2="90" stroke="#555" stroke-width="1" marker-start="url(#s9_5)" marker-end="url(#s9_5)"/>
+<text x="-18" y="64" text-anchor="end" font-size="10">t</text>
+</g>
+<!-- galeria de chanfros pequenos -->
+<g transform="translate(300,25)">
+<text x="200" y="-5" text-anchor="middle" fill="#0b3d91" font-weight="bold">Tipos de chanfro (penetração total)</text>
+<!-- V -->
+<g transform="translate(0,15)">
+<path d="M0 20 L40 20 L54 48 L54 60 L0 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M120 20 L80 20 L66 48 L66 60 L120 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M40 20 Q60 12 80 20 L66 48 L66 60 L54 60 L54 48 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="60" y="80" text-anchor="middle" font-size="11">V (t ≤ 20)</text>
+</g>
+<!-- 1/2 V -->
+<g transform="translate(145,15)">
+<path d="M0 20 L60 20 L60 60 L0 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M120 20 L94 20 L66 50 L66 60 L120 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M60 20 Q78 12 94 20 L66 50 L66 60 L60 60 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="60" y="80" text-anchor="middle" font-size="11">½ V (meio V)</text>
+</g>
+<!-- X -->
+<g transform="translate(290,15)">
+<path d="M0 20 L40 20 L56 38 L56 42 L40 60 L0 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M120 20 L80 20 L64 38 L64 42 L80 60 L120 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M40 20 Q60 12 80 20 L64 38 L64 42 L80 60 Q60 68 40 60 L56 42 L56 38 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="60" y="84" text-anchor="middle" font-size="11">X (duplo V, t ≥ 20)</text>
+</g>
+<!-- K -->
+<g transform="translate(0,120)">
+<path d="M0 20 L60 20 L60 60 L0 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M120 20 L90 20 L66 38 L66 42 L90 60 L120 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M60 20 Q76 12 90 20 L66 38 L66 42 L90 60 Q76 68 60 60 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="60" y="80" text-anchor="middle" font-size="11">K (duplo ½ V)</text>
+</g>
+<!-- U -->
+<g transform="translate(145,120)">
+<path d="M0 20 L44 20 L46 40 Q46 52 54 52 L54 60 L0 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M120 20 L76 20 L74 40 Q74 52 66 52 L66 60 L120 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M44 20 Q60 12 76 20 L74 40 Q74 52 66 52 L66 60 L54 60 L54 52 Q46 52 46 40 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="60" y="80" text-anchor="middle" font-size="11">U (t ≥ 25, menos solda)</text>
+</g>
+<!-- J -->
+<g transform="translate(290,120)">
+<path d="M0 20 L60 20 L60 60 L0 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M120 20 L88 20 L84 40 Q84 52 66 52 L66 60 L120 60 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M60 20 Q74 12 88 20 L84 40 Q84 52 66 52 L66 60 L60 60 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="60" y="80" text-anchor="middle" font-size="11">J (meio U)</text>
+</g>
+</g>
+<!-- penetração parcial x total -->
+<g transform="translate(20,175)">
+<text x="110" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Penetração parcial × total (junta T)</text>
+<g transform="translate(0,15)">
+<rect x="0" y="70" width="100" height="14" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M42 10 L58 10 L58 70 L42 70 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M42 40 L42 70 L28 70 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M58 40 L58 70 L72 70 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<line x1="42" y1="62" x2="42" y2="70" stroke="#c0392b" stroke-width="2"/>
+<text x="50" y="105" text-anchor="middle" font-size="10">parcial: raiz não</text><text x="50" y="117" text-anchor="middle" font-size="10">fundida (E)</text>
+</g>
+<g transform="translate(120,15)">
+<rect x="0" y="70" width="100" height="14" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M42 10 L58 10 L58 40 L66 70 L34 70 L42 40 Z" fill="url(#h9_5)" stroke="#333" stroke-width="1.2"/>
+<path d="M42 40 L34 70 L22 70 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M58 40 L66 70 L78 70 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M42 40 L58 40 L66 70 L34 70 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="50" y="105" text-anchor="middle" font-size="10">total: chanfro K,</text><text x="50" y="117" text-anchor="middle" font-size="10">goivagem, filete de reforço</text>
+</g>
+</g>
+</svg>
+<figcaption><b>Figura 9.5</b> – Preparação de chanfro em V (ângulo, nariz, abertura de raiz, cobre-junta), galeria de chanfros e diferença entre penetração parcial e total em junta T.</figcaption>
+</figure>
+<figure class="fig p90">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h9_6" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- filete: seção e vista -->
+<g transform="translate(20,20)">
+<text x="90" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Filete</text>
+<rect x="0" y="90" width="110" height="14" fill="url(#h9_6)" stroke="#333" stroke-width="1.5"/>
+<rect x="48" y="20" width="14" height="70" fill="url(#h9_6)" stroke="#333" stroke-width="1.5"/>
+<polygon points="48,90 48,66 24,90" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="62,90 62,66 86,90" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="55" y="130" text-anchor="middle" font-size="10">sem preparação;</text>
+<text x="55" y="143" text-anchor="middle" font-size="10">seção ≈ triângulo</text>
+<text x="55" y="156" text-anchor="middle" font-size="10">&gt; 80 % das soldas</text>
+</g>
+<!-- tampão -->
+<g transform="translate(250,20)">
+<text x="110" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Tampão (furo redondo)</text>
+<!-- vista de cima -->
+<rect x="0" y="20" width="100" height="70" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle cx="50" cy="55" r="16" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.5"/>
+<text x="50" y="108" text-anchor="middle" font-size="10">planta</text>
+<!-- seção -->
+<rect x="120" y="60" width="100" height="14" fill="url(#h9_6)" stroke="#333" stroke-width="1.5"/>
+<rect x="120" y="46" width="100" height="14" fill="url(#h9_6)" stroke="#333" stroke-width="1.5"/>
+<rect x="154" y="46" width="32" height="14" fill="#fff"/>
+<path d="M154 46 L186 46 L186 60 L154 60 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="170" y="108" text-anchor="middle" font-size="10">corte</text>
+<text x="110" y="130" text-anchor="middle" font-size="10">ø ≥ t + 8 mm; enche até</text>
+<text x="110" y="143" text-anchor="middle" font-size="10">t ≤ 16 mm; acima, até t/2 (≥ 16)</text>
+<text x="110" y="156" text-anchor="middle" font-size="10">resistência: 0,6·f<tspan baseline-shift="sub" font-size="8">w</tspan>·A<tspan baseline-shift="sub" font-size="8">furo</tspan>/γ<tspan baseline-shift="sub" font-size="8">w2</tspan></text>
+</g>
+<!-- rasgo -->
+<g transform="translate(500,20)">
+<text x="100" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Em rasgo (furo alongado)</text>
+<rect x="0" y="20" width="200" height="70" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="60" y="43" width="90" height="24" rx="12" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.5"/>
+<rect x="30" y="43" width="14" height="24" rx="7" fill="#fff" stroke="#333" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="100" y="108" text-anchor="middle" font-size="10">planta</text>
+<text x="100" y="130" text-anchor="middle" font-size="10">largura ≥ t + 8; comprimento ≤ 10t;</text>
+<text x="100" y="143" text-anchor="middle" font-size="10">extremidades semicirculares</text>
+<text x="100" y="156" text-anchor="middle" font-size="10">uso: chapas de reforço de alma, talas largas</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.6</b> – Solda de filete, de tampão e em rasgo: quando não há borda acessível, o furo na chapa superior vira a "junta".</figcaption>
+</figure>
+
+<h3>9.3.3 Posições de soldagem</h3>
+<p>A posição muda a dificuldade e a qualidade: na <strong>plana</strong> a gravidade ajuda a poça a assentar; na <strong>horizontal</strong> a poça tende a escorrer; na <strong>vertical</strong> o soldador sobe (mais penetração) ou desce (mais rápido, menos penetração — proibido em soldas estruturais de responsabilidade); na <strong>sobre-cabeça</strong> a gravidade trabalha contra e as taxas caem à metade. A AWS codifica: número 1 a 4 (plana, horizontal, vertical, sobre-cabeça) + letra <strong>F</strong> (filete) ou <strong>G</strong> (chanfro); para tubos, 5G (tubo fixo horizontal, soldador contorna) e 6G (tubo fixo a 45°, a mais difícil — quem se qualifica em 6G está qualificado em todas). Projete as peças para que a maior parte das soldas seja feita <strong>na plana (1F/1G)</strong>: gire a peça em fábrica, use posicionadores, evite sobre-cabeça em campo (Figura 9.7).</p>
+<figure class="fig">
+<svg viewBox="0 0 760 262" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_7" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- 1F plana -->
+<g transform="translate(20,20)">
+<text x="60" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">1F / 1G – plana</text>
+<g transform="translate(20,20) rotate(45 40 40)">
+<rect x="0" y="40" width="80" height="12" fill="url(#h9_7)" stroke="#333" stroke-width="1.2"/>
+<rect x="34" y="0" width="12" height="40" fill="url(#h9_7)" stroke="#333" stroke-width="1.2"/>
+<polygon points="46,40 46,24 62,40" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+</g>
+<line x1="60" y1="60" x2="60" y2="20" stroke="#555" stroke-width="1.5" marker-start="url(#s9_7)"/>
+<text x="60" y="135" text-anchor="middle" font-size="10">junta em T girada 45°,</text>
+<text x="60" y="148" text-anchor="middle" font-size="10">eletrodo vertical ("calha")</text>
+<text x="60" y="164" text-anchor="middle" font-size="10" fill="#2e8b57">mais fácil, maior deposição</text>
+</g>
+<!-- 2F horizontal -->
+<g transform="translate(200,20)">
+<text x="60" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">2F / 2G – horizontal</text>
+<rect x="20" y="80" width="80" height="12" fill="url(#h9_7)" stroke="#333" stroke-width="1.2"/>
+<rect x="54" y="30" width="12" height="50" fill="url(#h9_7)" stroke="#333" stroke-width="1.2"/>
+<polygon points="66,80 66,64 82,80" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<line x1="110" y1="50" x2="80" y2="72" stroke="#555" stroke-width="1.5" marker-end="url(#s9_7)"/>
+<text x="60" y="135" text-anchor="middle" font-size="10">eixo da solda horizontal,</text>
+<text x="60" y="148" text-anchor="middle" font-size="10">chapa base horizontal</text>
+<text x="60" y="164" text-anchor="middle" font-size="10" fill="#2e8b57">usual em fábrica (filetes de alma)</text>
+</g>
+<!-- 3F vertical -->
+<g transform="translate(380,20)">
+<text x="60" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">3F / 3G – vertical</text>
+<rect x="30" y="20" width="12" height="90" fill="url(#h9_7)" stroke="#333" stroke-width="1.2"/>
+<rect x="42" y="55" width="50" height="12" fill="url(#h9_7)" stroke="#333" stroke-width="1.2"/>
+<path d="M42 45 L42 55 L52 55 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M42 67 L42 77 L52 67 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<line x1="110" y1="100" x2="110" y2="40" stroke="#555" stroke-width="1.5" marker-end="url(#s9_7)"/>
+<text x="118" y="75" font-size="9">ascendente</text>
+<text x="60" y="135" text-anchor="middle" font-size="10">eixo da solda vertical;</text>
+<text x="60" y="148" text-anchor="middle" font-size="10">ascendente = mais penetração</text>
+<text x="60" y="164" text-anchor="middle" font-size="10" fill="#c0392b">descendente: só se qualificado</text>
+</g>
+<!-- 4F sobre-cabeça -->
+<g transform="translate(560,20)">
+<text x="60" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">4F / 4G – sobre-cabeça</text>
+<rect x="20" y="20" width="80" height="12" fill="url(#h9_7)" stroke="#333" stroke-width="1.2"/>
+<rect x="54" y="32" width="12" height="50" fill="url(#h9_7)" stroke="#333" stroke-width="1.2"/>
+<polygon points="66,32 66,48 82,32" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<line x1="110" y1="70" x2="82" y2="46" stroke="#555" stroke-width="1.5" marker-end="url(#s9_7)"/>
+<text x="60" y="135" text-anchor="middle" font-size="10">poça acima do soldador;</text>
+<text x="60" y="148" text-anchor="middle" font-size="10">taxa cai ≈ 50 %, mais defeitos</text>
+<text x="60" y="164" text-anchor="middle" font-size="10" fill="#c0392b">evitar em campo; EPI reforçado</text>
+</g>
+<!-- tubos -->
+<g transform="translate(30,190)">
+<text x="0" y="14" font-size="11" fill="#333"><tspan font-weight="bold">Tubos:</tspan> 1G = tubo girando (solda sempre na plana); 2G = tubo vertical fixo (solda horizontal); 5G = tubo horizontal fixo</text>
+<text x="0" y="30" font-size="11" fill="#333">(o soldador contorna: plana → vertical → sobre-cabeça); 6G = tubo fixo a 45° (a posição mais difícil, qualifica para todas).</text>
+<text x="0" y="50" font-size="11" fill="#333"><tspan font-weight="bold">Qualificação do soldador:</tspan> 3G + 4G qualificam para todas as posições em chapa; 6G qualifica para tudo.</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.7</b> – Posições de soldagem em chapa (1 a 4, F = filete, G = chanfro) e a nomenclatura para tubos.</figcaption>
+</figure>
+
+<h2>9.4 Simbologia de soldagem (AWS A2.4) <span class="nivel i">Intermediário</span></h2>
+<p>O desenho de fabricação comunica cada solda com um <strong>símbolo padronizado</strong> — a norma de referência é a AWS A2.4 (a ISO 2553 é semelhante, mas inverte a convenção do lado oposto). Aprender a ler e a escrever o símbolo é obrigatório para projetista, detalhista, soldador e inspetor: um símbolo mal escrito gera solda de mais (custo, distorção) ou de menos (risco). A Figura 9.8 mostra a anatomia completa.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<marker id="s9_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="s9_8b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker>
+</defs>
+<!-- símbolo central (grande) -->
+<g transform="translate(180,150)">
+<!-- linha de referência -->
+<line x1="0" y1="0" x2="300" y2="0" stroke="#333" stroke-width="2.5"/>
+<!-- seta -->
+<line x1="300" y1="0" x2="382" y2="49" stroke="#333" stroke-width="2.5" marker-end="url(#s9_8)"/>
+<!-- cauda -->
+<line x1="0" y1="0" x2="-30" y2="-22" stroke="#333" stroke-width="2.5"/>
+<line x1="0" y1="0" x2="-30" y2="22" stroke="#333" stroke-width="2.5"/>
+<text x="-36" y="5" text-anchor="end" font-size="13" font-weight="bold">SMAW E7018</text>
+<!-- símbolo filete lado da seta (abaixo) -->
+<polygon points="150,0 150,26 176,26" fill="none" stroke="#333" stroke-width="2.5"/>
+<!-- símbolo filete lado oposto (acima) -->
+<polygon points="150,0 150,-26 176,-26" fill="none" stroke="#333" stroke-width="2.5"/>
+<!-- dimensões -->
+<text x="120" y="22" text-anchor="middle" font-size="16" font-weight="bold">6</text>
+<text x="120" y="-10" text-anchor="middle" font-size="16" font-weight="bold">6</text>
+<text x="230" y="22" text-anchor="middle" font-size="16" font-weight="bold">50 – 150</text>
+<text x="230" y="-10" text-anchor="middle" font-size="16" font-weight="bold">50 – 150</text>
+<!-- todo em volta -->
+<circle cx="300" cy="0" r="9" fill="none" stroke="#333" stroke-width="2.5"/>
+<!-- solda de campo -->
+<line x1="300" y1="0" x2="300" y2="-40" stroke="#333" stroke-width="2.5"/>
+<polygon points="300,-40 300,-24 322,-32" fill="#333"/>
+</g>
+<!-- chamadas -->
+<g font-size="11" fill="#0b3d91">
+<text x="20" y="40" font-weight="bold">Cauda</text>
+<text x="20" y="54">processo, eletrodo,</text><text x="20" y="67">nota ou EPS (omitir se vazia)</text>
+<line x1="60" y1="72" x2="150" y2="128" stroke="#0b3d91" stroke-width="1" marker-end="url(#s9_8b)"/>
+<text x="190" y="40" font-weight="bold">Linha de referência</text>
+<text x="190" y="54">horizontal; tudo se organiza sobre ela</text>
+<line x1="250" y1="60" x2="250" y2="146" stroke="#0b3d91" stroke-width="1" marker-end="url(#s9_8b)"/>
+<text x="420" y="40" font-weight="bold">Outro lado</text>
+<text x="420" y="54">símbolo ACIMA da linha</text>
+<line x1="440" y1="60" x2="368" y2="132" stroke="#0b3d91" stroke-width="1" marker-end="url(#s9_8b)"/>
+<text x="575" y="250" font-weight="bold">Seta</text>
+<text x="575" y="264">aponta a junta; seta quebrada</text><text x="575" y="277">= lado que recebe o chanfro</text>
+<line x1="573" y1="252" x2="552" y2="204" stroke="#0b3d91" stroke-width="1" marker-end="url(#s9_8b)"/>
+<text x="400" y="262" font-weight="bold">Lado da seta</text>
+<text x="400" y="276">símbolo ABAIXO da linha</text>
+<line x1="420" y1="250" x2="352" y2="182" stroke="#0b3d91" stroke-width="1" marker-end="url(#s9_8b)"/>
+<text x="20" y="250" font-weight="bold">Dimensão da perna (b)</text>
+<text x="20" y="264">à esquerda do símbolo, em mm</text>
+<line x1="182" y1="260" x2="290" y2="176" stroke="#0b3d91" stroke-width="1" marker-end="url(#s9_8b)"/>
+<text x="20" y="300" font-weight="bold">Símbolo básico</text>
+<text x="20" y="314">triângulo = filete (a perna vertical fica à esquerda)</text>
+<line x1="302" y1="308" x2="338" y2="182" stroke="#0b3d91" stroke-width="1" marker-end="url(#s9_8b)"/>
+<text x="20" y="350" font-weight="bold">Comprimento – passo</text>
+<text x="20" y="364">à direita: solda intermitente 50 mm a cada 150 mm</text>
+<text x="20" y="378">(sem número = contínua em toda a junta)</text>
+<line x1="292" y1="360" x2="400" y2="178" stroke="#0b3d91" stroke-width="1" marker-end="url(#s9_8b)"/>
+<text x="575" y="150" font-weight="bold">Todo em volta (○)</text>
+<text x="575" y="164">solda contorna a peça inteira</text>
+<line x1="573" y1="160" x2="492" y2="152" stroke="#0b3d91" stroke-width="1" marker-end="url(#s9_8b)"/>
+<text x="575" y="200" font-weight="bold">Solda de campo (bandeira)</text>
+<text x="575" y="214">executar na obra, não na fábrica</text>
+<line x1="573" y1="205" x2="504" y2="118" stroke="#0b3d91" stroke-width="1" marker-end="url(#s9_8b)"/>
+</g>
+<text x="380" y="395" text-anchor="middle" font-size="11" fill="#555">Leitura do símbolo acima: filete de 6 mm, dos dois lados, intermitente 50 mm a cada 150 mm, todo em volta, em campo, SMAW E7018.</text>
+</svg>
+<figcaption><b>Figura 9.8</b> – Anatomia do símbolo de soldagem AWS A2.4: linha de referência, seta, lado da seta / outro lado, símbolo básico, dimensões, "todo em volta", solda de campo e cauda.</figcaption>
+</figure>
+<table class="tab"><caption>Tabela 9.3 – Símbolos básicos de solda (AWS A2.4) e complementares</caption>
+<thead><tr><th>Símbolo</th><th>Solda</th><th>Como se desenha / dimensões</th><th>Observação</th></tr></thead>
+<tbody>
+<tr><td class="c" style="font-size:16pt">▷</td><td class="l">Filete</td><td class="l">Triângulo retângulo com a perna vertical à esquerda; perna b à esquerda do símbolo; L – P à direita</td><td class="l">O mais usado; pernas desiguais: "6×10"</td></tr>
+<tr><td class="c" style="font-size:14pt">||</td><td class="l">Chanfro reto (sem chanfro)</td><td class="l">Duas barras verticais; abertura de raiz dentro</td><td class="l">Chapas finas (≤ 6 mm), penetração total com abertura</td></tr>
+<tr><td class="c" style="font-size:16pt">V</td><td class="l">Chanfro em V</td><td class="l">V; ângulo acima do V; abertura de raiz dentro; profundidade à esquerda</td><td class="l">Junta de topo típica</td></tr>
+<tr><td class="c" style="font-size:14pt">|/</td><td class="l">Meio V (½V)</td><td class="l">Linha vertical + inclinada; seta quebrada aponta a peça chanfrada</td><td class="l">Junta T ou de topo com um lado preparado</td></tr>
+<tr><td class="c" style="font-size:16pt">Y</td><td class="l">U</td><td class="l">U com ângulo e raio</td><td class="l">Chapas grossas, menos volume</td></tr>
+<tr><td class="c" style="font-size:16pt">⌐</td><td class="l">J</td><td class="l">Meio U; seta quebrada</td><td class="l">Idem, um lado</td></tr>
+<tr><td class="c" style="font-size:16pt">◫</td><td class="l">Tampão / rasgo</td><td class="l">Retângulo; diâmetro/largura à esquerda, comprimento à direita, ângulo acima</td><td class="l">Profundidade de enchimento dentro do símbolo</td></tr>
+<tr><td class="c" style="font-size:12pt">— ⊂</td><td class="l">Solda de contorno (rebaixada, plana, convexa)</td><td class="l">Traço reto, côncavo ou convexo sobre o símbolo; letra G (esmerilhada), M (usinada), C (cinzelada)</td><td class="l">Acabamento exigido, ex.: emendas de mesa em fadiga</td></tr>
+<tr><td class="c" style="font-size:14pt">○</td><td class="l">Todo em volta</td><td class="l">Círculo na junção linha–seta</td><td class="l">Tubos, chapas de base, enrijecedores</td></tr>
+<tr><td class="c" style="font-size:14pt">⚑</td><td class="l">Solda de campo</td><td class="l">Bandeira na junção linha–seta</td><td class="l">Define o que vai para a obra</td></tr>
+<tr><td class="c" style="font-size:14pt">—◯—</td><td class="l">Fusão (melt-through) / cobre-junta</td><td class="l">Semicírculo preenchido do outro lado = penetração pelo verso; retângulo com "CJ" ou "B" = cobre-junta (R = remover)</td><td class="l">Penetração total por um só lado</td></tr>
+<tr><td class="c">CJP / PJP</td><td class="l">Penetração total / parcial</td><td class="l">"CJP" na cauda ou símbolo de chanfro sem profundidade = penetração total; com profundidade (E) entre parênteses = parcial</td><td class="l">AWS D1.1: CJP exige EPS pré-qualificada ou ensaio</td></tr>
+</tbody></table>
+<p>A Figura 9.9 traz seis símbolos frequentes em desenhos de estruturas, cada um ao lado da solda que ele produz. Regras essenciais: (1) o que está <strong>abaixo</strong> da linha de referência é executado no lado apontado pela seta, o que está <strong>acima</strong> é do outro lado; (2) sem indicação de comprimento, a solda é contínua ao longo de toda a junta; (3) a dimensão do filete é a <em>perna</em>, não a garganta; (4) dimensões em mm; (5) duas linhas de referência empilhadas indicam sequência (a mais próxima da seta é a primeira operação).</p>
+<figure class="fig">
+<svg viewBox="0 0 760 440" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_9" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- 1: filete 6 lado da seta contínuo -->
+<g transform="translate(10,15)">
+<text x="115" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">1. Filete 6 mm, lado da seta, contínuo</text>
+<line x1="10" y1="45" x2="90" y2="45" stroke="#333" stroke-width="2"/>
+<line x1="90" y1="45" x2="130" y2="75" stroke="#333" stroke-width="2" marker-end="url(#s9_9)"/>
+<polygon points="50,45 50,63 68,63" fill="none" stroke="#333" stroke-width="2"/>
+<text x="38" y="60" text-anchor="end" font-size="13" font-weight="bold">6</text>
+<!-- solda resultante -->
+<g transform="translate(150,20)">
+<rect x="0" y="60" width="80" height="12" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<rect x="34" y="10" width="12" height="50" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<polygon points="46,60 46,46 60,60" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="65" y="45" font-size="9">6</text>
+</g>
+</g>
+<!-- 2: filete 6 ambos os lados -->
+<g transform="translate(260,15)">
+<text x="115" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">2. Filete 6 mm, ambos os lados</text>
+<line x1="10" y1="45" x2="90" y2="45" stroke="#333" stroke-width="2"/>
+<line x1="90" y1="45" x2="130" y2="75" stroke="#333" stroke-width="2" marker-end="url(#s9_9)"/>
+<polygon points="50,45 50,63 68,63" fill="none" stroke="#333" stroke-width="2"/>
+<polygon points="50,45 50,27 68,27" fill="none" stroke="#333" stroke-width="2"/>
+<text x="38" y="60" text-anchor="end" font-size="13" font-weight="bold">6</text>
+<text x="38" y="38" text-anchor="end" font-size="13" font-weight="bold">6</text>
+<g transform="translate(150,20)">
+<rect x="0" y="60" width="80" height="12" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<rect x="34" y="10" width="12" height="50" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<polygon points="46,60 46,46 60,60" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="34,60 34,46 20,60" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+</g>
+</g>
+<!-- 3: filete intermitente alternado -->
+<g transform="translate(510,15)">
+<text x="115" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">3. Intermitente alternado 5 mm, 50–200</text>
+<line x1="10" y1="45" x2="90" y2="45" stroke="#333" stroke-width="2"/>
+<line x1="90" y1="45" x2="130" y2="75" stroke="#333" stroke-width="2" marker-end="url(#s9_9)"/>
+<polygon points="30,45 30,63 48,63" fill="none" stroke="#333" stroke-width="2"/>
+<polygon points="50,45 50,27 68,27" fill="none" stroke="#333" stroke-width="2"/>
+<text x="20" y="60" text-anchor="end" font-size="12" font-weight="bold">5</text>
+<text x="40" y="38" text-anchor="end" font-size="12" font-weight="bold">5</text>
+<text x="52" y="60" font-size="11" font-weight="bold">50–200</text>
+<text x="72" y="38" font-size="11" font-weight="bold">50–200</text>
+<!-- vista de cima da junta T com trechos alternados -->
+<g transform="translate(140,25)">
+<rect x="0" y="20" width="100" height="10" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<g fill="#e0a86a" stroke="#7a3e00" stroke-width="1">
+<rect x="0" y="14" width="20" height="6"/><rect x="40" y="14" width="20" height="6"/><rect x="80" y="14" width="20" height="6"/>
+<rect x="20" y="30" width="20" height="6"/><rect x="60" y="30" width="20" height="6"/>
+</g>
+<text x="50" y="55" text-anchor="middle" font-size="9">planta: trechos defasados</text>
+</g>
+</g>
+<!-- 4: chanfro V penetração total com cobre-junta -->
+<g transform="translate(10,150)">
+<text x="115" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">4. Chanfro V 60°, abertura 6, cobre-junta, CJP</text>
+<line x1="10" y1="45" x2="90" y2="45" stroke="#333" stroke-width="2"/>
+<line x1="90" y1="45" x2="130" y2="75" stroke="#333" stroke-width="2" marker-end="url(#s9_9)"/>
+<polyline points="48,45 58,62 68,45" fill="none" stroke="#333" stroke-width="2"/>
+<text x="58" y="78" text-anchor="middle" font-size="11" font-weight="bold">60°</text>
+<text x="58" y="42" text-anchor="middle" font-size="10" font-weight="bold">6</text>
+<rect x="52" y="24" width="12" height="8" fill="none" stroke="#333" stroke-width="1.5"/>
+<text x="70" y="32" font-size="9">cobre-junta</text>
+<line x1="10" y1="45" x2="-4" y2="35" stroke="#333" stroke-width="2"/><line x1="10" y1="45" x2="-4" y2="55" stroke="#333" stroke-width="2"/>
+<text x="-4" y="70" font-size="9" font-weight="bold">CJP</text>
+<g transform="translate(150,20)">
+<path d="M0 30 L28 30 L38 50 L38 56 L0 56 Z" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<path d="M90 30 L62 30 L52 50 L52 56 L90 56 Z" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<path d="M28 30 Q45 22 62 30 L52 50 L52 56 L38 56 L38 50 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<rect x="25" y="56" width="40" height="6" fill="#c5ccd8" stroke="#333" stroke-width="1"/>
+</g>
+</g>
+<!-- 5: meio V no lado da seta (T) com filete de reforço do outro lado, campo -->
+<g transform="translate(260,150)">
+<text x="115" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">5. ½V 45° (PJP, E = 8) + filete 6 no verso, campo</text>
+<line x1="10" y1="45" x2="90" y2="45" stroke="#333" stroke-width="2"/>
+<polyline points="90,45 112,45 130,75" fill="none" stroke="#333" stroke-width="2" marker-end="url(#s9_9)"/>
+<polyline points="50,45 50,63 66,45" fill="none" stroke="#333" stroke-width="2"/>
+<text x="42" y="60" text-anchor="end" font-size="11" font-weight="bold">(8)</text>
+<text x="66" y="76" text-anchor="middle" font-size="10" font-weight="bold">45°</text>
+<polygon points="50,45 50,29 66,29" fill="none" stroke="#333" stroke-width="2"/>
+<text x="44" y="40" text-anchor="end" font-size="12" font-weight="bold">6</text>
+<line x1="90" y1="45" x2="90" y2="20" stroke="#333" stroke-width="2"/><polygon points="90,20 90,31 104,25.5" fill="#333"/>
+<g transform="translate(150,10)">
+<rect x="0" y="70" width="90" height="12" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<path d="M40 20 L52 20 L52 70 L40 70 L40 46 L48 46 Z" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<path d="M40 46 L48 46 L40 70 L26 70 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M52 70 L52 58 L64 70 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="45" y="100" text-anchor="middle" font-size="9">seta quebrada = lado chanfrado</text>
+</g>
+</g>
+<!-- 6: todo em volta, tubo -->
+<g transform="translate(510,150)">
+<text x="115" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">6. Filete 8 todo em volta (tubo em chapa)</text>
+<line x1="10" y1="45" x2="90" y2="45" stroke="#333" stroke-width="2"/>
+<line x1="90" y1="45" x2="130" y2="75" stroke="#333" stroke-width="2" marker-end="url(#s9_9)"/>
+<polygon points="50,45 50,63 68,63" fill="none" stroke="#333" stroke-width="2"/>
+<text x="42" y="60" text-anchor="end" font-size="13" font-weight="bold">8</text>
+<circle cx="90" cy="45" r="7" fill="none" stroke="#333" stroke-width="2"/>
+<g transform="translate(150,10)">
+<rect x="0" y="70" width="90" height="12" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<rect x="28" y="10" width="6" height="60" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<rect x="56" y="10" width="6" height="60" fill="url(#h9_9)" stroke="#333" stroke-width="1.2"/>
+<rect x="34" y="10" width="22" height="60" fill="#eef1f6"/>
+<polygon points="28,70 28,58 16,70" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="62,70 62,58 74,70" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="45" y="45" text-anchor="middle" font-size="9">tubo</text>
+</g>
+</g>
+<!-- legenda de leitura -->
+<g transform="translate(10,300)" font-size="11" fill="#333">
+<text x="0" y="0"><tspan font-weight="bold">Como ler:</tspan> abaixo da linha = lado da seta; acima = outro lado. Número à esquerda = perna do filete (mm) ou profundidade</text>
+<text x="0" y="16">do chanfro (entre parênteses: garganta efetiva E de PJP). Números à direita = comprimento – passo (intermitente).</text>
+<text x="0" y="32">Círculo = todo em volta. Bandeira = campo. Cauda = processo / eletrodo / EPS. Seta quebrada = qual peça recebe o chanfro.</text>
+<text x="0" y="56"><tspan font-weight="bold">Erros frequentes:</tspan> (a) filete só de um lado onde se queria dois (o soldador faz o que está desenhado); (b) "6" lido como</text>
+<text x="0" y="72">garganta; (c) esquecer a bandeira e a solda ser feita na fábrica onde não cabe o transporte; (d) omitir o passo em solda</text>
+<text x="0" y="88">intermitente (vira contínua = custo 3×); (e) símbolo ISO 2553 lido como AWS (convenção do lado oposto trocada).</text>
+<text x="0" y="112" fill="#555">Símbolos com a perna vertical do triângulo à esquerda, conforme a AWS A2.4. Em desenhos ISO 2553, o "outro lado" é indicado</text>
+<text x="0" y="126" fill="#555">por uma linha tracejada paralela à linha de referência.</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.9</b> – Seis símbolos de solda frequentes em estruturas e, ao lado de cada um, a solda que eles produzem.</figcaption>
+</figure>
+
+
+<h2>9.5 Geometria e dimensões do filete <span class="nivel i">Intermediário</span></h2>
+<h3>9.5.1 Perna, garganta e área efetiva</h3>
+<p>Num filete de pernas iguais b, a seção resistente é a <strong>garganta</strong> a — a menor distância da raiz à face teórica da solda (hipotenusa do triângulo): a = b · cos 45° = <strong>0,707·b</strong>. É na garganta que a solda rompe, por cisalhamento, qualquer que seja a direção da força. O reforço convexo não conta; a concavidade excessiva reduz a garganta e é defeito. A área efetiva é A<sub>w</sub> = a · L<sub>ef</sub> (Figura 9.10). No arco submerso, a NBR 8800 permite garganta maior (a = b para b ≤ 10 mm; a = 0,707b + 3 mm acima) pela penetração profunda garantida.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_10" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- filete grande com cotas -->
+<g transform="translate(30,20)">
+<text x="120" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Filete de pernas iguais</text>
+<rect x="0" y="170" width="220" height="20" fill="url(#h9_10)" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="20" width="20" height="150" fill="url(#h9_10)" stroke="#333" stroke-width="1.5"/>
+<!-- filete (com leve convexidade) -->
+<path d="M60 170 L60 70 Q120 100 160 170 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.5"/>
+<!-- face teórica -->
+<line x1="60" y1="70" x2="160" y2="170" stroke="#7a3e00" stroke-width="1" stroke-dasharray="4 3"/>
+<!-- garganta -->
+<line x1="60" y1="170" x2="110" y2="120" stroke="#c0392b" stroke-width="2"/>
+<text x="112" y="132" font-size="12" fill="#c0392b" font-weight="bold">a = 0,707·b</text>
+<text x="112" y="146" font-size="10" fill="#c0392b">(garganta)</text>
+<!-- cotas pernas -->
+<line x1="25" y1="70" x2="25" y2="170" stroke="#555" stroke-width="1" marker-start="url(#s9_10)" marker-end="url(#s9_10)"/>
+<line x1="20" y1="70" x2="60" y2="70" stroke="#555" stroke-width="1"/>
+<text x="18" y="124" text-anchor="end" font-size="12">b</text>
+<line x1="60" y1="205" x2="160" y2="205" stroke="#555" stroke-width="1" marker-start="url(#s9_10)" marker-end="url(#s9_10)"/>
+<line x1="160" y1="172" x2="160" y2="210" stroke="#555" stroke-width="1"/><line x1="60" y1="192" x2="60" y2="210" stroke="#555" stroke-width="1"/>
+<text x="110" y="222" text-anchor="middle" font-size="12">b (perna)</text>
+<text x="100" y="82" font-size="10" fill="#7a3e00">reforço (não conta)</text>
+<line x1="98" y1="85" x2="90" y2="92" stroke="#7a3e00" stroke-width="1"/>
+<text x="64" y="188" font-size="10" fill="#333">raiz</text>
+<text x="180" y="160" font-size="10" fill="#333">margem</text>
+</g>
+<!-- perfis: convexo, plano, côncavo, garganta efetiva -->
+<g transform="translate(320,20)">
+<text x="190" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Perfil do filete e garganta efetiva</text>
+<g transform="translate(0,20)">
+<rect x="0" y="90" width="100" height="12" fill="url(#h9_10)" stroke="#333" stroke-width="1.2"/>
+<rect x="20" y="10" width="12" height="80" fill="url(#h9_10)" stroke="#333" stroke-width="1.2"/>
+<path d="M32 90 L32 50 Q70 50 72 90 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.2"/>
+<line x1="32" y1="90" x2="52" y2="70" stroke="#c0392b" stroke-width="1.5"/>
+<text x="55" y="120" text-anchor="middle" font-size="10">convexo (usual)</text>
+<text x="55" y="133" text-anchor="middle" font-size="10">a = 0,707·b</text>
+</g>
+<g transform="translate(130,20)">
+<rect x="0" y="90" width="100" height="12" fill="url(#h9_10)" stroke="#333" stroke-width="1.2"/>
+<rect x="20" y="10" width="12" height="80" fill="url(#h9_10)" stroke="#333" stroke-width="1.2"/>
+<path d="M32 90 L32 50 Q40 76 72 90 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.2"/>
+<line x1="32" y1="90" x2="44" y2="78" stroke="#c0392b" stroke-width="1.5"/>
+<text x="55" y="120" text-anchor="middle" font-size="10">côncavo</text>
+<text x="55" y="133" text-anchor="middle" font-size="10" fill="#c0392b">garganta reduzida!</text>
+</g>
+<g transform="translate(260,20)">
+<rect x="0" y="90" width="100" height="12" fill="url(#h9_10)" stroke="#333" stroke-width="1.2"/>
+<rect x="20" y="10" width="12" height="80" fill="url(#h9_10)" stroke="#333" stroke-width="1.2"/>
+<path d="M32 90 L32 40 L82 90 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.2"/>
+<path d="M32 90 L32 98 L40 90 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.2"/>
+<line x1="32" y1="90" x2="57" y2="65" stroke="#c0392b" stroke-width="1.5"/>
+<text x="55" y="120" text-anchor="middle" font-size="10">SAW: penetração</text>
+<text x="55" y="133" text-anchor="middle" font-size="10">na raiz → a = b (b ≤ 10)</text>
+</g>
+<text x="190" y="190" text-anchor="middle" font-size="11" fill="#333">Pernas desiguais b₁ × b₂: a = b₁·b₂ / √(b₁² + b₂²). Área efetiva A<tspan baseline-shift="sub" font-size="8">w</tspan> = a · L<tspan baseline-shift="sub" font-size="8">ef</tspan>.</text>
+<text x="190" y="208" text-anchor="middle" font-size="11" fill="#333">Metal base: A<tspan baseline-shift="sub" font-size="8">MB</tspan> = b · L<tspan baseline-shift="sub" font-size="8">ef</tspan> (na perna, em cada chapa).</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.10</b> – Perna b, garganta a = 0,707·b e perfis de filete; a concavidade reduz a garganta efetiva.</figcaption>
+</figure>
+
+<h3>9.5.2 Dimensões mínimas e máximas, comprimentos e retornos</h3>
+<p>A NBR 8800 (Tabela 10) fixa a <strong>perna mínima</strong> em função da <em>espessura da chapa mais grossa</em> da junta — não por resistência, mas para que o cordão pequeno em chapa grossa não resfrie rápido demais e trinque (Tabela 9.4). A <strong>perna máxima</strong> ao longo de uma borda é limitada para que a solda não "coma" a borda e o inspetor consiga ver a margem: b ≤ t para t &lt; 6,35 mm; b ≤ t − 2 mm para t ≥ 6,35 mm (salvo indicação explícita de solda até a borda). Além disso (Figura 9.11):</p>
+<ul>
+<li><strong>Comprimento mínimo</strong> de um filete: 4b e nunca menor que 40 mm (senão o cordão é só cratera e início);</li>
+<li><strong>Comprimento efetivo</strong>: para L ≤ 100b, L<sub>ef</sub> = L; para 100b &lt; L ≤ 300b, L<sub>ef</sub> = β·L com β = 1,2 − 0,002·(L/b) ≤ 1,0; para L &gt; 300b, L<sub>ef</sub> = 180b (a distribuição de tensões deixa de ser uniforme em cordões longos);</li>
+<li><strong>Retornos de extremidade</strong>: em ligações sujeitas a excentricidade ou fadiga (cantoneiras de ligação, mísulas), o filete deve dobrar a esquina e prosseguir por ≥ 2b — evita a cratera na ponta, onde a tensão é máxima;</li>
+<li>Em juntas sobrepostas, a sobreposição mínima é 5t (t = chapa mais fina) e ≥ 25 mm; soldas longitudinais em barra chata tracionada devem ter L ≥ largura da barra (distância entre as soldas), para o fluxo de tensões alcançar toda a seção;</li>
+<li><strong>Solda intermitente</strong>: trechos de comprimento L ≥ 4b (≥ 40 mm) com passo P; o símbolo indica "L – P". Usada em composição de perfis pouco solicitados, em ligação de enrijecedores e reforços. Não usar em ambiente corrosivo (frestas) nem sob fadiga.</li>
+</ul>
+<table class="tab"><caption>Tabela 9.4 – Perna mínima e máxima de filete (NBR 8800, Tabela 10 e item 6.2.6)</caption><thead><tr><th>Espessura t da chapa mais grossa da junta (mm)</th><th>Perna mínima b<sub>min</sub> (mm)</th><th>Perna máxima ao longo da borda de chapa de espessura t</th><th>Comprimento mínimo</th></tr></thead><tbody><tr><td class="c">t ≤ 6,35</td><td class="c"><b>3</b></td><td class="c">b ≤ t (t &lt; 6,35)</td><td class="c" rowspan="4">4b e ≥ 40 mm; intermitente: idem por trecho</td></tr><tr><td class="c">6,35 &lt; t ≤ 12,7</td><td class="c"><b>5</b></td><td class="c">b ≤ t − 2 (t ≥ 6,35)</td></tr><tr><td class="c">12,7 &lt; t ≤ 19</td><td class="c"><b>6</b></td><td class="c">idem</td></tr><tr><td class="c">t &gt; 19</td><td class="c"><b>8</b></td><td class="c">idem</td></tr><tr><td class="l" colspan="4">A perna mínima não precisa exceder a espessura da chapa mais fina, desde que se garanta pré-aquecimento para a mais grossa. Um passe único de SMAW deposita no máximo ≈ 8 mm (plana) ou 6 mm (vertical/sobre-cabeça); pernas maiores exigem múltiplos passes.</td></tr></tbody></table>
+<figure class="fig">
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_11" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="s9_11r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<!-- (a) sobreposta com comprimentos mínimos -->
+<g transform="translate(15,20)">
+<text x="120" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(a) Junta sobreposta – planta</text>
+<rect x="0" y="40" width="150" height="110" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="90" y="55" width="150" height="80" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="90" y="55" width="60" height="6" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<rect x="90" y="129" width="60" height="6" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<line x1="90" y1="165" x2="150" y2="165" stroke="#555" stroke-width="1" marker-start="url(#s9_11)" marker-end="url(#s9_11)"/>
+<text x="120" y="180" text-anchor="middle" font-size="10">L ≥ w (largura) e ≥ 4b, ≥ 40</text>
+<line x1="255" y1="55" x2="255" y2="135" stroke="#555" stroke-width="1" marker-start="url(#s9_11)" marker-end="url(#s9_11)"/>
+<text x="260" y="99" font-size="10">w</text>
+<line x1="150" y1="20" x2="90" y2="20" stroke="#555" stroke-width="1" marker-start="url(#s9_11)" marker-end="url(#s9_11)"/>
+<text x="120" y="16" text-anchor="middle" font-size="10">sobreposição ≥ 5t, ≥ 25</text>
+<line x1="240" y1="95" x2="285" y2="95" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s9_11r)"/>
+<text x="0" y="200" font-size="10" fill="#333">L &gt; 100b: L<tspan baseline-shift="sub" font-size="8">ef</tspan> = (1,2 − 0,002·L/b)·L; L &gt; 300b: L<tspan baseline-shift="sub" font-size="8">ef</tspan> = 180b</text>
+</g>
+<!-- (b) retorno de extremidade -->
+<g transform="translate(330,20)">
+<text x="100" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(b) Retorno de extremidade</text>
+<!-- cantoneira em vista com solda vertical e retorno -->
+<rect x="20" y="30" width="20" height="160" fill="url(#h9_11)" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="50" width="70" height="120" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="50" width="6" height="120" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<rect x="40" y="50" width="26" height="6" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<rect x="40" y="164" width="26" height="6" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<line x1="40" y1="40" x2="66" y2="40" stroke="#555" stroke-width="1" marker-start="url(#s9_11)" marker-end="url(#s9_11)"/>
+<text x="53" y="34" text-anchor="middle" font-size="10">≥ 2b</text>
+<text x="120" y="90" font-size="10">cantoneira</text>
+<text x="120" y="104" font-size="10">de ligação</text>
+<text x="120" y="130" font-size="10">retorno evita</text>
+<text x="120" y="143" font-size="10">cratera na ponta</text>
+<text x="120" y="156" font-size="10">(tensão máxima)</text>
+<line x1="75" y1="190" x2="75" y2="215" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s9_11r)"/>
+<text x="85" y="210" font-size="11" fill="#c0392b">V</text>
+</g>
+<!-- (c) intermitente -->
+<g transform="translate(540,20)">
+<text x="105" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(c) Solda intermitente</text>
+<rect x="0" y="80" width="210" height="14" fill="url(#h9_11)" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="40" width="210" height="40" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<g fill="#e0a86a" stroke="#7a3e00" stroke-width="1">
+<rect x="10" y="74" width="40" height="6"/><rect x="90" y="74" width="40" height="6"/><rect x="170" y="74" width="40" height="6"/>
+</g>
+<line x1="10" y1="110" x2="50" y2="110" stroke="#555" stroke-width="1" marker-start="url(#s9_11)" marker-end="url(#s9_11)"/>
+<text x="30" y="125" text-anchor="middle" font-size="10">L ≥ 4b, 40</text>
+<line x1="10" y1="140" x2="90" y2="140" stroke="#555" stroke-width="1" marker-start="url(#s9_11)" marker-end="url(#s9_11)"/>
+<text x="50" y="155" text-anchor="middle" font-size="10">passo P</text>
+<text x="105" y="185" text-anchor="middle" font-size="10">símbolo: b ▷ L – P</text>
+<text x="105" y="200" text-anchor="middle" font-size="10">capacidade ∝ L/P</text>
+<text x="105" y="215" text-anchor="middle" font-size="10" fill="#c0392b">não usar em corrosão/fadiga</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.11</b> – Comprimentos mínimos em junta sobreposta, retorno de extremidade em cantoneira de ligação e solda intermitente (L – P).</figcaption>
+</figure>
+
+<h2>9.6 Resistência das soldas pela NBR 8800 <span class="nivel i">Intermediário</span></h2>
+<h3>9.6.1 Solda de filete</h3>
+<p>A NBR 8800 (Tabela 8) verifica dois estados-limites: ruptura do metal da solda na garganta e escoamento do metal base na perna. Em kN e cm, com f<sub>w</sub> = 48,5 kN/cm² (E70) e γ<sub>w2</sub> = 1,35:</p>
+<div class="formula">F<sub>w,Rd</sub> = 0,6 · f<sub>w</sub> · A<sub>w</sub> / γ<sub>w2</sub> = 0,6 · f<sub>w</sub> · (0,707·b) · L<sub>ef</sub> / 1,35 &nbsp;&nbsp;(metal da solda)<span class="n">(9.1)</span></div>
+<div class="formula">F<sub>MB,Rd</sub> = 0,6 · f<sub>y</sub> · A<sub>MB</sub> / γ<sub>a1</sub> = 0,6 · f<sub>y</sub> · b · L<sub>ef</sub> / 1,10 &nbsp;&nbsp;(metal base, em cada chapa)<span class="n">(9.2)</span></div>
+<p>Adota-se o menor dos dois. Para <strong>aço A36 com E70, o metal base governa por pequena margem</strong> (13,6 kN/cm² × b contra 15,2 × b), o que a Tabela 9.5 deixa claro; para A572 (f<sub>y</sub> = 34,5) o metal da solda passa a governar. A NBR 8800 permite ainda majorar a resistência do filete em (1 + 0,5·sen<sup>1,5</sup>θ) quando a força faz ângulo θ com o eixo da solda (filete transversal: +50 %) — recurso útil em chapas de topo e mísulas, mas que exige compatibilidade de deformação quando se misturam filetes longitudinais e transversais; neste manual usaremos a expressão básica, a favor da segurança.</p>
+<table class="tab"><caption>Tabela 9.5 – Resistência de cálculo de filete por centímetro de solda (kN/cm), NBR 8800, γ<sub>w2</sub> = 1,35, γ<sub>a1</sub> = 1,10 (calculado)</caption><thead><tr><th rowspan="2">Perna b (mm)</th><th rowspan="2">Garganta a (cm)</th><th colspan="2">Metal da solda 0,6·f<sub>w</sub>·a/1,35</th><th colspan="2">Metal base 0,6·f<sub>y</sub>·b/1,10</th><th colspan="3">Resistência adotada (menor)</th><th rowspan="2">Passes SMAW (plana)</th></tr><tr><th>E70 (48,5)</th><th>E60 (41,5)</th><th>A36 (f<sub>y</sub> = 25)</th><th>A572-50 (34,5)</th><th>A36 + E70</th><th>A36 + E60</th><th>A572-50 + E70</th></tr></thead><tbody><tr><td class="c"><b>3</b></td><td class="c">0,212</td><td class="c">4,57</td><td class="c">3,91</td><td class="c">4,09</td><td class="c">5,65</td><td class="c"><b>4,09</b></td><td class="c"><b>3,91</b></td><td class="c"><b>4,57</b></td><td class="c">1</td></tr><tr><td class="c"><b>4</b></td><td class="c">0,283</td><td class="c">6,10</td><td class="c">5,22</td><td class="c">5,45</td><td class="c">7,53</td><td class="c"><b>5,45</b></td><td class="c"><b>5,22</b></td><td class="c"><b>6,10</b></td><td class="c">1</td></tr><tr><td class="c"><b>5</b></td><td class="c">0,353</td><td class="c">7,62</td><td class="c">6,52</td><td class="c">6,82</td><td class="c">9,41</td><td class="c"><b>6,82</b></td><td class="c"><b>6,52</b></td><td class="c"><b>7,62</b></td><td class="c">1</td></tr><tr><td class="c"><b>6</b></td><td class="c">0,424</td><td class="c">9,14</td><td class="c">7,82</td><td class="c">8,18</td><td class="c">11,29</td><td class="c"><b>8,18</b></td><td class="c"><b>7,82</b></td><td class="c"><b>9,14</b></td><td class="c">1</td></tr><tr><td class="c"><b>8</b></td><td class="c">0,566</td><td class="c">12,19</td><td class="c">10,43</td><td class="c">10,91</td><td class="c">15,05</td><td class="c"><b>10,91</b></td><td class="c"><b>10,43</b></td><td class="c"><b>12,19</b></td><td class="c">1</td></tr><tr><td class="c"><b>10</b></td><td class="c">0,707</td><td class="c">15,24</td><td class="c">13,04</td><td class="c">13,64</td><td class="c">18,82</td><td class="c"><b>13,64</b></td><td class="c"><b>13,04</b></td><td class="c"><b>15,24</b></td><td class="c">3</td></tr><tr><td class="c"><b>12</b></td><td class="c">0,848</td><td class="c">18,29</td><td class="c">15,65</td><td class="c">16,36</td><td class="c">22,58</td><td class="c"><b>16,36</b></td><td class="c"><b>15,65</b></td><td class="c"><b>18,29</b></td><td class="c">4–6</td></tr></tbody></table><p style="font-size:9pt;color:#555;margin-top:-2mm">Valores por cordão. Para comprimentos L &gt; 100b, multiplique por β = 1,2 − 0,002·L/b. A resistência do metal base deve ser verificada em cada uma das duas chapas (a de menor f<sub>y</sub> governa). Filete carregado transversalmente pode ser majorado em até 1,5× pela NBR 8800 (1 + 0,5·sen<sup>1,5</sup>θ), não aplicado aqui.</p>
+<div class="box dica"><div class="tit">Regra de bolso – filete em A36/E70</div>
+<p><strong>≈ 1,36 kN por cm de solda para cada mm de perna</strong> (metal base governando). Filete de 5 mm → 6,8 kN/cm; 6 mm → 8,2 kN/cm; 8 mm → 10,9 kN/cm. Para transmitir 100 kN com filete de 6 mm são necessários ≈ 12,5 cm de solda (por exemplo, dois cordões de 65 mm). Perna acima de 8 mm exige vários passes (8 mm ≈ 1 passe grande ou 2; 10 mm = 3 passes; 12 mm = 4–6 passes): o custo cresce com b², não com b — prefira cordões menores e mais longos.</p></div>
+<h3>9.6.2 Soldas de penetração total e parcial</h3>
+<p>A solda de <strong>penetração total</strong> com eletrodo compatível tem resistência igual à do metal base: não se verifica a solda, verifica-se a chapa (tração, compressão, cisalhamento na seção). É a solução para emendas de mesas, chapas de topo de ligações rígidas e juntas sob fadiga — mas custa 3 a 5 vezes mais que o filete (chanfro, passes múltiplos, goivagem, ensaio UT). Na solda de <strong>penetração parcial</strong>, a garganta efetiva E é a profundidade do chanfro (menos 3 mm em chanfros V/½V de 45° soldados por SMAW, em posição vertical ou sobre-cabeça); a resistência à tração normal à solda é 0,6·f<sub>w</sub>·E·L/γ<sub>w2</sub> (metal da solda) e f<sub>y</sub>·E·L/γ<sub>a1</sub> (metal base); em compressão, usa-se o metal base. A NBR 8800 não permite penetração parcial em juntas de topo sob tração cíclica.</p>
+<h3>9.6.3 Excentricidade e solda sob torção – método elástico</h3>
+<p>Quando a força não passa pelo centro de gravidade do grupo de soldas (mísulas, chapas de cisalhamento, suportes), o grupo recebe força + momento. No <strong>método elástico</strong> (conservador, simples), trata-se a solda como uma linha de espessura unitária: calcula-se a força por unidade de comprimento devida ao cortante direto (f<sub>v</sub> = V / L<sub>total</sub>), a devida ao momento (f<sub>m</sub> = M · r / I<sub>p</sub>, com I<sub>p</sub> = momento polar de inércia da linha de solda, para torção no plano; ou f<sub>m</sub> = M / W<sub>linha</sub> para flexão fora do plano), soma-se vetorialmente no ponto mais distante e compara-se com a resistência por cm (Figura 9.12). A NBR 8800 aceita também o método do centro instantâneo de rotação (mais econômico, tabelas do AISC).</p>
+<figure class="fig p90">
+<svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_12" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="s9_12r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="s9_12b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker>
+</defs>
+<!-- (a) torção no plano: chapa soldada em C -->
+<g transform="translate(20,20)">
+<text x="150" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(a) Torção no plano da solda</text>
+<rect x="0" y="20" width="24" height="200" fill="url(#h9_12)" stroke="#333" stroke-width="1.5"/>
+<rect x="24" y="60" width="120" height="120" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- soldas em C: lado vertical + duas horizontais -->
+<rect x="24" y="60" width="6" height="120" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<rect x="24" y="60" width="70" height="6" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<rect x="24" y="174" width="70" height="6" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- CG -->
+<circle cx="47" cy="120" r="3" fill="#0b3d91"/>
+<text x="52" y="116" font-size="10" fill="#0b3d91">CG das soldas</text>
+<!-- força -->
+<line x1="130" y1="90" x2="130" y2="150" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s9_12r)"/>
+<text x="136" y="125" font-size="12" fill="#c0392b">P</text>
+<line x1="47" y1="200" x2="130" y2="200" stroke="#555" stroke-width="1" marker-start="url(#s9_12)" marker-end="url(#s9_12)"/>
+<text x="88" y="215" text-anchor="middle" font-size="10">e</text>
+<!-- momento -->
+<path d="M60 105 A18 18 0 1 1 60 135" fill="none" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s9_12r)"/>
+<text x="75" y="145" font-size="10" fill="#c0392b">M = P·e</text>
+<!-- componentes no ponto crítico -->
+<circle cx="94" cy="63" r="3" fill="#0b3d91"/>
+<line x1="94" y1="63" x2="94" y2="40" stroke="#0b3d91" stroke-width="1.5" marker-end="url(#s9_12b)"/>
+<line x1="94" y1="63" x2="120" y2="42" stroke="#0b3d91" stroke-width="1.5" marker-end="url(#s9_12b)"/>
+<text x="98" y="36" font-size="9" fill="#0b3d91">f<tspan baseline-shift="sub" font-size="7">v</tspan></text>
+<text x="124" y="46" font-size="9" fill="#0b3d91">f<tspan baseline-shift="sub" font-size="7">m</tspan> = M·r/I<tspan baseline-shift="sub" font-size="7">p</tspan></text>
+<text x="150" y="235" text-anchor="middle" font-size="10">ponto crítico: extremidade mais distante do CG; f<tspan baseline-shift="sub" font-size="8">res</tspan> = soma vetorial</text>
+</g>
+<!-- (b) flexão fora do plano -->
+<g transform="translate(400,20)">
+<text x="150" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(b) Flexão fora do plano (mísula)</text>
+<rect x="0" y="20" width="24" height="200" fill="url(#h9_12)" stroke="#333" stroke-width="1.5"/>
+<!-- mísula: chapa vertical soldada de topo por filetes dos dois lados (vista lateral) -->
+<path d="M24 60 L160 60 L160 100 L24 180 Z" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<line x1="24" y1="60" x2="24" y2="180" stroke="#7a3e00" stroke-width="6"/>
+<line x1="150" y1="60" x2="150" y2="40" stroke="#c0392b" stroke-width="2.5" marker-start="url(#s9_12r)"/>
+<text x="158" y="50" font-size="12" fill="#c0392b">V</text>
+<line x1="24" y1="30" x2="150" y2="30" stroke="#555" stroke-width="1" marker-start="url(#s9_12)" marker-end="url(#s9_12)"/>
+<text x="87" y="26" text-anchor="middle" font-size="10">e</text>
+<!-- diagrama de tensões na solda -->
+<g transform="translate(200,60)">
+<line x1="0" y1="0" x2="0" y2="120" stroke="#333" stroke-width="1"/>
+<polygon points="0,0 40,0 0,60" fill="#c0392b" opacity=".35"/>
+<polygon points="0,60 -40,120 0,120" fill="#0b3d91" opacity=".35"/>
+<text x="46" y="10" font-size="9" fill="#c0392b">tração</text>
+<text x="-40" y="135" font-size="9" fill="#0b3d91">compressão</text>
+<text x="10" y="90" font-size="9">f<tspan baseline-shift="sub" font-size="7">m</tspan> = M / W</text>
+<text x="10" y="103" font-size="9">W = 2·L²/6 (2 cordões)</text>
+</g>
+<text x="150" y="235" text-anchor="middle" font-size="10">f<tspan baseline-shift="sub" font-size="8">v</tspan> = V/(2L); f<tspan baseline-shift="sub" font-size="8">m</tspan> = V·e/(2L²/6); f<tspan baseline-shift="sub" font-size="8">res</tspan> = √(f<tspan baseline-shift="sub" font-size="8">v</tspan>² + f<tspan baseline-shift="sub" font-size="8">m</tspan>²) ≤ R<tspan baseline-shift="sub" font-size="8">d</tspan>/cm</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.12</b> – Método elástico para soldas excêntricas: torção no plano (grupo em C) e flexão fora do plano (mísula com dois cordões verticais).</figcaption>
+</figure>
+
+<h2>9.7 Exemplos resolvidos <span class="nivel a">Avançado</span></h2>
+<div class="box exemplo"><div class="tit">Exemplo 9.1 – Cantoneira L 76×76×7,9 tracionada (N<sub>Sd</sub> = 150 kN) soldada a chapa gusset de 9,5 mm com filetes longitudinais; E70, aço A36</div>
+<p><strong>Dados.</strong> Cantoneira: A<sub>g</sub> = 11,48 cm²; distância do CG à face da aba ligada (talão) e<sub>c</sub> = 2,2 cm; espessura 7,9 mm. Gusset 9,5 mm. Só soldas longitudinais (nas duas bordas da aba), sem solda transversal na ponta.</p>
+<div class="passo"><b>1. Escolha da perna.</b> Mínima (chapa mais grossa 9,5 mm → 6,35 &lt; t ≤ 12,7): b<sub>min</sub> = 5 mm. Máxima na borda da cantoneira (t = 7,9 ≥ 6,35): b<sub>max</sub> = 7,9 − 2 = 5,9 mm → <strong>b = 5 mm</strong>.</div>
+<div class="passo"><b>2. Resistência por cm.</b> Metal da solda: 0,6 · 48,5 · 0,3535 / 1,35 = 7,62 kN/cm. Metal base (A36, perna 0,5 cm): 0,6 · 25 · 0,5 / 1,10 = <strong>6,82 kN/cm</strong> ← governa.</div>
+<div class="passo"><b>3. Comprimento total.</b> L<sub>total</sub> = 150 / 6,82 = <strong>22,0 cm</strong>.</div>
+<div class="passo"><b>4. Balanceamento no CG</b> (para evitar momento na solda – obrigatório pela NBR 8800 em barras sob fadiga; recomendável sempre): as duas soldas devem ter resultante passando pelo CG da cantoneira (Figura 9.13).<br>
+Solda no talão (mais perto do CG): L₁ = L · (b − e<sub>c</sub>)/b = 22,0 · (7,6 − 2,2)/7,6 = 15,6 cm → <strong>adotar 16 cm</strong>.<br>
+Solda na ponta da aba: L₂ = L · e<sub>c</sub>/b = 22,0 · 2,2/7,6 = 6,4 cm → <strong>adotar 7 cm</strong> (≥ 4b = 2 cm e ≥ 4 cm ✓; ≥ largura da aba 7,6? A NBR exige L ≥ w apenas para chapas com duas soldas longitudinais; para cantoneira, adota-se ≥ 7,6 quando possível → <strong>use 8 cm</strong>).</div>
+<div class="passo"><b>5. Verificação da barra.</b> Área líquida efetiva com C<sub>t</sub> = 1 − e<sub>c</sub>/l<sub>c</sub> = 1 − 2,2/16 = 0,86: N<sub>t,Rd</sub> = 0,86 · 11,48 · 40 / 1,35 = 293 kN ✓; escoamento: 11,48 · 25/1,10 = 261 kN ✓ (≥ 150).</div>
+<div class="passo"><b>6. Verificação do gusset</b> (metal base na perna): mesma perna, mesmo f<sub>y</sub> → 6,82 kN/cm ✓; cisalhamento do gusset ao longo das soldas e seção de Whitmore (largura 2 · L₁ · tg 30° + 7,6 ≈ 26 cm × 0,95 cm): 24,7 cm² · 25/1,10 = 561 kN ✓.</div>
+<p><strong>Resultado:</strong> filete de 5 mm, 160 mm no talão e 80 mm na ponta da aba; total 24 cm (capacidade 164 kN). Símbolo: 5 ▷ com comprimentos indicados em cada cordão. Se houvesse solda transversal na ponta (7,6 cm × 6,82 = 52 kN), as longitudinais poderiam ser encurtadas, redistribuindo o balanceamento.</p></div>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_13" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_13" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="s9_13r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<g transform="translate(20,25)">
+<text x="250" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Aba ligada vista de frente (escala ≈ 1:7)</text>
+<rect x="0" y="20" width="330" height="180" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="10" y="192" font-size="10">gusset 9,5 mm</text>
+<!-- cantoneira (aba ligada) -->
+<rect x="60" y="60" width="500" height="114" fill="#c5ccd8" stroke="#333" stroke-width="1.5"/>
+<rect x="60" y="60" width="500" height="6" fill="#9aa4b2" stroke="#333" stroke-width="1"/>
+<text x="420" y="140" font-size="11">L 76×76×7,9</text>
+<text x="420" y="79" font-size="9" fill="#333">talão (aba de fora, dobrada)</text>
+<text x="420" y="185" font-size="9" fill="#333">ponta da aba</text>
+<!-- soldas -->
+<rect x="60" y="54" width="240" height="7" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<rect x="60" y="173" width="120" height="7" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- CG -->
+<line x1="40" y1="93" x2="640" y2="93" stroke="#555" stroke-width=".8" stroke-dasharray="10 3 2 3"/>
+<text x="240" y="89" font-size="10" fill="#333">eixo do CG da cantoneira</text>
+<line x1="560" y1="93" x2="630" y2="93" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s9_13r)"/>
+<text x="556" y="112" text-anchor="end" fill="#c0392b" font-size="12">N<tspan baseline-shift="sub" font-size="9">Sd</tspan> = 150 kN</text>
+<!-- cotas -->
+<line x1="60" y1="40" x2="300" y2="40" stroke="#555" stroke-width="1" marker-start="url(#s9_13)" marker-end="url(#s9_13)"/>
+<line x1="300" y1="35" x2="300" y2="52" stroke="#555" stroke-width="1"/>
+<text x="180" y="32" text-anchor="middle" font-size="10">L₁ = 160 (filete 5 mm) – lado do talão</text>
+<line x1="60" y1="200" x2="180" y2="200" stroke="#555" stroke-width="1" marker-start="url(#s9_13)" marker-end="url(#s9_13)"/>
+<line x1="180" y1="182" x2="180" y2="205" stroke="#555" stroke-width="1"/>
+<text x="120" y="216" text-anchor="middle" font-size="10">L₂ = 80 – lado da ponta</text>
+<line x1="585" y1="60" x2="585" y2="93" stroke="#555" stroke-width="1" marker-start="url(#s9_13)" marker-end="url(#s9_13)"/>
+<line x1="585" y1="93" x2="585" y2="174" stroke="#555" stroke-width="1" marker-start="url(#s9_13)" marker-end="url(#s9_13)"/>
+<line x1="562" y1="60" x2="590" y2="60" stroke="#555" stroke-width="1"/><line x1="562" y1="174" x2="590" y2="174" stroke="#555" stroke-width="1"/>
+<text x="592" y="80" font-size="10">e<tspan baseline-shift="sub" font-size="8">c</tspan> = 22</text>
+<text x="592" y="138" font-size="10">54</text>
+<text x="250" y="216" font-size="10" fill="#0b3d91">balanceamento L₁·22 = L₂·54 (cálculo: 156 e 64 mm; adotados 160 e 80)</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.13</b> – Exemplo 9.1: filetes longitudinais balanceados em relação ao centro de gravidade da cantoneira (o cordão do lado do talão é o mais longo).</figcaption>
+</figure>
+
+<div class="box exemplo"><div class="tit">Exemplo 9.2 – Mísula (consolo) em chapa de 12,5 mm soldada à mesa do pilar com dois filetes verticais de 200 mm; V<sub>Sd</sub> = 60 kN a e = 150 mm; E70, A36</div>
+<p><strong>Modelo.</strong> Dois cordões verticais (um de cada lado da chapa), L = 20 cm cada, tratados como linhas (Figura 9.14). Momento fora do plano M = 60 · 15 = 900 kN·cm.</p>
+<div class="passo"><b>1. Força por cm devida ao cortante.</b> f<sub>v</sub> = V / (2L) = 60 / 40 = 1,50 kN/cm.</div>
+<div class="passo"><b>2. Força por cm devida ao momento</b> (linha de solda como seção retangular de altura L, 2 cordões): W = 2 · L²/6 = 2 · 400/6 = 133,3 cm²; f<sub>m</sub> = M / W = 900 / 133,3 = 6,75 kN/cm (na extremidade superior, tração; inferior, compressão).</div>
+<div class="passo"><b>3. Resultante.</b> f<sub>res</sub> = √(1,50² + 6,75²) = <strong>6,91 kN/cm</strong>.</div>
+<div class="passo"><b>4. Perna necessária.</b> Metal da solda: b ≥ 6,91 / (0,6 · 48,5 · 0,707/1,35) = 6,91/15,24 = 0,45 cm. Metal base (A36): b ≥ 6,91 / (0,6 · 25/1,10) = 6,91/13,64 = 0,51 cm → <strong>b = 6 mm</strong>.<br>
+Limites: mínimo para t = 12,5 (6,35 &lt; t ≤ 12,7) = 5 mm ✓; máximo = 12,5 − 2 = 10,5 mm ✓; L = 200 ≥ 4·6 = 24 mm ✓.</div>
+<div class="passo"><b>5. Verificação da chapa da mísula</b> (seção junto à solda, 20 × 1,25 cm): flexão M<sub>Rd</sub> = (1,25 · 20²/4) · 25/1,10 = 2 841 kN·cm ≥ 900 ✓; cisalhamento 0,6 · 25 · 25/1,10 = 341 kN ≥ 60 ✓. Verificar também a mesa do pilar à flexão local se t<sub>f</sub> &lt; 12 mm (enrijecer se necessário).</div>
+<p><strong>Resultado:</strong> filete 6 mm, dois lados, 200 mm, com retornos de 15 mm nas extremidades (região mais tracionada). Símbolo: 6 ▷▷ 200, com bandeira se for solda de campo. Observe que o momento domina (6,75 contra 1,50): reduzir e ou aumentar L é muito mais eficiente que engrossar a solda.</p></div>
+<figure class="fig p75">
+<svg viewBox="0 0 640 280" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_14" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_14" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="s9_14r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<g transform="translate(20,40)">
+<text x="150" y="-24" text-anchor="middle" fill="#0b3d91" font-weight="bold">Elevação</text>
+<rect x="0" y="10" width="14" height="220" fill="url(#h9_14)" stroke="#333" stroke-width="1.5"/>
+<rect x="14" y="10" width="26" height="220" fill="#eef1f6"/>
+<rect x="40" y="10" width="14" height="220" fill="url(#h9_14)" stroke="#333" stroke-width="1.5"/>
+<text x="27" y="225" text-anchor="middle" font-size="9">pilar</text>
+<!-- mísula -->
+<path d="M54 40 L260 40 L260 90 L54 200 Z" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<line x1="54" y1="40" x2="54" y2="200" stroke="#7a3e00" stroke-width="6"/>
+<text x="150" y="80" font-size="11">chapa 12,5 mm</text>
+<line x1="230" y1="40" x2="230" y2="10" stroke="#c0392b" stroke-width="2.5" marker-start="url(#s9_14r)"/>
+<text x="240" y="30" font-size="12" fill="#c0392b">V = 60 kN</text>
+<line x1="54" y1="0" x2="230" y2="0" stroke="#555" stroke-width="1" marker-start="url(#s9_14)" marker-end="url(#s9_14)"/>
+<text x="142" y="-4" text-anchor="middle" font-size="10">e = 150</text>
+<line x1="70" y1="40" x2="70" y2="200" stroke="#555" stroke-width="1" marker-start="url(#s9_14)" marker-end="url(#s9_14)"/>
+<text x="76" y="125" font-size="10">L = 200</text>
+<text x="60" y="215" font-size="10" fill="#7a3e00">filete 6, 2 lados</text>
+</g>
+<g transform="translate(360,40)">
+<text x="120" y="-24" text-anchor="middle" fill="#0b3d91" font-weight="bold">Corte e diagrama de f<tspan baseline-shift="sub" font-size="9">m</tspan></text>
+<rect x="0" y="10" width="14" height="220" fill="url(#h9_14)" stroke="#333" stroke-width="1.5"/>
+<rect x="14" y="40" width="10" height="160" fill="url(#h9_14)" stroke="#333" stroke-width="1.5"/>
+<polygon points="14,40 14,32 6,40" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="24,40 24,32 32,40" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="40" y="36" font-size="9">(seção do topo)</text>
+<!-- diagrama -->
+<line x1="80" y1="40" x2="80" y2="200" stroke="#333" stroke-width="1"/>
+<polygon points="80,40 140,40 80,120" fill="#c0392b" opacity=".35"/>
+<polygon points="80,120 20,200 80,200" fill="#0b3d91" opacity=".35"/>
+<text x="146" y="46" font-size="10" fill="#c0392b">f<tspan baseline-shift="sub" font-size="8">m</tspan> = 6,75 kN/cm</text>
+<text x="146" y="60" font-size="10" fill="#c0392b">(tração)</text>
+<text x="100" y="196" font-size="10" fill="#0b3d91">compressão</text>
+<text x="146" y="130" font-size="10">f<tspan baseline-shift="sub" font-size="8">v</tspan> = 1,50 kN/cm</text>
+<text x="146" y="144" font-size="10">(uniforme)</text>
+<text x="120" y="225" text-anchor="middle" font-size="10">f<tspan baseline-shift="sub" font-size="8">res</tspan> = √(1,5² + 6,75²) = 6,91 ≤ 8,18 (b = 6) ✓</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.14</b> – Exemplo 9.2: mísula soldada com dois filetes verticais; distribuição elástica da força por cm devida ao momento.</figcaption>
+</figure>
+
+<div class="box exemplo"><div class="tit">Exemplo 9.3 – Solda de composição alma–mesa de perfil soldado VS 500 (mesas 250 × 12,5; alma 475 × 8) com V<sub>Sd</sub> = 300 kN</div>
+<p><strong>Conceito.</strong> A solda que une mesa e alma transmite o <strong>fluxo de cisalhamento longitudinal</strong> q = V·Q/I (kN/cm), que impede a mesa de deslizar sobre a alma quando a viga flete (Figura 9.15). Q é o momento estático da mesa em relação ao eixo neutro; I é a inércia da seção.</p>
+<div class="passo"><b>1. Propriedades.</b> h = 50 cm; b<sub>f</sub> = 25; t<sub>f</sub> = 1,25; t<sub>w</sub> = 0,8.<br>
+I = 25 · 50³/12 − 24,2 · 47,5³/12 = 260 417 − 216 130 = <strong>44 287 cm⁴</strong>.<br>
+Q<sub>mesa</sub> = 25 · 1,25 · (25 − 0,625) = <strong>761,7 cm³</strong>.</div>
+<div class="passo"><b>2. Fluxo de cisalhamento.</b> q = V · Q / I = 300 · 761,7 / 44 287 = <strong>5,16 kN/cm</strong> (total, dividido entre os dois filetes) → 2,58 kN/cm por filete.</div>
+<div class="passo"><b>3. Filete contínuo.</b> Perna mínima (chapa mais grossa 12,5 → 5 mm); máxima na alma de 8 mm: 6 mm. Com b = 5 mm: 6,82 kN/cm ≫ 2,58 ✓ (utilização 38 %). A perna mínima governa — situação típica em vigas de edifícios: <strong>a solda alma–mesa raramente é dimensionada pela força; é dada pela espessura</strong>.</div>
+<div class="passo"><b>4. Alternativa intermitente</b> (economia em vigas pouco solicitadas): trechos de 50 mm a cada 150 mm com b = 5: capacidade média 6,82 · 50/150 = 2,27 kN/cm &lt; 2,58 ✗. Com 60 mm a cada 150: 6,82 · 60/150 = 2,73 ≥ 2,58 ✓ → símbolo 5 ▷▷ 60–150 (alternado). Restrições: L = 60 ≥ 4b = 20 e ≥ 40 ✓; passo ≤ 24·t<sub>w</sub> = 192 mm e ≤ 300 mm ✓. Não usar intermitente em ambiente agressivo, sob fadiga (pontes rolantes) nem em perfis de pilares comprimidos com relação b/t elevada.</div>
+<div class="passo"><b>5. Onde o fluxo é crítico.</b> Junto aos apoios (V máximo) e onde há cargas concentradas na mesa (fluxo local q<sub>local</sub> = P/L<sub>distribuição</sub> somado a q). Em fábrica, perfis soldados são feitos por SAW contínuo dos dois lados; a verificação acima justifica a perna, não a continuidade.</div>
+<p><strong>Resultado:</strong> filete contínuo de 5 mm dos dois lados (SAW em fábrica) atende com folga; intermitente 60–150 atende no limite.</p></div>
+<figure class="fig p75">
+<svg viewBox="0 0 640 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_15" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_15" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="s9_15r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<!-- seção -->
+<g transform="translate(30,20)">
+<text x="100" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Seção VS 500</text>
+<path d="M0 20 L200 20 L200 30 L104 30 L104 210 L200 210 L200 220 L0 220 L0 210 L96 210 L96 30 L0 30 Z" fill="url(#h9_15)" stroke="#333" stroke-width="1.5"/>
+<!-- filetes -->
+<polygon points="96,30 96,38 88,30" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="104,30 104,38 112,30" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="96,210 96,202 88,210" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="104,210 104,202 112,210" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<!-- eixo neutro -->
+<line x1="-10" y1="120" x2="210" y2="120" stroke="#555" stroke-width=".8" stroke-dasharray="10 3 2 3"/>
+<text x="214" y="124" font-size="10">EN</text>
+<!-- Q: área da mesa e braço -->
+<rect x="0" y="20" width="200" height="10" fill="#c0392b" opacity=".3"/>
+<line x1="230" y1="25" x2="230" y2="120" stroke="#555" stroke-width="1" marker-start="url(#s9_15)" marker-end="url(#s9_15)"/>
+<text x="236" y="76" font-size="10">y = 24,4</text>
+<text x="100" y="272" text-anchor="middle" font-size="10">Q = A<tspan baseline-shift="sub" font-size="8">mesa</tspan> · y = 31,25 · 24,4 = 762 cm³</text>
+<line x1="0" y1="240" x2="200" y2="240" stroke="#555" stroke-width="1" marker-start="url(#s9_15)" marker-end="url(#s9_15)"/>
+<text x="100" y="254" text-anchor="middle" font-size="10">b<tspan baseline-shift="sub" font-size="8">f</tspan> = 250</text>
+<text x="120" y="60" font-size="10">t<tspan baseline-shift="sub" font-size="8">f</tspan> = 12,5</text>
+<text x="120" y="170" font-size="10">t<tspan baseline-shift="sub" font-size="8">w</tspan> = 8</text>
+</g>
+<!-- fluxo de cisalhamento: vista lateral -->
+<g transform="translate(340,20)">
+<text x="130" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Fluxo longitudinal q = V·Q/I</text>
+<rect x="0" y="20" width="260" height="12" fill="url(#h9_15)" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="32" width="260" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<text x="130" y="66" text-anchor="middle" font-size="10">alma</text>
+<!-- setas de fluxo na interface -->
+<g stroke="#c0392b" stroke-width="1.5">
+<line x1="20" y1="38" x2="50" y2="38" marker-end="url(#s9_15r)"/><line x1="70" y1="38" x2="100" y2="38" marker-end="url(#s9_15r)"/><line x1="120" y1="38" x2="150" y2="38" marker-end="url(#s9_15r)"/><line x1="170" y1="38" x2="200" y2="38" marker-end="url(#s9_15r)"/><line x1="220" y1="38" x2="250" y2="38" marker-end="url(#s9_15r)"/>
+<line x1="50" y1="14" x2="20" y2="14" marker-end="url(#s9_15r)"/><line x1="100" y1="14" x2="70" y2="14" marker-end="url(#s9_15r)"/><line x1="150" y1="14" x2="120" y2="14" marker-end="url(#s9_15r)"/><line x1="200" y1="14" x2="170" y2="14" marker-end="url(#s9_15r)"/><line x1="250" y1="14" x2="220" y2="14" marker-end="url(#s9_15r)"/>
+</g>
+<text x="130" y="112" text-anchor="middle" font-size="10">q = 300 · 762 / 44 287 = 5,16 kN/cm (2 filetes)</text>
+<!-- solda intermitente vista -->
+<rect x="0" y="140" width="260" height="12" fill="url(#h9_15)" stroke="#333" stroke-width="1.5"/>
+<rect x="0" y="152" width="260" height="40" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<g fill="#e0a86a" stroke="#7a3e00" stroke-width="1">
+<rect x="10" y="152" width="48" height="5"/><rect x="130" y="152" width="48" height="5"/><rect x="250" y="152" width="10" height="5"/>
+</g>
+<line x1="10" y1="205" x2="58" y2="205" stroke="#555" stroke-width="1" marker-start="url(#s9_15)" marker-end="url(#s9_15)"/>
+<text x="34" y="218" text-anchor="middle" font-size="10">60</text>
+<line x1="10" y1="230" x2="130" y2="230" stroke="#555" stroke-width="1" marker-start="url(#s9_15)" marker-end="url(#s9_15)"/>
+<text x="70" y="243" text-anchor="middle" font-size="10">passo 150</text>
+<text x="200" y="218" font-size="10">5 ▷ 60–150: 2,73 ≥ 2,58 ✓</text>
+</g>
+</svg>
+<figcaption><b>Figura 9.15</b> – Exemplo 9.3: fluxo de cisalhamento na interface alma–mesa e alternativa com filete intermitente 60–150.</figcaption>
+</figure>
+
+
+<h2>9.8 Distorções, tensões residuais e pré-aquecimento <span class="nivel i">Intermediário</span></h2>
+<h3>9.8.1 Por que a peça empena</h3>
+<p>O metal de solda e a ZTA aquecem a mais de 1 000 °C enquanto o resto da peça fica frio. Ao esfriar, a região da solda quer <strong>contrair</strong> — mas está presa ao metal frio em volta. Resultado: tensões residuais de tração na solda (da ordem de f<sub>y</sub>) e de compressão ao redor, e deformações visíveis (Figura 9.16): <strong>contração longitudinal</strong> (a peça encurta e, se a solda está fora do eixo, encurva — "efeito banana" em perfis soldados com uma mesa só), <strong>contração transversal</strong> (as chapas de uma junta de topo se aproximam 1 a 3 mm), <strong>distorção angular</strong> (as mesas de um T "fecham" em direção à solda; chapas de topo em V dobram), e <strong>empenamento</strong> de chapas finas (ondulação por flambagem sob a compressão residual). As tensões residuais não reduzem a resistência estática de peças dúcteis, mas antecipam a flambagem de pilares (por isso as curvas de flambagem distinguem perfis soldados de laminados) e reduzem a vida à fadiga.</p>
+<p>Como controlar:</p>
+<ul>
+<li><strong>Menos solda</strong>: perna mínima necessária, chanfros estreitos (U em vez de V em chapas grossas), penetração parcial onde admissível — cada mm de perna a mais aumenta o calor com b².</li>
+<li><strong>Soldas simétricas</strong> em relação ao eixo da peça (chanfro X em vez de V; soldar os dois lados alternadamente) para que as contrações se cancelem.</li>
+<li><strong>Sequência</strong>: soldar do centro para as extremidades; passe-a-ré (<em>backstep</em>) em cordões longos; em perfis e caixões, alternar lados e cordões em ordem "balanceada"; soldar primeiro as juntas que mais contraem (topo), depois as de filete.</li>
+<li><strong>Pré-deformação e contrafechamento</strong>: montar as mesas de um T abertas 2–3° para que a contração as traga a 90°; pré-curvar chapas de topo.</li>
+<li><strong>Restrição</strong>: gabaritos, cachorros e ponteamento firme (pontos de 4–6b de comprimento a cada 300–500 mm) mantêm a geometria — ao custo de tensões residuais maiores (aceitável em aço dúctil de baixo carbono).</li>
+<li><strong>Correção posterior</strong>: desempeno a frio (prensa) ou por aquecimento localizado com maçarico (linhas de calor a 600–650 °C, nunca acima de 700 °C em aços de alta resistência) — técnica de fábrica.</li>
+</ul>
+<figure class="fig">
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_16" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_16" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="s9_16r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+</defs>
+<!-- (a) distorção angular T -->
+<g transform="translate(15,20)">
+<text x="90" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(a) Distorção angular</text>
+<path d="M10 90 L80 90 L80 84 L10 76 Z" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<path d="M100 90 L170 90 L170 76 L100 84 Z" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<rect x="84" y="20" width="12" height="64" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<polygon points="84,84 84,70 70,86" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<polygon points="96,84 96,70 110,86" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<line x1="10" y1="90" x2="170" y2="90" stroke="#555" stroke-width=".8" stroke-dasharray="4 3"/>
+<text x="90" y="115" text-anchor="middle" font-size="10">mesa "fecha" para o lado da solda</text>
+<text x="90" y="128" text-anchor="middle" font-size="10">(contração transversal do filete)</text>
+</g>
+<!-- (b) contração longitudinal/ banana -->
+<g transform="translate(205,20)">
+<text x="90" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(b) Encurvamento</text>
+<path d="M10 60 Q90 40 170 60 L170 72 Q90 52 10 72 Z" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<path d="M10 45 Q90 25 170 45" fill="none" stroke="#7a3e00" stroke-width="5"/>
+<line x1="10" y1="90" x2="170" y2="90" stroke="#555" stroke-width=".8" stroke-dasharray="4 3"/>
+<text x="90" y="115" text-anchor="middle" font-size="10">solda fora do eixo contrai</text>
+<text x="90" y="128" text-anchor="middle" font-size="10">→ peça encurva ("banana")</text>
+</g>
+<!-- (c) contração transversal topo -->
+<g transform="translate(395,20)">
+<text x="90" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(c) Contração transversal</text>
+<path d="M10 60 L80 60 L90 80 L10 80 Z" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<path d="M170 60 L100 60 L90 80 L170 80 Z" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<path d="M80 60 Q90 54 100 60 L90 80 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<line x1="40" y1="45" x2="70" y2="45" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s9_16r)"/>
+<line x1="140" y1="45" x2="110" y2="45" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s9_16r)"/>
+<text x="90" y="115" text-anchor="middle" font-size="10">chapas se aproximam 1–3 mm;</text>
+<text x="90" y="128" text-anchor="middle" font-size="10">em V, também dobram (angular)</text>
+</g>
+<!-- (d) empenamento chapa fina -->
+<g transform="translate(585,20)">
+<text x="85" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">(d) Empenamento</text>
+<path d="M10 70 Q35 50 60 70 T110 70 T160 70" fill="none" stroke="#333" stroke-width="3"/>
+<line x1="10" y1="90" x2="160" y2="90" stroke="#555" stroke-width=".8" stroke-dasharray="4 3"/>
+<text x="85" y="115" text-anchor="middle" font-size="10">chapa fina ondula por</text>
+<text x="85" y="128" text-anchor="middle" font-size="10">compressão residual</text>
+</g>
+<!-- sequências -->
+<g transform="translate(15,165)">
+<text x="360" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Sequências de soldagem que reduzem a distorção</text>
+<!-- passe a ré -->
+<g transform="translate(0,15)">
+<rect x="0" y="30" width="200" height="14" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<g stroke="#7a3e00" stroke-width="4"><line x1="40" y1="24" x2="0" y2="24"/><line x1="80" y1="24" x2="40" y2="24"/><line x1="120" y1="24" x2="80" y2="24"/><line x1="160" y1="24" x2="120" y2="24"/><line x1="200" y1="24" x2="160" y2="24"/></g>
+<g stroke="#333" stroke-width="1.2"><line x1="40" y1="12" x2="4" y2="12" marker-end="url(#s9_16)"/><line x1="80" y1="12" x2="44" y2="12" marker-end="url(#s9_16)"/><line x1="120" y1="12" x2="84" y2="12" marker-end="url(#s9_16)"/><line x1="160" y1="12" x2="124" y2="12" marker-end="url(#s9_16)"/><line x1="200" y1="12" x2="164" y2="12" marker-end="url(#s9_16)"/></g>
+<text x="20" y="6" text-anchor="middle" font-size="9">1</text><text x="60" y="6" text-anchor="middle" font-size="9">2</text><text x="100" y="6" text-anchor="middle" font-size="9">3</text><text x="140" y="6" text-anchor="middle" font-size="9">4</text><text x="180" y="6" text-anchor="middle" font-size="9">5</text>
+<text x="100" y="64" text-anchor="middle" font-size="10">passe a ré (backstep): trechos curtos</text>
+<text x="100" y="77" text-anchor="middle" font-size="10">soldados "para trás", progresso geral →</text>
+</g>
+<!-- simétrica alternada em perfil I -->
+<g transform="translate(250,15)">
+<path d="M40 0 L120 0 L120 8 L84 8 L84 62 L120 62 L120 70 L40 70 L40 62 L76 62 L76 8 L40 8 Z" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<polygon points="76,8 76,16 68,8" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/><text x="58" y="18" font-size="10" font-weight="bold" fill="#c0392b">1</text>
+<polygon points="84,62 84,54 92,62" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/><text x="96" y="58" font-size="10" font-weight="bold" fill="#c0392b">2</text>
+<polygon points="84,8 84,16 92,8" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/><text x="96" y="18" font-size="10" font-weight="bold" fill="#c0392b">3</text>
+<polygon points="76,62 76,54 68,62" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/><text x="58" y="58" font-size="10" font-weight="bold" fill="#c0392b">4</text>
+<text x="80" y="92" text-anchor="middle" font-size="10">perfil I: cordões em diagonal</text>
+<text x="80" y="105" text-anchor="middle" font-size="10">alternados (1-2-3-4) equilibram</text>
+</g>
+<!-- pré-deformação -->
+<g transform="translate(450,15)">
+<path d="M10 70 L80 70 L80 62 L10 56 Z" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<path d="M100 70 L170 70 L170 56 L100 62 Z" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<rect x="84" y="0" width="12" height="62" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<line x1="10" y1="70" x2="170" y2="70" stroke="#555" stroke-width=".8" stroke-dasharray="4 3"/>
+<text x="20" y="50" font-size="9">2–3°</text>
+<text x="90" y="92" text-anchor="middle" font-size="10">pré-deformação: mesa montada</text>
+<text x="90" y="105" text-anchor="middle" font-size="10">"aberta"; a contração a traz a 90°</text>
+</g>
+<!-- ponteamento / centro para fora -->
+<g transform="translate(625,15)">
+<rect x="0" y="30" width="110" height="14" fill="url(#h9_16)" stroke="#333" stroke-width="1.2"/>
+<g fill="#e0a86a" stroke="#7a3e00" stroke-width="1"><rect x="8" y="24" width="10" height="6"/><rect x="50" y="24" width="10" height="6"/><rect x="92" y="24" width="10" height="6"/></g>
+<line x1="55" y1="12" x2="20" y2="12" stroke="#333" stroke-width="1.2" marker-end="url(#s9_16)"/>
+<line x1="55" y1="12" x2="90" y2="12" stroke="#333" stroke-width="1.2" marker-end="url(#s9_16)"/>
+<text x="55" y="64" text-anchor="middle" font-size="10">pontear (4–6b a cada</text>
+<text x="55" y="77" text-anchor="middle" font-size="10">300–500 mm); soldar</text>
+<text x="55" y="90" text-anchor="middle" font-size="10">do centro p/ as pontas</text>
+</g>
+</g>
+</svg>
+<figcaption><b>Figura 9.16</b> – Tipos de distorção causados pela contração da solda e sequências de soldagem que a reduzem.</figcaption>
+</figure>
+
+<h3>9.8.2 Pré-aquecimento e temperatura entre passes</h3>
+<p>Pré-aquecer a junta (com maçarico, resistências ou mantas) antes de soldar <strong>reduz a velocidade de resfriamento</strong>, evitando a formação de microestruturas duras na ZTA e dando tempo para o hidrogênio escapar — as duas causas da trinca a frio. A necessidade cresce com a <strong>espessura</strong> (massa fria que rouba calor), com o <strong>carbono equivalente</strong> do aço (CE = C + Mn/6 + (Cr+Mo+V)/5 + (Ni+Cu)/15; A36 tem CE ≈ 0,30–0,40; A572 Gr.50 ≈ 0,40–0,45; acima de 0,45 exige cuidado especial), com o <strong>hidrogênio</strong> do processo (E6013 é alto; E7018 seco, GMAW e SAW são baixos) e com a <strong>restrição</strong> da junta. O AWS D1.1 (Tabela 3.2, simplificada na Tabela 9.6) dá temperaturas mínimas para procedimentos pré-qualificados; a temperatura se mede a 75 mm da junta com giz térmico ou termômetro de contato, e deve ser mantida como <strong>temperatura mínima entre passes</strong> — a máxima entre passes (≈ 250 °C para aços comuns) evita perda de tenacidade.</p>
+<table class="tab"><caption>Tabela 9.6 – Temperatura mínima de pré-aquecimento e entre passes (AWS D1.1, Tabela 3.2 simplificada; aços A36/A572 Gr.50, eletrodos de baixo hidrogênio)</caption>
+<thead><tr><th>Espessura da parte mais grossa na junta</th><th>A36, A572 Gr.42/50 – SMAW baixo H₂, GMAW, FCAW, SAW</th><th>A36 – SMAW com eletrodo NÃO baixo H₂ (E6013)</th><th>Observações</th></tr></thead>
+<tbody>
+<tr><td class="c">t ≤ 19 mm</td><td class="c">sem pré-aquecimento (peça &gt; 0 °C)</td><td class="c">sem pré-aquecimento (peça &gt; 0 °C)</td><td class="l" rowspan="4">Abaixo de 0 °C a junta deve ser aquecida a pelo menos 20 °C. Medir a 75 mm da junta, do lado oposto ao aquecimento quando possível. Manter durante toda a soldagem (mínima entre passes = pré-aquecimento). Em aços patináveis A588 usar a coluna de baixo H₂ com +10–15 °C. Para CE &gt; 0,45 ou juntas muito restringidas, acrescentar 25–50 °C e considerar pós-aquecimento (200–250 °C por 1 h) para liberação de hidrogênio.</td></tr>
+<tr><td class="c">19 &lt; t ≤ 38 mm</td><td class="c"><b>65 °C</b></td><td class="c">65 °C</td></tr>
+<tr><td class="c">38 &lt; t ≤ 65 mm</td><td class="c"><b>110 °C</b></td><td class="c">150 °C</td></tr>
+<tr><td class="c">t &gt; 65 mm</td><td class="c"><b>150 °C</b></td><td class="c">225 °C</td></tr>
+</tbody></table>
+<div class="box atencao"><div class="tit">Atenção – ponto de solda também é solda</div>
+<p>Pontos de montagem (ponteamento) em chapas grossas ou aços de alta resistência, feitos sem pré-aquecimento e com eletrodo úmido, são a origem clássica de trincas que depois se propagam pela solda definitiva. Todo ponto deve seguir a mesma EPS, ser feito por soldador qualificado, e pontos trincados devem ser removidos por esmerilhamento antes de soldar por cima — nunca "cobertos".</p></div>
+
+<h2>9.9 Defeitos de solda: causas e correções <span class="nivel i">Intermediário</span></h2>
+<p>Descontinuidade é qualquer interrupção na estrutura da solda; ela vira <strong>defeito</strong> quando ultrapassa o critério de aceitação da norma (AWS D1.1, cláusula 6, para estruturas). A Figura 9.17 ilustra os mais comuns e a Tabela 9.7 relaciona causas e correções. Os mais graves são as <strong>trincas</strong> (nunca aceitáveis, em qualquer tamanho), a <strong>falta de fusão</strong> e a <strong>falta de penetração</strong> (planares, iniciam fratura, invisíveis por fora); porosidade e inclusões isoladas são toleradas dentro de limites de tamanho e frequência; mordeduras são aceitas até 1 mm de profundidade (0,25 mm em peças sob fadiga transversal).</p>
+<figure class="fig">
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><pattern id="h9_17" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- linha 1 -->
+<g transform="translate(10,15)">
+<text x="85" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">Porosidade</text>
+<path d="M10 40 L60 40 L75 80 L10 80 Z" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/><path d="M160 40 L110 40 L95 80 L160 80 Z" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<path d="M60 40 Q85 30 110 40 L95 80 L75 80 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<g fill="#fff" stroke="#333" stroke-width=".8"><circle cx="80" cy="50" r="3"/><circle cx="92" cy="58" r="2.5"/><circle cx="84" cy="68" r="3.5"/><circle cx="97" cy="46" r="2"/></g>
+<text x="85" y="100" text-anchor="middle" font-size="9">bolhas de gás: umidade, sujeira,</text><text x="85" y="111" text-anchor="middle" font-size="9">vento no gás, arco longo</text>
+</g>
+<g transform="translate(200,15)">
+<text x="85" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">Mordedura</text>
+<path d="M10 40 L60 40 L75 80 L10 80 Z" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/><path d="M160 40 L110 40 L95 80 L160 80 Z" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<path d="M62 40 Q85 26 108 40 L95 80 L75 80 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M56 40 Q60 48 66 42" fill="#fff" stroke="#c0392b" stroke-width="1.2"/><path d="M104 42 Q110 48 114 40" fill="#fff" stroke="#c0392b" stroke-width="1.2"/>
+<text x="85" y="100" text-anchor="middle" font-size="9">sulco na margem: corrente alta,</text><text x="85" y="111" text-anchor="middle" font-size="9">ângulo errado, velocidade alta</text>
+</g>
+<g transform="translate(390,15)">
+<text x="85" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">Falta de fusão</text>
+<rect x="10" y="80" width="150" height="14" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<rect x="78" y="20" width="14" height="60" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<polygon points="92,80 92,56 116,80" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<line x1="92" y1="58" x2="92" y2="78" stroke="#c0392b" stroke-width="2.5"/>
+<text x="85" y="112" text-anchor="middle" font-size="9">solda "colada" na chapa: corrente baixa,</text><text x="85" y="123" text-anchor="middle" font-size="9">óxido/tinta, poça à frente do arco</text>
+</g>
+<g transform="translate(580,15)">
+<text x="85" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">Falta de penetração</text>
+<path d="M10 40 L60 40 L75 70 L75 80 L10 80 Z" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/><path d="M160 40 L110 40 L95 70 L95 80 L160 80 Z" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<path d="M60 40 Q85 30 110 40 L97 66 L73 66 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<rect x="75" y="66" width="20" height="14" fill="#fff" stroke="#c0392b" stroke-width="1.5"/>
+<text x="85" y="100" text-anchor="middle" font-size="9">raiz não fundida: nariz grande,</text><text x="85" y="111" text-anchor="middle" font-size="9">abertura pequena, eletrodo grosso</text>
+</g>
+<!-- linha 2 -->
+<g transform="translate(10,165)">
+<text x="85" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">Trinca (a quente / a frio)</text>
+<path d="M10 40 L60 40 L75 80 L10 80 Z" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/><path d="M160 40 L110 40 L95 80 L160 80 Z" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<path d="M60 40 Q85 30 110 40 L95 80 L75 80 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M85 34 L83 48 L88 60 L84 76" fill="none" stroke="#c0392b" stroke-width="1.5"/>
+<path d="M62 42 L54 56 L58 68" fill="none" stroke="#c0392b" stroke-width="1.5"/>
+<text x="85" y="100" text-anchor="middle" font-size="9">a quente: no centro (S, P, cratera);</text><text x="85" y="111" text-anchor="middle" font-size="9">a frio: ZTA, H₂ + dureza + restrição</text>
+</g>
+<g transform="translate(200,165)">
+<text x="85" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">Inclusão de escória</text>
+<path d="M10 40 L60 40 L75 80 L10 80 Z" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/><path d="M160 40 L110 40 L95 80 L160 80 Z" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<path d="M60 40 Q85 30 110 40 L95 80 L75 80 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M70 62 Q78 56 88 62 Q80 68 70 62 Z" fill="#555"/>
+<path d="M92 50 Q98 46 104 52 Q98 56 92 50 Z" fill="#555"/>
+<text x="85" y="100" text-anchor="middle" font-size="9">escória presa entre passes:</text><text x="85" y="111" text-anchor="middle" font-size="9">limpeza insuficiente, chanfro estreito</text>
+</g>
+<g transform="translate(390,165)">
+<text x="85" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">Sobreposição e respingos</text>
+<rect x="10" y="80" width="150" height="14" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<rect x="78" y="20" width="14" height="60" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<path d="M92 80 L92 50 Q120 60 128 84 Q122 80 116 80 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<g fill="#7a3e00"><circle cx="30" cy="78" r="2"/><circle cx="45" cy="77" r="1.5"/><circle cx="140" cy="78" r="2"/><circle cx="150" cy="77" r="1.5"/></g>
+<text x="85" y="112" text-anchor="middle" font-size="9">metal escorrido sem fusão (overlap):</text><text x="85" y="123" text-anchor="middle" font-size="9">velocidade baixa; respingos: arco longo, CO₂</text>
+</g>
+<g transform="translate(580,165)">
+<text x="85" y="0" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">Perfil: côncavo / convexo</text>
+<rect x="10" y="80" width="70" height="14" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<rect x="40" y="20" width="12" height="60" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<path d="M52 80 L52 56 Q56 76 76 80 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<rect x="95" y="80" width="70" height="14" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<rect x="125" y="20" width="12" height="60" fill="url(#h9_17)" stroke="#333" stroke-width="1.2"/>
+<path d="M137 80 L137 56 Q170 60 161 80 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="85" y="112" text-anchor="middle" font-size="9">côncavo: garganta menor; convexo</text><text x="85" y="123" text-anchor="middle" font-size="9">excessivo: entalhe na margem, desperdício</text>
+</g>
+<text x="380" y="318" text-anchor="middle" font-size="10" fill="#555">Linhas vermelhas = descontinuidades planares (as mais perigosas: trinca, falta de fusão, falta de penetração). Nunca aceitas: trincas.</text>
+</svg>
+<figcaption><b>Figura 9.17</b> – Descontinuidades mais comuns em soldas de filete e de topo, com a causa típica de cada uma.</figcaption>
+</figure>
+<table class="tab small"><caption>Tabela 9.7 – Defeitos de solda: causas e correções</caption>
+<thead><tr><th>Defeito</th><th>Causas mais frequentes</th><th>Prevenção</th><th>Correção</th><th>Aceitação (AWS D1.1, estático)</th></tr></thead>
+<tbody>
+<tr><td class="l"><b>Porosidade</b></td><td class="l">Eletrodo úmido; chapa com óleo, tinta, ferrugem, umidade; vento no gás (GMAW/FCAW); arco muito longo; vazão de gás errada; CO₂ contaminado</td><td class="l">Estufa; limpar 25 mm de cada lado; barreira contra vento; arco curto; checar gás</td><td class="l">Esmerilhar e ressoldar</td><td class="l">Filete: Σ diâmetros ≤ 10 mm por 25 mm de solda e ≤ 19 mm por 300 mm; poros ≤ 2,4 mm</td></tr>
+<tr><td class="l"><b>Mordedura</b></td><td class="l">Corrente alta; velocidade alta; ângulo do eletrodo errado; oscilação excessiva; posição vertical descendente</td><td class="l">Ajustar parâmetros; ângulo 45°/15°; treino</td><td class="l">Passe fino de reparo após esmerilhar</td><td class="l">≤ 1 mm (t ≥ 25 mm: ≤ 1,6 mm em 50 mm); ≤ 0,25 mm sob tração cíclica transversal</td></tr>
+<tr><td class="l"><b>Falta de fusão</b></td><td class="l">Corrente baixa; poça à frente do arco (velocidade baixa); carepa/tinta; chanfro muito fechado; curto-circuito GMAW em chapa grossa</td><td class="l">Parâmetros da EPS; limpeza; GMAW spray ou FCAW em chapas grossas</td><td class="l">Remover totalmente (goivagem/esmeril) e ressoldar</td><td class="l">Não aceita quando detectada por UT/RX acima dos limites; visível: não aceita</td></tr>
+<tr><td class="l"><b>Falta de penetração</b></td><td class="l">Nariz grande; abertura de raiz pequena; eletrodo grosso; ângulo de chanfro fechado; corrente baixa</td><td class="l">Preparação conforme EPS; passe de raiz com eletrodo fino; goivagem do verso</td><td class="l">Goivar pela raiz e ressoldar</td><td class="l">Em CJP: não aceita (UT). Em PJP: é a raiz não fundida prevista (E)</td></tr>
+<tr><td class="l"><b>Trinca a quente</b></td><td class="l">Alto S/P no aço; cordão fino e profundo (relação largura/prof. &lt; 1); cratera não preenchida; alta restrição</td><td class="l">Cordão mais largo; preencher crateras; eletrodo básico; reduzir diluição</td><td class="l">Remover além das pontas (+ 50 mm) e ressoldar</td><td class="l"><b>Nunca aceita</b></td></tr>
+<tr><td class="l"><b>Trinca a frio (H₂)</b></td><td class="l">Hidrogênio (eletrodo úmido, umidade, tinta) + ZTA dura (resfriamento rápido, CE alto) + tensão (restrição); aparece até 48 h depois</td><td class="l">Baixo H₂; pré-aquecimento (Tabela 9.6); pós-aquecimento; sequência</td><td class="l">Remover e ressoldar com procedimento revisto; inspecionar após 48 h</td><td class="l"><b>Nunca aceita</b>; inspeção UT/PM ≥ 48 h após soldar em t &gt; 38 mm ou aços ≥ 350 MPa</td></tr>
+<tr><td class="l"><b>Inclusão de escória</b></td><td class="l">Não remover escória entre passes; chanfro estreito; oscilação errada; eletrodo inclinado demais</td><td class="l">Limpar cada passe (picadeira + escova); chanfro ≥ 45°</td><td class="l">Esmerilhar e ressoldar</td><td class="l">Alongadas ≤ 6 mm ou t/3; separadas ≥ 6× o comprimento</td></tr>
+<tr><td class="l"><b>Sobreposição (overlap)</b></td><td class="l">Velocidade baixa; corrente baixa; eletrodo grosso; ângulo inadequado</td><td class="l">Ajustar velocidade; eletrodo menor</td><td class="l">Esmerilhar até o perfil correto</td><td class="l">Não aceita (entalhe)</td></tr>
+<tr><td class="l"><b>Respingos</b></td><td class="l">Arco longo; CO₂ puro; parâmetros fora do modo spray; polaridade errada</td><td class="l">Mistura Ar/CO₂; antirrespingo; arco curto</td><td class="l">Remover com espátula/esmeril antes de pintar</td><td class="l">Estético/pintura; não estrutural</td></tr>
+<tr><td class="l"><b>Perna insuficiente / garganta côncava</b></td><td class="l">Velocidade alta; eletrodo fino; posição sobre-cabeça; medição errada (perna × garganta)</td><td class="l">Calibre de filete; passes adicionais</td><td class="l">Acrescentar passe (após limpar)</td><td class="l">Perna ≥ especificada; tolerância −1,6 mm em ≤ 10 % do comprimento</td></tr>
+<tr><td class="l"><b>Cratera</b></td><td class="l">Interrupção brusca do arco no fim do cordão</td><td class="l">Voltar o eletrodo sobre a poça ao terminar; retorno de extremidade</td><td class="l">Preencher</td><td class="l">Crateras devem ser preenchidas até a seção nominal (exceto extremidades de intermitente fora da seção efetiva)</td></tr>
+</tbody></table>
+
+<h2>9.10 Inspeção, ensaios e qualificação <span class="nivel i">Intermediário</span></h2>
+<h3>9.10.1 Métodos de inspeção</h3>
+<p>A inspeção começa <strong>antes</strong> da solda (materiais, preparação, ajuste, pré-aquecimento, EPS e soldador qualificados), continua <strong>durante</strong> (parâmetros, limpeza entre passes, temperatura) e termina <strong>depois</strong>, com o ensaio visual e, quando exigido, ensaios não destrutivos (END). A Tabela 9.8 resume o que cada método detecta. Em estruturas de edifícios e galpões, a regra usual é: <strong>VT em 100 %</strong> das soldas, <strong>PM ou LP</strong> por amostragem (10 a 25 %) em filetes de responsabilidade, e <strong>UT em 100 %</strong> das soldas de penetração total tracionadas (emendas de mesa, chapas de topo de ligações rígidas). Em pontes e vigas de rolamento, os percentuais sobem e entra a radiografia em emendas de topo.</p>
+<figure class="fig p90">
+<svg viewBox="0 0 720 245" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h9_18" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s9_18" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- calibre de filete (perna) -->
+<g transform="translate(20,20)">
+<text x="120" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Calibre de filete (perna)</text>
+<rect x="0" y="150" width="240" height="16" fill="url(#h9_18)" stroke="#333" stroke-width="1.5"/>
+<rect x="100" y="20" width="16" height="130" fill="url(#h9_18)" stroke="#333" stroke-width="1.5"/>
+<path d="M116 150 L116 90 Q150 110 176 150 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.5"/>
+<!-- calibre: peça em L com recorte triangular (encosta na chapa e na alma) -->
+<path d="M116 40 L200 40 L200 150 L176 150 L116 90 Z" fill="#c8d6e5" stroke="#0b3d91" stroke-width="1.5" opacity=".9"/>
+<text x="165" y="60" font-size="10" fill="#0b3d91">calibre "6"</text>
+<text x="165" y="74" font-size="9" fill="#0b3d91">(hipotenusa 45°)</text>
+<line x1="116" y1="175" x2="176" y2="175" stroke="#555" stroke-width="1" marker-start="url(#s9_18)" marker-end="url(#s9_18)"/>
+<text x="146" y="190" text-anchor="middle" font-size="10">perna b = 6</text>
+<text x="0" y="212" font-size="10">folga entre o calibre e a face da solda = perna insuficiente</text>
+</g>
+<!-- calibre de garganta (côncavo) e multiuso -->
+<g transform="translate(330,20)">
+<text x="190" y="0" text-anchor="middle" fill="#0b3d91" font-weight="bold">Outros calibres do inspetor</text>
+<!-- calibre de garganta -->
+<g transform="translate(0,20)">
+<rect x="0" y="110" width="120" height="14" fill="url(#h9_18)" stroke="#333" stroke-width="1.2"/>
+<rect x="40" y="20" width="12" height="90" fill="url(#h9_18)" stroke="#333" stroke-width="1.2"/>
+<path d="M52 110 L52 70 Q60 96 92 110 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M52 40 L110 40 L110 110 L100 110 L100 60 L58 102 Z" fill="#c8d6e5" stroke="#0b3d91" stroke-width="1.5"/>
+<rect x="74" y="72" width="4" height="26" fill="#0b3d91" transform="rotate(45 76 85)"/>
+<text x="60" y="145" text-anchor="middle" font-size="10">garganta (filete côncavo):</text>
+<text x="60" y="158" text-anchor="middle" font-size="10">ponteiro deslizante a 45°</text>
+</g>
+<!-- calibre multiuso (bridge cam) -->
+<g transform="translate(170,20)">
+<rect x="0" y="110" width="200" height="14" fill="url(#h9_18)" stroke="#333" stroke-width="1.2"/>
+<path d="M60 110 Q100 84 140 110 Z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<path d="M20 110 L20 60 A45 45 0 0 1 80 30 L120 40" fill="none" stroke="#0b3d91" stroke-width="2"/>
+<line x1="20" y1="60" x2="100" y2="60" stroke="#0b3d91" stroke-width="2"/>
+<rect x="98" y="50" width="4" height="60" fill="#0b3d91"/>
+<line x1="100" y1="110" x2="100" y2="86" stroke="#c0392b" stroke-width="2"/>
+<text x="100" y="145" text-anchor="middle" font-size="10">multiuso (bridge cam): reforço,</text>
+<text x="100" y="158" text-anchor="middle" font-size="10">mordedura, ângulo, desalinhamento</text>
+</g>
+</g>
+</svg>
+<figcaption><b>Figura 9.18</b> – Calibres do ensaio visual: calibre de perna, calibre de garganta para filete côncavo e calibre multiuso.</figcaption>
+</figure>
+<table class="tab small"><caption>Tabela 9.8 – Métodos de inspeção de soldas: o que detectam, custo e quando exigir</caption>
+<thead><tr><th>Método</th><th>O que detecta</th><th>Não detecta</th><th>Custo relativo</th><th>Quando exigir (prática usual)</th><th>Norma / critério</th></tr></thead>
+<tbody>
+<tr><td class="l"><b>VT</b> – visual (com calibres, lupa, lanterna)</td><td class="l">Perna e garganta, perfil, mordedura, sobreposição, porosidade superficial, trincas visíveis, respingos, crateras, desalinhamento, comprimento</td><td class="l">Tudo o que é interno ou subsuperficial</td><td class="c">baixo</td><td class="l"><b>100 %</b> das soldas, sempre; por inspetor qualificado (CWI / N1-N2)</td><td class="l">AWS D1.1 cl. 6; NBR 8800 anexo</td></tr>
+<tr><td class="l"><b>LP</b> – líquido penetrante</td><td class="l">Descontinuidades abertas à superfície (trincas finas, poros, falta de fusão na margem) em qualquer material</td><td class="l">Internas; superfícies muito rugosas dão falsas indicações</td><td class="c">baixo</td><td class="l">Amostragem em filetes; inox e não magnéticos; reparos</td><td class="l">ASTM E165; AWS D1.1 (critério = VT)</td></tr>
+<tr><td class="l"><b>PM</b> – partículas magnéticas (yoke)</td><td class="l">Trincas superficiais e subsuperficiais (≤ 2–3 mm) em aço carbono; mais rápido e sensível que LP em campo</td><td class="l">Internas profundas; não magnéticos</td><td class="c">baixo–médio</td><td class="l">10–25 % dos filetes de responsabilidade; 100 % em pontes rolantes; após reparo; 48 h após solda em chapas grossas</td><td class="l">ASTM E709; AWS D1.1</td></tr>
+<tr><td class="l"><b>UT</b> – ultrassom</td><td class="l">Falta de fusão, falta de penetração, trincas e inclusões internas (planares principalmente); mede profundidade; portátil</td><td class="l">Difícil em filetes pequenos e t &lt; 8 mm; depende muito do operador</td><td class="c">médio</td><td class="l"><b>100 % das CJP tracionadas</b>; emendas de pilar; chapas de topo; 25 % das CJP comprimidas</td><td class="l">AWS D1.1 cl. 6 parte F (Tab. 6.2/6.3); operador N2</td></tr>
+<tr><td class="l"><b>RX / gama</b> – radiografia</td><td class="l">Porosidade, inclusões, falta de penetração em juntas de topo; registro permanente (filme)</td><td class="l">Trincas e falta de fusão mal orientadas; só juntas de topo acessíveis dos dois lados; radiação (isolar área)</td><td class="c">alto</td><td class="l">Emendas de topo de mesas em pontes/vigas de rolamento; vasos; quando o contrato exige registro</td><td class="l">ASTM E94/E1032; AWS D1.1 cl. 6 parte E</td></tr>
+<tr><td class="l"><b>Ensaios destrutivos</b> (macrografia, dobramento, tração, dureza)</td><td class="l">Penetração real, perfil, propriedades mecânicas</td><td class="l">— (destroem o corpo de prova)</td><td class="c">médio</td><td class="l">Qualificação de EPS e de soldador; cupons de produção em obras críticas</td><td class="l">AWS D1.1 cl. 4; ASME IX; NBR ISO 15614</td></tr>
+</tbody></table>
+<h3>9.10.2 Qualificação: EPS, RQPS e soldador</h3>
+<p>Uma solda estrutural só é confiável se três documentos existirem:</p>
+<ul>
+<li><strong>EPS – Especificação de Procedimento de Soldagem</strong> (WPS): a "receita" escrita: processo, metal base (grupo), consumível (classe, diâmetro), posição, chanfro (desenho com cotas), corrente/tensão/velocidade por passe, pré-aquecimento e interpasse, técnica (passes, oscilação, limpeza, goivagem). Deve estar disponível no posto de soldagem. Procedimentos <strong>pré-qualificados</strong> pelo AWS D1.1 (cláusula 3) dispensam ensaio se seguirem exatamente os limites da norma (juntas, processos SMAW/GMAW/FCAW/SAW, aços listados).</li>
+<li><strong>RQPS – Registro de Qualificação do Procedimento</strong> (PQR): a prova de que a EPS funciona: corpo de prova soldado conforme a EPS e ensaiado (tração, dobramento, macro, eventualmente impacto), com laudo de laboratório. Obrigatório para procedimentos não pré-qualificados (aços fora da lista, GMAW curto-circuito, posições/parâmetros fora dos limites).</li>
+<li><strong>Qualificação do soldador / operador</strong>: prova prática por processo, posição, tipo de junta e espessura (AWS D1.1 cl. 4, ASME IX, NBR ISO 9606-1 / antiga NBR 14842). A qualificação em 3G + 4G cobre todas as posições em chapa; 6G cobre tudo. Validade: enquanto o soldador exercer o processo (revalidação a cada 6 meses de inatividade). Cada soldador recebe um <strong>sinete</strong> (número) e marca suas soldas — <strong>rastreabilidade</strong>: no registro de inspeção consta soldador, EPS, consumível (lote), data e resultado dos END.</li>
+</ul>
+<div class="box norma"><div class="tit">NBR 8800 e AWS D1.1 – o que a norma brasileira exige</div>
+<p>A NBR 8800:2008 remete a execução das soldas ao <strong>AWS D1.1</strong> (Structural Welding Code – Steel), inclusive para qualificação de procedimentos e soldadores, dimensões mínimas, inspeção e critérios de aceitação. A norma brasileira específica é a <strong>NBR 8800 seção 6.2</strong> (resistências) e o anexo sobre fabricação; para pré-qualificação e qualificação de soldadores no Brasil também são aceitas a <strong>NBR ISO 15614</strong> (EPS) e <strong>NBR ISO 9606-1</strong> (soldadores). A FBTS (Fundação Brasileira de Tecnologia da Soldagem) certifica inspetores de soldagem N1 (visual, campo) e N2 (END, procedimentos), figura exigida em obras de responsabilidade.</p></div>
+
+<h2>9.11 Soldagem em campo, galvanizados e segurança <span class="nivel b">Básico</span></h2>
+<h3>9.11.1 Cuidados na soldagem em campo</h3>
+<p>Campo é o pior lugar para soldar: vento, chuva, posição forçada, altura, iluminação, sem estufa, sem posicionador. Regras práticas: (1) <strong>projete para minimizar solda de campo</strong> — parafuse em campo, solde na fábrica; (2) o que precisar ser soldado em campo deve ser <strong>filete na plana ou horizontal</strong>, acessível, com a peça apoiada; (3) <strong>vento</strong>: SMAW até ≈ 8 m/s; GMAW/FCAW-G exigem barreira (lona, biombo) acima de 2 m/s; FCAW-S autoprotegido tolera vento; (4) <strong>umidade</strong>: não soldar com superfície molhada nem sob chuva; abaixo de 0 °C aquecer a junta; (5) <strong>eletrodos</strong>: estufa portátil de 120 °C na frente de trabalho, lata aberta consumida em 4 h; (6) <strong>energia</strong>: máquina inversora ou gerador com capacidade para a corrente e cabos dimensionados (queda de tensão em cabos longos reduz a corrente e causa falta de fusão); (7) <strong>montagem</strong>: peças pontas e escoradas antes da solda definitiva; solda não é meio de segurar peça em posição; (8) <strong>ordem</strong>: soldar as ligações que definem a geometria (alinhamento, prumo) só depois da conferência topográfica; (9) EPI completo e proteção contra queda (NR-35) — soldador em altura com cinto e linha de vida, e nunca sozinho.</p>
+<h3>9.11.2 Soldagem de peças galvanizadas e pintadas</h3>
+<p>O zinco vaporiza a 907 °C — muito abaixo da fusão do aço — e gera <strong>fumos de óxido de zinco</strong> (febre dos fumos metálicos: calafrios, febre, náusea horas depois) e <strong>porosidade e trincas</strong> na solda (zinco líquido penetra nos contornos de grão). Regra: <strong>remover o revestimento</strong> (esmeril, jato, chama) em pelo menos 25 mm de cada lado da junta antes de soldar, usar ventilação/exaustão local e máscara com filtro P2/P3 se a remoção for parcial; após soldar, recompor a proteção com tinta rica em zinco (≥ 85 % de zinco no filme seco, ASTM A780) — a região soldada é onde a galvanização mais falha. Peças pintadas: remover primer e tinta (a maioria libera fumos tóxicos: isocianatos, cromatos); primers de "solda" à base de zinco-etil-silicato de ≤ 25 µm são os únicos que toleram soldagem por cima, com parâmetros ajustados e a EPS qualificada com o primer.</p>
+<h3>9.11.3 Segurança na soldagem</h3>
+<p>Os riscos são bem conhecidos e as medidas simples: <strong>radiação do arco</strong> (UV/IV: "olho de soldador", queimaduras de pele) — máscara com filtro tonalidade 10–13 e roupa de raspa/algodão cobrindo tudo, biombos para proteger terceiros; <strong>fumos e gases</strong> (óxidos de ferro, manganês — neurotóxico —, zinco, ozônio do MIG, CO do CO₂) — exaustão localizada, ventilação, respirador; em espaço confinado NR-33; <strong>choque elétrico</strong> — tensão em vazio até 80 V, cabos e porta-eletrodo isolados, luvas secas, não trocar eletrodo com luva molhada, aterramento correto (nunca por estruturas com parafusos protendidos ou por tubulações); <strong>incêndio e explosão</strong> — respingos alcançam 10 m: afastar combustíveis, vigia de fogo por 30 min após a soldagem, extintor à mão, nunca soldar tambores/tanques que contiveram inflamáveis sem inertização; cilindros de gás em pé, amarrados, com capacete, longe do arco. Normas: <strong>NR-12</strong> (máquinas), <strong>NR-34</strong> (trabalho a quente em construção naval — adotada por analogia, com Permissão de Trabalho), <strong>NR-06</strong> (EPI), <strong>NR-35</strong> (altura), <strong>NR-33</strong> (confinado) e <strong>NR-18</strong> (construção civil).</p>
+
+<h2>9.12 Checklist, erros comuns e resumo <span class="nivel b">Básico</span></h2>
+<table class="tab"><caption>Tabela 9.9 – Erros comuns em ligações soldadas (projeto e execução)</caption>
+<thead><tr><th>Erro</th><th>Consequência</th><th>Como evitar</th></tr></thead>
+<tbody>
+<tr><td class="l">Perna especificada abaixo da mínima da Tabela 9.4 (ex.: 3 mm em chapa de 12,5)</td><td class="l">Trinca a frio na ZTA por resfriamento rápido</td><td class="l">Perna mínima pela chapa mais grossa; soldador confere com calibre</td></tr>
+<tr><td class="l">Perna maior que o necessário "para garantir"</td><td class="l">Custo com b², distorção, tensões residuais, mordedura</td><td class="l">Dimensionar; preferir cordão mais longo</td></tr>
+<tr><td class="l">Solda de campo sobre-cabeça ou inacessível</td><td class="l">Defeitos, baixa produtividade, risco</td><td class="l">Detalhar para 1F/2F; parafusar em campo</td></tr>
+<tr><td class="l">E7018 fora da estufa; E6013 em solda estrutural</td><td class="l">Hidrogênio → trinca a frio horas depois</td><td class="l">Estufa 120 °C; ressecagem; usar baixo H₂</td></tr>
+<tr><td class="l">Soldar sobre tinta, galvanização, óleo, carepa solta</td><td class="l">Porosidade, falta de fusão, fumos tóxicos</td><td class="l">Limpar 25 mm de cada lado; remover zinco</td></tr>
+<tr><td class="l">Símbolo incompleto (sem "ambos os lados", sem passo, sem bandeira)</td><td class="l">Solda diferente da projetada</td><td class="l">Revisar desenhos com a Tabela 9.3; listar soldas de campo</td></tr>
+<tr><td class="l">Filete só de um lado em junta T sob flexão</td><td class="l">Raiz tracionada, ruptura frágil pela raiz</td><td class="l">Filete dos dois lados ou penetração</td></tr>
+<tr><td class="l">Intermitente em ambiente agressivo ou sob fadiga</td><td class="l">Corrosão em fresta; trincas de fadiga nas pontas</td><td class="l">Contínua; selar frestas</td></tr>
+<tr><td class="l">Ponto de montagem trincado coberto pela solda final</td><td class="l">Trinca embutida propaga</td><td class="l">Remover pontos defeituosos; pontos com a mesma EPS</td></tr>
+<tr><td class="l">Sem pré-aquecimento em t &gt; 19 mm ou A572/COR</td><td class="l">ZTA dura, trinca a frio</td><td class="l">Tabela 9.6; giz térmico</td></tr>
+<tr><td class="l">Soldar sem EPS / soldador sem qualificação</td><td class="l">Sem garantia, sem rastreabilidade, reprovação na inspeção</td><td class="l">EPS no posto; sinete; registro</td></tr>
+<tr><td class="l">Aterramento da máquina pela estrutura (parafusos, rolamentos)</td><td class="l">Arco em pontos de contato, dano a parafusos e rolamentos</td><td class="l">Garra-terra na peça, perto da solda</td></tr>
+</tbody></table>
+<ul class="chk">
+<li>Processo e consumível compatíveis com o aço (E70 para A36/A572; W para patináveis)? Eletrodo de baixo hidrogênio em soldas estruturais?</li>
+<li>Símbolos completos nos desenhos (lado, perna, comprimento–passo, todo em volta, campo, cauda)?</li>
+<li>Perna entre mínima (Tabela 9.4) e máxima (t − 2); comprimento ≥ 4b e ≥ 40 mm; retornos onde há excentricidade?</li>
+<li>Resistência verificada: metal da solda (0,6·f<sub>w</sub>·0,707·b·L/1,35) e metal base (0,6·f<sub>y</sub>·b·L/1,10)?</li>
+<li>Soldas balanceadas no CG das barras; sequência de soldagem prevista para peças longas e chapas grossas?</li>
+<li>Pré-aquecimento e interpasse definidos por espessura e aço; giz térmico disponível?</li>
+<li>EPS no posto de trabalho; RQPS quando não pré-qualificada; soldadores qualificados e com sinete?</li>
+<li>Estufa de eletrodos (120 °C) e controle de exposição; gás e vazão corretos; barreira de vento?</li>
+<li>Superfícies limpas 25 mm de cada lado; zinco e tinta removidos?</li>
+<li>Plano de inspeção: VT 100 %; PM/LP por amostragem; UT 100 % em CJP tracionadas; espera de 48 h em chapas grossas?</li>
+<li>Reparo de zinco/pintura na região soldada; respingos removidos antes de pintar?</li>
+<li>Segurança: EPI, filtro de máscara, exaustão, vigia de fogo, aterramento, permissão de trabalho a quente, NR-35 em altura?</li>
+</ul>
+<div class="resumo"><div class="tit">Resumo do capítulo</div><ul>
+<li>Solda a arco = fusão local protegida do ar; o corte mostra metal de solda, ZTA (ponto fraco) e metal base. Energia de soldagem controla penetração, distorção e trincas.</li>
+<li>Processos: SMAW (campo, E7018 seco), GMAW (fábrica, sensível ao vento), FCAW (produtivo, fábrica e campo), SAW (perfis soldados). E70/ER70S/E71T para A36 e A572.</li>
+<li>Juntas: topo, T, canto, sobreposta, borda. Soldas: filete (&gt; 80 %), chanfro (CJP/PJP: V, ½V, X, K, U, J), tampão e rasgo. Posições 1–4 F/G; projete para a plana.</li>
+<li>Símbolo AWS A2.4: abaixo da linha = lado da seta; perna à esquerda; comprimento–passo à direita; círculo = todo em volta; bandeira = campo; cauda = processo.</li>
+<li>Filete: garganta a = 0,707·b; perna mínima por espessura (3/5/6/8 mm); máxima t − 2; L ≥ 4b e 40 mm; L<sub>ef</sub> reduzido acima de 100b.</li>
+<li>NBR 8800: F<sub>w,Rd</sub> = 0,6·f<sub>w</sub>·a·L/1,35 (solda) e 0,6·f<sub>y</sub>·b·L/1,10 (metal base) — em A36/E70 ≈ 1,36 kN/cm por mm de perna. Penetração total = resistência da chapa.</li>
+<li>Excentricidade: método elástico (f<sub>v</sub> + f<sub>m</sub> vetorialmente). Cantoneiras: balancear soldas no CG. Composição alma–mesa: q = V·Q/I, geralmente governada pela perna mínima.</li>
+<li>Distorção: menos solda, simetria, sequência (backstep, alternada), pré-deformação, ponteamento. Pré-aquecimento: 65 °C (19–38 mm), 110 °C (38–65), 150 °C (&gt; 65) para A36 com baixo H₂.</li>
+<li>Defeitos: trincas nunca aceitas; falta de fusão e penetração são planares e invisíveis — UT em CJP tracionadas; VT 100 % com calibres.</li>
+<li>Qualidade = EPS + RQPS + soldador qualificado + inspetor + rastreabilidade (AWS D1.1, NBR ISO 15614/9606). Campo: vento, umidade, estufa, posição, segurança (NR-12/34/35, fumos de zinco).</li>
+</ul></div>

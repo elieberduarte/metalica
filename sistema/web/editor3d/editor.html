@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor 3D — estruturas metálicas</title>
+<link rel="stylesheet" href="/editor3d/editor.css">
+<script>
+// Tema antes do primeiro quadro. O editor.js só roda depois de baixar o three.js;
+// sem isto, num sistema em modo escuro a página pinta escura até lá. O parâmetro
+// ?tema= vale mais que o tema salvo pela interface (galpao.tema).
+(function () {
+  var t = new URLSearchParams(location.search).get('tema');
+  if (t !== 'claro' && t !== 'escuro') { try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; } }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M6 21V11l10-5 10 5v10l-10 5z' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linejoin='round'/><path d='M6 11l10 5 10-5M16 16v10' fill='none' stroke='%23fff' stroke-width='1.2' opacity='.65'/></svg>">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "../lib/three.module.js",
+    "three/addons/": "../lib/"
+  }
+}
+</script>
+<script>
+// Registra erros desde antes dos módulos carregarem (inclusive falha de import),
+// para que a verificação automática consiga ler a lista em body[data-erros].
+window.__errosEditor = [];
+(function () {
+  var guardar = function (t) { window.__errosEditor.push(String(t).slice(0, 400)); };
+  addEventListener('error', function (e) {
+    var alvo = e.target && e.target !== window ? (e.target.src || e.target.href || '') : '';
+    guardar(alvo ? 'recurso não carregou: ' + alvo : (e.message || 'erro') +
+            (e.filename ? ' @ ' + e.filename + ':' + e.lineno : ''));
+  }, true);
+  addEventListener('unhandledrejection', function (e) {
+    guardar('promessa rejeitada: ' + (e.reason && e.reason.message || e.reason));
+  });
+  var original = console.error;
+  console.error = function () {
+    guardar('console.error: ' + Array.prototype.map.call(arguments, String).join(' '));
+    return original.apply(console, arguments);
+  };
+})();
+</script>
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M6 21V11l10-5 10 5v10l-10 5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M6 11l10 5 10-5M16 16v10" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".6"/>
+    </svg>
+    <span>Editor 3D</span>
+  </div>
+  <a class="voltar" href="/" title="Voltar à interface de dimensionamento">&larr; Dimensionamento</a>
+
+  <div class="menus" id="menus">
+    <div class="menu" data-menu="arquivo">
+      <button type="button" class="menu-botao">Arquivo</button>
+      <div class="menu-lista">
+        <button type="button" data-acao="novo">Novo modelo</button>
+        <button type="button" data-acao="abrir">Abrir…</button>
+        <button type="button" data-acao="salvar">Salvar</button>
+        <button type="button" data-acao="salvar-como">Salvar como…</button>
+        <hr>
+        <button type="button" data-acao="exemplo">Modelo de exemplo</button>
+        <button type="button" data-acao="do-galpao">Gerar do galpão dimensionado…</button>
+      </div>
+    </div>
+    <div class="menu" data-menu="ifc">
+      <button type="button" class="menu-botao">IFC</button>
+      <div class="menu-lista">
+        <button type="button" data-acao="importar-ifc">Importar IFC…</button>
+        <button type="button" data-acao="inspecionar-ifc">Inspecionar IFC…</button>
+        <hr>
+        <button type="button" data-acao="exportar-ifc">Exportar IFC</button>
+      </div>
+    </div>
+    <div class="menu" data-menu="editar">
+      <button type="button" class="menu-botao">Editar</button>
+      <div class="menu-lista" id="menu-editar">
+        <button type="button" data-acao="desfazer">Desfazer</button>
+        <button type="button" data-acao="refazer">Refazer</button>
+        <hr>
+        <button type="button" data-acao="selecionar-tudo">Selecionar tudo</button>
+        <button type="button" data-acao="inverter-selecao">Inverter seleção</button>
+        <button type="button" data-acao="apagar">Apagar seleção</button>
+        <hr>
+        <div class="menu-titulo">Histórico</div>
+        <div id="historico-undo" class="historico"></div>
+      </div>
+    </div>
+    <div class="menu" data-menu="ver">
+      <button type="button" class="menu-botao">Ver</button>
+      <div class="menu-lista">
+        <div class="menu-titulo">Vistas padrão</div>
+        <button type="button" data-vista="topo">Topo <kbd>1</kbd></button>
+        <button type="button" data-vista="frente">Frente <kbd>2</kbd></button>
+        <button type="button" data-vista="tras">Trás <kbd>3</kbd></button>
+        <button type="button" data-vista="esquerda">Esquerda <kbd>4</kbd></button>
+        <button type="button" data-vista="direita">Direita <kbd>5</kbd></button>
+        <button type="button" data-vista="inferior">Inferior <kbd>6</kbd></button>
+        <button type="button" data-vista="isometrica">Isométrica <kbd>7</kbd></button>
+        <hr>
+        <button type="button" data-acao="zoom-extensao">Zoom na extensão <kbd>Z</kbd></button>
+        <button type="button" data-acao="zoom-selecao">Zoom na seleção</button>
+        <hr>
+        <button type="button" data-acao="mapa-esforcos" id="menu-calcular">Calcular estrutura <kbd>F9</kbd></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="nome-modelo">
+    <input id="nome-modelo" value="Modelo" spellcheck="false" aria-label="Nome do modelo">
+  </div>
+
+  <div class="topo-acoes">
+    <button type="button" id="btn-calcular" class="botao destaque" aria-pressed="false"
+            title="Calcula os esforços do galpão dimensionado e pinta o mapa (F9)">Calcular estrutura</button>
+    <div class="segmentado" id="modos-exibicao" role="group" aria-label="Modo de exibição"></div>
+    <button type="button" id="btn-projecao" class="botao" title="Alternar perspectiva / ortográfica">Perspectiva</button>
+    <button type="button" id="btn-tema" class="botao" title="Alternar tema claro/escuro">Tema</button>
+  </div>
+</header>
+
+<div class="area">
+
+  <nav class="ferramentas" id="barra-ferramentas" aria-label="Ferramentas"></nav>
+
+  <div class="palco" id="palco">
+    <canvas id="canvas3d"></canvas>
+    <svg id="camada-snap" class="camada-snap" aria-hidden="true"></svg>
+    <div id="retangulo-selecao" class="retangulo-selecao" hidden></div>
+
+    <div class="vistas-rapidas" id="vistas-rapidas"></div>
+
+    <div class="carimbo" id="carimbo">
+      <span id="carimbo-contagem">0 objetos</span>
+      <span id="carimbo-extensao">—</span>
+    </div>
+
+    <div class="avisos" id="avisos" aria-live="polite"></div>
+  </div>
+
+  <aside class="paineis" id="paineis" aria-label="Painéis">
+
+    <section class="painel" data-painel="propriedades">
+      <h2><button type="button" class="cabecalho">Propriedades</button></h2>
+      <div class="corpo" id="painel-propriedades"></div>
+    </section>
+
+    <section class="painel" data-painel="camadas">
+      <h2><button type="button" class="cabecalho">Camadas</button></h2>
+      <div class="corpo" id="painel-camadas"></div>
+    </section>
+
+    <section class="painel" data-painel="materiais">
+      <h2><button type="button" class="cabecalho">Materiais</button></h2>
+      <div class="corpo" id="painel-materiais"></div>
+    </section>
+
+    <!-- Só aparece depois de "Calcular estrutura": sem análise não há o que mostrar. -->
+    <section class="painel" data-painel="analise" hidden>
+      <h2><button type="button" class="cabecalho">Análise</button></h2>
+      <div class="corpo" id="painel-analise"></div>
+    </section>
+
+    <section class="painel cresce" data-painel="arvore">
+      <h2><button type="button" class="cabecalho">Árvore do modelo</button></h2>
+      <div class="corpo" id="painel-arvore"></div>
+    </section>
+
+  </aside>
+</div>
+
+<footer class="rodape">
+  <span class="dica" id="dica">Carregando…</span>
+  <span class="trava" id="trava"></span>
+  <span class="espaco"></span>
+  <span class="estado-servidor" id="estado-servidor"></span>
+  <label class="caixa-medidas">
+    <span>Medidas</span>
+    <input id="medida" type="text" spellcheck="false" autocomplete="off"
+           placeholder="—" aria-label="Caixa de medidas">
+  </label>
+</footer>
+
+<dialog id="dialogo">
+  <form method="dialog" id="dialogo-form">
+    <h3 id="dialogo-titulo">—</h3>
+    <div id="dialogo-corpo"></div>
+    <!-- Confirmar vem antes no DOM: é o botão que o Enter aciona. O CSS inverte a ordem. -->
+    <menu>
+      <button type="submit" value="ok" class="botao principal" id="dialogo-ok">Confirmar</button>
+      <button type="submit" value="cancelar" class="botao" id="dialogo-cancelar">Cancelar</button>
+    </menu>
+  </form>
+</dialog>
+
+<input type="file" id="arquivo-ifc" accept=".ifc,.IFC" hidden>
+
+<script type="module" src="/editor3d/editor.js"></script>
+</body>
+</html>

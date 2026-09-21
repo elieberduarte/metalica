@@ -1,0 +1,828 @@
+<h1 class="cap"><small>Capítulo 5</small>Ações, segurança e combinações</h1>
+<div class="objetivos"><div class="tit">O que você vai aprender neste capítulo</div>
+<ul>
+<li>A filosofia dos estados-limites (ELU e ELS): valores característicos, valores de cálculo e a condição S<sub>d</sub> ≤ R<sub>d</sub>.</li>
+<li>Como estimar as ações permanentes (peso próprio, telhas, lajes, alvenarias) e as variáveis (sobrecargas da NBR 6120, manutenção, pontes rolantes).</li>
+<li>Como calcular a ação do vento pela NBR 6123: V<sub>0</sub>, S<sub>1</sub>, S<sub>2</sub>, S<sub>3</sub>, pressão dinâmica q, coeficientes de pressão externa e interna, com um exemplo completo para um galpão.</li>
+<li>Ações de temperatura, recalques e sismo.</li>
+<li>Coeficientes de ponderação γ<sub>f</sub> e fatores ψ<sub>0</sub>, ψ<sub>1</sub>, ψ<sub>2</sub> e como montar as combinações últimas e de serviço.</li>
+<li>Por que o vento de sucção pode inverter os esforços e governar o dimensionamento de terças e tesouras.</li>
+</ul></div>
+
+<p>Nenhum cálculo estrutural é melhor que as cargas que entram nele. Errar o perfil em 10 % é um problema; esquecer a sucção do vento no telhado é um acidente. Este capítulo organiza as ações que atuam numa estrutura metálica, como as normas brasileiras as quantificam e como elas são combinadas com margens de segurança. A base normativa é a NBR 8681:2003 (ações e segurança nas estruturas), a NBR 6120:2019 (cargas para o cálculo de estruturas de edificações), a NBR 6123 (forças devidas ao vento) e a NBR 8800:2008 (que particulariza os coeficientes para o aço).</p>
+
+<h2>5.1 A filosofia dos estados-limites <span class="nivel b">Básico</span></h2>
+<p>Um <strong>estado-limite</strong> é uma situação a partir da qual a estrutura deixa de cumprir sua função. Há dois grupos:</p>
+<ul>
+<li><strong>Estados-limites últimos (ELU):</strong> ligados à segurança — ruptura de uma seção, flambagem de um pilar, perda de equilíbrio (tombamento, levantamento), colapso progressivo, fadiga. Ocorrer um ELU significa ruína ou risco de vida. A probabilidade aceitável é minúscula (da ordem de 10⁻⁴ a 10⁻⁶ na vida útil).</li>
+<li><strong>Estados-limites de serviço (ELS):</strong> ligados ao uso — flecha excessiva, vibração incômoda, fissuras em alvenaria apoiada, empoçamento em coberturas, deslocamento lateral que trinca fachadas. Não derrubam a estrutura, mas a tornam inadequada.</li>
+</ul>
+<p>A verificação, em ambos os casos, é simples de enunciar: <strong>o efeito das ações de cálculo não pode superar a resistência de cálculo</strong>:</p>
+<div class="formula">S<sub>d</sub> ≤ R<sub>d</sub><span class="n">(5.1)</span></div>
+<p>O "d" (<em>design</em>) indica valores de cálculo, obtidos a partir dos valores característicos (índice k) por meio de coeficientes de ponderação. Nas ações, o valor característico F<sub>k</sub> é aquele com pequena probabilidade de ser ultrapassado (por exemplo, 5 % em 50 anos para o vento) — e é majorado: F<sub>d</sub> = γ<sub>f</sub>·F<sub>k</sub>. Na resistência, o valor característico f<sub>k</sub> (f<sub>y</sub> mínimo garantido pela usina) é minorado: R<sub>d</sub> = R<sub>k</sub>/γ<sub>m</sub> (na NBR 8800, γ<sub>a1</sub> = 1,10 para escoamento e γ<sub>a2</sub> = 1,35 para ruptura). A Figura 5.1 mostra a ideia: solicitação e resistência são variáveis aleatórias; os coeficientes afastam as duas curvas para que a área em que elas se sobrepõem (a probabilidade de falha) seja aceitavelmente pequena.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="s5_1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<line x1="40" y1="230" x2="680" y2="230" stroke="#333" stroke-width="1.5" marker-end="url(#s5_1)"/>
+<text x="670" y="250" text-anchor="end" font-size="12">esforço (kN, kN·m)</text>
+<line x1="40" y1="230" x2="40" y2="40" stroke="#333" stroke-width="1.5" marker-end="url(#s5_1)"/>
+<text x="48" y="50" font-size="12">frequência</text>
+<!-- curva S (vermelha) centro 220, largura ~ 70 -->
+<path d="M80 230 C120 230 150 225 170 200 C190 170 200 90 220 90 C240 90 250 170 270 200 C290 225 320 230 360 230 Z" fill="#fbe1de" stroke="#c0392b" stroke-width="2"/>
+<!-- curva R (azul) centro 480 -->
+<path d="M340 230 C380 230 410 225 430 200 C450 170 460 80 480 80 C500 80 510 170 530 200 C550 225 580 230 620 230 Z" fill="#dbe6f7" stroke="#0b3d91" stroke-width="2"/>
+<!-- sobreposição -->
+<path d="M330 230 C345 228 352 222 360 215 C355 222 348 228 340 230 Z" fill="#7a3e00"/>
+<text x="220" y="78" text-anchor="middle" fill="#c0392b" font-weight="bold">Solicitações S</text>
+<text x="480" y="68" text-anchor="middle" fill="#0b3d91" font-weight="bold">Resistências R</text>
+<!-- marcadores -->
+<line x1="220" y1="230" x2="220" y2="100" stroke="#c0392b" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="220" y="248" text-anchor="middle" font-size="12" fill="#c0392b">S<tspan baseline-shift="sub" font-size="9">m</tspan></text>
+<line x1="272" y1="230" x2="272" y2="150" stroke="#c0392b" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="272" y="248" text-anchor="middle" font-size="12" fill="#c0392b">S<tspan baseline-shift="sub" font-size="9">k</tspan></text>
+<line x1="340" y1="230" x2="340" y2="150" stroke="#c0392b" stroke-width="1.5"/>
+<text x="340" y="248" text-anchor="middle" font-size="12" fill="#c0392b" font-weight="bold">S<tspan baseline-shift="sub" font-size="9">d</tspan> = γ<tspan baseline-shift="sub" font-size="9">f</tspan>·S<tspan baseline-shift="sub" font-size="9">k</tspan></text>
+<line x1="480" y1="230" x2="480" y2="90" stroke="#0b3d91" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="480" y="248" text-anchor="middle" font-size="12" fill="#0b3d91">R<tspan baseline-shift="sub" font-size="9">m</tspan></text>
+<line x1="428" y1="230" x2="428" y2="150" stroke="#0b3d91" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="428" y="248" text-anchor="middle" font-size="12" fill="#0b3d91">R<tspan baseline-shift="sub" font-size="9">k</tspan></text>
+<line x1="372" y1="230" x2="372" y2="150" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="385" y="266" text-anchor="middle" font-size="12" fill="#0b3d91" font-weight="bold">R<tspan baseline-shift="sub" font-size="9">d</tspan> = R<tspan baseline-shift="sub" font-size="9">k</tspan>/γ<tspan baseline-shift="sub" font-size="9">m</tspan></text>
+<line x1="272" y1="140" x2="340" y2="140" stroke="#c0392b" stroke-width="1" marker-end="url(#s5_1)"/>
+<text x="306" y="134" text-anchor="middle" font-size="11" fill="#c0392b">× γ<tspan baseline-shift="sub" font-size="8">f</tspan></text>
+<line x1="428" y1="140" x2="372" y2="140" stroke="#0b3d91" stroke-width="1" marker-end="url(#s5_1)"/>
+<text x="400" y="134" text-anchor="middle" font-size="11" fill="#0b3d91">÷ γ<tspan baseline-shift="sub" font-size="8">m</tspan></text>
+<line x1="345" y1="207" x2="560" y2="158" stroke="#7a3e00" stroke-width="1" marker-start="url(#s5_1)"/>
+<text x="600" y="142" text-anchor="middle" font-size="11" fill="#7a3e00">zona de falha (S &gt; R):</text>
+<text x="600" y="156" text-anchor="middle" font-size="11" fill="#7a3e00">probabilidade mínima</text>
+<text x="356" y="290" text-anchor="middle" font-size="13" fill="#333" font-weight="bold">Verificação: S<tspan baseline-shift="sub" font-size="9">d</tspan> ≤ R<tspan baseline-shift="sub" font-size="9">d</tspan></text>
+</svg>
+<figcaption><b>Figura 5.1</b> – Solicitações e resistências são variáveis aleatórias. Os coeficientes γ<sub>f</sub> (majoram as ações) e γ<sub>m</sub> (minoram as resistências) afastam os valores de cálculo, deixando uma probabilidade de falha muito pequena.</figcaption>
+</figure>
+
+<div class="box"><div class="tit">Conceito – por que dois coeficientes e não um só?</div>
+<p>Cada incerteza recebe seu próprio coeficiente. γ<sub>f</sub> cobre a variabilidade das cargas (o vento pode ser mais forte que o previsto, a sobrecarga pode ser excedida) e as simplificações do modelo de cálculo; γ<sub>m</sub> cobre a variabilidade do material (uma corrida de aço abaixo do nominal), as tolerâncias dimensionais e as imperfeições. Separar permite, por exemplo, majorar mais o vento (1,4) e menos o peso próprio do aço (1,25), cuja variabilidade é pequena — o peso do perfil é conhecido com boa precisão.</p></div>
+
+<h3>5.1.1 Classificação das ações</h3>
+<p>A NBR 8681 classifica as ações pela variação no tempo (Figura 5.2):</p>
+<ul>
+<li><strong>Permanentes (G):</strong> praticamente constantes durante a vida da estrutura — peso próprio, elementos construtivos fixos, empuxos permanentes, protensão, recalques previstos. Podem ser <em>diretas</em> (pesos) ou <em>indiretas</em> (recalques, retração).</li>
+<li><strong>Variáveis (Q):</strong> variam significativamente — sobrecargas de uso, vento, temperatura, pontes rolantes, cargas de montagem e manutenção.</li>
+<li><strong>Excepcionais (E):</strong> duração muito curta e probabilidade baixíssima — explosões, choques de veículos, incêndio, sismo em regiões onde é relevante.</li>
+</ul>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="s5_2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<line x1="60" y1="210" x2="680" y2="210" stroke="#333" stroke-width="1.5" marker-end="url(#s5_2)"/>
+<text x="672" y="230" text-anchor="end" font-size="12">tempo (vida útil ≈ 50 anos)</text>
+<line x1="60" y1="210" x2="60" y2="30" stroke="#333" stroke-width="1.5" marker-end="url(#s5_2)"/>
+<text x="66" y="40" font-size="12">intensidade</text>
+<!-- permanente -->
+<line x1="60" y1="150" x2="660" y2="150" stroke="#0b3d91" stroke-width="3"/>
+<text x="120" y="143" fill="#0b3d91" font-weight="bold" font-size="12">Permanente G (peso próprio): constante</text>
+<!-- variável -->
+<path d="M60 200 L80 175 L100 190 L115 165 L130 185 L150 170 L170 195 L190 160 L205 180 L225 172 L245 190 L262 155 L280 178 L300 168 L320 192 L340 162 L360 180 L378 170 L400 195 L420 158 L440 176 L460 166 L480 190 L500 172 L520 185 L540 160 L560 182 L580 168 L600 194 L620 165 L640 180 L660 175" fill="none" stroke="#c0392b" stroke-width="2"/>
+<text x="130" y="105" fill="#c0392b" font-weight="bold" font-size="12">Variável Q (sobrecarga, vento): flutua</text>
+<line x1="270" y1="110" x2="262" y2="150" stroke="#c0392b" stroke-width="1" marker-end="url(#s5_2)"/>
+<line x1="60" y1="155" x2="660" y2="155" stroke="#c0392b" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="655" y="145" text-anchor="end" fill="#c0392b" font-size="11">Q<tspan baseline-shift="sub" font-size="8">k</tspan> = valor característico (raramente excedido)</text>
+<!-- excepcional -->
+<path d="M540 210 L546 60 L552 210" fill="#7a3e00" stroke="#7a3e00" stroke-width="1"/>
+<text x="546" y="52" text-anchor="middle" fill="#7a3e00" font-weight="bold" font-size="12">Excepcional E</text>
+<text x="546" y="66" text-anchor="middle" fill="#7a3e00" font-size="11">(explosão, choque)</text>
+</svg>
+<figcaption><b>Figura 5.2</b> – Ações ao longo do tempo: as permanentes são praticamente constantes, as variáveis flutuam (e o valor característico é o pico raro), as excepcionais são picos breves e improváveis.</figcaption>
+</figure>
+
+<h2>5.2 Ações permanentes <span class="nivel b">Básico</span></h2>
+<h3>5.2.1 Peso próprio da estrutura metálica</h3>
+<p>O peso próprio só é conhecido depois de dimensionar — por isso se começa com uma estimativa, que é conferida ao final (se a diferença for maior que uns 10 %, recalcula-se). Regras usuais para a primeira estimativa:</p>
+<ul>
+<li><strong>Cobertura de galpão</strong> (tesouras/pórticos + terças + contraventos), por m² de projeção: 0,10–0,15 kN/m² para vãos de 15–20 m; 0,15–0,25 kN/m² para 25–35 m; 0,25–0,40 kN/m² acima disso. Só terças e contraventos: 0,05–0,10 kN/m².</li>
+<li><strong>Vigas de piso</strong>: o peso do perfil equivale a 0,10–0,30 kN/m² de área de piso em edifícios comuns; vigas mistas com steel deck: 0,15–0,25 kN/m² (vigas) + peso da laje.</li>
+<li><strong>Consumo total de aço</strong>: galpões leves 15–30 kg/m²; galpões com ponte rolante 40–70 kg/m²; edifícios de múltiplos andares 40–80 kg/m² (Capítulo 6). 1 kg/m² = 0,01 kN/m².</li>
+<li>Perfis: peso (kg/m) = 0,785 × A (cm²); chapa: 7,85 kg/m² por mm de espessura; barra redonda: 0,00617·d² kg/m (d em mm). Acrescente 5–10 % para ligações, chapas, parafusos e enrijecedores.</li>
+</ul>
+
+<h3>5.2.2 Pesos de materiais e elementos construtivos</h3>
+<table class="tab"><caption>Tabela 5.1 – Pesos usuais de elementos construtivos (valores típicos; confirme com o fabricante e a NBR 6120)</caption>
+<thead><tr><th>Elemento</th><th>Peso</th><th>Observações</th></tr></thead>
+<tbody>
+<tr><td class="l">Telha metálica trapezoidal simples (0,43–0,65 mm)</td><td class="c">0,05–0,10 kN/m²</td><td class="l">Aço galvanizado ou galvalume; alumínio 0,03–0,05</td></tr>
+<tr><td class="l">Telha termoacústica (sanduíche, EPS ou PIR 30–50 mm)</td><td class="c">0,12–0,20 kN/m²</td><td class="l">Duas chapas + núcleo isolante</td></tr>
+<tr><td class="l">Telha de fibrocimento 6 mm (ondulada)</td><td class="c">0,18–0,25 kN/m²</td><td class="l">Inclui sobreposições; 8 mm ≈ 0,25–0,30</td></tr>
+<tr><td class="l">Telha cerâmica com ripas e caibros</td><td class="c">0,60–0,80 kN/m²</td><td class="l">Rara sobre aço, mas ocorre em residências</td></tr>
+<tr><td class="l">Terças + contraventos de cobertura</td><td class="c">0,05–0,10 kN/m²</td><td class="l">Ue 150–250 mm, vãos 5–8 m</td></tr>
+<tr><td class="l">Forro (gesso acartonado, PVC, lã) + estrutura</td><td class="c">0,10–0,30 kN/m²</td><td class="l">Gesso 12,5 mm com perfis ≈ 0,15–0,20</td></tr>
+<tr><td class="l">Laje mista steel deck, h = 12 cm (fôrma 0,80 mm + concreto)</td><td class="c">2,3–2,8 kN/m²</td><td class="l">Depende da forma e da espessura; h = 15 cm: 2,8–3,4</td></tr>
+<tr><td class="l">Laje maciça de concreto armado</td><td class="c">25 kN/m³ × h</td><td class="l">h = 10 cm: 2,5; 12 cm: 3,0; 15 cm: 3,75</td></tr>
+<tr><td class="l">Laje pré-moldada (vigotas + lajotas) h = 12 cm, capa 4 cm</td><td class="c">1,8–2,2 kN/m²</td><td class="l">Painéis alveolares 20 cm: 2,7–3,2</td></tr>
+<tr><td class="l">Alvenaria bloco cerâmico 14 cm, revestida</td><td class="c">1,8–2,2 kN/m² de parede</td><td class="l">Bloco de concreto 14 cm: 2,2–2,6; drywall: 0,25–0,50</td></tr>
+<tr><td class="l">Alvenaria bloco cerâmico 9 cm, revestida</td><td class="c">1,2–1,5 kN/m² de parede</td><td class="l">Multiplicar pela altura para obter kN/m sobre a viga</td></tr>
+<tr><td class="l">Revestimento de piso (contrapiso + cerâmica/porcelanato)</td><td class="c">0,8–1,2 kN/m²</td><td class="l">Adotar 1,0 na ausência de dados; piso elevado 0,3–0,5</td></tr>
+<tr><td class="l">Fechamento lateral com telha metálica + longarinas</td><td class="c">0,10–0,15 kN/m² de fachada</td><td class="l">Painel isotérmico: 0,15–0,25</td></tr>
+<tr><td class="l">Instalações penduradas (elétrica, ar-condicionado, sprinkler)</td><td class="c">0,10–0,50 kN/m²</td><td class="l">Indústrias: consultar projetos; dutos grandes podem passar de 0,5</td></tr>
+<tr><td class="l">Vidro (10 mm) / ACM / painel de fachada</td><td class="c">0,25 / 0,08 / 0,3–0,6 kN/m²</td><td class="l">Vidro: 25 kN/m³ × espessura</td></tr>
+<tr><td class="l">Pesos específicos</td><td class="c">aço 77; concreto armado 25; água 10; solo 17–20 kN/m³</td><td class="l">Madeira 6–10; alvenaria de tijolo maciço 18</td></tr>
+</tbody></table>
+
+<h3>5.2.3 Área de influência: de kN/m² para kN/m e kN</h3>
+<p>Cargas por área viram cargas por metro multiplicando pela largura da faixa que cada elemento recebe (área de influência). Uma terça espaçada de 1,60 m recebe q<sub>terça</sub> = q (kN/m²) × 1,60 m; uma tesoura com pórticos a cada 6 m recebe a carga de uma faixa de 6 m — ou, se as terças estão nos nós, cargas concentradas P = q × 1,60 × 6,0 em cada nó. O pilar recebe a reação da tesoura mais o fechamento; a fundação, tudo isso mais o peso do pilar.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 730 272" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="s5_3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="f5_3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker></defs>
+<text x="365" y="18" text-anchor="middle" font-weight="bold">Planta da cobertura (trecho) – áreas de influência</text>
+<!-- cota L (espaçamento dos pórticos) -->
+<text x="245" y="36" text-anchor="middle" font-size="11" fill="#555">L (espaçamento dos pórticos, 5–8 m)</text>
+<line x1="125" y1="44" x2="365" y2="44" stroke="#555" stroke-width="1" marker-start="url(#s5_3)" marker-end="url(#s5_3)"/>
+<text x="485" y="52" text-anchor="end" fill="#0b3d91" font-size="11">faixa da tesoura 2: largura L</text>
+<!-- pórticos (tesouras) verticais -->
+<g stroke="#0b3d91" stroke-width="5">
+<line x1="125" y1="58" x2="125" y2="238"/><line x1="365" y1="58" x2="365" y2="238"/><line x1="605" y1="58" x2="605" y2="238"/>
+</g>
+<text x="125" y="256" text-anchor="middle" fill="#0b3d91" font-size="12">tesoura 1</text><text x="365" y="256" text-anchor="middle" fill="#0b3d91" font-size="12">tesoura 2</text><text x="605" y="256" text-anchor="middle" fill="#0b3d91" font-size="12">tesoura 3</text>
+<!-- terças horizontais -->
+<g stroke="#333" stroke-width="2">
+<line x1="125" y1="78" x2="605" y2="78"/><line x1="125" y1="118" x2="605" y2="118"/><line x1="125" y1="158" x2="605" y2="158"/><line x1="125" y1="198" x2="605" y2="198"/>
+</g>
+<text x="615" y="82" font-size="11">terça</text><text x="615" y="122" font-size="11">terça</text><text x="615" y="162" font-size="11">terça</text><text x="615" y="202" font-size="11">terça</text>
+<!-- área de influência da terça central (vão 1) -->
+<rect x="125" y="98" width="240" height="40" fill="#fbe1de" stroke="#c0392b" stroke-width="1" stroke-dasharray="4 2"/>
+<!-- área de influência da tesoura 2 -->
+<rect x="245" y="58" width="240" height="180" fill="none" stroke="#0b3d91" stroke-width="1.5" stroke-dasharray="6 3"/>
+<!-- rótulos da faixa da terça (com fundo para não serem cortados pelas linhas) -->
+<rect x="148" y="102" width="194" height="14" fill="#fbe1de"/>
+<rect x="181" y="120" width="128" height="14" fill="#fbe1de"/>
+<text x="245" y="112" text-anchor="middle" fill="#c0392b" font-size="11">área de influência da terça: s × L</text>
+<text x="245" y="130" text-anchor="middle" fill="#c0392b" font-size="11">q<tspan baseline-shift="sub" font-size="8">terça</tspan> = q · s (kN/m)</text>
+<text x="476" y="178" text-anchor="end" fill="#0b3d91" font-size="11">P<tspan baseline-shift="sub" font-size="8">nó</tspan> = q · s · L (kN)</text>
+<!-- cota s -->
+<line x1="95" y1="118" x2="95" y2="158" stroke="#555" stroke-width="1" marker-start="url(#s5_3)" marker-end="url(#s5_3)"/>
+<text x="87" y="142" text-anchor="end" font-size="11" fill="#555">s (1,2–2,0 m)</text>
+</svg>
+<figcaption><b>Figura 5.3</b> – Áreas de influência em uma cobertura: a terça recebe uma faixa de largura s; a tesoura recebe uma faixa de largura L, concentrada nos nós onde as terças se apoiam.</figcaption>
+</figure>
+
+<h2>5.3 Ações variáveis <span class="nivel b">Básico</span></h2>
+<h3>5.3.1 Sobrecargas de uso (NBR 6120:2019)</h3>
+<p>A NBR 6120 fixa as cargas mínimas de utilização por tipo de ambiente. Os valores são uniformes por m² e já incluem pessoas, móveis e utensílios comuns; equipamentos pesados, arquivos deslizantes, estantes altas e veículos devem ser tratados à parte. A Tabela 5.2 resume os valores mais usados em estruturas metálicas.</p>
+
+<table class="tab"><caption>Tabela 5.2 – Sobrecargas de uso usuais (NBR 6120:2019, valores mínimos; consultar a norma para a lista completa)</caption>
+<thead><tr><th>Local / uso</th><th>Sobrecarga (kN/m²)</th><th>Observações</th></tr></thead>
+<tbody>
+<tr><td class="l">Cobertura sem acesso a pessoas (só manutenção)</td><td class="c">0,25</td><td class="l">Mínimo da NBR 8800 (B.5.1) em projeção horizontal; NBR 6120 admite carga de manutenção concentrada em vez disso</td></tr>
+<tr><td class="l">Forro sem acesso / com acesso</td><td class="c">0,50 / 1,0</td><td class="l">Forros com acesso para manutenção de instalações</td></tr>
+<tr><td class="l">Residências (dormitórios, salas, cozinhas, banheiros)</td><td class="c">1,5</td><td class="l">Áreas de serviço e despensas 2,0; sacadas 2,5</td></tr>
+<tr><td class="l">Escritórios (salas de uso geral)</td><td class="c">2,5</td><td class="l">Salas de arquivo 5,0 ou por levantamento; salas de reunião 3,0</td></tr>
+<tr><td class="l">Lojas e áreas comerciais</td><td class="c">4,0</td><td class="l">Supermercados com estantes: avaliar</td></tr>
+<tr><td class="l">Depósitos e almoxarifados</td><td class="c">5,0 a 7,5 ou mais</td><td class="l">Calcular pela altura de empilhamento × peso específico; porta-pallets: cargas concentradas nos montantes</td></tr>
+<tr><td class="l">Garagens e estacionamentos (veículos ≤ 30 kN)</td><td class="c">3,0</td><td class="l">Além de carga concentrada de roda; caminhões: 6,0 ou projeto específico</td></tr>
+<tr><td class="l">Escadas e corredores com acesso ao público</td><td class="c">3,0</td><td class="l">Uso restrito (residencial): 2,5</td></tr>
+<tr><td class="l">Salas de aula / bibliotecas (leitura) / auditórios</td><td class="c">3,0 / 3,0 / 4,0</td><td class="l">Estantes de biblioteca 6,0 ou mais</td></tr>
+<tr><td class="l">Academias, salões de dança, ginásios</td><td class="c">5,0</td><td class="l">Verificar vibração</td></tr>
+<tr><td class="l">Mezanino industrial / oficina</td><td class="c">5,0</td><td class="l">Frequente 7,5–10 para estoque; máquinas: peso real + impacto</td></tr>
+<tr><td class="l">Passarelas e plataformas de operação industrial</td><td class="c">2,5–5,0</td><td class="l">Plataformas de manutenção 2,5; de operação com materiais 5,0</td></tr>
+</tbody></table>
+
+<div class="box norma"><div class="tit">NBR 6120 e NBR 8800 – cargas de manutenção em coberturas</div>
+<p>Para coberturas leves de aço, a NBR 8800 (Anexo B) exige uma sobrecarga mínima de 0,25 kN/m² em projeção horizontal, que cobre pessoas e materiais durante a montagem e a manutenção, e eventuais acúmulos de água; a NBR 6120:2019 permite alternativamente uma carga concentrada de manutenção (1,0 kN aplicada na posição mais desfavorável de terças e telhas). Essa sobrecarga é considerada <strong>isoladamente</strong>: não se combina com o vento — ninguém faz manutenção no telhado durante uma ventania de projeto — mas é a ação variável principal na combinação gravitacional.</p></div>
+
+<h3>5.3.2 Cargas de equipamentos e pontes rolantes</h3>
+<p>Equipamentos fixos (máquinas, tanques, transformadores) entram com o peso real informado pelo fabricante, aplicado nos pontos de apoio, e com um acréscimo por impacto/vibração quando há partes móveis (normalmente 10–30 %). As <strong>pontes rolantes</strong> merecem tratamento especial porque são cargas móveis, com efeitos dinâmicos e horizontais (Figura 5.4):</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="f5_4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<pattern id="h5_4" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- pilares -->
+<rect x="60" y="60" width="16" height="220" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="624" y="60" width="16" height="220" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="280" width="56" height="8" fill="url(#h5_4)" stroke="#333" stroke-width="1"/><rect x="604" y="280" width="56" height="8" fill="url(#h5_4)" stroke="#333" stroke-width="1"/>
+<!-- consoles e vigas de rolamento -->
+<polygon points="76,130 110,130 110,150 76,165" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="624,130 590,130 590,150 624,165" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="80" y="112" width="40" height="18" fill="url(#h5_4)" stroke="#333" stroke-width="1.5"/>
+<rect x="580" y="112" width="40" height="18" fill="url(#h5_4)" stroke="#333" stroke-width="1.5"/>
+<rect x="95" y="104" width="10" height="8" fill="#444"/><rect x="595" y="104" width="10" height="8" fill="#444"/>
+<text x="106" y="178" text-anchor="middle" font-size="11">console</text><text x="600" y="178" text-anchor="middle" font-size="11">console</text>
+<text x="84" y="196" font-size="11">viga de rolamento + trilho</text>
+<!-- viga da ponte -->
+<rect x="100" y="80" width="500" height="18" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle cx="112" cy="102" r="6" fill="#444"/><circle cx="588" cy="102" r="6" fill="#444"/>
+<!-- carro (trolley) e carga -->
+<rect x="495" y="62" width="50" height="18" fill="#8a94a6" stroke="#333" stroke-width="1.5"/>
+<line x1="520" y1="98" x2="520" y2="190" stroke="#333" stroke-width="1.5"/>
+<rect x="490" y="190" width="60" height="40" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.5"/>
+<text x="520" y="215" text-anchor="middle" font-size="12" font-weight="bold">Q (içada)</text>
+<text x="520" y="50" text-anchor="middle" font-size="11">carro (trolley) na posição extrema</text>
+<!-- forças nas rodas -->
+<line x1="588" y1="230" x2="588" y2="262" stroke="#c0392b" stroke-width="2.5" marker-end="url(#f5_4)"/>
+<text x="560" y="250" text-anchor="end" font-size="12" fill="#c0392b" font-weight="bold">R<tspan baseline-shift="sub" font-size="9">máx</tspan> vertical × (1 + 25 % impacto)</text>
+<line x1="112" y1="230" x2="112" y2="262" stroke="#c0392b" stroke-width="1.5" marker-end="url(#f5_4)"/>
+<text x="130" y="250" font-size="12" fill="#c0392b">R<tspan baseline-shift="sub" font-size="9">mín</tspan></text>
+<line x1="540" y1="120" x2="580" y2="120" stroke="#c0392b" stroke-width="2" marker-end="url(#f5_4)"/>
+<line x1="160" y1="120" x2="120" y2="120" stroke="#c0392b" stroke-width="2" marker-end="url(#f5_4)"/>
+<text x="350" y="118" text-anchor="middle" font-size="12" fill="#c0392b">H<tspan baseline-shift="sub" font-size="9">T</tspan> transversal (frenagem do carro):</text>
+<text x="350" y="133" text-anchor="middle" font-size="12" fill="#c0392b">10–20 % de (Q + carro)</text>
+<circle cx="200" cy="166" r="8" fill="none" stroke="#c0392b" stroke-width="2"/><circle cx="200" cy="166" r="2.5" fill="#c0392b"/>
+<text x="370" y="163" text-anchor="middle" font-size="12" fill="#c0392b">H<tspan baseline-shift="sub" font-size="9">L</tspan> longitudinal (frenagem da ponte, ⊥ ao papel):</text>
+<text x="370" y="178" text-anchor="middle" font-size="12" fill="#c0392b">10 % das rodas motoras</text>
+</svg>
+<figcaption><b>Figura 5.4</b> – Ações de uma ponte rolante: reações verticais máximas com o carro na posição extrema (majoradas pelo impacto), força transversal de frenagem do carro e força longitudinal de frenagem da ponte, todas aplicadas no topo do trilho.</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 5.3 – Ações de pontes rolantes (valores usuais; a NBR 8800 remete à NBR 8400 e ao fabricante)</caption>
+<thead><tr><th>Ação</th><th>Valor usual</th><th>Onde atua</th></tr></thead>
+<tbody>
+<tr><td class="l">Carga vertical máxima por roda</td><td class="l">Dada pelo fabricante com carro na posição extrema (Q nominal + peso do carro + parcela da ponte)</td><td class="l">Vertical, no trilho; move-se ao longo da viga de rolamento</td></tr>
+<tr><td class="l">Coeficiente de impacto vertical</td><td class="l">1,25 (pontes comandadas da cabine ou do piso, uso normal); 1,10 para monovias/talhas manuais; até 1,30–1,50 para uso severo (siderurgia)</td><td class="l">Multiplica as cargas verticais das rodas</td></tr>
+<tr><td class="l">Força transversal H<sub>T</sub></td><td class="l">10 % (ponte comandada do piso) a 20 % (cabine, uso severo) de (Q + peso do carro), dividida entre as duas vigas de rolamento</td><td class="l">Horizontal, perpendicular à viga, no topo do trilho; solicita a mesa superior e o pórtico</td></tr>
+<tr><td class="l">Força longitudinal H<sub>L</sub></td><td class="l">10 % da carga vertical das rodas motoras (frenagem/aceleração)</td><td class="l">Ao longo da viga de rolamento; vai para o contraventamento longitudinal</td></tr>
+<tr><td class="l">Fadiga</td><td class="l">Classes de utilização (ciclos) e de carga; verificar viga, ligações e console</td><td class="l">Pontes com muitos ciclos (&gt; 20 000) exigem detalhes específicos (Capítulo 15)</td></tr>
+<tr><td class="l">Deslocamento limite</td><td class="l">Vertical L/600 (leves) a L/1000 (pesadas); horizontal L/400; topo do pilar H/400 (Anexo C, NBR 8800)</td><td class="l">Desalinhamento do trilho causa desgaste e travamento</td></tr>
+</tbody></table>
+
+<h2>5.4 Ação do vento – NBR 6123 <span class="nivel i">Intermediário</span></h2>
+<p>O vento é, para galpões e coberturas leves, a ação que governa quase tudo: terças, tesouras, contraventamentos, pilares, chumbadores e até o tipo de fundação. A NBR 6123 transforma a velocidade do vento em pressões sobre as faces da edificação em quatro etapas: (1) velocidade básica V<sub>0</sub> do local; (2) fatores S<sub>1</sub>, S<sub>2</sub>, S<sub>3</sub> → velocidade característica V<sub>k</sub>; (3) pressão dinâmica q; (4) coeficientes de pressão externa C<sub>e</sub> (ou de forma C<sub>pe</sub>) e interna C<sub>pi</sub> → pressão efetiva em cada face.</p>
+
+<h3>5.4.1 Velocidade básica V<sub>0</sub></h3>
+<p>V<sub>0</sub> é a velocidade de uma rajada de 3 s, a 10 m de altura, em campo aberto e plano, excedida em média uma vez em 50 anos. Ela é lida no mapa de isopletas da norma (curvas de igual velocidade). O mapa mostra valores crescendo do norte/nordeste (30 m/s) para o sul do país (até 50 m/s no Rio Grande do Sul e no oeste de Santa Catarina). A Figura 5.5 e a Tabela 5.4 dão leituras aproximadas para capitais — <strong>consulte sempre o mapa da norma vigente</strong> para a localidade real, pois a NBR 6123:2023 revisou o mapa e alguns valores aumentaram em relação à versão de 1988.</p>
+
+<figure class="fig p90">
+<img src="fig/cap05_v0_cidades.png" alt="Velocidade básica do vento em capitais">
+<figcaption><b>Figura 5.5</b> – Velocidade básica V<sub>0</sub> aproximada em capitais brasileiras, lida no mapa de isopletas da NBR 6123. Valores indicativos: use o mapa da norma para o local da obra.</figcaption>
+</figure>
+
+<table class="tab small"><caption>Tabela 5.4 – V<sub>0</sub> aproximado por região (leitura do mapa de isopletas; valores indicativos)</caption>
+<thead><tr><th>Região</th><th>Cidades e V<sub>0</sub> (m/s)</th><th>Faixa regional</th></tr></thead>
+<tbody>
+<tr><td class="l">Sul</td><td class="l">Porto Alegre 46 · Florianópolis 43 · Curitiba 43 · Londrina 45 · Chapecó 48–50</td><td class="c">40–50</td></tr>
+<tr><td class="l">Sudeste</td><td class="l">São Paulo 40–43 · Rio de Janeiro 35 · Belo Horizonte 32 · Vitória 32 · Campinas 42</td><td class="c">30–45</td></tr>
+<tr><td class="l">Centro-Oeste</td><td class="l">Campo Grande 40 · Cuiabá 32 · Goiânia 33 · Brasília 35</td><td class="c">30–42</td></tr>
+<tr><td class="l">Nordeste</td><td class="l">Salvador 30 · Recife 30 · Fortaleza 30 · Natal 30 · São Luís 30</td><td class="c">30–35</td></tr>
+<tr><td class="l">Norte</td><td class="l">Manaus 30 · Belém 30 · Porto Velho 30 · Palmas 32</td><td class="c">30</td></tr>
+</tbody></table>
+
+<h3>5.4.2 Fator topográfico S<sub>1</sub></h3>
+<p>S<sub>1</sub> corrige o vento pelo relevo: terreno plano ou fracamente acidentado, S<sub>1</sub> = 1,0; vales profundos protegidos de ventos de qualquer direção, 0,9; taludes e morros, o vento acelera na crista — S<sub>1</sub> depende da inclinação θ do talude e da altura z do ponto considerado (Figura 5.6): para θ ≤ 3°, S<sub>1</sub> = 1,0; para 6° ≤ θ ≤ 17°, S<sub>1</sub> = 1,0 + (2,5 − z/d)·tg(θ − 3°) ≥ 1; para θ ≥ 45°, S<sub>1</sub> = 1,0 + (2,5 − z/d)·0,31 ≥ 1 (interpolar entre esses valores). Um galpão na crista de um morro de 30 m de altura e 10° de inclinação pode ter S<sub>1</sub> = 1 + 2,5·tg(7°) ≈ 1,3 junto ao topo — cerca de 70 % mais pressão que no plano, já que a pressão cresce com o quadrado da velocidade (1,3² ≈ 1,7).</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 245" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="s5_6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<marker id="f5_6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker></defs>
+<!-- terreno -->
+<path d="M30 190 L200 190 L400 90 L520 90 L690 190 Z" fill="#c8c8c8" stroke="#333" stroke-width="1.5"/>
+<path d="M30 190 L200 190 L400 90 L520 90" fill="none" stroke="#333" stroke-width="2"/>
+<line x1="30" y1="190" x2="690" y2="190" stroke="#333" stroke-width="1"/>
+<!-- ângulo -->
+<path d="M260 190 A60 60 0 0 0 253 163" fill="none" stroke="#555" stroke-width="1"/>
+<text x="272" y="180" font-size="12" fill="#555">θ</text>
+<!-- altura d -->
+<line x1="380" y1="190" x2="380" y2="90" stroke="#555" stroke-width="1" marker-start="url(#s5_6)" marker-end="url(#s5_6)"/>
+<text x="366" y="145" text-anchor="end" font-size="12" fill="#555">d</text>
+<!-- galpão na crista -->
+<rect x="420" y="60" width="70" height="30" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="420,60 455,48 490,60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<line x1="520" y1="90" x2="520" y2="52" stroke="#555" stroke-width="1" marker-start="url(#s5_6)" marker-end="url(#s5_6)"/>
+<text x="530" y="75" font-size="12" fill="#555">z</text>
+<!-- vento -->
+<g stroke="#0b3d91" stroke-width="2" marker-end="url(#f5_6)">
+<line x1="40" y1="120" x2="110" y2="120"/><line x1="40" y1="145" x2="110" y2="145"/><line x1="40" y1="170" x2="110" y2="170"/>
+</g>
+<text x="75" y="108" text-anchor="middle" fill="#0b3d91" font-weight="bold" font-size="12">vento</text>
+<text x="290" y="125" text-anchor="end" font-size="11" fill="#333">ponto B (meio do talude):</text>
+<text x="290" y="140" text-anchor="end" font-size="11" fill="#333">S<tspan baseline-shift="sub" font-size="8">1</tspan> intermediário</text>
+<text x="455" y="38" text-anchor="middle" font-size="11" fill="#c0392b" font-weight="bold">crista: S<tspan baseline-shift="sub" font-size="8">1</tspan> &gt; 1 (vento acelera)</text>
+<text x="694" y="70" text-anchor="end" font-size="11" fill="#333">sotavento do morro:</text>
+<text x="694" y="85" text-anchor="end" font-size="11" fill="#333">S<tspan baseline-shift="sub" font-size="8">1</tspan> = 1,0 (a favor da segurança)</text>
+<text x="60" y="212" font-size="11" fill="#333">plano: S<tspan baseline-shift="sub" font-size="8">1</tspan> = 1,0</text>
+<text x="410" y="214" text-anchor="middle" font-size="11" fill="#555">6° ≤ θ ≤ 17°: S<tspan baseline-shift="sub" font-size="8">1</tspan>(z) = 1 + (2,5 − z/d)·tg(θ − 3°) ≥ 1</text>
+<text x="410" y="232" text-anchor="middle" font-size="11" fill="#555">θ ≥ 45°: S<tspan baseline-shift="sub" font-size="8">1</tspan>(z) = 1 + (2,5 − z/d)·0,31 ≥ 1</text>
+</svg>
+<figcaption><b>Figura 5.6</b> – Fator topográfico S<sub>1</sub>: em taludes e morros o vento acelera na crista; o acréscimo decresce com a altura z acima do topo e se anula para z ≥ 2,5·d.</figcaption>
+</figure>
+
+<h3>5.4.3 Fator S<sub>2</sub> – rugosidade, dimensões e altura</h3>
+<p>S<sub>2</sub> combina três efeitos: a <strong>rugosidade do terreno</strong> (categorias I a V), as <strong>dimensões da edificação</strong> (classes A, B, C — rajadas curtas atingem por inteiro edificações pequenas, mas não grandes) e a <strong>altura</strong> z acima do solo (o vento cresce com a altura). Ele é dado por S<sub>2</sub> = b·F<sub>r</sub>·(z/10)<sup>p</sup>, com parâmetros b, p tabelados por categoria e classe e F<sub>r</sub> = 1,00 (classe A), 0,98 (B) e 0,95 (C).</p>
+<ul>
+<li><strong>Categoria I:</strong> superfícies lisas de grandes dimensões (mar calmo, lagos, rios, pântanos sem vegetação).</li>
+<li><strong>Categoria II:</strong> terrenos abertos em nível, com poucos obstáculos isolados (campos de aviação, fazendas sem sebes ou muros, pradarias, zonas costeiras planas) — obstáculos com altura média abaixo de 1 m.</li>
+<li><strong>Categoria III:</strong> terrenos planos ou ondulados com obstáculos como sebes, muros, edificações baixas e esparsas (granjas, casas de campo, subúrbios afastados com casas baixas) — altura média 3 m.</li>
+<li><strong>Categoria IV:</strong> terrenos com obstáculos numerosos e pouco espaçados, em zona florestal, industrial ou urbanizada (cidades pequenas e arredores, subúrbios densos de grandes cidades, áreas industriais) — altura média 10 m.</li>
+<li><strong>Categoria V:</strong> obstáculos numerosos, grandes, altos e pouco espaçados (florestas com árvores altas, centros de grandes cidades, complexos industriais desenvolvidos) — altura média ≥ 25 m.</li>
+<li><strong>Classe A:</strong> maior dimensão horizontal ou vertical ≤ 20 m (todas as unidades de vedação, terças, elementos isolados); <strong>Classe B:</strong> entre 20 m e 50 m; <strong>Classe C:</strong> &gt; 50 m.</li>
+</ul>
+
+<figure class="fig p90">
+<img src="fig/cap05_s2.png" alt="Fator S2 em função da altura">
+<figcaption><b>Figura 5.7</b> – Fator S<sub>2</sub> em função da altura para as cinco categorias de rugosidade (classe B). Em cidade (categoria IV) um galpão de 7 m recebe cerca de 16 % menos velocidade — e 30 % menos pressão — do que em campo aberto (categoria II).</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 5.5 – Fator S<sub>2</sub> para as categorias II, III e IV, classes A e B (calculado com b, p e F<sub>r</sub> da NBR 6123)</caption>
+<thead><tr><th rowspan="2">Altura z (m)</th><th colspan="2">Categoria II</th><th colspan="2">Categoria III</th><th colspan="2">Categoria IV</th></tr>
+<tr><th>Classe A</th><th>Classe B</th><th>Classe A</th><th>Classe B</th><th>Classe A</th><th>Classe B</th></tr></thead>
+<tbody>
+<tr><td class="c">≤ 5</td><td class="c">0,94</td><td class="c">0,92</td><td class="c">0,88</td><td class="c">0,86</td><td class="c">0,79</td><td class="c">0,76</td></tr>
+<tr><td class="c">10</td><td class="c">1,00</td><td class="c">0,98</td><td class="c">0,94</td><td class="c">0,92</td><td class="c">0,86</td><td class="c">0,83</td></tr>
+<tr><td class="c">15</td><td class="c">1,04</td><td class="c">1,02</td><td class="c">0,98</td><td class="c">0,96</td><td class="c">0,90</td><td class="c">0,88</td></tr>
+<tr><td class="c">20</td><td class="c">1,06</td><td class="c">1,04</td><td class="c">1,01</td><td class="c">0,99</td><td class="c">0,93</td><td class="c">0,91</td></tr>
+<tr><td class="c">30</td><td class="c">1,10</td><td class="c">1,08</td><td class="c">1,05</td><td class="c">1,03</td><td class="c">0,98</td><td class="c">0,96</td></tr>
+<tr><td class="l" colspan="7">Parâmetros: cat. II b = 1,00, p = 0,085 (A) / 0,09 (B); cat. III b = 0,94, p = 0,10 / 0,105; cat. IV b = 0,86 / 0,85, p = 0,12 / 0,125. F<sub>r</sub> = 1,00 (A), 0,98 (B). Para galpões usuais, adota-se S<sub>2</sub> constante calculado na altura média da cobertura ou, a favor da segurança, na altura da cumeeira.</td></tr>
+</tbody></table>
+
+<h3>5.4.4 Fator estatístico S<sub>3</sub></h3>
+<table class="tab"><caption>Tabela 5.6 – Fator estatístico S<sub>3</sub> (NBR 6123)</caption>
+<thead><tr><th>Grupo</th><th>Descrição</th><th>S<sub>3</sub></th></tr></thead>
+<tbody>
+<tr><td class="c">1</td><td class="l">Edificações cuja ruína total ou parcial pode afetar a segurança ou a possibilidade de socorro após uma tempestade (hospitais, quartéis de bombeiros e de polícia, centrais de comunicação e energia)</td><td class="c">1,10</td></tr>
+<tr><td class="c">2</td><td class="l">Hotéis, residências, comércio, indústria com alto fator de ocupação</td><td class="c">1,00</td></tr>
+<tr><td class="c">3</td><td class="l">Indústrias com baixo fator de ocupação (depósitos, silos, construções rurais)</td><td class="c">0,95</td></tr>
+<tr><td class="c">4</td><td class="l">Vedações (telhas, vidros, painéis de vedação)</td><td class="c">0,88</td></tr>
+<tr><td class="c">5</td><td class="l">Edificações temporárias; estruturas durante a construção (grupos 1 a 3)</td><td class="c">0,83</td></tr>
+</tbody></table>
+<p>Na prática de projeto, é comum adotar S<sub>3</sub> = 1,0 para qualquer galpão industrial (mesmo de baixa ocupação), reservando 0,95 apenas a depósitos rurais isolados — uma decisão do projetista, a ser explicitada na memória de cálculo.</p>
+
+<h3>5.4.5 Velocidade característica e pressão dinâmica</h3>
+<div class="formula">V<sub>k</sub> = V<sub>0</sub> · S<sub>1</sub> · S<sub>2</sub> · S<sub>3</sub> &nbsp;&nbsp;(m/s)<span class="n">(5.2)</span></div>
+<div class="formula">q = 0,613 · V<sub>k</sub>² &nbsp;&nbsp;(N/m²)<span class="n">(5.3)</span></div>
+<p>A constante 0,613 é metade da massa específica do ar (1,226 kg/m³). Para V<sub>k</sub> = 40 m/s, q = 981 N/m² ≈ 1,0 kN/m² — uma boa referência: <strong>vento de 40 m/s ≈ 1 kN/m² de pressão dinâmica</strong>. Como q cresce com o quadrado de V<sub>k</sub>, 10 % a mais de velocidade são 21 % a mais de pressão.</p>
+
+<h3>5.4.6 Coeficientes de pressão externa C<sub>e</sub></h3>
+<p>A pressão dinâmica q é a pressão que o ar exerceria ao ser totalmente freado. Sobre uma edificação real, o ar contorna as faces e cada uma recebe uma fração de q — positiva (pressão, empurrando a face) ou negativa (sucção, puxando-a para fora). Esses coeficientes C<sub>e</sub> são tabelados na NBR 6123 para paredes (Tabela 4 da norma) e telhados de duas águas (Tabela 5) em função das proporções h/b, a/b, da inclinação θ e da direção do vento (0° = perpendicular à cumeeira, incidindo na parede maior; 90° = paralelo à cumeeira, incidindo no oitão). As Figuras 5.8 e 5.9 mostram os valores para o caso mais comum: galpão baixo (h/b ≤ 1/2), alongado (2 ≤ a/b ≤ 4), θ ≈ 10°.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 310" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="f5_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="v5_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker>
+<pattern id="h5_8" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<text x="380" y="22" text-anchor="middle" font-weight="bold">Vento a 0° (perpendicular à cumeeira) – corte transversal</text>
+<!-- solo -->
+<line x1="40" y1="270" x2="720" y2="270" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="270" width="680" height="8" fill="url(#h5_8)"/>
+<!-- galpão: largura b de 220 a 580 (360 px = 20 m), pé-direito 7 m = 126 px, cumeeira +10° -> 1,76 m = 32 px -->
+<polygon points="220,270 220,144 400,112 580,144 580,270" fill="#eef3fb" stroke="#333" stroke-width="2.5"/>
+<!-- vento -->
+<g stroke="#0b3d91" stroke-width="2" marker-end="url(#v5_8)">
+<line x1="60" y1="170" x2="150" y2="170"/><line x1="60" y1="200" x2="150" y2="200"/><line x1="60" y1="230" x2="150" y2="230"/>
+</g>
+<text x="105" y="155" text-anchor="middle" fill="#0b3d91" font-weight="bold">vento</text>
+<!-- parede barlavento: pressão +0,7 (setas para dentro) -->
+<g stroke="#c0392b" stroke-width="2" marker-end="url(#f5_8)">
+<line x1="180" y1="165" x2="216" y2="165"/><line x1="180" y1="200" x2="216" y2="200"/><line x1="180" y1="235" x2="216" y2="235"/>
+</g>
+<text x="200" y="258" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="13">+0,7</text>
+<text x="200" y="128" text-anchor="middle" fill="#c0392b" font-size="11">barlavento</text>
+<text x="200" y="140" text-anchor="middle" fill="#c0392b" font-size="11">(pressão)</text>
+<!-- parede sotavento: sucção -0,5 (setas para fora) -->
+<g stroke="#c0392b" stroke-width="2" marker-end="url(#f5_8)">
+<line x1="584" y1="165" x2="620" y2="165"/><line x1="584" y1="200" x2="620" y2="200"/><line x1="584" y1="235" x2="620" y2="235"/>
+</g>
+<text x="602" y="258" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="13">−0,5</text>
+<text x="602" y="128" text-anchor="middle" fill="#c0392b" font-size="11">sotavento</text>
+<text x="602" y="140" text-anchor="middle" fill="#c0392b" font-size="11">(sucção)</text>
+<!-- água barlavento: sucção -1,2 (setas saindo perpendicular ao telhado, inclinação 10°) -->
+<g stroke="#c0392b" stroke-width="2.5" marker-end="url(#f5_8)">
+<line x1="250" y1="135" x2="243" y2="95"/><line x1="290" y1="128" x2="283" y2="88"/><line x1="330" y1="121" x2="323" y2="81"/><line x1="370" y1="114" x2="363" y2="74"/>
+</g>
+<text x="300" y="66" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="14">−1,2</text>
+<text x="300" y="50" text-anchor="middle" fill="#c0392b" font-size="11">água de barlavento (EF): sucção forte</text>
+<!-- água sotavento -0,4 -->
+<g stroke="#c0392b" stroke-width="2" marker-end="url(#f5_8)">
+<line x1="430" y1="114" x2="437" y2="86"/><line x1="470" y1="121" x2="477" y2="93"/><line x1="510" y1="128" x2="517" y2="100"/><line x1="550" y1="135" x2="557" y2="107"/>
+</g>
+<text x="500" y="72" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="14">−0,4</text>
+<text x="500" y="56" text-anchor="middle" fill="#c0392b" font-size="11">água de sotavento (GH)</text>
+<!-- cotas -->
+<line x1="220" y1="292" x2="580" y2="292" stroke="#555" stroke-width="1"/>
+<text x="400" y="305" text-anchor="middle" fill="#555" font-size="11">b = 20 m &nbsp;·&nbsp; h = 7 m (h/b = 0,35 ≤ 0,5) &nbsp;·&nbsp; θ = 10° &nbsp;·&nbsp; a = 60 m (a/b = 3)</text>
+<line x1="640" y1="144" x2="640" y2="270" stroke="#555" stroke-width="1"/>
+<text x="652" y="210" fill="#555" font-size="11">h</text>
+<text x="400" y="215" text-anchor="middle" font-size="10" fill="#555">oitões (C e D, paralelas ao vento): −0,9 / −0,5</text>
+<text x="400" y="230" text-anchor="middle" font-size="10" fill="#555">(valores indicativos – NBR 6123, Tab. 4 e 5)</text>
+</svg>
+<figcaption><b>Figura 5.8</b> – Coeficientes de pressão externa C<sub>e</sub> para vento a 0° em um galpão de duas águas baixo (h/b ≤ 0,5, θ = 10°): a parede de barlavento é empurrada; todo o telhado e as demais paredes são <em>sugados</em>. A água de barlavento tem a maior sucção (−1,2).</figcaption>
+</figure>
+
+<figure class="fig">
+<svg viewBox="0 0 760 345" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="f5_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="v5_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker>
+<marker id="c5_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker></defs>
+<text x="380" y="22" text-anchor="middle" font-weight="bold">Vento a 90° (paralelo à cumeeira) – planta</text>
+<!-- galpão em planta: a = 60 m -> 480 px (de 200 a 680); b = 20 m -> 160 px (de 100 a 260) -->
+<rect x="200" y="100" width="480" height="160" fill="#eef3fb" stroke="#333" stroke-width="2.5"/>
+<line x1="200" y1="180" x2="680" y2="180" stroke="#333" stroke-width="1.2" stroke-dasharray="8 4"/>
+<text x="440" y="176" text-anchor="middle" font-size="11" fill="#555">cumeeira</text>
+<!-- divisórias de zonas: A1/B1 largura b/2 = 80 px; telhado EG até b/2 -->
+<line x1="280" y1="100" x2="280" y2="260" stroke="#555" stroke-width="1" stroke-dasharray="3 3"/>
+<!-- vento -->
+<g stroke="#0b3d91" stroke-width="2" marker-end="url(#v5_9)">
+<line x1="60" y1="140" x2="150" y2="140"/><line x1="60" y1="180" x2="150" y2="180"/><line x1="60" y1="220" x2="150" y2="220"/>
+</g>
+<text x="105" y="125" text-anchor="middle" fill="#0b3d91" font-weight="bold">vento</text>
+<!-- oitão barlavento C +0,7 -->
+<g stroke="#c0392b" stroke-width="2" marker-end="url(#f5_9)">
+<line x1="165" y1="130" x2="196" y2="130"/><line x1="165" y1="180" x2="196" y2="180"/><line x1="165" y1="230" x2="196" y2="230"/>
+</g>
+<text x="182" y="285" text-anchor="middle" fill="#c0392b" font-weight="bold">C: +0,7</text>
+<text x="182" y="300" text-anchor="middle" fill="#c0392b" font-size="11">oitão barlavento</text>
+<!-- oitão sotavento D -0,3 -->
+<g stroke="#c0392b" stroke-width="2" marker-end="url(#f5_9)">
+<line x1="684" y1="130" x2="715" y2="130"/><line x1="684" y1="180" x2="715" y2="180"/><line x1="684" y1="230" x2="715" y2="230"/>
+</g>
+<text x="700" y="285" text-anchor="middle" fill="#c0392b" font-weight="bold">D: −0,3</text>
+<text x="700" y="300" text-anchor="middle" fill="#c0392b" font-size="11">oitão sotavento</text>
+<!-- paredes laterais A1/B1 e A2/B2 -->
+<g stroke="#c0392b" stroke-width="2" marker-end="url(#f5_9)">
+<line x1="240" y1="96" x2="240" y2="66"/><line x1="240" y1="264" x2="240" y2="294"/>
+<line x1="400" y1="96" x2="400" y2="74"/><line x1="560" y1="96" x2="560" y2="74"/><line x1="400" y1="264" x2="400" y2="286"/><line x1="560" y1="264" x2="560" y2="286"/>
+</g>
+<text x="240" y="52" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="12">A1: −0,8 (trecho b/2)</text>
+<text x="480" y="62" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="12">A2: −0,4 (parede lateral, restante)</text>
+<text x="240" y="310" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="12">B1: −0,8</text>
+<text x="480" y="310" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="12">B2: −0,4</text>
+<!-- telhado -->
+<text x="240" y="150" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="13">E: −0,8</text>
+<text x="240" y="215" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="13">G: −0,8</text>
+<text x="480" y="150" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="13">F: −0,6 (telhado, restante)</text>
+<text x="480" y="215" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="13">H: −0,6</text>
+<!-- cota b/2 -->
+<text x="380" y="338" text-anchor="middle" fill="#555" font-size="10">Todo o telhado em sucção; trecho inicial (≈ b/2) com sucção maior. Bordas e cumeeira: C<tspan baseline-shift="sub" font-size="8">e</tspan> local até −2,0 (fixação das telhas).</text>
+</svg>
+<figcaption><b>Figura 5.9</b> – Coeficientes C<sub>e</sub> para vento a 90° (entrando pelo oitão): o oitão de barlavento é pressionado, o de sotavento sugado; paredes laterais e telhado sofrem sucção maior perto da borda de barlavento.</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 5.7 – C<sub>e</sub> indicativos para galpão de duas águas, h/b ≤ 1/2, 2 ≤ a/b ≤ 4 (NBR 6123, Tabelas 4 e 5 – consultar a norma para outras proporções)</caption>
+<thead><tr><th>Face</th><th>Vento a 0° (⊥ cumeeira)</th><th>Vento a 90° (∥ cumeeira)</th></tr></thead>
+<tbody>
+<tr><td class="l">Parede maior de barlavento (A)</td><td class="c">+0,7</td><td class="c">−0,8 (trecho b/2 inicial: A1) / −0,4 (A2)</td></tr>
+<tr><td class="l">Parede maior de sotavento (B)</td><td class="c">−0,5</td><td class="c">−0,8 (B1) / −0,4 (B2)</td></tr>
+<tr><td class="l">Oitões (C e D)</td><td class="c">−0,9 (trecho inicial C1, D1) / −0,5 (C2, D2)</td><td class="c">+0,7 (barlavento, C) / −0,3 (sotavento, D)</td></tr>
+<tr><td class="l">Telhado θ = 5°</td><td class="c">−0,9 (EF) / −0,4 (GH)</td><td class="c">−0,8 (EG) / −0,4 (FH)</td></tr>
+<tr><td class="l">Telhado θ = 10°</td><td class="c">−1,2 (EF) / −0,4 (GH)</td><td class="c">−0,8 (EG) / −0,6 (FH)</td></tr>
+<tr><td class="l">Telhado θ = 15°</td><td class="c">−1,0 (EF) / −0,4 (GH)</td><td class="c">−0,8 (EG) / −0,6 (FH)</td></tr>
+<tr><td class="l">Telhado θ = 20°</td><td class="c">−0,4 (EF) / −0,4 (GH)</td><td class="c">−0,7 (EG) / −0,6 (FH)</td></tr>
+<tr><td class="l">Telhado θ = 30°</td><td class="c">0 (EF) / −0,4 (GH)</td><td class="c">−0,7 (EG) / −0,6 (FH)</td></tr>
+<tr><td class="l">Bordas de telhado / cumeeira (valores locais para telhas e fixações)</td><td class="c" colspan="2">−1,4 a −2,0 em faixas de largura ≈ 0,15·b junto às bordas</td></tr>
+</tbody></table>
+
+<h3>5.4.7 Coeficiente de pressão interna C<sub>pi</sub></h3>
+<p>O ar também entra na edificação por portas, janelas, frestas e aberturas de ventilação e cria uma pressão interna que atua em todas as faces por dentro. Uma pressão interna positiva "infla" o galpão e soma-se à sucção externa do telhado; uma negativa alivia. A NBR 6123 dá os casos (Figura 5.10 e Tabela 5.8). A pressão efetiva em cada face é:</p>
+<div class="formula">p = (C<sub>e</sub> − C<sub>pi</sub>) · q<span class="n">(5.4)</span></div>
+<p>Sinal positivo = pressão sobre a face (de fora para dentro); negativo = sucção. Como C<sub>pi</sub> pode ser positivo ou negativo, deve-se testar os dois valores e usar o mais desfavorável para cada elemento.</p>
+
+<table class="tab"><caption>Tabela 5.8 – Coeficiente de pressão interna C<sub>pi</sub> (NBR 6123)</caption>
+<thead><tr><th>Situação de permeabilidade</th><th>C<sub>pi</sub></th></tr></thead>
+<tbody>
+<tr><td class="l">Duas faces opostas igualmente permeáveis, as outras impermeáveis; vento perpendicular a uma face permeável</td><td class="c">+0,2</td></tr>
+<tr><td class="l">Idem, vento perpendicular a uma face impermeável</td><td class="c">−0,3</td></tr>
+<tr><td class="l">Quatro faces igualmente permeáveis</td><td class="c">−0,3 ou 0 (o mais nocivo)</td></tr>
+<tr><td class="l">Abertura dominante na face de barlavento (portão aberto), relação entre a área da abertura e a soma das áreas das demais aberturas: 1 / 1,5 / 2 / 3 / ≥ 6</td><td class="c">+0,1 / +0,3 / +0,5 / +0,6 / +0,8</td></tr>
+<tr><td class="l">Abertura dominante na face de sotavento ou em face paralela ao vento</td><td class="c">Igual ao C<sub>e</sub> externo da face onde está a abertura (por ex. −0,3 a −0,9)</td></tr>
+<tr><td class="l">Edificação efetivamente estanque, com janelas fixas</td><td class="c">−0,2 ou 0 (o mais nocivo)</td></tr>
+</tbody></table>
+
+<figure class="fig">
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="f5_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="v5_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker></defs>
+<!-- (a) -->
+<g transform="translate(0,0)">
+<text x="125" y="20" text-anchor="middle" font-weight="bold" font-size="12">(a) Fechado, frestas iguais</text>
+<polygon points="50,200 50,110 125,90 200,110 200,200" fill="#eef3fb" stroke="#333" stroke-width="2"/>
+<line x1="10" y1="150" x2="40" y2="150" stroke="#0b3d91" stroke-width="2" marker-end="url(#v5_10)"/>
+<text x="125" y="150" text-anchor="middle" fill="#c0392b" font-weight="bold">C<tspan baseline-shift="sub" font-size="9">pi</tspan> = +0,2 ou −0,3</text>
+<text x="125" y="222" text-anchor="middle" font-size="11" fill="#555">testar os dois; sem "inflar" forte</text>
+</g>
+<!-- (b) -->
+<g transform="translate(255,0)">
+<text x="125" y="20" text-anchor="middle" font-weight="bold" font-size="12">(b) Portão aberto a barlavento</text>
+<polygon points="50,200 50,110 125,90 200,110 200,200" fill="#fbe1de" stroke="#333" stroke-width="2"/>
+<rect x="46" y="150" width="8" height="50" fill="#fff" stroke="#333" stroke-width="1"/>
+<line x1="10" y1="175" x2="60" y2="175" stroke="#0b3d91" stroke-width="2" marker-end="url(#v5_10)"/>
+<g stroke="#c0392b" stroke-width="2" marker-end="url(#f5_10)">
+<line x1="90" y1="130" x2="84" y2="106"/><line x1="125" y1="125" x2="125" y2="100"/><line x1="160" y1="130" x2="166" y2="106"/>
+<line x1="180" y1="150" x2="196" y2="150"/>
+</g>
+<text x="135" y="165" text-anchor="middle" fill="#c0392b" font-weight="bold">C<tspan baseline-shift="sub" font-size="9">pi</tspan> = +0,5 a +0,8</text>
+<text x="125" y="222" text-anchor="middle" font-size="11" fill="#555">pressão interna empurra o telhado para cima:</text>
+<text x="125" y="236" text-anchor="middle" font-size="11" fill="#555">soma com a sucção externa (caso crítico!)</text>
+</g>
+<!-- (c) -->
+<g transform="translate(510,0)">
+<text x="125" y="20" text-anchor="middle" font-weight="bold" font-size="12">(c) Portão aberto a sotavento</text>
+<polygon points="50,200 50,110 125,90 200,110 200,200" fill="#e9f7ec" stroke="#333" stroke-width="2"/>
+<rect x="196" y="150" width="8" height="50" fill="#fff" stroke="#333" stroke-width="1"/>
+<line x1="10" y1="150" x2="40" y2="150" stroke="#0b3d91" stroke-width="2" marker-end="url(#v5_10)"/>
+<g stroke="#c0392b" stroke-width="2" marker-end="url(#f5_10)">
+<line x1="84" y1="106" x2="90" y2="130"/><line x1="125" y1="100" x2="125" y2="125"/><line x1="166" y1="106" x2="160" y2="130"/>
+</g>
+<text x="120" y="160" text-anchor="middle" fill="#c0392b" font-weight="bold">C<tspan baseline-shift="sub" font-size="9">pi</tspan> ≈ −0,3</text>
+<text x="120" y="178" text-anchor="middle" fill="#c0392b" font-size="11">(sucção interna)</text>
+<text x="125" y="222" text-anchor="middle" font-size="11" fill="#555">alivia o telhado, mas carrega a</text>
+<text x="125" y="236" text-anchor="middle" font-size="11" fill="#555">parede de barlavento (0,7 + 0,3 = 1,0)</text>
+</g>
+</svg>
+<figcaption><b>Figura 5.10</b> – Pressão interna: (a) galpão fechado com permeabilidade uniforme; (b) portão dominante a barlavento — o galpão "infla" e o telhado recebe a sucção externa mais a pressão interna; (c) portão dominante a sotavento — sucção interna. Como portões abrem e fecham, os casos (b) e (c) devem ambos ser verificados quando há portões grandes.</figcaption>
+</figure>
+
+<div class="box exemplo"><div class="tit">Exemplo 5.1 – Vento em um galpão de duas águas (cálculo completo)</div>
+<p><b>Dados:</b> galpão industrial fechado com portões nos oitões; largura b = 20 m, comprimento a = 60 m, pé-direito (beiral) h = 7 m, inclinação θ = 10° (cumeeira a 8,76 m); local com V<sub>0</sub> = 40 m/s, terreno plano, subúrbio industrial de cidade pequena (categoria IV? — o projetista, a favor da segurança, adotou <b>categoria II</b>, por ser um distrito industrial em área aberta e plana); classe B (maior dimensão 60 m &gt; 50 m seria classe C, mas para as terças e telhas — elementos com menos de 20 m — vale a classe A; adotamos a classe B para a estrutura principal por ser intermediária e a favor da segurança nas faces). Grupo 2 → S<sub>3</sub> = 1,0.</p>
+<div class="passo"><b>Passo 1 – Fatores.</b> S<sub>1</sub> = 1,0 (plano). S<sub>2</sub> na altura média da cobertura (≈ 7,9 m; adotamos z = 7 m para as paredes e, a favor da segurança, o mesmo valor para tudo… conferindo na cumeeira, a 8,76 m, a diferença é de apenas 2 %): S<sub>2</sub> = 1,00 × 0,98 × (7/10)<sup>0,09</sup> = 0,98 × 0,968 = <b>0,949</b>. S<sub>3</sub> = 1,0.</div>
+<div class="passo"><b>Passo 2 – Velocidade característica.</b> V<sub>k</sub> = 40 × 1,0 × 0,949 × 1,0 = <b>37,96 m/s ≈ 38 m/s</b>.</div>
+<div class="passo"><b>Passo 3 – Pressão dinâmica.</b> q = 0,613 × 37,96² = 0,613 × 1 441 = 883 N/m² = <b>0,88 kN/m²</b>.</div>
+<div class="passo"><b>Passo 4 – Coeficientes externos.</b> h/b = 7/20 = 0,35 ≤ 0,5; a/b = 3 (entre 2 e 4); θ = 10° → valores da Tabela 5.7 (Figuras 5.8 e 5.9).</div>
+<div class="passo"><b>Passo 5 – Coeficiente interno.</b> Galpão com portões nos dois oitões e frestas nas demais faces: consideramos C<sub>pi</sub> = +0,2 e −0,3 (Tabela 5.8, primeira linha) e, adicionalmente, o caso do portão do oitão aberto com vento a 90° (abertura dominante a barlavento; área do portão ≈ 2 × a soma das demais aberturas → C<sub>pi</sub> = +0,5).</div>
+<div class="passo"><b>Passo 6 – Pressões efetivas p = (C<sub>e</sub> − C<sub>pi</sub>)·q.</b> Resultados na Tabela 5.9. Exemplo para a água de barlavento a 0°: (−1,2 − 0,2) × 0,88 = <b>−1,23 kN/m²</b> (sucção); parede de barlavento com C<sub>pi</sub> = −0,3: (+0,7 + 0,3) × 0,88 = <b>+0,88 kN/m²</b>.</div>
+<div class="passo"><b>Passo 7 – Leitura dos resultados.</b> A maior carga sobre o telhado é uma sucção de 1,23 kN/m² (0° com C<sub>pi</sub> = +0,2), e chega a 1,50 kN/m² no trecho inicial do telhado a 90° com o portão aberto. O peso próprio de telha + terças é de apenas 0,13 kN/m²: <strong>o vento levanta a cobertura com dez vezes o seu peso</strong>. Esse é o caso que dimensiona terças, fixações das telhas, banzo inferior das tesouras e os chumbadores à tração.</div></div>
+
+<table class="tab"><caption>Tabela 5.9 – Exemplo 5.1: pressões efetivas (kN/m²) por face; q = 0,88 kN/m²; positivo = pressão, negativo = sucção</caption>
+<thead><tr><th>Face</th><th>C<sub>e</sub></th><th>C<sub>pi</sub> = +0,2</th><th>C<sub>pi</sub> = −0,3</th><th>Governa</th></tr></thead>
+<tbody>
+<tr><td class="l" colspan="5"><b>Vento a 0° (perpendicular à cumeeira)</b></td></tr>
+<tr><td class="l">Parede de barlavento (A)</td><td class="c">+0,7</td><td class="c">+0,44</td><td class="c"><b>+0,88</b></td><td class="l">pressão (longarinas, pilares)</td></tr>
+<tr><td class="l">Parede de sotavento (B)</td><td class="c">−0,5</td><td class="c"><b>−0,62</b></td><td class="c">−0,18</td><td class="l">sucção</td></tr>
+<tr><td class="l">Oitões, trecho inicial (C1, D1) / restante (C2, D2)</td><td class="c">−0,9 / −0,5</td><td class="c"><b>−0,97 / −0,62</b></td><td class="c">−0,53 / −0,18</td><td class="l">sucção (fixação do fechamento)</td></tr>
+<tr><td class="l">Água de barlavento (EF)</td><td class="c">−1,2</td><td class="c"><b>−1,23</b></td><td class="c">−0,79</td><td class="l">sucção – terças, telhas, tesoura</td></tr>
+<tr><td class="l">Água de sotavento (GH)</td><td class="c">−0,4</td><td class="c"><b>−0,53</b></td><td class="c">−0,09</td><td class="l">sucção</td></tr>
+<tr><td class="l" colspan="5"><b>Vento a 90° (paralelo à cumeeira)</b></td></tr>
+<tr><td class="l">Oitão de barlavento (C)</td><td class="c">+0,7</td><td class="c">+0,44</td><td class="c"><b>+0,88</b></td><td class="l">pressão (portal de vento, contraventamento)</td></tr>
+<tr><td class="l">Oitão de sotavento (D)</td><td class="c">−0,3</td><td class="c"><b>−0,44</b></td><td class="c">0,00</td><td class="l">sucção</td></tr>
+<tr><td class="l">Paredes laterais: A1, B1 / A2, B2</td><td class="c">−0,8 / −0,4</td><td class="c"><b>−0,88 / −0,53</b></td><td class="c">−0,44 / −0,09</td><td class="l">sucção</td></tr>
+<tr><td class="l">Telhado: E, G (trecho b/2) / F, H (restante)</td><td class="c">−0,8 / −0,6</td><td class="c"><b>−0,88 / −0,70</b></td><td class="c">−0,44 / −0,26</td><td class="l">sucção</td></tr>
+<tr><td class="l">Telhado E, G com portão do oitão aberto (C<sub>pi</sub> = +0,5)</td><td class="c">−0,8 / −0,6</td><td class="c" colspan="2"><b>−1,14 / −0,97</b> (e −1,50 com C<sub>e</sub> local −1,2 na borda)</td><td class="l">sucção máxima</td></tr>
+</tbody></table>
+
+<div class="box atencao"><div class="tit">Três esquecimentos clássicos no vento</div>
+<ul>
+<li><strong>Esquecer a sucção no telhado</strong> e calcular a cobertura só para carga de baixo para cima. Em coberturas leves a sucção é a ação dominante — inverte os esforços em terças e tesouras e traciona os chumbadores.</li>
+<li><strong>Esquecer o C<sub>pi</sub>.</strong> Um portão aberto a barlavento pode dobrar a carga de levantamento do telhado. Galpões com portões grandes devem ser verificados com abertura dominante.</li>
+<li><strong>Usar C<sub>e</sub> médio nas fixações das telhas.</strong> Nas bordas e na cumeeira os coeficientes locais chegam a −2,0; é onde as telhas arrancam primeiro. Reduza o espaçamento dos parafusos nas faixas de borda.</li>
+</ul></div>
+
+<h2>5.5 Outras ações: temperatura, recalques, sismo <span class="nivel i">Intermediário</span></h2>
+<p><strong>Temperatura.</strong> O aço dilata 1,2 × 10⁻⁵ por °C: uma viga de 60 m com variação de 30 °C muda de comprimento 60 000 × 1,2 × 10⁻⁵ × 30 = 21,6 mm. Se ela está livre para se mover (apoios deslizantes, furos oblongos), nada acontece além do movimento; se está impedida, surge uma força N = E·A·α·ΔT — para um perfil de 50 cm² isso são 20 000 × 50 × 1,2 × 10⁻⁵ × 30 = 360 kN, o suficiente para flambar barras ou romper ligações. A NBR 8800 adota variação uniforme de ± 15 °C como referência em elementos internos (a NBR 6118 sugere 10–15 °C), podendo ser maior em estruturas expostas ao sol. Estruturas com mais de 60–100 m de comprimento normalmente recebem juntas de dilatação. Em cálculo, a temperatura entra como ação variável com γ<sub>f</sub> = 1,20.</p>
+
+<figure class="fig p75">
+<svg viewBox="0 0 700 180" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="f5_11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="c5_11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h5_11" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<text x="180" y="20" text-anchor="middle" font-weight="bold" font-size="12">(a) Livre: dilata sem esforço</text>
+<rect x="30" y="40" width="12" height="60" fill="url(#h5_11)" stroke="#333" stroke-width="1.5"/>
+<rect x="42" y="60" width="240" height="20" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="282" y="60" width="26" height="20" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="4 2"/>
+<polygon points="290,80 280,96 300,96" fill="#fff" stroke="#333" stroke-width="1.5"/><circle cx="284" cy="100" r="3" fill="#fff" stroke="#333" stroke-width="1"/><circle cx="296" cy="100" r="3" fill="#fff" stroke="#333" stroke-width="1"/>
+<line x1="282" y1="120" x2="308" y2="120" stroke="#c0392b" stroke-width="1" marker-start="url(#c5_11)" marker-end="url(#c5_11)"/>
+<text x="295" y="140" text-anchor="middle" font-size="11" fill="#c0392b">ΔL = α·L·ΔT</text>
+<text x="160" y="160" text-anchor="middle" font-size="12" fill="#333">L = 60 m, ΔT = 30 °C → ΔL = 21,6 mm</text>
+<text x="520" y="20" text-anchor="middle" font-weight="bold" font-size="12">(b) Impedida: surge força</text>
+<rect x="380" y="40" width="12" height="60" fill="url(#h5_11)" stroke="#333" stroke-width="1.5"/>
+<rect x="392" y="60" width="240" height="20" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="632" y="40" width="12" height="60" fill="url(#h5_11)" stroke="#333" stroke-width="1.5"/>
+<line x1="470" y1="70" x2="410" y2="70" stroke="#c0392b" stroke-width="2.5" marker-end="url(#f5_11)"/>
+<line x1="554" y1="70" x2="614" y2="70" stroke="#c0392b" stroke-width="2.5" marker-end="url(#f5_11)"/>
+<text x="512" y="74" text-anchor="middle" fill="#c0392b" font-weight="bold" font-size="12">N (compressão)</text>
+<text x="512" y="120" text-anchor="middle" font-size="11" fill="#c0392b">N = E·A·α·ΔT</text>
+<text x="512" y="140" text-anchor="middle" font-size="12" fill="#333">A = 50 cm² → N = 360 kN</text>
+<text x="512" y="160" text-anchor="middle" font-size="11" fill="#555">(independe do comprimento!)</text>
+</svg>
+<figcaption><b>Figura 5.11</b> – Ação térmica: se a estrutura pode se mover, a temperatura só gera deslocamento; se é impedida, gera esforço proporcional a E·A·α·ΔT.</figcaption>
+</figure>
+
+<p><strong>Recalques de apoio.</strong> Só produzem esforços em estruturas hiperestáticas (Capítulo 4). Quando o projeto geotécnico prevê recalques diferenciais significativos (solos moles, fundações mistas), o valor previsto entra como ação permanente indireta. Em galpões com pórticos isostáticos ou de base rotulada, o problema é pequeno; em edifícios com pórticos rígidos e vigas contínuas, pode ser importante.</p>
+<p><strong>Sismo.</strong> O Brasil está em região de baixa sismicidade. A NBR 15421:2006 (projeto de estruturas resistentes a sismos) divide o país em zonas; na maior parte do território (zona 0, aceleração ≤ 0,025g) nenhuma verificação é exigida; no Nordeste (zonas 1 a 2, até 0,10g) e em parte do Acre (zonas 3 a 4, até 0,15g) o projeto sísmico é obrigatório, mas em geral não governa estruturas metálicas leves e bem contraventadas — o vento é mais severo. A estrutura de aço, dúctil e leve, é naturalmente favorável.</p>
+<p><strong>Ações de construção e montagem.</strong> Pesos de equipamentos de montagem, materiais estocados sobre a laje ou a cobertura, cargas de içamento, e situações temporárias (estrutura sem contraventamento definitivo, laje mista sem escoramento com concreto fresco) devem ser verificadas em combinações de construção com coeficientes reduzidos (Tabela 5.10).</p>
+
+<h2>5.6 Coeficientes de ponderação e fatores de combinação <span class="nivel i">Intermediário</span></h2>
+<h3>5.6.1 Coeficientes γ<sub>f</sub></h3>
+<p>Os coeficientes de ponderação das ações (Tabela 5.10) são dados pela NBR 8800 (Tabela 1), compatíveis com a NBR 8681. Repare que as ações permanentes têm dois valores: o maior quando a ação é <strong>desfavorável</strong> (aumenta o esforço verificado) e 1,0 quando é <strong>favorável</strong> (reduz o esforço) — por exemplo, o peso próprio que "segura" a cobertura contra a sucção do vento não pode ser majorado, e sim tomado pelo valor mínimo.</p>
+
+<table class="tab"><caption>Tabela 5.10 – Coeficientes de ponderação das ações γ<sub>f</sub> (NBR 8800:2008, Tabela 1)</caption>
+<thead><tr><th rowspan="2">Ação</th><th colspan="3">Combinações últimas</th><th rowspan="2">ELS</th></tr>
+<tr><th>Normais</th><th>Especiais ou de construção</th><th>Excepcionais</th></tr></thead>
+<tbody>
+<tr><td class="l" colspan="5"><b>Permanentes diretas</b> (desfavorável / favorável)</td></tr>
+<tr><td class="l">Peso próprio de estruturas metálicas (pequena variabilidade)</td><td class="c">1,25 / 1,00</td><td class="c">1,15 / 1,00</td><td class="c">1,10 / 1,00</td><td class="c">1,0</td></tr>
+<tr><td class="l">Peso próprio de estruturas pré-moldadas</td><td class="c">1,30 / 1,00</td><td class="c">1,20 / 1,00</td><td class="c">1,15 / 1,00</td><td class="c">1,0</td></tr>
+<tr><td class="l">Peso próprio de estruturas moldadas no local, elementos construtivos industrializados e empuxos permanentes</td><td class="c">1,35 / 1,00</td><td class="c">1,25 / 1,00</td><td class="c">1,15 / 1,00</td><td class="c">1,0</td></tr>
+<tr><td class="l">Elementos construtivos industrializados com adições in loco</td><td class="c">1,40 / 1,00</td><td class="c">1,30 / 1,00</td><td class="c">1,20 / 1,00</td><td class="c">1,0</td></tr>
+<tr><td class="l">Elementos construtivos em geral e equipamentos (grande variabilidade)</td><td class="c">1,50 / 1,00</td><td class="c">1,40 / 1,00</td><td class="c">1,30 / 1,00</td><td class="c">1,0</td></tr>
+<tr><td class="l" colspan="5"><b>Permanentes indiretas</b> (recalques, retração): 1,20 / 0 (normal); 1,20 / 0 (especial); 0 / 0 (excepcional)</td></tr>
+<tr><td class="l" colspan="5"><b>Variáveis</b></td></tr>
+<tr><td class="l">Efeito da temperatura</td><td class="c">1,20</td><td class="c">1,00</td><td class="c">1,00</td><td class="c">1,0</td></tr>
+<tr><td class="l">Ação do vento</td><td class="c">1,40</td><td class="c">1,20</td><td class="c">1,00</td><td class="c">1,0</td></tr>
+<tr><td class="l">Ações truncadas (limitadas fisicamente, ex.: nível máximo de reservatório)</td><td class="c">1,20</td><td class="c">1,10</td><td class="c">1,00</td><td class="c">1,0</td></tr>
+<tr><td class="l">Demais ações variáveis (sobrecargas, pontes rolantes, equipamentos móveis)</td><td class="c">1,50</td><td class="c">1,30</td><td class="c">1,00</td><td class="c">1,0</td></tr>
+<tr><td class="l" colspan="5">A NBR 8681 usa, de forma simplificada, 1,40 para permanentes de grande variabilidade e 1,30 para pequena variabilidade; a NBR 8800 detalha por tipo, como acima. Em estruturas metálicas com telhas e forros leves é comum adotar 1,25 para o aço e 1,35–1,40 para os demais elementos permanentes.</td></tr>
+</tbody></table>
+
+<h3>5.6.2 Fatores de combinação ψ<sub>0</sub>, ψ<sub>1</sub>, ψ<sub>2</sub></h3>
+<p>É muito improvável que o vento de 50 anos sopre exatamente na hora em que o piso está com a sobrecarga máxima e a ponte rolante iça a carga nominal. Por isso, em cada combinação, apenas uma ação variável — a <em>principal</em> — entra com seu valor característico integral; as demais entram reduzidas pelo fator ψ<sub>0</sub> (valor de combinação). Para as verificações de serviço usam-se ψ<sub>1</sub> (valor frequente: excedido cerca de 5 % do tempo) e ψ<sub>2</sub> (valor quase permanente: valor médio ao longo da vida).</p>
+
+<table class="tab"><caption>Tabela 5.11 – Fatores de combinação e de redução ψ (NBR 8800:2008, Tabela 2)</caption>
+<thead><tr><th>Ação variável</th><th>ψ<sub>0</sub></th><th>ψ<sub>1</sub></th><th>ψ<sub>2</sub></th></tr></thead>
+<tbody>
+<tr><td class="l">Sobrecarga em locais sem predominância de pesos de equipamentos fixos nem de elevadas concentrações de pessoas (residências)</td><td class="c">0,5</td><td class="c">0,4</td><td class="c">0,3</td></tr>
+<tr><td class="l">Sobrecarga em locais com predominância de equipamentos fixos ou concentração de pessoas (escritórios, comércio, estações, escolas, edifícios públicos)</td><td class="c">0,7</td><td class="c">0,6</td><td class="c">0,4</td></tr>
+<tr><td class="l">Bibliotecas, arquivos, depósitos, oficinas, garagens e sobrecargas em coberturas</td><td class="c">0,8</td><td class="c">0,7</td><td class="c">0,6</td></tr>
+<tr><td class="l">Vento (pressão dinâmica)</td><td class="c">0,6</td><td class="c">0,3</td><td class="c">0</td></tr>
+<tr><td class="l">Temperatura (variações uniformes)</td><td class="c">0,6</td><td class="c">0,5</td><td class="c">0,3</td></tr>
+<tr><td class="l">Cargas móveis e efeitos dinâmicos – passarelas de pedestres</td><td class="c">0,6</td><td class="c">0,4</td><td class="c">0,3</td></tr>
+<tr><td class="l">Cargas móveis e efeitos dinâmicos – pontes rolantes</td><td class="c">1,0</td><td class="c">0,8</td><td class="c">0,5</td></tr>
+</tbody></table>
+
+<h2>5.7 Combinações de ações <span class="nivel i">Intermediário</span></h2>
+<h3>5.7.1 Combinações últimas normais</h3>
+<div class="formula">F<sub>d</sub> = Σ γ<sub>gi</sub> · F<sub>Gi,k</sub> + γ<sub>q1</sub> · F<sub>Q1,k</sub> + Σ γ<sub>qj</sub> · ψ<sub>0j</sub> · F<sub>Qj,k</sub><span class="n">(5.5)</span></div>
+<ul class="onde"><li>F<sub>Gi,k</sub> = ações permanentes características (cada uma com seu γ<sub>g</sub>, desfavorável ou favorável)</li><li>F<sub>Q1,k</sub> = ação variável principal (a que mais prejudica a verificação em questão)</li><li>F<sub>Qj,k</sub> = demais ações variáveis, reduzidas por ψ<sub>0j</sub></li></ul>
+<p>Como não se sabe de antemão qual variável é a principal, montam-se várias combinações, cada uma com uma variável diferente no papel de principal, e cada elemento é verificado para a mais desfavorável. Em galpões, as combinações típicas são:</p>
+<ol>
+<li>Gravitacional: 1,25·PP<sub>aço</sub> + 1,35·PP<sub>outros</sub> + 1,5·SC (sobrecarga/manutenção como principal).</li>
+<li>Vento como principal com permanentes favoráveis (levantamento): 1,0·PP + 1,4·V<sub>sucção</sub>.</li>
+<li>Vento como principal com permanentes desfavoráveis (pressão nas paredes, pórtico): 1,25·PP + 1,4·V + 1,5·0,8·SC<sub>cob</sub> (ψ<sub>0</sub> = 0,8 para sobrecarga de cobertura) — na prática, muitos projetistas não combinam manutenção com vento de projeto, o que a NBR 8800 permite quando a sobrecarga de cobertura é apenas de manutenção.</li>
+<li>Ponte rolante como principal: 1,25·PP + 1,5·PR + 1,4·0,6·V.</li>
+<li>Vento como principal com ponte rolante: 1,25·PP + 1,4·V + 1,5·1,0·PR (ψ<sub>0</sub> = 1,0 para pontes rolantes!).</li>
+</ol>
+
+<h3>5.7.2 Combinações últimas especiais, de construção e excepcionais</h3>
+<p>Combinações especiais (ações variáveis de natureza especial, como uma carga de teste) e de construção usam os γ reduzidos da Tabela 5.10 e a mesma estrutura da Equação 5.5. As excepcionais (F<sub>d</sub> = Σ γ<sub>g</sub>·F<sub>G</sub> + F<sub>Q,exc</sub> + Σ γ<sub>q</sub>·ψ<sub>0</sub>·F<sub>Q</sub>) têm γ ainda menores porque a ação excepcional já é, por definição, rara.</p>
+
+<h3>5.7.3 Combinações de serviço (ELS)</h3>
+<p>Nos estados-limites de serviço, os γ<sub>f</sub> são 1,0 e as ações variáveis entram com valores reduzidos conforme a duração do efeito verificado:</p>
+<div class="formula">Quase permanente: F<sub>ser</sub> = Σ F<sub>Gi,k</sub> + Σ ψ<sub>2j</sub> · F<sub>Qj,k</sub><span class="n">(5.6)</span></div>
+<div class="formula">Frequente: F<sub>ser</sub> = Σ F<sub>Gi,k</sub> + ψ<sub>11</sub> · F<sub>Q1,k</sub> + Σ ψ<sub>2j</sub> · F<sub>Qj,k</sub><span class="n">(5.7)</span></div>
+<div class="formula">Rara: F<sub>ser</sub> = Σ F<sub>Gi,k</sub> + F<sub>Q1,k</sub> + Σ ψ<sub>1j</sub> · F<sub>Qj,k</sub><span class="n">(5.8)</span></div>
+<p>Usa-se a quase permanente para efeitos de longa duração (flecha que trinca uma alvenaria, aparência), a frequente para efeitos reversíveis de curta duração (vibração, deslocamento lateral que desconforta) e a rara para efeitos irreversíveis (dano em vedação frágil). O Anexo C da NBR 8800 indica, para cada limite de deslocamento, qual combinação usar — na prática, para flechas de vigas de piso e cobertura adota-se com frequência a combinação rara ou a frequente, e para deslocamentos horizontais por vento, a frequente (ψ<sub>1</sub> = 0,3, isto é, apenas 30 % do vento característico).</p>
+
+<table class="tab"><caption>Tabela 5.12 – Deslocamentos máximos usuais (NBR 8800:2008, Anexo C – Tabela C.1, resumo)</caption>
+<thead><tr><th>Elemento</th><th>Limite</th><th>Observação</th></tr></thead>
+<tbody>
+<tr><td class="l">Travessas de fechamento (longarinas)</td><td class="c">L/120</td><td class="l">L/180 se houver alvenaria ou acabamento frágil ligado</td></tr>
+<tr><td class="l">Terças de cobertura</td><td class="c">L/180</td><td class="l">Cargas gravitacionais; L/120 para vento de sucção; L/240 se houver forro</td></tr>
+<tr><td class="l">Vigas de cobertura</td><td class="c">L/250</td><td class="l">Verificar empoçamento em coberturas planas</td></tr>
+<tr><td class="l">Vigas de piso</td><td class="c">L/350</td><td class="l">L/500 (e ≤ 15 mm) se apoiam alvenaria ou acabamento frágil</td></tr>
+<tr><td class="l">Vigas de rolamento de pontes rolantes (deslocamento vertical)</td><td class="c">L/600 a L/1000</td><td class="l">Conforme capacidade e classe de uso; horizontal L/400</td></tr>
+<tr><td class="l">Deslocamento horizontal do topo de pilares (galpões)</td><td class="c">H/300</td><td class="l">H/400 com ponte rolante; balanços L/150 no topo</td></tr>
+<tr><td class="l">Edifícios de múltiplos andares – deslocamento entre pisos</td><td class="c">h/400</td><td class="l">Topo: H/300 (ação do vento, combinação frequente); h/500 em edifícios altos ou com fechamento frágil</td></tr>
+</tbody></table>
+
+<h3>5.7.4 Exemplo: combinações para as terças do galpão</h3>
+<figure class="fig">
+<svg viewBox="0 0 782 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="13">
+<defs><marker id="f5_12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c0392b"/></marker>
+<marker id="v5_12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker></defs>
+<!-- (a) gravidade -->
+<text x="190" y="20" text-anchor="middle" font-weight="bold" font-size="12">(a) Combinação gravitacional: 1,25·PP + 1,5·SC</text>
+<line x1="60" y1="40" x2="320" y2="40" stroke="#c0392b" stroke-width="1.2"/>
+<g stroke="#c0392b" stroke-width="1.2" marker-end="url(#f5_12)">
+<line x1="70" y1="40" x2="70" y2="62"/><line x1="110" y1="40" x2="110" y2="62"/><line x1="150" y1="40" x2="150" y2="62"/><line x1="190" y1="40" x2="190" y2="62"/><line x1="230" y1="40" x2="230" y2="62"/><line x1="270" y1="40" x2="270" y2="62"/><line x1="310" y1="40" x2="310" y2="62"/>
+</g>
+<text x="335" y="55" font-size="11" fill="#c0392b">0,85 kN/m ↓</text>
+<rect x="60" y="66" width="260" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="65,76 55,92 75,92" fill="#fff" stroke="#333" stroke-width="1.5"/><polygon points="315,76 305,92 325,92" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<path d="M60 110 Q190 170 320 110 Z" fill="#dbe6f7" stroke="#0b3d91" stroke-width="1.5"/>
+<line x1="55" y1="110" x2="325" y2="110" stroke="#333" stroke-width="1"/>
+<text x="190" y="158" text-anchor="middle" fill="#0b3d91" font-size="12" font-weight="bold">M = +3,8 kN·m</text>
+<text x="190" y="190" text-anchor="middle" font-size="11" fill="#333">mesa superior comprimida — travada pelas telhas ✓</text>
+<!-- (b) sucção -->
+<text x="570" y="20" text-anchor="middle" font-weight="bold" font-size="12">(b) Combinação de sucção: 1,0·PP + 1,4·V</text>
+<g stroke="#c0392b" stroke-width="1.5" marker-end="url(#f5_12)">
+<line x1="450" y1="64" x2="450" y2="34"/><line x1="490" y1="64" x2="490" y2="34"/><line x1="530" y1="64" x2="530" y2="34"/><line x1="570" y1="64" x2="570" y2="34"/><line x1="610" y1="64" x2="610" y2="34"/><line x1="650" y1="64" x2="650" y2="34"/><line x1="690" y1="64" x2="690" y2="34"/>
+</g>
+<line x1="440" y1="34" x2="700" y2="34" stroke="#c0392b" stroke-width="1.2"/>
+<text x="712" y="45" font-size="11" fill="#c0392b">2,55 kN/m ↑</text>
+<rect x="440" y="66" width="260" height="10" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<polygon points="445,76 435,92 455,92" fill="#fff" stroke="#333" stroke-width="1.5"/><polygon points="695,76 685,92 705,92" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<path d="M440 175 Q570 -5 700 175 Z" fill="#fbe1de" stroke="#c0392b" stroke-width="1.5"/>
+<line x1="435" y1="175" x2="705" y2="175" stroke="#333" stroke-width="1"/>
+<text x="570" y="115" text-anchor="middle" fill="#c0392b" font-size="12" font-weight="bold">M = −11,5 kN·m</text>
+<text x="570" y="132" text-anchor="middle" fill="#c0392b" font-size="12" font-weight="bold">(3 × maior e invertido!)</text>
+<text x="570" y="195" text-anchor="middle" font-size="11" fill="#c0392b">mesa inferior comprimida — livre: flambagem lateral!</text>
+<!-- seções da terça -->
+<g transform="translate(130,215)">
+<path d="M0 0 L40 0 L40 6 L6 6 L6 54 L40 54 L40 60 L0 60 Z" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<path d="M40 0 L40 12 L34 12 L34 6" fill="none" stroke="#333" stroke-width="1.2"/><path d="M40 60 L40 48 L34 48 L34 54" fill="none" stroke="#333" stroke-width="1.2"/>
+<rect x="-10" y="-8" width="60" height="6" fill="#8a94a6"/>
+<text x="20" y="78" text-anchor="middle" font-size="10" fill="#555">telha fixa a mesa superior</text>
+<line x1="-6" y1="3" x2="-6" y2="30" stroke="#0b3d91" stroke-width="1.5" marker-end="url(#v5_12)"/>
+<text x="-14" y="24" text-anchor="end" font-size="10" fill="#0b3d91">C</text>
+</g>
+<g transform="translate(560,215)">
+<path d="M0 0 L40 0 L40 6 L6 6 L6 54 L40 54 L40 60 L0 60 Z" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<path d="M40 0 L40 12 L34 12 L34 6" fill="none" stroke="#333" stroke-width="1.2"/><path d="M40 60 L40 48 L34 48 L34 54" fill="none" stroke="#333" stroke-width="1.2"/>
+<rect x="-10" y="-8" width="60" height="6" fill="#8a94a6"/>
+<line x1="-6" y1="57" x2="-6" y2="30" stroke="#c0392b" stroke-width="1.5" marker-end="url(#f5_12)"/>
+<text x="-14" y="50" text-anchor="end" font-size="10" fill="#c0392b">C</text>
+<text x="20" y="78" text-anchor="middle" font-size="10" fill="#c0392b">mesa inferior comprimida sem travamento</text>
+</g>
+</svg>
+<figcaption><b>Figura 5.12</b> – Terça de galpão (Exemplo 5.2): na combinação gravitacional, a mesa comprimida é a superior, travada pela telha; na combinação de sucção, o momento inverte, triplica, e a mesa comprimida é a inferior, sem travamento — por isso as correntes (tirantes) e o dimensionamento à flambagem lateral são obrigatórios.</figcaption>
+</figure>
+
+<div class="box exemplo"><div class="tit">Exemplo 5.2 – Combinações para uma terça do galpão do Exemplo 5.1</div>
+<p>Terça Ue 200 × 75 × 20 × 2,65 mm (7,9 kg/m ≈ 0,08 kN/m; Tabela 17.3) na água de barlavento, espaçamento s = 1,60 m, vão L = 6,0 m (biapoiada entre pórticos), telha metálica 0,08 kN/m². Ações características por metro de terça:</p>
+<div class="passo"><b>Peso próprio (PP):</b> telha 0,08 × 1,60 = 0,128 kN/m + terça 0,08 = <b>0,21 kN/m</b> (todo classificado como aço/pequena variabilidade: γ = 1,25 ou 1,0).</div>
+<div class="passo"><b>Sobrecarga de manutenção (SC):</b> 0,25 × 1,60 = <b>0,40 kN/m</b> (γ = 1,5).</div>
+<div class="passo"><b>Vento de sucção (V):</b> −1,23 × 1,60 = <b>−1,97 kN/m</b>, perpendicular ao telhado (γ = 1,4). (Com o portão aberto a 90°: −1,14 × 1,6 = −1,82 kN/m no trecho de borda.)</div>
+<div class="passo"><b>Combinação 1 – gravitacional (SC principal):</b> q<sub>d</sub> = 1,25 × 0,21 + 1,5 × 0,40 = 0,26 + 0,60 = <b>0,86 kN/m ↓</b>. (A rigor decompõe-se nas direções dos eixos da terça, com cos 10° = 0,985 e sen 10° = 0,174; em torno do eixo forte: 0,85 kN/m.) M<sub>d</sub> = 0,85 × 6² / 8 = <b>+3,8 kN·m</b>.</div>
+<div class="passo"><b>Combinação 2 – sucção (V principal, PP favorável):</b> q<sub>d</sub> = 1,0 × 0,21 × 0,985 − 1,4 × 1,97 = 0,20 − 2,76 = <b>−2,55 kN/m ↑</b> (perpendicular ao telhado). M<sub>d</sub> = 2,55 × 6² / 8 = <b>−11,5 kN·m</b>.</div>
+<div class="passo"><b>Combinação 3 – vento + manutenção (V principal, SC com ψ<sub>0</sub> = 0,8):</b> 1,25 × 0,21 + 1,4 × (−1,97) + 1,5 × 0,8 × 0,40 = 0,26 − 2,76 + 0,48 = −2,02 kN/m — menos severa que a combinação 2 (a sobrecarga "ajuda" contra a sucção; a norma manda considerar cada variável só quando desfavorável, então esta combinação é descartada para a sucção).</div>
+<div class="passo"><b>Conclusão.</b> A combinação de sucção governa com folga: momento 3 vezes maior que o gravitacional, no sentido inverso, comprimindo a mesa inferior, que não é travada pela telha. A terça precisa de <strong>correntes (tirantes) a cada 1/3 do vão</strong> para reduzir o comprimento de flambagem lateral a 2,0 m, e a fixação telha-terça deve resistir ao arrancamento. Sem o vento de sucção, a mesma terça "passaria" com uma seção muito menor — e provavelmente seria arrancada na primeira tempestade.</div>
+<div class="passo"><b>ELS:</b> flecha por sucção (combinação rara, γ = 1,0): q = 1,97 − 0,21 = 1,76 kN/m; com I<sub>x</sub> = 620 cm⁴ (Ue 200 × 75 × 20 × 2,65): δ = 5 × 0,0176 × 600⁴ / (384 × 20 000 × 620) = 2,40 cm = 24,0 mm ≤ L/120 = 50 mm ✓. Flecha gravitacional (PP + SC): q = 0,61 kN/m → 8,3 mm ≤ L/180 = 33 mm ✓.</div></div>
+
+<h3>5.7.5 Roteiro resumido</h3>
+<figure class="fig p90">
+<svg viewBox="0 0 700 380" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="c5_13" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- linha 1: ações -->
+<rect x="20" y="20" width="200" height="60" rx="6" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="120" y="42" text-anchor="middle" font-weight="bold" fill="#0b3d91">1. Ações permanentes G</text>
+<text x="120" y="60" text-anchor="middle">PP aço, telhas, lajes, alvenaria</text>
+<text x="120" y="74" text-anchor="middle" fill="#555">(Tabela 5.1)</text>
+<rect x="250" y="20" width="200" height="60" rx="6" fill="#fff7d6" stroke="#b8860b" stroke-width="1.5"/>
+<text x="350" y="42" text-anchor="middle" font-weight="bold" fill="#8a6508">2. Ações variáveis Q</text>
+<text x="350" y="60" text-anchor="middle">sobrecarga, vento, ponte rolante,</text>
+<text x="350" y="74" text-anchor="middle">temperatura (Tab. 5.2 a 5.9)</text>
+<rect x="480" y="20" width="200" height="60" rx="6" fill="#fdecec" stroke="#c0392b" stroke-width="1.5"/>
+<text x="580" y="42" text-anchor="middle" font-weight="bold" fill="#a12a1f">3. Casos de carga</text>
+<text x="580" y="60" text-anchor="middle">vento 0°/90°, C<tspan baseline-shift="sub" font-size="8">pi</tspan> +/−, ponte</text>
+<text x="580" y="74" text-anchor="middle">em cada posição crítica</text>
+<!-- setas para baixo -->
+<line x1="120" y1="80" x2="120" y2="110" stroke="#333" stroke-width="1.5" marker-end="url(#c5_13)"/>
+<line x1="350" y1="80" x2="350" y2="110" stroke="#333" stroke-width="1.5" marker-end="url(#c5_13)"/>
+<line x1="580" y1="80" x2="580" y2="110" stroke="#333" stroke-width="1.5" marker-end="url(#c5_13)"/>
+<!-- linha 2: combinações -->
+<rect x="20" y="112" width="660" height="70" rx="6" fill="#f3eefc" stroke="#6a3fb5" stroke-width="1.5"/>
+<text x="350" y="134" text-anchor="middle" font-weight="bold" fill="#4f2c8f">4. Combinações últimas (ELU): F<tspan baseline-shift="sub" font-size="8">d</tspan> = Σ γ<tspan baseline-shift="sub" font-size="8">g</tspan>·G + γ<tspan baseline-shift="sub" font-size="8">q1</tspan>·Q<tspan baseline-shift="sub" font-size="8">1</tspan> + Σ γ<tspan baseline-shift="sub" font-size="8">qj</tspan>·ψ<tspan baseline-shift="sub" font-size="8">0j</tspan>·Q<tspan baseline-shift="sub" font-size="8">j</tspan></text>
+<text x="350" y="154" text-anchor="middle">uma combinação para cada variável principal · G desfavorável (1,25–1,5) ou favorável (1,0)</text>
+<text x="350" y="172" text-anchor="middle">γ<tspan baseline-shift="sub" font-size="8">q</tspan>: sobrecarga 1,5 · vento 1,4 · temperatura 1,2 · ψ<tspan baseline-shift="sub" font-size="8">0</tspan>: Tabela 5.11</text>
+<line x1="350" y1="182" x2="350" y2="212" stroke="#333" stroke-width="1.5" marker-end="url(#c5_13)"/>
+<!-- linha 3: análise -->
+<rect x="20" y="214" width="320" height="60" rx="6" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.5"/>
+<text x="180" y="236" text-anchor="middle" font-weight="bold" fill="#0b3d91">5. Análise estrutural → S<tspan baseline-shift="sub" font-size="8">d</tspan></text>
+<text x="180" y="254" text-anchor="middle">N, V, M em cada barra, para cada combinação</text>
+<text x="180" y="268" text-anchor="middle" fill="#555" font-size="10">(envoltória de esforços; efeitos de 2ª ordem se necessário)</text>
+<rect x="360" y="214" width="320" height="60" rx="6" fill="#e9f7ec" stroke="#2e8b57" stroke-width="1.5"/>
+<text x="520" y="236" text-anchor="middle" font-weight="bold" fill="#1f6b41">6. Resistências → R<tspan baseline-shift="sub" font-size="8">d</tspan> = R<tspan baseline-shift="sub" font-size="8">k</tspan>/γ<tspan baseline-shift="sub" font-size="8">m</tspan></text>
+<text x="520" y="254" text-anchor="middle">γ<tspan baseline-shift="sub" font-size="8">a1</tspan> = 1,10 (escoamento) · γ<tspan baseline-shift="sub" font-size="8">a2</tspan> = 1,35 (ruptura)</text>
+<text x="520" y="268" text-anchor="middle" fill="#555">(Capítulos 7 a 9)</text>
+<line x1="180" y1="274" x2="300" y2="306" stroke="#333" stroke-width="1.5" marker-end="url(#c5_13)"/>
+<line x1="520" y1="274" x2="400" y2="306" stroke="#333" stroke-width="1.5" marker-end="url(#c5_13)"/>
+<!-- linha 4: verificações -->
+<rect x="150" y="308" width="200" height="56" rx="6" fill="#fdecec" stroke="#c0392b" stroke-width="1.5"/>
+<text x="250" y="330" text-anchor="middle" font-weight="bold" fill="#a12a1f">7. ELU: S<tspan baseline-shift="sub" font-size="8">d</tspan> ≤ R<tspan baseline-shift="sub" font-size="8">d</tspan></text>
+<text x="250" y="350" text-anchor="middle">para todas as combinações</text>
+<rect x="370" y="308" width="200" height="56" rx="6" fill="#fff7d6" stroke="#b8860b" stroke-width="1.5"/>
+<text x="470" y="330" text-anchor="middle" font-weight="bold" fill="#8a6508">8. ELS: δ ≤ δ<tspan baseline-shift="sub" font-size="8">lim</tspan></text>
+<text x="470" y="344" text-anchor="middle" font-size="11">combinações rara / frequente /</text>
+<text x="470" y="358" text-anchor="middle" font-size="11">quase permanente (γ<tspan baseline-shift="sub" font-size="8">f</tspan> = 1,0)</text>
+</svg>
+<figcaption><b>Figura 5.13</b> – Fluxo de trabalho: das ações às verificações. Cada elemento é verificado para a envoltória de todas as combinações — a que governa a terça não é a mesma que governa o pilar.</figcaption>
+</figure>
+
+<div class="box dica"><div class="tit">Regras de bolso do capítulo</div>
+<ul>
+<li>Vento de 40 m/s ≈ 1 kN/m² de pressão dinâmica; V<sub>k</sub> = 30 m/s ≈ 0,55 kN/m²; 45 m/s ≈ 1,25 kN/m².</li>
+<li>Sucção no telhado de galpão baixo: 0,8 a 1,4 × q, ou seja, de 0,7 a 1,5 kN/m² em regiões de V<sub>0</sub> = 40–45 m/s — dez vezes o peso de telha + terças.</li>
+<li>Cobertura leve: PP total 0,15–0,30 kN/m²; sobrecarga 0,25 kN/m²; combinação gravitacional ≈ 0,6–0,8 kN/m²; combinação de sucção ≈ −1,0 a −2,0 kN/m². A sucção governa.</li>
+<li>Piso de escritório com steel deck: PP ≈ 2,5 (laje) + 0,2 (vigas) + 1,0 (revestimento) + 0,5 (divisórias) = 4,2 kN/m²; SC = 2,5 → combinação ≈ 1,35 × 4,2 + 1,5 × 2,5 ≈ 9,4 kN/m².</li>
+<li>Ponte rolante: multiplique as cargas verticais das rodas por 1,25 e adote 10 % (transversal, ⊥ à viga) e 10 % (longitudinal) como forças horizontais mínimas.</li>
+<li>Pilares e fundações de galpões: verifique sempre a combinação 1,0·PP + 1,4·V — é ela que traciona os chumbadores e pode exigir estacas ou blocos mais pesados contra o arrancamento.</li>
+</ul></div>
+
+<div class="box atencao"><div class="tit">Erros comuns em ações e combinações</div>
+<ul>
+<li>Esquecer a sucção do vento, ou aplicá-la com γ = 1,0, ou majorar o peso próprio (1,25) na combinação de levantamento — o correto é 1,0·PP + 1,4·V.</li>
+<li>Esquecer a pressão interna C<sub>pi</sub>, especialmente com portões grandes.</li>
+<li>Somar sobrecarga de manutenção com vento de sucção (ela alivia, logo não deve entrar) — e, no sentido inverso, esquecer que a sobrecarga de cobertura pode atuar junto com vento de pressão nas paredes (ψ<sub>0</sub> = 0,8) quando ela é mais que manutenção (terraços, equipamentos).</li>
+<li>Usar V<sub>0</sub> do mapa antigo sem verificar a versão vigente da NBR 6123; usar S<sub>2</sub> de categoria IV "porque é cidade" quando o galpão fica na borda de uma área aberta (a categoria vale para a direção de onde vem o vento).</li>
+<li>Tratar a ponte rolante como carga estática sem impacto e sem forças horizontais; esquecer ψ<sub>0</sub> = 1,0 para ponte rolante em combinações com vento.</li>
+<li>Aplicar a carga da alvenaria como distribuída na laje quando a parede está diretamente sobre uma viga (é linear, em kN/m, sobre aquela viga).</li>
+<li>Confundir ELU com ELS: verificar flecha com cargas majoradas (conservador demais) ou tensões com cargas de serviço (inseguro).</li>
+</ul></div>
+
+<div class="resumo"><div class="tit">Resumo do capítulo</div><ul>
+<li>Estados-limites: ELU (segurança) e ELS (uso). Verificação S<sub>d</sub> ≤ R<sub>d</sub>, com ações majoradas (γ<sub>f</sub>) e resistências minoradas (γ<sub>m</sub> = 1,10 / 1,35 no aço).</li>
+<li>Ações permanentes: estimar o peso próprio da estrutura (galpão 0,10–0,30 kN/m²; edifício 40–80 kg/m²) e usar tabelas para telhas (0,05–0,25), lajes steel deck (2,3–2,8), alvenaria (1,8–2,2 kN/m² de parede), revestimento (1,0).</li>
+<li>Sobrecargas NBR 6120: cobertura 0,25; residência 1,5; escritório 2,5; loja 4,0; depósito 5,0–7,5; garagem 3,0; mezanino industrial 5,0 kN/m². Ponte rolante: impacto 25 %, transversal 10–20 %, longitudinal 10 %.</li>
+<li>Vento: V<sub>k</sub> = V<sub>0</sub>·S<sub>1</sub>·S<sub>2</sub>·S<sub>3</sub>; q = 0,613·V<sub>k</sub>² (N/m²); p = (C<sub>e</sub> − C<sub>pi</sub>)·q. Galpão baixo: parede de barlavento +0,7; sotavento −0,5 (vento na face maior); telhado −0,4 a −1,2; C<sub>pi</sub> +0,2/−0,3 (ou até +0,8 com portão aberto a barlavento).</li>
+<li>Exemplo: V<sub>0</sub> = 40 m/s, cat. II, cl. B, h = 7 m → S<sub>2</sub> = 0,95, V<sub>k</sub> = 38 m/s, q = 0,88 kN/m²; sucção no telhado até −1,23 kN/m² (10 × o peso da cobertura).</li>
+<li>γ<sub>f</sub>: PP aço 1,25 (1,0 se favorável); demais permanentes 1,35–1,50; sobrecarga 1,50; vento 1,40; temperatura 1,20; ELS 1,0. ψ<sub>0</sub>/ψ<sub>1</sub>/ψ<sub>2</sub>: residencial 0,5/0,4/0,3; comercial 0,7/0,6/0,4; depósitos e coberturas 0,8/0,7/0,6; vento 0,6/0,3/0; temperatura 0,6/0,5/0,3; ponte rolante 1,0/0,8/0,5.</li>
+<li>Combinações últimas: F<sub>d</sub> = Σγ<sub>g</sub>G + γ<sub>q1</sub>Q<sub>1</sub> + Σγ<sub>qj</sub>ψ<sub>0j</sub>Q<sub>j</sub>, uma para cada variável principal. Serviço: quase permanente (ψ<sub>2</sub>), frequente (ψ<sub>1</sub>), rara.</li>
+<li>Em coberturas leves, a combinação 1,0·PP + 1,4·V<sub>sucção</sub> inverte e triplica o momento das terças e comprime o banzo inferior das tesouras: ela governa terças, telhas, travamentos e chumbadores.</li>
+</ul></div>
+
+<ul class="chk">
+<li>Levantei todas as ações permanentes, inclusive instalações penduradas e fechamentos?</li>
+<li>Sobrecargas conforme o uso real e futuro (NBR 6120), com a mínima de 0,25 kN/m² em coberturas?</li>
+<li>V<sub>0</sub> lido no mapa vigente; S<sub>1</sub>, S<sub>2</sub> (categoria/classe/altura) e S<sub>3</sub> justificados na memória?</li>
+<li>Vento a 0° e 90°, com C<sub>pi</sub> positivo e negativo (e abertura dominante, se há portões grandes)?</li>
+<li>Combinação de levantamento com PP favorável (γ = 1,0) e vento 1,4 verificada em terças, tesouras, pilares e chumbadores?</li>
+<li>Ponte rolante com impacto e forças horizontais, e ψ<sub>0</sub> = 1,0 nas combinações com vento?</li>
+<li>Deslocamentos verificados com combinações de serviço e limites do Anexo C?</li>
+</ul>

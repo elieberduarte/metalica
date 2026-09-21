@@ -1,0 +1,836 @@
+<h1 class="cap"><small>Capítulo 12</small>Acabamento e proteção do aço: pintura, galvanização e proteção contra fogo</h1>
+<div class="objetivos"><div class="tit">O que você vai aprender neste capítulo</div>
+<ul>
+<li>Por que o aço enferruja (a célula eletroquímica) e quais são as formas de corrosão.</li>
+<li>Como classificar a agressividade do ambiente (ISO 12944-2, C1 a C5 e CX/Im) e o que isso muda no projeto.</li>
+<li>Preparação de superfície: graus de limpeza (St 2, St 3, Sa 1 a Sa 3), perfil de rugosidade e prazos.</li>
+<li>Sistemas de pintura: função de cada camada, famílias de tintas, esquemas típicos por categoria e espessura de película seca.</li>
+<li>Como calcular consumo de tinta e área de pintura; aplicação, condições ambientais, inspeção e defeitos.</li>
+<li>Galvanização a fogo: processo, camadas, espessuras, projeto para galvanização, sistema duplex, metalização, aço patinável.</li>
+<li>Comportamento do aço no incêndio, TRRF (NBR 14432), fator de massividade e materiais de proteção passiva.</li>
+</ul></div>
+
+<p>O aço estrutural bem protegido dura mais de cem anos; mal protegido, pode perder seção em uma década. E, se estiver exposto a um incêndio sem proteção, perde metade da resistência em poucos minutos. Este capítulo trata das duas ameaças — a corrosão e o fogo — e das tecnologias que as combatem. A boa notícia é que ambas são problemas de <strong>especificação</strong>: com o ambiente bem classificado, a superfície bem preparada e o sistema certo, a proteção é previsível e mensurável.</p>
+
+<h2>12.1 Por que o aço enferruja <span class="nivel b">Básico</span></h2>
+<p>A ferrugem é o aço voltando ao estado de onde veio: o minério (óxido de ferro). O processo é <strong>eletroquímico</strong> e exige quatro elementos simultâneos: um <strong>anodo</strong> (região do aço que se dissolve, liberando íons Fe²⁺ e elétrons), um <strong>catodo</strong> (região onde os elétrons são consumidos reduzindo o oxigênio dissolvido), um <strong>eletrólito</strong> (água com sais, ácidos ou poluentes que conduz os íons) e um <strong>caminho metálico</strong> para os elétrons — que é o próprio aço. Anodo e catodo podem estar a milímetros um do outro na mesma peça (diferenças de composição, tensão, aeração) ou serem dois metais diferentes em contato. Retire qualquer um dos quatro elementos e a corrosão para: é isso que a pintura (barreira ao eletrólito e ao oxigênio), a galvanização (anodo de sacrifício) e o ambiente seco (sem eletrólito) fazem.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h12_1" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s12_1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- aço -->
+<rect x="60" y="180" width="580" height="90" fill="url(#h12_1)" stroke="#333" stroke-width="1.5"/>
+<text x="350" y="262" text-anchor="middle" font-size="13" font-weight="bold" fill="#333">AÇO (caminho metálico dos elétrons)</text>
+<!-- gota de eletrólito -->
+<path d="M120 180 Q160 60 350 60 Q540 60 580 180 z" fill="#cfe3f7" stroke="#0b3d91" stroke-width="1.5" opacity="0.9"/>
+<text x="350" y="97" text-anchor="middle" fill="#0b3d91" font-weight="bold">ELETRÓLITO (água + sais, poluentes, umidade)</text>
+<!-- anodo -->
+<rect x="150" y="172" width="150" height="16" fill="#c0392b" opacity="0.85"/>
+<text x="225" y="205" text-anchor="middle" fill="#c0392b" font-weight="bold">ANODO</text>
+<text x="225" y="220" text-anchor="middle" fill="#c0392b" font-size="11">Fe → Fe²⁺ + 2e⁻ (o aço se dissolve)</text>
+<!-- catodo -->
+<rect x="400" y="172" width="150" height="16" fill="#2e8b57" opacity="0.85"/>
+<text x="475" y="205" text-anchor="middle" fill="#1f6b41" font-weight="bold">CATODO</text>
+<text x="475" y="220" text-anchor="middle" fill="#1f6b41" font-size="11">O₂ + 2H₂O + 4e⁻ → 4OH⁻</text>
+<!-- elétrons no aço -->
+<path d="M225 240 L475 240" stroke="#333" stroke-width="1.5" marker-end="url(#s12_1)"/>
+<text x="350" y="236" text-anchor="middle" font-size="11">fluxo de elétrons e⁻ pelo aço</text>
+<!-- íons no eletrólito -->
+<path d="M240 160 Q350 130 460 160" stroke="#0b3d91" stroke-width="1.2" fill="none" marker-end="url(#s12_1)" stroke-dasharray="4 3"/>
+<text x="350" y="128" text-anchor="middle" font-size="11" fill="#0b3d91">Fe²⁺ e OH⁻ migram e se encontram → Fe(OH)₂ → Fe₂O₃·nH₂O (ferrugem)</text>
+<!-- oxigênio -->
+<g fill="#555" font-size="11">
+<text x="600" y="120">O₂ do ar</text>
+<text x="600" y="134">dissolve na água</text>
+</g>
+<path d="M600 140 L520 168" stroke="#555" stroke-width="1" marker-end="url(#s12_1)"/>
+<!-- ferrugem depósito -->
+<path d="M180 172 Q225 150 270 172" fill="#b5651d" opacity="0.7"/>
+<text x="225" y="162" text-anchor="middle" font-size="10" fill="#7a3e00">ferrugem se deposita</text>
+<!-- legenda -->
+<g font-size="11" fill="#333">
+<text x="60" y="290">Taxa de corrosão do aço nu (indicativa): interior seco &lt; 1 µm/ano · rural 5–25 · urbano 25–50 · industrial 50–80 · marinho 80–200+ µm/ano</text>
+</g>
+</svg>
+<figcaption><b>Figura 12.1</b> – Célula eletroquímica de corrosão: anodo, catodo, eletrólito e o aço como condutor. Remover um dos quatro elementos interrompe o processo.</figcaption>
+</figure>
+
+<h3>12.1.1 Formas de corrosão</h3>
+<p>A corrosão <strong>uniforme</strong> (generalizada) é a mais comum e a menos perigosa: a perda de espessura é previsível e visível. As formas <strong>localizadas</strong> são mais traiçoeiras porque concentram a perda em pontos pequenos (Figura 12.2):</p>
+<ul>
+<li><strong>Galvânica</strong>: dois metais diferentes em contato no mesmo eletrólito; o menos nobre (mais anódico) corrói aceleradamente. Aço em contato com cobre ou inox corrói; aço em contato com zinco ou alumínio é protegido (às custas deles). A relação de áreas importa: anodo pequeno com catodo grande é o pior caso (parafuso de aço comum em chapa de inox).</li>
+<li><strong>Por frestas</strong>: em juntas sobrepostas, sob arruelas e em cantos fechados, o eletrólito fica confinado e empobrece em oxigênio, tornando a fresta anódica; a corrosão avança escondida.</li>
+<li><strong>Por pites</strong> (puntiforme): furos pequenos e profundos, típica de ambientes com cloretos (marinho) e de aços inoxidáveis ou galvanizados com a camada rompida.</li>
+<li><strong>Sob depósitos</strong>: poeira, fuligem, dejetos de aves ou terra acumulados criam uma célula de aeração diferencial e retêm umidade; é o mecanismo dominante em mesas superiores de vigas de cobertura, base de pilares e bandejas.</li>
+<li><strong>Corrosão-fadiga e sob tensão</strong>: combinação de tensões cíclicas ou residuais com ambiente corrosivo; relevante em pontes rolantes e estruturas industriais.</li>
+</ul>
+
+<figure class="fig">
+<svg viewBox="0 0 780 235" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><pattern id="h12_2" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- a uniforme -->
+<text x="85" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">a) Uniforme</text>
+<path d="M20 70 L150 70 L150 130 L20 130 z" fill="url(#h12_2)" stroke="#333" stroke-width="1.5"/>
+<path d="M20 70 Q40 64 60 70 Q80 64 100 70 Q120 63 150 70 L150 60 L20 60 z" fill="#b5651d" opacity="0.8"/>
+<line x1="20" y1="60" x2="150" y2="60" stroke="#c0392b" stroke-width="1" stroke-dasharray="3 2"/>
+<text x="85" y="152" text-anchor="middle" font-size="10">perda de espessura</text>
+<text x="85" y="166" text-anchor="middle" font-size="10">regular e previsível;</text>
+<text x="85" y="180" text-anchor="middle" font-size="10">medível com ultrassom</text>
+<!-- b galvânica -->
+<text x="245" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">b) Galvânica</text>
+<rect x="180" y="70" width="70" height="60" fill="url(#h12_2)" stroke="#333" stroke-width="1.5"/>
+<rect x="250" y="70" width="60" height="60" fill="#d8b36a" stroke="#333" stroke-width="1.5"/>
+<path d="M230 70 L250 70 L250 90 Q240 84 230 92 z" fill="#b5651d"/>
+<text x="215" y="102" text-anchor="middle" font-size="10">aço</text><text x="280" y="102" text-anchor="middle" font-size="10">cobre</text>
+<text x="215" y="118" text-anchor="middle" font-size="9" fill="#c0392b">anodo</text><text x="280" y="118" text-anchor="middle" font-size="9" fill="#1f6b41">catodo</text>
+<text x="245" y="152" text-anchor="middle" font-size="10">metais diferentes em contato</text>
+<text x="245" y="166" text-anchor="middle" font-size="10">com eletrólito; o menos nobre</text>
+<text x="245" y="180" text-anchor="middle" font-size="10">corrói junto à junção</text>
+<!-- c fresta -->
+<text x="405" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">c) Por frestas</text>
+<rect x="340" y="95" width="130" height="35" fill="url(#h12_2)" stroke="#333" stroke-width="1.5"/>
+<rect x="370" y="68" width="100" height="27" fill="url(#h12_2)" stroke="#333" stroke-width="1.5"/>
+<path d="M370 92 L470 92 L470 98 L370 98 z" fill="#b5651d" opacity="0.9"/>
+<circle cx="440" cy="82" r="6" fill="#444"/>
+<text x="405" y="152" text-anchor="middle" font-size="10">junta sobreposta, sob arruela,</text>
+<text x="405" y="166" text-anchor="middle" font-size="10">canto fechado: eletrólito preso</text>
+<text x="405" y="180" text-anchor="middle" font-size="10">e pobre em O₂ → fresta é anodo</text>
+<!-- d pites -->
+<text x="565" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">d) Por pites</text>
+<path d="M500 70 L630 70 L630 130 L500 130 z" fill="url(#h12_2)" stroke="#333" stroke-width="1.5"/>
+<path d="M525 70 L530 70 L528 100 L527 100 z M560 70 L567 70 L565 92 z M600 70 L605 70 L603 110 L602 110 z" fill="#b5651d" stroke="#7a3e00" stroke-width="0.8"/>
+<text x="565" y="152" text-anchor="middle" font-size="10">furos pequenos e profundos;</text>
+<text x="565" y="166" text-anchor="middle" font-size="10">cloretos (ambiente marinho),</text>
+<text x="565" y="180" text-anchor="middle" font-size="10">falhas locais do revestimento</text>
+<!-- e sob depósito -->
+<text x="710" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">e) Sob depósitos</text>
+<path d="M660 70 L770 70 L770 130 L660 130 z" fill="url(#h12_2)" stroke="#333" stroke-width="1.5"/>
+<path d="M680 70 Q715 40 750 70 z" fill="#8a8a8a"/>
+<path d="M685 70 Q715 82 745 70 z" fill="#b5651d"/>
+<text x="715" y="55" text-anchor="middle" font-size="9" fill="#fff">poeira/fuligem</text>
+<text x="715" y="152" text-anchor="middle" font-size="10">depósito retém umidade</text>
+<text x="715" y="166" text-anchor="middle" font-size="10">e cria aeração diferencial;</text>
+<text x="715" y="180" text-anchor="middle" font-size="10">mesas superiores, bases</text>
+<text x="390" y="212" text-anchor="middle" font-size="10.5" fill="#555">Detalhes de projeto que evitam as formas localizadas: soldas contínuas em vez de intermitentes,</text>
+<text x="390" y="227" text-anchor="middle" font-size="10.5" fill="#555">sem cavidades que retenham água, furos de dreno, isolamento entre metais diferentes.</text>
+</svg>
+<figcaption><b>Figura 12.2</b> – Formas de corrosão: uniforme, galvânica, por frestas, por pites e sob depósitos.</figcaption>
+</figure>
+
+<table class="tab small"><caption>Tabela 12.1 – Compatibilidade galvânica de metais em contato com aço-carbono (ambiente úmido; "×" = evitar contato direto, isolar)</caption>
+<thead><tr><th>Metal em contato com o aço-carbono</th><th>Quem corrói</th><th>Compatibilidade</th><th>Solução usual</th></tr></thead>
+<tbody>
+<tr><td class="l">Zinco (galvanizado)</td><td class="c">zinco (protege o aço)</td><td class="c">boa — é o princípio da galvanização</td><td class="l">nenhuma; parafuso galvanizado em aço pintado é aceitável</td></tr>
+<tr><td class="l">Alumínio (telhas, esquadrias)</td><td class="c">alumínio</td><td class="c">regular; ruim em marinho</td><td class="l">fita ou arruela isolante, pintura da face de contato, fixadores inox com isolante</td></tr>
+<tr><td class="l">Aço inoxidável (parafusos, chapas)</td><td class="c">aço-carbono (junto ao inox)</td><td class="c">aceitável se o inox for pequeno (parafusos); × se o aço-carbono for pequeno</td><td class="l">pintar o aço-carbono; evitar parafuso de aço comum em chapa inox</td></tr>
+<tr><td class="l">Cobre, latão, bronze (tubulações, calhas)</td><td class="c">aço-carbono</td><td class="c">× ruim</td><td class="l">isolar com neoprene/PVC; nunca deixar água escorrer do cobre para o aço</td></tr>
+<tr><td class="l">Chumbo</td><td class="c">aço-carbono</td><td class="c">× ruim</td><td class="l">isolar</td></tr>
+<tr><td class="l">Aço-carbono com aço patinável</td><td class="c">praticamente neutro</td><td class="c">boa</td><td class="l">pintar o aço comum na região</td></tr>
+</tbody></table>
+
+<h2>12.2 Classificação da agressividade do ambiente <span class="nivel b">Básico</span></h2>
+<p>A norma <strong>ISO 12944</strong> (adotada no Brasil por fabricantes de tintas, especificadores e pela própria NBR 8800, que remete a ela) classifica a corrosividade atmosférica em categorias de <strong>C1</strong> a <strong>C5</strong>, mais <strong>CX</strong> (extrema) e as categorias de imersão <strong>Im1</strong> a <strong>Im4</strong>. A categoria é definida pela perda de massa de corpos de prova de aço e zinco expostos por um ano, e cada uma tem exemplos de ambientes. Definir a categoria é o primeiro passo de qualquer especificação de proteção (Tabela 12.2).</p>
+
+<table class="tab small"><caption>Tabela 12.2 – Categorias de corrosividade atmosférica (ISO 12944-2) com exemplos brasileiros</caption>
+<thead><tr><th>Categoria</th><th>Corrosividade</th><th>Perda do aço (µm/ano)</th><th>Perda do zinco (µm/ano)</th><th>Exemplos de ambiente externo</th><th>Exemplos de ambiente interno</th></tr></thead>
+<tbody>
+<tr><td class="c"><b>C1</b></td><td class="c">muito baixa</td><td class="c">≤ 1,3</td><td class="c">≤ 0,1</td><td class="l">—</td><td class="l">edifícios aquecidos/climatizados com ar limpo: escritórios, lojas, escolas, hotéis</td></tr>
+<tr><td class="c"><b>C2</b></td><td class="c">baixa</td><td class="c">1,3 a 25</td><td class="c">0,1 a 0,7</td><td class="l">rural do interior, baixa poluição (fazendas, cidades pequenas do Centro-Oeste e interior)</td><td class="l">galpões não climatizados com condensação ocasional: armazéns, ginásios, depósitos secos</td></tr>
+<tr><td class="c"><b>C3</b></td><td class="c">média</td><td class="c">25 a 50</td><td class="c">0,7 a 2,1</td><td class="l">urbano e industrial leve; litoral com baixa salinidade (a alguns km do mar); São Paulo, Belo Horizonte, Curitiba</td><td class="l">indústrias de alimentos, lavanderias, cervejarias, laticínios, fábricas com umidade e alguma poluição</td></tr>
+<tr><td class="c"><b>C4</b></td><td class="c">alta</td><td class="c">50 a 80</td><td class="c">2,1 a 4,2</td><td class="l">industrial (Cubatão, polos petroquímicos, siderurgia); litoral com salinidade moderada (1–3 km da praia)</td><td class="l">indústrias químicas, piscinas cobertas, estaleiros, galpões de fertilizantes</td></tr>
+<tr><td class="c"><b>C5</b></td><td class="c">muito alta</td><td class="c">80 a 200</td><td class="c">4,2 a 8,4</td><td class="l">industrial pesado com alta umidade e atmosfera agressiva; marinho com alta salinidade (orla, até ~1 km, portos)</td><td class="l">condensação quase permanente e alta poluição: mineração, celulose, curtumes</td></tr>
+<tr><td class="c"><b>CX</b></td><td class="c">extrema</td><td class="c">200 a 700</td><td class="c">8,4 a 25</td><td class="l">offshore, zona de respingo de maré, industrial extremo com umidade tropical (plataformas, píeres)</td><td class="l">—</td></tr>
+<tr><td class="c"><b>Im1 / Im2 / Im3</b></td><td class="c">imersão</td><td class="c">—</td><td class="c">—</td><td class="l">água doce (Im1), água do mar ou salobra (Im2), solo (Im3); Im4 = com proteção catódica</td><td class="l">—</td></tr>
+</tbody></table>
+
+<div class="box dica"><div class="tit">Regra de bolso para classificar</div>
+<p>Galpão fechado no interior: C2. Galpão urbano ou industrial leve, ou qualquer estrutura externa em cidade: C3. Indústria química, litoral a menos de 3 km: C4. Orla marítima, porto, indústria pesada: C5. Na dúvida entre duas categorias, escolha a maior: a diferença de custo entre um esquema C3 e um C4 é de 20–40 % da pintura (que é 5–10 % da obra), enquanto repintar uma estrutura montada custa 3 a 5 vezes a pintura de fábrica. Lembre-se também dos <strong>microclimas</strong>: a face inferior de uma cobertura próxima a uma chaminé ou a uma lavagem de veículos pode ser C4 dentro de uma planta C3.</p></div>
+
+<h2>12.3 Preparação de superfície <span class="nivel i">Intermediário</span></h2>
+<p>Se existe um consenso na indústria de pintura é este: <strong>a preparação da superfície determina mais a durabilidade do que a tinta</strong>. Uma tinta cara sobre carepa de laminação e ferrugem descasca em meses; uma tinta modesta sobre jato Sa 2½ dura anos. A preparação tem dois objetivos: <strong>remover contaminantes</strong> (carepa, ferrugem, óleos, sais) e <strong>criar rugosidade</strong> (perfil de ancoragem) para a tinta aderir.</p>
+
+<h3>12.3.1 Limpeza de óleos e graxas</h3>
+<p>Antes de qualquer limpeza mecânica, óleos, graxas e sais solúveis devem ser removidos com solvente, detergente alcalino ou lavagem com água doce pressurizada (<strong>SSPC-SP 1</strong>). Jatear sobre óleo espalha o contaminante e o incrusta na rugosidade. Marcas de giz de cera e de caneta também devem ser retiradas.</p>
+
+<h3>12.3.2 Graus de intemperismo e graus de limpeza (ISO 8501-1)</h3>
+<p>A ISO 8501-1 classifica o estado inicial do aço em graus de <strong>intemperismo</strong>: <strong>A</strong> (carepa de laminação intacta, quase sem ferrugem), <strong>B</strong> (carepa começando a soltar, ferrugem inicial), <strong>C</strong> (carepa totalmente enferrujada ou removível por raspagem, com pouca corrosão visível a olho nu) e <strong>D</strong> (carepa removida, corrosão com pites visíveis). E define os graus de <strong>limpeza</strong> obtidos por ferramentas manuais/mecânicas (St) e por jateamento (Sa), com padrões fotográficos para comparação visual (Tabela 12.3).</p>
+
+<table class="tab small"><caption>Tabela 12.3 – Graus de preparação de superfície (ISO 8501-1) e equivalências SSPC/NACE</caption>
+<thead><tr><th>Grau</th><th>Equivalente SSPC</th><th>Método</th><th>Descrição / aspecto visual</th><th>Uso típico</th></tr></thead>
+<tbody>
+<tr><td class="c"><b>St 2</b></td><td class="c">SP 2</td><td class="l">limpeza manual: escova de aço, raspadeira, lixa</td><td class="l">remove carepa solta, ferrugem solta e tinta solta; a superfície fica com brilho metálico fraco; carepa aderente permanece</td><td class="l">retoques de campo, manutenção em C1–C2</td></tr>
+<tr><td class="c"><b>St 3</b></td><td class="c">SP 3</td><td class="l">limpeza mecânica: escova rotativa, lixadeira, agulheiro, disco</td><td class="l">como St 2, porém mais completa; brilho metálico nítido; carepa bem aderente ainda pode permanecer</td><td class="l">retoques de solda de campo, C2–C3 quando o jato é inviável</td></tr>
+<tr><td class="c"><b>Sa 1</b></td><td class="c">SP 7</td><td class="l">jateamento ligeiro (<em>brush-off</em>)</td><td class="l">remove carepa, ferrugem e tinta soltas; resíduos aderentes permanecem; aspecto irregular</td><td class="l">preparação de galvanizado para pintura (<em>sweep</em>), tinta velha aderente</td></tr>
+<tr><td class="c"><b>Sa 2</b></td><td class="c">SP 6</td><td class="l">jateamento comercial</td><td class="l">remove quase toda carepa, ferrugem e tinta; até 33 % da área pode ter manchas e sombras leves; cor cinza irregular</td><td class="l">C2, interiores, esquemas alquídicos econômicos</td></tr>
+<tr><td class="c"><b>Sa 2½</b></td><td class="c">SP 10</td><td class="l">jateamento ao metal quase branco</td><td class="l">carepa, ferrugem e tinta removidas; ≤ 5 % da área com sombras ou manchas leves; cinza claro uniforme</td><td class="l"><b>padrão para estruturas metálicas</b>: C3 a C5, primers de zinco, epóxi</td></tr>
+<tr><td class="c"><b>Sa 3</b></td><td class="c">SP 5</td><td class="l">jateamento ao metal branco</td><td class="l">superfície totalmente limpa, cor metálica uniforme, sem manchas</td><td class="l">imersão, CX, etil-silicato de zinco em ambientes severos, metalização</td></tr>
+</tbody></table>
+
+<figure class="fig">
+<svg viewBox="0 0 780 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs>
+<pattern id="h12_3" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s12_3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- 4 painéis de aspecto -->
+<g stroke="#333" stroke-width="1.5">
+<rect x="20" y="40" width="120" height="80" fill="#5b4a3a"/>
+<rect x="160" y="40" width="120" height="80" fill="#8c8478"/>
+<rect x="300" y="40" width="120" height="80" fill="#b9bcc0"/>
+<rect x="440" y="40" width="120" height="80" fill="#d5d8dd"/>
+</g>
+<!-- manchas -->
+<g fill="#6b5240" opacity="0.8"><ellipse cx="190" cy="60" rx="14" ry="8"/><ellipse cx="250" cy="95" rx="18" ry="9"/><ellipse cx="215" cy="105" rx="10" ry="6"/><ellipse cx="200" cy="80" rx="8" ry="5"/></g>
+<g fill="#8c8478" opacity="0.8"><ellipse cx="330" cy="70" rx="6" ry="4"/><ellipse cx="395" cy="100" rx="5" ry="3"/></g>
+<g fill="#3d2f24" opacity="0.9"><ellipse cx="50" cy="60" rx="20" ry="10"/><ellipse cx="110" cy="95" rx="18" ry="12"/><ellipse cx="70" cy="100" rx="12" ry="7"/></g>
+<g text-anchor="middle" font-weight="bold" fill="#0b3d91"><text x="80" y="30">Grau C (antes)</text><text x="220" y="30">Sa 2</text><text x="360" y="30">Sa 2½</text><text x="500" y="30">Sa 3</text></g>
+<g text-anchor="middle" font-size="10"><text x="80" y="136">carepa e ferrugem</text><text x="220" y="136">≤ 33 % com sombras</text><text x="360" y="136">≤ 5 % com sombras</text><text x="500" y="136">metal branco</text></g>
+<!-- perfil de rugosidade -->
+<text x="670" y="30" text-anchor="middle" font-weight="bold" fill="#0b3d91">Perfil de rugosidade</text>
+<path d="M590 100 L598 78 L606 96 L614 72 L622 98 L630 80 L638 102 L646 74 L654 95 L662 78 L670 100 L678 76 L686 97 L694 82 L702 100 L710 74 L718 96 L726 80 L734 100 L742 76 L750 98 L750 120 L590 120 z" fill="url(#h12_3)" stroke="#333" stroke-width="1.2"/>
+<line x1="585" y1="72" x2="760" y2="72" stroke="#555" stroke-width="0.8" stroke-dasharray="3 2"/>
+<line x1="585" y1="102" x2="760" y2="102" stroke="#555" stroke-width="0.8" stroke-dasharray="3 2"/>
+<line x1="757" y1="72" x2="757" y2="102" stroke="#333" stroke-width="1" marker-start="url(#s12_3)" marker-end="url(#s12_3)"/>
+<text x="670" y="136" text-anchor="middle" font-size="10">R<tspan baseline-shift="sub" font-size="8">z</tspan> = 25 a 75 µm (típico 40–60)</text>
+<!-- texto inferior -->
+<g font-size="10.5" fill="#333">
+<text x="20" y="165">Abrasivos: granalha de aço angular (grit) → perfil anguloso, mais ancoragem; granalha esférica (shot) → perfil arredondado, menor rugosidade,</text>
+<text x="20" y="180">usada em turbinas automáticas; escória de cobre/níquel e óxido de alumínio → jato aberto, descartáveis. Medição do perfil: fita réplica (Testex) + micrômetro,</text>
+<text x="20" y="195">ou rugosímetro. Regra: a primeira demão deve cobrir os picos com folga — EPS do primer ≥ 1,5 a 2 × R<tspan baseline-shift="sub" font-size="8">z</tspan>; perfil alto demais (&gt; 100 µm) gera picos</text>
+<text x="20" y="210">expostos e "ferrugem por pontos"; perfil baixo demais (&lt; 20 µm) prejudica a aderência. Hidrojateamento (UHP, 2 000–3 000 bar) limpa sem criar perfil novo</text>
+<text x="20" y="225">(usa o perfil existente), útil em manutenção; ferramentas mecânicas (St 3) dão perfil de 10–25 µm apenas.</text>
+<text x="20" y="243" fill="#c0392b">Tempo máximo entre o jato e o primer: ≈ 4 h (menos com UR alta ou perto do mar); a superfície jateada oxida rápido — o "flash rust" obriga a rejatear.</text>
+</g>
+</svg>
+<figcaption><b>Figura 12.3</b> – Aspecto visual dos graus de jateamento (esquemático) e perfil de rugosidade criado pelo abrasivo.</figcaption>
+</figure>
+
+<h3>12.3.3 Perfil de rugosidade e prazo para o primer</h3>
+<p>O jato abrasivo deixa a superfície com picos e vales; a altura entre eles (R<sub>z</sub> ou "perfil de ancoragem") deve ficar entre <strong>25 e 75 µm</strong> para a maioria dos esquemas (fabricantes especificam a faixa de cada primer). O perfil é controlado pelo tipo e tamanho do abrasivo, pela pressão e pela distância do bico. Um perfil de 50 µm sob um primer de 60 µm deixa picos quase aflorando; por isso primers finos (etil-silicato de zinco, 60–75 µm) exigem perfil menor (25–50 µm) e a espessura total do sistema é sempre medida sobre os picos (o medidor magnético lê a média). A superfície jateada é extremamente reativa: em fábricas litorâneas ou com umidade alta, poucas horas bastam para surgir um véu alaranjado (<em>flash rust</em>). A prática é aplicar o primer <strong>em até 4 horas</strong> após o jato, no mesmo turno, e nunca deixar a peça jateada passar a noite sem primer.</p>
+
+<h2>12.4 Sistemas de pintura <span class="nivel i">Intermediário</span></h2>
+<h3>12.4.1 A função de cada camada</h3>
+<p>Um esquema de pintura anticorrosiva é um sistema de camadas complementares (Figura 12.4):</p>
+<ul>
+<li><strong>Primer (fundo)</strong>: garante a <strong>aderência</strong> ao aço e contém pigmentos <strong>inibidores</strong> ou <strong>de sacrifício</strong>. Os primers ricos em zinco (epóxi ou etil-silicato, com ≥ 80 % de zinco em massa na película seca) protegem catodicamente como uma galvanização fina; os primers com fosfato de zinco inibem a reação anódica; os alquídicos comuns são apenas barreira com alguma inibição.</li>
+<li><strong>Intermediária</strong>: constrói <strong>espessura</strong> e barreira (impermeabilidade ao oxigênio e à água); epóxis de alta espessura (100–200 µm por demão), às vezes com pigmento lamelar (óxido de ferro micáceo, MIO) que alonga o caminho da umidade.</li>
+<li><strong>Acabamento</strong>: dá a <strong>cor</strong>, o brilho e resiste ao <strong>UV</strong> e ao ataque químico; poliuretanos e poliaspárticos retêm cor e brilho; epóxis calcinam (esbranquiçam) ao sol, mas resistem bem quimicamente em interiores.</li>
+</ul>
+
+<figure class="fig p90">
+<svg viewBox="-15 0 715 260" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h12_4" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s12_4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- aço com perfil -->
+<path d="M60 170 L70 158 L80 172 L90 156 L100 171 L110 160 L120 173 L130 157 L140 170 L150 159 L160 172 L170 156 L180 170 L190 160 L200 173 L210 157 L220 171 L230 159 L240 172 L250 156 L260 170 L270 160 L280 173 L290 157 L300 171 L310 159 L320 172 L330 156 L340 170 L350 160 L360 173 L370 157 L380 171 L390 159 L400 172 L410 156 L420 170 L430 160 L440 173 L450 157 L460 171 L460 240 L60 240 z" fill="url(#h12_4)" stroke="#333" stroke-width="1.5"/>
+<text x="260" y="222" text-anchor="middle" font-weight="bold" fill="#333">AÇO jateado Sa 2½ · perfil R<tspan baseline-shift="sub" font-size="9">z</tspan> 40–60 µm</text>
+<!-- primer -->
+<path d="M60 170 L70 158 L80 172 L90 156 L100 171 L110 160 L120 173 L130 157 L140 170 L150 159 L160 172 L170 156 L180 170 L190 160 L200 173 L210 157 L220 171 L230 159 L240 172 L250 156 L260 170 L270 160 L280 173 L290 157 L300 171 L310 159 L320 172 L330 156 L340 170 L350 160 L360 173 L370 157 L380 171 L390 159 L400 172 L410 156 L420 170 L430 160 L440 173 L450 157 L460 171 L460 135 L60 135 z" fill="#8d8f6a" stroke="#333" stroke-width="1"/>
+<!-- intermediaria -->
+<rect x="60" y="85" width="400" height="50" fill="#c9c9c9" stroke="#333" stroke-width="1"/>
+<g fill="#8a8a8a"><rect x="80" y="100" width="22" height="3"/><rect x="130" y="112" width="26" height="3"/><rect x="190" y="95" width="20" height="3"/><rect x="240" y="118" width="24" height="3"/><rect x="300" y="102" width="22" height="3"/><rect x="360" y="114" width="26" height="3"/><rect x="410" y="96" width="20" height="3"/></g>
+<!-- acabamento -->
+<rect x="60" y="55" width="400" height="30" fill="#0b3d91" stroke="#333" stroke-width="1"/>
+<!-- rótulos -->
+<g font-size="10.5" fill="#333">
+<text x="472" y="66">Acabamento – poliuretano 50–80 µm:</text><text x="472" y="79">cor, brilho, resistência ao UV e química</text>
+<text x="472" y="106">Intermediária – epóxi 100–150 µm (MIO):</text><text x="472" y="119">barreira e espessura</text>
+<text x="472" y="146">Primer – epóxi rico em zinco 60–80 µm:</text><text x="472" y="159">aderência e proteção catódica</text>
+</g>
+<!-- cota EPS -->
+<line x1="40" y1="55" x2="40" y2="165" stroke="#333" stroke-width="1" marker-start="url(#s12_4)" marker-end="url(#s12_4)"/>
+<text x="34" y="108" text-anchor="end" font-size="10.5">EPS</text>
+<text x="34" y="121" text-anchor="end" font-size="10.5">total</text>
+<text x="34" y="134" text-anchor="end" font-size="10.5">≈ 240 µm</text>
+<!-- gota de água + oxigênio -->
+<path d="M200 20 Q210 5 220 20 Q225 30 210 34 Q195 30 200 20 z" fill="#cfe3f7" stroke="#0b3d91"/>
+<text x="235" y="28" font-size="11" fill="#0b3d91">água, O₂, sais: quanto mais espessa a barreira, mais lenta a difusão até o aço</text>
+<text x="260" y="256" text-anchor="middle" font-size="11" fill="#555">Mesma escala vertical exagerada: 240 µm = 0,24 mm — menos que uma folha de papel de gramatura alta.</text>
+</svg>
+<figcaption><b>Figura 12.4</b> – Corte esquemático de um sistema de pintura de três camadas sobre aço jateado, com a função de cada camada.</figcaption>
+</figure>
+
+<h3>12.4.2 Famílias de tintas</h3>
+<table class="tab small"><caption>Tabela 12.4 – Famílias de tintas para estruturas metálicas</caption>
+<thead><tr><th>Família</th><th>Cura</th><th>Vantagens</th><th>Limitações</th><th>Uso típico</th></tr></thead>
+<tbody>
+<tr><td class="l"><b>Alquídica</b> (óleo/esmalte sintético)</td><td class="c">oxidação pelo ar, 1 componente</td><td class="l">barata, fácil de aplicar e retocar, boa retenção de cor</td><td class="l">baixa resistência química e à umidade permanente; não aplicar sobre zinco (saponifica); espessura limitada por demão (30–40 µm)</td><td class="l">C1–C2: interiores de galpões, estruturas leves</td></tr>
+<tr><td class="l"><b>Epóxi</b> (bicomponente)</td><td class="c">reação com endurecedor (poliamida/amina)</td><td class="l">excelente aderência, barreira e resistência química; alta espessura por demão (80–200 µm)</td><td class="l">calcina e perde brilho ao sol (só cor/estética); janela de repintura; não cura abaixo de ≈ 10 °C</td><td class="l">primer e intermediária em C3–C5; acabamento em interiores</td></tr>
+<tr><td class="l"><b>Epóxi rico em zinco</b></td><td class="c">bicomponente</td><td class="l">proteção catódica + barreira; tolerante à preparação (Sa 2½); fácil de aplicar</td><td class="l">exige jato; espessura 50–80 µm apenas; não expor sem intermediária</td><td class="l">primer padrão para C4–C5</td></tr>
+<tr><td class="l"><b>Etil-silicato de zinco</b> (inorgânico)</td><td class="c">hidrólise com umidade do ar</td><td class="l">máxima proteção catódica, resiste a 400 °C e solventes; muito durável</td><td class="l">exige Sa 2½–Sa 3 e perfil controlado; cura precisa de UR ≥ 50 %; precisa de selante ("mist coat") para evitar bolhas na intermediária; sensível ao excesso de espessura (trinca)</td><td class="l">primer em C5/CX, refinarias, tanques, estruturas offshore</td></tr>
+<tr><td class="l"><b>Poliuretano</b> (PU acrílico/alifático)</td><td class="c">bicomponente</td><td class="l">excelente retenção de cor e brilho, resistência ao UV e química</td><td class="l">sensível à umidade na aplicação (bolhas de CO₂); toxicidade do isocianato (EPI); custo</td><td class="l">acabamento externo padrão C3–C5</td></tr>
+<tr><td class="l"><b>Acrílica</b> (base água ou solvente)</td><td class="c">evaporação / coalescência</td><td class="l">baixo VOC, secagem rápida, boa cor e UV, repintura fácil</td><td class="l">barreira inferior aos epóxis; sensível a chuva antes da secagem</td><td class="l">acabamentos C2–C3, retoques, ambientes onde solvente é proibido</td></tr>
+<tr><td class="l"><b>Poliaspártico</b></td><td class="c">bicomponente</td><td class="l">alta espessura em uma demão, cura rápida, UV; permite esquemas de 2 demãos</td><td class="l">custo; tempo de aplicação (<em>pot life</em>) curto</td><td class="l">estruturas com prazo apertado, pontes, fachadas</td></tr>
+<tr><td class="l"><b>Borracha clorada / vinílica</b></td><td class="c">evaporação, 1 componente</td><td class="l">boa resistência à água e produtos químicos; repintura fácil (redissolve)</td><td class="l">alto VOC; sensível a calor (&gt; 60 °C) e solventes; em desuso</td><td class="l">manutenção de sistemas antigos, piscinas, ambiente marinho leve</td></tr>
+</tbody></table>
+
+<h3>12.4.3 Esquemas típicos por categoria (ISO 12944-5)</h3>
+<p>A parte 5 da ISO 12944 lista centenas de esquemas testados para cada categoria e durabilidade esperada: <strong>L</strong> (baixa, até 7 anos), <strong>M</strong> (média, 7–15), <strong>H</strong> (alta, 15–25) e <strong>VH</strong> (muito alta, &gt; 25 anos) — a "durabilidade" na norma é o tempo até a primeira manutenção significativa (grau de enferrujamento Ri 3), não a vida da estrutura. A Tabela 12.5 traz exemplos representativos; <strong>são exemplos didáticos</strong> — a especificação real deve seguir a ficha técnica do fabricante e a durabilidade contratada.</p>
+
+<table class="tab small"><caption>Tabela 12.5 – Exemplos de esquemas de pintura por categoria de corrosividade (baseados na ISO 12944-5; EPS nominal por camada)</caption>
+<thead><tr><th>Categoria / ambiente</th><th>Preparação</th><th>Primer</th><th>Intermediária</th><th>Acabamento</th><th>EPS total</th><th>Durabilidade</th></tr></thead>
+<tbody>
+<tr><td class="l"><b>C2</b> – galpão fechado no interior, estrutura interna</td><td class="c">Sa 2 / Sa 2½</td><td class="l">alquídico fosfato de zinco 60 µm</td><td class="l">—</td><td class="l">alquídico 60 µm</td><td class="c">120 µm</td><td class="c">M (7–15 anos)</td></tr>
+<tr><td class="l"><b>C2 econômico</b> – interior de galpão, terças e tirantes</td><td class="c">St 3 / Sa 2</td><td class="l">primer epóxi ou alquídico 40–60 µm</td><td class="l">—</td><td class="l">acabamento alquídico ou acrílico 40 µm (opcional)</td><td class="c">80–100 µm</td><td class="c">L–M</td></tr>
+<tr><td class="l"><b>C3</b> – urbano, industrial leve; estrutura externa em cidade</td><td class="c">Sa 2½</td><td class="l">epóxi (fosfato de zinco) 80 µm</td><td class="l">—</td><td class="l">poliuretano 60 µm</td><td class="c">140 µm</td><td class="c">M</td></tr>
+<tr><td class="l"><b>C3 alta durabilidade</b></td><td class="c">Sa 2½</td><td class="l">epóxi rico em zinco 60 µm</td><td class="l">epóxi 100 µm</td><td class="l">poliuretano 60 µm</td><td class="c">220 µm</td><td class="c">H</td></tr>
+<tr><td class="l"><b>C4</b> – industrial, litoral a 1–3 km</td><td class="c">Sa 2½</td><td class="l">epóxi rico em zinco 60 µm</td><td class="l">epóxi (MIO) 120 µm</td><td class="l">poliuretano 60 µm</td><td class="c">240 µm</td><td class="c">H</td></tr>
+<tr><td class="l"><b>C5</b> – marinho (orla), industrial pesado</td><td class="c">Sa 2½ – Sa 3</td><td class="l">etil-silicato de zinco 75 µm</td><td class="l">epóxi 150 µm</td><td class="l">poliuretano 75 µm</td><td class="c">300 µm</td><td class="c">H–VH</td></tr>
+<tr><td class="l"><b>C5 / CX</b> – offshore, respingo</td><td class="c">Sa 3</td><td class="l">epóxi rico em zinco 75 µm</td><td class="l">epóxi 2 × 125 µm</td><td class="l">poliuretano 75 µm</td><td class="c">400 µm</td><td class="c">VH</td></tr>
+<tr><td class="l"><b>Duplex</b> – galvanizado + pintura (C4–C5, estética)</td><td class="c"><em>sweep blast</em> Sa 1 sobre o zinco</td><td class="l">epóxi (selante) 40–60 µm</td><td class="l">—</td><td class="l">poliuretano 60 µm</td><td class="c">100–120 µm + Zn</td><td class="c">VH (1,5 a 2,5 × a soma)</td></tr>
+</tbody></table>
+
+<h3>12.4.4 Espessura de película seca (EPS)</h3>
+<p>A <strong>espessura de película seca</strong> (EPS, em µm; em inglês DFT) é a grandeza que define o sistema: é ela que aparece na especificação, é ela que se mede e é por ela que se paga. A tinta aplicada úmida tem espessura maior (EPU); ao evaporar o solvente, resta a fração de <strong>sólidos por volume</strong> (SV):</p>
+<div class="formula">EPS = EPU × SV / 100<span class="n">(12.1)</span></div>
+<div class="formula">Rendimento teórico (m²/L) = 10 × SV (%) / EPS (µm)<span class="n">(12.2)</span></div>
+<ul class="onde"><li>SV = sólidos por volume da tinta, % (da ficha técnica: alquídicas 40–50 %; epóxis 55–80 %; PU 50–65 %; etil-silicato ≈ 60 %)</li><li>EPS = espessura de película seca especificada, µm</li><li>Rendimento prático = teórico × (1 − perdas); perdas típicas: airless em perfis 30–50 %, pistola convencional 40–60 %, rolo 10–20 %</li></ul>
+
+<p>A medição é feita com <strong>medidor magnético</strong> (por indução ou correntes parasitas em não ferrosos), calibrado com lâminas-padrão sobre a mesma superfície jateada (o perfil de rugosidade eleva a leitura; usa-se um ajuste de "zero" sobre o aço jateado). O critério usual (SSPC-PA 2 / ISO 19840) é a <strong>regra 80/20</strong> (ou "90/10"): nenhuma medição individual abaixo de 80 % da EPS especificada e a média de cada área de referência igual ou acima da especificada; leituras acima de 120 % também são anotadas (excesso pode trincar ou reter solvente). Número de medições: em cada área de 10 m² tomam-se 5 pontos de 3 leituras (SSPC-PA 2), ou conforme a ISO 19840 em função da área total. A Figura 12.5 resume.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs>
+<pattern id="h12_5" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s12_5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- medidor -->
+<text x="150" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Medidor magnético de EPS</text>
+<rect x="40" y="150" width="220" height="40" fill="url(#h12_5)" stroke="#333" stroke-width="1.5"/>
+<rect x="40" y="140" width="220" height="10" fill="#0b3d91"/>
+<rect x="120" y="60" width="60" height="80" rx="6" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="128" y="68" width="44" height="22" fill="#fff" stroke="#333"/>
+<text x="150" y="84" text-anchor="middle" font-size="11" font-family="Consolas, monospace">182 µm</text>
+<circle cx="150" cy="135" r="5" fill="#444"/>
+<text x="150" y="208" text-anchor="middle" font-size="10">sonda apoiada perpendicular, longe de bordas (&gt; 25 mm)</text>
+<text x="150" y="222" text-anchor="middle" font-size="10">e de soldas; calibrar no aço jateado com lâminas-padrão</text>
+<text x="150" y="240" text-anchor="middle" font-size="10">mede a soma de todas as camadas (medir demão a demão)</text>
+<!-- regra 80/20 -->
+<text x="490" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Critério de aceitação (regra 80/20)</text>
+<line x1="320" y1="180" x2="590" y2="180" stroke="#333" stroke-width="1"/>
+<line x1="320" y1="180" x2="320" y2="40" stroke="#333" stroke-width="1"/>
+<!-- linhas de referência -->
+<line x1="320" y1="110" x2="590" y2="110" stroke="#0b3d91" stroke-width="1.2" stroke-dasharray="5 3"/>
+<text x="594" y="114" font-size="9.5" fill="#0b3d91">EPS espec. 240 µm</text>
+<line x1="320" y1="138" x2="590" y2="138" stroke="#c0392b" stroke-width="1.2" stroke-dasharray="5 3"/>
+<text x="594" y="142" font-size="9.5" fill="#c0392b">80 % = 192 µm (mín.)</text>
+<line x1="320" y1="82" x2="590" y2="82" stroke="#d98e04" stroke-width="1.2" stroke-dasharray="5 3"/>
+<text x="594" y="86" font-size="9.5" fill="#d98e04">120 % = 288 µm</text>
+<!-- barras de medições (5 pontos) -->
+<g fill="#1f5fbf" stroke="#333" stroke-width="1">
+<rect x="336" y="100" width="28" height="80"/><rect x="388" y="118" width="28" height="62"/><rect x="440" y="94" width="28" height="86"/><rect x="492" y="128" width="28" height="52"/><rect x="544" y="104" width="28" height="76"/>
+</g>
+<g font-size="9.5" text-anchor="middle" fill="#333">
+<text x="350" y="114" fill="#fff">262</text><text x="402" y="132" fill="#fff">220</text><text x="454" y="108" fill="#fff">276</text><text x="506" y="142" fill="#fff">201</text><text x="558" y="118" fill="#fff">254</text>
+<text x="350" y="195">P1</text><text x="402" y="195">P2</text><text x="454" y="195">P3</text><text x="506" y="195">P4</text><text x="558" y="195">P5</text>
+</g>
+<text x="490" y="215" text-anchor="middle" font-size="10">média = 243 µm ≥ 240 ✓ · mínimo 201 ≥ 192 ✓ → área aprovada</text>
+<text x="490" y="230" text-anchor="middle" font-size="10">5 pontos (cada um = média de 3 leituras) por área de 10 m² — SSPC-PA 2</text>
+<text x="490" y="245" text-anchor="middle" font-size="10">reforçar demão onde falta; lixar/retirar excesso &gt; 150 % se o fabricante limitar</text>
+</svg>
+<figcaption><b>Figura 12.5</b> – Medição da espessura de película seca com medidor magnético e critério de aceitação 80/20.</figcaption>
+</figure>
+
+<h3>12.4.5 Estimando área de pintura e consumo de tinta</h3>
+<p>A área a pintar de um perfil é o seu perímetro vezes o comprimento (descontando faces em contato, quando houver). Como o perímetro cresce com a altura mas o peso cresce com a espessura, perfis leves têm mais área por tonelada. A Tabela 12.6 dá valores indicativos — a lista de materiais do detalhamento (Capítulo 11) fornece o número exato.</p>
+
+<table class="tab"><caption>Tabela 12.6 – Área de pintura por tonelada de aço (indicativa)</caption>
+<thead><tr><th>Tipo de peça</th><th>Área (m²/t)</th><th>Exemplos</th></tr></thead>
+<tbody>
+<tr><td class="l">Perfis formados a frio leves (terças, longarinas, Ue 150–250 com t = 2–3 mm)</td><td class="c">40–60</td><td class="l">Ue 200×75×25×2,65 (8,9 kg/m; 0,60 m de perímetro): 67 m²/t</td></tr>
+<tr><td class="l">Perfis W / laminados leves (até ~40 kg/m)</td><td class="c">25–35</td><td class="l">W 250×25,3: perímetro 1,00 m → 39 m²/t; W 310×32,7: 1,27 m → 39 m²/t</td></tr>
+<tr><td class="l">Perfis W médios (40–100 kg/m)</td><td class="c">20–25</td><td class="l">W 410×60: 1,64 m → 27 m²/t; W 530×85: 1,98 m → 23 m²/t</td></tr>
+<tr><td class="l">Perfis W pesados / HP (&gt; 100 kg/m)</td><td class="c">15–20</td><td class="l">W 610×155: 2,55 m → 16 m²/t; HP 310×125: 1,87 m → 15 m²/t</td></tr>
+<tr><td class="l">Treliças de cantoneiras e tubos leves</td><td class="c">35–50</td><td class="l">muitas peças pequenas e chapas de nó</td></tr>
+<tr><td class="l">Tubos estruturais (circular, quadrado)</td><td class="c">20–35</td><td class="l">só a face externa; tampar extremidades</td></tr>
+<tr><td class="l">Galpão completo (média ponderada usual)</td><td class="c">30–40</td><td class="l">pórticos pesados + terças leves</td></tr>
+</tbody></table>
+
+<div class="box exemplo"><div class="tit">Exemplo 12.1 – Consumo de tinta para 100 m² de estrutura, esquema C4</div>
+<p>Esquema: epóxi rico em zinco 60 µm (SV = 62 %) + epóxi MIO 120 µm (SV = 75 %) + poliuretano 60 µm (SV = 55 %). Aplicação com pistola airless em perfis W, perdas de 40 %.</p>
+<div class="passo"><b>Passo 1 – rendimento teórico de cada demão (eq. 12.2).</b> Primer: 10 × 62 / 60 = 10,3 m²/L. Intermediária: 10 × 75 / 120 = 6,25 m²/L. Acabamento: 10 × 55 / 60 = 9,2 m²/L.</div>
+<div class="passo"><b>Passo 2 – rendimento prático.</b> Multiplicar por (1 − 0,40) = 0,60: primer 6,2 m²/L; intermediária 3,75 m²/L; acabamento 5,5 m²/L.</div>
+<div class="passo"><b>Passo 3 – consumo para 100 m².</b> Primer: 100 / 6,2 = 16,1 L. Intermediária: 100 / 3,75 = 26,7 L. Acabamento: 100 / 5,5 = 18,2 L. Total ≈ 61 L de tinta (mais diluente, 5–15 %).</div>
+<div class="passo"><b>Passo 4 – para a obra inteira.</b> Se o galpão tem 176 t com 35 m²/t → 6 160 m² → ≈ 3 760 L de tinta. Dividindo por embalagens de 18 L (kit A+B), ≈ 210 kits. A espessura úmida a aplicar no primer, para o pintor controlar com o pente de EPU, é EPU = 60 / 0,62 ≈ 97 µm (≈ 100 µm).</div>
+</div>
+
+<h3>12.4.6 Aplicação e condições ambientais</h3>
+<p>Os métodos de aplicação são a <strong>pistola airless</strong> (sem ar: a tinta é bombeada a 150–250 bar e atomizada no bico; rápida, alta espessura, padrão em fábricas), a <strong>pistola convencional</strong> (ar comprimido; melhor acabamento, mais perda e mais névoa), o <strong>rolo</strong> (chapas planas, baixa perda, difícil atingir a EPS em uma demão) e a <strong>trincha</strong> (cantos, arestas, soldas, parafusos — a demão de reforço, <em>stripe coat</em>, obrigatória nas arestas, onde a tinta "foge" pela tensão superficial). As condições ambientais mínimas, comuns a quase todas as fichas técnicas:</p>
+<ul>
+<li><strong>Umidade relativa &lt; 85 %</strong> (etil-silicato de zinco precisa de UR ≥ 50 % para curar).</li>
+<li><strong>Temperatura da superfície ≥ ponto de orvalho + 3 °C</strong> — abaixo disso, condensa uma película invisível de água sobre o aço, e a tinta descola. Mede-se com termômetro de contato, higrômetro/psicrômetro e a tabela de ponto de orvalho (Tabela 12.7).</li>
+<li><strong>Temperatura do ar e da superfície entre 10 e 40 °C</strong> (epóxis não curam abaixo de 10 °C; acima de 40 °C, o solvente evapora rápido demais e a película fica porosa e com casca de laranja). Aço ao sol pode passar de 60 °C.</li>
+<li><strong>Sem chuva, neblina ou vento forte</strong> (poeira e névoa); em campo, pintar de manhã depois que o orvalho secou e parar antes do fim da tarde.</li>
+</ul>
+
+<table class="tab small"><caption>Tabela 12.7 – Ponto de orvalho (°C) em função da temperatura do ar e da umidade relativa (simplificada)</caption>
+<thead><tr><th>Temp. do ar</th><th>UR 50 %</th><th>UR 60 %</th><th>UR 70 %</th><th>UR 80 %</th><th>UR 85 %</th><th>UR 90 %</th></tr></thead>
+<tbody>
+<tr><td class="c">15 °C</td><td class="c">4,7</td><td class="c">7,3</td><td class="c">9,6</td><td class="c">11,6</td><td class="c">12,5</td><td class="c">13,4</td></tr>
+<tr><td class="c">20 °C</td><td class="c">9,3</td><td class="c">12,0</td><td class="c">14,4</td><td class="c">16,4</td><td class="c">17,4</td><td class="c">18,3</td></tr>
+<tr><td class="c">25 °C</td><td class="c">13,9</td><td class="c">16,7</td><td class="c">19,1</td><td class="c">21,3</td><td class="c">22,3</td><td class="c">23,3</td></tr>
+<tr><td class="c">30 °C</td><td class="c">18,4</td><td class="c">21,4</td><td class="c">23,9</td><td class="c">26,2</td><td class="c">27,2</td><td class="c">28,2</td></tr>
+<tr><td class="c">35 °C</td><td class="c">23,0</td><td class="c">26,1</td><td class="c">28,7</td><td class="c">31,0</td><td class="c">32,1</td><td class="c">33,1</td></tr>
+</tbody></table>
+<p>Exemplo: ar a 25 °C com UR 80 % → ponto de orvalho 21,3 °C; a superfície precisa estar a ≥ 24,3 °C. Uma viga à sombra de manhã cedo, a 22 °C, <strong>não pode</strong> ser pintada até aquecer. Os <strong>intervalos de repintura</strong> (mínimo e máximo entre demãos) são dados na ficha técnica e dependem da temperatura: o mínimo garante que a demão anterior secou o suficiente; o máximo garante que ainda há aderência química entre camadas — passado o máximo (dias a semanas em epóxis e PU), é preciso lixar para criar ancoragem mecânica. A <strong>cura completa</strong> (para resistência química e mecânica plena) leva 7 dias a 25 °C em epóxis e PU; o manuseio é possível em 12–24 h — mas peças empilhadas e amarradas antes da cura marcam e descascam nas cintas.</p>
+
+<h3>12.4.7 Retoques de campo</h3>
+<p>Toda estrutura chega à obra com danos de pintura (cintas, manuseio, içamento) e com regiões sem pintura por projeto (soldas de campo, faces de atrito, parafusos). O procedimento de retoque: (1) remover ferrugem, respingos e escória com ferramenta mecânica até St 3 (ou jato localizado, quando disponível), lixando a borda da tinta sã para criar transição ("chanfro" de 20–30 mm); (2) limpar poeira e óleo; (3) aplicar o mesmo primer do esquema (ou o primer de retoque compatível indicado pelo fabricante — nunca alquídico sobre zinco); (4) reconstruir as demãos até a EPS especificada, com trincha nas arestas e pistola nas áreas maiores. Parafusos e porcas galvanizados recebem selante epóxi e acabamento; parafusos pretos (sem revestimento) precisam de primer. Retoques devem ser registrados e inspecionados como a pintura original.</p>
+
+<h3>12.4.8 Inspeção e defeitos de pintura</h3>
+<p>O inspetor de pintura verifica, em ordem: contaminação (sais solúveis por teste de Bresle em ambiente marinho), grau de limpeza (padrão visual ISO 8501-1), perfil (fita réplica), condições ambientais (registrar a cada 2–4 h), EPS por demão e total (regra 80/20), <strong>aderência</strong> — por corte em grade (<strong>ISO 2409</strong>, para EPS ≤ 250 µm, classificação 0 a 5) ou por tração (<em>pull-off</em>, <strong>ISO 4624</strong> / ASTM D4541, resultado em MPa: sistemas epóxi bem aplicados dão ≥ 5–8 MPa) — e, em tanques e imersão, continuidade com <strong>detector de descontinuidades</strong> (holiday detector, esponja úmida em baixa tensão ou alta tensão para EPS &gt; 500 µm). A Tabela 12.8 lista os defeitos mais comuns.</p>
+
+<table class="tab small"><caption>Tabela 12.8 – Defeitos de pintura: causas e soluções</caption>
+<thead><tr><th>Defeito</th><th>Aspecto</th><th>Causas usuais</th><th>Correção</th></tr></thead>
+<tbody>
+<tr><td class="l"><b>Escorrimento</b> (cortina)</td><td class="l">gotas e ondas verticais</td><td class="l">excesso de tinta por passe, diluição excessiva, pistola perto ou lenta, superfície fria</td><td class="l">lixar quando seco e repintar; ajustar bico, distância (30–40 cm) e velocidade</td></tr>
+<tr><td class="l"><b>Casca de laranja</b></td><td class="l">textura rugosa uniforme</td><td class="l">tinta viscosa demais, pouco diluente, atomização ruim, temperatura alta (solvente evapora antes de nivelar)</td><td class="l">estético em geral; lixar e repintar se comprometer a EPS ou a estanqueidade</td></tr>
+<tr><td class="l"><b>Bolhas / empolamento</b></td><td class="l">bolhas fechadas ou rompidas</td><td class="l">solvente retido (demãos grossas, repintura cedo), umidade ou sais sob a tinta (osmose), superfície contaminada, orvalho</td><td class="l">remover até o aço na região, limpar (sais!), repintar respeitando intervalos e EPU</td></tr>
+<tr><td class="l"><b>Descascamento / delaminação</b></td><td class="l">tinta solta em placas, entre camadas ou do aço</td><td class="l">preparação insuficiente, óleo/poeira, intervalo máximo excedido (sem lixamento), incompatibilidade (alquídico sobre zinco), excesso de EPS no etil-silicato</td><td class="l">remover até camada sã ou até o aço, refazer preparação, repintar</td></tr>
+<tr><td class="l"><b>Calcinação</b> (<em>chalking</em>)</td><td class="l">pó branco na superfície, perda de brilho</td><td class="l">degradação por UV da resina (epóxi ao sol)</td><td class="l">lavar, lixar e aplicar acabamento resistente ao UV (PU, acrílico); só estético se a EPS se mantém</td></tr>
+<tr><td class="l"><b>Fissuras / trincas</b></td><td class="l">rachaduras em rede ou lineares</td><td class="l">excesso de espessura (etil-silicato &gt; 100 µm, epóxis muito grossos), tinta rígida sobre flexível, cura rápida ao sol</td><td class="l">remover a camada afetada e repintar na EPS correta</td></tr>
+<tr><td class="l"><b>Crateras / olhos de peixe</b></td><td class="l">pequenos furos circulares</td><td class="l">contaminação por óleo (compressor sem filtro), silicone, água no ar comprimido</td><td class="l">limpar, lixar, repintar; filtrar o ar</td></tr>
+<tr><td class="l"><b>Ferrugem por pontos</b> (<em>pinpoint rusting</em>)</td><td class="l">pontos de ferrugem no meio da película</td><td class="l">perfil de rugosidade alto demais para a EPS, EPS insuficiente</td><td class="l">lixar levemente, aplicar demão extra; especificar perfil compatível</td></tr>
+<tr><td class="l"><b>Sobrepulverização</b> (<em>overspray</em>)</td><td class="l">superfície áspera e fosca, "areia"</td><td class="l">névoa seca caindo sobre áreas já pintadas; vento; pistola longe</td><td class="l">lixar e repintar acabamento; proteger áreas adjacentes</td></tr>
+</tbody></table>
+
+<h2>12.5 Galvanização a fogo <span class="nivel i">Intermediário</span></h2>
+<p>A galvanização por imersão a quente (NBR 6323 / ASTM A123) reveste o aço com zinco mergulhando a peça em zinco fundido a ≈ 450 °C. Diferentemente da pintura, o zinco não é apenas uma barreira: ele é <strong>anódico</strong> em relação ao aço e o protege por sacrifício mesmo em riscos e arranhões pequenos (até ~2 mm de largura). Além disso, o revestimento é <strong>ligado metalurgicamente</strong> ao aço e cobre também o interior de tubos e cantos inacessíveis à pistola. A Figura 12.6 mostra o processo.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 215" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><marker id="s12_6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<g stroke="#333" stroke-width="1.5">
+<rect x="10" y="30" width="118" height="60" rx="5" fill="#eef3fb"/>
+<rect x="140" y="30" width="118" height="60" rx="5" fill="#eef3fb"/>
+<rect x="270" y="30" width="118" height="60" rx="5" fill="#eef3fb"/>
+<rect x="400" y="30" width="118" height="60" rx="5" fill="#fff7d6"/>
+<rect x="530" y="30" width="118" height="60" rx="5" fill="#d9dee7"/>
+<rect x="660" y="30" width="110" height="60" rx="5" fill="#e9f7ec"/>
+</g>
+<g text-anchor="middle" font-weight="bold" fill="#0b3d91">
+<text x="69" y="52">1. Desengraxe</text><text x="199" y="52">2. Decapagem</text><text x="329" y="52">3. Fluxagem</text><text x="459" y="52">4. Imersão</text><text x="589" y="52">5. Resfriamento</text><text x="715" y="52">6. Inspeção</text>
+</g>
+<g text-anchor="middle" font-size="10" fill="#333">
+<text x="69" y="68">solução alcalina</text><text x="69" y="81">quente, ou ácida</text>
+<text x="199" y="68">HCl 10–15 %,</text><text x="199" y="81">remove carepa/ferrugem</text>
+<text x="329" y="68">ZnCl₂ + NH₄Cl,</text><text x="329" y="81">evita reoxidar, secagem</text>
+<text x="459" y="68">zinco fundido 445–</text><text x="459" y="81">455 °C, 2–8 min</text>
+<text x="589" y="68">ao ar ou em água,</text><text x="589" y="81">remoção de escórias</text>
+<text x="715" y="68">espessura, aspecto,</text><text x="715" y="81">aderência</text>
+</g>
+<g stroke="#333" stroke-width="1.5" marker-end="url(#s12_6)">
+<line x1="128" y1="60" x2="138" y2="60"/><line x1="258" y1="60" x2="268" y2="60"/><line x1="388" y1="60" x2="398" y2="60"/><line x1="518" y1="60" x2="528" y2="60"/><line x1="648" y1="60" x2="658" y2="60"/>
+</g>
+<text x="390" y="115" text-anchor="middle" font-size="10.5">Lavagens com água entre as etapas 1→2 e 2→3 (ácido arrastado para a cuba causa defeitos).</text>
+<text x="390" y="131" text-anchor="middle" font-size="10.5">Peça pendurada em arames ou ganchos por furos/olhais previstos no projeto; entra inclinada (≈ 30–45°)</text>
+<text x="390" y="147" text-anchor="middle" font-size="10.5">para o ar sair e o zinco entrar; ao sair, o excesso escorre pelos pontos baixos → furos de escoamento.</text>
+<text x="390" y="168" text-anchor="middle" font-size="10.5" fill="#7a3e00">Cuba típica no Brasil: 7 × 1,5 × 2,5 m (compr. × largura × profundidade); as maiores chegam a 12–13 × 1,8 × 3 m.</text>
+<text x="390" y="184" text-anchor="middle" font-size="10.5" fill="#7a3e00">Peças até ≈ 1,8 × o comprimento da cuba: dupla imersão (uma metade de cada vez), com marca visível na transição.</text>
+<text x="390" y="205" text-anchor="middle" font-size="10.5" fill="#555">Consultar a galvanizadora antes de detalhar: dimensões, peso máximo (5–10 t), pontos de suspensão.</text>
+</svg>
+<figcaption><b>Figura 12.6</b> – Etapas da galvanização por imersão a quente e dimensões típicas de cuba.</figcaption>
+</figure>
+
+<h3>12.5.1 As camadas Fe-Zn</h3>
+<p>Durante a imersão, o ferro e o zinco reagem formando camadas intermetálicas de dureza crescente em direção ao aço; por cima fica uma camada de zinco puro (Figura 12.7). As camadas de liga são mais duras que o aço — por isso o galvanizado resiste bem a abrasão e manuseio, mas pode lascar em dobras severas. Aços com silício entre 0,04 e 0,14 % ou acima de 0,25 % (efeito Sandelin) reagem muito rápido e produzem camadas grossas, cinza-foscas e às vezes frágeis; a galvanizadora deve ser informada da composição (certificado) ou fazer testes.</p>
+
+<figure class="fig p75">
+<svg viewBox="0 0 700 230" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs>
+<pattern id="h12_7" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s12_7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- aço base -->
+<rect x="60" y="160" width="360" height="60" fill="url(#h12_7)" stroke="#333" stroke-width="1.5"/>
+<text x="240" y="195" text-anchor="middle" font-weight="bold">AÇO BASE</text>
+<!-- gama -->
+<rect x="60" y="150" width="360" height="10" fill="#6d6d6d" stroke="#333" stroke-width="0.8"/>
+<!-- delta -->
+<path d="M60 150 L60 118 L80 122 L100 116 L120 121 L140 115 L160 120 L180 116 L200 121 L220 115 L240 120 L260 116 L280 121 L300 115 L320 120 L340 116 L360 121 L380 115 L400 120 L420 117 L420 150 z" fill="#8d8d8d" stroke="#333" stroke-width="0.8"/>
+<!-- zeta (colunar) -->
+<path d="M60 118 L60 70 L420 70 L420 117 L400 120 L380 115 L360 121 L340 116 L320 120 L300 115 L280 121 L260 116 L240 120 L220 115 L200 121 L180 116 L160 120 L140 115 L120 121 L100 116 L80 122 z" fill="#adadad" stroke="#333" stroke-width="0.8"/>
+<g stroke="#8a8a8a" stroke-width="0.6"><line x1="90" y1="72" x2="94" y2="118"/><line x1="130" y1="72" x2="126" y2="118"/><line x1="170" y1="72" x2="174" y2="118"/><line x1="210" y1="72" x2="206" y2="118"/><line x1="250" y1="72" x2="254" y2="118"/><line x1="290" y1="72" x2="286" y2="118"/><line x1="330" y1="72" x2="334" y2="118"/><line x1="370" y1="72" x2="366" y2="118"/></g>
+<!-- eta -->
+<rect x="60" y="45" width="360" height="25" fill="#d0d3d8" stroke="#333" stroke-width="0.8"/>
+<!-- rótulos -->
+<g font-size="10.5" fill="#333">
+<text x="430" y="60">η (eta): zinco puro ≈ 100 % Zn — 70 HV</text>
+<text x="430" y="95">ζ (zeta): FeZn₁₃, 94 % Zn — 180 HV, colunar</text>
+<text x="430" y="135">δ (delta): FeZn₇, 90 % Zn — 245 HV</text>
+<text x="430" y="158">Γ (gama): Fe₃Zn₁₀, 75 % Zn — 250 HV, muito fina</text>
+<text x="430" y="190">aço: ≈ 160 HV</text>
+</g>
+<line x1="40" y1="45" x2="40" y2="150" stroke="#333" stroke-width="1" marker-start="url(#s12_7)" marker-end="url(#s12_7)"/>
+<text x="34" y="95" text-anchor="end" font-size="10.5">70–</text><text x="34" y="108" text-anchor="end" font-size="10.5">120 µm</text>
+<text x="350" y="30" text-anchor="middle" font-size="10.5" fill="#555">Corte metalográfico esquemático (≈ 400×). As camadas de liga são mais duras que o aço.</text>
+</svg>
+<figcaption><b>Figura 12.7</b> – Estrutura do revestimento galvanizado a fogo: camadas de liga Fe-Zn (Γ, δ, ζ) e zinco puro (η).</figcaption>
+</figure>
+
+<h3>12.5.2 Espessura, massa e aspecto</h3>
+<p>A espessura do revestimento depende principalmente da <strong>espessura do aço</strong> (peças grossas ficam mais tempo quentes e reagem mais), da composição e do tempo de imersão. As normas fixam mínimos por faixa de espessura (Tabela 12.9). O ensaio é feito com medidor magnético (como na pintura) ou por massa (g/m²; 1 µm de zinco ≈ 7,1 g/m²). O aspecto varia: <strong>brilhante com "flor"</strong> (cristais visíveis) quando o zinco puro solidifica lentamente; <strong>cinza fosco</strong> quando as camadas de liga chegam à superfície (aços reativos, peças grossas) — a proteção é igual ou maior; manchas brancas ("corrosão branca") aparecem em peças estocadas úmidas e empilhadas, sem ventilação — é superficial, mas indica estocagem errada.</p>
+
+<table class="tab"><caption>Tabela 12.9 – Espessura mínima do revestimento galvanizado a fogo (NBR 6323 / ASTM A123, peças estruturais)</caption>
+<thead><tr><th>Espessura do aço</th><th>NBR 6323 – camada mínima média (µm)</th><th>Massa equivalente (g/m²)</th><th>ASTM A123 – perfis e chapas (µm, grau)</th></tr></thead>
+<tbody>
+<tr><td class="c">&lt; 1,6 mm</td><td class="c">45</td><td class="c">320</td><td class="c">45 (grau 45)</td></tr>
+<tr><td class="c">1,6 a 3,0 mm</td><td class="c">55</td><td class="c">390</td><td class="c">65 (grau 65) para 1,6–4,8 mm</td></tr>
+<tr><td class="c">3,0 a 6,0 mm</td><td class="c">70</td><td class="c">500</td><td class="c">75 (grau 75) para 4,8–6,4 mm</td></tr>
+<tr><td class="c">&gt; 6,0 mm</td><td class="c">85</td><td class="c">600</td><td class="c">100 (grau 100) para &gt; 6,4 mm</td></tr>
+<tr><td class="c">Parafusos e fixadores (ASTM F2329 / NBR 6323)</td><td class="c">43–50</td><td class="c">300–350</td><td class="c">50 (d ≥ 10 mm)</td></tr>
+</tbody></table>
+
+<h3>12.5.3 Projeto para galvanização</h3>
+<p>Peças que serão galvanizadas devem ser <strong>projetadas para isso</strong> — é o erro mais comum de quem especifica galvanização depois do detalhamento pronto. Regras essenciais (Figura 12.8):</p>
+<ul>
+<li><strong>Furos de ventilação e escoamento</strong> em todo volume fechado (tubos, caixões, colunas compostas): sem eles, o ar preso impede o zinco de entrar (área sem revestimento) e a umidade interna vira vapor a 450 °C — <strong>a peça pode explodir na cuba</strong>. Diâmetro mínimo ≈ 10 mm (regra: ≥ 25 % do diâmetro do tubo para tubos até 50 mm, e um furo de 10–12 mm a cada 400–500 mm de comprimento em caixões), sempre nas extremidades e em posição diagonal oposta (um alto para o ar sair, um baixo para o zinco escoar).</li>
+<li><strong>Evitar bolsões</strong>: enrijecedores, chapas de topo e cantoneiras formam "copos" que retêm zinco (peso e custo extras, aspecto ruim) ou ar. Cantos de enrijecedores devem ser chanfrados (recorte de 20–25 mm) para o fluxo passar.</li>
+<li><strong>Sobreposições fechadas</strong> (chapas soldadas face a face) devem ser evitadas ou furadas: o ácido da decapagem entra pela fresta, não é removido e "sangra" ferrugem depois; áreas sobrepostas acima de ~100 cm² exigem furo de alívio. Prefira soldas contínuas e feche completamente ou deixe aberto.</li>
+<li><strong>Furos de parafusos</strong>: o zinco reduz o diâmetro do furo em ≈ 2 × espessura; para parafusos galvanizados, aumente o furo em +0,8 mm ou passe broca depois (sem galvanização nova). <strong>Roscas</strong> internas são abertas ou repassadas depois; porcas galvanizadas vêm com rosca sobremedida (A563 com ≈ 0,4 mm de folga).</li>
+<li><strong>Distorção térmica</strong>: a 450 °C o aço amolece um pouco e as tensões residuais de solda e laminação se aliviam; peças <strong>esbeltas, assimétricas ou de espessuras muito diferentes</strong> (chapa fina soldada em perfil grosso, treliças planas longas) empenam. Evite seções assimétricas, use espessuras próximas (razão ≤ 2,5 : 1), preveja simetria de solda e suspensão em dois pontos.</li>
+<li><strong>Marcas</strong>: tinta e giz de cera impedem o zinco de aderir; identificar por estampagem, etiqueta metálica ou tinta removível pelo desengraxe.</li>
+<li><strong>Aço patinável e alto silício</strong>: informar a galvanizadora (camadas espessas e frágeis).</li>
+</ul>
+
+<figure class="fig">
+<svg viewBox="0 0 780 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs>
+<pattern id="h12_8" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s12_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- a) tubo com chapas de extremidade -->
+<text x="200" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">a) Tubo/coluna com chapas nas extremidades</text>
+<rect x="60" y="60" width="280" height="50" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="50" y="45" width="10" height="80" fill="url(#h12_8)" stroke="#333" stroke-width="1.5"/>
+<rect x="340" y="45" width="10" height="80" fill="url(#h12_8)" stroke="#333" stroke-width="1.5"/>
+<!-- furos -->
+<g fill="#fff" stroke="#c0392b" stroke-width="1.5">
+<circle cx="80" cy="68" r="5"/><circle cx="320" cy="102" r="5"/><circle cx="55" cy="55" r="4"/><circle cx="345" cy="115" r="4"/>
+</g>
+<text x="104" y="50" text-anchor="middle" font-size="9.5" fill="#c0392b">saída de ar (alto)</text>
+<text x="356" y="136" font-size="9.5" fill="#c0392b">escoamento (baixo)</text>
+<line x1="200" y1="110" x2="200" y2="140" stroke="#333" stroke-width="1"/>
+<text x="200" y="152" text-anchor="middle" font-size="10">furos ø ≥ 10–12 mm, diagonalmente opostos, nas extremidades;</text>
+<text x="200" y="166" text-anchor="middle" font-size="10">tubos ≤ 50 mm: furo ≥ 25 % do diâmetro; nunca tubo fechado sem furo (explosão)</text>
+<!-- b) caixão com enrijecedores -->
+<text x="580" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">b) Enrijecedores: chanfrar os cantos</text>
+<g stroke="#333" stroke-width="1.5" fill="url(#h12_8)">
+<rect x="470" y="50" width="200" height="8"/><rect x="470" y="120" width="200" height="8"/><rect x="566" y="58" width="8" height="62"/>
+</g>
+<!-- enrijecedor com chanfro -->
+<path d="M574 58 L620 58 L620 66 L628 66 L628 112 L620 112 L620 120 L574 120 z" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<path d="M620 58 L628 66 M620 120 L628 112" stroke="#c0392b" stroke-width="1.5"/>
+<text x="655" y="66" font-size="9.5" fill="#c0392b">recorte 20–25 mm</text>
+<text x="655" y="112" font-size="9.5" fill="#c0392b">(passagem do zinco)</text>
+<!-- sem chanfro -->
+<path d="M566 58 L520 58 L520 120 L566 120 z" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<path d="M520 58 L520 66 L528 66" stroke="#333" stroke-width="0.8" fill="none"/>
+<text x="500" y="90" text-anchor="end" font-size="9.5" fill="#7a3e00">sem recorte:</text>
+<text x="500" y="102" text-anchor="end" font-size="9.5" fill="#7a3e00">bolsão de zinco</text>
+<text x="500" y="114" text-anchor="end" font-size="9.5" fill="#7a3e00">ou ar preso ✗</text>
+<!-- c) sobreposição -->
+<text x="200" y="200" text-anchor="middle" font-weight="bold" fill="#0b3d91">c) Sobreposição fechada</text>
+<rect x="60" y="250" width="200" height="14" fill="url(#h12_8)" stroke="#333" stroke-width="1.5"/>
+<rect x="110" y="230" width="100" height="20" fill="url(#h12_8)" stroke="#333" stroke-width="1.5"/>
+<path d="M110 250 L104 250 L110 244 z M210 250 L216 250 L210 244 z" fill="#e0a86a" stroke="#7a3e00"/>
+<circle cx="160" cy="240" r="5" fill="#fff" stroke="#c0392b" stroke-width="1.5"/>
+<text x="200" y="285" text-anchor="middle" font-size="10">solda em todo o contorno + furo de alívio se a área</text>
+<text x="200" y="299" text-anchor="middle" font-size="10">sobreposta &gt; ~100 cm² (ácido preso "sangra" e vapor</text>
+<text x="200" y="313" text-anchor="middle" font-size="10">estoura a solda); ou deixar a junta aberta (≥ 2 mm)</text>
+<!-- d) furos e distorção -->
+<text x="580" y="200" text-anchor="middle" font-weight="bold" fill="#0b3d91">d) Furos, roscas e distorção</text>
+<rect x="470" y="225" width="90" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<circle cx="515" cy="255" r="12" fill="#fff" stroke="#333" stroke-width="1.2"/>
+<circle cx="515" cy="255" r="10" fill="none" stroke="#c0392b" stroke-width="1" stroke-dasharray="2 2"/>
+<line x1="515" y1="255" x2="527" y2="255" stroke="#333" stroke-width="1" marker-end="url(#s12_8)"/>
+<text x="515" y="300" text-anchor="middle" font-size="9.5">furo + 0,8 mm (o zinco</text>
+<text x="515" y="312" text-anchor="middle" font-size="9.5">reduz o diâmetro)</text>
+<!-- treliça empenada -->
+<path d="M590 240 Q670 225 750 240" stroke="#333" stroke-width="2" fill="none"/>
+<path d="M590 270 Q670 255 750 270" stroke="#333" stroke-width="2" fill="none"/>
+<g stroke="#555" stroke-width="1"><line x1="610" y1="238" x2="630" y2="263"/><line x1="630" y1="263" x2="650" y2="233"/><line x1="650" y1="233" x2="670" y2="259"/><line x1="670" y1="259" x2="690" y2="233"/><line x1="690" y1="233" x2="710" y2="260"/><line x1="710" y1="260" x2="730" y2="237"/></g>
+<line x1="590" y1="245" x2="750" y2="245" stroke="#c0392b" stroke-width="0.8" stroke-dasharray="3 2"/>
+<text x="670" y="300" text-anchor="middle" font-size="9.5">esbeltas/assimétricas empenam a 450 °C:</text>
+<text x="670" y="312" text-anchor="middle" font-size="9.5">simetria, espessuras próximas</text>
+</svg>
+<figcaption><b>Figura 12.8</b> – Projeto para galvanização: furos de ventilação e escoamento, recortes em enrijecedores, sobreposições, folga de furos e risco de distorção.</figcaption>
+</figure>
+
+<h3>12.5.4 Soldar e cortar depois de galvanizar; reparos</h3>
+<p>Soldar galvanizado é possível (com ventilação — os fumos de óxido de zinco causam a "febre dos fumos metálicos"; usar exaustão e respirador) mas destrói o revestimento em ≈ 20–50 mm ao redor do cordão e gera porosidade; sempre que possível, solde <strong>antes</strong> e galvanize a peça pronta, parafusando em campo. Onde é inevitável cortar ou soldar galvanizado — e nos danos de transporte — a NBR 6323 e a ASTM A780 admitem reparo com <strong>tinta rica em zinco</strong> (≥ 92 % Zn na película seca, aplicada com EPS ≥ espessura da camada de zinco + 30 µm, em geral 2 demãos até ≈ 100 µm), com <strong>vareta de liga de zinco</strong> aplicada a quente (maçarico) ou por <strong>metalização</strong>; a área reparada é limitada (≈ 0,5 % da superfície ou 25 cm² por local, conforme a norma), acima disso a peça deve ser regalvanizada.</p>
+
+<h3>12.5.5 Sistema duplex</h3>
+<p>Pintar sobre galvanizado ("sistema duplex") combina a proteção catódica do zinco com a barreira e a cor da tinta; a durabilidade do conjunto é <strong>1,5 a 2,5 vezes a soma</strong> das durabilidades isoladas, porque cada um protege o outro (a tinta retarda o consumo do zinco; o zinco impede a corrosão sob a tinta). Exige preparação específica: o zinco novo é liso e, se pintado com tinta errada (alquídica), saponifica e descasca. O procedimento é: desengraxar; <strong>jateamento ligeiro</strong> (<em>sweep blast</em>, Sa 1 com abrasivo fino e pressão baixa, criando perfil de 10–20 µm sem remover o zinco) ou, em peças novas, primer específico para galvanizado (epóxi ou acrílico "wash primer"); pintar em até 4 h. Esquema típico: epóxi 40–60 µm + poliuretano 60 µm. Galvanizado envelhecido (com óxidos brancos) precisa de lavagem e sweep obrigatório.</p>
+
+<h3>12.5.6 Eletrogalvanização, zincagem por fixadores e metalização</h3>
+<ul>
+<li><strong>Eletrogalvanização / zincagem eletrolítica</strong> ("zincado branco" ou "zincado amarelo/bicromatizado"): camada de zinco depositada eletroliticamente, com apenas <strong>5 a 12 µm</strong>, aspecto brilhante uniforme. É usada em parafusos, porcas, arruelas e ferragens; em ambiente externo dura <strong>meses</strong>, não anos (C3: 1–2 anos até a ferrugem vermelha). Parafusos de estruturas externas devem ser galvanizados a fogo (ASTM F2329) ou receber pintura de retoque; parafusos A490 não devem ser galvanizados a fogo (fragilização por hidrogênio) — usam-se com revestimento de zinco lamelar ou sem revestimento e pintados. A NBR 8800 lembra que o coeficiente de atrito de superfícies galvanizadas é menor (ligações por atrito: classe B só com tratamento adequado).</li>
+<li><strong>Metalização (aspersão térmica)</strong>: zinco, alumínio ou liga Zn-Al fundidos por arco elétrico ou chama e projetados sobre o aço jateado (Sa 3, perfil 50–100 µm); espessuras de <strong>100 a 200 µm</strong> (Zn) ou 150–250 (Al) — <strong>NBR 15239</strong> e ISO 2063. Não tem limite de tamanho de peça, não distorce, e é feita em campo (pontes, torres, comportas, tanques). A camada é porosa e deve ser selada (epóxi de baixa viscosidade) e, em geral, pintada. Custo alto, mas vida útil de 20–40 anos em C4–C5.</li>
+</ul>
+
+<h3>12.5.7 Aço patinável</h3>
+<p>Os aços patináveis (ASTM A588, USI-SAC 350, CSN COR 420, NBR 7007 AR 350 COR) contêm cobre, cromo, níquel e fósforo, que fazem a ferrugem formar uma <strong>pátina</strong> aderente e compacta que reduz a taxa de corrosão para 1/3 a 1/8 da do aço comum, sem pintura. Só funciona com <strong>ciclos de molhagem e secagem</strong>: chuva seguida de sol e vento. Em ambientes sempre úmidos, em frestas, em imersão, enterrado ou em atmosfera marinha (cloretos) ou industrial pesada (SO₂ alto) a pátina não se estabiliza e o aço corrói como um aço comum ou pior. Os detalhes de projeto (Figura 12.9) são decisivos: nada pode reter água; sobreposições devem ser soldadas ou seladas; a pátina leva 2–4 anos para se formar e, nesse período, escorre ferrugem que mancha concreto, alvenaria e vidros — prever pingadeiras e afastamentos, ou pintar os primeiros metros junto a pisos claros. Em interiores (C1–C2) e em regiões de baixa agressividade, aço patinável sem pintura é uma solução durável e econômica (galpões, pontes rodoviárias no interior, torres de transmissão); quando pintado, a mesma tinta dura mais que sobre aço comum.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 230" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs>
+<pattern id="h12_9" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s12_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- errado: perfil U de boca para cima -->
+<text x="120" y="20" text-anchor="middle" font-weight="bold" fill="#c0392b">✗ Retém água</text>
+<path d="M50 60 L50 120 L190 120 L190 60 L178 60 L178 108 L62 108 L62 60 z" fill="url(#h12_9)" stroke="#333" stroke-width="1.5"/>
+<rect x="62" y="90" width="116" height="18" fill="#cfe3f7" stroke="none"/>
+<text x="120" y="103" text-anchor="middle" font-size="9.5" fill="#0b3d91">água + sujeira</text>
+<text x="120" y="142" text-anchor="middle" font-size="10">U com a boca para cima, cantoneira</text>
+<text x="120" y="156" text-anchor="middle" font-size="10">em "calha", chapa de base sem dreno</text>
+<!-- certo: com furo de dreno / U invertido -->
+<text x="350" y="20" text-anchor="middle" font-weight="bold" fill="#1f6b41">✓ Drena e seca</text>
+<path d="M280 60 L280 120 L420 120 L420 60 L408 60 L408 108 L292 108 L292 60 z" fill="url(#h12_9)" stroke="#333" stroke-width="1.5"/>
+<circle cx="350" cy="114" r="5" fill="#fff" stroke="#c0392b" stroke-width="1.5"/>
+<line x1="350" y1="120" x2="350" y2="140" stroke="#0b3d91" stroke-width="1.2" marker-end="url(#s12_9)"/>
+<text x="362" y="138" font-size="9.5" fill="#c0392b">dreno ø ≥ 12 mm</text>
+<text x="350" y="160" text-anchor="middle" font-size="10">ou inverter o perfil (boca para baixo),</text>
+<text x="350" y="174" text-anchor="middle" font-size="10">inclinar superfícies, selar frestas</text>
+<!-- escorrimento em concreto -->
+<text x="580" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Escorrimento sobre concreto</text>
+<rect x="540" y="40" width="30" height="100" fill="url(#h12_9)" stroke="#333" stroke-width="1.5"/>
+<rect x="500" y="140" width="110" height="30" fill="#c8c8c8" stroke="#333" stroke-width="1.5"/>
+<g fill="#888"><circle cx="510" cy="150" r="1"/><circle cx="530" cy="162" r="1"/><circle cx="555" cy="152" r="1"/><circle cx="580" cy="160" r="1"/><circle cx="600" cy="148" r="1"/></g>
+<path d="M540 120 Q535 140 520 142 L500 142" stroke="#b5651d" stroke-width="3" fill="none"/>
+<text x="580" y="188" text-anchor="middle" font-size="10">ferrugem mancha o concreto por 2–4 anos:</text>
+<text x="580" y="202" text-anchor="middle" font-size="10">pingadeira, afastamento, canaleta</text>
+<text x="580" y="216" text-anchor="middle" font-size="10">ou pintar a base do pilar</text>
+<text x="240" y="205" text-anchor="middle" font-size="10" fill="#555">Aço patinável: só sem pintura onde há ciclo molha/seca; nunca em C5,</text>
+<text x="240" y="219" text-anchor="middle" font-size="10" fill="#555">frestas, enterrado ou imerso. Perda de espessura de projeto: ≈ 1 mm por face em 50 anos (C3).</text>
+</svg>
+<figcaption><b>Figura 12.9</b> – Detalhes para aço patinável: evitar retenção de água, prever drenos e proteger superfícies vizinhas do escorrimento.</figcaption>
+</figure>
+
+<h3>12.5.8 Vida útil e custos comparativos</h3>
+<table class="tab small"><caption>Tabela 12.10 – Vida útil indicativa até a primeira manutenção significativa e custo relativo (valores indicativos)</caption>
+<thead><tr><th>Sistema</th><th>C2 (rural / interior)</th><th>C3 (urbano)</th><th>C4 (industrial)</th><th>C5 (marinho)</th><th>Custo relativo inicial*</th></tr></thead>
+<tbody>
+<tr><td class="l">Pintura alquídica 120 µm (Sa 2)</td><td class="c">8–12 anos</td><td class="c">5–10</td><td class="c">2–5</td><td class="c">não usar</td><td class="c">1,0</td></tr>
+<tr><td class="l">Epóxi + PU 140–160 µm (Sa 2½)</td><td class="c">15–20</td><td class="c">10–15</td><td class="c">7–10</td><td class="c">3–6</td><td class="c">1,5–1,8</td></tr>
+<tr><td class="l">Epóxi Zn + epóxi + PU 240 µm</td><td class="c">&gt; 25</td><td class="c">15–25</td><td class="c">12–18</td><td class="c">8–12</td><td class="c">2,0–2,5</td></tr>
+<tr><td class="l">Etil-silicato Zn + epóxi + PU 300 µm</td><td class="c">&gt; 25</td><td class="c">&gt; 25</td><td class="c">15–25</td><td class="c">10–20</td><td class="c">2,5–3,0</td></tr>
+<tr><td class="l">Galvanização a fogo 85 µm</td><td class="c">50+</td><td class="c">30–40</td><td class="c">15–25</td><td class="c">10–20</td><td class="c">1,8–2,5 (+ frete até a galvanizadora)</td></tr>
+<tr><td class="l">Duplex (galvanizado + epóxi/PU)</td><td class="c">&gt; 60</td><td class="c">50+</td><td class="c">30–40</td><td class="c">20–30</td><td class="c">3,0–3,5</td></tr>
+<tr><td class="l">Metalização Zn 150 µm + selante + PU</td><td class="c">&gt; 50</td><td class="c">30–40</td><td class="c">25–35</td><td class="c">20–30</td><td class="c">4–6</td></tr>
+<tr><td class="l">Aço patinável sem pintura</td><td class="c">&gt; 50 (perda ≈ 0,3 mm/face)</td><td class="c">40–50</td><td class="c">depende de SO₂; avaliar</td><td class="c">não usar</td><td class="c">0,3–0,5 (só o sobrepreço do aço)</td></tr>
+</tbody></table>
+<p class="onde">* Relativo ao custo da pintura alquídica simples por m² de superfície, incluindo preparação e aplicação em fábrica. A galvanização é cobrada por quilo (≈ 3–5 % de acréscimo de massa de zinco) e fica relativamente mais barata em peças leves com muita superfície; em obras longe de galvanizadoras, o frete de ida e volta pesa.</p>
+
+<div class="box atencao"><div class="tit">Custo do ciclo de vida, não só o inicial</div>
+<p>Repintar uma estrutura em uso custa de 3 a 5 vezes a pintura de fábrica (acesso, andaimes, proteção do que está embaixo, paradas de produção) e, em galpões com telhas, muitas vezes é inviável. Em uma comparação a 30 anos, um esquema C4 ou uma galvanização quase sempre vence um esquema C2 "barato" que exige duas ou três repinturas.</p></div>
+
+<h2>12.6 Proteção contra fogo <span class="nivel a">Avançado</span></h2>
+<h3>12.6.1 O aço no incêndio</h3>
+<p>O aço não queima, mas <strong>perde resistência e rigidez com a temperatura</strong>. Até ≈ 400 °C a resistência ao escoamento se mantém; a 550 °C caiu para ≈ 60 %; a 600 °C, para 47 %; a 700 °C, para 23 % (Figura 12.10, fatores k<sub>y,θ</sub> e k<sub>E,θ</sub> da NBR 14323). Como as estruturas trabalham em serviço com cerca de 50–65 % da capacidade, a "temperatura crítica" de um elemento típico fica entre 500 e 650 °C — e um incêndio em compartimento atinge 600 °C em 10 minutos e 900 °C em 30 minutos (curva-padrão ISO 834 / NBR 14432). Além disso, o aço é ótimo condutor e tem massa pequena: um perfil desprotegido acompanha a temperatura do gás com atraso de poucos minutos. Daí a necessidade de proteção passiva — materiais que retardam o aquecimento do aço por um tempo determinado.</p>
+
+<figure class="fig p90">
+<img src="fig/cap12_aco_fogo.png" alt="Fatores de redução ky e kE do aço com a temperatura">
+<figcaption><b>Figura 12.10</b> – Fatores de redução da resistência ao escoamento (k<sub>y,θ</sub>) e do módulo de elasticidade (k<sub>E,θ</sub>) do aço com a temperatura, conforme NBR 14323.</figcaption>
+</figure>
+
+<h3>12.6.2 TRRF – Tempo Requerido de Resistência ao Fogo (NBR 14432)</h3>
+<p>A NBR 14432 define, em função da <strong>ocupação</strong> e da <strong>altura</strong> da edificação, o tempo (em minutos, na curva-padrão) durante o qual a estrutura deve manter sua função: 30, 60, 90 ou 120 minutos (Tabela 12.11). O TRRF é uma exigência de segurança da vida (tempo para evacuar e para o combate), não uma previsão de duração do incêndio. As Instruções Técnicas dos Corpos de Bombeiros estaduais (p. ex. IT-08 de São Paulo) adotam e por vezes ampliam a NBR 14432; consulte sempre a IT vigente no estado da obra.</p>
+
+<table class="tab small"><caption>Tabela 12.11 – TRRF em minutos por ocupação e altura (resumo da Tabela A.1 da NBR 14432; h = altura do piso mais elevado ocupado)</caption>
+<thead><tr><th>Ocupação (grupo)</th><th>Térrea ou h ≤ 6 m</th><th>6 &lt; h ≤ 12 m</th><th>12 &lt; h ≤ 23 m</th><th>23 &lt; h ≤ 30 m</th><th>h &gt; 30 m</th></tr></thead>
+<tbody>
+<tr><td class="l">Residencial (A)</td><td class="c">30</td><td class="c">30</td><td class="c">60</td><td class="c">90</td><td class="c">120</td></tr>
+<tr><td class="l">Hotéis (B)</td><td class="c">30</td><td class="c">60</td><td class="c">60</td><td class="c">90</td><td class="c">120</td></tr>
+<tr><td class="l">Comercial – lojas, shoppings (C)</td><td class="c">60</td><td class="c">60</td><td class="c">60</td><td class="c">90</td><td class="c">120</td></tr>
+<tr><td class="l">Escritórios / serviços (D)</td><td class="c">30</td><td class="c">60</td><td class="c">60</td><td class="c">90</td><td class="c">120</td></tr>
+<tr><td class="l">Escolas (E)</td><td class="c">30</td><td class="c">30</td><td class="c">60</td><td class="c">90</td><td class="c">120</td></tr>
+<tr><td class="l">Locais de reunião de público (F)</td><td class="c">60</td><td class="c">60</td><td class="c">60</td><td class="c">90</td><td class="c">120</td></tr>
+<tr><td class="l">Garagens (G)</td><td class="c">30</td><td class="c">60</td><td class="c">60</td><td class="c">90</td><td class="c">120</td></tr>
+<tr><td class="l">Hospitais (H)</td><td class="c">30</td><td class="c">60</td><td class="c">60</td><td class="c">90</td><td class="c">120</td></tr>
+<tr><td class="l">Indústrias de baixo risco (I-1)</td><td class="c">30</td><td class="c">30</td><td class="c">60</td><td class="c">90</td><td class="c">120</td></tr>
+<tr><td class="l">Indústrias de médio/alto risco (I-2 / I-3)</td><td class="c">60</td><td class="c">60</td><td class="c">90</td><td class="c">120</td><td class="c">120</td></tr>
+<tr><td class="l">Depósitos de baixo risco (J-1)</td><td class="c">30</td><td class="c">30</td><td class="c">30</td><td class="c">30</td><td class="c">60</td></tr>
+<tr><td class="l">Depósitos de médio/alto risco (J-2 / J-3)</td><td class="c">60</td><td class="c">60</td><td class="c">90</td><td class="c">120</td><td class="c">120</td></tr>
+</tbody></table>
+
+<div class="box norma"><div class="tit">Quando um galpão fica isento (NBR 14432, item 6 e Anexo A)</div>
+<p>A norma isenta de exigência de TRRF, entre outros casos: edificações <strong>térreas com área ≤ 750 m²</strong> de qualquer ocupação; edificações térreas <strong>industriais ou depósitos com carga de incêndio específica ≤ 1 000 MJ/m² e área ≤ 5 000 m²</strong> (ou qualquer área se houver chuveiros automáticos e compartimentação, conforme a IT); edificações com h ≤ 12 m e carga de incêndio ≤ 300 MJ/m² em ocupações de baixo risco; e coberturas sem função de piso que não comprometam a estabilidade da estrutura (telhados de galpões térreos, desde que o colapso não afete paredes corta-fogo ou rotas de fuga). Na prática, a maioria dos galpões industriais e logísticos térreos de baixo risco fica isenta ou com TRRF 30; depósitos de alto risco (tintas, plásticos, papel) e galpões com mezaninos de ocupação podem exigir 60–90 min. A isenção deve ser confirmada no projeto de segurança contra incêndio aprovado pelo Corpo de Bombeiros — não pelo fabricante da estrutura.</p></div>
+
+<h3>12.6.3 Fator de massividade</h3>
+<p>A velocidade com que um perfil aquece depende da relação entre a superfície exposta ao fogo (que recebe calor) e o volume de aço (que o absorve): o <strong>fator de massividade</strong> u/A (m⁻¹), perímetro exposto dividido pela área da seção. Perfis leves e abertos têm u/A alto (300–400 m⁻¹) e aquecem em minutos; perfis pesados ou fechados (caixões, tubos preenchidos) têm u/A baixo (&lt; 100 m⁻¹) e resistem mais tempo sem proteção. Quando o perfil está protegido por material em contorno ou em caixão, usa-se o perímetro da proteção (u<sub>m</sub>). A Figura 12.11 e a Tabela 12.12 ilustram.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 240" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><pattern id="h12_11" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- a) 4 faces expostas -->
+<text x="110" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">a) 4 faces expostas</text>
+<g stroke="#333" stroke-width="1.5" fill="url(#h12_11)"><rect x="60" y="50" width="100" height="10"/><rect x="60" y="140" width="100" height="10"/><rect x="106" y="60" width="8" height="80"/></g>
+<path d="M60 50 L160 50 L160 60 L114 60 L114 140 L160 140 L160 150 L60 150 L60 140 L106 140 L106 60 L60 60 z" fill="none" stroke="#c0392b" stroke-width="2"/>
+<text x="110" y="175" text-anchor="middle" font-size="10">u = perímetro total</text>
+<text x="110" y="189" text-anchor="middle" font-size="10">u/A = 2·(b<tspan baseline-shift="sub" font-size="8">f</tspan> + d) + 2·(b<tspan baseline-shift="sub" font-size="8">f</tspan> − t<tspan baseline-shift="sub" font-size="8">w</tspan>)</text>
+<text x="110" y="203" text-anchor="middle" font-size="10">÷ A</text>
+<text x="110" y="222" text-anchor="middle" font-size="10" fill="#c0392b">W 310×38,7: ≈ 255 m⁻¹</text>
+<!-- b) 3 faces (laje em cima) -->
+<text x="350" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">b) 3 faces (laje sobre a mesa)</text>
+<rect x="270" y="30" width="160" height="20" fill="#c8c8c8" stroke="#333" stroke-width="1.2"/>
+<g fill="#888"><circle cx="285" cy="38" r="1"/><circle cx="310" cy="44" r="1"/><circle cx="340" cy="36" r="1"/><circle cx="370" cy="43" r="1"/><circle cx="400" cy="37" r="1"/><circle cx="420" cy="44" r="1"/></g>
+<g stroke="#333" stroke-width="1.5" fill="url(#h12_11)"><rect x="300" y="50" width="100" height="10"/><rect x="300" y="140" width="100" height="10"/><rect x="346" y="60" width="8" height="80"/></g>
+<path d="M300 50 L300 60 L346 60 L346 140 L300 140 L300 150 L400 150 L400 140 L354 140 L354 60 L400 60 L400 50" fill="none" stroke="#c0392b" stroke-width="2"/>
+<text x="350" y="175" text-anchor="middle" font-size="10">u = perímetro − b<tspan baseline-shift="sub" font-size="8">f</tspan> (face superior</text>
+<text x="350" y="189" text-anchor="middle" font-size="10">não recebe calor)</text>
+<text x="350" y="222" text-anchor="middle" font-size="10" fill="#c0392b">W 310×38,7: ≈ 222 m⁻¹</text>
+<!-- c) caixão -->
+<text x="580" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">c) Proteção em caixão</text>
+<rect x="520" y="42" width="120" height="116" fill="#fff7d6" stroke="#b8860b" stroke-width="2"/>
+<g stroke="#333" stroke-width="1.5" fill="url(#h12_11)"><rect x="530" y="50" width="100" height="10"/><rect x="530" y="140" width="100" height="10"/><rect x="576" y="60" width="8" height="80"/></g>
+<path d="M520 42 L640 42 L640 158 L520 158 z" fill="none" stroke="#c0392b" stroke-width="2"/>
+<text x="580" y="175" text-anchor="middle" font-size="10">u<tspan baseline-shift="sub" font-size="8">m</tspan> = 2·(b + d) do caixão</text>
+<text x="580" y="189" text-anchor="middle" font-size="10">(placas de gesso, lã de rocha)</text>
+<text x="580" y="222" text-anchor="middle" font-size="10" fill="#c0392b">W 310×38,7: ≈ 191 m⁻¹</text>
+</svg>
+<figcaption><b>Figura 12.11</b> – Fator de massividade: perímetro exposto ao fogo para perfil com 4 faces expostas, 3 faces (laje sobre a mesa) e proteção em caixão.</figcaption>
+</figure>
+
+<table class="tab small"><caption>Tabela 12.12 – Fator de massividade u/A de alguns perfis W (sem proteção; valores aproximados)</caption>
+<thead><tr><th>Perfil</th><th>Massa (kg/m)</th><th>A (cm²)</th><th>u/A – 4 faces (m⁻¹)</th><th>u/A – 3 faces (m⁻¹)</th><th>Tempo até 550 °C sem proteção*</th></tr></thead>
+<tbody>
+<tr><td class="c">W 150 × 13,0</td><td class="c">13,0</td><td class="c">16,6</td><td class="c">≈ 415</td><td class="c">≈ 355</td><td class="c">≈ 8–10 min</td></tr>
+<tr><td class="c">W 200 × 22,5</td><td class="c">22,5</td><td class="c">29,0</td><td class="c">≈ 280</td><td class="c">≈ 245</td><td class="c">≈ 11–13 min</td></tr>
+<tr><td class="c">W 250 × 32,7</td><td class="c">32,7</td><td class="c">42,1</td><td class="c">≈ 260</td><td class="c">≈ 225</td><td class="c">≈ 12–14 min</td></tr>
+<tr><td class="c">W 310 × 38,7</td><td class="c">38,7</td><td class="c">49,7</td><td class="c">≈ 255</td><td class="c">≈ 222</td><td class="c">≈ 12–15 min</td></tr>
+<tr><td class="c">W 360 × 57,8</td><td class="c">57,8</td><td class="c">72,5</td><td class="c">≈ 190</td><td class="c">≈ 168</td><td class="c">≈ 15–18 min</td></tr>
+<tr><td class="c">W 460 × 89,0</td><td class="c">89,0</td><td class="c">114</td><td class="c">≈ 147</td><td class="c">≈ 130</td><td class="c">≈ 18–22 min</td></tr>
+<tr><td class="c">W 610 × 155</td><td class="c">155</td><td class="c">198</td><td class="c">≈ 126</td><td class="c">≈ 110</td><td class="c">≈ 22–26 min</td></tr>
+<tr><td class="c">HP 310 × 125</td><td class="c">125</td><td class="c">159</td><td class="c">≈ 116</td><td class="c">≈ 96</td><td class="c">≈ 24–28 min</td></tr>
+</tbody></table>
+<p class="onde">* Ordem de grandeza na curva-padrão ISO 834, sem proteção, 4 faces; mostra que <strong>nenhum perfil usual atinge 30 min sem proteção</strong> — salvo quando o cálculo pela NBR 14323 (com o carregamento real de incêndio, reduzido) demonstrar temperatura crítica maior que a atingida.</p>
+
+<h3>12.6.4 Materiais de proteção passiva</h3>
+<p>Os materiais retardam o aquecimento do aço por isolamento térmico, por consumo de calor (água de cristalização) ou por expansão. A Figura 12.12 mostra os quatro tipos principais.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 282" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><pattern id="h12_12" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- a) argamassa projetada (contorno) -->
+<text x="100" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">a) Argamassa projetada</text>
+<path d="M40 40 L160 40 L160 62 L124 62 L124 128 L160 128 L160 150 L40 150 L40 128 L76 128 L76 62 L40 62 z" fill="#e8d9b5" stroke="#b8860b" stroke-width="1.5"/>
+<g stroke="#333" stroke-width="1.5" fill="url(#h12_12)"><rect x="50" y="50" width="100" height="10"/><rect x="50" y="130" width="100" height="10"/><rect x="96" y="60" width="8" height="70"/></g>
+<text x="100" y="172" text-anchor="middle" font-size="10">vermiculita/gesso ou lã mineral</text>
+<text x="100" y="186" text-anchor="middle" font-size="10">+ cimento; 15–40 mm; barata;</text>
+<text x="100" y="200" text-anchor="middle" font-size="10">aspecto rústico, frágil ao impacto;</text>
+<text x="100" y="214" text-anchor="middle" font-size="10">segue o contorno (u/A do perfil)</text>
+<!-- b) intumescente -->
+<text x="300" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">b) Tinta intumescente</text>
+<g stroke="#333" stroke-width="1.5" fill="url(#h12_12)"><rect x="250" y="50" width="100" height="10"/><rect x="250" y="130" width="100" height="10"/><rect x="296" y="60" width="8" height="70"/></g>
+<path d="M248 48 L352 48 L352 62 L306 62 L306 128 L352 128 L352 142 L248 142 L248 128 L294 128 L294 62 L248 62 z" fill="none" stroke="#c0392b" stroke-width="3"/>
+<!-- expandida (direita) -->
+<g stroke="#333" stroke-width="1.5" fill="url(#h12_12)"><rect x="380" y="50" width="60" height="8"/><rect x="380" y="132" width="60" height="8"/><rect x="407" y="58" width="6" height="74"/></g>
+<path d="M368 38 L452 38 L452 70 L425 70 L425 120 L452 120 L452 152 L368 152 L368 120 L395 120 L395 70 L368 70 z" fill="#2b2b2b" opacity="0.75" stroke="#333"/>
+<text x="410" y="30" text-anchor="middle" font-size="9" fill="#c0392b">no fogo: expande 30–50×</text>
+<text x="300" y="172" text-anchor="middle" font-size="10">400–2 000 µm; aspecto de pintura</text>
+<text x="300" y="186" text-anchor="middle" font-size="10">(aço aparente); mais cara; expande</text>
+<text x="300" y="200" text-anchor="middle" font-size="10">a ~250 °C formando espuma carbonosa;</text>
+<text x="300" y="214" text-anchor="middle" font-size="10">TRRF usual 30–90 min (120 em perfis pesados)</text>
+<!-- c) placas -->
+<text x="560" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">c) Placas (caixão)</text>
+<rect x="500" y="40" width="120" height="112" fill="#fff" stroke="#333" stroke-width="1"/>
+<g fill="#e6e6e6" stroke="#333" stroke-width="1.2"><rect x="500" y="40" width="120" height="12"/><rect x="500" y="140" width="120" height="12"/><rect x="500" y="52" width="12" height="88"/><rect x="608" y="52" width="12" height="88"/></g>
+<g stroke="#333" stroke-width="1.5" fill="url(#h12_12)"><rect x="522" y="62" width="76" height="8"/><rect x="522" y="122" width="76" height="8"/><rect x="556" y="70" width="8" height="52"/></g>
+<g fill="#444"><rect x="512" y="44" width="3" height="4"/><rect x="604" y="44" width="3" height="4"/><rect x="512" y="144" width="3" height="4"/><rect x="604" y="144" width="3" height="4"/></g>
+<text x="560" y="172" text-anchor="middle" font-size="10">gesso acartonado RF, silicato de</text>
+<text x="560" y="186" text-anchor="middle" font-size="10">cálcio, lã de rocha em painel; 12–50 mm;</text>
+<text x="560" y="200" text-anchor="middle" font-size="10">acabamento liso, seco; pilares em</text>
+<text x="560" y="214" text-anchor="middle" font-size="10">edifícios; usa u<tspan baseline-shift="sub" font-size="8">m</tspan>/A do caixão</text>
+<!-- d) concreto -->
+<text x="710" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">d) Concreto</text>
+<rect x="660" y="40" width="100" height="112" fill="#c8c8c8" stroke="#333" stroke-width="1.5"/>
+<g fill="#888"><circle cx="670" cy="50" r="1.2"/><circle cx="748" cy="60" r="1.2"/><circle cx="670" cy="140" r="1.2"/><circle cx="750" cy="145" r="1.2"/><circle cx="690" cy="100" r="1.2"/><circle cx="740" cy="100" r="1.2"/></g>
+<g stroke="#333" stroke-width="1.5" fill="url(#h12_12)"><rect x="680" y="60" width="60" height="8"/><rect x="680" y="124" width="60" height="8"/><rect x="706" y="68" width="8" height="56"/></g>
+<text x="710" y="172" text-anchor="middle" font-size="10">envolvendo (pilar misto)</text>
+<text x="710" y="186" text-anchor="middle" font-size="10">ou entre mesas: 120 min</text>
+<text x="710" y="200" text-anchor="middle" font-size="10">fácil; pesado; permite</text>
+<text x="710" y="214" text-anchor="middle" font-size="10">cálculo como pilar misto</text>
+<text x="390" y="243" text-anchor="middle" font-size="10.5" fill="#555">Sistemas mistos: laje de steel deck protege a mesa superior; vigas mistas com concreto entre mesas;</text>
+<text x="390" y="258" text-anchor="middle" font-size="10.5" fill="#555">tubos preenchidos com concreto (sem proteção externa até 60–90 min). Todo sistema deve ter ensaio</text>
+<text x="390" y="273" text-anchor="middle" font-size="10.5" fill="#555">em laboratório (curva-padrão) com carta de cobertura (espessura × massividade × TRRF) do fabricante.</text>
+</svg>
+<figcaption><b>Figura 12.12</b> – Materiais de proteção passiva: argamassa projetada em contorno, tinta intumescente (antes e após expandir), placas em caixão e concreto envolvendo.</figcaption>
+</figure>
+
+<table class="tab small"><caption>Tabela 12.13 – Espessuras indicativas de proteção em função da massividade e do TRRF (valores típicos de cartas de cobertura; a espessura real vem do ensaio do produto)</caption>
+<thead><tr><th>Material</th><th>u/A (m⁻¹)</th><th>TRRF 30 min</th><th>TRRF 60 min</th><th>TRRF 90 min</th><th>TRRF 120 min</th></tr></thead>
+<tbody>
+<tr><td class="l" rowspan="3">Argamassa projetada de vermiculita/gesso (contorno)</td><td class="c">≤ 150</td><td class="c">10 mm</td><td class="c">12–15 mm</td><td class="c">18–22 mm</td><td class="c">25–30 mm</td></tr>
+<tr><td class="c">200–250</td><td class="c">10–12 mm</td><td class="c">15–20 mm</td><td class="c">25–30 mm</td><td class="c">35–40 mm</td></tr>
+<tr><td class="c">≥ 300</td><td class="c">12–15 mm</td><td class="c">20–25 mm</td><td class="c">30–35 mm</td><td class="c">40–45 mm</td></tr>
+<tr><td class="l" rowspan="3">Tinta intumescente (base solvente/água, EPS)</td><td class="c">≤ 150</td><td class="c">300–400 µm</td><td class="c">500–800 µm</td><td class="c">900–1 400 µm</td><td class="c">1 500–2 500 µm</td></tr>
+<tr><td class="c">200–250</td><td class="c">400–500 µm</td><td class="c">800–1 200 µm</td><td class="c">1 400–2 000 µm</td><td class="c">raro / inviável</td></tr>
+<tr><td class="c">≥ 300</td><td class="c">500–700 µm</td><td class="c">1 200–1 800 µm</td><td class="c">&gt; 2 000 µm ou inviável</td><td class="c">inviável</td></tr>
+<tr><td class="l" rowspan="2">Placa de gesso RF / silicato de cálcio (caixão)</td><td class="c">≤ 200 (u<sub>m</sub>/A)</td><td class="c">12,5 mm</td><td class="c">15–20 mm</td><td class="c">2 × 12,5–15 mm</td><td class="c">2 × 15–20 mm</td></tr>
+<tr><td class="c">≥ 300</td><td class="c">12,5–15 mm</td><td class="c">2 × 12,5 mm</td><td class="c">2 × 15 mm</td><td class="c">2 × 20 mm ou 3 placas</td></tr>
+<tr><td class="l">Concreto envolvendo (cobrimento sobre o aço)</td><td class="c">qualquer</td><td class="c">25 mm</td><td class="c">25–40 mm</td><td class="c">40–50 mm</td><td class="c">50–60 mm</td></tr>
+</tbody></table>
+
+<div class="box exemplo"><div class="tit">Exemplo 12.2 – Escolha da proteção para um pilar de edifício de escritórios</div>
+<p>Edifício de escritórios (grupo D) com 20 m de altura → TRRF 60 min (Tabela 12.11). Pilar W 310 × 97 (A = 123 cm², perímetro ≈ 1,80 m), exposto nas 4 faces, dentro de um escritório (aço aparente desejado pelo arquiteto).</p>
+<div class="passo"><b>Passo 1 – massividade.</b> u/A = 1,80 / 0,0123 = 146 m⁻¹ (perfil relativamente pesado).</div>
+<div class="passo"><b>Passo 2 – opções.</b> Tinta intumescente para u/A ≈ 150 e 60 min: 500–800 µm (Tabela 12.13) — a carta do fabricante escolhido diz, por exemplo, 650 µm. Argamassa projetada: 12–15 mm, mas o acabamento rústico não atende à arquitetura. Placas de gesso RF 15–20 mm: atendem e permitem pintura, mas mudam a seção aparente.</div>
+<div class="passo"><b>Passo 3 – custo indicativo.</b> Área de pintura do pilar: 1,80 m²/m. Intumescente a 650 µm com SV 70 %: EPU ≈ 930 µm em 2–3 demãos, rendimento teórico 10 × 70 / 650 = 1,08 m²/L → ≈ 1,0 L/m² com perdas de 10 % (rolo/airless) → ≈ 1,8 L por metro de pilar, mais primer compatível e acabamento decorativo. A argamassa custaria de 1/3 a 1/2 disso; as placas, valor intermediário, com custo de mão de obra maior.</div>
+<div class="passo"><b>Passo 4 – decisão.</b> Intumescente nos pilares aparentes; argamassa projetada nas vigas escondidas pelo forro (u/A ≈ 200 com laje sobre a mesa → 15–20 mm); verificar se a laje mista dispensa proteção da mesa superior; exigir do aplicador a carta de cobertura do produto, o relatório de ensaio e a medição de EPS/espessura por peça.</div>
+</div>
+
+<h3>12.6.5 Orçamento, execução e manutenção</h3>
+<p>A proteção passiva costuma custar entre 10 e 30 % do valor da estrutura metálica quando exigida em toda a edificação — por isso a decisão de TRRF e a escolha do sistema devem entrar no estudo de viabilidade, não no fim. Boas práticas: aplicar a argamassa ou a intumescente depois da montagem, mas antes dos fechamentos (acesso); proteger também as ligações (chapas e parafusos aquecem e perdem resistência); em intumescentes, respeitar o primer compatível, a EPS por demão, medir a espessura em 100 % das peças e aplicar o acabamento indicado (a intumescente absorve umidade); em ambientes externos, só usar intumescentes classificadas para exterior. A manutenção consiste em inspecionar a integridade (impactos, reformas, furos para instalações que removem a proteção) e refazer o que foi danificado — uma parede de placas cortada para passar um duto perde a função.</p>
+
+<h2>12.7 Checklists e erros comuns <span class="nivel b">Básico</span></h2>
+<h3>12.7.1 Erros comuns de proteção anticorrosiva</h3>
+<ul>
+<li>Especificar a tinta sem classificar o ambiente (ou classificar por "custo" em vez de por agressividade).</li>
+<li>Jato Sa 2½ na especificação e escova rotativa na fábrica — sem inspeção, ninguém nota até descascar.</li>
+<li>Pintar sobre orvalho, sob sol a 50 °C ou com UR &gt; 85 %; não registrar as condições.</li>
+<li>Alquídico sobre galvanizado ou sobre primer de zinco; epóxi como acabamento externo (calcina).</li>
+<li>Faltar a demão de reforço em arestas, soldas e parafusos — é onde a ferrugem sempre começa.</li>
+<li>Empilhar e amarrar peças antes da cura; transportar sem calços (danos em 5 % da área, retocados mal).</li>
+<li>Não pintar depois da solda de campo, ou retocar com "spray" de ferragem.</li>
+<li>Galvanizar tubos fechados sem furos (explosão) ou treliças esbeltas assimétricas (empeno).</li>
+<li>Usar parafusos zincados eletroliticamente em estrutura externa: enferrujam em 1–2 anos.</li>
+<li>Aço patinável em U com a boca para cima, em contato com o solo ou na orla marítima.</li>
+<li>Proteção contra fogo sem carta de cobertura do produto ou removida por instalações posteriores.</li>
+</ul>
+
+<h3>12.7.2 Checklist de proteção</h3>
+<ul class="chk">
+<li>Categoria de corrosividade (ISO 12944-2) definida por ambiente e microclimas, registrada no projeto.</li>
+<li>Sistema especificado com preparação, tintas (famílias, produtos), EPS por camada e total, durabilidade esperada.</li>
+<li>Detalhes de projeto sem retenção de água, frestas seladas, metais diferentes isolados, drenos previstos.</li>
+<li>Limpeza de óleo (SP 1) antes do jato; grau de jateamento conferido com padrão visual; perfil medido com fita réplica.</li>
+<li>Primer aplicado em ≤ 4 h após o jato; sem flash rust.</li>
+<li>Condições ambientais medidas e registradas (UR, T ar, T superfície, ponto de orvalho + 3 °C).</li>
+<li>Demão de reforço em arestas, soldas, cantos e parafusos.</li>
+<li>EPS medida por demão (80/20), com registro por peça/lote; aderência por corte em grade ou pull-off por amostragem.</li>
+<li>Intervalos de repintura e cura respeitados; manuseio só após secagem ao toque duro; calços e cintas no transporte.</li>
+<li>Faces de atrito e zonas de solda de campo sem tinta (ou com primer aprovado); retoque de campo procedimentado.</li>
+<li>Galvanização: furos de ventilação/escoamento, recortes, folga de furos, dupla imersão prevista, certificado de espessura.</li>
+<li>Parafusos com revestimento compatível com o ambiente (fogo em externo); porcas com rosca sobremedida.</li>
+<li>TRRF definido no projeto de incêndio; massividade calculada por peça; produto com carta de cobertura e ensaio; espessura medida em obra.</li>
+</ul>
+
+<div class="resumo"><div class="tit">Resumo do capítulo</div><ul>
+<li>Corrosão é uma célula eletroquímica (anodo, catodo, eletrólito, condutor); remover um elemento a interrompe. Formas localizadas (galvânica, frestas, pites, sob depósitos) são mais perigosas que a uniforme.</li>
+<li>Classifique o ambiente pela ISO 12944-2: C2 interior/rural, C3 urbano, C4 industrial/litoral próximo, C5 marinho/industrial pesado, CX offshore.</li>
+<li>Preparação de superfície decide a durabilidade: Sa 2½ é o padrão; perfil 25–75 µm; primer em até 4 h.</li>
+<li>Sistema = primer (aderência/inibição/zinco) + intermediária (barreira) + acabamento (cor/UV). Esquemas típicos: C2 120 µm alquídico; C3 epóxi + PU 140–160 µm; C4 epóxi Zn + epóxi + PU 240 µm; C5 etil-silicato Zn + epóxi + PU 300 µm.</li>
+<li>EPS é a grandeza de controle (regra 80/20); rendimento teórico = 10 × SV / EPS; área de pintura 15–60 m²/t conforme o perfil.</li>
+<li>Aplicar com UR &lt; 85 %, T superfície ≥ orvalho + 3 °C, 10–40 °C; respeitar intervalos de repintura; reforçar arestas; inspecionar aderência e EPS.</li>
+<li>Galvanização a fogo (NBR 6323): 45–85 µm conforme espessura, proteção catódica, ligação metalúrgica; projete furos de ventilação/escoamento, evite bolsões, folga +0,8 mm em furos; reparo com tinta rica em zinco; duplex = 1,5–2,5 × a soma.</li>
+<li>Eletrozincado (5–12 µm) só para interiores; metalização 100–200 µm para grandes peças e campo; aço patinável só com ciclo molha/seca e detalhes que drenam.</li>
+<li>No fogo, o aço perde 40 % de f<sub>y</sub> a 550 °C; o TRRF (30–120 min) vem da NBR 14432 por ocupação e altura; galpões térreos de baixo risco costumam ser isentos.</li>
+<li>Perfis leves (u/A alto) aquecem mais rápido; proteção por argamassa projetada (15–40 mm), intumescente (400–2 000 µm), placas ou concreto, com espessura pela carta de cobertura do produto.</li>
+</ul></div>

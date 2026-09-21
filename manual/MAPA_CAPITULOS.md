@@ -1,0 +1,23 @@
+# Mapa dos capítulos do manual (use para conferir referências cruzadas)
+
+| Cap. | Arquivo | Assunto |
+|---|---|---|
+| 1 | cap01_introducao.html | Introdução às estruturas metálicas; história; vantagens × concreto; aplicações; cadeia produtiva; anatomia de galpão e de edifício; panorama de normas; como usar o manual |
+| 2 | cap02_aco.html | O aço como material: produção, elementos de liga, propriedades físicas e mecânicas, diagrama tensão-deformação, tenacidade, soldabilidade e carbono equivalente, efeito da temperatura, aços estruturais usuais, patinável, inox/alumínio, certificado de qualidade e ensaios |
+| 3 | cap03_produtos.html | Produtos siderúrgicos: chapas (bitolas MSG/polegadas), barras, perfis laminados (W, HP, I, U, L, T), perfis soldados CS/CVS/VS, perfis formados a frio (U, Ue, Z, cartola), tubos, telhas, **steel deck**, grades de piso, chapa xadrez, acessórios, fornecimento e leitura de tabelas de perfis |
+| 4 | cap04_fundamentos.html | Estática e resistência dos materiais: equilíbrio, apoios, esforços N/V/M, diagramas, tensão e deformação, flexão, propriedades geométricas (I, W, Z, r), flambagem de Euler, isostática × hiperestática, treliças, unidades |
+| 5 | cap05_acoes.html | Ações e segurança: estados-limites, ações permanentes e variáveis, sobrecargas NBR 6120, ponte rolante, vento NBR 6123 (V0, S1, S2, S3, Ce, Cpi), coeficientes γf e ψ, combinações ELU e ELS |
+| 6 | cap06_sistemas.html | Sistemas estruturais e concepção: caminho das cargas, galpões (pórticos, tesouras), terças e longarinas, contraventamentos, estabilidade global e efeitos de 2ª ordem, edifícios de andares, vigas mistas, mezaninos, grandes vãos, pontes rolantes, pré-dimensionamento |
+| 7 | cap07_dimensionamento.html | Dimensionamento NBR 8800: classificação de seções, tração, compressão (χ, K, Q), flexão (FLA, FLM, FLT, Cb), cisalhamento, flexão composta, torção, estados-limites de serviço, vigas mistas, perfis formados a frio, tabelas de pré-dimensionamento, software |
+| 8 | cap08_parafusadas.html | Ligações parafusadas: tipos de parafusos, furos, espaçamentos, tipo apoio × atrito, resistências (cisalhamento, tração, esmagamento), bloco de cisalhamento, ligações típicas, aperto e inspeção |
+| 9 | cap09_soldadas.html | Ligações soldadas: processos (SMAW, GMAW, FCAW, SAW), consumíveis, tipos de junta e de solda, posições, simbologia AWS, geometria e resistência do filete, distorções, pré-aquecimento, defeitos, inspeção e qualificação |
+| 10 | cap10_bases.html | Bases de pilares: tipos rotulada e engastada, pressão no concreto, espessura da placa, bases com momento, enrijecedores, chumbadores e ancoragem, transferência de força horizontal, grout, nivelamento e locação, corrosão na base, interface com concreto |
+| 11 | cap11_fabricacao.html | Detalhamento e fabricação: desenhos de fabricação e de montagem, marcas e listas, fluxo de fábrica, corte, furação, dobra, montagem em bancada, tolerâncias, controle de qualidade, expedição e transporte, custos de fabricação |
+| 12 | cap12_acabamento.html | Acabamento e proteção: corrosão, ISO 12944, preparação de superfície (jateamento), sistemas de pintura, espessura e consumo, aplicação e inspeção, galvanização a fogo, metalização, aço patinável, proteção contra fogo (TRRF, massividade, materiais) |
+| 13 | cap13_montagem.html | Montagem em obra: planejamento, interface com fundação, equipamentos de içamento, lingadas, sequência de montagem, aprumo, parafusagem e solda de campo, telhas, tolerâncias, segurança (NR-18/NR-35), entrega |
+| 14 | cap14_detalhes.html | Catálogo de detalhes construtivos: terças e correntes, longarinas, contraventamentos e nós, enrijecedores, mísulas, emendas, aberturas na alma, apoios de laje e em concreto, escadas, guarda-corpos, grades, telhas e calhas, juntas de dilatação, drenagem |
+| 15 | cap15_patologias.html | Patologias, inspeção, manutenção e reforço: corrosão, fadiga, deformações e vibração, flambagem, falhas de ligação, danos por impacto e fogo, erros de projeto e uso, roteiro de inspeção, plano de manutenção, técnicas de reforço |
+| 16 | cap16_exemplo_galpao.html | Exemplo completo: projeto de um galpão industrial passo a passo (concepção, cargas, terças, pórtico, ligações, base, contraventamentos, lista de material, custo, cronograma, especificações) |
+| 17 | cap17_anexos.html | Anexos: tabelas de perfis W/HP, cantoneiras, U/Ue, tubos, chapas, barras, parafusos, soldas, cargas de materiais, fórmulas de vigas, conversões, símbolos, glossário, checklists, bibliografia e índice remissivo |
+
+Regra prática: ao citar um assunto de outro capítulo, cite o capítulo cuja linha acima contém aquele assunto.

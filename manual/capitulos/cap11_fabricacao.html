@@ -1,0 +1,1070 @@
+<h1 class="cap"><small>Capítulo 11</small>Projeto de detalhamento e fabricação</h1>
+<div class="objetivos"><div class="tit">O que você vai aprender neste capítulo</div>
+<ul>
+<li>Como o projeto estrutural vira desenho de fábrica: básico, executivo, detalhamento, desenhos de fabricação e de montagem, listas e romaneios.</li>
+<li>O que um desenho de fabricação precisa conter e como funcionam marcas de peça e de conjunto.</li>
+<li>Softwares de detalhamento, modelo BIM/IFC e arquivos NC/DSTV para máquinas CNC.</li>
+<li>O fluxo completo de uma fábrica de estruturas: do recebimento do aço à expedição.</li>
+<li>Processos de corte, furação, dobra e calandra, com limites práticos de cada um.</li>
+<li>Montagem em bancada, controle de distorção de solda e retificação por aquecimento.</li>
+<li>Tolerâncias de fabricação (NBR 8800 / AISC) e como medi-las.</li>
+<li>Controle de qualidade, rastreabilidade, segurança na fábrica e logística de transporte.</li>
+<li>Produtividade (homem-hora por tonelada), composição de custo e como avaliar uma fábrica.</li>
+</ul></div>
+
+<p>Uma estrutura metálica é fabricada duas vezes: primeiro no papel (ou no modelo 3D) e depois no chão de fábrica. A qualidade da segunda depende inteiramente da primeira. Este capítulo acompanha o caminho que uma viga percorre entre o desenho do calculista e a carreta que a leva para a obra, mostrando em cada etapa o que precisa ser decidido, medido e conferido. Quem compra, projeta ou fiscaliza estruturas precisa entender esse fluxo tanto quanto quem está na fábrica — a maior parte dos problemas de montagem nasce de um detalhe mal resolvido ou de uma tolerância ignorada semanas antes.</p>
+
+<h2>11.1 Do projeto estrutural ao desenho de fábrica <span class="nivel b">Básico</span></h2>
+<p>O projeto de uma estrutura metálica passa por níveis crescentes de definição. Cada nível tem um produto, um responsável e um objetivo bem definidos, como resume a Figura 11.1.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s11_1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- caixas principais -->
+<g stroke="#333" stroke-width="1.5">
+<rect x="10" y="40" width="130" height="70" rx="4" fill="#eef3fb"/>
+<rect x="170" y="40" width="130" height="70" rx="4" fill="#eef3fb"/>
+<rect x="330" y="40" width="130" height="70" rx="4" fill="#d9dee7"/>
+<rect x="490" y="40" width="130" height="70" rx="4" fill="#d9dee7"/>
+<rect x="650" y="40" width="120" height="70" rx="4" fill="#d9dee7"/>
+</g>
+<g text-anchor="middle" font-weight="bold" fill="#0b3d91">
+<text x="75" y="62">Projeto básico</text>
+<text x="235" y="62">Projeto executivo</text>
+<text x="395" y="62">Detalhamento</text>
+<text x="555" y="62">Desenhos de fábrica</text>
+<text x="710" y="62">Listas e romaneios</text>
+</g>
+<g text-anchor="middle" font-size="10.5" fill="#333">
+<text x="75" y="80">concepção, vãos,</text><text x="75" y="94">pré-dimensionamento</text>
+<text x="235" y="80">cálculo, perfis, ligações</text><text x="235" y="94">tipo e esforços</text>
+<text x="395" y="80">modelo 3D, cada peça,</text><text x="395" y="94">furos, soldas, marcas</text>
+<text x="555" y="80">fabricação (peça) e</text><text x="555" y="94">montagem (conjunto)</text>
+<text x="710" y="80">materiais, parafusos,</text><text x="710" y="94">pesos, expedição</text>
+</g>
+<g stroke="#333" stroke-width="1.5" marker-end="url(#s11_1)">
+<line x1="140" y1="75" x2="168" y2="75"/><line x1="300" y1="75" x2="328" y2="75"/>
+<line x1="460" y1="75" x2="488" y2="75"/><line x1="620" y1="75" x2="648" y2="75"/>
+</g>
+<!-- responsáveis -->
+<g text-anchor="middle" font-size="10.5" fill="#555">
+<text x="75" y="128">Projetista / calculista</text>
+<text x="235" y="128">Calculista</text>
+<text x="395" y="128">Detalhador (fábrica ou escritório)</text>
+<text x="630" y="128">Fábrica (PCP, produção, expedição)</text>
+</g>
+<line x1="10" y1="135" x2="770" y2="135" stroke="#c9d3e6"/>
+<!-- verificações / retorno -->
+<g stroke="#0b3d91" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#s11_1)" fill="none">
+<path d="M395 110 L395 165 L235 165 L235 112"/>
+</g>
+<text x="315" y="180" text-anchor="middle" fill="#0b3d91" font-size="10.5">aprovação do detalhamento pelo calculista (obrigatória)</text>
+<g stroke="#c0392b" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#s11_1)" fill="none">
+<path d="M555 110 L555 205 L75 205 L75 112"/>
+</g>
+<text x="315" y="222" text-anchor="middle" fill="#c0392b" font-size="10.5">interferências e pedidos de alteração (RFI) retornam ao projeto — quanto mais tarde, mais caro</text>
+<text x="390" y="243" text-anchor="middle" font-size="10.5" fill="#555">Entrada: arquitetura, sondagem, cargas de equipamentos, memorial descritivo</text>
+</svg>
+<figcaption><b>Figura 11.1</b> – Níveis de projeto de uma estrutura metálica e os produtos de cada etapa. O detalhamento deve sempre voltar ao calculista para aprovação.</figcaption>
+</figure>
+
+<h3>11.1.1 Projeto básico e executivo</h3>
+<p>O <strong>projeto básico</strong> define a concepção: vãos, modulação, tipo de cobertura, sistema de contraventamento, materiais e um pré-dimensionamento que permite orçar. O <strong>projeto executivo</strong> (ou projeto estrutural) contém o cálculo completo (Capítulos 6 a 9): seções dos perfis, esforços solicitantes em cada barra, tipo de ligação (parafusada, soldada, rígida, flexível) e os esforços que cada ligação deve resistir. Esse projeto define <em>o que</em> a estrutura é; ele ainda não diz a uma serra ou a uma furadeira o que fazer.</p>
+
+<h3>11.1.2 Detalhamento</h3>
+<p>O <strong>detalhamento</strong> (em inglês <em>detailing</em>) traduz o projeto executivo em cada peça individual: comprimento exato de corte, posição e diâmetro de cada furo, chapas de ligação, enrijecedores, cordões de solda, contraflecha, acabamento e identificação. É a etapa mais trabalhosa em horas de engenharia e onde nascem — ou são evitados — a maioria dos erros de montagem. O detalhador precisa conhecer as limitações da fábrica (largura da cabine de pintura, capacidade da ponte rolante, comprimento da bancada) e do transporte, além das regras de ligação da NBR 8800 (espaçamento de parafusos, distância à borda, dimensões de solda).</p>
+<div class="box atencao"><div class="tit">O detalhamento não é "só desenhar"</div>
+<p>Quem detalha toma decisões estruturais o tempo todo: escolhe o número de parafusos de uma chapa de extremidade, decide onde cortar uma tesoura para transporte, posiciona um enrijecedor. Por isso a NBR 8800 exige que os desenhos de fabricação sejam <strong>aprovados pelo responsável pelo projeto estrutural</strong> antes de ir para a produção. Fábricas sérias só cortam aço com desenho carimbado "liberado para fabricação".</p></div>
+
+<h3>11.1.3 Produtos do detalhamento</h3>
+<ul>
+<li><strong>Desenhos de fabricação</strong> (desenho de peça, <em>shop drawing</em>): um por peça ou conjunto soldado, com tudo o que a fábrica precisa para produzi-la sem consultar mais nada.</li>
+<li><strong>Desenhos de montagem</strong> (<em>erection drawings</em>): plantas, elevações e cortes da estrutura com as marcas de cada peça na posição, os parafusos de campo, cotas de eixos e níveis. É o "mapa" da equipe de montagem (Capítulo 13).</li>
+<li><strong>Lista de materiais</strong> (LM): perfis, chapas, comprimentos, quantidades e pesos, usada para compra do aço e para o orçamento.</li>
+<li><strong>Lista de parafusos</strong>: tipo, diâmetro, comprimento, quantidade por ligação, com folga de 3 a 5 % para perdas.</li>
+<li><strong>Romaneio</strong> de expedição: relação das peças de cada carga (marca, quantidade, peso), que acompanha o caminhão e é conferida no recebimento em obra.</li>
+</ul>
+
+<h2>11.2 O desenho de fabricação <span class="nivel b">Básico</span></h2>
+<p>Um desenho de fabricação bem feito é autossuficiente: o operador não deveria precisar abrir o projeto estrutural nem ligar para o escritório. A Figura 11.2 mostra um exemplo típico de viga com chapas de extremidade.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 575" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs>
+<marker id="s11_2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+<pattern id="h11_2" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+</defs>
+<rect x="2" y="2" width="796" height="571" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<!-- ELEVAÇÃO -->
+<text x="30" y="30" font-weight="bold" fill="#0b3d91" font-size="12">ELEVAÇÃO — V-12 (4 peças)</text>
+<!-- viga -->
+<g stroke="#333" stroke-width="1.5" fill="#d9dee7">
+<rect x="96" y="150" width="508" height="8"/>   <!-- mesa superior -->
+<rect x="96" y="212" width="508" height="8"/>   <!-- mesa inferior -->
+</g>
+<rect x="96" y="158" width="508" height="54" fill="#eef1f6" stroke="none"/>
+<line x1="96" y1="158" x2="604" y2="158" stroke="#333" stroke-width="1"/>
+<line x1="96" y1="212" x2="604" y2="212" stroke="#333" stroke-width="1"/>
+<!-- chapas de topo -->
+<g stroke="#333" stroke-width="1.5" fill="#d9dee7">
+<rect x="88" y="132" width="8" height="106"/>
+<rect x="604" y="132" width="8" height="106"/>
+</g>
+<!-- enrijecedores no meio -->
+<g stroke="#333" stroke-width="1.5" fill="#d9dee7">
+<rect x="346" y="158" width="6" height="54"/>
+</g>
+<!-- furos nas chapas de topo (vista lateral: linhas ocultas) -->
+<g stroke="#333" stroke-width="1" stroke-dasharray="4 3">
+<line x1="88" y1="147" x2="96" y2="147"/><line x1="88" y1="185" x2="96" y2="185"/><line x1="88" y1="223" x2="96" y2="223"/>
+<line x1="604" y1="147" x2="612" y2="147"/><line x1="604" y1="185" x2="612" y2="185"/><line x1="604" y1="223" x2="612" y2="223"/>
+</g>
+<!-- símbolo de solda chapa de topo -->
+<g stroke="#7a3e00" stroke-width="1.2" fill="none">
+<line x1="100" y1="160" x2="140" y2="110"/><line x1="140" y1="110" x2="200" y2="110"/>
+<path d="M150 110 L150 100 L160 110 z" fill="#e0a86a"/>
+<path d="M150 110 L150 120 L160 110 z" fill="#e0a86a"/>
+</g>
+<text x="145" y="98" font-size="10" fill="#7a3e00">6</text><text x="145" y="130" font-size="10" fill="#7a3e00">6</text>
+<text x="166" y="106" font-size="9.5" fill="#7a3e00">filete 6 mm, ambos os lados,</text>
+<text x="166" y="118" font-size="9.5" fill="#7a3e00">todo o contorno (mesas e alma)</text>
+<circle cx="200" cy="110" r="3.5" fill="none" stroke="#7a3e00" stroke-width="1.2"/>
+<!-- símbolo de solda enrijecedor -->
+<g stroke="#7a3e00" stroke-width="1.2" fill="none">
+<line x1="352" y1="170" x2="390" y2="125"/><line x1="390" y1="125" x2="450" y2="125"/>
+<path d="M400 125 L400 115 L410 125 z" fill="#e0a86a"/>
+<path d="M400 125 L400 135 L410 125 z" fill="#e0a86a"/>
+</g>
+<text x="395" y="113" font-size="10" fill="#7a3e00">5</text><text x="395" y="145" font-size="10" fill="#7a3e00">5</text>
+<text x="416" y="121" font-size="9.5" fill="#7a3e00">enrijecedor CH 6,3 × 70 × 280 (2×)</text>
+<text x="416" y="133" font-size="9.5" fill="#7a3e00">solda 5 mm, 2 lados</text>
+<!-- rótulos das partes -->
+<text x="470" y="147" font-size="10" fill="#555">W 310 × 32,7 — ASTM A572 Gr.50</text>
+<text x="46" y="196" text-anchor="middle" font-size="10" fill="#555">CH 12,5 ×</text><text x="46" y="208" text-anchor="middle" font-size="10" fill="#555">200 × 350</text>
+<text x="640" y="196" text-anchor="middle" font-size="10" fill="#555">CH 12,5 ×</text><text x="640" y="208" text-anchor="middle" font-size="10" fill="#555">200 × 350</text>
+<!-- cota geral -->
+<g stroke="#555" stroke-width="1">
+<line x1="88" y1="245" x2="88" y2="275"/><line x1="612" y1="245" x2="612" y2="275"/>
+<line x1="88" y1="268" x2="612" y2="268" marker-start="url(#s11_2)" marker-end="url(#s11_2)"/>
+<line x1="96" y1="245" x2="96" y2="255"/><line x1="349" y1="225" x2="349" y2="255"/>
+<line x1="96" y1="250" x2="349" y2="250" marker-start="url(#s11_2)" marker-end="url(#s11_2)"/>
+<line x1="349" y1="250" x2="604" y2="250" marker-start="url(#s11_2)" marker-end="url(#s11_2)"/>
+<line x1="604" y1="245" x2="604" y2="255"/>
+</g>
+<text x="350" y="283" text-anchor="middle" font-size="11">6 025 (comprimento total com chapas)</text>
+<text x="222" y="246" text-anchor="middle" font-size="10">3 000</text>
+<text x="476" y="246" text-anchor="middle" font-size="10">3 000</text>
+<text x="350" y="300" text-anchor="middle" font-size="10" fill="#555">perfil: 6 000 ± 2 mm · contraflecha: 0 · extremidades esquadrejadas</text>
+<!-- VISTA DA CHAPA DE TOPO -->
+<text x="640" y="30" font-weight="bold" fill="#0b3d91" font-size="12">VISTA A — chapa de topo</text>
+<rect x="670" y="48" width="70" height="122" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- sombra do perfil -->
+<g fill="none" stroke="#333" stroke-width="0.8" stroke-dasharray="3 2">
+<rect x="680" y="70" width="50" height="3"/><rect x="680" y="145" width="50" height="3"/><rect x="704" y="73" width="2" height="72"/>
+</g>
+<!-- furos 2 colunas x 3 linhas -->
+<g fill="#fff" stroke="#333" stroke-width="1.2">
+<circle cx="687" cy="63" r="4"/><circle cx="723" cy="63" r="4"/>
+<circle cx="687" cy="109" r="4"/><circle cx="723" cy="109" r="4"/>
+<circle cx="687" cy="155" r="4"/><circle cx="723" cy="155" r="4"/>
+</g>
+<g stroke="#555" stroke-width="1">
+<line x1="670" y1="175" x2="670" y2="195"/><line x1="687" y1="165" x2="687" y2="195"/><line x1="723" y1="165" x2="723" y2="195"/><line x1="740" y1="175" x2="740" y2="195"/>
+<line x1="670" y1="190" x2="687" y2="190"/><line x1="687" y1="190" x2="723" y2="190" marker-start="url(#s11_2)" marker-end="url(#s11_2)"/><line x1="723" y1="190" x2="740" y2="190"/>
+<line x1="745" y1="48" x2="770" y2="48"/><line x1="745" y1="63" x2="770" y2="63"/><line x1="745" y1="109" x2="770" y2="109"/><line x1="745" y1="155" x2="770" y2="155"/><line x1="745" y1="170" x2="770" y2="170"/>
+<line x1="765" y1="48" x2="765" y2="63"/><line x1="765" y1="63" x2="765" y2="109" marker-start="url(#s11_2)" marker-end="url(#s11_2)"/><line x1="765" y1="109" x2="765" y2="155" marker-start="url(#s11_2)" marker-end="url(#s11_2)"/><line x1="765" y1="155" x2="765" y2="170"/>
+</g>
+<g font-size="9.5" text-anchor="middle">
+<text x="678" y="203">50</text><text x="705" y="203">100</text><text x="732" y="203">50</text>
+</g>
+<g font-size="9.5">
+<text x="770" y="58">45</text><text x="770" y="90">130</text><text x="770" y="136">130</text><text x="770" y="166">45</text>
+</g>
+<text x="705" y="218" text-anchor="middle" font-size="10" fill="#0b3d91">6 furos ø 22 (paraf. M20)</text>
+<text x="705" y="231" text-anchor="middle" font-size="9.5" fill="#555">furos por broca; posição ± 1 mm</text>
+<!-- CORTE B-B (seção) -->
+<text x="30" y="330" font-weight="bold" fill="#0b3d91" font-size="12">CORTE B-B</text>
+<g stroke="#333" stroke-width="1.5" fill="url(#h11_2)">
+<rect x="60" y="345" width="70" height="7"/><rect x="60" y="440" width="70" height="7"/><rect x="92" y="352" width="6" height="88"/>
+</g>
+<g stroke="#333" stroke-width="1.5" fill="url(#h11_2)">
+<rect x="98" y="352" width="30" height="5"/><rect x="62" y="352" width="30" height="5"/>
+</g>
+<text x="95" y="470" text-anchor="middle" font-size="10">enrijecedores de apoio</text>
+<text x="95" y="483" text-anchor="middle" font-size="10">ajustados às mesas</text>
+<g stroke="#555" stroke-width="1">
+<line x1="140" y1="345" x2="160" y2="345"/><line x1="140" y1="447" x2="160" y2="447"/>
+<line x1="155" y1="345" x2="155" y2="447" marker-start="url(#s11_2)" marker-end="url(#s11_2)"/>
+</g>
+<text x="162" y="400" font-size="10">d = 313</text>
+<!-- NOTAS -->
+<text x="230" y="330" font-weight="bold" fill="#0b3d91" font-size="12">NOTAS</text>
+<g font-size="10" fill="#333">
+<text x="230" y="348">1. Perfil W 310 × 32,7 (NBR 15980) em aço ASTM A572 Gr.50 (f<tspan baseline-shift="sub" font-size="8">y</tspan> = 345 MPa).</text>
+<text x="230" y="364">2. Chapas em ASTM A36. Furos ø 22 mm por broca ou puncionamento (t ≤ d + 3 mm).</text>
+<text x="230" y="380">3. Soldas: eletrodo E7018 / arame ER70S-6; AWS D1.1; filetes conforme símbolos.</text>
+<text x="230" y="396">4. Preparação de superfície Sa 2½ (ISO 8501-1); primer epóxi rico em zinco 75 µm.</text>
+<text x="230" y="412">5. Marcar "V-12" com tinta em ambas as extremidades e etiqueta metálica.</text>
+<text x="230" y="428">6. Tolerâncias: NBR 8800 / AISC COSP. Peso unitário calculado: 214 kg.</text>
+<text x="230" y="444">7. Posição na obra: ver desenho de montagem M-03, eixos 2 a 5.</text>
+</g>
+<!-- CARIMBO -->
+<g stroke="#333" stroke-width="1.2" fill="#f5f8fd">
+<rect x="20" y="500" width="760" height="64"/>
+<line x1="230" y1="500" x2="230" y2="564"/><line x1="380" y1="500" x2="380" y2="564"/><line x1="530" y1="500" x2="530" y2="564"/><line x1="660" y1="500" x2="660" y2="564"/>
+<line x1="20" y1="532" x2="780" y2="532"/>
+</g>
+<g font-size="8.5" fill="#555">
+<text x="25" y="510">OBRA</text><text x="235" y="510">MARCA</text><text x="385" y="510">QUANTIDADE</text><text x="535" y="510">PESO UNIT. / TOTAL</text><text x="665" y="510">DESENHO Nº</text>
+<text x="25" y="542">MATERIAL</text><text x="235" y="542">ACABAMENTO</text><text x="385" y="542">ESCALA / DATA</text><text x="535" y="542">DETALHOU / APROVOU</text><text x="665" y="542">REVISÃO</text>
+</g>
+<g font-size="10.5" font-weight="bold" fill="#111">
+<text x="25" y="526">Galpão Industrial – Bloco B</text><text x="235" y="526">V-12</text><text x="385" y="526">4</text><text x="535" y="526">214 / 856 kg</text><text x="665" y="526">F-112</text>
+<text x="25" y="558">A572 Gr.50 / A36</text><text x="235" y="558">Sa 2½ + epóxi Zn 75 µm</text><text x="385" y="558">1:25 · 14/03</text><text x="535" y="558">JRS / MCA</text><text x="665" y="558">R1</text>
+</g>
+</svg>
+<figcaption><b>Figura 11.2</b> – Exemplo de desenho de fabricação da viga V-12: elevação com cotas, vista da chapa de topo com furação, corte, símbolos de solda, notas e carimbo com quantidade, material, peso e acabamento.</figcaption>
+</figure>
+
+<h3>11.2.1 Conteúdo mínimo</h3>
+<ul>
+<li><strong>Marca da peça</strong> e quantidade a fabricar (incluindo peças espelhadas: "V-12" e "V-12E").</li>
+<li><strong>Perfil e material</strong> de cada componente (perfil principal, chapas, enrijecedores) com a norma do aço.</li>
+<li><strong>Cotas</strong>: comprimento de corte, posição de cada chapa e enrijecedor, ângulos de corte, contraflecha.</li>
+<li><strong>Furos</strong>: diâmetro, quantidade, posição referenciada a uma extremidade ou eixo, tipo (padrão, alargado, alongado) e processo permitido.</li>
+<li><strong>Soldas</strong>: símbolos AWS A2.4 com tipo, dimensão, comprimento, lado e observações (ver Capítulo 9).</li>
+<li><strong>Acabamento</strong>: grau de jateamento, esquema de pintura, espessura, áreas sem pintura (faces de contato de ligações por atrito, regiões de solda de campo).</li>
+<li><strong>Peso</strong> unitário e total (para orçamento, içamento e transporte).</li>
+<li><strong>Carimbo</strong>: obra, número do desenho, revisão, escala, quem detalhou e quem aprovou.</li>
+</ul>
+
+<h3>11.2.2 Marcas de peça e de conjunto</h3>
+<p>Cada peça recebe uma <strong>marca</strong> (identificação única) que a acompanha da fábrica até a posição final. Um sistema usual em português é uma letra pela função mais um número sequencial: P (pilar), V (viga), T (tesoura ou treliça), TR (terça), L (longarina), CV (contraventamento), E (escada), MB (mão-francesa), CH (chapa avulsa). Peças espelhadas ganham um sufixo (E ou "esq/dir"). Quando várias peças são soldadas em fábrica formando um <strong>conjunto</strong> (uma tesoura, um pilar com mísulas e chapa de base), o conjunto recebe a marca de montagem e os componentes internos recebem marcas de detalhe (p. ex. "T-01" formado por "T-01a" banzo superior, "T-01b" banzo inferior, "T-01c" diagonais…). Só a marca do conjunto aparece no desenho de montagem.</p>
+<div class="box dica"><div class="tit">Regras práticas de marcação</div>
+<p>Peças idênticas recebem a mesma marca — isso reduz o número de desenhos e o risco de troca em obra. Marque a peça em duas extremidades (uma pode ficar encoberta na pilha), com tinta de contraste ou plaqueta metálica; pintura sobre a marca deve ser refeita. Em peças simétricas com furação assimétrica, indique também uma referência de orientação ("norte", "eixo A") para o montador não instalar invertida.</p></div>
+
+<h3>11.2.3 Lista de materiais</h3>
+<p>A lista de materiais (Tabela 11.1) é gerada automaticamente pelo software de detalhamento e serve para compra do aço, orçamento, planejamento de corte (aproveitamento de barras) e cálculo de área de pintura. Note a coluna de comprimento comercial: perfis laminados são vendidos em 6 e 12 m; o detalhador deve compor os cortes para minimizar sobras.</p>
+
+<table class="tab small"><caption>Tabela 11.1 – Exemplo de lista de materiais (trecho) para as vigas V-12</caption>
+<thead><tr><th>Marca</th><th>Item</th><th>Descrição</th><th>Material</th><th>Comp. (mm)</th><th>Qtd.</th><th>Peso unit. (kg)</th><th>Peso total (kg)</th><th>Área pint. (m²)</th></tr></thead>
+<tbody>
+<tr><td class="c">V-12</td><td class="c">a</td><td class="l">W 310 × 32,7</td><td class="c">A572 Gr.50</td><td class="c">6 000</td><td class="c">4</td><td class="c">196,2</td><td class="c">784,8</td><td class="c">4 × 7,6</td></tr>
+<tr><td class="c">V-12</td><td class="c">b</td><td class="l">CH 12,5 × 200 × 350 (chapa de topo)</td><td class="c">A36</td><td class="c">350</td><td class="c">8</td><td class="c">6,9</td><td class="c">55,2</td><td class="c">8 × 0,16</td></tr>
+<tr><td class="c">V-12</td><td class="c">c</td><td class="l">CH 6,3 × 70 × 280 (enrijecedor)</td><td class="c">A36</td><td class="c">280</td><td class="c">8</td><td class="c">1,0</td><td class="c">8,0</td><td class="c">8 × 0,04</td></tr>
+<tr><td class="c" colspan="7"><b>Total V-12 (4 peças)</b></td><td class="c"><b>848,0</b></td><td class="c"><b>32,0</b></td></tr>
+<tr><td class="c">—</td><td class="c">—</td><td class="l">Parafuso ASTM A325 M20 × 65 c/ porca e 2 arruelas (campo)</td><td class="c">A325</td><td class="c">—</td><td class="c">48 + 5 %</td><td class="c">0,26</td><td class="c">13,1</td><td class="c">—</td></tr>
+</tbody></table>
+<p>O peso de 196,2 kg do perfil vem de 32,7 kg/m × 6,0 m; o peso "calculado" do conjunto (214 kg, no carimbo da Figura 11.2) inclui as chapas e enrijecedores e uma parcela de solda (~1 %). A área de pintura de 7,6 m² é o perímetro do perfil (≈ 1,27 m para o W 310 × 32,7) vezes o comprimento — tema do Capítulo 12.</p>
+
+<h3>11.2.4 Planta de marcação (desenho de montagem)</h3>
+<p>O desenho de montagem mostra onde cada marca vai. Para uma cobertura, a planta de marcação (Figura 11.3) indica tesouras, terças, contraventamentos, tirantes e mãos-francesas com suas marcas e os eixos da obra. Ele também traz a lista de parafusos de campo por tipo de ligação e as cotas de nível.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 360" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><marker id="s11_3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- eixos -->
+<g stroke="#999" stroke-width="0.8" stroke-dasharray="8 4">
+<line x1="100" y1="40" x2="100" y2="310"/><line x1="220" y1="40" x2="220" y2="310"/><line x1="340" y1="40" x2="340" y2="310"/><line x1="460" y1="40" x2="460" y2="310"/><line x1="580" y1="40" x2="580" y2="310"/>
+<line x1="70" y1="70" x2="620" y2="70"/><line x1="70" y1="160" x2="620" y2="160"/><line x1="70" y1="250" x2="620" y2="250"/>
+</g>
+<g font-weight="bold" fill="#0b3d91" text-anchor="middle">
+<circle cx="100" cy="30" r="10" fill="#fff" stroke="#0b3d91" stroke-width="1.2"/><text x="100" y="34">1</text>
+<circle cx="220" cy="30" r="10" fill="#fff" stroke="#0b3d91" stroke-width="1.2"/><text x="220" y="34">2</text>
+<circle cx="340" cy="30" r="10" fill="#fff" stroke="#0b3d91" stroke-width="1.2"/><text x="340" y="34">3</text>
+<circle cx="460" cy="30" r="10" fill="#fff" stroke="#0b3d91" stroke-width="1.2"/><text x="460" y="34">4</text>
+<circle cx="580" cy="30" r="10" fill="#fff" stroke="#0b3d91" stroke-width="1.2"/><text x="580" y="34">5</text>
+<circle cx="50" cy="70" r="10" fill="#fff" stroke="#0b3d91" stroke-width="1.2"/><text x="50" y="74">A</text>
+<circle cx="50" cy="160" r="10" fill="#fff" stroke="#0b3d91" stroke-width="1.2"/><text x="50" y="164">B</text>
+<circle cx="50" cy="250" r="10" fill="#fff" stroke="#0b3d91" stroke-width="1.2"/><text x="50" y="254">C</text>
+</g>
+<!-- tesouras (nos eixos 1..5, de A a C) -->
+<g stroke="#333" stroke-width="4">
+<line x1="100" y1="70" x2="100" y2="250"/><line x1="220" y1="70" x2="220" y2="250"/><line x1="340" y1="70" x2="340" y2="250"/><line x1="460" y1="70" x2="460" y2="250"/><line x1="580" y1="70" x2="580" y2="250"/>
+</g>
+<!-- terças -->
+<g stroke="#0b3d91" stroke-width="1.5">
+<line x1="100" y1="70" x2="580" y2="70"/><line x1="100" y1="100" x2="580" y2="100"/><line x1="100" y1="130" x2="580" y2="130"/><line x1="100" y1="160" x2="580" y2="160"/>
+<line x1="100" y1="190" x2="580" y2="190"/><line x1="100" y1="220" x2="580" y2="220"/><line x1="100" y1="250" x2="580" y2="250"/>
+</g>
+<!-- contraventamento de cobertura nos vãos extremos -->
+<g stroke="#c0392b" stroke-width="1.2" stroke-dasharray="6 3">
+<line x1="100" y1="70" x2="220" y2="160"/><line x1="100" y1="160" x2="220" y2="70"/><line x1="100" y1="160" x2="220" y2="250"/><line x1="100" y1="250" x2="220" y2="160"/>
+<line x1="460" y1="70" x2="580" y2="160"/><line x1="460" y1="160" x2="580" y2="70"/><line x1="460" y1="160" x2="580" y2="250"/><line x1="460" y1="250" x2="580" y2="160"/>
+</g>
+<!-- tirantes (linhas de corrente) -->
+<g stroke="#555" stroke-width="0.8" stroke-dasharray="2 2">
+<line x1="160" y1="70" x2="160" y2="250"/><line x1="280" y1="70" x2="280" y2="250"/><line x1="400" y1="70" x2="400" y2="250"/><line x1="520" y1="70" x2="520" y2="250"/>
+</g>
+<!-- marcas -->
+<g font-size="10" fill="#333">
+<text x="106" y="118" transform="rotate(-90 106 118)" text-anchor="middle" font-weight="bold">T-01</text>
+<text x="226" y="118" transform="rotate(-90 226 118)" text-anchor="middle" font-weight="bold">T-02</text>
+<text x="346" y="118" transform="rotate(-90 346 118)" text-anchor="middle" font-weight="bold">T-02</text>
+<text x="466" y="118" transform="rotate(-90 466 118)" text-anchor="middle" font-weight="bold">T-02</text>
+<text x="586" y="118" transform="rotate(-90 586 118)" text-anchor="middle" font-weight="bold">T-01</text>
+</g>
+<g font-size="9.5" fill="#0b3d91">
+<text x="300" y="66">TR-01</text><text x="300" y="96">TR-02</text><text x="300" y="126">TR-02</text><text x="300" y="156">TR-03 (cumeeira)</text>
+<text x="300" y="186">TR-02</text><text x="300" y="216">TR-02</text><text x="300" y="246">TR-01</text>
+<text x="420" y="96">TR-02</text><text x="180" y="96">TR-02</text>
+</g>
+<g font-size="9.5" fill="#c0392b">
+<text x="140" y="112">CV-01</text><text x="520" y="112">CV-01</text><text x="140" y="212">CV-01</text><text x="520" y="212">CV-01</text>
+</g>
+<g font-size="9" fill="#555">
+<text x="163" y="262">TI-01</text><text x="283" y="262">TI-01</text><text x="403" y="262">TI-01</text><text x="523" y="262">TI-01</text>
+</g>
+<!-- cotas -->
+<g stroke="#555" stroke-width="1">
+<line x1="100" y1="285" x2="100" y2="300"/><line x1="220" y1="285" x2="220" y2="300"/><line x1="340" y1="285" x2="340" y2="300"/><line x1="460" y1="285" x2="460" y2="300"/><line x1="580" y1="285" x2="580" y2="300"/>
+<line x1="100" y1="295" x2="220" y2="295" marker-start="url(#s11_3)" marker-end="url(#s11_3)"/><line x1="220" y1="295" x2="340" y2="295" marker-start="url(#s11_3)" marker-end="url(#s11_3)"/>
+<line x1="340" y1="295" x2="460" y2="295" marker-start="url(#s11_3)" marker-end="url(#s11_3)"/><line x1="460" y1="295" x2="580" y2="295" marker-start="url(#s11_3)" marker-end="url(#s11_3)"/>
+<line x1="600" y1="70" x2="640" y2="70"/><line x1="600" y1="250" x2="640" y2="250"/><line x1="635" y1="70" x2="635" y2="250" marker-start="url(#s11_3)" marker-end="url(#s11_3)"/>
+</g>
+<g font-size="10" text-anchor="middle">
+<text x="160" y="310">6 000</text><text x="280" y="310">6 000</text><text x="400" y="310">6 000</text><text x="520" y="310">6 000</text>
+<text x="655" y="165" transform="rotate(-90 655 165)">20 000</text>
+</g>
+<!-- legenda -->
+<g font-size="9.5">
+<line x1="60" y1="335" x2="90" y2="335" stroke="#333" stroke-width="4"/><text x="95" y="339">Tesoura T-xx</text>
+<line x1="180" y1="335" x2="210" y2="335" stroke="#0b3d91" stroke-width="1.5"/><text x="215" y="339">Terça TR-xx</text>
+<line x1="290" y1="335" x2="320" y2="335" stroke="#c0392b" stroke-width="1.2" stroke-dasharray="6 3"/><text x="325" y="339">Contrav. CV-xx (barra redonda ø 16)</text>
+<line x1="510" y1="335" x2="540" y2="335" stroke="#555" stroke-width="0.8" stroke-dasharray="2 2"/><text x="545" y="339">Tirante TI-xx</text>
+</g>
+<text x="350" y="356" text-anchor="middle" font-size="9.5" fill="#555">Nível do apoio das tesouras: +6,000 · Parafusos de campo terça/tesoura: 2 × M12 A307 · tesoura/pilar: 4 × M16 A325</text>
+</svg>
+<figcaption><b>Figura 11.3</b> – Planta de marcação de cobertura: eixos, tesouras, terças, contraventamentos e tirantes com suas marcas, cotas de eixo e informações de parafusos de campo.</figcaption>
+</figure>
+
+<h3>11.2.5 Softwares, BIM e arquivos para CNC</h3>
+<p>O detalhamento moderno é feito em modelos 3D com inteligência de aço estrutural. Ferramentas usuais no mercado brasileiro incluem <strong>Tekla Structures</strong>, <strong>Autodesk Advance Steel</strong>, <strong>SDS/2</strong> e, em menor escala, <strong>SolidWorks</strong> ou o <strong>AutoCAD</strong> puro (2D) em fábricas menores. A menção aqui é neutra: todos entregam desenhos, listas e arquivos de máquina; a escolha depende do porte da fábrica, da integração com o projetista e do custo. O que importa entender:</p>
+<ul>
+<li><strong>Modelo BIM</strong>: cada peça existe uma única vez no modelo, e desenhos, listas e pesos são extraídos dele — alterar o modelo atualiza tudo, reduzindo inconsistências. A troca com outras disciplinas (arquitetura, concreto, instalações) é feita em <strong>IFC</strong>, formato aberto que permite detectar interferências antes da fabricação.</li>
+<li><strong>Arquivos NC/DSTV</strong> (extensão .nc ou .nc1): formato padrão da indústria do aço, exportado peça a peça, que descreve o perfil, comprimento, furos, cortes e marcação. Alimenta diretamente serras, furadeiras de perfis, linhas de plasma e máquinas de marcação CNC. Chapas costumam ir em DXF para o <em>nesting</em> (aproveitamento) da mesa de corte.</li>
+<li><strong>Rastreabilidade digital</strong>: o modelo pode carregar o status de cada peça (detalhada, cortada, soldada, pintada, expedida, montada), integrando fábrica e canteiro.</li>
+</ul>
+
+<h2>11.3 Fluxo de fábrica <span class="nivel b">Básico</span></h2>
+<p>Uma fábrica de estruturas metálicas é uma sequência de operações que transforma barras e chapas em peças identificadas e prontas para montar (Figura 11.4). O arranjo físico ideal é linear: o aço entra por um lado e sai pronto pelo outro, sem cruzamentos de fluxo.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><marker id="s11_4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- linha 1 -->
+<g stroke="#333" stroke-width="1.5">
+<rect x="10" y="20" width="136" height="52" rx="5" fill="#eef3fb"/>
+<rect x="166" y="20" width="136" height="52" rx="5" fill="#eef3fb"/>
+<rect x="322" y="20" width="136" height="52" rx="5" fill="#d9dee7"/>
+<rect x="478" y="20" width="136" height="52" rx="5" fill="#d9dee7"/>
+<rect x="634" y="20" width="136" height="52" rx="5" fill="#d9dee7"/>
+</g>
+<g text-anchor="middle" fill="#0b3d91" font-weight="bold">
+<text x="78" y="42">1. Recebimento e</text><text x="78" y="57">inspeção do aço</text>
+<text x="234" y="42">2. Estocagem e</text><text x="234" y="57">rastreabilidade</text>
+<text x="390" y="42">3. Traçagem /</text><text x="390" y="57">marcação</text>
+<text x="546" y="42">4. Corte</text><text x="546" y="57">(serra, plasma, oxi)</text>
+<text x="702" y="42">5. Furação</text><text x="702" y="57">(broca, punção, CNC)</text>
+</g>
+<g stroke="#333" stroke-width="1.5" marker-end="url(#s11_4)">
+<line x1="146" y1="46" x2="164" y2="46"/><line x1="302" y1="46" x2="320" y2="46"/><line x1="458" y1="46" x2="476" y2="46"/><line x1="614" y1="46" x2="632" y2="46"/>
+</g>
+<!-- descida -->
+<path d="M702 72 L702 92 L78 92 L78 112" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#s11_4)"/>
+<!-- linha 2 -->
+<g stroke="#333" stroke-width="1.5">
+<rect x="10" y="114" width="136" height="52" rx="5" fill="#d9dee7"/>
+<rect x="166" y="114" width="136" height="52" rx="5" fill="#d9dee7"/>
+<rect x="322" y="114" width="136" height="52" rx="5" fill="#f9e7d2"/>
+<rect x="478" y="114" width="136" height="52" rx="5" fill="#d9dee7"/>
+<rect x="634" y="114" width="136" height="52" rx="5" fill="#fff7d6"/>
+</g>
+<g text-anchor="middle" fill="#0b3d91" font-weight="bold">
+<text x="78" y="136">6. Conformação</text><text x="78" y="151">(dobra, calandra)</text>
+<text x="234" y="136">7. Pré-montagem e</text><text x="234" y="151">ponteamento</text>
+<text x="390" y="136">8. Soldagem</text><text x="390" y="151">(MIG/MAG, arco sub.)</text>
+<text x="546" y="136">9. Esmerilhamento</text><text x="546" y="151">e acabamento</text>
+<text x="702" y="136">10. Inspeção</text><text x="702" y="151">dimensional e solda</text>
+</g>
+<g stroke="#333" stroke-width="1.5" marker-end="url(#s11_4)">
+<line x1="146" y1="140" x2="164" y2="140"/><line x1="302" y1="140" x2="320" y2="140"/><line x1="458" y1="140" x2="476" y2="140"/><line x1="614" y1="140" x2="632" y2="140"/>
+</g>
+<path d="M702 166 L702 186 L78 186 L78 206" stroke="#333" stroke-width="1.5" fill="none" marker-end="url(#s11_4)"/>
+<!-- linha 3 -->
+<g stroke="#333" stroke-width="1.5">
+<rect x="10" y="208" width="136" height="52" rx="5" fill="#d9dee7"/>
+<rect x="166" y="208" width="136" height="52" rx="5" fill="#d9dee7"/>
+<rect x="322" y="208" width="136" height="52" rx="5" fill="#d9dee7"/>
+<rect x="478" y="208" width="136" height="52" rx="5" fill="#eef3fb"/>
+<rect x="634" y="208" width="136" height="52" rx="5" fill="#e9f7ec"/>
+</g>
+<g text-anchor="middle" fill="#0b3d91" font-weight="bold">
+<text x="78" y="230">11. Limpeza /</text><text x="78" y="245">jateamento</text>
+<text x="234" y="230">12. Pintura</text><text x="234" y="245">(primer, acabamento)</text>
+<text x="390" y="230">13. Identificação</text><text x="390" y="245">(marca, etiqueta)</text>
+<text x="546" y="230">14. Expedição</text><text x="546" y="245">(romaneio, carga)</text>
+<text x="702" y="230">Obra</text><text x="702" y="245">(montagem – Cap. 13)</text>
+</g>
+<g stroke="#333" stroke-width="1.5" marker-end="url(#s11_4)">
+<line x1="146" y1="234" x2="164" y2="234"/><line x1="302" y1="234" x2="320" y2="234"/><line x1="458" y1="234" x2="476" y2="234"/><line x1="614" y1="234" x2="632" y2="234"/>
+</g>
+<!-- retorno de não conformidade -->
+<path d="M702 114 L702 100 L740 100 L740 140 L 770 140" stroke="#c0392b" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>
+<text x="390" y="290" text-anchor="middle" font-size="10.5" fill="#c0392b">Não conformidade na inspeção (10) → retrabalho em 7, 8 ou 9 → nova inspeção. Só peça aprovada segue para jateamento.</text>
+<text x="390" y="310" text-anchor="middle" font-size="10.5" fill="#555">Pontos de controle de qualidade típicos: recebimento (certificado), após corte/furação (dimensional), após solda (visual + END), após pintura (EPS).</text>
+</svg>
+<figcaption><b>Figura 11.4</b> – Fluxo de fabricação de estruturas metálicas, do recebimento do aço à expedição.</figcaption>
+</figure>
+
+<h3>11.3.1 Recebimento, estocagem e rastreabilidade</h3>
+<p>Todo aço que entra deve vir acompanhado do <strong>certificado de qualidade</strong> da usina (ou do distribuidor), que informa a corrida, a composição química e os ensaios mecânicos (f<sub>y</sub>, f<sub>u</sub>, alongamento). O recebimento confere: norma e grau do aço, dimensões e espessuras (com paquímetro e trena), retilineidade, ausência de corrosão avançada, laminações e amassados. A <strong>rastreabilidade por corrida</strong> significa que, a partir da marca de uma peça pronta, é possível chegar ao certificado do aço de origem. Na prática, a fábrica transcreve o número da corrida na barra ao dar entrada e o mantém no plano de corte; em obras com requisito contratual (petroquímica, energia) cada peça leva a corrida gravada.</p>
+<p>A estocagem deve ser em pátio nivelado, sobre calços que evitem contato com o solo, separando por tipo, bitola e material (aço A36 e A572 têm aparência idêntica — trocá-los é um erro sério e comum). Um sistema simples de identificação por cores nas extremidades das barras evita confusões.</p>
+
+<h3>11.3.2 Traçagem e marcação</h3>
+<p>A traçagem transfere as cotas do desenho para a peça: comprimento, posição dos furos, posição das chapas. Em fábricas manuais usa-se trena, esquadro, riscador e punção de centro; a precisão depende do operador, e cotas acumuladas (medir furo a furo) são a origem clássica de erros de posição. A regra é <strong>medir sempre a partir de uma mesma referência</strong> (uma extremidade esquadrejada). Em fábricas com CNC, a marcação é feita por jato de tinta, riscador ou puncionamento diretamente na linha de furação, a partir do arquivo DSTV — elimina-se a traçagem manual e o erro humano.</p>
+
+<h2>11.4 Processos de corte <span class="nivel i">Intermediário</span></h2>
+<p>Cada processo de corte tem uma faixa de espessura, uma qualidade de borda e um custo por metro. A Figura 11.5 mostra o aspecto da borda cortada por quatro processos e a Tabela 11.2 compara os principais.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 240" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><pattern id="h11_5" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- painel 1: guilhotina -->
+<text x="95" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Guilhotina (cisalhamento)</text>
+<path d="M20 60 L150 60 L150 80 Q140 92 150 105 L155 118 L152 130 L20 130 z" fill="url(#h11_5)" stroke="#333" stroke-width="1.5"/>
+<path d="M150 60 Q140 92 150 105" stroke="#0b3d91" stroke-width="2" fill="none"/>
+<text x="175" y="70" font-size="9.5" fill="#333">arredondamento</text>
+<text x="175" y="92" font-size="9.5" fill="#0b3d91">brunida (lisa)</text>
+<text x="175" y="114" font-size="9.5" fill="#333">fraturada (rugosa)</text>
+<text x="175" y="134" font-size="9.5" fill="#c0392b">rebarba (remover)</text>
+<text x="95" y="160" text-anchor="middle" font-size="10">t ≤ 12,7 mm (típico)</text>
+<text x="95" y="174" text-anchor="middle" font-size="10">chapas e cantoneiras leves</text>
+<text x="95" y="188" text-anchor="middle" font-size="10">borda encruada; folga da</text>
+<text x="95" y="202" text-anchor="middle" font-size="10">faca ≈ 5–10 % de t</text>
+<!-- painel 2: oxicorte -->
+<text x="330" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Oxicorte</text>
+<rect x="260" y="60" width="130" height="70" fill="url(#h11_5)" stroke="#333" stroke-width="1.5"/>
+<path d="M390 60 L392 66 L389 72 L393 78 L390 84 L392 90 L389 96 L393 102 L390 108 L392 114 L389 120 L393 126 L392 130" stroke="#333" stroke-width="1.5" fill="none"/>
+<rect x="378" y="60" width="12" height="70" fill="#f3c9a6" opacity="0.7" stroke="none"/>
+<text x="398" y="72" font-size="9.5" fill="#7a3e00">ZTA</text><text x="398" y="84" font-size="9.5" fill="#7a3e00">1–3 mm</text>
+<text x="398" y="104" font-size="9.5" fill="#333">estrias verticais</text>
+<path d="M386 130 L396 136 L400 132" stroke="#333" stroke-width="1.2" fill="none"/>
+<text x="398" y="146" font-size="9.5" fill="#c0392b">escória/rebarba</text>
+<text x="330" y="160" text-anchor="middle" font-size="10">t = 6 a 300 mm</text>
+<text x="330" y="174" text-anchor="middle" font-size="10">chapas grossas; precisão ± 1,5–3 mm;</text>
+<text x="330" y="188" text-anchor="middle" font-size="10">zona termicamente afetada (ZTA) dura;</text>
+<text x="330" y="202" text-anchor="middle" font-size="10">esmerilhar bordas que receberão solda</text>
+<!-- painel 3: plasma -->
+<text x="540" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Plasma</text>
+<path d="M480 60 L600 60 L596 130 L480 130 z" fill="url(#h11_5)" stroke="#333" stroke-width="1.5"/>
+<line x1="600" y1="55" x2="600" y2="135" stroke="#555" stroke-width="0.8" stroke-dasharray="3 2"/>
+<text x="604" y="90" font-size="9" fill="#333">conicidade</text><text x="604" y="102" font-size="9" fill="#333">≈ 1–3°</text>
+<text x="540" y="160" text-anchor="middle" font-size="10">t = 1 a ~40 mm (CNC)</text>
+<text x="540" y="174" text-anchor="middle" font-size="10">rápido, boa qualidade,</text>
+<text x="540" y="188" text-anchor="middle" font-size="10">precisão ± 0,5–1 mm;</text>
+<text x="540" y="202" text-anchor="middle" font-size="10">leve ZTA, pouca escória</text>
+<!-- painel 4: laser -->
+<text x="700" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Laser</text>
+<rect x="650" y="60" width="110" height="70" fill="url(#h11_5)" stroke="#333" stroke-width="1.5"/>
+<line x1="760" y1="60" x2="760" y2="130" stroke="#0b3d91" stroke-width="2.5"/>
+<text x="700" y="160" text-anchor="middle" font-size="10">t ≤ 20–25 mm (fibra)</text>
+<text x="700" y="174" text-anchor="middle" font-size="10">borda reta e lisa,</text>
+<text x="700" y="188" text-anchor="middle" font-size="10">precisão ± 0,1–0,3 mm;</text>
+<text x="700" y="202" text-anchor="middle" font-size="10">chapas finas, furos, recortes</text>
+<text x="390" y="230" text-anchor="middle" font-size="10" fill="#555">Serra de fita: processo padrão para perfis (W, U, L, tubos); corte a frio, sem ZTA, precisão ± 1 mm, ângulos até 45–60°.</text>
+</svg>
+<figcaption><b>Figura 11.5</b> – Aspecto da borda cortada por guilhotina, oxicorte, plasma e laser (seções esquemáticas, fora de escala).</figcaption>
+</figure>
+
+<table class="tab small"><caption>Tabela 11.2 – Comparação dos processos de corte usados em estruturas metálicas (valores típicos)</caption>
+<thead><tr><th>Processo</th><th>Espessura usual</th><th>Precisão</th><th>Velocidade</th><th>Custo relativo</th><th>Borda / ZTA</th><th>Aplicação típica</th></tr></thead>
+<tbody>
+<tr><td class="l"><b>Serra de fita</b></td><td class="c">perfis até 600–1 000 mm de altura</td><td class="c">± 1 mm; esquadro ± 0,5°</td><td class="c">lenta a média</td><td class="c">baixo</td><td class="l">a frio, limpa, sem ZTA</td><td class="l">corte de perfis e tubos no comprimento; cortes em ângulo</td></tr>
+<tr><td class="l"><b>Guilhotina</b></td><td class="c">até 12,7 mm (½"); máquinas grandes 16–20 mm</td><td class="c">± 1 mm</td><td class="c">muito rápida</td><td class="c">muito baixo</td><td class="l">encruada, com rebarba; leve arredondamento</td><td class="l">chapas de ligação, cantoneiras, tiras</td></tr>
+<tr><td class="l"><b>Oxicorte</b></td><td class="c">6 a 300 mm</td><td class="c">± 1,5 a 3 mm (CNC ± 1)</td><td class="c">lenta (≈ 0,3–0,6 m/min em 25 mm)</td><td class="c">baixo</td><td class="l">ZTA 1–3 mm, dura; estrias e escória; corte manual irregular</td><td class="l">chapas grossas, chapas de base, recortes de campo</td></tr>
+<tr><td class="l"><b>Plasma (CNC)</b></td><td class="c">1 a ~40 mm (alta definição até 25–30 mm)</td><td class="c">± 0,5 a 1 mm</td><td class="c">rápida (2–6 m/min em 10 mm)</td><td class="c">médio</td><td class="l">conicidade 1–3°; ZTA pequena; pouca escória</td><td class="l">chapas de ligação, enrijecedores, chapas de topo, furos > 1,5 t</td></tr>
+<tr><td class="l"><b>Laser (fibra)</b></td><td class="c">0,5 a 20–25 mm</td><td class="c">± 0,1 a 0,3 mm</td><td class="c">muito rápida em chapa fina</td><td class="c">alto (equipamento)</td><td class="l">reta, lisa, ZTA mínima</td><td class="l">chapas finas, recortes complexos, furos precisos, peças de fachada</td></tr>
+<tr><td class="l"><b>Jato d'água</b></td><td class="c">até 150–200 mm</td><td class="c">± 0,1 a 0,2 mm</td><td class="c">muito lenta</td><td class="c">muito alto</td><td class="l">sem calor algum; borda fosca</td><td class="l">aços especiais, alumínio, peças que não podem aquecer</td></tr>
+</tbody></table>
+
+<div class="box norma"><div class="tit">NBR 8800 e AWS D1.1 – bordas cortadas termicamente</div>
+<p>A NBR 8800 (item 6.3) admite corte por oxigênio ou plasma desde que a superfície seja regular e sem entalhes. Em bordas que receberão solda ou que trabalham à tração (mesas de vigas com furos, chapas de emenda), a AWS D1.1 limita a rugosidade da superfície cortada (≈ 25 µm R<sub>a</sub> para t ≤ 100 mm) e exige que entalhes maiores que 5 mm sejam esmerilhados com transição suave ou reparados por solda. Cantos reentrantes devem ser <strong>arredondados com raio ≥ 13 mm</strong> (nunca deixar canto vivo — é um concentrador de tensão e origem de trincas).</p></div>
+
+<h2>11.5 Furação <span class="nivel i">Intermediário</span></h2>
+<p>Os furos de ligação podem ser feitos por <strong>broca</strong>, por <strong>puncionamento</strong> ou por corte térmico em máquinas CNC de alta definição (para chapas). A Figura 11.6 compara os processos e mostra os furos especiais.</p>
+
+<figure class="fig">
+<svg viewBox="0 -16 780 276" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs>
+<pattern id="h11_6" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s11_6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- a) broca -->
+<text x="95" y="4" text-anchor="middle" font-weight="bold" fill="#0b3d91">a) Broca</text>
+<path d="M30 70 L80 70 L80 130 L30 130 z M110 70 L160 70 L160 130 L110 130 z" fill="url(#h11_6)" stroke="#333" stroke-width="1.5"/>
+<line x1="80" y1="70" x2="80" y2="130" stroke="#333" stroke-width="1.5"/><line x1="110" y1="70" x2="110" y2="130" stroke="#333" stroke-width="1.5"/>
+<line x1="30" y1="70" x2="160" y2="70" stroke="#333" stroke-width="1.5"/><line x1="30" y1="130" x2="160" y2="130" stroke="#333" stroke-width="1.5"/>
+<rect x="80" y="70" width="30" height="60" fill="#fff"/>
+<!-- broca -->
+<path d="M83 30 L107 30 L107 62 L95 72 L83 62 z" fill="#444" stroke="#333"/>
+<line x1="95" y1="30" x2="95" y2="10" stroke="#333" stroke-width="2"/>
+<g stroke="#555" stroke-width="1"><line x1="80" y1="140" x2="80" y2="152"/><line x1="110" y1="140" x2="110" y2="152"/><line x1="80" y1="148" x2="110" y2="148" marker-start="url(#s11_6)" marker-end="url(#s11_6)"/></g>
+<text x="95" y="165" text-anchor="middle" font-size="10">ø = d + 1,5 mm</text>
+<text x="95" y="185" text-anchor="middle" font-size="10">parede cilíndrica, lisa;</text>
+<text x="95" y="199" text-anchor="middle" font-size="10">qualquer espessura;</text>
+<text x="95" y="213" text-anchor="middle" font-size="10">obrigatório em t &gt; d + 3 mm</text>
+<text x="95" y="227" text-anchor="middle" font-size="10">e em furos alargados/alongados</text>
+<!-- b) punção -->
+<text x="300" y="4" text-anchor="middle" font-weight="bold" fill="#0b3d91">b) Puncionamento</text>
+<path d="M235 70 L283 70 L286 80 L282 95 L288 130 L235 130 z" fill="url(#h11_6)" stroke="#333" stroke-width="1.5"/>
+<path d="M317 70 L365 70 L365 130 L312 130 L318 95 L314 80 z" fill="url(#h11_6)" stroke="#333" stroke-width="1.5"/>
+<!-- zona encruada -->
+<path d="M283 70 L286 80 L282 95 L288 130 L296 130 L292 95 L295 80 L291 70 z" fill="#f3c9a6" opacity="0.8" stroke="none"/>
+<path d="M317 70 L314 80 L318 95 L312 130 L304 130 L310 95 L306 80 L309 70 z" fill="#f3c9a6" opacity="0.8" stroke="none"/>
+<!-- punção e matriz -->
+<rect x="283" y="28" width="34" height="38" fill="#444" stroke="#333"/>
+<line x1="300" y1="28" x2="300" y2="10" stroke="#333" stroke-width="2"/>
+<rect x="220" y="132" width="63" height="14" fill="#444"/><rect x="317" y="132" width="63" height="14" fill="#444"/>
+<text x="262" y="157" font-size="9.5" fill="#555">matriz</text>
+<text x="300" y="60" text-anchor="middle" font-size="9.5" fill="#fff">punção</text>
+<text x="300" y="175" text-anchor="middle" font-size="10">rápido e barato; parede</text>
+<text x="300" y="189" text-anchor="middle" font-size="10">ligeiramente cônica, zona</text>
+<text x="300" y="203" text-anchor="middle" font-size="10" fill="#7a3e00">encruada e microtrincas na borda</text>
+<text x="300" y="217" text-anchor="middle" font-size="10">Permitido só se t ≤ d + 3 mm;</text>
+<text x="300" y="231" text-anchor="middle" font-size="10">senão: subpuncionar (ø − 3 mm)</text>
+<text x="300" y="245" text-anchor="middle" font-size="10">e alargar, ou broquear</text>
+<!-- c) escareado -->
+<text x="500" y="4" text-anchor="middle" font-weight="bold" fill="#0b3d91">c) Escareamento</text>
+<path d="M440 70 L470 70 L485 95 L485 130 L440 130 z" fill="url(#h11_6)" stroke="#333" stroke-width="1.5"/>
+<path d="M560 70 L530 70 L515 95 L515 130 L560 130 z" fill="url(#h11_6)" stroke="#333" stroke-width="1.5"/>
+<!-- parafuso escareado -->
+<path d="M472 71 L528 71 L516 92 L516 128 L484 128 L484 92 z" fill="#444" stroke="#333" stroke-width="1"/>
+<line x1="490" y1="71" x2="510" y2="71" stroke="#fff" stroke-width="2"/>
+<text x="500" y="160" text-anchor="middle" font-size="10">cabeça faceada (ângulo 90°);</text>
+<text x="500" y="174" text-anchor="middle" font-size="10">usado em superfícies que</text>
+<text x="500" y="188" text-anchor="middle" font-size="10">precisam ficar lisas (trilhos,</text>
+<text x="500" y="202" text-anchor="middle" font-size="10">chapas de piso, fachadas);</text>
+<text x="500" y="216" text-anchor="middle" font-size="10">reduz a área de apoio – verificar</text>
+<!-- d) furos alargados / alongados -->
+<text x="680" y="4" text-anchor="middle" font-weight="bold" fill="#0b3d91">d) Furo alongado</text>
+<rect x="610" y="45" width="140" height="100" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="640" y="80" width="80" height="26" rx="13" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="680" cy="93" r="10" fill="none" stroke="#555" stroke-width="0.8" stroke-dasharray="2 2"/>
+<g stroke="#555" stroke-width="1"><line x1="640" y1="112" x2="640" y2="126"/><line x1="720" y1="112" x2="720" y2="126"/><line x1="640" y1="122" x2="720" y2="122" marker-start="url(#s11_6)" marker-end="url(#s11_6)"/></g>
+<text x="680" y="137" text-anchor="middle" font-size="9.5">comprimento ≤ 2,5 d (longo)</text>
+<text x="680" y="160" text-anchor="middle" font-size="10">alargado: ø + 6 a 8 mm;</text>
+<text x="680" y="174" text-anchor="middle" font-size="10">alongado curto: d + 1,5 × (d + 6);</text>
+<text x="680" y="188" text-anchor="middle" font-size="10">só por broca ou plasma CNC;</text>
+<text x="680" y="202" text-anchor="middle" font-size="10" fill="#c0392b">NUNCA por maçarico em obra;</text>
+<text x="680" y="216" text-anchor="middle" font-size="10">exigem arruela grossa/chapa</text>
+<text x="680" y="230" text-anchor="middle" font-size="10">cobrindo o furo (NBR 8800)</text>
+</svg>
+<figcaption><b>Figura 11.6</b> – Processos de furação: broca, puncionamento (com a zona encruada da borda), escareamento e furos alongados.</figcaption>
+</figure>
+
+<h3>11.5.1 Broca e linhas CNC de furação</h3>
+<p>A furação por broca produz o furo de melhor qualidade e é permitida em qualquer espessura. Em fábricas equipadas, <strong>linhas CNC de furação de perfis</strong> com três cabeçotes (mesa superior, alma e mesa inferior) furam um W de 12 m em minutos, lendo o arquivo DSTV, e vêm acopladas a uma serra automática — a peça sai cortada, furada e marcada. Chapas de ligação são furadas em furadeiras radiais com gabarito ou, mais frequentemente hoje, cortadas com os furos já abertos em plasma de alta definição ou laser (permitido pela NBR 8800 quando a qualidade do furo é equivalente à de broca; para plasma, em geral, quando o diâmetro é maior que a espessura da chapa).</p>
+
+<h3>11.5.2 Puncionamento</h3>
+<p>O puncionamento cisalha o material entre um punção e uma matriz; é muito rápido e barato, mas deixa a borda do furo encruada, ligeiramente cônica e com microtrincas, o que reduz a ductilidade local. Por isso a <strong>NBR 8800</strong> (como o AISC) só admite furos puncionados no tamanho final quando a <strong>espessura da chapa não excede o diâmetro nominal do furo acrescido de 3 mm</strong> (regra prática: chapa de 12,5 mm pode receber furo ø 22 puncionado; chapa de 25 mm, não). Acima disso, pode-se <strong>subpuncionar</strong> com diâmetro 3 mm menor e depois <strong>alargar</strong> com alargador ou broca até o diâmetro final, removendo a zona danificada — ou simplesmente broquear. Em ligações sujeitas a fadiga e em aços de alta resistência (f<sub>y</sub> ≥ 350 MPa) a boa prática é evitar o puncionamento ou exigir o alargamento posterior.</p>
+
+<div class="box norma"><div class="tit">Diâmetros de furo (NBR 8800, item 6.3.6 e Tabela 14)</div>
+<p>Furo <strong>padrão</strong>: d + 1,5 mm (d ≤ 24 mm) ou d + 3 mm para diâmetros maiores (o AISC usa d + 1/16" ≈ 1,6 mm). Furo <strong>alargado</strong>: d + 6 a 8 mm (usado para ajuste de montagem, só em ligações por atrito ou com arruelas endurecidas). Furos <strong>alongados</strong> curtos e longos: permitidos com a dimensão longa perpendicular à direção da força (exceto em ligações por atrito), sempre cobertos por arruela ou chapa de 8 mm. Furos alargados e alongados só podem ser abertos por broca ou por corte CNC de qualidade — <strong>nunca por maçarico em obra</strong>: além da geometria irregular, a ZTA endurecida e a perda de área de apoio invalidam o dimensionamento.</p></div>
+
+<table class="tab"><caption>Tabela 11.3 – Limites práticos de furação</caption>
+<thead><tr><th>Processo</th><th>Espessura permitida</th><th>Qualidade</th><th>Observação</th></tr></thead>
+<tbody>
+<tr><td class="l">Broca (manual, radial ou CNC)</td><td class="c">qualquer</td><td class="c">excelente</td><td class="l">obrigatória para furos alargados, alongados, escareados e t &gt; d + 3 mm</td></tr>
+<tr><td class="l">Puncionamento em tamanho final</td><td class="c">t ≤ d + 3 mm (e t ≤ 25 mm nas puncionadeiras usuais)</td><td class="c">boa</td><td class="l">borda encruada; evitar em fadiga e aços com f<sub>y</sub> &gt; 350 MPa</td></tr>
+<tr><td class="l">Subpuncionar + alargar</td><td class="c">até o limite da puncionadeira</td><td class="c">muito boa</td><td class="l">furo inicial ≤ d − 3 mm; alargamento remove 1,5 mm por lado</td></tr>
+<tr><td class="l">Plasma HD / laser (chapas)</td><td class="c">ø ≥ t (plasma); ø ≥ 0,5 t (laser)</td><td class="c">boa a excelente</td><td class="l">exige máquina calibrada e conicidade controlada; aceitável na NBR 8800 se a superfície for equivalente</td></tr>
+<tr><td class="l">Maçarico manual</td><td class="c">—</td><td class="c">inaceitável</td><td class="l">proibido para furos de ligação</td></tr>
+</tbody></table>
+
+<h2>11.6 Dobra e calandra <span class="nivel i">Intermediário</span></h2>
+<p>A conformação a frio é usada para fabricar perfis formados a frio (U, Ue, Z, cartolas — NBR 14762), para dobrar chapas de ligação (cantoneiras de chapa, calhas, rufos) e para curvar chapas e perfis em arcos (calandragem). Ao dobrar, a fibra externa se estira e a interna se comprime; se o raio interno for pequeno demais, a face externa trinca. A Figura 11.7 mostra os parâmetros.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs>
+<pattern id="h11_7" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s11_7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- a) dobra -->
+<text x="190" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">a) Dobra em dobradeira (prensa viradeira) – corte</text>
+<!-- chapa dobrada 90° com raio interno -->
+<path d="M40 60 L170 60 A 50 50 0 0 1 220 110 L220 170 L196 170 L196 110 A 26 26 0 0 0 170 84 L40 84 z" fill="url(#h11_7)" stroke="#333" stroke-width="1.5"/>
+<!-- fibra neutra -->
+<path d="M40 72 L170 72 A 38 38 0 0 1 208 110 L208 170" stroke="#0b3d91" stroke-width="1.2" stroke-dasharray="4 3" fill="none"/>
+<text x="42" y="56" font-size="9.5" fill="#0b3d91">fibra neutra (tracejada)</text>
+<!-- raio interno -->
+<circle cx="170" cy="110" r="1.5" fill="#333"/>
+<line x1="170" y1="110" x2="188" y2="92" stroke="#c0392b" stroke-width="1" marker-end="url(#s11_7)"/>
+<text x="166" y="126" font-size="10.5" text-anchor="middle" fill="#c0392b">r<tspan baseline-shift="sub" font-size="8">i</tspan></text>
+<!-- espessura t -->
+<g stroke="#555" stroke-width="1"><line x1="196" y1="176" x2="196" y2="188"/><line x1="220" y1="176" x2="220" y2="188"/><line x1="196" y1="184" x2="220" y2="184" marker-start="url(#s11_7)" marker-end="url(#s11_7)"/></g>
+<text x="208" y="200" font-size="10.5" text-anchor="middle">t</text>
+<!-- fibra externa -->
+<line x1="205" y1="66" x2="240" y2="50" stroke="#c0392b" stroke-width="0.8"/>
+<text x="243" y="52" font-size="9.5" fill="#c0392b">fibra externa estirada</text>
+<text x="243" y="64" font-size="9.5" fill="#c0392b">(trinca se r<tspan baseline-shift="sub" font-size="8">i</tspan> for pequeno)</text>
+<text x="243" y="90" font-size="10" fill="#333">r<tspan baseline-shift="sub" font-size="8">i</tspan> ≥ 1 a 2 t (aço estrutural)</text>
+<text x="243" y="104" font-size="10" fill="#333">r<tspan baseline-shift="sub" font-size="8">i</tspan> ≥ 2,5 a 4 t (alta resistência)</text>
+<text x="243" y="122" font-size="10" fill="#0b3d91">fibra neutra ≈ 0,33–0,45 t a partir</text>
+<text x="243" y="136" font-size="10" fill="#0b3d91">do raio interno (desenvolvimento)</text>
+<text x="243" y="154" font-size="10" fill="#333">retorno elástico ("springback"):</text>
+<text x="243" y="168" font-size="10" fill="#333">dobrar 2–4° a mais</text>
+<text x="40" y="222" font-size="10" fill="#333">dobra com eixo paralelo à laminação exige raio maior;</text>
+<text x="40" y="236" font-size="10" fill="#333">rebarbas do corte voltadas para dentro da dobra.</text>
+<!-- b) calandra -->
+<text x="560" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">b) Calandra de 3 rolos</text>
+<circle cx="500" cy="120" r="30" fill="#444" stroke="#333" stroke-width="1.5"/>
+<circle cx="620" cy="120" r="30" fill="#444" stroke="#333" stroke-width="1.5"/>
+<circle cx="560" cy="62" r="30" fill="#444" stroke="#333" stroke-width="1.5"/>
+<!-- chapa curvada -->
+<path d="M400 148 Q470 96 560 96 Q650 96 720 148" stroke="#333" stroke-width="7" fill="none"/>
+<path d="M400 148 Q470 96 560 96 Q650 96 720 148" stroke="#d9dee7" stroke-width="4" fill="none"/>
+<!-- setas de rotação -->
+<path d="M480 160 A 30 30 0 0 0 520 160" stroke="#0b3d91" stroke-width="1.2" fill="none" marker-end="url(#s11_7)"/>
+<path d="M600 160 A 30 30 0 0 0 640 160" stroke="#0b3d91" stroke-width="1.2" fill="none" marker-end="url(#s11_7)"/>
+<line x1="610" y1="44" x2="596" y2="52" stroke="#c0392b" stroke-width="1.2" marker-end="url(#s11_7)"/>
+<text x="614" y="46" font-size="9.5" fill="#c0392b">rolo superior desce (define o raio)</text>
+<text x="560" y="185" text-anchor="middle" font-size="10">chapas: raio mínimo ≈ 1,5 × diâmetro do rolo</text>
+<text x="560" y="199" text-anchor="middle" font-size="10">perfis (calandra de perfis): W/U/tubos em arcos,</text>
+<text x="560" y="213" text-anchor="middle" font-size="10">várias passadas; ponta reta de ≈ 1,5–2 × distância</text>
+<text x="560" y="227" text-anchor="middle" font-size="10">entre rolos fica sem curvar (pré-curvar ou cortar)</text>
+</svg>
+<figcaption><b>Figura 11.7</b> – Dobra de chapa: raio interno, fibra neutra e retorno elástico; calandragem de chapas e perfis em três rolos.</figcaption>
+</figure>
+
+<ul>
+<li><strong>Raio interno mínimo</strong>: para aços estruturais comuns (A36, MR250, CF-26) adota-se r<sub>i</sub> ≥ 1 t a 2 t; aços de maior resistência (f<sub>y</sub> ≥ 350 MPa) pedem 2,5 t a 4 t. Dobra com o eixo paralelo à direção de laminação da chapa exige raio maior (fibra mais frágil). A NBR 14762 usa r<sub>i</sub>/t nas propriedades dos perfis formados a frio; valores usuais em perfiladeiras são r<sub>i</sub> = 1,5 t a 2 t.</li>
+<li><strong>Retorno elástico</strong>: ao aliviar a carga, a chapa "abre" 2° a 4°; o operador dobra além (sobredobra) para compensar. Aços de alta resistência e raios grandes retornam mais.</li>
+<li><strong>Calandragem</strong> de chapas para tubos e cones, ou de perfis (W, U, tubos) para arcos de cobertura, é feita em calandras de 3 ou 4 rolos em passadas sucessivas. A distorção da seção (achatamento de tubos, empenamento de mesas) deve ser verificada; raios pequenos em W exigem calandra pesada e podem exigir aquecimento.</li>
+<li><strong>Conformação a quente</strong> (≥ 900 °C) só em casos especiais; após conformar a quente, as propriedades do aço podem mudar e o projeto deve ser informado.</li>
+</ul>
+
+<h2>11.7 Montagem em bancada e soldagem <span class="nivel i">Intermediário</span></h2>
+<p>Depois de cortadas e furadas, as partes de um conjunto (viga com chapas, pilar com base e mísulas, tesoura) são posicionadas em uma <strong>bancada nivelada</strong>, alinhadas com <strong>gabaritos</strong> (moldes que fixam a posição relativa dos furos e chapas), esquadrejadas e <strong>ponteadas</strong> (pontos de solda de 20 a 40 mm que fixam a posição antes da solda definitiva). Só depois da conferência dimensional vem a solda completa. A Figura 11.8 mostra o arranjo e a lógica de sequência.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 280" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs>
+<pattern id="h11_8" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s11_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<text x="230" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">a) Bancada com gabarito e ponteamento</text>
+<!-- bancada -->
+<rect x="20" y="150" width="420" height="12" fill="#444"/>
+<g fill="#444"><rect x="40" y="162" width="10" height="40"/><rect x="200" y="162" width="10" height="40"/><rect x="400" y="162" width="10" height="40"/></g>
+<text x="230" y="215" text-anchor="middle" font-size="10" fill="#555">bancada nivelada (verificar nível a cada troca de peça)</text>
+<!-- viga -->
+<rect x="60" y="120" width="360" height="30" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="60" y="120" width="360" height="5" fill="#b8c0cf" stroke="none"/><rect x="60" y="145" width="360" height="5" fill="#b8c0cf" stroke="none"/>
+<!-- chapa de topo -->
+<rect x="52" y="105" width="8" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<rect x="420" y="105" width="8" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<!-- gabarito de furos -->
+<rect x="30" y="98" width="22" height="74" fill="none" stroke="#0b3d91" stroke-width="1.5" stroke-dasharray="5 3"/>
+<g fill="#fff" stroke="#0b3d91" stroke-width="1"><circle cx="41" cy="112" r="3"/><circle cx="41" cy="135" r="3"/><circle cx="41" cy="158" r="3"/></g>
+<text x="41" y="90" text-anchor="middle" font-size="9.5" fill="#0b3d91">gabarito</text>
+<!-- esquadro -->
+<path d="M428 105 L470 105 L470 112 L435 112 L435 150 L428 150 z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="475" y="126" font-size="9.5" fill="#7a3e00">esquadro</text>
+<!-- pontos de solda -->
+<g fill="#e0a86a" stroke="#7a3e00" stroke-width="1">
+<path d="M60 120 L66 120 L60 126 z"/><path d="M60 150 L66 150 L60 144 z"/><path d="M420 120 L414 120 L420 126 z"/><path d="M420 150 L414 150 L420 144 z"/>
+</g>
+<text x="120" y="112" font-size="9.5" fill="#7a3e00">pontos de solda 20–40 mm (ponteamento)</text>
+<!-- grampo -->
+<path d="M330 100 L330 168 M322 100 L338 100 M322 168 L338 168" stroke="#444" stroke-width="3" fill="none"/>
+<text x="345" y="96" font-size="9.5" fill="#555">grampo / dispositivo</text><text x="345" y="107" font-size="9.5" fill="#555">de fixação</text>
+<!-- b) sequência de solda -->
+<text x="620" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">b) Sequência para controlar distorção</text>
+<!-- seção T com filetes -->
+<rect x="540" y="60" width="160" height="10" fill="url(#h11_8)" stroke="#333" stroke-width="1.5"/>
+<rect x="615" y="70" width="10" height="70" fill="url(#h11_8)" stroke="#333" stroke-width="1.5"/>
+<path d="M615 70 L605 70 L615 80 z" fill="#e0a86a" stroke="#7a3e00"/><path d="M625 70 L635 70 L625 80 z" fill="#e0a86a" stroke="#7a3e00"/>
+<text x="596" y="90" font-size="10" fill="#7a3e00" text-anchor="middle">1</text><text x="644" y="90" font-size="10" fill="#7a3e00" text-anchor="middle">2</text>
+<!-- mesa distorcida (angular) -->
+<path d="M540 62 L620 68 L700 62" stroke="#c0392b" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>
+<text x="705" y="66" font-size="9.5" fill="#c0392b">distorção angular</text>
+<!-- vista longitudinal com passes alternados -->
+<rect x="520" y="165" width="220" height="14" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<g fill="#e0a86a" stroke="#7a3e00" stroke-width="1">
+<rect x="525" y="158" width="40" height="7"/><rect x="605" y="158" width="40" height="7"/><rect x="685" y="158" width="40" height="7"/>
+<rect x="565" y="179" width="40" height="7"/><rect x="645" y="179" width="40" height="7"/>
+</g>
+<g font-size="9" fill="#7a3e00" text-anchor="middle">
+<text x="545" y="153">1</text><text x="625" y="153">3</text><text x="705" y="153">5</text><text x="585" y="195">2</text><text x="665" y="195">4</text>
+</g>
+<text x="630" y="211" text-anchor="middle" font-size="10">soldar alternando lados e do centro para as extremidades</text>
+<text x="630" y="225" text-anchor="middle" font-size="10">(passo a ré ou intermitente); pré-deformar ou fixar rígido</text>
+<text x="630" y="239" text-anchor="middle" font-size="10">quando a peça é esbelta; não sobredimensionar filetes</text>
+<text x="230" y="240" text-anchor="middle" font-size="10">Conferir antes da solda final: comprimento, esquadro,</text>
+<text x="230" y="254" text-anchor="middle" font-size="10">posição das chapas, contraflecha, orientação dos furos.</text>
+<text x="230" y="268" text-anchor="middle" font-size="10" fill="#c0392b">Depois de soldado, corrigir custa 5 a 10 vezes mais.</text>
+</svg>
+<figcaption><b>Figura 11.8</b> – Montagem em bancada com gabarito, esquadro, grampos e ponteamento; sequência de soldagem alternada para controlar a distorção.</figcaption>
+</figure>
+
+<h3>11.7.1 Controle de distorção</h3>
+<p>Toda solda contrai ao esfriar e puxa a peça para o lado do cordão. As distorções típicas são: <strong>angular</strong> (mesa que "fecha" em torno da alma em perfis soldados), <strong>longitudinal</strong> (viga que encurva porque a solda está fora do centro de gravidade da seção) e <strong>ondulação</strong> de chapas finas. As armas do fabricante são: soldar dos dois lados alternadamente, do centro para as extremidades, com passes a ré; usar o menor filete que atende ao projeto (a contração cresce com o volume de solda); fixar a peça em dispositivos rígidos ou <strong>pré-deformar</strong> no sentido contrário; equilibrar as soldas em relação ao eixo da peça; e, em perfis soldados de série, usar arco submerso com dois cabeçotes simultâneos. O Capítulo 9 trata dos procedimentos de soldagem (EPS, qualificação, inspeção); aqui interessa a lógica de montagem.</p>
+
+<h3>11.7.2 Retificação de deformações por aquecimento localizado</h3>
+<p>Quando, apesar de tudo, a peça sai torta além da tolerância, a correção usual é o <strong>aquecimento localizado</strong> (desempeno térmico): aquece-se com maçarico uma região pequena no lado convexo até o vermelho-escuro (≈ 600–650 °C, sem ultrapassar), em forma de triângulo ("V") ou faixa; ao esfriar, o metal aquecido contrai mais do que se expandiu (ficou confinado enquanto quente) e puxa a peça para o lado aquecido. A Figura 11.9 ilustra o método.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 208" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><marker id="s11_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- viga empenada (vista de topo da mesa) -->
+<text x="200" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Viga encurvada (vista superior, exagerada)</text>
+<path d="M30 70 Q200 40 370 70 L370 100 Q200 70 30 100 z" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<line x1="30" y1="85" x2="370" y2="85" stroke="#555" stroke-width="0.8" stroke-dasharray="4 3"/>
+<line x1="200" y1="85" x2="200" y2="56" stroke="#c0392b" stroke-width="1" marker-end="url(#s11_9)"/>
+<text x="206" y="100" font-size="10" fill="#c0392b">flecha f &gt; L/1000</text>
+<!-- triângulos de aquecimento no lado convexo (lado de cima = convexo) -->
+<g fill="#f39c12" opacity="0.8" stroke="#c0392b" stroke-width="1">
+<path d="M120 57 L140 57 L130 80 z"/><path d="M190 52 L210 52 L200 76 z"/><path d="M260 57 L280 57 L270 80 z"/>
+</g>
+<text x="200" y="125" text-anchor="middle" font-size="10">aquecer em "V" o lado <tspan font-weight="bold">convexo</tspan> (o mais longo), base no lado convexo</text>
+<text x="200" y="139" text-anchor="middle" font-size="10">≈ 600–650 °C (vermelho-escuro, medir com giz térmico); resfriar ao ar</text>
+<text x="200" y="153" text-anchor="middle" font-size="10">a contração puxa a peça para o lado aquecido; repetir em pontos espaçados</text>
+<text x="350" y="200" text-anchor="middle" font-size="9.5" fill="#c0392b">Nunca resfriar com água aços com f<tspan baseline-shift="sub" font-size="8">y</tspan> ≥ 345 MPa; nunca ultrapassar 650 °C (aços temperados: 590 °C)</text>
+<!-- corte da mesa com V -->
+<text x="540" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Formas de aquecimento</text>
+<g stroke="#333" stroke-width="1.5" fill="#d9dee7"><rect x="440" y="45" width="200" height="14"/><rect x="533" y="59" width="14" height="60"/></g>
+<path d="M440 45 L470 45 L455 59 z" fill="#f39c12" stroke="#c0392b"/>
+<path d="M610 45 L640 45 L625 59 z" fill="#f39c12" stroke="#c0392b"/>
+<rect x="533" y="90" width="14" height="14" fill="#f39c12" stroke="#c0392b"/>
+<text x="540" y="140" text-anchor="middle" font-size="10">"V" na mesa: corrige curvatura lateral</text>
+<text x="540" y="154" text-anchor="middle" font-size="10">linha na alma: corrige curvatura vertical</text>
+<text x="540" y="168" text-anchor="middle" font-size="10">ponto/mancha: ondulação de chapa</text>
+<text x="540" y="182" text-anchor="middle" font-size="10">o processo exige prática e vários ciclos</text>
+</svg>
+<figcaption><b>Figura 11.9</b> – Retificação de deformações por aquecimento localizado: posição dos "V" de aquecimento e limites de temperatura.</figcaption>
+</figure>
+
+<h2>11.8 Tolerâncias de fabricação <span class="nivel i">Intermediário</span></h2>
+<p>Nenhuma peça sai exatamente com as cotas do desenho; o que importa é que o desvio fique dentro do que a montagem e a resistência toleram. A NBR 8800 remete às tolerâncias dimensionais dos produtos (ASTM A6 / NBR 15980 para perfis laminados; NBR 5884 para soldados) e à prática de fabricação consagrada, essencialmente o <em>AISC Code of Standard Practice</em>. A Tabela 11.4 reúne os valores de referência mais usados e a Figura 11.10 mostra como medi-los.</p>
+
+<table class="tab small"><caption>Tabela 11.4 – Tolerâncias de fabricação de referência (NBR 8800 / ASTM A6 / AISC Code of Standard Practice; valores usuais em contratos)</caption>
+<thead><tr><th>Item</th><th>Tolerância</th><th>Como medir</th></tr></thead>
+<tbody>
+<tr><td class="l">Comprimento de vigas e pilares (entre faces de chapas de topo ou extremidades usinadas)</td><td class="c">± 2 mm até 9 m; ± 3 mm acima de 9 m</td><td class="l">trena de aço calibrada, na temperatura ambiente (corrigir em peças longas: 1,2×10⁻⁵/°C ≈ 0,12 mm/m a cada 10 °C)</td></tr>
+<tr><td class="l">Retilineidade (flecha lateral ou vertical) de peças</td><td class="c">L/1000, máx. 10 mm (perfis laminados: ASTM A6 ≈ 1 mm/m)</td><td class="l">linha de náilon esticada entre as extremidades; medir a maior distância entre linha e mesa</td></tr>
+<tr><td class="l">Contraflecha especificada</td><td class="c">− 0 / + 12 mm (até 15 m)</td><td class="l">peça apoiada nas extremidades, sem carga, com linha esticada</td></tr>
+<tr><td class="l">Esquadro da extremidade (perpendicularidade da chapa de topo ou do corte)</td><td class="c">± 1/500 da altura, máx. ± 1 mm (chapas de topo de ligações rígidas: ± 1 mm)</td><td class="l">esquadro de aço na mesa e na alma; medir a folga com calibre de lâminas</td></tr>
+<tr><td class="l">Altura da seção (perfis soldados, NBR 5884)</td><td class="c">± 3 mm (d ≤ 600 mm); ± 5 mm acima</td><td class="l">paquímetro ou trena em 3 seções</td></tr>
+<tr><td class="l">Empenamento e inclinação de mesas (perfis soldados/laminados)</td><td class="c">≤ b<sub>f</sub>/100, máx. 6 mm (medido nas bordas); em apoios ≤ 3 mm</td><td class="l">régua sobre a mesa e calibre de lâminas nas bordas</td></tr>
+<tr><td class="l">Desalinhamento da alma em relação ao centro das mesas</td><td class="c">≤ 3 mm (d ≤ 900 mm)</td><td class="l">esquadro e régua nas duas faces</td></tr>
+<tr><td class="l">Posição de furos individuais dentro de um grupo</td><td class="c">± 1 mm</td><td class="l">gabarito de furos ou trena a partir de uma referência única</td></tr>
+<tr><td class="l">Distância entre grupos de furos e da extremidade ao primeiro grupo</td><td class="c">± 2 mm</td><td class="l">trena a partir da extremidade de referência (nunca cota acumulada furo a furo)</td></tr>
+<tr><td class="l">Diâmetro do furo</td><td class="c">+ 0,5 / − 0 mm (broca); + 1 / − 0 (punção)</td><td class="l">calibre tampão ou paquímetro</td></tr>
+<tr><td class="l">Dimensão do filete de solda</td><td class="c">− 0 / + 2 mm sobre o especificado (AWS D1.1)</td><td class="l">calibre de solda (gabarito de filete)</td></tr>
+<tr><td class="l">Planicidade de chapa de base após solda</td><td class="c">≤ 1 mm em 300 mm; ≤ 3 mm total</td><td class="l">régua e calibre de lâminas em duas direções</td></tr>
+</tbody></table>
+
+<figure class="fig">
+<svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs>
+<pattern id="h11_10" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s11_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker>
+</defs>
+<!-- a) retilineidade -->
+<text x="190" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">a) Retilineidade</text>
+<path d="M30 60 Q190 40 350 60 L350 80 Q190 60 30 80 z" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<line x1="30" y1="60" x2="350" y2="60" stroke="#c0392b" stroke-width="1"/>
+<text x="360" y="64" font-size="9.5" fill="#c0392b">linha esticada</text>
+<line x1="190" y1="60" x2="190" y2="50" stroke="#333" stroke-width="1" marker-end="url(#s11_10)"/>
+<text x="200" y="50" font-size="10">f ≤ L/1000 (máx. 10 mm)</text>
+<g stroke="#555" stroke-width="1"><line x1="30" y1="90" x2="30" y2="104"/><line x1="350" y1="90" x2="350" y2="104"/><line x1="30" y1="100" x2="350" y2="100" marker-start="url(#s11_10)" marker-end="url(#s11_10)"/></g>
+<text x="190" y="115" text-anchor="middle" font-size="10">L (ex.: 8 000 → f ≤ 8 mm)</text>
+<!-- b) esquadro de extremidade -->
+<text x="580" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">b) Esquadro da extremidade</text>
+<rect x="470" y="45" width="180" height="60" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<path d="M650 45 L656 105" stroke="#333" stroke-width="1.5"/>
+<path d="M650 45 L650 105" stroke="#c0392b" stroke-width="1" stroke-dasharray="3 2"/>
+<path d="M650 45 L700 45 L700 52 L657 52 L657 110 L650 110 z" fill="#e0a86a" stroke="#7a3e00" stroke-width="1"/>
+<text x="705" y="50" font-size="9.5" fill="#7a3e00">esquadro</text>
+<line x1="665" y1="105" x2="658" y2="105" stroke="#333" stroke-width="1" marker-end="url(#s11_10)"/>
+<text x="668" y="98" font-size="10">Δ ≤ d/500, máx. 1 mm</text>
+<text x="668" y="112" font-size="10">(calibre de lâminas)</text>
+<text x="560" y="128" text-anchor="middle" font-size="10">medir na mesa e na alma; para chapas de topo</text>
+<text x="560" y="142" text-anchor="middle" font-size="10">de ligação rígida, também a planicidade da chapa</text>
+<!-- c) empenamento de mesa -->
+<text x="190" y="165" text-anchor="middle" font-weight="bold" fill="#0b3d91">c) Empenamento / inclinação de mesa</text>
+<g stroke="#333" stroke-width="1.5" fill="url(#h11_10)">
+<path d="M100 200 L280 190 L280 200 L195 205 L195 280 L185 280 L185 205 L100 210 z"/>
+<rect x="100" y="280" width="180" height="10"/>
+</g>
+<line x1="100" y1="185" x2="280" y2="185" stroke="#c0392b" stroke-width="1.5"/>
+<text x="285" y="189" font-size="9.5" fill="#c0392b">régua</text>
+<line x1="90" y1="200" x2="90" y2="185" stroke="#333" stroke-width="1" marker-start="url(#s11_10)" marker-end="url(#s11_10)"/>
+<text x="20" y="196" font-size="10">Δ<tspan baseline-shift="sub" font-size="8">f</tspan> ≤ b<tspan baseline-shift="sub" font-size="8">f</tspan>/100</text>
+<text x="20" y="210" font-size="10">máx. 6 mm</text>
+<g stroke="#555" stroke-width="1"><line x1="100" y1="296" x2="100" y2="310"/><line x1="280" y1="296" x2="280" y2="310"/><line x1="100" y1="306" x2="280" y2="306" marker-start="url(#s11_10)" marker-end="url(#s11_10)"/></g>
+<text x="190" y="318" text-anchor="middle" font-size="10">b<tspan baseline-shift="sub" font-size="8">f</tspan></text>
+<!-- d) furos -->
+<text x="580" y="165" text-anchor="middle" font-weight="bold" fill="#0b3d91">d) Posição de furos</text>
+<rect x="440" y="185" width="290" height="70" fill="#d9dee7" stroke="#333" stroke-width="1.5"/>
+<g fill="#fff" stroke="#333" stroke-width="1.2">
+<circle cx="480" cy="205" r="5"/><circle cx="520" cy="205" r="5"/><circle cx="480" cy="235" r="5"/><circle cx="520" cy="235" r="5"/>
+<circle cx="650" cy="205" r="5"/><circle cx="690" cy="205" r="5"/><circle cx="650" cy="235" r="5"/><circle cx="690" cy="235" r="5"/>
+</g>
+<rect x="468" y="193" width="64" height="54" fill="none" stroke="#0b3d91" stroke-width="0.8" stroke-dasharray="3 2"/>
+<rect x="638" y="193" width="64" height="54" fill="none" stroke="#0b3d91" stroke-width="0.8" stroke-dasharray="3 2"/>
+<g stroke="#555" stroke-width="1">
+<line x1="440" y1="262" x2="440" y2="280"/><line x1="480" y1="262" x2="480" y2="280"/><line x1="650" y1="262" x2="650" y2="280"/>
+<line x1="440" y1="275" x2="480" y2="275" marker-start="url(#s11_10)" marker-end="url(#s11_10)"/>
+<line x1="480" y1="275" x2="650" y2="275" marker-start="url(#s11_10)" marker-end="url(#s11_10)"/>
+<line x1="480" y1="205" x2="520" y2="205" stroke="#0b3d91" marker-start="url(#s11_10)" marker-end="url(#s11_10)"/>
+</g>
+<text x="460" y="292" text-anchor="middle" font-size="9.5">± 2 mm</text>
+<text x="565" y="292" text-anchor="middle" font-size="9.5">entre grupos: ± 2 mm</text>
+<text x="500" y="224" text-anchor="middle" font-size="9" fill="#0b3d91">± 1 mm</text>
+<text x="585" y="310" text-anchor="middle" font-size="10">dentro do grupo ± 1 mm; referência sempre na extremidade de montagem</text>
+</svg>
+<figcaption><b>Figura 11.10</b> – Como medir as principais tolerâncias de fabricação: retilineidade, esquadro de extremidade, empenamento de mesa e posição de furos.</figcaption>
+</figure>
+
+<div class="box dica"><div class="tit">Regra de bolso: onde a tolerância importa mais</div>
+<p>Um pilar 3 mm mais curto se resolve com calços na base; uma chapa de topo 3 mm fora de esquadro em uma ligação rígida viga-pilar não fecha. A tolerância deve ser apertada onde a montagem não tem ajuste (ligações com chapa de topo, emendas de pilar, furos de contraventamento) e pode ser folgada onde há folga de projeto (furos alongados de terças, chapas de base com furos alargados). Por isso o detalhador deve prever <strong>ajustes de montagem</strong>: furos alongados em um dos lados, calços (shims) previstos, chapas de enchimento e emendas com folga.</p></div>
+
+<h2>11.9 Controle de qualidade e rastreabilidade <span class="nivel i">Intermediário</span></h2>
+<p>O controle de qualidade de uma fábrica é organizado por um <strong>Plano de Inspeção e Testes (PIT)</strong>: uma tabela que lista, para cada etapa do fluxo, o que se inspeciona, com que critério, com que frequência (100 % ou amostragem), quem inspeciona e que registro fica. Um PIT típico contém:</p>
+<ul>
+<li><strong>Recebimento de materiais</strong>: certificados de aço, parafusos (lote, ensaio de carga de prova), consumíveis de solda, tintas (lote, validade, ficha técnica); dimensional por amostragem.</li>
+<li><strong>Inspeção dimensional</strong> após corte e furação (100 % em peças críticas, amostragem em séries) e após solda (comprimento, esquadro, retilineidade, posição de chapas — Tabela 11.4).</li>
+<li><strong>Inspeção de solda</strong>: 100 % visual (dimensão do filete, mordeduras, porosidade, respingos); ensaios não destrutivos conforme o projeto — líquido penetrante ou partícula magnética em filetes críticos, ultrassom em soldas de penetração total de emendas de mesa e de pilares (ver Capítulo 9). Registro: relatório com marca da peça, soldador, EPS, resultado.</li>
+<li><strong>Pintura</strong>: grau de jateamento (padrão visual ISO 8501-1), perfil de rugosidade, condições ambientais, espessura de película seca e aderência (Capítulo 12).</li>
+<li><strong>Liberação para expedição</strong>: conferência de marcas, quantidade e conformidade com o romaneio.</li>
+</ul>
+<p>Toda desconformidade gera um <strong>Relatório de Não-Conformidade (RNC)</strong> que descreve o problema, a causa, a disposição (retrabalhar, aceitar com concessão do projetista, sucatear) e a ação corretiva. A concessão é comum e legítima — por exemplo, um furo 2 mm fora pode ser aceito com furo alongado e arruela grossa — mas exige a assinatura do responsável pelo projeto. A rastreabilidade fecha o círculo: certificado da corrida → peça → soldador e EPS → inspeção → lote de tinta → romaneio.</p>
+
+<h3>11.9.1 Segurança na fábrica</h3>
+<p>Uma fábrica de estruturas movimenta cargas pesadas com ponte rolante, tem máquinas com partes móveis e cortes térmicos. Os principais requisitos legais são a <strong>NR-12</strong> (segurança em máquinas: proteções de serras e prensas, comandos bimanuais, dispositivos de parada), a <strong>NR-11</strong> (transporte e movimentação de materiais: inspeção de cabos, cintas e ganchos, sinaleiro, operador habilitado de ponte rolante, proibição de passar carga sobre pessoas), a <strong>NR-06</strong> (EPIs: capacete, óculos, protetor auricular, luvas, botina com biqueira, máscara de solda e respirador para fumos) e a NR-34/NR-33 quando há trabalho a quente em espaços confinados (caixões). Peças estocadas devem ficar em pilhas estáveis com calços e altura limitada; perfis longos em pé são um risco clássico de tombamento.</p>
+
+<h2>11.10 Pré-montagem, identificação e expedição <span class="nivel b">Básico</span></h2>
+<h3>11.10.1 Quando pré-montar em fábrica</h3>
+<p>A <strong>pré-montagem</strong> (montar em fábrica um trecho da estrutura, conferir e desmontar) custa horas e espaço, mas evita surpresas em obra. Justifica-se quando: a estrutura tem geometria complexa ou muitas ligações com chapa de topo (onde não há ajuste); há emendas de transporte de tesouras e treliças longas (os furos das duas metades devem coincidir); há peças curvas ou tridimensionais (escadas helicoidais, mezaninos irregulares); o cliente exige (contratos industriais); ou a obra é distante, onde um erro custa dias de espera. Em galpões padronizados com terças em furos alongados, a pré-montagem em geral é dispensável.</p>
+
+<h3>11.10.2 Identificação e etiquetas</h3>
+<p>Cada peça sai da pintura com a marca aplicada em <strong>tinta de contraste</strong> (estêncil ou manual) em duas posições visíveis, além de uma <strong>etiqueta</strong> resistente (plástica ou metálica, presa por arame) com: obra, marca, quantidade, peso, número do romaneio e, se exigido, corrida do aço. Peças pequenas (chapas avulsas, parafusos, tirantes) vão em caixas ou amarrados identificados — parafusos por diâmetro e comprimento, em sacos com etiqueta da ligação a que se destinam.</p>
+
+<h3>11.10.3 Ordem de carregamento e romaneio</h3>
+<p>A regra de ouro da expedição é: <strong>a ordem de carregamento segue a sequência de montagem, ao contrário</strong>. O que se monta primeiro (chumbadores, pilares dos pórticos iniciais, contraventamentos verticais) deve estar em cima ou nas primeiras carretas; terças e fechamentos vêm depois. Isso evita "desmontar" o pátio da obra para achar uma peça. Cada carga é descrita em um <strong>romaneio</strong> (packing list) com marca, quantidade, peso por item e peso total, conferido na saída e no recebimento — as divergências viram registro imediato, não descoberta na hora de içar. A Figura 11.11 resume a etiqueta e a lógica de carregamento.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 230" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><marker id="s11_11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- etiqueta -->
+<text x="150" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Etiqueta de identificação</text>
+<rect x="30" y="32" width="240" height="120" rx="6" fill="#fff7d6" stroke="#333" stroke-width="1.5"/>
+<circle cx="45" cy="47" r="4" fill="#fff" stroke="#333"/>
+<g font-size="10" fill="#333">
+<text x="60" y="52">OBRA: Galpão Bloco B – Cliente XYZ</text>
+<text x="60" y="70">MARCA: <tspan font-weight="bold" font-size="14">V-12</tspan>   QTD: 1/4</text>
+<text x="60" y="88">PESO: 214 kg   PERFIL: W 310 × 32,7</text>
+<text x="60" y="106">MATERIAL: A572 Gr.50 – corrida 4471B</text>
+<text x="60" y="124">ROMANEIO: 07   CARGA: 03   DES.: F-112 R1</text>
+<text x="60" y="142">POSIÇÃO: eixos 2–5 / nível +6,000</text>
+</g>
+<text x="150" y="172" text-anchor="middle" font-size="10">+ marca pintada com estêncil nas duas extremidades</text>
+<text x="150" y="186" text-anchor="middle" font-size="10">(nunca sobre face de contato de ligação por atrito)</text>
+<!-- carregamento -->
+<text x="540" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Ordem de carregamento = sequência de montagem invertida</text>
+<text x="540" y="40" text-anchor="middle" font-size="10" fill="#555">(o que se monta primeiro viaja por cima ou nas primeiras carretas)</text>
+<!-- carreta -->
+<rect x="340" y="140" width="400" height="14" fill="#444"/>
+<g fill="#444"><circle cx="380" cy="165" r="10"/><circle cx="410" cy="165" r="10"/><circle cx="690" cy="165" r="10"/><circle cx="720" cy="165" r="10"/></g>
+<rect x="320" y="115" width="24" height="39" fill="#444"/>
+<!-- camadas de carga -->
+<rect x="350" y="118" width="380" height="20" fill="#d9dee7" stroke="#333" stroke-width="1.2"/>
+<text x="540" y="132" text-anchor="middle" font-size="10">3ª camada (embaixo): terças TR, longarinas, tirantes — montam por último</text>
+<rect x="360" y="96" width="360" height="20" fill="#c9d0dc" stroke="#333" stroke-width="1.2"/>
+<text x="540" y="110" text-anchor="middle" font-size="10">2ª camada: tesouras T-02…, vigas V — montam em seguida</text>
+<rect x="370" y="74" width="340" height="20" fill="#b8c0cf" stroke="#333" stroke-width="1.2"/>
+<text x="540" y="88" text-anchor="middle" font-size="10">1ª camada (em cima): pilares P-01/P-02, CV verticais — montam primeiro</text>
+<!-- calços -->
+<g fill="#7a3e00"><rect x="400" y="94" width="14" height="4"/><rect x="660" y="94" width="14" height="4"/><rect x="400" y="116" width="14" height="4"/><rect x="660" y="116" width="14" height="4"/></g>
+<text x="540" y="66" text-anchor="middle" font-size="9.5" fill="#7a3e00">calços de madeira alinhados entre camadas (não amassar mesas, proteger a pintura)</text>
+<text x="540" y="195" text-anchor="middle" font-size="10">amarrar com cintas (não correntes diretas sobre pintura); centro de gravidade baixo e centrado;</text>
+<text x="540" y="209" text-anchor="middle" font-size="10">peso por carreta ≤ 25–27 t úteis (bitrem 35–40 t); conferir romaneio na saída e no recebimento</text>
+</svg>
+<figcaption><b>Figura 11.11</b> – Etiqueta de identificação de peça e ordem de carregamento coerente com a sequência de montagem.</figcaption>
+</figure>
+
+<h3>11.10.4 Dimensões de transporte e emendas de transporte</h3>
+<p>As peças precisam caber no caminhão e nas estradas. Os limites usuais no Brasil para carga sem autorização especial (Resolução CONTRAN) são <strong>largura 2,60 m</strong>, <strong>altura total 4,40 m</strong> (carga + veículo) e comprimento do veículo de 14,0 m (caminhão simples) a 18,6–19,8 m (carreta articulada); o piso da carreta fica a ≈ 1,2–1,5 m do solo, o que deixa <strong>≈ 2,9–3,0 m de altura útil</strong>, e o comprimento útil da carreta é de 12,5 a 15 m. Cargas maiores são <strong>cargas indivisíveis especiais</strong>: exigem Autorização Especial de Trânsito (AET), batedores/escolta, horários restritos e custam bem mais — por isso tesouras de 25 ou 30 m são fabricadas em duas ou três partes com <strong>emendas de transporte</strong> parafusadas, e pilares acima de ~15 m recebem emendas (Figura 11.12).</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 305" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><marker id="s11_12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#333"/></marker></defs>
+<!-- carreta vista lateral -->
+<text x="250" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">Gabarito de transporte (carreta convencional)</text>
+<rect x="40" y="130" width="380" height="10" fill="#444"/>
+<rect x="20" y="95" width="45" height="45" fill="#444"/>
+<g fill="#444"><circle cx="45" cy="150" r="10"/><circle cx="90" cy="150" r="10"/><circle cx="360" cy="150" r="10"/><circle cx="395" cy="150" r="10"/></g>
+<line x1="10" y1="160" x2="440" y2="160" stroke="#333" stroke-width="1"/>
+<!-- envelope de carga -->
+<rect x="70" y="50" width="350" height="80" fill="#eef3fb" stroke="#0b3d91" stroke-width="1.2" stroke-dasharray="5 3"/>
+<text x="245" y="95" text-anchor="middle" font-size="11" fill="#0b3d91">área útil de carga</text>
+<g stroke="#555" stroke-width="1">
+<line x1="70" y1="35" x2="70" y2="48"/><line x1="420" y1="35" x2="420" y2="48"/><line x1="70" y1="40" x2="420" y2="40" marker-start="url(#s11_12)" marker-end="url(#s11_12)"/>
+<line x1="428" y1="50" x2="452" y2="50"/><line x1="428" y1="130" x2="452" y2="130"/><line x1="428" y1="160" x2="452" y2="160"/>
+<line x1="445" y1="50" x2="445" y2="130" marker-start="url(#s11_12)" marker-end="url(#s11_12)"/>
+<line x1="445" y1="130" x2="445" y2="160" marker-start="url(#s11_12)" marker-end="url(#s11_12)"/>
+</g>
+<text x="245" y="34" text-anchor="middle" font-size="10">12,5 a 15,0 m (comprimento útil)</text>
+<text x="452" y="82" font-size="10">≈ 2,9–</text><text x="452" y="94" font-size="10">3,0 m</text>
+<text x="452" y="149" font-size="10">≈ 1,4 m</text>
+<text x="530" y="60" font-size="10" fill="#333">altura total ≤ 4,40 m</text>
+<text x="530" y="74" font-size="10" fill="#333">largura ≤ 2,60 m</text>
+<text x="530" y="88" font-size="10" fill="#333">peso útil 25–27 t (carreta 3 eixos)</text>
+<text x="530" y="102" font-size="10" fill="#333">balanço traseiro ≤ 3,5 m (sinalizado)</text>
+<text x="530" y="116" font-size="10" fill="#c0392b">acima: carga especial → AET, escolta,</text>
+<text x="530" y="130" font-size="10" fill="#c0392b">horários restritos, custo 2 a 5 × maior</text>
+<text x="530" y="150" font-size="10" fill="#333">pranchas rebaixadas: altura útil</text>
+<text x="530" y="163" font-size="10" fill="#333">≈ 3,4–3,6 m</text>
+<!-- tesoura com emenda de transporte -->
+<text x="390" y="195" text-anchor="middle" font-weight="bold" fill="#0b3d91">Tesoura de 24 m dividida em duas partes de 12 m com emenda de transporte parafusada</text>
+<g stroke="#333" stroke-width="2.5" fill="none">
+<path d="M60 270 L390 215 L720 270"/>
+<path d="M60 270 L720 270"/>
+</g>
+<g stroke="#555" stroke-width="1.2">
+<line x1="120" y1="270" x2="120" y2="260"/><line x1="120" y1="260" x2="180" y2="270"/><line x1="180" y1="270" x2="180" y2="250"/><line x1="180" y1="250" x2="240" y2="270"/><line x1="240" y1="270" x2="240" y2="240"/><line x1="240" y1="240" x2="300" y2="270"/><line x1="300" y1="270" x2="300" y2="230"/><line x1="300" y1="230" x2="360" y2="270"/><line x1="360" y1="270" x2="360" y2="220"/>
+<line x1="660" y1="270" x2="660" y2="260"/><line x1="660" y1="260" x2="600" y2="270"/><line x1="600" y1="270" x2="600" y2="250"/><line x1="600" y1="250" x2="540" y2="270"/><line x1="540" y1="270" x2="540" y2="240"/><line x1="540" y1="240" x2="480" y2="270"/><line x1="480" y1="270" x2="480" y2="230"/><line x1="480" y1="230" x2="420" y2="270"/><line x1="420" y1="270" x2="420" y2="220"/>
+</g>
+<!-- emenda -->
+<rect x="376" y="208" width="28" height="16" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.2"/>
+<rect x="376" y="262" width="28" height="16" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.2"/>
+<g fill="#444"><circle cx="383" cy="216" r="2"/><circle cx="397" cy="216" r="2"/><circle cx="383" cy="270" r="2"/><circle cx="397" cy="270" r="2"/></g>
+<line x1="390" y1="200" x2="390" y2="285" stroke="#c0392b" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="390" y="295" text-anchor="middle" font-size="9.5" fill="#c0392b">emenda de transporte (talas parafusadas nos banzos, pré-montada em fábrica)</text>
+</svg>
+<figcaption><b>Figura 11.12</b> – Gabarito de transporte rodoviário e exemplo de divisão de uma tesoura para transporte com emenda parafusada.</figcaption>
+</figure>
+
+<table class="tab"><caption>Tabela 11.5 – Limites de transporte rodoviário (referência; confirmar a legislação vigente e as rotas)</caption>
+<thead><tr><th>Item</th><th>Sem autorização especial</th><th>Carga especial (AET)</th></tr></thead>
+<tbody>
+<tr><td class="l">Largura</td><td class="c">2,60 m</td><td class="c">até 3,20 m sem escolta; acima, com escolta</td></tr>
+<tr><td class="l">Altura total (veículo + carga)</td><td class="c">4,40 m</td><td class="c">até 4,95–5,00 m (verificar viadutos e redes elétricas)</td></tr>
+<tr><td class="l">Comprimento útil de carga</td><td class="c">12,5–15 m (carreta 3 eixos); 18–20 m em bitrens e carretas extensíveis com balanço</td><td class="c">até 25–30 m com carreta extensível; pilares e tesouras inteiras</td></tr>
+<tr><td class="l">Peso útil</td><td class="c">≈ 25–27 t (carreta 3 eixos); 35–40 t (bitrem)</td><td class="c">limitado por eixo e por ponte no trajeto</td></tr>
+<tr><td class="l">Custo e prazo</td><td class="c">frete usual (R$/t·km)</td><td class="c">2 a 5 × o frete; AET com prazo de dias a semanas; escolta e horários noturnos</td></tr>
+</tbody></table>
+
+<div class="box dica"><div class="tit">Onde colocar a emenda de transporte</div>
+<p>Em tesouras e treliças, a emenda fica de preferência em um nó, onde o momento é pequeno, e usa talas parafusadas nos banzos e nas diagonais que chegam ao nó. Em vigas de alma cheia, a emenda vai a cerca de 1/4 a 1/5 do vão (momento reduzido, cortante moderado), com chapas de emenda nas mesas e na alma (Capítulo 8). Emendas com chapa de topo em pilares vão logo acima do nível do piso (fácil acesso, sem plataforma). Sempre pré-monte a emenda em fábrica e marque as duas metades com a mesma marca e sufixo (T-05a / T-05b).</p></div>
+
+<h2>11.11 Produtividade e custo de fabricação <span class="nivel a">Avançado</span></h2>
+<p>A fabricação é medida em <strong>homem-hora por tonelada (hh/t)</strong>, contando todas as horas diretas de produção (corte, furação, montagem, solda, acabamento, pintura). O número varia enormemente com a complexidade: quanto mais chapas, furos e soldas por tonelada, mais horas. Peças pesadas e simples "diluem" as horas; peças leves e cheias de detalhes as concentram. A Tabela 11.6 dá faixas indicativas para fábricas brasileiras de porte médio.</p>
+
+<table class="tab"><caption>Tabela 11.6 – Produtividade de fabricação típica (valores indicativos, fábrica com equipamentos convencionais e algum CNC)</caption>
+<thead><tr><th>Tipo de estrutura</th><th>hh/t (fabricação)</th><th>Peso típico de aço</th><th>Observações</th></tr></thead>
+<tbody>
+<tr><td class="l">Galpão simples (pórticos de alma cheia, terças formadas a frio, ligações parafusadas padronizadas)</td><td class="c">15–25</td><td class="c">25–45 kg/m²</td><td class="l">alta repetição; linhas CNC reduzem para 10–15</td></tr>
+<tr><td class="l">Galpão com ponte rolante, treliças e mezaninos</td><td class="c">25–40</td><td class="c">45–80 kg/m²</td><td class="l">treliças consomem muita solda por tonelada</td></tr>
+<tr><td class="l">Edifício de andares com ligações flexíveis (chapa simples, cantoneiras)</td><td class="c">25–35</td><td class="c">50–90 kg/m²</td><td class="l">vigas e pilares pesados, ligações repetidas</td></tr>
+<tr><td class="l">Edifício ou estrutura industrial com ligações rígidas e complexas (chapas de topo, enrijecedores, emendas soldadas)</td><td class="c">35–60</td><td class="c">80–150 kg/m²</td><td class="l">inspeção de solda e pré-montagem pesam</td></tr>
+<tr><td class="l">Estruturas leves e complexas (escadas, passarelas, plataformas de processo, tubulações de suporte)</td><td class="c">50–100+</td><td class="c">—</td><td class="l">pouca massa, muito detalhe; orçar por unidade e não por tonelada</td></tr>
+</tbody></table>
+
+<p>O <strong>custo total</strong> de uma estrutura metálica instalada se distribui aproximadamente como mostra a Figura 11.13. O material é a parcela dominante, mas a mão de obra de fabricação e montagem, somada, é da mesma ordem — e é ela que varia com a qualidade do detalhamento. Projetos que padronizam ligações, reduzem o número de peças diferentes e evitam soldas desnecessárias reduzem custo mesmo consumindo um pouco mais de aço.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 170" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<text x="350" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">Composição indicativa do custo de uma estrutura metálica instalada (galpão / edifício convencional)</text>
+<!-- barra: total 600 px = 100% -->
+<g stroke="#333" stroke-width="1">
+<rect x="50" y="40" width="318" height="40" fill="#0b3d91"/>
+<rect x="368" y="40" width="150" height="40" fill="#1f5fbf"/>
+<rect x="518" y="40" width="42" height="40" fill="#7a3e00"/>
+<rect x="560" y="40" width="90" height="40" fill="#2e8b57"/>
+</g>
+<g fill="#fff" text-anchor="middle" font-weight="bold" font-size="11">
+<text x="209" y="58">Material (aço, parafusos)</text><text x="209" y="73">45–60 %</text>
+<text x="443" y="58">Fabricação</text><text x="443" y="73">20–30 %</text>
+<text x="539" y="58">Pint.</text><text x="539" y="73">5–10</text>
+<text x="605" y="58">Montagem</text><text x="605" y="73">10–20 %</text>
+</g>
+<g font-size="10" fill="#333">
+<text x="50" y="105">Material: perfis, chapas, parafusos, consumíveis — segue a cotação do aço (varia ± 30 % em poucos anos).</text>
+<text x="50" y="121">Fabricação: mão de obra (hh/t × custo horário), energia, depreciação de máquinas, engenharia de detalhamento (2–5 % do total).</text>
+<text x="50" y="137">Pintura: preparação de superfície + tinta + aplicação; galvanização a fogo custa em geral mais (Capítulo 12).</text>
+<text x="50" y="153">Montagem: equipe, guindaste, transporte (frete 3–6 % do total, fora de grandes centros mais). Valores mudam com a região e o ano.</text>
+</g>
+</svg>
+<figcaption><b>Figura 11.13</b> – Composição indicativa do custo de uma estrutura metálica instalada. As faixas se sobrepõem porque dependem do tipo de obra e da cotação do aço.</figcaption>
+</figure>
+
+<div class="box exemplo"><div class="tit">Exemplo 11.1 – Estimativa de horas e prazo de fabricação de um galpão</div>
+<p>Galpão de 40 × 80 m (3 200 m²), pórticos de alma cheia a cada 8 m, ponte rolante de 5 t. Peso estimado: 55 kg/m² × 3 200 m² = 176 t. Fábrica com 30 operários diretos, 8,8 h/dia, 22 dias/mês.</p>
+<div class="passo"><b>Passo 1 – horas de fabricação.</b> Estrutura com ponte rolante: 30 hh/t (Tabela 11.6). Horas = 176 × 30 = 5 280 hh.</div>
+<div class="passo"><b>Passo 2 – capacidade da fábrica.</b> 30 × 8,8 × 22 ≈ 5 800 hh/mês, com eficiência de 80 % → 4 640 hh/mês úteis → ≈ 155 t/mês nesse tipo de obra.</div>
+<div class="passo"><b>Passo 3 – prazo.</b> 5 280 / 4 640 ≈ 1,15 mês de produção pura. Somando 3–4 semanas de detalhamento e aprovação, 2–3 semanas de compra do aço (perfis fora de estoque podem levar 30–60 dias) e 1 semana de pintura/expedição, o prazo realista do pedido à primeira carga é de 8 a 10 semanas, e da última carga, 11 a 13 semanas.</div>
+<div class="passo"><b>Passo 4 – ordem de grandeza de custo.</b> Se o material custa, digamos, 55 % do total e o valor do aço processado é conhecido, o custo total ≈ custo do material / 0,55. Já o custo de fabricação isolado é 5 280 hh × (custo horário com encargos e despesas indiretas). Os valores monetários mudam; o método não.</div>
+</div>
+
+<h2>11.12 Como escolher e avaliar uma fábrica <span class="nivel a">Avançado</span></h2>
+<p>Antes de contratar uma fábrica — ou de auditar a que já foi contratada — vale uma visita com roteiro. Os pontos a observar:</p>
+<ul>
+<li><strong>Equipamentos</strong>: serra de fita para perfis, linha CNC de furação (ou ao menos furadeiras radiais com gabaritos), mesa de corte plasma/oxicorte CNC, dobradeira, calandra, máquinas de solda MIG/MAG e arco submerso para perfis soldados, cabine de jateamento com granalha e cabine de pintura, pontes rolantes com capacidade compatível com as peças mais pesadas da obra.</li>
+<li><strong>Pessoas</strong>: soldadores qualificados (certificados por EPS/RQS em dia), inspetor de solda (nível 1 ou 2 FBTS ou equivalente), inspetor de pintura, engenheiro responsável, detalhadores próprios ou parceiros.</li>
+<li><strong>Sistema de qualidade</strong>: certificação <strong>ISO 9001</strong> é um bom sinal, mas o que importa é ver os registros funcionando: PIT, RNCs, certificados arquivados, calibração de trenas, paquímetros, medidores de EPS e torquímetros. Fábricas que exportam ou atendem petroquímica podem ter certificação <strong>EN 1090</strong> (marcação CE, classes de execução EXC1–EXC4) ou AISC Certified — referências de alto nível.</li>
+<li><strong>Histórico</strong>: obras semelhantes entregues, visitas a clientes, cumprimento de prazo, saúde financeira (aço é comprado adiantado — uma fábrica descapitalizada atrasa por falta de material).</li>
+<li><strong>Capacidade real</strong> em t/mês para o tipo de obra e a carga já contratada nos meses do seu projeto.</li>
+<li><strong>Organização do pátio</strong>: aço identificado e calçado, fluxo linear, peças prontas identificadas, EPIs em uso, área de sucata separada. O pátio diz muito sobre a gestão.</li>
+</ul>
+
+<h2>11.13 Checklist e erros comuns <span class="nivel b">Básico</span></h2>
+<h3>11.13.1 Erros comuns de detalhamento e fabricação</h3>
+<ul>
+<li>Cortar aço antes da aprovação do detalhamento pelo calculista — mudanças posteriores viram sucata.</li>
+<li>Trocar o material (A36 no lugar de A572) por falta de identificação no estoque.</li>
+<li>Cotas acumuladas na traçagem: erro de 1 mm por furo vira 8 mm no fim da chapa.</li>
+<li>Puncionar chapas grossas em tamanho final; abrir furos alargados com maçarico.</li>
+<li>Furos de chapas de topo e de emendas fora de tolerância — a ligação não fecha e alguém "resolve" com maçarico em obra.</li>
+<li>Peças espelhadas fabricadas iguais (esquecer o "E").</li>
+<li>Filetes de solda maiores que o projeto "por segurança": mais distorção, mais custo, sem ganho.</li>
+<li>Pintar as faces de contato de ligações por atrito ou as zonas de solda de campo.</li>
+<li>Ignorar as dimensões de transporte e descobrir na expedição que a tesoura não cabe.</li>
+<li>Carregar sem lógica de montagem; romaneio divergente do que está no caminhão.</li>
+<li>Deixar cantos reentrantes vivos em recortes (cope) de vigas — concentradores de tensão e origem de trincas.</li>
+</ul>
+
+<h3>11.13.2 Checklist de fabricação</h3>
+<ul class="chk">
+<li>Desenhos de fabricação com revisão atual, aprovados pelo projetista e liberados para produção.</li>
+<li>Certificados de aço, parafusos, consumíveis e tintas arquivados e conferidos com o especificado.</li>
+<li>Aço identificado por material e corrida no estoque; barras calçadas e separadas.</li>
+<li>Traçagem a partir de uma única referência; gabaritos de furos conferidos contra o desenho.</li>
+<li>Processos de furação compatíveis com a espessura (punção só se t ≤ d + 3 mm); furos alargados só por broca ou CNC.</li>
+<li>Cantos reentrantes arredondados (r ≥ 13 mm); bordas de corte térmico esmerilhadas onde receberão solda.</li>
+<li>Inspeção dimensional antes da solda final: comprimento, esquadro, posição de chapas, orientação.</li>
+<li>Soldas conforme símbolos e EPS; inspeção visual 100 % e END conforme o projeto; registros por peça e soldador.</li>
+<li>Retilineidade e esquadro dentro da Tabela 11.4; retificação térmica com temperatura controlada.</li>
+<li>Faces de contato de ligações por atrito e zonas de solda de campo protegidas da pintura.</li>
+<li>Marcas em duas posições, etiqueta completa, peças espelhadas identificadas.</li>
+<li>Emendas de transporte pré-montadas; dimensões e pesos compatíveis com o transporte.</li>
+<li>Romaneio conferido; carregamento na ordem inversa da montagem; calços e cintas protegendo a pintura.</li>
+<li>RNCs registradas e fechadas, com concessões assinadas pelo projetista quando houver.</li>
+</ul>
+
+<div class="resumo"><div class="tit">Resumo do capítulo</div><ul>
+<li>O projeto estrutural define <em>o que</em> a estrutura é; o detalhamento define <em>cada peça</em> e deve ser aprovado pelo calculista antes de cortar aço.</li>
+<li>O desenho de fabricação é autossuficiente: marca, quantidade, material, cotas, furos, soldas, acabamento, peso e carimbo. As marcas identificam a peça da fábrica à posição final.</li>
+<li>Modelos 3D (BIM/IFC) geram desenhos, listas e arquivos NC/DSTV para as máquinas CNC, reduzindo erros de transcrição.</li>
+<li>O fluxo de fábrica é linear: recebimento → estoque → traçagem → corte → furação → conformação → pré-montagem → solda → acabamento → inspeção → jato → pintura → identificação → expedição.</li>
+<li>Serra para perfis; guilhotina até ~12,7 mm; plasma CNC até ~40 mm; oxicorte para chapas grossas; laser para chapas finas e precisão.</li>
+<li>Puncionar só se t ≤ d + 3 mm; furos alargados e alongados só por broca ou CNC; nunca maçarico.</li>
+<li>Raio interno de dobra ≥ 1–2 t; calandragem em passadas; retificação de empeno por aquecimento localizado ≤ 650 °C.</li>
+<li>Tolerâncias usuais: comprimento ± 2 mm (± 3 mm acima de 9 m); retilineidade L/1000 ≤ 10 mm; furos ± 1 mm no grupo, ± 2 mm entre grupos.</li>
+<li>Qualidade se organiza por PIT, registros e RNCs, com rastreabilidade por corrida; segurança pela NR-12, NR-11 e NR-06.</li>
+<li>Transporte: 2,60 m × 4,40 m × 12,5–15 m sem autorização especial; acima disso, emendas de transporte ou carga especial.</li>
+<li>Produtividade de 15–25 hh/t (galpão simples) a 35–60 hh/t (ligações complexas); material é 45–60 % do custo, fabricação 20–30 %, pintura 5–10 %, montagem 10–20 %.</li>
+</ul></div>

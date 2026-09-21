@@ -1,0 +1,15 @@
+Projeto de exemplo gerado pelo sistema.
+
+Galpão de 20 m de vão por 40 m de comprimento, pé-direito 6 m, pórticos a cada 5 m,
+vento V0 = 40 m/s, categoria II, classe B.
+
+  desenhos/   11 arquivos DXF, abrem em AutoCAD, BricsCAD, QCAD ou LibreCAD; do
+              pórtico ao nó de contraventamento, mais os diagramas de M, V e N e o
+              quadro de verificações
+  pranchas/   6 pranchas em PDF com carimbo, prontas para impressão (A1 e A2)
+  memorial/   memorial de cálculo com todas as verificações passo a passo
+  lista/      romaneio, resumo de compra e orçamento (CSV para Excel e PDF)
+  ifc/        modelo 3D em IFC4 (pilares, vigas, terças, contraventamentos e chapas),
+              abre no editor 3D do sistema, no Revit, no Tekla, no BIMcollab e no BlenderBIM
+
+Para gerar outro projeto, rode "python app.py" na pasta sistema.

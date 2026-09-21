@@ -1,0 +1,694 @@
+<h1 class="cap"><small>Capítulo 2</small>O aço como material</h1>
+<div class="objetivos"><div class="tit">O que você vai aprender neste capítulo</div>
+<ul>
+<li>O que é o aço, o que o carbono e os elementos de liga fazem com ele e como ele é produzido na usina.</li>
+<li>As propriedades físicas que todo cálculo usa: E, G, ν, ρ e α.</li>
+<li>Ler o diagrama tensão–deformação e entender f<sub>y</sub>, f<sub>u</sub>, alongamento, ductilidade, tenacidade, dureza, resiliência e fadiga.</li>
+<li>Soldabilidade e carbono equivalente: quando pré-aquecer.</li>
+<li>O que acontece com o aço no incêndio (NBR 14323).</li>
+<li>Os aços estruturais vendidos no Brasil (ASTM, NBR 7007, CSN, Usiminas, galvanizados, tubos), com f<sub>y</sub>, f<sub>u</sub> e uso típico.</li>
+<li>Aço patinável, aços inoxidáveis e alumínio: quando e onde usar.</li>
+<li>Como ler um certificado de qualidade, o que ensaiar no recebimento e como especificar o aço no projeto.</li>
+</ul></div>
+
+<h2>2.1 O que é o aço <span class="nivel b">Básico</span></h2>
+<p>O aço é uma <strong>liga de ferro e carbono</strong> com teor de carbono inferior a cerca de 2 %, contendo ainda pequenas quantidades de manganês, silício, fósforo, enxofre e, quando desejado, elementos de liga (cobre, cromo, níquel, nióbio, vanádio). Acima de 2 % de carbono o material é <strong>ferro fundido</strong> — duro, frágil e não soldável, bom para peças moldadas, mas não para vigas. Abaixo de 0,05 % temos praticamente o ferro puro, mole demais para uso estrutural.</p>
+<p>Os <strong>aços estruturais</strong> são <strong>aços de baixo carbono</strong>: entre <strong>0,15 e 0,29 % de C</strong> (o ASTM A36, por exemplo, limita o carbono a 0,26 % em perfis leves e 0,29 % nas chapas mais grossas). Esse teor baixo é proposital: é ele que garante a <strong>ductilidade</strong> (capacidade de se deformar muito antes de romper) e a <strong>soldabilidade</strong>, as duas qualidades que tornam o aço seguro e fácil de fabricar. Quanto mais carbono, mais resistente e mais duro fica o aço — mas também mais frágil e mais difícil de soldar.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 210" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s2_1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker></defs>
+<!-- escala de carbono 0 a 4,5 % : x=60..660 (133,3 px por %) -->
+<rect x="60" y="60" width="40" height="40" fill="#dfe8f7" stroke="#333" stroke-width="1.2"/>
+<rect x="100" y="60" width="40" height="40" fill="#0b3d91" stroke="#333" stroke-width="1.2"/>
+<rect x="140" y="60" width="40" height="40" fill="#5f88cc" stroke="#333" stroke-width="1.2"/>
+<rect x="180" y="60" width="187" height="40" fill="#fff7d6" stroke="#333" stroke-width="1.2"/>
+<rect x="367" y="60" width="293" height="40" fill="#fdecec" stroke="#333" stroke-width="1.2"/>
+<g font-size="11" text-anchor="middle" fill="#333">
+<text x="60" y="118">0</text><text x="100" y="118">0,15</text><text x="140" y="118">0,30</text><text x="180" y="118">0,60</text><text x="367" y="118">2,0</text><text x="660" y="118">4,5 % C</text>
+</g>
+<g font-size="11" text-anchor="middle">
+<text x="80" y="44" fill="#333">ferro</text><text x="80" y="55" fill="#333">quase puro</text>
+<text x="120" y="136" text-anchor="middle" font-size="10" fill="#123a7a" font-weight="bold">baixo carbono</text>
+<text x="273" y="78" fill="#8a6508" font-weight="bold">médio e alto carbono</text><text x="273" y="92" fill="#8a6508" font-size="10">eixos, molas, ferramentas, trilhos</text>
+<text x="513" y="78" fill="#a12a1f" font-weight="bold">ferro fundido</text><text x="513" y="92" fill="#a12a1f" font-size="10">peças moldadas; frágil; não soldável</text>
+</g>
+<line x1="100" y1="30" x2="140" y2="30" stroke="#0b3d91" stroke-width="2" marker-start="url(#s2_1)" marker-end="url(#s2_1)"/>
+<text x="120" y="20" text-anchor="middle" font-size="11" fill="#0b3d91" font-weight="bold">aços estruturais: 0,15 a 0,29 % C</text>
+<g font-size="12">
+<line x1="60" y1="150" x2="660" y2="150" stroke="#c0392b" stroke-width="2" marker-end="url(#s2_1)"/>
+<text x="360" y="144" text-anchor="middle" fill="#c0392b">resistência e dureza aumentam com o carbono</text>
+<line x1="660" y1="185" x2="60" y2="185" stroke="#2e8b57" stroke-width="2" marker-end="url(#s2_1)"/>
+<text x="360" y="200" text-anchor="middle" fill="#1f6b41">ductilidade, tenacidade e soldabilidade aumentam com menos carbono</text>
+</g>
+</svg>
+<figcaption><b>Figura 2.1</b> – O teor de carbono define a família do material: os aços estruturais ficam na faixa de baixo carbono.</figcaption>
+</figure>
+
+<h2>2.2 Como o aço é produzido <span class="nivel b">Básico</span></h2>
+<p>Há duas rotas para produzir aço, e ambas existem no Brasil (Figura 2.2):</p>
+<ul>
+<li><strong>Rota integrada (alto-forno + aciaria LD)</strong>: minério de ferro, coque (carvão mineral destilado) e calcário são carregados no <strong>alto-forno</strong>, onde o minério é reduzido a <strong>ferro-gusa</strong> líquido, com cerca de 4 % de carbono. O gusa segue para a <strong>aciaria</strong>, onde, no <strong>conversor LD</strong> (sopro de oxigênio puro), o excesso de carbono é queimado em cerca de 20 minutos, e o metal vira aço. É a rota da CSN, Usiminas, ArcelorMittal Tubarão e Gerdau Ouro Branco.</li>
+<li><strong>Rota semi-integrada (aciaria elétrica)</strong>: sucata de aço (e às vezes ferro-esponja ou gusa sólido) é fundida em um <strong>forno elétrico a arco</strong>. É a rota típica das usinas de perfis e barras (Gerdau, por exemplo) e a razão de o aço ser o material mais reciclado do mundo — um perfil novo pode ter mais de 90 % de sucata.</li>
+</ul>
+<p>Nos dois casos o aço líquido passa pelo <strong>refino secundário</strong> (forno-panela e desgaseificação), onde a composição é ajustada com precisão: adiciona-se manganês, silício, nióbio, vanádio; remove-se enxofre, fósforo e gases. É nessa etapa que nasce a <strong>corrida</strong> (<em>heat</em>) — o lote de 50 a 300 t de aço com a mesma composição, identificado por um número que acompanha o material até o certificado de qualidade.</p>
+<p>O aço líquido vai então para o <strong>lingotamento contínuo</strong>, onde solidifica em <strong>placas</strong> (para chapas e bobinas), <strong>tarugos</strong> (barras, fio-máquina) ou <strong>blocos e beam blanks</strong> (perfis). Esses semiacabados são reaquecidos a cerca de 1 200 °C e passam pela <strong>laminação a quente</strong>: sucessivos pares de cilindros reduzem a seção e dão a forma final — perfis I/H/U/L, chapas grossas, bobinas a quente, barras. Parte das bobinas a quente é decapada e passa pela <strong>laminação a frio</strong> (à temperatura ambiente), que produz chapas finas com melhor acabamento e tolerância, usadas em perfis formados a frio, telhas e galvanizados (Figura 2.3).</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<defs><marker id="s2_2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b3d91"/></marker></defs>
+<g stroke="#333" stroke-width="1.3">
+<rect x="10" y="30" width="120" height="56" rx="5" fill="#f5f5f5"/>
+<rect x="160" y="30" width="120" height="56" rx="5" fill="#fdecec"/>
+<rect x="10" y="120" width="120" height="56" rx="5" fill="#f5f5f5"/>
+<rect x="160" y="120" width="120" height="56" rx="5" fill="#fdecec"/>
+<rect x="320" y="75" width="110" height="56" rx="5" fill="#fff7d6"/>
+<rect x="460" y="75" width="110" height="56" rx="5" fill="#fff7d6"/>
+<rect x="600" y="30" width="150" height="56" rx="5" fill="#eef3fb"/>
+<rect x="600" y="120" width="150" height="56" rx="5" fill="#eef3fb"/>
+<rect x="600" y="210" width="150" height="56" rx="5" fill="#e9f7ec"/>
+</g>
+<g stroke="#0b3d91" stroke-width="2" fill="none" marker-end="url(#s2_2)">
+<line x1="132" y1="58" x2="156" y2="58"/><line x1="132" y1="148" x2="156" y2="148"/>
+<path d="M282 58 L316 96"/><path d="M282 148 L316 110"/>
+<line x1="432" y1="103" x2="456" y2="103"/>
+<path d="M572 103 L596 66"/><path d="M572 103 L596 140"/>
+<path d="M675 178 V206"/>
+</g>
+<g text-anchor="middle" font-weight="bold" fill="#0b3d91" font-size="12">
+<text x="70" y="50">Minério + coque</text><text x="70" y="64">+ calcário</text>
+<text x="220" y="50">ALTO-FORNO</text>
+<text x="70" y="140">Sucata de aço</text>
+<text x="220" y="140">FORNO ELÉTRICO</text>
+<text x="375" y="95">ACIARIA</text>
+<text x="515" y="95">LINGOTAMENTO</text>
+<text x="675" y="50">LAMINAÇÃO A QUENTE</text>
+<text x="675" y="140">LAMINAÇÃO A QUENTE</text>
+<text x="675" y="230">LAMINAÇÃO A FRIO</text>
+</g>
+<g text-anchor="middle" fill="#1a1a1a">
+<text x="70" y="78">rota integrada</text>
+<text x="220" y="64">ferro-gusa líquido</text><text x="220" y="78">≈ 4 % C, 1 500 °C</text>
+<text x="70" y="168">rota semi-integrada</text>
+<text x="220" y="154">a arco</text><text x="220" y="168">funde a sucata</text>
+<text x="375" y="109">conversor LD (O₂)</text><text x="375" y="122">ou refino em panela</text>
+<text x="515" y="109">contínuo: placas,</text><text x="515" y="122">tarugos, blocos</text>
+<text x="675" y="64">perfis W, U, L, barras</text><text x="675" y="78">(≈ 1 200 °C → 900 °C)</text>
+<text x="675" y="154">chapas grossas e</text><text x="675" y="168">bobinas a quente (≥ 1,2 mm)</text>
+<text x="675" y="244">bobinas a frio (0,3–3 mm),</text><text x="675" y="258">galvanizadas, telhas</text>
+</g>
+<g fill="#555" text-anchor="middle">
+<text x="300" y="220">Semiacabados e produtos:</text>
+<text x="300" y="236">placa (200–250 mm) → chapas e bobinas</text>
+<text x="300" y="250">tarugo (100–160 mm²) → barras, cantoneiras pequenas, fio-máquina</text>
+<text x="300" y="264">bloco / beam blank → perfis I, H, U</text>
+</g>
+<text x="380" y="290" text-anchor="middle" fill="#555">A corrida (heat) é o lote de aço de composição única; seu número identifica o material no certificado.</text>
+</svg>
+<figcaption><b>Figura 2.2</b> – Fluxograma simplificado da produção do aço: rotas integrada e semi-integrada, aciaria, lingotamento contínuo e laminação.</figcaption>
+</figure>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h2_3" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s2_3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker>
+</defs>
+<!-- (a) laminação de chapa -->
+<text x="170" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Laminação de chapa (cilindros lisos)</text>
+<circle cx="170" cy="80" r="34" fill="#d9dee7" stroke="#333" stroke-width="1.8"/><circle cx="170" cy="80" r="5" fill="#333"/>
+<circle cx="170" cy="176" r="34" fill="#d9dee7" stroke="#333" stroke-width="1.8"/><circle cx="170" cy="176" r="5" fill="#333"/>
+<!-- placa entrando espessa, saindo fina -->
+<polygon points="30,108 136,116 136,140 30,148" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.5"/>
+<polygon points="204,120 320,120 320,136 204,136" fill="#e0a86a" stroke="#7a3e00" stroke-width="1.5"/>
+<path d="M136 116 Q170 118 204 120 M136 140 Q170 138 204 136" fill="none" stroke="#7a3e00" stroke-width="1.5"/>
+<!-- setas de rotação -->
+<path d="M150 56 a30 30 0 0 1 40 0" fill="none" stroke="#c0392b" stroke-width="1.6" marker-end="url(#s2_3)"/>
+<path d="M190 200 a30 30 0 0 1 -40 0" fill="none" stroke="#c0392b" stroke-width="1.6" marker-end="url(#s2_3)"/>
+<line x1="40" y1="128" x2="90" y2="128" stroke="#0b3d91" stroke-width="2" marker-end="url(#s2_3)"/>
+<g stroke="#555" stroke-width="1"><line x1="20" y1="108" x2="20" y2="148" marker-start="url(#s2_3)" marker-end="url(#s2_3)"/><line x1="332" y1="120" x2="332" y2="136" marker-start="url(#s2_3)" marker-end="url(#s2_3)"/></g>
+<text x="12" y="165" font-size="11" fill="#555">t₀</text><text x="326" y="152" font-size="11" fill="#555">t₁ &lt; t₀</text>
+<text x="170" y="224" text-anchor="middle" font-size="11" fill="#555">a quente: 1 200 → 900 °C, grandes reduções</text><text x="170" y="238" text-anchor="middle" font-size="11" fill="#555">a frio: ambiente, melhor acabamento e tolerância</text>
+<!-- (b) laminador universal de perfis -->
+<text x="530" y="20" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Laminador universal (perfis I/H)</text>
+<!-- perfil I no centro -->
+<path d="M500 80 h60 v12 h-22 v56 h22 v12 h-60 v-12 h22 v-56 h-22 z" fill="url(#h2_3)" stroke="#333" stroke-width="1.6"/>
+<!-- cilindros horizontais (acima e abaixo) -->
+<rect x="478" y="46" width="104" height="30" rx="4" fill="#d9dee7" stroke="#333" stroke-width="1.6"/>
+<rect x="478" y="164" width="104" height="30" rx="4" fill="#d9dee7" stroke="#333" stroke-width="1.6"/>
+<!-- cilindros verticais (laterais) -->
+<rect x="446" y="80" width="26" height="80" rx="4" fill="#d9dee7" stroke="#333" stroke-width="1.6"/>
+<rect x="588" y="80" width="26" height="80" rx="4" fill="#d9dee7" stroke="#333" stroke-width="1.6"/>
+<g stroke="#c0392b" stroke-width="1.6" marker-end="url(#s2_3)"><line x1="530" y1="36" x2="530" y2="44"/><line x1="530" y1="204" x2="530" y2="196"/><line x1="430" y1="120" x2="444" y2="120"/><line x1="630" y1="120" x2="616" y2="120"/></g>
+<text x="530" y="224" text-anchor="middle" font-size="11" fill="#555">cilindros horizontais: alma e mesas;</text><text x="530" y="238" text-anchor="middle" font-size="11" fill="#555">cilindros verticais: faces externas das mesas</text>
+</svg>
+<figcaption><b>Figura 2.3</b> – Laminação: (a) redução de espessura entre cilindros; (b) laminador universal, que produz perfis de mesas paralelas (W, H).</figcaption>
+</figure>
+
+<h2>2.3 Efeito dos elementos de liga <span class="nivel i">Intermediário</span></h2>
+<p>Além do carbono, cada elemento presente no aço — proposital ou residual — altera as propriedades. A Tabela 2.1 resume o que interessa ao engenheiro e ao fabricante. Repare que fósforo e enxofre são <strong>impurezas</strong> cujo teor a norma limita (P ≤ 0,04 %, S ≤ 0,05 % no A36), enquanto cobre, cromo e níquel em pequenas doses é o que torna um aço "patinável".</p>
+
+<table class="tab small"><caption>Tabela 2.1 – Elementos de liga e residuais nos aços estruturais</caption>
+<thead><tr><th style="width:10%">Elemento</th><th style="width:14%">Teor usual</th><th>Efeito principal</th><th>Observações práticas</th></tr></thead>
+<tbody>
+<tr><td class="l"><b>C</b> carbono</td><td class="c">0,15–0,29 %</td><td class="l">Aumenta f<sub>y</sub>, f<sub>u</sub> e dureza; reduz ductilidade, tenacidade e soldabilidade.</td><td class="l">Principal termo do carbono equivalente. Quanto menor, mais fácil de soldar.</td></tr>
+<tr><td class="l"><b>Mn</b> manganês</td><td class="c">0,6–1,6 %</td><td class="l">Aumenta resistência e tenacidade; neutraliza o enxofre (forma MnS).</td><td class="l">Elemento "amigo": dá resistência sem prejudicar muito a soldabilidade (peso 1/6 no CE).</td></tr>
+<tr><td class="l"><b>Si</b> silício</td><td class="c">0,15–0,40 %</td><td class="l">Desoxidante na aciaria (aço "acalmado"); pequeno ganho de resistência.</td><td class="l">Teor alto (&gt; 0,25 %) engrossa a camada de zinco na galvanização (efeito Sandelin).</td></tr>
+<tr><td class="l"><b>P</b> fósforo</td><td class="c">≤ 0,04 %</td><td class="l">Impureza: fragiliza a frio; em teores controlados (aços COR) ajuda a pátina.</td><td class="l">Limitado pela norma; alto P prejudica soldagem e tenacidade.</td></tr>
+<tr><td class="l"><b>S</b> enxofre</td><td class="c">≤ 0,05 %</td><td class="l">Impureza: forma inclusões que fragilizam a quente e reduzem a ductilidade na espessura.</td><td class="l">Aços com S ≤ 0,010 % resistem melhor ao rasgamento lamelar em chapas grossas soldadas.</td></tr>
+<tr><td class="l"><b>Cu</b> cobre</td><td class="c">0,20–0,50 %</td><td class="l">Melhora a resistência à corrosão atmosférica (pátina); leve aumento de resistência.</td><td class="l">Elemento-chave dos aços patináveis (A588, COR, SAC).</td></tr>
+<tr><td class="l"><b>Cr</b> cromo</td><td class="c">0,4–0,7 % (patinável)</td><td class="l">Resistência à corrosão e à oxidação a quente; aumenta a temperabilidade.</td><td class="l">≥ 10,5 % define o aço inoxidável. Peso 1/5 no CE.</td></tr>
+<tr><td class="l"><b>Ni</b> níquel</td><td class="c">0,2–0,5 % (patinável)</td><td class="l">Tenacidade a baixa temperatura; resistência à corrosão.</td><td class="l">Caro; nos inox austeníticos chega a 8–12 %.</td></tr>
+<tr><td class="l"><b>Nb</b> nióbio</td><td class="c">0,01–0,05 %</td><td class="l">Microligante: refina o grão, elevando f<sub>y</sub> sem aumentar o carbono (aços ARBL / HSLA).</td><td class="l">Base dos aços de alta resistência e boa soldabilidade (A572 Gr.50, AR350). O Brasil é o maior produtor mundial.</td></tr>
+<tr><td class="l"><b>V</b> vanádio</td><td class="c">0,01–0,10 %</td><td class="l">Microligante: endurecimento por precipitação; aumenta f<sub>y</sub> e a resistência a quente.</td><td class="l">Usado com Nb nos aços ARBL. Peso 1/5 no CE.</td></tr>
+<tr><td class="l"><b>Mo</b> molibdênio</td><td class="c">≤ 0,10 %</td><td class="l">Resistência a quente e à fluência; temperabilidade.</td><td class="l">Aços para vasos de pressão e alta temperatura.</td></tr>
+<tr><td class="l"><b>Al</b> alumínio</td><td class="c">0,02–0,06 %</td><td class="l">Desoxidante e refinador de grão (aço acalmado ao alumínio).</td><td class="l">Melhora a tenacidade; padrão em chapas de qualidade.</td></tr>
+</tbody></table>
+
+<div class="box"><div class="tit">Conceito: aços ARBL (alta resistência e baixa liga)</div>
+<p>Para elevar f<sub>y</sub> de 250 para 345 MPa sem aumentar o carbono, as usinas adicionam quantidades mínimas de nióbio e vanádio, que refinam o grão e formam precipitados. O resultado é um aço mais resistente, igualmente soldável e com o mesmo módulo E — o A572 Gr.50, o A992, o NBR 7007 AR350 e os USI-SAC/USI-CIVIL 350 são desse tipo. Como o preço por kg é apenas ligeiramente maior que o do A36, os aços ARBL costumam compensar em elementos governados por resistência (tração, flexão de vigas curtas); não compensam em elementos governados por flecha ou flambagem (governados por E, que não muda).</p></div>
+
+<h2>2.4 Propriedades físicas <span class="nivel b">Básico</span></h2>
+<p>As propriedades físicas do aço estrutural são praticamente as mesmas para todos os graus — do A36 aos aços de alta resistência — e são fixadas pela NBR 8800 para uso em projeto (Tabela 2.2). Memorize-as: elas aparecem em toda fórmula de flecha, flambagem e dilatação.</p>
+
+<table class="tab"><caption>Tabela 2.2 – Propriedades físicas do aço estrutural (NBR 8800)</caption>
+<thead><tr><th>Propriedade</th><th>Símbolo</th><th>Valor</th><th>Onde entra</th></tr></thead>
+<tbody>
+<tr><td class="l">Módulo de elasticidade longitudinal (módulo de Young)</td><td class="c">E</td><td class="c">200 000 MPa = 20 000 kN/cm²</td><td class="l">Flechas, flambagem (N<sub>cr</sub> = π²EI/L²), rigidez de pórticos, vibração</td></tr>
+<tr><td class="l">Módulo de elasticidade transversal</td><td class="c">G</td><td class="c">77 000 MPa (= E/[2(1+ν)])</td><td class="l">Torção, flambagem lateral com torção, deformação por cisalhamento</td></tr>
+<tr><td class="l">Coeficiente de Poisson</td><td class="c">ν</td><td class="c">0,3</td><td class="l">Flambagem local de chapas, placas</td></tr>
+<tr><td class="l">Massa específica</td><td class="c">ρ</td><td class="c">7 850 kg/m³ (peso específico 77 kN/m³)</td><td class="l">Peso próprio; massa de perfis e chapas (7,85 kg/m² por mm de espessura)</td></tr>
+<tr><td class="l">Coeficiente de dilatação térmica</td><td class="c">α</td><td class="c">1,2 × 10⁻⁵ /°C</td><td class="l">Juntas de dilatação, esforços por variação de temperatura, incêndio</td></tr>
+</tbody></table>
+
+<div class="box exemplo"><div class="tit">Exemplo 2.1 – Dilatação de um galpão</div>
+<p>Um galpão de 120 m de comprimento sofre variação de temperatura de 30 °C entre a noite e a tarde. Qual a variação de comprimento se a estrutura estiver livre?</p>
+<div class="passo">ΔL = α · L · ΔT = 1,2 × 10⁻⁵ × 120 000 mm × 30 = <b>43 mm</b>.</div>
+<div class="passo">Se a estrutura estivesse totalmente impedida, a tensão gerada seria σ = E · α · ΔT = 200 000 × 1,2 × 10⁻⁵ × 30 = <b>72 MPa</b> — quase 30 % de f<sub>y</sub> de um A36, só de temperatura. Por isso galpões longos (acima de 80 a 100 m) recebem juntas de dilatação ou furos oblongos nas ligações das terças e longarinas.</div></div>
+
+<h2>2.5 O diagrama tensão–deformação <span class="nivel b">Básico</span></h2>
+<p>A "identidade" mecânica de um aço é obtida no <strong>ensaio de tração</strong>: um corpo de prova padronizado (Figura 2.5) é puxado em uma máquina que registra a força e o alongamento até a ruptura. Dividindo a força pela área inicial (tensão σ) e o alongamento pelo comprimento inicial (deformação ε), obtém-se o diagrama da Figura 2.4. Nele estão as grandezas que todas as normas usam:</p>
+<ul>
+<li><strong>Regime elástico</strong>: trecho reto inicial; a tensão é proporcional à deformação (lei de Hooke, σ = E·ε) e, se descarregarmos, a peça volta ao tamanho original. A inclinação é o módulo E. Termina no <strong>limite de escoamento f<sub>y</sub></strong> (ε<sub>y</sub> = f<sub>y</sub>/E ≈ 0,125 % para o A36).</li>
+<li><strong>Patamar de escoamento</strong>: o aço "cede" — alonga-se de 1 a 2 % sem aumento de tensão. É a deformação plástica (permanente). Este patamar é a marca registrada dos aços de baixo carbono e a base do dimensionamento plástico e da redistribuição de esforços.</li>
+<li><strong>Encruamento</strong>: a partir de ε ≈ 1,5–2 %, o aço volta a ganhar resistência até atingir a tensão máxima, o <strong>limite de resistência à tração f<sub>u</sub></strong> (≈ 400 MPa no A36), com ε de 15 a 20 %.</li>
+<li><strong>Estricção e ruptura</strong>: após f<sub>u</sub>, a seção começa a se afinar localmente (estricção) e a tensão nominal cai até a ruptura, com alongamento total de 20 a 25 %.</li>
+</ul>
+
+<figure class="fig">
+<img src="fig/cap02_tensao_deformacao.png" alt="Diagrama tensão-deformação do aço A36">
+<figcaption><b>Figura 2.4</b> – Diagrama tensão–deformação típico de um aço estrutural de baixo carbono (ASTM A36), com os regimes e as grandezas de projeto.</figcaption>
+</figure>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s2_5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker></defs>
+<text x="350" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">Corpo de prova de tração (seção circular, NBR ISO 6892-1 / ASTM A370)</text>
+<!-- antes do ensaio -->
+<path d="M60 60 h110 q20 0 25 10 h330 q5 -10 25 -10 h110 v40 h-110 q-20 0 -25 -10 h-330 q-5 10 -25 10 h-110 z" fill="#d9dee7" stroke="#333" stroke-width="1.8"/>
+<g stroke="#555" stroke-width="1" fill="none">
+<line x1="215" y1="110" x2="215" y2="128"/><line x1="505" y1="110" x2="505" y2="128"/>
+<line x1="215" y1="122" x2="505" y2="122" marker-start="url(#s2_5)" marker-end="url(#s2_5)"/>
+<line x1="40" y1="70" x2="40" y2="90" marker-start="url(#s2_5)" marker-end="url(#s2_5)"/>
+<line x1="690" y1="60" x2="690" y2="100" marker-start="url(#s2_5)" marker-end="url(#s2_5)"/>
+<line x1="60" y1="46" x2="170" y2="46" marker-start="url(#s2_5)" marker-end="url(#s2_5)"/>
+<line x1="550" y1="46" x2="660" y2="46" marker-start="url(#s2_5)" marker-end="url(#s2_5)"/>
+</g>
+<g fill="#555" font-size="11" text-anchor="middle">
+<text x="360" y="138">L₀ = comprimento de medida inicial (5 d₀ ou 50 mm)</text>
+<text x="24" y="84">d₀</text>
+<text x="115" y="40">cabeça (garra)</text>
+<text x="585" y="46">cabeça (garra)</text>
+</g>
+<text x="360" y="85" text-anchor="middle" font-size="11" fill="#1a1a1a">parte útil: d₀ = 12,5 mm (típico), área A₀ = π d₀²/4</text>
+<!-- após ruptura -->
+<g transform="translate(0,90)">
+<path d="M60 60 h110 q20 0 25 10 h120 q30 0 40 -4 v28 q-10 -4 -40 -4 h-120 q-5 10 -25 10 h-110 z" fill="#d9dee7" stroke="#333" stroke-width="1.8"/>
+<path d="M375 58 q12 6 8 16 q-6 8 4 16 h130 q5 -10 25 -10 h110 v40 h-110 q-20 0 -25 -10 h-130 z" fill="#d9dee7" stroke="#333" stroke-width="1.8"/>
+<line x1="352" y1="45" x2="352" y2="105" stroke="#c0392b" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="352" y="120" text-anchor="middle" font-size="11" fill="#c0392b">estricção e ruptura</text>
+<line x1="215" y1="108" x2="215" y2="140" stroke="#555" stroke-width="1"/><line x1="560" y1="108" x2="560" y2="140" stroke="#555" stroke-width="1"/>
+<line x1="215" y1="136" x2="560" y2="136" stroke="#555" stroke-width="1" marker-start="url(#s2_5)" marker-end="url(#s2_5)"/>
+<text x="388" y="152" text-anchor="middle" font-size="11" fill="#555">L<tspan baseline-shift="sub" font-size="8">f</tspan> (juntando as duas metades): alongamento A = (L<tspan baseline-shift="sub" font-size="8">f</tspan> − L₀)/L₀ × 100 % — ex.: A36 ≥ 20 %</text>
+</g>
+</svg>
+<figcaption><b>Figura 2.5</b> – Corpo de prova de tração antes e depois do ensaio: L<sub>0</sub>, d<sub>0</sub>, estricção e medida do alongamento.</figcaption>
+</figure>
+
+<p>Nem todo aço tem patamar bem definido: os aços de alta resistência (tratados termicamente ou laminados a frio) apresentam curva contínua, e o f<sub>y</sub> é definido convencionalmente pela deformação residual de 0,2 %. A Figura 2.6 compara três classes de aço: observe que <strong>o módulo E é o mesmo</strong> (as retas iniciais coincidem) e que quanto maior a resistência, menor o alongamento.</p>
+
+<figure class="fig p90">
+<img src="fig/cap02_comparacao_acos.png" alt="Comparação de curvas tensão-deformação">
+<figcaption><b>Figura 2.6</b> – Curvas idealizadas do A36, do A572 Gr.50 e de um aço de alta resistência (690 MPa): mesma rigidez, resistências e ductilidades diferentes.</figcaption>
+</figure>
+
+<h2>2.6 Propriedades mecânicas e o que significam <span class="nivel i">Intermediário</span></h2>
+<h3>2.6.1 Resistência ao escoamento (f<sub>y</sub>) e à ruptura (f<sub>u</sub>)</h3>
+<p><strong>f<sub>y</sub></strong> é o valor mais usado no projeto: quase todas as resistências de cálculo da NBR 8800 (tração na área bruta, compressão, flexão, cisalhamento) são proporcionais a f<sub>y</sub>, divididas por γ<sub>a1</sub> = 1,10. <strong>f<sub>u</sub></strong> governa os estados-limites de ruptura: tração na área líquida (furos), pressão de contato em furos de parafusos, ruptura de soldas e blocos de cisalhamento, com γ<sub>a2</sub> = 1,35. A relação f<sub>u</sub>/f<sub>y</sub> (1,6 no A36; 1,3 no A572 Gr.50; 1,15 em aços de 690 MPa) mede a "reserva" após o escoamento — as normas exigem f<sub>u</sub>/f<sub>y</sub> ≥ 1,18 para o dimensionamento plástico. Os valores de norma são <strong>mínimos garantidos</strong>: um A36 real costuma ter f<sub>y</sub> de 270 a 320 MPa.</p>
+
+<h3>2.6.2 Alongamento e ductilidade</h3>
+<p>O <strong>alongamento</strong> (A, em %) é a deformação permanente medida após a ruptura sobre a base L<sub>0</sub>; a norma exige ≥ 20 % (L<sub>0</sub> = 200 mm) para o A36 e ≥ 18 % para o A572 Gr.50 — em L<sub>0</sub> = 50 mm os mínimos sobem para 23 % e 21 %. Ele quantifica a <strong>ductilidade</strong>, a capacidade de o aço se deformar plasticamente sem romper. Na prática, a ductilidade é o que permite: (1) redistribuir esforços em ligações e estruturas hiperestáticas, tolerando pequenos erros de fabricação; (2) dobrar chapas e perfis a frio; (3) avisar antes de romper — uma viga dúctil flecha visivelmente antes do colapso, enquanto um material frágil rompe de repente.</p>
+
+<h3>2.6.3 Tenacidade e ensaio Charpy</h3>
+<p><strong>Tenacidade</strong> é a energia que o material absorve até fraturar — a área sob a curva tensão–deformação. Ela depende fortemente da <strong>temperatura</strong>: os aços de baixo carbono (estrutura cristalina cúbica de corpo centrado) sofrem uma <strong>transição dúctil-frágil</strong>: acima de certa temperatura fraturam de modo dúctil, absorvendo muita energia; abaixo dela, de modo frágil, absorvendo pouca. O <strong>ensaio Charpy</strong> mede essa energia (em joules) rompendo um corpo de prova entalhado com um pêndulo (Figura 2.7). Especificações típicas: 27 J a 0 °C ou a −20 °C, conforme a temperatura de serviço e a importância da peça. A tenacidade importa em estruturas soldadas com chapas grossas, sujeitas a impacto ou fadiga (pontes, vigas de rolamento, estruturas offshore) e a baixas temperaturas (câmaras frias, região Sul no inverno); para galpões e edifícios correntes, à temperatura ambiente, raramente é especificada.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h2_7" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s2_7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker>
+</defs>
+<!-- (a) pêndulo -->
+<text x="160" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Ensaio Charpy</text>
+<circle cx="160" cy="50" r="6" fill="#333"/>
+<line x1="160" y1="50" x2="60" y2="120" stroke="#333" stroke-width="3"/>
+<rect x="36" y="110" width="40" height="30" rx="4" fill="#d9dee7" stroke="#333" stroke-width="1.5" transform="rotate(-35 56 125)"/>
+<path d="M58 150 A115 115 0 0 0 160 190" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#s2_7)"/>
+<line x1="160" y1="50" x2="160" y2="190" stroke="#555" stroke-width="1" stroke-dasharray="3 3"/>
+<!-- bigorna e corpo de prova -->
+<rect x="120" y="200" width="30" height="30" fill="#c8c8c8" stroke="#333" stroke-width="1.2"/><rect x="170" y="200" width="30" height="30" fill="#c8c8c8" stroke="#333" stroke-width="1.2"/>
+<rect x="132" y="184" width="56" height="12" fill="url(#h2_7)" stroke="#333" stroke-width="1.4"/>
+<polygon points="157,196 163,196 160,190" fill="#fff" stroke="#333" stroke-width="1"/>
+<g font-size="11" fill="#555"><text x="200" y="176">corpo de prova 10×10×55 mm</text><text x="200" y="190">com entalhe em V (2 mm)</text><text x="215" y="222">bigorna</text><text x="30" y="90">martelo</text><text x="168" y="60">pivô</text></g>
+<text x="160" y="250" text-anchor="middle" font-size="11" fill="#555">energia absorvida = altura de queda − altura de subida (J)</text>
+<!-- (b) curva de transição -->
+<text x="540" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Curva de transição dúctil-frágil</text>
+<line x1="360" y1="220" x2="720" y2="220" stroke="#333" stroke-width="1.5" marker-end="url(#s2_7)"/>
+<line x1="360" y1="220" x2="360" y2="40" stroke="#333" stroke-width="1.5" marker-end="url(#s2_7)"/>
+<path d="M370 205 C 440 203, 470 200, 500 170 S 560 70, 620 62 S 690 58, 710 58" fill="none" stroke="#0b3d91" stroke-width="2.5"/>
+<rect x="370" y="60" width="150" height="150" fill="#fdecec" fill-opacity=".5"/>
+<rect x="600" y="60" width="110" height="150" fill="#e9f7ec" fill-opacity=".5"/>
+<text x="445" y="80" text-anchor="middle" font-size="11" fill="#a12a1f">fratura frágil</text><text x="445" y="94" text-anchor="middle" font-size="10" fill="#a12a1f">(patamar inferior, ≈ 5–10 J)</text>
+<text x="655" y="80" text-anchor="middle" font-size="11" fill="#1f6b41">fratura dúctil</text><text x="655" y="94" text-anchor="middle" font-size="10" fill="#1f6b41">(patamar superior, &gt; 100 J)</text>
+<text x="596" y="52" text-anchor="end" font-size="11" fill="#333">zona de transição</text><line x1="546" y1="56" x2="536" y2="124" stroke="#555" stroke-width=".9"/>
+<line x1="555" y1="220" x2="555" y2="120" stroke="#555" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="555" y="236" text-anchor="middle" font-size="11" fill="#555">T de transição</text>
+<line x1="360" y1="185" x2="490" y2="185" stroke="#c0392b" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="366" y="180" font-size="10" fill="#c0392b">requisito: 27 J</text>
+<line x1="490" y1="220" x2="490" y2="185" stroke="#c0392b" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="490" y="236" text-anchor="middle" font-size="10" fill="#c0392b">−20 °C</text>
+<text x="712" y="236" text-anchor="end" font-size="11" fill="#333">temperatura →</text>
+<text x="372" y="52" font-size="11" fill="#333">energia (J)</text>
+<text x="540" y="252" text-anchor="middle" font-size="10" fill="#555">Ni, Mn, Al e grão fino deslocam a curva para a esquerda (melhor);</text><text x="540" y="264" text-anchor="middle" font-size="10" fill="#555">C, P, S e grão grosso deslocam para a direita (pior).</text>
+</svg>
+<figcaption><b>Figura 2.7</b> – Tenacidade: (a) o ensaio de impacto Charpy; (b) curva de transição dúctil-frágil e o requisito típico de 27 J a −20 °C.</figcaption>
+</figure>
+
+<h3>2.6.4 Dureza e resiliência</h3>
+<p><strong>Dureza</strong> é a resistência à penetração, medida por ensaios Brinell (HB, esfera), Rockwell (HRB/HRC, cone ou esfera) ou Vickers (HV, pirâmide). Para aços de baixo carbono, a dureza se correlaciona com f<sub>u</sub> (f<sub>u</sub> ≈ 3,4 × HB, em MPa): um A36 tem cerca de 120 HB; um A572 Gr.50, 140 HB. Na oficina o durômetro serve para conferir rapidamente se um lote é "o aço certo" e, na solda, para detectar zonas endurecidas (ZTA com HV &gt; 350 indica risco de trinca a frio). <strong>Resiliência</strong> é a energia absorvida no regime elástico (área sob o trecho reto, = f<sub>y</sub>²/2E): mede a capacidade de absorver choques sem deformação permanente — relevante em molas e defensas, não em vigas.</p>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 230" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s2_8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker>
+<pattern id="h2_8" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern></defs>
+<!-- (a) áreas sob a curva -->
+<text x="180" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Resiliência × tenacidade</text>
+<line x1="40" y1="190" x2="330" y2="190" stroke="#333" stroke-width="1.5" marker-end="url(#s2_8)"/>
+<line x1="40" y1="190" x2="40" y2="40" stroke="#333" stroke-width="1.5" marker-end="url(#s2_8)"/>
+<path d="M40 190 L60 110 L90 110 C 150 70, 230 60, 290 80 L 305 100" fill="none" stroke="#0b3d91" stroke-width="2.5"/>
+<polygon points="40,190 60,110 60,190" fill="#0b3d91" fill-opacity=".35"/>
+<path d="M60 190 L60 110 L90 110 C 150 70, 230 60, 290 80 L 305 100 L 305 190 z" fill="#e9f7ec" stroke="none"/>
+<text x="62" y="176" font-size="10" fill="#0b3d91" font-weight="bold">resiliência</text>
+<text x="180" y="150" text-anchor="middle" font-size="11" fill="#1f6b41" font-weight="bold">tenacidade = área total</text>
+<text x="180" y="164" text-anchor="middle" font-size="10" fill="#1f6b41">(energia até a ruptura)</text>
+<text x="325" y="206" text-anchor="end" font-size="11">ε</text><text x="48" y="50" font-size="11">σ</text>
+<text x="30" y="114" text-anchor="end" font-size="10" fill="#555">f<tspan baseline-shift="sub" font-size="8">y</tspan></text>
+<!-- (b) dureza Brinell -->
+<text x="520" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Dureza Brinell</text>
+<rect x="400" y="120" width="240" height="60" fill="url(#h2_8)" stroke="#333" stroke-width="1.5"/>
+<path d="M480 120 A40 40 0 0 1 560 120" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<circle cx="520" cy="100" r="40" fill="#d9dee7" stroke="#333" stroke-width="1.8"/>
+<rect x="505" y="40" width="30" height="24" fill="#c8c8c8" stroke="#333" stroke-width="1.2"/>
+<line x1="520" y1="20" x2="520" y2="38" stroke="#c0392b" stroke-width="2.5" marker-end="url(#s2_8)"/>
+<text x="530" y="30" font-size="11" fill="#c0392b">F (ex.: 3 000 kgf)</text>
+<line x1="480" y1="196" x2="560" y2="196" stroke="#555" stroke-width="1" marker-start="url(#s2_8)" marker-end="url(#s2_8)"/>
+<text x="520" y="212" text-anchor="middle" font-size="11" fill="#555">d = diâmetro da impressão → HB = F / área da calota</text>
+<text x="575" y="104" font-size="11" fill="#333">esfera ø10 mm</text>
+<text x="660" y="225" text-anchor="end" font-size="10" fill="#555">f<tspan baseline-shift="sub" font-size="8">u</tspan> ≈ 3,4 × HB (MPa)</text>
+</svg>
+<figcaption><b>Figura 2.8</b> – (a) Resiliência (área elástica) e tenacidade (área total) no diagrama σ–ε; (b) princípio do ensaio de dureza Brinell.</figcaption>
+</figure>
+
+<h3>2.6.5 Fadiga</h3>
+<p>Uma peça pode romper com tensões bem abaixo de f<sub>y</sub> se a carga for aplicada e retirada milhares ou milhões de vezes: é a <strong>fadiga</strong>. As trincas nascem em concentradores de tensão — furos, cantos vivos, pés de solda, mordeduras — e crescem a cada ciclo até a ruptura brusca. A resistência à fadiga é descrita pela <strong>curva S-N</strong> (Figura 2.9): variação de tensão Δσ versus número de ciclos N até a falha, em escala logarítmica. Para o aço, existe um <strong>limite de fadiga</strong>: abaixo de certa Δσ (para detalhes soldados, tipicamente 30 a 70 MPa) a vida é ilimitada. Estruturas sujeitas a fadiga — vigas de rolamento de pontes rolantes, pontes rodoviárias, suportes de máquinas vibratórias, torres eólicas — exigem detalhes de solda de boa categoria, sem cantos vivos, e verificação específica (NBR 8800 Anexo K; AISC Apêndice 3). Galpões e edifícios comuns não têm problema de fadiga.</p>
+
+<figure class="fig p75">
+<svg viewBox="0 0 600 260" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s2_9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker></defs>
+<line x1="70" y1="200" x2="570" y2="200" stroke="#333" stroke-width="1.5" marker-end="url(#s2_9)"/>
+<line x1="70" y1="200" x2="70" y2="30" stroke="#333" stroke-width="1.5" marker-end="url(#s2_9)"/>
+<g stroke="#ddd" stroke-width="1"><line x1="150" y1="40" x2="150" y2="200"/><line x1="230" y1="40" x2="230" y2="200"/><line x1="310" y1="40" x2="310" y2="200"/><line x1="390" y1="40" x2="390" y2="200"/><line x1="470" y1="40" x2="470" y2="200"/></g>
+<g font-size="11" fill="#333" text-anchor="middle"><text x="150" y="216">10³</text><text x="230" y="216">10⁴</text><text x="310" y="216">10⁵</text><text x="390" y="216">10⁶</text><text x="470" y="216">10⁷</text><text x="550" y="216">10⁸</text></g>
+<text x="330" y="240" text-anchor="middle">N – número de ciclos até a falha (log)</text>
+<text x="30" y="120" text-anchor="middle" transform="rotate(-90 30 120)">Δσ – variação de tensão (log)</text>
+<!-- curva metal base -->
+<path d="M110 50 L410 150 L560 150" fill="none" stroke="#0b3d91" stroke-width="2.5"/>
+<!-- curva detalhe soldado -->
+<path d="M110 95 L430 185 L560 185" fill="none" stroke="#c0392b" stroke-width="2.5"/>
+<text x="250" y="70" font-size="11" fill="#0b3d91" font-weight="bold">metal base liso / furos</text>
+<text x="558" y="194" text-anchor="end" font-size="10" fill="#c0392b" font-weight="bold">detalhe soldado (ex.: enrijecedor transversal)</text>
+<text x="480" y="143" font-size="11" fill="#0b3d91">limite de fadiga</text>
+<text x="480" y="180" font-size="11" fill="#c0392b">limite de fadiga</text>
+<line x1="70" y1="150" x2="410" y2="150" stroke="#0b3d91" stroke-width=".8" stroke-dasharray="4 3"/>
+<line x1="70" y1="185" x2="430" y2="185" stroke="#c0392b" stroke-width=".8" stroke-dasharray="4 3"/>
+<text x="120" y="45" font-size="10" fill="#555">vida finita: Δσ³·N = constante</text>
+<text x="330" y="254" text-anchor="middle" font-size="10" fill="#555">Ponte rolante com 20 ciclos/hora, 16 h/dia, 25 anos ≈ 3 × 10⁶ ciclos: fadiga governa o projeto da viga de rolamento.</text>
+</svg>
+<figcaption><b>Figura 2.9</b> – Curva S-N conceitual: a resistência à fadiga cai com o número de ciclos e depende muito do detalhe (solda) — não do grau do aço.</figcaption>
+</figure>
+
+<h2>2.7 Soldabilidade e carbono equivalente <span class="nivel i">Intermediário</span></h2>
+<p>Soldar é fundir localmente o aço e deixá-lo esfriar muito rápido. Se a composição favorecer a formação de microestruturas duras e frágeis (martensita) na zona termicamente afetada (ZTA), e houver hidrogênio dissolvido (da umidade do eletrodo, da ferrugem, da tinta) e tensões residuais, aparece a <strong>trinca a frio</strong> (ou trinca por hidrogênio), horas ou dias depois da soldagem. A tendência ao endurecimento é medida pelo <strong>carbono equivalente</strong> (CE), que pondera cada elemento pelo seu efeito na temperabilidade. A fórmula mais usada é a do IIW (International Institute of Welding):</p>
+<div class="formula">CE = C + Mn/6 + (Cr + Mo + V)/5 + (Ni + Cu)/15<span class="n">(2.1)</span></div>
+<ul class="onde"><li>teores em % em massa, obtidos do certificado de qualidade da corrida</li></ul>
+<p>Quanto menor o CE, mais fácil a soldagem. A Tabela 2.3 dá a orientação prática usual (AWS D1.1 e prática de oficina); a espessura entra porque chapas grossas extraem calor mais depressa (resfriam a solda mais rápido) e travam mais a contração.</p>
+
+<table class="tab"><caption>Tabela 2.3 – Carbono equivalente, soldabilidade e pré-aquecimento (orientação prática)</caption>
+<thead><tr><th>CE (IIW)</th><th>Soldabilidade</th><th>Pré-aquecimento indicativo (eletrodo de baixo hidrogênio)</th><th>Aços típicos</th></tr></thead>
+<tbody>
+<tr><td class="c">≤ 0,35</td><td class="l">Excelente</td><td class="l">Não necessário até t ≈ 40 mm; ≥ 20 °C e superfície seca</td><td class="l">A36 leve, MR250, CF-26, ZAR</td></tr>
+<tr><td class="c">0,35 a 0,40</td><td class="l">Boa</td><td class="l">t ≤ 25 mm: não; 25–50 mm: 50–80 °C; &gt; 50 mm: 100 °C</td><td class="l">A36 grosso, A572 Gr.50, AR350, A992</td></tr>
+<tr><td class="c">0,40 a 0,45</td><td class="l">Regular</td><td class="l">t ≤ 20 mm: 50 °C; 20–40 mm: 80–120 °C; &gt; 40 mm: 120–150 °C</td><td class="l">A588, COR 420/500, USI-SAC 350</td></tr>
+<tr><td class="c">0,45 a 0,55</td><td class="l">Difícil</td><td class="l">Sempre: 120 a 200 °C; controle de interpasse; eletrodo seco em estufa</td><td class="l">Aços de médio carbono, alguns fundidos</td></tr>
+<tr><td class="c">&gt; 0,55</td><td class="l">Muito difícil</td><td class="l">Procedimento qualificado, pré-aquecimento ≥ 200 °C, pós-aquecimento</td><td class="l">Aços temperados, ferramentas — evitar em estruturas</td></tr>
+</tbody></table>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs><marker id="s2_10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker></defs>
+<!-- escala CE 0,25 a 0,65: x = 60..660 (1500 px por 1,0) -->
+<rect x="60" y="70" width="150" height="40" fill="#e9f7ec" stroke="#333" stroke-width="1"/>
+<rect x="210" y="70" width="75" height="40" fill="#d5efd9" stroke="#333" stroke-width="1"/>
+<rect x="285" y="70" width="75" height="40" fill="#fff7d6" stroke="#333" stroke-width="1"/>
+<rect x="360" y="70" width="150" height="40" fill="#fde3c4" stroke="#333" stroke-width="1"/>
+<rect x="510" y="70" width="150" height="40" fill="#fdecec" stroke="#333" stroke-width="1"/>
+<g font-size="11" text-anchor="middle" fill="#333">
+<text x="60" y="128">0,25</text><text x="210" y="128">0,35</text><text x="285" y="128">0,40</text><text x="360" y="128">0,45</text><text x="510" y="128">0,55</text><text x="660" y="128">0,65</text>
+</g>
+<text x="360" y="148" text-anchor="middle" fill="#333">CE = C + Mn/6 + (Cr+Mo+V)/5 + (Ni+Cu)/15</text>
+<g font-size="10" text-anchor="middle">
+<text x="135" y="88" fill="#1f6b41" font-weight="bold">excelente</text><text x="135" y="101" fill="#1f6b41">sem pré-aquec.</text>
+<text x="247" y="88" fill="#1f6b41" font-weight="bold">boa</text><text x="247" y="101" fill="#1f6b41">pré-aq. se t &gt; 25</text>
+<text x="322" y="88" fill="#8a6508" font-weight="bold">regular</text><text x="322" y="101" fill="#8a6508">50–150 °C</text>
+<text x="435" y="88" fill="#a12a1f" font-weight="bold">difícil</text><text x="435" y="101" fill="#a12a1f">120–200 °C</text>
+<text x="585" y="88" fill="#a12a1f" font-weight="bold">muito difícil</text><text x="585" y="101" fill="#a12a1f">evitar em estruturas</text>
+</g>
+<!-- posições dos aços -->
+<g stroke="#0b3d91" stroke-width="2"><line x1="150" y1="60" x2="150" y2="70"/><line x1="255" y1="60" x2="255" y2="70"/><line x1="330" y1="60" x2="330" y2="70"/></g>
+<g font-size="11" text-anchor="middle" fill="#0b3d91" font-weight="bold">
+<text x="150" y="40">A36 / MR250</text><text x="150" y="54">(≈ 0,30–0,36)</text>
+<text x="255" y="40">A572 Gr.50 / AR350</text><text x="255" y="54">(≈ 0,36–0,42)</text>
+<text x="400" y="40">A588 / COR / SAC</text><text x="400" y="54">(≈ 0,40–0,46)</text>
+</g>
+<line x1="330" y1="60" x2="370" y2="56" stroke="#0b3d91" stroke-width="1"/>
+<text x="360" y="170" text-anchor="middle" font-size="10" fill="#555">Pré-aquecimento: aquecer a junta (maçarico ou resistência) até a temperatura indicada,</text>
+<text x="360" y="183" text-anchor="middle" font-size="10" fill="#555">numa faixa de 75 mm de cada lado, antes de soldar; verificar com giz térmico.</text>
+<text x="360" y="196" text-anchor="middle" font-size="10" fill="#555">Sempre: eletrodo de baixo hidrogênio (E7018) seco em estufa; junta limpa, sem umidade, ferrugem ou tinta.</text>
+</svg>
+<figcaption><b>Figura 2.10</b> – Escala de carbono equivalente e posição dos aços estruturais usuais; quanto maior o CE e a espessura, mais cuidado com pré-aquecimento e hidrogênio.</figcaption>
+</figure>
+
+<div class="box exemplo"><div class="tit">Exemplo 2.2 – Carbono equivalente a partir do certificado</div>
+<p>Certificado de uma chapa ASTM A572 Gr.50 de 25,4 mm: C = 0,17 %; Mn = 1,25 %; Si = 0,22 %; P = 0,015 %; S = 0,008 %; Cr = 0,04 %; Ni = 0,03 %; Cu = 0,05 %; Mo = 0,01 %; V = 0,04 %; Nb = 0,03 %.</p>
+<div class="passo"><b>Passo 1:</b> CE = 0,17 + 1,25/6 + (0,04 + 0,01 + 0,04)/5 + (0,03 + 0,05)/15 = 0,17 + 0,208 + 0,018 + 0,005 = <b>0,40</b>.</div>
+<div class="passo"><b>Passo 2:</b> Tabela 2.3: CE = 0,40, t = 25,4 mm → soldabilidade boa; pré-aquecimento de 50 a 80 °C recomendável nas juntas de penetração total e em filetes grandes (&gt; 8 mm), com eletrodo E7018 seco. Sem pré-aquecimento apenas para filetes pequenos com t ≤ 20 mm.</div>
+<div class="passo"><b>Passo 3:</b> O A572 exige CE ≤ 0,45 (opção suplementar); o A36 típico fica em 0,30–0,36. Se o certificado mostrar CE &gt; 0,45 em um aço "A36", desconfie da corrida e exija esclarecimentos.</div></div>
+
+<h2>2.8 Efeito da temperatura: o aço no incêndio <span class="nivel i">Intermediário</span></h2>
+<p>O aço não queima, mas <strong>perde resistência e rigidez quando aquecido</strong>. Até cerca de 400 °C, f<sub>y</sub> praticamente não muda (embora E já caia 30 %); entre 500 e 700 °C a resistência despenca — a 600 °C restam 47 % de f<sub>y</sub> e 31 % de E. Como um incêndio compartimentado atinge 600 a 900 °C em 10 a 20 minutos e o aço, bom condutor e de pequena espessura, aquece rapidamente, uma estrutura desprotegida pode entrar em colapso em 15 a 30 minutos. A NBR 14323 fornece os fatores de redução (Tabela 2.4 e Figura 2.11) e o método de verificação; a NBR 14432 diz que tempo de resistência ao fogo (TRRF: 30, 60, 90, 120 min) cada tipo de edificação precisa. Galpões térreos de uso industrial ou de depósito com área e altura limitadas costumam ser <strong>isentos</strong>; edifícios de andares, em geral, precisam de proteção (argamassa projetada, placas, tinta intumescente) ou de dimensionamento em situação de incêndio.</p>
+
+<table class="tab"><caption>Tabela 2.4 – Fatores de redução do aço com a temperatura (NBR 14323)</caption>
+<thead><tr><th>Temperatura θ (°C)</th><th>20</th><th>100</th><th>200</th><th>300</th><th>400</th><th>500</th><th>600</th><th>700</th><th>800</th><th>900</th></tr></thead>
+<tbody>
+<tr><td class="l">k<sub>y,θ</sub> = f<sub>y,θ</sub>/f<sub>y</sub></td><td class="c">1,00</td><td class="c">1,00</td><td class="c">1,00</td><td class="c">1,00</td><td class="c">1,00</td><td class="c">0,78</td><td class="c">0,47</td><td class="c">0,23</td><td class="c">0,11</td><td class="c">0,06</td></tr>
+<tr><td class="l">k<sub>E,θ</sub> = E<sub>θ</sub>/E</td><td class="c">1,00</td><td class="c">1,00</td><td class="c">0,90</td><td class="c">0,80</td><td class="c">0,70</td><td class="c">0,60</td><td class="c">0,31</td><td class="c">0,13</td><td class="c">0,09</td><td class="c">0,07</td></tr>
+</tbody></table>
+
+<figure class="fig p90">
+<img src="fig/cap02_temperatura.png" alt="Redução de fy e E com a temperatura">
+<figcaption><b>Figura 2.11</b> – Redução da resistência ao escoamento e do módulo de elasticidade com a temperatura (NBR 14323).</figcaption>
+</figure>
+
+<div class="box dica"><div class="tit">Regra de bolso: temperatura crítica</div>
+<p>Uma viga ou pilar carregado com cerca de 60 % da sua capacidade (situação usual nas combinações de incêndio, que usam cargas reduzidas) atinge a ruína quando k<sub>y,θ</sub> ≈ 0,6, ou seja, a cerca de <strong>550 °C</strong> — a "temperatura crítica" usada em muitas verificações simplificadas. Elementos pouco solicitados resistem a temperaturas maiores; elementos esbeltos, governados por E, falham antes. Aquecimento acidental de peças (fogo, maçarico para desempenar) acima de 650 °C pode alterar as propriedades de aços microligados; consulte o fabricante.</p></div>
+
+<h2>2.9 Aços estruturais usuais no Brasil <span class="nivel i">Intermediário</span></h2>
+<p>A Tabela 2.5 reúne os aços que aparecem em listas de material e certificados no Brasil, com os valores mínimos de norma. A escolha prática se resume a poucos casos: <strong>ASTM A36 ou NBR 7007 MR250</strong> para perfis, chapas e barras correntes; <strong>A572 Gr.50 / AR350 / A992</strong> para perfis laminados W (a Gerdau produz os W em A572 Gr.50 e em ASTM A992 como padrão) e para chapas de perfis soldados pesados; <strong>patináveis</strong> (A588, COR, SAC) onde se deseja dispensar pintura; <strong>CF-26, ZAR-230/280</strong> em perfis formados a frio e telhas; <strong>A500 / VMB</strong> em tubos.</p>
+
+<table class="tab small"><caption>Tabela 2.5 – Aços estruturais usuais: resistências mínimas e uso típico</caption>
+<thead><tr><th style="width:17%">Especificação</th><th style="width:7%">f<sub>y</sub> (MPa)</th><th style="width:7%">f<sub>u</sub> (MPa)</th><th style="width:8%">Along. mín.</th><th>Produtos e uso típico</th><th style="width:22%">Observações</th></tr></thead>
+<tbody>
+<tr><td class="l" colspan="6" style="background:#eef3fb"><b>ASTM (EUA) – perfis, chapas e barras</b></td></tr>
+<tr><td class="l">ASTM A36</td><td class="c">250</td><td class="c">400–550</td><td class="c">20 %</td><td class="l">Chapas, barras, cantoneiras, U laminado, perfis soldados; o aço "padrão" de serralherias e caldeirarias</td><td class="l">C ≤ 0,26–0,29 %; excelente soldabilidade; equivale ao MR250</td></tr>
+<tr><td class="l">ASTM A572 Gr.42</td><td class="c">290</td><td class="c">415</td><td class="c">20 %</td><td class="l">Chapas e perfis; pouco usado no Brasil</td><td class="l">Microligado ao Nb/V</td></tr>
+<tr><td class="l">ASTM A572 Gr.50</td><td class="c">345</td><td class="c">450</td><td class="c">18 %</td><td class="l">Perfis laminados W/HP (padrão Gerdau), chapas para perfis soldados pesados, vigas de rolamento</td><td class="l">O aço mais usado em perfis W; f<sub>u</sub>/f<sub>y</sub> = 1,30</td></tr>
+<tr><td class="l">ASTM A992</td><td class="c">345 (máx. 450)</td><td class="c">450</td><td class="c">18 %</td><td class="l">Perfis W para edifícios (norma americana específica de perfis)</td><td class="l">Limita f<sub>y</sub>/f<sub>u</sub> ≤ 0,85 e CE; ideal para projeto sísmico/plástico</td></tr>
+<tr><td class="l">ASTM A588 Gr.A/B</td><td class="c">345</td><td class="c">485</td><td class="c">18 %</td><td class="l">Chapas e perfis patináveis: pontes, torres, fachadas sem pintura</td><td class="l">Cu, Cr, Ni, P; ≈ 4× a resistência à corrosão atmosférica do A36</td></tr>
+<tr><td class="l">ASTM A283 Gr.C</td><td class="c">205</td><td class="c">380–515</td><td class="c">22 %</td><td class="l">Chapas de baixa exigência: tanques, silos leves, chapas de piso</td><td class="l">Mais barato; não confundir com A36 em cálculo</td></tr>
+<tr><td class="l">ASTM A1011 SS Gr.36 / HSLAS Gr.50</td><td class="c">250 / 345</td><td class="c">365 / 410</td><td class="c">20 / 20 %</td><td class="l">Chapas e bobinas finas laminadas a quente (t ≤ 6 mm) para perfis formados a frio</td><td class="l">Substitui a antiga A570; equivalente à NBR 6650</td></tr>
+<tr><td class="l" colspan="6" style="background:#eef3fb"><b>NBR 7007 – aços para perfis laminados (Brasil)</b></td></tr>
+<tr><td class="l">MR250 (MR 250)</td><td class="c">250</td><td class="c">400</td><td class="c">20 %</td><td class="l">Cantoneiras, U, barras, perfis I padrão; "média resistência"</td><td class="l">Equivalente ao A36</td></tr>
+<tr><td class="l">AR350</td><td class="c">350</td><td class="c">450</td><td class="c">18 %</td><td class="l">Perfis W e chapas; "alta resistência"</td><td class="l">Equivalente ao A572 Gr.50</td></tr>
+<tr><td class="l">AR350 COR</td><td class="c">350</td><td class="c">485</td><td class="c">18 %</td><td class="l">Perfis patináveis</td><td class="l">Equivalente ao A588</td></tr>
+<tr><td class="l">AR415</td><td class="c">415</td><td class="c">520</td><td class="c">16 %</td><td class="l">Perfis de alta resistência; pouco disponível</td><td class="l">Equivalente ao A572 Gr.60</td></tr>
+<tr><td class="l" colspan="6" style="background:#eef3fb"><b>Aços de usinas brasileiras – chapas grossas e bobinas a quente</b></td></tr>
+<tr><td class="l">CSN COR 420</td><td class="c">300</td><td class="c">420–560</td><td class="c">20 %</td><td class="l">Chapas patináveis para perfis soldados, galpões e fachadas</td><td class="l">Patinável; conferir catálogo (há também COR 500: 375/500)</td></tr>
+<tr><td class="l">USI-SAC 300</td><td class="c">300</td><td class="c">400</td><td class="c">20 %</td><td class="l">Chapas e bobinas patináveis (Usiminas) – "SAC" = resistente à corrosão atmosférica</td><td class="l">Patinável</td></tr>
+<tr><td class="l">USI-SAC 350</td><td class="c">350</td><td class="c">490</td><td class="c">18 %</td><td class="l">Chapas patináveis de alta resistência; perfis soldados, pontes, torres</td><td class="l">Equivalente ao A588 / AR350 COR</td></tr>
+<tr><td class="l">USI-CIVIL 300 / 350</td><td class="c">300 / 350</td><td class="c">400 / 490</td><td class="c">20 / 18 %</td><td class="l">Chapas e bobinas para construção civil (perfis soldados, formados a frio)</td><td class="l">Não patináveis; boa soldabilidade</td></tr>
+<tr><td class="l" colspan="6" style="background:#eef3fb"><b>Chapas finas e galvanizadas – perfis formados a frio e telhas</b></td></tr>
+<tr><td class="l">NBR 6650 CF-26 (a quente) / NBR 6649 CF-26 (a frio)</td><td class="c">260</td><td class="c">410</td><td class="c">18–20 %</td><td class="l">Chapas finas para perfis Ue, U, Z, cartola, telhas; o aço "padrão" da NBR 14762</td><td class="l">Existem CF-24 (240/370) e CF-30 (300/490)</td></tr>
+<tr><td class="l">NBR 7008 ZAR-230</td><td class="c">230</td><td class="c">310</td><td class="c">20 %</td><td class="l">Chapas zincadas de alta resistência para telhas, steel deck, perfis leves</td><td class="l">Revestimento Z275 (275 g/m²) usual</td></tr>
+<tr><td class="l">NBR 7008 ZAR-280</td><td class="c">280</td><td class="c">360</td><td class="c">18 %</td><td class="l">Terças e perfis Ue galvanizados, steel deck (MF-50/75)</td><td class="l">O mais usado em terças galvanizadas</td></tr>
+<tr><td class="l">NBR 7008 ZAR-345</td><td class="c">345</td><td class="c">430</td><td class="c">16 %</td><td class="l">Perfis leves de alta resistência, light steel framing</td><td class="l"></td></tr>
+<tr><td class="l" colspan="6" style="background:#eef3fb"><b>Tubos estruturais</b></td></tr>
+<tr><td class="l">ASTM A500 Gr.B</td><td class="c">290 (circ.) / 315 (quad./ret.)</td><td class="c">400</td><td class="c">23 %</td><td class="l">Tubos com costura para treliças, pilares, guarda-corpos</td><td class="l">O mais comum em tubos de seção quadrada e retangular</td></tr>
+<tr><td class="l">ASTM A500 Gr.C</td><td class="c">317 (circ.) / 345 (quad./ret.)</td><td class="c">427</td><td class="c">21 %</td><td class="l">Tubos com costura de maior resistência</td><td class="l"></td></tr>
+<tr><td class="l">VMB 250 / 300 / 350 (NBR 8261)</td><td class="c">250 / 300 / 350</td><td class="c">400 / 415 / 485</td><td class="c">23–20 %</td><td class="l">Tubos sem costura (Vallourec) para estruturas: treliças espaciais, pilares, coberturas</td><td class="l">VMB 350 COR: patinável</td></tr>
+</tbody></table>
+<p style="font-size:9pt;color:#555">Valores mínimos das normas e catálogos vigentes; f<sub>y</sub> pode ser reduzido para espessuras maiores em algumas especificações (ex.: A588 e A572 acima de 100 mm). Confirme sempre no certificado da corrida.</p>
+
+<div class="box atencao"><div class="tit">Não misture "nomes" com propriedades</div>
+<p>"Aço 1020" (SAE) é um aço de 0,20 % de carbono sem garantia de propriedades mecânicas nem de soldabilidade — é vendido por composição, não por resistência. Ele <strong>não</strong> é equivalente ao A36 e não deve ser aceito como aço estrutural em projeto, embora barras SAE 1020 sejam comuns em serralherias. Da mesma forma, "chapa naval" (ASTM A131) e "chapa comercial" (sem norma) só servem se vierem com certificado que garanta f<sub>y</sub> e f<sub>u</sub> compatíveis com o projeto.</p></div>
+
+<h2>2.10 Aço patinável <span class="nivel i">Intermediário</span></h2>
+<p>Os aços <strong>patináveis</strong> (A588, AR350 COR, CSN COR, USI-SAC, VMB COR; nome comercial histórico "Corten") contêm pequenas adições de cobre, cromo, níquel e fósforo que mudam a forma como o aço enferruja. No aço comum, a ferrugem é porosa, retém água e se destaca, expondo metal novo — a perda de espessura continua indefinidamente (0,02 a 0,1 mm/ano em atmosfera urbana). No aço patinável, após alguns <strong>ciclos de molhagem e secagem</strong>, forma-se uma camada de óxidos compacta e aderente, a <strong>pátina</strong> (cor marrom-avermelhada escura), que funciona como barreira e reduz a taxa de corrosão a valores muito baixos após 2 a 4 anos (Figura 2.12). O resultado é uma estrutura que dispensa pintura, com custo de manutenção próximo de zero — se as condições forem adequadas.</p>
+<p><strong>Onde não usar (ou usar só com pintura)</strong>: ambientes permanentemente úmidos ou submersos (a pátina precisa secar); atmosfera marinha com cloretos (a menos de 1 a 2 km do mar); atmosferas industriais com SO₂ intenso; frestas, sobreposições e cantos onde a água fica retida; contato com concreto ou alvenaria (manchas de escorrimento nos primeiros anos, que mancham fachadas e calçadas); interiores fechados sem ciclos de molhagem (a pátina não se forma, mas também não há corrosão significativa). Em detalhamento, evite acúmulo de água: furos de dreno, ligações abertas, sem cavidades. A pátina reduz a espessura em 0,1 a 0,3 mm no total ao longo da vida — considere isso em chapas finas (&lt; 4 mm) ou aumente a espessura. Aços patináveis também podem ser pintados: a aderência é boa e a durabilidade da pintura, maior.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h2_12" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s2_12" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker>
+</defs>
+<!-- (a) aço comum -->
+<text x="130" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Aço comum</text>
+<rect x="30" y="80" width="200" height="60" fill="url(#h2_12)" stroke="#333" stroke-width="1.5"/>
+<path d="M30 80 q20 -14 40 -4 t40 -6 t40 6 t40 -8 t40 4 v10 h-200 z" fill="#c9793a" stroke="#7a3e00" stroke-width="1.2"/>
+<g fill="#7a3e00"><circle cx="60" cy="74" r="2"/><circle cx="110" cy="70" r="2"/><circle cx="160" cy="76" r="2"/><circle cx="205" cy="70" r="2"/></g>
+<path d="M120 40 q4 6 0 12 q-4 -6 0 -12" fill="#1f5fbf"/><line x1="120" y1="52" x2="120" y2="80" stroke="#1f5fbf" stroke-width="1.5" marker-end="url(#s2_12)"/>
+<line x1="70" y1="60" x2="70" y2="40" stroke="#c0392b" stroke-width="1.5" marker-end="url(#s2_12)"/><text x="78" y="46" font-size="10" fill="#c0392b">ferrugem se solta</text>
+<text x="130" y="160" text-anchor="middle" font-size="11" fill="#555">ferrugem porosa, retém água,</text><text x="130" y="174" text-anchor="middle" font-size="11" fill="#555">se destaca e expõe metal novo:</text><text x="130" y="188" text-anchor="middle" font-size="11" fill="#c0392b" font-weight="bold">corrosão contínua</text>
+<!-- (b) aço patinável -->
+<text x="380" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Aço patinável</text>
+<rect x="280" y="80" width="200" height="60" fill="url(#h2_12)" stroke="#333" stroke-width="1.5"/>
+<rect x="280" y="72" width="200" height="8" fill="#6b3a1e" stroke="#4a2810" stroke-width="1.2"/>
+<path d="M370 40 q4 6 0 12 q-4 -6 0 -12" fill="#1f5fbf"/><line x1="370" y1="52" x2="370" y2="70" stroke="#1f5fbf" stroke-width="1.5"/><line x1="366" y1="70" x2="374" y2="70" stroke="#c0392b" stroke-width="2"/>
+<text x="380" y="60" font-size="10" fill="#1f5fbf">água não penetra</text>
+<text x="380" y="160" text-anchor="middle" font-size="11" fill="#555">pátina densa e aderente (Cu, Cr, Ni, P),</text><text x="380" y="174" text-anchor="middle" font-size="11" fill="#555">formada em ciclos de molha e seca:</text><text x="380" y="188" text-anchor="middle" font-size="11" fill="#1f6b41" font-weight="bold">corrosão quase estabiliza</text>
+<!-- (c) gráfico perda x tempo -->
+<text x="630" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(c) Perda de espessura</text>
+<line x1="540" y1="190" x2="740" y2="190" stroke="#333" stroke-width="1.5" marker-end="url(#s2_12)"/>
+<line x1="540" y1="190" x2="540" y2="40" stroke="#333" stroke-width="1.5" marker-end="url(#s2_12)"/>
+<path d="M540 190 L720 70" fill="none" stroke="#c0392b" stroke-width="2.5"/>
+<path d="M540 190 Q 570 140 600 130 T 720 118" fill="none" stroke="#1f6b41" stroke-width="2.5"/>
+<text x="690" y="62" font-size="10" fill="#c0392b">aço comum</text>
+<text x="660" y="140" font-size="10" fill="#1f6b41">patinável</text>
+<text x="640" y="206" text-anchor="middle" font-size="11">anos (0 → 20)</text>
+<text x="548" y="52" font-size="10">perda (mm)</text>
+<text x="380" y="222" text-anchor="middle" font-size="10" fill="#555">Não usar sem pintura: ambiente marinho (&lt; 1–2 km do mar), atmosfera industrial agressiva, umidade permanente,</text>
+<text x="380" y="236" text-anchor="middle" font-size="10" fill="#555">frestas e locais sem ciclo de secagem. Prever drenagem; evitar escorrimento sobre concreto e fachadas nos primeiros anos.</text>
+<text x="380" y="256" text-anchor="middle" font-size="10" fill="#555">Pátina estável: 2 a 4 anos em atmosfera rural/urbana; perda total típica de 0,1 a 0,3 mm na vida útil.</text>
+</svg>
+<figcaption><b>Figura 2.12</b> – Como a pátina protege o aço patinável e a comparação da perda de espessura com o aço comum em atmosfera urbana.</figcaption>
+</figure>
+
+<h2>2.11 Aços inoxidáveis e alumínio <span class="nivel i">Intermediário</span></h2>
+<p>Os <strong>aços inoxidáveis</strong> contêm no mínimo 10,5 % de cromo, que forma uma película passiva de óxido de cromo autorregenerável. Os mais usados em construção são os austeníticos <strong>AISI 304</strong> (18 % Cr, 8 % Ni) — guarda-corpos, fixadores, fachadas, cozinhas industriais — e <strong>316</strong> (com 2 % de Mo), para ambientes marinhos e químicos. Há também os ferríticos (430, mais baratos, menos resistentes à corrosão) e os duplex (alta resistência, para offshore). Estruturalmente, o inox tem f<sub>y</sub> de 200 a 250 MPa (304 recozido, curva sem patamar), E ≈ 190–200 GPa, custo 4 a 8 vezes o do aço-carbono, e exige soldagem com procedimentos próprios. Seu uso estrutural é pontual: ancoragens de fachada, fixadores, passarelas em ambientes agressivos, estruturas de piscinas (com cuidado: cloretos podem causar corrosão sob tensão no 304).</p>
+<p>O <strong>alumínio</strong> estrutural (ligas 6061-T6, 6063-T5, 6082) tem um terço do peso do aço (2 700 kg/m³) e boa resistência à corrosão, mas também <strong>um terço do módulo E</strong> (70 000 MPa) — flechas e flambagem triplicam para a mesma seção — e um coeficiente de dilatação duplo. É soldável, mas a solda reduz a resistência da liga tratada termicamente em até 50 %; por isso as ligações são preferencialmente parafusadas ou rebitadas. Usos: esquadrias e fachadas, coberturas leves e móveis, andaimes, passarelas e estruturas em ambientes marinhos, guarda-corpos.</p>
+
+<table class="tab"><caption>Tabela 2.6 – Comparação rápida: aço-carbono, inox e alumínio</caption>
+<thead><tr><th>Propriedade</th><th>Aço-carbono (A36 / A572)</th><th>Inox austenítico (304 / 316)</th><th>Alumínio (6061-T6 / 6063-T5)</th></tr></thead>
+<tbody>
+<tr><td class="l">Massa específica (kg/m³)</td><td class="c">7 850</td><td class="c">7 900–8 000</td><td class="c">2 700</td></tr>
+<tr><td class="l">Módulo E (MPa)</td><td class="c">200 000</td><td class="c">190 000–200 000</td><td class="c">70 000</td></tr>
+<tr><td class="l">f<sub>y</sub> (MPa)</td><td class="c">250 / 345</td><td class="c">≈ 210–240 (0,2 %)</td><td class="c">240 / 145 (zona soldada: ≈ 115 / 70)</td></tr>
+<tr><td class="l">Dilatação α (/°C)</td><td class="c">1,2 × 10⁻⁵</td><td class="c">1,6–1,7 × 10⁻⁵</td><td class="c">2,3 × 10⁻⁵</td></tr>
+<tr><td class="l">Resistência à corrosão</td><td class="c">Baixa; requer pintura / galvanização</td><td class="c">Alta (316 &gt; 304); cuidado com cloretos</td><td class="c">Boa; cuidado com contato galvânico com aço</td></tr>
+<tr><td class="l">Custo relativo por kg</td><td class="c">1</td><td class="c">4 a 8</td><td class="c">3 a 5 (por kg; por volume ≈ 1 a 1,7)</td></tr>
+<tr><td class="l">Soldabilidade</td><td class="c">Excelente</td><td class="c">Boa, com consumíveis e limpeza próprios</td><td class="c">Regular (MIG/TIG; perda de resistência)</td></tr>
+<tr><td class="l">Uso estrutural típico</td><td class="c">Tudo</td><td class="c">Fixadores, ancoragens, ambientes agressivos</td><td class="c">Coberturas leves, fachadas, andaimes, passarelas</td></tr>
+</tbody></table>
+
+<h2>2.12 Certificado de qualidade, rastreabilidade e ensaios de recebimento <span class="nivel i">Intermediário</span></h2>
+<h3>2.12.1 O certificado de qualidade</h3>
+<p>Todo produto siderúrgico de uso estrutural deve chegar acompanhado do <strong>certificado de qualidade</strong> (ou certificado de inspeção, tipo 3.1 conforme a EN 10204), emitido pela usina e vinculado à <strong>corrida</strong>. Ele é a prova de que o material atende à especificação do projeto; sem ele, o aço é "sem procedência" e não deveria ser usado em estrutura. A Figura 2.13 mostra o que ler:</p>
+<ol>
+<li><strong>Usina e número do certificado</strong>; cliente, nota fiscal e pedido.</li>
+<li><strong>Norma e grau</strong> (ex.: ASTM A572 Gr.50, NBR 7007 AR350) — deve coincidir com o projeto.</li>
+<li><strong>Produto, dimensões e quantidade</strong> (ex.: perfil W 310×38,7 × 12 000 mm, 24 peças).</li>
+<li><strong>Número da corrida</strong> (<em>heat</em>) e, se houver, número da placa/lote — é o elo da rastreabilidade.</li>
+<li><strong>Composição química</strong> da corrida (análise de panela): C, Mn, Si, P, S, Cu, Cr, Ni, Mo, V, Nb, Al, às vezes Ti, B, N; e o carbono equivalente (CE ou Pcm).</li>
+<li><strong>Ensaios mecânicos</strong>: limite de escoamento (LE = f<sub>y</sub>), limite de resistência (LR = f<sub>u</sub>), alongamento (%) e base de medida, direção do corpo de prova; quando exigido, Charpy (J, temperatura) e dureza.</li>
+<li><strong>Observações e assinatura</strong> do responsável pela qualidade da usina.</li>
+</ol>
+
+<figure class="fig p90">
+<svg viewBox="0 0 700 330" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="11">
+<rect x="20" y="10" width="480" height="310" fill="#fff" stroke="#333" stroke-width="1.5"/>
+<rect x="20" y="10" width="480" height="34" fill="#eef3fb" stroke="#333" stroke-width="1"/>
+<text x="30" y="24" font-weight="bold" fill="#0b3d91" font-size="12">USINA SIDERÚRGICA XYZ S.A. – CERTIFICADO DE QUALIDADE Nº 123456</text>
+<text x="30" y="38" fill="#333">Cliente: Estruturas ABC Ltda.   NF: 45678   Pedido: 9012   Data: 12/03/2025   Tipo 3.1 (EN 10204)</text>
+<text x="30" y="60" fill="#333"><tspan font-weight="bold">Norma / grau:</tspan> ASTM A572/A572M Gr.50   <tspan font-weight="bold">Produto:</tspan> Perfil W 310 × 38,7   <tspan font-weight="bold">Compr.:</tspan> 12 000 mm</text>
+<text x="30" y="76" fill="#333"><tspan font-weight="bold">Corrida:</tspan> 7A2345   <tspan font-weight="bold">Lote:</tspan> 118   <tspan font-weight="bold">Qtde:</tspan> 24 peças / 11 146 kg</text>
+<line x1="20" y1="86" x2="500" y2="86" stroke="#333" stroke-width="1"/>
+<text x="30" y="102" font-weight="bold" fill="#0b3d91">COMPOSIÇÃO QUÍMICA (% em massa – análise de corrida)</text>
+<g fill="#333">
+<text x="30" y="120">C</text><text x="70" y="120">Mn</text><text x="110" y="120">Si</text><text x="150" y="120">P</text><text x="190" y="120">S</text><text x="230" y="120">Cu</text><text x="270" y="120">Cr</text><text x="310" y="120">Ni</text><text x="350" y="120">Mo</text><text x="390" y="120">V</text><text x="430" y="120">Nb</text><text x="470" y="120">CE</text>
+<text x="30" y="136">0,16</text><text x="70" y="136">1,22</text><text x="110" y="136">0,21</text><text x="150" y="136">0,014</text><text x="190" y="136">0,006</text><text x="230" y="136">0,04</text><text x="270" y="136">0,03</text><text x="310" y="136">0,02</text><text x="350" y="136">0,01</text><text x="390" y="136">0,03</text><text x="430" y="136">0,025</text><text x="470" y="136">0,38</text>
+</g>
+<line x1="20" y1="146" x2="500" y2="146" stroke="#333" stroke-width="1"/>
+<text x="30" y="162" font-weight="bold" fill="#0b3d91">ENSAIOS MECÂNICOS (ASTM A370 – corpo de prova longitudinal, da mesa)</text>
+<g fill="#333">
+<text x="30" y="180">LE (MPa)</text><text x="120" y="180">LR (MPa)</text><text x="210" y="180">Along. (%) L₀ = 200 mm</text><text x="380" y="180">Charpy (J) a 0 °C</text>
+<text x="30" y="196">378</text><text x="120" y="196">512</text><text x="210" y="196">24</text><text x="380" y="196">85 / 92 / 78 (média 85)</text>
+<text x="30" y="212">mín. norma: 345</text><text x="120" y="212">mín. norma: 450</text><text x="210" y="212">mín. norma: 18</text><text x="380" y="212">não exigido pela norma</text>
+</g>
+<line x1="20" y1="222" x2="500" y2="222" stroke="#333" stroke-width="1"/>
+<text x="30" y="240" fill="#333"><tspan font-weight="bold">Dureza:</tspan> —    <tspan font-weight="bold">Ultrassom:</tspan> —    <tspan font-weight="bold">Tolerâncias dimensionais:</tspan> ASTM A6 – conforme</text>
+<text x="30" y="258" fill="#333"><tspan font-weight="bold">Observações:</tspan> Conforme ASTM A6/A6M. Aço acalmado, grão fino. Ensaios do laboratório da usina.</text>
+<text x="30" y="296" fill="#333">Responsável pela qualidade: ____________________   (assinatura / carimbo)</text>
+<text x="30" y="312" fill="#555" font-size="10">Certificado válido apenas com o número da corrida marcado (pintado ou estampado) nas peças.</text>
+<!-- balões -->
+<g font-weight="bold" font-size="11" fill="#fff">
+<circle cx="518" cy="27" r="9" fill="#c0392b"/><text x="518" y="31" text-anchor="middle">1</text>
+<circle cx="518" cy="52" r="9" fill="#c0392b"/><text x="518" y="56" text-anchor="middle">2</text>
+<circle cx="518" cy="68" r="9" fill="#c0392b"/><text x="518" y="72" text-anchor="middle">3</text>
+<circle cx="518" cy="84" r="9" fill="#c0392b"/><text x="518" y="88" text-anchor="middle">4</text>
+<circle cx="518" cy="126" r="9" fill="#c0392b"/><text x="518" y="130" text-anchor="middle">5</text>
+<circle cx="518" cy="192" r="9" fill="#c0392b"/><text x="518" y="196" text-anchor="middle">6</text>
+<circle cx="518" cy="296" r="9" fill="#c0392b"/><text x="518" y="300" text-anchor="middle">7</text>
+</g>
+<g font-size="11" fill="#1a1a1a">
+<text x="535" y="31">usina, nº, NF, pedido</text>
+<text x="535" y="56">norma e grau = projeto?</text>
+<text x="535" y="72">produto, dimensões, qtde</text>
+<text x="535" y="88">corrida: rastreabilidade</text>
+<text x="535" y="120">composição: P, S baixos?</text><text x="535" y="134">CE ≤ 0,45?</text>
+<text x="535" y="186">LE ≥ 345? LR ≥ 450?</text><text x="535" y="200">Along. ≥ 18 %?</text><text x="535" y="214">Charpy se exigido</text>
+<text x="535" y="300">assinatura do RT</text>
+</g>
+<g fill="#555" font-size="10"><text x="535" y="250">Confira também se o produto</text><text x="535" y="263">e as dimensões batem com a</text><text x="535" y="276">NF e com as peças recebidas.</text></g>
+</svg>
+<figcaption><b>Figura 2.13</b> – Exemplo de certificado de qualidade e os pontos a conferir no recebimento (valores fictícios).</figcaption>
+</figure>
+
+<h3>2.12.2 Rastreabilidade</h3>
+<p><strong>Rastreabilidade</strong> é a capacidade de saber, para cada peça montada na obra, de que corrida veio o aço. A usina marca o número da corrida nos perfis e chapas (pintura ou estampagem); o distribuidor deve manter a marcação ao cortar; a fábrica transfere a marca para os retalhos e registra, no romaneio ou no desenho de oficina, a corrida usada em cada peça (pelo menos nas principais: pilares, vigas de rolamento, chapas grossas). Em obras com inspeção formal (indústrias, pontes, EN 1090, obras públicas) isso é exigido; em obras correntes, é boa prática guardar os certificados por corrida junto com as notas fiscais. Quando há dúvida sobre a origem do material, a saída é o ensaio de recebimento.</p>
+
+<h3>2.12.3 Ensaios de recebimento</h3>
+<p>Os ensaios de recebimento verificam se o material entregue corresponde ao certificado ou, na ausência dele, se atende ao projeto. Não são rotina em obras pequenas, mas são obrigatórios quando o certificado falta, quando há suspeita de troca de material (marcação ilegível, distribuidor sem controle), em chapas grossas para ligações soldadas críticas e em obras com plano de inspeção. A Tabela 2.7 resume os ensaios usuais.</p>
+
+<table class="tab small"><caption>Tabela 2.7 – Ensaios de recebimento de aço estrutural</caption>
+<thead><tr><th style="width:14%">Ensaio</th><th style="width:22%">Norma</th><th>O que verifica</th><th>Quando fazer</th><th style="width:16%">Custo/prazo típico</th></tr></thead>
+<tbody>
+<tr><td class="l">Tração</td><td class="l">NBR ISO 6892-1; ASTM A370</td><td class="l">f<sub>y</sub>, f<sub>u</sub> e alongamento; confirma o grau do aço</td><td class="l">Sem certificado; suspeita de troca; por corrida em obras com plano de inspeção</td><td class="l">R$ 150–400 por CP; 2 a 5 dias</td></tr>
+<tr><td class="l">Dobramento</td><td class="l">NBR ISO 7438; ASTM A370</td><td class="l">Ductilidade e sanidade (ausência de trincas ao dobrar 180° sobre cutelo de 1,5 a 2 t)</td><td class="l">Chapas para dobra a frio e perfis formados a frio; barras de chumbadores</td><td class="l">R$ 80–200; junto com a tração</td></tr>
+<tr><td class="l">Impacto Charpy</td><td class="l">NBR ISO 148-1; ASTM A370</td><td class="l">Tenacidade à temperatura especificada (ex.: 27 J a −20 °C)</td><td class="l">Pontes, vigas de rolamento, chapas grossas soldadas, baixa temperatura</td><td class="l">R$ 300–600 por trio; 3 a 7 dias</td></tr>
+<tr><td class="l">Dureza</td><td class="l">NBR ISO 6506 (Brinell), 6508 (Rockwell)</td><td class="l">Triagem rápida do grau; detecta aço endurecido ou temperado; ZTA de soldas</td><td class="l">Verificação no recebimento com durômetro portátil; após aquecimento acidental</td><td class="l">Baixo; imediato</td></tr>
+<tr><td class="l">Análise química</td><td class="l">Espectrometria (OES); ASTM A751</td><td class="l">Composição e CE; identifica o aço quando não há certificado</td><td class="l">Material sem procedência; dúvida sobre soldabilidade ou patinabilidade</td><td class="l">R$ 200–500; portátil (PMI) imediato</td></tr>
+<tr><td class="l">Ultrassom em chapas</td><td class="l">ASTM A435 / A578; EN 10160</td><td class="l">Dupla laminação e inclusões internas em chapas grossas (t ≥ 20–25 mm)</td><td class="l">Chapas de ligação solicitadas na espessura (chapas de topo, mesas de perfis soldados pesados), risco de rasgamento lamelar</td><td class="l">R$ 20–60 por m²; na fábrica</td></tr>
+<tr><td class="l">Dimensional</td><td class="l">ASTM A6; NBR 15980; NBR 5884; NBR 11888</td><td class="l">Espessura, altura, largura de mesa, empeno, flecha, torção, massa por metro</td><td class="l">Sempre, por amostragem; perfis fora de tolerância dificultam a fabricação</td><td class="l">Baixo; paquímetro, trena, régua</td></tr>
+</tbody></table>
+
+<figure class="fig">
+<svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" font-family="Arial, Helvetica, sans-serif" font-size="12">
+<defs>
+<pattern id="h2_14" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#8a94a6" stroke-width="1"/></pattern>
+<marker id="s2_14" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker>
+</defs>
+<!-- (a) dobramento -->
+<text x="180" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(a) Ensaio de dobramento (180°)</text>
+<circle cx="180" cy="110" r="30" fill="#c8c8c8" stroke="#333" stroke-width="1.5"/>
+<path d="M60 140 h120 a-40 -40 0 0 1 0 -80 h-0" fill="none" stroke="#333" stroke-width="1"/>
+<path d="M60 142 H180 A32 32 0 0 0 180 78 H60" fill="none" stroke="#0b3d91" stroke-width="12" stroke-linecap="butt"/>
+<line x1="180" y1="150" x2="180" y2="180" stroke="#555" stroke-width="1"/><line x1="140" y1="170" x2="220" y2="170" stroke="#555" stroke-width="1" marker-start="url(#s2_14)" marker-end="url(#s2_14)"/>
+<text x="180" y="196" text-anchor="middle" font-size="11" fill="#555">cutelo: D = 1,5 t a 2 t (A36, t ≤ 20 mm)</text>
+<text x="180" y="212" text-anchor="middle" font-size="11" fill="#555">aprovado se a face externa não trincar</text>
+<text x="120" y="60" font-size="11" fill="#333">CP (espessura t)</text>
+<line x1="230" y1="80" x2="250" y2="80" stroke="#c0392b" stroke-width="1"/><text x="254" y="84" font-size="10" fill="#c0392b">face tracionada</text>
+<!-- (b) ultrassom -->
+<text x="560" y="18" text-anchor="middle" font-weight="bold" fill="#0b3d91">(b) Ultrassom em chapa grossa</text>
+<rect x="400" y="90" width="320" height="60" fill="url(#h2_14)" stroke="#333" stroke-width="1.5"/>
+<!-- dupla laminação -->
+<path d="M540 118 q30 -6 60 0 q-30 6 -60 0 z" fill="#fff" stroke="#c0392b" stroke-width="1.5"/>
+<text x="520" y="194" text-anchor="middle" font-size="11" fill="#c0392b">dupla laminação (vazio interno)</text>
+<!-- cabeçote -->
+<rect x="556" y="66" width="28" height="24" fill="#444"/><line x1="570" y1="50" x2="570" y2="66" stroke="#444" stroke-width="2"/>
+<g stroke="#0b3d91" stroke-width="1" stroke-dasharray="3 2"><line x1="565" y1="90" x2="565" y2="114"/><line x1="575" y1="90" x2="575" y2="114"/><line x1="470" y1="90" x2="470" y2="150"/></g>
+<rect x="446" y="60" width="24" height="24" fill="#444"/>
+<!-- tela -->
+<rect x="630" y="180" width="110" height="50" fill="#fff" stroke="#333" stroke-width="1"/>
+<polyline points="634,225 640,225 642,190 644,225 660,225 662,205 664,225 690,225 692,192 694,225 736,225" fill="none" stroke="#0b3d91" stroke-width="1.2"/>
+<text x="644" y="187" font-size="8" fill="#333">emissão</text><text x="656" y="203" font-size="8" fill="#c0392b">defeito</text><text x="690" y="189" font-size="8" fill="#333">fundo</text>
+<text x="455" y="172" text-anchor="middle" font-size="11" fill="#555">região sã: só eco de fundo</text>
+<text x="500" y="216" text-anchor="middle" font-size="11" fill="#555">Chapas t ≥ 20–25 mm solicitadas na espessura:</text>
+<text x="500" y="230" text-anchor="middle" font-size="11" fill="#555">varredura em grade (ASTM A435 / A578)</text>
+</svg>
+<figcaption><b>Figura 2.14</b> – Ensaios de recebimento: (a) dobramento sobre cutelo; (b) inspeção por ultrassom para detectar dupla laminação em chapas grossas.</figcaption>
+</figure>
+
+<div class="box atencao"><div class="tit">Rasgamento lamelar</div>
+<p>Chapas grossas laminadas têm inclusões achatadas no plano da laminação. Quando uma solda de penetração puxa a chapa na direção da espessura (por exemplo, uma mesa de viga soldada de topo à mesa de um pilar sem enrijecedores), as inclusões podem se abrir em degraus — o <strong>rasgamento lamelar</strong>. Prevenção: aço com enxofre baixo (S ≤ 0,010 %) ou com propriedades na espessura garantidas (classe Z25/Z35, EN 10164), ultrassom antes da solda, detalhes que solicitem menos a espessura e sequência de soldagem adequada.</p></div>
+
+<h2>2.13 Como especificar o aço no projeto <span class="nivel i">Intermediário</span></h2>
+<p>A especificação do material deve estar escrita no projeto estrutural — na prancha de notas gerais e no memorial — de forma inequívoca, por tipo de produto. Um exemplo de nota completa:</p>
+<div class="box norma"><div class="tit">Exemplo de nota de material em projeto</div>
+<p><b>Perfis laminados W e HP:</b> ASTM A572 Gr.50 (f<sub>y</sub> = 345 MPa, f<sub>u</sub> = 450 MPa) ou NBR 7007 AR350. <b>Cantoneiras, U laminado, barras chatas e redondas, chapas e perfis soldados:</b> ASTM A36 (f<sub>y</sub> = 250 MPa, f<sub>u</sub> = 400 MPa) ou NBR 7007 MR250. <b>Perfis formados a frio (terças, longarinas):</b> NBR 6650/6649 CF-26 (f<sub>y</sub> = 260 MPa) ou ZAR-280 galvanizado Z275. <b>Tubos:</b> ASTM A500 Gr.B ou VMB 250. <b>Chumbadores:</b> ASTM F1554 Gr.36 ou barra SAE 1020 laminada com f<sub>y</sub> ≥ 250 MPa certificado. <b>Parafusos:</b> ASTM A325 (estruturais) e A307 (secundários); porcas A563, arruelas F436. <b>Eletrodos:</b> AWS E7018 (SMAW) ou ER70S-6 (GMAW), f<sub>w</sub> = 485 MPa. Todo material com certificado de qualidade da usina, rastreável por corrida. <b>Substituições somente com aprovação por escrito do projetista.</b></p></div>
+
+<table class="tab small"><caption>Tabela 2.8 – O que acontece quando o material é trocado sem reavaliar o projeto</caption>
+<thead><tr><th style="width:28%">Troca</th><th>Consequência</th><th style="width:30%">Como proceder</th></tr></thead>
+<tbody>
+<tr><td class="l">A572 Gr.50 → A36 (mesma seção)</td><td class="l">Resistência cai 28 % (f<sub>y</sub> 345 → 250). Peças governadas por resistência (vigas curtas, tração, ligações) ficam subdimensionadas; peças governadas por flecha ou esbeltez podem passar.</td><td class="l">Recalcular. Frequentemente exige aumentar a seção — e o peso — em 15 a 30 %.</td></tr>
+<tr><td class="l">A36 → A572 Gr.50 (mesma seção)</td><td class="l">Resistência sobe; rigidez (E) não muda: flechas iguais. Em geral seguro, mas alguns estados-limites (flambagem local, relação f<sub>u</sub>/f<sub>y</sub> em ligações, solda) devem ser conferidos.</td><td class="l">Aceitável na maioria dos casos com anuência do projetista; custo por kg um pouco maior.</td></tr>
+<tr><td class="l">CF-26 → ZAR-230 em terças</td><td class="l">f<sub>y</sub> cai de 260 para 230 MPa (−12 %); terças no limite podem falhar por flexão ou flambagem distorcional.</td><td class="l">Preferir ZAR-280 (f<sub>y</sub> maior) ou recalcular.</td></tr>
+<tr><td class="l">Perfil W laminado → perfil soldado "equivalente"</td><td class="l">Mesmas dimensões nominais não garantem as mesmas propriedades: tensões residuais e imperfeições diferentes mudam a curva de flambagem; soldas adicionam custo e distorção.</td><td class="l">Conferir área, I, W, r e a classificação da seção (compacta/esbelta); revisar compressão.</td></tr>
+<tr><td class="l">Barra SAE 1020 sem certificado → chumbador</td><td class="l">Sem garantia de f<sub>y</sub>, f<sub>u</sub> nem de soldabilidade; propriedades variam entre 200 e 350 MPa.</td><td class="l">Exigir certificado ou ensaio de tração; especificar F1554 ou barra A36 certificada.</td></tr>
+<tr><td class="l">Parafuso A325 → A307 (mesmo diâmetro)</td><td class="l">Resistência à tração e ao cisalhamento cai para cerca de metade (f<sub>ub</sub> 415 contra 825 MPa); ligações rompem.</td><td class="l">Nunca trocar sem recalcular; identificar pela marcação na cabeça (A325: três traços radiais).</td></tr>
+<tr><td class="l">Espessura de chapa "aproximada" (12,7 → 9,5 mm)</td><td class="l">Chapas de base, de topo e enrijecedores perdem 44 % da resistência à flexão (∝ t²); furos e soldas ficam fora de norma.</td><td class="l">Conferir espessura de chapas críticas no recebimento; não aceitar "a bitola mais próxima".</td></tr>
+</tbody></table>
+
+<div class="box dica"><div class="tit">Dicas práticas de compra e especificação</div>
+<p>(1) Especifique por norma e grau, não por "nome de mercado". (2) Aceite equivalências explícitas (A36 ↔ MR250; A572 Gr.50 ↔ AR350 ↔ A992) escrevendo-as no projeto, para não travar a compra. (3) Perfis W da Gerdau vêm em A572 Gr.50/A992 por padrão: aproveite o f<sub>y</sub> = 345 MPa no cálculo, mas escreva isso no projeto. (4) Chapas grossas (&gt; 20 mm) em ligações soldadas críticas: exija S baixo e considere ultrassom. (5) Peça o certificado junto com a nota fiscal e confira norma, grau, corrida e valores mínimos antes de descarregar. (6) Guarde os certificados por obra; eles são a sua defesa em uma perícia.</p></div>
+
+<div class="resumo"><div class="tit">Resumo do capítulo</div>
+<ul>
+<li>Aço estrutural = ferro + 0,15 a 0,29 % de carbono + Mn, Si e microligantes; o baixo carbono garante ductilidade e soldabilidade.</li>
+<li>Produção: alto-forno + aciaria LD (rota integrada) ou forno elétrico com sucata; refino em panela (corrida); lingotamento contínuo; laminação a quente (perfis, chapas grossas, bobinas) e a frio (chapas finas, galvanizadas).</li>
+<li>Propriedades físicas para projeto: E = 200 000 MPa; G = 77 000 MPa; ν = 0,3; ρ = 7 850 kg/m³; α = 1,2 × 10⁻⁵ /°C — iguais para todos os graus.</li>
+<li>Do diagrama σ–ε vêm f<sub>y</sub> (escoamento; base das resistências com γ<sub>a1</sub> = 1,10), f<sub>u</sub> (ruptura; γ<sub>a2</sub> = 1,35) e o alongamento (ductilidade ≥ 18–20 %).</li>
+<li>Tenacidade (Charpy, transição dúctil-frágil), dureza (HB ≈ f<sub>u</sub>/3,4), resiliência e fadiga (curva S-N; governada pelo detalhe, não pelo grau) completam o retrato mecânico.</li>
+<li>Soldabilidade: CE = C + Mn/6 + (Cr+Mo+V)/5 + (Ni+Cu)/15; até 0,40 solda-se bem; acima, pré-aquecer conforme a espessura e usar eletrodo de baixo hidrogênio.</li>
+<li>Incêndio: f<sub>y</sub> mantém-se até 400 °C, cai a 78 % a 500 °C, 47 % a 600 °C e 23 % a 700 °C; E cai antes (70 % a 400 °C).</li>
+<li>Aços usuais: A36/MR250 (250/400); A572 Gr.50/AR350/A992 (345/450); A588/AR350 COR/USI-SAC 350 (345–350/485–490, patináveis); CF-26 (260/410); ZAR-230/280/345; A500 Gr.B/C e VMB 250/300/350 em tubos.</li>
+<li>Aço patinável dispensa pintura em atmosfera rural/urbana com ciclos de secagem; não em ambiente marinho, industrial agressivo, úmido ou com frestas.</li>
+<li>Certificado de qualidade por corrida é obrigatório; confira norma/grau, composição (P, S, CE) e LE/LR/alongamento; faça ensaios de recebimento quando faltar certificado ou em peças críticas.</li>
+<li>Especifique o aço por norma e grau no projeto; trocas de material exigem recálculo — trocar A572 por A36 reduz a resistência em 28 %.</li>
+</ul></div>
+<ul class="chk">
+<li>Sei dizer f<sub>y</sub> e f<sub>u</sub> do A36, do A572 Gr.50 e do CF-26 de cabeça.</li>
+<li>Consigo calcular o CE a partir de um certificado e decidir se preciso pré-aquecer.</li>
+<li>Sei ler um certificado de qualidade e localizar corrida, composição e ensaios.</li>
+<li>Sei explicar por que trocar o grau do aço não muda a flecha de uma viga.</li>
+<li>Sei onde o aço patinável não deve ser usado sem pintura.</li>
+</ul>

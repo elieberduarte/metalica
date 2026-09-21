@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dimensionamento de galpões metálicos</title>
+<link rel="stylesheet" href="estilo.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M5 24V13l11-6 11 6v11' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linejoin='round'/></svg>">
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M4 27V13.5L16 6l12 7.5V27" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M4 13.5h24M16 6v21" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".55"/>
+    </svg>
+    <h1>Dimensionamento de galpões<span>Estruturas metálicas — NBR 8800 / 14762 / 6123</span></h1>
+  </div>
+
+  <div class="projeto-atual" id="projeto-atual">—</div>
+
+  <div class="acoes">
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" id="btn-3d" title="Abrir este galpão no editor 3D, em outra aba"
+            onclick="window.open('/editor?galpao=1', '_blank')">Modelo 3D</button>
+    <button type="button" id="btn-salvar" title="Salvar este projeto no servidor">Salvar</button>
+    <button type="button" id="btn-calcular" class="principal" title="Dimensionar (Ctrl+Enter)">Dimensionar</button>
+  </div>
+</header>
+
+<div class="corpo">
+
+  <nav class="lateral" aria-label="Etapas do projeto">
+    <div class="rotulo-bloco">Etapas</div>
+    <ul class="etapas" id="nav-etapas">
+      <li><a href="#projeto" data-etapa="projeto"><span class="num">1</span><span class="tit">Projeto</span><span class="sub">identificação e geometria</span><span class="sinal pend" data-sinal="projeto"></span></a></li>
+      <li><a href="#cargas" data-etapa="cargas"><span class="num">2</span><span class="tit">Cargas e vento</span><span class="sub">NBR 6120 e NBR 6123</span><span class="sinal pend" data-sinal="cargas"></span></a></li>
+      <li><a href="#materiais" data-etapa="materiais"><span class="num">3</span><span class="tit">Materiais</span><span class="sub">aços e critérios</span><span class="sinal pend" data-sinal="materiais"></span></a></li>
+      <li><a href="#resultados" data-etapa="resultados"><span class="num">4</span><span class="tit">Resultados</span><span class="sub">verificações por elemento</span><span class="sinal pend" data-sinal="resultados"></span></a></li>
+      <li><a href="#entrega" data-etapa="entrega"><span class="num">5</span><span class="tit">Entrega</span><span class="sub">memorial, DXF e lista</span><span class="sinal pend" data-sinal="entrega"></span></a></li>
+    </ul>
+
+    <div class="rotulo-bloco">Projetos salvos</div>
+    <ul class="projetos-lista" id="projetos-lista"><li class="vazio">carregando…</li></ul>
+    <button type="button" class="discreto" id="btn-recarregar-projetos">Atualizar lista</button>
+  </nav>
+
+  <main class="conteudo" id="conteudo">
+
+    <!-- ======================================================= 1. PROJETO -->
+    <section class="etapa" id="etapa-projeto" hidden>
+      <div class="cabecalho-etapa">
+        <h2>1. Projeto</h2>
+        <p>Identificação e geometria do galpão de duas águas. O desenho ao lado acompanha
+           o que você digita — confira nele se o sistema entendeu as dimensões.</p>
+      </div>
+
+      <div class="colunas">
+        <div class="lado-esquerdo">
+          <div class="painel">
+            <h3>Identificação</h3>
+            <div class="conteudo-painel"><div class="grade-campos" data-grupo="identificacao"></div></div>
+          </div>
+          <div class="painel">
+            <h3>Geometria</h3>
+            <div class="conteudo-painel"><div class="grade-campos" data-grupo="geometria"></div></div>
+          </div>
+          <div class="painel">
+            <h3>Sistema estrutural</h3>
+            <div class="conteudo-painel"><div class="grade-campos" data-grupo="sistema"></div></div>
+          </div>
+        </div>
+
+        <div class="lado-direito">
+          <div class="painel desenho">
+            <h3>Seção transversal do pórtico</h3>
+            <div class="conteudo-painel"><div id="svg-secao"></div></div>
+            <dl class="cotas-resumo" id="cotas-resumo"></dl>
+          </div>
+          <div class="painel desenho">
+            <h3>Elevação longitudinal</h3>
+            <div class="conteudo-painel"><div id="svg-longitudinal"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rodape-etapa">
+        <span class="atalho"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> dimensiona a qualquer momento.</span>
+        <button type="button" data-ir="cargas">Cargas e vento →</button>
+      </div>
+    </section>
+
+    <!-- ======================================================== 2. CARGAS -->
+    <section class="etapa" id="etapa-cargas" hidden>
+      <div class="cabecalho-etapa">
+        <h2>2. Cargas e vento</h2>
+        <p>Cargas permanentes e variáveis da cobertura (NBR 6120) e os parâmetros do vento
+           (NBR 6123). Os fatores S₂, V<sub>k</sub> e q aparecem ao lado assim que houver
+           dados suficientes — são uma prévia; o cálculo definitivo é feito no servidor.</p>
+      </div>
+
+      <div class="colunas">
+        <div class="lado-esquerdo">
+          <div class="painel">
+            <h3>Cobertura e fechamento</h3>
+            <div class="conteudo-painel"><div class="grade-campos" data-grupo="cobertura"></div></div>
+          </div>
+          <div class="painel">
+            <h3>Cargas</h3>
+            <div class="conteudo-painel"><div class="grade-campos" data-grupo="cargas"></div></div>
+          </div>
+          <div class="painel">
+            <h3>Vento (NBR 6123)</h3>
+            <div class="conteudo-painel"><div class="grade-campos" data-grupo="vento"></div></div>
+          </div>
+        </div>
+
+        <div class="lado-direito">
+          <div class="painel">
+            <h3>Fatores do vento — prévia</h3>
+            <div class="conteudo-painel">
+              <p class="nota" id="vento-contexto"></p>
+              <dl class="fatores" id="vento-fatores"></dl>
+              <div id="vento-contas"></div>
+              <div id="vento-erro"></div>
+            </div>
+          </div>
+          <div class="painel">
+            <h3>Composição das cargas na cobertura</h3>
+            <div class="conteudo-painel">
+              <div class="rolagem"><table class="tab" id="tab-cargas"></table></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rodape-etapa">
+        <button type="button" data-ir="projeto">← Projeto</button>
+        <button type="button" data-ir="materiais">Materiais e critérios →</button>
+      </div>
+    </section>
+
+    <!-- ===================================================== 3. MATERIAIS -->
+    <section class="etapa" id="etapa-materiais" hidden>
+      <div class="cabecalho-etapa">
+        <h2>3. Materiais e critérios</h2>
+        <p>Aços, meios de ligação e os limites de deslocamento adotados no projeto.</p>
+      </div>
+
+      <div class="colunas">
+        <div class="lado-esquerdo">
+          <div class="painel">
+            <h3>Materiais</h3>
+            <div class="conteudo-painel"><div class="grade-campos" data-grupo="materiais"></div></div>
+          </div>
+          <div class="painel">
+            <h3>Critérios de projeto</h3>
+            <div class="conteudo-painel">
+              <p class="nota">Limites de deslocamento da NBR 8800, Anexo C, Tabela C.1 — e o custo
+                 unitário usado só na estimativa orçamentária.</p>
+              <div class="grade-campos" data-grupo="criterios"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="lado-direito">
+          <div class="painel">
+            <h3>Resistências dos materiais escolhidos</h3>
+            <div class="conteudo-painel">
+              <div class="rolagem"><table class="tab" id="tab-materiais"></table></div>
+            </div>
+          </div>
+          <div class="painel">
+            <h3>Limites de serviço adotados</h3>
+            <div class="conteudo-painel">
+              <div class="rolagem"><table class="tab" id="tab-criterios"></table></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rodape-etapa">
+        <button type="button" data-ir="cargas">← Cargas e vento</button>
+        <button type="button" class="principal" data-acao="dimensionar">Dimensionar →</button>
+      </div>
+    </section>
+
+    <!-- ==================================================== 4. RESULTADOS -->
+    <section class="etapa" id="etapa-resultados" hidden>
+      <div class="cabecalho-etapa">
+        <h2>4. Resultados</h2>
+        <p>Uma barra por elemento com a razão de aproveitamento S<sub>d</sub>/R<sub>d</sub>:
+           verde até 0,85, amarelo até 1,00, vermelho acima. A memória de cálculo completa
+           abre em cada elemento.</p>
+      </div>
+      <div id="resultados-area"></div>
+      <div class="rodape-etapa">
+        <button type="button" data-ir="materiais">← Materiais</button>
+        <button type="button" data-ir="entrega">Entrega →</button>
+      </div>
+    </section>
+
+    <!-- ======================================================= 5. ENTREGA -->
+    <section class="etapa" id="etapa-entrega" hidden>
+      <div class="cabecalho-etapa">
+        <h2>5. Entrega</h2>
+        <p>Memorial de cálculo, desenhos DXF, pranchas e lista de material gravados na pasta
+           do projeto.</p>
+      </div>
+      <div id="entrega-area"></div>
+      <div class="rodape-etapa">
+        <button type="button" data-ir="resultados">← Resultados</button>
+        <span class="atalho">Os arquivos ficam em <code>sistema/projetos/&lt;projeto&gt;/</code>.</span>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="carregando" id="carregando" hidden>
+  <div class="caixa"><span class="giro"></span><span id="carregando-texto">Calculando…</span></div>
+</div>
+
+<div class="bandeja" id="bandeja" aria-live="polite"></div>
+
+<dialog class="memoria" id="dlg-memoria">
+  <header>
+    <div>
+      <h3 id="memoria-titulo">Memória de cálculo</h3>
+      <div class="sub" id="memoria-sub"></div>
+    </div>
+    <button type="button" id="memoria-fechar">Fechar</button>
+  </header>
+  <div class="corpo-memoria" id="memoria-corpo"></div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

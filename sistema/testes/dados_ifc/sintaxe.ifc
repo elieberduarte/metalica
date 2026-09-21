@@ -1,0 +1,24 @@
+ISO-10303-21;
+/* Tortura da sintaxe da parte 21, escrita à mão. Não é um IFC com geometria:
+   serve só para o leitor genérico (ifc/step.py).                               */
+HEADER;
+FILE_DESCRIPTION(('ViewDefinition [CoordinationView]','Coment\X2\00E1\X0\rio'),'2;1');
+FILE_NAME('sintaxe.ifc','2026-01-01T00:00:00',('Jo\X2\00E3\X0\o d''Avila'),('Org'),
+  'pre-processador','Programa X','');
+FILE_SCHEMA(('IFC2X3'));
+ENDSEC;
+DATA;
+#1=IFCTEXTOS('It''s a ''quoted'' string','A\X2\00E7\X0\o estrutural','caf\S\i',
+  'Constru\X2\00E700E3\X0\o','sorriso \X4\0001F600\X0\','barra \\ invertida',
+  'ponto;e v\X\EDrgula','/* isto nao e comentario */','');
+#2=IFCLISTAS(((1,2),(3,(4,5))),(),(#1,#3),$,*,.T.,.F.,.U.,.ELEMENT.,-1.5E-3,42,
+  1.,IFCLABEL('rotulo'),IFCREAL(2.5));
+#3=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));
+/* comentário; com ponto e vírgula */
+#4=IFCMULTILINHA('linha 1',
+   (1.,
+    2.),   /* comentário no meio da instrução */ 3);
+#5 = IFCESPACADO ( #4 , ( #1 , #2 ) , 'x' ) ;
+#6=IFCSEMARGUMENTOS();
+ENDSEC;
+END-ISO-10303-21;

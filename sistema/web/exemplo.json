@@ -1,0 +1,1430 @@
+{
+ "dados": {
+  "nome": "Galpão industrial — Módulo A",
+  "cliente": "Metalúrgica Rio Verde Ltda.",
+  "local": "Chapecó / SC",
+  "responsavel": "Eng. J. Schneider — CREA-SC 123456",
+  "vao": 20.0,
+  "comprimento": 40.0,
+  "pe_direito": 6.0,
+  "espacamento_porticos": 5.0,
+  "inclinacao": 10.0,
+  "balanco_lateral": 0.6,
+  "tipo_portico": "alma cheia",
+  "base_rotulada": true,
+  "com_misula": true,
+  "comprimento_misula": 1.8,
+  "altura_misula": 0.0,
+  "aco_perfis": "ASTM A572 Gr.50",
+  "aco_tercas": "CF-26 (NBR 6650)",
+  "aco_chapas": "ASTM A36",
+  "parafuso": "ASTM A325",
+  "eletrodo": "E70XX",
+  "fck_MPa": 25.0,
+  "telha": "telha metálica simples",
+  "espacamento_tercas": 1.6,
+  "linhas_correntes": 1,
+  "fechamento_lateral": "telha metálica",
+  "altura_fechamento": 0.0,
+  "sobrecarga_cobertura": 0.25,
+  "carga_forro": 0.0,
+  "carga_extra": 0.0,
+  "ponte_rolante": false,
+  "capacidade_ponte_t": 0.0,
+  "cidade": "Chapecó",
+  "v0": 50.0,
+  "categoria_rugosidade": "II",
+  "classe": "B",
+  "fator_topografico": 1.0,
+  "fator_estatistico": 1.0,
+  "aberturas": "duas faces opostas",
+  "flecha_terca": 180,
+  "flecha_viga": 250,
+  "desloc_horizontal": 300,
+  "custo_kg": 17.0
+ },
+ "ok": true,
+ "elementos": [
+  {
+   "nome": "Pilar",
+   "perfil": "W 460×52,0",
+   "material": "ASTM A572 Gr.50",
+   "razao": 0.92,
+   "ok": true,
+   "esforcos": {
+    "N_Sd_kN": 148.0,
+    "V_Sd_kN": 38.0,
+    "M_Sd_kNm": 184.2
+   },
+   "geometria": {
+    "altura_m": 6.0,
+    "comprimento_flambagem_m": 9.6
+   },
+   "alternativas": [
+    {
+     "perfil": "W 410×46,1",
+     "razao": 1.06,
+     "ok": false,
+     "massa": 46.1
+    },
+    {
+     "perfil": "W 460×52,0",
+     "razao": 0.879,
+     "ok": true,
+     "massa": 52.0
+    },
+    {
+     "perfil": "W 530×66,0",
+     "razao": 0.641,
+     "ok": true,
+     "massa": 66.0
+    }
+   ],
+   "resultado": {
+    "elemento": "Pilar P1",
+    "perfil": "W 460×52,0",
+    "material": "ASTM A572 Gr.50",
+    "razao": 0.92,
+    "ok": true,
+    "critica": "Deslocamento horizontal do topo",
+    "verificacoes": [
+     {
+      "titulo": "Compressão — flambagem por flexão",
+      "norma": "NBR 8800:2008, item 5.3.3",
+      "Sd": 148.0,
+      "Rd": 742.0,
+      "unidade": "kN",
+      "razao": 0.199,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Esbeltez reduzida da barra",
+        "formula": "λ<sub>0</sub> = √(N<sub>e</sub> / (Q·A·f<sub>y</sub>))",
+        "conta": "√(3 210 / (1,00 · 66,6 · 34,5))",
+        "valor": "1,184",
+        "norma": "item 5.3.3.1"
+       },
+       {
+        "texto": "Carga crítica de flambagem elástica",
+        "formula": "N<sub>e</sub> = π²·E·I<sub>x</sub> / (K·L)²",
+        "conta": "π² · 20 000 · 21 370 / (1,0 · 600)²",
+        "valor": "3 210 kN",
+        "norma": "Anexo E"
+       },
+       {
+        "texto": "Fator de redução",
+        "formula": "χ = 0,658<sup>λ₀²</sup>",
+        "conta": "0,658^(1,184²)",
+        "valor": "0,546",
+        "norma": "item 5.3.3.1"
+       },
+       {
+        "texto": "Força axial resistente de cálculo",
+        "formula": "N<sub>c,Rd</sub> = χ·Q·A·f<sub>y</sub> / γ<sub>a1</sub>",
+        "conta": "0,546 · 1,00 · 66,6 · 34,5 / 1,10",
+        "valor": "742,0 kN",
+        "norma": "item 5.3.2"
+       }
+      ]
+     },
+     {
+      "titulo": "Flexão — flambagem lateral com torção (FLT)",
+      "norma": "NBR 8800:2008, Anexo G",
+      "Sd": 18420.0,
+      "Rd": 24180.0,
+      "unidade": "kN·cm",
+      "razao": 0.762,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Comprimento destravado entre travamentos laterais",
+        "formula": "L<sub>b</sub>",
+        "conta": "linhas de correntes a cada 200 cm",
+        "valor": "200 cm",
+        "norma": ""
+       },
+       {
+        "texto": "Parâmetro de esbeltez do trecho",
+        "formula": "λ = L<sub>b</sub> / r<sub>y</sub>",
+        "conta": "200 / 4,27",
+        "valor": "46,8",
+        "norma": "G.2.1"
+       },
+       {
+        "texto": "Momento de plastificação",
+        "formula": "M<sub>pl</sub> = Z<sub>x</sub>·f<sub>y</sub>",
+        "conta": "1 095 · 34,5",
+        "valor": "37 778 kN·cm",
+        "norma": "G.2"
+       },
+       {
+        "texto": "Momento fletor resistente de cálculo",
+        "formula": "M<sub>Rd</sub> = C<sub>b</sub>·M<sub>pl</sub> / γ<sub>a1</sub> ≤ M<sub>pl</sub>/γ<sub>a1</sub>",
+        "conta": "1,14 · 26 598 / 1,10",
+        "valor": "24 180 kN·cm",
+        "norma": "G.2.1"
+       }
+      ]
+     },
+     {
+      "titulo": "Interação flexo-compressão",
+      "norma": "NBR 8800:2008, item 5.5.1.2",
+      "Sd": 0.879,
+      "Rd": 1.0,
+      "unidade": "—",
+      "razao": 0.879,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Relação de força axial",
+        "formula": "N<sub>Sd</sub> / N<sub>c,Rd</sub>",
+        "conta": "148,0 / 742,0",
+        "valor": "0,199",
+        "norma": "item 5.5.1.2"
+       },
+       {
+        "texto": "Como N/N<sub>Rd</sub> ≥ 0,2, aplica-se a primeira expressão",
+        "formula": "N/N<sub>Rd</sub> + (8/9)·(M<sub>x</sub>/M<sub>x,Rd</sub>) ≤ 1",
+        "conta": "0,199 + (8/9)·(18 420 / 24 180)",
+        "valor": "0,876",
+        "norma": "equação 5.31"
+       },
+       {
+        "texto": "Acréscimo de segunda ordem (B<sub>1</sub>·B<sub>2</sub>)",
+        "formula": "M<sub>Sd</sub> = B<sub>1</sub>·M<sub>nt</sub> + B<sub>2</sub>·M<sub>lt</sub>",
+        "conta": "1,00 · 15 200 + 1,21 · 2 660",
+        "valor": "18 420 kN·cm",
+        "norma": "Anexo D"
+       }
+      ]
+     },
+     {
+      "titulo": "Cisalhamento na alma",
+      "norma": "NBR 8800:2008, item 5.4.3",
+      "Sd": 38.0,
+      "Rd": 447.0,
+      "unidade": "kN",
+      "razao": 0.085,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Área efetiva de cisalhamento",
+        "formula": "A<sub>w</sub> = d·t<sub>w</sub>",
+        "conta": "45,0 · 0,76",
+        "valor": "34,2 cm²",
+        "norma": "item 5.4.3.1"
+       },
+       {
+        "texto": "Esbeltez da alma e plastificação",
+        "formula": "λ = h/t<sub>w</sub> ≤ λ<sub>p</sub> = 2,46·√(E/f<sub>y</sub>)",
+        "conta": "53,4 ≤ 59,2 → V<sub>pl</sub>",
+        "valor": "—",
+        "norma": "item 5.4.3.1"
+       },
+       {
+        "texto": "Força cortante resistente",
+        "formula": "V<sub>Rd</sub> = 0,60·A<sub>w</sub>·f<sub>y</sub> / γ<sub>a1</sub>",
+        "conta": "0,60 · 34,2 · 34,5 / 1,10",
+        "valor": "447,0 kN",
+        "norma": "item 5.4.3.1"
+       }
+      ]
+     },
+     {
+      "titulo": "Deslocamento horizontal do topo",
+      "norma": "NBR 8800:2008, Anexo C, Tabela C.1",
+      "Sd": 1.84,
+      "Rd": 2.0,
+      "unidade": "cm",
+      "razao": 0.92,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Limite de norma para pilar de galpão sem ponte rolante",
+        "formula": "δ<sub>lim</sub> = H / 300",
+        "conta": "600 / 300",
+        "valor": "2,00 cm",
+        "norma": "Tabela C.1"
+       },
+       {
+        "texto": "Deslocamento da combinação de serviço (vento frequente)",
+        "formula": "δ = δ<sub>vento</sub>",
+        "conta": "análise do pórtico plano",
+        "valor": "1,84 cm",
+        "norma": ""
+       }
+      ]
+     }
+    ],
+    "dados": {
+     "chi": 0.546,
+     "lambda_0": 1.184,
+     "Lb_cm": 200.0,
+     "Cb": 1.14,
+     "K_x": 1.6,
+     "K_y": 1.0,
+     "N_Sd_kN": 148.0,
+     "M_Sd_kNcm": 18420.0,
+     "altura_cm": 600.0
+    }
+   }
+  },
+  {
+   "nome": "Viga do pórtico",
+   "perfil": "W 460×60,0",
+   "material": "ASTM A572 Gr.50",
+   "razao": 0.898,
+   "ok": true,
+   "esforcos": {
+    "M_Sd_kNm": 214.0,
+    "V_Sd_kN": 54.0,
+    "N_Sd_kN": 32.0
+   },
+   "geometria": {
+    "vao_inclinado_m": 10.07,
+    "misula_m": 1.8,
+    "altura_misula_m": 0.9
+   },
+   "alternativas": [
+    {
+     "perfil": "W 460×52,0",
+     "razao": 0.98,
+     "ok": true,
+     "massa": 52.0
+    },
+    {
+     "perfil": "W 460×60,0",
+     "razao": 0.854,
+     "ok": true,
+     "massa": 60.0
+    }
+   ],
+   "resultado": {
+    "elemento": "Viga do pórtico",
+    "perfil": "W 460×60,0",
+    "material": "ASTM A572 Gr.50",
+    "razao": 0.898,
+    "ok": true,
+    "critica": "Flecha na combinação quase permanente",
+    "verificacoes": [
+     {
+      "titulo": "Flexão — flambagem local da mesa (FLM)",
+      "norma": "NBR 8800:2008, Anexo G",
+      "Sd": 21400.0,
+      "Rd": 38720.0,
+      "unidade": "kN·cm",
+      "razao": 0.553,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Esbeltez da mesa comprimida",
+        "formula": "λ = b<sub>f</sub> / (2·t<sub>f</sub>)",
+        "conta": "153 / (2 · 13,3)",
+        "valor": "5,75",
+        "norma": "Tabela G.1"
+       },
+       {
+        "texto": "Esbeltez limite de plastificação",
+        "formula": "λ<sub>p</sub> = 0,38·√(E/f<sub>y</sub>)",
+        "conta": "0,38 · √(20 000 / 34,5)",
+        "valor": "9,15",
+        "norma": "Tabela G.1"
+       },
+       {
+        "texto": "Seção compacta: λ ≤ λ<sub>p</sub>",
+        "formula": "M<sub>Rd</sub> = M<sub>pl</sub> / γ<sub>a1</sub>",
+        "conta": "42 592 / 1,10",
+        "valor": "38 720 kN·cm",
+        "norma": "item G.2.1"
+       }
+      ]
+     },
+     {
+      "titulo": "Flexão — flambagem lateral com torção (FLT)",
+      "norma": "NBR 8800:2008, Anexo G",
+      "Sd": 21400.0,
+      "Rd": 25060.0,
+      "unidade": "kN·cm",
+      "razao": 0.854,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Comprimento destravado pela terça",
+        "formula": "L<sub>b</sub> = espaçamento das terças",
+        "conta": "160 cm",
+        "valor": "160 cm",
+        "norma": ""
+       },
+       {
+        "texto": "Fator de modificação do diagrama de momentos",
+        "formula": "C<sub>b</sub> = 12,5·M<sub>máx</sub> / (2,5·M<sub>máx</sub> + 3M<sub>A</sub> + 4M<sub>B</sub> + 3M<sub>C</sub>)",
+        "conta": "12,5 · 21 400 / (2,5·21 400 + 3·9 800 + 4·4 100 + 3·11 600)",
+        "valor": "1,32",
+        "norma": "equação G.3"
+       },
+       {
+        "texto": "Momento resistente no regime inelástico",
+        "formula": "M<sub>Rd</sub> = C<sub>b</sub>/γ<sub>a1</sub>·[M<sub>pl</sub> − (M<sub>pl</sub>−M<sub>r</sub>)·(λ−λ<sub>p</sub>)/(λ<sub>r</sub>−λ<sub>p</sub>)]",
+        "conta": "1,32/1,10 · [42 592 − (42 592 − 28 100)·(37,5 − 35,6)/(120,4 − 35,6)]",
+        "valor": "25 060 kN·cm",
+        "norma": "item G.2.1"
+       }
+      ]
+     },
+     {
+      "titulo": "Flecha na combinação quase permanente",
+      "norma": "NBR 8800:2008, Anexo C",
+      "Sd": 3.62,
+      "Rd": 4.03,
+      "unidade": "cm",
+      "razao": 0.898,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Limite de norma para viga de cobertura",
+        "formula": "δ<sub>lim</sub> = L / 250",
+        "conta": "1 007 / 250",
+        "valor": "4,03 cm",
+        "norma": "Tabela C.1"
+       },
+       {
+        "texto": "Flecha calculada no meio do vão da água",
+        "formula": "δ = análise do pórtico (carga de serviço)",
+        "conta": "g + ψ₂·q",
+        "valor": "3,62 cm",
+        "norma": ""
+       }
+      ]
+     },
+     {
+      "titulo": "Cisalhamento na alma",
+      "norma": "NBR 8800:2008, item 5.4.3",
+      "Sd": 54.0,
+      "Rd": 486.0,
+      "unidade": "kN",
+      "razao": 0.111,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Força cortante resistente",
+        "formula": "V<sub>Rd</sub> = 0,60·A<sub>w</sub>·f<sub>y</sub>/γ<sub>a1</sub>",
+        "conta": "0,60 · 25,8 · 34,5 / 1,10",
+        "valor": "486,0 kN",
+        "norma": "item 5.4.3.1"
+       }
+      ]
+     },
+     {
+      "titulo": "Flambagem por distorção da alma na mísula",
+      "norma": "NBR 8800:2008 — caso não coberto explicitamente",
+      "Sd": 0.0,
+      "Rd": 0.0,
+      "unidade": "—",
+      "razao": 0.0,
+      "ok": true,
+      "dispensada": true,
+      "observacao": "Não se aplica: a mísula tem enrijecedor transversal no ponto de inflexão e a alma foi verificada como painel enrijecido.",
+      "passos": []
+     }
+    ],
+    "dados": {
+     "Cb": 1.32,
+     "Lb_cm": 160.0,
+     "Mpl_kNcm": 42592.0,
+     "vao_inclinado_cm": 1007.0,
+     "misula_cm": 180.0
+    }
+   }
+  },
+  {
+   "nome": "Terça",
+   "perfil": "Ue 200×75×25×2,65",
+   "material": "CF-26 (NBR 6650)",
+   "razao": 0.968,
+   "ok": true,
+   "esforcos": {
+    "M_x_Sd_kNm": 4.32,
+    "M_y_Sd_kNm": 0.375,
+    "V_Sd_kN": 3.5
+   },
+   "geometria": {
+    "vao_m": 5.0,
+    "espacamento_m": 1.6,
+    "quantidade": 126
+   },
+   "alternativas": [
+    {
+     "perfil": "Ue 150×60×20×2,25",
+     "razao": 1.42,
+     "ok": false,
+     "massa": 4.5
+    },
+    {
+     "perfil": "Ue 200×75×25×2,65",
+     "razao": 0.927,
+     "ok": true,
+     "massa": 6.9
+    }
+   ],
+   "resultado": {
+    "elemento": "Terça",
+    "perfil": "Ue 200×75×25×2,65",
+    "material": "CF-26 (NBR 6650)",
+    "razao": 0.968,
+    "ok": true,
+    "critica": "Sucção do vento — mesa livre comprimida",
+    "verificacoes": [
+     {
+      "titulo": "Flexão em torno do eixo x (MRD)",
+      "norma": "NBR 14762:2010, item 9.8.2",
+      "Sd": 432.0,
+      "Rd": 466.0,
+      "unidade": "kN·cm",
+      "razao": 0.927,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Momento de flambagem elástica local",
+        "formula": "M<sub>l</sub> = k·π²·E/(12(1−ν²))·(t/b)²·W<sub>x</sub>",
+        "conta": "seção efetiva pelo método da resistência direta (MRD)",
+        "valor": "742 kN·cm",
+        "norma": "item 9.8.2.3"
+       },
+       {
+        "texto": "Esbeltez reduzida associada à flambagem local",
+        "formula": "λ<sub>l</sub> = √(M<sub>pl</sub>/M<sub>l</sub>)",
+        "conta": "√(556 / 742)",
+        "valor": "0,866",
+        "norma": "9.8.2.3"
+       },
+       {
+        "texto": "Momento resistente característico",
+        "formula": "M<sub>Rk</sub> = (1 − 0,15·λ<sub>l</sub><sup>−0,8</sup>)·λ<sub>l</sub><sup>−0,8</sup>·M<sub>pl</sub>",
+        "conta": "(1 − 0,15·0,866^−0,8)·0,866^−0,8·556",
+        "valor": "513 kN·cm",
+        "norma": "9.8.2.3"
+       },
+       {
+        "texto": "Momento resistente de cálculo",
+        "formula": "M<sub>x,Rd</sub> = M<sub>Rk</sub> / γ",
+        "conta": "513 / 1,10",
+        "valor": "466 kN·cm",
+        "norma": "item 9.8.2"
+       }
+      ]
+     },
+     {
+      "titulo": "Flexão oblíqua com corrente a meio vão",
+      "norma": "NBR 14762:2010, item 9.9",
+      "Sd": 0.927,
+      "Rd": 1.0,
+      "unidade": "—",
+      "razao": 0.927,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Momento no eixo y com a linha de correntes",
+        "formula": "M<sub>y,Sd</sub> = q<sub>y</sub>·L²/32",
+        "conta": "0,048 · 500² / 32",
+        "valor": "37,5 kN·cm",
+        "norma": "manual, item 9.4"
+       },
+       {
+        "texto": "Interação de flexão oblíqua",
+        "formula": "M<sub>x,Sd</sub>/M<sub>x,Rd</sub> + M<sub>y,Sd</sub>/M<sub>y,Rd</sub> ≤ 1",
+        "conta": "432/466 + 37,5/128",
+        "valor": "0,927",
+        "norma": "item 9.9"
+       }
+      ]
+     },
+     {
+      "titulo": "Flecha na combinação de serviço",
+      "norma": "NBR 14762:2010, item 10",
+      "Sd": 2.51,
+      "Rd": 2.78,
+      "unidade": "cm",
+      "razao": 0.903,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Limite adotado no projeto",
+        "formula": "δ<sub>lim</sub> = L / 180",
+        "conta": "500 / 180",
+        "valor": "2,78 cm",
+        "norma": "Tabela 15"
+       },
+       {
+        "texto": "Flecha da terça contínua com corrente",
+        "formula": "δ = 5·q·L⁴/(384·E·I<sub>x</sub>)",
+        "conta": "5 · 0,00131 · 500⁴ / (384 · 20 000 · 191)",
+        "valor": "2,51 cm",
+        "norma": ""
+       }
+      ]
+     },
+     {
+      "titulo": "Sucção do vento — mesa livre comprimida",
+      "norma": "NBR 14762:2010, item 9.8.2.2",
+      "Sd": 389.0,
+      "Rd": 402.0,
+      "unidade": "kN·cm",
+      "razao": 0.968,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Pressão efetiva de sucção na cobertura",
+        "formula": "p = (C<sub>e</sub> − C<sub>pi</sub>)·q",
+        "conta": "(−0,90 − 0,20) · 1,354",
+        "valor": "-1,489 kN/m²",
+        "norma": "NBR 6123, item 6.1"
+       },
+       {
+        "texto": "Momento resistente com a mesa inferior comprimida",
+        "formula": "M<sub>Rd</sub> (FLT, L<sub>b</sub> = 250 cm)",
+        "conta": "com a corrente a meio vão",
+        "valor": "402 kN·cm",
+        "norma": "item 9.8.2.2"
+       }
+      ]
+     }
+    ],
+    "dados": {
+     "vao_cm": 500.0,
+     "espacamento_cm": 160.0,
+     "linhas_correntes": 1,
+     "n_tercas_por_agua": 7
+    }
+   }
+  },
+  {
+   "nome": "Contraventamento",
+   "perfil": "Barra redonda ⌀ 16 mm",
+   "material": "ASTM A36",
+   "razao": 0.95,
+   "ok": true,
+   "esforcos": {
+    "N_Sd_kN": 41.0
+   },
+   "geometria": {
+    "comprimento_m": 11.4,
+    "quantidade": 16
+   },
+   "alternativas": [
+    {
+     "perfil": "Barra redonda ⌀ 12,5 mm",
+     "razao": 1.48,
+     "ok": false,
+     "massa": 0.96
+    },
+    {
+     "perfil": "Barra redonda ⌀ 16 mm",
+     "razao": 0.919,
+     "ok": true,
+     "massa": 1.58
+    }
+   ],
+   "resultado": {
+    "elemento": "Contraventamento de cobertura",
+    "perfil": "Barra redonda ⌀ 16 mm",
+    "material": "ASTM A36",
+    "razao": 0.95,
+    "ok": true,
+    "critica": "Esbeltez máxima da barra tracionada",
+    "verificacoes": [
+     {
+      "titulo": "Tração na diagonal — escoamento da seção bruta",
+      "norma": "NBR 8800:2008, item 5.2.2",
+      "Sd": 41.0,
+      "Rd": 45.7,
+      "unidade": "kN",
+      "razao": 0.897,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Área bruta da barra redonda",
+        "formula": "A<sub>g</sub> = π·d²/4",
+        "conta": "π · 1,6² / 4",
+        "valor": "2,011 cm²",
+        "norma": ""
+       },
+       {
+        "texto": "Força resistente ao escoamento",
+        "formula": "N<sub>t,Rd</sub> = A<sub>g</sub>·f<sub>y</sub> / γ<sub>a1</sub>",
+        "conta": "2,011 · 25,0 / 1,10",
+        "valor": "45,7 kN",
+        "norma": "item 5.2.2 a"
+       }
+      ]
+     },
+     {
+      "titulo": "Tração — ruptura da seção líquida na rosca",
+      "norma": "NBR 8800:2008, item 5.2.2",
+      "Sd": 41.0,
+      "Rd": 44.6,
+      "unidade": "kN",
+      "razao": 0.919,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Área efetiva na região rosqueada",
+        "formula": "A<sub>e</sub> = 0,75·A<sub>g</sub>",
+        "conta": "0,75 · 2,011",
+        "valor": "1,508 cm²",
+        "norma": "item 5.2.4"
+       },
+       {
+        "texto": "Força resistente à ruptura",
+        "formula": "N<sub>t,Rd</sub> = A<sub>e</sub>·f<sub>u</sub> / γ<sub>a2</sub>",
+        "conta": "1,508 · 40,0 / 1,35",
+        "valor": "44,6 kN",
+        "norma": "item 5.2.2 b"
+       }
+      ]
+     },
+     {
+      "titulo": "Esbeltez máxima da barra tracionada",
+      "norma": "NBR 8800:2008, item 5.2.8",
+      "Sd": 285.0,
+      "Rd": 300.0,
+      "unidade": "—",
+      "razao": 0.95,
+      "ok": true,
+      "dispensada": false,
+      "observacao": "",
+      "passos": [
+       {
+        "texto": "Índice de esbeltez",
+        "formula": "λ = L / r",
+        "conta": "1 140 / 0,40",
+        "valor": "285",
+        "norma": "item 5.2.8"
+       },
+       {
+        "texto": "Limite recomendado para barras tracionadas",
+        "formula": "λ ≤ 300",
+        "conta": "com esticador para eliminar a flecha própria",
+        "valor": "300",
+        "norma": "item 5.2.8"
+       }
+      ]
+     }
+    ],
+    "dados": {
+     "diagonais_por_vao": 2,
+     "vaos_contraventados": 2,
+     "comprimento_cm": 1140.0
+    }
+   }
+  }
+ ],
+ "ligacoes": {
+  "joelho": {
+   "elemento": "Ligação viga-pilar (joelho)",
+   "perfil": "Chapa de topo 22 mm",
+   "material": "ASTM A36 / parafusos ASTM A325",
+   "razao": 0.882,
+   "ok": true,
+   "critica": "Flexão da chapa de topo",
+   "verificacoes": [
+    {
+     "titulo": "Tração nos parafusos da mesa superior",
+     "norma": "NBR 8800:2008, item 6.3.3",
+     "Sd": 118.0,
+     "Rd": 148.5,
+     "unidade": "kN",
+     "razao": 0.795,
+     "ok": true,
+     "dispensada": false,
+     "observacao": "",
+     "passos": [
+      {
+       "texto": "Força de tração por parafuso",
+       "formula": "F<sub>t,Sd</sub> = M<sub>Sd</sub> / (n·d')",
+       "conta": "21 400 / (6 · 30,2)",
+       "valor": "118,0 kN",
+       "norma": "manual, item 12.6"
+      },
+      {
+       "texto": "Resistência à tração do parafuso ⌀ 3/4\"",
+       "formula": "F<sub>t,Rd</sub> = 0,75·A<sub>b</sub>·f<sub>ub</sub> / γ<sub>a2</sub>",
+       "conta": "0,75 · 2,85 · 82,5 / 1,35",
+       "valor": "130,6 kN",
+       "norma": "item 6.3.3.1"
+      },
+      {
+       "texto": "Acréscimo por efeito alavanca já considerado na chapa de 22 mm",
+       "formula": "F<sub>t,Rd</sub> majorada pela rigidez da chapa",
+       "conta": "sem alavanca (t ≥ t<sub>mín</sub>)",
+       "valor": "148,5 kN",
+       "norma": "manual, item 12.6.3"
+      }
+     ]
+    },
+    {
+     "titulo": "Flexão da chapa de topo",
+     "norma": "NBR 8800:2008, item 6.1.4",
+     "Sd": 1.94,
+     "Rd": 2.2,
+     "unidade": "cm",
+     "razao": 0.882,
+     "ok": true,
+     "dispensada": false,
+     "observacao": "",
+     "passos": [
+      {
+       "texto": "Espessura mínima pela linha de escoamento",
+       "formula": "t<sub>mín</sub> = √(4·F<sub>t,Sd</sub>·b / (p·f<sub>y</sub>/γ))",
+       "conta": "√(4 · 118 · 3,5 / (20 · 25,0/1,10))",
+       "valor": "1,94 cm",
+       "norma": "manual, item 12.6.3"
+      },
+      {
+       "texto": "Espessura adotada",
+       "formula": "t",
+       "conta": "chapa comercial 22 mm",
+       "valor": "2,20 cm",
+       "norma": ""
+      }
+     ]
+    },
+    {
+     "titulo": "Cisalhamento e pressão de contato",
+     "norma": "NBR 8800:2008, item 6.3.3",
+     "Sd": 9.0,
+     "Rd": 69.7,
+     "unidade": "kN",
+     "razao": 0.129,
+     "ok": true,
+     "dispensada": false,
+     "observacao": "",
+     "passos": [
+      {
+       "texto": "Cortante por parafuso",
+       "formula": "F<sub>v,Sd</sub> = V<sub>Sd</sub> / n",
+       "conta": "54,0 / 6",
+       "valor": "9,0 kN",
+       "norma": ""
+      },
+      {
+       "texto": "Resistência ao cisalhamento (plano da rosca)",
+       "formula": "F<sub>v,Rd</sub> = 0,4·A<sub>b</sub>·f<sub>ub</sub> / γ<sub>a2</sub>",
+       "conta": "0,4 · 2,85 · 82,5 / 1,35",
+       "valor": "69,7 kN",
+       "norma": "item 6.3.3.2"
+      },
+      {
+       "texto": "Pressão de contato na chapa (não governa)",
+       "formula": "F<sub>c,Rd</sub> = 2,4·d·t·f<sub>u</sub>/γ<sub>a2</sub>",
+       "conta": "2,4 · 1,905 · 2,2 · 40,0 / 1,35",
+       "valor": "298,1 kN",
+       "norma": "item 6.3.3.3"
+      }
+     ]
+    },
+    {
+     "titulo": "Solda de filete mesa-chapa",
+     "norma": "NBR 8800:2008, item 6.2.4",
+     "Sd": 4.12,
+     "Rd": 5.18,
+     "unidade": "kN/cm",
+     "razao": 0.795,
+     "ok": true,
+     "dispensada": false,
+     "observacao": "",
+     "passos": [
+      {
+       "texto": "Solicitação por centímetro de solda",
+       "formula": "f<sub>Sd</sub> = F<sub>Sd</sub> / l<sub>w</sub>",
+       "conta": "118,0 · 2 / 57,3",
+       "valor": "4,12 kN/cm",
+       "norma": ""
+      },
+      {
+       "texto": "Resistência do metal da solda E70XX, perna 6 mm",
+       "formula": "f<sub>Rd</sub> = 0,60·f<sub>w</sub>·0,707·b / γ<sub>w2</sub>",
+       "conta": "0,60 · 48,5 · 0,707 · 0,6 / 1,35",
+       "valor": "5,18 kN/cm",
+       "norma": "item 6.2.4.1"
+      }
+     ]
+    }
+   ],
+   "dados": {
+    "parafusos": "6 ⌀ 3/4\" A325",
+    "chapa_mm": 22.0,
+    "solda_mm": 6.0
+   }
+  },
+  "cumeeira": {
+   "elemento": "Ligação de cumeeira",
+   "perfil": "Chapa de topo 19 mm",
+   "material": "ASTM A36 / parafusos ASTM A325",
+   "razao": 0.853,
+   "ok": true,
+   "critica": "Flexão da chapa de topo",
+   "verificacoes": [
+    {
+     "titulo": "Tração nos parafusos",
+     "norma": "NBR 8800:2008, item 6.3.3",
+     "Sd": 71.0,
+     "Rd": 130.6,
+     "unidade": "kN",
+     "razao": 0.544,
+     "ok": true,
+     "dispensada": false,
+     "observacao": "",
+     "passos": [
+      {
+       "texto": "Força de tração por parafuso",
+       "formula": "F<sub>t,Sd</sub> = M<sub>Sd</sub>/(n·d')",
+       "conta": "9 800 / (4 · 34,5)",
+       "valor": "71,0 kN",
+       "norma": "manual, item 12.6"
+      },
+      {
+       "texto": "Resistência à tração ⌀ 3/4\" A325",
+       "formula": "F<sub>t,Rd</sub> = 0,75·A<sub>b</sub>·f<sub>ub</sub>/γ<sub>a2</sub>",
+       "conta": "0,75 · 2,85 · 82,5 / 1,35",
+       "valor": "130,6 kN",
+       "norma": "item 6.3.3.1"
+      }
+     ]
+    },
+    {
+     "titulo": "Flexão da chapa de topo",
+     "norma": "NBR 8800:2008, item 6.1.4",
+     "Sd": 1.62,
+     "Rd": 1.9,
+     "unidade": "cm",
+     "razao": 0.853,
+     "ok": true,
+     "dispensada": false,
+     "observacao": "",
+     "passos": [
+      {
+       "texto": "Espessura mínima pela linha de escoamento",
+       "formula": "t<sub>mín</sub>",
+       "conta": "√(4 · 71 · 3,5 / (20 · 25,0/1,10))",
+       "valor": "1,62 cm",
+       "norma": "manual, item 12.6.3"
+      },
+      {
+       "texto": "Espessura adotada",
+       "formula": "t",
+       "conta": "chapa comercial 19 mm",
+       "valor": "1,90 cm",
+       "norma": ""
+      }
+     ]
+    }
+   ],
+   "dados": {
+    "parafusos": "4 ⌀ 3/4\" A325",
+    "chapa_mm": 19.0
+   }
+  },
+  "emenda_terca": {
+   "elemento": "Emenda da terça",
+   "perfil": "Talas 2×150×3,0 mm",
+   "material": "ASTM A36 / parafusos ASTM A325 ⌀ 1/2\"",
+   "razao": 0.236,
+   "ok": true,
+   "critica": "Rasgamento da alma da terça (chapa fina)",
+   "verificacoes": [
+    {
+     "titulo": "Cisalhamento dos parafusos da tala",
+     "norma": "NBR 8800:2008, item 6.3.3",
+     "Sd": 1.75,
+     "Rd": 31.0,
+     "unidade": "kN",
+     "razao": 0.056,
+     "ok": true,
+     "dispensada": false,
+     "observacao": "",
+     "passos": [
+      {
+       "texto": "Cortante por parafuso",
+       "formula": "F<sub>v,Sd</sub> = V<sub>Sd</sub>/n",
+       "conta": "3,5 / 2",
+       "valor": "1,75 kN",
+       "norma": ""
+      },
+      {
+       "texto": "Resistência ao cisalhamento ⌀ 1/2\" A325",
+       "formula": "F<sub>v,Rd</sub> = 0,4·A<sub>b</sub>·f<sub>ub</sub>/γ<sub>a2</sub>",
+       "conta": "0,4 · 1,267 · 82,5 / 1,35",
+       "valor": "31,0 kN",
+       "norma": "item 6.3.3.2"
+      }
+     ]
+    },
+    {
+     "titulo": "Rasgamento da alma da terça (chapa fina)",
+     "norma": "NBR 14762:2010, item 8.4",
+     "Sd": 1.75,
+     "Rd": 7.42,
+     "unidade": "kN",
+     "razao": 0.236,
+     "ok": true,
+     "dispensada": false,
+     "observacao": "",
+     "passos": [
+      {
+       "texto": "Pressão de contato em chapa de 2,65 mm",
+       "formula": "F<sub>c,Rd</sub> = α·d·t·f<sub>u</sub>/γ",
+       "conta": "2,4 · 1,27 · 0,265 · 40,0 / 1,35 · 0,86",
+       "valor": "7,42 kN",
+       "norma": "item 8.4.2"
+      }
+     ]
+    }
+   ],
+   "dados": {
+    "parafusos": "2 ⌀ 1/2\" A325 por lado",
+    "tala_mm": 3.0
+   }
+  }
+ },
+ "base": {
+  "elemento": "Base do pilar — placa e chumbadores",
+  "perfil": "Placa 450×300×25 mm",
+  "material": "ASTM A36 / C25",
+  "razao": 0.943,
+  "ok": true,
+  "critica": "Cisalhamento na base — atrito e chave",
+  "verificacoes": [
+   {
+    "titulo": "Pressão de contato no concreto",
+    "norma": "NBR 8800:2008, item 6.5.5.1",
+    "Sd": 1.24,
+    "Rd": 1.7,
+    "unidade": "kN/cm²",
+    "razao": 0.729,
+    "ok": true,
+    "dispensada": false,
+    "observacao": "",
+    "passos": [
+     {
+      "texto": "Área da placa de base",
+      "formula": "A<sub>1</sub> = B·N",
+      "conta": "45,0 · 30,0",
+      "valor": "1 350 cm²",
+      "norma": ""
+     },
+     {
+      "texto": "Tensão solicitante com a flexão do vento",
+      "formula": "σ<sub>Sd</sub> = N<sub>Sd</sub>/A<sub>1</sub> + M<sub>Sd</sub>/W",
+      "conta": "148,0/1 350 + 9 240/8 100",
+      "valor": "1,240 kN/cm²",
+      "norma": ""
+     },
+     {
+      "texto": "Resistência de contato com confinamento",
+      "formula": "σ<sub>Rd</sub> = 0,85·f<sub>cd</sub>·√(A<sub>2</sub>/A<sub>1</sub>) ≤ 1,7·f<sub>cd</sub>",
+      "conta": "0,85 · 1,786 · 2,00 → limitado a 1,7 · 1,786 · 0,56",
+      "valor": "1,70 kN/cm²",
+      "norma": "item 6.5.5.1"
+     }
+    ]
+   },
+   {
+    "titulo": "Flexão da placa de base",
+    "norma": "NBR 8800:2008, item 6.5.5.2",
+    "Sd": 2.31,
+    "Rd": 2.5,
+    "unidade": "cm",
+    "razao": 0.924,
+    "ok": true,
+    "dispensada": false,
+    "observacao": "",
+    "passos": [
+     {
+      "texto": "Balanço crítico da placa",
+      "formula": "m = (N − 0,95·d)/2",
+      "conta": "adotado m = 6,2 cm",
+      "valor": "6,20 cm",
+      "norma": "item 6.5.5.2"
+     },
+     {
+      "texto": "Espessura mínima",
+      "formula": "t<sub>mín</sub> = m·√(2·σ<sub>Sd</sub>·γ / f<sub>y</sub>)",
+      "conta": "6,2 · √(2 · 1,24 · 1,10 / 25,0)",
+      "valor": "2,31 cm",
+      "norma": "item 6.5.5.2"
+     },
+     {
+      "texto": "Espessura adotada",
+      "formula": "t",
+      "conta": "chapa comercial 25 mm",
+      "valor": "2,50 cm",
+      "norma": ""
+     }
+    ]
+   },
+   {
+    "titulo": "Tração nos chumbadores (vento de sucção)",
+    "norma": "NBR 8800:2008, item 6.3.3 e NBR 6118, item 9.4",
+    "Sd": 62.0,
+    "Rd": 79.4,
+    "unidade": "kN",
+    "razao": 0.781,
+    "ok": true,
+    "dispensada": false,
+    "observacao": "",
+    "passos": [
+     {
+      "texto": "Tração por chumbador na combinação 0,9G + 1,4V",
+      "formula": "F<sub>t,Sd</sub> = M/d' − 0,9·N/n",
+      "conta": "9 240/34,0 − 0,9·96/4",
+      "valor": "62,0 kN",
+      "norma": "manual, item 13.4"
+     },
+     {
+      "texto": "Resistência do chumbador ⌀ 3/4\" F1554 Gr.36",
+      "formula": "F<sub>t,Rd</sub> = 0,75·A<sub>b</sub>·f<sub>ub</sub>/γ<sub>a2</sub>",
+      "conta": "0,75 · 2,85 · 40,0 / 1,35 · 1,25",
+      "valor": "79,4 kN",
+      "norma": "item 6.3.3.1"
+     },
+     {
+      "texto": "Comprimento de ancoragem no bloco",
+      "formula": "l<sub>b</sub> ≥ 12·d com gancho",
+      "conta": "12 · 1,905 → adotado 40 cm",
+      "valor": "40 cm",
+      "norma": "NBR 6118, item 9.4"
+     }
+    ]
+   },
+   {
+    "titulo": "Cisalhamento na base — atrito e chave",
+    "norma": "NBR 8800:2008, item 6.5.5.3",
+    "Sd": 38.0,
+    "Rd": 40.3,
+    "unidade": "kN",
+    "razao": 0.943,
+    "ok": true,
+    "dispensada": false,
+    "observacao": "",
+    "passos": [
+     {
+      "texto": "Resistência por atrito placa-graute",
+      "formula": "V<sub>Rd</sub> = μ·N<sub>Sd,mín</sub>",
+      "conta": "0,55 · 73,3",
+      "valor": "40,3 kN",
+      "norma": "item 6.5.5.3"
+     },
+     {
+      "texto": "Como V<sub>Sd</sub> ≤ V<sub>Rd</sub>, dispensa-se a chave de cisalhamento",
+      "formula": "38,0 ≤ 40,3",
+      "conta": "margem de 5,7 %",
+      "valor": "sem chave",
+      "norma": ""
+     }
+    ]
+   },
+   {
+    "titulo": "Punção do bloco de fundação",
+    "norma": "NBR 6118:2014, item 19.5",
+    "Sd": 0.0,
+    "Rd": 0.0,
+    "unidade": "kN",
+    "razao": 0.0,
+    "ok": true,
+    "dispensada": true,
+    "observacao": "Não se aplica: a fundação é projetada por terceiros; as reações de cálculo estão na prancha de cargas na fundação.",
+    "passos": []
+   }
+  ],
+  "dados": {
+   "placa_mm": "450 × 300 × 25",
+   "chumbadores": "4 ⌀ 3/4\" F1554 Gr.36",
+   "graute_mm": 30.0,
+   "ancoragem_cm": 40.0
+  }
+ },
+ "vento": {
+  "V0": 50.0,
+  "S1": 1.0,
+  "S2": 0.94,
+  "S3": 1.0,
+  "Vk": 47.0,
+  "q": 1.354,
+  "z": 7.0,
+  "categoria": "II",
+  "classe": "B",
+  "Cpi": [
+   0.2,
+   -0.3
+  ],
+  "Ce_cobertura_barlavento": -0.9,
+  "Ce_cobertura_sotavento": -0.4,
+  "Ce_parede_barlavento": 0.7,
+  "Ce_parede_sotavento": -0.5,
+  "p_max_sucao_cobertura": -1.49,
+  "p_max_pressao_parede": 1.35
+ },
+ "cargas": {
+  "peso_telha": 0.05,
+  "peso_tercas": 0.05,
+  "peso_contraventamentos": 0.05,
+  "sobrecarga": 0.25,
+  "forro": 0.0,
+  "extra": 0.0,
+  "permanente_total": 0.15,
+  "variavel_total": 0.25,
+  "area_influencia_portico_m2": 100.0
+ },
+ "lista_material": [
+  {
+   "marca": "P1",
+   "descricao": "Pilar do pórtico",
+   "perfil": "W 460×52,0",
+   "material": "ASTM A572 Gr.50",
+   "quantidade": 18,
+   "comprimento_m": 6.0,
+   "peso_unit_kg": 312.0,
+   "peso_total_kg": 5616.0,
+   "area_pintura_m2": 165.6,
+   "observacao": ""
+  },
+  {
+   "marca": "V1",
+   "descricao": "Viga do pórtico (meia água)",
+   "perfil": "W 460×60,0",
+   "material": "ASTM A572 Gr.50",
+   "quantidade": 18,
+   "comprimento_m": 10.07,
+   "peso_unit_kg": 604.2,
+   "peso_total_kg": 10875.6,
+   "area_pintura_m2": 275.4,
+   "observacao": ""
+  },
+  {
+   "marca": "M1",
+   "descricao": "Mísula do joelho",
+   "perfil": "Chapa 8 mm recortada",
+   "material": "ASTM A572 Gr.50",
+   "quantidade": 18,
+   "comprimento_m": 1.8,
+   "peso_unit_kg": 41.5,
+   "peso_total_kg": 747.0,
+   "area_pintura_m2": 28.8,
+   "observacao": ""
+  },
+  {
+   "marca": "T1",
+   "descricao": "Terça de cobertura",
+   "perfil": "Ue 200×75×25×2,65",
+   "material": "CF-26 (NBR 6650)",
+   "quantidade": 126,
+   "comprimento_m": 5.0,
+   "peso_unit_kg": 34.5,
+   "peso_total_kg": 4347.0,
+   "area_pintura_m2": 390.6,
+   "observacao": ""
+  },
+  {
+   "marca": "C1",
+   "descricao": "Contraventamento de cobertura",
+   "perfil": "Barra redonda ⌀ 16 mm",
+   "material": "ASTM A36",
+   "quantidade": 16,
+   "comprimento_m": 11.4,
+   "peso_unit_kg": 18.0,
+   "peso_total_kg": 288.0,
+   "area_pintura_m2": 9.12,
+   "observacao": ""
+  },
+  {
+   "marca": "C2",
+   "descricao": "Contraventamento de parede",
+   "perfil": "Barra redonda ⌀ 16 mm",
+   "material": "ASTM A36",
+   "quantidade": 8,
+   "comprimento_m": 7.8,
+   "peso_unit_kg": 12.3,
+   "peso_total_kg": 98.4,
+   "area_pintura_m2": 3.12,
+   "observacao": ""
+  },
+  {
+   "marca": "CO",
+   "descricao": "Corrente de terça",
+   "perfil": "Barra redonda ⌀ 12,5 mm",
+   "material": "ASTM A36",
+   "quantidade": 56,
+   "comprimento_m": 1.6,
+   "peso_unit_kg": 1.54,
+   "peso_total_kg": 86.2,
+   "area_pintura_m2": 3.36,
+   "observacao": ""
+  },
+  {
+   "marca": "CH1",
+   "descricao": "Chapa de topo do joelho",
+   "perfil": "Chapa 22 mm — 450×300",
+   "material": "ASTM A36",
+   "quantidade": 36,
+   "comprimento_m": 0.0,
+   "peso_unit_kg": 23.3,
+   "peso_total_kg": 838.8,
+   "area_pintura_m2": 11.88,
+   "observacao": ""
+  },
+  {
+   "marca": "CH2",
+   "descricao": "Chapa de topo da cumeeira",
+   "perfil": "Chapa 19 mm — 460×260",
+   "material": "ASTM A36",
+   "quantidade": 18,
+   "comprimento_m": 0.0,
+   "peso_unit_kg": 17.9,
+   "peso_total_kg": 322.2,
+   "area_pintura_m2": 5.04,
+   "observacao": ""
+  },
+  {
+   "marca": "BP",
+   "descricao": "Placa de base",
+   "perfil": "Chapa 25 mm — 450×300",
+   "material": "ASTM A36",
+   "quantidade": 18,
+   "comprimento_m": 0.0,
+   "peso_unit_kg": 26.5,
+   "peso_total_kg": 477.0,
+   "area_pintura_m2": 5.94,
+   "observacao": ""
+  },
+  {
+   "marca": "CB",
+   "descricao": "Chumbador com gancho",
+   "perfil": "⌀ 3/4\" × 500 mm",
+   "material": "ASTM F1554 Gr.36",
+   "quantidade": 72,
+   "comprimento_m": 0.5,
+   "peso_unit_kg": 1.12,
+   "peso_total_kg": 80.6,
+   "area_pintura_m2": 2.88,
+   "observacao": ""
+  },
+  {
+   "marca": "MF",
+   "descricao": "Mão-francesa do fechamento",
+   "perfil": "L 50×50×4,75",
+   "material": "ASTM A36",
+   "quantidade": 36,
+   "comprimento_m": 0.9,
+   "peso_unit_kg": 3.2,
+   "peso_total_kg": 115.2,
+   "area_pintura_m2": 6.84,
+   "observacao": ""
+  }
+ ],
+ "resumo_pesos": {
+  "pilares": 5616.0,
+  "vigas": 10875.6,
+  "mísulas": 747.0,
+  "terças": 4347.0,
+  "contraventamentos": 464.2,
+  "correntes": 86.2,
+  "chapas e ligações": 1801.6,
+  "bases e chumbadores": 558.6
+ },
+ "custo": {
+  "peso_kg": 24496.2,
+  "custo_kg": 17.0,
+  "material_e_fabricacao": 291705.0,
+  "montagem": 78387.8,
+  "pintura_m2": 42.0,
+  "custo_pintura": 30294.0,
+  "total": 416386.8,
+  "por_m2_coberto": 520.5
+ },
+ "peso_total_kg": 23892.0,
+ "consumo_kg_m2": 29.86,
+ "area_pintura_m2": 908.6,
+ "avisos": [
+  "V₀ = 50 m/s adotado pela tabela regional; confira o mapa de isopletas da NBR 6123 vigente para Chapecó antes de emitir o projeto.",
+  "A flecha da viga (3,62 cm) usa 90 % do limite L/250: qualquer acréscimo de carga permanente exige revisão.",
+  "A fundação não faz parte deste dimensionamento; as reações de cálculo estão na prancha de cargas na fundação."
+ ],
+ "erros": [],
+ "_demo": true,
+ "_observacao": "Resposta de demonstração para desenvolvimento da interface. Os números são plausíveis mas NÃO foram conferidos por cálculo.",
+ "arquivos": [
+  {
+   "nome": "memorial.pdf",
+   "url": "/saida/galpao-industrial-modulo-a/memorial/memorial.pdf",
+   "tamanho_kb": 1847.3,
+   "descricao": "Memorial de cálculo completo (68 páginas)"
+  },
+  {
+   "nome": "portico.dxf",
+   "url": "/saida/galpao-industrial-modulo-a/desenhos/portico.dxf",
+   "tamanho_kb": 412.8,
+   "descricao": "Pórtico típico com cotas e marcas"
+  },
+  {
+   "nome": "ligacoes.dxf",
+   "url": "/saida/galpao-industrial-modulo-a/desenhos/ligacoes.dxf",
+   "tamanho_kb": 233.1,
+   "descricao": "Joelho, cumeeira e base do pilar"
+  },
+  {
+   "nome": "tercas_e_contraventamentos.dxf",
+   "url": "/saida/galpao-industrial-modulo-a/desenhos/tercas_e_contraventamentos.dxf",
+   "tamanho_kb": 176.4,
+   "descricao": "Planta de cobertura"
+  },
+  {
+   "nome": "pranchas.pdf",
+   "url": "/saida/galpao-industrial-modulo-a/pranchas/pranchas.pdf",
+   "tamanho_kb": 2963.5,
+   "descricao": "4 pranchas A1 com carimbo"
+  },
+  {
+   "nome": "lista_material.pdf",
+   "url": "/saida/galpao-industrial-modulo-a/lista/lista_material.pdf",
+   "tamanho_kb": 128.9,
+   "descricao": "Lista de material por marca"
+  },
+  {
+   "nome": "lista_material.csv",
+   "url": "/saida/galpao-industrial-modulo-a/lista/lista_material.csv",
+   "tamanho_kb": 6.2,
+   "descricao": "Mesma lista para planilha"
+  }
+ ],
+ "pasta": "sistema/projetos/galpao-industrial-modulo-a"
+}
