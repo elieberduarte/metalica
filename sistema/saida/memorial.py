@@ -42,6 +42,19 @@ from nucleo.modelo_galpao import (DadosGalpao, ElementoDimensionado,       # noq
 
 _AQUI = os.path.dirname(os.path.abspath(__file__))
 
+
+def _identificacao_do_programa() -> str:
+    """'Metálica 0.1.0 · núcleo 3f9a1c0b7e2d', impresso na capa: de qual versão o
+    memorial saiu e com qual núcleo de cálculo (ver `versao.py`)."""
+    try:
+        raiz = os.path.dirname(_AQUI)
+        if raiz not in sys.path:
+            sys.path.insert(0, raiz)
+        import versao
+        return versao.identificacao()
+    except Exception:                                  # a capa não pode cair por isso
+        return ""
+
 #: Largura útil da página A4 com as margens da folha de estilo (176 mm), em pontos.
 #: É a largura natural das figuras desenhadas aqui; o CSS só as reduz, nunca amplia.
 LARGURA_FIGURA_PT = 172.0 / 25.4 * 72.0
@@ -1638,6 +1651,7 @@ def _capa(projeto: ProjetoGalpao) -> str:
     <div>Emitido em {hoje.strftime('%d/%m/%Y')} · {len(projeto.elementos)} elementos
       dimensionados · {len(projeto.ligacoes) + (1 if projeto.base else 0)} ligações
       verificadas</div>
+    <div class="versao">{_identificacao_do_programa()}</div>
   </div>
 </div>"""
 

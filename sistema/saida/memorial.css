@@ -107,6 +107,8 @@ hr { border: 0; border-top: 1px solid var(--linha); margin: 4mm 0 }
   border-top: 2px solid var(--azul); padding-top: 3mm; font-size: 8.5pt;
   color: #4a4f57 }
 .capa .rodape .aviso { color: var(--nao); font-weight: bold }
+.capa .rodape .versao { margin-top: 1.5mm; font-family: Consolas, 'Courier New', monospace;
+  font-size: 7.5pt; color: #6b7280 }
 
 /* ------------------------------ Sumário -------------------------------- */
 .sumario { page: sumario; break-before: page }

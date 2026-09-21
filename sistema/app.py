@@ -26,6 +26,7 @@ import socket
 import re
 import sys
 import threading
+import time
 import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -33,8 +34,55 @@ from urllib.parse import unquote, urlparse
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(BASE, "web")
-PROJETOS = os.path.join(BASE, "projetos")
 sys.path.insert(0, BASE)
+
+import versao                                  # noqa: E402
+
+
+def _documentos() -> str:
+    """Pasta Documentos do usuário, mesmo quando o OneDrive a redirecionou."""
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class GUID(ctypes.Structure):
+                _fields_ = [("a", wintypes.DWORD), ("b", wintypes.WORD),
+                            ("c", wintypes.WORD), ("d", ctypes.c_ubyte * 8)]
+            # FOLDERID_Documents = {FDD39AD0-238F-46AF-ADB4-6C85480369C7}
+            fid = GUID(0xFDD39AD0, 0x238F, 0x46AF,
+                       (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))
+            ptr = ctypes.c_wchar_p()
+            if ctypes.windll.shell32.SHGetKnownFolderPath(
+                    ctypes.byref(fid), 0, None, ctypes.byref(ptr)) == 0 and ptr.value:
+                caminho = ptr.value
+                ctypes.windll.ole32.CoTaskMemFree(ptr)
+                return caminho
+        except Exception:
+            pass
+    return os.path.join(os.path.expanduser("~"), "Documents")
+
+
+def _pasta_de_dados() -> str:
+    """Onde ficam projetos, modelos e arquivos gerados.
+
+    `--dados pasta` ou a variável METALICA_DADOS mandam. Sem elas, o programa instalado
+    grava em Documentos\\Metálica — a pasta de instalação não aceita escrita, e ali o
+    usuário enxerga os arquivos e faz backup —, e o desenvolvimento continua em
+    `sistema/projetos`, onde os testes e os verificadores procuram.
+    """
+    if "--dados" in sys.argv:
+        i = sys.argv.index("--dados")
+        if i + 1 < len(sys.argv):
+            return os.path.abspath(sys.argv[i + 1])
+    if os.environ.get("METALICA_DADOS"):
+        return os.path.abspath(os.environ["METALICA_DADOS"])
+    if versao.CONGELADO:
+        return os.path.join(_documentos(), versao.NOME)
+    return os.path.join(BASE, "projetos")
+
+
+PROJETOS = _pasta_de_dados()
 
 from nucleo.base import ErroDeDados            # noqa: E402
 from nucleo.modelo_galpao import DadosGalpao   # noqa: E402
@@ -501,6 +549,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if rota == "/" or rota == "/index.html":
                 return self._arquivo(os.path.join(WEB, "index.html"), WEB)
+            if rota == "/api/versao":
+                return self._json({"programa": versao.NOME, "versao": versao.VERSAO,
+                                   "nucleo": versao.impressao_do_nucleo(),
+                                   "dados": PROJETOS, "instalado": versao.CONGELADO})
             if rota == "/api/catalogo":
                 return self._json(catalogo())
             if rota == "/api/projetos":
@@ -591,27 +643,120 @@ def _servidores(porta: int):
     return principal, extras
 
 
+PORTA_PADRAO = 8765
+
+
+def _ja_esta_rodando(porta: int) -> bool:
+    """Há outro Metálica respondendo nessa porta? (segundo clique no atalho)"""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{porta}/api/versao", timeout=1.5) as r:
+            return json.loads(r.read().decode("utf-8")).get("programa") == versao.NOME
+    except Exception:
+        return False
+
+
+def _porta_livre(preferida: int) -> int:
+    """A porta preferida, se estiver livre; senão uma que o sistema escolher.
+
+    Na máquina do usuário a 8765 pode estar ocupada por outro programa, e o Metálica
+    não pode deixar de abrir por isso."""
+    for candidata in (preferida, 0):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("127.0.0.1", candidata))
+            return s.getsockname()[1]
+        except OSError:
+            continue
+        finally:
+            s.close()
+    return preferida
+
+
+def _abrir_janela(url: str):
+    """Janela própria do programa: o Edge (ou Chrome) em modo aplicativo, sem abas nem
+    barra de endereço, com perfil separado do navegador do usuário.
+
+    Devolve o processo, para o programa encerrar quando a janela fechar, ou None se não
+    houver navegador compatível — aí a interface abre no navegador padrão."""
+    import subprocess
+    try:
+        from saida.printpdf import navegador
+        exe = navegador()
+    except Exception:
+        return None
+    perfil = os.path.join(PROJETOS, ".janela")
+    os.makedirs(perfil, exist_ok=True)
+    try:
+        return subprocess.Popen(
+            [exe, f"--app={url}", f"--user-data-dir={perfil}", "--no-first-run",
+             "--no-default-browser-check", "--window-size=1500,950",
+             "--disable-features=Translate"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return None
+
+
+def _registro_em_arquivo():
+    """Sem console (programa instalado), print e erros vão para um arquivo de registro:
+    `sys.stdout` é None e qualquer escrita nele derrubaria o servidor."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    try:
+        arq = open(os.path.join(PROJETOS, "metalica.log"), "a", encoding="utf-8", buffering=1)
+    except OSError:
+        arq = open(os.devnull, "w")
+    sys.stdout = sys.stdout or arq
+    sys.stderr = sys.stderr or arq
+
+
 def main():
-    porta = 8765
+    os.makedirs(PROJETOS, exist_ok=True)
+    _registro_em_arquivo()
+    com_janela = "--janela" in sys.argv or (versao.CONGELADO and "--sem-navegador" not in sys.argv)
     if "--porta" in sys.argv:
         porta = int(sys.argv[sys.argv.index("--porta") + 1])
-    os.makedirs(PROJETOS, exist_ok=True)
+    else:
+        if com_janela and _ja_esta_rodando(PORTA_PADRAO):
+            # segundo clique no atalho: mostra o que já está aberto, não sobe outro
+            janela = _abrir_janela(f"http://localhost:{PORTA_PADRAO}/")
+            if janela is None:
+                webbrowser.open(f"http://localhost:{PORTA_PADRAO}/")
+            return
+        porta = _porta_livre(PORTA_PADRAO)
     servidor, extras = _servidores(porta)
     for s in extras:
         threading.Thread(target=s.serve_forever, daemon=True).start()
     url = f"http://localhost:{porta}/"
-    print(f"Sistema de dimensionamento de estruturas metálicas")
-    print(f"  interface: {url}")
-    print(f"  projetos:  {PROJETOS}")
-    print("  Ctrl+C para encerrar.")
-    if "--sem-navegador" not in sys.argv:
+    # flush: com a saída redirecionada para arquivo o Python retém o texto, e quem lê o
+    # registro para descobrir a porta ficaria sem resposta
+    print(f"{versao.identificacao()} — dimensionamento de estruturas metálicas", flush=True)
+    print(f"  interface: {url}", flush=True)
+    print(f"  projetos:  {PROJETOS}", flush=True)
+
+    def encerrar():
+        for s in [servidor, *extras]:
+            threading.Thread(target=s.shutdown, daemon=True).start()
+
+    if com_janela:
+        def vigiar():
+            time.sleep(0.6)                     # o servidor já está ouvindo
+            janela = _abrir_janela(url)
+            if janela is None:
+                webbrowser.open(url)            # sem Edge nem Chrome: navegador padrão,
+                return                          # e o programa fica até ser encerrado
+            janela.wait()
+            print("janela fechada: encerrando.")
+            encerrar()
+        threading.Thread(target=vigiar, daemon=True).start()
+    elif "--sem-navegador" not in sys.argv:
+        print("  Ctrl+C para encerrar.")
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
         servidor.serve_forever()
     except KeyboardInterrupt:
         print("\nencerrado.")
-        for s in [servidor, *extras]:
-            s.shutdown()
+        encerrar()
 
 
 if __name__ == "__main__":

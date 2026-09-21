@@ -20,3 +20,9 @@ desktop.ini
 .DS_Store
 .vscode/
 .idea/
+
+# Empacotamento: só o roteiro entra no repositório, não o que ele gera
+empacotar/_gerado/
+empacotar/build/
+empacotar/dist/
+empacotar/saida/
