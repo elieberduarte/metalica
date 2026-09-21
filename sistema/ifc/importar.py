@@ -56,7 +56,7 @@ if RAIZ not in sys.path:
     sys.path.insert(0, RAIZ)
 
 from ifc.step import Arquivo, Entidade, Ref, Tipado, ler                # noqa: E402
-from nucleo3d.modelo import (Barra, Camada, Chapa, Documento,          # noqa: E402
+from nucleo3d.modelo import (Barra, Camada, Chapa, Documento, Grupo,   # noqa: E402
                              Material, Solido)
 
 __all__ = ["importar", "inspecionar", "Importador", "LIMITACOES", "camada_semantica",
@@ -372,6 +372,7 @@ class Importador:
             "camada_padrao": "Importado",
             "max_avisos": 200,
             "nome": None,
+            "trazer_para_origem": True,  # coordenadas de obra viram locais (ver método)
         }
         self.op.update(opcoes)
 
@@ -1991,6 +1992,43 @@ class Importador:
         return PAPEL_POR_TIPO.get(base, "barra")
 
     # ------------------------------------------------------------ percurso
+    #: A partir desta distância do canto mínimo à origem (mm) o modelo é trazido para
+    #: perto dela. Um galpão de 100 m em coordenadas locais tem o canto em (0, 0); só
+    #: coordenadas de obra deixam o canto a 50 m ou mais.
+    LIMITE_DESLOCAMENTO = 50000.0
+
+    def _trazer_para_origem(self):
+        """Coordenadas de obra viram coordenadas locais.
+
+        Programas de detalhamento gravam a peça onde ela está no terreno, a centenas
+        de metros da origem; no editor o modelo ficaria fora da grade e o zoom na
+        extensão o mostraria minúsculo. O canto mínimo em planta vai para (0, 0), a
+        cota fica como está, e o deslocamento é guardado em
+        `metadados["deslocamento_mm"]` para o exportador repor a posição no IfcSite.
+        Modelo já perto da origem (o galpão do sistema, um IFC exportado daqui) não
+        é tocado, senão a ida e volta mudaria as coordenadas."""
+        if not self.doc.entidades or not self.op.get("trazer_para_origem", True):
+            return
+        try:
+            (x0, y0, _), _ = self.doc.caixa()
+        except (TypeError, ValueError):
+            return
+        if not (math.isfinite(x0) and math.isfinite(y0)) or math.hypot(x0, y0) < self.LIMITE_DESLOCAMENTO:
+            return
+        dx, dy = -x0, -y0
+        def mv(p):
+            return (p[0] + dx, p[1] + dy, p[2])
+        for e in self.doc.entidades.values():
+            if isinstance(e, Barra):
+                e.inicio, e.fim = mv(e.inicio), mv(e.fim)
+            elif isinstance(e, (Chapa, Grupo)):
+                e.origem = mv(e.origem)
+            elif isinstance(e, Solido):
+                e.vertices = [mv(v) for v in e.vertices]
+        self.doc.metadados["deslocamento_mm"] = [round(x0, 3), round(y0, 3), 0.0]
+        self.avisar("modelo trazido para a origem: no arquivo ele estava em x = %.1f m, "
+                    "y = %.1f m; o exportador devolve essa posição" % (x0 / 1000, y0 / 1000))
+
     def processar(self) -> Documento:
         inicio = time.time()
         self.ler_unidades()
@@ -2038,6 +2076,7 @@ class Importador:
         if usadas:
             for nome in [n for n in self.doc.camadas if n not in usadas]:
                 del self.doc.camadas[nome]
+        self._trazer_para_origem()
 
         self.doc.metadados["importacao"] = {
             "arquivo": os.path.basename(self.arq.caminho),

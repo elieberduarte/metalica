@@ -565,7 +565,16 @@ class _Exportador:
         projeto = self.raiz("IFCPROJECT", _texto(self.projeto_nome),
                             _texto(self.descricao), "$", "$", "$",
                             _lista([self.contexto]), unidades)
-        pl_sitio = a.add(f"IFCLOCALPLACEMENT($,{a.eixo3()})")
+        # modelo importado de coordenadas de obra foi trazido para a origem; a posição
+        # original volta aqui, na colocação do sítio, com a geometria local intacta
+        desloc = self.doc.metadados.get("deslocamento_mm") or (0.0, 0.0, 0.0)
+        try:
+            origem_sitio = tuple(float(v) for v in desloc)[:3]
+            if len(origem_sitio) != 3 or not all(math.isfinite(v) for v in origem_sitio):
+                origem_sitio = (0.0, 0.0, 0.0)
+        except (TypeError, ValueError):
+            origem_sitio = (0.0, 0.0, 0.0)
+        pl_sitio = a.add(f"IFCLOCALPLACEMENT($,{a.eixo3(origem_sitio)})")
         sitio = self.raiz("IFCSITE", _texto(self.sitio_nome), "$", "$", pl_sitio, "$",
                           "$", ".ELEMENT.", "$", "$", _real(0.0), "$", "$")
         pl_predio = a.add(f"IFCLOCALPLACEMENT({pl_sitio},{a.eixo3()})")

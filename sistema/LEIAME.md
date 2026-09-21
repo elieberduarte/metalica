@@ -112,6 +112,13 @@ biapoiada, e o diagrama delas aparece sobre uma **peça típica** de cada elemen
   peça é: Telhas, Chapas, Parafusos, Tirantes, Pilares, Vigas e Barras, para dar para
   ocultar as telhas e ver a estrutura. Cada peça guarda as marcas de conjunto, posição
   e perfil do exportador.
+- Modelo em coordenadas de obra (o canto a mais de 50 m da origem) é trazido para a
+  origem na importação, para cair sobre a grade; a cota fica como está. O deslocamento
+  vai para `metadados["deslocamento_mm"]` e o exportador o devolve na colocação do
+  `IfcSite`, de modo que o arquivo exportado volta ao lugar de obra.
+- O editor grava o documento no servidor alguns segundos depois de cada mudança, em
+  `projetos/modelos/<nome>.modelo.json`, e reabre o último modelo ao carregar a página
+  sem parâmetros. Atualizar a página não descarta o trabalho.
 - **Colorir por**, no painel Camadas, pinta o modelo por conjunto de montagem, posição,
   perfil ou tipo IFC, com legenda: clique num grupo seleciona as peças dele, duplo
   clique enquadra. Peças sem a marca ficam em cinza.

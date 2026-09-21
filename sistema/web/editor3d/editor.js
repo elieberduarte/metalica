@@ -28,6 +28,8 @@ import { Ferramenta, formatar } from './ferramentas/base.js';
 
 const CHAVE_TEMA = 'galpao.tema';               // a mesma da interface principal
 const CHAVE_GALPAO = 'galpao.estado.v1';        // dados do galpão dimensionado
+const CHAVE_ULTIMO = 'galpao.editor.ultimo';    // nome do último modelo salvo no servidor
+const ATRASO_AUTOSAVE = 4000;                   // ms de sossego antes de gravar no servidor
 const TECLAS_VISTA = ['topo', 'frente', 'tras', 'esquerda', 'direita', 'inferior', 'isometrica'];
 const ARRASTO_MIN = 4;                          // pixels até um clique virar arrasto
 const ABREVIACOES = { navegacao: 'Nav', desenho: 'Des', edicao: 'Edi', medicao: 'Med', estrutura: 'Estr' };
@@ -237,6 +239,13 @@ export class Editor {
     if (this.parametros.get('galpao') === '1') await this._carregarGalpaoDaInterface();
     else if (this.parametros.get('exemplo')) this.carregarExemplo();
     else if (this.parametros.get('abrir')) await this.abrirModelo(this.parametros.get('abrir'));
+    else {
+      // Sem pedido na URL, volta ao último modelo: o documento é gravado no servidor
+      // a cada mudança, então atualizar a página não pode jogar o trabalho fora.
+      let ultimo = null;
+      try { ultimo = localStorage.getItem(CHAVE_ULTIMO); } catch { ultimo = null; }
+      if (ultimo) await this.abrirModelo(ultimo, { avisarErro: false });
+    }
 
     this._aplicarParametrosDeTeste();
     this._agendarPaineis('props', 'camadas', 'materiais', 'arvore');
@@ -766,10 +775,11 @@ export class Editor {
     }
     this._atualizarCarimbo();
     this._sujo = true;
+    this._agendarAutosave();
   }
 
   /** Troca o documento inteiro (abrir, importar, gerar do galpão). */
-  carregarDocumento(json, { enquadrar = true } = {}) {
+  carregarDocumento(json, { enquadrar = true, autosalvar = true } = {}) {
     // A análise é de um modelo só: trocar o documento a invalida. Quem gera do galpão
     // repõe os dados logo em seguida; modelo aberto ou importado fica sem o que calcular.
     this._limparAnalise();
@@ -784,6 +794,14 @@ export class Editor {
     }
     if (enquadrar) this.camera.vista('isometrica', this.documento.caixa());
     this._agendarPaineis('props', 'camadas', 'materiais', 'arvore');
+    if (autosalvar) {
+      this._agendarAutosave();
+    } else {
+      // `substituirPor` avisa "tudo mudou" e agendaria uma gravação do que acabou de
+      // vir do servidor; cancela, senão a primeira mudança de verdade espera na fila
+      this._autosavePendente = false;
+      if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+    }
     return this.documento;
   }
 
@@ -803,6 +821,7 @@ export class Editor {
     this.documento.nome = n;
     try {
       const r = await this.api.salvar(this.documento.paraJSON(), n);
+      this._lembrar(r.salvo || n);
       this.aviso(`Modelo salvo: projetos/modelos/${r.salvo} (${r.entidades} objetos).`, 'info');
     } catch (e) {
       this.aviso(`Não foi possível salvar: ${e.message}`, 'erro');
@@ -819,13 +838,55 @@ export class Editor {
     await this.salvar(nome);
   }
 
-  async abrirModelo(nome) {
+  async abrirModelo(nome, { avisarErro = true } = {}) {
     try {
       const r = await this.api.abrir(nome);
-      this.carregarDocumento(r.documento);
+      // o que acabou de vir do servidor não precisa voltar para lá
+      this.carregarDocumento(r.documento, { autosalvar: false });
+      this._lembrar(nome);
       this.dica(`Modelo "${nome}" aberto.`);
     } catch (e) {
-      this.aviso(`Não foi possível abrir "${nome}": ${e.message}`, 'erro');
+      if (avisarErro) this.aviso(`Não foi possível abrir "${nome}": ${e.message}`, 'erro');
+      else this.dica(`O último modelo ("${nome}") não está mais no servidor.`);
+    }
+  }
+
+  // ------------------------------------------------------------ gravação automática
+
+  /** Guarda o nome (já em forma de arquivo) do modelo a reabrir na próxima visita. */
+  _lembrar(nome) {
+    const n = String(nome || '').replace(/\.modelo\.json$/, '');
+    try { if (n) localStorage.setItem(CHAVE_ULTIMO, n); } catch { /* janela privativa */ }
+  }
+
+  /** Agenda a gravação no servidor depois de um intervalo sem mudanças. */
+  _agendarAutosave() {
+    this._autosavePendente = true;
+    if (this._autosaveTimer) clearTimeout(this._autosaveTimer);
+    this._autosaveTimer = setTimeout(() => this._autosalvar(), ATRASO_AUTOSAVE);
+  }
+
+  /**
+   * Grava o documento em projetos/modelos/<nome>.modelo.json, o mesmo arquivo do
+   * botão Salvar, e anota o nome para a próxima abertura. Uma gravação por vez: se o
+   * modelo mudar no meio, outra é agendada quando esta terminar. Falha em silêncio na
+   * barra de dica, porque não é o usuário que pediu.
+   */
+  async _autosalvar() {
+    this._autosaveTimer = null;
+    if (this._autosalvando) { this._agendarAutosave(); return; }
+    if (!this._autosavePendente || !this.documento.tamanho) return;
+    this._autosavePendente = false;
+    this._autosalvando = true;
+    const nome = this.el.nome.value.trim() || this.documento.nome || 'modelo';
+    try {
+      const r = await this.api.salvar(this.documento.paraJSON(), nome);
+      this._lembrar(r.salvo || nome);
+    } catch (e) {
+      this.dica(`Gravação automática falhou: ${e.message}`);
+    } finally {
+      this._autosalvando = false;
+      if (this._autosavePendente) this._agendarAutosave();
     }
   }
 

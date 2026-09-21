@@ -1113,3 +1113,44 @@ def test_marcas_de_pset_e_descricao():
     m = marcas_de("HEA200", "", {"Tekla Common": {"PART_POS": "p12", "ASSEMBLY_POS": "A3"}})
     assert m["posicao"] == "p12" and m["conjunto"] == "A3" and m["perfil"] == "HEA200"
     assert marcas_de("", "", {}) == {}
+
+
+# ------------------------------------------------- coordenadas de obra → origem
+
+def test_modelo_longe_da_origem_vem_para_a_origem_e_a_exportacao_devolve():
+    """Um IFC com a peça a 200 m da origem entra com o canto em (0, 0), guarda o
+    deslocamento, e a ida e volta pelo exportador mantém tudo estável."""
+    import tempfile
+    from ifc import exportar as exp
+    from ifc.importar import importar
+    from nucleo3d.modelo import Documento, Barra
+    doc = Documento(nome="Longe")
+    doc.add(Barra(nome="V1", inicio=(210000.0, 66000.0, 4500.0), fim=(217000.0, 66000.0, 4500.0),
+                  perfil="W 310×38,7", papel="viga"))
+    doc.add(Barra(nome="P1", inicio=(210000.0, 66000.0, 0.0), fim=(210000.0, 66000.0, 4500.0),
+                  perfil="W 310×38,7", papel="pilar"))
+    with tempfile.TemporaryDirectory() as pasta:
+        caminho = exp.exportar(doc, os.path.join(pasta, "longe.ifc"))
+        volta = importar(caminho)
+        (x0, y0, z0), (x1, y1, z1) = volta.caixa()
+        assert abs(x0) < 1.0 and abs(y0) < 1.0, (x0, y0)          # canto em (0, 0)
+        assert abs(z0) < 1.0 and abs(z1 - 4500) < 1.0             # cota preservada
+        assert abs(x1 - 7000) < 1.0
+        d = volta.metadados.get("deslocamento_mm")
+        assert d and abs(d[0] - 210000) < 1.0 and abs(d[1] - 66000) < 1.0, d
+        assert any("origem" in a for a in volta.metadados["importacao"]["avisos"])
+        # exporta de novo: o sítio carrega o deslocamento e a peça volta ao lugar de obra
+        caminho2 = exp.exportar(volta, os.path.join(pasta, "longe2.ifc"))
+        texto = open(caminho2, encoding="utf-8").read()
+        assert "210000." in texto and "66000." in texto
+        de_novo = importar(caminho2)
+        (x0, y0, _), _ = de_novo.caixa()
+        assert abs(x0) < 1.0 and abs(y0) < 1.0
+        d2 = de_novo.metadados.get("deslocamento_mm")
+        assert d2 and abs(d2[0] - 210000) < 1.0 and abs(d2[1] - 66000) < 1.0, d2
+
+
+def test_modelo_perto_da_origem_nao_e_mexido():
+    from ifc.importar import importar
+    doc = importar(os.path.join(DADOS, "estrutura_mm.ifc"))
+    assert "deslocamento_mm" not in doc.metadados

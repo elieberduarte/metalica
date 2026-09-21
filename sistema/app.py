@@ -412,8 +412,12 @@ def salvar_modelo(corpo: dict) -> dict:
     os.makedirs(MODELOS, exist_ok=True)
     nome = _slug(corpo.get("nome") or doc.nome or "modelo")
     caminho = os.path.join(MODELOS, nome + ".modelo.json")
-    with open(caminho, "w", encoding="utf-8") as f:
+    # grava num temporário e troca de uma vez: a gravação automática do editor manda
+    # dezenas de megabytes, e quem abrir o modelo no meio não pode ler metade
+    temporario = caminho + ".parcial"
+    with open(temporario, "w", encoding="utf-8") as f:
         json.dump(doc.dict(), f, ensure_ascii=False)
+    os.replace(temporario, caminho)
     return {"salvo": os.path.basename(caminho), "entidades": len(doc.entidades)}
 
 
