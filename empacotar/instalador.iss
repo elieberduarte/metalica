@@ -20,7 +20,7 @@
 AppId={{6F3B1C5E-8D2A-4E47-9B61-3A7C0D5E2F14}
 AppName=Metálica
 AppVersion={#Versao}
-AppPublisher=Vizin
+AppPublisher=Elieber
 AppComments=Dimensionamento e detalhamento de estruturas metálicas
 DefaultDirName={autopf}\Metalica
 DefaultGroupName=Metálica

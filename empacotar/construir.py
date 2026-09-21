@@ -3,6 +3,7 @@
 
     python empacotar/construir.py              # executável + instalador
     python empacotar/construir.py --sem-instalador
+    python empacotar/construir.py --so-instalador   # reaproveita o executável já gerado
 
 Passos:
   1. calcula a impressão digital do núcleo de cálculo e grava `impressao_nucleo.txt`,
@@ -13,8 +14,8 @@ Passos:
      basta repetir a estrutura de pastas dentro do pacote;
   3. compila o instalador com o Inno Setup (`instalador.iss`).
 
-Saídas: `empacotar/dist/Metalica/Metalica.exe` e
-`empacotar/saida/Metalica-<versão>-instalador.exe`.
+Saídas: o instalador em `empacotar/saida/Metalica-<versão>-instalador.exe` e o programa em
+pasta em `%TEMP%/metalica-build/dist/Metalica/` (fora do projeto, por causa do OneDrive).
 
 Requisitos: `pip install pyinstaller` e o Inno Setup 6 (winget install JRSoftware.InnoSetup).
 O nome do executável vai sem acento de propósito: atalho e pasta de instalação com
@@ -24,6 +25,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(AQUI)
@@ -33,8 +35,12 @@ sys.path.insert(0, SISTEMA)
 import versao                                   # noqa: E402
 
 GERADO = os.path.join(AQUI, "_gerado")
-DIST = os.path.join(AQUI, "dist")
-TRABALHO = os.path.join(AQUI, "build")
+# intermediários fora do projeto: ele costuma estar no OneDrive, que trava arquivos
+# enquanto sincroniza e derruba o PyInstaller com "acesso negado"
+import tempfile                                  # noqa: E402
+CONSTRUCAO = os.path.join(tempfile.gettempdir(), "metalica-build")
+TRABALHO = os.path.join(CONSTRUCAO, "trabalho")
+DIST = os.path.join(CONSTRUCAO, "dist")          # o executável em pasta também fica fora
 SAIDA = os.path.join(AQUI, "saida")
 
 ISCC = [os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
@@ -112,8 +118,17 @@ def tamanho_mb(caminho: str) -> float:
 
 
 def main():
+    if "--so-instalador" in sys.argv:            # mudou só o roteiro do instalador
+        inst = instalador()
+        if inst and os.path.exists(inst):
+            print(f"instalador: {inst}  ({tamanho_mb(inst):.0f} MB)")
+        return
     for pasta in (os.path.join(DIST, "Metalica"), TRABALHO):
-        shutil.rmtree(pasta, ignore_errors=True)
+        for _ in range(5):                      # o OneDrive pode segurar um arquivo por instantes
+            shutil.rmtree(pasta, ignore_errors=True)
+            if not os.path.exists(pasta):
+                break
+            time.sleep(2)
     print(f"{versao.NOME} {versao.VERSAO} — núcleo {impressao()[:12]}")
     exe = executavel()
     print(f"executável: {exe}  ({tamanho_mb(os.path.dirname(exe)):.0f} MB na pasta)")

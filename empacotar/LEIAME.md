@@ -12,7 +12,7 @@ python empacotar/construir.py
 
 | Saída | O que é |
 |---|---|
-| `empacotar/dist/Metalica/Metalica.exe` | o programa, em pasta, com o Python e as bibliotecas dentro (cerca de 85 MB) |
+| `%TEMP%\metalica-build\dist\Metalica\Metalica.exe` | o programa, em pasta, com o Python e as bibliotecas dentro (cerca de 85 MB). Fica fora do projeto: dentro do OneDrive a construção falha com "acesso negado", porque ele trava arquivos enquanto sincroniza |
 | `empacotar/saida/Metalica-<versão>-instalador.exe` | o instalador (cerca de 30 MB) |
 
 ## O que muda no programa instalado

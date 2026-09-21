@@ -685,7 +685,10 @@ def _abrir_janela(url: str):
         exe = navegador()
     except Exception:
         return None
-    perfil = os.path.join(PROJETOS, ".janela")
+    # o perfil do navegador fica fora da pasta de dados: Documentos costuma estar no
+    # OneDrive, que passaria a sincronizar centenas de arquivos temporários do Chrome
+    local = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    perfil = os.path.join(local, "Metalica", "janela")
     os.makedirs(perfil, exist_ok=True)
     try:
         return subprocess.Popen(
