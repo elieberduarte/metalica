@@ -156,7 +156,10 @@ class CAD {
   _agendarAutosave() {
     if (!this.projeto) return;
     if (this._autosaveTimer) clearTimeout(this._autosaveTimer);
-    this._autosaveTimer = setTimeout(() => { this._autosaveTimer = null; this.salvar({ avisar: false }); }, ATRASO_AUTOSAVE);
+    // desenho enorme (modelo inteiro): serializar 100 MB trava a tela por um instante,
+    // então espera mais, para uma sequência de edições gravar uma vez só
+    const atraso = this.doc.tamanho > 100000 ? ATRASO_AUTOSAVE * 5 : ATRASO_AUTOSAVE;
+    this._autosaveTimer = setTimeout(() => { this._autosaveTimer = null; this.salvar({ avisar: false }); }, atraso);
   }
 
   async exportarDXF() {

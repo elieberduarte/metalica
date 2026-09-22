@@ -101,22 +101,32 @@ export class Tela {
           textoInvertido: (c) => c };
   }
 
-  /** O que define o cache do desenho: se nada disto mudou, o quadro anterior serve. */
-  _assinatura() {
-    const v = this.vp;
-    return [v.x, v.y, v.z, this.canvas.width, this.canvas.height, this.escuro, this.grade,
-            this.doc.versao, this.doc.escala, this.realce].join('|');
+  /** O que define o conteúdo do cache, fora a janela: documento, tema, grade, tamanho. */
+  _assinaturaConteudo() {
+    return [this.canvas.width, this.canvas.height, this.escuro, this.grade, this.doc.versao, this.doc.escala].join('|');
   }
 
-  _cacheValido() {
-    const f = this._cache;
-    if (!f || f.assinatura !== this._assinatura() || f.selecao.size !== this.selecao.size) return false;
+  _mesmaSelecao(f) {
+    if (f.selecao.size !== this.selecao.size) return false;
     for (const id of this.selecao) if (!f.selecao.has(id)) return false;
     return true;
   }
 
+  _cacheValido() {
+    const f = this._cache, v = this.vp;
+    return !!f && f.assinatura === this._assinaturaConteudo() && this._mesmaSelecao(f)
+      && f.vp.x === v.x && f.vp.y === v.y && f.vp.z === v.z;
+  }
+
+  /** Só a janela mudou (pan/zoom): o conteúdo do cache serve, deslocado e escalado. */
+  _cacheSoDeslocado() {
+    const f = this._cache;
+    return !!f && f.assinatura === this._assinaturaConteudo() && this._mesmaSelecao(f);
+  }
+
   /** Fundo, grade e entidades, num canvas do tamanho da tela (em pixels físicos). */
   _renderizarCache(cores) {
+    const t0 = performance.now();
     const dpr = window.devicePixelRatio || 1;
     const W = this.largura, H = this.altura;
     const f = this._cache || (this._cache = { canvas: document.createElement('canvas') });
@@ -136,26 +146,68 @@ export class Tela {
     const ordem = this.doc.naRegiao([[m0[0] - mg, m0[1] - mg], [m1[0] + mg, m1[1] + mg]]);
     const peso = (e) => (e.tipo === 'hachura' ? 0 : (e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada') ? 2 : 1);
     ordem.sort((a, b) => peso(a) - peso(b));
+    // nível de detalhe: o que cabe em menos de um pixel (parafusos e furos com a vista
+    // afastada) vira um ponto, e um desenho de centenas de milhares de objetos fica leve
+    const minimo = 0.8 * this.mmPorPixel;
+    let pontos = 0;
     for (const e of ordem) {
       if (!this.doc.visivel(e)) continue;
       const cam = this.doc.camadas.get(e.camada);
-      const cor = this.selecao.has(e.id) ? cores.selecao : this.realce === e.id ? cores.realce : cores.textoInvertido((cam && cam.cor) || '#4b5563');
+      const cor = this.selecao.has(e.id) ? cores.selecao : cores.textoInvertido((cam && cam.cor) || '#4b5563');
+      const c = this.doc.caixaDa(e);
+      if (c && e.tipo !== 'texto' && !this.selecao.has(e.id) && c[1][0] - c[0][0] < minimo && c[1][1] - c[0][1] < minimo) {
+        const [x, y] = this.paraTela(c[0]);
+        ctx.fillStyle = cor;
+        ctx.fillRect(x, y - 1, 1, 1); pontos++;
+        continue;
+      }
       this._entidade(ctx, e, cor, cam, k, this.selecao.has(e.id));
     }
-    f.assinatura = this._assinatura();
+    f.assinatura = this._assinaturaConteudo();
     f.selecao = new Set(this.selecao);
-    f.desenhadas = ordem.length;
+    f.vp = { ...this.vp };
+    f.desenhadas = ordem.length - pontos;
+    f.pontos = pontos;
+    f.duracao = performance.now() - t0;
+  }
+
+  /** Cache deslocado/escalado para a janela atual: resposta imediata ao pan e ao zoom
+   *  num desenho pesado; o quadro definitivo vem quando a interação para. */
+  _blitAproximado(ctx, cores) {
+    const f = this._cache, W = this.largura, H = this.altura;
+    const s = this.vp.z / f.vp.z;
+    const dx = (f.vp.x - this.vp.x) * this.vp.z;
+    const dy = H * (1 - s) - (f.vp.y - this.vp.y) * this.vp.z;
+    ctx.fillStyle = cores.fundo;
+    ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(f.canvas, dx, dy, W * s, H * s);
+    if (this._timerDefinitivo) clearTimeout(this._timerDefinitivo);
+    this._timerDefinitivo = setTimeout(() => { this._timerDefinitivo = null; this._definitivo = true; this.pedirQuadro(); }, 160);
   }
 
   desenhar() {
     const ctx = this.ctx, dpr = window.devicePixelRatio || 1;
     const cores = this.cores();
-    if (!this._cacheValido()) this._renderizarCache(cores);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(this._cache.canvas, 0, 0);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // quadro pesado (> 40 ms) durante pan/zoom: aproxima com o cache e só refaz de
+    // verdade quando a janela fica parada 160 ms
+    const aproximar = !this._cacheValido() && this._cacheSoDeslocado() && this._cache.duracao > 40 && !this._definitivo;
+    this._definitivo = false;
+    if (aproximar) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this._blitAproximado(ctx, cores);
+    } else {
+      if (!this._cacheValido()) this._renderizarCache(cores);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(this._cache.canvas, 0, 0);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
 
     const k = this.doc.escala;
+    // realce do que está sob o mouse por cima do cache: passar o mouse não refaz o desenho
+    if (this.realce && !this.selecao.has(this.realce)) {
+      const e = this.doc.get(this.realce);
+      if (e && this.doc.visivel(e)) this._entidade(ctx, e, cores.realce, this.doc.camadas.get(e.camada), k, false);
+    }
     for (const e of this.previa) this._entidade(ctx, e, cores.previa, null, k, false, true);
 
     if (this.retangulo) {

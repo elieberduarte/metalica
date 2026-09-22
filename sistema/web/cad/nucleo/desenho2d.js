@@ -406,8 +406,10 @@ export class Desenho2D {
   paraJSON() {
     const camadas = {};
     for (const [k, v] of this.camadas) camadas[k] = { ...v };
+    // sem clonar: quem chama serializa em seguida (JSON.stringify), e clonar cada uma
+    // das centenas de milhares de entidades de um desenho grande dobrava o tempo e a memória
     return { nome: this.nome, unidade: this.unidade, escala: this.escala, camadas,
-             entidades: [...this.entidades.values()].map(clonar), vistas: this.vistas, metadados: this.metadados };
+             entidades: [...this.entidades.values()], vistas: this.vistas, metadados: this.metadados };
   }
 
   static deJSON(d) {
