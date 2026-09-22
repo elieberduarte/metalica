@@ -54,3 +54,5 @@ Name: "{autodesktop}\Metálica"; Filename: "{app}\Metalica.exe"; Tasks: atalho
 
 [Run]
 Filename: "{app}\Metalica.exe"; Description: "Abrir o Metálica agora"; Flags: nowait postinstall skipifsilent
+; instalação silenciosa (atualização de dentro do programa): reabre o programa sozinho
+Filename: "{app}\Metalica.exe"; Flags: nowait; Check: WizardSilent

@@ -530,10 +530,22 @@ def instalar_atualizacao() -> dict:
         raise ErroDeDados("o instalador baixado veio incompleto (%d bytes)." % tamanho)
     os.replace(destino + ".parcial", destino)
     exe_atual = sys.executable
-    # instala em silêncio e reabre o programa; roda separado deste processo, que fecha
-    comando = 'start "" /wait "%s" /SILENT /SUPPRESSMSGBOXES /NORESTART & start "" "%s"' % (destino, exe_atual)
-    subprocess.Popen(["cmd.exe", "/c", comando], creationflags=0x00000008 | 0x00000200,   # DETACHED | NEW_PROCESS_GROUP
-                     close_fds=True)
+    # instala em silêncio e reabre o programa, por um .cmd em disco (a linha de comando
+    # com aspas dentro de aspas passada ao cmd /c não era interpretada inteira); roda
+    # separado deste processo, que fecha. O instalador também reabre o programa por
+    # conta própria quando roda em silêncio ([Run] com Check: WizardSilent).
+    lote = os.path.join(tempfile.gettempdir(), "metalica-atualizar.cmd")
+    linhas = [
+        "@echo off",
+        "timeout /t 2 /nobreak >nul",
+        '"%s" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS' % destino,
+        'if not exist "%s" exit /b 1' % exe_atual,
+        'tasklist /fi "imagename eq Metalica.exe" | find /i "Metalica.exe" >nul || start "" "%s"' % exe_atual,
+    ]
+    with open(lote, "w", encoding="cp1252", errors="replace", newline="") as f:
+        f.write("\r\n".join(linhas) + "\r\n")
+    subprocess.Popen(["cmd.exe", "/c", lote], creationflags=0x00000008 | 0x00000200,   # DETACHED | NEW_PROCESS_GROUP
+                     close_fds=True, cwd=tempfile.gettempdir())
 
     def sair():
         time.sleep(1.5)
