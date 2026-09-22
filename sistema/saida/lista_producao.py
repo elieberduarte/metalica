@@ -116,7 +116,7 @@ def _linha_posicao(p: Posicao, categoria: str) -> dict:
             "largura": round(p.desenvolvimento[0] if p.desenvolvimento else p.H) if chapa or p.classe == "telha" else 0,
             "espessura": round(p.espessura or p.T, 1) if chapa else 0,
             "area_m2": round(_area_m2(p) * p.quantidade, 3) if chapa or p.classe == "telha" else 0,
-            "furos": p.rotulo_furos(), "peso": round(p.peso, 3), "peso_total": round(p.peso_total, 2),
+            "furos": p.rotulo_furos(), "parafusos": p.rotulo_parafusos(), "peso": round(p.peso, 3), "peso_total": round(p.peso_total, 2),
             "conjuntos": list(p.conjuntos), "observacoes": list(p.observacoes)}
 
 
@@ -405,15 +405,15 @@ def corpo_html(lista: dict) -> str:
                               larguras=["8%", "8%", "11%", "8%", "8%", "37%", "10%", "10%"]))
     partes.append(_tabela("Quadro 6 — Romaneio por posição",
                           [("Nome", "l"), ("Posição", "l"), ("Tipo", "l"), ("Perfil / chapa", "l"), ("Material", "l"), ("Qtd", "c"), ("Compr. (mm)", "r"),
-                           ("Larg. (mm)", "r"), ("Esp. (mm)", "r"), ("Furos", "l"), ("Peso un. (kg)", "r"), ("Peso tot. (kg)", "r"), ("Conjuntos", "l")],
+                           ("Larg. (mm)", "r"), ("Esp. (mm)", "r"), ("Furos", "l"), ("Parafusos", "l"), ("Peso un. (kg)", "r"), ("Peso tot. (kg)", "r"), ("Conjuntos", "l")],
                           [[(p.get("nome") or "—", "l b"), (p["marca"], "l"), (p["classe"], "l"), (p["perfil"], "l"), (p["material"], "l"), (p["quantidade"], "c"),
                             (_n(p["comprimento"]) if p["comprimento"] else "—", "r"), (_n(p["largura"]) if p["largura"] else "—", "r"),
-                            (_n(p["espessura"], 1) if p["espessura"] else "—", "r"), (p["furos"] or "—", "l"),
+                            (_n(p["espessura"], 1) if p["espessura"] else "—", "r"), (p["furos"] or "—", "l"), (p.get("parafusos") or "—", "l"),
                             (_n(p["peso"], 2), "r"), (_n(p["peso_total"], 1), "r b"), (" ".join(p["conjuntos"][:12]) + (" …" if len(p["conjuntos"]) > 12 else ""), "l")]
                            for p in lista["posicoes"]],
-                          rodape=[("TOTAL", "l b"), ("", "l"), ("", "l"), ("", "l"), ("", "l"), (_n(t["pecas"]), "c b"), ("", "r"), ("", "r"), ("", "r"), ("", "l"),
+                          rodape=[("TOTAL", "l b"), ("", "l"), ("", "l"), ("", "l"), ("", "l"), (_n(t["pecas"]), "c b"), ("", "r"), ("", "r"), ("", "r"), ("", "l"), ("", "l"),
                                   ("", "r"), (_n(t["peso"], 1), "r b"), ("", "l")],
-                          larguras=["6%", "5%", "6%", "13%", "8%", "4%", "7%", "6%", "5%", "11%", "6%", "6%", "17%"]))
+                          larguras=["6%", "5%", "6%", "12%", "7%", "4%", "6%", "5%", "5%", "10%", "9%", "6%", "6%", "13%"]))
     if lista["acessorios"]:
         partes.append(_tabela("Quadro 7 — Acessórios (só na lista: parafusos, porcas, arruelas)",
                               [("Item", "l"), ("Quantidade", "c")],

@@ -297,6 +297,28 @@ def _caixa_solida(L, H, T, dx=0.0, dy=0.0, dz=0.0):
     return v, f
 
 
+def test_parafusos_da_posicao():
+    """A chapa com um furo Ø13 em (65, 25) e um parafuso 12x35 atravessando esse furo:
+    parafusos = {"M12 x 35": 1}; a chapa sem furo nem parafuso é anotada como soldada."""
+    doc = Documento(nome="teste")
+    v, f = chapa_com_furo(130, 50, 3, 13)
+    doc.add(_solido("PLATE 130x50x3", "IfcPlate", v, f, "P1", "M1", "PLATE 130x50x3"))
+    vb, fb = _caixa_solida(12, 12, 45, dx=59, dy=19, dz=-20)
+    b = Solido(nome="BOLT (A) 12x35", vertices=vb, faces=fb)
+    b.atributos["tipo_ifc"] = "IfcMechanicalFastener"
+    doc.add(b)
+    vs, fs = _caixa_solida(80, 80, 8, dx=2000)
+    doc.add(_solido("PLATE 80x80x8", "IfcPlate", vs, fs, "P2", "M2", "PLATE 80x80x8"))
+    lev = det.levantar(doc, regra_tercas=False)
+    por = {p.marca: p for p in lev["posicoes"]}
+    assert por["P1"].parafusos == {"M12 x 35": 1} and por["P1"].rotulo_parafusos() == "1x M12 x 35"
+    assert por["P2"].parafusos == {} and any("soldada" in o for o in por["P2"].observacoes)
+    r = det.detalhar(doc, grupos=["chapas"], regra_tercas=False, converter=False)
+    assert r["posicoes"][0]["marca"] in ("P1", "P2")
+    textos = [e.texto for e in r["desenhos"]["chapas"].entidades.values() if isinstance(e, Texto)]
+    assert any("parafusos: 1x M12 x 35" in t for t in textos)
+
+
 def test_furos_pelos_parafusos():
     """Chapa que veio como caixa (sem furo) ganha um furo por parafuso que a atravessa:
     Ø13 para o 12x35 e, para o parafuso sem tamanho, o da porca (entre faces 16 → M10 → Ø11)."""
@@ -308,6 +330,7 @@ def test_furos_pelos_parafusos():
     b = Solido(nome="BOLT (A) 12x35", vertices=vb, faces=fb)
     b.atributos["tipo_ifc"] = "IfcMechanicalFastener"
     doc.add(b)
+    # a mesma chapa, contada com os parafusos que a atravessam (o 12x35) e a porca à parte
     # "porca" achatada 16 × 16 × 12 sem tamanho no nome, em (150, 50), encostada na chapa
     vn, fn = _caixa_solida(16, 16, 12, dx=142, dy=42, dz=10)
     n = Solido(nome="BOLT () 0x0", vertices=vn, faces=fn)

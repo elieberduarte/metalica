@@ -440,6 +440,117 @@ def _centros_dos_fixadores(fixadores: Sequence[Solido]) -> Dict[str, Tuple[float
     return {f.id: tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3)) for f in fixadores if f.vertices}
 
 
+def _eixos_dos_fixadores(fixadores: Sequence[Solido]) -> Dict[str, tuple]:
+    """{id: (centro, eixo unitário, meio comprimento ao longo do eixo, é_porca)} de cada
+    fixador, uma vez para o lote: parafuso comprido tem o eixo no maior espalhamento; a
+    porca (achatada) no menor."""
+    fora = {}
+    for f in fixadores:
+        if len(f.vertices) < 4:
+            continue
+        cc, pca = _autovetores(f.vertices)
+        ext = []
+        for ax in pca:
+            ts = [_dot(_sub(v, cc), ax) for v in f.vertices]
+            ext.append(max(ts) - min(ts))
+        comprido = ext[0] > 1.5 * ext[1]
+        eixo = pca[0] if comprido else pca[2]
+        meio = (ext[0] if comprido else ext[2]) / 2
+        fora[f.id] = (cc, eixo, meio, ext, not comprido)
+    return fora
+
+
+def _nome_do_parafuso(f: Solido, ext) -> Tuple[str, bool]:
+    """"M12x35" a partir de "BOLT (A) 12x35"; (rosca pela porca, True) sem tamanho no nome."""
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)", f.nome or "")
+    if m and float(m.group(1).replace(",", ".")) > 0:
+        d = m.group(1).replace(",", ".")
+        d = d[:-2] if d.endswith(".0") else d
+        return "M%s x %s" % (d, m.group(2)), False
+    d, _ = _diametro_do_fixador(f, ext)
+    return "M%d" % round(d), True
+
+
+def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido], eixos_fix: Optional[dict] = None) -> None:
+    """Conta os fixadores cujo eixo atravessa um furo desta peça (uma instância):
+    `pos.parafusos` = {"M12 x 35": 4} e `pos.porcas` = fixadores sem tamanho no nome
+    (porca, arruela) junto dos furos. Chapa sem furo e sem parafuso é soldada, e ganha
+    a nota."""
+    pos.parafusos, pos.porcas = {}, 0
+    if not pos.eixos or not fixadores or pos.classe == "indefinida":
+        if pos.classe == "chapa" and not pos.furos:
+            pos.observacoes.append("sem furo e sem parafuso: chapa soldada")
+        return
+    if eixos_fix is None:
+        eixos_fix = _eixos_dos_fixadores(fixadores)
+    e1, e2, e3 = pos.eixos
+    c, _ = _autovetores(pos.vertices)
+    P = [(_dot(_sub(v, c), e1), _dot(_sub(v, c), e2), _dot(_sub(v, c), e3)) for v in pos.vertices]
+    u0, v0 = min(q[0] for q in P), min(q[1] for q in P)
+    w0 = (min(q[2] for q in P) + max(q[2] for q in P)) / 2
+    caixa = _caixa(ent)
+    folga = 60.0
+    frente = [f for f in pos.furos if f.vista == "frente"]
+    topo = [f for f in pos.furos if f.vista == "topo"]
+    if not frente and not topo:
+        if pos.classe == "chapa":
+            pos.observacoes.append("sem furo e sem parafuso: chapa soldada")
+        return
+    contagem: Dict[str, int] = collections.Counter()
+    porcas = 0
+    for f in fixadores:
+        info = eixos_fix.get(f.id)
+        if info is None:
+            continue
+        cc, eixo, meio, ext, porca = info
+        if not all(caixa[i][0] - folga <= cc[i] <= caixa[i][1] + folga for i in range(3)):
+            continue
+        u, v, w = _dot(_sub(cc, c), e1) - u0, _dot(_sub(cc, c), e2) - v0, _dot(_sub(cc, c), e3) - w0
+        bate = False
+        # furo de frente: eixo do fixador ao longo de e3, centro perto do furo no plano (e1, e2)
+        if frente and abs(_dot(eixo, e3)) > 0.7 and abs(w) <= meio + pos.T / 2 + 20.0:
+            bate = any(math.hypot(u - g.x, v - g.y) <= max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0 for g in frente)
+        # furo de topo (mesa): eixo ao longo de e2, centro perto do furo no plano (e1, e3)
+        if not bate and topo and abs(_dot(eixo, e2)) > 0.7:
+            wt = _dot(_sub(cc, c), e3) - min(q[2] for q in P)
+            bate = any(math.hypot(u - g.x, wt - g.y) <= max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0 for g in topo)
+        if not bate:
+            continue
+        nome, pela_porca = _nome_do_parafuso(f, ext)
+        if porca or pela_porca:
+            porcas += 1
+        else:
+            contagem[nome] += 1
+    pos.parafusos = dict(contagem)
+    pos.porcas = porcas
+
+
+def parafusos_no_conjunto(doc: Documento, instancia: Sequence[Solido]) -> Tuple[Dict[str, int], int]:
+    """Fixadores dentro da caixa da instância do conjunto: ({"M12 x 35": 32}, porcas)."""
+    if not instancia:
+        return {}, 0
+    caixas = [_caixa(e) for e in instancia]
+    minimo = [min(cx[i][0] for cx in caixas) - 20.0 for i in range(3)]
+    maximo = [max(cx[i][1] for cx in caixas) + 20.0 for i in range(3)]
+    contagem: Dict[str, int] = collections.Counter()
+    porcas = 0
+    for f in _fixadores(doc):
+        cc = tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3))
+        if not all(minimo[i] <= cc[i] <= maximo[i] for i in range(3)):
+            continue
+        ext = []
+        _, pca = _autovetores(f.vertices)
+        for ax in pca:
+            ts = [_dot(_sub(v, cc), ax) for v in f.vertices]
+            ext.append(max(ts) - min(ts))
+        nome, pela_porca = _nome_do_parafuso(f, ext)
+        if pela_porca or ext[0] <= 1.5 * ext[1]:
+            porcas += 1
+        else:
+            contagem[nome] += 1
+    return dict(contagem), porcas
+
+
 def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[Solido], centros=None) -> int:
     """Chapa que veio do IFC sem o furo modelado: cada parafuso (ou chumbador) que
     atravessa a chapa vira um furo redondo de d + 1 mm no ponto em que o eixo cruza o
@@ -691,6 +802,7 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
         m = _marcas(ent)
         primeiro.setdefault(str(m.get("posicao") or ent.nome or ent.id), ent)
     centros = _centros_dos_fixadores(fixadores) if fixadores else {}
+    eixos_fix = _eixos_dos_fixadores(fixadores) if fixadores else {}
     for marca, pos in por_marca.items():
         try:
             ch = getattr(primeiro.get(marca), "parametrica", None)
@@ -700,6 +812,8 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
                 analisar(pos)
                 if fixadores:
                     inferir_furos_de_parafusos(pos, primeiro[marca], fixadores, centros)
+            if fixadores:
+                parafusos_da_posicao(pos, primeiro[marca], fixadores, eixos_fix)
         except Exception as e:                      # noqa: BLE001 — uma peça não derruba o lote
             pos.classe = "indefinida"
             pos.observacoes.append("falha na análise: %s" % e)
@@ -906,6 +1020,8 @@ def _cabecalho(pos: Posicao) -> List[str]:
     detalhes = []
     if pos.furos:
         detalhes.append(pos.rotulo_furos())
+    if pos.parafusos or pos.porcas:
+        detalhes.append("parafusos: " + pos.rotulo_parafusos())
     if pos.peso:
         detalhes.append("%s kg/pç  total %s kg" % (_mm(pos.peso, 2), _mm(pos.peso_total, 1)))
     if detalhes:
@@ -2198,6 +2314,12 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         return fora
     titulo = "%s – %02dx" % (nome or marca, n_instancias) + ("  (%s)" % marca if nome else "")
     linhas = [titulo] + quebrar("Perfis: ", lista) + quebrar("Pecas: " if nomes else "Posicoes: ", posic)
+    paraf, porcas = parafusos_no_conjunto(doc, instancia)
+    if paraf or porcas:
+        itens_p = ["%dx %s" % (q, k) for k, q in sorted(paraf.items(), key=lambda kv: _ordem_natural(kv[0]))]
+        if porcas:
+            itens_p.append("%d fixador(es) sem tamanho no IFC (porca ou chumbador)" % porcas)
+        linhas += quebrar("Parafusos (por unidade): ", itens_p)
     if tipo:
         linhas.insert(0, TIPOS_NOME.get(tipo, tipo).upper())
     for txt in ([nota] if isinstance(nota, str) else list(nota or [])):

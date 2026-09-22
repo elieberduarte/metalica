@@ -316,6 +316,13 @@ malha atrás do símbolo. As **cotas dos furos** das células saem sempre: trech
 número (35 mm da ponta em 1:25) vai para uma segunda linha alternada (`cadeia_h` devolve "dupla" e
 a total sobe uma linha).
 
+**Parafusos nos detalhes** (`parafusos_da_posicao`): os fixadores do IFC cujo eixo atravessa um furo da
+peça (uma instância) são contados por rosca × comprimento — "parafusos: 4x M12 x 35" no título da
+célula, coluna "Parafusos" na lista de materiais, no romaneio e no HTML/PDF; fixador sem tamanho no
+nome (porca, chumbador) é contado à parte. Chapa sem furo e sem parafuso ganha a nota "chapa soldada".
+A elevação do conjunto lista os parafusos dentro da instância (`parafusos_no_conjunto`). O IFC do
+TecnoMETAL não traz soldas: o símbolo de solda continua fora.
+
 **Desenho completo** (`desenho_completo`, grupo `completo`, padrão ligado): todos os grupos num desenho só,
 em faixas com título (CHAPAS, BARRAS E TERÇAS, TIRANTES, TELHAS, CONJUNTOS, PLANTA DE LOCALIZAÇÃO), na
 escala 1:25 — as células são desenhadas de novo nessa escala (`_anexar_faixa` translada cada faixa

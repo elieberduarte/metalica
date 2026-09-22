@@ -262,10 +262,19 @@ class Posicao:
     nome: str = ""            # nome de produção (S.T.1, T.C.2-A…): nucleo2d.detalhar.nomear
     camada_2d: str = ""       # camada do desenho pelo tipo da peça (TERCAS, DIAGONAIS…)
     tipo_nome: str = ""       # tipo de produção (tesoura, terca_cobertura, contraventamento…)
+    parafusos: Dict[str, int] = field(default_factory=dict)   # {"M12x35": 4}: os que atravessam a peça
+    porcas: int = 0           # porcas/arruelas junto dos furos (fixadores sem tamanho no nome)
 
     @property
     def peso_total(self) -> float:
         return self.peso * self.quantidade
+
+    def rotulo_parafusos(self) -> str:
+        """"4x M12x35, 2x M16x40" (mais "+ n porcas" quando há fixador sem tamanho)."""
+        partes = ["%dx %s" % (n, r) for r, n in sorted(self.parafusos.items(), key=lambda kv: _ordem_natural(kv[0]))]
+        if self.porcas:
+            partes.append("%d fixador(es) sem tamanho no IFC (porca ou chumbador)" % self.porcas)
+        return ", ".join(partes)
 
     def rotulo_furos(self) -> str:
         cont = collections.Counter(f.rotulo() for f in self.furos)
@@ -1118,7 +1127,7 @@ def _num(x, casas=2) -> str:
 
 def gravar_romaneio(caminho: str, posicoes: Sequence[Posicao], acessorios: Dict[str, int]) -> str:
     colunas = ["Nome", "Posicao", "Conjuntos", "Tipo", "Perfil / chapa", "Material", "Qtd",
-               "Comprimento (mm)", "Largura (mm)", "Espessura (mm)", "Furos",
+               "Comprimento (mm)", "Largura (mm)", "Espessura (mm)", "Furos", "Parafusos",
                "Peso unit (kg)", "Peso total (kg)", "Observacoes"]
     os.makedirs(os.path.dirname(os.path.abspath(caminho)), exist_ok=True)
     with open(caminho, "w", encoding="utf-8-sig", newline="") as f:
@@ -1131,10 +1140,10 @@ def gravar_romaneio(caminho: str, posicoes: Sequence[Posicao], acessorios: Dict[
                         _num(p.comprimento, 0) if p.classe != "indefinida" else "",
                         _num(p.desenvolvimento[0] if p.desenvolvimento else p.H, 0) if chapa or p.classe == "telha" else "",
                         _num(p.espessura or p.T, 1) if chapa else "",
-                        p.rotulo_furos(), _num(p.peso, 3), _num(p.peso_total, 2),
+                        p.rotulo_furos(), p.rotulo_parafusos(), _num(p.peso, 3), _num(p.peso_total, 2),
                         "; ".join(p.observacoes)])
         for nome, n in sorted(acessorios.items()):
-            w.writerow(["", "", "", "Acessório", nome, "", n, "", "", "", "", "", "", "só na lista"])
+            w.writerow(["", "", "", "Acessório", nome, "", n, "", "", "", "", "", "", "", "só na lista"])
     return caminho
 
 

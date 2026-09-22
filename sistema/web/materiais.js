@@ -199,11 +199,12 @@ function desenhar(L) {
       { titulo: 'Larg. (mm)', valor: (p_) => p_.largura || null, classe: 'r', num: true },
       { titulo: 'Esp. (mm)', valor: (p_) => p_.espessura || null, classe: 'r', num: true, casas: 1 },
       { titulo: 'Furos', valor: (p_) => p_.furos || '—' },
+      { titulo: 'Parafusos', valor: (p_) => p_.parafusos || '—', classe: 'quebra' },
       { titulo: 'Peso un. (kg)', chave: 'peso', classe: 'r', num: true, casas: 2 },
       { titulo: 'Peso tot. (kg)', chave: 'peso_total', classe: 'r b', num: true, casas: 1 },
       { titulo: 'Conjuntos', valor: (p_) => marcas(p_.conjuntos, 10), classe: 'quebra' },
       { titulo: 'Obs.', valor: (p_) => (p_.observacoes || []).join('; ') || '', classe: 'quebra' },
-    ], L.posicoes || [], ['TOTAL', '', '', '', '', '', n(t.pecas), '', '', '', '', '', n(t.peso, 1), '', ''],
+    ], L.posicoes || [], ['TOTAL', '', '', '', '', '', n(t.pecas), '', '', '', '', '', '', n(t.peso, 1), '', ''],
     (p_) => [p_.nome, p_.marca, p_.perfil, p_.material, p_.classe, (p_.conjuntos || []).join(' ')].join(' ')))));
 
   if ((L.acessorios || []).length) {
