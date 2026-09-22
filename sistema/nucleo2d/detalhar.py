@@ -546,16 +546,25 @@ def _eixos_do_conjunto(pecas: Sequence[Solido]):
     mais vertical dos outros dois eixos, u = v × w."""
     verts = [v for e in pecas for v in e.vertices]
     c, pca = _autovetores(verts)
-    # o eixo mais comprido do conjunto deita na horizontal do desenho (tesoura, viga de
-    # painel e pilar saem deitados, como na prancha); o mais fino é a normal da vista
-    u, w = pca[0], pca[2]
-    if u[0] < -1e-9 or (abs(u[0]) <= 1e-9 and u[1] < 0):
+    # a normal da vista é o eixo mais fino do conjunto; a vertical do desenho é a
+    # vertical da obra projetada nesse plano — a tesoura sai inclinada como está
+    # montada, o pilar em pé. Conjunto deitado no plano horizontal (contraventamento
+    # de cobertura) não tem vertical: o eixo mais comprido vai para a horizontal.
+    w = pca[2]
+    if abs(w[2]) > 0.8:
+        u = pca[0]
+        if u[0] < -1e-9 or (abs(u[0]) <= 1e-9 and u[1] < 0):
+            u = (-u[0], -u[1], -u[2])
+        v = _norm(_cruz(w, u))
+        if v[1] < 0 and abs(v[1]) > abs(v[0]):
+            v, w = (-v[0], -v[1], -v[2]), (-w[0], -w[1], -w[2])
+        w = _norm(_cruz(u, v))
+        return c, u, v, w
+    z = (0.0, 0.0, 1.0)
+    v = _norm(tuple(z[i] - _dot(z, w) * w[i] for i in range(3)))
+    u = _norm(_cruz(v, w))
+    if u[0] < -1e-9 or (abs(u[0]) <= 1e-9 and u[1] < 0):    # esquerda → direita
         u = (-u[0], -u[1], -u[2])
-    v = _norm(_cruz(w, u))
-    # "acima" aponta para +z (ou +y quando o conjunto está deitado no plano)
-    ref = (0.0, 0.0, 1.0) if abs(v[2]) > 0.2 else (0.0, 1.0, 0.0)
-    if _dot(v, ref) < 0:
-        v = (-v[0], -v[1], -v[2])
     w = _norm(_cruz(u, v))
     return c, u, v, w
 
@@ -569,6 +578,24 @@ def _eixo_da_peca(ent: Solido):
     e1 = pca[0]
     ts = [_dot(_sub(v, c), e1) for v in verts]
     return (tuple(c[i] + e1[i] * min(ts) for i in range(3)), tuple(c[i] + e1[i] * max(ts) for i in range(3)))
+
+
+def _assinatura_conjunto(instancia: Sequence[Solido]) -> tuple:
+    """Composição + extensões principais + posição relativa de cada peça (a 10 mm):
+    conjuntos com marcas diferentes e assinatura igual são o mesmo detalhe."""
+    verts = [v for e in instancia for v in e.vertices]
+    c, pca = _autovetores(verts)
+    ext = []
+    for e_ in pca:
+        ts = [_dot(_sub(v, c), e_) for v in verts]
+        ext.append(round((max(ts) - min(ts)) / 10.0))
+    pecas = []
+    for e in instancia:
+        m = _marcas(e)
+        ce = [sum(v[i] for v in e.vertices) / len(e.vertices) for i in range(3)]
+        d = _sub(ce, c)
+        pecas.append((str(m.get("posicao") or e.nome), round(abs(_dot(d, pca[0])) / 10.0), round(abs(_dot(d, pca[1])) / 10.0)))
+    return (tuple(ext), tuple(sorted(pecas)))
 
 
 def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido], n_instancias: int,
@@ -703,6 +730,30 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
 
 
 # ============================================================ montagem
+#: Quadros das pranchas, na ordem em que aparecem.
+CATEGORIAS = collections.OrderedDict([
+    ("TESOURAS", "Tesouras e pórticos"), ("CONJUNTOS", "Conjuntos menores"), ("TERÇAS", "Terças"),
+    ("BARRAS", "Barras"), ("CHAPAS", "Chapas"), ("TIRANTES", "Tirantes e barras redondas"),
+    ("TELHAS", "Telhas"), ("VISTAS", "Vistas e cortes"), ("OUTROS", "Outros"),
+])
+
+
+def _categoria(pos: Posicao, camada: str) -> str:
+    if pos.classe in ("chapa", "chapa_dobrada"):
+        return "CHAPAS"
+    if pos.classe == "telha":
+        return "TELHAS"
+    if pos.classe == "barra_redonda" or (pos.classe == "barra_conformada" and _eh_redonda_perfil(pos.perfil)):
+        return "TIRANTES"
+    if _eh_terca(pos, camada):
+        return "TERÇAS"
+    return "BARRAS"
+
+
+def _eh_redonda_perfil(perfil: str) -> bool:
+    return bool(re.search(r"FE\s*RED|BARRA\s*ROSC|REDOND|\bFR\b|Ø\s*\d|VERG", perfil or "", re.I))
+
+
 def _ordenar(posicoes: Sequence[Posicao]) -> List[Posicao]:
     ordem = {c: i for i, c in enumerate(CLASSES)}
     return sorted(posicoes, key=lambda p: (ordem.get(p.classe, 99), _ordem_natural(p.perfil), _ordem_natural(p.marca)))
@@ -787,7 +838,8 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             # o que a tabela de posições da prancha lista para cada célula
             "itens": {p.marca: {"quantidade": p.quantidade, "perfil": p.perfil, "material": p.material,
                                 "comprimento": round(p.comprimento), "espessura": round(p.espessura or p.T, 1),
-                                "peso": round(p.peso, 2), "classe": CLASSES.get(p.classe, p.classe)}
+                                "peso": round(p.peso, 2), "classe": CLASSES.get(p.classe, p.classe),
+                                "categoria": _categoria(p, camadas.get(p.marca, ""))}
                       for p in lista}}
         celulas = [(lambda x, y, p=p: desenho_da_posicao(p, d, x, y)) for p in lista]
         _empilhar(d, celulas)
@@ -827,22 +879,37 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                          "espacial bate com a composição unitária; desenhado o maior" % (conj, n))
             candidatos.append((conj, lista, inst, n, unidade, aviso))
         candidatos.sort(key=lambda c: (-len(c[1]), _ordem_natural(c[0])))
+        # marcas diferentes com a mesma geometria (o TecnoMETAL numera por pórtico) viram
+        # uma célula só: "M17 / M46 – 08x"
+        por_assinatura: Dict[tuple, list] = collections.OrderedDict()
+        for cand in candidatos:
+            por_assinatura.setdefault(_assinatura_conjunto(cand[2]), []).append(cand)
         if candidatos:
             g = GRUPOS["conjuntos"]
             d = Desenho(nome=g["titulo"], escala=g["escala"])
             celulas = []
-            for conj, lista, inst, n, unidade, aviso in candidatos:
-                celulas.append((lambda x, y, conj=conj, inst=inst, n=n:
-                                desenho_do_conjunto(doc, conj, inst, n, d, x, y, rotular)))
-                conjuntos_info.append({"marca": conj, "pecas": len(lista), "instancias": n,
-                                       "iguais": not aviso, "composicao": dict(unidade)})
-                if aviso:
-                    avisos.append(aviso)
+            for grupo in por_assinatura.values():
+                conj, lista, inst, n, unidade, aviso = grupo[0]
+                marcas = sorted((c[0] for c in grupo), key=_ordem_natural)
+                total_inst = sum(c[3] for c in grupo)
+                total_pecas = sum(len(c[1]) for c in grupo)
+                rotulo = " / ".join(marcas)
+                celulas.append((lambda x, y, rotulo=rotulo, inst=inst, n=total_inst:
+                                desenho_do_conjunto(doc, rotulo, inst, n, d, x, y, rotular)))
+                conjuntos_info.append({"marca": rotulo, "marcas": marcas, "pecas": total_pecas, "instancias": total_inst,
+                                       "iguais": not aviso, "composicao": dict(unidade),
+                                       "categoria": "TESOURAS" if sum(q for k, q in unidade.items() if classe_de.get(k, "").startswith("barra")) >= 8 else "CONJUNTOS"})
+                for c in grupo:
+                    if c[5]:
+                        avisos.append(c[5])
+                if len(marcas) > 1:
+                    avisos.append("conjuntos %s têm a mesma geometria: detalhados numa célula só (%d no total)" % (", ".join(marcas), total_inst))
             _empilhar(d, celulas, largura_max_papel=1400.0)
             d.metadados["detalhamento"] = {
                 "grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info],
                 "itens": {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
-                                       "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto"}
+                                       "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
+                                       "categoria": c["categoria"], "marcas": c["marcas"]}
                           for c in conjuntos_info}}
             desenhos["conjuntos"] = d
 

@@ -45,6 +45,9 @@ ESCALAS = (1, 2, 2.5, 5, 10, 15, 20, 25, 50, 75, 100, 125, 150, 200, 250, 500)
 #: Folga entre células e faixa do rótulo de escala sob cada uma (mm de papel).
 FOLGA = 10.0
 FAIXA = 7.0
+#: Quadros por categoria: recuo das células dentro do quadro e altura da faixa do título.
+QUADRO_MARGEM = 6.0
+QUADRO_CABECALHO = 9.0
 OBS_CARIMBO = ("Desenho gerado automaticamente. Conferir antes da fabricação.")
 
 
@@ -270,6 +273,17 @@ def _tabela_de_posicoes(d: Desenho, cels: Sequence[dict], quadro, carimbo_caixa)
             y -= h_linha
 
 
+def _quadro(d: Desenho, mq: dict, x0: float, x1: float):
+    """Moldura de um quadro de categoria com a faixa do título."""
+    y0, y1 = mq["y0"], mq["y1"]
+    atr = {"prancha": "quadro", "categoria": mq["categoria"]}
+    d.add(Polilinha(camada="PRANCHA", vertices=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], fechada=True, atributos=dict(atr)))
+    yt = y1 - QUADRO_CABECALHO
+    d.add(Linha(camada="PRANCHA", a=(x0, yt), b=(x1, yt), atributos=dict(atr)))
+    d.add(Texto(camada="TEXTO", posicao=(round(x0 + 3.0, 2), round(yt + 2.6, 2)), texto=mq["titulo"].upper(), altura=4.0,
+                atributos=dict(atr, campo="titulo")))
+
+
 def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Optional[dict] = None,
                     titulo: str = "Prancha") -> List[Desenho]:
     """Monta as pranchas. `fontes`: [{nome, desenho (Desenho), escala (opcional)}].
@@ -294,6 +308,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         celulas.extend(cs)
     if not celulas:
         raise ErroDeDados("nenhum desenho com conteúdo para montar a prancha.")
+    for i_c, c in enumerate(celulas):
+        c["_ordem"] = i_c
     larg, alt = FOLHAS[formato]
     m = MARGENS_A3 if formato in ("A3", "A4") else MARGENS
     lc, ac = CARIMBO[formato]
@@ -309,33 +325,73 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         (bx0, by0), (bx1, by1) = c["caixa"]
         w_mod, h_mod = bx1 - bx0, by1 - by0
         k = c["escala"]
-        if w_mod / k > util_l or (h_mod / k + FAIXA) > util_a:
-            k = escala_normalizada(max(w_mod / util_l, h_mod / (util_a - FAIXA)))
+        larg_int = util_l - 2 * QUADRO_MARGEM
+        alt_int = util_a - QUADRO_CABECALHO - 2 * FOLGA
+        if w_mod / k > larg_int or (h_mod / k + FAIXA) > alt_int:
+            k = escala_normalizada(max(w_mod / larg_int, h_mod / (alt_int - FAIXA)))
             c["nota"] = "reduzida para %s para caber na folha" % texto_escala(k)
         c["k"] = k
         c["w"], c["h"] = w_mod / k, h_mod / k + FAIXA
         itens.append(c)
 
-    # prateleiras: a ordem de chegada é a dos desenhos (grupo a grupo); dentro de uma
-    # prateleira as células ficam alinhadas pelo canto inferior
-    pranchas: List[List[dict]] = [[]]
-    x, y_topo, alt_linha = ux0, uy1, 0.0
-    fonte_atual = None
+    # quadros por categoria: as células de cada categoria formam prateleiras dentro de
+    # um quadro com título; os quadros se empilham na folha e o que não cabe continua
+    # na prancha seguinte, com o título "(continuação)"
+    from nucleo2d.detalhar import CATEGORIAS
+    ordem = {k: i for i, k in enumerate(CATEGORIAS)}
     for c in itens:
-        # cada desenho de origem começa numa prateleira nova, para não misturar chapas
-        # e barras na mesma linha
-        if (x > ux0 and x + c["w"] > ux1) or (fonte_atual not in (None, c["fonte"]) and x > ux0):
-            y_topo -= alt_linha + FOLGA
-            x, alt_linha = ux0, 0.0
-        if y_topo - c["h"] < uy0 and pranchas[-1]:    # nova prancha
-            pranchas.append([])
-            x, y_topo, alt_linha = ux0, uy1, 0.0
-        c["px"], c["py"] = x, y_topo - c["h"]
-        fonte_atual = c["fonte"]
-        pranchas[-1].append(c)
-        x += c["w"] + FOLGA
-        alt_linha = max(alt_linha, c["h"])
-    pranchas = [p for p in pranchas if p]
+        c["categoria"] = (c.get("item") or {}).get("categoria") or ("VISTAS" if not c.get("marca") else "OUTROS")
+    itens.sort(key=lambda c: (ordem.get(c["categoria"], 99), c.get("_ordem", 0)))
+    qx0, qx1 = ux0 + QUADRO_MARGEM, ux1 - QUADRO_MARGEM
+    quadros: List[dict] = []
+    for cat in CATEGORIAS:
+        cels = [c for c in itens if c["categoria"] == cat]
+        if not cels:
+            continue
+        linhas: List[dict] = []
+        x, atual = qx0, None
+        for c in cels:
+            if atual is None or x + c["w"] > qx1:
+                atual = {"celulas": [], "h": 0.0}
+                linhas.append(atual)
+                x = qx0
+            c["px_rel"] = x
+            atual["celulas"].append(c)
+            atual["h"] = max(atual["h"], c["h"])
+            x += c["w"] + FOLGA
+        quadros.append({"categoria": cat, "titulo": CATEGORIAS[cat], "linhas": linhas})
+
+    pranchas: List[List[dict]] = [[]]
+    molduras: List[List[dict]] = [[]]      # por prancha: {categoria, titulo, y0, y1}
+    y_topo = uy1
+    for q in quadros:
+        continuacao = False
+        aberto = None
+        for linha in q["linhas"]:
+            precisa = linha["h"] + FOLGA + (QUADRO_CABECALHO + FOLGA if aberto is None else 0.0)
+            if y_topo - precisa < uy0 and (pranchas[-1] or aberto is not None):
+                if aberto is not None:
+                    aberto["y0"] = y_topo
+                    aberto = None
+                pranchas.append([])
+                molduras.append([])
+                y_topo = uy1
+                continuacao = True
+            if aberto is None:
+                aberto = {"categoria": q["categoria"], "titulo": q["titulo"] + (" (continuação)" if continuacao else ""),
+                          "y1": y_topo, "y0": None}
+                molduras[-1].append(aberto)
+                y_topo -= QUADRO_CABECALHO + FOLGA
+            for c in linha["celulas"]:
+                c["px"], c["py"] = c["px_rel"], y_topo - linha["h"]
+                pranchas[-1].append(c)
+            y_topo -= linha["h"] + FOLGA
+        if aberto is not None:
+            aberto["y0"] = y_topo
+        y_topo -= FOLGA
+    if not pranchas[-1]:
+        pranchas.pop()
+        molduras.pop()
     total = len(pranchas)
 
     saida = []
@@ -343,9 +399,11 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         d = Desenho(nome="%s %02d" % (titulo, i), escala=1.0)
         fontes_da = sorted({c["fonte"] for c in cels})
         info = dict(carimbo)
-        info.setdefault("titulo", fontes_titulo(cels))
+        info.setdefault("titulo", ", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i - 1]))[:48] or fontes_titulo(cels))
         quadro, carimbo_caixa = _moldura(d, formato, info, i, total, [c["k"] for c in cels])
         _tabela_de_posicoes(d, cels, quadro, carimbo_caixa)
+        for mq in molduras[i - 1]:
+            _quadro(d, mq, ux0, ux1)
         for c in cels:
             (bx0, by0), (bx1, by1) = c["caixa"]
             dx = c["px"] - bx0 / c["k"]

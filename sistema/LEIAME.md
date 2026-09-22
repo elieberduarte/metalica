@@ -211,11 +211,14 @@ do modelo já importado, desenhos editáveis no CAD (`nucleo2d/detalhar.py`, rot
   peso, contorno com furos e cotas em cadeia (só quando cabem), seção da barra ao lado e
   vista de topo quando há furo na mesa;
 - a **elevação de cada conjunto** (marca de montagem: tesoura, viga de painel, pilar),
-  deitada, com a cadeia de cotas dos nós embaixo e em cima, altura, rótulo de posição em
+  na orientação em que está montado (a tesoura inclinada, o pilar em pé; só o conjunto
+  deitado no plano horizontal é girado para o comprido ficar na horizontal), com a
+  cadeia de cotas dos nós embaixo e em cima, altura, rótulo de posição em
   cada barra, título "M2 – 08x" e a lista de perfis e posições. O número de instâncias é
   o máximo divisor comum das quantidades por posição dentro da marca (8 pórticos M2 =
   80 P10, 64 P11, 64 P12 → 8); a instância desenhada é um agrupamento espacial com a
-  composição unitária;
+  composição unitária. Marcas diferentes com a mesma geometria (o TecnoMETAL numera
+  por pórtico) saem numa célula só, "M17 / M46 – 04x";
 - `detalhamento/romaneio.csv` e `relatorio.json`.
 
 **Regra da furação das terças** (padrão da máquina da fábrica, opção ligada por padrão):
@@ -233,8 +236,10 @@ No CAD, **Desenho → Montar pranchas…** (rota `POST /api/projetos/<slug>/pran
 `nucleo2d/pranchas.py`) monta folhas A0–A4 em paisagem com moldura, quadro e carimbo
 (obra, cliente, título, responsável, escala, data, número "01/07", revisão). Cada posição
 ou conjunto dos desenhos de detalhamento vira uma vista na escala do desenho de origem;
-cortes e vistas entram inteiros. O que não cabe na escala desce para a normalizada
-seguinte, com nota; o que não cabe na folha vai para a prancha seguinte. A prancha é um
+cortes e vistas entram inteiros, agrupados em **quadros por categoria** com título —
+tesouras e pórticos, conjuntos menores, terças, barras, chapas, tirantes, telhas, vistas —
+que continuam na prancha seguinte quando não cabem. O que não cabe na escala desce para
+a normalizada seguinte, com nota. A prancha é um
 desenho em milímetro de papel (escala 1), editável como qualquer outro, e o DXF sai em
 papel 1:1: a cota guarda o valor original como texto. Cada prancha traz, no rodapé à
 esquerda do carimbo, a **tabela das posições** que contém (marca, quantidade, perfil,

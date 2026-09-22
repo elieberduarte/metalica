@@ -69,9 +69,17 @@ def test_posicoes_contadas_e_desenhos():
     # M9 tem 2 instâncias pela composição (4 P3 / 2)
     conj = {c["marca"]: c for c in r["conjuntos"]}
     assert conj["M9"]["instancias"] == 2 and conj["M9"]["composicao"] == {"P3": 2, "P4": 1}
-    assert conj["M1"]["instancias"] == 1
+    # M1, M2 e M3 têm a mesma geometria: uma célula só, "M1 / M2 / M3 – 03x"
+    juntos = conj["M1 / M2 / M3"]
+    assert juntos["instancias"] == 3 and juntos["marcas"] == ["M1", "M2", "M3"]
+    assert juntos["categoria"] == "CONJUNTOS" and "M1" not in conj
     tit = [e.texto for e in r["desenhos"]["conjuntos"].entidades.values() if isinstance(e, Texto)]
     assert any(t.startswith("M9 – 02x") for t in tit)
+    assert any(t.startswith("M1 / M2 / M3 – 03x") for t in tit)
+    itens = r["desenhos"]["chapas"].metadados["detalhamento"]["itens"]
+    assert itens["P1"]["categoria"] == "CHAPAS"
+    itens_b = r["desenhos"]["barras"].metadados["detalhamento"]["itens"]
+    assert itens_b["M5"]["categoria"] == "TERÇAS" and itens_b["P2"]["categoria"] == "BARRAS"
     assert abs(r["peso_total"] - sum(p["peso_total"] for p in r["posicoes"])) < 0.5
 
 
@@ -110,13 +118,24 @@ def test_regra_furacao_terca():
     assert "padrao de fabrica" in pos_terca.observacoes[0]
 
 
-def test_eixos_do_conjunto_deitam_o_maior():
+def test_eixos_do_conjunto_orientacao_real():
     v, f = perfil_u(3000, 88, 40, 2.25)
-    # barra em pé (eixo z): a elevação tem de sair deitada (u ≈ z)
+    # barra em pé (eixo z): sai em pé, como montada (vertical do desenho ≈ z)
     s = Solido(nome="x", vertices=[(y, z, x) for x, y, z in v], faces=[list(q) for q in f])
     s.atributos["tipo_ifc"] = "IfcColumn"
     c, u, vv, w = det._eixos_do_conjunto([s])
-    assert abs(u[2]) > 0.99
+    assert vv[2] > 0.99 and abs(u[2]) < 0.01
+    # barra inclinada a 20° no plano x-z: sai inclinada
+    import math
+    a = math.radians(20)
+    # comprimento e altura (88) no plano x-z, largura (40) em y: a peça fina está de lado, como uma tesoura
+    s2 = Solido(nome="y", vertices=[(x * math.cos(a) - y * math.sin(a), z, x * math.sin(a) + y * math.cos(a)) for x, y, z in v], faces=[list(q) for q in f])
+    c, u, vv, w = det._eixos_do_conjunto([s2])
+    assert abs(vv[2] - 1.0) < 0.02 and abs(u[0] - 1.0) < 0.02
+    # conjunto deitado no plano horizontal: o eixo comprido vai para a horizontal
+    s3 = Solido(nome="z", vertices=[(x, y, z * 0.01) for x, y, z in v], faces=[list(q) for q in f])
+    c, u, vv, w = det._eixos_do_conjunto([s3])
+    assert abs(u[0]) > 0.99 and abs(w[2]) > 0.99
 
 
 if __name__ == "__main__":
