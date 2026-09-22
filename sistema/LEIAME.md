@@ -287,9 +287,20 @@ lista de materiais (coluna "Nome", CSV, HTML e PDF), a tabela das pranchas e par
 composição por posição fundida, extensões a 3 mm, cada peça a 8 mm da correspondente e o
 mesmo **lado** (`_lado_do_conjunto`: para onde a tesoura sobe no desenho — a água esquerda e
 a direita ficam em células separadas, uma de cada lado) viram uma célula ("M17 / M46 – 04x").
-Conjunto com as mesmas dimensões mas outra composição fica em célula própria com a nota
-"= M2 nas dimensoes; difere: +P26 x1; -P1 x1" (`_nota_de_semelhanca`), para o usuário decidir.
+Conjunto **semelhante** (`_conjuntos_semelhantes`: mesmo lado, dimensões a 20 mm e 75 % das
+peças em comum — a tesoura de ponta com outra chapa de base ou uma diagonal a menos) entra na
+mesma célula, desenhado o líder e cada variante anotada ("M7 – 02x: +P26 x1; -P1 x1";
+`conjuntos_info[..]["variantes"]`) — decisão do usuário: um detalhe por lado.
 Todas as cotas dos detalhes saem em **milímetro inteiro** (`_Papel.cota_h/cota_v/cadeia_*`).
+
+**Camadas por tipo de peça** (`CAMADAS_PECAS`, paleta das camadas do 3D): TERCAS, BANZOS,
+DIAGONAIS, MONTANTES, CHAPAS, TIRANTES, PILARES, VIGAS, TELHAS. O traço forte de cada peça vai
+na camada do seu tipo (`_Papel.camada_peca` nas células de posição; `_classificar_pecas_do_conjunto`
+remapeia VISTA/CORTE na elevação do conjunto e vota a camada das posições — banzo, montante ou
+diagonal pela posição da barra na elevação, porque o TecnoMETAL exporta montantes como
+IfcColumn; `desenho_de_localizacao(camadas_pecas=…)`). As arestas finas continuam em
+VISTA-FINA. A camada de cada posição fica em `nomes.json` (`camadas_2d`). O contorno da chapa
+editável pode estar em VISTA ou CHAPAS (`CAMADAS_DE_CONTORNO`; CAD `_contornoDe`).
 
 ### Detalhe de uma peça ligado ao 3D (chapa paramétrica)
 

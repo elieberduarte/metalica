@@ -720,7 +720,8 @@ class CAD {
     let melhor = null, area = -1;
     for (const e of this.doc.entidades.values()) {
       const a = e.atributos || {};
-      if (e.tipo !== 'polilinha' || !e.fechada || e.camada !== 'VISTA' || a.detalhe !== 'posicao' || String(a.posicao) !== marca || 'furo' in a) continue;
+      // o contorno da chapa fica na camada VISTA (desenhos antigos) ou CHAPAS (camada por tipo de peça)
+      if (e.tipo !== 'polilinha' || !e.fechada || (e.camada !== 'VISTA' && e.camada !== 'CHAPAS') || a.detalhe !== 'posicao' || String(a.posicao) !== marca || 'furo' in a) continue;
       const v = e.vertices; let s = 0;
       for (let i = 0; i < v.length; i++) { const p = v[i], q = v[(i + 1) % v.length]; s += p[0] * q[1] - q[0] * p[1]; }
       if (Math.abs(s) > area) { area = Math.abs(s); melhor = e; }

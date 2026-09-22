@@ -640,7 +640,7 @@ def _gravar_nomes_producao(s: str, nomes: dict):
     pasta = os.path.join(_gerente()._existente(s), "detalhamento")
     os.makedirs(pasta, exist_ok=True)
     with open(os.path.join(pasta, "nomes.json"), "w", encoding="utf-8") as f:
-        json.dump({k: nomes.get(k) or {} for k in ("posicoes", "conjuntos", "tipos", "tipos_conjuntos", "ifc", "ifc_conjuntos")},
+        json.dump({k: nomes.get(k) or {} for k in ("posicoes", "conjuntos", "tipos", "tipos_conjuntos", "ifc", "ifc_conjuntos", "camadas_2d")},
                   f, ensure_ascii=False, indent=1)
 
 

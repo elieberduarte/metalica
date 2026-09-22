@@ -559,7 +559,7 @@ def test_conjuntos_iguais_por_tolerancia_e_cotas_inteiras():
         # chapa inclinada numa ponta: quebra a simetria e define o "lado" (sobe para a
         # direita nos dois primeiros, para a esquerda no espelhado)
         px = 2800.0 if not espelhar else 80.0
-        vc = [(x + px, y + 100.0, z + 200.0) for x, y, z in ch]
+        vc = [(x + px, y + 100.0, z + 900.0) for x, y, z in ch]
         doc.add(_solido("PLATE 120x60x6", "IfcPlate", vc, chf, "P2", conj, "PLATE 120x60x6", dy=dy))
         vt = [(x + 1500.0 + (0.3 if conj == "MB" else 0.0), y, z + 100.0) for x, y, z in ch]
         doc.add(_solido("PLATE 120x60x6", "IfcPlate", vt, chf, "P3", conj, "PLATE 120x60x6", dy=dy))
@@ -580,7 +580,11 @@ def test_nomes_de_producao_no_modelo_real():
     doc = _modelo_real()
     r = det.detalhar(doc, grupos=["barras", "conjuntos", "localizacao"], converter=False)
     nm = r["nomes"]
-    assert nm["conjuntos"]["M2"] == "T1"                      # 8 tesouras iguais
+    chave_m2 = next(k for k in nm["conjuntos"] if "M2" in k.split(" / "))
+    assert nm["conjuntos"][chave_m2] == "T1"                  # as 8 tesouras correntes lideram
+    tesouras = [c for c in r["conjuntos"] if c["categoria"] == "TESOURAS"]
+    assert len(tesouras) == 2                                  # um detalhe por lado
+    assert any(c["variantes"] for c in tesouras)               # com as variantes anotadas
     assert nm["posicoes"]["M13"] == "T.C.1"                    # a terça mais repetida
     assert nm["conjuntos"]["M16"] == "S.T.1" and nm["tipos_conjuntos"]["M16"] == "suporte_terca"
     assert nm["posicoes"]["P36"].startswith("S.T.")          # chapinha partilhada por M16 e M62
@@ -592,7 +596,13 @@ def test_nomes_de_producao_no_modelo_real():
     textos = [e.texto for e in r["desenhos"]["barras"].entidades.values() if isinstance(e, Texto)]
     assert any(tx.startswith("T.C.1 – ") and "(M13)" in tx for tx in textos)
     textos_c = [e.texto for e in r["desenhos"]["conjuntos"].entidades.values() if isinstance(e, Texto)]
-    assert any(tx.startswith("T1 – 08x") and "(M2)" in tx for tx in textos_c)
+    assert any(tx.startswith("T1 – 10x") and "(M2 / " in tx for tx in textos_c)
+    # camadas por tipo de peça
+    cams = {e.camada for e in r["desenhos"]["conjuntos"].entidades.values()}
+    assert {"BANZOS", "DIAGONAIS", "CHAPAS"} <= cams
+    cams_b = {e.camada for e in r["desenhos"]["barras"].entidades.values()}
+    assert {"TERCAS", "TIRANTES", "DIAGONAIS"} <= cams_b
+    assert nm["camadas_2d"]["M13"] == "TERCAS" and nm["camadas_2d"]["P10"] == "MONTANTES"
     textos_l = [e.texto for e in r["desenhos"]["localizacao"].entidades.values() if isinstance(e, Texto)]
     assert "T1" in textos_l and "T.C.1" in textos_l
     assert nm["ifc"]["M2"] == "T1" and nm["ifc"]["P36"] == nm["posicoes"]["P36"]

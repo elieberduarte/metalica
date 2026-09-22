@@ -260,6 +260,7 @@ class Posicao:
     desenvolvimento: Optional[Tuple[float, float]] = None     # chapa dobrada: (largura, comprimento planificado)
     espessura: float = 0.0    # chapa: espessura real (T de uma chapa dobrada é a altura da dobra)
     nome: str = ""            # nome de produção (S.T.1, T.C.2-A…): nucleo2d.detalhar.nomear
+    camada_2d: str = ""       # camada do desenho pelo tipo da peça (TERCAS, DIAGONAIS…)
 
     @property
     def peso_total(self) -> float:

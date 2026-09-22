@@ -92,11 +92,14 @@ class _Papel:
     Alturas de texto chegam em mm de modelo e viram mm de papel pela escala do desenho."""
     CAMADAS = {"ACO": "VISTA", "ACO-FINO": "VISTA-FINA"}
 
-    def __init__(self, desenho: Desenho, atributos: dict, dx: float = 0.0, dy: float = 0.0):
+    def __init__(self, desenho: Desenho, atributos: dict, dx: float = 0.0, dy: float = 0.0, camada_peca: str = ""):
         self.d = desenho
         self.atr = atributos
         self.dx, self.dy = dx, dy
         self.pontos: List[Tuple[float, float]] = []
+        self.camada_peca = camada_peca          # TERCAS, DIAGONAIS…: o traço forte da peça vai nela
+        if camada_peca:
+            _registrar_camadas_de_pecas(desenho)
 
     def _p(self, x, y):
         p = (round(x + self.dx, 2), round(y + self.dy, 2))
@@ -104,6 +107,8 @@ class _Papel:
         return p
 
     def _cam(self, camada):
+        if camada == "ACO" and self.camada_peca:
+            return self.camada_peca
         return self.CAMADAS.get(camada, camada)
 
     def linha(self, x1, y1, x2, y2, camada="ACO"):
@@ -246,6 +251,91 @@ def _pecas(doc: Documento):
         elif t in TIPOS_ACESSORIO:
             acessorios[ent.nome or t] += 1
     return pecas, dict(acessorios)
+
+
+#: Camadas do desenho por tipo de peça — a mesma paleta das camadas do modelo 3D (chapas
+#: douradas, vigas/terças azuis, tirantes verdes, pilares cinza), com tons que se leem nos
+#: dois temas do CAD; banzos, diagonais e montantes ganham cores próprias.
+CAMADAS_PECAS = collections.OrderedDict([
+    ("TERCAS", ("#3b82f6", 0.35)), ("BANZOS", ("#22a7c2", 0.35)), ("DIAGONAIS", ("#e67e22", 0.35)),
+    ("MONTANTES", ("#a855f7", 0.35)), ("CHAPAS", ("#d4a017", 0.35)), ("TIRANTES", ("#2eaf63", 0.35)),
+    ("PILARES", ("#8b95a5", 0.35)), ("VIGAS", ("#5b7db1", 0.35)), ("TELHAS", ("#9aa4b2", 0.25)),
+])
+
+
+def _registrar_camadas_de_pecas(d: Desenho):
+    from nucleo2d.desenho import Camada2D
+    for nome, (cor, esp) in CAMADAS_PECAS.items():
+        if nome not in d.camadas:
+            d.camadas[nome] = Camada2D(nome, cor, espessura=esp)
+
+
+def _classificar_pecas_do_conjunto(instancia: Sequence[Solido], eixos=None) -> Dict[str, str]:
+    """{id da peça: camada} numa instância de conjunto: chapas, pilares e redondos pelo
+    tipo; barras pela posição na elevação — banzo (quase horizontal e comprida),
+    montante (quase vertical) ou diagonal. `eixos` = (u, v, origem) da vista; sem eles,
+    os eixos do conjunto."""
+    if eixos is None:
+        c, u, v, w = _eixos_do_conjunto(instancia)
+        u, v, w = _vistas.Vista(origem=c, normal=w, acima=v).eixos()
+        origem = c
+    else:
+        u, v, origem = eixos
+    fora: Dict[str, str] = {}
+    barras = []
+    us = [_dot(_sub(p, origem), u) for e in instancia for p in e.vertices]
+    larg = (max(us) - min(us)) if us else 0.0
+    for e in instancia:
+        t = _tipo_ifc(e)
+        perfil = str(_marcas(e).get("perfil") or e.nome or "")
+        if t.startswith("IfcPlate") or isinstance(getattr(e, "parametrica", None), Chapa):
+            fora[e.id] = "CHAPAS"
+        elif _eh_redonda_perfil(perfil):
+            fora[e.id] = "TIRANTES"
+        else:
+            # IfcColumn não quer dizer pilar: o TecnoMETAL exporta montantes e diagonais
+            # assim; o que decide é a posição da barra na elevação
+            eixo = _eixo_da_peca(e)
+            if not eixo:
+                fora[e.id] = "VIGAS"
+                continue
+            a, b = eixo
+            pa = (_dot(_sub(a, origem), u), _dot(_sub(a, origem), v))
+            pb = (_dot(_sub(b, origem), u), _dot(_sub(b, origem), v))
+            comp = math.hypot(pb[0] - pa[0], pb[1] - pa[1])
+            ang = abs(math.degrees(math.atan2(pb[1] - pa[1], pb[0] - pa[0]))) % 180
+            barras.append((e.id, comp, ang))
+    for eid, comp, ang in barras:
+        if (ang < 25.0 or ang > 155.0) and comp > 0.25 * larg:
+            fora[eid] = "BANZOS"
+        elif 75.0 <= ang <= 105.0:
+            fora[eid] = "MONTANTES"
+        else:
+            fora[eid] = "DIAGONAIS"
+    return fora
+
+
+def _camada_da_posicao(pos: Posicao, tipo: str, votos: Optional[Dict[str, collections.Counter]] = None) -> str:
+    """Camada 2D de uma posição: pelo tipo de produção (terça, tirante, chapa, telha) ou,
+    para a barra de conjunto, pelo que ela é na elevação (banzo, diagonal, montante —
+    a classificação mais votada entre as instâncias); pilar do IFC é PILARES."""
+    if pos.classe in ("chapa", "chapa_dobrada"):
+        return "CHAPAS"
+    if pos.classe == "telha":
+        return "TELHAS"
+    if tipo in ("contraventamento",) or pos.classe == "barra_redonda" or (pos.classe == "barra_conformada" and _eh_redonda_perfil(pos.perfil)):
+        return "TIRANTES"
+    if tipo in ("terca_cobertura", "terca_marquise"):
+        return "TERCAS"
+    if votos:
+        for m in marcas_de(pos):
+            if votos.get(m):
+                return votos[m].most_common(1)[0][0]
+    # barra solta em pé e comprida é pilar (IfcColumn sozinho não basta: o TecnoMETAL
+    # exporta montantes de tesoura como IfcColumn)
+    if pos.eixos and abs(pos.eixos[0][2]) > 0.7 and pos.comprimento >= 1500.0:
+        return "PILARES"
+    return "VIGAS"
 
 
 def _proxy_da_chapa(ch: Chapa) -> Solido:
@@ -774,7 +864,7 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     """Célula da posição em `desenho`, com a vista de frente em (dx, dy). Devolve os
     extremos. `editavel`: furos da chapa como entidades marcadas (ver _furos_editaveis)."""
     atr = {"posicao": pos.marca, "perfil": pos.perfil, "classe": pos.classe, "detalhe": "posicao"}
-    p = _Papel(desenho, atr, dx, dy)
+    p = _Papel(desenho, atr, dx, dy, camada_peca=pos.camada_2d or "")
     esc = desenho.escala
     est = Estilo(escala=esc)
     off, off2, off3 = 10.0, 20.0, 30.0            # mm de papel
@@ -1458,13 +1548,17 @@ def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[d
     return ext
 
 
+#: Camadas em que o contorno de uma chapa pode estar num desenho de detalhamento.
+CAMADAS_DE_CONTORNO = ("VISTA", "CHAPAS")
+
+
 def contorno_do_desenho(d: Desenho, marca: Optional[str] = None):
     """(contorno, origem) da chapa num desenho: a maior polilinha fechada da camada
     VISTA marcada com a posição; o contorno volta com o canto inferior esquerdo em (0, 0)."""
     melhor, area = None, -1.0
     for e in d.entidades.values():
         a = e.atributos or {}
-        if not isinstance(e, Polilinha) or not e.fechada or getattr(e, "camada", "") != "VISTA":
+        if not isinstance(e, Polilinha) or not e.fechada or getattr(e, "camada", "") not in CAMADAS_DE_CONTORNO:
             continue
         if a.get("detalhe") != "posicao" or (marca is not None and str(a.get("posicao")) != marca) or "furo" in a:
             continue
@@ -1717,17 +1811,18 @@ def _lado_do_conjunto(instancia: Sequence[Solido]) -> int:
         u, v, w = _vistas.Vista(origem=c, normal=w, acima=v).eixos()
     except Exception:                                 # noqa: BLE001
         return 0
-    centros = []
-    for e in instancia:
-        ce = [sum(q[i] for q in e.vertices) / len(e.vertices) for i in range(3)]
-        centros.append((_dot(_sub(ce, c), u), _dot(_sub(ce, c), v)))
-    us = [q for e in instancia for q in (_dot(_sub(p, c), u) for p in e.vertices)]
-    vs = [q for e in instancia for q in (_dot(_sub(p, c), v) for p in e.vertices)]
+    # pelos vértices (não pelos centros das peças): um conjunto de poucas peças, com a
+    # barra atravessando tudo, ainda tem o que comparar em cada quarto
+    pontos = [(_dot(_sub(p, c), u), _dot(_sub(p, c), v)) for e in instancia for p in e.vertices]
+    if not pontos:
+        return 0
+    us = [q[0] for q in pontos]
+    vs = [q[1] for q in pontos]
     L, H = max(us) - min(us), max(vs) - min(vs)
     if L <= 0 or H <= 0:
         return 0
-    esq = [cv for cu, cv in centros if cu < -0.25 * L]
-    dir_ = [cv for cu, cv in centros if cu > 0.25 * L]
+    esq = [cv for cu, cv in pontos if cu < -0.25 * L]
+    dir_ = [cv for cu, cv in pontos if cu > 0.25 * L]
     if not esq or not dir_:
         return 0
     dif = sum(dir_) / len(dir_) - sum(esq) / len(esq)
@@ -1758,46 +1853,55 @@ def _conjuntos_iguais(a: dict, b: dict) -> bool:
     return True
 
 
+#: Conjuntos com as mesmas dimensões (a esta tolerância, mm) e pelo menos esta fração
+#: de peças em comum são o mesmo detalhe, com a diferença de composição anotada.
+TOLERANCIA_CONJUNTO_SEMELHANTE = 20.0
+FRACAO_COMUM_CONJUNTO = 0.75
+
+
+def _conjuntos_semelhantes(a: dict, b: dict) -> bool:
+    """Mesmo lado, mesmas dimensões principais e composição quase igual: a tesoura de
+    ponta com outra chapa de base ou uma diagonal a menos vai para a célula da tesoura
+    corrente (pedido do usuário: um detalhe por lado), com a diferença escrita."""
+    if a["lado"] != b["lado"]:
+        return False
+    if any(abs(x - y) > TOLERANCIA_CONJUNTO_SEMELHANTE for x, y in zip(a["ext"][:2], b["ext"][:2])):
+        return False
+    ca = collections.Counter({k: len(v) for k, v in a["pecas"].items()})
+    cb = collections.Counter({k: len(v) for k, v in b["pecas"].items()})
+    comum = sum(min(ca[k], cb.get(k, 0)) for k in ca)
+    return comum >= FRACAO_COMUM_CONJUNTO * max(sum(ca.values()), sum(cb.values()), 1)
+
+
+def _diferenca_de_composicao(lider: dict, outra: dict) -> str:
+    """"+P26 x1; -P1 x1": o que `outra` tem a mais e a menos que o conjunto líder."""
+    a = collections.Counter({k: len(v) for k, v in outra["pecas"].items()})
+    b = collections.Counter({k: len(v) for k, v in lider["pecas"].items()})
+    mais = sorted((k for k in a if a[k] > b.get(k, 0)), key=_ordem_natural)
+    menos = sorted((k for k in b if b[k] > a.get(k, 0)), key=_ordem_natural)
+    partes = []
+    if mais:
+        partes.append("+" + ", ".join("%s x%d" % (k, a[k] - b.get(k, 0)) for k in mais))
+    if menos:
+        partes.append("-" + ", ".join("%s x%d" % (k, b[k] - a.get(k, 0)) for k in menos))
+    return "; ".join(partes)
+
+
 def _agrupar_conjuntos_iguais(candidatos, fundidas: Optional[Dict[str, str]] = None) -> List[Tuple[dict, list]]:
-    """Candidatos (conj, lista, inst, n, unidade, aviso) com a mesma assinatura, a menos
-    das tolerâncias, na mesma célula; a ordem dos candidatos manda (o primeiro lidera).
-    Devolve [(assinatura, grupo)]."""
+    """Candidatos (conj, lista, inst, n, unidade, aviso) iguais (a menos das tolerâncias)
+    ou semelhantes (mesmas dimensões, composição quase igual) na mesma célula; a ordem
+    dos candidatos manda (o primeiro lidera). Devolve [(assinatura do líder, grupo)];
+    cada candidato do grupo ganha um 7º campo: a diferença de composição para o líder."""
     grupos: List[Tuple[dict, list]] = []
     for cand in candidatos:
         ass = _assinatura_conjunto(cand[2], fundidas)
         for ass_g, grupo in grupos:
-            if _conjuntos_iguais(ass_g, ass):
-                grupo.append(cand)
+            if _conjuntos_iguais(ass_g, ass) or _conjuntos_semelhantes(ass_g, ass):
+                grupo.append(tuple(cand) + (_diferenca_de_composicao(ass_g, ass),))
                 break
         else:
-            grupos.append((ass, [cand]))
+            grupos.append((ass, [tuple(cand) + ("",)]))
     return grupos
-
-
-def _nota_de_semelhanca(ass: dict, rotulo: str, outros: Sequence[Tuple[dict, str]]) -> str:
-    """"≈ M2: +P26 −P1" quando outro conjunto tem as mesmas dimensões (a 10 mm) e o
-    mesmo lado, diferindo só na composição: a tesoura de ponta com outra chapa de base
-    fica em célula própria, mas com a diferença escrita, para o usuário decidir."""
-    melhor, menor = None, None
-    for outra, nome in outros:
-        if nome == rotulo or outra["lado"] != ass["lado"]:
-            continue
-        if any(abs(x - y) > 10.0 for x, y in zip(ass["ext"][:2], outra["ext"][:2])):
-            continue
-        a = collections.Counter({k: len(v) for k, v in ass["pecas"].items()})
-        b = collections.Counter({k: len(v) for k, v in outra["pecas"].items()})
-        mais = sorted((k for k in a if a[k] > b.get(k, 0)), key=_ordem_natural)
-        menos = sorted((k for k in b if b[k] > a.get(k, 0)), key=_ordem_natural)
-        n = len(mais) + len(menos)
-        if n == 0 or (menor is not None and n >= menor):
-            continue
-        partes = []
-        if mais:
-            partes.append("+" + ", ".join("%s x%d" % (k, a[k] - b.get(k, 0)) for k in mais))
-        if menos:
-            partes.append("-" + ", ".join("%s x%d" % (k, b[k] - a.get(k, 0)) for k in menos))
-        melhor, menor = "= %s nas dimensoes; difere: %s" % (nome, "; ".join(partes)), n
-    return melhor or ""
 
 
 def _sobrepoe(a, b, folga=0.0) -> bool:
@@ -1828,7 +1932,7 @@ def _rotular_barras(p: "_Papel", rotulos, esc: float, altura_papel: float = 1.8)
 
 def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido], n_instancias: int,
                         desenho: Desenho, dx: float, dy: float, rotular: bool = True,
-                        fundidas: Optional[Dict[str, str]] = None, nota: str = "",
+                        fundidas: Optional[Dict[str, str]] = None, nota=None,
                         nomes: Optional[Dict[str, str]] = None, nome: str = "") -> Tuple[float, float, float, float]:
     """Elevação do conjunto com cotas de nós, título e lista de perfis, em (dx, dy).
     `fundidas`: marca do IFC → posição fundida; `nomes`: posição fundida → nome de
@@ -1853,9 +1957,15 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     info = desenho.vistas[-1]
     larg, alt = info["largura"], info["altura"]
     novas = [desenho.entidades[k] for k in desenho.entidades if k not in antes]
+    camada_de = _classificar_pecas_do_conjunto(instancia, (u, v, origem))
+    _registrar_camadas_de_pecas(desenho)
     for e in novas:
         e.atributos["conjunto"] = marca
         e.atributos["detalhe"] = "conjunto"
+        # silhueta (VISTA/CORTE) na camada da peça: terças, banzos, diagonais…; as
+        # arestas finas ficam finas
+        if e.camada in ("VISTA", "CORTE") and e.atributos.get("origem") in camada_de:
+            e.camada = camada_de[e.atributos["origem"]]
     # extremos reais em (u, v) do que foi desenhado: canto inferior esquerdo = (dx, dy)
     us = [_dot(_sub(p, origem), u) for e in instancia for p in e.vertices]
     vs = [_dot(_sub(p, origem), v) for e in instancia for p in e.vertices]
@@ -1960,10 +2070,12 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         return fora
     titulo = "%s – %02dx" % (nome or marca, n_instancias) + ("  (%s)" % marca if nome else "")
     linhas = [titulo] + quebrar("Perfis: ", lista) + quebrar("Pecas: " if nomes else "Posicoes: ", posic)
-    if nota:
+    for txt in ([nota] if isinstance(nota, str) else list(nota or [])):
+        if not txt:
+            continue
         # nota quebrada por palavras, com recuo
         atual = "* "
-        for palavra in nota.split(" "):
+        for palavra in txt.split(" "):
             if len(atual) + len(palavra) + 1 > 72 and atual.strip() != "*":
                 linhas.append(atual.rstrip())
                 atual = "  "
@@ -2033,7 +2145,8 @@ MENOR_ITEM_LOCALIZACAO = 500.0
 
 
 def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str = "Detalhamento – localização",
-                           ignorar: Sequence[str] = (), nomes: Optional[Dict[str, str]] = None) -> Desenho:
+                           ignorar: Sequence[str] = (), nomes: Optional[Dict[str, str]] = None,
+                           camadas_pecas: Optional[Dict[str, str]] = None) -> Desenho:
     """Planta e duas elevações esquemáticas do modelo inteiro (cada peça é o contorno
     convexo da sua projeção, em linha fina) com a marca de cada conjunto e de cada peça
     solta escrita no lugar em que está montada: é a planta de montagem que diz onde vai
@@ -2098,7 +2211,10 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
                 if m.get("conjunto"):
                     atr["conjunto"] = str(m["conjunto"])
                 pp = _Papel(d, atr, x0, y0)
-                pp.polilinha(casco, fechada=True, camada="ACO-FINO")
+                cam = (camadas_pecas or {}).get(str(m.get("posicao") or ""), "")
+                if cam:
+                    _registrar_camadas_de_pecas(d)
+                pp.polilinha(casco, fechada=True, camada=cam or "ACO-FINO")
                 p.pontos.extend(pp.pontos)
                 n_pecas += 1
         # rótulos no centro de cada item; quem está de topo (extensão projetada pequena
@@ -2433,8 +2549,12 @@ def aplicar_nomes(posicoes: Sequence[Posicao], nomes: Optional[dict]):
     """Escreve `pos.nome` a partir do nomes.json do projeto (por marca fundida ou por
     qualquer das marcas originais); sem registro, o nome fica vazio."""
     mapa = (nomes or {}).get("posicoes") or {}
+    cam = (nomes or {}).get("camadas_2d") or {}
     for p in posicoes:
         p.nome = mapa.get(p.marca) or next((mapa[m] for m in marcas_de(p) if mapa.get(m)), "")
+        p.camada_2d = cam.get(p.marca) or next((cam[m] for m in marcas_de(p) if cam.get(m)), "")
+        if not p.camada_2d and nomes:
+            p.camada_2d = _camada_da_posicao(p, (nomes.get("tipos") or {}).get(p.marca, ""))
 
 
 def _ordenar(posicoes: Sequence[Posicao]) -> List[Posicao]:
@@ -2606,29 +2726,50 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         grupos_iguais = _agrupar_conjuntos_iguais(candidatos, fundidas)
         celulas = []
         if candidatos:
-            rotulos_grupos = [(ass, " / ".join(sorted((c[0] for c in grupo), key=_ordem_natural))) for ass, grupo in grupos_iguais]
             for ass, grupo in grupos_iguais:
-                conj, lista, inst, n, unidade, aviso = grupo[0]
+                conj, lista, inst, n, unidade, aviso, _ = grupo[0]
                 marcas = sorted((c[0] for c in grupo), key=_ordem_natural)
                 total_inst = sum(c[3] for c in grupo)
                 total_pecas = sum(len(c[1]) for c in grupo)
                 rotulo = " / ".join(marcas)
-                nota = _nota_de_semelhanca(ass, rotulo, rotulos_grupos)
+                # variantes: os conjuntos da célula cuja composição difere da do líder
+                variantes = [{"marca": c[0], "instancias": c[3], "difere": c[6]} for c in grupo[1:] if c[6]]
+                nota = ["%s – %02dx: %s" % (v_["marca"], v_["instancias"], v_["difere"]) for v_ in variantes]
+                if nota:
+                    nota.insert(0, "desenhado o %s; os demais diferem so no anotado" % conj)
                 celulas.append((rotulo, inst, total_inst, nota))
                 conjuntos_info.append({"marca": rotulo, "marcas": marcas, "pecas": total_pecas, "instancias": total_inst,
-                                       "iguais": not aviso, "composicao": dict(unidade), "semelhante": nota,
+                                       "iguais": not aviso, "composicao": dict(unidade), "variantes": variantes,
                                        "categoria": "TESOURAS" if sum(q for k, q in unidade.items() if classe_de.get(k, "").startswith("barra")) >= 8 else "CONJUNTOS"})
                 for c in grupo:
                     if c[5]:
                         avisos.append(c[5])
                 if len(marcas) > 1:
-                    avisos.append("conjuntos %s têm a mesma geometria: detalhados numa célula só (%d no total)" % (", ".join(marcas), total_inst))
+                    avisos.append("conjuntos %s têm a mesma geometria: detalhados numa célula só (%d no total)%s"
+                                  % (", ".join(marcas), total_inst,
+                                     "; " + "; ".join("%s difere: %s" % (v_["marca"], v_["difere"]) for v_ in variantes) if variantes else ""))
     # nomes de produção (S.T.1, T.C.2-A, T1…) de posições e conjuntos, estáveis entre
     # gerações quando `nomes` traz os anteriores
     nomeacao = nomear(posicoes, camadas, pecas, conjuntos_info, anteriores=nomes)
     nomes_pos, nomes_conj = nomeacao["posicoes"], nomeacao["conjuntos"]
     for c in conjuntos_info:
         c["nome"] = nomes_conj.get(c["marca"], "")
+    # camada 2D de cada posição: barra de conjunto pelo que ela é na elevação (votos
+    # das instâncias desenhadas), o resto pelo tipo
+    votos: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    for ass, grupo in grupos_iguais:
+        for c in grupo:
+            try:
+                for eid, cam in _classificar_pecas_do_conjunto(c[2]).items():
+                    e_ = doc.entidades.get(eid)
+                    if e_ is not None:
+                        votos[str(_marcas(e_).get("posicao") or e_.nome or eid)][cam] += 1
+            except Exception:                         # noqa: BLE001
+                continue
+    for p in posicoes:
+        p.camada_2d = _camada_da_posicao(p, nomeacao["tipos"].get(p.marca, ""), votos)
+    nomeacao["camadas_2d"] = {p.marca: p.camada_2d for p in posicoes}
+    camadas_ifc = {m: p.camada_2d for p in posicoes for m in marcas_de(p)}
     if celulas and "conjuntos" in grupos:
         g = GRUPOS["conjuntos"]
         d = Desenho(nome=g["titulo"], escala=g["escala"])
@@ -2673,7 +2814,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         try:
             desenhos["localizacao"] = desenho_de_localizacao(doc, pecas, GRUPOS["localizacao"]["titulo"],
                                                              ignorar=[p.marca for p in posicoes if p.classe == "telha"],
-                                                             nomes=nomeacao["ifc"])
+                                                             nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc)
         except ErroDeDados as e:
             avisos.append("planta de localização não gerada: %s" % e)
 
