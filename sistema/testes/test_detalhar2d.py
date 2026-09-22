@@ -120,7 +120,13 @@ def test_regra_furacao_terca():
     assert xs == [40, 90]                                    # 80 → 50, centrado em 65
     assert sorted(round(f.y) for f in pos_banzo.furos) == [50, 100]
     assert sorted(round(f.y) for f in pos_outra.furos) == [35, 135]
-    assert sorted(round(f.y) for f in pos_alta.furos) == [75, 175]   # ≥ 200 mm: 100 na vertical
+    assert sorted(round(f.y) for f in pos_alta.furos) == [75, 175]   # > 200 mm: 100 na vertical
+    # terça de exatamente 200 mm continua com 50 (a regra é "mais de 200")
+    pos_200 = det.Posicao(marca="M7", tipo_ifc="IfcBeam", perfil="U200X75X3", conjuntos=["M7"])
+    pos_200.classe, pos_200.L, pos_200.H = "barra", 6000.0, 200.0
+    pos_200.furos = [det.Furo("redondo", 100.0, 60.0, 13.0), det.Furo("redondo", 100.0, 140.0, 13.0)]
+    det.regra_furacao_terca([pos_200], {})
+    assert sorted(round(f.y) for f in pos_200.furos) == [75, 125]
     assert "padrao de fabrica" in pos_terca.observacoes[0]
 
 

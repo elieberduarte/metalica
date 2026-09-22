@@ -3454,6 +3454,8 @@ export function modeloDeExemplo(d, perfis) {
 
 const editor = new Editor();
 window.editor = editor;                // útil no console do navegador
+// o botão "Atualizar" (web/atualizacao.js) grava o modelo antes de instalar
+window.__antesDeAtualizar = () => editor._gravarAntesDeGerar();
 editor.iniciar().catch((e) => {
   console.error('o editor não conseguiu iniciar:', e);
   editor.aviso(`O editor não conseguiu iniciar: ${e.message}`, 'erro', 0);

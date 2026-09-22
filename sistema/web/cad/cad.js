@@ -103,6 +103,8 @@ class CAD {
     this._atualizarCarimbo();
     document.body.dataset.pronto = '1';
     window.cad = this;
+    // o botão "Atualizar" (web/atualizacao.js) grava o desenho antes de instalar
+    window.__antesDeAtualizar = () => this.salvar({ avisar: false });
   }
 
   // ---------------------------------------------------------- documento

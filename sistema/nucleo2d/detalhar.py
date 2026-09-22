@@ -820,7 +820,8 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
     assinaturas: Dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
     tercas = [p for p in posicoes if _eh_terca(p, camadas.get(p.marca, ""))]
     for pos in tercas:
-        passo_v, passo_h = FURACAO_TERCA_BAIXA if pos.H < LIMITE_TERCA else FURACAO_TERCA_ALTA
+        # até 200 mm (inclusive) é 50 mm na vertical; só acima de 200 vai a 100
+        passo_v, passo_h = FURACAO_TERCA_BAIXA if pos.H <= LIMITE_TERCA else FURACAO_TERCA_ALTA
         alterou = []
         oblongados = 0
         for g in _grupos_de_furos(pos.furos):

@@ -269,6 +269,12 @@ orientação (a chapinha do suporte), recebe a mesma substituição; o centro do
 mantido e a célula diz "furação no padrão de fábrica". Padrão quadrado ou terças de
 alturas diferentes com a mesma furação original saem com "conferir".
 
+**Atualizar de dentro do trabalho**: `web/atualizacao.js` põe o botão "Atualizar → x.y.z" ao lado de
+Tema no editor 3D, no CAD e na lista de materiais quando há release nova (janela própria, programa
+instalado); ao clicar, a tela grava o pendente (`window.__antesDeAtualizar`), `POST /api/atualizacao/instalar
+{reabrir}` guarda o caminho em `<dados>/reabrir.json` e o programa reabre nessa tela
+(`_url_para_reabrir`, válido por 15 min).
+
 **Nomes de produção** (`nucleo2d.detalhar.nomear`, guardados em `detalhamento/nomes.json` para
 não mudarem entre gerações): tesouras (conjuntos com 8+ barras) `T1, T2…`; terças de cobertura
 `T.C.n` (mesmo perfil e comprimento = mesma família; só a furação diferente = `T.C.n-A`, `-B`…)

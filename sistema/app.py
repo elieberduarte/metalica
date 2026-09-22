@@ -769,12 +769,45 @@ def verificar_atualizacao() -> dict:
     return fora
 
 
-def instalar_atualizacao() -> dict:
+ARQUIVO_REABRIR = "reabrir.json"
+
+
+def _gravar_reabrir(caminho: str):
+    """Guarda em que tela o programa deve reabrir depois da atualização (só caminhos
+    desta interface, como "/cad?projeto=x&desenho=y")."""
+    if not isinstance(caminho, str) or not caminho.startswith("/") or caminho.startswith("//"):
+        return
+    try:
+        with open(os.path.join(PROJETOS, ARQUIVO_REABRIR), "w", encoding="utf-8") as f:
+            json.dump({"caminho": caminho[:2000], "quando": time.time()}, f)
+    except OSError:
+        pass
+
+
+def _url_para_reabrir(base: str) -> str:
+    """A URL inicial: a tela gravada por _gravar_reabrir, se foi há menos de 15 min."""
+    arq = os.path.join(PROJETOS, ARQUIVO_REABRIR)
+    try:
+        with open(arq, encoding="utf-8") as f:
+            dados = json.load(f)
+        os.remove(arq)
+        caminho = str(dados.get("caminho") or "")
+        if caminho.startswith("/") and time.time() - float(dados.get("quando") or 0) < 900:
+            return base.rstrip("/") + caminho
+    except (OSError, ValueError, TypeError):
+        pass
+    return base
+
+
+def instalar_atualizacao(corpo: Optional[dict] = None) -> dict:
     """Baixa o instalador da última release e o executa em silêncio; este processo se
-    encerra e o instalador reabre o programa no fim. Só no programa instalado."""
+    encerra e o instalador reabre o programa no fim. Só no programa instalado.
+    `corpo.reabrir`: caminho da tela em que o programa deve voltar (o desenho aberto)."""
     import subprocess
     import tempfile
     import urllib.request
+    if corpo and corpo.get("reabrir"):
+        _gravar_reabrir(corpo.get("reabrir"))
     if not versao.CONGELADO:
         raise ErroDeDados("a atualização automática só vale para o programa instalado; "
                           "no desenvolvimento, use git pull.")
@@ -1262,7 +1295,7 @@ class Handler(BaseHTTPRequestHandler):
                 _abrir_no_explorador(PROJETOS)
                 return self._json({"aberta": PROJETOS})
             if rota == "/api/atualizacao/instalar":
-                return self._json(instalar_atualizacao())
+                return self._json(instalar_atualizacao(corpo if isinstance(corpo, dict) else None))
             if rota == "/api/projetos":
                 return self._json(criar_projeto(corpo))
             if rota.startswith("/api/projetos/"):
@@ -1470,7 +1503,7 @@ def main():
     servidor, extras = _servidores(porta)
     for s in extras:
         threading.Thread(target=s.serve_forever, daemon=True).start()
-    url = f"http://localhost:{porta}/"
+    url = _url_para_reabrir(f"http://localhost:{porta}/")     # volta ao desenho de antes da atualização
     # flush: com a saída redirecionada para arquivo o Python retém o texto, e quem lê o
     # registro para descobrir a porta ficaria sem resposta
     print(f"{versao.identificacao()} — dimensionamento de estruturas metálicas", flush=True)
