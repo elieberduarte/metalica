@@ -909,7 +909,8 @@ class CAD {
     const caixas = new Map();
     const opcoes = el('div', { class: 'lista-opcoes' });
     for (const d of lista) {
-      const c = el('input', { type: 'checkbox', checked: /^detalhamento/.test(d.nome) || d.nome === this.nomeDesenho ? 'checked' : undefined });
+      // o "completo" repete as células dos grupos em 1:25: não entra por padrão
+      const c = el('input', { type: 'checkbox', checked: (/^detalhamento/.test(d.nome) && !/completo/.test(d.nome)) || d.nome === this.nomeDesenho ? 'checked' : undefined });
       caixas.set(d.nome, c);
       opcoes.append(el('label', { class: 'linha' }, c, ` ${d.titulo || d.nome}`, el('small', { texto: `  ${numero(d.entidades || 0)} objetos · 1:${d.escala || '?'}` })));
     }
@@ -922,6 +923,7 @@ class CAD {
       titulo: el('input', { type: 'text', value: 'Prancha', title: 'Nome base das pranchas: Prancha 01, 02, …' }),
     };
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
+    const indice = el('input', { type: 'checkbox', checked: 'checked' });
     // peças selecionadas neste desenho: as posições/conjuntos das entidades marcadas
     const chavesSel = new Set();
     for (const id of this.tela.selecao) {
@@ -939,6 +941,7 @@ class CAD {
       el('label', {}, 'Obra', campos.obra), el('label', {}, 'Cliente', campos.cliente),
       el('label', {}, 'Responsável técnico', campos.responsavel), el('label', {}, 'Revisão', campos.revisao),
       el('label', {}, 'Nome base', campos.titulo),
+      el('label', { class: 'linha' }, indice, ' Prancha 01 de índice: relação das pranchas e tabela de todas as posições com a prancha de cada uma'),
       el('label', { class: 'linha' }, substituir, ' Substituir as pranchas anteriores com este nome'));
     if (await this.dialogo({ titulo: 'Montar pranchas', corpo, ok: 'Montar' }) !== 'ok') return;
     const escolhidos = [...caixas].filter(([, c]) => c.checked).map(([n]) => n);
@@ -947,7 +950,7 @@ class CAD {
     try {
       const desenhos = escolhidos.map(n => (soSelecao.checked && chavesSel.size && n === this.nomeDesenho) ? { nome: n, chaves: [...chavesSel] } : n);
       const j = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/pranchas`, {
-        desenhos, formato: formato.value, titulo: campos.titulo.value, substituir: substituir.checked,
+        desenhos, formato: formato.value, titulo: campos.titulo.value, substituir: substituir.checked, indice: indice.checked,
         carimbo: { obra: campos.obra.value, cliente: campos.cliente.value, responsavel: campos.responsavel.value, revisao: campos.revisao.value },
       });
       this.aviso(`${j.pranchas.length} prancha(s) ${j.formato} montada(s): ${j.pranchas.map(p => p.titulo).join(', ')}. Abra as outras em Desenho → Abrir desenho do projeto; Exportar DXF grava cada uma em papel 1:1.`, 'info', 15000);

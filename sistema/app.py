@@ -926,7 +926,8 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
                "responsavel": p.get("responsavel") or "", "revisao": "00"}
     carimbo.update({k: v for k, v in (corpo.get("carimbo") or {}).items() if v not in (None, "")})
     titulo = (corpo.get("titulo") or "Prancha").strip() or "Prancha"
-    folhas = montar_pranchas(fontes, formato=corpo.get("formato") or "A1", carimbo=carimbo, titulo=titulo)
+    folhas = montar_pranchas(fontes, formato=corpo.get("formato") or "A1", carimbo=carimbo, titulo=titulo,
+                             indice=corpo.get("indice", True) is not False)
     if corpo.get("substituir", True) is not False:
         # apaga as pranchas anteriores com o mesmo título-base (Prancha 01, 02, …)
         for d in g.listar_desenhos(s, contar=False):

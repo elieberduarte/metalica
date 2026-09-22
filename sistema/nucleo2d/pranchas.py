@@ -124,8 +124,19 @@ def celulas_de(desenho: Desenho, nome: str) -> List[dict]:
         caixa = _caixa_de(visiveis, float(desenho.escala or 1.0))
         if caixa is None:
             return []
-        return [{"fonte": nome, "titulo": desenho.nome, "desenho_titulo": desenho.nome,
-                 "escala": float(desenho.escala or 1.0), "caixa": caixa, "entidades": visiveis}]
+        unica = {"fonte": nome, "titulo": desenho.nome, "desenho_titulo": desenho.nome,
+                 "escala": float(desenho.escala or 1.0), "caixa": caixa, "entidades": visiveis}
+        # desenho de uma célula só (detalhe de uma peça, ou um grupo com uma posição):
+        # a chave é a dessa posição/conjunto, para a tabela e o índice a listarem
+        meta = desenho.metadados.get("detalhamento") or {}
+        dp = desenho.metadados.get("detalhe_posicao") or {}
+        posic = list(meta.get("posicoes") or []) or ([dp["marca"]] if dp.get("marca") else [])
+        conjs = list(meta.get("conjuntos") or [])
+        if len(posic) == 1 and not conjs:
+            unica["chave"] = ("posicao", str(posic[0]))
+        elif len(conjs) == 1 and not posic:
+            unica["chave"] = ("conjunto", str(conjs[0]))
+        return [unica]
     folga = 0.5 * desenho.escala
     celulas = [{"fonte": nome, "titulo": desenho.nome, "desenho_titulo": desenho.nome,
                 "escala": float(desenho.escala or 1.0), "caixa": ((c[0], c[1]), (c[2], c[3])), "entidades": []}
@@ -285,9 +296,11 @@ def _quadro(d: Desenho, mq: dict, x0: float, x1: float):
 
 
 def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Optional[dict] = None,
-                    titulo: str = "Prancha") -> List[Desenho]:
+                    titulo: str = "Prancha", indice: bool = False) -> List[Desenho]:
     """Monta as pranchas. `fontes`: [{nome, desenho (Desenho), escala (opcional)}].
-    Devolve a lista de desenhos-prancha, já numerados."""
+    Devolve a lista de desenhos-prancha, já numerados. Com `indice`, a prancha 01 é o
+    índice: relação das pranchas e tabela de todas as posições/conjuntos com a prancha
+    em que cada um está."""
     if formato not in FOLHAS:
         raise ErroDeDados("formato de folha desconhecido: %s" % formato)
     carimbo = dict(carimbo or {})
@@ -392,17 +405,18 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     if not pranchas[-1]:
         pranchas.pop()
         molduras.pop()
-    total = len(pranchas)
+    total = len(pranchas) + (1 if indice else 0)
 
     saida = []
-    for i, cels in enumerate(pranchas, start=1):
+    for i0, cels in enumerate(pranchas, start=1):
+        i = i0 + (1 if indice else 0)
         d = Desenho(nome="%s %02d" % (titulo, i), escala=1.0)
         fontes_da = sorted({c["fonte"] for c in cels})
         info = dict(carimbo)
-        info.setdefault("titulo", ", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i - 1]))[:48] or fontes_titulo(cels))
+        info.setdefault("titulo", ", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i0 - 1]))[:48] or fontes_titulo(cels))
         quadro, carimbo_caixa = _moldura(d, formato, info, i, total, [c["k"] for c in cels])
         _tabela_de_posicoes(d, cels, quadro, carimbo_caixa)
-        for mq in molduras[i - 1]:
+        for mq in molduras[i0 - 1]:
             _quadro(d, mq, ux0, ux1)
         for c in cels:
             (bx0, by0), (bx1, by1) = c["caixa"]
@@ -414,12 +428,90 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             d.add(Texto(camada="TEXTO", posicao=(round(c["px"], 2), round(c["py"] + 1.5, 2)), texto=rot, altura=2.0,
                         atributos={"prancha": "escala", "fonte": c["fonte"], "celula": c["titulo"]}))
         d.metadados["prancha"] = {"formato": formato, "numero": i, "total": total, "fontes": fontes_da,
+                                  "titulo": info.get("titulo", ""),
                                   "quadro": [round(v, 2) for v in quadro], "carimbo": [round(v, 2) for v in carimbo_caixa],
                                   "celulas": [{"titulo": c["titulo"], "fonte": c["fonte"], "escala": c["k"],
+                                               "marca": c.get("marca"), "item": _item_resumido(c.get("item")),
                                                "caixa": [round(c["px"], 2), round(c["py"], 2), round(c["px"] + c["w"], 2), round(c["py"] + c["h"], 2)]}
                                               for c in cels]}
         saida.append(d)
+    if indice:
+        saida.insert(0, _prancha_indice(formato, carimbo, titulo, saida, total))
     return saida
+
+
+def _item_resumido(it: Optional[dict]) -> Optional[dict]:
+    if not it:
+        return None
+    return {k: it.get(k) for k in ("nome", "quantidade", "perfil", "comprimento", "espessura", "peso", "classe", "categoria") if k in it}
+
+
+def _prancha_indice(formato: str, carimbo: dict, titulo: str, pranchas: Sequence[Desenho], total: int) -> Desenho:
+    """Prancha 01: relação das pranchas (número e conteúdo) e a tabela de todas as
+    posições e conjuntos — nome, marca, quantidade, perfil, comprimento e a prancha em
+    que cada um está desenhado —, em ordem de nome, em quantas colunas couberem."""
+    from saida.detalhamento import _ordem_natural
+    d = Desenho(nome="%s 01" % titulo, escala=1.0)
+    info = dict(carimbo)
+    info["titulo"] = "Índice"
+    quadro, carimbo_caixa = _moldura(d, formato, info, 1, total, [])
+    qx0, qy0, qx1, qy1 = quadro
+    cx0, cy0, cx1, cy1 = carimbo_caixa
+    cam = "CARIMBO"
+    atr = {"prancha": "indice"}
+    y = qy1 - 8.0
+    d.add(Texto(camada=cam, posicao=(round(qx0 + 6.0, 2), round(y, 2)), texto="ÍNDICE DE PRANCHAS E POSIÇÕES", altura=5.0, atributos=dict(atr, campo="titulo")))
+    y -= 9.0
+    # relação das pranchas
+    for p in pranchas:
+        pr = p.metadados.get("prancha") or {}
+        d.add(Texto(camada=cam, posicao=(round(qx0 + 6.0, 2), round(y, 2)),
+                    texto="Prancha %02d/%02d — %s  (%d vista(s))" % (pr.get("numero", 0), total, pr.get("titulo") or "", len(pr.get("celulas") or [])),
+                    altura=2.5, atributos=dict(atr, campo="prancha")))
+        y -= 4.2
+    y -= 4.0
+    # tabela de posições/conjuntos: nome, marca, qtd, perfil, compr., prancha
+    linhas = []
+    vistos = set()
+    for p in pranchas:
+        pr = p.metadados.get("prancha") or {}
+        for c in pr.get("celulas") or []:
+            it, marca = c.get("item"), c.get("marca")
+            if not it or not marca or marca in vistos:
+                continue
+            vistos.add(marca)
+            comp = ("%d" % it["comprimento"]) if it.get("comprimento") else ("#%s" % it["espessura"] if it.get("espessura") else "")
+            marca_txt = marca if len(marca) <= 14 else marca[:13] + "…"
+            linhas.append(((it.get("nome") or marca)[:16], marca_txt, "%dx" % (it.get("quantidade") or 0), (it.get("perfil") or "")[:30], comp, "%02d" % pr.get("numero", 0)))
+    linhas.sort(key=lambda r: (_ordem_natural(r[0]), _ordem_natural(r[1])))
+    cabec = ("NOME", "MARCA", "QTD", "PERFIL / CHAPA / CONJUNTO", "COMPR.", "PRANCHA")
+    larguras = (26.0, 20.0, 10.0, 56.0, 16.0, 16.0)
+    h_linha, altura_txt = 3.6, 2.0
+    larg_col = sum(larguras) + 8.0
+    x0, x1 = qx0 + 6.0, qx1 - 6.0
+    y_fundo = max(qy0, cy1) + 6.0
+    n_cols = max(1, int((x1 - x0) // larg_col))
+    por_col = max(1, int((y - y_fundo) // h_linha) - 1)
+    if len(linhas) > n_cols * por_col:
+        linhas = linhas[:n_cols * por_col - 1] + [("…", "", "", "e mais %d item(ns): ver as pranchas" % (len(linhas) - n_cols * por_col + 1), "", "")]
+    for ci in range(n_cols):
+        bloco = linhas[ci * por_col:(ci + 1) * por_col]
+        if not bloco:
+            break
+        bx = x0 + ci * larg_col
+        yy = y
+        for j, (rot, larg) in enumerate(zip(cabec, larguras)):
+            d.add(Texto(camada=cam, posicao=(round(bx + sum(larguras[:j]), 2), round(yy - altura_txt, 2)), texto=rot, altura=altura_txt, atributos=dict(atr, campo="cabecalho")))
+        d.add(Linha(camada=cam, a=(round(bx, 2), round(yy - h_linha + 0.6, 2)), b=(round(bx + sum(larguras), 2), round(yy - h_linha + 0.6, 2)), atributos=dict(atr)))
+        yy -= h_linha
+        for linha in bloco:
+            for j, (txt, larg) in enumerate(zip(linha, larguras)):
+                if txt:
+                    d.add(Texto(camada=cam, posicao=(round(bx + sum(larguras[:j]), 2), round(yy - altura_txt, 2)), texto=str(txt), altura=altura_txt, atributos=dict(atr, campo="linha")))
+            yy -= h_linha
+    d.metadados["prancha"] = {"formato": formato, "numero": 1, "total": total, "fontes": [], "titulo": "Índice", "indice": True,
+                              "quadro": [round(v, 2) for v in quadro], "carimbo": [round(v, 2) for v in carimbo_caixa], "celulas": []}
+    return d
 
 
 def fontes_titulo(cels: Sequence[dict]) -> str:

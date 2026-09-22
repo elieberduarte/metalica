@@ -119,3 +119,28 @@ def test_pdf_das_pranchas(tmp_path):
     w2 = doc[1].rect.width / 72 * 25.4
     assert abs(w2 - ((x1 - x0) / d.escala + 20)) < 1
     assert "P1" in doc[0].get_text()
+
+
+
+def test_prancha_de_indice():
+    """Com índice, a prancha 01 relaciona as pranchas e lista todas as posições com o
+    número da prancha em que estão; sem índice, a numeração começa no conteúdo."""
+    import os
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from test_detalhar2d import _modelo
+    from nucleo2d import detalhar as det
+    from nucleo2d.pranchas import montar_pranchas
+    from nucleo2d.desenho import Texto
+    doc = _modelo()
+    r = det.detalhar(doc, grupos=["chapas", "barras"], regra_tercas=False, converter=False)
+    fontes = [{"nome": k, "desenho": d} for k, d in r["desenhos"].items()]
+    folhas = montar_pranchas(fontes, formato="A1", titulo="Prancha", indice=True)
+    assert folhas[0].nome == "Prancha 01" and folhas[0].metadados["prancha"]["indice"] is True
+    assert folhas[0].metadados["prancha"]["total"] == len(folhas) and folhas[1].metadados["prancha"]["numero"] == 2
+    textos = [e.texto for e in folhas[0].entidades.values() if isinstance(e, Texto)]
+    assert any(t.startswith("Prancha 02/") for t in textos)
+    assert any(t == "P1" for t in textos) and any(t == "M5" for t in textos)   # marcas na tabela
+    assert any(t == "02" for t in textos)                                       # coluna da prancha
+    sem = montar_pranchas(fontes, formato="A1", titulo="Prancha", indice=False)
+    assert sem[0].metadados["prancha"]["numero"] == 1 and len(sem) == len(folhas) - 1

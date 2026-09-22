@@ -316,6 +316,13 @@ malha atrás do símbolo. As **cotas dos furos** das células saem sempre: trech
 número (35 mm da ponta em 1:25) vai para uma segunda linha alternada (`cadeia_h` devolve "dupla" e
 a total sobe uma linha).
 
+**Prancha de índice** (`pranchas._prancha_indice`, `montar_pranchas(..., indice=True)`, padrão na rota
+`/pranchas`): a prancha 01 relaciona as pranchas (número, conteúdo, nº de vistas) e traz a tabela de
+todas as posições e conjuntos — nome, marca, quantidade, perfil, comprimento e a prancha em que cada
+um está —, em ordem de nome, em colunas. As pranchas de conteúdo passam a 02…N; `metadados.prancha.celulas`
+guarda `marca` e `item` resumido de cada vista. Desenho de uma célula só (detalhe de uma peça) recebe a
+chave da posição (`celulas_de`). O desenho completo não entra nas pranchas por padrão (repete as células).
+
 **Furos das barras editáveis** (`aplicar_furos_de_barra`): a célula de uma barra (detalhe pelo duplo
 clique ou desenho geral) traz os furos da alma como entidades FURO; "Aplicar furos" guarda a furação
 nova em `ajustes-furos.json` (é o que o detalhamento seguinte usa) e move os furos na malha 3D com
