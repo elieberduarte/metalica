@@ -264,8 +264,13 @@ peça montada espelhada recebe o espelho, escolhido pelos furos originais — `_
 regrava o modelo e regenera o detalhe. Chapas paramétricas entram no detalhamento geral
 como sólidos equivalentes (`_proxy_da_chapa`); a malha 3D (`geometria.malha_chapa`) e a
 cena do editor abrem furos redondos e **oblongos** (`{x, y, largura, altura}`).
-**Ver no 3D** (CAD) abre o editor com `destacar=posicao:P77` — peças selecionadas e
-enquadradas. Chapa com nome nominal e malha até 1 mm menor sai com a dimensão nominal
+O detalhamento geral (`detalhar(..., converter=True)`) converte todas as chapas planas
+(`converter_chapas_planas`) e as células de chapa saem editáveis
+(`metadados.detalhamento.editaveis` e `furos_originais`); `/aplicar-furos` com `marca` lê
+furos e contorno da célula (`contorno_do_desenho`, `furos_do_desenho`), aplica (contorno
+mudado = tamanho ajustado) e regenera a célula no lugar (`regenerar_celula`).
+**Ver no 3D** (CAD) abre o editor com `destacar=posicao:P77` — peças selecionadas,
+enquadradas e o resto do modelo em fantasma (`cena.destacar`). Chapa com nome nominal e malha até 1 mm menor sai com a dimensão nominal
 (`saida.detalhamento._ajustar_ao_nominal`).
 
 ### Lista de materiais

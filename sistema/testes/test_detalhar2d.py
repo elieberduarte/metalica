@@ -247,6 +247,36 @@ def test_chapa_nominal_e_bloco_parametrico():
     assert esp(30.0, 25.0) == (100.0, 25.0)
 
 
+def test_desenho_geral_editavel_e_tamanho():
+    """O detalhamento geral converte as chapas planas; a célula tem furos editáveis; os
+    furos e um contorno maior lidos do desenho vão para as chapas e a célula é
+    regenerada no mesmo lugar, sem furo em dobro."""
+    from nucleo3d.modelo import Chapa
+    from nucleo2d.desenho import Circulo
+    doc = _modelo()
+    r = det.detalhar(doc, grupos=["chapas"], regra_tercas=False)
+    assert r["convertidas"] == 3
+    d = r["desenhos"]["chapas"]
+    meta = d.metadados["detalhamento"]
+    assert meta["editaveis"] == ["P1"] and len(meta["furos_originais"]["P1"]) == 1
+    cont, org = det.contorno_do_desenho(d, "P1")
+    assert abs(max(x for x, _ in cont) - 130) < 1e-6 and abs(max(y for _, y in cont) - 50) < 1e-6
+    d.add(Circulo(camada="FURO", centro=(org[0] + 100.0, org[1] + 25.0), raio=8.75))
+    furos = det.furos_do_desenho(d, "P1", org)
+    assert len(furos) == 2 and abs(furos[-1]["x"] - 100.0) < 1e-6
+    novo = [(x * 140 / 130, y) for x, y in cont]
+    res = det.aplicar_furos(doc, "P1", furos, meta["furos_originais"]["P1"], novo)
+    assert res == {"chapas": 3, "furos": 2, "contornos": 3}
+    for ch in (e for e in doc.entidades.values() if isinstance(e, Chapa)):
+        xs = [p[0] for p in ch.contorno]
+        assert abs((max(xs) - min(xs)) - 140) < 1e-6 and len(ch.furos) == 2
+    det.regenerar_celula(d, doc, "P1")
+    cont2, org2 = det.contorno_do_desenho(d, "P1")
+    assert org2 == org and abs(max(x for x, _ in cont2) - 140) < 1e-6
+    assert len(det.furos_do_desenho(d, "P1", org2)) == 2          # o desenhado à mão não dobra
+    assert sum(1 for c in d.metadados["celulas"] if abs(c[2] - c[0]) > 140) >= 1
+
+
 def test_furo_oblongo_na_malha():
     from nucleo3d.modelo import Chapa
     from nucleo3d import geometria

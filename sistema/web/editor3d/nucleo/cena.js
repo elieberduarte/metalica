@@ -626,6 +626,7 @@ export class Cena {
   }
 
   _materialLinhas(ent) {
+    if (this.destaque && !this.destaque.has(ent.id)) return this._materialFantasmaLinha();
     const tipo = tipoDe(ent);
     const base = this._corDe(ent);
     const cor = tipo === 'construcao' ? (this.escuro ? '#9aa4b2' : '#5d6a7e')
@@ -801,6 +802,7 @@ export class Cena {
   }
 
   _materialDe(ent) {
+    if (this.destaque && !this.destaque.has(ent.id)) return this._materialFantasma();
     const mat = ent.material && this.documento.materiais.get(ent.material);
     const cor = this._corDe(ent);
     // Pintando por valor, a peça sem valor fica translúcida e o brilho metálico sai de
@@ -835,6 +837,7 @@ export class Cena {
   }
 
   _materialArestas(ent) {
+    if (this.destaque && !this.destaque.has(ent.id)) return this._materialFantasmaLinha();
     const forte = this.modo === 'arestas' || this.modo === 'raiox';
     const cor = forte ? (this.escuro ? '#c8d4e6' : '#1c2836')
                       : misturar(this._corDe(ent), this.escuro ? '#f0f5ff' : '#101822', 0.55);
@@ -861,7 +864,44 @@ export class Cena {
     if (malha && !obj.userData.realce) malha.material = this._materialDe(ent);
     if (arestas && !obj.userData.realce) arestas.material = this._materialArestas(ent);
     if (linhas && !obj.userData.realce) linhas.material = this._materialLinhas(ent);
+    if (this.destaque && !this.destaque.has(id) && !obj.userData.realce) {
+      // fora do destaque: fantasma cinza quase transparente, para as peças em foco saltarem
+      if (malha) malha.material = this._materialFantasma();
+      if (arestas) arestas.material = this._materialFantasmaLinha();
+      if (linhas) linhas.material = this._materialFantasmaLinha();
+    }
     this._aplicarModo(obj);
+  }
+
+  /** Destaque: só `ids` ficam com a cor normal, o resto do modelo vira fantasma. null desliga. */
+  destacar(ids) {
+    this.destaque = ids && ids.length ? new Set(ids) : null;
+    for (const id of this.objetos.keys()) this._pintar(id);
+    this.pedirQuadro();
+  }
+
+  _materialFantasma() {
+    const chave = `fantasma|${this.escuro ? 1 : 0}|${this.planosCorte.length}`;
+    let m = this.cacheMaterial.get(chave);
+    if (!m) {
+      m = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(this.escuro ? '#6b7280' : '#9aa3b2'), metalness: 0.1, roughness: 0.9,
+        transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide,
+        clippingPlanes: this.planosCorte.length ? this.planosCorte : null,
+      });
+      this.cacheMaterial.set(chave, m);
+    }
+    return m;
+  }
+
+  _materialFantasmaLinha() {
+    const chave = `fantasma-linha|${this.escuro ? 1 : 0}`;
+    let m = this.cacheMaterial.get(chave);
+    if (!m) {
+      m = new THREE.LineBasicMaterial({ color: new THREE.Color(this.escuro ? '#6b7280' : '#9aa3b2'), transparent: true, opacity: 0.12, depthWrite: false });
+      this.cacheMaterial.set(chave, m);
+    }
+    return m;
   }
 
   _aplicarModo(obj) {

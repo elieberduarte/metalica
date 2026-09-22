@@ -221,6 +221,7 @@ export class Editor {
     this.documento.aoMudar((ev) => this._aposMudanca(ev));
     this.pilha.aoMudar(() => this._atualizarMenuEditar());
     this.selecao.aoMudar(() => {
+      if (this._destaqueAtivo && this.selecao.ids.size === 0) { this._destaqueAtivo = false; this.cena.destacar(null); }
       this._agendarPaineis('props', 'arvore');
       this._atualizarCarimbo();
       this._aposSelecaoAnalise();
@@ -1272,10 +1273,12 @@ export class Editor {
       .map(e => e.id);
     if (!ids.length) { this.aviso(`Nenhuma peça com ${chave} ${[...marcas].join(', ')} no modelo.`, 'atencao'); return; }
     this.selecao.definir(ids);
+    this.cena.destacar(ids);
+    this._destaqueAtivo = true;
     this.camera.zoomSelecao(ids);
     // as malhas do servidor chegam depois: enquadra de novo quando a cena já as tem
-    setTimeout(() => { if (this.selecao.ids.size === ids.length) this.camera.zoomSelecao(ids); }, 1500);
-    this.aviso(`${ids.length} peça(s) ${[...marcas].join(', ')} em destaque (selecionadas). Esc limpa a seleção; Desenho 2D volta ao CAD.`, 'info', 12000);
+    setTimeout(() => { if (this.selecao.ids.size === ids.length) { this.camera.zoomSelecao(ids); this.cena.destacar(ids); } }, 1500);
+    this.aviso(`${ids.length} peça(s) ${[...marcas].join(', ')} em destaque; o resto do modelo está esmaecido. Esc limpa a seleção e devolve o modelo; Desenho 2D volta ao CAD.`, 'info', 14000);
     const url = new URL(location.href); url.searchParams.delete('destacar'); history.replaceState(null, '', url);
   }
 
@@ -1374,6 +1377,7 @@ export class Editor {
     for (const [k, r] of grupos) { caixas[k] = el('input', { type: 'checkbox', checked: 'checked' }); grade.append(el('label', { texto: r }), caixas[k]); }
     const regra = el('input', { type: 'checkbox', checked: 'checked' });
     const rotular = el('input', { type: 'checkbox', checked: 'checked' });
+    const converter = el('input', { type: 'checkbox', checked: 'checked' });
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
     grade.append(el('label', { texto: 'Furação das terças no padrão da fábrica', title: 'Terça com menos de 200 mm: furos a 50 mm na vertical e 60 na horizontal; com 200 mm ou mais: 100 × 60. Vale para os suportes com a mesma furação.' }), regra,
                  el('label', { texto: 'Rotular posições nos conjuntos' }), rotular,
@@ -1390,7 +1394,7 @@ export class Editor {
       await this._gravarAntesDeGerar();
       const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar`, {
         method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({ grupos: escolhidos, regra_tercas: regra.checked, rotular: rotular.checked, substituir: substituir.checked }),
+        body: JSON.stringify({ grupos: escolhidos, regra_tercas: regra.checked, rotular: rotular.checked, substituir: substituir.checked, converter: converter.checked }),
       });
       const j = await r.json();
       if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);

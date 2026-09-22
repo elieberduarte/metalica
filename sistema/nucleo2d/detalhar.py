@@ -34,7 +34,7 @@ from nucleo3d.modelo import Documento, Solido, Chapa
 from nucleo3d import geometria as _geo
 from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota
 from nucleo2d import vistas as _vistas
-from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO,
+from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
                                 _arestas_dos_furos, _ordem_natural, _autovetores)
 from saida.desenhos import Estilo, _mm
 
@@ -685,20 +685,47 @@ def _simetria(originais, atuais, L: float, H: float, tol: float = 1.5):
     return cands[0]
 
 
-def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: Sequence[dict]) -> dict:
-    """Escreve nas chapas paramétricas da posição os furos vindos do desenho de detalhe
-    (coordenadas do desenho: canto inferior esquerdo do contorno = 0,0)."""
+def furos_da_chapa(ch: Chapa) -> List[dict]:
+    """Furos de uma Chapa no sistema do desenho (canto inferior esquerdo do contorno = 0,0)."""
+    cont = [(float(x), float(y)) for x, y in (ch.contorno or [])]
+    if not cont:
+        return []
+    u0, v0 = min(x for x, _ in cont), min(y for _, y in cont)
+    fora = []
+    for f in ch.furos or []:
+        x, y = float(f.get("x", 0) or 0) - u0, float(f.get("y", 0) or 0) - v0
+        if float(f.get("diametro", 0) or 0) > 0:
+            fora.append({"tipo": "redondo", "x": x, "y": y, "d": float(f["diametro"])})
+        else:
+            fora.append({"tipo": "oblongo", "x": x, "y": y, "larg": float(f.get("largura", 0) or 0), "alt": float(f.get("altura", 0) or 0)})
+    return fora
+
+
+def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: Sequence[dict],
+                  contorno: Optional[Sequence[Tuple[float, float]]] = None) -> dict:
+    """Escreve nas chapas paramétricas da posição os furos vindos do desenho (coordenadas
+    do desenho: canto inferior esquerdo do contorno = 0,0) e, se `contorno` veio
+    diferente do da chapa (tamanho ajustado no desenho), o contorno também."""
     chapas = [e for e in doc.entidades.values() if isinstance(e, Chapa)
               and str(_marcas(e).get("posicao") or e.nome or e.id) == marca]
     if not chapas:
         raise ErroDeDados("a posição %s não tem chapa paramétrica no modelo (abra o detalhe pela peça no 3D primeiro)." % marca)
     orig = [(float(f["x"]), float(f["y"])) for f in originais]
+    contornos = 0
     for ch in chapas:
         cont = [(float(x), float(y)) for x, y in (ch.contorno or [])]
         u0, v0 = min(x for x, _ in cont), min(y for _, y in cont)
         L, H = max(x for x, _ in cont) - u0, max(y for _, y in cont) - v0
         atuais = [(float(f.get("x", 0) or 0) - u0, float(f.get("y", 0) or 0) - v0) for f in (ch.furos or [])]
         mapa = _simetria(orig, atuais, L, H)
+        if contorno:
+            atual_norm = [(x - u0, y - v0) for x, y in cont]
+            novo = [(float(x), float(y)) for x, y in contorno]
+            mudou = len(novo) != len(atual_norm) or any(
+                math.hypot(a[0] - b[0], a[1] - b[1]) > 0.05 for a, b in zip(atual_norm, novo))
+            if mudou:
+                ch.contorno = [(round(mx + u0, 3), round(my + v0, 3)) for mx, my in (mapa(x, y) for x, y in novo)]
+                contornos += 1
         novos = []
         for f in furos:
             x, y = mapa(float(f["x"]), float(f["y"]))
@@ -710,24 +737,106 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
             if reg.get("diametro", 0) > 0 or reg.get("largura", 0) > 0:
                 novos.append(reg)
         ch.furos = novos
-    return {"chapas": len(chapas), "furos": len(furos)}
+    return {"chapas": len(chapas), "furos": len(furos), "contornos": contornos}
 
 
-def furos_do_desenho(d: Desenho) -> List[dict]:
-    """Os furos de um desenho de detalhe editável: círculos e polilinhas fechadas da
-    camada FURO (as marcadas com `furo` e as que o usuário desenhou depois)."""
+def regenerar_celula(d: Desenho, doc: Documento, marca: str) -> Tuple[float, float, float, float]:
+    """Redesenha, no mesmo lugar de um desenho geral, a célula da posição (depois de os
+    furos ou o tamanho terem mudado no modelo): apaga o que tem a marca e desenha de
+    novo, com furos editáveis, a partir do canto onde estava."""
+    cont_antigo, origem = contorno_do_desenho(d, marca)
+    caixa = None
+    if cont_antigo:
+        caixa = (origem[0] - 5.0, origem[1] - 5.0, origem[0] + max(x for x, _ in cont_antigo) + 5.0,
+                 origem[1] + max(y for _, y in cont_antigo) + 5.0)
+    ids = []
+    for k, e in d.entidades.items():
+        a = e.atributos or {}
+        if a.get("detalhe") == "posicao" and str(a.get("posicao")) == marca:
+            ids.append(k)
+        elif getattr(e, "camada", "") == "FURO" and a.get("posicao") is None and caixa:
+            # furo desenhado à mão dentro da célula: já foi para o modelo, sai daqui para
+            # não ficar em dobro com o regenerado
+            pts = e.pontos() if hasattr(e, "pontos") else []
+            if pts and all(caixa[0] <= p[0] <= caixa[2] and caixa[1] <= p[1] <= caixa[3] for p in pts):
+                ids.append(k)
+    for k in ids:
+        d.remover(k) if hasattr(d, "remover") else d.entidades.pop(k, None)
+    pecas, _ = _pecas(doc)
+    lista = [e for e in pecas if str(_marcas(e).get("posicao") or e.nome or e.id) == marca]
+    if not lista:
+        raise ErroDeDados("a posição %s não está mais no modelo." % marca)
+    posicoes, _ = _posicoes_de(lista)
+    pos = posicoes[0]
+    ext = desenho_da_posicao(pos, d, origem[0], origem[1], editavel=pos.classe == "chapa")
+    meta = d.metadados.setdefault("detalhamento", {})
+    if pos.classe == "chapa":
+        meta.setdefault("furos_originais", {})[marca] = [_furo_dict(f) for f in pos.furos if f.vista == "frente"]
+        if marca not in meta.setdefault("editaveis", []):
+            meta["editaveis"].append(marca)
+    itens = meta.setdefault("itens", {})
+    if marca in itens:
+        itens[marca].update(comprimento=round(pos.comprimento), espessura=round(pos.espessura or pos.T, 1), peso=round(pos.peso, 2))
+    # a caixa da célula que continha o canto antigo passa a ser a nova
+    cels = d.metadados.get("celulas") or []
+    for i, c in enumerate(cels):
+        if c[0] - 1 <= origem[0] <= c[2] + 1 and c[1] - 1 <= origem[1] <= c[3] + 1:
+            cels[i] = [round(v, 1) for v in ext]
+            break
+    return ext
+
+
+def contorno_do_desenho(d: Desenho, marca: Optional[str] = None):
+    """(contorno, origem) da chapa num desenho: a maior polilinha fechada da camada
+    VISTA marcada com a posição; o contorno volta com o canto inferior esquerdo em (0, 0)."""
+    melhor, area = None, -1.0
+    for e in d.entidades.values():
+        a = e.atributos or {}
+        if not isinstance(e, Polilinha) or not e.fechada or getattr(e, "camada", "") != "VISTA":
+            continue
+        if a.get("detalhe") != "posicao" or (marca is not None and str(a.get("posicao")) != marca) or "furo" in a:
+            continue
+        ar = abs(_area_2d(e.vertices))
+        if ar > area:
+            melhor, area = e, ar
+    if melhor is None:
+        return None, (0.0, 0.0)
+    xs = [p[0] for p in melhor.vertices]
+    ys = [p[1] for p in melhor.vertices]
+    x0, y0 = min(xs), min(ys)
+    return [(round(x - x0, 3), round(y - y0, 3)) for x, y in melhor.vertices], (x0, y0)
+
+
+def furos_do_desenho(d: Desenho, marca: Optional[str] = None, origem=(0.0, 0.0)) -> List[dict]:
+    """Os furos de um desenho editável: círculos e polilinhas fechadas da camada FURO
+    (as marcadas com `furo` e as que o usuário desenhou depois). Com `marca`, só os da
+    célula dessa posição (ou sem posição nenhuma, dentro da caixa do contorno dela);
+    `origem` é o canto da chapa no desenho, descontado das coordenadas."""
     fora = []
+    caixa = None
+    if marca is not None:
+        cont, org = contorno_do_desenho(d, marca)
+        if cont:
+            caixa = (org[0] - 5.0, org[1] - 5.0, org[0] + max(x for x, _ in cont) + 5.0, org[1] + max(y for _, y in cont) + 5.0)
     for e in d.entidades.values():
         if getattr(e, "camada", "") != "FURO":
             continue
         a = e.atributos or {}
+        if marca is not None:
+            pos_e = a.get("posicao")
+            if pos_e is not None and str(pos_e) != marca:
+                continue
+            if pos_e is None:
+                pts = e.pontos() if hasattr(e, "pontos") else []
+                if not caixa or not pts or not all(caixa[0] <= p[0] <= caixa[2] and caixa[1] <= p[1] <= caixa[3] for p in pts):
+                    continue
         if isinstance(e, Circulo):
-            fora.append({"tipo": "redondo", "x": e.centro[0], "y": e.centro[1], "d": 2 * e.raio})
+            fora.append({"tipo": "redondo", "x": e.centro[0] - origem[0], "y": e.centro[1] - origem[1], "d": 2 * e.raio})
         elif isinstance(e, Polilinha) and e.fechada and len(e.vertices) >= 3:
             xs = [p[0] for p in e.vertices]
             ys = [p[1] for p in e.vertices]
             larg, alt = max(xs) - min(xs), max(ys) - min(ys)
-            cx, cy = (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2
+            cx, cy = (max(xs) + min(xs)) / 2 - origem[0], (max(ys) + min(ys)) / 2 - origem[1]
             if a.get("tipo_furo") == "oblongo" or abs(larg - alt) > 0.5:
                 fora.append({"tipo": "oblongo", "x": cx, "y": cy, "larg": float(a.get("larg") or larg), "alt": float(a.get("alt") or alt)})
             else:
@@ -1366,16 +1475,37 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None) -> dict:
             "categorias": {p.marca: _categoria(p, camadas.get(p.marca, "")) for p in posicoes}}
 
 
+def converter_chapas_planas(doc: Documento, posicoes: Sequence[Posicao], pecas: Sequence[Solido]) -> int:
+    """Toda posição de chapa plana ainda sólida vira Chapa paramétrica (ver converter_chapas)."""
+    parametricas = {str(_marcas(e).get("posicao") or e.nome or e.id) for e in pecas if getattr(e, "parametrica", None) is not None}
+    n = 0
+    for p in posicoes:
+        if p.classe == "chapa" and p.tipo_ifc == "IfcPlate" and p.marca not in parametricas:
+            n += converter_chapas(doc, p.marca)
+    return n
+
+
 def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_tercas: bool = True,
-             rotular: bool = True, avisar=None) -> dict:
+             rotular: bool = True, avisar=None, converter: bool = True) -> dict:
     """Gera os desenhos de detalhamento do modelo. Devolve
     {"desenhos": {chave: Desenho}, "posicoes": [...], "conjuntos": [...], "acessorios": {},
      "regra_tercas": {marca: texto}, "avisos": [...]}."""
     avisar = avisar or (lambda *a: None)
     grupos = list(grupos or GRUPOS.keys())
     lev = levantar(doc, regra_tercas=regra_tercas, avisar=avisar)
+    convertidas = 0
+    if converter:
+        # chapas planas viram paramétricas: a célula sai com furos editáveis e "Aplicar
+        # furos ao modelo 3D" funciona a partir do desenho geral
+        convertidas = converter_chapas_planas(doc, lev["posicoes"], lev["pecas"])
+        if convertidas:
+            lev = levantar(doc, regra_tercas=regra_tercas)
     pecas, acessorios, posicoes, camadas, mudadas = (lev["pecas"], lev["acessorios"], lev["posicoes"],
                                                      lev["camadas"], lev["regra_tercas"])
+    parametricas: Dict[str, bool] = {}
+    for e in pecas:
+        m_ = str(_marcas(e).get("posicao") or e.nome or e.id)
+        parametricas[m_] = parametricas.get(m_, True) and getattr(e, "parametrica", None) is not None
     desenhos: Dict[str, Desenho] = collections.OrderedDict()
     avisos: List[str] = []
 
@@ -1395,8 +1525,12 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                                 "peso": round(p.peso, 2), "classe": CLASSES.get(p.classe, p.classe),
                                 "categoria": _categoria(p, camadas.get(p.marca, ""))}
                       for p in lista}}
-        celulas = [(lambda x, y, p=p: desenho_da_posicao(p, d, x, y)) for p in lista]
+        editaveis = [p.marca for p in lista if p.classe == "chapa" and parametricas.get(p.marca)]
+        celulas = [(lambda x, y, p=p: desenho_da_posicao(p, d, x, y, editavel=p.marca in editaveis)) for p in lista]
         _empilhar(d, celulas)
+        d.metadados["detalhamento"]["editaveis"] = editaveis
+        d.metadados["detalhamento"]["furos_originais"] = {
+            p.marca: [_furo_dict(f) for f in p.furos if f.vista == "frente"] for p in lista if p.marca in editaveis}
         desenhos[chave] = d
 
     conjuntos_info = []
@@ -1484,4 +1618,5 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     return {"desenhos": desenhos, "posicoes": resumo_pos, "conjuntos": conjuntos_info,
             "acessorios": acessorios, "regra_tercas": mudadas, "avisos": avisos,
             "peso_total": round(sum(p.peso_total for p in posicoes), 1),
-            "objetos_posicoes": posicoes, "objetos_pecas": pecas, "camadas": camadas}
+            "objetos_posicoes": posicoes, "objetos_pecas": pecas, "camadas": camadas,
+            "convertidas": convertidas}

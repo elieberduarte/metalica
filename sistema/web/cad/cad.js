@@ -98,6 +98,7 @@ class CAD {
       if (lista.length) await this.abrirDesenho(lista[0].nome);
       else this.dica('Desenho novo. Use "Vistas do modelo" para trazer uma vista do 3D, ou desenhe à mão.');
     }
+    try { if (localStorage.getItem('cad.orto') === '1') this.snap.orto = true; } catch { /* sem armazenamento */ }
     this._agendarPaineis('props', 'camadas', 'snap', 'vistas');
     this._atualizarCarimbo();
     document.body.dataset.pronto = '1';
@@ -358,12 +359,11 @@ class CAD {
         if (ev.key === 'Escape') { this.el.medida.value = ''; this.el.canvas.focus(); }
         return;
       }
-      if (ev.key === 'Shift') { this.snap.orto = true; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? this.refazer() : this.desfazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') { ev.preventDefault(); this.refazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); this.salvar(); return; }
       if (ev.key === 'Escape') { if (this.ferramenta) { this.ferramenta.cancelar(); } this.selecionar([]); if (this.ferramenta.constructor.id !== 'selecionar') this.ativarFerramenta('selecionar'); return; }
-      if (ev.key === 'F8') { ev.preventDefault(); this.snap.orto = !this.snap.orto; this.dica(`Orto ${this.snap.orto ? 'ligado' : 'desligado'}`); return; }
+      if (ev.key === 'F8') { ev.preventDefault(); this.definirOrto(!this.snap.orto); return; }
       if (this.ferramenta && this.ferramenta.onTecla(ev)) { ev.preventDefault(); return; }
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
       if (ev.key.toLowerCase() === 'z') { this.tela.enquadrar(); return; }
@@ -371,7 +371,6 @@ class CAD {
       if (/^[-0-9.,@<]$/.test(ev.key)) { this.el.medida.focus(); return; }
       for (const F of FERRAMENTAS) if (F.atalho && ev.key === F.atalho) { ev.preventDefault(); this.ativarFerramenta(F.id); return; }
     });
-    document.addEventListener('keyup', (ev) => { if (ev.key === 'Shift') this.snap.orto = false; });
   }
 
   // ------------------------------------------------------------- menus
@@ -381,6 +380,7 @@ class CAD {
       novo: () => this.dialogoNovo(),
       'excluir-desenhos': () => this.dialogoExcluir(),
       'aplicar-furos': () => this.aplicarFuros(),
+      'ajustar-tamanho': () => this.ajustarTamanho(),
       'ver-3d': () => this.verNo3D(),
       salvar: () => this.salvar(),
       'exportar-dxf': () => this.exportarDXF(),
@@ -403,7 +403,7 @@ class CAD {
       'zoom-extensao': () => this.tela.enquadrar(),
       'zoom-selecao': () => { const c = this.doc.caixa(this.tela.selecao); if (c) this.tela.enquadrar(c, 0.2); },
       grade: () => { this.tela.grade = !this.tela.grade; this.tela.pedirQuadro(); },
-      orto: () => { this.snap.orto = !this.snap.orto; this.dica(`Orto ${this.snap.orto ? 'ligado' : 'desligado'}`); },
+      orto: () => this.definirOrto(!this.snap.orto),
     };
     document.addEventListener('click', (ev) => {
       const botaoMenu = ev.target.closest('.menu-botao');
@@ -600,7 +600,18 @@ class CAD {
       c.addEventListener('change', () => { this.snap.ativos[k] = c.checked; });
       g.append(el('label', {}, c, r));
     }
+    const orto = el('input', { type: 'checkbox', checked: this.snap.orto ? 'checked' : undefined });
+    orto.addEventListener('change', () => this.definirOrto(orto.checked));
+    g.append(el('label', { title: 'Só horizontal e vertical ao desenhar e mover (F8 alterna; Shift segurado liga na hora)' }, orto, 'Orto (F8)'));
     raiz.append(g);
+  }
+
+  /** Orto fixo: linhas, movimentos e cópias só na horizontal/vertical. Fica gravado para os próximos desenhos. */
+  definirOrto(ligado) {
+    this.snap.orto = !!ligado;
+    try { localStorage.setItem('cad.orto', this.snap.orto ? '1' : '0'); } catch { /* sem armazenamento */ }
+    this.dica(`Orto ${this.snap.orto ? 'ligado: só horizontal e vertical (F8 desliga)' : 'desligado (F8 liga; Shift segurado trava na hora)'}`);
+    this._agendarPaineis('snap');
   }
 
   _painelVistas() {
@@ -694,22 +705,70 @@ class CAD {
    * Furos do detalhe de uma chapa (camada FURO) → chapas paramétricas da posição no
    * modelo 3D. O servidor regrava o modelo e regenera o detalhe, que é reaberto.
    */
-  async aplicarFuros() {
-    if (!this.projeto || !this.nomeDesenho) { this.aviso('Abra o detalhe de uma peça (duplo clique nela no modelo 3D).', 'atencao'); return; }
+  /** A posição da chapa em foco: a do detalhe aberto, ou a da seleção num desenho geral. */
+  _marcaEmFoco() {
     const meta = (this.doc.metadados || {}).detalhe_posicao;
-    if (!meta || !meta.marca) { this.aviso('Este desenho não é o detalhe de uma posição: no modelo 3D, dê duplo clique na peça.', 'atencao'); return; }
-    if (!meta.editavel) { this.aviso(`Os furos de ${meta.marca} não são editáveis: só chapa plana (convertida em chapa paramétrica) tem esse vínculo.`, 'atencao'); return; }
-    const furos = [...this.doc.entidades.values()].filter(e => e.camada === 'FURO' && (e.tipo === 'circulo' || (e.tipo === 'polilinha' && e.fechada)));
-    const corpo = el('div', {}, el('p', {}, `Levar ${furos.length} furo(s) da camada FURO deste desenho para as ${meta.pecas ? meta.pecas.length : ''} chapa(s) ${meta.marca} do modelo 3D? O detalhe é regenerado em seguida.`));
-    if (await this.dialogo({ titulo: 'Aplicar furos ao modelo 3D', corpo, ok: 'Aplicar' }) !== 'ok') return;
-    this.dica('Aplicando os furos no modelo…');
+    if (meta && meta.marca) return { marca: meta.marca, editavel: !!meta.editavel, detalhe: true };
+    const geral = (this.doc.metadados || {}).detalhamento || {};
+    const ents = [...this.tela.selecao].map(id => this.doc.get(id)).filter(Boolean);
+    const marcas = [...new Set(ents.map(e => (e.atributos || {}).posicao).filter(Boolean))];
+    if (marcas.length !== 1) return null;
+    return { marca: marcas[0], editavel: (geral.editaveis || []).includes(marcas[0]), detalhe: false };
+  }
+
+  _contornoDe(marca) {
+    let melhor = null, area = -1;
+    for (const e of this.doc.entidades.values()) {
+      const a = e.atributos || {};
+      if (e.tipo !== 'polilinha' || !e.fechada || e.camada !== 'VISTA' || a.detalhe !== 'posicao' || String(a.posicao) !== marca || 'furo' in a) continue;
+      const v = e.vertices; let s = 0;
+      for (let i = 0; i < v.length; i++) { const p = v[i], q = v[(i + 1) % v.length]; s += p[0] * q[1] - q[0] * p[1]; }
+      if (Math.abs(s) > area) { area = Math.abs(s); melhor = e; }
+    }
+    return melhor;
+  }
+
+  /** Comprimento × altura do contorno da chapa em foco; os furos ficam onde estão. */
+  async ajustarTamanho() {
+    const foco = this._marcaEmFoco();
+    if (!foco) { this.aviso('Selecione a chapa (contorno, furo ou título) cujo tamanho vai mudar.', 'atencao'); return; }
+    const cont = this._contornoDe(foco.marca);
+    if (!cont) { this.aviso(`Não achei o contorno da chapa ${foco.marca} neste desenho.`, 'atencao'); return; }
+    const xs = cont.vertices.map(p => p[0]), ys = cont.vertices.map(p => p[1]);
+    const x0 = Math.min(...xs), y0 = Math.min(...ys), L0 = Math.max(...xs) - x0, H0 = Math.max(...ys) - y0;
+    const L = el('input', { type: 'number', step: 'any', value: String(Math.round(L0 * 100) / 100) });
+    const H = el('input', { type: 'number', step: 'any', value: String(Math.round(H0 * 100) / 100) });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: `Chapa ${foco.marca}: o contorno é esticado a partir do canto inferior esquerdo; os furos não se movem. Depois use "Aplicar furos e tamanho ao modelo 3D".` }),
+      el('label', { class: 'linha' }, 'Comprimento (mm) ', L), el('label', { class: 'linha' }, 'Altura (mm) ', H));
+    if (await this.dialogo({ titulo: 'Ajustar tamanho da chapa', corpo, ok: 'Ajustar' }) !== 'ok') return;
+    const nL = parseFloat(String(L.value).replace(',', '.')), nH = parseFloat(String(H.value).replace(',', '.'));
+    if (!(nL > 0) || !(nH > 0) || !(L0 > 0) || !(H0 > 0)) { this.aviso('Medidas inválidas.', 'atencao'); return; }
+    const vertices = cont.vertices.map(([x, y]) => [Math.round((x0 + (x - x0) * nL / L0) * 1000) / 1000, Math.round((y0 + (y - y0) * nH / H0) * 1000) / 1000]);
+    this.executar(new ComandoAlterar({ [cont.id]: { vertices } }, 'Ajustar tamanho'));
+    this.aviso(`Contorno de ${foco.marca}: ${formatarMm(nL)} × ${formatarMm(nH)} mm. As cotas atualizam ao aplicar no modelo 3D.`, 'info', 8000);
+  }
+
+  /**
+   * Furos (camada FURO) e contorno da chapa em foco → chapas paramétricas da posição
+   * no modelo 3D. Detalhe aberto pelo 3D: regenerado inteiro; desenho geral: só a
+   * célula. O servidor regrava o modelo e o desenho, que é reaberto.
+   */
+  async aplicarFuros() {
+    if (!this.projeto || !this.nomeDesenho) { this.aviso('Abra um desenho de detalhamento do projeto.', 'atencao'); return; }
+    const foco = this._marcaEmFoco();
+    if (!foco) { this.aviso('Selecione a chapa (contorno, furo ou título) cujos furos vão para o modelo 3D, ou abra o detalhe dela pelo 3D (duplo clique).', 'atencao'); return; }
+    if (!foco.editavel) { this.aviso(`A chapa ${foco.marca} não é paramétrica neste desenho: gere o detalhamento de novo (as chapas planas viram paramétricas) ou abra a peça pelo 3D.`, 'atencao'); return; }
+    const corpo = el('div', {}, el('p', {}, `Levar os furos da camada FURO e o contorno de ${foco.marca} deste desenho para todas as chapas ${foco.marca} do modelo 3D? ${foco.detalhe ? 'O detalhe' : 'A célula'} é regenerad${foco.detalhe ? 'o' : 'a'} em seguida.`));
+    if (await this.dialogo({ titulo: 'Aplicar furos e tamanho ao modelo 3D', corpo, ok: 'Aplicar' }) !== 'ok') return;
+    this.dica('Aplicando no modelo…');
     try {
-      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/aplicar-furos`, { desenho: this.doc.paraJSON() });
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/aplicar-furos`, { desenho: this.doc.paraJSON(), marca: foco.marca });
       this._autosavePendente = false;
       if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
       await this.abrirDesenho(r.nome);
-      this.aviso(`${r.furos} furo(s) aplicados em ${r.chapas} chapa(s) ${r.marca} do modelo 3D; detalhe regenerado.`, 'info', 10000);
-    } catch (e) { this.aviso(`Não foi possível aplicar os furos: ${e.message}`, 'erro', 0); this.dica(''); }
+      this.aviso(`${r.furos} furo(s)${r.contornos ? ' e o contorno' : ''} aplicados em ${r.chapas} chapa(s) ${r.marca} do modelo 3D; desenho regenerado.`, 'info', 10000);
+    } catch (e) { this.aviso(`Não foi possível aplicar: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
   async dialogoExcluir() {
@@ -802,10 +861,12 @@ class CAD {
     for (const [k, r] of grupos) { caixas[k] = el('input', { type: 'checkbox', checked: 'checked' }); lista.append(el('label', { class: 'linha' }, caixas[k], ' ' + r)); }
     const regra = el('input', { type: 'checkbox', checked: 'checked' });
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
+    const converter = el('input', { type: 'checkbox', checked: 'checked' });
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: 'Uma célula por posição (as peças iguais são contadas, não repetidas) e a elevação de cada conjunto, com cotas de fabricação e lista de perfis. Gera um desenho por grupo e o romaneio em detalhamento/romaneio.csv.' }),
+      el('div', { class: 'explica', texto: 'Uma célula por posição (as peças iguais são contadas, não repetidas) e a elevação de cada conjunto, com cotas de fabricação e lista de perfis. Gera um desenho por grupo e a lista de materiais.' }),
       lista,
       el('label', { class: 'linha' }, regra, ' Furação das terças no padrão da fábrica (50 × 60 abaixo de 200 mm; 100 × 60 acima)'),
+      el('label', { class: 'linha' }, converter, ' Chapas planas viram chapas paramétricas no 3D (furos e tamanho editáveis no desenho)'),
       el('label', { class: 'linha' }, substituir, ' Substituir os desenhos de detalhamento anteriores'));
     if (await this.dialogo({ titulo: 'Detalhar peças e conjuntos', corpo, ok: 'Detalhar' }) !== 'ok') return;
     const escolhidos = grupos.map(([k]) => k).filter(k => caixas[k].checked);
@@ -813,7 +874,7 @@ class CAD {
     this.dica('Detalhando as peças do projeto…');
     try {
       if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });
-      const j = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar`, { grupos: escolhidos, regra_tercas: regra.checked, rotular: true, substituir: substituir.checked });
+      const j = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar`, { grupos: escolhidos, regra_tercas: regra.checked, rotular: true, substituir: substituir.checked, converter: converter.checked });
       const tercas = Object.keys(j.regra_tercas || {}).length;
       this.aviso(`Detalhamento: ${j.pecas} peças em ${j.posicoes} posições e ${j.conjuntos} conjuntos, ${j.peso_total} kg; ${j.desenhos.length} desenho(s)` + (tercas ? `, furação de fábrica em ${tercas} posições` : '') + '. Os desenhos estão em Desenho → Abrir desenho do projeto; a lista de materiais em Vistas do modelo → Lista de materiais.', 'info', 15000);
       if (j.desenhos.length) await this.abrirDesenho(j.desenhos[0].nome);

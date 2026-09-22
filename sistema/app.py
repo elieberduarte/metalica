@@ -453,7 +453,10 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     doc = _documento3d_do_projeto(s)
     grupos = corpo.get("grupos") or list(GRUPOS.keys())
     r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
-                 rotular=corpo.get("rotular", True) is not False)
+                 rotular=corpo.get("rotular", True) is not False,
+                 converter=corpo.get("converter", True) is not False)
+    if r.get("convertidas"):
+        g.salvar_modelo(s, doc.dict())            # chapas planas viraram paramétricas
     substituir = corpo.get("substituir", True) is not False
     desenhos = []
     for chave, desenho in r["desenhos"].items():
@@ -478,7 +481,7 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     g.tocar(s)
     return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
             "pecas": sum(p["quantidade"] for p in r["posicoes"]), "peso_total": r["peso_total"],
-            "regra_tercas": r["regra_tercas"], "avisos": r["avisos"],
+            "regra_tercas": r["regra_tercas"], "avisos": r["avisos"], "convertidas": r.get("convertidas", 0),
             "romaneio": _descrever_arquivo(arquivos["romaneio"], pasta),
             "materiais": {k: _descrever_arquivo(v, pasta) for k, v in arquivos.items()}}
 
@@ -514,23 +517,45 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
     paramétricas da posição e regrava o modelo e o detalhe regenerado."""
     from nucleo2d import detalhar as det
     from nucleo2d.desenho import Desenho
+    from nucleo3d.modelo import Chapa
     g = _gerente()
     d = Desenho.de_dict(corpo["desenho"]) if isinstance(corpo.get("desenho"), dict) else Desenho.de_dict(g.abrir_desenho(s, nome))
     meta = d.metadados.get("detalhe_posicao") or {}
-    if not meta.get("marca"):
-        raise ErroDeDados("este desenho não é o detalhe de uma posição: abra a peça pelo modelo 3D (duplo clique).")
-    if not meta.get("editavel"):
-        raise ErroDeDados("os furos desta posição não são editáveis (só chapa plana convertida em chapa paramétrica).")
-    furos = det.furos_do_desenho(d)
     doc = _documento3d_do_projeto(s)
-    r = det.aplicar_furos(doc, meta["marca"], furos, meta.get("furos") or [])
+    if meta.get("marca"):
+        # desenho "Detalhe – P77": uma célula em (0, 0), furos originais guardados
+        if not meta.get("editavel"):
+            raise ErroDeDados("os furos desta posição não são editáveis (só chapa plana convertida em chapa paramétrica).")
+        marca = meta["marca"]
+        contorno, _ = det.contorno_do_desenho(d, marca)
+        furos = det.furos_do_desenho(d)
+        r = det.aplicar_furos(doc, marca, furos, meta.get("furos") or [], contorno)
+        g.salvar_modelo(s, doc.dict())
+        novo, pos = det.detalhar_posicao(doc, marca)
+        if os.path.exists(g._caminho_desenho(s, novo.nome)):
+            g.excluir_desenho(s, novo.nome)
+        novo.metadados["gerado_por"] = "detalhamento"
+        salvo = g.salvar_desenho(s, novo.nome, novo.dict())
+        return dict(r, nome=salvo["nome"], marca=marca, quantidade=pos.quantidade)
+    # desenho geral (Detalhamento – chapas): a célula da posição pedida
+    marca = str(corpo.get("marca") or "").strip()
+    geral = d.metadados.get("detalhamento") or {}
+    if not marca:
+        raise ErroDeDados("selecione a chapa (contorno, furo ou título) cujos furos vão para o modelo.")
+    if marca not in (geral.get("editaveis") or []):
+        raise ErroDeDados("a posição %s não tem furos editáveis neste desenho: gere o detalhamento de novo (as chapas planas viram paramétricas) ou abra a peça pelo 3D." % marca)
+    contorno, origem = det.contorno_do_desenho(d, marca)
+    furos = det.furos_do_desenho(d, marca, origem)
+    originais = (geral.get("furos_originais") or {}).get(marca)
+    if originais is None:
+        primeira = next((e for e in doc.entidades.values() if isinstance(e, Chapa)
+                         and str(((e.atributos or {}).get("marcas") or {}).get("posicao")) == marca), None)
+        originais = det.furos_da_chapa(primeira) if primeira else []
+    r = det.aplicar_furos(doc, marca, furos, originais, contorno)
     g.salvar_modelo(s, doc.dict())
-    novo, pos = det.detalhar_posicao(doc, meta["marca"])
-    if os.path.exists(g._caminho_desenho(s, novo.nome)):
-        g.excluir_desenho(s, novo.nome)
-    novo.metadados["gerado_por"] = "detalhamento"
-    salvo = g.salvar_desenho(s, novo.nome, novo.dict())
-    return dict(r, nome=salvo["nome"], marca=meta["marca"], quantidade=pos.quantidade)
+    det.regenerar_celula(d, doc, marca)
+    salvo = g.salvar_desenho(s, nome, d.dict())
+    return dict(r, nome=salvo["nome"], marca=marca)
 
 
 def _identificacao_do_projeto(s: str) -> dict:
