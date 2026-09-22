@@ -20,6 +20,7 @@ Rotas da API:
     POST /api/projetos/<slug>/<ação>    dados, modelo, importar-ifc, renomear, duplicar,
                                         excluir, abrir-pasta
     POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
+    POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + romaneio
     GET  /api/projetos/<slug>/desenhos[/<nome>]      desenhos 2D do CAD
     POST /api/projetos/<slug>/desenhos/<nome>[/dxf|/excluir]
     GET  /saida/<projeto>/<arquivo> baixa um arquivo gerado
@@ -431,6 +432,43 @@ def gerar_vista_2d(s: str, corpo: dict) -> dict:
     return r
 
 
+def detalhar_projeto(s: str, corpo: dict) -> dict:
+    """Detalhamento de peças e conjuntos do modelo do projeto: um desenho 2D por grupo
+    (chapas, barras e terças, tirantes, telhas, conjuntos) gravado em desenhos-2d/, mais o
+    romaneio (CSV) e o relatório em detalhamento/.
+
+    corpo: {grupos: [...], regra_tercas: bool, rotular: bool, substituir: bool}"""
+    from nucleo2d.detalhar import detalhar, GRUPOS
+    from saida.detalhamento import gravar_romaneio
+    g = _gerente()
+    doc = _documento3d_do_projeto(s)
+    grupos = corpo.get("grupos") or list(GRUPOS.keys())
+    r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
+                 rotular=corpo.get("rotular", True) is not False)
+    substituir = corpo.get("substituir", True) is not False
+    desenhos = []
+    for chave, desenho in r["desenhos"].items():
+        nome = desenho.nome
+        if substituir and os.path.exists(g._caminho_desenho(s, nome)):
+            g.excluir_desenho(s, nome)
+        desenho.metadados["gerado_por"] = "detalhamento"
+        salvo = g.salvar_desenho(s, nome, desenho.dict())
+        desenhos.append({"grupo": chave, "nome": salvo["nome"], "titulo": nome,
+                         "entidades": desenho.tamanho, "escala": desenho.escala})
+    pasta = os.path.join(g._existente(s), "detalhamento")
+    os.makedirs(pasta, exist_ok=True)
+    romaneio = gravar_romaneio(os.path.join(pasta, "romaneio.csv"), r["objetos_posicoes"], r["acessorios"])
+    relatorio = {k: v for k, v in r.items() if k not in ("desenhos", "objetos_posicoes")}
+    relatorio["desenhos"] = desenhos
+    with open(os.path.join(pasta, "relatorio.json"), "w", encoding="utf-8") as f:
+        json.dump(relatorio, f, ensure_ascii=False, indent=1)
+    g.tocar(s)
+    return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
+            "pecas": sum(p["quantidade"] for p in r["posicoes"]), "peso_total": r["peso_total"],
+            "regra_tercas": r["regra_tercas"], "avisos": r["avisos"],
+            "romaneio": _descrever_arquivo(romaneio, pasta)}
+
+
 def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:
     from nucleo2d.desenho import Desenho
     g = _gerente()
@@ -761,6 +799,8 @@ class Handler(BaseHTTPRequestHandler):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
                 if len(partes) == 2 and partes[1] == "vista2d":
                     return self._json(gerar_vista_2d(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "detalhar":
+                    return self._json(detalhar_projeto(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "desenhos":
                     return self._json(_gerente().salvar_desenho(partes[0], partes[2],
                                                                 corpo.get("desenho", corpo)))

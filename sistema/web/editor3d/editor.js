@@ -1237,6 +1237,47 @@ export class Editor {
     }
   }
 
+  /**
+   * Detalhamento para produção: uma célula por posição (peças iguais contadas uma vez)
+   * e a elevação de cada conjunto, em desenhos por grupo, mais o romaneio.
+   */
+  async dialogoDetalharPecas() {
+    if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para detalhar.', 'atencao'); return; }
+    const grupos = [['chapas', 'Chapas'], ['barras', 'Barras e terças'], ['tirantes', 'Tirantes e barras redondas'], ['telhas', 'Telhas'], ['conjuntos', 'Conjuntos (tesouras, vigas, pilares)']];
+    const caixas = {};
+    const grade = el('div', { class: 'campos' });
+    for (const [k, r] of grupos) { caixas[k] = el('input', { type: 'checkbox', checked: 'checked' }); grade.append(el('label', { texto: r }), caixas[k]); }
+    const regra = el('input', { type: 'checkbox', checked: 'checked' });
+    const rotular = el('input', { type: 'checkbox', checked: 'checked' });
+    const substituir = el('input', { type: 'checkbox', checked: 'checked' });
+    grade.append(el('label', { texto: 'Furação das terças no padrão da fábrica', title: 'Terça com menos de 200 mm: furos a 50 mm na vertical e 60 na horizontal; com 200 mm ou mais: 100 × 60. Vale para os suportes com a mesma furação.' }), regra,
+                 el('label', { texto: 'Rotular posições nos conjuntos' }), rotular,
+                 el('label', { texto: 'Substituir os desenhos de detalhamento anteriores' }), substituir);
+    const corpo = el('div', {},
+      el('p', { class: 'explica', texto: 'Cada posição (marca de peça do IFC) vira uma célula com título "P12 – 112x", perfil ou chapa, contorno, furos e cotas; as peças iguais são contadas, não repetidas. Cada conjunto (marca de montagem) vira uma elevação com a cadeia de cotas dos nós e a lista de perfis. Sai também o romaneio em detalhamento/romaneio.csv.' }),
+      grade);
+    if (await this.dialogo({ titulo: 'Detalhar peças e conjuntos', corpo, ok: 'Detalhar e abrir' }) !== 'ok') return;
+    const escolhidos = grupos.map(([k]) => k).filter(k => caixas[k].checked);
+    if (!escolhidos.length) return;
+    this.dica('Detalhando as peças do projeto…');
+    this.aviso('Detalhando: analisando cada posição e conjunto do modelo. Pode levar alguns segundos.', 'info', 8000);
+    try {
+      await this._gravarAntesDeGerar();
+      const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ grupos: escolhidos, regra_tercas: regra.checked, rotular: rotular.checked, substituir: substituir.checked }),
+      });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      const tercas = Object.keys(j.regra_tercas || {}).length;
+      this.aviso(`Detalhamento: ${j.pecas} peças em ${j.posicoes} posições e ${j.conjuntos} conjuntos, ${j.peso_total} kg. ${j.desenhos.length} desenho(s) gerado(s)` +
+                 (tercas ? `; furação de fábrica aplicada em ${tercas} posições` : '') + `. Romaneio em detalhamento/romaneio.csv.` +
+                 (j.avisos && j.avisos.length ? ` ${j.avisos.length} aviso(s) no relatório.` : ''), 'info', 15000);
+      this.dica('Detalhamento pronto.');
+      if (j.desenhos.length) this._abrirCAD(j.desenhos[0].nome);
+    } catch (e) { this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
   /** Vistas ortográficas só das peças selecionadas (ou do modelo inteiro), num desenho. */
   async dialogoVistasDaSelecao() {
     if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para gerar desenhos 2D.', 'atencao'); return; }
@@ -1306,6 +1347,7 @@ export class Editor {
       'mapa-esforcos': () => this.alternarAnalise(),
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
+      'detalhar-pecas': () => this.dialogoDetalharPecas(),
       'abrir-cad': () => this._abrirCAD(),
     };
     document.addEventListener('click', (ev) => {

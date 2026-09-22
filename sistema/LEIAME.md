@@ -197,6 +197,34 @@ módulo não resolve fica dito na célula e no relatório: chapa dobrada sem
 desenvolvimento, barra curva ou dobrada sem comprimento de corte, recorte que não é
 furo redondo nem oblongo desenhado como polilinha.
 
+### Detalhamento no CAD do projeto (peças e conjuntos)
+
+No editor 3D de um projeto, **Desenho 2D → Detalhar peças e conjuntos…** gera, a partir
+do modelo já importado, desenhos editáveis no CAD (`nucleo2d/detalhar.py`, rota
+`POST /api/projetos/<slug>/detalhar`), no formato das pranchas de fábrica:
+
+- um desenho por grupo — chapas (1:10), barras e terças (1:25), tirantes, telhas e
+  conjuntos (1:50) — com uma célula por **posição**: título "P12 – 112x" (as iguais são
+  contadas, não repetidas), perfil ou chapa com espessura (`#3/8"`), material, furos,
+  peso, contorno com furos e cotas em cadeia (só quando cabem), seção da barra ao lado e
+  vista de topo quando há furo na mesa;
+- a **elevação de cada conjunto** (marca de montagem: tesoura, viga de painel, pilar),
+  deitada, com a cadeia de cotas dos nós embaixo e em cima, altura, rótulo de posição em
+  cada barra, título "M2 – 08x" e a lista de perfis e posições. O número de instâncias é
+  o máximo divisor comum das quantidades por posição dentro da marca (8 pórticos M2 =
+  80 P10, 64 P11, 64 P12 → 8); a instância desenhada é um agrupamento espacial com a
+  composição unitária;
+- `detalhamento/romaneio.csv` e `relatorio.json`.
+
+**Regra da furação das terças** (padrão da máquina da fábrica, opção ligada por padrão):
+terça com menos de 200 mm de altura fura a 50 mm na vertical e 60 mm na horizontal; com
+200 mm ou mais, 100 × 60. Terça é a barra U/C/Z de 50 a 400 mm que viaja solta (marca de
+posição igual à de conjunto). A regra vale para o que compõe a ligação da terça: toda
+posição com um grupo de furos de furação original igual à da terça, em qualquer
+orientação (a chapinha do suporte), recebe a mesma substituição; o centro do grupo é
+mantido e a célula diz "furação no padrão de fábrica". Padrão quadrado ou terças de
+alturas diferentes com a mesma furação original saem com "conferir".
+
 ## O que sai
 
 | Entrega | Formato | Onde |
