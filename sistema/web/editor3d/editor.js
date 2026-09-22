@@ -838,7 +838,8 @@ export class Editor {
     this.documento.nome = n;
     try {
       if (this.projeto && !nome) {
-        const s = await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON());
+        const s = await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON(), this._modeloAlterado);
+        if (s && s.alterado) this._modeloAlterado = s.alterado;
         this.aviso(`Modelo salvo no projeto (${s.entidades} objetos).`, 'info');
         return;
       }
@@ -903,13 +904,19 @@ export class Editor {
     const nome = this.el.nome.value.trim() || this.documento.nome || 'modelo';
     try {
       if (this.projeto) {
-        await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON());
+        const s = await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON(), this._modeloAlterado);
+        if (s && s.alterado) this._modeloAlterado = s.alterado;
       } else {
         const r = await this.api.salvar(this.documento.paraJSON(), nome);
         this._lembrar(r.salvo || nome);
       }
     } catch (e) {
       this.dica(`Gravação automática falhou: ${e.message}`);
+      if (/outra tela|recarregue/i.test(e.message || '')) {
+        // modelo mais novo no servidor: parar de insistir e avisar com destaque
+        this._autosavePendente = false;
+        this.aviso(`Este modelo foi alterado por outra tela (por exemplo, "Aplicar furos" no CAD) depois de aberto aqui. Recarregue a página (F5) para ver a versão atual; as suas edições desde então não foram gravadas.`, 'erro', 0);
+      }
     } finally {
       this._autosalvando = false;
       if (this._autosavePendente) this._agendarAutosave();
@@ -1009,6 +1016,7 @@ export class Editor {
     const dados = (projeto.dados && typeof projeto.dados === 'object') ? projeto.dados : null;
     let modelo = null;
     try { modelo = await this.api.modeloDoProjeto(s); } catch { modelo = null; }
+    this._modeloAlterado = modelo && modelo.alterado ? modelo.alterado : null;
 
     if (modelo && modelo.documento) {
       this.carregarDocumento(modelo.documento, { autosalvar: false });
@@ -1114,6 +1122,7 @@ export class Editor {
       if (this.projeto) {
         r = await this.api.importarIFCNoProjeto(this.projeto, arquivo);
         const m = await this.api.modeloDoProjeto(this.projeto);
+        this._modeloAlterado = m && m.alterado ? m.alterado : null;
         this.carregarDocumento(m.documento, { autosalvar: false });
       } else {
         r = await this.api.importarIFC(arquivo);

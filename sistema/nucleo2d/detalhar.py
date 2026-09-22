@@ -955,6 +955,9 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
         raise ErroDeDados("a posição %s não tem chapa paramétrica no modelo (abra o detalhe pela peça no 3D primeiro)." % marca)
     orig = [(float(f["x"]), float(f["y"])) for f in originais]
     contornos = 0
+    fixadores = _fixadores(doc)
+    movidos: set = set()
+    parafusos = 0
     for ch in chapas:
         cont = [(float(x), float(y)) for x, y in (ch.contorno or [])]
         u0, v0 = min(x for x, _ in cont), min(y for _, y in cont)
@@ -970,9 +973,18 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
                 ch.contorno = [(round(mx + u0, 3), round(my + v0, 3)) for mx, my in (mapa(x, y) for x, y in novo)]
                 contornos += 1
         novos = []
+        antigos = list(ch.furos or [])
         for f in furos:
             x, y = mapa(float(f["x"]), float(f["y"]))
             reg = {"x": round(x + u0, 3), "y": round(y + v0, 3)}
+            # o furo que já existia e andou leva o parafuso junto
+            i = f.get("furo")
+            if isinstance(i, int) and 0 <= i < len(antigos):
+                velho = antigos[i]
+                ddx, ddy = reg["x"] - float(velho.get("x", 0) or 0), reg["y"] - float(velho.get("y", 0) or 0)
+                if math.hypot(ddx, ddy) > 0.05:
+                    raio = max(float(velho.get("diametro", 0) or 0), float(velho.get("largura", 0) or 0), 13.0) / 2 + 6.0
+                    parafusos += _mover_fixadores(ch, (float(velho.get("x", 0) or 0), float(velho.get("y", 0) or 0)), (ddx, ddy), raio, fixadores, movidos)
             if f.get("tipo") == "oblongo" and float(f.get("larg", 0) or 0) > 0:
                 reg.update(largura=round(float(f["larg"]), 3), altura=round(float(f.get("alt", 0) or 0), 3))
             else:
@@ -980,7 +992,32 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
             if reg.get("diametro", 0) > 0 or reg.get("largura", 0) > 0:
                 novos.append(reg)
         ch.furos = novos
-    return {"chapas": len(chapas), "furos": len(furos), "contornos": contornos}
+    return {"chapas": len(chapas), "furos": len(furos), "contornos": contornos, "parafusos": parafusos}
+
+
+def _mover_fixadores(ch: Chapa, furo_local, delta_local, raio: float, fixadores: Sequence[Solido], movidos: set) -> int:
+    """Parafuso, porca e arruela que atravessam o furo (eixo perto do centro do furo,
+    até 120 mm acima ou abaixo da chapa) andam o mesmo tanto que o furo, no plano da chapa."""
+    ex, ey = _norm(tuple(float(k) for k in ch.eixo_x)), _norm(tuple(float(k) for k in ch.eixo_y))
+    nz = _norm(_cruz(ex, ey))
+    o = tuple(float(k) for k in ch.origem)
+    if ch.centrada:
+        o = tuple(o[i] - nz[i] * float(ch.espessura) / 2.0 for i in range(3))
+    centro = tuple(o[i] + ex[i] * furo_local[0] + ey[i] * furo_local[1] + nz[i] * float(ch.espessura) / 2.0 for i in range(3))
+    delta = tuple(ex[i] * delta_local[0] + ey[i] * delta_local[1] for i in range(3))
+    n = 0
+    for f in fixadores:
+        if f.id in movidos:
+            continue
+        cf = tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3))
+        d = _sub(cf, centro)
+        t = _dot(d, nz)
+        lateral = math.sqrt(max(0.0, _dot(d, d) - t * t))
+        if lateral <= raio and abs(t) <= 120.0:
+            f.vertices = [tuple(v[i] + delta[i] for i in range(3)) for v in f.vertices]
+            movidos.add(f.id)
+            n += 1
+    return n
 
 
 def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[dict] = None) -> Tuple[float, float, float, float]:
@@ -1077,17 +1114,18 @@ def furos_do_desenho(d: Desenho, marca: Optional[str] = None, origem=(0.0, 0.0))
                 pts = e.pontos() if hasattr(e, "pontos") else []
                 if not caixa or not pts or not all(caixa[0] <= p[0] <= caixa[2] and caixa[1] <= p[1] <= caixa[3] for p in pts):
                     continue
+        indice = a.get("furo") if isinstance(a.get("furo"), int) else None
         if isinstance(e, Circulo):
-            fora.append({"tipo": "redondo", "x": e.centro[0] - origem[0], "y": e.centro[1] - origem[1], "d": 2 * e.raio})
+            fora.append({"tipo": "redondo", "x": e.centro[0] - origem[0], "y": e.centro[1] - origem[1], "d": 2 * e.raio, "furo": indice})
         elif isinstance(e, Polilinha) and e.fechada and len(e.vertices) >= 3:
             xs = [p[0] for p in e.vertices]
             ys = [p[1] for p in e.vertices]
             larg, alt = max(xs) - min(xs), max(ys) - min(ys)
             cx, cy = (max(xs) + min(xs)) / 2 - origem[0], (max(ys) + min(ys)) / 2 - origem[1]
             if a.get("tipo_furo") == "oblongo" or abs(larg - alt) > 0.5:
-                fora.append({"tipo": "oblongo", "x": cx, "y": cy, "larg": float(a.get("larg") or larg), "alt": float(a.get("alt") or alt)})
+                fora.append({"tipo": "oblongo", "x": cx, "y": cy, "larg": float(a.get("larg") or larg), "alt": float(a.get("alt") or alt), "furo": indice})
             else:
-                fora.append({"tipo": "redondo", "x": cx, "y": cy, "d": (larg + alt) / 2})
+                fora.append({"tipo": "redondo", "x": cx, "y": cy, "d": (larg + alt) / 2, "furo": indice})
     return fora
 
 

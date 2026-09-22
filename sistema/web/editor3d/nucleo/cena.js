@@ -865,12 +865,14 @@ export class Cena {
     if (arestas && !obj.userData.realce) arestas.material = this._materialArestas(ent);
     if (linhas && !obj.userData.realce) linhas.material = this._materialLinhas(ent);
     if (this.destaque && !this.destaque.has(id) && !obj.userData.realce) {
-      // fora do destaque: fantasma cinza quase transparente, para as peças em foco saltarem
+      // fora do destaque: fantasma cinza claro opaco, para as peças em foco saltarem
       if (malha) malha.material = this._materialFantasma();
       if (arestas) arestas.material = this._materialFantasmaLinha();
       if (linhas) linhas.material = this._materialFantasmaLinha();
     }
     this._aplicarModo(obj);
+    // fantasma sem arestas: metade dos objetos desenhados a menos
+    if (this.destaque && !this.destaque.has(id) && arestas) arestas.visible = false;
   }
 
   /** Destaque: só `ids` ficam com a cor normal, o resto do modelo vira fantasma. null desliga. */
@@ -884,9 +886,12 @@ export class Cena {
     const chave = `fantasma|${this.escuro ? 1 : 0}|${this.planosCorte.length}`;
     let m = this.cacheMaterial.get(chave);
     if (!m) {
+      // opaco de propósito: material transparente em milhares de peças obriga a ordenar
+      // e sobrepor tudo a cada quadro, e a cena trava; um cinza claro opaco faz o mesmo
+      // papel de "sumir" sem custo
       m = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(this.escuro ? '#6b7280' : '#9aa3b2'), metalness: 0.1, roughness: 0.9,
-        transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide,
+        color: new THREE.Color(this.escuro ? '#2e3642' : '#d7dce6'), metalness: 0.0, roughness: 1.0,
+        side: THREE.DoubleSide,
         clippingPlanes: this.planosCorte.length ? this.planosCorte : null,
       });
       this.cacheMaterial.set(chave, m);
@@ -898,7 +903,7 @@ export class Cena {
     const chave = `fantasma-linha|${this.escuro ? 1 : 0}`;
     let m = this.cacheMaterial.get(chave);
     if (!m) {
-      m = new THREE.LineBasicMaterial({ color: new THREE.Color(this.escuro ? '#6b7280' : '#9aa3b2'), transparent: true, opacity: 0.12, depthWrite: false });
+      m = new THREE.LineBasicMaterial({ color: new THREE.Color(this.escuro ? '#3a4352' : '#c3c9d4') });
       this.cacheMaterial.set(chave, m);
     }
     return m;

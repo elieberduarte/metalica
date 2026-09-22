@@ -268,7 +268,7 @@ def test_desenho_geral_editavel_e_tamanho():
     assert len(furos) == 2 and abs(furos[-1]["x"] - 100.0) < 1e-6
     novo = [(x * 140 / 130, y) for x, y in cont]
     res = det.aplicar_furos(doc, "P1", furos, meta["furos_originais"]["P1"], novo)
-    assert res == {"chapas": 3, "furos": 2, "contornos": 3}
+    assert res == {"chapas": 3, "furos": 2, "contornos": 3, "parafusos": 0}
     for ch in (e for e in doc.entidades.values() if isinstance(e, Chapa)):
         xs = [p[0] for p in ch.contorno]
         assert abs((max(xs) - min(xs)) - 140) < 1e-6 and len(ch.furos) == 2
@@ -316,6 +316,16 @@ def test_furos_pelos_parafusos():
     assert det.converter_chapas(doc, "P9") == 1
     ch = next(e for e in doc.entidades.values() if isinstance(e, Chapa))
     assert sorted(round(f_["diametro"]) for f_ in ch.furos) == [11, 13]
+    # o furo do parafuso 12x35 (índice 0, em 50,50) anda 20 mm em x: o parafuso vai junto
+    x_antes = sum(v[0] for v in b.vertices) / len(b.vertices)
+    i0 = next(i for i, f_ in enumerate(ch.furos) if abs(f_["x"] - 50) < 1e-6)
+    furos = [{"tipo": "redondo", "x": 70.0, "y": 50.0, "d": 13.0, "furo": i0},
+             {"tipo": "redondo", "x": 150.0, "y": 50.0, "d": 11.0, "furo": 1 - i0}]
+    originais = [{"x": f_["x"], "y": f_["y"]} for f_ in ch.furos]
+    res = det.aplicar_furos(doc, "P9", furos, originais)
+    assert res["parafusos"] == 1
+    assert abs(sum(v[0] for v in b.vertices) / len(b.vertices) - x_antes - 20.0) < 1e-6
+    assert abs(sum(v[0] for v in fora.vertices) / len(fora.vertices) - 306.0) < 1e-6    # o de fora não mexe
 
 
 def test_vinculo_chapa_tercas_e_ajustes():

@@ -72,9 +72,9 @@ export class Api {
     return pedir(this._r('/api/projetos/' + encodeURIComponent(slug) + '/modelo'));
   }
 
-  salvarModeloDoProjeto(slug, documentoJSON) {
+  salvarModeloDoProjeto(slug, documentoJSON, baseAlterado = null) {
     return postar(this._r('/api/projetos/' + encodeURIComponent(slug) + '/modelo'),
-                  { documento: documentoJSON });
+                  { documento: documentoJSON, base_alterado: baseAlterado });
   }
 
   async importarIFCNoProjeto(slug, arquivo) {

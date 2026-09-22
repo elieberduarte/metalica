@@ -333,7 +333,17 @@ def acao_de_projeto(s: str, acao: str, corpo: dict) -> dict:
         _abrir_no_explorador(pasta)
         return {"aberta": pasta}
     if acao == "modelo":
-        return g.salvar_modelo(s, corpo.get("documento", corpo))
+        # o editor manda a data do modelo que carregou: se o arquivo mudou depois disso
+        # (o CAD aplicou furos, outra janela ou outra máquina gravou), não sobrescreve
+        base = corpo.get("base_alterado")
+        if base is not None:
+            atual = _alterado_modelo(s)
+            if atual - float(base) > 0.5:
+                raise ErroDeDados("o modelo deste projeto foi gravado por outra tela, janela ou máquina depois de "
+                                  "você abri-lo; recarregue o modelo (F5) antes de continuar. Nada foi gravado.")
+        r = g.salvar_modelo(s, corpo.get("documento", corpo))
+        r["alterado"] = _alterado_modelo(s)
+        return r
     if acao == "importar-ifc":
         return importar_ifc_no_projeto(s, corpo)
     raise ErroDeDados("ação desconhecida para o projeto: " + acao)
@@ -820,9 +830,17 @@ def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:
     return {"arquivo": _descrever_arquivo(caminho, pasta), "entidades": desenho.tamanho}
 
 
+def _alterado_modelo(s: str) -> float:
+    caminho = _gerente().caminho_modelo(s)
+    try:
+        return round(os.path.getmtime(caminho), 3)
+    except OSError:
+        return 0.0
+
+
 def modelo_do_projeto(s: str) -> dict:
     doc = _gerente().abrir_modelo(s)
-    return {"documento": doc, "existe": doc is not None}
+    return {"documento": doc, "existe": doc is not None, "alterado": _alterado_modelo(s)}
 
 
 

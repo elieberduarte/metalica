@@ -244,6 +244,10 @@ regra de fábrica) grava `detalhamento/ajustes-furos.json`, aplicado por
 `aplicar_ajustes_de_furos` em `levantar(..., ajustes=)`. No CAD, `Mover._cotasLigadas` leva as
 cotas presas à coluna/linha dos furos movidos.
 
+Ao aplicar furos, `_mover_fixadores` leva junto os fixadores cujo eixo passa pelo furo movido
+(até 120 mm de cada lado da chapa). `POST …/modelo` aceita `base_alterado` (mtime do modelo
+carregado) e recusa gravar por cima de um modelo mais novo; o editor 3D pára o autosave e pede F5.
+
 Orientação dos conjuntos (`_eixos_do_conjunto`): a normal da vista é o eixo mais fino do
 conjunto e a vertical do desenho é a vertical da obra projetada — a tesoura sai inclinada
 como montada. Conjunto **linear** (segunda extensão < 12 % da primeira: tirante com as
