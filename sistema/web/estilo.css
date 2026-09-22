@@ -919,3 +919,9 @@ a.voltar-projetos:hover { background: var(--azul-fraco); }
   .cartao-lado { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
   .gerenciador { padding: 18px 14px 30px; }
 }
+
+/* aviso de versão nova no gerenciador */
+.atualizacao { margin: 14px 0 0; padding: 9px 12px; border: 1px solid color-mix(in srgb, var(--azul) 40%, var(--borda));
+  background: var(--azul-fraco, var(--painel2)); border-radius: var(--raio); font-size: 13px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.atualizacao a { color: var(--azul); font-weight: 600; }
+.atualizacao button { margin-left: auto; }

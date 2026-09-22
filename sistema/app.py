@@ -10,6 +10,7 @@ a interface de `web/` mais uma API JSON.
 
 Rotas da API:
     GET  /api/catalogo              perfis, aços, parafusos, eletrodos, cidades
+    GET  /api/atualizacao           última versão publicada no GitHub e se é mais nova
     POST /api/dimensionar           recebe DadosGalpao, devolve ProjetoGalpao em JSON
     POST /api/gerar                 gera memorial, DXF, pranchas e lista de material
     POST /api/modelo/ifc/detalhar   IFC recebido → DXF de produção, romaneio e relatório
@@ -470,6 +471,38 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
             "romaneio": _descrever_arquivo(romaneio, pasta)}
 
 
+REPOSITORIO = "elieberduarte/metalica"
+
+
+def _versao_tupla(v: str):
+    return tuple(int(x) for x in re.findall(r"\d+", str(v))[:3]) or (0,)
+
+
+def verificar_atualizacao() -> dict:
+    """Consulta a última versão publicada no GitHub (releases) e diz se há uma mais nova
+    que esta. Sem internet, devolve `disponivel: None` em vez de erro: a tela segue."""
+    import urllib.request
+    fora = {"atual": versao.VERSAO, "ultima": None, "nova": False, "url": None, "arquivo": None, "disponivel": None}
+    try:
+        req = urllib.request.Request("https://api.github.com/repos/%s/releases/latest" % REPOSITORIO,
+                                     headers={"User-Agent": "Metalica/" + versao.VERSAO, "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=4) as r:
+            dados = json.loads(r.read().decode("utf-8"))
+    except Exception as e:                       # noqa: BLE001 — sem rede, sem release, limite da API
+        fora["erro"] = str(e)[:120]
+        return fora
+    ultima = str(dados.get("tag_name") or dados.get("name") or "").lstrip("vV")
+    fora.update({"ultima": ultima, "url": dados.get("html_url"), "disponivel": True,
+                 "nova": _versao_tupla(ultima) > _versao_tupla(versao.VERSAO),
+                 "publicada": (dados.get("published_at") or "")[:10]})
+    for a in dados.get("assets") or []:
+        if str(a.get("name", "")).lower().endswith(".exe"):
+            fora["arquivo"] = a.get("browser_download_url")
+            fora["tamanho_mb"] = round((a.get("size") or 0) / 1048576, 1)
+            break
+    return fora
+
+
 def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     """Pranchas a partir de desenhos 2D do projeto: uma célula por posição/conjunto dos
     desenhos de detalhamento, ou o desenho inteiro, em folhas ISO com carimbo.
@@ -802,6 +835,8 @@ class Handler(BaseHTTPRequestHandler):
                                    "nucleo": versao.impressao_do_nucleo(),
                                    "dados": PROJETOS, "instalado": versao.CONGELADO,
                                    "janela": JANELA_PROPRIA})
+            if rota == "/api/atualizacao":
+                return self._json(verificar_atualizacao())
             if rota == "/api/catalogo":
                 return self._json(catalogo())
             if rota == "/api/projetos":

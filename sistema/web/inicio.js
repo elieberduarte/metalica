@@ -360,6 +360,23 @@ async function iniciar() {
       'cada projeto é uma pasta com arquivos comuns (JSON, PDF, DXF, CSV, IFC): copie a pasta para fazer backup.';
   } catch (e) { /* sem versão: a tela funciona igual */ }
   await carregar();
+  verificarAtualizacao();
+}
+
+/** Avisa quando há versão mais nova publicada; sem internet, nada aparece. */
+async function verificarAtualizacao() {
+  try {
+    const a = await api('/api/atualizacao');
+    if (!a || !a.nova) return;
+    const aviso = el('div', { class: 'atualizacao', role: 'status' },
+      el('span', { texto: `Versão ${a.ultima} disponível (esta é a ${a.atual}). ` }),
+      a.arquivo
+        ? el('a', { href: a.arquivo, texto: `Baixar o instalador${a.tamanho_mb ? ` (${String(a.tamanho_mb).replace('.', ',')} MB)` : ''}`, target: '_blank', rel: 'noopener' })
+        : el('a', { href: a.url, texto: 'Ver no GitHub', target: '_blank', rel: 'noopener' }),
+      el('span', { texto: ' — execute o instalador por cima da versão atual; os projetos ficam onde estão.' }),
+      el('button', { type: 'button', class: 'discreto', texto: '×', title: 'fechar', onclick: () => aviso.remove() }));
+    $('#pe').before(aviso);
+  } catch (e) { /* sem rede */ }
 }
 
 document.addEventListener('DOMContentLoaded', iniciar);
