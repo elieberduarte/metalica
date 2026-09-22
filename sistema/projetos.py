@@ -42,7 +42,7 @@ RESERVADAS = {"modelos", LIXEIRA, "_conferencia", "_desenhos"}
 #: O que o gerenciador mostra como conteúdo do projeto: pasta -> rótulo.
 ENTREGAS = [("memorial", "Memorial"), ("desenhos", "Desenhos DXF"), ("pranchas", "Pranchas"),
             ("lista", "Lista de material"), ("detalhamento", "Detalhamento"),
-            ("ifc", "IFC exportado")]
+            ("desenhos-2d", "Desenhos 2D"), ("ifc", "IFC exportado")]
 TIPOS = {"galpao": "Galpão dimensionado", "ifc": "Modelo a partir de IFC"}
 IDENTIFICACAO = ("nome", "cliente", "local", "responsavel")
 
@@ -254,6 +254,70 @@ class Projetos:
         destino = os.path.join(lixo, "%s-%s" % (s, time.strftime("%Y%m%d-%H%M%S")))
         shutil.move(origem, destino)
         return {"excluido": s, "lixeira": destino}
+
+    # ------------------------------------------------------------ desenhos 2D
+    #
+    # <projeto>/desenhos-2d/<nome>.desenho.json — os desenhos do CAD (ver nucleo2d).
+    # A pasta não é `desenhos/`, que já é a das entregas DXF do dimensionamento.
+
+    PASTA_DESENHOS = "desenhos-2d"
+
+    def _pasta_desenhos(self, s: str) -> str:
+        return os.path.join(self._existente(s), self.PASTA_DESENHOS)
+
+    def _caminho_desenho(self, s: str, nome: str) -> str:
+        nome = slug(nome)
+        if not nome:
+            raise ErroDeDados("dê um nome ao desenho.")
+        return os.path.join(self._pasta_desenhos(s), nome + ".desenho.json")
+
+    def listar_desenhos(self, s: str) -> List[dict]:
+        pasta = self._pasta_desenhos(s)
+        if not os.path.isdir(pasta):
+            return []
+        fora = []
+        for arq in sorted(os.listdir(pasta)):
+            if not arq.endswith(".desenho.json"):
+                continue
+            caminho = os.path.join(pasta, arq)
+            item = {"nome": arq[:-len(".desenho.json")],
+                    "alterado": datetime.datetime.fromtimestamp(
+                        os.path.getmtime(caminho)).replace(microsecond=0).isoformat(),
+                    "kb": round(os.path.getsize(caminho) / 1024, 1)}
+            try:
+                d = _ler_json(caminho)
+                item.update({"titulo": d.get("nome") or item["nome"], "escala": d.get("escala"),
+                             "entidades": len(d.get("entidades") or []),
+                             "vistas": [v.get("nome") or v.get("tipo") for v in d.get("vistas") or []]})
+            except (OSError, ValueError):
+                item["titulo"] = item["nome"]
+            fora.append(item)
+        fora.sort(key=lambda i: i["alterado"], reverse=True)
+        return fora
+
+    def salvar_desenho(self, s: str, nome: str, desenho: dict) -> dict:
+        if not isinstance(desenho, dict):
+            raise ErroDeDados("desenho 2D ausente ou inválido.")
+        caminho = self._caminho_desenho(s, nome)
+        _gravar_json(caminho, desenho)
+        self.tocar(s)
+        return {"salvo": os.path.basename(caminho), "nome": slug(nome), "projeto": s,
+                "entidades": len(desenho.get("entidades") or [])}
+
+    def abrir_desenho(self, s: str, nome: str) -> dict:
+        caminho = self._caminho_desenho(s, nome)
+        if not os.path.exists(caminho):
+            raise ErroDeDados("desenho não encontrado: " + nome)
+        return _ler_json(caminho)
+
+    def excluir_desenho(self, s: str, nome: str) -> dict:
+        caminho = self._caminho_desenho(s, nome)
+        if os.path.exists(caminho):
+            lixo = os.path.join(self.raiz, LIXEIRA)
+            os.makedirs(lixo, exist_ok=True)
+            shutil.move(caminho, os.path.join(lixo, "%s-%s-%s" % (
+                s, os.path.basename(caminho), time.strftime("%Y%m%d-%H%M%S"))))
+        return {"excluido": slug(nome)}
 
     # ------------------------------------------------------------ modelo 3D
     def caminho_modelo(self, s: str) -> str:

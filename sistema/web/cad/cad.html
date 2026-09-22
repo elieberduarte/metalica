@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Desenho 2D — Metálica</title>
+<link rel="stylesheet" href="/editor3d/editor.css">
+<link rel="stylesheet" href="/cad/cad.css">
+<script>
+(function () {
+  var t = new URLSearchParams(location.search).get('tema');
+  if (t !== 'claro' && t !== 'escuro') { try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; } }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M6 24h20M6 24V8M10 20l6-8 6 8' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round'/></svg>">
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 24h20M6 24V8M10 20l6-8 6 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <span>Desenho 2D</span>
+  </div>
+  <a class="voltar" id="link-projetos" href="/" title="Voltar à lista de projetos">&larr; Projetos</a>
+  <a class="voltar" id="link-editor" href="/editor" title="Abrir o modelo 3D deste projeto">Modelo 3D</a>
+
+  <div class="menus" id="menus">
+    <div class="menu" data-menu="desenho">
+      <button type="button" class="menu-botao">Desenho</button>
+      <div class="menu-lista">
+        <button type="button" data-acao="abrir">Abrir desenho do projeto…</button>
+        <button type="button" data-acao="novo">Novo desenho em branco…</button>
+        <button type="button" data-acao="salvar">Salvar <kbd>Ctrl+S</kbd></button>
+        <hr>
+        <button type="button" data-acao="exportar-dxf">Exportar DXF…</button>
+        <button type="button" data-acao="abrir-pasta">Abrir a pasta dos desenhos</button>
+      </div>
+    </div>
+    <div class="menu" data-menu="vistas">
+      <button type="button" class="menu-botao">Vistas do modelo</button>
+      <div class="menu-lista">
+        <div class="menu-titulo">Inserir vista do modelo 3D</div>
+        <button type="button" data-vista="frente">Frente</button>
+        <button type="button" data-vista="tras">Trás</button>
+        <button type="button" data-vista="esquerda">Lateral esquerda</button>
+        <button type="button" data-vista="direita">Lateral direita</button>
+        <button type="button" data-vista="topo">Planta (topo)</button>
+        <button type="button" data-vista="inferior">Vista inferior</button>
+        <hr>
+        <button type="button" data-acao="corte">Corte por plano…</button>
+        <div class="menu-titulo">Para cortar numa tesoura: no Modelo 3D, ferramenta Seção (X), depois "Gerar desenho 2D"</div>
+      </div>
+    </div>
+    <div class="menu" data-menu="editar">
+      <button type="button" class="menu-botao">Editar</button>
+      <div class="menu-lista" id="menu-editar">
+        <button type="button" data-acao="desfazer">Desfazer <kbd>Ctrl+Z</kbd></button>
+        <button type="button" data-acao="refazer">Refazer <kbd>Ctrl+Y</kbd></button>
+        <hr>
+        <button type="button" data-acao="selecionar-tudo">Selecionar tudo <kbd>Ctrl+A</kbd></button>
+        <button type="button" data-acao="apagar">Apagar seleção <kbd>Del</kbd></button>
+        <hr>
+        <button type="button" data-acao="selecionar-peca">Selecionar tudo da mesma peça</button>
+      </div>
+    </div>
+    <div class="menu" data-menu="ver">
+      <button type="button" class="menu-botao">Ver</button>
+      <div class="menu-lista">
+        <button type="button" data-acao="zoom-extensao">Zoom na extensão <kbd>Z</kbd></button>
+        <button type="button" data-acao="zoom-selecao">Zoom na seleção</button>
+        <hr>
+        <button type="button" data-acao="grade">Grade ligada/desligada</button>
+        <button type="button" data-acao="orto">Orto (Shift) ligado/desligado <kbd>F8</kbd></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="nome-modelo">
+    <input id="nome-desenho" value="Desenho" spellcheck="false" aria-label="Nome do desenho">
+  </div>
+
+  <div class="topo-acoes">
+    <label class="escala-topo" title="Escala em que o desenho será impresso: define o tamanho de textos, cotas e hachuras">Escala 1:
+      <select id="escala"><option>1</option><option>2</option><option>2.5</option><option>5</option><option>10</option><option>20</option><option>25</option><option>50</option><option>100</option><option>200</option></select>
+    </label>
+    <button type="button" id="btn-salvar" class="botao" title="Salvar no projeto (também é gravado sozinho)">Salvar</button>
+    <button type="button" id="btn-dxf" class="botao destaque" title="Gerar o DXF para produção">Exportar DXF</button>
+    <button type="button" id="btn-tema" class="botao" title="Alternar tema claro/escuro">Tema</button>
+  </div>
+</header>
+
+<div class="area">
+  <nav class="ferramentas" id="barra-ferramentas" aria-label="Ferramentas"></nav>
+
+  <div class="palco" id="palco">
+    <canvas id="canvas2d"></canvas>
+    <div class="carimbo" id="carimbo">
+      <span id="carimbo-contagem">0 objetos</span>
+      <span id="carimbo-coord">x —  y —</span>
+    </div>
+    <div class="avisos" id="avisos" aria-live="polite"></div>
+  </div>
+
+  <aside class="paineis" id="paineis" aria-label="Painéis">
+    <section class="painel" data-painel="propriedades">
+      <h2><button type="button" class="cabecalho">Propriedades</button></h2>
+      <div class="corpo" id="painel-propriedades"></div>
+    </section>
+    <section class="painel" data-painel="camadas">
+      <h2><button type="button" class="cabecalho">Camadas</button></h2>
+      <div class="corpo" id="painel-camadas"></div>
+    </section>
+    <section class="painel" data-painel="snap">
+      <h2><button type="button" class="cabecalho">Snap</button></h2>
+      <div class="corpo" id="painel-snap"></div>
+    </section>
+    <section class="painel" data-painel="vistas">
+      <h2><button type="button" class="cabecalho">Vistas no desenho</button></h2>
+      <div class="corpo" id="painel-vistas"></div>
+    </section>
+  </aside>
+</div>
+
+<footer class="rodape">
+  <span class="dica" id="dica">Carregando…</span>
+  <span class="estado-salvo" id="estado-salvo"></span>
+  <label class="medidas">MEDIDAS <input id="medida" spellcheck="false" autocomplete="off" placeholder="digite e Enter"></label>
+</footer>
+
+<dialog class="dialogo" id="dialogo">
+  <form method="dialog">
+    <h3 id="dialogo-titulo"></h3>
+    <div class="dialogo-corpo" id="dialogo-corpo"></div>
+    <div class="dialogo-botoes">
+      <button type="button" id="dialogo-cancelar">Cancelar</button>
+      <button type="submit" class="botao-ok" id="dialogo-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module" src="/cad/cad.js"></script>
+<script src="/vivo.js"></script>
+</body>
+</html>

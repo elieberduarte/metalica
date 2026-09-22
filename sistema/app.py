@@ -19,6 +19,9 @@ Rotas da API:
     GET  /api/projetos/<slug>/modelo    documento do editor 3D
     POST /api/projetos/<slug>/<ação>    dados, modelo, importar-ifc, renomear, duplicar,
                                         excluir, abrir-pasta
+    POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
+    GET  /api/projetos/<slug>/desenhos[/<nome>]      desenhos 2D do CAD
+    POST /api/projetos/<slug>/desenhos/<nome>[/dxf|/excluir]
     GET  /saida/<projeto>/<arquivo> baixa um arquivo gerado
 """
 import json
@@ -362,6 +365,69 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
             "relatorio": doc.metadados.get("importacao", {})}
 
 
+# ---- desenhos 2D (CAD): ver nucleo2d/
+
+def _documento3d_do_projeto(s: str):
+    from nucleo3d.modelo import Documento
+    d = _gerente().abrir_modelo(s)
+    if d is None:
+        raise ErroDeDados("o projeto ainda não tem modelo 3D: importe o IFC ou gere o galpão.")
+    return Documento.de_dict(d)
+
+
+def gerar_vista_2d(s: str, corpo: dict) -> dict:
+    """Vista 2D do modelo do projeto: cria um desenho novo ou acrescenta a um existente.
+
+    corpo: {vista: {origem, normal, acima, profundidade, cortar, entidades, nome, tipo}
+                   ou {padrao: "frente"|"topo"|..., profundidade, entidades},
+            desenho: nome do desenho (novo ou existente), deslocamento: [x, y]}"""
+    from nucleo2d.vistas import Vista, gerar, vista_padrao
+    from nucleo2d.desenho import Desenho
+    g = _gerente()
+    doc = _documento3d_do_projeto(s)
+    definicao = corpo.get("vista") or {}
+    if definicao.get("padrao"):
+        vista = vista_padrao(str(definicao["padrao"]), doc.caixa())
+        for k in ("profundidade", "entidades", "nome", "rotular"):
+            if definicao.get(k) is not None:
+                setattr(vista, k, definicao[k])
+    else:
+        vista = Vista.de_dict(definicao)
+    if not vista.nome:
+        vista.nome = {"corte": "Corte"}.get(vista.tipo, vista.tipo.capitalize())
+    nome = corpo.get("desenho") or vista.nome or "desenho"
+    existente = None
+    try:
+        existente = Desenho.de_dict(g.abrir_desenho(s, nome))
+    except ErroDeDados:
+        pass
+    desl = corpo.get("deslocamento") or [0.0, 0.0]
+    if existente is not None and not corpo.get("deslocamento"):
+        # vista nova num desenho que já tem coisas: à direita do que existe
+        caixa = existente.caixa()
+        if caixa:
+            desl = [caixa[1][0] + 40.0 * existente.escala, caixa[0][1]]
+    desenho = gerar(doc, vista, existente, (float(desl[0]), float(desl[1])))
+    if existente is None:
+        desenho.nome = corpo.get("titulo") or nome
+    r = g.salvar_desenho(s, nome, desenho.dict())
+    r["vista"] = desenho.vistas[-1]
+    r["escala"] = desenho.escala
+    return r
+
+
+def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:
+    from nucleo2d.desenho import Desenho
+    g = _gerente()
+    fonte = corpo.get("desenho") if isinstance(corpo.get("desenho"), dict) else g.abrir_desenho(s, nome)
+    desenho = Desenho.de_dict(fonte)
+    pasta = os.path.join(g._existente(s), "desenhos-2d")
+    escala = corpo.get("escala")
+    caminho = desenho.para_dxf(float(escala) if escala else None).gravar(
+        os.path.join(pasta, _slug(nome) + ".dxf"))
+    return {"arquivo": _descrever_arquivo(caminho, pasta), "entidades": desenho.tamanho}
+
+
 def modelo_do_projeto(s: str) -> dict:
     doc = _gerente().abrir_modelo(s)
     return {"documento": doc, "existe": doc is not None}
@@ -636,6 +702,10 @@ class Handler(BaseHTTPRequestHandler):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
                 if len(partes) == 2 and partes[1] == "modelo":
                     return self._json(modelo_do_projeto(partes[0]))
+                if len(partes) == 2 and partes[1] == "desenhos":
+                    return self._json(_gerente().listar_desenhos(partes[0]))
+                if len(partes) == 3 and partes[1] == "desenhos":
+                    return self._json({"desenho": _gerente().abrir_desenho(partes[0], partes[2])})
                 return self._json(projeto_completo(partes[0]))
             if rota == "/api/modelo/catalogo":
                 return self._json(catalogo_3d())
@@ -643,6 +713,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(listar_modelos())
             if rota.startswith("/api/modelo/abrir/"):
                 return self._json(abrir_modelo(rota.split("/api/modelo/abrir/", 1)[1]))
+            if rota in ("/cad", "/desenho"):
+                return self._arquivo(os.path.join(WEB, "cad", "cad.html"), WEB)
             if rota in ("/editor", "/editor3d", "/3d"):
                 return self._arquivo(os.path.join(WEB, "editor3d", "editor.html"), WEB)
             if rota.startswith("/saida/"):
@@ -674,6 +746,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(criar_projeto(corpo))
             if rota.startswith("/api/projetos/"):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
+                if len(partes) == 2 and partes[1] == "vista2d":
+                    return self._json(gerar_vista_2d(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "desenhos":
+                    return self._json(_gerente().salvar_desenho(partes[0], partes[2],
+                                                                corpo.get("desenho", corpo)))
+                if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "dxf":
+                    return self._json(exportar_desenho_dxf(partes[0], partes[2], corpo))
+                if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "excluir":
+                    return self._json(_gerente().excluir_desenho(partes[0], partes[2]))
                 if len(partes) != 2:
                     raise ErroDeDados("rota de projeto inválida: " + rota)
                 return self._json(acao_de_projeto(partes[0], partes[1], corpo))

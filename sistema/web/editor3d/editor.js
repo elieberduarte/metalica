@@ -1149,6 +1149,91 @@ export class Editor {
     this.dica(`Detalhamento de ${arquivo.name} pronto: ${numero(r.posicoes)} posições.`);
   }
 
+  // ------------------------------------------------------------ desenho 2D
+
+  _abrirCAD(desenho = null) {
+    if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para gerar desenhos 2D.', 'atencao'); return; }
+    const url = `/cad?projeto=${encodeURIComponent(this.projeto)}` + (desenho ? `&desenho=${encodeURIComponent(desenho)}` : '');
+    const j = window.open(url, 'metalica-cad2d', 'popup=yes,width=1500,height=950,left=60,top=40');
+    if (j) j.focus(); else window.location.href = url;
+  }
+
+  async _pedirVista(corpo) {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/vista2d`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(corpo),
+    });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+    return j;
+  }
+
+  async _gravarAntesDeGerar() {
+    // a vista é feita do modelo.json do projeto: o que está por gravar vai antes
+    if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+    if (this._autosavePendente) await this._autosalvar();
+  }
+
+  /**
+   * Corte 2D do plano de seção: manda ao servidor o plano (origem e normal, em mm do
+   * documento), com a profundidade de vista pedida, e abre o CAD no desenho gerado.
+   */
+  async gerarDesenhoDoCorte(plano = null) {
+    if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para gerar desenhos 2D.', 'atencao'); return; }
+    const secao = this.ferramentas.get('secao');
+    const p = plano || (secao && secao.constructor.ultimo);
+    if (!p) { this.aviso('Não há plano de corte. Use a ferramenta Seção (X): clique numa face ou tecle X, Y ou Z.', 'atencao'); this.ativarFerramenta('secao'); return; }
+    const nome = el('input', { type: 'text', value: `Corte ${String.fromCharCode(65 + Math.min(25, this._cortesGerados || 0))}` });
+    const prof = el('input', { type: 'number', step: 'any', value: '1500' });
+    const rot = el('input', { type: 'checkbox', checked: 'checked' });
+    const corpo = el('div', {},
+      el('p', { class: 'explica', texto: 'O que o plano atravessa sai como seção hachurada; o que está além, até a profundidade, sai projetado. O lado visível é o da seta da ferramenta Seção.' }),
+      el('div', { class: 'campos' }, el('label', { texto: 'Nome do desenho' }), nome,
+        el('label', { texto: 'Profundidade de vista (mm)' }), prof, el('label', { texto: 'Rotular peças cortadas' }), rot));
+    if (await this.dialogo({ titulo: 'Gerar desenho 2D do corte', corpo, ok: 'Gerar e abrir' }) !== 'ok') return;
+    this.dica('Gravando o modelo e gerando o corte…');
+    try {
+      await this._gravarAntesDeGerar();
+      const profundidade = parseFloat(prof.value);
+      const j = await this._pedirVista({
+        vista: { origem: [...p.origem], normal: [...p.normal], profundidade: isFinite(profundidade) && profundidade > 0 ? profundidade : null,
+                 cortar: true, rotular: rot.checked, nome: nome.value.trim() || 'Corte', tipo: 'corte' },
+        desenho: nome.value.trim() || 'Corte',
+      });
+      this._cortesGerados = (this._cortesGerados || 0) + 1;
+      const v = j.vista || {};
+      this.aviso(`Corte gerado: ${v.pecas_cortadas || 0} peça(s) cortada(s), ${v.pecas_projetadas || 0} projetada(s). Abrindo o CAD…`, 'info', 6000);
+      this._abrirCAD(j.nome);
+    } catch (e) {
+      this.aviso(`Não foi possível gerar o corte: ${e.message}`, 'erro', 0);
+    }
+  }
+
+  /** Vistas ortográficas só das peças selecionadas (ou do modelo inteiro), num desenho. */
+  async dialogoVistasDaSelecao() {
+    if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para gerar desenhos 2D.', 'atencao'); return; }
+    const ids = [...this.selecao.ids];
+    const nome = el('input', { type: 'text', value: ids.length ? 'Detalhe' : 'Vistas gerais' });
+    const caixas = {};
+    const grade = el('div', { class: 'campos' }, el('label', { texto: 'Nome do desenho' }), nome);
+    for (const [k, r] of [['frente', 'Frente'], ['topo', 'Planta (topo)'], ['esquerda', 'Lateral esquerda'], ['direita', 'Lateral direita'], ['tras', 'Trás']]) {
+      caixas[k] = el('input', { type: 'checkbox', checked: (k === 'frente' || k === 'topo' || k === 'esquerda') ? 'checked' : undefined });
+      grade.append(el('label', { texto: r }), caixas[k]);
+    }
+    const corpo = el('div', {}, el('p', { class: 'explica', texto: ids.length
+      ? `${ids.length} peça(s) selecionada(s): as vistas saem só delas, lado a lado num desenho novo.`
+      : 'Nada selecionado: as vistas saem do modelo inteiro (camadas ocultas ficam de fora).' }), grade);
+    if (await this.dialogo({ titulo: 'Vistas 2D', corpo, ok: 'Gerar e abrir' }) !== 'ok') return;
+    const escolhidas = Object.entries(caixas).filter(([, c]) => c.checked).map(([k]) => k);
+    if (!escolhidas.length) return;
+    this.dica('Gerando as vistas…');
+    try {
+      await this._gravarAntesDeGerar();
+      const desenho = nome.value.trim() || 'Vistas';
+      for (const k of escolhidas) await this._pedirVista({ vista: { padrao: k, entidades: ids.length ? ids : null, rotular: false }, desenho });
+      this._abrirCAD(desenho);
+    } catch (e) { this.aviso(`Não foi possível gerar as vistas: ${e.message}`, 'erro', 0); }
+  }
+
   // ------------------------------------------------------------ interface
 
   _ligarMenus() {
@@ -1171,6 +1256,9 @@ export class Editor {
       'zoom-extensao': () => this.camera.zoomExtensao(),
       'zoom-selecao': () => this.camera.zoomSelecao([...this.selecao.ids]),
       'mapa-esforcos': () => this.alternarAnalise(),
+      'desenho-corte': () => this.gerarDesenhoDoCorte(),
+      'desenho-selecao': () => this.dialogoVistasDaSelecao(),
+      'abrir-cad': () => this._abrirCAD(),
     };
     document.addEventListener('click', (ev) => {
       const botaoMenu = ev.target.closest('.menu-botao');

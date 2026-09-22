@@ -64,6 +64,10 @@ export class FerramentaSecao extends Ferramenta {
       this.definir(C.planoDe(c, C.EIXOS[eixo].vetor));
       return true;
     }
+    if ((k === 'g' || ev.key === 'Enter') && this.plano && this.editor && typeof this.editor.gerarDesenhoDoCorte === 'function') {
+      this.editor.gerarDesenhoDoCorte(this.plano);
+      return true;
+    }
     if (ev.key === 'Tab' && this.plano) {
       this.definir(C.planoDe(this.plano.origem, C.mul(this.plano.normal, -1)));
       return true;
@@ -115,7 +119,7 @@ export class FerramentaSecao extends Ferramenta {
     this.constructor.ultimo = plano;
     this.aplicarNaCena(plano);
     this.medida('corte em ' + this.descrever(plano));
-    this.dica('Digite um afastamento para deslocar · Tab inverte · Delete remove');
+    this.dica('Digite um afastamento para deslocar · Tab inverte · Delete remove · G gera o desenho 2D deste corte');
     this.desenhar();
   }
 
