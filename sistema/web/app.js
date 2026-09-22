@@ -163,7 +163,7 @@ const CONFIG = {
   inclinacao: { faixa: [2, 100], un: '%', rotuloErro: 'Inclinação do telhado' },
   balanco_lateral: { faixa: [0, 5], un: 'm', rotuloErro: 'Beiral lateral' },
 
-  tipo_portico: { opcoes: ['alma cheia', 'treliçado'] },
+  tipo_portico: { opcoes: ['alma cheia'], dica: 'só alma cheia é calculado; treliçado ainda não' },
   comprimento_misula: { faixa: [0, 6], un: 'm', rotuloErro: 'Comprimento da mísula' },
   altura_misula: { faixa: [0, 3], un: 'm', rotuloErro: 'Altura da mísula' },
 
@@ -178,6 +178,7 @@ const CONFIG = {
                           dica: 'NBR 8800: 0,25 kN/m² mínimo' },
   carga_forro: { faixa: [0, 5], un: 'kN/m²', rotuloErro: 'Forro' },
   carga_extra: { faixa: [0, 5], un: 'kN/m²', rotuloErro: 'Carga extra' },
+  ponte_rolante: { dica: 'ainda não entra no cálculo: se marcar, o programa recusa dimensionar' },
   capacidade_ponte_t: { faixa: [0, 200], un: 't', rotuloErro: 'Capacidade da ponte',
                         depende: 'ponte_rolante' },
 
@@ -291,7 +292,8 @@ function montarCampo(item) {
       aoMudarDados();
     });
     return el('div', { class: 'campo booleano', 'data-campo': item.campo },
-      entrada, el('label', { for: id }, item.rotulo));
+      entrada, el('label', { for: id }, item.rotulo),
+      cfg.dica ? el('small', { class: 'dica', texto: cfg.dica }) : null);
   }
 
   const opcoes = fonteOpcoes(item.campo);

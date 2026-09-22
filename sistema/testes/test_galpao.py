@@ -210,3 +210,16 @@ if __name__ == "__main__":
                 print(f"  FALHA {nome}: {e}")
     print(f"\n{falhas} falha(s).")
     sys.exit(1 if falhas else 0)
+
+
+def test_recusa_o_que_nao_calcula():
+    """Pórtico treliçado e ponte rolante são aceitos pelo formulário mas não pelo cálculo:
+    validar() recusa com mensagem, em vez de calcular alma cheia e imprimir outra coisa."""
+    import pytest
+    from nucleo.base import ErroDeDados
+    from nucleo.modelo_galpao import DadosGalpao
+    with pytest.raises(ErroDeDados, match="treli"):
+        DadosGalpao(tipo_portico="treliçado").validar()
+    with pytest.raises(ErroDeDados, match="Ponte rolante"):
+        DadosGalpao(ponte_rolante=True, capacidade_ponte_t=5).validar()
+    DadosGalpao().validar()

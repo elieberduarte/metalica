@@ -101,6 +101,15 @@ class DadosGalpao:
             raise ErroDeDados("Classe da edificação deve ser A, B ou C.")
         if self.comprimento < self.espacamento_porticos:
             raise ErroDeDados("O comprimento do galpão é menor que o espaçamento entre pórticos.")
+        # O que o programa ainda não calcula é recusado, não ignorado: um memorial que
+        # imprime "pórtico treliçado" com o cálculo de alma cheia seria um documento falso.
+        if "alma" not in str(self.tipo_portico or "").lower():
+            raise ErroDeDados("Pórtico \"%s\" ainda não é calculado por este programa: só o pórtico de "
+                              "alma cheia de duas águas. Escolha \"alma cheia\"." % self.tipo_portico)
+        if self.ponte_rolante or (self.capacidade_ponte_t or 0) > 0:
+            raise ErroDeDados("Ponte rolante ainda não entra no cálculo (cargas móveis, vigas de rolamento "
+                              "e efeitos dinâmicos). Desmarque a ponte rolante ou dimensione o galpão "
+                              "com ponte em outro programa.")
         return self
 
     # --- grandezas derivadas ---
