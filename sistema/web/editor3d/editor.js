@@ -1273,6 +1273,8 @@ export class Editor {
     if (!ids.length) { this.aviso(`Nenhuma peça com ${chave} ${[...marcas].join(', ')} no modelo.`, 'atencao'); return; }
     this.selecao.definir(ids);
     this.camera.zoomSelecao(ids);
+    // as malhas do servidor chegam depois: enquadra de novo quando a cena já as tem
+    setTimeout(() => { if (this.selecao.ids.size === ids.length) this.camera.zoomSelecao(ids); }, 1500);
     this.aviso(`${ids.length} peça(s) ${[...marcas].join(', ')} em destaque (selecionadas). Esc limpa a seleção; Desenho 2D volta ao CAD.`, 'info', 12000);
     const url = new URL(location.href); url.searchParams.delete('destacar'); history.replaceState(null, '', url);
   }
