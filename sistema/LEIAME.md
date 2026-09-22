@@ -238,6 +238,9 @@ papel 1:1: a cota guarda o valor original como texto. Cada prancha traz, no roda
 esquerda do carimbo, a **tabela das posições** que contém (marca, quantidade, perfil,
 comprimento, peso). Para escolher à mão o que vai numa prancha, selecione as células no
 desenho de detalhamento antes de abrir o diálogo e marque "só as peças selecionadas".
+**Desenho → Exportar PDF** gera o PDF vetorial do desenho aberto (prancha no tamanho da
+folha; desenho comum no tamanho dele na escala) e **PDF de todas as pranchas…** junta as
+pranchas do projeto num arquivo em `pranchas/`, uma por página, pronto para plotar.
 
 ## O que sai
 

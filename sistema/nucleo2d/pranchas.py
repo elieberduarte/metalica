@@ -371,3 +371,55 @@ def fontes_titulo(cels: Sequence[dict]) -> str:
         if t not in nomes:
             nomes.append(t)
     return ", ".join(nomes)[:48]
+
+
+# ============================================================ PDF
+#: Relação entre a altura de texto do DXF (mm) e o corpo da fonte em pontos no
+#: renderizador (`dxf_render` monta o corpo como altura · fator · 2,4). Igual à de
+#: saida/pranchas.py.
+_FATOR_TEXTO = (2.835 / 0.73) / 2.4
+
+
+def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: float = 10.0) -> str:
+    """PDF vetorial, uma página por desenho, no tamanho real do papel.
+
+    Prancha (escala 1, `metadados.prancha`) sai na folha do seu formato; qualquer outro
+    desenho sai numa página do tamanho do desenho na sua escala mais a margem, e o texto
+    com a altura de papel que o CAD mostra. É o `para_dxf` de cada desenho renderizado
+    pelo `saida.dxf_render`, o mesmo do memorial, num eixo cujo intervalo de dados é o
+    tamanho da página vezes a escala — 1 mm no papel é 1 mm impresso."""
+    import os
+    import tempfile
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    from saida import dxf_render
+    os.makedirs(os.path.dirname(os.path.abspath(caminho_pdf)), exist_ok=True)
+    with PdfPages(caminho_pdf) as pdf, tempfile.TemporaryDirectory() as tmp:
+        for i, d in enumerate(desenhos):
+            info = d.metadados.get("prancha")
+            if info and info.get("formato") in FOLHAS:
+                larg, alt = FOLHAS[info["formato"]]
+                k = 1.0
+                x0, y0 = 0.0, 0.0
+            else:
+                k = float(d.escala or 1.0)
+                caixa = d.caixa()
+                if not caixa:
+                    continue
+                (bx0, by0), (bx1, by1) = caixa
+                larg = (bx1 - bx0) / k + 2 * margem
+                alt = (by1 - by0) / k + 2 * margem
+                x0, y0 = bx0 - margem * k, by0 - margem * k
+            arq = d.para_dxf(k).gravar(os.path.join(tmp, "p%d.dxf" % i))
+            fig = plt.figure(figsize=(larg / 25.4, alt / 25.4))
+            ax = fig.add_axes((0, 0, 1, 1))
+            dxf_render.desenhar(arq, ax, escala_texto=_FATOR_TEXTO / k)
+            ax.set_xlim(x0, x0 + larg * k)
+            ax.set_ylim(y0, y0 + alt * k)
+            ax.set_aspect("equal")
+            ax.axis("off")
+            pdf.savefig(fig)
+            plt.close(fig)
+    return caminho_pdf

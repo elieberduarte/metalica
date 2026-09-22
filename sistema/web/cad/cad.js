@@ -176,6 +176,37 @@ class CAD {
     } catch (e) { this.aviso(`Não foi possível exportar: ${e.message}`, 'erro', 0); }
   }
 
+  async exportarPDF() {
+    if (!this.doc.tamanho) { this.dica('O desenho está vazio.'); return; }
+    if (!this.projeto) { this.aviso('Exportar PDF precisa de um projeto aberto.', 'atencao'); return; }
+    if (!this.nomeDesenho) this.nomeDesenho = slug(this.el.nome.value || 'desenho');
+    this.dica('Gerando o PDF…');
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/pdf`, { desenho: this.doc.paraJSON() });
+      const a = r.arquivo || {};
+      this.aviso(el('span', {}, 'PDF gerado: ', el('a', { href: a.url, target: '_blank', rel: 'noopener', texto: a.nome || 'abrir' }), a.tamanho_kb ? ` · ${numero(a.tamanho_kb, 0)} kB` : ''), 'info', 0);
+      this.dica('PDF exportado.');
+      window.open(a.url, '_blank');
+    } catch (e) { this.aviso(`Não foi possível gerar o PDF: ${e.message}`, 'erro', 0); }
+  }
+
+  /** Um PDF com todas as pranchas do projeto (as de nome "Prancha NN"), em ordem. */
+  async pdfDasPranchas() {
+    if (!this.projeto) { this.aviso('Precisa de um projeto aberto.', 'atencao'); return; }
+    const lista = (await this._listaDesenhos()).filter(d => /^prancha-\d+$/i.test(d.nome))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
+    if (!lista.length) { this.aviso('O projeto não tem pranchas ainda: Desenho → Montar pranchas…', 'atencao'); return; }
+    if (this.nomeDesenho && lista.some(d => d.nome === this.nomeDesenho)) await this.salvar({ avisar: false });
+    this.dica(`Gerando o PDF de ${lista.length} prancha(s)…`);
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(lista[0].nome)}/pdf`, { desenhos: lista.map(d => d.nome), titulo: 'pranchas' });
+      const a = r.arquivo || {};
+      this.aviso(el('span', {}, `PDF com ${r.paginas} página(s): `, el('a', { href: a.url, target: '_blank', rel: 'noopener', texto: a.nome || 'abrir' }), a.tamanho_kb ? ` · ${numero(a.tamanho_kb, 0)} kB` : ''), 'info', 0);
+      this.dica('PDF das pranchas exportado (pasta pranchas/ do projeto).');
+      window.open(a.url, '_blank');
+    } catch (e) { this.aviso(`Não foi possível gerar o PDF: ${e.message}`, 'erro', 0); }
+  }
+
   async inserirVista(definicao, titulo) {
     if (!this.projeto) { this.aviso('Inserir vista precisa de um projeto com modelo 3D.', 'atencao'); return; }
     if (!this.nomeDesenho) this.nomeDesenho = slug(this.el.nome.value || titulo || 'desenho');
@@ -328,6 +359,8 @@ class CAD {
       novo: () => this.dialogoNovo(),
       salvar: () => this.salvar(),
       'exportar-dxf': () => this.exportarDXF(),
+      'exportar-pdf': () => this.exportarPDF(),
+      'pdf-pranchas': () => this.pdfDasPranchas(),
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
       detalhar: () => this.dialogoDetalhar(),

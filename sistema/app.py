@@ -24,7 +24,7 @@ Rotas da API:
     POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + romaneio
     POST /api/projetos/<slug>/pranchas  pranchas (folhas com carimbo) a partir dos desenhos 2D
     GET  /api/projetos/<slug>/desenhos[/<nome>]      desenhos 2D do CAD
-    POST /api/projetos/<slug>/desenhos/<nome>[/dxf|/excluir]
+    POST /api/projetos/<slug>/desenhos/<nome>[/dxf|/pdf|/excluir]
     GET  /saida/<projeto>/<arquivo> baixa um arquivo gerado
 """
 import json
@@ -546,6 +546,26 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     return {"pranchas": saida, "formato": corpo.get("formato") or "A1"}
 
 
+def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
+    """PDF de um desenho (ou, com `desenhos: [...]`, de vários numa só saída): prancha no
+    tamanho da folha, desenho comum no tamanho do desenho na sua escala."""
+    from nucleo2d.desenho import Desenho
+    from nucleo2d.pranchas import pdf_dos_desenhos
+    g = _gerente()
+    nomes = corpo.get("desenhos") or [nome]
+    desenhos = []
+    for n in nomes:
+        if n == nome and isinstance(corpo.get("desenho"), dict):
+            desenhos.append(Desenho.de_dict(corpo["desenho"]))
+        else:
+            desenhos.append(Desenho.de_dict(g.abrir_desenho(s, n)))
+    pasta = os.path.join(g._existente(s), "pranchas" if any(d.metadados.get("prancha") for d in desenhos) else "desenhos-2d")
+    base = corpo.get("arquivo") or (_slug(nome) if len(nomes) == 1 else _slug(corpo.get("titulo") or "pranchas"))
+    caminho = pdf_dos_desenhos(desenhos, os.path.join(pasta, base + ".pdf"))
+    g.tocar(s)
+    return {"arquivo": _descrever_arquivo(caminho, pasta), "paginas": len(desenhos)}
+
+
 def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:
     from nucleo2d.desenho import Desenho
     g = _gerente()
@@ -900,6 +920,8 @@ class Handler(BaseHTTPRequestHandler):
                                                                 corpo.get("desenho", corpo)))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "dxf":
                     return self._json(exportar_desenho_dxf(partes[0], partes[2], corpo))
+                if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "pdf":
+                    return self._json(exportar_desenho_pdf(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "excluir":
                     return self._json(_gerente().excluir_desenho(partes[0], partes[2]))
                 if len(partes) != 2:

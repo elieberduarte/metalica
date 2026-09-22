@@ -102,3 +102,20 @@ if __name__ == "__main__":
                 print(f"  FALHA {nome}: {e}")
     print(f"\n{falhas} falha(s).")
     sys.exit(1 if falhas else 0)
+
+
+def test_pdf_das_pranchas(tmp_path):
+    """PDF no tamanho real: prancha A3 sai em 420 × 297 mm; desenho comum, no tamanho
+    dele na escala mais a margem."""
+    import pymupdf
+    d = _detalhe()
+    folhas = pranchas.montar_pranchas([{"nome": "det", "desenho": d}], formato="A3")
+    caminho = pranchas.pdf_dos_desenhos(folhas + [d], str(tmp_path / "p.pdf"))
+    doc = pymupdf.open(caminho)
+    assert len(doc) == 2
+    w, h = doc[0].rect.width / 72 * 25.4, doc[0].rect.height / 72 * 25.4
+    assert abs(w - 420) < 1 and abs(h - 297) < 1
+    (x0, y0), (x1, y1) = d.caixa()
+    w2 = doc[1].rect.width / 72 * 25.4
+    assert abs(w2 - ((x1 - x0) / d.escala + 20)) < 1
+    assert "P1" in doc[0].get_text()
