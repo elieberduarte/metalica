@@ -1260,7 +1260,8 @@ export class Editor {
     try {
       await this._gravarAntesDeGerar();
       const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar-posicao`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ marca }),
+        // a peça clicada é a referência: o desenho sai na orientação em que ela está
+        method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ marca, referencia: ent.id }),
       });
       const j = await r.json();
       if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
@@ -2168,7 +2169,7 @@ export class Editor {
     const ids = [];
     for (const ent of this.documento.entidades.values()) {
       const a = ent.atributos || {}, m = a.marcas || {};
-      const texto = [ent.nome, m.posicao, m.conjunto, m.perfil, ent.perfil, ent.camada, a.tipo_ifc, ent.origem_ifc, ent.papel]
+      const texto = [ent.nome, m.posicao, m.conjunto, m.nome, m.nome_conjunto, m.perfil, ent.perfil, ent.camada, a.tipo_ifc, ent.origem_ifc, ent.papel]
         .filter(Boolean).join(' ').toLowerCase();
       if (!palavras.every(p => texto.includes(p))) continue;
       total++; ids.push(ent.id);

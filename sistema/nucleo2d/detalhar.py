@@ -35,7 +35,7 @@ from nucleo3d import geometria as _geo
 from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota
 from nucleo2d import vistas as _vistas
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
-                                _arestas_dos_furos, _ordem_natural, _autovetores)
+                                _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d)
 from saida.desenhos import Estilo, _mm
 
 __all__ = ["detalhar", "GRUPOS", "regra_furacao_terca"]
@@ -158,6 +158,9 @@ class _Papel:
 
     # cotas nativas (editáveis no CAD); afastamentos em mm de papel
     def cota_h(self, x1, x2, y, desl_papel, texto=None):
+        # a fábrica não trabalha com décimos: os extremos da cota vão ao milímetro
+        # inteiro (o desvio de até 0,5 mm em relação ao traço não se vê no papel)
+        x1, x2 = float(round(x1)), float(round(x2))
         if abs(x2 - x1) < 0.05:
             return
         self.d.add(Cota(modo="h", p1=self._p(x1, y), p2=self._p(x2, y),
@@ -166,6 +169,7 @@ class _Papel:
 
     def cota_v(self, y1, y2, x, desl_papel, texto=None):
         """`desl_papel > 0` joga a cota para a direita."""
+        y1, y2 = float(round(y1)), float(round(y2))
         if abs(y2 - y1) < 0.05:
             return
         self.d.add(Cota(modo="v", p1=self._p(x, y1), p2=self._p(x, y2),
@@ -179,7 +183,7 @@ class _Papel:
         return all(vals[i + 1] - vals[i] >= minimo for i in range(len(vals) - 1))
 
     def cadeia_h(self, xs, y, desl_papel):
-        xs = sorted(set(round(x, 1) for x in xs))
+        xs = sorted(set(float(round(x)) for x in xs))
         if not self._cabe(xs):
             return False
         for i in range(len(xs) - 1):
@@ -187,7 +191,7 @@ class _Papel:
         return True
 
     def cadeia_v(self, ys, x, desl_papel):
-        ys = sorted(set(round(y, 1) for y in ys))
+        ys = sorted(set(float(round(y)) for y in ys))
         if not self._cabe(ys):
             return False
         for i in range(len(ys) - 1):
@@ -308,12 +312,21 @@ def _ponto_no_poligono(x: float, y: float, poligono, folga: float = 1.0) -> bool
     return any(math.hypot(x - px, y - py) <= folga for px, py in poligono)
 
 
-def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[Solido]) -> int:
+def _centros_dos_fixadores(fixadores: Sequence[Solido]) -> Dict[str, Tuple[float, float, float]]:
+    """Centro (média dos vértices) de cada fixador, calculado uma vez para o lote todo:
+    conferir 1.300 parafusos contra 650 chapas era o que dominava a conversão."""
+    return {f.id: tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3)) for f in fixadores if f.vertices}
+
+
+def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[Solido], centros=None) -> int:
     """Chapa que veio do IFC sem o furo modelado: cada parafuso (ou chumbador) que
     atravessa a chapa vira um furo redondo de d + 1 mm no ponto em que o eixo cruza o
-    plano médio. Devolve quantos furos entraram; a célula ganha a observação."""
+    plano médio. Devolve quantos furos entraram; a célula ganha a observação.
+    `centros`: {id do fixador: centro}, de _centros_dos_fixadores (opcional)."""
     if pos.classe != "chapa" or not pos.eixos or not pos.contorno or not fixadores:
         return 0
+    if centros is None:
+        centros = _centros_dos_fixadores(fixadores)
     e1, e2, e3 = pos.eixos
     c, _ = _autovetores(pos.vertices)
     P = [(_dot(_sub(v, c), e1), _dot(_sub(v, c), e2), _dot(_sub(v, c), e3)) for v in pos.vertices]
@@ -324,8 +337,8 @@ def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[So
     folga = 40.0
     novos, porca = 0, False
     for f in fixadores:
-        cf = tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3))
-        if not all(caixa[i][0] - folga <= cf[i] <= caixa[i][1] + folga for i in range(3)):
+        cf = centros.get(f.id)
+        if cf is None or not all(caixa[i][0] - folga <= cf[i] <= caixa[i][1] + folga for i in range(3)):
             continue
         cc, pca = _autovetores(f.vertices)
         ext = []
@@ -555,6 +568,7 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
     for ent in pecas:
         m = _marcas(ent)
         primeiro.setdefault(str(m.get("posicao") or ent.nome or ent.id), ent)
+    centros = _centros_dos_fixadores(fixadores) if fixadores else {}
     for marca, pos in por_marca.items():
         try:
             ch = getattr(primeiro.get(marca), "parametrica", None)
@@ -563,7 +577,7 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
             else:
                 analisar(pos)
                 if fixadores:
-                    inferir_furos_de_parafusos(pos, primeiro[marca], fixadores)
+                    inferir_furos_de_parafusos(pos, primeiro[marca], fixadores, centros)
         except Exception as e:                      # noqa: BLE001 — uma peça não derruba o lote
             pos.classe = "indefinida"
             pos.observacoes.append("falha na análise: %s" % e)
@@ -713,7 +727,10 @@ def _rotulo_espessura(pos: Posicao) -> str:
 
 
 def _cabecalho(pos: Posicao) -> List[str]:
-    linhas = ["%s – %02dx" % (pos.marca, pos.quantidade)]
+    titulo = "%s – %02dx" % (pos.nome or pos.marca, pos.quantidade)
+    if pos.nome:
+        titulo += "  (%s)" % pos.marca                  # a marca do TecnoMETAL fica rastreável
+    linhas = [titulo]
     if pos.classe == "chapa_dobrada" and pos.desenvolvimento:
         linhas.append("%s  %s  %s  desenv. %s x %s mm" % (pos.perfil, _rotulo_espessura(pos), pos.material,
                                                           _mm(pos.desenvolvimento[0]), _mm(pos.desenvolvimento[1])))
@@ -833,7 +850,8 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
 
 
 # ============================================================ detalhe de uma posição
-def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes: Optional[dict] = None) -> Tuple[Desenho, Posicao]:
+def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes: Optional[dict] = None,
+                     nomes: Optional[dict] = None) -> Tuple[Desenho, Posicao]:
     """Desenho "Detalhe – <marca>" com a célula da posição. Chapa paramétrica sai com os
     furos editáveis e `metadados.detalhe_posicao` guarda o que "Aplicar furos" precisa."""
     pecas, _ = _pecas(doc)
@@ -842,6 +860,7 @@ def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes:
         raise ErroDeDados("não há peça com a posição %s no modelo." % marca)
     posicoes, camadas = _posicoes_de(lista, _fixadores(doc))
     aplicar_ajustes_de_furos(posicoes, ajustes)
+    aplicar_nomes(posicoes, nomes)
     pos = posicoes[0]
     escala = {"chapa": 10.0, "chapa_dobrada": 10.0, "telha": 50.0}.get(pos.classe, 25.0)
     d = Desenho(nome="Detalhe – %s" % marca, escala=escala)
@@ -854,7 +873,7 @@ def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes:
         "itens": {marca: {"quantidade": pos.quantidade, "perfil": pos.perfil, "material": pos.material,
                           "comprimento": round(pos.comprimento), "espessura": round(pos.espessura or pos.T, 1),
                           "peso": round(pos.peso, 2), "classe": CLASSES.get(pos.classe, pos.classe),
-                          "categoria": _categoria(pos, camadas.get(marca, ""))}}}
+                          "categoria": _categoria(pos, camadas.get(marca, "")), "nome": pos.nome}}}
     d.metadados["detalhe_posicao"] = {
         "marca": marca, "classe": pos.classe, "editavel": edit, "parametrica": parametrica,
         "L": round(pos.L, 3), "H": round(pos.H, 3), "T": round(pos.T, 3),
@@ -863,53 +882,318 @@ def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes:
     return d, pos
 
 
-def converter_chapas(doc: Documento, marca: str) -> int:
+def _posicao_bruta(ent: Solido, marca: str) -> Posicao:
+    m = _marcas(ent)
+    return Posicao(marca=marca, tipo_ifc="IfcPlate", perfil=re.sub(r"\s+", " ", str(m.get("perfil") or ent.nome or "")),
+                   material=_material(ent), vertices=[tuple(v) for v in ent.vertices], faces=[list(f) for f in ent.faces])
+
+
+def _custo_forma(A: Sequence[Tuple[float, float]], B: Sequence[Tuple[float, float]], celula: float = 4.0, teto: float = 8.0) -> float:
+    """Distância média (mm) de cada ponto de A ao ponto mais próximo de B e vice-versa,
+    com grade de `celula` mm e distâncias acima de `teto` saturadas: mede se dois
+    conjuntos de vértices projetados têm a mesma forma."""
+    def grade(P):
+        g: Dict[Tuple[int, int], List[Tuple[float, float]]] = collections.defaultdict(list)
+        for p in P:
+            g[(int(math.floor(p[0] / celula)), int(math.floor(p[1] / celula)))].append(p)
+        return g
+
+    def lado(P, gq):
+        total = 0.0
+        for p in P:
+            i, j = int(math.floor(p[0] / celula)), int(math.floor(p[1] / celula))
+            m = teto
+            for di in (-2, -1, 0, 1, 2):
+                for dj in (-2, -1, 0, 1, 2):
+                    for q in gq.get((i + di, j + dj), ()):
+                        d = math.hypot(p[0] - q[0], p[1] - q[1])
+                        if d < m:
+                            m = d
+            total += m
+        return total / max(1, len(P))
+    return (lado(A, grade(B)) + lado(B, grade(A))) / 2.0
+
+
+def _pontuacao_vista(eixos) -> int:
+    """Quanto o triedro segue a vista natural (ver _orientar_para_vista): desempate."""
+    e1, _, e3 = eixos
+    ax = max(range(3), key=lambda i: abs(e3[i]))
+    alvo = {2: 1.0, 1: -1.0, 0: 1.0}[ax]
+    ax1 = max(range(3), key=lambda i: abs(e1[i]))
+    return (2 if e3[ax] * alvo > 0 else 0) + (1 if e1[ax1] > 0 else 0)
+
+
+def _eixos_pela_forma(pos_ref: Posicao, pos: Posicao):
+    """Triedro (direito) desta instância que projeta os vértices dela sobre a forma da
+    referência: entre ±e1, ±e2 (e os eixos trocados numa chapa quase quadrada), o de
+    menor custo de forma. Furo fora do centro decide o sentido; quando a forma é
+    simétrica e sobra empate, vale a vista natural — assim TODAS as instâncias da
+    posição recebem o furo mexido do mesmo lado, e do lado que se vê no 3D. Devolve
+    (eixos, conferida) ou None quando a forma nem bate (peça diferente)."""
+    if not pos.eixos or not pos_ref.local or not pos.vertices:
+        return None
+    ref2 = [(u, v) for u, v, _ in pos_ref.local]
+    e1, e2, _ = pos.eixos
+    c, _ = _autovetores(pos.vertices)
+    quadrada = abs(pos.L - pos.H) < 0.05 * max(pos.L, pos.H, 1.0)
+    cands = []
+    for trocar in ((False, True) if quadrada else (False,)):
+        a, b = (e2, e1) if trocar else (e1, e2)
+        for s1 in (1.0, -1.0):
+            for s2 in (1.0, -1.0):
+                f1 = tuple(s1 * x for x in a)
+                f2 = tuple(s2 * x for x in b)
+                f3 = _norm(_cruz(f1, f2))
+                P = [(_dot(_sub(v, c), f1), _dot(_sub(v, c), f2)) for v in pos.vertices]
+                u0, v0 = min(p[0] for p in P), min(p[1] for p in P)
+                cands.append((_custo_forma(ref2, [(u - u0, v - v0) for u, v in P]), (f1, f2, f3)))
+    cands.sort(key=lambda t: t[0])
+    melhor = cands[0][0]
+    if melhor > 2.0:
+        return None
+    empatados = [e for custo, e in cands if custo - melhor <= 0.3]
+    return max(empatados, key=_pontuacao_vista), True
+
+
+def _orientar_para_vista(eixos):
+    """Sinais dos eixos da chapa de referência pela vista natural: chapa deitada é vista
+    de cima (normal +z), chapa em pé de frente (normal −y) ou da direita (+x); o eixo
+    do comprimento aponta para +x (ou +y, +z). O desenho fica previsível e, com as
+    instâncias no mesmo sistema, o furo mexido cai no mesmo lugar em todas."""
+    e1, e2, e3 = eixos
+    ax = max(range(3), key=lambda i: abs(e3[i]))
+    alvo = {2: 1.0, 1: -1.0, 0: 1.0}[ax]
+    if e3[ax] * alvo < 0:
+        e3 = tuple(-x for x in e3)
+    ax1 = max(range(3), key=lambda i: abs(e1[i]))
+    if e1[ax1] < 0:
+        e1 = tuple(-x for x in e1)
+    e2 = _norm(_cruz(e3, e1))
+    e1 = _norm(_cruz(e2, e3))
+    return (e1, e2, e3)
+
+
+def _chapa_de_posicao(ent: Solido, pos: Posicao, espelhada: bool = False, conferida: bool = True) -> Chapa:
+    """Chapa paramétrica com os parâmetros medidos em `pos` (mesmo id e atributos do
+    sólido). `espelhada`: os eixos são um triedro esquerdo (instância espelhada) e a
+    origem vai para a outra face, para a espessura crescer para o lado certo."""
+    e1, e2, e3 = pos.eixos
+    c, _ = _autovetores(pos.vertices)
+    P = [(_dot(_sub(v, c), e1), _dot(_sub(v, c), e2), _dot(_sub(v, c), e3)) for v in pos.vertices]
+    u0, v0 = min(q[0] for q in P), min(q[1] for q in P)
+    w0 = (min(q[2] for q in P) + max(q[2] for q in P)) / 2
+    base = w0 + pos.T / 2 if espelhada else w0 - pos.T / 2
+    origem = tuple(c[i] + e1[i] * u0 + e2[i] * v0 + e3[i] * base for i in range(3))
+    furos = []
+    for f in pos.furos:
+        if f.vista != "frente":
+            continue
+        if f.tipo == "redondo":
+            furos.append({"x": round(f.x, 3), "y": round(f.y, 3), "diametro": round(f.d, 3)})
+        elif f.tipo == "oblongo":
+            furos.append({"x": round(f.x, 3), "y": round(f.y, 3), "largura": round(f.larg, 3), "altura": round(f.alt, 3)})
+    atributos = dict(ent.atributos or {})
+    atributos["convertida_de"] = "solido"
+    atributos["eixos_conferidos"] = bool(conferida)
+    if getattr(ent, "origem_ifc", ""):
+        atributos["origem_ifc"] = ent.origem_ifc
+    return Chapa(id=ent.id, nome=ent.nome, camada=ent.camada, material=ent.material, visivel=ent.visivel,
+                 bloqueada=ent.bloqueada, grupo=ent.grupo, atributos=atributos,
+                 origem=tuple(round(x, 3) for x in origem), eixo_x=tuple(round(x, 6) for x in e1),
+                 eixo_y=tuple(round(x, 6) for x in e2),
+                 contorno=[(round(x, 3), round(y, 3)) for x, y in pos.contorno],
+                 espessura=round(pos.T, 3), centrada=False, furos=furos, aco=ent.material or _material(ent))
+
+
+def converter_chapas(doc: Documento, marca: str, referencia: Optional[str] = None) -> int:
     """Sólidos de chapa plana (IfcPlate) da posição viram entidades Chapa paramétricas —
-    mesmo id, nome, camada e atributos; contorno, espessura e furos medidos da malha, no
-    sistema da própria peça. Devolve quantas foram convertidas."""
-    n = 0
+    mesmo id, nome, camada e atributos; contorno, espessura e furos medidos da malha.
+
+    Todas as instâncias saem no MESMO sistema: a de referência (`referencia` = id da
+    peça clicada, senão a primeira) tem os eixos pela vista natural, e cada outra recebe
+    o triedro que põe a forma dela sobre a forma da referência (ver _eixos_pela_forma)
+    — uma chapa montada virada ou espelhada fica com o furo do desenho no mesmo canto
+    físico que as demais. Quando nem a forma bate (`eixos_conferidos` = False), a
+    instância é medida sozinha e "Aplicar furos" volta a decidir o espelhamento pelos
+    furos originais. Devolve quantas foram convertidas."""
+    lista = [ent for ent in doc.entidades.values() if isinstance(ent, Solido) and _tipo_ifc(ent) == "IfcPlate"
+             and str(_marcas(ent).get("posicao") or ent.nome or ent.id) == marca]
+    if not lista:
+        return 0
+    ref = next((e for e in lista if e.id == referencia), lista[0])
     fixadores = _fixadores(doc)
-    for ent in list(doc.entidades.values()):
-        if not isinstance(ent, Solido) or _tipo_ifc(ent) != "IfcPlate":
-            continue
-        m = _marcas(ent)
-        if str(m.get("posicao") or ent.nome or ent.id) != marca:
-            continue
-        pos = Posicao(marca=marca, tipo_ifc="IfcPlate", perfil=re.sub(r"\s+", " ", str(m.get("perfil") or ent.nome or "")),
-                      material=_material(ent), vertices=[tuple(v) for v in ent.vertices], faces=[list(f) for f in ent.faces])
-        try:
-            analisar(pos)
-            inferir_furos_de_parafusos(pos, ent, fixadores)
-        except Exception:                             # noqa: BLE001
-            continue
-        if pos.classe != "chapa" or not pos.contorno or not pos.eixos:
-            continue
-        e1, e2, e3 = pos.eixos
-        c, _ = _autovetores(pos.vertices)
-        P = [(_dot(_sub(v, c), e1), _dot(_sub(v, c), e2), _dot(_sub(v, c), e3)) for v in pos.vertices]
-        u0, v0 = min(q[0] for q in P), min(q[1] for q in P)
-        w0 = (min(q[2] for q in P) + max(q[2] for q in P)) / 2
-        base = w0 - pos.T / 2
-        origem = tuple(c[i] + e1[i] * u0 + e2[i] * v0 + e3[i] * base for i in range(3))
-        furos = []
-        for f in pos.furos:
-            if f.vista != "frente":
+    centros = _centros_dos_fixadores(fixadores)
+    pos_ref = _posicao_bruta(ref, marca)
+    try:
+        analisar(pos_ref)
+        if pos_ref.classe == "chapa" and pos_ref.contorno and pos_ref.eixos:
+            analisar(pos_ref, eixos=_orientar_para_vista(pos_ref.eixos))
+            inferir_furos_de_parafusos(pos_ref, ref, fixadores, centros)
+    except Exception:                                 # noqa: BLE001
+        pos_ref.classe = "indefinida"
+    if pos_ref.classe != "chapa" or not pos_ref.contorno or not pos_ref.eixos:
+        return 0
+    n = 0
+    for ent in lista:
+        if ent is ref:
+            pos, espelhada, conferida = pos_ref, False, True
+        else:
+            pos = _posicao_bruta(ent, marca)
+            espelhada, conferida = False, False
+            try:
+                analisar(pos)
+                if pos.classe == "chapa" and pos.eixos:
+                    r = _eixos_pela_forma(pos_ref, pos)
+                    if r:
+                        eixos, conferida = r
+                        analisar(pos, eixos=eixos)
+                    else:
+                        analisar(pos, eixos=_orientar_para_vista(pos.eixos))
+                inferir_furos_de_parafusos(pos, ent, fixadores, centros)
+            except Exception:                         # noqa: BLE001
                 continue
-            if f.tipo == "redondo":
-                furos.append({"x": round(f.x, 3), "y": round(f.y, 3), "diametro": round(f.d, 3)})
-            elif f.tipo == "oblongo":
-                furos.append({"x": round(f.x, 3), "y": round(f.y, 3), "largura": round(f.larg, 3), "altura": round(f.alt, 3)})
-        atributos = dict(ent.atributos or {})
-        atributos["convertida_de"] = "solido"
-        ch = Chapa(id=ent.id, nome=ent.nome, camada=ent.camada, material=ent.material, visivel=ent.visivel,
-                   bloqueada=ent.bloqueada, grupo=ent.grupo, atributos=atributos,
-                   origem=tuple(round(x, 3) for x in origem), eixo_x=tuple(round(x, 6) for x in e1),
-                   eixo_y=tuple(round(x, 6) for x in e2),
-                   contorno=[(round(x, 3), round(y, 3)) for x, y in pos.contorno],
-                   espessura=round(pos.T, 3), centrada=False, furos=furos, aco=ent.material or _material(ent))
-        doc.entidades[ent.id] = ch
+            if pos.classe != "chapa" or not pos.contorno or not pos.eixos:
+                continue
+        doc.entidades[ent.id] = _chapa_de_posicao(ent, pos, espelhada, conferida)
         n += 1
     return n
+
+
+def _mundo_da_chapa(ch: Chapa):
+    """(origem da face de baixo, ex, ey, normal) da chapa, no mundo."""
+    ex, ey = _norm(tuple(float(k) for k in ch.eixo_x)), _norm(tuple(float(k) for k in ch.eixo_y))
+    nz = _norm(_cruz(ex, ey))
+    o = tuple(float(k) for k in ch.origem)
+    if ch.centrada:
+        o = tuple(o[i] - nz[i] * float(ch.espessura) / 2.0 for i in range(3))
+    return o, ex, ey, nz
+
+
+def _ponto_da_chapa(ch: Chapa, x: float, y: float):
+    """Ponto (x, y) do sistema da chapa no plano médio, no mundo."""
+    o, ex, ey, nz = _mundo_da_chapa(ch)
+    t = float(ch.espessura) / 2.0
+    return tuple(o[i] + ex[i] * x + ey[i] * y + nz[i] * t for i in range(3))
+
+
+def _local_na_chapa(ch: Chapa, p) -> Tuple[float, float]:
+    o, ex, ey, _ = _mundo_da_chapa(ch)
+    d = _sub(p, o)
+    return _dot(d, ex), _dot(d, ey)
+
+
+def _caixa_da_chapa(ch: Chapa):
+    o, ex, ey, nz = _mundo_da_chapa(ch)
+    t = float(ch.espessura)
+    pts = [tuple(o[i] + ex[i] * x + ey[i] * y + nz[i] * w for i in range(3)) for x, y in (ch.contorno or []) for w in (0.0, t)]
+    if not pts:
+        return None
+    return tuple((min(p[i] for p in pts), max(p[i] for p in pts)) for i in range(3))
+
+
+def reorientar_chapas(doc: Documento, doc_ifc: Documento) -> dict:
+    """Migração das chapas convertidas antes da 0.6.6 (eixos escolhidos peça a peça,
+    `eixos_conferidos` ausente): refaz a conversão a partir das malhas do IFC de origem
+    (`doc_ifc`), com a primeira chapa da posição como referência — foi ela que gerou o
+    desenho —, e escreve em TODAS as instâncias a furação e o contorno atuais dessa
+    referência, no sistema novo. Os parafusos de cada instância vão atrás do furo que
+    mudou de lugar. Devolve {"posicoes", "chapas", "parafusos", "sem_origem": [ids]}."""
+    por_pos: Dict[str, List[Chapa]] = collections.OrderedDict()
+    for e in doc.entidades.values():
+        a = e.atributos or {}
+        if isinstance(e, Chapa) and a.get("convertida_de") == "solido" and not a.get("eixos_conferidos"):
+            por_pos.setdefault(str((a.get("marcas") or {}).get("posicao") or e.nome or e.id), []).append(e)
+    saida = {"posicoes": 0, "chapas": 0, "parafusos": 0, "sem_origem": []}
+    if not por_pos:
+        return saida
+    solidos_pos: Dict[str, List[Solido]] = collections.defaultdict(list)
+    por_gid: Dict[str, Solido] = {}
+    for s in doc_ifc.entidades.values():
+        if isinstance(s, Solido) and _tipo_ifc(s) == "IfcPlate":
+            solidos_pos[str(_marcas(s).get("posicao") or s.nome or s.id)].append(s)
+            if s.origem_ifc:
+                por_gid[s.origem_ifc] = s
+    fixadores = _fixadores(doc)
+    movidos: set = set()
+    for marca, chapas in por_pos.items():
+        pares = []
+        for ch in chapas:
+            s = por_gid.get(str((ch.atributos or {}).get("origem_ifc") or ""))
+            if s is None:
+                cx = _caixa_da_chapa(ch)
+                melhor, dist = None, 5.0
+                for cand in solidos_pos.get(marca, []):
+                    cb = _caixa(cand)
+                    if cx is None:
+                        break
+                    d = max(abs((cb[i][0] + cb[i][1]) - (cx[i][0] + cx[i][1])) / 2.0 for i in range(3))
+                    if d < dist:
+                        melhor, dist = cand, d
+                s = melhor
+            if s is None:
+                saida["sem_origem"].append(ch.id)
+                continue
+            pares.append((ch, s))
+        if not pares:
+            continue
+        aux = Documento(nome="reorientar")
+        for _, s in pares:
+            aux.entidades[s.id] = s
+        converter_chapas(aux, marca, referencia=pares[0][1].id)
+        novas = {s.id: aux.entidades[s.id] for _, s in pares if isinstance(aux.entidades.get(s.id), Chapa)}
+        ref_velha, ref_s = pares[0]
+        ref_nova = novas.get(ref_s.id)
+        if ref_nova is None:
+            saida["sem_origem"].extend(ch.id for ch, _ in pares)
+            continue
+        # furação e contorno atuais da referência (com o que o usuário já aplicou), levados
+        # ao sistema novo: mesmo ponto físico
+        _, ex_v, ey_v, _ = _mundo_da_chapa(ref_velha)
+        _, ex_n, _, _ = _mundo_da_chapa(ref_nova)
+        girado = abs(_dot(ex_v, ex_n)) < 0.7          # eixos novos a 90° dos velhos
+        furos_novos = []
+        for f in ref_velha.furos or []:
+            x, y = _local_na_chapa(ref_nova, _ponto_da_chapa(ref_velha, float(f.get("x", 0) or 0), float(f.get("y", 0) or 0)))
+            reg = dict(f)
+            reg.update(x=round(x, 3), y=round(y, 3))
+            if girado and reg.get("largura") and reg.get("altura"):
+                reg["largura"], reg["altura"] = reg["altura"], reg["largura"]
+            furos_novos.append(reg)
+        contorno_novo = [tuple(round(v, 3) for v in _local_na_chapa(ref_nova, _ponto_da_chapa(ref_velha, float(x), float(y))))
+                         for x, y in (ref_velha.contorno or [])]
+        for ch, s in pares:
+            nova = novas.get(s.id)
+            if nova is None:
+                saida["sem_origem"].append(ch.id)
+                continue
+            nova.id = ch.id
+            nova.nome, nova.camada, nova.material = ch.nome, ch.camada, ch.material
+            nova.visivel, nova.bloqueada, nova.grupo, nova.aco = ch.visivel, ch.bloqueada, ch.grupo, ch.aco
+            atributos = dict(ch.atributos or {})
+            atributos.update({k: v for k, v in (nova.atributos or {}).items() if k in ("eixos_conferidos", "origem_ifc", "convertida_de")})
+            nova.atributos = atributos
+            nova.furos = [dict(f) for f in furos_novos]
+            if contorno_novo:
+                nova.contorno = contorno_novo
+            # cada furo antigo desta instância vai para o furo novo mais perto (no mundo);
+            # os parafusos junto dele acompanham
+            antigos = [(f, _ponto_da_chapa(ch, float(f.get("x", 0) or 0), float(f.get("y", 0) or 0))) for f in (ch.furos or [])]
+            novos_w = [_ponto_da_chapa(nova, float(f["x"]), float(f["y"])) for f in nova.furos]
+            livres = list(range(len(novos_w)))
+            _, _, _, nz = _mundo_da_chapa(ch)
+            for f, pa in sorted(antigos, key=lambda t: t[1]):
+                if not livres:
+                    break
+                k = min(livres, key=lambda i: math.dist(novos_w[i], pa))
+                livres.remove(k)
+                delta = _sub(novos_w[k], pa)
+                if math.sqrt(_dot(delta, delta)) > 0.05:
+                    raio = max(float(f.get("diametro", 0) or 0), float(f.get("largura", 0) or 0), 13.0) / 2 + 6.0
+                    saida["parafusos"] += _mover_fixadores_mundo(pa, nz, delta, raio, fixadores, movidos)
+            doc.entidades[ch.id] = nova
+            saida["chapas"] += 1
+        saida["posicoes"] += 1
+    return saida
 
 
 def _simetria(originais, atuais, L: float, H: float, tol: float = 1.5):
@@ -963,7 +1247,9 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
         u0, v0 = min(x for x, _ in cont), min(y for _, y in cont)
         L, H = max(x for x, _ in cont) - u0, max(y for _, y in cont) - v0
         atuais = [(float(f.get("x", 0) or 0) - u0, float(f.get("y", 0) or 0) - v0) for f in (ch.furos or [])]
-        mapa = _simetria(orig, atuais, L, H)
+        # instâncias no mesmo sistema (conversão com correspondência de vértices): o furo
+        # do desenho vai direto; só a chapa medida sozinha ainda adivinha o espelhamento
+        mapa = (lambda x, y: (x, y)) if (ch.atributos or {}).get("eixos_conferidos") else _simetria(orig, atuais, L, H)
         if contorno:
             atual_norm = [(x - u0, y - v0) for x, y in cont]
             novo = [(float(x), float(y)) for x, y in contorno]
@@ -998,13 +1284,16 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
 def _mover_fixadores(ch: Chapa, furo_local, delta_local, raio: float, fixadores: Sequence[Solido], movidos: set) -> int:
     """Parafuso, porca e arruela que atravessam o furo (eixo perto do centro do furo,
     até 120 mm acima ou abaixo da chapa) andam o mesmo tanto que o furo, no plano da chapa."""
-    ex, ey = _norm(tuple(float(k) for k in ch.eixo_x)), _norm(tuple(float(k) for k in ch.eixo_y))
-    nz = _norm(_cruz(ex, ey))
-    o = tuple(float(k) for k in ch.origem)
-    if ch.centrada:
-        o = tuple(o[i] - nz[i] * float(ch.espessura) / 2.0 for i in range(3))
+    o, ex, ey, nz = _mundo_da_chapa(ch)
     centro = tuple(o[i] + ex[i] * furo_local[0] + ey[i] * furo_local[1] + nz[i] * float(ch.espessura) / 2.0 for i in range(3))
     delta = tuple(ex[i] * delta_local[0] + ey[i] * delta_local[1] for i in range(3))
+    return _mover_fixadores_mundo(centro, nz, delta, raio, fixadores, movidos)
+
+
+def _mover_fixadores_mundo(centro, nz, delta, raio: float, fixadores: Sequence[Solido], movidos: set,
+                           alcance: float = 120.0) -> int:
+    """Fixadores cujo centro está a menos de `raio` do eixo `nz` que passa por `centro`
+    (e a menos de `alcance` ao longo dele) transladam de `delta`; cada um só uma vez."""
     n = 0
     for f in fixadores:
         if f.id in movidos:
@@ -1013,14 +1302,112 @@ def _mover_fixadores(ch: Chapa, furo_local, delta_local, raio: float, fixadores:
         d = _sub(cf, centro)
         t = _dot(d, nz)
         lateral = math.sqrt(max(0.0, _dot(d, d) - t * t))
-        if lateral <= raio and abs(t) <= 120.0:
+        if lateral <= raio and abs(t) <= alcance:
             f.vertices = [tuple(v[i] + delta[i] for i in range(3)) for v in f.vertices]
             movidos.add(f.id)
             n += 1
     return n
 
 
-def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[dict] = None) -> Tuple[float, float, float, float]:
+def _furos_da_malha(pos: Posicao) -> List[Tuple[Furo, List[int], str]]:
+    """Os furos de uma barra analisada com os índices dos vértices do laço de cada um
+    (alma = vista de frente, mesa = vista de topo), na ordem de `pos.furos`."""
+    fora = []
+    for eixo, sinal, ij, vista in ((2, +1.0, (0, 1), "frente"), (1, -1.0, (0, 2), "topo")):
+        lacos = _lacos_2d(pos, eixo, sinal, ij)
+        for laco, pts in lacos[1:]:
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            fora.append((Furo("redondo", (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2,
+                              d=max(max(xs) - min(xs), max(ys) - min(ys)), vista=vista), list(laco), vista))
+    return fora
+
+
+#: Um furo do ajuste a mais que isto (mm) do furo da malha não é o mesmo furo: a barra fica.
+LIMITE_DESLOCAMENTO_FURO = 40.0
+
+
+def aplicar_furos_nas_barras(doc: Documento, ajustes: Optional[dict], marcas: Optional[Sequence[str]] = None) -> dict:
+    """Leva ao 3D a furação guardada no projeto para as barras (terças vinculadas ao
+    suporte): em cada sólido da posição, os vértices de cada furo da malha (parede do
+    furo e as duas faces) transladam, no plano da alma ou da mesa, até a posição do
+    furo correspondente do ajuste. Repetir não muda nada (o furo já está lá). Devolve
+    {"barras": n, "furos": n, "posicoes": [...]}."""
+    saida = {"barras": 0, "furos": 0, "posicoes": []}
+    if not ajustes:
+        return saida
+    alvo = set(marcas) if marcas else set(ajustes)
+    for ent in list(doc.entidades.values()):
+        if not isinstance(ent, Solido) or _tipo_ifc(ent) not in TIPOS_PECA:
+            continue
+        marca = str(_marcas(ent).get("posicao") or ent.nome or ent.id)
+        reg = ajustes.get(marca) if marca in alvo else None
+        if not reg or not isinstance(reg, dict) or not reg.get("furos"):
+            continue
+        pos = _posicao_bruta(ent, marca)
+        pos.tipo_ifc = _tipo_ifc(ent)
+        try:
+            analisar(pos)
+        except Exception:                             # noqa: BLE001
+            continue
+        if pos.classe != "barra" or not pos.eixos:
+            continue
+        e1, e2, e3 = pos.eixos
+        atuais = _furos_da_malha(pos)
+        alvos = [_furo_de_dict(f) for f in reg["furos"]]
+        # o ajuste só muda passos de furação: a malha tem de ter os mesmos furos, cada um
+        # a poucos centímetros do alvo; outra geometria com a mesma marca fica intocada
+        if len(atuais) != len(alvos):
+            saida.setdefault("ignoradas", []).append(marca)
+            continue
+        livres = list(range(len(alvos)))
+        pares = []
+        for f, laco, vista in atuais:
+            cands = [i for i in livres if alvos[i].vista == vista]
+            if not cands:
+                pares = None
+                break
+            k = min(cands, key=lambda i: math.hypot(alvos[i].x - f.x, alvos[i].y - f.y))
+            livres.remove(k)
+            pares.append((f, laco, vista, k))
+        if pares is None or any(math.hypot(alvos[k].x - f.x, alvos[k].y - f.y) > LIMITE_DESLOCAMENTO_FURO for f, _, _, k in pares):
+            saida.setdefault("ignoradas", []).append(marca)
+            continue
+        movidos_aqui = 0
+        for f, laco, vista, k in pares:
+            ddx, ddy = alvos[k].x - f.x, alvos[k].y - f.y
+            # o ajuste guarda milímetros inteiros e a malha tem meios milímetros: furo que
+            # só difere pelo arredondamento fica; a medição depois de mover pode
+            # oscilar um décimo (a origem local é o vértice extremo), e isso também fica
+            if max(abs(ddx), abs(ddy)) <= 0.6:
+                continue
+            # o furo de frente vive no plano (e1, e2); o de topo, no plano (e1, e3)
+            delta = tuple(e1[i] * ddx + (e2[i] if vista == "frente" else e3[i]) * ddy for i in range(3))
+            # vértices do furo: os do laço e os que estão no mesmo cilindro (a outra face
+            # e a parede): perto do eixo do furo e no nível da chapa do laço
+            eixo = e3 if vista == "frente" else e2
+            centro = tuple(sum(ent.vertices[i][j] for i in laco) / len(laco) for j in range(3))
+            raio = f.d / 2 + 1.0
+            nivel = _dot(centro, eixo)
+            idx = set(laco)
+            for i, v in enumerate(ent.vertices):
+                d = _sub(v, centro)
+                t = _dot(d, eixo)
+                lateral = math.sqrt(max(0.0, _dot(d, d) - t * t))
+                if lateral <= raio and abs(_dot(v, eixo) - nivel) <= 15.0:
+                    idx.add(i)
+            ent.vertices = [tuple(v[j] + delta[j] for j in range(3)) if i in idx else tuple(v) for i, v in enumerate(ent.vertices)]
+            movidos_aqui += 1
+        if movidos_aqui:
+            saida["barras"] += 1
+            saida["furos"] += movidos_aqui
+            if marca not in saida["posicoes"]:
+                saida["posicoes"].append(marca)
+    return saida
+
+
+def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[dict] = None,
+                     nomes_producao: Optional[dict] = None) -> Tuple[float, float, float, float]:
     """Redesenha, no mesmo lugar de um desenho geral, a célula da posição (depois de os
     furos ou o tamanho terem mudado no modelo): apaga o que tem a marca e desenha de
     novo, com furos editáveis, a partir do canto onde estava."""
@@ -1050,6 +1437,7 @@ def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[d
     posicoes, camadas_ = _posicoes_de(lista, _fixadores(doc))
     posicoes = fundir_posicoes_iguais(posicoes, camadas_)
     aplicar_ajustes_de_furos(posicoes, ajustes)
+    aplicar_nomes(posicoes, nomes_producao)
     pos = next((p for p in posicoes if p.marca == marca), posicoes[0])
     pos.marca = marca
     ext = desenho_da_posicao(pos, d, origem[0], origem[1], editavel=pos.classe == "chapa")
@@ -1298,22 +1686,118 @@ def _eixo_da_peca(ent: Solido):
     return (tuple(c[i] + e1[i] * min(ts) for i in range(3)), tuple(c[i] + e1[i] * max(ts) for i in range(3)))
 
 
-def _assinatura_conjunto(instancia: Sequence[Solido]) -> tuple:
-    """Composição + extensões principais + posição relativa de cada peça (a 10 mm):
-    conjuntos com marcas diferentes e assinatura igual são o mesmo detalhe."""
+def _assinatura_conjunto(instancia: Sequence[Solido], fundidas: Optional[Dict[str, str]] = None) -> dict:
+    """O que identifica o detalhe de um conjunto: composição (por posição fundida),
+    extensões principais, posição relativa de cada peça e o lado para que a tesoura
+    sobe no desenho. Comparar com _conjuntos_iguais, que usa tolerâncias — décimos de
+    milímetro não separam duas tesouras iguais."""
+    fundidas = fundidas or {}
     verts = [v for e in instancia for v in e.vertices]
     c, pca = _autovetores(verts)
     ext = []
     for e_ in pca:
         ts = [_dot(_sub(v, c), e_) for v in verts]
-        ext.append(round((max(ts) - min(ts)) / 10.0))
-    pecas = []
+        ext.append(max(ts) - min(ts))
+    pecas: Dict[str, List[Tuple[float, float]]] = collections.defaultdict(list)
     for e in instancia:
         m = _marcas(e)
+        marca = str(m.get("posicao") or e.nome)
         ce = [sum(v[i] for v in e.vertices) / len(e.vertices) for i in range(3)]
         d = _sub(ce, c)
-        pecas.append((str(m.get("posicao") or e.nome), round(abs(_dot(d, pca[0])) / 10.0), round(abs(_dot(d, pca[1])) / 10.0)))
-    return (tuple(ext), tuple(sorted(pecas)))
+        pecas[fundidas.get(marca, marca)].append((abs(_dot(d, pca[0])), abs(_dot(d, pca[1]))))
+    return {"ext": tuple(ext), "pecas": {k: sorted(v) for k, v in pecas.items()}, "lado": _lado_do_conjunto(instancia)}
+
+
+def _lado_do_conjunto(instancia: Sequence[Solido]) -> int:
+    """+1 quando o conjunto sobe para a direita no desenho, −1 para a esquerda, 0 quando
+    é simétrico ou reto: a água esquerda e a direita de um pórtico são espelhadas, e o
+    usuário quer um detalhe de cada lado."""
+    try:
+        c, u, v, w = _eixos_do_conjunto(instancia)
+        u, v, w = _vistas.Vista(origem=c, normal=w, acima=v).eixos()
+    except Exception:                                 # noqa: BLE001
+        return 0
+    centros = []
+    for e in instancia:
+        ce = [sum(q[i] for q in e.vertices) / len(e.vertices) for i in range(3)]
+        centros.append((_dot(_sub(ce, c), u), _dot(_sub(ce, c), v)))
+    us = [q for e in instancia for q in (_dot(_sub(p, c), u) for p in e.vertices)]
+    vs = [q for e in instancia for q in (_dot(_sub(p, c), v) for p in e.vertices)]
+    L, H = max(us) - min(us), max(vs) - min(vs)
+    if L <= 0 or H <= 0:
+        return 0
+    esq = [cv for cu, cv in centros if cu < -0.25 * L]
+    dir_ = [cv for cu, cv in centros if cu > 0.25 * L]
+    if not esq or not dir_:
+        return 0
+    dif = sum(dir_) / len(dir_) - sum(esq) / len(esq)
+    if abs(dif) < 0.15 * H:
+        return 0
+    return 1 if dif > 0 else -1
+
+
+#: Tolerâncias (mm) para dois conjuntos serem o mesmo detalhe.
+TOLERANCIA_CONJUNTO_EXT = 3.0
+TOLERANCIA_CONJUNTO_PECA = 8.0
+
+
+def _conjuntos_iguais(a: dict, b: dict) -> bool:
+    if a["lado"] != b["lado"] or set(a["pecas"]) != set(b["pecas"]):
+        return False
+    if any(abs(x - y) > TOLERANCIA_CONJUNTO_EXT for x, y in zip(a["ext"], b["ext"])):
+        return False
+    for marca, lista in a["pecas"].items():
+        outra = list(b["pecas"][marca])
+        if len(outra) != len(lista):
+            return False
+        for du, dv in lista:
+            k = min(range(len(outra)), key=lambda i: abs(outra[i][0] - du) + abs(outra[i][1] - dv))
+            if abs(outra[k][0] - du) > TOLERANCIA_CONJUNTO_PECA or abs(outra[k][1] - dv) > TOLERANCIA_CONJUNTO_PECA:
+                return False
+            outra.pop(k)
+    return True
+
+
+def _agrupar_conjuntos_iguais(candidatos, fundidas: Optional[Dict[str, str]] = None) -> List[Tuple[dict, list]]:
+    """Candidatos (conj, lista, inst, n, unidade, aviso) com a mesma assinatura, a menos
+    das tolerâncias, na mesma célula; a ordem dos candidatos manda (o primeiro lidera).
+    Devolve [(assinatura, grupo)]."""
+    grupos: List[Tuple[dict, list]] = []
+    for cand in candidatos:
+        ass = _assinatura_conjunto(cand[2], fundidas)
+        for ass_g, grupo in grupos:
+            if _conjuntos_iguais(ass_g, ass):
+                grupo.append(cand)
+                break
+        else:
+            grupos.append((ass, [cand]))
+    return grupos
+
+
+def _nota_de_semelhanca(ass: dict, rotulo: str, outros: Sequence[Tuple[dict, str]]) -> str:
+    """"≈ M2: +P26 −P1" quando outro conjunto tem as mesmas dimensões (a 10 mm) e o
+    mesmo lado, diferindo só na composição: a tesoura de ponta com outra chapa de base
+    fica em célula própria, mas com a diferença escrita, para o usuário decidir."""
+    melhor, menor = None, None
+    for outra, nome in outros:
+        if nome == rotulo or outra["lado"] != ass["lado"]:
+            continue
+        if any(abs(x - y) > 10.0 for x, y in zip(ass["ext"][:2], outra["ext"][:2])):
+            continue
+        a = collections.Counter({k: len(v) for k, v in ass["pecas"].items()})
+        b = collections.Counter({k: len(v) for k, v in outra["pecas"].items()})
+        mais = sorted((k for k in a if a[k] > b.get(k, 0)), key=_ordem_natural)
+        menos = sorted((k for k in b if b[k] > a.get(k, 0)), key=_ordem_natural)
+        n = len(mais) + len(menos)
+        if n == 0 or (menor is not None and n >= menor):
+            continue
+        partes = []
+        if mais:
+            partes.append("+" + ", ".join("%s x%d" % (k, a[k] - b.get(k, 0)) for k in mais))
+        if menos:
+            partes.append("-" + ", ".join("%s x%d" % (k, b[k] - a.get(k, 0)) for k in menos))
+        melhor, menor = "= %s nas dimensoes; difere: %s" % (nome, "; ".join(partes)), n
+    return melhor or ""
 
 
 def _sobrepoe(a, b, folga=0.0) -> bool:
@@ -1343,8 +1827,19 @@ def _rotular_barras(p: "_Papel", rotulos, esc: float, altura_papel: float = 1.8)
 
 
 def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido], n_instancias: int,
-                        desenho: Desenho, dx: float, dy: float, rotular: bool = True) -> Tuple[float, float, float, float]:
-    """Elevação do conjunto com cotas de nós, título e lista de perfis, em (dx, dy)."""
+                        desenho: Desenho, dx: float, dy: float, rotular: bool = True,
+                        fundidas: Optional[Dict[str, str]] = None, nota: str = "",
+                        nomes: Optional[Dict[str, str]] = None, nome: str = "") -> Tuple[float, float, float, float]:
+    """Elevação do conjunto com cotas de nós, título e lista de perfis, em (dx, dy).
+    `fundidas`: marca do IFC → posição fundida; `nomes`: posição fundida → nome de
+    produção (rótulos e composição com o mesmo nome que as células de posição);
+    `nome`: o do conjunto (T1, S.T.2…)."""
+    fundidas = fundidas or {}
+    nomes = nomes or {}
+
+    def nome_de(marca_ifc):
+        f = fundidas.get(str(marca_ifc), str(marca_ifc))
+        return nomes.get(f) or f
     c, u, v, w = _eixos_do_conjunto(instancia)
     # observador em -w (convenção do motor de vistas): origem atrás de tudo
     ws = [_dot(_sub(p, c), w) for e in instancia for p in e.vertices]
@@ -1388,7 +1883,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         barras.append((pa, pb, comp, ang))
         m = _marcas(e)
         if rotular and m.get("posicao"):
-            rotulos.append((m["posicao"], ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), ang))
+            rotulos.append((nome_de(m["posicao"]), ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), ang))
     banzos = [b for b in barras if (b[3] < 25.0 or b[3] > 155.0) and b[2] > 0.25 * larg]
     diagonais = [b for b in barras if b not in banzos]
     # nós: interseção do eixo de cada diagonal/montante com o eixo de cada banzo, perto da
@@ -1448,7 +1943,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     perfis = collections.Counter()
     for e in instancia:
         m = _marcas(e)
-        comp[str(m.get("posicao") or e.nome)] += 1
+        comp[nome_de(m.get("posicao") or e.nome)] += 1
         perfis[str(m.get("perfil") or e.nome)] += 1
     y = alt + ((off2 if cadeia_cima else off) + 2.0) * esc
     lista = ["%s x%d" % (k, n) for k, n in sorted(perfis.items(), key=lambda kv: (-kv[1], _ordem_natural(kv[0])))]
@@ -1463,7 +1958,17 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             atual += it + ", "
         fora.append(atual.rstrip(", "))
         return fora
-    linhas = ["%s – %02dx" % (marca, n_instancias)] + quebrar("Perfis: ", lista) + quebrar("Posicoes: ", posic)
+    titulo = "%s – %02dx" % (nome or marca, n_instancias) + ("  (%s)" % marca if nome else "")
+    linhas = [titulo] + quebrar("Perfis: ", lista) + quebrar("Pecas: " if nomes else "Posicoes: ", posic)
+    if nota:
+        # nota quebrada por palavras, com recuo
+        atual = "* "
+        for palavra in nota.split(" "):
+            if len(atual) + len(palavra) + 1 > 72 and atual.strip() != "*":
+                linhas.append(atual.rstrip())
+                atual = "  "
+            atual += palavra + " "
+        linhas.append(atual.rstrip())
     for i, txt in enumerate(reversed(linhas)):
         alt_t = 3.5 if i == len(linhas) - 1 else 2.5
         p.texto(0, y, txt, alt_t * esc)
@@ -1528,7 +2033,7 @@ MENOR_ITEM_LOCALIZACAO = 500.0
 
 
 def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str = "Detalhamento – localização",
-                           ignorar: Sequence[str] = ()) -> Desenho:
+                           ignorar: Sequence[str] = (), nomes: Optional[Dict[str, str]] = None) -> Desenho:
     """Planta e duas elevações esquemáticas do modelo inteiro (cada peça é o contorno
     convexo da sua projeção, em linha fina) com a marca de cada conjunto e de cada peça
     solta escrita no lugar em que está montada: é a planta de montagem que diz onde vai
@@ -1610,7 +2115,7 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
             ext2 = max(max(pu) - min(pu), max(pv) - min(pv))
             if ext3 < MENOR_ITEM_LOCALIZACAO or (ext3 > 0 and ext2 < 0.3 * ext3):
                 continue
-            rotulos.append((rotulo, (sum(pu) / len(pu), sum(pv) / len(pv))))
+            rotulos.append(((nomes or {}).get(rotulo) or rotulo, (sum(pu) / len(pu), sum(pv) / len(pv))))
         rotulos.sort(key=lambda r: (r[1][1], r[1][0]))
         postos: List[Tuple[str, float, float]] = []
         for rotulo, (cx, cy) in rotulos:
@@ -1670,6 +2175,266 @@ def _categoria(pos: Posicao, camada: str) -> str:
 
 def _eh_redonda_perfil(perfil: str) -> bool:
     return bool(re.search(r"FE\s*RED|BARRA\s*ROSC|REDOND|\bFR\b|Ø\s*\d|VERG", perfil or "", re.I))
+
+
+# ============================================================ nomes de produção
+#: Prefixo do nome de produção por tipo de item (padrão dos desenhos da fábrica).
+PREFIXO_NOME = collections.OrderedDict([
+    ("tesoura", "T"), ("terca_cobertura", "T.C."), ("terca_marquise", "T.M."), ("suporte_terca", "S.T."),
+    ("agulhamento", "A.G."), ("contraventamento", "C.V."), ("castanha", "C.S."), ("chapa", "CH."),
+    ("barra", "B."), ("telha", "TL."), ("conjunto", "CJ."), ("parte", ""),
+])
+TIPOS_NOME = {
+    "tesoura": "Tesoura", "terca_cobertura": "Terça de cobertura", "terca_marquise": "Terça de marquise",
+    "suporte_terca": "Suporte de terça", "agulhamento": "Agulhamento", "contraventamento": "Contraventamento",
+    "castanha": "Castanha", "chapa": "Chapa", "barra": "Barra", "telha": "Telha", "conjunto": "Conjunto",
+    "parte": "Parte de conjunto",
+}
+#: Terça cujo centro fica além disto (mm) da caixa dos pilares em planta é de marquise.
+FOLGA_MARQUISE = 300.0
+
+
+def _assinaturas_de_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> set:
+    fora = set()
+    for p in posicoes:
+        if _eh_terca(p, camadas.get(p.marca, "")):
+            for g in _grupos_de_furos(p.furos):
+                a = _assinatura(g)
+                if a and len(g) >= 2:
+                    fora.add(_eixos_da_assinatura(a))
+    return fora
+
+
+def _tem_furacao_de_terca(pos: Posicao, assinaturas: set) -> bool:
+    for g in _grupos_de_furos(pos.furos):
+        a = _assinatura(g)
+        if a and len(g) >= 2 and _eixos_da_assinatura(a) in assinaturas:
+            return True
+    return False
+
+
+def _caixa_dos_pilares(pecas: Sequence[Solido]):
+    """(x0, y0, x1, y1) em planta dos pilares (IfcColumn com mais de 1 m de altura)."""
+    xs, ys = [], []
+    for e in pecas:
+        if _tipo_ifc(e) == "IfcColumn" and e.vertices:
+            cx = _caixa(e)
+            if cx[2][1] - cx[2][0] > 1000.0:
+                xs.extend((cx[0][0], cx[0][1]))
+                ys.extend((cx[1][0], cx[1][1]))
+    return (min(xs), min(ys), max(xs), max(ys)) if xs else None
+
+
+def _nome_numero(nome: str, prefixo: str):
+    """("T.C.2-A", "T.C.") → (2, "A"); None quando o nome não tem esse prefixo."""
+    m = re.match(re.escape(prefixo) + r"(\d+)(?:-([A-Z]))?$", nome or "")
+    return (int(m.group(1)), m.group(2) or "") if m else None
+
+
+def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence[Solido],
+           conjuntos_info: Sequence[dict], anteriores: Optional[dict] = None) -> dict:
+    """Nome de produção de cada posição e conjunto, no padrão da fábrica:
+
+    * tesouras (conjuntos com 8+ barras) T1, T2…; terças de cobertura T.C.n (mesmo
+      perfil e comprimento = mesma família; furação diferente = T.C.n-A, -B…) e de
+      marquise T.M.n (centro fora da caixa dos pilares em planta); suportes de terça
+      S.T.n (chapa/cantoneira com a furação de alguma terça, ou o conjunto que a
+      contém); agulhamentos A.G.n (barra solta comprida que não é terça, ou o conjunto
+      de uma barra com chapas); contraventamentos C.V.n (barras redondas e os conjuntos
+      com elas); castanhas C.S.n (chapa pequena presa a contraventamento); as demais
+      chapas CH.n, barras B.n, telhas TL.n e conjuntos CJ.n;
+    * a peça que só existe dentro de um conjunto (que não seja tesoura) chama-se pelo
+      conjunto: S.T.1.1, S.T.1.2…
+
+    Numeração por quantidade decrescente. `anteriores` ({"posicoes": {marca: nome},
+    "conjuntos": {...}}, o nomes.json do projeto) mantém os nomes já dados: uma peça
+    nova não renumera as outras. Devolve {"posicoes", "conjuntos", "tipos",
+    "tipos_conjuntos", "ifc" (marca do IFC → nome), "ifc_conjuntos"} e escreve
+    `pos.nome` em cada posição."""
+    anteriores = anteriores or {}
+    ant_pos = anteriores.get("posicoes") or {}
+    ant_conj = anteriores.get("conjuntos") or {}
+    ass_terca = _assinaturas_de_terca(posicoes, camadas)
+    caixa_pil = _caixa_dos_pilares(pecas)
+    centros: Dict[str, List[Tuple[float, float]]] = collections.defaultdict(list)
+    for e in pecas:
+        m = str(_marcas(e).get("posicao") or e.nome or e.id)
+        if e.vertices:
+            centros[m].append((sum(v[0] for v in e.vertices) / len(e.vertices), sum(v[1] for v in e.vertices) / len(e.vertices)))
+    fundidas = {m: p.marca for p in posicoes for m in marcas_de(p)}
+    conj_de_marca: Dict[str, str] = {}
+    for c in conjuntos_info:
+        for m in c.get("marcas") or [c["marca"]]:
+            conj_de_marca[m] = c["marca"]
+    tesouras = {c["marca"] for c in conjuntos_info if c.get("categoria") == "TESOURAS"}
+
+    def conjuntos_de(p: Posicao) -> set:
+        proprias = set(marcas_de(p))
+        return {conj_de_marca.get(c, c) for c in p.conjuntos if c not in proprias}
+
+    # ---- tipo de cada posição
+    tipo: Dict[str, str] = {}
+    for p in posicoes:
+        cls = p.classe
+        if cls in ("chapa", "chapa_dobrada"):
+            t = "suporte_terca" if _tem_furacao_de_terca(p, ass_terca) else "chapa"
+        elif cls == "telha":
+            t = "telha"
+        elif cls == "barra_redonda" or (cls == "barra_conformada" and _eh_redonda_perfil(p.perfil)):
+            t = "contraventamento"
+        elif cls == "barra" and _eh_terca(p, camadas.get(p.marca, "")):
+            t = "terca_cobertura"
+            pts = [q for m in marcas_de(p) for q in centros.get(m, [])]
+            if caixa_pil and pts:
+                cx = sum(q[0] for q in pts) / len(pts)
+                cy = sum(q[1] for q in pts) / len(pts)
+                if (cx < caixa_pil[0] - FOLGA_MARQUISE or cx > caixa_pil[2] + FOLGA_MARQUISE
+                        or cy < caixa_pil[1] - FOLGA_MARQUISE or cy > caixa_pil[3] + FOLGA_MARQUISE):
+                    t = "terca_marquise"
+        elif cls in ("barra", "barra_conformada"):
+            t = "agulhamento" if (p.comprimento >= 1500.0 and not (conjuntos_de(p) & tesouras)) else "barra"
+        else:
+            t = "barra"
+        tipo[p.marca] = t
+
+    # ---- tipo de cada conjunto pela composição
+    tipo_conj: Dict[str, str] = {}
+    for c in conjuntos_info:
+        if c.get("categoria") == "TESOURAS":
+            tipo_conj[c["marca"]] = "tesoura"
+            continue
+        comp = c.get("composicao") or {}
+        cont = collections.Counter()
+        for m, q in comp.items():
+            cont[tipo.get(fundidas.get(m, m), "")] += q
+        n = sum(comp.values())
+        if cont.get("suporte_terca") and n <= 6:
+            tipo_conj[c["marca"]] = "suporte_terca"
+        elif cont.get("contraventamento"):
+            tipo_conj[c["marca"]] = "contraventamento"
+        elif cont.get("agulhamento") == 1 and n <= 6:
+            tipo_conj[c["marca"]] = "agulhamento"
+        else:
+            tipo_conj[c["marca"]] = "conjunto"
+    for p in posicoes:
+        if tipo[p.marca] == "chapa" and p.L <= 250.0 and any(tipo_conj.get(c) == "contraventamento" for c in conjuntos_de(p)):
+            tipo[p.marca] = "castanha"
+
+    def anterior(mapa, chaves, prefixo):
+        for k in chaves:
+            n = mapa.get(k)
+            if n and _nome_numero(n, prefixo):
+                return n
+        return ""
+
+    # ---- conjuntos: por tipo, quantidade decrescente, mantendo os nomes anteriores
+    nomes_conj: Dict[str, str] = {}
+    usados_por_prefixo: Dict[str, set] = collections.defaultdict(set)   # conjuntos e posições não repetem nome
+    por_tipo: Dict[str, list] = collections.defaultdict(list)
+    for c in conjuntos_info:
+        por_tipo[tipo_conj[c["marca"]]].append(c)
+    for t, lista in por_tipo.items():
+        prefixo = PREFIXO_NOME[t]
+        usados, pendentes = usados_por_prefixo[prefixo], []
+        for c in sorted(lista, key=lambda c: (-c.get("instancias", 0), _ordem_natural(c["marca"]))):
+            n = anterior(ant_conj, [c["marca"]] + list(c.get("marcas") or []), prefixo)
+            num = _nome_numero(n, prefixo)[0] if n else None
+            if num is not None and num not in usados:
+                nomes_conj[c["marca"]] = "%s%d" % (prefixo, num)
+                usados.add(num)
+            else:
+                pendentes.append(c)
+        k = 1
+        for c in pendentes:
+            while k in usados:
+                k += 1
+            nomes_conj[c["marca"]] = "%s%d" % (prefixo, k)
+            usados.add(k)
+
+    # ---- posições que só existem dentro de um conjunto (não tesoura): nome do conjunto + .k
+    nomes_pos: Dict[str, str] = {}
+    partes: Dict[str, List[Posicao]] = collections.defaultdict(list)
+    for p in posicoes:
+        cs = {c for c in conjuntos_de(p) if c in nomes_conj}
+        if len(cs) == 1 and conjuntos_de(p) == cs:
+            c = next(iter(cs))
+            if tipo_conj.get(c) != "tesoura":
+                partes[c].append(p)
+    for c, lista in partes.items():
+        for i, p in enumerate(sorted(lista, key=lambda q: _ordem_natural(q.marca)), 1):
+            nomes_pos[p.marca] = "%s.%d" % (nomes_conj[c], i)
+            tipo[p.marca] = "parte"
+
+    # ---- as demais por tipo; terças em famílias (perfil + comprimento) com variantes
+    por_tipo = collections.defaultdict(list)
+    for p in posicoes:
+        if p.marca not in nomes_pos:
+            por_tipo[tipo[p.marca]].append(p)
+    for t, lista in por_tipo.items():
+        prefixo = PREFIXO_NOME.get(t) or "P."
+        familias: Dict[object, List[Posicao]] = collections.OrderedDict()
+        for p in lista:
+            chave = (re.sub(r"\s+", "", p.perfil or "").upper(), round(p.comprimento)) if t in ("terca_cobertura", "terca_marquise") else p.marca
+            familias.setdefault(chave, []).append(p)
+        ordem = sorted(familias.values(), key=lambda l: (-sum(q.quantidade for q in l), _ordem_natural(l[0].marca)))
+        for l in ordem:
+            l.sort(key=lambda q: (-q.quantidade, _ordem_natural(q.marca)))
+
+        def atribuir(l, num):
+            letras = set()
+            for q in l:
+                n = anterior(ant_pos, [q.marca] + marcas_de(q), prefixo)
+                if n and _nome_numero(n, prefixo)[0] == num and _nome_numero(n, prefixo)[1] not in letras:
+                    nomes_pos[q.marca] = n
+                    letras.add(_nome_numero(n, prefixo)[1])
+            j = 0
+            for q in l:
+                if q.marca in nomes_pos:
+                    continue
+                while True:
+                    letra = "" if j == 0 else chr(64 + j)
+                    j += 1
+                    if letra not in letras:
+                        break
+                letras.add(letra)
+                nomes_pos[q.marca] = "%s%d%s" % (prefixo, num, "-" + letra if letra else "")
+        usados, pendentes = usados_por_prefixo[prefixo], []
+        for l in ordem:
+            n = anterior(ant_pos, [l[0].marca] + marcas_de(l[0]), prefixo)
+            num = _nome_numero(n, prefixo)[0] if n else None
+            if num is not None and num not in usados:
+                usados.add(num)
+                atribuir(l, num)
+            else:
+                pendentes.append(l)
+        k = 1
+        for l in pendentes:
+            while k in usados:
+                k += 1
+            usados.add(k)
+            atribuir(l, k)
+    for p in posicoes:
+        p.nome = nomes_pos.get(p.marca, "")
+    ifc: Dict[str, str] = {}
+    ifc_conj: Dict[str, str] = {}
+    for c in conjuntos_info:
+        for m in c.get("marcas") or [c["marca"]]:
+            ifc_conj[m] = nomes_conj.get(c["marca"], "")
+    ifc.update(ifc_conj)
+    for p in posicoes:
+        for m in marcas_de(p):
+            if p.nome:
+                ifc[m] = p.nome
+    return {"posicoes": nomes_pos, "conjuntos": nomes_conj, "tipos": tipo, "tipos_conjuntos": tipo_conj,
+            "ifc": ifc, "ifc_conjuntos": ifc_conj}
+
+
+def aplicar_nomes(posicoes: Sequence[Posicao], nomes: Optional[dict]):
+    """Escreve `pos.nome` a partir do nomes.json do projeto (por marca fundida ou por
+    qualquer das marcas originais); sem registro, o nome fica vazio."""
+    mapa = (nomes or {}).get("posicoes") or {}
+    for p in posicoes:
+        p.nome = mapa.get(p.marca) or next((mapa[m] for m in marcas_de(p) if mapa.get(m)), "")
 
 
 def _ordenar(posicoes: Sequence[Posicao]) -> List[Posicao]:
@@ -1743,7 +2508,8 @@ def _empilhar(desenho: Desenho, celulas, largura_max_papel: float = 800.0):
     return desenho
 
 
-def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Optional[dict] = None) -> dict:
+def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Optional[dict] = None,
+             nomes: Optional[dict] = None) -> dict:
     """Só o levantamento: as peças de produção do modelo agrupadas em posições, com a
     geometria analisada e a regra das terças aplicada — sem desenhar nada. É o que a
     lista de materiais usa. Devolve {"pecas", "acessorios", "posicoes", "camadas",
@@ -1757,6 +2523,7 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     avisar("%d peças em %d posições" % (len(pecas), len(posicoes)))
     mudadas = regra_furacao_terca(posicoes, camadas) if regra_tercas else {}
     ajustadas = aplicar_ajustes_de_furos(posicoes, ajustes)
+    aplicar_nomes(posicoes, nomes)
     return {"pecas": pecas, "acessorios": acessorios, "posicoes": posicoes, "camadas": camadas,
             "regra_tercas": mudadas, "ajustes": ajustadas,
             "categorias": {p.marca: _categoria(p, camadas.get(p.marca, "")) for p in posicoes}}
@@ -1775,7 +2542,8 @@ def converter_chapas_planas(doc: Documento, posicoes: Sequence[Posicao], pecas: 
 
 
 def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_tercas: bool = True,
-             rotular: bool = True, avisar=None, converter: bool = True, ajustes: Optional[dict] = None) -> dict:
+             rotular: bool = True, avisar=None, converter: bool = True, ajustes: Optional[dict] = None,
+             nomes: Optional[dict] = None) -> dict:
     """Gera os desenhos de detalhamento do modelo. Devolve
     {"desenhos": {chave: Desenho}, "posicoes": [...], "conjuntos": [...], "acessorios": {},
      "regra_tercas": {marca: texto}, "avisos": [...]}."""
@@ -1798,32 +2566,8 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     desenhos: Dict[str, Desenho] = collections.OrderedDict()
     avisos: List[str] = []
 
-    for chave in grupos:
-        g = GRUPOS.get(chave)
-        if not g or chave in ("conjuntos", "localizacao"):
-            continue
-        lista = [p for p in _ordenar(posicoes) if p.classe in g["classes"]]
-        if not lista:
-            continue
-        d = Desenho(nome=g["titulo"], escala=g["escala"])
-        d.metadados["detalhamento"] = {
-            "grupo": chave, "posicoes": [p.marca for p in lista],
-            # o que a tabela de posições da prancha lista para cada célula
-            "itens": {p.marca: {"quantidade": p.quantidade, "perfil": p.perfil, "material": p.material,
-                                "comprimento": round(p.comprimento), "espessura": round(p.espessura or p.T, 1),
-                                "peso": round(p.peso, 2), "classe": CLASSES.get(p.classe, p.classe),
-                                "categoria": _categoria(p, camadas.get(p.marca, "")), "marcas": marcas_de(p)}
-                      for p in lista}}
-        editaveis = [p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))]
-        celulas = [(lambda x, y, p=p: desenho_da_posicao(p, d, x, y, editavel=p.marca in editaveis)) for p in lista]
-        _empilhar(d, celulas)
-        d.metadados["detalhamento"]["editaveis"] = editaveis
-        d.metadados["detalhamento"]["furos_originais"] = {
-            p.marca: [_furo_dict(f) for f in p.furos if f.vista == "frente"] for p in lista if p.marca in editaveis}
-        desenhos[chave] = d
-
     conjuntos_info = []
-    if "conjuntos" in grupos:
+    if pecas:            # sempre levantados: os nomes de produção dependem dos conjuntos
         por_conj: Dict[str, List[Solido]] = collections.defaultdict(list)
         for e in pecas:
             conj = str(_marcas(e).get("conjunto") or "")
@@ -1858,48 +2602,85 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         candidatos.sort(key=lambda c: (-len(c[1]), _ordem_natural(c[0])))
         # marcas diferentes com a mesma geometria (o TecnoMETAL numera por pórtico) viram
         # uma célula só: "M17 / M46 – 08x"
-        por_assinatura: Dict[tuple, list] = collections.OrderedDict()
-        for cand in candidatos:
-            por_assinatura.setdefault(_assinatura_conjunto(cand[2]), []).append(cand)
+        fundidas = {m: p.marca for p in posicoes for m in marcas_de(p)}
+        grupos_iguais = _agrupar_conjuntos_iguais(candidatos, fundidas)
+        celulas = []
         if candidatos:
-            g = GRUPOS["conjuntos"]
-            d = Desenho(nome=g["titulo"], escala=g["escala"])
-            celulas = []
-            for grupo in por_assinatura.values():
+            rotulos_grupos = [(ass, " / ".join(sorted((c[0] for c in grupo), key=_ordem_natural))) for ass, grupo in grupos_iguais]
+            for ass, grupo in grupos_iguais:
                 conj, lista, inst, n, unidade, aviso = grupo[0]
                 marcas = sorted((c[0] for c in grupo), key=_ordem_natural)
                 total_inst = sum(c[3] for c in grupo)
                 total_pecas = sum(len(c[1]) for c in grupo)
                 rotulo = " / ".join(marcas)
-                celulas.append((lambda x, y, rotulo=rotulo, inst=inst, n=total_inst:
-                                desenho_do_conjunto(doc, rotulo, inst, n, d, x, y, rotular)))
+                nota = _nota_de_semelhanca(ass, rotulo, rotulos_grupos)
+                celulas.append((rotulo, inst, total_inst, nota))
                 conjuntos_info.append({"marca": rotulo, "marcas": marcas, "pecas": total_pecas, "instancias": total_inst,
-                                       "iguais": not aviso, "composicao": dict(unidade),
+                                       "iguais": not aviso, "composicao": dict(unidade), "semelhante": nota,
                                        "categoria": "TESOURAS" if sum(q for k, q in unidade.items() if classe_de.get(k, "").startswith("barra")) >= 8 else "CONJUNTOS"})
                 for c in grupo:
                     if c[5]:
                         avisos.append(c[5])
                 if len(marcas) > 1:
                     avisos.append("conjuntos %s têm a mesma geometria: detalhados numa célula só (%d no total)" % (", ".join(marcas), total_inst))
-            _empilhar(d, celulas, largura_max_papel=1400.0)
-            d.metadados["detalhamento"] = {
-                "grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info],
-                "itens": {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
-                                       "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
-                                       "categoria": c["categoria"], "marcas": c["marcas"]}
-                          for c in conjuntos_info}}
-            desenhos["conjuntos"] = d
+    # nomes de produção (S.T.1, T.C.2-A, T1…) de posições e conjuntos, estáveis entre
+    # gerações quando `nomes` traz os anteriores
+    nomeacao = nomear(posicoes, camadas, pecas, conjuntos_info, anteriores=nomes)
+    nomes_pos, nomes_conj = nomeacao["posicoes"], nomeacao["conjuntos"]
+    for c in conjuntos_info:
+        c["nome"] = nomes_conj.get(c["marca"], "")
+    if celulas and "conjuntos" in grupos:
+        g = GRUPOS["conjuntos"]
+        d = Desenho(nome=g["titulo"], escala=g["escala"])
+        _empilhar(d, [(lambda x, y, rotulo=rotulo, inst=inst, n=n, nota=nota:
+                       desenho_do_conjunto(doc, rotulo, inst, n, d, x, y, rotular, fundidas=fundidas, nota=nota,
+                                           nomes=nomes_pos, nome=nomes_conj.get(rotulo, "")))
+                      for rotulo, inst, n, nota in celulas], largura_max_papel=1400.0)
+        d.metadados["detalhamento"] = {
+            "grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info],
+            "itens": {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
+                                   "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
+                                   "categoria": c["categoria"], "marcas": c["marcas"], "nome": c["nome"]}
+                      for c in conjuntos_info}}
+        desenhos["conjuntos"] = d
+
+    for chave in grupos:
+        g = GRUPOS.get(chave)
+        if not g or chave in ("conjuntos", "localizacao"):
+            continue
+        lista = [p for p in _ordenar(posicoes) if p.classe in g["classes"]]
+        if not lista:
+            continue
+        d = Desenho(nome=g["titulo"], escala=g["escala"])
+        d.metadados["detalhamento"] = {
+            "grupo": chave, "posicoes": [p.marca for p in lista],
+            # o que a tabela de posições da prancha lista para cada célula
+            "itens": {p.marca: {"quantidade": p.quantidade, "perfil": p.perfil, "material": p.material,
+                                "comprimento": round(p.comprimento), "espessura": round(p.espessura or p.T, 1),
+                                "peso": round(p.peso, 2), "classe": CLASSES.get(p.classe, p.classe),
+                                "categoria": _categoria(p, camadas.get(p.marca, "")), "marcas": marcas_de(p),
+                                "nome": p.nome}
+                      for p in lista}}
+        editaveis = [p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))]
+        celulas = [(lambda x, y, p=p: desenho_da_posicao(p, d, x, y, editavel=p.marca in editaveis)) for p in lista]
+        _empilhar(d, celulas)
+        d.metadados["detalhamento"]["editaveis"] = editaveis
+        d.metadados["detalhamento"]["furos_originais"] = {
+            p.marca: [_furo_dict(f) for f in p.furos if f.vista == "frente"] for p in lista if p.marca in editaveis}
+        desenhos[chave] = d
 
     if "localizacao" in grupos:
         try:
             desenhos["localizacao"] = desenho_de_localizacao(doc, pecas, GRUPOS["localizacao"]["titulo"],
-                                                             ignorar=[p.marca for p in posicoes if p.classe == "telha"])
+                                                             ignorar=[p.marca for p in posicoes if p.classe == "telha"],
+                                                             nomes=nomeacao["ifc"])
         except ErroDeDados as e:
             avisos.append("planta de localização não gerada: %s" % e)
 
     resumo_pos = []
     for p in _ordenar(posicoes):
-        resumo_pos.append({"marca": p.marca, "marcas": marcas_de(p), "classe": CLASSES.get(p.classe, p.classe), "perfil": p.perfil,
+        resumo_pos.append({"marca": p.marca, "nome": p.nome, "tipo": nomeacao["tipos"].get(p.marca, ""),
+                           "marcas": marcas_de(p), "classe": CLASSES.get(p.classe, p.classe), "perfil": p.perfil,
                            "material": p.material, "quantidade": p.quantidade, "comprimento": round(p.comprimento),
                            "largura": round(p.H), "espessura": round(p.espessura or p.T, 1), "furos": p.rotulo_furos(),
                            "peso": round(p.peso, 3), "peso_total": round(p.peso_total, 2),
@@ -1908,4 +2689,4 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             "acessorios": acessorios, "regra_tercas": mudadas, "avisos": avisos,
             "peso_total": round(sum(p.peso_total for p in posicoes), 1),
             "objetos_posicoes": posicoes, "objetos_pecas": pecas, "camadas": camadas,
-            "convertidas": convertidas}
+            "convertidas": convertidas, "nomes": nomeacao}

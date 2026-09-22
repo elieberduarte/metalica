@@ -259,6 +259,7 @@ class Posicao:
     vista_topo: bool = False                                  # o desenho precisa da vista de cima
     desenvolvimento: Optional[Tuple[float, float]] = None     # chapa dobrada: (largura, comprimento planificado)
     espessura: float = 0.0    # chapa: espessura real (T de uma chapa dobrada é a altura da dobra)
+    nome: str = ""            # nome de produção (S.T.1, T.C.2-A…): nucleo2d.detalhar.nomear
 
     @property
     def peso_total(self) -> float:
@@ -675,9 +676,11 @@ def _cortes_de_ponta(pos: Posicao, area_secao: float):
             pos.vista_topo = True
 
 
-def analisar(pos: Posicao) -> Posicao:
-    """Classifica a posição e mede o que a produção precisa; medidas ao milímetro inteiro."""
-    _analisar(pos)
+def analisar(pos: Posicao, eixos=None) -> Posicao:
+    """Classifica a posição e mede o que a produção precisa; medidas ao milímetro inteiro.
+    `eixos` força (e1, e2, e3): é como as instâncias de uma mesma chapa saem no mesmo
+    sistema (ver nucleo2d.detalhar.converter_chapas)."""
+    _analisar(pos, eixos)
     _arredondar(pos)
     return pos
 
@@ -707,13 +710,13 @@ def _arredondar(pos: Posicao):
         f.x, f.y = float(round(f.x)), float(round(f.y))
 
 
-def _analisar(pos: Posicao) -> Posicao:
+def _analisar(pos: Posicao, eixos=None) -> Posicao:
     if not pos.faces or len(pos.vertices) < 4:
         pos.classe = "indefinida"
         if not pos.observacoes:
             pos.observacoes.append("sem geometria")
         return pos
-    _projetar(pos)
+    _projetar(pos, eixos)
     pos.volume = _volume(pos)
     pos.peso = pos.volume * RHO_ACO
     perfil = pos.perfil or ""
@@ -1097,7 +1100,7 @@ def _num(x, casas=2) -> str:
 
 
 def gravar_romaneio(caminho: str, posicoes: Sequence[Posicao], acessorios: Dict[str, int]) -> str:
-    colunas = ["Posicao", "Conjuntos", "Tipo", "Perfil / chapa", "Material", "Qtd",
+    colunas = ["Nome", "Posicao", "Conjuntos", "Tipo", "Perfil / chapa", "Material", "Qtd",
                "Comprimento (mm)", "Largura (mm)", "Espessura (mm)", "Furos",
                "Peso unit (kg)", "Peso total (kg)", "Observacoes"]
     os.makedirs(os.path.dirname(os.path.abspath(caminho)), exist_ok=True)
@@ -1106,7 +1109,7 @@ def gravar_romaneio(caminho: str, posicoes: Sequence[Posicao], acessorios: Dict[
         w.writerow(colunas)
         for p in _ordenar(posicoes):
             chapa = p.classe.startswith("chapa")
-            w.writerow([p.marca, " ".join(p.conjuntos), CLASSES.get(p.classe, p.classe),
+            w.writerow([getattr(p, "nome", ""), p.marca, " ".join(p.conjuntos), CLASSES.get(p.classe, p.classe),
                         p.perfil, p.material, p.quantidade,
                         _num(p.comprimento, 0) if p.classe != "indefinida" else "",
                         _num(p.desenvolvimento[0] if p.desenvolvimento else p.H, 0) if chapa or p.classe == "telha" else "",
@@ -1114,7 +1117,7 @@ def gravar_romaneio(caminho: str, posicoes: Sequence[Posicao], acessorios: Dict[
                         p.rotulo_furos(), _num(p.peso, 3), _num(p.peso_total, 2),
                         "; ".join(p.observacoes)])
         for nome, n in sorted(acessorios.items()):
-            w.writerow(["", "", "Acessório", nome, "", n, "", "", "", "", "", "", "só na lista"])
+            w.writerow(["", "", "", "Acessório", nome, "", n, "", "", "", "", "", "", "só na lista"])
     return caminho
 
 

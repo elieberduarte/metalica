@@ -206,8 +206,9 @@ do modelo já importado, desenhos editáveis no CAD (`nucleo2d/detalhar.py`, rot
 `POST /api/projetos/<slug>/detalhar`), no formato das pranchas de fábrica:
 
 - um desenho por grupo — chapas (1:10), barras e terças (1:25), tirantes, telhas e
-  conjuntos (1:50) — com uma célula por **posição**: título "P12 – 112x" (as iguais são
-  contadas, não repetidas), perfil ou chapa com espessura (`#3/8"`), material, furos,
+  conjuntos (1:50) — com uma célula por **posição**: título "T.C.1 – 28x  (M13)" — o
+  **nome de produção** no padrão da fábrica e, entre parênteses, a marca do TecnoMETAL;
+  as iguais são contadas, não repetidas —, perfil ou chapa com espessura (`#3/8"`), material, furos,
   peso, contorno com furos e cotas em cadeia (só quando cabem), seção da barra ao lado e
   vista de topo quando há furo na mesa;
 - a **elevação de cada conjunto** (marca de montagem: tesoura, viga de painel, pilar),
@@ -268,17 +269,52 @@ orientação (a chapinha do suporte), recebe a mesma substituição; o centro do
 mantido e a célula diz "furação no padrão de fábrica". Padrão quadrado ou terças de
 alturas diferentes com a mesma furação original saem com "conferir".
 
+**Nomes de produção** (`nucleo2d.detalhar.nomear`, guardados em `detalhamento/nomes.json` para
+não mudarem entre gerações): tesouras (conjuntos com 8+ barras) `T1, T2…`; terças de cobertura
+`T.C.n` (mesmo perfil e comprimento = mesma família; só a furação diferente = `T.C.n-A`, `-B`…)
+e de marquise `T.M.n` (centro fora da caixa dos pilares em planta); suportes de terça `S.T.n`
+(chapa ou cantoneira com a furação de alguma terça, ou o conjunto que a contém); agulhamentos
+`A.G.n`; contraventamentos `C.V.n` (barras redondas e os conjuntos com elas); castanhas
+`C.S.n`; demais chapas `CH.n`, barras `B.n`, telhas `TL.n`, conjuntos `CJ.n`. A peça que só
+existe dentro de um conjunto (que não seja tesoura) chama-se pelo conjunto: `S.T.1.1`,
+`S.T.1.2`. Numeração por quantidade decrescente; nomes únicos entre posições e conjuntos.
+O nome vai para o título das células, os rótulos da elevação, a planta de localização, a
+lista de materiais (coluna "Nome", CSV, HTML e PDF), a tabela das pranchas e para
+`marcas.nome` / `marcas.nome_conjunto` das peças do modelo 3D (a pesquisa do editor acha
+"S.T.1").
+
+**Conjuntos iguais a menos de décimos** (`_assinatura_conjunto` + `_conjuntos_iguais`): mesma
+composição por posição fundida, extensões a 3 mm, cada peça a 8 mm da correspondente e o
+mesmo **lado** (`_lado_do_conjunto`: para onde a tesoura sobe no desenho — a água esquerda e
+a direita ficam em células separadas, uma de cada lado) viram uma célula ("M17 / M46 – 04x").
+Conjunto com as mesmas dimensões mas outra composição fica em célula própria com a nota
+"= M2 nas dimensoes; difere: +P26 x1; -P1 x1" (`_nota_de_semelhanca`), para o usuário decidir.
+Todas as cotas dos detalhes saem em **milímetro inteiro** (`_Papel.cota_h/cota_v/cadeia_*`).
+
 ### Detalhe de uma peça ligado ao 3D (chapa paramétrica)
 
-Duplo clique numa peça do editor 3D → `POST /api/projetos/<slug>/detalhar-posicao {marca}`:
+Duplo clique numa peça do editor 3D → `POST /api/projetos/<slug>/detalhar-posicao {marca, referencia}`:
 sólidos de chapa plana da posição viram entidades `Chapa` (`nucleo2d.detalhar.converter_chapas`:
-contorno, espessura e furos medidos pela análise, no sistema da própria peça, mesmo id e
-atributos) e o desenho "Detalhe – P77" sai com os furos como entidades marcadas da camada
+contorno, espessura e furos medidos pela análise, mesmo id e atributos). **Todas as instâncias
+da posição saem no mesmo sistema**: a peça clicada (`referencia`) é medida na vista natural
+(`_orientar_para_vista`: chapa deitada vista de cima, em pé vista de frente, comprimento
+para +x) e cada outra recebe o triedro que põe a forma dela sobre a forma da referência
+(`_eixos_pela_forma`: entre ±e1, ±e2, o de menor custo de forma; furo fora do centro decide
+o sentido e, em forma simétrica, vale a vista natural) — a chapa montada virada ou espelhada
+fica com o furo mexido no mesmo lado físico que as demais (`atributos.eixos_conferidos`).
+Chapas convertidas por versões anteriores são refeitas uma vez a partir do IFC de origem do
+projeto (`reorientar_chapas`, chamada por `app._conferir_eixos_das_chapas`), mantendo a
+furação atual da referência em todas e levando os parafusos junto.
+O desenho "Detalhe – P77" sai com os furos como entidades marcadas da camada
 FURO (`desenho_da_posicao(..., editavel=True)`, `metadados.detalhe_posicao`). No CAD,
 **Aplicar furos ao modelo 3D** (`POST …/desenhos/<nome>/aplicar-furos`) lê círculos e
-polilinhas fechadas da camada FURO, escreve nas chapas da posição (`aplicar_furos`; a
-peça montada espelhada recebe o espelho, escolhido pelos furos originais — `_simetria`),
-regrava o modelo e regenera o detalhe. Chapas paramétricas entram no detalhamento geral
+polilinhas fechadas da camada FURO, escreve nas chapas da posição (`aplicar_furos`; só a
+chapa medida sozinha, sem `eixos_conferidos`, ainda decide o espelhamento pelos furos
+originais — `_simetria`), regrava o modelo e regenera o detalhe. As terças vinculadas
+(`ajustes-furos.json`) têm os furos movidos também **nas malhas do 3D**
+(`aplicar_furos_nas_barras`: os vértices de cada furo da malha — parede e as duas faces —
+transladam no plano da alma ou da mesa até a posição do ajuste; só quando a malha tem os
+mesmos furos, cada um a menos de 40 mm do alvo; repetir não mexe). Chapas paramétricas entram no detalhamento geral
 como sólidos equivalentes (`_proxy_da_chapa`); a malha 3D (`geometria.malha_chapa`) e a
 cena do editor abrem furos redondos e **oblongos** (`{x, y, largura, altura}`).
 O detalhamento geral (`detalhar(..., converter=True)`) converte todas as chapas planas

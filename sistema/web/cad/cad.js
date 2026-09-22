@@ -768,8 +768,11 @@ class CAD {
       if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
       await this.abrirDesenho(r.nome);
       const vinc = (r.vinculadas || []).length;
+      const b3 = r.barras3d || {};
       this.aviso(`${r.furos} furo(s)${r.contornos ? ' e o contorno' : ''} aplicados em ${r.chapas} chapa(s) ${r.marca} do modelo 3D${r.parafusos ? `, ${r.parafusos} parafuso(s) movidos junto` : ''}; desenho regenerado.` +
-                 (vinc ? ` Furação de ${vinc} terça(s) ajustada junto (${r.vinculadas.slice(0, 6).join(', ')}${vinc > 6 ? '…' : ''}): gere o desenho de barras e terças de novo.` : ''), 'info', 14000);
+                 (vinc ? ` Furação de ${vinc} terça(s) ajustada junto (${r.vinculadas.slice(0, 6).join(', ')}${vinc > 6 ? '…' : ''})` +
+                         (b3.barras ? `, ${b3.furos} furo(s) movidos em ${b3.barras} terça(s) no 3D` : '') +
+                         ': gere o desenho de barras e terças de novo.' : ''), 'info', 14000);
     } catch (e) { this.aviso(`Não foi possível aplicar: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 

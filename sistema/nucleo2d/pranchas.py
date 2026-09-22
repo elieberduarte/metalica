@@ -234,7 +234,7 @@ def _tabela_de_posicoes(d: Desenho, cels: Sequence[dict], quadro, carimbo_caixa)
         if not it or not c.get("marca"):
             continue
         comp = ("%d" % it["comprimento"]) if it.get("comprimento") else ("#%s" % it["espessura"] if it.get("espessura") else "")
-        linhas.append((c["marca"], "%dx" % it.get("quantidade", 0), (it.get("perfil") or "")[:26], comp,
+        linhas.append((it.get("nome") or c["marca"], "%dx" % it.get("quantidade", 0), (it.get("perfil") or "")[:26], comp,
                        ("%.1f" % (it["peso"] * it.get("quantidade", 0))) if it.get("peso") else ""))
     if not linhas:
         return

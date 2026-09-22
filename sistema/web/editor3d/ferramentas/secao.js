@@ -38,24 +38,58 @@ export class FerramentaSecao extends Ferramenta {
 
   // ------------------------------------------------------------- eventos
 
-  onMover(p) {
-    if (!p || this.plano) return;
+  onMover(p, ev) {
+    if (!p) return;
+    if (this.plano) {
+      // arrasto com o botão apertado: o plano desliza ao longo da própria normal até o
+      // ponto do mouse projetado nela (o plano fixo num eixo também se move assim)
+      if (ev && ev.arrasto && this._arrastoBase) {
+        const alvo = this._pontoNaNormal(p);
+        if (alvo) this.definir(C.planoDe(alvo, this.plano.normal), true);
+      }
+      return;
+    }
     if (p.entidade && p.normal) {
       this.candidato = C.planoDe(p.ponto, p.normal);
       this.desenhar(true);
     }
   }
 
-  onPonto(p) {
+  onPonto(p, ev) {
     if (!p) return;
+    if (this.plano) {
+      // clique parado com o plano definido: não muda nada (o arrasto é que desloca)
+      return;
+    }
     const n = (p.normal && C.comp(p.normal) > 1e-6) ? p.normal : [0, 0, 1];
     this.definir(C.planoDe(p.ponto, n));
+  }
+
+  onSoltar(p, ev) {
+    if (!this.plano) { this.onPonto(p, ev); return; }
+    if (this._arrastoBase) {
+      const alvo = this._pontoNaNormal(p);
+      if (alvo) this.definir(C.planoDe(alvo, this.plano.normal));
+    }
+    this._arrastoBase = null;
+  }
+
+  /** Ponto do plano mais perto do raio do mouse, medido ao longo da normal. */
+  _pontoNaNormal(p) {
+    if (!this.plano) return null;
+    const base = this._arrastoBase ? this._arrastoBase.origem : this.plano.origem;
+    const t = C.distanciaNaReta(this.editor, p, base, this.plano.normal);
+    if (!isFinite(t)) return null;
+    return C.add(base, C.mul(this.plano.normal, t));
   }
 
   onTecla(ev) {
     if (ev.type && ev.type !== 'keydown') return false;
     const k = String(ev.key || '').toLowerCase();
     let eixo = null;
+    // com o plano já definido, as setas deslocam (100 mm; Shift: 10 mm); sem plano, escolhem o eixo
+    if (this.plano && (ev.key === 'ArrowUp' || ev.key === 'ArrowRight')) { this.deslocar(ev.shiftKey ? 10 : 100); return true; }
+    if (this.plano && (ev.key === 'ArrowDown' || ev.key === 'ArrowLeft')) { this.deslocar(ev.shiftKey ? -10 : -100); return true; }
     if (k === 'x' || ev.key === 'ArrowRight') eixo = 'x';
     else if (k === 'y' || ev.key === 'ArrowLeft') eixo = 'y';
     else if (k === 'z' || ev.key === 'ArrowUp') eixo = 'z';
@@ -114,13 +148,20 @@ export class FerramentaSecao extends Ferramenta {
     return Math.max(d, 4000);
   }
 
-  definir(plano) {
+  definir(plano, arrastando = false) {
+    if (!arrastando) this._arrastoBase = { origem: C.copiar(plano.origem) };
     this.plano = plano;
     this.constructor.ultimo = plano;
     this.aplicarNaCena(plano);
     this.medida('corte em ' + this.descrever(plano));
-    this.dica('Digite um afastamento para deslocar · Tab inverte · Delete remove · G gera o desenho 2D deste corte');
+    this.dica('Arraste o plano ou digite um afastamento para deslocar · setas ±100 mm (Shift ±10) · Tab inverte · Delete remove · G gera o desenho 2D');
     this.desenhar();
+  }
+
+  /** Desloca o plano `d` mm ao longo da normal. */
+  deslocar(d) {
+    if (!this.plano) return;
+    this.definir(C.planoDe(C.add(this.plano.origem, C.mul(this.plano.normal, d)), this.plano.normal));
   }
 
   limpar() {

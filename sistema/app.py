@@ -461,12 +461,16 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     from saida import lista_producao
     g = _gerente()
     doc = _documento3d_do_projeto(s)
+    _conferir_eixos_das_chapas(s, doc)
     grupos = corpo.get("grupos") or list(GRUPOS.keys())
     r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
                  rotular=corpo.get("rotular", True) is not False,
-                 converter=corpo.get("converter", True) is not False, ajustes=_ajustes_furos(s))
-    if r.get("convertidas"):
-        g.salvar_modelo(s, doc.dict())            # chapas planas viraram paramétricas
+                 converter=corpo.get("converter", True) is not False, ajustes=_ajustes_furos(s),
+                 nomes=_nomes_producao(s))
+    _gravar_nomes_producao(s, r.get("nomes") or {})
+    nomeadas = _nomes_no_modelo(doc, r.get("nomes") or {})
+    if r.get("convertidas") or nomeadas:
+        g.salvar_modelo(s, doc.dict())            # chapas planas viraram paramétricas / nomes nas peças
     substituir = corpo.get("substituir", True) is not False
     desenhos = []
     for chave, desenho in r["desenhos"].items():
@@ -482,7 +486,8 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     # a lista de materiais sai do mesmo levantamento dos desenhos (romaneio, perfis, chapas…)
     categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
     lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
-                                  barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s))
+                                  barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
+                                  nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"))
     arquivos = lista_producao.gravar(pasta, lista, r["objetos_posicoes"], r["acessorios"])
     relatorio = {k: v for k, v in r.items() if k not in ("desenhos", "objetos_posicoes", "objetos_pecas", "camadas")}
     relatorio["desenhos"] = desenhos
@@ -496,6 +501,32 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
             "materiais": {k: _descrever_arquivo(v, pasta) for k, v in arquivos.items()}}
 
 
+def _conferir_eixos_das_chapas(s: str, doc) -> dict:
+    """Chapas convertidas por versões anteriores (eixos por peça, `eixos_conferidos`
+    ausente) são refeitas a partir do IFC de origem do projeto, todas no mesmo sistema
+    — ver nucleo2d.detalhar.reorientar_chapas. Uma vez por projeto; sem o IFC, ficam
+    como estão (o espelhamento continua a ser adivinhado pelos furos)."""
+    from nucleo3d.modelo import Chapa
+    pendentes = [e for e in doc.entidades.values() if isinstance(e, Chapa)
+                 and (e.atributos or {}).get("convertida_de") == "solido" and not (e.atributos or {}).get("eixos_conferidos")]
+    if not pendentes:
+        return {}
+    g = _gerente()
+    nome = _identificacao_do_projeto(s).get("origem_ifc") or ""
+    caminho = os.path.join(g._existente(s), "origem", nome) if nome else ""
+    if not nome or not os.path.exists(caminho):
+        return {"aviso": "%d chapa(s) convertidas por versão anterior sem o IFC de origem no projeto: eixos não conferidos" % len(pendentes)}
+    from ifc import importar as imp
+    from nucleo2d import detalhar as det
+    doc_ifc = imp.importar(caminho)
+    r = det.reorientar_chapas(doc, doc_ifc)
+    if r.get("chapas"):
+        g.salvar_modelo(s, doc.dict())
+        print("[detalhamento] %s: %d chapa(s) de %d posição(ões) reorientadas pelo IFC; %d parafuso(s) movidos"
+              % (s, r["chapas"], r["posicoes"], r["parafusos"]))
+    return r
+
+
 def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/detalhar-posicao {marca}: desenho "Detalhe – <marca>" da
     peça. Chapa plana vinda do IFC é antes convertida em Chapa paramétrica (contorno +
@@ -507,17 +538,20 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
         raise ErroDeDados("informe a marca da posição.")
     g = _gerente()
     doc = _documento3d_do_projeto(s)
-    convertidas = det.converter_chapas(doc, marca) if corpo.get("converter", True) is not False else 0
+    reorientadas = _conferir_eixos_das_chapas(s, doc)
+    convertidas = (det.converter_chapas(doc, marca, referencia=str(corpo.get("referencia") or "") or None)
+                   if corpo.get("converter", True) is not False else 0)
     if convertidas:
         g.salvar_modelo(s, doc.dict())
-    desenho, pos = det.detalhar_posicao(doc, marca, ajustes=_ajustes_furos(s))
+    desenho, pos = det.detalhar_posicao(doc, marca, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
     nome = desenho.nome
     if corpo.get("substituir", True) is not False and os.path.exists(g._caminho_desenho(s, nome)):
         g.excluir_desenho(s, nome)
     desenho.metadados["gerado_por"] = "detalhamento"
     salvo = g.salvar_desenho(s, nome, desenho.dict())
     return {"nome": salvo["nome"], "titulo": nome, "marca": marca, "classe": pos.classe,
-            "convertidas": convertidas, "editavel": desenho.metadados["detalhe_posicao"]["editavel"],
+            "convertidas": convertidas, "reorientadas": reorientadas.get("chapas", 0),
+            "editavel": desenho.metadados["detalhe_posicao"]["editavel"],
             "furos": len(desenho.metadados["detalhe_posicao"]["furos"]), "quantidade": pos.quantidade}
 
 
@@ -532,16 +566,24 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
     d = Desenho.de_dict(corpo["desenho"]) if isinstance(corpo.get("desenho"), dict) else Desenho.de_dict(g.abrir_desenho(s, nome))
     meta = d.metadados.get("detalhe_posicao") or {}
     doc = _documento3d_do_projeto(s)
+    _conferir_eixos_das_chapas(s, doc)
     ajustes = _ajustes_furos(s)
+
+    barras3d = {"barras": 0, "furos": 0, "posicoes": []}
 
     def vincular(marca_, originais_, furos_):
         # a chapinha do suporte mudou de furação: as terças com a mesma furação original
-        # acompanham; a furação delas fica guardada no projeto
+        # acompanham; a furação delas fica guardada no projeto e vai também para as
+        # malhas das terças no 3D
         lev = det.levantar(doc, ajustes=ajustes)
         vinc = det.vincular_furos_de_ligacao(lev["posicoes"], lev["camadas"], marca_, originais_, furos_)
         if vinc:
             ajustes.update(vinc)
             _gravar_ajustes_furos(s, ajustes)
+        r3 = det.aplicar_furos_nas_barras(doc, ajustes)
+        if r3["barras"]:
+            barras3d.update(r3)
+            g.salvar_modelo(s, doc.dict())
         return sorted(vinc)
     if meta.get("marca"):
         # desenho "Detalhe – P77": uma célula em (0, 0), furos originais guardados
@@ -553,12 +595,12 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         r = det.aplicar_furos(doc, marca, furos, meta.get("furos") or [], contorno)
         g.salvar_modelo(s, doc.dict())
         vinculadas = vincular(marca, meta.get("furos") or [], furos)
-        novo, pos = det.detalhar_posicao(doc, marca, ajustes=ajustes)
+        novo, pos = det.detalhar_posicao(doc, marca, ajustes=ajustes, nomes=_nomes_producao(s))
         if os.path.exists(g._caminho_desenho(s, novo.nome)):
             g.excluir_desenho(s, novo.nome)
         novo.metadados["gerado_por"] = "detalhamento"
         salvo = g.salvar_desenho(s, novo.nome, novo.dict())
-        return dict(r, nome=salvo["nome"], marca=marca, quantidade=pos.quantidade, vinculadas=vinculadas)
+        return dict(r, nome=salvo["nome"], marca=marca, quantidade=pos.quantidade, vinculadas=vinculadas, barras3d=barras3d)
     # desenho geral (Detalhamento – chapas): a célula da posição pedida
     marca = str(corpo.get("marca") or "").strip()
     geral = d.metadados.get("detalhamento") or {}
@@ -576,9 +618,48 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
     r = det.aplicar_furos(doc, marca, furos, originais, contorno)
     g.salvar_modelo(s, doc.dict())
     vinculadas = vincular(marca, originais, furos)
-    det.regenerar_celula(d, doc, marca, ajustes=ajustes)
+    det.regenerar_celula(d, doc, marca, ajustes=ajustes, nomes_producao=_nomes_producao(s))
     salvo = g.salvar_desenho(s, nome, d.dict())
-    return dict(r, nome=salvo["nome"], marca=marca, vinculadas=vinculadas)
+    return dict(r, nome=salvo["nome"], marca=marca, vinculadas=vinculadas, barras3d=barras3d)
+
+
+def _nomes_producao(s: str) -> dict:
+    """Nomes de produção já dados (detalhamento/nomes.json): {"posicoes": {marca: nome}, "conjuntos": {...}}."""
+    caminho = os.path.join(_gerente()._existente(s), "detalhamento", "nomes.json")
+    if not os.path.exists(caminho):
+        return {}
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            dados = json.load(f)
+        return dados if isinstance(dados, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _gravar_nomes_producao(s: str, nomes: dict):
+    pasta = os.path.join(_gerente()._existente(s), "detalhamento")
+    os.makedirs(pasta, exist_ok=True)
+    with open(os.path.join(pasta, "nomes.json"), "w", encoding="utf-8") as f:
+        json.dump({k: nomes.get(k) or {} for k in ("posicoes", "conjuntos", "tipos", "tipos_conjuntos", "ifc", "ifc_conjuntos")},
+                  f, ensure_ascii=False, indent=1)
+
+
+def _nomes_no_modelo(doc, nomes: dict) -> int:
+    """Escreve marcas.nome / marcas.nome_conjunto nas peças do modelo 3D (a busca do
+    editor acha "S.T.1"). Devolve quantas mudaram."""
+    ifc = nomes.get("ifc") or {}
+    ifc_conj = nomes.get("ifc_conjuntos") or {}
+    n = 0
+    for e in doc.entidades.values():
+        m = (e.atributos or {}).get("marcas")
+        if not isinstance(m, dict):
+            continue
+        novo = ifc.get(str(m.get("posicao") or "")) or ""
+        novo_c = ifc_conj.get(str(m.get("conjunto") or "")) or ""
+        if (m.get("nome") or "") != novo or (m.get("nome_conjunto") or "") != novo_c:
+            m["nome"], m["nome_conjunto"] = novo, novo_c
+            n += 1
+    return n
 
 
 def _ajustes_furos(s: str) -> dict:
@@ -622,9 +703,11 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
             lista = json.load(f)
     else:
         doc = _documento3d_do_projeto(s)
-        lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False, ajustes=_ajustes_furos(s))
+        nomes = _nomes_producao(s)
+        lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False, ajustes=_ajustes_furos(s), nomes=nomes)
         lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
-                                      barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s))
+                                      barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
+                                      nomes_conjuntos=nomes.get("ifc_conjuntos"))
         lista_producao.gravar(pasta, lista, lev["posicoes"], lev["acessorios"])
         g.tocar(s)
     arquivos = {}

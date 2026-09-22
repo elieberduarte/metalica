@@ -180,19 +180,19 @@ function desenhar(L) {
   if ((L.conjuntos || []).length) {
     c.append(secao('Conjuntos', 'montagens (tesouras, vigas, pilares): instâncias pela composição e peso de cada uma',
       el('div', { class: 'rolagem' }, tabela([
-        { titulo: 'Conjunto', chave: 'marca', classe: 'b' }, { titulo: 'Tipo', valor: (x) => rotuloCategoria(x.categoria) },
+        { titulo: 'Nome', chave: 'nome', classe: 'b' }, { titulo: 'Conjunto', chave: 'marca' }, { titulo: 'Tipo', valor: (x) => rotuloCategoria(x.categoria) },
         { titulo: 'Instâncias', chave: 'instancias', classe: 'c b', num: true },
         { titulo: 'Peças/un.', chave: 'pecas_unidade', classe: 'c', num: true },
         { titulo: 'Composição', chave: 'composicao_texto', classe: 'quebra mono' },
         { titulo: 'Peso un. (kg)', chave: 'peso_unitario', classe: 'r', num: true, casas: 1 },
         { titulo: 'Peso total (kg)', chave: 'peso_total', classe: 'r b', num: true, casas: 1 },
-      ], L.conjuntos, ['TOTAL', '', n(L.conjuntos.reduce((s, x) => s + x.instancias, 0)), '', '', '', n(L.conjuntos.reduce((s, x) => s + x.peso_total, 0), 1)],
-      (x) => [x.marca, x.composicao_texto].join(' ')))));
+      ], L.conjuntos, ['TOTAL', '', '', n(L.conjuntos.reduce((s, x) => s + x.instancias, 0)), '', '', '', n(L.conjuntos.reduce((s, x) => s + x.peso_total, 0), 1)],
+      (x) => [x.nome, x.marca, x.composicao_texto].join(' ')))));
   }
 
   c.append(secao('Romaneio por posição', `${n(t.posicoes)} posições · ${n(t.pecas)} peças`,
     el('div', { class: 'rolagem' }, tabela([
-      { titulo: 'Posição', chave: 'marca', classe: 'b' }, { titulo: 'Categoria', valor: (p_) => rotuloCategoria(p_.categoria) },
+      { titulo: 'Nome', chave: 'nome', classe: 'b' }, { titulo: 'Posição', chave: 'marca' }, { titulo: 'Categoria', valor: (p_) => rotuloCategoria(p_.categoria) },
       { titulo: 'Tipo', chave: 'classe' }, { titulo: 'Perfil / chapa', chave: 'perfil' }, { titulo: 'Material', chave: 'material' },
       { titulo: 'Qtd', chave: 'quantidade', classe: 'c b', num: true },
       { titulo: 'Compr. (mm)', chave: 'comprimento', classe: 'r', num: true },
@@ -203,8 +203,8 @@ function desenhar(L) {
       { titulo: 'Peso tot. (kg)', chave: 'peso_total', classe: 'r b', num: true, casas: 1 },
       { titulo: 'Conjuntos', valor: (p_) => marcas(p_.conjuntos, 10), classe: 'quebra' },
       { titulo: 'Obs.', valor: (p_) => (p_.observacoes || []).join('; ') || '', classe: 'quebra' },
-    ], L.posicoes || [], ['TOTAL', '', '', '', '', n(t.pecas), '', '', '', '', '', n(t.peso, 1), '', ''],
-    (p_) => [p_.marca, p_.perfil, p_.material, p_.classe, (p_.conjuntos || []).join(' ')].join(' ')))));
+    ], L.posicoes || [], ['TOTAL', '', '', '', '', '', n(t.pecas), '', '', '', '', '', n(t.peso, 1), '', ''],
+    (p_) => [p_.nome, p_.marca, p_.perfil, p_.material, p_.classe, (p_.conjuntos || []).join(' ')].join(' ')))));
 
   if ((L.acessorios || []).length) {
     c.append(secao('Acessórios', 'só na lista: parafusos, porcas, arruelas (não são desenhados)', tabela([

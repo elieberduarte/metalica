@@ -222,12 +222,12 @@ def test_folha_e_romaneio():
         csv_path = det.gravar_romaneio(os.path.join(pasta, "r.csv"), pecas, {"BOLT 12x35": 7})
         with open(csv_path, encoding="utf-8-sig") as f:
             linhas = list(csv.reader(f, delimiter=";"))
-    assert linhas[0][0] == "Posicao" and len(linhas) == 5
-    chapa = next(l for l in linhas if l[0] == "P1")
-    assert chapa[5] == "10" and chapa[6] == "130" and chapa[7] == "50" and chapa[8] == "3,0"
-    assert chapa[9].startswith("1x") and chapa[1] == "M1 M2"
+    assert linhas[0][:2] == ["Nome", "Posicao"] and len(linhas) == 5
+    chapa = next(l for l in linhas if l[1] == "P1")
+    assert chapa[6] == "10" and chapa[7] == "130" and chapa[8] == "50" and chapa[9] == "3,0"
+    assert chapa[10].startswith("1x") and chapa[2] == "M1 M2"
     bolt = linhas[-1]
-    assert bolt[3] == "BOLT 12x35" and bolt[5] == "7"
+    assert bolt[4] == "BOLT 12x35" and bolt[6] == "7"
 
 
 def test_ponta_a_ponta_com_ifc_pequeno():

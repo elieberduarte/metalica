@@ -110,7 +110,7 @@ def _area_m2(p: Posicao) -> float:
 
 def _linha_posicao(p: Posicao, categoria: str) -> dict:
     chapa = _e_chapa(p)
-    return {"marca": p.marca, "categoria": categoria, "classe": CLASSES.get(p.classe, p.classe),
+    return {"marca": p.marca, "nome": getattr(p, "nome", ""), "categoria": categoria, "classe": CLASSES.get(p.classe, p.classe),
             "perfil": p.perfil, "material": p.material, "quantidade": p.quantidade,
             "comprimento": round(p.comprimento) if p.classe != "indefinida" else 0,
             "largura": round(p.desenvolvimento[0] if p.desenvolvimento else p.H) if chapa or p.classe == "telha" else 0,
@@ -120,7 +120,7 @@ def _linha_posicao(p: Posicao, categoria: str) -> dict:
             "conjuntos": list(p.conjuntos), "observacoes": list(p.observacoes)}
 
 
-def _conjuntos(pecas, por_marca: Dict[str, Posicao]) -> List[dict]:
+def _conjuntos(pecas, por_marca: Dict[str, Posicao], nomes: Optional[Dict[str, str]] = None) -> List[dict]:
     """Montagens do modelo: instâncias pelo mdc das quantidades por posição (como o
     detalhamento), composição unitária e peso de uma montagem."""
     from nucleo2d.detalhar import _marcas
@@ -145,7 +145,7 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao]) -> List[dict]:
         peso = sum(q * (por_marca[k].peso if k in por_marca else 0.0) for k, q in unidade.items())
         barras = sum(q for k, q in unidade.items() if k in por_marca and por_marca[k].classe.startswith("barra"))
         comp = sorted(unidade.items(), key=lambda kv: _ordem_natural(kv[0]))
-        saida.append({"marca": conj, "instancias": n, "pecas_unidade": sum(unidade.values()),
+        saida.append({"marca": conj, "nome": (nomes or {}).get(conj, ""), "instancias": n, "pecas_unidade": sum(unidade.values()),
                       "composicao": dict(comp),
                       "composicao_texto": ", ".join("%d× %s" % (q, k) for k, q in comp),
                       "peso_unitario": round(peso, 2), "peso_total": round(peso * n, 2),
@@ -155,8 +155,10 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao]) -> List[dict]:
 
 
 def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: Dict[str, int],
-           pecas=None, barra: float = 0.0, projeto: Optional[dict] = None) -> dict:
-    """A lista inteira, pronta para gravar em JSON. `barra` em mm (0 = automático)."""
+           pecas=None, barra: float = 0.0, projeto: Optional[dict] = None,
+           nomes_conjuntos: Optional[Dict[str, str]] = None) -> dict:
+    """A lista inteira, pronta para gravar em JSON. `barra` em mm (0 = automático);
+    `nomes_conjuntos`: marca do conjunto → nome de produção."""
     from nucleo2d.detalhar import CATEGORIAS
     lista = _ordenar(posicoes)
     por_marca = {}
@@ -249,7 +251,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         c["pct"] = round(100.0 * c["peso"] / peso_total, 1) if peso_total else 0.0
         categorias_lista.append(c)
 
-    conjuntos = _conjuntos(pecas or [], por_marca)
+    conjuntos = _conjuntos(pecas or [], por_marca, nomes_conjuntos)
     ressalvas = [{"marca": p.marca, "perfil": p.perfil, "observacoes": list(p.observacoes)} for p in lista if p.observacoes]
     return {
         "gerado": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -304,9 +306,9 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
                               [[_num_csv(g["espessura"], 1), g["material"], " ".join(g["posicoes"]), g["pecas"],
                                 _num_csv(g["area_m2"]), _num_csv(g["peso"], 1)] for g in lista["chapas"]])
     arquivos["conjuntos"] = _csv(os.path.join(pasta, "conjuntos.csv"),
-                                 ["Conjunto", "Categoria", "Instancias", "Pecas por unidade", "Composicao",
+                                 ["Nome", "Conjunto", "Categoria", "Instancias", "Pecas por unidade", "Composicao",
                                   "Peso unitario (kg)", "Peso total (kg)"],
-                                 [[c["marca"], c["categoria"], c["instancias"], c["pecas_unidade"], c["composicao_texto"],
+                                 [[c.get("nome", ""), c["marca"], c["categoria"], c["instancias"], c["pecas_unidade"], c["composicao_texto"],
                                    _num_csv(c["peso_unitario"]), _num_csv(c["peso_total"])] for c in lista["conjuntos"]])
     caminho = os.path.join(pasta, ARQUIVO_HTML)
     with open(caminho, "w", encoding="utf-8") as f:
@@ -395,23 +397,23 @@ def corpo_html(lista: dict) -> str:
                                 (_n(g["area_m2"], 2), "r"), (_n(g["peso"], 1), "r")] for g in lista["telhas"]]))
     if lista["conjuntos"]:
         partes.append(_tabela("Quadro 5 — Conjuntos (montagens): instâncias, composição e peso",
-                              [("Conjunto", "l"), ("Tipo", "l"), ("Instâncias", "c"), ("Peças/un.", "c"), ("Composição", "l"),
+                              [("Nome", "l"), ("Conjunto", "l"), ("Tipo", "l"), ("Instâncias", "c"), ("Peças/un.", "c"), ("Composição", "l"),
                                ("Peso un. (kg)", "r"), ("Peso total (kg)", "r")],
-                              [[(c["marca"], "l b"), ("Tesoura/pórtico" if c["categoria"] == "TESOURAS" else "Conjunto", "l"),
+                              [[(c.get("nome") or "—", "l b"), (c["marca"], "l"), ("Tesoura/pórtico" if c["categoria"] == "TESOURAS" else "Conjunto", "l"),
                                 (c["instancias"], "c"), (c["pecas_unidade"], "c"), (c["composicao_texto"], "l"),
                                 (_n(c["peso_unitario"], 1), "r"), (_n(c["peso_total"], 1), "r b")] for c in lista["conjuntos"]],
-                              larguras=["10%", "12%", "8%", "8%", "42%", "10%", "10%"]))
+                              larguras=["8%", "8%", "11%", "8%", "8%", "37%", "10%", "10%"]))
     partes.append(_tabela("Quadro 6 — Romaneio por posição",
-                          [("Posição", "l"), ("Tipo", "l"), ("Perfil / chapa", "l"), ("Material", "l"), ("Qtd", "c"), ("Compr. (mm)", "r"),
+                          [("Nome", "l"), ("Posição", "l"), ("Tipo", "l"), ("Perfil / chapa", "l"), ("Material", "l"), ("Qtd", "c"), ("Compr. (mm)", "r"),
                            ("Larg. (mm)", "r"), ("Esp. (mm)", "r"), ("Furos", "l"), ("Peso un. (kg)", "r"), ("Peso tot. (kg)", "r"), ("Conjuntos", "l")],
-                          [[(p["marca"], "l b"), (p["classe"], "l"), (p["perfil"], "l"), (p["material"], "l"), (p["quantidade"], "c"),
+                          [[(p.get("nome") or "—", "l b"), (p["marca"], "l"), (p["classe"], "l"), (p["perfil"], "l"), (p["material"], "l"), (p["quantidade"], "c"),
                             (_n(p["comprimento"]) if p["comprimento"] else "—", "r"), (_n(p["largura"]) if p["largura"] else "—", "r"),
                             (_n(p["espessura"], 1) if p["espessura"] else "—", "r"), (p["furos"] or "—", "l"),
                             (_n(p["peso"], 2), "r"), (_n(p["peso_total"], 1), "r b"), (" ".join(p["conjuntos"][:12]) + (" …" if len(p["conjuntos"]) > 12 else ""), "l")]
                            for p in lista["posicoes"]],
-                          rodape=[("TOTAL", "l b"), ("", "l"), ("", "l"), ("", "l"), (_n(t["pecas"]), "c b"), ("", "r"), ("", "r"), ("", "r"), ("", "l"),
+                          rodape=[("TOTAL", "l b"), ("", "l"), ("", "l"), ("", "l"), ("", "l"), (_n(t["pecas"]), "c b"), ("", "r"), ("", "r"), ("", "r"), ("", "l"),
                                   ("", "r"), (_n(t["peso"], 1), "r b"), ("", "l")],
-                          larguras=["6%", "7%", "14%", "8%", "4%", "7%", "6%", "5%", "12%", "7%", "7%", "17%"]))
+                          larguras=["6%", "5%", "6%", "13%", "8%", "4%", "7%", "6%", "5%", "11%", "6%", "6%", "17%"]))
     if lista["acessorios"]:
         partes.append(_tabela("Quadro 7 — Acessórios (só na lista: parafusos, porcas, arruelas)",
                               [("Item", "l"), ("Quantidade", "c")],
