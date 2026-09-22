@@ -251,14 +251,16 @@ export class Editor {
     if (modo) this.definirModo(modo);
 
     this.projeto = this.parametros.get('projeto') || null;
+    const pedidoNaUrl = !!(this.projeto || this.parametros.get('galpao') === '1' || this.parametros.get('exemplo') || this.parametros.get('abrir'));
     if (this.projeto) await this._abrirProjeto();
     else if (this.parametros.get('galpao') === '1') await this._carregarGalpaoDaInterface();
     else if (this.parametros.get('exemplo')) this.carregarExemplo();
     else if (this.parametros.get('abrir')) await this.abrirModelo(this.parametros.get('abrir'));
     if (this.parametros.get('destacar')) this._destacar(this.parametros.get('destacar'));
-    else {
-      // Sem pedido na URL, volta ao último modelo: o documento é gravado no servidor
-      // a cada mudança, então atualizar a página não pode jogar o trabalho fora.
+    else if (!pedidoNaUrl) {
+      // Só sem pedido na URL volta ao último modelo (o documento é gravado no servidor a
+      // cada mudança, então atualizar a página não pode jogar o trabalho fora). Com um
+      // projeto na URL, este passo abria o modelo antigo por cima do projeto recém-aberto.
       let ultimo = null;
       try { ultimo = localStorage.getItem(CHAVE_ULTIMO); } catch { ultimo = null; }
       if (ultimo) await this.abrirModelo(ultimo, { avisarErro: false });
