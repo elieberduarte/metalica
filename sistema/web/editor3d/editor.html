@@ -132,6 +132,12 @@ window.__errosEditor = [];
     <input id="nome-modelo" value="Modelo" spellcheck="false" aria-label="Nome do modelo">
   </div>
 
+  <div class="busca-pecas" id="busca-pecas">
+    <input id="busca-campo" type="search" placeholder="Pesquisar peça: nome, posição, conjunto, perfil…  (Ctrl+F)"
+           spellcheck="false" autocomplete="off" aria-label="Pesquisar peças">
+    <div class="busca-resultados" id="busca-resultados" hidden></div>
+  </div>
+
   <div class="topo-acoes">
     <button type="button" id="btn-calcular" class="botao destaque" aria-pressed="false"
             title="Calcula os esforços do galpão dimensionado e pinta o mapa (F9)">Calcular estrutura</button>

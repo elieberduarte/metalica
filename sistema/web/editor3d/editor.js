@@ -52,10 +52,20 @@ const RAMPA_ESFORCOS = ['#2c6fbb', '#3fa9c9', '#7ec97a', '#f2c24a', '#e8743b', '
 const RAMPA_APROVEITAMENTO = ['#2f9e5f', '#8dc63f', '#f2c24a', '#e8743b', '#c0392b'];
 
 // Cores de grupo (conjunto, posição, perfil): vinte tons de saturação média, que se
-// distinguem entre si e do azul da seleção nos dois temas. Repetem a partir da 21ª.
+// distinguem entre si e do azul da seleção nos dois temas. A partir da 21ª, `corDeGrupo`
+// gera tons novos pelo ângulo de ouro, em três faixas de claridade: um modelo com 160
+// posições tem 160 cores diferentes, e vizinhas na ordem ficam longe no matiz.
 const PALETA_GRUPOS = ['#d94a4a', '#2f9e5f', '#3d6fd6', '#e08a1e', '#8e44ad', '#17a2b8',
   '#c2185b', '#7cb342', '#f4c20d', '#6d4c41', '#00897b', '#5c6bc0', '#ef6c00', '#4db6ac',
   '#ad1457', '#9e9d24', '#1e88e5', '#e64a19', '#546e7a', '#8d6e63'];
+function corDeGrupo(i) {
+  if (i < PALETA_GRUPOS.length) return PALETA_GRUPOS[i];
+  const k = i - PALETA_GRUPOS.length;
+  const h = (k * 137.508) % 360;
+  const faixa = k % 3;
+  const s = [72, 58, 80][faixa], l = [48, 62, 36][faixa];
+  return `hsl(${h.toFixed(1)}, ${s}%, ${l}%)`;
+}
 
 const $ = (sel, raiz = document) => raiz.querySelector(sel);
 
@@ -1390,6 +1400,7 @@ export class Editor {
     this.el.nome.addEventListener('change', () => {
       this.documento.nome = this.el.nome.value.trim() || 'Modelo';
     });
+    this._ligarBusca();
     this.el.projecao.addEventListener('click', () => {
       this.camera.alternarProjecao();
       this.el.projecao.textContent = this.camera.projecao === 'perspectiva' ? 'Perspectiva' : 'Ortográfica';
@@ -1729,11 +1740,43 @@ export class Editor {
     }
 
     if (um && um.tipo === 'solido') {
+      // peça importada de IFC: marcas, dimensões pelos eixos principais e massa
+      const a = um.atributos || {}, marcas = a.marcas || {};
+      if (marcas.posicao || marcas.conjunto || marcas.perfil || a.tipo_ifc) {
+        const gi = this._grupo(raiz, 'Peça (IFC)');
+        const linha = (rotulo, valor, acao) => {
+          const v = el('span', { class: 'valor' + (acao ? ' clicavel' : ''), texto: String(valor), title: acao ? 'Clique: selecionar todas com o mesmo valor' : undefined });
+          if (acao) v.addEventListener('click', acao);
+          gi.append(el('label', { texto: rotulo }), v);
+        };
+        if (marcas.posicao) {
+          const iguais = [...this.documento.entidades.values()].filter(e => e.atributos && e.atributos.marcas && e.atributos.marcas.posicao === marcas.posicao).map(e => e.id);
+          linha('Posição', `${marcas.posicao}  (${iguais.length} iguais)`, () => this.selecao.definir(iguais));
+        }
+        if (marcas.conjunto) {
+          const doConj = [...this.documento.entidades.values()].filter(e => e.atributos && e.atributos.marcas && e.atributos.marcas.conjunto === marcas.conjunto).map(e => e.id);
+          linha('Conjunto', `${marcas.conjunto}  (${doConj.length} peças)`, () => this.selecao.definir(doConj));
+        }
+        if (marcas.perfil) linha('Perfil', marcas.perfil);
+        if (a.tipo_ifc) linha('Tipo IFC', a.tipo_ifc);
+        const dims = dimensoesPrincipais(um);
+        if (dims) {
+          linha('Comprimento', `${numero(dims[0], 0)} mm`);
+          linha('Seção (envolvente)', `${numero(dims[1], 0)} × ${numero(dims[2], 1)} mm`);
+        }
+        linha('Massa', `${numero(volumeDe(um) * 7.85e-6, 2)} kg`);
+      }
       const gs = this._grupo(raiz, 'Sólido');
       gs.append(el('label', { texto: 'Vértices' }), el('span', { class: 'valor', texto: String((um.vertices || []).length) }));
       gs.append(el('label', { texto: 'Faces' }), el('span', { class: 'valor', texto: String((um.faces || []).length) }));
       gs.append(el('label', { texto: 'Volume' }), el('span', { class: 'valor', texto: `${numero(volumeDe(um) / 1e9, 4)} m³` }));
       if (um.origem_ifc) gs.append(el('label', { texto: 'GlobalId' }), el('span', { class: 'valor', texto: um.origem_ifc }));
+    } else if (ents.length > 1 && ents.every(e => e.tipo === 'solido')) {
+      const gs = this._grupo(raiz, 'Sólidos');
+      const massa = ents.reduce((s, e) => s + volumeDe(e) * 7.85e-6, 0);
+      gs.append(el('label', { texto: 'Massa' }), el('span', { class: 'valor', texto: `${numero(massa, 1)} kg no total` }));
+      const pos = new Set(ents.map(e => e.atributos && e.atributos.marcas && e.atributos.marcas.posicao).filter(Boolean));
+      if (pos.size) gs.append(el('label', { texto: 'Posições' }), el('span', { class: 'valor', texto: [...pos].slice(0, 12).join(', ') + (pos.size > 12 ? ' …' : '') }));
     }
 
     const acoes = el('div', { class: 'acoes-painel' });
@@ -1920,6 +1963,102 @@ export class Editor {
     raiz.append(acoes);
   }
 
+  // ------------------------------------------------------------ pesquisa de peças
+
+  /**
+   * Campo de pesquisa do topo: procura em nome, posição, conjunto, perfil, camada, tipo
+   * IFC e GlobalId; várias palavras são "e". Os resultados saem agrupados por posição
+   * (marca da peça) — ou por nome, quando não há marca — com a contagem e a cor do
+   * grupo. Clique seleciona o grupo, duplo clique enquadra, Enter seleciona tudo.
+   */
+  _ligarBusca() {
+    const campo = document.getElementById('busca-campo');
+    const caixa = document.getElementById('busca-resultados');
+    if (!campo || !caixa) return;
+    let timer = null, ativo = -1, grupos = [];
+    const fechar = () => { caixa.hidden = true; ativo = -1; };
+    const render = () => {
+      const termo = campo.value.trim();
+      caixa.replaceChildren();
+      if (!termo) { fechar(); return; }
+      const r = this.pesquisarPecas(termo);
+      grupos = r.grupos;
+      caixa.hidden = false;
+      const cabeca = el('div', { class: 'cabeca' },
+        el('span', { texto: r.total ? `${numero(r.total)} peça(s) em ${numero(grupos.length)} grupo(s)` : 'Nada encontrado' }));
+      if (r.total) {
+        cabeca.append(el('button', { type: 'button', texto: 'Selecionar tudo', onclick: () => { this.selecao.definir(r.ids); this.camera.zoomSelecao(r.ids); fechar(); } }));
+      }
+      caixa.append(cabeca);
+      if (!r.total) { caixa.append(el('div', { class: 'nada', texto: 'Tente parte do nome, a posição (P12), o conjunto (M2) ou o perfil.' })); return; }
+      grupos.slice(0, 80).forEach((g, i) => {
+        const item = el('div', { class: 'item', title: 'Clique: selecionar · duplo clique: enquadrar' },
+          el('span', { class: 'amostra', style: `background:${g.cor}` }),
+          el('span', { class: 'nome' }, g.chave, el('small', { texto: g.detalhe })),
+          el('span', { class: 'contagem', texto: numero(g.ids.length) }));
+        item.addEventListener('click', (ev) => { ev.shiftKey ? this.selecao.somar(g.ids) : this.selecao.definir(g.ids); ativo = i; realcar(); });
+        item.addEventListener('dblclick', () => { this.selecao.definir(g.ids); this.camera.zoomSelecao(g.ids); });
+        caixa.append(item);
+      });
+      if (grupos.length > 80) caixa.append(el('div', { class: 'nada', texto: `… e mais ${grupos.length - 80} grupo(s): refine a pesquisa.` }));
+    };
+    const realcar = () => { [...caixa.querySelectorAll('.item')].forEach((e, i) => e.classList.toggle('ativo', i === ativo)); };
+    campo.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(render, 160); });
+    campo.addEventListener('focus', () => { if (campo.value.trim()) render(); });
+    campo.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') { campo.value = ''; fechar(); campo.blur(); return; }
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        if (!grupos.length) return;
+        ativo = (ativo + (ev.key === 'ArrowDown' ? 1 : -1) + grupos.length) % grupos.length;
+        this.selecao.definir(grupos[ativo].ids); realcar();
+        const e = caixa.querySelectorAll('.item')[ativo]; if (e) e.scrollIntoView({ block: 'nearest' });
+        return;
+      }
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        const ids = ativo >= 0 && grupos[ativo] ? grupos[ativo].ids : grupos.flatMap(g => g.ids);
+        if (ids.length) { this.selecao.definir(ids); this.camera.zoomSelecao(ids); }
+        fechar();
+      }
+    });
+    document.addEventListener('click', (ev) => { if (!ev.target.closest('#busca-pecas')) fechar(); });
+    document.addEventListener('keydown', (ev) => {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'f') { ev.preventDefault(); campo.focus(); campo.select(); }
+    });
+  }
+
+  /** Peças cujo texto casa com todas as palavras do termo; agrupadas por posição ou nome. */
+  pesquisarPecas(termo) {
+    const palavras = termo.toLowerCase().split(/\s+/).filter(Boolean);
+    const grupos = new Map();
+    let total = 0;
+    const ids = [];
+    for (const ent of this.documento.entidades.values()) {
+      const a = ent.atributos || {}, m = a.marcas || {};
+      const texto = [ent.nome, m.posicao, m.conjunto, m.perfil, ent.perfil, ent.camada, a.tipo_ifc, ent.origem_ifc, ent.papel]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!palavras.every(p => texto.includes(p))) continue;
+      total++; ids.push(ent.id);
+      const chave = m.posicao || ent.nome || ent.tipo;
+      let g = grupos.get(chave);
+      if (!g) {
+        const detalhe = [m.perfil && m.perfil !== chave ? m.perfil : (ent.perfil || ''), m.conjunto ? `conj. ${m.conjunto}` : '', ent.camada].filter(Boolean).join(' · ');
+        g = { chave, detalhe, ids: [], cor: '#7d8a9e' };
+        grupos.set(chave, g);
+      }
+      g.ids.push(ent.id);
+    }
+    const lista = [...grupos.values()].sort((x, y) => y.ids.length - x.ids.length || String(x.chave).localeCompare(String(y.chave), 'pt-BR', { numeric: true }));
+    const cores = this._coresGrupo;
+    for (const g of lista) {
+      const ent = this.documento.entidades.get(g.ids[0]);
+      const chaveCor = this._chaveDeGrupo(ent, this.corPor || 'padrao');
+      if (cores && chaveCor != null && cores.has(chaveCor)) g.cor = cores.get(chaveCor);
+    }
+    return { total, ids, grupos: lista };
+  }
+
   // ------------------------------------------------------------ cor por grupo
 
   /** Chave de agrupamento de uma entidade no modo pedido, ou null quando não tem. */
@@ -1954,7 +2093,7 @@ export class Editor {
     this.cena.definirCorPorValor((ent) => {
       const chave = this._chaveDeGrupo(ent, modo);
       if (chave == null) return null;
-      if (!cores.has(chave)) cores.set(chave, PALETA_GRUPOS[cores.size % PALETA_GRUPOS.length]);
+      if (!cores.has(chave)) cores.set(chave, corDeGrupo(cores.size));
       return cores.get(chave);
     });
   }
@@ -1990,7 +2129,7 @@ export class Editor {
     const lista = el('div', { class: 'lista-linhas legenda-grupos' });
     const LIMITE = 400;
     for (const chave of chaves.slice(0, LIMITE)) {
-      if (!cores.has(chave)) cores.set(chave, PALETA_GRUPOS[cores.size % PALETA_GRUPOS.length]);
+      if (!cores.has(chave)) cores.set(chave, corDeGrupo(cores.size));
       const ids = grupos.get(chave);
       const linha = el('div', { class: 'linha', title: 'Clique: selecionar o grupo · Shift: somar · duplo clique: enquadrar' },
         el('span', { class: 'amostra', style: `background:${cores.get(chave)}` }),
@@ -3010,6 +3149,44 @@ function volumeDe(s) {
     }
   }
   return Math.abs(v);
+}
+
+/**
+ * Extensões de um sólido ao longo dos seus eixos principais (covariância dos vértices,
+ * Jacobi 3×3), da maior para a menor: [comprimento, altura, espessura]. É a mesma conta do
+ * detalhamento em Python, para o painel dizer o comprimento da peça importada.
+ */
+function dimensoesPrincipais(s) {
+  const P = s.vertices || [];
+  const n = P.length;
+  if (n < 4) return null;
+  const c = [0, 0, 0];
+  for (const p of P) { c[0] += p[0]; c[1] += p[1]; c[2] += p[2]; }
+  c[0] /= n; c[1] /= n; c[2] /= n;
+  const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (const p of P) {
+    const d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) A[i][j] += d[i] * d[j];
+  }
+  const V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let it = 0; it < 60; it++) {
+    let p = 0, q = 1, m = Math.abs(A[0][1]);
+    if (Math.abs(A[0][2]) > m) { p = 0; q = 2; m = Math.abs(A[0][2]); }
+    if (Math.abs(A[1][2]) > m) { p = 1; q = 2; m = Math.abs(A[1][2]); }
+    if (m < 1e-9) break;
+    const th = 0.5 * Math.atan2(2 * A[p][q], A[q][q] - A[p][p]);
+    const co = Math.cos(th), si = Math.sin(th);
+    for (let k = 0; k < 3; k++) { const akp = A[k][p], akq = A[k][q]; A[k][p] = co * akp - si * akq; A[k][q] = si * akp + co * akq; }
+    for (let k = 0; k < 3; k++) { const apk = A[p][k], aqk = A[q][k]; A[p][k] = co * apk - si * aqk; A[q][k] = si * apk + co * aqk; }
+    for (let k = 0; k < 3; k++) { const vkp = V[k][p], vkq = V[k][q]; V[k][p] = co * vkp - si * vkq; V[k][q] = si * vkp + co * vkq; }
+  }
+  const ordem = [0, 1, 2].sort((i, j) => A[j][j] - A[i][i]);
+  return ordem.map(i => {
+    const e = [V[0][i], V[1][i], V[2][i]];
+    let lo = Infinity, hi = -Infinity;
+    for (const p of P) { const t = (p[0] - c[0]) * e[0] + (p[1] - c[1]) * e[1] + (p[2] - c[2]) * e[2]; if (t < lo) lo = t; if (t > hi) hi = t; }
+    return hi - lo;
+  });
 }
 
 /** Translada uma entidade (usado só no colar de reserva). */
