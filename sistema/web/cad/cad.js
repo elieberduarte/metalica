@@ -302,6 +302,23 @@ class CAD {
 
   previa(entidades) { this.tela.previa = entidades || []; this.tela.pedirQuadro(); }
   dica(t) { this.el.dica.textContent = t || ''; }
+
+  /**
+   * Enquanto uma operação longa roda no servidor (detalhar, importar IFC), mostra a
+   * etapa corrente na linha de dica. Devolve a função que para de acompanhar.
+   */
+  _acompanharProgresso(prefixo = '') {
+    if (!this.projeto) return () => {};
+    const url = `/api/projetos/${encodeURIComponent(this.projeto)}/progresso`;
+    const timer = setInterval(async () => {
+      try {
+        const p = await (await fetch(url, { cache: 'no-store' })).json();
+        if (p && p.etapa) this.dica(`${prefixo}${p.etapa}${p.ha_s >= 3 ? ` (${Math.round(p.ha_s)} s)` : ''}`);
+      } catch { /* servidor ocupado ou fora: tenta de novo no próximo tique */ }
+    }, 700);
+    return () => clearInterval(timer);
+  }
+
   medida(t) { if (document.activeElement !== this.el.medida) this.el.medida.placeholder = t || 'digite e Enter'; }
 
   // ------------------------------------------------------------- mouse
@@ -889,13 +906,15 @@ class CAD {
     const escolhidos = grupos.map(([k]) => k).filter(k => caixas[k].checked);
     if (!escolhidos.length) return;
     this.dica('Detalhando as peças do projeto…');
+    const parar = this._acompanharProgresso('Detalhando: ');
     try {
       if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });
       const j = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar`, { grupos: escolhidos, regra_tercas: regra.checked, rotular: true, substituir: substituir.checked, converter: converter.checked });
+      parar();
       const tercas = Object.keys(j.regra_tercas || {}).length;
       this.aviso(`Detalhamento: ${j.pecas} peças em ${j.posicoes} posições e ${j.conjuntos} conjuntos, ${j.peso_total} kg; ${j.desenhos.length} desenho(s)` + (tercas ? `, furação de fábrica em ${tercas} posições` : '') + '. Os desenhos estão em Desenho → Abrir desenho do projeto; a lista de materiais em Vistas do modelo → Lista de materiais.', 'info', 15000);
       if (j.desenhos.length) await this.abrirDesenho(j.desenhos[0].nome);
-    } catch (e) { this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
+    } catch (e) { parar(); this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
   /** Pranchas com carimbo a partir dos desenhos do projeto (rota /pranchas); abre a primeira. */

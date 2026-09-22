@@ -47,7 +47,7 @@ import time
 import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Optional
+from typing import Dict, Optional
 from urllib.parse import unquote, urlparse, parse_qs
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -382,11 +382,17 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
         nome += ".ifc"
     destino = os.path.join(pasta, "origem", nome)
     os.makedirs(os.path.dirname(destino), exist_ok=True)
-    with open(destino, "wb") as f:
-        f.write(base64.b64decode(dados))
-    doc = imp.importar(destino)
-    g.salvar_modelo(s, doc.dict(), marco=True)
-    g.tocar(s, tipo="ifc", origem_ifc=nome)
+    try:
+        _progresso(s, "gravando o IFC na pasta do projeto…")
+        with open(destino, "wb") as f:
+            f.write(base64.b64decode(dados))
+        _progresso(s, "lendo o IFC (%.0f MB; leva uns 20 s)…" % (os.path.getsize(destino) / 1048576))
+        doc = imp.importar(destino)
+        _progresso(s, "gravando o modelo 3D…")
+        g.salvar_modelo(s, doc.dict(), marco=True)
+        g.tocar(s, tipo="ifc", origem_ifc=nome)
+    finally:
+        _fim_progresso(s)
     return {"projeto": s, "estatisticas": doc.estatisticas(),
             "relatorio": doc.metadados.get("importacao", {})}
 
@@ -466,17 +472,27 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     from nucleo2d.detalhar import detalhar, GRUPOS, _categoria
     from saida import lista_producao
     g = _gerente()
+    try:
+        return _detalhar_projeto(s, corpo, g, detalhar, GRUPOS, _categoria, lista_producao)
+    finally:
+        _fim_progresso(s)
+
+
+def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, lista_producao) -> dict:
+    _progresso(s, "abrindo o modelo…")
     doc = _documento3d_do_projeto(s)
     _conferir_eixos_das_chapas(s, doc)
     grupos = corpo.get("grupos") or list(GRUPOS.keys())
     r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
                  rotular=corpo.get("rotular", True) is not False,
                  converter=corpo.get("converter", True) is not False, ajustes=_ajustes_furos(s),
-                 nomes=_nomes_producao(s))
+                 nomes=_nomes_producao(s), avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
     _gravar_nomes_producao(s, r.get("nomes") or {})
     nomeadas = _nomes_no_modelo(doc, r.get("nomes") or {})
     if r.get("convertidas") or nomeadas:
+        _progresso(s, "gravando o modelo…")
         g.salvar_modelo(s, doc.dict(), marco=True)            # chapas planas viraram paramétricas / nomes nas peças
+    _progresso(s, "gravando os desenhos…")
     substituir = corpo.get("substituir", True) is not False
     desenhos = []
     for chave, desenho in r["desenhos"].items():
@@ -490,6 +506,7 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     pasta = os.path.join(g._existente(s), "detalhamento")
     os.makedirs(pasta, exist_ok=True)
     # a lista de materiais sai do mesmo levantamento dos desenhos (romaneio, perfis, chapas…)
+    _progresso(s, "lista de materiais…")
     categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
     lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                   barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
@@ -505,6 +522,25 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
             "regra_tercas": r["regra_tercas"], "avisos": r["avisos"], "convertidas": r.get("convertidas", 0),
             "romaneio": _descrever_arquivo(arquivos["romaneio"], pasta),
             "materiais": {k: _descrever_arquivo(v, pasta) for k, v in arquivos.items()}}
+
+
+#: Etapa corrente das operações longas, por projeto: {slug: {"etapa", "quando"}}.
+PROGRESSO: Dict[str, dict] = {}
+
+
+def _progresso(s: str, etapa: str):
+    PROGRESSO[s] = {"etapa": str(etapa), "quando": time.time()}
+
+
+def _fim_progresso(s: str):
+    PROGRESSO.pop(s, None)
+
+
+def progresso_do_projeto(s: str) -> dict:
+    p = PROGRESSO.get(s)
+    if not p:
+        return {"etapa": "", "ha_s": 0}
+    return {"etapa": p["etapa"], "ha_s": round(time.time() - p["quando"], 1)}
 
 
 def _conferir_eixos_das_chapas(s: str, doc) -> dict:
@@ -524,7 +560,9 @@ def _conferir_eixos_das_chapas(s: str, doc) -> dict:
         return {"aviso": "%d chapa(s) convertidas por versão anterior sem o IFC de origem no projeto: eixos não conferidos" % len(pendentes)}
     from ifc import importar as imp
     from nucleo2d import detalhar as det
+    _progresso(s, "conferindo os eixos de %d chapas pelo IFC de origem (leva uns 20 s)…" % len(pendentes))
     doc_ifc = imp.importar(caminho)
+    _progresso(s, "reorientando as chapas…")
     r = det.reorientar_chapas(doc, doc_ifc)
     if r.get("chapas"):
         g.salvar_modelo(s, doc.dict(), marco=True)
@@ -544,7 +582,10 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
         raise ErroDeDados("informe a marca da posição.")
     g = _gerente()
     doc = _documento3d_do_projeto(s)
-    reorientadas = _conferir_eixos_das_chapas(s, doc)
+    try:
+        reorientadas = _conferir_eixos_das_chapas(s, doc)
+    finally:
+        _fim_progresso(s)
     convertidas = (det.converter_chapas(doc, marca, referencia=str(corpo.get("referencia") or "") or None)
                    if corpo.get("converter", True) is not False else 0)
     if convertidas:
@@ -1314,6 +1355,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(modelo_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "historico":
                     return self._json({"historico": _gerente().listar_historico(partes[0])})
+                if len(partes) == 2 and partes[1] == "progresso":
+                    return self._json(progresso_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":

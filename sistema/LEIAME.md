@@ -484,6 +484,13 @@ sistema/
 No catálogo, tubos redondos têm o prefixo `TC` e tubos retangulares e quadrados, `TR`
 e `TQ`.
 
+## Progresso das operações longas
+
+Importar IFC, detalhar e a conferência dos eixos das chapas publicam a etapa corrente em
+`app.PROGRESSO[slug]` (`_progresso`/`_fim_progresso`; `detalhar()` chama `avisar` a cada etapa) e
+`GET /api/projetos/<s>/progresso` a devolve; o editor 3D e o CAD (`_acompanharProgresso`) mostram-na na
+linha de dica a cada 0,7 s enquanto esperam a resposta.
+
 ## Histórico do modelo e projeto aberto
 
 `Projetos.salvar_modelo(..., marco=True)` guarda antes o modelo anterior comprimido em

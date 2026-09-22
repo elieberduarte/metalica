@@ -350,6 +350,23 @@ export class Editor {
 
   dica(texto) { this.el.dica.textContent = texto || ''; }
 
+  /**
+   * Enquanto uma operação longa roda no servidor (detalhar, importar IFC), mostra a
+   * etapa corrente na linha de dica. Devolve a função que para de acompanhar.
+   */
+  _acompanharProgresso(prefixo = '') {
+    if (!this.projeto) return () => {};
+    const url = `/api/projetos/${encodeURIComponent(this.projeto)}/progresso`;
+    const timer = setInterval(async () => {
+      try {
+        const p = await (await fetch(url, { cache: 'no-store' })).json();
+        if (p && p.etapa) this.dica(`${prefixo}${p.etapa}${p.ha_s >= 3 ? ` (${Math.round(p.ha_s)} s)` : ''}`);
+      } catch { /* servidor ocupado ou fora: tenta de novo no próximo tique */ }
+    }, 700);
+    return () => clearInterval(timer);
+  }
+
+
   /** Caixa de medidas: o que a ferramenta está medindo agora. */
   medida(texto) {
     this._textoMedida = texto ? String(texto) : '';
@@ -1127,7 +1144,8 @@ export class Editor {
       }
       let r;
       if (this.projeto) {
-        r = await this.api.importarIFCNoProjeto(this.projeto, arquivo);
+        const pararImp = this._acompanharProgresso('Importando: ');
+        try { r = await this.api.importarIFCNoProjeto(this.projeto, arquivo); } finally { pararImp(); }
         const m = await this.api.modeloDoProjeto(this.projeto);
         this._modeloAlterado = m && m.alterado ? m.alterado : null;
         this.carregarDocumento(m.documento, { autosalvar: false });
@@ -1301,6 +1319,7 @@ export class Editor {
     const marca = ent && ent.atributos && ent.atributos.marcas && ent.atributos.marcas.posicao;
     if (!marca) { this.aviso('Esta peça não tem marca de posição.', 'atencao'); return; }
     this.dica(`Gerando o detalhe de ${marca}…`);
+    const pararDet = this._acompanharProgresso(`Detalhe de ${marca}: `);
     try {
       await this._gravarAntesDeGerar();
       const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar-posicao`, {
@@ -1311,6 +1330,7 @@ export class Editor {
       if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
       window.location.href = `/cad?projeto=${encodeURIComponent(this.projeto)}&desenho=${encodeURIComponent(j.nome)}`;
     } catch (e) { this.aviso(`Não foi possível abrir o detalhe de ${marca}: ${e.message}`, 'erro', 0); this.dica(''); }
+    finally { pararDet(); }
   }
 
   /**
@@ -1443,7 +1463,8 @@ export class Editor {
     const escolhidos = grupos.map(([k]) => k).filter(k => caixas[k].checked);
     if (!escolhidos.length) return;
     this.dica('Detalhando as peças do projeto…');
-    this.aviso('Detalhando: analisando cada posição e conjunto do modelo. Pode levar alguns segundos.', 'info', 8000);
+    this.aviso('Detalhando: analisando cada posição e conjunto do modelo. A etapa corrente aparece na linha de baixo.', 'info', 8000);
+    const parar = this._acompanharProgresso('Detalhando: ');
     try {
       await this._gravarAntesDeGerar();
       const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar`, {
@@ -1456,9 +1477,10 @@ export class Editor {
       this.aviso(`Detalhamento: ${j.pecas} peças em ${j.posicoes} posições e ${j.conjuntos} conjuntos, ${j.peso_total} kg. ${j.desenhos.length} desenho(s) gerado(s)` +
                  (tercas ? `; furação de fábrica aplicada em ${tercas} posições` : '') + `. Lista de materiais em Desenho 2D → Lista de materiais.` +
                  (j.avisos && j.avisos.length ? ` ${j.avisos.length} aviso(s) no relatório.` : ''), 'info', 15000);
+      parar();
       this.dica('Detalhamento pronto.');
       if (j.desenhos.length) this._abrirCAD(j.desenhos[0].nome);
-    } catch (e) { this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
+    } catch (e) { parar(); this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
   /** Vistas ortográficas só das peças selecionadas (ou do modelo inteiro), num desenho. */

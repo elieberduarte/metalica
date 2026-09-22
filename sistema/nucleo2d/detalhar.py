@@ -3256,6 +3256,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     if converter:
         # chapas planas viram paramétricas: a célula sai com furos editáveis e "Aplicar
         # furos ao modelo 3D" funciona a partir do desenho geral
+        avisar("convertendo as chapas planas em chapas paramétricas…")
         convertidas = converter_chapas_planas(doc, lev["posicoes"], lev["pecas"])
         if convertidas:
             lev = levantar(doc, regra_tercas=regra_tercas, ajustes=ajustes)
@@ -3332,6 +3333,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                                      "; " + "; ".join("%s difere: %s" % (v_["marca"], v_["difere"]) for v_ in variantes) if variantes else ""))
     # nomes de produção (S.T.1, T.C.2-A, T1…) de posições e conjuntos, estáveis entre
     # gerações quando `nomes` traz os anteriores
+    avisar("nomes de produção…")
     nomeacao = nomear(posicoes, camadas, pecas, conjuntos_info, anteriores=nomes)
     nomes_pos, nomes_conj = nomeacao["posicoes"], nomeacao["conjuntos"]
     for c in conjuntos_info:
@@ -3354,6 +3356,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     camadas_ifc = {m: p.camada_2d for p in posicoes for m in marcas_de(p)}
     faixas: Dict[str, tuple] = {}          # grupo -> (células, largura, metadados) para o desenho completo
     if celulas and ("conjuntos" in grupos or "completo" in grupos):
+        avisar("desenhando os conjuntos (%d células)…" % len(celulas))
         g = GRUPOS["conjuntos"]
         d = Desenho(nome=g["titulo"], escala=g["escala"])
         tipos_conj = nomeacao["tipos_conjuntos"]
@@ -3400,6 +3403,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         lista = [p for p in _ordenar(posicoes) if p.classe in g["classes"]]
         if not lista:
             continue
+        avisar("desenhando %s (%d posições)…" % (g["titulo"].replace("Detalhamento – ", ""), len(lista)))
         d = Desenho(nome=g["titulo"], escala=g["escala"])
         d.metadados["detalhamento"] = {
             "grupo": chave, "posicoes": [p.marca for p in lista],
@@ -3423,6 +3427,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
 
     localizacao = None
     if "localizacao" in grupos or "completo" in grupos:
+        avisar("planta de localização…")
         try:
             localizacao = desenho_de_localizacao(doc, pecas, GRUPOS["localizacao"]["titulo"],
                                                  ignorar=[p.marca for p in posicoes if p.classe == "telha"],
@@ -3433,6 +3438,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             avisos.append("planta de localização não gerada: %s" % e)
 
     if "completo" in grupos and (faixas or localizacao is not None):
+        avisar("desenho completo…")
         desenhos["completo"] = desenho_completo(faixas, localizacao)
 
     resumo_pos = []
