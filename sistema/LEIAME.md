@@ -227,6 +227,10 @@ do modelo já importado, desenhos editáveis no CAD (`nucleo2d/detalhar.py`, rot
   águas de um pórtico na cumeeira) é dividido ao longo do eixo comprido (`_dividir`);
 - `detalhamento/relatorio.json` e a lista de materiais (abaixo).
 
+Desenhos gerados podem ser excluídos em lote (**Excluir desenhos…** no menu Desenho 2D do
+editor 3D e no menu Desenho do CAD; × ao lado de cada desenho salvo no editor): vão para a
+`.lixeira` da pasta de dados (`POST …/desenhos/<nome>/excluir`).
+
 Orientação dos conjuntos (`_eixos_do_conjunto`): a normal da vista é o eixo mais fino do
 conjunto e a vertical do desenho é a vertical da obra projetada — a tesoura sai inclinada
 como montada. Conjunto **linear** (segunda extensão < 12 % da primeira: tirante com as

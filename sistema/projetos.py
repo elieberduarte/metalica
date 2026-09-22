@@ -393,10 +393,13 @@ class Projetos:
             if not arq.endswith(".desenho.json"):
                 continue
             caminho = os.path.join(pasta, arq)
-            item = {"nome": arq[:-len(".desenho.json")],
-                    "alterado": datetime.datetime.fromtimestamp(
-                        os.path.getmtime(caminho)).replace(microsecond=0).isoformat(),
-                    "kb": round(os.path.getsize(caminho) / 1024, 1)}
+            try:
+                item = {"nome": arq[:-len(".desenho.json")],
+                        "alterado": datetime.datetime.fromtimestamp(
+                            os.path.getmtime(caminho)).replace(microsecond=0).isoformat(),
+                        "kb": round(os.path.getsize(caminho) / 1024, 1)}
+            except OSError:
+                continue                        # foi excluído (ou movido) entre o listdir e aqui
             item["titulo"] = item["nome"]
             try:
                 item.update(_cabecalho_do_desenho(caminho, contar))

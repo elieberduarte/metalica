@@ -212,7 +212,11 @@ kbd {
 /* desenhos 2D salvos, listados ao abrir o menu Desenho 2D */
 .menu-nota { font-size: 11.5px; color: var(--texto3); padding: 4px 9px 3px; }
 .desenhos-salvos { max-height: 40vh; overflow-y: auto; }
+.desenhos-salvos .desenho-salvo { display: flex; align-items: stretch; }
+.desenhos-salvos .desenho-salvo > button:first-child { flex: 1; min-width: 0; }
 .desenhos-salvos button { flex-direction: column; align-items: flex-start; gap: 1px; }
+.desenhos-salvos button.excluir { flex: none; width: 28px; align-items: center; justify-content: center; color: var(--texto3); font-size: 15px; padding: 0; }
+.desenhos-salvos button.excluir:hover { color: var(--vermelho, #c33); background: var(--painel2); }
 .desenhos-salvos button small { font-size: 11px; color: var(--texto3); }
 .desenhos-salvos button:hover small { color: inherit; opacity: .8; }
 .menu-titulo {

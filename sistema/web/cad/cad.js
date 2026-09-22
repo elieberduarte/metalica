@@ -357,6 +357,7 @@ class CAD {
     const acoes = {
       abrir: () => this.dialogoAbrir(),
       novo: () => this.dialogoNovo(),
+      'excluir-desenhos': () => this.dialogoExcluir(),
       salvar: () => this.salvar(),
       'exportar-dxf': () => this.exportarDXF(),
       'exportar-pdf': () => this.exportarPDF(),
@@ -626,6 +627,59 @@ class CAD {
     }
     await this.dialogo({ titulo: 'Abrir desenho do projeto', corpo: caixa, ok: null });
     if (escolhido) await this.abrirDesenho(escolhido);
+  }
+
+  async dialogoExcluir() {
+    if (!this.projeto) { this.aviso('Excluir desenhos precisa de um projeto aberto.', 'atencao'); return; }
+    const lista = await this._listaDesenhos();
+    const excluidos = await this.dialogoExcluirDesenhos(lista, { atual: this.nomeDesenho });
+    if (excluidos.includes(this.nomeDesenho)) {
+      // o desenho aberto foi embora: não pode ser regravado pelo autosave
+      this._autosavePendente = false;
+      if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+      const resto = (await this._listaDesenhos());
+      if (resto.length) await this.abrirDesenho(resto[0].nome);
+      else { this.nomeDesenho = null; this.carregar({ nome: 'Desenho', escala: 20 }); const url = new URL(location.href); url.searchParams.delete('desenho'); history.replaceState(null, '', url); }
+    }
+  }
+
+  /**
+   * Diálogo com a lista dos desenhos do projeto em caixas; os marcados vão para a
+   * lixeira da pasta de dados (.lixeira), de onde dá para recuperar à mão.
+   */
+  async dialogoExcluirDesenhos(lista, { atual = null } = {}) {
+    if (!lista.length) { this.aviso('O projeto não tem desenhos para excluir.', 'atencao'); return []; }
+    const caixas = new Map();
+    const opcoes = el('div', { class: 'lista-opcoes', style: 'max-height:45vh;overflow:auto' });
+    for (const d of lista) {
+      const c = el('input', { type: 'checkbox' });
+      caixas.set(d.nome, c);
+      opcoes.append(el('label', { class: 'linha' }, c, ` ${d.titulo || d.nome}`,
+        el('small', { texto: `  ${(d.entidades || 0).toLocaleString('pt-BR')} objetos · ${(d.vistas || []).length} vista(s) · ${d.alterado ? d.alterado.replace('T', ' ').slice(0, 16) : ''}` })));
+    }
+    const marcar = (teste) => { for (const d of lista) caixas.get(d.nome).checked = teste(d); };
+    const atalhos = el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin:8px 0' },
+      el('button', { type: 'button', onclick: () => marcar(d => /^detalhamento/i.test(d.nome)) }, 'Marcar detalhamentos'),
+      el('button', { type: 'button', onclick: () => marcar(d => /^prancha(-\d+)?$/i.test(d.nome)) }, 'Marcar pranchas'),
+      el('button', { type: 'button', onclick: () => marcar(() => true) }, 'Marcar todos'),
+      el('button', { type: 'button', onclick: () => marcar(() => false) }, 'Desmarcar'));
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: 'Os desenhos marcados saem do projeto e vão para a pasta .lixeira dos dados (dá para recuperar à mão). Depois, "Detalhar peças e conjuntos…" gera tudo de novo.' }),
+      atalhos, opcoes);
+    if (await this.dialogo({ titulo: 'Excluir desenhos do projeto', corpo, ok: 'Excluir marcados' }) !== 'ok') return [];
+    const nomes = lista.map(d => d.nome).filter(n => caixas.get(n).checked);
+    if (!nomes.length) return [];
+    const excluidos = [];
+    for (const n of nomes) {
+      try {
+        const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(n)}/excluir`, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: '{}' });
+        const j = await r.json();
+        if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+        excluidos.push(n);
+      } catch (e) { this.aviso(`Não foi possível excluir "${n}": ${e.message}`, 'erro'); }
+    }
+    if (excluidos.length) this.aviso(`${excluidos.length} desenho(s) excluído(s)${excluidos.includes(atual) ? ' — inclusive o que estava aberto' : ''}.`, 'info', 8000);
+    return excluidos;
   }
 
   async dialogoNovo() {

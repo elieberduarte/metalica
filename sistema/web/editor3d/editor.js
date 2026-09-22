@@ -1177,6 +1177,66 @@ export class Editor {
     this._irPara(`/materiais?projeto=${encodeURIComponent(this.projeto)}`);
   }
 
+  async _excluirDesenhos() {
+    if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador).', 'atencao'); return; }
+    let lista = [];
+    try { lista = await (await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos`)).json(); } catch { lista = []; }
+    await this.dialogoExcluirDesenhos(Array.isArray(lista) ? lista : []);
+    this._listarDesenhosNoMenu();
+  }
+
+  /** Um desenho só, pelo × ao lado dele no menu. */
+  async _excluirUmDesenho(nome, titulo) {
+    const corpo = el('div', {}, el('p', {}, `Excluir o desenho "${titulo || nome}"? Ele vai para a pasta .lixeira dos dados.`));
+    if (await this.dialogo({ titulo: 'Excluir desenho', corpo, ok: 'Excluir' }) !== 'ok') return;
+    try {
+      const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(nome)}/excluir`, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: '{}' });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      this.aviso(`Desenho "${titulo || nome}" excluído.`, 'info', 6000);
+    } catch (e) { this.aviso(`Não foi possível excluir: ${e.message}`, 'erro'); }
+    this._listarDesenhosNoMenu();
+  }
+
+  /**
+   * Diálogo com a lista dos desenhos do projeto em caixas; os marcados vão para a
+   * lixeira da pasta de dados (.lixeira), de onde dá para recuperar à mão.
+   */
+  async dialogoExcluirDesenhos(lista, { atual = null } = {}) {
+    if (!lista.length) { this.aviso('O projeto não tem desenhos para excluir.', 'atencao'); return []; }
+    const caixas = new Map();
+    const opcoes = el('div', { class: 'lista-opcoes', style: 'max-height:45vh;overflow:auto' });
+    for (const d of lista) {
+      const c = el('input', { type: 'checkbox' });
+      caixas.set(d.nome, c);
+      opcoes.append(el('label', { class: 'linha' }, c, ` ${d.titulo || d.nome}`,
+        el('small', { texto: `  ${(d.entidades || 0).toLocaleString('pt-BR')} objetos · ${(d.vistas || []).length} vista(s) · ${d.alterado ? d.alterado.replace('T', ' ').slice(0, 16) : ''}` })));
+    }
+    const marcar = (teste) => { for (const d of lista) caixas.get(d.nome).checked = teste(d); };
+    const atalhos = el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin:8px 0' },
+      el('button', { type: 'button', onclick: () => marcar(d => /^detalhamento/i.test(d.nome)) }, 'Marcar detalhamentos'),
+      el('button', { type: 'button', onclick: () => marcar(d => /^prancha(-\d+)?$/i.test(d.nome)) }, 'Marcar pranchas'),
+      el('button', { type: 'button', onclick: () => marcar(() => true) }, 'Marcar todos'),
+      el('button', { type: 'button', onclick: () => marcar(() => false) }, 'Desmarcar'));
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: 'Os desenhos marcados saem do projeto e vão para a pasta .lixeira dos dados (dá para recuperar à mão). Depois, "Detalhar peças e conjuntos…" gera tudo de novo.' }),
+      atalhos, opcoes);
+    if (await this.dialogo({ titulo: 'Excluir desenhos do projeto', corpo, ok: 'Excluir marcados' }) !== 'ok') return [];
+    const nomes = lista.map(d => d.nome).filter(n => caixas.get(n).checked);
+    if (!nomes.length) return [];
+    const excluidos = [];
+    for (const n of nomes) {
+      try {
+        const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(n)}/excluir`, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: '{}' });
+        const j = await r.json();
+        if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+        excluidos.push(n);
+      } catch (e) { this.aviso(`Não foi possível excluir "${n}": ${e.message}`, 'erro'); }
+    }
+    if (excluidos.length) this.aviso(`${excluidos.length} desenho(s) excluído(s)${excluidos.includes(atual) ? ' — inclusive o que estava aberto' : ''}.`, 'info', 8000);
+    return excluidos;
+  }
+
   /** Navega na mesma janela depois de gravar o que estiver pendente do autosave. */
   _irPara(url) {
     this._gravarAntesDeGerar().catch(() => {}).then(() => { window.location.href = url; });
@@ -1199,10 +1259,12 @@ export class Editor {
       if (!r.ok || desenhos.erro) throw new Error(desenhos.erro || r.statusText);
       if (!desenhos.length) { bloco.replaceChildren(el('div', { class: 'menu-nota', texto: 'Nenhum desenho salvo neste projeto ainda.' })); return; }
       bloco.replaceChildren(el('div', { class: 'menu-nota', texto: `Desenhos salvos (${desenhos.length}) — abrir no CAD:` }),
-        ...desenhos.map(d => el('button', { type: 'button', 'data-desenho': d.nome,
-          title: `${(d.vistas || []).join(', ') || 'sem vistas'} · ${d.kb >= 1024 ? (d.kb / 1024).toFixed(1) + ' MB' : Math.round(d.kb) + ' kB'} · ${d.alterado ? d.alterado.replace('T', ' ').slice(0, 16) : ''}` },
-          el('span', { texto: d.titulo || d.nome }),
-          el('small', { texto: `${(d.entidades || 0).toLocaleString('pt-BR')} objetos · ${(d.vistas || []).length} vista(s)` }))));
+        ...desenhos.map(d => el('div', { class: 'desenho-salvo' },
+          el('button', { type: 'button', 'data-desenho': d.nome,
+            title: `${(d.vistas || []).join(', ') || 'sem vistas'} · ${d.kb >= 1024 ? (d.kb / 1024).toFixed(1) + ' MB' : Math.round(d.kb) + ' kB'} · ${d.alterado ? d.alterado.replace('T', ' ').slice(0, 16) : ''}` },
+            el('span', { texto: d.titulo || d.nome }),
+            el('small', { texto: `${(d.entidades || 0).toLocaleString('pt-BR')} objetos · ${(d.vistas || []).length} vista(s)` })),
+          el('button', { type: 'button', class: 'excluir', 'data-excluir': d.nome, 'data-titulo': d.titulo || d.nome, title: 'Excluir este desenho (vai para a lixeira)', texto: '×' }))));
     } catch (e) {
       bloco.replaceChildren(el('div', { class: 'menu-nota', texto: `Não foi possível listar os desenhos: ${e.message}` }));
     }
@@ -1371,6 +1433,7 @@ export class Editor {
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
       'abrir-cad': () => this._abrirCAD(),
       'materiais': () => this._abrirMateriais(),
+      'excluir-desenhos': () => this._excluirDesenhos(),
     };
     document.addEventListener('click', (ev) => {
       const botaoMenu = ev.target.closest('.menu-botao');
@@ -1381,6 +1444,8 @@ export class Editor {
         if (!aberto) { menu.classList.add('aberto'); if (menu.dataset.menu === 'desenho2d') this._listarDesenhosNoMenu(); }
         return;
       }
+      const excluir = ev.target.closest('[data-excluir]');
+      if (excluir) { ev.stopPropagation(); this._fecharMenus(); this._excluirUmDesenho(excluir.dataset.excluir, excluir.dataset.titulo); return; }
       const desenho = ev.target.closest('[data-desenho]');
       if (desenho) { this._fecharMenus(); this._abrirCAD(desenho.dataset.desenho); return; }
       const acao = ev.target.closest('[data-acao]');
