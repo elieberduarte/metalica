@@ -2334,9 +2334,11 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
             continue
         marca_t = fundidas.get(str(_marcas(tir).get("posicao") or tir.nome), str(_marcas(tir).get("posicao") or tir.nome))
         comp_t = comprimentos.get(marca_t)
-        linhas.append("%s – %02dx: tirante %s %s%s" % (nomes_conj.get(rot, rot), n_inst, nomes.get(marca_t) or marca_t,
-                                                     str(_marcas(tir).get("perfil") or tir.nome or ""),
-                                                     "  L = %d mm" % round(comp_t) if comp_t else ""))
+        nome_t = nomes.get(marca_t) or marca_t
+        linhas.append("%s – %02dx: tirante %s%s%s" % (nomes_conj.get(rot, rot), n_inst,
+                                                    "" if nome_t == nomes_conj.get(rot, rot) else nome_t + " ",
+                                                    str(_marcas(tir).get("perfil") or tir.nome or ""),
+                                                    "  L = %d mm" % round(comp_t) if comp_t else ""))
     pecas_ponta = collections.Counter(nome_de(_marcas(e).get("posicao") or e.nome) for e in inst if e is not tirante)
     if pecas_ponta:
         linhas.append("Pecas de ponta (por unidade): " + ", ".join("%s x%d" % (k, q) for k, q in sorted(pecas_ponta.items(), key=lambda kv: _ordem_natural(kv[0]))))
@@ -2557,12 +2559,14 @@ def _eh_redonda_perfil(perfil: str) -> bool:
 #: Prefixo do nome de produção por tipo de item (padrão dos desenhos da fábrica).
 PREFIXO_NOME = collections.OrderedDict([
     ("tesoura", "T"), ("terca_cobertura", "T.C."), ("terca_marquise", "T.M."), ("suporte_terca", "S.T."),
-    ("agulhamento", "A.G."), ("contraventamento", "C.V."), ("castanha", "C.S."), ("chapa", "CH."),
+    ("agulhamento", "A.G."), ("suporte_agulhamento", "S.A.G."), ("contraventamento", "C.V."),
+    ("suporte_contraventamento", "S.C.V."), ("castanha", "C.S."), ("chapa", "CH."),
     ("barra_roscada", "B.R."), ("gancho", "G."), ("barra", "B."), ("telha", "TL."), ("conjunto", "CJ."), ("parte", ""),
 ])
 TIPOS_NOME = {
     "tesoura": "Tesoura", "terca_cobertura": "Terça de cobertura", "terca_marquise": "Terça de marquise",
-    "suporte_terca": "Suporte de terça", "agulhamento": "Agulhamento", "contraventamento": "Contraventamento",
+    "suporte_terca": "Suporte de terça", "agulhamento": "Agulhamento", "suporte_agulhamento": "Suporte de agulhamento",
+    "contraventamento": "Contraventamento", "suporte_contraventamento": "Suporte de contraventamento",
     "castanha": "Castanha", "chapa": "Chapa", "barra": "Barra", "telha": "Telha", "conjunto": "Conjunto",
     "barra_roscada": "Barra roscada", "gancho": "Gancho", "parte": "Parte de conjunto",
 }
@@ -2587,6 +2591,48 @@ def _tem_furacao_de_terca(pos: Posicao, assinaturas: set) -> bool:
         if a and len(g) >= 2 and _eixos_da_assinatura(a) in assinaturas:
             return True
     return False
+
+
+#: Chapa a menos disto (mm) da ponta de uma terça é o suporte dela.
+ALCANCE_SUPORTE_TERCA = 200.0
+
+
+def _chapas_onde_a_terca_encosta(pecas: Sequence[Solido], marcas_terca: set) -> set:
+    """Marcas das chapas que têm a ponta de alguma terça a menos de ALCANCE_SUPORTE_TERCA
+    do seu centro: são os suportes de terça, seja qual for a furação."""
+    pontas = collections.defaultdict(list)
+    cel = 500.0
+    for e in pecas:
+        if str(_marcas(e).get("posicao") or e.nome or e.id) not in marcas_terca:
+            continue
+        eixo = _eixo_da_peca(e)
+        if not eixo:
+            continue
+        for p in eixo:
+            pontas[tuple(int(math.floor(p[i] / cel)) for i in range(3))].append(p)
+    fora = set()
+    for e in pecas:
+        if not (_tipo_ifc(e).startswith("IfcPlate") or isinstance(getattr(e, "parametrica", None), Chapa)) or not e.vertices:
+            continue
+        c = tuple(sum(v[i] for v in e.vertices) / len(e.vertices) for i in range(3))
+        k = tuple(int(math.floor(c[i] / cel)) for i in range(3))
+        perto = False
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for p in pontas.get((k[0] + dx, k[1] + dy, k[2] + dz), ()):
+                        if math.dist(p, c) <= ALCANCE_SUPORTE_TERCA:
+                            perto = True
+                            break
+                    if perto:
+                        break
+                if perto:
+                    break
+            if perto:
+                break
+        if perto:
+            fora.add(str(_marcas(e).get("posicao") or e.nome or e.id))
+    return fora
 
 
 def _caixa_dos_pilares(pecas: Sequence[Solido]):
@@ -2650,10 +2696,14 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
 
     # ---- tipo de cada posição
     tipo: Dict[str, str] = {}
+    marcas_terca = {m for p in posicoes for m in marcas_de(p) if p.classe == "barra" and _eh_terca(p, camadas.get(p.marca, ""))}
+    suportes = _chapas_onde_a_terca_encosta(pecas, marcas_terca)
     for p in posicoes:
         cls = p.classe
         if cls in ("chapa", "chapa_dobrada"):
-            t = "suporte_terca" if _tem_furacao_de_terca(p, ass_terca) else "chapa"
+            # suporte de terça é a chapa em que a terça encosta (geometria), não a que
+            # tem a furação parecida: a chapinha de ponta do agulhamento tem os mesmos furos
+            t = "suporte_terca" if any(m in suportes for m in marcas_de(p)) else "chapa"
         elif cls == "telha":
             t = "telha"
         elif re.search(r"BARRA\s*ROSC", p.perfil or "", re.I):
@@ -2670,7 +2720,7 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
                         or cy < caixa_pil[1] - FOLGA_MARQUISE or cy > caixa_pil[3] + FOLGA_MARQUISE):
                     t = "terca_marquise"
         elif cls in ("barra", "barra_conformada"):
-            t = "agulhamento" if (p.comprimento >= 1500.0 and not (conjuntos_de(p) & tesouras)) else "barra"
+            t = "agulhamento" if (p.comprimento >= 1500.0 and not conjuntos_de(p)) else "barra"
         else:
             t = "barra"
         tipo[p.marca] = t
@@ -2686,17 +2736,27 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
         for m, q in comp.items():
             cont[tipo.get(fundidas.get(m, m), "")] += q
         n = sum(comp.values())
-        if cont.get("suporte_terca") and n <= 6:
-            tipo_conj[c["marca"]] = "suporte_terca"
-        elif cont.get("contraventamento"):
+        barras_conj = [fundidas.get(m, m) for m, q in comp.items() if tipo.get(fundidas.get(m, m)) in ("barra", "agulhamento") for _ in range(q)]
+        if cont.get("contraventamento"):
             tipo_conj[c["marca"]] = "contraventamento"
-        elif cont.get("agulhamento") == 1 and n <= 6:
+        elif len(barras_conj) == 1 and n <= 6 and n == len(barras_conj) + cont.get("chapa", 0) + cont.get("suporte_terca", 0):
+            # uma barra com chapinhas de ponta: agulhamento (a barra é a agulha)
             tipo_conj[c["marca"]] = "agulhamento"
+            tipo[barras_conj[0]] = "agulhamento"
+        elif cont.get("suporte_terca") and n <= 6:
+            tipo_conj[c["marca"]] = "suporte_terca"
         else:
             tipo_conj[c["marca"]] = "conjunto"
     for p in posicoes:
-        if tipo[p.marca] == "chapa" and p.L <= 250.0 and any(tipo_conj.get(c) == "contraventamento" for c in conjuntos_de(p)):
+        cs = conjuntos_de(p)
+        if not cs:
+            continue
+        if tipo[p.marca] == "chapa" and p.L <= 250.0 and any(tipo_conj.get(c) == "contraventamento" for c in cs):
             tipo[p.marca] = "castanha"
+        elif tipo[p.marca] in ("chapa", "suporte_terca") and all(tipo_conj.get(c) == "agulhamento" for c in cs):
+            tipo[p.marca] = "suporte_agulhamento"          # as chapinhas de ponta da agulha
+        elif tipo[p.marca] in ("chapa", "barra") and all(tipo_conj.get(c) == "contraventamento" for c in cs):
+            tipo[p.marca] = "suporte_contraventamento"     # cantoneiras e chapas de ponta do tirante
 
     def anterior(mapa, chaves, prefixo):
         for k in chaves:
@@ -2738,7 +2798,13 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             c = next(iter(cs))
             if tipo_conj.get(c) != "tesoura":
                 partes[c].append(p)
+    principais = {"contraventamento": "contraventamento", "agulhamento": "agulhamento"}
     for c, lista in partes.items():
+        if tipo_conj.get(c) in principais:
+            for p in lista:
+                if tipo[p.marca] == principais[tipo_conj[c]]:
+                    nomes_pos[p.marca] = nomes_conj[c]      # o tirante é o C.V.n; a agulha é o A.G.n
+            continue
         for i, p in enumerate(sorted(lista, key=lambda q: _ordem_natural(q.marca)), 1):
             nomes_pos[p.marca] = "%s.%d" % (nomes_conj[c], i)
             tipo[p.marca] = "parte"

@@ -1890,6 +1890,12 @@ export class Editor {
           const doConj = [...this.documento.entidades.values()].filter(e => e.atributos && e.atributos.marcas && e.atributos.marcas.conjunto === marcas.conjunto).map(e => e.id);
           linha('Conjunto', `${marcas.conjunto}  (${doConj.length} peças)`, () => this.selecao.definir(doConj));
         }
+        // nome de produção dado pelo detalhamento (S.T.1, T.C.2-A…), quando já existe
+        if (marcas.nome) {
+          const mesmos = [...this.documento.entidades.values()].filter(e => e.atributos && e.atributos.marcas && e.atributos.marcas.nome === marcas.nome).map(e => e.id);
+          linha('Nome', `${marcas.nome}  (${mesmos.length} peças)`, () => this.selecao.definir(mesmos));
+        }
+        if (marcas.nome_conjunto && marcas.nome_conjunto !== marcas.nome) linha('Nome do conjunto', marcas.nome_conjunto);
         if (marcas.perfil) linha('Perfil', marcas.perfil);
         if (a.tipo_ifc) linha('Tipo IFC', a.tipo_ifc);
         const dims = dimensoesPrincipais(um);

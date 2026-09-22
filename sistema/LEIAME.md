@@ -273,11 +273,13 @@ alturas diferentes com a mesma furação original saem com "conferir".
 não mudarem entre gerações): tesouras (conjuntos com 8+ barras) `T1, T2…`; terças de cobertura
 `T.C.n` (mesmo perfil e comprimento = mesma família; só a furação diferente = `T.C.n-A`, `-B`…)
 e de marquise `T.M.n` (centro fora da caixa dos pilares em planta); suportes de terça `S.T.n`
-(chapa ou cantoneira com a furação de alguma terça, ou o conjunto que a contém); agulhamentos
-`A.G.n`; contraventamentos `C.V.n` (barras redondas e os conjuntos com elas); castanhas
-`C.S.n`; demais chapas `CH.n`, barras `B.n`, telhas `TL.n`, conjuntos `CJ.n`. A peça que só
-existe dentro de um conjunto (que não seja tesoura) chama-se pelo conjunto: `S.T.1.1`,
-`S.T.1.2`. Numeração por quantidade decrescente; nomes únicos entre posições e conjuntos.
+(a chapa em que a ponta de uma terça encosta, a menos de 200 mm — `_chapas_onde_a_terca_encosta`);
+agulhamentos `A.G.n` (conjunto de uma barra com chapinhas de ponta: a barra leva o nome do
+conjunto e as chapinhas são `S.A.G.n`); contraventamentos `C.V.n` (o tirante leva o nome do
+conjunto; cantoneiras e chapas de ponta `S.C.V.n`, castanhas `C.S.n`, barra roscada `B.R.n`,
+gancho `G.n`); demais chapas `CH.n`, barras `B.n`, telhas `TL.n`, conjuntos `CJ.n`. A peça que só
+existe dentro de outro conjunto (que não seja tesoura) chama-se pelo conjunto: `CJ.1.1`. O painel
+Propriedades do editor 3D mostra o nome e o nome do conjunto (`marcas.nome`). Numeração por quantidade decrescente; nomes únicos entre posições e conjuntos.
 O nome vai para o título das células, os rótulos da elevação, a planta de localização, a
 lista de materiais (coluna "Nome", CSV, HTML e PDF), a tabela das pranchas e para
 `marcas.nome` / `marcas.nome_conjunto` das peças do modelo 3D (a pesquisa do editor acha

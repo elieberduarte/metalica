@@ -590,13 +590,24 @@ def test_nomes_de_producao_no_modelo_real():
     assert len(tesouras) == 2                                  # um detalhe por lado
     assert any(c["variantes"] for c in tesouras)               # com as variantes anotadas
     assert nm["posicoes"]["M13"] == "T.C.1"                    # a terça mais repetida
-    assert nm["conjuntos"]["M16"] == "S.T.1" and nm["tipos_conjuntos"]["M16"] == "suporte_terca"
-    assert nm["posicoes"]["P36"].startswith("S.T.")          # chapinha partilhada por M16 e M62
-    assert any(n.startswith("S.T.1.") for n in nm["posicoes"].values())   # a peça exclusiva do suporte
+    # M16 = cantoneira de 1,5 m com duas chapinhas de ponta: agulhamento; a agulha leva o
+    # nome do conjunto e as chapinhas são suportes de agulhamento
+    assert nm["tipos_conjuntos"]["M16"] == "agulhamento" and nm["conjuntos"]["M16"].startswith("A.G.")
+    assert nm["posicoes"]["P37"] == nm["conjuntos"]["M16"]
+    assert nm["posicoes"]["P36"].startswith("S.A.G.")
+    # suporte de terça é a chapa em que a terça encosta (P12, na tesoura)
+    assert nm["posicoes"]["P12"].startswith("S.T.") and nm["tipos"]["P12"] == "suporte_terca"
+    # o tirante do contraventamento tem o nome do conjunto; as castanhas são C.S.n
+    cv = next(k for k, v in nm["tipos_conjuntos"].items() if v == "contraventamento" and "M17" in k.split(" / "))
+    assert nm["posicoes"]["P38"] == nm["conjuntos"][cv] and nm["posicoes"]["P42"].startswith("C.S.")
     terca_var = [n for n in nm["posicoes"].values() if n.startswith("T.C.") and "-A" in n]
     assert terca_var                                           # mesmo perfil e comprimento, outra furação
-    todos = list(nm["posicoes"].values()) + list(nm["conjuntos"].values())
-    assert len(todos) == len(set(todos))                       # sem nome repetido
+    # sem nome repetido entre posições nem entre conjuntos; a agulha e o tirante levam o
+    # nome do próprio conjunto (é o mesmo detalhe), e só eles coincidem
+    pos_nomes, conj_nomes = list(nm["posicoes"].values()), list(nm["conjuntos"].values())
+    assert len(pos_nomes) == len(set(pos_nomes)) and len(conj_nomes) == len(set(conj_nomes))
+    comuns = set(pos_nomes) & set(conj_nomes)
+    assert all(n_.startswith(("C.V.", "A.G.")) for n_ in comuns)
     textos = [e.texto for e in r["desenhos"]["barras"].entidades.values() if isinstance(e, Texto)]
     assert any(tx.startswith("T.C.1 – ") and "(M13)" in tx for tx in textos)
     textos_c = [e.texto for e in r["desenhos"]["conjuntos"].entidades.values() if isinstance(e, Texto)]
