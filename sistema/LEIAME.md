@@ -234,7 +234,10 @@ ou conjunto dos desenhos de detalhamento vira uma vista na escala do desenho de 
 cortes e vistas entram inteiros. O que não cabe na escala desce para a normalizada
 seguinte, com nota; o que não cabe na folha vai para a prancha seguinte. A prancha é um
 desenho em milímetro de papel (escala 1), editável como qualquer outro, e o DXF sai em
-papel 1:1: a cota guarda o valor original como texto.
+papel 1:1: a cota guarda o valor original como texto. Cada prancha traz, no rodapé à
+esquerda do carimbo, a **tabela das posições** que contém (marca, quantidade, perfil,
+comprimento, peso). Para escolher à mão o que vai numa prancha, selecione as células no
+desenho de detalhamento antes de abrir o diálogo e marque "só as peças selecionadas".
 
 ## O que sai
 

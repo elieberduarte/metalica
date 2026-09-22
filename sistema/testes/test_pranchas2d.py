@@ -78,6 +78,18 @@ def test_reduz_escala_e_quebra_em_pranchas():
         pass
 
 
+def test_filtro_de_chaves_e_tabela():
+    d = _detalhe(n_celulas=3)
+    d.metadados["detalhamento"] = {"itens": {"P%d" % i: {"quantidade": 4, "perfil": "PLATE 100x50x3", "comprimento": 1200,
+                                                          "espessura": 3.0, "peso": 1.5, "classe": "Chapa"} for i in (1, 2, 3)}}
+    folhas = pranchas.montar_pranchas([{"nome": "det", "desenho": d, "chaves": ["P2"]}], formato="A3")
+    cels = folhas[0].metadados["prancha"]["celulas"]
+    assert [c["titulo"] for c in cels] == ["P2 – 04x"]
+    textos = [e for e in folhas[0].entidades.values() if isinstance(e, Texto) and e.atributos.get("prancha") == "tabela"]
+    assert any(t.texto == "P2" for t in textos) and not any(t.texto == "P1" for t in textos)
+    assert any(t.texto == "6.0" for t in textos)        # peso total 4 × 1,5
+
+
 if __name__ == "__main__":
     falhas = 0
     for nome, fn in sorted(globals().items()):

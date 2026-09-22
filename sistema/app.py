@@ -474,7 +474,7 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     """Pranchas a partir de desenhos 2D do projeto: uma célula por posição/conjunto dos
     desenhos de detalhamento, ou o desenho inteiro, em folhas ISO com carimbo.
 
-    corpo: {desenhos: [nome | {nome, escala}], formato: "A1", titulo: "Prancha",
+    corpo: {desenhos: [nome | {nome, escala, chaves: [posições/conjuntos]}], formato: "A1", titulo: "Prancha",
             carimbo: {obra, cliente, responsavel, crea, revisao, data, titulo, subtitulo},
             substituir: bool}"""
     from nucleo2d.desenho import Desenho
@@ -490,7 +490,8 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
         if d.metadados.get("prancha"):
             raise ErroDeDados("\"%s\" já é uma prancha; escolha os desenhos de origem." % d.nome)
         fontes.append({"nome": _slug(nome), "desenho": d,
-                       "escala": (item.get("escala") if isinstance(item, dict) else None)})
+                       "escala": (item.get("escala") if isinstance(item, dict) else None),
+                       "chaves": (item.get("chaves") if isinstance(item, dict) else None)})
     p = g.ler(s)
     carimbo = {"obra": p.get("nome") or s, "cliente": p.get("cliente") or "",
                "responsavel": p.get("responsavel") or "", "revisao": "00"}

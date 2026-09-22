@@ -222,6 +222,54 @@ def _moldura(d: Desenho, formato: str, info: dict, numero: int, total: int, esca
     return (x0, y0, x1, y1), (cx0, cy0, x1, cy1)
 
 
+def _tabela_de_posicoes(d: Desenho, cels: Sequence[dict], quadro, carimbo_caixa):
+    """Lista das posições da prancha (marca, quantidade, perfil, comprimento, peso) na
+    faixa do rodapé, à esquerda do carimbo, em quantas colunas couberem."""
+    linhas = []
+    for c in cels:
+        it = c.get("item")
+        if not it or not c.get("marca"):
+            continue
+        comp = ("%d" % it["comprimento"]) if it.get("comprimento") else ("#%s" % it["espessura"] if it.get("espessura") else "")
+        linhas.append((c["marca"], "%dx" % it.get("quantidade", 0), (it.get("perfil") or "")[:26], comp,
+                       ("%.1f" % (it["peso"] * it.get("quantidade", 0))) if it.get("peso") else ""))
+    if not linhas:
+        return
+    qx0, qy0, qx1, qy1 = quadro
+    cx0, cy0, cx1, cy1 = carimbo_caixa
+    x0, y0, x1, y1 = qx0, cy0, cx0, cy1
+    h_linha = 3.2
+    altura_txt = 1.8
+    cabec = ("POS.", "QTD", "PERFIL / CHAPA", "COMPR.", "PESO kg")
+    larguras = (14.0, 10.0, 46.0, 14.0, 14.0)
+    larg_col = sum(larguras) + 6.0
+    n_cols = max(1, int((x1 - x0 - 4.0) // larg_col))
+    por_col = max(1, int((y1 - y0 - 4.0) // h_linha) - 1)
+    cam = "CARIMBO"
+    atr = {"prancha": "tabela"}
+    d.add(Polilinha(camada="PRANCHA", vertices=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], fechada=True, atributos=dict(atr)))
+    total_cabe = n_cols * por_col
+    if len(linhas) > total_cabe:
+        linhas = linhas[:total_cabe - 1] + [("…", "", "e mais %d posição(ões): ver as células" % (len(linhas) - total_cabe + 1), "", "")]
+    for ci in range(n_cols):
+        bloco = linhas[ci * por_col:(ci + 1) * por_col]
+        if not bloco:
+            break
+        bx = x0 + 3.0 + ci * larg_col
+        y = y1 - 3.0
+        for j, (rot, larg) in enumerate(zip(cabec, larguras)):
+            xx = bx + sum(larguras[:j])
+            d.add(Texto(camada=cam, posicao=(round(xx, 2), round(y - altura_txt, 2)), texto=rot, altura=altura_txt, atributos=dict(atr, campo="cabecalho")))
+        d.add(Linha(camada=cam, a=(round(bx, 2), round(y - h_linha + 0.6, 2)), b=(round(bx + sum(larguras), 2), round(y - h_linha + 0.6, 2)), atributos=dict(atr)))
+        y -= h_linha
+        for linha in bloco:
+            for j, (valor, larg) in enumerate(zip(linha, larguras)):
+                xx = bx + sum(larguras[:j])
+                d.add(Texto(camada=cam, posicao=(round(xx, 2), round(y - altura_txt, 2)), texto=str(valor), altura=altura_txt,
+                            atributos=dict(atr, marca=linha[0])))
+            y -= h_linha
+
+
 def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Optional[dict] = None,
                     titulo: str = "Prancha") -> List[Desenho]:
     """Monta as pranchas. `fontes`: [{nome, desenho (Desenho), escala (opcional)}].
@@ -232,9 +280,17 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     celulas = []
     for f in fontes:
         cs = celulas_de(f["desenho"], f["nome"])
+        if f.get("chaves"):                      # só as posições/conjuntos pedidos
+            pedidas = {str(k) for k in f["chaves"]}
+            cs = [c for c in cs if (c.get("chave") and c["chave"][1] in pedidas) or c["titulo"] in pedidas]
         if f.get("escala"):
             for c in cs:
                 c["escala"] = float(f["escala"])
+        itens = (f["desenho"].metadados.get("detalhamento") or {}).get("itens") or {}
+        for c in cs:
+            if c.get("chave"):
+                c["item"] = itens.get(c["chave"][1])
+                c["marca"] = c["chave"][1]
         celulas.extend(cs)
     if not celulas:
         raise ErroDeDados("nenhum desenho com conteúdo para montar a prancha.")
@@ -289,6 +345,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         info = dict(carimbo)
         info.setdefault("titulo", fontes_titulo(cels))
         quadro, carimbo_caixa = _moldura(d, formato, info, i, total, [c["k"] for c in cels])
+        _tabela_de_posicoes(d, cels, quadro, carimbo_caixa)
         for c in cels:
             (bx0, by0), (bx1, by1) = c["caixa"]
             dx = c["px"] - bx0 / c["k"]

@@ -632,9 +632,19 @@ class CAD {
       titulo: el('input', { type: 'text', value: 'Prancha', title: 'Nome base das pranchas: Prancha 01, 02, …' }),
     };
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
+    // peças selecionadas neste desenho: as posições/conjuntos das entidades marcadas
+    const chavesSel = new Set();
+    for (const id of this.tela.selecao) {
+      const e = this.doc.get(id), a = (e && e.atributos) || {};
+      if (a.detalhe === 'posicao' && a.posicao) chavesSel.add(a.posicao);
+      else if (a.detalhe === 'conjunto' && a.conjunto) chavesSel.add(a.conjunto);
+    }
+    const soSelecao = el('input', { type: 'checkbox', checked: chavesSel.size ? 'checked' : undefined, disabled: chavesSel.size ? undefined : 'disabled' });
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: 'Cada posição ou conjunto dos desenhos de detalhamento vira uma vista na escala do próprio desenho; cortes e vistas entram inteiros. O que não cabe na escala desce para a seguinte, com nota; o que não cabe na folha vai para a prancha seguinte.' }),
+      el('div', { class: 'explica', texto: 'Cada posição ou conjunto dos desenhos de detalhamento vira uma vista na escala do próprio desenho; cortes e vistas entram inteiros. O que não cabe na escala desce para a seguinte, com nota; o que não cabe na folha vai para a prancha seguinte. Cada prancha traz a tabela das posições que contém.' }),
       el('div', { class: 'explica', texto: 'Desenhos de origem:' }), opcoes,
+      el('label', { class: 'linha', title: 'Selecione no desenho as células que quer na prancha (clique na peça, Shift soma) antes de abrir este diálogo' }, soSelecao,
+         chavesSel.size ? ` Deste desenho, só as ${chavesSel.size} peça(s) selecionada(s): ${[...chavesSel].slice(0, 8).join(', ')}${chavesSel.size > 8 ? '…' : ''}` : ' Deste desenho, só as peças selecionadas (nada selecionado)'),
       el('label', {}, 'Formato da folha', formato),
       el('label', {}, 'Obra', campos.obra), el('label', {}, 'Cliente', campos.cliente),
       el('label', {}, 'Responsável técnico', campos.responsavel), el('label', {}, 'Revisão', campos.revisao),
@@ -645,8 +655,9 @@ class CAD {
     if (!escolhidos.length) { this.aviso('Escolha ao menos um desenho.', 'atencao'); return; }
     this.dica('Montando as pranchas…');
     try {
+      const desenhos = escolhidos.map(n => (soSelecao.checked && chavesSel.size && n === this.nomeDesenho) ? { nome: n, chaves: [...chavesSel] } : n);
       const j = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/pranchas`, {
-        desenhos: escolhidos, formato: formato.value, titulo: campos.titulo.value, substituir: substituir.checked,
+        desenhos, formato: formato.value, titulo: campos.titulo.value, substituir: substituir.checked,
         carimbo: { obra: campos.obra.value, cliente: campos.cliente.value, responsavel: campos.responsavel.value, revisao: campos.revisao.value },
       });
       this.aviso(`${j.pranchas.length} prancha(s) ${j.formato} montada(s): ${j.pranchas.map(p => p.titulo).join(', ')}. Abra as outras em Desenho → Abrir desenho do projeto; Exportar DXF grava cada uma em papel 1:1.`, 'info', 15000);

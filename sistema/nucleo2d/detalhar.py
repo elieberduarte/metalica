@@ -771,7 +771,13 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         if not lista:
             continue
         d = Desenho(nome=g["titulo"], escala=g["escala"])
-        d.metadados["detalhamento"] = {"grupo": chave, "posicoes": [p.marca for p in lista]}
+        d.metadados["detalhamento"] = {
+            "grupo": chave, "posicoes": [p.marca for p in lista],
+            # o que a tabela de posições da prancha lista para cada célula
+            "itens": {p.marca: {"quantidade": p.quantidade, "perfil": p.perfil, "material": p.material,
+                                "comprimento": round(p.comprimento), "espessura": round(p.T, 1),
+                                "peso": round(p.peso, 2), "classe": CLASSES.get(p.classe, p.classe)}
+                      for p in lista}}
         celulas = [(lambda x, y, p=p: desenho_da_posicao(p, d, x, y)) for p in lista]
         _empilhar(d, celulas)
         desenhos[chave] = d
@@ -822,7 +828,11 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                 if aviso:
                     avisos.append(aviso)
             _empilhar(d, celulas, largura_max_papel=1400.0)
-            d.metadados["detalhamento"] = {"grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info]}
+            d.metadados["detalhamento"] = {
+                "grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info],
+                "itens": {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
+                                       "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto"}
+                          for c in conjuntos_info}}
             desenhos["conjuntos"] = d
 
     resumo_pos = []
