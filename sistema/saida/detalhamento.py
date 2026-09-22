@@ -676,7 +676,38 @@ def _cortes_de_ponta(pos: Posicao, area_secao: float):
 
 
 def analisar(pos: Posicao) -> Posicao:
-    """Classifica a posição e mede o que a produção precisa."""
+    """Classifica a posição e mede o que a produção precisa; medidas ao milímetro inteiro."""
+    _analisar(pos)
+    _arredondar(pos)
+    return pos
+
+
+def _arredondar(pos: Posicao):
+    """A produção não corta em décimos: comprimento de corte, altura da chapa e posição
+    dos furos vão para o milímetro inteiro (2529,5 → 2530). A espessura fica como está
+    (4,8 mm é 3/16"). Diâmetros e rasgos também ficam (13, 17,5)."""
+    if pos.classe == "indefinida":
+        return
+    if pos.classe == "chapa":
+        L, H = float(round(pos.L)), float(round(pos.H))
+        if pos.L > 0 and pos.H > 0 and L > 0 and H > 0:
+            if abs(L - pos.L) > 1e-6 or abs(H - pos.H) > 1e-6:
+                kx, ky = L / pos.L, H / pos.H
+                pos.contorno = [(x * kx, y * ky) for x, y in pos.contorno]
+            pos.L, pos.H = L, H
+        pos.comprimento = pos.L
+    elif pos.classe in ("barra", "barra_redonda", "barra_conformada", "telha"):
+        pos.comprimento = float(round(pos.comprimento))
+        pos.L = float(round(pos.L))
+    elif pos.classe == "chapa_dobrada":
+        pos.comprimento = float(round(pos.comprimento))
+    if pos.desenvolvimento:
+        pos.desenvolvimento = (float(round(pos.desenvolvimento[0])), float(round(pos.desenvolvimento[1])))
+    for f in pos.furos:
+        f.x, f.y = float(round(f.x)), float(round(f.y))
+
+
+def _analisar(pos: Posicao) -> Posicao:
     if not pos.faces or len(pos.vertices) < 4:
         pos.classe = "indefinida"
         if not pos.observacoes:

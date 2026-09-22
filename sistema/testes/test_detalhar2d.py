@@ -60,7 +60,8 @@ def test_posicoes_contadas_e_desenhos():
     por = {p["marca"]: p for p in r["posicoes"]}
     assert por["P1"]["quantidade"] == 3 and por["P1"]["classe"] == "Chapa"
     assert por["M5"]["quantidade"] == 2 and por["M5"]["classe"] == "Barra"
-    assert por["P2"]["quantidade"] == 6 and por["P3"]["quantidade"] == 4
+    # P2, P3 e P4 são a mesma barra (U88 de 1200, sem furos): uma posição só, 12 peças
+    assert "P2" not in por and por["P2 / P3 / P4"]["quantidade"] == 12 and por["P2 / P3 / P4"]["marcas"] == ["P2", "P3", "P4"]
     assert set(r["desenhos"]) >= {"chapas", "barras", "conjuntos"}
     chapas = r["desenhos"]["chapas"]
     titulos = [e.texto for e in chapas.entidades.values() if isinstance(e, Texto)]
@@ -79,7 +80,8 @@ def test_posicoes_contadas_e_desenhos():
     itens = r["desenhos"]["chapas"].metadados["detalhamento"]["itens"]
     assert itens["P1"]["categoria"] == "CHAPAS"
     itens_b = r["desenhos"]["barras"].metadados["detalhamento"]["itens"]
-    assert itens_b["M5"]["categoria"] == "TERÇAS" and itens_b["P2"]["categoria"] == "BARRAS"
+    assert itens_b["M5"]["categoria"] == "TERÇAS" and itens_b["P2 / P3 / P4"]["categoria"] == "BARRAS"
+    assert itens_b["P2 / P3 / P4"]["marcas"] == ["P2", "P3", "P4"]
     assert abs(r["peso_total"] - sum(p["peso_total"] for p in r["posicoes"])) < 0.5
 
 

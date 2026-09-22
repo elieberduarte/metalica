@@ -159,7 +159,11 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     """A lista inteira, pronta para gravar em JSON. `barra` em mm (0 = automático)."""
     from nucleo2d.detalhar import CATEGORIAS
     lista = _ordenar(posicoes)
-    por_marca = {p.marca: p for p in lista}
+    por_marca = {}
+    for p in lista:
+        por_marca[p.marca] = p
+        for m in (getattr(p, "marcas", None) or []):
+            por_marca[m] = p
     linhas = [_linha_posicao(p, categorias.get(p.marca, "OUTROS")) for p in lista]
 
     # perfis (tudo o que é barra, tirante incluído): peças, comprimento total, kg/m, barras

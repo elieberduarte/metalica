@@ -231,6 +231,11 @@ Desenhos gerados podem ser excluídos em lote (**Excluir desenhos…** no menu D
 editor 3D e no menu Desenho do CAD; × ao lado de cada desenho salvo no editor): vão para a
 `.lixeira` da pasta de dados (`POST …/desenhos/<nome>/excluir`).
 
+Medidas ao milímetro (`saida.detalhamento._arredondar`: comprimento, chapa e furos; espessura
+e diâmetros ficam) e posições iguais fundidas (`nucleo2d.detalhar.fundir_posicoes_iguais`:
+mesma classe, perfil, material, comprimento, altura, espessura e furos → "P64 / P65 / P66",
+`marcas_de(pos)` guarda as originais; `/aplicar-furos` e `regenerar_celula` aceitam o rótulo).
+
 Orientação dos conjuntos (`_eixos_do_conjunto`): a normal da vista é o eixo mais fino do
 conjunto e a vertical do desenho é a vertical da obra projetada — a tesoura sai inclinada
 como montada. Conjunto **linear** (segunda extensão < 12 % da primeira: tirante com as

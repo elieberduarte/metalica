@@ -649,7 +649,9 @@ def instalar_atualizacao() -> dict:
     info = verificar_atualizacao()
     if not info.get("nova") or not info.get("arquivo"):
         raise ErroDeDados("não há versão mais nova com instalador publicado.")
-    destino = os.path.join(tempfile.gettempdir(), "Metalica-%s-instalador.exe" % info["ultima"])
+    # nome único por tentativa: o instalador anterior pode estar aberto ou preso pelo
+    # antivírus, e a troca de nome sobre ele dá "acesso negado" (WinError 5)
+    destino = os.path.join(tempfile.gettempdir(), "Metalica-%s-instalador-%d.exe" % (info["ultima"], int(time.time())))
     req = urllib.request.Request(info["arquivo"], headers={"User-Agent": "Metalica/" + versao.VERSAO})
     with urllib.request.urlopen(req, timeout=60) as r, open(destino + ".parcial", "wb") as f:
         while True:
@@ -660,7 +662,8 @@ def instalar_atualizacao() -> dict:
     tamanho = os.path.getsize(destino + ".parcial")
     if tamanho < 5 * 1048576:
         raise ErroDeDados("o instalador baixado veio incompleto (%d bytes)." % tamanho)
-    os.replace(destino + ".parcial", destino)
+    from projetos import trocar_arquivo
+    trocar_arquivo(destino + ".parcial", destino, espera=30.0)   # o Defender segura o .exe recém-baixado uns segundos
     exe_atual = sys.executable
     # instala em silêncio e reabre o programa, por um .cmd em disco (a linha de comando
     # com aspas dentro de aspas passada ao cmd /c não era interpretada inteira); roda

@@ -293,6 +293,91 @@ def _posicao_de_chapa(pos: Posicao, ch: Chapa):
     pos.origem_chapa = (u0, v0)
 
 
+def marcas_de(pos: Posicao) -> List[str]:
+    """As marcas do IFC que a posição representa (várias quando iguais foram fundidas)."""
+    return list(getattr(pos, "marcas", None) or [pos.marca])
+
+
+def _assinatura_posicao(p: Posicao) -> tuple:
+    furos = tuple(sorted((f.tipo, f.vista, round(f.x), round(f.y), round(f.d, 1), round(f.larg, 1), round(f.alt, 1),
+                          tuple((round(x), round(y)) for x, y in f.pontos)) for f in p.furos))
+    dev = tuple(round(v) for v in p.desenvolvimento) if p.desenvolvimento else ()
+    # barra redonda (tirante): a "altura" é o gancho da ponta e a "espessura" é o polígono
+    # da malha, que variam décimos de peça para peça; reta ou com gancho, é o mesmo item
+    # quando o comprimento de corte é o mesmo
+    redonda = p.classe in ("barra_redonda", "barra_conformada") and _eh_redonda_perfil(p.perfil)
+    classe = "redonda" if redonda else p.classe
+    altura = None if redonda else round(p.H)
+    espessura = None if redonda else round(p.T, 1)
+    return (classe, re.sub(r"\s+", "", p.perfil or "").upper(), re.sub(r"\s+", "", p.material or "").upper(),
+            altura, espessura, furos, dev)
+
+
+#: Comprimentos até esta diferença (mm) são a mesma peça.
+TOLERANCIA_COMPRIMENTO = 1.0
+
+
+def fundir_posicoes_iguais(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> List[Posicao]:
+    """Marcas diferentes com a mesma peça (o TecnoMETAL numera por conjunto, e décimos de
+    milímetro separavam tirantes iguais) viram uma posição só: "P64 / P65 / P66", com
+    as quantidades somadas e os conjuntos reunidos. `marcas_de(pos)` guarda as originais."""
+    chaves: Dict[tuple, List[Posicao]] = collections.OrderedDict()
+    fora: List[Posicao] = []
+    for p in posicoes:
+        p.marcas = [p.marca]
+        if p.classe == "indefinida":
+            fora.append(p)
+            continue
+        chaves.setdefault(_assinatura_posicao(p), []).append(p)
+    # dentro da mesma assinatura, comprimentos a até 1 mm um do outro são a mesma peça
+    grupos: List[List[Posicao]] = []
+    for lista in chaves.values():
+        lista.sort(key=lambda q: q.comprimento)
+        atual = [lista[0]]
+        for q in lista[1:]:
+            if q.comprimento - atual[-1].comprimento <= TOLERANCIA_COMPRIMENTO:
+                atual.append(q)
+            else:
+                grupos.append(atual)
+                atual = [q]
+        grupos.append(atual)
+    for grupo in grupos:
+        if len(grupo) == 1:
+            fora.append(grupo[0])
+            continue
+        grupo.sort(key=lambda q: _ordem_natural(q.marca))
+        base = grupo[0]
+        base.marcas = [q.marca for q in grupo]
+        base.marca = " / ".join(base.marcas)
+        base.quantidade = sum(q.quantidade for q in grupo)
+        conjuntos: List[str] = []
+        for q in grupo:
+            for c in q.conjuntos:
+                if c not in conjuntos:
+                    conjuntos.append(c)
+            if q is not base:
+                base.global_ids.extend(q.global_ids)
+                for obs in q.observacoes:
+                    if obs not in base.observacoes:
+                        base.observacoes.append(obs)
+        base.conjuntos = conjuntos
+        if any(q.classe == "barra_redonda" for q in grupo) and _eh_redonda_perfil(base.perfil):
+            base.classe = "barra_redonda"              # tirante: vai para o grupo dos tirantes
+        # o comprimento da peça fundida é o mais frequente (peso das quantidades)
+        cont = collections.Counter()
+        for q in grupo:
+            cont[q.comprimento] += q.quantidade
+        total_q = sum(cont.values()) or 1
+        media = sum(c * n for c, n in cont.items()) / total_q
+        # empate: o mais perto da média ponderada e, ainda empatado, o menor (2529,5 e 2530,3 → 2530)
+        base.comprimento = max(cont, key=lambda c: (cont[c], -abs(c - media), -c))
+        if base.classe in ("barra", "barra_redonda", "barra_conformada", "telha"):
+            base.L = base.comprimento
+        camadas[base.marca] = camadas.get(base.marcas[0], "")
+        fora.append(base)
+    return fora
+
+
 def _posicoes_de(pecas: Sequence[Solido]) -> Tuple[List[Posicao], Dict[str, str]]:
     """Agrupa por posição e analisa a geometria de uma peça de cada."""
     por_marca: Dict[str, Posicao] = collections.OrderedDict()
@@ -341,7 +426,7 @@ def _eh_terca(pos: Posicao, camada: str) -> bool:
     if re.search(r"ter[cç]a", camada or "", re.I):
         return True
     perfil_u = bool(re.match(r"^\s*(2\s*)?[CUZ]\s*\d", pos.perfil or "", re.I))
-    solta = not pos.conjuntos or pos.conjuntos == [pos.marca]
+    solta = not pos.conjuntos or set(pos.conjuntos) <= set(marcas_de(pos))
     return perfil_u and solta and 50.0 <= pos.H <= 400.0 and pos.L >= 1500.0
 
 
@@ -706,8 +791,9 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
     """Escreve nas chapas paramétricas da posição os furos vindos do desenho (coordenadas
     do desenho: canto inferior esquerdo do contorno = 0,0) e, se `contorno` veio
     diferente do da chapa (tamanho ajustado no desenho), o contorno também."""
+    nomes = [m.strip() for m in str(marca).split(" / ") if m.strip()]
     chapas = [e for e in doc.entidades.values() if isinstance(e, Chapa)
-              and str(_marcas(e).get("posicao") or e.nome or e.id) == marca]
+              and str(_marcas(e).get("posicao") or e.nome or e.id) in nomes]
     if not chapas:
         raise ErroDeDados("a posição %s não tem chapa paramétrica no modelo (abra o detalhe pela peça no 3D primeiro)." % marca)
     orig = [(float(f["x"]), float(f["y"])) for f in originais]
@@ -763,11 +849,14 @@ def regenerar_celula(d: Desenho, doc: Documento, marca: str) -> Tuple[float, flo
     for k in ids:
         d.remover(k) if hasattr(d, "remover") else d.entidades.pop(k, None)
     pecas, _ = _pecas(doc)
-    lista = [e for e in pecas if str(_marcas(e).get("posicao") or e.nome or e.id) == marca]
+    nomes = [m.strip() for m in str(marca).split(" / ") if m.strip()]
+    lista = [e for e in pecas if str(_marcas(e).get("posicao") or e.nome or e.id) in nomes]
     if not lista:
         raise ErroDeDados("a posição %s não está mais no modelo." % marca)
-    posicoes, _ = _posicoes_de(lista)
-    pos = posicoes[0]
+    posicoes, camadas_ = _posicoes_de(lista)
+    posicoes = fundir_posicoes_iguais(posicoes, camadas_)
+    pos = next((p for p in posicoes if p.marca == marca), posicoes[0])
+    pos.marca = marca
     ext = desenho_da_posicao(pos, d, origem[0], origem[1], editavel=pos.classe == "chapa")
     meta = d.metadados.setdefault("detalhamento", {})
     if pos.classe == "chapa":
@@ -1468,6 +1557,7 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None) -> dict:
     if not pecas:
         raise ErroDeDados("o modelo não tem peças com marcas de IFC (IfcBeam, IfcPlate…) para detalhar.")
     posicoes, camadas = _posicoes_de(pecas)
+    posicoes = fundir_posicoes_iguais(posicoes, camadas)
     avisar("%d peças em %d posições" % (len(pecas), len(posicoes)))
     mudadas = regra_furacao_terca(posicoes, camadas) if regra_tercas else {}
     return {"pecas": pecas, "acessorios": acessorios, "posicoes": posicoes, "camadas": camadas,
@@ -1480,8 +1570,10 @@ def converter_chapas_planas(doc: Documento, posicoes: Sequence[Posicao], pecas: 
     parametricas = {str(_marcas(e).get("posicao") or e.nome or e.id) for e in pecas if getattr(e, "parametrica", None) is not None}
     n = 0
     for p in posicoes:
-        if p.classe == "chapa" and p.tipo_ifc == "IfcPlate" and p.marca not in parametricas:
-            n += converter_chapas(doc, p.marca)
+        if p.classe == "chapa" and p.tipo_ifc == "IfcPlate":
+            for m in marcas_de(p):
+                if m not in parametricas:
+                    n += converter_chapas(doc, m)
     return n
 
 
@@ -1523,9 +1615,9 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             "itens": {p.marca: {"quantidade": p.quantidade, "perfil": p.perfil, "material": p.material,
                                 "comprimento": round(p.comprimento), "espessura": round(p.espessura or p.T, 1),
                                 "peso": round(p.peso, 2), "classe": CLASSES.get(p.classe, p.classe),
-                                "categoria": _categoria(p, camadas.get(p.marca, ""))}
+                                "categoria": _categoria(p, camadas.get(p.marca, "")), "marcas": marcas_de(p)}
                       for p in lista}}
-        editaveis = [p.marca for p in lista if p.classe == "chapa" and parametricas.get(p.marca)]
+        editaveis = [p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))]
         celulas = [(lambda x, y, p=p: desenho_da_posicao(p, d, x, y, editavel=p.marca in editaveis)) for p in lista]
         _empilhar(d, celulas)
         d.metadados["detalhamento"]["editaveis"] = editaveis
@@ -1610,7 +1702,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
 
     resumo_pos = []
     for p in _ordenar(posicoes):
-        resumo_pos.append({"marca": p.marca, "classe": CLASSES.get(p.classe, p.classe), "perfil": p.perfil,
+        resumo_pos.append({"marca": p.marca, "marcas": marcas_de(p), "classe": CLASSES.get(p.classe, p.classe), "perfil": p.perfil,
                            "material": p.material, "quantidade": p.quantidade, "comprimento": round(p.comprimento),
                            "largura": round(p.H), "espessura": round(p.espessura or p.T, 1), "furos": p.rotulo_furos(),
                            "peso": round(p.peso, 3), "peso_total": round(p.peso_total, 2),

@@ -33,7 +33,7 @@ def test_montar_resumos_e_totais():
     lista = lp.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
                       projeto={"nome": "Teste", "cliente": "Cliente"})
     t = lista["totais"]
-    assert t["posicoes"] == 5 and t["pecas"] == 17 and t["peso"] > 0
+    assert t["posicoes"] == 3 and t["pecas"] == 17 and t["peso"] > 0      # P2/P3/P4 fundidas
     cats = {c["categoria"]: c for c in t["categorias"]}
     assert cats["TERÇAS"]["pecas"] == 2 and cats["CHAPAS"]["pecas"] == 3 and cats["BARRAS"]["pecas"] == 12
     assert abs(sum(c["pct"] for c in t["categorias"]) - 100) < 0.5
@@ -42,7 +42,7 @@ def test_montar_resumos_e_totais():
     u150, u88 = perfis["U150X50X2.25"], perfis["U88X40X2.25"]
     assert u150["pecas"] == 2 and abs(u150["comprimento_m"] - 10.0) < 0.01 and u150["barras"]["quantidade"] == 2
     assert u150["categoria"] == "TERÇAS" and u150["kg_m"] > 0
-    assert u88["pecas"] == 12 and u88["barras"]["quantidade"] == 3 and u88["posicoes"] == ["P2", "P3", "P4"]
+    assert u88["pecas"] == 12 and u88["barras"]["quantidade"] == 3 and u88["posicoes"] == ["P2 / P3 / P4"]
     # chapas: P1 130×50×3 ×3
     assert len(lista["chapas"]) == 1
     ch = lista["chapas"][0]
