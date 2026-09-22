@@ -106,6 +106,10 @@ function cartao(p) {
     if (e.pasta === 'desenhos-2d' && (p.desenhos || []).length) continue;   // listados um a um abaixo
     conteudo.push([e.rotulo, 'entrega', e.pasta]);
   }
+  if (p.tem_materiais) {
+    conteudo.push(['≡ Lista de materiais', 'desenho', null, `/materiais?projeto=${encodeURIComponent(p.slug)}`,
+                   'Romaneio por posição, perfis com barras comerciais, chapas, conjuntos e acessórios; CSV e PDF']);
+  }
   // desenhos 2D gravados: cada um abre direto no CAD, sem gerar nada de novo
   for (const d of (p.desenhos || []).slice(0, 6)) {
     conteudo.push([`✎ ${d.titulo}`, 'desenho', null, `/cad?projeto=${encodeURIComponent(p.slug)}&desenho=${encodeURIComponent(d.nome)}`,

@@ -1164,11 +1164,22 @@ export class Editor {
 
   // ------------------------------------------------------------ desenho 2D
 
+  /** Troca para a tela do CAD 2D na mesma janela (o link "Modelo 3D" do CAD traz de volta). */
   _abrirCAD(desenho = null) {
     if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para gerar desenhos 2D.', 'atencao'); return; }
     const url = `/cad?projeto=${encodeURIComponent(this.projeto)}` + (desenho ? `&desenho=${encodeURIComponent(desenho)}` : '');
-    const j = window.open(url, 'metalica-cad2d', 'popup=yes,width=1500,height=950,left=60,top=40');
-    if (j) j.focus(); else window.location.href = url;
+    this._irPara(url);
+  }
+
+  /** Tela da lista de materiais do projeto (romaneio, perfis, chapas, conjuntos). */
+  _abrirMateriais() {
+    if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para ver a lista de materiais.', 'atencao'); return; }
+    this._irPara(`/materiais?projeto=${encodeURIComponent(this.projeto)}`);
+  }
+
+  /** Navega na mesma janela depois de gravar o que estiver pendente do autosave. */
+  _irPara(url) {
+    this._gravarAntesDeGerar().catch(() => {}).then(() => { window.location.href = url; });
   }
 
   /**
@@ -1281,7 +1292,7 @@ export class Editor {
       if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
       const tercas = Object.keys(j.regra_tercas || {}).length;
       this.aviso(`Detalhamento: ${j.pecas} peças em ${j.posicoes} posições e ${j.conjuntos} conjuntos, ${j.peso_total} kg. ${j.desenhos.length} desenho(s) gerado(s)` +
-                 (tercas ? `; furação de fábrica aplicada em ${tercas} posições` : '') + `. Romaneio em detalhamento/romaneio.csv.` +
+                 (tercas ? `; furação de fábrica aplicada em ${tercas} posições` : '') + `. Lista de materiais em Desenho 2D → Lista de materiais.` +
                  (j.avisos && j.avisos.length ? ` ${j.avisos.length} aviso(s) no relatório.` : ''), 'info', 15000);
       this.dica('Detalhamento pronto.');
       if (j.desenhos.length) this._abrirCAD(j.desenhos[0].nome);
@@ -1359,6 +1370,7 @@ export class Editor {
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
       'abrir-cad': () => this._abrirCAD(),
+      'materiais': () => this._abrirMateriais(),
     };
     document.addEventListener('click', (ev) => {
       const botaoMenu = ev.target.closest('.menu-botao');

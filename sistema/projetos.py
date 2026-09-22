@@ -255,6 +255,7 @@ class Projetos:
                 "tem_modelo": os.path.exists(modelo),
                 "modelo_mb": round(os.path.getsize(modelo) / 1048576, 1) if os.path.exists(modelo) else 0,
                 "origem_ifc": p.get("origem_ifc"), "entregas": entregas, "pasta": pasta,
+                "tem_materiais": os.path.exists(os.path.join(pasta, "detalhamento", "lista-de-materiais.json")),
                 "desenhos": [{"nome": d["nome"], "titulo": d.get("titulo") or d["nome"], "vistas": d.get("vistas") or []}
                              for d in self.listar_desenhos(s, contar=False)]}
 

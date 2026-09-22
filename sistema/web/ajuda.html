@@ -50,12 +50,13 @@
 <main class="ajuda">
 
 <h2 id="inicio">Por onde começar</h2>
-<p>O programa é uma sequência de telas, e cada uma abre a seguinte:</p>
+<p>O programa é uma sequência de telas na mesma janela — cada uma abre a seguinte e tem, no topo, o caminho de volta (Projetos, Modelo 3D, Desenho 2D):</p>
 <ol>
   <li><span class="passo">Projetos</span> (a primeira tela): crie um projeto a partir de um arquivo <b>IFC</b> do detalhamento (TecnoMETAL, Tekla, Advance Steel) ou um projeto de <b>galpão dimensionado</b>. Cada projeto é uma pasta em <code>Documentos\Metálica</code>; copiar a pasta é o backup.</li>
   <li><span class="passo">Modelo 3D</span>: veja e organize as peças importadas, pesquise, pinte por posição, gere cortes e o detalhamento.</li>
   <li><span class="passo">Desenho 2D (CAD)</span>: cotas, textos e ajustes nos desenhos gerados; importação de DXF.</li>
   <li><span class="passo">Pranchas</span>: folhas com carimbo montadas dos desenhos, em PDF e DXF.</li>
+  <li><span class="passo">Lista de materiais</span>: romaneio, perfis com barras comerciais, chapas e conjuntos, em tela, Excel e PDF.</li>
 </ol>
 <div class="indice">
   <a href="#projetos">Projetos e arquivos</a>
@@ -65,6 +66,7 @@
   <a href="#cad">CAD 2D: ferramentas e atalhos</a>
   <a href="#detalhamento">Detalhamento de peças e conjuntos</a>
   <a href="#tercas">Regra da furação das terças</a>
+  <a href="#materiais">Lista de materiais</a>
   <a href="#pranchas">Pranchas, PDF e DXF</a>
   <a href="#dxf">Importar um DXF</a>
   <a href="#instalar">Instalar e atualizar</a>
@@ -106,7 +108,7 @@
 <ul>
   <li><b>Posições:</b> uma célula por marca de peça, com título "P12 – 112x" (as iguais são contadas, não repetidas), perfil ou chapa com espessura, material, furos, peso unitário e total, contorno com furos e cotas, seção da barra ao lado, vista de topo quando há furo na mesa. Chapa dobrada traz o retângulo do <b>desenvolvimento</b>; barra curva traz o <b>comprimento de corte</b> pelo volume.</li>
   <li><b>Conjuntos:</b> a elevação de cada montagem (tesoura, viga, pilar) deitada, com a cadeia de cotas dos nós embaixo e em cima, altura, rótulo de posição em cada barra, título "M2 – 08x" e lista de perfis. O número de instâncias vem da composição (8 pórticos M2 = 80 P10, 64 P11…).</li>
-  <li><b>Romaneio</b> em <code>detalhamento/romaneio.csv</code> (abre no Excel) e relatório com as ressalvas.</li>
+  <li><b>Lista de materiais</b> do mesmo levantamento (romaneio, perfis, chapas, conjuntos) — veja a seção abaixo — e relatório com as ressalvas.</li>
 </ul>
 <div class="caixa info">Toda célula que o programa não conseguiu resolver diz isso no próprio desenho ("* …"): confira essas antes de mandar para a fábrica.</div>
 
@@ -118,6 +120,18 @@
   <tr><td>200 mm ou mais</td><td>100 mm</td><td>60 mm</td></tr>
 </table>
 <p>Terça é a barra U/C/Z que viaja solta (marca de posição igual à de conjunto). A regra vale também para o que compõe a ligação — a chapinha do suporte com a mesma furação original recebe a mesma troca, em qualquer orientação. O centro de cada grupo de furos é mantido e a célula avisa "furação no padrão de fábrica". Casos ambíguos saem com "conferir".</p>
+
+<h2 id="materiais">Lista de materiais</h2>
+<p>No Modelo 3D, <b>Desenho 2D → Lista de materiais…</b>; no CAD, <b>Vistas do modelo → Lista de materiais…</b>; ou a pílula <b>≡ Lista de materiais</b> no cartão do projeto. A tela mostra, do mesmo levantamento que o detalhamento desenha:</p>
+<ul>
+  <li><b>Totais por categoria</b> (tesouras, terças, barras, chapas, tirantes, telhas) com peso e percentual.</li>
+  <li><b>Perfis:</b> peças, comprimento total, kg/m, peso e a estimativa de <b>barras comerciais</b> — o programa encaixa as peças do maior para o menor em barras de 6 m (ou 12 m, quando alguma peça passa de 6; a caixa <i>Barra comercial</i> fixa uma ou outra), descontando 3 mm por corte, e diz quantas barras, o aproveitamento e a sobra. Peça mais comprida que a barra conta como <i>emenda</i>.</li>
+  <li><b>Chapas</b> por espessura e material, com área (contorno, ou desenvolvimento na dobrada) e peso.</li>
+  <li><b>Conjuntos:</b> instâncias, composição ("2× P3, 1× P4") e peso de cada montagem — o que sobe no caminhão e no guindaste.</li>
+  <li><b>Romaneio por posição</b> (a mesma tabela do <code>romaneio.csv</code>), acessórios contados e as observações do detalhamento.</li>
+</ul>
+<p>Os cabeçalhos ordenam; o campo <i>Filtrar</i> vale para todos os quadros. Os arquivos ficam em <code>detalhamento/</code>: <code>romaneio.csv</code>, <code>resumo-perfis.csv</code>, <code>resumo-chapas.csv</code> e <code>conjuntos.csv</code> abrem no Excel; <b>PDF</b> gera <code>Lista-de-materiais.pdf</code> (A4 paisagem) para mandar à fábrica. <b>Recalcular do modelo</b> refaz o levantamento depois de uma mudança no modelo 3D; o detalhamento também regrava a lista.</p>
+<div class="caixa">Os pesos vêm do volume das peças do IFC (7.850 kg/m³); o número de barras é uma estimativa de compra, não um plano de corte.</div>
 
 <h2 id="pranchas">Pranchas, PDF e DXF</h2>
 <p>No CAD, <b>Desenho → Montar pranchas…</b>: escolha os desenhos de origem, o formato (A0 a A4) e o carimbo (obra, cliente e responsável vêm do projeto). Cada posição e cada conjunto vira uma vista na escala do desenho; o que não cabe na escala desce para a seguinte com nota, e o que não cabe na folha vai para a prancha seguinte ("01/07"). Cada prancha traz a tabela das posições que contém. Para escolher à mão o que vai numa prancha, selecione as células no desenho de detalhamento antes e marque "só as peças selecionadas".</p>
@@ -132,7 +146,8 @@
 
 <h2 id="limites">O que o programa ainda não faz</h2>
 <ul>
-  <li>Símbolos de solda e chamadas de parafuso nos desenhos (os parafusos entram só no romaneio).</li>
+  <li>Símbolos de solda e chamadas de parafuso nos desenhos (os parafusos entram só na lista de materiais).</li>
+  <li>Plano de corte por barra (a lista diz quantas barras, não o que sai de cada uma) e preço do material.</li>
   <li>Cortes nas ligações das tesouras (A-A, B-B) e remoção de linhas ocultas nas vistas.</li>
   <li>Recortes que não são furo redondo nem oblongo saem como contorno, sem cota própria.</li>
   <li>No dimensionamento de galpões: pórtico treliçado e ponte rolante são recusados (o programa só calcula pórtico de alma cheia sem ponte).</li>

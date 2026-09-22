@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lista de materiais — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M8 9h16M8 16h16M8 23h10' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/></svg>">
+<style>
+  .materiais { max-width: 1280px; margin: 0 auto; padding: 18px 24px 60px; }
+  .materiais .barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 14px; }
+  .materiais .barra .sep { flex: 1; }
+  .materiais .barra label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto2); }
+  .materiais .barra select, .materiais .barra input[type=search] { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--borda-forte);
+    border-radius: var(--raio-p); background: var(--painel); color: var(--texto); }
+  .materiais .barra input[type=search] { width: 220px; }
+  .materiais .cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 6px 0 18px; }
+  .materiais .cartao-n { padding: 10px 14px; background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); }
+  .materiais .cartao-n b { display: block; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+  .materiais .cartao-n span { font-size: 12px; color: var(--texto2); text-transform: uppercase; letter-spacing: .05em; }
+  .materiais h2 { font-size: 16px; margin: 22px 0 8px; color: var(--azul); display: flex; align-items: baseline; gap: 10px; }
+  .materiais h2 small { font-size: 12px; font-weight: 400; color: var(--texto3); }
+  .materiais table { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--painel); }
+  .materiais th, .materiais td { border: 1px solid var(--borda); padding: 4px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+  .materiais td.quebra, .materiais th.quebra { white-space: normal; }
+  .materiais th { background: var(--painel2); font-weight: 600; position: sticky; top: 52px; z-index: 2; cursor: pointer; user-select: none; }
+  .materiais .rolagem th { top: 0; }
+  .materiais th.ordem-asc::after { content: " ▲"; font-size: 9px; color: var(--texto3); }
+  .materiais th.ordem-desc::after { content: " ▼"; font-size: 9px; color: var(--texto3); }
+  .materiais td.r, .materiais th.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .materiais td.c, .materiais th.c { text-align: center; }
+  .materiais td.b { font-weight: 600; }
+  .materiais tfoot td { background: var(--painel2); font-weight: 600; }
+  .materiais tr.oculta { display: none; }
+  .materiais .mono { font-family: var(--mono); font-size: 12px; }
+  .materiais .vazio { padding: 14px; color: var(--texto3); font-size: 13px; border: 1px dashed var(--borda); border-radius: var(--raio); }
+  .materiais .nota { font-size: 12.5px; color: var(--texto2); margin: 6px 0 0; }
+  .materiais .ressalvas li { font-size: 13px; margin: 3px 0; }
+  .materiais .aviso-topo { padding: 10px 14px; border-left: 3px solid var(--amarelo); background: var(--amarelo-fundo); border-radius: var(--raio-p); margin: 0 0 14px; font-size: 13.5px; }
+  .materiais .aviso-topo.erro { border-color: var(--vermelho, #c33); }
+  .materiais .rolagem { overflow: auto; max-height: 70vh; border: 1px solid var(--borda); border-radius: var(--raio); }
+  .materiais .rolagem table { border: 0; }
+  .materiais .arquivos { display: flex; flex-wrap: wrap; gap: 6px; }
+  .materiais .arquivos a { font-size: 12.5px; padding: 3px 9px; border: 1px solid var(--borda-forte); border-radius: 999px; text-decoration: none; color: var(--texto); }
+  .materiais .arquivos a:hover { border-color: var(--azul); color: var(--azul); }
+  @media print {
+    .topo, .materiais .barra, .materiais .arquivos, .materiais .rolagem { display: block; }
+    .topo, .materiais .barra, .materiais .arquivos { display: none !important; }
+    .materiais { max-width: none; padding: 0; }
+    .materiais .rolagem { max-height: none; overflow: visible; border: 0; }
+    .materiais th { position: static; }
+    .materiais table { font-size: 10px; }
+    .materiais tr.oculta { display: none; }
+    body { background: #fff; color: #000; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M8 9h16M8 16h16M8 23h10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+    </svg>
+    <h1>Lista de materiais<span id="sub-projeto">projeto</span></h1>
+  </div>
+  <div class="projeto-atual" id="quando" title="Quando a lista foi levantada do modelo">—</div>
+  <div class="acoes">
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" id="btn-3d" title="Voltar ao modelo 3D deste projeto">Modelo 3D</button>
+    <button type="button" id="btn-cad" title="Abrir o CAD 2D deste projeto">Desenho 2D</button>
+    <button type="button" onclick="location.href='/'" title="Voltar à lista de projetos">Projetos</button>
+  </div>
+</header>
+
+<main class="materiais">
+  <div id="aviso" class="aviso-topo" hidden></div>
+
+  <div class="barra">
+    <label>Barra comercial
+      <select id="barra" title="Comprimento da barra de compra para estimar quantas barras saem de cada perfil">
+        <option value="0">automático (6 m; 12 m se alguma peça passa de 6)</option>
+        <option value="6000">6 m</option>
+        <option value="12000">12 m</option>
+      </select>
+    </label>
+    <button type="button" id="btn-recalcular" title="Levanta as peças do modelo 3D de novo (use depois de mudar o modelo)">Recalcular do modelo</button>
+    <span class="sep"></span>
+    <input type="search" id="filtro" placeholder="Filtrar posição, perfil, conjunto…" title="Filtra as linhas de todos os quadros">
+    <button type="button" id="btn-pdf" title="Gera Lista-de-materiais.pdf na pasta detalhamento/ do projeto e abre">PDF</button>
+    <button type="button" id="btn-imprimir" title="Imprime esta tela">Imprimir</button>
+    <button type="button" id="btn-pasta" title="Abre a pasta detalhamento/ do projeto, onde estão os CSVs para o Excel">Abrir pasta</button>
+  </div>
+
+  <div class="arquivos" id="arquivos"></div>
+
+  <div class="cartoes" id="cartoes"></div>
+
+  <div id="conteudo"></div>
+</main>
+
+<script src="/materiais.js"></script>
+</body>
+</html>

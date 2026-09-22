@@ -219,7 +219,7 @@ do modelo já importado, desenhos editáveis no CAD (`nucleo2d/detalhar.py`, rot
   80 P10, 64 P11, 64 P12 → 8); a instância desenhada é um agrupamento espacial com a
   composição unitária. Marcas diferentes com a mesma geometria (o TecnoMETAL numera
   por pórtico) saem numa célula só, "M17 / M46 – 04x";
-- `detalhamento/romaneio.csv` e `relatorio.json`.
+- `detalhamento/relatorio.json` e a lista de materiais (abaixo).
 
 **Regra da furação das terças** (padrão da máquina da fábrica, opção ligada por padrão):
 terça com menos de 200 mm de altura fura a 50 mm na vertical e 60 mm na horizontal; com
@@ -229,6 +229,28 @@ posição com um grupo de furos de furação original igual à da terça, em qua
 orientação (a chapinha do suporte), recebe a mesma substituição; o centro do grupo é
 mantido e a célula diz "furação no padrão de fábrica". Padrão quadrado ou terças de
 alturas diferentes com a mesma furação original saem com "conferir".
+
+### Lista de materiais
+
+`saida/lista_producao.py`, tela `/materiais?projeto=<slug>` (menu **Desenho 2D → Lista de
+materiais…** no editor 3D, **Vistas do modelo → Lista de materiais…** no CAD, pílula no
+gerenciador). Sai do mesmo levantamento do detalhamento (`nucleo2d.detalhar.levantar`):
+
+- **romaneio por posição** (marca, conjuntos, tipo, perfil/chapa, material, quantidade,
+  dimensões, furos, pesos, observações);
+- **perfis**: peças, comprimento total, kg/m, peso e **barras comerciais** por encaixe
+  "primeiro que cabe, do maior para o menor" em barras de 6 m (12 m quando alguma peça
+  passa de 6, ou fixado pelo usuário), com 3 mm de perda por corte, aproveitamento, sobra
+  e peças com emenda;
+- **chapas** por espessura e material (área pelo contorno ou desenvolvimento, peso);
+- **conjuntos**: instâncias pelo mdc, composição e peso da montagem;
+- **acessórios** contados e **totais por categoria**.
+
+Rotas: `GET /api/projetos/<slug>/materiais` (a gravada, ou levanta do modelo na hora),
+`POST …/materiais` (recalcula; `barra`: 0, 6000 ou 12000), `POST …/materiais/pdf`. Arquivos em
+`detalhamento/`: `lista-de-materiais.json`, `romaneio.csv`, `resumo-perfis.csv`,
+`resumo-chapas.csv`, `conjuntos.csv`, `lista-de-materiais.html` e `Lista-de-materiais.pdf`
+(Chrome, A4 paisagem, padrão visual do memorial). A rota `/detalhar` regrava a lista.
 
 ### Pranchas com carimbo
 
@@ -259,6 +281,7 @@ pranchas do projeto num arquivo em `pranchas/`, uma por página, pronto para plo
 | Entrega | Formato | Onde |
 |---|---|---|
 | Detalhamento de peças de um IFC | DXF único, CSV e JSON | `projetos/<nome>/detalhamento/` |
+| Lista de materiais de produção | tela, CSVs para Excel, HTML e PDF | `projetos/<nome>/detalhamento/` |
 | Memorial de cálculo | PDF, cerca de 50 páginas | `projetos/<nome>/memorial/` |
 | Desenhos | 11 arquivos DXF (R12, abrem em qualquer CAD), do pórtico ao nó de contraventamento, mais os diagramas de M, V e N e o quadro de verificações | `projetos/<nome>/desenhos/` |
 | Pranchas | PDF A1, A2 ou A3 com carimbo; a folha sai da escala em que cada desenho foi cotado | `projetos/<nome>/pranchas/` |
@@ -292,7 +315,8 @@ sistema/
 │   ├── exportar.py       documento 3D para IFC4
 │   └── importar.py       IFC para documento 3D
 ├── saida/                memorial, desenhos DXF, pranchas, lista
-│   └── detalhamento.py   peças de um IFC para produção (DXF único e romaneio)
+│   ├── detalhamento.py   peças de um IFC para produção (DXF único e romaneio)
+│   └── lista_producao.py lista de materiais do detalhamento (perfis, barras, chapas, conjuntos)
 ├── web/                  interface de dimensionamento (HTML, CSS e JS puros)
 │   ├── editor3d/         editor 3D: núcleo e ferramentas
 │   └── lib/              Three.js r160, servido localmente

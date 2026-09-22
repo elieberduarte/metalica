@@ -809,6 +809,23 @@ def _empilhar(desenho: Desenho, celulas, largura_max_papel: float = 800.0):
     return desenho
 
 
+def levantar(doc: Documento, regra_tercas: bool = True, avisar=None) -> dict:
+    """Só o levantamento: as peças de produção do modelo agrupadas em posições, com a
+    geometria analisada e a regra das terças aplicada — sem desenhar nada. É o que a
+    lista de materiais usa. Devolve {"pecas", "acessorios", "posicoes", "camadas",
+    "regra_tercas", "categorias": {marca: categoria}}."""
+    avisar = avisar or (lambda *a: None)
+    pecas, acessorios = _pecas(doc)
+    if not pecas:
+        raise ErroDeDados("o modelo não tem peças com marcas de IFC (IfcBeam, IfcPlate…) para detalhar.")
+    posicoes, camadas = _posicoes_de(pecas)
+    avisar("%d peças em %d posições" % (len(pecas), len(posicoes)))
+    mudadas = regra_furacao_terca(posicoes, camadas) if regra_tercas else {}
+    return {"pecas": pecas, "acessorios": acessorios, "posicoes": posicoes, "camadas": camadas,
+            "regra_tercas": mudadas,
+            "categorias": {p.marca: _categoria(p, camadas.get(p.marca, "")) for p in posicoes}}
+
+
 def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_tercas: bool = True,
              rotular: bool = True, avisar=None) -> dict:
     """Gera os desenhos de detalhamento do modelo. Devolve
@@ -816,12 +833,9 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
      "regra_tercas": {marca: texto}, "avisos": [...]}."""
     avisar = avisar or (lambda *a: None)
     grupos = list(grupos or GRUPOS.keys())
-    pecas, acessorios = _pecas(doc)
-    if not pecas:
-        raise ErroDeDados("o modelo não tem peças com marcas de IFC (IfcBeam, IfcPlate…) para detalhar.")
-    posicoes, camadas = _posicoes_de(pecas)
-    avisar("%d peças em %d posições" % (len(pecas), len(posicoes)))
-    mudadas = regra_furacao_terca(posicoes, camadas) if regra_tercas else {}
+    lev = levantar(doc, regra_tercas=regra_tercas, avisar=avisar)
+    pecas, acessorios, posicoes, camadas, mudadas = (lev["pecas"], lev["acessorios"], lev["posicoes"],
+                                                     lev["camadas"], lev["regra_tercas"])
     desenhos: Dict[str, Desenho] = collections.OrderedDict()
     avisos: List[str] = []
 
@@ -923,4 +937,4 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     return {"desenhos": desenhos, "posicoes": resumo_pos, "conjuntos": conjuntos_info,
             "acessorios": acessorios, "regra_tercas": mudadas, "avisos": avisos,
             "peso_total": round(sum(p.peso_total for p in posicoes), 1),
-            "objetos_posicoes": posicoes}
+            "objetos_posicoes": posicoes, "objetos_pecas": pecas, "camadas": camadas}

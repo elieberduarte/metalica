@@ -369,6 +369,11 @@ class CAD {
       desfazer: () => this.desfazer(), refazer: () => this.refazer(),
       'selecionar-tudo': () => this.selecionar([...this.doc.entidades.keys()].filter(id => this.doc.visivel(this.doc.get(id)))),
       apagar: () => this.apagarSelecao(),
+      materiais: async () => {
+        if (!this.projeto) { this.aviso('A lista de materiais precisa de um projeto aberto.', 'atencao'); return; }
+        if (this.doc.tamanho && this.nomeDesenho) { try { await this.salvar({ avisar: false }); } catch { /* segue */ } }
+        location.href = `/materiais?projeto=${encodeURIComponent(this.projeto)}`;
+      },
       'selecionar-peca': () => this.selecionarMesmaPeca(),
       'zoom-extensao': () => this.tela.enquadrar(),
       'zoom-selecao': () => { const c = this.doc.caixa(this.tela.selecao); if (c) this.tela.enquadrar(c, 0.2); },
@@ -673,7 +678,7 @@ class CAD {
       if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });
       const j = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar`, { grupos: escolhidos, regra_tercas: regra.checked, rotular: true, substituir: substituir.checked });
       const tercas = Object.keys(j.regra_tercas || {}).length;
-      this.aviso(`Detalhamento: ${j.pecas} peças em ${j.posicoes} posições e ${j.conjuntos} conjuntos, ${j.peso_total} kg; ${j.desenhos.length} desenho(s)` + (tercas ? `, furação de fábrica em ${tercas} posições` : '') + '. Os desenhos estão em Desenho → Abrir desenho do projeto.', 'info', 15000);
+      this.aviso(`Detalhamento: ${j.pecas} peças em ${j.posicoes} posições e ${j.conjuntos} conjuntos, ${j.peso_total} kg; ${j.desenhos.length} desenho(s)` + (tercas ? `, furação de fábrica em ${tercas} posições` : '') + '. Os desenhos estão em Desenho → Abrir desenho do projeto; a lista de materiais em Vistas do modelo → Lista de materiais.', 'info', 15000);
       if (j.desenhos.length) await this.abrirDesenho(j.desenhos[0].nome);
     } catch (e) { this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
   }

@@ -22,7 +22,9 @@ Rotas da API:
     POST /api/projetos/<slug>/<ação>    dados, modelo, importar-ifc, renomear, duplicar,
                                         excluir, abrir-pasta
     POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
-    POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + romaneio
+    POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + lista de materiais
+    GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
+    POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
     POST /api/projetos/<slug>/pranchas  pranchas (folhas com carimbo) a partir dos desenhos 2D
     POST /api/projetos/<slug>/importar-dxf  DXF em texto → entidades do CAD
     GET  /api/projetos/<slug>/desenhos[/<nome>]      desenhos 2D do CAD
@@ -41,7 +43,8 @@ import time
 import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlparse
+from typing import Optional
+from urllib.parse import unquote, urlparse, parse_qs
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(BASE, "web")
@@ -442,8 +445,8 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     romaneio (CSV) e o relatório em detalhamento/.
 
     corpo: {grupos: [...], regra_tercas: bool, rotular: bool, substituir: bool}"""
-    from nucleo2d.detalhar import detalhar, GRUPOS
-    from saida.detalhamento import gravar_romaneio
+    from nucleo2d.detalhar import detalhar, GRUPOS, _categoria
+    from saida import lista_producao
     g = _gerente()
     doc = _documento3d_do_projeto(s)
     grupos = corpo.get("grupos") or list(GRUPOS.keys())
@@ -461,8 +464,12 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
                          "entidades": desenho.tamanho, "escala": desenho.escala})
     pasta = os.path.join(g._existente(s), "detalhamento")
     os.makedirs(pasta, exist_ok=True)
-    romaneio = gravar_romaneio(os.path.join(pasta, "romaneio.csv"), r["objetos_posicoes"], r["acessorios"])
-    relatorio = {k: v for k, v in r.items() if k not in ("desenhos", "objetos_posicoes")}
+    # a lista de materiais sai do mesmo levantamento dos desenhos (romaneio, perfis, chapas…)
+    categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
+    lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
+                                  barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s))
+    arquivos = lista_producao.gravar(pasta, lista, r["objetos_posicoes"], r["acessorios"])
+    relatorio = {k: v for k, v in r.items() if k not in ("desenhos", "objetos_posicoes", "objetos_pecas", "camadas")}
     relatorio["desenhos"] = desenhos
     with open(os.path.join(pasta, "relatorio.json"), "w", encoding="utf-8") as f:
         json.dump(relatorio, f, ensure_ascii=False, indent=1)
@@ -470,7 +477,55 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
             "pecas": sum(p["quantidade"] for p in r["posicoes"]), "peso_total": r["peso_total"],
             "regra_tercas": r["regra_tercas"], "avisos": r["avisos"],
-            "romaneio": _descrever_arquivo(romaneio, pasta)}
+            "romaneio": _descrever_arquivo(arquivos["romaneio"], pasta),
+            "materiais": {k: _descrever_arquivo(v, pasta) for k, v in arquivos.items()}}
+
+
+def _identificacao_do_projeto(s: str) -> dict:
+    p = _gerente().ler(s)
+    return {k: p.get(k, "") for k in ("nome", "cliente", "local", "responsavel", "origem_ifc")}
+
+
+def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] = None) -> dict:
+    """A lista de materiais do projeto (GET /api/projetos/<s>/materiais). Lê a gravada pelo
+    último detalhamento; sem ela, ou com `recalcular`, levanta de novo do modelo e grava.
+
+    corpo (POST): {barra: 0|6000|12000, regra_tercas: bool}"""
+    from nucleo2d.detalhar import levantar
+    from saida import lista_producao
+    g = _gerente()
+    pasta = os.path.join(g._existente(s), "detalhamento")
+    caminho = os.path.join(pasta, lista_producao.ARQUIVO_JSON)
+    corpo = corpo or {}
+    if not recalcular and os.path.exists(caminho):
+        with open(caminho, encoding="utf-8") as f:
+            lista = json.load(f)
+    else:
+        doc = _documento3d_do_projeto(s)
+        lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False)
+        lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
+                                      barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s))
+        lista_producao.gravar(pasta, lista, lev["posicoes"], lev["acessorios"])
+        g.tocar(s)
+    arquivos = {}
+    for chave, nome in (("json", lista_producao.ARQUIVO_JSON), ("html", lista_producao.ARQUIVO_HTML),
+                        ("pdf", lista_producao.ARQUIVO_PDF), ("romaneio", "romaneio.csv"),
+                        ("perfis", "resumo-perfis.csv"), ("chapas", "resumo-chapas.csv"), ("conjuntos", "conjuntos.csv")):
+        cam = os.path.join(pasta, nome)
+        if os.path.exists(cam):
+            arquivos[chave] = _descrever_arquivo(cam, pasta)
+    lista["arquivos"] = arquivos
+    lista["projeto"] = dict(lista.get("projeto") or {}, slug=s, **_identificacao_do_projeto(s))
+    return lista
+
+
+def pdf_da_lista_de_materiais(s: str) -> dict:
+    """POST /api/projetos/<s>/materiais/pdf: imprime a lista gravada (gera se não houver)."""
+    from saida import lista_producao
+    lista = lista_de_materiais(s)
+    pasta = os.path.join(_gerente()._existente(s), "detalhamento")
+    pdf = lista_producao.gerar_pdf(pasta, lista)
+    return {"pdf": _descrever_arquivo(pdf, pasta)}
 
 
 REPOSITORIO = "elieberduarte/metalica"
@@ -943,6 +998,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(modelo_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
+                if len(partes) == 2 and partes[1] == "materiais":
+                    q = parse_qs(urlparse(self.path).query)
+                    return self._json(lista_de_materiais(partes[0], recalcular=q.get("recalcular", ["0"])[0] in ("1", "true")))
                 if len(partes) == 3 and partes[1] == "desenhos":
                     return self._json({"desenho": _gerente().abrir_desenho(partes[0], partes[2])})
                 return self._json(projeto_completo(partes[0]))
@@ -954,6 +1012,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(abrir_modelo(rota.split("/api/modelo/abrir/", 1)[1]))
             if rota in ("/cad", "/desenho"):
                 return self._arquivo(os.path.join(WEB, "cad", "cad.html"), WEB)
+            if rota in ("/materiais", "/lista-de-materiais"):
+                return self._arquivo(os.path.join(WEB, "materiais.html"), WEB)
             if rota in ("/editor", "/editor3d", "/3d"):
                 return self._arquivo(os.path.join(WEB, "editor3d", "editor.html"), WEB)
             if rota.startswith("/saida/"):
@@ -991,6 +1051,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gerar_vista_2d(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar":
                     return self._json(detalhar_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "materiais":
+                    return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
+                if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "pdf":
+                    return self._json(pdf_da_lista_de_materiais(partes[0]))
                 if len(partes) == 2 and partes[1] == "pranchas":
                     return self._json(montar_pranchas_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "importar-dxf":
