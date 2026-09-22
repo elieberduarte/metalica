@@ -293,7 +293,16 @@ mesma célula, desenhado o líder e cada variante anotada ("M7 – 02x: +P26 x1;
 `conjuntos_info[..]["variantes"]`) — decisão do usuário: um detalhe por lado.
 Todas as cotas dos detalhes saem em **milímetro inteiro** (`_Papel.cota_h/cota_v/cadeia_*`).
 Na elevação do conjunto, a cadeia de nós de um banzo inclinado (mais de 2°) é **alinhada ao banzo**
-(`_Papel.cadeia_alinhada`): distâncias medidas na própria barra, como se marca na produção.
+(`_Papel.cadeia_alinhada`): distâncias medidas na própria barra, como se marca na produção. Acima
+dela sai a **cadeia dos suportes de terça** (chapas em pé encostadas no banzo de cima, fundidas a
+60 mm), quando não coincide com a dos nós. O título de cada célula começa pelo **tipo** em caixa
+alta ("TESOURA", "TERÇA DE COBERTURA", "CONTRAVENTAMENTO"). Tesouras semelhantes toleram 3 % nas
+dimensões (a chapa de base maior). **Contraventamentos** com as mesmas peças de ponta saem num
+detalhe só (`desenho_de_contraventamentos`): elevação do mais comprido, cotas empilhadas
+"C.V.3 (02x) – 5150" por contraventamento, cotas das peças de ponta com o nome ("230  B.R.1") e,
+no título, o tirante de cada um com o comprimento de corte. Barra roscada é `B.R.n`; redondo curto
+(< 600 mm) é gancho `G.n`. A regra das terças também torna **oblongos** os furos da ligação
+(Ø13 → 25x13, rasgo no sentido da barra; `_oblongar`) — a chapinha do suporte fica redonda.
 
 **Camadas por tipo de peça** (`CAMADAS_PECAS`, paleta das camadas do 3D): TERCAS, BANZOS,
 DIAGONAIS, MONTANTES, CHAPAS, TIRANTES, PILARES, VIGAS, TELHAS. O traço forte de cada peça vai

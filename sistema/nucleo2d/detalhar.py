@@ -187,7 +187,7 @@ class _Papel:
         minimo = 3.0 * 2.5 * self.d.escala
         return all(vals[i + 1] - vals[i] >= minimo for i in range(len(vals) - 1))
 
-    def cadeia_alinhada(self, linha, xs, desl_papel):
+    def cadeia_alinhada(self, linha, xs, desl_papel, exigir_espaco=True):
         """Cadeia de cotas ao longo da reta `linha` = (a, b) (o banzo inclinado): cada
         nó de abscissa x vai para o ponto da reta nessa abscissa e a cota é a distância
         medida na própria reta, ao milímetro — o que a produção marca no banzo.
@@ -200,7 +200,7 @@ class _Papel:
             return self.cadeia_h(xs, ay, desl_papel)
         ux, uy = dx / comp, dy / comp
         ts = sorted(set(float(round((x - ax) / ux)) for x in xs)) if abs(ux) > 1e-9 else []
-        if len(ts) < 2 or not self._cabe(ts):
+        if len(ts) < 2 or (exigir_espaco and not self._cabe(ts)):
             return False
         for i in range(len(ts) - 1):
             p1 = (ax + ux * ts[i], ay + uy * ts[i])
@@ -210,9 +210,9 @@ class _Papel:
             self._p(p1[0] - uy * desl_papel * self.d.escala, p1[1] + ux * desl_papel * self.d.escala)
         return True
 
-    def cadeia_h(self, xs, y, desl_papel):
+    def cadeia_h(self, xs, y, desl_papel, exigir_espaco=True):
         xs = sorted(set(float(round(x)) for x in xs))
-        if not self._cabe(xs):
+        if exigir_espaco and not self._cabe(xs):
             return False
         for i in range(len(xs) - 1):
             self.cota_h(xs[i], xs[i + 1], y, desl_papel)
@@ -346,7 +346,7 @@ def _camada_da_posicao(pos: Posicao, tipo: str, votos: Optional[Dict[str, collec
         return "CHAPAS"
     if pos.classe == "telha":
         return "TELHAS"
-    if tipo in ("contraventamento",) or pos.classe == "barra_redonda" or (pos.classe == "barra_conformada" and _eh_redonda_perfil(pos.perfil)):
+    if tipo in ("contraventamento", "barra_roscada", "gancho") or pos.classe == "barra_redonda" or (pos.classe == "barra_conformada" and _eh_redonda_perfil(pos.perfil)):
         return "TIRANTES"
     if tipo in ("terca_cobertura", "terca_marquise"):
         return "TERCAS"
@@ -720,7 +720,11 @@ def _eixos_da_assinatura(ass) -> Tuple[Tuple[int, float], ...]:
 
 def _grupos_de_furos(furos: Sequence[Furo], raio: float = 160.0) -> List[List[Furo]]:
     """Furos redondos da vista de frente agrupados por proximidade (uma ligação cada)."""
-    lista = [f for f in furos if f.vista == "frente" and f.tipo == "redondo"]
+    # redondos, e os oblongos que têm par na mesma coluna (furos de ligação já oblongados
+    # pelo padrão da fábrica); o oblongo isolado é o do tirante e não entra
+    frente = [f for f in furos if f.vista == "frente"]
+    lista = [f for f in frente if f.tipo == "redondo"
+             or (f.tipo == "oblongo" and any(g is not f and abs(g.x - f.x) <= 2.0 for g in frente))]
     grupos: List[List[Furo]] = []
     for f in sorted(lista, key=lambda f: (f.x, f.y)):
         for g in grupos:
@@ -766,6 +770,39 @@ def _reposicionar(grupo: Sequence[Furo], passo_h: float, passo_v: float):
         f.y = cy + (il - (nl - 1) / 2.0) * passo_v
 
 
+#: Rasgo do furo oblongo da terça: comprimento = diâmetro + isto (Ø13 → 25x13).
+RASGO_OBLONGO_TERCA = 12.0
+
+
+def _oblongar(grupo: Sequence[Furo]) -> int:
+    """Furos redondos do grupo viram oblongos no sentido da barra; devolve quantos."""
+    n = 0
+    for f in grupo:
+        if f.tipo == "redondo" and f.d > 0:
+            f.tipo, f.larg, f.alt = "oblongo", float(round(f.d + RASGO_OBLONGO_TERCA)), float(f.d)
+            n += 1
+    return n
+
+
+def oblongar_tercas(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> List[str]:
+    """Padrão da fábrica: os furos da ligação da terça (os que têm par na mesma coluna —
+    o furo isolado do tirante fica) são oblongos, com o rasgo no sentido da barra. Vale
+    depois da regra e dos ajustes do projeto. Devolve as marcas alteradas."""
+    fora = []
+    for pos in posicoes:
+        if not _eh_terca(pos, camadas.get(pos.marca, "")):
+            continue
+        frente = [f for f in pos.furos if f.vista == "frente"]
+        n = 0
+        for f in frente:
+            if f.tipo == "redondo" and any(g is not f and abs(g.x - f.x) <= 2.0 for g in frente):
+                n += _oblongar([f])
+        if n:
+            pos.observacoes.append("furos da ligacao oblongos (%s): padrao de fabrica" % ", ".join(sorted({f.rotulo() for f in frente if f.tipo == "oblongo"})))
+            fora.append(pos.marca)
+    return fora
+
+
 def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> dict:
     """Aplica a furação padrão de fábrica às terças e ao que compõe a ligação delas.
 
@@ -779,6 +816,7 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
     for pos in tercas:
         passo_v, passo_h = FURACAO_TERCA_BAIXA if pos.H < LIMITE_TERCA else FURACAO_TERCA_ALTA
         alterou = []
+        oblongados = 0
         for g in _grupos_de_furos(pos.furos):
             ass = _assinatura(g)
             if ass is None:
@@ -790,9 +828,10 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
                 assinaturas[_eixos_da_assinatura(ass)][(nc, nl, dx, dy, novo_h, novo_v)] += pos.quantidade
                 _reposicionar(g, novo_h, novo_v)
                 alterou.append("%dx%d %s x %s -> %s x %s" % (nc, nl, _mm(dx), _mm(dy), _mm(novo_h), _mm(novo_v)))
-        if alterou:
-            txt = "furacao no padrao de fabrica (%s x %s mm): %s" % (
-                _mm(passo_h), _mm(passo_v), "; ".join(sorted(set(alterou))))
+        if alterou or oblongados:
+            txt = "furacao no padrao de fabrica (%s x %s mm%s)%s" % (
+                _mm(passo_h), _mm(passo_v), ", furos oblongos" if oblongados else "",
+                (": " + "; ".join(sorted(set(alterou)))) if alterou else "")
             pos.observacoes.append(txt)
             mudadas[pos.marca] = txt
     # o que compõe a ligação (suporte, chapinha): mesma furação original que alguma terça,
@@ -844,6 +883,8 @@ def _cabecalho(pos: Posicao) -> List[str]:
     if pos.nome:
         titulo += "  (%s)" % pos.marca                  # a marca do TecnoMETAL fica rastreável
     linhas = [titulo]
+    if pos.tipo_nome and pos.tipo_nome != "parte":
+        linhas.insert(0, TIPOS_NOME.get(pos.tipo_nome, pos.tipo_nome).upper())   # "TERÇA DE COBERTURA"
     if pos.classe == "chapa_dobrada" and pos.desenvolvimento:
         linhas.append("%s  %s  %s  desenv. %s x %s mm" % (pos.perfil, _rotulo_espessura(pos), pos.material,
                                                           _mm(pos.desenvolvimento[0]), _mm(pos.desenvolvimento[1])))
@@ -973,6 +1014,7 @@ def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes:
         raise ErroDeDados("não há peça com a posição %s no modelo." % marca)
     posicoes, camadas = _posicoes_de(lista, _fixadores(doc))
     aplicar_ajustes_de_furos(posicoes, ajustes)
+    oblongar_tercas(posicoes, camadas)
     aplicar_nomes(posicoes, nomes)
     pos = posicoes[0]
     escala = {"chapa": 10.0, "chapa_dobrada": 10.0, "telha": 50.0}.get(pos.classe, 25.0)
@@ -1550,6 +1592,7 @@ def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[d
     posicoes, camadas_ = _posicoes_de(lista, _fixadores(doc))
     posicoes = fundir_posicoes_iguais(posicoes, camadas_)
     aplicar_ajustes_de_furos(posicoes, ajustes)
+    oblongar_tercas(posicoes, camadas_)
     aplicar_nomes(posicoes, nomes_producao)
     pos = next((p for p in posicoes if p.marca == marca), posicoes[0])
     pos.marca = marca
@@ -1888,7 +1931,9 @@ def _conjuntos_semelhantes(a: dict, b: dict) -> bool:
     corrente (pedido do usuário: um detalhe por lado), com a diferença escrita."""
     if a["lado"] != b["lado"]:
         return False
-    if any(abs(x - y) > TOLERANCIA_CONJUNTO_SEMELHANTE for x, y in zip(a["ext"][:2], b["ext"][:2])):
+    # 20 mm ou 3 % da dimensão: a chapa de base maior deixa a tesoura de ponta 28 mm
+    # mais alta e ela continua sendo a mesma tesoura
+    if any(abs(x - y) > max(TOLERANCIA_CONJUNTO_SEMELHANTE, 0.03 * max(x, y)) for x, y in zip(a["ext"][:2], b["ext"][:2])):
         return False
     ca = collections.Counter({k: len(v) for k, v in a["pecas"].items()})
     cb = collections.Counter({k: len(v) for k, v in b["pecas"].items()})
@@ -1956,7 +2001,7 @@ def _rotular_barras(p: "_Papel", rotulos, esc: float, altura_papel: float = 1.8)
 def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido], n_instancias: int,
                         desenho: Desenho, dx: float, dy: float, rotular: bool = True,
                         fundidas: Optional[Dict[str, str]] = None, nota=None,
-                        nomes: Optional[Dict[str, str]] = None, nome: str = "") -> Tuple[float, float, float, float]:
+                        nomes: Optional[Dict[str, str]] = None, nome: str = "", tipo: str = "") -> Tuple[float, float, float, float]:
     """Elevação do conjunto com cotas de nós, título e lista de perfis, em (dx, dy).
     `fundidas`: marca do IFC → posição fundida; `nomes`: posição fundida → nome de
     produção (rótulos e composição com o mesmo nome que as células de posição);
@@ -1996,7 +2041,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     atr = {"conjunto": marca, "detalhe": "conjunto"}
     p = _Papel(desenho, atr, dx, dy)
     esc = desenho.escala
-    off, off2 = 10.0, 20.0
+    off, off2, off3 = 10.0, 20.0, 30.0
     # eixos das barras em (u, v); banzos são as barras quase horizontais e compridas
     barras = []
     rotulos = []
@@ -2086,6 +2131,39 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     cadeia = len(nos_baixo) > 2 and cadeia_do_banzo(nos_baixo, False)
     p.cota_h(0, larg, 0, -(off2 if cadeia else off))
     cadeia_cima = len(nos_cima) > 2 and nos_cima != nos_baixo and cadeia_do_banzo(nos_cima, True)
+    # suportes de terça (chapinhas/cantoneiras curtas encostadas no banzo de cima): a
+    # cadeia do espaçamento deles, alinhada ao banzo, acima da cadeia dos nós
+    suportes = []
+    reta_cima = reta_do_banzo(True)
+    for e in instancia:
+        if camada_de.get(e.id) != "CHAPAS":
+            continue
+        pu = [_dot(_sub(q, origem), u) - u0 for q in e.vertices]
+        pv = [_dot(_sub(q, origem), v) - v0 for q in e.vertices]
+        # o suporte é a chapa em pé (alta e estreita na elevação); o gusset deitado
+        # e o enrijecedor ao lado dele não contam
+        if max(pu) - min(pu) > 40.0 or max(pv) - min(pv) < 100.0:
+            continue
+        cx, cy = sum(pu) / len(pu), sum(pv) / len(pv)
+        if reta_cima is not None:
+            (ax_, ay_), (bx_, by_) = reta_cima
+            dist = abs((bx_ - ax_) * (ay_ - cy) - (ax_ - cx) * (by_ - ay_)) / max(math.hypot(bx_ - ax_, by_ - ay_), 1e-9)
+        else:
+            dist = abs(cy - alt)
+        if dist <= 150.0:
+            suportes.append(cx)
+    cadeia_suportes = False
+    if len(suportes) >= 2:
+        sup = fundir(set(round(s, 1) for s in suportes) | {0.0, larg}, tol=60.0, fixos=(0.0, larg))
+        # a cadeia dos suportes só se repete quando é exatamente a dos nós (terça em todo
+        # nó); terça de dois em dois nós tem espaçamento próprio, e é ele que se cota
+        iguais = len(sup) == len(nos_cima) and all(abs(s - n_) <= 20.0 for s, n_ in zip(sorted(sup), sorted(nos_cima)))
+        if not iguais and len(sup) > 2:
+            # a folga da ponta ao primeiro suporte é curta (uns 120 mm): a cadeia sai mesmo
+            # assim — é a medida que a fábrica marca no banzo
+            desl = off2 if cadeia_cima else off
+            cadeia_suportes = (p.cadeia_alinhada(reta_cima, sup, desl, exigir_espaco=False) if reta_cima is not None
+                               else p.cadeia_h(sup, alt, desl, exigir_espaco=False))
     cadeia = len(alturas) > 2 and p.cadeia_v(alturas, larg, off)
     p.cota_v(0, alt, larg, off2 if cadeia else off)
     _rotular_barras(p, rotulos, esc)
@@ -2096,7 +2174,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         m = _marcas(e)
         comp[nome_de(m.get("posicao") or e.nome)] += 1
         perfis[str(m.get("perfil") or e.nome)] += 1
-    y = alt + ((off2 if cadeia_cima else off) + 2.0) * esc
+    y = alt + (((off3 if cadeia_cima else off2) if cadeia_suportes else (off2 if cadeia_cima else off)) + 2.0) * esc
     lista = ["%s x%d" % (k, n) for k, n in sorted(perfis.items(), key=lambda kv: (-kv[1], _ordem_natural(kv[0])))]
     posic = ["%s x%d" % (k, n) for k, n in sorted(comp.items(), key=lambda kv: _ordem_natural(kv[0]))]
 
@@ -2111,6 +2189,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         return fora
     titulo = "%s – %02dx" % (nome or marca, n_instancias) + ("  (%s)" % marca if nome else "")
     linhas = [titulo] + quebrar("Perfis: ", lista) + quebrar("Pecas: " if nomes else "Posicoes: ", posic)
+    if tipo:
+        linhas.insert(0, TIPOS_NOME.get(tipo, tipo).upper())
     for txt in ([nota] if isinstance(nota, str) else list(nota or [])):
         if not txt:
             continue
@@ -2122,6 +2202,142 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                 atual = "  "
             atual += palavra + " "
         linhas.append(atual.rstrip())
+    for i, txt in enumerate(reversed(linhas)):
+        alt_t = 3.5 if i == len(linhas) - 1 else 2.5
+        p.texto(0, y, txt, alt_t * esc)
+        y += (alt_t + 1.2) * esc
+    ext = p.extremos
+    return (min(ext[0], dx), min(ext[1], dy), max(ext[2], dx + larg), max(ext[3], dy + alt))
+
+
+# ============================================================ contraventamentos
+#: Redondo mais curto que isto (mm) não é o tirante do contraventamento (gancho, esticador).
+MENOR_TIRANTE = 600.0
+
+
+def _tirante_principal(instancia: Sequence[Solido]):
+    """A barra redonda mais comprida do conjunto (o tirante), ou None."""
+    melhor, comp = None, 0.0
+    for e in instancia:
+        if not _eh_redonda_perfil(str(_marcas(e).get("perfil") or e.nome or "")):
+            continue
+        cx = _caixa(e)
+        ext = max(cx[i][1] - cx[i][0] for i in range(3))
+        if ext > comp:
+            melhor, comp = e, ext
+    return melhor if comp >= MENOR_TIRANTE else None
+
+
+def _extensao_do_conjunto(instancia: Sequence[Solido]) -> Tuple[float, float]:
+    """(comprimento, altura) da instância na vista em que é desenhada."""
+    c, u, v, w = _eixos_do_conjunto(instancia)
+    u, v, w = _vistas.Vista(origem=c, normal=w, acima=v).eixos()
+    us = [_dot(_sub(p, c), u) for e in instancia for p in e.vertices]
+    vs = [_dot(_sub(p, c), v) for e in instancia for p in e.vertices]
+    return max(us) - min(us), max(vs) - min(vs)
+
+
+def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desenho: Desenho, dx: float, dy: float,
+                                 nomes: Dict[str, str], nomes_conj: Dict[str, str], fundidas: Dict[str, str],
+                                 comprimentos: Dict[str, float], rotular: bool = True) -> Tuple[float, float, float, float]:
+    """Detalhe limpo dos contraventamentos que só diferem no comprimento do tirante
+    (mesmas peças de ponta): a elevação do mais comprido, as cotas empilhadas — uma por
+    contraventamento, "C.V.3 (02x) – 5150" — e, embaixo, as cotas das peças de ponta
+    (barra roscada do esticador, cantoneiras, chapa). `membros` = [(rotulo do grupo,
+    instância, nº de instâncias)]."""
+    membros = sorted(membros, key=lambda m: _ordem_natural(nomes_conj.get(m[0], m[0])))
+    maior = max(membros, key=lambda m: _extensao_do_conjunto(m[1])[0])
+    rotulo, inst, _ = maior
+    rotulo_celula = " / ".join(m[0] for m in membros)
+    c, u, v, w = _eixos_do_conjunto(inst)
+    ws = [_dot(_sub(p, c), w) for e in inst for p in e.vertices]
+    origem = tuple(c[i] + w[i] * (min(ws) - 10.0) for i in range(3))
+    vista = _vistas.Vista(origem=origem, normal=w, acima=v, profundidade=None, cortar=False,
+                          entidades=[e.id for e in inst], rotular=False, nome="Contraventamento %s" % rotulo_celula, tipo="conjunto")
+    u, v, w = vista.eixos()
+    antes = set(desenho.entidades)
+    _vistas.gerar(doc, vista, desenho, (dx, dy))
+    info = desenho.vistas[-1]
+    larg, alt = info["largura"], info["altura"]
+    camada_de = _classificar_pecas_do_conjunto(inst, (u, v, origem))
+    _registrar_camadas_de_pecas(desenho)
+    for e in (desenho.entidades[k] for k in desenho.entidades if k not in antes):
+        e.atributos["conjunto"] = rotulo_celula
+        e.atributos["detalhe"] = "conjunto"
+        if e.camada in ("VISTA", "CORTE") and e.atributos.get("origem") in camada_de:
+            e.camada = camada_de[e.atributos["origem"]]
+    us = [_dot(_sub(p, origem), u) for e in inst for p in e.vertices]
+    vs = [_dot(_sub(p, origem), v) for e in inst for p in e.vertices]
+    u0, v0 = min(us), min(vs)
+    atr = {"conjunto": rotulo_celula, "detalhe": "conjunto"}
+    p = _Papel(desenho, atr, dx, dy)
+    esc = desenho.escala
+    off, passo = 10.0, 8.0
+    tirante = _tirante_principal(inst)
+
+    def nome_de(marca_ifc):
+        f = fundidas.get(str(marca_ifc), str(marca_ifc))
+        return nomes.get(f) or f
+    # peças de ponta cotadas embaixo: barra roscada e chapa na 1ª linha, cantoneiras na 2ª
+    extremos_pecas = []
+    for e in inst:
+        if e is tirante:
+            continue
+        pu = [_dot(_sub(q, origem), u) - u0 for q in e.vertices]
+        ext = max(pu) - min(pu)
+        if ext < 20.0:
+            continue
+        perfil = str(_marcas(e).get("perfil") or e.nome or "")
+        extremos_pecas.append([min(pu), max(pu), 0, nome_de(_marcas(e).get("posicao") or e.nome), perfil])
+    # uma linha de cota por peça de cada ponta (as cantoneiras vizinhas não se atropelam),
+    # com o nome da peça no texto: "150  B.7"
+    extremos_pecas.sort(key=lambda r_: r_[0])
+    meio = larg / 2.0
+    for lado_ in (False, True):
+        k = 0
+        for r_ in extremos_pecas:
+            if ((r_[0] + r_[1]) / 2 > meio) != lado_:
+                continue
+            k += 1
+            r_[2] = k
+    for a_, b_, linha, nome_p, perfil in extremos_pecas:
+        p.cota_h(a_, b_, 0, -(off * linha), texto="%d  %s" % (round(b_ - a_), nome_p))
+    # cotas empilhadas por contraventamento, a partir da ponta esquerda
+    for i, (rot, inst_m, n_inst) in enumerate(membros):
+        comp_m, _ = _extensao_do_conjunto(inst_m)
+        nome_m = nomes_conj.get(rot, rot)
+        p.cota_h(0, round(comp_m), alt, off + passo * i, texto="%s (%02dx) – %d" % (nome_m, n_inst, round(comp_m)))
+    # rótulos: tirante pelo perfil no meio; peças de ponta pelo nome
+    if rotular:
+        h = 1.8 * esc
+        if tirante is not None:
+            pu = [_dot(_sub(q, origem), u) - u0 for q in tirante.vertices]
+            p.texto((min(pu) + max(pu)) / 2, alt + 2.0 * esc, str(_marcas(tirante).get("perfil") or tirante.nome or ""), h, "TEXTO", alinhamento="centro")
+        pass
+    # título: tipo, nomes e, por contraventamento, o tirante com o comprimento de corte
+    total = sum(m[2] for m in membros)
+    linhas = ["CONTRAVENTAMENTO", "%s – %02dx" % (" / ".join(nomes_conj.get(m[0], m[0]) for m in membros), total)]
+    marcas_txt, atual = [], "("
+    for mk in rotulo_celula.split(" / "):
+        if len(atual) + len(mk) + 3 > 72 and atual != "(":
+            marcas_txt.append(atual.rstrip(" /"))
+            atual = " "
+        atual += mk + " / "
+    marcas_txt.append(atual.rstrip(" /") + ")")
+    linhas.extend(marcas_txt)
+    for rot, inst_m, n_inst in membros:
+        tir = _tirante_principal(inst_m)
+        if tir is None:
+            continue
+        marca_t = fundidas.get(str(_marcas(tir).get("posicao") or tir.nome), str(_marcas(tir).get("posicao") or tir.nome))
+        comp_t = comprimentos.get(marca_t)
+        linhas.append("%s – %02dx: tirante %s %s%s" % (nomes_conj.get(rot, rot), n_inst, nomes.get(marca_t) or marca_t,
+                                                     str(_marcas(tir).get("perfil") or tir.nome or ""),
+                                                     "  L = %d mm" % round(comp_t) if comp_t else ""))
+    pecas_ponta = collections.Counter(nome_de(_marcas(e).get("posicao") or e.nome) for e in inst if e is not tirante)
+    if pecas_ponta:
+        linhas.append("Pecas de ponta (por unidade): " + ", ".join("%s x%d" % (k, q) for k, q in sorted(pecas_ponta.items(), key=lambda kv: _ordem_natural(kv[0]))))
+    y = alt + (off + passo * len(membros) + 4.0) * esc
     for i, txt in enumerate(reversed(linhas)):
         alt_t = 3.5 if i == len(linhas) - 1 else 2.5
         p.texto(0, y, txt, alt_t * esc)
@@ -2339,13 +2555,13 @@ def _eh_redonda_perfil(perfil: str) -> bool:
 PREFIXO_NOME = collections.OrderedDict([
     ("tesoura", "T"), ("terca_cobertura", "T.C."), ("terca_marquise", "T.M."), ("suporte_terca", "S.T."),
     ("agulhamento", "A.G."), ("contraventamento", "C.V."), ("castanha", "C.S."), ("chapa", "CH."),
-    ("barra", "B."), ("telha", "TL."), ("conjunto", "CJ."), ("parte", ""),
+    ("barra_roscada", "B.R."), ("gancho", "G."), ("barra", "B."), ("telha", "TL."), ("conjunto", "CJ."), ("parte", ""),
 ])
 TIPOS_NOME = {
     "tesoura": "Tesoura", "terca_cobertura": "Terça de cobertura", "terca_marquise": "Terça de marquise",
     "suporte_terca": "Suporte de terça", "agulhamento": "Agulhamento", "contraventamento": "Contraventamento",
     "castanha": "Castanha", "chapa": "Chapa", "barra": "Barra", "telha": "Telha", "conjunto": "Conjunto",
-    "parte": "Parte de conjunto",
+    "barra_roscada": "Barra roscada", "gancho": "Gancho", "parte": "Parte de conjunto",
 }
 #: Terça cujo centro fica além disto (mm) da caixa dos pilares em planta é de marquise.
 FOLGA_MARQUISE = 300.0
@@ -2437,8 +2653,10 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             t = "suporte_terca" if _tem_furacao_de_terca(p, ass_terca) else "chapa"
         elif cls == "telha":
             t = "telha"
+        elif re.search(r"BARRA\s*ROSC", p.perfil or "", re.I):
+            t = "barra_roscada"                      # o pedaço roscado do esticador, não o tirante
         elif cls == "barra_redonda" or (cls == "barra_conformada" and _eh_redonda_perfil(p.perfil)):
-            t = "contraventamento"
+            t = "contraventamento" if p.comprimento >= MENOR_TIRANTE else "gancho"
         elif cls == "barra" and _eh_terca(p, camadas.get(p.marca, "")):
             t = "terca_cobertura"
             pts = [q for m in marcas_de(p) for q in centros.get(m, [])]
@@ -2572,6 +2790,7 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             atribuir(l, k)
     for p in posicoes:
         p.nome = nomes_pos.get(p.marca, "")
+        p.tipo_nome = tipo.get(p.marca, "")
     ifc: Dict[str, str] = {}
     ifc_conj: Dict[str, str] = {}
     for c in conjuntos_info:
@@ -2591,8 +2810,10 @@ def aplicar_nomes(posicoes: Sequence[Posicao], nomes: Optional[dict]):
     qualquer das marcas originais); sem registro, o nome fica vazio."""
     mapa = (nomes or {}).get("posicoes") or {}
     cam = (nomes or {}).get("camadas_2d") or {}
+    tipos = (nomes or {}).get("tipos") or {}
     for p in posicoes:
         p.nome = mapa.get(p.marca) or next((mapa[m] for m in marcas_de(p) if mapa.get(m)), "")
+        p.tipo_nome = tipos.get(p.marca) or next((tipos[m] for m in marcas_de(p) if tipos.get(m)), "")
         p.camada_2d = cam.get(p.marca) or next((cam[m] for m in marcas_de(p) if cam.get(m)), "")
         if not p.camada_2d and nomes:
             p.camada_2d = _camada_da_posicao(p, (nomes.get("tipos") or {}).get(p.marca, ""))
@@ -2684,6 +2905,8 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     avisar("%d peças em %d posições" % (len(pecas), len(posicoes)))
     mudadas = regra_furacao_terca(posicoes, camadas) if regra_tercas else {}
     ajustadas = aplicar_ajustes_de_furos(posicoes, ajustes)
+    if regra_tercas:
+        oblongar_tercas(posicoes, camadas)
     aplicar_nomes(posicoes, nomes)
     return {"pecas": pecas, "acessorios": acessorios, "posicoes": posicoes, "camadas": camadas,
             "regra_tercas": mudadas, "ajustes": ajustadas,
@@ -2814,16 +3037,39 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     if celulas and "conjuntos" in grupos:
         g = GRUPOS["conjuntos"]
         d = Desenho(nome=g["titulo"], escala=g["escala"])
-        _empilhar(d, [(lambda x, y, rotulo=rotulo, inst=inst, n=n, nota=nota:
+        tipos_conj = nomeacao["tipos_conjuntos"]
+        comprimentos = {p.marca: p.comprimento for p in posicoes}
+        # contraventamentos com as mesmas peças de ponta: um detalhe só, cotas empilhadas
+        cv: Dict[tuple, list] = collections.OrderedDict()
+        fns = []
+        for rotulo, inst, n, nota in celulas:
+            tir = _tirante_principal(inst) if tipos_conj.get(rotulo) == "contraventamento" else None
+            if tir is not None:
+                marca_t = fundidas.get(str(_marcas(tir).get("posicao") or tir.nome), str(_marcas(tir).get("posicao") or tir.nome))
+                chave = tuple(sorted((fundidas.get(m, m), q) for m, q in collections.Counter(
+                    str(_marcas(e).get("posicao") or e.nome) for e in inst).items() if fundidas.get(m, m) != marca_t))
+                cv.setdefault(chave, []).append((rotulo, inst, n))
+                continue
+            fns.append(lambda x, y, rotulo=rotulo, inst=inst, n=n, nota=nota:
                        desenho_do_conjunto(doc, rotulo, inst, n, d, x, y, rotular, fundidas=fundidas, nota=nota,
-                                           nomes=nomes_pos, nome=nomes_conj.get(rotulo, "")))
-                      for rotulo, inst, n, nota in celulas], largura_max_papel=1400.0)
-        d.metadados["detalhamento"] = {
-            "grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info],
-            "itens": {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
+                                           nomes=nomes_pos, nome=nomes_conj.get(rotulo, ""), tipo=tipos_conj.get(rotulo, "")))
+        itens_cv = {}
+        for membros in cv.values():
+            membros.sort(key=lambda m: _ordem_natural(nomes_conj.get(m[0], m[0])))   # mesma ordem do rótulo da célula
+            fns.append(lambda x, y, membros=membros: desenho_de_contraventamentos(
+                doc, membros, d, x, y, nomes_pos, nomes_conj, fundidas, comprimentos, rotular))
+            chave_cel = " / ".join(m[0] for m in membros)
+            itens_cv[chave_cel] = {"quantidade": sum(m[2] for m in membros), "perfil": "contraventamentos %s" % " / ".join(nomes_conj.get(m[0], m[0]) for m in membros),
                                    "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
-                                   "categoria": c["categoria"], "marcas": c["marcas"], "nome": c["nome"]}
-                      for c in conjuntos_info}}
+                                   "categoria": "CONJUNTOS", "marcas": [mk for m in membros for mk in m[0].split(" / ")],
+                                   "nome": " / ".join(nomes_conj.get(m[0], m[0]) for m in membros)}
+        _empilhar(d, fns, largura_max_papel=1400.0)
+        itens = {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
+                              "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
+                              "categoria": c["categoria"], "marcas": c["marcas"], "nome": c["nome"]}
+                 for c in conjuntos_info}
+        itens.update(itens_cv)
+        d.metadados["detalhamento"] = {"grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info], "itens": itens}
         desenhos["conjuntos"] = d
 
     for chave in grupos:

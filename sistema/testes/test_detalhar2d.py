@@ -106,11 +106,15 @@ def test_regra_furacao_terca():
     pos_outra.classe, pos_outra.L, pos_outra.H = "barra", 5000.0, 150.0
     pos_outra.furos = [det.Furo("redondo", 100.0, 35.0, 17.0), det.Furo("redondo", 100.0, 135.0, 17.0)]
     mud = det.regra_furacao_terca([pos_terca, pos_chapa, pos_banzo, pos_alta, pos_outra], {})
+    assert det.oblongar_tercas([pos_terca, pos_chapa, pos_banzo, pos_alta, pos_outra], {}) == ["M5", "M6"]
     # o banzo P9 tem a mesma furação original da terça (é onde a terça se liga): entra;
     # P8, com outro passo (100), não é ligação de terça e fica como está
     assert set(mud) == {"M5", "P1", "M6", "P9"}
-    ys = sorted(round(f.y) for f in pos_terca.furos if f.tipo == "redondo" and f.x < 200)
+    ys = sorted(round(f.y) for f in pos_terca.furos if f.x < 200)
     assert ys == [50, 100]                                   # centro em 75, 50 mm entre eixos
+    # os furos da ligação da terça saem oblongos (25x13), o do tirante fica como está
+    assert all(f.tipo == "oblongo" and f.larg == 25.0 and f.alt == 13.0 for f in pos_terca.furos if f.x < 200)
+    assert all(f.tipo == "redondo" for f in pos_chapa.furos)         # a chapinha continua redonda
     assert round(pos_terca.furos[4].x) == 2500               # o oblongo não muda
     xs = sorted(round(f.x) for f in pos_chapa.furos)
     assert xs == [40, 90]                                    # 80 → 50, centrado em 65
