@@ -225,6 +225,17 @@ orientação (a chapinha do suporte), recebe a mesma substituição; o centro do
 mantido e a célula diz "furação no padrão de fábrica". Padrão quadrado ou terças de
 alturas diferentes com a mesma furação original saem com "conferir".
 
+### Pranchas com carimbo
+
+No CAD, **Desenho → Montar pranchas…** (rota `POST /api/projetos/<slug>/pranchas`,
+`nucleo2d/pranchas.py`) monta folhas A0–A4 em paisagem com moldura, quadro e carimbo
+(obra, cliente, título, responsável, escala, data, número "01/07", revisão). Cada posição
+ou conjunto dos desenhos de detalhamento vira uma vista na escala do desenho de origem;
+cortes e vistas entram inteiros. O que não cabe na escala desce para a normalizada
+seguinte, com nota; o que não cabe na folha vai para a prancha seguinte. A prancha é um
+desenho em milímetro de papel (escala 1), editável como qualquer outro, e o DXF sai em
+papel 1:1: a cota guarda o valor original como texto.
+
 ## O que sai
 
 | Entrega | Formato | Onde |

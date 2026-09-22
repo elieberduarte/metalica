@@ -21,6 +21,7 @@ Rotas da API:
                                         excluir, abrir-pasta
     POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
     POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + romaneio
+    POST /api/projetos/<slug>/pranchas  pranchas (folhas com carimbo) a partir dos desenhos 2D
     GET  /api/projetos/<slug>/desenhos[/<nome>]      desenhos 2D do CAD
     POST /api/projetos/<slug>/desenhos/<nome>[/dxf|/excluir]
     GET  /saida/<projeto>/<arquivo> baixa um arquivo gerado
@@ -469,6 +470,48 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
             "romaneio": _descrever_arquivo(romaneio, pasta)}
 
 
+def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
+    """Pranchas a partir de desenhos 2D do projeto: uma célula por posição/conjunto dos
+    desenhos de detalhamento, ou o desenho inteiro, em folhas ISO com carimbo.
+
+    corpo: {desenhos: [nome | {nome, escala}], formato: "A1", titulo: "Prancha",
+            carimbo: {obra, cliente, responsavel, crea, revisao, data, titulo, subtitulo},
+            substituir: bool}"""
+    from nucleo2d.desenho import Desenho
+    from nucleo2d.pranchas import montar_pranchas
+    g = _gerente()
+    pedidos = corpo.get("desenhos") or []
+    if not pedidos:
+        raise ErroDeDados("escolha ao menos um desenho para a prancha.")
+    fontes = []
+    for item in pedidos:
+        nome = item.get("nome") if isinstance(item, dict) else str(item)
+        d = Desenho.de_dict(g.abrir_desenho(s, nome))
+        if d.metadados.get("prancha"):
+            raise ErroDeDados("\"%s\" já é uma prancha; escolha os desenhos de origem." % d.nome)
+        fontes.append({"nome": _slug(nome), "desenho": d,
+                       "escala": (item.get("escala") if isinstance(item, dict) else None)})
+    p = g.ler(s)
+    carimbo = {"obra": p.get("nome") or s, "cliente": p.get("cliente") or "",
+               "responsavel": p.get("responsavel") or "", "revisao": "00"}
+    carimbo.update({k: v for k, v in (corpo.get("carimbo") or {}).items() if v not in (None, "")})
+    titulo = (corpo.get("titulo") or "Prancha").strip() or "Prancha"
+    folhas = montar_pranchas(fontes, formato=corpo.get("formato") or "A1", carimbo=carimbo, titulo=titulo)
+    if corpo.get("substituir", True) is not False:
+        # apaga as pranchas anteriores com o mesmo título-base (Prancha 01, 02, …)
+        for d in g.listar_desenhos(s, contar=False):
+            if d["nome"].startswith(_slug(titulo) + "-") and d["nome"][len(_slug(titulo)) + 1:].isdigit():
+                g.excluir_desenho(s, d["nome"])
+    saida = []
+    for folha in folhas:
+        folha.metadados["gerado_por"] = "pranchas"
+        salvo = g.salvar_desenho(s, folha.nome, folha.dict())
+        saida.append({"nome": salvo["nome"], "titulo": folha.nome, "entidades": folha.tamanho,
+                      "celulas": len(folha.metadados["prancha"]["celulas"])})
+    g.tocar(s)
+    return {"pranchas": saida, "formato": corpo.get("formato") or "A1"}
+
+
 def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:
     from nucleo2d.desenho import Desenho
     g = _gerente()
@@ -814,6 +857,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gerar_vista_2d(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar":
                     return self._json(detalhar_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "pranchas":
+                    return self._json(montar_pranchas_projeto(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "desenhos":
                     return self._json(_gerente().salvar_desenho(partes[0], partes[2],
                                                                 corpo.get("desenho", corpo)))

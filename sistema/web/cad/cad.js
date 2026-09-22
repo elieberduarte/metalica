@@ -331,6 +331,7 @@ class CAD {
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
       detalhar: () => this.dialogoDetalhar(),
+      pranchas: () => this.dialogoPranchas(),
       desfazer: () => this.desfazer(), refazer: () => this.refazer(),
       'selecionar-tudo': () => this.selecionar([...this.doc.entidades.keys()].filter(id => this.doc.visivel(this.doc.get(id)))),
       apagar: () => this.apagarSelecao(),
@@ -605,6 +606,52 @@ class CAD {
       this.aviso(`Detalhamento: ${j.pecas} peças em ${j.posicoes} posições e ${j.conjuntos} conjuntos, ${j.peso_total} kg; ${j.desenhos.length} desenho(s)` + (tercas ? `, furação de fábrica em ${tercas} posições` : '') + '. Os desenhos estão em Desenho → Abrir desenho do projeto.', 'info', 15000);
       if (j.desenhos.length) await this.abrirDesenho(j.desenhos[0].nome);
     } catch (e) { this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
+  /** Pranchas com carimbo a partir dos desenhos do projeto (rota /pranchas); abre a primeira. */
+  async dialogoPranchas() {
+    if (!this.projeto) { this.aviso('Montar pranchas precisa de um projeto aberto.', 'atencao'); return; }
+    if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });
+    const lista = (await this._listaDesenhos()).filter(d => !/^prancha(-\d+)?$/i.test(d.nome));
+    if (!lista.length) { this.aviso('O projeto ainda não tem desenhos: gere cortes, vistas ou o detalhamento primeiro.', 'atencao'); return; }
+    let projeto = {};
+    try { projeto = (await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}`)).projeto || {}; } catch { /* sem dados */ }
+    const caixas = new Map();
+    const opcoes = el('div', { class: 'lista-opcoes' });
+    for (const d of lista) {
+      const c = el('input', { type: 'checkbox', checked: /^detalhamento/.test(d.nome) || d.nome === this.nomeDesenho ? 'checked' : undefined });
+      caixas.set(d.nome, c);
+      opcoes.append(el('label', { class: 'linha' }, c, ` ${d.titulo || d.nome}`, el('small', { texto: `  ${numero(d.entidades || 0)} objetos · 1:${d.escala || '?'}` })));
+    }
+    const formato = el('select', {}, ...['A0', 'A1', 'A2', 'A3', 'A4'].map(f => el('option', { value: f, texto: f, selected: f === 'A1' ? 'selected' : undefined })));
+    const campos = {
+      obra: el('input', { type: 'text', value: projeto.nome || '' }),
+      cliente: el('input', { type: 'text', value: projeto.cliente || '' }),
+      responsavel: el('input', { type: 'text', value: projeto.responsavel || '' }),
+      revisao: el('input', { type: 'text', value: '00' }),
+      titulo: el('input', { type: 'text', value: 'Prancha', title: 'Nome base das pranchas: Prancha 01, 02, …' }),
+    };
+    const substituir = el('input', { type: 'checkbox', checked: 'checked' });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: 'Cada posição ou conjunto dos desenhos de detalhamento vira uma vista na escala do próprio desenho; cortes e vistas entram inteiros. O que não cabe na escala desce para a seguinte, com nota; o que não cabe na folha vai para a prancha seguinte.' }),
+      el('div', { class: 'explica', texto: 'Desenhos de origem:' }), opcoes,
+      el('label', {}, 'Formato da folha', formato),
+      el('label', {}, 'Obra', campos.obra), el('label', {}, 'Cliente', campos.cliente),
+      el('label', {}, 'Responsável técnico', campos.responsavel), el('label', {}, 'Revisão', campos.revisao),
+      el('label', {}, 'Nome base', campos.titulo),
+      el('label', { class: 'linha' }, substituir, ' Substituir as pranchas anteriores com este nome'));
+    if (await this.dialogo({ titulo: 'Montar pranchas', corpo, ok: 'Montar' }) !== 'ok') return;
+    const escolhidos = [...caixas].filter(([, c]) => c.checked).map(([n]) => n);
+    if (!escolhidos.length) { this.aviso('Escolha ao menos um desenho.', 'atencao'); return; }
+    this.dica('Montando as pranchas…');
+    try {
+      const j = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/pranchas`, {
+        desenhos: escolhidos, formato: formato.value, titulo: campos.titulo.value, substituir: substituir.checked,
+        carimbo: { obra: campos.obra.value, cliente: campos.cliente.value, responsavel: campos.responsavel.value, revisao: campos.revisao.value },
+      });
+      this.aviso(`${j.pranchas.length} prancha(s) ${j.formato} montada(s): ${j.pranchas.map(p => p.titulo).join(', ')}. Abra as outras em Desenho → Abrir desenho do projeto; Exportar DXF grava cada uma em papel 1:1.`, 'info', 15000);
+      if (j.pranchas.length) await this.abrirDesenho(j.pranchas[0].nome);
+    } catch (e) { this.aviso(`Não foi possível montar as pranchas: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
   // -------------------------------------------------------------- avisos
