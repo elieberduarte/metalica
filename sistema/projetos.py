@@ -37,6 +37,14 @@ from nucleo.base import ErroDeDados
 import versao
 
 ARQUIVO = "projeto.json"
+HISTORICO = "historico"
+#: pasta/limite do histórico do modelo; marca de projeto aberto
+MAX_HISTORICO = 8
+
+INTERVALO_HISTORICO = 600.0
+
+ABERTO = "aberto.json"
+
 MODELO = "modelo.json"
 LIXEIRA = ".lixeira"
 #: Pastas da pasta de dados que não são projetos.
@@ -256,6 +264,7 @@ class Projetos:
                 "modelo_mb": round(os.path.getsize(modelo) / 1048576, 1) if os.path.exists(modelo) else 0,
                 "origem_ifc": p.get("origem_ifc"), "entregas": entregas, "pasta": pasta,
                 "tem_materiais": os.path.exists(os.path.join(pasta, "detalhamento", "lista-de-materiais.json")),
+                "aberto_por": self.aberto_por(s),
                 "desenhos": [{"nome": d["nome"], "titulo": d.get("titulo") or d["nome"], "vistas": d.get("vistas") or []}
                              for d in self.listar_desenhos(s, contar=False)]}
 
@@ -437,13 +446,124 @@ class Projetos:
     def caminho_modelo(self, s: str) -> str:
         return os.path.join(self._existente(s), MODELO)
 
-    def salvar_modelo(self, s: str, documento: dict) -> dict:
+    def salvar_modelo(self, s: str, documento: dict, marco: bool = False) -> dict:
+        """Grava o modelo. Antes, guarda o modelo anterior no histórico quando `marco`
+        (operação que muda peças: furos aplicados, detalhamento, migração) ou quando o
+        último guardado tem mais de INTERVALO_HISTORICO."""
         if not isinstance(documento, dict):
             raise ErroDeDados("documento 3D ausente ou inválido.")
+        try:
+            self._guardar_historico(s, marco)
+        except OSError:
+            pass
         _gravar_json(self.caminho_modelo(s), documento)
         self.tocar(s)
         return {"salvo": MODELO, "projeto": s,
                 "entidades": len(documento.get("entidades") or [])}
+
+    # ---- histórico do modelo: cópias comprimidas das gravações anteriores
+    def _pasta_historico(self, s: str) -> str:
+        return os.path.join(self._existente(s), HISTORICO)
+
+    def _guardar_historico(self, s: str, marco: bool):
+        import gzip
+        import shutil
+        caminho = self.caminho_modelo(s)
+        if not os.path.exists(caminho):
+            return
+        pasta = self._pasta_historico(s)
+        os.makedirs(pasta, exist_ok=True)
+        anteriores = sorted(f for f in os.listdir(pasta) if f.startswith("modelo-") and f.endswith(".json.gz"))
+        if anteriores and not marco:
+            ultimo = os.path.getmtime(os.path.join(pasta, anteriores[-1]))
+            if time.time() - ultimo < INTERVALO_HISTORICO:
+                return
+        base = "modelo-%s%s" % (datetime.datetime.now().strftime("%Y%m%d-%H%M%S"), "-marco" if marco else "")
+        nome, k = base + ".json.gz", 1
+        while os.path.exists(os.path.join(pasta, nome)):        # duas gravações no mesmo segundo
+            k += 1
+            nome = "%s-%d.json.gz" % (base, k)
+        with open(caminho, "rb") as f, gzip.open(os.path.join(pasta, nome), "wb", compresslevel=6) as g:
+            shutil.copyfileobj(f, g)
+        anteriores.append(nome)
+        for velho in anteriores[:-MAX_HISTORICO]:
+            try:
+                os.remove(os.path.join(pasta, velho))
+            except OSError:
+                pass
+
+    def listar_historico(self, s: str) -> List[dict]:
+        """Gravações anteriores do modelo, da mais nova para a mais antiga."""
+        pasta = self._pasta_historico(s)
+        if not os.path.isdir(pasta):
+            return []
+        fora = []
+        for f in sorted(os.listdir(pasta), reverse=True):
+            if not (f.startswith("modelo-") and f.endswith(".json.gz")):
+                continue
+            m = re.match(r"modelo-(\d{8})-(\d{6})(-marco)?(?:-\d+)?\.json\.gz$", f)
+            quando = ""
+            if m:
+                quando = "%s-%s-%sT%s:%s:%s" % (m.group(1)[:4], m.group(1)[4:6], m.group(1)[6:], m.group(2)[:2], m.group(2)[2:4], m.group(2)[4:])
+            fora.append({"arquivo": f, "quando": quando, "marco": bool(m and m.group(3)),
+                         "mb": round(os.path.getsize(os.path.join(pasta, f)) / 1048576, 2)})
+        return fora
+
+    def restaurar_modelo(self, s: str, arquivo: str) -> dict:
+        """Volta o modelo a uma gravação do histórico; a atual vai para o histórico como
+        marco antes, então nada se perde."""
+        import gzip
+        arquivo = os.path.basename(str(arquivo or ""))
+        caminho = os.path.join(self._pasta_historico(s), arquivo)
+        if not (arquivo.startswith("modelo-") and arquivo.endswith(".json.gz")) or not os.path.exists(caminho):
+            raise ErroDeDados("gravação do histórico não encontrada: %s" % arquivo)
+        with gzip.open(caminho, "rb") as f:
+            documento = json.loads(f.read().decode("utf-8"))
+        if not isinstance(documento, dict) or "entidades" not in documento:
+            raise ErroDeDados("a gravação %s não é um modelo válido." % arquivo)
+        r = self.salvar_modelo(s, documento, marco=True)
+        r["restaurado"] = arquivo
+        return r
+
+    # ---- projeto aberto: quem está com o modelo na tela (outra máquina no OneDrive)
+    def marcar_aberto(self, s: str, maquina: str, usuario: str, minimo: float = 60.0):
+        """Grava aberto.json com máquina, usuário e hora; regrava no máximo a cada
+        `minimo` s (OneDrive sincroniza cada gravação)."""
+        caminho = os.path.join(self._existente(s), ABERTO)
+        try:
+            if os.path.exists(caminho) and time.time() - os.path.getmtime(caminho) < minimo:
+                with open(caminho, encoding="utf-8") as f:
+                    atual = json.load(f)
+                if atual.get("maquina") == maquina:
+                    return
+            with open(caminho, "w", encoding="utf-8") as f:
+                json.dump({"maquina": maquina, "usuario": usuario, "quando": time.time()}, f)
+        except (OSError, ValueError):
+            pass
+
+    def desmarcar_aberto(self, s: str, maquina: str):
+        caminho = os.path.join(self._existente(s), ABERTO)
+        try:
+            with open(caminho, encoding="utf-8") as f:
+                atual = json.load(f)
+            if atual.get("maquina") == maquina:
+                os.remove(caminho)
+        except (OSError, ValueError):
+            pass
+
+    def aberto_por(self, s: str, limite: float = 180.0) -> Optional[dict]:
+        """{maquina, usuario, ha_s} quando alguém marcou o projeto como aberto há menos
+        de `limite` s (pela hora gravada no arquivo, que viaja pelo OneDrive)."""
+        caminho = os.path.join(self._existente(s), ABERTO)
+        try:
+            with open(caminho, encoding="utf-8") as f:
+                atual = json.load(f)
+            ha = time.time() - float(atual.get("quando") or 0)
+            if 0 <= ha < limite:
+                return {"maquina": atual.get("maquina", ""), "usuario": atual.get("usuario", ""), "ha_s": round(ha)}
+        except (OSError, ValueError, TypeError):
+            pass
+        return None
 
     def abrir_modelo(self, s: str) -> Optional[dict]:
         caminho = self.caminho_modelo(s)

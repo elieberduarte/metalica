@@ -233,3 +233,37 @@ if __name__ == "__main__":
                 print(f"  FALHA {nome}: {e}")
     print(f"\n{falhas} falha(s).")
     sys.exit(1 if falhas else 0)
+
+
+
+def test_historico_e_aberto(tmp_path):
+    """Gravar com marco guarda o modelo anterior comprimido; a lista sai da mais nova para
+    a mais antiga; restaurar volta o conteúdo e guarda o atual antes; o histórico não
+    passa de MAX_HISTORICO. A marca de aberto expira e não vale para a própria máquina."""
+    import time as _t
+    from projetos import Projetos, MAX_HISTORICO
+    g = Projetos(str(tmp_path))
+    p = g.criar("Teste")
+    s = p["slug"]
+    g.salvar_modelo(s, {"formato": 1, "nome": "a", "entidades": [{"id": "1"}]})
+    assert g.listar_historico(s) == []                       # sem anterior, nada a guardar
+    g.salvar_modelo(s, {"formato": 1, "nome": "b", "entidades": [{"id": "1"}, {"id": "2"}]}, marco=True)
+    h = g.listar_historico(s)
+    assert len(h) == 1 and h[0]["marco"] and h[0]["arquivo"].endswith("-marco.json.gz")
+    g.salvar_modelo(s, {"formato": 1, "nome": "c", "entidades": []})          # sem marco, dentro do intervalo: não guarda
+    assert len(g.listar_historico(s)) == 1
+    r = g.restaurar_modelo(s, h[0]["arquivo"])
+    assert r["restaurado"] == h[0]["arquivo"] and g.abrir_modelo(s)["nome"] == "a"
+    assert len(g.listar_historico(s)) == 2                   # o "c" foi guardado antes de restaurar
+    for i in range(MAX_HISTORICO + 3):
+        _t.sleep(1.05)                                        # nome por segundo
+        g.salvar_modelo(s, {"formato": 1, "nome": "x%d" % i, "entidades": []}, marco=True)
+    assert len(g.listar_historico(s)) == MAX_HISTORICO
+    g.marcar_aberto(s, "maquina-A", "fulano")
+    a = g.aberto_por(s)
+    assert a and a["maquina"] == "maquina-A" and a["usuario"] == "fulano"
+    assert g.aberto_por(s, limite=0.0) is None
+    g.desmarcar_aberto(s, "maquina-B")                        # outra máquina não tira a marca
+    assert g.aberto_por(s) is not None
+    g.desmarcar_aberto(s, "maquina-A")
+    assert g.aberto_por(s) is None

@@ -70,6 +70,7 @@ function alternarTema() {
 
 let projetos = [];
 let janelaPropria = false;
+let maquinaLocal = '';
 
 const ICONES = {
   galpao: '<svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 27V13.5L16 6l12 7.5V27" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 13.5h24M10 27v-8h12v8" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".6"/></svg>',
@@ -107,6 +108,12 @@ function cartao(p) {
   for (const e of p.entregas || []) {
     if (e.pasta === 'desenhos-2d' && (p.desenhos || []).length) continue;   // listados um a um abaixo
     conteudo.push([e.rotulo, 'entrega', e.pasta]);
+  }
+  if (p.aberto_por && p.aberto_por.maquina && p.aberto_por.maquina !== maquinaLocal) {
+    const a = p.aberto_por;
+    const ha = a.ha_s >= 60 ? `${Math.round(a.ha_s / 60)} min` : `${a.ha_s} s`;
+    conteudo.push([`⚠ Aberto em ${a.maquina}${a.usuario ? ' (' + a.usuario + ')' : ''} há ${ha}`, 'fraco', null, null,
+                   'Outra máquina está com este projeto aberto; se as duas gravarem, a segunda recebe "recarregue"']);
   }
   if (p.tem_materiais) {
     conteudo.push(['≡ Lista de materiais', 'desenho', null, `/materiais?projeto=${encodeURIComponent(p.slug)}`,
@@ -368,6 +375,7 @@ async function iniciar() {
   try {
     const v = await api('/api/versao');
     janelaPropria = !!v.janela;
+    maquinaLocal = v.maquina || '';
     $('#pasta-dados').textContent = v.dados || '—';
     $('#pe').textContent = `${v.programa} ${v.versao} · núcleo ${String(v.nucleo || '').slice(0, 12)} · ` +
       'cada projeto é uma pasta com arquivos comuns (JSON, PDF, DXF, CSV, IFC): copie a pasta para fazer backup.';

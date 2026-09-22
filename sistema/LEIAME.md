@@ -484,6 +484,19 @@ sistema/
 No catálogo, tubos redondos têm o prefixo `TC` e tubos retangulares e quadrados, `TR`
 e `TQ`.
 
+## Histórico do modelo e projeto aberto
+
+`Projetos.salvar_modelo(..., marco=True)` guarda antes o modelo anterior comprimido em
+`<projeto>/historico/modelo-AAAAMMDD-HHMMSS[-marco].json.gz` (operações que mudam peças: aplicar furos,
+detalhamento, migração, restauro); sem marco, uma cópia a cada 10 min no máximo; ficam as 8 últimas.
+`GET /api/projetos/<s>/historico` lista; `POST .../restaurar-modelo {arquivo}` volta a uma delas (a atual vai
+para o histórico antes). No editor 3D: Arquivo → Restaurar modelo anterior…
+
+Ao abrir o modelo (`GET .../modelo`) e a cada sinal de vida da página (`/api/vivo?p=<slug>`, web/vivo.js) o
+servidor grava `<projeto>/aberto.json` {máquina, usuário, hora} (no máximo a cada 60 s; apagado ao fechar).
+A tela Projetos e o editor avisam quando outra máquina tem o projeto aberto há menos de 3 min — é o caso
+de duas máquinas na mesma pasta do OneDrive; a guarda `base_alterado` continua a impedir gravar por cima.
+
 ## Testes
 
 ```bash
@@ -507,6 +520,12 @@ python testes/verificar_zoom.py --porta 8765             # zoom da roda e grade 
 Cada um grava um galpão no navegador como a interface faz, executa a sua sequência,
 salva uma captura de tela em `projetos/` e lista os erros de JavaScript. Saem com
 código 1 quando alguma conferência falha.
+
+### Verificadores headless e CI
+
+`testes/verificadores/verif_*.py` sobem o servidor numa pasta temporária e exercitam a interface pelo Chrome
+sem janela (CDP); a maioria usa o modelo de exemplo do cliente, que não está no repositório — ver o LEIAME
+da pasta. `.github/workflows/testes.yml` roda o `pytest` no GitHub a cada push (Windows, Python 3.12).
 
 ## Limites do sistema
 

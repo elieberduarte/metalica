@@ -13,8 +13,11 @@
 (function () {
   'use strict';
   var id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  var projeto = '';
+  try { projeto = new URLSearchParams(location.search).get('projeto') || ''; } catch (e) { projeto = ''; }
+  var sufixo = projeto ? '&p=' + encodeURIComponent(projeto) : '';
   function sinal() {
-    try { fetch('/api/vivo?j=' + id, { cache: 'no-store', keepalive: true }).catch(function () {}); }
+    try { fetch('/api/vivo?j=' + id + sufixo, { cache: 'no-store', keepalive: true }).catch(function () {}); }
     catch (e) { /* servidor fora do ar: nada a fazer */ }
   }
   sinal();
@@ -22,6 +25,6 @@
   // aba em segundo plano tem o temporizador freado pelo navegador; ao voltar, avisa já
   document.addEventListener('visibilitychange', function () { if (!document.hidden) sinal(); });
   window.addEventListener('pagehide', function () {
-    try { navigator.sendBeacon('/api/fechou?j=' + id); } catch (e) { /* idem */ }
+    try { navigator.sendBeacon('/api/fechou?j=' + id + sufixo); } catch (e) { /* idem */ }
   });
 })();

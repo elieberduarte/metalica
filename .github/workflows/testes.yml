@@ -1,0 +1,20 @@
+name: testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependências
+        run: pip install pytest matplotlib
+      - name: Testes
+        working-directory: sistema
+        run: python -m pytest testes -q

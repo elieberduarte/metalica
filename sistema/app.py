@@ -36,6 +36,8 @@ Rotas da API:
 import json
 import mimetypes
 import os
+import getpass
+import platform
 import posixpath
 import socket
 import re
@@ -346,6 +348,10 @@ def acao_de_projeto(s: str, acao: str, corpo: dict) -> dict:
         return r
     if acao == "importar-ifc":
         return importar_ifc_no_projeto(s, corpo)
+    if acao == "restaurar-modelo":
+        r = g.restaurar_modelo(s, corpo.get("arquivo"))
+        r["alterado"] = _alterado_modelo(s)
+        return r
     raise ErroDeDados("ação desconhecida para o projeto: " + acao)
 
 
@@ -379,7 +385,7 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
     with open(destino, "wb") as f:
         f.write(base64.b64decode(dados))
     doc = imp.importar(destino)
-    g.salvar_modelo(s, doc.dict())
+    g.salvar_modelo(s, doc.dict(), marco=True)
     g.tocar(s, tipo="ifc", origem_ifc=nome)
     return {"projeto": s, "estatisticas": doc.estatisticas(),
             "relatorio": doc.metadados.get("importacao", {})}
@@ -470,7 +476,7 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     _gravar_nomes_producao(s, r.get("nomes") or {})
     nomeadas = _nomes_no_modelo(doc, r.get("nomes") or {})
     if r.get("convertidas") or nomeadas:
-        g.salvar_modelo(s, doc.dict())            # chapas planas viraram paramétricas / nomes nas peças
+        g.salvar_modelo(s, doc.dict(), marco=True)            # chapas planas viraram paramétricas / nomes nas peças
     substituir = corpo.get("substituir", True) is not False
     desenhos = []
     for chave, desenho in r["desenhos"].items():
@@ -521,7 +527,7 @@ def _conferir_eixos_das_chapas(s: str, doc) -> dict:
     doc_ifc = imp.importar(caminho)
     r = det.reorientar_chapas(doc, doc_ifc)
     if r.get("chapas"):
-        g.salvar_modelo(s, doc.dict())
+        g.salvar_modelo(s, doc.dict(), marco=True)
         print("[detalhamento] %s: %d chapa(s) de %d posição(ões) reorientadas pelo IFC; %d parafuso(s) movidos"
               % (s, r["chapas"], r["posicoes"], r["parafusos"]))
     return r
@@ -542,7 +548,7 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
     convertidas = (det.converter_chapas(doc, marca, referencia=str(corpo.get("referencia") or "") or None)
                    if corpo.get("converter", True) is not False else 0)
     if convertidas:
-        g.salvar_modelo(s, doc.dict())
+        g.salvar_modelo(s, doc.dict(), marco=True)
     desenho, pos = det.detalhar_posicao(doc, marca, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
     nome = desenho.nome
     if corpo.get("substituir", True) is not False and os.path.exists(g._caminho_desenho(s, nome)):
@@ -583,7 +589,7 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         r3 = det.aplicar_furos_nas_barras(doc, ajustes)
         if r3["barras"]:
             barras3d.update(r3)
-            g.salvar_modelo(s, doc.dict())
+            g.salvar_modelo(s, doc.dict(), marco=True)
         return sorted(vinc)
     def aplicar_em_barra(marca_, furos_):
         # barra (terça, diagonal…): a furação nova fica como ajuste do projeto e os furos
@@ -591,7 +597,7 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         r_ = det.aplicar_furos_de_barra(doc, marca_, furos_, ajustes)
         _gravar_ajustes_furos(s, ajustes)
         if r_["barras3d"].get("barras"):
-            g.salvar_modelo(s, doc.dict())
+            g.salvar_modelo(s, doc.dict(), marco=True)
         barras3d.update(r_["barras3d"])
         return r_
     if meta.get("marca"):
@@ -606,7 +612,7 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
             vinculadas = []
         else:
             r = det.aplicar_furos(doc, marca, furos, meta.get("furos") or [], contorno)
-            g.salvar_modelo(s, doc.dict())
+            g.salvar_modelo(s, doc.dict(), marco=True)
             vinculadas = vincular(marca, meta.get("furos") or [], furos)
         novo, pos = det.detalhar_posicao(doc, marca, ajustes=ajustes, nomes=_nomes_producao(s))
         if os.path.exists(g._caminho_desenho(s, novo.nome)):
@@ -638,7 +644,7 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
                              and str(((e.atributos or {}).get("marcas") or {}).get("posicao")) == marca), None)
             originais = det.furos_da_chapa(primeira) if primeira else []
         r = det.aplicar_furos(doc, marca, furos, originais, contorno)
-        g.salvar_modelo(s, doc.dict())
+        g.salvar_modelo(s, doc.dict(), marco=True)
         vinculadas = vincular(marca, originais, furos)
     det.regenerar_celula(d, doc, marca, ajustes=ajustes, nomes_producao=_nomes_producao(s))
     salvo = g.salvar_desenho(s, nome, d.dict())
@@ -1005,9 +1011,21 @@ def _alterado_modelo(s: str) -> float:
         return 0.0
 
 
+MAQUINA = platform.node() or "esta máquina"
+try:
+    USUARIO = getpass.getuser()
+except Exception:                                                     # noqa: BLE001
+    USUARIO = ""
+
+
 def modelo_do_projeto(s: str) -> dict:
-    doc = _gerente().abrir_modelo(s)
-    return {"documento": doc, "existe": doc is not None, "alterado": _alterado_modelo(s)}
+    g = _gerente()
+    outro = g.aberto_por(s)
+    if outro and outro.get("maquina") == MAQUINA:
+        outro = None                                   # a própria máquina (outra janela) não é aviso
+    doc = g.abrir_modelo(s)
+    g.marcar_aberto(s, MAQUINA, USUARIO)
+    return {"documento": doc, "existe": doc is not None, "alterado": _alterado_modelo(s), "aberto_por": outro}
 
 
 
@@ -1283,7 +1301,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"programa": versao.NOME, "versao": versao.VERSAO,
                                    "nucleo": versao.impressao_do_nucleo(),
                                    "dados": PROJETOS, "instalado": versao.CONGELADO,
-                                   "janela": JANELA_PROPRIA})
+                                   "janela": JANELA_PROPRIA, "maquina": MAQUINA, "usuario": USUARIO})
             if rota == "/api/atualizacao":
                 return self._json(verificar_atualizacao())
             if rota == "/api/catalogo":
@@ -1294,6 +1312,8 @@ class Handler(BaseHTTPRequestHandler):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
                 if len(partes) == 2 and partes[1] == "modelo":
                     return self._json(modelo_do_projeto(partes[0]))
+                if len(partes) == 2 and partes[1] == "historico":
+                    return self._json({"historico": _gerente().listar_historico(partes[0])})
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":
@@ -1445,7 +1465,18 @@ SILENCIO_MAXIMO = float(os.environ.get("METALICA_SILENCIO") or 90.0)   # a vari�
 
 def _sinal_de_vida(rota_completa: str, fechou: bool):
     from urllib.parse import parse_qs
-    j = (parse_qs(urlparse(rota_completa).query).get("j") or [""])[0][:64]
+    q = parse_qs(urlparse(rota_completa).query)
+    j = (q.get("j") or [""])[0][:64]
+    p = (q.get("p") or [""])[0][:80]
+    if p:
+        # a página de um projeto mantém a marca de "aberto" (e a tira ao fechar)
+        try:
+            if fechou:
+                _gerente().desmarcar_aberto(p, MAQUINA)
+            else:
+                _gerente().marcar_aberto(p, MAQUINA, USUARIO)
+        except Exception:                                             # noqa: BLE001
+            pass
     if not j:
         return
     with _TRAVA_JANELAS:

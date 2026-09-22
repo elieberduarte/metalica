@@ -1019,6 +1019,11 @@ export class Editor {
     let modelo = null;
     try { modelo = await this.api.modeloDoProjeto(s); } catch { modelo = null; }
     this._modeloAlterado = modelo && modelo.alterado ? modelo.alterado : null;
+    if (modelo && modelo.aberto_por && modelo.aberto_por.maquina) {
+      const a = modelo.aberto_por;
+      const ha = a.ha_s >= 60 ? `${Math.round(a.ha_s / 60)} min` : `${a.ha_s} s`;
+      this.aviso(`Este projeto está aberto em "${a.maquina}"${a.usuario ? ` (${a.usuario})` : ''} há ${ha}. Se as duas máquinas gravarem, a segunda recebe "recarregue" e perde o que fez desde então: combine quem edita.`, 'atencao', 0);
+    }
 
     if (modelo && modelo.documento) {
       this.carregarDocumento(modelo.documento, { autosalvar: false });
@@ -1251,6 +1256,43 @@ export class Editor {
   }
 
   /**
+   * Histórico do modelo do projeto: as gravações anteriores (marcos das operações que
+   * mudam peças e uma cópia a cada 10 min); escolher uma volta o modelo a ela — a atual
+   * vai para o histórico antes, então dá para desfazer o próprio restauro.
+   */
+  async dialogoRestaurarModelo() {
+    if (!this.projeto) { this.aviso('Restaurar precisa de um projeto aberto.', 'atencao'); return; }
+    let lista = [];
+    try {
+      const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/historico`);
+      lista = (await r.json()).historico || [];
+    } catch (e) { this.aviso(`Não foi possível ler o histórico: ${e.message}`, 'erro', 0); return; }
+    if (!lista.length) { this.aviso('Este projeto ainda não tem gravações anteriores no histórico (elas começam a ser guardadas ao gravar o modelo).', 'info', 8000); return; }
+    let escolhido = null;
+    const opcoes = el('div', { class: 'lista-opcoes' });
+    for (const h of lista) {
+      const r = el('input', { type: 'radio', name: 'hist' });
+      r.addEventListener('change', () => { if (r.checked) escolhido = h.arquivo; });
+      const quando = h.quando ? h.quando.replace('T', ' ') : h.arquivo;
+      opcoes.append(el('label', { class: 'linha' }, r, ` ${quando}  ·  ${String(h.mb).replace('.', ',')} MB${h.marco ? '  ·  marco (furos, detalhamento…)' : ''}`));
+    }
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: 'Gravações anteriores do modelo 3D deste projeto. Escolha uma para voltar a ela: o modelo atual vai para o histórico antes, então dá para desfazer. Os desenhos 2D não mudam; gere o detalhamento de novo depois.' }),
+      opcoes);
+    if (await this.dialogo({ titulo: 'Restaurar modelo anterior', corpo, ok: 'Restaurar' }) !== 'ok' || !escolhido) return;
+    this.dica('Restaurando…');
+    try {
+      const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/restaurar-modelo`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ arquivo: escolhido }),
+      });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      this._autosavePendente = false;
+      window.location.reload();
+    } catch (e) { this.aviso(`Não foi possível restaurar: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
+  /**
    * Detalhe de uma peça (duplo clique no 3D): o servidor gera "Detalhe – P77" — chapa
    * plana vira chapa paramétrica no modelo, com os furos editáveis no desenho — e o
    * CAD abre nele. O modelo é recarregado ao voltar, então nada fica desatualizado.
@@ -1478,6 +1520,7 @@ export class Editor {
       'inspecionar-ifc': () => { this._modoArquivo = 'inspecionar'; this.el.arquivoIfc.click(); },
       'detalhar-ifc': () => { this._modoArquivo = 'detalhar'; this.el.arquivoIfc.click(); },
       'exportar-ifc': () => this.exportarIFC(),
+      'restaurar-modelo': () => this.dialogoRestaurarModelo(),
       desfazer: () => this.desfazer(),
       refazer: () => this.refazer(),
       'selecionar-tudo': () => this.selecao.tudo(),
