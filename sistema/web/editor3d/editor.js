@@ -1229,8 +1229,11 @@ export class Editor {
     try {
       await this._gravarAntesDeGerar();
       const desenho = nome.value.trim() || 'Vistas';
-      for (const k of escolhidas) await this._pedirVista({ vista: { padrao: k, entidades: ids.length ? ids : null, rotular: false }, desenho });
-      this._abrirCAD(desenho);
+      // todas num pedido só: o desenho é gravado uma vez, no fim
+      const j = await this._pedirVista({ vistas: escolhidas.map(k => ({ padrao: k, entidades: ids.length ? ids : null, rotular: false })), desenho });
+      const n = (j.vistas || []).reduce((s, v) => s + (v.pecas_projetadas || 0), 0);
+      this.aviso(`${escolhidas.length} vista(s) gerada(s), ${n} peça(s) projetada(s). Abrindo o CAD…`, 'info', 6000);
+      this._abrirCAD(j.nome || desenho);
     } catch (e) { this.aviso(`Não foi possível gerar as vistas: ${e.message}`, 'erro', 0); }
   }
 

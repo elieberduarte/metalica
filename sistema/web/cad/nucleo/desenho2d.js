@@ -287,11 +287,110 @@ export class Desenho2D {
     return caixaDe(pts);
   }
 
+  // ---- índice espacial ----
+  // Grade uniforme de caixas: snap, seleção e redesenho perguntam "o que há nesta
+  // região" em vez de varrer todas as entidades — um desenho do modelo inteiro passa de
+  // cem mil objetos, e a varredura a cada movimento do mouse travava a tela.
+  _indice() {
+    if (this._grade) return this._grade;
+    const caixas = new Map();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, n = 0;
+    for (const e of this.entidades.values()) {
+      const c = caixaDe(pontosDe(e));
+      if (!c) continue;
+      caixas.set(e.id, c); n++;
+      if (c[0][0] < x0) x0 = c[0][0]; if (c[0][1] < y0) y0 = c[0][1];
+      if (c[1][0] > x1) x1 = c[1][0]; if (c[1][1] > y1) y1 = c[1][1];
+    }
+    // célula tal que a grade tenha ~ raiz(n)/2 células por lado: poucas entidades por
+    // célula, e uma diagonal comprida (contraventamento) não cai em centenas delas
+    const lado = Math.max(x1 - x0, y1 - y0, 1);
+    const celula = Math.max(lado / Math.max(8, Math.min(160, Math.ceil(Math.sqrt(n) / 2))), 1);
+    this._grade = { celula, caixas, celulas: new Map() };
+    for (const [id, c] of caixas) this._indexar(id, c);
+    return this._grade;
+  }
+
+  _chavesDe(c) {
+    const g = this._grade, s = g.celula;
+    return [Math.floor(c[0][0] / s), Math.floor(c[0][1] / s), Math.floor(c[1][0] / s), Math.floor(c[1][1] / s)];
+  }
+
+  // chave numérica da célula (i, j): mais rápida que texto como chave de Map
+  static _chave(i, j) { return i * 4194304 + j; }
+
+  _indexar(id, c) {
+    const g = this._grade, [i0, j0, i1, j1] = this._chavesDe(c);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const k = Desenho2D._chave(i, j);
+      let cel = g.celulas.get(k);
+      if (!cel) { cel = { i, j, ids: new Set() }; g.celulas.set(k, cel); }
+      cel.ids.add(id);
+    }
+  }
+
+  _desindexar(id) {
+    const g = this._grade, c = g.caixas.get(id);
+    if (!c) return;
+    const [i0, j0, i1, j1] = this._chavesDe(c);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const k = Desenho2D._chave(i, j), cel = g.celulas.get(k);
+      if (cel) { cel.ids.delete(id); if (!cel.ids.size) g.celulas.delete(k); }
+    }
+    g.caixas.delete(id);
+  }
+
+  _atualizarIndice(ids, acao) {
+    if (!this._grade) return;
+    if (acao === 'tudo' || ids.length > this.entidades.size / 4) { this._grade = null; return; }
+    for (const id of ids) {
+      this._desindexar(id);
+      const e = this.entidades.get(id);
+      const c = e ? caixaDe(pontosDe(e)) : null;
+      if (c) { this._grade.caixas.set(id, c); this._indexar(id, c); }
+    }
+  }
+
+  /** Caixa [[x0,y0],[x1,y1]] de uma entidade, do índice. */
+  caixaDa(e) {
+    return this._indice().caixas.get(e.id) || null;
+  }
+
+  /** Entidades cuja caixa toca a região [[x0,y0],[x1,y1]] (em mm do modelo). */
+  naRegiao(regiao) {
+    const g = this._indice(), [i0, j0, i1, j1] = this._chavesDe(regiao);
+    const total = (i1 - i0 + 1) * (j1 - j0 + 1);
+    const fora = [];
+    const toca = (c) => c[1][0] >= regiao[0][0] && c[0][0] <= regiao[1][0] && c[1][1] >= regiao[0][1] && c[0][1] <= regiao[1][1];
+    if (total > g.celulas.size) {
+      // região maior que a grade ocupada: mais barato olhar as células que existem
+      const vistos = new Set();
+      for (const c of g.celulas.values()) {
+        if (c.i < i0 || c.i > i1 || c.j < j0 || c.j > j1) continue;
+        for (const id of c.ids) if (!vistos.has(id)) { vistos.add(id); if (toca(g.caixas.get(id))) fora.push(this.entidades.get(id)); }
+      }
+      return fora;
+    }
+    const vistos = new Set();
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const c = g.celulas.get(Desenho2D._chave(i, j));
+      if (!c) continue;
+      for (const id of c.ids) if (!vistos.has(id)) { vistos.add(id); if (toca(g.caixas.get(id))) fora.push(this.entidades.get(id)); }
+    }
+    return fora;
+  }
+
   // ---- notificação ----
   aoMudar(fn) { this._ouvintes.add(fn); return () => this._ouvintes.delete(fn); }
 
   notificar(ids, acao) {
+    this.versao = (this.versao || 0) + 1;         // a tela compara para saber se redesenha
+    if (acao !== 'aparencia') this._atualizarIndice(ids, acao);
     if (this._lote) { for (const i of ids) this._lote.ids.add(i); if (acao === 'tudo') this._lote.acao = 'tudo'; return; }
+    this._emitir(ids, acao);
+  }
+
+  _emitir(ids, acao) {
     for (const fn of this._ouvintes) { try { fn({ ids, acao, documento: this }); } catch (e) { console.error(e); } }
   }
 
@@ -299,7 +398,7 @@ export class Desenho2D {
     const externo = !this._lote;
     if (externo) this._lote = { ids: new Set(), acao: 'alterar' };
     try { return fn(); } finally {
-      if (externo) { const l = this._lote; this._lote = null; this.notificar([...l.ids], l.acao); }
+      if (externo) { const l = this._lote; this._lote = null; this._emitir([...l.ids], l.acao); }
     }
   }
 

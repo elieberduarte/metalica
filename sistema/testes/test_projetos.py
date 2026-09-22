@@ -145,6 +145,56 @@ def test_rotas_do_servidor():
             importlib.reload(app)
 
 
+def test_gravacao_simultanea_nao_emenda_arquivo():
+    """Autosave do CAD e vista nova gravando o mesmo desenho ao mesmo tempo: o arquivo
+    final é um dos dois, inteiro — nunca metade de um e o fim do outro."""
+    import threading
+    with tempfile.TemporaryDirectory() as raiz:
+        g = Projetos(raiz)
+        s = g.criar("Simultâneo")["slug"]
+        grande = {"nome": "x", "entidades": [{"tipo": "linha", "a": [i, 0], "b": [i, 1]} for i in range(60000)]}
+        pequeno = {"nome": "x", "entidades": grande["entidades"][:100]}
+        erros = []
+
+        def grava(d):
+            try:
+                for _ in range(3):
+                    g.salvar_desenho(s, "corte", d)
+            except Exception as e:                   # noqa: BLE001
+                erros.append(e)
+        fios = [threading.Thread(target=grava, args=(d,)) for d in (grande, pequeno, grande)]
+        for f in fios:
+            f.start()
+        for f in fios:
+            f.join()
+        assert not erros
+        assert len(g.abrir_desenho(s, "corte")["entidades"]) in (100, 60000)
+        assert not [a for a in os.listdir(os.path.join(raiz, s, "desenhos-2d")) if a.endswith(".parcial")]
+
+
+def test_troca_espera_arquivo_em_uso():
+    """Outro processo (OneDrive, antivírus) segurando o destino: a troca insiste em vez
+    de falhar com WinError 32."""
+    import threading
+    import time
+    from projetos import _gravar_json
+    with tempfile.TemporaryDirectory() as raiz:
+        alvo = os.path.join(raiz, "a.json")
+        _gravar_json(alvo, {"v": 1})
+        if os.name != "nt":
+            return
+        import ctypes
+        # GENERIC_READ, FILE_SHARE_READ (sem FILE_SHARE_DELETE): a troca por cima falha
+        h = ctypes.windll.kernel32.CreateFileW(alvo, 0x80000000, 1, None, 3, 0x80, None)
+        assert h not in (0, -1)
+        threading.Timer(0.6, lambda: ctypes.windll.kernel32.CloseHandle(h)).start()
+        t0 = time.monotonic()
+        _gravar_json(alvo, {"v": 2})
+        assert 0.4 < time.monotonic() - t0 < 6
+        with open(alvo, encoding="utf-8") as f:
+            assert json.load(f)["v"] == 2
+
+
 if __name__ == "__main__":
     falhas = 0
     for nome, fn in sorted(globals().items()):

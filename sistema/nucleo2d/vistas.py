@@ -404,7 +404,10 @@ def gerar(doc: Documento, vista: Vista, desenho: Optional[Desenho] = None,
     x0, y0 = min(xs), min(ys)
     larg, alt = max(xs) - x0, max(ys) - y0
     dx, dy = deslocamento[0] - x0, deslocamento[1] - y0
-    mv = lambda p: (p[0] + dx, p[1] + dy)             # noqa: E731
+    # centésimo de milímetro: precisão de sobra para produção e metade do tamanho do
+    # arquivo em relação aos 17 dígitos de um float (um desenho do modelo inteiro tem
+    # centenas de milhares de vértices)
+    mv = lambda p: (round(p[0] + dx, 2), round(p[1] + dy, 2))    # noqa: E731
 
     des = desenho if desenho is not None else Desenho(nome=vista.nome or "Vista")
     if desenho is None:

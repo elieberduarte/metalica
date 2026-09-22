@@ -380,38 +380,51 @@ def gerar_vista_2d(s: str, corpo: dict) -> dict:
 
     corpo: {vista: {origem, normal, acima, profundidade, cortar, entidades, nome, tipo}
                    ou {padrao: "frente"|"topo"|..., profundidade, entidades},
-            desenho: nome do desenho (novo ou existente), deslocamento: [x, y]}"""
+            vistas: [várias definições como acima, geradas de uma vez],
+            desenho: nome do desenho (novo ou existente), deslocamento: [x, y]}
+
+    Várias vistas num pedido só saem lado a lado e gravam o desenho uma única vez: um
+    desenho do modelo inteiro passa de dezenas de megabytes, e ler e regravar tudo a
+    cada vista é o que demora e o que dá "arquivo em uso" com o OneDrive por cima."""
     from nucleo2d.vistas import Vista, gerar, vista_padrao
     from nucleo2d.desenho import Desenho
     g = _gerente()
     doc = _documento3d_do_projeto(s)
-    definicao = corpo.get("vista") or {}
-    if definicao.get("padrao"):
-        vista = vista_padrao(str(definicao["padrao"]), doc.caixa())
-        for k in ("profundidade", "entidades", "nome", "rotular"):
-            if definicao.get(k) is not None:
-                setattr(vista, k, definicao[k])
-    else:
-        vista = Vista.de_dict(definicao)
-    if not vista.nome:
-        vista.nome = {"corte": "Corte"}.get(vista.tipo, vista.tipo.capitalize())
-    nome = corpo.get("desenho") or vista.nome or "desenho"
-    existente = None
+    definicoes = corpo.get("vistas")
+    if not isinstance(definicoes, list) or not definicoes:
+        definicoes = [corpo.get("vista") or {}]
+    vistas = []
+    for definicao in definicoes:
+        if definicao.get("padrao"):
+            vista = vista_padrao(str(definicao["padrao"]), doc.caixa())
+            for k in ("profundidade", "entidades", "nome", "rotular"):
+                if definicao.get(k) is not None:
+                    setattr(vista, k, definicao[k])
+        else:
+            vista = Vista.de_dict(definicao)
+        if not vista.nome:
+            vista.nome = {"corte": "Corte"}.get(vista.tipo, vista.tipo.capitalize())
+        vistas.append(vista)
+    nome = corpo.get("desenho") or vistas[0].nome or "desenho"
+    desenho = None
     try:
-        existente = Desenho.de_dict(g.abrir_desenho(s, nome))
+        desenho = Desenho.de_dict(g.abrir_desenho(s, nome))
     except ErroDeDados:
         pass
-    desl = corpo.get("deslocamento") or [0.0, 0.0]
-    if existente is not None and not corpo.get("deslocamento"):
-        # vista nova num desenho que já tem coisas: à direita do que existe
-        caixa = existente.caixa()
-        if caixa:
-            desl = [caixa[1][0] + 40.0 * existente.escala, caixa[0][1]]
-    desenho = gerar(doc, vista, existente, (float(desl[0]), float(desl[1])))
-    if existente is None:
+    novo = desenho is None
+    desl = corpo.get("deslocamento")
+    for i, vista in enumerate(vistas):
+        if desenho is not None and (i > 0 or not desl):
+            # vista nova num desenho que já tem coisas: à direita do que existe
+            caixa = desenho.caixa()
+            desl = [caixa[1][0] + 40.0 * desenho.escala, caixa[0][1]] if caixa else [0.0, 0.0]
+        d = desl or [0.0, 0.0]
+        desenho = gerar(doc, vista, desenho, (float(d[0]), float(d[1])))
+    if novo:
         desenho.nome = corpo.get("titulo") or nome
     r = g.salvar_desenho(s, nome, desenho.dict())
     r["vista"] = desenho.vistas[-1]
+    r["vistas"] = desenho.vistas[-len(vistas):]
     r["escala"] = desenho.escala
     return r
 
@@ -597,10 +610,8 @@ def salvar_modelo(corpo: dict) -> dict:
     caminho = os.path.join(MODELOS, nome + ".modelo.json")
     # grava num temporário e troca de uma vez: a gravação automática do editor manda
     # dezenas de megabytes, e quem abrir o modelo no meio não pode ler metade
-    temporario = caminho + ".parcial"
-    with open(temporario, "w", encoding="utf-8") as f:
-        json.dump(doc.dict(), f, ensure_ascii=False)
-    os.replace(temporario, caminho)
+    from projetos import _gravar_json
+    _gravar_json(caminho, doc.dict())
     return {"salvo": os.path.basename(caminho), "entidades": len(doc.entidades)}
 
 

@@ -16,17 +16,11 @@ export class Snap {
     this.orto = false;
   }
 
-  /** Candidatos das entidades perto do cursor (em mm). */
+  /** Candidatos das entidades perto do cursor (em mm), pelo índice espacial do documento. */
   _candidatas(p, raioMm) {
-    const doc = this.tela.doc, fora = [];
-    const caixaOk = (pts) => pts.some(q => Math.abs(q[0] - p[0]) < raioMm * 40 && Math.abs(q[1] - p[1]) < raioMm * 40) || pts.length > 40;
-    for (const e of doc.entidades.values()) {
-      if (!doc.visivel(e) || e.tipo === 'hachura' || e.tipo === 'texto') continue;
-      const pts = pontosDe(e);
-      if (!pts.length || !caixaOk(pts)) continue;
-      fora.push(e);
-    }
-    return fora;
+    const doc = this.tela.doc, r = raioMm * 3;
+    return doc.naRegiao([[p[0] - r, p[1] - r], [p[0] + r, p[1] + r]])
+      .filter(e => doc.visivel(e) && e.tipo !== 'hachura' && e.tipo !== 'texto');
   }
 
   resolver(px, opcoes = {}) {
@@ -58,9 +52,16 @@ export class Snap {
       }
     }
     if (a.interseccao && ents.length > 1) {
-      const segs = ents.flatMap(e => segmentosDe(e).map(s => [e.id, s]));
-      // só segmentos perto do cursor
-      const perto = segs.filter(([, [s, t]]) => Math.min(dist(s, p), dist(t, p), distSegmento(p, s, t)) < raio * 3);
+      // só segmentos que passam a menos de um raio do cursor: a interseção que vale
+      // está dentro do raio, logo os dois segmentos passam por ali. Com a vista muito
+      // afastada num desenho denso ainda podem ser milhares; os pares ficam limitados
+      // aos mais próximos, senão cada movimento do mouse custa segundos.
+      const perto = [];
+      for (const e of ents) for (const s of segmentosDe(e)) {
+        const d = distSegmento(p, s[0], s[1]);
+        if (d < raio) perto.push([e.id, s, d]);
+      }
+      if (perto.length > 200) { perto.sort((x, y) => x[2] - y[2]); perto.length = 200; }
       for (let i = 0; i < perto.length; i++) for (let j = i + 1; j < perto.length; j++) {
         if (perto[i][0] === perto[j][0]) continue;
         const x = intersecaoSeg(perto[i][1][0], perto[i][1][1], perto[j][1][0], perto[j][1][1]);

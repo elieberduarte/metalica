@@ -6,8 +6,11 @@
 // hachura) vale `mm_papel × escala_do_desenho` em milímetros do modelo, então aparece
 // na tela do tamanho que terá impresso, em qualquer zoom.
 //
-// Redesenho completo a cada quadro pedido: com dezenas de milhares de linhas o canvas
-// 2D dá conta em poucos milissegundos, e a simplicidade vale mais que um cache.
+// O desenho em si (fundo, grade, entidades) vai para um canvas de cache que só é
+// refeito quando a janela, o documento, a seleção ou o tema mudam; o que acompanha o
+// mouse (cursor, snap, prévia da ferramenta, retângulo de seleção) é desenhado por cima
+// a cada quadro. Um desenho do modelo inteiro passa de cem mil objetos e leva quase um
+// segundo para ser refeito; sem o cache, cada movimento do mouse custaria isso.
 
 import { pontosArco, valorCota, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade } from './desenho2d.js';
 
@@ -98,18 +101,39 @@ export class Tela {
           textoInvertido: (c) => c };
   }
 
-  desenhar() {
-    const ctx = this.ctx, dpr = window.devicePixelRatio || 1;
+  /** O que define o cache do desenho: se nada disto mudou, o quadro anterior serve. */
+  _assinatura() {
+    const v = this.vp;
+    return [v.x, v.y, v.z, this.canvas.width, this.canvas.height, this.escuro, this.grade,
+            this.doc.versao, this.doc.escala, this.realce].join('|');
+  }
+
+  _cacheValido() {
+    const f = this._cache;
+    if (!f || f.assinatura !== this._assinatura() || f.selecao.size !== this.selecao.size) return false;
+    for (const id of this.selecao) if (!f.selecao.has(id)) return false;
+    return true;
+  }
+
+  /** Fundo, grade e entidades, num canvas do tamanho da tela (em pixels físicos). */
+  _renderizarCache(cores) {
+    const dpr = window.devicePixelRatio || 1;
     const W = this.largura, H = this.altura;
-    const cores = this.cores();
+    const f = this._cache || (this._cache = { canvas: document.createElement('canvas') });
+    if (f.canvas.width !== this.canvas.width || f.canvas.height !== this.canvas.height) {
+      f.canvas.width = this.canvas.width; f.canvas.height = this.canvas.height;
+    }
+    const ctx = f.canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = cores.fundo;
     ctx.fillRect(0, 0, W, H);
     if (this.grade) this._grade(ctx, cores);
 
     const k = this.doc.escala;                    // mm de papel → mm de modelo
-    const ordem = [...this.doc.entidades.values()];
-    // hachuras por baixo, textos e cotas por cima
+    // só o que toca a tela, com margem para textos e cotas que se estendem além dos
+    // pontos que os definem; hachuras por baixo, textos e cotas por cima
+    const m0 = this.paraMundo([0, H]), m1 = this.paraMundo([W, 0]), mg = 30 * k;
+    const ordem = this.doc.naRegiao([[m0[0] - mg, m0[1] - mg], [m1[0] + mg, m1[1] + mg]]);
     const peso = (e) => (e.tipo === 'hachura' ? 0 : (e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada') ? 2 : 1);
     ordem.sort((a, b) => peso(a) - peso(b));
     for (const e of ordem) {
@@ -118,6 +142,20 @@ export class Tela {
       const cor = this.selecao.has(e.id) ? cores.selecao : this.realce === e.id ? cores.realce : cores.textoInvertido((cam && cam.cor) || '#4b5563');
       this._entidade(ctx, e, cor, cam, k, this.selecao.has(e.id));
     }
+    f.assinatura = this._assinatura();
+    f.selecao = new Set(this.selecao);
+    f.desenhadas = ordem.length;
+  }
+
+  desenhar() {
+    const ctx = this.ctx, dpr = window.devicePixelRatio || 1;
+    const cores = this.cores();
+    if (!this._cacheValido()) this._renderizarCache(cores);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(this._cache.canvas, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const k = this.doc.escala;
     for (const e of this.previa) this._entidade(ctx, e, cores.previa, null, k, false, true);
 
     if (this.retangulo) {
@@ -329,7 +367,9 @@ export class Tela {
   sob(px, tol = 6) {
     const p = this.paraMundo(px), t = tol * this.mmPorPixel;
     let melhor = null, dm = Infinity;
-    for (const e of this.doc.entidades.values()) {
+    // textos e cotas ocupam mais que seus pontos de definição: margem no papel
+    const m = t + 12 * this.doc.escala;
+    for (const e of this.doc.naRegiao([[p[0] - m, p[1] - m], [p[0] + m, p[1] + m]])) {
       if (!this.doc.visivel(e) || this.doc.bloqueada(e)) continue;
       let d;
       if (e.tipo === 'cota') {
@@ -356,14 +396,10 @@ export class Tela {
     const m2 = this.paraMundo([Math.max(a[0], b[0]), Math.min(a[1], b[1])]);
     const dentro = (p) => p[0] >= m1[0] && p[0] <= m2[0] && p[1] >= m1[1] && p[1] <= m2[1];
     const ids = [];
-    for (const e of this.doc.entidades.values()) {
+    for (const e of this.doc.naRegiao([m1, m2])) {       // só as que tocam o retângulo
       if (!this.doc.visivel(e) || this.doc.bloqueada(e)) continue;
-      const pts = pontosDe(e);
-      if (!pts.length) continue;
-      if (cruzamento) {
-        const cx = caixaDe(pts);
-        if (cx[1][0] >= m1[0] && cx[0][0] <= m2[0] && cx[1][1] >= m1[1] && cx[0][1] <= m2[1]) ids.push(e.id);
-      } else if (pts.every(dentro)) ids.push(e.id);
+      if (cruzamento) ids.push(e.id);
+      else if (pontosDe(e).every(dentro)) ids.push(e.id);
     }
     return ids;
   }

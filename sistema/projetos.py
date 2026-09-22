@@ -24,10 +24,12 @@ Pastas que já existiam antes deste módulo (entregas geradas pelo nome do galp�
 adotadas: aparecem na lista e ganham o `projeto.json` na primeira vez que são abertas.
 """
 import datetime
+import itertools
 import json
 import os
 import re
 import shutil
+import threading
 import time
 from typing import Dict, List, Optional
 
@@ -57,13 +59,54 @@ def _agora() -> str:
     return datetime.datetime.now().replace(microsecond=0).isoformat()
 
 
+_TRAVAS: Dict[str, threading.Lock] = {}
+_TRAVA_DAS_TRAVAS = threading.Lock()
+_CONTADOR = itertools.count()
+#: Quanto tempo insistir na troca do arquivo quando outro processo o segura (s).
+ESPERA_TROCA = 12.0
+
+
+def _trava(caminho: str) -> threading.Lock:
+    with _TRAVA_DAS_TRAVAS:
+        return _TRAVAS.setdefault(os.path.normcase(os.path.abspath(caminho)), threading.Lock())
+
+
+def trocar_arquivo(parcial: str, caminho: str, espera: float = ESPERA_TROCA):
+    """`os.replace` insistente: no Windows, o OneDrive, o antivírus ou o indexador seguram
+    por alguns segundos um arquivo recém-gravado, e a troca falha com "arquivo em uso"
+    (WinError 32) ou "acesso negado" (WinError 5). Tenta de novo até `espera` segundos."""
+    limite = time.monotonic() + espera
+    pausa = 0.05
+    while True:
+        try:
+            os.replace(parcial, caminho)
+            return
+        except PermissionError:
+            if time.monotonic() >= limite:
+                raise
+            time.sleep(pausa)
+            pausa = min(pausa * 2, 1.0)
+
+
 def _gravar_json(caminho: str, dados, indent=None):
-    """Temporário + troca: quem ler no meio da gravação não pega metade do arquivo."""
+    """Temporário + troca: quem ler no meio da gravação não pega metade do arquivo.
+
+    O temporário tem nome único e a gravação de cada caminho é serializada por uma
+    trava: dois pedidos simultâneos (a gravação automática do CAD e uma vista nova, ou
+    dois cliques) não escrevem no mesmo temporário nem deixam um arquivo emendado."""
     os.makedirs(os.path.dirname(caminho), exist_ok=True)
-    parcial = caminho + ".parcial"
-    with open(parcial, "w", encoding="utf-8") as f:
-        json.dump(dados, f, ensure_ascii=False, indent=indent)
-    os.replace(parcial, caminho)
+    parcial = "%s.%d-%d.parcial" % (caminho, os.getpid(), next(_CONTADOR))
+    with _trava(caminho):
+        try:
+            with open(parcial, "w", encoding="utf-8") as f:
+                json.dump(dados, f, ensure_ascii=False, indent=indent)
+            trocar_arquivo(parcial, caminho)
+        finally:
+            if os.path.exists(parcial):
+                try:
+                    os.remove(parcial)
+                except OSError:
+                    pass
 
 
 def _ler_json(caminho: str):
