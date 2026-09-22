@@ -395,6 +395,7 @@ class Arquivo:
         self.avisos: List[str] = []
         self.truncado = False
         self._indice: Optional[Dict[str, List[Entidade]]] = None
+        self._inversos_tipos: Optional[frozenset] = None
         self._inversos: Optional[Dict[int, List[int]]] = None
 
     # ---- cabeçalho ----
@@ -493,11 +494,20 @@ class Arquivo:
         return fora
 
     # ---- referências inversas ----
-    def _garantir_inversos(self):
-        if self._inversos is not None:
+    def _garantir_inversos(self, so_tipos=None):
+        """Índice de quem referencia quem. Com `so_tipos`, indexa só as entidades desses
+        tipos como origem — é o que o importador precisa (IfcStyledItem, IfcRelAssociates…),
+        e custa uma fração de indexar 1,6 milhão de pontos e faces."""
+        if self._inversos is not None and (self._inversos_tipos is None or
+                                           (so_tipos and so_tipos <= self._inversos_tipos)):
             return
+        if so_tipos and self._inversos is not None:
+            so_tipos = so_tipos | self._inversos_tipos
         inv: Dict[int, List[int]] = {}
-        for e in self.entidades.values():
+        origens = (self.entidades.values() if not so_tipos
+                   else (e for t in so_tipos for e in self.por_tipo(t)))
+        self._inversos_tipos = frozenset(so_tipos) if so_tipos else None
+        for e in origens:
             origem = e.id
             pilha = list(e.args)
             while pilha:
@@ -514,17 +524,18 @@ class Arquivo:
                     pilha.extend(v.args)
         self._inversos = inv
 
-    def inversos(self, id_) -> List[Entidade]:
+    def inversos(self, id_, so_tipos=None) -> List[Entidade]:
         """Entidades que referenciam esta — o caminho para achar as relações do IFC."""
         if isinstance(id_, Entidade):
             id_ = id_.id
-        self._garantir_inversos()
+        self._garantir_inversos(so_tipos)
         ents = self.entidades
         return [ents[i] for i in self._inversos.get(int(id_), ()) if i in ents]
 
     def inversos_tipo(self, id_, *tipos: str) -> List[Entidade]:
-        alvos = {t.upper() for t in tipos}
-        return [e for e in self.inversos(id_) if alvos.intersection(e.tipos)]
+        """Quem referencia `id_` e é de um dos `tipos`. Só esses tipos são indexados."""
+        alvos = frozenset(t.upper() for t in tipos)
+        return [e for e in self.inversos(id_, alvos) if alvos.intersection(e.tipos)]
 
     # ---- diagnóstico ----
     def avisar(self, msg: str):
@@ -552,6 +563,21 @@ def _instrucoes(linhas: Iterable[str]) -> Iterator[Tuple[str, bool]]:
     em_texto = False
     em_comentario = False
     for linha in linhas:
+        # Atalho para a linha comum: fora de texto e de comentário, sem aspas nem "/*",
+        # o ";" separa instruções sem ambiguidade, e dá para fatiar a linha de uma vez.
+        # Percorrer caractere a caractere as 1,7 milhão de linhas de um IFC grande era
+        # o maior custo da leitura. Linha com aspas ou comentário segue pelo laço cuidadoso.
+        if not em_texto and not em_comentario and "'" not in linha and "/*" not in linha:
+            if ";" not in linha:
+                buf.append(linha)
+                continue
+            partes = linha.split(";")
+            buf.append(partes[0])
+            yield "".join(buf), True
+            for parte in partes[1:-1]:
+                yield parte, True
+            buf = [partes[-1]] if partes[-1] else []
+            continue
         i, n, inicio = 0, len(linha), 0
         while i < n:
             c = linha[i]
@@ -600,6 +626,66 @@ def _instrucoes(linhas: Iterable[str]) -> Iterator[Tuple[str, bool]]:
 
 
 _RE_ATRIB = re.compile(r"^\s*#([0-9]+)\s*=\s*(.*)$", re.S)
+
+# --- atalho para as entidades de forma fixa -------------------------------------------
+#
+# Num IFC de geometria facetada, mais de 90 % das instruções são IFCCARTESIANPOINT,
+# IFCDIRECTION, IFCPOLYLOOP, IFCFACEOUTERBOUND e IFCFACE: um nome, parênteses, e dentro
+# só números ou só referências. Passar cada uma pelo tokenizador e pela descida recursiva
+# custava 45 s num arquivo de 80 MB; reconhecer a forma com uma expressão regular e
+# converter direto custa uma fração disso. Qualquer instrução que não case com a forma
+# simples (texto, enum, tipo explícito, aninhamento) segue pelo caminho completo, então
+# o resultado é o mesmo.
+_RE_SIMPLES = re.compile(r"^([A-Za-z_][A-Za-z_0-9]*)\s*\((.*)\)\s*$", re.S)
+_RE_SO_NUMEROS = re.compile(r"^\(\s*([-+0-9.eE\s,]+)\)$")
+_RE_SO_REFS = re.compile(r"^\(\s*((?:#[0-9]+\s*,?\s*)+)\)$")
+_RE_ARGS_PLANOS = re.compile(r"^[-+0-9.eE#$*.,\s]*$")     # sem aspas, sem parêntese interno
+
+
+def _numero(s: str):
+    return int(s) if s.lstrip("-+").isdigit() else float(s)
+
+
+def _arg_plano(s: str):
+    """Um argumento sem aninhamento: ref, número, $ ou *."""
+    s = s.strip()
+    if not s or s == "$":
+        return None
+    if s == "*":
+        return DERIVADO
+    if s[0] == "#":
+        return Ref(int(s[1:]))
+    return _numero(s)
+
+
+def _entidade_rapida(texto: str):
+    """(tipo, args) para instruções de forma fixa, ou None para seguir o caminho completo."""
+    m = _RE_SIMPLES.match(texto)
+    if m is None:
+        return None
+    tipo, corpo = m.group(1).upper(), m.group(2).strip()
+    if not corpo:
+        return tipo, []
+    # um único argumento que é lista de números: IFCCARTESIANPOINT((1.,2.,3.))
+    if corpo[0] == "(":
+        if corpo[-1] != ")" or "(" in corpo[1:-1]:
+            return None
+        mn = _RE_SO_NUMEROS.match(corpo)
+        if mn:
+            return tipo, [[_numero(x) for x in mn.group(1).replace(" ", "").split(",") if x]]
+        mr = _RE_SO_REFS.match(corpo)
+        if mr:
+            return tipo, [[Ref(int(x)) for x in mr.group(1).replace("#", " ").replace(",", " ").split()]]
+        return None
+    # argumentos planos separados por vírgula: IFCFACEOUTERBOUND(#12,.T.) não entra
+    # (tem enum), mas IFCFACE((#12)) e IFCAXIS2PLACEMENT3D(#1,#2,#3) entram
+    if not _RE_ARGS_PLANOS.match(corpo):        # aspas, enum, parêntese: caminho completo
+        return None
+    try:
+        return tipo, [_arg_plano(x) for x in corpo.split(",")]
+    except ValueError:
+        return None
+
 _MARCAS = {"ISO-10303-21": "inicio", "END-ISO-10303-21": "fim", "HEADER": "cabecalho",
            "DATA": "dados", "ENDSEC": "nenhuma"}
 
@@ -630,7 +716,11 @@ def _analisar_fluxo(linhas: Iterable[str], arq: Arquivo, so_cabecalho=False) -> 
                 if secao == "cabecalho" or so_cabecalho:
                     continue
                 ident = int(m.group(1))
-                tipo, args, partes = _Analisador(_tokens(m.group(2))).corpo()
+                rapida = _entidade_rapida(m.group(2))
+                if rapida is not None:
+                    tipo, args, partes = rapida[0], rapida[1], None
+                else:
+                    tipo, args, partes = _Analisador(_tokens(m.group(2))).corpo()
                 if ident in arq.entidades:
                     arq.avisar("id repetido #%d: a última definição prevalece" % ident)
                 arq.entidades[ident] = Entidade(ident, tipo, args, partes)

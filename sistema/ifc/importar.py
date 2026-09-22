@@ -207,12 +207,13 @@ def m_escalar(m: Matriz, sx: float, sy: float, sz: float) -> Matriz:
 
 class Malha:
     """Vértices e faces em construção, antes de virar `Solido`."""
-    __slots__ = ("vertices", "faces", "_indice")
+    __slots__ = ("vertices", "faces", "_indice", "_por_chave")
 
     def __init__(self):
         self.vertices: List[Tuple[float, float, float]] = []
         self.faces: List[List[int]] = []
         self._indice: Dict[Tuple[int, int, int], int] = {}
+        self._por_chave: Dict[int, int] = {}
 
     # ---- construção ----
     def ponto(self, p) -> int:
@@ -237,6 +238,18 @@ class Malha:
         if len(idx) >= 3:
             self.faces.append(idx)
 
+    def ponto_com_chave(self, chave, p) -> int:
+        """Vértice identificado por uma chave do arquivo (id do ponto), sem arredondar.
+
+        Vale para Brep facetado, onde a mesma IfcCartesianPoint é compartilhada pelas
+        faces vizinhas: a dedução por coordenada seria repetida a cada face. Pontos de
+        origens diferentes com a mesma coordenada continuam deduzidos por `ponto`."""
+        i = self._por_chave.get(chave)
+        if i is None:
+            i = self.ponto(p)
+            self._por_chave[chave] = i
+        return i
+
     def face_indices(self, idx: List[int]):
         limpo = []
         for i in idx:
@@ -259,10 +272,12 @@ class Malha:
         return not self.faces
 
     def transformada(self, m: Matriz) -> "Malha":
+        """A mesma malha no outro sistema. Os índices das faces não mudam com uma
+        transformação rígida, então basta mover os vértices; refazer a dedução de
+        duplicatas era a metade do custo de importar um Brep grande."""
         nova = Malha()
-        pts = [m_ponto(m, v) for v in self.vertices]
-        for f in self.faces:
-            nova.face([pts[i] for i in f])
+        nova.vertices = [m_ponto(m, v) for v in self.vertices]
+        nova.faces = [list(f) for f in self.faces]
         return nova
 
     def caixa(self):
@@ -1032,6 +1047,8 @@ class Importador:
         if not face.e_tipo("IFCFACE", "IFCFACESURFACE", "IFCADVANCEDFACE"):
             return
         externo: List[Tuple[float, float, float]] = []
+        externo_refs: list = []
+        refs: list = []
         internos: List[List[Tuple[float, float, float]]] = []
         for bound in self.lista(face.arg(0)):
             laco = self.res(bound.arg(0))
@@ -1045,15 +1062,27 @@ class Importador:
                     continue
             else:
                 pts = [self.ponto(p) for p in (laco.arg(0) or [])]
+                refs = laco.arg(0) or []
             if len(pts) < 3:
                 continue
             if bound.arg(1) is False:
                 pts = list(reversed(pts))
+                refs = list(reversed(refs)) if laco.e_tipo("IFCPOLYLOOP") else []
             if bound.e_tipo("IFCFACEOUTERBOUND") or not externo:
                 externo = pts
+                externo_refs = refs if laco.e_tipo("IFCPOLYLOOP") else []
             else:
                 internos.append(pts)
         if len(externo) < 3:
+            return
+        if not internos and externo_refs and len(externo_refs) == len(externo):
+            # caminho rápido: face simples de Brep facetado, vértices pelo id do ponto
+            idx = []
+            for ref, p in zip(externo_refs, externo):
+                i = m.ponto_com_chave(int(ref), p)
+                if not idx or idx[-1] != i:
+                    idx.append(i)
+            m.face_indices(idx)
             return
         if internos:
             # furo na face: costura no plano dominante da face
