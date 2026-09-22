@@ -251,6 +251,23 @@ orientação (a chapinha do suporte), recebe a mesma substituição; o centro do
 mantido e a célula diz "furação no padrão de fábrica". Padrão quadrado ou terças de
 alturas diferentes com a mesma furação original saem com "conferir".
 
+### Detalhe de uma peça ligado ao 3D (chapa paramétrica)
+
+Duplo clique numa peça do editor 3D → `POST /api/projetos/<slug>/detalhar-posicao {marca}`:
+sólidos de chapa plana da posição viram entidades `Chapa` (`nucleo2d.detalhar.converter_chapas`:
+contorno, espessura e furos medidos pela análise, no sistema da própria peça, mesmo id e
+atributos) e o desenho "Detalhe – P77" sai com os furos como entidades marcadas da camada
+FURO (`desenho_da_posicao(..., editavel=True)`, `metadados.detalhe_posicao`). No CAD,
+**Aplicar furos ao modelo 3D** (`POST …/desenhos/<nome>/aplicar-furos`) lê círculos e
+polilinhas fechadas da camada FURO, escreve nas chapas da posição (`aplicar_furos`; a
+peça montada espelhada recebe o espelho, escolhido pelos furos originais — `_simetria`),
+regrava o modelo e regenera o detalhe. Chapas paramétricas entram no detalhamento geral
+como sólidos equivalentes (`_proxy_da_chapa`); a malha 3D (`geometria.malha_chapa`) e a
+cena do editor abrem furos redondos e **oblongos** (`{x, y, largura, altura}`).
+**Ver no 3D** (CAD) abre o editor com `destacar=posicao:P77` — peças selecionadas e
+enquadradas. Chapa com nome nominal e malha até 1 mm menor sai com a dimensão nominal
+(`saida.detalhamento._ajustar_ao_nominal`).
+
 ### Lista de materiais
 
 `saida/lista_producao.py`, tela `/materiais?projeto=<slug>` (menu **Desenho 2D → Lista de

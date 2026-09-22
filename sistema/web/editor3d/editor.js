@@ -254,6 +254,7 @@ export class Editor {
     else if (this.parametros.get('galpao') === '1') await this._carregarGalpaoDaInterface();
     else if (this.parametros.get('exemplo')) this.carregarExemplo();
     else if (this.parametros.get('abrir')) await this.abrirModelo(this.parametros.get('abrir'));
+    if (this.parametros.get('destacar')) this._destacar(this.parametros.get('destacar'));
     else {
       // Sem pedido na URL, volta ao último modelo: o documento é gravado no servidor
       // a cada mudança, então atualizar a página não pode jogar o trabalho fora.
@@ -1235,6 +1236,45 @@ export class Editor {
     }
     if (excluidos.length) this.aviso(`${excluidos.length} desenho(s) excluído(s)${excluidos.includes(atual) ? ' — inclusive o que estava aberto' : ''}.`, 'info', 8000);
     return excluidos;
+  }
+
+  /**
+   * Detalhe de uma peça (duplo clique no 3D): o servidor gera "Detalhe – P77" — chapa
+   * plana vira chapa paramétrica no modelo, com os furos editáveis no desenho — e o
+   * CAD abre nele. O modelo é recarregado ao voltar, então nada fica desatualizado.
+   */
+  async abrirDetalheDaPeca(ent) {
+    const marca = ent && ent.atributos && ent.atributos.marcas && ent.atributos.marcas.posicao;
+    if (!marca) { this.aviso('Esta peça não tem marca de posição.', 'atencao'); return; }
+    this.dica(`Gerando o detalhe de ${marca}…`);
+    try {
+      await this._gravarAntesDeGerar();
+      const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar-posicao`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ marca }),
+      });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      window.location.href = `/cad?projeto=${encodeURIComponent(this.projeto)}&desenho=${encodeURIComponent(j.nome)}`;
+    } catch (e) { this.aviso(`Não foi possível abrir o detalhe de ${marca}: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
+  /**
+   * `destacar=posicao:P77,P12` ou `conjunto:M2` na URL (vindo do "Ver no 3D" do CAD):
+   * seleciona as peças com essa marca e enquadra a câmera nelas.
+   */
+  _destacar(spec) {
+    const m = /^(posicao|conjunto):(.+)$/.exec(String(spec || ''));
+    if (!m) return;
+    const chave = m[1];
+    const marcas = new Set(m[2].split(',').map(s => s.trim()).filter(Boolean));
+    const ids = [...this.documento.entidades.values()]
+      .filter(e => e.atributos && e.atributos.marcas && marcas.has(String(e.atributos.marcas[chave])))
+      .map(e => e.id);
+    if (!ids.length) { this.aviso(`Nenhuma peça com ${chave} ${[...marcas].join(', ')} no modelo.`, 'atencao'); return; }
+    this.selecao.definir(ids);
+    this.camera.zoomSelecao(ids);
+    this.aviso(`${ids.length} peça(s) ${[...marcas].join(', ')} em destaque (selecionadas). Esc limpa a seleção; Desenho 2D volta ao CAD.`, 'info', 12000);
+    const url = new URL(location.href); url.searchParams.delete('destacar'); history.replaceState(null, '', url);
   }
 
   /** Navega na mesma janela depois de gravar o que estiver pendente do autosave. */

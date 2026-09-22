@@ -283,8 +283,9 @@ export class Mover extends Transformadora {
       const copias = novas.map(e => ({ ...e, id: undefined }));
       const cmd = new ComandoAdicionar(copias.map(c => criar(c)), 'Copiar');
       this.editor.executar(cmd);
-      this.base = p;                                     // continua copiando a partir da última
-      this.dica('Próximo destino (Esc termina)');
+      // o ponto base continua o mesmo: cada novo destino é medido da referência
+      // original (como no AutoCAD), e a seleção copiada é sempre a original
+      this.dica('Próximo destino, medido do mesmo ponto base (Esc termina)');
     } else {
       this.editor.executar(new ComandoSubstituir(novas, 'Mover'));
       this.reiniciar();
@@ -400,20 +401,24 @@ function intersecaoLinhaCirculo(a, b, c, r) {
 }
 
 export class Offset extends Ferramenta {
-  static id = 'offset'; static nome = 'Paralela'; static atalho = 'f'; static grupo = 'edicao'; static dica = 'Clique na linha, depois do lado desejado (ou digite a distância)';
+  static id = 'offset'; static nome = 'Offset (paralela)'; static atalho = 'f'; static grupo = 'edicao'; static dica = 'Offset: clique na linha, arco, círculo ou polilinha; depois do lado desejado (ou digite a distância e clique o lado)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 8h16M4 16h16" /></svg>';
   reiniciar() { super.reiniciar(); this.alvo = null; this.distancia = null; }
   onPonto(p, ev) {
-    if (!this.alvo) { const e = this.editor.tela.sob(ev.px); if (e && (e.tipo === 'linha' || e.tipo === 'circulo' || e.tipo === 'polilinha')) { this.alvo = e; this.dica('Lado (clique) ou distância (digite)'); } return; }
+    if (!this.alvo) { const e = this.editor.tela.sob(ev.px); if (e && (e.tipo === 'linha' || e.tipo === 'circulo' || e.tipo === 'polilinha' || e.tipo === 'arco')) { this.alvo = e; this.dica(this.distancia != null ? `Distância ${fmt(this.distancia)}: clique do lado desejado` : 'Lado (clique) ou distância (digite)'); } return; }
     const n = this._paralela(p, this.distancia);
-    if (n) this.editor.executar(new ComandoAdicionar([n], 'Paralela'));
+    if (n) this.editor.executar(new ComandoAdicionar([n], 'Offset'));
+    // a distância digitada vale para os próximos offsets, até Esc
+    const d = this.distancia;
     this.reiniciar();
+    this.distancia = d;
+    if (d != null) this.dica(`Offset ${fmt(d)}: clique na próxima linha (Esc sai)`);
   }
   onValor(t) { const v = paraMilimetros(t); if (v != null) { this.distancia = v; this.dica(`Distância ${fmt(v)}: clique do lado desejado`); } }
   onMover(p) { if (this.alvo) { const n = this._paralela(p, this.distancia); if (n) this.editor.previa([n]); } }
   _paralela(p, dfix) {
     const e = this.alvo;
-    if (e.tipo === 'circulo') { const d = dfix ?? Math.abs(dist(p, e.centro) - e.raio); const r = dist(p, e.centro) > e.raio ? e.raio + d : e.raio - d; return r > 0 ? criar({ ...e, id: undefined, raio: r }) : null; }
+    if (e.tipo === 'circulo' || e.tipo === 'arco') { const d = dfix ?? Math.abs(dist(p, e.centro) - e.raio); const r = dist(p, e.centro) > e.raio ? e.raio + d : e.raio - d; return r > 0 ? criar({ ...e, id: undefined, raio: r }) : null; }
     if (e.tipo === 'linha') {
       const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
       const lado = Math.sign((p[0] - e.a[0]) * nx + (p[1] - e.a[1]) * ny) || 1;

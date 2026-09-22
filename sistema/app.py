@@ -23,6 +23,8 @@ Rotas da API:
                                         excluir, abrir-pasta
     POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
     POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + lista de materiais
+    POST /api/projetos/<slug>/detalhar-posicao {marca}   detalhe de uma peça (chapa vira paramétrica)
+    POST /api/projetos/<slug>/desenhos/<nome>/aplicar-furos   furos do detalhe → chapas do modelo
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
     POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
     POST /api/projetos/<slug>/pranchas  pranchas (folhas com carimbo) a partir dos desenhos 2D
@@ -479,6 +481,56 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
             "regra_tercas": r["regra_tercas"], "avisos": r["avisos"],
             "romaneio": _descrever_arquivo(arquivos["romaneio"], pasta),
             "materiais": {k: _descrever_arquivo(v, pasta) for k, v in arquivos.items()}}
+
+
+def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/detalhar-posicao {marca}: desenho "Detalhe – <marca>" da
+    peça. Chapa plana vinda do IFC é antes convertida em Chapa paramétrica (contorno +
+    furos) no modelo, para o detalhe ser um "bloco" ligado ao 3D: os furos mexidos no
+    desenho voltam para as chapas com /aplicar-furos."""
+    from nucleo2d import detalhar as det
+    marca = str(corpo.get("marca") or "").strip()
+    if not marca:
+        raise ErroDeDados("informe a marca da posição.")
+    g = _gerente()
+    doc = _documento3d_do_projeto(s)
+    convertidas = det.converter_chapas(doc, marca) if corpo.get("converter", True) is not False else 0
+    if convertidas:
+        g.salvar_modelo(s, doc.dict())
+    desenho, pos = det.detalhar_posicao(doc, marca)
+    nome = desenho.nome
+    if corpo.get("substituir", True) is not False and os.path.exists(g._caminho_desenho(s, nome)):
+        g.excluir_desenho(s, nome)
+    desenho.metadados["gerado_por"] = "detalhamento"
+    salvo = g.salvar_desenho(s, nome, desenho.dict())
+    return {"nome": salvo["nome"], "titulo": nome, "marca": marca, "classe": pos.classe,
+            "convertidas": convertidas, "editavel": desenho.metadados["detalhe_posicao"]["editavel"],
+            "furos": len(desenho.metadados["detalhe_posicao"]["furos"]), "quantidade": pos.quantidade}
+
+
+def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/desenhos/<nome>/aplicar-furos: lê os furos da camada FURO
+    do desenho de detalhe (o gravado, ou `desenho` no corpo), escreve nas chapas
+    paramétricas da posição e regrava o modelo e o detalhe regenerado."""
+    from nucleo2d import detalhar as det
+    from nucleo2d.desenho import Desenho
+    g = _gerente()
+    d = Desenho.de_dict(corpo["desenho"]) if isinstance(corpo.get("desenho"), dict) else Desenho.de_dict(g.abrir_desenho(s, nome))
+    meta = d.metadados.get("detalhe_posicao") or {}
+    if not meta.get("marca"):
+        raise ErroDeDados("este desenho não é o detalhe de uma posição: abra a peça pelo modelo 3D (duplo clique).")
+    if not meta.get("editavel"):
+        raise ErroDeDados("os furos desta posição não são editáveis (só chapa plana convertida em chapa paramétrica).")
+    furos = det.furos_do_desenho(d)
+    doc = _documento3d_do_projeto(s)
+    r = det.aplicar_furos(doc, meta["marca"], furos, meta.get("furos") or [])
+    g.salvar_modelo(s, doc.dict())
+    novo, pos = det.detalhar_posicao(doc, meta["marca"])
+    if os.path.exists(g._caminho_desenho(s, novo.nome)):
+        g.excluir_desenho(s, novo.nome)
+    novo.metadados["gerado_por"] = "detalhamento"
+    salvo = g.salvar_desenho(s, novo.nome, novo.dict())
+    return dict(r, nome=salvo["nome"], marca=meta["marca"], quantidade=pos.quantidade)
 
 
 def _identificacao_do_projeto(s: str) -> dict:
@@ -1053,6 +1105,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(detalhar_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "materiais":
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
+                if len(partes) == 2 and partes[1] == "detalhar-posicao":
+                    return self._json(detalhar_posicao_projeto(partes[0], corpo))
+                if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-furos":
+                    return self._json(aplicar_furos_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "pdf":
                     return self._json(pdf_da_lista_de_materiais(partes[0]))
                 if len(partes) == 2 and partes[1] == "pranchas":

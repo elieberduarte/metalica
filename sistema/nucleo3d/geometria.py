@@ -972,6 +972,38 @@ def contorno_furo(x: float, y: float, diametro: float,
              y + r * math.sin(-2 * math.pi * i / lados)) for i in range(lados)]
 
 
+def contorno_oblongo(x: float, y: float, largura: float, altura: float,
+                     angulo: float = 0.0, lados: int = LADOS_FURO) -> List[Ponto2]:
+    """Polígono de um furo oblongo (estádio), no sentido horário: `largura` é o
+    comprimento total, `altura` a largura do rasgo; `angulo` em graus gira o rasgo."""
+    larg, alt = max(float(largura), 0.1), max(float(altura), 0.1)
+    if alt > larg:
+        larg, alt = alt, larg
+        angulo += 90.0
+    r = alt / 2.0
+    meio = (larg - alt) / 2.0
+    n = max(4, lados // 2)
+    pts: List[Ponto2] = []
+    # semicírculo da direita (de +90° a -90°) e da esquerda (de -90° a -270°), horário
+    for i in range(n + 1):
+        a = math.pi / 2 - math.pi * i / n
+        pts.append((meio + r * math.cos(a), r * math.sin(a)))
+    for i in range(n + 1):
+        a = -math.pi / 2 - math.pi * i / n
+        pts.append((-meio + r * math.cos(a), r * math.sin(a)))
+    ca, sa = math.cos(math.radians(angulo)), math.sin(math.radians(angulo))
+    return [(x + px * ca - py * sa, y + px * sa + py * ca) for px, py in pts]
+
+
+def contorno_do_furo(f: dict) -> Optional[List[Ponto2]]:
+    """Contorno de um furo da Chapa: {x, y, diametro} ou {x, y, largura, altura[, angulo]}."""
+    if float(f.get("diametro", 0.0) or 0.0) > 0:
+        return contorno_furo(f.get("x", 0.0), f.get("y", 0.0), f.get("diametro", 0.0))
+    if float(f.get("largura", 0.0) or 0.0) > 0 and float(f.get("altura", 0.0) or 0.0) > 0:
+        return contorno_oblongo(f.get("x", 0.0), f.get("y", 0.0), f["largura"], f["altura"], float(f.get("angulo", 0.0) or 0.0))
+    return None
+
+
 def malha_chapa(chapa: Chapa) -> Tuple[List[Ponto], List[List[int]]]:
     """Malha da chapa, com os furos **abertos** na triangulação (não só desenhados)."""
     if not isinstance(chapa, Chapa):
@@ -984,8 +1016,7 @@ def malha_chapa(chapa: Chapa) -> Tuple[List[Ponto], List[List[int]]]:
         raise ErroDeDados(f"chapa {chapa.nome or chapa.id}: coordenada inválida.")
     if float(chapa.espessura) <= 0:
         raise ErroDeDados(f"chapa {chapa.nome or chapa.id}: espessura nula.")
-    furos = [contorno_furo(f.get("x", 0.0), f.get("y", 0.0), f.get("diametro", 0.0))
-             for f in (chapa.furos or []) if float(f.get("diametro", 0.0)) > 0]
+    furos = [c for c in (contorno_do_furo(f) for f in (chapa.furos or [])) if c]
     ex = normalizar(chapa.eixo_x)
     ey = normalizar(chapa.eixo_y)
     nz = normalizar(produto_vetorial(ex, ey))

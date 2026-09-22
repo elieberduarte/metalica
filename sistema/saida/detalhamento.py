@@ -700,6 +700,8 @@ def analisar(pos: Posicao) -> Posicao:
             pos.classe = "chapa"
             if nominal and (abs(nominal[0] - pos.L) > 3 and abs(nominal[0] - pos.H) > 3):
                 pos.observacoes.append("dimensões medidas diferem do nome do TecnoMETAL")
+            elif nominal:
+                _ajustar_ao_nominal(pos, nominal)
         return pos
 
     if _eh_telha(perfil):
@@ -789,6 +791,33 @@ def _fatiar_eixo(pos: Posicao, eixo: int, valor: float):
     copia.local = [tuple(p[i] for i in ordem) for p in pos.local]
     copia.normais = [tuple(n[i] for i in ordem) for n in pos.normais]
     return _fatiar(copia, valor)
+
+
+#: Diferença até a qual a chapa medida na malha é tratada como a nominal do nome.
+TOLERANCIA_NOMINAL = 1.0
+
+
+def _ajustar_ao_nominal(pos: Posicao, nominal) -> bool:
+    """A malha do IFC traz a chapa com décimos a menos do que o nome diz (150x123 vem
+    com 122,5): a produção corta pelo nominal, e a cota tem de dizer 123. Quando a
+    diferença é de até 1 mm em cada lado, o contorno e os furos são escalados para
+    as dimensões nominais; diferença maior fica como medida."""
+    a, b = float(nominal[0]), float(nominal[1])
+    if abs(a - pos.L) <= TOLERANCIA_NOMINAL and abs(b - pos.H) <= TOLERANCIA_NOMINAL:
+        alvo = (a, b)
+    elif abs(b - pos.L) <= TOLERANCIA_NOMINAL and abs(a - pos.H) <= TOLERANCIA_NOMINAL:
+        alvo = (b, a)
+    else:
+        return False
+    if pos.L <= 0 or pos.H <= 0 or (abs(alvo[0] - pos.L) < 1e-6 and abs(alvo[1] - pos.H) < 1e-6):
+        return False
+    kx, ky = alvo[0] / pos.L, alvo[1] / pos.H
+    # só o contorno estica; os furos ficam onde a malha os pôs, medidos do canto
+    # inferior esquerdo (a referência da furadeira), sem ganhar décimos
+    pos.contorno = [(x * kx, y * ky) for x, y in pos.contorno]
+    pos.L, pos.H = alvo
+    pos.comprimento = pos.L
+    return True
 
 
 def _desenvolver_chapa(pos: Posicao, t_nominal: Optional[float]):

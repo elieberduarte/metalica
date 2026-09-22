@@ -189,6 +189,81 @@ def test_planta_de_localizacao():
     assert d.escala >= 1
 
 
+def test_chapa_nominal_e_bloco_parametrico():
+    """Chapa 130×49,5 com nome PLATE 130x50x3 sai com 50 na cota; vira Chapa paramétrica,
+    o detalhe é editável e os furos mexidos no desenho voltam para as 3 chapas — uma
+    delas montada espelhada."""
+    import math
+    from nucleo3d.modelo import Chapa
+    from nucleo2d.desenho import Circulo
+    v, f = chapa_com_furo(130, 49.5, 3, 13)
+    doc = Documento(nome="teste")
+    doc.add(_solido("PLATE 130x50x3", "IfcPlate", v, f, "P1", "M1", "PLATE 130x50x3"))
+    doc.add(_solido("PLATE 130x50x3", "IfcPlate", v, f, "P1", "M2", "PLATE 130x50x3", dx=1000))
+    # a terceira girada de 180° em torno de z (espelhada no plano da chapa)
+    doc.add(_solido("PLATE 130x50x3", "IfcPlate", [(-x + 2000, -y, z) for x, y, z in v], [list(reversed(q)) for q in f],
+                    "P1", "M3", "PLATE 130x50x3"))
+    d, pos = det.detalhar_posicao(doc, "P1")
+    assert pos.classe == "chapa" and abs(pos.H - 50.0) < 1e-6 and abs(pos.L - 130.0) < 1e-6
+    assert d.metadados["detalhe_posicao"]["editavel"] is False        # ainda sólido
+    furos0 = d.metadados["detalhe_posicao"]["furos"]
+    assert len(furos0) == 1 and furos0[0]["tipo"] == "redondo" and abs(furos0[0]["d"] - 13) < 0.5
+    assert det.converter_chapas(doc, "P1") == 3
+    chapas = [e for e in doc.entidades.values() if isinstance(e, Chapa)]
+    assert len(chapas) == 3 and all(c.atributos["marcas"]["posicao"] == "P1" for c in chapas)
+    assert all(abs(c.espessura - 3.0) < 0.2 and len(c.furos) == 1 for c in chapas)
+    # o desenho de detalhe da chapa convertida é editável, com o furo como entidade marcada
+    d, pos = det.detalhar_posicao(doc, "P1")
+    meta = d.metadados["detalhe_posicao"]
+    assert meta["editavel"] and meta["parametrica"] and len(meta["pecas"]) == 3
+    furos = [e for e in d.entidades.values() if e.camada == "FURO"]
+    assert len(furos) == 1 and isinstance(furos[0], Circulo) and furos[0].atributos.get("furo") == 0
+    # edição: move o furo 20 mm em x e acrescenta outro; aplica
+    furos[0].centro = (furos[0].centro[0] + 20.0, furos[0].centro[1])
+    d.add(Circulo(camada="FURO", centro=(100.0, 25.0), raio=8.75))
+    lidos = det.furos_do_desenho(d)
+    assert len(lidos) == 2
+    r = det.aplicar_furos(doc, "P1", lidos, meta["furos"])
+    assert r["chapas"] == 3
+    x_orig = furos0[0]["x"]
+    for c in chapas:
+        xs = sorted(round(f_["x"], 1) for f_ in c.furos)
+        u0 = min(x for x, _ in c.contorno)
+        # o furo original andou 20 mm no sentido do desenho em cada chapa, espelhada ou não
+        assert any(abs(x - u0 - (x_orig + 20.0)) < 1.6 or abs(x - u0 - (130.0 - x_orig - 20.0)) < 1.6 for x in xs)
+        assert any(abs(f_["diametro"] - 17.5) < 1e-6 for f_ in c.furos)
+    # o detalhe regenerado lê os furos novos, e o modelo sobrevive ao JSON
+    d2, _ = det.detalhar_posicao(doc, "P1")
+    assert len(d2.metadados["detalhe_posicao"]["furos"]) == 2
+    doc2 = Documento.de_dict(doc.dict())
+    assert sum(isinstance(e, Chapa) for e in doc2.entidades.values()) == 3
+    # o detalhamento geral continua contando a posição (chapas paramétricas entram)
+    r = det.detalhar(doc2, grupos=["chapas"], regra_tercas=False)
+    assert {p["marca"]: p["quantidade"] for p in r["posicoes"]}["P1"] == 3
+    # simetria: identidade quando bate, espelho em x quando é o que leva os furos
+    ident = det._simetria([(30.0, 25.0)], [(30.0, 25.0)], 130.0, 50.0)
+    assert ident(10.0, 5.0) == (10.0, 5.0)
+    esp = det._simetria([(30.0, 25.0)], [(100.0, 25.0)], 130.0, 50.0)
+    assert esp(30.0, 25.0) == (100.0, 25.0)
+
+
+def test_furo_oblongo_na_malha():
+    from nucleo3d.modelo import Chapa
+    from nucleo3d import geometria
+    ch = Chapa(contorno=[(0, 0), (150, 0), (150, 123), (0, 123)], espessura=4.8, centrada=False,
+               furos=[{"x": 35, "y": 25, "largura": 25, "altura": 13}, {"x": 115, "y": 85, "diametro": 13}])
+    v, f = geometria.malha_chapa(ch)
+    assert len(v) > 8 and all(len(face) >= 3 for face in f)
+    # a área desconta o rasgo (estádio) e o furo redondo
+    import math
+    esperado = 150 * 123 - ((25 - 13) * 13 + math.pi * 6.5 ** 2) - math.pi * 6.5 ** 2
+    assert abs(ch.area - esperado) < 1e-6
+    ob = geometria.contorno_oblongo(0, 0, 25, 13)
+    xs = [p[0] for p in ob]
+    ys = [p[1] for p in ob]
+    assert abs(max(xs) - 12.5) < 1e-6 and abs(min(xs) + 12.5) < 1e-6 and abs(max(ys) - 6.5) < 1e-6
+
+
 if __name__ == "__main__":
     falhas = 0
     for nome, fn in sorted(globals().items()):

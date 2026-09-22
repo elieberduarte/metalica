@@ -65,6 +65,7 @@
   <a href="#cortes">Cortes e vistas 2D</a>
   <a href="#cad">CAD 2D: ferramentas e atalhos</a>
   <a href="#detalhamento">Detalhamento de peças e conjuntos</a>
+  <a href="#bloco">Detalhe ligado ao 3D (chapa paramétrica)</a>
   <a href="#tercas">Regra da furação das terças</a>
   <a href="#materiais">Lista de materiais</a>
   <a href="#pranchas">Pranchas, PDF e DXF</a>
@@ -90,7 +91,7 @@
 <ul>
   <li><b>Corte de uma tesoura:</b> ferramenta <b>Seção</b> (<kbd>X</kbd>), clique numa face ou tecle <kbd>Y</kbd> para um plano transversal, digite o afastamento, e tecle <kbd>G</kbd>: o corte vira um desenho 2D e o CAD abre nele. O que o plano atravessa sai hachurado; o que está além, até a profundidade escolhida, sai projetado.</li>
   <li><b>Vistas da seleção:</b> menu <b>Desenho 2D → Vistas da seleção…</b> com peças selecionadas gera frente, planta e laterais só delas. Sem seleção, gera do modelo inteiro (pesado: use para prancha de conjunto).</li>
-  <li><b>Desenhos salvos:</b> o mesmo menu lista os desenhos do projeto; nada precisa ser gerado de novo para abrir. O <b>×</b> ao lado de cada um e <b>Excluir desenhos…</b> (também no CAD, menu Desenho) mandam desenhos para a pasta <code>.lixeira</code> dos dados, para gerar tudo de novo; "Marcar detalhamentos" seleciona os do detalhamento de uma vez.</li>
+  <li><b>Desenhos salvos:</b> o mesmo menu lista os desenhos do projeto (e o menu Desenho do CAD também, para navegar entre os detalhes); nada precisa ser gerado de novo para abrir. O <b>×</b> ao lado de cada um e <b>Excluir desenhos…</b> (também no CAD, menu Desenho) mandam desenhos para a pasta <code>.lixeira</code> dos dados, para gerar tudo de novo; "Marcar detalhamentos" seleciona os do detalhamento de uma vez.</li>
 </ul>
 
 <h2 id="cad">CAD 2D: ferramentas e atalhos</h2>
@@ -112,6 +113,16 @@
   <li><b>Lista de materiais</b> do mesmo levantamento (romaneio, perfis, chapas, conjuntos) — veja a seção abaixo — e relatório com as ressalvas.</li>
 </ul>
 <div class="caixa info">Toda célula que o programa não conseguiu resolver diz isso no próprio desenho ("* …"): confira essas antes de mandar para a fábrica.</div>
+
+<h2 id="bloco">Detalhe de uma peça ligado ao 3D (chapa paramétrica)</h2>
+<p>No Modelo 3D, <b>duplo clique numa peça</b> abre no CAD o desenho <i>Detalhe – P77</i> só dela. Se a peça é uma chapa plana, o programa converte antes todas as chapas dessa posição em <b>chapas paramétricas</b> (contorno, espessura e furos, no lugar do sólido do IFC): é o "bloco" do AutoCAD, ligado ao modelo.</p>
+<ul>
+  <li>No detalhe, cada furo é um objeto da camada <b>FURO</b>: mova, apague ou desenhe um círculo (ou oblongo fechado) nessa camada.</li>
+  <li><b>Vistas do modelo → Aplicar furos ao modelo 3D</b> leva os furos do desenho para todas as chapas dessa posição no 3D (a peça montada espelhada recebe o espelho) e regenera o detalhe com cotas novas. A lista de materiais e os desenhos gerados depois refletem a mudança.</li>
+  <li><b>Ver no 3D</b> (painel Propriedades, ou Vistas do modelo → <i>Ver no 3D a peça selecionada</i>): abre o modelo 3D com as peças da posição (ou do conjunto) selecionadas e enquadradas, para ver onde a peça fica na estrutura. Esc limpa a seleção; Desenho 2D volta ao CAD.</li>
+  <li>Barras e perfis também abrem o detalhe pelo duplo clique, mas sem furos editáveis por enquanto.</li>
+</ul>
+<div class="caixa info">Chapa cujo nome traz o tamanho (PLATE 150x123x5) mas cuja malha mede décimos a menos (122,5) sai com a dimensão nominal (123): a diferença até 1 mm é tratada como arredondamento do modelo; acima disso a medida da malha fica e a célula avisa.</div>
 
 <h2 id="tercas">Regra da furação das terças</h2>
 <p>O IFC traz a furação do projetista; a máquina da fábrica fura na vertical com passo fixo. Com a opção ligada (padrão), o detalhamento refaz os grupos de furos das terças:</p>

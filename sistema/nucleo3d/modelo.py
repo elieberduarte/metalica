@@ -182,7 +182,17 @@ class Chapa(Entidade):
         s = sum(p[i][0] * p[(i + 1) % len(p)][1] - p[(i + 1) % len(p)][0] * p[i][1]
                 for i in range(len(p)))
         bruta = abs(s) / 2
-        return bruta - sum(math.pi * (f.get("diametro", 0) / 2) ** 2 for f in self.furos)
+        furos = 0.0
+        for f in self.furos:
+            d = float(f.get("diametro", 0) or 0)
+            if d > 0:
+                furos += math.pi * (d / 2) ** 2
+            else:
+                larg, alt = float(f.get("largura", 0) or 0), float(f.get("altura", 0) or 0)
+                if larg > 0 and alt > 0:
+                    a, b = max(larg, alt), min(larg, alt)
+                    furos += (a - b) * b + math.pi * (b / 2) ** 2
+        return bruta - furos
 
     def tipo_ifc(self) -> str:
         return "IfcPlate"

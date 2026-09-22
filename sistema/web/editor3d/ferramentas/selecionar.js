@@ -65,6 +65,13 @@ export class Selecionar extends Ferramenta {
   onDuploClique(p, ev) {
     const alvo = this.editor.selecao.sob(p.tela[0], p.tela[1]);
     if (!alvo) { this.editor.selecao.tudo(); return; }
+    // peça com marca de posição (IFC) num projeto: o duplo clique abre o detalhe dela
+    // no CAD; Shift mantém a seleção dos semelhantes
+    const marcas = (alvo.atributos && alvo.atributos.marcas) || {};
+    if (marcas.posicao && this.editor.projeto && !(ev && ev.shiftKey) && this.editor.abrirDetalheDaPeca) {
+      this.editor.abrirDetalheDaPeca(alvo);
+      return;
+    }
     this.editor.selecao.semelhantes(alvo.id, !!(ev && ev.shiftKey));
     this.editor.dica('Selecionados os objetos semelhantes.');
   }

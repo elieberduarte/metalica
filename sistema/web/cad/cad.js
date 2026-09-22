@@ -244,6 +244,28 @@ class CAD {
   alternarSelecao(id) { const s = new Set(this.tela.selecao); s.has(id) ? s.delete(id) : s.add(id); this.selecionar([...s]); }
   _podarSelecao() { const antes = this.tela.selecao.size; this.tela.selecao = new Set([...this.tela.selecao].filter(id => this.doc.get(id))); if (this.tela.selecao.size !== antes) this._agendarPaineis('props'); }
   apagarSelecao() { if (this.tela.selecao.size) this.executar(new ComandoRemover([...this.tela.selecao])); }
+  /**
+   * Abre o modelo 3D com as peças do que está selecionado em destaque: a posição
+   * (P77 → as 18 chapas) ou, sem posição, o conjunto; sem seleção, a posição do
+   * desenho de detalhe aberto. O editor recebe `destacar=posicao:P77` na URL.
+   */
+  verNo3D() {
+    if (!this.projeto) { this.aviso('Ver no 3D precisa de um projeto aberto.', 'atencao'); return; }
+    const ents = [...this.tela.selecao].map(id => this.doc.get(id)).filter(Boolean);
+    const posicoes = [...new Set(ents.map(e => (e.atributos || {}).posicao).filter(Boolean))];
+    const conjuntos = [...new Set(ents.map(e => (e.atributos || {}).conjunto).filter(Boolean))];
+    let alvo = null;
+    if (posicoes.length) alvo = 'posicao:' + posicoes.slice(0, 20).join(',');
+    else if (conjuntos.length) alvo = 'conjunto:' + conjuntos.slice(0, 20).join(',');
+    else {
+      const meta = (this.doc.metadados || {}).detalhe_posicao;
+      if (meta && meta.marca) alvo = 'posicao:' + meta.marca;
+    }
+    if (!alvo) { this.aviso('Selecione uma peça do detalhamento (título, contorno ou furo) para vê-la no 3D.', 'atencao'); return; }
+    const ir = () => { location.href = `/editor?projeto=${encodeURIComponent(this.projeto)}&destacar=${encodeURIComponent(alvo)}`; };
+    if (this.doc.tamanho && this.nomeDesenho) this.salvar({ avisar: false }).then(ir, ir); else ir();
+  }
+
   selecionarMesmaPeca() {
     const origens = new Set([...this.tela.selecao].map(id => (this.doc.get(id).atributos || {}).origem).filter(Boolean));
     if (!origens.size) { this.dica('Selecione um objeto que veio do modelo 3D.'); return; }
@@ -358,6 +380,8 @@ class CAD {
       abrir: () => this.dialogoAbrir(),
       novo: () => this.dialogoNovo(),
       'excluir-desenhos': () => this.dialogoExcluir(),
+      'aplicar-furos': () => this.aplicarFuros(),
+      'ver-3d': () => this.verNo3D(),
       salvar: () => this.salvar(),
       'exportar-dxf': () => this.exportarDXF(),
       'exportar-pdf': () => this.exportarPDF(),
@@ -383,7 +407,11 @@ class CAD {
     };
     document.addEventListener('click', (ev) => {
       const botaoMenu = ev.target.closest('.menu-botao');
-      if (botaoMenu) { const m = botaoMenu.parentElement; const aberto = m.classList.contains('aberto'); this._fecharMenus(); if (!aberto) m.classList.add('aberto'); return; }
+      if (botaoMenu) { const m = botaoMenu.parentElement; const aberto = m.classList.contains('aberto'); this._fecharMenus(); if (!aberto) { m.classList.add('aberto'); if (m.dataset.menu === 'desenho') this._listarDesenhosNoMenu(); } return; }
+      const excluir = ev.target.closest('[data-excluir]');
+      if (excluir) { ev.stopPropagation(); this._fecharMenus(); this._excluirUmDesenho(excluir.dataset.excluir, excluir.dataset.titulo); return; }
+      const salvo = ev.target.closest('[data-desenho]');
+      if (salvo) { this._fecharMenus(); this.abrirDesenho(salvo.dataset.desenho); return; }
       const item = ev.target.closest('[data-acao], [data-vista]');
       if (item) {
         this._fecharMenus();
@@ -518,6 +546,7 @@ class CAD {
     const botoes = el('div', { class: 'botoes' },
       el('button', { type: 'button', texto: 'Zoom', onclick: () => { const c = this.doc.caixa(this.tela.selecao); if (c) this.tela.enquadrar(c, 0.25); } }),
       el('button', { type: 'button', texto: 'Mesma peça', onclick: () => this.selecionarMesmaPeca() }),
+      el('button', { type: 'button', texto: 'Ver no 3D', title: 'Abre o modelo 3D com as peças desta posição (ou conjunto) selecionadas e enquadradas', onclick: () => this.verNo3D() }),
       el('button', { type: 'button', texto: 'Apagar', onclick: () => this.apagarSelecao() }));
     g.append(botoes);
     raiz.append(g);
@@ -627,6 +656,60 @@ class CAD {
     }
     await this.dialogo({ titulo: 'Abrir desenho do projeto', corpo: caixa, ok: null });
     if (escolhido) await this.abrirDesenho(escolhido);
+  }
+
+  /** Desenhos salvos do projeto dentro do menu Desenho: abrir com um clique, × exclui. */
+  async _listarDesenhosNoMenu() {
+    const bloco = $('#desenhos-salvos');
+    if (!bloco) return;
+    if (!this.projeto) { bloco.replaceChildren(); return; }
+    bloco.replaceChildren(el('div', { class: 'menu-nota', texto: 'Desenhos salvos…' }));
+    const lista = await this._listaDesenhos();
+    if (!lista.length) { bloco.replaceChildren(el('div', { class: 'menu-nota', texto: 'Nenhum desenho salvo neste projeto ainda.' })); return; }
+    bloco.replaceChildren(el('div', { class: 'menu-nota', texto: `Desenhos salvos (${lista.length}):` }),
+      ...lista.map(d => el('div', { class: 'desenho-salvo' + (d.nome === this.nomeDesenho ? ' atual' : '') },
+        el('button', { type: 'button', 'data-desenho': d.nome, title: `${(d.vistas || []).join(', ') || 'sem vistas'} · ${d.alterado ? d.alterado.replace('T', ' ').slice(0, 16) : ''}` },
+          el('span', { texto: d.titulo || d.nome }),
+          el('small', { texto: `${numero(d.entidades || 0)} objetos · 1:${d.escala || '?'}` })),
+        el('button', { type: 'button', class: 'excluir', 'data-excluir': d.nome, 'data-titulo': d.titulo || d.nome, title: 'Excluir este desenho (vai para a lixeira)', texto: '×' }))));
+  }
+
+  async _excluirUmDesenho(nome, titulo) {
+    const corpo = el('div', {}, el('p', {}, `Excluir o desenho "${titulo || nome}"? Ele vai para a pasta .lixeira dos dados.`));
+    if (await this.dialogo({ titulo: 'Excluir desenho', corpo, ok: 'Excluir' }) !== 'ok') return;
+    try {
+      await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(nome)}/excluir`, {});
+      this.aviso(`Desenho "${titulo || nome}" excluído.`, 'info', 6000);
+      if (nome === this.nomeDesenho) {
+        this._autosavePendente = false;
+        if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+        const resto = await this._listaDesenhos();
+        if (resto.length) await this.abrirDesenho(resto[0].nome);
+        else { this.nomeDesenho = null; this.carregar({ nome: 'Desenho', escala: 20 }); }
+      }
+    } catch (e) { this.aviso(`Não foi possível excluir: ${e.message}`, 'erro'); }
+  }
+
+  /**
+   * Furos do detalhe de uma chapa (camada FURO) → chapas paramétricas da posição no
+   * modelo 3D. O servidor regrava o modelo e regenera o detalhe, que é reaberto.
+   */
+  async aplicarFuros() {
+    if (!this.projeto || !this.nomeDesenho) { this.aviso('Abra o detalhe de uma peça (duplo clique nela no modelo 3D).', 'atencao'); return; }
+    const meta = (this.doc.metadados || {}).detalhe_posicao;
+    if (!meta || !meta.marca) { this.aviso('Este desenho não é o detalhe de uma posição: no modelo 3D, dê duplo clique na peça.', 'atencao'); return; }
+    if (!meta.editavel) { this.aviso(`Os furos de ${meta.marca} não são editáveis: só chapa plana (convertida em chapa paramétrica) tem esse vínculo.`, 'atencao'); return; }
+    const furos = [...this.doc.entidades.values()].filter(e => e.camada === 'FURO' && (e.tipo === 'circulo' || (e.tipo === 'polilinha' && e.fechada)));
+    const corpo = el('div', {}, el('p', {}, `Levar ${furos.length} furo(s) da camada FURO deste desenho para as ${meta.pecas ? meta.pecas.length : ''} chapa(s) ${meta.marca} do modelo 3D? O detalhe é regenerado em seguida.`));
+    if (await this.dialogo({ titulo: 'Aplicar furos ao modelo 3D', corpo, ok: 'Aplicar' }) !== 'ok') return;
+    this.dica('Aplicando os furos no modelo…');
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/aplicar-furos`, { desenho: this.doc.paraJSON() });
+      this._autosavePendente = false;
+      if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+      await this.abrirDesenho(r.nome);
+      this.aviso(`${r.furos} furo(s) aplicados em ${r.chapas} chapa(s) ${r.marca} do modelo 3D; detalhe regenerado.`, 'info', 10000);
+    } catch (e) { this.aviso(`Não foi possível aplicar os furos: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
   async dialogoExcluir() {

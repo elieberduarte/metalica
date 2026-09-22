@@ -543,15 +543,23 @@ export class Cena {
     const contorno = ch.contorno || [];
     if (contorno.length < 3) return { geom: null, matriz: null };
     const chave = `chapa|${ch.espessura}|${contorno.map(p => p.join()).join(';')}|` +
-                  (ch.furos || []).map(f => `${f.x},${f.y},${f.diametro}`).join(';');
+                  (ch.furos || []).map(f => `${f.x},${f.y},${f.diametro || ''},${f.largura || ''},${f.altura || ''},${f.angulo || ''}`).join(';');
     let geom = this.cacheGeometria.get(chave);
     if (!geom) {
       const forma = new THREE.Shape(contorno.map(p => new THREE.Vector2(p[0], p[1])));
       for (const f of (ch.furos || [])) {
         const r = (f.diametro || 0) / 2;
-        if (r <= 0) continue;
         const furo = new THREE.Path();
-        furo.absarc(f.x || 0, f.y || 0, r, 0, Math.PI * 2, true);
+        if (r > 0) {
+          furo.absarc(f.x || 0, f.y || 0, r, 0, Math.PI * 2, true);
+        } else if ((f.largura || 0) > 0 && (f.altura || 0) > 0) {
+          // oblongo: dois semicírculos ligados por retas (o Path liga os arcos sozinho)
+          let larg = f.largura, alt = f.altura, ang = (f.angulo || 0) * Math.PI / 180;
+          if (alt > larg) { [larg, alt] = [alt, larg]; ang += Math.PI / 2; }
+          const rr = alt / 2, m = (larg - alt) / 2, ca = Math.cos(ang), sa = Math.sin(ang), x0 = f.x || 0, y0 = f.y || 0;
+          furo.absarc(x0 + m * ca, y0 + m * sa, rr, ang + Math.PI / 2, ang - Math.PI / 2, true);
+          furo.absarc(x0 - m * ca, y0 - m * sa, rr, ang - Math.PI / 2, ang - 3 * Math.PI / 2, true);
+        } else continue;
         forma.holes.push(furo);
       }
       geom = extrudar(forma, ch.espessura || 1);
