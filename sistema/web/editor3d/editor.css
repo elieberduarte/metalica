@@ -692,6 +692,20 @@ dialog .botao:hover { background: var(--azul-fraco); }
 dialog .botao.principal { background: var(--azul); border-color: var(--azul); color: #fff; }
 dialog .botao.principal:hover { background: var(--azul2); }
 dialog .campos { grid-template-columns: 160px 1fr; }
+/* botões sem classe dentro do diálogo (marcar todos, desmarcar…) e seletores fora de
+   .campos (Colorir por): mesmos campos do tema, e não o branco do navegador */
+dialog #dialogo-corpo button:not(.botao):not(.discreto) {
+  background: var(--painel); border: 1px solid var(--borda-forte); color: var(--texto);
+  border-radius: var(--raio-p); padding: 3px 9px; cursor: pointer; font-size: 12px;
+}
+dialog #dialogo-corpo button:not(.botao):not(.discreto):hover { background: var(--azul-fraco); }
+.painel select, .cor-por > select, #dialogo-corpo select, #dialogo-corpo input:not([type="checkbox"]):not([type="radio"]) {
+  background: var(--campo-fundo); border: 1px solid var(--campo-borda); color: var(--texto);
+  border-radius: var(--raio-p); padding: 3px 6px;
+}
+.painel select:focus, .cor-por > select:focus, #dialogo-corpo select:focus, #dialogo-corpo input:focus {
+  outline: 0; border-color: var(--campo-foco);
+}
 dialog .lista-modelos { display: flex; flex-direction: column; gap: 2px; }
 dialog .lista-modelos button {
   display: flex; justify-content: space-between; gap: 12px; width: 100%;
