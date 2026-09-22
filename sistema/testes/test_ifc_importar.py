@@ -1154,3 +1154,12 @@ def test_modelo_perto_da_origem_nao_e_mexido():
     from ifc.importar import importar
     doc = importar(os.path.join(DADOS, "estrutura_mm.ifc"))
     assert "deslocamento_mm" not in doc.metadados
+
+
+def test_pilar_pela_geometria():
+    """Montante curto e diagonal deitada não são pilares; a coluna de 3 m em pé é."""
+    from ifc.importar import pilar_pela_geometria
+    caixa = lambda dx, dy, dz: [(x, y, z) for x in (0, dx) for y in (0, dy) for z in (0, dz)]
+    assert pilar_pela_geometria(caixa(150, 150, 3000))
+    assert not pilar_pela_geometria(caixa(88, 40, 700))          # montante
+    assert not pilar_pela_geometria(caixa(2500, 40, 800))        # diagonal deitada

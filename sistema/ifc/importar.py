@@ -2131,7 +2131,23 @@ class Importador:
             "limitacoes": LIMITACOES,
             "tempo_s": round(time.time() - inicio, 3),
         }
+        self._pilares_pela_geometria()
         return self.doc
+
+    def _pilares_pela_geometria(self):
+        """IfcColumn não quer dizer pilar: o TecnoMETAL exporta montantes e diagonais de
+        tesoura como IfcColumn. O que não está em pé e com mais de 1,5 m vai para Vigas."""
+        movidos = 0
+        for e in self.doc.entidades.values():
+            if getattr(e, "camada", "") != "Pilares" or not getattr(e, "vertices", None):
+                continue
+            if not pilar_pela_geometria(e.vertices):
+                e.camada = "Vigas"
+                movidos += 1
+        if movidos:
+            if "Vigas" not in self.doc.camadas:
+                self.doc.camadas["Vigas"] = Camada(nome="Vigas", cor=CAMADAS_SEMANTICAS["Vigas"])
+            self.avisos.append("%d IfcColumn deitadas ou curtas (montantes e diagonais de tesoura) foram para a camada Vigas" % movidos)
 
     def _percorrer_espacial(self, no: Entidade, camada: str, nivel: int):
         if nivel > 20 or no.id in self._vistos:
@@ -2261,6 +2277,21 @@ CAMADAS_SEMANTICAS = {
 _RE_TELHA = re.compile(r"TELHA|TP\s*\d{2}|TRAPEZ|ONDUL", re.I)
 _RE_PARAFUSO = re.compile(r"\bBOLT\b|PARAF|\bNUT\b|PORCA|ARRUELA|WASHER", re.I)
 _RE_TIRANTE = re.compile(r"FE\s*RED|BARRA\s*ROSC|REDOND|VERG|TIRANTE", re.I)
+
+
+#: Pilar de verdade: pelo menos isto (mm) de altura, e mais alto que largo.
+ALTURA_MINIMA_PILAR = 1500.0
+
+
+def pilar_pela_geometria(vertices) -> bool:
+    """Está em pé (a extensão vertical manda) e tem altura de pilar? Montante de tesoura
+    é vertical mas curto; diagonal é comprida mas deitada: nenhum dos dois é pilar."""
+    xs = [v[0] for v in vertices]
+    ys = [v[1] for v in vertices]
+    zs = [v[2] for v in vertices]
+    dz = max(zs) - min(zs)
+    dh = max(max(xs) - min(xs), max(ys) - min(ys))
+    return dz >= ALTURA_MINIMA_PILAR and dz >= 0.7 * dh
 
 
 def camada_semantica(tipo: str, nome: str) -> str:

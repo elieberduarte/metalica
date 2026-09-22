@@ -645,6 +645,7 @@ def _gravar_nomes_producao(s: str, nomes: dict):
 
 
 def _nomes_no_modelo(doc, nomes: dict) -> int:
+    from ifc.importar import pilar_pela_geometria
     """Escreve marcas.nome / marcas.nome_conjunto nas peças do modelo 3D (a busca do
     editor acha "S.T.1"). Devolve quantas mudaram."""
     ifc = nomes.get("ifc") or {}
@@ -658,6 +659,11 @@ def _nomes_no_modelo(doc, nomes: dict) -> int:
         novo_c = ifc_conj.get(str(m.get("conjunto") or "")) or ""
         if (m.get("nome") or "") != novo or (m.get("nome_conjunto") or "") != novo_c:
             m["nome"], m["nome_conjunto"] = novo, novo_c
+            n += 1
+        # modelos importados antes da 0.6.13: montantes e diagonais (IfcColumn do
+        # TecnoMETAL) estavam na camada Pilares; a regra da geometria os leva a Vigas
+        if getattr(e, "camada", "") == "Pilares" and getattr(e, "vertices", None) and not pilar_pela_geometria(e.vertices):
+            e.camada = "Vigas"
             n += 1
     return n
 
