@@ -142,6 +142,32 @@ biapoiada, e o diagrama delas aparece sobre uma **peça típica** de cada elemen
   perfil ou tipo IFC, com legenda: clique num grupo seleciona as peças dele, duplo
   clique enquadra. Peças sem a marca ficam em cinza.
 
+## CAD 2D: cortes e vistas do modelo para as pranchas
+
+O caminho de produção a partir de um modelo importado: no editor 3D, posicione o plano
+com a ferramenta **Seção (X)** e tecle **G** (ou menu Desenho 2D → Gerar desenho do corte
+atual). O servidor corta o modelo pelo plano e abre o **CAD 2D** (`/cad`) no desenho
+gerado, dentro do projeto (`<projeto>/desenhos-2d/`).
+
+- **Motor de vistas** (`nucleo2d/vistas.py`): o que o plano atravessa vira a seção da
+  peça, hachurada e rotulada com a marca de posição; o que está além, até a
+  *profundidade de vista*, sai projetado (silhueta e arestas vivas). Vistas padrão de
+  frente, topo e laterais, do modelo inteiro ou só da seleção. Cada linha sabe de que
+  peça 3D veio, e o CAD seleciona "tudo da mesma peça". Linhas ocultas não são removidas.
+- **Documento 2D** (`nucleo2d/desenho.py`): camadas com tipo de linha e espessura;
+  linha, polilinha, círculo, arco, texto, cota, hachura e chamada. Milímetro no modelo;
+  texto, cota e hachura em mm de papel, multiplicados pela **escala do desenho** ao
+  desenhar e ao exportar, então mudar a escala redimensiona a anotação toda.
+- **CAD** (`web/cad/`): canvas 2D com zoom na roda e pan no botão direito; snap de
+  extremidade, meio, centro, interseção, perpendicular e sobre a linha; orto com Shift;
+  ferramentas de linha (L), polilinha (P), retângulo (R), círculo (C), arco (A), texto
+  (T), cota (D, com H/V/A para o modo), chamada (H), hachura (G), mover (M), copiar (O),
+  girar (Q), espelhar (I), paralela (F), aparar (X), apagar (E) e medir (U); medida
+  digitada (`1500`, `1,5m`, `1500<30`, `2000;1000`); desfazer/refazer; painéis de
+  propriedades, camadas, snap e vistas. O desenho é gravado sozinho no projeto.
+- **Exportar DXF** gera o arquivo em `desenhos-2d/` com as camadas da produção (ACO,
+  ACO-FINO, HACHURA, COTA, TEXTO…), na escala do desenho.
+
 ## Detalhamento de peças a partir de um IFC
 
 Para produção a partir de um modelo de detalhamento de terceiros (TecnoMETAL, Tekla,

@@ -15,6 +15,14 @@ from nucleo2d.desenho import (Desenho, Linha, Polilinha, Circulo, Arco, Texto, C
 from nucleo2d.vistas import Vista, gerar, vista_padrao                # noqa: E402
 
 
+def _projecao(d):
+    return [e for e in d.entidades.values() if e.camada in ("VISTA", "VISTA-FINA")]
+
+
+def _secoes(d):
+    return [e for e in d.por_tipo("polilinha") if e.camada == "CORTE"]
+
+
 def _cubo(x0, y0, z0, a, nome="C", camada="Estrutura"):
     v = [(x0, y0, z0), (x0 + a, y0, z0), (x0 + a, y0 + a, z0), (x0, y0 + a, z0),
          (x0, y0, z0 + a), (x0 + a, y0, z0 + a), (x0 + a, y0 + a, z0 + a), (x0, y0 + a, z0 + a)]
@@ -86,8 +94,8 @@ def test_corte_de_um_cubo_da_secao_quadrada_hachurada_e_rotulada():
     doc = Documento(nome="t")
     doc.add(_cubo(0, 0, 0, 1000, nome="Bloco"))
     d = gerar(doc, Vista(origem=(0, 500, 0), normal=(0, 1, 0)))
-    cortes = d.por_tipo("polilinha")
-    assert len(cortes) == 1 and cortes[0].camada == "CORTE" and cortes[0].fechada
+    cortes = _secoes(d)
+    assert len(cortes) == 1 and cortes[0].fechada
     pts = cortes[0].vertices
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
@@ -97,9 +105,10 @@ def test_corte_de_um_cubo_da_secao_quadrada_hachurada_e_rotulada():
     rot = d.por_tipo("texto")
     assert len(rot) == 1 and rot[0].texto == "Bloco" and rot[0].atributos.get("rotulo")
     assert cortes[0].atributos["origem"] and cortes[0].atributos["nome"] == "Bloco"
-    # a metade removida (y < 500) não projeta nada: só a seção e as 4 arestas da face de trás
-    fortes = d.por_tipo("linha")
-    assert all(l.camada in ("VISTA", "VISTA-FINA") for l in fortes)
+    # a metade removida (y < 500) não projeta nada: só a seção e a face de trás,
+    # encadeada numa polilinha fechada de 4 lados
+    proj = _projecao(d)
+    assert len(proj) == 1 and proj[0].tipo == "polilinha" and proj[0].fechada and len(proj[0].vertices) == 4
     assert d.vistas[0]["pecas_cortadas"] == 1
 
 
@@ -109,16 +118,16 @@ def test_projecao_de_frente_de_um_cubo_e_profundidade():
     doc.add(_cubo(0, 5000, 0, 500, nome="B"))                   # 5 m atrás
     frente = vista_padrao("frente", doc.caixa())
     d = gerar(doc, frente)
-    nomes = {l.atributos["nome"] for l in d.por_tipo("linha")}
-    assert nomes == {"A", "B"} and not d.por_tipo("polilinha")     # sem corte, sem seção
-    # 4 arestas de silhueta do cubo A visto de frente (o quadrado), sem arestas vivas
-    # duplicadas: as 4 laterais são silhueta, as internas não aparecem
-    quad = [l for l in d.por_tipo("linha") if l.atributos["nome"] == "A" and l.camada == "VISTA"]
-    assert len(quad) == 4
+    nomes = {l.atributos["nome"] for l in _projecao(d)}
+    assert nomes == {"A", "B"} and not _secoes(d)                # sem corte, sem seção
+    # a silhueta do cubo A visto de frente é um quadrado: uma polilinha fechada de 4
+    # vértices (as arestas internas não aparecem)
+    quad = [l for l in _projecao(d) if l.atributos["nome"] == "A" and l.camada == "VISTA"]
+    assert len(quad) == 1 and quad[0].tipo == "polilinha" and quad[0].fechada and len(quad[0].vertices) == 4
     # com profundidade de 2 m, B fica de fora
     frente.profundidade = 2000
     d2 = gerar(doc, frente)
-    assert {l.atributos["nome"] for l in d2.por_tipo("linha")} == {"A"}
+    assert {l.atributos["nome"] for l in _projecao(d2)} == {"A"}
 
 
 def test_corte_aparado_na_profundidade_e_lado_removido():
@@ -145,7 +154,7 @@ def test_vista_de_barra_e_chapa_parametricas():
                   furos=[{"x": 0, "y": 0, "diametro": 20}]))
     # corte horizontal a 1,5 m: a seção do W (um I) com a alma e as mesas
     d = gerar(doc, Vista(origem=(0, 0, 1500), normal=(0, 0, -1), acima=(0, 1, 0)))
-    secoes = d.por_tipo("polilinha")
+    secoes = _secoes(d)
     assert len(secoes) == 1 and secoes[0].atributos["perfil"] == "W 310×38,7"
     pts = secoes[0].vertices
     assert len(pts) >= 12                                          # o I tem 12 cantos
@@ -156,7 +165,7 @@ def test_vista_de_barra_e_chapa_parametricas():
     # vista de topo: a chapa aparece com o furo
     topo = vista_padrao("topo", doc.caixa())
     d2 = gerar(doc, topo)
-    assert any(l.atributos["nome"] == "CH1" for l in d2.por_tipo("linha"))
+    assert any(l.atributos["nome"] == "CH1" for l in _projecao(d2))
 
 
 def test_entidades_escolhidas_e_camada_oculta():
@@ -165,10 +174,10 @@ def test_entidades_escolhidas_e_camada_oculta():
     b = doc.add(_cubo(3000, 0, 0, 1000, nome="B", camada="Telhas"))
     frente = vista_padrao("frente", doc.caixa())
     frente.entidades = [a.id]
-    assert {l.atributos["nome"] for l in gerar(doc, frente).por_tipo("linha")} == {"A"}
+    assert {l.atributos["nome"] for l in _projecao(gerar(doc, frente))} == {"A"}
     frente.entidades = None
     doc.camadas["Telhas"].visivel = False
-    assert {l.atributos["nome"] for l in gerar(doc, frente).por_tipo("linha")} == {"A"}
+    assert {l.atributos["nome"] for l in _projecao(gerar(doc, frente))} == {"A"}
 
 
 def test_definicao_de_vista_serializa():

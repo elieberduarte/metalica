@@ -225,6 +225,59 @@ def _encadear(segs) -> List[List[Ponto2]]:
     return lacos
 
 
+def _encadear_abertos(segs) -> List[List[Ponto2]]:
+    """Segmentos soltos → cadeias de pontos, fechadas ou não. Cada extremidade só liga a
+    uma vizinha (nó com três arestas quebra a cadeia), para a polilinha não zigue-zaguear."""
+    chave = lambda p: (round(p[0], 2), round(p[1], 2))    # noqa: E731
+    adj = collections.defaultdict(list)
+    for k, (a, b) in enumerate(segs):
+        if chave(a) == chave(b):
+            continue
+        adj[chave(a)].append((k, b))
+        adj[chave(b)].append((k, a))
+    usados, cadeias = set(), []
+
+    def seguir(inicio, primeiro):
+        pts, atual = [inicio, primeiro], primeiro
+        while True:
+            viz = [(k, o) for k, o in adj[chave(atual)] if k not in usados]
+            if len(viz) != 1 or len(adj[chave(atual)]) != 2:
+                return pts
+            k, o = viz[0]
+            usados.add(k)
+            pts.append(o)
+            atual = o
+            if chave(o) == chave(inicio):
+                return pts
+
+    for k, (a, b) in enumerate(segs):
+        if k in usados or chave(a) == chave(b):
+            continue
+        usados.add(k)
+        frente = seguir(a, b)
+        if chave(frente[-1]) == chave(a):
+            cadeias.append(frente)
+            continue
+        tras = seguir(b, a)
+        cadeias.append(list(reversed(tras[2:])) + frente if len(tras) > 2 else frente)
+    return cadeias
+
+
+def _fundir_colineares(pts: List[Ponto2], tol: float = 0.02) -> List[Ponto2]:
+    """Remove vértices que estão sobre a reta dos vizinhos."""
+    if len(pts) < 3:
+        return pts
+    fora = [pts[0]]
+    for i in range(1, len(pts) - 1):
+        a, b, c = fora[-1], pts[i], pts[i + 1]
+        area2 = abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+        comp = math.hypot(c[0] - a[0], c[1] - a[1]) or 1.0
+        if area2 / comp > tol:
+            fora.append(b)
+    fora.append(pts[-1])
+    return fora
+
+
 def _arestas_visiveis(P, faces, normais, w_min: float, w_max: Optional[float]):
     """Silhueta e arestas vivas da malha vista ao longo de +w, restritas à faixa de
     profundidade. Aresta atravessando w_min é aparada no plano.
@@ -356,11 +409,30 @@ def gerar(doc: Documento, vista: Vista, desenho: Optional[Desenho] = None,
     des = desenho if desenho is not None else Desenho(nome=vista.nome or "Vista")
     if desenho is None:
         des.escala = escala_sugerida(larg, alt)
-    # o que está mais longe primeiro, para a ordem de desenho ajudar a leitura
-    for ent, a, b, z in sorted(finas, key=lambda t: -t[3]):
-        des.add(Linha(camada="VISTA-FINA", a=mv(a), b=mv(b), atributos=_atributos(ent)))
-    for ent, a, b, z in sorted(fortes, key=lambda t: -t[3]):
-        des.add(Linha(camada="VISTA", a=mv(a), b=mv(b), atributos=_atributos(ent)))
+    # As arestas de cada peça são encadeadas em polilinhas e os trechos colineares
+    # fundidos: uma barra redonda facetada ou uma peça curva vira poucas polilinhas em
+    # vez de centenas de linhas soltas, e o desenho fica leve para editar. A ordem vai
+    # do mais distante ao mais próximo, para a leitura.
+    for lista, camada in ((finas, "VISTA-FINA"), (fortes, "VISTA")):
+        por_peca: Dict[int, list] = {}
+        ordem: List[object] = []
+        for ent, a, b, z in lista:
+            if id(ent) not in por_peca:
+                por_peca[id(ent)] = []
+                ordem.append(ent)
+            por_peca[id(ent)].append((a, b, z))
+        ordem.sort(key=lambda e: -max(z for _, _, z in por_peca[id(e)]))
+        for ent in ordem:
+            atr = _atributos(ent)
+            for cadeia in _encadear_abertos([(a, b) for a, b, _ in por_peca[id(ent)]]):
+                pts = [mv(p) for p in _fundir_colineares(cadeia)]
+                if len(pts) == 2:
+                    des.add(Linha(camada=camada, a=pts[0], b=pts[1], atributos=dict(atr)))
+                elif len(pts) > 2:
+                    fechada = math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1]) < 0.05
+                    if fechada:
+                        pts = pts[:-1]
+                    des.add(Polilinha(camada=camada, vertices=pts, fechada=fechada, atributos=dict(atr)))
     for ent, lacos in secoes:
         atr = _atributos(ent)
         lacos = sorted(lacos, key=lambda l: -abs(_area2(l)))
