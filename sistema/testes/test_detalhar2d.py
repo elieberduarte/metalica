@@ -695,3 +695,39 @@ def test_desenho_completo():
     # só o completo, sem os grupos: sai o mesmo conteúdo
     r2 = det.detalhar(doc, grupos=["completo"], regra_tercas=False)
     assert set(r2["desenhos"]) == {"completo"} and "P1" in r2["desenhos"]["completo"].metadados["detalhamento"]["editaveis"]
+
+
+
+def test_furos_de_barra_editaveis():
+    """Detalhe da terça M13 com os furos da alma editáveis; mover um furo 20 mm e aplicar
+    guarda a furação como ajuste e move o furo na malha 3D; o detalhe regenerado mostra
+    o furo no lugar novo."""
+    import math
+    from nucleo2d.desenho import Circulo, Polilinha
+    doc = _modelo_real()
+    d, pos = det.detalhar_posicao(doc, "M13")
+    meta = d.metadados["detalhe_posicao"]
+    assert meta["editavel"] and meta["classe"] == "barra"
+    furos = [e for e in d.entidades.values() if e.camada == "FURO" and (e.atributos or {}).get("furo") is not None]
+    assert len(furos) == len(meta["furos"]) >= 4
+    alvo = furos[0]
+    if isinstance(alvo, Circulo):
+        antes = alvo.centro[0]
+        alvo.centro = (alvo.centro[0] + 20.0, alvo.centro[1])
+    else:
+        antes = (min(p[0] for p in alvo.vertices) + max(p[0] for p in alvo.vertices)) / 2
+        alvo.vertices = [(x + 20.0, y) for x, y in alvo.vertices]
+    ajustes = {}
+    r = det.aplicar_furos_de_barra(doc, "M13", det.furos_do_desenho(d), ajustes)
+    assert r["furos"] == len(meta["furos"]) and "M13" in ajustes and r["barras3d"]["barras"] >= 1
+    assert any(abs(f["x"] - round(antes + 20.0)) < 1.0 for f in ajustes["M13"]["furos"])
+    # a malha mudou: a análise da primeira peça M13 mede o furo no lugar novo
+    e = next(x for x in doc.entidades.values() if isinstance(x, Solido) and det._marcas(x).get("posicao") == "M13")
+    p2 = det._posicao_bruta(e, "M13")
+    p2.tipo_ifc = det._tipo_ifc(e)
+    det.analisar(p2)
+    assert any(abs(f.x - (antes + 20.0)) < 1.5 for f in p2.furos if f.vista == "frente")
+    d2, _ = det.detalhar_posicao(doc, "M13", ajustes=ajustes)
+    xs = [e.centro[0] if isinstance(e, Circulo) else (min(p[0] for p in e.vertices) + max(p[0] for p in e.vertices)) / 2
+          for e in d2.entidades.values() if e.camada == "FURO"]
+    assert any(abs(x - (antes + 20.0)) < 1.0 for x in xs)

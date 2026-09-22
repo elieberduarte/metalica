@@ -316,6 +316,12 @@ malha atrás do símbolo. As **cotas dos furos** das células saem sempre: trech
 número (35 mm da ponta em 1:25) vai para uma segunda linha alternada (`cadeia_h` devolve "dupla" e
 a total sobe uma linha).
 
+**Furos das barras editáveis** (`aplicar_furos_de_barra`): a célula de uma barra (detalhe pelo duplo
+clique ou desenho geral) traz os furos da alma como entidades FURO; "Aplicar furos" guarda a furação
+nova em `ajustes-furos.json` (é o que o detalhamento seguinte usa) e move os furos na malha 3D com
+`aplicar_furos_nas_barras` (até 300 mm por furo; furo novo ou apagado vale só no desenho). Os furos da
+mesa (vista de topo) continuam os da malha. `_origem_da_celula` dá o canto da célula sem contorno fechado.
+
 **Parafusos nos detalhes** (`parafusos_da_posicao`): os fixadores do IFC cujo eixo atravessa um furo da
 peça (uma instância) são contados por rosca × comprimento — "parafusos: 4x M12 x 35" no título da
 célula, coluna "Parafusos" na lista de materiais, no romaneio e no HTML/PDF; fixador sem tamanho no

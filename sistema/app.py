@@ -585,6 +585,15 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
             barras3d.update(r3)
             g.salvar_modelo(s, doc.dict())
         return sorted(vinc)
+    def aplicar_em_barra(marca_, furos_):
+        # barra (terça, diagonal…): a furação nova fica como ajuste do projeto e os furos
+        # da malha 3D são movidos, furo a furo; furo novo ou apagado só vale no desenho
+        r_ = det.aplicar_furos_de_barra(doc, marca_, furos_, ajustes)
+        _gravar_ajustes_furos(s, ajustes)
+        if r_["barras3d"].get("barras"):
+            g.salvar_modelo(s, doc.dict())
+        barras3d.update(r_["barras3d"])
+        return r_
     if meta.get("marca"):
         # desenho "Detalhe – P77": uma célula em (0, 0), furos originais guardados
         if not meta.get("editavel"):
@@ -592,9 +601,13 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         marca = meta["marca"]
         contorno, _ = det.contorno_do_desenho(d, marca)
         furos = det.furos_do_desenho(d)
-        r = det.aplicar_furos(doc, marca, furos, meta.get("furos") or [], contorno)
-        g.salvar_modelo(s, doc.dict())
-        vinculadas = vincular(marca, meta.get("furos") or [], furos)
+        if meta.get("classe") == "barra":
+            r = aplicar_em_barra(marca, furos)
+            vinculadas = []
+        else:
+            r = det.aplicar_furos(doc, marca, furos, meta.get("furos") or [], contorno)
+            g.salvar_modelo(s, doc.dict())
+            vinculadas = vincular(marca, meta.get("furos") or [], furos)
         novo, pos = det.detalhar_posicao(doc, marca, ajustes=ajustes, nomes=_nomes_producao(s))
         if os.path.exists(g._caminho_desenho(s, novo.nome)):
             g.excluir_desenho(s, novo.nome)
@@ -607,17 +620,26 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
     if not marca:
         raise ErroDeDados("selecione a chapa (contorno, furo ou título) cujos furos vão para o modelo.")
     if marca not in (geral.get("editaveis") or []):
-        raise ErroDeDados("a posição %s não tem furos editáveis neste desenho: gere o detalhamento de novo (as chapas planas viram paramétricas) ou abra a peça pelo 3D." % marca)
+        raise ErroDeDados("a posição %s não tem furos editáveis neste desenho: gere o detalhamento de novo ou abra a peça pelo 3D." % marca)
     contorno, origem = det.contorno_do_desenho(d, marca)
+    if contorno is None:
+        origem = det._origem_da_celula(d, marca)
     furos = det.furos_do_desenho(d, marca, origem)
-    originais = (geral.get("furos_originais") or {}).get(marca)
-    if originais is None:
-        primeira = next((e for e in doc.entidades.values() if isinstance(e, Chapa)
-                         and str(((e.atributos or {}).get("marcas") or {}).get("posicao")) == marca), None)
-        originais = det.furos_da_chapa(primeira) if primeira else []
-    r = det.aplicar_furos(doc, marca, furos, originais, contorno)
-    g.salvar_modelo(s, doc.dict())
-    vinculadas = vincular(marca, originais, furos)
+    nomes_m = [m.strip() for m in marca.split(" / ")]
+    tem_chapa = any(isinstance(e, Chapa) and str(((e.atributos or {}).get("marcas") or {}).get("posicao")) in nomes_m
+                    for e in doc.entidades.values())
+    if not tem_chapa:
+        r = aplicar_em_barra(marca, furos)
+        vinculadas = []
+    else:
+        originais = (geral.get("furos_originais") or {}).get(marca)
+        if originais is None:
+            primeira = next((e for e in doc.entidades.values() if isinstance(e, Chapa)
+                             and str(((e.atributos or {}).get("marcas") or {}).get("posicao")) == marca), None)
+            originais = det.furos_da_chapa(primeira) if primeira else []
+        r = det.aplicar_furos(doc, marca, furos, originais, contorno)
+        g.salvar_modelo(s, doc.dict())
+        vinculadas = vincular(marca, originais, furos)
     det.regenerar_celula(d, doc, marca, ajustes=ajustes, nomes_producao=_nomes_producao(s))
     salvo = g.salvar_desenho(s, nome, d.dict())
     return dict(r, nome=salvo["nome"], marca=marca, vinculadas=vinculadas, barras3d=barras3d)

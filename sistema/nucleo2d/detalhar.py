@@ -1071,7 +1071,10 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     else:
         ignorar = _arestas_dos_furos(pos, 2, +1.0, (0, 1)) if furos_frente else set()
         _vista(p, pos, (0, 1), 2, +1.0, 0, 0, ignorar)
-        _desenhar_furos(p, est, furos_frente, 0, 0)
+        if editavel and pos.classe == "barra":
+            _furos_editaveis(p, atr, furos_frente)     # os da alma; os da mesa (topo) ficam fixos
+        else:
+            _desenhar_furos(p, est, furos_frente, 0, 0)
     # cotas: cadeia dos furos junto da peça, total mais afastada
     xs = sorted({round(f.x, 1) for f in furos_frente})
     ys = sorted({round(f.y, 1) for f in furos_frente})
@@ -1145,7 +1148,7 @@ def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes:
     escala = {"chapa": 10.0, "chapa_dobrada": 10.0, "telha": 50.0}.get(pos.classe, 25.0)
     d = Desenho(nome="Detalhe – %s" % marca, escala=escala)
     parametrica = all(isinstance(getattr(e, "parametrica", None), Chapa) for e in lista)
-    edit = bool(editavel and parametrica and pos.classe == "chapa")
+    edit = bool(editavel and ((parametrica and pos.classe == "chapa") or pos.classe == "barra"))
     ext = desenho_da_posicao(pos, d, 0.0, 0.0, editavel=edit)
     d.metadados["celulas"] = [[round(v, 1) for v in ext]]
     d.metadados["detalhamento"] = {
@@ -1607,7 +1610,8 @@ def _furos_da_malha(pos: Posicao) -> List[Tuple[Furo, List[int], str]]:
 LIMITE_DESLOCAMENTO_FURO = 40.0
 
 
-def aplicar_furos_nas_barras(doc: Documento, ajustes: Optional[dict], marcas: Optional[Sequence[str]] = None) -> dict:
+def aplicar_furos_nas_barras(doc: Documento, ajustes: Optional[dict], marcas: Optional[Sequence[str]] = None,
+                             limite: float = LIMITE_DESLOCAMENTO_FURO) -> dict:
     """Leva ao 3D a furação guardada no projeto para as barras (terças vinculadas ao
     suporte): em cada sólido da posição, os vértices de cada furo da malha (parede do
     furo e as duas faces) transladam, no plano da alma ou da mesa, até a posição do
@@ -1650,7 +1654,7 @@ def aplicar_furos_nas_barras(doc: Documento, ajustes: Optional[dict], marcas: Op
             k = min(cands, key=lambda i: math.hypot(alvos[i].x - f.x, alvos[i].y - f.y))
             livres.remove(k)
             pares.append((f, laco, vista, k))
-        if pares is None or any(math.hypot(alvos[k].x - f.x, alvos[k].y - f.y) > LIMITE_DESLOCAMENTO_FURO for f, _, _, k in pares):
+        if pares is None or any(math.hypot(alvos[k].x - f.x, alvos[k].y - f.y) > limite for f, _, _, k in pares):
             saida.setdefault("ignoradas", []).append(marca)
             continue
         movidos_aqui = 0
@@ -1692,6 +1696,8 @@ def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[d
     furos ou o tamanho terem mudado no modelo): apaga o que tem a marca e desenha de
     novo, com furos editáveis, a partir do canto onde estava."""
     cont_antigo, origem = contorno_do_desenho(d, marca)
+    if cont_antigo is None:
+        origem = _origem_da_celula(d, marca)
     caixa = None
     if cont_antigo:
         caixa = (origem[0] - 5.0, origem[1] - 5.0, origem[0] + max(x for x, _ in cont_antigo) + 5.0,
@@ -1721,9 +1727,9 @@ def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[d
     aplicar_nomes(posicoes, nomes_producao)
     pos = next((p for p in posicoes if p.marca == marca), posicoes[0])
     pos.marca = marca
-    ext = desenho_da_posicao(pos, d, origem[0], origem[1], editavel=pos.classe == "chapa")
+    ext = desenho_da_posicao(pos, d, origem[0], origem[1], editavel=pos.classe in ("chapa", "barra"))
     meta = d.metadados.setdefault("detalhamento", {})
-    if pos.classe == "chapa":
+    if pos.classe in ("chapa", "barra"):
         meta.setdefault("furos_originais", {})[marca] = [_furo_dict(f) for f in pos.furos if f.vista == "frente"]
         if marca not in meta.setdefault("editaveis", []):
             meta["editaveis"].append(marca)
@@ -1741,6 +1747,49 @@ def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[d
 
 #: Camadas em que o contorno de uma chapa pode estar num desenho de detalhamento.
 CAMADAS_DE_CONTORNO = ("VISTA", "CHAPAS")
+
+
+def _origem_da_celula(d: Desenho, marca: str) -> Tuple[float, float]:
+    """Canto inferior esquerdo da peça numa célula sem contorno fechado (barra): o mínimo
+    dos traços da peça (vista de frente começa em 0,0 na célula)."""
+    xs, ys = [], []
+    for e in d.entidades.values():
+        a = e.atributos or {}
+        if a.get("detalhe") != "posicao" or str(a.get("posicao")) != marca:
+            continue
+        if getattr(e, "camada", "") in ("COTA", "TEXTO", "EIXO", "FURO", "AUXILIAR"):
+            continue
+        for x, y in (e.pontos() if hasattr(e, "pontos") else []):
+            xs.append(x)
+            ys.append(y)
+    return (min(xs), min(ys)) if xs else (0.0, 0.0)
+
+
+def aplicar_furos_de_barra(doc: Documento, marca: str, furos_desenho: Sequence[dict], ajustes: dict,
+                           limite: float = 300.0) -> dict:
+    """Furos da alma lidos do desenho da barra viram a furação da posição: guardados em
+    `ajustes` (o que o detalhamento seguinte usa) e levados às malhas do 3D
+    (`aplicar_furos_nas_barras`, furo a furo até `limite` mm). Os furos da mesa (topo)
+    continuam os da malha. Devolve {"furos", "marcas", "barras3d"}."""
+    pecas, _ = _pecas(doc)
+    nomes = [m.strip() for m in str(marca).split(" / ") if m.strip()]
+    lista = [e for e in pecas if str(_marcas(e).get("posicao") or e.nome or e.id) in nomes]
+    if not lista:
+        raise ErroDeDados("a posição %s não está no modelo." % marca)
+    posicoes, _ = _posicoes_de(lista, _fixadores(doc))
+    topo = [f for p in posicoes[:1] for f in p.furos if f.vista == "topo"]
+    frente = []
+    for f in furos_desenho:
+        reg = {"tipo": f.get("tipo", "redondo"), "x": round(float(f["x"])), "y": round(float(f["y"])),
+               "d": round(float(f.get("d", 0) or 0), 1), "larg": round(float(f.get("larg", 0) or 0), 1),
+               "alt": round(float(f.get("alt", 0) or 0), 1), "pontos": [], "vista": "frente"}
+        if reg["d"] > 0 or reg["larg"] > 0:
+            frente.append(reg)
+    reg = {"furos": frente + [_furo_dict(f) for f in topo], "origem": "detalhe editado no CAD"}
+    for m in nomes:
+        ajustes[m] = reg
+    r3 = aplicar_furos_nas_barras(doc, {m: reg for m in nomes}, nomes, limite=limite)
+    return {"furos": len(frente), "marcas": nomes, "barras3d": r3, "chapas": 0, "contornos": 0, "parafusos": 0}
 
 
 def contorno_do_desenho(d: Desenho, marca: Optional[str] = None):
@@ -3361,7 +3410,8 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                                 "categoria": _categoria(p, camadas.get(p.marca, "")), "marcas": marcas_de(p),
                                 "nome": p.nome}
                       for p in lista}}
-        editaveis = [p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))]
+        editaveis = ([p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))]
+                     + [p.marca for p in lista if p.classe == "barra" and any(f.vista == "frente" for f in p.furos)])
         celulas_g = [(lambda dd, x, y, p=p: desenho_da_posicao(p, dd, x, y, editavel=p.marca in editaveis)) for p in lista]
         _empilhar(d, [(lambda x, y, f=f: f(d, x, y)) for f in celulas_g])
         d.metadados["detalhamento"]["editaveis"] = editaveis

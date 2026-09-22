@@ -772,6 +772,15 @@ class CAD {
       await this.abrirDesenho(r.nome);
       const vinc = (r.vinculadas || []).length;
       const b3 = r.barras3d || {};
+      const ign = (b3.ignoradas || []).length;
+      if (!r.chapas && r.marcas) {
+        // barra: furação guardada no projeto e furos movidos na malha 3D
+        this.aviso(`${r.furos} furo(s) da alma de ${r.marca} guardados como furação da posição` +
+                   (b3.barras ? ` e movidos em ${b3.barras} barra(s) no modelo 3D` : '') +
+                   (ign ? `; ${ign} barra(s) ficaram como estavam no 3D (furo novo, apagado ou deslocado demais)` : '') +
+                   '; desenho regenerado. Furo novo ou apagado vale só no desenho e na lista.', 'info', 14000);
+        return;
+      }
       this.aviso(`${r.furos} furo(s)${r.contornos ? ' e o contorno' : ''} aplicados em ${r.chapas} chapa(s) ${r.marca} do modelo 3D${r.parafusos ? `, ${r.parafusos} parafuso(s) movidos junto` : ''}; desenho regenerado.` +
                  (vinc ? ` Furação de ${vinc} terça(s) ajustada junto (${r.vinculadas.slice(0, 6).join(', ')}${vinc > 6 ? '…' : ''})` +
                          (b3.barras ? `, ${b3.furos} furo(s) movidos em ${b3.barras} terça(s) no 3D` : '') +
