@@ -279,6 +279,72 @@ def test_desenho_geral_editavel_e_tamanho():
     assert sum(1 for c in d.metadados["celulas"] if abs(c[2] - c[0]) > 140) >= 1
 
 
+def _caixa_solida(L, H, T, dx=0.0, dy=0.0, dz=0.0):
+    v = [(x + dx, y + dy, z + dz) for z in (0.0, T) for x, y in ((0, 0), (L, 0), (L, H), (0, H))]
+    f = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
+    return v, f
+
+
+def test_furos_pelos_parafusos():
+    """Chapa que veio como caixa (sem furo) ganha um furo por parafuso que a atravessa:
+    Ø13 para o 12x35 e, para o parafuso sem tamanho, o da porca (entre faces 16 → M10 → Ø11)."""
+    doc = Documento(nome="teste")
+    v, f = _caixa_solida(200, 100, 10)
+    doc.add(_solido("PLATE 200x100x10", "IfcPlate", v, f, "P9", "M1", "PLATE 200x100x10"))
+    # parafuso 12x35 em pé no ponto (50, 50), atravessando a chapa
+    vb, fb = _caixa_solida(12, 12, 45, dx=44, dy=44, dz=-20)
+    b = Solido(nome="BOLT (A) 12x35", vertices=vb, faces=fb)
+    b.atributos["tipo_ifc"] = "IfcMechanicalFastener"
+    doc.add(b)
+    # "porca" achatada 16 × 16 × 12 sem tamanho no nome, em (150, 50), encostada na chapa
+    vn, fn = _caixa_solida(16, 16, 12, dx=142, dy=42, dz=10)
+    n = Solido(nome="BOLT () 0x0", vertices=vn, faces=fn)
+    n.atributos["tipo_ifc"] = "IfcBuildingElementProxy"
+    doc.add(n)
+    # parafuso fora da chapa: não entra
+    vf, ff = _caixa_solida(12, 12, 45, dx=300, dy=44, dz=-20)
+    fora = Solido(nome="BOLT (A) 12x35", vertices=vf, faces=ff)
+    fora.atributos["tipo_ifc"] = "IfcMechanicalFastener"
+    doc.add(fora)
+    lev = det.levantar(doc, regra_tercas=False)
+    pos = lev["posicoes"][0]
+    furos = sorted((f.x, f.y, f.d) for f in pos.furos)
+    assert furos == [(50.0, 50.0, 13.0), (150.0, 50.0, 11.0)], furos
+    assert any("parafuso" in o for o in pos.observacoes) and any("porca" in o for o in pos.observacoes)
+    # a conversão em chapa paramétrica leva os furos inferidos para o 3D
+    from nucleo3d.modelo import Chapa
+    assert det.converter_chapas(doc, "P9") == 1
+    ch = next(e for e in doc.entidades.values() if isinstance(e, Chapa))
+    assert sorted(round(f_["diametro"]) for f_ in ch.furos) == [11, 13]
+
+
+def test_vinculo_chapa_tercas_e_ajustes():
+    """A chapinha do suporte muda de 80 para 60 mm entre furos: a terça com a mesma furação
+    original (na outra orientação) acompanha; o ajuste guardado volta a ser aplicado."""
+    terca = det.Posicao(marca="M5", tipo_ifc="IfcBeam", perfil="U150X50X2.25", conjuntos=["M5"])
+    terca.classe, terca.L, terca.H = "barra", 5000.0, 150.0
+    terca.furos = [det.Furo("redondo", 100.0, 35.0, 13.0), det.Furo("redondo", 100.0, 115.0, 13.0),
+                   det.Furo("redondo", 4900.0, 35.0, 13.0), det.Furo("redondo", 4900.0, 115.0, 13.0)]
+    outra = det.Posicao(marca="M6", tipo_ifc="IfcBeam", perfil="U150X50X2.25", conjuntos=["M6"])
+    outra.classe, outra.L, outra.H = "barra", 5000.0, 150.0
+    outra.furos = [det.Furo("redondo", 100.0, 35.0, 13.0), det.Furo("redondo", 100.0, 135.0, 13.0)]
+    originais = [{"tipo": "redondo", "x": 25.0, "y": 25.0, "d": 13.0}, {"tipo": "redondo", "x": 105.0, "y": 25.0, "d": 13.0}]
+    novos = [{"tipo": "redondo", "x": 35.0, "y": 25.0, "d": 13.0}, {"tipo": "redondo", "x": 95.0, "y": 25.0, "d": 13.0}]
+    vinc = det.vincular_furos_de_ligacao([terca, outra], {}, "P1", originais, novos)
+    assert set(vinc) == {"M5"}
+    ys = sorted(round(f_["y"]) for f_ in vinc["M5"]["furos"] if f_["x"] < 200)
+    assert ys == [45, 105]                       # 80 → 60, centrado em 75
+    assert "chapa P1" in vinc["M5"]["origem"]
+    # mesma furação de novo: nada muda; passos iguais: nada
+    assert det.vincular_furos_de_ligacao([terca], {}, "P1", novos, novos) == {}
+    # o ajuste guardado é aplicado no levantamento seguinte
+    fresca = det.Posicao(marca="M5", tipo_ifc="IfcBeam", perfil="U150X50X2.25", conjuntos=["M5"])
+    fresca.classe, fresca.furos = "barra", [det.Furo("redondo", 100.0, 35.0, 13.0), det.Furo("redondo", 100.0, 115.0, 13.0)]
+    assert det.aplicar_ajustes_de_furos([fresca], vinc) == ["M5"]
+    assert sorted(round(f_.y) for f_ in fresca.furos if f_.x < 200) == [45, 105]
+    assert any("vinculada" in o for o in fresca.observacoes)
+
+
 def test_furo_oblongo_na_malha():
     from nucleo3d.modelo import Chapa
     from nucleo3d import geometria

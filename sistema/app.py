@@ -454,7 +454,7 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     grupos = corpo.get("grupos") or list(GRUPOS.keys())
     r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
                  rotular=corpo.get("rotular", True) is not False,
-                 converter=corpo.get("converter", True) is not False)
+                 converter=corpo.get("converter", True) is not False, ajustes=_ajustes_furos(s))
     if r.get("convertidas"):
         g.salvar_modelo(s, doc.dict())            # chapas planas viraram paramétricas
     substituir = corpo.get("substituir", True) is not False
@@ -500,7 +500,7 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
     convertidas = det.converter_chapas(doc, marca) if corpo.get("converter", True) is not False else 0
     if convertidas:
         g.salvar_modelo(s, doc.dict())
-    desenho, pos = det.detalhar_posicao(doc, marca)
+    desenho, pos = det.detalhar_posicao(doc, marca, ajustes=_ajustes_furos(s))
     nome = desenho.nome
     if corpo.get("substituir", True) is not False and os.path.exists(g._caminho_desenho(s, nome)):
         g.excluir_desenho(s, nome)
@@ -522,6 +522,17 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
     d = Desenho.de_dict(corpo["desenho"]) if isinstance(corpo.get("desenho"), dict) else Desenho.de_dict(g.abrir_desenho(s, nome))
     meta = d.metadados.get("detalhe_posicao") or {}
     doc = _documento3d_do_projeto(s)
+    ajustes = _ajustes_furos(s)
+
+    def vincular(marca_, originais_, furos_):
+        # a chapinha do suporte mudou de furação: as terças com a mesma furação original
+        # acompanham; a furação delas fica guardada no projeto
+        lev = det.levantar(doc, ajustes=ajustes)
+        vinc = det.vincular_furos_de_ligacao(lev["posicoes"], lev["camadas"], marca_, originais_, furos_)
+        if vinc:
+            ajustes.update(vinc)
+            _gravar_ajustes_furos(s, ajustes)
+        return sorted(vinc)
     if meta.get("marca"):
         # desenho "Detalhe – P77": uma célula em (0, 0), furos originais guardados
         if not meta.get("editavel"):
@@ -531,12 +542,13 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         furos = det.furos_do_desenho(d)
         r = det.aplicar_furos(doc, marca, furos, meta.get("furos") or [], contorno)
         g.salvar_modelo(s, doc.dict())
-        novo, pos = det.detalhar_posicao(doc, marca)
+        vinculadas = vincular(marca, meta.get("furos") or [], furos)
+        novo, pos = det.detalhar_posicao(doc, marca, ajustes=ajustes)
         if os.path.exists(g._caminho_desenho(s, novo.nome)):
             g.excluir_desenho(s, novo.nome)
         novo.metadados["gerado_por"] = "detalhamento"
         salvo = g.salvar_desenho(s, novo.nome, novo.dict())
-        return dict(r, nome=salvo["nome"], marca=marca, quantidade=pos.quantidade)
+        return dict(r, nome=salvo["nome"], marca=marca, quantidade=pos.quantidade, vinculadas=vinculadas)
     # desenho geral (Detalhamento – chapas): a célula da posição pedida
     marca = str(corpo.get("marca") or "").strip()
     geral = d.metadados.get("detalhamento") or {}
@@ -553,9 +565,30 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         originais = det.furos_da_chapa(primeira) if primeira else []
     r = det.aplicar_furos(doc, marca, furos, originais, contorno)
     g.salvar_modelo(s, doc.dict())
-    det.regenerar_celula(d, doc, marca)
+    vinculadas = vincular(marca, originais, furos)
+    det.regenerar_celula(d, doc, marca, ajustes=ajustes)
     salvo = g.salvar_desenho(s, nome, d.dict())
-    return dict(r, nome=salvo["nome"], marca=marca)
+    return dict(r, nome=salvo["nome"], marca=marca, vinculadas=vinculadas)
+
+
+def _ajustes_furos(s: str) -> dict:
+    """Furação guardada no projeto (vínculo chapa → terças): detalhamento/ajustes-furos.json."""
+    caminho = os.path.join(_gerente()._existente(s), "detalhamento", "ajustes-furos.json")
+    if not os.path.exists(caminho):
+        return {}
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            dados = json.load(f)
+        return dados if isinstance(dados, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _gravar_ajustes_furos(s: str, ajustes: dict):
+    pasta = os.path.join(_gerente()._existente(s), "detalhamento")
+    os.makedirs(pasta, exist_ok=True)
+    with open(os.path.join(pasta, "ajustes-furos.json"), "w", encoding="utf-8") as f:
+        json.dump(ajustes, f, ensure_ascii=False, indent=1)
 
 
 def _identificacao_do_projeto(s: str) -> dict:
@@ -579,7 +612,7 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
             lista = json.load(f)
     else:
         doc = _documento3d_do_projeto(s)
-        lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False)
+        lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False, ajustes=_ajustes_furos(s))
         lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s))
         lista_producao.gravar(pasta, lista, lev["posicoes"], lev["acessorios"])

@@ -287,14 +287,46 @@ export class Mover extends Transformadora {
       // original (como no AutoCAD), e a seleção copiada é sempre a original
       this.dica('Próximo destino, medido do mesmo ponto base (Esc termina)');
     } else {
-      this.editor.executar(new ComandoSubstituir(novas, 'Mover'));
+      this.editor.executar(new ComandoSubstituir([...novas, ...this._cotasLigadas(d)], 'Mover'));
       this.reiniciar();
     }
+  }
+  /**
+   * Cotas associativas: movendo furos (camada FURO), a cota horizontal cujo ponto está
+   * na coluna do furo anda em x, e a vertical cuja linha é a do furo anda em y — desde
+   * que todos os furos daquela coluna/linha estejam sendo movidos.
+   */
+  _cotasLigadas(d) {
+    const sel = new Set(this.ids);
+    const centro = (e) => e.tipo === 'circulo' ? e.centro
+      : e.tipo === 'polilinha' ? (() => { const xs = e.vertices.map(q => q[0]), ys = e.vertices.map(q => q[1]); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; })()
+      : null;
+    if (!this.selecionadas().some(e => e.camada === 'FURO' && centro(e))) return [];
+    const furos = [];
+    for (const e of this.doc.entidades.values()) {
+      if (e.camada !== 'FURO' || (e.tipo !== 'circulo' && e.tipo !== 'polilinha')) continue;
+      const c = centro(e); if (c) furos.push({ id: e.id, c, pos: (e.atributos || {}).posicao || null });
+    }
+    const out = [];
+    for (const e of this.doc.entidades.values()) {
+      if (e.tipo !== 'cota' || sel.has(e.id) || (e.modo !== 'h' && e.modo !== 'v')) continue;
+      const pe = (e.atributos || {}).posicao || null;
+      const k = e.modo === 'h' ? 0 : 1;
+      const p1 = e.p1.slice(), p2 = e.p2.slice();
+      let mudou = false;
+      for (const p of [p1, p2]) {
+        const ali = furos.filter(f => (!pe || !f.pos || f.pos === pe) && Math.abs(f.c[k] - p[k]) < 0.05);
+        if (!ali.length || !ali.every(f => sel.has(f.id))) continue;
+        p[k] += d[k]; mudou = true;
+      }
+      if (mudou) out.push(criar({ ...e, p1, p2 }));
+    }
+    return out;
   }
   onMover(p) {
     if (!this.base) return;
     const d = [p[0] - this.base[0], p[1] - this.base[1]];
-    this.editor.previa(this.selecionadas().map(e => transladar(e, d)));
+    this.editor.previa([...this.selecionadas().map(e => transladar(e, d)), ...(this.copiar ? [] : this._cotasLigadas(d))]);
     this.editor.medida(`${fmt(dist(this.base, p))} mm  ∠ ${fmt(ang(this.base, p) * 180 / Math.PI)}°`);
   }
   onValor(t) {

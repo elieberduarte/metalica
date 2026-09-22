@@ -258,7 +258,159 @@ def _proxy_da_chapa(ch: Chapa) -> Solido:
 
 def _furo_dict(f: Furo) -> dict:
     return {"tipo": f.tipo, "x": round(f.x, 3), "y": round(f.y, 3), "d": round(f.d, 3),
-            "larg": round(f.larg, 3), "alt": round(f.alt, 3), "pontos": [list(p) for p in f.pontos]}
+            "larg": round(f.larg, 3), "alt": round(f.alt, 3), "pontos": [list(p) for p in f.pontos],
+            "vista": f.vista}
+
+
+def _furo_de_dict(f: dict) -> Furo:
+    return Furo(str(f.get("tipo") or "redondo"), float(f.get("x", 0) or 0), float(f.get("y", 0) or 0),
+                float(f.get("d", 0) or 0), float(f.get("larg", 0) or 0), float(f.get("alt", 0) or 0),
+                [tuple(p) for p in (f.get("pontos") or [])], str(f.get("vista") or "frente"))
+
+
+# ============================================================ furos pelos parafusos
+#: Porca sextavada: entre faces (mm) → rosca métrica.
+_PORCAS = ((10, 6), (13, 8), (16, 10), (18, 12), (19, 12), (21, 14), (24, 16), (27, 18), (30, 20), (34, 22), (36, 24))
+
+
+def _fixadores(doc: Documento) -> List[Solido]:
+    return [e for e in doc.entidades.values() if isinstance(e, Solido) and _tipo_ifc(e) in TIPOS_ACESSORIO and len(e.vertices) >= 4]
+
+
+def _diametro_do_fixador(ent: Solido, ext) -> Tuple[float, bool]:
+    """Diâmetro nominal do parafuso: do nome ("BOLT 12x35" → 12) ou, sem tamanho no nome
+    ("BOLT () 0x0"), da porca (entre faces → rosca). Devolve (d, inferido_da_porca)."""
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*\d", ent.nome or "")
+    if m:
+        d = float(m.group(1).replace(",", "."))
+        if d > 0:
+            return d, False
+    transversais = sorted(ext)[1:]                       # as duas maiores extensões da porca
+    af = min(transversais) if transversais else 0.0
+    melhor = 12.0
+    for entre_faces, rosca in _PORCAS:
+        if af >= entre_faces - 0.6:
+            melhor = float(rosca)
+    return melhor, True
+
+
+def _ponto_no_poligono(x: float, y: float, poligono, folga: float = 1.0) -> bool:
+    dentro = False
+    n = len(poligono)
+    for i in range(n):
+        (x1, y1), (x2, y2) = poligono[i], poligono[(i + 1) % n]
+        if (y1 > y) != (y2 > y):
+            xi = x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+            if xi > x:
+                dentro = not dentro
+    if dentro:
+        return True
+    return any(math.hypot(x - px, y - py) <= folga for px, py in poligono)
+
+
+def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[Solido]) -> int:
+    """Chapa que veio do IFC sem o furo modelado: cada parafuso (ou chumbador) que
+    atravessa a chapa vira um furo redondo de d + 1 mm no ponto em que o eixo cruza o
+    plano médio. Devolve quantos furos entraram; a célula ganha a observação."""
+    if pos.classe != "chapa" or not pos.eixos or not pos.contorno or not fixadores:
+        return 0
+    e1, e2, e3 = pos.eixos
+    c, _ = _autovetores(pos.vertices)
+    P = [(_dot(_sub(v, c), e1), _dot(_sub(v, c), e2), _dot(_sub(v, c), e3)) for v in pos.vertices]
+    u0, v0 = min(q[0] for q in P), min(q[1] for q in P)
+    w0 = (min(q[2] for q in P) + max(q[2] for q in P)) / 2
+    centro_plano = tuple(c[i] + e3[i] * w0 for i in range(3))
+    caixa = _caixa(ent)
+    folga = 40.0
+    novos, porca = 0, False
+    for f in fixadores:
+        cf = tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3))
+        if not all(caixa[i][0] - folga <= cf[i] <= caixa[i][1] + folga for i in range(3)):
+            continue
+        cc, pca = _autovetores(f.vertices)
+        ext = []
+        for ax in pca:
+            ts = [_dot(_sub(v, cc), ax) for v in f.vertices]
+            ext.append(max(ts) - min(ts))
+        # parafuso comprido: eixo é o maior; só a porca (achatada): eixo é o menor
+        eixo = pca[0] if ext[0] > 1.5 * ext[1] else pca[2]
+        alcance = (ext[0] if ext[0] > 1.5 * ext[1] else ext[2]) / 2 + pos.T + folga
+        den = _dot(eixo, e3)
+        if abs(den) < 0.7:
+            continue
+        t = _dot(_sub(centro_plano, cc), e3) / den
+        if abs(t) > alcance:
+            continue
+        p = tuple(cc[i] + eixo[i] * t for i in range(3))
+        u, v = _dot(_sub(p, c), e1) - u0, _dot(_sub(p, c), e2) - v0
+        if not _ponto_no_poligono(u, v, pos.contorno, 1.0):
+            continue
+        d, inferido = _diametro_do_fixador(f, ext)
+        d_furo = d + 1.0
+        if any(math.hypot(u - g.x, v - g.y) < max(d_furo, g.d, g.larg) for g in pos.furos):
+            continue                                     # o furo já está na malha
+        pos.furos.append(Furo("redondo", float(round(u)), float(round(v)), d_furo))
+        novos += 1
+        porca = porca or inferido
+    if novos:
+        pos.observacoes.append("%d furo(s) pelo parafuso do modelo (a chapa veio sem furo no IFC)%s"
+                               % (novos, "; diametro pela porca, conferir" if porca else ""))
+    return novos
+
+
+def aplicar_ajustes_de_furos(posicoes: Sequence[Posicao], ajustes: Optional[dict]) -> List[str]:
+    """Furação guardada no projeto (vínculo chapa → terça) substitui a medida da malha."""
+    if not ajustes:
+        return []
+    aplicadas = []
+    for pos in posicoes:
+        for m in marcas_de(pos):
+            reg = ajustes.get(m)
+            if not reg or not isinstance(reg, dict):
+                continue
+            pos.furos = [_furo_de_dict(f) for f in (reg.get("furos") or [])]
+            pos.observacoes.append("furacao vinculada a %s" % (reg.get("origem") or "ajuste do projeto"))
+            aplicadas.append(pos.marca)
+            break
+    return aplicadas
+
+
+def vincular_furos_de_ligacao(posicoes: Sequence[Posicao], camadas: Dict[str, str], marca_chapa: str,
+                              originais: Sequence[dict], novos: Sequence[dict]) -> Dict[str, dict]:
+    """A chapinha do suporte mudou de furação (passos): as terças cuja furação original
+    era a mesma (em qualquer orientação) recebem os passos novos, como na regra de
+    fábrica. Devolve {marca da terça: {"furos": [...], "origem": ...}} para guardar."""
+    def grade(furos):
+        g = [Furo("redondo", float(f["x"]), float(f["y"]), float(f.get("d", 0) or 0)) for f in furos if f.get("tipo", "redondo") == "redondo"]
+        return _assinatura(g) if len(g) >= 2 else None
+    ass_o, ass_n = grade(originais), grade(novos)
+    if not ass_o or not ass_n or ass_o[:2] != ass_n[:2] or ass_o == ass_n:
+        return {}
+    nc_o, nl_o, dx_o, dy_o = ass_o
+    _, _, dx_n, dy_n = ass_n
+    fora: Dict[str, dict] = {}
+    for pos in posicoes:
+        if pos.classe != "barra" or not _eh_terca(pos, camadas.get(pos.marca, "")):
+            continue
+        mudou = []
+        for g in _grupos_de_furos(pos.furos):
+            ass = _assinatura(g)
+            if not ass:
+                continue
+            nc, nl, dx, dy = ass
+            if (nc, dx) == (nc_o, dx_o) and (nl, dy) == (nl_o, dy_o):
+                _reposicionar(g, dx_n, dy_n)
+                mudou.append("%dx%d %s x %s -> %s x %s" % (nc, nl, _mm(dx), _mm(dy), _mm(dx_n), _mm(dy_n)))
+            elif (nc, dx) == (nl_o, dy_o) and (nl, dy) == (nc_o, dx_o):
+                _reposicionar(g, dy_n, dx_n)
+                mudou.append("%dx%d %s x %s -> %s x %s" % (nc, nl, _mm(dx), _mm(dy), _mm(dy_n), _mm(dx_n)))
+        if mudou:
+            for f in pos.furos:
+                f.x, f.y = float(round(f.x)), float(round(f.y))
+            reg = {"furos": [_furo_dict(f) for f in pos.furos], "origem": "chapa %s (%s)" % (marca_chapa, "; ".join(sorted(set(mudou))))}
+            for m in marcas_de(pos):
+                fora[m] = reg
+    return fora
 
 
 def _posicao_de_chapa(pos: Posicao, ch: Chapa):
@@ -378,7 +530,7 @@ def fundir_posicoes_iguais(posicoes: Sequence[Posicao], camadas: Dict[str, str])
     return fora
 
 
-def _posicoes_de(pecas: Sequence[Solido]) -> Tuple[List[Posicao], Dict[str, str]]:
+def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] = None) -> Tuple[List[Posicao], Dict[str, str]]:
     """Agrupa por posição e analisa a geometria de uma peça de cada."""
     por_marca: Dict[str, Posicao] = collections.OrderedDict()
     camadas: Dict[str, str] = {}
@@ -410,6 +562,8 @@ def _posicoes_de(pecas: Sequence[Solido]) -> Tuple[List[Posicao], Dict[str, str]
                 _posicao_de_chapa(pos, ch)
             else:
                 analisar(pos)
+                if fixadores:
+                    inferir_furos_de_parafusos(pos, primeiro[marca], fixadores)
         except Exception as e:                      # noqa: BLE001 — uma peça não derruba o lote
             pos.classe = "indefinida"
             pos.observacoes.append("falha na análise: %s" % e)
@@ -679,14 +833,15 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
 
 
 # ============================================================ detalhe de uma posição
-def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True) -> Tuple[Desenho, Posicao]:
+def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes: Optional[dict] = None) -> Tuple[Desenho, Posicao]:
     """Desenho "Detalhe – <marca>" com a célula da posição. Chapa paramétrica sai com os
     furos editáveis e `metadados.detalhe_posicao` guarda o que "Aplicar furos" precisa."""
     pecas, _ = _pecas(doc)
     lista = [e for e in pecas if str(_marcas(e).get("posicao") or e.nome or e.id) == marca]
     if not lista:
         raise ErroDeDados("não há peça com a posição %s no modelo." % marca)
-    posicoes, camadas = _posicoes_de(lista)
+    posicoes, camadas = _posicoes_de(lista, _fixadores(doc))
+    aplicar_ajustes_de_furos(posicoes, ajustes)
     pos = posicoes[0]
     escala = {"chapa": 10.0, "chapa_dobrada": 10.0, "telha": 50.0}.get(pos.classe, 25.0)
     d = Desenho(nome="Detalhe – %s" % marca, escala=escala)
@@ -713,6 +868,7 @@ def converter_chapas(doc: Documento, marca: str) -> int:
     mesmo id, nome, camada e atributos; contorno, espessura e furos medidos da malha, no
     sistema da própria peça. Devolve quantas foram convertidas."""
     n = 0
+    fixadores = _fixadores(doc)
     for ent in list(doc.entidades.values()):
         if not isinstance(ent, Solido) or _tipo_ifc(ent) != "IfcPlate":
             continue
@@ -723,6 +879,7 @@ def converter_chapas(doc: Documento, marca: str) -> int:
                       material=_material(ent), vertices=[tuple(v) for v in ent.vertices], faces=[list(f) for f in ent.faces])
         try:
             analisar(pos)
+            inferir_furos_de_parafusos(pos, ent, fixadores)
         except Exception:                             # noqa: BLE001
             continue
         if pos.classe != "chapa" or not pos.contorno or not pos.eixos:
@@ -826,7 +983,7 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
     return {"chapas": len(chapas), "furos": len(furos), "contornos": contornos}
 
 
-def regenerar_celula(d: Desenho, doc: Documento, marca: str) -> Tuple[float, float, float, float]:
+def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[dict] = None) -> Tuple[float, float, float, float]:
     """Redesenha, no mesmo lugar de um desenho geral, a célula da posição (depois de os
     furos ou o tamanho terem mudado no modelo): apaga o que tem a marca e desenha de
     novo, com furos editáveis, a partir do canto onde estava."""
@@ -853,8 +1010,9 @@ def regenerar_celula(d: Desenho, doc: Documento, marca: str) -> Tuple[float, flo
     lista = [e for e in pecas if str(_marcas(e).get("posicao") or e.nome or e.id) in nomes]
     if not lista:
         raise ErroDeDados("a posição %s não está mais no modelo." % marca)
-    posicoes, camadas_ = _posicoes_de(lista)
+    posicoes, camadas_ = _posicoes_de(lista, _fixadores(doc))
     posicoes = fundir_posicoes_iguais(posicoes, camadas_)
+    aplicar_ajustes_de_furos(posicoes, ajustes)
     pos = next((p for p in posicoes if p.marca == marca), posicoes[0])
     pos.marca = marca
     ext = desenho_da_posicao(pos, d, origem[0], origem[1], editavel=pos.classe == "chapa")
@@ -1547,7 +1705,7 @@ def _empilhar(desenho: Desenho, celulas, largura_max_papel: float = 800.0):
     return desenho
 
 
-def levantar(doc: Documento, regra_tercas: bool = True, avisar=None) -> dict:
+def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Optional[dict] = None) -> dict:
     """Só o levantamento: as peças de produção do modelo agrupadas em posições, com a
     geometria analisada e a regra das terças aplicada — sem desenhar nada. É o que a
     lista de materiais usa. Devolve {"pecas", "acessorios", "posicoes", "camadas",
@@ -1556,12 +1714,13 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None) -> dict:
     pecas, acessorios = _pecas(doc)
     if not pecas:
         raise ErroDeDados("o modelo não tem peças com marcas de IFC (IfcBeam, IfcPlate…) para detalhar.")
-    posicoes, camadas = _posicoes_de(pecas)
+    posicoes, camadas = _posicoes_de(pecas, _fixadores(doc))
     posicoes = fundir_posicoes_iguais(posicoes, camadas)
     avisar("%d peças em %d posições" % (len(pecas), len(posicoes)))
     mudadas = regra_furacao_terca(posicoes, camadas) if regra_tercas else {}
+    ajustadas = aplicar_ajustes_de_furos(posicoes, ajustes)
     return {"pecas": pecas, "acessorios": acessorios, "posicoes": posicoes, "camadas": camadas,
-            "regra_tercas": mudadas,
+            "regra_tercas": mudadas, "ajustes": ajustadas,
             "categorias": {p.marca: _categoria(p, camadas.get(p.marca, "")) for p in posicoes}}
 
 
@@ -1578,20 +1737,20 @@ def converter_chapas_planas(doc: Documento, posicoes: Sequence[Posicao], pecas: 
 
 
 def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_tercas: bool = True,
-             rotular: bool = True, avisar=None, converter: bool = True) -> dict:
+             rotular: bool = True, avisar=None, converter: bool = True, ajustes: Optional[dict] = None) -> dict:
     """Gera os desenhos de detalhamento do modelo. Devolve
     {"desenhos": {chave: Desenho}, "posicoes": [...], "conjuntos": [...], "acessorios": {},
      "regra_tercas": {marca: texto}, "avisos": [...]}."""
     avisar = avisar or (lambda *a: None)
     grupos = list(grupos or GRUPOS.keys())
-    lev = levantar(doc, regra_tercas=regra_tercas, avisar=avisar)
+    lev = levantar(doc, regra_tercas=regra_tercas, avisar=avisar, ajustes=ajustes)
     convertidas = 0
     if converter:
         # chapas planas viram paramétricas: a célula sai com furos editáveis e "Aplicar
         # furos ao modelo 3D" funciona a partir do desenho geral
         convertidas = converter_chapas_planas(doc, lev["posicoes"], lev["pecas"])
         if convertidas:
-            lev = levantar(doc, regra_tercas=regra_tercas)
+            lev = levantar(doc, regra_tercas=regra_tercas, ajustes=ajustes)
     pecas, acessorios, posicoes, camadas, mudadas = (lev["pecas"], lev["acessorios"], lev["posicoes"],
                                                      lev["camadas"], lev["regra_tercas"])
     parametricas: Dict[str, bool] = {}

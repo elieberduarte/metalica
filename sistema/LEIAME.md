@@ -236,6 +236,14 @@ e diâmetros ficam) e posições iguais fundidas (`nucleo2d.detalhar.fundir_posi
 mesma classe, perfil, material, comprimento, altura, espessura e furos → "P64 / P65 / P66",
 `marcas_de(pos)` guarda as originais; `/aplicar-furos` e `regenerar_celula` aceitam o rótulo).
 
+Chapa sem furo na malha (caixa de 8 vértices): `inferir_furos_de_parafusos` cruza o eixo
+de cada fixador (`TIPOS_ACESSORIO`; parafuso comprido → eixo maior, porca achatada → eixo
+menor) com o plano médio da chapa e abre Ø d + 1 (d do nome "12x35" ou da porca por entre
+faces). Vínculo chapa → terças: `vincular_furos_de_ligacao` (mesma lógica de assinatura da
+regra de fábrica) grava `detalhamento/ajustes-furos.json`, aplicado por
+`aplicar_ajustes_de_furos` em `levantar(..., ajustes=)`. No CAD, `Mover._cotasLigadas` leva as
+cotas presas à coluna/linha dos furos movidos.
+
 Orientação dos conjuntos (`_eixos_do_conjunto`): a normal da vista é o eixo mais fino do
 conjunto e a vertical do desenho é a vertical da obra projetada — a tesoura sai inclinada
 como montada. Conjunto **linear** (segunda extensão < 12 % da primeira: tirante com as
