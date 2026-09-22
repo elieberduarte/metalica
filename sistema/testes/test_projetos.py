@@ -172,6 +172,32 @@ def test_gravacao_simultanea_nao_emenda_arquivo():
         assert not [a for a in os.listdir(os.path.join(raiz, s, "desenhos-2d")) if a.endswith(".parcial")]
 
 
+def test_desenho_emendado_e_recuperado():
+    """Arquivo com JSON completo seguido de lixo (herança das gravações simultâneas):
+    abrir recupera o documento inteiro, regrava limpo e guarda o original na lixeira."""
+    with tempfile.TemporaryDirectory() as raiz:
+        g = Projetos(raiz)
+        s = g.criar("Emenda")["slug"]
+        g.salvar_desenho(s, "vistas", {"nome": "Vistas", "entidades": [{"tipo": "linha", "a": [0, 0], "b": [1, 1]}]})
+        caminho = os.path.join(raiz, s, "desenhos-2d", "vistas.desenho.json")
+        with open(caminho, "a", encoding="utf-8") as f:
+            f.write('7553694682, 1327.39]}, {"id": "ea22", "tipo": "linha"}], "metadados": {}}')
+        d = g.abrir_desenho(s, "vistas")
+        assert d["nome"] == "Vistas" and len(d["entidades"]) == 1
+        with open(caminho, encoding="utf-8") as f:
+            assert json.load(f)["nome"] == "Vistas"             # regravado limpo
+        lixo = os.listdir(os.path.join(raiz, LIXEIRA))
+        assert any(a.startswith("danificado-") and a.endswith("vistas.desenho.json") for a in lixo)
+        # sem documento inteiro nenhum: erro com o caminho, não "Extra data" solto
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write('{"nome": "Vistas", "entidades": [')
+        try:
+            g.abrir_desenho(s, "vistas")
+            assert False, "devia falhar"
+        except ErroDeDados as e:
+            assert "danificado" in str(e) and caminho in str(e)
+
+
 def test_troca_espera_arquivo_em_uso():
     """Outro processo (OneDrive, antivírus) segurando o destino: a troca insiste em vez
     de falhar com WinError 32."""

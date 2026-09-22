@@ -109,9 +109,30 @@ def _gravar_json(caminho: str, dados, indent=None):
                     pass
 
 
-def _ler_json(caminho: str):
+def _ler_json(caminho: str, lixeira: Optional[str] = None):
+    """Lê um JSON. Com `lixeira`, um arquivo emendado (JSON completo seguido de lixo —
+    o que duas gravações simultâneas no mesmo temporário deixavam) é aproveitado pelo
+    primeiro documento inteiro e regravado limpo; o original vai para a lixeira. O que
+    não tem documento inteiro nenhum vira ErroDeDados, com o caminho, em vez de um
+    "Extra data" solto."""
     with open(caminho, encoding="utf-8") as f:
-        return json.load(f)
+        texto = f.read()
+    try:
+        return json.loads(texto)
+    except ValueError as e:
+        if lixeira is None:
+            raise
+        try:
+            dados, _ = json.JSONDecoder().raw_decode(texto.lstrip())
+        except ValueError:
+            raise ErroDeDados("arquivo danificado, não foi possível ler: %s (%s)" % (caminho, e))
+        del texto
+        lixo = lixeira
+        os.makedirs(lixo, exist_ok=True)
+        shutil.copy2(caminho, os.path.join(lixo, "danificado-%s-%s" % (
+            time.strftime("%Y%m%d-%H%M%S"), os.path.basename(caminho))))
+        _gravar_json(caminho, dados)
+        return dados
 
 
 class Projetos:
@@ -351,7 +372,7 @@ class Projetos:
         caminho = self._caminho_desenho(s, nome)
         if not os.path.exists(caminho):
             raise ErroDeDados("desenho não encontrado: " + nome)
-        return _ler_json(caminho)
+        return _ler_json(caminho, os.path.join(self.raiz, LIXEIRA))
 
     def excluir_desenho(self, s: str, nome: str) -> dict:
         caminho = self._caminho_desenho(s, nome)
@@ -378,4 +399,4 @@ class Projetos:
         caminho = self.caminho_modelo(s)
         if not os.path.exists(caminho):
             return None
-        return _ler_json(caminho)
+        return _ler_json(caminho, os.path.join(self.raiz, LIXEIRA))

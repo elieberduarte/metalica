@@ -1219,9 +1219,11 @@ export class Editor {
       caixas[k] = el('input', { type: 'checkbox', checked: (k === 'frente' || k === 'topo' || k === 'esquerda') ? 'checked' : undefined });
       grade.append(el('label', { texto: r }), caixas[k]);
     }
+    const substituir = el('input', { type: 'checkbox' });
+    grade.append(el('label', { texto: 'Substituir desenho existente com este nome', title: 'Desmarcado, as vistas são acrescentadas ao lado do que o desenho já tem' }), substituir);
     const corpo = el('div', {}, el('p', { class: 'explica', texto: ids.length
       ? `${ids.length} peça(s) selecionada(s): as vistas saem só delas, lado a lado num desenho novo.`
-      : 'Nada selecionado: as vistas saem do modelo inteiro (camadas ocultas ficam de fora).' }), grade);
+      : 'Nada selecionado: as vistas saem do modelo inteiro (camadas ocultas ficam de fora). Fica pesado: para detalhar, selecione antes a tesoura ou o pórtico.' }), grade);
     if (await this.dialogo({ titulo: 'Vistas 2D', corpo, ok: 'Gerar e abrir' }) !== 'ok') return;
     const escolhidas = Object.entries(caixas).filter(([, c]) => c.checked).map(([k]) => k);
     if (!escolhidas.length) return;
@@ -1230,7 +1232,7 @@ export class Editor {
       await this._gravarAntesDeGerar();
       const desenho = nome.value.trim() || 'Vistas';
       // todas num pedido só: o desenho é gravado uma vez, no fim
-      const j = await this._pedirVista({ vistas: escolhidas.map(k => ({ padrao: k, entidades: ids.length ? ids : null, rotular: false })), desenho });
+      const j = await this._pedirVista({ vistas: escolhidas.map(k => ({ padrao: k, entidades: ids.length ? ids : null, rotular: false })), desenho, substituir: substituir.checked });
       const n = (j.vistas || []).reduce((s, v) => s + (v.pecas_projetadas || 0), 0);
       this.aviso(`${escolhidas.length} vista(s) gerada(s), ${n} peça(s) projetada(s). Abrindo o CAD…`, 'info', 6000);
       this._abrirCAD(j.nome || desenho);

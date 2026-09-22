@@ -407,10 +407,12 @@ def gerar_vista_2d(s: str, corpo: dict) -> dict:
         vistas.append(vista)
     nome = corpo.get("desenho") or vistas[0].nome or "desenho"
     desenho = None
-    try:
+    if corpo.get("substituir") and os.path.exists(g._caminho_desenho(s, nome)):
+        g.excluir_desenho(s, nome)                  # vai para a lixeira
+    if os.path.exists(g._caminho_desenho(s, nome)):
+        # arquivo danificado sem recuperação possível sobe como erro, com o caminho,
+        # em vez de ser sobrescrito em silêncio
         desenho = Desenho.de_dict(g.abrir_desenho(s, nome))
-    except ErroDeDados:
-        pass
     novo = desenho is None
     desl = corpo.get("deslocamento")
     for i, vista in enumerate(vistas):
