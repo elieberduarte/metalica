@@ -4,8 +4,9 @@
 // desenhar e conferir medidas. A troca preserva o enquadramento — o que estava na tela
 // continua na tela, só muda a projeção.
 //
-// Mouse: o botão esquerdo é da ferramenta ativa, nunca da navegação. Orbita com o botão
-// direito ou com o do meio; Shift + botão do meio faz pan; a roda dá zoom no cursor.
+// Mouse: o botão esquerdo é da ferramenta ativa, nunca da navegação. O botão direito
+// desloca (pan, a "mão"); o do meio orbita; Shift inverte (Shift + direito orbita,
+// Shift + meio desloca); a roda dá zoom no cursor.
 
 import * as THREE from 'three';
 import { OrbitControls } from '../../lib/OrbitControls.js';
@@ -72,19 +73,19 @@ export class Camera {
     this.controles.maxDistance = 6000;
     // O esquerdo fica livre para as ferramentas.
     this.controles.mouseButtons = {
-      LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.ROTATE,
+      LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN,
     };
     this.controles.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
 
-    // Shift + botão do meio faz pan. O OrbitControls relê `mouseButtons` a cada
-    // pointerdown, então basta ajustar antes dele — daí o `capture`.
+    // Direito desloca e meio orbita; Shift inverte. O OrbitControls relê
+    // `mouseButtons` a cada pointerdown, então basta ajustar antes dele — daí o `capture`.
     this._antesDoDown = (ev) => {
       if (ev.button === 1) {
         this.controles.mouseButtons.MIDDLE =
           ev.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
       } else if (ev.button === 2) {
         this.controles.mouseButtons.RIGHT =
-          ev.shiftKey ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+          ev.shiftKey ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
       }
     };
     elemento.addEventListener('pointerdown', this._antesDoDown, { capture: true });
