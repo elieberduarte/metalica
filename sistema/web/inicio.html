@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metálica — projetos</title>
+<link rel="stylesheet" href="estilo.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M5 24V13l11-6 11 6v11' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linejoin='round'/></svg>">
+<script>
+// Tema antes do primeiro quadro, para a página não piscar clara num sistema escuro.
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+</head>
+<body class="inicio">
+
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M4 27V13.5L16 6l12 7.5V27" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M4 13.5h24M16 6v21" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".55"/>
+    </svg>
+    <h1>Metálica<span>Projetos de estruturas metálicas</span></h1>
+  </div>
+  <div class="projeto-atual" id="pasta-dados" title="Pasta onde os projetos ficam guardados">—</div>
+  <div class="acoes">
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" id="btn-pasta" title="Abrir a pasta dos projetos no Explorador de Arquivos">Abrir pasta</button>
+  </div>
+</header>
+
+<main class="gerenciador">
+
+  <section class="gerenciador-cabeca">
+    <div>
+      <h2>Projetos</h2>
+      <p class="nota" id="contagem">carregando…</p>
+    </div>
+    <div class="gerenciador-acoes">
+      <input type="search" id="busca" placeholder="Buscar por nome, cliente ou local" aria-label="Buscar projeto">
+      <button type="button" id="btn-novo-ifc" title="Cria um projeto a partir de um modelo IFC de outro programa (TecnoMETAL, Tekla, Revit…)">Novo a partir de IFC…</button>
+      <button type="button" id="btn-novo" class="principal">Novo projeto</button>
+    </div>
+  </section>
+
+  <div id="lista" class="lista-projetos" aria-live="polite"></div>
+
+  <div id="vazio" class="vazio-grande" hidden>
+    <svg width="54" height="54" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M4 27V13.5L16 6l12 7.5V27" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M4 13.5h24M16 6v21" fill="none" stroke="currentColor" stroke-width=".9" opacity=".55"/>
+    </svg>
+    <h3>Nenhum projeto ainda</h3>
+    <p>Um projeto guarda o dimensionamento, o modelo 3D e tudo o que for gerado a partir dele, numa pasta só.</p>
+    <div class="vazio-acoes">
+      <button type="button" class="principal" data-acao="novo">Novo projeto de galpão</button>
+      <button type="button" data-acao="novo-ifc">Novo a partir de um IFC…</button>
+    </div>
+  </div>
+
+  <footer class="gerenciador-pe" id="pe"></footer>
+</main>
+
+<!-- novo projeto / renomear / duplicar: um diálogo só, montado pelo inicio.js -->
+<dialog class="dlg" id="dlg">
+  <form method="dialog" id="dlg-form">
+    <h3 id="dlg-titulo">Novo projeto</h3>
+    <p class="nota" id="dlg-texto"></p>
+    <div class="dlg-campos" id="dlg-campos"></div>
+    <p class="dlg-erro" id="dlg-erro" hidden></p>
+    <div class="dlg-botoes">
+      <button type="button" id="dlg-cancelar">Cancelar</button>
+      <button type="submit" class="principal" id="dlg-ok">Criar</button>
+    </div>
+  </form>
+</dialog>
+
+<input type="file" id="arquivo-ifc" accept=".ifc,.IFC" hidden>
+
+<div class="carregando" id="carregando" hidden>
+  <div class="caixa"><span class="giro"></span><span id="carregando-texto">Trabalhando…</span></div>
+</div>
+<div class="bandeja" id="bandeja" aria-live="polite"></div>
+
+<script src="inicio.js"></script>
+<script src="/vivo.js"></script>
+</body>
+</html>

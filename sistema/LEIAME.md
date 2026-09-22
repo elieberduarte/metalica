@@ -12,13 +12,32 @@ cd sistema
 python app.py
 ```
 
-O navegador abre em `http://localhost:8765`. Preencha as cinco etapas e clique em
-**Dimensionar**. Depois vá em **Entrega** para gerar os arquivos.
+O navegador abre em `http://localhost:8765` no **gerenciador de projetos**. Ali você cria um
+projeto de galpão (que abre o dimensionamento) ou um projeto a partir de um IFC (que abre o
+editor 3D), e volta a qualquer projeto pela lista. Cada projeto é uma pasta em
+`Documentos\Metálica` (no programa instalado) ou em `sistema/projetos` (no desenvolvimento):
 
-O botão **Modelo 3D**, no alto da tela, abre o galpão dimensionado no editor 3D, em outra
-aba. O editor também abre direto em `http://localhost:8765/editor`.
+```
+<pasta de dados>/galpao-do-joao/
+├── projeto.json     identificação, tipo, datas e os dados do dimensionamento
+├── modelo.json      documento do editor 3D
+├── origem/          o IFC importado, como veio
+├── memorial/  desenhos/  pranchas/  lista/   entregas do dimensionamento
+├── detalhamento/    DXF de produção, romaneio e relatório
+└── ifc/             IFC exportado pelo editor
+```
 
-Opções: `--porta 9000` muda a porta, `--sem-navegador` não abre o navegador sozinho.
+Tudo é arquivo comum (JSON, PDF, DXF, CSV, IFC): copiar a pasta é o backup. O formulário
+do dimensionamento e o modelo 3D são gravados sozinhos a cada mudança. `projeto.json`
+guarda a entrada do cálculo, não o resultado: o cálculo é refeito ao abrir, e o memorial
+diz de qual versão do programa saiu. Excluir move a pasta para `.lixeira`.
+
+Telas: `/` gerenciador, `/dimensionar?projeto=<pasta>` dimensionamento,
+`/editor?projeto=<pasta>` editor 3D. Sem `?projeto=`, o dimensionamento funciona como
+rascunho guardado no navegador, e o botão Salvar cria o projeto.
+
+Opções: `--porta 9000` muda a porta, `--sem-navegador` não abre o navegador sozinho,
+`--dados pasta` muda a pasta de dados.
 
 ## O que o sistema faz
 

@@ -236,7 +236,9 @@ export class Editor {
     const modo = this.parametros.get('modo');
     if (modo) this.definirModo(modo);
 
-    if (this.parametros.get('galpao') === '1') await this._carregarGalpaoDaInterface();
+    this.projeto = this.parametros.get('projeto') || null;
+    if (this.projeto) await this._abrirProjeto();
+    else if (this.parametros.get('galpao') === '1') await this._carregarGalpaoDaInterface();
     else if (this.parametros.get('exemplo')) this.carregarExemplo();
     else if (this.parametros.get('abrir')) await this.abrirModelo(this.parametros.get('abrir'));
     else {
@@ -820,6 +822,11 @@ export class Editor {
     const n = nome || this.el.nome.value.trim() || this.documento.nome || 'modelo';
     this.documento.nome = n;
     try {
+      if (this.projeto && !nome) {
+        const s = await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON());
+        this.aviso(`Modelo salvo no projeto (${s.entidades} objetos).`, 'info');
+        return;
+      }
       const r = await this.api.salvar(this.documento.paraJSON(), n);
       this._lembrar(r.salvo || n);
       this.aviso(`Modelo salvo: projetos/modelos/${r.salvo} (${r.entidades} objetos).`, 'info');
@@ -880,8 +887,12 @@ export class Editor {
     this._autosalvando = true;
     const nome = this.el.nome.value.trim() || this.documento.nome || 'modelo';
     try {
-      const r = await this.api.salvar(this.documento.paraJSON(), nome);
-      this._lembrar(r.salvo || nome);
+      if (this.projeto) {
+        await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON());
+      } else {
+        const r = await this.api.salvar(this.documento.paraJSON(), nome);
+        this._lembrar(r.salvo || nome);
+      }
     } catch (e) {
       this.dica(`Gravação automática falhou: ${e.message}`);
     } finally {
@@ -955,6 +966,62 @@ export class Editor {
     return true;
   }
 
+  /**
+   * Abre o editor dentro de um projeto (?projeto=<slug>): o modelo é o modelo.json da
+   * pasta do projeto, e a gravação automática escreve nele.
+   *
+   * Projeto de galpão sem modelo ainda gera um a partir do dimensionamento. Com modelo
+   * salvo, abre o salvo — que pode ter edições feitas à mão — e, se o dimensionamento
+   * mudou depois, avisa e oferece gerar de novo em vez de sobrescrever calado.
+   */
+  async _abrirProjeto() {
+    const s = this.projeto;
+    const dim = document.getElementById('link-dimensionamento');
+    let projeto = null;
+    try {
+      projeto = (await this.api.projeto(s)).projeto;
+    } catch (e) {
+      this.aviso(`Projeto "${s}" não encontrado: ${e.message}`, 'erro', 0);
+      this.projeto = null;
+      if (dim) dim.hidden = true;
+      return;
+    }
+    document.title = `${projeto.nome || s} — Editor 3D`;
+    if (dim) {
+      dim.href = '/dimensionar?projeto=' + encodeURIComponent(s);
+      dim.hidden = projeto.tipo !== 'galpao';
+    }
+    const dados = (projeto.dados && typeof projeto.dados === 'object') ? projeto.dados : null;
+    let modelo = null;
+    try { modelo = await this.api.modeloDoProjeto(s); } catch { modelo = null; }
+
+    if (modelo && modelo.documento) {
+      this.carregarDocumento(modelo.documento, { autosalvar: false });
+      if (dados) {                      // é o que "Calcular estrutura" analisa
+        this._dadosGalpao = dados;
+        this._atualizarBotaoCalcular();
+      }
+      this.dica(`Projeto "${projeto.nome || s}" aberto.`);
+      const gerado = this.documento.projeto || {};
+      const mudou = dados && ['vao', 'comprimento', 'pe_direito', 'espacamento_porticos', 'inclinacao',
+                              'com_misula', 'base_rotulada', 'espacamento_tercas']
+        .some(k => k in gerado && String(gerado[k]) !== String(dados[k]));
+      if (mudou) {
+        const botao = el('button', { type: 'button', texto: 'Gerar de novo' });
+        botao.addEventListener('click', async () => {
+          if (await this.gerarDoGalpao(dados)) this.dica('Modelo refeito a partir do dimensionamento atual.');
+        });
+        this.aviso(el('span', {}, 'O dimensionamento mudou depois que este modelo foi gerado. ' +
+          'Gerar de novo descarta as edições feitas à mão. ', botao), 'atencao', 0);
+      }
+      return;
+    }
+    if (dados) { await this.gerarDoGalpao(dados); return; }
+    this.dica(projeto.tipo === 'ifc'
+      ? 'Projeto sem modelo: use IFC → Importar IFC… para trazer o arquivo.'
+      : 'Projeto sem dimensionamento ainda: preencha os dados em Dimensionamento, ou desenhe à mão.');
+  }
+
   async _carregarGalpaoDaInterface() {
     let dados = null;
     try {
@@ -999,7 +1066,8 @@ export class Editor {
     this.dica('Exportando IFC…');
     try {
       const r = await this.api.exportarIFC(this.documento.paraJSON(),
-                                           this.el.nome.value || this.documento.nome);
+                                           this.el.nome.value || this.documento.nome,
+                                           this.projeto ? { projeto: this.projeto } : {});
       const a = r.arquivo || {};
       const conteudo = el('span', {}, `IFC exportado (${r.entidades} objetos): `,
         el('a', { href: a.url, download: a.nome || true, texto: a.nome || 'baixar' }),
@@ -1027,8 +1095,15 @@ export class Editor {
         await this.dialogo({ titulo: `Conteúdo de ${arquivo.name}`, corpo: pre, ok: null });
         return;
       }
-      const r = await this.api.importarIFC(arquivo);
-      this.carregarDocumento(r.documento);
+      let r;
+      if (this.projeto) {
+        r = await this.api.importarIFCNoProjeto(this.projeto, arquivo);
+        const m = await this.api.modeloDoProjeto(this.projeto);
+        this.carregarDocumento(m.documento, { autosalvar: false });
+      } else {
+        r = await this.api.importarIFC(arquivo);
+        this.carregarDocumento(r.documento);
+      }
       const e = r.estatisticas || this.documento.estatisticas();
       this.aviso(`${arquivo.name}: ${e.entidades} objetos importados ` +
                  `(${e.barras} barras, ${e.chapas} chapas, ${e.solidos} sólidos).`, 'info', 9000);
@@ -1044,7 +1119,7 @@ export class Editor {
    *  com ressalva. O arquivo pode ter dezenas de megabytes, então avisa que demora. */
   async _detalharIFC(arquivo) {
     this.dica(`Detalhando as peças de ${arquivo.name}… (um arquivo grande leva um minuto)`);
-    const r = await this.api.detalharIFC(arquivo);
+    const r = await this.api.detalharIFC(arquivo, this.projeto);
     const arq = r.arquivos || {};
     const link = (chave, rotulo) => arq[chave]
       ? el('a', { href: arq[chave].url, download: arq[chave].nome || true, texto: rotulo })

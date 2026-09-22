@@ -673,3 +673,7 @@ dialog p.explica { margin: 0 0 10px; color: var(--texto2); font-size: 12.5px; }
   .paineis { display: none; }
   .nome-modelo { display: none; }
 }
+
+/* dois links de volta no topo: projetos e dimensionamento */
+.topo a.voltar[hidden] { display: none; }
+.topo a.voltar + a.voltar { margin-left: -6px; }

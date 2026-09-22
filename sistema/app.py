@@ -13,9 +13,12 @@ Rotas da API:
     POST /api/dimensionar           recebe DadosGalpao, devolve ProjetoGalpao em JSON
     POST /api/gerar                 gera memorial, DXF, pranchas e lista de material
     POST /api/modelo/ifc/detalhar   IFC recebido → DXF de produção, romaneio e relatório
-    GET  /api/projetos              lista projetos salvos
-    POST /api/projetos              salva um projeto (JSON de entrada)
-    GET  /api/projetos/<nome>       carrega um projeto salvo
+    GET  /api/projetos                  lista os projetos (ver projetos.py)
+    POST /api/projetos                  cria um projeto
+    GET  /api/projetos/<slug>           projeto.json e resumo
+    GET  /api/projetos/<slug>/modelo    documento do editor 3D
+    POST /api/projetos/<slug>/<ação>    dados, modelo, importar-ifc, renomear, duplicar,
+                                        excluir, abrir-pasta
     GET  /saida/<projeto>/<arquivo> baixa um arquivo gerado
 """
 import json
@@ -184,7 +187,7 @@ def gerar_saidas(entrada: dict) -> dict:
     dados = _dados_de(entrada.get("dados", entrada))
     quais = entrada.get("saidas") or ["memorial", "dxf", "pranchas", "lista"]
     projeto = calcular(dados)
-    pasta = os.path.join(PROJETOS, _slug(dados.nome))
+    do_projeto, pasta = _pasta_do_projeto(entrada, dados.nome)
     os.makedirs(pasta, exist_ok=True)
     arquivos = []
 
@@ -216,6 +219,8 @@ def gerar_saidas(entrada: dict) -> dict:
     resposta = projeto.para_json()
     resposta["arquivos"] = [_descrever_arquivo(a, pasta) for a in arquivos if a]
     resposta["pasta"] = pasta
+    if do_projeto:
+        _gerente().tocar(do_projeto)
     return resposta
 
 
@@ -267,39 +272,99 @@ def _slug(nome: str) -> str:
     return re.sub(r"[\s_-]+", "-", s)[:60] or "projeto"
 
 
-def salvar_projeto(entrada: dict) -> dict:
-    dados = _dados_de(entrada)
-    os.makedirs(PROJETOS, exist_ok=True)
-    caminho = os.path.join(PROJETOS, _slug(dados.nome) + ".json")
-    with open(caminho, "w", encoding="utf-8") as f:
-        json.dump(dados.dict(), f, ensure_ascii=False, indent=1)
-    return {"salvo": os.path.basename(caminho), "nome": dados.nome}
+# ---------------------------------------------------------------- projetos
+#
+# Ver projetos.py: cada projeto é uma pasta com projeto.json, modelo.json, o IFC de
+# origem e as entregas. Aqui ficam só as rotas e o que depende do resto do servidor.
+
+def _gerente():
+    from projetos import Projetos
+    return Projetos(PROJETOS)
 
 
-def listar_projetos() -> list:
-    if not os.path.isdir(PROJETOS):
-        return []
-    saida = []
-    for f in sorted(os.listdir(PROJETOS)):
-        if f.endswith(".json"):
-            try:
-                with open(os.path.join(PROJETOS, f), encoding="utf-8") as fh:
-                    d = json.load(fh)
-                saida.append({"arquivo": f, "nome": d.get("nome", f),
-                              "vao": d.get("vao"), "comprimento": d.get("comprimento")})
-            except Exception:
-                pass
-    return saida
+def _pasta_do_projeto(corpo: dict, nome_padrao: str):
+    """(slug ou None, pasta) onde gravar uma entrega. Com `projeto` no pedido, dentro
+    dele; sem, numa pasta com o nome do trabalho, como sempre foi."""
+    s = (corpo or {}).get("projeto")
+    if s:
+        return s, _gerente()._existente(s)
+    return None, os.path.join(PROJETOS, _slug(nome_padrao))
 
 
-def carregar_projeto(nome: str) -> dict:
-    caminho = os.path.join(PROJETOS, os.path.basename(nome))
-    if not caminho.endswith(".json"):
-        caminho += ".json"
-    if not os.path.exists(caminho):
-        raise ErroDeDados(f"projeto não encontrado: {nome}")
-    with open(caminho, encoding="utf-8") as f:
-        return json.load(f)
+def criar_projeto(corpo: dict) -> dict:
+    return _gerente().criar(corpo.get("nome"), corpo.get("cliente"), corpo.get("local"),
+                            corpo.get("responsavel"), corpo.get("tipo") or "galpao",
+                            corpo.get("dados") if isinstance(corpo.get("dados"), dict) else None)
+
+
+def projeto_completo(s: str) -> dict:
+    g = _gerente()
+    return {"projeto": g.ler(s), "resumo": g.resumo(s)}
+
+
+def acao_de_projeto(s: str, acao: str, corpo: dict) -> dict:
+    g = _gerente()
+    if acao == "dados":
+        return g.salvar_dados(s, corpo.get("dados", corpo))
+    if acao == "renomear":
+        return g.renomear(s, corpo.get("nome"))
+    if acao == "duplicar":
+        return g.duplicar(s, corpo.get("nome"))
+    if acao == "excluir":
+        return g.excluir(s)
+    if acao == "abrir-pasta":
+        pasta = g._existente(s)
+        sub = os.path.basename(str(corpo.get("sub") or ""))
+        if sub and os.path.isdir(os.path.join(pasta, sub)):
+            pasta = os.path.join(pasta, sub)
+        _abrir_no_explorador(pasta)
+        return {"aberta": pasta}
+    if acao == "modelo":
+        return g.salvar_modelo(s, corpo.get("documento", corpo))
+    if acao == "importar-ifc":
+        return importar_ifc_no_projeto(s, corpo)
+    raise ErroDeDados("ação desconhecida para o projeto: " + acao)
+
+
+def _abrir_no_explorador(pasta: str):
+    """Abre a pasta no gerenciador de arquivos do sistema (o servidor é local)."""
+    import subprocess
+    os.makedirs(pasta, exist_ok=True)
+    if os.name == "nt":
+        os.startfile(pasta)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", pasta])
+    else:
+        subprocess.Popen(["xdg-open", pasta])
+
+
+def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
+    """Guarda o IFC em <projeto>/origem, importa e grava o modelo do editor. Devolve só
+    o relatório: o documento tem dezenas de megabytes e o editor o busca ao abrir."""
+    import base64
+    from ifc import importar as imp
+    g = _gerente()
+    pasta = g._existente(s)
+    dados = corpo.get("conteudo_b64")
+    if not dados:
+        raise ErroDeDados("nenhum arquivo IFC recebido.")
+    nome = os.path.basename(corpo.get("nome") or "modelo.ifc")
+    if not nome.lower().endswith(".ifc"):
+        nome += ".ifc"
+    destino = os.path.join(pasta, "origem", nome)
+    os.makedirs(os.path.dirname(destino), exist_ok=True)
+    with open(destino, "wb") as f:
+        f.write(base64.b64decode(dados))
+    doc = imp.importar(destino)
+    g.salvar_modelo(s, doc.dict())
+    g.tocar(s, tipo="ifc", origem_ifc=nome)
+    return {"projeto": s, "estatisticas": doc.estatisticas(),
+            "relatorio": doc.metadados.get("importacao", {})}
+
+
+def modelo_do_projeto(s: str) -> dict:
+    doc = _gerente().abrir_modelo(s)
+    return {"documento": doc, "existe": doc is not None}
 
 
 
@@ -374,7 +439,8 @@ def exportar_ifc(corpo: dict) -> dict:
     from ifc import exportar as exp
     doc = _documento_de(corpo)
     nome = _slug(corpo.get("nome") or doc.nome or "modelo")
-    pasta = os.path.join(PROJETOS, nome, "ifc")
+    do_projeto, base = _pasta_do_projeto(corpo, nome)
+    pasta = os.path.join(base, "ifc")
     caminho = exp.exportar(doc, os.path.join(pasta, nome + ".ifc"),
                            projeto_nome=doc.nome,
                            autor=corpo.get("autor") or "",
@@ -417,8 +483,11 @@ def detalhar_ifc(corpo: dict) -> dict:
     from saida import detalhamento
     destino = _gravar_ifc_recebido(corpo, "detalhar.ifc")
     nome = _slug(os.path.splitext(os.path.basename(corpo.get("nome") or "modelo"))[0])
-    pasta = os.path.join(PROJETOS, nome, "detalhamento")
+    do_projeto, base = _pasta_do_projeto(corpo, nome)
+    pasta = os.path.join(base, "detalhamento")
     rel = detalhamento.gerar(destino, pasta)
+    if do_projeto:
+        _gerente().tocar(do_projeto)
     rel["arquivos"] = {k: _descrever_arquivo(v, pasta) for k, v in rel["arquivos"].items()}
     rel["arquivos"]["relatorio"] = _descrever_arquivo(os.path.join(pasta, "relatorio.json"), pasta)
     rel["pasta"] = pasta
@@ -547,7 +616,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         rota = unquote(urlparse(self.path).path)
         try:
-            if rota == "/" or rota == "/index.html":
+            if rota == "/":
+                return self._arquivo(os.path.join(WEB, "inicio.html"), WEB)
+            if rota in ("/dimensionar", "/index.html"):
                 return self._arquivo(os.path.join(WEB, "index.html"), WEB)
             if rota in ("/api/vivo", "/api/fechou"):
                 _sinal_de_vida(self.path, rota == "/api/fechou")
@@ -560,9 +631,12 @@ class Handler(BaseHTTPRequestHandler):
             if rota == "/api/catalogo":
                 return self._json(catalogo())
             if rota == "/api/projetos":
-                return self._json(listar_projetos())
+                return self._json(_gerente().listar())
             if rota.startswith("/api/projetos/"):
-                return self._json(carregar_projeto(rota.split("/api/projetos/", 1)[1]))
+                partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
+                if len(partes) == 2 and partes[1] == "modelo":
+                    return self._json(modelo_do_projeto(partes[0]))
+                return self._json(projeto_completo(partes[0]))
             if rota == "/api/modelo/catalogo":
                 return self._json(catalogo_3d())
             if rota == "/api/modelo/lista":
@@ -593,8 +667,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(dimensionar(corpo))
             if rota == "/api/gerar":
                 return self._json(gerar_saidas(corpo))
+            if rota == "/api/pasta-de-dados":
+                _abrir_no_explorador(PROJETOS)
+                return self._json({"aberta": PROJETOS})
             if rota == "/api/projetos":
-                return self._json(salvar_projeto(corpo))
+                return self._json(criar_projeto(corpo))
+            if rota.startswith("/api/projetos/"):
+                partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
+                if len(partes) != 2:
+                    raise ErroDeDados("rota de projeto inválida: " + rota)
+                return self._json(acao_de_projeto(partes[0], partes[1], corpo))
             if rota == "/api/modelo/malha":
                 return self._json(malhas_do_documento(corpo))
             if rota == "/api/modelo/ifc/exportar":

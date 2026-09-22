@@ -831,3 +831,88 @@ kbd {
   .corpo { grid-template-columns: 1fr; }
   .etapa[hidden] { display: block !important; }
 }
+
+
+/* =====================================================================================
+   Gerenciador de projetos (inicio.html)
+   ===================================================================================== */
+body.inicio { display: block; }
+.gerenciador { max-width: 1180px; margin: 0 auto; padding: 26px 28px 40px; }
+.gerenciador-cabeca { display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap; margin-bottom: 16px; }
+.gerenciador-cabeca[hidden] { display: none; }
+.gerenciador-cabeca h2 { font-size: 22px; color: var(--texto); letter-spacing: -.01em; }
+.gerenciador-cabeca .nota { margin-top: 3px; font-size: 12.5px; color: var(--texto3); }
+.gerenciador-acoes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gerenciador-acoes input[type="search"] { width: 290px; max-width: 100%; padding: 7px 10px;
+  border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo);
+  color: var(--texto); font: inherit; font-size: 13px; }
+.gerenciador-acoes input[type="search"]:focus { outline: 2px solid var(--campo-foco); outline-offset: 0; }
+
+.lista-projetos { display: flex; flex-direction: column; gap: 10px; }
+.cartao { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 16px; align-items: center;
+  background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio);
+  padding: 14px 16px; box-shadow: var(--sombra); cursor: pointer;
+  transition: border-color .12s, transform .12s; }
+.cartao:hover { border-color: var(--azul2); }
+.cartao:focus-visible { outline: 2px solid var(--campo-foco); outline-offset: 2px; }
+.cartao-icone { width: 54px; height: 54px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--azul-fraco); color: var(--azul); }
+.cartao-icone.ifc { background: color-mix(in srgb, #7c4dbd 14%, var(--painel)); color: #7c4dbd; }
+.cartao-linha1 { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cartao-linha1 h3 { font-size: 16px; color: var(--texto); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; min-width: 0; }
+.etiqueta { flex: none; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px; background: var(--azul-fraco); color: var(--azul); }
+.etiqueta.ifc { background: color-mix(in srgb, #7c4dbd 14%, var(--painel)); color: #7c4dbd; }
+.cartao-sub { margin-top: 3px; font-size: 12.5px; color: var(--texto2); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.cartao-conteudo { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.pilula { font: inherit; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; line-height: 1.5;
+  border: 1px solid var(--borda); background: var(--painel2); color: var(--texto2); }
+.pilula.fraco { color: var(--texto3); border-style: dashed; }
+.pilula.entrega { border-color: color-mix(in srgb, var(--verde) 35%, var(--borda));
+  background: var(--verde-fundo); color: var(--verde); }
+button.pilula { cursor: pointer; }
+button.pilula:hover:not(:disabled) { border-color: var(--verde); color: var(--verde); }
+.cartao-lado { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+.cartao-quando { font-size: 11.5px; color: var(--texto3); white-space: nowrap; }
+.cartao-botoes { display: flex; gap: 6px; }
+.cartao-menu { display: flex; gap: 0; opacity: .55; transition: opacity .12s; }
+.cartao:hover .cartao-menu, .cartao:focus-within .cartao-menu { opacity: 1; }
+.cartao-menu button { font-size: 11.5px; padding: 2px 6px; }
+button.perigo { color: var(--verm); }
+button.perigo:hover:not(:disabled) { background: var(--verm-fundo); color: var(--verm); border-color: transparent; }
+
+.vazio-grande { text-align: center; padding: 70px 20px; color: var(--texto2); }
+.vazio-grande[hidden] { display: none; }
+.vazio-grande svg { color: var(--azul); opacity: .7; }
+.vazio-grande h3 { margin-top: 14px; font-size: 19px; color: var(--texto); }
+.vazio-grande p { margin: 8px auto 0; max-width: 460px; font-size: 13.5px; line-height: 1.55; }
+.vazio-acoes { display: flex; gap: 10px; justify-content: center; margin-top: 20px; flex-wrap: wrap; }
+
+.gerenciador-pe { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--borda);
+  font-size: 11.5px; color: var(--texto3); line-height: 1.5; }
+
+dialog.dlg { border: 1px solid var(--borda-forte); border-radius: var(--raio); background: var(--painel);
+  color: var(--texto); padding: 0; width: min(480px, calc(100vw - 32px));
+  box-shadow: 0 18px 60px rgba(9, 16, 28, .35); }
+dialog.dlg::backdrop { background: rgba(9, 16, 28, .55); }
+dialog.dlg form { padding: 20px 22px 18px; }
+dialog.dlg h3 { font-size: 17px; color: var(--azul); }
+dialog.dlg .nota { margin-top: 6px; font-size: 12.5px; color: var(--texto2); line-height: 1.5; }
+.dlg-campos { display: flex; flex-direction: column; gap: 11px; margin-top: 16px; }
+.dlg-erro { margin-top: 10px; font-size: 12.5px; color: var(--verm); }
+.dlg-botoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+/* volta ao gerenciador, na barra lateral do dimensionamento */
+a.voltar-projetos { display: flex; align-items: center; gap: 6px; padding: 7px 9px; margin-bottom: 10px;
+  border-radius: var(--raio-p); color: var(--azul2); font-size: 12.5px; text-decoration: none; }
+a.voltar-projetos:hover { background: var(--azul-fraco); }
+.estado-salvo { font-size: 11px; color: var(--texto3); padding: 0 9px 8px; min-height: 16px; }
+
+@media (max-width: 760px) {
+  .cartao { grid-template-columns: 44px minmax(0, 1fr); }
+  .cartao-lado { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+  .gerenciador { padding: 18px 14px 30px; }
+}

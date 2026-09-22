@@ -19,6 +19,8 @@
 
 const PARAMS = new URLSearchParams(location.search);
 const DEMO = PARAMS.has('demo') && PARAMS.get('demo') !== '0';
+/** Projeto em que a tela trabalha (pasta em Documentos\\Metálica), ou null no rascunho. */
+const PROJETO = PARAMS.get('projeto') || null;
 const CHAVE_ESTADO = 'galpao.estado.v1';
 const ETAPAS = ['projeto', 'cargas', 'materiais', 'resultados', 'entrega'];
 
@@ -121,6 +123,7 @@ function salvarLocal() {
   if (DEMO) return;
   try {
     localStorage.setItem(CHAVE_ESTADO, JSON.stringify(estado.dados));
+    agendarGravacaoNoProjeto();
   } catch (e) {
     /* janela privativa ou armazenamento cheio: seguir sem persistir */
   }
@@ -1113,7 +1116,7 @@ async function gerarArquivos(quais) {
       ? await api('exemplo.json')
       : await api('/api/gerar', {
         method: 'POST',
-        body: JSON.stringify({ dados: dadosParaEnvio(), saidas: quais }),
+        body: JSON.stringify({ dados: dadosParaEnvio(), saidas: quais, projeto: PROJETO || undefined }),
       });
     estado.entrega = resposta;
     if (resposta.elementos) estado.projeto = resposta;
@@ -1622,71 +1625,81 @@ function renderEntrega() {
   }
 }
 
-/* ------------------------------------------------------- projetos salvos */
+/* ---------------------------------------------------------------- projeto
+ *
+ * A tela trabalha dentro de um projeto quando a URL traz ?projeto=<slug> (é como o
+ * gerenciador a abre). O formulário vem de projeto.json, cada mudança é gravada lá
+ * depois de um instante de sossego, e as entregas saem na pasta do projeto. Sem o
+ * parâmetro a tela continua servindo de rascunho, guardado só no navegador. */
 
-async function carregarListaProjetos() {
-  const lista = $('#projetos-lista');
-  lista.textContent = '';
+let temporizadorProjeto = null;
+let gravandoProjeto = false;
+let gravacaoPendente = false;
+
+function estadoSalvo(texto) {
+  const e = $('#estado-salvo');
+  if (e) e.textContent = texto || '';
+}
+
+/** Aplica ao formulário os dados guardados no projeto. Devolve false se não havia. */
+function aplicarDadosDoProjeto(p) {
+  const dados = (p && p.dados) || null;
+  if (dados && Object.keys(dados).length) {
+    for (const [k, v] of Object.entries(dados)) {
+      if (!(k in estado.tipos)) continue;
+      estado.dados[k] = (estado.tipos[k] === 'bool') ? Boolean(v)
+        : (v === null || v === undefined ? '' : String(v));
+    }
+    return true;
+  }
+  for (const k of ['nome', 'cliente', 'local', 'responsavel']) {
+    if (p && typeof p[k] === 'string' && k in estado.tipos) estado.dados[k] = p[k];
+  }
+  return false;
+}
+
+async function gravarNoProjeto({ avisar = false } = {}) {
+  if (!PROJETO || DEMO) return;
+  if (gravandoProjeto) { gravacaoPendente = true; return; }
+  gravandoProjeto = true;
+  estadoSalvo('gravando…');
   try {
-    const itens = await api('/api/projetos');
-    if (!itens || !itens.length) {
-      lista.append(el('li', { class: 'vazio' }, 'nenhum projeto salvo'));
-      return;
-    }
-    for (const it of itens) {
-      lista.append(el('li', {}, el('button', {
-        type: 'button', title: 'abrir ' + it.arquivo,
-        onclick: () => abrirProjeto(it.arquivo),
-      }, it.nome, el('small', {}, `${nf(it.vao, 1)} × ${nf(it.comprimento, 1)} m`))));
-    }
+    /* o formulário como está, mesmo com campo em branco: é rascunho de trabalho */
+    await api('/api/projetos/' + encodeURIComponent(PROJETO) + '/dados', {
+      method: 'POST', body: JSON.stringify({ dados: dadosParaEnvio() }),
+    });
+    estadoSalvo('gravado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    if (avisar) recado('Projeto salvo', estado.dados.nome || PROJETO, 'ok');
   } catch (e) {
-    lista.append(el('li', { class: 'vazio' }, 'não foi possível listar'));
+    estadoSalvo('não foi possível gravar');
+    if (avisar) { const d = descreverErro(e); recado(d.titulo, d.texto, 'erro'); }
+  } finally {
+    gravandoProjeto = false;
+    if (gravacaoPendente) { gravacaoPendente = false; agendarGravacaoNoProjeto(); }
   }
 }
 
-async function abrirProjeto(arquivo) {
-  carregando(true, 'Carregando projeto…');
-  try {
-    const dados = await api('/api/projetos/' + encodeURIComponent(arquivo));
-    for (const [k, v] of Object.entries(dados)) {
-      if (!(k in estado.tipos)) continue;
-      estado.dados[k] = (estado.tipos[k] === 'bool') ? Boolean(v) : String(v);
-      if (estado.tipos[k] === 'bool') estado.dados[k] = Boolean(v);
-    }
-    normalizarAberturas();
-    refletirNosCampos();
-    estado.projeto = null;
-    estado.entrega = null;
-    aoMudarDados();
-    irPara('projeto');
-    recado('Projeto carregado', dados.nome || arquivo, 'ok');
-  } catch (e) {
-    const d = descreverErro(e);
-    recado(d.titulo, d.texto, 'erro');
-  } finally {
-    carregando(false);
-  }
+function agendarGravacaoNoProjeto() {
+  if (!PROJETO || DEMO) return;
+  clearTimeout(temporizadorProjeto);
+  temporizadorProjeto = setTimeout(() => gravarNoProjeto(), 1200);
 }
 
 async function salvarProjeto() {
-  const erros = validar();
-  mostrarErros(erros);
-  if (Object.keys(erros).length) {
-    recado('Corrija os campos marcados', 'O servidor valida os mesmos limites.', 'erro');
-    irPara(etapaDoCampo(Object.keys(erros)[0]));
-    return;
-  }
-  carregando(true, 'Salvando…');
+  if (PROJETO) { await gravarNoProjeto({ avisar: true }); return; }
+  /* rascunho sem projeto: o botão Salvar cria um e passa a trabalhar nele */
+  const d = dadosParaEnvio();
+  if (!d.nome) { recado('Dê um nome ao projeto', 'Preencha "Nome do projeto" na etapa 1.', 'erro'); irPara('projeto'); return; }
+  carregando(true, 'Criando o projeto…');
   try {
-    const r = await api('/api/projetos', {
-      method: 'POST', body: JSON.stringify(dadosParaEnvio()),
+    const p = await api('/api/projetos', {
+      method: 'POST', body: JSON.stringify({ nome: d.nome, cliente: d.cliente, local: d.local,
+                                             responsavel: d.responsavel, tipo: 'galpao', dados: d }),
     });
-    recado('Projeto salvo', `${r.nome} → ${r.salvo}`, 'ok');
-    carregarListaProjetos();
+    location.href = '/dimensionar?projeto=' + encodeURIComponent(p.slug);
   } catch (e) {
-    const d = descreverErro(e);
-    recado(d.titulo, d.texto, 'erro');
-  } finally {
+    const x = descreverErro(e);
+    recado(x.titulo, x.texto, 'erro');
     carregando(false);
   }
 }
@@ -1754,7 +1767,6 @@ async function iniciar() {
   $('#btn-tema').addEventListener('click', alternarTema);
   $('#btn-salvar').addEventListener('click', salvarProjeto);
   $('#btn-calcular').addEventListener('click', () => dimensionar());
-  $('#btn-recarregar-projetos').addEventListener('click', carregarListaProjetos);
   $('#memoria-fechar').addEventListener('click', () => $('#dlg-memoria').close());
 
   for (const b of $$('[data-ir]')) b.addEventListener('click', () => irPara(b.dataset.ir));
@@ -1798,7 +1810,23 @@ async function iniciar() {
     }
   }
 
-  const salvo = lerLocal();
+  /* dentro de um projeto o formulário vem dele; o rascunho do navegador é de outro
+     trabalho e contaminaria um projeto novo com os dados do anterior */
+  let doProjeto = null;
+  if (PROJETO && !DEMO) {
+    try {
+      doProjeto = (await api('/api/projetos/' + encodeURIComponent(PROJETO))).projeto;
+    } catch (e) {
+      const d = descreverErro(e);
+      recado('Projeto não encontrado', d.texto || PROJETO, 'erro');
+    }
+  }
+  const salvo = PROJETO ? null : lerLocal();
+  if (doProjeto) {
+    const tinhaDados = aplicarDadosDoProjeto(doProjeto);
+    document.title = (doProjeto.nome || PROJETO) + ' — Metálica';
+    estadoSalvo(tinhaDados ? 'projeto aberto' : 'projeto novo: os dados são gravados sozinhos');
+  }
   if (salvo) {
     for (const [k, v] of Object.entries(salvo)) {
       if (k in estado.tipos) estado.dados[k] = (estado.tipos[k] === 'bool') ? Boolean(v) : v;
@@ -1820,7 +1848,6 @@ async function iniciar() {
   normalizarAberturas();
   montarFormulario();
   aoMudarDados();
-  carregarListaProjetos();
 
   renderResultados();
   renderEntrega();
@@ -1848,7 +1875,7 @@ let janelaPropria = false;
 fetch('/api/versao').then(r => r.json()).then(v => { janelaPropria = !!v.janela; }).catch(() => {});
 
 function abrirEditor3D() {
-  const url = '/editor?galpao=1';
+  const url = PROJETO ? '/editor?projeto=' + encodeURIComponent(PROJETO) : '/editor?galpao=1';
   if (!janelaPropria) { window.open(url, '_blank'); return; }
   const larg = Math.min(1600, screen.availWidth - 80), alt = Math.min(1000, screen.availHeight - 80);
   const j = window.open(url, 'metalica-editor3d', `popup=yes,width=${larg},height=${alt},left=40,top=40`);

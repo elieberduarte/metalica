@@ -1,0 +1,274 @@
+# -*- coding: utf-8 -*-
+"""Projetos em disco: o que o gerenciador de projetos lista, cria, abre e apaga.
+
+Um projeto é uma pasta dentro da pasta de dados (Documentos\\Metálica no programa
+instalado), com tudo o que pertence a ele:
+
+    <pasta de dados>/
+    └── galpao-do-joao/
+        ├── projeto.json     identificação, tipo, datas e os dados do dimensionamento
+        ├── modelo.json      documento do editor 3D (barras, chapas, sólidos, camadas)
+        ├── origem/          o IFC importado, como veio
+        ├── memorial/  desenhos/  pranchas/  lista/      entregas do dimensionamento
+        ├── detalhamento/    DXF de produção, romaneio e relatório
+        └── ifc/             IFC exportado pelo editor
+
+Tudo é arquivo comum: JSON legível, PDF, DXF, CSV, IFC. O usuário copia a pasta para
+fazer backup ou mandar o projeto a alguém, e o programa do outro lado a enxerga.
+
+`projeto.json` guarda a **entrada** do dimensionamento, não o resultado: o cálculo leva
+poucos segundos e é refeito ao abrir, de modo que um projeto antigo aberto numa versão
+nova do programa sai com as verificações da versão nova, e o memorial diz de qual.
+
+Pastas que já existiam antes deste módulo (entregas geradas pelo nome do galpão) são
+adotadas: aparecem na lista e ganham o `projeto.json` na primeira vez que são abertas.
+"""
+import datetime
+import json
+import os
+import re
+import shutil
+import time
+from typing import Dict, List, Optional
+
+from nucleo.base import ErroDeDados
+import versao
+
+ARQUIVO = "projeto.json"
+MODELO = "modelo.json"
+LIXEIRA = ".lixeira"
+#: Pastas da pasta de dados que não são projetos.
+RESERVADAS = {"modelos", LIXEIRA, "_conferencia", "_desenhos"}
+#: O que o gerenciador mostra como conteúdo do projeto: pasta -> rótulo.
+ENTREGAS = [("memorial", "Memorial"), ("desenhos", "Desenhos DXF"), ("pranchas", "Pranchas"),
+            ("lista", "Lista de material"), ("detalhamento", "Detalhamento"),
+            ("ifc", "IFC exportado")]
+TIPOS = {"galpao": "Galpão dimensionado", "ifc": "Modelo a partir de IFC"}
+IDENTIFICACAO = ("nome", "cliente", "local", "responsavel")
+
+
+def slug(nome: str) -> str:
+    """Nome de pasta: minúsculas, sem pontuação, hífen no lugar de espaço."""
+    s = re.sub(r"[^\w\s-]", "", (nome or "projeto"), flags=re.U).strip().lower()
+    return re.sub(r"[\s_-]+", "-", s)[:60].strip("-") or "projeto"
+
+
+def _agora() -> str:
+    return datetime.datetime.now().replace(microsecond=0).isoformat()
+
+
+def _gravar_json(caminho: str, dados, indent=None):
+    """Temporário + troca: quem ler no meio da gravação não pega metade do arquivo."""
+    os.makedirs(os.path.dirname(caminho), exist_ok=True)
+    parcial = caminho + ".parcial"
+    with open(parcial, "w", encoding="utf-8") as f:
+        json.dump(dados, f, ensure_ascii=False, indent=indent)
+    os.replace(parcial, caminho)
+
+
+def _ler_json(caminho: str):
+    with open(caminho, encoding="utf-8") as f:
+        return json.load(f)
+
+
+class Projetos:
+    """Operações sobre os projetos de uma pasta de dados."""
+
+    def __init__(self, raiz: str):
+        self.raiz = raiz
+
+    # ------------------------------------------------------------ caminhos
+    def pasta(self, s: str) -> str:
+        """Pasta do projeto, recusando qualquer coisa que saia da pasta de dados."""
+        s = os.path.basename(str(s or "").replace("\\", "/").rstrip("/"))
+        if not s or s.startswith(".") or s in RESERVADAS:
+            raise ErroDeDados("projeto inválido: %r" % s)
+        return os.path.join(self.raiz, s)
+
+    def _existente(self, s: str) -> str:
+        pasta = self.pasta(s)
+        if not os.path.isdir(pasta):
+            raise ErroDeDados("projeto não encontrado: " + s)
+        return pasta
+
+    def _slug_livre(self, nome: str) -> str:
+        base = slug(nome)
+        if base in RESERVADAS:
+            base += "-projeto"
+        candidato, n = base, 2
+        while os.path.exists(os.path.join(self.raiz, candidato)):
+            candidato, n = "%s-%d" % (base, n), n + 1
+        return candidato
+
+    # ------------------------------------------------------------ leitura
+    def ler(self, s: str) -> dict:
+        """`projeto.json`, criado na hora para pasta adotada."""
+        pasta = self._existente(s)
+        caminho = os.path.join(pasta, ARQUIVO)
+        if os.path.exists(caminho):
+            try:
+                p = _ler_json(caminho)
+                if isinstance(p, dict):
+                    p.setdefault("nome", s)
+                    p.setdefault("tipo", "galpao")
+                    return p
+            except (OSError, ValueError):
+                pass                                  # arquivo estragado: reconstrói abaixo
+        quando = datetime.datetime.fromtimestamp(os.path.getmtime(pasta)).replace(
+            microsecond=0).isoformat()
+        p = {"formato": 1, "nome": s.replace("-", " ").strip().capitalize() or s,
+             "cliente": "", "local": "", "responsavel": "",
+             "tipo": "ifc" if os.path.isdir(os.path.join(pasta, "origem")) else "galpao",
+             "criado": quando, "alterado": quando, "programa": versao.VERSAO,
+             "dados": None, "origem_ifc": None, "adotado": True}
+        _gravar_json(caminho, p, indent=1)
+        return p
+
+    def resumo(self, s: str) -> dict:
+        """Uma linha da lista do gerenciador."""
+        pasta = self._existente(s)
+        p = self.ler(s)
+        entregas = []
+        for sub, rotulo in ENTREGAS:
+            d = os.path.join(pasta, sub)
+            if os.path.isdir(d) and any(os.scandir(d)):
+                entregas.append({"pasta": sub, "rotulo": rotulo})
+        modelo = os.path.join(pasta, MODELO)
+        dados = p.get("dados") or {}
+        return {"slug": s, "nome": p.get("nome") or s, "cliente": p.get("cliente", ""),
+                "local": p.get("local", ""), "responsavel": p.get("responsavel", ""),
+                "tipo": p.get("tipo", "galpao"), "tipo_rotulo": TIPOS.get(p.get("tipo"), "Projeto"),
+                "criado": p.get("criado"), "alterado": p.get("alterado"),
+                "programa": p.get("programa"),
+                "tem_dados": bool(dados), "vao": dados.get("vao"),
+                "comprimento": dados.get("comprimento"),
+                "tem_modelo": os.path.exists(modelo),
+                "modelo_mb": round(os.path.getsize(modelo) / 1048576, 1) if os.path.exists(modelo) else 0,
+                "origem_ifc": p.get("origem_ifc"), "entregas": entregas, "pasta": pasta}
+
+    def listar(self) -> List[dict]:
+        if not os.path.isdir(self.raiz):
+            return []
+        itens = []
+        for nome in os.listdir(self.raiz):
+            pasta = os.path.join(self.raiz, nome)
+            if not os.path.isdir(pasta) or nome.startswith((".", "_")) or nome in RESERVADAS:
+                continue
+            conhecido = os.path.exists(os.path.join(pasta, ARQUIVO)) or any(
+                os.path.isdir(os.path.join(pasta, sub)) for sub, _ in ENTREGAS) or \
+                os.path.isdir(os.path.join(pasta, "origem"))
+            if not conhecido:
+                continue                              # pasta qualquer do usuário: não é nossa
+            try:
+                itens.append(self.resumo(nome))
+            except (OSError, ErroDeDados):
+                continue
+        itens.sort(key=lambda i: i.get("alterado") or "", reverse=True)
+        return itens
+
+    # ------------------------------------------------------------ escrita
+    def criar(self, nome: str, cliente="", local="", responsavel="", tipo="galpao",
+              dados: Optional[dict] = None) -> dict:
+        nome = re.sub(r"\s+", " ", str(nome or "")).strip()
+        if not nome:
+            raise ErroDeDados("dê um nome ao projeto.")
+        if tipo not in TIPOS:
+            raise ErroDeDados("tipo de projeto desconhecido: %r" % tipo)
+        s = self._slug_livre(nome)
+        agora = _agora()
+        p = {"formato": 1, "nome": nome, "cliente": str(cliente or "").strip(),
+             "local": str(local or "").strip(), "responsavel": str(responsavel or "").strip(),
+             "tipo": tipo, "criado": agora, "alterado": agora, "programa": versao.VERSAO,
+             "dados": dados or None, "origem_ifc": None}
+        if p["dados"]:
+            p["dados"].update({k: p[k] for k in IDENTIFICACAO})
+        _gravar_json(os.path.join(self.pasta(s), ARQUIVO), p, indent=1)
+        return self.resumo(s)
+
+    def _atualizar(self, s: str, **campos) -> dict:
+        p = self.ler(s)
+        p.update(campos)
+        p["alterado"] = _agora()
+        p["programa"] = versao.VERSAO
+        p.pop("adotado", None)
+        _gravar_json(os.path.join(self._existente(s), ARQUIVO), p, indent=1)
+        return p
+
+    def salvar_dados(self, s: str, dados: dict) -> dict:
+        """Guarda o formulário do dimensionamento como está, mesmo incompleto: é
+        rascunho de trabalho, e quem valida é o cálculo. A identificação do projeto
+        acompanha o que está no formulário."""
+        if not isinstance(dados, dict):
+            raise ErroDeDados("dados do projeto inválidos.")
+        campos = {"dados": dados}
+        for k in IDENTIFICACAO:
+            v = dados.get(k)
+            if isinstance(v, str) and (v.strip() or k != "nome"):
+                campos[k] = v.strip()
+        self._atualizar(s, **campos)
+        return self.resumo(s)
+
+    def tocar(self, s: str, **campos):
+        """Marca o projeto como alterado agora (entrega gerada, modelo salvo)."""
+        self._atualizar(s, **campos)
+
+    def renomear(self, s: str, nome: str) -> dict:
+        """Muda o nome e, se der, a pasta junto, para o Explorer mostrar o mesmo nome."""
+        nome = re.sub(r"\s+", " ", str(nome or "")).strip()
+        if not nome:
+            raise ErroDeDados("dê um nome ao projeto.")
+        p = self.ler(s)
+        dados = p.get("dados")
+        if isinstance(dados, dict):
+            dados["nome"] = nome
+        self._atualizar(s, nome=nome, dados=dados)
+        novo = slug(nome)
+        if novo != s and novo not in RESERVADAS and not os.path.exists(os.path.join(self.raiz, novo)):
+            try:
+                os.rename(self._existente(s), os.path.join(self.raiz, novo))
+                s = novo
+            except OSError:
+                pass                                  # arquivo aberto em outro programa: fica o nome antigo
+        return self.resumo(s)
+
+    def duplicar(self, s: str, nome: Optional[str] = None) -> dict:
+        origem = self._existente(s)
+        p = self.ler(s)
+        nome = re.sub(r"\s+", " ", str(nome or "")).strip() or (p.get("nome", s) + " (cópia)")
+        novo = self._slug_livre(nome)
+        shutil.copytree(origem, os.path.join(self.raiz, novo),
+                        ignore=shutil.ignore_patterns("*.parcial"))
+        dados = p.get("dados")
+        if isinstance(dados, dict):
+            dados = dict(dados, nome=nome)
+        agora = _agora()
+        self._atualizar(novo, nome=nome, dados=dados, criado=agora)
+        return self.resumo(novo)
+
+    def excluir(self, s: str) -> dict:
+        """Não apaga: move para `.lixeira`, com a data no nome. Apagar de verdade é
+        decisão do usuário, no Explorer."""
+        origem = self._existente(s)
+        lixo = os.path.join(self.raiz, LIXEIRA)
+        os.makedirs(lixo, exist_ok=True)
+        destino = os.path.join(lixo, "%s-%s" % (s, time.strftime("%Y%m%d-%H%M%S")))
+        shutil.move(origem, destino)
+        return {"excluido": s, "lixeira": destino}
+
+    # ------------------------------------------------------------ modelo 3D
+    def caminho_modelo(self, s: str) -> str:
+        return os.path.join(self._existente(s), MODELO)
+
+    def salvar_modelo(self, s: str, documento: dict) -> dict:
+        if not isinstance(documento, dict):
+            raise ErroDeDados("documento 3D ausente ou inválido.")
+        _gravar_json(self.caminho_modelo(s), documento)
+        self.tocar(s)
+        return {"salvo": MODELO, "projeto": s,
+                "entidades": len(documento.get("entidades") or [])}
+
+    def abrir_modelo(self, s: str) -> Optional[dict]:
+        caminho = self.caminho_modelo(s)
+        if not os.path.exists(caminho):
+            return None
+        return _ler_json(caminho)

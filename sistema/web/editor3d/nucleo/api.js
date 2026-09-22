@@ -65,6 +65,24 @@ export class Api {
 
   abrir(nome) { return pedir(this._r('/api/modelo/abrir/' + encodeURIComponent(nome))); }
 
+  // ---- projeto: o modelo mora em <projeto>/modelo.json (ver sistema/projetos.py)
+  projeto(slug) { return pedir(this._r('/api/projetos/' + encodeURIComponent(slug))); }
+
+  modeloDoProjeto(slug) {
+    return pedir(this._r('/api/projetos/' + encodeURIComponent(slug) + '/modelo'));
+  }
+
+  salvarModeloDoProjeto(slug, documentoJSON) {
+    return postar(this._r('/api/projetos/' + encodeURIComponent(slug) + '/modelo'),
+                  { documento: documentoJSON });
+  }
+
+  async importarIFCNoProjeto(slug, arquivo) {
+    const conteudo_b64 = await paraBase64(arquivo);
+    return postar(this._r('/api/projetos/' + encodeURIComponent(slug) + '/importar-ifc'),
+                  { nome: arquivo.name, conteudo_b64 });
+  }
+
   lista() { return pedir(this._r('/api/modelo/lista')); }
 
   exportarIFC(documentoJSON, nome, extras = {}) {
@@ -87,10 +105,10 @@ export class Api {
 
   /** Detalhamento de peças para produção: o servidor devolve os links do DXF único,
    *  do romaneio e do relatório. Não mexe no documento aberto. */
-  async detalharIFC(arquivo) {
+  async detalharIFC(arquivo, projeto = null) {
     const conteudo_b64 = await paraBase64(arquivo);
     return postar(this._r('/api/modelo/ifc/detalhar'),
-                  { nome: arquivo.name, conteudo_b64 });
+                  { nome: arquivo.name, conteudo_b64, projeto: projeto || undefined });
   }
 
   /** Dimensiona o galpão e devolve o modelo 3D correspondente. */
