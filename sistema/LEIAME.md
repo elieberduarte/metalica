@@ -301,8 +301,12 @@ dimensões (a chapa de base maior). **Contraventamentos** com as mesmas peças d
 detalhe só (`desenho_de_contraventamentos`): elevação do mais comprido, cotas empilhadas
 "C.V.3 (02x) – 5150" por contraventamento, cotas das peças de ponta com o nome ("230  B.R.1") e,
 no título, o tirante de cada um com o comprimento de corte. Barra roscada é `B.R.n`; redondo curto
-(< 600 mm) é gancho `G.n`. A regra das terças também torna **oblongos** os furos da ligação
-(Ø13 → 25x13, rasgo no sentido da barra; `_oblongar`) — a chapinha do suporte fica redonda.
+(< 600 mm) é gancho `G.n`. A regra das terças também torna **oblongos** todos os furos redondos da terça na vista de
+frente (Ø13 → 25x13, rasgo no sentido da barra; `oblongar_tercas`, depois da regra e dos ajustes)
+— a chapinha do suporte fica redonda; `_arestas_dos_furos` esconde o cilindro inteiro do furo da
+malha atrás do símbolo. As **cotas dos furos** das células saem sempre: trecho curto demais para o
+número (35 mm da ponta em 1:25) vai para uma segunda linha alternada (`cadeia_h` devolve "dupla" e
+a total sobe uma linha).
 
 **Camadas por tipo de peça** (`CAMADAS_PECAS`, paleta das camadas do 3D): TERCAS, BANZOS,
 DIAGONAIS, MONTANTES, CHAPAS, TIRANTES, PILARES, VIGAS, TELHAS. O traço forte de cada peça vai

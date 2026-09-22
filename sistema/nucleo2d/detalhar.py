@@ -211,20 +211,24 @@ class _Papel:
         return True
 
     def cadeia_h(self, xs, y, desl_papel, exigir_espaco=True):
+        """Cadeia de cotas. Sem `exigir_espaco`, trechos curtos demais para o número
+        saem em duas linhas alternadas (os textos não se atropelam); devolve "dupla"."""
         xs = sorted(set(float(round(x)) for x in xs))
         if exigir_espaco and not self._cabe(xs):
             return False
+        dupla = not self._cabe(xs)
         for i in range(len(xs) - 1):
-            self.cota_h(xs[i], xs[i + 1], y, desl_papel)
-        return True
+            self.cota_h(xs[i], xs[i + 1], y, desl_papel * (2 if dupla and i % 2 else 1))
+        return "dupla" if dupla else True
 
-    def cadeia_v(self, ys, x, desl_papel):
+    def cadeia_v(self, ys, x, desl_papel, exigir_espaco=True):
         ys = sorted(set(float(round(y)) for y in ys))
-        if not self._cabe(ys):
+        if exigir_espaco and not self._cabe(ys):
             return False
+        dupla = not self._cabe(ys)
         for i in range(len(ys) - 1):
-            self.cota_v(ys[i], ys[i + 1], x, desl_papel)
-        return True
+            self.cota_v(ys[i], ys[i + 1], x, desl_papel * (2 if dupla and i % 2 else 1))
+        return "dupla" if dupla else True
 
     @property
     def extremos(self):
@@ -785,18 +789,15 @@ def _oblongar(grupo: Sequence[Furo]) -> int:
 
 
 def oblongar_tercas(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> List[str]:
-    """Padrão da fábrica: os furos da ligação da terça (os que têm par na mesma coluna —
-    o furo isolado do tirante fica) são oblongos, com o rasgo no sentido da barra. Vale
-    depois da regra e dos ajustes do projeto. Devolve as marcas alteradas."""
+    """Padrão da fábrica: todos os furos redondos da terça na vista de frente (ligação
+    aos suportes, esticador, tirante) são oblongos, com o rasgo no sentido da barra.
+    Vale depois da regra e dos ajustes do projeto. Devolve as marcas alteradas."""
     fora = []
     for pos in posicoes:
         if not _eh_terca(pos, camadas.get(pos.marca, "")):
             continue
         frente = [f for f in pos.furos if f.vista == "frente"]
-        n = 0
-        for f in frente:
-            if f.tipo == "redondo" and any(g is not f and abs(g.x - f.x) <= 2.0 for g in frente):
-                n += _oblongar([f])
+        n = _oblongar([f for f in frente if f.tipo == "redondo"])
         if n:
             pos.observacoes.append("furos da ligacao oblongos (%s): padrao de fabrica" % ", ".join(sorted({f.rotulo() for f in frente if f.tipo == "oblongo"})))
             fora.append(pos.marca)
@@ -952,10 +953,12 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     # cotas: cadeia dos furos junto da peça, total mais afastada
     xs = sorted({round(f.x, 1) for f in furos_frente})
     ys = sorted({round(f.y, 1) for f in furos_frente})
-    cadeia = bool(xs) and p.cadeia_h([0.0] + xs + [L], 0, -off)
-    p.cota_h(0, L, 0, -(off2 if cadeia else off))
-    cadeia = bool(ys) and p.cadeia_v([0.0] + ys + [H], L, off)
-    p.cota_v(0, H, L, off2 if cadeia else off)
+    # as cotas dos furos saem sempre (a produção precisa delas), mesmo quando um trecho
+    # curto — 35 mm da ponta numa terça em 1:25 — deixa os textos apertados
+    cadeia = bool(xs) and p.cadeia_h([0.0] + xs + [L], 0, -off, exigir_espaco=False)
+    p.cota_h(0, L, 0, -(off3 if cadeia == "dupla" else off2 if cadeia else off))
+    cadeia = bool(ys) and p.cadeia_v([0.0] + ys + [H], L, off, exigir_espaco=False)
+    p.cota_v(0, H, L, off3 if cadeia == "dupla" else off2 if cadeia else off)
 
     x_dir = L + (off3 + off) * esc
     if pos.classe in ("barra", "barra_redonda", "telha") and pos.secao:
@@ -986,7 +989,7 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
         _vista(p, pos, (0, 2), 1, -1.0, 0, y_topo, ignorar_t)
         _desenhar_furos(p, est, furos_topo, 0, y_topo)
         if furos_topo:
-            p.cadeia_h([0.0] + sorted({round(f.x, 1) for f in furos_topo}) + [L], y_topo + w_min, -off)
+            p.cadeia_h([0.0] + sorted({round(f.x, 1) for f in furos_topo}) + [L], y_topo + w_min, -off, exigir_espaco=False)
         p.cota_v(y_topo + w_min, y_topo + w_max, L, off)
 
     # título acima da peça

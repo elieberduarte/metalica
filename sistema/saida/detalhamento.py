@@ -932,13 +932,28 @@ def _vista(d: Desenho, pos: Posicao, ij: Tuple[int, int], k: int, sinal: float,
 
 
 def _arestas_dos_furos(pos: Posicao, eixo: int, sinal: float, ij: Tuple[int, int]) -> set:
-    """Arestas dos furos já desenhados como círculo, para a silhueta não repeti-las."""
+    """Arestas dos furos já desenhados como símbolo (círculo ou oblongo), para a silhueta
+    não repeti-las: o laço da face da frente, o da face de trás e a parede do furo — tudo
+    o que cai dentro do cilindro de cada furo. Sem isso, o furo redondo da malha
+    aparecia dentro do oblongo do padrão de fábrica."""
     lacos = _lacos_2d(pos, eixo, sinal, ij)
     chaves = set()
-    for laco, _ in lacos[1:]:
+    cilindros = []
+    for laco, pts in lacos[1:]:
         for i in range(len(laco)):
             a, b = laco[i], laco[(i + 1) % len(laco)]
             chaves.add((min(a, b), max(a, b)))
+        cx = sum(p[0] for p in pts) / len(pts)
+        cy = sum(p[1] for p in pts) / len(pts)
+        cilindros.append((cx, cy, max(math.hypot(p[0] - cx, p[1] - cy) for p in pts) + 0.5))
+    if cilindros and pos.local:
+        P = [(q[ij[0]], q[ij[1]]) for q in pos.local]
+        dentro = [any(math.hypot(x - cx, y - cy) <= r for cx, cy, r in cilindros) for x, y in P]
+        for f in pos.faces:
+            for i in range(len(f)):
+                a, b = f[i], f[(i + 1) % len(f)]
+                if dentro[a] and dentro[b]:
+                    chaves.add((min(a, b), max(a, b)))
     return chaves
 
 
