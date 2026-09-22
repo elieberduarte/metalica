@@ -207,6 +207,8 @@ kbd {
 .menu-lista button[disabled] { opacity: .42; cursor: default; }
 .menu-lista button[disabled]:hover { background: none; color: inherit; }
 .menu-lista hr { border: 0; border-top: 1px solid var(--borda); margin: 5px 2px; }
+.menu-lista a.menu-link { display: block; padding: 5px 9px; border-radius: var(--raio-p); font-size: 13px; color: inherit; text-decoration: none; }
+.menu-lista a.menu-link:hover { background: var(--azul-fraco); color: var(--azul-tinta); }
 /* desenhos 2D salvos, listados ao abrir o menu Desenho 2D */
 .menu-nota { font-size: 11.5px; color: var(--texto3); padding: 4px 9px 3px; }
 .desenhos-salvos { max-height: 40vh; overflow-y: auto; }

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ajuda — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<style>
+  .ajuda { max-width: 900px; margin: 0 auto; padding: 22px 24px 60px; }
+  .ajuda h2 { font-size: 20px; margin: 30px 0 10px; color: var(--azul); }
+  .ajuda h3 { font-size: 15px; margin: 18px 0 6px; }
+  .ajuda p, .ajuda li { font-size: 14px; line-height: 1.55; }
+  .ajuda ul, .ajuda ol { padding-left: 22px; }
+  .ajuda kbd { font: 12px var(--mono); border: 1px solid var(--borda-forte); border-radius: 3px; padding: 0 5px; background: var(--painel2); }
+  .ajuda .indice { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 18px; margin: 14px 0 6px; padding: 12px 16px;
+    background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); }
+  .ajuda .indice a { text-decoration: none; font-size: 13.5px; }
+  .ajuda table { border-collapse: collapse; width: 100%; margin: 8px 0 12px; font-size: 13.5px; }
+  .ajuda th, .ajuda td { border: 1px solid var(--borda); padding: 5px 9px; text-align: left; vertical-align: top; }
+  .ajuda th { background: var(--painel2); }
+  .ajuda .caixa { padding: 10px 14px; border-left: 3px solid var(--amarelo); background: var(--amarelo-fundo); border-radius: var(--raio-p); margin: 10px 0; }
+  .ajuda .caixa.info { border-color: var(--azul2); background: var(--azul-fraco); }
+  .ajuda .passo { font-weight: 600; color: var(--azul); }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M4 27V13.5L16 6l12 7.5V27" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M4 13.5h24M16 6v21" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".55"/>
+    </svg>
+    <h1>Metálica<span>Ajuda do programa</span></h1>
+  </div>
+  <div class="projeto-atual">Guia de uso: projetos, modelo 3D, CAD, detalhamento e pranchas</div>
+  <div class="acoes">
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" onclick="history.length > 1 ? history.back() : (location.href = '/')">Voltar</button>
+  </div>
+</header>
+
+<main class="ajuda">
+
+<h2 id="inicio">Por onde começar</h2>
+<p>O programa é uma sequência de telas, e cada uma abre a seguinte:</p>
+<ol>
+  <li><span class="passo">Projetos</span> (a primeira tela): crie um projeto a partir de um arquivo <b>IFC</b> do detalhamento (TecnoMETAL, Tekla, Advance Steel) ou um projeto de <b>galpão dimensionado</b>. Cada projeto é uma pasta em <code>Documentos\Metálica</code>; copiar a pasta é o backup.</li>
+  <li><span class="passo">Modelo 3D</span>: veja e organize as peças importadas, pesquise, pinte por posição, gere cortes e o detalhamento.</li>
+  <li><span class="passo">Desenho 2D (CAD)</span>: cotas, textos e ajustes nos desenhos gerados; importação de DXF.</li>
+  <li><span class="passo">Pranchas</span>: folhas com carimbo montadas dos desenhos, em PDF e DXF.</li>
+</ol>
+<div class="indice">
+  <a href="#projetos">Projetos e arquivos</a>
+  <a href="#modelo3d">Modelo 3D e IFC</a>
+  <a href="#pesquisa">Pesquisar e colorir peças</a>
+  <a href="#cortes">Cortes e vistas 2D</a>
+  <a href="#cad">CAD 2D: ferramentas e atalhos</a>
+  <a href="#detalhamento">Detalhamento de peças e conjuntos</a>
+  <a href="#tercas">Regra da furação das terças</a>
+  <a href="#pranchas">Pranchas, PDF e DXF</a>
+  <a href="#dxf">Importar um DXF</a>
+  <a href="#instalar">Instalar e atualizar</a>
+  <a href="#limites">O que o programa ainda não faz</a>
+</div>
+
+<h2 id="projetos">Projetos e arquivos</h2>
+<p>Na tela <b>Projetos</b>, <b>Novo a partir de IFC</b> importa o arquivo (um IFC de 80 MB leva cerca de 20 s) e abre o Modelo 3D. Os cartões mostram o que cada projeto já tem: modelo 3D, entregas e os <b>desenhos 2D gravados</b> (as pílulas ✎ abrem o CAD direto no desenho). Renomear, duplicar e excluir ficam no cartão; excluir move a pasta para <code>.lixeira</code>.</p>
+<p>Dentro da pasta do projeto: <code>projeto.json</code> (identificação), <code>modelo.json</code> (o modelo 3D), <code>origem/</code> (o IFC como veio), <code>desenhos-2d/</code> (um arquivo por desenho do CAD), <code>detalhamento/</code> (romaneio e relatório) e <code>pranchas/</code> (PDFs). Tudo é gravado sozinho a cada mudança; não há botão "salvar" que você possa esquecer.</p>
+<div class="caixa">A pasta <code>Documentos\Metálica</code> costuma estar no OneDrive. O programa espera o OneDrive soltar os arquivos, mas se um projeto ficar lento, pause a sincronização enquanto trabalha.</div>
+
+<h2 id="modelo3d">Modelo 3D e IFC</h2>
+<p>O modelo mostra as peças do IFC em camadas por tipo (Chapas, Parafusos, Vigas, Pilares, Telhas, Tirantes). O olho ao lado da camada esconde ou mostra; ocultar as <b>Telhas</b> é o primeiro gesto para ver a estrutura. Girar: botão direito; deslocar: botão do meio; zoom: roda; <kbd>Z</kbd> enquadra tudo; teclas <kbd>1</kbd> a <kbd>7</kbd> vistas padrão.</p>
+<p>Clique numa peça para ver, no painel à direita, o grupo <b>Peça (IFC)</b>: posição (marca da peça) com quantas iguais existem, conjunto de montagem, perfil, tipo IFC, comprimento, seção envolvente e massa. Clique no valor da posição para selecionar todas as iguais; no do conjunto, para selecionar o conjunto inteiro.</p>
+
+<h2 id="pesquisa">Pesquisar e colorir peças</h2>
+<p><b>Pesquisar</b> (campo no topo, ou <kbd>Ctrl+F</kbd>): digite parte do nome, a posição (<code>P12</code>), o conjunto (<code>M2</code>), o perfil (<code>U150</code>) ou duas palavras (<code>M2 plate</code>). Os resultados saem agrupados por posição com a contagem; clique seleciona o grupo, duplo clique enquadra, setas percorrem, <kbd>Enter</kbd> seleciona tudo.</p>
+<p><b>Colorir por</b> (painel Camadas): <i>posição</i> pinta cada peça diferente com uma cor e as iguais com a mesma — 160 posições ganham 160 cores distintas; <i>conjunto</i> pinta por montagem; <i>perfil</i> por seção. A legenda lista cada grupo com a contagem; clique nela seleciona.</p>
+
+<h2 id="cortes">Cortes e vistas 2D</h2>
+<ul>
+  <li><b>Corte de uma tesoura:</b> ferramenta <b>Seção</b> (<kbd>X</kbd>), clique numa face ou tecle <kbd>Y</kbd> para um plano transversal, digite o afastamento, e tecle <kbd>G</kbd>: o corte vira um desenho 2D e o CAD abre nele. O que o plano atravessa sai hachurado; o que está além, até a profundidade escolhida, sai projetado.</li>
+  <li><b>Vistas da seleção:</b> menu <b>Desenho 2D → Vistas da seleção…</b> com peças selecionadas gera frente, planta e laterais só delas. Sem seleção, gera do modelo inteiro (pesado: use para prancha de conjunto).</li>
+  <li><b>Desenhos salvos:</b> o mesmo menu lista os desenhos do projeto; nada precisa ser gerado de novo para abrir.</li>
+</ul>
+
+<h2 id="cad">CAD 2D: ferramentas e atalhos</h2>
+<table>
+  <tr><th>Grupo</th><th>Ferramentas</th></tr>
+  <tr><td>Desenho</td><td>linha <kbd>L</kbd>, polilinha, retângulo <kbd>R</kbd>, círculo <kbd>C</kbd>, arco, texto <kbd>T</kbd>, cota <kbd>D</kbd>, chamada <kbd>H</kbd>, hachura</td></tr>
+  <tr><td>Edição</td><td>mover <kbd>M</kbd>, copiar, girar, espelhar, paralela (offset), aparar, apagar <kbd>Del</kbd></td></tr>
+  <tr><td>Apoio</td><td>medir, snap (extremidade, meio, centro, interseção, perpendicular, sobre a linha, grade), orto com <kbd>Shift</kbd> ou <kbd>F8</kbd>, desfazer <kbd>Ctrl+Z</kbd>, refazer <kbd>Ctrl+Y</kbd></td></tr>
+</table>
+<p>Medidas digitadas funcionam como no AutoCAD: <code>1500</code>, <code>1,5m</code>, <code>1500&lt;30</code> (comprimento e ângulo), <code>2000;1000</code> (retângulo). A <b>escala</b> no topo (1:10, 1:25…) é a de impressão: define o tamanho de textos, cotas e hachuras no papel. Cada linha sabe de que peça 3D veio: <b>Editar → Selecionar tudo da mesma peça</b>.</p>
+<p>Botão do meio ou direito arrasta a vista; roda dá zoom; <kbd>Z</kbd> enquadra. O desenho é gravado sozinho no projeto.</p>
+
+<h2 id="detalhamento">Detalhamento de peças e conjuntos</h2>
+<p>No Modelo 3D, <b>Desenho 2D → Detalhar peças e conjuntos…</b> (ou no CAD, <b>Vistas do modelo → Detalhar…</b>). Sai um desenho por grupo — chapas (1:10), barras e terças (1:25), tirantes, telhas e conjuntos (1:50):</p>
+<ul>
+  <li><b>Posições:</b> uma célula por marca de peça, com título "P12 – 112x" (as iguais são contadas, não repetidas), perfil ou chapa com espessura, material, furos, peso unitário e total, contorno com furos e cotas, seção da barra ao lado, vista de topo quando há furo na mesa. Chapa dobrada traz o retângulo do <b>desenvolvimento</b>; barra curva traz o <b>comprimento de corte</b> pelo volume.</li>
+  <li><b>Conjuntos:</b> a elevação de cada montagem (tesoura, viga, pilar) deitada, com a cadeia de cotas dos nós embaixo e em cima, altura, rótulo de posição em cada barra, título "M2 – 08x" e lista de perfis. O número de instâncias vem da composição (8 pórticos M2 = 80 P10, 64 P11…).</li>
+  <li><b>Romaneio</b> em <code>detalhamento/romaneio.csv</code> (abre no Excel) e relatório com as ressalvas.</li>
+</ul>
+<div class="caixa info">Toda célula que o programa não conseguiu resolver diz isso no próprio desenho ("* …"): confira essas antes de mandar para a fábrica.</div>
+
+<h2 id="tercas">Regra da furação das terças</h2>
+<p>O IFC traz a furação do projetista; a máquina da fábrica fura na vertical com passo fixo. Com a opção ligada (padrão), o detalhamento refaz os grupos de furos das terças:</p>
+<table>
+  <tr><th>Altura da terça</th><th>Vertical</th><th>Horizontal</th></tr>
+  <tr><td>menor que 200 mm</td><td>50 mm</td><td>60 mm</td></tr>
+  <tr><td>200 mm ou mais</td><td>100 mm</td><td>60 mm</td></tr>
+</table>
+<p>Terça é a barra U/C/Z que viaja solta (marca de posição igual à de conjunto). A regra vale também para o que compõe a ligação — a chapinha do suporte com a mesma furação original recebe a mesma troca, em qualquer orientação. O centro de cada grupo de furos é mantido e a célula avisa "furação no padrão de fábrica". Casos ambíguos saem com "conferir".</p>
+
+<h2 id="pranchas">Pranchas, PDF e DXF</h2>
+<p>No CAD, <b>Desenho → Montar pranchas…</b>: escolha os desenhos de origem, o formato (A0 a A4) e o carimbo (obra, cliente e responsável vêm do projeto). Cada posição e cada conjunto vira uma vista na escala do desenho; o que não cabe na escala desce para a seguinte com nota, e o que não cabe na folha vai para a prancha seguinte ("01/07"). Cada prancha traz a tabela das posições que contém. Para escolher à mão o que vai numa prancha, selecione as células no desenho de detalhamento antes e marque "só as peças selecionadas".</p>
+<p>A prancha abre no CAD como um desenho em milímetro de papel: dá para mover uma vista, escrever uma nota, cotar por cima. <b>Exportar PDF</b> gera o PDF no tamanho exato da folha; <b>PDF de todas as pranchas</b> junta todas num arquivo em <code>pranchas/</code>; <b>Exportar DXF</b> grava o desenho em papel 1:1 (ou, num desenho comum, em milímetro de modelo com as camadas ACO, FURO, COTA, TEXTO).</p>
+
+<h2 id="dxf">Importar um DXF</h2>
+<p><b>Desenho → Importar DXF neste desenho…</b> traz um DXF de outro CAD para o desenho aberto: linhas, polilinhas, círculos, arcos, textos, blocos e cotas (como o CAD de origem as desenhou). Informe a unidade do arquivo se ele não a declarar (muitos DWGs antigos estão em centímetro) e o ponto de inserção. Entra como um comando: <kbd>Ctrl+Z</kbd> desfaz. DWG não é lido diretamente: no CAD de origem, salve como DXF.</p>
+
+<h2 id="instalar">Instalar e atualizar</h2>
+<p>O instalador (<code>Metalica-X.Y.Z-instalador.exe</code>) está na página de <a href="https://github.com/elieberduarte/metalica/releases/latest" target="_blank" rel="noopener">releases do GitHub</a>. Não precisa de Python: só do Chrome ou Edge que todo Windows tem. Instala sem pedir administrador e cria o atalho na área de trabalho. Na primeira execução o Windows pode mostrar "editor desconhecido": clique em <i>Mais informações → Executar assim mesmo</i>.</p>
+<p>Quando sair versão nova, a tela Projetos avisa e o botão <b>Atualizar agora</b> baixa e instala por cima; os projetos ficam onde estão. Também dá para executar o instalador novo à mão.</p>
+
+<h2 id="limites">O que o programa ainda não faz</h2>
+<ul>
+  <li>Símbolos de solda e chamadas de parafuso nos desenhos (os parafusos entram só no romaneio).</li>
+  <li>Cortes nas ligações das tesouras (A-A, B-B) e remoção de linhas ocultas nas vistas.</li>
+  <li>Recortes que não são furo redondo nem oblongo saem como contorno, sem cota própria.</li>
+  <li>No dimensionamento de galpões: pórtico treliçado e ponte rolante são recusados (o programa só calcula pórtico de alma cheia sem ponte).</li>
+</ul>
+
+</main>
+<script>
+document.getElementById('btn-tema').addEventListener('click', () => {
+  const raiz = document.documentElement;
+  const atual = raiz.getAttribute('data-tema') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro');
+  const novo = atual === 'escuro' ? 'claro' : 'escuro';
+  raiz.setAttribute('data-tema', novo);
+  try { localStorage.setItem('galpao.tema', novo); } catch (e) { /* privado */ }
+});
+</script>
+<script src="/vivo.js"></script>
+</body>
+</html>

@@ -909,6 +909,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "inicio.html"), WEB)
             if rota in ("/dimensionar", "/index.html"):
                 return self._arquivo(os.path.join(WEB, "index.html"), WEB)
+            if rota == "/ajuda":
+                return self._arquivo(os.path.join(WEB, "ajuda.html"), WEB)
             if rota in ("/api/vivo", "/api/fechou"):
                 _sinal_de_vida(self.path, rota == "/api/fechou")
                 return self._json({"ok": True})
