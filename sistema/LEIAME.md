@@ -310,6 +310,12 @@ malha atrás do símbolo. As **cotas dos furos** das células saem sempre: trech
 número (35 mm da ponta em 1:25) vai para uma segunda linha alternada (`cadeia_h` devolve "dupla" e
 a total sobe uma linha).
 
+**Desenho completo** (`desenho_completo`, grupo `completo`, padrão ligado): todos os grupos num desenho só,
+em faixas com título (CHAPAS, BARRAS E TERÇAS, TIRANTES, TELHAS, CONJUNTOS, PLANTA DE LOCALIZAÇÃO), na
+escala 1:25 — as células são desenhadas de novo nessa escala (`_anexar_faixa` translada cada faixa
+para baixo da anterior e funde células e metadados; as chapas continuam editáveis ali); a planta entra
+como está. Os desenhos por grupo continuam saindo nas escalas próprias, para as pranchas.
+
 **Camadas por tipo de peça** (`CAMADAS_PECAS`, paleta das camadas do 3D): TERCAS, BANZOS,
 DIAGONAIS, MONTANTES, CHAPAS, TIRANTES, PILARES, VIGAS, TELHAS. O traço forte de cada peça vai
 na camada do seu tipo (`_Papel.camada_peca` nas células de posição; `_classificar_pecas_do_conjunto`

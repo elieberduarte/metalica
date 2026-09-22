@@ -53,7 +53,12 @@ GRUPOS = collections.OrderedDict([
     ("telhas", {"titulo": "Detalhamento – telhas", "escala": 50.0, "classes": ("telha",)}),
     ("conjuntos", {"titulo": "Detalhamento – conjuntos", "escala": 50.0, "classes": ()}),
     ("localizacao", {"titulo": "Detalhamento – localização", "escala": 100.0, "classes": ()}),
+    # tudo num desenho só, em faixas, para navegar sem trocar de desenho
+    ("completo", {"titulo": "Detalhamento – completo", "escala": 25.0, "classes": ()}),
 ])
+#: Ordem e título das faixas do desenho completo.
+FAIXAS_COMPLETO = [("chapas", "CHAPAS"), ("barras", "BARRAS E TERÇAS"), ("tirantes", "TIRANTES E BARRAS REDONDAS"),
+                   ("telhas", "TELHAS"), ("conjuntos", "CONJUNTOS"), ("localizacao", "PLANTA DE LOCALIZAÇÃO")]
 
 TIPOS_PECA = {"IfcBeam", "IfcColumn", "IfcMember", "IfcPlate", "IfcPlateStandardCase",
               "IfcMemberStandardCase", "IfcBeamStandardCase", "IfcColumnStandardCase"}
@@ -2959,6 +2964,78 @@ def _empilhar(desenho: Desenho, celulas, largura_max_papel: float = 800.0):
     return desenho
 
 
+def _anexar_faixa(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_faixa: Optional[dict] = None) -> float:
+    """Copia as entidades de `banda` para `dc`, transladadas para ficarem abaixo de
+    `y_topo` com o título da faixa por cima; funde células e metadados. Devolve o y do
+    fundo da faixa."""
+    import copy as _copy
+    esc = dc.escala
+    if not banda.entidades:
+        return y_topo
+    pontos = [q for e in banda.entidades.values() for q in (e.pontos() if hasattr(e, "pontos") else [])]
+    if not pontos:
+        return y_topo
+    x0 = min(q[0] for q in pontos)
+    topo = max(q[1] for q in pontos)
+    fundo = min(q[1] for q in pontos)
+    y_titulo = y_topo - 12.0 * esc
+    dc.add(Texto(camada="TEXTO", posicao=(0.0, y_titulo), texto=titulo, altura=5.0, atributos={"faixa": titulo}))
+    dc.add(Linha(camada="AUXILIAR", a=(0.0, y_titulo - 2.0 * esc), b=(max(q[0] for q in pontos) - x0, y_titulo - 2.0 * esc), atributos={"faixa": titulo}))
+    dy = (y_titulo - 6.0 * esc) - topo
+    dx = -x0
+    for nome, cam in banda.camadas.items():
+        if nome not in dc.camadas:
+            dc.camadas[nome] = _copy.deepcopy(cam)
+    for e in banda.entidades.values():
+        e2 = _copy.deepcopy(e)
+        _mover(e2, dx, dy)
+        e2.atributos = dict(e2.atributos or {}, faixa=titulo)
+        dc.add(e2)
+    for c in banda.metadados.get("celulas") or []:
+        dc.metadados.setdefault("celulas", []).append([round(c[0] + dx, 1), round(c[1] + dy, 1), round(c[2] + dx, 1), round(c[3] + dy, 1)])
+    meta = dc.metadados.setdefault("detalhamento", {"grupo": "completo", "posicoes": [], "itens": {}, "editaveis": [],
+                                                    "furos_originais": {}, "conjuntos": []})
+    for m in (meta_faixa, banda.metadados.get("detalhamento")):
+        if not m:
+            continue
+        meta["posicoes"].extend(k for k in (m.get("posicoes") or []) if k not in meta["posicoes"])
+        meta["itens"].update(m.get("itens") or {})
+        meta["editaveis"].extend(k for k in (m.get("editaveis") or []) if k not in meta["editaveis"])
+        meta["furos_originais"].update(m.get("furos_originais") or {})
+        meta["conjuntos"].extend(k for k in (m.get("conjuntos") or []) if k not in meta["conjuntos"])
+    for v in banda.vistas:
+        v2 = dict(v)
+        if v2.get("canto"):
+            v2["canto"] = [v2["canto"][0] + dx, v2["canto"][1] + dy]
+        dc.vistas.append(v2)
+    return fundo + dy
+
+
+def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho]) -> Desenho:
+    """"Detalhamento – completo": cada grupo é uma faixa (título e linha), todas na
+    escala 1:25 — as células são desenhadas de novo nessa escala, com os furos das
+    chapas editáveis como no desenho do grupo; a planta de localização entra como está.
+    Serve para navegar por tudo sem trocar de desenho; para imprimir, as pranchas."""
+    g = GRUPOS["completo"]
+    dc = Desenho(nome=g["titulo"], escala=g["escala"])
+    _registrar_camadas_de_pecas(dc)
+    y = 0.0
+    for chave, titulo in FAIXAS_COMPLETO:
+        if chave == "localizacao":
+            if localizacao is not None:
+                y = _anexar_faixa(dc, localizacao, titulo, y)
+            continue
+        if chave not in faixas:
+            continue
+        celulas, largura, meta = faixas[chave]
+        banda = Desenho(nome=titulo, escala=g["escala"])
+        _empilhar(banda, [(lambda x, y_, f=f: f(banda, x, y_)) for f in celulas], largura_max_papel=largura)
+        y = _anexar_faixa(dc, banda, titulo, y, meta)
+    dc.metadados.setdefault("detalhamento", {"grupo": "completo", "posicoes": [], "itens": {}, "editaveis": [], "furos_originais": {}, "conjuntos": []})
+    dc.metadados["detalhamento"]["grupo"] = "completo"
+    return dc
+
+
 def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Optional[dict] = None,
              nomes: Optional[dict] = None) -> dict:
     """Só o levantamento: as peças de produção do modelo agrupadas em posições, com a
@@ -3103,7 +3180,8 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         p.camada_2d = _camada_da_posicao(p, nomeacao["tipos"].get(p.marca, ""), votos)
     nomeacao["camadas_2d"] = {p.marca: p.camada_2d for p in posicoes}
     camadas_ifc = {m: p.camada_2d for p in posicoes for m in marcas_de(p)}
-    if celulas and "conjuntos" in grupos:
+    faixas: Dict[str, tuple] = {}          # grupo -> (células, largura, metadados) para o desenho completo
+    if celulas and ("conjuntos" in grupos or "completo" in grupos):
         g = GRUPOS["conjuntos"]
         d = Desenho(nome=g["titulo"], escala=g["escala"])
         tipos_conj = nomeacao["tipos_conjuntos"]
@@ -3119,31 +3197,33 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                     str(_marcas(e).get("posicao") or e.nome) for e in inst).items() if fundidas.get(m, m) != marca_t))
                 cv.setdefault(chave, []).append((rotulo, inst, n))
                 continue
-            fns.append(lambda x, y, rotulo=rotulo, inst=inst, n=n, nota=nota:
-                       desenho_do_conjunto(doc, rotulo, inst, n, d, x, y, rotular, fundidas=fundidas, nota=nota,
+            fns.append(lambda dd, x, y, rotulo=rotulo, inst=inst, n=n, nota=nota:
+                       desenho_do_conjunto(doc, rotulo, inst, n, dd, x, y, rotular, fundidas=fundidas, nota=nota,
                                            nomes=nomes_pos, nome=nomes_conj.get(rotulo, ""), tipo=tipos_conj.get(rotulo, "")))
         itens_cv = {}
         for membros in cv.values():
             membros.sort(key=lambda m: _ordem_natural(nomes_conj.get(m[0], m[0])))   # mesma ordem do rótulo da célula
-            fns.append(lambda x, y, membros=membros: desenho_de_contraventamentos(
-                doc, membros, d, x, y, nomes_pos, nomes_conj, fundidas, comprimentos, rotular))
+            fns.append(lambda dd, x, y, membros=membros: desenho_de_contraventamentos(
+                doc, membros, dd, x, y, nomes_pos, nomes_conj, fundidas, comprimentos, rotular))
             chave_cel = " / ".join(m[0] for m in membros)
             itens_cv[chave_cel] = {"quantidade": sum(m[2] for m in membros), "perfil": "contraventamentos %s" % " / ".join(nomes_conj.get(m[0], m[0]) for m in membros),
                                    "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                                    "categoria": "CONJUNTOS", "marcas": [mk for m in membros for mk in m[0].split(" / ")],
                                    "nome": " / ".join(nomes_conj.get(m[0], m[0]) for m in membros)}
-        _empilhar(d, fns, largura_max_papel=1400.0)
+        _empilhar(d, [(lambda x, y, f=f: f(d, x, y)) for f in fns], largura_max_papel=1400.0)
         itens = {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
                               "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                               "categoria": c["categoria"], "marcas": c["marcas"], "nome": c["nome"]}
                  for c in conjuntos_info}
         itens.update(itens_cv)
         d.metadados["detalhamento"] = {"grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info], "itens": itens}
-        desenhos["conjuntos"] = d
+        if "conjuntos" in grupos:
+            desenhos["conjuntos"] = d
+        faixas["conjuntos"] = (fns, 1400.0, dict(d.metadados["detalhamento"]))
 
-    for chave in grupos:
+    for chave in (list(grupos) + [k for k in GRUPOS if k not in grupos]) if "completo" in grupos else grupos:
         g = GRUPOS.get(chave)
-        if not g or chave in ("conjuntos", "localizacao"):
+        if not g or chave in ("conjuntos", "localizacao", "completo"):
             continue
         lista = [p for p in _ordenar(posicoes) if p.classe in g["classes"]]
         if not lista:
@@ -3159,20 +3239,28 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                                 "nome": p.nome}
                       for p in lista}}
         editaveis = [p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))]
-        celulas = [(lambda x, y, p=p: desenho_da_posicao(p, d, x, y, editavel=p.marca in editaveis)) for p in lista]
-        _empilhar(d, celulas)
+        celulas_g = [(lambda dd, x, y, p=p: desenho_da_posicao(p, dd, x, y, editavel=p.marca in editaveis)) for p in lista]
+        _empilhar(d, [(lambda x, y, f=f: f(d, x, y)) for f in celulas_g])
         d.metadados["detalhamento"]["editaveis"] = editaveis
         d.metadados["detalhamento"]["furos_originais"] = {
             p.marca: [_furo_dict(f) for f in p.furos if f.vista == "frente"] for p in lista if p.marca in editaveis}
-        desenhos[chave] = d
+        faixas[chave] = (celulas_g, 800.0, dict(d.metadados["detalhamento"]))
+        if chave in grupos:
+            desenhos[chave] = d
 
-    if "localizacao" in grupos:
+    localizacao = None
+    if "localizacao" in grupos or "completo" in grupos:
         try:
-            desenhos["localizacao"] = desenho_de_localizacao(doc, pecas, GRUPOS["localizacao"]["titulo"],
-                                                             ignorar=[p.marca for p in posicoes if p.classe == "telha"],
-                                                             nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc)
+            localizacao = desenho_de_localizacao(doc, pecas, GRUPOS["localizacao"]["titulo"],
+                                                 ignorar=[p.marca for p in posicoes if p.classe == "telha"],
+                                                 nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc)
+            if "localizacao" in grupos:
+                desenhos["localizacao"] = localizacao
         except ErroDeDados as e:
             avisos.append("planta de localização não gerada: %s" % e)
+
+    if "completo" in grupos and (faixas or localizacao is not None):
+        desenhos["completo"] = desenho_completo(faixas, localizacao)
 
     resumo_pos = []
     for p in _ordenar(posicoes):

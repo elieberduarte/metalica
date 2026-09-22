@@ -640,3 +640,29 @@ def test_nomes_sinteticos_e_estaveis():
     assert r2["nomes"]["posicoes"]["M5"] == "T.C.7"
     outros = [n for m, n in r2["nomes"]["posicoes"].items() if m != "M5"]
     assert "T.C.7" not in outros
+
+
+
+def test_desenho_completo():
+    """"Detalhamento – completo": faixas de todos os grupos num desenho só, na escala 25,
+    com as células das chapas editáveis e a planta de localização no fim."""
+    from nucleo2d.desenho import Texto, Circulo
+    doc = _modelo()
+    r = det.detalhar(doc, regra_tercas=False)
+    dc = r["desenhos"]["completo"]
+    assert dc.escala == 25.0
+    faixas = {(e.atributos or {}).get("faixa") for e in dc.entidades.values()} - {None}
+    assert {"CHAPAS", "BARRAS E TERÇAS", "CONJUNTOS", "PLANTA DE LOCALIZAÇÃO"} <= faixas
+    titulos = [e.texto for e in dc.entidades.values() if isinstance(e, Texto) and e.altura == 5.0]
+    assert titulos[:2] == ["CHAPAS", "BARRAS E TERÇAS"]
+    meta = dc.metadados["detalhamento"]
+    assert meta["grupo"] == "completo" and "P1" in meta["editaveis"] and "P1" in meta["itens"] and "M5" in meta["itens"]
+    assert any(isinstance(e, Circulo) and e.camada == "FURO" and (e.atributos or {}).get("posicao") == "P1" for e in dc.entidades.values())
+    # as faixas não se sobrepõem: a de baixo começa abaixo da de cima
+    cels = dc.metadados["celulas"]
+    assert len(cels) >= 4
+    # o desenho do grupo continua existindo e igual
+    assert "chapas" in r["desenhos"] and r["desenhos"]["chapas"].escala == 10.0
+    # só o completo, sem os grupos: sai o mesmo conteúdo
+    r2 = det.detalhar(doc, grupos=["completo"], regra_tercas=False)
+    assert set(r2["desenhos"]) == {"completo"} and "P1" in r2["desenhos"]["completo"].metadados["detalhamento"]["editaveis"]
