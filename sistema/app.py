@@ -772,6 +772,26 @@ def verificar_atualizacao() -> dict:
 ARQUIVO_REABRIR = "reabrir.json"
 
 
+def limpar_instaladores_antigos() -> int:
+    """Apaga da pasta temporária os instaladores baixados pelas atualizações anteriores
+    (30 MB cada; sem isto, cada atualização deixava um) e o .cmd da troca. Devolve
+    quantos arquivos saíram."""
+    import glob
+    import tempfile
+    n = 0
+    pasta = tempfile.gettempdir()
+    for padrao in ("Metalica-*-instalador*.exe", "Metalica-*-instalador*.exe.parcial", "metalica-atualizar.cmd"):
+        for arq in glob.glob(os.path.join(pasta, padrao)):
+            try:
+                if time.time() - os.path.getmtime(arq) < 120:
+                    continue                          # pode ser o da troca em curso
+                os.remove(arq)
+                n += 1
+            except OSError:
+                pass
+    return n
+
+
 def _gravar_reabrir(caminho: str):
     """Guarda em que tela o programa deve reabrir depois da atualização (só caminhos
     desta interface, como "/cad?projeto=x&desenho=y")."""
@@ -839,6 +859,8 @@ def instalar_atualizacao(corpo: Optional[dict] = None) -> dict:
         "@echo off",
         "timeout /t 2 /nobreak >nul",
         '"%s" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS' % destino,
+        "timeout /t 3 /nobreak >nul",
+        'del /q "%s" >nul 2>&1' % destino,                # o instalador já cumpriu o papel
         'if not exist "%s" exit /b 1' % exe_atual,
         'tasklist /fi "imagename eq Metalica.exe" | find /i "Metalica.exe" >nul || start "" "%s"' % exe_atual,
     ]
@@ -1466,7 +1488,7 @@ def _abrir_janela(url: str):
         return subprocess.Popen(
             [exe, f"--app={url}", f"--user-data-dir={perfil}", "--no-first-run",
              "--no-default-browser-check", "--window-size=1500,950",
-             "--disable-features=Translate"],
+             "--disable-features=Translate", "--disk-cache-size=104857600"],   # cache do perfil limitado a 100 MB
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
         return None
@@ -1504,6 +1526,10 @@ def main():
     for s in extras:
         threading.Thread(target=s.serve_forever, daemon=True).start()
     url = _url_para_reabrir(f"http://localhost:{porta}/")     # volta ao desenho de antes da atualização
+    try:
+        limpar_instaladores_antigos()                           # o que as atualizações anteriores deixaram
+    except Exception:                                           # noqa: BLE001
+        pass
     # flush: com a saída redirecionada para arquivo o Python retém o texto, e quem lê o
     # registro para descobrir a porta ficaria sem resposta
     print(f"{versao.identificacao()} — dimensionamento de estruturas metálicas", flush=True)
