@@ -1199,7 +1199,7 @@ export class Editor {
       if (!r.ok || desenhos.erro) throw new Error(desenhos.erro || r.statusText);
       if (!desenhos.length) { bloco.replaceChildren(el('div', { class: 'menu-nota', texto: 'Nenhum desenho salvo neste projeto ainda.' })); return; }
       bloco.replaceChildren(el('div', { class: 'menu-nota', texto: `Desenhos salvos (${desenhos.length}) — abrir no CAD:` }),
-        ...desenhos.slice(0, 12).map(d => el('button', { type: 'button', 'data-desenho': d.nome,
+        ...desenhos.map(d => el('button', { type: 'button', 'data-desenho': d.nome,
           title: `${(d.vistas || []).join(', ') || 'sem vistas'} · ${d.kb >= 1024 ? (d.kb / 1024).toFixed(1) + ' MB' : Math.round(d.kb) + ' kB'} · ${d.alterado ? d.alterado.replace('T', ' ').slice(0, 16) : ''}` },
           el('span', { texto: d.titulo || d.nome }),
           el('small', { texto: `${(d.entidades || 0).toLocaleString('pt-BR')} objetos · ${(d.vistas || []).length} vista(s)` }))));

@@ -95,6 +95,8 @@ function urlDoProjeto(p, destino) {
   return p.tipo === 'ifc' ? `/editor?projeto=${s}` : `/dimensionar?projeto=${s}`;
 }
 
+const expandidos = new Set();   // projetos com todos os desenhos à mostra
+
 function cartao(p) {
   const onde = [p.cliente, p.local].filter(Boolean).join(' · ');
   const medidas = (p.vao && p.comprimento)
@@ -110,10 +112,16 @@ function cartao(p) {
     conteudo.push(['≡ Lista de materiais', 'desenho', null, `/materiais?projeto=${encodeURIComponent(p.slug)}`,
                    'Romaneio por posição, perfis com barras comerciais, chapas, conjuntos e acessórios; CSV e PDF']);
   }
-  // desenhos 2D gravados: cada um abre direto no CAD, sem gerar nada de novo
-  for (const d of (p.desenhos || []).slice(0, 6)) {
+  // desenhos 2D gravados: cada um abre direto no CAD, sem gerar nada de novo; além de 6,
+  // uma pílula "+N" mostra o resto
+  const desenhos = p.desenhos || [];
+  const todos = expandidos.has(p.slug);
+  for (const d of (todos ? desenhos : desenhos.slice(0, 6))) {
     conteudo.push([`✎ ${d.titulo}`, 'desenho', null, `/cad?projeto=${encodeURIComponent(p.slug)}&desenho=${encodeURIComponent(d.nome)}`,
                    `Abrir no CAD 2D · ${d.vistas.length} vista(s)${d.vistas.length ? ': ' + d.vistas.slice(0, 6).join(', ') : ''}`]);
+  }
+  if (!todos && desenhos.length > 6) {
+    conteudo.push([`+${desenhos.length - 6} desenhos…`, 'desenho', null, 'expandir', 'Mostrar todos os desenhos do projeto']);
   }
 
   const menu = el('div', { class: 'cartao-menu' },
@@ -141,7 +149,8 @@ function cartao(p) {
         el(pasta || url ? 'button' : 'span', {
           class: 'pilula ' + cls, type: pasta || url ? 'button' : undefined,
           title: dica || (pasta ? `Abrir a pasta ${pasta}` : undefined),
-          onclick: url ? (ev) => { ev.stopPropagation(); location.href = url; }
+          onclick: url === 'expandir' ? (ev) => { ev.stopPropagation(); expandidos.add(p.slug); desenhar(); }
+            : url ? (ev) => { ev.stopPropagation(); location.href = url; }
             : pasta ? (ev) => { ev.stopPropagation(); abrirPasta(p, pasta); } : undefined,
         }, rot)))),
     el('div', { class: 'cartao-lado' },
