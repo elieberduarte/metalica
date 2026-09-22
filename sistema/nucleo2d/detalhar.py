@@ -397,7 +397,7 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
 
 # ============================================================ célula da posição
 def _rotulo_espessura(pos: Posicao) -> str:
-    t = pos.T
+    t = pos.espessura or pos.T
     pol = t / 25.4
     for den in (16, 8, 4, 2):
         n = round(pol * den)
@@ -409,7 +409,10 @@ def _rotulo_espessura(pos: Posicao) -> str:
 
 def _cabecalho(pos: Posicao) -> List[str]:
     linhas = ["%s – %02dx" % (pos.marca, pos.quantidade)]
-    if pos.classe in ("chapa", "chapa_dobrada"):
+    if pos.classe == "chapa_dobrada" and pos.desenvolvimento:
+        linhas.append("%s  %s  %s  desenv. %s x %s mm" % (pos.perfil, _rotulo_espessura(pos), pos.material,
+                                                          _mm(pos.desenvolvimento[0]), _mm(pos.desenvolvimento[1])))
+    elif pos.classe in ("chapa", "chapa_dobrada"):
         linhas.append("%s  %s  %s" % (pos.perfil, _rotulo_espessura(pos), pos.material))
     elif pos.classe == "barra_conformada":
         linhas.append("%s  L desenv. %s mm  %s" % (pos.perfil, _mm(pos.comprimento), pos.material))
@@ -471,6 +474,14 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float) -> 
         w_min = min(q[2] for q in pos.local)
         _vista(p, pos, (2, 1), 0, +1.0, x_dir - w_min, 0)
         p.cota_h(x_dir, x_dir + pos.T, 0, -off)
+        if pos.desenvolvimento:
+            # planificação: retângulo largura × desenvolvimento, à direita da vista lateral
+            larg_d, comp_d = pos.desenvolvimento
+            x_pl = x_dir + pos.T + (off3 + off) * esc
+            p.retangulo(x_pl, 0, comp_d, larg_d, "ACO-FINO")
+            p.cota_h(x_pl, x_pl + comp_d, 0, -off)
+            p.cota_v(0, larg_d, x_pl + comp_d, off)
+            p.texto(x_pl, larg_d + 3.0 * esc, "DESENVOLVIMENTO (linha média)", 2.0 * esc)
     if (furos_topo or pos.vista_topo or pos.classe == "barra_conformada") and pos.local:
         w_min = min(q[2] for q in pos.local)
         w_max = max(q[2] for q in pos.local)
@@ -775,7 +786,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             "grupo": chave, "posicoes": [p.marca for p in lista],
             # o que a tabela de posições da prancha lista para cada célula
             "itens": {p.marca: {"quantidade": p.quantidade, "perfil": p.perfil, "material": p.material,
-                                "comprimento": round(p.comprimento), "espessura": round(p.T, 1),
+                                "comprimento": round(p.comprimento), "espessura": round(p.espessura or p.T, 1),
                                 "peso": round(p.peso, 2), "classe": CLASSES.get(p.classe, p.classe)}
                       for p in lista}}
         celulas = [(lambda x, y, p=p: desenho_da_posicao(p, d, x, y)) for p in lista]
@@ -839,7 +850,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     for p in _ordenar(posicoes):
         resumo_pos.append({"marca": p.marca, "classe": CLASSES.get(p.classe, p.classe), "perfil": p.perfil,
                            "material": p.material, "quantidade": p.quantidade, "comprimento": round(p.comprimento),
-                           "largura": round(p.H), "espessura": round(p.T, 1), "furos": p.rotulo_furos(),
+                           "largura": round(p.H), "espessura": round(p.espessura or p.T, 1), "furos": p.rotulo_furos(),
                            "peso": round(p.peso, 3), "peso_total": round(p.peso_total, 2),
                            "conjuntos": list(p.conjuntos), "observacoes": list(p.observacoes)})
     return {"desenhos": desenhos, "posicoes": resumo_pos, "conjuntos": conjuntos_info,

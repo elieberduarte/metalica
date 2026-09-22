@@ -253,3 +253,60 @@ if __name__ == "__main__":
                 print(f"  FALHA {nome}: {e}")
     print(f"\n{falhas} falha(s).")
     sys.exit(1 if falhas else 0)
+
+
+def _extrudar(perfil_xz, comprimento_y):
+    """Sólido fechado: polígono (x, z) extrudado ao longo de y."""
+    n = len(perfil_xz)
+    v = [(x, 0.0, z) for x, z in perfil_xz] + [(x, comprimento_y, z) for x, z in perfil_xz]
+    f = [list(range(n))[::-1], [n + i for i in range(n)]]
+    for i in range(n):
+        j = (i + 1) % n
+        f.append([i, j, n + j, n + i])
+    return v, f
+
+
+def test_chapa_dobrada_desenvolvimento():
+    """Cantoneira dobrada de chapa 3 mm, pernas 80 e 60, largura 100: desenvolvimento pela
+    linha média = (80 − 1,5) + (60 − 1,5) = 137 mm, largura 100."""
+    L_ = [(0, 0), (80, 0), (80, 3), (3, 3), (3, 60), (0, 60)]
+    v, f = _extrudar(L_, 100.0)
+    pos = det.Posicao(marca="P9", tipo_ifc="IfcPlate", perfil="PLATE 100x137x3", vertices=v, faces=f)
+    det.analisar(pos)
+    assert pos.classe == "chapa_dobrada", pos.classe
+    assert pos.desenvolvimento is not None, pos.observacoes
+    larg, comp = pos.desenvolvimento
+    assert abs(larg - 100) < 0.5 and abs(comp - 137) < 0.5, pos.desenvolvimento
+    assert abs(pos.comprimento - 137) < 0.5
+    assert any("desenvolvimento" in o for o in pos.observacoes)
+
+
+def test_barra_curva_comprimento_de_corte():
+    """U 88×40×2,25 calandrado num arco de raio 5 m e 0,3 rad (1500 mm de arco, corda
+    1494, flecha 56 mm): não é reta, e o comprimento de corte pelo volume ÷ seção sai
+    o do arco pela linha do centroide (Pappus), a 1 % do arco."""
+    h, b, t = 88.0, 40.0, 2.25
+    sec = [(0, 0), (h, 0), (h, b), (h - t, b), (h - t, t), (t, t), (t, b), (0, b)]   # (radial, largura)
+    R, theta, N = 5000.0, 0.3, 24
+    v, f = [], []
+    n = len(sec)
+    for i in range(N + 1):
+        phi = -theta / 2 + theta * i / N
+        c = (R * math.sin(phi), 0.0, R * (1 - math.cos(phi)))
+        nr = (-math.sin(phi), 0.0, math.cos(phi))          # radial (altura da seção)
+        for (yy, zz) in sec:
+            v.append((c[0] + nr[0] * yy, zz, c[2] + nr[2] * yy))
+    f.append(list(range(n))[::-1])
+    f.append([N * n + i for i in range(n)])
+    for s in range(N):
+        for i in range(n):
+            j = (i + 1) % n
+            f.append([s * n + i, s * n + j, (s + 1) * n + j, (s + 1) * n + i])
+    pos = det.Posicao(marca="P8", tipo_ifc="IfcBeam", perfil="U88X40X2.25", vertices=v, faces=f)
+    det.analisar(pos)
+    assert pos.classe == "barra_conformada", (pos.classe, pos.observacoes)
+    area = (h + 2 * (b - t)) * t
+    assert abs(pos.volume / area - pos.comprimento) < 1.0
+    # a seção fica do lado de dentro do arco (centroide a ~30 mm do raio de 5 m): 1 % menos
+    assert abs(pos.comprimento - R * theta) < 0.02 * R * theta, (pos.comprimento, pos.observacoes)
+    assert any("comprimento de corte" in o for o in pos.observacoes)

@@ -38,9 +38,13 @@ Como cada posição é lida (tudo em milímetro, no sistema local da peça):
 4. **Telha**: retângulo de corte (comprimento na direção da onda × largura) e a
    seção da onda.
 
-Limitações declaradas no relatório: chapa dobrada não tem o desenvolvimento calculado;
-furo inclinado ou rasgo aberto sai como polilinha; a seção de barra com furo bem no
-meio pode falhar numa estação, por isso são cinco.
+Chapa dobrada recebe o **desenvolvimento** pela linha média: a fatia perpendicular ao
+eixo da dobra é uma faixa fechada de espessura t, e o comprimento planificado é
+(perímetro − 2t)/2; a largura é a extensão no eixo da dobra; o eixo escolhido é o
+que faz largura × desenvolvimento × t bater com o volume. Barra curva ou dobrada
+recebe o **comprimento de corte** pelo volume dividido pela área da seção (a menor
+fatia, que é a menos oblíqua). Furo inclinado ou rasgo aberto sai como polilinha; a
+seção de barra com furo bem no meio pode falhar numa estação, por isso são nove.
 """
 import collections
 import csv
@@ -253,6 +257,8 @@ class Posicao:
     normais: List[Ponto] = field(default_factory=list)        # por face, no sistema local
     eixos: Optional[Tuple[Ponto, Ponto, Ponto]] = None        # (e1, e2, e3) no arquivo
     vista_topo: bool = False                                  # o desenho precisa da vista de cima
+    desenvolvimento: Optional[Tuple[float, float]] = None     # chapa dobrada: (largura, comprimento planificado)
+    espessura: float = 0.0    # chapa: espessura real (T de uma chapa dobrada é a altura da dobra)
 
     @property
     def peso_total(self) -> float:
@@ -685,10 +691,11 @@ def analisar(pos: Posicao) -> Posicao:
         pos.contorno, pos.furos = _contorno_e_furos(pos, 2, +1.0, (0, 1), "frente")
         nominal = _chapa_nominal(perfil)
         t_nom = nominal[2] if nominal else pos.T
+        pos.espessura = pos.T
         pos.comprimento = pos.L
         if pos.T > 1.25 * t_nom + 0.5 or not pos.contorno:
             pos.classe = "chapa_dobrada"
-            pos.observacoes.append("chapa dobrada: desenvolvimento não calculado")
+            _desenvolver_chapa(pos, nominal[2] if nominal else None)
         else:
             pos.classe = "chapa"
             if nominal and (abs(nominal[0] - pos.L) > 3 and abs(nominal[0] - pos.H) > 3):
@@ -760,8 +767,67 @@ def analisar(pos: Posicao) -> Posicao:
     else:
         pos.classe = "barra_conformada"
         pos.comprimento = pos.L
-        pos.observacoes.append("barra dobrada ou curva: comprimento de corte não calculado")
+        # comprimento de corte pelo volume ÷ área da seção: a menor fatia de todas as
+        # estações é a menos oblíqua (a que atravessa a dobra sai maior que a seção)
+        area_secao = area_unitaria * max(1, len(secao)) if area_unitaria else 0.0
+        if area_secao > 0 and 0.9 * pos.L <= pos.volume / area_secao <= 3.0 * pos.L:
+            pos.comprimento = pos.volume / area_secao
+            pos.observacoes.append("barra dobrada ou curva: comprimento de corte %s mm pelo volume "
+                                   "÷ seção (%s mm²)" % (_mm(pos.comprimento), _mm(area_secao)))
+        else:
+            pos.observacoes.append("barra dobrada ou curva: comprimento de corte não calculado")
     return pos
+
+
+def _fatiar_eixo(pos: Posicao, eixo: int, valor: float):
+    """`_fatiar` num eixo qualquer do sistema local: permuta as coordenadas para que o
+    eixo pedido faça o papel de u, corta e devolve os laços no plano dos outros dois."""
+    if eixo == 0:
+        return _fatiar(pos, valor)
+    ordem = (1, 0, 2) if eixo == 1 else (2, 0, 1)
+    copia = Posicao(marca=pos.marca, tipo_ifc=pos.tipo_ifc, faces=pos.faces)
+    copia.local = [tuple(p[i] for i in ordem) for p in pos.local]
+    copia.normais = [tuple(n[i] for i in ordem) for n in pos.normais]
+    return _fatiar(copia, valor)
+
+
+def _desenvolver_chapa(pos: Posicao, t_nominal: Optional[float]):
+    """Largura e comprimento planificado de uma chapa dobrada, pela linha média.
+
+    Espessura: a nominal do nome; sem nome, 2·volume/área da malha (a chapa fina tem
+    duas faces grandes). Para cada eixo candidato à dobra (u ou v), a fatia no meio é
+    uma faixa fechada; o desenvolvimento é (perímetro − 2t)/2 e a largura é a extensão
+    no eixo. Fica o eixo cujo largura × desenvolvimento × t mais se aproxima do volume,
+    e só se a diferença for menor que 15 %."""
+    S = sum(_normal_area([pos.local[i] for i in f])[1] for f in pos.faces)
+    t = t_nominal or (2.0 * pos.volume / S if S > 0 else 0.0)
+    if not t or t <= 0 or pos.volume <= 0:
+        pos.observacoes.append("chapa dobrada: desenvolvimento não calculado (sem espessura)")
+        return
+    melhor = None
+    for eixo, largura in ((0, pos.L), (1, pos.H)):
+        lacos = [l for l, ok in _fatiar_eixo(pos, eixo, 0.5 * largura) if ok]
+        if not lacos:
+            continue
+        laco = max(lacos, key=lambda l: abs(_area_2d(l)))
+        perimetro = sum(math.hypot(laco[(i + 1) % len(laco)][0] - laco[i][0],
+                                   laco[(i + 1) % len(laco)][1] - laco[i][1]) for i in range(len(laco)))
+        desenv = (perimetro - 2.0 * t) / 2.0
+        if desenv <= 0 or largura <= 0:
+            continue
+        erro = abs(largura * desenv * t - pos.volume) / pos.volume
+        if melhor is None or erro < melhor[0]:
+            melhor = (erro, largura, desenv)
+    if melhor is None or melhor[0] > 0.15:
+        pos.observacoes.append("chapa dobrada: desenvolvimento não calculado (a malha não fecha "
+                               "como chapa de espessura constante)")
+        return
+    _, largura, desenv = melhor
+    pos.espessura = t
+    pos.desenvolvimento = (largura, desenv)
+    pos.comprimento = desenv
+    pos.observacoes.append("chapa dobrada: desenvolvimento %s x %s mm pela linha média, esp. %s mm"
+                           % (_mm(largura), _mm(desenv), _mm(t, 1)))
 
 
 # ======================================================================== desenho
@@ -983,8 +1049,8 @@ def gravar_romaneio(caminho: str, posicoes: Sequence[Posicao], acessorios: Dict[
             w.writerow([p.marca, " ".join(p.conjuntos), CLASSES.get(p.classe, p.classe),
                         p.perfil, p.material, p.quantidade,
                         _num(p.comprimento, 0) if p.classe != "indefinida" else "",
-                        _num(p.H, 0) if chapa or p.classe == "telha" else "",
-                        _num(p.T, 1) if chapa else "",
+                        _num(p.desenvolvimento[0] if p.desenvolvimento else p.H, 0) if chapa or p.classe == "telha" else "",
+                        _num(p.espessura or p.T, 1) if chapa else "",
                         p.rotulo_furos(), _num(p.peso, 3), _num(p.peso_total, 2),
                         "; ".join(p.observacoes)])
         for nome, n in sorted(acessorios.items()):

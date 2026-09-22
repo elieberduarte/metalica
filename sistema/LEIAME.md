@@ -193,9 +193,11 @@ facetado, sem perfil paramétrico: contorno e furos (redondos e oblongos) vêm d
 de borda da face, a seção vem do corte da malha ao longo do eixo, o comprimento é a
 extensão no eixo e as pontas cortadas fora do esquadro saem com o ângulo. Barra redonda
 dobrada (gancho, chumbador) recebe o comprimento desenvolvido pelo volume. O que o
-módulo não resolve fica dito na célula e no relatório: chapa dobrada sem
-desenvolvimento, barra curva ou dobrada sem comprimento de corte, recorte que não é
-furo redondo nem oblongo desenhado como polilinha.
+módulo não resolve fica dito na célula e no relatório: recorte que não é furo redondo
+nem oblongo desenhado como polilinha. **Chapa dobrada** sai com o desenvolvimento pela
+linha média (largura × comprimento planificado, desenhado ao lado da vista lateral) e
+**barra curva ou dobrada** com o comprimento de corte pelo volume ÷ área da seção, ambos
+anotados na célula com o método; quando a conta não fecha, a célula diz que não calculou.
 
 ### Detalhamento no CAD do projeto (peças e conjuntos)
 
