@@ -119,23 +119,74 @@ def test_regra_furacao_terca():
 
 
 def test_eixos_do_conjunto_orientacao_real():
+    import math
     v, f = perfil_u(3000, 88, 40, 2.25)
-    # barra em pé (eixo z): sai em pé, como montada (vertical do desenho ≈ z)
+    # conjunto linear (uma barra só, tirante com chapinhas): sai deitado na horizontal do
+    # papel, para o comprimento total ser lido — mesmo a barra em pé (eixo z)
     s = Solido(nome="x", vertices=[(y, z, x) for x, y, z in v], faces=[list(q) for q in f])
     s.atributos["tipo_ifc"] = "IfcColumn"
     c, u, vv, w = det._eixos_do_conjunto([s])
-    assert vv[2] > 0.99 and abs(u[2]) < 0.01
-    # barra inclinada a 20° no plano x-z: sai inclinada
-    import math
+    assert abs(u[2]) > 0.99 and abs(vv[2]) < 0.01
     a = math.radians(20)
-    # comprimento e altura (88) no plano x-z, largura (40) em y: a peça fina está de lado, como uma tesoura
     s2 = Solido(nome="y", vertices=[(x * math.cos(a) - y * math.sin(a), z, x * math.sin(a) + y * math.cos(a)) for x, y, z in v], faces=[list(q) for q in f])
     c, u, vv, w = det._eixos_do_conjunto([s2])
+    assert abs(u[2] - math.sin(a)) < 0.02 and vv[2] > 0.9
+    # conjunto com altura (duas barras a 20°, afastadas 1000 mm na perpendicular): sai
+    # inclinado como está montado — vertical do desenho = z, esquerda → direita = +x
+    dz, dx = 1000 * math.cos(a), -1000 * math.sin(a)
+    s2b = Solido(nome="y2", vertices=[(p[0] + dx, p[1], p[2] + dz) for p in s2.vertices], faces=[list(q) for q in f])
+    c, u, vv, w = det._eixos_do_conjunto([s2, s2b])
     assert abs(vv[2] - 1.0) < 0.02 and abs(u[0] - 1.0) < 0.02
-    # conjunto deitado no plano horizontal: o eixo comprido vai para a horizontal
+    # o triedro segue a convenção do gerador de vistas: direita = w × v
+    cr = det._cruz(w, vv)
+    assert all(abs(cr[i] - u[i]) < 1e-6 for i in range(3))
+    # conjunto linear deitado no plano horizontal: visto de cima, comprido na horizontal
     s3 = Solido(nome="z", vertices=[(x, y, z * 0.01) for x, y, z in v], faces=[list(q) for q in f])
     c, u, vv, w = det._eixos_do_conjunto([s3])
     assert abs(u[0]) > 0.99 and abs(w[2]) > 0.99
+
+
+def test_instancias_por_caixas():
+    """Duas barras encostadas numa linha (a segunda começa dentro da primeira) são uma
+    instância só — a varredura corta pelo x máximo, não pelo y mínimo."""
+    v, f = perfil_u(1000, 88, 40, 2.25)
+    a = Solido(nome="a", vertices=list(v), faces=[list(q) for q in f])
+    b = Solido(nome="b", vertices=[(x + 500, y, z) for x, y, z in v], faces=[list(q) for q in f])
+    c = Solido(nome="c", vertices=[(x + 5000, y, z) for x, y, z in v], faces=[list(q) for q in f])
+    grupos = det._instancias([a, b, c], folga=8.0)
+    assert sorted(len(g) for g in grupos) == [1, 2]
+    # grupo com 2 unidades encostadas (águas de um pórtico): divide em duas com a composição unitária
+    for s, pos in ((a, "P1"), (b, "P2")):
+        s.atributos["marcas"] = {"posicao": pos, "conjunto": "M1"}
+    a2 = Solido(nome="a2", vertices=[(x + 1500, y, z) for x, y, z in v], faces=[list(q) for q in f])
+    b2 = Solido(nome="b2", vertices=[(x + 2000, y, z) for x, y, z in v], faces=[list(q) for q in f])
+    a2.atributos["marcas"] = {"posicao": "P1", "conjunto": "M1"}
+    b2.atributos["marcas"] = {"posicao": "P2", "conjunto": "M1"}
+    import collections
+    unidade = collections.Counter({"P1": 1, "P2": 1})
+    assert det._multiplo([a, b, a2, b2], unidade) == 2 and det._multiplo([a, b, a2], unidade) == 0
+    partes = det._dividir([a, b, a2, b2], 2, unidade)
+    assert len(partes) == 2 and all(len(p) == 2 for p in partes)
+
+
+def test_planta_de_localizacao():
+    doc = _modelo()
+    r = det.detalhar(doc, grupos=["localizacao"], regra_tercas=False)
+    d = r["desenhos"]["localizacao"]
+    assert [v["tipo"] for v in d.vistas] == ["topo", "frente", "lateral"]
+    assert len(d.metadados["celulas"]) == 3 and d.metadados["detalhamento"]["grupo"] == "localizacao"
+    rot = [e for e in d.entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("vista")]
+    por_vista = {}
+    for e in rot:
+        por_vista.setdefault(e.atributos["vista"], []).append(e.texto)
+    planta = por_vista["PLANTA DE LOCALIZAÇÃO"]
+    # os 3 conjuntos M1..M3 e o M9 (2 instâncias) aparecem na planta; as terças M5 (5 m,
+    # deitadas) também; a chapa P1 está dentro dos conjuntos, não é rótulo
+    assert planta.count("M9") == 2 and {"M1", "M2", "M3"} <= set(planta) and planta.count("M5") == 2
+    assert "P1" not in planta
+    # todas as peças desenhadas nas três vistas, em linha fina
+    assert all(v["pecas_projetadas"] == len(det._pecas(doc)[0]) for v in d.vistas)
+    assert d.escala >= 1
 
 
 if __name__ == "__main__":

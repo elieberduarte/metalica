@@ -1264,7 +1264,7 @@ export class Editor {
    */
   async dialogoDetalharPecas() {
     if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para detalhar.', 'atencao'); return; }
-    const grupos = [['chapas', 'Chapas'], ['barras', 'Barras e terças'], ['tirantes', 'Tirantes e barras redondas'], ['telhas', 'Telhas'], ['conjuntos', 'Conjuntos (tesouras, vigas, pilares)']];
+    const grupos = [['chapas', 'Chapas'], ['barras', 'Barras e terças'], ['tirantes', 'Tirantes e barras redondas'], ['telhas', 'Telhas'], ['conjuntos', 'Conjuntos (tesouras, vigas, pilares)'], ['localizacao', 'Planta de localização (marcas no lugar de montagem)']];
     const caixas = {};
     const grade = el('div', { class: 'campos' });
     for (const [k, r] of grupos) { caixas[k] = el('input', { type: 'checkbox', checked: 'checked' }); grade.append(el('label', { texto: r }), caixas[k]); }

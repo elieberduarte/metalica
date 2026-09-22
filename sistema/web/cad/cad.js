@@ -659,7 +659,7 @@ class CAD {
   /** Detalhamento de peças e conjuntos do projeto (mesma rota do editor 3D); abre o primeiro desenho aqui. */
   async dialogoDetalhar() {
     if (!this.projeto) { this.aviso('Detalhar precisa de um projeto aberto.', 'atencao'); return; }
-    const grupos = [['chapas', 'Chapas'], ['barras', 'Barras e terças'], ['tirantes', 'Tirantes e barras redondas'], ['telhas', 'Telhas'], ['conjuntos', 'Conjuntos (tesouras, vigas, pilares)']];
+    const grupos = [['chapas', 'Chapas'], ['barras', 'Barras e terças'], ['tirantes', 'Tirantes e barras redondas'], ['telhas', 'Telhas'], ['conjuntos', 'Conjuntos (tesouras, vigas, pilares)'], ['localizacao', 'Planta de localização (marcas no lugar de montagem)']];
     const caixas = {};
     const lista = el('div', { class: 'lista-opcoes' });
     for (const [k, r] of grupos) { caixas[k] = el('input', { type: 'checkbox', checked: 'checked' }); lista.append(el('label', { class: 'linha' }, caixas[k], ' ' + r)); }

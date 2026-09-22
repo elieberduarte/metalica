@@ -219,7 +219,24 @@ do modelo já importado, desenhos editáveis no CAD (`nucleo2d/detalhar.py`, rot
   80 P10, 64 P11, 64 P12 → 8); a instância desenhada é um agrupamento espacial com a
   composição unitária. Marcas diferentes com a mesma geometria (o TecnoMETAL numera
   por pórtico) saem numa célula só, "M17 / M46 – 04x";
+- a **planta de localização** (grupo `localizacao`): planta e duas elevações esquemáticas
+  do modelo inteiro (cada peça é o contorno convexo da projeção, em linha fina; telhas
+  ficam fora) com a marca de cada conjunto e de cada peça solta escrita no lugar de
+  montagem — é a planta que diz onde vai cada item detalhado. Instâncias de conjunto por
+  conectividade das caixas (`_instancias`); um grupo com k unidades encostadas (as duas
+  águas de um pórtico na cumeeira) é dividido ao longo do eixo comprido (`_dividir`);
 - `detalhamento/relatorio.json` e a lista de materiais (abaixo).
+
+Orientação dos conjuntos (`_eixos_do_conjunto`): a normal da vista é o eixo mais fino do
+conjunto e a vertical do desenho é a vertical da obra projetada — a tesoura sai inclinada
+como montada. Conjunto **linear** (segunda extensão < 12 % da primeira: tirante com as
+chapinhas, viga de uma barra, pilar) sai deitado na horizontal, com o comprimento total
+legível; deitado no plano horizontal é visto de cima. O triedro segue a convenção do
+gerador de vistas (`Vista.eixos`: observador em −w, direita = w × v) — é o que garante que
+os rótulos de posição caem sobre as barras desenhadas. Os rótulos ficam na perpendicular
+da barra e afastam-se quando cairiam um sobre o outro; nas prateleiras (`_empilhar`) a
+linha inteira desce quando uma célula é mais alta que a primeira, para o título não
+invadir as cotas da linha de cima.
 
 **Regra da furação das terças** (padrão da máquina da fábrica, opção ligada por padrão):
 terça com menos de 200 mm de altura fura a 50 mm na vertical e 60 mm na horizontal; com
