@@ -135,6 +135,52 @@ def _ler_json(caminho: str, lixeira: Optional[str] = None):
         return dados
 
 
+#: Desenho 2D maior que isto não é lido inteiro só para listar: cabeça e cauda bastam.
+DESENHO_GRANDE = 4 * 1048576
+
+
+def _cabecalho_do_desenho(caminho: str, contar: bool = True) -> dict:
+    """Título, escala, nº de entidades e vistas de um desenho 2D, para listagens.
+
+    Um desenho do modelo inteiro passa de 100 MB; ler e decodificar tudo para mostrar
+    um nome no menu levaria segundos. `Desenho.dict()` grava as chaves em ordem fixa —
+    nome, unidade, escala, camadas, entidades, vistas, metadados —, então o título está
+    nos primeiros bytes e as vistas nos últimos; o número de entidades é a contagem de
+    `"id": "` nos bytes, sem decodificar JSON (dezenas de ms para 100 MB)."""
+    tamanho = os.path.getsize(caminho)
+    if tamanho <= DESENHO_GRANDE:
+        d = _ler_json(caminho)
+        return {"titulo": d.get("nome") or None, "escala": d.get("escala"),
+                "entidades": len(d.get("entidades") or []),
+                "vistas": [v.get("nome") or v.get("tipo") for v in d.get("vistas") or []]}
+    fora: dict = {}
+    with open(caminho, "rb") as f:
+        if contar:
+            tudo = f.read()
+            cabeca = tudo[:4096].decode("utf-8", "ignore")
+            cauda = tudo[-256 * 1024:].decode("utf-8", "ignore")
+            fora["entidades"] = tudo.count(b'"id": "')
+            del tudo
+        else:                                       # só o que está nas pontas
+            cabeca = f.read(4096).decode("utf-8", "ignore")
+            f.seek(max(0, tamanho - 256 * 1024))
+            cauda = f.read().decode("utf-8", "ignore")
+    m = re.match(r'\s*\{"nome":\s*"((?:[^"\\]|\\.)*)"', cabeca)
+    if m:
+        fora["titulo"] = json.loads('"%s"' % m.group(1))
+    m = re.search(r'"escala":\s*([0-9.]+)', cabeca[:2048])
+    if m:
+        fora["escala"] = float(m.group(1))
+    i = cauda.rfind('"vistas": [')
+    if i >= 0:
+        try:
+            fim = json.loads("{" + cauda[i:])
+            fora["vistas"] = [v.get("nome") or v.get("tipo") for v in fim.get("vistas") or []]
+        except ValueError:
+            pass
+    return fora
+
+
 class Projetos:
     """Operações sobre os projetos de uma pasta de dados."""
 
@@ -208,7 +254,9 @@ class Projetos:
                 "comprimento": dados.get("comprimento"),
                 "tem_modelo": os.path.exists(modelo),
                 "modelo_mb": round(os.path.getsize(modelo) / 1048576, 1) if os.path.exists(modelo) else 0,
-                "origem_ifc": p.get("origem_ifc"), "entregas": entregas, "pasta": pasta}
+                "origem_ifc": p.get("origem_ifc"), "entregas": entregas, "pasta": pasta,
+                "desenhos": [{"nome": d["nome"], "titulo": d.get("titulo") or d["nome"], "vistas": d.get("vistas") or []}
+                             for d in self.listar_desenhos(s, contar=False)]}
 
     def listar(self) -> List[dict]:
         if not os.path.isdir(self.raiz):
@@ -335,7 +383,7 @@ class Projetos:
             raise ErroDeDados("dê um nome ao desenho.")
         return os.path.join(self._pasta_desenhos(s), nome + ".desenho.json")
 
-    def listar_desenhos(self, s: str) -> List[dict]:
+    def listar_desenhos(self, s: str, contar: bool = True) -> List[dict]:
         pasta = self._pasta_desenhos(s)
         if not os.path.isdir(pasta):
             return []
@@ -348,13 +396,11 @@ class Projetos:
                     "alterado": datetime.datetime.fromtimestamp(
                         os.path.getmtime(caminho)).replace(microsecond=0).isoformat(),
                     "kb": round(os.path.getsize(caminho) / 1024, 1)}
+            item["titulo"] = item["nome"]
             try:
-                d = _ler_json(caminho)
-                item.update({"titulo": d.get("nome") or item["nome"], "escala": d.get("escala"),
-                             "entidades": len(d.get("entidades") or []),
-                             "vistas": [v.get("nome") or v.get("tipo") for v in d.get("vistas") or []]})
+                item.update(_cabecalho_do_desenho(caminho, contar))
             except (OSError, ValueError):
-                item["titulo"] = item["nome"]
+                pass
             fora.append(item)
         fora.sort(key=lambda i: i["alterado"], reverse=True)
         return fora

@@ -60,6 +60,9 @@ const PALETA_GRUPOS = ['#d94a4a', '#2f9e5f', '#3d6fd6', '#e08a1e', '#8e44ad', '#
 const $ = (sel, raiz = document) => raiz.querySelector(sel);
 
 /** Cria um elemento com atributos e filhos, sem innerHTML para dados do usuário. */
+/** Mesmo nome de arquivo que `projetos.slug` dá a um desenho 2D (espelho de cad.js). */
+const slugDesenho = (s) => String(s || '').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().toLowerCase().replace(/[\s_-]+/g, '-').slice(0, 60).replace(/^-+|-+$/g, '') || 'desenho';
+
 function el(tag, attrs = {}, ...filhos) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -1158,6 +1161,32 @@ export class Editor {
     if (j) j.focus(); else window.location.href = url;
   }
 
+  /**
+   * Desenhos 2D já gravados no projeto, no fim do menu Desenho 2D: cada corte ou
+   * conjunto de vistas é um arquivo em desenhos-2d/, e reabrir não gera nada de novo.
+   */
+  async _listarDesenhosNoMenu() {
+    const lista = document.querySelector('.menu[data-menu="desenho2d"] .menu-lista');
+    if (!lista) return;
+    let bloco = lista.querySelector('.desenhos-salvos');
+    if (!bloco) { bloco = el('div', { class: 'desenhos-salvos' }); lista.append(el('hr'), bloco); }
+    if (!this.projeto) { bloco.replaceChildren(el('div', { class: 'menu-nota', texto: 'Desenhos salvos: abra o modelo por um projeto.' })); return; }
+    bloco.replaceChildren(el('div', { class: 'menu-nota', texto: 'Desenhos salvos…' }));
+    try {
+      const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos`);
+      const desenhos = await r.json();
+      if (!r.ok || desenhos.erro) throw new Error(desenhos.erro || r.statusText);
+      if (!desenhos.length) { bloco.replaceChildren(el('div', { class: 'menu-nota', texto: 'Nenhum desenho salvo neste projeto ainda.' })); return; }
+      bloco.replaceChildren(el('div', { class: 'menu-nota', texto: `Desenhos salvos (${desenhos.length}) — abrir no CAD:` }),
+        ...desenhos.slice(0, 12).map(d => el('button', { type: 'button', 'data-desenho': d.nome,
+          title: `${(d.vistas || []).join(', ') || 'sem vistas'} · ${d.kb >= 1024 ? (d.kb / 1024).toFixed(1) + ' MB' : Math.round(d.kb) + ' kB'} · ${d.alterado ? d.alterado.replace('T', ' ').slice(0, 16) : ''}` },
+          el('span', { texto: d.titulo || d.nome }),
+          el('small', { texto: `${(d.entidades || 0).toLocaleString('pt-BR')} objetos · ${(d.vistas || []).length} vista(s)` }))));
+    } catch (e) {
+      bloco.replaceChildren(el('div', { class: 'menu-nota', texto: `Não foi possível listar os desenhos: ${e.message}` }));
+    }
+  }
+
   async _pedirVista(corpo) {
     const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/vista2d`, {
       method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(corpo),
@@ -1221,9 +1250,23 @@ export class Editor {
     }
     const substituir = el('input', { type: 'checkbox' });
     grade.append(el('label', { texto: 'Substituir desenho existente com este nome', title: 'Desmarcado, as vistas são acrescentadas ao lado do que o desenho já tem' }), substituir);
+    const existe = el('p', { class: 'explica aviso-existe', texto: '' });
+    // desenho com este nome já existe? então substituir é o padrão, senão as vistas
+    // se acumulam ao lado das anteriores a cada clique
+    const existentes = new Map();
+    fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos`).then(r => r.json()).then(lista => {
+      if (Array.isArray(lista)) for (const d of lista) existentes.set(d.nome, d);
+      conferir();
+    }).catch(() => {});
+    const conferir = () => {
+      const d = existentes.get(slugDesenho(nome.value));
+      substituir.checked = !!d;
+      existe.textContent = d ? `Já existe "${d.titulo || d.nome}" com ${(d.vistas || []).length} vista(s) e ${(d.entidades || 0).toLocaleString('pt-BR')} objetos: será substituído (o anterior vai para a lixeira). Desmarque para acrescentar ao lado.` : '';
+    };
+    nome.addEventListener('input', conferir);
     const corpo = el('div', {}, el('p', { class: 'explica', texto: ids.length
       ? `${ids.length} peça(s) selecionada(s): as vistas saem só delas, lado a lado num desenho novo.`
-      : 'Nada selecionado: as vistas saem do modelo inteiro (camadas ocultas ficam de fora). Fica pesado: para detalhar, selecione antes a tesoura ou o pórtico.' }), grade);
+      : 'Nada selecionado: as vistas saem do modelo inteiro (camadas ocultas ficam de fora). Fica pesado: para detalhar, selecione antes a tesoura ou o pórtico.' }), grade, existe);
     if (await this.dialogo({ titulo: 'Vistas 2D', corpo, ok: 'Gerar e abrir' }) !== 'ok') return;
     const escolhidas = Object.entries(caixas).filter(([, c]) => c.checked).map(([k]) => k);
     if (!escolhidas.length) return;
@@ -1271,9 +1314,11 @@ export class Editor {
         const menu = botaoMenu.parentElement;
         const aberto = menu.classList.contains('aberto');
         this._fecharMenus();
-        if (!aberto) menu.classList.add('aberto');
+        if (!aberto) { menu.classList.add('aberto'); if (menu.dataset.menu === 'desenho2d') this._listarDesenhosNoMenu(); }
         return;
       }
+      const desenho = ev.target.closest('[data-desenho]');
+      if (desenho) { this._fecharMenus(); this._abrirCAD(desenho.dataset.desenho); return; }
       const acao = ev.target.closest('[data-acao]');
       if (acao && acoes[acao.dataset.acao]) {
         this._fecharMenus();
@@ -1290,6 +1335,7 @@ export class Editor {
         if (document.querySelector('.menu.aberto') && !m.classList.contains('aberto')) {
           this._fecharMenus();
           m.classList.add('aberto');
+          if (m.dataset.menu === 'desenho2d') this._listarDesenhosNoMenu();
         }
       });
     }

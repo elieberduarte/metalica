@@ -102,7 +102,15 @@ function cartao(p) {
   const conteudo = [];
   if (p.tipo === 'galpao') conteudo.push(p.tem_dados ? ['Dimensionamento', ''] : ['Sem dados ainda', 'fraco']);
   if (p.tem_modelo) conteudo.push([`Modelo 3D${p.modelo_mb >= 1 ? ' · ' + String(p.modelo_mb).replace('.', ',') + ' MB' : ''}`, '']);
-  for (const e of p.entregas || []) conteudo.push([e.rotulo, 'entrega', e.pasta]);
+  for (const e of p.entregas || []) {
+    if (e.pasta === 'desenhos-2d' && (p.desenhos || []).length) continue;   // listados um a um abaixo
+    conteudo.push([e.rotulo, 'entrega', e.pasta]);
+  }
+  // desenhos 2D gravados: cada um abre direto no CAD, sem gerar nada de novo
+  for (const d of (p.desenhos || []).slice(0, 6)) {
+    conteudo.push([`✎ ${d.titulo}`, 'desenho', null, `/cad?projeto=${encodeURIComponent(p.slug)}&desenho=${encodeURIComponent(d.nome)}`,
+                   `Abrir no CAD 2D · ${d.vistas.length} vista(s)${d.vistas.length ? ': ' + d.vistas.slice(0, 6).join(', ') : ''}`]);
+  }
 
   const menu = el('div', { class: 'cartao-menu' },
     el('button', { type: 'button', class: 'discreto', title: 'Abrir a pasta do projeto no Explorador de Arquivos',
@@ -125,11 +133,12 @@ function cartao(p) {
         el('span', { class: 'etiqueta ' + p.tipo, texto: p.tipo_rotulo })),
       el('div', { class: 'cartao-sub' },
         [onde, medidas, p.origem_ifc].filter(Boolean).join('  ·  ') || 'sem cliente nem local informados'),
-      el('div', { class: 'cartao-conteudo' }, conteudo.map(([rot, cls, pasta]) =>
-        el(pasta ? 'button' : 'span', {
-          class: 'pilula ' + cls, type: pasta ? 'button' : undefined,
-          title: pasta ? `Abrir a pasta ${pasta}` : undefined,
-          onclick: pasta ? (ev) => { ev.stopPropagation(); abrirPasta(p, pasta); } : undefined,
+      el('div', { class: 'cartao-conteudo' }, conteudo.map(([rot, cls, pasta, url, dica]) =>
+        el(pasta || url ? 'button' : 'span', {
+          class: 'pilula ' + cls, type: pasta || url ? 'button' : undefined,
+          title: dica || (pasta ? `Abrir a pasta ${pasta}` : undefined),
+          onclick: url ? (ev) => { ev.stopPropagation(); location.href = url; }
+            : pasta ? (ev) => { ev.stopPropagation(); abrirPasta(p, pasta); } : undefined,
         }, rot)))),
     el('div', { class: 'cartao-lado' },
       el('div', { class: 'cartao-quando', title: p.alterado || '' }, 'alterado ' + quando(p.alterado)),
