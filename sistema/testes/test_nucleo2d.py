@@ -206,3 +206,35 @@ if __name__ == "__main__":
                 print(f"  FALHA {nome}: {e}")
     print(f"\n{falhas} falha(s).")
     sys.exit(1 if falhas else 0)
+
+
+def test_dxf_ler_ida_e_volta_e_unidades():
+    """DXF gravado pelo próprio CAD volta como as mesmas entidades; texto vira altura de
+    papel pela escala de destino; fator de unidade multiplica a geometria."""
+    from nucleo2d.dxf_ler import para_desenho
+    from nucleo2d.desenho import Desenho, Linha, Circulo, Arco, Texto, Cota, Polilinha
+    d = Desenho(nome="x", escala=20.0)
+    d.add(Linha(a=(0, 0), b=(1000, 0)))
+    d.add(Circulo(camada="FURO", centro=(500, 100), raio=6.5))
+    d.add(Arco(centro=(0, 0), raio=200, inicio=0, fim=90))
+    d.add(Polilinha(vertices=[(0, 0), (100, 0), (100, 50)], fechada=True))
+    d.add(Texto(posicao=(0, 300), texto="P12 – 04x", altura=3.5))
+    d.add(Cota(modo="h", p1=(0, 0), p2=(1000, 0), deslocamento=-10))
+    texto = d.para_dxf().dxf()
+    novo, r = para_desenho(texto, escala=20.0)
+    tipos = r["por_tipo"]
+    assert tipos.get("circulo") == 1 and tipos.get("arco", 0) >= 1 and tipos.get("polilinha", 0) >= 1
+    t = [e for e in novo.entidades.values() if isinstance(e, Texto) and "P12" in e.texto][0]
+    assert abs(t.altura - 3.5) < 0.05                       # 70 mm no arquivo / 20
+    c = [e for e in novo.entidades.values() if isinstance(e, Circulo)][0]
+    assert abs(c.raio - 6.5) < 1e-6 and c.camada == "FURO"
+    # a cota vem explodida: o número "1000" está entre os textos
+    assert any(e.texto.strip() == "1000" for e in novo.entidades.values() if isinstance(e, Texto))
+    novo3, r3 = para_desenho(texto, escala=20.0, fator=10.0, deslocamento=(100.0, 0.0))
+    c3 = [e for e in novo3.entidades.values() if isinstance(e, Circulo)][0]
+    assert abs(c3.raio - 65.0) < 1e-6 and abs(c3.centro[0] - 5100.0) < 1e-6
+    try:
+        para_desenho("isto não é um dxf", escala=1.0)
+        assert False
+    except Exception as e:
+        assert "DXF" in str(e)

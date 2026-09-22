@@ -4,8 +4,8 @@
 // Mouse: botão esquerdo é da ferramenta; do meio ou direito arrasta a vista; roda dá
 // zoom no cursor. Shift trava orto. Esc cancela; Enter e espaço confirmam/repetem.
 
-import { Desenho2D, clonar, valorCota, pontosDe } from './nucleo/desenho2d.js';
-import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia } from './nucleo/comandos.js';
+import { Desenho2D, clonar, valorCota, pontosDe, criar } from './nucleo/desenho2d.js';
+import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar } from './nucleo/comandos.js';
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta } from './ferramentas.js';
@@ -365,6 +365,7 @@ class CAD {
       corte: () => this.dialogoCorte(),
       detalhar: () => this.dialogoDetalhar(),
       pranchas: () => this.dialogoPranchas(),
+      'importar-dxf': () => $('#arquivo-dxf').click(),
       desfazer: () => this.desfazer(), refazer: () => this.refazer(),
       'selecionar-tudo': () => this.selecionar([...this.doc.entidades.keys()].filter(id => this.doc.visivel(this.doc.get(id)))),
       apagar: () => this.apagarSelecao(),
@@ -388,6 +389,7 @@ class CAD {
     });
     $('#btn-salvar').addEventListener('click', () => this.salvar());
     $('#btn-dxf').addEventListener('click', () => this.exportarDXF());
+    $('#arquivo-dxf').addEventListener('change', () => { const f = $('#arquivo-dxf').files && $('#arquivo-dxf').files[0]; $('#arquivo-dxf').value = ''; this.importarDXF(f); });
     $('#btn-tema').addEventListener('click', () => this._alternarTema());
     this.el.nome.addEventListener('change', () => { this.doc.nome = this.el.nome.value.trim() || 'Desenho'; document.title = `${this.doc.nome} — Desenho 2D`; this._agendarAutosave(); });
     this.el.escala.addEventListener('change', () => { this.doc.escala = parseFloat(this.el.escala.value) || 20; this.doc.notificar([], 'aparencia'); this.dica(`Escala 1:${this.doc.escala}: textos, cotas e hachuras redimensionados.`); });
@@ -405,6 +407,41 @@ class CAD {
   }
 
   // ----------------------------------------------------------- painéis
+  /** DXF escolhido no seletor: pergunta unidade e posição, manda ao servidor, insere como comando. */
+  async importarDXF(arquivo) {
+    if (!arquivo) return;
+    if (!this.projeto) { this.aviso('Importar DXF precisa de um projeto aberto.', 'atencao'); return; }
+    const texto = await arquivo.text();
+    const unidade = el('select', {}, ...[['auto', 'pelo arquivo ($INSUNITS), senão mm'], ['1', 'milímetro'], ['10', 'centímetro'], ['1000', 'metro'], ['25.4', 'polegada']]
+      .map(([v, t]) => el('option', { value: v, texto: t })));
+    const x = el('input', { type: 'number', step: 'any', value: '0' });
+    const y = el('input', { type: 'number', step: 'any', value: '0' });
+    const prefixo = el('input', { type: 'text', value: '', placeholder: 'ex.: DXF-' });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: `"${arquivo.name}" (${numero(arquivo.size / 1024, 0)} kB). O desenho vem para a escala deste (1:${this.doc.escala}): a altura dos textos do arquivo vira altura de papel dividida pela escala. Cotas do DXF entram como linhas e textos, como o CAD de origem as desenhou. DWG não é lido: salve como DXF no CAD de origem.` }),
+      el('label', {}, 'Unidade do arquivo', unidade),
+      el('label', {}, 'Inserir em X (mm)', x), el('label', {}, 'Inserir em Y (mm)', y),
+      el('label', {}, 'Prefixo para as camadas do arquivo (opcional)', prefixo));
+    if (await this.dialogo({ titulo: 'Importar DXF', corpo, ok: 'Importar' }) !== 'ok') return;
+    this.dica('Lendo o DXF…');
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/importar-dxf`, {
+        conteudo: texto, escala: this.doc.escala, fator: unidade.value === 'auto' ? null : parseFloat(unidade.value),
+        deslocamento: [parseFloat(x.value) || 0, parseFloat(y.value) || 0], prefixo_camada: prefixo.value,
+      });
+      for (const [nome, c] of Object.entries(r.camadas || {})) if (!this.doc.camadas.has(nome)) this.doc.camadas.set(nome, { nome, cor: c.cor, visivel: true, bloqueada: false, tipo_linha: c.tipo_linha || 'CONTINUOUS', espessura: c.espessura || 0.25 });
+      const ents = (r.entidades || []).map(e => ({ ...e, id: undefined }));
+      if (!ents.length) { this.aviso('O DXF não trouxe nada que o CAD leia.', 'atencao'); return; }
+      const novas = ents.map(e => criar(e));
+      this.executar(new ComandoAdicionar(novas, `Importar DXF (${ents.length})`));
+      this.selecionar(novas.map(e => e.id));
+      this.tela.enquadrar();
+      const ig = Object.entries(r.resumo.por_tipo || {}).filter(([k]) => k.startsWith('ignorado')).map(([k, v]) => `${k.slice(9)} ×${v}`);
+      this.aviso(`DXF importado: ${numero(r.resumo.entidades)} objetos, ${(r.resumo.camadas_novas || []).length} camada(s) nova(s), fator ${r.resumo.fator} mm/unidade.` + (ig.length ? ` Fora: ${ig.join(', ')}.` : ''), 'info', 12000);
+      this.dica('DXF importado; Ctrl+Z desfaz.');
+    } catch (e) { this.aviso(`Não foi possível importar: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
   _ligarPaineis() {
     for (const cab of document.querySelectorAll('.painel .cabecalho')) cab.addEventListener('click', () => cab.closest('.painel').classList.toggle('fechado'));
   }

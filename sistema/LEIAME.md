@@ -240,6 +240,11 @@ papel 1:1: a cota guarda o valor original como texto. Cada prancha traz, no roda
 esquerda do carimbo, a **tabela das posições** que contém (marca, quantidade, perfil,
 comprimento, peso). Para escolher à mão o que vai numa prancha, selecione as células no
 desenho de detalhamento antes de abrir o diálogo e marque "só as peças selecionadas".
+**Desenho → Importar DXF neste desenho…** traz um DXF em texto (R12 a R2018: linhas,
+polilinhas com arcos, círculos, textos e MTEXT, blocos aninhados, cotas como o CAD de
+origem as desenhou; hachura e imagem ficam de fora) para a escala do desenho aberto,
+com a unidade do arquivo (`$INSUNITS` ou escolhida) e ponto de inserção; entra como um
+comando, então Ctrl+Z desfaz. DWG não é lido: salve como DXF no CAD de origem.
 **Desenho → Exportar PDF** gera o PDF vetorial do desenho aberto (prancha no tamanho da
 folha; desenho comum no tamanho dele na escala) e **PDF de todas as pranchas…** junta as
 pranchas do projeto num arquivo em `pranchas/`, uma por página, pronto para plotar.

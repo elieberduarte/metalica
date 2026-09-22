@@ -373,7 +373,17 @@ async function verificarAtualizacao() {
       a.arquivo
         ? el('a', { href: a.arquivo, texto: `Baixar o instalador${a.tamanho_mb ? ` (${String(a.tamanho_mb).replace('.', ',')} MB)` : ''}`, target: '_blank', rel: 'noopener' })
         : el('a', { href: a.url, texto: 'Ver no GitHub', target: '_blank', rel: 'noopener' }),
-      el('span', { texto: ' — execute o instalador por cima da versão atual; os projetos ficam onde estão.' }),
+      el('span', { texto: ' — os projetos ficam onde estão.' }),
+      janelaPropria && a.arquivo
+        ? el('button', { type: 'button', class: 'principal', texto: 'Atualizar agora', title: 'Baixa o instalador e o executa; o programa fecha e reabre na versão nova',
+                         onclick: async (ev) => {
+                           const b = ev.currentTarget; b.disabled = true; b.textContent = 'Baixando…';
+                           try {
+                             const r = await postar('/api/atualizacao/instalar');
+                             aviso.replaceChildren(el('span', { texto: `${r.mensagem} (${String(r.tamanho_mb).replace('.', ',')} MB baixados) — se a janela não voltar em um minuto, abra o Metálica pelo atalho.` }));
+                           } catch (e) { b.disabled = false; b.textContent = 'Atualizar agora'; recado('Não foi possível atualizar', e.message, 'erro'); }
+                         } })
+        : null,
       el('button', { type: 'button', class: 'discreto', texto: '×', title: 'fechar', onclick: () => aviso.remove() }));
     $('#pe').before(aviso);
   } catch (e) { /* sem rede */ }

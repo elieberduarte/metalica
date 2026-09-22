@@ -11,6 +11,7 @@ a interface de `web/` mais uma API JSON.
 Rotas da API:
     GET  /api/catalogo              perfis, aços, parafusos, eletrodos, cidades
     GET  /api/atualizacao           última versão publicada no GitHub e se é mais nova
+    POST /api/atualizacao/instalar  baixa o instalador da release e o executa (programa instalado)
     POST /api/dimensionar           recebe DadosGalpao, devolve ProjetoGalpao em JSON
     POST /api/gerar                 gera memorial, DXF, pranchas e lista de material
     POST /api/modelo/ifc/detalhar   IFC recebido → DXF de produção, romaneio e relatório
@@ -23,6 +24,7 @@ Rotas da API:
     POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
     POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + romaneio
     POST /api/projetos/<slug>/pranchas  pranchas (folhas com carimbo) a partir dos desenhos 2D
+    POST /api/projetos/<slug>/importar-dxf  DXF em texto → entidades do CAD
     GET  /api/projetos/<slug>/desenhos[/<nome>]      desenhos 2D do CAD
     POST /api/projetos/<slug>/desenhos/<nome>[/dxf|/pdf|/excluir]
     GET  /saida/<projeto>/<arquivo> baixa um arquivo gerado
@@ -503,6 +505,44 @@ def verificar_atualizacao() -> dict:
     return fora
 
 
+def instalar_atualizacao() -> dict:
+    """Baixa o instalador da última release e o executa em silêncio; este processo se
+    encerra e o instalador reabre o programa no fim. Só no programa instalado."""
+    import subprocess
+    import tempfile
+    import urllib.request
+    if not versao.CONGELADO:
+        raise ErroDeDados("a atualização automática só vale para o programa instalado; "
+                          "no desenvolvimento, use git pull.")
+    info = verificar_atualizacao()
+    if not info.get("nova") or not info.get("arquivo"):
+        raise ErroDeDados("não há versão mais nova com instalador publicado.")
+    destino = os.path.join(tempfile.gettempdir(), "Metalica-%s-instalador.exe" % info["ultima"])
+    req = urllib.request.Request(info["arquivo"], headers={"User-Agent": "Metalica/" + versao.VERSAO})
+    with urllib.request.urlopen(req, timeout=60) as r, open(destino + ".parcial", "wb") as f:
+        while True:
+            bloco = r.read(1 << 20)
+            if not bloco:
+                break
+            f.write(bloco)
+    tamanho = os.path.getsize(destino + ".parcial")
+    if tamanho < 5 * 1048576:
+        raise ErroDeDados("o instalador baixado veio incompleto (%d bytes)." % tamanho)
+    os.replace(destino + ".parcial", destino)
+    exe_atual = sys.executable
+    # instala em silêncio e reabre o programa; roda separado deste processo, que fecha
+    comando = 'start "" /wait "%s" /SILENT /SUPPRESSMSGBOXES /NORESTART & start "" "%s"' % (destino, exe_atual)
+    subprocess.Popen(["cmd.exe", "/c", comando], creationflags=0x00000008 | 0x00000200,   # DETACHED | NEW_PROCESS_GROUP
+                     close_fds=True)
+
+    def sair():
+        time.sleep(1.5)
+        os._exit(0)
+    threading.Thread(target=sair, daemon=True).start()
+    return {"baixado": destino, "tamanho_mb": round(tamanho / 1048576, 1), "versao": info["ultima"],
+            "mensagem": "Instalando a versão %s: o programa vai fechar e reabrir sozinho." % info["ultima"]}
+
+
 def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     """Pranchas a partir de desenhos 2D do projeto: uma célula por posição/conjunto dos
     desenhos de detalhamento, ou o desenho inteiro, em folhas ISO com carimbo.
@@ -544,6 +584,28 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
                       "celulas": len(folha.metadados["prancha"]["celulas"])})
     g.tocar(s)
     return {"pranchas": saida, "formato": corpo.get("formato") or "A1"}
+
+
+def importar_dxf_no_desenho(s: str, corpo: dict) -> dict:
+    """DXF (texto) → entidades do CAD, para o desenho aberto acrescentar como um comando.
+
+    corpo: {conteudo: texto do DXF, escala: do desenho de destino, fator: mm por unidade
+            (None = pelo $INSUNITS), deslocamento: [x, y], prefixo_camada: ""}"""
+    from nucleo2d.desenho import Desenho
+    from nucleo2d.dxf_ler import para_desenho
+    from dataclasses import asdict
+    texto = corpo.get("conteudo")
+    if not isinstance(texto, str) or not texto.strip():
+        raise ErroDeDados("mande o conteúdo do DXF em texto.")
+    fator = corpo.get("fator")
+    d = Desenho(nome="importado", escala=float(corpo.get("escala") or 1.0))
+    desl = corpo.get("deslocamento") or [0.0, 0.0]
+    _, resumo = para_desenho(texto, escala=d.escala, fator=float(fator) if fator else None, destino=d,
+                             deslocamento=(float(desl[0]), float(desl[1])),
+                             prefixo_camada=str(corpo.get("prefixo_camada") or ""))
+    return {"entidades": [asdict(e) for e in d.entidades.values()],
+            "camadas": {k: asdict(v) for k, v in d.camadas.items() if k in resumo["camadas_novas"]},
+            "resumo": {k: v for k, v in resumo.items() if k != "ids"}}
 
 
 def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
@@ -905,6 +967,8 @@ class Handler(BaseHTTPRequestHandler):
             if rota == "/api/pasta-de-dados":
                 _abrir_no_explorador(PROJETOS)
                 return self._json({"aberta": PROJETOS})
+            if rota == "/api/atualizacao/instalar":
+                return self._json(instalar_atualizacao())
             if rota == "/api/projetos":
                 return self._json(criar_projeto(corpo))
             if rota.startswith("/api/projetos/"):
@@ -915,6 +979,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(detalhar_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "pranchas":
                     return self._json(montar_pranchas_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "importar-dxf":
+                    return self._json(importar_dxf_no_desenho(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "desenhos":
                     return self._json(_gerente().salvar_desenho(partes[0], partes[2],
                                                                 corpo.get("desenho", corpo)))
