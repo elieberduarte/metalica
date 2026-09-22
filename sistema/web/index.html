@@ -22,8 +22,8 @@
 
   <div class="acoes">
     <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
-    <button type="button" id="btn-3d" title="Abrir este galpão no editor 3D, em outra aba"
-            onclick="window.open('/editor?galpao=1', '_blank')">Modelo 3D</button>
+    <button type="button" id="btn-3d" title="Abrir este galpão no editor 3D"
+            onclick="abrirEditor3D()">Modelo 3D</button>
     <button type="button" id="btn-salvar" title="Salvar este projeto no servidor">Salvar</button>
     <button type="button" id="btn-calcular" class="principal" title="Dimensionar (Ctrl+Enter)">Dimensionar</button>
   </div>
@@ -236,5 +236,6 @@
 </dialog>
 
 <script src="app.js"></script>
+<script src="/vivo.js"></script>
 </body>
 </html>

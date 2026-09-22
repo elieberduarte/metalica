@@ -549,10 +549,14 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if rota == "/" or rota == "/index.html":
                 return self._arquivo(os.path.join(WEB, "index.html"), WEB)
+            if rota in ("/api/vivo", "/api/fechou"):
+                _sinal_de_vida(self.path, rota == "/api/fechou")
+                return self._json({"ok": True})
             if rota == "/api/versao":
                 return self._json({"programa": versao.NOME, "versao": versao.VERSAO,
                                    "nucleo": versao.impressao_do_nucleo(),
-                                   "dados": PROJETOS, "instalado": versao.CONGELADO})
+                                   "dados": PROJETOS, "instalado": versao.CONGELADO,
+                                   "janela": JANELA_PROPRIA})
             if rota == "/api/catalogo":
                 return self._json(catalogo())
             if rota == "/api/projetos":
@@ -581,6 +585,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         rota = unquote(urlparse(self.path).path)
         try:
+            if rota in ("/api/vivo", "/api/fechou"):
+                _sinal_de_vida(self.path, rota == "/api/fechou")
+                return self._json({"ok": True})
             corpo = self._corpo()
             if rota == "/api/dimensionar":
                 return self._json(dimensionar(corpo))
@@ -644,6 +651,38 @@ def _servidores(porta: int):
 
 
 PORTA_PADRAO = 8765
+
+#: True quando o programa abriu a própria janela (modo aplicativo). A interface usa
+#: isto para abrir o editor 3D em outra janela do mesmo tipo, e não numa aba.
+JANELA_PROPRIA = False
+
+#: Janelas do programa que deram sinal de vida: id da página -> instante do último sinal.
+#: Ver web/vivo.js. Só é usado quando o programa abriu a própria janela.
+JANELAS_VIVAS = {}
+_TRAVA_JANELAS = threading.Lock()
+#: Sem sinal por este tempo, a janela é dada como fechada. Maior que um minuto porque o
+#: navegador freia o temporizador de página em segundo plano para uma vez por minuto.
+SILENCIO_MAXIMO = float(os.environ.get("METALICA_SILENCIO") or 90.0)   # a variável é para teste
+
+
+def _sinal_de_vida(rota_completa: str, fechou: bool):
+    from urllib.parse import parse_qs
+    j = (parse_qs(urlparse(rota_completa).query).get("j") or [""])[0][:64]
+    if not j:
+        return
+    with _TRAVA_JANELAS:
+        if fechou:
+            JANELAS_VIVAS.pop(j, None)
+        else:
+            JANELAS_VIVAS[j] = time.time()
+
+
+def _janelas_abertas() -> int:
+    agora = time.time()
+    with _TRAVA_JANELAS:
+        for j in [k for k, quando in JANELAS_VIVAS.items() if agora - quando > SILENCIO_MAXIMO]:
+            del JANELAS_VIVAS[j]
+        return len(JANELAS_VIVAS)
 
 
 def _ja_esta_rodando(porta: int) -> bool:
@@ -714,6 +753,7 @@ def _registro_em_arquivo():
 
 
 def main():
+    global JANELA_PROPRIA
     os.makedirs(PROJETOS, exist_ok=True)
     _registro_em_arquivo()
     com_janela = "--janela" in sys.argv or (versao.CONGELADO and "--sem-navegador" not in sys.argv)
@@ -741,16 +781,30 @@ def main():
         for s in [servidor, *extras]:
             threading.Thread(target=s.shutdown, daemon=True).start()
 
+    JANELA_PROPRIA = com_janela
     if com_janela:
         def vigiar():
             time.sleep(0.6)                     # o servidor já está ouvindo
-            janela = _abrir_janela(url)
-            if janela is None:
-                webbrowser.open(url)            # sem Edge nem Chrome: navegador padrão,
-                return                          # e o programa fica até ser encerrado
-            janela.wait()
-            print("janela fechada: encerrando.")
-            encerrar()
+            if _abrir_janela(url) is None:
+                webbrowser.open(url)            # sem Edge nem Chrome: navegador padrão
+            # Encerra quando nenhuma janela dá sinal de vida (web/vivo.js). O processo do
+            # navegador não serve de referência: havendo outro Chrome com o mesmo perfil,
+            # o que lançamos entrega a janela a ele e sai na hora, com a janela aberta.
+            inicio, vazio_desde, ja_abriu = time.time(), None, False
+            while True:
+                time.sleep(1.0)
+                abertas = _janelas_abertas()
+                if abertas:
+                    ja_abriu, vazio_desde = True, None
+                    continue
+                # nunca abriu: dá dois minutos (máquina lenta, antivírus); depois de aberta,
+                # seis segundos sem ninguém cobrem a troca de uma página para outra
+                limite = 6.0 if ja_abriu else 120.0
+                vazio_desde = vazio_desde or (time.time() if ja_abriu else inicio)
+                if time.time() - vazio_desde >= limite:
+                    print("nenhuma janela aberta: encerrando.", flush=True)
+                    encerrar()
+                    return
         threading.Thread(target=vigiar, daemon=True).start()
     elif "--sem-navegador" not in sys.argv:
         print("  Ctrl+C para encerrar.")

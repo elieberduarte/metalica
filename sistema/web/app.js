@@ -1838,3 +1838,20 @@ async function iniciar() {
 }
 
 document.addEventListener('DOMContentLoaded', iniciar);
+
+/* ------------------------------------------------------------------ editor 3D
+ * No navegador o editor abre em outra aba. No programa instalado a janela é o Chrome
+ * em modo aplicativo, que não tem abas: um `_blank` viraria uma janela comum do
+ * navegador, com barra de endereço. Ali pedimos um popup, que o Chrome abre como outra
+ * janela do aplicativo; o nome fixo faz o segundo clique reaproveitar a mesma janela. */
+let janelaPropria = false;
+fetch('/api/versao').then(r => r.json()).then(v => { janelaPropria = !!v.janela; }).catch(() => {});
+
+function abrirEditor3D() {
+  const url = '/editor?galpao=1';
+  if (!janelaPropria) { window.open(url, '_blank'); return; }
+  const larg = Math.min(1600, screen.availWidth - 80), alt = Math.min(1000, screen.availHeight - 80);
+  const j = window.open(url, 'metalica-editor3d', `popup=yes,width=${larg},height=${alt},left=40,top=40`);
+  if (j) j.focus(); else window.location.href = url;      // popup bloqueado: mesma janela
+}
+window.abrirEditor3D = abrirEditor3D;

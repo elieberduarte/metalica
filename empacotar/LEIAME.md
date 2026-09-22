@@ -18,7 +18,10 @@ python empacotar/construir.py
 ## O que muda no programa instalado
 
 - **Janela própria.** Abre o Edge ou o Chrome em modo aplicativo, sem abas nem barra de
-  endereço, com perfil separado do navegador do usuário. Fechar a janela encerra o programa.
+  endereço, com perfil separado do navegador do usuário. O editor 3D abre em outra janela
+  do mesmo tipo (um `_blank` viraria janela comum do navegador). O programa encerra quando
+  nenhuma janela dá mais sinal de vida (`web/vivo.js`); o processo do navegador não serve
+  de referência, porque havendo outro Chrome com o mesmo perfil ele sai na hora.
   Um segundo clique no atalho mostra a instância que já está aberta em vez de subir outra.
 - **Dados em `Documentos\Metálica`.** A pasta de instalação não aceita escrita. Ali ficam
   os projetos, os modelos do editor, os arquivos gerados e o registro `metalica.log`.
