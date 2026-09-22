@@ -330,6 +330,7 @@ class CAD {
       'exportar-dxf': () => this.exportarDXF(),
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
+      detalhar: () => this.dialogoDetalhar(),
       desfazer: () => this.desfazer(), refazer: () => this.refazer(),
       'selecionar-tudo': () => this.selecionar([...this.doc.entidades.keys()].filter(id => this.doc.visivel(this.doc.get(id)))),
       apagar: () => this.apagarSelecao(),
@@ -577,6 +578,33 @@ class CAD {
     const origem = eixo.endsWith('y') ? [0, pos, 0] : eixo.endsWith('x') ? [pos, 0, 0] : [0, 0, pos];
     const prof = parseFloat(campos.profundidade.value);
     await this.inserirVista({ origem, normal, acima: eixo === 'z' ? [0, 1, 0] : null, profundidade: isFinite(prof) && prof > 0 ? prof : null, cortar: true, nome: campos.nome.value, tipo: 'corte' }, campos.nome.value);
+  }
+
+  /** Detalhamento de peças e conjuntos do projeto (mesma rota do editor 3D); abre o primeiro desenho aqui. */
+  async dialogoDetalhar() {
+    if (!this.projeto) { this.aviso('Detalhar precisa de um projeto aberto.', 'atencao'); return; }
+    const grupos = [['chapas', 'Chapas'], ['barras', 'Barras e terças'], ['tirantes', 'Tirantes e barras redondas'], ['telhas', 'Telhas'], ['conjuntos', 'Conjuntos (tesouras, vigas, pilares)']];
+    const caixas = {};
+    const lista = el('div', { class: 'lista-opcoes' });
+    for (const [k, r] of grupos) { caixas[k] = el('input', { type: 'checkbox', checked: 'checked' }); lista.append(el('label', { class: 'linha' }, caixas[k], ' ' + r)); }
+    const regra = el('input', { type: 'checkbox', checked: 'checked' });
+    const substituir = el('input', { type: 'checkbox', checked: 'checked' });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: 'Uma célula por posição (as peças iguais são contadas, não repetidas) e a elevação de cada conjunto, com cotas de fabricação e lista de perfis. Gera um desenho por grupo e o romaneio em detalhamento/romaneio.csv.' }),
+      lista,
+      el('label', { class: 'linha' }, regra, ' Furação das terças no padrão da fábrica (50 × 60 abaixo de 200 mm; 100 × 60 acima)'),
+      el('label', { class: 'linha' }, substituir, ' Substituir os desenhos de detalhamento anteriores'));
+    if (await this.dialogo({ titulo: 'Detalhar peças e conjuntos', corpo, ok: 'Detalhar' }) !== 'ok') return;
+    const escolhidos = grupos.map(([k]) => k).filter(k => caixas[k].checked);
+    if (!escolhidos.length) return;
+    this.dica('Detalhando as peças do projeto…');
+    try {
+      if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });
+      const j = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/detalhar`, { grupos: escolhidos, regra_tercas: regra.checked, rotular: true, substituir: substituir.checked });
+      const tercas = Object.keys(j.regra_tercas || {}).length;
+      this.aviso(`Detalhamento: ${j.pecas} peças em ${j.posicoes} posições e ${j.conjuntos} conjuntos, ${j.peso_total} kg; ${j.desenhos.length} desenho(s)` + (tercas ? `, furação de fábrica em ${tercas} posições` : '') + '. Os desenhos estão em Desenho → Abrir desenho do projeto.', 'info', 15000);
+      if (j.desenhos.length) await this.abrirDesenho(j.desenhos[0].nome);
+    } catch (e) { this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
   // -------------------------------------------------------------- avisos

@@ -719,10 +719,23 @@ class Handler(BaseHTTPRequestHandler):
         tipo = mimetypes.guess_type(caminho)[0] or "application/octet-stream"
         if caminho.endswith(".dxf"):
             tipo = "application/dxf"
+        # sempre revalidar: depois de uma atualização do programa a janela do aplicativo
+        # não pode continuar com o JavaScript antigo em cache; a etiqueta (data e
+        # tamanho) devolve 304 quando nada mudou, então revalidar custa quase nada
+        st = os.stat(caminho)
+        etag = '"%x-%x"' % (int(st.st_mtime), st.st_size)
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
         dados = open(caminho, "rb").read()
         self.send_response(200)
         self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(len(dados)))
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "no-cache")
         if tipo == "application/dxf":
             self.send_header("Content-Disposition",
                              f'attachment; filename="{os.path.basename(caminho)}"')
