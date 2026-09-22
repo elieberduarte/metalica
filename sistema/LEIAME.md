@@ -292,6 +292,8 @@ peças em comum — a tesoura de ponta com outra chapa de base ou uma diagonal a
 mesma célula, desenhado o líder e cada variante anotada ("M7 – 02x: +P26 x1; -P1 x1";
 `conjuntos_info[..]["variantes"]`) — decisão do usuário: um detalhe por lado.
 Todas as cotas dos detalhes saem em **milímetro inteiro** (`_Papel.cota_h/cota_v/cadeia_*`).
+Na elevação do conjunto, a cadeia de nós de um banzo inclinado (mais de 2°) é **alinhada ao banzo**
+(`_Papel.cadeia_alinhada`): distâncias medidas na própria barra, como se marca na produção.
 
 **Camadas por tipo de peça** (`CAMADAS_PECAS`, paleta das camadas do 3D): TERCAS, BANZOS,
 DIAGONAIS, MONTANTES, CHAPAS, TIRANTES, PILARES, VIGAS, TELHAS. O traço forte de cada peça vai

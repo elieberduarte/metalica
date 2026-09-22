@@ -187,6 +187,29 @@ class _Papel:
         minimo = 3.0 * 2.5 * self.d.escala
         return all(vals[i + 1] - vals[i] >= minimo for i in range(len(vals) - 1))
 
+    def cadeia_alinhada(self, linha, xs, desl_papel):
+        """Cadeia de cotas ao longo da reta `linha` = (a, b) (o banzo inclinado): cada
+        nó de abscissa x vai para o ponto da reta nessa abscissa e a cota é a distância
+        medida na própria reta, ao milímetro — o que a produção marca no banzo.
+        `desl_papel > 0` joga a cota para a esquerda do sentido a→b (acima, quando a reta
+        vai para a direita)."""
+        (ax, ay), (bx, by) = linha
+        dx, dy = bx - ax, by - ay
+        comp = math.hypot(dx, dy)
+        if comp < 1e-6:
+            return self.cadeia_h(xs, ay, desl_papel)
+        ux, uy = dx / comp, dy / comp
+        ts = sorted(set(float(round((x - ax) / ux)) for x in xs)) if abs(ux) > 1e-9 else []
+        if len(ts) < 2 or not self._cabe(ts):
+            return False
+        for i in range(len(ts) - 1):
+            p1 = (ax + ux * ts[i], ay + uy * ts[i])
+            p2 = (ax + ux * ts[i + 1], ay + uy * ts[i + 1])
+            self.d.add(Cota(modo="alinhada", p1=self._p(*p1), p2=self._p(*p2),
+                            deslocamento=float(desl_papel), atributos=dict(self.atr)))
+            self._p(p1[0] - uy * desl_papel * self.d.escala, p1[1] + ux * desl_papel * self.d.escala)
+        return True
+
     def cadeia_h(self, xs, y, desl_papel):
         xs = sorted(set(float(round(x)) for x in xs))
         if not self._cabe(xs):
@@ -2042,9 +2065,27 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     nos_baixo = fundir(nos_baixo, fixos=(0.0, larg))
     nos_cima = fundir(nos_cima, fixos=(0.0, larg))
     alturas = fundir(alturas, tol=30.0, fixos=(0.0, alt))
-    cadeia = len(nos_baixo) > 2 and p.cadeia_h(nos_baixo, 0, -off)
+    # a cadeia de cada banzo acompanha a caída da cobertura: banzo inclinado (mais de 2°)
+    # ganha cotas alinhadas à própria reta, com as distâncias medidas nela — é o que se
+    # marca na barra; banzo horizontal fica com a cadeia horizontal
+    def reta_do_banzo(em_cima):
+        lados = [b for b in banzos if ((b[0][1] + b[1][1]) / 2 > v_medio) == em_cima]
+        pts = [q for b in lados for q in (b[0], b[1])]
+        if not pts:
+            return None
+        a_, b_ = min(pts, key=lambda q: q[0]), max(pts, key=lambda q: q[0])
+        if b_[0] - a_[0] < 1e-6 or abs(math.degrees(math.atan2(b_[1] - a_[1], b_[0] - a_[0]))) < 2.0:
+            return None
+        return a_, b_
+
+    def cadeia_do_banzo(nos, em_cima):
+        reta = reta_do_banzo(em_cima)
+        if reta is None:
+            return p.cadeia_h(nos, alt if em_cima else 0.0, off if em_cima else -off)
+        return p.cadeia_alinhada(reta, nos, off if em_cima else -off)
+    cadeia = len(nos_baixo) > 2 and cadeia_do_banzo(nos_baixo, False)
     p.cota_h(0, larg, 0, -(off2 if cadeia else off))
-    cadeia_cima = len(nos_cima) > 2 and nos_cima != nos_baixo and p.cadeia_h(nos_cima, alt, off)
+    cadeia_cima = len(nos_cima) > 2 and nos_cima != nos_baixo and cadeia_do_banzo(nos_cima, True)
     cadeia = len(alturas) > 2 and p.cadeia_v(alturas, larg, off)
     p.cota_v(0, alt, larg, off2 if cadeia else off)
     _rotular_barras(p, rotulos, esc)
