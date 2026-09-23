@@ -185,7 +185,7 @@ escala para 1050), e a linha da empena segue contínua. Multi-dobra: o raio sai 
 facetas ÷ ângulo (no TecnoMETAL do usuário, 110 mm por faceta girando 7,87° = R800 na linha média) —
 o desenho explica a conta; as terças e longarinas debaixo dela aparecem (camada TERCAS, seção pela face
 da ponta, `_apoios_no_perfil`) com a cadeia de espaçamento em cada reta, da ponta livre.
-Cadeia dos suportes de terça: a referência é o suporte (pé da perpendicular no banzo), a chamada nasce
+Nós da tesoura: onde chega um montante, o nó é o eixo dele (a diagonal cruza o banzo com excentricidade e puxava a média uns 23 mm). Cadeia dos suportes de terça: a referência é o suporte (pé da perpendicular no banzo), a chamada nasce
 nele. Contraventamento: a cota empilhada é o tamanho da **barra** (sem as peças de ponta), a dobra da
 ponta ganha cota, e as peças de ponta (gancho, chapas, barra roscada) são detalhe padrão — só o nome.
 Bitola #14 = **2,00** (a da fábrica); a troca de perfil mede a espessura na malha, então refazer a troca

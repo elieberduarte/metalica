@@ -608,6 +608,9 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     # ponta da diagonal (a ponta em si é cortada em ângulo e cai fora do nó)
     nos_baixo, nos_cima = {0.0, larg}, {0.0, larg}
     alturas = {0.0, alt}
+    # onde chega um montante (barra em pé), o nó é o eixo dele: é o que a fábrica marca no
+    # banzo; a diagonal que chega ao mesmo nó cruza o eixo do banzo com excentricidade
+    de_montante = set()
 
     def intersecao(p1, p2, q1, q2):
         d1 = (p2[0] - p1[0], p2[1] - p1[1])
@@ -627,6 +630,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             if -0.15 <= t <= 1.15 and min(qa[0], qb[0]) - 50 <= x <= max(qa[0], qb[0]) + 50:
                 em_cima = (qa[1] + qb[1]) / 2 > v_medio
                 (nos_cima if em_cima else nos_baixo).add(round(x, 1))
+                if abs(ang - 90.0) < 10.0:
+                    de_montante.add(round(x, 1))
     for qa, qb, _, _ in banzos:
         for q in (qa, qb):
             alturas.add(round(q[1], 1))
@@ -645,7 +650,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         fora = []
         for g in grupos:
             fixo = [x for x in g if x in fixos]
-            fora.append(fixo[0] if fixo else round(sum(g) / len(g), 1))
+            mont = [x for x in g if x in de_montante]
+            fora.append(fixo[0] if fixo else round(sum(mont) / len(mont), 1) if mont else round(sum(g) / len(g), 1))
         return fora
     nos_baixo = fundir(nos_baixo, fixos=(0.0, larg))
     nos_cima = fundir(nos_cima, fixos=(0.0, larg))
