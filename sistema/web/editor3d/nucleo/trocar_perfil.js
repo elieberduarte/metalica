@@ -130,6 +130,46 @@ function folgaNoMiolo(de, para, valores) {
   para.splice(i + 1, 0, n0, n1);
 }
 
+/** Os dois eixos principais que não são `e1` (para procurar a direção da altura). */
+function eixosRestantes(e1, P, c) {
+  const { eixos } = eixosPrincipais(P);
+  return eixos.filter(ax => Math.abs(dot(ax, e1)) < 0.9);
+}
+
+/**
+ * Peça que não é reta (U com a ponta dobrada ou calandrada): se a extensão da malha numa
+ * das direções principais é a altura do perfil, a altura (mesas e enrijecedores) muda por
+ * essa direção, sem mexer na curva. A aba e a espessura da alma dependeriam da direção
+ * local da curva: nessas peças elas ficam, e a troca que as muda é recusada com o motivo.
+ */
+function trocarAlturaDePecaDobrada(P, c, eixos, antigo, novo) {
+  const tol = Math.max(4, 0.06 * antigo.H);
+  for (const ax of eixos) {
+    const a = P.map(p => dot(sub(p, c), ax));
+    let aMin = Infinity, aMax = -Infinity;
+    for (const v of a) { aMin = Math.min(aMin, v); aMax = Math.max(aMax, v); }
+    if (Math.abs(aMax - aMin - antigo.H) > tol) continue;
+    if (Math.abs(novo.B - antigo.B) > 0.05 || Math.abs(novo.t - antigo.t) > 0.05) {
+      return { erro: `a peça não é reta (tem trecho dobrado): na malha só dá para mudar a altura${antigo.familia === 'Ue' ? ' e o enrijecedor' : ''} — a aba (${antigo.B}) e a espessura (${String(antigo.t).replace('.', ',')}) têm de ficar` };
+    }
+    const acima = a.map(v => v - aMin).filter(v => v > 0.3 && v > 0.5 * antigo.t && v < 1.6 * antigo.t);
+    const t = acima.length ? Math.min(...acima) : antigo.t;
+    const novaAltura = aMax - aMin + (novo.H - antigo.H);
+    const aC = (aMin + aMax) / 2, a0 = aC - novaAltura / 2, a1 = aC + novaAltura / 2;
+    const deA = [aMin, aMin + t], paraA = [a0, a0 + novo.t];
+    if (antigo.familia === 'Ue') { deA.push(aMin + antigo.D, aMax - antigo.D); paraA.push(a0 + novo.D, a1 - novo.D); }
+    deA.push(aMax - t, aMax); paraA.push(a1 - novo.t, a1);
+    folgaNoMiolo(deA, paraA, a);
+    const fa = porTrechos(deA, paraA);
+    const vertices = P.map((p, i) => {
+      const d = fa(a[i]) - a[i];
+      return [p[0] + ax[0] * d, p[1] + ax[1] * d, p[2] + ax[2] * d];
+    });
+    return { vertices, dobrada: true };
+  }
+  return null;
+}
+
 /**
  * Vértices da peça `ent` (sólido com vertices/faces) com a seção do perfil `antigo` passada
  * para `novo` (resultados de lerPerfil, mesma família). Devolve {vertices} ou {erro}.
@@ -161,6 +201,10 @@ export function trocarSecao(ent, antigo, novo) {
   const altura = aMax - aMin, largura = bMax - bMin;
   const tol = Math.max(4, 0.06 * antigo.H);
   if (Math.abs(altura - antigo.H) > tol || Math.abs(largura - antigo.B) > Math.max(4, 0.08 * antigo.B)) {
+    // peça dobrada ou calandrada (agulhamento com a ponta curva): a seção envolvente não é
+    // a do perfil, mas a altura dele segue uma direção só — muda a altura por ela
+    const dobrada = trocarAlturaDePecaDobrada(P, c, [e1, ...eixosRestantes(e1, P, c)], antigo, novo);
+    if (dobrada) return dobrada;
     return { erro: `a seção da peça (${altura.toFixed(1)} × ${largura.toFixed(1)} mm) não bate com ${antigo.familia} ${antigo.H}×${antigo.B}` };
   }
   // de que lado está a alma: média (por área) da largura das faces paralelas à alma
