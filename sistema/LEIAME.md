@@ -169,6 +169,12 @@ a largura do perfil. O que sobra da reta do modelo vira a telha **complementar**
 célula, na paginação e na lista de materiais. Largura da telha: **1050 total** (com os
 transpasses) e **980 útil**.
 
+**Saia** (`telhas.SAIA_TELHA`, regra da fábrica): a telha de fachada e a reta da parede da
+multi-dobra descem 150 mm abaixo da última longarina (`saias_de_fachada`, `aplicar_saias`: a
+posição ganha `saia`, que entra na compra, na célula, na lista e na paginação). Na paginação
+cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
+inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
+
 **Quadros por família no desenho completo** (`detalhar.FAMILIAS`): o conjunto e as peças dele
 juntos — a tesoura com as barras e as chapas de base, o agulhamento com o suporte e a barra, o
 contraventamento com o tirante, a castanha e a barra roscada. A família de uma peça avulsa vem

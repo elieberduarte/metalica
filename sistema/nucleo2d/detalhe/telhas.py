@@ -27,6 +27,10 @@ FACETA_MAX = 400.0
 #: e a telha seguinte começa 150 mm antes dela — transpasse de 300 mm + a largura da terça.
 COBRIMENTO_TERCA = 150.0
 
+#: Saia (regra da fábrica): a telha de fachada e a reta da parede da multi-dobra descem 150 mm
+#: abaixo da última longarina.
+SAIA_TELHA = 150.0
+
 
 def _medidas(e):
     """Centro, eixos principais e extensões (maior → menor) da malha."""
@@ -135,6 +139,7 @@ def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
     # cobrimento: a reta da cobertura (a mais deitada) termina 150 mm depois da primeira
     # terça; o que sobra do modelo vira a telha complementar, que começa 150 mm antes dela
     cobrimento = None
+    saia = None
     desenv_modelo = L1 + L2
     if barras:
         cob = 1 if abs(d1[1]) <= abs(d2[1]) else 2
@@ -166,6 +171,32 @@ def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
                 L1, p1 = novo, novo_p
             else:
                 L2, p2 = novo, novo_p
+        # saia: a reta da parede desce 150 mm abaixo da última longarina
+        par = 2 if cob == 1 else 1
+        ponta_p, Lp = (p2, L2) if par == 2 else (p1, L1)
+        Tp = (I[0] + d2[0] * T, I[1] + d2[1] * T) if par == 2 else (I[0] - d1[0] * T, I[1] - d1[1] * T)
+        n_ = math.dist(ponta_p, Tp) or 1.0
+        dirp = ((ponta_p[0] - Tp[0]) / n_, (ponta_p[1] - Tp[1]) / n_)
+        nrp = (-dirp[1], dirp[0])
+        ultimo = None
+        for e, c, eixos, ext in barras:
+            if abs(_dot(eixos[0], w)) < 0.95 or abs(_dot(c, w) - wc) > ext[0] / 2:
+                continue
+            pts = [(_dot(q, a), _dot(q, b)) for q in e.vertices]
+            ss = [(q[0] - Tp[0]) * dirp[0] + (q[1] - Tp[1]) * dirp[1] for q in pts]
+            dd = [abs((q[0] - Tp[0]) * nrp[0] + (q[1] - Tp[1]) * nrp[1]) for q in pts]
+            if min(ss) < 0 or min(ss) > Lp + 2000.0 or min(dd) > 300.0:
+                continue
+            if ultimo is None or max(ss) > ultimo[0]:
+                ultimo = (max(ss), str(_marcas(e).get("perfil") or e.nome or ""))
+        if ultimo:
+            novo = ultimo[0] + SAIA_TELHA
+            saia = {"longarina": ultimo[1], "reta_modelo": round(Lp, 1), "reta_nova": round(novo, 1)}
+            novo_p = (Tp[0] + dirp[0] * novo, Tp[1] + dirp[1] * novo)
+            if par == 2:
+                L2, p2 = novo, novo_p
+            else:
+                L1, p1 = novo, novo_p
     h = sorted(altura_onda)[len(altura_onda) // 2]
     R_int, R_ext = R - h / 2, R + h / 2
     peso = sum(_volume(e) for e in inst) * RHO_ACO
@@ -185,7 +216,7 @@ def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
             "perfil": str(m0.get("perfil") or e_longa.nome or "TELHA"), "material": _material(e_longa),
             # o perfil no plano: pontas livres, tangências, centro do arco (para o desenho)
             "p1": p1, "p2": p2, "d1": d1, "d2": d2, "I": I, "T": T, "sentido": 1 if theta > 0 else -1,
-            "cobrimento": cobrimento, "eixos_perfil": (a, b, w)}
+            "cobrimento": cobrimento, "saia": saia, "eixos_perfil": (a, b, w)}
 
 
 def _volume(e) -> float:
@@ -269,6 +300,9 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
                   fmt(md["desenv_ext"]), fmt(md["desenv_int"]), ("%.2f" % md["peso"]).replace(".", ","),
                   ("%.1f" % (md["peso"] * md["instancias"])).replace(".", ",")),
               "no modelo: %s (facetas de %s)" % (comp, md["conjunto"])]
+    if md.get("saia"):
+        linhas.insert(5, "saia: a reta da parede desce %d mm abaixo da última longarina (%s); no modelo tinha %s" % (
+            SAIA_TELHA, md["saia"]["longarina"], fmt(md["saia"]["reta_modelo"])))
     cb = md.get("cobrimento")
     if cb:
         linhas.insert(5, "cobrimento: passa %d mm da 1ª terça (%s); a telha seguinte começa %d mm antes — transpasse %s mm" % (
@@ -338,7 +372,7 @@ def multidobras(pecas: Sequence) -> Dict[str, object]:
 
 
 # ============================================================ paginação
-def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None) -> List[dict]:
+def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, saias: Optional[dict] = None) -> List[dict]:
     """As telhas do modelo agrupadas por face (água da cobertura, fachada), cada uma com as
     chapas na posição de montagem: [{"normal", "u", "v", "chapas": [{"contorno": [(x, y)],
     "comprimento", "nome", "centro"}]}]. A telha multi-dobra entra como uma chapa só, na face
@@ -406,6 +440,13 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None) ->
             uu = ch["u"][0] if ch["u"][1] else u
             proj = [_dot(p, uu) for p in ch["e"].vertices]
             comp = ch["multidobra"]["desenv_ext"] if ch["multidobra"] else max(proj) - min(proj)
+            desce = (saias or {}).get(ch["e"].id, 0.0)
+            if desce and not ch["multidobra"]:
+                # a saia: a ponta de baixo desce (a face da fachada tem u para cima)
+                comp += desce
+                y_min = min(ys)
+                contorno = [(q[0], q[1] - desce) if q[1] <= y_min + 1.0 else q for q in contorno]
+                ys = ys + [y_min - desce]
             cb = ch["multidobra"].get("cobrimento") if ch["multidobra"] else None
             if cb:
                 # a multi-dobra termina 150 mm depois da 1ª terça; a complementar começa 150
@@ -510,7 +551,17 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         larg = max(xs) - min(xs)
         k = LARGURA_TOTAL_TELHA / larg if 600.0 < larg < 1200.0 and ch.get("alinhada", True) else 1.0
         contorno = [(ch["x"] + (q[0] - ch["x"]) * k, q[1]) for q in ch["contorno"]]
-        p.polilinha([T(q) for q in contorno], fechada=True, camada="ACO")
+        # a telha inteira (como é comprada) em traço cheio; o corte que ela tem no modelo
+        # (a empena inclinada, a curva do canto) tracejado — é feito na obra, medido depois
+        # de instalada
+        xa, xb = min(q[0] for q in contorno), max(q[0] for q in contorno)
+        ya, yb = ch["y0"], ch["y1"]
+        retangulo = [(xa, ya), (xb, ya), (xb, yb), (xa, yb)]
+        p.polilinha([T(q) for q in retangulo], fechada=True, camada="ACO")
+        area_c = abs(sum(contorno[i][0] * contorno[(i + 1) % len(contorno)][1] - contorno[(i + 1) % len(contorno)][0] * contorno[i][1]
+                         for i in range(len(contorno)))) / 2.0 if len(contorno) >= 3 else 0.0
+        if area_c and area_c < 0.99 * (xb - xa) * (yb - ya):
+            p.polilinha([T(q) for q in contorno], fechada=True, camada="OCULTA")
         if k != 1.0 and not cotada:
             cotada = True
             xa = min(q[0] for q in contorno) - x0
@@ -535,3 +586,77 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     p.texto(0, alt + 6.0 * esc, titulo, 3.5 * esc)
     p.texto(0, alt + 2.0 * esc, resumo[:220], 2.0 * esc)
     return p.extremos
+
+def saias_de_fachada(pecas, ignorar=frozenset()) -> Dict[str, float]:
+    """{id da telha: quanto a ponta de baixo desce (mm; negativo sobe)} das telhas de
+    fachada (chapa em pé, onda na vertical), para a ponta de baixo ficar SAIA_TELHA abaixo
+    da longarina mais baixa atrás dela — a regra da fábrica. Longarina: barra comprida,
+    deitada, paralela à face e a menos de 400 mm do plano da telha, cobrindo a largura dela."""
+    barras, telhas = [], []
+    for e in pecas:
+        m = _marcas(e)
+        nome = str(m.get("perfil") or e.nome or "")
+        if len(e.vertices or []) < 8:
+            continue
+        if _eh_telha(nome):
+            if e.id not in ignorar:                   # as peças das multi-dobra têm regra própria
+                telhas.append(e)
+        elif "PLATE" not in nome.upper():
+            c, eixos, ext = _medidas(e)
+            if ext[0] > 1000.0 and ext[1] < 400.0 and abs(eixos[0][2]) < 0.2:
+                barras.append((e, c, eixos, ext))
+    fora = {}
+    for e in telhas:
+        c, eixos, ext = _medidas(e)
+        n = _norm(eixos[2])
+        if abs(n[2]) > 0.2:
+            continue                                  # não é fachada
+        u, clara = _direcao_da_onda(e, n)
+        if clara and abs(u[2]) < 0.8:
+            continue                                  # onda deitada: não é a telha da saia
+        h = _norm(_cruz((0.0, 0.0, 1.0), n))           # horizontal no plano da telha
+        hs = [_dot(q, h) for q in e.vertices]
+        h0, h1 = min(hs), max(hs)
+        z0 = min(q[2] for q in e.vertices)
+        mais_baixa = None
+        for b, cb, eb, xb in barras:
+            if abs(_dot(eb[0], n)) > 0.2 or abs(_dot(_sub(cb, c), n)) > 400.0:
+                continue
+            bh = [_dot(q, h) for q in b.vertices]
+            if min(bh) > h0 + 50.0 or max(bh) < h1 - 50.0:
+                continue                              # não passa atrás da telha inteira
+            zb = min(q[2] for q in b.vertices)
+            if zb > z0 + 1500.0:
+                continue
+            if mais_baixa is None or zb < mais_baixa:
+                mais_baixa = zb
+        if mais_baixa is not None:
+            delta = z0 - (mais_baixa - SAIA_TELHA)
+            if abs(delta) > 0.5 and abs(delta) < 2000.0:
+                fora[e.id] = round(delta, 1)
+    return fora
+
+def aplicar_saias(posicoes, pecas, md: Optional[dict] = None) -> Dict[str, float]:
+    """Põe em cada posição de telha de fachada o `saia` (mm que a ponta de baixo desce para
+    ficar SAIA_TELHA abaixo da última longarina): a compra, a célula e a lista usam o
+    comprimento com a saia. Devolve {id da peça: desloc} para a paginação."""
+    from nucleo2d.detalhe.base import marcas_de
+    md = md if md is not None else multidobras(pecas)
+    ignorar = {i for t in md.get("telhas", []) for i in t.get("ids", [])}
+    por_peca = saias_de_fachada(pecas, ignorar)
+    por_marca: Dict[str, float] = {}
+    for e in pecas:
+        v = por_peca.get(e.id)
+        if v is None:
+            continue
+        m = _posicao(e)
+        if m not in por_marca or abs(v) > abs(por_marca[m]):
+            por_marca[m] = v
+    for p in posicoes:
+        if p.classe != "telha":
+            continue
+        vals = [por_marca[m] for m in marcas_de(p) if m in por_marca]
+        if vals:
+            p.saia = max(vals, key=abs)
+            p.observacoes.append("saia: desce %d mm abaixo da última longarina (%+d mm no comprimento)" % (SAIA_TELHA, round(p.saia)))
+    return por_peca

@@ -81,6 +81,10 @@ def compra_da_telha(pos) -> dict:
     cheia = L * H
     cortada = bool(area and cheia and area < 0.995 * cheia)
     peso = pos.peso * cheia / area if cortada and area > 0.2 * cheia else pos.peso
+    saia = float(getattr(pos, "saia", 0.0) or 0.0)       # fachada: desce até 150 abaixo da longarina
+    if saia and L > 0:
+        peso *= (L + saia) / L
+        L += saia
     return {"comprimento": L, "largura": LARGURA_COMPRA_TELHA, "largura_total": LARGURA_TOTAL_TELHA,
             "cortada": cortada, "peso": peso}
 FURACAO_TERCA_BAIXA = (50.0, 60.0)

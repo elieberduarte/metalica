@@ -407,8 +407,14 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     if regra_tercas:
         oblongar_tercas(posicoes, camadas)
     aplicar_nomes(posicoes, nomes)
+    # telhas de fachada: saia 150 mm abaixo da última longarina (regra da fábrica)
+    try:
+        from nucleo2d.detalhe.telhas import aplicar_saias
+        saias = aplicar_saias(posicoes, pecas)
+    except Exception:                               # noqa: BLE001 — a regra não pode derrubar o levantamento
+        saias = {}
     return {"pecas": pecas, "acessorios": acessorios, "posicoes": posicoes, "camadas": camadas,
-            "regra_tercas": mudadas, "ajustes": ajustadas,
+            "regra_tercas": mudadas, "ajustes": ajustadas, "saias": saias,
             "categorias": {p.marca: _categoria(p, camadas.get(p.marca, "")) for p in posicoes}}
 
 
@@ -640,7 +646,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             # paginação: cada face com as chapas lado a lado, marca e comprimento real
             try:
                 nome_tl = lambda m: nomes_pos.get(fundidas.get(m, m)) or fundidas.get(m, m)    # noqa: E731
-                faces = faces_de_telhas(pecas, md, nome_tl)
+                faces = faces_de_telhas(pecas, md, nome_tl, saias=lev.get("saias") or {})
             except Exception as exc:              # noqa: BLE001
                 faces = []
                 avisos.append("paginação das telhas não gerada: %s" % exc)
