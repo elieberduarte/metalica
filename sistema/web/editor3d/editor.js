@@ -830,6 +830,13 @@ export class Editor {
     }
     if (enquadrar) this.camera.vista('isometrica', this.documento.caixa());
     this._agendarPaineis('props', 'camadas', 'materiais', 'arvore');
+    this._atualizarMenuSombras();
+    if (this.cena.sombrasDesligadasPeloTamanho && !this._avisouSombras) {
+      this._avisouSombras = true;
+      this.aviso(`Modelo grande (${numero(this.documento.tamanho)} peças): sombras desligadas para a navegação ` +
+                 'ficar leve. Ver → Sombras liga de novo; o modo "Sombreado" (sem arestas) alivia mais ainda.',
+                 'info', 12000);
+    }
     if (autosalvar) {
       this._agendarAutosave();
     } else {
@@ -1553,6 +1560,7 @@ export class Editor {
       'zoom-extensao': () => this.camera.zoomExtensao(),
       'zoom-selecao': () => this.camera.zoomSelecao([...this.selecao.ids]),
       'mapa-esforcos': () => this.alternarAnalise(),
+      sombras: () => this.alternarSombras(),
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
@@ -2407,6 +2415,22 @@ export class Editor {
   }
 
   // ---------------------------------------------------------------- análise
+
+  /** Ver → Sombras: liga ou desliga a sombra do sol (escolha do usuário vale até trocar de modelo). */
+  alternarSombras() {
+    const ligadas = this.cena.definirSombras(!this.cena.sombrasAtivas);
+    this._atualizarMenuSombras();
+    this.dica(ligadas ? 'Sombras ligadas.' : 'Sombras desligadas: o modelo é desenhado uma vez só por quadro.');
+    this._sujo = true;
+  }
+
+  _atualizarMenuSombras() {
+    const b = document.getElementById('menu-sombras');
+    if (!b) return;
+    const ligadas = this.cena.sombrasAtivas;
+    b.replaceChildren(`Sombras ${ligadas ? '✓' : '—'}`);
+    b.setAttribute('aria-pressed', String(ligadas));
+  }
 
   /**
    * "Calcular estrutura": na primeira vez roda a análise no servidor; nas seguintes só

@@ -24,6 +24,11 @@ const tipoDe = (ent) => (ent && ent.atributos && ent.atributos.tipo) || '';
 /** Metros de cena por milímetro de documento. */
 export const ESCALA = 0.001;
 
+/** Acima de tantos objetos a sombra sai sozinha: o mapa de sombra desenha o modelo
+ *  inteiro uma segunda vez a cada quadro (medido: 152 ms → 49 ms por quadro num IFC de
+ *  5 mil peças). */
+export const LIMITE_SOMBRAS = 1500;
+
 export const MODOS = [
   ['sombreado', 'Sombreado'],
   ['sombreado_arestas', 'Sombreado com arestas'],
@@ -61,6 +66,8 @@ export class Cena {
     this.escuro = !!opcoes.escuro;
     this.catalogo = { perfis: new Map() };
     this.modo = 'sombreado_arestas';
+    this.sombras = 'auto';                 // 'auto' | true | false (Ver → Sombras)
+    this._sombrasAtivas = true;
     this.usarServidor = true;         // desligado sozinho se o servidor não puder ajudar
     this.avisoServidor = '';
 
@@ -341,6 +348,38 @@ export class Cena {
     eixo([0, 0, 0], [0, 0, -t * 0.2], CORES_EIXO.z, true);
   }
 
+  // ------------------------------------------------------------- sombras
+
+  /** Sombras ligadas agora? */
+  get sombrasAtivas() { return this._sombrasAtivas; }
+
+  /** Desligadas por serem muitas peças (e não por escolha do usuário)? */
+  get sombrasDesligadasPeloTamanho() { return this.sombras === 'auto' && !this._sombrasAtivas; }
+
+  /** `true`, `false` ou 'auto' (desliga acima de LIMITE_SOMBRAS objetos). */
+  definirSombras(valor) {
+    this.sombras = valor === 'auto' ? 'auto' : !!valor;
+    this._ajustarSombras(true);
+    return this._sombrasAtivas;
+  }
+
+  _ajustarSombras(forcar = false) {
+    const querido = this.sombras === 'auto' ? this.objetos.size <= LIMITE_SOMBRAS : this.sombras;
+    if (!forcar && querido === this._sombrasAtivas) return;
+    this._sombrasAtivas = querido;
+    this.renderizador.shadowMap.enabled = querido;
+    if (this.luzSol) this.luzSol.castShadow = querido;
+    this.raiz.traverse(o => { if (o.isMesh) { o.castShadow = querido; o.receiveShadow = querido; } });
+    if (this.chao) this.chao.receiveShadow = querido;
+    // o programa de sombreamento muda: os materiais precisam recompilar
+    for (const m of this.cacheMaterial.values()) m.needsUpdate = true;
+    this.cena.traverse(o => {
+      if (!o.material) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.needsUpdate = true; });
+    });
+    this.pedirQuadro();
+  }
+
   // ------------------------------------------------------ modo de exibição
 
   definirModo(modo) {
@@ -432,6 +471,7 @@ export class Cena {
     // da cena (malhas do servidor chegando), o documento não avisa ninguém — então a
     // seleção precisa ser reaplicada daqui, senão o que estava selecionado apaga.
     if (ids.length && this.aoRepintar) this.aoRepintar();
+    this._ajustarSombras();
     this._agendarRefino();
     this.pedirQuadro();
   }

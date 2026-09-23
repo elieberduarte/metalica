@@ -570,6 +570,15 @@ código 1 quando alguma conferência falha.
 sem janela (CDP); a maioria usa o modelo de exemplo do cliente, que não está no repositório — ver o LEIAME
 da pasta. `.github/workflows/testes.yml` roda o `pytest` no GitHub a cada push (Windows, Python 3.12).
 
+## Desempenho no Modelo 3D com IFC grande
+
+Acima de 1.500 objetos (`LIMITE_SOMBRAS` em `web/editor3d/nucleo/cena.js`) a cena abre sem a sombra
+do sol: o mapa de sombra desenha o modelo inteiro uma segunda vez por quadro (IFC de 5 mil peças:
+152 ms → 49 ms por quadro). Ver → Sombras liga de novo; o modo "Sombreado" (sem arestas) corta as
+chamadas de desenho pela metade (28 ms). Com o mapa de esforços ligado, a peça sem valor fica em
+cinza opaco sem arestas (material translúcido em milhares de peças obrigava a ordenar tudo a cada
+quadro). Medição: scratchpad `medir_quadro.py` (renderer.info e tempo de `cena.desenhar`).
+
 ## Limites do sistema
 
 Estes pontos são declarados no memorial e precisam de atenção do engenheiro:
