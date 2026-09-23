@@ -17,6 +17,9 @@ Três origens, e cada item diz de qual veio (campo `origem`), porque isso muda a
   fabricante, que arredondam e às vezes divergem entre si — por isso ficam marcadas.
 * **perfis.json** — os laminados W/HP, U, cantoneiras em polegada e tubos já extraídos
   pelo `extrai_perfis.py`; o catálogo os lê de lá, não os repete aqui.
+* **fornecedores** — `dados/fornecedores/*.json`, transcrições dos catálogos públicos
+  (seção 3 abaixo): entram o que as séries não têm, marcado `fornecedor: True`, e quem
+  fabrica cada perfil (`fabricantes`).
 
 O catálogo serve a três coisas: consultar peças na interface, oferecer alternativas na
 troca de perfil da análise (mais leve/mais pesado, com o impacto no peso) e, adiante,
@@ -74,6 +77,11 @@ def _fmt(x, casas=2):
     return round(float(x), casas)
 
 
+def _dim(*medidas):
+    """Medidas em mm para exibir: "127×50×17×1,95"."""
+    return "×".join(("%g" % m).replace(".", ",") for m in medidas)
+
+
 def perfis_frio():
     """Séries U e Ue pelo método linear da NBR 14762 (nucleo/nbr14762.py)."""
     from nucleo import nbr14762
@@ -102,7 +110,7 @@ def perfis_frio():
 def _do_frio(sec, familia, h, bf, d, t):
     return {
         "nome": sec.nome, "familia": familia, "grupo": "formado a frio",
-        "dim": ("%g×%g×%g" % (h, bf, t)) if not d else ("%g×%g×%g×%g" % (h, bf, d, t)),
+        "dim": _dim(h, bf, d, t) if d else _dim(h, bf, t),
         "d": h, "bf": bf, "enrijecedor": d or None, "t": t,
         "massa": _fmt(sec.massa, 2), "A": _fmt(sec.A, 3),
         "Ix": _fmt(sec.Ix, 1), "Wx": _fmt(sec.Wx, 2), "rx": _fmt(sec.rx, 2),
@@ -135,7 +143,7 @@ def _da_cantoneira(p, b1, b2, t):
     frio = bool(d.get("formado_a_frio"))
     return {
         "nome": p.nome, "familia": "L", "grupo": "formado a frio" if frio else "laminado",
-        "dim": "%g×%g×%g" % (b1, b2, t), "b": max(b1, b2), "b2": min(b1, b2), "t": t,
+        "dim": _dim(b1, b2, t), "b": max(b1, b2), "b2": min(b1, b2), "t": t,
         "massa": d["massa"], "A": d["A"], "Ix": d["Ix"], "Iy": d["Iy"],
         "Wx": d["Wx"], "Wy": d["Wy"], "rx": d["rx"], "ry": d["ry"], "rmin": d["rmin"],
         "J": d["J"],
@@ -263,7 +271,316 @@ def parafusos():
 
 
 # =====================================================================================
-# 3. Montagem
+# 3. Catálogos de fornecedores (dados/fornecedores/)
+# =====================================================================================
+#
+# Transcrições dos catálogos públicos (Gerdau, ArcelorMittal, Vallourec, Marcegaglia,
+# Perfinasa, Perfilor, Isoeste, Tetraferro, telhas de vários fabricantes). Tudo que vem
+# daqui ganha `fornecedor: True` quando não faz parte das séries acima: entra na consulta,
+# na busca e na troca de perfil, mas o dimensionamento automático continua escolhendo só
+# nas séries padrão. Da NBR 6355 só entram as designações; as propriedades dos formados a
+# frio são sempre calculadas (NBR 14762), e a tabela do fabricante, quando existe, fica
+# ao lado (`tabela_fabricante`) para quem quiser conferir.
+
+FORNECEDORES = os.path.join(BASE, "fornecedores")
+
+USO_FRIO = {
+    "Ze": "terças e longarinas contínuas (o Z encaixa no transpasse)",
+    "Z45": "terças e longarinas contínuas, com transpasse",
+    "Cr": "terças leves, travessas de fechamento, apoio de forro e de telha",
+}
+
+
+def _ler_fornecedor(nome):
+    caminho = os.path.join(FORNECEDORES, nome)
+    if not os.path.exists(caminho):
+        return {}
+    with open(caminho, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _num(x, casas_min=0):
+    """Número com vírgula, sem zeros sobrando ("3,6", "4,75", "50"); `casas_min` força
+    ao menos essa quantidade de casas ("3,0")."""
+    s = ("%.2f" % float(x)).rstrip("0")
+    if s.endswith("."):
+        s = s[:-1]
+    if casas_min and "." not in s:
+        s += "." + "0" * casas_min
+    return s.replace(".", ",")
+
+
+def _marca_fornecedor(reg, fonte):
+    fab = fonte.get("fabricante")
+    reg["fabricantes"] = [fab] if fab else []
+    if fonte.get("tabela_fabricante") and fab:
+        reg["tabela_fabricante"] = {fab: fonte["tabela_fabricante"]}
+    if fonte.get("fonte"):
+        reg["fonte"] = fonte["fonte"]
+    if fonte.get("obs"):
+        reg["obs"] = fonte["obs"]
+    return reg
+
+
+def _do_z_cartola(fam, h, b, d, t):
+    from nucleo import secoes_frio
+    s = secoes_frio.propriedades(fam, h, b, d, t)
+    return {
+        "nome": "%s %s×%s×%s×%s" % (fam, _num(h), _num(b), _num(d), ("%.2f" % t).replace(".", ",")),
+        "familia": fam, "grupo": "formado a frio", "dim": _dim(h, b, d, t),
+        "d": h, "bf": b, "enrijecedor": d, "t": t,
+        "massa": _fmt(s["massa"], 2), "A": _fmt(s["A"], 3),
+        "Ix": _fmt(s["Ix"], 1), "Wx": _fmt(s["Wx"], 2), "rx": _fmt(s["rx"], 2),
+        "Iy": _fmt(s["Iy"], 1), "Wy": _fmt(s["Wy"], 2), "ry": _fmt(s["ry"], 2),
+        "Ixy": _fmt(s["Ixy"], 1), "I1": _fmt(s["I1"], 1), "I2": _fmt(s["I2"], 1),
+        "alfa": _fmt(s["alfa"], 1), "rmin": _fmt(s["rmin"], 2),
+        "J": _fmt(s["J"], 4), "Cw": _fmt(s["Cw"], 1), "x0": _fmt(s["x0"], 3), "r0": _fmt(s["r0"], 3),
+        "norma": "NBR 6355 (dimensões) e NBR 14762 (propriedades)", "origem": "calculado",
+        "uso": USO_FRIO.get(fam, ""),
+    }
+
+
+def frio_de_fornecedores():
+    """Formados a frio dos catálogos: U, Ue, Ze, Z45, cartola e cantoneira dobrada.
+    Linhas sem as medidas completas (o Z da Isoeste só dá a altura) ficam de fora."""
+    from nucleo import nbr14762
+    from nucleo.perfis_fabrica import perfil_cantoneira
+    itens = []
+    for p in _ler_fornecedor("formados_a_frio.json").get("perfis", []):
+        fam, h, b, d, t = p.get("familia"), p.get("h"), p.get("b"), p.get("D"), p.get("t")
+        if not (h and b and t) or (fam in ("Ue", "Ze", "Z45", "Cr") and not d):
+            continue
+        try:
+            if fam == "U":
+                reg = _do_frio(nbr14762.propriedades_u(h, b, t), "U", h, b, 0.0, t)
+            elif fam == "Ue":
+                reg = _do_frio(nbr14762.propriedades_ue(h, b, d, t), "Ue", h, b, d, t)
+            elif fam == "L":
+                b1, b2 = max(h, b), min(h, b)
+                reg = _da_cantoneira(perfil_cantoneira(b1, b2, t), b1, b2, t)
+            elif fam in USO_FRIO:
+                reg = _do_z_cartola(fam, h, b, d, t)
+            else:
+                continue
+        except Exception:
+            continue
+        itens.append(_marca_fornecedor(reg, p))
+    return itens
+
+
+def laminados_de_fornecedores():
+    """W e HP (Gerdau), I e U americanos e cantoneiras em polegada (Gerdau, ArcelorMittal).
+    Linhas que o catálogo só dá com a massa entram sem as propriedades."""
+    itens = []
+    for p in _ler_fornecedor("laminados_I.json").get("perfis", []):
+        reg = {k: v for k, v in p.items() if v is not None and k not in ("fabricante", "rotulo_original")}
+        reg.update({"nome": p["nome"], "familia": "I", "serie": p.get("familia"),
+                    "grupo": "laminado", "origem": "tabela",
+                    "norma": "ASTM A572 Gr. 50 / NBR 5884 (tabela do fabricante)",
+                    "uso": "pilares e estacas" if p.get("familia") == "HP" else "vigas e pilares"})
+        itens.append(_marca_fornecedor(reg, p))
+    lam = _ler_fornecedor("laminados_U_L_barras.json")
+    usos = {"U": "terças pesadas, vigas de tapamento, travessas",
+            "I": "vigas leves, trilhos de talha",
+            "L": "diagonais, montantes, travamentos e agulhamento"}
+    for fam in ("U", "I", "L"):
+        for p in lam.get(fam, []):
+            reg = {k: v for k, v in p.items() if v is not None and k not in ("fabricante", "obs", "rz_min")}
+            if p.get("rz_min"):
+                reg["rmin"] = p["rz_min"]
+            if fam == "L" and not p.get("b2"):
+                reg["b2"] = p.get("b")
+            reg.update({"familia": fam, "grupo": "laminado",
+                        "origem": "tabela", "so_massa": None if p.get("A") else True,
+                        "norma": "ASTM A36 (tabela do fabricante)", "uso": usos[fam]})
+            itens.append(_marca_fornecedor(reg, p))
+    return itens
+
+
+def _props_tubo(tipo, D, b, h, t):
+    """Propriedades de tubo pela seção cheia menos o furo (cantos vivos no retangular:
+    fica 1 % a 3 % acima da tabela, que desconta o raio). mm → cm."""
+    t = t / 10.0
+    if tipo == "redondo":
+        De = D / 10.0
+        Di = De - 2 * t
+        A = math.pi * (De ** 2 - Di ** 2) / 4
+        I = math.pi * (De ** 4 - Di ** 4) / 64
+        W = I / (De / 2)
+        r = math.sqrt(I / A)
+        return {"A": _fmt(A, 3), "Ix": _fmt(I, 2), "Iy": _fmt(I, 2), "Wx": _fmt(W, 2),
+                "Wy": _fmt(W, 2), "rx": _fmt(r, 2), "ry": _fmt(r, 2), "J": _fmt(2 * I, 2)}
+    B, H = b / 10.0, h / 10.0
+    bi, hi = B - 2 * t, H - 2 * t
+    A = B * H - bi * hi
+    Ix = (B * H ** 3 - bi * hi ** 3) / 12
+    Iy = (H * B ** 3 - hi * bi ** 3) / 12
+    Am = (B - t) * (H - t)
+    J = 4 * Am ** 2 * t / (2 * ((B - t) + (H - t)))
+    return {"A": _fmt(A, 3), "Ix": _fmt(Ix, 2), "Iy": _fmt(Iy, 2),
+            "Wx": _fmt(Ix / (H / 2), 2), "Wy": _fmt(Iy / (B / 2), 2),
+            "rx": _fmt(math.sqrt(Ix / A), 2), "ry": _fmt(math.sqrt(Iy / A), 2), "J": _fmt(J, 2)}
+
+
+def _geo_tubo(tipo, D, b, h, t):
+    if tipo == "redondo":
+        return ("redondo", round(float(D), 1), round(float(t), 2))
+    return (tipo, round(float(max(b, h)), 1), round(float(min(b, h)), 1), round(float(t), 2))
+
+
+def tubos_de_fornecedores():
+    """Tubos Vallourec (sem costura, com a tabela completa) e Marcegaglia (com costura,
+    o catálogo só dá a massa: as propriedades são calculadas). Nomes na grafia do
+    perfis.json: TC redondo, TQ quadrado, TR retangular; os que ele já tem ficam de fora."""
+    ja = set()
+    try:
+        with open(os.path.join(BASE, "perfis.json"), encoding="utf-8") as f:
+            for p in json.load(f).get("tubo", []):
+                ja.add(_geo_tubo(p.get("tipo"), p.get("D"), p.get("b"), p.get("h"), p.get("t")))
+    except (OSError, ValueError, TypeError):
+        pass
+    itens, vistos = [], {}
+    for p in _ler_fornecedor("tubos.json").get("tubos", []):
+        tipo, D, b, h, t = p.get("tipo"), p.get("D"), p.get("b"), p.get("h"), p.get("t")
+        if not t or (tipo == "redondo" and not D) or (tipo != "redondo" and not (b and h)):
+            continue
+        geo = _geo_tubo(tipo, D, b, h, t)
+        if geo in ja:
+            continue
+        if geo in vistos:                      # mesmo tubo nos dois fabricantes
+            fab = p.get("fabricante")
+            if fab and fab not in vistos[geo]["fabricantes"]:
+                vistos[geo]["fabricantes"].append(fab)
+            continue
+        if tipo == "redondo":
+            nome, dim = "TC %s×%s" % (_num(D, 1), _num(t, 1)), "ø" + _dim(D, t)
+        elif tipo == "quadrado":
+            nome, dim = "TQ %s×%s×%s" % (_num(b), _num(b), _num(t, 1)), _dim(b, b, t)
+        else:
+            hh, bb = max(b, h), min(b, h)
+            nome, dim = "TR %s×%s×%s" % (_num(hh), _num(bb), _num(t, 1)), _dim(hh, bb, t)
+        reg = {"nome": nome, "familia": "tubo", "grupo": "tubo", "tipo": tipo, "dim": dim,
+               "t": t, "massa": p.get("massa")}
+        if tipo == "redondo":
+            reg["D"] = D
+        else:
+            reg["b"], reg["h"] = min(b, h), max(b, h)
+        if p.get("A"):
+            for k in ("A", "Ix", "Iy", "Wx", "Wy", "rx", "ry", "J", "Zx", "Zy", "Wt"):
+                if p.get(k) is not None:
+                    reg[k] = p[k]
+            reg["origem"] = "tabela"
+        else:
+            reg.update(_props_tubo(tipo, D, b, h, t))
+            reg["origem"] = "calculado"
+            if not reg.get("massa"):
+                reg["massa"] = _fmt(reg["A"] * RHO * 1e-4, 2)
+        reg["norma"] = p.get("norma") or ""
+        reg["uso"] = "pilares, banzos e diagonais de treliça aparente, estruturas tubulares"
+        if p.get("sob_consulta"):
+            reg["sob_consulta"] = True
+        _marca_fornecedor(reg, {"fabricante": p.get("fabricante"), "fonte": p.get("fonte")})
+        vistos[geo] = reg
+        itens.append(reg)
+    return itens
+
+
+def barras_de_fornecedores():
+    """Barras redondas e chatas da Gerdau, nos nomes do catálogo ("Barra redonda ø 3/8\"")."""
+    lam = _ler_fornecedor("laminados_U_L_barras.json")
+    itens = []
+    for p in lam.get("barras_redondas", []):
+        d = float(p["diametro"])
+        rot = p["nome"].replace("BR ", "", 1).strip()
+        A = math.pi * (d / 10.0) ** 2 / 4
+        itens.append(_marca_fornecedor({
+            "nome": "Barra redonda ø %s" % rot, "familia": "barra_redonda", "grupo": "barra",
+            "d": d, "A": _fmt(A, 3), "massa": p.get("massa") or _fmt(A * RHO * 1e-4, 3),
+            "polegada": rot if '"' in rot else None, "origem": "tabela",
+            "norma": "SAE 1020 / ASTM A36 (tabela do fabricante)",
+            "uso": "tirantes, chumbadores, eixos"}, p))
+    for p in lam.get("barras_chatas", []):
+        rot = p["nome"].replace("BC ", "", 1).strip()
+        b, t = float(p["largura"]), float(p["espessura"])
+        itens.append(_marca_fornecedor({
+            "nome": "Barra chata %s" % rot, "familia": "barra_chata", "grupo": "barra",
+            "b": b, "t": t, "A": _fmt(b * t / 100.0, 3), "massa": p.get("massa"),
+            "origem": "tabela", "norma": "ASTM A36 (tabela do fabricante)",
+            "uso": "travessas, enrijecedores, grades, chapinhas"}, p))
+    return itens
+
+
+def telhas_de_fornecedores():
+    """Telhas trapezoidais e onduladas: um item por modelo e espessura, com a massa por m²
+    e as larguras total e útil. Modelos sem tabela publicada entram como referência."""
+    itens = []
+    for p in _ler_fornecedor("telhas.json").get("telhas", []):
+        base = {"familia": "telha", "grupo": "telha", "modelo": p["nome"],
+                "largura_total": p.get("largura_total"), "largura_util": p.get("largura_util"),
+                "altura_onda": p.get("altura_onda"), "comprimento_max": p.get("comprimento_max"),
+                "origem": "tabela", "norma": "tabela do fabricante",
+                "uso": "cobertura e fechamento"}
+        if p.get("observacao"):
+            base["obs"] = p["observacao"]
+        fab = p.get("fabricante") or ""
+        esps = [e for e in (p.get("espessuras") or []) if e.get("t")]
+        if not esps:
+            reg = dict(base, nome="%s (%s)" % (p["nome"], fab))
+            itens.append(_marca_fornecedor(reg, p))
+            continue
+        for e in esps:
+            reg = dict(base, nome="%s %s mm (%s)" % (p["nome"], _num(e["t"], 2), fab),
+                       t=e["t"], massa_m2=e.get("peso_m2"))
+            itens.append(_marca_fornecedor(reg, p))
+    return itens
+
+
+def _geometria(reg):
+    """Chave de geometria para achar o mesmo perfil com outro nome."""
+    f = reg["familia"]
+    r = lambda x: round(float(x or 0), 1)
+    if f in ("U", "Ue", "Ze", "Z45", "Cr"):
+        return (f, r(reg.get("d")), r(reg.get("bf")), r(reg.get("enrijecedor")), round(float(reg.get("t") or 0), 2))
+    if f == "L":
+        return (f, r(reg.get("b")), r(reg.get("b2") or reg.get("b")), round(float(reg.get("t") or 0), 1))
+    if f == "barra_redonda":
+        return (f, r(reg.get("d")))
+    if f == "barra_chata":
+        return (f, r(reg.get("b")), r(reg.get("t")))
+    return (f, reg["nome"])
+
+
+def _juntar(base, novos):
+    """Acrescenta os itens dos fornecedores às séries sem repetir: se o perfil já existe
+    (mesmo nome ou mesma geometria), só ganha o nome do fabricante."""
+    from nucleo.catalogo import _chave
+    por_nome = {_chave(i["nome"]): i for i in base}
+    por_geo = {_geometria(i): i for i in base}
+    for n in novos:
+        velho = por_nome.get(_chave(n["nome"])) or por_geo.get(_geometria(n))
+        if velho is not None:
+            for fab in n.get("fabricantes", []):
+                if fab and fab not in velho.setdefault("fabricantes", []):
+                    velho["fabricantes"].append(fab)
+            if n.get("tabela_fabricante"):
+                velho.setdefault("tabela_fabricante", {}).update(n["tabela_fabricante"])
+            continue
+        n["fornecedor"] = True
+        n = {k: v for k, v in n.items() if v is not None}
+        por_nome[_chave(n["nome"])] = n
+        por_geo[_geometria(n)] = n
+        base.append(n)
+    return base
+
+
+def bitolas():
+    """Tabela de bitolas (#14 etc.) dos fornecedores: a mesma bitola muda de espessura
+    conforme a chapa é laminada a quente, a frio ou zincada."""
+    return _ler_fornecedor("formados_a_frio.json").get("bitolas", [])
+
+
+# =====================================================================================
+# 4. Montagem
 # =====================================================================================
 
 def montar():
@@ -281,7 +598,45 @@ def montar():
     dados["itens"].extend(chapas())
     dados["itens"].extend(barras())
     dados["itens"].extend(parafusos())
+
+    # fornecedores: o que o perfis.json já tem entra só na sombra (para não repetir)
+    sombra = _sombra_do_banco()
+    n_sombra = len(sombra)
+    base = sombra + dados["itens"]
+    _juntar(base, frio_de_fornecedores() + laminados_de_fornecedores() + barras_de_fornecedores())
+    base.extend(tubos_de_fornecedores())
+    base.extend(telhas_de_fornecedores())
+    dados["fabricantes_perfis"] = {s["nome"]: s["fabricantes"] for s in base[:n_sombra]
+                                   if s.get("fabricantes")}
+    dados["itens"] = base[n_sombra:]
+    dados["bitolas"] = bitolas()
     return dados
+
+
+def _sombra_do_banco():
+    """Os perfis do perfis.json no formato dos itens, só para achar repetidos."""
+    try:
+        with open(os.path.join(BASE, "perfis.json"), encoding="utf-8") as f:
+            banco = json.load(f)
+    except (OSError, ValueError):
+        return []
+    sombra = []
+    for tipo, lista in banco.items():
+        if not isinstance(lista, list):
+            continue
+        for p in lista:
+            nome = p.get("nome", "")
+            fam = tipo
+            if tipo in ("U", "Ue"):
+                fam = "Ue" if nome.upper().startswith("UE") else "U"
+            reg = {"nome": nome, "familia": fam, "d": p.get("d"), "bf": p.get("bf"),
+                   "enrijecedor": p.get("D") if fam == "Ue" else None, "t": p.get("t"),
+                   "b": p.get("b"), "b2": p.get("b2") or p.get("b")}
+            if tipo in ("U", "Ue") and "(FF)" not in nome and not nome.upper().startswith("UE"):
+                reg["t"] = p.get("tw") or p.get("t")      # U laminado: a geometria não importa
+                reg["d"] = -1.0
+            sombra.append(reg)
+    return sombra
 
 
 def main(argv=None):
@@ -296,7 +651,13 @@ def main(argv=None):
         print("catálogo %s (%d itens)" % ("igual" if iguais else "DIFERENTE", len(dados["itens"])))
         return 0 if iguais else 1
     with open(SAIDA, "w", encoding="utf-8") as f:
-        json.dump(dados, f, ensure_ascii=False, indent=1)
+        # um item por linha: o arquivo fica menor e o diff mostra o que mudou
+        f.write("{\n")
+        for k in [k for k in dados if k != "itens"]:
+            f.write(" %s: %s,\n" % (json.dumps(k), json.dumps(dados[k], ensure_ascii=False)))
+        f.write(' "itens": [\n')
+        f.write(",\n".join("  " + json.dumps(i, ensure_ascii=False) for i in dados["itens"]))
+        f.write("\n ]\n}\n")
     print("%s: %d itens" % (os.path.relpath(SAIDA, SISTEMA), len(dados["itens"])))
     for fam, n in sorted(por_familia.items(), key=lambda kv: -kv[1]):
         print("   %-14s %4d" % (fam, n))

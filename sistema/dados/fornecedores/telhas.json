@@ -1,0 +1,621 @@
+{
+ "fontes": [
+  {
+   "serie": "Vallourec: tubos estruturais sem costura TC/TQ/TR (circular, quadrada, retangular)",
+   "url": "https://api.aecweb.com.br/cls/catalogos/20437/24986/126catalogo-tubos-estruturais.pdf",
+   "observacao": "Catálogo Vallourec (PDF hospedado no AECweb), pp.35-54. Extraído por coordenadas do PDF; 694 bitolas com m, A, I, r, W, Z, J, Wt. '*' = fornecido sob consulta (campo sob_consulta)."
+  },
+  {
+   "serie": "Vallourec: graus de aço VMB",
+   "url": "https://www.vallourec.com/app/uploads/sites/2/2023/10/BR-Catalogo-de-Acos-Estruturais.pdf",
+   "observacao": "Só graus e propriedades mecânicas; sem tabelas de bitolas."
+  },
+  {
+   "serie": "Marcegaglia do Brasil: tubos com costura redondos/quadrados/retangulares (NBR 6591 / NBR 8261 / EN 10305-3 / ASTM A500 / A513)",
+   "url": "https://marcegagliadobrasil.com/wp-content/uploads/2024/10/Marcegaglia-do-Brasil-Carbon-Steel-Welded-Tubes.pdf",
+   "observacao": "Só massa teórica kg/m por espessura (pp.3-7). Linha TR 17,20 descartada (colunas desalinhadas no PDF)."
+  },
+  {
+   "serie": "Tuper: Tabela Técnica de Produtos 2022/2024",
+   "url": "https://tuper-prd.s3.sa-east-1.amazonaws.com/uploads/2021/08/Tabela-Tecnica-de-Produtos-Tuper-2024.pdf",
+   "observacao": "Consultada; só faixas de espessura, fardos e tubo-mãe, sem propriedades geométricas. Não transcrita."
+  },
+  {
+   "serie": "Tubos Ipiranga: tubos quadrados e retangulares 2024",
+   "url": "https://www.tubosipiranga.com.br/docs-and-files/Act_Tubos_Catalogo2024_Digital_Tubos_Quadrados_Retangulares.pdf",
+   "observacao": "Consultada; só peso por barra de 6 m. Não transcrita."
+  },
+  {
+   "serie": "Apolo Tubos: catálogo",
+   "url": "https://api.aecweb.com.br/cls/catalogos/apolo_tubos/apolo_tubos_equipamentos.pdf",
+   "observacao": "Consultado; NBR 8261 só com peso por peça. Não transcrito."
+  },
+  {
+   "serie": "Isoeste Metálica: TP40",
+   "url": "https://www.isoestemetalica.com.br/wp-content/uploads/2021/01/Tabela-Tecnica-Telha-TP40-1.pdf",
+   "observacao": "Ficha técnica oficial."
+  },
+  {
+   "serie": "Isoeste Metálica: TP25",
+   "url": "https://www.isoestemetalica.com.br/wp-content/uploads/2021/01/Tabela-Tecnica-Telha-TP25-1.pdf",
+   "observacao": "Ficha técnica oficial."
+  },
+  {
+   "serie": "Kingspan Isoeste: catálogo de produtos (TP-40, TP-100, OND-17)",
+   "url": "https://downloads.kingspan-isoeste.com.br/catalogos/Kingspan-Isoeste-Cat%C3%A1logo-de-Produtos-PT-BR.pdf",
+   "observacao": "Pesos por espessura das tabelas 'Detalhes técnicos'; larguras dos desenhos."
+  },
+  {
+   "serie": "Kingspan Isoeste: página TP-40",
+   "url": "https://kingspan-isoeste.com.br/solucoes-kingspan/telha-metalica-tp-40/",
+   "observacao": "Confirma 980/1032 mm e pesos; comprimento conforme projeto, limitado pelo transporte."
+  },
+  {
+   "serie": "Ananda Metais: Telhas Metálicas 2022",
+   "url": "https://anandametais.com.br/assets/uploads/pdf/TELHAS/material_D.pdf",
+   "observacao": "Perfis e espessuras (tabelas de sobrecarga). Sem pesos."
+  },
+  {
+   "serie": "Ananda Metais: catálogo de telhas antigo (AECweb)",
+   "url": "https://api.aecweb.com.br/cls/catalogos/ananda/catalogo_telhas.pdf",
+   "observacao": "Larguras útil/total dos desenhos; inclui AT 35/1050."
+  },
+  {
+   "serie": "Eternit: telhas metálicas",
+   "url": "https://api.aecweb.com.br/cls/catalogos/eternit/catalogo_telhas_metalicas.pdf",
+   "observacao": "TMTO-17, TMTP-25/40/120; larguras dos desenhos; sem pesos."
+  },
+  {
+   "serie": "Regional Telhas: RT 40/980, RT 40/1020, RT 100/952 (AECweb)",
+   "url": "https://www.aecweb.com.br/produto/telha-trapezoidal-rt-40980/15687",
+   "observacao": "Espessuras e pesos kg/m e kg/m²; larguras não cotadas."
+  },
+  {
+   "serie": "Sandre: telha trapezoidal 40",
+   "url": "https://www.sandre.com.br/pdfs/telha-trapezoidal-40.pdf",
+   "observacao": "Folheto: espessuras e largura útil."
+  },
+  {
+   "serie": "ArcelorMittal Perfilor: LR 17/25/33/40/100",
+   "url": "https://perfilor.com.br/produtos-solucoes/telha-trapezoidal-lr-40/",
+   "observacao": "Só faixas de espessura por material; ficha técnica exige cadastro."
+  }
+ ],
+ "telhas": [
+  {
+   "nome": "TP40",
+   "fabricante": "Isoeste Metálica",
+   "largura_total": 1074,
+   "largura_util": 1020,
+   "altura_onda": 40,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": 3.97
+    },
+    {
+     "t": 0.5,
+     "peso_m2": 4.62
+    }
+   ],
+   "comprimento_max": 12000,
+   "observacao": "peso_m2 = 'Kg/m² (cob)' (por área útil); peso linear 4,05 / 4,71 kg/m. Galvalume. Comprimento total até 12 m.",
+   "altura_designacao": 40,
+   "fonte": "https://www.isoestemetalica.com.br/wp-content/uploads/2021/01/Tabela-Tecnica-Telha-TP40-1.pdf"
+  },
+  {
+   "nome": "TP25",
+   "fabricante": "Isoeste Metálica",
+   "largura_total": 1057,
+   "largura_util": 1020,
+   "altura_onda": 25,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": 3.97
+    },
+    {
+     "t": 0.5,
+     "peso_m2": 4.62
+    }
+   ],
+   "comprimento_max": 10000,
+   "observacao": "peso_m2 = 'Kg/m² (cob)'; peso linear 4,05 / 4,71 kg/m (valores idênticos aos da TP40 na ficha). Galvalume. Comprimento total até 10 m.",
+   "altura_designacao": 25,
+   "fonte": "https://www.isoestemetalica.com.br/wp-content/uploads/2021/01/Tabela-Tecnica-Telha-TP25-1.pdf"
+  },
+  {
+   "nome": "TP-40",
+   "fabricante": "Kingspan Isoeste",
+   "largura_total": 1032,
+   "largura_util": 980,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": 4.13
+    },
+    {
+     "t": 0.5,
+     "peso_m2": 4.81
+    },
+    {
+     "t": 0.65,
+     "peso_m2": 6.25
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Comprimento: 'conforme projeto, limitado pelo transporte'. Altura da onda não cotada explicitamente.",
+   "altura_designacao": 40,
+   "fonte": "https://kingspan-isoeste.com.br/solucoes-kingspan/telha-metalica-tp-40/ ; https://downloads.kingspan-isoeste.com.br/catalogos/Kingspan-Isoeste-Cat%C3%A1logo-de-Produtos-PT-BR.pdf"
+  },
+  {
+   "nome": "TP-100",
+   "fabricante": "Kingspan Isoeste",
+   "largura_total": 1000,
+   "largura_util": 952,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.5,
+     "peso_m2": 4.96
+    },
+    {
+     "t": 0.65,
+     "peso_m2": 6.44
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Larguras do desenho Multidobras TP-100 (p.26 do PDF). Pesos do bloco 'Detalhes técnicos' da TP-100 (vãos 3,00 a 5,00 m).",
+   "altura_designacao": 100,
+   "fonte": "https://downloads.kingspan-isoeste.com.br/catalogos/Kingspan-Isoeste-Cat%C3%A1logo-de-Produtos-PT-BR.pdf"
+  },
+  {
+   "nome": "OND-17",
+   "fabricante": "Kingspan Isoeste",
+   "largura_total": 1092,
+   "largura_util": 995,
+   "altura_onda": 17,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": 4.07
+    },
+    {
+     "t": 0.5,
+     "peso_m2": 4.73
+    },
+    {
+     "t": 0.65,
+     "peso_m2": 6.15
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Ondulada. Larguras/altura do desenho Multidobras OND-17 (p.26 do PDF). Pesos do bloco OND-17 (vãos 1,20 a 2,00 m).",
+   "altura_designacao": 17,
+   "fonte": "https://downloads.kingspan-isoeste.com.br/catalogos/Kingspan-Isoeste-Cat%C3%A1logo-de-Produtos-PT-BR.pdf"
+  },
+  {
+   "nome": "AT 25/1020",
+   "fabricante": "Ananda Metais",
+   "largura_total": 1062,
+   "largura_util": 1016,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": null
+    },
+    {
+     "t": 0.5,
+     "peso_m2": null
+    },
+    {
+     "t": 0.65,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "NBR 14514. Espessuras do catálogo 2022; larguras do catálogo antigo. Peso e comprimento máximo não publicados.",
+   "altura_designacao": 25,
+   "fonte": "https://anandametais.com.br/assets/uploads/pdf/TELHAS/material_D.pdf ; https://api.aecweb.com.br/cls/catalogos/ananda/catalogo_telhas.pdf"
+  },
+  {
+   "nome": "AT 35/1050",
+   "fabricante": "Ananda Metais",
+   "largura_total": 1095,
+   "largura_util": 1054,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": null
+    },
+    {
+     "t": 0.5,
+     "peso_m2": null
+    },
+    {
+     "t": 0.65,
+     "peso_m2": null
+    },
+    {
+     "t": 0.8,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "NBR 14514. Só no catálogo antigo (não consta do catálogo 2022). Peso não publicado.",
+   "altura_designacao": 35,
+   "fonte": "https://api.aecweb.com.br/cls/catalogos/ananda/catalogo_telhas.pdf"
+  },
+  {
+   "nome": "AT 40/980",
+   "fabricante": "Ananda Metais",
+   "largura_total": 1050,
+   "largura_util": 980,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": null
+    },
+    {
+     "t": 0.5,
+     "peso_m2": null
+    },
+    {
+     "t": 0.65,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "NBR 14514. Peso não publicado.",
+   "altura_designacao": 40,
+   "fonte": "https://anandametais.com.br/assets/uploads/pdf/TELHAS/material_D.pdf ; https://api.aecweb.com.br/cls/catalogos/ananda/catalogo_telhas.pdf"
+  },
+  {
+   "nome": "AT 40/1020",
+   "fabricante": "Ananda Metais",
+   "largura_total": 1077,
+   "largura_util": 1027,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": null
+    },
+    {
+     "t": 0.5,
+     "peso_m2": null
+    },
+    {
+     "t": 0.65,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "NBR 14514. Largura útil cotada 1.027 mm no desenho. Peso não publicado.",
+   "altura_designacao": 40,
+   "fonte": "https://anandametais.com.br/assets/uploads/pdf/TELHAS/material_D.pdf ; https://api.aecweb.com.br/cls/catalogos/ananda/catalogo_telhas.pdf"
+  },
+  {
+   "nome": "AT 100/950",
+   "fabricante": "Ananda Metais",
+   "largura_total": 1020,
+   "largura_util": 956,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.5,
+     "peso_m2": null
+    },
+    {
+     "t": 0.65,
+     "peso_m2": null
+    },
+    {
+     "t": 0.8,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "NBR 14514. Largura útil 956 mm no catálogo 2022; catálogo antigo cota 960 mm útil / 1.020 mm total. Peso não publicado.",
+   "altura_designacao": 100,
+   "fonte": "https://anandametais.com.br/assets/uploads/pdf/TELHAS/material_D.pdf ; https://api.aecweb.com.br/cls/catalogos/ananda/catalogo_telhas.pdf"
+  },
+  {
+   "nome": "AT 17/980",
+   "fabricante": "Ananda Metais",
+   "largura_total": 1082,
+   "largura_util": 985,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": null
+    },
+    {
+     "t": 0.5,
+     "peso_m2": null
+    },
+    {
+     "t": 0.65,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Ondulada, NBR 14513. Peso não publicado.",
+   "altura_designacao": 17,
+   "fonte": "https://anandametais.com.br/assets/uploads/pdf/TELHAS/material_D.pdf ; https://api.aecweb.com.br/cls/catalogos/ananda/catalogo_telhas.pdf"
+  },
+  {
+   "nome": "TMTO-17",
+   "fabricante": "Eternit (telhas metálicas)",
+   "largura_total": 1087,
+   "largura_util": 985,
+   "altura_onda": 18,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": null
+    },
+    {
+     "t": 0.5,
+     "peso_m2": null
+    },
+    {
+     "t": 0.65,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Ondulada 17; desenho cota altura 18 mm. Peso e comprimento máximo não publicados.",
+   "altura_designacao": 17,
+   "fonte": "https://api.aecweb.com.br/cls/catalogos/eternit/catalogo_telhas_metalicas.pdf"
+  },
+  {
+   "nome": "TMTP-25",
+   "fabricante": "Eternit (telhas metálicas)",
+   "largura_total": 1048,
+   "largura_util": 1000,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": null
+    },
+    {
+     "t": 0.5,
+     "peso_m2": null
+    },
+    {
+     "t": 0.65,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Altura não cotada de forma inequívoca (desenho mostra 23/24/26 mm). Peso não publicado.",
+   "altura_designacao": 25,
+   "fonte": "https://api.aecweb.com.br/cls/catalogos/eternit/catalogo_telhas_metalicas.pdf"
+  },
+  {
+   "nome": "TMTP-40",
+   "fabricante": "Eternit (telhas metálicas)",
+   "largura_total": 1040,
+   "largura_util": 980,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": null
+    },
+    {
+     "t": 0.5,
+     "peso_m2": null
+    },
+    {
+     "t": 0.65,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Peso não publicado.",
+   "altura_designacao": 40,
+   "fonte": "https://api.aecweb.com.br/cls/catalogos/eternit/catalogo_telhas_metalicas.pdf"
+  },
+  {
+   "nome": "TMTP-120",
+   "fabricante": "Eternit (telhas metálicas)",
+   "largura_total": null,
+   "largura_util": null,
+   "altura_onda": 120,
+   "espessuras": [
+    {
+     "t": 0.65,
+     "peso_m2": null
+    },
+    {
+     "t": 0.8,
+     "peso_m2": null
+    },
+    {
+     "t": 0.95,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Desenho cota 957 mm e 910 mm sem legenda clara de útil/total; 0,95 mm marcada com ** no catálogo. Peso não publicado.",
+   "altura_designacao": 120,
+   "fonte": "https://api.aecweb.com.br/cls/catalogos/eternit/catalogo_telhas_metalicas.pdf"
+  },
+  {
+   "nome": "RT 40/980",
+   "fabricante": "Regional Telhas",
+   "largura_total": null,
+   "largura_util": null,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": 3.94
+    },
+    {
+     "t": 0.5,
+     "peso_m2": 4.59
+    },
+    {
+     "t": 0.65,
+     "peso_m2": 5.96
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Peso linear 3,87 / 4,50 / 5,85 kg/m. Largura útil só pela designação (980 mm), não cotada na página.",
+   "altura_designacao": 40,
+   "fonte": "https://www.aecweb.com.br/produto/telha-trapezoidal-rt-40980/15687"
+  },
+  {
+   "nome": "RT 40/1020",
+   "fabricante": "Regional Telhas",
+   "largura_total": null,
+   "largura_util": null,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": 3.79
+    },
+    {
+     "t": 0.5,
+     "peso_m2": 4.41
+    },
+    {
+     "t": 0.65,
+     "peso_m2": 5.73
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Peso linear 3,87 / 4,50 / 5,85 kg/m. NBR 14514. Largura útil só pela designação (1020 mm).",
+   "altura_designacao": 40,
+   "fonte": "https://www.aecweb.com.br/produto/telha-trapezoidal-rt-401020/15688"
+  },
+  {
+   "nome": "RT 100/952",
+   "fabricante": "Regional Telhas",
+   "largura_total": null,
+   "largura_util": null,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.5,
+     "peso_m2": 4.72
+    },
+    {
+     "t": 0.65,
+     "peso_m2": 6.14
+    },
+    {
+     "t": 0.8,
+     "peso_m2": 7.56
+    },
+    {
+     "t": 0.95,
+     "peso_m2": 8.98
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Peso linear 4,50 / 5,85 / 7,20 / 8,55 kg/m. Largura útil só pela designação (952 mm).",
+   "altura_designacao": 100,
+   "fonte": "https://www.aecweb.com.br/produto/telha-trapezoidal-rt-100952/15689"
+  },
+  {
+   "nome": "Trapezoidal 40",
+   "fabricante": "Sandre",
+   "largura_total": null,
+   "largura_util": 980,
+   "altura_onda": null,
+   "espessuras": [
+    {
+     "t": 0.43,
+     "peso_m2": null
+    },
+    {
+     "t": 0.5,
+     "peso_m2": null
+    },
+    {
+     "t": 0.65,
+     "peso_m2": null
+    },
+    {
+     "t": 0.8,
+     "peso_m2": null
+    }
+   ],
+   "comprimento_max": null,
+   "observacao": "Folheto: inclinação mínima 5%; galvanizado/galvalume/pré e pós-pintado. Peso não publicado.",
+   "altura_designacao": 40,
+   "fonte": "https://www.sandre.com.br/pdfs/telha-trapezoidal-40.pdf"
+  },
+  {
+   "nome": "LR 17",
+   "fabricante": "ArcelorMittal Perfilor",
+   "largura_total": null,
+   "largura_util": null,
+   "altura_onda": null,
+   "espessuras": null,
+   "comprimento_max": null,
+   "observacao": "Faixas de espessura (mm) publicadas: Galvalume 0,43 a 0,65; Zincado 0,80 a 1,25. Larguras, pesos e comprimento máximo não publicados no site (catálogo técnico atrás de formulário).",
+   "altura_designacao": 17,
+   "fonte": "https://perfilor.com.br/produtos-solucoes/telha-ondulada-lr-17/"
+  },
+  {
+   "nome": "LR 25",
+   "fabricante": "ArcelorMittal Perfilor",
+   "largura_total": null,
+   "largura_util": null,
+   "altura_onda": null,
+   "espessuras": null,
+   "comprimento_max": null,
+   "observacao": "Faixas de espessura (mm) publicadas: Galvalume 0,43 a 0,65; Zincado 0,80 a 1,25; Inox 0,50. Larguras, pesos e comprimento máximo não publicados no site (catálogo técnico atrás de formulário).",
+   "altura_designacao": 25,
+   "fonte": "https://perfilor.com.br/produtos-solucoes/telha-trapezoidal-lr-25/"
+  },
+  {
+   "nome": "LR 33",
+   "fabricante": "ArcelorMittal Perfilor",
+   "largura_total": null,
+   "largura_util": null,
+   "altura_onda": null,
+   "espessuras": null,
+   "comprimento_max": null,
+   "observacao": "Faixas de espessura (mm) publicadas: Galvalume 0,50 a 0,65; Zincado 0,80 a 1,25. Larguras, pesos e comprimento máximo não publicados no site (catálogo técnico atrás de formulário).",
+   "altura_designacao": 33,
+   "fonte": "https://perfilor.com.br/produtos-solucoes/telha-trapezoidal-lr-33/"
+  },
+  {
+   "nome": "LR 40",
+   "fabricante": "ArcelorMittal Perfilor",
+   "largura_total": null,
+   "largura_util": null,
+   "altura_onda": null,
+   "espessuras": null,
+   "comprimento_max": null,
+   "observacao": "Faixas de espessura (mm) publicadas: Galvalume 0,50 a 0,65; Zincado 0,80 a 1,25; Inox 0,50 a 0,60. Larguras, pesos e comprimento máximo não publicados no site (catálogo técnico atrás de formulário).",
+   "altura_designacao": 40,
+   "fonte": "https://perfilor.com.br/produtos-solucoes/telha-trapezoidal-lr-40/"
+  },
+  {
+   "nome": "LR 100",
+   "fabricante": "ArcelorMittal Perfilor",
+   "largura_total": null,
+   "largura_util": null,
+   "altura_onda": null,
+   "espessuras": null,
+   "comprimento_max": null,
+   "observacao": "Faixas de espessura (mm) publicadas: Galvalume 0,50 a 0,65; Zincado 0,80 a 1,25. Larguras, pesos e comprimento máximo não publicados no site (catálogo técnico atrás de formulário). Texto do site: 'canal de quase 100 mm de altura e 475 mm de largura'.",
+   "altura_designacao": 100,
+   "fonte": "https://perfilor.com.br/produtos-solucoes/telha-trapezoidal-lr-100/"
+  }
+ ]
+}

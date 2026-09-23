@@ -40,7 +40,12 @@ const COLUNAS = {
     ['nome', 'Peça', ''], ['dim', 'Dimensões', ''], ['altura', 'h (mm)', 'r'],
     ['espessura', 't (mm)', 'r'], ['massa', 'kg/m', 'r'], ['A', 'A (cm²)', 'r'],
     ['Ix', 'Ix (cm⁴)', 'r'], ['Wx', 'Wx (cm³)', 'r'], ['rx', 'rx (cm)', 'r'],
-    ['ry', 'ry (cm)', 'r'], ['origem', 'Origem', ''],
+    ['ry', 'ry (cm)', 'r'], ['fabricantes', 'Fabricantes', ''], ['origem', 'Origem', ''],
+  ],
+  telha: [
+    ['nome', 'Telha', ''], ['espessura', 't (mm)', 'r'], ['massa_m2', 'kg/m²', 'r'],
+    ['largura_total', 'Larg. total (mm)', 'r'], ['largura_util', 'Larg. útil (mm)', 'r'],
+    ['fabricantes', 'Fabricante', ''], ['origem', 'Origem', ''],
   ],
   chapa: [
     ['nome', 'Peça', ''], ['espessura', 'Espessura (mm)', 'r'], ['massa_m2', 'kg/m²', 'r'],
@@ -102,7 +107,9 @@ function desenharTabela() {
     for (const [chave, , classe] of colunas) {
       const v = it[chave];
       if (chave === 'origem') {
-        tr.append(el('td', {}, el('span', { class: `etiqueta ${v}`, texto: v })));
+        tr.append(el('td', {}, el('span', { class: `etiqueta ${String(v).split(' ')[0]}`, texto: v })));
+      } else if (Array.isArray(v)) {
+        tr.append(el('td', { class: 'fabricantes', title: v.join('\n'), texto: v.length ? v.join(', ') : '—' }));
       } else if (typeof v === 'number') {
         tr.append(el('td', { class: classe, texto: numero(v, casasDe(chave)) }));
       } else {
@@ -173,9 +180,21 @@ function desenharDetalhe(peca, alternativas) {
   linha('rx / ry', peca.rx ? `${numero(peca.rx, 2)} / ${numero(peca.ry, 2)} cm` : '');
   linha('Serve como', (peca.papeis || []).join(', '));
   linha('Uso', peca.uso);
-  linha('Origem', peca.origem === 'tabela' ? 'tabela de fabricante' : 'calculado (método linear)');
+  linha('Largura total / útil', peca.largura_total ? `${numero(peca.largura_total)} / ${numero(peca.largura_util)} mm` : '');
+  linha('Origem', { tabela: 'tabela de fabricante', calculado: 'calculado (método linear)' }[peca.origem] || peca.origem);
   linha('Norma', peca.norma);
+  linha('Fabricantes', (peca.fabricantes || []).join(', '));
+  linha('Disponibilidade', peca.sob_consulta ? 'sob consulta ao fabricante' : '');
+  linha('Propriedades', peca.so_massa ? 'o catálogo do fabricante só dá a massa' : '');
+  linha('Observação', peca.obs);
   caixa.append(campos);
+  // a tabela de cada fabricante ao lado do valor calculado, para conferir
+  const tabs = peca.tabela_fabricante || {};
+  for (const [fab, valores] of Object.entries(tabs)) {
+    const partes = Object.entries(valores).map(([k, v]) => `${k} ${numero(v, 2)}`);
+    if (!partes.length) continue;
+    caixa.append(el('p', { class: 'nota', texto: `Tabela ${fab}: ${partes.join(' · ')}` }));
+  }
 
   caixa.append(el('h2', { texto: 'No lugar dela', style: 'margin-top:14px' }));
   if (!alternativas.length) {

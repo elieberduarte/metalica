@@ -129,7 +129,7 @@ def _trechos_u(h, bf, t, r) -> List[dict]:
     rm = r + t / 2.0
     ym = (h - t) / 2.0
     xw = t / 2.0
-    xl = bf - t / 2.0
+    xl = bf              # a borda livre da mesa: a linha média vai até a face da ponta
     T = []
     T.append({"elem": "mesa_inf", "reta": ((xl, -ym), (xw + rm, -ym))})
     T.append({"elem": "canto", "pts": _arco(xw + rm, -(ym - rm), rm, -math.pi / 2, -math.pi)})

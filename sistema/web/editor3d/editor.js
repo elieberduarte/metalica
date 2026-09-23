@@ -2463,7 +2463,25 @@ export class Editor {
     const todas = [...this.documento.entidades.values()].filter(e => e.tipo === 'solido' && e.atributos && e.atributos.marcas);
     const daPosicao = marcas0.posicao ? todas.filter(e => e.atributos.marcas.posicao === marcas0.posicao && e.atributos.marcas.perfil === antigoNome) : [];
     const doPerfil = todas.filter(e => e.atributos.marcas.perfil === antigoNome);
-    const campo = el('input', { type: 'text', value: '', placeholder: 'ex.: 127X50X17X#14', spellcheck: 'false' });
+    const campo = el('input', { type: 'text', value: '', placeholder: 'ex.: 127X50X17X#14', spellcheck: 'false', list: 'perfis-do-catalogo' });
+    // sugestões: os perfis da mesma família no catálogo (séries e fornecedores), no jeito da fábrica
+    const sugestoes = el('datalist', { id: 'perfis-do-catalogo' });
+    const pa = lerPerfil(antigoNome);
+    if (pa) {
+      fetch(`/api/catalogo/pecas?familia=${pa.familia}`).then(r => r.json()).then(d => {
+        const vistos = new Set();
+        for (const it of (d.itens || [])) {
+          const p = lerPerfil(it.nome.replace(/\s*\(FF\)\s*$/, ''));
+          if (!p || p.familia !== pa.familia) continue;
+          const nome = pa.prefixo + [p.H, p.B, ...(p.D ? [p.D] : []), p.t.toFixed(2)].join('X');
+          if (vistos.has(nome)) continue;
+          vistos.add(nome);
+          const fab = (it.fabricantes || []).map(f => f.split(/ [(–]/)[0]).filter(Boolean);
+          sugestoes.append(el('option', { value: nome,
+            texto: `${it.nome} · ${numero(it.massa, 2)} kg/m${fab.length ? ' · ' + [...new Set(fab)].join(', ') : ''}` }));
+        }
+      }).catch(() => {});
+    }
     const alcance = el('select', {},
       el('option', { value: 'selecao', texto: ents.length > 1 ? `as ${ents.length} peças selecionadas` : 'só esta peça' }),
       ...(daPosicao.length > ents.length ? [el('option', { value: 'posicao', texto: `a posição ${marcas0.posicao} inteira (${daPosicao.length} peças)`, selected: 'selected' })] : []),
@@ -2472,7 +2490,7 @@ export class Editor {
     const corpo = el('div', {},
       el('div', { class: 'explica', texto: `Perfil atual: ${antigoNome}. Digite o novo como a fábrica escreve — altura × aba × enrijecedor × espessura; a espessura pode ser a bitola (#14 = 1,90 mm, #13 = 2,25, #12 = 2,65, #16 = 1,50). A peça muda de seção no 3D (as espessuras, abas e enrijecedores ficam exatos; os furos acompanham), e o detalhamento e a lista de materiais passam a sair com o perfil novo — gere-os de novo depois.` }),
       el('div', { class: 'campos' }, el('label', { texto: 'Novo perfil' }), campo, el('label', { texto: 'Aplicar em' }), alcance),
-      aviso);
+      sugestoes, aviso);
     const conferir = () => {
       const nome = nomeDoPerfil(campo.value, antigoNome);
       const p = lerPerfil(nome), a = lerPerfil(antigoNome);

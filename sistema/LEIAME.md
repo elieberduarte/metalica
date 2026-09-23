@@ -844,9 +844,9 @@ um modelo desenhado é calculado como um importado. Testes: `testes/test_de_dese
 
 ## Catálogo de peças
 
-`nucleo/catalogo.py` é o ponto único para "que peças existem": perfis I laminados (W, HP), U laminados e
-formados a frio, Ue, cantoneiras em polegada e em milímetro, tubos, barras redondas e chatas, chapas e
-parafusos — 495 itens. Junta `dados/perfis.json` (tabelas de fabricante, extraídas pelo `extrai_perfis.py`)
+`nucleo/catalogo.py` é o ponto único para "que peças existem": perfis I laminados (W, HP, I americano), U
+laminados e formados a frio, Ue, Z enrijecido a 90° e a 45°, cartola, cantoneiras em polegada e em milímetro,
+tubos, barras redondas e chatas, chapas, parafusos e telhas — cerca de 5.200 itens. Junta `dados/perfis.json` (tabelas de fabricante, extraídas pelo `extrai_perfis.py`)
 com `dados/catalogo.json` (gerado por `dados/gerar_catalogo.py`: séries NBR 6355 e cantoneiras métricas
 calculadas pelo método linear da NBR 14762, mais chapas, barras e parafusos das tabelas do anexo). Cada item
 diz a `origem` — `tabela` ou `calculado` —, e quando o mesmo perfil está nos dois lugares vale o da tabela.
@@ -857,6 +857,27 @@ catálogo) e `alternativas()` — o que pode entrar no lugar de uma peça, na me
 U vira Ue e vice-versa; cantoneira não vira terça), com altura de seção entre metade e o dobro da atual
 (`FAIXA_ALTURA`) e a diferença de massa por metro. O padrão é "vizinhos": metade mais leves, metade mais
 pesados, os mais próximos.
+
+**Fornecedores** (`dados/fornecedores/*.json`, transcrições dos catálogos públicos): Gerdau (W/HP, U, I,
+cantoneiras, barras), ArcelorMittal, Vallourec (tubos sem costura, com a tabela completa), Marcegaglia (tubos
+com costura, só massa — as propriedades são calculadas pela seção cheia menos o furo), Perfinasa, Perfilor,
+Isoeste e Tetraferro (formados a frio) e as telhas (Isoeste, Kingspan Isoeste, Perfilor, Ananda, Regional,
+Eternit, Sandre). Da NBR 6355 entram só as designações; as propriedades dos formados a frio são sempre
+calculadas (U e Ue por `nbr14762`, Ze/Z45/cartola por `nucleo/secoes_frio.py`, que dá também Ixy, os eixos
+principais I1/I2 e o ângulo α do Z), e a tabela do fabricante fica ao lado (`tabela_fabricante`) para
+conferir. Conferido contra a transcrição da norma: A, Ix e Iy a menos de 0,3 % (U até 3 %); Cw 1 % a 10 %
+abaixo. O gerador junta sem repetir (mesmo nome ou mesma geometria só acrescenta o fabricante em
+`fabricantes`); o que só o fornecedor tem ganha `fornecedor: True` — aparece na tela, na busca e na troca,
+mas `tesouras.candidatos` não o usa, e o dimensionamento automático segue nas séries padrão. `perfil_de()`
+monta o `Perfil` dos laminados e tubos de fornecedor direto da tabela.
+
+A busca entende a bitola no lugar da espessura (`127x50x17x#14` acha as de 1,90, 1,95 e 2,00 mm —
+`espessuras_da_bitola()`, da tabela `bitolas` dos fornecedores: #14 é 1,90 a frio, 2,00 a quente e 1,95
+zincada) e os apelidos BR/BC das barras. No 3D, o diálogo **Trocar perfil** sugere os perfis da mesma família
+do catálogo, já no jeito da fábrica (`C127X50X17X2.00`), com massa e fabricante.
+
+Correção da 0.7.11 em `nbr14762._trechos_u`: a linha média da mesa do U simples ia até `bf − t/2` em vez de
+`bf`; a área e o Iy do U formado a frio ficavam um pouco baixos.
 
 Rota `GET /api/catalogo/pecas` (sem parâmetros: famílias e resumo; `familia`, `q`, `alternativas`) e tela
 `/catalogo`, ligada na barra da tela de projetos. Testes em `testes/test_catalogo.py`, inclusive um que

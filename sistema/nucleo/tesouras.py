@@ -459,8 +459,8 @@ def candidatos(familias: Sequence[str], altura_min: float = 0.0,
         vistos, lista = set(), []
         for f in familias:
             for it in catalogo.itens(f):
-                if not it.eh_barra or it.nome in vistos:
-                    continue
+                if not it.eh_barra or it.nome in vistos or it.dados.get("fornecedor"):
+                    continue                      # o que só o fornecedor tem não entra no projeto automático
                 p = catalogo.perfil_de(it)
                 if p is None or not getattr(p, "A", 0):
                     continue

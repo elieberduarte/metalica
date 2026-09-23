@@ -13,7 +13,11 @@ Junta duas fontes, sem repetir nada:
 * `dados/perfis.json` — laminados W e HP, U em polegada, cantoneiras em polegada e tubos,
   com as propriedades das tabelas de fabricante (`dados/extrai_perfis.py`);
 * `dados/catalogo.json` — séries formadas a frio (U e Ue), cantoneiras em milímetro,
-  chapas, barras redondas e chatas e parafusos (`dados/gerar_catalogo.py`).
+  chapas, barras redondas e chatas e parafusos (`dados/gerar_catalogo.py`), mais os
+  catálogos dos fornecedores (`dados/fornecedores/`: Gerdau, ArcelorMittal, Vallourec,
+  Marcegaglia, Perfinasa, Perfilor, Isoeste, Tetraferro e as telhas). Os itens que vêm só
+  dos fornecedores têm `fornecedor: True`: aparecem na consulta, na busca e na troca, mas o
+  dimensionamento automático continua escolhendo nas séries padrão.
 
 Quando o mesmo perfil aparece nas duas, vale o da tabela de fabricante.
 
@@ -47,13 +51,19 @@ ARQUIVO = os.path.join(BASE, "dados", "catalogo.json")
 
 #: Rótulo e descrição de cada família, na ordem em que a tela mostra.
 FAMILIAS: Dict[str, dict] = {
-    "I": {"nome": "Perfis I laminados (W, HP)", "grupo": "laminado", "peca": "barra",
+    "I": {"nome": "Perfis I laminados (W, HP, I)", "grupo": "laminado", "peca": "barra",
           "descricao": "vigas e pilares de alma cheia; a série W é a usual em galpões"},
     "U": {"nome": "Perfis U", "grupo": "laminado e formado a frio", "peca": "barra",
           "descricao": "terças, travessas, montantes e diagonais; em polegada (laminado) "
                        "ou dobrado da chapa (formado a frio)"},
     "Ue": {"nome": "Perfis U enrijecidos (Ue)", "grupo": "formado a frio", "peca": "barra",
            "descricao": "o perfil de terça e longarina; a aba dobrada segura a mesa"},
+    "Ze": {"nome": "Perfis Z enrijecidos a 90°", "grupo": "formado a frio", "peca": "barra",
+           "descricao": "terças e longarinas contínuas; um Z encaixa no outro no transpasse"},
+    "Z45": {"nome": "Perfis Z enrijecidos a 45°", "grupo": "formado a frio", "peca": "barra",
+            "descricao": "terças e longarinas contínuas, com transpasse"},
+    "Cr": {"nome": "Perfis cartola", "grupo": "formado a frio", "peca": "barra",
+           "descricao": "terças leves, travessas de fechamento, apoio de forro e de telha"},
     "L": {"nome": "Cantoneiras", "grupo": "laminado e formado a frio", "peca": "barra",
           "descricao": "diagonais, montantes, travamentos e agulhamento"},
     "tubo": {"nome": "Tubos estruturais", "grupo": "tubo", "peca": "barra",
@@ -66,6 +76,8 @@ FAMILIAS: Dict[str, dict] = {
               "descricao": "chapas de topo, de base, gussets e chapinhas; massa por m²"},
     "parafuso": {"nome": "Parafusos", "grupo": "conector", "peca": "conector",
                  "descricao": "parafusos estruturais e comuns, com o furo padrão"},
+    "telha": {"nome": "Telhas metálicas", "grupo": "telha", "peca": "telha",
+              "descricao": "trapezoidais e onduladas; larguras total e útil e massa por m²"},
 }
 
 #: Famílias que se substituem de verdade na obra. Um Ue vira U (e o contrário), porque
@@ -73,6 +85,7 @@ FAMILIAS: Dict[str, dict] = {
 #: mesmo compartilhando o papel "diagonal" em outra posição.
 TROCA_COMPATIVEL: Dict[str, List[str]] = {
     "I": ["I"], "U": ["U", "Ue"], "Ue": ["Ue", "U"], "L": ["L"], "tubo": ["tubo"],
+    "Ze": ["Ze", "Z45"], "Z45": ["Z45", "Ze"], "Cr": ["Cr"], "telha": ["telha"],
     "barra_redonda": ["barra_redonda"], "barra_chata": ["barra_chata"],
     "chapa": ["chapa"], "parafuso": ["parafuso"],
 }
@@ -87,6 +100,10 @@ PAPEIS: Dict[str, List[str]] = {
     "I": ["viga", "pilar", "banzo"],
     "U": ["terça", "longarina", "banzo", "diagonal", "montante", "travessa"],
     "Ue": ["terça", "longarina", "banzo", "diagonal", "montante"],
+    "Ze": ["terça", "longarina"],
+    "Z45": ["terça", "longarina"],
+    "Cr": ["terça", "travessa"],
+    "telha": ["cobertura", "fechamento"],
     "L": ["diagonal", "montante", "travamento", "agulhamento"],
     "tubo": ["pilar", "banzo", "diagonal", "montante"],
     "barra_redonda": ["tirante", "contraventamento", "chumbador"],
@@ -162,6 +179,14 @@ class Item:
             "rx": self.rx or None, "ry": self.ry or None,
             "uso": self.uso, "norma": self.norma, "papeis": self.papeis,
             "dim": self.dados.get("dim") or "",
+            "fabricantes": self.dados.get("fabricantes") or [],
+            "fornecedor": bool(self.dados.get("fornecedor")),
+            "tabela_fabricante": self.dados.get("tabela_fabricante") or None,
+            "obs": self.dados.get("obs") or "",
+            "sob_consulta": bool(self.dados.get("sob_consulta")),
+            "so_massa": bool(self.dados.get("so_massa")),
+            "largura_util": self.dados.get("largura_util"),
+            "largura_total": self.dados.get("largura_total"),
         }
 
 
@@ -218,11 +243,19 @@ def _do_banco() -> List[Item]:
     return saida
 
 
+_fabricantes_perfis: Dict[str, List[str]] = {}
+_bitolas: List[dict] = []
+
+
 def _do_arquivo() -> List[Item]:
+    global _fabricantes_perfis, _bitolas
     if not os.path.exists(ARQUIVO):
         return []
     with open(ARQUIVO, encoding="utf-8") as f:
         dados = json.load(f)
+    # quem fabrica os perfis do perfis.json (o gerador acha pelos catálogos)
+    _fabricantes_perfis = {_chave(k): v for k, v in (dados.get("fabricantes_perfis") or {}).items()}
+    _bitolas = list(dados.get("bitolas") or [])
     saida = []
     for reg in dados.get("itens", []):
         saida.append(Item(
@@ -239,15 +272,21 @@ def _carregar() -> List[Item]:
         return _itens
     todos = _do_banco()
     vistos = {_chave(i.nome) for i in todos}
-    for i in _do_arquivo():
+    do_arquivo = _do_arquivo()
+    for i in todos:
+        fabs = _fabricantes_perfis.get(_chave(i.nome))
+        if fabs:
+            i.dados["fabricantes"] = list(fabs)
+    for i in do_arquivo:
         if _chave(i.nome) in vistos:
             continue                      # o valor de tabela vence o calculado
         vistos.add(_chave(i.nome))
         todos.append(i)
     # ordem de exibição: família, depois altura e massa
     ordem = list(FAMILIAS)
+    # sem massa (modelo de telha sem tabela publicada) vai para o fim da família
     todos.sort(key=lambda i: (ordem.index(i.familia) if i.familia in ordem else 99,
-                              i.altura, i.massa or i.massa_m2))
+                              0 if (i.massa or i.massa_m2) else 1, i.altura, i.massa or i.massa_m2))
     _itens = todos
     _por_chave = {_chave(i.nome): i for i in todos}
     return _itens
@@ -298,12 +337,43 @@ def familias() -> List[dict]:
     return saida
 
 
+def bitolas() -> List[dict]:
+    """Bitolas de chapa dos fornecedores (#14 etc.) com a espessura em mm. A mesma bitola
+    tem mais de uma espessura: laminada a quente, a frio ou zincada."""
+    _carregar()
+    return list(_bitolas)
+
+
+def espessuras_da_bitola(bitola: str) -> List[float]:
+    """Espessuras (mm) que a bitola "#14" pode ser, da tabela dos fornecedores."""
+    num = re.sub(r"[^0-9]", "", str(bitola))
+    return sorted({float(b["t_mm"]) for b in bitolas()
+                   if re.sub(r"[^0-9]", "", str(b.get("bitola", ""))) == num
+                   and str(b.get("bitola", "")).startswith("#")})
+
+
+#: Apelidos da fábrica na busca: "BR 3/8" é a barra redonda, "BC" a chata.
+_APELIDOS = [(r"^BR(?=[0-9])", "BARRAREDONDAD"), (r"^BC(?=[0-9])", "BARRACHATA")]
+
+
 def buscar(texto: str, familia: Optional[str] = None, limite: int = 60) -> List[Item]:
-    """Busca livre pelo nome e pelas dimensões ("150x60", "W 310", "3/8")."""
+    """Busca livre pelo nome e pelas dimensões ("150x60", "W 310", "3/8").
+
+    Entende a bitola no lugar da espessura ("127x50x17x#14" acha as de 1,90, 1,95 e 2,00
+    mm) e os apelidos BR/BC das barras."""
     alvo = _chave(texto)
     if not alvo:
         return itens(familia)[:limite]
-    saida = [i for i in itens(familia) if alvo in _chave(i.nome) or alvo in _chave(i.dados.get("dim", ""))]
+    alvos = [alvo]
+    for padrao, troca in _APELIDOS:
+        if re.search(padrao, alvo):
+            alvos.append(re.sub(padrao, troca, alvo))
+    m = re.search(r"X?#(\d+)", alvo)
+    if m:
+        alvos = [a.replace(m.group(0), "X%.2f" % t) for a in alvos
+                 for t in espessuras_da_bitola(m.group(1))] or alvos
+    saida = [i for i in itens(familia)
+             if any(a in _chave(i.nome) or a in _chave(i.dados.get("dim", "")) for a in alvos)]
     return saida[:limite]
 
 
@@ -340,6 +410,9 @@ def perfil_de(nome) -> Optional[Perfil]:
         if it.familia == "barra_chata" and d.get("b"):
             from nucleo3d import geometria
             return geometria.barra_chata(d["b"], d["t"], it.nome)
+        # laminados e tubos dos fornecedores: a tabela já traz as propriedades
+        if it.familia in ("I", "U", "tubo") and d.get("A") and d.get("Ix") and d.get("Iy"):
+            return Perfil(nome=it.nome, tipo=it.familia, dados=dict(d))
     except Exception:
         return None
     return None
