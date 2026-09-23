@@ -52,6 +52,8 @@ def _norm(nome: str) -> str:
     s = s.replace("' '", '"').replace("''", '"').replace("’’", '"').replace("”", '"')
     s = s.replace("'", '"')
     s = s.replace(",", ".")
+    # sufixos que o catálogo acrescenta ao nome e não fazem parte da medida
+    s = re.sub(r"\((?:FF|MÉTRICA|METRICA)\)", " ", s)
     s = re.sub(r"\s+", " ", s)
     return s.strip()
 

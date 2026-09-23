@@ -27,6 +27,7 @@ Rotas da API:
     POST /api/projetos/<slug>/detalhar-posicao {marca}   detalhe de uma peça (chapa vira paramétrica)
     POST /api/projetos/<slug>/calcular {parametros, trocas, comparar}  cálculo estrutural do modelo importado
     GET  /api/projetos/<slug>/calculo[/geometria]        último cálculo gravado / dados para o diálogo
+    GET  /api/projetos/<slug>/calculo/alternativas?marca=  perfis que podem substituir a peça, verificados
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-furos   furos do detalhe → chapas do modelo
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
     POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
@@ -563,6 +564,18 @@ def geometria_para_calculo(s: str) -> dict:
     anterior = calculo_do_projeto(s)
     g["parametros"] = anterior.get("parametros") or {}
     return g
+
+
+def alternativas_de_perfil(s: str, marca: str, limite: int = 10, todas: bool = False) -> dict:
+    """GET /api/projetos/<s>/calculo/alternativas?marca=P42: perfis do catálogo que podem
+    entrar no lugar do desta posição, verificados com os esforços do cálculo gravado."""
+    from nucleo3d import calculo_ifc
+    if not marca:
+        raise ErroDeDados("informe a posição (marca) da peça")
+    guardado = calculo_do_projeto(s).get("calculo")
+    if not guardado:
+        raise ErroDeDados("este projeto ainda não tem cálculo: use Calcular estrutura")
+    return calculo_ifc.alternativas(guardado, marca, limite=limite, todas=todas)
 
 
 def calcular_projeto(s: str, corpo: dict) -> dict:
@@ -1461,6 +1474,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(calculo_do_projeto(partes[0]))
                 if len(partes) == 3 and partes[1] == "calculo" and partes[2] == "geometria":
                     return self._json(geometria_para_calculo(partes[0]))
+                if len(partes) == 3 and partes[1] == "calculo" and partes[2] == "alternativas":
+                    q = parse_qs(urlparse(self.path).query)
+                    return self._json(alternativas_de_perfil(
+                        partes[0], (q.get("marca") or [""])[0],
+                        int((q.get("limite") or ["10"])[0] or 10),
+                        (q.get("todas") or ["0"])[0] in ("1", "true")))
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":

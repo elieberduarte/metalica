@@ -95,6 +95,37 @@ def test_calculo_completo(modelo):
     assert r["resumo"]["tesouras"] == 3 and r["resumo"]["tercas"] == 1
 
 
+def test_alternativas_verificadas(modelo):
+    doc, nomes = modelo
+    r = calculo_ifc.calcular(doc, nomes, {"v0": 35.0})
+    assert r["resumo"]["peso_verificado_kg"] > 0
+    el = r["elementos"]["P2"]
+    assert el["comprimento_total_m"] > 0 and el["peso_kg"] > 0
+    assert el["entrada"]["tipo"] == "barra"
+
+    a = calculo_ifc.alternativas(r, "P2", limite=6)
+    assert a["perfil"] == el["perfil"] and a["comprimento_total_m"] == el["comprimento_total_m"]
+    assert a["alternativas"], "nenhum candidato no catálogo"
+    for c in a["alternativas"]:
+        assert c["nome"] != el["perfil"]
+        assert c["aproveitamento"] > 0 and isinstance(c["ok"], bool)
+        # o impacto no peso é a diferença por metro vezes o comprimento da posição
+        assert c["delta_peso_kg"] == pytest.approx(c["delta_massa"] * a["comprimento_total_m"], abs=0.2)
+    # quem passa vem antes de quem não passa
+    ordem = [c["ok"] for c in a["alternativas"]]
+    assert ordem == sorted(ordem, reverse=True)
+    # e entre os que passam, do mais leve ao mais pesado
+    passam = [c["massa"] for c in a["alternativas"] if c["ok"]]
+    assert passam == sorted(passam)
+
+    # a terça também tem alternativas, verificadas como terça
+    at = calculo_ifc.alternativas(r, "P10", limite=4)
+    assert at["alternativas"] and at["tipo"] == "terca"
+
+    with pytest.raises(Exception):
+        calculo_ifc.alternativas(r, "não existe")
+
+
 def test_troca_de_perfil(modelo):
     doc, nomes = modelo
     base = calculo_ifc.calcular(doc, nomes, {"v0": 35.0})

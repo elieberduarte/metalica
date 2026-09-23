@@ -535,6 +535,16 @@ o cálculo gravado volta ao abrir o projeto. Em "Peça selecionada", **Perfil de
 perfil da posição (catálogo, perfis do projeto ou nome de fábrica), recalcula e mostra o que mudou;
 o sólido do modelo continua o de fábrica.
 
+**Alternativas de perfil verificadas** (`calculo_ifc.alternativas(calculo, marca)`, rota
+`GET /api/projetos/<s>/calculo/alternativas?marca=`): pega os candidatos do catálogo (mesma família, altura
+entre metade e o dobro) e **verifica cada um com os esforços já gravados** do cálculo — responde em
+décimos de segundo porque não refaz a análise. Cada candidato volta com aproveitamento, verificação que
+governa e o impacto no peso (diferença de massa por metro × comprimento total daquela posição no modelo,
+que o cálculo passou a guardar em `comprimento_total_m`/`peso_kg`; o total fica em
+`resumo.peso_verificado_kg`). Ordem: quem passa primeiro, do mais leve ao mais pesado; quando nada passa,
+os que chegam mais perto. No editor é o bloco "No lugar dela" da peça selecionada, e clicar aplica a troca
+— aí sim o cálculo inteiro é refeito, porque trocar o perfil redistribui os esforços na treliça.
+
 Limites: contraventamentos, agulhamentos e consoles não são verificados (sem cargas de oitão);
 ligações e chapas de nó não entram; terças de beiral apoiadas nos consoles ficam sem apoio; sem
 travamento lido no modelo o banzo inferior é verificado com o comprimento inteiro (informe

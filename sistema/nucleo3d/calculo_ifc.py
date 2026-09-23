@@ -1092,6 +1092,11 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         raise ErroDeDados("nenhuma tesoura pôde ser analisada: " + "; ".join(avisos[-3:]))
 
     avisar("verificando as peças…")
+    # Comprimento total de cada posição no modelo: é o que transforma "kg/m a menos"
+    # em "kg a menos na estrutura" quando se troca o perfil.
+    comprimento_total: Dict[str, float] = collections.defaultdict(float)
+    for p in pecas:
+        comprimento_total[p.marca] += p.L / 1000.0
     # esforços por marca entre todas as tesouras
     por_marca: Dict[str, dict] = {}
     for t in tes:
@@ -1150,6 +1155,12 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
             "dimensionamento": {"M": round(reg["M"] / 100.0, 2), "V": round(reg["V"], 2),
                                 "N": round(max(reg["Nc"], reg["Nt"]), 2), "caso": reg["caso"],
                                 "Lx_cm": round(reg["Lx"], 1), "Ly_cm": round(reg["Ly"], 1)},
+            # o que basta para verificar outro perfil nesta posição, sem refazer a análise
+            "entrada": {"tipo": "barra", "Nc": round(reg["Nc"], 3), "Nt": round(reg["Nt"], 3),
+                        "M_kNcm": round(reg["M"], 3), "Lx_cm": round(reg["Lx"], 2),
+                        "Ly_cm": round(reg["Ly"], 2), "n": reg["n"], "aco": reg["aco"]},
+            "comprimento_total_m": round(comprimento_total.get(marca, 0.0), 2),
+            "peso_kg": round(reg["perfil"].massa * comprimento_total.get(marca, 0.0), 1),
             "diagrama": None, "valores": {},
         }
         verificacoes.append(dict(_serializar_resultado(r), marca=marca, nome=nome, tipo=reg["tipo"]))
@@ -1214,6 +1225,16 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
                                 "correntes": (int(par["correntes"]) if par.get("correntes") is not None
                                               else int(correntes.get(marca, 0))),
                                 "q_gravidade_kN_m": round(q_g, 3), "q_succao_kN_m": round(q_s, 3)},
+            "entrada": {"tipo": "terca", "vao_m": round(vao, 4), "largura_m": round(larg, 4),
+                        "q_g": round(q_g, 4), "q_s": round(q_s, 4), "q_gs": round(q_gs, 4),
+                        "q_ss": round(q_ss, 4), "theta": round(theta, 3), "aco": p.aco,
+                        "correntes": (int(par["correntes"]) if par.get("correntes") is not None
+                                      else int(correntes.get(marca, 0))),
+                        "flecha": int(par["flecha_terca"]), "g_cob": round(g_cob, 5),
+                        "sc": round(sc, 5), "p_min": round(min(p_min, 0.0), 5),
+                        "p_max": round(max(p_max, 0.0), 5)},
+            "comprimento_total_m": round(comprimento_total.get(marca, 0.0), 2),
+            "peso_kg": round(p.perfil.massa * comprimento_total.get(marca, 0.0), 1),
             "diagrama": {"modelo": "viga biapoiada", "vao_m": round(vao, 3), "caso": caso, "q_kN_m": round(q, 3),
                          "s": [round(x, 4) for x in passos],
                          "M": [round(q * vao * vao * x * (1 - x) / 2.0, 3) for x in passos],
@@ -1310,7 +1331,9 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
                       "tesoura": t.chave}
 
     pior = max((el["aproveitamento"] for el in elementos.values() if el.get("aproveitamento") is not None), default=0.0)
+    peso_verificado = sum(el.get("peso_kg") or 0.0 for el in elementos.values())
     resumo = {
+        "peso_verificado_kg": round(peso_verificado, 1),
         "tesouras": len(tes), "tipos_de_tesoura": len(tipicas), "tercas": len(por_terca),
         "barras_no_modelo": len(pecas), "vao_m": round(max(t.vao_mm for t in tes) / 1000.0, 2),
         "inclinacao_graus": round(theta, 2), "telha_kN_m2": round(g_telha, 3), "sobrecarga_kN_m2": sc,
@@ -1337,6 +1360,110 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         "resumo": resumo,
         "avisos": avisos,
     }
+
+
+def alternativas(calculo: dict, marca: str, limite: int = 10, todas: bool = False) -> dict:
+    """Perfis do catálogo que podem entrar no lugar do desta posição, **verificados**.
+
+    Usa os esforços já calculados (guardados em `elementos[marca]["entrada"]`), então
+    responde na hora: não refaz a análise da tesoura. Cada candidato volta com o
+    aproveitamento, a verificação que governa e quanto muda no peso da estrutura —
+    o comprimento total daquela posição no modelo vezes a diferença de massa por metro.
+
+    A ressalva que acompanha o resultado: trocar o perfil muda a rigidez e redistribui
+    os esforços na treliça. Por isso o aproveitamento aqui é uma **triagem**; ao aplicar
+    a troca, o cálculo inteiro é refeito (é o caminho de `trocas` em `calcular`).
+    """
+    from nucleo import catalogo
+    el = (calculo.get("elementos") or {}).get(marca)
+    if not el:
+        raise ErroDeDados("posição %s não está no cálculo" % marca)
+    entrada = el.get("entrada") or {}
+    if not entrada:
+        raise ErroDeDados("o cálculo gravado é de uma versão anterior, sem os dados para "
+                          "verificar outro perfil: recalcule a estrutura")
+    atual = el.get("perfil") or ""
+    comprimento = float(el.get("comprimento_total_m") or 0.0)
+    peso_total = float((calculo.get("resumo") or {}).get("peso_verificado_kg") or 0.0)
+    try:
+        # Varre a família inteira (dentro da faixa de altura): quando a peça atual não
+        # passa, o que interessa é o mais leve que passa — e ele pode estar longe da
+        # massa atual. A ordenação final põe quem passa na frente.
+        candidatos = catalogo.alternativas(atual, modo="todos", limite=90)
+    except ErroDeDados:
+        # perfil de fábrica fora do catálogo (U92X40X2.25): oferece o que casa em altura
+        p = catalogo.perfil_de(atual)
+        alt_familia = "Ue" if (p and p.tipo == "Ue") else (p.tipo if p else "")
+        altura = p.d if p else 0.0
+        candidatos = [c.dict() for c in catalogo.itens(alt_familia)
+                      if altura and 0.6 * altura <= c.altura <= 2.0 * altura][:90]
+        for c in candidatos:
+            base = p.massa if p else 0.0
+            c["massa_atual"] = base
+            c["delta_massa"] = round((c["massa"] or 0.0) - base, 3) if base else None
+            c["delta_pct"] = round(((c["massa"] or 0.0) - base) / base * 100.0, 1) if base else None
+            c["mais_leve"] = bool(base and (c["massa"] or 0.0) < base)
+    saida = []
+    for c in candidatos:
+        perfil = catalogo.perfil_de(c["nome"])
+        if perfil is None:
+            continue
+        r = _verificar_candidato(perfil, entrada, el)
+        if r is None:
+            continue
+        razao, governa, norma, ok = r
+        delta_massa = c.get("delta_massa")
+        delta_peso = round((delta_massa or 0.0) * comprimento, 1) if delta_massa is not None else None
+        saida.append({
+            "nome": c["nome"], "familia": c["familia"], "origem": c["origem"],
+            "massa": c["massa"], "delta_massa": delta_massa, "delta_pct": c.get("delta_pct"),
+            "mais_leve": c.get("mais_leve"), "aproveitamento": round(razao, 3),
+            "ok": bool(ok), "governa": governa, "norma": norma,
+            "delta_peso_kg": delta_peso,
+            "delta_peso_pct": (round(delta_peso / peso_total * 100.0, 2)
+                               if delta_peso is not None and peso_total else None),
+        })
+    # Quem passa vem primeiro, do mais leve ao mais pesado (é o que se procura). Quem não
+    # passa é ordenado pelo aproveitamento: quando nada passa, o alto da lista é o que
+    # chegou mais perto, e não o mais leve do catálogo, que não serve para nada.
+    saida.sort(key=lambda a: (not a["ok"], (a["massa"] or 0.0) if a["ok"] else a["aproveitamento"]))
+    return {
+        "marca": marca, "nome": el.get("nome", ""), "perfil": atual,
+        "aproveitamento": el.get("aproveitamento"), "ok": el.get("ok"),
+        "governa": el.get("governa", ""), "tipo": el.get("tipo", ""),
+        "comprimento_total_m": comprimento, "peso_kg": el.get("peso_kg"),
+        "peso_verificado_kg": peso_total,
+        "alternativas": saida[:limite],
+        "aviso": ("Triagem com os esforços do cálculo atual. Trocar o perfil muda a rigidez "
+                  "e redistribui os esforços: ao aplicar, o cálculo é refeito inteiro."),
+    }
+
+
+def _verificar_candidato(perfil, entrada: dict, el: dict):
+    """(razão, verificação que governa, norma, passou) de um perfil nos esforços guardados."""
+    try:
+        if entrada.get("tipo") == "terca":
+            vao = float(entrada["vao_m"])
+            if perfis_fabrica.tipo_de_verificacao(perfil) == "frio":
+                r = nbr14762.terca(perfis_fabrica.secao_frio(perfil), entrada["aco"], vao,
+                                   float(entrada["q_g"]), float(entrada["q_s"]),
+                                   int(entrada.get("correntes") or 0), inclinacao=float(entrada.get("theta") or 0.0),
+                                   carga_servico_gravidade=float(entrada["q_gs"]),
+                                   carga_servico_succao=float(entrada["q_ss"]),
+                                   limite_flecha_gravidade=float(entrada.get("flecha") or 180))
+            else:
+                q = max(float(entrada["q_g"]), float(entrada["q_s"]))
+                r = nbr8800.verificar_viga(perfil, entrada["aco"], L=vao * 100, q_Sd=q / 100.0,
+                                           q_servico=max(float(entrada["q_gs"]), float(entrada["q_ss"])) / 100.0,
+                                           limite="L/%d" % int(entrada.get("flecha") or 180))
+        else:
+            r = _verificar_membro(perfil, entrada["aco"], float(entrada["Nc"]), float(entrada["Nt"]),
+                                  float(entrada["M_kNcm"]), float(entrada["Lx_cm"]), float(entrada["Ly_cm"]),
+                                  int(entrada.get("n") or 1), el.get("titulo", ""), [])
+    except Exception:
+        return None
+    crit = r.critica
+    return (r.razao, crit.titulo if crit else "", getattr(crit, "norma", "") if crit else "", r.ok)
 
 
 def _gaps(t: _Tesoura, posicao: str, pontos: List[dict]) -> Optional[float]:

@@ -122,6 +122,12 @@ export class Api {
   calculoDoProjeto(s) {
     return pedir(this._r(`/api/projetos/${encodeURIComponent(s)}/calculo`), { cache: 'no-store' });
   }
+  /** Perfis do catálogo que podem substituir a peça, já verificados nos esforços dela. */
+  alternativasDePerfil(s, marca, limite = 10) {
+    return pedir(this._r(`/api/projetos/${encodeURIComponent(s)}/calculo/alternativas` +
+                         `?marca=${encodeURIComponent(marca)}&limite=${limite}`), { cache: 'no-store' });
+  }
+
   /** O que o diálogo de cálculo precisa saber do modelo (tesouras, vão, cota do apoio…). */
   geometriaParaCalculo(s) {
     return pedir(this._r(`/api/projetos/${encodeURIComponent(s)}/calculo/geometria`), { cache: 'no-store' });

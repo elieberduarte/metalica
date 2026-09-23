@@ -2807,6 +2807,54 @@ export class Editor {
     return caixa;
   }
 
+  /**
+   * "No lugar dela": perfis do catálogo verificados **nos esforços desta posição**, com o
+   * aproveitamento que teriam e quanto mudariam no peso da estrutura. O servidor faz a
+   * triagem com o cálculo já gravado (responde em décimos de segundo); clicar num deles
+   * aplica a troca, e aí sim o cálculo inteiro é refeito.
+   */
+  _blocoAlternativas(marca) {
+    const caixa = el('div', { class: 'grupo-campos' },
+      el('h4', { texto: 'No lugar dela' }),
+      el('div', { class: 'vazio', texto: 'Procurando no catálogo…' }));
+    this.api.alternativasDePerfil(this.projeto, marca, 10).then((r) => {
+      if (!caixa.isConnected) return;
+      caixa.replaceChildren(el('h4', { texto: 'No lugar dela' }));
+      const lista = (r && r.alternativas) || [];
+      if (!lista.length) {
+        caixa.append(el('div', { class: 'vazio', texto: 'Nada no catálogo serve para esta posição.' }));
+        return;
+      }
+      const passam = lista.filter(a => a.ok).length;
+      caixa.append(el('p', { class: 'analise-descricao', texto:
+        (passam ? `${numero(passam)} de ${numero(lista.length)} passam nos esforços atuais. `
+                : 'Nenhum passa nos esforços atuais; os primeiros são os que chegam mais perto. ') +
+        `A posição tem ${numero(r.comprimento_total_m, 1)} m no modelo (${numero(r.peso_kg, 0)} kg).` }));
+      const linhas = el('div', { class: 'lista-linhas' });
+      for (const a of lista) {
+        const dp = a.delta_peso_kg;
+        const linha = el('div', { class: 'linha',
+          title: `${a.governa || ''}${a.norma ? ' · ' + a.norma : ''} · ${a.massa} kg/m · ` +
+                 `${a.origem === 'tabela' ? 'tabela de fabricante' : 'calculado'} — clique para aplicar e recalcular`,
+          onclick: () => this._trocarPerfil(marca, a.nome) },
+          el('span', { class: 'nome', texto: a.nome }),
+          el('span', { class: 'contagem',
+                       texto: dp === null || dp === undefined ? '—'
+                              : `${dp > 0 ? '+' : ''}${numero(dp, 0)} kg` }),
+          el('span', { class: 'aprov', dados: { ok: a.ok ? '1' : '' },
+                       texto: `${numero(a.aproveitamento * 100, 0)} %` }));
+        linhas.append(linha);
+      }
+      caixa.append(linhas);
+      caixa.append(el('p', { class: 'analise-descricao', texto: r.aviso || '' }));
+    }).catch((e) => {
+      if (!caixa.isConnected) return;
+      caixa.replaceChildren(el('h4', { texto: 'No lugar dela' }),
+        el('div', { class: 'vazio', texto: `Não foi possível levantar as alternativas: ${e.message}` }));
+    });
+    return caixa;
+  }
+
   async _trocarPerfil(marca, perfil) {
     const trocas = { ...((this.analise && this.analise.parametros && this.analise.parametros.trocas) || {}) };
     if (perfil) trocas[marca] = perfil; else delete trocas[marca];
@@ -2857,6 +2905,7 @@ export class Editor {
     linha('Terças', `${numero(res.tercas)} posição(ões)`);
     linha('Cargas', `telha ${numero(res.telha_kN_m2, 3)} · sobrecarga ${numero(res.sobrecarga_kN_m2, 2)}` +
                     (res.carga_extra_kN_m2 ? ` · extra ${numero(res.carga_extra_kN_m2, 2)}` : '') + ' kN/m²');
+    if (res.peso_verificado_kg) linha('Peso verificado', `${numero(res.peso_verificado_kg, 0)} kg (barras e terças do cálculo)`);
     if (v.V0) linha('Vento', `V₀ ${numero(v.V0)} m/s · cat. ${v.categoria || ''}${v.classe || ''} · q ${numero(v.q, 3)} kN/m² · h ${numero(v.h, 2)} m`);
     const rep = res.reprovadas || [];
     campos.append(el('label', { texto: 'Reprovadas' }),
@@ -3347,7 +3396,10 @@ export class Editor {
                                             (typeof dim.correntes === 'number' ? ` · ${dim.correntes} corrente(s)` : ''));
     }
     caixa.append(campos);
-    if (this.analise.origem === 'ifc' && this.projeto) caixa.append(this._blocoTrocaPerfil(nome, info));
+    if (this.analise.origem === 'ifc' && this.projeto) {
+      caixa.append(this._blocoTrocaPerfil(nome, info));
+      if (info.entrada) caixa.append(this._blocoAlternativas(nome));
+    }
   }
 
   /** Primeiro elemento analisado que está na seleção. */
