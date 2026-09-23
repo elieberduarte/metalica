@@ -18,7 +18,7 @@ import { Documento, criar, clonar, comprimentoDaBarra, direcaoDaBarra, areaDaCha
          PAPEIS, somar, escalar } from './nucleo/documento.js';
 import { Pilha, Comando, ComandoAdicionar, ComandoRemover, ComandoAlterar }
   from './nucleo/comandos.js';
-import { Cena, MODOS, ESCALA } from './nucleo/cena.js';
+import { Cena, MODOS, ESCALA, PESADOS, medir } from './nucleo/cena.js';
 import { Camera, VISTAS } from './nucleo/camera.js';
 import { Selecao } from './nucleo/selecao.js';
 import { Inferencia } from './nucleo/inferencia.js';
@@ -935,11 +935,14 @@ export class Editor {
     this._autosalvando = true;
     const nome = this.el.nome.value.trim() || this.documento.nome || 'modelo';
     try {
+      // Preparar o JSON de um modelo de milhares de peças custa segundos e trava a tela:
+      // fica medido, para o diagnóstico poder apontá-lo.
+      const json = medir('preparar a gravação automática', () => this.documento.paraJSON());
       if (this.projeto) {
-        const s = await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON(), this._modeloAlterado);
+        const s = await this.api.salvarModeloDoProjeto(this.projeto, json, this._modeloAlterado);
         if (s && s.alterado) this._modeloAlterado = s.alterado;
       } else {
-        const r = await this.api.salvar(this.documento.paraJSON(), nome);
+        const r = await this.api.salvar(json, nome);
         this._lembrar(r.salvo || nome);
       }
     } catch (e) {
@@ -1834,8 +1837,9 @@ export class Editor {
 
   _atualizarServidor() {
     const c = this.cena;
-    this.el.servidor.textContent = (c.usarServidor ? 'malhas: servidor' : 'malhas: locais') + (c.emLote ? ' · lote' : '');
-    this.el.servidor.title = c.usarServidor
+    const refino = c.usarServidor && !c.emLote;
+    this.el.servidor.textContent = (refino ? 'malhas: servidor' : 'malhas: locais') + (c.emLote ? ' · lote' : '');
+    this.el.servidor.title = refino
       ? 'As seções de barras e chapas vêm de nucleo3d/geometria.py.'
       : `Seções montadas no navegador. Motivo: ${c.avisoServidor || '—'}`;
   }
@@ -2496,7 +2500,25 @@ export class Editor {
         'oculte as camadas que não estiver usando (Telhas costuma ser a mais pesada) e confira em ' +
         'Ver → Sombras se elas estão desligadas.' }));
     }
-    const texto = linhas.map(([a, b]) => `${a}: ${b}`).join('\n');
+    // O que travou a tela desde que o programa abriu (operações medidas em cena.js)
+    if (PESADOS.length) {
+      const por = new Map();
+      for (const p of PESADOS) {
+        const r = por.get(p.nome) || { n: 0, total: 0, pior: 0 };
+        r.n++; r.total += p.ms; r.pior = Math.max(r.pior, p.ms);
+        por.set(p.nome, r);
+      }
+      const ordenado = [...por.entries()].sort((a, b) => b[1].total - a[1].total).slice(0, 5);
+      const lista = el('div', { class: 'lista-linhas' });
+      for (const [nome, r] of ordenado) {
+        lista.append(el('div', { class: 'linha' },
+          el('span', { class: 'nome', texto: nome }),
+          el('span', { class: 'contagem', texto: `${r.n}× · pior ${numero(r.pior, 0)} ms` })));
+      }
+      corpo.append(el('h4', { texto: 'Travadas desde que o programa abriu' }), lista);
+    }
+    const texto = linhas.map(([a, b]) => `${a}: ${b}`).join('\n') +
+      (PESADOS.length ? '\nTravadas: ' + PESADOS.map(p => `${p.nome} ${p.ms} ms`).join(' · ') : '');
     corpo.append(el('p', { class: 'explica' },
       el('button', { type: 'button', texto: 'Copiar os números',
         onclick: () => { navigator.clipboard.writeText(texto).then(() => this.dica('Números copiados.')); } })));
@@ -3686,7 +3708,9 @@ export class Editor {
       document.body.dataset.servidor = this.cena.usarServidor ? 'sim' : 'nao';
     };
     publicar();
-    setInterval(publicar, 500);
+    // Em modelo grande esta publicação (para os verificadores de tela) percorre todas as
+    // peças: de meio em meio segundo ela própria vira peso.
+    setInterval(publicar, this.documento.tamanho > 1500 ? 5000 : 500);
   }
 }
 

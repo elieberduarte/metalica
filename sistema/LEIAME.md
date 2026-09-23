@@ -584,6 +584,16 @@ cada peça e só então os triângulos das candidatas; o encontro leva `entidade
 mouse varria os ~16 mil triângulos de cada bloco (10 a 50 ms por movimento, a origem real da sensação de
 travamento). Medido no IFC de 5 mil peças: 0,3 ms.
 
+**Refino de malhas desligado no lote**: o refino pelo servidor (`Cena._refinar`) trocava a geometria de
+80 chaves por rodada e, a cada rodada, **refazia o modelo inteiro na tela** — num IFC com centenas de chapas
+eram várias travadas de 4 s em sequência (a "sensação de que está calculando o tempo todo"). Com o lote
+ativo o refino não roda (a seção local basta) e a barra de estado diz "malhas: locais · lote"; fora do lote
+ele vai numa rodada só e refaz apenas as peças cujas geometrias mudaram.
+
+**Travadas medidas**: `cena.js` exporta `PESADOS` e `medir(nome, fn)` (operações acima de 60 ms) e observa
+`longtask` acima de 250 ms; Ver → Diagnóstico de desempenho lista as cinco maiores. Verificador:
+scratchpad `verif_travadas.py` (abre o modelo grande e reporta as travadas em 90 s).
+
 **Modo leve**: acima de `LIMITE_LOTE` o modelo abre em "Sombreado" (sem as arestas de cada peça: eram 362 mil
 linhas) e sem sombra; os botões de modo e Ver → Sombras devolvem o normal.
 

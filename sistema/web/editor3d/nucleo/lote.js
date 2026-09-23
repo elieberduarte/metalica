@@ -81,8 +81,11 @@ export class Lote {
    */
   definirVarios(ents) {
     const pecas = [];
+    // tira de uma vez quem já estava (cada remoção avulsa refazia os índices do bloco)
+    const velhas = ents.filter(e => this.itens.has(e.id));
+    for (const e of velhas) this.remover(e.id, true);
+    if (velhas.length) this.concluir();
     for (const ent of ents) {
-      if (this.itens.has(ent.id)) this.remover(ent.id);
       const g = this._geometria(ent);
       if (!g) continue;
       pecas.push(g);
@@ -249,7 +252,8 @@ export class Lote {
     return null;
   }
 
-  remover(id) {
+  /** Tira a peça do lote. `adiar` deixa os índices para um `concluir()` depois. */
+  remover(id, adiar = false) {
     const it = this.itens.get(id);
     if (!it) return;
     this.itens.delete(id);
@@ -257,11 +261,9 @@ export class Lote {
     this._tirarContorno(id);
     const b = it.bloco;
     b.itens.splice(b.itens.indexOf(it), 1);
-    // a geometria fica no bloco (vira zona morta); só sai do índice
-    this.escondidos.add(id);
-    b.sujo = true;
+    b.sujo = true;                    // a geometria fica no bloco; só sai do índice
+    if (adiar) return;
     this.concluir();
-    this.escondidos.delete(id);
     if (!b.itens.length) this._descartarBloco(b);
   }
 
@@ -287,8 +289,9 @@ export class Lote {
 
   /** Aplica os índices dos blocos que mudaram (chame ao fim de um lote de mudanças). */
   concluir() {
-    for (const b of this.blocos) {
+    for (const b of this.blocos.slice()) {
       if (!b.sujo) continue;
+      if (!b.itens.length) { this._descartarBloco(b); continue; }
       b.sujo = false;
       b.malha.geometry.setIndex(new THREE.BufferAttribute(this._indice(b, false), 1));
       b.arestas.geometry.setIndex(new THREE.BufferAttribute(this._indice(b, true), 1));

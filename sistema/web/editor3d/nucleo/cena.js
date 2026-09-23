@@ -25,6 +25,42 @@ const tipoDe = (ent) => (ent && ent.atributos && ent.atributos.tipo) || '';
 /** Metros de cena por milímetro de documento. */
 export const ESCALA = 0.001;
 
+/**
+ * Operações pesadas medidas (as últimas 40), para Ver → Diagnóstico de desempenho dizer
+ * o que travou a tela. Uma travada de segundos não aparece na média de quadros: aparece
+ * aqui, com nome e duração.
+ */
+export const PESADOS = [];
+// também em window, para os verificadores de tela lerem sem mexer no editor
+try { window.__pesados = PESADOS; } catch (e) { /* fora do navegador */ }
+
+// Qualquer travada acima de 250 ms entra aqui, mesmo sem nome: assim o diagnóstico
+// mostra que houve travada mesmo quando ela veio de um ponto ainda não medido.
+try {
+  if (typeof PerformanceObserver !== 'undefined') {
+    new PerformanceObserver((lista) => {
+      for (const e of lista.getEntries()) {
+        if (e.duration < 250) continue;
+        PESADOS.push({ nome: 'travada não identificada', ms: Math.round(e.duration), quando: Date.now() });
+        if (PESADOS.length > 40) PESADOS.shift();
+      }
+    }).observe({ entryTypes: ['longtask'] });
+  }
+} catch (e) { /* navegador sem PerformanceObserver de tarefas longas */ }
+
+export function medir(nome, fn) {
+  const t0 = performance.now();
+  try {
+    return fn();
+  } finally {
+    const ms = performance.now() - t0;
+    if (ms >= 60) {
+      PESADOS.push({ nome, ms: Math.round(ms), quando: Date.now() });
+      if (PESADOS.length > 40) PESADOS.shift();
+    }
+  }
+}
+
 /** Acima de tantos objetos a sombra sai sozinha: o mapa de sombra desenha o modelo
  *  inteiro uma segunda vez a cada quadro (medido: 152 ms → 49 ms por quadro num IFC de
  *  5 mil peças). */
@@ -454,6 +490,10 @@ export class Cena {
   // ------------------------------------------------ construção das entidades
 
   reconstruirTudo() {
+    return medir('montar o modelo na tela', () => this._reconstruirTudo());
+  }
+
+  _reconstruirTudo() {
     for (const [id, obj] of this.objetos) this._descartarObjeto(obj);
     this.objetos.clear();
     this.rotulos.clear();
@@ -470,6 +510,11 @@ export class Cena {
 
   /** Reconstrói apenas as entidades pedidas (sem lista: só redesenha). */
   atualizar(ids = []) {
+    if (ids.length > 200) return medir(`refazer ${ids.length} peças na tela`, () => this._atualizar(ids));
+    return this._atualizar(ids);
+  }
+
+  _atualizar(ids = []) {
     const paraLote = [];
     for (const id of ids) {
       const ent = this.documento.get(id);
@@ -756,7 +801,11 @@ export class Cena {
   // ---- refino pelo servidor ----
 
   _agendarRefino() {
-    if (!this.usarServidor || !this.api) return;
+    if (!this.usarServidor || !this.api || this._refinando) return;
+    // Modelo grande (desenho em lote): a seção local já é fiel o bastante, e trocar a
+    // geometria de centenas de chapas obrigaria a refazer os blocos — uma travada de
+    // segundos em troca de quase nada na tela.
+    if (this.lote) { this.avisoServidor = 'modelo grande: seção local, sem refino'; return; }
     // Junta os pedidos de um mesmo quadro numa chamada só.
     if (this._pedidoAgendado) return;
     this._pedidoAgendado = setTimeout(() => {
@@ -779,7 +828,10 @@ export class Cena {
     }
     if (!porChave.size) return;
 
-    const amostras = [...porChave.values()].slice(0, 80);
+    // Uma rodada só: antes eram 80 chaves por vez, e cada rodada refazia o modelo
+    // inteiro na tela — num IFC com centenas de chapas isso eram várias travadas de
+    // segundos em sequência, que é o que o usuário sentia como "calculando o tempo todo".
+    const amostras = [...porChave.values()];
     const docJSON = {
       nome: this.documento.nome, unidade: 'mm',
       entidades: amostras.map(e => JSON.parse(JSON.stringify(e))),
@@ -796,6 +848,7 @@ export class Cena {
       return;
     }
     const malhas = (resposta && resposta.malhas) || {};
+    const chavesTrocadas = new Set();
     let trocadas = 0;
     for (const ent of amostras) {
       const reg = malhas[ent.id];
@@ -813,11 +866,17 @@ export class Cena {
       geom.userData.emCache = true;
       this.cacheGeometria.set(chave, geom);
       this.origemGeometria.set(chave, 'servidor');
+      chavesTrocadas.add(chave);
       trocadas++;
     }
     if (trocadas) {
-      // Reconstrói quem usa as chaves que acabaram de mudar.
-      this.atualizar([...this.objetos.keys()]);
+      // Só quem usa as geometrias que acabaram de mudar — e não o modelo inteiro.
+      const ids = [];
+      for (const [id, obj] of this.objetos) {
+        if (chavesTrocadas.has(obj.userData.chave)) ids.push(id);
+      }
+      this._refinando = true;         // a reconstrução não pede refino de novo (laço)
+      try { this.atualizar(ids); } finally { this._refinando = false; }
     }
   }
 
