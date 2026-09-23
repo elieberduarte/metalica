@@ -19,6 +19,7 @@ export function paraMilimetros(texto) {
 const ang = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]);
 const polar = (a, angulo, d) => [a[0] + d * Math.cos(angulo), a[1] + d * Math.sin(angulo)];
 const fmt = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1).replace('.', ','));
+const valorDaCota = (c) => (c.modo === 'h' ? Math.abs(c.p2[0] - c.p1[0]) : c.modo === 'v' ? Math.abs(c.p2[1] - c.p1[1]) : dist(c.p1, c.p2));
 
 export class Ferramenta {
   static id = 'base'; static nome = 'Ferramenta'; static atalho = ''; static grupo = 'desenho'; static dica = '';
@@ -40,11 +41,80 @@ export class Ferramenta {
 
 // ------------------------------------------------------------ selecionar
 
+/** Deslocamento (mm de papel) que põe a linha da cota `c` passando por `p`. */
+function deslocamentoPara(c, p, escala) {
+  let [x1, y1] = c.p1, [x2, y2] = c.p2;
+  if (c.modo === 'h') y2 = y1; else if (c.modo === 'v') x2 = x1;
+  const dx = x2 - x1, dy = y2 - y1, k = Math.hypot(dx, dy) || 1;
+  let desl = (-(dy / k) * (p[0] - x1) + (dx / k) * (p[1] - y1)) / escala;
+  if (Math.abs(desl) < 2) desl = desl < 0 ? -2 : 2;
+  return desl;
+}
+
 export class Selecionar extends Ferramenta {
   static id = 'selecionar'; static nome = 'Selecionar'; static atalho = ' '; static grupo = 'navegacao';
-  static dica = 'Clique para selecionar · Shift soma · Ctrl alterna · arraste uma janela · Del apaga';
+  static dica = 'Clique para selecionar · Shift soma · Ctrl alterna · arraste uma janela · Del apaga · na cota selecionada, arraste as alças';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 3l14 8-6 2-3 6z"/></svg>';
+  reiniciar() { this._soltarAlca(); super.reiniciar(); }
+
+  // ---- alças da cota: a do meio leva a linha de cota; as das pontas, o ponto medido
+  onPressionar(p, ev) {
+    if (this.alca) return true;               // alça já presa ao cursor: este clique a solta
+    const a = this.editor.tela.alcaSob(ev.px);
+    if (!a) return false;
+    this._pegarAlca(a);
+    this._recemPega = true;                   // o soltar deste mesmo clique não conta
+    return true;
+  }
+  _pegarAlca(a) {
+    this.alca = a;
+    this.editor.tela.alcaQuente = a;
+    this.editor.snap.ignorar = new Set([a.id]);
+    this.dica(a.parte === 'linha'
+      ? 'Leve a linha de cota até a posição (o snap pega a linha de outra cota) · Esc cancela'
+      : 'Leve o ponto de referência da cota até o novo ponto (extremidade, interseção…) · Esc cancela');
+  }
+  _soltarAlca() {
+    this.alca = null;
+    this.editor.tela.alcaQuente = null;
+    this.editor.snap.ignorar = new Set();
+  }
+  _cotaEditada(p) {
+    const c = this.doc.get(this.alca.id);
+    if (!c) return null;
+    const k = this.doc.escala;
+    if (this.alca.parte === 'linha') return criar({ ...c, deslocamento: deslocamentoPara(c, p, k) });
+    // muda o ponto medido e mantém a linha de cota onde estava
+    const pc = pontosCota(c, k);
+    const naLinha = pc.length === 4 ? pc[this.alca.parte === 'p1' ? 2 : 3] : null;
+    const nova = { ...c, [this.alca.parte]: [p[0], p[1]] };
+    if (dist(nova.p1, nova.p2) < 1e-6) return null;
+    if (naLinha) nova.deslocamento = deslocamentoPara(nova, naLinha, k);
+    // cota com o valor escrito (as do detalhamento, arredondadas ao mm): o texto acompanha a medida nova
+    if (nova.texto != null && /^\s*\d+(?:[.,]\d+)?\s*$/.test(String(nova.texto))) nova.texto = String(Math.round(valorDaCota(nova)));
+    return criar(nova);
+  }
+  onMover(p) {
+    if (!this.alca) return;
+    const c = this._cotaEditada(p);
+    this.editor.previa(c ? [c] : []);
+    if (c) this.editor.medida(`${fmt(valorDaCota(c))} mm`);
+  }
+  cancelar() { this._soltarAlca(); super.cancelar(); }
+
   onPonto(p, ev) {
+    if (this.alca) {
+      if (ev.semMover && this._recemPega) { this._recemPega = false; return; }   // clicou na alça: agora ela segue o cursor
+      this._recemPega = false;
+      const c = this._cotaEditada(p);
+      const id = this.alca.id;
+      this._soltarAlca();
+      this.editor.previa([]);
+      if (c) this.editor.executar(new ComandoSubstituir([c], 'Ajustar cota'));
+      this.editor.selecionar([id]);
+      this.dica(this.constructor.dica);
+      return;
+    }
     const e = this.editor.tela.sob(ev.px);
     if (!e) { if (!ev.shiftKey && !ev.ctrlKey) this.editor.selecionar([]); return; }
     if (ev.ctrlKey) this.editor.alternarSelecao(e.id);

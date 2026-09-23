@@ -135,7 +135,7 @@
 <h2 id="cortes">Cortes e vistas 2D</h2>
 <ul>
   <li><b>Corte de uma tesoura:</b> ferramenta <b>Seção</b> (<kbd>X</kbd>), clique numa face ou tecle <kbd>Y</kbd> para um plano transversal, digite o afastamento, e tecle <kbd>G</kbd>: o corte vira um desenho 2D e o CAD abre nele. O que o plano atravessa sai hachurado; o que está além, até a profundidade escolhida, sai projetado.</li>
-  <li><b>Vistas da seleção:</b> menu <b>Desenho 2D → Vistas da seleção…</b> com peças selecionadas gera frente, planta e laterais só delas. Sem seleção, gera do modelo inteiro (pesado: use para prancha de conjunto).</li>
+  <li><b>Vistas da seleção:</b> menu <b>Detalhamentos → Vistas da seleção…</b> com peças selecionadas gera frente, planta e laterais só delas. Sem seleção, gera do modelo inteiro (pesado: use para prancha de conjunto).</li>
   <li><b>Desenhos salvos:</b> o mesmo menu lista os desenhos do projeto (e o menu Desenho do CAD também, para navegar entre os detalhes); nada precisa ser gerado de novo para abrir. O <b>×</b> ao lado de cada um e <b>Excluir desenhos…</b> (também no CAD, menu Desenho) mandam desenhos para a pasta <code>.lixeira</code> dos dados, para gerar tudo de novo; "Marcar detalhamentos" seleciona os do detalhamento de uma vez.</li>
 </ul>
 
@@ -143,7 +143,7 @@
 <table>
   <tr><th>Grupo</th><th>Ferramentas</th></tr>
   <tr><td>Desenho</td><td>linha <kbd>L</kbd>, polilinha, retângulo <kbd>R</kbd>, círculo <kbd>C</kbd>, arco, texto <kbd>T</kbd>, cota <kbd>D</kbd>, chamada <kbd>H</kbd>, hachura</td></tr>
-  <tr><td>Edição</td><td>mover <kbd>M</kbd>, copiar, girar, espelhar, paralela (offset <kbd>F</kbd>), aparar/trim <kbd>X</kbd>, estender/extend <kbd>N</kbd>, concordar/fillet <kbd>K</kbd> (digite o raio antes; 0 = canto vivo), mover linha de cota <kbd>J</kbd> (clique na cota — ou selecione várias — e depois onde a linha deve ficar; o snap pega a linha de outra cota, para alinhar), apagar <kbd>Del</kbd>. Desenhando linha, o cursor gruda na continuação da linha anterior; <kbd>Esc</kbd> volta a selecionar e <kbd>espaço</kbd> chama de novo a ferramenta anterior.</td></tr>
+  <tr><td>Edição</td><td>mover <kbd>M</kbd>, copiar, girar, espelhar, paralela (offset <kbd>F</kbd>), aparar/trim <kbd>X</kbd>, estender/extend <kbd>N</kbd>, concordar/fillet <kbd>K</kbd> (digite o raio antes; 0 = canto vivo), mover linha de cota <kbd>J</kbd> (clique na cota — ou selecione várias — e depois onde a linha deve ficar; o snap pega a linha de outra cota, para alinhar), apagar <kbd>Del</kbd>. <b>Cota selecionada tem alças</b>: arraste o círculo do meio para levar a linha de cota, ou um dos quadrados das pontas para mudar onde a cota pega (com snap; a linha fica onde está e o número acompanha). Também dá para clicar na alça, soltar e clicar no destino. Desenhando linha, o cursor gruda na continuação da linha anterior; <kbd>Esc</kbd> volta a selecionar e <kbd>espaço</kbd> chama de novo a ferramenta anterior.</td></tr>
   <tr><td>Apoio</td><td>medir, snap (extremidade, meio, centro, interseção, perpendicular, sobre a linha, grade), orto com <kbd>Shift</kbd> ou <kbd>F8</kbd>, desfazer <kbd>Ctrl+Z</kbd>, refazer <kbd>Ctrl+Y</kbd></td></tr>
 </table>
 <p>Medidas digitadas funcionam como no AutoCAD: <code>1500</code>, <code>1,5m</code>, <code>1500&lt;30</code> (comprimento e ângulo), <code>2000;1000</code> (retângulo). A <b>escala</b> no topo (1:10, 1:25…) é a de impressão: define o tamanho de textos, cotas e hachuras no papel. Cada linha sabe de que peça 3D veio: <b>Editar → Selecionar tudo da mesma peça</b>.</p>
@@ -151,7 +151,7 @@
 
 <h2 id="detalhamento">Detalhamento de peças e conjuntos</h2>
 <p>Enquanto o detalhamento (ou a importação de um IFC) roda, a linha de baixo da tela mostra a etapa corrente — "convertendo as chapas…", "desenhando os conjuntos (25 células)…", "lista de materiais…" — com o tempo decorrido.</p>
-<p>No Modelo 3D, <b>Desenho 2D → Detalhar peças e conjuntos…</b> (ou no CAD, <b>Vistas do modelo → Detalhar…</b>). Sai um desenho por grupo — chapas (1:10), barras e terças (1:25), tirantes, telhas e conjuntos (1:50):</p>
+<p>No Modelo 3D, <b>Detalhamentos → Detalhar peças e conjuntos…</b> (ou no CAD, <b>Vistas do modelo → Detalhar…</b>). Sai um desenho por grupo — chapas (1:10), barras e terças (1:25), tirantes, telhas e conjuntos (1:50):</p>
 <ul>
   <li><b>Snap Centro</b> vale também para furo oblongo e recorte (polilinha fechada): o centro da caixa do furo, para mover pelo centro.</li>
   <li><b>Orto (F8):</b> caixa no painel Snap (ou menu Ver): linhas, movimentos e cópias só na horizontal e vertical. Shift segurado trava na hora. Fica gravado para os próximos desenhos.</li>
@@ -181,7 +181,7 @@
   <li><b>Cotas que acompanham o furo:</b> ao mover furos (ferramenta Mover, camada FURO), a cota horizontal presa à coluna do furo e a vertical presa à linha andam junto, desde que todos os furos daquela coluna ou linha estejam sendo movidos. Cota selecionada: o painel Propriedades edita texto, deslocamento e modo.</li>
   <li><b>Parafusos acompanham o furo:</b> ao aplicar, o parafuso, a porca e a arruela que atravessam um furo movido andam o mesmo tanto no 3D. Furo novo não cria parafuso; furo apagado não apaga o parafuso.</li>
   <li><b>Modelo gravado por outra tela:</b> se o CAD (ou outra janela, ou outra máquina na mesma pasta do OneDrive) gravar o modelo depois de o editor 3D abri-lo, o editor recusa gravar por cima e pede F5. É a proteção para a furação aplicada não voltar atrás.</li>
-  <li><b>Ver no 3D</b> (painel Propriedades, ou Vistas do modelo → <i>Ver no 3D a peça selecionada</i>): abre o modelo 3D com as peças da posição (ou do conjunto) selecionadas e enquadradas, e o resto do modelo esmaecido, para achar a peça na estrutura. Esc limpa a seleção e devolve o modelo; Desenho 2D volta ao CAD.</li>
+  <li><b>Ver no 3D</b> (painel Propriedades, ou Vistas do modelo → <i>Ver no 3D a peça selecionada</i>): abre o modelo 3D com as peças da posição (ou do conjunto) selecionadas e enquadradas, e o resto do modelo esmaecido, para achar a peça na estrutura. Esc limpa a seleção e devolve o modelo; Detalhamentos volta ao CAD.</li>
   <li><b>Barras (terças, diagonais, banzos):</b> o detalhe pelo duplo clique e a célula do desenho geral trazem os furos da alma como objetos da camada FURO. Mova e use <i>Aplicar furos ao modelo 3D</i>: a furação nova fica guardada no projeto (vale para os próximos detalhamentos e para a lista) e os furos são movidos na malha da barra no 3D, furo a furo, até 300 mm. Furo novo ou apagado vale só no desenho e na lista; a malha 3D não é recortada. Os furos da mesa (vista de topo) não são editáveis.</li>
 </ul>
 <div class="caixa info"><b>Medidas inteiras e posições iguais:</b> comprimento de corte, tamanho de chapa e posição dos furos saem ao milímetro (2529,5 → 2530). Marcas diferentes com a mesma peça (mesmo perfil, material, comprimento e furos) viram uma posição só, "P64 / P65 / P66 – 03x", com as quantidades somadas; a lista de materiais e as pranchas seguem o mesmo rótulo. Espessura, diâmetro e rasgo dos furos não são arredondados.</div>
@@ -197,7 +197,7 @@
 <p>Terça é a barra U/C/Z que viaja solta (marca de posição igual à de conjunto). A regra vale também para o que compõe a ligação — a chapinha do suporte com a mesma furação original recebe a mesma troca, em qualquer orientação. O centro de cada grupo de furos é mantido e a célula avisa "furação no padrão de fábrica". Todos os furos redondos da terça saem <b>oblongos</b> (Ø13 → 25x13, rasgo no sentido da barra), como a fábrica faz; a chapinha do suporte continua com furo redondo. As cotas dos furos saem sempre; trechos curtos vão para uma segunda linha alternada. Casos ambíguos saem com "conferir".</p>
 
 <h2 id="materiais">Lista de materiais</h2>
-<p>No Modelo 3D, <b>Desenho 2D → Lista de materiais…</b>; no CAD, <b>Vistas do modelo → Lista de materiais…</b>; ou a pílula <b>≡ Lista de materiais</b> no cartão do projeto. A tela mostra, do mesmo levantamento que o detalhamento desenha:</p>
+<p>No Modelo 3D, <b>Detalhamentos → Lista de materiais…</b>; no CAD, <b>Vistas do modelo → Lista de materiais…</b>; ou a pílula <b>≡ Lista de materiais</b> no cartão do projeto. A tela mostra, do mesmo levantamento que o detalhamento desenha:</p>
 <ul>
   <li><b>Totais por categoria</b> (tesouras, terças, barras, chapas, tirantes, telhas) com peso e percentual.</li>
   <li><b>Perfis:</b> peças, comprimento total, kg/m, peso e a estimativa de <b>barras comerciais</b> — o programa encaixa as peças do maior para o menor em barras de 6 m (ou 12 m, quando alguma peça passa de 6; a caixa <i>Barra comercial</i> fixa uma ou outra), descontando 3 mm por corte, e diz quantas barras, o aproveitamento e a sobra. Peça mais comprida que a barra conta como <i>emenda</i>.</li>

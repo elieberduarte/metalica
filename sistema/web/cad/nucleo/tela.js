@@ -34,6 +34,7 @@ export class Tela {
     this.snap = null;                   // {ponto, tipo}
     this.cursor = null;                 // ponto do modelo sob o mouse
     this.retangulo = null;              // seleção por janela [[x,y],[x,y]] em tela
+    this.alcaQuente = null;             // alça sendo arrastada ({id, parte, ponto})
     this.escuro = false;
     this.grade = true;
     this._quadro = null;
@@ -48,6 +49,33 @@ export class Tela {
   paraMundo(px) { return [px[0] / this.vp.z + this.vp.x, (this.altura - px[1]) / this.vp.z + this.vp.y]; }
   /** mm do modelo por pixel. */
   get mmPorPixel() { return 1 / this.vp.z; }
+
+  /**
+   * Alças das cotas selecionadas: os dois pontos de referência (p1, p2) e o meio da linha
+   * de cota. É por elas que a cota se ajusta com o mouse, como nos CADs.
+   */
+  alcas() {
+    if (!this.selecao.size || this.selecao.size > 300) return [];
+    const k = this.doc.escala, fora = [];
+    for (const id of this.selecao) {
+      const e = this.doc.get(id);
+      if (!e || e.tipo !== 'cota' || !this.doc.visivel(e)) continue;
+      const pc = pontosCota(e, k);
+      fora.push({ id, parte: 'p1', ponto: e.p1 }, { id, parte: 'p2', ponto: e.p2 });
+      if (pc.length === 4) fora.push({ id, parte: 'linha', ponto: [(pc[2][0] + pc[3][0]) / 2, (pc[2][1] + pc[3][1]) / 2] });
+    }
+    return fora;
+  }
+
+  /** A alça a até `raio` pixels de `px`, ou null. */
+  alcaSob(px, raio = 7) {
+    let melhor = null, dm = raio;
+    for (const a of this.alcas()) {
+      const q = this.paraTela(a.ponto), d = Math.hypot(q[0] - px[0], q[1] - px[1]);
+      if (d <= dm) { dm = d; melhor = a; }
+    }
+    return melhor;
+  }
 
   redimensionar() {
     const dpr = window.devicePixelRatio || 1;
@@ -209,6 +237,15 @@ export class Tela {
       if (e && this.doc.visivel(e)) this._entidade(ctx, e, cores.realce, this.doc.camadas.get(e.camada), k, false);
     }
     for (const e of this.previa) this._entidade(ctx, e, cores.previa, null, k, false, true);
+    // alças das cotas selecionadas (quadradinhos; a que está sendo arrastada, cheia)
+    for (const a of this.alcas()) {
+      const [x, y] = this.paraTela(a.ponto);
+      const quente = this.alcaQuente && this.alcaQuente.id === a.id && this.alcaQuente.parte === a.parte;
+      ctx.setLineDash([]); ctx.lineWidth = 1; ctx.strokeStyle = cores.selecao;
+      ctx.fillStyle = quente ? '#e0442f' : cores.selecao;
+      if (a.parte === 'linha') { ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill(); }
+      else ctx.fillRect(x - 4, y - 4, 8, 8);
+    }
 
     if (this.retangulo) {
       const [a, b] = this.retangulo;

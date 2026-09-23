@@ -253,6 +253,11 @@ dos CADs, sem travar como o orto. **Esc** volta para selecionar e **espaço** ch
 ferramenta que estava em uso. A seleção por janela pega a cota pela **linha de cota**
 (`pontosCota`), não pelos pontos medidos, que ficam na peça: antes uma cota deslocada da peça
 não entrava na janela nem no índice espacial, e não havia como apagá-la.
+**Alças da cota** (`Tela.alcas`, `Selecionar.onPressionar`): com a cota selecionada aparecem
+três alças — os dois pontos medidos (quadrados) e o meio da linha de cota (círculo). Arrastar
+(ou clicar e clicar de novo) a do meio leva a linha de cota; as das pontas mudam o ponto de
+referência com snap, e a linha de cota fica onde estava. O texto numérico da cota acompanha a
+medida nova; o snap não enxerga a própria cota enquanto ela é arrastada (`Snap.ignorar`).
 
 ## Detalhamento de peças a partir de um IFC
 
@@ -355,7 +360,18 @@ linha de cima.
 **Quadros por tipo** (`detalhar._quadros_por_tipo`): o desenho de conjuntos agrupa as
 células por tipo — TESOURAS, VIGAS, PILARES, CONJUNTOS, AGULHAMENTOS, CONTRAVENTAMENTOS —,
 cada grupo empilhado à parte e dentro de uma moldura com título (camada AUXILIAR), um
-quadro abaixo do outro. Antes saíam numa fila só, na ordem do IFC.
+quadro abaixo do outro. Antes saíam numa fila só, na ordem do IFC. O **desenho completo**
+usa os mesmos quadros: um por grupo de posições (CHAPAS, BARRAS E TERÇAS…), os de conjuntos
+por tipo e a planta de localização. A moldura cerca a extensão real (`detalhar._extremos_de`:
+linha de cota deslocada com o número e largura estimada do texto), não só os pontos que
+definem as entidades — antes as cotas das tesouras saíam para fora do quadro.
+
+**Unidade do conjunto pela maioria** (`detalhar._unidade_pela_maioria`): as instâncias de
+um conjunto saem do mdc das quantidades por posição; uma peça a mais ou a menos numa delas
+(29 P13 em 8 tesouras de 4) derrubava o mdc para 1 e o conjunto inteiro saía desenhado como
+se fosse uma instância. Quando ≥ 80 % das posições têm quantidade múltipla de um mesmo n, a
+unidade é quantidade/n; a instância desenhada é uma das que batem com ela, e o aviso diz o
+que difere no total. Conjunto espalhado em vários grupos nunca é desenhado inteiro.
 
 **Canto da tesoura em meia-esquadria** (`conjuntos._chanfrar_cantos`): o banzo calandrado
 do joelho chega do IFC como um arco, mas a fábrica não calandra — corta os dois banzos

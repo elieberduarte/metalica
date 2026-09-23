@@ -174,6 +174,37 @@ from nucleo2d.detalhe.celulas import (  # noqa: E402,F401
 __all__ = ["detalhar", "GRUPOS", "regra_furacao_terca"]
 
 
+def _extremos_de(e, esc: float) -> List[Ponto]:
+    """Pontos que cercam o que a entidade ocupa no desenho — não só os que a definem: a
+    linha de cota deslocada (com o número) e a largura estimada do texto. Sem isso a
+    moldura de um quadro passava por cima das cotas e dos títulos das células."""
+    if isinstance(e, Cota):
+        (x1, y1), (x2, y2) = e.p1, e.p2
+        if e.modo == "h":
+            y2 = y1
+        elif e.modo == "v":
+            x2 = x1
+        dx, dy = x2 - x1, y2 - y1
+        comp = math.hypot(dx, dy)
+        if comp < 1e-9:
+            return [e.p1, e.p2]
+        nx, ny = -dy / comp, dx / comp
+        d = float(e.deslocamento or 0.0) * esc
+        d2 = d + math.copysign(1.6 * float(e.altura or 2.5) * esc, d if d else 1.0)
+        return [e.p1, e.p2, (x1 + nx * d, y1 + ny * d), (x2 + nx * d, y2 + ny * d),
+                (x1 + nx * d2, y1 + ny * d2), (x2 + nx * d2, y2 + ny * d2)]
+    if isinstance(e, Texto):
+        x, y = e.posicao
+        h = float(e.altura or 2.5) * esc
+        larg = 0.75 * h * len(e.texto or "")
+        if e.angulo:
+            r = max(larg, h)
+            return [(x - r, y - r), (x + r, y + r)]
+        x0 = x - larg / 2 if e.alinhamento == "centro" else x - larg if e.alinhamento == "direita" else x
+        return [(x0, y), (x0 + larg, y + h)]
+    return e.pontos() if hasattr(e, "pontos") else []
+
+
 def _anexar_faixa(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_faixa: Optional[dict] = None) -> float:
     """Copia as entidades de `banda` para `dc`, transladadas para ficarem abaixo de
     `y_topo` com o título da faixa por cima; funde células e metadados. Devolve o y do
@@ -182,7 +213,7 @@ def _anexar_faixa(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_
     esc = dc.escala
     if not banda.entidades:
         return y_topo
-    pontos = [q for e in banda.entidades.values() for q in (e.pontos() if hasattr(e, "pontos") else [])]
+    pontos = [q for e in banda.entidades.values() for q in _extremos_de(e, esc)]
     if not pontos:
         return y_topo
     x0 = min(q[0] for q in pontos)
@@ -226,7 +257,8 @@ QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("c
            ("agulhamento", "AGULHAMENTOS"), ("contraventamento", "CONTRAVENTAMENTOS")]
 
 
-def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float = 1400.0) -> None:
+def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float = 1400.0,
+                      y: float = 0.0, meta: Optional[dict] = None) -> float:
     """Desenha as células agrupadas por tipo, cada grupo dentro de um quadro com título.
 
     Sem isso as tesouras, os agulhamentos e os contraventamentos saíam numa fila só, na
@@ -240,39 +272,44 @@ def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float
         grupos.setdefault(chave, []).append(f)
     ordem = [t for t, _ in QUADROS if t in grupos] + [t for t in grupos if t not in dict(QUADROS)]
     titulos = dict(QUADROS)
-    y = 0.0
-    esc = d.escala
     for chave in ordem:
         banda = Desenho(nome=chave, escala=d.escala)
         banda.camadas = {k: v for k, v in d.camadas.items()}
         _empilhar(banda, [(lambda x, y_, f=f: f(banda, x, y_)) for f in grupos[chave]], largura_max_papel=largura_max_papel)
         titulo = titulos.get(chave) or (chave.upper() + "S")
-        y = _anexar_quadro(d, banda, titulo, y)
+        y = _anexar_quadro(d, banda, titulo, y, meta)
+    return y
 
 
-def _anexar_quadro(dc: Desenho, banda: Desenho, titulo: str, y_topo: float) -> float:
+def _anexar_quadro(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_faixa: Optional[dict] = None) -> float:
     """Como `_anexar_faixa`, mas com a moldura fechada em volta do grupo. Devolve o y do
-    fundo do quadro (o próximo começa abaixo dele)."""
+    fundo do quadro (o próximo começa abaixo dele). A moldura cerca a extensão real —
+    linhas de cota e textos incluídos — e as células que `_empilhar` mediu."""
     esc = dc.escala
     antes = set(dc.entidades)
-    fundo = _anexar_faixa(dc, banda, titulo, y_topo - 8.0 * esc)
+    n_celulas = len(dc.metadados.get("celulas") or [])
+    _anexar_faixa(dc, banda, titulo, y_topo - 8.0 * esc, meta_faixa)
     novas = [dc.entidades[k] for k in dc.entidades if k not in antes]
-    pontos = [q for e in novas for q in (e.pontos() if hasattr(e, "pontos") else [])]
+    pontos = [q for e in novas for q in _extremos_de(e, esc)]
+    for c in (dc.metadados.get("celulas") or [])[n_celulas:]:
+        pontos += [(c[0], c[1]), (c[2], c[3])]
     if not pontos:
         return y_topo
     x0, x1 = min(q[0] for q in pontos) - 6.0 * esc, max(q[0] for q in pontos) + 6.0 * esc
-    y1 = max(q[1] for q in pontos) + 9.0 * esc          # o título (5 mm de papel) fica dentro da moldura
+    y1 = max(q[1] for q in pontos) + 4.0 * esc          # o título já está nos pontos (texto com altura)
     y0 = min(q[1] for q in pontos) - 6.0 * esc
     dc.add(Polilinha(camada="AUXILIAR", vertices=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], fechada=True,
                      atributos={"quadro": titulo}))
-    return y0 - 4.0 * esc
+    return y0 - 12.0 * esc
 
 
 def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho]) -> Desenho:
-    """"Detalhamento – completo": cada grupo é uma faixa (título e linha), todas na
+    """"Detalhamento – completo": cada grupo é um quadro (moldura com título), todos na
     escala 1:25 — as células são desenhadas de novo nessa escala, com os furos das
-    chapas editáveis como no desenho do grupo; a planta de localização entra como está.
-    Serve para navegar por tudo sem trocar de desenho; para imprimir, as pranchas."""
+    chapas editáveis como no desenho do grupo; os conjuntos saem nos mesmos quadros por
+    tipo do desenho de conjuntos (TESOURAS, CONJUNTOS, AGULHAMENTOS…); a planta de
+    localização entra como está, no seu quadro. Serve para navegar por tudo sem trocar
+    de desenho; para imprimir, as pranchas."""
     g = GRUPOS["completo"]
     dc = Desenho(nome=g["titulo"], escala=g["escala"])
     _registrar_camadas_de_pecas(dc)
@@ -280,17 +317,33 @@ def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho]) -
     for chave, titulo in FAIXAS_COMPLETO:
         if chave == "localizacao":
             if localizacao is not None:
-                y = _anexar_faixa(dc, localizacao, titulo, y)
+                y = _anexar_quadro(dc, localizacao, titulo, y)
             continue
         if chave not in faixas:
             continue
         celulas, largura, meta = faixas[chave]
+        if chave == "conjuntos":          # (tipo, célula): um quadro por tipo
+            y = _quadros_por_tipo(dc, celulas, largura_max_papel=largura, y=y, meta=meta)
+            continue
         banda = Desenho(nome=titulo, escala=g["escala"])
         _empilhar(banda, [(lambda x, y_, f=f: f(banda, x, y_)) for f in celulas], largura_max_papel=largura)
-        y = _anexar_faixa(dc, banda, titulo, y, meta)
+        y = _anexar_quadro(dc, banda, titulo, y, meta)
     dc.metadados.setdefault("detalhamento", {"grupo": "completo", "posicoes": [], "itens": {}, "editaveis": [], "furos_originais": {}, "conjuntos": []})
     dc.metadados["detalhamento"]["grupo"] = "completo"
     return dc
+
+
+def _unidade_pela_maioria(total: collections.Counter, fracao: float = 0.8):
+    """(n, unidade) quando pelo menos `fracao` das posições do conjunto têm quantidade
+    múltipla de um mesmo n > 1 (o maior deles); unidade = quantidade / n arredondada. None
+    quando nem isso há (conjunto de fato único)."""
+    if len(total) < 3:
+        return None
+    for n in range(max(total.values()), 1, -1):
+        if sum(1 for q in total.values() if q % n == 0) >= fracao * len(total):
+            unidade = collections.Counter({k: int(round(q / n)) for k, q in total.items() if round(q / n) >= 1})
+            return (n, unidade) if unidade else None
+    return None
 
 
 def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Optional[dict] = None,
@@ -382,8 +435,26 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             inst = next((i for i in insts if collections.Counter(
                 str(_marcas(e).get("posicao") or e.nome) for e in i) == unidade), None)
             aviso = ""
+            if inst is None or n == 1:
+                # uma peça a mais ou a menos numa das instâncias (29 P13 em 8 tesouras de
+                # 4) derruba o mdc para 1 e o conjunto inteiro saía desenhado como se fosse
+                # uma instância só (os fragmentos juntos batiam com a "unidade" = tudo); a
+                # composição da maioria das posições dá a unidade
+                robusta = _unidade_pela_maioria(total)
+                if robusta:
+                    n2, unidade2 = robusta
+                    iguais = [i for i in _instancias_do_conjunto(lista, unidade2)
+                              if collections.Counter(str(_marcas(e).get("posicao") or e.nome) for e in i) == unidade2]
+                    if iguais:
+                        difere = ["%s (%d em vez de %d)" % (k, total.get(k, 0), n2 * unidade2.get(k, 0))
+                                  for k in sorted(set(total) | set(unidade2), key=_ordem_natural)
+                                  if total.get(k, 0) != n2 * unidade2.get(k, 0)]
+                        aviso = ("conjunto %s: %d instâncias, %d com a composição desenhada; no total diferem %s"
+                                 % (conj, n2, len(iguais), ", ".join(difere)))
+                        inst, n, unidade = iguais[0], n2, unidade2
             if inst is None:
-                inst = lista if n == 1 else max(insts, key=len)
+                # nunca o conjunto inteiro quando ele está espalhado em vários grupos
+                inst = max(insts, key=len) if len(insts) > 1 else lista
                 aviso = ("conjunto %s: %d instâncias pela composição, mas nenhum agrupamento "
                          "espacial bate com a composição unitária; desenhado o maior" % (conj, n))
             candidatos.append((conj, lista, inst, n, unidade, aviso))
@@ -473,7 +544,6 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                                    "categoria": "CONJUNTOS", "marcas": [mk for m in membros for mk in m[0].split(" / ")],
                                    "nome": " / ".join(nomes_conj.get(m[0], m[0]) for m in membros)}
         _quadros_por_tipo(d, fns, largura_max_papel=1400.0)
-        fns = [f for _, f in fns]
         itens = {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
                               "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                               "categoria": c["categoria"], "marcas": c["marcas"], "nome": c["nome"]}

@@ -333,7 +333,14 @@ class CAD {
     c.addEventListener('pointerdown', (ev) => {
       c.setPointerCapture(ev.pointerId);
       if (ev.button === 1 || ev.button === 2) { arrastoVista = px(ev); this.el.palco.dataset.arrastando = '1'; return; }
-      if (ev.button === 0) pressao = { px: px(ev), movido: false };
+      if (ev.button === 0) {
+        pressao = { px: px(ev), movido: false, capturado: false };
+        // a ferramenta pode tomar o arrasto para si (a alça de uma cota, na Selecionar)
+        if (this.ferramenta && this.ferramenta.onPressionar) {
+          const s = this.snap.resolver(pressao.px, { orto: ev.shiftKey });
+          pressao.capturado = !!this.ferramenta.onPressionar(s.ponto, { ...evInfo(ev), px: pressao.px });
+        }
+      }
     });
     c.addEventListener('pointermove', (ev) => {
       const p = px(ev);
@@ -342,6 +349,11 @@ class CAD {
       this.tela.cursor = s.ponto; this.tela.snap = s.tipo ? s : null;
       this.el.coord.textContent = `x ${formatarMm(s.ponto[0])}  y ${formatarMm(s.ponto[1])}`;
       if (pressao && !pressao.movido && Math.hypot(p[0] - pressao.px[0], p[1] - pressao.px[1]) > ARRASTO_MIN) pressao.movido = true;
+      if (pressao && pressao.capturado) {
+        if (this.ferramenta) this.ferramenta.onMover(s.ponto, { ...evInfo(ev), px: p });
+        this.tela.pedirQuadro();
+        return;
+      }
       if (pressao && pressao.movido && this.ferramenta && this.ferramenta.onSoltar !== Ferramenta.prototype.onSoltar) {
         this.tela.retangulo = [pressao.px, p];
       }
@@ -356,7 +368,10 @@ class CAD {
       if (arrastoVista) { arrastoVista = null; delete this.el.palco.dataset.arrastando; return; }
       if (!pressao) return;
       const s = this.snap.resolver(p, { orto: ev.shiftKey });
-      if (pressao.movido && this.tela.retangulo) {
+      if (pressao.capturado) {
+        // arrastou a alça: solta onde está; só clicou: a alça fica presa ao cursor até o próximo clique
+        if (this.ferramenta) this.ferramenta.onPonto(s.ponto, { ...evInfo(ev), px: p, semMover: !pressao.movido });
+      } else if (pressao.movido && this.tela.retangulo) {
         this.tela.retangulo = null;
         if (this.ferramenta) this.ferramenta.onSoltar(s.ponto, { ...evInfo(ev), px: p, arrasto: { de: pressao.px, para: p } });
       } else if (this.ferramenta) {

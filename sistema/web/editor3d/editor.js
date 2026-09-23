@@ -1225,6 +1225,22 @@ export class Editor {
     this._irPara(url);
   }
 
+  /**
+   * "Abrir o CAD 2D do projeto": vai direto ao detalhamento completo quando ele existe
+   * (é o desenho de trabalho); senão ao CAD do projeto sem desenho.
+   */
+  async _abrirCADDoProjeto() {
+    if (!this.projeto) { this._abrirCAD(); return; }
+    let alvo = null;
+    try {
+      const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos`);
+      const desenhos = r.ok ? await r.json() : [];
+      const d = (Array.isArray(desenhos) ? desenhos : []).find(x => x.nome === 'detalhamento-completo');
+      if (d) alvo = d.nome;
+    } catch { /* sem lista: abre o CAD do projeto */ }
+    this._abrirCAD(alvo);
+  }
+
   /** Tela da lista de materiais do projeto (romaneio, perfis, chapas, conjuntos). */
   _abrirMateriais() {
     if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para ver a lista de materiais.', 'atencao'); return; }
@@ -1370,7 +1386,7 @@ export class Editor {
     this.camera.zoomSelecao(ids);
     // as malhas do servidor chegam depois: enquadra de novo quando a cena já as tem
     setTimeout(() => { if (this.selecao.ids.size === ids.length) { this.camera.zoomSelecao(ids); this.cena.destacar(ids); } }, 1500);
-    this.aviso(`${ids.length} peça(s) ${[...marcas].join(', ')} em destaque; o resto do modelo está esmaecido. Esc limpa a seleção e devolve o modelo; Desenho 2D volta ao CAD.`, 'info', 14000);
+    this.aviso(`${ids.length} peça(s) ${[...marcas].join(', ')} em destaque; o resto do modelo está esmaecido. Esc limpa a seleção e devolve o modelo; Detalhamentos volta ao CAD.`, 'info', 14000);
     const url = new URL(location.href); url.searchParams.delete('destacar'); history.replaceState(null, '', url);
   }
 
@@ -1495,7 +1511,7 @@ export class Editor {
       if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
       const tercas = Object.keys(j.regra_tercas || {}).length;
       this.aviso(`Detalhamento: ${j.pecas} peças em ${j.posicoes} posições e ${j.conjuntos} conjuntos, ${j.peso_total} kg. ${j.desenhos.length} desenho(s) gerado(s)` +
-                 (tercas ? `; furação de fábrica aplicada em ${tercas} posições` : '') + `. Lista de materiais em Desenho 2D → Lista de materiais.` +
+                 (tercas ? `; furação de fábrica aplicada em ${tercas} posições` : '') + `. Lista de materiais em Detalhamentos → Lista de materiais.` +
                  (j.avisos && j.avisos.length ? ` ${j.avisos.length} aviso(s) no relatório.` : ''), 'info', 15000);
       parar();
       this.dica('Detalhamento pronto.');
@@ -1576,7 +1592,7 @@ export class Editor {
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
-      'abrir-cad': () => this._abrirCAD(),
+      'abrir-cad': () => this._abrirCADDoProjeto(),
       'materiais': () => this._abrirMateriais(),
       'excluir-desenhos': () => this._excluirDesenhos(),
     };
@@ -2698,7 +2714,7 @@ export class Editor {
     try { g = await this.api.geometriaParaCalculo(this.projeto); }
     catch (e) { this.aviso(`Não foi possível ler o modelo para o cálculo: ${e.message}`, 'erro', 0); return null; }
     if (!g.detalhado) {
-      this.aviso('Gere o detalhamento primeiro (Desenho 2D → Detalhar peças e conjuntos): é ele que ' +
+      this.aviso('Gere o detalhamento primeiro (Detalhamentos → Detalhar peças e conjuntos): é ele que ' +
                  'classifica tesouras, terças e contraventamentos para o cálculo.', 'atencao', 0);
       return null;
     }

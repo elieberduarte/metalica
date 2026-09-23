@@ -22,13 +22,14 @@ export class Snap {
     this.ultimo = null;                  // último ponto fixado pela ferramenta (para orto/perpendicular)
     this.direcoes = [];                  // direções a seguir a partir de `ultimo` (continuação da linha anterior)
     this.orto = false;
+    this.ignorar = new Set();            // ids que o snap não enxerga (a cota que está sendo arrastada)
   }
 
   /** Candidatos das entidades perto do cursor (em mm), pelo índice espacial do documento. */
   _candidatas(p, raioMm) {
     const doc = this.tela.doc, r = raioMm * 3;
     return doc.naRegiao([[p[0] - r, p[1] - r], [p[0] + r, p[1] + r]])
-      .filter(e => doc.visivel(e) && e.tipo !== 'hachura' && e.tipo !== 'texto');
+      .filter(e => doc.visivel(e) && e.tipo !== 'hachura' && e.tipo !== 'texto' && !this.ignorar.has(e.id));
   }
 
   resolver(px, opcoes = {}) {
