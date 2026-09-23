@@ -29,3 +29,6 @@ empacotar/saida/
 Metalica-instalador.exe
 
 sistema/testes/verificadores/saida/
+
+# Modelos soltos na raiz do sistema (cópias de projeto de cliente)
+sistema/*.json
