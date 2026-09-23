@@ -587,6 +587,31 @@ código 1 quando alguma conferência falha.
 sem janela (CDP); a maioria usa o modelo de exemplo do cliente, que não está no repositório — ver o LEIAME
 da pasta. `.github/workflows/testes.yml` roda o `pytest` no GitHub a cada push (Windows, Python 3.12).
 
+## Do desenho 2D para o modelo 3D
+
+`nucleo3d/de_desenho.py` faz o caminho inverso do importador: um desenho do CAD vira modelo 3D com a
+informação de cada peça. Cada linha (ou lado de polilinha) marcada com uma **peça do catálogo** vira uma
+`Barra` com perfil, aço, papel, camada e — o que liga tudo o que vem depois — as **marcas por peça** em
+`atributos["marcas"]`: `posicao` (P1, P2… por perfil e comprimento) e `conjunto` (M1, M2…, um por cópia),
+no mesmo formato que o IFC de fábrica traz. Assim o modelo desenhado serve ao detalhamento, à lista de
+materiais, ao cálculo e ao IFC sem caminho paralelo.
+
+A peça fica em `atributos["peca"]` da entidade 2D (`{perfil, papel, aco, rotacao}`) ou, valendo para tudo
+o que está nela, em `desenho.metadados["pecas_por_camada"]` — é assim que se desenha uma tesoura: uma
+camada por tipo de peça. Linha sem peça é anotação e fica de fora, contada no relatório.
+
+`plano` põe o desenho no espaço (`frente`, `lado`, `topo`) e `repeticoes`/`espacamento` copiam ao longo da
+normal: as oito tesouras do galpão saem de um desenho só. Rota
+`POST /api/projetos/<s>/desenhos/<nome>/gerar-3d` (com `conferir: true` só levanta o que o desenho tem).
+No CAD: **Peça do catálogo…** (seleção ou camada ativa) e **Gerar modelo 3D do desenho…**. Na tela de
+projetos, **Novo desenhando em 2D…** cria um projeto do tipo `desenho`, que abre direto no CAD.
+
+O exportador de IFC passou a gravar as marcas (`Part Mark`, `Assembly Mark`, `Nome`) no
+`Pset_MetalicaCalculo`, e o importador aceita o nome de perfil declarado quando o catálogo o conhece —
+com isso um IFC gerado aqui volta como barra, com posição e conjunto. O cálculo (`calculo_ifc`) lê barras
+paramétricas direto (`_CorpoDaBarra` dá a elas os vértices que o reconhecimento de tesouras espera), então
+um modelo desenhado é calculado como um importado. Testes: `testes/test_de_desenho.py`.
+
 ## Catálogo de peças
 
 `nucleo/catalogo.py` é o ponto único para "que peças existem": perfis I laminados (W, HP), U laminados e

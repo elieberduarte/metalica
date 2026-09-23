@@ -408,6 +408,8 @@ class CAD {
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
       detalhar: () => this.dialogoDetalhar(),
+      'peca-catalogo': () => this.dialogoPeca(),
+      'gerar-3d': () => this.dialogoGerar3D(),
       pranchas: () => this.dialogoPranchas(),
       'importar-dxf': () => $('#arquivo-dxf').click(),
       desfazer: () => this.desfazer(), refazer: () => this.refazer(),
@@ -526,6 +528,7 @@ class CAD {
     const ents = ids.map(id => this.doc.get(id));
     const g = el('div', { class: 'props' });
     const tipos = new Set(ents.map(e => e.tipo));
+    this._linhaPeca(g, ents);
     g.append(el('label', { texto: 'Seleção' }), el('div', { texto: ids.length === 1 ? ents[0].tipo : `${ids.length} objetos (${[...tipos].join(', ')})` }));
     const camadas = new Set(ents.map(e => e.camada));
     g.append(el('label', { texto: 'Camada' }), this._seletorCamada(camadas.size === 1 ? ents[0].camada : '', (v) => {
@@ -887,6 +890,180 @@ class CAD {
   }
 
   /** Detalhamento de peças e conjuntos do projeto (mesma rota do editor 3D); abre o primeiro desenho aqui. */
+  /** Peça do catálogo que a seleção representa (dela ou herdada da camada). */
+  _pecaDe(ent) {
+    const dela = ent && ent.atributos && ent.atributos.peca;
+    if (dela && dela.perfil) return { ...dela, herdada: false };
+    const porCamada = (this.doc.metadados && this.doc.metadados.pecas_por_camada) || {};
+    const c = porCamada[ent && ent.camada];
+    return c && c.perfil ? { ...c, herdada: true } : null;
+  }
+
+  /** Linha "Peça" no painel de propriedades, com o que fazer para mudá-la. */
+  _linhaPeca(g, ents) {
+    const pecas = ents.map(e => this._pecaDe(e));
+    const nomes = new Set(pecas.map(p => (p ? p.perfil : '')));
+    const texto = nomes.size > 1 ? '— várias —'
+      : (pecas[0] ? `${pecas[0].perfil}${pecas[0].herdada ? ' (da camada)' : ''}` : 'sem peça (anotação)');
+    const b = el('button', { type: 'button', class: 'mini', texto: 'Peça…',
+      title: 'Escolher a peça do catálogo desta seleção', onclick: () => this.dialogoPeca() });
+    g.append(el('label', { texto: 'Peça' }), el('div', { class: 'linha-peca' },
+      el('span', { texto, title: pecas[0] ? `${pecas[0].papel || 'barra'} · ${pecas[0].aco || 'aço padrão'}` : '' }), b));
+  }
+
+  /**
+   * Diz que peça do catálogo as linhas representam. Sem seleção, vale para a camada
+   * ativa — é como se desenha uma tesoura inteira: uma camada por tipo de peça.
+   */
+  async dialogoPeca() {
+    const ids = [...this.tela.selecao];
+    const alvoCamada = !ids.length;
+    const camada = this.camadaAtiva;
+    let fams = [];
+    try { fams = (await pedir('/api/catalogo/pecas')).familias || []; }
+    catch (e) { this.aviso(`Catálogo indisponível: ${e.message}`, 'erro'); return; }
+    const barras = fams.filter(f => f.peca === 'barra');
+    const atual = alvoCamada
+      ? ((this.doc.metadados && this.doc.metadados.pecas_por_camada) || {})[camada]
+      : this._pecaDe(this.doc.get(ids[0]));
+    const selFam = el('select');
+    for (const f of barras) selFam.append(el('option', { value: f.familia, texto: f.nome }));
+    const selPerfil = el('select');
+    const busca = el('input', { type: 'search', placeholder: 'buscar: 150x60, W 310, 3/8…', spellcheck: 'false' });
+    const selPapel = el('select');
+    for (const p of ['banzo', 'diagonal', 'montante', 'terça', 'longarina', 'viga', 'pilar',
+                     'contraventamento', 'tirante', 'barra']) {
+      selPapel.append(el('option', { value: p, texto: p }));
+    }
+    const selAco = el('select');
+    try {
+      const cat = await pedir('/api/catalogo');
+      for (const a of (cat.acos || [])) selAco.append(el('option', { value: a.nome, texto: a.nome }));
+    } catch { selAco.append(el('option', { value: '', texto: 'padrão' })); }
+    const rot = el('input', { type: 'number', step: '15', value: '0', title: 'Giro da seção em torno do eixo da barra' });
+    const carregar = async () => {
+      const q = busca.value.trim();
+      const rota = `/api/catalogo/pecas?familia=${encodeURIComponent(selFam.value)}` +
+                   (q ? `&q=${encodeURIComponent(q)}` : '') + '&limite=400';
+      let itens = [];
+      try { itens = (await pedir(rota)).itens || []; } catch { itens = []; }
+      selPerfil.replaceChildren();
+      for (const i of itens) {
+        selPerfil.append(el('option', { value: i.nome,
+          texto: `${i.nome} · ${numero(i.massa || 0, 2)} kg/m` }));
+      }
+      if (atual && atual.perfil && itens.some(i => i.nome === atual.perfil)) selPerfil.value = atual.perfil;
+    };
+    selFam.addEventListener('change', carregar);
+    let t = null;
+    busca.addEventListener('input', () => { clearTimeout(t); t = setTimeout(carregar, 180); });
+    if (atual) {
+      if (atual.papel) selPapel.value = atual.papel;
+      if (atual.aco) selAco.value = atual.aco;
+      if (atual.rotacao) rot.value = String(atual.rotacao);
+      const fam = barras.find(f => (atual.perfil || '').startsWith(f.familia === 'I' ? 'W' : f.familia));
+      if (fam) selFam.value = fam.familia;
+    }
+    await carregar();
+    const campos = el('div', { class: 'campos' },
+      el('label', { texto: 'Família' }), selFam,
+      el('label', { texto: 'Buscar' }), busca,
+      el('label', { texto: 'Perfil' }), selPerfil,
+      el('label', { texto: 'Papel' }), selPapel,
+      el('label', { texto: 'Aço' }), selAco,
+      el('label', { texto: 'Giro da seção (°)' }), rot);
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: alvoCamada
+        ? `Nada selecionado: a peça vale para tudo o que está (e for desenhado) na camada ${camada}.`
+        : `${ids.length} objeto(s) selecionado(s).` }),
+      campos,
+      el('div', { class: 'explica', texto: 'Cada linha com peça vira uma barra no 3D, com perfil, aço, papel e marcas de posição e conjunto — como uma peça vinda de IFC.' }));
+    const r = await this.dialogo({ titulo: alvoCamada ? `Peça da camada ${camada}` : 'Peça do catálogo', corpo, ok: 'Aplicar' });
+    if (r !== 'ok' || !selPerfil.value) return;
+    const peca = { perfil: selPerfil.value, papel: selPapel.value, aco: selAco.value || '',
+                   rotacao: parseFloat(rot.value) || 0 };
+    if (alvoCamada) {
+      const meta = { ...(this.doc.metadados || {}) };
+      meta.pecas_por_camada = { ...(meta.pecas_por_camada || {}), [camada]: peca };
+      this.doc.metadados = meta;
+      this.doc.notificar([], 'aparencia');
+      this._agendarAutosave();
+      this.dica(`Camada ${camada}: ${peca.perfil}.`);
+    } else {
+      const mudancas = {};
+      for (const id of ids) {
+        const e = this.doc.get(id);
+        mudancas[id] = { atributos: { ...(e.atributos || {}), peca } };
+      }
+      this.executar(new ComandoAlterar(mudancas, `Peça ${peca.perfil}`));
+      this.dica(`${ids.length} objeto(s): ${peca.perfil}.`);
+    }
+    this._agendarPaineis('props');
+  }
+
+  /** Gera o modelo 3D deste desenho (uma tesoura desenhada vira as oito do galpão). */
+  async dialogoGerar3D() {
+    if (!this.projeto) { this.aviso('Gerar o 3D precisa de um projeto aberto.', 'atencao'); return; }
+    if (!this.nomeDesenho) { this.aviso('Salve o desenho antes de gerar o modelo.', 'atencao'); return; }
+    if (this.doc.tamanho) await this.salvar({ avisar: false });
+    let info;
+    try {
+      info = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/gerar-3d`, { conferir: true });
+    } catch (e) { this.aviso(`Não foi possível ler o desenho: ${e.message}`, 'erro', 0); return; }
+    if (!info.barras) {
+      this.aviso('Nenhuma linha deste desenho tem peça do catálogo. Use "Peça do catálogo…" ' +
+                 'na seleção ou na camada antes de gerar o modelo.', 'atencao', 0);
+      return;
+    }
+    const selPlano = el('select');
+    for (const p of info.planos) selPlano.append(el('option', { value: p.chave, texto: p.nome }));
+    const num = (v, t) => el('input', { type: 'number', step: 'any', value: String(v), title: t });
+    const rep = num(1, 'Quantas cópias do desenho, uma por conjunto');
+    const esp = num(5000, 'Distância entre as cópias, em mm');
+    const ox = num(0, 'Onde o ponto (0,0) do desenho cai no modelo, em mm');
+    const oy = num(0, '');
+    const oz = num(0, '');
+    const conj = el('input', { type: 'text', value: 'M', title: 'Prefixo da marca de conjunto: M1, M2…' });
+    const modo = el('select');
+    modo.append(el('option', { value: 'acrescentar', texto: 'acrescentar ao modelo do projeto' }));
+    modo.append(el('option', { value: 'substituir', texto: 'substituir o modelo do projeto' }));
+    const perfis = Object.entries(info.perfis || {}).map(([n, q]) => `${q}× ${n}`).join(' · ');
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto:
+        `${info.barras} barra(s) em ${info.com_peca} objeto(s) com peça, ${numero(info.comprimento_m, 1)} m no total. ` +
+        `${info.anotacao} objeto(s) sem peça ficam de fora (cotas, textos, eixos).` }),
+      el('div', { class: 'explica', texto: perfis }),
+      el('div', { class: 'campos' },
+        el('label', { texto: 'Plano' }), selPlano,
+        el('label', { texto: 'Cópias' }), rep,
+        el('label', { texto: 'Espaçamento (mm)' }), esp,
+        el('label', { texto: 'Origem X (mm)' }), ox,
+        el('label', { texto: 'Origem Y (mm)' }), oy,
+        el('label', { texto: 'Origem Z (mm)' }), oz,
+        el('label', { texto: 'Conjunto' }), conj,
+        el('label', { texto: 'Modelo' }), modo),
+      el('div', { class: 'explica', texto:
+        'Cada cópia é um conjunto de montagem (M1, M2…) e cada peça ganha a marca da posição (P1, P2…), ' +
+        'como num modelo vindo de IFC: dá para detalhar, listar materiais, calcular e exportar IFC.' }));
+    if (await this.dialogo({ titulo: 'Gerar modelo 3D do desenho', corpo, ok: 'Gerar' }) !== 'ok') return;
+    this.dica('Gerando o modelo 3D…');
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/gerar-3d`, {
+        plano: selPlano.value, repeticoes: parseInt(rep.value, 10) || 1,
+        espacamento: parseFloat(esp.value) || 5000,
+        origem: [parseFloat(ox.value) || 0, parseFloat(oy.value) || 0, parseFloat(oz.value) || 0],
+        conjunto: conj.value.trim() || 'M', modo: modo.value,
+      });
+      const g = r.gerado || {};
+      this.aviso(`Modelo 3D gerado: ${g.barras} barras em ${g.posicoes} posições, ${r.modelo.entidades} objetos no modelo. ` +
+                 'Abra o Modelo 3D para ver; o modelo anterior foi guardado no histórico.', 'info', 15000);
+      this.dica('Modelo 3D gerado.');
+    } catch (e) {
+      this.aviso(`Não foi possível gerar o modelo: ${e.message}`, 'erro', 0);
+      this.dica('');
+    }
+  }
+
   async dialogoDetalhar() {
     if (!this.projeto) { this.aviso('Detalhar precisa de um projeto aberto.', 'atencao'); return; }
     const grupos = [['chapas', 'Chapas'], ['barras', 'Barras e terças'], ['tirantes', 'Tirantes e barras redondas'], ['telhas', 'Telhas'], ['conjuntos', 'Conjuntos (tesouras, vigas, pilares)'], ['localizacao', 'Planta de localização (marcas no lugar de montagem)']];

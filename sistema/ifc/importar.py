@@ -1672,6 +1672,15 @@ class Importador:
         # nome declarado no IFC, quando bate com o catálogo, vale mais que a medida
         declarado = (info.get("nome") or "").strip()
         p = banco.get(declarado) if declarado else None
+        if p is None and declarado:
+            # Perfil fora do banco tabelado mas conhecido do catálogo de peças: séries
+            # formadas a frio e nomes de fábrica (U92X40X2.25, L 50×2,25 (FF)). É o que
+            # faz um IFC gerado aqui — ou de fábrica — voltar como barra, e não sólido.
+            try:
+                from nucleo import catalogo as _cat
+                p = _cat.perfil_de(declarado)
+            except Exception:
+                p = None
         if p is not None:
             if tipos and p.tipo in tipos:
                 return p.nome, 0.0

@@ -166,6 +166,37 @@ class _Peca:
         self.L = _norma(_sub(self.b, self.a))
 
 
+class _CorpoDaBarra:
+    """Uma `Barra` vestida de sólido, para o cálculo ter um caminho só.
+
+    O reconhecimento de tesouras, a classificação de banzo/diagonal/montante e o
+    agrupamento por instância foram escritos para os sólidos facetados do IFC de fábrica
+    e trabalham sobre `vertices`. Uma barra paramétrica (modelo desenhado em 2D ou gerado
+    do galpão) não os tem, então aqui ela ganha os oito cantos da sua caixa — o suficiente
+    para a caixa envolvente, os eixos por PCA e a posição na elevação, que é tudo o que
+    aquele caminho pede.
+    """
+    __slots__ = ("id", "nome", "camada", "atributos", "vertices", "barra")
+
+    def __init__(self, b, perfil):
+        self.id = b.id
+        self.nome = b.nome
+        self.camada = b.camada
+        self.atributos = dict(b.atributos or {})
+        self.atributos.setdefault("tipo_ifc", b.tipo_ifc())
+        self.barra = b
+        h = (perfil.d or 100.0) / 2.0 if perfil else 50.0
+        w = (perfil.bf or perfil.d or 100.0) / 2.0 if perfil else 50.0
+        d = _unit(_sub(b.fim, b.inicio))
+        cima = (0.0, 0.0, 1.0) if abs(d[2]) < 0.95 else (1.0, 0.0, 0.0)
+        n = _unit(_cruz(d, cima))
+        v = _unit(_cruz(n, d))
+        self.vertices = [
+            tuple(p[i] + v[i] * sv * h + n[i] * sn * w for i in range(3))
+            for p in (b.inicio, b.fim) for sv, sn in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+        ]
+
+
 def _eixo_pca(ent):
     from nucleo2d.detalhe.base import _eixo_da_peca
     return _eixo_da_peca(ent)
@@ -234,6 +265,20 @@ def _levantar_pecas(doc: Documento, nomes: dict, par: dict, avisos: List[str]):
     telhas: List[dict] = []
     castanhas: List[Tuple[float, float, float]] = []
     chapas_por_conjunto: Dict[str, List] = collections.defaultdict(list)
+    # Barras de verdade (modelo desenhado em 2D ou gerado do galpão) entram direto: o
+    # eixo já é o eixo, e o perfil já é do catálogo. Os sólidos do IFC de fábrica passam
+    # pelo reconhecimento de nome e pelo eixo por PCA, logo abaixo.
+    for b in doc.barras:
+        m = _marcas(b)
+        perfil = _perfil_de(b.perfil, str(m.get("posicao") or b.id), par.get("trocas") or {}, cache)
+        if perfil is None:
+            sem_perfil[b.perfil] += 1
+            continue
+        pecas.append(_Peca(_CorpoDaBarra(b, perfil), str(m.get("posicao") or b.id),
+                           str(m.get("conjunto") or ""), b.perfil, perfil,
+                           b.aco or _aco_da_peca(b, perfil, par),
+                           str(tipos.get(str(m.get("posicao") or "")) or b.papel or ""),
+                           (tuple(b.inicio), tuple(b.fim))))
     for e in list(doc.solidos) + list(doc.chapas):
         m = _marcas(e)
         marca = str(m.get("posicao") or "")

@@ -93,6 +93,8 @@ function urlDoProjeto(p, destino) {
   const s = encodeURIComponent(p.slug);
   if (destino === 'editor') return `/editor?projeto=${s}`;
   if (destino === 'dimensionar') return `/dimensionar?projeto=${s}`;
+  if (destino === 'cad') return `/cad?projeto=${s}`;
+  if (p.tipo === 'desenho') return `/cad?projeto=${s}`;    // começa desenhando
   return p.tipo === 'ifc' ? `/editor?projeto=${s}` : `/dimensionar?projeto=${s}`;
 }
 
@@ -246,6 +248,28 @@ function perguntar({ titulo, texto = '', campos, ok = 'OK' }) {
   });
 }
 
+/**
+ * Projeto que nasce de um desenho: abre o CAD vazio. O caminho é desenhar a estrutura
+ * em 2D, dizer que peça do catálogo cada linha é e gerar o modelo 3D a partir dela.
+ */
+async function novoProjetoDesenhado() {
+  const v = await perguntar({
+    titulo: 'Novo projeto desenhando em 2D',
+    texto: 'Abre o CAD 2D vazio. Desenhe a estrutura (uma tesoura, por exemplo), diga em ' +
+           '"Peça do catálogo…" qual perfil cada linha é e use "Gerar modelo 3D do desenho…". ' +
+           'O modelo sai com perfil, aço e marcas de posição e conjunto em cada peça.',
+    campos: CAMPOS_PROJETO, ok: 'Criar e desenhar' });
+  if (!v) return;
+  try {
+    carregando(true, 'Criando o projeto…');
+    const criado = await postar('/api/projetos', { ...v, tipo: 'desenho' });
+    location.href = `/cad?projeto=${encodeURIComponent(criado.slug)}`;
+  } catch (e) {
+    carregando(false);
+    aviso(`Não foi possível criar o projeto: ${e.message}`, 'erro');
+  }
+}
+
 const CAMPOS_PROJETO = [
   { id: 'nome', rotulo: 'Nome do projeto', dica: 'ex.: Galpão da fazenda São João', obrigatorio: true },
   { id: 'cliente', rotulo: 'Cliente' },
@@ -361,10 +385,12 @@ async function iniciar() {
   $('#btn-tema').addEventListener('click', alternarTema);
   $('#btn-novo').addEventListener('click', novoProjeto);
   $('#btn-novo-ifc').addEventListener('click', novoDeIFC);
+  $('#btn-novo-desenho').addEventListener('click', novoProjetoDesenhado);
   $('#btn-pasta').addEventListener('click', () => abrirPasta(null));
   $('#busca').addEventListener('input', desenhar);
   for (const b of document.querySelectorAll('[data-acao="novo"]')) b.addEventListener('click', novoProjeto);
   for (const b of document.querySelectorAll('[data-acao="novo-ifc"]')) b.addEventListener('click', novoDeIFC);
+  for (const b of document.querySelectorAll('[data-acao="novo-desenho"]')) b.addEventListener('click', novoProjetoDesenhado);
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'n' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); novoProjeto(); }
     if (ev.key === '/' && document.activeElement === document.body) { ev.preventDefault(); $('#busca').focus(); }

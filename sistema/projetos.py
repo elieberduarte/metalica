@@ -53,7 +53,8 @@ RESERVADAS = {"modelos", LIXEIRA, "_conferencia", "_desenhos"}
 ENTREGAS = [("memorial", "Memorial"), ("desenhos", "Desenhos DXF"), ("pranchas", "Pranchas"),
             ("lista", "Lista de material"), ("detalhamento", "Detalhamento"),
             ("desenhos-2d", "Desenhos 2D"), ("ifc", "IFC exportado")]
-TIPOS = {"galpao": "Galpão dimensionado", "ifc": "Modelo a partir de IFC"}
+TIPOS = {"galpao": "Galpão dimensionado", "ifc": "Modelo a partir de IFC",
+         "desenho": "Modelo desenhado em 2D"}
 IDENTIFICACAO = ("nome", "cliente", "local", "responsavel")
 
 

@@ -29,6 +29,7 @@ Rotas da API:
     GET  /api/projetos/<slug>/calculo[/geometria]        último cálculo gravado / dados para o diálogo
     GET  /api/projetos/<slug>/calculo/alternativas?marca=  perfis que podem substituir a peça, verificados
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-furos   furos do detalhe → chapas do modelo
+    POST /api/projetos/<slug>/desenhos/<nome>/gerar-3d       desenho 2D → modelo 3D (peças do catálogo)
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
     POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
     POST /api/projetos/<slug>/pranchas  pranchas (folhas com carimbo) a partir dos desenhos 2D
@@ -465,6 +466,50 @@ def gerar_vista_2d(s: str, corpo: dict) -> dict:
     r["vistas"] = desenho.vistas[-len(vistas):]
     r["escala"] = desenho.escala
     return r
+
+
+def gerar_3d_do_desenho(s: str, nome: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/desenhos/<nome>/gerar-3d: o desenho 2D vira modelo 3D.
+
+    corpo: {conferir: bool, plano, origem: [x,y,z], repeticoes, espacamento, conjunto,
+            aco, modo: "acrescentar"|"substituir"}
+
+    Cada linha marcada com uma peça do catálogo vira uma `Barra` com perfil, aço, papel e
+    as marcas de posição e conjunto — o mesmo que um IFC de fábrica traz. Com
+    `conferir`, só devolve o que o desenho tem, sem gerar nada."""
+    from nucleo2d.desenho import Desenho
+    from nucleo3d import de_desenho
+    from nucleo3d.modelo import Documento
+    g = _gerente()
+    bruto = g.abrir_desenho(s, nome)
+    if not bruto:
+        raise ErroDeDados("desenho não encontrado: %s" % nome)
+    desenho = Desenho.de_dict(bruto)
+    if corpo.get("conferir"):
+        info = de_desenho.conferir_desenho(desenho)
+        info["desenho"] = desenho.nome
+        info["planos"] = [{"chave": k, "nome": v["nome"]} for k, v in de_desenho.PLANOS.items()]
+        info["papeis"] = de_desenho.PAPEIS
+        return info
+    modo = str(corpo.get("modo") or "acrescentar")
+    base = None
+    if modo == "acrescentar":
+        atual = g.abrir_modelo(s)
+        base = Documento.de_dict(atual) if atual else None
+    doc = de_desenho.modelo_do_desenho(
+        desenho, plano=str(corpo.get("plano") or "frente"),
+        origem=[float(x) for x in (corpo.get("origem") or [0, 0, 0])],
+        repeticoes=int(corpo.get("repeticoes") or 1),
+        espacamento=float(corpo.get("espacamento") or 5000.0),
+        conjunto=str(corpo.get("conjunto") or "M"),
+        aco_padrao=str(corpo.get("aco") or "ASTM A572 Gr.50"),
+        nome=str(corpo.get("nome") or "") or None, doc=base)
+    g.salvar_modelo(s, doc.dict(), marco=True)      # o modelo anterior vai para o histórico
+    g.tocar(s)
+    info = doc.metadados.get("de_desenho", {})
+    return {"modelo": {"entidades": len(doc.entidades), "barras": len(doc.barras)},
+            "gerado": info, "modo": modo,
+            "estatisticas": doc.estatisticas()}
 
 
 def detalhar_projeto(s: str, corpo: dict) -> dict:
@@ -1543,6 +1588,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
                     return self._json(detalhar_posicao_projeto(partes[0], corpo))
+                if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "gerar-3d":
+                    return self._json(gerar_3d_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-furos":
                     return self._json(aplicar_furos_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "pdf":

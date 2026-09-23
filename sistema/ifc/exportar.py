@@ -782,6 +782,19 @@ class _Exportador:
         papel = getattr(ent, "papel", None)
         if papel:
             props.append(self._prop_valor("Papel", "IFCLABEL", str(papel)))
+        # Marcas de produção (posição e conjunto), com os mesmos nomes de campo que o
+        # TecnoMETAL e o Tekla usam: é assim que a peça leva a própria identidade para
+        # fora, e é assim que ela volta quando o IFC é reimportado aqui.
+        marcas = at.get("marcas") if isinstance(at.get("marcas"), dict) else {}
+        if marcas.get("posicao"):
+            props.append(self._prop_valor("Part Mark", "IFCLABEL", str(marcas["posicao"]),
+                                          descricao="marca da posição (peça)"))
+        if marcas.get("conjunto"):
+            props.append(self._prop_valor("Assembly Mark", "IFCLABEL", str(marcas["conjunto"]),
+                                          descricao="marca do conjunto de montagem"))
+        if marcas.get("nome"):
+            props.append(self._prop_valor("Nome", "IFCLABEL", str(marcas["nome"]),
+                                          descricao="nome de produção"))
         props += self._reserva_aparencia(ent)
         return props
 
