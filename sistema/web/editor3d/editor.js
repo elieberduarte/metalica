@@ -2249,6 +2249,20 @@ export class Editor {
    * (marca da peça) — ou por nome, quando não há marca — com a contagem e a cor do
    * grupo. Clique seleciona o grupo, duplo clique enquadra, Enter seleciona tudo.
    */
+  /**
+   * Peças achadas na busca: selecionadas e em destaque — o resto do modelo esmaece, para
+   * se ver onde elas estão no projeto (o mesmo do "Ver no 3D"). Esc, ou limpar a busca,
+   * devolve o modelo. `enquadrar` aproxima a câmera delas.
+   */
+  _destacarEncontradas(ids, enquadrar = false) {
+    if (!ids || !ids.length) return;
+    this.selecao.definir(ids);
+    this.cena.destacar(ids);
+    this._destaqueAtivo = true;
+    if (enquadrar) this.camera.zoomSelecao(ids);
+    this.dica(`${ids.length} peça(s) em destaque; o resto do modelo está esmaecido. Esc devolve o modelo · duplo clique no resultado enquadra.`);
+  }
+
   _ligarBusca() {
     const campo = document.getElementById('busca-campo');
     const caixa = document.getElementById('busca-resultados');
@@ -2265,7 +2279,7 @@ export class Editor {
       const cabeca = el('div', { class: 'cabeca' },
         el('span', { texto: r.total ? `${numero(r.total)} peça(s) em ${numero(grupos.length)} grupo(s)` : 'Nada encontrado' }));
       if (r.total) {
-        cabeca.append(el('button', { type: 'button', texto: 'Selecionar tudo', onclick: () => { this.selecao.definir(r.ids); this.camera.zoomSelecao(r.ids); fechar(); } }));
+        cabeca.append(el('button', { type: 'button', texto: 'Selecionar tudo', onclick: () => { this._destacarEncontradas(r.ids, true); fechar(); } }));
       }
       caixa.append(cabeca);
       if (!r.total) { caixa.append(el('div', { class: 'nada', texto: 'Tente parte do nome, a posição (P12), o conjunto (M2) ou o perfil.' })); return; }
@@ -2274,29 +2288,40 @@ export class Editor {
           el('span', { class: 'amostra', style: `background:${g.cor}` }),
           el('span', { class: 'nome' }, g.chave, el('small', { texto: g.detalhe })),
           el('span', { class: 'contagem', texto: numero(g.ids.length) }));
-        item.addEventListener('click', (ev) => { ev.shiftKey ? this.selecao.somar(g.ids) : this.selecao.definir(g.ids); ativo = i; realcar(); });
-        item.addEventListener('dblclick', () => { this.selecao.definir(g.ids); this.camera.zoomSelecao(g.ids); });
+        item.addEventListener('click', (ev) => {
+          const ids = ev.shiftKey ? [...new Set([...this.selecao.ids, ...g.ids])] : g.ids;
+          this._destacarEncontradas(ids); ativo = i; realcar();
+        });
+        item.addEventListener('dblclick', () => this._destacarEncontradas(g.ids, true));
         caixa.append(item);
       });
       if (grupos.length > 80) caixa.append(el('div', { class: 'nada', texto: `… e mais ${grupos.length - 80} grupo(s): refine a pesquisa.` }));
     };
     const realcar = () => { [...caixa.querySelectorAll('.item')].forEach((e, i) => e.classList.toggle('ativo', i === ativo)); };
-    campo.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(render, 160); });
+    campo.addEventListener('input', () => {
+      clearTimeout(timer); timer = setTimeout(render, 160);
+      // limpou a busca (o × do campo): o modelo volta inteiro
+      if (!campo.value.trim() && this._destaqueAtivo) { this._destaqueAtivo = false; this.cena.destacar(null); }
+    });
     campo.addEventListener('focus', () => { if (campo.value.trim()) render(); });
     campo.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Escape') { campo.value = ''; fechar(); campo.blur(); return; }
+      if (ev.key === 'Escape') {
+        campo.value = ''; fechar(); campo.blur();
+        if (this._destaqueAtivo) { this._destaqueAtivo = false; this.cena.destacar(null); this.selecao.definir([]); }
+        return;
+      }
       if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
         ev.preventDefault();
         if (!grupos.length) return;
         ativo = (ativo + (ev.key === 'ArrowDown' ? 1 : -1) + grupos.length) % grupos.length;
-        this.selecao.definir(grupos[ativo].ids); realcar();
+        this._destacarEncontradas(grupos[ativo].ids); realcar();
         const e = caixa.querySelectorAll('.item')[ativo]; if (e) e.scrollIntoView({ block: 'nearest' });
         return;
       }
       if (ev.key === 'Enter') {
         ev.preventDefault();
         const ids = ativo >= 0 && grupos[ativo] ? grupos[ativo].ids : grupos.flatMap(g => g.ids);
-        if (ids.length) { this.selecao.definir(ids); this.camera.zoomSelecao(ids); }
+        if (ids.length) this._destacarEncontradas(ids, true);
         fechar();
       }
     });
