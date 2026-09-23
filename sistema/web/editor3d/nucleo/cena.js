@@ -15,6 +15,7 @@
 // apareça na hora.
 
 import * as THREE from 'three';
+import { Lote, LIMITE_LOTE } from './lote.js';
 import { Documento, baseDaBarra, normalizar, produtoVetorial,
          comprimentoDaBarra, normalDaChapa, arestasSoltasDe } from './documento.js';
 
@@ -77,6 +78,8 @@ export class Cena {
     this.mapaCores = null;            // Map<id, '#rrggbb'>, alternativa à função
 
     this.objetos = new Map();         // id da entidade -> THREE.Group
+    this.lote = null;                 // sólidos em lote (modelo grande): ver lote.js
+    this.semLote = !!opcoes.semLote;  // força um objeto por peça (teste e comparação)
     this.cacheGeometria = new Map();  // chave (perfil|comprimento) -> BufferGeometry
     this.origemGeometria = new Map(); // mesma chave -> 'servidor' | 'local'
     this.cacheMaterial = new Map();
@@ -116,6 +119,7 @@ export class Cena {
       this.planosCorte = [];
     }
     this.cacheMaterial.clear();
+    if (this.lote) this.lote.aplicarCorte(this.planosCorte);
     for (const id of this.objetos.keys()) this._pintar(id);
     if (this.aoRepintar) this.aoRepintar();
     this.pedirQuadro();
@@ -371,6 +375,7 @@ export class Cena {
     if (this.luzSol) this.luzSol.castShadow = querido;
     this.raiz.traverse(o => { if (o.isMesh) { o.castShadow = querido; o.receiveShadow = querido; } });
     if (this.chao) this.chao.receiveShadow = querido;
+    if (this.lote) this.lote.definirSombras(querido);
     // o programa de sombreamento muda: os materiais precisam recompilar
     for (const m of this.cacheMaterial.values()) m.needsUpdate = true;
     this.cena.traverse(o => {
@@ -385,6 +390,7 @@ export class Cena {
   definirModo(modo) {
     if (!MODOS.some(m => m[0] === modo)) return;
     this.modo = modo;
+    if (this.lote) this.lote.aplicarModo(modo);
     this.cacheMaterial.clear();
     for (const id of this.objetos.keys()) this._pintar(id);
     if (this.aoRepintar) this.aoRepintar();
@@ -451,12 +457,20 @@ export class Cena {
     for (const [id, obj] of this.objetos) this._descartarObjeto(obj);
     this.objetos.clear();
     this.rotulos.clear();
+    if (this.lote) { this.lote.descartar(); this.lote = null; }
     this.raiz.children = this.raiz.children.filter(c => c === this.previa);
+    // Modelo grande: sólidos em lote (poucas chamadas de desenho). O pequeno continua
+    // com um objeto por peça, que é o caminho que todas as ferramentas conhecem.
+    if (!this.semLote && this.documento.tamanho > LIMITE_LOTE) this.lote = new Lote(this);
     this.atualizar([...this.documento.entidades.keys()]);
   }
 
+  /** Os sólidos estão em lote? (o editor mostra na barra de estado) */
+  get emLote() { return !!this.lote; }
+
   /** Reconstrói apenas as entidades pedidas (sem lista: só redesenha). */
   atualizar(ids = []) {
+    const paraLote = [];
     for (const id of ids) {
       const ent = this.documento.get(id);
       const antigo = this.objetos.get(id);
@@ -464,9 +478,27 @@ export class Cena {
       this.rotulos.delete(id);
       if (!ent) continue;
       if (!this.documento.aparece(ent)) continue;
+      if (this.lote && Lote.aceita(ent)) { paraLote.push(ent); continue; }
       const obj = this._construirEntidade(ent);
       if (obj) { this.objetos.set(id, obj); this.raiz.add(obj); }
     }
+    if (paraLote.length) {
+      // Um grupo vazio por peça mantém a contabilidade (`objetos`) e faz o código de um
+      // objeto por peça não achar malha nenhuma — e portanto não mexer.
+      this.lote.definirVarios(paraLote);
+      for (const ent of paraLote) {
+        const proxy = new THREE.Group();
+        proxy.name = ent.id;
+        proxy.userData.entidade = ent.id;
+        proxy.userData.lote = true;
+        // a chave da geometria (barra, chapa) continua aqui: é por ela que o refino do
+        // servidor sabe o que ainda está com a seção local
+        const it = this.lote.itens.get(ent.id);
+        proxy.userData.chave = it ? it.chave : null;
+        this.objetos.set(ent.id, proxy);
+      }
+    }
+    if (this.lote) this.lote.concluir();
     // Objeto recém-construído nasce sem destaque. Quando a reconstrução vem de dentro
     // da cena (malhas do servidor chegando), o documento não avisa ninguém — então a
     // seleção precisa ser reaplicada daqui, senão o que estava selecionado apaga.
@@ -481,8 +513,10 @@ export class Cena {
     for (const [id, obj] of this.objetos) {
       const ent = this.documento.get(id);
       obj.visible = !!ent && this.documento.aparece(ent);
+      if (obj.userData.lote && this.lote) this.lote.mostrar(id, obj.visible);
       this._pintar(id);
     }
+    if (this.lote) this.lote.concluir();
     // Entidades que estavam escondidas e voltaram ainda não têm objeto.
     const faltando = [];
     for (const [id, ent] of this.documento.entidades) {
@@ -549,6 +583,7 @@ export class Cena {
 
   _descartarObjeto(obj) {
     if (!obj) return;
+    if (obj.userData.lote) { if (this.lote) this.lote.remover(obj.userData.entidade); return; }
     obj.traverse(f => {
       // As geometrias de barra e chapa são compartilhadas pelo cache: não descarte.
       if (f.geometry && f.geometry.userData && f.geometry.userData.emCache !== true) {
@@ -903,6 +938,7 @@ export class Cena {
     const obj = this.objetos.get(id);
     const ent = this.documento.get(id);
     if (!obj || !ent) return;
+    if (obj.userData.lote) { if (this.lote) this.lote.pintar(id); return; }
     const malha = obj.getObjectByName('malha');
     const arestas = obj.getObjectByName('arestas');
     const linhas = obj.getObjectByName('linhas');
@@ -994,7 +1030,7 @@ export class Cena {
 
   /** Objetos que entram no raycast. */
   get alvos() {
-    const out = [];
+    const out = this.lote ? this.lote.alvos() : [];
     for (const obj of this.objetos.values()) {
       if (!obj.visible) continue;
       const m = obj.getObjectByName('malha');
@@ -1026,6 +1062,7 @@ export class Cena {
 
   descartar() {
     if (this.desinscrever) this.desinscrever();
+    if (this.lote) { this.lote.descartar(); this.lote = null; }
     for (const g of this.cacheGeometria.values()) g.dispose();
     this.cacheGeometria.clear();
     for (const m of this.cacheMaterial.values()) m.dispose();

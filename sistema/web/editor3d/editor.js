@@ -165,7 +165,8 @@ export class Editor {
     this._aplicarTemaInicial();
     this.documento = new Documento('Modelo');
     this.pilha = new Pilha(this.documento, 200);
-    this.cena = new Cena(this.el.canvas, this.documento, { api, escuro: this.escuro });
+    this.cena = new Cena(this.el.canvas, this.documento, { api, escuro: this.escuro,
+                                                          semLote: this.parametros.get('lote') === '0' });
     this.camera = new Camera(this.el.canvas, this.cena);
     this.selecao = new Selecao(this.documento, this.cena, this.camera);
     this.inferencia = new Inferencia(this.documento, this.cena, this.camera,
@@ -1827,7 +1828,7 @@ export class Editor {
 
   _atualizarServidor() {
     const c = this.cena;
-    this.el.servidor.textContent = c.usarServidor ? 'malhas: servidor' : 'malhas: locais';
+    this.el.servidor.textContent = (c.usarServidor ? 'malhas: servidor' : 'malhas: locais') + (c.emLote ? ' · lote' : '');
     this.el.servidor.title = c.usarServidor
       ? 'As seções de barras e chapas vêm de nucleo3d/geometria.py.'
       : `Seções montadas no navegador. Motivo: ${c.avisoServidor || '—'}`;

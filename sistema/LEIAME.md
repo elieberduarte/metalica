@@ -572,6 +572,16 @@ da pasta. `.github/workflows/testes.yml` roda o `pytest` no GitHub a cada push (
 
 ## Desempenho no Modelo 3D com IFC grande
 
+**Desenho em lote** (`web/editor3d/nucleo/lote.js`): acima de `LIMITE_LOTE` (1.500) entidades, sólidos com
+faces, chapas e barras entram em blocos de ~50 mil vértices (uma malha e um `LineSegments` de arestas
+por bloco), ordenados no espaço; a cor de cada peça é um atributo de vértice e a visibilidade está no
+índice (peça escondida sai do índice). O raycast dá a peça pelo índice da face (`userData.entidadeDe`).
+A cena mantém um `Group` vazio por peça em `objetos` (com `userData.lote`), então o código de um objeto
+por peça não acha malha e não mexe; cor, realce, modo, corte e sombras passam pelo `Lote`. IFC de 5 mil
+peças: 7.122 → 82 chamadas de desenho por quadro. `?lote=0` força um objeto por peça (comparação).
+Medição: scratchpad `verif_lote.py` (chamadas, quadro, clique, camada, mapa).
+
+
 Acima de 1.500 objetos (`LIMITE_SOMBRAS` em `web/editor3d/nucleo/cena.js`) a cena abre sem a sombra
 do sol: o mapa de sombra desenha o modelo inteiro uma segunda vez por quadro (IFC de 5 mil peças:
 152 ms → 49 ms por quadro). Ver → Sombras liga de novo; o modo "Sombreado" (sem arestas) corta as

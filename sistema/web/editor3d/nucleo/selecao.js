@@ -63,8 +63,11 @@ export class Selecao {
     // Limiar das linhas em pixels de tela, convertido para milímetros: o Three.js
     // compara a distância ao segmento no espaço local do objeto, que é o do documento.
     this.raio.params.Line.threshold = 6 * this.camera.mmPorPixel();
+    // Malha em lote: a peça vem do índice da face (lote.js); as demais trazem o id no objeto.
+    const idDe = (h) => (h.object.userData.entidadeDe ? h.object.userData.entidadeDe(h.faceIndex)
+                                                        : h.object.userData.entidade);
     const hits = this.raio.intersectObjects(alvos, false).filter(h => {
-      const e = this.documento.get(h.object.userData.entidade);
+      const e = this.documento.get(idDe(h));
       return e && this.documento.aparece(e);
     });
     // Linha desenhada sobre uma face ganha da face: é ela que o usuário está mirando.
@@ -73,7 +76,7 @@ export class Selecao {
     const escolhido = naLinha && (!naMalha || naLinha.distance <= naMalha.distance * 1.01 + 0.02)
       ? naLinha : naMalha;
     for (const h of escolhido ? [escolhido] : []) {
-      const id = h.object.userData.entidade;
+      const id = idDe(h);
       const ent = this.documento.get(id);
       const n = h.face
         ? new THREE.Vector3().copy(h.face.normal)
@@ -256,6 +259,7 @@ export class Selecao {
     const obj = this.cena.objetos.get(id);
     const ent = this.documento.get(id);
     if (!obj || !ent) return;
+    if (obj.userData.lote) { if (this.cena.lote) this.cena.lote.realcar(id, estado); return; }
     const malha = obj.getObjectByName('malha');
     const arestas = obj.getObjectByName('arestas');
     const contornoAntigo = obj.getObjectByName('contorno');
