@@ -174,6 +174,8 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
         g = doc.groups.new(_nome_grupo(nomes.get(chave) or chave[1], usados),
                            description="%s %s" % (chave[0], chave[1]))
         g.extend(ents)
+    import os
+    os.makedirs(os.path.dirname(os.path.abspath(caminho)), exist_ok=True)
     doc.saveas(caminho)
     return caminho
 
