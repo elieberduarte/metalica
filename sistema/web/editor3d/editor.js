@@ -741,6 +741,64 @@ export class Editor {
     this._reprocessarMouse();
   }
 
+  // ------------------------------------------------------ edição isolada
+
+  /** Chapa: o que define a peça (contorno, furos, espessura), para saber se mudou. */
+  _retratoChapa(e) {
+    return e && e.tipo === 'chapa' ? JSON.stringify([e.contorno, e.furos, e.espessura]) : null;
+  }
+
+  /**
+   * Edita a seleção sozinha no 3D: o resto do modelo some (também para seleção e snap),
+   * a câmera enquadra a peça e as ferramentas trabalham só nela. "Voltar ao modelo" traz
+   * tudo de volta; chapa mudada pode ser levada às peças iguais da mesma posição.
+   */
+  isolarSelecao() {
+    const ids = [...this.selecao.ids];
+    if (!ids.length) { this.dica('Selecione a peça que quer editar isolada.'); return; }
+    const manter = new Set(ids);
+    this.documento.foraDoIsolamento = new Set([...this.documento.entidades.keys()].filter(i => !manter.has(i)));
+    this._isolamento = { ids, antes: new Map(ids.map(i => [i, this._retratoChapa(this.documento.get(i))])) };
+    this.cena.repintarTudo();
+    this.camera.zoomSelecao(ids);
+    const nomes = ids.map(i => { const e = this.documento.get(i); const m = (e && e.atributos && e.atributos.marcas) || {}; return m.nome || m.posicao || (e && e.nome) || i; });
+    const txt = `Editando isolado: ${[...new Set(nomes)].slice(0, 4).join(', ')}${nomes.length > 4 ? ' …' : ''}`;
+    this._faixaIsolamento = el('div', { class: 'faixa-isolamento' },
+      el('span', { texto: txt }),
+      el('button', { type: 'button', texto: 'Voltar ao modelo', onclick: () => this.sairDoIsolamento() }));
+    (this.el.palco || document.body).append(this._faixaIsolamento);
+    this._agendarPaineis('props');
+  }
+
+  async sairDoIsolamento() {
+    const iso = this._isolamento;
+    if (!iso) return;
+    this._isolamento = null;
+    this.documento.foraDoIsolamento = null;
+    if (this._faixaIsolamento) { this._faixaIsolamento.remove(); this._faixaIsolamento = null; }
+    this.cena.repintarTudo();
+    this.camera.zoomSelecao(iso.ids);
+    this._agendarPaineis('props');
+    // chapa mudada durante a edição: oferecer a mesma chapa às peças iguais (mesma posição)
+    const mud = {}, rotulos = [];
+    for (const id of iso.ids) {
+      const e = this.documento.get(id);
+      if (!e || e.tipo !== 'chapa' || this._retratoChapa(e) === iso.antes.get(id)) continue;
+      const pos = ((e.atributos || {}).marcas || {}).posicao;
+      if (!pos) continue;
+      const iguais = [...this.documento.entidades.values()].filter(o => o.id !== id && o.tipo === 'chapa' && !iso.ids.includes(o.id)
+        && ((o.atributos || {}).marcas || {}).posicao === pos);
+      if (!iguais.length) continue;
+      rotulos.push(`${((e.atributos || {}).marcas || {}).nome || pos} (${iguais.length} iguais)`);
+      for (const o of iguais) mud[o.id] = { contorno: clonar(e.contorno), furos: clonar(e.furos), espessura: e.espessura };
+    }
+    if (!Object.keys(mud).length) return;
+    const corpo = el('div', { class: 'explica', texto: `A chapa mudou durante a edição: ${rotulos.join(', ')}. Aplicar a mesma chapa (contorno, furos e espessura) às outras peças da mesma posição? Os parafusos delas não se movem — ajuste pelo detalhe da peça se for preciso.` });
+    if (await this.dialogo({ titulo: 'Levar às peças iguais', corpo, ok: 'Aplicar às iguais', cancelar: 'Só esta' }) !== 'ok') return;
+    this.executar(new ComandoAlterar(mud, 'Chapa editada isolada → peças iguais'));
+    this.aviso(`${Object.keys(mud).length} peça(s) atualizadas como a editada. Ctrl+Z desfaz.`, 'info', 8000);
+  }
+
   // ------------------------------------------------------ edição global
 
   apagarSelecao() {
@@ -1597,6 +1655,7 @@ export class Editor {
       'abrir-cad': () => this._abrirCADDoProjeto(),
       'materiais': () => this._abrirMateriais(),
       'excluir-desenhos': () => this._excluirDesenhos(),
+      isolar: () => (this._isolamento ? this.sairDoIsolamento() : this.isolarSelecao()),
     };
     document.addEventListener('click', (ev) => {
       const botaoMenu = ev.target.closest('.menu-botao');
@@ -2060,6 +2119,7 @@ export class Editor {
     const acoes = el('div', { class: 'acoes-painel' });
     const botao = (texto, fn, titulo) => acoes.append(el('button', { type: 'button', texto, title: titulo, onclick: fn }));
     botao('Zoom', () => this.camera.zoomSelecao(ids), 'Enquadrar a seleção');
+    if (!this._isolamento) botao('Isolar', () => this.isolarSelecao(), 'Mostra só a seleção para editar; "Voltar ao modelo" traz o resto de volta');
     if (um) botao('Semelhantes', () => this.selecao.semelhantes(um.id), 'Mesmo tipo e mesmo perfil');
     botao('Mesma camada', () => this.selecao.porCamada(ents[0].camada));
     if (comum('perfil')) botao('Mesmo perfil', () => this.selecao.porPerfil(comum('perfil')));
@@ -2488,7 +2548,7 @@ export class Editor {
       el('option', { value: 'perfil', texto: `todas as peças ${antigoNome} do modelo (${doPerfil.length})` }));
     const aviso = el('div', { class: 'explica', texto: '' });
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: `Perfil atual: ${antigoNome}. Digite o novo como a fábrica escreve — altura × aba × enrijecedor × espessura; a espessura pode ser a bitola (#14 = 1,90 mm, #13 = 2,25, #12 = 2,65, #16 = 1,50). A peça muda de seção no 3D (as espessuras, abas e enrijecedores ficam exatos; os furos acompanham), e o detalhamento e a lista de materiais passam a sair com o perfil novo — gere-os de novo depois.` }),
+      el('div', { class: 'explica', texto: `Perfil atual: ${antigoNome}. Digite o novo como a fábrica escreve — altura × aba × enrijecedor × espessura; a espessura pode ser a bitola (#14 = 2,00 mm, #13 = 2,25, #12 = 2,65, #16 = 1,50). A peça muda de seção no 3D (as espessuras, abas e enrijecedores ficam exatos; os furos acompanham), e o detalhamento e a lista de materiais passam a sair com o perfil novo — gere-os de novo depois.` }),
       el('div', { class: 'campos' }, el('label', { texto: 'Novo perfil' }), campo, el('label', { texto: 'Aplicar em' }), alcance),
       sugestoes, aviso);
     const conferir = () => {

@@ -48,6 +48,16 @@ LIMITE_TERCA = 200.0
 LARGURA_COMPRA_TELHA = 980.0
 LARGURA_TOTAL_TELHA = 1050.0
 
+#: Comprimento de telha arredondado PARA CIMA neste passo (mm) — regra da fábrica: sempre
+#: sobra um pouco (1449 → 1450, 1891 → 1895), nunca falta.
+PASSO_TELHA = 5.0
+
+
+def arredondar_telha(mm: float) -> float:
+    """Comprimento de compra/corte da telha: o múltiplo de PASSO_TELHA logo acima (com
+    0,05 mm de folga, para 1450,00 não virar 1455)."""
+    return float(math.ceil((float(mm) - 0.05) / PASSO_TELHA) * PASSO_TELHA) if mm > 0 else 0.0
+
 
 def _area_casco(pontos) -> float:
     """Área do casco convexo de pontos 2D (cadeia monótona)."""
@@ -85,6 +95,10 @@ def compra_da_telha(pos) -> dict:
     if saia and L > 0:
         peso *= (L + saia) / L
         L += saia
+    if L > 0:
+        Lr = arredondar_telha(L)            # a sobra da fábrica
+        peso *= Lr / L
+        L = Lr
     return {"comprimento": L, "largura": LARGURA_COMPRA_TELHA, "largura_total": LARGURA_TOTAL_TELHA,
             "cortada": cortada, "peso": peso}
 FURACAO_TERCA_BAIXA = (50.0, 60.0)

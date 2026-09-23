@@ -497,6 +497,11 @@ kbd {
 .cor-por .legenda-grupos .amostra { cursor: default; }
 
 .acoes-painel { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.faixa-isolamento { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 20;
+  display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 14px; border-radius: 8px;
+  background: var(--azul, #0b3d91); color: #fff; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+.faixa-isolamento button { border: 0; border-radius: 6px; padding: 5px 10px; background: #fff; color: #0b3d91;
+  font-weight: 600; cursor: pointer; }
 .acoes-painel button {
   background: var(--painel2); border: 1px solid var(--borda); border-radius: var(--raio-p);
   padding: 3px 8px; cursor: pointer; font-size: 12px; color: var(--texto2);

@@ -591,6 +591,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     _progresso(s, "abrindo o modelo…")
     doc = _documento3d_do_projeto(s)
     _conferir_eixos_das_chapas(s, doc)
+    _alinhar_furos_das_barras(s, doc)
     grupos = corpo.get("grupos") or list(GRUPOS.keys())
     r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
                  rotular=bool(corpo.get("rotular", False)),
@@ -734,6 +735,20 @@ def progresso_do_projeto(s: str) -> dict:
     return {"etapa": p["etapa"], "ha_s": round(time.time() - p["quando"], 1)}
 
 
+def _alinhar_furos_das_barras(s: str, doc) -> dict:
+    """Furos das terças no lugar (e no formato) dos furos das chapas de suporte
+    parafusadas nelas — nucleo2d.detalhar.alinhar_furos_das_barras_as_chapas. Grava o
+    modelo quando algo mudou."""
+    from nucleo2d import detalhar as det
+    _progresso(s, "conferindo os furos das terças com os das chapas de suporte…")
+    r = det.alinhar_furos_das_barras_as_chapas(doc)
+    if r.get("barras"):
+        _gerente().salvar_modelo(s, doc.dict(), marco=True)
+        print("[detalhamento] %s: %d furo(s) de %d barra(s) alinhados às chapas (%d oblongos)"
+              % (s, r["furos"], r["barras"], r["oblongos"]))
+    return r
+
+
 def _conferir_eixos_das_chapas(s: str, doc) -> dict:
     """Chapas convertidas por versões anteriores (eixos por peça, `eixos_conferidos`
     ausente) são refeitas a partir do IFC de origem do projeto, todas no mesmo sistema
@@ -819,6 +834,12 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
             ajustes.update(vinc)
             _gravar_ajustes_furos(s, ajustes)
         r3 = det.aplicar_furos_nas_barras(doc, ajustes)
+        # e pela geometria: o furo da terça vai para o furo da chapa encostada nela (vale
+        # também para furo oblongo, que o vínculo por passos não compara)
+        r4 = det.alinhar_furos_das_barras_as_chapas(doc)
+        if r4["barras"]:
+            r3 = dict(r3, barras=r3["barras"] + r4["barras"], furos=r3.get("furos", 0) + r4["furos"],
+                      posicoes=sorted(set(r3.get("posicoes", [])) | set(r4["posicoes"])))
         if r3["barras"]:
             barras3d.update(r3)
             g.salvar_modelo(s, doc.dict(), marco=True)

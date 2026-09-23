@@ -162,6 +162,7 @@ from nucleo2d.detalhe.celulas import (  # noqa: E402,F401
     aplicar_furos,
     aplicar_furos_de_barra,
     aplicar_furos_nas_barras,
+    alinhar_furos_das_barras_as_chapas,
     contorno_do_desenho,
     converter_chapas,
     desenho_da_posicao,

@@ -41,8 +41,8 @@ ESPESSURA_MAX_FRIO = 5.0
 POLEGADA = 25.4
 
 #: Bitolas de chapa (número → espessura em mm), como o comércio de aço usa no Brasil:
-#: "C127X50X17X#14" é um Ue de 1,90 mm.
-BITOLAS = {8: 4.25, 10: 3.35, 11: 3.0, 12: 2.65, 13: 2.25, 14: 1.9, 16: 1.5, 18: 1.2, 20: 0.9}
+#: "C127X50X17X#14" é um Ue de 2,00 mm (a fábrica usa a bitola da chapa a quente).
+BITOLAS = {8: 4.25, 10: 3.35, 11: 3.0, 12: 2.65, 13: 2.25, 14: 2.0, 16: 1.5, 18: 1.2, 20: 0.9}
 
 _NAO_BARRA = ("PLATE", "CH ", "CHAPA", "TELHA", "BOLT", "PARAF", "PORCA", "ARRUELA",
               "GRAUTE", "CHUMB")
@@ -56,7 +56,7 @@ def _norm(nome: str) -> str:
     s = s.replace("' '", '"').replace("''", '"').replace("’’", '"').replace("”", '"')
     s = s.replace("'", '"')
     s = s.replace(",", ".")
-    # espessura pela bitola: "X#14" → "X1.9"
+    # espessura pela bitola: "X#14" → "X2"
     s = re.sub(r"(\d)\s*#", r"\1X#", s)          # "17#14" = "17X#14"
     s = re.sub(r"#\s*(\d+)", lambda m: ("%g" % BITOLAS[int(m.group(1))]) if int(m.group(1)) in BITOLAS else m.group(0), s)
     # sufixos que o catálogo acrescenta ao nome e não fazem parte da medida

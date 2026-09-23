@@ -175,6 +175,26 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
+**0.7.12 — retorno da fábrica.** Telha: comprimento de compra arredondado **para cima** de 5 em 5 mm
+(`base.arredondar_telha`, `PASSO_TELHA`: 1449 → 1450, 1891 → 1895) na compra, na célula, na lista, na
+paginação e nas retas da multi-dobra (a sobra fica nas pontas livres). A saia é **fora a fora**: uma
+altura por face, a da longarina mais baixa da face (`saias_de_fachada` agrupa as telhas pelo plano; a
+telha do canto, onde a longarina já terminou, desce junto). Na paginação da fachada, a linha da última
+longarina (EIXO) atravessa a face com a cota da saia; o tracejado do corte fica na posição real (sem a
+escala para 1050), e a linha da empena segue contínua. Multi-dobra: o raio sai do modelo como arco das
+facetas ÷ ângulo (no TecnoMETAL do usuário, 110 mm por faceta girando 7,87° = R800 na linha média) —
+o desenho explica a conta; as terças e longarinas debaixo dela aparecem (camada TERCAS, seção pela face
+da ponta, `_apoios_no_perfil`) com a cadeia de espaçamento em cada reta, da ponta livre.
+Cadeia dos suportes de terça: a referência é o suporte (pé da perpendicular no banzo), a chamada nasce
+nele. Contraventamento: a cota empilhada é o tamanho da **barra** (sem as peças de ponta), a dobra da
+ponta ganha cota, e as peças de ponta (gancho, chapas, barra roscada) são detalhe padrão — só o nome.
+Bitola #14 = **2,00** (a da fábrica); a troca de perfil mede a espessura na malha, então refazer a troca
+para o mesmo nome corrige peça trocada antes com 1,90. Furos das terças seguem a chapa de suporte
+(`alinhar_furos_das_barras_as_chapas`: pela geometria — furo de chapa paramétrica encostado a menos de
+40 mm —, com o formato: oblongo da chapa vira oblongo na malha da terça); roda ao gerar o detalhamento e
+ao aplicar furos. No 3D, **Isolar** (painel da seleção, menu Ver): só a peça aparece (também para seleção
+e snap, `Documento.foraDoIsolamento`); "Voltar ao modelo" oferece levar a chapa editada às iguais.
+
 **Quadros por família no desenho completo** (`detalhar.FAMILIAS`): o conjunto e as peças dele
 juntos — a tesoura com as barras e as chapas de base, o agulhamento com o suporte e a barra, o
 contraventamento com o tirante, a castanha e a barra roscada. A família de uma peça avulsa vem

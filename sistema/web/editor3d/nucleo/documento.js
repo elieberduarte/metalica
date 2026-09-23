@@ -334,6 +334,9 @@ export class Documento {
   /** A entidade aparece na cena? Considera a camada além dela mesma. */
   aparece(ent) {
     if (!ent || ent.visivel === false) return false;
+    // modo isolado (editar uma peça sozinha): o resto do modelo some — e some também para
+    // a seleção, o snap e o "selecionar tudo"; o que for criado durante a edição aparece
+    if (this.foraDoIsolamento && this.foraDoIsolamento.has(ent.id)) return false;
     const c = this.camadas.get(ent.camada);
     return !c || c.visivel !== false;
   }

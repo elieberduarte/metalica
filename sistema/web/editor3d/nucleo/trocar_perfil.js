@@ -9,10 +9,10 @@
 // que encosta no suporte) e a altura cresce igual para os dois lados.
 //
 // Por enquanto: U e Ue (C) formados a frio — os perfis de terça, longarina e banzo da
-// treliça. Espessura por bitola: "#14" = 1,90 mm (tabela comercial MSG).
+// treliça. Espessura por bitola: "#14" = 2,00 mm (a da fábrica: chapa a quente).
 
 /** Bitolas de chapa (número → mm), como o comércio de aço usa no Brasil. */
-export const BITOLAS = { 8: 4.25, 10: 3.35, 11: 3.0, 12: 2.65, 13: 2.25, 14: 1.9, 16: 1.5, 18: 1.2, 20: 0.9 };
+export const BITOLAS = { 8: 4.25, 10: 3.35, 11: 3.0, 12: 2.65, 13: 2.25, 14: 2.0, 16: 1.5, 18: 1.2, 20: 0.9 };
 
 /**
  * Nome de perfil → {familia: 'Ue'|'U', H, B, D, t, prefixo} ou null. Aceita a grafia do
@@ -171,6 +171,10 @@ export function trocarSecao(ent, antigo, novo) {
     sa += x.area; sb += x.area * cf;
   }
   const almaEmBaixo = sa > 0 ? (sb / sa) < (bMin + bMax) / 2 : true;
+  // espessura de verdade da malha (a face interna da mesa): o nome pode dizer outra coisa —
+  // peça trocada quando #14 era 1,90; refazer a troca para o mesmo nome corrige a espessura
+  const acima = loc.map(q => q[1] - aMin).filter(v => v > 0.3 && v > 0.5 * antigo.t && v < 1.6 * antigo.t);
+  if (acima.length) antigo = { ...antigo, t: Math.min(...acima) };
   // altura: centro fixo; faixas da mesa (t) e do enrijecedor (D) em cada lado
   const novaAltura = altura + (novo.H - antigo.H);
   const aC = (aMin + aMax) / 2, a0 = aC - novaAltura / 2, a1 = aC + novaAltura / 2;

@@ -691,7 +691,16 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         else:
             dist = abs(cy - alt)
         if dist <= 150.0:
-            suportes.append(cx)
+            if reta_cima is not None:
+                # o suporte fica em pé, perpendicular ao banzo: a referência dele é o pé da
+                # perpendicular no banzo (a projeção vertical erra em banzo inclinado), e a
+                # abscissa que a cadeia alinhada leva de volta a esse mesmo ponto
+                cl = math.hypot(bx_ - ax_, by_ - ay_) or 1.0
+                ux_, uy_ = (bx_ - ax_) / cl, (by_ - ay_) / cl
+                t_ = (cx - ax_) * ux_ + (cy - ay_) * uy_
+                suportes.append(ax_ + ux_ * t_)
+            else:
+                suportes.append(cx)
     cadeia_suportes = False
     if len(suportes) >= 2:
         sup = fundir(set(round(s, 1) for s in suportes) | {0.0, larg}, tol=60.0, fixos=(0.0, larg))
@@ -702,20 +711,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             # a folga da ponta ao primeiro suporte é curta (uns 120 mm): a cadeia sai mesmo
             # assim — é a medida que a fábrica marca no banzo
             desl = off2 if cadeia_cima else off
-            if reta_cima is not None and cadeia_cima:
-                # as terças não caem exatamente nos nós (no TecnoMETAL ficam a uns 36 mm): a
-                # linha de chamada do suporte que atravessasse a cadeia dos nós pareceria um
-                # buraco nela. Os pontos da cadeia dos suportes ficam na linha de cota dos nós,
-                # e a chamada nasce ali.
-                (ax_, ay_), (bx_, by_) = reta_cima
-                cl = math.hypot(bx_ - ax_, by_ - ay_) or 1.0
-                nx_, ny_ = -(by_ - ay_) / cl * off * esc, (bx_ - ax_) / cl * off * esc
-                reta_sup = ((ax_ + nx_, ay_ + ny_), (bx_ + nx_, by_ + ny_))
-                sup_desl = [s + nx_ for s in sup]          # a mesma abscissa ao longo da reta deslocada
-                cadeia_suportes = p.cadeia_alinhada(reta_sup, sup_desl, desl - off, exigir_espaco=False)
-            else:
-                cadeia_suportes = (p.cadeia_alinhada(reta_cima, sup, desl, exigir_espaco=False) if reta_cima is not None
-                                   else p.cadeia_h(sup, alt, desl, exigir_espaco=False))
+            # a referência é o suporte da terça (regra da fábrica): a linha de chamada nasce
+            # no pé do suporte, no banzo, e sobe por ele até a cadeia
+            cadeia_suportes = (p.cadeia_alinhada(reta_cima, sup, desl, exigir_espaco=False) if reta_cima is not None
+                               else p.cadeia_h(sup, alt, desl, exigir_espaco=False))
     cadeia = len(alturas) > 2 and p.cadeia_v(alturas, larg, off)
     p.cota_v(0, alt, larg, off2 if cadeia else off)
     _rotular_barras(p, rotulos, esc)
@@ -786,6 +785,25 @@ def _tirante_principal(instancia: Sequence[Solido]):
     return melhor if comp >= MENOR_TIRANTE else None
 
 
+def _barra_mais_longa(instancia: Sequence[Solido]):
+    """A peça mais comprida do conjunto (a barra do contraventamento que não é redonda)."""
+    melhor, comp = None, 0.0
+    for e in instancia:
+        cx = _caixa(e)
+        ext = max(cx[i][1] - cx[i][0] for i in range(3))
+        if ext > comp:
+            melhor, comp = e, ext
+    return melhor
+
+
+def _comprimento_na_vista(peca: Solido, instancia: Sequence[Solido]) -> float:
+    """Extensão da peça ao longo do comprimento da vista do conjunto dela."""
+    c, u, v, w = _eixos_do_conjunto(instancia)
+    u, v, w = _vistas.Vista(origem=c, normal=w, acima=v).eixos()
+    us = [_dot(_sub(p, c), u) for p in peca.vertices]
+    return max(us) - min(us)
+
+
 def _extensao_do_conjunto(instancia: Sequence[Solido]) -> Tuple[float, float]:
     """(comprimento, altura) da instância na vista em que é desenhada."""
     c, u, v, w = _eixos_do_conjunto(instancia)
@@ -831,7 +849,7 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
     p = _Papel(desenho, atr, dx, dy)
     esc = desenho.escala
     off, passo = 10.0, 8.0
-    tirante = _tirante_principal(inst)
+    tirante = _tirante_principal(inst) or _barra_mais_longa(inst)
 
     def nome_de(marca_ifc):
         f = fundidas.get(str(marca_ifc), str(marca_ifc))
@@ -858,13 +876,44 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
                 continue
             k += 1
             r_[2] = k
+    # as peças de ponta (gancho, chapas, barra roscada do esticador) são detalhe padrão,
+    # iguais em todos: aqui só o nome embaixo de cada uma — as medidas estão no detalhe dela
+    h_nome = 1.8 * esc
     for a_, b_, linha, nome_p, perfil in extremos_pecas:
-        p.cota_h(a_, b_, 0, -(off * linha), texto="%d  %s" % (round(b_ - a_), nome_p))
-    # cotas empilhadas por contraventamento, a partir da ponta esquerda
+        p.texto((a_ + b_) / 2, -(3.0 + 3.0 * (linha - 1)) * esc - h_nome, nome_p, h_nome, "TEXTO", alinhamento="centro")
+    # cotas empilhadas por contraventamento: o tamanho da BARRA (sem as peças de ponta),
+    # a partir da ponta dela no desenho
+    if tirante is not None:
+        pu_t = [_dot(_sub(q, origem), u) - u0 for q in tirante.vertices]
+        pv_t = [_dot(_sub(q, origem), v) - v0 for q in tirante.vertices]
+        t0, t1 = min(pu_t), max(pu_t)
+    else:
+        t0, t1 = 0.0, larg
     for i, (rot, inst_m, n_inst) in enumerate(membros):
-        comp_m, _ = _extensao_do_conjunto(inst_m)
+        tir_m = _tirante_principal(inst_m) or _barra_mais_longa(inst_m)
+        comp_m = _comprimento_na_vista(tir_m, inst_m) if tir_m is not None else _extensao_do_conjunto(inst_m)[0]
         nome_m = nomes_conj.get(rot, rot)
-        p.cota_h(0, round(comp_m), alt, off + passo * i, texto="%s (%02dx) – %d" % (nome_m, n_inst, round(comp_m)))
+        p.cota_h(round(t0), round(t0 + comp_m), alt, off + passo * i, texto="%s (%02dx) – %d" % (nome_m, n_inst, round(comp_m)))
+    # a dobra da barra (gancho na ponta): a altura da perna, cotada na própria ponta
+    if tirante is not None:
+        corpo = [pv for pu_, pv in zip(pu_t, pv_t) if t0 + 0.3 * (t1 - t0) < pu_ < t1 - 0.3 * (t1 - t0)]
+        diam = (max(corpo) - min(corpo)) if corpo else 0.0
+        for lado_esq in (True, False):
+            ponta = [(pu_, pv) for pu_, pv in zip(pu_t, pv_t) if (pu_ < t0 + 250.0 if lado_esq else pu_ > t1 - 250.0)]
+            if not ponta:
+                continue
+            vmin, vmax = min(q[1] for q in ponta), max(q[1] for q in ponta)
+            if vmax - vmin - diam < 15.0:
+                continue                              # ponta reta
+            x_ = t0 if lado_esq else t1
+            p.cota_v(vmin, vmax, x_, -off if lado_esq else off)
+            # o trecho da dobra ao longo da barra (onde a perna começa)
+            perna = [q[0] for q in ponta if (q[1] > max(corpo) + 2.0 or q[1] < min(corpo) - 2.0)] if corpo else []
+            if perna:
+                if lado_esq:
+                    p.cota_h(t0, max(perna), vmax, 4.0)
+                else:
+                    p.cota_h(min(perna), t1, vmax, 4.0)
     # rótulos: tirante pelo perfil no meio; peças de ponta pelo nome
     if rotular:
         h = 1.8 * esc
@@ -896,7 +945,8 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
                                                     "  L = %d mm" % round(comp_t) if comp_t else ""))
     pecas_ponta = collections.Counter(nome_de(_marcas(e).get("posicao") or e.nome) for e in inst if e is not tirante)
     if pecas_ponta:
-        linhas.append("Pecas de ponta (por unidade): " + ", ".join("%s x%d" % (k, q) for k, q in sorted(pecas_ponta.items(), key=lambda kv: _ordem_natural(kv[0]))))
+        linhas.append("Pecas de ponta (por unidade, detalhe padrão – ver o detalhe de cada uma): "
+                      + ", ".join("%s x%d" % (k, q) for k, q in sorted(pecas_ponta.items(), key=lambda kv: _ordem_natural(kv[0]))))
     y = alt + (off + passo * len(membros) + 4.0) * esc
     for i, txt in enumerate(reversed(linhas)):
         alt_t = 3.5 if i == len(linhas) - 1 else 2.5

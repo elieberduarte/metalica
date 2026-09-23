@@ -804,6 +804,128 @@ def aplicar_furos_nas_barras(doc: Documento, ajustes: Optional[dict], marcas: Op
     return saida
 
 
+def _indices_do_furo(ent, laco, eixo, raio):
+    """Vértices de um furo da malha: os do laço e os que estão no mesmo cilindro (a outra
+    face e a parede) — perto do eixo do furo e no nível da chapa do laço."""
+    centro = tuple(sum(ent.vertices[i][j] for i in laco) / len(laco) for j in range(3))
+    nivel = _dot(centro, eixo)
+    idx = set(laco)
+    for i, v in enumerate(ent.vertices):
+        d = _sub(v, centro)
+        t = _dot(d, eixo)
+        lateral = math.sqrt(max(0.0, _dot(d, d) - t * t))
+        if lateral <= raio and abs(_dot(v, eixo) - nivel) <= 15.0:
+            idx.add(i)
+    return centro, idx
+
+
+def alinhar_furos_das_barras_as_chapas(doc: Documento, limite: float = LIMITE_DESLOCAMENTO_FURO) -> dict:
+    """Os furos das barras (terças) seguem os da chapa parafusada nelas: cada furo da malha
+    da barra que tem, a menos de `limite` mm e encostado nela, um furo de uma chapa
+    paramétrica (o suporte) vai para o centro desse furo — e, se o da chapa é oblongo,
+    vira oblongo do mesmo tamanho e no mesmo sentido. É pela geometria, então vale para
+    qualquer furação mexida na chapa (redonda ou oblonga, pelo CAD ou pelo 3D), e repetir
+    não muda nada. Devolve {"barras", "furos", "oblongos", "posicoes"}."""
+    saida = {"barras": 0, "furos": 0, "oblongos": 0, "posicoes": []}
+    furos_ch = []
+    for ch in doc.entidades.values():
+        if not isinstance(ch, Chapa) or not ch.furos:
+            continue
+        ex, ey = _norm(tuple(ch.eixo_x)), _norm(tuple(ch.eixo_y))
+        n = _norm(_cruz(ex, ey))
+        for f in ch.furos:
+            x, y = float(f.get("x", 0) or 0), float(f.get("y", 0) or 0)
+            c = tuple(ch.origem[i] + ex[i] * x + ey[i] * y for i in range(3))
+            d = float(f.get("diametro", 0) or 0)
+            L, A = float(f.get("largura", 0) or 0), float(f.get("altura", 0) or 0)
+            rasgo = None if d > 0 or L <= 0 or A <= 0 else ((ex if L >= A else ey), max(L, A), min(L, A))
+            furos_ch.append((c, n, float(ch.espessura or 0), rasgo))
+    if not furos_ch:
+        return saida
+    # grade espacial (500 mm) para achar os furos de chapa perto de cada barra
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    for k, fc in enumerate(furos_ch):
+        grade[tuple(int(math.floor(v / 500.0)) for v in fc[0])].append(k)
+    for ent in list(doc.entidades.values()):
+        if not isinstance(ent, Solido) or _tipo_ifc(ent) not in TIPOS_PECA or len(ent.vertices or []) < 8:
+            continue
+        lo = [min(v[i] for v in ent.vertices) - 60.0 for i in range(3)]
+        hi = [max(v[i] for v in ent.vertices) + 60.0 for i in range(3)]
+        perto = set()
+        for gx in range(int(math.floor(lo[0] / 500.0)), int(math.floor(hi[0] / 500.0)) + 1):
+            for gy in range(int(math.floor(lo[1] / 500.0)), int(math.floor(hi[1] / 500.0)) + 1):
+                for gz in range(int(math.floor(lo[2] / 500.0)), int(math.floor(hi[2] / 500.0)) + 1):
+                    for k in grade.get((gx, gy, gz), ()):
+                        c = furos_ch[k][0]
+                        if all(lo[i] <= c[i] <= hi[i] for i in range(3)):
+                            perto.add(k)
+        if not perto:
+            continue
+        marca = str(_marcas(ent).get("posicao") or ent.nome or ent.id)
+        pos = _posicao_bruta(ent, marca)
+        pos.tipo_ifc = _tipo_ifc(ent)
+        try:
+            analisar(pos)
+        except Exception:                             # noqa: BLE001
+            continue
+        if pos.classe != "barra" or not pos.eixos:
+            continue
+        e1, e2, e3 = pos.eixos
+        usados = set()
+        mexeu = 0
+        for f, laco, vista in _furos_da_malha(pos):
+            eixo = e3 if vista == "frente" else e2
+            centro, idx = _indices_do_furo(ent, laco, eixo, f.d / 2 + 1.0)
+            melhor, dist = None, limite
+            for k in perto - usados:
+                c, n, esp, rasgo = furos_ch[k]
+                if abs(_dot(n, eixo)) < 0.95:
+                    continue                          # chapa em outro plano
+                d = _sub(c, centro)
+                normal_ = _dot(d, eixo)
+                if abs(normal_) > esp / 2.0 + 15.0:
+                    continue                          # não encosta na barra
+                plano = math.sqrt(max(0.0, _dot(d, d) - normal_ * normal_))
+                if plano < dist:
+                    melhor, dist = k, plano
+            if melhor is None:
+                continue
+            usados.add(melhor)
+            c, n, esp, rasgo = furos_ch[melhor]
+            d = _sub(c, centro)
+            delta = tuple(d[i] - eixo[i] * _dot(d, eixo) for i in range(3))
+            movido = False
+            if math.sqrt(_dot(delta, delta)) > 0.6:
+                ent.vertices = [tuple(v[j] + delta[j] for j in range(3)) if i in idx else tuple(v) for i, v in enumerate(ent.vertices)]
+                centro = tuple(centro[j] + delta[j] for j in range(3))
+                movido = True
+            if rasgo is not None:
+                # o furo vira oblongo como o da chapa: as duas metades se afastam no sentido
+                # do rasgo até o comprimento dele
+                u_ = rasgo[0]
+                u_ = _norm(tuple(u_[i] - eixo[i] * _dot(u_, eixo) for i in range(3)))
+                ts = [_dot(_sub(ent.vertices[i], centro), u_) for i in laco]
+                s = (rasgo[1] - (max(ts) - min(ts))) / 2.0
+                if s > 0.5:
+                    novos = list(ent.vertices)
+                    for i in idx:
+                        t = _dot(_sub(novos[i], centro), u_)
+                        if abs(t) > 0.01:
+                            sg = 1.0 if t > 0 else -1.0
+                            novos[i] = tuple(novos[i][j] + u_[j] * s * sg for j in range(3))
+                    ent.vertices = novos
+                    saida["oblongos"] += 1
+                    movido = True
+            if movido:
+                mexeu += 1
+        if mexeu:
+            saida["barras"] += 1
+            saida["furos"] += mexeu
+            if marca not in saida["posicoes"]:
+                saida["posicoes"].append(marca)
+    return saida
+
+
 def regenerar_celula(d: Desenho, doc: Documento, marca: str, ajustes: Optional[dict] = None,
                      nomes_producao: Optional[dict] = None) -> Tuple[float, float, float, float]:
     """Redesenha, no mesmo lugar de um desenho geral, a célula da posição (depois de os
