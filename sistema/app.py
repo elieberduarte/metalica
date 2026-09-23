@@ -1663,7 +1663,13 @@ def _abrir_janela(url: str):
         return subprocess.Popen(
             [exe, f"--app={url}", f"--user-data-dir={perfil}", "--no-first-run",
              "--no-default-browser-check", "--window-size=1500,950",
-             "--disable-features=Translate", "--disk-cache-size=104857600"],   # cache do perfil limitado a 100 MB
+             "--disable-features=Translate", "--disk-cache-size=104857600",   # cache do perfil limitado a 100 MB
+             # O modelo 3D é desenhado pela placa de vídeo. Em placa antiga ou com driver
+             # na lista de bloqueio do navegador, ele cai para o desenho por software e a
+             # navegação fica lenta mesmo num modelo modesto — estas opções mantêm a
+             # aceleração ligada. Ver → Diagnóstico de desempenho mostra o que está em uso.
+             "--ignore-gpu-blocklist", "--enable-gpu-rasterization",
+             "--enable-zero-copy"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
         return None

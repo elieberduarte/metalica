@@ -540,6 +540,13 @@ ligações e chapas de nó não entram; terças de beiral apoiadas nos consoles 
 travamento lido no modelo o banzo inferior é verificado com o comprimento inteiro (informe
 `trava_inferior`); as tabelas de vento são de galpão fechado de duas águas.
 
+## Versão que cada janela está rodando
+
+`web/versao.js` (em todas as páginas) escreve `v<versão>` no rodapé: é a versão do **código que aquela
+janela carregou**. De minuto em minuto pergunta ao servidor; se ele passou a responder outra versão (o
+programa foi atualizado com a janela aberta), o rótulo fica amarelo com "recarregar para vX" e um clique
+recarrega. Janelas abertas antes de uma atualização continuam com o código antigo até serem recarregadas.
+
 ## Testes
 
 ```bash
@@ -571,6 +578,19 @@ sem janela (CDP); a maioria usa o modelo de exemplo do cliente, que não está n
 da pasta. `.github/workflows/testes.yml` roda o `pytest` no GitHub a cada push (Windows, Python 3.12).
 
 ## Desempenho no Modelo 3D com IFC grande
+
+**Escolha de peça pelo cursor**: o raycast do lote é próprio (`Lote._raycast`) — caixa do bloco, caixa de
+cada peça e só então os triângulos das candidatas; o encontro leva `entidadeId`. Sem isso cada movimento do
+mouse varria os ~16 mil triângulos de cada bloco (10 a 50 ms por movimento, a origem real da sensação de
+travamento). Medido no IFC de 5 mil peças: 0,3 ms.
+
+**Modo leve**: acima de `LIMITE_LOTE` o modelo abre em "Sombreado" (sem as arestas de cada peça: eram 362 mil
+linhas) e sem sombra; os botões de modo e Ver → Sombras devolvem o normal.
+
+**Ver → Diagnóstico de desempenho** (`Editor3D.dialogoDesempenho`): mede na máquina do usuário os quadros por
+segundo reais, as chamadas de desenho, o custo de escolher uma peça e qual placa de vídeo o navegador está
+usando — e avisa quando caiu para SwiftShader (desenho por software). A janela do programa é aberta com
+`--ignore-gpu-blocklist` e `--enable-gpu-rasterization` para não cair nesse modo por driver antigo.
 
 **Desenho em lote** (`web/editor3d/nucleo/lote.js`): acima de `LIMITE_LOTE` (1.500) entidades, sólidos com
 faces, chapas e barras entram em blocos de ~50 mil vértices (uma malha e um `LineSegments` de arestas

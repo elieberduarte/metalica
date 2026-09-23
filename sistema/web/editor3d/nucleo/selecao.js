@@ -64,8 +64,9 @@ export class Selecao {
     // compara a distância ao segmento no espaço local do objeto, que é o do documento.
     this.raio.params.Line.threshold = 6 * this.camera.mmPorPixel();
     // Malha em lote: a peça vem do índice da face (lote.js); as demais trazem o id no objeto.
-    const idDe = (h) => (h.object.userData.entidadeDe ? h.object.userData.entidadeDe(h.faceIndex)
-                                                        : h.object.userData.entidade);
+    const idDe = (h) => h.entidadeId
+      || (h.object.userData.entidadeDe ? h.object.userData.entidadeDe(h.faceIndex)
+                                       : h.object.userData.entidade);
     const hits = this.raio.intersectObjects(alvos, false).filter(h => {
       const e = this.documento.get(idDe(h));
       return e && this.documento.aparece(e);

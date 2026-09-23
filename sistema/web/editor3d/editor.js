@@ -832,11 +832,16 @@ export class Editor {
     if (enquadrar) this.camera.vista('isometrica', this.documento.caixa());
     this._agendarPaineis('props', 'camadas', 'materiais', 'arvore');
     this._atualizarMenuSombras();
-    if (this.cena.sombrasDesligadasPeloTamanho && !this._avisouSombras) {
-      this._avisouSombras = true;
-      this.aviso(`Modelo grande (${numero(this.documento.tamanho)} peças): sombras desligadas para a navegação ` +
-                 'ficar leve. Ver → Sombras liga de novo; o modo "Sombreado" (sem arestas) alivia mais ainda.',
-                 'info', 12000);
+    if (this.cena.sombrasDesligadasPeloTamanho && !this._avisouLeve) {
+      this._avisouLeve = true;
+      // Modelo grande abre leve: sem sombra do sol e sem as arestas de cada peça (num IFC
+      // de milhares de peças elas são centenas de milhares de linhas, e viram um borrão).
+      // Os dois voltam num clique, e o aviso diz onde.
+      if (this.cena.emLote && this.cena.modo === 'sombreado_arestas') this.definirModo('sombreado');
+      this.aviso(`Modelo grande (${numero(this.documento.tamanho)} peças): aberto no modo leve — sem sombra e ` +
+                 'sem as arestas das peças. Os botões ao lado de "Perspectiva" voltam ao sombreado com arestas; ' +
+                 'Ver → Sombras liga a sombra. Ver → Diagnóstico de desempenho mede a sua máquina.',
+                 'info', 15000);
     }
     if (autosalvar) {
       this._agendarAutosave();
@@ -1562,6 +1567,7 @@ export class Editor {
       'zoom-selecao': () => this.camera.zoomSelecao([...this.selecao.ids]),
       'mapa-esforcos': () => this.alternarAnalise(),
       sombras: () => this.alternarSombras(),
+      desempenho: () => this.dialogoDesempenho(),
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
@@ -2416,6 +2422,87 @@ export class Editor {
   }
 
   // ---------------------------------------------------------------- análise
+
+  /**
+   * Ver → Diagnóstico de desempenho: mede o que custa cada parte na **máquina do
+   * usuário** — quadros por segundo reais, chamadas de desenho, custo de escolher uma
+   * peça com o cursor e qual placa de vídeo o navegador está usando. É o que diz se a
+   * lentidão está no desenho, na escolha ou no vídeo (aceleração desligada).
+   */
+  async dialogoDesempenho() {
+    this.dica('Medindo o desempenho…');
+    const cena = this.cena, r = cena.renderizador;
+    // 1. quadros por segundo: desenha de verdade, contando o intervalo entre quadros
+    const medirFPS = (n = 40) => new Promise((ok) => {
+      const t = [];
+      let i = 0;
+      const passo = () => {
+        cena.desenhar(this.camera.ativa);
+        t.push(performance.now());
+        if (++i < n) requestAnimationFrame(passo);
+        else {
+          const dt = [];
+          for (let k = 1; k < t.length; k++) dt.push(t[k] - t[k - 1]);
+          dt.sort((a, b) => a - b);
+          ok({ mediana: dt[Math.floor(dt.length / 2)] || 0, pior: dt[dt.length - 1] || 0 });
+        }
+      };
+      requestAnimationFrame(passo);
+    });
+    const fps = await medirFPS();
+    // 2. escolha de peça pelo cursor, no meio da tela e ao redor
+    const t0 = performance.now();
+    let achou = 0, n = 0;
+    for (let x = 0.3; x <= 0.7; x += 0.1) {
+      for (let y = 0.3; y <= 0.7; y += 0.1) {
+        const p = this.selecao.sob(this.camera.largura * x, this.camera.altura * y);
+        if (p) achou++;
+        n++;
+      }
+    }
+    const escolha = (performance.now() - t0) / Math.max(n, 1);
+    // 3. placa de vídeo que o navegador está usando
+    let placa = 'desconhecida';
+    try {
+      const gl = r.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      if (ext) placa = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '');
+      else placa = String(gl.getParameter(gl.RENDERER) || '');
+    } catch { /* sem informação da placa */ }
+    const macio = /swiftshader|software|llvmpipe|basic render/i.test(placa);
+    const info = r.info.render;
+    const linhas = [
+      ['Quadros por segundo', `${numero(1000 / Math.max(fps.mediana, 0.001), 0)} (pior quadro ${numero(fps.pior, 0)} ms)`],
+      ['Chamadas de desenho', `${numero(info.calls)} · ${numero(info.triangles)} triângulos · ${numero(info.lines)} linhas`],
+      ['Escolher peça no cursor', `${numero(escolha, 1)} ms`],
+      ['Peças no modelo', `${numero(this.documento.tamanho)}${cena.emLote ? ` · desenho em lote (${cena.lote.blocos.length} blocos)` : ' · um objeto por peça'}`],
+      ['Sombras', cena.sombrasAtivas ? 'ligadas' : 'desligadas'],
+      ['Modo', cena.modo.replace('_', ' com ')],
+      ['Vídeo', placa || 'desconhecida'],
+    ];
+    const campos = el('div', { class: 'campos' });
+    for (const [rot, val] of linhas) {
+      campos.append(el('label', { texto: rot }), el('span', { class: 'valor quebra', texto: val }));
+    }
+    const corpo = el('div', {}, campos);
+    if (macio) {
+      corpo.append(el('p', { class: 'explica', texto:
+        'A aceleração de vídeo está desligada no navegador: o modelo é desenhado pelo processador, ' +
+        'e é por isso que a navegação fica pesada. Em Configurações do Edge/Chrome → Sistema, ligue ' +
+        '"Usar aceleração de hardware quando disponível" e reabra o programa.' }));
+    } else if (1000 / Math.max(fps.mediana, 0.001) < 25) {
+      corpo.append(el('p', { class: 'explica', texto:
+        'Menos de 25 quadros por segundo. Tente o modo "Sombreado" (sem arestas) no alto à direita, ' +
+        'oculte as camadas que não estiver usando (Telhas costuma ser a mais pesada) e confira em ' +
+        'Ver → Sombras se elas estão desligadas.' }));
+    }
+    const texto = linhas.map(([a, b]) => `${a}: ${b}`).join('\n');
+    corpo.append(el('p', { class: 'explica' },
+      el('button', { type: 'button', texto: 'Copiar os números',
+        onclick: () => { navigator.clipboard.writeText(texto).then(() => this.dica('Números copiados.')); } })));
+    this.dica('Diagnóstico pronto.');
+    await this.dialogo({ titulo: 'Diagnóstico de desempenho', corpo, ok: 'Fechar' });
+  }
 
   /** Ver → Sombras: liga ou desliga a sombra do sol (escolha do usuário vale até trocar de modelo). */
   alternarSombras() {

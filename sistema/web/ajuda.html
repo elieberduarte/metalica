@@ -89,7 +89,11 @@
 
 <p><b>Calcular estrutura (modelo importado):</b> num projeto que veio de IFC, o botão <b>Calcular estrutura</b> (F9) abre o diálogo com vento (NBR 6123), sobrecarga, telha, travamentos, apoios e aços, e o programa monta o cálculo a partir das próprias peças: cada tesoura vira um pórtico plano (banzos contínuos, diagonais e montantes rotulados), as terças viram vigas entre tesouras, o peso próprio e a telha são medidos do modelo. Precisa do detalhamento gerado antes, porque é ele que classifica tesouras e terças. O modelo fica pintado pelo aproveitamento (verde passa, vermelho não), com a lista das mais solicitadas, os diagramas na tesoura típica e a flecha; o cálculo fica gravado no projeto e volta ao abrir. Em <b>Peça selecionada</b>, <b>Perfil de cálculo</b> troca o perfil daquela posição (catálogo, perfis do projeto ou o nome de fábrica, como U100X50X3.04) e recalcula, mostrando o que mudou em cada peça; o sólido do modelo continua o de fábrica. Contraventamentos, agulhamentos e consoles de apoio ainda não são verificados; sem travamento lido no modelo, o banzo inferior é verificado com o comprimento inteiro (informe o espaçamento no diálogo).</p>
 
-<p><b>Modelo grande:</b> acima de 1.500 peças o programa desenha sólidos, chapas e barras em blocos (a barra de estado mostra "lote") e abre sem a sombra do sol; a navegação fica leve mesmo com milhares de peças. Nada muda no uso: clique, seleção, camadas, cores, corte e mapa de esforços funcionam do mesmo jeito. <b>Ver → Sombras</b> liga a sombra quando quiser.</p>
+<p><b>Qual versão está rodando:</b> no canto do rodapé aparece <code>v0.6.28</code>, a versão do programa <i>naquela janela</i>. Cada janela guarda o programa que carregou: depois de uma atualização, a janela que abre sozinha já está na versão nova, mas outra que ficou aberta continua na antiga até ser recarregada — quando isso acontece o rótulo fica amarelo dizendo "recarregar para v…", e basta clicar nele (ou Ctrl+R).</p>
+
+<p><b>Está lento?</b> <b>Ver → Diagnóstico de desempenho…</b> mede na sua máquina os quadros por segundo, as chamadas de desenho, o tempo de escolher uma peça com o cursor e qual placa de vídeo o navegador está usando. Se ele disser que a aceleração de vídeo está desligada, é esse o motivo da lentidão.</p>
+
+<p><b>Modelo grande:</b> acima de 1.500 peças o programa desenha sólidos, chapas e barras em blocos (a barra de estado mostra "lote") e abre no modo leve, sem a sombra do sol e sem as arestas de cada peça; a navegação fica leve mesmo com milhares de peças. Nada muda no uso: clique, seleção, camadas, cores, corte e mapa de esforços funcionam do mesmo jeito. <b>Ver → Sombras</b> liga a sombra quando quiser.</p>
 
 <h2 id="pesquisa">Pesquisar e colorir peças</h2>
 <p><b>Pesquisar</b> (campo no topo, ou <kbd>Ctrl+F</kbd>): digite parte do nome, a posição (<code>P12</code>), o conjunto (<code>M2</code>), o perfil (<code>U150</code>) ou duas palavras (<code>M2 plate</code>). Os resultados saem agrupados por posição com a contagem; clique seleciona o grupo, duplo clique enquadra, setas percorrem, <kbd>Enter</kbd> seleciona tudo.</p>
@@ -205,5 +209,6 @@ document.getElementById('btn-tema').addEventListener('click', () => {
 });
 </script>
 <script src="/vivo.js"></script>
+<script src="/versao.js" defer></script>
 </body>
 </html>

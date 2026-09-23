@@ -32,6 +32,12 @@ const COR_SELECAO = '#1f7ae0';
 const COR_SOBRE = '#5fa8f5';
 
 const _cor = new THREE.Color();
+// temporários do raycast (um por módulo: a escolha roda a cada movimento do mouse)
+const _inv = new THREE.Matrix4();
+const _raio = new THREE.Ray();
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
+const _p = new THREE.Vector3();
+const _tri = new THREE.Triangle();
 
 export class Lote {
   constructor(cena) {
@@ -131,11 +137,17 @@ export class Lote {
     const apos = new Float32Array(na * 3), acor = new Float32Array(na * 3);
     const bloco = { itens: [], malha: null, arestas: null, nv, na, sujo: false };
     let v0 = 0, a0 = 0;
+    const caixaBloco = new THREE.Box3();
     for (const p of pecas) {
       pos.set(p.geom.getAttribute('position').array, v0 * 3);
       nor.set(p.geom.getAttribute('normal').array, v0 * 3);
       apos.set(p.arestas.getAttribute('position').array, a0 * 3);
-      const item = { id: p.id, bloco, v0, nv: p.nv, a0, na: p.na, chave: p.chave, corMalha: null, corAresta: null };
+      // Caixa envolvente da peça: é o que faz a escolha pelo cursor ser barata (sem ela,
+      // o raio testaria os ~16 mil triângulos de cada bloco a cada movimento do mouse).
+      const caixa = new THREE.Box3().setFromArray(p.geom.getAttribute('position').array);
+      caixaBloco.union(caixa);
+      const item = { id: p.id, bloco, v0, nv: p.nv, a0, na: p.na, chave: p.chave,
+                     corMalha: null, corAresta: null, caixa };
       bloco.itens.push(item);
       this.itens.set(p.id, item);
       v0 += p.nv;
@@ -146,10 +158,14 @@ export class Lote {
     g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     g.setAttribute('color', new THREE.BufferAttribute(cor, 3));
     g.setIndex(new THREE.BufferAttribute(this._indice(bloco, false), 1));
+    bloco.caixa = caixaBloco;
     const malha = new THREE.Mesh(g, this.materialMalha);
     malha.name = 'lote-malha';
     malha.userData.lote = true;
     malha.userData.entidadeDe = (faceIndex) => this._entidadeDaFace(bloco, faceIndex);
+    // Escolha pelo cursor: caixa do bloco → caixa de cada peça → triângulos só das
+    // candidatas. Substitui o raycast padrão, que varre o bloco inteiro.
+    malha.raycast = (raycaster, intersects) => this._raycast(bloco, raycaster, intersects);
     const ga = new THREE.BufferGeometry();
     ga.setAttribute('position', new THREE.BufferAttribute(apos, 3));
     ga.setAttribute('color', new THREE.BufferAttribute(acor, 3));
@@ -175,6 +191,46 @@ export class Lote {
       for (let i = ini; i < fim; i++) idx[k++] = i;
     }
     return idx;
+  }
+
+  /** Raycast do bloco: devolve no máximo um encontro, o da peça mais próxima. */
+  _raycast(bloco, raycaster, intersects) {
+    const malha = bloco.malha;
+    if (!malha.visible || !bloco.caixa) return;
+    _inv.copy(malha.matrixWorld).invert();
+    _raio.copy(raycaster.ray).applyMatrix4(_inv);
+    if (!_raio.intersectsBox(bloco.caixa)) return;
+    const pos = malha.geometry.getAttribute('position');
+    let melhor = Infinity, item = null, tri = -1;
+    for (const it of bloco.itens) {
+      if (this.escondidos.has(it.id)) continue;
+      if (!_raio.intersectsBox(it.caixa)) continue;
+      const fim = it.v0 + it.nv;
+      for (let i = it.v0; i < fim; i += 3) {
+        _a.fromBufferAttribute(pos, i);
+        _b.fromBufferAttribute(pos, i + 1);
+        _c.fromBufferAttribute(pos, i + 2);
+        if (!_raio.intersectTriangle(_a, _b, _c, false, _p)) continue;   // material é DoubleSide
+        const d = _p.distanceToSquared(_raio.origin);
+        if (d < melhor) { melhor = d; item = it; tri = i; }
+      }
+    }
+    if (!item) return;
+    _a.fromBufferAttribute(pos, tri);
+    _b.fromBufferAttribute(pos, tri + 1);
+    _c.fromBufferAttribute(pos, tri + 2);
+    _raio.intersectTriangle(_a, _b, _c, false, _p);
+    const ponto = _p.clone().applyMatrix4(malha.matrixWorld);
+    const distancia = raycaster.ray.origin.distanceTo(ponto);
+    if (distancia < raycaster.near || distancia > raycaster.far) return;
+    _tri.set(_a, _b, _c);
+    const normal = new THREE.Vector3();
+    _tri.getNormal(normal);
+    intersects.push({
+      distance: distancia, point: ponto, object: malha, entidadeId: item.id,
+      face: { a: tri, b: tri + 1, c: tri + 2, normal, materialIndex: 0 },
+      faceIndex: tri / 3, uv: null,
+    });
   }
 
   _entidadeDaFace(bloco, faceIndex) {
