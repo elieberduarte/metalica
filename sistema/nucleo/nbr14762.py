@@ -1398,6 +1398,7 @@ def dimensionar_terca(aco="CF-26 (NBR 6650)", vao: float = 5.0,
                       massa_max: Optional[float] = None,
                       altura_max: Optional[float] = None,
                       apenas_aprovados: bool = True,
+                      perfis: Optional[Sequence] = None,
                       **kwargs) -> List[Resultado]:
     """Busca no catálogo o Ue mais leve que atende, variando as linhas de corrente.
 
@@ -1411,7 +1412,8 @@ def dimensionar_terca(aco="CF-26 (NBR 6650)", vao: float = 5.0,
     limites de flecha, cargas de serviço, etc.).
     """
     saida: List[Resultado] = []
-    for p in perfis_ue(massa_max=massa_max, altura_max=altura_max):
+    # `perfis` restringe a busca (o perfil forçado pelo usuário, por exemplo)
+    for p in (list(perfis) if perfis is not None else perfis_ue(massa_max=massa_max, altura_max=altura_max)):
         try:
             sec = secao_do_perfil(p, r=kwargs.get("raio_dobra"))
         except ErroDeDados:

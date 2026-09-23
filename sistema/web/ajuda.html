@@ -97,6 +97,10 @@
 
 <p><b>Modelo grande:</b> acima de 1.500 peças o programa desenha sólidos, chapas e barras em blocos (a barra de estado mostra "lote") e abre no modo leve, sem a sombra do sol e sem as arestas de cada peça; a navegação fica leve mesmo com milhares de peças. Nada muda no uso: clique, seleção, camadas, cores, corte e mapa de esforços funcionam do mesmo jeito. <b>Ver → Sombras</b> liga a sombra quando quiser.</p>
 
+<h2 id="perfis">Escolher o perfil de cada elemento</h2>
+<p>Em <b>Materiais → Perfis por elemento</b> você escolhe o perfil da terça, da longarina, da viga, do pilar e, na tesoura, dos banzos, diagonais e montantes — entre os do catálogo. Vazio = o programa escolhe o mais leve que passa. O perfil escolhido é verificado do mesmo jeito: se não passar, ele fica no resultado com a razão e um aviso. <b>Banzos com perfil duplo</b> (e diagonais/montantes) entram com duas peças costas com costas.</p>
+<p>Nos <b>Resultados</b>, cada elemento abre <b>Perfis do catálogo verificados</b>: os que passam primeiro (do mais leve ao mais pesado), com kg/m, e um botão <b>Usar</b> que adota o perfil e redimensiona tudo. É o caminho para ajustar a altura da terça ou do banzo sem sair do que a norma aceita.</p>
+
 <h2 id="tesoura">Galpão com tesoura treliçada</h2>
 <p>Em <b>Sistema estrutural</b>, escolha <b>Tipo de pórtico → treliçado (tesoura)</b>. Aparecem os campos da tesoura no lugar dos da mísula.</p>
 <ul>
@@ -139,7 +143,7 @@
 <table>
   <tr><th>Grupo</th><th>Ferramentas</th></tr>
   <tr><td>Desenho</td><td>linha <kbd>L</kbd>, polilinha, retângulo <kbd>R</kbd>, círculo <kbd>C</kbd>, arco, texto <kbd>T</kbd>, cota <kbd>D</kbd>, chamada <kbd>H</kbd>, hachura</td></tr>
-  <tr><td>Edição</td><td>mover <kbd>M</kbd>, copiar, girar, espelhar, paralela (offset <kbd>F</kbd>), aparar/trim <kbd>X</kbd>, estender/extend <kbd>N</kbd>, concordar/fillet <kbd>K</kbd> (digite o raio antes; 0 = canto vivo), apagar <kbd>Del</kbd>. Desenhando linha, o cursor gruda na continuação da linha anterior; <kbd>Esc</kbd> volta a selecionar e <kbd>espaço</kbd> chama de novo a ferramenta anterior.</td></tr>
+  <tr><td>Edição</td><td>mover <kbd>M</kbd>, copiar, girar, espelhar, paralela (offset <kbd>F</kbd>), aparar/trim <kbd>X</kbd>, estender/extend <kbd>N</kbd>, concordar/fillet <kbd>K</kbd> (digite o raio antes; 0 = canto vivo), mover linha de cota <kbd>J</kbd> (clique na cota — ou selecione várias — e depois onde a linha deve ficar; o snap pega a linha de outra cota, para alinhar), apagar <kbd>Del</kbd>. Desenhando linha, o cursor gruda na continuação da linha anterior; <kbd>Esc</kbd> volta a selecionar e <kbd>espaço</kbd> chama de novo a ferramenta anterior.</td></tr>
   <tr><td>Apoio</td><td>medir, snap (extremidade, meio, centro, interseção, perpendicular, sobre a linha, grade), orto com <kbd>Shift</kbd> ou <kbd>F8</kbd>, desfazer <kbd>Ctrl+Z</kbd>, refazer <kbd>Ctrl+Y</kbd></td></tr>
 </table>
 <p>Medidas digitadas funcionam como no AutoCAD: <code>1500</code>, <code>1,5m</code>, <code>1500&lt;30</code> (comprimento e ângulo), <code>2000;1000</code> (retângulo). A <b>escala</b> no topo (1:10, 1:25…) é a de impressão: define o tamanho de textos, cotas e hachuras no papel. Cada linha sabe de que peça 3D veio: <b>Editar → Selecionar tudo da mesma peça</b>.</p>

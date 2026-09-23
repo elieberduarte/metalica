@@ -17,6 +17,21 @@ from .base import Resultado, ErroDeDados
 
 # ---------------------------------------------------------------- entrada
 
+#: Campo de perfil forçado → famílias de perfil que o elemento aceita (vazio = qualquer barra).
+PERFIS_POR_ELEMENTO = {
+    "perfil_terca": ("Ue", "U"), "perfil_longarina": ("Ue", "U"),
+    "perfil_viga": ("I",), "perfil_pilar": ("I",),
+    "perfil_banzo_superior": (), "perfil_banzo_inferior": (),
+    "perfil_diagonal": (), "perfil_montante": (),
+}
+_ROTULO_PERFIL = {
+    "perfil_terca": "Perfil da terça", "perfil_longarina": "Perfil da longarina",
+    "perfil_viga": "Perfil da viga", "perfil_pilar": "Perfil do pilar",
+    "perfil_banzo_superior": "Perfil do banzo superior", "perfil_banzo_inferior": "Perfil do banzo inferior",
+    "perfil_diagonal": "Perfil da diagonal", "perfil_montante": "Perfil do montante",
+}
+
+
 @dataclass
 class DadosGalpao:
     """Tudo que o usuário informa para dimensionar um galpão de duas águas."""
@@ -47,6 +62,19 @@ class DadosGalpao:
     altura_tesoura: float = 0.0              # m entre banzos no apoio; 0 = automática
     paineis_tesoura: int = 0                 # painéis por água; 0 = pelo passo das terças
     ligacao_tesoura: str = "apoiada"         # "apoiada" no pilar ou "rígida" (joelho)
+
+    # perfis por elemento: vazio = o programa escolhe o mais leve do catálogo que passa;
+    # um nome do catálogo força aquele perfil, e ele é verificado como qualquer outro
+    perfil_terca: str = ""
+    perfil_longarina: str = ""
+    perfil_viga: str = ""
+    perfil_pilar: str = ""
+    perfil_banzo_superior: str = ""
+    perfil_banzo_inferior: str = ""
+    perfil_diagonal: str = ""
+    perfil_montante: str = ""
+    banzos_duplos: bool = False              # 2× o perfil nos banzos, costas com costas
+    diagonais_duplas: bool = False           # 2× nas diagonais e nos montantes
 
     # materiais
     aco_perfis: str = "ASTM A572 Gr.50"
@@ -132,11 +160,40 @@ class DadosGalpao:
         elif "alma" not in str(self.tipo_portico or "").lower():
             raise ErroDeDados("Pórtico \"%s\" ainda não é calculado por este programa: escolha "
                               "\"alma cheia\" ou \"treliçado (tesoura)\"." % self.tipo_portico)
+        for chave, familias in PERFIS_POR_ELEMENTO.items():
+            nome = str(getattr(self, chave, "") or "").strip()
+            if not nome:
+                continue
+            p = self.perfil_forcado(chave)
+            if p is None:
+                raise ErroDeDados("%s: \"%s\" não está no catálogo de peças." % (_ROTULO_PERFIL[chave], nome))
+            if familias and p.tipo not in familias:
+                raise ErroDeDados("%s: \"%s\" é um perfil %s; este elemento aceita %s."
+                                  % (_ROTULO_PERFIL[chave], nome, p.tipo, " ou ".join(familias)))
         if self.ponte_rolante or (self.capacidade_ponte_t or 0) > 0:
             raise ErroDeDados("Ponte rolante ainda não entra no cálculo (cargas móveis, vigas de rolamento "
                               "e efeitos dinâmicos). Desmarque a ponte rolante ou dimensione o galpão "
                               "com ponte em outro programa.")
         return self
+
+    def perfil_forcado(self, chave: str):
+        """`Perfil` do catálogo informado em `chave` ("perfil_terca"…), ou None."""
+        nome = str(getattr(self, chave, "") or "").strip()
+        if not nome:
+            return None
+        from .catalogo import perfil_de
+        try:
+            return perfil_de(nome)
+        except Exception:
+            return None
+
+    def pecas_por_barra(self, papel: str) -> int:
+        """Quantas peças formam a barra da tesoura desse papel (1 ou 2)."""
+        if papel.startswith("banzo"):
+            return 2 if self.banzos_duplos else 1
+        if papel in ("diagonal", "montante"):
+            return 2 if self.diagonais_duplas else 1
+        return 1
 
     # --- grandezas derivadas ---
     @property

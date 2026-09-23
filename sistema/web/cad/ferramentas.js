@@ -5,7 +5,7 @@
 // Medida digitada (`onValor`): "1500", "1,5m", "150cm", "@30" (ângulo), e para
 // retângulo "2000;1000". Esc cancela, Enter/espaço confirma ou repete.
 
-import { criar, dist, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe } from './nucleo/desenho2d.js';
+import { criar, dist, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto } from './nucleo/comandos.js';
 
 export function paraMilimetros(texto) {
@@ -263,6 +263,46 @@ export class Cota extends Ferramenta {
     if (k === 'h' || k === 'v' || k === 'a') { this.modo = k === 'a' ? 'alinhada' : k; this.dica(`Modo: ${this.modo}`); if (this.p2) this.onMover(this.editor.tela.cursor || this.p2); return true; }
     return false;
   }
+}
+
+/**
+ * Move a linha de cota sem mexer nos pontos medidos: clique na cota (ou selecione várias)
+ * e depois onde a linha deve ficar. Com várias cotas paralelas selecionadas, todas vão
+ * para a mesma linha — é como se alinha uma fila de cotas de uma vez. O ponto clicado
+ * aceita o snap, inclusive o da linha de outra cota.
+ */
+export class MoverCota extends Ferramenta {
+  static id = 'mover_cota'; static nome = 'Mover linha de cota'; static atalho = 'j'; static grupo = 'edicao';
+  static dica = 'Clique na cota (ou selecione várias antes) e depois onde a linha de cota deve ficar';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20V4M20 20V4"/><path d="M4 9h16" stroke-dasharray="3 2"/><path d="M4 15h16"/><path d="M7 13l-3 2 3 2M17 13l3 2-3 2"/><path d="M12 9v6M10.5 11l1.5-2 1.5 2"/></svg>';
+  reiniciar() {
+    super.reiniciar();
+    this.ids = [...this.editor.tela.selecao].filter(id => (this.doc.get(id) || {}).tipo === 'cota');
+    this.dica(this.ids.length ? `${this.ids.length} cota(s): clique onde a linha de cota deve ficar` : this.constructor.dica);
+  }
+  _desloc(c, p3) {
+    let [x1, y1] = c.p1, [x2, y2] = c.p2;
+    if (c.modo === 'h') y2 = y1; else if (c.modo === 'v') x2 = x1;
+    const dx = x2 - x1, dy = y2 - y1, k = Math.hypot(dx, dy) || 1;
+    let desl = (-(dy / k) * (p3[0] - x1) + (dx / k) * (p3[1] - y1)) / this.doc.escala;
+    if (Math.abs(desl) < 2) desl = desl < 0 ? -2 : 2;
+    return desl;
+  }
+  _novas(p3) {
+    return this.ids.map(id => this.doc.get(id)).filter(Boolean).map(c => criar({ ...c, deslocamento: this._desloc(c, p3) }));
+  }
+  onPonto(p, ev) {
+    if (!this.ids.length) {
+      const e = this.editor.tela.sob(ev.px);
+      if (e && e.tipo === 'cota') { this.editor.selecionar([e.id]); this.ids = [e.id]; this.dica('Agora clique onde a linha de cota deve ficar (o snap pega a linha de outra cota)'); }
+      else this.dica('Clique numa cota');
+      return;
+    }
+    this.editor.executar(new ComandoSubstituir(this._novas(p), 'Mover linha de cota'));
+    this.editor.selecionar([]);
+    this.reiniciar();
+  }
+  onMover(p) { if (this.ids.length) this.editor.previa(this._novas(p)); }
 }
 
 export class Hachura extends Ferramenta {
@@ -608,5 +648,5 @@ export class Medir extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, Chamada, Hachura,
-  Mover, Copiar, Girar, Espelhar, Offset, Aparar, Estender, Concordar, Apagar, Medir];
+  Mover, Copiar, Girar, Espelhar, Offset, Aparar, Estender, Concordar, MoverCota, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];

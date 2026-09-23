@@ -225,3 +225,36 @@ def test_memorial_conta_a_estrutura_certa():
     assert "Tesoura banzos paralelos" in html
     assert "Warren" in html
     assert "alma cheia" not in html.split("Sistema estrutural")[1][:400]
+
+
+# ------------------------------------------------ 4. perfil por elemento
+
+def test_perfil_forcado_e_verificado_e_reprova_com_aviso():
+    """O perfil escolhido pelo usuário é verificado como qualquer outro; reprovado, fica
+    no resultado com a razão e a lista dos que passam ao lado."""
+    p = galpao.dimensionar(_dados(perfil_terca="Ue 75×40×15×1,20"))
+    terca = p.elemento("Terça")
+    assert terca.perfil == "Ue 75×40×15×1,20" and not terca.ok
+    assert any("terça escolhida" in a.lower() for a in p.avisos)
+    assert terca.alternativas and terca.alternativas[0]["ok"]
+    assert all("massa" in a for a in terca.alternativas)
+
+
+def test_perfil_forcado_de_familia_errada_e_recusado():
+    with pytest.raises(ErroDeDados, match="aceita I"):
+        DadosGalpao(perfil_viga="Ue 100×50×17×2,00").validar()
+    with pytest.raises(ErroDeDados, match="catálogo"):
+        DadosGalpao(perfil_pilar="W 999×1").validar()
+
+
+def test_banzos_duplos_contam_duas_pecas():
+    p = galpao.dimensionar(_dados(perfil_banzo_superior="Ue 200×75×20×2,65", banzos_duplos=True))
+    bs = p.elemento("Banzo superior")
+    assert bs.perfil == "Ue 200×75×20×2,65" and bs.geometria["pecas_por_barra"] == 2
+    assert bs.resultado.dados.get("n") == 2
+    peca = next(x for x in p.lista_material if x.marca == "BS")
+    assert peca.quantidade == 2 * 2 * p.dados.n_porticos and "duplo" in peca.descricao
+    # cada elemento da tesoura traz os perfis do catálogo verificados, quem passa primeiro
+    for nome in ("Banzo superior", "Banzo inferior", "Diagonal", "Montante"):
+        alt = p.elemento(nome).alternativas
+        assert alt and alt[0]["ok"] and "massa" in alt[0]

@@ -39,7 +39,7 @@ from .perfis import Perfil
 
 __all__ = ["FORMATOS", "DIAGONAIS", "PAPEIS", "Tesoura", "geometria", "montar",
            "altura_padrao", "paineis_padrao", "menor_perfil", "candidatos",
-           "perfil_proximo", "FAMILIAS_POR_PAPEL"]
+           "perfil_proximo", "FAMILIAS_POR_PAPEL", "candidatos_verificados"]
 
 #: Formato da tesoura: o que cada um faz com os dois banzos.
 FORMATOS: Dict[str, str] = {
@@ -488,13 +488,17 @@ def menor_perfil(familias: Sequence[str], aco: str, Nc: float, Nt: float, M: flo
                  Lx: float, Ly: float, elemento: str,
                  altura_min: float = 0.0, altura_max: float = 0.0,
                  esbeltez_max: float = 250.0,
-                 espessura_min: float = MIN_ESPESSURA) -> Tuple[Optional[Perfil], Optional[Resultado]]:
+                 espessura_min: float = MIN_ESPESSURA, n: int = 1,
+                 forcado: Optional[Perfil] = None) -> Tuple[Optional[Perfil], Optional[Resultado]]:
     """O perfil mais leve que passa. Devolve (perfil, resultado) ou o menos ruim achado.
 
     `esbeltez_max` recusa antes da norma a barra esbelta demais (NBR 8800 limita
     λ = KL/r a 200 na compressão e 300 na tração): não adianta passar por pouco numa
-    peça que chega torta à obra.
+    peça que chega torta à obra. `n` é o número de peças da barra (2 no perfil duplo);
+    `forcado` pula a busca e verifica só aquele perfil — é o que o usuário escolheu.
     """
+    if forcado is not None:
+        return forcado, verificar.verificar_membro(forcado, aco, Nc, Nt, M, Lx, Ly, n, elemento, [])
     melhor = (None, None)
     comprimido = abs(Nc) > 1e-6
     limite = min(esbeltez_max, 200.0 if comprimido else 300.0)
@@ -504,9 +508,30 @@ def menor_perfil(familias: Sequence[str], aco: str, Nc: float, Nt: float, M: flo
         r_min = min(getattr(p, "rx", 0.0) or 1e9, getattr(p, "ry", 0.0) or 1e9)
         if r_min and max(Lx, Ly) / r_min > limite:
             continue
-        r = verificar.verificar_membro(p, aco, Nc, Nt, M, Lx, Ly, 1, elemento, [])
+        r = verificar.verificar_membro(p, aco, Nc, Nt, M, Lx, Ly, n, elemento, [])
         if r.ok:
             return p, r
         if melhor[1] is None or r.razao < melhor[1].razao:
             melhor = (p, r)
     return melhor
+
+
+def candidatos_verificados(familias: Sequence[str], aco: str, Nc: float, Nt: float, M: float,
+                           Lx: float, Ly: float, elemento: str, altura_ref: float = 0.0,
+                           altura_max: float = 0.0, n: int = 1, limite: int = 12,
+                           espessura_min: float = MIN_ESPESSURA) -> List[dict]:
+    """Os perfis do catálogo em volta do adotado, cada um verificado nos mesmos esforços:
+    o que passa primeiro (do mais leve ao mais pesado), depois o que não passa (do que
+    chegou mais perto). É a lista que o projetista usa para trocar o perfil sem sair do
+    que a norma aceita — e para ver quanto cada escolha custa em kg/m."""
+    a_min = 0.5 * altura_ref if altura_ref else 0.0
+    a_max = min(2.0 * altura_ref, altura_max) if (altura_ref and altura_max) else (2.0 * altura_ref if altura_ref else altura_max)
+    saida = []
+    for p in candidatos(familias, a_min, a_max):
+        if espessura_min and 0 < _espessura(p) < espessura_min:
+            continue
+        r = verificar.verificar_membro(p, aco, Nc, Nt, M, Lx, Ly, n, elemento, [])
+        saida.append({"perfil": p.nome, "razao": round(r.razao, 3), "ok": bool(r.ok),
+                      "massa": round((p.massa or 0.0) * n, 2)})
+    saida.sort(key=lambda x: (not x["ok"], x["massa"] if x["ok"] else x["razao"]))
+    return saida[:limite]

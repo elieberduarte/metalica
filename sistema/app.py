@@ -120,6 +120,13 @@ def catalogo() -> dict:
     dados = mat.listar()
     dados["perfis"] = {tipo: [p.resumo() for p in lista]
                        for tipo, lista in b.por_tipo.items()}
+    # nomes do catálogo completo (laminados e formados a frio) por família, para as
+    # listas de "perfil por elemento" do formulário
+    try:
+        from nucleo import catalogo as _cat
+        dados["pecas"] = {fam: [it.nome for it in _cat.itens(fam)] for fam in ("I", "U", "Ue", "L", "tubo")}
+    except Exception as e:
+        dados["pecas"] = {"erro": str(e)}
     try:
         from nucleo.cargas import listar as listar_cargas
         dados["cargas"] = listar_cargas()
@@ -143,6 +150,11 @@ def _campos_formulario() -> list:
                                            "comprimento_misula", "altura_misula"]),
         "materiais": ("Materiais", ["aco_perfis", "aco_tercas", "aco_chapas", "parafuso",
                                     "eletrodo", "fck_MPa"]),
+        "perfis": ("Perfis por elemento", ["perfil_terca", "perfil_longarina", "perfil_viga",
+                                           "perfil_pilar", "perfil_banzo_superior",
+                                           "perfil_banzo_inferior", "perfil_diagonal",
+                                           "perfil_montante", "banzos_duplos",
+                                           "diagonais_duplas"]),
         "cobertura": ("Cobertura e fechamento", ["telha", "espacamento_tercas",
                                                  "linhas_correntes", "fechamento_lateral",
                                                  "altura_fechamento"]),
@@ -194,6 +206,12 @@ ROTULOS = {
     "desloc_horizontal": "Deslocamento do pilar (H/…)", "custo_kg": "Custo (R$/kg instalado)",
     "nome": "Nome do projeto", "cliente": "Cliente", "local": "Local",
     "responsavel": "Responsável técnico",
+    "perfil_terca": "Terça", "perfil_longarina": "Longarina de fechamento",
+    "perfil_viga": "Viga do pórtico (alma cheia)", "perfil_pilar": "Pilar",
+    "perfil_banzo_superior": "Banzo superior (tesoura)", "perfil_banzo_inferior": "Banzo inferior (tesoura)",
+    "perfil_diagonal": "Diagonais (tesoura)", "perfil_montante": "Montantes (tesoura)",
+    "banzos_duplos": "Banzos com perfil duplo (2 peças costas com costas)",
+    "diagonais_duplas": "Diagonais e montantes com perfil duplo",
 }
 
 

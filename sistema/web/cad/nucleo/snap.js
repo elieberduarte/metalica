@@ -5,7 +5,14 @@
 // Tudo dentro de um raio em pixels; o resultado traz o tipo, que a tela desenha como
 // glifo. Orto (Shift) trava a direção a 0°/90° a partir do último ponto.
 
-import { pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dist } from './desenho2d.js';
+import { pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dist, pontosCota } from './desenho2d.js';
+
+/** Segmentos que o snap enxerga: na cota, a linha de cota também (é o que se alinha). */
+function segmentosSnap(e, escala) {
+  if (e.tipo !== 'cota') return segmentosDe(e);
+  const pc = pontosCota(e, escala);
+  return pc.length === 4 ? [[pc[2], pc[3]], [e.p1, e.p2]] : [[e.p1, e.p2]];
+}
 
 export class Snap {
   constructor(tela) {
@@ -41,7 +48,12 @@ export class Snap {
         if (e.tipo === 'linha') { considerar(e.a, 'extremidade', 0); considerar(e.b, 'extremidade', 0); }
         else if (e.tipo === 'polilinha') for (const v of e.vertices) considerar(v, 'extremidade', 0);
         else if (e.tipo === 'arco') { const pa = pontosDe(e); considerar(pa[0], 'extremidade', 0); considerar(pa[pa.length - 1], 'extremidade', 0); }
-        else if (e.tipo === 'cota') { considerar(e.p1, 'extremidade', 0); considerar(e.p2, 'extremidade', 0); }
+        else if (e.tipo === 'cota') {
+          considerar(e.p1, 'extremidade', 0); considerar(e.p2, 'extremidade', 0);
+          // as pontas da linha de cota: é nelas que a próxima cota se alinha
+          const pc = pontosCota(e, tela.doc.escala);
+          if (pc.length === 4) { considerar(pc[2], 'extremidade', 0, 'linha de cota'); considerar(pc[3], 'extremidade', 0, 'linha de cota'); }
+        }
         else if (e.tipo === 'chamada') { considerar(e.alvo, 'extremidade', 0); }
       }
       if (a.meio) {
@@ -64,7 +76,7 @@ export class Snap {
       // afastada num desenho denso ainda podem ser milhares; os pares ficam limitados
       // aos mais próximos, senão cada movimento do mouse custa segundos.
       const perto = [];
-      for (const e of ents) for (const s of segmentosDe(e)) {
+      for (const e of ents) for (const s of segmentosSnap(e, tela.doc.escala)) {
         const d = distSegmento(p, s[0], s[1]);
         if (d < raio) perto.push([e.id, s, d]);
       }
@@ -76,7 +88,7 @@ export class Snap {
       }
     }
     if (a.perpendicular && this.ultimo) {
-      for (const e of ents) for (const [s, t] of segmentosDe(e)) {
+      for (const e of ents) for (const [s, t] of segmentosSnap(e, tela.doc.escala)) {
         const q = maisProximoSeg(this.ultimo, s, t);
         if (dist(q, s) > 1e-6 && dist(q, t) > 1e-6) considerar(q, 'perpendicular', 2);
       }
@@ -96,7 +108,7 @@ export class Snap {
         if (e.tipo === 'circulo') {
           const ang = Math.atan2(p[1] - e.centro[1], p[0] - e.centro[0]);
           considerar([e.centro[0] + e.raio * Math.cos(ang), e.centro[1] + e.raio * Math.sin(ang)], 'sobre', 3);
-        } else for (const [s, t] of segmentosDe(e)) considerar(maisProximoSeg(p, s, t), 'sobre', 3);
+        } else for (const [s, t] of segmentosSnap(e, tela.doc.escala)) considerar(maisProximoSeg(p, s, t), 'sobre', 3, e.tipo === 'cota' ? 'linha de cota' : '');
       }
     }
     let ponto = melhor ? melhor.ponto : p;

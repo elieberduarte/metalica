@@ -203,6 +203,17 @@ const CONFIG = {
                        dica: '1,0 em terreno plano; 0,9 em vale profundo' },
   fator_estatistico: { faixa: [0.8, 1.2], rotuloErro: 'S₃', lista: 's3' },
 
+  perfil_terca: { largo: true, lista: 'pecas_Ue', dica: 'Ue ou U formado a frio; vazio = automático' },
+  perfil_longarina: { largo: true, lista: 'pecas_Ue', dica: 'Ue ou U formado a frio; vazio = automático' },
+  perfil_viga: { largo: true, lista: 'pecas_I', sePortico: 'alma', dica: 'W ou HP; vazio = automático' },
+  perfil_pilar: { largo: true, lista: 'pecas_I', dica: 'W ou HP; vazio = automático' },
+  perfil_banzo_superior: { largo: true, lista: 'pecas_Ue', sePortico: 'treli', dica: 'Ue, U, cantoneira ou tubo; vazio = automático' },
+  perfil_banzo_inferior: { largo: true, lista: 'pecas_Ue', sePortico: 'treli', dica: 'Ue, U, cantoneira ou tubo; vazio = automático' },
+  perfil_diagonal: { largo: true, lista: 'pecas_L', sePortico: 'treli', dica: 'cantoneira, U ou Ue; vazio = automático' },
+  perfil_montante: { largo: true, lista: 'pecas_L', sePortico: 'treli', dica: 'cantoneira, U ou Ue; vazio = automático' },
+  banzos_duplos: { sePortico: 'treli', dica: 'duas peças costas com costas: o dobro da área e da inércia' },
+  diagonais_duplas: { sePortico: 'treli', dica: 'idem nas diagonais e nos montantes' },
+
   flecha_terca: { faixa: [100, 600], inteiro: true, prefixo: 'L /', rotuloErro: 'Flecha da terça' },
   flecha_viga: { faixa: [100, 600], inteiro: true, prefixo: 'L /', rotuloErro: 'Flecha da viga' },
   desloc_horizontal: { faixa: [100, 800], inteiro: true, prefixo: 'H /',
@@ -271,6 +282,13 @@ function listaAuxiliar(nomeLista) {
     return Object.entries(cargas.grupos_s3 || {}).map(([g, v]) => ({
       valor: String(v.S3), rotulo: `grupo ${g} — ${v.descricao}`,
     }));
+  }
+  // perfis do catálogo por família ("pecas_Ue": Ue e U formados a frio; "pecas_L":
+  // cantoneiras, U e Ue; "pecas_I": W e HP) — o servidor manda os nomes em `pecas`
+  if (nomeLista.startsWith('pecas_')) {
+    const pecas = (c.pecas && !c.pecas.erro) ? c.pecas : {};
+    const fams = { pecas_Ue: ['Ue', 'U'], pecas_L: ['L', 'U', 'Ue'], pecas_I: ['I'] }[nomeLista] || [];
+    return fams.flatMap(f => (pecas[f] || []).map(n => ({ valor: n })));
   }
   return [];
 }
@@ -476,7 +494,7 @@ function atualizarSinais(erros) {
   const porEtapa = {
     projeto: ['identificacao', 'geometria', 'sistema'],
     cargas: ['cobertura', 'cargas', 'vento'],
-    materiais: ['materiais', 'criterios'],
+    materiais: ['materiais', 'perfis', 'criterios'],
   };
   for (const [etapa, grupos] of Object.entries(porEtapa)) {
     const campos = estado.campos.filter(g => grupos.includes(g.grupo))
@@ -1396,24 +1414,61 @@ function cartaoElemento(info) {
           el('dt', {}, rotularChave(k)), el('dd', {}, valorCurto(v))))) : null,
       info.alternativas && info.alternativas.length
         ? el('details', { class: 'dados-extra' },
-          el('summary', {}, `Perfis testados (${info.alternativas.length})`),
-          tabelaAlternativas(info.alternativas))
+          el('summary', {}, `Perfis do catálogo verificados (${info.alternativas.filter(a => a.ok).length} passam de ${info.alternativas.length})`),
+          notaPerfilForcado(info.nome),
+          tabelaAlternativas(info.alternativas, campoDoPerfil(info.nome)))
         : null,
       el('footer', {}, botao)));
 }
 
-function tabelaAlternativas(lista) {
+/** Campo de DadosGalpao que força o perfil deste elemento (null para quem não tem). */
+function campoDoPerfil(nomeElemento) {
+  const n = String(nomeElemento || '').toLowerCase();
+  if (n.startsWith('terça')) return 'perfil_terca';
+  if (n.startsWith('longarina')) return 'perfil_longarina';
+  if (n.startsWith('viga do pórtico')) return 'perfil_viga';
+  if (n === 'pilar' || n.startsWith('pilar')) return 'perfil_pilar';
+  if (n.startsWith('banzo superior')) return 'perfil_banzo_superior';
+  if (n.startsWith('banzo inferior')) return 'perfil_banzo_inferior';
+  if (n.startsWith('diagonal da tesoura')) return 'perfil_diagonal';
+  if (n.startsWith('montante da tesoura')) return 'perfil_montante';
+  return null;
+}
+
+/** Aplica um perfil escolhido nos resultados: grava no formulário e redimensiona. */
+function adotarPerfil(campo, nome) {
+  if (!campo) return;
+  estado.dados[campo] = nome || '';
+  const ctrl = document.getElementById('c-' + campo);
+  if (ctrl) ctrl.value = estado.dados[campo];
+  aoMudarDados();
+  dimensionar();
+}
+
+function notaPerfilForcado(nomeElemento) {
+  const campo = campoDoPerfil(nomeElemento);
+  const atual = campo ? String(estado.dados[campo] || '').trim() : '';
+  if (!campo || !atual) return null;
+  return el('p', { class: 'nota' }, `Perfil forçado em Materiais → Perfis por elemento: ${atual}. `,
+    el('button', { type: 'button', class: 'mini', onclick: () => adotarPerfil(campo, '') }, 'Voltar ao automático'));
+}
+
+function tabelaAlternativas(lista, campo = null) {
   const tab = el('table', { class: 'tab' });
   tab.append(el('thead', {}, el('tr', {},
     el('th', {}, 'Perfil'), el('th', { class: 'n' }, 'Razão'),
-    el('th', { class: 'n' }, 'kg/m'), el('th', { class: 'c' }, 'Situação'))));
+    el('th', { class: 'n' }, 'kg/m'), el('th', { class: 'c' }, 'Situação'),
+    campo ? el('th', { class: 'c' }, '') : null)));
   const corpo = el('tbody');
   for (const a of lista) {
     corpo.append(el('tr', {},
       el('td', {}, a.perfil || '—'),
       el('td', { class: 'n' }, nf(a.razao, 3)),
-      el('td', { class: 'n' }, a.massa === undefined ? '—' : nf(a.massa, 1)),
-      el('td', { class: 'c' }, a.ok ? 'passa' : 'não passa')));
+      el('td', { class: 'n' }, a.massa === undefined || a.massa === null ? '—' : nf(a.massa, 1)),
+      el('td', { class: 'c' }, a.ok ? 'passa' : 'não passa'),
+      campo ? el('td', { class: 'c' },
+        el('button', { type: 'button', class: 'mini', title: 'adota este perfil e redimensiona o galpão inteiro',
+                       onclick: () => adotarPerfil(campo, a.perfil) }, 'Usar')) : null));
   }
   tab.append(corpo);
   return tab;

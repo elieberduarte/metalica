@@ -123,6 +123,26 @@ família. Ligações verificadas: **chapa de nó** (gusset da diagonal mais soli
 seção de Whitmore, bloco de cisalhamento e parafusos) e **tesoura–pilar** (cortante do
 pórtico e a tração de arrancamento sob sucção). Testes: `testes/test_tesouras.py`.
 
+## Perfil por elemento
+
+Na etapa **Materiais → Perfis por elemento** o projetista escolhe o perfil de cada
+elemento (terça, longarina, viga, pilar, banzos, diagonais e montantes) entre os do catálogo
+— vazio continua sendo "o mais leve que passa". O perfil forçado é verificado exatamente
+como qualquer outro (`DadosGalpao.perfil_forcado`, `tesouras.menor_perfil(forcado=…)`,
+`nbr14762.dimensionar_terca(perfis=[…])`): reprovado, ele fica no resultado com a razão e
+um aviso, em vez de ser trocado às escondidas. Família errada (um Ue na viga) é recusada
+na validação. **Banzos com perfil duplo** e **diagonais e montantes com perfil duplo**
+(`banzos_duplos`, `diagonais_duplas`) entram na análise com o dobro da área e da inércia,
+na verificação com `n = 2` (os esforços se dividem pelas duas peças) e na lista de
+material com o dobro das peças.
+
+Cada elemento dos resultados traz **os perfis do catálogo verificados nos esforços dele**
+(`ElementoDimensionado.alternativas`, com razão, kg/m e situação): os que passam
+primeiro, do mais leve ao mais pesado, depois os que não passam, do que chegou mais perto
+(`tesouras.candidatos_verificados`, `galpao._alternativas_W`, `_alternativas_de_opcoes`).
+Na tela, **Usar** grava o perfil no formulário e redimensiona o galpão inteiro — é como se
+troca a altura da terça ou do banzo sem sair do que a norma aceita.
+
 ## Editor 3D
 
 O editor roda no navegador e funciona sem internet: a biblioteca 3D, Three.js r160 sobre
@@ -226,7 +246,7 @@ círculo (C), arco (A), texto (T), cota (D), chamada (H), hachura (G); mover (M)
 girar (Q), espelhar (I), offset (F), **aparar/trim (X)**, **estender/extend (N)** — a linha vai
 até a primeira linha, arco ou círculo na direção dela —, **concordar/fillet (K)** — duas linhas
 viram canto vivo (raio 0) ou arco tangente do raio digitado, com as pontas aparadas ou
-estendidas —, apagar (E), medir (U). Ao desenhar linha ou polilinha, o cursor **gruda na
+estendidas —, **mover linha de cota (J)** — clique na cota, ou selecione várias, e depois onde a linha deve ficar; os pontos medidos não mudam, e várias cotas paralelas vão para a mesma linha —, apagar (E), medir (U). O snap enxerga a **linha de cota** das cotas existentes (pontas e "sobre", rótulo `linha de cota`): é como se alinha a próxima cota pela anterior. Ao desenhar linha ou polilinha, o cursor **gruda na
 continuação da linha anterior** e na perpendicular dela (snap `alinhamento`, marcado com
 `⊢─⊣`), e no primeiro ponto segue a linha existente de onde a nova parte — é o *tracking*
 dos CADs, sem travar como o orto. **Esc** volta para selecionar e **espaço** chama de novo a

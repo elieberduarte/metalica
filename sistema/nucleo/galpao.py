@@ -182,12 +182,26 @@ def _tercas(p: ProjetoGalpao):
     q_serv_grav = (g + sc) * esp
     q_serv_suc = max(0.0, (abs(succao) - g) * esp)
 
+    forcada = d.perfil_forcado("perfil_terca")
     opcoes = nbr14762.dimensionar_terca(
         aco=d.aco_tercas, vao=vao, carga_gravidade=q_grav, carga_succao=q_suc,
         correntes=(d.linhas_correntes,) if d.linhas_correntes else (0, 1, 2),
         inclinacao=d.angulo_telhado,
         carga_servico_gravidade=q_serv_grav, carga_servico_succao=q_serv_suc,
         apenas_aprovados=True)
+    catalogo_tercas = list(opcoes)
+    if forcada is not None:
+        # o perfil escolhido é verificado com as mesmas cargas; reprovado, ele fica e o
+        # projetista vê a razão — a lista dos que passam continua disponível ao lado
+        opcoes = nbr14762.dimensionar_terca(
+            aco=d.aco_tercas, vao=vao, carga_gravidade=q_grav, carga_succao=q_suc,
+            correntes=(d.linhas_correntes,) if d.linhas_correntes else (0, 1, 2),
+            inclinacao=d.angulo_telhado, carga_servico_gravidade=q_serv_grav,
+            carga_servico_succao=q_serv_suc, apenas_aprovados=False, perfis=[forcada])
+        opcoes.sort(key=lambda r: (not r.ok, r.razao))
+        if opcoes and not opcoes[0].ok:
+            p.avisos.append("A terça escolhida (%s) não passa (aproveitamento %.2f): veja os perfis "
+                            "que passam na lista do elemento." % (forcada.nome, opcoes[0].razao))
     if not opcoes:
         # tenta liberar o número de correntes antes de desistir
         opcoes = nbr14762.dimensionar_terca(
@@ -222,8 +236,7 @@ def _tercas(p: ProjetoGalpao):
                    "n_correntes": n_correntes, "por_agua": n_linhas,
                    "recuo_beiral_m": RECUO_TERCA_BEIRAL,
                    "recuo_cumeeira_m": RECUO_TERCA_CUMEEIRA},
-        alternativas=[{"perfil": o.perfil, "razao": round(o.razao, 3), "ok": o.ok}
-                      for o in opcoes[:8]])
+        alternativas=_alternativas_de_opcoes(catalogo_tercas or opcoes))
     p.elementos.append(e)
     p.cargas["espacamento_tercas_real"] = esp
     p.cargas["linhas_tercas_por_agua"] = n_linhas
@@ -262,12 +275,23 @@ def _longarinas(p: ProjetoGalpao):
 
     opcoes = nbr14762.dimensionar_terca(correntes=(max(1, d.linhas_correntes),),
                                         apenas_aprovados=True, **base)
-    if not opcoes:
+    catalogo_long = list(opcoes)
+    forcada_long = d.perfil_forcado("perfil_longarina")
+    if forcada_long is not None:
+        # o perfil escolhido é verificado com as mesmas cargas; reprovado, ele fica e o
+        # projetista vê a razão — a lista dos que passam continua ao lado
+        opcoes = nbr14762.dimensionar_terca(correntes=(0, 1, 2, 3), apenas_aprovados=False,
+                                            perfis=[forcada_long], **base)
+        opcoes.sort(key=lambda r: (not r.ok, r.razao))
+        if opcoes and not opcoes[0].ok:
+            p.avisos.append("A longarina escolhida (%s) não passa (aproveitamento %.2f): veja os "
+                            "perfis que passam na lista do elemento." % (forcada_long.nome, opcoes[0].razao))
+    if not opcoes and forcada_long is None:
         opcoes = nbr14762.dimensionar_terca(correntes=(1, 2, 3), apenas_aprovados=True, **base)
         if opcoes:
             p.avisos.append("As longarinas precisaram de %s linha(s) de correntes."
                             % opcoes[0].dados.get("n_correntes"))
-    if not opcoes:
+    if not opcoes and forcada_long is None:
         opcoes = nbr14762.dimensionar_terca(correntes=(1, 2, 3), apenas_aprovados=False, **base)
         opcoes.sort(key=lambda r: r.razao)
         p.avisos.append("Nenhuma longarina do catálogo atende; foi adotada a de menor razão "
@@ -292,8 +316,7 @@ def _longarinas(p: ProjetoGalpao):
                    "cotas_fiadas_m": [round(esp / 2 + k * esp, 4)
                                       for k in range(n_fiadas)],
                    "n_correntes": melhor.dados.get("n_correntes", d.linhas_correntes)},
-        alternativas=[{"perfil": o.perfil, "razao": round(o.razao, 3), "ok": o.ok}
-                      for o in opcoes[:8]]))
+        alternativas=_alternativas_de_opcoes(catalogo_long or opcoes)))
 
 
 # --------------------------------------------------------- 4. análise do pórtico
@@ -425,22 +448,20 @@ def _analise_alma_cheia(p: ProjetoGalpao):
         # inferior fica comprimida e quem trava sao as maos-francesas
         inverte = esf["viga"]["M_max"] * esf["viga"]["M_min"] < 0
         Lb_viga = max(esp_terca, min(d.vao * 100 / 4, 300.0)) if inverte else esp_terca
-        res_viga = _menor_perfil(
-            lambda perf: nbr8800.verificar_viga(
-                perf, a, L=d.comprimento_agua * 100, M_Sd=esf["viga"]["M"],
-                V_Sd=esf["viga"]["V"], Lb=Lb_viga, Cb=1.14,
-                limite="L/%d" % d.flecha_viga, q_servico=_q_servico_viga(p),
-                elemento="Viga do pórtico"),
-            altura_min=200)
+        verificar_viga = (lambda perf, esf=esf, Lb=Lb_viga: nbr8800.verificar_viga(
+            perf, a, L=d.comprimento_agua * 100, M_Sd=esf["viga"]["M"],
+            V_Sd=esf["viga"]["V"], Lb=Lb, Cb=1.14,
+            limite="L/%d" % d.flecha_viga, q_servico=_q_servico_viga(p),
+            elemento="Viga do pórtico"))
+        res_viga = _menor_perfil(verificar_viga, altura_min=200, forcado=d.perfil_forcado("perfil_viga"))
 
         # pilar: flexo-compressao, com altura minima proxima a da viga para nao ficar
         # tao flexivel a ponto de empurrar todo o momento para a cumeeira
         h_min_pilar = max(200.0, achar_perfil(res_viga.perfil).d * 0.8)
-        res_pilar = _menor_perfil(
-            lambda perf: nbr8800.flexao_composta(
-                perf, a, N_Sd=esf["pilar"]["N"], Mx_Sd=esf["pilar"]["M"],
-                Lx=H, Ly=Ly, Kx=Kx, Ky=1.0, Lb=Ly, Cb=1.67, elemento="Pilar"),
-            altura_min=h_min_pilar)
+        verificar_pilar = (lambda perf, esf=esf: nbr8800.flexao_composta(
+            perf, a, N_Sd=esf["pilar"]["N"], Mx_Sd=esf["pilar"]["M"],
+            Lx=H, Ly=Ly, Kx=Kx, Ky=1.0, Lb=Ly, Cb=1.67, elemento="Pilar"))
+        res_pilar = _menor_perfil(verificar_pilar, altura_min=h_min_pilar, forcado=d.perfil_forcado("perfil_pilar"))
 
         nova_viga = achar_perfil(res_viga.perfil)
         novo_pilar = achar_perfil(res_pilar.perfil)
@@ -453,9 +474,10 @@ def _analise_alma_cheia(p: ProjetoGalpao):
 
     # o deslocamento horizontal do topo costuma governar o pilar de galpao com base
     # rotulada; percorre-se o catalogo ate atender ao limite de servico
-    pilar0, res_pilar = _pilar_por_deslocamento(
-        p, viga0, pilar0, res_pilar, _extrair_esforcos(
-            _rodar_analise(p, pilar0, viga0)[1]), H, Kx, Ly, a)
+    if d.perfil_forcado("perfil_pilar") is None:
+        pilar0, res_pilar = _pilar_por_deslocamento(
+            p, viga0, pilar0, res_pilar, _extrair_esforcos(
+                _rodar_analise(p, pilar0, viga0)[1]), H, Kx, Ly, a)
 
     # analise final com os perfis adotados
     modelo, env, combos = _rodar_analise(p, pilar0, viga0)
@@ -477,9 +499,18 @@ def _analise_alma_cheia(p: ProjetoGalpao):
     p.esforcos["casos_modelo"] = combos
     p.combinacoes = _combinacoes_documentadas(p)
 
+    # os W em volta do adotado, verificados nos esforços finais: é a lista que a tela
+    # oferece para trocar o perfil sem sair do que passa
+    verificar_viga_final = (lambda perf: nbr8800.verificar_viga(
+        perf, a, L=d.comprimento_agua * 100, M_Sd=esf["viga"]["M"], V_Sd=esf["viga"]["V"],
+        Lb=Lb_viga, Cb=1.14, limite="L/%d" % d.flecha_viga, q_servico=_q_servico_viga(p),
+        elemento="Viga do pórtico"))
+    verificar_pilar_final = (lambda perf: nbr8800.flexao_composta(
+        perf, a, N_Sd=esf["pilar"]["N"], Mx_Sd=esf["pilar"]["M"], Lx=H, Ly=Ly, Kx=Kx, Ky=1.0,
+        Lb=Ly, Cb=1.67, elemento="Pilar"))
     p.elementos.append(ElementoDimensionado(
         nome="Viga do pórtico", perfil=res_viga.perfil, material=d.aco_perfis,
-        resultado=res_viga,
+        resultado=res_viga, alternativas=_alternativas_W(verificar_viga_final, res_viga.perfil),
         esforcos={"M_kNcm": round(esf["viga"]["M"], 1),
                   "M_kNm": round(esf["viga"]["M"] / 100, 1),
                   "V_kN": round(esf["viga"]["V"], 1),
@@ -489,7 +520,7 @@ def _analise_alma_cheia(p: ProjetoGalpao):
                    "misula_m": d.comprimento_misula if d.com_misula else 0.0}))
     p.elementos.append(ElementoDimensionado(
         nome="Pilar", perfil=res_pilar.perfil, material=d.aco_perfis,
-        resultado=res_pilar,
+        resultado=res_pilar, alternativas=_alternativas_W(verificar_pilar_final, res_pilar.perfil),
         esforcos={"N_kN": round(esf["pilar"]["N"], 1),
                   "M_kNcm": round(esf["pilar"]["M"], 1),
                   "M_kNm": round(esf["pilar"]["M"] / 100, 1),
@@ -679,8 +710,11 @@ def _momentos_nos_nos(modelo, combos) -> dict:
     return {"joelho": joelho, "cumeeira": cumeeira}
 
 
-def _menor_perfil(verificar, altura_min=200.0, familia="W"):
-    """Primeiro perfil do catalogo (do mais leve ao mais pesado) que passa em tudo."""
+def _menor_perfil(verificar, altura_min=200.0, familia="W", forcado=None):
+    """Primeiro perfil do catalogo (do mais leve ao mais pesado) que passa em tudo.
+    Com `forcado` (o perfil escolhido pelo usuário) só ele é verificado."""
+    if forcado is not None:
+        return verificar(forcado)
     ultimo = None
     for perf in banco().candidatos("I", familia, altura_min=altura_min):
         r = verificar(perf)
@@ -688,6 +722,26 @@ def _menor_perfil(verificar, altura_min=200.0, familia="W"):
         if r.ok:
             return r
     return ultimo
+
+
+def _alternativas_W(verificar, adotado: str, limite: int = 12) -> list:
+    """Os W em volta do adotado, verificados nos mesmos esforços: quem passa primeiro."""
+    try:
+        h = achar_perfil(adotado).d
+    except Exception:
+        h = 0.0
+    saida = []
+    for perf in banco().candidatos("I", "W"):
+        if h and not (0.6 * h <= perf.d <= 1.8 * h):
+            continue
+        try:
+            r = verificar(perf)
+        except ErroDeDados:
+            continue
+        saida.append({"perfil": perf.nome, "razao": round(r.razao, 3), "ok": bool(r.ok),
+                      "massa": round(perf.massa or 0.0, 2)})
+    saida.sort(key=lambda x: (not x["ok"], x["massa"] if x["ok"] else x["razao"]))
+    return saida[:limite]
 
 
 def _deslocamento_horizontal(p: ProjetoGalpao, modelo) -> dict:
@@ -869,13 +923,13 @@ def _perfis_semente(t, d: DadosGalpao) -> dict:
     return semente
 
 
-def _peso_proprio_tesoura(t, perfis: dict) -> dict:
+def _peso_proprio_tesoura(t, perfis: dict, d: Optional[DadosGalpao] = None) -> dict:
     """Peso da tesoura repartido entre os dois banzos, em kN/m de barra.
 
     As diagonais e os montantes não têm carga própria no modelo — o peso deles entra
-    metade em cada banzo, que é onde ele de fato chega."""
-    massa = {papel: (perfis[papel].massa or 0.0) for papel in tesouras.PAPEIS
-             if papel in perfis and t.do_papel(papel)}
+    metade em cada banzo, que é onde ele de fato chega. Perfil duplo pesa o dobro."""
+    massa = {papel: (perfis[papel].massa or 0.0) * (d.pecas_por_barra(papel) if d else 1)
+             for papel in tesouras.PAPEIS if papel in perfis and t.do_papel(papel)}
     peso_web = sum(massa.get(x, 0.0) * t.comprimento_total(x) / 100.0
                    for x in ("diagonal", "montante"))                 # kg
     l_sup = max(t.comprimento_total("banzo superior") / 100.0, 1.0)
@@ -887,13 +941,14 @@ def _peso_proprio_tesoura(t, perfis: dict) -> dict:
 
 
 def _rodar_tesoura(p: ProjetoGalpao, t, perfis: dict):
-    """Monta o modelo da tesoura com os perfis dados, carrega e devolve a envoltória."""
+    """Monta o modelo da tesoura com os perfis dados, carrega e devolve a envoltória.
+    No perfil duplo a barra entra com o dobro da área e da inércia."""
     d = p.dados
-    secoes = {k: (v.A, v.Ix) for k, v in perfis.items()}
+    secoes = {k: (v.A * d.pecas_por_barra(k), v.Ix * d.pecas_por_barra(k)) for k, v in perfis.items()}
     modelo = tesouras.montar(t, d.pe_direito * 100, secoes,
                              base_rotulada=d.base_rotulada, ligacao=d.ligacao_tesoura)
     _carregar_portico(modelo, p, perfis["pilar"], perfis.get("banzo superior"),
-                      pp=_peso_proprio_tesoura(t, perfis))
+                      pp=_peso_proprio_tesoura(t, perfis, d))
     modelo.validar()
     combos = _combinar(modelo, p, None)
     env = analise.envoltoria(modelo, [c for c in combos if c.startswith("C")])
@@ -1029,6 +1084,8 @@ def _analise_tesoura(p: ProjetoGalpao):
             e = esf.get(papel)
             if not e:
                 continue
+            forcado = d.perfil_forcado("perfil_" + papel.replace(" ", "_"))
+            n_pecas = d.pecas_por_barra(papel)
             if papel == "banzo inferior":
                 # o passo do travamento é parte da escolha: fecha-se a malha de
                 # travamento até o banzo passar, antes de engrossar o perfil
@@ -1037,7 +1094,7 @@ def _analise_tesoura(p: ProjetoGalpao):
                     perf, _r = tesouras.menor_perfil(
                         tesouras.FAMILIAS_POR_PAPEL[papel], d.aco_perfis, e["N_c"],
                         e["N_t"], e["M"], e["L"], cand_trava, NOME_DA_BARRA[papel],
-                        altura_max=altura_max(papel, e))
+                        altura_max=altura_max(papel, e), n=n_pecas, forcado=forcado)
                     trava, n_travas = cand_trava, cand_linhas
                     if _r is not None and _r.ok:
                         break
@@ -1047,7 +1104,7 @@ def _analise_tesoura(p: ProjetoGalpao):
             perf, _r = tesouras.menor_perfil(
                 tesouras.FAMILIAS_POR_PAPEL[papel], d.aco_perfis, e["N_c"], e["N_t"],
                 e["M"], e["L"], fora_do_plano(papel, e), NOME_DA_BARRA[papel],
-                altura_max=altura_max(papel, e))
+                altura_max=altura_max(papel, e), n=n_pecas, forcado=forcado)
             if perf is None:
                 raise ErroDeDados(
                     "Nenhum perfil do catálogo atende ao %s da tesoura com altura de até "
@@ -1060,7 +1117,7 @@ def _analise_tesoura(p: ProjetoGalpao):
             lambda perf: nbr8800.flexao_composta(
                 perf, a, N_Sd=ep["N_c"], Mx_Sd=ep["M"], Lx=H, Ly=Ly_pilar,
                 Kx=Kx, Ky=1.0, Lb=Ly_pilar, Cb=1.67, elemento="Pilar"),
-            altura_min=200.0)
+            altura_min=200.0, forcado=d.perfil_forcado("perfil_pilar"))
         novos["pilar"] = achar_perfil(r_pilar.perfil)
 
         # Em galpão de base rotulada quem governa o pilar não é a resistência, é o
@@ -1072,7 +1129,7 @@ def _analise_tesoura(p: ProjetoGalpao):
         rendeu = len(deslocs) < 2 or deslocs[-2] <= 0 or (
             (deslocs[-2] - deslocs[-1]) / deslocs[-2] > 0.02)
         if (desloc_atual and desloc_atual.get("razao", 0) > 1.0 and subidas < 8
-                and (rendeu or subidas == 0)):
+                and (rendeu or subidas == 0) and d.perfil_forcado("perfil_pilar") is None):
             acima = [c for c in banco().candidatos("I", "W")
                      if (c.massa or 0) > (perfis["pilar"].massa or 0)]
             if acima:
@@ -1121,8 +1178,13 @@ def _analise_tesoura(p: ProjetoGalpao):
             continue
         perf = perfis[papel]
         Ly = fora_do_plano(papel, e)
+        n_pecas = d.pecas_por_barra(papel)
         r = verificar.verificar_membro(perf, d.aco_perfis, e["N_c"], e["N_t"], e["M"],
-                                       e["L"], Ly, 1, NOME_DA_BARRA[papel], p.avisos)
+                                       e["L"], Ly, n_pecas, NOME_DA_BARRA[papel], p.avisos)
+        alternativas = tesouras.candidatos_verificados(
+            tesouras.FAMILIAS_POR_PAPEL[papel], d.aco_perfis, e["N_c"], e["N_t"], e["M"],
+            e["L"], Ly, NOME_DA_BARRA[papel], altura_ref=perf.d, altura_max=altura_max(papel, e),
+            n=n_pecas)
         if papel == "banzo inferior" and flecha is not None:
             r.add(flecha)
         if not r.ok:
@@ -1139,21 +1201,24 @@ def _analise_tesoura(p: ProjetoGalpao):
                              fmt(e["L"] / 100, 2, "m")))
         p.elementos.append(ElementoDimensionado(
             nome=NOME_DA_BARRA[papel], perfil=perf.nome, material=d.aco_perfis, resultado=r,
+            alternativas=alternativas,
             esforcos={"N_compressao_kN": round(e["N_c"], 1),
                       "N_tracao_kN": round(e["N_t"], 1),
                       "M_kNm": round(e["M"] / 100, 2),
                       "barra": e["barra_N"] or e["barra_M"],
                       "caso": e["caso_N"] or e["caso_M"]},
-            geometria={"barras_por_tesoura": e["n"],
+            geometria={"barras_por_tesoura": e["n"], "pecas_por_barra": n_pecas,
                        "comprimento_max_m": round(e["L"] / 100, 2),
                        "Lx_cm": round(e["L"], 1), "Ly_cm": round(Ly, 1),
                        "comprimento_total_m": round(t.comprimento_total(papel) / 100, 2)}))
 
-    r_pilar = nbr8800.flexao_composta(
-        perfis["pilar"], a, N_Sd=ep["N_c"], Mx_Sd=ep["M"], Lx=H, Ly=Ly_pilar,
-        Kx=Kx, Ky=1.0, Lb=Ly_pilar, Cb=1.67, elemento="Pilar")
+    verificar_pilar_final = (lambda perf: nbr8800.flexao_composta(
+        perf, a, N_Sd=ep["N_c"], Mx_Sd=ep["M"], Lx=H, Ly=Ly_pilar,
+        Kx=Kx, Ky=1.0, Lb=Ly_pilar, Cb=1.67, elemento="Pilar"))
+    r_pilar = verificar_pilar_final(perfis["pilar"])
     p.elementos.append(ElementoDimensionado(
         nome="Pilar", perfil=perfis["pilar"].nome, material=d.aco_perfis, resultado=r_pilar,
+        alternativas=_alternativas_W(verificar_pilar_final, perfis["pilar"].nome),
         esforcos={"N_kN": round(ep["N_c"], 1), "N_tracao_kN": round(ep["N_t"], 1),
                   "M_kNcm": round(ep["M"], 1), "M_kNm": round(ep["M"] / 100, 1),
                   "V_kN": round(ep["V"], 1), "caso": ep["caso_M"]},
@@ -1708,6 +1773,24 @@ def _lista_de_material(p: ProjetoGalpao):
                         f"usual de galpões (18 a 35 kg/m²). Reveja vão, espaçamento e cargas.")
 
 
+def _alternativas_de_opcoes(opcoes, limite: int = 12) -> list:
+    """Lista de alternativas a partir dos `Resultado` de uma busca no catálogo."""
+    saida = []
+    vistos = set()
+    for o in opcoes:
+        if o.perfil in vistos:
+            continue
+        vistos.add(o.perfil)
+        try:
+            massa = catalogo.perfil_de(o.perfil).massa
+        except Exception:
+            massa = None
+        saida.append({"perfil": o.perfil, "razao": round(o.razao, 3), "ok": bool(o.ok),
+                      "massa": round(massa, 2) if massa else None})
+    saida.sort(key=lambda x: (not x["ok"], (x["massa"] or 0.0) if x["ok"] else x["razao"]))
+    return saida[:limite]
+
+
 def _lista_da_tesoura(p: ProjetoGalpao, add, n_port: int):
     """Peças da tesoura: banzo por água e as barras internas agrupadas por comprimento.
 
@@ -1727,17 +1810,19 @@ def _lista_da_tesoura(p: ProjetoGalpao, add, n_port: int):
         barras = [b for b in t.do_papel(papel) if b.rotulo not in pular]
         if el is None or not barras:
             continue
+        n_pecas = int(el.geometria.get("pecas_por_barra") or 1)
+        duplo = " (perfil duplo, 2 peças por barra)" if n_pecas == 2 else ""
         if papel.startswith("banzo"):
-            add(marca[papel], "%s (meia tesoura)" % NOME_DA_BARRA[papel], el.perfil,
-                2 * n_port, t.comprimento_total(papel) / 200.0)
+            add(marca[papel], "%s (meia tesoura)%s" % (NOME_DA_BARRA[papel], duplo), el.perfil,
+                2 * n_port * n_pecas, t.comprimento_total(papel) / 200.0)
             continue
         grupos = {}
         for b in barras:
             c = round(t.comprimento(b) / 100.0, 2)
             grupos[c] = grupos.get(c, 0) + 1
         for i, comp in enumerate(sorted(grupos, reverse=True), start=1):
-            add("%s%d" % (marca[papel], i), NOME_DA_BARRA[papel], el.perfil,
-                grupos[comp] * n_port, comp)
+            add("%s%d" % (marca[papel], i), NOME_DA_BARRA[papel] + duplo, el.perfil,
+                grupos[comp] * n_port * n_pecas, comp)
     trav = p.elemento("Travamento do banzo inferior")
     if trav is not None and trav.geometria.get("quantidade"):
         add("TV", "Travamento lateral do banzo inferior", trav.perfil,
