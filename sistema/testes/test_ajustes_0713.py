@@ -33,7 +33,7 @@ def test_pecas_montadas_e_desenho():
     d = Desenho(nome="t", escala=10.0)
     ext = desenho_de_montagem(doc, g, d, 0.0, 0.0, "", {e.id: e for e in pecas})
     assert ext[2] > ext[0] and ext[3] > ext[1]
-    assert len(d.vistas) == 3                              # frente, lateral e isométrica
+    assert len(d.vistas) == 2                              # frente e lateral
     assert any((e.atributos or {}).get("detalhe") == "montagem" for e in d.entidades.values())
 
 

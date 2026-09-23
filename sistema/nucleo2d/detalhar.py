@@ -262,7 +262,7 @@ QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("c
 
 #: Título do quadro de cada tipo de posição (peça avulsa), na ordem em que saem.
 QUADROS_POSICOES = [("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("cumeeira", "CUMEEIRAS"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
-                    ("suporte_terca", "SUPORTES DE TERÇA"), ("montagem", "PEÇAS MONTADAS – FRENTE, LATERAL E ISOMÉTRICA"), ("agulhamento", "AGULHAMENTOS"),
+                    ("suporte_terca", "SUPORTES DE TERÇA"), ("montagem", "PEÇAS MONTADAS – FRENTE E LATERAL"), ("agulhamento", "AGULHAMENTOS"),
                     ("suporte_agulhamento", "SUPORTES DE AGULHAMENTO"), ("contraventamento", "CONTRAVENTAMENTOS"),
                     ("suporte_contraventamento", "SUPORTES DE CONTRAVENTAMENTO"), ("castanha", "CASTANHAS"),
                     ("barra_roscada", "BARRAS ROSCADAS"), ("gancho", "GANCHOS"), ("chumbador", "CHUMBADORES"), ("parte", "PEÇAS DE CONJUNTOS"),
@@ -668,7 +668,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         celulas_g += [(nomeacao["tipos"].get(p.marca) or p.tipo_nome or p.classe,
                        (lambda dd, x, y, p=p: desenho_da_posicao(p, dd, x, y, editavel=p.marca in editaveis))) for p in lista]
         # peças montadas (suporte de terça soldado, chapa de base com os chumbadores): junto
-        # das chapas, com frente, lateral e isométrica
+        # das chapas, com frente e lateral
         celulas_mont, familias_mont = [], []
         if chave == "chapas":
             from nucleo2d.detalhe.montagens import grupos_montados, desenho_de_montagem

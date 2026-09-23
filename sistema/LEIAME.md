@@ -191,7 +191,7 @@ pela geometria as chapas miúdas (≤ 600 mm) do mesmo conjunto que se encostam 
 nervura soldada) e a chapa de base deitada atravessada por barra redonda em pé (o chumbador, que no
 TecnoMETAL vem como conjunto próprio), com as porcas; pares de chapas iguais não contam. Cada combinação
 vira uma célula (quadro "PEÇAS MONTADAS", no desenho de chapas e na família dela no completo) com frente,
-lateral (cotas gerais, nomes com chamada) e isométrica. O chumbador ganhou tipo próprio (`chumbador`,
+lateral (cotas gerais, nomes com chamada; a isométrica saiu na 0.7.17). O chumbador ganhou tipo próprio (`chumbador`,
 "CB."; antes caía como contraventamento). `retirar_furos_sem_uso`: furo de terça sem parafuso nem barra
 passando (caixa do fixador/barra cobrindo o centro, 2 mm) é fechado na malha — os vértices vão para o
 eixo do furo — e some do detalhamento; roda ao gerar o detalhamento, depois do alinhamento às chapas.

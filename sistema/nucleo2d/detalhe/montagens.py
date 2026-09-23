@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Peças montadas: o que a fábrica solda ou a obra junta antes de pôr no lugar, desenhado
-junto — a vista de frente, a lateral e uma isométrica, para ficar claro como fica.
+junto — a vista de frente e a lateral, para ficar claro como fica (a isométrica, sem
+remoção de linhas ocultas, confundia mais do que ajudava e saiu).
 
 Dois tipos, achados pela geometria do modelo:
 
@@ -138,7 +139,7 @@ def _eixos_da_chapa(e):
 def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float, dy: float,
                         titulo: str = "", pecas_por_id: Optional[dict] = None) -> Tuple[float, float, float, float]:
     """Célula da peça montada: vista de frente e lateral com as cotas gerais e o nome de
-    cada peça, e a isométrica ao lado."""
+    cada peça."""
     ids = [i for i in grupo["exemplo"] if i in doc.entidades]
     pecas_por_id = pecas_por_id or {}
     ents = [pecas_por_id.get(i) or doc.entidades[i] for i in ids]
@@ -156,8 +157,6 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
         h1 = _norm(_sub(e2, tuple(z[i] * _dot(e2, z) for i in range(3))))
         w1 = h1
         w2 = _norm(_cruz(z, h1))
-    # isométrica: de cima, pela diagonal das duas vistas (o observador fica em −w)
-    w3 = _norm(tuple(w1[i] + w2[i] - z[i] * 1.2 for i in range(3)))
     esc = desenho.escala
     _registrar_camadas_de_pecas(desenho)
     atr = {"detalhe": "montagem", "montagem": " + ".join(grupo["chave"])}
@@ -172,7 +171,7 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
     x = dx
     caixas = []
     p_txt = _Papel(desenho, atr, 0.0, 0.0)
-    for k, (w, rot) in enumerate(((w1, "FRENTE"), (w2, "LATERAL"), (w3, "ISOMÉTRICA"))):
+    for k, (w, rot) in enumerate(((w1, "FRENTE"), (w2, "LATERAL"))):
         pts = [q for e in solidos for q in e.vertices]
         ws = [_dot(q, w) for q in pts]
         origem = tuple(c_ref[i] + w[i] * (min(ws) - _dot(c_ref, w) - 10.0) for i in range(3))
@@ -224,7 +223,7 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
     comp = ", ".join("%s x%d" % (k, q) for k, q in sorted(grupo["composicao"].items(), key=lambda kv: _ordem_natural(kv[0])))
     linhas = [tit + " – MONTADO", "%s – %02dx" % (" + ".join(dict.fromkeys(grupo["chave"])), grupo["instancias"]),
               "por unidade: " + comp,
-              "vistas de frente e lateral na escala do desenho; isométrica só para visualizar"]
+              "vistas de frente e lateral na escala do desenho"]
     if grupo["tipo"] == "chumbamento":
         linhas.insert(3, "chumbadores, porcas e arruelas como no modelo; o comprimento de corte do chumbador está no detalhe dele")
     y = topo + 4.0 * esc
