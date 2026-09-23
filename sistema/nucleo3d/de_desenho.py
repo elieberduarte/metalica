@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
-from nucleo2d.desenho import Desenho, Entidade2D, Linha, Polilinha
+from nucleo2d.desenho import Circulo, Desenho, Entidade2D, Linha, Polilinha
 from nucleo3d.modelo import Barra, Camada, Chapa, Documento
 
 __all__ = ["modelo_do_desenho", "conferir_desenho", "PLANOS", "PAPEIS", "peca_da_entidade"]
@@ -98,7 +98,34 @@ def peca_da_entidade(ent: Entidade2D, desenho: Desenho) -> Optional[Peca]:
              aco=str(bruto.get("aco") or ""), rotacao=float(bruto.get("rotacao") or 0.0),
              espessura=float(bruto.get("espessura") or 0.0),
              material=str(bruto.get("material") or ""))
+    if p.papel == "chapa" and not p.espessura and p.perfil:
+        # a chapa pode ser escolhida pelo catálogo ("CH 9,53 mm (3/8\")"): a espessura é dele
+        from nucleo import catalogo
+        it = catalogo.item(p.perfil)
+        if it is not None:
+            p.espessura = float(it.dados.get("t") or 0.0)
     return p if p.valida() else None
+
+
+def _eh_contorno_de_chapa(ent: Entidade2D, peca: Optional["Peca"]) -> bool:
+    """Polilinha fechada com peça de chapa: é o contorno de uma chapa, não barras."""
+    return bool(peca and peca.papel == "chapa" and peca.espessura > 0
+                and isinstance(ent, Polilinha) and ent.fechada and len(ent.vertices or []) >= 3)
+
+
+def _dentro(p: Tuple[float, float], poligono: Sequence[Tuple[float, float]]) -> bool:
+    """Ponto dentro do polígono (número de cruzamentos)."""
+    x, y = p
+    dentro = False
+    n = len(poligono)
+    for i in range(n):
+        x1, y1 = poligono[i]
+        x2, y2 = poligono[(i + 1) % n]
+        if (y1 > y) != (y2 > y):
+            xc = x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+            if xc > x:
+                dentro = not dentro
+    return dentro
 
 
 def _segmentos(ent: Entidade2D) -> List[Tuple[Tuple[float, float], Tuple[float, float]]]:
@@ -116,6 +143,17 @@ def _segmentos(ent: Entidade2D) -> List[Tuple[Tuple[float, float], Tuple[float, 
     return []
 
 
+def _area(pontos: Sequence[Tuple[float, float]]) -> float:
+    """Área assinada do polígono (mm²)."""
+    s = 0.0
+    n = len(pontos)
+    for i in range(n):
+        x1, y1 = pontos[i]
+        x2, y2 = pontos[(i + 1) % n]
+        s += x1 * y2 - x2 * y1
+    return s / 2.0
+
+
 def _no_espaco(plano: dict, origem: Sequence[float], desloc: float, p: Sequence[float]):
     """Ponto 2D do desenho → ponto 3D, no plano escolhido e afastado `desloc` na normal."""
     u, v, n = plano["u"], plano["v"], plano["n"]
@@ -129,14 +167,20 @@ def conferir_desenho(desenho: Desenho) -> dict:
     quais deles o catálogo não conhece — é o que o diálogo mostra antes de gerar.
     """
     from nucleo import catalogo
-    com_peca = anotacao = trechos = 0
+    com_peca = anotacao = trechos = chapas = 0
     perfis: Dict[str, int] = collections.Counter()
     papeis: Dict[str, int] = collections.Counter()
     desconhecidos: List[str] = []
-    comprimento = 0.0
+    comprimento = area_chapas = 0.0
     for ent in desenho.entidades.values():
-        segs = _segmentos(ent)
         peca = peca_da_entidade(ent, desenho)
+        if _eh_contorno_de_chapa(ent, peca):
+            chapas += 1
+            com_peca += 1
+            papeis["chapa"] += 1
+            area_chapas += abs(_area(ent.vertices)) / 1e6
+            continue
+        segs = _segmentos(ent)
         if not segs:
             continue
         if peca is None:
@@ -145,7 +189,7 @@ def conferir_desenho(desenho: Desenho) -> dict:
         com_peca += 1
         trechos += len(segs)
         papeis[peca.papel] += len(segs)
-        if peca.perfil:
+        if peca.perfil and peca.papel != "chapa":
             perfis[peca.perfil] += len(segs)
             if catalogo.perfil_de(peca.perfil) is None and peca.perfil not in desconhecidos:
                 desconhecidos.append(peca.perfil)
@@ -153,7 +197,8 @@ def conferir_desenho(desenho: Desenho) -> dict:
             comprimento += math.dist(a, b)
     return {
         "entidades": len(desenho.entidades), "com_peca": com_peca, "anotacao": anotacao,
-        "barras": trechos, "comprimento_m": round(comprimento / 1000.0, 2),
+        "barras": trechos, "chapas": chapas, "area_chapas_m2": round(area_chapas, 3),
+        "comprimento_m": round(comprimento / 1000.0, 2),
         "perfis": dict(perfis), "papeis": dict(papeis),
         "perfis_desconhecidos": desconhecidos,
         "camadas_com_peca": sorted((desenho.metadados or {}).get("pecas_por_camada") or {}),
@@ -190,10 +235,20 @@ def modelo_do_desenho(desenho: Desenho, *, plano: str = "frente",
         doc.camadas.setdefault(nome_camada, Camada(nome=nome_camada))
 
     # --- 1. levanta os trechos com peça, uma vez (o desenho é o mesmo em toda cópia)
-    trechos = []
+    trechos, chapas = [], []
+    circulos = [e for e in desenho.entidades.values() if isinstance(e, Circulo)]
     for ent in desenho.entidades.values():
         peca = peca_da_entidade(ent, desenho)
         if peca is None:
+            continue
+        if _eh_contorno_de_chapa(ent, peca):
+            vs = [tuple(float(x) for x in v) for v in ent.vertices]
+            # círculo dentro do contorno é furo da chapa (o do desenho é o do aço)
+            furos = [{"x": round(c.centro[0], 2), "y": round(c.centro[1], 2),
+                      "diametro": round(c.raio * 2, 2)}
+                     for c in circulos if _dentro(tuple(c.centro), vs)]
+            chapas.append({"ent": ent, "peca": peca, "contorno": vs, "furos": furos,
+                           "area": abs(_area(vs))})
             continue
         for a, b in _segmentos(ent):
             L = math.dist(a, b)
@@ -205,7 +260,10 @@ def modelo_do_desenho(desenho: Desenho, *, plano: str = "frente",
     grupos: Dict[tuple, List[dict]] = collections.defaultdict(list)
     for t in trechos:
         grupos[(t["peca"].perfil, t["peca"].papel, round(t["L"]))].append(t)
-    ordem = sorted(grupos.items(), key=lambda kv: (-len(kv[1]), -kv[0][2], kv[0][0]))
+    for c in chapas:
+        c["chave"] = ("chapa", round(c["peca"].espessura, 2), round(c["area"]), len(c["furos"]))
+        grupos[c["chave"]].append(c)
+    ordem = sorted(grupos.items(), key=lambda kv: (-len(kv[1]), -_ordem_chave(kv[0]), str(kv[0][0])))
     posicao_de: Dict[tuple, str] = {}
     for i, (chave, _lista) in enumerate(ordem, start=1):
         posicao_de[chave] = "P%d" % i
@@ -240,10 +298,40 @@ def modelo_do_desenho(desenho: Desenho, *, plano: str = "frente",
             }
             doc.add(b)
             criadas += 1
+        for c in chapas:
+            peca = c["peca"]
+            ch = Chapa(
+                nome=peca.perfil or ("CH %g mm" % peca.espessura),
+                origem=_no_espaco(p, origem, desloc, (0.0, 0.0)),
+                eixo_x=p["u"], eixo_y=p["v"],
+                contorno=[(round(x, 3), round(y, 3)) for x, y in c["contorno"]],
+                espessura=peca.espessura, centrada=True, furos=list(c["furos"]),
+                aco=peca.aco or aco_padrao, camada="Chapas",
+                material=peca.material or "",
+            )
+            ch.atributos = {
+                "tipo_ifc": "IfcPlate",
+                "marcas": {"posicao": posicao_de[c["chave"]], "conjunto": marca_conj,
+                           "perfil": ch.nome},
+                "origem": {"desenho": desenho.nome, "entidade": c["ent"].id,
+                           "camada_2d": c["ent"].camada},
+                "peso_kg": round(c["area"] * peca.espessura * 7.85e-6, 3),
+            }
+            doc.add(ch)
+            criadas += 1
 
     doc.metadados["de_desenho"] = {
         "desenho": desenho.nome, "plano": plano, "origem": list(origem),
         "repeticoes": repeticoes, "espacamento": espacamento, "conjunto": conjunto,
-        "barras": criadas, "posicoes": len(posicao_de),
+        "barras": criadas - len(chapas) * repeticoes, "chapas": len(chapas) * repeticoes,
+        "pecas": criadas, "posicoes": len(posicao_de),
     }
     return doc
+
+
+def _ordem_chave(chave: tuple) -> float:
+    """Tamanho para ordenar a numeração das posições (comprimento da barra, área da chapa)."""
+    try:
+        return float(chave[2])
+    except (TypeError, ValueError, IndexError):
+        return 0.0

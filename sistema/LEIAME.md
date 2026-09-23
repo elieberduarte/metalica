@@ -596,6 +596,11 @@ informação de cada peça. Cada linha (ou lado de polilinha) marcada com uma **
 no mesmo formato que o IFC de fábrica traz. Assim o modelo desenhado serve ao detalhamento, à lista de
 materiais, ao cálculo e ao IFC sem caminho paralelo.
 
+**Chapa de nó**: polilinha **fechada** com peça de chapa vira uma `Chapa` no plano do desenho, e os
+círculos com centro dentro do contorno viram os furos dela. A espessura vem do item de chapa do catálogo
+(`CH 9,53 mm (3/8")`) ou do campo `espessura` da peça. As chapas entram na mesma numeração de posições das
+barras, agrupadas por espessura, área e número de furos.
+
 A peça fica em `atributos["peca"]` da entidade 2D (`{perfil, papel, aco, rotacao}`) ou, valendo para tudo
 o que está nela, em `desenho.metadados["pecas_por_camada"]` — é assim que se desenha uma tesoura: uma
 camada por tipo de peça. Linha sem peça é anotação e fica de fora, contada no relatório.
@@ -605,6 +610,11 @@ normal: as oito tesouras do galpão saem de um desenho só. Rota
 `POST /api/projetos/<s>/desenhos/<nome>/gerar-3d` (com `conferir: true` só levanta o que o desenho tem).
 No CAD: **Peça do catálogo…** (seleção ou camada ativa) e **Gerar modelo 3D do desenho…**. Na tela de
 projetos, **Novo desenhando em 2D…** cria um projeto do tipo `desenho`, que abre direto no CAD.
+
+**Detalhamento de modelo desenhado**: `nucleo2d/detalhe/base._pecas` aceita `Barra` e `Chapa`
+paramétricas, convertendo-as no sólido equivalente (`_proxy_da_barra`, `_proxy_da_chapa`) com a malha
+montada dos próprios parâmetros. Com isso o detalhamento, o romaneio e as pranchas funcionam igual para
+modelo importado, desenhado ou gerado do galpão.
 
 O exportador de IFC passou a gravar as marcas (`Part Mark`, `Assembly Mark`, `Nome`) no
 `Pset_MetalicaCalculo`, e o importador aceita o nome de perfil declarado quando o catálogo o conhece —

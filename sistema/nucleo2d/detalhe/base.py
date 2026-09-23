@@ -6,7 +6,7 @@ import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
-from nucleo3d.modelo import Documento, Solido, Chapa
+from nucleo3d.modelo import Barra, Chapa, Documento, Solido
 from nucleo3d import geometria as _geo
 from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota
 from nucleo2d import vistas as _vistas
@@ -240,9 +240,21 @@ def _material(ent) -> str:
 
 
 def _pecas(doc: Documento):
-    """Sólidos do modelo que são peças de produção, e os acessórios contados."""
+    """Sólidos do modelo que são peças de produção, e os acessórios contados.
+
+    Chapa e barra paramétricas (modelo desenhado em 2D ou gerado do galpão) entram como
+    o sólido equivalente, com a malha montada dos próprios parâmetros: daí para a frente
+    o detalhamento não distingue de onde a peça veio.
+    """
     pecas, acessorios = [], collections.Counter()
     for ent in doc.entidades.values():
+        if isinstance(ent, Barra):
+            if (_tipo_ifc(ent) or ent.tipo_ifc()) in TIPOS_PECA:
+                try:
+                    pecas.append(_proxy_da_barra(ent))
+                except Exception:                     # noqa: BLE001 — barra degenerada não derruba o lote
+                    pass
+            continue
         if isinstance(ent, Chapa):
             if (_tipo_ifc(ent) or "IfcPlate") in TIPOS_PECA:
                 try:
@@ -298,6 +310,25 @@ def _camada_da_posicao(pos: Posicao, tipo: str, votos: Optional[Dict[str, collec
     if pos.eixos and abs(pos.eixos[0][2]) > 0.7 and pos.comprimento >= 1500.0:
         return "PILARES"
     return "VIGAS"
+
+
+def _proxy_da_barra(b: Barra) -> Solido:
+    """Sólido equivalente a uma `Barra` (mesmo id e atributos), com a malha do perfil.
+
+    O comprimento já sai com os recortes de ponta aplicados, como o 3D desenha; o perfil
+    vem do catálogo pelo nome, então um nome de fábrica (U92X40X2.25) também funciona.
+    """
+    verts, faces = _geo.malha_barra(b)
+    s = Solido(id=b.id, nome=b.nome or b.perfil, camada=b.camada, material=b.material,
+               visivel=b.visivel, bloqueada=b.bloqueada, grupo=b.grupo,
+               atributos=dict(b.atributos or {}),
+               vertices=[tuple(float(x) for x in v) for v in verts], faces=[list(f) for f in faces])
+    s.atributos.setdefault("tipo_ifc", b.tipo_ifc())
+    marcas = dict(s.atributos.get("marcas") or {})
+    marcas.setdefault("perfil", b.perfil)
+    s.atributos["marcas"] = marcas
+    s.parametrica = b
+    return s
 
 
 def _proxy_da_chapa(ch: Chapa) -> Solido:

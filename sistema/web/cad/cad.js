@@ -922,7 +922,8 @@ class CAD {
     let fams = [];
     try { fams = (await pedir('/api/catalogo/pecas')).familias || []; }
     catch (e) { this.aviso(`Catálogo indisponível: ${e.message}`, 'erro'); return; }
-    const barras = fams.filter(f => f.peca === 'barra');
+    // barras e chapas: a polilinha fechada com chapa vira chapa de nó no 3D
+    const barras = fams.filter(f => f.peca === 'barra' || f.peca === 'chapa');
     const atual = alvoCamada
       ? ((this.doc.metadados && this.doc.metadados.pecas_por_camada) || {})[camada]
       : this._pecaDe(this.doc.get(ids[0]));
@@ -932,7 +933,7 @@ class CAD {
     const busca = el('input', { type: 'search', placeholder: 'buscar: 150x60, W 310, 3/8…', spellcheck: 'false' });
     const selPapel = el('select');
     for (const p of ['banzo', 'diagonal', 'montante', 'terça', 'longarina', 'viga', 'pilar',
-                     'contraventamento', 'tirante', 'barra']) {
+                     'contraventamento', 'tirante', 'barra', 'chapa']) {
       selPapel.append(el('option', { value: p, texto: p }));
     }
     const selAco = el('select');
@@ -954,7 +955,12 @@ class CAD {
       }
       if (atual && atual.perfil && itens.some(i => i.nome === atual.perfil)) selPerfil.value = atual.perfil;
     };
-    selFam.addEventListener('change', carregar);
+    const ehChapa = () => (fams.find(f => f.familia === selFam.value) || {}).peca === 'chapa';
+    const ajustarPapel = () => {
+      if (ehChapa()) { selPapel.value = 'chapa'; selPapel.disabled = true; }
+      else { if (selPapel.value === 'chapa') selPapel.value = 'banzo'; selPapel.disabled = false; }
+    };
+    selFam.addEventListener('change', () => { ajustarPapel(); carregar(); });
     let t = null;
     busca.addEventListener('input', () => { clearTimeout(t); t = setTimeout(carregar, 180); });
     if (atual) {
@@ -964,6 +970,7 @@ class CAD {
       const fam = barras.find(f => (atual.perfil || '').startsWith(f.familia === 'I' ? 'W' : f.familia));
       if (fam) selFam.value = fam.familia;
     }
+    ajustarPapel();
     await carregar();
     const campos = el('div', { class: 'campos' },
       el('label', { texto: 'Família' }), selFam,
@@ -977,7 +984,7 @@ class CAD {
         ? `Nada selecionado: a peça vale para tudo o que está (e for desenhado) na camada ${camada}.`
         : `${ids.length} objeto(s) selecionado(s).` }),
       campos,
-      el('div', { class: 'explica', texto: 'Cada linha com peça vira uma barra no 3D, com perfil, aço, papel e marcas de posição e conjunto — como uma peça vinda de IFC.' }));
+      el('div', { class: 'explica', texto: 'Cada linha com peça vira uma barra no 3D, com perfil, aço, papel e marcas de posição e conjunto — como uma peça vinda de IFC. Escolhendo uma chapa, a polilinha fechada vira a chapa de nó, e os círculos dentro dela viram os furos.' }));
     const r = await this.dialogo({ titulo: alvoCamada ? `Peça da camada ${camada}` : 'Peça do catálogo', corpo, ok: 'Aplicar' });
     if (r !== 'ok' || !selPerfil.value) return;
     const peca = { perfil: selPerfil.value, papel: selPapel.value, aco: selAco.value || '',

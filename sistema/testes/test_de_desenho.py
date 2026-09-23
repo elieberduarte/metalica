@@ -109,6 +109,57 @@ def test_acrescenta_ao_modelo_existente():
     assert {"M", "N"} <= {b.atributos["marcas"]["conjunto"] for b in doc.barras}
 
 
+def _com_chapa() -> Desenho:
+    from nucleo2d.desenho import Circulo
+    d = Desenho(nome="NÓ")
+    d.metadados["pecas_por_camada"] = {
+        "BANZOS": {"perfil": "Ue 200×75×20×2,65", "papel": "banzo", "aco": "CIVIL 300"},
+        "CHAPAS": {"perfil": 'CH 9,53 mm (3/8")', "papel": "chapa", "aco": "ASTM A36"},
+    }
+    d.add(Linha(camada="BANZOS", a=(0.0, 0.0), b=(6000.0, 0.0)))
+    d.add(Polilinha(camada="CHAPAS", fechada=True,
+                    vertices=[(1400.0, -100.0), (1700.0, -100.0), (1700.0, 100.0), (1400.0, 100.0)]))
+    for x in (1450.0, 1650.0):
+        for y in (-50.0, 50.0):
+            d.add(Circulo(camada="CHAPAS", centro=(x, y), raio=8.5))
+    d.add(Circulo(camada="CHAPAS", centro=(3000.0, 0.0), raio=8.5))     # fora da chapa
+    return d
+
+
+def test_chapa_de_no_com_furos():
+    d = _com_chapa()
+    info = de_desenho.conferir_desenho(d)
+    assert info["chapas"] == 1 and info["barras"] == 1
+    assert info["area_chapas_m2"] == pytest.approx(0.06, abs=0.001)
+
+    doc = de_desenho.modelo_do_desenho(d, plano="frente", repeticoes=2, espacamento=5000.0)
+    assert len(doc.chapas) == 2 and len(doc.barras) == 2
+    ch = doc.chapas[0]
+    assert ch.espessura == pytest.approx(9.53)
+    assert len(ch.furos) == 4, "só os círculos dentro do contorno viram furos"
+    assert all(f["diametro"] == pytest.approx(17.0) for f in ch.furos)
+    assert ch.aco == "ASTM A36" and ch.camada == "Chapas"
+    assert ch.atributos["marcas"]["posicao"].startswith("P")
+    assert ch.atributos["peso_kg"] > 0
+    # a chapa fica no plano do desenho, em pé
+    assert abs(ch.normal[1]) > 0.99
+
+
+def test_detalhamento_de_modelo_desenhado():
+    """Um modelo desenhado tem de detalhar como um importado (barras viram sólidos)."""
+    from nucleo2d.detalhar import detalhar
+    doc = de_desenho.modelo_do_desenho(_com_chapa(), repeticoes=2, espacamento=5000.0)
+    r = detalhar(doc, grupos=["chapas", "barras"], rotular=True)
+    assert r["peso_total"] > 0
+    marcas = {p["marca"] for p in r["posicoes"]}
+    assert len(marcas) == len(r["posicoes"])
+    chapa = next(p for p in r["posicoes"] if p["classe"] == "Chapa")
+    assert chapa["quantidade"] == 2 and chapa["espessura"] == pytest.approx(9.5, abs=0.1)
+    assert chapa["comprimento"] == 300 and chapa["largura"] == 200
+    barra = next(p for p in r["posicoes"] if p["classe"] != "Chapa")
+    assert barra["comprimento"] == 6000
+
+
 def test_erros():
     with pytest.raises(ErroDeDados):
         de_desenho.modelo_do_desenho(Desenho(nome="vazio"))          # nada com peça
