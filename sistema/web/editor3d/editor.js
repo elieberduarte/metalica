@@ -1468,11 +1468,13 @@ export class Editor {
     const grade = el('div', { class: 'campos' });
     for (const [k, r] of grupos) { caixas[k] = el('input', { type: 'checkbox', checked: 'checked' }); grade.append(el('label', { texto: r }), caixas[k]); }
     const regra = el('input', { type: 'checkbox', checked: 'checked' });
-    const rotular = el('input', { type: 'checkbox', checked: 'checked' });
+    // os nomes ao lado de cada barra da tesoura atrapalhavam quem gabarita a treliça e mede
+    // peça a peça: saem desligados, e quem quiser liga
+    const rotular = el('input', { type: 'checkbox' });
     const converter = el('input', { type: 'checkbox', checked: 'checked' });
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
     grade.append(el('label', { texto: 'Furação das terças no padrão da fábrica', title: 'Terça com menos de 200 mm: furos a 50 mm na vertical e 60 na horizontal; com 200 mm ou mais: 100 × 60. Vale para os suportes com a mesma furação.' }), regra,
-                 el('label', { texto: 'Rotular posições nos conjuntos' }), rotular,
+                 el('label', { texto: 'Rotular posições nos conjuntos', title: 'Escreve o nome de cada barra ao lado dela na elevação da tesoura. Desligado por padrão: a fábrica gabarita a tesoura e mede peça a peça.' }), rotular,
                  el('label', { texto: 'Substituir os desenhos de detalhamento anteriores' }), substituir);
     const corpo = el('div', {},
       el('p', { class: 'explica', texto: 'Cada posição (marca de peça do IFC) vira uma célula com título "P12 – 112x", perfil ou chapa, contorno, furos e cotas; as peças iguais são contadas, não repetidas. Cada conjunto (marca de montagem) vira uma elevação com a cadeia de cotas dos nós e a lista de perfis. Sai também o romaneio em detalhamento/romaneio.csv.' }),

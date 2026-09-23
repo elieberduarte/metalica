@@ -12,7 +12,7 @@
 // a cada quadro. Um desenho do modelo inteiro passa de cem mil objetos e leva quase um
 // segundo para ser refeito; sem o cache, cada movimento do mouse custaria isso.
 
-import { pontosArco, valorCota, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade } from './desenho2d.js';
+import { pontosArco, valorCota, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota } from './desenho2d.js';
 
 const TRACOS = { CONTINUOUS: [], HIDDEN: [6, 4], CENTER: [16, 4, 4, 4], DASHED: [8, 6], DOT: [2, 3] };
 const PX_GRADE_ALVO = 60;
@@ -405,6 +405,7 @@ export class Tela {
       case 'perpendicular': ctx.moveTo(x - 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x - 5, y); ctx.lineTo(x, y); ctx.lineTo(x, y + 5); break;
       case 'sobre': ctx.moveTo(x, y - 6); ctx.lineTo(x + 6, y); ctx.lineTo(x, y + 6); ctx.lineTo(x - 6, y); ctx.closePath(); break;
       case 'grade': ctx.moveTo(x - 4, y); ctx.lineTo(x + 4, y); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); break;
+      case 'alinhamento': ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y); ctx.moveTo(x - 3, y - 3); ctx.lineTo(x - 3, y + 3); ctx.moveTo(x + 3, y - 3); ctx.lineTo(x + 3, y + 3); break;
       default: ctx.arc(x, y, 3, 0, Math.PI * 2);
     }
     ctx.stroke();
@@ -451,7 +452,9 @@ export class Tela {
     for (const e of this.doc.naRegiao([m1, m2])) {       // só as que tocam o retângulo
       if (!this.doc.visivel(e) || this.doc.bloqueada(e)) continue;
       if (cruzamento) ids.push(e.id);
-      else if (pontosDe(e).every(dentro)) ids.push(e.id);
+      // a cota entra pela linha de cota (que é o que se vê e se quer apagar), não pelos
+      // pontos medidos, que ficam na peça, fora da janela
+      else if (e.tipo === 'cota' ? pontosCota(e, this.doc.escala).slice(2).every(dentro) : pontosDe(e).every(dentro)) ids.push(e.id);
     }
     return ids;
   }

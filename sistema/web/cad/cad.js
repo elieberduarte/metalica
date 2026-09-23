@@ -283,7 +283,7 @@ class CAD {
       for (const F of FERRAMENTAS.filter(f => f.grupo === grupo)) {
         this.ferramentas.set(F.id, new F(this));
         const b = el('button', { type: 'button', class: 'ferramenta', 'data-ferramenta': F.id, 'aria-pressed': 'false',
-          title: `${F.nome}${F.atalho ? ` (${F.atalho === ' ' ? 'espaço' : F.atalho.toUpperCase()})` : ''}`, html: F.icone || '' });
+          title: `${F.nome}${F.atalho ? ` (${F.atalho === ' ' ? 'espaço · depois de Esc, espaço volta à ferramenta anterior' : F.atalho.toUpperCase()})` : ''}`, html: F.icone || '' });
         b.addEventListener('click', () => this.ativarFerramenta(F.id));
         barra.append(b);
       }
@@ -293,6 +293,9 @@ class CAD {
   ativarFerramenta(id) {
     const f = this.ferramentas.get(id);
     if (!f) return;
+    // ao voltar para "selecionar" (Esc), a ferramenta que estava em uso fica guardada:
+    // espaço a chama de novo, sem procurar o botão
+    if (this.ferramenta && this.ferramenta.constructor.id !== 'selecionar' && id === 'selecionar') this.ferramentaAnterior = this.ferramenta.constructor.id;
     if (this.ferramenta) this.ferramenta.desativar();
     this.ferramenta = f;
     this.previa([]);
@@ -385,6 +388,9 @@ class CAD {
       if (ev.key === 'F8') { ev.preventDefault(); this.definirOrto(!this.snap.orto); return; }
       if (this.ferramenta && this.ferramenta.onTecla(ev)) { ev.preventDefault(); return; }
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (ev.key === ' ' && this.ferramenta && this.ferramenta.constructor.id === 'selecionar' && this.ferramentaAnterior) {
+        ev.preventDefault(); this.ativarFerramenta(this.ferramentaAnterior); return;
+      }
       if (ev.key.toLowerCase() === 'z') { this.tela.enquadrar(); return; }
       // número ou sinal digitado no canvas vai para a caixa de medidas
       if (/^[-0-9.,@<]$/.test(ev.key)) { this.el.medida.focus(); return; }

@@ -13,6 +13,7 @@ export class Snap {
     this.ativos = { extremidade: true, meio: true, centro: true, interseccao: true, perpendicular: true, sobre: true, grade: false };
     this.raioPx = 9;
     this.ultimo = null;                  // último ponto fixado pela ferramenta (para orto/perpendicular)
+    this.direcoes = [];                  // direções a seguir a partir de `ultimo` (continuação da linha anterior)
     this.orto = false;
   }
 
@@ -78,6 +79,16 @@ export class Snap {
       for (const e of ents) for (const [s, t] of segmentosDe(e)) {
         const q = maisProximoSeg(this.ultimo, s, t);
         if (dist(q, s) > 1e-6 && dist(q, t) > 1e-6) considerar(q, 'perpendicular', 2);
+      }
+    }
+    // alinhamento: continuação (e perpendicular) da linha anterior a partir do último
+    // ponto — o cursor gruda quando passa perto, sem travar como o orto
+    if (this.ultimo && this.direcoes.length && !melhor) {
+      for (const d of this.direcoes) for (const [ux, uy, rot] of [[d[0], d[1], 'continuação'], [-d[1], d[0], 'perpendicular à anterior']]) {
+        const t = (p[0] - this.ultimo[0]) * ux + (p[1] - this.ultimo[1]) * uy;
+        if (Math.abs(t) < 1e-6) continue;
+        const q = [this.ultimo[0] + ux * t, this.ultimo[1] + uy * t];
+        if (dist(q, p) <= raio) considerar(q, 'alinhamento', 2, rot);
       }
     }
     if (a.sobre && !melhor) {

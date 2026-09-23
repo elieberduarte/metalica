@@ -72,6 +72,20 @@ export function valorCota(c) {
 }
 
 /** Pontos característicos de uma entidade: os que a definem (para caixa e snap). */
+/**
+ * Pontos por onde a cota é desenhada (as pontas da linha de cota), além dos dois pontos
+ * medidos. É o que a seleção por janela e o índice espacial precisam ver: a linha de
+ * cota fica deslocada dos pontos medidos, às vezes muito.
+ */
+export function pontosCota(c, escala = 1) {
+  let [x1, y1] = c.p1, [x2, y2] = c.p2;
+  if (c.modo === 'h') y2 = y1; else if (c.modo === 'v') x2 = x1;
+  const dx = x2 - x1, dy = y2 - y1, comp = Math.hypot(dx, dy);
+  if (comp < 1e-9) return [c.p1, c.p2];
+  const nx = -dy / comp, ny = dx / comp, desl = (c.deslocamento || 0) * escala;
+  return [c.p1, c.p2, [x1 + nx * desl, y1 + ny * desl], [x2 + nx * desl, y2 + ny * desl]];
+}
+
 export function pontosDe(e) {
   switch (e.tipo) {
     case 'linha': return [e.a, e.b];
@@ -296,7 +310,7 @@ export class Desenho2D {
     const caixas = new Map();
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, n = 0;
     for (const e of this.entidades.values()) {
-      const c = caixaDe(pontosDe(e));
+      const c = caixaDe(e.tipo === 'cota' ? pontosCota(e, this.escala) : pontosDe(e));
       if (!c) continue;
       caixas.set(e.id, c); n++;
       if (c[0][0] < x0) x0 = c[0][0]; if (c[0][1] < y0) y0 = c[0][1];
@@ -346,7 +360,7 @@ export class Desenho2D {
     for (const id of ids) {
       this._desindexar(id);
       const e = this.entidades.get(id);
-      const c = e ? caixaDe(pontosDe(e)) : null;
+      const c = e ? caixaDe(e.tipo === 'cota' ? pontosCota(e, this.escala) : pontosDe(e)) : null;
       if (c) { this._grade.caixas.set(id, c); this._indexar(id, c); }
     }
   }

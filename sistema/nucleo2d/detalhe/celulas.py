@@ -124,7 +124,10 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     # curto — 35 mm da ponta numa terça em 1:25 — deixa os textos apertados
     cadeia = bool(xs) and p.cadeia_h([0.0] + xs + [L], 0, -off, exigir_espaco=False)
     p.cota_h(0, L, 0, -(off3 if cadeia == "dupla" else off2 if cadeia else off))
-    cadeia = bool(ys) and p.cadeia_v([0.0] + ys + [H], L, off, exigir_espaco=False)
+    # na terça a altura dos furos é o padrão da máquina de corte (50 ou 100 mm): a cadeia
+    # vertical só atrapalha; ficam a altura da peça e as cotas horizontais
+    terca = pos.tipo_nome in ("terca_cobertura", "terca_marquise")
+    cadeia = bool(ys) and not terca and p.cadeia_v([0.0] + ys + [H], L, off, exigir_espaco=False)
     p.cota_v(0, H, L, off3 if cadeia == "dupla" else off2 if cadeia else off)
 
     x_dir = L + (off3 + off) * esc

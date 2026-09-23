@@ -136,11 +136,11 @@ def _campos_formulario() -> list:
         "identificacao": ("Identificação", ["nome", "cliente", "local", "responsavel"]),
         "geometria": ("Geometria", ["vao", "comprimento", "pe_direito",
                                     "espacamento_porticos", "inclinacao", "balanco_lateral"]),
-        "sistema": ("Sistema estrutural", ["tipo_portico", "base_rotulada", "com_misula",
-                                           "comprimento_misula", "altura_misula",
+        "sistema": ("Sistema estrutural", ["tipo_portico", "base_rotulada",
                                            "formato_tesoura", "diagonais_tesoura",
                                            "ligacao_tesoura", "altura_tesoura",
-                                           "paineis_tesoura"]),
+                                           "paineis_tesoura", "com_misula",
+                                           "comprimento_misula", "altura_misula"]),
         "materiais": ("Materiais", ["aco_perfis", "aco_tercas", "aco_chapas", "parafuso",
                                     "eletrodo", "fck_MPa"]),
         "cobertura": ("Cobertura e fechamento", ["telha", "espacamento_tercas",
@@ -176,7 +176,7 @@ ROTULOS = {
     "altura_misula": "Altura total no joelho, com a mísula (m, 0 = automática)",
     "formato_tesoura": "Formato da tesoura", "diagonais_tesoura": "Diagonais da tesoura",
     "ligacao_tesoura": "Ligação da tesoura no pilar",
-    "altura_tesoura": "Altura da tesoura no apoio (m, 0 = automática)",
+    "altura_tesoura": "Altura da tesoura no apoio (m) — 0 = automática, vão/25",
     "paineis_tesoura": "Painéis por água (0 = pelo passo das terças)",
     "aco_perfis": "Aço dos perfis", "aco_tercas": "Aço das terças",
     "aco_chapas": "Aço das chapas", "parafuso": "Parafuso", "eletrodo": "Eletrodo",
@@ -575,7 +575,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     _conferir_eixos_das_chapas(s, doc)
     grupos = corpo.get("grupos") or list(GRUPOS.keys())
     r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
-                 rotular=corpo.get("rotular", True) is not False,
+                 rotular=bool(corpo.get("rotular", False)),
                  converter=corpo.get("converter", True) is not False, ajustes=_ajustes_furos(s),
                  nomes=_nomes_producao(s), avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
     _gravar_nomes_producao(s, r.get("nomes") or {})

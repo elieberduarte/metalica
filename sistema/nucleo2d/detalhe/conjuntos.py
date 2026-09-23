@@ -356,6 +356,118 @@ def _sobrepoe(a, b, folga=0.0) -> bool:
     return a[0] < b[2] + folga and b[0] < a[2] + folga and a[1] < b[3] + folga and b[1] < a[3] + folga
 
 
+def _trechos_curvos(pts: Sequence[Tuple[float, float]], fechada: bool) -> List[Tuple[int, int]]:
+    """Índices (i, j) dos trechos em arco da polilinha: quatro ou mais segmentos curtos
+    seguidos virando para o mesmo lado. Os índices são os vértices reto-antes e
+    reto-depois do arco."""
+    n = len(pts)
+    if n < 6:
+        return []
+    segs = [(pts[(k + 1) % n][0] - pts[k][0], pts[(k + 1) % n][1] - pts[k][1]) for k in range(n if fechada else n - 1)]
+    comp = [math.hypot(*s) for s in segs]
+    if not comp:
+        return []
+    curto = 0.4 * max(comp)
+
+    def giro(k):                       # ângulo entre o segmento k e o k+1, em graus com sinal
+        a, b = segs[k % len(segs)], segs[(k + 1) % len(segs)]
+        la, lb = comp[k % len(segs)], comp[(k + 1) % len(segs)]
+        if la < 1e-6 or lb < 1e-6:
+            return 0.0
+        return math.degrees(math.atan2(a[0] * b[1] - a[1] * b[0], a[0] * b[0] + a[1] * b[1]))
+
+    ns = len(segs)
+    limite = ns if fechada else ns - 1
+    trechos = []
+    k = 0
+    while k < limite:
+        g = giro(k)
+        if abs(g) < 1.0 or abs(g) > 30.0 or comp[(k + 1) % ns] > curto:
+            k += 1
+            continue
+        sinal = 1 if g > 0 else -1
+        j = k
+        while j + 1 < limite and comp[(j + 1) % ns] <= curto:
+            g2 = giro(j + 1)
+            if abs(g2) < 1.0 or abs(g2) > 30.0 or (1 if g2 > 0 else -1) != sinal:
+                break
+            j += 1
+        # vértices curvos: k+1 … j+1; retos de cada lado: k e j+2
+        if j - k >= 3:
+            trechos.append((k, j + 2))
+        k = j + 2
+    return trechos
+
+
+def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set) -> List:
+    """Troca cada arco das silhuetas das peças `ids` pelo canto vivo e liga o canto de
+    fora ao de dentro com a linha da emenda.
+
+    O canto é a interseção das **tangentes nas duas pontas do arco** — para o quarto de
+    círculo calandrado é exatamente onde os dois banzos retos se cruzariam. Isso vale
+    tanto para a peça que é só o arco (o banzo calandrado do joelho) quanto para o arco
+    no meio de uma silhueta fechada. Os cantos de uma mesma peça caem na bissetriz; a
+    emenda em meia-esquadria é a linha do mais de fora ao mais de dentro.
+    """
+    saida = list(novas)
+    cantos_por_peca: Dict[str, List[Tuple[float, float]]] = {}
+    for e in novas:
+        if not isinstance(e, Polilinha) or (e.atributos or {}).get("origem") not in ids:
+            continue
+        pts = [tuple(p) for p in e.vertices]
+        n = len(pts)
+        if n < 6:
+            continue
+        # numa polilinha fechada, gira a lista até nenhum arco atravessar a emenda dela
+        trechos = _trechos_curvos(pts, e.fechada)
+        if e.fechada:
+            for _ in range(n):
+                if all(j < n for _, j in trechos):
+                    break
+                pts = pts[1:] + pts[:1]
+                trechos = _trechos_curvos(pts, True)
+        if not trechos:
+            continue
+        cantos = []
+        for i, j in sorted(trechos, reverse=True):
+            if j >= len(pts) or j - i < 3:
+                continue
+            P = _cruzamento(pts[i], pts[i + 1], pts[j - 1], pts[j])
+            if P is None:
+                continue
+            corda = math.dist(pts[i], pts[j])
+            if math.dist(P, pts[i]) > 3.0 * corda + 1.0 or math.dist(P, pts[j]) > 3.0 * corda + 1.0:
+                continue
+            P = (round(P[0], 2), round(P[1], 2))
+            pts = pts[:i + 1] + [P] + pts[j:]
+            cantos.append(P)
+        if not cantos:
+            continue
+        e.vertices = [(round(x, 2), round(y, 2)) for x, y in pts]
+        cantos_por_peca.setdefault(str((e.atributos or {}).get("origem")), []).extend(cantos)
+    for origem, cantos in cantos_por_peca.items():
+        if len(cantos) < 2:
+            continue
+        P, Q = max(((a, b) for a in cantos for b in cantos), key=lambda ab: math.dist(*ab))
+        if math.dist(P, Q) < 5.0:
+            continue
+        e = Linha(camada="VISTA-FINA", a=P, b=Q, atributos={"emenda": "meia-esquadria", "origem": origem})
+        desenho.add(e)
+        saida.append(e)
+    return saida
+
+
+def _cruzamento(a0, a1, b0, b1):
+    """Interseção das retas a0–a1 e b0–b1, ou None se paralelas."""
+    r = (a1[0] - a0[0], a1[1] - a0[1])
+    s = (b1[0] - b0[0], b1[1] - b0[1])
+    den = r[0] * s[1] - r[1] * s[0]
+    if abs(den) < 1e-9:
+        return None
+    t = ((b0[0] - a0[0]) * s[1] - (b0[1] - a0[1]) * s[0]) / den
+    return (a0[0] + t * r[0], a0[1] + t * r[1])
+
+
 def _rotular_barras(p: "_Papel", rotulos, esc: float, altura_papel: float = 1.8):
     """Rótulo de posição ao lado do meio de cada barra, deslocado na perpendicular da
     barra; quando cai em cima de outro rótulo, afasta-se mais um passo (até quatro)."""
@@ -381,7 +493,8 @@ def _rotular_barras(p: "_Papel", rotulos, esc: float, altura_papel: float = 1.8)
 def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido], n_instancias: int,
                         desenho: Desenho, dx: float, dy: float, rotular: bool = True,
                         fundidas: Optional[Dict[str, str]] = None, nota=None,
-                        nomes: Optional[Dict[str, str]] = None, nome: str = "", tipo: str = "") -> Tuple[float, float, float, float]:
+                        nomes: Optional[Dict[str, str]] = None, nome: str = "", tipo: str = "",
+                        conformadas: Optional[set] = None) -> Tuple[float, float, float, float]:
     """Elevação do conjunto com cotas de nós, título e lista de perfis, em (dx, dy).
     `fundidas`: marca do IFC → posição fundida; `nomes`: posição fundida → nome de
     produção (rótulos e composição com o mesmo nome que as células de posição);
@@ -407,6 +520,14 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     novas = [desenho.entidades[k] for k in desenho.entidades if k not in antes]
     camada_de = _classificar_pecas_do_conjunto(instancia, (u, v, origem))
     _registrar_camadas_de_pecas(desenho)
+    # A barra calandrada do canto (banzo que dobra no joelho) sai da fábrica como duas
+    # peças retas cortadas em meia-esquadria: o desenho mostra o canto vivo com a
+    # emenda diagonal, não o arco que o modelo 3D traz.
+    if conformadas:
+        ids_conformadas = {e.id for e in instancia
+                           if fundidas.get(str(_marcas(e).get("posicao") or e.nome), str(_marcas(e).get("posicao") or e.nome)) in conformadas}
+        if ids_conformadas:
+            novas = _chanfrar_cantos(desenho, novas, ids_conformadas)
     for e in novas:
         e.atributos["conjunto"] = marca
         e.atributos["detalhe"] = "conjunto"

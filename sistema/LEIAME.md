@@ -221,6 +221,19 @@ gerado, dentro do projeto (`<projeto>/desenhos-2d/`).
 - **Exportar DXF** gera o arquivo em `desenhos-2d/` com as camadas da produção (ACO,
   ACO-FINO, HACHURA, COTA, TEXTO…), na escala do desenho.
 
+Ferramentas do CAD 2D (`web/cad/ferramentas.js`): linha (L), polilinha (P), retângulo (R),
+círculo (C), arco (A), texto (T), cota (D), chamada (H), hachura (G); mover (M), copiar (O),
+girar (Q), espelhar (I), offset (F), **aparar/trim (X)**, **estender/extend (N)** — a linha vai
+até a primeira linha, arco ou círculo na direção dela —, **concordar/fillet (K)** — duas linhas
+viram canto vivo (raio 0) ou arco tangente do raio digitado, com as pontas aparadas ou
+estendidas —, apagar (E), medir (U). Ao desenhar linha ou polilinha, o cursor **gruda na
+continuação da linha anterior** e na perpendicular dela (snap `alinhamento`, marcado com
+`⊢─⊣`), e no primeiro ponto segue a linha existente de onde a nova parte — é o *tracking*
+dos CADs, sem travar como o orto. **Esc** volta para selecionar e **espaço** chama de novo a
+ferramenta que estava em uso. A seleção por janela pega a cota pela **linha de cota**
+(`pontosCota`), não pelos pontos medidos, que ficam na peça: antes uma cota deslocada da peça
+não entrava na janela nem no índice espacial, e não havia como apagá-la.
+
 ## Detalhamento de peças a partir de um IFC
 
 Para produção a partir de um modelo de detalhamento de terceiros (TecnoMETAL, Tekla,
@@ -313,9 +326,25 @@ chapinhas, viga de uma barra, pilar) sai deitado na horizontal, com o compriment
 legível; deitado no plano horizontal é visto de cima. O triedro segue a convenção do
 gerador de vistas (`Vista.eixos`: observador em −w, direita = w × v) — é o que garante que
 os rótulos de posição caem sobre as barras desenhadas. Os rótulos ficam na perpendicular
-da barra e afastam-se quando cairiam um sobre o outro; nas prateleiras (`_empilhar`) a
-linha inteira desce quando uma célula é mais alta que a primeira, para o título não
-invadir as cotas da linha de cima.
+da barra e afastam-se quando cairiam um sobre o outro; **saem desligados por padrão**
+("Rotular posições nos conjuntos"): a fábrica gabarita a tesoura e mede peça a peça, e o
+nome ao lado de cada barra mais atrapalhava. Nas prateleiras (`_empilhar`) a linha inteira
+desce quando uma célula é mais alta que a primeira, para o título não invadir as cotas da
+linha de cima.
+
+**Quadros por tipo** (`detalhar._quadros_por_tipo`): o desenho de conjuntos agrupa as
+células por tipo — TESOURAS, VIGAS, PILARES, CONJUNTOS, AGULHAMENTOS, CONTRAVENTAMENTOS —,
+cada grupo empilhado à parte e dentro de uma moldura com título (camada AUXILIAR), um
+quadro abaixo do outro. Antes saíam numa fila só, na ordem do IFC.
+
+**Canto da tesoura em meia-esquadria** (`conjuntos._chanfrar_cantos`): o banzo calandrado
+do joelho chega do IFC como um arco, mas a fábrica não calandra — corta os dois banzos
+retos em diagonal e solda. Na elevação do conjunto cada arco da silhueta da peça
+`barra_conformada` vira o canto vivo (interseção das tangentes nas duas pontas do arco) e
+a emenda sai como linha do canto de fora ao de dentro. O modelo 3D e a célula da peça
+continuam com o arco. Na célula da **terça** a cadeia vertical dos furos não sai (a
+altura dos furos é o padrão da máquina de corte: 50 ou 100 mm); ficam a altura da peça e
+as cotas horizontais.
 
 **Regra da furação das terças** (padrão da máquina da fábrica, opção ligada por padrão):
 terça com menos de 200 mm de altura fura a 50 mm na vertical e 60 mm na horizontal; com

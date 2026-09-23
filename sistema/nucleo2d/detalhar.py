@@ -221,6 +221,53 @@ def _anexar_faixa(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_
     return fundo + dy
 
 
+#: Título do quadro de cada tipo de conjunto, na ordem em que os quadros saem.
+QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("conjunto", "CONJUNTOS"),
+           ("agulhamento", "AGULHAMENTOS"), ("contraventamento", "CONTRAVENTAMENTOS")]
+
+
+def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float = 1400.0) -> None:
+    """Desenha as células agrupadas por tipo, cada grupo dentro de um quadro com título.
+
+    Sem isso as tesouras, os agulhamentos e os contraventamentos saíam numa fila só, na
+    ordem em que apareciam no IFC, e quem lia o desenho tinha de garimpar. Cada grupo é
+    empilhado à parte (as prateleiras de um não interferem nas do outro) e depois entra no
+    desenho abaixo do quadro anterior, com o título e a moldura na camada AUXILIAR.
+    """
+    grupos: Dict[str, list] = collections.OrderedDict()
+    for tipo, f in fns:
+        chave = str(tipo or "conjunto")
+        grupos.setdefault(chave, []).append(f)
+    ordem = [t for t, _ in QUADROS if t in grupos] + [t for t in grupos if t not in dict(QUADROS)]
+    titulos = dict(QUADROS)
+    y = 0.0
+    esc = d.escala
+    for chave in ordem:
+        banda = Desenho(nome=chave, escala=d.escala)
+        banda.camadas = {k: v for k, v in d.camadas.items()}
+        _empilhar(banda, [(lambda x, y_, f=f: f(banda, x, y_)) for f in grupos[chave]], largura_max_papel=largura_max_papel)
+        titulo = titulos.get(chave) or (chave.upper() + "S")
+        y = _anexar_quadro(d, banda, titulo, y)
+
+
+def _anexar_quadro(dc: Desenho, banda: Desenho, titulo: str, y_topo: float) -> float:
+    """Como `_anexar_faixa`, mas com a moldura fechada em volta do grupo. Devolve o y do
+    fundo do quadro (o próximo começa abaixo dele)."""
+    esc = dc.escala
+    antes = set(dc.entidades)
+    fundo = _anexar_faixa(dc, banda, titulo, y_topo - 8.0 * esc)
+    novas = [dc.entidades[k] for k in dc.entidades if k not in antes]
+    pontos = [q for e in novas for q in (e.pontos() if hasattr(e, "pontos") else [])]
+    if not pontos:
+        return y_topo
+    x0, x1 = min(q[0] for q in pontos) - 6.0 * esc, max(q[0] for q in pontos) + 6.0 * esc
+    y1 = max(q[1] for q in pontos) + 9.0 * esc          # o título (5 mm de papel) fica dentro da moldura
+    y0 = min(q[1] for q in pontos) - 6.0 * esc
+    dc.add(Polilinha(camada="AUXILIAR", vertices=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], fechada=True,
+                     atributos={"quadro": titulo}))
+    return y0 - 4.0 * esc
+
+
 def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho]) -> Desenho:
     """"Detalhamento – completo": cada grupo é uma faixa (título e linha), todas na
     escala 1:25 — as células são desenhadas de novo nessa escala, com os furos das
@@ -399,6 +446,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         d = Desenho(nome=g["titulo"], escala=g["escala"])
         tipos_conj = nomeacao["tipos_conjuntos"]
         comprimentos = {p.marca: p.comprimento for p in posicoes}
+        conformadas = {p.marca for p in posicoes if p.classe == "barra_conformada"}
         # contraventamentos com as mesmas peças de ponta: um detalhe só, cotas empilhadas
         cv: Dict[tuple, list] = collections.OrderedDict()
         fns = []
@@ -410,20 +458,22 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                     str(_marcas(e).get("posicao") or e.nome) for e in inst).items() if fundidas.get(m, m) != marca_t))
                 cv.setdefault(chave, []).append((rotulo, inst, n))
                 continue
-            fns.append(lambda dd, x, y, rotulo=rotulo, inst=inst, n=n, nota=nota:
+            fns.append((tipos_conj.get(rotulo, ""), lambda dd, x, y, rotulo=rotulo, inst=inst, n=n, nota=nota:
                        desenho_do_conjunto(doc, rotulo, inst, n, dd, x, y, rotular, fundidas=fundidas, nota=nota,
-                                           nomes=nomes_pos, nome=nomes_conj.get(rotulo, ""), tipo=tipos_conj.get(rotulo, "")))
+                                           nomes=nomes_pos, nome=nomes_conj.get(rotulo, ""), tipo=tipos_conj.get(rotulo, ""),
+                                           conformadas=conformadas)))
         itens_cv = {}
         for membros in cv.values():
             membros.sort(key=lambda m: _ordem_natural(nomes_conj.get(m[0], m[0])))   # mesma ordem do rótulo da célula
-            fns.append(lambda dd, x, y, membros=membros: desenho_de_contraventamentos(
-                doc, membros, dd, x, y, nomes_pos, nomes_conj, fundidas, comprimentos, rotular))
+            fns.append(("contraventamento", lambda dd, x, y, membros=membros: desenho_de_contraventamentos(
+                doc, membros, dd, x, y, nomes_pos, nomes_conj, fundidas, comprimentos, rotular)))
             chave_cel = " / ".join(m[0] for m in membros)
             itens_cv[chave_cel] = {"quantidade": sum(m[2] for m in membros), "perfil": "contraventamentos %s" % " / ".join(nomes_conj.get(m[0], m[0]) for m in membros),
                                    "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                                    "categoria": "CONJUNTOS", "marcas": [mk for m in membros for mk in m[0].split(" / ")],
                                    "nome": " / ".join(nomes_conj.get(m[0], m[0]) for m in membros)}
-        _empilhar(d, [(lambda x, y, f=f: f(d, x, y)) for f in fns], largura_max_papel=1400.0)
+        _quadros_por_tipo(d, fns, largura_max_papel=1400.0)
+        fns = [f for _, f in fns]
         itens = {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
                               "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                               "categoria": c["categoria"], "marcas": c["marcas"], "nome": c["nome"]}

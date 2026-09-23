@@ -65,15 +65,37 @@ export class Selecionar extends Ferramenta {
 
 // --------------------------------------------------------------- desenho
 
+/**
+ * Direções que o snap passa a seguir a partir de um ponto: a do trecho que acabou de ser
+ * desenhado (para continuar reto) e, no primeiro ponto, a da linha existente de onde a
+ * nova parte. É o "tracking" dos CADs: o cursor gruda na continuação (e na perpendicular)
+ * quando passa perto dela, sem travar como o orto.
+ */
+function direcoesEm(editor, p, anterior) {
+  const dirs = [];
+  const add = (a, b) => { const d = dist(a, b); if (d > 1e-6) dirs.push([(b[0] - a[0]) / d, (b[1] - a[1]) / d]); };
+  if (anterior) add(anterior, p);
+  else {
+    for (const e of editor.doc.naRegiao([[p[0] - 0.5, p[1] - 0.5], [p[0] + 0.5, p[1] + 0.5]])) {
+      if (!editor.doc.visivel(e)) continue;
+      for (const [s, t] of segmentosDe(e)) {
+        if (dist(p, s) < 0.5) add(t, s); else if (dist(p, t) < 0.5) add(s, t);
+      }
+    }
+  }
+  return dirs.slice(0, 4);
+}
+
 export class Linha extends Ferramenta {
   static id = 'linha'; static nome = 'Linha'; static atalho = 'l'; static dica = 'Clique no primeiro ponto';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20 20 4"/><circle cx="4" cy="20" r="1.5"/><circle cx="20" cy="4" r="1.5"/></svg>';
-  reiniciar() { super.reiniciar(); this.ultimo = null; }
+  reiniciar() { super.reiniciar(); this.ultimo = null; this.editor.snap.direcoes = []; }
   onPonto(p) {
     if (this.ultimo && dist(p, this.ultimo) < 1e-6) return;
     if (this.ultimo) this.editor.executar(new ComandoAdicionar([this.novaEntidade({ tipo: 'linha', a: this.ultimo, b: p })], 'Linha'));
+    this.editor.snap.direcoes = direcoesEm(this.editor, p, this.ultimo);
     this.ultimo = p; this.editor.snap.ultimo = p;
-    this.dica('Próximo ponto, ou digite o comprimento · Enter/Esc termina');
+    this.dica('Próximo ponto, ou digite o comprimento · Enter/Esc termina · o cursor gruda na continuação da linha anterior');
   }
   onMover(p) {
     if (!this.ultimo) return;
@@ -98,6 +120,7 @@ export class Polilinha extends Linha {
   reiniciar() { super.reiniciar(); this.pontos = []; }
   onPonto(p) {
     if (this.pontos.length && dist(p, this.pontos[this.pontos.length - 1]) < 1e-6) return;
+    this.editor.snap.direcoes = direcoesEm(this.editor, p, this.ultimo);
     this.pontos.push(p); this.ultimo = p; this.editor.snap.ultimo = p;
     this.editor.previa([criar({ tipo: 'polilinha', camada: this.camada, vertices: this.pontos })]);
     this.dica(`${this.pontos.length} vértice(s) · próximo ponto ou comprimento · Enter termina · C fecha`);
@@ -400,7 +423,7 @@ export class Apagar extends Ferramenta {
 }
 
 export class Aparar extends Ferramenta {
-  static id = 'aparar'; static nome = 'Aparar'; static atalho = 'x'; static grupo = 'edicao'; static dica = 'Clique no trecho da linha a remover (corta nas interseções com outras linhas)';
+  static id = 'aparar'; static nome = 'Aparar (trim)'; static atalho = 'x'; static grupo = 'edicao'; static dica = 'Clique no trecho da linha a remover (corta nas interseções com outras linhas)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h16M4 18h16M12 3v18" stroke-dasharray="4 2"/><path d="M9 9l6 6"/></svg>';
   onPonto(p, ev) {
     const e = this.editor.tela.sob(ev.px);
@@ -430,6 +453,106 @@ function intersecaoLinhaCirculo(a, b, c, r) {
   if (disc < 0) return [];
   disc = Math.sqrt(disc);
   return [(-B - disc) / (2 * A), (-B + disc) / (2 * A)].filter(t => t >= 0 && t <= 1).map(t => [a[0] + t * d[0], a[1] + t * d[1]]);
+}
+
+/** Interseção de duas retas (não segmentos), ou null se paralelas. */
+function intersecaoRetas(a, b, c, d) {
+  const r = [b[0] - a[0], b[1] - a[1]], s = [d[0] - c[0], d[1] - c[1]];
+  const den = r[0] * s[1] - r[1] * s[0];
+  if (Math.abs(den) < 1e-12) return null;
+  const t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den;
+  return [a[0] + t * r[0], a[1] + t * r[1]];
+}
+
+export class Estender extends Ferramenta {
+  static id = 'estender'; static nome = 'Estender (extend)'; static atalho = 'n'; static grupo = 'edicao';
+  static dica = 'Clique perto da ponta da linha a estender: ela vai até a primeira linha, arco ou círculo que encontrar';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v16"/><path d="M20 12H8" stroke-dasharray="3 2"/><path d="M14 12h6M17 9l3 3-3 3"/></svg>';
+  onPonto(p, ev) {
+    const e = this.editor.tela.sob(ev.px);
+    if (!e || e.tipo !== 'linha') { this.dica('Estender funciona em linhas: clique perto da ponta a estender'); return; }
+    // a ponta mais perto do clique é a que anda; a direção é a da própria linha
+    const inverte = dist(p, e.a) < dist(p, e.b);
+    const fixo = inverte ? e.b : e.a, ponta = inverte ? e.a : e.b;
+    const L = dist(fixo, ponta) || 1, d = [(ponta[0] - fixo[0]) / L, (ponta[1] - fixo[1]) / L];
+    const longe = [ponta[0] + d[0] * 1e6, ponta[1] + d[1] * 1e6];
+    let melhor = null;
+    for (const o of this.doc.entidades.values()) {
+      if (o.id === e.id || !this.doc.visivel(o) || o.tipo === 'texto' || o.tipo === 'hachura') continue;
+      const cand = [];
+      for (const [s, t] of segmentosDe(o)) { const x = intersecaoSeg(ponta, longe, s, t); if (x) cand.push(x); }
+      if (o.tipo === 'circulo') cand.push(...intersecaoLinhaCirculo(ponta, longe, o.centro, o.raio));
+      for (const x of cand) {
+        const dx = dist(ponta, x);
+        if (dx > 0.05 && (!melhor || dx < melhor.d)) melhor = { x, d: dx };
+      }
+    }
+    if (!melhor) { this.dica('Nada nessa direção para a linha chegar'); return; }
+    const nova = criar({ ...e, a: inverte ? melhor.x : e.a, b: inverte ? e.b : melhor.x });
+    this.editor.executar(new ComandoSubstituir([nova], 'Estender'));
+    this.dica(`Estendida ${fmt(melhor.d)} mm · próxima linha (Esc sai)`);
+  }
+}
+
+export class Concordar extends Ferramenta {
+  static id = 'concordar'; static nome = 'Concordar (fillet)'; static atalho = 'k'; static grupo = 'edicao';
+  static dica = 'Fillet: clique na primeira linha, depois na segunda · digite o raio antes (0 = canto vivo)';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20V10a6 6 0 0 1 6-6h10"/></svg>';
+  reiniciar() { super.reiniciar(); this.primeira = null; this.raio = this.raio || 0; this.dica(`Fillet R ${fmt(this.raio)}: clique na primeira linha (digite outro raio se quiser)`); }
+  onValor(t) { const v = paraMilimetros(t); if (v != null && v >= 0) { this.raio = v; this.dica(`Raio ${fmt(v)}: clique na primeira linha`); } }
+  onPonto(p, ev) {
+    const e = this.editor.tela.sob(ev.px);
+    if (!e || e.tipo !== 'linha') { this.dica('Concordar funciona entre duas linhas'); return; }
+    if (!this.primeira) { this.primeira = { e, p }; this.dica('Agora a segunda linha'); return; }
+    if (e.id === this.primeira.e.id) { this.dica('Clique numa segunda linha, diferente da primeira'); return; }
+    const res = this._concordar(this.primeira.e, this.primeira.p, e, p, this.raio);
+    if (!res) { this.dica('As linhas são paralelas ou o raio não cabe'); this.primeira = null; return; }
+    const cmd = new ComandoComposto([new ComandoSubstituir(res.linhas, 'Concordar'),
+      ...(res.arco ? [new ComandoAdicionar([res.arco])] : [])], 'Concordar');
+    this.editor.executar(cmd);
+    this.primeira = null;
+    this.dica(`Feito · próxima concordância com R ${fmt(this.raio)} (Esc sai)`);
+  }
+  /**
+   * As duas retas se cruzam em P. De cada linha fica o lado em que o usuário clicou; o
+   * canto é aparado (ou estendido) até P com raio zero, ou até os pontos de tangência do
+   * arco de raio R, que fica do lado dos cliques.
+   */
+  _concordar(e1, p1, e2, p2, R) {
+    const P = intersecaoRetas(e1.a, e1.b, e2.a, e2.b);
+    if (!P) return null;
+    const lado = (e, pc) => {
+      // direção unitária de P para o lado clicado, e a ponta que fica desse lado
+      const q = maisProximoSeg(pc, e.a, e.b);
+      let d = [q[0] - P[0], q[1] - P[1]], n = Math.hypot(d[0], d[1]);
+      if (n < 1e-6) { d = [e.b[0] - e.a[0], e.b[1] - e.a[1]]; n = Math.hypot(d[0], d[1]); }
+      d = [d[0] / n, d[1] / n];
+      const ponta = ((e.a[0] - P[0]) * d[0] + (e.a[1] - P[1]) * d[1]) >= ((e.b[0] - P[0]) * d[0] + (e.b[1] - P[1]) * d[1]) ? e.a : e.b;
+      return { d, ponta };
+    };
+    const l1 = lado(e1, p1), l2 = lado(e2, p2);
+    if (R <= 1e-6) {
+      return { linhas: [criar({ ...e1, a: P, b: l1.ponta }), criar({ ...e2, a: P, b: l2.ponta })], arco: null };
+    }
+    const cosT = l1.d[0] * l2.d[0] + l1.d[1] * l2.d[1];
+    const theta = Math.acos(Math.max(-1, Math.min(1, cosT)));          // ângulo entre os lados
+    if (theta < 1e-3 || Math.PI - theta < 1e-3) return null;
+    const t = R / Math.tan(theta / 2);                                  // P → ponto de tangência
+    const T1 = [P[0] + l1.d[0] * t, P[1] + l1.d[1] * t], T2 = [P[0] + l2.d[0] * t, P[1] + l2.d[1] * t];
+    // o arco tem de caber: a ponta guardada precisa passar do ponto de tangência
+    for (const [l, T] of [[l1, T1], [l2, T2]]) if (dist(P, l.ponta) < t - 1e-6) return null;
+    let bx = l1.d[0] + l2.d[0], by = l1.d[1] + l2.d[1];
+    const nb = Math.hypot(bx, by); bx /= nb; by /= nb;
+    const C = [P[0] + bx * R / Math.sin(theta / 2), P[1] + by * R / Math.sin(theta / 2)];
+    const g = (q) => ((Math.atan2(q[1] - C[1], q[0] - C[0]) * 180 / Math.PI) + 360) % 360;
+    // o arco vai de T1 a T2 pelo lado de P (o lado côncavo): escolhe o sentido que contém P
+    const am = g(P);
+    let a0 = g(T1), a1 = g(T2);
+    const dentro = (x, i, f) => (f >= i ? x >= i && x <= f : x >= i || x <= f);
+    if (!dentro(am, a0, a1)) [a0, a1] = [a1, a0];
+    const arco = criar({ tipo: 'arco', camada: e1.camada, centro: C, raio: R, inicio: a0, fim: a1 });
+    return { linhas: [criar({ ...e1, a: T1, b: l1.ponta }), criar({ ...e2, a: T2, b: l2.ponta })], arco };
+  }
 }
 
 export class Offset extends Ferramenta {
@@ -485,5 +608,5 @@ export class Medir extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, Chamada, Hachura,
-  Mover, Copiar, Girar, Espelhar, Offset, Aparar, Apagar, Medir];
+  Mover, Copiar, Girar, Espelhar, Offset, Aparar, Estender, Concordar, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];
