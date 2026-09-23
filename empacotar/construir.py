@@ -14,13 +14,17 @@ Passos:
      basta repetir a estrutura de pastas dentro do pacote;
   3. compila o instalador com o Inno Setup (`instalador.iss`).
 
-Saídas: o instalador em `empacotar/saida/Metalica-<versão>-instalador.exe` e o programa em
-pasta em `%TEMP%/metalica-build/dist/Metalica/` (fora do projeto, por causa do OneDrive).
+Saídas: o instalador em `Metalica-instalador.exe`, na raiz da pasta do aplicativo, e o
+programa em pasta em `%TEMP%/metalica-build/dist/Metalica/` (fora do projeto, por causa
+do OneDrive). O instalador tem sempre o mesmo nome e é sobrescrito: guardar um de 30 MB
+por versão enchia a pasta (e a sincronização do OneDrive) sem servir para nada — as
+versões antigas ficam nas releases do GitHub, que é onde se vai buscá-las.
 
 Requisitos: `pip install pyinstaller` e o Inno Setup 6 (winget install JRSoftware.InnoSetup).
 O nome do executável vai sem acento de propósito: atalho e pasta de instalação com
 acento dão problema em scripts e em alguns antivírus.
 """
+import glob
 import os
 import shutil
 import subprocess
@@ -41,7 +45,8 @@ import tempfile                                  # noqa: E402
 CONSTRUCAO = os.path.join(tempfile.gettempdir(), "metalica-build")
 TRABALHO = os.path.join(CONSTRUCAO, "trabalho")
 DIST = os.path.join(CONSTRUCAO, "dist")          # o executável em pasta também fica fora
-SAIDA = os.path.join(AQUI, "saida")
+SAIDA = os.path.join(AQUI, "saida")          # onde o Inno Setup grava, antes de mover
+INSTALADOR = os.path.join(RAIZ, "Metalica-instalador.exe")
 
 ISCC = [os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
         r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
@@ -97,6 +102,7 @@ def executavel():
 
 
 def instalador():
+    """Compila o instalador e o deixa, com nome fixo, na raiz da pasta do aplicativo."""
     iscc = next((c for c in ISCC if os.path.exists(c)), None)
     if not iscc:
         print("Inno Setup não encontrado: instalador não gerado "
@@ -105,7 +111,28 @@ def instalador():
     os.makedirs(SAIDA, exist_ok=True)
     subprocess.run([iscc, f"/DVersao={versao.VERSAO}", f"/DOrigem={os.path.join(DIST, 'Metalica')}",
                     f"/DSaida={SAIDA}", os.path.join(AQUI, "instalador.iss")], check=True)
-    return os.path.join(SAIDA, f"Metalica-{versao.VERSAO}-instalador.exe")
+    gerado = os.path.join(SAIDA, "Metalica-instalador.exe")
+    if not os.path.exists(gerado):
+        raise SystemExit("o Inno Setup terminou sem gerar " + gerado)
+    os.replace(gerado, INSTALADOR)
+    limpar_instaladores_antigos()
+    return INSTALADOR
+
+
+def limpar_instaladores_antigos() -> int:
+    """Apaga os instaladores de versões anteriores que ficaram na pasta de saída.
+
+    Eram 30 MB cada, um por versão, dentro do OneDrive. O instalador que vale é o
+    `Metalica-instalador.exe` da raiz; as versões antigas ficam publicadas nas releases.
+    """
+    apagados = 0
+    for caminho in glob.glob(os.path.join(SAIDA, "Metalica-*-instalador.exe")):
+        try:
+            os.remove(caminho)
+            apagados += 1
+        except OSError:
+            pass
+    return apagados
 
 
 def tamanho_mb(caminho: str) -> float:

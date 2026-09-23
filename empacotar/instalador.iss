@@ -28,7 +28,9 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir={#Saida}
-OutputBaseFilename=Metalica-{#Versao}-instalador
+; nome sem a versão de propósito: é sempre o mesmo arquivo, sobrescrito a cada
+; build, para não acumular um instalador de 30 MB por versão na pasta (e no OneDrive)
+OutputBaseFilename=Metalica-instalador
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
