@@ -203,8 +203,20 @@ def _dimensao(msp, c: Cota, k: float, at: dict):
     override = {}
     if c.altura and abs(float(c.altura) - 2.5) > 1e-6:
         override["dimtxt"] = float(c.altura)
-    dim = msp.add_linear_dim(base=base, p1=c.p1, p2=c.p2, angle=ang, dimstyle=ESTILO,
-                             text=str(c.texto) if c.texto not in (None, "") else "<>",
-                             override=override or None, dxfattribs=at)
+    # o número: onde foi posto à mão; ou, quando não cabe entre as chamadas, um degrau para
+    # fora (a mesma regra da tela do CAD)
+    texto = str(c.texto) if c.texto not in (None, "") else "<>"
+    local = None
+    h = float(c.altura or 2.5) * k
+    seta = min(2.5 * k, max(1.0 * k, comp / 4))
+    n_txt = len(str(c.texto)) if c.texto not in (None, "") else len("%d" % round(comp))
+    if c.texto_pos:
+        local = tuple(c.texto_pos)
+    elif comp >= 3 * seta and 0.62 * h * n_txt + 2 * seta > comp:
+        sg = 1.0 if desl >= 0 else -1.0
+        mx, my = (base[0] + base[0] + dx) / 2, (base[1] + base[1] + dy) / 2
+        local = (mx + nx * sg * 2.4 * h, my + ny * sg * 2.4 * h)
+    dim = msp.add_linear_dim(base=base, p1=c.p1, p2=c.p2, angle=ang, dimstyle=ESTILO, text=texto,
+                             location=local, override=override or None, dxfattribs=at)
     dim.render()
     return dim.dimension

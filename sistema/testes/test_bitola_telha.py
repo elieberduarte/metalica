@@ -11,6 +11,11 @@ def test_bitola_14_no_nome_do_perfil():
     assert p.dados["d"] == 127.0 and p.dados["bf"] == 50.0 and abs(p.dados["t"] - 1.9) < 1e-9
 
 
+def test_bitola_colada_na_medida_anterior():
+    p = pf.perfil_de_fabrica("C127X50X17#14")          # sem o X antes da bitola
+    assert p is not None and abs(p.dados["t"] - 1.9) < 1e-9
+
+
 def test_bitola_desconhecida_nao_vira_numero():
     assert pf.perfil_de_fabrica("C127X50X17X#99") is None
 

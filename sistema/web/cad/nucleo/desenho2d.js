@@ -37,7 +37,7 @@ export function criar(reg) {
     case 'texto': return { ...base, camada: base.camada || 'TEXTO', posicao: reg.posicao, texto: reg.texto || '',
       altura: reg.altura ?? 2.5, angulo: reg.angulo || 0, alinhamento: reg.alinhamento || 'esquerda', vertical: reg.vertical || 'base' };
     case 'cota': return { ...base, camada: base.camada || 'COTA', modo: reg.modo || 'alinhada', p1: reg.p1, p2: reg.p2,
-      deslocamento: reg.deslocamento ?? 10, texto: reg.texto ?? null, altura: reg.altura ?? 2.5 };
+      deslocamento: reg.deslocamento ?? 10, texto: reg.texto ?? null, altura: reg.altura ?? 2.5, texto_pos: reg.texto_pos ?? null };
     case 'hachura': return { ...base, camada: base.camada || 'HACHURA', contornos: reg.contornos || [], padrao: reg.padrao || 'aco',
       angulo: reg.angulo ?? 45, espacamento: reg.espacamento ?? 2.5 };
     case 'chamada': return { ...base, camada: base.camada || 'TEXTO', alvo: reg.alvo, posicao: reg.posicao, texto: reg.texto || '', altura: reg.altura ?? 2.5 };
@@ -201,7 +201,7 @@ export function transladar(e, d) {
     case 'polilinha': n.vertices = e.vertices.map(mv); break;
     case 'circulo': case 'arco': n.centro = mv(e.centro); break;
     case 'texto': n.posicao = mv(e.posicao); break;
-    case 'cota': n.p1 = mv(e.p1); n.p2 = mv(e.p2); break;
+    case 'cota': n.p1 = mv(e.p1); n.p2 = mv(e.p2); if (e.texto_pos) n.texto_pos = mv(e.texto_pos); break;
     case 'hachura': n.contornos = e.contornos.map(c => c.map(mv)); break;
     case 'chamada': n.alvo = mv(e.alvo); n.posicao = mv(e.posicao); break;
   }
@@ -224,7 +224,7 @@ export function transformar(e, f, fAng = (a) => a, k = 1, espelha = false) {
       break;
     }
     case 'texto': n.posicao = f(e.posicao); n.angulo = espelha ? e.angulo : fAng(e.angulo); break;
-    case 'cota': n.p1 = f(e.p1); n.p2 = f(e.p2); if (espelha) n.deslocamento = -e.deslocamento; break;
+    case 'cota': n.p1 = f(e.p1); n.p2 = f(e.p2); if (e.texto_pos) n.texto_pos = f(e.texto_pos); if (espelha) n.deslocamento = -e.deslocamento; break;
     case 'hachura': n.contornos = e.contornos.map(c => c.map(f)); break;
     case 'chamada': n.alvo = f(e.alvo); n.posicao = f(e.posicao); break;
   }

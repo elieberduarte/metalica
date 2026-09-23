@@ -57,6 +57,7 @@ def _norm(nome: str) -> str:
     s = s.replace("'", '"')
     s = s.replace(",", ".")
     # espessura pela bitola: "X#14" → "X1.9"
+    s = re.sub(r"(\d)\s*#", r"\1X#", s)          # "17#14" = "17X#14"
     s = re.sub(r"#\s*(\d+)", lambda m: ("%g" % BITOLAS[int(m.group(1))]) if int(m.group(1)) in BITOLAS else m.group(0), s)
     # sufixos que o catálogo acrescenta ao nome e não fazem parte da medida
     s = re.sub(r"\((?:FF|MÉTRICA|METRICA)\)", " ", s)

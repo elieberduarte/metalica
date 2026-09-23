@@ -399,14 +399,29 @@ def _trechos_curvos(pts: Sequence[Tuple[float, float]], fechada: bool) -> List[T
     return trechos
 
 
-def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set) -> List:
-    """Troca cada arco das silhuetas das peças `ids` pela **corda**: a peça curva do canto
-    da tesoura (o banzo calandrado do joelho) sai como uma barra diagonal reta ligando as
-    duas pontas do arco — é o chanfro que a fábrica faz, em vez de calandrar. Vale para a
-    peça que é só o arco e para o arco no meio de uma silhueta fechada. O 3D fica com o
-    arco do modelo.
+#: Folga (mm) do trecho reto além do suporte de terça que ele segura, no chanfro do canto.
+FOLGA_CHANFRO_SUPORTE = 100.0
+
+
+def _dist_ponto_seg(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    l2 = dx * dx + dy * dy
+    t = 0.0 if l2 < 1e-12 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2))
+    return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+
+
+def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence = ()) -> List:
+    """Troca cada arco das silhuetas das peças `ids` por uma **barra diagonal reta** — o
+    chanfro que a fábrica faz, em vez de calandrar. Sem nada apoiado no canto, a diagonal é
+    a corda do arco. Quando um suporte de terça (`apoios`: caixas 2D das chapas) encosta no
+    trecho reto logo depois do arco, esse trecho avança sobre o arco até passar do suporte
+    com folga (FOLGA_CHANFRO_SUPORTE), e a diagonal vai do começo do arco até ali: o
+    suporte não fica "voando" sobre a diagonal. Vale para a peça que é só o arco e para o
+    arco no meio de uma silhueta fechada. O 3D fica com o arco do modelo.
     """
     saida = list(novas)
+    preparadas = []
+    recuos: Dict[tuple, float] = {}              # (peça, direção do trecho reto) → avanço
     for e in novas:
         if not isinstance(e, Polilinha) or (e.atributos or {}).get("origem") not in ids:
             continue
@@ -424,18 +439,49 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set) -> List:
                 trechos = _trechos_curvos(pts, True)
         if not trechos:
             continue
+        origem = (e.atributos or {}).get("origem")
+        preparadas.append((e, pts, trechos, origem))
+        # quanto cada trecho reto vizinho do arco precisa avançar para segurar um suporte
+        for i, j in trechos:
+            if j >= len(pts) or j - i < 3:
+                continue
+            corda = math.dist(pts[i + 1], pts[j - 1])
+            for ponta, longe in ((pts[j - 1], pts[j]), (pts[i + 1], pts[i])):
+                L = math.dist(ponta, longe)
+                if L < 1e-6:
+                    continue
+                volta = ((ponta[0] - longe[0]) / L, (ponta[1] - longe[1]) / L)   # do reto para dentro do arco
+                s = 0.0
+                for (x0, y0, x1, y1) in apoios:
+                    cantos = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+                    if min(_dist_ponto_seg(q, ponta, longe) for q in cantos) > 60.0:
+                        continue
+                    alem = max((q[0] - ponta[0]) * volta[0] + (q[1] - ponta[1]) * volta[1] for q in cantos)
+                    if alem > -FOLGA_CHANFRO_SUPORTE:
+                        s = max(s, alem + FOLGA_CHANFRO_SUPORTE)
+                if s > 0:
+                    chave = (origem, round(math.degrees(math.atan2(volta[1], volta[0])) / 5.0))
+                    recuos[chave] = min(max(recuos.get(chave, 0.0), s), 0.8 * corda)
+    for e, pts, trechos, origem in preparadas:
         mudou = False
         for i, j in sorted(trechos, reverse=True):
             if j >= len(pts) or j - i < 3:
                 continue
             # o arco vai de pts[i+1] a pts[j-1] (pts[i] e pts[j] são as outras pontas dos
-            # trechos retos vizinhos): os vértices do meio saem, fica a corda
-            pts = pts[:i + 2] + pts[j - 1:]
+            # trechos retos vizinhos): os vértices do meio saem, fica a diagonal
+            a, b = pts[i + 1], pts[j - 1]
+            novos = []
+            for ponta, longe in ((a, pts[i]), (b, pts[j])):
+                L = math.dist(ponta, longe)
+                volta = ((ponta[0] - longe[0]) / L, (ponta[1] - longe[1]) / L) if L > 1e-6 else (0.0, 0.0)
+                s = recuos.get((origem, round(math.degrees(math.atan2(volta[1], volta[0])) / 5.0)), 0.0)
+                novos.append((ponta[0] + volta[0] * s, ponta[1] + volta[1] * s))
+            pts = pts[:i + 1] + novos + pts[j:]
             mudou = True
         if not mudou:
             continue
         e.vertices = [(round(x, 2), round(y, 2)) for x, y in pts]
-        e.atributos = dict(e.atributos or {}, chanfro="corda do arco")
+        e.atributos = dict(e.atributos or {}, chanfro="diagonal")
     return saida
 
 
@@ -509,7 +555,16 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         ids_conformadas = {e.id for e in instancia
                            if fundidas.get(str(_marcas(e).get("posicao") or e.nome), str(_marcas(e).get("posicao") or e.nome)) in conformadas}
         if ids_conformadas:
-            novas = _chanfrar_cantos(desenho, novas, ids_conformadas)
+            # as chapas desenhadas (suportes de terça): o trecho reto que segura uma delas
+            # avança sobre o arco
+            ids_chapas = {e.id for e in instancia if camada_de.get(e.id) == "CHAPAS"}
+            apoios = []
+            for e in novas:
+                if (e.atributos or {}).get("origem") in ids_chapas and hasattr(e, "pontos"):
+                    pp = e.pontos()
+                    if pp:
+                        apoios.append((min(q[0] for q in pp), min(q[1] for q in pp), max(q[0] for q in pp), max(q[1] for q in pp)))
+            novas = _chanfrar_cantos(desenho, novas, ids_conformadas, apoios)
     for e in novas:
         e.atributos["conjunto"] = marca
         e.atributos["detalhe"] = "conjunto"

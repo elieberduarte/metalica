@@ -266,6 +266,32 @@ QUADROS_POSICOES = [("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS
                     ("barra", "BARRAS"), ("chapa", "CHAPAS"), ("telha", "TELHAS")]
 
 
+#: Quadros do desenho completo por família: o conjunto e as peças que fazem parte dele
+#: (a tesoura com as barras e as chapas de base; o agulhamento com o suporte e a barra; o
+#: contraventamento com o tirante, a castanha e a barra roscada) ficam juntos.
+FAMILIAS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("conjunto", "CONJUNTOS"),
+            ("terca", "TERÇAS E SUPORTES DE TERÇA"), ("agulhamento", "AGULHAMENTOS"),
+            ("contraventamento", "CONTRAVENTAMENTOS E TIRANTES"), ("telha", "TELHAS"), ("outros", "OUTRAS PEÇAS")]
+
+
+def _familia_da_posicao(p, tipo_pos: str, tipo_de_conj: Dict[str, str]) -> str:
+    """Família da peça avulsa: pelo tipo de produção dela e, sendo parte de conjunto, pelo
+    tipo do conjunto em que ela mais aparece."""
+    if tipo_pos in ("agulhamento", "suporte_agulhamento"):
+        return "agulhamento"
+    if tipo_pos in ("contraventamento", "suporte_contraventamento", "castanha", "gancho", "barra_roscada"):
+        return "contraventamento"
+    if tipo_pos in ("terca_cobertura", "terca_marquise", "suporte_terca"):
+        return "terca"
+    if p.classe == "telha":
+        return "telha"
+    tipos = collections.Counter(tipo_de_conj[c] for c in (p.conjuntos or []) if tipo_de_conj.get(c))
+    if tipos:
+        t = tipos.most_common(1)[0][0]
+        return t if t in dict(FAMILIAS) else "conjunto"
+    return "outros"
+
+
 def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float = 1400.0,
                       y: float = 0.0, meta: Optional[dict] = None, titulos: Optional[Sequence[tuple]] = None) -> float:
     """Desenha as células agrupadas por tipo, cada grupo dentro de um quadro com título.
@@ -328,6 +354,12 @@ def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho]) -
         if chave == "localizacao":
             if localizacao is not None:
                 y = _anexar_quadro(dc, localizacao, titulo, y)
+            continue
+        if "familias" in faixas:
+            # quadros por família: cada conjunto junto das peças dele (a planta vem depois)
+            if chave == "conjuntos":
+                celulas, largura, meta = faixas["familias"][:3]
+                y = _quadros_por_tipo(dc, celulas, largura_max_papel=largura, y=y, meta=meta, titulos=FAMILIAS)
             continue
         if chave not in faixas:
             continue
@@ -419,6 +451,8 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     avisos: List[str] = []
 
     conjuntos_info = []
+    familias_completo: List[tuple] = []       # (família, célula) para o desenho completo
+    tipo_de_conj: Dict[str, str] = {}         # marca de conjunto → tipo (tesoura, agulhamento…)
     if pecas:            # sempre levantados: os nomes de produção dependem dos conjuntos
         por_conj: Dict[str, List[Solido]] = collections.defaultdict(list)
         for e in pecas:
@@ -564,6 +598,10 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         if "conjuntos" in grupos:
             desenhos["conjuntos"] = d
         faixas["conjuntos"] = (fns, 1400.0, dict(d.metadados["detalhamento"]))
+        familias_completo.extend(((t if t in dict(FAMILIAS) else "conjunto") or "conjunto", f) for t, f in fns)
+        for c in conjuntos_info:
+            for m in c["marcas"]:
+                tipo_de_conj[m] = tipos_conj.get(c["marca"], "") or "conjunto"
 
     # telhas multi-dobra: a fileira de facetas de um conjunto de telhas é uma peça só
     from nucleo2d.detalhe.telhas import multidobras, desenho_da_multidobra, faces_de_telhas, desenho_da_paginacao
@@ -621,6 +659,10 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         d.metadados["detalhamento"]["furos_originais"] = {
             p.marca: [_furo_dict(f) for f in p.furos if f.vista == "frente"] for p in lista if p.marca in editaveis}
         faixas[chave] = (celulas_g, 800.0, dict(d.metadados["detalhamento"]), QUADROS_POSICOES)
+        n_extra = len(celulas_g) - len(lista)
+        familias_completo.extend(("telha", f) for _, f in celulas_g[:n_extra])
+        familias_completo.extend((_familia_da_posicao(p, nomeacao["tipos"].get(p.marca) or p.tipo_nome, tipo_de_conj), f)
+                                 for p, (_, f) in zip(lista, celulas_g[n_extra:]))
         if chave in grupos:
             desenhos[chave] = d
 
@@ -636,6 +678,17 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         except ErroDeDados as e:
             avisos.append("planta de localização não gerada: %s" % e)
 
+    if familias_completo:
+        # metadados de todos os grupos juntos (itens, editáveis, furos originais)
+        meta_todos = {"grupo": "completo", "posicoes": [], "itens": {}, "editaveis": [], "furos_originais": {}, "conjuntos": []}
+        for fx in faixas.values():
+            m = fx[2] or {}
+            meta_todos["posicoes"] += [k for k in (m.get("posicoes") or []) if k not in meta_todos["posicoes"]]
+            meta_todos["itens"].update(m.get("itens") or {})
+            meta_todos["editaveis"] += [k for k in (m.get("editaveis") or []) if k not in meta_todos["editaveis"]]
+            meta_todos["furos_originais"].update(m.get("furos_originais") or {})
+            meta_todos["conjuntos"] += [k for k in (m.get("conjuntos") or []) if k not in meta_todos["conjuntos"]]
+        faixas["familias"] = (familias_completo, 1400.0, meta_todos)
     if "completo" in grupos and (faixas or localizacao is not None):
         avisar("desenho completo…")
         desenhos["completo"] = desenho_completo(faixas, localizacao)

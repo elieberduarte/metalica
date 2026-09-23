@@ -63,6 +63,8 @@ export class Tela {
       const pc = pontosCota(e, k);
       fora.push({ id, parte: 'p1', ponto: e.p1 }, { id, parte: 'p2', ponto: e.p2 });
       if (pc.length === 4) fora.push({ id, parte: 'linha', ponto: [(pc[2][0] + pc[3][0]) / 2, (pc[2][1] + pc[3][1]) / 2] });
+      const t = Tela.textoCota(e, k);
+      if (t) fora.push({ id, parte: 'texto', ponto: t.pos });
     }
     return fora;
   }
@@ -244,6 +246,7 @@ export class Tela {
       ctx.setLineDash([]); ctx.lineWidth = 1; ctx.strokeStyle = cores.selecao;
       ctx.fillStyle = quente ? '#e0442f' : cores.selecao;
       if (a.parte === 'linha') { ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill(); }
+      else if (a.parte === 'texto') { ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.lineTo(x + 5, y); ctx.lineTo(x, y + 5); ctx.lineTo(x - 5, y); ctx.closePath(); ctx.fill(); }
       else ctx.fillRect(x - 4, y - 4, 8, 8);
     }
 
@@ -362,6 +365,30 @@ export class Tela {
     return { a1, a2, ux, uy, nx, ny, comp, desl, x1, y1, x2, y2 };
   }
 
+  /**
+   * Onde vai o número da cota (base do texto, centrado) e o ângulo dele. `texto_pos`
+   * (arrastado pela alça do texto) manda; sem ela, o número fica no meio da linha — e,
+   * quando não cabe entre as chamadas, sai para fora (um degrau mais longe da peça), para
+   * não encavalar no da cota vizinha.
+   */
+  static textoCota(c, k) {
+    const g = Tela.geometriaCota(c, k);
+    if (!g) return null;
+    const sg = g.desl >= 0 ? 1 : -1, seta = Math.min(2.5 * k, Math.max(1 * k, g.comp / 4));
+    const txt = c.texto != null && c.texto !== '' ? String(c.texto) : formatarMm(valorCota(c));
+    const ang = Math.atan2(g.uy, g.ux);
+    let angG = ang * 180 / Math.PI;
+    const lado = (angG > -90 && angG <= 90) ? 1 : -1;
+    if (lado < 0) angG += 180;
+    const h = c.altura * k, off = h * 0.55 * lado;
+    const fora = g.comp < 3 * seta;
+    if (c.texto_pos) return { pos: c.texto_pos, txt, h, angG, g, seta, fora, ang };
+    let mx = (g.a1[0] + g.a2[0]) / 2, my = (g.a1[1] + g.a2[1]) / 2;
+    if (fora) { mx += g.ux * (2.4 * seta + 0.4 * h * txt.length); my += g.uy * (2.4 * seta + 0.4 * h * txt.length); }
+    else if (0.62 * h * txt.length + 2 * seta > g.comp) { mx += g.nx * sg * 1.9 * h; my += g.ny * sg * 1.9 * h; }
+    return { pos: [mx + g.nx * off, my + g.ny * off], txt, h, angG, g, seta, fora, ang };
+  }
+
   _cota(ctx, c, k, cor) {
     const g = Tela.geometriaCota(c, k);
     if (!g) return;
@@ -379,14 +406,8 @@ export class Tela {
     const fora = g.comp < 3 * seta;
     this._seta(ctx, A1, fora ? ang : ang + Math.PI, seta * z);
     this._seta(ctx, A2, fora ? ang + Math.PI : ang, seta * z);
-    const txt = c.texto != null && c.texto !== '' ? c.texto : formatarMm(valorCota(c));
-    let mx = (g.a1[0] + g.a2[0]) / 2, my = (g.a1[1] + g.a2[1]) / 2;
-    let angG = ang * 180 / Math.PI;
-    const lado = (angG > -90 && angG <= 90) ? 1 : -1;
-    if (lado < 0) angG += 180;
-    const h = c.altura * k, off = h * 0.55 * lado;
-    if (fora) { mx += g.ux * (2.4 * seta + 0.4 * h * txt.length); my += g.uy * (2.4 * seta + 0.4 * h * txt.length); }
-    this._texto(ctx, [mx + g.nx * off, my + g.ny * off], txt, h, angG, 'centro', 'base', cor);
+    const t = Tela.textoCota(c, k);
+    this._texto(ctx, t.pos, t.txt, t.h, t.angG, 'centro', 'base', cor);
   }
 
   _hachura(ctx, e, k, cor) {

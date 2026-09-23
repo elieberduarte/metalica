@@ -171,7 +171,7 @@ function desenhar(L) {
 
   if ((L.telhas || []).length) {
     c.append(secao('Telhas', null, tabela([
-      { titulo: 'Perfil', valor: (g) => g.perfil + (g.largura ? ` · larg. ${g.largura}` : ''), classe: 'b' },
+      { titulo: 'Perfil', valor: (g) => g.perfil + (g.largura ? ` · larg. ${g.largura_total || g.largura} (útil ${g.largura})` : ''), classe: 'b' },
       { titulo: 'Chapas inteiras (qtd × compr. mm)', valor: (g) => g.chapas_texto || '', classe: 'quebra' },
       { titulo: 'Posições', valor: (g) => marcas(g.posicoes, 30), classe: 'quebra' },
       { titulo: 'Peças', chave: 'pecas', classe: 'c', num: true }, { titulo: 'Compr. (m)', chave: 'comprimento_m', classe: 'r', num: true, casas: 2 },

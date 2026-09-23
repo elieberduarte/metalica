@@ -70,7 +70,8 @@ export class Selecionar extends Ferramenta {
     this.alca = a;
     this.editor.tela.alcaQuente = a;
     this.editor.snap.ignorar = new Set([a.id]);
-    this.dica(a.parte === 'linha'
+    this.dica(a.parte === 'texto' ? 'Leve o número da cota para onde ele fica legível · Esc cancela'
+      : a.parte === 'linha'
       ? 'Leve a linha de cota até a posição (o snap pega a linha de outra cota) · Esc cancela'
       : 'Leve o ponto de referência da cota até o novo ponto (extremidade, interseção…) · Esc cancela');
   }
@@ -83,7 +84,9 @@ export class Selecionar extends Ferramenta {
     const c = this.doc.get(this.alca.id);
     if (!c) return null;
     const k = this.doc.escala;
-    if (this.alca.parte === 'linha') return criar({ ...c, deslocamento: deslocamentoPara(c, p, k) });
+    // a alça do texto leva só o número; a da linha leva a linha (e o número volta ao meio dela)
+    if (this.alca.parte === 'texto') return criar({ ...c, texto_pos: [p[0], p[1]] });
+    if (this.alca.parte === 'linha') return criar({ ...c, deslocamento: deslocamentoPara(c, p, k), texto_pos: null });
     // muda o ponto medido e mantém a linha de cota onde estava
     const pc = pontosCota(c, k);
     const naLinha = pc.length === 4 ? pc[this.alca.parte === 'p1' ? 2 : 3] : null;
@@ -373,6 +376,115 @@ export class MoverCota extends Ferramenta {
     this.reiniciar();
   }
   onMover(p) { if (this.ids.length) this.editor.previa(this._novas(p)); }
+}
+
+/**
+ * Esticar — o "empurrar/puxar" do SketchUp no 2D. Dois jeitos:
+ *  • clique numa aresta (a ponta de uma terça, o lado de uma chapa): ela anda na
+ *    perpendicular a ela mesma, e tudo o que encosta nas duas pontas dela vai junto — as
+ *    arestas vizinhas esticam e as cotas presas ali mudam de valor;
+ *  • arraste uma janela: cada ponto dentro dela (vértices, pontas de linha, pontos de
+ *    cota) anda; o resto fica — o STRETCH do AutoCAD.
+ * Depois, o ponto de destino (ou digite a distância; na aresta, positivo afasta para o
+ * lado do cursor). Furos e textos só andam quando estão dentro da janela.
+ */
+export class Esticar extends Ferramenta {
+  static id = 'esticar'; static nome = 'Esticar (empurrar/puxar)'; static atalho = 's'; static grupo = 'edicao';
+  static dica = 'Clique na aresta a empurrar/puxar, ou arraste uma janela sobre o que vai esticar';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="7" width="11" height="10"/><path d="M14 7v10" stroke-width="2.4"/><path d="M17 12h5M19.5 9.5 22 12l-2.5 2.5"/></svg>';
+  reiniciar() {
+    super.reiniciar();
+    this.dentro = null;          // (ponto) => bool: o que anda
+    this.regiao = null;          // caixa para buscar entidades
+    this.normal = null;          // aresta: o deslocamento fica na perpendicular dela
+    this.base = null;
+  }
+  _pegarAresta(p, ev) {
+    const tela = this.editor.tela, e = tela.sob(ev.px);
+    if (!e) { this.dica('Clique numa aresta, ou arraste uma janela'); return false; }
+    let melhor = null, dm = Infinity;
+    for (const [s, t] of segmentosDe(e)) {
+      const q = maisProximoSeg(p, s, t), d = dist(q, p);
+      if (d < dm) { dm = d; melhor = [s, t]; }
+    }
+    if (!melhor) return false;
+    const [s, t] = melhor, L = dist(s, t) || 1;
+    const tol = Math.max(0.5, 2 * tela.mmPorPixel);
+    this.dentro = (q) => dist(q, s) <= tol || dist(q, t) <= tol;
+    this.regiao = [[Math.min(s[0], t[0]) - tol, Math.min(s[1], t[1]) - tol], [Math.max(s[0], t[0]) + tol, Math.max(s[1], t[1]) + tol]];
+    this.normal = [-(t[1] - s[1]) / L, (t[0] - s[0]) / L];
+    this.base = p; this.editor.snap.ultimo = p;
+    this.editor.previa([criar({ tipo: 'linha', camada: this.camada, a: s, b: t })]);
+    this.dica('Leve a aresta até a nova posição, ou digite a distância · Esc cancela');
+    return true;
+  }
+  onSoltar(p, ev) {
+    if (!ev.arrasto || this.dentro) return;
+    const tela = this.editor.tela;
+    const a = tela.paraMundo(ev.arrasto.de), b = tela.paraMundo(ev.arrasto.para);
+    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+    this.dentro = (q) => q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1;
+    this.regiao = [[x0, y0], [x1, y1]];
+    this.normal = null;
+    this.editor.previa([criar({ tipo: 'polilinha', camada: this.camada, vertices: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], fechada: true })]);
+    this.dica('Ponto base do esticamento');
+  }
+  _desloc(p) {
+    let d = [p[0] - this.base[0], p[1] - this.base[1]];
+    if (this.normal) { const k = d[0] * this.normal[0] + d[1] * this.normal[1]; d = [this.normal[0] * k, this.normal[1] * k]; }
+    return d;
+  }
+  /** Cópias das entidades afetadas, com os pontos de dentro deslocados de `d`. */
+  _novas(d) {
+    const mv = (q) => (this.dentro(q) ? [q[0] + d[0], q[1] + d[1]] : q);
+    const [lo, hi] = this.regiao;
+    const fora = [];
+    for (const e of this.doc.naRegiao([lo, hi])) {
+      if (!this.doc.visivel(e)) continue;
+      const c = clonar(e);
+      let mudou = false;
+      const trocar = (campo) => { const v = mv(c[campo]); if (v !== c[campo]) { c[campo] = v; mudou = true; } };
+      if (e.tipo === 'linha') { trocar('a'); trocar('b'); }
+      else if (e.tipo === 'polilinha') { c.vertices = c.vertices.map(q => { const v = mv(q); if (v !== q) mudou = true; return v; }); }
+      else if (e.tipo === 'cota') { trocar('p1'); trocar('p2'); if (c.texto_pos) trocar('texto_pos'); }
+      else if (e.tipo === 'circulo' || e.tipo === 'arco') { trocar('centro'); }
+      else if (e.tipo === 'texto') { trocar('posicao'); }
+      else if (e.tipo === 'chamada') { trocar('alvo'); trocar('posicao'); }
+      else if (e.tipo === 'hachura') { c.contornos = c.contornos.map(ct => ct.map(q => { const v = mv(q); if (v !== q) mudou = true; return v; })); }
+      if (mudou) {
+        // cota com o valor escrito (as do detalhamento): o número acompanha a medida nova
+        if (c.tipo === 'cota' && c.texto != null && /^\s*\d+(?:[.,]\d+)?\s*$/.test(String(c.texto))) {
+          const v = c.modo === 'h' ? Math.abs(c.p2[0] - c.p1[0]) : c.modo === 'v' ? Math.abs(c.p2[1] - c.p1[1]) : dist(c.p1, c.p2);
+          c.texto = String(Math.round(v));
+        }
+        fora.push(criar(c));
+      }
+    }
+    return fora;
+  }
+  onPonto(p, ev) {
+    if (!this.dentro) { this._pegarAresta(p, ev); return; }
+    if (!this.base) { this.base = p; this.editor.snap.ultimo = p; this.dica('Ponto de destino, ou digite a distância'); return; }
+    const novas = this._novas(this._desloc(p));
+    if (novas.length) this.editor.executar(new ComandoSubstituir(novas, 'Esticar'));
+    this.reiniciar();
+  }
+  onMover(p) {
+    if (!this.dentro || !this.base) return;
+    const d = this._desloc(p);
+    this.editor.previa(this._novas(d));
+    this.editor.medida(`${fmt(Math.hypot(d[0], d[1]))} mm`);
+  }
+  onValor(t) {
+    if (!this.dentro || !this.base) return;
+    const v = paraMilimetros(t);
+    if (v == null) return;
+    const alvo = this.editor.tela.cursor || this.base;
+    let dir = this.normal || [alvo[0] - this.base[0], alvo[1] - this.base[1]];
+    if (this.normal) { const k = (alvo[0] - this.base[0]) * dir[0] + (alvo[1] - this.base[1]) * dir[1]; if (k < 0) dir = [-dir[0], -dir[1]]; }
+    const n = Math.hypot(dir[0], dir[1]) || 1;
+    this.onPonto([this.base[0] + dir[0] / n * v, this.base[1] + dir[1] / n * v], {});
+  }
 }
 
 export class Hachura extends Ferramenta {
@@ -718,5 +830,5 @@ export class Medir extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, Chamada, Hachura,
-  Mover, Copiar, Girar, Espelhar, Offset, Aparar, Estender, Concordar, MoverCota, Apagar, Medir];
+  Mover, Copiar, Girar, Espelhar, Esticar, Offset, Aparar, Estender, Concordar, MoverCota, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];

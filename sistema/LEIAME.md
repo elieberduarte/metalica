@@ -162,6 +162,30 @@ posição de montagem, a marca embaixo e a cota do comprimento real dentro da ch
 direção da onda vem das normais das faces da malha (a direção que nenhuma face aponta), não
 do maior eixo — numa telha curta o maior eixo é a largura.
 
+**Cobrimento da multi-dobra** (regra da fábrica, `COBRIMENTO_TERCA`): a reta da cobertura
+termina 150 mm depois da primeira terça (achada entre as barras paralelas à largura da telha,
+logo abaixo da reta); a telha seguinte começa 150 mm antes da terça — transpasse de 300 mm +
+a largura do perfil. O que sobra da reta do modelo vira a telha **complementar** (`-C`), na
+célula, na paginação e na lista de materiais. Largura da telha: **1050 total** (com os
+transpasses) e **980 útil**.
+
+**Quadros por família no desenho completo** (`detalhar.FAMILIAS`): o conjunto e as peças dele
+juntos — a tesoura com as barras e as chapas de base, o agulhamento com o suporte e a barra, o
+contraventamento com o tirante, a castanha e a barra roscada. A família de uma peça avulsa vem
+do tipo de produção dela ou do tipo do conjunto em que ela mais aparece.
+
+**Canto da tesoura**: sem nada apoiado, a diagonal é a corda do arco; com um suporte de terça
+encostado no trecho reto depois do arco, esse trecho avança até passar do suporte
+(`FOLGA_CHANFRO_SUPORTE` = 100 mm) e a diagonal vai até ali.
+
+**Cotas**: número que não cabe entre as chamadas sai pela ponta (primeira e última cota da
+cadeia) ou um degrau para fora (as do meio), gravado em `Cota.texto_pos`; no CAD, a cota
+selecionada tem uma quarta alça (losango) que leva só o número.
+
+**Esticar (S)** no CAD: clique numa aresta e ela anda na perpendicular levando o que encosta
+nas pontas dela (arestas vizinhas esticam, cotas presas mudam de valor) — o empurrar/puxar do
+SketchUp; ou arraste uma janela e os pontos dentro dela andam (o STRETCH do AutoCAD).
+
 ## Exportar DXF
 
 `nucleo2d/dxf_cad.py` (ezdxf, DXF R2010): cotas como DIMENSION funcionais (estilo METALICA,

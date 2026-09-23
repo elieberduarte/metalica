@@ -200,6 +200,15 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                        "peso": round(t["peso"], 3), "peso_total": round(t["peso"] * t["instancias"], 2), "conjuntos": [t["conjunto"]],
                        "observacoes": ["multi-dobra: retas %.0f + %.0f, raio int. %.0f, %.1f°, desenv. int. %.0f" % (
                            t["reta1"], t["reta2"], t["raio_int"], t["angulo"], t["desenv_int"])]})
+        cb = t.get("cobrimento")
+        if cb:
+            linhas.append({"marca": t["conjunto"] + "-C", "nome": "TMD.%d-C" % i, "categoria": "TELHAS",
+                           "classe": "Telha (complemento da multi-dobra)", "perfil": t["perfil"], "material": t["material"],
+                           "quantidade": t["instancias"], "comprimento": round(cb["resto"]), "largura": 980, "espessura": 0,
+                           "area_m2": round(cb["resto"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
+                           "peso": cb.get("peso", 0.0), "peso_total": round(cb.get("peso", 0.0) * t["instancias"], 2),
+                           "conjuntos": [t["conjunto"]],
+                           "observacoes": ["começa %d mm antes da terça %s (transpasse %.0f mm)" % (150, cb["terca"], cb["transpasse"])]})
 
     # perfis (tudo o que é barra, tirante incluído): peças, comprimento total, kg/m, barras
     perfis: Dict[tuple, dict] = collections.OrderedDict()
@@ -263,6 +272,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         g["peso"] += c["peso"] * p.quantidade
         g["_chapas"][int(round(c["comprimento"]))] += p.quantidade
         g["largura"] = int(round(c["largura"]))
+        g["largura_total"] = int(round(c.get("largura_total", c["largura"])))
     for t in md["telhas"]:
         g = telhas.setdefault(t["perfil"], {"perfil": t["perfil"], "posicoes": [], "pecas": 0,
                                              "comprimento_m": 0.0, "area_m2": 0.0, "peso": 0.0, "_chapas": collections.Counter()})
@@ -273,7 +283,15 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         g["peso"] += t["peso"] * t["instancias"]
         g["_chapas"][int(round(t["desenv_ext"]))] += t["instancias"]
         g.setdefault("multidobra", []).append(int(round(t["desenv_ext"])))
+        cb = t.get("cobrimento")
+        if cb:
+            g["pecas"] += t["instancias"]
+            g["comprimento_m"] += cb["resto"] * t["instancias"] / 1000.0
+            g["area_m2"] += cb["resto"] * 980 / 1e6 * t["instancias"]
+            g["peso"] += cb.get("peso", 0.0) * t["instancias"]
+            g["_chapas"][int(round(cb["resto"]))] += t["instancias"]
         g["largura"] = 980
+        g["largura_total"] = 1050
     lista_telhas = []
     for g in telhas.values():
         chapas_t = g.pop("_chapas")
@@ -446,7 +464,7 @@ def corpo_html(lista: dict) -> str:
     if lista.get("telhas"):
         partes.append(_tabela("Quadro 4 — Telhas (chapas inteiras de compra; cortes em obra)",
                               [("Perfil", "l"), ("Chapas (qtd × compr. mm)", "l"), ("Peças", "c"), ("Compr. (m)", "r"), ("Área (m²)", "r"), ("Peso (kg)", "r")],
-                              [[(g["perfil"] + (" · larg. %d" % g["largura"] if g.get("largura") else ""), "l b"), (g.get("chapas_texto", ""), "l"),
+                              [[(g["perfil"] + (" · larg. %d (útil %d)" % (g.get("largura_total", g["largura"]), g["largura"]) if g.get("largura") else ""), "l b"), (g.get("chapas_texto", ""), "l"),
                                 (g["pecas"], "c"), (_n(g["comprimento_m"], 2), "r"),
                                 (_n(g["area_m2"], 2), "r"), (_n(g["peso"], 1), "r")] for g in lista["telhas"]]))
     if lista["conjuntos"]:

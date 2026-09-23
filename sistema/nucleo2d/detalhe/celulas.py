@@ -58,7 +58,8 @@ def _cabecalho(pos: Posicao) -> List[str]:
         linhas.append("%s  L desenv. %s mm  %s" % (pos.perfil, _mm(pos.comprimento), pos.material))
     elif pos.classe == "telha":
         c = compra_da_telha(pos)
-        linhas.append("%s  chapa inteira %s x %s mm  %s" % (pos.perfil, _mm(c["comprimento"]), _mm(c["largura"]), pos.material))
+        linhas.append("%s  chapa inteira %s x %s mm (útil %s)  %s" % (pos.perfil, _mm(c["comprimento"]), _mm(c["largura_total"]),
+                                                                      _mm(c["largura"]), pos.material))
         linhas.append("%s kg/pç  total %s kg" % (_mm(c["peso"], 2), _mm(c["peso"] * pos.quantidade, 1))
                       + ("  ·  corte em obra (pontilhado)" if c["cortada"] else ""))
         if pos.conjuntos and pos.conjuntos != [pos.marca]:
@@ -206,7 +207,7 @@ def _desenho_da_telha(pos: Posicao, p: "_Papel", esc: float, off: float, off2: f
     (1031 na TP40) vira a comercial (980): o desenho inteiro é escalado nessa direção."""
     c = compra_da_telha(pos)
     L, H = c["comprimento"], float(pos.H or c["largura"])
-    B = c["largura"]
+    B = c["largura_total"]                   # a chapa inteira, com os transpasses
     k = B / H if H > 0 else 1.0
     p.retangulo(0, 0, L, B, "ACO")
     # ondas: pelos vértices da peça inteira (y = largura, z = altura da onda), não pela
@@ -224,8 +225,9 @@ def _desenho_da_telha(pos: Posicao, p: "_Papel", esc: float, off: float, off2: f
     if c["cortada"]:
         _vista(_PapelPontilhado(p, k), pos, (0, 1), 2, +1.0, 0, 0)
     p.cota_h(0, L, 0, -off)
-    p.cota_v(0, B, L, off)
-    x_dir = L + (off3 + off) * esc
+    p.cota_v(0, c["largura"], L, off)          # útil (a que cobre)
+    p.cota_v(0, B, L, off2)                    # total, com os transpasses
+    x_dir = L + (off3 + off2) * esc
     if len(perfil_onda) >= 2:
         # a onda na largura inteira (linha média da chapa fina)
         w_min = min(w for _, w in perfil_onda)

@@ -150,6 +150,7 @@ class Cota(Entidade2D):
     deslocamento: float = 10.0
     texto: Optional[str] = None
     altura: float = 2.5
+    texto_pos: Optional[Ponto2] = None   # onde o número foi posto à mão (None = no meio da linha)
 
     def pontos(self):
         return [self.p1, self.p2]
@@ -256,7 +257,7 @@ class Desenho:
             if classe is None:
                 continue
             campos = {k: v for k, v in e.items() if k in classe.__dataclass_fields__}
-            for k in ("a", "b", "centro", "posicao", "p1", "p2", "alvo"):
+            for k in ("a", "b", "centro", "posicao", "p1", "p2", "alvo", "texto_pos"):
                 if k in campos and campos[k] is not None:
                     campos[k] = tuple(campos[k])
             if "vertices" in campos:
@@ -346,6 +347,9 @@ def _cota_dxf(d, c: Cota, k: float, camada: str):
         d.seta(a1[0], a1[1], ang + 180, tam, camada)
         d.seta(a2[0], a2[1], ang, tam, camada)
     txt = c.texto if c.texto is not None else formatar_mm(c.valor())
+    if c.texto_pos:
+        d.texto(c.texto_pos[0], c.texto_pos[1], txt, h, camada, angulo=(ang if -90 < ang <= 90 else ang + 180), alinhamento="centro")
+        return
     mx, my = (a1[0] + a2[0]) / 2, (a1[1] + a2[1]) / 2
     ang_txt = ang if -90 < ang <= 90 else ang + 180
     lado = 1.0 if -90 < ang <= 90 else -1.0

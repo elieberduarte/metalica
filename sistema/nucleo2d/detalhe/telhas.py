@@ -23,6 +23,10 @@ from nucleo2d.detalhe.base import _marcas, _dot, _sub, _norm, _cruz
 #: Peça mais curta que isto (mm) na fileira é faceta da dobra; a reta é bem mais longa.
 FACETA_MAX = 400.0
 
+#: Cobrimento da multi-dobra (regra da fábrica): ela passa 150 mm além da primeira terça,
+#: e a telha seguinte começa 150 mm antes dela — transpasse de 300 mm + a largura da terça.
+COBRIMENTO_TERCA = 150.0
+
 
 def _medidas(e):
     """Centro, eixos principais e extensões (maior → menor) da malha."""
@@ -38,7 +42,7 @@ def _posicao(e) -> str:
     return str(_marcas(e).get("posicao") or e.nome or e.id)
 
 
-def _analisar_instancia(inst) -> Optional[dict]:
+def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
     """Perfil de uma instância (lista de sólidos) ou None se não é multi-dobra."""
     if len(inst) < 4:
         return None
@@ -128,9 +132,48 @@ def _analisar_instancia(inst) -> Optional[dict]:
     L2 = math.dist(p2, I) - T
     if L1 <= 0 or L2 <= 0:
         return None
+    # cobrimento: a reta da cobertura (a mais deitada) termina 150 mm depois da primeira
+    # terça; o que sobra do modelo vira a telha complementar, que começa 150 mm antes dela
+    cobrimento = None
+    desenv_modelo = L1 + L2
+    if barras:
+        cob = 1 if abs(d1[1]) <= abs(d2[1]) else 2
+        ponta, Lc = (p1, L1) if cob == 1 else (p2, L2)
+        Tt = (I[0] - d1[0] * T, I[1] - d1[1] * T) if cob == 1 else (I[0] + d2[0] * T, I[1] + d2[1] * T)
+        n_ = math.dist(ponta, Tt) or 1.0
+        dirc = ((ponta[0] - Tt[0]) / n_, (ponta[1] - Tt[1]) / n_)
+        nrm = (-dirc[1], dirc[0])
+        wc = sum(_dot(m[1], w) for m in med) / len(med)
+        melhor = None
+        for e, c, eixos, ext in barras:
+            if abs(_dot(eixos[0], w)) < 0.95 or abs(_dot(c, w) - wc) > ext[0] / 2:
+                continue
+            pts = [(_dot(q, a), _dot(q, b)) for q in e.vertices]
+            ss = [(q[0] - Tt[0]) * dirc[0] + (q[1] - Tt[1]) * dirc[1] for q in pts]
+            dd = [abs((q[0] - Tt[0]) * nrm[0] + (q[1] - Tt[1]) * nrm[1]) for q in pts]
+            if min(ss) < 0 or max(ss) > Lc or min(dd) > 300.0:
+                continue
+            if melhor is None or min(ss) < melhor[0]:
+                melhor = (min(ss), max(ss), str(_marcas(e).get("perfil") or e.nome or ""))
+        if melhor and melhor[1] + COBRIMENTO_TERCA < Lc - 100.0:
+            novo = melhor[1] + COBRIMENTO_TERCA
+            cobrimento = {"terca": melhor[2], "terca_ini": round(melhor[0], 1), "terca_fim": round(melhor[1], 1),
+                          "reta_modelo": round(Lc, 1), "transpasse": round(melhor[1] - melhor[0] + 2 * COBRIMENTO_TERCA, 1),
+                          "resto": round(Lc - (melhor[0] - COBRIMENTO_TERCA), 1), "reta": "cobertura",
+                          "reta_nova": round(novo, 1)}
+            novo_p = (Tt[0] + dirc[0] * novo, Tt[1] + dirc[1] * novo)
+            if cob == 1:
+                L1, p1 = novo, novo_p
+            else:
+                L2, p2 = novo, novo_p
     h = sorted(altura_onda)[len(altura_onda) // 2]
     R_int, R_ext = R - h / 2, R + h / 2
     peso = sum(_volume(e) for e in inst) * RHO_ACO
+    arco_mid = R * abs(theta)
+    peso_mm = peso / max(desenv_modelo + arco_mid, 1.0)      # kg por mm de telha desenvolvida
+    peso = peso_mm * (L1 + L2 + arco_mid)
+    if cobrimento:
+        cobrimento["peso"] = round(peso_mm * cobrimento["resto"], 3)
     e_longa = reta2["e"] if reta2["L"] >= reta1["L"] else reta1["e"]
     m0 = _marcas(e_longa)
     from nucleo2d.detalhe.base import _material
@@ -141,7 +184,8 @@ def _analisar_instancia(inst) -> Optional[dict]:
             "corda": round(math.dist(p1, p2), 1), "peso": round(peso, 3),
             "perfil": str(m0.get("perfil") or e_longa.nome or "TELHA"), "material": _material(e_longa),
             # o perfil no plano: pontas livres, tangências, centro do arco (para o desenho)
-            "p1": p1, "p2": p2, "d1": d1, "d2": d2, "I": I, "T": T, "sentido": 1 if theta > 0 else -1}
+            "p1": p1, "p2": p2, "d1": d1, "d2": d2, "I": I, "T": T, "sentido": 1 if theta > 0 else -1,
+            "cobrimento": cobrimento, "eixos_perfil": (a, b, w)}
 
 
 def _volume(e) -> float:
@@ -218,13 +262,19 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
     comp = ", ".join("%s x%d" % (k, q) for k, q in sorted(md["composicao"].items(), key=lambda kv: _ordem_natural(kv[0])))
     linhas = ["TELHA MULTI-DOBRA",
               "%s – %02dx  (%s)" % (nome or md["conjunto"], md["instancias"], md["conjunto"]),
-              "%s  %s  largura de compra 980 mm" % (md["perfil"], md["material"]),
+              "%s  %s  largura 1050 mm (útil 980)" % (md["perfil"], md["material"]),
               "retas %s + %s mm · raio int. %s / ext. %s · %s°" % (fmt(md["reta1"]), fmt(md["reta2"]), fmt(md["raio_int"]),
                                                                fmt(md["raio_ext"]), ("%.1f" % md["angulo"]).replace(".", ",")),
               "desenvolvida: ext. %s mm · int. %s mm   %s kg/pç  total %s kg" % (
                   fmt(md["desenv_ext"]), fmt(md["desenv_int"]), ("%.2f" % md["peso"]).replace(".", ","),
                   ("%.1f" % (md["peso"] * md["instancias"])).replace(".", ",")),
               "no modelo: %s (facetas de %s)" % (comp, md["conjunto"])]
+    cb = md.get("cobrimento")
+    if cb:
+        linhas.insert(5, "cobrimento: passa %d mm da 1ª terça (%s); a telha seguinte começa %d mm antes — transpasse %s mm" % (
+            COBRIMENTO_TERCA, cb["terca"], COBRIMENTO_TERCA, fmt(cb["transpasse"])))
+        linhas.insert(6, "telha complementar %s-C: %02dx  L = %s mm (a reta do modelo tinha %s)" % (
+            nome or md["conjunto"], md["instancias"], fmt(cb["resto"]), fmt(cb["reta_modelo"])))
     y = painel_y + 4.0 * esc
     for i, txt in enumerate(reversed(linhas)):
         altura = 3.5 if i == len(linhas) - 1 else 2.5
@@ -249,6 +299,17 @@ def multidobras(pecas: Sequence) -> Dict[str, object]:
         if conj:
             por_conj[conj].append(e)
     telhas, usadas = [], collections.Counter()
+    barras = []
+    if any(len(v) >= 4 for v in por_conj.values()):
+        for e in pecas:
+            m = _marcas(e)
+            if _eh_telha(str(m.get("perfil") or e.nome or "")) or len(e.vertices or []) < 8:
+                continue
+            if "PLATE" in str(m.get("perfil") or e.nome or "").upper():
+                continue
+            c, eixos, ext = _medidas(e)
+            if ext[0] > 1000.0 and ext[1] < 400.0:
+                barras.append((e, c, eixos, ext))
     for conj, lista in sorted(por_conj.items(), key=lambda kv: _ordem_natural(kv[0])):
         if len(lista) < 4:
             continue
@@ -263,7 +324,7 @@ def multidobras(pecas: Sequence) -> Dict[str, object]:
                  if collections.Counter(_posicao(e) for e in i) == unidade]
         if not insts:
             continue
-        perfil = _analisar_instancia(insts[0])
+        perfil = _analisar_instancia(insts[0], barras)
         if perfil is None:
             continue
         perfil.update(conjunto=conj, instancias=len(insts), composicao=dict(unidade),
@@ -298,7 +359,7 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None) ->
         t = em_md.get(e.id)
         if t is not None:
             # só o trecho reto mais longo de cada multi-dobra representa a telha
-            if ext[0] < 0.5 * max(t["reta1"], t["reta2"]):
+            if ext[0] < 0.5 * max(t["reta1"], t["reta2"], (t.get("cobrimento") or {}).get("reta_modelo", 0.0)):
                 continue
 
         # normal da chapa: o eixo de menor extensão (altura da onda); para cima ou para fora
@@ -308,6 +369,13 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None) ->
         # comprimento: o maior eixo; largura o do meio (a onda corre no comprimento)
         chapas.append({"e": e, "c": c, "n": n, "u": _direcao_da_onda(e, n), "ext": ext, "multidobra": t,
                        "nome": (t["nome"] if t is not None and t.get("nome") else nome_de(_posicao(e)))})
+    # centros das facetas das multi-dobra (para saber de que lado fica a curva)
+    facetas = []
+    for e in pecas:
+        if e.id in em_md:
+            c, eixos, ext = _medidas(e)
+            if ext[0] < FACETA_MAX and max(ext[1], ext[2]) > 300:
+                facetas.append(c)
     faces: List[dict] = []
     for ch in chapas:
         for f in faces:
@@ -338,9 +406,28 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None) ->
             uu = ch["u"][0] if ch["u"][1] else u
             proj = [_dot(p, uu) for p in ch["e"].vertices]
             comp = ch["multidobra"]["desenv_ext"] if ch["multidobra"] else max(proj) - min(proj)
+            cb = ch["multidobra"].get("cobrimento") if ch["multidobra"] else None
+            if cb:
+                # a multi-dobra termina 150 mm depois da 1ª terça; a complementar começa 150
+                # antes dela e vai até o fim da reta do modelo. A ponta da curva é a ponta da
+                # peça mais perto das facetas.
+                y0_, y1_ = min(ys), max(ys)
+                uf = min((_dot(fc, u) for fc in facetas), key=lambda q: min(abs(q - y0_), abs(q - y1_)), default=y0_)
+                de_baixo = abs(uf - y0_) <= abs(uf - y1_)
+                yt, sg = (y0_, 1.0) if de_baixo else (y1_, -1.0)
+                x0_, x1_ = min(xs), max(xs)
+                ret = lambda a_, b_: [(x0_, min(a_, b_)), (x1_, min(a_, b_)), (x1_, max(a_, b_)), (x0_, max(a_, b_))]   # noqa: E731
+                ym = yt + sg * cb["reta_nova"]
+                yc = yt + sg * (cb["terca_ini"] - COBRIMENTO_TERCA)
+                yf = y1_ if de_baixo else y0_
+                lista.append({"contorno": ret(yt, ym), "comprimento": comp, "nome": ch["nome"],
+                              "x": (x0_ + x1_) / 2, "y0": min(yt, ym), "y1": max(yt, ym), "multidobra": True})
+                lista.append({"contorno": ret(yc, yf), "comprimento": cb["resto"], "nome": ch["nome"] + "-C",
+                              "x": (x0_ + x1_) / 2 + 1e-3, "y0": min(yc, yf), "y1": max(yc, yf), "multidobra": False})
+                continue
             lista.append({"contorno": contorno, "comprimento": comp, "nome": ch["nome"],
                           "x": (min(xs) + max(xs)) / 2, "y0": min(ys), "y1": max(ys),
-                          "multidobra": bool(ch["multidobra"])})
+                          "multidobra": bool(ch["multidobra"]), "alinhada": abs(_dot(uu, u)) > 0.9})
         inclinacao = math.degrees(math.acos(max(-1.0, min(1.0, abs(n[2])))))
         saida.append({"normal": n, "chapas": lista, "inclinacao": inclinacao,
                       "tipo": "cobertura" if inclinacao < 45 else "fachada"})
@@ -413,8 +500,26 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     x0 = min(q[0] for ch in chapas for q in ch["contorno"])
     y0 = min(q[1] for ch in chapas for q in ch["contorno"])
     T = lambda q: (q[0] - x0, q[1] - y0)        # noqa: E731
-    for ch in sorted(chapas, key=lambda c: c["x"]):
-        p.polilinha([T(q) for q in ch["contorno"]], fechada=True, camada="ACO")
+    from nucleo2d.detalhe.base import LARGURA_TOTAL_TELHA, LARGURA_COMPRA_TELHA
+    ordenadas = sorted(chapas, key=lambda c: c["x"])
+    cotada = False
+    for n, ch in enumerate(ordenadas):
+        # a chapa com a largura total de catálogo (1050, com os transpasses) em volta do
+        # centro dela; o passo entre chapas é o do modelo (a largura útil)
+        xs = [q[0] for q in ch["contorno"]]
+        larg = max(xs) - min(xs)
+        k = LARGURA_TOTAL_TELHA / larg if 600.0 < larg < 1200.0 and ch.get("alinhada", True) else 1.0
+        contorno = [(ch["x"] + (q[0] - ch["x"]) * k, q[1]) for q in ch["contorno"]]
+        p.polilinha([T(q) for q in contorno], fechada=True, camada="ACO")
+        if k != 1.0 and not cotada:
+            cotada = True
+            xa = min(q[0] for q in contorno) - x0
+            yb = ch["y0"] - y0
+            desenho.add(Cota(modo="h", p1=p._p(xa, yb), p2=p._p(xa + LARGURA_COMPRA_TELHA, yb), deslocamento=-14.0,
+                             texto="%d útil" % LARGURA_COMPRA_TELHA, atributos=dict(atr)))
+            desenho.add(Cota(modo="h", p1=p._p(xa, yb), p2=p._p(xa + LARGURA_TOTAL_TELHA, yb), deslocamento=-22.0,
+                             texto="%d total" % LARGURA_TOTAL_TELHA, atributos=dict(atr)))
+            p._p(xa, yb - 26.0 * esc)
         xm = ch["x"] - x0
         a, b = (xm, ch["y0"] - y0), (xm, ch["y1"] - y0)
         texto = "%d" % round(ch["comprimento"])

@@ -20,7 +20,8 @@ export const BITOLAS = { 8: 4.25, 10: 3.35, 11: 3.0, 12: 2.65, 13: 2.25, 14: 1.9
  * espessura (127X50X17X#14). Sem prefixo, 4 medidas = Ue e 3 = U.
  */
 export function lerPerfil(nome) {
-  const s = String(nome || '').toUpperCase().replace(/×/g, 'X').replace(/,/g, '.').replace(/\s+/g, '');
+  const s = String(nome || '').toUpperCase().replace(/×/g, 'X').replace(/,/g, '.').replace(/\s+/g, '')
+    .replace(/(\d)#/g, '$1X#');     // "17#14" = "17X#14" (a bitola colada na medida anterior)
   const m = s.match(/^([A-Z]*)(.*)$/);
   const prefixo = m[1];
   const partes = m[2].split('X').filter(p => p !== '');

@@ -43,9 +43,10 @@ TIPOS_ACESSORIO = {"IfcMechanicalFastener", "IfcDiscreteAccessory", "IfcFastener
 #: Regra da furação das terças: altura limite e (vertical, horizontal) em mm.
 LIMITE_TERCA = 200.0
 
-#: Largura comercial da telha (mm): é por ela que a telha é comprada, qualquer que seja a
-#: largura total que o modelo traz (a TP40 do TecnoMETAL vem com 1031, com a sobreposição).
+#: Largura útil da telha (mm) — a que cobre, e a de catálogo — e largura total da chapa,
+#: com os transpasses (a TP40 do TecnoMETAL vem modelada com 1031).
 LARGURA_COMPRA_TELHA = 980.0
+LARGURA_TOTAL_TELHA = 1050.0
 
 
 def _area_casco(pontos) -> float:
@@ -80,7 +81,8 @@ def compra_da_telha(pos) -> dict:
     cheia = L * H
     cortada = bool(area and cheia and area < 0.995 * cheia)
     peso = pos.peso * cheia / area if cortada and area > 0.2 * cheia else pos.peso
-    return {"comprimento": L, "largura": LARGURA_COMPRA_TELHA, "cortada": cortada, "peso": peso}
+    return {"comprimento": L, "largura": LARGURA_COMPRA_TELHA, "largura_total": LARGURA_TOTAL_TELHA,
+            "cortada": cortada, "peso": peso}
 FURACAO_TERCA_BAIXA = (50.0, 60.0)
 FURACAO_TERCA_ALTA = (100.0, 60.0)
 
@@ -181,23 +183,39 @@ class _Papel:
         self.polilinha([p1, p2, p3] + ([p4] if p4 else []), True, camada)
 
     # cotas nativas (editáveis no CAD); afastamentos em mm de papel
-    def cota_h(self, x1, x2, y, desl_papel, texto=None):
+    def _texto_fora(self, comp: float, n_car: int, i: int, n: int):
+        """Onde vai o número de um trecho de cadeia que não cabe entre as chamadas:
+        None (cabe, fica no meio), "antes" (primeira cota: sai pela ponta de trás), "depois"
+        (última: pela da frente) ou "fora" (do meio: um degrau mais longe da peça, para não
+        encavalar no número vizinho)."""
+        esc = self.d.escala
+        h = 2.5 * esc
+        seta = min(2.5 * esc, max(1.0 * esc, comp / 4))
+        if 0.62 * h * n_car + 2 * seta <= comp:
+            return None
+        if n > 1 and i == 0:
+            return "antes"
+        if n > 1 and i == n - 1:
+            return "depois"
+        return "fora"
+
+    def cota_h(self, x1, x2, y, desl_papel, texto=None, texto_pos=None):
         # a fábrica não trabalha com décimos: os extremos da cota vão ao milímetro
         # inteiro (o desvio de até 0,5 mm em relação ao traço não se vê no papel)
         x1, x2 = float(round(x1)), float(round(x2))
         if abs(x2 - x1) < 0.05:
             return
         self.d.add(Cota(modo="h", p1=self._p(x1, y), p2=self._p(x2, y),
-                        deslocamento=float(desl_papel), texto=texto, atributos=dict(self.atr)))
+                        deslocamento=float(desl_papel), texto=texto, texto_pos=texto_pos, atributos=dict(self.atr)))
         self._p(x1, y + desl_papel * self.d.escala)
 
-    def cota_v(self, y1, y2, x, desl_papel, texto=None):
+    def cota_v(self, y1, y2, x, desl_papel, texto=None, texto_pos=None):
         """`desl_papel > 0` joga a cota para a direita."""
         y1, y2 = float(round(y1)), float(round(y2))
         if abs(y2 - y1) < 0.05:
             return
         self.d.add(Cota(modo="v", p1=self._p(x, y1), p2=self._p(x, y2),
-                        deslocamento=-float(desl_papel), texto=texto, atributos=dict(self.atr)))
+                        deslocamento=-float(desl_papel), texto=texto, texto_pos=texto_pos, atributos=dict(self.atr)))
         self._p(x + desl_papel * self.d.escala, y1)
 
     def _cabe(self, vals) -> bool:
@@ -237,16 +255,55 @@ class _Papel:
         xs = sorted(set(float(round(x)) for x in xs))
         if exigir_espaco and not self._cabe(xs):
             return False
-        for i in range(len(xs) - 1):
-            self.cota_h(xs[i], xs[i + 1], y, desl_papel)
+        esc = self.d.escala
+        h = 2.5 * esc
+        n = len(xs) - 1
+        y_linha = y + desl_papel * esc                     # a linha de cota (h: normal para cima)
+        sg = 1.0 if desl_papel >= 0 else -1.0
+        for i in range(n):
+            comp = xs[i + 1] - xs[i]
+            txt = "%d" % round(comp)
+            onde = self._texto_fora(comp, len(txt), i, n)
+            tw = 0.62 * h * len(txt)
+            pos = None
+            if onde == "antes":
+                pos = (xs[i] - tw / 2 - 1.5 * esc + self.dx, y_linha + 0.55 * h + self.dy)
+            elif onde == "depois":
+                pos = (xs[i + 1] + tw / 2 + 1.5 * esc + self.dx, y_linha + 0.55 * h + self.dy)
+            elif onde == "fora":
+                pos = ((xs[i] + xs[i + 1]) / 2 + self.dx, y_linha + 0.55 * h + sg * 1.9 * h + self.dy)
+            if pos:
+                self._p(pos[0] - self.dx - tw / 2, pos[1] - self.dy - h)
+                self._p(pos[0] - self.dx + tw / 2, pos[1] - self.dy + h)
+            self.cota_h(xs[i], xs[i + 1], y, desl_papel, texto_pos=pos)
         return True
 
     def cadeia_v(self, ys, x, desl_papel, exigir_espaco=True):
         ys = sorted(set(float(round(y)) for y in ys))
         if exigir_espaco and not self._cabe(ys):
             return False
-        for i in range(len(ys) - 1):
-            self.cota_v(ys[i], ys[i + 1], x, desl_papel)
+        esc = self.d.escala
+        h = 2.5 * esc
+        n = len(ys) - 1
+        x_linha = x + desl_papel * esc                     # desl > 0: a linha à direita
+        sg = 1.0 if desl_papel >= 0 else -1.0
+        for i in range(n):
+            comp = ys[i + 1] - ys[i]
+            txt = "%d" % round(comp)
+            onde = self._texto_fora(comp, len(txt), i, n)
+            tw = 0.62 * h * len(txt)
+            pos = None
+            # o número da vertical fica girado 90°, com a base à esquerda da linha
+            if onde == "antes":
+                pos = (x_linha - 0.55 * h + self.dx, ys[i] - tw / 2 - 1.5 * esc + self.dy)
+            elif onde == "depois":
+                pos = (x_linha - 0.55 * h + self.dx, ys[i + 1] + tw / 2 + 1.5 * esc + self.dy)
+            elif onde == "fora":
+                pos = (x_linha - 0.55 * h + sg * 1.9 * h + self.dx, (ys[i] + ys[i + 1]) / 2 + self.dy)
+            if pos:
+                self._p(pos[0] - self.dx - h, pos[1] - self.dy - tw / 2)
+                self._p(pos[0] - self.dx + h, pos[1] - self.dy + tw / 2)
+            self.cota_v(ys[i], ys[i + 1], x, desl_papel, texto_pos=pos)
         return True
 
     @property
@@ -1076,6 +1133,8 @@ def _mover(e, dx: float, dy: float):
         e.posicao = mv(e.posicao)
     elif isinstance(e, Cota):
         e.p1, e.p2 = mv(e.p1), mv(e.p2)
+        if e.texto_pos:
+            e.texto_pos = mv(e.texto_pos)
     elif hasattr(e, "contornos"):
         e.contornos = [[mv(p) for p in c] for c in e.contornos]
     elif hasattr(e, "alvo"):
