@@ -32,6 +32,7 @@ from nucleo2d.detalhe.base import (  # noqa: E402
     _pecas,
     _posicoes_de,
     _rotulo_espessura,
+    compra_da_telha,
     _sub,
     _tipo_ifc,
     aplicar_ajustes_de_furos,
@@ -55,6 +56,14 @@ def _cabecalho(pos: Posicao) -> List[str]:
         linhas.append("%s  %s  %s" % (pos.perfil, _rotulo_espessura(pos), pos.material))
     elif pos.classe == "barra_conformada":
         linhas.append("%s  L desenv. %s mm  %s" % (pos.perfil, _mm(pos.comprimento), pos.material))
+    elif pos.classe == "telha":
+        c = compra_da_telha(pos)
+        linhas.append("%s  chapa inteira %s x %s mm  %s" % (pos.perfil, _mm(c["comprimento"]), _mm(c["largura"]), pos.material))
+        linhas.append("%s kg/pç  total %s kg" % (_mm(c["peso"], 2), _mm(c["peso"] * pos.quantidade, 1))
+                      + ("  ·  corte em obra (pontilhado)" if c["cortada"] else ""))
+        if pos.conjuntos and pos.conjuntos != [pos.marca]:
+            linhas.append("conj. " + ", ".join(pos.conjuntos[:6]) + (" …" if len(pos.conjuntos) > 6 else ""))
+        return linhas
     elif pos.classe == "indefinida":
         linhas.append(pos.perfil)
     else:
@@ -100,6 +109,8 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     if pos.classe == "indefinida":
         p.texto(0, 0, "%s – %02dx  %s  (sem geometria reconhecida)" % (pos.marca, pos.quantidade, pos.perfil), 3.0 * esc)
         return p.extremos
+    if pos.classe == "telha":
+        return _desenho_da_telha(pos, p, esc, off, off2, off3)
     L, H = pos.L, pos.H
     furos_frente = [f for f in pos.furos if f.vista == "frente"]
     furos_topo = [f for f in pos.furos if f.vista == "topo"]
@@ -169,6 +180,60 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     for i, txt in enumerate(reversed(obs)):
         p.texto(0, y + i * 3.2 * esc, "* " + txt, 2.0 * esc)
     y += len(obs) * 3.2 * esc
+    for i, txt in enumerate(reversed(linhas)):
+        alt = 3.5 if i == len(linhas) - 1 else 2.5
+        p.texto(0, y, txt, alt * esc)
+        y += (alt + 1.2) * esc
+    return p.extremos
+
+
+class _PapelPontilhado:
+    """Recebe as linhas de `_vista` e as põe na camada OCULTA (tracejada), com a largura
+    da peça escalada para a largura comercial."""
+    def __init__(self, p, k):
+        self.p, self.k = p, k
+
+    def linha(self, x1, y1, x2, y2, camada="ACO"):
+        self.p.linha(x1, y1 * self.k, x2, y2 * self.k, "OCULTA")
+
+
+def _desenho_da_telha(pos: Posicao, p: "_Papel", esc: float, off: float, off2: float, off3: float):
+    """A telha como vai para a compra: a chapa inteira (comprimento × largura comercial)
+    em traço cheio, com as ondas de ponta a ponta; o corte que a peça do modelo tem (ângulo
+    do beiral, curva do canto) em pontilhado, porque é feito na obra. A largura do modelo
+    (1031 na TP40) vira a comercial (980): o desenho inteiro é escalado nessa direção."""
+    c = compra_da_telha(pos)
+    L, H = c["comprimento"], float(pos.H or c["largura"])
+    B = c["largura"]
+    k = B / H if H > 0 else 1.0
+    p.retangulo(0, 0, L, B, "ACO")
+    # ondas: pelos vértices da peça inteira (y = largura, z = altura da onda), não pela
+    # seção de uma ponta — na peça cortada em diagonal a ponta pega só parte da largura
+    grupos: List[List[Tuple[float, float]]] = []
+    for y, z in sorted((q[1], q[2]) for q in (pos.local or [])):
+        if grupos and y - grupos[-1][-1][0] <= 3.0:
+            grupos[-1].append((y, z))
+        else:
+            grupos.append([(y, z)])
+    perfil_onda = [(sum(q[0] for q in g) / len(g), sorted(q[1] for q in g)[len(g) // 2]) for g in grupos]
+    for v, _ in perfil_onda:
+        if 3.0 < v < H - 3.0:
+            p.linha(0, v * k, L, v * k, "ACO-FINO")
+    if c["cortada"]:
+        _vista(_PapelPontilhado(p, k), pos, (0, 1), 2, +1.0, 0, 0)
+    p.cota_h(0, L, 0, -off)
+    p.cota_v(0, B, L, off)
+    x_dir = L + (off3 + off) * esc
+    if len(perfil_onda) >= 2:
+        # a onda na largura inteira (linha média da chapa fina)
+        w_min = min(w for _, w in perfil_onda)
+        w_max = max(w for _, w in perfil_onda)
+        p.polilinha([(x_dir + (w - w_min), v * k) for v, w in perfil_onda], fechada=False, camada="ACO")
+        p.cota_h(x_dir, x_dir + (w_max - w_min), 0, -off)
+        p.cota_v(0, B, x_dir + (w_max - w_min), off)
+        p.texto(x_dir, B + 3.0 * esc, "SEÇÃO", 2.0 * esc)
+    y = B + (off + 2.0) * esc
+    linhas = _cabecalho(pos)
     for i, txt in enumerate(reversed(linhas)):
         alt = 3.5 if i == len(linhas) - 1 else 2.5
         p.texto(0, y, txt, alt * esc)

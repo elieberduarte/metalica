@@ -19,6 +19,7 @@ import { Documento, criar, clonar, comprimentoDaBarra, direcaoDaBarra, areaDaCha
 import { Pilha, Comando, ComandoAdicionar, ComandoRemover, ComandoAlterar }
   from './nucleo/comandos.js';
 import { Cena, MODOS, ESCALA, PESADOS, medir } from './nucleo/cena.js';
+import { lerPerfil, nomeDoPerfil, trocarSecao } from './nucleo/trocar_perfil.js';
 import { Camera, VISTAS } from './nucleo/camera.js';
 import { Selecao } from './nucleo/selecao.js';
 import { Inferencia } from './nucleo/inferencia.js';
@@ -2002,7 +2003,14 @@ export class Editor {
           linha('Nome', `${marcas.nome}  (${mesmos.length} peças)`, () => this.selecao.definir(mesmos));
         }
         if (marcas.nome_conjunto && marcas.nome_conjunto !== marcas.nome) linha('Nome do conjunto', marcas.nome_conjunto);
-        if (marcas.perfil) linha('Perfil', marcas.perfil);
+        if (marcas.perfil) {
+          linha('Perfil', marcas.perfil);
+          if (lerPerfil(marcas.perfil)) {
+            gi.append(el('span'), el('button', { type: 'button', class: 'mini', texto: 'Trocar perfil…',
+              title: 'Troca o perfil desta peça, da posição inteira ou de todas com este perfil — a malha 3D muda de seção e os desenhos saem com o perfil novo',
+              onclick: () => this.dialogoTrocarPerfil([um.id]) }));
+          }
+        }
         if (a.tipo_ifc) linha('Tipo IFC', a.tipo_ifc);
         const dims = dimensoesPrincipais(um);
         if (dims) {
@@ -2020,6 +2028,11 @@ export class Editor {
       const gs = this._grupo(raiz, 'Sólidos');
       const massa = ents.reduce((s, e) => s + volumeDe(e) * 7.85e-6, 0);
       gs.append(el('label', { texto: 'Massa' }), el('span', { class: 'valor', texto: `${numero(massa, 1)} kg no total` }));
+      const perfisSel = new Set(ents.map(e => e.atributos && e.atributos.marcas && e.atributos.marcas.perfil).filter(Boolean));
+      if (perfisSel.size === 1 && lerPerfil([...perfisSel][0])) {
+        gs.append(el('span'), el('button', { type: 'button', class: 'mini', texto: 'Trocar perfil…',
+          title: 'Troca o perfil das peças selecionadas (a malha 3D muda de seção)', onclick: () => this.dialogoTrocarPerfil(ents.map(e => e.id)) }));
+      }
       const pos = new Set(ents.map(e => e.atributos && e.atributos.marcas && e.atributos.marcas.posicao).filter(Boolean));
       if (pos.size) gs.append(el('label', { texto: 'Posições' }), el('span', { class: 'valor', texto: [...pos].slice(0, 12).join(', ') + (pos.size > 12 ? ' …' : '') }));
     }
@@ -2389,6 +2402,60 @@ export class Editor {
       `${numero(grupos.size)} grupo(s)` + (semGrupo ? ` · ${numero(semGrupo)} peça(s) sem ${modo} ficam em cinza` : '') +
       (chaves.length > LIMITE ? ` · legenda mostra os ${LIMITE} primeiros` : '') }), lista);
     return caixa;
+  }
+
+  /**
+   * Troca o perfil de peças importadas do IFC (perfis U e Ue/C formados a frio): a malha
+   * de cada peça muda de seção (trocar_perfil.js), e a marca `perfil` passa a ser a nova —
+   * então o detalhamento, a lista de materiais e o cálculo saem com ela. Alcance: as
+   * peças escolhidas, a posição inteira ou todas com o mesmo perfil. Desfaz com Ctrl+Z.
+   */
+  async dialogoTrocarPerfil(ids) {
+    const ents = ids.map(id => this.documento.get(id)).filter(e => e && e.tipo === 'solido');
+    if (!ents.length) return;
+    const marcas0 = (ents[0].atributos || {}).marcas || {};
+    const antigoNome = marcas0.perfil;
+    const todas = [...this.documento.entidades.values()].filter(e => e.tipo === 'solido' && e.atributos && e.atributos.marcas);
+    const daPosicao = marcas0.posicao ? todas.filter(e => e.atributos.marcas.posicao === marcas0.posicao && e.atributos.marcas.perfil === antigoNome) : [];
+    const doPerfil = todas.filter(e => e.atributos.marcas.perfil === antigoNome);
+    const campo = el('input', { type: 'text', value: '', placeholder: 'ex.: 127X50X17X#14', spellcheck: 'false' });
+    const alcance = el('select', {},
+      el('option', { value: 'selecao', texto: ents.length > 1 ? `as ${ents.length} peças selecionadas` : 'só esta peça' }),
+      ...(daPosicao.length > ents.length ? [el('option', { value: 'posicao', texto: `a posição ${marcas0.posicao} inteira (${daPosicao.length} peças)`, selected: 'selected' })] : []),
+      el('option', { value: 'perfil', texto: `todas as peças ${antigoNome} do modelo (${doPerfil.length})` }));
+    const aviso = el('div', { class: 'explica', texto: '' });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: `Perfil atual: ${antigoNome}. Digite o novo como a fábrica escreve — altura × aba × enrijecedor × espessura; a espessura pode ser a bitola (#14 = 1,90 mm, #13 = 2,25, #12 = 2,65, #16 = 1,50). A peça muda de seção no 3D (as espessuras, abas e enrijecedores ficam exatos; os furos acompanham), e o detalhamento e a lista de materiais passam a sair com o perfil novo — gere-os de novo depois.` }),
+      el('div', { class: 'campos' }, el('label', { texto: 'Novo perfil' }), campo, el('label', { texto: 'Aplicar em' }), alcance),
+      aviso);
+    const conferir = () => {
+      const nome = nomeDoPerfil(campo.value, antigoNome);
+      const p = lerPerfil(nome), a = lerPerfil(antigoNome);
+      aviso.textContent = !campo.value.trim() ? '' : !p ? 'Não reconheci esse perfil (U ou Ue/C: 127X50X17X#14, U92X40X2.25).'
+        : (a && p.familia !== a.familia) ? `O atual é ${a.familia}; a troca na malha é dentro da mesma família.`
+        : `${nome}: ${p.H} × ${p.B}${p.D ? ' × ' + p.D : ''} × ${String(p.t).replace('.', ',')} mm`;
+    };
+    campo.addEventListener('input', conferir);
+    setTimeout(() => campo.focus(), 50);
+    if (await this.dialogo({ titulo: 'Trocar perfil', corpo, ok: 'Trocar' }) !== 'ok') return;
+    const novoNome = nomeDoPerfil(campo.value, antigoNome);
+    const novo = lerPerfil(novoNome), antigo = lerPerfil(antigoNome);
+    if (!novo || !antigo) { this.aviso('Perfil não reconhecido: use U ou Ue/C, como 127X50X17X#14.', 'atencao'); return; }
+    const alvos = alcance.value === 'posicao' ? daPosicao : alcance.value === 'perfil' ? doPerfil : ents;
+    const mud = {}, falhas = [];
+    for (const e of alvos) {
+      const r = trocarSecao(e, antigo, novo);
+      if (r.erro) { falhas.push(`${(e.atributos.marcas || {}).posicao || e.nome}: ${r.erro}`); continue; }
+      const atributos = clonar(e.atributos);
+      atributos.marcas = { ...atributos.marcas, perfil: novoNome, perfil_anterior: atributos.marcas.perfil_anterior || antigoNome };
+      mud[e.id] = { vertices: r.vertices, atributos, ...(e.nome === antigoNome ? { nome: novoNome } : {}) };
+    }
+    const n = Object.keys(mud).length;
+    if (n) this.executar(new ComandoAlterar(mud, `Trocar perfil ${antigoNome} → ${novoNome}`));
+    this.aviso(`${n} peça(s) passaram de ${antigoNome} para ${novoNome}` +
+               (falhas.length ? `; ${falhas.length} não: ${falhas.slice(0, 3).join(' · ')}` : '') +
+               '. Gere o detalhamento de novo para os desenhos saírem com o perfil novo. Ctrl+Z desfaz.',
+               falhas.length ? 'atencao' : 'info', 12000);
   }
 
   async _novaCamada() {

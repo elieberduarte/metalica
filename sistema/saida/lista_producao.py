@@ -108,8 +108,23 @@ def _area_m2(p: Posicao) -> float:
     return p.L * p.H / 1e6
 
 
+def _compra_telha(p: Posicao) -> dict:
+    from nucleo2d.detalhe.base import compra_da_telha
+    return compra_da_telha(p)
+
+
 def _linha_posicao(p: Posicao, categoria: str) -> dict:
     chapa = _e_chapa(p)
+    if p.classe == "telha":
+        # a telha é comprada inteira, na largura comercial; o corte é na obra
+        c = _compra_telha(p)
+        return {"marca": p.marca, "nome": getattr(p, "nome", ""), "categoria": categoria, "classe": CLASSES.get(p.classe, p.classe),
+                "perfil": p.perfil, "material": p.material, "quantidade": p.quantidade,
+                "comprimento": round(c["comprimento"]), "largura": round(c["largura"]), "espessura": 0,
+                "area_m2": round(c["comprimento"] * c["largura"] / 1e6 * p.quantidade, 3),
+                "furos": p.rotulo_furos(), "parafusos": p.rotulo_parafusos(), "peso": round(c["peso"], 3),
+                "peso_total": round(c["peso"] * p.quantidade, 2), "conjuntos": list(p.conjuntos),
+                "observacoes": list(p.observacoes) + (["corte em obra"] if c["cortada"] else [])}
     return {"marca": p.marca, "nome": getattr(p, "nome", ""), "categoria": categoria, "classe": CLASSES.get(p.classe, p.classe),
             "perfil": p.perfil, "material": p.material, "quantidade": p.quantidade,
             "comprimento": round(p.comprimento) if p.classe != "indefinida" else 0,
@@ -221,14 +236,21 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         if p.classe != "telha":
             continue
         g = telhas.setdefault(p.perfil, {"perfil": p.perfil, "posicoes": [], "pecas": 0,
-                                         "comprimento_m": 0.0, "area_m2": 0.0, "peso": 0.0})
+                                         "comprimento_m": 0.0, "area_m2": 0.0, "peso": 0.0, "_chapas": collections.Counter()})
+        c = _compra_telha(p)
         g["posicoes"].append(p.marca)
         g["pecas"] += p.quantidade
-        g["comprimento_m"] += p.comprimento * p.quantidade / 1000.0
-        g["area_m2"] += _area_m2(p) * p.quantidade
-        g["peso"] += p.peso_total
+        g["comprimento_m"] += c["comprimento"] * p.quantidade / 1000.0
+        g["area_m2"] += c["comprimento"] * c["largura"] / 1e6 * p.quantidade
+        g["peso"] += c["peso"] * p.quantidade
+        g["_chapas"][int(round(c["comprimento"]))] += p.quantidade
+        g["largura"] = int(round(c["largura"]))
     lista_telhas = []
     for g in telhas.values():
+        chapas_t = g.pop("_chapas")
+        # o pedido de compra: quantas chapas inteiras de cada comprimento
+        g["chapas"] = [{"comprimento": L, "quantidade": q} for L, q in sorted(chapas_t.items(), reverse=True)]
+        g["chapas_texto"] = " · ".join("%d× %d" % (q, L) for L, q in sorted(chapas_t.items(), reverse=True))
         for k in ("comprimento_m", "area_m2"):
             g[k] = round(g[k], 2)
         g["peso"] = round(g["peso"], 1)
@@ -391,9 +413,10 @@ def corpo_html(lista: dict) -> str:
                                       (_n(sum(g["area_m2"] for g in lista["chapas"]), 2), "r b"), (_n(sum(g["peso"] for g in lista["chapas"]), 1), "r b")],
                               larguras=["12%", "14%", "44%", "10%", "10%", "10%"]))
     if lista.get("telhas"):
-        partes.append(_tabela("Quadro 4 — Telhas",
-                              [("Perfil", "l"), ("Posições", "l"), ("Peças", "c"), ("Compr. (m)", "r"), ("Área (m²)", "r"), ("Peso (kg)", "r")],
-                              [[(g["perfil"], "l b"), (" ".join(g["posicoes"]), "l"), (g["pecas"], "c"), (_n(g["comprimento_m"], 2), "r"),
+        partes.append(_tabela("Quadro 4 — Telhas (chapas inteiras de compra; cortes em obra)",
+                              [("Perfil", "l"), ("Chapas (qtd × compr. mm)", "l"), ("Peças", "c"), ("Compr. (m)", "r"), ("Área (m²)", "r"), ("Peso (kg)", "r")],
+                              [[(g["perfil"] + (" · larg. %d" % g["largura"] if g.get("largura") else ""), "l b"), (g.get("chapas_texto", ""), "l"),
+                                (g["pecas"], "c"), (_n(g["comprimento_m"], 2), "r"),
                                 (_n(g["area_m2"], 2), "r"), (_n(g["peso"], 1), "r")] for g in lista["telhas"]]))
     if lista["conjuntos"]:
         partes.append(_tabela("Quadro 5 — Conjuntos (montagens): instâncias, composição e peso",

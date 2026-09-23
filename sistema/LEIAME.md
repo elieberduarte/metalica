@@ -143,6 +143,21 @@ primeiro, do mais leve ao mais pesado, depois os que não passam, do que chegou 
 Na tela, **Usar** grava o perfil no formulário e redimensiona o galpão inteiro — é como se
 troca a altura da terça ou do banzo sem sair do que a norma aceita.
 
+## Trocar o perfil de uma peça importada
+
+A peça do IFC é uma malha, não uma barra paramétrica. **Trocar perfil…** (painel
+Propriedades, grupo "Peça (IFC)", ou com várias peças do mesmo perfil selecionadas) passa
+a malha para a seção nova (`web/editor3d/nucleo/trocar_perfil.js`): a seção é remapeada
+por faixas — espessura da mesa, enrijecedor e alma na altura; espessura da alma e do
+enrijecedor na largura — com o comprimento intacto, então espessuras, abas e enrijecedores
+saem exatos; o esticamento do miolo vai para o maior trecho sem vértices, e os furos só se
+deslocam, sem mudar de tamanho. A face da alma fica no lugar; a altura cresce igual para
+os dois lados. Alcance: as peças escolhidas, a posição inteira ou todas com o mesmo perfil;
+Ctrl+Z desfaz. A marca `perfil` passa a ser a nova (`perfil_anterior` guarda a de origem),
+e detalhamento, lista de materiais e cálculo saem com ela. Por ora U e Ue (C) formados a
+frio. A espessura pode vir pela **bitola** (`perfis_fabrica.BITOLAS`: #16 = 1,50, #14 =
+1,90, #13 = 2,25, #12 = 2,65, #11 = 3,00 mm): "C127X50X17X#14" é um Ue 127×50×17×1,90.
+
 ## Editor 3D
 
 O editor roda no navegador e funciona sem internet: a biblioteca 3D, Three.js r160 sobre
@@ -365,6 +380,15 @@ usa os mesmos quadros: um por grupo de posições (CHAPAS, BARRAS E TERÇAS…),
 por tipo e a planta de localização. A moldura cerca a extensão real (`detalhar._extremos_de`:
 linha de cota deslocada com o número e largura estimada do texto), não só os pontos que
 definem as entidades — antes as cotas das tesouras saíam para fora do quadro.
+
+**Telhas pela chapa de compra** (`detalhe.base.compra_da_telha`, `celulas._desenho_da_telha`):
+a telha é comprada inteira e cortada na obra. A célula mostra a chapa inteira (comprimento
+da peça × **largura comercial**, `LARGURA_COMPRA_TELHA` = 980 mm — o TecnoMETAL modela a
+TP40 com 1031) com as ondas de ponta a ponta, tiradas dos vértices da peça inteira (a
+seção de uma ponta cortada em diagonal pega só parte da largura), e o corte que a peça tem
+no modelo (ângulo do beiral, curva do canto) em **pontilhado**, camada OCULTA. O peso é o
+da chapa inteira (o da peça × retângulo / área do casco). A lista de materiais segue a
+mesma regra e diz quantas chapas de cada comprimento comprar.
 
 **Unidade do conjunto pela maioria** (`detalhar._unidade_pela_maioria`): as instâncias de
 um conjunto saem do mdc das quantidades por posição; uma peça a mais ou a menos numa delas

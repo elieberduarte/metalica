@@ -42,6 +42,45 @@ TIPOS_ACESSORIO = {"IfcMechanicalFastener", "IfcDiscreteAccessory", "IfcFastener
 
 #: Regra da furação das terças: altura limite e (vertical, horizontal) em mm.
 LIMITE_TERCA = 200.0
+
+#: Largura comercial da telha (mm): é por ela que a telha é comprada, qualquer que seja a
+#: largura total que o modelo traz (a TP40 do TecnoMETAL vem com 1031, com a sobreposição).
+LARGURA_COMPRA_TELHA = 980.0
+
+
+def _area_casco(pontos) -> float:
+    """Área do casco convexo de pontos 2D (cadeia monótona)."""
+    pts = sorted(set((round(p[0], 3), round(p[1], 3)) for p in pontos))
+    if len(pts) < 3:
+        return 0.0
+
+    def giro(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    baixo, cima = [], []
+    for p in pts:
+        while len(baixo) >= 2 and giro(baixo[-2], baixo[-1], p) <= 0:
+            baixo.pop()
+        baixo.append(p)
+    for p in reversed(pts):
+        while len(cima) >= 2 and giro(cima[-2], cima[-1], p) <= 0:
+            cima.pop()
+        cima.append(p)
+    casco = baixo[:-1] + cima[:-1]
+    return abs(sum(casco[i][0] * casco[(i + 1) % len(casco)][1] - casco[(i + 1) % len(casco)][0] * casco[i][1]
+                   for i in range(len(casco)))) / 2.0
+
+
+def compra_da_telha(pos) -> dict:
+    """A telha como é comprada: chapa inteira no comprimento da peça e na largura
+    comercial; os cortes em ângulo ou em curva são feitos na obra. `cortada` diz se a peça
+    do modelo tem corte (área da vista menor que o retângulo); `peso` é o da chapa inteira
+    (o da peça × retângulo / área cortada)."""
+    L, H = float(pos.L or pos.comprimento or 0.0), float(pos.H or 0.0)
+    area = _area_casco([(q[0], q[1]) for q in (pos.local or [])]) if pos.local else 0.0
+    cheia = L * H
+    cortada = bool(area and cheia and area < 0.995 * cheia)
+    peso = pos.peso * cheia / area if cortada and area > 0.2 * cheia else pos.peso
+    return {"comprimento": L, "largura": LARGURA_COMPRA_TELHA, "cortada": cortada, "peso": peso}
 FURACAO_TERCA_BAIXA = (50.0, 60.0)
 FURACAO_TERCA_ALTA = (100.0, 60.0)
 
