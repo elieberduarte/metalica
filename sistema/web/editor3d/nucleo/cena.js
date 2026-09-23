@@ -809,6 +809,11 @@ export class Cena {
     // cena: a cor do mapa tem de ser lida como cor, não como reflexo.
     const porValor = this.pintandoPorValor;
     const semValor = porValor && !this._corDeValor(ent);
+    // Sem valor no mapa: o mesmo cinza opaco do fantasma. Translúcido ficava bonito no
+    // galpão de 300 peças, mas num IFC de 5 mil (telhas, parafusos, chapas sem
+    // verificação) milhares de materiais transparentes obrigam a ordenar e sobrepor tudo
+    // a cada quadro, e a cena trava.
+    if (semValor && this.modo !== 'raiox' && this.modo !== 'arestas') return this._materialFantasma();
     const opac = this.modo === 'raiox' ? 0.18
                : this.modo === 'arestas' ? 0
                : semValor ? OPACIDADE_SEM_VALOR
@@ -873,6 +878,9 @@ export class Cena {
     this._aplicarModo(obj);
     // fantasma sem arestas: metade dos objetos desenhados a menos
     if (this.destaque && !this.destaque.has(id) && arestas) arestas.visible = false;
+    // idem para a peça sem valor no mapa de esforços
+    if (arestas && this.pintandoPorValor && !this._corDeValor(ent) && !obj.userData.realce &&
+        this.modo !== 'arestas' && this.modo !== 'raiox') arestas.visible = false;
   }
 
   /** Destaque: só `ids` ficam com a cor normal, o resto do modelo vira fantasma. null desliga. */

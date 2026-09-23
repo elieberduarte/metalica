@@ -89,6 +89,7 @@ TOL_PLANO = {"superior": 520.0, "inferior": 400.0}   # terça/trava: distância 
 TOL_APOIO = 450.0        # ponto de apoio informado a menos disto de um nó
 MARGEM_CRUZAMENTO = 260.0   # a terça/trava pode parar até isto antes do plano da tesoura
 G = 9.81e-3              # kN por kg
+ESTACOES_TESOURA = 11    # estações dos diagramas nas barras da treliça
 
 
 # ------------------------------------------------------------------ vetores
@@ -1262,13 +1263,15 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
             ex, ey = (B[0] - A[0]) / L, (B[1] - A[1]) / L
             nx, ny = ey, -ex                      # face tracionada pelo momento positivo
             normal = tuple(t.u[i] * nx + t.v[i] * ny for i in range(3))
+            # barras curtas (painéis da treliça): 11 estações bastam e o JSON gravado no
+            # projeto fica na metade
             diagramas = {}
             for caso, r in t.resultados.items():
                 try:
-                    diagramas[caso] = _amostrar(r.barras[k], ESTACOES)
+                    diagramas[caso] = _amostrar(r.barras[k], ESTACOES_TESOURA)
                 except Exception:
                     continue
-            diagramas[ENVOLTORIA] = _envoltoria(diagramas, [c for c in ultimas if c in diagramas], ESTACOES)
+            diagramas[ENVOLTORIA] = _envoltoria(diagramas, [c for c in ultimas if c in diagramas], ESTACOES_TESOURA)
             rot = "%s:%d" % (t.chave, k)
             elementos[mb.marca]["barras"].append(rot)
             barras_saida.append({"rotulo": rot, "elemento": mb.marca, "tesoura": t.chave,
