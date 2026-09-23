@@ -87,6 +87,8 @@ export class Camera {
         this.controles.mouseButtons.RIGHT =
           ev.shiftKey ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
       }
+      const orbita = (ev.button === 1 && !ev.shiftKey) || (ev.button === 2 && ev.shiftKey);
+      if (orbita && this.controles.enabled) this._pivoDaOrbita(ev);
     };
     elemento.addEventListener('pointerdown', this._antesDoDown, { capture: true });
     elemento.addEventListener('contextmenu', e => e.preventDefault());
@@ -289,6 +291,42 @@ export class Camera {
   zoomExtensao(caixaMM = null) {
     const caixa = caixaMM || (this.cena && this.cena.documento.caixa());
     this._enquadrarSuave(caixa);
+  }
+
+  /**
+   * Antes de orbitar, põe o pivô onde o usuário está olhando. Com peça selecionada, o
+   * pivô é o centro dela (a vista desliza para centrá-la): a órbita gira em volta da
+   * peça, como nos CADs. Sem seleção, o pivô vai para a profundidade da peça sob o
+   * cursor, no eixo da vista — a tela não pula. Antes o pivô ficava onde o último
+   * enquadramento o deixou; de perto de uma chapa, a câmera girava em torno de um ponto
+   * metros atrás e a peça sumia da tela.
+   */
+  _pivoDaOrbita(ev) {
+    const alvo = this.controles.target;
+    const ids = this.idsSelecionados ? this.idsSelecionados() : [];
+    if (ids && ids.length && this.cena) {
+      const caixa = this.cena.documento.caixa(ids);
+      if (caixa) {
+        const { centro } = esferaDe(caixa);
+        const d = centro.clone().sub(alvo);
+        if (d.lengthSq() > 1e-12) {
+          this._animacao = null;
+          this.ativa.position.add(d);
+          alvo.copy(centro);
+          this.controles.update();
+        }
+        return;
+      }
+    }
+    const p = this._focoDoCursor(this._ndcDoEvento(ev));
+    if (this.apoioDoZoom !== 'peça') return;
+    const dir = new THREE.Vector3();
+    this.ativa.getWorldDirection(dir);
+    const prof = p.clone().sub(this.ativa.position).dot(dir);
+    if (prof > 1e-4) {
+      alvo.copy(this.ativa.position).addScaledVector(dir, prof);
+      this.controles.update();
+    }
   }
 
   /** Zoom no que está selecionado. */

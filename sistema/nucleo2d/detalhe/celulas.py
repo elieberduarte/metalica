@@ -102,6 +102,8 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     """Célula da posição em `desenho`, com a vista de frente em (dx, dy). Devolve os
     extremos. `editavel`: furos da chapa como entidades marcadas (ver _furos_editaveis)."""
     atr = {"posicao": pos.marca, "perfil": pos.perfil, "classe": pos.classe, "detalhe": "posicao"}
+    if pos.nome:
+        atr["nome"] = pos.nome                  # o grupo da peça no DXF leva o nome de produção
     p = _Papel(desenho, atr, dx, dy, camada_peca=pos.camada_2d or "")
     esc = desenho.escala
     est = Estilo(escala=esc)

@@ -143,6 +143,35 @@ primeiro, do mais leve ao mais pesado, depois os que não passam, do que chegou 
 Na tela, **Usar** grava o perfil no formulário e redimensiona o galpão inteiro — é como se
 troca a altura da terça ou do banzo sem sair do que a norma aceita.
 
+## Telhas: multi-dobra e paginação
+
+**Multi-dobra** (`nucleo2d/detalhe/telhas.py`): o TecnoMETAL modela a telha que dobra do
+telhado para a parede como uma fileira de peças do mesmo conjunto — a reta da cobertura,
+facetas curtas (110 mm) girando alguns graus cada uma e a reta da parede. `multidobras`
+reconhece essas fileiras por instância do conjunto (largura comum às peças, cadeia
+contínua, ≥ 3 facetas, retas bem mais longas que as facetas), mede no plano do perfil as
+duas retas entre os pontos de tangência, o raio (arco das facetas / ângulo), o ângulo e o
+desenvolvido **externo** e **interno** (raio ± meia altura da onda), e as posições que a
+multi-dobra consome deixam de sair como telhas recortadas. A célula (`desenho_da_multidobra`)
+traz o perfil duas vezes, medidas externas e internas, como a fábrica pede; a lista de
+materiais conta a multi-dobra pelo desenvolvido externo.
+
+**Paginação** (`faces_de_telhas`, `desenho_da_paginacao`): no padrão do "comprimentos
+reais" da fábrica, cada face (água da cobertura, fachada) sai com as chapas lado a lado na
+posição de montagem, a marca embaixo e a cota do comprimento real dentro da chapa. A
+direção da onda vem das normais das faces da malha (a direção que nenhuma face aponta), não
+do maior eixo — numa telha curta o maior eixo é a largura.
+
+## Exportar DXF
+
+`nucleo2d/dxf_cad.py` (ezdxf, DXF R2010): cotas como DIMENSION funcionais (estilo METALICA,
+DIMSCALE = escala do desenho, decimal com vírgula), camadas com a cor do CAD (RGB e ACI mais
+próxima; as quase pretas em ACI 7), tipo de linha e espessura, textos no estilo METALICA com
+a fonte da tela (Segoe UI) e um GROUP por peça ou conjunto com o nome de produção. Sem a
+ezdxf, a rota cai no R12 antigo (`Desenho.para_dxf`). As posições também saem em **quadros
+por tipo** (`detalhar.QUADROS_POSICOES`: terças, suportes de terça, chapas…), no desenho do
+grupo e no completo.
+
 ## Trocar o perfil de uma peça importada
 
 A peça do IFC é uma malha, não uma barra paramétrica. **Trocar perfil…** (painel

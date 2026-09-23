@@ -230,24 +230,24 @@ class _Papel:
         return True
 
     def cadeia_h(self, xs, y, desl_papel, exigir_espaco=True):
-        """Cadeia de cotas. Sem `exigir_espaco`, trechos curtos demais para o número
-        saem em duas linhas alternadas (os textos não se atropelam); devolve "dupla"."""
+        """Cadeia de cotas, sempre numa linha só e contínua (30 | 210 | 30), com a total
+        por fora — é o padrão da fábrica. Antes, trechos curtos saíam em duas linhas
+        alternadas, e a cadeia ficava picada. Com `exigir_espaco`, sem espaço para os
+        números não sai cadeia (fica só a total)."""
         xs = sorted(set(float(round(x)) for x in xs))
         if exigir_espaco and not self._cabe(xs):
             return False
-        dupla = not self._cabe(xs)
         for i in range(len(xs) - 1):
-            self.cota_h(xs[i], xs[i + 1], y, desl_papel * (2 if dupla and i % 2 else 1))
-        return "dupla" if dupla else True
+            self.cota_h(xs[i], xs[i + 1], y, desl_papel)
+        return True
 
     def cadeia_v(self, ys, x, desl_papel, exigir_espaco=True):
         ys = sorted(set(float(round(y)) for y in ys))
         if exigir_espaco and not self._cabe(ys):
             return False
-        dupla = not self._cabe(ys)
         for i in range(len(ys) - 1):
-            self.cota_v(ys[i], ys[i + 1], x, desl_papel * (2 if dupla and i % 2 else 1))
-        return "dupla" if dupla else True
+            self.cota_v(ys[i], ys[i + 1], x, desl_papel)
+        return True
 
     @property
     def extremos(self):

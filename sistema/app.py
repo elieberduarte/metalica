@@ -1230,8 +1230,13 @@ def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:
     desenho = Desenho.de_dict(fonte)
     pasta = os.path.join(g._existente(s), "desenhos-2d")
     escala = corpo.get("escala")
-    caminho = desenho.para_dxf(float(escala) if escala else None).gravar(
-        os.path.join(pasta, _slug(nome) + ".dxf"))
+    destino = os.path.join(pasta, _slug(nome) + ".dxf")
+    try:
+        # R2010 pela ezdxf: cotas DIMENSION, cores e estilo de texto do CAD, grupos por peça
+        from nucleo2d import dxf_cad
+        caminho = dxf_cad.exportar(desenho, destino, float(escala) if escala else None)
+    except ImportError:
+        caminho = desenho.para_dxf(float(escala) if escala else None).gravar(destino)
     return {"arquivo": _descrever_arquivo(caminho, pasta), "entidades": desenho.tamanho}
 
 

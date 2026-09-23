@@ -156,6 +156,22 @@ class CAD {
     }
   }
 
+  /**
+   * Volta para a tela de onde o desenho foi aberto (o modelo 3D, a lista de desenhos…).
+   * O que está pendente de gravação é gravado antes — `fechar` avisa que salvou; o
+   * Voltar simples também grava o pendente, para nada se perder na troca de tela.
+   */
+  async voltar(fechar) {
+    const pendente = this._autosaveTimer || this._autosavePendente;
+    if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+    if (this.nomeDesenho && this.doc.tamanho && (fechar || pendente)) {
+      try { await this.salvar({ avisar: !!fechar }); } catch { /* o aviso de erro já saiu */ }
+    }
+    const mesmaOrigem = document.referrer && new URL(document.referrer).origin === location.origin;
+    if (mesmaOrigem && history.length > 1) { history.back(); return; }
+    location.href = this.projeto ? `/editor?projeto=${encodeURIComponent(this.projeto)}` : '/';
+  }
+
   _agendarAutosave() {
     if (!this.projeto) return;
     if (this._autosaveTimer) clearTimeout(this._autosaveTimer);
@@ -255,8 +271,10 @@ class CAD {
   verNo3D() {
     if (!this.projeto) { this.aviso('Ver no 3D precisa de um projeto aberto.', 'atencao'); return; }
     const ents = [...this.tela.selecao].map(id => this.doc.get(id)).filter(Boolean);
-    const posicoes = [...new Set(ents.map(e => (e.atributos || {}).posicao).filter(Boolean))];
-    const conjuntos = [...new Set(ents.map(e => (e.atributos || {}).conjunto).filter(Boolean))];
+    // célula de peças fundidas ou conjuntos iguais: "M5 / M7 / M8" são três marcas do modelo
+    const separar = (v) => String(v).split(/\s*\/\s*/).filter(Boolean);
+    const posicoes = [...new Set(ents.flatMap(e => (e.atributos || {}).posicao ? separar(e.atributos.posicao) : []))];
+    const conjuntos = [...new Set(ents.flatMap(e => (e.atributos || {}).conjunto ? separar(e.atributos.conjunto) : []))];
     let alvo = null;
     if (posicoes.length) alvo = 'posicao:' + posicoes.slice(0, 20).join(',');
     else if (conjuntos.length) alvo = 'conjunto:' + conjuntos.slice(0, 20).join(',');
@@ -464,6 +482,8 @@ class CAD {
       if (!ev.target.closest('.menu')) this._fecharMenus();
     });
     $('#btn-salvar').addEventListener('click', () => this.salvar());
+    $('#btn-voltar').addEventListener('click', (ev) => { ev.preventDefault(); this.voltar(false); });
+    $('#btn-fechar').addEventListener('click', () => this.voltar(true));
     $('#btn-dxf').addEventListener('click', () => this.exportarDXF());
     $('#arquivo-dxf').addEventListener('change', () => { const f = $('#arquivo-dxf').files && $('#arquivo-dxf').files[0]; $('#arquivo-dxf').value = ''; this.importarDXF(f); });
     $('#btn-tema').addEventListener('click', () => this._alternarTema());

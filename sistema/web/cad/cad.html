@@ -25,7 +25,8 @@
     <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M6 24h20M6 24V8M10 20l6-8 6 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
     <span>Desenho 2D</span>
   </div>
-  <a class="voltar" id="link-projetos" href="/" title="Voltar à lista de projetos">&larr; Projetos</a>
+  <a class="voltar" id="btn-voltar" href="#" title="Volta para a tela anterior (o que foi desenhado já está gravado)">&larr; Voltar</a>
+  <a class="voltar" id="link-projetos" href="/" title="Voltar à lista de projetos">Projetos</a>
   <a class="voltar" id="link-editor" href="/editor" title="Abrir o modelo 3D deste projeto">Modelo 3D</a>
 
   <div class="menus" id="menus">
@@ -108,6 +109,7 @@
       <select id="escala"><option>1</option><option>2</option><option>2.5</option><option>5</option><option>10</option><option>20</option><option>25</option><option>50</option><option>100</option><option>200</option></select>
     </label>
     <button type="button" id="btn-salvar" class="botao" title="Salvar no projeto (também é gravado sozinho)">Salvar</button>
+    <button type="button" id="btn-fechar" class="botao" title="Salva este desenho e volta para a tela anterior">Fechar e salvar</button>
     <button type="button" id="btn-dxf" class="botao destaque" title="Gerar o DXF para produção">Exportar DXF</button>
     <button type="button" id="btn-tema" class="botao" title="Alternar tema claro/escuro">Tema</button>
   </div>

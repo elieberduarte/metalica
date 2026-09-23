@@ -681,9 +681,11 @@ def test_desenho_completo():
     dc = r["desenhos"]["completo"]
     assert dc.escala == 25.0
     faixas = {(e.atributos or {}).get("faixa") for e in dc.entidades.values()} - {None}
-    assert {"CHAPAS", "BARRAS E TERÇAS", "CONJUNTOS", "PLANTA DE LOCALIZAÇÃO"} <= faixas
-    titulos = [e.texto for e in dc.entidades.values() if isinstance(e, Texto) and e.altura == 5.0]
-    assert titulos[:2] == ["CHAPAS", "BARRAS E TERÇAS"]
+    # cada grupo sai em quadros por tipo de peça (chapas, barras…), os conjuntos por tipo
+    # de conjunto e a planta no fim — todos com moldura
+    assert "PLANTA DE LOCALIZAÇÃO" in faixas and len(faixas) >= 3
+    quadros = [e.atributos["quadro"] for e in dc.entidades.values() if (e.atributos or {}).get("quadro")]
+    assert quadros[-1] == "PLANTA DE LOCALIZAÇÃO" and len(quadros) == len(faixas)
     meta = dc.metadados["detalhamento"]
     assert meta["grupo"] == "completo" and "P1" in meta["editaveis"] and "P1" in meta["itens"] and "M5" in meta["itens"]
     assert any(isinstance(e, Circulo) and e.camada == "FURO" and (e.atributos or {}).get("posicao") == "P1" for e in dc.entidades.values())

@@ -170,6 +170,7 @@ export class Editor {
                                                           semLote: this.parametros.get('lote') === '0' });
     this.camera = new Camera(this.el.canvas, this.cena);
     this.selecao = new Selecao(this.documento, this.cena, this.camera);
+    this.camera.idsSelecionados = () => [...this.selecao.ids];    // pivô da órbita
     this.inferencia = new Inferencia(this.documento, this.cena, this.camera,
                                      this.selecao, this.el.snap);
 
@@ -1979,8 +1980,10 @@ export class Editor {
       gc.append(el('label', { texto: 'Massa' }), el('span', { class: 'valor', texto: `${numero(massa, 1)} kg` }));
     }
 
-    if (um && um.tipo === 'solido') {
-      // peça importada de IFC: marcas, dimensões pelos eixos principais e massa
+    const marcasDe = (e) => (e && e.atributos && e.atributos.marcas) || null;
+    if (um && (um.tipo === 'solido' || marcasDe(um))) {
+      // peça importada de IFC (sólido, ou chapa já convertida em paramétrica): marcas,
+      // nome de produção com a quantidade; no sólido, dimensões pelos eixos e massa
       const a = um.atributos || {}, marcas = a.marcas || {};
       if (marcas.posicao || marcas.conjunto || marcas.perfil || a.tipo_ifc) {
         const gi = this._grupo(raiz, 'Peça (IFC)');
@@ -1989,6 +1992,19 @@ export class Editor {
           if (acao) v.addEventListener('click', acao);
           gi.append(el('label', { texto: rotulo }), v);
         };
+        // o que o detalhamento escreve no título da célula: "S.T.2 – 49x (P13)"
+        const chaveQtd = marcas.nome ? ['nome', marcas.nome] : marcas.posicao ? ['posicao', marcas.posicao] : null;
+        if (chaveQtd) {
+          const iguaisQtd = [...this.documento.entidades.values()].filter(e => { const m = marcasDe(e); return m && m[chaveQtd[0]] === chaveQtd[1]; }).map(e => e.id);
+          const titulo = `${marcas.nome || marcas.posicao} – ${String(iguaisQtd.length).padStart(2, '0')}x` + (marcas.nome && marcas.posicao ? `  (${marcas.posicao})` : '');
+          const t = el('div', { class: 'titulo-peca clicavel', texto: titulo, title: 'Quantidade no modelo — clique para selecionar todas',
+            style: 'grid-column:1/-1;font-weight:600;font-size:1.05em;margin:.1em 0 .3em;cursor:pointer' });
+          t.addEventListener('click', () => this.selecao.definir(iguaisQtd));
+          gi.append(t);
+        }
+        // o nome e a quantidade vêm antes dos campos de edição (na chapa o grupo dela é longo)
+        const caixa = gi.parentElement, primeiro = raiz.querySelector('.grupo-campos');
+        if (caixa && primeiro && primeiro !== caixa) primeiro.before(caixa);
         if (marcas.posicao) {
           const iguais = [...this.documento.entidades.values()].filter(e => e.atributos && e.atributos.marcas && e.atributos.marcas.posicao === marcas.posicao).map(e => e.id);
           linha('Posição', `${marcas.posicao}  (${iguais.length} iguais)`, () => this.selecao.definir(iguais));
@@ -2012,13 +2028,17 @@ export class Editor {
           }
         }
         if (a.tipo_ifc) linha('Tipo IFC', a.tipo_ifc);
-        const dims = dimensoesPrincipais(um);
-        if (dims) {
-          linha('Comprimento', `${numero(dims[0], 0)} mm`);
-          linha('Seção (envolvente)', `${numero(dims[1], 0)} × ${numero(dims[2], 1)} mm`);
+        if (um.tipo === 'solido') {
+          const dims = dimensoesPrincipais(um);
+          if (dims) {
+            linha('Comprimento', `${numero(dims[0], 0)} mm`);
+            linha('Seção (envolvente)', `${numero(dims[1], 0)} × ${numero(dims[2], 1)} mm`);
+          }
+          linha('Massa', `${numero(volumeDe(um) * 7.85e-6, 2)} kg`);
         }
-        linha('Massa', `${numero(volumeDe(um) * 7.85e-6, 2)} kg`);
       }
+    }
+    if (um && um.tipo === 'solido') {
       const gs = this._grupo(raiz, 'Sólido');
       gs.append(el('label', { texto: 'Vértices' }), el('span', { class: 'valor', texto: String((um.vertices || []).length) }));
       gs.append(el('label', { texto: 'Faces' }), el('span', { class: 'valor', texto: String((um.faces || []).length) }));

@@ -257,8 +257,17 @@ QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("c
            ("agulhamento", "AGULHAMENTOS"), ("contraventamento", "CONTRAVENTAMENTOS")]
 
 
+#: Título do quadro de cada tipo de posição (peça avulsa), na ordem em que saem.
+QUADROS_POSICOES = [("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
+                    ("suporte_terca", "SUPORTES DE TERÇA"), ("agulhamento", "AGULHAMENTOS"),
+                    ("suporte_agulhamento", "SUPORTES DE AGULHAMENTO"), ("contraventamento", "CONTRAVENTAMENTOS"),
+                    ("suporte_contraventamento", "SUPORTES DE CONTRAVENTAMENTO"), ("castanha", "CASTANHAS"),
+                    ("barra_roscada", "BARRAS ROSCADAS"), ("gancho", "GANCHOS"), ("parte", "PEÇAS DE CONJUNTOS"),
+                    ("barra", "BARRAS"), ("chapa", "CHAPAS"), ("telha", "TELHAS")]
+
+
 def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float = 1400.0,
-                      y: float = 0.0, meta: Optional[dict] = None) -> float:
+                      y: float = 0.0, meta: Optional[dict] = None, titulos: Optional[Sequence[tuple]] = None) -> float:
     """Desenha as células agrupadas por tipo, cada grupo dentro de um quadro com título.
 
     Sem isso as tesouras, os agulhamentos e os contraventamentos saíam numa fila só, na
@@ -270,8 +279,9 @@ def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float
     for tipo, f in fns:
         chave = str(tipo or "conjunto")
         grupos.setdefault(chave, []).append(f)
-    ordem = [t for t, _ in QUADROS if t in grupos] + [t for t in grupos if t not in dict(QUADROS)]
-    titulos = dict(QUADROS)
+    lista_titulos = list(titulos or QUADROS)
+    ordem = [t for t, _ in lista_titulos if t in grupos] + [t for t in grupos if t not in dict(lista_titulos)]
+    titulos = dict(lista_titulos)
     for chave in ordem:
         banda = Desenho(nome=chave, escala=d.escala)
         banda.camadas = {k: v for k, v in d.camadas.items()}
@@ -321,9 +331,10 @@ def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho]) -
             continue
         if chave not in faixas:
             continue
-        celulas, largura, meta = faixas[chave]
-        if chave == "conjuntos":          # (tipo, célula): um quadro por tipo
-            y = _quadros_por_tipo(dc, celulas, largura_max_papel=largura, y=y, meta=meta)
+        celulas, largura, meta = faixas[chave][:3]
+        titulos = faixas[chave][3] if len(faixas[chave]) > 3 else None
+        if celulas and isinstance(celulas[0], tuple):     # (tipo, célula): um quadro por tipo
+            y = _quadros_por_tipo(dc, celulas, largura_max_papel=largura, y=y, meta=meta, titulos=titulos)
             continue
         banda = Desenho(nome=titulo, escala=g["escala"])
         _empilhar(banda, [(lambda x, y_, f=f: f(banda, x, y_)) for f in celulas], largura_max_papel=largura)
@@ -554,12 +565,23 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             desenhos["conjuntos"] = d
         faixas["conjuntos"] = (fns, 1400.0, dict(d.metadados["detalhamento"]))
 
+    # telhas multi-dobra: a fileira de facetas de um conjunto de telhas é uma peça só
+    from nucleo2d.detalhe.telhas import multidobras, desenho_da_multidobra, faces_de_telhas, desenho_da_paginacao
+    try:
+        md = multidobras(pecas)
+    except Exception as exc:                      # noqa: BLE001 — o resto do detalhamento sai
+        md = {"telhas": [], "posicoes": set()}
+        avisos.append("telhas multi-dobra não analisadas: %s" % exc)
+    for i, t in enumerate(md["telhas"], 1):
+        t["nome"] = "TMD.%d" % i
     for chave in (list(grupos) + [k for k in GRUPOS if k not in grupos]) if "completo" in grupos else grupos:
         g = GRUPOS.get(chave)
         if not g or chave in ("conjuntos", "localizacao", "completo"):
             continue
-        lista = [p for p in _ordenar(posicoes) if p.classe in g["classes"]]
-        if not lista:
+        lista = [p for p in _ordenar(posicoes) if p.classe in g["classes"]
+                 and not (p.classe == "telha" and all(m in md["posicoes"] for m in marcas_de(p)))]
+        extra_md = md["telhas"] if chave == "telhas" else []
+        if not lista and not extra_md:
             continue
         avisar("desenhando %s (%d posições)…" % (g["titulo"].replace("Detalhamento – ", ""), len(lista)))
         d = Desenho(nome=g["titulo"], escala=g["escala"])
@@ -574,12 +596,31 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                       for p in lista}}
         editaveis = ([p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))]
                      + [p.marca for p in lista if p.classe == "barra" and any(f.vista == "frente" for f in p.furos)])
-        celulas_g = [(lambda dd, x, y, p=p: desenho_da_posicao(p, dd, x, y, editavel=p.marca in editaveis)) for p in lista]
-        _empilhar(d, [(lambda x, y, f=f: f(d, x, y)) for f in celulas_g])
+        # um quadro por tipo de peça (terças, suportes de terça, chapas…), como os conjuntos
+        celulas_g = []
+        if chave == "telhas":
+            # paginação: cada face com as chapas lado a lado, marca e comprimento real
+            try:
+                nome_tl = lambda m: nomes_pos.get(fundidas.get(m, m)) or fundidas.get(m, m)    # noqa: E731
+                faces = faces_de_telhas(pecas, md, nome_tl)
+            except Exception as exc:              # noqa: BLE001
+                faces = []
+                avisos.append("paginação das telhas não gerada: %s" % exc)
+            celulas_g += [("paginacao", (lambda dd, x, y, f=f, i=i: desenho_da_paginacao(f, dd, x, y, i)))
+                          for i, f in enumerate(faces, 1)]
+        celulas_g += [("multidobra", (lambda dd, x, y, t=t: desenho_da_multidobra(t, dd, x, y, t["nome"]))) for t in extra_md]
+        celulas_g += [(nomeacao["tipos"].get(p.marca) or p.tipo_nome or p.classe,
+                       (lambda dd, x, y, p=p: desenho_da_posicao(p, dd, x, y, editavel=p.marca in editaveis))) for p in lista]
+        for t in extra_md:
+            d.metadados["detalhamento"]["itens"][t["conjunto"]] = {
+                "quantidade": t["instancias"], "perfil": "%s multi-dobra" % t["perfil"], "material": t["material"],
+                "comprimento": round(t["desenv_ext"]), "espessura": 0, "peso": round(t["peso"], 2),
+                "classe": "Telha multi-dobra", "categoria": "TELHAS", "marcas": [t["conjunto"]], "nome": t["nome"]}
+        _quadros_por_tipo(d, celulas_g, largura_max_papel=800.0, titulos=QUADROS_POSICOES)
         d.metadados["detalhamento"]["editaveis"] = editaveis
         d.metadados["detalhamento"]["furos_originais"] = {
             p.marca: [_furo_dict(f) for f in p.furos if f.vista == "frente"] for p in lista if p.marca in editaveis}
-        faixas[chave] = (celulas_g, 800.0, dict(d.metadados["detalhamento"]))
+        faixas[chave] = (celulas_g, 800.0, dict(d.metadados["detalhamento"]), QUADROS_POSICOES)
         if chave in grupos:
             desenhos[chave] = d
 
@@ -608,6 +649,8 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                            "peso": round(p.peso, 3), "peso_total": round(p.peso_total, 2),
                            "conjuntos": list(p.conjuntos), "observacoes": list(p.observacoes)})
     return {"desenhos": desenhos, "posicoes": resumo_pos, "conjuntos": conjuntos_info,
+            "multidobras": [{k: v for k, v in t.items() if k not in ("ids", "p1", "p2", "d1", "d2", "I", "T", "sentido")}
+                            for t in md["telhas"]],
             "acessorios": acessorios, "regra_tercas": mudadas, "avisos": avisos,
             "peso_total": round(sum(p.peso_total for p in posicoes), 1),
             "objetos_posicoes": posicoes, "objetos_pecas": pecas, "camadas": camadas,

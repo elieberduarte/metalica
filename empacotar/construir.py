@@ -83,6 +83,8 @@ def executavel():
            "--collect-submodules", "nucleo", "--collect-submodules", "nucleo3d",
            "--collect-submodules", "saida", "--collect-submodules", "ifc",
            "--hidden-import", "versao",
+           # DXF do CAD (R2010, cotas DIMENSION): a ezdxf traz tabelas de fontes em dados
+           "--collect-submodules", "nucleo2d", "--collect-submodules", "ezdxf", "--collect-data", "ezdxf",
            # o matplotlib só desenha em arquivo (Agg): interface gráfica e testes ficam fora
            "--exclude-module", "tkinter", "--exclude-module", "pytest",
            "--exclude-module", "IPython", "--exclude-module", "PyQt5",

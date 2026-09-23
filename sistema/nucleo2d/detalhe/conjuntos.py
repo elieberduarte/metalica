@@ -400,17 +400,13 @@ def _trechos_curvos(pts: Sequence[Tuple[float, float]], fechada: bool) -> List[T
 
 
 def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set) -> List:
-    """Troca cada arco das silhuetas das peças `ids` pelo canto vivo e liga o canto de
-    fora ao de dentro com a linha da emenda.
-
-    O canto é a interseção das **tangentes nas duas pontas do arco** — para o quarto de
-    círculo calandrado é exatamente onde os dois banzos retos se cruzariam. Isso vale
-    tanto para a peça que é só o arco (o banzo calandrado do joelho) quanto para o arco
-    no meio de uma silhueta fechada. Os cantos de uma mesma peça caem na bissetriz; a
-    emenda em meia-esquadria é a linha do mais de fora ao mais de dentro.
+    """Troca cada arco das silhuetas das peças `ids` pela **corda**: a peça curva do canto
+    da tesoura (o banzo calandrado do joelho) sai como uma barra diagonal reta ligando as
+    duas pontas do arco — é o chanfro que a fábrica faz, em vez de calandrar. Vale para a
+    peça que é só o arco e para o arco no meio de uma silhueta fechada. O 3D fica com o
+    arco do modelo.
     """
     saida = list(novas)
-    cantos_por_peca: Dict[str, List[Tuple[float, float]]] = {}
     for e in novas:
         if not isinstance(e, Polilinha) or (e.atributos or {}).get("origem") not in ids:
             continue
@@ -428,32 +424,18 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set) -> List:
                 trechos = _trechos_curvos(pts, True)
         if not trechos:
             continue
-        cantos = []
+        mudou = False
         for i, j in sorted(trechos, reverse=True):
             if j >= len(pts) or j - i < 3:
                 continue
-            P = _cruzamento(pts[i], pts[i + 1], pts[j - 1], pts[j])
-            if P is None:
-                continue
-            corda = math.dist(pts[i], pts[j])
-            if math.dist(P, pts[i]) > 3.0 * corda + 1.0 or math.dist(P, pts[j]) > 3.0 * corda + 1.0:
-                continue
-            P = (round(P[0], 2), round(P[1], 2))
-            pts = pts[:i + 1] + [P] + pts[j:]
-            cantos.append(P)
-        if not cantos:
+            # o arco vai de pts[i+1] a pts[j-1] (pts[i] e pts[j] são as outras pontas dos
+            # trechos retos vizinhos): os vértices do meio saem, fica a corda
+            pts = pts[:i + 2] + pts[j - 1:]
+            mudou = True
+        if not mudou:
             continue
         e.vertices = [(round(x, 2), round(y, 2)) for x, y in pts]
-        cantos_por_peca.setdefault(str((e.atributos or {}).get("origem")), []).extend(cantos)
-    for origem, cantos in cantos_por_peca.items():
-        if len(cantos) < 2:
-            continue
-        P, Q = max(((a, b) for a in cantos for b in cantos), key=lambda ab: math.dist(*ab))
-        if math.dist(P, Q) < 5.0:
-            continue
-        e = Linha(camada="VISTA-FINA", a=P, b=Q, atributos={"emenda": "meia-esquadria", "origem": origem})
-        desenho.add(e)
-        saida.append(e)
+        e.atributos = dict(e.atributos or {}, chanfro="corda do arco")
     return saida
 
 
@@ -540,6 +522,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     vs = [_dot(_sub(p, origem), v) for e in instancia for p in e.vertices]
     u0, v0 = min(us), min(vs)
     atr = {"conjunto": marca, "detalhe": "conjunto"}
+    if nome:
+        atr["nome"] = nome                      # o grupo do conjunto no DXF leva o nome de produção
     p = _Papel(desenho, atr, dx, dy)
     esc = desenho.escala
     off, off2, off3 = 10.0, 20.0, 30.0
@@ -663,8 +647,20 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             # a folga da ponta ao primeiro suporte é curta (uns 120 mm): a cadeia sai mesmo
             # assim — é a medida que a fábrica marca no banzo
             desl = off2 if cadeia_cima else off
-            cadeia_suportes = (p.cadeia_alinhada(reta_cima, sup, desl, exigir_espaco=False) if reta_cima is not None
-                               else p.cadeia_h(sup, alt, desl, exigir_espaco=False))
+            if reta_cima is not None and cadeia_cima:
+                # as terças não caem exatamente nos nós (no TecnoMETAL ficam a uns 36 mm): a
+                # linha de chamada do suporte que atravessasse a cadeia dos nós pareceria um
+                # buraco nela. Os pontos da cadeia dos suportes ficam na linha de cota dos nós,
+                # e a chamada nasce ali.
+                (ax_, ay_), (bx_, by_) = reta_cima
+                cl = math.hypot(bx_ - ax_, by_ - ay_) or 1.0
+                nx_, ny_ = -(by_ - ay_) / cl * off * esc, (bx_ - ax_) / cl * off * esc
+                reta_sup = ((ax_ + nx_, ay_ + ny_), (bx_ + nx_, by_ + ny_))
+                sup_desl = [s + nx_ for s in sup]          # a mesma abscissa ao longo da reta deslocada
+                cadeia_suportes = p.cadeia_alinhada(reta_sup, sup_desl, desl - off, exigir_espaco=False)
+            else:
+                cadeia_suportes = (p.cadeia_alinhada(reta_cima, sup, desl, exigir_espaco=False) if reta_cima is not None
+                                   else p.cadeia_h(sup, alt, desl, exigir_espaco=False))
     cadeia = len(alturas) > 2 and p.cadeia_v(alturas, larg, off)
     p.cota_v(0, alt, larg, off2 if cadeia else off)
     _rotular_barras(p, rotulos, esc)
