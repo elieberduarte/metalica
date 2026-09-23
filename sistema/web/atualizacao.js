@@ -45,5 +45,9 @@
     tema.before(botao);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(verificar, 1500)); else setTimeout(verificar, 1500);
-  setInterval(verificar, 30 * 60 * 1000);
+  setInterval(verificar, 15 * 60 * 1000);
+  // a tela fica aberta o dia inteiro: pergunta também quando a janela volta ao foco
+  // (no máximo a cada 5 minutos; o servidor guarda a resposta do GitHub)
+  let ultimaVez = Date.now();
+  window.addEventListener('focus', () => { if (Date.now() - ultimaVez > 5 * 60 * 1000) { ultimaVez = Date.now(); verificar(); } });
 })();

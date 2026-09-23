@@ -1025,9 +1025,17 @@ def _versao_tupla(v: str):
     return tuple(int(x) for x in re.findall(r"\d+", str(v))[:3]) or (0,)
 
 
+_ULTIMA_CONSULTA = {"quando": 0.0, "dados": None}
+#: Resposta do GitHub reaproveitada por este tempo (s): as telas perguntam ao ganhar foco,
+#: e a API sem autenticação aceita 60 consultas por hora.
+CACHE_ATUALIZACAO = 300.0
+
+
 def verificar_atualizacao() -> dict:
     """Consulta a última versão publicada no GitHub (releases) e diz se há uma mais nova
     que esta. Sem internet, devolve `disponivel: None` em vez de erro: a tela segue."""
+    if _ULTIMA_CONSULTA["dados"] is not None and time.time() - _ULTIMA_CONSULTA["quando"] < CACHE_ATUALIZACAO:
+        return dict(_ULTIMA_CONSULTA["dados"])
     import urllib.request
     fora = {"atual": versao.VERSAO, "ultima": None, "nova": False, "url": None, "arquivo": None, "disponivel": None}
     try:
@@ -1047,6 +1055,7 @@ def verificar_atualizacao() -> dict:
             fora["arquivo"] = a.get("browser_download_url")
             fora["tamanho_mb"] = round((a.get("size") or 0) / 1048576, 1)
             break
+    _ULTIMA_CONSULTA.update(quando=time.time(), dados=dict(fora))
     return fora
 
 
