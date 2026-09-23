@@ -1047,6 +1047,8 @@ export class Editor {
       if (dados) {                      // é o que "Calcular estrutura" analisa
         this._dadosGalpao = dados;
         this._atualizarBotaoCalcular();
+      } else {
+        this._carregarCalculoGravado(s); // modelo importado: o cálculo fica em calculo.json
       }
       this.dica(`Projeto "${projeto.nome || s}" aberto.`);
       const gerado = this.documento.projeto || {};
@@ -2422,6 +2424,7 @@ export class Editor {
     if (this._calculando) return false;
     if (this.analise && !forcar) { this._mostrarAnalise(true); return true; }
     if (!this._dadosGalpao) {
+      if (this.projeto) return this._calcularProjetoImportado({ forcar });
       this.aviso('Este modelo não veio de um galpão dimensionado, então não há esforços ' +
                  'para calcular. Use Arquivo → Gerar do galpão dimensionado… e tente de novo.',
                  'atencao');
@@ -2463,7 +2466,7 @@ export class Editor {
   }
 
   /** Guarda um resultado de análise e o põe na tela. Público: a verificação usa. */
-  aplicarAnalise(payload) {
+  aplicarAnalise(payload, { mostrar = true } = {}) {
     if (!payload || !payload.elementos) return false;
     this.analise = payload;
     const combos = payload.combinacoes || [];
@@ -2481,12 +2484,283 @@ export class Editor {
       this._aplicarAoMapa();
       this._agendarPaineis('analise');
     });
+    if (!mostrar) { this._atualizarBotaoCalcular(); return true; }
     this._mostrarAnalise(true);
     const n = Object.keys(payload.elementos).length;
     const pior = this._piorAproveitamento();
     this.dica(`Análise pronta: ${numero(n)} elemento(s)` +
               (pior ? ` — pior aproveitamento ${numero(pior * 100, 0)} %.` : '.'));
     return true;
+  }
+
+  // ------------------------------------------- cálculo do modelo importado (IFC)
+
+  /**
+   * "Calcular estrutura" num projeto que veio de IFC: o servidor monta o modelo de
+   * cálculo a partir dos sólidos (tesouras, terças, cargas) e devolve o mesmo mapa do
+   * galpão. Os parâmetros (vento, sobrecarga, apoios) vêm de um diálogo; `trocas` refaz
+   * o cálculo com outros perfis de cálculo e traz a comparação com o anterior.
+   */
+  async _calcularProjetoImportado({ forcar = false, trocas = null } = {}) {
+    if (this._calculando) return false;
+    if (this.analise && !forcar && !trocas) { this._mostrarAnalise(true); return true; }
+    let corpo;
+    if (trocas) {
+      corpo = { trocas, comparar: true };
+    } else {
+      const par = await this._dialogoParametrosCalculo();
+      if (!par) return false;
+      corpo = { parametros: par };
+    }
+    this._calculando = true;
+    this._atualizarBotaoCalcular();
+    this.dica('Calculando a estrutura do modelo importado…');
+    const parar = this._acompanharProgresso('Cálculo: ');
+    const geracao = ++this._geracaoAnalise;
+    let r = null;
+    try {
+      r = await this.api.calcularProjeto(this.projeto, corpo);
+    } catch (e) {
+      this.aviso(`Não foi possível calcular a estrutura: ${e.message}`, 'erro', 0);
+    } finally {
+      parar();
+      this._calculando = false;
+    }
+    if (geracao !== this._geracaoAnalise) return false;
+    if (!r || !r.elementos) {
+      this._atualizarBotaoCalcular();
+      this.dica('Cálculo indisponível.');
+      return false;
+    }
+    await this._carregarMapa();
+    const antes = r.antes;
+    delete r.antes;
+    this.aplicarAnalise(r);
+    const res = r.resumo || {};
+    const rep = res.reprovadas || [];
+    const n = Object.keys(r.elementos).length;
+    this.dica(`Cálculo pronto: ${numero(n)} posições verificadas, ${rep.length} reprovada(s)` +
+              (res.pior_aproveitamento ? `, pior aproveitamento ${numero(res.pior_aproveitamento * 100, 0)} %.` : '.'));
+    for (const t of (r.avisos || []).filter(a => !/fora do modelo/.test(a)).slice(0, 3)) this.aviso(t, 'atencao', 12000);
+    if (antes) this._mostrarComparacao(antes, r, trocas);
+    return true;
+  }
+
+  /** Cálculo gravado no projeto (calculo.json): entra como análise pronta, sem ligar o mapa. */
+  async _carregarCalculoGravado(s) {
+    let r = null;
+    try { r = await this.api.calculoDoProjeto(s); } catch { r = null; }
+    if (!r || !r.calculo || !r.calculo.elementos || this.projeto !== s) return;
+    r.calculo.parametros = r.calculo.parametros || r.parametros || {};
+    this.aplicarAnalise(r.calculo, { mostrar: false });
+    this.dica(`Projeto aberto. Há um cálculo gravado${r.quando ? ` (${r.quando})` : ''}: "Mostrar análise" o traz de volta; "Recalcular" refaz.`);
+  }
+
+  /** Diálogo dos parâmetros do cálculo: vento, cargas, apoios, aços. Devolve null se cancelado. */
+  async _dialogoParametrosCalculo() {
+    let g;
+    try { g = await this.api.geometriaParaCalculo(this.projeto); }
+    catch (e) { this.aviso(`Não foi possível ler o modelo para o cálculo: ${e.message}`, 'erro', 0); return null; }
+    if (!g.detalhado) {
+      this.aviso('Gere o detalhamento primeiro (Desenho 2D → Detalhar peças e conjuntos): é ele que ' +
+                 'classifica tesouras, terças e contraventamentos para o cálculo.', 'atencao', 0);
+      return null;
+    }
+    if (!g.tesouras) {
+      this.aviso('O nomeador não encontrou tesouras neste modelo (conjuntos de treliça com banzos e ' +
+                 'diagonais). O cálculo do modelo importado começa pelas tesouras.', 'atencao', 0);
+      return null;
+    }
+    const padrao = { ...(g.padrao || {}), ...(g.parametros || {}) };
+    if (padrao.altura_beiral == null) padrao.altura_beiral = g.cota_apoio_m;
+    if (padrao.telha == null) padrao.telha = g.telha_kN_m2;
+    const entradas = {};
+    const grade = el('div', { class: 'campos' });
+    const num = (k, rot, titulo = '') => {
+      entradas[k] = el('input', { type: 'text', value: padrao[k] == null ? '' : String(padrao[k]).replace('.', ','),
+                                  title: titulo, placeholder: titulo ? 'auto' : '' });
+      grade.append(el('label', { texto: rot, title: titulo }), entradas[k]);
+    };
+    const sel = (k, rot, opcoes) => {
+      const atual = padrao[k] == null ? '' : String(padrao[k]);
+      const lista = opcoes.some(o => (Array.isArray(o) ? o[0] : o) === atual) || !atual ? opcoes : [[atual, atual], ...opcoes];
+      entradas[k] = this._lista(lista, atual, () => {});
+      grade.append(el('label', { texto: rot }), entradas[k]);
+    };
+    grade.append(el('h4', { texto: 'Vento (NBR 6123)', style: 'grid-column:1/-1;margin:.2em 0 0' }));
+    num('v0', 'V₀ (m/s)');
+    sel('categoria', 'Categoria do terreno', [['I', 'I — mar, lago'], ['II', 'II — campo aberto'], ['III', 'III — subúrbio, fazendas'], ['IV', 'IV — cidade, industrial'], ['V', 'V — centro de cidade']]);
+    sel('classe', 'Classe', [['A', 'A — até 20 m'], ['B', 'B — 20 a 50 m'], ['C', 'C — mais de 50 m']]);
+    sel('aberturas', 'Fechamento', [['duas faces opostas', 'fechado, duas faces permeáveis'], ['quatro faces permeáveis', 'quatro faces permeáveis (aberto)'], ['estanque', 'estanque']]);
+    num('altura_beiral', 'Altura do beiral (m)', 'acima do solo; o modelo dá a cota do apoio');
+    grade.append(el('h4', { texto: 'Cargas', style: 'grid-column:1/-1;margin:.4em 0 0' }));
+    num('telha', 'Telha (kN/m²)', 'peso da telha por m² de cobertura');
+    num('sobrecarga', 'Sobrecarga (kN/m²)', 'NBR 8800: mínimo 0,25 kN/m²');
+    num('carga_extra', 'Permanente extra (kN/m²)', 'forro, instalações, tubulação pendurada');
+    grade.append(el('h4', { texto: 'Travamentos e apoios', style: 'grid-column:1/-1;margin:.4em 0 0' }));
+    num('correntes', 'Correntes por vão de terça', 'vazio = contadas no modelo (barras curtas que encostam na terça)');
+    num('trava_inferior', 'Travamento do banzo inferior (m)', 'espaçamento dos travamentos laterais; vazio = os lidos no modelo (nenhum = banzo inteiro)');
+    sel('apoio', 'Apoios da tesoura', [['rotulado', 'rotulados nos dois lados'], ['movel', 'rotulado + móvel']]);
+    grade.append(el('h4', { texto: 'Aços e critérios', style: 'grid-column:1/-1;margin:.4em 0 0' }));
+    const acos = (this.catalogo && this.catalogo.acos && this.catalogo.acos.length) ? this.catalogo.acos
+      : ['CIVIL 300', 'CIVIL 350', 'CF-26 (NBR 6650)', 'ASTM A36', 'ASTM A572 Gr.50'];
+    sel('aco_frio', 'Aço dos formados a frio', acos.map(a => [a, a]));
+    sel('aco_laminado', 'Aço dos laminados', acos.map(a => [a, a]));
+    num('flecha_tesoura', 'Flecha da tesoura L/', '');
+    num('flecha_terca', 'Flecha da terça L/', '');
+    const corpo = el('div', {},
+      el('p', { class: 'explica', texto: `O modelo tem ${g.tesouras} tesoura(s) (${(g.conjuntos || []).join(', ')}), ` +
+        `vão ${numero(g.vao_m, 2)} m, inclinação ${numero(g.inclinacao_graus, 1)}°, apoio na cota ${numero(g.cota_apoio_m, 2)} m, ` +
+        `${numero(g.barras)} barras com perfil reconhecido. O peso próprio e a telha são medidos do modelo; ` +
+        'as tesouras viram pórticos planos, as terças vigas entre tesouras. Vento pela NBR 6123 nas tabelas de galpão de duas águas.' }),
+      grade);
+    for (const t of (g.avisos || []).slice(0, 3)) corpo.append(el('p', { class: 'explica', texto: t }));
+    if (await this.dialogo({ titulo: 'Calcular a estrutura do modelo importado', corpo, ok: 'Calcular' }) !== 'ok') return null;
+    const par = {};
+    const numeros = ['v0', 'altura_beiral', 'telha', 'sobrecarga', 'carga_extra', 'correntes', 'trava_inferior', 'flecha_tesoura', 'flecha_terca'];
+    for (const [k, e] of Object.entries(entradas)) {
+      const v = String(e.value ?? '').trim();
+      if (numeros.includes(k)) {
+        const n = parseFloat(v.replace(',', '.'));
+        par[k] = v === '' || !isFinite(n) ? null : n;
+      } else {
+        par[k] = v;
+      }
+    }
+    return par;
+  }
+
+  /** Perfis usados no cálculo e os do catálogo, para o seletor de troca. */
+  _opcoesDePerfilDeCalculo(atual) {
+    const doProjeto = new Set();
+    for (const info of Object.values((this.analise && this.analise.elementos) || {})) if (info.perfil) doProjeto.add(info.perfil);
+    const s = el('select');
+    s.append(el('option', { value: atual, texto: `${atual} (atual)`, selected: true }));
+    const g1 = el('optgroup', { label: 'Perfis deste projeto' });
+    for (const p of [...doProjeto].sort()) if (p !== atual) g1.append(el('option', { value: p, texto: p }));
+    if (g1.children.length) s.append(g1);
+    const porTipo = new Map();
+    for (const p of (this.catalogo && this.catalogo.perfis) || []) {
+      if (doProjeto.has(p.nome)) continue;
+      if (!porTipo.has(p.tipo)) porTipo.set(p.tipo, el('optgroup', { label: `Catálogo · ${p.tipo}` }));
+      porTipo.get(p.tipo).append(el('option', { value: p.nome, texto: `${p.nome} · ${numero(p.massa, 1)} kg/m` }));
+    }
+    for (const g of porTipo.values()) s.append(g);
+    return s;
+  }
+
+  /** Bloco "Perfil de cálculo" da peça selecionada (só no modelo importado). */
+  _blocoTrocaPerfil(marca, info) {
+    const caixa = el('div', { class: 'campos' });
+    const atual = info.perfil || '';
+    const s = this._opcoesDePerfilDeCalculo(atual);
+    s.title = 'Refaz o cálculo com este perfil na posição (todas as peças da marca) e mostra o que mudou';
+    s.addEventListener('change', () => { if (s.value && s.value !== atual) this._trocarPerfil(marca, s.value); });
+    caixa.append(el('label', { texto: 'Perfil de cálculo' }), s);
+    const outro = el('input', { type: 'text', placeholder: 'ou nome de fábrica: U100X50X3.04, C150X75X20X2.25…',
+                                title: 'Enter aplica' });
+    outro.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && outro.value.trim()) { ev.preventDefault(); this._trocarPerfil(marca, outro.value.trim()); }
+    });
+    caixa.append(el('label', { texto: '' }), outro);
+    const trocas = (this.analise.parametros && this.analise.parametros.trocas) || {};
+    if (trocas[marca]) {
+      caixa.append(el('label', { texto: 'No modelo' }),
+        el('span', { class: 'valor' }, el('button', { type: 'button', texto: 'Voltar ao perfil do modelo',
+          title: 'Tira a troca desta posição e recalcula',
+          onclick: () => this._trocarPerfil(marca, null) })));
+    }
+    return caixa;
+  }
+
+  async _trocarPerfil(marca, perfil) {
+    const trocas = { ...((this.analise && this.analise.parametros && this.analise.parametros.trocas) || {}) };
+    if (perfil) trocas[marca] = perfil; else delete trocas[marca];
+    return this._calcularProjetoImportado({ trocas });
+  }
+
+  /** O que mudou entre o cálculo anterior e o atual (troca de perfil). */
+  _mostrarComparacao(antes, r, trocas) {
+    const linhas = [];
+    for (const [marca, el_] of Object.entries(r.elementos || {})) {
+      const a = antes[marca] || {};
+      const a0 = typeof a.aproveitamento === 'number' ? a.aproveitamento : null;
+      const a1 = typeof el_.aproveitamento === 'number' ? el_.aproveitamento : null;
+      const mudouPerfil = a.perfil && a.perfil !== el_.perfil;
+      const delta = a0 !== null && a1 !== null ? a1 - a0 : 0;
+      if (!mudouPerfil && Math.abs(delta) < 0.005) continue;
+      linhas.push({ marca, nome: el_.nome || '', perfil0: a.perfil || '', perfil1: el_.perfil || '', a0, a1, delta, mudouPerfil });
+    }
+    linhas.sort((x, y) => (y.mudouPerfil - x.mudouPerfil) || Math.abs(y.delta) - Math.abs(x.delta));
+    const corpo = el('div', {});
+    const pct = (v) => v === null ? '—' : `${numero(v * 100, 0)} %`;
+    if (!linhas.length) {
+      corpo.append(el('p', { class: 'explica', texto: 'Nenhuma peça mudou de aproveitamento.' }));
+    } else {
+      const lista = el('div', { class: 'lista-linhas comparacao' });
+      for (const l of linhas.slice(0, 40)) {
+        lista.append(el('div', { class: 'linha', title: l.mudouPerfil ? `${l.perfil0} → ${l.perfil1}` : l.perfil1 },
+          el('span', { class: 'marca', texto: l.marca }),
+          el('span', { class: 'nome', texto: (l.nome ? `${l.nome} · ` : '') + (l.mudouPerfil ? `${l.perfil0} → ${l.perfil1}` : l.perfil1) }),
+          el('span', { class: 'contagem', texto: `${pct(l.a0)} → ` }),
+          el('span', { class: 'aprov', dados: { ok: l.a1 !== null && l.a1 <= 1 ? '1' : '' }, texto: pct(l.a1) })));
+      }
+      corpo.append(el('p', { class: 'explica', texto: `${linhas.length} posição(ões) mudaram (as vizinhas mudam pela redistribuição dos esforços na tesoura).` }), lista);
+    }
+    const rep = (r.resumo && r.resumo.reprovadas) || [];
+    corpo.append(el('p', { class: 'explica', texto: rep.length ? `Continuam reprovadas: ${rep.join(', ')}.` : 'Todas as posições verificadas passam.' }));
+    this.dialogo({ titulo: 'Troca de perfil de cálculo: o que mudou', corpo, ok: 'Fechar' });
+  }
+
+  /** Resumo, avisos, trocas e não verificadas do cálculo do modelo importado. */
+  _blocoResumoCalculo(a) {
+    const caixa = el('div', { class: 'grupo-campos' }, el('h4', { texto: 'Cálculo do modelo importado' }));
+    const res = a.resumo || {};
+    const v = res.vento || {};
+    const campos = el('div', { class: 'campos' });
+    const linha = (rot, txt) => { if (txt) campos.append(el('label', { texto: rot }), el('span', { class: 'valor quebra', texto: txt })); };
+    linha('Tesouras', `${numero(res.tesouras)} (${numero(res.tipos_de_tesoura)} tipo(s)) · vão ${numero(res.vao_m, 2)} m · ${numero(res.inclinacao_graus, 1)}°`);
+    linha('Terças', `${numero(res.tercas)} posição(ões)`);
+    linha('Cargas', `telha ${numero(res.telha_kN_m2, 3)} · sobrecarga ${numero(res.sobrecarga_kN_m2, 2)}` +
+                    (res.carga_extra_kN_m2 ? ` · extra ${numero(res.carga_extra_kN_m2, 2)}` : '') + ' kN/m²');
+    if (v.V0) linha('Vento', `V₀ ${numero(v.V0)} m/s · cat. ${v.categoria || ''}${v.classe || ''} · q ${numero(v.q, 3)} kN/m² · h ${numero(v.h, 2)} m`);
+    const rep = res.reprovadas || [];
+    campos.append(el('label', { texto: 'Reprovadas' }),
+      el('span', { class: 'valor' }, el('span', { class: 'aprov', dados: { ok: rep.length ? '' : '1' },
+        texto: rep.length ? `${rep.length}: ${rep.join(', ')}` : 'nenhuma' })));
+    caixa.append(campos);
+    const trocas = (a.parametros && a.parametros.trocas) || {};
+    const ts = Object.entries(trocas);
+    if (ts.length) {
+      const lista = el('div', { class: 'lista-linhas' });
+      for (const [marca, perfil] of ts) {
+        lista.append(el('div', { class: 'linha', title: 'perfil de cálculo diferente do modelo' },
+          el('span', { class: 'marca', texto: marca }),
+          el('span', { class: 'nome', texto: `→ ${perfil}` }),
+          el('button', { type: 'button', texto: '✕', title: 'desfazer a troca', onclick: () => this._trocarPerfil(marca, null) })));
+      }
+      caixa.append(el('p', { class: 'analise-descricao', texto: 'Perfis de cálculo trocados (o sólido do modelo continua o de fábrica):' }), lista);
+    }
+    const avisos = a.avisos || [];
+    if (avisos.length) {
+      const d = el('details', {}, el('summary', { texto: `${avisos.length} aviso(s) do cálculo` }));
+      for (const t of avisos) d.append(el('p', { class: 'analise-descricao', texto: t }));
+      caixa.append(d);
+    }
+    const nv = res.nao_verificadas || [];
+    if (nv.length) {
+      const d = el('details', {}, el('summary', { texto: `${nv.length} posição(ões) não verificadas` }));
+      d.append(el('p', { class: 'analise-descricao', texto: 'Fora das tesouras e das terças: contraventamentos, agulhamentos, consoles de apoio. Ficam para uma próxima etapa.' }));
+      const lista = el('div', { class: 'lista-linhas' });
+      for (const x of nv.slice(0, 60)) {
+        lista.append(el('div', { class: 'linha' }, el('span', { class: 'marca', texto: x.marca }),
+          el('span', { class: 'nome', texto: `${x.nome ? x.nome + ' · ' : ''}${x.tipo} · ${x.perfil}` }),
+          el('span', { class: 'contagem', texto: `${x.pecas}×` })));
+      }
+      d.append(lista);
+      caixa.append(d);
+    }
+    return caixa;
   }
 
   /** Liga ou desliga o mapa: cores e desenhos na cena, painel na coluna da direita. */
@@ -2637,6 +2911,7 @@ export class Editor {
 
     raiz.append(this._camadasAnalise(est));
     raiz.append(this._servicoAnalise(a));
+    if (a.origem === 'ifc') raiz.append(this._blocoResumoCalculo(a));
 
     const acoes = el('div', { class: 'acoes-painel' });
     acoes.append(el('button', { type: 'button', texto: 'Recalcular',
@@ -2738,7 +3013,7 @@ export class Editor {
       linha.append(
         el('span', { class: 'amostra', style: `background:${this._corDaEscala(t)}` }),
         el('span', { class: 'marca', texto: item.marca || '—' }),
-        el('span', { class: 'nome', texto: (item.elemento || '') + (fora ? ' *' : '') }),
+        el('span', { class: 'nome', texto: (info.nome ? `${info.nome} · ${info.tipo || ''}`.replace(/ · $/, '') : (item.elemento || '')) + (fora ? ' *' : '') }),
         el('span', { class: 'contagem', texto: this._formatarValor(item.valor, faixa) }));
       if (!faixa.percentual) {
         linha.append(el('span', { class: 'aprov', dados: { ok: ap !== null && ap <= 1 ? '1' : '' },
@@ -2874,7 +3149,7 @@ export class Editor {
     const rente = razao > 0.95 && razao < 1.05;     // rente ao limite, a casa decimal diz
     caixa.append(el('h4', { texto: 'Serviço' }),
       el('div', { class: 'servico-linha' },
-        el('span', { texto: 'Deslocamento do topo' }),
+        el('span', { texto: d.rotulo || 'Deslocamento do topo' }),
         el('strong', { class: atende ? 'bom' : 'ruim', texto: `${cm(d.u_cm)} cm` })),
       el('div', { class: 'barra-servico' },
         el('span', { class: 'preenche', dados: { ok: atende ? '1' : '' },
@@ -2908,8 +3183,8 @@ export class Editor {
       campos.append(el('label', { texto: rotulo }),
                     el('span', { class: 'valor quebra', title: titulo || texto, texto }));
     };
-    linha('Elemento', nome);
-    if (info.perfil) linha('Perfil', info.perfil);
+    linha('Elemento', info.titulo || nome);
+    if (info.perfil) linha('Perfil', info.perfil + (info.n > 1 ? ` (${info.n} peças geminadas)` : ''));
     if (typeof info.aproveitamento === 'number') {
       campos.append(el('label', { texto: 'S/R' }),
         el('span', { class: 'valor' },
@@ -2933,8 +3208,12 @@ export class Editor {
       }
       if (partes.length) linha('Dimensionou', partes.join(' · '));
       if (dim.caso) linha('Caso', dim.caso);
+      if (dim.Lx_cm) linha('Comprimentos', `Lx ${numero(dim.Lx_cm, 0)} cm · Ly ${numero(dim.Ly_cm, 0)} cm`);
+      if (dim.vao_m) linha('Vão da terça', `${numero(dim.vao_m, 2)} m · largura ${numero(dim.largura_m, 2)} m` +
+                                            (typeof dim.correntes === 'number' ? ` · ${dim.correntes} corrente(s)` : ''));
     }
     caixa.append(campos);
+    if (this.analise.origem === 'ifc' && this.projeto) caixa.append(this._blocoTrocaPerfil(nome, info));
   }
 
   /** Primeiro elemento analisado que está na seleção. */
@@ -2943,8 +3222,9 @@ export class Editor {
     if (!a) return null;
     for (const ent of this.selecao.entidades) {
       const at = ent.atributos || {};
-      const info = at.elemento && a.elementos[at.elemento];
-      if (info) return { nome: at.elemento, info, marca: at.marca || ent.nome || '' };
+      const chave = at.elemento || (at.marcas && at.marcas.posicao);
+      const info = chave && a.elementos[chave];
+      if (info) return { nome: chave, info, marca: at.marca || (at.marcas && at.marcas.posicao) || ent.nome || '' };
     }
     return null;
   }
@@ -3011,11 +3291,12 @@ export class Editor {
     const noModelo = new Map();
     for (const ent of this.documento.entidades.values()) {
       const at = ent.atributos || {};
-      if (!at.elemento) continue;
-      let reg = noModelo.get(at.elemento);
-      if (!reg) noModelo.set(at.elemento, reg = { marca: '', ids: [] });
+      const chave = at.elemento || (at.marcas && at.marcas.posicao);
+      if (!chave) continue;
+      let reg = noModelo.get(chave);
+      if (!reg) noModelo.set(chave, reg = { marca: '', ids: [] });
       reg.ids.push(ent.id);
-      if (!reg.marca && at.marca) reg.marca = at.marca;
+      if (!reg.marca) reg.marca = at.marca || (at.marcas && at.marcas.posicao) || '';
     }
     const itens = [];
     for (const [nome, info] of Object.entries(a.elementos)) {

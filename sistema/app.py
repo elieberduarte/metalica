@@ -24,6 +24,8 @@ Rotas da API:
     POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
     POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + lista de materiais
     POST /api/projetos/<slug>/detalhar-posicao {marca}   detalhe de uma peça (chapa vira paramétrica)
+    POST /api/projetos/<slug>/calcular {parametros, trocas, comparar}  cálculo estrutural do modelo importado
+    GET  /api/projetos/<slug>/calculo[/geometria]        último cálculo gravado / dados para o diálogo
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-furos   furos do detalhe → chapas do modelo
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
     POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
@@ -526,6 +528,76 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
 
 #: Etapa corrente das operações longas, por projeto: {slug: {"etapa", "quando"}}.
 PROGRESSO: Dict[str, dict] = {}
+
+
+# ----------------------------------------------------------- cálculo do modelo importado
+
+def _caminho_calculo(s: str) -> str:
+    return os.path.join(_gerente()._existente(s), "calculo.json")
+
+
+def calculo_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/calculo: o último cálculo gravado (parâmetros e resultado)."""
+    caminho = _caminho_calculo(s)
+    if not os.path.exists(caminho):
+        return {"calculo": None}
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            dados = json.load(f)
+    except (OSError, ValueError):
+        return {"calculo": None}
+    return {"calculo": dados.get("resultado"), "parametros": dados.get("parametros") or {},
+            "quando": dados.get("quando")}
+
+
+def geometria_para_calculo(s: str) -> dict:
+    """GET /api/projetos/<s>/calculo/geometria: o que o diálogo precisa saber do modelo
+    antes de calcular (tesouras, vão, cota do apoio, peso da telha)."""
+    from nucleo3d import calculo_ifc
+    doc = _documento3d_do_projeto(s)
+    nomes = _nomes_producao(s)
+    g = calculo_ifc.geometria_do_modelo(doc, nomes) if nomes else {"tesouras": 0, "avisos": []}
+    g["detalhado"] = bool(nomes)
+    g["padrao"] = {k: v for k, v in calculo_ifc.PARAMETROS_PADRAO.items() if k != "trocas"}
+    anterior = calculo_do_projeto(s)
+    g["parametros"] = anterior.get("parametros") or {}
+    return g
+
+
+def calcular_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/calcular {parametros, trocas, comparar}: monta o modelo de
+    cálculo a partir dos sólidos do IFC, analisa, verifica e grava em calculo.json.
+
+    `parametros` sobrepõe os do cálculo anterior (os demais ficam); `trocas` {marca: perfil}
+    substitui a lista anterior de perfis de cálculo; `comparar` devolve em `antes` o
+    aproveitamento e o perfil de cada peça no cálculo anterior."""
+    from nucleo3d import calculo_ifc
+    try:
+        _progresso(s, "abrindo o modelo…")
+        doc = _documento3d_do_projeto(s)
+        nomes = _nomes_producao(s)
+        if not nomes:
+            raise ErroDeDados("gere o detalhamento primeiro (Desenho 2D → Detalhar peças e conjuntos): "
+                              "é ele que classifica tesouras, terças e contraventamentos.")
+        anterior = calculo_do_projeto(s)
+        par = dict(anterior.get("parametros") or {})
+        par.update({k: v for k, v in (corpo.get("parametros") or {}).items()})
+        if "trocas" in corpo:
+            par["trocas"] = {str(k): str(v) for k, v in (corpo.get("trocas") or {}).items() if v}
+        r = calculo_ifc.calcular(doc, nomes, par,
+                                 avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+        r["parametros"] = par
+        ant = anterior.get("calculo") or {}
+        if corpo.get("comparar") and ant.get("elementos"):
+            r["antes"] = {m: {"aproveitamento": el.get("aproveitamento"), "perfil": el.get("perfil"),
+                              "ok": el.get("ok")} for m, el in ant["elementos"].items()}
+        from projetos import _gravar_json
+        _gravar_json(_caminho_calculo(s), {"parametros": par, "resultado": {k: v for k, v in r.items() if k != "antes"},
+                                          "quando": time.strftime("%Y-%m-%d %H:%M:%S")})
+        _gerente().tocar(s)
+        return r
+    finally:
+        _fim_progresso(s)
 
 
 def _progresso(s: str, etapa: str):
@@ -1357,6 +1429,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"historico": _gerente().listar_historico(partes[0])})
                 if len(partes) == 2 and partes[1] == "progresso":
                     return self._json(progresso_do_projeto(partes[0]))
+                if len(partes) == 2 and partes[1] == "calculo":
+                    return self._json(calculo_do_projeto(partes[0]))
+                if len(partes) == 3 and partes[1] == "calculo" and partes[2] == "geometria":
+                    return self._json(geometria_para_calculo(partes[0]))
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":
@@ -1412,6 +1488,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gerar_vista_2d(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar":
                     return self._json(detalhar_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "calcular":
+                    return self._json(calcular_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "materiais":
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":

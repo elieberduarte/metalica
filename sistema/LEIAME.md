@@ -508,6 +508,38 @@ servidor grava `<projeto>/aberto.json` {máquina, usuário, hora} (no máximo a 
 A tela Projetos e o editor avisam quando outra máquina tem o projeto aberto há menos de 3 min — é o caso
 de duas máquinas na mesma pasta do OneDrive; a guarda `base_alterado` continua a impedir gravar por cima.
 
+## Cálculo do modelo importado (IFC de fábrica)
+
+`nucleo3d/calculo_ifc.py` monta o modelo de cálculo a partir dos sólidos do TecnoMETAL, sem barra
+paramétrica: cada instância de conjunto classificado como **tesoura** (nomes.json do detalhamento)
+vira um pórtico plano no seu plano — banzos contínuos divididos nos nós, diagonais e montantes
+rotulados, nós nos pontos de trabalho, peças geminadas (dois U) somadas; peças de ponta livre
+(consoles de apoio à coluna, que não está no modelo) ficam fora com aviso; apoios nos nós mais
+baixos de cada extremidade, ou nos pontos informados (`apoios`). Toda barra fora das tesouras cujo
+eixo cruza o plano da tesoura junto ao banzo superior é **terça** (reação do trecho tributário como
+carga concentrada) e junto ao inferior é **travamento**. Cargas: peso próprio medido (perfil e
+chapas), telha pela espessura do nome ou informada, sobrecarga (0,25 kN/m²), vento NBR 6123 com a
+geometria lida (vão, comprimento, inclinação, cota do apoio) — cobertura de uma água usa a sucção
+mais severa das duas águas. Combinações como no galpão. Verificação por posição (marca), com os
+piores esforços entre as instâncias: U/Ue formados a frio pela NBR 14762 (MRD; U simples sem
+enrijecedor em `propriedades_u`, mesa AL, sem modo distorcional), cantoneiras/W/tubos pela NBR 8800
+(cantoneira fria com fator Q), terças pela rotina de terça (correntes contadas no modelo), redondas
+à tração. Perfis pelo nome de fábrica em `nucleo/perfis_fabrica.py` (U92X40X2.25,
+C150X75X20X2.25, L1.1/4''X1/8'', W150X13.00, FE RED 3/8''…); aço CIVIL 300/350 no catálogo.
+
+Rotas: `GET /api/projetos/<s>/calculo/geometria` (o que o diálogo precisa), `POST .../calcular
+{parametros, trocas, comparar}` (grava `<projeto>/calculo.json`; `trocas` = {marca: perfil de
+cálculo}, `comparar` devolve `antes`), `GET .../calculo`. No editor 3D, **Calcular estrutura**
+num projeto importado abre o diálogo (vento, cargas, travamentos, apoios, aços) e pinta o mapa;
+o cálculo gravado volta ao abrir o projeto. Em "Peça selecionada", **Perfil de cálculo** troca o
+perfil da posição (catálogo, perfis do projeto ou nome de fábrica), recalcula e mostra o que mudou;
+o sólido do modelo continua o de fábrica.
+
+Limites: contraventamentos, agulhamentos e consoles não são verificados (sem cargas de oitão);
+ligações e chapas de nó não entram; terças de beiral apoiadas nos consoles ficam sem apoio; sem
+travamento lido no modelo o banzo inferior é verificado com o comprimento inteiro (informe
+`trava_inferior`); as tabelas de vento são de galpão fechado de duas águas.
+
 ## Testes
 
 ```bash
@@ -543,7 +575,9 @@ da pasta. `.github/workflows/testes.yml` roda o `pytest` no GitHub a cada push (
 Estes pontos são declarados no memorial e precisam de atenção do engenheiro:
 
 - **Galpão de duas águas simétrico**, pórtico de alma cheia. Treliça, shed, arco,
-  múltiplas naves e ponte rolante não estão implementados.
+  múltiplas naves e ponte rolante não estão implementados no dimensionador. O modelo
+  **importado** de IFC é calculado à parte (tesouras como pórticos planos, terças como vigas;
+  ver "Cálculo do modelo importado" e seus limites).
 - **Análise plana e elástica**, com efeitos de segunda ordem por amplificação B₁/B₂.
   Não há análise não linear geométrica nem plastificação.
 - **Fundação fora do escopo**: o sistema entrega as reações e a tração nos chumbadores;

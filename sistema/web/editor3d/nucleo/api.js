@@ -114,6 +114,19 @@ export class Api {
   /** Dimensiona o galpão e devolve o modelo 3D correspondente. */
   doGalpao(dados) { return postar(this._r('/api/modelo/do-galpao'), { dados }); }
 
+  /** Cálculo estrutural do modelo importado (sólidos do IFC) do projeto. */
+  calcularProjeto(s, corpo) {
+    return postar(this._r(`/api/projetos/${encodeURIComponent(s)}/calcular`), corpo || {});
+  }
+  /** Último cálculo gravado no projeto ({calculo, parametros, quando}). */
+  calculoDoProjeto(s) {
+    return pedir(this._r(`/api/projetos/${encodeURIComponent(s)}/calculo`), { cache: 'no-store' });
+  }
+  /** O que o diálogo de cálculo precisa saber do modelo (tesouras, vão, cota do apoio…). */
+  geometriaParaCalculo(s) {
+    return pedir(this._r(`/api/projetos/${encodeURIComponent(s)}/calculo/geometria`), { cache: 'no-store' });
+  }
+
   /** Catálogo do sistema de cálculo — usado pelo diálogo "gerar do galpão". */
   catalogoCalculo() { return pedir(this._r('/api/catalogo')); }
 }

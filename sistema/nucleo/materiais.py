@@ -41,6 +41,8 @@ ACOS: Dict[str, Aco] = {a.nome: a for a in [
     Aco("USI-SAC 350", 34.5, 49.0, "NBR 5920/5921", "chapa patinável"),
     # formados a frio
     Aco("CF-26 (NBR 6650)", 26.0, 41.0, "NBR 6650", "perfis formados a frio (terças, longarinas)"),
+    Aco("CIVIL 300", 30.0, 40.0, "NBR 6650 / CSN", "chapa laminada a quente para perfis formados a frio"),
+    Aco("CIVIL 350", 35.0, 45.0, "NBR 6650 / CSN", "chapa laminada a quente de alta resistência"),
     Aco("ZAR-230", 23.0, 31.0, "NBR 7008", "chapa galvanizada para perfis formados a frio"),
     Aco("ZAR-280", 28.0, 38.0, "NBR 7008", "chapa galvanizada de maior resistência"),
     Aco("ZAR-345", 34.5, 43.0, "NBR 7008", "chapa galvanizada estrutural"),

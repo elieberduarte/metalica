@@ -25,6 +25,15 @@
 import * as THREE from 'three';
 import { ESCALA, misturar } from './cena.js';
 
+/**
+ * Chave do elemento de uma entidade: `atributos.elemento` no galpão gerado; no modelo
+ * importado do IFC o cálculo verifica por posição, e a chave é a marca (`marcas.posicao`).
+ */
+export function elementoDaEntidade(ent) {
+  const at = (ent && ent.atributos) || {};
+  return at.elemento || (at.marcas && at.marcas.posicao) || null;
+}
+
 /** Grandezas que têm diagrama ao longo da barra. */
 export const GRANDEZAS_DE_DIAGRAMA = ['M', 'V', 'N'];
 
@@ -151,7 +160,8 @@ export class MapaDeEsforcos {
     this._tamanho = null;              // a régua dos desenhos vem do pórtico novo
     if (this.dados) {
       for (const [nome, el] of Object.entries(this.dados.elementos || {})) {
-        if (el && typeof el === 'object') this._porElemento.set(nome, { nome, ...el });
+        // a chave vence o campo `nome` do verbete (no modelo importado ele é o nome de produção)
+        if (el && typeof el === 'object') this._porElemento.set(nome, { ...el, nome });
       }
       for (const b of ((this.dados.portico || {}).barras || [])) {
         if (b && b.rotulo && ponto3(b.ini) && ponto3(b.fim)) this._barras.set(b.rotulo, b);
@@ -258,7 +268,7 @@ export class MapaDeEsforcos {
   /** Valor da grandeza atual para uma entidade do documento, ou null. */
   valorDaEntidade(ent) {
     if (!ent || !this.pronto) return null;
-    const nome = ent.atributos && ent.atributos.elemento;
+    const nome = elementoDaEntidade(ent);
     if (!nome) return null;
     return this._valorDoElemento(this._porElemento.get(nome));
   }
@@ -284,7 +294,9 @@ export class MapaDeEsforcos {
       linhas.push({
         id: primeira ? primeira.id : '',
         ids: ents.map(e => e.id),
-        marca: (primeira && primeira.atributos && primeira.atributos.marca) || el.marca || '',
+        marca: (primeira && primeira.atributos && (primeira.atributos.marca ||
+                (primeira.atributos.marcas && primeira.atributos.marcas.posicao))) || el.marca || el.nome || '',
+        rotulo: el.nome_producao || el.nome || '',
         elemento: el.nome,
         perfil: el.perfil || '',
         valor,
@@ -325,7 +337,7 @@ export class MapaDeEsforcos {
     const mapa = new Map();
     if (!this.documento) return mapa;
     for (const ent of this.documento.entidades.values()) {
-      const nome = ent.atributos && ent.atributos.elemento;
+      const nome = elementoDaEntidade(ent);
       if (!nome) continue;
       if (!mapa.has(nome)) mapa.set(nome, []);
       mapa.get(nome).push(ent);
@@ -546,8 +558,9 @@ export class MapaDeEsforcos {
     };
     for (const b of this._barras.values()) { engolir(b.ini); engolir(b.fim); }
     for (const n of (((this.dados || {}).portico || {}).nos || [])) engolir(n && n.p);
-    const dy = max[1] - min[1], dz = max[2] - min[2];
-    this._tamanho = Number.isFinite(dy) ? Math.max(dy, dz, 1000) : 10000;
+    const dx = max[0] - min[0], dy = max[1] - min[1], dz = max[2] - min[2];
+    // tesoura importada pode estar no plano x·z: a régua é a maior dimensão do desenho
+    this._tamanho = Number.isFinite(dy) ? Math.max(dx, dy, dz, 1000) : 10000;
     return this._tamanho;
   }
 

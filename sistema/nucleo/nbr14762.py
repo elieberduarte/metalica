@@ -122,6 +122,33 @@ def _trechos_ue(h, bf, d, t, r) -> List[dict]:
     return T
 
 
+def _trechos_u(h, bf, t, r) -> List[dict]:
+    """Linha média do U simples (sem enrijecedor), na mesma convenção de `_trechos_ue`.
+    Percorrida da ponta da mesa inferior à ponta da mesa superior; a mesa é elemento
+    AL (um bordo livre)."""
+    rm = r + t / 2.0
+    ym = (h - t) / 2.0
+    xw = t / 2.0
+    xl = bf - t / 2.0
+    T = []
+    T.append({"elem": "mesa_inf", "reta": ((xl, -ym), (xw + rm, -ym))})
+    T.append({"elem": "canto", "pts": _arco(xw + rm, -(ym - rm), rm, -math.pi / 2, -math.pi)})
+    T.append({"elem": "alma", "reta": ((xw, -(ym - rm)), (xw, ym - rm))})
+    T.append({"elem": "canto", "pts": _arco(xw + rm, ym - rm, rm, math.pi, math.pi / 2)})
+    T.append({"elem": "mesa_sup", "reta": ((xw + rm, ym), (xl, ym))})
+    for tr in T:
+        if "reta" in tr:
+            tr["pts"] = [tr["reta"][0], tr["reta"][1]]
+    return T
+
+
+def _trechos(sec: "SecaoUe") -> List[dict]:
+    """Trechos da linha média da seção (Ue, ou U simples quando `sec.d == 0`)."""
+    if sec.d <= 0:
+        return _trechos_u(sec.h, sec.bf, sec.t, sec.r)
+    return _trechos_ue(sec.h, sec.bf, sec.d, sec.t, sec.r)
+
+
 def _polilinha(trechos) -> List[Tuple[float, float]]:
     pts = []
     for tr in trechos:
@@ -332,6 +359,46 @@ def propriedades_ue(h: float, bf: float, d_enr: float, t: float,
                    J=p["J"], Cw=p["Cw"], massa=p["A"] * RHO * 1e-4)
 
 
+def propriedades_u(h: float, bf: float, t: float, r: Optional[float] = None,
+                   nome: str = "") -> SecaoUe:
+    """Propriedades de um **U simples** formado a frio (sem enrijecedor), pelo mesmo
+    método linear de `propriedades_ue`. Devolve `SecaoUe` com `d = 0`: as rotinas do
+    MRD tratam a mesa como elemento AL (k = 0,43) e não têm modo distorcional (não há
+    enrijecedor para girar). Dimensões em mm."""
+    for rot, val in (("h", h), ("bf", bf), ("t", t)):
+        if val is None or val <= 0:
+            raise ErroDeDados(f"dimensão {rot} deve ser positiva (recebido: {val})")
+    if not (0.4 <= t <= 8.0):
+        raise ErroDeDados(f"espessura t = {t} mm fora da faixa da NBR 6355 "
+                          "para perfis formados a frio (0,4 mm a 8,0 mm)")
+    if r is None:
+        r = 1.0 * t
+    rm = r + t / 2.0
+    if bf <= t + rm:
+        raise ErroDeDados(f"mesa bf = {bf} mm curta demais para o raio de dobra")
+    if h <= t + 2 * rm:
+        raise ErroDeDados(f"alma h = {h} mm curta demais para o raio de dobra")
+    hc, bfc, tc, rc = h / 10.0, bf / 10.0, t / 10.0, r / 10.0
+    trechos = _trechos_u(hc, bfc, tc, rc)
+    p = _props_linha(_polilinha(trechos), tc)
+    planos = {}
+    for tr in trechos:
+        if "reta" in tr:
+            (x1, y1), (x2, y2) = tr["reta"]
+            planos[tr["elem"]] = math.hypot(x2 - x1, y2 - y1)
+    Wx = p["Ix"] / (hc / 2.0)
+    Wy = p["Iy"] / max(bfc - p["xc"], p["xc"])
+    r0 = math.sqrt((p["Ix"] + p["Iy"]) / p["A"] + p["x0"] ** 2)
+    if not nome:
+        nome = (f"U {h:g}×{bf:g}×{t:.2f} (FF)".replace(".", ","))
+    return SecaoUe(nome=nome, h_mm=h, bf_mm=bf, d_mm=0.0, t_mm=t, r_mm=r,
+                   h=hc, bf=bfc, d=0.0, t=tc, r=rc,
+                   bw_plano=planos["alma"], bf_plano=planos["mesa_sup"], d_plano=0.0,
+                   A=p["A"], Ix=p["Ix"], Iy=p["Iy"], Wx=Wx, Wy=Wy,
+                   xc=p["xc"], xs=p["xs"], x0=p["x0"], r0=r0,
+                   J=p["J"], Cw=p["Cw"], massa=p["A"] * RHO * 1e-4)
+
+
 def _dims_do_nome(texto: str) -> Optional[Tuple[float, float, float, float]]:
     """Extrai h × bf × D × t (mm) de 'Ue 200×75×20×2,65'."""
     limpo = (texto.replace("×", "x").replace("X", "x").replace(",", ".")
@@ -356,15 +423,38 @@ def secao_do_perfil(p, r: Optional[float] = None) -> SecaoUe:
     """
     if not isinstance(p, Perfil):
         p = perfil(str(p))
-    if p.tipo != "Ue" or not p.nome.strip().upper().startswith("UE"):
-        raise ErroDeDados(f"{p.nome} não é um perfil U enrijecido (Ue); "
-                          "este módulo só dimensiona Ue. U simples, Z, Ze e "
+    nome_up = p.nome.strip().upper()
+    if p.tipo == "Ue" and not nome_up.startswith("UE"):
+        # U simples formado a frio ("U 100×50×2,00 (FF)"): três dimensões
+        dims3 = _dims_u_do_nome(p.dados.get("dim", "")) or _dims_u_do_nome(p.nome)
+        if dims3 is None:
+            raise ErroDeDados(f"não consegui ler as dimensões h×bf×t de {p.nome}")
+        h, bf, t = dims3
+        return propriedades_u(h, bf, t, r=r, nome=p.nome)
+    if p.tipo != "Ue":
+        raise ErroDeDados(f"{p.nome} não é um perfil formado a frio U ou Ue; "
+                          "este módulo só dimensiona U e Ue. Z, Ze e "
                           "cartola não estão implementados")
     dims = _dims_do_nome(p.dados.get("dim", "")) or _dims_do_nome(p.nome)
     if dims is None:
         raise ErroDeDados(f"não consegui ler as dimensões h×bf×D×t de {p.nome}")
     h, bf, d_enr, t = dims
     return propriedades_ue(h, bf, d_enr, t, r=r, nome=p.nome)
+
+
+def _dims_u_do_nome(texto: str) -> Optional[Tuple[float, float, float]]:
+    """Extrai h × bf × t (mm) de 'U 100×50×2,00 (FF)' ou '92×40×2,25'."""
+    limpo = (texto.replace("×", "x").replace("X", "x").replace(",", ".")
+             .replace("(FF)", " ").replace("(ff)", " "))
+    nums = []
+    for pedaco in limpo.replace("x", " ").replace("U", " ").replace("u", " ").split():
+        try:
+            nums.append(float(pedaco))
+        except ValueError:
+            pass
+    if len(nums) == 3:
+        return nums[0], nums[1], nums[2]
+    return None
 
 
 def perfis_ue(massa_max: Optional[float] = None,
@@ -412,6 +502,14 @@ def tensoes_criticas_locais(sec: SecaoUe, esforco: str = "compressao") -> dict:
     if esforco not in ("compressao", "flexao"):
         raise ErroDeDados("esforco deve ser 'compressao' ou 'flexao'")
     k_alma = K_AA_FLEXAO if esforco == "flexao" else K_AA
+    if sec.d <= 0:
+        # U simples: a mesa tem um bordo livre (AL) e não há enrijecedor
+        return {
+            "alma": _tensao_placa(k_alma, sec.bw_plano, sec.t),
+            "mesa": _tensao_placa(K_AL, sec.bf_plano, sec.t),
+            "enrijecedor": float("inf"),
+            "k_alma": k_alma, "k_mesa": K_AL, "k_enrijecedor": None,
+        }
     return {
         "alma": _tensao_placa(k_alma, sec.bw_plano, sec.t),
         "mesa": _tensao_placa(K_AA, sec.bf_plano, sec.t),
@@ -491,6 +589,8 @@ def forca_critica_distorcional(sec: SecaoUe, esforco: str = "compressao",
     """
     if esforco not in ("compressao", "flexao"):
         raise ErroDeDados("esforco deve ser 'compressao' ou 'flexao'")
+    if sec.d <= 0:
+        return float("inf")          # U simples: sem enrijecedor não há modo distorcional
     f = _mesa_enrijecedor(sec)
     bw = sec.h - sec.t                      # altura da linha média da alma
     k_phi = 3.0 * _D_PLACA * sec.t ** 3 / bw + max(k_mola, 0.0)
@@ -838,9 +938,9 @@ def _pecas_efetivas(sec: SecaoUe, fy: float, esforco: str, y_na: float) -> List[
     y_na: ordenada da linha neutra (cm), na convenção do `_trechos_ue`
     (y = 0 na meia altura). Para compressão centrada use y_na = None.
     """
-    trechos = _trechos_ue(sec.h, sec.bf, sec.d, sec.t, sec.r)
+    trechos = _trechos(sec)
     y_top = sec.h / 2.0
-    cm = coeficiente_mesa_enrijecida(sec, fy)
+    cm = coeficiente_mesa_enrijecida(sec, fy)      # U simples: D = 0 → R_I = 0 → k = 0,43
     pecas = []
     for tr in trechos:
         if tr["elem"] == "canto":
@@ -894,6 +994,13 @@ def _pecas_efetivas(sec: SecaoUe, fy: float, esforco: str, y_na: float) -> List[
                 pecas.append(tr["pts"])         # mesa tracionada: toda efetiva
                 continue
             bef = largura_efetiva(b, sec.t, sigma, cm["k"])
+            if sec.d <= 0:
+                # U simples: mesa AL, a parte efetiva encosta na dobra com a alma
+                # (mesa_inf vai da ponta livre à dobra; mesa_sup, da dobra à ponta)
+                pc = corta(b - bef, b) if tr["elem"] == "mesa_inf" else corta(0, bef)
+                if pc:
+                    pecas.append(pc)
+                continue
             for pc in (corta(0, bef / 2), corta(b - bef / 2, b)):
                 if pc:
                     pecas.append(pc)
