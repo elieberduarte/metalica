@@ -577,6 +577,26 @@ código 1 quando alguma conferência falha.
 sem janela (CDP); a maioria usa o modelo de exemplo do cliente, que não está no repositório — ver o LEIAME
 da pasta. `.github/workflows/testes.yml` roda o `pytest` no GitHub a cada push (Windows, Python 3.12).
 
+## Catálogo de peças
+
+`nucleo/catalogo.py` é o ponto único para "que peças existem": perfis I laminados (W, HP), U laminados e
+formados a frio, Ue, cantoneiras em polegada e em milímetro, tubos, barras redondas e chatas, chapas e
+parafusos — 495 itens. Junta `dados/perfis.json` (tabelas de fabricante, extraídas pelo `extrai_perfis.py`)
+com `dados/catalogo.json` (gerado por `dados/gerar_catalogo.py`: séries NBR 6355 e cantoneiras métricas
+calculadas pelo método linear da NBR 14762, mais chapas, barras e parafusos das tabelas do anexo). Cada item
+diz a `origem` — `tabela` ou `calculado` —, e quando o mesmo perfil está nos dois lugares vale o da tabela.
+
+`itens()`, `item()` (tolerante à grafia: `ue150x60x20x2,65`), `buscar()` (nome ou dimensão), `perfil_de()`
+(devolve o `Perfil` de cálculo, montando na hora os formados a frio e aceitando nome de fábrica fora do
+catálogo) e `alternativas()` — o que pode entrar no lugar de uma peça, na mesma família (`TROCA_COMPATIVEL`:
+U vira Ue e vice-versa; cantoneira não vira terça), com altura de seção entre metade e o dobro da atual
+(`FAIXA_ALTURA`) e a diferença de massa por metro. O padrão é "vizinhos": metade mais leves, metade mais
+pesados, os mais próximos.
+
+Rota `GET /api/catalogo/pecas` (sem parâmetros: famílias e resumo; `familia`, `q`, `alternativas`) e tela
+`/catalogo`, ligada na barra da tela de projetos. Testes em `testes/test_catalogo.py`, inclusive um que
+confere se `dados/catalogo.json` ainda é o que o gerador produz.
+
 ## Desempenho no Modelo 3D com IFC grande
 
 **Escolha de peça pelo cursor**: o raycast do lote é próprio (`Lote._raycast`) — caixa do bloco, caixa de

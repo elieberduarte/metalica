@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101b2e">
+<script src="/tema-janela.js"></script>
+<script src="/atualizacao.js" defer></script>
+<title>Catálogo de peças — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M7 10h18M7 16h18M7 22h18' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round'/></svg>">
+<style>
+  .catalogo { max-width: 1400px; margin: 0 auto; padding: 16px 20px 60px; display: grid;
+              grid-template-columns: 250px minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .catalogo { grid-template-columns: 1fr; } }
+  .catalogo .caixa { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 12px 14px; }
+  .catalogo h2 { font-size: 14px; margin: 0 0 8px; color: var(--azul); }
+  .catalogo .familias { display: flex; flex-direction: column; gap: 2px; }
+  .catalogo .familias button { text-align: left; background: none; border: 0; border-radius: var(--raio-p);
+    padding: 7px 9px; font: inherit; font-size: 13px; color: var(--texto); cursor: pointer; display: flex;
+    justify-content: space-between; gap: 8px; align-items: baseline; }
+  .catalogo .familias button:hover { background: var(--painel2); }
+  .catalogo .familias button[aria-pressed=true] { background: var(--azul-fundo, var(--painel2)); color: var(--azul); font-weight: 600; }
+  .catalogo .familias .n { font-size: 11.5px; color: var(--texto3); font-variant-numeric: tabular-nums; }
+  .catalogo .descricao { font-size: 12px; color: var(--texto2); margin: 8px 2px 0; line-height: 1.45; }
+  .catalogo .barra { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  .catalogo input[type=search] { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--borda-forte);
+    border-radius: var(--raio-p); background: var(--painel); color: var(--texto); min-width: 240px; flex: 1; }
+  .catalogo .rolagem { overflow: auto; max-height: 72vh; border: 1px solid var(--borda); border-radius: var(--raio); }
+  .catalogo table { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--painel); }
+  .catalogo th, .catalogo td { border-bottom: 1px solid var(--borda); padding: 5px 9px; text-align: left; white-space: nowrap; }
+  .catalogo th { background: var(--painel2); position: sticky; top: 0; z-index: 2; font-weight: 600; cursor: pointer; user-select: none; }
+  .catalogo td.r, .catalogo th.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .catalogo tbody tr { cursor: pointer; }
+  .catalogo tbody tr:hover { background: var(--painel2); }
+  .catalogo tbody tr[aria-selected=true] { background: var(--azul-fundo, var(--painel2)); box-shadow: inset 3px 0 0 var(--azul); }
+  .catalogo .etiqueta { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--borda-forte); color: var(--texto3); }
+  .catalogo .etiqueta.calculado { border-color: var(--amarelo, #b8860b); color: var(--amarelo, #b8860b); }
+  .catalogo .campos { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 12.5px; align-items: baseline; }
+  .catalogo .campos label { color: var(--texto2); }
+  .catalogo .campos .valor { font-family: var(--mono); font-size: 12px; }
+  .catalogo .alt { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+  .catalogo .alt .linha { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: baseline;
+    padding: 4px 6px; border-radius: var(--raio-p); font-size: 12.5px; cursor: pointer; }
+  .catalogo .alt .linha:hover { background: var(--painel2); }
+  .catalogo .alt .massa { font-variant-numeric: tabular-nums; color: var(--texto2); }
+  .catalogo .alt .delta { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .catalogo .alt .delta.leve { color: var(--verde, #2e8b57); }
+  .catalogo .alt .delta.pesado { color: var(--vermelho, #c0392b); }
+  .catalogo .vazio { padding: 12px; color: var(--texto3); font-size: 13px; }
+  .catalogo .nota { font-size: 12px; color: var(--texto2); margin: 10px 0 0; line-height: 1.45; }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M7 10h18M7 16h18M7 22h18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    </svg>
+    <h1>Catálogo de peças<span id="sub-resumo"></span></h1>
+  </div>
+  <div class="acoes">
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <a class="botao" href="/" title="Voltar à tela de projetos">← Projetos</a>
+  </div>
+</header>
+
+<main class="catalogo">
+  <section class="caixa">
+    <h2>Famílias</h2>
+    <div class="familias" id="familias"></div>
+    <p class="descricao" id="descricao"></p>
+  </section>
+
+  <section>
+    <div class="barra">
+      <input type="search" id="busca" placeholder="Buscar por nome ou dimensão: 150x60, W 310, 3/8…" spellcheck="false" autocomplete="off">
+      <span class="etiqueta" id="contagem"></span>
+    </div>
+    <div class="rolagem"><table id="tabela"><thead></thead><tbody></tbody></table></div>
+    <p class="nota" id="nota-origem">
+      <b>tabela</b>: valores da tabela do fabricante (anexo do manual). <b>calculado</b>: propriedades pelo
+      método linear da NBR 14762 (linha média), para as séries formadas a frio e as cantoneiras em milímetro —
+      divergem 1 % a 8 % das tabelas de fabricante, que arredondam. Onde houver tabela do fabricante para a
+      peça exata, é ela que vale.
+    </p>
+  </section>
+
+  <section class="caixa" id="detalhe">
+    <h2>Peça</h2>
+    <div class="vazio">Clique numa peça da lista.</div>
+  </section>
+</main>
+
+<script src="/vivo.js"></script>
+<script src="/versao.js" defer></script>
+<script type="module" src="/catalogo.js"></script>
+</body>
+</html>

@@ -10,6 +10,7 @@ a interface de `web/` mais uma API JSON.
 
 Rotas da API:
     GET  /api/catalogo              perfis, aços, parafusos, eletrodos, cidades
+    GET  /api/catalogo/pecas        catálogo de peças (famílias, itens, busca, alternativas)
     GET  /api/atualizacao           última versão publicada no GitHub e se é mais nova
     POST /api/atualizacao/instalar  baixa o instalador da release e o executa (programa instalado)
     POST /api/dimensionar           recebe DadosGalpao, devolve ProjetoGalpao em JSON
@@ -1155,6 +1156,31 @@ def _documento_de(corpo: dict):
     return Documento.de_dict(d)
 
 
+def catalogo_de_pecas(q: dict) -> dict:
+    """GET /api/catalogo/pecas: o catálogo de peças (perfis, chapas, barras, parafusos).
+
+    Sem parâmetros devolve as famílias e o resumo — é o que a tela precisa para abrir.
+    `familia` traz os itens de uma família, `q` busca pelo nome ou pelas dimensões e
+    `alternativas` devolve o que pode entrar no lugar de uma peça, com a diferença de
+    massa por metro."""
+    from nucleo import catalogo
+    um = lambda k, padrao="": (q.get(k) or [padrao])[0]          # noqa: E731
+    nome = um("alternativas")
+    if nome:
+        return {"peca": (catalogo.item(nome).dict() if catalogo.item(nome) else None),
+                "alternativas": catalogo.alternativas(
+                    nome, modo=um("modo", "vizinhos"),
+                    mesma_altura=um("mesma_altura") in ("1", "true"),
+                    limite=int(um("limite", "30") or 30))}
+    familia = um("familia")
+    texto = um("q")
+    if familia or texto:
+        lista = catalogo.buscar(texto, familia or None, limite=int(um("limite", "400") or 400)) \
+            if texto else catalogo.itens(familia)
+        return {"familia": familia, "q": texto, "itens": [i.dict() for i in lista]}
+    return {"familias": catalogo.familias(), "resumo": catalogo.resumo()}
+
+
 def catalogo_3d() -> dict:
     """Perfis com a seção já pronta para o editor desenhar."""
     from nucleo.perfis import banco
@@ -1419,6 +1445,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(verificar_atualizacao())
             if rota == "/api/catalogo":
                 return self._json(catalogo())
+            if rota == "/api/catalogo/pecas":
+                return self._json(catalogo_de_pecas(parse_qs(urlparse(self.path).query)))
             if rota == "/api/projetos":
                 return self._json(_gerente().listar())
             if rota.startswith("/api/projetos/"):
@@ -1451,6 +1479,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "cad", "cad.html"), WEB)
             if rota in ("/materiais", "/lista-de-materiais"):
                 return self._arquivo(os.path.join(WEB, "materiais.html"), WEB)
+            if rota in ("/catalogo", "/pecas"):
+                return self._arquivo(os.path.join(WEB, "catalogo.html"), WEB)
             if rota in ("/editor", "/editor3d", "/3d"):
                 return self._arquivo(os.path.join(WEB, "editor3d", "editor.html"), WEB)
             if rota.startswith("/saida/"):
