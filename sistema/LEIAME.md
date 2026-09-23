@@ -598,8 +598,27 @@ que o cálculo passou a guardar em `comprimento_total_m`/`peso_kg`; o total fica
 os que chegam mais perto. No editor é o bloco "No lugar dela" da peça selecionada, e clicar aplica a troca
 — aí sim o cálculo inteiro é refeito, porque trocar o perfil redistribui os esforços na treliça.
 
+**Ligações**: cada diagonal e montante é verificado também na ligação com o banzo, e o
+resultado sai em `ligacoes` (uma linha por chapa-ou-banzo × barra, com o pior esforço entre
+todos os nós, como a fábrica detalha). Há três casos, decididos pela geometria lida do modelo:
+chapa de nó **parafusada** (furos da chapa na faixa da barra: diâmetro pelo furo, passo e borda
+medidos — Whitmore, cisalhamento e esmagamento dos parafusos, bloco de cisalhamento), chapa de
+nó **soldada** (sobreposição da barra sobre a chapa medida ao longo do eixo — Whitmore e dois
+cordões de filete) e, sem chapa sobre a barra, a **solda da diagonal direto no banzo**, que é
+como a treliça leve de Ue é fabricada: contato = altura do banzo / sen θ, dois cordões, perna
+mínima da Tabela 10 limitada pela chapa mais fina (item 6.2.6.2.2). Chapinha de terça e chapa
+de apoio perto do nó não recebem a barra e ficam de fora sozinhas. Cada barra guarda a pior
+ligação dela (`elementos[marca]["ligacao"]`), e **"No lugar dela" reverifica a ligação com
+cada candidato**: a diagonal mais fina passa na barra e reprova na solda, e a lista mostra os
+dois aproveitamentos. No editor, o bloco *Ligações* do painel do cálculo lista tudo; clicar
+seleciona a chapa e as barras da ligação. Parâmetros novos: `parafuso` (classe, o IFC não
+diz) e `eletrodo`.
+
 Limites: contraventamentos, agulhamentos e consoles não são verificados (sem cargas de oitão);
-ligações e chapas de nó não entram; terças de beiral apoiadas nos consoles ficam sem apoio; sem
+a ligação da tesoura ao pilar (chapa de apoio) e a solda dos suportes de terça não entram; o
+IFC não traz a solda, então perna e cordões são os adotados acima e ficam declarados na
+observação de cada verificação; a chapa de nó comprimida é verificada como escoamento de
+Whitmore, sem flambagem; terças de beiral apoiadas nos consoles ficam sem apoio; sem
 travamento lido no modelo o banzo inferior é verificado com o comprimento inteiro (informe
 `trava_inferior`); as tabelas de vento são de galpão fechado de duas águas.
 

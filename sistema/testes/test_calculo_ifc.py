@@ -11,7 +11,7 @@ if BASE not in sys.path:
     sys.path.insert(0, BASE)
 
 from nucleo3d import calculo_ifc                        # noqa: E402
-from nucleo3d.modelo import Documento, Solido           # noqa: E402
+from nucleo3d.modelo import Chapa, Documento, Solido    # noqa: E402
 
 
 def _caixa(a, b, h=100.0, w=50.0, **marcas):
@@ -93,6 +93,94 @@ def test_calculo_completo(modelo):
     assert any("banzo inferior" in v.get("dados", {}).get("observacao", "") for v in r["verificacoes"]
                if v["marca"] == "P1")
     assert r["resumo"]["tesouras"] == 3 and r["resumo"]["tercas"] == 1
+
+
+# ------------------------------------------------------------------ ligações
+
+def test_diagonal_soldada_no_banzo(modelo):
+    """Sem chapa de nó no modelo, a ligação da diagonal é a solda dela no banzo — e ela
+    entra na troca de perfil: a barra mais fina passa na barra e pode reprovar na solda."""
+    doc, nomes = modelo
+    r = calculo_ifc.calcular(doc, nomes, {"v0": 35.0})
+    ligs = r["ligacoes"]
+    assert ligs, "nenhuma ligação verificada"
+    assert {x["tipo"] for x in ligs} == {"soldada no banzo"}
+    assert r["resumo"]["ligacoes"] == len(ligs)
+    for x in ligs:
+        assert x["chapa"] in ("P1", "P2") and x["barra"] in ("P3", "P4")
+        assert x["sobreposicao_mm"] > 0 and x["perna_mm"] > 0
+        assert 0 <= x["aproveitamento"] < 10
+        assert x["ids"], "sem peças para selecionar no modelo"
+        assert x["verificacoes"] and x["verificacoes"][0]["titulo"].startswith("Solda de filete")
+    # o montante chega ao banzo a 90°: contato = altura do banzo (100 mm)
+    mont = next(x for x in ligs if x["tipo_barra"] == "montante")
+    assert mont["angulo_graus"] == pytest.approx(90.0, abs=1.0)
+    assert mont["sobreposicao_mm"] == pytest.approx(100.0, abs=1.0)
+    # a barra sabe da pior ligação dela, e a troca de perfil a reverifica
+    el = r["elementos"]["P4"]
+    assert el["ligacao"]["tipo"] == "soldada no banzo" and el["entrada"]["ligacao"]["comprimento_cm"] > 0
+    a = calculo_ifc.alternativas(r, "P4", limite=8)
+    assert a["ligacao"]["chave"] == el["ligacao"]["chave"]
+    assert all(c["ligacao"] is not None for c in a["alternativas"])
+    assert all(c["ok"] == (c["ok_barra"] and c["ligacao"]["ok"]) for c in a["alternativas"])
+
+
+def _chapa_no_no(x, y, z, conj, marca="P20", esp=4.8, furos=None, lado=220.0):
+    """Chapa de nó quadrada no plano y·z da tesoura, centrada no nó (x, y, z)."""
+    ch = Chapa(nome="CH %g" % esp, camada="Chapas",
+               origem=(x, y - lado / 2, z - lado / 2), eixo_x=(0.0, 1.0, 0.0), eixo_y=(0.0, 0.0, 1.0),
+               contorno=[(0.0, 0.0), (lado, 0.0), (lado, lado), (0.0, lado)], espessura=esp, centrada=True,
+               furos=list(furos or []), aco="ASTM A36")
+    ch.atributos = {"tipo_ifc": "IfcPlate", "marcas": {"posicao": marca, "conjunto": conj}}
+    return ch
+
+
+@pytest.fixture(scope="module")
+def modelo_com_chapas():
+    """A mesma tesoura, com chapa de nó em todos os nós do banzo inferior; num deles a
+    diagonal é parafusada (dois furos de 13,5 mm ao longo do eixo dela)."""
+    doc = Documento(nome="chapas")
+    vao, altura, paineis = 6000.0, 600.0, 6
+    dx = vao / paineis
+    for k, x in enumerate((0.0, 3000.0)):
+        conj = "M%d" % (k + 1)
+        _tesoura(doc, x, conj, vao, altura, paineis)
+        for i in range(paineis + 1):
+            furos = None
+            if i == 1:
+                # diagonal de inf[1] a sup[2]: direção (dx, altura) normalizada, furos a 60 e 120 mm
+                L = math.hypot(dx, altura)
+                d = (dx / L, altura / L)
+                furos = [{"x": 110.0 + d[0] * s, "y": 110.0 + d[1] * s, "diametro": 13.5} for s in (60.0, 120.0)]
+            doc.add(_chapa_no_no(x, i * dx, 0.0, conj, marca="P21" if i == 1 else "P20", furos=furos))
+    nomes = {"tipos": {}, "tipos_conjuntos": {"M1 / M2": "tesoura"},
+             "posicoes": {"P1": "B.1", "P2": "B.2", "P3": "B.3", "P4": "B.4", "P20": "CH.1", "P21": "CH.2"},
+             "conjuntos": {"M1 / M2": "T1"}, "ifc": {}, "ifc_conjuntos": {"M1": "T1", "M2": "T1"}}
+    return doc, nomes
+
+
+def test_chapa_de_no_soldada_e_parafusada(modelo_com_chapas):
+    doc, nomes = modelo_com_chapas
+    r = calculo_ifc.calcular(doc, nomes, {"v0": 35.0, "parafuso": "ASTM A307"})
+    ligs = {x["chave"]: x for x in r["ligacoes"]}
+    tipos = {x["tipo"] for x in r["ligacoes"]}
+    assert "soldada" in tipos and "parafusada" in tipos, tipos
+    # a chapa de nó com furos na faixa da diagonal: parafusada, M12 pelo furo de 13,5
+    par = next(x for x in r["ligacoes"] if x["tipo"] == "parafusada")
+    assert par["chapa"] == "P21" and par["barra"] == "P4"
+    assert par["n_parafusos"] == 2 and par["diametro"] == "M12"
+    assert par["espessura_mm"] == pytest.approx(4.8)
+    titulos = [v["titulo"] for v in par["verificacoes"]]
+    assert any("Whitmore" in t for t in titulos) and any("isalhamento" in t for t in titulos)
+    # as chapas sem furo: soldada na chapa, com a sobreposição medida sobre a chapa
+    sol = next(x for x in r["ligacoes"] if x["tipo"] == "soldada" and x["barra"] == "P4")
+    assert sol["chapa"] == "P20" and 60.0 <= sol["sobreposicao_mm"] <= 230.0
+    assert any(v["titulo"].startswith("Solda de filete") for v in sol["verificacoes"])
+    # o banzo superior não tem chapa: ali a diagonal continua soldada no banzo
+    assert any(x["tipo"] == "soldada no banzo" and x["chapa"] == "P2" for x in r["ligacoes"])
+    # a chapa entra nas peças selecionáveis da ligação
+    assert any(i.startswith("") for i in par["ids"]) and len(par["ids"]) >= 2
+    assert ligs[par["chave"]]["nos"] >= 1
 
 
 def test_alternativas_verificadas(modelo):

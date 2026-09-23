@@ -32,10 +32,20 @@ memória de cada peça) e `resumo` (o que foi adotado), para o relatório.
 Unidades: o documento está em mm; o modelo de análise trabalha em cm e kN; as cargas de
 superfície em kN/m²; o payload em mm, kN e kN·m como o editor lê.
 
+**Ligações** (`ligacoes` no resultado): a chapa de nó lida do modelo — a `Chapa`
+paramétrica do detalhamento dá espessura, contorno e furos — é verificada com a barra que
+chega nela (Whitmore, bloco de cisalhamento, parafusos ou solda); sem chapa sobre a barra,
+que é o caso da treliça leve com a diagonal soldada direto no banzo Ue, verifica-se a solda
+da diagonal no banzo, com o contato medido pela altura do banzo e o ângulo entre os dois.
+A troca de perfil reverifica a ligação com o candidato: a barra mais fina passa na barra e
+pode reprovar na solda, porque a perna fica limitada pela chapa mais fina.
+
 Limites desta versão (declarados em `avisos`): contraventamentos e tirantes não são
-verificados (sem cargas de oitão no modelo); ligações e chapas de nó não entram;
-cantoneira formada a frio é verificada pela NBR 8800 com o fator Q (conservador);
-as tabelas de vento são as de galpão fechado de duas águas.
+verificados (sem cargas de oitão no modelo); o IFC não traz solda nem classe de parafuso,
+então a perna é a mínima da Tabela 10 (limitada pela chapa mais fina) e a classe é a do
+parâmetro `parafuso`; a chapa de nó comprimida é verificada como escoamento de Whitmore,
+sem flambagem; cantoneira formada a frio é verificada pela NBR 8800 com o fator Q
+(conservador); as tabelas de vento são as de galpão fechado de duas águas.
 """
 from __future__ import annotations
 
@@ -74,6 +84,9 @@ PARAMETROS_PADRAO = {
     "flecha_tesoura": 250,           # L/250
     "flecha_terca": 180,
     "trocas": {},                    # {marca: nome do perfil de cálculo}
+    "parafuso": "ASTM A307",         # classe dos parafusos das chapas de nó (o IFC não diz)
+    "eletrodo": "E70XX",             # eletrodo das soldas das chapas de nó
+    "aco_chapa": None,               # aço das chapas de nó; None = o da chapa no modelo ou o laminado
 }
 
 #: Peso da telha pela espessura no nome (kN/m² de superfície).
@@ -959,6 +972,371 @@ _verificar_membro = verificar.verificar_membro
 _serializar_resultado = verificar.serializar_resultado
 
 
+# ------------------------------------------------------------------ ligações
+
+#: A chapa de nó fica no plano da tesoura; a chapinha de terça e a de apoio ficam fora
+#: dele. Mais do que isto de distância ao plano, a chapa não é de nó (mm).
+TOL_PLANO_CHAPA = 25.0
+#: Sobreposição mínima da barra sobre a chapa para haver ligação medida (mm).
+SOBREPOSICAO_MINIMA = 20.0
+#: Até onde a sobreposição é procurada ao longo da barra, a partir do nó (mm).
+ALCANCE_SOBREPOSICAO = 800.0
+
+
+def _pontos_da_chapa_no_plano(t: _Tesoura, ch) -> Tuple[List[Tuple[float, float]], List[dict], float]:
+    """Contorno e furos da chapa projetados no plano da tesoura (mm), e a distância do
+    centro da chapa ao plano. Só para `Chapa` paramétrica (a do detalhamento)."""
+    ex, ey, o = ch.eixo_x, ch.eixo_y, ch.origem
+
+    def mundo(x, y):
+        return tuple(o[i] + ex[i] * x + ey[i] * y for i in range(3))
+
+    contorno = [t.p2(mundo(x, y)) for x, y in (ch.contorno or [])]
+    furos = []
+    for f in ch.furos or []:
+        p = t.p2(mundo(float(f.get("x", 0.0)), float(f.get("y", 0.0))))
+        d = float(f.get("diametro") or max(float(f.get("largura") or 0.0), float(f.get("altura") or 0.0)))
+        furos.append({"p": p, "d": d})
+    if not contorno:
+        return [], [], float("inf")
+    centro = mundo(sum(x for x, _ in ch.contorno) / len(ch.contorno),
+                   sum(y for _, y in ch.contorno) / len(ch.contorno))
+    return contorno, furos, t.dist_plano(centro)
+
+
+def _chapas_de_no(t: _Tesoura) -> Dict[int, dict]:
+    """{índice do nó: chapa de nó} — a chapa paramétrica no plano da tesoura mais perto
+    de cada nó, dentro de TOL_CHAPA. Chapa sem contorno ou fora do plano (suporte de
+    terça, chapa de apoio) fica de fora."""
+    from nucleo3d.modelo import Chapa
+    candidatas = []
+    for ch in t.chapas:
+        if not isinstance(ch, Chapa):
+            continue
+        contorno, furos, fora = _pontos_da_chapa_no_plano(t, ch)
+        if len(contorno) < 3 or fora > max(TOL_PLANO_CHAPA, 3.0 * float(ch.espessura or 0.0)):
+            continue
+        cx = sum(p[0] for p in contorno) / len(contorno)
+        cy = sum(p[1] for p in contorno) / len(contorno)
+        candidatas.append({"ent": ch, "contorno": contorno, "furos": furos, "centro": (cx, cy)})
+    saida: Dict[int, dict] = {}
+    for i in t.nos_usados():
+        n = t.nos[i]
+        melhor = None
+        for c in candidatas:
+            d = math.dist(n, c["centro"])
+            if d <= TOL_CHAPA and (melhor is None or d < melhor[0]):
+                melhor = (d, c)
+        if melhor is not None:
+            saida[i] = melhor[1]
+    return saida
+
+
+def _sobreposicao(poligono, Q, d) -> Tuple[float, float]:
+    """(início, fim) em mm, medidos do nó Q ao longo de d, do trecho em que a barra está
+    sobre a chapa. (0, 0) quando não há sobreposição."""
+    from nucleo3d.de_desenho import _dentro
+    passo = 4.0
+    dentro = [s for s in range(0, int(ALCANCE_SOBREPOSICAO / passo) + 1)
+              if _dentro((Q[0] + d[0] * s * passo, Q[1] + d[1] * s * passo), poligono)]
+    if not dentro:
+        return 0.0, 0.0
+    s0 = dentro[0] * passo
+    # o trecho que conta é o contínuo a partir da primeira entrada
+    fim = dentro[0]
+    for s in dentro[1:]:
+        if s != fim + 1:
+            break
+        fim = s
+    return s0, fim * passo
+
+
+def _contato_no_banzo(t: _Tesoura, Q, d, banzos_no_no) -> Optional[dict]:
+    """Comprimento de contato da barra com o banzo que passa pelo nó (mm) e o que a
+    solda precisa saber do banzo. A barra chega ao banzo num ângulo θ e encosta nele ao
+    longo da altura d do perfil: contato = d/sen θ, limitado a três alturas."""
+    from nucleo import tesouras
+    melhor = None
+    for kk, bb in banzos_no_no:
+        mb = t.membros[bb["membro"]]
+        A, B = t.nos[bb["ni"]], t.nos[bb["nf"]]
+        L = math.dist(A, B) or 1.0
+        e = ((B[0] - A[0]) / L, (B[1] - A[1]) / L)
+        sen = abs(-d[0] * e[1] + d[1] * e[0])
+        altura = float(mb.perfil.d or mb.perfil.bf or 100.0)
+        comp = min(altura / max(sen, 0.2), 3.0 * altura)
+        try:
+            t_b = tesouras._espessura(mb.perfil)
+        except Exception:
+            t_b = 0.0
+        cand = {"banzo": mb.marca, "comprimento_mm": comp, "t_banzo_mm": t_b, "aco_banzo": mb.aco,
+                "angulo_graus": math.degrees(math.asin(min(sen, 1.0)))}
+        if melhor is None or comp < melhor["comprimento_mm"]:
+            melhor = cand
+    return melhor
+
+
+def _largura_ligada(perfil: Perfil) -> float:
+    """Largura da parte da barra que encosta na chapa, cm: a aba da cantoneira, a alma
+    do U/Ue (que é o que se solda ou parafusa numa chapa de nó)."""
+    if perfil.tipo == "L":
+        return max(float(perfil.bf or perfil.d or 50.0), 20.0) / 10.0
+    return max(float(perfil.d or perfil.bf or 50.0), 20.0) / 10.0
+
+
+def _diametro_do_furo(d_furo_mm: float) -> str:
+    """Nome comercial do parafuso pelo furo: o furo padrão é d + 1,5 mm (NBR 8800)."""
+    alvo = d_furo_mm - 1.5
+    nomes = [n for n in mat.DIAMETROS if n.startswith("M")] + [n for n in mat.DIAMETROS if not n.startswith("M")]
+    return min(nomes, key=lambda n: (abs(mat.DIAMETROS[n][0] * 10.0 - alvo), 0 if n.startswith("M") else 1))
+
+
+def _ligacoes_das_tesouras(tes: List[_Tesoura], par: dict, nomes_pos: dict, elementos: Dict[str, dict],
+                           avisos: List[str]) -> List[dict]:
+    """Chapa de nó de cada nó da tesoura, verificada com a barra que chega nela.
+
+    A geometria vem do modelo: a chapa paramétrica do detalhamento dá espessura, contorno
+    e furos; a sobreposição da barra sobre a chapa é medida ao longo do eixo da barra a
+    partir do nó. Furos dentro da faixa da barra dizem que a ligação é parafusada (o
+    diâmetro sai do furo, o passo e a borda são medidos); sem furo, é soldada, com dois
+    cordões de filete ao longo da sobreposição e a perna mínima da Tabela 10 da NBR 8800
+    para a chapa mais grossa — que é o que se assume porque o IFC não traz a solda.
+
+    Sem chapa sobre a barra — o caso da treliça leve, em que a diagonal é soldada direto
+    no banzo Ue — a ligação é a solda da diagonal no banzo: dois cordões ao longo do
+    contato, que mede a altura do banzo dividida pelo seno do ângulo entre os dois, e a
+    perna limitada pela chapa mais fina (item 6.2.6.2.2), que na chapa dobrada é ela
+    mesma. A chapinha de terça e a chapa de apoio, mesmo perto do nó, não recebem a
+    barra e ficam de fora sozinhas: a sobreposição medida é zero.
+
+    O resultado sai agrupado por (chapa ou banzo, barra, tipo), com o pior esforço entre
+    todos os nós e tesouras — é assim que a fábrica detalha: uma ligação por posição.
+    A compressão é verificada na seção de Whitmore como escoamento, sem flambagem da
+    chapa: a chapa de nó no plano da tesoura tem o comprimento livre curto, e isso fica
+    declarado na observação.
+    """
+    from nucleo import ligacoes, tesouras
+    grupos: Dict[tuple, dict] = {}
+    sem_ligacao = 0
+    total = 0
+    for t in tes:
+        chapas = _chapas_de_no(t)
+        for i in t.nos_usados():
+            Q = t.nos[i]
+            ch = chapas.get(i)
+            banzos_no_no = [(kk, bb) for kk, bb in enumerate(t.barras)
+                            if not bb["rotula"] and i in (bb["ni"], bb["nf"])]
+            for k, b in enumerate(t.barras):
+                if not b["rotula"] or i not in (b["ni"], b["nf"]):
+                    continue
+                total += 1
+                mb = t.membros[b["membro"]]
+                outro = t.nos[b["nf"] if b["ni"] == i else b["ni"]]
+                L = math.dist(Q, outro) or 1.0
+                d = ((outro[0] - Q[0]) / L, (outro[1] - Q[1]) / L)
+                s0, s1 = _sobreposicao(ch["contorno"], Q, d) if ch is not None else (0.0, 0.0)
+                if s1 - s0 < SOBREPOSICAO_MINIMA:
+                    # sem chapa recebendo a barra: soldada direto no banzo
+                    contato = _contato_no_banzo(t, Q, d, banzos_no_no)
+                    if contato is None:
+                        sem_ligacao += 1
+                        continue
+                    ch = None
+                    s0, s1 = 0.0, contato["comprimento_mm"]
+                eb = t.env.barras[k]
+                Nc, Nt = -min(eb.N_min.valor, 0.0), max(eb.N_max.valor, 0.0)
+                N = max(Nc, Nt)
+                caso = eb.N_min.caso if Nc >= Nt else eb.N_max.caso
+                largura = _largura_ligada(mb.perfil)
+                # furos na faixa da barra e dentro da sobreposição
+                faixa = largura * 10.0 / 2.0 + 6.0
+                na_barra = []
+                for f in (ch["furos"] if ch is not None else []):
+                    rx, ry = f["p"][0] - Q[0], f["p"][1] - Q[1]
+                    s = rx * d[0] + ry * d[1]
+                    e = abs(-rx * d[1] + ry * d[0])
+                    if e <= faixa and s0 - 10.0 <= s <= s1 + 20.0:
+                        na_barra.append((s, f["d"]))
+                na_barra.sort()
+                if ch is None:
+                    tipo, suporte = "soldada no banzo", contato["banzo"]
+                    esp_sup, aco_sup = contato["t_banzo_mm"], contato["aco_banzo"]
+                else:
+                    tipo = "parafusada" if na_barra else "soldada"
+                    suporte = str((getattr(ch["ent"], "atributos", {}) or {}).get("marcas", {}).get("posicao")
+                                  or ch["ent"].nome or "")
+                    esp_sup, aco_sup = float(ch["ent"].espessura or 0.0), str(getattr(ch["ent"], "aco", "") or "")
+                chave = (suporte, mb.marca, tipo)
+                g = grupos.get(chave)
+                if g is None or N > g["N"]:
+                    grupos[chave] = g = {
+                        "chapa": suporte, "barra": mb.marca, "tipo": tipo, "tipo_barra": mb.tipo,
+                        "perfil": mb.perfil, "aco_barra": mb.aco, "n": mb.n,
+                        "espessura_mm": esp_sup, "aco_chapa": aco_sup,
+                        "N": N, "Nc": Nc, "Nt": Nt, "caso": caso,
+                        "sobreposicao_mm": s1 - s0, "largura_cm": largura,
+                        "furos": [(s - s0, dd) for s, dd in na_barra], "fim_mm": s1 - s0,
+                        "angulo_graus": contato["angulo_graus"] if ch is None else None,
+                        "nos": 0, "tesouras": set(), "ids": [],
+                    }
+                g["nos"] += 1
+                g["tesouras"].add(t.conjunto)
+                ids_novos = ([ch["ent"].id] if ch is not None else []) + [p.id for p in mb.pecas]
+                for pid in ids_novos:
+                    if pid not in g["ids"] and len(g["ids"]) < 400:
+                        g["ids"].append(pid)
+    if sem_ligacao:
+        avisos.append("%d de %d pontas de diagonal/montante sem chapa de nó nem banzo no nó: a ligação dessas "
+                      "pontas não foi verificada" % (sem_ligacao, total))
+
+    saida: List[dict] = []
+    for chave in sorted(grupos):
+        g = grupos[chave]
+        entrada = _entrada_da_ligacao(g, par)
+        r = _verificar_ligacao(g["perfil"], entrada, "Ligação %s × %s" % (g["chapa"], g["barra"]))
+        crit = r.critica
+        item = {
+            "chave": "%s × %s" % (g["chapa"], g["barra"]), "chapa": g["chapa"],
+            "nome_chapa": nomes_pos.get(g["chapa"], ""), "barra": g["barra"],
+            "nome_barra": nomes_pos.get(g["barra"], ""), "tipo_barra": g["tipo_barra"],
+            "tipo": g["tipo"], "perfil": g["perfil"].nome, "espessura_mm": round(g["espessura_mm"], 2),
+            "aco_chapa": entrada["aco_chapa"], "N_kN": round(g["N"], 2), "caso": g["caso"],
+            "sobreposicao_mm": round(g["sobreposicao_mm"], 0), "largura_cm": round(g["largura_cm"], 2),
+            "n_parafusos": entrada.get("n_parafusos", 0), "diametro": entrada.get("diametro", ""),
+            "perna_mm": round(entrada.get("perna_cm", 0.0) * 10.0, 1) if g["tipo"] != "parafusada" else 0.0,
+            "angulo_graus": g.get("angulo_graus"),
+            "aproveitamento": round(r.razao, 3), "ok": bool(r.ok),
+            "governa": crit.titulo if crit else "", "norma": getattr(crit, "norma", "") if crit else "",
+            "Sd": round(crit.Sd, 2) if crit else 0.0, "Rd": round(crit.Rd, 2) if crit else 0.0,
+            "unidade": getattr(crit, "unidade", "") if crit else "",
+            "nos": g["nos"], "tesouras": sorted(g["tesouras"]), "ids": g["ids"],
+            "verificacoes": verificar.serializar_resultado(r)["verificacoes"],
+            "entrada": entrada,
+        }
+        saida.append(item)
+        # a barra guarda a pior ligação dela: é o que a troca de perfil reverifica
+        el = elementos.get(g["barra"])
+        if el is not None:
+            atual = el.get("ligacao")
+            if atual is None or item["aproveitamento"] > atual["aproveitamento"]:
+                el["ligacao"] = {"chave": item["chave"], "tipo": g["tipo"], "aproveitamento": item["aproveitamento"],
+                                 "ok": item["ok"], "governa": item["governa"]}
+                el.setdefault("entrada", {})["ligacao"] = entrada
+    return saida
+
+
+def _entrada_da_ligacao(g: dict, par: dict) -> dict:
+    """O que basta para verificar a ligação de novo com outro perfil de barra."""
+    from nucleo import ligacoes
+    t_g = g["espessura_mm"] / 10.0
+    aco_chapa = g["aco_chapa"]
+    try:
+        mat.aco(aco_chapa)
+    except Exception:
+        aco_chapa = str(par.get("aco_chapa") or par.get("aco_laminado") or "ASTM A36")
+    entrada = {"tipo": g["tipo"], "t_gusset_cm": round(t_g, 3), "aco_chapa": aco_chapa,
+               "comprimento_cm": round(g["sobreposicao_mm"] / 10.0, 2), "largura_cm": round(g["largura_cm"], 2),
+               "N": round(g["N"], 3), "aco_barra": g["aco_barra"], "n": int(g["n"]),
+               "parafuso": str(par.get("parafuso") or "ASTM A307"), "eletrodo": str(par.get("eletrodo") or "E70XX")}
+    if g["tipo"] == "soldada no banzo":
+        t_b = 0.0
+        try:
+            from nucleo import tesouras
+            t_b = tesouras._espessura(g["perfil"]) / 10.0
+        except Exception:
+            pass
+        entrada.update({"t_banzo_cm": round(g["espessura_mm"] / 10.0, 3), "aco_banzo": g["aco_chapa"],
+                        "angulo_graus": round(g.get("angulo_graus") or 90.0, 1),
+                        "perna_cm": round(_perna_de_solda(t_g, t_b), 3)})
+        return entrada
+    if g["tipo"] == "parafusada":
+        furos = g["furos"]
+        d_furo = sum(dd for _, dd in furos) / len(furos)
+        nome = _diametro_do_furo(d_furo)
+        d_cm = mat.DIAMETROS[nome][0]
+        passos = [b - a for (a, _), (b, _) in zip(furos, furos[1:])]
+        passo = (sum(passos) / len(passos) / 10.0) if passos else ligacoes.espacamento_recomendado(d_cm)
+        borda = max((g["fim_mm"] - furos[-1][0]) / 10.0, 1.2 * d_cm)
+        entrada.update({"n_parafusos": len(furos), "diametro": nome, "passo_cm": round(passo, 2),
+                        "borda_cm": round(borda, 2), "d_furo_mm": round(d_furo, 1)})
+    else:
+        t_b = 0.0
+        try:
+            from nucleo import tesouras
+            t_b = tesouras._espessura(g["perfil"]) / 10.0
+        except Exception:
+            pass
+        entrada["perna_cm"] = round(_perna_de_solda(t_g, t_b), 3)
+    return entrada
+
+
+def _perna_de_solda(t_a: float, t_b: float) -> float:
+    """Perna do filete entre duas chapas, cm: a mínima da Tabela 10 para a mais grossa,
+    mas nunca maior que a mais fina — na chapa dobrada de 2 mm a perna é a própria chapa
+    (NBR 8800, item 6.2.6.2.2)."""
+    grossa, fina = max(t_a, t_b), min(x for x in (t_a, t_b) if x > 0) if (t_a > 0 or t_b > 0) else 0.3
+    perna = max(mat.perna_minima(grossa), 0.3) if grossa > 0 else 0.3
+    return max(min(perna, fina), 0.15)
+
+
+def _verificar_ligacao(perfil: Perfil, entrada: dict, elemento: str) -> Resultado:
+    """Chapa de nó com a barra `perfil`, nos dados guardados em `entrada`."""
+    from nucleo import ligacoes, tesouras
+    try:
+        t_b = tesouras._espessura(perfil) / 10.0
+    except Exception:
+        t_b = 0.0
+    largura = _largura_ligada(perfil)
+    N = float(entrada["N"]) / max(int(entrada.get("n") or 1), 1)
+    comum = dict(N_Sd=N, t_gusset=float(entrada["t_gusset_cm"]), largura_ligacao=largura,
+                 comprimento_ligacao=float(entrada["comprimento_cm"]), aco_gusset=entrada["aco_chapa"],
+                 t_barra=t_b or None, aco_barra=entrada.get("aco_barra") or "ASTM A36",
+                 eletrodo=entrada.get("eletrodo") or "E70XX", elemento=elemento)
+    try:
+        if entrada.get("tipo") == "soldada no banzo":
+            t_banzo = float(entrada.get("t_banzo_cm") or 0.0)
+            perna = _perna_de_solda(t_banzo, t_b)
+            try:
+                fy = min(mat.aco(entrada.get("aco_banzo") or "ASTM A36").fy,
+                         mat.aco(entrada.get("aco_barra") or "ASTM A36").fy)
+            except Exception:
+                fy = 25.0
+            r = Resultado(elemento, perfil=perfil.nome, material=entrada.get("aco_banzo") or "")
+            v = ligacoes.filete(perna, float(entrada["comprimento_cm"]), entrada.get("eletrodo") or "E70XX",
+                                fy_base=fy, t_base=max(t_banzo, t_b) or None, t_outra=min(t_banzo, t_b) or None,
+                                F_Sd=N, n_cordoes=2, nome="%s × banzo" % perfil.nome)
+            v.observacao = ("diagonal soldada direto no banzo: dois cordões ao longo do contato "
+                            "(altura do banzo / sen %s°), perna %s — o IFC não traz a solda"
+                            % (fmt(float(entrada.get("angulo_graus") or 90.0), 0), fmt(perna * 10, 1, "mm")))
+            r.add(v)
+            r.dados.update({"perna_cm": perna, "comprimento_cm": float(entrada["comprimento_cm"])})
+        elif entrada.get("tipo") == "parafusada":
+            r = ligacoes.gusset_contraventamento(
+                diametro=entrada["diametro"], parafuso=entrada.get("parafuso") or "ASTM A307",
+                n_parafusos=int(entrada["n_parafusos"]), passo=float(entrada["passo_cm"]),
+                borda=float(entrada["borda_cm"]), gabarito_barra=max(largura / 2.0, 2.0), **comum)
+        else:
+            perna = float(entrada.get("perna_cm") or mat.perna_minima(max(float(entrada["t_gusset_cm"]), t_b)))
+            r = ligacoes.gusset_contraventamento(
+                perna_solda=perna, comprimento_solda=float(entrada["comprimento_cm"]), n_cordoes=2, **comum)
+            r.dados["perna_cm"] = perna
+            for v in r.verificacoes:
+                if v.titulo.startswith("Solda"):
+                    v.observacao = ("o IFC não traz a solda: adotados dois cordões ao longo da sobreposição, "
+                                    "com a perna mínima da Tabela 10 para a chapa mais grossa")
+        for v in r.verificacoes:
+            if v.titulo.startswith("Seção de Whitmore"):
+                v.observacao = "compressão verificada como escoamento da seção de Whitmore, sem flambagem da chapa"
+    except ErroDeDados as exc:
+        r = Resultado(elemento, perfil=perfil.nome, material=entrada.get("aco_chapa", ""))
+        v = Verificacao("Não verificada", Sd=0.0, Rd=1.0, unidade="—")
+        v.observacao = str(exc)
+        r.add(v)
+        r.dados["erro"] = str(exc)
+    r.dados.update({"N": N, "largura_ligacao": largura, "t_barra": t_b, "tipo": entrada.get("tipo", "")})
+    return r
+
+
 # ------------------------------------------------------------------ orquestração
 
 def geometria_do_modelo(doc: Documento, nomes: dict, parametros: Optional[dict] = None) -> dict:
@@ -1112,6 +1490,10 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
             "diagrama": None, "valores": {},
         }
         verificacoes.append(dict(_serializar_resultado(r), marca=marca, nome=nome, tipo=reg["tipo"]))
+
+    # ligações: a chapa de nó de cada nó, com a barra que chega nela
+    avisar("verificando as ligações…")
+    ligacoes_saida = _ligacoes_das_tesouras(tes, par, nomes_pos, elementos, avisos)
 
     # terças
     avisar("verificando as terças…")
@@ -1289,6 +1671,9 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         "parametros": {k: v for k, v in par.items() if k != "trocas"}, "trocas": dict(par.get("trocas") or {}),
         "pior_aproveitamento": round(pior, 3), "reprovadas": sorted(m for m, el in elementos.items() if not el["ok"]),
         "nao_verificadas": nao_verificadas,
+        "ligacoes": len(ligacoes_saida),
+        "ligacoes_reprovadas": [x["chave"] for x in ligacoes_saida if not x["ok"]],
+        "pior_ligacao": round(max((x["aproveitamento"] for x in ligacoes_saida), default=0.0), 3),
     }
     return {
         "ok": True,
@@ -1297,6 +1682,7 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         "grandezas": [dict(x) for x in GRANDEZAS],
         "combinacoes": _combinacoes(combos_total, ultimas, servico),
         "elementos": elementos,
+        "ligacoes": ligacoes_saida,
         "portico": {"xs_mm": [0.0], "nos": nos_saida, "barras": barras_saida,
                     "tesouras": [{"chave": t.chave, "conjunto": t.conjunto, "nome": nomes_conj.get(t.conjunto, t.conjunto),
                                   "vao_m": round(t.vao_mm / 1000.0, 2), "barras": len(t.barras), "nos": len(t.nos),
@@ -1360,13 +1746,21 @@ def alternativas(calculo: dict, marca: str, limite: int = 10, todas: bool = Fals
         if r is None:
             continue
         razao, governa, norma, ok = r
+        lig = None
+        if entrada.get("ligacao"):
+            # a barra mais leve pode passar e a chapa de nó reprovar: a lista mostra os dois
+            rl = _verificar_ligacao(perfil, entrada["ligacao"], "ligação")
+            cl = rl.critica
+            lig = {"aproveitamento": round(rl.razao, 3), "ok": bool(rl.ok),
+                   "governa": cl.titulo if cl else ""}
         delta_massa = c.get("delta_massa")
         delta_peso = round((delta_massa or 0.0) * comprimento, 1) if delta_massa is not None else None
         saida.append({
             "nome": c["nome"], "familia": c["familia"], "origem": c["origem"],
             "massa": c["massa"], "delta_massa": delta_massa, "delta_pct": c.get("delta_pct"),
             "mais_leve": c.get("mais_leve"), "aproveitamento": round(razao, 3),
-            "ok": bool(ok), "governa": governa, "norma": norma,
+            "ok": bool(ok) and (lig is None or lig["ok"]), "ok_barra": bool(ok),
+            "governa": governa, "norma": norma, "ligacao": lig,
             "delta_peso_kg": delta_peso,
             "delta_peso_pct": (round(delta_peso / peso_total * 100.0, 2)
                                if delta_peso is not None and peso_total else None),
@@ -1380,7 +1774,7 @@ def alternativas(calculo: dict, marca: str, limite: int = 10, todas: bool = Fals
         "aproveitamento": el.get("aproveitamento"), "ok": el.get("ok"),
         "governa": el.get("governa", ""), "tipo": el.get("tipo", ""),
         "comprimento_total_m": comprimento, "peso_kg": el.get("peso_kg"),
-        "peso_verificado_kg": peso_total,
+        "peso_verificado_kg": peso_total, "ligacao": el.get("ligacao"),
         "alternativas": saida[:limite],
         "aviso": ("Triagem com os esforços do cálculo atual. Trocar o perfil muda a rigidez "
                   "e redistribui os esforços: ao aplicar, o cálculo é refeito inteiro."),

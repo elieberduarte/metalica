@@ -1286,7 +1286,9 @@ def catalogo_3d() -> dict:
     from nucleo.perfis import banco
     from nucleo import materiais as mat
     from nucleo3d.modelo import Documento
-    saida = {"perfis": [], "materiais": [], "acos": [a.nome for a in mat.ACOS.values()]}
+    saida = {"perfis": [], "materiais": [], "acos": [a.nome for a in mat.ACOS.values()],
+             "parafusos": [p.nome for p in mat.PARAFUSOS.values() if "chumbador" not in (p.norma or "")],
+             "eletrodos": [e.nome for e in mat.ELETRODOS.values()]}
     try:
         from nucleo3d import geometria
     except Exception:

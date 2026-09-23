@@ -2740,6 +2740,12 @@ export class Editor {
       : ['CIVIL 300', 'CIVIL 350', 'CF-26 (NBR 6650)', 'ASTM A36', 'ASTM A572 Gr.50'];
     sel('aco_frio', 'Aço dos formados a frio', acos.map(a => [a, a]));
     sel('aco_laminado', 'Aço dos laminados', acos.map(a => [a, a]));
+    const parafusos = (this.catalogo && this.catalogo.parafusos && this.catalogo.parafusos.length) ? this.catalogo.parafusos
+      : ['ASTM A307', 'ASTM A325', 'ISO 4.6', 'ISO 8.8'];
+    const eletrodos = (this.catalogo && this.catalogo.eletrodos && this.catalogo.eletrodos.length) ? this.catalogo.eletrodos
+      : ['E60XX', 'E70XX'];
+    sel('parafuso', 'Parafusos das chapas de nó', parafusos.map(a => [a, a]));
+    sel('eletrodo', 'Eletrodo das soldas', eletrodos.map(a => [a, a]));
     num('flecha_tesoura', 'Flecha da tesoura L/', '');
     num('flecha_terca', 'Flecha da terça L/', '');
     const corpo = el('div', {},
@@ -2826,23 +2832,34 @@ export class Editor {
         return;
       }
       const passam = lista.filter(a => a.ok).length;
+      const comLig = lista.some(a => a.ligacao);
       caixa.append(el('p', { class: 'analise-descricao', texto:
-        (passam ? `${numero(passam)} de ${numero(lista.length)} passam nos esforços atuais. `
+        (passam ? `${numero(passam)} de ${numero(lista.length)} passam nos esforços atuais` +
+                  (comLig ? ' — na barra e na ligação dela. ' : '. ')
                 : 'Nenhum passa nos esforços atuais; os primeiros são os que chegam mais perto. ') +
-        `A posição tem ${numero(r.comprimento_total_m, 1)} m no modelo (${numero(r.peso_kg, 0)} kg).` }));
+        `A posição tem ${numero(r.comprimento_total_m, 1)} m no modelo (${numero(r.peso_kg, 0)} kg).` +
+        (r.ligacao ? ` Ligação atual (${r.ligacao.chave}, ${r.ligacao.tipo}): ${numero(r.ligacao.aproveitamento * 100, 0)} %.` : '') }));
       const linhas = el('div', { class: 'lista-linhas' });
       for (const a of lista) {
         const dp = a.delta_peso_kg;
+        const lig = a.ligacao;
         const linha = el('div', { class: 'linha',
           title: `${a.governa || ''}${a.norma ? ' · ' + a.norma : ''} · ${a.massa} kg/m · ` +
-                 `${a.origem === 'tabela' ? 'tabela de fabricante' : 'calculado'} — clique para aplicar e recalcular`,
+                 `${a.origem === 'tabela' ? 'tabela de fabricante' : 'calculado'}` +
+                 (lig ? ` · ligação ${numero(lig.aproveitamento * 100, 0)} % (${lig.governa || ''})` : '') +
+                 ' — clique para aplicar e recalcular',
           onclick: () => this._trocarPerfil(marca, a.nome) },
           el('span', { class: 'nome', texto: a.nome }),
           el('span', { class: 'contagem',
                        texto: dp === null || dp === undefined ? '—'
                               : `${dp > 0 ? '+' : ''}${numero(dp, 0)} kg` }),
-          el('span', { class: 'aprov', dados: { ok: a.ok ? '1' : '' },
+          el('span', { class: 'aprov', dados: { ok: (a.ok_barra ?? a.ok) ? '1' : '' },
                        texto: `${numero(a.aproveitamento * 100, 0)} %` }));
+        if (lig) {
+          linha.append(el('span', { class: 'aprov', dados: { ok: lig.ok ? '1' : '' },
+                                    title: 'ligação (chapa de nó ou solda no banzo) com este perfil',
+                                    texto: `lig. ${numero(lig.aproveitamento * 100, 0)} %` }));
+        }
         linhas.append(linha);
       }
       caixa.append(linhas);
@@ -2911,7 +2928,16 @@ export class Editor {
     campos.append(el('label', { texto: 'Reprovadas' }),
       el('span', { class: 'valor' }, el('span', { class: 'aprov', dados: { ok: rep.length ? '' : '1' },
         texto: rep.length ? `${rep.length}: ${rep.join(', ')}` : 'nenhuma' })));
+    const ligs = a.ligacoes || [];
+    if (ligs.length) {
+      const lr = res.ligacoes_reprovadas || [];
+      campos.append(el('label', { texto: 'Ligações' }),
+        el('span', { class: 'valor' }, el('span', { class: 'aprov', dados: { ok: lr.length ? '' : '1' },
+          texto: `${numero(ligs.length)} verificadas · ${lr.length ? `${lr.length} reprovada(s): ${lr.join(', ')}` : 'todas passam'}` +
+                 (res.pior_ligacao ? ` · pior ${numero(res.pior_ligacao * 100, 0)} %` : '') })));
+    }
     caixa.append(campos);
+    if (ligs.length) caixa.append(this._blocoLigacoes(ligs));
     const trocas = (a.parametros && a.parametros.trocas) || {};
     const ts = Object.entries(trocas);
     if (ts.length) {
@@ -2944,6 +2970,42 @@ export class Editor {
       caixa.append(d);
     }
     return caixa;
+  }
+
+  /**
+   * Ligações verificadas do modelo importado: uma linha por (chapa ou banzo × barra), com o
+   * pior esforço entre todos os nós. Clique seleciona as peças (chapa e barras) no modelo,
+   * duplo clique enquadra — o mesmo gesto do ranking.
+   */
+  _blocoLigacoes(ligs) {
+    const ordem = [...ligs].sort((x, y) => (y.aproveitamento || 0) - (x.aproveitamento || 0));
+    const d = el('details', {}, el('summary', { texto: `${numero(ligs.length)} ligação(ões) verificadas` }));
+    const tipos = {};
+    for (const x of ligs) tipos[x.tipo] = (tipos[x.tipo] || 0) + 1;
+    const descr = Object.entries(tipos).map(([t, n]) => `${numero(n)} ${t}`).join(', ');
+    d.append(el('p', { class: 'analise-descricao', texto:
+      `Chapa de nó lida do modelo (espessura, contorno e furos); sem chapa sobre a barra, a solda dela no banzo. ${descr}. ` +
+      'Ordem do pior aproveitamento para o melhor.' }));
+    const lista = el('div', { class: 'lista-linhas' });
+    for (const x of ordem.slice(0, 80)) {
+      const det = x.tipo === 'parafusada'
+        ? `${x.n_parafusos}× ${x.diametro}`
+        : `perna ${numero(x.perna_mm, 1)} mm · ${numero(x.sobreposicao_mm, 0)} mm` + (x.angulo_graus ? ` · ${numero(x.angulo_graus, 0)}°` : '');
+      const linha = el('div', { class: 'linha',
+        title: `${x.governa || ''}${x.norma ? ' · ' + x.norma : ''} · N ${numero(x.N_kN, 1)} kN (${x.caso || ''}) · ` +
+               `${x.nos} nó(s) em ${(x.tesouras || []).length} tesoura(s) — clique seleciona, duplo clique enquadra` });
+      linha.append(
+        el('span', { class: 'marca', texto: x.chave }),
+        el('span', { class: 'nome', texto: `${x.tipo} · ${x.tipo_barra} ${x.perfil} · ${det}` }),
+        el('span', { class: 'contagem', texto: `${numero(x.N_kN, 1)} kN` }),
+        el('span', { class: 'aprov', dados: { ok: x.ok ? '1' : '' }, texto: `${numero(x.aproveitamento * 100, 0)} %` }));
+      const ids = x.ids || [];
+      linha.addEventListener('click', (ev) => { if (!ev.target.closest('button, input')) this._clicarRanking(ids, ev); });
+      linha.addEventListener('dblclick', (ev) => { if (ids.length) this.camera.zoomSelecao(ids); });
+      lista.append(linha);
+    }
+    d.append(lista);
+    return d;
   }
 
   /** Liga ou desliga o mapa: cores e desenhos na cena, painel na coluna da direita. */
