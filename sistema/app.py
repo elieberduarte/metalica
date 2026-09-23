@@ -742,10 +742,14 @@ def _alinhar_furos_das_barras(s: str, doc) -> dict:
     from nucleo2d import detalhar as det
     _progresso(s, "conferindo os furos das terças com os das chapas de suporte…")
     r = det.alinhar_furos_das_barras_as_chapas(doc)
-    if r.get("barras"):
+    # e os furos das terças em que não passa nada saem (a produção furaria à toa)
+    _progresso(s, "retirando das terças os furos sem parafuso nem barra…")
+    r2 = det.retirar_furos_sem_uso(doc)
+    if r.get("barras") or r2.get("furos"):
         _gerente().salvar_modelo(s, doc.dict(), marco=True)
-        print("[detalhamento] %s: %d furo(s) de %d barra(s) alinhados às chapas (%d oblongos)"
-              % (s, r["furos"], r["barras"], r["oblongos"]))
+        print("[detalhamento] %s: %d furo(s) de %d barra(s) alinhados às chapas (%d oblongos); %d furo(s) sem uso retirados de %d terça(s)"
+              % (s, r["furos"], r["barras"], r["oblongos"], r2["furos"], r2["barras"]))
+    r["retirados"] = r2
     return r
 
 

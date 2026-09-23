@@ -163,6 +163,7 @@ from nucleo2d.detalhe.celulas import (  # noqa: E402,F401
     aplicar_furos_de_barra,
     aplicar_furos_nas_barras,
     alinhar_furos_das_barras_as_chapas,
+    retirar_furos_sem_uso,
     contorno_do_desenho,
     converter_chapas,
     desenho_da_posicao,
@@ -255,15 +256,15 @@ def _anexar_faixa(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_
 
 #: Título do quadro de cada tipo de conjunto, na ordem em que os quadros saem.
 QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("conjunto", "CONJUNTOS"),
-           ("agulhamento", "AGULHAMENTOS"), ("contraventamento", "CONTRAVENTAMENTOS")]
+           ("agulhamento", "AGULHAMENTOS"), ("contraventamento", "CONTRAVENTAMENTOS"), ("chumbador", "CHUMBADORES")]
 
 
 #: Título do quadro de cada tipo de posição (peça avulsa), na ordem em que saem.
 QUADROS_POSICOES = [("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
-                    ("suporte_terca", "SUPORTES DE TERÇA"), ("agulhamento", "AGULHAMENTOS"),
+                    ("suporte_terca", "SUPORTES DE TERÇA"), ("montagem", "PEÇAS MONTADAS – FRENTE, LATERAL E ISOMÉTRICA"), ("agulhamento", "AGULHAMENTOS"),
                     ("suporte_agulhamento", "SUPORTES DE AGULHAMENTO"), ("contraventamento", "CONTRAVENTAMENTOS"),
                     ("suporte_contraventamento", "SUPORTES DE CONTRAVENTAMENTO"), ("castanha", "CASTANHAS"),
-                    ("barra_roscada", "BARRAS ROSCADAS"), ("gancho", "GANCHOS"), ("parte", "PEÇAS DE CONJUNTOS"),
+                    ("barra_roscada", "BARRAS ROSCADAS"), ("gancho", "GANCHOS"), ("chumbador", "CHUMBADORES"), ("parte", "PEÇAS DE CONJUNTOS"),
                     ("barra", "BARRAS"), ("chapa", "CHAPAS"), ("telha", "TELHAS")]
 
 
@@ -284,6 +285,8 @@ def _familia_da_posicao(p, tipo_pos: str, tipo_de_conj: Dict[str, str]) -> str:
         return "contraventamento"
     if tipo_pos in ("terca_cobertura", "terca_marquise", "suporte_terca"):
         return "terca"
+    if tipo_pos == "chumbador":
+        return "tesoura"                              # junto das chapas de base das tesouras"
     if p.classe == "telha":
         return "telha"
     tipos = collections.Counter(tipo_de_conj[c] for c in (p.conjuntos or []) if tipo_de_conj.get(c))
@@ -654,8 +657,32 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             celulas_g += [("paginacao", (lambda dd, x, y, f=f, i=i: desenho_da_paginacao(f, dd, x, y, i)))
                           for i, f in enumerate(faces, 1)]
         celulas_g += [("multidobra", (lambda dd, x, y, t=t: desenho_da_multidobra(t, dd, x, y, t["nome"]))) for t in extra_md]
+        n_frente = len(celulas_g)
         celulas_g += [(nomeacao["tipos"].get(p.marca) or p.tipo_nome or p.classe,
                        (lambda dd, x, y, p=p: desenho_da_posicao(p, dd, x, y, editavel=p.marca in editaveis))) for p in lista]
+        # peças montadas (suporte de terça soldado, chapa de base com os chumbadores): junto
+        # das chapas, com frente, lateral e isométrica
+        celulas_mont, familias_mont = [], []
+        if chave == "chapas":
+            from nucleo2d.detalhe.montagens import grupos_montados, desenho_de_montagem
+            nome_pc = lambda m: nomes_pos.get(fundidas.get(m, m)) or nomes_conj.get(m) or fundidas.get(m, m)    # noqa: E731
+            try:
+                montagens = grupos_montados(pecas, _fixadores(doc), nome_pc)
+            except Exception as exc:              # noqa: BLE001 — o resto do detalhamento sai
+                montagens = []
+                avisos.append("peças montadas não levantadas: %s" % exc)
+            por_id = {e.id: e for e in pecas}
+            for gm in montagens:
+                tipos_g = {nomeacao["tipos"].get(fundidas.get(m, m)) for m in gm["marcas"]}
+                titulo = "SUPORTE DE TERÇA" if "suporte_terca" in tipos_g else ""
+                celulas_mont.append(("montagem", (lambda dd, x, y, gm=gm, titulo=titulo:
+                                                  desenho_de_montagem(doc, gm, dd, x, y, titulo, por_id))))
+                if "suporte_terca" in tipos_g:
+                    familias_mont.append("terca")
+                else:
+                    conjs = [tipo_de_conj.get(str(_marcas(por_id[i]).get("conjunto") or "")) for i in gm["pecas"] if i in por_id]
+                    familias_mont.append(next((t for t in conjs if t in dict(FAMILIAS)), "outros"))
+        celulas_g += celulas_mont
         for t in extra_md:
             d.metadados["detalhamento"]["itens"][t["conjunto"]] = {
                 "quantidade": t["instancias"], "perfil": "%s multi-dobra" % t["perfil"], "material": t["material"],
@@ -666,10 +693,10 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         d.metadados["detalhamento"]["furos_originais"] = {
             p.marca: [_furo_dict(f) for f in p.furos if f.vista == "frente"] for p in lista if p.marca in editaveis}
         faixas[chave] = (celulas_g, 800.0, dict(d.metadados["detalhamento"]), QUADROS_POSICOES)
-        n_extra = len(celulas_g) - len(lista)
-        familias_completo.extend(("telha", f) for _, f in celulas_g[:n_extra])
+        familias_completo.extend(("telha", f) for _, f in celulas_g[:n_frente])
         familias_completo.extend((_familia_da_posicao(p, nomeacao["tipos"].get(p.marca) or p.tipo_nome, tipo_de_conj), f)
-                                 for p, (_, f) in zip(lista, celulas_g[n_extra:]))
+                                 for p, (_, f) in zip(lista, celulas_g[n_frente:n_frente + len(lista)]))
+        familias_completo.extend((fam, f) for fam, (_, f) in zip(familias_mont, celulas_mont))
         if chave in grupos:
             desenhos[chave] = d
 

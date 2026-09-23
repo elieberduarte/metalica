@@ -175,6 +175,18 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
+**0.7.13 — peças montadas e furos sem uso.** `nucleo2d/detalhe/montagens.py`: `grupos_montados` acha
+pela geometria as chapas miúdas (≤ 600 mm) do mesmo conjunto que se encostam (suporte de terça = chapa +
+nervura soldada) e a chapa de base deitada atravessada por barra redonda em pé (o chumbador, que no
+TecnoMETAL vem como conjunto próprio), com as porcas; pares de chapas iguais não contam. Cada combinação
+vira uma célula (quadro "PEÇAS MONTADAS", no desenho de chapas e na família dela no completo) com frente,
+lateral (cotas gerais, nomes com chamada) e isométrica. O chumbador ganhou tipo próprio (`chumbador`,
+"CB."; antes caía como contraventamento). `retirar_furos_sem_uso`: furo de terça sem parafuso nem barra
+passando (caixa do fixador/barra cobrindo o centro, 2 mm) é fechado na malha — os vértices vão para o
+eixo do furo — e some do detalhamento; roda ao gerar o detalhamento, depois do alinhamento às chapas.
+O alinhamento passou a parear furo × furo da chapa pelo par mais próximo no todo (furo a furo, um furo
+sem uso perto da ligação roubava o furo da chapa).
+
 **0.7.12 — retorno da fábrica.** Telha: comprimento de compra arredondado **para cima** de 5 em 5 mm
 (`base.arredondar_telha`, `PASSO_TELHA`: 1449 → 1450, 1891 → 1895) na compra, na célula, na lista, na
 paginação e nas retas da multi-dobra (a sobra fica nas pontas livres). A saia é **fora a fora**: uma

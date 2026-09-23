@@ -158,6 +158,19 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     tipo: Dict[str, str] = {}
     marcas_terca = {m for p in posicoes for m in marcas_de(p) if p.classe == "barra" and _eh_terca(p, camadas.get(p.marca, ""))}
     suportes = _chapas_onde_a_terca_encosta(pecas, marcas_terca)
+    # chumbador: barra redonda em pé que atravessa uma chapa de base deitada (no TecnoMETAL
+    # vem como conjunto próprio e caía na regra do tirante: "C.V.")
+    from nucleo2d.detalhe.montagens import grupos_montados, _eh_chapa
+    marcas_chumbador = set()
+    try:
+        por_id = {e.id: e for e in pecas}
+        for g in grupos_montados(pecas, (), lambda m: m):
+            if g["tipo"] == "chumbamento":
+                marcas_chumbador |= {m for m in g["marcas"]
+                                     if any(not _eh_chapa(e) and str(_marcas(e).get("posicao") or e.nome) == m
+                                            for e in (por_id[i] for i in g["pecas"] if i in por_id))}
+    except Exception:                                 # noqa: BLE001 — sem isso, fica a regra antiga
+        marcas_chumbador = set()
     for p in posicoes:
         cls = p.classe
         if cls in ("chapa", "chapa_dobrada"):
@@ -168,6 +181,9 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             t = "telha"
         elif re.search(r"BARRA\s*ROSC", p.perfil or "", re.I):
             t = "barra_roscada"                      # o pedaço roscado do esticador, não o tirante
+        elif (cls == "barra_redonda" or (cls == "barra_conformada" and _eh_redonda_perfil(p.perfil))) \
+                and any(m in marcas_chumbador for m in marcas_de(p)):
+            t = "chumbador"
         elif cls == "barra_redonda" or (cls == "barra_conformada" and _eh_redonda_perfil(p.perfil)):
             t = "contraventamento" if p.comprimento >= MENOR_TIRANTE else "gancho"
         elif cls == "barra" and _eh_terca(p, camadas.get(p.marca, "")):
@@ -197,7 +213,9 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             cont[tipo.get(fundidas.get(m, m), "")] += q
         n = sum(comp.values())
         barras_conj = [fundidas.get(m, m) for m, q in comp.items() if tipo.get(fundidas.get(m, m)) in ("barra", "agulhamento") for _ in range(q)]
-        if cont.get("contraventamento"):
+        if cont.get("chumbador") and n == cont.get("chumbador"):
+            tipo_conj[c["marca"]] = "chumbador"
+        elif cont.get("contraventamento"):
             tipo_conj[c["marca"]] = "contraventamento"
         elif len(barras_conj) == 1 and n <= 6 and n == len(barras_conj) + cont.get("chapa", 0) + cont.get("suporte_terca", 0):
             # uma barra com chapinhas de ponta: agulhamento (a barra é a agulha)

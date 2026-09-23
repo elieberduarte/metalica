@@ -871,13 +871,17 @@ def alinhar_furos_das_barras_as_chapas(doc: Documento, limite: float = LIMITE_DE
         if pos.classe != "barra" or not pos.eixos:
             continue
         e1, e2, e3 = pos.eixos
-        usados = set()
         mexeu = 0
-        for f, laco, vista in _furos_da_malha(pos):
+        # pares furo da barra × furo da chapa, do mais perto para o mais longe, cada um
+        # usado uma vez: furo a furo, um furo a mais da barra (sem uso) perto da ligação
+        # "roubava" o furo da chapa do furo certo
+        furos_b = []
+        pares = []
+        for hi, (f, laco, vista) in enumerate(_furos_da_malha(pos)):
             eixo = e3 if vista == "frente" else e2
             centro, idx = _indices_do_furo(ent, laco, eixo, f.d / 2 + 1.0)
-            melhor, dist = None, limite
-            for k in perto - usados:
+            furos_b.append((f, laco, vista, eixo, centro, idx))
+            for k in perto:
                 c, n, esp, rasgo = furos_ch[k]
                 if abs(_dot(n, eixo)) < 0.95:
                     continue                          # chapa em outro plano
@@ -886,12 +890,20 @@ def alinhar_furos_das_barras_as_chapas(doc: Documento, limite: float = LIMITE_DE
                 if abs(normal_) > esp / 2.0 + 15.0:
                     continue                          # não encosta na barra
                 plano = math.sqrt(max(0.0, _dot(d, d) - normal_ * normal_))
-                if plano < dist:
-                    melhor, dist = k, plano
-            if melhor is None:
+                if plano < limite:
+                    pares.append((plano, hi, k))
+        pares.sort()
+        par_de: Dict[int, int] = {}
+        usados = set()
+        for plano, hi, k in pares:
+            if hi in par_de or k in usados:
                 continue
-            usados.add(melhor)
-            c, n, esp, rasgo = furos_ch[melhor]
+            par_de[hi] = k
+            usados.add(k)
+        for hi, (f, laco, vista, eixo, centro, idx) in enumerate(furos_b):
+            if hi not in par_de:
+                continue
+            c, n, esp, rasgo = furos_ch[par_de[hi]]
             d = _sub(c, centro)
             delta = tuple(d[i] - eixo[i] * _dot(d, eixo) for i in range(3))
             movido = False
@@ -923,6 +935,63 @@ def alinhar_furos_das_barras_as_chapas(doc: Documento, limite: float = LIMITE_DE
             saida["furos"] += mexeu
             if marca not in saida["posicoes"]:
                 saida["posicoes"].append(marca)
+    return saida
+
+
+#: Um furo "tem uso" se o parafuso ou a barra que passa nele cobre o centro do furo com
+#: esta folga (mm).
+FOLGA_USO_FURO = 2.0
+
+
+def retirar_furos_sem_uso(doc: Documento, so_tercas: bool = True) -> dict:
+    """Tira das terças (malha 3D) os furos em que não passa nada — nenhum parafuso nem
+    barra (tirante, corrente, chumbador): furação padronizada do IFC que a produção furaria
+    à toa (a máquina da fábrica não é automática). O furo some fechando a malha nele: os
+    vértices do furo vão para o eixo dele, e o detalhamento seguinte já não o vê. Repetir
+    não muda nada. Devolve {"barras", "furos", "posicoes": {marca: n}}."""
+    from nucleo2d.detalhe.base import _fixadores, _eh_terca, _eh_redonda_perfil
+    saida = {"barras": 0, "furos": 0, "posicoes": {}}
+    pecas, _ = _pecas(doc)
+    passantes = [_caixa(f) for f in _fixadores(doc)]
+    passantes += [_caixa(e) for e in pecas if _eh_redonda_perfil(str(_marcas(e).get("perfil") or e.nome or ""))]
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    for k, cx in enumerate(passantes):
+        for gx in range(int(cx[0][0] // 500), int(cx[0][1] // 500) + 1):
+            for gy in range(int(cx[1][0] // 500), int(cx[1][1] // 500) + 1):
+                for gz in range(int(cx[2][0] // 500), int(cx[2][1] // 500) + 1):
+                    grade[(gx, gy, gz)].append(k)
+    tol = FOLGA_USO_FURO
+    for ent in list(doc.entidades.values()):
+        if not isinstance(ent, Solido) or _tipo_ifc(ent) not in TIPOS_PECA or len(ent.vertices or []) < 8:
+            continue
+        m = _marcas(ent)
+        marca = str(m.get("posicao") or ent.nome or ent.id)
+        pos = _posicao_bruta(ent, marca)
+        pos.tipo_ifc = _tipo_ifc(ent)
+        conj = str(m.get("conjunto") or "")
+        pos.conjuntos = [conj] if conj else []
+        try:
+            analisar(pos)
+        except Exception:                             # noqa: BLE001
+            continue
+        if pos.classe != "barra" or not pos.eixos or (so_tercas and not _eh_terca(pos, ent.camada or "")):
+            continue
+        e1, e2, e3 = pos.eixos
+        fechados = 0
+        for f, laco, vista in _furos_da_malha(pos):
+            eixo = e3 if vista == "frente" else e2
+            c, idx = _indices_do_furo(ent, laco, eixo, f.d / 2 + 1.0)
+            chave = (int(c[0] // 500), int(c[1] // 500), int(c[2] // 500))
+            if any(all(passantes[k][i][0] - tol <= c[i] <= passantes[k][i][1] + tol for i in range(3))
+                   for k in grade.get(chave, ())):
+                continue                              # tem parafuso ou barra: fica
+            ent.vertices = [tuple(c[j] + eixo[j] * _dot(_sub(v, c), eixo) for j in range(3)) if i in idx else tuple(v)
+                            for i, v in enumerate(ent.vertices)]
+            fechados += 1
+        if fechados:
+            saida["barras"] += 1
+            saida["furos"] += fechados
+            saida["posicoes"][marca] = saida["posicoes"].get(marca, 0) + fechados
     return saida
 
 
