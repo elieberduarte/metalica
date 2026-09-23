@@ -9,7 +9,7 @@ Passos:
   1. calcula a impressão digital do núcleo de cálculo e grava `impressao_nucleo.txt`,
      porque no executável os fontes não existem mais para calcular na hora;
   2. roda o PyInstaller sobre `sistema/app.py`, em pasta (onedir) e sem console,
-     levando junto o que não é código: `web/`, `dados/perfis.json`, `saida/memorial.css`.
+     levando junto o que não é código: `web/`, `dados/perfis.json` e `catalogo.json`, `saida/memorial.css`.
      Os módulos acham esses arquivos por caminho relativo ao próprio `__file__`, então
      basta repetir a estrutura de pastas dentro do pacote;
   3. compila o instalador com o Inno Setup (`instalador.iss`).
@@ -65,6 +65,9 @@ def executavel():
     dados = [
         (os.path.join(SISTEMA, "web"), "web"),
         (os.path.join(SISTEMA, "dados", "perfis.json"), "dados"),
+        # catálogo de peças (séries calculadas e fornecedores): sem ele o programa
+        # instalado só via o perfis.json, e as tesouras escolhiam em menos perfis
+        (os.path.join(SISTEMA, "dados", "catalogo.json"), "dados"),
         (os.path.join(SISTEMA, "saida", "memorial.css"), "saida"),
         # a paginação do memorial e da lista em PDF: no desenvolvimento o sistema a
         # acha na pasta do manual, que não vai no pacote; aqui entra em saida/lib,
