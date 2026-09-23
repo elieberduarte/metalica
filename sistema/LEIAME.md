@@ -202,7 +202,11 @@ anotados na célula com o método; quando a conta não fecha, a célula diz que 
 ### Detalhamento no CAD do projeto (peças e conjuntos)
 
 No editor 3D de um projeto, **Desenho 2D → Detalhar peças e conjuntos…** gera, a partir
-do modelo já importado, desenhos editáveis no CAD (`nucleo2d/detalhar.py`, rota
+do modelo já importado, desenhos editáveis no CAD (`nucleo2d/detalhar.py` é a fachada — reexporta tudo,
+inclusive os nomes privados usados nos testes — e a orquestração `levantar`/`detalhar`/`desenho_completo`;
+as partes ficam em `nucleo2d/detalhe/`: `base.py` (papel, posições, furos e parafusos, regra das terças,
+categorias), `conjuntos.py` (instâncias, elevação, contraventamentos, localização), `nomes.py` (nomes de
+produção) e `celulas.py` (célula da posição, chapa paramétrica, furos editáveis); rota
 `POST /api/projetos/<slug>/detalhar`), no formato das pranchas de fábrica:
 
 - um desenho por grupo — chapas (1:10), barras e terças (1:25), tirantes, telhas e
