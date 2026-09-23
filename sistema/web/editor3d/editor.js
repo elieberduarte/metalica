@@ -19,7 +19,7 @@ import { Documento, criar, clonar, comprimentoDaBarra, direcaoDaBarra, areaDaCha
 import { Pilha, Comando, ComandoAdicionar, ComandoRemover, ComandoAlterar }
   from './nucleo/comandos.js';
 import { Cena, MODOS, ESCALA, PESADOS, medir } from './nucleo/cena.js';
-import { lerPerfil, nomeDoPerfil, trocarSecao } from './nucleo/trocar_perfil.js';
+import { lerPerfil, nomeDoPerfil, trocarSecao, BITOLAS } from './nucleo/trocar_perfil.js';
 import { Camera, VISTAS } from './nucleo/camera.js';
 import { Selecao } from './nucleo/selecao.js';
 import { Inferencia } from './nucleo/inferencia.js';
@@ -2533,12 +2533,15 @@ export class Editor {
         for (const it of (d.itens || [])) {
           const p = lerPerfil(it.nome.replace(/\s*\(FF\)\s*$/, ''));
           if (!p || p.familia !== pa.familia) continue;
-          const nome = pa.prefixo + [p.H, p.B, ...(p.D ? [p.D] : []), p.t.toFixed(2)].join('X');
+          // espessura de bitola vai como a fábrica escreve (#14 = 2,00); as outras em mm
+          const bitola = Object.keys(BITOLAS).find(k => Math.abs(BITOLAS[k] - p.t) < 0.005);
+          const esp = bitola ? `#${bitola}` : p.t.toFixed(2);
+          const nome = pa.prefixo + [p.H, p.B, ...(p.D ? [p.D] : []), esp].join('X');
           if (vistos.has(nome)) continue;
           vistos.add(nome);
           const fab = (it.fabricantes || []).map(f => f.split(/ [(–]/)[0]).filter(Boolean);
           sugestoes.append(el('option', { value: nome,
-            texto: `${it.nome} · ${numero(it.massa, 2)} kg/m${fab.length ? ' · ' + [...new Set(fab)].join(', ') : ''}` }));
+            texto: `${it.nome}${bitola ? ` (#${bitola} = ${p.t.toFixed(2).replace('.', ',')} mm)` : ''} · ${numero(it.massa, 2)} kg/m${fab.length ? ' · ' + [...new Set(fab)].join(', ') : ''}` }));
         }
       }).catch(() => {});
     }
