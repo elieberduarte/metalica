@@ -338,15 +338,24 @@ export class Lote {
     this._marcar(acor, it.a0 * 3, it.na * 3);
   }
 
-  /** Só o trecho mudado sobe para a placa; vários trechos no mesmo quadro viram o buffer inteiro. */
+  /**
+   * Só os trechos mudados sobem para a placa. As faixas se acumulam até o próximo quadro
+   * (o renderer as limpa depois de enviar); muitas de uma vez viram o buffer inteiro.
+   * Antes isto lia `attr.needsUpdate` para saber se já havia envio pendente — mas no
+   * three.js ele só tem setter, a leitura dá undefined, e cada peça sobrescrevia a faixa
+   * da anterior: repintar o modelo (colorir por perfil) só mudava a última peça.
+   * O pedido de envio (`needsUpdate`) vai sempre: faixas marcadas antes do primeiro envio
+   * do bloco não são limpas pelo three.js (o primeiro envio manda tudo e deixa a lista),
+   * então "já há faixa pendente" não quer dizer que um envio vai acontecer.
+   */
   _marcar(attr, offset, count) {
-    if (attr.needsUpdate) {
-      attr.updateRange.offset = 0;
-      attr.updateRange.count = -1;
-      return;
+    const faixas = attr.updateRanges;
+    const n = attr.array.length;
+    const inteiro = faixas.length === 1 && faixas[0].start === 0 && faixas[0].count === n;
+    if (!inteiro) {
+      if (faixas.length >= 64) { attr.clearUpdateRanges(); attr.addUpdateRange(0, n); }
+      else attr.addUpdateRange(offset, count);
     }
-    attr.updateRange.offset = offset;
-    attr.updateRange.count = count;
     attr.needsUpdate = true;
   }
 
