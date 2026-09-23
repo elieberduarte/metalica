@@ -93,7 +93,9 @@ GRUPOS_ENTRADA = [
     ("Geometria", ["vao", "comprimento", "pe_direito", "espacamento_porticos",
                    "inclinacao", "balanco_lateral"]),
     ("Sistema estrutural", ["tipo_portico", "base_rotulada", "com_misula",
-                            "comprimento_misula", "altura_misula"]),
+                            "comprimento_misula", "altura_misula", "formato_tesoura",
+                            "diagonais_tesoura", "ligacao_tesoura", "altura_tesoura",
+                            "paineis_tesoura"]),
     ("Materiais", ["aco_perfis", "aco_tercas", "aco_chapas", "parafuso", "eletrodo",
                    "fck_MPa"]),
     ("Cobertura e fechamento", ["telha", "espacamento_tercas", "linhas_correntes",
@@ -1600,18 +1602,25 @@ def _data_extenso(dt: date) -> str:
 def _capa(projeto: ProjetoGalpao) -> str:
     d = projeto.dados
     hoje = date.today()
-    sistema = ("Pórtico de alma cheia de duas águas"
-               if "alma" in str(d.tipo_portico).lower()
-               else f"Pórtico {d.tipo_portico}")
-    sistema += (", bases rotuladas" if d.base_rotulada else ", bases engastadas")
-    sistema += (f", mísula de {fmt(d.comprimento_misula, 2)} m" if d.com_misula
-                else ", sem mísula")
+    if d.eh_trelicado:
+        sistema = (f"Tesoura {d.formato_tesoura} de duas águas, diagonais "
+                   f"{d.diagonais_tesoura}, {d.ligacao_tesoura} no pilar")
+        sistema += (", bases rotuladas" if d.base_rotulada else ", bases engastadas")
+        sistema += f", altura de {fmt(d.altura_tesoura_m, 2)} m no apoio"
+    else:
+        sistema = ("Pórtico de alma cheia de duas águas"
+                   if "alma" in str(d.tipo_portico).lower()
+                   else f"Pórtico {d.tipo_portico}")
+        sistema += (", bases rotuladas" if d.base_rotulada else ", bases engastadas")
+        sistema += (f", mísula de {fmt(d.comprimento_misula, 2)} m" if d.com_misula
+                    else ", sem mísula")
     resumo = [
         ("Vão × comprimento × pé-direito",
          f"{fmt(d.vao, 1)} × {fmt(d.comprimento, 1)} × {fmt(d.pe_direito, 1)} m"),
         ("Área coberta", fmt(d.area_coberta, 0, "m²")),
         ("Inclinação do telhado",
          f"{fmt(d.inclinacao, 1)} % ({fmt(d.angulo_telhado, 1)}°)"),
+        ("Altura do beiral", fmt(d.altura_beiral, 2, "m")),
         ("Altura da cumeeira", fmt(d.altura_cumeeira, 2, "m")),
         ("Pórticos", f"{d.n_porticos} a cada {fmt(d.espacamento_porticos, 2)} m"),
         ("Sistema estrutural", sistema),

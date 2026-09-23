@@ -199,7 +199,9 @@ def _desenhos_do_projeto(projeto, pasta_tmp: str) -> Dict[str, Vista]:
     except Exception:
         return {}
     saida: Dict[str, Vista] = {}
-    for nome, titulo, escala, fn in getattr(desenhos, "CATALOGO", []):
+    catalogo = (desenhos.catalogo_de(projeto) if hasattr(desenhos, "catalogo_de")
+                else getattr(desenhos, "CATALOGO", []))
+    for nome, titulo, escala, fn in catalogo:
         try:
             d = fn(projeto)
         except Exception:
@@ -600,6 +602,11 @@ def gerar(projeto, pasta: str, desenhos: Optional[Sequence] = None) -> List[dict
                         "Pranchas montadas com o desenho de esquema do próprio módulo: "
                         "o módulo saida/desenhos.py não pôde fornecer os detalhes.")
 
+        # prancha sem nenhuma vista disponível sai da composição antes da numeração,
+        # para não imprimir "02/06" num jogo de cinco pranchas
+        composicao = [c for c in composicao
+                      if any(n in catalogo for n in c[3])]
+        composicao = [(i + 1,) + c[1:] for i, c in enumerate(composicao)]
         total = len(composicao)
         for numero, formato, titulo, nomes in composicao:
             vistas = [catalogo[n] for n in nomes if n in catalogo]

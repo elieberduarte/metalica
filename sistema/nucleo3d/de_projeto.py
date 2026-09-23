@@ -103,6 +103,8 @@ def _vaos_padrao(n_vaos: int) -> List[int]:
 
 #: Marcas de fabricação, as mesmas da lista de material.
 MARCAS = {"pilar": "P1", "viga": "V1", "misula_alma": "M1", "misula_mesa": "M2",
+          "banzo superior": "BS", "banzo inferior": "BI",
+          "diagonal": "D", "montante": "M", "travamento": "TV",
           "terca": "T1", "corrente": "TC", "longarina": "L1",
           "contrav_cobertura": "CC", "contrav_vertical": "CV",
           "chapa_joelho": "CH1", "chapa_cumeeira": "CH2", "placa_base": "CH3",
@@ -194,6 +196,11 @@ class _Construtor:
 
         g = self.g
         self.V, self.C, self.H = g.vao, g.comprimento, g.H
+        # na tesoura o topo do pilar (H) é o banzo inferior e o telhado começa no
+        # beiral, uma altura de tesoura acima; no pórtico de alma cheia os dois coincidem
+        self.hb = g.h_beiral
+        self.topo_pilar = g.h_beiral if (self.dg.eh_trelicado
+                                         and self.dg.ligacao_tesoura == "rígida") else g.H
         self.hc, self.i, self.theta = g.h_cumeeira, g.i, g.theta
         self.c, self.s = math.cos(g.theta), math.sin(g.theta)
         self.xs = [k * g.esp_port for k in range(g.n_porticos)]
@@ -223,11 +230,12 @@ class _Construtor:
 
     def _barra(self, chave: str, ini: Ponto, fim: Ponto, perfil: Perfil, papel: str,
                camada: str, material: str, aco: str, elemento: str,
-               rotacao: float = 0.0, **pos) -> Barra:
-        b = Barra(nome=MARCAS[chave], inicio=tuple(ini), fim=tuple(fim),
+               rotacao: float = 0.0, marca: Optional[str] = None, **pos) -> Barra:
+        marca = marca or MARCAS[chave]
+        b = Barra(nome=marca, inicio=tuple(ini), fim=tuple(fim),
                   perfil=perfil.nome, rotacao=rotacao, papel=papel, camada=camada,
                   material=material, aco=aco)
-        b.atributos = {"marca": MARCAS[chave], "elemento": elemento,
+        b.atributos = {"marca": marca, "elemento": elemento,
                        "peso_kg": round(geo.peso_barra(b), 2), **pos}
         self.doc.add(b)
         return b
@@ -247,8 +255,8 @@ class _Construtor:
         return ch
 
     def _z_agua(self, y: float) -> float:
-        """Cota do eixo da viga na posição y do vão (duas águas)."""
-        return self.H + self.i * min(y, self.V - y)
+        """Cota do eixo da água na posição y do vão (viga ou banzo superior)."""
+        return self.hb + self.i * min(y, self.V - y)
 
     def _normal_agua(self, y: float) -> Ponto:
         """Normal da água (para cima, perpendicular à viga) na posição y."""
@@ -257,13 +265,20 @@ class _Construtor:
     # ------------------------------------------------------------------ montagem
     def montar(self) -> Documento:
         self._pilares()
-        self._vigas()
-        self._misulas()
+        if self.dg.eh_trelicado:
+            self._tesoura()
+        else:
+            self._vigas()
+            self._misulas()
         self._tercas_e_correntes()
         self._longarinas()
         self._contraventamento_cobertura()
         self._contraventamento_vertical()
-        self._chapas_de_topo()
+        self._travamento_banzo_inferior()
+        if not self.dg.eh_trelicado:
+            # as chapas de topo do joelho e da cumeeira são do pórtico de alma cheia;
+            # na tesoura quem faz esse papel é a chapa de nó, ainda não modelada em 3D
+            self._chapas_de_topo()
         self._bases()
         if self.com_fechamento:
             self._fechamento()
@@ -276,7 +291,7 @@ class _Construtor:
         for k, x in enumerate(self.xs):
             for lado, y in (("esquerdo", 0.0), ("direito", self.V)):
                 # rotação 90°: alma no plano do pórtico (eixo forte no Y global)
-                self._barra("pilar", (x, y, 0.0), (x, y, self.H), self.pilar, "pilar",
+                self._barra("pilar", (x, y, 0.0), (x, y, self.topo_pilar), self.pilar, "pilar",
                             "Estrutura", "Aço", self.dg.aco_perfis, el, rotacao=90.0,
                             portico=k + 1, lado=lado)
 
@@ -287,6 +302,69 @@ class _Construtor:
                 self._barra("viga", (x, y0, self.H), (x, self.V / 2, self.hc),
                             self.viga, "viga", "Estrutura", "Aço", self.dg.aco_perfis,
                             el, portico=k + 1, agua=agua)
+
+    def _tesoura(self):
+        """A tesoura de cada pórtico, barra por barra, com o perfil de cada família.
+
+        A malha é a mesma que o cálculo usou (`esforcos["geometria_tesoura"]`), e as
+        marcas são as da lista de material: BS e BI nos banzos, D1…Dn e M1…Mn nas
+        barras internas, agrupadas por comprimento.
+        """
+        from nucleo import tesouras as _tes
+        from nucleo.galpao import NOME_DA_BARRA
+        t = dsn._tesoura_do_projeto(self.fonte, self.dg)
+        perfis, nomes = {}, {}
+        for papel in _tes.PAPEIS:
+            el = self._elemento(NOME_DA_BARRA[papel])
+            perfis[papel] = dsn._perfil(el.perfil) if el and el.perfil else self.viga
+            nomes[papel] = el.nome if el else NOME_DA_BARRA[papel]
+        pular = {"mont_esq", "mont_dir"} if self.dg.ligacao_tesoura == "rígida" else set()
+
+        # marca por comprimento, na mesma ordem da lista de material
+        marca_de = {}
+        for papel in ("diagonal", "montante"):
+            comps = sorted({round(t.comprimento(b) / 100.0, 2)
+                            for b in t.do_papel(papel) if b.rotulo not in pular},
+                           reverse=True)
+            for i, c in enumerate(comps, start=1):
+                marca_de[(papel, c)] = "%s%d" % (MARCAS[papel], i)
+
+        for k, x in enumerate(self.xs):
+            for b in t.barras:
+                if b.rotulo in pular:
+                    continue
+                ni, nj = t.no(b.i), t.no(b.j)
+                ini = (x, ni.x * 10.0, self.H + ni.y * 10.0)
+                fim = (x, nj.x * 10.0, self.H + nj.y * 10.0)
+                comp = round(t.comprimento(b) / 100.0, 2)
+                marca = marca_de.get((b.papel, comp), MARCAS[b.papel])
+                papel3d = "banzo" if b.papel.startswith("banzo") else b.papel
+                self._barra(b.papel, ini, fim, perfis[b.papel], papel3d, "Estrutura",
+                            "Aço", self.dg.aco_perfis, nomes[b.papel], marca=marca,
+                            portico=k + 1, barra=b.rotulo, familia=b.papel)
+
+    def _travamento_banzo_inferior(self):
+        """Tirantes que travam o banzo inferior de uma tesoura à vizinha."""
+        el = self._elemento("Travamento do banzo inferior")
+        if el is None or not self.dg.eh_trelicado:
+            return
+        t = dsn._tesoura_do_projeto(self.fonte, self.dg)
+        linhas = int(el.geometria.get("linhas_por_tesoura") or 0)
+        if linhas <= 0:
+            return
+        perfil = self._perfil_contraventamento("Travamento do banzo inferior")
+        nos = [n for n in t.nos if n.banzo == "inferior"]
+        nos.sort(key=lambda n: n.x)
+        if len(nos) < linhas + 2:
+            return
+        passo = (len(nos) - 1) / float(linhas + 1)
+        alvos = [nos[int(round(passo * (j + 1)))] for j in range(linhas)]
+        for j, n in enumerate(alvos):
+            y, z = n.x * 10.0, self.H + n.y * 10.0
+            for iv in range(len(self.xs) - 1):
+                self._barra("travamento", (self.xs[iv], y, z), (self.xs[iv + 1], y, z),
+                            perfil, "contraventamento", "Contraventamento", "Aço",
+                            self.dg.aco_chapas, el.nome, linha=j + 1, vao=iv + 1)
 
     def _misulas(self):
         g = self.g
@@ -604,7 +682,7 @@ class _Construtor:
             self.doc.add(s)
         # paredes laterais, na face externa das longarinas
         yf = self.pilar.d / 2 + self.longarina.d
-        h_fech = (self.dg.altura_fechamento * 1000.0) or H
+        h_fech = (self.dg.altura_fechamento * 1000.0) or self.hb
         for lado, y, sy in (("esquerdo", -yf, -1.0), ("direito", V + yf, 1.0)):
             cantos = [(0.0, y, 0.0), (C, y, 0.0), (C, y, h_fech), (0.0, y, h_fech)]
             s = geo.prisma(cantos, (0.0, sy * e, 0.0), nome=MARCAS["fechamento"],
@@ -617,7 +695,8 @@ class _Construtor:
         # oitões (frontões), por fora do primeiro e do último pórtico
         bf = self.pilar.bf / 2
         for lado, x, sx in (("frente", -bf, -1.0), ("fundo", C + bf, 1.0)):
-            cantos = [(x, 0.0, 0.0), (x, V, 0.0), (x, V, H), (x, V / 2, hc), (x, 0.0, H)]
+            hb = self.hb
+            cantos = [(x, 0.0, 0.0), (x, V, 0.0), (x, V, hb), (x, V / 2, hc), (x, 0.0, hb)]
             s = geo.prisma(cantos, (sx * e, 0.0, 0.0), nome=MARCAS["fechamento"],
                            camada="Fechamento", material="Telha")
             s.atributos = {"marca": MARCAS["fechamento"], "elemento": "Fechamento de oitão",

@@ -97,6 +97,17 @@
 
 <p><b>Modelo grande:</b> acima de 1.500 peças o programa desenha sólidos, chapas e barras em blocos (a barra de estado mostra "lote") e abre no modo leve, sem a sombra do sol e sem as arestas de cada peça; a navegação fica leve mesmo com milhares de peças. Nada muda no uso: clique, seleção, camadas, cores, corte e mapa de esforços funcionam do mesmo jeito. <b>Ver → Sombras</b> liga a sombra quando quiser.</p>
 
+<h2 id="tesoura">Galpão com tesoura treliçada</h2>
+<p>Em <b>Sistema estrutural</b>, escolha <b>Tipo de pórtico → treliçado (tesoura)</b>. Aparecem os campos da tesoura no lugar dos da mísula.</p>
+<ul>
+  <li><b>Formato</b>: <i>trapezoidal</i> (o usual), <i>banzos paralelos</i> (altura constante, diagonais todas iguais) ou <i>triangular</i> (só com telhado bem inclinado).</li>
+  <li><b>Diagonais</b>: <i>Howe</i>, <i>Pratt</i> (diagonais tracionadas, costuma sair mais leve) ou <i>Warren</i> (sem montantes, menos chapas de nó).</li>
+  <li><b>Ligação no pilar</b>: <i>apoiada</i> — a tesoura senta no topo do pilar, e aí a base tem de ser engastada; <i>rígida</i> — o pilar sobe até o banzo superior e forma o joelho, e a base pode ser rotulada.</li>
+  <li><b>Altura no apoio</b> e <b>painéis por água</b>: deixe em 0 para o programa escolher. A altura é o que mais rende quando a tesoura não fecha; os painéis saem pelo passo das terças, para a terça cair no nó.</li>
+</ul>
+<p>Atenção ao <b>pé-direito</b>: na tesoura ele é a altura livre sob o banzo inferior. A parede sobe mais a altura da tesoura até o beiral, e o programa mostra as duas cotas no memorial.</p>
+<p>O resultado traz uma linha por família — banzo superior, banzo inferior, diagonal e montante —, o travamento lateral do banzo inferior (que sob sucção comprime) e as ligações de chapa de nó e tesoura-pilar. A elevação, o modelo 3D, o romaneio e o mapa de esforços saem da mesma tesoura.</p>
+
 <h2 id="desenhar">Desenhar em 2D e gerar o 3D</h2>
 <p>Dá para fazer o caminho inverso do IFC: desenhar a estrutura no CAD 2D e gerar o modelo 3D a partir dela. Na tela de projetos, <b>Novo desenhando em 2D…</b> cria o projeto já no CAD.</p>
 <ol>
@@ -212,7 +223,8 @@
   <li>Plano de corte por barra (a lista diz quantas barras, não o que sai de cada uma) e preço do material.</li>
   <li>Cortes nas ligações das tesouras (A-A, B-B) e remoção de linhas ocultas nas vistas.</li>
   <li>Recortes que não são furo redondo nem oblongo saem como contorno, sem cota própria.</li>
-  <li>No dimensionamento de galpões: pórtico treliçado e ponte rolante são recusados (o programa só calcula pórtico de alma cheia sem ponte).</li>
+  <li>No dimensionamento de galpões: ponte rolante é recusada. Pórtico de alma cheia e tesoura treliçada são calculados; shed, arco e múltiplas naves não.</li>
+  <li>Na tesoura, a chapa de nó é verificada mas não desenhada em detalhe nem modelada em 3D.</li>
   <li>No cálculo do modelo importado: contraventamentos, agulhamentos, consoles e ligações não são verificados; vento pelas tabelas de galpão fechado de duas águas; terças de beiral apoiadas em consoles ficam sem apoio.</li>
 </ul>
 

@@ -20,8 +20,10 @@ import math
 import re
 from typing import List, Optional, Tuple
 
-from . import analise, bases, cargas, ligacoes, materiais as mat, nbr8800, nbr14762
+from . import (analise, bases, cargas, catalogo, ligacoes, materiais as mat,
+               nbr8800, nbr14762, tesouras)
 from .base import ErroDeDados, Resultado, Verificacao, fmt
+from . import verificar
 from dataclasses import replace
 from .modelo_galpao import DadosGalpao, ElementoDimensionado, Peca, ProjetoGalpao
 from .perfis import Perfil, banco, perfil as achar_perfil
@@ -93,7 +95,7 @@ def _vento(p: ProjetoGalpao):
     v0 = cargas.velocidade_basica(d.cidade) if d.cidade else d.v0
     altura_ref = d.altura_cumeeira
     vg = cargas.pressoes_galpao(
-        b=d.vao, a=d.comprimento, h=d.pe_direito, theta_graus=d.angulo_telhado,
+        b=d.vao, a=d.comprimento, h=d.altura_beiral, theta_graus=d.angulo_telhado,
         V0=v0, categoria=d.categoria_rugosidade, classe=d.classe, z=altura_ref,
         S1=d.fator_topografico, aberturas=d.aberturas)
     p.vento = {
@@ -248,8 +250,8 @@ def _longarinas(p: ProjetoGalpao):
     pressao = max(l["p (kN/m²)"] for l in linhas)
     succao = min(l["p (kN/m²)"] for l in linhas)
 
-    altura = d.altura_fechamento or d.pe_direito
-    n_fiadas = max(2, int(d.pe_direito / 2))      # mesmo critério da lista de material
+    altura = d.altura_fechamento or d.altura_beiral
+    n_fiadas = max(2, int(d.altura_beiral / 2))   # mesmo critério da lista de material
     esp = altura / n_fiadas                        # faixa de parede por fiada, m
     q_p = 1.4 * max(pressao, 0.0) * esp
     q_s = 1.4 * abs(min(succao, 0.0)) * esp
@@ -296,8 +298,33 @@ def _longarinas(p: ProjetoGalpao):
 
 # --------------------------------------------------------- 4. análise do pórtico
 
-def _carregar_portico(modelo, p: ProjetoGalpao, pilar: Perfil, viga: Perfil):
-    """Aplica os casos de carga elementares no modelo do pórtico."""
+def _barras_carregadas(modelo):
+    """(água barlavento, água sotavento, pilar esquerdo, pilar direito), por rótulo.
+
+    O modelo diz quais barras formam cada água e cada pilar — na tesoura são muitas, no
+    pórtico de alma cheia são a viga e, junto ao joelho, a mísula. A mísula entra: ela é
+    um sexto de cada água e deixá-la sem carga tirava esse tanto do telhado.
+    """
+    dd = getattr(modelo, "dados", None) or {}
+    agua_esq = list(dd.get("barras_agua_esq") or [])
+    agua_dir = list(dd.get("barras_agua_dir") or [])
+    if not agua_esq:
+        agua_esq = [b for b in ("misula_esq", "viga_esq") if _tem_barra(modelo, b)] or [1]
+        agua_dir = [b for b in ("viga_dir", "misula_dir") if _tem_barra(modelo, b)] or [2]
+    pil_esq = list(dd.get("barras_pilar_esq") or [])
+    pil_dir = list(dd.get("barras_pilar_dir") or [])
+    if not pil_esq:
+        pil_esq = [b for b in ("pilar_esq",) if _tem_barra(modelo, b)] or [0]
+        pil_dir = [b for b in ("pilar_dir",) if _tem_barra(modelo, b)] or [3]
+    return agua_esq, agua_dir, pil_esq, pil_dir
+
+
+def _carregar_portico(modelo, p: ProjetoGalpao, pilar: Perfil, viga: Perfil, pp=None):
+    """Aplica os casos de carga elementares no modelo do pórtico.
+
+    `pp` permite informar o peso próprio em kN/m quando ele não sai de um perfil só,
+    como na tesoura: ``{"agua": q, "pilar": q, "extras": {rótulo: q}}``.
+    """
     d = p.dados
     s = d.espacamento_porticos                      # largura de influência, m
     g = p.cargas["g_cobertura"]
@@ -305,11 +332,13 @@ def _carregar_portico(modelo, p: ProjetoGalpao, pilar: Perfil, viga: Perfil):
     crit = _pressoes_criticas(p)
 
     # peso próprio do pórtico, estimado pelos perfis adotados (kN/m na barra)
-    pp_viga = viga.massa * 9.81e-3 if viga else 0.5
-    pp_pilar = pilar.massa * 9.81e-3 if pilar else 0.5
+    pp = pp or {}
+    pp_viga = pp.get("agua", viga.massa * 9.81e-3 if viga else 0.5)
+    pp_pilar = pp.get("pilar", pilar.massa * 9.81e-3 if pilar else 0.5)
 
-    barras_viga = [b for b in ("viga_esq", "viga_dir") if _tem_barra(modelo, b)] or [1, 2]
-    barras_pilar = [b for b in ("pilar_esq", "pilar_dir") if _tem_barra(modelo, b)] or [0, 3]
+    agua_esq, agua_dir, pil_esq, pil_dir = _barras_carregadas(modelo)
+    barras_viga = agua_esq + agua_dir
+    barras_pilar = pil_esq + pil_dir
 
     # o modelo trabalha em kN e cm: as cargas de kN/m entram divididas por 100
     M = 1 / 100.0
@@ -319,6 +348,8 @@ def _carregar_portico(modelo, p: ProjetoGalpao, pilar: Perfil, viga: Perfil):
         modelo.distribuida("PP", b, -(g * s + pp_viga) * M, "global_y")
     for b in barras_pilar:
         modelo.distribuida("PP", b, -pp_pilar * M, "global_y")
+    for rot, q in (pp.get("extras") or {}).items():
+        modelo.distribuida("PP", rot, -q * M, "global_y")
     # --- sobrecarga (projetada na horizontal) ---
     for b in barras_viga:
         modelo.distribuida("SC", b, -sc * s * M, "projetada_y")
@@ -331,13 +362,15 @@ def _carregar_portico(modelo, p: ProjetoGalpao, pilar: Perfil, viga: Perfil):
         # cobertura. Sem isso ela entrava empurrando o telhado para baixo, a combinação
         # de sucção somava com a gravidade em vez de aliviar, e o caso de inversão de
         # momento — o que costuma governar galpão leve — simplesmente não aparecia.
-        modelo.distribuida(caso, barras_viga[0], -c["telhado_barlavento"] * s * M, "perpendicular")
-        if len(barras_viga) > 1:
-            modelo.distribuida(caso, barras_viga[1], -c["telhado_sotavento"] * s * M, "perpendicular")
+        for b in agua_esq:
+            modelo.distribuida(caso, b, -c["telhado_barlavento"] * s * M, "perpendicular")
+        for b in agua_dir:
+            modelo.distribuida(caso, b, -c["telhado_sotavento"] * s * M, "perpendicular")
         # paredes: pressão horizontal nos pilares, ambas no sentido do vento
-        modelo.distribuida(caso, barras_pilar[0], c["parede_barlavento"] * s * M, "global_x")
-        if len(barras_pilar) > 1:
-            modelo.distribuida(caso, barras_pilar[1], -c["parede_sotavento"] * s * M, "global_x")
+        for b in pil_esq:
+            modelo.distribuida(caso, b, c["parede_barlavento"] * s * M, "global_x")
+        for b in pil_dir:
+            modelo.distribuida(caso, b, -c["parede_sotavento"] * s * M, "global_x")
     return crit
 
 
@@ -350,6 +383,17 @@ def _tem_barra(modelo, rotulo) -> bool:
 
 
 def _analise_portico(p: ProjetoGalpao):
+    """Analisa e dimensiona o pórtico — de alma cheia ou treliçado.
+
+    O caminho treliçado está em `_analise_tesoura`; daqui para baixo é o pórtico de
+    alma cheia, com viga e pilar.
+    """
+    if p.dados.eh_trelicado:
+        return _analise_tesoura(p)
+    return _analise_alma_cheia(p)
+
+
+def _analise_alma_cheia(p: ProjetoGalpao):
     """Analisa e dimensiona viga e pilar juntos, iterando até a rigidez estabilizar.
 
     A distribuição de momentos num pórtico depende da rigidez relativa entre pilar e
@@ -574,11 +618,13 @@ def _extrair_esforcos(env) -> dict:
                     val, caso = _v(ext), _caso(ext)
         return val, caso
 
-    # a viga e dimensionada pelo momento fora da misula; o trecho de misula tem
-    # secao maior e e verificado junto com a ligacao de joelho
+    # A viga é dimensionada pelo momento e pelo cortante **fora** da mísula: ali a seção
+    # é maior, e o esforço daquele trecho é o que dimensiona a ligação de joelho, não a
+    # viga. Por isso saem dois cortantes — o da viga e o do joelho, que a ligação usa.
     barras_viga = ["viga_esq", "viga_dir"]
     M_viga, caso_v = maior(barras_viga, "M")
-    V_viga, _ = maior(barras_viga + ["misula_esq", "misula_dir"], "V")
+    V_viga, _ = maior(barras_viga, "V")
+    V_joelho_, _ = maior(barras_viga + ["misula_esq", "misula_dir"], "V")
     N_viga, _ = maior(["viga_esq", "viga_dir"], "N")
     M_pil, caso_p = maior(["pilar_esq", "pilar_dir"], "M")
     V_pil, _ = maior(["pilar_esq", "pilar_dir"], "V")
@@ -594,7 +640,8 @@ def _extrair_esforcos(env) -> dict:
     ve = env.barra("viga_esq")
     pe = env.barra("pilar_esq")
     return {
-        "viga": {"M": abs(M_viga), "V": abs(V_viga), "N": abs(N_viga),
+        "viga": {"M": abs(M_viga), "V": abs(V_viga), "V_joelho": abs(V_joelho_),
+                 "N": abs(N_viga),
                  "M_max": _v(ve.M_max), "M_min": _v(ve.M_min),
                  "caso_M": caso_v, "resumo": ve.resumo()},
         "pilar": {"M": abs(M_pil), "V": abs(V_pil), "N": abs(N_pil),
@@ -648,7 +695,7 @@ def _deslocamento_horizontal(p: ProjetoGalpao, modelo) -> dict:
     d = p.dados
     try:
         r = analise.resolver(modelo, "S vento")
-        i = modelo.indice_no("B")
+        i = modelo.indice_no((modelo.dados or {}).get("no_joelho") or "B")
         u = abs(r.deslocamento(i)[0])
     except Exception:
         return {}
@@ -753,6 +800,413 @@ def _q_servico_viga(p: ProjetoGalpao) -> float:
     return (g + d.sobrecarga_cobertura) * d.espacamento_porticos / 100.0   # kN/cm
 
 
+# ------------------------------------------------ 6b. pórtico treliçado
+
+#: Alvo do espaçamento entre travamentos laterais do banzo inferior, cm. Sob sucção o
+#: banzo inferior comprime, e quem o segura são as linhas que ligam uma tesoura à
+#: vizinha. 3,5 m equivale ao travamento a cada dois nós, que é como se detalha — e é o
+#: que decide o peso do banzo inferior, porque ele entra como L_y na flambagem.
+ALVO_TRAVAMENTO = 350.0
+
+#: Relação mínima entre o comprimento do painel e a altura do perfil do banzo. É a
+#: regra clássica da treliça: banzo mais alto que isso deixa de trabalhar por força
+#: normal e passa a puxar para si o momento da continuidade — o nó rotulado que a
+#: treliça pressupõe deixa de existir, e o dimensionamento entra em círculo (quanto mais
+#: pesado o banzo, mais momento ele atrai).
+PAINEL_POR_ALTURA_DO_BANZO = 8.0
+
+#: Nome de cada família de barra da tesoura na lista de elementos.
+NOME_DA_BARRA = {
+    "banzo superior": "Banzo superior da tesoura",
+    "banzo inferior": "Banzo inferior da tesoura",
+    "diagonal": "Diagonal da tesoura",
+    "montante": "Montante da tesoura",
+}
+
+
+def _geometria_tesoura(p: ProjetoGalpao) -> "tesouras.Tesoura":
+    d = p.dados
+    esp = (p.cargas.get("espacamento_tercas_real") or d.espacamento_tercas) * 100
+    return tesouras.geometria(
+        vao=d.vao * 100, inclinacao=d.inclinacao / 100.0,
+        formato=d.formato_tesoura, diagonais=d.diagonais_tesoura,
+        altura_apoio=d.altura_tesoura * 100, paineis=d.paineis_tesoura,
+        espacamento_tercas=esp)
+
+
+def _opcoes_de_travamento(t) -> List[Tuple[float, int]]:
+    """Passos de travamento do banzo inferior, do mais espaçado ao mais cerrado.
+
+    O banzo inferior traciona sob gravidade e **comprime sob sucção** — é o caso que
+    governa o galpão leve. Fora do plano quem o segura são as linhas que ligam o banzo
+    de uma tesoura ao da vizinha, e elas só podem cair num nó: por isso o passo é sempre
+    um múltiplo inteiro do painel. Começa no mais espaçado que faz sentido montar
+    (`ALVO_TRAVAMENTO`) e fecha até um painel — o dimensionamento escolhe o primeiro que
+    deixa o banzo passar, que é a decisão que o projetista toma na prancha.
+    """
+    barras = t.do_papel("banzo inferior")
+    if not barras:
+        return [(t.vao, 0)]
+    passo = t.comprimento_total("banzo inferior") / len(barras)
+    maior = max(1, int(round(ALVO_TRAVAMENTO / passo)))
+    saida = []
+    for k in range(maior, 0, -1):
+        trechos = int(math.ceil(len(barras) / float(k)))
+        saida.append((k * passo, max(0, trechos - 1)))
+    return saida
+
+
+def _perfis_semente(t, d: DadosGalpao) -> dict:
+    """Ponto de partida do laço: alturas usuais, que o dimensionamento depois corrige."""
+    h_banzo = max(75.0, t.vao / 12.0)          # mm
+    h_web = max(50.0, t.vao / 30.0)
+    semente = {"pilar": _perfil_proximo(max(d.vao * 1000 / 45, d.pe_direito * 1000 / 20))}
+    for papel in tesouras.PAPEIS:
+        if not t.do_papel(papel):
+            continue
+        alvo = h_banzo if papel.startswith("banzo") else h_web
+        semente[papel] = tesouras.perfil_proximo(tesouras.FAMILIAS_POR_PAPEL[papel], alvo)
+    return semente
+
+
+def _peso_proprio_tesoura(t, perfis: dict) -> dict:
+    """Peso da tesoura repartido entre os dois banzos, em kN/m de barra.
+
+    As diagonais e os montantes não têm carga própria no modelo — o peso deles entra
+    metade em cada banzo, que é onde ele de fato chega."""
+    massa = {papel: (perfis[papel].massa or 0.0) for papel in tesouras.PAPEIS
+             if papel in perfis and t.do_papel(papel)}
+    peso_web = sum(massa.get(x, 0.0) * t.comprimento_total(x) / 100.0
+                   for x in ("diagonal", "montante"))                 # kg
+    l_sup = max(t.comprimento_total("banzo superior") / 100.0, 1.0)
+    l_inf = max(t.comprimento_total("banzo inferior") / 100.0, 1.0)
+    q_sup = (massa.get("banzo superior", 0.0) + peso_web / 2.0 / l_sup) * 9.81e-3
+    q_inf = (massa.get("banzo inferior", 0.0) + peso_web / 2.0 / l_inf) * 9.81e-3
+    return {"agua": q_sup, "pilar": (perfis["pilar"].massa or 0.0) * 9.81e-3,
+            "extras": {b.rotulo: q_inf for b in t.do_papel("banzo inferior")}}
+
+
+def _rodar_tesoura(p: ProjetoGalpao, t, perfis: dict):
+    """Monta o modelo da tesoura com os perfis dados, carrega e devolve a envoltória."""
+    d = p.dados
+    secoes = {k: (v.A, v.Ix) for k, v in perfis.items()}
+    modelo = tesouras.montar(t, d.pe_direito * 100, secoes,
+                             base_rotulada=d.base_rotulada, ligacao=d.ligacao_tesoura)
+    _carregar_portico(modelo, p, perfis["pilar"], perfis.get("banzo superior"),
+                      pp=_peso_proprio_tesoura(t, perfis))
+    modelo.validar()
+    combos = _combinar(modelo, p, None)
+    env = analise.envoltoria(modelo, [c for c in combos if c.startswith("C")])
+    return modelo, env, combos
+
+
+def _esforcos_da_tesoura(env, modelo, t, d: DadosGalpao) -> dict:
+    """Pior esforço de cada família de barras, com a barra e o caso que mandam.
+
+    A tesoura é fabricada com um perfil por família, então o que dimensiona é o extremo
+    entre todas as barras dela: a maior compressão, a maior tração e — nos banzos, que
+    são contínuos — o maior momento local do trecho entre nós.
+    """
+    saida = {}
+    pular = {"mont_esq", "mont_dir"} if d.ligacao_tesoura == "rígida" else set()
+    for papel in tesouras.PAPEIS:
+        barras = [b for b in t.do_papel(papel) if b.rotulo not in pular]
+        if not barras:
+            continue
+        e = {"N_c": 0.0, "N_t": 0.0, "M": 0.0, "V": 0.0, "L": 0.0, "n": len(barras),
+             "barra_N": "", "caso_N": "", "barra_M": "", "caso_M": ""}
+        for b in barras:
+            e["L"] = max(e["L"], t.comprimento(b))
+            try:
+                eb = env.barra(b.rotulo)
+            except Exception:
+                continue
+            for ext in (eb.N_max, eb.N_min):
+                v = _v(ext)
+                if v < 0 and -v > e["N_c"]:
+                    e["N_c"], e["barra_N"], e["caso_N"] = -v, b.rotulo, _caso(ext)
+                elif v > e["N_t"]:
+                    e["N_t"] = v
+            for ext in (eb.M_max, eb.M_min):
+                if abs(_v(ext)) > e["M"]:
+                    e["M"], e["barra_M"], e["caso_M"] = abs(_v(ext)), b.rotulo, _caso(ext)
+            for ext in (eb.V_max, eb.V_min):
+                e["V"] = max(e["V"], abs(_v(ext)))
+        saida[papel] = e
+
+    ep = {"N_c": 0.0, "N_t": 0.0, "M": 0.0, "V": 0.0, "caso_M": "", "caso_N": ""}
+    for rot in ((modelo.dados or {}).get("barras_pilar") or []):
+        try:
+            eb = env.barra(rot)
+        except Exception:
+            continue
+        for ext in (eb.N_max, eb.N_min):
+            v = _v(ext)
+            if v < 0 and -v > ep["N_c"]:
+                ep["N_c"], ep["caso_N"] = -v, _caso(ext)
+            elif v > ep["N_t"]:
+                ep["N_t"] = v
+        for ext in (eb.M_max, eb.M_min):
+            if abs(_v(ext)) > ep["M"]:
+                ep["M"], ep["caso_M"] = abs(_v(ext)), _caso(ext)
+        for ext in (eb.V_max, eb.V_min):
+            ep["V"] = max(ep["V"], abs(_v(ext)))
+    saida["pilar"] = ep
+    return saida
+
+
+def _flecha_tesoura(p: ProjetoGalpao, modelo, t) -> Optional[Verificacao]:
+    """Flecha da tesoura na combinação de serviço, contra o limite L/flecha_viga."""
+    d = p.dados
+    try:
+        r = analise.resolver(modelo, "S rara gravidade")
+    except Exception:
+        return None
+    flecha = 0.0
+    for n in t.nos:
+        try:
+            flecha = max(flecha, abs(r.deslocamento(modelo.indice_no(n.nome))[1]))
+        except Exception:
+            continue
+    limite = d.vao * 100.0 / d.flecha_viga
+    v = Verificacao("Flecha da tesoura (combinação rara de serviço)",
+                    norma="NBR 8800:2008, Anexo C", Sd=flecha, Rd=limite, unidade="cm")
+    v.passo("Limite adotado", "L/%d" % d.flecha_viga,
+            "%s / %d" % (fmt(d.vao * 100, 0, "cm"), d.flecha_viga), fmt(limite, 2, "cm"))
+    v.passo("Flecha calculada", "", "maior deslocamento vertical dos nós da tesoura",
+            fmt(flecha, 2, "cm"))
+    return v
+
+
+def _analise_tesoura(p: ProjetoGalpao):
+    """Analisa e dimensiona a tesoura e os pilares juntos, até os perfis se repetirem.
+
+    O caminho é o mesmo do pórtico de alma cheia — análise e dimensionamento no mesmo
+    laço, porque a rigidez depende do perfil e o perfil depende do esforço —, com três
+    diferenças que vêm da treliça:
+
+    * os banzos entram **contínuos**, então o banzo superior é verificado à
+      flexo-compressão: a terça o carrega entre os nós;
+    * cada família de barras recebe um perfil só, o mais leve do catálogo que passa em
+      todas as barras dela;
+    * fora do plano, o banzo superior é travado pelas terças e o banzo inferior pelas
+      linhas de travamento, cujo espaçamento é o que entra como L_y.
+    """
+    d = p.dados
+    a = mat.aco(d.aco_perfis)
+    t = _geometria_tesoura(p)
+    esp_terca = (p.cargas.get("espacamento_tercas_real") or d.espacamento_tercas) * 100
+    opcoes_trava = _opcoes_de_travamento(t)
+    trava, n_travas = opcoes_trava[0]
+    perfis = _perfis_semente(t, d)
+    H = d.pe_direito * 100
+    Kx = 2.0 if d.base_rotulada else 1.5
+    Ly_pilar = min(H, 300.0)
+
+    def fora_do_plano(papel: str, e: dict) -> float:
+        if papel == "banzo superior":
+            return esp_terca
+        if papel == "banzo inferior":
+            return trava
+        return e["L"]
+
+    def altura_max(papel: str, e: dict) -> float:
+        """Altura de seção aceita, em mm (só os banzos têm limite)."""
+        if not papel.startswith("banzo"):
+            return 0.0
+        return max(100.0, e["L"] * 10.0 / PAINEL_POR_ALTURA_DO_BANZO)
+
+    # o laço só fecha quando a escolha feita sobre uma análise devolve os mesmos perfis
+    # que a geraram: aí a verificação final é feita sobre os esforços daquela análise, e
+    # não sobre outros, que é o que deixava o perfil escolhido reprovando no fim
+    historico, modelo, env, combos, esf = [], None, None, None, {}
+    deslocs, subidas = [], 0
+    for _ in range(12):
+        modelo, env, combos = _rodar_tesoura(p, t, perfis)
+        esf = _esforcos_da_tesoura(env, modelo, t, d)
+        novos = dict(perfis)
+        for papel in tesouras.PAPEIS:
+            e = esf.get(papel)
+            if not e:
+                continue
+            if papel == "banzo inferior":
+                # o passo do travamento é parte da escolha: fecha-se a malha de
+                # travamento até o banzo passar, antes de engrossar o perfil
+                perf = None
+                for cand_trava, cand_linhas in opcoes_trava:
+                    perf, _r = tesouras.menor_perfil(
+                        tesouras.FAMILIAS_POR_PAPEL[papel], d.aco_perfis, e["N_c"],
+                        e["N_t"], e["M"], e["L"], cand_trava, NOME_DA_BARRA[papel],
+                        altura_max=altura_max(papel, e))
+                    trava, n_travas = cand_trava, cand_linhas
+                    if _r is not None and _r.ok:
+                        break
+                if perf is not None:
+                    novos[papel] = perf
+                continue
+            perf, _r = tesouras.menor_perfil(
+                tesouras.FAMILIAS_POR_PAPEL[papel], d.aco_perfis, e["N_c"], e["N_t"],
+                e["M"], e["L"], fora_do_plano(papel, e), NOME_DA_BARRA[papel],
+                altura_max=altura_max(papel, e))
+            if perf is None:
+                raise ErroDeDados(
+                    "Nenhum perfil do catálogo atende ao %s da tesoura com altura de até "
+                    "%s (um oitavo do painel). Aumente a altura da tesoura, reduza o vão "
+                    "ou aproxime os pórticos."
+                    % (papel, fmt(altura_max(papel, e), 0, "mm")))
+            novos[papel] = perf
+        ep = esf["pilar"]
+        r_pilar = _menor_perfil(
+            lambda perf: nbr8800.flexao_composta(
+                perf, a, N_Sd=ep["N_c"], Mx_Sd=ep["M"], Lx=H, Ly=Ly_pilar,
+                Kx=Kx, Ky=1.0, Lb=Ly_pilar, Cb=1.67, elemento="Pilar"),
+            altura_min=200.0)
+        novos["pilar"] = achar_perfil(r_pilar.perfil)
+
+        # Em galpão de base rotulada quem governa o pilar não é a resistência, é o
+        # deslocamento do topo: sobe-se o perfil enquanto cada degrau render mais de
+        # 2 % — daí em diante o que limita é a rigidez do pórtico inteiro, e engrossar
+        # só o pilar encarece sem resolver.
+        desloc_atual = _deslocamento_horizontal(p, modelo)
+        deslocs.append(desloc_atual.get("u_cm", 0.0) if desloc_atual else 0.0)
+        rendeu = len(deslocs) < 2 or deslocs[-2] <= 0 or (
+            (deslocs[-2] - deslocs[-1]) / deslocs[-2] > 0.02)
+        if (desloc_atual and desloc_atual.get("razao", 0) > 1.0 and subidas < 8
+                and (rendeu or subidas == 0)):
+            acima = [c for c in banco().candidatos("I", "W")
+                     if (c.massa or 0) > (perfis["pilar"].massa or 0)]
+            if acima:
+                proximo = min(acima, key=lambda c: c.massa)
+                if (novos["pilar"].massa or 0) <= (perfis["pilar"].massa or 0):
+                    novos["pilar"] = proximo
+                    subidas += 1
+
+        chave = tuple(sorted((k, v.nome) for k, v in novos.items()))
+        if all(novos[k].nome == perfis[k].nome for k in novos):
+            break                              # ponto fixo: a escolha devolveu a entrada
+        if chave in historico:
+            # ciclo entre dois conjuntos: fica com o mais pesado de cada família e para
+            perfis = {k: max((perfis[k], novos[k]), key=lambda x: x.massa or 0.0)
+                      for k in novos}
+            modelo, env, combos = _rodar_tesoura(p, t, perfis)
+            esf = _esforcos_da_tesoura(env, modelo, t, d)
+            break
+        historico.append(chave)
+        perfis = novos
+
+    desloc = _deslocamento_horizontal(p, modelo)
+    flecha = _flecha_tesoura(p, modelo, t)
+
+    ep = esf["pilar"]
+    p.esforcos = {
+        "modelo": modelo, "envoltoria": env, "combinacoes": combos,
+        "casos_modelo": combos,
+        "tesoura": t.resumo(), "geometria_tesoura": t,
+        "pilar": {"N": ep["N_c"], "N_t": ep["N_t"], "M": ep["M"], "V": ep["V"],
+                  "caso_M": ep["caso_M"]},
+        "deslocamento": desloc,
+        "travamento_banzo_inferior_m": round(trava / 100.0, 2),
+        "linhas_de_travamento": n_travas,
+        "iteracoes": len(historico),
+    }
+    for papel in tesouras.PAPEIS:
+        if papel in esf:
+            p.esforcos["N_c_%s_kN" % papel.replace(" ", "_")] = round(esf[papel]["N_c"], 1)
+            p.esforcos["N_t_%s_kN" % papel.replace(" ", "_")] = round(esf[papel]["N_t"], 1)
+    p.combinacoes = _combinacoes_documentadas(p)
+
+    for papel in tesouras.PAPEIS:
+        e = esf.get(papel)
+        if not e:
+            continue
+        perf = perfis[papel]
+        Ly = fora_do_plano(papel, e)
+        r = verificar.verificar_membro(perf, d.aco_perfis, e["N_c"], e["N_t"], e["M"],
+                                       e["L"], Ly, 1, NOME_DA_BARRA[papel], p.avisos)
+        if papel == "banzo inferior" and flecha is not None:
+            r.add(flecha)
+        if not r.ok:
+            p.avisos.append(
+                "O %s não passa nem com o perfil mais pesado de altura compatível com o "
+                "painel (%s, aproveitamento %s). A tesoura está rasa para o vão: aumente "
+                "a altura dela, reduza o vão ou aproxime os pórticos."
+                % (NOME_DA_BARRA[papel].lower(), perf.nome, fmt(r.razao, 2)))
+        if papel.startswith("banzo") and perf.d >= altura_max(papel, e) - 1.0:
+            p.avisos.append(
+                "O %s ficou na altura máxima admitida (%s, um oitavo do painel de %s). "
+                "Menos painéis por água — painel mais longo — deixam o banzo trabalhar "
+                "melhor." % (NOME_DA_BARRA[papel].lower(), fmt(perf.d, 0, "mm"),
+                             fmt(e["L"] / 100, 2, "m")))
+        p.elementos.append(ElementoDimensionado(
+            nome=NOME_DA_BARRA[papel], perfil=perf.nome, material=d.aco_perfis, resultado=r,
+            esforcos={"N_compressao_kN": round(e["N_c"], 1),
+                      "N_tracao_kN": round(e["N_t"], 1),
+                      "M_kNm": round(e["M"] / 100, 2),
+                      "barra": e["barra_N"] or e["barra_M"],
+                      "caso": e["caso_N"] or e["caso_M"]},
+            geometria={"barras_por_tesoura": e["n"],
+                       "comprimento_max_m": round(e["L"] / 100, 2),
+                       "Lx_cm": round(e["L"], 1), "Ly_cm": round(Ly, 1),
+                       "comprimento_total_m": round(t.comprimento_total(papel) / 100, 2)}))
+
+    r_pilar = nbr8800.flexao_composta(
+        perfis["pilar"], a, N_Sd=ep["N_c"], Mx_Sd=ep["M"], Lx=H, Ly=Ly_pilar,
+        Kx=Kx, Ky=1.0, Lb=Ly_pilar, Cb=1.67, elemento="Pilar")
+    p.elementos.append(ElementoDimensionado(
+        nome="Pilar", perfil=perfis["pilar"].nome, material=d.aco_perfis, resultado=r_pilar,
+        esforcos={"N_kN": round(ep["N_c"], 1), "N_tracao_kN": round(ep["N_t"], 1),
+                  "M_kNcm": round(ep["M"], 1), "M_kNm": round(ep["M"] / 100, 1),
+                  "V_kN": round(ep["V"], 1), "caso": ep["caso_M"]},
+        geometria={"altura_m": d.pe_direito, "Kx": Kx, "Ly_cm": Ly_pilar}))
+
+    _travamento(p, t, esf, n_travas, trava)
+    if n_travas > 6:
+        p.avisos.append(
+            "O banzo inferior precisou de %d linhas de travamento por tesoura, a cada %s. "
+            "Tanto travamento é sinal de tesoura rasa: aumentar a altura dela sai mais "
+            "barato do que a malha de travamento."
+            % (n_travas, fmt(trava / 100, 2, "m")))
+
+    if desloc and desloc.get("razao", 0) > 1.0:
+        p.avisos.append(
+            "O deslocamento horizontal do topo do pilar (%s) passa do limite %s. Engaste "
+            "a base, aproxime os pórticos ou aumente o pilar."
+            % (fmt(desloc["u_cm"], 2, "cm"), desloc.get("criterio", "")))
+    if flecha is not None and not flecha.ok:
+        p.avisos.append("A flecha da tesoura passa do limite adotado: aumente a altura da "
+                        "tesoura, que é o que mais rende, antes de engrossar os banzos.")
+
+
+def _travamento(p: ProjetoGalpao, t, esf: dict, n_linhas: int, trava: float):
+    """Travamento lateral do banzo inferior: tirante redondo com esticador.
+
+    A força vem da regra de barra de travamento (NBR 8800, item 4.11): quem trava leva
+    2 % da força do que é travado. O tirante corre de tesoura a tesoura, ao longo de
+    todo o galpão, e descarrega no contraventamento — o mesmo arranjo da corrente de
+    terça. Sem essas linhas o L_y adotado para o banzo inferior não existe na obra, e o
+    banzo comprimido sob sucção fica com o dobro ou o triplo do comprimento suposto.
+    """
+    d = p.dados
+    e = esf.get("banzo inferior")
+    if not e or n_linhas <= 0:
+        return
+    N = max(0.02 * e["N_c"], 2.0)
+    L = d.espacamento_porticos * 100
+    r = _dimensionar_tirante(N, L, mat.aco(d.aco_chapas), "Travamento do banzo inferior")
+    if not r.ok:
+        p.avisos.append("O tirante de travamento do banzo inferior não atende nem com o "
+                        "maior diâmetro; adote cantoneira ou tubo nessa linha.")
+    p.elementos.append(ElementoDimensionado(
+        nome="Travamento do banzo inferior", perfil=r.perfil, material=d.aco_chapas,
+        resultado=r,
+        esforcos={"N_kN": round(N, 1), "N_banzo_kN": round(e["N_c"], 1),
+                  "criterio": "2 % da compressão do banzo (NBR 8800, item 4.11)"},
+        geometria={"linhas_por_tesoura": n_linhas,
+                   "espacamento_travado_m": round(trava / 100, 2),
+                   "comprimento_m": round(d.espacamento_porticos, 2),
+                   "quantidade": n_linhas * max(1, d.n_porticos - 1)}))
+
+
 # ------------------------------------------------- 7. contraventamentos
 
 def _barra_redonda(diametro_mm: float) -> Perfil:
@@ -821,7 +1275,7 @@ def _contraventamentos(p: ProjetoGalpao):
 
     # parcela do vento no oitão que vai à cobertura: metade da parede, até meia altura
     # do frontão
-    area_oitao = d.vao * (d.pe_direito + (d.altura_cumeeira - d.pe_direito) / 2) / 2
+    area_oitao = d.vao * (d.altura_beiral + (d.altura_cumeeira - d.altura_beiral) / 2) / 2
     q_oitao = max(abs(crit["cpi+"]["parede_barlavento"]),
                   abs(crit["cpi-"]["parede_barlavento"]))
     F_total = 1.4 * q_oitao * area_oitao
@@ -904,6 +1358,88 @@ def _secao_misula(viga: Perfil, altura_mm: float) -> Perfil:
 
 
 def _ligacoes(p: ProjetoGalpao):
+    """Ligações do pórtico: chapa de topo no de alma cheia, chapa de nó no treliçado."""
+    if p.dados.eh_trelicado:
+        return _ligacoes_tesoura(p)
+    return _ligacoes_alma_cheia(p)
+
+
+def _ligacoes_tesoura(p: ProjetoGalpao):
+    """Chapa de nó da diagonal mais solicitada e ligação da tesoura ao pilar.
+
+    São as duas ligações que decidem a tesoura. A chapa de nó (gusset) recebe a diagonal
+    mais carregada e é verificada pela seção de Whitmore, pelo bloco de cisalhamento e
+    pelos parafusos. A ligação ao pilar leva o cortante do pórtico e, sob sucção, a
+    **tração de arrancamento** — que no galpão leve costuma ser o que manda nela.
+    """
+    d = p.dados
+    diag = p.elemento("Diagonal da tesoura") or p.elemento("Montante da tesoura")
+    if diag is not None:
+        N = max(diag.esforcos.get("N_compressao_kN", 0.0),
+                diag.esforcos.get("N_tracao_kN", 0.0))
+        perf = catalogo.perfil_de(diag.perfil)
+        largura = max(4.0, (getattr(perf, "bf", 0.0) or 50.0) / 10.0)      # cm
+        t_barra = max(0.2, (tesouras._espessura(perf) if perf else 2.0) / 10.0)
+        melhor = None
+        # mais parafusos alargam a seção de Whitmore e aliviam a chapa: por isso a busca
+        # cresce primeiro no número de parafusos e só depois na espessura
+        for t_chapa in (0.63, 0.80, 0.95, 1.27, 1.60, 1.90, 2.24):
+            for diam in ('5/8"', '3/4"'):
+                passo = ligacoes.espacamento_recomendado(
+                    1.5875 if diam == '5/8"' else 1.905)
+                for n_par in (2, 3, 4, 5, 6):
+                    r = ligacoes.gusset_contraventamento(
+                        N_Sd=N, t_gusset=t_chapa, largura_ligacao=largura,
+                        comprimento_ligacao=(n_par - 1) * passo, aco_gusset=d.aco_chapas,
+                        diametro=diam, parafuso=d.parafuso, n_parafusos=n_par, passo=passo,
+                        t_barra=t_barra, aco_barra=d.aco_perfis, eletrodo=d.eletrodo,
+                        elemento="Chapa de nó da tesoura")
+                    if melhor is None or r.razao < melhor.razao:
+                        melhor = r
+                    if r.ok:
+                        break
+                if melhor is not None and melhor.ok:
+                    break
+            if melhor is not None and melhor.ok:
+                break
+        if melhor is not None:
+            melhor.dados["N_Sd_kN"] = round(N, 1)
+            if not melhor.ok:
+                p.avisos.append("A chapa de nó da tesoura não fecha com as espessuras "
+                                "testadas: aumente a aba da diagonal ou solde a diagonal "
+                                "direto no banzo.")
+            p.ligacoes["nó da tesoura"] = melhor
+
+    ep = p.esforcos.get("pilar") or {}
+    Ft, Fv = abs(ep.get("N_t", 0.0)), abs(ep.get("V", 0.0))
+    aco_ch = mat.aco(d.aco_chapas)
+    melhor = None
+    for diam in ('5/8"', '3/4"', '7/8"'):
+        borda = max(ligacoes.distancia_borda_minima(diam)[0], 3.5)
+        for n_par in (2, 4, 6):
+            r = Resultado("Ligação tesoura–pilar", perfil="%d × %s" % (n_par, diam),
+                          material=d.parafuso)
+            r.add(ligacoes.interacao_tracao_cisalhamento(diam, d.parafuso,
+                                                         Ft / n_par, Fv / n_par))
+            r.add(ligacoes.esmagamento(diam, t_chapa=1.60, fu=aco_ch.fu,
+                                       distancia_borda=borda, Fc_Sd=Fv / n_par,
+                                       nome_chapa="chapa de topo do pilar"))
+            r.dados.update({"n_parafusos": n_par, "diametro": diam,
+                            "F_tracao_kN": round(Ft, 1), "V_kN": round(Fv, 1),
+                            "t_chapa_cm": 1.60, "distancia_borda_cm": round(borda, 1)})
+            melhor = r
+            if r.ok:
+                break
+        if melhor is not None and melhor.ok:
+            break
+    if melhor is not None:
+        if not melhor.ok:
+            p.avisos.append("A ligação da tesoura no pilar não fecha com até 6 parafusos "
+                            "de 7/8\": reveja o arrancamento sob sucção.")
+        p.ligacoes["tesoura-pilar"] = melhor
+
+
+def _ligacoes_alma_cheia(p: ProjetoGalpao):
     """Ligação de joelho e de cumeeira por chapa de topo, buscando a configuração
     mais econômica que atenda a todas as verificações."""
     d = p.dados
@@ -914,7 +1450,7 @@ def _ligacoes(p: ProjetoGalpao):
 
     # --- joelho: seção da mísula e momento do joelho ---
     M_joelho = abs(p.esforcos.get("joelho_kNm", 0.0)) * 100 or p.esforcos["viga"]["M"]
-    V_joelho = p.esforcos["viga"]["V"]
+    V_joelho = p.esforcos["viga"].get("V_joelho") or p.esforcos["viga"]["V"]
 
     # a altura da mísula é o que dá braço de alavanca ao binário da ligação: quando a
     # chapa de topo não fecha, o caminho de projeto é alongar a mísula, não engrossar
@@ -989,19 +1525,25 @@ def _base(p: ProjetoGalpao):
     N = pilar.esforcos.get("N_kN", 0.0)
     V = pilar.esforcos.get("V_kN", 0.0)
     M = 0.0 if d.base_rotulada else pilar.esforcos.get("M_kNcm", 0.0)
-    lado = max(40.0, perf.d / 10 + 20)
 
     quantidades = (2, 4) if d.base_rotulada else (4, 6, 8)
     diametros = ('3/4"', '7/8"', '1"', '1.1/8"', '1.1/4"')
-    # placa maior reduz o balanço e, com ele, a espessura necessária: é a primeira
-    # saída antes de partir para chapa mais grossa ou chumbador maior
-    folgas = (20.0, 40.0, 60.0, 90.0)
+    # A placa é retangular, e as duas dimensões servem a coisas diferentes: **L**, na
+    # direção do momento, é o que dá braço ao chumbador tracionado, e crescer nela
+    # ajuda; **B**, perpendicular, é balanço puro a partir da mesa, e crescer nela só
+    # aumenta o momento na chapa. Uma placa quadrada grande, que era o que se tentava
+    # antes, pedia 30 cm de espessura numa base engastada e nenhuma chapa comercial
+    # servia — a base ficava sem dimensionar em todo galpão de base engastada.
+    lado_L = max(25.0, perf.d / 10.0)
+    lado_B = max(20.0, perf.bf / 10.0)
+    tamanhos = sorted(((lado_B + fb, lado_L + fl)
+                       for fb in (10.0, 15.0, 22.0) for fl in (10.0, 20.0, 30.0, 45.0)),
+                      key=lambda bl: bl[0] * bl[1])
     # o pedestal precisa sobrar bem além da placa: é o concreto à frente da chave de
     # cisalhamento que resiste ao empuxo horizontal
     sobras_pedestal = (40.0, 60.0, 80.0)
     melhor, primeiro = None, None
-    for folga, sobra in ((f, s_) for f in folgas for s_ in sobras_pedestal):
-        B = L = lado + folga
+    for (B, L), sobra in ((t_, s_) for t_ in tamanhos for s_ in sobras_pedestal):
         for n in quantidades:
             for diam in diametros:
                 for h_ef in (30.0, 40.0, 50.0, 60.0, 75.0):
@@ -1090,7 +1632,9 @@ def _lista_de_material(p: ProjetoGalpao):
 
     if pilar:
         add("P1", "Pilar do pórtico", pilar.perfil, 2 * n_port, d.pe_direito)
-    if viga:
+    if d.eh_trelicado:
+        _lista_da_tesoura(p, add, n_port)
+    elif viga:
         add("V1", "Viga do pórtico (uma água)", viga.perfil, 2 * n_port, d.comprimento_agua)
     if terca:
         linhas = terca.geometria.get("linhas", 0) * 2          # duas águas
@@ -1110,7 +1654,7 @@ def _lista_de_material(p: ProjetoGalpao):
     # longarinas de fechamento lateral, com o perfil verificado em _longarinas
     longarina = p.elemento("Longarina")
     n_long = int(longarina.geometria.get("fiadas_por_lado", 0)) if longarina else 0
-    n_long = n_long or max(2, int(d.pe_direito / 2))
+    n_long = n_long or max(2, int(d.altura_beiral / 2))
     perfil_long = longarina.perfil if longarina else (terca.perfil if terca else "")
     if perfil_long:
         add("L1", "Longarina de fechamento", perfil_long, n_long * 2 * (n_port - 1),
@@ -1164,12 +1708,52 @@ def _lista_de_material(p: ProjetoGalpao):
                         f"usual de galpões (18 a 35 kg/m²). Reveja vão, espaçamento e cargas.")
 
 
+def _lista_da_tesoura(p: ProjetoGalpao, add, n_port: int):
+    """Peças da tesoura: banzo por água e as barras internas agrupadas por comprimento.
+
+    Os banzos saem inteiros por água (a emenda é na cumeeira, como se fabrica). Diagonais
+    e montantes vão agrupados por comprimento, que é o romaneio que a fábrica corta —
+    numa tesoura simétrica são poucos comprimentos distintos.
+    """
+    d = p.dados
+    t = p.esforcos.get("geometria_tesoura")
+    if t is None:
+        return
+    marca = {"banzo superior": "BS", "banzo inferior": "BI", "diagonal": "D",
+             "montante": "M"}
+    pular = {"mont_esq", "mont_dir"} if d.ligacao_tesoura == "rígida" else set()
+    for papel in tesouras.PAPEIS:
+        el = p.elemento(NOME_DA_BARRA[papel])
+        barras = [b for b in t.do_papel(papel) if b.rotulo not in pular]
+        if el is None or not barras:
+            continue
+        if papel.startswith("banzo"):
+            add(marca[papel], "%s (meia tesoura)" % NOME_DA_BARRA[papel], el.perfil,
+                2 * n_port, t.comprimento_total(papel) / 200.0)
+            continue
+        grupos = {}
+        for b in barras:
+            c = round(t.comprimento(b) / 100.0, 2)
+            grupos[c] = grupos.get(c, 0) + 1
+        for i, comp in enumerate(sorted(grupos, reverse=True), start=1):
+            add("%s%d" % (marca[papel], i), NOME_DA_BARRA[papel], el.perfil,
+                grupos[comp] * n_port, comp)
+    trav = p.elemento("Travamento do banzo inferior")
+    if trav is not None and trav.geometria.get("quantidade"):
+        add("TV", "Travamento lateral do banzo inferior", trav.perfil,
+            int(trav.geometria["quantidade"]), trav.geometria.get("comprimento_m", 0.0))
+
+
 def _perfil_sintetico(nome: str):
-    """Perfis que o dimensionamento cria fora do catálogo, como os tirantes redondos."""
+    """Perfis que o dimensionamento cria fora do catálogo: tirantes redondos e as séries
+    formadas a frio da tesoura, que são montadas pelo nome."""
     m = re.search(r"\u00f8\s*([\d.,]+)\s*mm", nome or "")
     if nome and nome.lower().startswith("barra redonda") and m:
         return _barra_redonda(float(m.group(1).replace(",", ".")))
-    return None
+    try:
+        return catalogo.perfil_de(nome)
+    except Exception:
+        return None
 
 
 def _perimetro_pintura(perf: Perfil) -> float:

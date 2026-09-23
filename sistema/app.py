@@ -137,7 +137,10 @@ def _campos_formulario() -> list:
         "geometria": ("Geometria", ["vao", "comprimento", "pe_direito",
                                     "espacamento_porticos", "inclinacao", "balanco_lateral"]),
         "sistema": ("Sistema estrutural", ["tipo_portico", "base_rotulada", "com_misula",
-                                           "comprimento_misula", "altura_misula"]),
+                                           "comprimento_misula", "altura_misula",
+                                           "formato_tesoura", "diagonais_tesoura",
+                                           "ligacao_tesoura", "altura_tesoura",
+                                           "paineis_tesoura"]),
         "materiais": ("Materiais", ["aco_perfis", "aco_tercas", "aco_chapas", "parafuso",
                                     "eletrodo", "fck_MPa"]),
         "cobertura": ("Cobertura e fechamento", ["telha", "espacamento_tercas",
@@ -171,6 +174,10 @@ ROTULOS = {
     "tipo_portico": "Tipo de pórtico", "base_rotulada": "Base rotulada",
     "com_misula": "Usar mísula", "comprimento_misula": "Comprimento da mísula (m)",
     "altura_misula": "Altura total no joelho, com a mísula (m, 0 = automática)",
+    "formato_tesoura": "Formato da tesoura", "diagonais_tesoura": "Diagonais da tesoura",
+    "ligacao_tesoura": "Ligação da tesoura no pilar",
+    "altura_tesoura": "Altura da tesoura no apoio (m, 0 = automática)",
+    "paineis_tesoura": "Painéis por água (0 = pelo passo das terças)",
     "aco_perfis": "Aço dos perfis", "aco_tercas": "Aço das terças",
     "aco_chapas": "Aço das chapas", "parafuso": "Parafuso", "eletrodo": "Eletrodo",
     "fck_MPa": "fck do concreto (MPa)", "telha": "Telha",
@@ -192,6 +199,36 @@ ROTULOS = {
 
 def _rotulo(campo: str) -> str:
     return ROTULOS.get(campo, campo.replace("_", " ").capitalize())
+
+
+def geometria_da_tesoura(entrada: dict) -> dict:
+    """Malha da tesoura para a pré-visualização do formulário, em metros.
+
+    Sai do mesmo gerador do cálculo (`nucleo/tesouras.geometria`), e não de uma cópia
+    das regras no JavaScript: assim o desenho da tela nunca mostra uma tesoura
+    diferente da que vai ser dimensionada.
+    """
+    from nucleo import tesouras
+    d = _dados_de(entrada or {}, validar=False)
+    if not d.eh_trelicado:
+        return {"trelicado": False}
+    try:
+        t = tesouras.geometria(
+            vao=d.vao * 100, inclinacao=d.inclinacao / 100.0, formato=d.formato_tesoura,
+            diagonais=d.diagonais_tesoura, altura_apoio=d.altura_tesoura * 100,
+            paineis=d.paineis_tesoura, espacamento_tercas=d.espacamento_tercas * 100)
+    except Exception as e:
+        return {"trelicado": True, "erro": str(e)}
+    pular = {"mont_esq", "mont_dir"} if d.ligacao_tesoura == "rígida" else set()
+    return {
+        "trelicado": True,
+        "ligacao": d.ligacao_tesoura,
+        "altura_apoio_m": round(t.altura_apoio / 100.0, 3),
+        "nos": {n.nome: [round(n.x / 100.0, 4), round(n.y / 100.0, 4)] for n in t.nos},
+        "barras": [{"i": b.i, "j": b.j, "papel": b.papel} for b in t.barras
+                   if b.rotulo not in pular],
+        "resumo": t.resumo(),
+    }
 
 
 def dimensionar(entrada: dict) -> dict:
@@ -257,7 +294,12 @@ def _descrever_arquivo(caminho, pasta_projeto):
     return d
 
 
-def _dados_de(entrada: dict) -> DadosGalpao:
+def _dados_de(entrada: dict, validar: bool = True) -> DadosGalpao:
+    """Converte o corpo da requisição em `DadosGalpao`.
+
+    `validar=False` serve à pré-visualização do formulário, que desenha enquanto o
+    projetista ainda está escolhendo e não pode recusar um estado intermediário.
+    """
     campos = {f.name for f in __import__("dataclasses").fields(DadosGalpao)}
     limpo = {}
     for k, v in (entrada or {}).items():
@@ -284,7 +326,7 @@ def _dados_de(entrada: dict) -> DadosGalpao:
                 raise ErroDeDados(f"{_rotulo(f.name)}: '{v}' não é um número.")
         elif alvo is bool and isinstance(v, str):
             setattr(d, f.name, v.lower() in ("true", "1", "sim", "on"))
-    return d.validar()
+    return d.validar() if validar else d
 
 
 def _slug(nome: str) -> str:
@@ -1567,6 +1609,8 @@ class Handler(BaseHTTPRequestHandler):
             corpo = self._corpo()
             if rota == "/api/dimensionar":
                 return self._json(dimensionar(corpo))
+            if rota == "/api/tesoura":
+                return self._json(geometria_da_tesoura(corpo))
             if rota == "/api/gerar":
                 return self._json(gerar_saidas(corpo))
             if rota == "/api/pasta-de-dados":

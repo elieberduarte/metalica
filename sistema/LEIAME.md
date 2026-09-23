@@ -49,11 +49,14 @@ Percorre o mesmo caminho de um projetista:
 3. **Terças e longarinas** pela NBR 14762. A terça sob gravidade e sob sucção do
    telhado; a longarina sob pressão e sucção da parede. Em cada caso o sistema escolhe
    o perfil Ue mais leve que atende e ajusta as linhas de correntes.
-4. **Pórtico** analisado pelo método da rigidez, com mísulas e base rotulada ou engastada.
+4. **Pórtico** analisado pelo método da rigidez, com mísulas e base rotulada ou
+   engastada — de **alma cheia** (viga e pilar de perfil I) ou **treliçado** (tesoura
+   sobre pilares; ver "Tesouras treliçadas").
 5. **Combinações** últimas e de serviço (NBR 8681), inclusive com a permanente favorável
    quando a sucção alivia, que é o caso que costuma governar em galpão leve.
 6. **Viga e pilar** pela NBR 8800, num laço que refaz a análise a cada troca de perfil,
-   porque a distribuição de momentos depende da rigidez relativa entre os dois.
+   porque a distribuição de momentos depende da rigidez relativa entre os dois. No
+   pórtico treliçado o laço dimensiona as quatro famílias da tesoura e os pilares juntos.
 7. **Contraventamentos** por tirante redondo com esticador. O X de cobertura de cada vão
    extremo é tratado como treliça horizontal que vence o vão do galpão, com cortante de
    apoio igual a metade da força do vento no oitão. Quando o tirante não cabe, o sistema
@@ -69,6 +72,56 @@ fórmula com os números substituídos e o item da norma. É dessa memória que 
 Os desenhos, a lista de material e o modelo 3D leem do cálculo os perfis, a altura da
 mísula, os vãos contraventados e o número de painéis. Assim, o que se desenha é o que se
 calculou e o que se compra.
+
+## Tesouras treliçadas
+
+`nucleo/tesouras.py` monta a malha, o modelo de análise e a escolha do perfil; o
+`nucleo/galpao.py` carrega, combina e imprime, no mesmo caminho do pórtico de alma cheia.
+
+**Formatos**: `trapezoidal` (banzo inferior horizontal, altura crescendo do apoio à
+cumeeira — o usual), `banzos paralelos` (os dois banzos acompanham a inclinação, altura
+constante, todas as diagonais iguais) e `triangular` (altura nula no apoio; só fecha com
+telhado inclinado, e o programa recusa quando a inclinação não dá altura ao vão).
+
+**Diagonais**: `Howe` (montantes verticais, diagonais caindo para o apoio), `Pratt` (o
+contrário: diagonais tracionadas sob gravidade, que é o arranjo mais leve) e `Warren`
+(sem montantes, nós do banzo inferior no meio do painel).
+
+**Ligação no pilar**: `apoiada` — a tesoura se apoia no topo do pilar e não transmite
+momento, e então a base tem de ser engastada, senão o pórtico é um mecanismo no plano
+transversal (o programa recusa); `rígida` — o pilar sobe até o banzo superior e recebe os
+dois banzos, formando o joelho do pórtico treliçado, e aí a base pode ser rotulada.
+
+O que o modelo de análise faz, e por quê:
+
+* **banzos contínuos** (elementos de pórtico): a terça carrega o banzo superior *entre*
+  os nós, e ignorar essa flexão local subestima justamente a barra mais solicitada;
+* **diagonais e montantes rotulados** nas duas pontas, como a chapa de nó de fato liga;
+* no joelho rígido os **banzos chegam rotulados ao pilar**: o momento do joelho é o
+  binário entre os dois banzos, não flexão de banzo;
+* a **altura do perfil do banzo** é limitada a um oitavo do painel. Banzo mais alto
+  deixa de trabalhar por força normal e puxa para si o momento da continuidade — o nó
+  rotulado que a treliça pressupõe deixa de existir e o dimensionamento entra em
+  círculo, cada perfil mais pesado atraindo mais momento.
+
+**Travamento do banzo inferior**: sob gravidade ele traciona, mas **sob sucção ele
+comprime** — é o caso que governa o galpão leve. Fora do plano quem o segura são os
+tirantes que ligam o banzo de uma tesoura à vizinha, e o passo desse travamento é parte
+do dimensionamento: fecha-se a malha (sempre num múltiplo inteiro de painel, porque o
+travamento tem de cair num nó) até o banzo passar, antes de engrossar o perfil. Os
+tirantes saem na lista com a marca `TV`, dimensionados a 2 % da compressão do banzo
+(NBR 8800, item 4.11).
+
+**Pé-direito e beiral**: na tesoura o pé-direito é o nível do **banzo inferior** — a
+altura livre sob a tesoura. A parede ainda sobe a altura da tesoura até o beiral, e é
+essa altura que o vento vê e que as longarinas acompanham.
+
+Sai tudo o que sai do pórtico de alma cheia: elevação do pórtico com a tesoura barra por
+barra (`saida/desenhos.portico_trelicado`), modelo 3D com uma peça por barra e as marcas
+do romaneio (BS, BI, D1…Dn, M1…Mn), memorial, lista de material e mapa de esforços por
+família. Ligações verificadas: **chapa de nó** (gusset da diagonal mais solicitada, pela
+seção de Whitmore, bloco de cisalhamento e parafusos) e **tesoura–pilar** (cortante do
+pórtico e a tração de arrancamento sob sucção). Testes: `testes/test_tesouras.py`.
 
 ## Editor 3D
 
@@ -688,10 +741,15 @@ quadro). Medição: scratchpad `medir_quadro.py` (renderer.info e tempo de `cena
 
 Estes pontos são declarados no memorial e precisam de atenção do engenheiro:
 
-- **Galpão de duas águas simétrico**, pórtico de alma cheia. Treliça, shed, arco,
-  múltiplas naves e ponte rolante não estão implementados no dimensionador. O modelo
+- **Galpão de duas águas simétrico**, pórtico de alma cheia ou tesoura treliçada. Shed,
+  arco, múltiplas naves e ponte rolante não estão implementados no dimensionador. O modelo
   **importado** de IFC é calculado à parte (tesouras como pórticos planos, terças como vigas;
   ver "Cálculo do modelo importado" e seus limites).
+- Na tesoura, a **chapa de nó não é modelada em 3D** nem desenhada em detalhe: o cálculo
+  verifica a chapa da diagonal mais solicitada e a prancha a indica por chamada.
+- A **placa de base** é uma chapa lisa, sem enrijecedores. Base engastada de pórtico de
+  vão grande pode pedir placa enrijecida, que o programa não dimensiona — nesse caso ele
+  reprova a base com aviso, em vez de entregar uma chapa que não existe.
 - **Análise plana e elástica**, com efeitos de segunda ordem por amplificação B₁/B₂.
   Não há análise não linear geométrica nem plastificação.
 - **Fundação fora do escopo**: o sistema entrega as reações e a tração nos chumbadores;

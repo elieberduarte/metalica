@@ -35,11 +35,18 @@ class DadosGalpao:
     balanco_lateral: float = 0.0         # beiral além do pilar, cada lado
 
     # sistema
-    tipo_portico: str = "alma cheia"     # "alma cheia" ou "treliçado"
+    tipo_portico: str = "alma cheia"     # "alma cheia" ou "treliçado (tesoura)"
     base_rotulada: bool = True
     com_misula: bool = True
     comprimento_misula: float = 1.8      # m, medido ao longo da viga
     altura_misula: float = 0.0           # 0 = automática (altura da viga)
+
+    # tesoura (só valem quando o pórtico é treliçado)
+    formato_tesoura: str = "trapezoidal"     # ver nucleo/tesouras.py: FORMATOS
+    diagonais_tesoura: str = "Howe"          # ver nucleo/tesouras.py: DIAGONAIS
+    altura_tesoura: float = 0.0              # m entre banzos no apoio; 0 = automática
+    paineis_tesoura: int = 0                 # painéis por água; 0 = pelo passo das terças
+    ligacao_tesoura: str = "apoiada"         # "apoiada" no pilar ou "rígida" (joelho)
 
     # materiais
     aco_perfis: str = "ASTM A572 Gr.50"
@@ -101,11 +108,30 @@ class DadosGalpao:
             raise ErroDeDados("Classe da edificação deve ser A, B ou C.")
         if self.comprimento < self.espacamento_porticos:
             raise ErroDeDados("O comprimento do galpão é menor que o espaçamento entre pórticos.")
-        # O que o programa ainda não calcula é recusado, não ignorado: um memorial que
-        # imprime "pórtico treliçado" com o cálculo de alma cheia seria um documento falso.
-        if "alma" not in str(self.tipo_portico or "").lower():
-            raise ErroDeDados("Pórtico \"%s\" ainda não é calculado por este programa: só o pórtico de "
-                              "alma cheia de duas águas. Escolha \"alma cheia\"." % self.tipo_portico)
+        if self.eh_trelicado:
+            from .tesouras import DIAGONAIS, FORMATOS
+            if self.formato_tesoura not in FORMATOS:
+                raise ErroDeDados("Formato de tesoura \"%s\" desconhecido. Escolha um de: %s."
+                                  % (self.formato_tesoura, ", ".join(FORMATOS)))
+            if self.diagonais_tesoura not in DIAGONAIS:
+                raise ErroDeDados("Arranjo de diagonais \"%s\" desconhecido. Escolha um de: %s."
+                                  % (self.diagonais_tesoura, ", ".join(DIAGONAIS)))
+            if self.ligacao_tesoura not in ("apoiada", "rígida"):
+                raise ErroDeDados("Ligação da tesoura \"%s\" desconhecida: use \"apoiada\" ou "
+                                  "\"rígida\"." % self.ligacao_tesoura)
+            faixa("Altura da tesoura no apoio", self.altura_tesoura, 0, 4, "m")
+            faixa("Painéis da tesoura por água", self.paineis_tesoura, 0, 14, "")
+            # Tesoura apoiada em pilar de base rotulada é mecanismo no plano do pórtico:
+            # nada segura o galpão contra o vento transversal. Recusar é mais honesto do
+            # que calcular uma estrutura que não para em pé.
+            if self.ligacao_tesoura == "apoiada" and self.base_rotulada:
+                raise ErroDeDados(
+                    "Tesoura apoiada sobre pilar de base rotulada não tem estabilidade no plano "
+                    "do pórtico. Desmarque \"base rotulada\" (engaste o pilar) ou escolha a "
+                    "ligação rígida, em que o pilar sobe até o banzo superior.")
+        elif "alma" not in str(self.tipo_portico or "").lower():
+            raise ErroDeDados("Pórtico \"%s\" ainda não é calculado por este programa: escolha "
+                              "\"alma cheia\" ou \"treliçado (tesoura)\"." % self.tipo_portico)
         if self.ponte_rolante or (self.capacidade_ponte_t or 0) > 0:
             raise ErroDeDados("Ponte rolante ainda não entra no cálculo (cargas móveis, vigas de rolamento "
                               "e efeitos dinâmicos). Desmarque a ponte rolante ou dimensione o galpão "
@@ -114,15 +140,41 @@ class DadosGalpao:
 
     # --- grandezas derivadas ---
     @property
+    def eh_trelicado(self) -> bool:
+        """True quando o pórtico é uma tesoura treliçada sobre pilares."""
+        return "treli" in str(self.tipo_portico or "").lower()
+
+    @property
     def angulo_telhado(self) -> float:
         """Ângulo do telhado em graus."""
         import math
         return math.degrees(math.atan(self.inclinacao / 100))
 
     @property
+    def altura_tesoura_m(self) -> float:
+        """Altura da tesoura no apoio, em m (0 no pórtico de alma cheia)."""
+        if not self.eh_trelicado:
+            return 0.0
+        if self.altura_tesoura and self.altura_tesoura > 0:
+            return float(self.altura_tesoura)
+        from .tesouras import altura_padrao
+        return altura_padrao(self.vao * 100, self.formato_tesoura,
+                             self.inclinacao / 100) / 100.0
+
+    @property
+    def altura_beiral(self) -> float:
+        """Altura da parede no beiral, em m.
+
+        No pórtico de alma cheia é o próprio pé-direito. Na tesoura o pé-direito é o
+        nível do banzo inferior (a altura livre sob a tesoura) e a parede ainda sobe a
+        altura da tesoura até o beiral — é essa altura que o vento vê.
+        """
+        return self.pe_direito + self.altura_tesoura_m
+
+    @property
     def altura_cumeeira(self) -> float:
         """Altura total até a cumeeira, em m."""
-        return self.pe_direito + (self.vao / 2) * (self.inclinacao / 100)
+        return self.altura_beiral + (self.vao / 2) * (self.inclinacao / 100)
 
     @property
     def n_porticos(self) -> int:
@@ -228,10 +280,17 @@ class ProjetoGalpao:
 
     @property
     def ok(self) -> bool:
+        """Só é `ok` o que foi verificado e passou.
+
+        Base ausente conta como reprovação quando há pilar: antes, quando o
+        dimensionamento da base não fechava, ela ficava em `None` e o projeto se dizia
+        aprovado sem ter base nenhuma verificada.
+        """
+        base_ok = self.base.ok if self.base else (self.elemento("Pilar") is None)
         return (not self.erros
                 and all(e.ok for e in self.elementos)
                 and all(r.ok for r in self.ligacoes.values())
-                and (self.base.ok if self.base else True))
+                and base_ok)
 
     def resumo(self) -> List[str]:
         linhas = [e.resultado.resumo() if e.resultado else f"{e.nome}: —"

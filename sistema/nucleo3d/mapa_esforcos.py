@@ -84,14 +84,16 @@ def mapa_de_esforcos(projeto: ProjetoGalpao, estacoes: int = ESTACOES) -> dict:
 
     g = dsn._Geo(projeto)
     barras = _barras(modelo, resultados, ultimas, estacoes)
-    por_elemento = _valores_por_elemento(barras, resultados, ultimas)
+    do_elemento, para_valor = _mapa_de_barras(modelo)
+    por_elemento = _valores_por_elemento(barras, resultados, ultimas, para_valor)
 
     return {
         "ok": True,
         "unidades": dict(UNIDADES),
         "grandezas": [dict(x) for x in GRANDEZAS],
         "combinacoes": _combinacoes(combos, ultimas, servico),
-        "elementos": _elementos(projeto, por_elemento, list(resultados) + [ENVOLTORIA]),
+        "elementos": _elementos(projeto, por_elemento, list(resultados) + [ENVOLTORIA],
+                                do_elemento),
         "portico": {
             "xs_mm": _posicoes_dos_porticos(g),
             "nos": [{"nome": n.nome or f"n{i}", "p": _ponto(n), "apoiado": bool(n.apoiado)}
@@ -354,12 +356,30 @@ def _cargas(modelo, caso: str, eixos: Dict[str, Dict[str, List[float]]]) -> List
 # Elementos dimensionados
 # =====================================================================================
 
-def _valores_por_elemento(barras: List[dict], resultados: dict,
-                          ultimas: List[str]) -> Dict[str, Dict[str, dict]]:
+def _mapa_de_barras(modelo):
+    """(barras de cada elemento, barras que contam para o valor), conforme o pórtico.
+
+    No pórtico de alma cheia é a tabela fixa deste módulo. Na tesoura as famílias são
+    outras — banzos, diagonais e montantes — e quem as publica é o próprio modelo, em
+    `dados["barras_por_papel"]`: assim o painel do editor mostra a mesma peça que o
+    memorial dimensionou, sem tabela paralela.
+    """
+    dd = getattr(modelo, "dados", None) or {}
+    por_papel = dd.get("barras_por_papel")
+    if not por_papel:
+        return dict(BARRAS_DO_ELEMENTO), dict(BARRAS_PARA_VALOR)
+    mapa = {"Pilar": tuple(dd.get("barras_pilar") or ())}
+    for papel, rotulos in por_papel.items():
+        mapa[str(papel).capitalize()] = tuple(rotulos)
+    return mapa, dict(mapa)
+
+
+def _valores_por_elemento(barras: List[dict], resultados: dict, ultimas: List[str],
+                          para_valor=None) -> Dict[str, Dict[str, dict]]:
     """Maior N, V e M em módulo de cada elemento do pórtico, por combinação."""
     saida: Dict[str, Dict[str, dict]] = {}
     casos = list(resultados) + [ENVOLTORIA]
-    for elemento, rotulos in BARRAS_PARA_VALOR.items():
+    for elemento, rotulos in (para_valor or BARRAS_PARA_VALOR).items():
         minhas = [b for b in barras if b["rotulo"] in rotulos]
         if not minhas:
             continue
@@ -381,15 +401,16 @@ def _valores_por_elemento(barras: List[dict], resultados: dict,
 
 
 def _elementos(projeto: ProjetoGalpao, por_elemento: Dict[str, Dict[str, dict]],
-               casos: List[str]) -> Dict[str, dict]:
+               casos: List[str], do_elemento=None) -> Dict[str, dict]:
     """Um verbete por elemento dimensionado, na chave que o modelo 3D usa.
 
     A chave é o nome do elemento — o mesmo que `de_projeto.py` grava em
     `atributos["elemento"]` de cada peça —, e é por ele que o editor casa peça e valor.
     """
     saida: Dict[str, dict] = {}
+    do_elemento = do_elemento or BARRAS_DO_ELEMENTO
     for e in projeto.elementos:
-        chave_portico = _chave_do_portico(e.nome)
+        chave_portico = _chave_do_portico(e.nome, do_elemento)
         valores = dict(por_elemento.get(chave_portico, {})) if chave_portico else {}
         if not valores:
             # elemento fora do pórtico (terça, longarina, contraventamento): o cálculo
@@ -409,7 +430,7 @@ def _elementos(projeto: ProjetoGalpao, por_elemento: Dict[str, Dict[str, dict]],
             "Sd": round(critica.Sd, 2) if critica else 0.0,
             "Rd": round(critica.Rd, 2) if critica else 0.0,
             "unidade": getattr(critica, "unidade", "") if critica else "",
-            "barras": list(BARRAS_DO_ELEMENTO.get(chave_portico, ())),
+            "barras": list(do_elemento.get(chave_portico, ())),
             "no_portico": bool(chave_portico),
             "dimensionamento": _esforcos_do_elemento(e),
             # quem está no pórtico já tem o diagrama em `portico.barras`; as demais peças
@@ -456,8 +477,8 @@ def _diagrama_de_viga(e, estacoes: int) -> Optional[dict]:
     }
 
 
-def _chave_do_portico(nome: str) -> Optional[str]:
-    for chave in BARRAS_DO_ELEMENTO:
+def _chave_do_portico(nome: str, do_elemento=None) -> Optional[str]:
+    for chave in (do_elemento or BARRAS_DO_ELEMENTO):
         if nome.lower().startswith(chave.lower()):
             return chave
     return None

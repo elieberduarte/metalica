@@ -168,7 +168,12 @@ def test_serializa_para_a_interface():
 # ----------------------------------------------------------- robustez
 
 def test_varredura_de_geometrias():
-    """Nenhuma combinação usual pode levantar erro ou deixar de fechar."""
+    """Nenhuma combinação usual pode levantar erro, nem reprovar em silêncio.
+
+    Reprovar é legítimo — um pórtico de 30 m com base engastada pede uma base fora do
+    que o catálogo de chumbadores alcança. O que não pode é reprovar sem dizer por quê,
+    nem um elemento passar sem ter sido verificado.
+    """
     problemas = []
     for vao in (8, 16, 25, 30):
         for pe in (4, 6, 8):
@@ -176,13 +181,31 @@ def test_varredura_de_geometrias():
                 p = dimensionar(_cap16(vao=vao, pe_direito=pe, comprimento=36.0,
                                        espacamento_porticos=6.0,
                                        base_rotulada=rotulada))
+                caso = (vao, pe, rotulada)
                 if p.erros:
-                    problemas.append((vao, pe, rotulada, p.erros[0]))
-                elif not p.ok:
-                    crit = [v.titulo for e in p.elementos if not e.ok
-                            for v in e.resultado.verificacoes if not v.ok]
-                    problemas.append((vao, pe, rotulada, crit[:1]))
+                    problemas.append(caso + (p.erros[0],))
+                    continue
+                crit = [v.titulo for e in p.elementos if not e.ok
+                        for v in e.resultado.verificacoes if not v.ok]
+                if crit:
+                    problemas.append(caso + (crit[:1],))
+                elif not p.ok and not p.avisos:
+                    problemas.append(caso + ("reprovou sem aviso",))
     assert not problemas, problemas
+
+
+def test_base_engastada_e_dimensionada():
+    """Base engastada tem de sair com placa e chumbadores, não em branco.
+
+    A placa é retangular: alargar na direção do momento dá braço ao chumbador, alargar
+    na outra só aumenta o balanço da chapa. Enquanto a busca só testava placa quadrada
+    grande, nenhuma base engastada fechava e o projeto ainda se dizia aprovado.
+    """
+    p = dimensionar(_cap16(vao=16, pe_direito=6, comprimento=36.0,
+                           espacamento_porticos=6.0, base_rotulada=False))
+    assert p.base is not None, "base engastada ficou sem dimensionamento"
+    assert p.base.dados.get("L", 0) > p.base.dados.get("B", 0), "placa devia ser retangular"
+    assert p.base.ok
 
 
 def test_entrada_invalida_tem_mensagem_clara():
@@ -213,13 +236,25 @@ if __name__ == "__main__":
 
 
 def test_recusa_o_que_nao_calcula():
-    """Pórtico treliçado e ponte rolante são aceitos pelo formulário mas não pelo cálculo:
-    validar() recusa com mensagem, em vez de calcular alma cheia e imprimir outra coisa."""
+    """O que o programa não calcula é recusado com mensagem, em vez de sair outra coisa.
+
+    O pórtico treliçado passou a ser calculado (`nucleo/tesouras.py`); o que continua
+    fora é a ponte rolante, o formato de pórtico desconhecido e a tesoura sem
+    estabilidade no plano.
+    """
     import pytest
     from nucleo.base import ErroDeDados
     from nucleo.modelo_galpao import DadosGalpao
-    with pytest.raises(ErroDeDados, match="treli"):
-        DadosGalpao(tipo_portico="treliçado").validar()
     with pytest.raises(ErroDeDados, match="Ponte rolante"):
         DadosGalpao(ponte_rolante=True, capacidade_ponte_t=5).validar()
+    with pytest.raises(ErroDeDados, match="alma cheia"):
+        DadosGalpao(tipo_portico="arco atirantado").validar()
+    # tesoura apoiada sobre pilar de base rotulada é mecanismo: tem de ser recusada
+    with pytest.raises(ErroDeDados, match="estabilidade"):
+        DadosGalpao(tipo_portico="treliçado", ligacao_tesoura="apoiada",
+                    base_rotulada=True).validar()
+    with pytest.raises(ErroDeDados, match="[Ff]ormato"):
+        DadosGalpao(tipo_portico="treliçado", formato_tesoura="arco",
+                    base_rotulada=False).validar()
     DadosGalpao().validar()
+    DadosGalpao(tipo_portico="treliçado", base_rotulada=False).validar()

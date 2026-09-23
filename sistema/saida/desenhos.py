@@ -713,13 +713,25 @@ def _rosca(d_mm: float) -> str:
 
 
 def _perfil(nome_ou_perfil) -> Perfil:
-    """Aceita um `Perfil` pronto, um nome do catálogo ou "Barra redonda ø N mm"."""
+    """Aceita um `Perfil` pronto, um nome do catálogo ou "Barra redonda ø N mm".
+
+    Depois do banco de laminados vem o catálogo completo, que é quem conhece as séries
+    formadas a frio (Ue, U de fábrica, cantoneira em milímetro). Sem esse passo a terça
+    e o banzo da tesoura eram desenhados com a seção de um W 310, que não é a peça.
+    """
     if isinstance(nome_ou_perfil, Perfil):
         return nome_ou_perfil
     d_barra = _diametro_barra(nome_ou_perfil)
     if d_barra:
         return _perfil_barra(d_barra)
-    p = banco().get(str(nome_ou_perfil))
+    nome = str(nome_ou_perfil)
+    p = banco().get(nome)
+    if p is None:
+        try:
+            from nucleo import catalogo
+            p = catalogo.perfil_de(nome)
+        except Exception:
+            p = None
     if p is None:                                  # nome desconhecido: não trava o desenho
         p = banco()["W 310×38,7"]
     return p
@@ -899,7 +911,7 @@ def _fiadas_longarina(g) -> Tuple[List[float], float]:
     o elemento, fiadas a cada 1,9 m a partir do piso, parando 300 mm abaixo do beiral
     (Cap. 16, passo 1: 1,90 / 3,80 / 5,70 m para 6 m).
     """
-    H = g.H
+    H = g.h_beiral
     el = _elemento(g.fonte, "Longarina de fechamento")
     geo = el.geometria if el is not None and isinstance(el.geometria, dict) else {}
     cotas = geo.get("cotas_fiadas_m")
@@ -945,7 +957,12 @@ class _Geo:
         self.i = dg.inclinacao / 100.0
         self.theta = math.atan(self.i)
         self.flecha = (self.vao / 2.0) * self.i
-        self.h_cumeeira = self.H + self.flecha
+        # na tesoura o pé-direito é o nível do banzo inferior: a parede sobe mais a
+        # altura da tesoura até o beiral, e é de lá que o telhado começa a subir
+        self.h_tesoura = dg.altura_tesoura_m * 1000.0
+        self.h_beiral = self.H + self.h_tesoura
+        self.h_cumeeira = self.h_beiral + self.flecha
+        self.trelicado = bool(dg.eh_trelicado)
         self.balanco = dg.balanco_lateral * 1000.0
         self.esp_terca = dg.espacamento_tercas * 1000.0
         self.com_misula = bool(dg.com_misula)
@@ -970,7 +987,7 @@ def _agua(g: _Geo, espelhar: bool) -> Tuple[Tuple[float, float], Tuple[float, fl
     """Extremos da linha inferior do rafter de uma água (joelho → cumeeira)."""
     x0 = 0.0 if not espelhar else g.vao
     s = 1.0 if not espelhar else -1.0
-    return (x0, g.H), (x0 + s * g.vao / 2.0, g.h_cumeeira)
+    return (x0, g.h_beiral), (x0 + s * g.vao / 2.0, g.h_cumeeira)
 
 
 def _faixa(d: Desenho, p1, p2, esp, lado=1, camada="ACO", fechar=True):
@@ -993,6 +1010,18 @@ def _faixa(d: Desenho, p1, p2, esp, lado=1, camada="ACO", fechar=True):
 
 
 def portico(projeto) -> Desenho:
+    """Elevação do pórtico transversal: de alma cheia ou treliçado.
+
+    O pórtico treliçado é desenhado por `portico_trelicado`; daqui para baixo é o de
+    alma cheia. Desenhar um pórtico de alma cheia onde a estrutura é uma tesoura seria
+    uma prancha falsa, então o desvio é na entrada.
+    """
+    if _dados_galpao(projeto).eh_trelicado:
+        return portico_trelicado(projeto)
+    return _portico_alma_cheia(projeto)
+
+
+def _portico_alma_cheia(projeto) -> Desenho:
     """Elevação do pórtico transversal completo (Cap. 16, Figura 16.2).
 
     Mostra pilares, vigas inclinadas, mísulas, as três ligações (joelho, cumeeira e
@@ -1151,6 +1180,170 @@ def portico(projeto) -> Desenho:
         f"Inclinacao {g.dg.inclinacao:g} %%% ({math.degrees(g.theta):.1f}%%d).".replace(".", ","),
         f"{g.n_porticos} porticos a cada {_mm(g.esp_port)} mm.",
         "Bases " + ("rotuladas" if g.rotulada else "engastadas") + " - ver DET. 06.",
+    ]
+    _notas(d, est, -dp / 2 - est.off, y_tit - est.tt * 2.0, notas)
+    return d
+
+
+# =====================================================================================
+# 1b. Pórtico treliçado — elevação da tesoura
+# =====================================================================================
+
+def _tesoura_do_projeto(fonte, dg: DadosGalpao):
+    """A tesoura desenhada é a mesma que o cálculo montou.
+
+    Sem cálculo (pré-visualização do formulário) ela é remontada com os mesmos dados,
+    pelo mesmo gerador — o desenho nunca inventa uma malha que o cálculo não viu.
+    """
+    if isinstance(fonte, ProjetoGalpao):
+        t = (fonte.esforcos or {}).get("geometria_tesoura")
+        if t is not None:
+            return t
+    from nucleo import tesouras
+    return tesouras.geometria(
+        vao=dg.vao * 100, inclinacao=dg.inclinacao / 100.0, formato=dg.formato_tesoura,
+        diagonais=dg.diagonais_tesoura, altura_apoio=dg.altura_tesoura * 100,
+        paineis=dg.paineis_tesoura, espacamento_tercas=dg.espacamento_tercas * 100)
+
+
+def _perfis_tesoura(fonte) -> Dict[str, str]:
+    """Perfil de cada família de barra da tesoura, pelo nome que o cálculo publicou."""
+    from nucleo.galpao import NOME_DA_BARRA
+    from nucleo import tesouras
+    saida = {}
+    for papel in tesouras.PAPEIS:
+        el = _elemento(fonte, NOME_DA_BARRA[papel])
+        if el is not None and el.perfil:
+            saida[papel] = el.perfil
+    return saida
+
+
+def _barra_centrada(d: Desenho, p1, p2, esp: float, camada="ACO"):
+    """Barra desenhada como faixa de espessura `esp` centrada no eixo p1→p2."""
+    dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+    c = math.hypot(dx, dy)
+    if c < 1e-9 or esp <= 0:
+        return
+    nx, ny = -dy / c * esp / 2.0, dx / c * esp / 2.0
+    d.polilinha([(p1[0] + nx, p1[1] + ny), (p2[0] + nx, p2[1] + ny),
+                 (p2[0] - nx, p2[1] - ny), (p1[0] - nx, p1[1] - ny)],
+                fechada=True, camada=camada)
+
+
+def portico_trelicado(projeto) -> Desenho:
+    """Elevação do pórtico transversal com tesoura treliçada.
+
+    Mostra os dois pilares, a tesoura inteira (banzos, diagonais e montantes, cada barra
+    com a altura do perfil adotado), as bases e as cotas que a fábrica usa: vão, painel,
+    altura da tesoura no apoio e na cumeeira, pé-direito e beiral.
+    """
+    from nucleo import tesouras as _tes
+    g = _Geo(projeto)
+    dg = g.dg
+    t = _tesoura_do_projeto(projeto, dg)
+    perfis = _perfis_tesoura(projeto)
+    est = Estilo(100.0)
+    d = Desenho("portico-trelicado")
+
+    H, V = g.H, g.vao
+    hc = g.h_cumeeira
+    dp = g.d_pilar
+    esp = {}
+    for papel in _tes.PAPEIS:
+        nome = perfis.get(papel)
+        esp[papel] = _perfil(nome).d if nome else (120.0 if papel.startswith("banzo") else 60.0)
+
+    def ponto(nome_no):
+        n = t.no(nome_no)
+        return (n.x * 10.0, H + n.y * 10.0)
+
+    # ---------------- pilares ----------------
+    topo = H + (t.altura_apoio * 10.0 if dg.ligacao_tesoura == "rígida" else 0.0)
+    for x in (0.0, V):
+        d.retangulo(x - dp / 2, 0.0, dp, topo, "ACO")
+        d.linha(x - dp / 2 + g.pilar.tf, 0.0, x - dp / 2 + g.pilar.tf, topo, "ACO-FINO")
+        d.linha(x + dp / 2 - g.pilar.tf, 0.0, x + dp / 2 - g.pilar.tf, topo, "ACO-FINO")
+        _eixo(d, x, -est.off, x, hc * 0.2)
+
+    # ---------------- tesoura ----------------
+    pular = {"mont_esq", "mont_dir"} if dg.ligacao_tesoura == "rígida" else set()
+    for b in t.barras:
+        if b.rotulo in pular:
+            continue
+        camada = "ACO" if b.papel.startswith("banzo") else "ACO-FINO"
+        _barra_centrada(d, ponto(b.i), ponto(b.j), esp[b.papel], camada)
+    for n in t.nos:                       # chapas de nó, em linha auxiliar
+        x, y = ponto(n.nome)
+        d.circulo(x, y, max(esp.values()) * 0.45, "AUXILIAR")
+
+    # ---------------- bases ----------------
+    ped_b = dp + 2 * PADRAO_BASE["pedestal_folga"]
+    ped_h = 600.0
+    for x in (0.0, V):
+        d.retangulo(x - ped_b / 2, -ped_h, ped_b, ped_h, "CONCRETO")
+        d.hachura([(x - ped_b / 2, -ped_h), (x + ped_b / 2, -ped_h),
+                   (x + ped_b / 2, 0.0), (x - ped_b / 2, 0.0)],
+                  espacamento=90.0, angulo=45.0)
+        pl = PADRAO_BASE["placa_L"]
+        d.retangulo(x - pl / 2, 0.0, pl, PADRAO_BASE["placa_t"] * 3, "ACO")
+    _terreno(d, est, -V * 0.08, V * 1.08, 0.0)
+
+    # ---------------- chamadas ----------------
+    r_lig = 0.045 * V
+    d.circulo(0.0, H, r_lig, "AUXILIAR")
+    d.circulo(V, H, r_lig, "AUXILIAR")
+    _chamada(d, est, r_lig * 0.7, H + r_lig * 0.7, V * 0.18, H * 0.78,
+             "LIGACAO TESOURA-PILAR", est.tp, linhas=["CHAPA DE TOPO DO PILAR"])
+    meio = t.no(("BI%d" % t.paineis) if t.formato != "banzos paralelos" else "TS%d" % t.paineis)
+    _chamada(d, est, V * 0.5, H + meio.y * 10.0, V * 0.62, hc + 0.22 * hc,
+             "CHAPA DE NO - GUSSET", est.tp)
+    _chamada(d, est, V + r_lig * 0.5, -r_lig * 0.4, V * 0.82, -ped_h - est.off2 * 1.6,
+             "BASE " + ("ROTULADA" if g.rotulada else "ENGASTADA") + " - VER DET. 06",
+             est.tp)
+    _chamada(d, est, -dp / 2, topo * 0.42, -est.off3 - V * 0.10, topo * 0.30,
+             f"PILAR P1  {g.pilar.nome}", est.tp,
+             linhas=[f"{g.pilar.massa:.1f} kg/m".replace(".", ","), f"L = {_mm(topo)} mm"])
+
+    rotulo = {"banzo superior": "BS", "banzo inferior": "BI",
+              "diagonal": "D", "montante": "M"}
+    linhas = [f"{rotulo[p]}  {perfis[p]}" for p in _tes.PAPEIS if p in perfis]
+    if linhas:
+        _chamada(d, est, V * 0.5, hc, V * 0.24, hc + 0.30 * hc,
+                 "PERFIS DA TESOURA", est.tp, linhas=linhas)
+
+    # ---------------- cotas ----------------
+    y_cota = -ped_h - est.off
+    _cota_h(d, est, 0.0, V / 2.0, y_cota, -est.off, _mm(V / 2.0))
+    _cota_h(d, est, V / 2.0, V, y_cota, -est.off, _mm(V / 2.0))
+    _cota_h(d, est, 0.0, V, y_cota, -est.off2 - est.off, _mm(V))
+    d.texto(V / 2.0, y_cota - est.off3 - est.t * 1.6, "VAO ENTRE EIXOS DE PILARES",
+            est.tp, "TEXTO", alinhamento="centro")
+    # painéis do banzo superior, na cadeia que a fábrica marca
+    xs = [t.no("TS%d" % k).x * 10.0 for k in range(2 * t.paineis + 1)]
+    _cadeia_h(d, est, xs, y_cota, est.off * 0.8)
+
+    x_cota = -dp / 2 - est.off
+    _cota_v(d, est, 0.0, H, x_cota, -est.off, f"{_mm(H)}  (PE-DIREITO)")
+    if t.altura_apoio > 0:
+        _cota_v(d, est, H, H + t.altura_apoio * 10.0, x_cota, -est.off2 - est.off,
+                f"{_mm(t.altura_apoio * 10.0)}  (TESOURA NO APOIO)")
+    x_cota_d = V + dp / 2 + est.off
+    _cota_v(d, est, H, hc, x_cota_d, est.off, _mm(hc - H))
+    _cota_v(d, est, 0.0, hc, x_cota_d, est.off2 + est.off, f"{_mm(hc)}  (CUMEEIRA)")
+
+    # ---------------- rótulo e notas ----------------
+    y_tit = y_cota - est.off3 - est.tt * 3.6
+    _titulo_vista(d, est, V / 2.0, y_tit, "PORTICO TRELICADO - ELEVACAO",
+                  est.texto_escala())
+    notas = [
+        "Cotas em milimetros. Desenho em escala 1:1 no modelo.",
+        f"Tesoura {t.formato}, diagonais {t.diagonais}, "
+        f"{t.paineis} paineis por agua.".upper(),
+        f"Aco dos perfis: {dg.aco_perfis}; chapas: {dg.aco_chapas}.",
+        f"Parafusos {dg.parafuso}; eletrodo {dg.eletrodo}.",
+        f"Tesoura {dg.ligacao_tesoura} no pilar; bases "
+        + ("rotuladas" if g.rotulada else "engastadas") + ".",
+        f"{g.n_porticos} porticos a cada {_mm(g.esp_port)} mm.",
     ]
     _notas(d, est, -dp / 2 - est.off, y_tit - est.tt * 2.0, notas)
     return d
@@ -1326,8 +1519,14 @@ def elevacao_longitudinal(projeto) -> Desenho:
         d.texto(x, H + est.off * 1.8, f"P{i + 1}", est.t, "TEXTO", alinhamento="centro")
 
     # ---------------- viga de beiral e cumeeira ----------------
-    d.linha(0.0, H, C, H, "ACO")
-    d.retangulo(0.0, H, C, g.terca.d, "ACO-FINO")
+    # na tesoura o beiral fica acima do topo do pilar: a linha do banzo inferior é a do
+    # pé-direito e a terça de beiral corre na altura do banzo superior
+    if g.trelicado and g.h_beiral > H + 1.0:
+        d.linha(0.0, H, C, H, "ACO-FINO")
+        d.texto(C * 0.5, H - est.tp * 1.4, "BANZO INFERIOR DA TESOURA", est.tp,
+                "TEXTO", alinhamento="centro")
+    d.linha(0.0, g.h_beiral, C, g.h_beiral, "ACO")
+    d.retangulo(0.0, g.h_beiral, C, g.terca.d, "ACO-FINO")
     d.linha(0.0, g.h_cumeeira, C, g.h_cumeeira, "OCULTA")
     d.texto(C * 0.5, g.h_cumeeira + est.tp * 0.6, "CUMEEIRA (ALEM)", est.tp, "TEXTO",
             alinhamento="centro")
@@ -3079,6 +3278,23 @@ CATALOGO = [
 ]
 
 
+def catalogo_de(projeto) -> List[tuple]:
+    """Os desenhos que se aplicam a este projeto.
+
+    A ligação de joelho e a de cumeeira por chapa de topo são do pórtico de alma cheia.
+    Numa tesoura elas não existem — quem liga os banzos é a chapa de nó —, e imprimir
+    essas pranchas seria detalhar uma peça que a obra não vai ter.
+    """
+    try:
+        trelicado = _dados_galpao(projeto).eh_trelicado
+    except Exception:
+        trelicado = False
+    if not trelicado:
+        return list(CATALOGO)
+    fora = {"04-LIGACAO-VIGA-PILAR", "05-LIGACAO-CUMEEIRA"}
+    return [x for x in CATALOGO if x[0] not in fora]
+
+
 def gerar_todos(projeto, pasta: str) -> List[dict]:
     """Grava todos os DXF em `pasta` e devolve a lista do que foi criado.
 
@@ -3086,7 +3302,7 @@ def gerar_todos(projeto, pasta: str) -> List[dict]:
     """
     os.makedirs(os.path.abspath(pasta), exist_ok=True)
     saida = []
-    for nome, titulo, escala, fn in CATALOGO:
+    for nome, titulo, escala, fn in catalogo_de(projeto):
         d = fn(projeto)
         caminho = os.path.join(pasta, f"{nome}.dxf")
         d.gravar(caminho)

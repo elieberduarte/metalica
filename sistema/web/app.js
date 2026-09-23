@@ -112,6 +112,8 @@ const estado = {
   dados: {},           // valores do formulário (texto para números, bool para checkbox)
   tipos: {},           // campo -> "float" | "int" | "str" | "bool"
   rotulos: {},
+  tesoura: null,       // malha da tesoura, quando o pórtico é treliçado
+  chaveTesoura: '',    // dados que geraram a malha em cache
   projeto: null,       // última resposta de /api/dimensionar
   entrega: null,       // última resposta de /api/gerar
   erroCalculo: null,
@@ -163,9 +165,23 @@ const CONFIG = {
   inclinacao: { faixa: [2, 100], un: '%', rotuloErro: 'Inclinação do telhado' },
   balanco_lateral: { faixa: [0, 5], un: 'm', rotuloErro: 'Beiral lateral' },
 
-  tipo_portico: { opcoes: ['alma cheia'], dica: 'só alma cheia é calculado; treliçado ainda não' },
-  comprimento_misula: { faixa: [0, 6], un: 'm', rotuloErro: 'Comprimento da mísula' },
-  altura_misula: { faixa: [0, 3], un: 'm', rotuloErro: 'Altura da mísula' },
+  tipo_portico: { opcoes: ['alma cheia', 'treliçado (tesoura)'],
+                  dica: 'alma cheia: viga e pilar de perfil I; treliçado: tesoura sobre pilares' },
+  comprimento_misula: { faixa: [0, 6], un: 'm', rotuloErro: 'Comprimento da mísula',
+                        sePortico: 'alma' },
+  altura_misula: { faixa: [0, 3], un: 'm', rotuloErro: 'Altura da mísula', sePortico: 'alma' },
+
+  formato_tesoura: { opcoes: ['trapezoidal', 'banzos paralelos', 'triangular'],
+                     sePortico: 'treli',
+                     dica: 'trapezoidal é o usual; triangular só com telhado inclinado' },
+  diagonais_tesoura: { opcoes: ['Howe', 'Pratt', 'Warren'], sePortico: 'treli',
+                       dica: 'Pratt traciona as diagonais; Warren dispensa montantes' },
+  ligacao_tesoura: { opcoes: ['apoiada', 'rígida'], sePortico: 'treli',
+                     dica: 'apoiada exige base engastada; rígida deixa o pilar subir até o banzo superior' },
+  altura_tesoura: { faixa: [0, 4], un: 'm', rotuloErro: 'Altura da tesoura no apoio',
+                    sePortico: 'treli', dica: '0 = automática (vão/25 na trapezoidal)' },
+  paineis_tesoura: { faixa: [0, 14], inteiro: true, rotuloErro: 'Painéis da tesoura por água',
+                     sePortico: 'treli', dica: '0 = um painel por terça' },
 
   fck_MPa: { faixa: [15, 50], un: 'MPa', rotuloErro: 'fck do concreto', lista: 'fck' },
 
@@ -375,6 +391,15 @@ function aplicarDependencias() {
     const ctrl = document.getElementById('c-' + campo);
     if (ctrl) ctrl.disabled = !estado.dados[cfg.depende];
   }
+  // campos que só valem num tipo de pórtico: some com os do outro, em vez de deixar
+  // o projetista preencher mísula de uma tesoura ou diagonal de um pórtico de alma cheia
+  const tipo = String(estado.dados.tipo_portico || '').toLowerCase();
+  for (const [campo, cfg] of Object.entries(CONFIG)) {
+    if (!cfg.sePortico) continue;
+    const caixa = document.getElementById('c-' + campo)?.closest('.campo');
+    const vale = tipo.includes(cfg.sePortico);
+    if (caixa) caixa.hidden = !vale;
+  }
   for (const campo of ['comprimento_misula', 'altura_misula']) {
     const ctrl = document.getElementById('c-' + campo);
     if (ctrl) ctrl.disabled = !estado.dados.com_misula;
@@ -404,6 +429,7 @@ function validar() {
     if (!cfg.faixa) continue;
     if (estado.tipos[campo] !== 'float' && estado.tipos[campo] !== 'int') continue;
     if (cfg.depende && !d[cfg.depende]) continue;
+    if (cfg.sePortico && !String(d.tipo_portico || '').toLowerCase().includes(cfg.sePortico)) continue;
     const v = num(d[campo]);
     const [minimo, maximo] = cfg.faixa;
     const nome = cfg.rotuloErro || estado.rotulos[campo] || campo;
@@ -490,17 +516,23 @@ function geometria() {
   const bal = Number.isFinite(num(d.balanco_lateral)) ? num(d.balanco_lateral) : 0;
   if (!(vao > 0) || !(pe > 0) || !(incl > 0)) return null;
   const tg = incl / 100;
+  /* na tesoura o pé-direito é o banzo inferior: a parede sobe mais a altura da
+     tesoura até o beiral, e é de lá que o telhado começa a subir */
+  const trelicado = String(d.tipo_portico || '').toLowerCase().includes('treli');
+  const alturaTesoura = trelicado
+    ? (estado.tesoura?.altura_apoio_m ?? (num(d.altura_tesoura) || 0)) : 0;
+  const beiral = pe + (Number.isFinite(alturaTesoura) ? alturaTesoura : 0);
   return {
-    vao, pe, incl, bal, tg,
+    vao, pe, incl, bal, tg, trelicado, alturaTesoura, beiral,
     angulo: Math.atan(tg) * 180 / Math.PI,
-    cumeeira: pe + (vao / 2) * tg,
+    cumeeira: beiral + (vao / 2) * tg,
     comprimentoAgua: (vao / 2) / Math.cos(Math.atan(tg)),
     comprimento: num(d.comprimento),
     espacamento: num(d.espacamento_porticos),
     espTercas: num(d.espacamento_tercas),
     nPorticos: Math.round(num(d.comprimento) / num(d.espacamento_porticos)) + 1,
-    misula: d.com_misula ? (num(d.comprimento_misula) || 0) : 0,
-    alturaMisula: d.com_misula ? (num(d.altura_misula) || 0) : 0,
+    misula: (!trelicado && d.com_misula) ? (num(d.comprimento_misula) || 0) : 0,
+    alturaMisula: (!trelicado && d.com_misula) ? (num(d.altura_misula) || 0) : 0,
   };
 }
 
@@ -566,7 +598,8 @@ function desenharSecao() {
   }
 
   const W = 660;
-  const pad = { l: 74, r: 80, t: 30, b: 64 };
+  /* a tesoura tem uma cota a mais do lado esquerdo (o beiral), e ela precisa de folga */
+  const pad = { l: g.trelicado ? 108 : 74, r: 80, t: 30, b: 64 };
   const xMin = -g.bal, xMax = g.vao + g.bal;
   const modeloL = Math.max(xMax - xMin, 0.001);
   const modeloA = Math.max(g.cumeeira, 0.001);
@@ -597,22 +630,35 @@ function desenharSecao() {
 
   /* --- beirais --- */
   if (g.bal > 0) {
-    const yb = g.pe - g.bal * g.tg;
+    const yb = g.beiral - g.bal * g.tg;
     svg.append(s('line', {
-      x1: X(-g.bal), y1: Y(yb), x2: X(0), y2: Y(g.pe), class: 'd-aco',
+      x1: X(-g.bal), y1: Y(yb), x2: X(0), y2: Y(g.beiral), class: 'd-aco',
       'stroke-width': 3.5,
     }));
     svg.append(s('line', {
-      x1: X(g.vao + g.bal), y1: Y(yb), x2: X(g.vao), y2: Y(g.pe), class: 'd-aco',
+      x1: X(g.vao + g.bal), y1: Y(yb), x2: X(g.vao), y2: Y(g.beiral), class: 'd-aco',
       'stroke-width': 3.5,
     }));
   }
 
-  /* --- vigas (águas) --- */
-  for (const [x1, x2] of [[0, g.vao / 2], [g.vao, g.vao / 2]]) {
-    svg.append(s('line', {
-      x1: X(x1), y1: Y(g.pe), x2: X(x2), y2: Y(g.cumeeira), class: 'd-aco', 'stroke-width': 6,
-    }));
+  /* --- viga do pórtico, ou a tesoura inteira --- */
+  const malha = g.trelicado ? estado.tesoura : null;
+  if (malha && malha.barras && malha.nos) {
+    for (const b of malha.barras) {
+      const a = malha.nos[b.i], c = malha.nos[b.j];
+      if (!a || !c) continue;
+      const banzo = b.papel.startsWith('banzo');
+      svg.append(s('line', {
+        x1: X(a[0]), y1: Y(g.pe + a[1]), x2: X(c[0]), y2: Y(g.pe + c[1]),
+        class: 'd-aco', 'stroke-width': banzo ? 5 : 2.5,
+      }));
+    }
+  } else if (!g.trelicado) {
+    for (const [x1, x2] of [[0, g.vao / 2], [g.vao, g.vao / 2]]) {
+      svg.append(s('line', {
+        x1: X(x1), y1: Y(g.pe), x2: X(x2), y2: Y(g.cumeeira), class: 'd-aco', 'stroke-width': 6,
+      }));
+    }
   }
 
   /* --- terças sobre as águas --- */
@@ -623,7 +669,7 @@ function desenharSecao() {
       for (const sentido of [1, -1]) {
         const x = sentido > 0 ? f * g.vao / 2 : g.vao - f * g.vao / 2;
         const y = g.pe + Math.abs(x - 0) * 0;
-        const yy = g.pe + (sentido > 0 ? x : g.vao - x) * g.tg;
+        const yy = g.beiral + (sentido > 0 ? x : g.vao - x) * g.tg;
         svg.append(s('rect', {
           x: X(x) - 2.6, y: Y(yy) - 7.5, width: 5.2, height: 5.2, class: 'd-terca',
           transform: `rotate(${sentido > 0 ? -g.angulo : g.angulo} ${X(x)} ${Y(yy)})`,
@@ -650,9 +696,11 @@ function desenharSecao() {
 
   /* --- pilares --- */
   const larguraPilar = 7;
+  const topoPilar = (g.trelicado && String(estado.dados.ligacao_tesoura || '')
+    .startsWith('rígid')) ? g.beiral : g.pe;
   for (const x of [0, g.vao]) {
     svg.append(s('rect', {
-      x: X(x) - larguraPilar / 2, y: Y(g.pe), width: larguraPilar, height: y0 - Y(g.pe),
+      x: X(x) - larguraPilar / 2, y: Y(topoPilar), width: larguraPilar, height: y0 - Y(topoPilar),
       fill: 'var(--azul)', stroke: 'var(--azul)', 'stroke-width': 1,
     }));
     /* placa de base */
@@ -676,10 +724,16 @@ function desenharSecao() {
     x1: X(g.vao / 2), y1: Y(g.cumeeira), x2: xDir + 6, y2: Y(g.cumeeira), class: 'd-aux',
   }));
   svg.append(cota(xDir, y0, xDir, Y(g.cumeeira), `cumeeira ${nf(g.cumeeira, 2)} m`));
+  if (g.trelicado && g.beiral > g.pe + 0.01) {
+    svg.append(s('line', {
+      x1: X(0), y1: Y(g.beiral), x2: xEsq - 6, y2: Y(g.beiral), class: 'd-aux',
+    }));
+    svg.append(cota(xEsq - 34, y0, xEsq - 34, Y(g.beiral), `beiral ${nf(g.beiral, 2)} m`));
+  }
 
   /* --- inclinação: triângulo indicador sobre a água esquerda --- */
   const xa = g.vao * 0.10, xb = g.vao * 0.26;
-  const ya = g.pe + xa * g.tg, yb = g.pe + xb * g.tg;
+  const ya = g.beiral + xa * g.tg, yb = g.beiral + xb * g.tg;
   svg.append(s('polyline', {
     points: `${X(xa)},${Y(ya) - 10} ${X(xb)},${Y(ya) - 10} ${X(xb)},${Y(yb) - 10}`,
     class: 'd-cota',
@@ -693,8 +747,8 @@ function desenharSecao() {
     x: X(0) - 12, y: Y(g.pe / 2), class: 'd-texto', 'text-anchor': 'end',
   }, 'pilar'));
   svg.append(s('text', {
-    x: X(g.vao * 0.74), y: Y(g.pe + g.vao * 0.26 * g.tg) - 14, class: 'd-texto',
-  }, 'viga do pórtico'));
+    x: X(g.vao * 0.74), y: Y(g.beiral + g.vao * 0.26 * g.tg) - 14, class: 'd-texto',
+  }, g.trelicado ? 'tesoura' : 'viga do pórtico'));
   if (g.misula > 0) {
     svg.append(s('text', {
       x: X(g.vao) + 8, y: Y(g.pe) + 17, class: 'd-texto',
@@ -714,6 +768,7 @@ function atualizarCotasResumo(g) {
   alvo.textContent = '';
   if (!g) return;
   const itens = [
+    ...(g.trelicado ? [['Altura do beiral', nu(g.beiral, 2, 'm')]] : []),
     ['Altura da cumeeira', nu(g.cumeeira, 2, 'm')],
     ['Ângulo do telhado', nu(g.angulo, 1, '°')],
     ['Comprimento da água', nu(g.comprimentoAgua, 2, 'm')],
@@ -756,7 +811,16 @@ function desenharLongitudinal() {
     x1: X(0), y1: Y(g.cumeeira), x2: X(g.comprimento), y2: Y(g.cumeeira),
     class: 'd-aco-leve', 'stroke-dasharray': '7 4',
   }));
-  svg.append(s('line', { x1: X(0), y1: Y(g.pe), x2: X(g.comprimento), y2: Y(g.pe), class: 'd-aco', 'stroke-width': 3 }));
+  svg.append(s('line', {
+    x1: X(0), y1: Y(g.beiral), x2: X(g.comprimento), y2: Y(g.beiral),
+    class: 'd-aco', 'stroke-width': 3,
+  }));
+  if (g.trelicado && g.beiral > g.pe + 0.01) {
+    /* o topo do pilar, onde a tesoura se apoia, fica abaixo do beiral */
+    svg.append(s('line', {
+      x1: X(0), y1: Y(g.pe), x2: X(g.comprimento), y2: Y(g.pe), class: 'd-aux',
+    }));
+  }
 
   const n = Math.max(2, Math.min(g.nPorticos, 80));
   const passo = g.comprimento / (n - 1);
@@ -1730,6 +1794,30 @@ function irPara(etapa) {
 
 /** Reage a qualquer mudança nos dados: valida, redesenha, persiste. */
 let temporizador = null;
+/* Malha da tesoura para o desenho da seção. Vem do servidor, do mesmo gerador que o
+   cálculo usa, em vez de uma cópia das regras aqui: o desenho da tela nunca pode
+   mostrar uma tesoura diferente da que vai ser dimensionada. */
+async function atualizarTesoura() {
+  const d = estado.dados;
+  if (!String(d.tipo_portico || '').toLowerCase().includes('treli')) {
+    if (estado.tesoura) { estado.tesoura = null; estado.chaveTesoura = ''; desenharSecao(); }
+    return;
+  }
+  const chave = ['vao', 'inclinacao', 'formato_tesoura', 'diagonais_tesoura',
+    'ligacao_tesoura', 'altura_tesoura', 'paineis_tesoura', 'espacamento_tercas']
+    .map(c => String(d[c] ?? '')).join('|');
+  if (chave === estado.chaveTesoura) return;
+  estado.chaveTesoura = chave;
+  try {
+    const r = await api('/api/tesoura', { method: 'POST', body: JSON.stringify(d) });
+    if (estado.chaveTesoura !== chave) return;      // chegou fora de ordem
+    estado.tesoura = (r && r.barras) ? r : null;
+  } catch (e) {
+    estado.tesoura = null;
+  }
+  desenharSecao();
+}
+
 function aoMudarDados() {
   const erros = validar();
   mostrarErros(erros);
@@ -1745,6 +1833,7 @@ function aoMudarDados() {
   renderTabelaCriterios();
   clearTimeout(temporizador);
   temporizador = setTimeout(salvarLocal, 250);
+  atualizarTesoura();
 }
 
 function aplicarTema(tema) {
