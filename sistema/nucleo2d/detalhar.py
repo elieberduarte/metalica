@@ -164,6 +164,7 @@ from nucleo2d.detalhe.celulas import (  # noqa: E402,F401
     aplicar_furos_nas_barras,
     alinhar_furos_das_barras_as_chapas,
     retirar_furos_sem_uso,
+    oblongar_furos_das_tercas,
     contorno_do_desenho,
     converter_chapas,
     desenho_da_posicao,
@@ -260,7 +261,7 @@ QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("c
 
 
 #: Título do quadro de cada tipo de posição (peça avulsa), na ordem em que saem.
-QUADROS_POSICOES = [("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
+QUADROS_POSICOES = [("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("cumeeira", "CUMEEIRAS"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
                     ("suporte_terca", "SUPORTES DE TERÇA"), ("montagem", "PEÇAS MONTADAS – FRENTE, LATERAL E ISOMÉTRICA"), ("agulhamento", "AGULHAMENTOS"),
                     ("suporte_agulhamento", "SUPORTES DE AGULHAMENTO"), ("contraventamento", "CONTRAVENTAMENTOS"),
                     ("suporte_contraventamento", "SUPORTES DE CONTRAVENTAMENTO"), ("castanha", "CASTANHAS"),
@@ -622,6 +623,9 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         avisos.append("telhas multi-dobra não analisadas: %s" % exc)
     for i, t in enumerate(md["telhas"], 1):
         t["nome"] = "TMD.%d" % i
+    md.setdefault("cumeeiras", [])
+    for i, cm in enumerate(md["cumeeiras"], 1):
+        cm["nome"] = "CM.%d" % i
     for chave in (list(grupos) + [k for k in GRUPOS if k not in grupos]) if "completo" in grupos else grupos:
         g = GRUPOS.get(chave)
         if not g or chave in ("conjuntos", "localizacao", "completo"):
@@ -629,7 +633,8 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         lista = [p for p in _ordenar(posicoes) if p.classe in g["classes"]
                  and not (p.classe == "telha" and all(m in md["posicoes"] for m in marcas_de(p)))]
         extra_md = md["telhas"] if chave == "telhas" else []
-        if not lista and not extra_md:
+        extra_cm = md["cumeeiras"] if chave == "telhas" else []
+        if not lista and not extra_md and not extra_cm:
             continue
         avisar("desenhando %s (%d posições)…" % (g["titulo"].replace("Detalhamento – ", ""), len(lista)))
         d = Desenho(nome=g["titulo"], escala=g["escala"])
@@ -657,6 +662,8 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             celulas_g += [("paginacao", (lambda dd, x, y, f=f, i=i: desenho_da_paginacao(f, dd, x, y, i)))
                           for i, f in enumerate(faces, 1)]
         celulas_g += [("multidobra", (lambda dd, x, y, t=t: desenho_da_multidobra(t, dd, x, y, t["nome"]))) for t in extra_md]
+        from nucleo2d.detalhe.telhas import desenho_da_cumeeira
+        celulas_g += [("cumeeira", (lambda dd, x, y, t=t: desenho_da_cumeeira(t, dd, x, y, t["nome"]))) for t in extra_cm]
         n_frente = len(celulas_g)
         celulas_g += [(nomeacao["tipos"].get(p.marca) or p.tipo_nome or p.classe,
                        (lambda dd, x, y, p=p: desenho_da_posicao(p, dd, x, y, editavel=p.marca in editaveis))) for p in lista]
@@ -688,6 +695,11 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                 "quantidade": t["instancias"], "perfil": "%s multi-dobra" % t["perfil"], "material": t["material"],
                 "comprimento": round(t["desenv_ext"]), "espessura": 0, "peso": round(t["peso"], 2),
                 "classe": "Telha multi-dobra", "categoria": "TELHAS", "marcas": [t["conjunto"]], "nome": t["nome"]}
+        for t in extra_cm:
+            d.metadados["detalhamento"]["itens"][t["conjunto"]] = {
+                "quantidade": t["instancias"], "perfil": "%s cumeeira" % t["perfil"], "material": t["material"],
+                "comprimento": round(t["desenv"]), "espessura": 0, "peso": round(t["peso"], 2),
+                "classe": "Cumeeira", "categoria": "TELHAS", "marcas": [t["conjunto"]], "nome": t["nome"]}
         _quadros_por_tipo(d, celulas_g, largura_max_papel=800.0, titulos=QUADROS_POSICOES)
         d.metadados["detalhamento"]["editaveis"] = editaveis
         d.metadados["detalhamento"]["furos_originais"] = {

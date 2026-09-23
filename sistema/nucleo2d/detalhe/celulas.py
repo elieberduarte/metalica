@@ -938,9 +938,207 @@ def alinhar_furos_das_barras_as_chapas(doc: Documento, limite: float = LIMITE_DE
     return saida
 
 
-#: Um furo "tem uso" se o parafuso ou a barra que passa nele cobre o centro do furo com
-#: esta folga (mm).
-FOLGA_USO_FURO = 2.0
+#: Um furo "tem uso" se a superfície do parafuso ou da barra que passa nele fica a no
+#: máximo meio furo + esta folga (mm) do centro do furo.
+FOLGA_USO_FURO = 3.0
+
+
+def _dist_ponto_triangulo(p, a, b, c) -> float:
+    """Distância de um ponto a um triângulo 3D (Ericson, Real-Time Collision Detection)."""
+    ab, ac, ap = _sub(b, a), _sub(c, a), _sub(p, a)
+    d1, d2 = _dot(ab, ap), _dot(ac, ap)
+    if d1 <= 0 and d2 <= 0:
+        return math.dist(p, a)
+    bp = _sub(p, b)
+    d3, d4 = _dot(ab, bp), _dot(ac, bp)
+    if d3 >= 0 and d4 <= d3:
+        return math.dist(p, b)
+    vc = d1 * d4 - d3 * d2
+    if vc <= 0 and d1 >= 0 and d3 <= 0:
+        v = d1 / (d1 - d3)
+        return math.dist(p, tuple(a[i] + ab[i] * v for i in range(3)))
+    cp = _sub(p, c)
+    d5, d6 = _dot(ab, cp), _dot(ac, cp)
+    if d6 >= 0 and d5 <= d6:
+        return math.dist(p, c)
+    vb = d5 * d2 - d1 * d6
+    if vb <= 0 and d2 >= 0 and d6 <= 0:
+        w = d2 / (d2 - d6)
+        return math.dist(p, tuple(a[i] + ac[i] * w for i in range(3)))
+    va = d3 * d6 - d5 * d4
+    if va <= 0 and (d4 - d3) >= 0 and (d5 - d6) >= 0:
+        w = (d4 - d3) / ((d4 - d3) + (d5 - d6))
+        return math.dist(p, tuple(b[i] + (c[i] - b[i]) * w for i in range(3)))
+    den = 1.0 / (va + vb + vc)
+    v, w = vb * den, vc * den
+    return math.dist(p, tuple(a[i] + ab[i] * v + ac[i] * w for i in range(3)))
+
+
+def _dist_ponto_malha(p, ent, limite: float) -> float:
+    """Menor distância de `p` à superfície da malha (para quando passa de `limite`)."""
+    P = ent.vertices
+    melhor = float("inf")
+    for f in ent.faces:
+        for i in range(1, len(f) - 1):
+            d = _dist_ponto_triangulo(p, P[f[0]], P[f[i]], P[f[i + 1]])
+            if d < melhor:
+                melhor = d
+                if melhor <= limite:
+                    return melhor
+    return melhor
+
+
+def _limpar_faces(ent, tol: float = 0.01) -> int:
+    """Tira da malha o que um furo fechado deixa para trás: no polígono da alma (no IFC, uma
+    face só com os furos recortados por "pontes"), os pontos repetidos e as pontas (vai e
+    volta ao mesmo ponto); e as faces da parede do furo, que viraram linhas. Sem isso o
+    3D triangula errado e o furo fechado aparece como um risco. Devolve quantas faces mudaram."""
+    P = ent.vertices
+    chave = lambda i: (round(P[i][0] / tol), round(P[i][1] / tol), round(P[i][2] / tol))   # noqa: E731
+    novas, mudou = [], 0
+    for f in ent.faces:
+        g = list(f)
+        while True:
+            antes = len(g)
+            # pontos seguidos no mesmo lugar
+            h = []
+            for i in g:
+                if not h or chave(h[-1]) != chave(i):
+                    h.append(i)
+            while len(h) > 1 and chave(h[0]) == chave(h[-1]):
+                h.pop()
+            # pontas: A, X, A → A
+            k = 0
+            while len(h) >= 3 and k < len(h):
+                a, b = h[k - 1], h[(k + 1) % len(h)]
+                if chave(a) == chave(b):
+                    del h[k]
+                    if k < len(h):
+                        del h[k]                      # o A repetido logo depois
+                    k = max(k - 1, 0)
+                else:
+                    k += 1
+            g = h
+            if len(g) == antes:
+                break
+        if len(g) >= 3:
+            s = [0.0, 0.0, 0.0]
+            for i in range(1, len(g) - 1):
+                c_ = _cruz(_sub(P[g[i]], P[g[0]]), _sub(P[g[i + 1]], P[g[0]]))
+                s = [s[0] + c_[0], s[1] + c_[1], s[2] + c_[2]]
+            area = math.sqrt(s[0] ** 2 + s[1] ** 2 + s[2] ** 2) / 2.0
+        else:
+            area = 0.0
+        if area < 1e-3:
+            mudou += 1                                # parede do furo fechado: sai
+            continue
+        if len(g) != len(f):
+            mudou += 1
+        novas.append(g)
+    if mudou:
+        ent.faces = novas
+    return mudou
+
+
+#: Furo oblongo da terça, pela regra da fábrica (comprimento no sentido da barra × largura).
+OBLONGO_TERCA = (25.0, 13.0)
+
+
+def oblongar_furos_das_tercas(doc: Documento) -> dict:
+    """Regra da fábrica no 3D: todo furo de ligação da terça (vista de frente, até 18 mm) é
+    oblongo 25×13 com o rasgo no sentido da barra — o detalhamento já desenhava assim, a
+    malha ficava redonda. O furo redondo da chapa parafusada nele (suporte de agulhamento,
+    de terça) vira oblongo igual, no mesmo sentido. Repetir não muda nada. Devolve
+    {"tercas", "furos", "chapas": furos de chapa}."""
+    from nucleo2d.detalhe.base import _eh_terca
+    comp, larg = OBLONGO_TERCA
+    saida = {"tercas": 0, "furos": 0, "chapas": 0}
+    oblongos = []                                     # (centro, eixo do furo, sentido do rasgo)
+    for ent in list(doc.entidades.values()):
+        if not isinstance(ent, Solido) or _tipo_ifc(ent) not in TIPOS_PECA or len(ent.vertices or []) < 8:
+            continue
+        m = _marcas(ent)
+        marca = str(m.get("posicao") or ent.nome or ent.id)
+        pos = _posicao_bruta(ent, marca)
+        pos.tipo_ifc = _tipo_ifc(ent)
+        conj = str(m.get("conjunto") or "")
+        pos.conjuntos = [conj] if conj else []
+        try:
+            analisar(pos)
+        except Exception:                             # noqa: BLE001
+            continue
+        if pos.classe != "barra" or not pos.eixos or not _eh_terca(pos, ent.camada or ""):
+            continue
+        e1, e2, e3 = pos.eixos
+        mexeu = 0
+        for f, laco, vista in _furos_da_malha(pos):
+            if vista != "frente":
+                continue
+            centro, idx = _indices_do_furo(ent, laco, e3, f.d / 2 + 1.0)
+            ts = [_dot(_sub(ent.vertices[i], centro), e1) for i in laco]
+            ws = [_dot(_sub(ent.vertices[i], centro), e2) for i in laco]
+            ext_l, ext_w = max(ts) - min(ts), max(ws) - min(ws)
+            if ext_w > 18.0:
+                continue                              # furo grande: não é de parafuso de terça
+            oblongos.append((centro, e3, e1))
+            s = (comp - ext_l) / 2.0
+            if s <= 0.5:
+                continue
+            novos = list(ent.vertices)
+            for i in idx:
+                t = _dot(_sub(novos[i], centro), e1)
+                if abs(t) > 0.01:
+                    sg = 1.0 if t > 0 else -1.0
+                    novos[i] = tuple(novos[i][j] + e1[j] * s * sg for j in range(3))
+            ent.vertices = novos
+            mexeu += 1
+        if mexeu:
+            saida["tercas"] += 1
+            saida["furos"] += mexeu
+    # a chapa parafusada no furo da terça acompanha
+    if oblongos:
+        grade: Dict[tuple, list] = collections.defaultdict(list)
+        for k, (c, _, _) in enumerate(oblongos):
+            grade[tuple(int(math.floor(v / 200.0)) for v in c)].append(k)
+        for ch in doc.entidades.values():
+            if not isinstance(ch, Chapa) or not ch.furos:
+                continue
+            ex, ey = _norm(tuple(ch.eixo_x)), _norm(tuple(ch.eixo_y))
+            n = _norm(_cruz(ex, ey))
+            novos, mexeu = [], False
+            for f in ch.furos:
+                d = float(f.get("diametro", 0) or 0)
+                if not (0 < d <= 18.0):
+                    novos.append(f)
+                    continue
+                x, y = float(f.get("x", 0) or 0), float(f.get("y", 0) or 0)
+                c = tuple(ch.origem[i] + ex[i] * x + ey[i] * y for i in range(3))
+                g = tuple(int(math.floor(v / 200.0)) for v in c)
+                achou = None
+                for gx in (g[0] - 1, g[0], g[0] + 1):
+                    for gy in (g[1] - 1, g[1], g[1] + 1):
+                        for gz in (g[2] - 1, g[2], g[2] + 1):
+                            for k in grade.get((gx, gy, gz), ()):
+                                co, eixo, sentido = oblongos[k]
+                                if abs(_dot(n, eixo)) < 0.95:
+                                    continue
+                                dv = _sub(c, co)
+                                nrm = _dot(dv, eixo)
+                                plano = math.sqrt(max(0.0, _dot(dv, dv) - nrm * nrm))
+                                if plano <= 3.0 and abs(nrm) <= float(ch.espessura or 0) / 2.0 + 15.0:
+                                    achou = sentido
+                if achou is None:
+                    novos.append(f)
+                    continue
+                ao_longo_x = abs(_dot(achou, ex)) >= abs(_dot(achou, ey))
+                g2 = {k: v for k, v in f.items() if k != "diametro"}
+                g2.update(largura=comp if ao_longo_x else larg, altura=larg if ao_longo_x else comp)
+                novos.append(g2)
+                mexeu = True
+                saida["chapas"] += 1
+            if mexeu:
+                ch.furos = novos
+    return saida
 
 
 def retirar_furos_sem_uso(doc: Documento, so_tercas: bool = True) -> dict:
@@ -952,8 +1150,11 @@ def retirar_furos_sem_uso(doc: Documento, so_tercas: bool = True) -> dict:
     from nucleo2d.detalhe.base import _fixadores, _eh_terca, _eh_redonda_perfil
     saida = {"barras": 0, "furos": 0, "posicoes": {}}
     pecas, _ = _pecas(doc)
-    passantes = [_caixa(f) for f in _fixadores(doc)]
-    passantes += [_caixa(e) for e in pecas if _eh_redonda_perfil(str(_marcas(e).get("perfil") or e.nome or ""))]
+    # parafusos e barras que podem passar num furo; a caixa só pré-seleciona — a de um
+    # tirante em diagonal cobre metros de terça, e o furo tem de estar na barra de verdade
+    passantes_e = [f for f in _fixadores(doc)]
+    passantes_e += [e for e in pecas if _eh_redonda_perfil(str(_marcas(e).get("perfil") or e.nome or ""))]
+    passantes = [_caixa(e) for e in passantes_e]
     grade: Dict[tuple, list] = collections.defaultdict(list)
     for k, cx in enumerate(passantes):
         for gx in range(int(cx[0][0] // 500), int(cx[0][1] // 500) + 1):
@@ -982,12 +1183,18 @@ def retirar_furos_sem_uso(doc: Documento, so_tercas: bool = True) -> dict:
             eixo = e3 if vista == "frente" else e2
             c, idx = _indices_do_furo(ent, laco, eixo, f.d / 2 + 1.0)
             chave = (int(c[0] // 500), int(c[1] // 500), int(c[2] // 500))
+            raio = min(f.d, f.larg or f.d, f.alt or f.d) / 2.0 if (f.larg and f.alt) else f.d / 2.0
             if any(all(passantes[k][i][0] - tol <= c[i] <= passantes[k][i][1] + tol for i in range(3))
+                   and _dist_ponto_malha(c, passantes_e[k], raio + tol) <= raio + tol
                    for k in grade.get(chave, ())):
-                continue                              # tem parafuso ou barra: fica
+                continue                              # tem parafuso ou barra passando: fica
             ent.vertices = [tuple(c[j] + eixo[j] * _dot(_sub(v, c), eixo) for j in range(3)) if i in idx else tuple(v)
                             for i, v in enumerate(ent.vertices)]
             fechados += 1
+        # tira da malha o furo fechado (agora e os que versões anteriores fecharam só
+        # juntando os pontos, e que o 3D mostrava como risco)
+        if _limpar_faces(ent):
+            saida["limpas"] = saida.get("limpas", 0) + 1
         if fechados:
             saida["barras"] += 1
             saida["furos"] += fechados

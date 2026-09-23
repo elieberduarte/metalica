@@ -189,6 +189,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
             md = multidobras(pecas)
         except Exception:                                   # noqa: BLE001
             md = {"telhas": [], "posicoes": set()}
+    md.setdefault("cumeeiras", [])
     consumida = lambda p: p.classe == "telha" and all(m in md["posicoes"] for m in (getattr(p, "marcas", None) or [p.marca]))   # noqa: E731
     lista = [p for p in lista if not consumida(p)]
     linhas = [_linha_posicao(p, categorias.get(p.marca, "OUTROS")) for p in lista]
@@ -209,6 +210,14 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            "peso": cb.get("peso", 0.0), "peso_total": round(cb.get("peso", 0.0) * t["instancias"], 2),
                            "conjuntos": [t["conjunto"]],
                            "observacoes": ["começa %d mm antes da terça %s (transpasse %.0f mm)" % (150, cb["terca"], cb["transpasse"])]})
+
+    for i, t in enumerate(md["cumeeiras"], 1):
+        linhas.append({"marca": t["conjunto"], "nome": "CM.%d" % i, "categoria": "TELHAS", "classe": "Cumeeira",
+                       "perfil": t["perfil"], "material": t["material"], "quantidade": t["instancias"],
+                       "comprimento": round(t["desenv"]), "largura": 980, "espessura": 0,
+                       "area_m2": round(t["desenv"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
+                       "peso": round(t["peso"], 3), "peso_total": round(t["peso"] * t["instancias"], 2), "conjuntos": [t["conjunto"]],
+                       "observacoes": ["cumeeira: pernas %d + %d, dobra %.1f°, uma peça só" % (t["perna1"], t["perna2"], t["angulo"])]})
 
     # perfis (tudo o que é barra, tirante incluído): peças, comprimento total, kg/m, barras
     perfis: Dict[tuple, dict] = collections.OrderedDict()
@@ -292,13 +301,26 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
             g["_chapas"][int(round(cb["resto"]))] += t["instancias"]
         g["largura"] = 980
         g["largura_total"] = 1050
+    for t in md["cumeeiras"]:
+        g = telhas.setdefault(t["perfil"], {"perfil": t["perfil"], "posicoes": [], "pecas": 0,
+                                             "comprimento_m": 0.0, "area_m2": 0.0, "peso": 0.0, "_chapas": collections.Counter()})
+        g["posicoes"].append(t["conjunto"])
+        g["pecas"] += t["instancias"]
+        g["comprimento_m"] += t["desenv"] * t["instancias"] / 1000.0
+        g["area_m2"] += t["desenv"] * 980 / 1e6 * t["instancias"]
+        g["peso"] += t["peso"] * t["instancias"]
+        g["_chapas"][int(round(t["desenv"]))] += t["instancias"]
+        g.setdefault("cumeeira", []).append(int(round(t["desenv"])))
+        g["largura"] = 980
+        g["largura_total"] = 1050
     lista_telhas = []
     for g in telhas.values():
         chapas_t = g.pop("_chapas")
         # o pedido de compra: quantas chapas inteiras de cada comprimento
         g["chapas"] = [{"comprimento": L, "quantidade": q} for L, q in sorted(chapas_t.items(), reverse=True)]
         md_L = set(g.pop("multidobra", []))
-        g["chapas_texto"] = " · ".join("%d× %d%s" % (q, L, " multi-dobra" if L in md_L else "")
+        cm_L = set(g.pop("cumeeira", []))
+        g["chapas_texto"] = " · ".join("%d× %d%s" % (q, L, " multi-dobra" if L in md_L else " cumeeira" if L in cm_L else "")
                                        for L, q in sorted(chapas_t.items(), reverse=True))
         for k in ("comprimento_m", "area_m2"):
             g[k] = round(g[k], 2)

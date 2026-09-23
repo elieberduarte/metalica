@@ -571,6 +571,24 @@ class CAD {
     const tipos = new Set(ents.map(e => e.tipo));
     this._linhaPeca(g, ents);
     g.append(el('label', { texto: 'Seleção' }), el('div', { texto: ids.length === 1 ? ents[0].tipo : `${ids.length} objetos (${[...tipos].join(', ')})` }));
+    // comprimento do traço (polilinha, linha, arco, círculo); com vários, a soma
+    const compr = (e) => {
+      if (e.tipo === 'linha') return Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
+      if (e.tipo === 'polilinha') {
+        const v = e.vertices || []; let s = 0;
+        for (let i = 1; i < v.length; i++) s += Math.hypot(v[i][0] - v[i - 1][0], v[i][1] - v[i - 1][1]);
+        if (e.fechada && v.length > 2) s += Math.hypot(v[0][0] - v[v.length - 1][0], v[0][1] - v[v.length - 1][1]);
+        return s;
+      }
+      if (e.tipo === 'arco') { const d = (((e.fim - e.inicio) % 360) + 360) % 360 || 360; return e.raio * d * Math.PI / 180; }
+      if (e.tipo === 'circulo') return 2 * Math.PI * e.raio;
+      return null;
+    };
+    const comps = ents.map(compr).filter(v => v !== null);
+    if (comps.length && !(ids.length === 1 && ents[0].tipo === 'linha')) {
+      const total = comps.reduce((s, v) => s + v, 0);
+      g.append(el('label', { texto: comps.length > 1 ? 'Comprimento (soma)' : 'Comprimento' }), el('div', { texto: formatarMm(total) + ' mm' }));
+    }
     const camadas = new Set(ents.map(e => e.camada));
     g.append(el('label', { texto: 'Camada' }), this._seletorCamada(camadas.size === 1 ? ents[0].camada : '', (v) => {
       const m = {}; for (const id of ids) m[id] = { camada: v }; this.executar(new ComandoAlterar(m, 'Trocar camada'));

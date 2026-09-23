@@ -175,6 +175,17 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
+**0.7.16.** Furo fechado sai da malha de verdade (`_limpar_faces`: tira os pontos repetidos e as pontas
+que o furo fechado deixava no polígono da alma e as faces da parede; conserta também os furos fechados
+pela 0.7.13–0.7.15). "Tem uso" passou a ser a distância real do centro do furo à superfície do parafuso
+ou da barra (a caixa de um tirante em diagonal cobria metros de terça). `oblongar_furos_das_tercas`:
+todo furo de ligação da terça (≤ 18 mm) vira oblongo 25×13 no sentido da barra também na malha, e o
+furo redondo da chapa parafusada nele (suporte de agulhamento, de terça) vira oblongo igual.
+**Cumeeira** (`telhas.cumeeiras`): o TecnoMETAL modela como duas telhas curtas, uma em cada água,
+que se encontram na cumeeira; agora é uma peça só (CM.n), com as pernas (arredondadas para cima), a
+dobra e o desenvolvido, na lista de materiais e fora da paginação. No CAD, o painel mostra o
+comprimento da polilinha, do arco e do círculo (a soma, com vários).
+
 **0.7.13 — peças montadas e furos sem uso.** `nucleo2d/detalhe/montagens.py`: `grupos_montados` acha
 pela geometria as chapas miúdas (≤ 600 mm) do mesmo conjunto que se encostam (suporte de terça = chapa +
 nervura soldada) e a chapa de base deitada atravessada por barra redonda em pé (o chumbador, que no

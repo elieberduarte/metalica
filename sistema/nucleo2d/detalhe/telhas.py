@@ -502,7 +502,173 @@ def multidobras(pecas: Sequence) -> Dict[str, object]:
             for e in i:
                 usadas[_posicao(e)] += 1
     consumidas = {p for p, n in usadas.items() if n >= todas_por_pos.get(p, 0)}
-    return {"telhas": telhas, "posicoes": consumidas}
+    # a cumeeira (duas pernas curtas, uma em cada água) é uma peça só
+    try:
+        cm = cumeeiras([e for e in pecas if e.id not in {i for t in telhas for i in t.get("ids", [])}])
+    except Exception:                                 # noqa: BLE001 — sem cumeeira, o resto segue
+        cm = {"cumeeiras": [], "posicoes": set()}
+    return {"telhas": telhas, "posicoes": consumidas | cm["posicoes"], "cumeeiras": cm["cumeeiras"]}
+
+
+# ============================================================ cumeeira
+#: Perna de cumeeira mais comprida que isto (mm) não é cumeeira: é telha que se apoia.
+PERNA_MAX_CUMEEIRA = 600.0
+
+
+def _perna(e, w):
+    """Perna (peça curta de telha) no plano perpendicular à largura `w`: centro, direção,
+    comprimento, espessura (altura da onda)."""
+    c, eixos, ext = _medidas(e)
+    outros = [(ax, x) for ax, x in zip(eixos, ext) if abs(_dot(ax, w)) < 0.9]
+    if len(outros) < 2:
+        return None
+    (ax_l, comp), (_, alt) = sorted(outros, key=lambda t: -t[1])[:2]
+    return c, ax_l, comp, alt
+
+
+def cumeeiras(pecas: Sequence) -> Dict[str, object]:
+    """Cumeeiras do modelo: o TecnoMETAL modela cada uma como duas telhas curtas (uma em cada
+    água) que se encontram na cumeeira; na fábrica é uma peça só, dobrada no meio. Por
+    conjunto de telhas, as peças são pareadas pela ponta que se encontra (até 60 mm) com
+    as pernas formando uma dobra entre 90° e 178°. {"cumeeiras": [...], "posicoes": {...}}."""
+    por_conj: Dict[str, list] = collections.defaultdict(list)
+    todas_por_pos = collections.Counter()
+    for e in pecas:
+        m = _marcas(e)
+        if not _eh_telha(str(m.get("perfil") or e.nome or "")):
+            continue
+        todas_por_pos[_posicao(e)] += 1
+        conj = str(m.get("conjunto") or "")
+        if conj:
+            por_conj[conj].append(e)
+    saida, usadas = [], collections.Counter()
+    for conj, lista in sorted(por_conj.items(), key=lambda kv: _ordem_natural(kv[0])):
+        if len(lista) < 2:
+            continue
+        # a largura (TP40: 1031): o maior eixo, comum às peças
+        c0, eixos0, ext0 = _medidas(lista[0])
+        w = _norm(eixos0[0])
+        if ext0[0] < 300:
+            continue
+        z = (0.0, 0.0, 1.0)
+        bz = _sub(z, tuple(v * _dot(z, w) for v in w))
+        if _dot(bz, bz) < 1e-6:
+            continue
+        b = _norm(bz)
+        a = _norm(_cruz(b, w))
+        pernas = []
+        for e in lista:
+            pr = _perna(e, w)
+            if pr is None or pr[2] > PERNA_MAX_CUMEEIRA:
+                pernas = []
+                break
+            c, ax, L, alt = pr
+            c2 = (_dot(c, a), _dot(c, b))
+            d2 = (_dot(ax, a), _dot(ax, b))
+            n = math.hypot(*d2) or 1.0
+            d2 = (d2[0] / n, d2[1] / n)
+            pontas = [(c2[0] - d2[0] * L / 2, c2[1] - d2[1] * L / 2), (c2[0] + d2[0] * L / 2, c2[1] + d2[1] * L / 2)]
+            pernas.append({"e": e, "p": pontas, "L": L, "alt": alt, "w": _dot(c, w)})
+        if len(pernas) < 2:
+            continue
+        # pares: mesma faixa da largura, pontas que se encontram, dobra de verdade
+        pares, livres = [], set(range(len(pernas)))
+        cands = []
+        for i in range(len(pernas)):
+            for j in range(i + 1, len(pernas)):
+                A, B = pernas[i], pernas[j]
+                if abs(A["w"] - B["w"]) > 50.0:
+                    continue
+                for ka in (0, 1):
+                    for kb in (0, 1):
+                        gap = math.dist(A["p"][ka], B["p"][kb])
+                        if gap <= 60.0:
+                            cands.append((gap, i, j, ka, kb))
+        cands.sort()
+        for gap, i, j, ka, kb in cands:
+            if i not in livres or j not in livres:
+                continue
+            A, B = pernas[i], pernas[j]
+            topo = ((A["p"][ka][0] + B["p"][kb][0]) / 2, (A["p"][ka][1] + B["p"][kb][1]) / 2)
+            da = _sub((*A["p"][1 - ka], 0.0), (*A["p"][ka], 0.0))[:2]
+            db = _sub((*B["p"][1 - kb], 0.0), (*B["p"][kb], 0.0))[:2]
+            na, nb = math.hypot(*da) or 1.0, math.hypot(*db) or 1.0
+            cosang = (da[0] * db[0] + da[1] * db[1]) / (na * nb)
+            ang = math.degrees(math.acos(max(-1.0, min(1.0, cosang))))
+            if not (90.0 <= ang <= 178.0):
+                continue
+            livres -= {i, j}
+            pares.append((A, B, topo, (da[0] / na, da[1] / na), (db[0] / nb, db[1] / nb), ang))
+        if not pares or len(pares) * 2 < 0.8 * len(pernas):
+            continue
+        A, B, topo, da, db, ang = pares[0]
+        L1, L2 = arredondar_telha(A["L"]), arredondar_telha(B["L"])
+        # a perna 1 é a da esquerda no desenho
+        if da[0] > db[0]:
+            L1, L2, da, db = L2, L1, db, da
+        peso_m = sum(_volume(p["e"]) for p in (A, B)) * RHO_ACO
+        peso = peso_m * (L1 + L2) / max(A["L"] + B["L"], 1.0)
+        from nucleo2d.detalhe.base import _material
+        m0 = _marcas(A["e"])
+        comp = collections.Counter(_posicao(p["e"]) for par in pares for p in par[:2])
+        g = 0
+        for q in comp.values():
+            g = math.gcd(g, q)
+        saida.append({"tipo": "cumeeira", "conjunto": conj, "instancias": len(pares),
+                      "composicao": {k: q // len(pares) if q % len(pares) == 0 else q for k, q in comp.items()},
+                      "ids": [p["e"].id for par in pares for p in par[:2]],
+                      "perna1": L1, "perna2": L2, "angulo": round(ang, 1), "desenv": L1 + L2,
+                      "desenv_ext": L1 + L2, "altura_onda": round(sorted((A["alt"], B["alt"]))[0], 1),
+                      "perfil": str(m0.get("perfil") or A["e"].nome or "TELHA"), "material": _material(A["e"]),
+                      "peso": round(peso, 3), "topo": (0.0, 0.0), "d1": da, "d2": db})
+        for par in pares:
+            for p in par[:2]:
+                usadas[_posicao(p["e"])] += 1
+    consumidas = {p for p, n in usadas.items() if n >= todas_por_pos.get(p, 0)}
+    return {"cumeeiras": saida, "posicoes": consumidas}
+
+
+def desenho_da_cumeeira(cm: dict, desenho, dx: float, dy: float, nome: str = ""):
+    """Célula da cumeeira: o perfil das duas pernas dobrado na cumeeira, cada perna cotada, o
+    ângulo da dobra e o desenvolvido (o comprimento da chapa cortada da bobina)."""
+    from nucleo2d.detalhe.base import _Papel
+    from nucleo2d.desenho import Cota
+    esc = desenho.escala
+    atr = {"conjunto": cm["conjunto"], "detalhe": "cumeeira"}
+    if nome:
+        atr["nome"] = nome
+    p = _Papel(desenho, atr, dx, dy, camada_peca="TELHAS")
+    d1, d2 = cm["d1"], cm["d2"]
+    q1 = (d1[0] * cm["perna1"], d1[1] * cm["perna1"])
+    q2 = (d2[0] * cm["perna2"], d2[1] * cm["perna2"])
+    xs = [0.0, q1[0], q2[0]]
+    ys = [0.0, q1[1], q2[1]]
+    x0, y0 = min(xs), min(ys)
+    T = lambda q: (q[0] - x0, q[1] - y0)          # noqa: E731
+    topo, a1, a2 = T((0.0, 0.0)), T(q1), T(q2)
+    p.polilinha([a1, topo, a2], camada="ACO")
+    for pa, pb in ((a1, topo), (topo, a2)):
+        # cota por fora da dobra (do lado de cima, longe do ângulo)
+        ux, uy = pb[0] - pa[0], pb[1] - pa[1]
+        sinal = 1.0 if ux >= 0 else -1.0
+        desenho.add(Cota(modo="alinhada", p1=p._p(*pa), p2=p._p(*pb), deslocamento=10.0 * sinal,
+                         texto=str(int(round(math.dist(pa, pb)))), atributos=dict(atr)))
+    p.texto(topo[0], topo[1] - 5.0 * esc, "dobra %s°" % ("%.1f" % cm["angulo"]).replace(".", ","), 2.2 * esc, alinhamento="centro")
+    alt = max(a1[1], a2[1], topo[1])
+    comp = ", ".join("%s x%d" % (k, q) for k, q in sorted(cm["composicao"].items(), key=lambda kv: _ordem_natural(kv[0])))
+    linhas = ["CUMEEIRA",
+              "%s – %02dx  (%s)" % (nome or cm["conjunto"], cm["instancias"], cm["conjunto"]),
+              "%s  %s  largura 1050 mm (útil 980)" % (cm["perfil"], cm["material"]),
+              "pernas %d + %d mm · dobra %s° · desenvolvida %d mm   %s kg/pç  total %s kg" % (
+                  cm["perna1"], cm["perna2"], ("%.1f" % cm["angulo"]).replace(".", ","), cm["desenv"],
+                  ("%.2f" % cm["peso"]).replace(".", ","), ("%.1f" % (cm["peso"] * cm["instancias"])).replace(".", ",")),
+              "uma peça só, dobrada na cumeeira; no modelo: %s" % comp]
+    y = alt + 18.0 * esc
+    for i, txt in enumerate(reversed(linhas)):
+        altura = 3.5 if i == len(linhas) - 1 else 2.5
+        p.texto(0, y, txt, altura * esc)
+        y += (altura + 1.2) * esc
+    return p.extremos
 
 
 # ============================================================ paginação
@@ -517,11 +683,12 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
     for t in md.get("telhas", []):
         for i in t.get("ids", []):
             em_md[i] = t
+    de_cumeeira = {i for cm in md.get("cumeeiras", []) for i in cm.get("ids", [])}
     feitas_md = set()
     chapas = []
     for e in pecas:
         m = _marcas(e)
-        if not _eh_telha(str(m.get("perfil") or e.nome or "")):
+        if not _eh_telha(str(m.get("perfil") or e.nome or "")) or e.id in de_cumeeira:
             continue
         c, eixos, ext = _medidas(e)
         t = em_md.get(e.id)
