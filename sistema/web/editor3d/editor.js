@@ -450,6 +450,7 @@ export class Editor {
       b.setAttribute('aria-pressed', String(b.dataset.id === id));
     }
     this._atualizarTrava();
+    this._agendarPaineis('props');          // a ferramenta pode ter opções no painel (Parafuso)
     return true;
   }
 
@@ -1969,6 +1970,11 @@ export class Editor {
     this._propsPendente = false;
     raiz.replaceChildren();
     const ents = this.selecao.entidades;
+    // ferramenta com opções (o parafuso a lançar): no topo do painel
+    if (this.ativa && typeof this.ativa.painel === 'function') {
+      try { this.ativa.painel(raiz, el); } catch (e) { console.error('painel da ferramenta:', e); }
+      if (!ents.length) return;
+    }
     if (!ents.length) { this._propsPadroes(raiz); return; }
 
     const ids = ents.map(e => e.id);

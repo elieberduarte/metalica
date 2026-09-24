@@ -218,6 +218,14 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.2.** Parafuso no 3D: a ferramenta põe as opções no painel de propriedades (gancho genérico `ferramenta.painel(raiz, el)`
+no `_painelPropriedades`; o editor repinta o painel ao trocar de ferramenta): diâmetro, comprimento, classe e os tamanhos
+usados no modelo; abrir com um parafuso selecionado copia o tamanho. Eixos da face (`eixosDaFace`: vértices da peça no plano
+da face, direção pela aresta mais comprida das faces nesse plano) com snap nas linhas de centro e rótulo das distâncias às
+bordas e pontas. Nome "BOLT (A325) 16x50": `_nome_do_parafuso` põe a classe na lista ("M16 x 50 A325"); "(A)" do IFC não
+é classe. Atualização: `verificar_atualizacao` não guarda em cache a versão nova ainda sem o .exe anexado (a tela inicial
+ficava com "Ver no GitHub" e sem o botão), e a publicação cria a release como rascunho e só publica depois do anexo.
+
 **0.8.1.** Ajustes do detalhamento dos compressores: (1) clique no CAD seleciona a peça inteira (`cad.pecaDe`: mesma
 origem, célula e detalhe, encostadas; Alt = só a linha) e o cruzamento testa o traço (`Tela._tocaJanela`, a moldura do
 quadro não entra); (2) banzo que avança até o nó do chanfro desliza na direção da própria linha (`_emendas_do_chanfro.destino`

@@ -562,7 +562,9 @@ def _nome_do_parafuso(f: Solido, ext) -> Tuple[str, bool]:
     if m and float(m.group(1).replace(",", ".")) > 0:
         d = m.group(1).replace(",", ".")
         d = d[:-2] if d.endswith(".0") else d
-        return "M%s x %s" % (d, m.group(2)), False
+        # a classe que o editor 3D grava no nome ("BOLT (A325) 16x50"); o "(A)" do IFC não é classe
+        c = re.search(r"\(([^)]{2,})\)", f.nome or "")
+        return "M%s x %s%s" % (d, m.group(2), (" " + c.group(1).strip()) if c else ""), False
     d, _ = _diametro_do_fixador(f, ext)
     return "M%d" % round(d), True
 

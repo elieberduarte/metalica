@@ -42,7 +42,27 @@ try:
     ok(aba.avaliar("window.editor.ferramentas.has('parafuso')"), "ferramenta Parafuso carregada")
     ok(aba.avaliar("window.editor.ativarFerramenta('parafuso')"), "ativou")
     aba.avaliar("window.editor.ativa.onValor('M16x40'); 1")
-    ok(aba.avaliar("JSON.stringify(window.editor.ativa.tamanho)") == '{"d":16,"L":40}', "tamanho digitado M16x40")
+    t = json.loads(aba.avaliar("JSON.stringify(window.editor.ativa.tamanho)"))
+    ok(t["d"] == 16 and t["L"] == 40, f"tamanho digitado M16x40: {t}")
+    # painel de propriedades: o parafuso a lançar, com a classe e os já usados no modelo
+    aba.drenar(0.8)
+    txt = aba.avaliar("window.editor.el.props.textContent")
+    ok("Parafuso a lançar" in txt and "Já usados no modelo" in txt and "M12x35" in txt, "painel do parafuso: " + txt[:160])
+    aba.avaliar("(() => { const s = [...window.editor.el.props.querySelectorAll('select')].find(x => [...x.options].some(o => o.value === 'A490')); s.value = 'A490'; s.dispatchEvent(new Event('change')); return 1; })()")
+    ok(aba.avaliar("window.editor.ativa.nomeAtual") == "BOLT (A490) 16x40", "classe escolhida no painel vai para o nome: " + aba.avaliar("window.editor.ativa.nomeAtual"))
+    # eixos da face: caixa 1000 × 100 × 50, clique a 6 mm da linha de centro da face de cima
+    r = json.loads(aba.avaliar("""JSON.stringify((() => {
+      const ed = window.editor;
+      const v = []; for (const z of [0, 50]) for (const [x, y] of [[0,0],[1000,0],[1000,100],[0,100]]) v.push([x + 90000, y, z]);
+      const cx = ed.documento.add({ tipo: 'solido', nome: 'CAIXA', camada: 'Chapas', vertices: v,
+        faces: [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]], arestas_vivas: [], atributos: {} });
+      const aj = ed.ativa.ajustar({ entidade: cx.id, ponto: [90300, 56, 50], normal: [0, 0, 1] }, [0, 0, 1]);
+      const longe = ed.ativa.ajustar({ entidade: cx.id, ponto: [90300, 85, 50], normal: [0, 0, 1] }, [0, 0, 1]);
+      return [aj.ponto.map(Math.round), aj.extra.length, longe.ponto.map(Math.round)];
+    })())"""))
+    ok(r[0] == [90300, 50, 50] and r[1] >= 4, f"prende na linha de centro da face e desenha os eixos: {r}")
+    ok(r[2] == [90300, 85, 50], f"longe do eixo fica onde clicou: {r[2]}")
+    aba.avaliar("window.editor.ativa._definir({ d: 16, L: 40, classe: '' }); 1")
     # ponto no meio da P80, normal pela menor extensão (a alma)
     r = aba.avaliar("""JSON.stringify((() => {
       const ed = window.editor, doc = ed.documento;

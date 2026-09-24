@@ -1213,7 +1213,11 @@ def verificar_atualizacao() -> dict:
             fora["arquivo"] = a.get("browser_download_url")
             fora["tamanho_mb"] = round((a.get("size") or 0) / 1048576, 1)
             break
-    _ULTIMA_CONSULTA.update(quando=time.time(), dados=dict(fora))
+    # versão nova ainda sem o instalador anexado (a publicação sobe o .exe depois de criar a
+    # release): não guarda, senão a tela ficava a tarde toda com "Ver no GitHub" e sem o
+    # botão de atualizar
+    if not (fora["nova"] and not fora.get("arquivo")):
+        _ULTIMA_CONSULTA.update(quando=time.time(), dados=dict(fora))
     return fora
 
 
