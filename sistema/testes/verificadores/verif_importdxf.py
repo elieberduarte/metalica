@@ -36,7 +36,9 @@ try:
     t0 = time.time()
     while time.time() - t0 < 30 and not aba.avaliar("document.body.dataset.pronto === '1' && !!window.cad"): aba.drenar(0.5)
     ok(aba.avaliar("!!document.querySelector('[data-acao=\"importar-dxf\"]') && !!document.getElementById('arquivo-dxf')"), "menu e seletor de arquivo presentes")
-    texto = open(os.path.join(SCR, "det2d", "exemplo_tesoura_import.dxf"), encoding="cp1252").read()
+    # o galpão de exemplo (planta e pórtico, com cotas e textos acentuados)
+    import projeto_2d_exemplo as ex
+    texto = open(ex.dxf(os.path.join(tempfile.mkdtemp(prefix="idxf_"), "galpao.dxf")), encoding="utf-8").read()
     aba.avaliar("window.__dxf = %s; 1" % json.dumps(texto))
     antes = aba.avaliar("window.cad.doc.tamanho")
     # chama a importação com um File construído em JS; aceita o diálogo automaticamente
@@ -47,7 +49,8 @@ try:
     t0 = time.time()
     while time.time() - t0 < 60 and aba.avaliar("window.cad.doc.tamanho") <= antes: aba.drenar(0.5)
     n = aba.avaliar("window.cad.doc.tamanho")
-    ok(n - antes > 300, f"importou {n - antes} objetos (tesoura do exemplo)")
+    ok(n - antes > 150, f"importou {n - antes} objetos (galpão do exemplo)")
+    ok(aba.avaliar("[...window.cad.doc.entidades.values()].some(e => e.tipo === 'texto' && e.texto === 'PÓRTICO - TESOURA T1')"), "acentos preservados")
     ok(aba.avaliar("window.cad.tela.selecao.size") == n - antes, "os objetos importados ficaram selecionados")
     aba.avaliar("window.cad.desfazer(); 1"); aba.drenar(0.3)
     ok(aba.avaliar("window.cad.doc.tamanho") == antes, "desfazer remove a importação")

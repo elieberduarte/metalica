@@ -44,8 +44,14 @@ dialog.dialogo form { padding: 18px 20px 16px; }
 dialog.dialogo h3 { font-size: 16px; color: var(--azul); margin: 0 0 10px; }
 .dialogo-corpo { display: flex; flex-direction: column; gap: 9px; font-size: 13px; }
 .dialogo-corpo label { display: flex; flex-direction: column; gap: 3px; color: var(--texto2); font-size: 12px; }
-.dialogo-corpo input, .dialogo-corpo select { padding: 6px 8px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p);
+.dialogo-corpo input, .dialogo-corpo select, .dialogo-corpo textarea { padding: 6px 8px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p);
   background: var(--campo-fundo); color: var(--texto); font: inherit; font-size: 13px; }
+.dialogo-corpo textarea { font-variant-numeric: tabular-nums; resize: vertical; }
+.dialogo-corpo .montagens { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow: auto; }
+.dialogo-corpo fieldset.montagem { border: 1px solid var(--campo-borda); border-radius: var(--raio-p); padding: 6px 10px 8px; margin: 0; }
+.dialogo-corpo fieldset.montagem legend { font-weight: 600; color: var(--texto); padding: 0 4px; }
+.dialogo-corpo .lista-avisos { margin: 0; padding-left: 18px; color: var(--texto2); line-height: 1.45; }
+.dialogo-corpo .explica.atencao { color: #d97706; }
 .dialogo-corpo .explica { color: var(--texto2); line-height: 1.45; }
 .dialogo-corpo .lista-opcoes { display: flex; flex-direction: column; gap: 4px; }
 .dialogo-corpo label.linha { flex-direction: row; align-items: center; gap: 8px; color: var(--texto); font-size: 13px; }

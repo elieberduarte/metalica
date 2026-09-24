@@ -36,9 +36,11 @@
         <button type="button" data-acao="abrir">Abrir desenho do projeto…</button>
         <div class="desenhos-salvos" id="desenhos-salvos"></div>
         <button type="button" data-acao="novo">Novo desenho em branco…</button>
-        <button type="button" data-acao="importar-dxf" title="Traz um DXF (de outro CAD ou um DWG salvo como DXF) para dentro deste desenho">Importar DXF neste desenho…</button>
+        <button type="button" data-acao="projeto-2d" title="O projeto estrutural recebido em DXF ou PDF vira, de uma vez: um desenho com as peças reconhecidas pelos perfis escritos, o modelo 3D (tesouras nos eixos, terças na cobertura) e o IFC">Projeto recebido (DXF/PDF) → modelo 3D e IFC…</button>
+        <button type="button" data-acao="importar-dxf" title="Traz um DXF (de outro CAD ou um DWG salvo como DXF) ou um PDF vetorial para dentro deste desenho">Importar DXF ou PDF neste desenho…</button>
         <button type="button" data-acao="excluir-desenhos" title="Manda desenhos do projeto (detalhamentos, cortes, pranchas) para a lixeira, para gerar de novo">Excluir desenhos…</button>
-        <input type="file" id="arquivo-dxf" accept=".dxf" hidden>
+        <input type="file" id="arquivo-dxf" accept=".dxf,.pdf" hidden>
+        <input type="file" id="arquivo-projeto-2d" accept=".dxf,.pdf" hidden>
         <hr>
         <button type="button" data-acao="pranchas" title="Folhas A0–A4 com moldura e carimbo; cada posição ou conjunto dos desenhos de detalhamento vira uma vista na escala do desenho">Montar pranchas…</button>
         <button type="button" data-acao="salvar">Salvar <kbd>Ctrl+S</kbd></button>
@@ -65,6 +67,7 @@
         <hr>
         <div class="menu-titulo">Detalhamento para produção</div>
         <button type="button" data-acao="peca-catalogo" title="Diz qual peça do catálogo (perfil, papel, aço) as linhas selecionadas representam — ou a camada inteira">Peça do catálogo…</button>
+        <button type="button" data-acao="reconhecer" title="Projeto recebido (DXF/PDF importado): liga cada perfil escrito (U100x50#11, W 200x19,3, Ø1/2&quot;…) à linha que ele acompanha e põe as peças na camada PEÇAS RECONHECIDAS, para conferir antes de gerar o 3D">Reconhecer peças pelos perfis escritos…</button>
         <button type="button" data-acao="gerar-3d" title="Transforma este desenho em modelo 3D: cada linha com peça vira uma barra com perfil, aço, papel e marcas de posição e conjunto">Gerar modelo 3D do desenho…</button>
         <hr>
         <button type="button" data-acao="detalhar" title="Uma célula por posição (peças iguais contadas) e a elevação de cada conjunto, com cotas; gera os desenhos de detalhamento do projeto e o romaneio">Detalhar peças e conjuntos…</button>

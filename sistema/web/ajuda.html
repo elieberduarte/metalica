@@ -72,6 +72,7 @@
   <a href="#materiais">Lista de materiais</a>
   <a href="#pranchas">Pranchas, PDF e DXF</a>
   <a href="#dxf">Importar um DXF</a>
+  <a href="#recebido">Projeto recebido em DXF ou PDF → modelo 3D e IFC</a>
   <a href="#instalar">Instalar e atualizar</a>
   <a href="#limites">O que o programa ainda não faz</a>
 </div>
@@ -231,6 +232,23 @@
 
 <h2 id="dxf">Importar um DXF</h2>
 <p><b>Desenho → Importar DXF neste desenho…</b> traz um DXF de outro CAD para o desenho aberto: linhas, polilinhas, círculos, arcos, textos, blocos e cotas (como o CAD de origem as desenhou). Informe a unidade do arquivo se ele não a declarar (muitos DWGs antigos estão em centímetro) e o ponto de inserção. Entra como um comando: <kbd>Ctrl+Z</kbd> desfaz. DWG não é lido diretamente: no CAD de origem, salve como DXF.</p>
+
+<h2 id="recebido">Projeto recebido em DXF ou PDF → modelo 3D e IFC</h2>
+<p>O projeto estrutural que chega do escritório de cálculo (planta de cobertura, tesoura, pórtico, fachada, com os perfis escritos junto das barras) vira modelo 3D e IFC sem ser redesenhado. No CAD, <b>Desenho → Projeto recebido (DXF/PDF) → modelo 3D e IFC…</b>, escolha o arquivo e pronto: o programa grava um desenho "Projeto recebido – nome" com as peças reconhecidas, monta o modelo 3D do projeto e grava o IFC (o link aparece no fim).</p>
+<p>O que ele lê, como um detalhista leria:</p>
+<ul>
+  <li><b>Vistas</b>: as linhas próximas formam uma vista; o título diz o que ela é (PLANTA, TESOURA, PÓRTICO, CORTE, FACHADA LATERAL). Cotas e eixos não juntam uma vista à outra.</li>
+  <li><b>Escala de cada vista</b>, pelas cotas: o número escrito dividido pelo comprimento da linha de cota. No PDF isso dá o 1:50, o 1:100 de cada vista; no DXF, se o desenho está em mm, cm ou m (mesmo sem unidade declarada). O "ESC. 1:50" do título confirma.</li>
+  <li><b>Perfis escritos</b> na grafia da fábrica e na do projetista: U100x50#11, U200x75x25#13 (Ue), C150X50X17X2.25, L50X50#3/16", 2U75x38#13 (dois perfis costas com costas), W 200 x 19,3, TQ 100x100x4, Tubo 30x30#1,5mm, Ø1/2" e FERRO Ø3/8" (contraventamento). Furo, parafuso, chumbador e solda não são peça. O perfil tem de estar no catálogo ou ser um dobrado que o banco monta.</li>
+  <li><b>Qual linha</b>: a linha de chamada que sai do texto; senão a linha paralela mais perto do texto; texto de pilar ao lado da linha em pé também vale. Legenda de siglas ("BS – BANZO SUPERIOR – U 150x60x20#13") liga as siglas escritas nas barras.</li>
+  <li><b>O resto da barra</b>: o perfil segue pelos trechos colineares da mesma camada; numa camada em que três ou mais rótulos dizem o mesmo perfil, as linhas sem rótulo o herdam — essas ficam em <b>PEÇAS A CONFERIR</b> (rosa).</li>
+  <li><b>Linha dupla</b>: barra desenhada com as duas faces vira uma barra no eixo, quando a distância entre as linhas bate com a altura ou a largura do perfil.</li>
+  <li><b>Papel</b>: pela palavra (BANZO, TERÇA, PILAR…); numa treliça, o contorno de cima e de baixo é banzo, o que está em pé é montante, o resto é diagonal; na planta, perfil dobrado é terça e barra redonda é contraventamento.</li>
+  <li><b>Eixos</b>: balão com número ou letra na ponta de uma linha longa.</li>
+</ul>
+<p><b>Montagem</b>: a planta fica deitada e as peças dela sobem até a cobertura (a altura sai do banzo superior da tesoura em cada ponto; a terça apoia em cima do banzo) e são partidas nos eixos das tesouras, uma por vão. A tesoura (ou o pórtico) entra em pé em cada eixo da planta cuja família tem o comprimento do vão; se a vista tem pilares, o pé deles fica no zero, senão a tesoura apoia na altura dos pilares de outra vista. A fachada lateral entra nos eixos das pontas. Tesouras iguais levam a mesma marca de conjunto, como no IFC do TecnoMETAL.</p>
+<p><b>Conferir e corrigir</b>: as peças ficam em linhas novas, por cima do desenho, nas camadas PEÇAS RECONHECIDAS (laranja) e PEÇAS A CONFERIR (rosa). Apague a que não é peça, desenhe a que faltou e use <b>Peça do catálogo…</b> para trocar o perfil ou o papel. Depois <b>Vistas do modelo → Gerar modelo 3D do desenho…</b> mostra a montagem de cada vista (escala, direção do X e do Y, uma origem por cópia, subir até a cobertura) para acertar antes de gerar de novo. <b>Reconhecer peças pelos perfis escritos…</b> refaz a leitura num desenho em que o DXF ou o PDF foi importado à mão (<b>Importar DXF ou PDF neste desenho…</b>).</p>
+<p>Limites: PDF digitalizado (imagem) não tem o que ler; texto exportado como traço (fonte SHX) também não — o aviso diz. Chapas de ligação, parafusos e a rotação das terças na inclinação do telhado não saem do desenho de projeto: entram depois, no 3D. Perfil que o texto não diz fica sem peça (aparece em "perfis escritos sem linha achada" quando é o contrário).</p>
 
 <h2 id="instalar">Instalar e atualizar</h2>
 <p>Quando há versão nova, aparece o botão <b>Atualizar → x.y.z</b> ao lado de "Tema" no Modelo 3D, no CAD e na lista de materiais (além do aviso da tela Projetos). Ao clicar, o trabalho aberto é gravado, o instalador roda em silêncio e o programa fecha e reabre <b>na mesma tela</b> em uns 20 segundos. Cada atualização substitui os arquivos da instalação anterior (a pasta do programa não cresce) e apaga o instalador baixado; nada se acumula. O aviso amarelo "Atualização disponível" que às vezes aparece na barra de título da janela é do próprio navegador (Chrome/Edge), não do Metálica.</p>

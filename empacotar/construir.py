@@ -88,6 +88,8 @@ def executavel():
            "--hidden-import", "versao", "--hidden-import", "fabrica",
            # DXF do CAD (R2010, cotas DIMENSION): a ezdxf traz tabelas de fontes em dados
            "--collect-submodules", "nucleo2d", "--collect-submodules", "ezdxf", "--collect-data", "ezdxf",
+           # leitura do PDF do projeto recebido (nucleo2d/pdf_ler.py importa dentro da função)
+           "--hidden-import", "pymupdf", "--collect-submodules", "pymupdf", "--collect-binaries", "pymupdf",
            # o matplotlib só desenha em arquivo (Agg): interface gráfica e testes ficam fora
            "--exclude-module", "tkinter", "--exclude-module", "pytest",
            "--exclude-module", "IPython", "--exclude-module", "PyQt5",

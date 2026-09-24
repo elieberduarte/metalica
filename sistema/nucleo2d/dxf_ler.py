@@ -261,6 +261,31 @@ def mtext_limpo(t: str) -> str:
 
 
 # ------------------------------------------------------------ geometria
+def texto_de_bytes(dados: bytes) -> str:
+    """Bytes do arquivo → texto. DXF de 2007 em diante é UTF-8; os anteriores são da
+    página de código do Windows ($DWGCODEPAGE, quase sempre ANSI_1252)."""
+    try:
+        return dados.decode("utf-8")
+    except UnicodeDecodeError:
+        cab = dados[:6000].decode("latin-1", errors="replace")
+        m = re.search(r"\$DWGCODEPAGE\s*\n\s*3\s*\n\s*ANSI_(\d+)", cab)
+        pagina = "cp" + (m.group(1) if m else "1252")
+        try:
+            return dados.decode(pagina, errors="replace")
+        except LookupError:
+            return dados.decode("cp1252", errors="replace")
+
+
+def codigos_de_texto(t: str) -> str:
+    """Códigos de controle do TEXT: %%c Ø, %%d °, %%p ±, %%nnn caractere; %%u e %%o
+    (sublinhado e sobrelinha) somem — "%%UCORTE 1" é o título "CORTE 1" sublinhado."""
+    t = re.sub(r"%%(\d{3})", lambda m: chr(int(m.group(1))), t)
+    t = re.sub(r"(?i)%%[uok]", "", t)
+    for a, b in (("%%c", "Ø"), ("%%C", "Ø"), ("%%d", "°"), ("%%D", "°"), ("%%p", "±"), ("%%P", "±"), ("%%%", "%")):
+        t = t.replace(a, b)
+    return t
+
+
 def _arco_pts(c, r, a0, a1, passo_graus=6.0):
     if a1 < a0:
         a1 += 360
@@ -315,22 +340,26 @@ class _T:
 def _achatar(dxf: dict, so_modelo: bool = True):
     blocos = dxf["blocos"]
 
-    def rec(ents, T, prof):
+    def rec(ents, T, prof, camada_pai=None):
         for e in ents:
             if so_modelo and prof == 0 and e.get("papel"):
                 continue
+            # objeto do bloco na camada 0 fica na camada de quem insere o bloco (como no
+            # AutoCAD): a linha da cota vai para a camada da cota, não para a 0
+            if camada_pai and (e.get("camada") or "0") == "0":
+                e = dict(e, camada=camada_pai)
             t = e["tipo"]
             if t == "INSERT":
                 b = blocos.get(e["nome"])
                 if b and prof < 10:
                     T2 = T.compor(e["p"], e["sx"], e["sy"], e["rot"], b["base"])
-                    yield from rec(b["ents"], T2, prof + 1)
+                    yield from rec(b["ents"], T2, prof + 1, e.get("camada") or camada_pai)
                 for a in e.get("attribs", []):
                     yield a, T
             elif t == "DIMENSION":
                 b = blocos.get(e.get("bloco") or "")
                 if b:
-                    yield from rec(b["ents"], T, prof + 1)
+                    yield from rec(b["ents"], T, prof + 1, e.get("camada") or camada_pai)
             else:
                 yield e, T
     yield from rec(dxf["entidades"], _T(), 0)
@@ -408,7 +437,7 @@ def para_desenho(texto: str, escala: float = 1.0, fator: Optional[float] = None,
             elif len(vs) > 2:
                 add(Polilinha(camada=cam, vertices=vs, fechada=bool(e.get("fechada")), atributos=dict(atr)))
         elif t in ("TEXT", "ATTRIB", "MTEXT"):
-            txt = mtext_limpo(e["texto"]) if t == "MTEXT" else e["texto"].replace("%%c", "Ø").replace("%%d", "°").replace("%%p", "±")
+            txt = mtext_limpo(e["texto"]) if t == "MTEXT" else codigos_de_texto(e["texto"])
             if not txt.strip():
                 continue
             h = e["h"] * T.esc * fator / k
@@ -429,7 +458,7 @@ def para_desenho(texto: str, escala: float = 1.0, fator: Optional[float] = None,
                 if not linha.strip():
                     continue
                 py = pos[1] - i * 1.6 * h * k
-                add(Texto(camada=cam, posicao=(pos[0], round(py, 3)), texto=linha, altura=round(max(h, 0.5), 2),
+                add(Texto(camada=cam, posicao=(pos[0], round(py, 3)), texto=linha, altura=round(max(h, 1e-4), 4),
                           angulo=(e.get("rot", 0.0) + T.rot) % 360, alinhamento=al, vertical=vert, atributos=dict(atr)))
         elif t == "LEADER":
             vs = [P(T, p) for p in e["pts"]]

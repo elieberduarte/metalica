@@ -218,6 +218,23 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.0.** Projeto recebido em DXF ou PDF → modelo 3D → IFC. `nucleo2d/pdf_ler.py` lê o PDF vetorial (PyMuPDF: traços,
+Béziers, círculos dos balões, textos com rotação; camada = OCG ou cor; mm de papel; avisa PDF digitalizado e texto SHX).
+`nucleo2d/reconhecer.py`: vistas por proximidade só das linhas de peça (cota e eixo não juntam vistas), título e tipo
+(planta, treliça, elevação, lateral, detalhe), escala de cada vista pela moda de valor/comprimento das cotas (linha de cota
+partida em volta do número e até a ponta da seta; PDF encaixa em 1:N, DXF em mm/cm/m/pol e ampliações), eixos (balão +
+linha longa), perfil escrito → catálogo (`perfil_do_texto`: #bitola ABNT e MSG, polegadas, 2U/2L, Ø, CH, legenda de
+siglas), rótulo → linha (chamada curta ou de camada de anotação; senão paralela; texto ao lado de pilar), herança pelo
+colinear da mesma camada e pela camada homogênea (≥ 3 rótulos, "a conferir"), linha dupla fundida no eixo, emenda de
+colineares, papel (palavra, sigla, contorno da treliça). `aplicar` põe as barras nas camadas PEÇAS RECONHECIDAS / A
+CONFERIR (não mexe no desenho). `sugerir_montagem`: planta deitada subindo até o banzo superior (`_Cobertura`) e terças
+partidas nos eixos; vista em pé em cada eixo da família que tem o vão; lateral nos eixos das pontas.
+`nucleo3d/de_vistas.modelo_das_vistas` gera as barras (posição por perfil/papel/comprimento; conjunto igual para
+instâncias iguais). Rotas `importar-pdf`, `desenhos/<n>/reconhecer`, `projeto-2d` (tudo de uma vez + IFC em `ifc/`),
+`gerar-3d` com `montagens`. DXF: `texto_de_bytes` (ANSI dos DXF antigos), `codigos_de_texto` (%%U some), objetos de bloco
+na camada 0 herdam a camada de quem insere, altura de texto sem o piso de 0,5. Exemplo: `testes/projeto_2d_exemplo.py`
+(galpão em DXF e PDF); testes `test_projeto_2d.py`; verificador `verif_projeto_2d.py`.
+
 **0.7.31.** Regras da fábrica (`fabrica.py`, `<dados>/fabrica/regras.json`): bobinas, largura máxima da tira, limites
 da dobradeira e raio interno; o Trocar perfil do 3D valida pelo servidor (`POST /api/fabrica/validar`) e recusa o perfil
 dobrado que a fábrica não faz (laminado só do catálogo; MSG e ABNT da mesma bitola valem). Perfis fora do catálogo usados

@@ -37,6 +37,9 @@ Rotas da API:
     POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
     POST /api/projetos/<slug>/pranchas  pranchas (folhas com carimbo) a partir dos desenhos 2D
     POST /api/projetos/<slug>/importar-dxf  DXF em texto → entidades do CAD
+    POST /api/projetos/<slug>/importar-pdf  PDF vetorial (base64) → entidades do CAD, em mm de papel
+    POST /api/projetos/<slug>/desenhos/<nome>/reconhecer  perfis escritos do projeto recebido → peças
+    POST /api/projetos/<slug>/projeto-2d    DXF/PDF de projeto → desenho, peças, modelo 3D e IFC de uma vez
     GET  /api/projetos/<slug>/desenhos[/<nome>]      desenhos 2D do CAD
     POST /api/projetos/<slug>/desenhos/<nome>[/dxf|/pdf|/excluir]
     GET  /saida/<projeto>/<arquivo> baixa um arquivo gerado
@@ -559,6 +562,19 @@ def gerar_3d_do_desenho(s: str, nome: str, corpo: dict) -> dict:
     if modo == "acrescentar":
         atual = g.abrir_modelo(s)
         base = Documento.de_dict(atual) if atual else None
+    if corpo.get("montagens"):
+        # projeto recebido (DXF/PDF reconhecido): cada vista no seu lugar
+        from nucleo3d import de_vistas
+        doc = de_vistas.modelo_das_vistas(desenho, corpo["montagens"], aco_padrao=str(corpo.get("aco") or "ASTM A572 Gr.50"),
+                                          nome=str(corpo.get("nome") or "") or desenho.nome, doc=base)
+        g.salvar_modelo(s, doc.dict(), marco=True)
+        g.tocar(s)
+        r = {"modelo": {"entidades": len(doc.entidades), "barras": len(doc.barras)},
+             "gerado": {k: v for k, v in doc.metadados.get("de_desenho", {}).items() if k != "montagens"},
+             "modo": modo, "estatisticas": doc.estatisticas()}
+        if corpo.get("ifc"):
+            r["ifc"] = _exportar_ifc_do_projeto(s, doc, str(corpo.get("nome") or "") or desenho.nome)
+        return r
     doc = de_desenho.modelo_do_desenho(
         desenho, plano=str(corpo.get("plano") or "frente"),
         origem=[float(x) for x in (corpo.get("origem") or [0, 0, 0])],
@@ -1353,6 +1369,142 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     return {"pranchas": saida, "formato": corpo.get("formato") or "A1"}
 
 
+def _texto_do_dxf(corpo: dict) -> str:
+    """O DXF vem em texto (`conteudo`) ou em base64 (`conteudo_b64`, que preserva os
+    acentos dos DXF antigos, gravados em ANSI/cp1252 e não em UTF-8)."""
+    if corpo.get("conteudo_b64"):
+        import base64
+        from nucleo2d.dxf_ler import texto_de_bytes
+        return texto_de_bytes(base64.b64decode(corpo["conteudo_b64"]))
+    texto = corpo.get("conteudo")
+    if not isinstance(texto, str) or not texto.strip():
+        raise ErroDeDados("mande o conteúdo do DXF em texto.")
+    return texto
+
+
+def importar_pdf_no_desenho(s: str, corpo: dict) -> dict:
+    """PDF vetorial (base64) → entidades do CAD, em mm de papel, para o desenho aberto
+    acrescentar como um comando. corpo: {conteudo_b64, escala, deslocamento, paginas}"""
+    import base64
+    from dataclasses import asdict
+    from nucleo2d.desenho import Desenho
+    from nucleo2d.pdf_ler import para_desenho
+    if not corpo.get("conteudo_b64"):
+        raise ErroDeDados("mande o PDF em base64.")
+    d = Desenho(nome="importado", escala=float(corpo.get("escala") or 1.0))
+    desl = corpo.get("deslocamento") or [0.0, 0.0]
+    _, resumo = para_desenho(base64.b64decode(corpo["conteudo_b64"]), destino=d,
+                             paginas=corpo.get("paginas") or None,
+                             deslocamento=(float(desl[0]), float(desl[1])),
+                             prefixo_camada=str(corpo.get("prefixo_camada") or ""))
+    return {"entidades": [asdict(e) for e in d.entidades.values()],
+            "camadas": {k: asdict(v) for k, v in d.camadas.items() if k in resumo["camadas_novas"]},
+            "resumo": {k: v for k, v in resumo.items() if k != "ids"}}
+
+
+def reconhecer_no_desenho(s: str, nome: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/desenhos/<nome>/reconhecer: lê os perfis escritos no
+    projeto recebido (DXF/PDF importado) e devolve as peças reconhecidas como linhas da
+    camada "PEÇAS RECONHECIDAS", mais as vistas e a montagem sugerida.
+
+    corpo: {desenho: o desenho aberto no CAD (senão o gravado), fator: força a escala}.
+    Não grava: o CAD acrescenta as linhas como um comando (Ctrl+Z desfaz)."""
+    from dataclasses import asdict
+    from nucleo2d import reconhecer
+    from nucleo2d.desenho import Desenho
+    bruto = corpo.get("desenho") if isinstance(corpo.get("desenho"), dict) else _gerente().abrir_desenho(s, nome)
+    des = Desenho.de_dict(bruto)
+    _progresso(s, "reconhecendo as peças do desenho…")
+    try:
+        r = reconhecer.reconhecer(des, fator=float(corpo["fator"]) if corpo.get("fator") else None,
+                                  avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+    finally:
+        _fim_progresso(s)
+    antigas = [k for k, e in des.entidades.items() if (e.atributos or {}).get("reconhecido")]
+    novas = reconhecer.aplicar(des, r)
+    mont = reconhecer.sugerir_montagem(r)
+    rec = dict(des.metadados.get("reconhecimento") or {})
+    rec["montagens"] = mont["montagens"]
+    return {"entidades": [asdict(e) for e in novas], "remover": antigas,
+            "camadas": {k: asdict(des.camadas[k]) for k in (reconhecer.CAMADA_OK, reconhecer.CAMADA_CONFERIR)},
+            "reconhecimento": rec, "vistas": r["vistas"], "resumo": r["resumo"],
+            "avisos": r["avisos"] + mont["avisos"], "textos_sem_linha": r["textos_sem_linha"][:60],
+            "montagens": mont["montagens"]}
+
+
+def _exportar_ifc_do_projeto(s: str, doc, nome: str) -> dict:
+    from ifc import exportar as exp
+    g = _gerente()
+    pasta = os.path.join(g._existente(s), "ifc")
+    os.makedirs(pasta, exist_ok=True)
+    caminho = exp.exportar(doc, os.path.join(pasta, _slug(nome or doc.nome or "modelo") + ".ifc"),
+                           projeto_nome=doc.nome)
+    return _descrever_arquivo(caminho, pasta)
+
+
+def projeto_2d_para_modelo(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/projeto-2d: o projeto recebido em DXF ou PDF vira, de uma
+    vez, um desenho no CAD (com as peças reconhecidas numa camada própria), o modelo 3D
+    do projeto e o IFC.
+
+    corpo: {arquivo: nome do arquivo, conteudo_b64, tipo: "dxf"|"pdf" (pela extensão),
+            modo: "substituir"|"acrescentar", ifc: true, fator: força a escala}"""
+    import base64
+    from nucleo2d import reconhecer
+    from nucleo2d.desenho import Desenho
+    from nucleo3d import de_vistas
+    from nucleo3d.modelo import Documento
+    g = _gerente()
+    arquivo = str(corpo.get("arquivo") or "projeto")
+    tipo = str(corpo.get("tipo") or os.path.splitext(arquivo)[1].lstrip(".")).lower()
+    if not corpo.get("conteudo_b64"):
+        raise ErroDeDados("mande o arquivo em base64.")
+    dados = base64.b64decode(corpo["conteudo_b64"])
+    try:
+        _progresso(s, "lendo %s…" % arquivo)
+        if tipo == "pdf":
+            from nucleo2d.pdf_ler import para_desenho as ler_pdf
+            des, lido = ler_pdf(dados, destino=Desenho(nome="Projeto recebido", escala=1.0))
+            des.metadados["origem_arquivo"] = "pdf"
+        elif tipo == "dxf":
+            from nucleo2d.dxf_ler import para_desenho as ler_dxf, texto_de_bytes
+            des, lido = ler_dxf(texto_de_bytes(dados), escala=50.0, destino=Desenho(nome="Projeto recebido", escala=50.0))
+            des.metadados["origem_arquivo"] = "dxf"
+        else:
+            raise ErroDeDados("o projeto tem de vir em DXF ou PDF (DWG: salve como DXF no CAD de origem).")
+        des.metadados["arquivo_recebido"] = arquivo
+        r = reconhecer.reconhecer(des, fator=float(corpo["fator"]) if corpo.get("fator") else None,
+                                  avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+        reconhecer.aplicar(des, r)
+        mont = reconhecer.sugerir_montagem(r)
+        des.metadados["reconhecimento"]["montagens"] = mont["montagens"]
+        nome_des = "Projeto recebido – " + os.path.splitext(arquivo)[0]
+        des.nome = nome_des
+        _progresso(s, "gravando o desenho…")
+        g.salvar_desenho(s, nome_des, des.dict())
+        saida = {"desenho": nome_des, "lido": {k: v for k, v in lido.items() if k != "ids"},
+                 "vistas": r["vistas"], "resumo": r["resumo"], "textos_sem_linha": r["textos_sem_linha"][:60],
+                 "avisos": list(lido.get("avisos") or []) + r["avisos"] + mont["avisos"], "montagens": mont["montagens"]}
+        if not r["barras"] or corpo.get("gerar") is False:
+            return saida
+        _progresso(s, "montando o modelo 3D…")
+        base = None
+        if str(corpo.get("modo") or "substituir") == "acrescentar":
+            atual = g.abrir_modelo(s)
+            base = Documento.de_dict(atual) if atual else None
+        doc = de_vistas.modelo_das_vistas(des, mont["montagens"], nome=os.path.splitext(arquivo)[0], doc=base)
+        g.salvar_modelo(s, doc.dict(), marco=True)
+        g.tocar(s)
+        saida["modelo"] = {"entidades": len(doc.entidades), "barras": len(doc.barras)}
+        saida["gerado"] = {k: v for k, v in doc.metadados.get("de_desenho", {}).items() if k != "montagens"}
+        if corpo.get("ifc", True):
+            _progresso(s, "gravando o IFC…")
+            saida["ifc"] = _exportar_ifc_do_projeto(s, doc, os.path.splitext(arquivo)[0])
+        return saida
+    finally:
+        _fim_progresso(s)
+
+
 def importar_dxf_no_desenho(s: str, corpo: dict) -> dict:
     """DXF (texto) → entidades do CAD, para o desenho aberto acrescentar como um comando.
 
@@ -1361,9 +1513,7 @@ def importar_dxf_no_desenho(s: str, corpo: dict) -> dict:
     from nucleo2d.desenho import Desenho
     from nucleo2d.dxf_ler import para_desenho
     from dataclasses import asdict
-    texto = corpo.get("conteudo")
-    if not isinstance(texto, str) or not texto.strip():
-        raise ErroDeDados("mande o conteúdo do DXF em texto.")
+    texto = _texto_do_dxf(corpo)
     fator = corpo.get("fator")
     d = Desenho(nome="importado", escala=float(corpo.get("escala") or 1.0))
     desl = corpo.get("deslocamento") or [0.0, 0.0]
@@ -1847,6 +1997,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(montar_pranchas_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "importar-dxf":
                     return self._json(importar_dxf_no_desenho(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "importar-pdf":
+                    return self._json(importar_pdf_no_desenho(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "projeto-2d":
+                    return self._json(projeto_2d_para_modelo(partes[0], corpo))
+                if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "reconhecer":
+                    return self._json(reconhecer_no_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 3 and partes[1] == "desenhos":
                     return self._json(_gerente().salvar_desenho(partes[0], partes[2],
                                                                 corpo.get("desenho", corpo)))

@@ -5,7 +5,7 @@
 // zoom no cursor. Shift trava orto. Esc cancela; Enter e espaço confirmam/repetem.
 
 import { Desenho2D, clonar, valorCota, pontosDe, criar } from './nucleo/desenho2d.js';
-import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar } from './nucleo/comandos.js';
+import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar, ComandoComposto } from './nucleo/comandos.js';
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta } from './ferramentas.js';
@@ -39,6 +39,22 @@ async function pedir(rota, opcoes = {}) {
   return dados;
 }
 const postar = (rota, corpo) => pedir(rota, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(corpo || {}) });
+/** Arquivo → base64 (sem o prefixo data:), para mandar ao servidor sem perder bytes. */
+function base64DoArquivo(arquivo) {
+  return new Promise((ok, erro) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).replace(/^data:[^,]*,/, ''));
+    r.onerror = () => erro(r.error || new Error('não foi possível ler o arquivo'));
+    r.readAsDataURL(arquivo);
+  });
+}
+const TIPOS_VISTA = { planta: 'planta', trelica: 'tesoura/treliça', elevacao: 'elevação/pórtico', lateral: 'fachada lateral', detalhe: 'detalhe' };
+const tipoDeVista = (t) => TIPOS_VISTA[t] || 'vista';
+const textoEscala = (v) => {
+  const f = Number(v.fator || 1);
+  const de = { cotas: 'pelas cotas', titulo: 'pelo título', padrao: 'a conferir', informado: 'informada' }[v.fator_origem] || '';
+  return (f >= 2 && Number.isInteger(Math.round(f * 100) / 100) ? `1:${Math.round(f)}` : `${Math.round(f * 1000) / 1000} mm/unidade`) + (de ? ` (${de})` : '');
+};
 const numero = (v, casas = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
 
 class CAD {
@@ -451,6 +467,8 @@ class CAD {
       'gerar-3d': () => this.dialogoGerar3D(),
       pranchas: () => this.dialogoPranchas(),
       'importar-dxf': () => $('#arquivo-dxf').click(),
+      'projeto-2d': () => $('#arquivo-projeto-2d').click(),
+      reconhecer: () => this.reconhecerPecas(),
       desfazer: () => this.desfazer(), refazer: () => this.refazer(),
       'selecionar-tudo': () => this.selecionar([...this.doc.entidades.keys()].filter(id => this.doc.visivel(this.doc.get(id)))),
       apagar: () => this.apagarSelecao(),
@@ -485,7 +503,12 @@ class CAD {
     $('#btn-voltar').addEventListener('click', (ev) => { ev.preventDefault(); this.voltar(false); });
     $('#btn-fechar').addEventListener('click', () => this.voltar(true));
     $('#btn-dxf').addEventListener('click', () => this.exportarDXF());
-    $('#arquivo-dxf').addEventListener('change', () => { const f = $('#arquivo-dxf').files && $('#arquivo-dxf').files[0]; $('#arquivo-dxf').value = ''; this.importarDXF(f); });
+    $('#arquivo-dxf').addEventListener('change', () => {
+      const f = $('#arquivo-dxf').files && $('#arquivo-dxf').files[0];
+      $('#arquivo-dxf').value = '';
+      if (f && /\.pdf$/i.test(f.name)) this.importarPDF(f); else this.importarDXF(f);
+    });
+    $('#arquivo-projeto-2d').addEventListener('change', () => { const f = $('#arquivo-projeto-2d').files && $('#arquivo-projeto-2d').files[0]; $('#arquivo-projeto-2d').value = ''; this.projetoRecebido(f); });
     $('#btn-tema').addEventListener('click', () => this._alternarTema());
     this.el.nome.addEventListener('change', () => { this.doc.nome = this.el.nome.value.trim() || 'Desenho'; document.title = `${this.doc.nome} — Desenho 2D`; this._agendarAutosave(); });
     this.el.escala.addEventListener('change', () => { this.doc.escala = parseFloat(this.el.escala.value) || 20; this.doc.notificar([], 'aparencia'); this.dica(`Escala 1:${this.doc.escala}: textos, cotas e hachuras redimensionados.`); });
@@ -507,7 +530,7 @@ class CAD {
   async importarDXF(arquivo) {
     if (!arquivo) return;
     if (!this.projeto) { this.aviso('Importar DXF precisa de um projeto aberto.', 'atencao'); return; }
-    const texto = await arquivo.text();
+    const b64 = await base64DoArquivo(arquivo);
     const unidade = el('select', {}, ...[['auto', 'pelo arquivo ($INSUNITS), senão mm'], ['1', 'milímetro'], ['10', 'centímetro'], ['1000', 'metro'], ['25.4', 'polegada']]
       .map(([v, t]) => el('option', { value: v, texto: t })));
     const x = el('input', { type: 'number', step: 'any', value: '0' });
@@ -522,7 +545,7 @@ class CAD {
     this.dica('Lendo o DXF…');
     try {
       const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/importar-dxf`, {
-        conteudo: texto, escala: this.doc.escala, fator: unidade.value === 'auto' ? null : parseFloat(unidade.value),
+        conteudo_b64: b64, escala: this.doc.escala, fator: unidade.value === 'auto' ? null : parseFloat(unidade.value),
         deslocamento: [parseFloat(x.value) || 0, parseFloat(y.value) || 0], prefixo_camada: prefixo.value,
       });
       for (const [nome, c] of Object.entries(r.camadas || {})) if (!this.doc.camadas.has(nome)) this.doc.camadas.set(nome, { nome, cor: c.cor, visivel: true, bloqueada: false, tipo_linha: c.tipo_linha || 'CONTINUOUS', espessura: c.espessura || 0.25 });
@@ -536,6 +559,166 @@ class CAD {
       this.aviso(`DXF importado: ${numero(r.resumo.entidades)} objetos, ${(r.resumo.camadas_novas || []).length} camada(s) nova(s), fator ${r.resumo.fator} mm/unidade.` + (ig.length ? ` Fora: ${ig.join(', ')}.` : ''), 'info', 12000);
       this.dica('DXF importado; Ctrl+Z desfaz.');
     } catch (e) { this.aviso(`Não foi possível importar: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
+  /** PDF vetorial escolhido no seletor: entra em mm de papel (a escala de cada vista o
+   *  Reconhecer descobre pelas cotas). */
+  async importarPDF(arquivo) {
+    if (!arquivo) return;
+    if (!this.projeto) { this.aviso('Importar PDF precisa de um projeto aberto.', 'atencao'); return; }
+    const x = el('input', { type: 'number', step: 'any', value: '0' });
+    const y = el('input', { type: 'number', step: 'any', value: '0' });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: `"${arquivo.name}" (${numero(arquivo.size / 1024, 0)} kB). O PDF exportado do CAD traz as linhas e os textos de verdade; entram em milímetro de papel, uma página ao lado da outra. PDF digitalizado (imagem) não tem o que ler. Depois use "Reconhecer peças pelos perfis escritos" para achar as barras e a escala de cada vista.` }),
+      el('label', {}, 'Inserir em X (mm)', x), el('label', {}, 'Inserir em Y (mm)', y));
+    if (await this.dialogo({ titulo: 'Importar PDF', corpo, ok: 'Importar' }) !== 'ok') return;
+    this.dica('Lendo o PDF…');
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/importar-pdf`, {
+        conteudo_b64: await base64DoArquivo(arquivo), escala: this.doc.escala,
+        deslocamento: [parseFloat(x.value) || 0, parseFloat(y.value) || 0],
+      });
+      for (const [nome, c] of Object.entries(r.camadas || {})) if (!this.doc.camadas.has(nome)) this.doc.camadas.set(nome, { nome, cor: c.cor, visivel: true, bloqueada: false, tipo_linha: c.tipo_linha || 'CONTINUOUS', espessura: c.espessura || 0.25 });
+      const ents = (r.entidades || []).map(e => ({ ...e, id: undefined }));
+      for (const a of r.resumo.avisos || []) this.aviso(a, 'atencao', 0);
+      if (!ents.length) { this.aviso('O PDF não trouxe linhas nem textos que o CAD leia.', 'atencao'); return; }
+      const novas = ents.map(e => criar(e));
+      this.executar(new ComandoAdicionar(novas, `Importar PDF (${ents.length})`));
+      this.selecionar(novas.map(e => e.id));
+      this.tela.enquadrar();
+      this.aviso(`PDF importado: ${numero(r.resumo.entidades)} objetos em ${(r.resumo.paginas || []).length} página(s), em mm de papel.`, 'info', 12000);
+      this.dica('PDF importado; Ctrl+Z desfaz.');
+    } catch (e) { this.aviso(`Não foi possível importar: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
+  /** Liga os perfis escritos às linhas e põe as peças na camada PEÇAS RECONHECIDAS. */
+  async reconhecerPecas() {
+    if (!this.projeto) { this.aviso('Reconhecer precisa de um projeto aberto.', 'atencao'); return; }
+    if (!this.doc.tamanho) { this.aviso('O desenho está vazio: importe o DXF ou o PDF do projeto antes.', 'atencao'); return; }
+    const parar = this._acompanharProgresso('Reconhecendo: ');
+    let r;
+    try {
+      r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho || 'desenho')}/reconhecer`, { desenho: this.doc.paraJSON() });
+    } catch (e) { parar(); this.aviso(`Não foi possível reconhecer: ${e.message}`, 'erro', 0); return; }
+    parar();
+    for (const [nome, c] of Object.entries(r.camadas || {})) if (!this.doc.camadas.has(nome)) this.doc.camadas.set(nome, { nome, cor: c.cor, visivel: true, bloqueada: false, tipo_linha: c.tipo_linha || 'CONTINUOUS', espessura: c.espessura || 0.5 });
+    const novas = (r.entidades || []).map(e => criar(e));
+    const cmds = [];
+    const remover = (r.remover || []).filter(id => this.doc.get(id));
+    if (remover.length) cmds.push(new ComandoRemover(remover));
+    if (novas.length) cmds.push(new ComandoAdicionar(novas));
+    if (cmds.length) this.executar(new ComandoComposto(cmds, `Reconhecer peças (${novas.length})`));
+    this.doc.metadados = { ...(this.doc.metadados || {}), reconhecimento: r.reconhecimento };
+    this.tela.pedirQuadro();
+    const res = r.resumo || {};
+    const lista = el('ul', { class: 'lista-avisos' });
+    for (const v of r.vistas || []) {
+      lista.append(el('li', { texto: `${v.titulo || 'Vista ' + v.id} — ${tipoDeVista(v.tipo)}, ${v.barras} barra(s), escala ${textoEscala(v)}` + (v.eixos && v.eixos.length ? `, eixos ${v.eixos.map(e => e.rotulo).join(' ')}` : '') }));
+    }
+    const perfis = Object.entries(res.perfis || {}).sort((a, b) => b[1] - a[1]).map(([n, q]) => `${q}× ${n}`).join(' · ');
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: `${res.barras || 0} barra(s) reconhecida(s) em ${res.vistas || 0} vista(s)` + (res.a_conferir ? `; ${res.a_conferir} herdaram o perfil da camada e estão em PEÇAS A CONFERIR (rosa)` : '') + '. As peças estão em linhas novas por cima do desenho — apague, desenhe ou mude a peça (Peça do catálogo…) do que estiver errado antes de gerar o 3D.' }),
+      lista,
+      el('div', { class: 'explica', texto: perfis || '' }),
+      ...(r.textos_sem_linha || []).length ? [el('div', { class: 'explica', texto: `Perfis escritos sem linha achada (${r.textos_sem_linha.length}): ` + r.textos_sem_linha.slice(0, 12).map(t => t.texto).join(' · ') })] : [],
+      ...(r.avisos || []).map(a => el('div', { class: 'explica atencao', texto: a })));
+    const acao = await this.dialogo({ titulo: 'Peças reconhecidas', corpo, ok: novas.length ? 'Gerar o modelo 3D…' : 'OK' });
+    if (acao === 'ok' && novas.length) this.dialogoGerar3D();
+  }
+
+  /** Projeto recebido: DXF/PDF → desenho + peças + modelo 3D + IFC, numa ida ao servidor. */
+  async projetoRecebido(arquivo) {
+    if (!arquivo) return;
+    if (!this.projeto) { this.aviso('Abra ou crie um projeto antes (o modelo 3D e o IFC ficam nele).', 'atencao'); return; }
+    const modo = el('select');
+    modo.append(el('option', { value: 'substituir', texto: 'substituir o modelo 3D do projeto (o atual vai para o histórico)' }));
+    modo.append(el('option', { value: 'acrescentar', texto: 'acrescentar ao modelo 3D do projeto' }));
+    const ifc = el('input', { type: 'checkbox', checked: 'checked' });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: `"${arquivo.name}" (${numero(arquivo.size / 1024, 0)} kB). O sistema lê as vistas (planta, tesoura, pórtico, fachada), a escala de cada uma pelas cotas, os eixos e os perfis escritos junto das barras; monta as tesouras nos eixos da planta e sobe as terças para a cobertura. O desenho fica gravado no projeto, com as peças numa camada própria, para conferir e corrigir.` }),
+      el('label', {}, 'Modelo 3D', modo),
+      el('label', { class: 'linha' }, ifc, ' Gravar o IFC do modelo gerado'));
+    if (await this.dialogo({ titulo: 'Projeto recebido → modelo 3D', corpo, ok: 'Ler o projeto' }) !== 'ok') return;
+    const parar = this._acompanharProgresso('Projeto recebido: ');
+    let r;
+    try {
+      r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/projeto-2d`, {
+        arquivo: arquivo.name, conteudo_b64: await base64DoArquivo(arquivo), modo: modo.value, ifc: ifc.checked,
+      });
+    } catch (e) { parar(); this.aviso(`Não foi possível ler o projeto: ${e.message}`, 'erro', 0); this.dica(''); return; }
+    parar();
+    this.dica('');
+    await this.abrirDesenho(r.desenho);
+    const res = r.resumo || {};
+    const g = r.gerado || {};
+    const lista = el('ul', { class: 'lista-avisos' });
+    for (const v of r.vistas || []) lista.append(el('li', { texto: `${v.titulo || 'Vista ' + v.id} — ${tipoDeVista(v.tipo)}, ${v.barras} barra(s), escala ${textoEscala(v)}` }));
+    const papeis = Object.entries(res.papeis || {}).map(([n, q]) => `${q} ${n}`).join(', ');
+    const itens = [
+      el('div', { class: 'explica', texto: r.modelo
+        ? `Modelo 3D: ${numero(g.barras || 0)} barra(s), ${g.posicoes || 0} posição(ões), ${g.conjuntos || 0} conjunto(s), ${numero(g.peso_kg || 0)} kg. No desenho: ${res.barras || 0} peça(s) reconhecida(s) (${papeis}).`
+        : 'Nenhuma peça foi reconhecida: o modelo 3D não foi gerado. Veja os avisos abaixo.' }),
+      lista,
+    ];
+    if (r.ifc) itens.push(el('div', { class: 'explica' }, 'IFC: ', el('a', { href: r.ifc.url, download: r.ifc.nome, texto: `${r.ifc.nome} (${numero(r.ifc.tamanho_kb, 0)} kB)` })));
+    if (res.a_conferir) itens.push(el('div', { class: 'explica atencao', texto: `${res.a_conferir} peça(s) herdaram o perfil da camada (sem texto junto): estão em PEÇAS A CONFERIR, em rosa.` }));
+    for (const a of r.avisos || []) itens.push(el('div', { class: 'explica atencao', texto: a }));
+    const acao = await this.dialogo({ titulo: 'Projeto recebido', corpo: el('div', {}, ...itens), ok: r.modelo ? 'Abrir o modelo 3D' : 'OK' });
+    if (acao === 'ok' && r.modelo) location.href = `/editor?projeto=${encodeURIComponent(this.projeto)}`;
+  }
+
+  /** Várias vistas reconhecidas: cada uma no seu lugar (a montagem sugerida, editável). */
+  async _dialogoGerar3DVistas(montagens) {
+    const num = (v, t, larg = '7em') => el('input', { type: 'number', step: 'any', value: String(v), title: t || '', style: `width:${larg}` });
+    const linhas = [];
+    const tabela = el('div', { class: 'montagens' });
+    const vec = (v) => (v || []).map(x => Math.round(x * 1000) / 1000).join('; ');
+    const lerVec = (s) => s.split(/[;\s]+/).filter(Boolean).map(x => parseFloat(x.replace(',', '.')) || 0);
+    for (const m of montagens) {
+      const usar = el('input', { type: 'checkbox', ...(m.usar !== false ? { checked: 'checked' } : {}) });
+      const fator = num(m.fator, 'mm do modelo por unidade do desenho (PDF: o denominador da escala, 50 para 1:50)');
+      const u = el('input', { type: 'text', value: vec(m.u), title: 'Para onde vai o X do desenho no modelo (vetor x; y; z)', style: 'width:9em' });
+      const v = el('input', { type: 'text', value: vec(m.v), title: 'Para onde vai o Y do desenho no modelo (vetor x; y; z)', style: 'width:9em' });
+      const origens = el('textarea', { rows: String(Math.min(4, Math.max(1, (m.origens || []).length))), title: 'Onde o ponto base da vista cai no modelo, uma cópia por linha: x; y; z (mm)', style: 'width:16em' });
+      origens.value = (m.origens || []).map(o => o.map(x => Math.round(x)).join('; ')).join('\n');
+      const cob = el('input', { type: 'checkbox', ...(m.cobertura ? { checked: 'checked' } : {}), title: 'A altura de cada ponto sai do banzo superior da tesoura (planta de cobertura)' });
+      linhas.push({ m, usar, fator, u, v, origens, cob });
+      tabela.append(el('fieldset', { class: 'montagem' },
+        el('legend', {}, usar, ` ${m.titulo || 'Vista ' + m.vista} (${tipoDeVista(m.tipo)})`),
+        el('div', { class: 'campos' },
+          el('label', { texto: 'Escala (fator)' }), fator,
+          el('label', { texto: 'X do desenho →' }), u,
+          el('label', { texto: 'Y do desenho →' }), v,
+          el('label', { texto: `Origens (${(m.origens || []).length})` }), origens,
+          el('label', { texto: 'Sobe até a cobertura' }), cob)));
+    }
+    const modo = el('select');
+    modo.append(el('option', { value: 'substituir', texto: 'substituir o modelo do projeto' }));
+    modo.append(el('option', { value: 'acrescentar', texto: 'acrescentar ao modelo do projeto' }));
+    const ifc = el('input', { type: 'checkbox', checked: 'checked' });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: 'Cada vista reconhecida entra no espaço por uma montagem: o ponto base da vista vai para cada origem (uma cópia por linha — as tesouras de todos os eixos saem de uma vista só), o X e o Y do desenho seguem os vetores. A montagem abaixo foi sugerida pelos eixos da planta; confira antes de gerar.' }),
+      tabela,
+      el('div', { class: 'campos' }, el('label', { texto: 'Modelo' }), modo),
+      el('label', { class: 'linha' }, ifc, ' Gravar também o IFC'));
+    if (await this.dialogo({ titulo: 'Gerar modelo 3D das vistas', corpo, ok: 'Gerar' }) !== 'ok') return;
+    const novas = linhas.map(({ m, usar, fator, u, v, origens, cob }) => ({
+      ...m, usar: usar.checked, fator: parseFloat(fator.value) || 1, u: lerVec(u.value), v: lerVec(v.value), cobertura: cob.checked,
+      origens: origens.value.split('\n').map(l => lerVec(l)).filter(o => o.length).map(o => [o[0] || 0, o[1] || 0, o[2] || 0]),
+    }));
+    this.doc.metadados = { ...(this.doc.metadados || {}), reconhecimento: { ...(this.doc.metadados.reconhecimento || {}), montagens: novas } };
+    await this.salvar({ avisar: false });
+    this.dica('Gerando o modelo 3D…');
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/gerar-3d`, {
+        montagens: novas, modo: modo.value, ifc: ifc.checked,
+      });
+      const g = r.gerado || {};
+      const itens = [el('div', { class: 'explica', texto: `Modelo 3D gerado: ${numero(g.barras || 0)} barra(s), ${g.posicoes || 0} posição(ões), ${g.conjuntos || 0} conjunto(s), ${numero(g.peso_kg || 0)} kg. O modelo anterior foi guardado no histórico.` })];
+      if (r.ifc) itens.push(el('div', { class: 'explica' }, 'IFC: ', el('a', { href: r.ifc.url, download: r.ifc.nome, texto: `${r.ifc.nome} (${numero(r.ifc.tamanho_kb, 0)} kB)` })));
+      this.dica('Modelo 3D gerado.');
+      if (await this.dialogo({ titulo: 'Modelo 3D gerado', corpo: el('div', {}, ...itens), ok: 'Abrir o modelo 3D' }) === 'ok') location.href = `/editor?projeto=${encodeURIComponent(this.projeto)}`;
+    } catch (e) { this.aviso(`Não foi possível gerar o modelo: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
   _ligarPaineis() {
@@ -1073,6 +1256,8 @@ class CAD {
     if (!this.projeto) { this.aviso('Gerar o 3D precisa de um projeto aberto.', 'atencao'); return; }
     if (!this.nomeDesenho) { this.aviso('Salve o desenho antes de gerar o modelo.', 'atencao'); return; }
     if (this.doc.tamanho) await this.salvar({ avisar: false });
+    const montagens = ((this.doc.metadados || {}).reconhecimento || {}).montagens;
+    if (montagens && montagens.length) return this._dialogoGerar3DVistas(montagens);
     let info;
     try {
       info = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/gerar-3d`, { conferir: true });
