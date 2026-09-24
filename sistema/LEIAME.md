@@ -218,6 +218,10 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.5.** "Já usados no modelo" do Parafuso inclui os fixadores sem tamanho no nome ("BOLT () 0x0", porca de chumbador
+ou de barra roscada): `tamanhoDoFixador` mede a entre faces nos eixos principais da peça (Jacobi 3×3; a caixa do mundo
+engana com a porca girada) e usa a tabela `_PORCAS` do detalhamento; arruela (espessura < 1/4 da maior medida) fica fora.
+
 **0.8.4.** Célula de peça com a linha dos furos ("furo Ø17", "furos: 2x Ø21") — a legenda enxuta da 0.7.20 tinha tirado,
 e a fábrica precisa do diâmetro. Barra que atravessa furo de chapa (`base.barras_passantes`: barra roscada, ferro redondo,
 tirante, pelo eixo inteiro furando o plano médio da chapa) entra pelo nome: "fixação: barra roscada Ø5/8", 2x porca 5/8""

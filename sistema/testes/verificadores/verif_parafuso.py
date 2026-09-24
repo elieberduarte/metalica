@@ -48,6 +48,9 @@ try:
     aba.drenar(0.8)
     txt = aba.avaliar("window.editor.el.props.textContent")
     ok("Parafuso a lançar" in txt and "Já usados no modelo" in txt and "M12x35" in txt, "painel do parafuso: " + txt[:160])
+    ok("porca/chumbador" in txt, "os fixadores sem tamanho do IFC (BOLT () 0x0) também aparecem, pela rosca da porca")
+    t = json.loads(aba.avaliar("JSON.stringify(window.editor.ativa._usadosNoModelo().map(u => u.rotulo))"))
+    print("     usados:", t, aba.avaliar("JSON.stringify(window.editor.ativa._usadosNoModelo().map(u => u.n))"))
     aba.avaliar("(() => { const s = [...window.editor.el.props.querySelectorAll('select')].find(x => [...x.options].some(o => o.value === 'A490')); s.value = 'A490'; s.dispatchEvent(new Event('change')); return 1; })()")
     ok(aba.avaliar("window.editor.ativa.nomeAtual") == "BOLT (A490) 16x40", "classe escolhida no painel vai para o nome: " + aba.avaliar("window.editor.ativa.nomeAtual"))
     # eixos da face: caixa 1000 × 100 × 50, clique a 6 mm da linha de centro da face de cima

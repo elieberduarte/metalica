@@ -76,6 +76,60 @@ export function lerNomeDoParafuso(nome) {
   return { d, L, classe: c.length > 1 ? c : '' };
 }
 
+//: entre faces da porca → rosca (a mesma tabela do detalhamento, nucleo2d/detalhe/base._PORCAS)
+const PORCAS = [[10, 6], [13, 8], [16, 10], [18, 12], [19, 12], [21, 14], [24, 16], [27, 18], [30, 20], [34, 22], [36, 24]];
+
+/** Autovetores da covariância dos pontos (Jacobi 3×3): os eixos principais da peça. */
+function eixosPrincipais(pts) {
+  const n = pts.length;
+  const m = [0, 1, 2].map(i => pts.reduce((s, q) => s + q[i], 0) / n);
+  const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (const q of pts) for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) A[i][j] += (q[i] - m[i]) * (q[j] - m[j]);
+  const V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let it = 0; it < 30; it++) {
+    let p = 0, r = 1, maior = 0;
+    for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) if (Math.abs(A[i][j]) > maior) { maior = Math.abs(A[i][j]); p = i; r = j; }
+    if (maior < 1e-9) break;
+    const th = 0.5 * Math.atan2(2 * A[p][r], A[r][r] - A[p][p]);
+    const c = Math.cos(th), sn = Math.sin(th);
+    for (let k = 0; k < 3; k++) {                      // A ← Jᵀ A J
+      const akp = A[k][p], akr = A[k][r];
+      A[k][p] = c * akp - sn * akr; A[k][r] = sn * akp + c * akr;
+    }
+    for (let k = 0; k < 3; k++) {
+      const apk = A[p][k], ark = A[r][k];
+      A[p][k] = c * apk - sn * ark; A[r][k] = sn * apk + c * ark;
+    }
+    for (let k = 0; k < 3; k++) {
+      const vkp = V[k][p], vkr = V[k][r];
+      V[k][p] = c * vkp - sn * vkr; V[k][r] = sn * vkp + c * vkr;
+    }
+  }
+  return [0, 1, 2].map(j => [V[0][j], V[1][j], V[2][j]]);
+}
+
+/**
+ * Tamanho do fixador do modelo: pelo nome ("BOLT (A) 12x35") ou, sem tamanho no nome
+ * ("BOLT () 0x0", a porca do chumbador ou da barra roscada no IFC do TecnoMETAL), pela
+ * peça — a medida do meio da caixa é a entre faces da porca, que dá a rosca. Arruela
+ * (chata) devolve null.
+ */
+export function tamanhoDoFixador(ent) {
+  const t = lerNomeDoParafuso(ent && ent.nome);
+  if (t) return t;
+  if (!ent || !/^BOLT/i.test(ent.nome || '') || !(ent.vertices && ent.vertices.length >= 4)) return null;
+  // extensões nos eixos principais da peça (a porca vem girada: a caixa do mundo engana)
+  const ext = eixosPrincipais(ent.vertices).map(ax => {
+    const v = ent.vertices.map(q => C.dot(q, ax));
+    return Math.max(...v) - Math.min(...v);
+  }).sort((a, b) => a - b);
+  if (ext[0] < 0.25 * ext[2]) return null;                  // arruela
+  const af = ext[1];
+  let d = 0;
+  for (const [entre, rosca] of PORCAS) if (af >= entre - 0.6) d = rosca;
+  return d ? { d, L: 0, classe: '', semTamanho: true } : null;
+}
+
 export class FerramentaParafuso extends Ferramenta {
   static id = 'parafuso';
   static nome = 'Parafuso';
@@ -93,8 +147,8 @@ export class FerramentaParafuso extends Ferramenta {
     this.tamanho = { d: 12, L: 35, classe: 'A325', ...(this.constructor.tamanho || {}) };
     // parafuso selecionado ao abrir a ferramenta: lança igual a ele
     const sel = (this.selecao && this.selecao.entidades) || [];
-    const modelo = sel.map(e => lerNomeDoParafuso(e.nome)).find(Boolean);
-    if (modelo) this._definir({ ...modelo, classe: modelo.classe || this.tamanho.classe });
+    const modelo = sel.map(e => tamanhoDoFixador(e)).find(Boolean);
+    if (modelo) this._definir({ d: modelo.d, L: modelo.L || this.tamanho.L, classe: modelo.classe || this.tamanho.classe });
     this._atualizarDica();
   }
 
@@ -136,14 +190,15 @@ export class FerramentaParafuso extends Ferramenta {
     if (!ents) return [];
     for (const e of ents.values()) {
       if (e.tipo !== 'solido' || !/^BOLT/.test(e.nome || '')) continue;
-      const t = lerNomeDoParafuso(e.nome);
+      const t = tamanhoDoFixador(e);
       if (!t) continue;
-      const k = `M${num(t.d)}x${num(t.L)}${t.classe ? ' ' + t.classe : ''}`;
+      // sem tamanho no IFC: vale a rosca medida na porca; o comprimento é o da ferramenta
+      const k = t.semTamanho ? `M${num(t.d)} porca/chumbador` : `M${num(t.d)}x${num(t.L)}${t.classe ? ' ' + t.classe : ''}`;
       const r = cont.get(k) || { rotulo: k, t, n: 0 };
       r.n++;
       cont.set(k, r);
     }
-    return [...cont.values()].sort((a, b) => b.n - a.n).slice(0, 10);
+    return [...cont.values()].sort((a, b) => b.n - a.n).slice(0, 14);
   }
 
   /** Opções no painel de propriedades (chamado pelo editor). */
@@ -174,8 +229,11 @@ export class FerramentaParafuso extends Ferramenta {
     if (usados.length) {
       const box = el('div', { class: 'acoes' });
       for (const u of usados) {
-        box.append(el('button', { type: 'button', texto: `${u.rotulo} (${u.n})`, title: 'Lançar este, como os que já estão no modelo',
-          onclick: () => { this._definir({ ...u.t, classe: u.t.classe || this.tamanho.classe }); this.editor._agendarPaineis('props'); } }));
+        const dica = u.t.semTamanho
+          ? 'Fixador que veio do IFC sem tamanho no nome ("BOLT () 0x0" — porca de chumbador ou de barra roscada): a rosca é medida na porca; o comprimento fica o do campo acima'
+          : 'Lançar este, como os que já estão no modelo';
+        box.append(el('button', { type: 'button', texto: `${u.rotulo} (${u.n})`, title: dica,
+          onclick: () => { this._definir({ d: u.t.d, L: u.t.L || this.tamanho.L, classe: u.t.classe || this.tamanho.classe }); this.editor._agendarPaineis('props'); } }));
       }
       raiz.append(el('div', { class: 'grupo-campos' }, el('h4', { texto: 'Já usados no modelo' }), box));
     }
