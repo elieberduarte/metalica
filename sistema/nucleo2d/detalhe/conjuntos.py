@@ -531,6 +531,15 @@ def _trechos_curvos(pts: Sequence[Tuple[float, float]], fechada: bool) -> List[T
 
     ns = len(segs)
     limite = ns if fechada else ns - 1
+    # polilinha que é só o arco (a silhueta veio partida: o arco separado das retas): não
+    # há segmento comprido para os do arco serem "curtos" — todos iguais, virando para o
+    # mesmo lado. O trecho é a polilinha inteira; as pontas fazem o papel das retas
+    # vizinhas (o chanfro pelas tangentes sai igual ao do contorno inteiro)
+    if not fechada and n >= 8:
+        giros = [giro(k) for k in range(ns - 1)]
+        if max(comp) <= 1.6 * min(comp) and all(1.0 <= abs(g) <= 30.0 for g in giros) \
+                and len({1 if g > 0 else -1 for g in giros}) == 1:
+            return [(0, n - 1)]
     trechos = []
     k = 0
     while k < limite:
@@ -591,6 +600,62 @@ def _avanco_tangente(pts, i, j) -> Tuple[float, float]:
     return saida[0], saida[1]
 
 
+def _nos_do_arco_puro(pts: Sequence[Tuple[float, float]], direcoes=None):
+    """Nós do chanfro de uma polilinha que é só o arco: centro pelo círculo de três pontos
+    e tangentes exatas nas pontas — o primeiro e o último segmento do arco são chordas,
+    meio passo angular fora da tangente, e prolongá-los deixava o nó uns 30 mm para dentro
+    e o trecho até a ponta tombado. Devolve [nó1, nó2] ou None."""
+    n = len(pts)
+    if n < 5:
+        return None
+    A, M, E = pts[0], pts[n // 2], pts[-1]
+    d = 2.0 * (A[0] * (M[1] - E[1]) + M[0] * (E[1] - A[1]) + E[0] * (A[1] - M[1]))
+    if abs(d) < 1e-9:
+        return None
+    a2, m2, e2 = A[0] ** 2 + A[1] ** 2, M[0] ** 2 + M[1] ** 2, E[0] ** 2 + E[1] ** 2
+    cx = (a2 * (M[1] - E[1]) + m2 * (E[1] - A[1]) + e2 * (A[1] - M[1])) / d
+    cy = (a2 * (E[0] - M[0]) + m2 * (A[0] - E[0]) + e2 * (M[0] - A[0])) / d
+
+    def tangente(p):
+        return (p[0] - (p[1] - cy), p[1] + (p[0] - cx))      # ponto sobre a tangente em p
+
+    def direcao_na_ponta(p, viz, sentido):
+        """Direção da reta que sai da ponta, orientada como o arco a percorre: a da reta
+        do contorno da mesma peça (o arco puro costuma acabar um ou dois facetados antes
+        da tangência, e a tangente ali ainda está inclinada). None sem contorno."""
+        c = (viz[0] - p[0], viz[1] - p[1])
+        Lc = math.hypot(*c)
+        if not direcoes or Lc < 1e-6:
+            return None
+        c = (c[0] / Lc * sentido, c[1] / Lc * sentido)
+        d_ = max(direcoes, key=lambda x: abs(x[0] * c[0] + x[1] * c[1]))
+        if abs(d_[0] * c[0] + d_[1] * c[1]) < math.cos(math.radians(20.0)):
+            return None
+        return d_ if d_[0] * c[0] + d_[1] * c[1] > 0 else (-d_[0], -d_[1])
+    t1 = direcao_na_ponta(A, pts[1], 1.0)          # entrando no arco
+    t2 = direcao_na_ponta(E, pts[-2], -1.0)        # saindo dele
+    if t1 is not None and t2 is not None:
+        # a diagonal é a bissetriz das duas retas, tangente ao círculo do lado do arco
+        dm = (t1[0] + t2[0], t1[1] + t2[1])
+        Ld = math.hypot(*dm)
+        if Ld > 1e-6:
+            dm = (dm[0] / Ld, dm[1] / Ld)
+            nrm = (-dm[1], dm[0])
+            R = math.dist(A, (cx, cy))
+            if nrm[0] * (M[0] - cx) + nrm[1] * (M[1] - cy) < 0:
+                nrm = (-nrm[0], -nrm[1])
+            Mt = (cx + nrm[0] * R, cy + nrm[1] * R)
+            no1 = _cruzamento(A, (A[0] + t1[0], A[1] + t1[1]), Mt, (Mt[0] + dm[0], Mt[1] + dm[1]))
+            no2 = _cruzamento(E, (E[0] + t2[0], E[1] + t2[1]), Mt, (Mt[0] + dm[0], Mt[1] + dm[1]))
+            if no1 is not None and no2 is not None:
+                return [no1, no2]
+    no1 = _cruzamento(A, tangente(A), M, tangente(M))
+    no2 = _cruzamento(E, tangente(E), M, tangente(M))
+    if no1 is None or no2 is None:
+        return None
+    return [no1, no2]
+
+
 def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence = ()) -> List:
     """Troca cada arco das silhuetas das peças `ids` por uma **barra diagonal reta** — o
     chanfro que a fábrica faz, em vez de calandrar. Sem nada apoiado no canto, a diagonal é
@@ -605,6 +670,7 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence =
     saida = list(novas)
     preparadas = []
     recuos: Dict[tuple, float] = {}              # (peça, direção do trecho reto) → avanço
+    direcoes: Dict[str, list] = {}               # peça → direções das retas junto ao arco (do contorno fechado)
     for e in novas:
         if not isinstance(e, Polilinha) or (e.atributos or {}).get("origem") not in ids:
             continue
@@ -624,6 +690,15 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence =
             continue
         origem = (e.atributos or {}).get("origem")
         preparadas.append((e, pts, trechos, origem))
+        if not (len(trechos) == 1 and trechos[0][0] == 0 and trechos[0][1] == n - 1 and not e.fechada):
+            # as direções das retas junto ao arco (de qualquer polilinha que as tenha, aberta
+            # ou fechada), para as arestas que vierem só como arco
+            for i, j in trechos:
+                if j < n and j - i >= 3:
+                    for p_, q_ in ((pts[i], pts[i + 1]), (pts[j - 1], pts[j])):
+                        L_ = math.dist(p_, q_)
+                        if L_ > 1e-6:
+                            direcoes.setdefault(origem, []).append(((q_[0] - p_[0]) / L_, (q_[1] - p_[1]) / L_))
         # quanto cada trecho reto vizinho do arco precisa avançar para segurar um suporte
         for i, j in trechos:
             if j >= len(pts) or j - i < 3:
@@ -654,14 +729,18 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence =
             # o arco vai de pts[i+1] a pts[j-1] (pts[i] e pts[j] são as outras pontas dos
             # trechos retos vizinhos): os vértices do meio saem, fica a diagonal
             a, b = pts[i + 1], pts[j - 1]
-            tangente = _avanco_tangente(pts, i, j)
-            novos = []
-            for k_, (ponta, longe) in enumerate(((a, pts[i]), (b, pts[j]))):
-                L = math.dist(ponta, longe)
-                volta = ((ponta[0] - longe[0]) / L, (ponta[1] - longe[1]) / L) if L > 1e-6 else (0.0, 0.0)
-                s = recuos.get((origem, round(math.degrees(math.atan2(volta[1], volta[0])) / 5.0)), 0.0)
-                s = max(s, tangente[k_])
-                novos.append((ponta[0] + volta[0] * s, ponta[1] + volta[1] * s))
+            # polilinha que é só o arco (as arestas das abas vindas separadas do contorno):
+            # nós pelas tangentes exatas
+            novos = _nos_do_arco_puro(pts, direcoes.get(origem)) if (i == 0 and j == len(pts) - 1 and not e.fechada) else None
+            if novos is None:
+                tangente = _avanco_tangente(pts, i, j)
+                novos = []
+                for k_, (ponta, longe) in enumerate(((a, pts[i]), (b, pts[j]))):
+                    L = math.dist(ponta, longe)
+                    volta = ((ponta[0] - longe[0]) / L, (ponta[1] - longe[1]) / L) if L > 1e-6 else (0.0, 0.0)
+                    s = recuos.get((origem, round(math.degrees(math.atan2(volta[1], volta[0])) / 5.0)), 0.0)
+                    s = max(s, tangente[k_])
+                    novos.append((ponta[0] + volta[0] * s, ponta[1] + volta[1] * s))
             pts = pts[:i + 1] + novos + pts[j:]
             nos_e += novos
             mudou = True
@@ -1486,9 +1565,16 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         comp_m = _comprimento_na_vista(tir_m, inst_m) if tir_m is not None else _extensao_do_conjunto(inst_m)[0]
         nome_m = nomes_conj.get(rot, rot)
         # a cota na própria linha (deslocamento zero): só a linha com as setas e o texto —
-        # as linhas de chamada de cada cota até a barra enchiam a célula de traços
-        p.cota_h(round(t0), round(t0 + comp_m), alt + (off + passo * i) * esc, 0.0,
-                 texto="%s (%02dx) – %d" % (nome_m, n_inst, round(comp_m)))
+        # as linhas de chamada de cada cota até a barra enchiam a célula de traços.
+        # Os textos ficam alinhados à esquerda, na mesma abscissa (centrados em cotas de
+        # comprimentos diferentes ziguezagueavam), e cada ponta da cota ganha um traço
+        y_c = alt + (off + passo * i) * esc
+        txt = "%s (%02dx) – %d" % (nome_m, n_inst, round(comp_m))
+        h_t = 2.5 * esc
+        p.cota_h(round(t0), round(t0 + comp_m), y_c, 0.0, texto=txt,
+                 texto_pos=p._p(t0 + 5.0 * esc + 0.62 * h_t * len(txt) / 2.0, y_c + 1.0 * esc))
+        for x_ in (round(t0), round(t0 + comp_m)):
+            p.linha(x_, y_c - 1.5 * esc, x_, y_c + 1.5 * esc, "COTA")
     # a dobra da barra (gancho na ponta): a altura da perna, cotada na própria ponta
     if tirante is not None:
         corpo = [pv for pu_, pv in zip(pu_t, pv_t) if t0 + 0.3 * (t1 - t0) < pu_ < t1 - 0.3 * (t1 - t0)]

@@ -325,6 +325,7 @@ class CAD {
     for (const o of this.doc.entidades.values()) {
       const b = o.atributos || {};
       if (b.origem !== a.origem || (b.conjunto || '') !== (a.conjunto || '') || (b.detalhe || '') !== (a.detalhe || '')) continue;
+      if ((b.grupo_copia || '') !== (a.grupo_copia || '')) continue;      // a cópia é outra peça
       if (o.tipo === 'cota' || o.tipo === 'texto') continue;
       if (!this.doc.visivel(o)) continue;
       const c = caixaDe(o);

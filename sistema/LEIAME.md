@@ -218,6 +218,17 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.7.** (1) Cópia no CAD é outra peça: `copiaDe` (ferramentas.js) dá às linhas copiadas por Mover+Ctrl, Copiar, Girar
+em modo cópia e Espelhar um `atributos.grupo_copia` por operação, e `cad.pecaDe` separa por ele — original e cópia, com a
+mesma `origem` do 3D e encostados, eram selecionados juntos. (2) Canto da tesoura com a silhueta partida (M8 + M9: as
+arestas das abas da P15 vieram como polilinhas só de arco, 24 pontos, separadas das retas): `_trechos_curvos` reconhece a
+polilinha que é só arco (segmentos iguais virando para o mesmo lado, sem segmento comprido que torne os do arco "curtos") e
+devolve o trecho inteiro (0, n−1). Os nós do arco puro (`_nos_do_arco_puro`) vêm das direções das retas do contorno da
+mesma peça (colhidas no primeiro laço de `_chanfrar_cantos`, `direcoes`) e da bissetriz delas tangente ao círculo de três
+pontos — o arco puro acaba um ou dois facetados antes da tangência, e a tangente ali (ou o índice médio) errava 3–8°.
+(3) Cotas empilhadas do contraventamento: texto alinhado à esquerda pelo `texto_pos` (margem de 5 mm de papel + meia
+largura do texto) e um traço vertical em cada ponta da cota.
+
 **0.8.6.** (1) Emenda do banzo com a peça do canto em **meia-esquadria** (`conjuntos._quinas_da_emenda`): a quina é o
 cruzamento do contorno do banzo com o lado da peça do canto; a tampa e a linha da aba terminam na emenda entre as duas
 quinas; nós a menos de 12 mm são o mesmo (`nos_quina`). (2) Furos pelos **parafusos colocados no 3D**: a peça que representa

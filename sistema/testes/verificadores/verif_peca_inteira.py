@@ -68,6 +68,10 @@ try:
     ok(aba.avaliar("window.cad.doc.tamanho") == n0 + 3, "Mover com Ctrl copia as 3 linhas")
     ok(aba.avaliar("window.cad.doc.get('c1').vertices[0][1]") == 0, "o original não saiu do lugar")
     ok(aba.avaliar("[...window.cad.tela.selecao].every(id => !['c1','c2','c3'].includes(id))"), "a cópia fica selecionada")
+    # a cópia é outra peça: clicar no original pega só o original, e vice-versa
+    ok(aba.avaliar("window.cad.pecaDe('c1').sort().join(',')") == "c1,c2,c3", "depois de copiar, o original continua sendo só as 3 linhas dele")
+    r = aba.avaliar("(() => { const ids = [...window.cad.tela.selecao]; const p = window.cad.pecaDe(ids[0]); return [p.length, p.every(i => ids.includes(i))]; })()")
+    ok(r[0] == 3 and r[1], f"a cópia é uma peça só (3 linhas), sem o original: {r}")
     n1 = aba.avaliar("window.cad.doc.tamanho")
     aba.avaliar("(() => { window.cad.selecionar(['c1','c2','c3']); window.cad.ativarFerramenta('girar'); const f = window.cad.ferramenta;"
                 " f.onPonto([0, 0], { px: [0, 0] }); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Control' }));"

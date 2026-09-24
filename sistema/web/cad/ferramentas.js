@@ -563,6 +563,13 @@ class Transformadora extends Ferramenta {
   }
 }
 
+/** Cópia de uma entidade com identidade nova e grupo de cópia próprio (todas as linhas
+ *  copiadas na mesma operação levam o mesmo grupo: continuam sendo "a peça inteira"). */
+function copiaDe(e, grupo) {
+  return { ...e, id: undefined, atributos: { ...(e.atributos || {}), grupo_copia: grupo } };
+}
+const novoGrupoCopia = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
 export class Mover extends Transformadora {
   static id = 'mover'; static nome = 'Mover'; static atalho = 'm'; static dica = 'Ponto base do deslocamento';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg>';
@@ -574,14 +581,16 @@ export class Mover extends Transformadora {
     const novas = this.selecionadas().map(e => transladar(e, d));
     if (!this.copiar && this.copiaAgora(ev)) {
       // Mover com Ctrl: a cópia vai para o destino, o original fica; a cópia fica selecionada
-      const copias = novas.map(e => criar({ ...e, id: undefined }));
+      const grupo = novoGrupoCopia();
+      const copias = novas.map(e => criar(copiaDe(e, grupo)));
       this.editor.executar(new ComandoAdicionar(copias, 'Copiar'));
       this.editor.selecionar(copias.map(c => c.id));
       this.reiniciar();
       return;
     }
     if (this.copiar) {
-      const copias = novas.map(e => ({ ...e, id: undefined }));
+      const grupo = novoGrupoCopia();
+      const copias = novas.map(e => copiaDe(e, grupo));
       const cmd = new ComandoAdicionar(copias.map(c => criar(c)), 'Copiar');
       this.editor.executar(cmd);
       // o ponto base continua o mesmo: cada novo destino é medido da referência
@@ -656,7 +665,8 @@ export class Girar extends Transformadora {
   _aplicar(theta, ev) {
     const giradas = this._girar(theta);
     if (this.copiaAgora(ev)) {
-      const copias = giradas.map(e => criar({ ...e, id: undefined }));
+      const grupo = novoGrupoCopia();
+      const copias = giradas.map(e => criar(copiaDe(e, grupo)));
       this.editor.executar(new ComandoAdicionar(copias, 'Girar cópia'));
       this.editor.selecionar(copias.map(c => c.id));
     } else {
@@ -699,7 +709,8 @@ export class Espelhar extends Transformadora {
     if (!this.base) { this.base = p; this.editor.snap.ultimo = p; this.dica('Segundo ponto do eixo'); return; }
     if (dist(p, this.base) < 1e-6) return;
     const novas = this._espelhar(this.base, p);
-    this.editor.executar(new ComandoAdicionar(novas.map(e => criar({ ...e, id: undefined })), 'Espelhar'));
+    const grupo = novoGrupoCopia();
+    this.editor.executar(new ComandoAdicionar(novas.map(e => criar(copiaDe(e, grupo))), 'Espelhar'));
     this.reiniciar();
   }
   onMover(p) { if (this.base) this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.base, b: p }), ...this._espelhar(this.base, p)]); }
