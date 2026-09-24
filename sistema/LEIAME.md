@@ -218,6 +218,17 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.7.27.** Tesouras **montadas**: as meias-tesouras no mesmo plano (`tesouras_montadas`, 150 mm) saem juntas,
+como a fábrica gabarita, e as montadas com as mesmas meias viram uma célula ("T1 + T1 – 03x"); a meia só sai sozinha
+se tiver instância sem par. Cadeias de cota por água (`trechos` do banzo; banzo de cima pela comparação na mesma
+abscissa, não pela altura média). Canto chanfrado em peças retas (`_emendas_do_chanfro`): o banzo vai até o nó (o
+trecho reto curto da calandrada sai) e cada nó ganha a linha de emenda. Legendas com a espessura pela bitola
+(`saida.dobras.com_bitola`: MSG 4,176 = #8 → U100X50X#8) e continuação alinhada à margem. Furação padrão de fábrica
+também no 3D: ao detalhar, as chapas paramétricas das posições corrigidas pela regra das terças recebem os passos
+novos (`padronizar_furos_das_chapas`, com os parafusos) e as terças acompanham. CAD: Estender numa polilinha (chapa)
+passa ao Esticar com o lado pego. 3D: Empurrar/Puxar em chapa paramétrica (lado do contorno ou espessura); cotas 3D
+com chamada e traço proporcionais à medida.
+
 **0.7.26.** Esticar (S) na ponta de barra inclinada com corte oblíquo (a diagonal da tesoura): a aresta andava
 na perpendicular dela mesma e entortava a barra, e as linhas internas do perfil, que chegam no meio da aresta,
 ficavam paradas. Agora anda tudo o que termina sobre a aresta, na direção das linhas que chegam nela quando são

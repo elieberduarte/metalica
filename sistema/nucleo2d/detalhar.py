@@ -130,7 +130,8 @@ from nucleo2d.detalhe.conjuntos import (  # noqa: E402,F401
     _tirante_principal,
     desenho_de_contraventamentos,
     desenho_de_localizacao,
-    desenho_do_conjunto)
+    desenho_do_conjunto,
+    tesouras_montadas)
 from nucleo2d.detalhe.nomes import (  # noqa: E402,F401
     ALCANCE_SUPORTE_TERCA,
     FOLGA_MARQUISE,
@@ -165,6 +166,7 @@ from nucleo2d.detalhe.celulas import (  # noqa: E402,F401
     aplicar_furos_de_barra,
     aplicar_furos_nas_barras,
     alinhar_furos_das_barras_as_chapas,
+    padronizar_furos_das_chapas,
     retirar_furos_sem_uso,
     oblongar_furos_das_tercas,
     contorno_do_desenho,
@@ -595,7 +597,37 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         # contraventamentos com as mesmas peças de ponta: um detalhe só, cotas empilhadas
         cv: Dict[tuple, list] = collections.OrderedDict()
         fns = []
+        # tesouras montadas: as meias no mesmo plano (as duas águas) desenhadas juntas, como a
+        # fábrica gabarita; as montadas iguais viram uma célula com a quantidade. A meia que
+        # só aparece dentro de montadas não ganha célula própria.
+        meias = []
+        for ass, grupo in grupos_iguais:
+            rot_g = " / ".join(sorted((c[0] for c in grupo), key=_ordem_natural))
+            if tipos_conj.get(rot_g) == "tesoura":
+                meias += [(rot_g, c[1], c[4]) for c in grupo]
+        montadas, meias_cobertas = [], set()
+        if meias:
+            avisar("tesouras montadas…")
+            try:
+                montadas, meias_cobertas = tesouras_montadas(meias)
+            except Exception as exc:                  # noqa: BLE001 — as meias saem como antes
+                avisos.append("tesouras montadas não levantadas: %s" % exc)
+        itens_montadas = {}
+        montadas.sort(key=lambda m: _ordem_natural(" + ".join(nomes_conj.get(r, r) for r in m["rotulos"])))
+        for m in montadas:
+            rot_m = " + ".join(m["rotulos"])
+            nome_m = " + ".join(nomes_conj.get(r, r) for r in m["rotulos"])
+            fns.append(("tesoura", lambda dd, x, y, rot_m=rot_m, m=m, nome_m=nome_m:
+                        desenho_do_conjunto(doc, rot_m, m["pecas"], m["n"], dd, x, y, rotular, fundidas=fundidas,
+                                            nomes=nomes_pos, nome=nome_m, tipo="tesoura",
+                                            conformadas=conformadas, pesos=pesos)))
+            itens_montadas[rot_m] = {"quantidade": m["n"], "perfil": "tesoura montada (%s)" % nome_m, "material": "",
+                                     "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
+                                     "categoria": "TESOURAS", "nome": nome_m,
+                                     "marcas": [mk for r in m["rotulos"] for mk in r.split(" / ")]}
         for rotulo, inst, n, nota in celulas:
+            if rotulo in meias_cobertas:
+                continue
             tir = _tirante_principal(inst) if tipos_conj.get(rotulo) == "contraventamento" else None
             if tir is not None:
                 marca_t = fundidas.get(str(_marcas(tir).get("posicao") or tir.nome), str(_marcas(tir).get("posicao") or tir.nome))
@@ -624,6 +656,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                               "categoria": c["categoria"], "marcas": c["marcas"], "nome": c["nome"]}
                  for c in conjuntos_info}
         itens.update(itens_cv)
+        itens.update(itens_montadas)
         d.metadados["detalhamento"] = {"grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info], "itens": itens}
         faixas["conjuntos"] = (fns, 1400.0, dict(d.metadados["detalhamento"]))
         familias_completo.extend(((t if t in dict(FAMILIAS) else "conjunto") or "conjunto", t or "conjunto", f) for t, f in fns)

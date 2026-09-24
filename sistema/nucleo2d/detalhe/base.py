@@ -1019,6 +1019,20 @@ def oblongar_tercas(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> Lis
     return fora
 
 
+def _guardar_passos(pos: Posicao, nc, dx, novo_h, nl, dy, novo_v):
+    """Guarda na posição a troca de passos da regra — (nº de furos, passo original) → passo
+    novo — para a mesma furação ir às chapas paramétricas do modelo 3D
+    (`padronizar_furos_das_chapas`)."""
+    passos = getattr(pos, "regra_passos", None)
+    if passos is None:
+        passos = {}
+        pos.regra_passos = passos
+    if nc > 1 and novo_h:
+        passos[(nc, int(round(dx)))] = float(novo_h)
+    if nl > 1 and novo_v:
+        passos[(nl, int(round(dy)))] = float(novo_v)
+
+
 def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> dict:
     """Aplica a furação padrão de fábrica às terças e ao que compõe a ligação delas.
 
@@ -1043,6 +1057,7 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
             novo_v = passo_v if nl > 1 else 0.0
             if (nc > 1 and abs(dx - novo_h) > 0.5) or (nl > 1 and abs(dy - novo_v) > 0.5):
                 assinaturas[_eixos_da_assinatura(ass)][(nc, nl, dx, dy, novo_h, novo_v)] += pos.quantidade
+                _guardar_passos(pos, nc, dx, novo_h, nl, dy, novo_v)
                 _reposicionar(g, novo_h, novo_v)
                 alterou.append("%dx%d %s x %s -> %s x %s" % (nc, nl, _mm(dx), _mm(dy), _mm(novo_h), _mm(novo_v)))
         if alterou or oblongados:
@@ -1073,6 +1088,8 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
             novo_v = mapa.get((nl, dy), 0.0) if nl > 1 else 0.0
             if (nc_t, dx_t) == (nl_t, dy_t):    # padrão quadrado: mesma orientação da terça
                 novo_h, novo_v = novo_h_t, novo_v_t
+            elif not ambiguo:
+                _guardar_passos(pos, nc, dx, novo_h, nl, dy, novo_v)
             _reposicionar(g, novo_h, novo_v)
             alterou.append("%dx%d %s x %s -> %s x %s%s" % (nc, nl, _mm(dx), _mm(dy), _mm(novo_h), _mm(novo_v),
                                                           " (conferir: orientacao ou terca de outra altura)" if ambiguo else ""))

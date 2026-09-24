@@ -126,3 +126,40 @@ def massa_da_norma(perfil: str) -> Optional[float]:
                 and abs(d - g["d"]) < 0.6):
             return float(it.massa) if it.massa else None
     return None
+
+
+#: Espessuras (mm) de cada bitola de chapa: a MSG (é a que o TecnoMETAL escreve no nome do
+#: perfil — #8 = 4,176 → "4.18") e a ABNT/fornecedores (nucleo/perfis_fabrica.BITOLAS e o
+#: catálogo). A fábrica chama o perfil pelo número da bitola: U100X50X#8.
+ESPESSURAS_BITOLA = {
+    7: (4.554, 4.5), 8: (4.176, 4.25), 9: (3.797, 3.75), 10: (3.416, 3.35), 11: (3.038, 3.0),
+    12: (2.657, 2.65, 2.7), 13: (2.278, 2.25, 2.3), 14: (1.897, 1.9, 1.95, 2.0), 15: (1.709, 1.7, 1.8),
+    16: (1.519, 1.5, 1.55), 18: (1.214, 1.2), 20: (0.912, 0.9),
+}
+TOLERANCIA_BITOLA = 0.035
+
+
+def bitola_de(t: float) -> Optional[int]:
+    """Número da bitola cuja espessura (MSG ou ABNT) está a até 0,035 mm de `t`."""
+    melhor = None
+    for num, ts in ESPESSURAS_BITOLA.items():
+        for x in ts:
+            d = abs(t - x)
+            if d <= TOLERANCIA_BITOLA and (melhor is None or d < melhor[0]):
+                melhor = (d, num)
+    return melhor[1] if melhor else None
+
+
+def com_bitola(perfil: str) -> str:
+    """O nome do perfil dobrado como a fábrica escreve: a espessura pelo número da bitola
+    ("U100X50X4.18" → "U100X50X#8", "C150X50X17X2.25" → "C150X50X17X#13"). Perfil que não é
+    dobrado da chapa, ou espessura fora das bitolas, fica como está."""
+    if not perfil or geometria(perfil) is None:
+        return perfil
+    m = re.search(r"(?i)x\s*(\d+(?:[.,]\d+)?)\s*(\(FF\))?\s*$", perfil)
+    if not m:
+        return perfil
+    b = bitola_de(_num(m.group(1)))
+    if b is None:
+        return perfil
+    return perfil[:m.start(1)] + "#%d" % b + (perfil[m.end(1):] if m.group(2) else "")

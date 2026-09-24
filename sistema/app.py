@@ -600,7 +600,15 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
                  nomes=_nomes_producao(s), avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
     _gravar_nomes_producao(s, r.get("nomes") or {})
     nomeadas = _nomes_no_modelo(doc, r.get("nomes") or {})
-    if r.get("convertidas") or nomeadas:
+    # a furação padrão de fábrica (regra das terças) também nas chapas do 3D, e as terças
+    # parafusadas nelas acompanham
+    from nucleo2d.detalhar import padronizar_furos_das_chapas, alinhar_furos_das_barras_as_chapas
+    padr = padronizar_furos_das_chapas(doc, r.get("objetos_posicoes") or [])
+    if padr["chapas"]:
+        alinhar_furos_das_barras_as_chapas(doc)
+        r.setdefault("avisos", []).append("furação padrão de fábrica aplicada no 3D a %d chapa(s): %s"
+                                          % (padr["chapas"], ", ".join(padr["posicoes"][:12])))
+    if r.get("convertidas") or nomeadas or padr["chapas"]:
         _progresso(s, "gravando o modelo…")
         g.salvar_modelo(s, doc.dict(), marco=True)            # chapas planas viraram paramétricas / nomes nas peças
     _progresso(s, "gravando os desenhos…")

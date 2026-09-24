@@ -101,11 +101,15 @@ export class FerramentaCotar extends Ferramenta {
   /** Vértices e arestas do desenho da cota. */
   geometria(desloc) {
     const off = C.mul(this.lado, desloc);
-    const sobra = C.mul(this.lado, desloc >= 0 ? 60 : -60);
+    // sobra da chamada e traço a 45° proporcionais à cota (numa cota de 60 mm os 60 e 45 mm
+    // fixos de antes eram maiores que a própria medida), com os valores antigos de teto
+    const L = C.dist(this.a, this.b);
+    const s = Math.max(2, Math.min(60, 0.12 * L)), tr = Math.max(1.5, Math.min(45, 0.07 * L));
+    const sobra = C.mul(this.lado, desloc >= 0 ? s : -s);
     const a = this.a, b = this.b;
     const a1 = C.add(a, off), b1 = C.add(b, off);
     const a2 = C.add(a1, sobra), b2 = C.add(b1, sobra);
-    const t = C.mul(C.add(this.dir, this.lado), 45 / Math.SQRT2);
+    const t = C.mul(C.add(this.dir, this.lado), tr / Math.SQRT2);
     const v = [a, b, a1, b1, a2, b2,
                C.sub(a1, t), C.add(a1, t), C.sub(b1, t), C.add(b1, t)];
     const arestas = [[0, 4], [1, 5], [2, 3], [6, 7], [8, 9]];

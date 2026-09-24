@@ -42,7 +42,8 @@ def test_legenda_enxuta():
     pos.peso = 21.6
     pos.observacoes.append("furacao no padrao de fabrica")
     linhas = _cabecalho(pos)
-    assert linhas[0] == "T.C.1 – 28x   L = 4925 mm" and linhas[1] == "U150X50X2.28"
+    # espessura pela bitola, como a fábrica escreve (2,28 = #13 MSG)
+    assert linhas[0] == "T.C.1 – 28x   L = 4925 mm" and linhas[1] == "U150X50X#13"
     assert linhas[2] == "parafusos: 2x M12 x 30" and linhas[3].startswith("21,6 kg/pç")
     txt = "\n".join(linhas)
     for fora in ("TERÇA", "(M13)", "CIVIL", "OBL", "padrao"):

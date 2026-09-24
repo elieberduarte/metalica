@@ -38,9 +38,13 @@ from nucleo2d.detalhe.base import (  # noqa: E402
     aplicar_ajustes_de_furos,
     fundir_posicoes_iguais,
     inferir_furos_de_parafusos,
+    marcas_de,
     oblongar_tercas)
 from nucleo2d.detalhe.nomes import (  # noqa: E402
     aplicar_nomes)
+
+from saida.dobras import com_bitola  # noqa: E402
+
 
 def _cabecalho(pos: Posicao) -> List[str]:
     """Legenda enxuta, só o principal: nome e quantidade com o comprimento no título, o
@@ -54,7 +58,7 @@ def _cabecalho(pos: Posicao) -> List[str]:
     elif pos.classe in ("chapa", "chapa_dobrada"):
         linhas = [titulo, "%s  %s" % (pos.perfil, _rotulo_espessura(pos))]
     elif pos.classe == "barra_conformada":
-        linhas = [titulo + "   L desenv. %s mm" % _mm(pos.comprimento), pos.perfil]
+        linhas = [titulo + "   L desenv. %s mm" % _mm(pos.comprimento), com_bitola(pos.perfil)]
     elif pos.classe == "telha":
         c = compra_da_telha(pos)
         return [titulo + "   L = %s mm" % _mm(c["comprimento"]),
@@ -65,7 +69,7 @@ def _cabecalho(pos: Posicao) -> List[str]:
     elif pos.classe == "indefinida":
         linhas = [titulo, pos.perfil]
     else:
-        linhas = [titulo + "   L = %s mm" % _mm(pos.comprimento), pos.perfil]
+        linhas = [titulo + "   L = %s mm" % _mm(pos.comprimento), com_bitola(pos.perfil)]
     if pos.parafusos or pos.porcas:
         linhas.append("parafusos: " + pos.rotulo_parafusos())
     if pos.peso:
@@ -895,6 +899,74 @@ def _indices_do_furo(ent, laco, eixo, raio):
         if lateral <= raio and abs(_dot(v, eixo) - nivel) <= 15.0:
             idx.add(i)
     return centro, idx
+
+
+def padronizar_furos_das_chapas(doc: Documento, posicoes: Sequence[Posicao]) -> dict:
+    """A furação padrão de fábrica (a regra das terças: 60 × 50 mm até 200 mm de altura)
+    também nas chapas paramétricas do modelo 3D — o suporte de terça, a chapinha de
+    ligação. A regra corrigia só o desenho; no 3D a chapa ficava com os 80 × 60 do IFC e a
+    terça, que segue a chapa, também. Cada linha e cada coluna da grade de furos da chapa
+    (no sistema dela) vai para o passo novo do mesmo (nº de furos, passo original), em volta
+    do mesmo centro. Devolve {"chapas", "furos", "posicoes"}."""
+    saida = {"chapas": 0, "furos": 0, "posicoes": []}
+    mapa: Dict[str, dict] = {}
+    for p in posicoes:
+        passos = getattr(p, "regra_passos", None)
+        if passos and p.classe in ("chapa", "chapa_dobrada"):
+            for m in marcas_de(p):
+                mapa[m] = passos
+
+    fixadores = _fixadores(doc)
+    movidos: set = set()
+
+    def fileiras(vals):
+        grupos = []
+        for v in sorted(vals):
+            if grupos and v - grupos[-1][-1] <= 1.0:
+                grupos[-1].append(v)
+            else:
+                grupos.append([v])
+        return [sum(g) / len(g) for g in grupos]
+    for ch in doc.entidades.values():
+        if not isinstance(ch, Chapa) or not ch.furos:
+            continue
+        passos = mapa.get(str(_marcas(ch).get("posicao") or ""))
+        if not passos:
+            continue
+        novos = [dict(f) for f in ch.furos]
+        mudou = False
+        for eixo in ("x", "y"):
+            fil = fileiras([float(f.get(eixo, 0) or 0) for f in novos])
+            if len(fil) < 2:
+                continue
+            passo = fil[1] - fil[0]
+            if any(abs((fil[i + 1] - fil[i]) - passo) > 1.0 for i in range(len(fil) - 1)):
+                continue                                  # passos desiguais: fica como está
+            novo = passos.get((len(fil), int(round(passo))))
+            if not novo or abs(novo - passo) < 0.5:
+                continue
+            centro = (fil[0] + fil[-1]) / 2
+            alvo = {k: centro + (k - (len(fil) - 1) / 2) * novo for k in range(len(fil))}
+            for f in novos:
+                v = float(f.get(eixo, 0) or 0)
+                k = min(range(len(fil)), key=lambda i: abs(fil[i] - v))
+                f[eixo] = round(alvo[k], 2)
+            mudou = True
+        if mudou:
+            # o parafuso (e a porca, a arruela) que atravessa cada furo anda com ele
+            for f0, f1 in zip(ch.furos, novos):
+                x0, y0 = float(f0.get("x", 0) or 0), float(f0.get("y", 0) or 0)
+                dxl, dyl = float(f1["x"]) - x0, float(f1["y"]) - y0
+                if abs(dxl) > 0.01 or abs(dyl) > 0.01:
+                    raio = max(float(f0.get("diametro", 0) or 0), float(f0.get("largura", 0) or 0), 14.0) / 2.0 + 4.0
+                    _mover_fixadores(ch, (x0, y0), (dxl, dyl), raio, fixadores, movidos)
+            ch.furos = novos
+            saida["chapas"] += 1
+            saida["furos"] += len(novos)
+            m = str(_marcas(ch).get("posicao") or "")
+            if m not in saida["posicoes"]:
+                saida["posicoes"].append(m)
+    return saida
 
 
 def alinhar_furos_das_barras_as_chapas(doc: Documento, limite: float = LIMITE_DESLOCAMENTO_FURO) -> dict:

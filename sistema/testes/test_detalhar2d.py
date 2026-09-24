@@ -649,7 +649,10 @@ def test_nomes_de_producao_no_modelo_real():
     assert any(tx.startswith("T.C.1 – ") and "L = " in tx for tx in textos)
     assert not any("(M13)" in tx or tx == "TERÇA DE COBERTURA" for tx in textos)   # legenda enxuta
     textos_c = [e.texto for e in r["desenhos"]["tesouras"].entidades.values() if isinstance(e, Texto)]
-    assert any(tx.startswith("T1 – 08x") for tx in textos_c) and not any("(M2)" in tx for tx in textos_c)
+    # tesouras montadas (as duas águas juntas, como a fábrica gabarita): 3 com T1 dos dois
+    # lados e 2 com T1 + T2; a meia-tesoura T1 não sai mais sozinha
+    assert any(tx.startswith("T1 + T1 – 03x") for tx in textos_c) and any(tx.startswith("T1 + T2 – 02x") for tx in textos_c)
+    assert not any(tx.startswith("T1 – ") for tx in textos_c) and not any("(M2)" in tx for tx in textos_c)
     # camadas por tipo de peça
     cams = {e.camada for e in r["desenhos"]["tesouras"].entidades.values()}
     assert {"BANZOS", "DIAGONAIS", "CHAPAS"} <= cams

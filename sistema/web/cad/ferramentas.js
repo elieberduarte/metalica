@@ -721,6 +721,15 @@ export class Estender extends Ferramenta {
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4v16"/><path d="M20 12H8" stroke-dasharray="3 2"/><path d="M14 12h6M17 9l3 3-3 3"/></svg>';
   onPonto(p, ev) {
     const e = this.editor.tela.sob(ev.px);
+    if (e && (e.tipo === 'polilinha' || e.tipo === 'hachura')) {
+      // chapa, contorno de peça: o lado clicado anda — é o Esticar (S), com a aresta já pega
+      this.editor.ativarFerramenta('esticar');
+      const f = this.editor.ferramenta;
+      if (f && f._pegarAresta && f._pegarAresta(p, ev)) {
+        this.editor.dica('Contorno (chapa): leve o lado até a nova posição, ou digite quanto estender · Esc cancela');
+      }
+      return;
+    }
     if (!e || e.tipo !== 'linha') { this.dica('Estender funciona em linhas: clique perto da ponta a estender'); return; }
     // a ponta mais perto do clique é a que anda; a direção é a da própria linha
     const inverte = dist(p, e.a) < dist(p, e.b);
