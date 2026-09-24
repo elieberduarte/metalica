@@ -218,6 +218,10 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.3.** Ponta do banzo no chanfro: na 0.8.1 toda ponta de linha deslizava na própria direção até o nó; a tampa da ponta
+(linha curta, atravessada) deslizava ao longo dela mesma e ficava no lugar antigo — a ponta do banzo desmanchava. Agora só
+desliza quem anda na própria direção (≤ 15°); o resto vai ao nó como antes.
+
 **0.8.2.** Parafuso no 3D: a ferramenta põe as opções no painel de propriedades (gancho genérico `ferramenta.painel(raiz, el)`
 no `_painelPropriedades`; o editor repinta o painel ao trocar de ferramenta): diâmetro, comprimento, classe e os tamanhos
 usados no modelo; abrir com um parafuso selecionado copia o tamanho. Eixos da face (`eixosDaFace`: vértices da peça no plano

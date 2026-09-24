@@ -743,6 +743,12 @@ def _emendas_do_chanfro(desenho: Desenho, novas: List, ids: set, camada_de: Dict
         # que não passa pelo nó, ia girar em volta da outra ponta (o banzo "torcia")
         L = math.dist(w, longe)
         d = ((w[0] - longe[0]) / L, (w[1] - longe[1]) / L)
+        mv = math.dist(w, q)
+        # só desliza quem anda na própria direção (as linhas compridas do banzo); a tampa da
+        # ponta, curta e atravessada, vai inteira até o nó — deslizando ao longo dela mesma
+        # ela ficava no lugar antigo e a ponta do banzo desmanchava
+        if mv < 1e-6 or abs(((q[0] - w[0]) * d[0] + (q[1] - w[1]) * d[1]) / mv) < math.cos(math.radians(15.0)):
+            return q
         t = (q[0] - longe[0]) * d[0] + (q[1] - longe[1]) * d[1]
         return (round(longe[0] + d[0] * t, 2), round(longe[1] + d[1] * t, 2))
     if movimentos:
