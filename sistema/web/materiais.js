@@ -104,6 +104,13 @@ function marcas(lista, max = 14) {
   return el('span', { class: 'mono', title: lista.join(' '), texto: s + (lista.length > max ? ' …' : '') });
 }
 
+// o seletor da barra de compra vai para dentro do quadro Perfis, que é refeito a cada
+// desenho: guardado aqui, ele sobrevive ao redesenho (antes, depois de gerar o PDF, a
+// tela procurava #barra fora do documento e dava "Cannot read properties of null")
+let SELETOR_BARRA = null, CONTROLE_BARRA = null;
+const seletorBarra = () => (SELETOR_BARRA = SELETOR_BARRA || $('#barra'));
+const controleBarra = () => (CONTROLE_BARRA = CONTROLE_BARRA || $('#controle-barra'));
+
 function desenhar(L) {
   LISTA = L;
   const t = L.totais || {};
@@ -112,7 +119,7 @@ function desenhar(L) {
   document.title = `Lista de materiais — ${p.nome || PROJETO}`;
   $('#quando').textContent = L.gerado ? `levantada em ${L.gerado.replace(/^(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1')}` : '—';
   $('#quando').title = 'Quando a lista foi levantada do modelo 3D. Depois de mudar o modelo, use "Atualizar pelo modelo 3D".';
-  $('#barra').value = String(L.barra || 0);
+  if (seletorBarra()) seletorBarra().value = String(L.barra || 0);
   $('#obra-atual').replaceChildren('Projeto: ', el('b', { texto: p.nome || PROJETO }));
 
   // arquivos gravados
@@ -138,10 +145,9 @@ function desenhar(L) {
 
   if ((L.perfis || []).length) {
     const totB = L.perfis.reduce((s, g) => s + g.barras.quantidade, 0);
-    const controleBarra = $('#controle-barra');
-    controleBarra.hidden = false;
+    controleBarra().hidden = false;
     c.append(secao('Perfis', `comprimento, peso e barras de compra por encaixe (do maior para o menor, 3 mm de corte); ${n(totB)} barras no total`,
-      el('div', {}, controleBarra, el('div', { class: 'rolagem' }, tabela([
+      el('div', {}, controleBarra(), el('div', { class: 'rolagem' }, tabela([
         { titulo: 'Perfil', chave: 'perfil', classe: 'b' }, { titulo: 'Material', chave: 'material' },
         { titulo: 'Categoria', valor: (g) => rotuloCategoria(g.categoria) },
         { titulo: 'Posições', valor: (g) => marcas(g.posicoes), classe: 'quebra' },
@@ -270,7 +276,7 @@ async function carregar(recalcular = false) {
   aviso(recalcular ? 'Levantando as peças do modelo…' : 'Carregando…');
   try {
     const L = recalcular
-      ? await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais`, { barra: Number($('#barra').value) || 0 })
+      ? await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais`, { barra: Number(seletorBarra() ? seletorBarra().value : 0) || 0 })
       : await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais`);
     aviso('');
     desenhar(L);
@@ -298,7 +304,13 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#btn-3d').addEventListener('click', () => { location.href = `/editor?projeto=${encodeURIComponent(PROJETO)}`; });
   $('#btn-cad').addEventListener('click', () => { location.href = `/cad?projeto=${encodeURIComponent(PROJETO)}`; });
   $('#btn-recalcular').addEventListener('click', () => carregar(true));
-  $('#barra').addEventListener('change', () => carregar(true));
+  seletorBarra().addEventListener('change', () => carregar(true));
+  controleBarra();
+  $('#btn-voltar').addEventListener('click', () => {
+    // volta para a tela de onde veio (CAD, 3D); aberta direto, vai ao modelo 3D
+    if (document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1) history.back();
+    else location.href = `/editor?projeto=${encodeURIComponent(PROJETO)}`;
+  });
   $('#btn-pdf').addEventListener('click', gerarPDF);
   $('#btn-imprimir').addEventListener('click', () => window.print());
   $('#btn-pasta').addEventListener('click', () => pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/abrir-pasta`, { sub: 'detalhamento' }).catch(e => aviso(e.message, true)));

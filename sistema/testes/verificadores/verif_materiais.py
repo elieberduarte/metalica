@@ -81,6 +81,19 @@ try:
     # ordenar por peso
     aba.avaliar("[...document.querySelectorAll('.materiais th')].find(t => t.textContent.startsWith('Peso (kg)')).click(); 1")
     ok(aba.avaliar("document.querySelector('.materiais th.ordem-asc, .materiais th.ordem-desc') !== null"), "clique no cabeçalho ordena")
+    # PDF pela tela: a lista é redesenhada depois, e o seletor da barra tem de sobreviver
+    aba.avaliar("window.open = () => null; document.querySelector('#btn-pdf').click(); 1")
+    t0 = time.time()
+    while time.time() - t0 < 90 and aba.avaliar("document.querySelector('#btn-pdf').disabled"): aba.drenar(0.5)
+    aba.drenar(1.0)
+    av = aba.avaliar("(() => { const a = document.querySelector('#aviso'); return a.hidden ? '' : a.textContent; })()")
+    ok("Não foi possível" not in av, "PDF pela tela sem erro: %r" % av)
+    ok(aba.avaliar("!!document.querySelector('#barra') && document.body.contains(document.querySelector('#barra'))"), "seletor da barra continua na tela depois do PDF")
+    aba.avaliar("const s = document.querySelector('#barra'); s.value = s.options[s.options.length - 1].value; s.dispatchEvent(new Event('change')); 1")
+    aba.drenar(4.0)
+    av = aba.avaliar("(() => { const a = document.querySelector('#aviso'); return a.hidden ? '' : a.textContent; })()")
+    ok("Não foi possível" not in av, "trocar a barra depois do PDF sem erro: %r" % av)
+    ok(aba.avaliar("!!document.querySelector('#btn-voltar')"), "botão Voltar")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, "sem erros no console da tela: %s" % erros[:3])
     # 6) navegação: editor 3D → CAD na mesma janela (sem window.open)

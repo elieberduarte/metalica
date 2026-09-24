@@ -732,17 +732,34 @@ def _emendas_do_chanfro(desenho: Desenho, novas: List, ids: set, camada_de: Dict
             e.vertices = [v for r, v in enumerate(vs) if r not in tirar]
     # a ponta antiga m (emenda com o banzo) vai para o nó nas linhas do banzo: para o nó
     # mais perto dela entre os que a apontaram (contorno de fora ou de dentro)
-    def destino(w):
+    def destino(w, longe=None):
         cand = [(math.dist(w, q), q) for m, q in movimentos if perto(w, m)]
-        return min(cand)[1] if cand else w
+        if not cand:
+            return w
+        q = min(cand)[1]
+        if longe is None or math.dist(w, longe) < 1e-6:
+            return q
+        # a ponta desliza na direção da própria linha até a altura do nó: a linha da aba,
+        # que não passa pelo nó, ia girar em volta da outra ponta (o banzo "torcia")
+        L = math.dist(w, longe)
+        d = ((w[0] - longe[0]) / L, (w[1] - longe[1]) / L)
+        t = (q[0] - longe[0]) * d[0] + (q[1] - longe[1]) * d[1]
+        return (round(longe[0] + d[0] * t, 2), round(longe[1] + d[1] * t, 2))
     if movimentos:
         for o in outras:
             if o.camada == "CHAPAS":
                 continue
             if isinstance(o, Polilinha):
-                o.vertices = [destino(w) for w in o.vertices]
+                vs = list(o.vertices)
+                n = len(vs)
+                novos = []
+                for k, w in enumerate(vs):
+                    viz = [vs[j % n] for j in (k - 1, k + 1) if (0 <= j < n) or o.fechada]
+                    longe = max(viz, key=lambda x: math.dist(x, w)) if viz else None
+                    novos.append(destino(w, longe))
+                o.vertices = novos
             else:
-                o.a, o.b = destino(o.a), destino(o.b)
+                o.a, o.b = destino(o.a, o.b), destino(o.b, o.a)
     # 2) a linha de emenda em cada nó: o nó do contorno de fora com o do de dentro
     por_origem: Dict[str, list] = collections.defaultdict(list)
     for e in canto:

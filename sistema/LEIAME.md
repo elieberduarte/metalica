@@ -218,6 +218,18 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.1.** Ajustes do detalhamento dos compressores: (1) clique no CAD seleciona a peça inteira (`cad.pecaDe`: mesma
+origem, célula e detalhe, encostadas; Alt = só a linha) e o cruzamento testa o traço (`Tela._tocaJanela`, a moldura do
+quadro não entra); (2) banzo que avança até o nó do chanfro desliza na direção da própria linha (`_emendas_do_chanfro.destino`
+com a ponta de longe) — a linha da aba girava 0,35° e o banzo "torcia"; (3) chapa soldada no chumbador e a montagem
+CB + CH vão para o quadro CHUMBADORES (`chapas_de_chumbador`, `grupos_montados` levantado uma vez); (4) chapa de topo
+da cumeeira (em pé: extensão ao longo do vão ≤ espessura + 5, a 350 mm do meio) detalhada debaixo da tesoura montada
+(`com_chapas_da_cumeeira`, atributo `detalhe_cumeeira`); (5) terças em colunas (`base._em_colunas`, 560 mm de papel) em vez
+de uma por linha (quadro de 8,5 × 40 m); (6) lista de materiais: o seletor da barra, movido para o quadro Perfis, era
+apagado no redesenho (PDF pela tela dava "Cannot read properties of null") — referência guardada; botão Voltar;
+(7) Mover e Girar copiam com Ctrl (toque liga/desliga, como no SketchUp; segurar no clique também).
+Verificador `verif_peca_inteira.py`; `verif_materiais.py` gera o PDF pela tela.
+
 **0.8.0.** Projeto recebido em DXF ou PDF → modelo 3D → IFC. `nucleo2d/pdf_ler.py` lê o PDF vetorial (PyMuPDF: traços,
 Béziers, círculos dos balões, textos com rotação; camada = OCG ou cor; mm de papel; avisa PDF digitalizado e texto SHX).
 `nucleo2d/reconhecer.py`: vistas por proximidade só das linhas de peça (cota e eixo não juntam vistas), título e tipo

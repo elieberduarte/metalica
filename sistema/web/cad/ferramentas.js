@@ -53,7 +53,7 @@ function deslocamentoPara(c, p, escala) {
 
 export class Selecionar extends Ferramenta {
   static id = 'selecionar'; static nome = 'Selecionar'; static atalho = ' '; static grupo = 'navegacao';
-  static dica = 'Clique para selecionar · Shift soma · Ctrl alterna · arraste uma janela · Del apaga · na cota selecionada, arraste as alças';
+  static dica = 'Clique seleciona (a peça inteira; Alt+clique, só a linha) · Shift soma · Ctrl alterna · arraste uma janela · Del apaga · na cota selecionada, arraste as alças';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 3l14 8-6 2-3 6z"/></svg>';
   reiniciar() { this._soltarAlca(); super.reiniciar(); }
 
@@ -120,9 +120,13 @@ export class Selecionar extends Ferramenta {
     }
     const e = this.editor.tela.sob(ev.px);
     if (!e) { if (!ev.shiftKey && !ev.ctrlKey) this.editor.selecionar([]); return; }
-    if (ev.ctrlKey) this.editor.alternarSelecao(e.id);
-    else if (ev.shiftKey) this.editor.selecionar([...this.editor.tela.selecao, e.id]);
-    else this.editor.selecionar([e.id]);
+    // a peça do detalhamento é feita de várias linhas (contorno, abas, linha oculta): o
+    // clique pega a peça inteira, como um bloco — girar ou mover não deixa resquício.
+    // Alt+clique pega só a linha.
+    const ids = ev.altKey ? [e.id] : this.editor.pecaDe(e.id);
+    if (ev.ctrlKey) { for (const id of ids) this.editor.alternarSelecao(id); }
+    else if (ev.shiftKey) this.editor.selecionar([...this.editor.tela.selecao, ...ids]);
+    else this.editor.selecionar(ids);
   }
   onSoltar(p, ev) {
     if (!ev.arrasto) return;
@@ -533,7 +537,21 @@ const area = (pts) => pts.reduce((s, p, i) => { const q = pts[(i + 1) % pts.leng
 class Transformadora extends Ferramenta {
   /** Ferramentas que agem sobre a seleção: se não há, o primeiro clique seleciona. */
   static grupo = 'edicao';
-  reiniciar() { super.reiniciar(); this.base = null; this.ids = [...this.editor.tela.selecao]; this.dica(this.ids.length ? this.constructor.dica : 'Selecione os objetos primeiro (clique ou janela) e depois use a ferramenta'); }
+  reiniciar() { super.reiniciar(); this.base = null; this.modoCopia = false; this.ids = [...this.editor.tela.selecao]; this.dica(this.ids.length ? this._comCopia(this.constructor.dica) : 'Selecione os objetos primeiro (clique ou janela) e depois use a ferramenta'); }
+  /** Mover e Girar: um toque no Ctrl liga/desliga a cópia (o original fica), como no SketchUp. */
+  get aceitaCopia() { return false; }
+  alternarCopia() {
+    if (!this.aceitaCopia) return;
+    this.modoCopia = !this.modoCopia;
+    this.dica(this._comCopia(this._dicaAtual || this.constructor.dica));
+    this.editor.tela.pedirQuadro();
+  }
+  _comCopia(t) {
+    this._dicaAtual = String(t).replace(/ · (cópia|Ctrl: cópia).*$/, '');
+    if (!this.aceitaCopia) return this._dicaAtual;
+    return this._dicaAtual + (this.modoCopia ? ' · (cópia) Ctrl: mover o original' : ' · Ctrl: cópia');
+  }
+  copiaAgora(ev) { return this.aceitaCopia && (!!this.modoCopia !== !!(ev && ev.ctrlKey)); }
   selecionadas() { return this.ids.map(id => this.doc.get(id)).filter(Boolean); }
   onPonto(p, ev) {
     if (!this.ids.length) {
@@ -549,10 +567,19 @@ export class Mover extends Transformadora {
   static id = 'mover'; static nome = 'Mover'; static atalho = 'm'; static dica = 'Ponto base do deslocamento';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg>';
   copiar = false;
-  passo(p) {
-    if (!this.base) { this.base = p; this.editor.snap.ultimo = p; this.dica('Ponto de destino, ou digite a distância'); return; }
+  get aceitaCopia() { return !this.copiar; }
+  passo(p, ev) {
+    if (!this.base) { this.base = p; this.editor.snap.ultimo = p; this.dica(this._comCopia('Ponto de destino, ou digite a distância')); return; }
     const d = [p[0] - this.base[0], p[1] - this.base[1]];
     const novas = this.selecionadas().map(e => transladar(e, d));
+    if (!this.copiar && this.copiaAgora(ev)) {
+      // Mover com Ctrl: a cópia vai para o destino, o original fica; a cópia fica selecionada
+      const copias = novas.map(e => criar({ ...e, id: undefined }));
+      this.editor.executar(new ComandoAdicionar(copias, 'Copiar'));
+      this.editor.selecionar(copias.map(c => c.id));
+      this.reiniciar();
+      return;
+    }
     if (this.copiar) {
       const copias = novas.map(e => ({ ...e, id: undefined }));
       const cmd = new ComandoAdicionar(copias.map(c => criar(c)), 'Copiar');
@@ -597,11 +624,12 @@ export class Mover extends Transformadora {
     }
     return out;
   }
-  onMover(p) {
+  onMover(p, ev) {
     if (!this.base) return;
     const d = [p[0] - this.base[0], p[1] - this.base[1]];
-    this.editor.previa([...this.selecionadas().map(e => transladar(e, d)), ...(this.copiar ? [] : this._cotasLigadas(d))]);
-    this.editor.medida(`${fmt(dist(this.base, p))} mm  ∠ ${fmt(ang(this.base, p) * 180 / Math.PI)}°`);
+    const copia = this.copiar || this.copiaAgora(ev);
+    this.editor.previa([...this.selecionadas().map(e => transladar(e, d)), ...(copia ? [] : this._cotasLigadas(d))]);
+    this.editor.medida(`${fmt(dist(this.base, p))} mm  ∠ ${fmt(ang(this.base, p) * 180 / Math.PI)}°${copia && !this.copiar ? '  (cópia)' : ''}`);
   }
   onValor(t) {
     if (!this.base) return;
@@ -609,7 +637,7 @@ export class Mover extends Transformadora {
     const m = t.match(/^(.*?)(?:<|@)(-?\d+(?:[.,]\d+)?)$/);
     const comp = paraMilimetros(m ? m[1] : t);
     if (comp == null) return;
-    this.passo(polar(this.base, m ? parseFloat(m[2].replace(',', '.')) * Math.PI / 180 : ang(this.base, alvo), comp));
+    this.passo(polar(this.base, m ? parseFloat(m[2].replace(',', '.')) * Math.PI / 180 : ang(this.base, alvo), comp), {});
   }
 }
 
@@ -623,27 +651,38 @@ export class Girar extends Transformadora {
   static id = 'girar'; static nome = 'Girar'; static atalho = 'q'; static dica = 'Centro de rotação';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4h-4"/></svg>';
   reiniciar() { super.reiniciar(); this.ref = null; }
+  get aceitaCopia() { return true; }
+  /** Gira a seleção; em modo cópia (Ctrl), gira uma cópia e o original fica. */
+  _aplicar(theta, ev) {
+    const giradas = this._girar(theta);
+    if (this.copiaAgora(ev)) {
+      const copias = giradas.map(e => criar({ ...e, id: undefined }));
+      this.editor.executar(new ComandoAdicionar(copias, 'Girar cópia'));
+      this.editor.selecionar(copias.map(c => c.id));
+    } else {
+      this.editor.executar(new ComandoSubstituir(giradas, 'Girar'));
+    }
+    this.reiniciar();
+  }
   _girar(theta) {
     const c = this.base, co = Math.cos(theta), si = Math.sin(theta);
     const f = (p) => [c[0] + (p[0] - c[0]) * co - (p[1] - c[1]) * si, c[1] + (p[0] - c[0]) * si + (p[1] - c[1]) * co];
     return this.selecionadas().map(e => transformar(e, f, (a) => a + theta * 180 / Math.PI));
   }
-  passo(p) {
-    if (!this.base) { this.base = p; this.editor.snap.ultimo = p; this.dica('Ponto de referência do ângulo, ou digite o ângulo em graus'); return; }
-    if (!this.ref) { this.ref = p; this.dica('Novo ângulo'); return; }
-    this.editor.executar(new ComandoSubstituir(this._girar(ang(this.base, p) - ang(this.base, this.ref)), 'Girar'));
-    this.reiniciar();
+  passo(p, ev) {
+    if (!this.base) { this.base = p; this.editor.snap.ultimo = p; this.dica(this._comCopia('Ponto de referência do ângulo, ou digite o ângulo em graus')); return; }
+    if (!this.ref) { this.ref = p; this.dica(this._comCopia('Novo ângulo')); return; }
+    this._aplicar(ang(this.base, p) - ang(this.base, this.ref), ev);
   }
-  onMover(p) {
-    if (this.base && this.ref) { const th = ang(this.base, p) - ang(this.base, this.ref); this.editor.previa(this._girar(th)); this.editor.medida(`${fmt(th * 180 / Math.PI)}°`); }
+  onMover(p, ev) {
+    if (this.base && this.ref) { const th = ang(this.base, p) - ang(this.base, this.ref); this.editor.previa(this._girar(th)); this.editor.medida(`${fmt(th * 180 / Math.PI)}°${this.copiaAgora(ev) ? '  (cópia)' : ''}`); }
     else if (this.base) this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.base, b: p })]);
   }
   onValor(t) {
     if (!this.base) return;
     const g = parseFloat(t.replace(',', '.'));
     if (!isFinite(g)) return;
-    this.editor.executar(new ComandoSubstituir(this._girar(g * Math.PI / 180), 'Girar'));
-    this.reiniciar();
+    this._aplicar(g * Math.PI / 180, {});
   }
 }
 

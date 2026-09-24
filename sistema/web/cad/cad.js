@@ -303,6 +303,37 @@ class CAD {
     if (this.doc.tamanho && this.nomeDesenho) this.salvar({ avisar: false }).then(ir, ir); else ir();
   }
 
+  /** As linhas da mesma peça em volta desta (contorno, abas, linha oculta de uma barra
+   *  no detalhe): mesma origem no 3D e na mesma célula, encostadas. Cota, texto e linha
+   *  sem origem são só eles. */
+  pecaDe(id) {
+    const e = this.doc.get(id);
+    const a = (e && e.atributos) || {};
+    if (!e || !a.origem || e.tipo === 'cota' || e.tipo === 'texto' || e.tipo === 'chamada') return [id];
+    const caixaDe = (ent) => {
+      const pts = pontosDe(ent);
+      if (!pts.length) return null;
+      let a0 = Infinity, b0 = Infinity, a1 = -Infinity, b1 = -Infinity;
+      for (const [x, y] of pts) { if (x < a0) a0 = x; if (y < b0) b0 = y; if (x > a1) a1 = x; if (y > b1) b1 = y; }
+      return [[a0, b0], [a1, b1]];
+    };
+    const cx = caixaDe(e);
+    if (!cx) return [id];
+    const [[x0, y0], [x1, y1]] = cx;
+    const m = Math.max(20, 0.15 * Math.hypot(x1 - x0, y1 - y0));
+    const ids = [];
+    for (const o of this.doc.entidades.values()) {
+      const b = o.atributos || {};
+      if (b.origem !== a.origem || (b.conjunto || '') !== (a.conjunto || '') || (b.detalhe || '') !== (a.detalhe || '')) continue;
+      if (o.tipo === 'cota' || o.tipo === 'texto') continue;
+      if (!this.doc.visivel(o)) continue;
+      const c = caixaDe(o);
+      if (!c || c[0][0] > x1 + m || c[1][0] < x0 - m || c[0][1] > y1 + m || c[1][1] < y0 - m) continue;
+      ids.push(o.id);
+    }
+    return ids.length ? ids : [id];
+  }
+
   selecionarMesmaPeca() {
     const origens = new Set([...this.tela.selecao].map(id => (this.doc.get(id).atributos || {}).origem).filter(Boolean));
     if (!origens.size) { this.dica('Selecione um objeto que veio do modelo 3D.'); return; }
@@ -421,6 +452,17 @@ class CAD {
 
   // ----------------------------------------------------------- teclado
   _ligarTeclado() {
+    // Ctrl tocado sozinho (apertou e soltou sem outra tecla): no Mover e no Girar liga ou
+    // desliga a cópia, como no SketchUp. Ctrl+Z, Ctrl+S… não contam como toque.
+    let ctrlSozinho = false;
+    document.addEventListener('keydown', (ev) => { ctrlSozinho = ev.key === 'Control' && !ev.repeat ? true : (ev.key === 'Control' ? ctrlSozinho : false); }, true);
+    document.addEventListener('keyup', (ev) => {
+      if (ev.key !== 'Control') return;
+      const tocou = ctrlSozinho;
+      ctrlSozinho = false;
+      if (tocou && this.ferramenta && this.ferramenta.alternarCopia) this.ferramenta.alternarCopia();
+    });
+    this.el.canvas.addEventListener('pointerdown', () => { ctrlSozinho = false; }, true);
     document.addEventListener('keydown', (ev) => {
       const alvo = ev.target;
       const emCampo = alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'SELECT' || alvo.tagName === 'TEXTAREA');

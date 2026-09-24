@@ -1280,6 +1280,41 @@ def _mover(e, dx: float, dy: float):
         e.alvo, e.posicao = mv(e.alvo), mv(e.posicao)
 
 
+def _em_colunas(desenho: Desenho, celulas, altura_max_papel: float = 560.0):
+    """Células uma embaixo da outra, em colunas: quando a coluna passa de
+    `altura_max_papel` (mm de papel), a próxima célula começa outra coluna à direita. As
+    terças (uma por linha, da menor para a maior) davam um quadro de 40 m de altura por
+    8 m de largura; em colunas, lê-se de cima para baixo e da esquerda para a direita."""
+    esc = desenho.escala
+    altura_max = altura_max_papel * esc
+    folga = 12.0 * esc
+    x0 = 0.0
+    topo = 0.0                  # onde começa a próxima célula (o topo dela), descendo
+    direita = 0.0
+    na_coluna = 0
+    celulas_meta = desenho.metadados.setdefault("celulas", [])
+    for desenhar in celulas:
+        antes = set(desenho.entidades)
+        ext = desenhar(x0, 0.0)
+        novas = [k for k in desenho.entidades if k not in antes]
+        alt = ext[3] - ext[1]
+        ddx = 0.0
+        if na_coluna and topo - alt < -altura_max:
+            ddx = direita + folga - x0
+            x0 = direita + folga
+            topo = 0.0
+            na_coluna = 0
+        ddy = topo - ext[3]
+        for k in novas:
+            _mover(desenho.entidades[k], ddx, ddy)
+        ext = (ext[0] + ddx, ext[1] + ddy, ext[2] + ddx, ext[3] + ddy)
+        topo = ext[1] - folga
+        direita = max(direita, ext[2])
+        na_coluna += 1
+        celulas_meta.append([round(v, 1) for v in ext])
+    return desenho
+
+
 def _empilhar(desenho: Desenho, celulas, largura_max_papel: float = 800.0):
     """Coloca células (função que desenha em (dx, dy) e devolve extremos) em prateleiras.
 

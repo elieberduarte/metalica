@@ -499,6 +499,36 @@ export class Tela {
     return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
   }
 
+  /** O traço da entidade toca o retângulo (m1 canto de cima à esquerda, m2 de baixo à
+   *  direita)? A caixa envolvente não serve: a moldura de um quadro (polilinha fechada)
+   *  envolve tudo e entrava em qualquer seleção por cruzamento feita dentro dela. */
+  _tocaJanela(e, m1, m2, dentro) {
+    let trechos = null;
+    if (e.tipo === 'linha') trechos = [[e.a, e.b]];
+    else if (e.tipo === 'polilinha') {
+      const v = e.vertices || [];
+      trechos = v.slice(1).map((q, i) => [v[i], q]);
+      if (e.fechada && v.length > 2) trechos.push([v[v.length - 1], v[0]]);
+    } else if (e.tipo === 'hachura') {
+      trechos = [];
+      for (const c of e.contornos || []) c.forEach((q, i) => trechos.push([q, c[(i + 1) % c.length]]));
+    } else return true;
+    const x0 = Math.min(m1[0], m2[0]), x1 = Math.max(m1[0], m2[0]), y0 = Math.min(m1[1], m2[1]), y1 = Math.max(m1[1], m2[1]);
+    const cruza = (a, b) => {
+      if (dentro(a) || dentro(b)) return true;
+      // Liang–Barsky: o segmento atravessa o retângulo?
+      let t0 = 0, t1 = 1;
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      for (const [pp, qq] of [[-dx, a[0] - x0], [dx, x1 - a[0]], [-dy, a[1] - y0], [dy, y1 - a[1]]]) {
+        if (pp === 0) { if (qq < 0) return false; continue; }
+        const r = qq / pp;
+        if (pp < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; }
+      }
+      return true;
+    };
+    return trechos.some(([a, b]) => cruza(a, b));
+  }
+
   /** Ids dentro de um retângulo de tela. Da esquerda para a direita: só as inteiramente
    *  dentro (janela); da direita para a esquerda: as que tocam (cruzamento). */
   naJanela(a, b) {
@@ -509,7 +539,7 @@ export class Tela {
     const ids = [];
     for (const e of this.doc.naRegiao([m1, m2])) {       // só as que tocam o retângulo
       if (!this.doc.visivel(e) || this.doc.bloqueada(e)) continue;
-      if (cruzamento) ids.push(e.id);
+      if (cruzamento) { if (this._tocaJanela(e, m1, m2, dentro)) ids.push(e.id); }
       // a cota entra pela linha de cota (que é o que se vê e se quer apagar), não pelos
       // pontos medidos, que ficam na peça, fora da janela
       else if (e.tipo === 'cota' ? pontosCota(e, this.doc.escala).slice(2).every(dentro) : pontosDe(e).every(dentro)) ids.push(e.id);

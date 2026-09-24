@@ -72,6 +72,7 @@ from nucleo2d.detalhe.base import (  # noqa: E402,F401
     _eixos_da_assinatura,
     _eixos_dos_fixadores,
     _empilhar,
+    _em_colunas,
     _fixadores,
     _furo_de_dict,
     _furo_dict,
@@ -328,8 +329,11 @@ def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float
         banda.camadas = {k: v for k, v in d.camadas.items()}
         # terças: uma embaixo da outra (já vêm do menor comprimento para o maior) — as do
         # mesmo tamanho com furação diferente ficam lado a lado para conferir
-        larg = 1.0 if chave in UMA_POR_LINHA else largura_max_papel
-        _empilhar(banda, [(lambda x, y_, f=f: f(banda, x, y_)) for f in grupos[chave]], largura_max_papel=larg)
+        fs = [(lambda x, y_, f=f: f(banda, x, y_)) for f in grupos[chave]]
+        if chave in UMA_POR_LINHA:
+            _em_colunas(banda, fs)
+        else:
+            _empilhar(banda, fs, largura_max_papel=largura_max_papel)
         titulo = titulos.get(chave) or (chave.upper() + "S")
         y = _anexar_quadro(d, banda, titulo, y, meta)
     return y
@@ -614,14 +618,82 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             except Exception as exc:                  # noqa: BLE001 — as meias saem como antes
                 avisos.append("tesouras montadas não levantadas: %s" % exc)
         itens_montadas = {}
+        pos_por_marca = {p.marca: p for p in posicoes}
+
+        def chapas_da_cumeeira(pecas_m):
+            """Posições das chapas de topo na cumeeira da tesoura montada: chapa da meia
+            (em pé, atravessada pelo vão) perto do meio do vão — a emenda aparafusada das
+            duas águas, que a fábrica quer detalhada junto da tesoura."""
+            c, u, _v, _w = _eixos_do_conjunto(pecas_m)
+            ss = [_dot(_sub(q, c), u) for e in pecas_m for q in e.vertices]
+            meio = (min(ss) + max(ss)) / 2.0
+            achadas = []
+            for e in pecas_m:
+                marca = fundidas.get(str(_marcas(e).get("posicao") or e.nome), str(_marcas(e).get("posicao") or e.nome))
+                pos = pos_por_marca.get(marca)
+                if pos is None or pos.classe != "chapa" or marca in achadas or not e.vertices:
+                    continue
+                se = [_dot(_sub(q, c), u) for q in e.vertices]
+                # em pé mesmo (só a espessura ao longo do vão): o suporte de terça, que
+                # acompanha a inclinação do banzo, fica de fora
+                esp = float(pos.espessura or pos.T or 10.0)
+                if max(se) - min(se) <= esp + 5.0 and abs((max(se) + min(se)) / 2.0 - meio) <= 350.0:
+                    achadas.append(marca)
+            return [pos_por_marca[m] for m in achadas]
+
+        def com_chapas_da_cumeeira(dd, x, y, desenhar, pecas_m):
+            antes_t = set(dd.entidades)
+            ext = desenhar(dd, x, y)
+            da_tesoura = [dd.entidades[k] for k in dd.entidades if k not in antes_t]
+            try:
+                chapas = chapas_da_cumeeira(pecas_m)
+            except Exception:                          # noqa: BLE001 — a tesoura sai sem o detalhe
+                chapas = []
+            if not chapas:
+                return ext
+            esc = dd.escala
+            topo = ext[1] - 10.0 * esc
+            x0, x1, y0, y1 = ext[0], ext[2], ext[1], ext[3]
+            larguras = []
+            feitas = []
+            cursor = 0.0
+            for pos in chapas:
+                antes = set(dd.entidades)
+                e2 = desenho_da_posicao(pos, dd, cursor, 0.0)
+                novas = [k for k in dd.entidades if k not in antes]
+                feitas.append((novas, e2))
+                larguras.append(e2[2] - e2[0])
+                cursor = e2[2] + 12.0 * esc
+            total = sum(larguras) + 12.0 * esc * (len(feitas) - 1)
+            inicio = (ext[0] + ext[2]) / 2.0 - total / 2.0          # debaixo da cumeeira, no meio do vão
+            # logo abaixo do que a tesoura tem nessa faixa (a cumeeira fica alta; as cotas e
+            # a legenda dos lados não empurram o detalhe para longe)
+            ys = []
+            for e_ in da_tesoura:
+                qs = _extremos_de(e_, esc)
+                if qs and min(q[0] for q in qs) <= inicio + total + 20.0 * esc and max(q[0] for q in qs) >= inicio - 20.0 * esc:
+                    ys.append(min(q[1] for q in qs))
+            if ys:
+                topo = min(ys) - 12.0 * esc
+            for novas, e2 in feitas:
+                ddx, ddy = inicio - e2[0], topo - e2[3]
+                for k in novas:
+                    _mover(dd.entidades[k], ddx, ddy)
+                for k in novas:
+                    dd.entidades[k].atributos = dict(dd.entidades[k].atributos or {}, detalhe_cumeeira=True)
+                inicio += (e2[2] - e2[0]) + 12.0 * esc
+                x0, x1 = min(x0, e2[0] + ddx), max(x1, e2[2] + ddx)
+                y0 = min(y0, e2[1] + ddy)
+            return (x0, y0, x1, y1)
         montadas.sort(key=lambda m: _ordem_natural(" + ".join(nomes_conj.get(r, r) for r in m["rotulos"])))
         for m in montadas:
             rot_m = " + ".join(m["rotulos"])
             nome_m = " + ".join(nomes_conj.get(r, r) for r in m["rotulos"])
-            fns.append(("tesoura", lambda dd, x, y, rot_m=rot_m, m=m, nome_m=nome_m:
-                        desenho_do_conjunto(doc, rot_m, m["pecas"], m["n"], dd, x, y, rotular, fundidas=fundidas,
-                                            nomes=nomes_pos, nome=nome_m, tipo="tesoura",
-                                            conformadas=conformadas, pesos=pesos)))
+            fns.append(("tesoura", lambda dd, x, y, rot_m=rot_m, m=m, nome_m=nome_m: com_chapas_da_cumeeira(
+                dd, x, y, lambda dd_, x_, y_, rot_m=rot_m, m=m, nome_m=nome_m:
+                desenho_do_conjunto(doc, rot_m, m["pecas"], m["n"], dd_, x_, y_, rotular, fundidas=fundidas,
+                                    nomes=nomes_pos, nome=nome_m, tipo="tesoura",
+                                    conformadas=conformadas, pesos=pesos), m["pecas"])))
             itens_montadas[rot_m] = {"quantidade": m["n"], "perfil": "tesoura montada (%s)" % nome_m, "material": "",
                                      "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                                      "categoria": "TESOURAS", "nome": nome_m,
@@ -677,6 +749,22 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     md.setdefault("cumeeiras", [])
     for i, cm in enumerate(md["cumeeiras"], 1):
         cm["nome"] = "CM.%d" % i
+    # peças montadas (levantadas uma vez): a chapa soldada no chumbador vai para o quadro
+    # dos chumbadores, junto das barras dele (a fábrica prepara o chumbador inteiro)
+    montagens_cache = None
+    chapas_de_chumbador = set()
+    if any(GRUPOS_BASE.get(c, {}).get("classes") for c in grupos):
+        from nucleo2d.detalhe.montagens import grupos_montados
+        nome_pc0 = lambda m: nomes_pos.get(fundidas.get(m, m)) or nomes_conj.get(m) or fundidas.get(m, m)    # noqa: E731
+        try:
+            montagens_cache = grupos_montados(pecas, _fixadores(doc), nome_pc0)
+        except Exception as exc:                  # noqa: BLE001 — o resto do detalhamento sai
+            montagens_cache = []
+            avisos.append("peças montadas não levantadas: %s" % exc)
+        for gm in montagens_cache:
+            tipos_m = {fundidas.get(m, m): nomeacao["tipos"].get(fundidas.get(m, m)) for m in gm["marcas"]}
+            if "chumbador" in tipos_m.values():
+                chapas_de_chumbador |= {m for m, t in tipos_m.items() if t != "chumbador"}
     for chave in grupos:
         g = GRUPOS_BASE.get(chave)
         if not g or chave in ("conjuntos", "localizacao", "completo"):
@@ -718,27 +806,25 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         from nucleo2d.detalhe.telhas import desenho_da_cumeeira
         celulas_g += [("cumeeira", (lambda dd, x, y, t=t: desenho_da_cumeeira(t, dd, x, y, t["nome"]))) for t in extra_cm]
         n_frente = len(celulas_g)
-        celulas_g += [(nomeacao["tipos"].get(p.marca) or p.tipo_nome or p.classe,
+        celulas_g += [("chumbador" if (p.classe == "chapa" and p.marca in chapas_de_chumbador)
+                       else (nomeacao["tipos"].get(p.marca) or p.tipo_nome or p.classe),
                        (lambda dd, x, y, p=p: desenho_da_posicao(p, dd, x, y, editavel=p.marca in editaveis))) for p in lista]
         # peças montadas (suporte de terça soldado, chapa de base com os chumbadores): junto
         # das chapas, com frente e lateral
         celulas_mont, familias_mont = [], []
         if chave == "chapas":
-            from nucleo2d.detalhe.montagens import grupos_montados, desenho_de_montagem
-            nome_pc = lambda m: nomes_pos.get(fundidas.get(m, m)) or nomes_conj.get(m) or fundidas.get(m, m)    # noqa: E731
-            try:
-                montagens = grupos_montados(pecas, _fixadores(doc), nome_pc)
-            except Exception as exc:              # noqa: BLE001 — o resto do detalhamento sai
-                montagens = []
-                avisos.append("peças montadas não levantadas: %s" % exc)
+            from nucleo2d.detalhe.montagens import desenho_de_montagem
+            montagens = montagens_cache or []
             por_id = {e.id: e for e in pecas}
             for gm in montagens:
                 tipos_g = {nomeacao["tipos"].get(fundidas.get(m, m)) for m in gm["marcas"]}
                 titulo = "SUPORTE DE TERÇA" if "suporte_terca" in tipos_g else ""
-                celulas_mont.append(("montagem", (lambda dd, x, y, gm=gm, titulo=titulo:
+                celulas_mont.append(("chumbador" if "chumbador" in tipos_g else "montagem", (lambda dd, x, y, gm=gm, titulo=titulo:
                                                   desenho_de_montagem(doc, gm, dd, x, y, titulo, por_id))))
                 if "suporte_terca" in tipos_g:
                     familias_mont.append("terca")
+                elif "chumbador" in tipos_g:
+                    familias_mont.append("tesoura")           # com os chumbadores, junto das tesouras
                 else:
                     conjs = [tipo_de_conj.get(str(_marcas(por_id[i]).get("conjunto") or "")) for i in gm["pecas"] if i in por_id]
                     familias_mont.append(next((t for t in conjs if t in dict(FAMILIAS)), "outros"))
@@ -761,11 +847,12 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         familias_completo.extend(("telha", t, f) for t, f in celulas_g[:n_frente])
         # o tirante que já está no detalhe do contraventamento (barra, comprimento e dobra
         # cotados lá) não ganha célula própria: era o mesmo desenho repetido
-        familias_completo.extend((_familia_da_posicao(p, nomeacao["tipos"].get(p.marca) or p.tipo_nome, tipo_de_conj), t, f)
+        familias_completo.extend((_familia_da_posicao(p, t if t == "chumbador" else (nomeacao["tipos"].get(p.marca) or p.tipo_nome),
+                                                      tipo_de_conj), t, f)
                                  for p, (t, f) in zip(lista, celulas_g[n_frente:n_frente + len(lista)])
                                  if not (p.marca in tirantes_em_grupo
                                          and (nomeacao["tipos"].get(p.marca) or p.tipo_nome) == "contraventamento"))
-        familias_completo.extend((fam, "montagem", f) for fam, (_, f) in zip(familias_mont, celulas_mont))
+        familias_completo.extend((fam, t, f) for fam, (t, f) in zip(familias_mont, celulas_mont))
         base[chave] = d
 
     localizacao = None
