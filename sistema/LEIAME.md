@@ -218,6 +218,13 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.4.** Célula de peça com a linha dos furos ("furo Ø17", "furos: 2x Ø21") — a legenda enxuta da 0.7.20 tinha tirado,
+e a fábrica precisa do diâmetro. Barra que atravessa furo de chapa (`base.barras_passantes`: barra roscada, ferro redondo,
+tirante, pelo eixo inteiro furando o plano médio da chapa) entra pelo nome: "fixação: barra roscada Ø5/8", 2x porca 5/8""
+em vez de "2 fixador(es) sem tamanho no IFC". Parafuso no 3D: a peça atravessada abaixo da face (`_atravessadas`, caixa
+com 80 mm de folga lateral) mostra o eixo dela no plano da face (`_eixoDaPeca`, seção local a ±400 mm), com a distância; o
+ponto prende nele e, com o eixo da face preso, no cruzamento.
+
 **0.8.3.** Ponta do banzo no chanfro: na 0.8.1 toda ponta de linha deslizava na própria direção até o nó; a tampa da ponta
 (linha curta, atravessada) deslizava ao longo dela mesma e ficava no lugar antigo — a ponta do banzo desmanchava. Agora só
 desliza quem anda na própria direção (≤ 15°); o resto vai ao nó como antes.

@@ -569,6 +569,55 @@ def _nome_do_parafuso(f: Solido, ext) -> Tuple[str, bool]:
     return "M%d" % round(d), True
 
 
+_RE_PASSANTE = re.compile(r"ROSCAD|FE\s*RED|FERRO\s*RED|BARRA\s*REDOND|TIRANTE", re.I)
+
+
+def _nome_passante(nome: str) -> str:
+    """"BARRA ROSCADA Ø 5/8''" → 'barra roscada Ø5/8"'; "FE RED 3/8''" → 'ferro redondo Ø3/8"'."""
+    t = re.sub(r"\s+", " ", str(nome or "").replace("''", '"')).strip()      # o IFC traz quebra de linha no fim
+    m = re.search(r"(\d+(?:[.,]\d+)?(?:\s*/\s*\d+)?\s*(?:\"|mm)?)\s*$", t.strip())
+    bitola = m.group(1).replace(" ", "") if m else ""
+    tipo = "barra roscada" if re.search(r"ROSCAD", t, re.I) else "ferro redondo"
+    return "%s Ø%s" % (tipo, bitola) if bitola else tipo
+
+
+def barras_passantes(pos: Posicao, ent: Solido, barras: Sequence[Solido], eixos_bar: Optional[dict] = None) -> None:
+    """Barra roscada ou ferro redondo cujo eixo atravessa um furo de frente desta peça
+    (a castanha do contraventamento): `pos.passantes` = {'barra roscada Ø5/8"': 1}. O eixo
+    vale inteiro — o tirante comprido passa longe do centro da chapa e ainda atravessa."""
+    pos.passantes = {}
+    frente = [f for f in pos.furos if f.vista == "frente"]
+    if not frente or not pos.eixos or not barras:
+        return
+    if eixos_bar is None:
+        eixos_bar = _eixos_dos_fixadores(barras)
+    e1, e2, e3 = pos.eixos
+    c, _ = _autovetores(pos.vertices)
+    P = [(_dot(_sub(v, c), e1), _dot(_sub(v, c), e2), _dot(_sub(v, c), e3)) for v in pos.vertices]
+    u0, v0 = min(q[0] for q in P), min(q[1] for q in P)
+    w0 = (min(q[2] for q in P) + max(q[2] for q in P)) / 2
+    cont: Dict[str, int] = collections.Counter()
+    for b in barras:
+        if b is ent or b.id == ent.id:
+            continue
+        info = eixos_bar.get(b.id)
+        if info is None or info[4]:                   # achatado: não é barra
+            continue
+        cc, eixo, meio = info[0], info[1], info[2]
+        cos = _dot(eixo, e3)
+        if abs(cos) < 0.7:
+            continue
+        # onde o eixo da barra fura o plano médio da chapa
+        t = (w0 - _dot(_sub(cc, c), e3)) / cos
+        if abs(t) > meio + 5.0:
+            continue
+        pt = tuple(cc[i] + eixo[i] * t for i in range(3))
+        u, v = _dot(_sub(pt, c), e1) - u0, _dot(_sub(pt, c), e2) - v0
+        if any(math.hypot(u - g.x, v - g.y) <= max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0 for g in frente):
+            cont[_nome_passante(b.nome)] += 1
+    pos.passantes = dict(cont)
+
+
 def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido], eixos_fix: Optional[dict] = None) -> None:
     """Conta os fixadores cujo eixo atravessa um furo desta peça (uma instância):
     `pos.parafusos` = {"M12 x 35": 4} e `pos.porcas` = fixadores sem tamanho no nome
@@ -982,6 +1031,9 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
         primeiro.setdefault(str(m.get("posicao") or ent.nome or ent.id), ent)
     centros = _centros_dos_fixadores(fixadores) if fixadores else {}
     eixos_fix = _eixos_dos_fixadores(fixadores) if fixadores else {}
+    # barras que atravessam furos de chapa (barra roscada na castanha, tirante): uma de cada posição basta
+    barras_r = [e for e in pecas if isinstance(e, Solido) and _RE_PASSANTE.search(e.nome or "")]
+    eixos_bar = _eixos_dos_fixadores(barras_r) if barras_r else {}
     for marca, pos in por_marca.items():
         try:
             ch = getattr(primeiro.get(marca), "parametrica", None)
@@ -994,6 +1046,8 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
                     inferir_furos_de_barra(pos, primeiro[marca], fixadores, centros)
             if fixadores:
                 parafusos_da_posicao(pos, primeiro[marca], fixadores, eixos_fix)
+            if barras_r and pos.classe in ("chapa", "chapa_dobrada"):
+                barras_passantes(pos, primeiro[marca], barras_r, eixos_bar)
         except Exception as e:                      # noqa: BLE001 — uma peça não derruba o lote
             pos.classe = "indefinida"
             pos.observacoes.append("falha na análise: %s" % e)

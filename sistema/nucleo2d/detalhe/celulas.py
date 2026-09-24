@@ -71,8 +71,12 @@ def _cabecalho(pos: Posicao) -> List[str]:
         linhas = [titulo, pos.perfil]
     else:
         linhas = [titulo + "   L = %s mm" % _mm(pos.comprimento), com_bitola(pos.perfil)]
-    if pos.parafusos or pos.porcas:
-        linhas.append("parafusos: " + pos.rotulo_parafusos())
+    furos = pos.rotulo_furos() if pos.classe not in ("telha", "indefinida") else ""
+    if furos:
+        # um furo só: "furo Ø17"; vários: "furos: 4x Ø14, 2x OBL 14x26"
+        linhas.append(("furo " + furos[3:]) if (furos.startswith("1x ") and ", " not in furos) else ("furos: " + furos))
+    if pos.parafusos or pos.porcas or getattr(pos, "passantes", None):
+        linhas.append(("parafusos: " if pos.parafusos else "fixação: ") + pos.rotulo_parafusos())
     if pos.peso:
         linhas.append("%s kg/pç  total %s kg" % (_mm(pos.peso, 2), _mm(pos.peso_total, 1)))
     return linhas

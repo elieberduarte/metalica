@@ -89,6 +89,7 @@ export class FerramentaParafuso extends Ferramenta {
   static eixos = true;
 
   ativar() {
+    this._caixas = new Map();
     this.tamanho = { d: 12, L: 35, classe: 'A325', ...(this.constructor.tamanho || {}) };
     // parafuso selecionado ao abrir a ferramenta: lança igual a ele
     const sel = (this.selecao && this.selecao.entidades) || [];
@@ -248,6 +249,97 @@ export class FerramentaParafuso extends Ferramenta {
     return { e1, e2, min1: Math.min(...s1), max1: Math.max(...s1), min2: Math.min(...s2), max2: Math.max(...s2) };
   }
 
+  /** Caixa envolvente da peça (guardada: o mouse passa muitas vezes pelas mesmas). */
+  _caixaDe(ent) {
+    this._caixas = this._caixas || new Map();
+    let c = this._caixas.get(ent.id);
+    if (c) return c;
+    const pts = C.pontosDaEntidade(ent);
+    if (!pts.length) return null;
+    const lo = [0, 1, 2].map(i => Math.min(...pts.map(q => q[i])));
+    const hi = [0, 1, 2].map(i => Math.max(...pts.map(q => q[i])));
+    // a barra paramétrica só tem as duas pontas: a seção entra como folga
+    const folga = ent.tipo === 'barra' ? 150 : (ent.tipo === 'chapa' ? (ent.espessura || 10) : 1);
+    c = [lo.map(v => v - folga), hi.map(v => v + folga)];
+    this._caixas.set(ent.id, c);
+    return c;
+  }
+
+  /**
+   * As peças que o parafuso atravessa abaixo da face (o banzo ou a chapa embaixo da
+   * terça), da mais perto para a mais longe: o segmento do corpo do parafuso cruza a caixa
+   * delas. Parafusos, porcas e telhas ficam de fora.
+   */
+  _atravessadas(ponto, n, idAlvo) {
+    const ents = this.documento && this.documento.entidades;
+    if (!ents) return [];
+    const L = this.tamanho.L + 30;
+    const fim = C.add(ponto, C.mul(n, -L));
+    const lo = [0, 1, 2].map(i => Math.min(ponto[i], fim[i]));
+    const hi = [0, 1, 2].map(i => Math.max(ponto[i], fim[i]));
+    const achadas = [];
+    for (const e of ents.values()) {
+      if (e.id === idAlvo || e.visivel === false) continue;
+      if (/^BOLT|PORCA|ARRUELA|TELHA/i.test(e.nome || '') || e.camada === 'Parafusos' || e.camada === 'Telhas') continue;
+      const c0 = this._caixaDe(e);
+      if (!c0) continue;
+      // folga de 80 mm para os lados: o banzo aparece mesmo com o parafuso fora dele (é
+      // quando mais importa ver onde está o eixo)
+      const c = [c0[0].map(v => v - 80), c0[1].map(v => v + 80)];
+      if ([0, 1, 2].some(i => c[1][i] < lo[i] || c[0][i] > hi[i])) continue;
+      // o segmento cruza a caixa (slab)?
+      let t0 = 0, t1 = L, d = C.mul(n, -1);
+      let fora = false;
+      for (let i = 0; i < 3 && !fora; i++) {
+        if (Math.abs(d[i]) < 1e-9) { if (ponto[i] < c[0][i] || ponto[i] > c[1][i]) fora = true; continue; }
+        let ta = (c[0][i] - ponto[i]) / d[i], tb = (c[1][i] - ponto[i]) / d[i];
+        if (ta > tb) [ta, tb] = [tb, ta];
+        t0 = Math.max(t0, ta); t1 = Math.min(t1, tb);
+        if (t0 > t1) fora = true;
+      }
+      if (!fora) achadas.push({ e, t: t0 });
+    }
+    return achadas.sort((a, b) => a.t - b.t).slice(0, 2).map(x => x.e);
+  }
+
+  /**
+   * Eixo da peça de baixo no plano da face: direção dela levada ao plano e o centro da
+   * largura dela ali perto do parafuso (só os vértices a menos de 400 mm, para a seção
+   * local de uma peça comprida ou inclinada). Devolve {d, q, larg, min, max} em que q é a
+   * coordenada do eixo ao longo da atravessada f = n × d.
+   */
+  _eixoDaPeca(ent, ponto, n) {
+    let pts = C.pontosDaEntidade(ent);
+    if (pts.length < 2) return null;
+    let d;
+    if (ent.tipo === 'barra') d = C.sub(ent.fim, ent.inicio);
+    else if (ent.tipo === 'chapa') d = ent.eixo_x;
+    else {
+      const vs = ent.vertices || [];
+      let dm = 0;
+      for (const f of ent.faces || []) for (let k = 0; k < f.length; k++) {
+        const q = vs[f[k]], r = vs[f[(k + 1) % f.length]];
+        if (!q || !r) continue;
+        const dd = C.dist(q, r);
+        if (dd > dm) { dm = dd; d = C.sub(r, q); }
+      }
+    }
+    if (!d) return null;
+    d = C.sub(d, C.mul(n, C.dot(d, n)));
+    if (C.comp(d) < 1e-6) return null;
+    d = C.normalizar(d);
+    const f = C.normalizar(C.cross(n, d));
+    const perto = pts.filter(q => Math.abs(C.dot(C.sub(q, ponto), d)) <= 400);
+    const usar = perto.length >= 3 ? perto : pts;
+    if (ent.tipo === 'barra') {
+      const q = C.dot(ent.inicio, f);
+      return { d, f, q, min: q - 50, max: q + 50 };
+    }
+    const vs = usar.map(q => C.dot(q, f));
+    const min = Math.min(...vs), max = Math.max(...vs);
+    return { d, f, q: (min + max) / 2, min, max };
+  }
+
   /** Ponto ajustado aos eixos da face, com o desenho dos eixos e o rótulo das distâncias. */
   ajustar(p, n) {
     if (!this.constructor.eixos) return { ponto: p.ponto, extra: [] };
@@ -262,7 +354,28 @@ export class FerramentaParafuso extends Ferramenta {
     let presoC2 = false, presoC1 = false;
     if (Math.abs(b - c2) <= tol2) { b = c2; presoC2 = true; }
     if (Math.abs(a - c1) <= tol1) { a = c1; presoC1 = true; }
-    const ponto = C.add(p.ponto, C.add(C.mul(e1, a - C.dot(p.ponto, e1)), C.mul(e2, b - C.dot(p.ponto, e2))));
+    let ponto = C.add(p.ponto, C.add(C.mul(e1, a - C.dot(p.ponto, e1)), C.mul(e2, b - C.dot(p.ponto, e2))));
+    // a peça de baixo (o banzo sob a terça): o eixo dela também prende o parafuso; com os
+    // dois eixos presos, o parafuso vai para o cruzamento deles
+    const baixo = [];
+    for (const e of this._atravessadas(ponto, n, p.entidade)) {
+      const ax = this._eixoDaPeca(e, ponto, n);
+      if (!ax) continue;
+      const larg_b = ax.max - ax.min;
+      const tol = Math.min(25, Math.max(3, 0.12 * larg_b));
+      const dist_ = C.dot(ponto, ax.f) - ax.q;
+      let preso = false;
+      if (Math.abs(dist_) <= tol) {
+        // anda na direção atravessada ao eixo de baixo; se o eixo da face estava preso e as
+        // duas linhas não são paralelas, fica no cruzamento (anda ao longo do eixo da face)
+        if (presoC2 && Math.abs(C.dot(ax.f, e1)) > 0.2) ponto = C.add(ponto, C.mul(e1, -dist_ / C.dot(ax.f, e1)));
+        else ponto = C.add(ponto, C.mul(ax.f, -dist_));
+        preso = true;
+      }
+      baixo.push({ e, ax, preso });
+      if (baixo.length >= 1) break;              // o primeiro de baixo basta (o banzo)
+    }
+    a = C.dot(ponto, e1); b = C.dot(ponto, e2);
     const em = (s1, s2) => C.add(ponto, C.add(C.mul(e1, s1 - a), C.mul(e2, s2 - b)));
     const folga = Math.max(20, 0.1 * larg);
     const extra = [
@@ -272,9 +385,21 @@ export class FerramentaParafuso extends Ferramenta {
       // a atravessada que passa pelo parafuso
       C.gLinha([em(a, f.min2), em(a, f.max2)], '#8a94a6'),
     ];
-    const txt = `bordas ${mm(b - f.min2)} | ${mm(f.max2 - b)} · pontas ${mm(a - f.min1)} | ${mm(f.max1 - a)} mm`
+    const txt = `face: bordas ${mm(b - f.min2)} | ${mm(f.max2 - b)} · pontas ${mm(a - f.min1)} | ${mm(f.max1 - a)} mm`
       + (presoC2 ? ' · no eixo' : '');
-    extra.push(C.gRotulo(txt, C.add(ponto, C.add(C.mul(n, 40), C.mul(e2, -0.5 * larg - 30))), '#0b3d91'));
+    extra.push(C.gRotulo(txt, C.add(ponto, C.add(C.mul(n, 60), C.mul(e2, -0.5 * larg - 40))), '#0b3d91'));
+    for (const { e, ax, preso } of baixo) {
+      // o eixo da peça de baixo, levado ao plano da face, perto do parafuso
+      const s = C.dot(ponto, ax.f) - ax.q;
+      const base = C.add(ponto, C.mul(ax.f, -s));
+      const meia = Math.max(150, 2 * (ax.max - ax.min));
+      extra.push(C.gLinha([C.add(base, C.mul(ax.d, -meia)), C.add(base, C.mul(ax.d, meia))],
+                          preso ? '#0a8f3c' : '#b8860b', { tracejada: true }));
+      const q = C.dot(ponto, ax.f);
+      const nomeB = (e.atributos && e.atributos.marcas && (e.atributos.marcas.nome || e.atributos.marcas.posicao)) || e.nome || 'peça de baixo';
+      const t2 = `${nomeB}: ${preso ? 'no eixo' : mm(Math.abs(s)) + ' mm do eixo'} · bordas ${mm(q - ax.min)} | ${mm(ax.max - q)} mm`;
+      extra.push(C.gRotulo(t2, C.add(ponto, C.add(C.mul(n, 60), C.mul(ax.f, 0.5 * (ax.max - ax.min) + 60))), '#7a5a00'));
+    }
     return { ponto, extra };
   }
 

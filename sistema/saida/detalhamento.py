@@ -264,22 +264,29 @@ class Posicao:
     tipo_nome: str = ""       # tipo de produção (tesoura, terca_cobertura, contraventamento…)
     parafusos: Dict[str, int] = field(default_factory=dict)   # {"M12x35": 4}: os que atravessam a peça
     porcas: int = 0           # porcas/arruelas junto dos furos (fixadores sem tamanho no nome)
+    passantes: Dict[str, int] = field(default_factory=dict)   # {'barra roscada Ø5/8"': 1}: barra que atravessa o furo
 
     @property
     def peso_total(self) -> float:
         return self.peso * self.quantidade
 
     def rotulo_parafusos(self) -> str:
-        """"4x M12x35, 2x M16x40" (mais "+ n porcas" quando há fixador sem tamanho)."""
+        """"4x M12x35, 2x M16x40"; a barra que atravessa o furo pelo nome (barra roscada
+        Ø5/8") e as porcas dela ("2x porca 5/8""); porca sem barra achada: "porca/chumbador"."""
         partes = ["%dx %s" % (n, r) for r, n in sorted(self.parafusos.items(), key=lambda kv: _ordem_natural(kv[0]))]
+        partes += ["%dx %s" % (n, r) if n > 1 else r for r, n in sorted(self.passantes.items())]
         if self.porcas:
-            partes.append("%d fixador(es) sem tamanho no IFC (porca ou chumbador)" % self.porcas)
+            bitola = ""
+            if len(self.passantes) == 1:
+                m = re.search(r"Ø\s*(.+)$", next(iter(self.passantes)))
+                bitola = (" " + m.group(1).strip()) if m else ""
+            partes.append("%dx porca%s" % (self.porcas, bitola) if self.passantes else "%dx porca/chumbador" % self.porcas)
         return ", ".join(partes)
 
     def rotulo_furos(self) -> str:
-        cont = collections.Counter(f.rotulo() for f in self.furos)
-        return ", ".join("%dx %s" % (n, r) for r, n in sorted(cont.items(),
-                                                             key=lambda kv: kv[0]))
+        """"1x Ø17", "4x Ø14, 2x OBL 14x26" — o recorte fica de fora (tem cota própria)."""
+        cont = collections.Counter(f.rotulo() for f in self.furos if f.tipo in ("redondo", "oblongo"))
+        return ", ".join("%dx %s" % (n, r) for r, n in sorted(cont.items(), key=lambda kv: kv[0]))
 
 
 # ======================================================================== leitura

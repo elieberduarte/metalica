@@ -62,6 +62,24 @@ try:
     })())"""))
     ok(r[0] == [90300, 50, 50] and r[1] >= 4, f"prende na linha de centro da face e desenha os eixos: {r}")
     ok(r[2] == [90300, 85, 50], f"longe do eixo fica onde clicou: {r[2]}")
+    # peça de baixo: terça (aba de 60) em cima de um banzo atravessado de 50 mm de largura;
+    # perto dos dois eixos, o parafuso vai para o cruzamento deles
+    r = json.loads(aba.avaliar("""JSON.stringify((() => {
+      const ed = window.editor, doc = ed.documento;
+      const caixa = (x0, y0, z0, x1, y1, z1, nome) => { const v = [];
+        for (const z of [z0, z1]) for (const [x, y] of [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]) v.push([x, y, z]);
+        return doc.add({ tipo: 'solido', nome, camada: 'Vigas', vertices: v,
+          faces: [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]], arestas_vivas: [],
+          atributos: { marcas: { nome } } }); };
+      const terca = caixa(80000, 0, 100, 81000, 60, 105, 'TERCA');
+      caixa(80275, -500, 0, 80325, 500, 100, 'BANZO');
+      ed.ativa._caixas = new Map();
+      const aj = ed.ativa.ajustar({ entidade: terca.id, ponto: [80304, 32, 105], normal: [0, 0, 1] }, [0, 0, 1]);
+      const longe = ed.ativa.ajustar({ entidade: terca.id, ponto: [80340, 32, 105], normal: [0, 0, 1] }, [0, 0, 1]);
+      return [aj.ponto.map(Math.round), aj.extra.length, longe.ponto.map(Math.round), longe.extra.length];
+    })())"""))
+    ok(r[0] == [80300, 30, 105] and r[1] >= 6, f"eixo da terça e do banzo de baixo: vai ao cruzamento {r[:2]}")
+    ok(r[2][0] == 80340 and r[3] >= 6, f"longe do eixo do banzo: mostra a distância e não prende {r[2:]}")
     aba.avaliar("window.editor.ativa._definir({ d: 16, L: 40, classe: '' }); 1")
     # ponto no meio da P80, normal pela menor extensão (a alma)
     r = aba.avaliar("""JSON.stringify((() => {
