@@ -573,12 +573,13 @@ def gerar_3d_do_desenho(s: str, nome: str, corpo: dict) -> dict:
 
 
 def detalhar_projeto(s: str, corpo: dict) -> dict:
-    """Detalhamento de peças e conjuntos do modelo do projeto: um desenho 2D por grupo
-    (chapas, barras e terças, tirantes, telhas, conjuntos) gravado em desenhos-2d/, mais o
-    romaneio (CSV) e o relatório em detalhamento/.
+    """Detalhamento de peças e conjuntos do modelo do projeto: um desenho 2D por família
+    (tesouras, conjuntos, terças, contraventamentos, agulhamentos, extras), mais telhas,
+    chaparias, localização e completo, gravados em desenhos-2d/, com o romaneio (CSV) e o
+    relatório em detalhamento/.
 
     corpo: {grupos: [...], regra_tercas: bool, rotular: bool, substituir: bool}"""
-    from nucleo2d.detalhar import detalhar, GRUPOS, _categoria
+    from nucleo2d.detalhar import detalhar, GRUPOS, _categoria  # noqa: F401
     from saida import lista_producao
     g = _gerente()
     try:
@@ -604,6 +605,13 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         g.salvar_modelo(s, doc.dict(), marco=True)            # chapas planas viraram paramétricas / nomes nas peças
     _progresso(s, "gravando os desenhos…")
     substituir = corpo.get("substituir", True) is not False
+    if substituir:
+        # os desenhos por classe de antes da 0.7.22 (chapas, barras e terças, tirantes) não
+        # são mais gerados: saem, para não ficarem ao lado dos novos com conteúdo velho
+        from nucleo2d.detalhar import TITULOS_ANTIGOS
+        for nome in TITULOS_ANTIGOS:
+            if os.path.exists(g._caminho_desenho(s, nome)):
+                g.excluir_desenho(s, nome)
     desenhos = []
     for chave, desenho in r["desenhos"].items():
         nome = desenho.nome

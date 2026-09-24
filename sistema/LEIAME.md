@@ -210,6 +210,14 @@ furos em pé, lateral = nervura), também o que está deitado no modelo, com as 
 furos simples dos dois lados de um furo duplo numa cadeia só, na mesma linha. Paginação: a cumeeira
 hachurada sobre as telhas, com a linha e o rótulo.
 
+**0.7.22.** Desenhos de detalhamento por família de produção (`GRUPOS`): tesouras, conjuntos (vigas, pilares
+e outros), terças, contraventamentos, agulhamentos e extras em 1:25 — cada um com os conjuntos da família e
+as peças que eles levam (`_familia_da_posicao`; as células são as mesmas do completo, agora com o tipo para
+os quadros internos) —, telhas (1:50), chaparias (todas as chapas e as peças montadas, 1:10, para o corte),
+localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, barras, tirantes, conjuntos em
+1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
+desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
+
 **0.7.18.** Furos das terças "viradas": a detecção (`saida.detalhamento._lacos_2d`) aceitava só os laços
 no nível médio da alma (±0,6 mm), mas os eixos da barra vêm da nuvem de vértices e saem inclinados uma
 fração de grau — numa terça de 5 m a alma "sobe" ~7 mm de ponta a ponta, e só o furo do meio passava.

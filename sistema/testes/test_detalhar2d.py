@@ -56,13 +56,16 @@ def _modelo():
 
 def test_posicoes_contadas_e_desenhos():
     doc = _modelo()
-    r = det.detalhar(doc, regra_tercas=False)
+    # os desenhos novos (por família) e os por classe pedidos pelo nome antigo
+    r = det.detalhar(doc, regra_tercas=False, grupos=list(det.GRUPOS) + ["chapas", "barras"])
     por = {p["marca"]: p for p in r["posicoes"]}
     assert por["P1"]["quantidade"] == 3 and por["P1"]["classe"] == "Chapa"
     assert por["M5"]["quantidade"] == 2 and por["M5"]["classe"] == "Barra"
     # P2, P3 e P4 são a mesma barra (U88 de 1200, sem furos): uma posição só, 12 peças
     assert "P2" not in por and por["P2 / P3 / P4"]["quantidade"] == 12 and por["P2 / P3 / P4"]["marcas"] == ["P2", "P3", "P4"]
-    assert set(r["desenhos"]) >= {"chapas", "barras", "conjuntos"}
+    assert set(r["desenhos"]) >= {"chapas", "barras", "conjuntos", "chaparias"}
+    assert r["desenhos"]["chaparias"].nome == "Detalhamento – chaparias" and r["desenhos"]["chaparias"].escala == 10.0
+    assert r["desenhos"]["conjuntos"].escala == 25.0
     chapas = r["desenhos"]["chapas"]
     titulos = [e.texto for e in chapas.entidades.values() if isinstance(e, Texto)]
     nomes = r["nomes"]["posicoes"]
@@ -614,7 +617,7 @@ def test_nomes_de_producao_no_modelo_real():
     anterior mantém tudo; a marca do IFC continua no título da célula."""
     from nucleo2d.desenho import Texto
     doc = _modelo_real()
-    r = det.detalhar(doc, grupos=["barras", "conjuntos", "localizacao"], converter=False)
+    r = det.detalhar(doc, grupos=["barras", "tesouras", "localizacao"], converter=False)
     nm = r["nomes"]
     chave_m2 = next(k for k in nm["conjuntos"] if "M2" in k.split(" / "))
     assert nm["conjuntos"][chave_m2] == "T1"                  # as 8 tesouras correntes lideram
@@ -645,10 +648,10 @@ def test_nomes_de_producao_no_modelo_real():
     textos = [e.texto for e in r["desenhos"]["barras"].entidades.values() if isinstance(e, Texto)]
     assert any(tx.startswith("T.C.1 – ") and "L = " in tx for tx in textos)
     assert not any("(M13)" in tx or tx == "TERÇA DE COBERTURA" for tx in textos)   # legenda enxuta
-    textos_c = [e.texto for e in r["desenhos"]["conjuntos"].entidades.values() if isinstance(e, Texto)]
+    textos_c = [e.texto for e in r["desenhos"]["tesouras"].entidades.values() if isinstance(e, Texto)]
     assert any(tx.startswith("T1 – 08x") for tx in textos_c) and not any("(M2)" in tx for tx in textos_c)
     # camadas por tipo de peça
-    cams = {e.camada for e in r["desenhos"]["conjuntos"].entidades.values()}
+    cams = {e.camada for e in r["desenhos"]["tesouras"].entidades.values()}
     assert {"BANZOS", "DIAGONAIS", "CHAPAS"} <= cams
     cams_b = {e.camada for e in r["desenhos"]["barras"].entidades.values()}
     assert {"TERCAS", "TIRANTES", "DIAGONAIS"} <= cams_b
@@ -698,8 +701,9 @@ def test_desenho_completo():
     # as faixas não se sobrepõem: a de baixo começa abaixo da de cima
     cels = dc.metadados["celulas"]
     assert len(cels) >= 4
-    # o desenho do grupo continua existindo e igual
-    assert "chapas" in r["desenhos"] and r["desenhos"]["chapas"].escala == 10.0
+    # os desenhos por família saem junto; a chaparia (todas as chapas) em 1:10
+    assert "chaparias" in r["desenhos"] and r["desenhos"]["chaparias"].escala == 10.0
+    assert "chapas" not in r["desenhos"]                     # o nome antigo só quando pedido
     # só o completo, sem os grupos: sai o mesmo conteúdo
     r2 = det.detalhar(doc, grupos=["completo"], regra_tercas=False)
     assert set(r2["desenhos"]) == {"completo"} and "P1" in r2["desenhos"]["completo"].metadados["detalhamento"]["editaveis"]

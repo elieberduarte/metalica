@@ -17,8 +17,29 @@ from saida.desenhos import Estilo, _mm
 
 Ponto = Tuple[float, float, float]
 
-#: Grupos de desenho: chave, título, escala do desenho e classes de posição que entram.
+#: Desenhos de detalhamento gerados (0.7.22): um por família de produção — cada um com os
+#: conjuntos da família e as peças que eles levam (a tesoura com as barras e as chapas
+#: dela; as terças com os suportes) —, mais telhas, chaparias (todas as chapas, para o
+#: corte), a planta de localização e o completo. `familias`: as famílias de
+#: `nucleo2d.detalhar.FAMILIAS` que entram.
 GRUPOS = collections.OrderedDict([
+    ("tesouras", {"titulo": "Detalhamento – tesouras", "escala": 25.0, "familias": ("tesoura",)}),
+    ("conjuntos", {"titulo": "Detalhamento – conjuntos", "escala": 25.0, "familias": ("viga", "pilar", "conjunto")}),
+    ("tercas", {"titulo": "Detalhamento – terças", "escala": 25.0, "familias": ("terca",)}),
+    ("contraventamentos", {"titulo": "Detalhamento – contraventamentos", "escala": 25.0, "familias": ("contraventamento",)}),
+    ("agulhamentos", {"titulo": "Detalhamento – agulhamentos", "escala": 25.0, "familias": ("agulhamento",)}),
+    ("extras", {"titulo": "Detalhamento – extras", "escala": 25.0, "familias": ("outros",)}),
+    ("telhas", {"titulo": "Detalhamento – telhas", "escala": 50.0, "base": "telhas"}),
+    ("chaparias", {"titulo": "Detalhamento – chaparias", "escala": 10.0, "base": "chapas"}),
+    ("localizacao", {"titulo": "Detalhamento – localização", "escala": 100.0}),
+    ("completo", {"titulo": "Detalhamento – completo", "escala": 25.0}),
+])
+#: Títulos dos desenhos de antes da 0.7.22: ao detalhar de novo com "substituir", saem.
+TITULOS_ANTIGOS = ("Detalhamento – chapas", "Detalhamento – barras e terças", "Detalhamento – tirantes e barras redondas")
+
+#: Grupos por classe de peça (como era até a 0.7.21): continuam sendo montados por dentro
+#: (as células, o completo, telhas e chaparias saem deles) e podem ser pedidos pelo nome.
+GRUPOS_BASE = collections.OrderedDict([
     ("chapas", {"titulo": "Detalhamento – chapas", "escala": 10.0,
                 "classes": ("chapa", "chapa_dobrada")}),
     ("barras", {"titulo": "Detalhamento – barras e terças", "escala": 25.0,
