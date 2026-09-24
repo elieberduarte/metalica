@@ -37,6 +37,10 @@ def test_montar_resumos_e_totais():
     cats = {c["categoria"]: c for c in t["categorias"]}
     assert cats["TERÇAS"]["pecas"] == 2 and cats["CHAPAS"]["pecas"] == 3 and cats["BARRAS"]["pecas"] == 12
     assert abs(sum(c["pct"] for c in t["categorias"]) - 100) < 0.5
+    # o total é a soma da coluna do quadro de posições (telhas multi-dobra e cumeeira incluídas,
+    # pelo peso de compra) — antes o cabeçalho deixava as multi-dobra de fora
+    assert abs(t["peso"] - sum(li["peso_total"] for li in lista["posicoes"])) < 0.1
+    assert t["pecas"] == sum(li["quantidade"] for li in lista["posicoes"])
     # perfis: o U150 são 2 terças de 5 m → 10 m, 2 barras de 6 m; o U88 são 12 de 1,2 m → 3 barras
     perfis = {g["perfil"]: g for g in lista["perfis"]}
     u150, u88 = perfis["U150X50X2.25"], perfis["U88X40X2.25"]
@@ -85,6 +89,29 @@ def test_gravar_arquivos_e_html():
         assert "Quadro 1" in corpo and "Quadro 6" in corpo
 
 
+def test_conjunto_com_uma_peca_faltando_conta_pela_maioria():
+    # 8 tesouras com uma peça a menos numa delas (29 P13 em vez de 32): o mdc cai para 1 e
+    # o conjunto saía como uma instância só com o peso das 8; agora são 8, peso total real
+    from saida.detalhamento import Posicao
+
+    class _Peca:
+        def __init__(self, marca):
+            self.atributos = {"marcas": {"conjunto": "M2", "posicao": marca}}
+            self.nome = marca
+    outras = ["P%d" % i for i in range(14, 20)]                  # 6 posições com 8 peças (1 por tesoura)
+    pecas = [_Peca("P10") for _ in range(80)] + [_Peca("P11") for _ in range(64)] + [_Peca("P13") for _ in range(29)] \
+        + [_Peca("P1") for _ in range(8)] + [_Peca(m) for m in outras for _ in range(8)]
+    por_marca = {}
+    for m, peso in [("P10", 2.0), ("P11", 3.0), ("P13", 1.0), ("P1", 5.0)] + [(m, 0.5) for m in outras]:
+        p = Posicao(marca=m, tipo_ifc="IfcBeam")
+        p.classe, p.peso = "barra", peso
+        por_marca[m] = p
+    c = lp._conjuntos(pecas, por_marca)[0]
+    assert c["instancias"] == 8 and c["composicao"]["P13"] == 4
+    assert abs(c["peso_total"] - (80 * 2 + 64 * 3 + 29 * 1 + 8 * 5 + 6 * 8 * 0.5)) < 0.01
+    assert "P13 (29 em vez de 32)" in c["composicao_texto"]
+
+
 if __name__ == "__main__":
     falhas = 0
     for nome, fn in sorted(globals().items()):
@@ -97,3 +124,4 @@ if __name__ == "__main__":
                 print(f"  FALHA {nome}: {e}")
     print(f"\n{falhas} falha(s).")
     sys.exit(1 if falhas else 0)
+

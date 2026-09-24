@@ -146,6 +146,7 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao], nomes: Optional[Dict[str, s
         if not conj:
             continue
         por_conj.setdefault(conj, collections.Counter())[str(m.get("posicao") or e.nome)] += 1
+    from nucleo2d.detalhar import _unidade_pela_maioria
     saida = []
     for conj, total in por_conj.items():
         n = 0
@@ -153,17 +154,31 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao], nomes: Optional[Dict[str, s
             n = math.gcd(n, q)
         n = max(n, 1)
         unidade = {k: q // n for k, q in total.items()}
+        difere = []
+        if n == 1:
+            # uma peça a mais ou a menos numa das instâncias derruba o mdc para 1 e o
+            # conjunto inteiro saía como uma unidade só; a maioria das posições dá a unidade
+            # (a mesma regra do detalhamento)
+            robusta = _unidade_pela_maioria(collections.Counter(total))
+            if robusta:
+                n, unidade = robusta[0], dict(robusta[1])
+                difere = ["%s (%d em vez de %d)" % (k, total.get(k, 0), n * unidade.get(k, 0))
+                          for k in sorted(set(total) | set(unidade), key=_ordem_natural)
+                          if total.get(k, 0) != n * unidade.get(k, 0)]
         if sum(unidade.values()) < 2:
             continue
         if all(por_marca.get(k) is not None and por_marca[k].classe == "telha" for k in unidade):
             continue
-        peso = sum(q * (por_marca[k].peso if k in por_marca else 0.0) for k, q in unidade.items())
+        # o peso total é o das peças que existem (29 P13, não 8 × 4); o unitário, a média
+        peso_tot = sum(q * (por_marca[k].peso if k in por_marca else 0.0) for k, q in total.items())
         barras = sum(q for k, q in unidade.items() if k in por_marca and por_marca[k].classe.startswith("barra"))
         comp = sorted(unidade.items(), key=lambda kv: _ordem_natural(kv[0]))
         saida.append({"marca": conj, "nome": (nomes or {}).get(conj, ""), "instancias": n, "pecas_unidade": sum(unidade.values()),
                       "composicao": dict(comp),
-                      "composicao_texto": ", ".join("%d× %s" % (q, k) for k, q in comp),
-                      "peso_unitario": round(peso, 2), "peso_total": round(peso * n, 2),
+                      "composicao_texto": ", ".join("%d× %s" % (q, k) for k, q in comp)
+                      + ("  (no total diferem: %s)" % ", ".join(difere) if difere else ""),
+                      "peso_unitario": round(peso_tot / n, 2), "peso_total": round(peso_tot, 2),
+                      "difere": difere,
                       "categoria": "TESOURAS" if barras >= 8 else "CONJUNTOS"})
     saida.sort(key=lambda c: (-c["peso_total"], _ordem_natural(c["marca"])))
     return saida
@@ -356,12 +371,15 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     # totais por categoria
     por_cat: Dict[str, dict] = collections.OrderedDict((k, {"categoria": k, "titulo": v, "posicoes": 0, "pecas": 0, "peso": 0.0})
                                                        for k, v in CATEGORIAS.items())
-    for p in lista:
-        c = por_cat.setdefault(categorias.get(p.marca, "OUTROS"), {"categoria": "OUTROS", "titulo": "Outros", "posicoes": 0, "pecas": 0, "peso": 0.0})
+    # pelas linhas da lista, que é o que se compra e se fabrica: as telhas multi-dobra, o
+    # complemento e a cumeeira entram (as facetas que elas consomem, não), com o peso de
+    # compra das telhas — o total bate com a soma da coluna do quadro de posições
+    for li in linhas:
+        c = por_cat.setdefault(li.get("categoria") or "OUTROS", {"categoria": "OUTROS", "titulo": "Outros", "posicoes": 0, "pecas": 0, "peso": 0.0})
         c["posicoes"] += 1
-        c["pecas"] += p.quantidade
-        c["peso"] += p.peso_total
-    peso_total = sum(p.peso_total for p in lista)
+        c["pecas"] += li["quantidade"]
+        c["peso"] += li["peso_total"]
+    peso_total = sum(li["peso_total"] for li in linhas)
     categorias_lista = []
     for c in por_cat.values():
         if not c["pecas"]:
@@ -376,7 +394,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         "gerado": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "projeto": dict(projeto or {}),
         "barra": barra or 0,
-        "totais": {"posicoes": len(lista), "pecas": sum(p.quantidade for p in lista),
+        "totais": {"posicoes": len(linhas), "pecas": sum(li["quantidade"] for li in linhas),
                    "peso": round(peso_total, 1), "conjuntos": len(conjuntos),
                    "acessorios": sum(acessorios.values()) if acessorios else 0,
                    "categorias": categorias_lista},

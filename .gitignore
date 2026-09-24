@@ -32,3 +32,7 @@ sistema/testes/verificadores/saida/
 
 # Modelos soltos na raiz do sistema (cópias de projeto de cliente)
 sistema/*.json
+
+# saídas dos verificadores headless (imagens e o detalhamento do modelo de teste)
+sistema/testes/verificadores/det2d/
+sistema/testes/verificadores/*.png

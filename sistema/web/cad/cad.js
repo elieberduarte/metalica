@@ -743,7 +743,8 @@ class CAD {
     let escolhido = null;
     for (const d of lista) {
       const b = el('button', { type: 'button' }, d.titulo || d.nome, el('small', { texto: `${numero(d.entidades)} objetos · 1:${d.escala} · ${(d.vistas || []).join(', ') || 'sem vistas'} · ${d.alterado.replace('T', ' ')}` }));
-      b.addEventListener('click', () => { escolhido = d.nome; $('#dialogo').close(); });
+      // fecha pelo "cancelar" do diálogo, que resolve a promessa (o close() direto a deixava pendurada)
+      b.addEventListener('click', () => { escolhido = d.nome; $('#dialogo-cancelar').click(); });
       caixa.append(b);
     }
     await this.dialogo({ titulo: 'Abrir desenho do projeto', corpo: caixa, ok: null });

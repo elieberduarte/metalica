@@ -218,6 +218,14 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.7.24.** Lista de materiais: totais e categorias somados das linhas da lista (antes, das posições cruas)
+— as telhas multi-dobra, o complemento e a cumeeira entram, e as telhas pelo peso de compra; na sala dos
+compressores o cabeçalho dizia 6.957 kg / 1.866 peças e a coluna somava 11.215 kg / 2.026. Conjuntos com
+uma peça a mais ou a menos numa das instâncias contam as instâncias pela maioria das posições, como o
+detalhamento (`_unidade_pela_maioria`): M2 = 8 tesouras, não 1; o peso total é o das peças que existem e a
+composição anota o que difere. CAD: "Abrir desenho do projeto" fechava o diálogo sem abrir (o `close()`
+direto não resolvia a promessa). Saídas dos verificadores headless no `.gitignore`.
+
 **0.7.23.** Pranchas no modelo da fábrica (`Projeto/Modelos de Pranchas - Hermes.dwg`, medidas em
 `nucleo2d/modelo_hermes.py`): quadro com 25 mm à esquerda e 7 mm nos outros lados, marcas de dobra, aviso de
 propriedade em pé na margem e carimbo 178 × 99,8 mm (0,6 disso na A3/A4) com caixas R2 — logo (hachuras do
