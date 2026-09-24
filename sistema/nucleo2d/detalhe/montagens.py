@@ -148,7 +148,28 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
     ref = max(chapas, key=lambda e: sorted((c[1] - c[0] for c in _caixa(e)))[-1] * sorted((c[1] - c[0] for c in _caixa(e)))[-2])
     c_ref, (e1, e2, n) = _eixos_da_chapa(ref)
     z = (0.0, 0.0, 1.0)
-    if abs(_dot(n, z)) < 0.7:
+    acima1 = acima2 = z
+    rot2 = "LATERAL"
+    nervura = next((e for e in chapas if e is not ref and abs(_dot(_eixos_da_chapa(e)[1][2], n)) < 0.3), None)
+    if grupo["tipo"] == "soldadas" and nervura is not None:
+        # suporte soldado (chapa furada + nervura): as vistas seguem a peça, não o prédio.
+        # No modelo o suporte está inclinado com o banzo (11°) e, com o "acima" vertical, a
+        # chapa saía torta e a nervura como um triângulo enviesado; a fábrica solda a peça
+        # na bancada, com a chapa em pé — a frente mostra a chapa com os furos e a lateral
+        # a nervura de face, as duas retas
+        n2 = _eixos_da_chapa(nervura)[1][2]
+        cima = _norm(_cruz(n, n2))
+        if _dot(cima, z) < 0:
+            cima = (-cima[0], -cima[1], -cima[2])
+        if abs(_dot(cima, z)) >= 0.3:
+            w1, acima1 = n, cima
+            w2, acima2 = n2, cima
+        else:
+            # chapa deitada com a nervura em pé: a elevação pela nervura e a planta da chapa,
+            # com o mesmo eixo horizontal
+            w1, acima1 = n2, z
+            w2, acima2, rot2 = (0.0, 0.0, -1.0), n2, "PLANTA"
+    elif abs(_dot(n, z)) < 0.7:
         # chapa em pé (suporte): de frente para a chapa e de lado
         w1 = n
         w2 = _norm(_cruz(z, n))
@@ -171,11 +192,11 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
     x = dx
     caixas = []
     p_txt = _Papel(desenho, atr, 0.0, 0.0)
-    for k, (w, rot) in enumerate(((w1, "FRENTE"), (w2, "LATERAL"))):
+    for k, (w, acima, rot) in enumerate(((w1, acima1, "FRENTE"), (w2, acima2, rot2))):
         pts = [q for e in solidos for q in e.vertices]
         ws = [_dot(q, w) for q in pts]
         origem = tuple(c_ref[i] + w[i] * (min(ws) - _dot(c_ref, w) - 10.0) for i in range(3))
-        vista = _vistas.Vista(origem=origem, normal=w, acima=z, profundidade=None, cortar=False,
+        vista = _vistas.Vista(origem=origem, normal=w, acima=acima, profundidade=None, cortar=False,
                               entidades=ids, rotular=False, nome="Montagem %s – %s" % (atr["montagem"], rot.lower()),
                               tipo="montagem")
         u, v, _ = vista.eixos()
@@ -219,13 +240,11 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
         caixas.append((x, dy, x + larg, dy + alt))
         x += larg + (22.0 if k < 2 else 10.0) * esc
     topo = max(c[3] for c in caixas)
-    tit = titulo or ("CHAPA DE BASE COM CHUMBADORES" if grupo["tipo"] == "chumbamento" else "PEÇAS SOLDADAS")
+    # legenda enxuta: as peças e a quantidade, e o que vai por unidade (o tipo está no
+    # título do quadro e nos nomes das peças; `titulo` só vai aos metadados da célula)
     comp = ", ".join("%s x%d" % (k, q) for k, q in sorted(grupo["composicao"].items(), key=lambda kv: _ordem_natural(kv[0])))
-    linhas = [tit + " – MONTADO", "%s – %02dx" % (" + ".join(dict.fromkeys(grupo["chave"])), grupo["instancias"]),
-              "por unidade: " + comp,
-              "vistas de frente e lateral na escala do desenho"]
-    if grupo["tipo"] == "chumbamento":
-        linhas.insert(3, "chumbadores, porcas e arruelas como no modelo; o comprimento de corte do chumbador está no detalhe dele")
+    linhas = ["%s – %02dx" % (" + ".join(dict.fromkeys(grupo["chave"])), grupo["instancias"]),
+              "por unidade: " + comp]
     y = topo + 4.0 * esc
     for i, txt in enumerate(reversed(linhas)):
         alt_t = 3.5 if i == len(linhas) - 1 else 2.2

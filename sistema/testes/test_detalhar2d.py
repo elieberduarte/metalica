@@ -65,7 +65,9 @@ def test_posicoes_contadas_e_desenhos():
     assert set(r["desenhos"]) >= {"chapas", "barras", "conjuntos"}
     chapas = r["desenhos"]["chapas"]
     titulos = [e.texto for e in chapas.entidades.values() if isinstance(e, Texto)]
-    assert any("– 03x" in t and "(P1)" in t for t in titulos)
+    nomes = r["nomes"]["posicoes"]
+    assert any(t.startswith("%s – 03x" % nomes.get("P1", "P1")) for t in titulos)
+    assert not any("(P1)" in t for t in titulos)               # legenda enxuta: a marca fica nos metadados
     assert any(isinstance(e, Cota) for e in chapas.entidades.values())
     # M9 tem 2 instâncias pela composição (4 P3 / 2)
     conj = {c["marca"]: c for c in r["conjuntos"]}
@@ -75,8 +77,9 @@ def test_posicoes_contadas_e_desenhos():
     assert juntos["instancias"] == 3 and juntos["marcas"] == ["M1", "M2", "M3"]
     assert juntos["categoria"] == "CONJUNTOS" and "M1" not in conj
     tit = [e.texto for e in r["desenhos"]["conjuntos"].entidades.values() if isinstance(e, Texto)]
-    assert any("– 02x" in t and "(M9)" in t for t in tit)
-    assert any("– 03x" in t and "(M1 / M2 / M3)" in t for t in tit)
+    nomes_c = r["nomes"]["conjuntos"]
+    assert any(t.startswith("%s – 02x" % nomes_c.get("M9", "M9")) for t in tit)
+    assert any(t.startswith("%s – 03x" % nomes_c.get("M1 / M2 / M3", "M1 / M2 / M3")) for t in tit)
     itens = r["desenhos"]["chapas"].metadados["detalhamento"]["itens"]
     assert itens["P1"]["categoria"] == "CHAPAS"
     itens_b = r["desenhos"]["barras"].metadados["detalhamento"]["itens"]
@@ -640,9 +643,10 @@ def test_nomes_de_producao_no_modelo_real():
     comuns = set(pos_nomes) & set(conj_nomes)
     assert all(n_.startswith(("C.V.", "A.G.")) for n_ in comuns)
     textos = [e.texto for e in r["desenhos"]["barras"].entidades.values() if isinstance(e, Texto)]
-    assert any(tx.startswith("T.C.1 – ") and "(M13)" in tx for tx in textos)
+    assert any(tx.startswith("T.C.1 – ") and "L = " in tx for tx in textos)
+    assert not any("(M13)" in tx or tx == "TERÇA DE COBERTURA" for tx in textos)   # legenda enxuta
     textos_c = [e.texto for e in r["desenhos"]["conjuntos"].entidades.values() if isinstance(e, Texto)]
-    assert any(tx.startswith("T1 – 08x") and "(M2)" in tx for tx in textos_c)
+    assert any(tx.startswith("T1 – 08x") for tx in textos_c) and not any("(M2)" in tx for tx in textos_c)
     # camadas por tipo de peça
     cams = {e.camada for e in r["desenhos"]["conjuntos"].entidades.values()}
     assert {"BANZOS", "DIAGONAIS", "CHAPAS"} <= cams

@@ -43,44 +43,67 @@ from nucleo2d.detalhe.nomes import (  # noqa: E402
     aplicar_nomes)
 
 def _cabecalho(pos: Posicao) -> List[str]:
+    """Legenda enxuta, só o principal: nome e quantidade com o comprimento no título, o
+    perfil, os parafusos e o peso. O tipo da peça fica no título do quadro; a marca do
+    TecnoMETAL, o material, a contagem de furos, os conjuntos e as observações ficam nos
+    metadados e na lista de produção (na célula só poluíam)."""
     titulo = "%s – %02dx" % (pos.nome or pos.marca, pos.quantidade)
-    if pos.nome:
-        titulo += "  (%s)" % pos.marca                  # a marca do TecnoMETAL fica rastreável
-    linhas = [titulo]
-    if pos.tipo_nome and pos.tipo_nome != "parte":
-        linhas.insert(0, TIPOS_NOME.get(pos.tipo_nome, pos.tipo_nome).upper())   # "TERÇA DE COBERTURA"
     if pos.classe == "chapa_dobrada" and pos.desenvolvimento:
-        linhas.append("%s  %s  %s  desenv. %s x %s mm" % (pos.perfil, _rotulo_espessura(pos), pos.material,
-                                                          _mm(pos.desenvolvimento[0]), _mm(pos.desenvolvimento[1])))
+        linhas = [titulo, "%s  %s  desenv. %s x %s mm" % (pos.perfil, _rotulo_espessura(pos),
+                                                          _mm(pos.desenvolvimento[0]), _mm(pos.desenvolvimento[1]))]
     elif pos.classe in ("chapa", "chapa_dobrada"):
-        linhas.append("%s  %s  %s" % (pos.perfil, _rotulo_espessura(pos), pos.material))
+        linhas = [titulo, "%s  %s" % (pos.perfil, _rotulo_espessura(pos))]
     elif pos.classe == "barra_conformada":
-        linhas.append("%s  L desenv. %s mm  %s" % (pos.perfil, _mm(pos.comprimento), pos.material))
+        linhas = [titulo + "   L desenv. %s mm" % _mm(pos.comprimento), pos.perfil]
     elif pos.classe == "telha":
         c = compra_da_telha(pos)
-        linhas.append("%s  chapa inteira %s x %s mm (útil %s)  %s" % (pos.perfil, _mm(c["comprimento"]), _mm(c["largura_total"]),
-                                                                      _mm(c["largura"]), pos.material))
-        linhas.append("%s kg/pç  total %s kg" % (_mm(c["peso"], 2), _mm(c["peso"] * pos.quantidade, 1))
-                      + ("  ·  corte em obra (pontilhado)" if c["cortada"] else ""))
-        if pos.conjuntos and pos.conjuntos != [pos.marca]:
-            linhas.append("conj. " + ", ".join(pos.conjuntos[:6]) + (" …" if len(pos.conjuntos) > 6 else ""))
-        return linhas
+        return [titulo + "   L = %s mm" % _mm(c["comprimento"]),
+                "%s  chapa inteira %s x %s mm (útil %s)" % (pos.perfil, _mm(c["comprimento"]), _mm(c["largura_total"]),
+                                                            _mm(c["largura"])),
+                "%s kg/pç  total %s kg" % (_mm(c["peso"], 2), _mm(c["peso"] * pos.quantidade, 1))
+                + ("  ·  corte em obra (pontilhado)" if c["cortada"] else "")]
     elif pos.classe == "indefinida":
-        linhas.append(pos.perfil)
+        linhas = [titulo, pos.perfil]
     else:
-        linhas.append("%s  L = %s mm  %s" % (pos.perfil, _mm(pos.comprimento), pos.material))
-    detalhes = []
-    if pos.furos:
-        detalhes.append(pos.rotulo_furos())
+        linhas = [titulo + "   L = %s mm" % _mm(pos.comprimento), pos.perfil]
     if pos.parafusos or pos.porcas:
-        detalhes.append("parafusos: " + pos.rotulo_parafusos())
+        linhas.append("parafusos: " + pos.rotulo_parafusos())
     if pos.peso:
-        detalhes.append("%s kg/pç  total %s kg" % (_mm(pos.peso, 2), _mm(pos.peso_total, 1)))
-    if detalhes:
-        linhas.append("  ".join(detalhes))
-    if pos.conjuntos and pos.conjuntos != [pos.marca]:
-        linhas.append("conj. " + ", ".join(pos.conjuntos[:6]) + (" …" if len(pos.conjuntos) > 6 else ""))
+        linhas.append("%s kg/pç  total %s kg" % (_mm(pos.peso, 2), _mm(pos.peso_total, 1)))
     return linhas
+
+
+def _cotas_da_terca(p: "_Papel", furos: Sequence[Furo], L: float, off: float, off2: float):
+    """Cotas da terça como a máquina de furar trabalha: primeiro a cadeia dos furos duplos
+    (duas furações na mesma abscissa — a ligação ao suporte), de ponta a ponta; depois
+    cada furo simples (tirante, esticador) cotado a partir do furo duplo mais próximo,
+    numa segunda linha. Devolve False sem furo duplo (vale a cadeia comum), True com a
+    linha dos duplos só, "dupla" quando também há a linha dos simples."""
+    colunas: List[List[float]] = []
+    for x in sorted(f.x for f in furos):
+        if colunas and x - colunas[-1][-1] <= 2.0:
+            colunas[-1].append(x)
+        else:
+            colunas.append([x])
+    duplos = [sum(c) / len(c) for c in colunas if len(c) >= 2]
+    simples = [c[0] for c in colunas if len(c) < 2]
+    if not duplos:
+        return False
+    p.cadeia_h([0.0] + duplos + [L], 0, -off, exigir_espaco=False)
+    # a linha dos simples fica a 6 mm a mais: o número de um trecho curto da cadeia (60)
+    # sai por baixo da linha dela e cairia em cima dos números dos simples
+    usadas: Dict[float, int] = collections.Counter()
+    for x in simples:
+        xd = min(duplos, key=lambda d: abs(d - x))
+        # cadeia de dois nós: o número de um trecho curto (100 mm) sai para fora das linhas;
+        # o 2º simples do mesmo furo duplo (100 para cada lado) desce uma linha
+        p.cadeia_h([xd, x], 0, -(off2 + FOLGA_COTA_TERCA + 7.0 * usadas[xd]), exigir_espaco=False)
+        usadas[xd] += 1
+    return "dupla" if simples else True
+
+
+#: Na terça, quanto a linha dos furos simples e a total descem a mais (mm de papel).
+FOLGA_COTA_TERCA = 6.0
 
 
 def _furos_editaveis(p: "_Papel", atr: dict, furos: Sequence[Furo]):
@@ -136,11 +159,12 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     ys = sorted({round(f.y, 1) for f in furos_frente})
     # as cotas dos furos saem sempre (a produção precisa delas), mesmo quando um trecho
     # curto — 35 mm da ponta numa terça em 1:25 — deixa os textos apertados
-    cadeia = bool(xs) and p.cadeia_h([0.0] + xs + [L], 0, -off, exigir_espaco=False)
-    p.cota_h(0, L, 0, -(off3 if cadeia == "dupla" else off2 if cadeia else off))
+    terca = pos.tipo_nome in ("terca_cobertura", "terca_marquise")
+    cadeia = bool(xs) and ((terca and _cotas_da_terca(p, furos_frente, L, off, off2))
+                           or p.cadeia_h([0.0] + xs + [L], 0, -off, exigir_espaco=False))
+    p.cota_h(0, L, 0, -((off3 + (FOLGA_COTA_TERCA + 7.0 if terca else 0.0)) if cadeia == "dupla" else off2 if cadeia else off))
     # na terça a altura dos furos é o padrão da máquina de corte (50 ou 100 mm): a cadeia
     # vertical só atrapalha; ficam a altura da peça e as cotas horizontais
-    terca = pos.tipo_nome in ("terca_cobertura", "terca_marquise")
     cadeia = bool(ys) and not terca and p.cadeia_v([0.0] + ys + [H], L, off, exigir_espaco=False)
     p.cota_v(0, H, L, off3 if cadeia == "dupla" else off2 if cadeia else off)
 
@@ -179,13 +203,9 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     if pos.tipo_nome == "gancho" and pos.local:
         _rosca_do_gancho(p, pos, esc, off)
 
-    # título acima da peça
+    # título acima da peça (as observações ficam nos metadados e na lista de produção)
     y = H + (off + 2.0) * esc
     linhas = _cabecalho(pos)
-    obs = pos.observacoes[:3]
-    for i, txt in enumerate(reversed(obs)):
-        p.texto(0, y + i * 3.2 * esc, "* " + txt, 2.0 * esc)
-    y += len(obs) * 3.2 * esc
     for i, txt in enumerate(reversed(linhas)):
         alt = 3.5 if i == len(linhas) - 1 else 2.5
         p.texto(0, y, txt, alt * esc)

@@ -389,32 +389,22 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
         # o título acima das cotas externas (reta a 12, apoios a 21, corda a 30)
         p.texto(0, painel_y + alt + 36.0 * esc, "%s  %s mm" % (titulo, fmt(desenv)), 3.0 * esc)
         painel_y += alt + 70.0 * esc
-    comp = ", ".join("%s x%d" % (k, q) for k, q in sorted(md["composicao"].items(), key=lambda kv: _ordem_natural(kv[0])))
-    linhas = ["TELHA MULTI-DOBRA",
-              "%s – %02dx  (%s)" % (nome or md["conjunto"], md["instancias"], md["conjunto"]),
-              "%s  %s  largura 1050 mm (útil 980)" % (md["perfil"], md["material"]),
+    # legenda enxuta: o que se compra e se dobra; a dedução do raio, as facetas do modelo
+    # e os apoios ficam no desenho e na lista de produção
+    linhas = ["%s – %02dx" % (nome or md["conjunto"], md["instancias"]),
+              "%s  largura 1050 mm (útil 980)" % md["perfil"],
               "retas %s + %s mm · raio int. %s / ext. %s · %s°" % (fmt(md["reta1"]), fmt(md["reta2"]), fmt(md["raio_int"]),
                                                                fmt(md["raio_ext"]), ("%.1f" % md["angulo"]).replace(".", ",")),
               "desenvolvida: ext. %s mm · int. %s mm   %s kg/pç  total %s kg" % (
                   fmt(md["desenv_ext"]), fmt(md["desenv_int"]), ("%.2f" % md["peso"]).replace(".", ","),
-                  ("%.1f" % (md["peso"] * md["instancias"])).replace(".", ",")),
-              "no modelo: %s (facetas de %s)" % (comp, md["conjunto"])]
-    if md.get("arco_modelo"):
-        linhas.insert(4, "raio = arco / ângulo: as %d facetas do modelo somam %s mm na linha média; %s / %s rad (%s°) = R%s; int./ext. = R ∓ meia onda (%s)" % (
-            md["facetas"], fmt(md["arco_modelo"]), fmt(md["arco_modelo"]),
-            ("%.4f" % math.radians(md["angulo"])).replace(".", ","), ("%.1f" % md["angulo"]).replace(".", ","),
-            fmt(md["raio"]), fmt(md["altura_onda"] / 2)))
-    if md.get("apoios"):
-        linhas.append("apoios (azul): " + ", ".join(sorted({ap["perfil"] for ap in md["apoios"]})) + " — só para conferir fixação e espaçamento")
+                  ("%.1f" % (md["peso"] * md["instancias"])).replace(".", ","))]
     if md.get("saia"):
-        linhas.insert(5, "saia: a reta da parede desce %d mm abaixo da última longarina (%s); no modelo tinha %s" % (
-            SAIA_TELHA, md["saia"]["longarina"], fmt(md["saia"]["reta_modelo"])))
+        linhas.append("saia: %d mm abaixo da última longarina (%s)" % (SAIA_TELHA, md["saia"]["longarina"]))
     cb = md.get("cobrimento")
     if cb:
-        linhas.insert(5, "cobrimento: passa %d mm da 1ª terça (%s); a telha seguinte começa %d mm antes — transpasse %s mm" % (
-            COBRIMENTO_TERCA, cb["terca"], COBRIMENTO_TERCA, fmt(cb["transpasse"])))
-        linhas.insert(6, "telha complementar %s-C: %02dx  L = %s mm (a reta do modelo tinha %s)" % (
-            nome or md["conjunto"], md["instancias"], fmt(cb["resto"]), fmt(cb["reta_modelo"])))
+        linhas.append("cobrimento: passa %d mm da 1ª terça (%s) — transpasse %s mm" % (
+            COBRIMENTO_TERCA, cb["terca"], fmt(cb["transpasse"])))
+        linhas.append("telha complementar %s-C: %02dx  L = %s mm" % (nome or md["conjunto"], md["instancias"], fmt(cb["resto"])))
     y = painel_y + 4.0 * esc
     for i, txt in enumerate(reversed(linhas)):
         altura = 3.5 if i == len(linhas) - 1 else 2.5
@@ -671,14 +661,11 @@ def desenho_da_cumeeira(cm: dict, desenho, dx: float, dy: float, nome: str = "")
                          texto=str(int(round(math.dist(pa, pb)))), atributos=dict(atr)))
     p.texto(topo[0], topo[1] - 5.0 * esc, "dobra %s°" % ("%.1f" % cm["angulo"]).replace(".", ","), 2.2 * esc, alinhamento="centro")
     alt = max(a1[1], a2[1], topo[1])
-    comp = ", ".join("%s x%d" % (k, q) for k, q in sorted(cm["composicao"].items(), key=lambda kv: _ordem_natural(kv[0])))
-    linhas = ["CUMEEIRA",
-              "%s – %02dx  (%s)" % (nome or cm["conjunto"], cm["instancias"], cm["conjunto"]),
-              "%s  %s  largura 1050 mm (útil 980)" % (cm["perfil"], cm["material"]),
+    linhas = ["%s – %02dx" % (nome or cm["conjunto"], cm["instancias"]),
+              "%s  largura 1050 mm (útil 980)" % cm["perfil"],
               "pernas %d + %d mm · dobra %s° · desenvolvida %d mm   %s kg/pç  total %s kg" % (
                   cm["perna1"], cm["perna2"], ("%.1f" % cm["angulo"]).replace(".", ","), cm["desenv"],
-                  ("%.2f" % cm["peso"]).replace(".", ","), ("%.1f" % (cm["peso"] * cm["instancias"])).replace(".", ",")),
-              "uma peça só, dobrada na cumeeira; no modelo: %s" % comp]
+                  ("%.2f" % cm["peso"]).replace(".", ","), ("%.1f" % (cm["peso"] * cm["instancias"])).replace(".", ","))]
     y = alt + 18.0 * esc
     for i, txt in enumerate(reversed(linhas)):
         altura = 3.5 if i == len(linhas) - 1 else 2.5
@@ -699,13 +686,16 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
     for t in md.get("telhas", []):
         for i in t.get("ids", []):
             em_md[i] = t
-    de_cumeeira = {i for cm in md.get("cumeeiras", []) for i in cm.get("ids", [])}
+    # as pernas da cumeeira entram na face delas (uma em cada água), com o nome da cumeeira:
+    # a paginação mostra onde ela assenta e o comprimento de cada perna
+    de_cumeeira = {i: cm for cm in md.get("cumeeiras", []) for i in cm.get("ids", [])}
     feitas_md = set()
     chapas = []
     for e in pecas:
         m = _marcas(e)
-        if not _eh_telha(str(m.get("perfil") or e.nome or "")) or e.id in de_cumeeira:
+        if not _eh_telha(str(m.get("perfil") or e.nome or "")):
             continue
+        cm = de_cumeeira.get(e.id)
         c, eixos, ext = _medidas(e)
         t = em_md.get(e.id)
         if t is not None:
@@ -719,7 +709,9 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
             n = (-n[0], -n[1], -n[2])
         # comprimento: o maior eixo; largura o do meio (a onda corre no comprimento)
         chapas.append({"e": e, "c": c, "n": n, "u": _direcao_da_onda(e, n), "ext": ext, "multidobra": t,
-                       "nome": (t["nome"] if t is not None and t.get("nome") else nome_de(_posicao(e)))})
+                       "cumeeira": cm is not None,
+                       "nome": ((cm.get("nome") or cm["conjunto"]) if cm is not None
+                                else t["nome"] if t is not None and t.get("nome") else nome_de(_posicao(e)))})
     # centros das facetas das multi-dobra (para saber de que lado fica a curva)
     facetas = []
     for e in pecas:
@@ -792,7 +784,7 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
                               "x": (x0_ + x1_) / 2 + 1e-3, "y0": min(yc, yf), "y1": max(yc, yf), "multidobra": False})
                 continue
             lista.append({"contorno": contorno, "corte": corte, "comprimento": comp, "nome": ch["nome"], "saia": desce,
-                          "x": (min(xs) + max(xs)) / 2, "y0": min(ys), "y1": max(ys),
+                          "x": (min(xs) + max(xs)) / 2, "y0": min(ys), "y1": max(ys), "cumeeira": ch["cumeeira"],
                           "multidobra": bool(ch["multidobra"]), "alinhada": abs(_dot(uu, u)) > 0.9})
         inclinacao = math.degrees(math.acos(max(-1.0, min(1.0, abs(n[2])))))
         saida.append({"normal": n, "chapas": lista, "inclinacao": inclinacao,
@@ -935,11 +927,16 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
                          texto="%d" % SAIA_TELHA, altura=1.8, atributos=dict(atr)))
         p._p(xb_f + 14.0 * esc, y_fundo)
     alt = max(q[1] for ch in chapas for q in ch["contorno"]) - y0
-    cont = collections.Counter(ch["nome"] for ch in chapas)
+    pernas = [ch for ch in chapas if ch.get("cumeeira")]
+    cont = collections.Counter(ch["nome"] for ch in chapas if not ch.get("cumeeira"))
     resumo = " · ".join("%s %dx" % (k, q) for k, q in sorted(cont.items(), key=lambda kv: _ordem_natural(kv[0])))
-    titulo = "FACE %d – %s%s – %d chapas" % (indice, face["tipo"].upper(),
-                                            (" (%.0f°)" % face["inclinacao"]) if face["tipo"] == "cobertura" else "",
-                                            len(chapas))
+    if pernas:
+        cont_cm = collections.Counter(ch["nome"] for ch in pernas)
+        resumo += "   cumeeira: " + " · ".join("%s %dx" % (k, q) for k, q in sorted(cont_cm.items(), key=lambda kv: _ordem_natural(kv[0])))
+    titulo = "FACE %d – %s%s – %d chapas%s" % (indice, face["tipo"].upper(),
+                                              (" (%.0f°)" % face["inclinacao"]) if face["tipo"] == "cobertura" else "",
+                                              len(chapas) - len(pernas),
+                                              (" + %d pernas de cumeeira" % len(pernas)) if pernas else "")
     p.texto(0, alt + 6.0 * esc, titulo, 3.5 * esc)
     p.texto(0, alt + 2.0 * esc, resumo[:220], 2.0 * esc)
     return p.extremos

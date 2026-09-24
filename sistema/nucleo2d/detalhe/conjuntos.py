@@ -763,7 +763,6 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         comp[nome_de(m.get("posicao") or e.nome)] += 1
         perfis[str(m.get("perfil") or e.nome)] += 1
     y = alt + (((off3 if cadeia_cima else off2) if cadeia_suportes else (off2 if cadeia_cima else off)) + 2.0) * esc
-    lista = ["%s x%d" % (k, n) for k, n in sorted(perfis.items(), key=lambda kv: (-kv[1], _ordem_natural(kv[0])))]
     posic = ["%s x%d" % (k, n) for k, n in sorted(comp.items(), key=lambda kv: _ordem_natural(kv[0]))]
 
     def quebrar(prefixo, itens, largura=64):
@@ -775,16 +774,16 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             atual += it + ", "
         fora.append(atual.rstrip(", "))
         return fora
-    titulo = "%s – %02dx" % (nome or marca, n_instancias) + ("  (%s)" % marca if nome else "")
-    linhas = [titulo] + quebrar("Perfis: ", lista) + quebrar("Pecas: " if nomes else "Posicoes: ", posic)
+    # legenda enxuta: nome e quantidade, as peças e os parafusos; o tipo está no título do
+    # quadro e a marca do TecnoMETAL nos metadados (cada perfil está no detalhe da peça)
+    titulo = "%s – %02dx" % (nome or marca, n_instancias)
+    linhas = [titulo] + quebrar("Pecas: " if nomes else "Posicoes: ", posic)
     paraf, porcas = parafusos_no_conjunto(doc, instancia)
     if paraf or porcas:
         itens_p = ["%dx %s" % (q, k) for k, q in sorted(paraf.items(), key=lambda kv: _ordem_natural(kv[0]))]
         if porcas:
             itens_p.append("%d fixador(es) sem tamanho no IFC (porca ou chumbador)" % porcas)
         linhas += quebrar("Parafusos (por unidade): ", itens_p)
-    if tipo:
-        linhas.insert(0, TIPOS_NOME.get(tipo, tipo).upper())
     for txt in ([nota] if isinstance(nota, str) else list(nota or [])):
         if not txt:
             continue
@@ -930,7 +929,10 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         tir_m = _tirante_principal(inst_m) or _barra_mais_longa(inst_m)
         comp_m = _comprimento_na_vista(tir_m, inst_m) if tir_m is not None else _extensao_do_conjunto(inst_m)[0]
         nome_m = nomes_conj.get(rot, rot)
-        p.cota_h(round(t0), round(t0 + comp_m), alt, off + passo * i, texto="%s (%02dx) – %d" % (nome_m, n_inst, round(comp_m)))
+        # a cota na própria linha (deslocamento zero): só a linha com as setas e o texto —
+        # as linhas de chamada de cada cota até a barra enchiam a célula de traços
+        p.cota_h(round(t0), round(t0 + comp_m), alt + (off + passo * i) * esc, 0.0,
+                 texto="%s (%02dx) – %d" % (nome_m, n_inst, round(comp_m)))
     # a dobra da barra (gancho na ponta): a altura da perna, cotada na própria ponta
     if tirante is not None:
         corpo = [pv for pu_, pv in zip(pu_t, pv_t) if t0 + 0.3 * (t1 - t0) < pu_ < t1 - 0.3 * (t1 - t0)]
@@ -960,15 +962,7 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         pass
     # título: tipo, nomes e, por contraventamento, o tirante com o comprimento de corte
     total = sum(m[2] for m in membros)
-    linhas = ["CONTRAVENTAMENTO", "%s – %02dx" % (" / ".join(nomes_conj.get(m[0], m[0]) for m in membros), total)]
-    marcas_txt, atual = [], "("
-    for mk in rotulo_celula.split(" / "):
-        if len(atual) + len(mk) + 3 > 72 and atual != "(":
-            marcas_txt.append(atual.rstrip(" /"))
-            atual = " "
-        atual += mk + " / "
-    marcas_txt.append(atual.rstrip(" /") + ")")
-    linhas.extend(marcas_txt)
+    linhas = ["%s – %02dx" % (" / ".join(nomes_conj.get(m[0], m[0]) for m in membros), total)]
     for rot, inst_m, n_inst in membros:
         tir = _tirante_principal(inst_m)
         if tir is None:
@@ -982,7 +976,7 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
                                                     "  L = %d mm" % round(comp_t) if comp_t else ""))
     pecas_ponta = collections.Counter(nome_de(_marcas(e).get("posicao") or e.nome) for e in inst if e is not tirante)
     if pecas_ponta:
-        linhas.append("Pecas de ponta (por unidade, detalhe padrão – ver o detalhe de cada uma): "
+        linhas.append("Pecas de ponta (por unidade): "
                       + ", ".join("%s x%d" % (k, q) for k, q in sorted(pecas_ponta.items(), key=lambda kv: _ordem_natural(kv[0]))))
     y = alt + (off + passo * len(membros) + 4.0) * esc
     for i, txt in enumerate(reversed(linhas)):

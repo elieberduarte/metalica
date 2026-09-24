@@ -186,6 +186,20 @@ iguais dividem célula (as de outra composição saem em detalhe próprio) e os 
 elevação (cruz na camada FURO). Oblongo em pé na terça (copiado de chapa) gira para o sentido da barra, e a
 chapa junto.
 
+**0.7.20.** Legendas enxutas em todas as células (`_cabecalho`, conjuntos, montagens, telhas): nome e
+quantidade com o comprimento no título, perfil, parafusos e peso; o tipo fica só no título do quadro e a
+marca do TecnoMETAL, o material, a contagem de furos e as observações ficam nos metadados e na lista de
+produção. Cotas da terça como a máquina fura (`_cotas_da_terca`): a cadeia dos furos duplos (duas furações
+na mesma abscissa, a ligação ao suporte) de ponta a ponta na primeira linha, e cada furo simples (tirante,
+esticador) cotado a partir do furo duplo mais próximo na segunda — o segundo simples do mesmo duplo desce
+uma linha; a total fica por fora. Suporte soldado montado (chapa furada + nervura): as vistas seguem a
+peça, não o prédio — "acima" é o eixo comum às duas chapas, a frente mostra a chapa com os furos e a lateral
+a nervura de face, as duas retas (no modelo o suporte está inclinado com o banzo e saía torto); chapa deitada
+com nervura em pé sai em elevação pela nervura e PLANTA. Paginação: as pernas da cumeeira entram na face
+delas com o nome da cumeeira (CM.n) e o comprimento da perna; o título conta "N chapas + M pernas de
+cumeeira". Contraventamentos: as cotas empilhadas dos tirantes ficam na própria linha (deslocamento zero),
+sem as linhas de chamada até a barra.
+
 **0.7.18.** Furos das terças "viradas": a detecção (`saida.detalhamento._lacos_2d`) aceitava só os laços
 no nível médio da alma (±0,6 mm), mas os eixos da barra vêm da nuvem de vértices e saem inclinados uma
 fração de grau — numa terça de 5 m a alma "sobe" ~7 mm de ponta a ponta, e só o furo do meio passava.
