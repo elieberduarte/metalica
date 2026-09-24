@@ -42,7 +42,7 @@ POLEGADA = 25.4
 
 #: Bitolas de chapa (número → espessura em mm), como o comércio de aço usa no Brasil:
 #: "C127X50X17X#14" é um Ue de 2,00 mm (a fábrica usa a bitola da chapa a quente).
-BITOLAS = {8: 4.25, 10: 3.35, 11: 3.0, 12: 2.65, 13: 2.25, 14: 2.0, 16: 1.5, 18: 1.2, 20: 0.9}
+BITOLAS = {7: 4.5, 8: 4.25, 9: 3.75, 10: 3.35, 11: 3.0, 12: 2.65, 13: 2.25, 14: 2.0, 15: 1.7, 16: 1.5, 18: 1.2, 20: 0.9}
 
 _NAO_BARRA = ("PLATE", "CH ", "CHAPA", "TELHA", "BOLT", "PARAF", "PORCA", "ARRUELA",
               "GRAUTE", "CHUMB")

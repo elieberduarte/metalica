@@ -962,6 +962,13 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
                           vertices=[tuple(v) for v in ent.vertices], faces=[list(f) for f in ent.faces])
             por_marca[marca] = pos
             camadas[marca] = ent.camada or ""
+            # perfil trocado no 3D: o original do projeto e a data vão para a lista
+            original = str(m.get("perfil_original") or m.get("perfil_anterior") or "")
+            if original and original != pos.perfil:
+                trocas = (ent.atributos or {}).get("trocas_de_perfil") or []
+                data = str(trocas[-1].get("data") or "")[:10] if trocas else ""
+                dia = "/".join(reversed(data.split("-"))) if data else ""
+                pos.observacoes.append("perfil original %s%s" % (original, (", trocado em %s" % dia) if dia else ""))
         pos.quantidade += 1
         pos.global_ids.append(ent.id)
         conj = str(m.get("conjunto") or "")

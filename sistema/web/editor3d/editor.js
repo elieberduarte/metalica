@@ -2102,6 +2102,14 @@ export class Editor {
         if (marcas.nome_conjunto && marcas.nome_conjunto !== marcas.nome) linha('Nome do conjunto', marcas.nome_conjunto);
         if (marcas.perfil) {
           linha('Perfil', marcas.perfil);
+          // perfil do projeto (o do IFC) e cada troca, com a data
+          const trocas = (um.atributos && um.atributos.trocas_de_perfil) || [];
+          const original = marcas.perfil_original || marcas.perfil_anterior;
+          if (original && original !== marcas.perfil) linha('Perfil original', original);
+          for (const t of trocas) {
+            const dia = String(t.data || '').slice(0, 10).split('-').reverse().join('/');
+            linha('Troca de perfil', `${dia}  ${t.de} → ${t.para}`);
+          }
           if (lerPerfil(marcas.perfil)) {
             gi.append(el('span'), el('button', { type: 'button', class: 'mini', texto: 'Trocar perfil…',
               title: 'Troca o perfil desta peça, da posição inteira ou de todas com este perfil — a malha 3D muda de seção e os desenhos saem com o perfil novo',
@@ -2578,7 +2586,7 @@ export class Editor {
       el('option', { value: 'perfil', texto: `todas as peças ${antigoNome} do modelo (${doPerfil.length})` }));
     const aviso = el('div', { class: 'explica', texto: '' });
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: `Perfil atual: ${antigoNome}. Digite o novo como a fábrica escreve — altura × aba × enrijecedor × espessura; a espessura pode ser a bitola (#14 = 2,00 mm, #13 = 2,25, #12 = 2,65, #16 = 1,50). A peça muda de seção no 3D (as espessuras, abas e enrijecedores ficam exatos; os furos acompanham), e o detalhamento e a lista de materiais passam a sair com o perfil novo — gere-os de novo depois.` }),
+      el('div', { class: 'explica', texto: `Perfil atual: ${antigoNome}. Digite o novo como a fábrica escreve — altura × aba × enrijecedor × espessura; a espessura pode ser a bitola (#14 = 2,00 mm, #13 = 2,25, #12 = 2,65, #11 = 3,00, #10 = 3,35, #9 = 3,75, #8 = 4,25, #16 = 1,50). A peça muda de seção no 3D (as espessuras, abas e enrijecedores ficam exatos; os furos acompanham), e o detalhamento e a lista de materiais passam a sair com o perfil novo — gere-os de novo depois.` }),
       el('div', { class: 'campos' }, el('label', { texto: 'Novo perfil' }), campo, el('label', { texto: 'Aplicar em' }), alcance),
       sugestoes, aviso);
     const conferir = () => {
@@ -2600,7 +2608,12 @@ export class Editor {
       const r = trocarSecao(e, antigo, novo);
       if (r.erro) { falhas.push(`${(e.atributos.marcas || {}).posicao || e.nome}: ${r.erro}`); continue; }
       const atributos = clonar(e.atributos);
-      atributos.marcas = { ...atributos.marcas, perfil: novoNome, perfil_anterior: atributos.marcas.perfil_anterior || antigoNome };
+      // o perfil original (o do projeto) fica guardado, e cada troca com a data
+      const original = atributos.marcas.perfil_original || atributos.marcas.perfil_anterior || antigoNome;
+      atributos.marcas = { ...atributos.marcas, perfil: novoNome, perfil_anterior: atributos.marcas.perfil_anterior || antigoNome,
+                           perfil_original: original };
+      atributos.trocas_de_perfil = [...(atributos.trocas_de_perfil || []),
+        { de: (e.atributos.marcas || {}).perfil || antigoNome, para: novoNome, data: new Date().toISOString().slice(0, 19) }];
       mud[e.id] = { vertices: r.vertices, atributos, ...(e.nome === antigoNome ? { nome: novoNome } : {}) };
     }
     const n = Object.keys(mud).length;

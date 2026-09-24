@@ -218,6 +218,11 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.7.30.** Bitolas #7 (4,50), #9 (3,75) e #15 (1,70) em `nucleo/perfis_fabrica.BITOLAS` e no Trocar perfil do 3D
+(U100X50X#9 não era reconhecido). Histórico da troca de perfil: a peça guarda `marcas.perfil_original` e
+`atributos.trocas_de_perfil` ([{de, para, data}]), mostrados nas propriedades; a posição leva "perfil original X,
+trocado em dd/mm/aaaa" nas observações (romaneio).
+
 **0.7.29.** O furo da barra segue o parafuso (`alinhar_furos_das_barras_aos_parafusos`, até 250 mm; o parafuso tem de
 cruzar a peça no sistema dela): a ligação mexida à mão no 3D (chapa P79 esticada 90 mm) não passava do limite de 40 mm
 do alinhamento com as chapas. **Atualizar peça** (`POST /atualizar-pecas`): furos e células só das peças pedidas,

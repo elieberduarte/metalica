@@ -12,7 +12,7 @@
 // treliça. Espessura por bitola: "#14" = 2,00 mm (a da fábrica: chapa a quente).
 
 /** Bitolas de chapa (número → mm), como o comércio de aço usa no Brasil. */
-export const BITOLAS = { 8: 4.25, 10: 3.35, 11: 3.0, 12: 2.65, 13: 2.25, 14: 2.0, 16: 1.5, 18: 1.2, 20: 0.9 };
+export const BITOLAS = { 7: 4.5, 8: 4.25, 9: 3.75, 10: 3.35, 11: 3.0, 12: 2.65, 13: 2.25, 14: 2.0, 15: 1.7, 16: 1.5, 18: 1.2, 20: 0.9 };
 
 /**
  * Nome de perfil → {familia: 'Ue'|'U', H, B, D, t, prefixo} ou null. Aceita a grafia do
