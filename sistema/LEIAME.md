@@ -218,6 +218,10 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.7.25.** Lista de materiais: o seletor "Barra comercial" (6/12 m) ficava no topo, ao lado de "Recalcular do
+modelo", e parecia escolher outro projeto; agora está dentro do quadro Perfis ("Comprimento da barra de aço para
+compra"), que é o único que ele muda, o topo diz "Projeto: <nome>" e o botão virou "Atualizar pelo modelo 3D".
+
 **0.7.24.** Lista de materiais: totais e categorias somados das linhas da lista (antes, das posições cruas)
 — as telhas multi-dobra, o complemento e a cumeeira entram, e as telhas pelo peso de compra; na sala dos
 compressores o cabeçalho dizia 6.957 kg / 1.866 peças e a coluna somava 11.215 kg / 2.026. Conjuntos com

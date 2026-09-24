@@ -21,7 +21,7 @@
   .materiais .barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 14px; }
   .materiais .barra .sep { flex: 1; }
   .materiais .barra label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto2); }
-  .materiais .barra select, .materiais .barra input[type=search] { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--borda-forte);
+  .materiais .barra select, .materiais .barra input[type=search], .controle-barra select { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--borda-forte);
     border-radius: var(--raio-p); background: var(--painel); color: var(--texto); }
   .materiais .barra input[type=search] { width: 220px; }
   .materiais .cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 6px 0 18px; }
@@ -63,6 +63,10 @@
     .materiais tr.oculta { display: none; }
     body { background: #fff; color: #000; }
   }
+  .obra-atual { font-size: 15px; }
+  .obra-atual b { font-weight: 600; }
+  .controle-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 10px; font-size: 13px; color: var(--texto2); }
+  @media print { .controle-barra { display: none; } }
 </style>
 </head>
 <body>
@@ -87,14 +91,8 @@
   <div id="aviso" class="aviso-topo" hidden></div>
 
   <div class="barra">
-    <label>Barra comercial
-      <select id="barra" title="Comprimento da barra de compra para estimar quantas barras saem de cada perfil">
-        <option value="0">automático (6 m; 12 m se alguma peça passa de 6)</option>
-        <option value="6000">6 m</option>
-        <option value="12000">12 m</option>
-      </select>
-    </label>
-    <button type="button" id="btn-recalcular" title="Levanta as peças do modelo 3D de novo (use depois de mudar o modelo)">Recalcular do modelo</button>
+    <div class="obra-atual" id="obra-atual" title="A lista é sempre do projeto aberto">Projeto: <b>—</b></div>
+    <button type="button" id="btn-recalcular" title="Levanta de novo as peças do modelo 3D deste projeto (use depois de mudar o modelo)">Atualizar pelo modelo 3D</button>
     <span class="sep"></span>
     <input type="search" id="filtro" placeholder="Filtrar posição, perfil, conjunto…" title="Filtra as linhas de todos os quadros">
     <button type="button" id="btn-pdf" title="Gera Lista-de-materiais.pdf na pasta detalhamento/ do projeto e abre">PDF</button>
@@ -105,6 +103,15 @@
   <div class="arquivos" id="arquivos"></div>
 
   <div class="cartoes" id="cartoes"></div>
+
+  <!-- vai para dentro do quadro Perfis: só muda a estimativa de barras de compra -->
+  <label class="controle-barra" id="controle-barra" hidden>Comprimento da barra de aço para compra
+    <select id="barra" title="Comprimento das barras compradas, para estimar quantas saem de cada perfil (colunas Barra, Barras, Aprov., Sobra e Emendas)">
+      <option value="0">6 m, ou 12 m quando alguma peça do perfil passa de 6 m</option>
+      <option value="6000">sempre 6 m</option>
+      <option value="12000">sempre 12 m</option>
+    </select>
+  </label>
 
   <div id="conteudo"></div>
 </main>

@@ -111,8 +111,9 @@ function desenhar(L) {
   $('#sub-projeto').textContent = p.nome || PROJETO;
   document.title = `Lista de materiais — ${p.nome || PROJETO}`;
   $('#quando').textContent = L.gerado ? `levantada em ${L.gerado.replace(/^(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1')}` : '—';
-  $('#quando').title = 'Quando a lista foi levantada do modelo. Depois de mudar o modelo, use "Recalcular".';
+  $('#quando').title = 'Quando a lista foi levantada do modelo 3D. Depois de mudar o modelo, use "Atualizar pelo modelo 3D".';
   $('#barra').value = String(L.barra || 0);
+  $('#obra-atual').replaceChildren('Projeto: ', el('b', { texto: p.nome || PROJETO }));
 
   // arquivos gravados
   const arq = L.arquivos || {};
@@ -123,7 +124,7 @@ function desenhar(L) {
 
   $('#cartoes').replaceChildren(
     cartao(n(t.pecas), 'peças'), cartao(n(t.posicoes), 'posições'), cartao(n(t.peso, 1) + ' kg', 'peso total'),
-    cartao(n(t.conjuntos), 'conjuntos'), cartao(n((L.perfis || []).reduce((s, g) => s + (g.barras?.quantidade || 0), 0)), 'barras comerciais'),
+    cartao(n(t.conjuntos), 'conjuntos'), cartao(n((L.perfis || []).reduce((s, g) => s + (g.barras?.quantidade || 0), 0)), 'barras de compra'),
     cartao(n(t.acessorios), 'acessórios'));
 
   const c = $('#conteudo');
@@ -137,8 +138,10 @@ function desenhar(L) {
 
   if ((L.perfis || []).length) {
     const totB = L.perfis.reduce((s, g) => s + g.barras.quantidade, 0);
-    c.append(secao('Perfis', `comprimento, peso e barras comerciais por encaixe (do maior para o menor, 3 mm de corte); ${n(totB)} barras no total`,
-      el('div', { class: 'rolagem' }, tabela([
+    const controleBarra = $('#controle-barra');
+    controleBarra.hidden = false;
+    c.append(secao('Perfis', `comprimento, peso e barras de compra por encaixe (do maior para o menor, 3 mm de corte); ${n(totB)} barras no total`,
+      el('div', {}, controleBarra, el('div', { class: 'rolagem' }, tabela([
         { titulo: 'Perfil', chave: 'perfil', classe: 'b' }, { titulo: 'Material', chave: 'material' },
         { titulo: 'Categoria', valor: (g) => rotuloCategoria(g.categoria) },
         { titulo: 'Posições', valor: (g) => marcas(g.posicoes), classe: 'quebra' },
@@ -153,7 +156,7 @@ function desenhar(L) {
         { titulo: 'Emendas', valor: (g) => g.barras.emendas, classe: 'c', num: true, dica: 'Peças mais compridas que a barra comercial' },
       ], L.perfis, ['TOTAL', '', '', '', n(L.perfis.reduce((s, g) => s + g.pecas, 0)), n(L.perfis.reduce((s, g) => s + g.comprimento_m, 0), 2), '',
                     n(L.perfis.reduce((s, g) => s + g.peso, 0), 1), '', n(totB), '', '', ''],
-      (g) => [g.perfil, g.material, g.posicoes.join(' ')].join(' ')))));
+      (g) => [g.perfil, g.material, g.posicoes.join(' ')].join(' '))))));
   }
 
   const dob = L.dobrados || {};
