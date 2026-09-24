@@ -726,6 +726,23 @@ LIMITE_DESLOCAMENTO_FURO = 40.0
 
 def aplicar_furos_nas_barras(doc: Documento, ajustes: Optional[dict], marcas: Optional[Sequence[str]] = None,
                              limite: float = LIMITE_DESLOCAMENTO_FURO) -> dict:
+    """Leva a furação guardada às malhas das barras, repetindo a passada até assentar: os
+    eixos da barra saem da nuvem de vértices e giram um pouco quando os furos andam, então
+    a medida seguinte ainda acha um resto de 1–2 mm; em duas ou três passadas zera."""
+    total = _aplicar_furos_nas_barras_uma_vez(doc, ajustes, marcas, limite)
+    alvo = list(total["posicoes"])
+    for _ in range(4):
+        if not alvo:
+            break
+        r = _aplicar_furos_nas_barras_uma_vez(doc, ajustes, alvo, limite)
+        if not r["furos"]:
+            break
+        alvo = list(r["posicoes"])
+    return total
+
+
+def _aplicar_furos_nas_barras_uma_vez(doc: Documento, ajustes: Optional[dict], marcas: Optional[Sequence[str]] = None,
+                                      limite: float = LIMITE_DESLOCAMENTO_FURO) -> dict:
     """Leva ao 3D a furação guardada no projeto para as barras (terças vinculadas ao
     suporte): em cada sólido da posição, os vértices de cada furo da malha (parede do
     furo e as duas faces) transladam, no plano da alma ou da mesa, até a posição do

@@ -175,6 +175,14 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
+**0.7.18.** Furos das terças "viradas": a detecção (`saida.detalhamento._lacos_2d`) aceitava só os laços
+no nível médio da alma (±0,6 mm), mas os eixos da barra vêm da nuvem de vértices e saem inclinados uma
+fração de grau — numa terça de 5 m a alma "sobe" ~7 mm de ponta a ponta, e só o furo do meio passava.
+Agora o nível de cada laço é comparado com o plano ajustado à alma (`_plano_do_laco`); uma seção inteira de
+terças (T.C.4 e outras) voltou a ter furos alinhados, retirados e oblongados. `aplicar_furos_nas_barras`
+repete a passada até assentar (o eixo gira um pouco quando os furos andam). Medidas e direção da onda das
+telhas guardadas por peça (o detalhamento completo caiu de ~60 s para ~33 s).
+
 **0.7.16.** Furo fechado sai da malha de verdade (`_limpar_faces`: tira os pontos repetidos e as pontas
 que o furo fechado deixava no polígono da alma e as faces da parede; conserta também os furos fechados
 pela 0.7.13–0.7.15). "Tem uso" passou a ser a distância real do centro do furo à superfície do parafuso

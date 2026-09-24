@@ -527,9 +527,44 @@ def _lacos_2d(pos: Posicao, eixo: int, sinal: float, ij: Tuple[int, int]):
         nivel = sum(pos.local[i][eixo] for i in laco) / len(laco)
         itens.append((abs(_area_2d(pts)), nivel, laco, pts))
     itens.sort(key=lambda t: -t[0])
-    nivel0 = itens[0][1]
+    # o plano do maior laço (a alma), ajustado pelos pontos dele: os eixos da peça vêm da
+    # nuvem de vértices e, numa barra comprida com os furos concentrados, saem inclinados
+    # uma fração de grau — a alma "sobe" alguns milímetros de uma ponta à outra, e o nível
+    # médio de um furo perto da ponta não bate com o nível médio da alma inteira
+    plano = _plano_do_laco(pos, itens[0][2], eixo, ij)
+
+    def fora_do_plano(laco, nivel):
+        cu = sum(pos.local[i][ij[0]] for i in laco) / len(laco)
+        cv = sum(pos.local[i][ij[1]] for i in laco) / len(laco)
+        return abs(nivel - (plano[0] + plano[1] * cu + plano[2] * cv))
     return [(laco, pts) for area, nivel, laco, pts in itens
-            if abs(nivel - nivel0) < 0.6 and area >= 1.0]
+            if fora_do_plano(laco, nivel) < 0.6 and area >= 1.0]
+
+
+def _plano_do_laco(pos: Posicao, laco, eixo: int, ij: Tuple[int, int]):
+    """nível = a + b·u + c·v pelos mínimos quadrados sobre os pontos do laço (u, v pelos
+    eixos `ij`). Sem pontos bastantes para o ajuste, o nível médio (a, 0, 0)."""
+    pts = [(pos.local[i][ij[0]], pos.local[i][ij[1]], pos.local[i][eixo]) for i in laco]
+    n = len(pts)
+    media = sum(p[2] for p in pts) / n
+    if n < 3:
+        return (media, 0.0, 0.0)
+    su = sum(p[0] for p in pts) / n
+    sv = sum(p[1] for p in pts) / n
+    uu = sum((p[0] - su) ** 2 for p in pts)
+    vv = sum((p[1] - sv) ** 2 for p in pts)
+    uv = sum((p[0] - su) * (p[1] - sv) for p in pts)
+    uz = sum((p[0] - su) * (p[2] - media) for p in pts)
+    vz = sum((p[1] - sv) * (p[2] - media) for p in pts)
+    det = uu * vv - uv * uv
+    if abs(det) < 1e-9:
+        return (media, 0.0, 0.0)
+    b = (uz * vv - vz * uv) / det
+    c = (vz * uu - uz * uv) / det
+    # inclinação grande não é "eixo torto", é outra face: fica o nível médio
+    if abs(b) > 0.02 or abs(c) > 0.02:
+        return (media, 0.0, 0.0)
+    return (media - b * su - c * sv, b, c)
 
 
 def _contorno_e_furos(pos: Posicao, eixo: int, sinal: float, ij: Tuple[int, int],

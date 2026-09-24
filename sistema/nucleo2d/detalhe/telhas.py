@@ -32,8 +32,24 @@ COBRIMENTO_TERCA = 150.0
 SAIA_TELHA = 150.0
 
 
+_CACHE_MEDIDAS: Dict[tuple, tuple] = {}
+
+
 def _medidas(e):
-    """Centro, eixos principais e extensões (maior → menor) da malha."""
+    """Centro, eixos principais e extensões (maior → menor) da malha. Guardado por peça (a
+    mesma telha é medida pela saia, pela multi-dobra, pela cumeeira e pela paginação)."""
+    V = e.vertices
+    chave = (e.id, len(V), tuple(V[0]), tuple(V[-1]), tuple(V[len(V) // 2]))
+    r = _CACHE_MEDIDAS.get(chave)
+    if r is None:
+        r = _medidas_calc(e)
+        if len(_CACHE_MEDIDAS) > 20000:
+            _CACHE_MEDIDAS.clear()
+        _CACHE_MEDIDAS[chave] = r
+    return r
+
+
+def _medidas_calc(e):
     c, pca = _autovetores(e.vertices)
     ext = []
     for ax in pca:
@@ -785,7 +801,22 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
     return saida
 
 
+_CACHE_ONDA: Dict[tuple, tuple] = {}
+
+
 def _direcao_da_onda(e, normal):
+    V = e.vertices
+    chave = (e.id, len(V), tuple(V[0]), tuple(V[-1]), tuple(round(k, 4) for k in normal))
+    r = _CACHE_ONDA.get(chave)
+    if r is None:
+        r = _direcao_da_onda_calc(e, normal)
+        if len(_CACHE_ONDA) > 20000:
+            _CACHE_ONDA.clear()
+        _CACHE_ONDA[chave] = r
+    return r
+
+
+def _direcao_da_onda_calc(e, normal):
     """Direção em que a onda da telha corre (o comprimento de compra): a direção do plano
     da chapa que as faces da malha menos apontam — as faces inclinadas da onda têm normal
     na largura, nenhuma no comprimento. O maior eixo da malha não serve: numa telha curta
