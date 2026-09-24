@@ -295,7 +295,7 @@ class Desenho:
             elif isinstance(e, Hachura):
                 for contorno in e.contornos[:1]:      # furos: só o externo por enquanto
                     if e.padrao == "solido" and len(contorno) >= 3:
-                        d.hachura(contorno, espacamento=0.5 * k, angulo=e.angulo, camada=camada)
+                        d.hachura(contorno, espacamento=0.5 * k, angulo=e.angulo, camada=camada, furos=e.contornos[1:])
                     else:
                         d.hachura(contorno, espacamento=e.espacamento * k, angulo=e.angulo, camada=camada)
             elif isinstance(e, Chamada):

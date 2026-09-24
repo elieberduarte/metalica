@@ -1182,6 +1182,7 @@ class CAD {
       cliente: el('input', { type: 'text', value: projeto.cliente || '' }),
       responsavel: el('input', { type: 'text', value: projeto.responsavel || '' }),
       revisao: el('input', { type: 'text', value: '00' }),
+      data: el('input', { type: 'text', value: '', placeholder: 'mês / ano de hoje' }),
       titulo: el('input', { type: 'text', value: 'Prancha', title: 'Nome base das pranchas: Prancha 01, 02, …' }),
     };
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
@@ -1201,7 +1202,7 @@ class CAD {
          chavesSel.size ? ` Deste desenho, só as ${chavesSel.size} peça(s) selecionada(s): ${[...chavesSel].slice(0, 8).join(', ')}${chavesSel.size > 8 ? '…' : ''}` : ' Deste desenho, só as peças selecionadas (nada selecionado)'),
       el('label', {}, 'Formato da folha', formato),
       el('label', {}, 'Obra', campos.obra), el('label', {}, 'Cliente', campos.cliente),
-      el('label', {}, 'Responsável técnico', campos.responsavel), el('label', {}, 'Revisão', campos.revisao),
+      el('label', {}, 'Projetista', campos.responsavel), el('label', {}, 'Data (mês / ano)', campos.data), el('label', {}, 'Revisão', campos.revisao),
       el('label', {}, 'Nome base', campos.titulo),
       el('label', { class: 'linha' }, indice, ' Prancha 01 de índice: relação das pranchas e tabela de todas as posições com a prancha de cada uma'),
       el('label', { class: 'linha' }, substituir, ' Substituir as pranchas anteriores com este nome'));
@@ -1213,7 +1214,7 @@ class CAD {
       const desenhos = escolhidos.map(n => (soSelecao.checked && chavesSel.size && n === this.nomeDesenho) ? { nome: n, chaves: [...chavesSel] } : n);
       const j = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/pranchas`, {
         desenhos, formato: formato.value, titulo: campos.titulo.value, substituir: substituir.checked, indice: indice.checked,
-        carimbo: { obra: campos.obra.value, cliente: campos.cliente.value, responsavel: campos.responsavel.value, revisao: campos.revisao.value },
+        carimbo: { obra: campos.obra.value, cliente: campos.cliente.value, responsavel: campos.responsavel.value, revisao: campos.revisao.value, data: campos.data.value },
       });
       this.aviso(`${j.pranchas.length} prancha(s) ${j.formato} montada(s): ${j.pranchas.map(p => p.titulo).join(', ')}. Abra as outras em Desenho → Abrir desenho do projeto; Exportar DXF grava cada uma em papel 1:1.`, 'info', 15000);
       if (j.pranchas.length) await this.abrirDesenho(j.pranchas[0].nome);

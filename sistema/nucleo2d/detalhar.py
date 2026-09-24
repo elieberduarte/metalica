@@ -479,6 +479,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
 
     conjuntos_info = []
     familias_completo: List[tuple] = []       # (família, tipo, célula): completo e desenhos por família
+    tirantes_em_grupo: set = set()            # tirantes já cotados no detalhe do contraventamento
     tipo_de_conj: Dict[str, str] = {}         # marca de conjunto → tipo (tesoura, agulhamento…)
     if pecas:            # sempre levantados: os nomes de produção dependem dos conjuntos
         por_conj: Dict[str, List[Solido]] = collections.defaultdict(list)
@@ -589,6 +590,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         d = Desenho(nome=g["titulo"], escala=g["escala"])
         tipos_conj = nomeacao["tipos_conjuntos"]
         comprimentos = {p.marca: p.comprimento for p in posicoes}
+        pesos = {p.marca: p.peso for p in posicoes}
         conformadas = {p.marca for p in posicoes if p.classe == "barra_conformada"}
         # contraventamentos com as mesmas peças de ponta: um detalhe só, cotas empilhadas
         cv: Dict[tuple, list] = collections.OrderedDict()
@@ -600,11 +602,12 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                 chave = tuple(sorted((fundidas.get(m, m), q) for m, q in collections.Counter(
                     str(_marcas(e).get("posicao") or e.nome) for e in inst).items() if fundidas.get(m, m) != marca_t))
                 cv.setdefault(chave, []).append((rotulo, inst, n))
+                tirantes_em_grupo.add(marca_t)
                 continue
             fns.append((tipos_conj.get(rotulo, ""), lambda dd, x, y, rotulo=rotulo, inst=inst, n=n, nota=nota:
                        desenho_do_conjunto(doc, rotulo, inst, n, dd, x, y, rotular, fundidas=fundidas, nota=nota,
                                            nomes=nomes_pos, nome=nomes_conj.get(rotulo, ""), tipo=tipos_conj.get(rotulo, ""),
-                                           conformadas=conformadas)))
+                                           conformadas=conformadas, pesos=pesos)))
         itens_cv = {}
         for membros in cv.values():
             membros.sort(key=lambda m: _ordem_natural(nomes_conj.get(m[0], m[0])))   # mesma ordem do rótulo da célula
@@ -722,8 +725,12 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             p.marca: [_furo_dict(f) for f in p.furos if f.vista == "frente"] for p in lista if p.marca in editaveis}
         faixas[chave] = (celulas_g, 800.0, dict(d.metadados["detalhamento"]), QUADROS_POSICOES)
         familias_completo.extend(("telha", t, f) for t, f in celulas_g[:n_frente])
+        # o tirante que já está no detalhe do contraventamento (barra, comprimento e dobra
+        # cotados lá) não ganha célula própria: era o mesmo desenho repetido
         familias_completo.extend((_familia_da_posicao(p, nomeacao["tipos"].get(p.marca) or p.tipo_nome, tipo_de_conj), t, f)
-                                 for p, (t, f) in zip(lista, celulas_g[n_frente:n_frente + len(lista)]))
+                                 for p, (t, f) in zip(lista, celulas_g[n_frente:n_frente + len(lista)])
+                                 if not (p.marca in tirantes_em_grupo
+                                         and (nomeacao["tipos"].get(p.marca) or p.tipo_nome) == "contraventamento"))
         familias_completo.extend((fam, "montagem", f) for fam, (_, f) in zip(familias_mont, celulas_mont))
         base[chave] = d
 

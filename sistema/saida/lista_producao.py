@@ -169,6 +169,31 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao], nomes: Optional[Dict[str, s
     return saida
 
 
+def comparar_dobras(perfis: Sequence[dict]) -> dict:
+    """Perfis dobrados da chapa: peso teórico (soma das medidas externas) × com o desconto
+    das dobras (a tira desenvolvida), lado a lado com o peso do modelo e o kg/m da NBR 6355.
+    Ver `saida/dobras.py`."""
+    from saida import dobras
+    linhas = []
+    for g in perfis:
+        r = dobras.pesos(g["perfil"], g["comprimento_m"])
+        if r is None:
+            continue
+        norma = dobras.massa_da_norma(g["perfil"])
+        linhas.append({"perfil": g["perfil"], "material": g["material"], "pecas": g["pecas"], "comprimento_m": g["comprimento_m"],
+                       "t": r["t"], "dobras": r["dobras"], "soma_externa": r["soma_externa"], "desenvolvido": r["desenvolvido"],
+                       "kg_m_teorico": r["kg_m_teorico"], "kg_m_desconto": r["kg_m_desconto"], "kg_m_norma": norma,
+                       "kg_m_modelo": g["kg_m"], "peso_modelo": g["peso"],
+                       "peso_teorico": round(r["peso_teorico"], 1), "peso_desconto": round(r["peso_desconto"], 1),
+                       "diferenca": round(r["peso_teorico"] - r["peso_desconto"], 1),
+                       "diferenca_pct": round(100.0 * (1.0 - r["kg_m_desconto"] / r["kg_m_teorico"]), 2) if r["kg_m_teorico"] else 0.0})
+    tot = {k: round(sum(li[k] for li in linhas), 1) for k in ("peso_modelo", "peso_teorico", "peso_desconto", "diferenca")}
+    tot["diferenca_pct"] = round(100.0 * tot["diferenca"] / tot["peso_teorico"], 2) if tot["peso_teorico"] else 0.0
+    return {"linhas": linhas, "totais": tot,
+            "regra": "desconto por dobra de 90° = 2(ri + t) − π/2 (ri + k·t), com ri = %g·t e k = %g "
+                     "(linha média, como a NBR 6355): ≈ %.2f·t" % (dobras.RAIO_INTERNO, dobras.FATOR_K, dobras.desconto_por_dobra(1.0))}
+
+
 def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: Dict[str, int],
            pecas=None, barra: float = 0.0, projeto: Optional[dict] = None,
            nomes_conjuntos: Optional[Dict[str, str]] = None) -> dict:
@@ -245,6 +270,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         g["posicoes"] = sorted(g["posicoes"], key=_ordem_natural)
         lista_perfis.append(g)
     lista_perfis.sort(key=lambda g: (-g["peso"], g["perfil"]))
+    dobrados = comparar_dobras(lista_perfis)
 
     # chapas por espessura e material
     chapas: Dict[tuple, dict] = collections.OrderedDict()
@@ -355,6 +381,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                    "acessorios": sum(acessorios.values()) if acessorios else 0,
                    "categorias": categorias_lista},
         "posicoes": linhas, "perfis": lista_perfis, "chapas": lista_chapas, "telhas": lista_telhas,
+        "dobrados": dobrados,
         "conjuntos": conjuntos,
         "acessorios": [{"nome": k, "quantidade": v} for k, v in sorted((acessorios or {}).items())],
         "ressalvas": ressalvas,
@@ -394,6 +421,17 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
                                 _num_csv(g["barras"]["comprimento"] / 1000.0, 0), g["barras"]["quantidade"],
                                 _num_csv(g["barras"]["aproveitamento"], 1), _num_csv(g["barras"]["sobra_m"]), g["barras"]["emendas"]]
                                for g in lista["perfis"]])
+    dob = (lista.get("dobrados") or {}).get("linhas") or []
+    if dob:
+        arquivos["dobras"] = _csv(os.path.join(pasta, "peso-dobras.csv"),
+                                  ["Perfil", "Material", "Pecas", "Comprimento total (m)", "Espessura (mm)", "Dobras",
+                                   "Soma externa (mm)", "Desenvolvido (mm)", "kg/m teorico", "kg/m com desconto", "kg/m NBR 6355",
+                                   "Peso do modelo (kg)", "Peso teorico (kg)", "Peso com desconto (kg)", "Diferenca (kg)", "Diferenca (%)"],
+                                  [[d["perfil"], d["material"], d["pecas"], _num_csv(d["comprimento_m"]), _num_csv(d["t"]), d["dobras"],
+                                    _num_csv(d["soma_externa"], 1), _num_csv(d["desenvolvido"], 1), _num_csv(d["kg_m_teorico"], 3),
+                                    _num_csv(d["kg_m_desconto"], 3), _num_csv(d["kg_m_norma"], 3) if d["kg_m_norma"] else "",
+                                    _num_csv(d["peso_modelo"], 1), _num_csv(d["peso_teorico"], 1), _num_csv(d["peso_desconto"], 1),
+                                    _num_csv(d["diferenca"], 1), _num_csv(d["diferenca_pct"], 2)] for d in dob])
     arquivos["chapas"] = _csv(os.path.join(pasta, "resumo-chapas.csv"),
                               ["Espessura (mm)", "Material", "Posicoes", "Pecas", "Area (m2)", "Peso (kg)"],
                               [[_num_csv(g["espessura"], 1), g["material"], " ".join(g["posicoes"]), g["pecas"],
@@ -475,6 +513,21 @@ def corpo_html(lista: dict) -> str:
                                       (_n(sum(g["peso"] for g in lista["perfis"]), 1), "r b"), ("", "c"),
                                       (_n(sum(g["barras"]["quantidade"] for g in lista["perfis"])), "c b"), ("", "c"), ("", "c")],
                               larguras=["15%", "10%", "23%", "6%", "8%", "6%", "8%", "6%", "6%", "6%", "6%"]))
+    dob = lista.get("dobrados") or {}
+    if dob.get("linhas"):
+        td = dob["totais"]
+        partes.append(_tabela("Perfis dobrados — peso teórico × com desconto das dobras (%s)" % dob.get("regra", ""),
+                              [("Perfil", "l"), ("Peças", "c"), ("Compr. (m)", "r"), ("Dobras", "c"), ("Soma ext. (mm)", "r"),
+                               ("Desenv. (mm)", "r"), ("kg/m teórico", "r"), ("kg/m c/ desc.", "r"), ("kg/m NBR", "r"),
+                               ("Peso modelo (kg)", "r"), ("Peso teórico (kg)", "r"), ("Peso c/ desc. (kg)", "r"), ("Dif. (kg)", "r"), ("Dif. (%)", "c")],
+                              [[(d["perfil"], "l b"), (d["pecas"], "c"), (_n(d["comprimento_m"], 2), "r"), (d["dobras"], "c"),
+                                (_n(d["soma_externa"], 1), "r"), (_n(d["desenvolvido"], 1), "r b"), (_n(d["kg_m_teorico"], 3), "r"),
+                                (_n(d["kg_m_desconto"], 3), "r"), (_n(d["kg_m_norma"], 2) if d["kg_m_norma"] else "—", "r"),
+                                (_n(d["peso_modelo"], 1), "r"), (_n(d["peso_teorico"], 1), "r"), (_n(d["peso_desconto"], 1), "r b"),
+                                (_n(d["diferenca"], 1), "r"), (_n(d["diferenca_pct"], 1), "c")] for d in dob["linhas"]],
+                              rodape=[("TOTAL", "l b"), ("", "c"), ("", "r"), ("", "c"), ("", "r"), ("", "r"), ("", "r"), ("", "r"), ("", "r"),
+                                      (_n(td["peso_modelo"], 1), "r b"), (_n(td["peso_teorico"], 1), "r b"), (_n(td["peso_desconto"], 1), "r b"),
+                                      (_n(td["diferenca"], 1), "r b"), (_n(td["diferenca_pct"], 1), "c b")]))
     if lista["chapas"]:
         partes.append(_tabela("Quadro 3 — Chapas por espessura e material",
                               [("Espessura (mm)", "c"), ("Material", "l"), ("Posições", "l"), ("Peças", "c"), ("Área (m²)", "r"), ("Peso (kg)", "r")],

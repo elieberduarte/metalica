@@ -218,6 +218,21 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.7.23.** Pranchas no modelo da fábrica (`Projeto/Modelos de Pranchas - Hermes.dwg`, medidas em
+`nucleo2d/modelo_hermes.py`): quadro com 25 mm à esquerda e 7 mm nos outros lados, marcas de dobra, aviso de
+propriedade em pé na margem e carimbo 178 × 99,8 mm (0,6 disso na A3/A4) com caixas R2 — logo (hachuras do
+bloco do DWG, `nucleo2d/_logo_hermes.py`), CONTEÚDO (gerado: "- TESOURAS: T1 (08X), T2 (02X)", com o número
+da prancha), ESCALA ("INDICADA" com mais de uma), DATA (mês / ano), OBRA (obra - cliente) e PROJETISTA. A
+tabela de posições no rodapé saiu (o conteúdo está no carimbo e no índice). A prancha herda as camadas dos
+desenhos de origem, e o PDF sai com as cores das camadas das peças; a moldura/título dos quadros do desenho de
+origem não entra mais na célula. Legenda dos conjuntos sem a lista de nomes das peças: uma linha por tipo
+(banzos, diagonais, montantes, chapas pela espessura) na cor da camada, parafusos e peso. Contraventamentos:
+o tirante que já está no detalhe do grupo não ganha célula própria. Lista de materiais: a página não
+carregava `web/vivo.js` e o programa instalado se encerrava 6 s depois de abri-la ("Failed to fetch" no
+PDF) — `testes/test_paginas.py` cobre todas as páginas; novo quadro **perfis dobrados: peso teórico × com
+desconto das dobras** (`saida/dobras.py`: desconto = 2(ri + t) − π/2 (ri + k·t), ri = t, k = 0,5 — bate com
+a massa da NBR 6355), com a tira desenvolvida e `peso-dobras.csv`.
+
 **0.7.18.** Furos das terças "viradas": a detecção (`saida.detalhamento._lacos_2d`) aceitava só os laços
 no nível médio da alma (±0,6 mm), mas os eixos da barra vêm da nuvem de vértices e saem inclinados uma
 fração de grau — numa terça de 5 m a alma "sobe" ~7 mm de ponta a ponta, e só o furo do meio passava.

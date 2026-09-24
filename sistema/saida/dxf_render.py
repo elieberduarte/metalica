@@ -198,8 +198,9 @@ def _escala_texto_automatica(ents, ax) -> float:
     return max(1e-5, min(50.0, pt_por_mm / 2.4))
 
 
-def desenhar(caminho_dxf: str, ax=None, escala_texto=1.0, camadas_ocultas=()):
-    """`escala_texto=None` calcula o fator automaticamente (texto em escala real)."""
+def desenhar(caminho_dxf: str, ax=None, escala_texto=1.0, camadas_ocultas=(), cores=None):
+    """`escala_texto=None` calcula o fator automaticamente (texto em escala real);
+    `cores`: camada → cor (#rrggbb) que prevalece sobre a da tabela do DXF."""
     doc = ler_dxf(caminho_dxf)
     cams, ents = doc["camadas"], doc["entidades"]
     if ax is None:
@@ -210,7 +211,7 @@ def desenhar(caminho_dxf: str, ax=None, escala_texto=1.0, camadas_ocultas=()):
         cam = e.get("camada", "0")
         if cam in camadas_ocultas:
             continue
-        cor = _cor(cam, cams)
+        cor = (cores or {}).get(cam) or _cor(cam, cams)
         lw = 1.4 if cam in ("ACO", "CONCRETO") else (0.5 if cam in ("HACHURA", "COTA", "EIXO") else 0.9)
         t = e["tipo"]
         if t == "LINE":

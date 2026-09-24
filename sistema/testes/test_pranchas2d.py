@@ -48,7 +48,8 @@ def test_celulas_e_transformacao():
     assert furos and abs(furos[0].raio - 0.65) < 1e-6
     # carimbo com obra, prancha 01/01 e escala
     textos = [e.texto for e in f.entidades.values() if isinstance(e, Texto)]
-    assert "Obra X" in textos and "01/01" in textos and any("1:10" in t for t in textos)
+    # (modelo da fábrica: valores em maiúsculas, "PRANCHA 01/01" na caixa do conteúdo)
+    assert "OBRA X" in textos and "PRANCHA 01/01" in textos and any("1:10" in t for t in textos)
     assert sum(1 for t in textos if t.startswith("ESC. 1:10")) == 3
 
 
@@ -78,16 +79,16 @@ def test_reduz_escala_e_quebra_em_pranchas():
         pass
 
 
-def test_filtro_de_chaves_e_tabela():
+def test_filtro_de_chaves_e_conteudo():
     d = _detalhe(n_celulas=3)
     d.metadados["detalhamento"] = {"itens": {"P%d" % i: {"quantidade": 4, "perfil": "PLATE 100x50x3", "comprimento": 1200,
                                                           "espessura": 3.0, "peso": 1.5, "classe": "Chapa"} for i in (1, 2, 3)}}
     folhas = pranchas.montar_pranchas([{"nome": "det", "desenho": d, "chaves": ["P2"]}], formato="A3")
     cels = folhas[0].metadados["prancha"]["celulas"]
     assert [c["titulo"] for c in cels] == ["P2 – 04x"]
-    textos = [e for e in folhas[0].entidades.values() if isinstance(e, Texto) and e.atributos.get("prancha") == "tabela"]
-    assert any(t.texto == "P2" for t in textos) and not any(t.texto == "P1" for t in textos)
-    assert any(t.texto == "6.0" for t in textos)        # peso total 4 × 1,5
+    # a caixa CONTEÚDO do carimbo lista o que está na folha, com a quantidade
+    conteudo = " ".join(e.texto for e in folhas[0].entidades.values() if isinstance(e, Texto) and e.atributos.get("campo") == "conteudo")
+    assert "P2 (04X)" in conteudo and "P1" not in conteudo
 
 
 if __name__ == "__main__":

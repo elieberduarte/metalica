@@ -419,8 +419,8 @@ export class Tela {
     for (const c of e.contornos) { c.forEach((p, i) => { const q = T(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); }
     ctx.clip('evenodd');
     const esp = (e.padrao === 'solido' ? 0.6 : e.espacamento) * k * this.vp.z;
-    if (esp < 2.5) {                                    // longe: preenchimento leve no lugar das linhas
-      ctx.globalAlpha = e.padrao === 'solido' ? 0.85 : 0.18; ctx.fillStyle = cor;
+    if (esp < 2.5 || e.padrao === 'solido') {           // longe (ou sólida): preenchimento no lugar das linhas
+      ctx.globalAlpha = e.padrao === 'solido' ? 0.9 : 0.18; ctx.fillStyle = cor;
       const pts = ext.map(T); const cx = caixaDe(pts);
       ctx.fillRect(cx[0][0], cx[0][1], cx[1][0] - cx[0][0], cx[1][1] - cx[0][1]);
       ctx.restore(); return;

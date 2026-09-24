@@ -36,11 +36,10 @@ FOLHAS: Dict[str, Tuple[float, float]] = {
     "A0": (1189.0, 841.0), "A1": (841.0, 594.0), "A2": (594.0, 420.0),
     "A3": (420.0, 297.0), "A4": (297.0, 210.0),
 }
-MARGENS = {"esquerda": 20.0, "direita": 10.0, "superior": 10.0, "inferior": 10.0}
-MARGENS_A3 = {"esquerda": 15.0, "direita": 7.0, "superior": 7.0, "inferior": 7.0}
-#: Carimbo (largura × altura, mm): 180 mm é a largura da ISO 7200.
-CARIMBO = {"A0": (180.0, 70.0), "A1": (180.0, 65.0), "A2": (180.0, 60.0),
-           "A3": (180.0, 55.0), "A4": (170.0, 50.0)}
+#: Folha, carimbo e margens seguem o modelo da fábrica (`nucleo2d/modelo_hermes.py`).
+from nucleo2d import modelo_hermes as _modelo    # noqa: E402
+MARGENS = MARGENS_A3 = _modelo.MARGENS
+CARIMBO = {f: _modelo.carimbo_tamanho(f) for f in FOLHAS}
 ESCALAS = (1, 2, 2.5, 5, 10, 15, 20, 25, 50, 75, 100, 125, 150, 200, 250, 500)
 #: Folga entre células e faixa do rótulo de escala sob cada uma (mm de papel).
 FOLGA = 10.0
@@ -48,7 +47,6 @@ FAIXA = 7.0
 #: Quadros por categoria: recuo das células dentro do quadro e altura da faixa do título.
 QUADRO_MARGEM = 6.0
 QUADRO_CABECALHO = 9.0
-OBS_CARIMBO = ("Desenho gerado automaticamente. Conferir antes da fabricação.")
 
 
 def texto_escala(escala: float) -> str:
@@ -111,14 +109,25 @@ def _caixa_de(ents: Sequence[Entidade2D], escala: float = 1.0) -> Optional[Tuple
     return (min(xs), min(ys)), (max(xs), max(ys))
 
 
+def _eh_moldura_de_origem(e: Entidade2D) -> bool:
+    """Título ou moldura de quadro/faixa do desenho de origem: tem `faixa`/`quadro` nos
+    atributos e não pertence a nenhuma posição ou conjunto (todas as entidades da faixa
+    carregam `faixa`, mas as das células têm `detalhe`)."""
+    a = e.atributos or {}
+    return bool(a.get("quadro")) or (bool(a.get("faixa")) and not a.get("detalhe"))
+
+
 def celulas_de(desenho: Desenho, nome: str) -> List[dict]:
     """Células de um desenho: as de `metadados.celulas` (detalhamento) ou o desenho inteiro.
 
     Cada célula: {fonte, titulo, escala, caixa, entidades}. Uma entidade pertence à
     célula que contém todos os seus pontos (com folga), e a que não pertence a nenhuma
     vai para a célula mais próxima."""
+    # as molduras e títulos dos quadros do desenho de origem (faixa/quadro, camada
+    # AUXILIAR) ficam de fora: a prancha tem os seus próprios quadros
     visiveis = [e for e in desenho.entidades.values()
-                if not (desenho.camadas.get(e.camada) and not desenho.camadas[e.camada].visivel)]
+                if not (desenho.camadas.get(e.camada) and not desenho.camadas[e.camada].visivel)
+                and e.camada != "AUXILIAR" and not _eh_moldura_de_origem(e)]
     caixas = desenho.metadados.get("celulas") or []
     if not caixas or len(caixas) == 1:
         caixa = _caixa_de(visiveis, float(desenho.escala or 1.0))
@@ -184,104 +193,30 @@ def celulas_de(desenho: Desenho, nome: str) -> List[dict]:
 
 
 # ============================================================ folha
-def _moldura(d: Desenho, formato: str, info: dict, numero: int, total: int, escalas: Sequence[float]):
+def _moldura(d: Desenho, formato: str, info: dict, numero: int, total: int, escalas: Sequence[float],
+             conteudo: Sequence[str] = ()):
+    """Borda, quadro, dobras e carimbo do modelo da fábrica. `conteudo`: as linhas da caixa
+    CONTEÚDO ("- TESOURAS: T1 (05x)…"). Devolve (quadro, carimbo) como caixas."""
     larg, alt = FOLHAS[formato]
-    m = MARGENS_A3 if formato in ("A3", "A4") else MARGENS
-    cam = "PRANCHA"
-    d.camadas[cam] = Camada2D(cam, "#111827", espessura=0.5)
-    d.camadas["CARIMBO"] = Camada2D("CARIMBO", "#111827", espessura=0.25)
-    atr = {"prancha": "moldura"}
-    d.add(Polilinha(camada=cam, vertices=[(0, 0), (larg, 0), (larg, alt), (0, alt)], fechada=True, atributos=dict(atr)))
-    x0, y0 = m["esquerda"], m["inferior"]
-    x1, y1 = larg - m["direita"], alt - m["superior"]
-    d.add(Polilinha(camada=cam, vertices=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], fechada=True, atributos=dict(atr)))
-    # carimbo no canto inferior direito do quadro
-    lc, ac = CARIMBO[formato]
-    cx0, cy0 = x1 - lc, y0
-    cy1 = cy0 + ac
-    T = lambda x, y, t, h, **kw: d.add(Texto(camada="CARIMBO", posicao=(round(x, 2), round(y, 2)), texto=str(t), altura=h,   # noqa: E731
-                                            atributos=dict(atr, campo=kw.get("campo", "")), alinhamento=kw.get("al", "esquerda")))
-    L = lambda a, b: d.add(Linha(camada="CARIMBO", a=a, b=b, atributos=dict(atr)))    # noqa: E731
-    d.add(Polilinha(camada=cam, vertices=[(cx0, cy0), (x1, cy0), (x1, cy1), (cx0, cy1)], fechada=True, atributos=dict(atr)))
-    h_obs, h_rod, h_tit = ac * 0.13, ac * 0.29, ac * 0.25
-    y_obs, y_rod, y_tit = cy0 + h_obs, cy0 + h_obs + h_rod, cy0 + h_obs + h_rod + h_tit
-    for y in (y_obs, y_rod, y_tit):
-        L((cx0, y), (x1, y))
-    xc1, xc2 = cx0 + lc * 0.46, cx0 + lc * 0.72
-    for x in (xc1, xc2):
-        L((x, y_obs), (x, y_rod))
-    k = ac / 65.0
-    mg = 3.0
-    h_top = cy1 - y_tit
-    T(cx0 + mg, cy1 - 0.24 * h_top, "OBRA", 1.8 * k, campo="rotulo")
-    obra = str(info.get("obra") or "")
-    T(cx0 + mg, cy1 - 0.52 * h_top, obra[:60], (3.2 if len(obra) <= 40 else 2.5) * k, campo="obra")
-    T(cx0 + mg, cy1 - 0.72 * h_top, "CLIENTE", 1.8 * k, campo="rotulo")
-    T(cx0 + mg, cy1 - 0.95 * h_top, str(info.get("cliente") or "")[:58], 2.4 * k, campo="cliente")
-    T(cx0 + mg, y_tit - 0.28 * h_tit, "TÍTULO DO DESENHO", 1.8 * k, campo="rotulo")
-    T(cx0 + mg, y_tit - 0.62 * h_tit, str(info.get("titulo") or "")[:48], 3.0 * k, campo="titulo")
-    if info.get("subtitulo"):
-        T(cx0 + mg, y_tit - 0.92 * h_tit, str(info["subtitulo"])[:66], 2.0 * k, campo="subtitulo")
-    esc_txt = ", ".join(texto_escala(e) for e in sorted(set(escalas))) or "—"
-    if len(set(escalas)) > 1:
-        esc_txt = "INDICADA (%s)" % esc_txt
-    for x, rotulo, valor, extra, grande, campo in (
-            (cx0, "RESPONSÁVEL TÉCNICO", str(info.get("responsavel") or "—")[:38], str(info.get("crea") or "CREA ____________")[:44], False, "responsavel"),
-            (xc1, "ESCALA", esc_txt[:24], "DATA  " + str(info.get("data") or date.today().strftime("%d/%m/%Y")), False, "escala"),
-            (xc2, "PRANCHA", "%02d/%02d" % (numero, total), "REV. " + str(info.get("revisao") or "00"), True, "prancha")):
-        T(x + mg, y_rod - 0.24 * h_rod, rotulo, 1.7 * k, campo="rotulo")
-        T(x + mg, y_rod - 0.55 * h_rod, valor, (3.4 if grande else 2.4) * k, campo=campo)
-        T(x + mg, y_rod - 0.84 * h_rod, extra, 1.8 * k, campo=campo + "-extra")
-    T(cx0 + mg, y_obs - 0.68 * h_obs, OBS_CARIMBO, 1.6 * k, campo="obs")
-    return (x0, y0, x1, y1), (cx0, cy0, x1, cy1)
+    unicas = sorted(set(escalas))
+    esc_txt = "INDICADA" if len(unicas) > 1 else (texto_escala(unicas[0]) if unicas else "-")
+    return _modelo.desenhar_folha(d, formato, larg, alt, info, numero, total, esc_txt, conteudo)
 
 
-def _tabela_de_posicoes(d: Desenho, cels: Sequence[dict], quadro, carimbo_caixa):
-    """Lista das posições da prancha (marca, quantidade, perfil, comprimento, peso) na
-    faixa do rodapé, à esquerda do carimbo, em quantas colunas couberem."""
-    linhas = []
+def _conteudo_de(cels: Sequence[dict]) -> List[str]:
+    """Linhas do CONTEÚDO: por categoria, os nomes com a quantidade — "- TESOURAS: T1 (05x), T2 (02x)";
+    vistas e cortes pelo título do desenho."""
+    por_cat: Dict[str, List[str]] = collections.OrderedDict()
     for c in cels:
-        it = c.get("item")
-        if not it or not c.get("marca"):
-            continue
-        comp = ("%d" % it["comprimento"]) if it.get("comprimento") else ("#%s" % it["espessura"] if it.get("espessura") else "")
-        linhas.append((it.get("nome") or c["marca"], "%dx" % it.get("quantidade", 0), (it.get("perfil") or "")[:26], comp,
-                       ("%.1f" % (it["peso"] * it.get("quantidade", 0))) if it.get("peso") else ""))
-    if not linhas:
-        return
-    qx0, qy0, qx1, qy1 = quadro
-    cx0, cy0, cx1, cy1 = carimbo_caixa
-    x0, y0, x1, y1 = qx0, cy0, cx0, cy1
-    h_linha = 3.2
-    altura_txt = 1.8
-    cabec = ("POS.", "QTD", "PERFIL / CHAPA", "COMPR.", "PESO kg")
-    larguras = (14.0, 10.0, 46.0, 14.0, 14.0)
-    larg_col = sum(larguras) + 6.0
-    n_cols = max(1, int((x1 - x0 - 4.0) // larg_col))
-    por_col = max(1, int((y1 - y0 - 4.0) // h_linha) - 1)
-    cam = "CARIMBO"
-    atr = {"prancha": "tabela"}
-    d.add(Polilinha(camada="PRANCHA", vertices=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], fechada=True, atributos=dict(atr)))
-    total_cabe = n_cols * por_col
-    if len(linhas) > total_cabe:
-        linhas = linhas[:total_cabe - 1] + [("…", "", "e mais %d posição(ões): ver as células" % (len(linhas) - total_cabe + 1), "", "")]
-    for ci in range(n_cols):
-        bloco = linhas[ci * por_col:(ci + 1) * por_col]
-        if not bloco:
-            break
-        bx = x0 + 3.0 + ci * larg_col
-        y = y1 - 3.0
-        for j, (rot, larg) in enumerate(zip(cabec, larguras)):
-            xx = bx + sum(larguras[:j])
-            d.add(Texto(camada=cam, posicao=(round(xx, 2), round(y - altura_txt, 2)), texto=rot, altura=altura_txt, atributos=dict(atr, campo="cabecalho")))
-        d.add(Linha(camada=cam, a=(round(bx, 2), round(y - h_linha + 0.6, 2)), b=(round(bx + sum(larguras), 2), round(y - h_linha + 0.6, 2)), atributos=dict(atr)))
-        y -= h_linha
-        for linha in bloco:
-            for j, (valor, larg) in enumerate(zip(linha, larguras)):
-                xx = bx + sum(larguras[:j])
-                d.add(Texto(camada=cam, posicao=(round(xx, 2), round(y - altura_txt, 2)), texto=str(valor), altura=altura_txt,
-                            atributos=dict(atr, marca=linha[0])))
-            y -= h_linha
+        it = c.get("item") or {}
+        cat = (it.get("categoria") or c.get("categoria") or "VISTAS").upper()
+        nome = (it.get("nome") or c.get("marca") or c.get("desenho_titulo") or c["titulo"]).replace("Detalhamento – ", "")
+        if it.get("quantidade"):
+            nome = "%s (%02dx)" % (nome, it["quantidade"])
+        por_cat.setdefault(cat, [])
+        if nome not in por_cat[cat]:
+            por_cat[cat].append(nome)
+    return ["- %s: %s" % (cat, ", ".join(nomes)) for cat, nomes in por_cat.items()]
 
 
 def _quadro(d: Desenho, mq: dict, x0: float, x1: float):
@@ -324,7 +259,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     for i_c, c in enumerate(celulas):
         c["_ordem"] = i_c
     larg, alt = FOLHAS[formato]
-    m = MARGENS_A3 if formato in ("A3", "A4") else MARGENS
+    m = MARGENS
     lc, ac = CARIMBO[formato]
     # área útil: o quadro menos a faixa do carimbo (a faixa inteira, para a prateleira
     # de baixo não invadir o carimbo)
@@ -411,11 +346,14 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     for i0, cels in enumerate(pranchas, start=1):
         i = i0 + (1 if indice else 0)
         d = Desenho(nome="%s %02d" % (titulo, i), escala=1.0)
+        # as camadas dos desenhos de origem (cores por tipo de peça: banzos, diagonais…)
+        for f in fontes:
+            for k, cam in f["desenho"].camadas.items():
+                d.camadas.setdefault(k, copy.deepcopy(cam))
         fontes_da = sorted({c["fonte"] for c in cels})
         info = dict(carimbo)
         info.setdefault("titulo", ", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i0 - 1]))[:48] or fontes_titulo(cels))
-        quadro, carimbo_caixa = _moldura(d, formato, info, i, total, [c["k"] for c in cels])
-        _tabela_de_posicoes(d, cels, quadro, carimbo_caixa)
+        quadro, carimbo_caixa = _moldura(d, formato, info, i, total, [c["k"] for c in cels], _conteudo_de(cels))
         for mq in molduras[i0 - 1]:
             _quadro(d, mq, ux0, ux1)
         for c in cels:
@@ -454,7 +392,7 @@ def _prancha_indice(formato: str, carimbo: dict, titulo: str, pranchas: Sequence
     d = Desenho(nome="%s 01" % titulo, escala=1.0)
     info = dict(carimbo)
     info["titulo"] = "Índice"
-    quadro, carimbo_caixa = _moldura(d, formato, info, 1, total, [])
+    quadro, carimbo_caixa = _moldura(d, formato, info, 1, total, [], ["- ÍNDICE DE PRANCHAS E POSIÇÕES"])
     qx0, qy0, qx1, qy1 = quadro
     cx0, cy0, cx1, cy1 = carimbo_caixa
     cam = "CARIMBO"
@@ -530,6 +468,26 @@ def fontes_titulo(cels: Sequence[dict]) -> str:
 _FATOR_TEXTO = (2.835 / 0.73) / 2.4
 
 
+def _preencher_solidas(d: Desenho, ax):
+    """Hachuras sólidas (o logo do carimbo) preenchidas de verdade — o DXF de linhas do
+    renderizador só tem traços; os contornos internos são furos (regra par-ímpar)."""
+    from matplotlib.path import Path
+    from matplotlib.patches import PathPatch
+    for e in d.entidades.values():
+        if not isinstance(e, Hachura) or e.padrao != "solido":
+            continue
+        cam = d.camadas.get(e.camada)
+        cor = cam.cor if cam is not None else "#111827"
+        verts, codes = [], []
+        for c in e.contornos:
+            if len(c) < 3:
+                continue
+            verts += list(c) + [c[0]]
+            codes += [Path.MOVETO] + [Path.LINETO] * (len(c) - 1) + [Path.CLOSEPOLY]
+        if verts:
+            ax.add_patch(PathPatch(Path(verts, codes), facecolor=cor, edgecolor="none", zorder=5))
+
+
 def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: float = 10.0) -> str:
     """PDF vetorial, uma página por desenho, no tamanho real do papel.
 
@@ -565,7 +523,11 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
             arq = d.para_dxf(k).gravar(os.path.join(tmp, "p%d.dxf" % i))
             fig = plt.figure(figsize=(larg / 25.4, alt / 25.4))
             ax = fig.add_axes((0, 0, 1, 1))
-            dxf_render.desenhar(arq, ax, escala_texto=_FATOR_TEXTO / k)
+            # as camadas por tipo de peça (banzos, diagonais…) saem na cor delas, como no CAD
+            from nucleo2d.detalhe.base import CAMADAS_PECAS
+            cores = {n: (d.camadas[n].cor if n in d.camadas else c) for n, (c, _e) in CAMADAS_PECAS.items()}
+            dxf_render.desenhar(arq, ax, escala_texto=_FATOR_TEXTO / k, cores=cores)
+            _preencher_solidas(d, ax)
             ax.set_xlim(x0, x0 + larg * k)
             ax.set_ylim(y0, y0 + alt * k)
             ax.set_aspect("equal")

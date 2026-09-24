@@ -116,7 +116,7 @@ function desenhar(L) {
 
   // arquivos gravados
   const arq = L.arquivos || {};
-  const rot = { romaneio: 'romaneio.csv', perfis: 'resumo-perfis.csv', chapas: 'resumo-chapas.csv', conjuntos: 'conjuntos.csv', html: 'lista (HTML)', pdf: 'lista (PDF)' };
+  const rot = { romaneio: 'romaneio.csv', perfis: 'resumo-perfis.csv', dobras: 'peso-dobras.csv', chapas: 'resumo-chapas.csv', conjuntos: 'conjuntos.csv', html: 'lista (HTML)', pdf: 'lista (PDF)' };
   $('#arquivos').replaceChildren(el('span', { class: 'nota', texto: 'Arquivos (abrem no Excel / navegador): ' }),
     ...Object.entries(rot).filter(([k]) => arq[k]).map(([k, r]) => el('a', { href: arq[k].url, target: '_blank', rel: 'noopener',
       title: `${arq[k].nome} · ${n(arq[k].tamanho_kb, 1)} kB`, texto: r })));
@@ -154,6 +154,30 @@ function desenhar(L) {
       ], L.perfis, ['TOTAL', '', '', '', n(L.perfis.reduce((s, g) => s + g.pecas, 0)), n(L.perfis.reduce((s, g) => s + g.comprimento_m, 0), 2), '',
                     n(L.perfis.reduce((s, g) => s + g.peso, 0), 1), '', n(totB), '', '', ''],
       (g) => [g.perfil, g.material, g.posicoes.join(' ')].join(' ')))));
+  }
+
+  const dob = L.dobrados || {};
+  if ((dob.linhas || []).length) {
+    const td = dob.totais || {};
+    c.append(secao('Perfis dobrados: peso teórico × com desconto das dobras',
+      'teórico = soma das medidas externas × espessura; com desconto = tira desenvolvida (' + (dob.regra || '') + '). O peso do modelo é o da malha 3D (cantos vivos, furos descontados).',
+      el('div', { class: 'rolagem' }, tabela([
+        { titulo: 'Perfil', chave: 'perfil', classe: 'b' },
+        { titulo: 'Peças', chave: 'pecas', classe: 'c', num: true },
+        { titulo: 'Compr. (m)', chave: 'comprimento_m', classe: 'r', num: true, casas: 2 },
+        { titulo: 'Dobras', chave: 'dobras', classe: 'c', num: true },
+        { titulo: 'Soma ext. (mm)', chave: 'soma_externa', classe: 'r', num: true, casas: 1, dica: 'Soma das medidas externas da seção' },
+        { titulo: 'Desenv. (mm)', chave: 'desenvolvido', classe: 'r b', num: true, casas: 1, dica: 'Largura da tira cortada da bobina' },
+        { titulo: 'kg/m teórico', chave: 'kg_m_teorico', classe: 'r', num: true, casas: 3 },
+        { titulo: 'kg/m c/ desc.', chave: 'kg_m_desconto', classe: 'r', num: true, casas: 3 },
+        { titulo: 'kg/m NBR', valor: (d) => d.kg_m_norma, classe: 'r', num: true, casas: 2, dica: 'Tabela da NBR 6355 (catálogo), quando o perfil está nela' },
+        { titulo: 'Peso modelo (kg)', chave: 'peso_modelo', classe: 'r', num: true, casas: 1 },
+        { titulo: 'Peso teórico (kg)', chave: 'peso_teorico', classe: 'r', num: true, casas: 1 },
+        { titulo: 'Peso c/ desc. (kg)', chave: 'peso_desconto', classe: 'r b', num: true, casas: 1 },
+        { titulo: 'Dif. (kg)', chave: 'diferenca', classe: 'r', num: true, casas: 1 },
+        { titulo: 'Dif. (%)', chave: 'diferenca_pct', classe: 'c', num: true, casas: 1 },
+      ], dob.linhas, ['TOTAL', '', '', '', '', '', '', '', '', n(td.peso_modelo, 1), n(td.peso_teorico, 1), n(td.peso_desconto, 1), n(td.diferenca, 1), n(td.diferenca_pct, 1)],
+      (d) => d.perfil))));
   }
 
   if ((L.chapas || []).length) {

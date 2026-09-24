@@ -203,9 +203,10 @@ class Desenho:
                    altura, camada, alinhamento="esquerda" if direita else "direita")
         return self
 
-    def hachura(self, pontos, espacamento=3.0, angulo=45.0, camada="HACHURA"):
+    def hachura(self, pontos, espacamento=3.0, angulo=45.0, camada="HACHURA", furos=()):
         """Hachura de corte por linhas paralelas dentro de um polígono convexo ou côncavo
-        simples (varredura por linhas com interseções ordenadas)."""
+        simples (varredura por linhas com interseções ordenadas); `furos`: contornos
+        internos que ficam vazios (par-ímpar)."""
         if len(pontos) < 3:
             return self
         a = math.radians(angulo)
@@ -213,11 +214,11 @@ class Desenho:
         proj = [(-p[0] * sa + p[1] * ca) for p in pontos]     # coordenada perpendicular
         t_min, t_max = min(proj), max(proj)
         n = int((t_max - t_min) / espacamento) + 1
+        arestas = [(c[j], c[(j + 1) % len(c)]) for c in [pontos] + [f for f in furos if len(f) >= 3] for j in range(len(c))]
         for i in range(1, n):
             t = t_min + i * espacamento
             cortes = []
-            for j in range(len(pontos)):
-                p1, p2 = pontos[j], pontos[(j + 1) % len(pontos)]
+            for p1, p2 in arestas:
                 t1 = -p1[0] * sa + p1[1] * ca
                 t2 = -p2[0] * sa + p2[1] * ca
                 if (t1 - t) * (t2 - t) < 0:

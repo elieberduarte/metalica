@@ -15,6 +15,7 @@ from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desen
 from saida.desenhos import Estilo, _mm
 
 from nucleo2d.detalhe.base import (  # noqa: E402
+    CAMADAS_PECAS,
     TIPOS_NOME,
     _Papel,
     _caixa,
@@ -705,13 +706,15 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                         desenho: Desenho, dx: float, dy: float, rotular: bool = True,
                         fundidas: Optional[Dict[str, str]] = None, nota=None,
                         nomes: Optional[Dict[str, str]] = None, nome: str = "", tipo: str = "",
-                        conformadas: Optional[set] = None) -> Tuple[float, float, float, float]:
+                        conformadas: Optional[set] = None,
+                        pesos: Optional[Dict[str, float]] = None) -> Tuple[float, float, float, float]:
     """Elevação do conjunto com cotas de nós, título e lista de perfis, em (dx, dy).
     `fundidas`: marca do IFC → posição fundida; `nomes`: posição fundida → nome de
     produção (rótulos e composição com o mesmo nome que as células de posição);
-    `nome`: o do conjunto (T1, S.T.2…)."""
+    `nome`: o do conjunto (T1, S.T.2…); `pesos`: posição fundida → kg por peça."""
     fundidas = fundidas or {}
     nomes = nomes or {}
+    pesos = pesos or {}
 
     def nome_de(marca_ifc):
         f = fundidas.get(str(marca_ifc), str(marca_ifc))
@@ -912,15 +915,17 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # os detalhes de furação abaixo de tudo o que a elevação já desenhou
         fundo = min([0.0] + [q[1] - dy for q in p.pontos])
         _detalhes_de_furos(p, barras_furadas, nome_de, esc, fundo - 20.0 * esc)
-    # título e lista de perfis
-    comp = collections.Counter()
-    perfis = collections.Counter()
+    # título e lista de perfis: um perfil por linha, escrito na camada (cor) das peças
+    # que o usam — banzo, diagonal, montante, chapa —, como a fábrica lê a elevação
+    perfis_cam: Dict[tuple, int] = collections.Counter()
+    peso_un = 0.0
     for e in instancia:
         m = _marcas(e)
-        comp[nome_de(m.get("posicao") or e.nome)] += 1
-        perfis[str(m.get("perfil") or e.nome)] += 1
+        marca_e = str(m.get("posicao") or e.nome)
+        perfis_cam[(camada_de.get(e.id, "TEXTO"), str(m.get("perfil") or e.nome))] += 1
+        peso_un += float(pesos.get(fundidas.get(marca_e, marca_e), 0.0) or 0.0)
+    ordem_cam = {k: i for i, k in enumerate(CAMADAS_PECAS)}
     y = alt + (((off3 if cadeia_cima else off2) if cadeia_suportes else (off2 if cadeia_cima else off)) + 2.0) * esc
-    posic = ["%s x%d" % (k, n) for k, n in sorted(comp.items(), key=lambda kv: _ordem_natural(kv[0]))]
 
     def quebrar(prefixo, itens, largura=64):
         fora, atual = [], prefixo
@@ -931,16 +936,35 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             atual += it + ", "
         fora.append(atual.rstrip(", "))
         return fora
-    # legenda enxuta: nome e quantidade, as peças e os parafusos; o tipo está no título do
-    # quadro e a marca do TecnoMETAL nos metadados (cada perfil está no detalhe da peça)
+    # legenda enxuta: nome e quantidade, os perfis (um por linha, na cor da peça), os
+    # parafusos e o peso; sem a lista de nomes das peças — cada uma tem o seu detalhe e o
+    # tipo está no título do quadro. Cada linha é (texto, camada).
     titulo = "%s – %02dx" % (nome or marca, n_instancias)
-    linhas = [titulo] + quebrar("Pecas: " if nomes else "Posicoes: ", posic)
+    linhas = [(titulo, "TEXTO")]
+    # uma linha por tipo de peça, na cor dela: "U100X50X4.18" (banzos, azul), "U88X40X2.25 /
+    # U100X50X3.04" (diagonais, laranja)…; as chapas pela espessura ("PLATE 400x120x13" → #13)
+    por_cam: Dict[str, List[str]] = collections.OrderedDict()
+    for (cam_, perfil_), _q in sorted(perfis_cam.items(), key=lambda kv: (ordem_cam.get(kv[0][0], 99), _ordem_natural(kv[0][1]))):
+        if not perfil_:
+            continue
+        if cam_ == "CHAPAS":
+            m_esp = re.search(r"x\s*([\d.,]+)\s*$", perfil_)
+            perfil_ = "#" + m_esp.group(1).replace(".", ",") if m_esp else perfil_
+        lista_ = por_cam.setdefault(cam_ if cam_ in CAMADAS_PECAS else "TEXTO", [])
+        if perfil_ not in lista_:
+            lista_.append(perfil_)
+    for cam_, lista_ in por_cam.items():
+        if cam_ == "CHAPAS":
+            lista_ = sorted(lista_, key=_ordem_natural, reverse=True)
+        linhas.append(("%s%s" % ("Chapas " if cam_ == "CHAPAS" else "", " / ".join(lista_)), cam_))
     paraf, porcas = parafusos_no_conjunto(doc, instancia)
     if paraf or porcas:
         itens_p = ["%dx %s" % (q, k) for k, q in sorted(paraf.items(), key=lambda kv: _ordem_natural(kv[0]))]
         if porcas:
-            itens_p.append("%d fixador(es) sem tamanho no IFC (porca ou chumbador)" % porcas)
-        linhas += quebrar("Parafusos (por unidade): ", itens_p)
+            itens_p.append("%dx porca/chumbador" % porcas)
+        linhas += [(t, "TEXTO") for t in quebrar("Parafusos: ", itens_p)]
+    if peso_un > 0:
+        linhas.append(("%s kg/un  total %s kg" % (_mm(peso_un, 1), _mm(peso_un * n_instancias, 1)), "TEXTO"))
     for txt in ([nota] if isinstance(nota, str) else list(nota or [])):
         if not txt:
             continue
@@ -948,13 +972,13 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         atual = "* "
         for palavra in txt.split(" "):
             if len(atual) + len(palavra) + 1 > 72 and atual.strip() != "*":
-                linhas.append(atual.rstrip())
+                linhas.append((atual.rstrip(), "TEXTO"))
                 atual = "  "
             atual += palavra + " "
-        linhas.append(atual.rstrip())
-    for i, txt in enumerate(reversed(linhas)):
+        linhas.append((atual.rstrip(), "TEXTO"))
+    for i, (txt, cam_) in enumerate(reversed(linhas)):
         alt_t = 3.5 if i == len(linhas) - 1 else 2.5
-        p.texto(0, y, txt, alt_t * esc)
+        p.texto(0, y, txt, alt_t * esc, cam_)
         y += (alt_t + 1.2) * esc
     ext = p.extremos
     return (min(ext[0], dx), min(ext[1], dy), max(ext[2], dx + larg), max(ext[3], dy + alt))
