@@ -200,6 +200,16 @@ delas com o nome da cumeeira (CM.n) e o comprimento da perna; o título conta "N
 cumeeira". Contraventamentos: as cotas empilhadas dos tirantes ficam na própria linha (deslocamento zero),
 sem as linhas de chamada até a barra.
 
+**0.7.21.** Tesouras: cada barra furada ganha um detalhe ampliado (1:5, `_detalhes_de_furos`) abaixo da
+elevação — a face furada de frente, da ponta mais perto dos furos até depois do último, trechos longos
+interrompidos, cadeia da ponta aos furos e as linhas de furação; na elevação, uma chamada com a letra. Os
+furos da alma virada para baixo (escondidos na elevação) aparecem aí. Canto chanfrado do banzo: a diagonal
+é a tangente ao arco no meio dele (`_avanco_tangente`), não a corda — a corda cortava por dentro e a
+diagonal da treliça atravessava o banzo. Suporte soldado montado sempre pela peça (frente = chapa com os
+furos em pé, lateral = nervura), também o que está deitado no modelo, com as cadeias dos furos. Terça: os
+furos simples dos dois lados de um furo duplo numa cadeia só, na mesma linha. Paginação: a cumeeira
+hachurada sobre as telhas, com a linha e o rótulo.
+
 **0.7.18.** Furos das terças "viradas": a detecção (`saida.detalhamento._lacos_2d`) aceitava só os laços
 no nível médio da alma (±0,6 mm), mas os eixos da barra vêm da nuvem de vértices e saem inclinados uma
 fração de grau — numa terça de 5 m a alma "sobe" ~7 mm de ponta a ponta, e só o furo do meio passava.

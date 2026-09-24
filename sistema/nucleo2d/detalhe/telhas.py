@@ -874,7 +874,8 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     y0 = min(q[1] for ch in chapas for q in ch["contorno"])
     T = lambda q: (q[0] - x0, q[1] - y0)        # noqa: E731
     from nucleo2d.detalhe.base import LARGURA_TOTAL_TELHA, LARGURA_COMPRA_TELHA
-    ordenadas = sorted(chapas, key=lambda c: c["x"])
+    pernas = [ch for ch in chapas if ch.get("cumeeira")]
+    ordenadas = sorted((ch for ch in chapas if not ch.get("cumeeira")), key=lambda c: c["x"])
     cotada = False
     for n, ch in enumerate(ordenadas):
         # a chapa com a largura total de catálogo (1050, com os transpasses) em volta do
@@ -912,6 +913,35 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         desenho.add(Cota(modo="v", p1=p._p(*a), p2=p._p(*b), deslocamento=0.0, texto=texto, altura=1.8,
                          atributos=dict(atr, chapa=ch["nome"])))
         p.texto(xm, ch["y0"] - y0 - 4.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0, alinhamento="direita")
+    if pernas:
+        # a cumeeira por cima das telhas: cada perna hachurada (é a peça que cobre o topo
+        # das chapas), a linha da cumeeira e um rótulo só — nome e comprimento da perna
+        from nucleo2d.detalhe.base import LARGURA_TOTAL_TELHA as _LTc
+        for ch in pernas:
+            xs_ = [q[0] for q in ch["contorno"]]
+            larg_ = max(xs_) - min(xs_)
+            k_ = _LTc / larg_ if 600.0 < larg_ < 1200.0 else 1.0
+            xa_ = ch["x"] + (min(xs_) - ch["x"]) * k_ - x0
+            xb_ = ch["x"] + (max(xs_) - ch["x"]) * k_ - x0
+            ya_, yb_ = ch["y0"] - y0, ch["y1"] - y0
+            p.polilinha([(xa_, ya_), (xb_, ya_), (xb_, yb_), (xa_, yb_)], fechada=True, camada="ACO")
+            passo = 80.0
+            t = passo
+            while t < (xb_ - xa_) + (yb_ - ya_):
+                # hachura a 45°, recortada no retângulo da perna
+                p1 = (xa_ + min(t, xb_ - xa_), ya_ + max(0.0, t - (xb_ - xa_)))
+                p2 = (xa_ + max(0.0, t - (yb_ - ya_)), ya_ + min(t, yb_ - ya_))
+                p.linha(p1[0], p1[1], p2[0], p2[1], "HACHURA")
+                t += passo
+        y_cm = max(ch["y1"] for ch in pernas) - y0
+        xa_f = min(q[0] for ch in chapas for q in ch["contorno"]) - x0
+        xb_f = max(q[0] for ch in chapas for q in ch["contorno"]) - x0
+        p.linha(xa_f, y_cm, xb_f, y_cm, "EIXO")
+        cont_cm = collections.Counter(ch["nome"] for ch in pernas)
+        comp_cm = sorted({round(ch["comprimento"]) for ch in pernas})
+        # o rótulo à direita da face, na altura da faixa (acima dela fica o subtítulo da face)
+        p.texto(xb_f + 3.0 * esc, y_cm - 3.0 * esc, "CUMEEIRA %s – perna %s mm (faixa hachurada)" % (
+            " · ".join(sorted(cont_cm, key=_ordem_natural)), " / ".join(str(c) for c in comp_cm)), 3.0 * esc)
     # a linha da estrutura (a última longarina, de onde a saia é medida) atravessando a
     # face, com a cota da saia até a ponta de baixo das telhas: para conferir os 150 mm
     com_saia = [ch for ch in ordenadas if ch.get("saia")]

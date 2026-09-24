@@ -305,13 +305,15 @@ TOLERANCIA_CONJUNTO_SEMELHANTE = 20.0
 FRACAO_COMUM_CONJUNTO = 0.75
 
 
-def _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc):
+def _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc) -> List[dict]:
     """Os furos das barras do conjunto na elevação: uma cruz no centro de cada furo — os da
-    alma virada para baixo (fundo do banzo) não apareciam na vista. As medidas ficam no
-    detalhe de cada barra."""
+    alma virada para baixo (fundo do banzo) não apareciam na vista. Devolve, por barra
+    furada, o que o detalhe da furação precisa (`_detalhes_de_furos`)."""
     from nucleo2d.detalhe.celulas import _posicao_bruta, _furos_da_malha, _indices_do_furo
     from saida.detalhamento import analisar
     r = 1.2 * esc
+    w = _cruz(u, v)
+    barras = []
     for e in instancia:
         if _tipo_ifc(e).startswith("IfcPlate") or len(e.vertices or []) < 8:
             continue
@@ -324,12 +326,131 @@ def _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc):
         if pos.classe != "barra" or not pos.eixos:
             continue
         e1, e2, e3 = pos.eixos
+        furos = []
         for f, laco, vista in _furos_da_malha(pos):
-            c, _ = _indices_do_furo(e, laco, e3 if vista == "frente" else e2, f.d / 2 + 1.0)
+            nrm = e3 if vista == "frente" else e2
+            c, _ = _indices_do_furo(e, laco, nrm, f.d / 2 + 1.0)
             x = _dot(_sub(c, origem), u) - u0
             y = _dot(_sub(c, origem), v) - v0
             p.linha(x - r, y, x + r, y, "FURO")
             p.linha(x, y - r, x, y + r, "FURO")
+            furos.append({"x": f.x, "y": f.y, "d": f.d, "vista": vista, "p2": (x, y),
+                          "escondido": abs(_dot(nrm, w)) < 0.5})
+        if furos and pos.local:
+            # as pontas da barra no desenho: de onde as cotas do detalhe partem
+            i0 = min(range(len(pos.local)), key=lambda i: pos.local[i][0])
+            i1 = max(range(len(pos.local)), key=lambda i: pos.local[i][0])
+            pontas = [(_dot(_sub(e.vertices[i], origem), u) - u0, _dot(_sub(e.vertices[i], origem), v) - v0) for i in (i0, i1)]
+            larg_face = {"frente": pos.H, "topo": max(q[2] for q in pos.local) - min(q[2] for q in pos.local)}
+            # a altura do furo no detalhe é medida da borda da face: na alma o zero já é a
+            # borda, na aba (vista de topo) o zero é o meio da peça
+            base_face = {"frente": min(0.0, min(q[1] for q in pos.local)), "topo": min(q[2] for q in pos.local)}
+            for f in furos:
+                f["y"] = f["y"] - base_face[f["vista"]]
+            barras.append({"marca": str(_marcas(e).get("posicao") or e.nome or e.id), "L": pos.L, "furos": furos,
+                           "pontas": pontas, "larg_face": larg_face})
+    return barras
+
+
+#: Escala dos detalhes de furação das barras da tesoura (1:ESCALA_DETALHE_FUROS).
+ESCALA_DETALHE_FUROS = 5.0
+#: Folga (mm reais) mostrada antes e depois dos furos no detalhe; trecho sem furo maior
+#: que o dobro disso é interrompido (linha de quebra).
+FOLGA_DETALHE_FUROS = 80.0
+
+
+def _quebra(p, x, y0, y1, camada="VISTA-FINA"):
+    """Linha de quebra (zigue-zague) vertical em x, de y0 a y1."""
+    h = y1 - y0
+    a = 0.12 * h
+    p.polilinha([(x, y0 - 0.1 * h), (x, y0 + 0.4 * h), (x + a, y0 + 0.45 * h), (x - a, y0 + 0.55 * h),
+                 (x, y0 + 0.6 * h), (x, y1 + 0.1 * h)], False, camada)
+
+
+def _detalhes_de_furos(p, barras: Sequence[dict], nome_de, esc: float, y_topo: float) -> None:
+    """Um detalhe ampliado por barra furada da tesoura, lado a lado abaixo da elevação: a
+    face furada vista de frente, da ponta da barra até depois do último furo (trechos
+    longos sem furo interrompidos), com a cadeia dos furos a partir da ponta e as linhas de
+    furação. Na elevação, uma chamada com a letra do detalhe. Os furos da alma virada para
+    baixo (escondidos na elevação) aparecem aqui."""
+    k = max(1.0, esc / ESCALA_DETALHE_FUROS)
+    x_cel = 0.0
+    letras = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+    vistos = set()
+    n = 0
+    for b in sorted(barras, key=lambda b_: _ordem_natural(nome_de(b_["marca"]))):
+        nome = nome_de(b["marca"])
+        for vista in ("frente", "topo"):
+            fs = [f for f in b["furos"] if f["vista"] == vista]
+            if not fs or (nome, vista) in vistos:
+                continue
+            vistos.add((nome, vista))
+            letra = letras[n % len(letras)]
+            n += 1
+            L = b["L"]
+            # a ponta de referência: a mais perto dos furos
+            do_fim = sum(f["x"] for f in fs) / len(fs) > L / 2
+            dist = sorted(((L - f["x"]) if do_fim else f["x"], f["y"], f["d"]) for f in fs)
+            ponta2d = b["pontas"][1 if do_fim else 0]
+            outra2d = b["pontas"][0 if do_fim else 1]
+            lado = "direita" if ponta2d[0] > outra2d[0] else "esquerda"
+            H = float(b["larg_face"].get(vista) or 100.0)
+            # colunas de furos (mesma distância da ponta) e os trechos mostrados
+            cols: List[float] = []
+            for d_, _, _ in dist:
+                if not cols or d_ - cols[-1] > 2.0:
+                    cols.append(d_)
+            trechos = [[0.0, min(FOLGA_DETALHE_FUROS, cols[0])]]
+            for c in cols:
+                a_, b_ = max(0.0, c - FOLGA_DETALHE_FUROS), min(L, c + FOLGA_DETALHE_FUROS)
+                if a_ - trechos[-1][1] <= 2 * FOLGA_DETALHE_FUROS:
+                    trechos[-1][1] = max(trechos[-1][1], b_)
+                else:
+                    trechos.append([a_, b_])
+            gap = 30.0
+
+            def X(r):
+                acum = 0.0
+                for t0, t1 in trechos:
+                    if r <= t1 + 1e-6:
+                        return x_cel + (acum + max(0.0, r - t0)) * k
+                    acum += (t1 - t0) + gap
+                return x_cel + (acum - gap) * k
+            y0 = y_topo - H * k
+            # contorno da face: linhas de cima e de baixo por trecho, ponta à esquerda
+            for t0, t1 in trechos:
+                p.linha(X(t0), y0, X(t1), y0, "ACO")
+                p.linha(X(t0), y_topo, X(t1), y_topo, "ACO")
+            p.linha(X(0.0), y0, X(0.0), y_topo, "ACO")
+            for i_, (t0, t1) in enumerate(trechos):
+                if i_ > 0:
+                    _quebra(p, X(t0), y0, y_topo)
+                if i_ < len(trechos) - 1 or t1 < L - 1.0:
+                    _quebra(p, X(t1), y0, y_topo)
+            for d_, fy, diam in dist:
+                p.circulo(X(d_), y0 + fy * k, diam / 2 * k, "FURO")
+            # cadeia da ponta aos furos (medidas reais) e as linhas de furação
+            nos = [0.0] + cols
+            for i_ in range(len(nos) - 1):
+                p.cota_h(X(nos[i_]), X(nos[i_ + 1]), y0, -8.0, texto="%d" % round(nos[i_ + 1] - nos[i_]))
+            linhas_y = sorted({round(fy) for _, fy, _ in dist})
+            ys = [0.0] + [float(v_) for v_ in linhas_y] + [H]
+            x_fim = X(trechos[-1][1])
+            for i_ in range(len(ys) - 1):
+                if ys[i_ + 1] - ys[i_] > 0.5:
+                    p.cota_v(y0 + ys[i_] * k, y0 + ys[i_ + 1] * k, x_fim, 8.0, texto="%d" % round(ys[i_ + 1] - ys[i_]))
+            escondido = any(f["escondido"] for f in fs)
+            h = 2.2 * esc
+            p.texto(x_cel, y_topo + 5.0 * esc + 1.2 * h, "DETALHE %s – FUROS DE %s  (1:%d)" % (letra, nome, round(esc / k)), h)
+            p.texto(x_cel, y_topo + 5.0 * esc, "da ponta %s%s" % (lado, " · face escondida na elevação" if escondido else ""), 1.8 * esc)
+            # chamada na elevação: círculo em volta dos furos e a letra
+            xs_e = [f["p2"][0] for f in fs]
+            ys_e = [f["p2"][1] for f in fs]
+            cx, cy = (min(xs_e) + max(xs_e)) / 2, (min(ys_e) + max(ys_e)) / 2
+            raio = max(6.0 * esc, 0.6 * max(max(xs_e) - min(xs_e), max(ys_e) - min(ys_e)))
+            p.circulo(cx, cy, raio, "COTA")
+            p.texto(cx + raio * 0.75, cy - raio * 0.75 - 2.5 * esc, letra, 2.5 * esc, "COTA")
+            x_cel = x_fim + 30.0 * esc
 
 
 def _conjuntos_semelhantes(a: dict, b: dict) -> bool:
@@ -440,10 +561,40 @@ def _dist_ponto_seg(p, a, b):
     return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
 
 
+def _avanco_tangente(pts, i, j) -> Tuple[float, float]:
+    """Quanto cada trecho reto vizinho do arco pts[i+1..j-1] avança (prolongado) até a
+    tangente ao arco no meio dele: (do lado de i, do lado de j). A diagonal entre esses dois
+    pontos envolve o arco por fora — a corda cortava por dentro, e a diagonal da treliça que
+    chega na face de dentro do arco atravessava o banzo no desenho."""
+    a, b = pts[i + 1], pts[j - 1]
+    cx, cy = b[0] - a[0], b[1] - a[1]
+    cl = math.hypot(cx, cy)
+    if cl < 1e-6:
+        return 0.0, 0.0
+    nx, ny = -cy / cl, cx / cl
+    meio = pts[i + 1:j]
+    # o vértice do arco mais longe da corda é o meio dele; a tangente ali é paralela à corda
+    m = max(meio, key=lambda q: abs((q[0] - a[0]) * nx + (q[1] - a[1]) * ny))
+    t2 = (m[0] + cx, m[1] + cy)
+    saida = []
+    for ponta, longe in ((a, pts[i]), (b, pts[j])):
+        x = _cruzamento(longe, ponta, m, t2)
+        L = math.dist(ponta, longe)
+        if x is None or L < 1e-6:
+            saida.append(0.0)
+            continue
+        volta = ((ponta[0] - longe[0]) / L, (ponta[1] - longe[1]) / L)
+        s = (x[0] - ponta[0]) * volta[0] + (x[1] - ponta[1]) * volta[1]
+        saida.append(max(0.0, min(s, cl)))
+    return saida[0], saida[1]
+
+
 def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence = ()) -> List:
     """Troca cada arco das silhuetas das peças `ids` por uma **barra diagonal reta** — o
     chanfro que a fábrica faz, em vez de calandrar. Sem nada apoiado no canto, a diagonal é
-    a corda do arco. Quando um suporte de terça (`apoios`: caixas 2D das chapas) encosta no
+    a tangente ao arco no meio dele (`_avanco_tangente`): os trechos retos se prolongam até
+    ela e o banzo envolve o arco por fora, sem que a diagonal da treliça que chega no canto
+    o atravesse. Quando um suporte de terça (`apoios`: caixas 2D das chapas) encosta no
     trecho reto logo depois do arco, esse trecho avança sobre o arco até passar do suporte
     com folga (FOLGA_CHANFRO_SUPORTE), e a diagonal vai do começo do arco até ali: o
     suporte não fica "voando" sobre a diagonal. Vale para a peça que é só o arco e para o
@@ -500,11 +651,13 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence =
             # o arco vai de pts[i+1] a pts[j-1] (pts[i] e pts[j] são as outras pontas dos
             # trechos retos vizinhos): os vértices do meio saem, fica a diagonal
             a, b = pts[i + 1], pts[j - 1]
+            tangente = _avanco_tangente(pts, i, j)
             novos = []
-            for ponta, longe in ((a, pts[i]), (b, pts[j])):
+            for k_, (ponta, longe) in enumerate(((a, pts[i]), (b, pts[j]))):
                 L = math.dist(ponta, longe)
                 volta = ((ponta[0] - longe[0]) / L, (ponta[1] - longe[1]) / L) if L > 1e-6 else (0.0, 0.0)
                 s = recuos.get((origem, round(math.degrees(math.atan2(volta[1], volta[0])) / 5.0)), 0.0)
+                s = max(s, tangente[k_])
                 novos.append((ponta[0] + volta[0] * s, ponta[1] + volta[1] * s))
             pts = pts[:i + 1] + novos + pts[j:]
             mudou = True
@@ -632,7 +785,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         m = _marcas(e)
         if rotular and m.get("posicao"):
             rotulos.append((nome_de(m["posicao"]), ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), ang))
-    _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc)
+    barras_furadas = _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc)
     banzos = [b for b in barras if (b[3] < 25.0 or b[3] > 155.0) and b[2] > 0.25 * larg]
     diagonais = [b for b in barras if b not in banzos]
     # nós: interseção do eixo de cada diagonal/montante com o eixo de cada banzo, perto da
@@ -755,6 +908,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     cadeia = len(alturas) > 2 and p.cadeia_v(alturas, larg, off)
     p.cota_v(0, alt, larg, off2 if cadeia else off)
     _rotular_barras(p, rotulos, esc)
+    if barras_furadas:
+        # os detalhes de furação abaixo de tudo o que a elevação já desenhou
+        fundo = min([0.0] + [q[1] - dy for q in p.pontos])
+        _detalhes_de_furos(p, barras_furadas, nome_de, esc, fundo - 20.0 * esc)
     # título e lista de perfis
     comp = collections.Counter()
     perfis = collections.Counter()

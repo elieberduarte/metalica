@@ -136,6 +136,30 @@ def _eixos_da_chapa(e):
     return c, [_norm(tuple(a)) for a in pca]
 
 
+def _furos_na_vista(chapa, origem, u, v, u0, v0, w) -> List[Tuple[float, float]]:
+    """Centros dos furos da chapa na vista (u, v) — só quando a vista olha a chapa de
+    frente (os furos aparecem). Pela malha, como os furos das barras da tesoura."""
+    from nucleo2d.detalhe.celulas import _posicao_bruta, _furos_da_malha, _indices_do_furo
+    from saida.detalhamento import analisar
+    pos = _posicao_bruta(chapa, str(_marcas(chapa).get("posicao") or chapa.nome or chapa.id))
+    try:
+        analisar(pos)
+    except Exception:                                 # noqa: BLE001
+        return []
+    if not pos.eixos:
+        return []
+    e1, e2, e3 = pos.eixos
+    if abs(_dot(e3, w)) < 0.9:
+        return []
+    fora = []
+    for f, laco, vista in _furos_da_malha(pos):
+        if vista != "frente":
+            continue
+        c, _ = _indices_do_furo(chapa, laco, e3, f.d / 2 + 1.0)
+        fora.append((_dot(_sub(c, origem), u) - u0, _dot(_sub(c, origem), v) - v0))
+    return fora
+
+
 def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float, dy: float,
                         titulo: str = "", pecas_por_id: Optional[dict] = None) -> Tuple[float, float, float, float]:
     """Célula da peça montada: vista de frente e lateral com as cotas gerais e o nome de
@@ -157,18 +181,18 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
         # chapa saía torta e a nervura como um triângulo enviesado; a fábrica solda a peça
         # na bancada, com a chapa em pé — a frente mostra a chapa com os furos e a lateral
         # a nervura de face, as duas retas
+        # Vale também para o suporte montado deitado no modelo (a chapa na mesa do banzo e
+        # a nervura em pé): a frente é sempre a chapa com os furos, em pé, e a lateral a
+        # nervura — o mesmo desenho do suporte em pé, como a fábrica monta.
         n2 = _eixos_da_chapa(nervura)[1][2]
         cima = _norm(_cruz(n, n2))
-        if _dot(cima, z) < 0:
+        # o "acima" da peça: a nervura (triângulo) larga embaixo e a ponta em cima, como no
+        # suporte em pé — o centro da nervura fica abaixo do centro da chapa
+        c_nerv = tuple(sum(q[j] for q in nervura.vertices) / len(nervura.vertices) for j in range(3))
+        if _dot(_sub(c_nerv, c_ref), cima) > 0:
             cima = (-cima[0], -cima[1], -cima[2])
-        if abs(_dot(cima, z)) >= 0.3:
-            w1, acima1 = n, cima
-            w2, acima2 = n2, cima
-        else:
-            # chapa deitada com a nervura em pé: a elevação pela nervura e a planta da chapa,
-            # com o mesmo eixo horizontal
-            w1, acima1 = n2, z
-            w2, acima2, rot2 = (0.0, 0.0, -1.0), n2, "PLANTA"
+        w1, acima1 = n, cima
+        w2, acima2 = n2, cima
     elif abs(_dot(n, z)) < 0.7:
         # chapa em pé (suporte): de frente para a chapa e de lado
         w1 = n
@@ -213,8 +237,17 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
         u0, v0 = min(us), min(vs)
         p = _Papel(desenho, atr, x, dy)
         if k < 2:
-            p.cota_h(0, larg, 0, -8.0)
-            p.cota_v(0, alt, larg, 8.0)
+            furos = _furos_na_vista(ref, origem, u, v, u0, v0, w) if k == 0 else []
+            if furos:
+                # a furação da chapa: a cadeia dos furos junto da peça e a total por fora
+                xs = sorted({round(f[0]) for f in furos})
+                ys = sorted({round(f[1]) for f in furos})
+                p.cadeia_h([0.0] + xs + [larg], 0, -8.0, exigir_espaco=False)
+                # a cadeia vertical um pouco mais longe: o número de baixo dela encostava no
+                # último da cadeia horizontal, no canto
+                p.cadeia_v([0.0] + ys + [alt], larg, 12.0, exigir_espaco=False)
+            p.cota_h(0, larg, 0, -16.0 if furos else -8.0)
+            p.cota_v(0, alt, larg, 20.0 if furos else 8.0)
             if k == 0:
                 # o nome de cada peça numa coluna à esquerda, com a chamada até o centro dela
                 # (no centro, as peças encostadas empilhavam os nomes)
@@ -235,7 +268,7 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
                     x_t = -6.0 * esc
                     p.texto(x_t, y_t - h / 2, nome, h, "TEXTO", alinhamento="direita")
                     p.linha(x_t + 1.0 * esc, y_t, ax, ay, "COTA")
-        p.texto(larg / 2, -(16.0 if k < 2 else 4.0) * esc, rot, 2.2 * esc, "TEXTO", alinhamento="centro")
+        p.texto(larg / 2, -(24.0 if k < 2 else 4.0) * esc, rot, 2.2 * esc, "TEXTO", alinhamento="centro")
         caixas.append(p.extremos)
         caixas.append((x, dy, x + larg, dy + alt))
         x += larg + (22.0 if k < 2 else 10.0) * esc
