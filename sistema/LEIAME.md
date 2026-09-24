@@ -218,6 +218,14 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.7.29.** O furo da barra segue o parafuso (`alinhar_furos_das_barras_aos_parafusos`, até 250 mm; o parafuso tem de
+cruzar a peça no sistema dela): a ligação mexida à mão no 3D (chapa P79 esticada 90 mm) não passava do limite de 40 mm
+do alinhamento com as chapas. **Atualizar peça** (`POST /atualizar-pecas`): furos e células só das peças pedidas,
+redesenhadas no mesmo lugar em cada desenho de detalhamento (`nucleo2d.desenho.transladar`). 3D: Shift sobre uma aresta
+trava o movimento paralelo a ela (`EIXOS.aresta`); a chapa paramétrica tem as arestas das duas faces (`facesDaChapa`)
+para o snap. Editor não abria modelo com malha de 200 mil vértices (`push(...lista)` em `Documento.caixa`, OBRA
+CAPITÃO do SketchUp).
+
 **0.7.28.** Ferramenta **Parafuso** (U) no 3D (`web/editor3d/ferramentas/parafuso.js`): cabeça, corpo e porca
 perpendiculares à face clicada, tamanho digitado (M12x35, 16x40); sólido na camada Parafusos com o nome e o tipo dos
 parafusos do IFC ("BOLT (A) 12x35", IfcMechanicalFastener, `criado_no_editor`). No levantamento, a barra que um

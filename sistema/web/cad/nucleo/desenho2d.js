@@ -296,7 +296,7 @@ export class Desenho2D {
     for (const e of this.entidades.values()) {
       if (ids && !ids.has(e.id)) continue;
       if (!ids && !this.visivel(e)) continue;
-      pts.push(...pontosDe(e));
+      for (const p of pontosDe(e)) pts.push(p);
     }
     return caixaDe(pts);
   }

@@ -332,7 +332,12 @@ export function travarEixoNucleo(editor, eixo) {
 /** Lê o eixo travado no núcleo — ele pode ter recebido a seta antes da ferramenta. */
 export function sincronizarEixo(f) {
   const inf = f.editor && f.editor.inferencia;
-  if (inf && 'travado' in inf) f.eixo = inf.travado || null;
+  if (!inf || !('travado' in inf)) return;
+  if (inf.travado === 'aresta' && inf.direcaoTravada) {
+    // Shift sobre uma aresta: paralelo a ela (o banzo inclinado)
+    EIXOS.aresta = { vetor: inf.direcaoTravada.slice(0, 3), nome: 'paralelo à aresta', cor: 0xb07cc6 };
+  }
+  f.eixo = inf.travado || null;
 }
 
 /**

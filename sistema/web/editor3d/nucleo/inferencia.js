@@ -28,6 +28,7 @@ export const TIPOS = {
   plano_base:   { rotulo: 'No plano',    cor: '#8a94a6', glifo: 'ponto',    prio: 8 },
 };
 
+// "aresta": a direção da aresta travada com Shift (paralelo), preenchida na hora
 const EIXOS = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -73,6 +74,17 @@ export class Inferencia {
         const t = this.ultimo && this.ultimo.tipoSnap;
         const eixo = t === 'eixo_x' ? 'x' : t === 'eixo_y' ? 'y' : t === 'eixo_z' ? 'z' : null;
         if (eixo) { this.travado = eixo; this.travadoPorShift = true; return true; }
+        // sobre uma aresta (a do banzo inclinado): Shift trava paralelo a ela
+        const ar = (this.ultimo && this.ultimo.aresta) || this.ultimaAresta;
+        if (ar && this.ancora) {
+          const d = normalizar(subtrair(ar[1], ar[0]));
+          if (norma(d) > 0.5) {
+            EIXOS.aresta = d;
+            this.direcaoTravada = d;
+            this.travado = 'aresta'; this.travadoPorShift = true;
+            return true;
+          }
+        }
       }
     } else if (ev.type === 'keyup' && ev.key === 'Shift' && this.travadoPorShift) {
       this.destravar();
@@ -83,6 +95,7 @@ export class Inferencia {
 
   /** Descrição do que está travado, para a barra inferior. */
   get descricaoTrava() {
+    if (this.travado === 'aresta') return 'paralelo à aresta (solte o Shift para destravar)';
     return this.travado ? `eixo ${this.travado.toUpperCase()} travado` : '';
   }
 
@@ -104,7 +117,7 @@ export class Inferencia {
     // 1. Eixo travado: o ponto é a projeção do raio sobre a reta do eixo.
     if (this.travado && this.ancora) {
       const p = pontoNoEixo(this.ancora, EIXOS[this.travado], raio);
-      const r = { ...base, ponto: p, tipoSnap: 'eixo_' + this.travado };
+      const r = { ...base, ponto: p, tipoSnap: this.travado === 'aresta' ? 'paralelo' : 'eixo_' + this.travado };
       return this._concluir(r, tela);
     }
 
@@ -227,6 +240,7 @@ export class Inferencia {
       return pa !== pb ? pa - pb : a.d - b.d;
     });
     const melhor = cand[0];
+    if (melhor.aresta) this.ultimaAresta = melhor.aresta;     // para o Shift travar paralelo
     return this._concluir({
       ...base,
       ponto: melhor.ponto,
@@ -261,7 +275,7 @@ export class Inferencia {
     const [x, y] = proj[2] <= 1 && isFinite(proj[0]) ? proj : p.tela;
 
     // Linha-guia do eixo, da âncora até o ponto, atravessando a tela.
-    if (this.ancora && p.tipoSnap.startsWith('eixo_')) {
+    if (this.ancora && (p.tipoSnap.startsWith('eixo_') || p.tipoSnap === 'paralelo')) {
       const a = this.camera.paraTela(this.ancora);
       const l = doc(this.svg, 'line');
       l.setAttribute('x1', a[0]); l.setAttribute('y1', a[1]);

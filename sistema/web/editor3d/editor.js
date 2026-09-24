@@ -1579,6 +1579,28 @@ export class Editor {
     } catch (e) { parar(); this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
+  /** Só as peças pedidas: furos das barras nas chapas e nos parafusos, e as células delas
+   *  redesenhadas nos desenhos de detalhamento (rota /atualizar-pecas). */
+  async atualizarPecas(marcas) {
+    if (!this.projeto || !marcas.length) return;
+    this.aviso(`Atualizando ${marcas.slice(0, 6).join(', ')}${marcas.length > 6 ? '…' : ''}: furos das barras e desenhos destas peças.`, 'info', 6000);
+    const parar = this._acompanharProgresso('Atualizando: ');
+    try {
+      await this._gravarAntesDeGerar();
+      const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/atualizar-pecas`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ marcas }) });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      parar();
+      const partes = [];
+      if (j.furos_barras) partes.push(`${j.furos_barras} furo(s) movidos nas barras ${j.barras.join(', ')}`);
+      partes.push(j.desenhos.length ? `redesenhadas em ${j.desenhos.join(', ')}` : 'nenhum desenho de detalhamento tinha estas peças');
+      if (j.detalhes.length) partes.push(`refeito ${j.detalhes.join(', ')}`);
+      this.aviso(`${j.pecas.join(', ')}: ${partes.join('; ')}. A elevação das tesouras e conjuntos só muda gerando o detalhamento de novo.`, 'info', 15000);
+      if (j.furos_barras) await this._abrirProjeto();            // os furos novos na malha 3D
+    } catch (e) { parar(); this.aviso(`Não foi possível atualizar: ${e.message}`, 'erro', 0); }
+  }
+
   /** Vistas ortográficas só das peças selecionadas (ou do modelo inteiro), num desenho. */
   async dialogoVistasDaSelecao() {
     if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para gerar desenhos 2D.', 'atencao'); return; }
@@ -2123,6 +2145,11 @@ export class Editor {
     if (um) botao('Semelhantes', () => this.selecao.semelhantes(um.id), 'Mesmo tipo e mesmo perfil');
     botao('Mesma camada', () => this.selecao.porCamada(ents[0].camada));
     if (comum('perfil')) botao('Mesmo perfil', () => this.selecao.porPerfil(comum('perfil')));
+    const posSel = new Set(ents.map(e => e.atributos && e.atributos.marcas && e.atributos.marcas.posicao).filter(Boolean));
+    if (this.projeto && posSel.size && posSel.size <= 30) {
+      botao('Atualizar peça', () => this.atualizarPecas([...posSel]),
+            'Leva os furos das barras às chapas e aos parafusos desta ligação e redesenha só estas peças nos desenhos de detalhamento, sem gerar tudo de novo');
+    }
     botao('Apagar', () => this.apagarSelecao(), 'Del');
     raiz.append(acoes);
   }

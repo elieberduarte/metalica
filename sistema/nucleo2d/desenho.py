@@ -195,6 +195,30 @@ TIPOS = {"linha": Linha, "polilinha": Polilinha, "circulo": Circulo, "arco": Arc
 
 # ---------------------------------------------------------------- desenho
 
+def transladar(e: "Entidade2D", dx: float, dy: float) -> "Entidade2D":
+    """Cópia da entidade deslocada de (dx, dy) — mesma identidade (id), o resto igual."""
+    import copy as _copy
+    n = _copy.deepcopy(e)
+    mv = lambda q: (round(q[0] + dx, 3), round(q[1] + dy, 3))    # noqa: E731
+    if isinstance(n, Linha):
+        n.a, n.b = mv(n.a), mv(n.b)
+    elif isinstance(n, Polilinha):
+        n.vertices = [mv(q) for q in n.vertices]
+    elif isinstance(n, (Circulo, Arco)):
+        n.centro = mv(n.centro)
+    elif isinstance(n, Texto):
+        n.posicao = mv(n.posicao)
+    elif isinstance(n, Cota):
+        n.p1, n.p2 = mv(n.p1), mv(n.p2)
+        if n.texto_pos:
+            n.texto_pos = mv(n.texto_pos)
+    elif isinstance(n, Hachura):
+        n.contornos = [[mv(q) for q in c] for c in n.contornos]
+    elif isinstance(n, Chamada):
+        n.alvo, n.posicao = mv(n.alvo), mv(n.posicao)
+    return n
+
+
 @dataclass
 class Desenho:
     nome: str = "Desenho"

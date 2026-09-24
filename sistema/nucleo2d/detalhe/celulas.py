@@ -23,6 +23,7 @@ from nucleo2d.detalhe.base import (  # noqa: E402
     _centros_dos_fixadores,
     _cruz,
     _dot,
+    _eixos_dos_fixadores,
     _fixadores,
     _furo_de_dict,
     _furo_dict,
@@ -1080,6 +1081,120 @@ def alinhar_furos_das_barras_as_chapas(doc: Documento, limite: float = LIMITE_DE
                     movido = True
             if movido:
                 mexeu += 1
+        if mexeu:
+            saida["barras"] += 1
+            saida["furos"] += mexeu
+            if marca not in saida["posicoes"]:
+                saida["posicoes"].append(marca)
+    return saida
+
+
+#: Até quanto (mm) o furo da barra anda para ir ao parafuso que ficou sem furo.
+LIMITE_FURO_SEGUE_PARAFUSO = 250.0
+
+
+def alinhar_furos_das_barras_aos_parafusos(doc: Documento, ids: Optional[Sequence[str]] = None,
+                                           limite: float = LIMITE_FURO_SEGUE_PARAFUSO) -> dict:
+    """O furo da barra segue o parafuso: numa ligação mexida à mão (a chapa esticada, os
+    parafusos levados a outro lugar), a barra fica com um furo onde não passa parafuso e um
+    parafuso passando onde ela não tem furo. Cada furo sem parafuso vai para o parafuso sem
+    furo mais perto (no plano da face, mesmo sentido de eixo, até `limite` mm), do par mais
+    perto para o mais longe. `alinhar_furos_das_barras_as_chapas` faz o ajuste fino (até
+    40 mm, e o oblongo); este cobre o deslocamento grande. `ids`: só essas barras.
+    Devolve {"barras", "furos", "posicoes"}."""
+    saida = {"barras": 0, "furos": 0, "posicoes": []}
+    eixos_fix = _eixos_dos_fixadores(_fixadores(doc))
+    parafusos = [(c, a, meio) for c, a, meio, _ext, porca in eixos_fix.values() if not porca]
+    if not parafusos:
+        return saida
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    for k, (c, a, meio) in enumerate(parafusos):
+        grade[tuple(int(math.floor(v / 500.0)) for v in c)].append(k)
+    alvo = set(ids) if ids else None
+    for ent in list(doc.entidades.values()):
+        if alvo is not None and ent.id not in alvo:
+            continue
+        if not isinstance(ent, Solido) or _tipo_ifc(ent) not in TIPOS_PECA or len(ent.vertices or []) < 8:
+            continue
+        lo = [min(v[i] for v in ent.vertices) - 40.0 for i in range(3)]
+        hi = [max(v[i] for v in ent.vertices) + 40.0 for i in range(3)]
+        perto = []
+        for gx in range(int(math.floor(lo[0] / 500.0)), int(math.floor(hi[0] / 500.0)) + 1):
+            for gy in range(int(math.floor(lo[1] / 500.0)), int(math.floor(hi[1] / 500.0)) + 1):
+                for gz in range(int(math.floor(lo[2] / 500.0)), int(math.floor(hi[2] / 500.0)) + 1):
+                    perto += [k for k in grade.get((gx, gy, gz), ()) if all(lo[i] <= parafusos[k][0][i] <= hi[i] for i in range(3))]
+        if not perto:
+            continue
+        marca = str(_marcas(ent).get("posicao") or ent.nome or ent.id)
+        pos = _posicao_bruta(ent, marca)
+        pos.tipo_ifc = _tipo_ifc(ent)
+        try:
+            analisar(pos)
+        except Exception:                             # noqa: BLE001
+            continue
+        if not pos.classe.startswith("barra") or not pos.eixos:
+            continue
+        e1, e2, e3 = pos.eixos
+        v0_, l0_ = pos.vertices[0], pos.local[0]
+
+        def dentro_da_barra(q):
+            # no sistema da peça: dentro do comprimento e da altura (a alma), ou da
+            # largura (a mesa) — o parafuso da terça vizinha, no transpasse, fica fora
+            d_ = _sub(q, v0_)
+            u_, v_, w_ = l0_[0] + _dot(d_, e1), l0_[1] + _dot(d_, e2), l0_[2] + _dot(d_, e3)
+            ws_ = [p_[2] for p_ in pos.local]
+            return (1.0 < u_ < pos.L - 1.0 and -1.0 < v_ < pos.H + 1.0 and min(ws_) - 1.0 < w_ < max(ws_) + 1.0)
+        furos = []
+        for f, laco, vista in _furos_da_malha(pos):
+            eixo = e3 if vista == "frente" else e2
+            raio = max(f.d, f.alt or 0.0) / 2.0 if f.d or f.alt else 7.0
+            centro, idx = _indices_do_furo(ent, laco, eixo, raio + 1.0)
+            furos.append({"eixo": eixo, "centro": centro, "idx": idx, "raio": raio})
+
+        def passa(k, centro, eixo, raio):
+            """O eixo do parafuso k passa pelo furo (centro, eixo, raio)?"""
+            c, a, meio = parafusos[k]
+            if abs(_dot(a, eixo)) < 0.95:
+                return False
+            d = _sub(centro, c)
+            t = _dot(d, a)
+            lateral = math.sqrt(max(0.0, _dot(d, d) - t * t))
+            return lateral <= raio + 3.0 and abs(t) <= meio + 20.0
+        sem_parafuso = [h for h, fu in enumerate(furos) if not any(passa(k, fu["centro"], fu["eixo"], fu["raio"]) for k in perto)]
+        if not sem_parafuso:
+            continue
+        pares = []
+        for k in perto:
+            c, a, meio = parafusos[k]
+            if any(passa(k, fu["centro"], fu["eixo"], fu["raio"]) for fu in furos):
+                continue                              # já tem furo
+            for h in sem_parafuso:
+                fu = furos[h]
+                if abs(_dot(a, fu["eixo"])) < 0.95:
+                    continue
+                # onde o eixo do parafuso cruza o plano do furo
+                t = _dot(_sub(fu["centro"], c), fu["eixo"]) / _dot(a, fu["eixo"])
+                if abs(t) > meio + 20.0:
+                    continue                          # o parafuso não chega à face
+                q = tuple(c[i] + a[i] * t for i in range(3))
+                if not dentro_da_barra(q):
+                    continue
+                dd = math.dist(q, fu["centro"])
+                if 0.6 < dd <= limite:
+                    pares.append((dd, h, k, q))
+        pares.sort()
+        usados_h, usados_k = set(), set()
+        mexeu = 0
+        for dd, h, k, q in pares:
+            if h in usados_h or k in usados_k:
+                continue
+            usados_h.add(h)
+            usados_k.add(k)
+            fu = furos[h]
+            delta = _sub(q, fu["centro"])
+            delta = tuple(delta[i] - fu["eixo"][i] * _dot(delta, fu["eixo"]) for i in range(3))
+            ent.vertices = [tuple(v[j] + delta[j] for j in range(3)) if i in fu["idx"] else tuple(v) for i, v in enumerate(ent.vertices)]
+            mexeu += 1
         if mexeu:
             saida["barras"] += 1
             saida["furos"] += mexeu

@@ -166,6 +166,7 @@ from nucleo2d.detalhe.celulas import (  # noqa: E402,F401
     aplicar_furos_de_barra,
     aplicar_furos_nas_barras,
     alinhar_furos_das_barras_as_chapas,
+    alinhar_furos_das_barras_aos_parafusos,
     padronizar_furos_das_chapas,
     retirar_furos_sem_uso,
     oblongar_furos_das_tercas,

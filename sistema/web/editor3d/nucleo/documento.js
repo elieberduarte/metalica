@@ -115,10 +115,21 @@ export const clonar = (o) => (o === undefined || o === null
 export function pontosDe(ent) {
   if (!ent) return [];
   if (ent.tipo === 'barra') return [ent.inicio, ent.fim];
-  if (ent.tipo === 'chapa') return contornoNoMundo(ent);
+  if (ent.tipo === 'chapa') return [...facesDaChapa(ent)[0], ...facesDaChapa(ent)[1]];
   if (ent.tipo === 'solido') return ent.vertices || [];
   if (ent.tipo === 'grupo') return [ent.origem];
   return [];
+}
+
+/** Os dois contornos da chapa no mundo — a face de baixo e a de cima (com a espessura:
+ *  centrada no plano da origem, ou crescendo para a normal). São as arestas que se veem. */
+export function facesDaChapa(ch) {
+  const t = Number(ch.espessura) || 0;
+  const n = normalizar(produtoVetorial(ch.eixo_x, ch.eixo_y));
+  const z0 = ch.centrada ? -t / 2 : 0;
+  const plano = contornoNoMundo(ch);
+  const face = (z) => plano.map(p => somar(p, escalar(n, z)));
+  return [face(z0), face(z0 + t)];
 }
 
 /** Contorno da chapa levado para o mundo. */
@@ -142,8 +153,11 @@ export function arestasDe(ent) {
   if (!ent) return [];
   if (ent.tipo === 'barra') return [[ent.inicio, ent.fim]];
   if (ent.tipo === 'chapa') {
-    const p = contornoNoMundo(ent);
-    return p.map((a, i) => [a, p[(i + 1) % p.length]]);
+    const [f0, f1] = facesDaChapa(ent);
+    const fora = [];
+    for (const f of [f0, f1]) f.forEach((a, i) => fora.push([a, f[(i + 1) % f.length]]));
+    f0.forEach((a, i) => fora.push([a, f1[i]]));
+    return fora;
   }
   if (ent.tipo === 'solido') {
     const out = [];
@@ -357,7 +371,9 @@ export class Documento {
   caixa(ids = null) {
     const pts = [];
     const alvo = ids ? ids.map(i => this.entidades.get(i)) : this.entidades.values();
-    for (const e of alvo) if (e) pts.push(...pontosDe(e));
+    // um laço, não push(...lista): uma malha de 200 mil vértices (proxy do SketchUp com a
+    // cobertura inteira) passa do limite de argumentos e o editor não abria
+    for (const e of alvo) if (e) for (const p of pontosDe(e)) pts.push(p);
     return caixaDePontos(pts) || [[0, 0, 0], [0, 0, 0]];
   }
 

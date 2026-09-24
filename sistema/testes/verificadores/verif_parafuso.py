@@ -74,6 +74,30 @@ try:
       return [antes !== JSON.stringify(depois), Math.round(L(depois[1], depois[2]) - L(JSON.parse(antes)[1], JSON.parse(antes)[2]))];
     })())""")
     ok(json.loads(r)[0] is True and json.loads(r)[1] == 20, f"chapa esticada 20 mm pelo lado: {r}")
+    # chapa: arestas das duas faces e as verticais (4 lados → 12 arestas), para o snap
+    r = json.loads(aba.avaliar("""JSON.stringify((() => {
+      const doc = window.editor.documento;
+      const ch = [...doc.entidades.values()].find(x => x.tipo === 'chapa');
+      return ch ? [ch.contorno.length, doc.constructor.name] : null;
+    })())"""))
+    ok(r is not None, f"chapa de teste existe: {r}")
+    # Shift sobre uma aresta inclinada trava paralelo a ela; o Mover anda nessa direção
+    r = aba.avaliar("""JSON.stringify((() => {
+      const ed = window.editor, inf = ed.inferencia;
+      ed.ativarFerramenta('mover');
+      inf.definirAncora([0, 0, 0]);
+      inf.ultimo = { tipoSnap: 'sobre_aresta', aresta: [[0, 0, 0], [1000, 0, 200]] };
+      const tratou = inf.onTecla({ type: 'keydown', key: 'Shift' });
+      const trava = inf.travado, desc = inf.descricaoTrava;
+      ed.ativa.base = [0, 0, 0];
+      ed.ativa.onMover({ ponto: [500, 300, 0] }, {});
+      const d = ed.ativa.delta;
+      inf.onTecla({ type: 'keyup', key: 'Shift' });
+      return [tratou, trava, desc, d.map(v => Math.round(v)), inf.travado];
+    })())""")
+    r = json.loads(r)
+    # projeção de (500, 300, 0) na direção (1000, 0, 200): k = 500000/1040000 → (481, 0, 96)
+    ok(r[0] and r[1] == "aresta" and r[3] == [481, 0, 96] and r[4] is None, f"Shift trava paralelo à aresta e o Mover segue: {r}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

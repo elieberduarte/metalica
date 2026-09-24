@@ -25,6 +25,7 @@ Rotas da API:
     POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
     POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + lista de materiais
     POST /api/projetos/<slug>/detalhar-posicao {marca}   detalhe de uma peça (chapa vira paramétrica)
+    POST /api/projetos/<slug>/atualizar-pecas {marcas}   furos das barras e células dessas peças, sem refazer tudo
     POST /api/projetos/<slug>/calcular {parametros, trocas, comparar}  cálculo estrutural do modelo importado
     GET  /api/projetos/<slug>/calculo[/geometria]        último cálculo gravado / dados para o diálogo
     GET  /api/projetos/<slug>/calculo/alternativas?marca=  perfis que podem substituir a peça, verificados
@@ -758,6 +759,11 @@ def _alinhar_furos_das_barras(s: str, doc) -> dict:
     from nucleo2d import detalhar as det
     _progresso(s, "conferindo os furos das terças com os das chapas de suporte…")
     r = det.alinhar_furos_das_barras_as_chapas(doc)
+    # e o furo que ficou longe (chapa esticada, parafusos levados à mão) vai até o parafuso
+    rp = det.alinhar_furos_das_barras_aos_parafusos(doc)
+    if rp["barras"]:
+        r = dict(r, barras=r["barras"] + rp["barras"], furos=r["furos"] + rp["furos"],
+                 posicoes=sorted(set(r["posicoes"]) | set(rp["posicoes"])))
     # e os furos das terças em que não passa nada saem (a produção furaria à toa)
     _progresso(s, "retirando das terças os furos sem parafuso nem barra…")
     r2 = det.retirar_furos_sem_uso(doc)
@@ -829,6 +835,94 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
             "convertidas": convertidas, "reorientadas": reorientadas.get("chapas", 0),
             "editavel": desenho.metadados["detalhe_posicao"]["editavel"],
             "furos": len(desenho.metadados["detalhe_posicao"]["furos"]), "quantidade": pos.quantidade}
+
+
+def atualizar_pecas_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/atualizar-pecas {marcas: [...]}: atualiza só essas peças, sem
+    refazer o detalhamento inteiro. Os furos das barras vão para os das chapas e para os
+    parafusos (a ligação mexida à mão no 3D) e o modelo é gravado; depois, em cada desenho
+    de detalhamento gravado, a célula de cada posição pedida é redesenhada no mesmo lugar
+    (o canto de baixo à esquerda fica onde estava), e o "Detalhe – <peça>", se existir, é
+    refeito. A elevação dos conjuntos (tesouras) não muda aqui: para ela, gerar de novo."""
+    from collections import Counter
+    from nucleo2d import detalhar as det
+    from nucleo2d.desenho import Desenho, transladar
+    marcas = [str(m).strip() for m in (corpo.get("marcas") or []) if str(m).strip()]
+    if not marcas:
+        raise ErroDeDados("selecione a peça (ou as peças) no 3D.")
+    g = _gerente()
+    doc = _documento3d_do_projeto(s)
+    _progresso(s, "furos das barras nas chapas e nos parafusos…")
+    try:
+        r1 = det.alinhar_furos_das_barras_as_chapas(doc)
+        r2 = det.alinhar_furos_das_barras_aos_parafusos(doc)
+        if r1["barras"] or r2["barras"]:
+            g.salvar_modelo(s, doc.dict(), marco=True)
+        _progresso(s, "levantando as peças…")
+        lev = det.levantar(doc, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
+        pedidas = []
+        for p in lev["posicoes"]:
+            ms = det.marcas_de(p)
+            if any(m in ms or m == p.marca or m == p.nome for m in marcas):
+                pedidas.append(p)
+        if not pedidas:
+            raise ErroDeDados("as peças pedidas (%s) não foram achadas no levantamento." % ", ".join(marcas[:8]))
+        atualizados = []
+        for info in g.listar_desenhos(s, contar=False):
+            nome = info["nome"]
+            try:
+                d = Desenho.de_dict(g.abrir_desenho(s, nome))
+            except Exception:                                  # noqa: BLE001
+                continue
+            if not d.metadados.get("detalhamento"):
+                continue
+            mudou = False
+            for p in pedidas:
+                velhas = [e for e in d.entidades.values()
+                          if (e.atributos or {}).get("detalhe") == "posicao" and (e.atributos or {}).get("posicao") == p.marca]
+                if not velhas:
+                    continue
+                _progresso(s, "redesenhando %s em %s…" % (p.nome or p.marca, d.nome))
+                pts = [q for e in velhas for q in e.pontos()]
+                x0, y0 = min(q[0] for q in pts), min(q[1] for q in pts)
+                # a camada da peça é a que o desenho já usa para ela (banzo, diagonal…)
+                cams = Counter(e.camada for e in velhas if e.camada not in ("COTA", "TEXTO", "FURO", "EIXO", "VISTA-FINA", "OCULTA"))
+                if cams:
+                    p.camada_2d = cams.most_common(1)[0][0]
+                tmp = Desenho(nome="tmp", escala=d.escala)
+                tmp.camadas = dict(d.camadas)
+                editavel = p.marca in ((d.metadados.get("detalhamento") or {}).get("editaveis") or [])
+                det.desenho_da_posicao(p, tmp, 0.0, 0.0, editavel=editavel)
+                novas = list(tmp.entidades.values())
+                pts_n = [q for e in novas for q in e.pontos()]
+                if not pts_n:
+                    continue
+                nx0, ny0 = min(q[0] for q in pts_n), min(q[1] for q in pts_n)
+                for e in velhas:
+                    d.remover(e.id)
+                for e in novas:
+                    d.add(transladar(e, x0 - nx0, y0 - ny0))
+                mudou = True
+            if mudou:
+                g.salvar_desenho(s, nome, d.dict())
+                atualizados.append(d.nome)
+        # o "Detalhe – <peça>" gravado, refeito do modelo
+        detalhes = []
+        for p in pedidas:
+            titulo = "Detalhe – %s" % p.marca
+            if any(i.get("titulo") == titulo or i["nome"] == _slug(titulo) for i in g.listar_desenhos(s, contar=False)):
+                desenho, _ = det.detalhar_posicao(doc, det.marcas_de(p)[0], ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
+                if os.path.exists(g._caminho_desenho(s, desenho.nome)):
+                    g.excluir_desenho(s, desenho.nome)
+                desenho.metadados["gerado_por"] = "detalhamento"
+                g.salvar_desenho(s, desenho.nome, desenho.dict())
+                detalhes.append(desenho.nome)
+        g.tocar(s)
+        return {"pecas": [p.nome or p.marca for p in pedidas], "furos_barras": r1["furos"] + r2["furos"],
+                "barras": sorted(set(r1["posicoes"]) | set(r2["posicoes"])),
+                "desenhos": atualizados, "detalhes": detalhes}
+    finally:
+        _fim_progresso(s)
 
 
 def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
@@ -1711,6 +1805,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
                     return self._json(detalhar_posicao_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "atualizar-pecas":
+                    return self._json(atualizar_pecas_projeto(partes[0], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "gerar-3d":
                     return self._json(gerar_3d_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-furos":
