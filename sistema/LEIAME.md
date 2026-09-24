@@ -218,6 +218,12 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.7.28.** Ferramenta **Parafuso** (U) no 3D (`web/editor3d/ferramentas/parafuso.js`): cabeça, corpo e porca
+perpendiculares à face clicada, tamanho digitado (M12x35, 16x40); sólido na camada Parafusos com o nome e o tipo dos
+parafusos do IFC ("BOLT (A) 12x35", IfcMechanicalFastener, `criado_no_editor`). No levantamento, a barra que um
+parafuso do editor atravessa ganha o furo na alma ou na mesa (`inferir_furos_de_barra`; os parafusos do IFC não criam
+furo em barra). Verificador `testes/verificadores/verif_parafuso.py` (parafuso e Empurrar/Puxar em chapa).
+
 **0.7.27.** Tesouras **montadas**: as meias-tesouras no mesmo plano (`tesouras_montadas`, 150 mm) saem juntas,
 como a fábrica gabarita, e as montadas com as mesmas meias viram uma célula ("T1 + T1 – 03x"); a meia só sai sozinha
 se tiver instância sem par. Cadeias de cota por água (`trechos` do banzo; banzo de cima pela comparação na mesma

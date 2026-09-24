@@ -700,6 +700,80 @@ def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[So
     return novos
 
 
+def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido], centros=None) -> int:
+    """Barra sem o furo onde passa um parafuso (o colocado à mão no 3D, na ligação que o
+    projeto não detalhou): o furo redondo de d + 1 mm entra na vista da face que o
+    parafuso atravessa — alma (frente, eixo em e3) ou mesa (topo, eixo em e2) —, no ponto
+    em que o eixo cruza a peça. Furo que a malha já tem ali não repete."""
+    if not pos.classe.startswith("barra") or not getattr(pos, "local", None) or not pos.eixos or not fixadores:
+        return 0
+    if centros is None:
+        centros = _centros_dos_fixadores(fixadores)
+    e1, e2, e3 = pos.eixos
+    v0, l0 = pos.vertices[0], pos.local[0]
+
+    def local(q):
+        d = _sub(q, v0)
+        return (l0[0] + _dot(d, e1), l0[1] + _dot(d, e2), l0[2] + _dot(d, e3))
+    caixa = _caixa(ent)
+    folga = 60.0
+    ws = [q[2] for q in pos.local]
+    w_min, w_max = min(ws), max(ws)
+    novos = 0
+    for f in fixadores:
+        # só os parafusos colocados no editor: os do IFC vêm com o furo da barra modelado,
+        # e nos poucos em que a análise não o casa (furo movido pela regra, oblongo) um furo
+        # a mais mudaria o desenho já conferido
+        if not (f.atributos or {}).get("criado_no_editor"):
+            continue
+        cf = centros.get(f.id)
+        if cf is None or not all(caixa[i][0] - folga <= cf[i] <= caixa[i][1] + folga for i in range(3)):
+            continue
+        cc, pca = _autovetores(f.vertices)
+        ext = []
+        for ax in pca:
+            ts = [_dot(_sub(q, cc), ax) for q in f.vertices]
+            ext.append(max(ts) - min(ts))
+        if ext[0] <= 1.5 * ext[1]:
+            continue                                    # só a porca: sem eixo confiável
+        eixo = pca[0]
+        a_l = (_dot(eixo, e1), _dot(eixo, e2), _dot(eixo, e3))
+        c_l = local(cc)
+        meio = ext[0] / 2
+        if abs(a_l[2]) > 0.9:                           # atravessa a alma
+            vista, t = "frente", -c_l[2] / a_l[2]
+        elif abs(a_l[1]) > 0.9:                         # atravessa a mesa
+            vista, t = "topo", None
+        else:
+            continue
+        if vista == "frente":
+            if abs(t) > meio + 1.0:
+                continue                                # o corpo não chega ao plano da alma
+            p = tuple(c_l[i] + a_l[i] * t for i in range(3))
+            x, y = p[0], p[1]
+            if not (0.0 < x < pos.L and 0.0 < y < pos.H):
+                continue
+        else:
+            # a mesa está numa das pontas de v (0 ou H): o parafuso tem de alcançar uma delas
+            alvo = min((0.0, pos.H), key=lambda v_: abs(c_l[1] - v_))
+            t = (alvo - c_l[1]) / a_l[1]
+            if abs(t) > meio + 1.0:
+                continue
+            p = tuple(c_l[i] + a_l[i] * t for i in range(3))
+            x, y = p[0], p[2]
+            if not (0.0 < x < pos.L and w_min - 1.0 < y < w_max + 1.0):
+                continue
+        d, _ = _diametro_do_fixador(f, ext)
+        d_furo = d + 1.0
+        if any(g.vista == vista and math.hypot(x - g.x, y - g.y) < max(d_furo, g.d, g.larg) for g in pos.furos):
+            continue
+        pos.furos.append(Furo("redondo", float(round(x)), float(round(y)), d_furo, vista=vista))
+        novos += 1
+    if novos:
+        pos.observacoes.append("%d furo(s) pelo parafuso do modelo (a barra veio sem o furo)" % novos)
+    return novos
+
+
 def aplicar_ajustes_de_furos(posicoes: Sequence[Posicao], ajustes: Optional[dict]) -> List[str]:
     """Furação guardada no projeto (vínculo chapa → terça) substitui a medida da malha."""
     if not ajustes:
@@ -908,6 +982,7 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
                 analisar(pos)
                 if fixadores:
                     inferir_furos_de_parafusos(pos, primeiro[marca], fixadores, centros)
+                    inferir_furos_de_barra(pos, primeiro[marca], fixadores, centros)
             if fixadores:
                 parafusos_da_posicao(pos, primeiro[marca], fixadores, eixos_fix)
         except Exception as e:                      # noqa: BLE001 — uma peça não derruba o lote
