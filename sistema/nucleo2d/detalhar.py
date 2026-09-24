@@ -265,8 +265,13 @@ QUADROS_POSICOES = [("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS
                     ("suporte_terca", "SUPORTES DE TERÇA"), ("montagem", "PEÇAS MONTADAS – FRENTE E LATERAL"), ("agulhamento", "AGULHAMENTOS"),
                     ("suporte_agulhamento", "SUPORTES DE AGULHAMENTO"), ("contraventamento", "CONTRAVENTAMENTOS"),
                     ("suporte_contraventamento", "SUPORTES DE CONTRAVENTAMENTO"), ("castanha", "CASTANHAS"),
-                    ("barra_roscada", "BARRAS ROSCADAS"), ("gancho", "GANCHOS"), ("chumbador", "CHUMBADORES"), ("parte", "PEÇAS DE CONJUNTOS"),
+                    ("barra_roscada", "BARRAS ROSCADAS"), ("gancho", "GANCHOS"), ("chumbador", "CHUMBADORES"), ("cantoneira_forro", "CANTONEIRAS DE FORRO"),
+                    ("perfil_fechamento", "PERFIS DE FECHAMENTO"), ("parte", "PEÇAS DE CONJUNTOS"),
                     ("barra", "BARRAS"), ("chapa", "CHAPAS"), ("telha", "TELHAS")]
+
+
+#: Quadros com uma célula por linha (a terça é comprida e as iguais em tamanho se comparam).
+UMA_POR_LINHA = {"terca_cobertura", "terca_marquise"}
 
 
 #: Quadros do desenho completo por família: o conjunto e as peças que fazem parte dele
@@ -316,7 +321,10 @@ def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float
     for chave in ordem:
         banda = Desenho(nome=chave, escala=d.escala)
         banda.camadas = {k: v for k, v in d.camadas.items()}
-        _empilhar(banda, [(lambda x, y_, f=f: f(banda, x, y_)) for f in grupos[chave]], largura_max_papel=largura_max_papel)
+        # terças: uma embaixo da outra (já vêm do menor comprimento para o maior) — as do
+        # mesmo tamanho com furação diferente ficam lado a lado para conferir
+        larg = 1.0 if chave in UMA_POR_LINHA else largura_max_papel
+        _empilhar(banda, [(lambda x, y_, f=f: f(banda, x, y_)) for f in grupos[chave]], largura_max_papel=larg)
         titulo = titulos.get(chave) or (chave.upper() + "S")
         y = _anexar_quadro(d, banda, titulo, y, meta)
     return y
@@ -647,6 +655,8 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                                 "categoria": _categoria(p, camadas.get(p.marca, "")), "marcas": marcas_de(p),
                                 "nome": p.nome}
                       for p in lista}}
+        # terças do menor comprimento para o maior (o resto na ordem de sempre)
+        lista.sort(key=lambda p: p.comprimento if (nomeacao["tipos"].get(p.marca) or p.tipo_nome) in UMA_POR_LINHA else 0.0)
         editaveis = ([p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))]
                      + [p.marca for p in lista if p.classe == "barra" and any(f.vista == "frente" for f in p.furos)])
         # um quadro por tipo de peça (terças, suportes de terça, chapas…), como os conjuntos

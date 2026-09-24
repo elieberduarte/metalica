@@ -347,7 +347,17 @@ def _eixos_da_peca(pos: Posicao):
     c, pca = _autovetores(verts)
     redonda = _eh_redonda(pos.perfil) and pos.tipo_ifc != "IfcPlate"
     if redonda:
-        e1, e2, e3 = pca[0], pca[1], _norm(_cruz(pca[0], pca[1]))
+        # o eixo da barra pelas normais da superfície (cilindro: todas perpendiculares ao
+        # eixo), pesadas pela área — o trecho reto domina e o gancho não entorta a peça,
+        # como acontecia com o eixo principal dos vértices
+        e1 = _eixo_pelas_arestas_longas(pos) or _eixo_pelas_normais(pos)
+        pos.eixo_exato = e1 is not None
+        e1 = e1 or pca[0]
+        if _dot(e1, pca[0]) < 0:
+            e1 = tuple(-k for k in e1)
+        p = pca[1] if abs(_dot(pca[1], e1)) < 0.9 else pca[2]
+        e2 = _norm(_sub(p, tuple(_dot(p, e1) * k for k in e1)))
+        e3 = _norm(_cruz(e1, e2))
         return c, e1, e2, e3
 
     normais = []
@@ -385,6 +395,14 @@ def _eixos_da_peca(pos: Posicao):
     # projetado (barra). Só arestas de borda: quando a face de topo vem dividida em
     # quadriláteros em volta do furo, a diagonal interna seria a maior aresta
     e1 = None
+    if not chapa:
+        # barra: o comprimento pela aresta reta mais longa da face principal (a alma, a
+        # aba da cantoneira) — o eixo principal dos vértices inclina com furos, ponta
+        # cortada em ângulo ou peça curta, e a peça saía desenhada enviesada
+        e1 = _aresta_mais_longa(pos, e3, minimo=0.6 * _extensao_ao_longo(verts, pca[0]))
+        if e1 is not None and _dot(e1, pca[0]) < 0:
+            e1 = tuple(-k for k in e1)            # o mesmo sentido de antes: furos gravados não invertem
+        pos.eixo_exato = e1 is not None
     if chapa:
         normais_faces = [_normal_area([verts[i] for i in f])[0] for f in pos.faces]
         lacos = _lacos_de_borda(pos, lambda n: abs(_dot(n, e3)) > 0.985, normais_faces)
@@ -407,6 +425,79 @@ def _eixos_da_peca(pos: Posicao):
     e2 = _norm(_cruz(e3, e1))
     e1 = _norm(_cruz(e2, e3))
     return c, e1, e2, e3
+
+
+def _extensao_ao_longo(verts, ax) -> float:
+    ts = [_dot(v, ax) for v in verts]
+    return max(ts) - min(ts) if ts else 0.0
+
+
+def _aresta_mais_longa(pos: Posicao, e3, minimo: float = 0.0):
+    """Direção da aresta de borda mais longa das faces paralelas a `e3` (ou None se a
+    maior não passa de `minimo`)."""
+    verts = pos.vertices
+    normais_faces = [_normal_area([verts[i] for i in f])[0] for f in pos.faces]
+    lacos = _lacos_de_borda(pos, lambda n: abs(_dot(n, e3)) > 0.985, normais_faces)
+    maior, e1 = 0.0, None
+    for laco in lacos or []:
+        for i in range(len(laco)):
+            a, b = verts[laco[i]], verts[laco[(i + 1) % len(laco)]]
+            d = _sub(b, a)
+            comp = math.sqrt(_dot(d, d))
+            if comp > maior and comp > 1e-6 and abs(_dot(d, e3)) / comp < 0.05:
+                maior, e1 = comp, _norm(d)
+    if e1 is None or maior < minimo:
+        return None
+    return e1
+
+
+def _eixo_pelas_arestas_longas(pos: Posicao):
+    """Barra redonda: as arestas longas do cilindro (as geratrizes) correm no eixo do
+    trecho reto — a média das que têm pelo menos 80 % da maior e são paralelas a ela.
+    None quando a maior aresta é curta (barra facetada em pedaços)."""
+    V = pos.vertices
+    vistos, arestas = set(), []
+    for f in pos.faces:
+        for i in range(len(f)):
+            a, b = f[i], f[(i + 1) % len(f)]
+            k = (min(a, b), max(a, b))
+            if k in vistos:
+                continue
+            vistos.add(k)
+            d = _sub(V[b], V[a])
+            L = math.sqrt(_dot(d, d))
+            if L > 1e-6:
+                arestas.append((L, d))
+    if not arestas:
+        return None
+    Lmax, dmax = max(arestas, key=lambda t: t[0])
+    ext = _extensao_ao_longo(V, _norm(dmax))
+    if Lmax < 0.4 * ext:
+        return None
+    u = _norm(dmax)
+    soma = [0.0, 0.0, 0.0]
+    for L, d in arestas:
+        if L >= 0.8 * Lmax and abs(_dot(_norm(d), u)) > 0.999:
+            s = 1.0 if _dot(d, u) > 0 else -1.0
+            soma = [soma[k] + s * d[k] for k in range(3)]
+    return _norm(tuple(soma))
+
+
+def _eixo_pelas_normais(pos: Posicao):
+    """Direção a que as normais das faces menos apontam (menor autovetor de Σ área·n·nᵀ):
+    o eixo de uma barra redonda. None se a malha não deixa decidir."""
+    import numpy as np
+    M = np.zeros((3, 3))
+    verts = pos.vertices
+    for f in pos.faces:
+        n, a = _normal_area([verts[i] for i in f])
+        if a > 1e-9:
+            M += a * np.outer(n, n)
+    w, V = np.linalg.eigh(M)
+    if w[1] <= 1e-9 or w[0] > 0.3 * w[1]:
+        return None
+    v = V[:, 0]
+    return (float(v[0]), float(v[1]), float(v[2]))
 
 
 def _projetar(pos: Posicao, eixos=None):
@@ -791,7 +882,9 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
         return pos
 
     medida = _secao_ao_longo(pos)
-    if medida[1]:
+    # o eixo pela aresta reta (ou pelas normais, na redonda) já é o da barra; refinar pelos
+    # centros das seções entortava a peça com aba cortada ou gancho numa ponta
+    if medida[1] and not getattr(pos, "eixo_exato", False):
         medida = _alinhar_eixo(pos, medida)
     secao, reta, area, area_unitaria = medida
     pos.secao = secao
@@ -954,15 +1047,27 @@ def _vista(d: Desenho, pos: Posicao, ij: Tuple[int, int], k: int, sinal: float,
     faces viradas com ângulo acima de 30° é aresta viva; o resto não se vê. Arestas
     que pertencem a um furo já desenhado como círculo ficam de fora."""
     P = pos.local
+    # vértice repetido (mesma posição, outro número) vira um só: a "ponte" que o IFC usa
+    # para recortar os furos numa face só vai e volta pelo mesmo caminho com números
+    # diferentes, e contada como duas arestas soltas aparecia como uma linha no meio da peça
+    canon, primeiro = [], {}
+    for i, p in enumerate(P):
+        chave = (round(p[0], 2), round(p[1], 2), round(p[2], 2))
+        canon.append(primeiro.setdefault(chave, i))
     por_aresta = collections.defaultdict(list)
     for idx, f in enumerate(pos.faces):
         for i in range(len(f)):
-            a, b = f[i], f[(i + 1) % len(f)]
+            a, b = canon[f[i]], canon[f[(i + 1) % len(f)]]
+            if a == b:
+                continue
             por_aresta[(min(a, b), max(a, b))].append(idx)
+    ignorar = {(min(canon[a], canon[b]), max(canon[a], canon[b])) for a, b in ignorar} if ignorar else ignorar
     cos30 = math.cos(math.radians(30))
     for (a, b), fs in por_aresta.items():
         if (a, b) in ignorar:
             continue
+        if len(fs) == 2 and fs[0] == fs[1]:
+            continue                                  # ponte: ida e volta dentro da mesma face
         frente = [pos.normais[i][k] * sinal > 1e-6 for i in fs]
         if len(fs) == 1:
             camada = "ACO"

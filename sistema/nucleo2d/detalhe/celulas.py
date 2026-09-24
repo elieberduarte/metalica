@@ -176,6 +176,9 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
             p.cadeia_h([0.0] + sorted({round(f.x, 1) for f in furos_topo}) + [L], y_topo + w_min, -off, exigir_espaco=False)
         p.cota_v(y_topo + w_min, y_topo + w_max, L, off)
 
+    if pos.tipo_nome == "gancho" and pos.local:
+        _rosca_do_gancho(p, pos, esc, off)
+
     # título acima da peça
     y = H + (off + 2.0) * esc
     linhas = _cabecalho(pos)
@@ -188,6 +191,33 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
         p.texto(0, y, txt, alt * esc)
         y += (alt + 1.2) * esc
     return p.extremos
+
+
+#: Rosca do gancho (regra da fábrica), na ponta reta, em mm.
+ROSCA_GANCHO = 100.0
+
+
+def _rosca_do_gancho(p, pos: Posicao, esc: float, off: float):
+    """A rosca do gancho na ponta reta (a oposta à dobra): as duas linhas finas do fundo
+    da rosca ao longo de ROSCA_GANCHO e a cota "ROSCA 100"."""
+    L = max(q[0] for q in pos.local)          # a ponta desenhada (pos.L pode ser o desenvolvido)
+    perto = lambda u0: [q[1] for q in pos.local if abs(q[0] - u0) <= 30.0]    # noqa: E731
+    a, b = perto(0.0), perto(L)
+    if not a or not b:
+        return
+    # a ponta do gancho espalha mais na altura; a reta é a outra
+    reta_no_fim = (max(b) - min(b)) <= (max(a) - min(a))
+    vs = b if reta_no_fim else a
+    vs_ponta = [q[1] for q in pos.local if abs(q[0] - (L if reta_no_fim else 0.0)) <= 2.0] or vs
+    v0, v1 = min(vs_ponta), max(vs_ponta)
+    d = v1 - v0
+    vc = (v0 + v1) / 2.0
+    comp = min(ROSCA_GANCHO, 0.9 * L)
+    u1, u2 = (L - comp, L) if reta_no_fim else (0.0, comp)
+    for s in (-1.0, 1.0):
+        p.linha(u1, vc + s * d * 0.32, u2, vc + s * d * 0.32, "ACO-FINO")
+    p.linha(u1, v0, u1, v1, "ACO-FINO")
+    p.cota_h(u1, u2, v1, 4.0, texto="ROSCA %d" % round(comp))   # rente à barra: o título vem logo acima
 
 
 class _PapelPontilhado:
@@ -1095,13 +1125,24 @@ def oblongar_furos_das_tercas(doc: Documento) -> dict:
             ts = [_dot(_sub(ent.vertices[i], centro), e1) for i in laco]
             ws = [_dot(_sub(ent.vertices[i], centro), e2) for i in laco]
             ext_l, ext_w = max(ts) - min(ts), max(ws) - min(ws)
+            novos = list(ent.vertices)
+            girou = False
+            if ext_w > ext_l + 3.0 and ext_w <= comp + 3.0 and ext_l <= 18.0:
+                # oblongo em pé (copiado de uma chapa com o rasgo atravessado): as metades
+                # voltam para o centro na altura, e o rasgo vai para o sentido da barra
+                s2 = (ext_w - ext_l) / 2.0
+                for i in idx:
+                    t2 = _dot(_sub(novos[i], centro), e2)
+                    novo_t2 = math.copysign(max(0.0, abs(t2) - s2), t2)
+                    novos[i] = tuple(novos[i][j] + e2[j] * (novo_t2 - t2) for j in range(3))
+                ext_w = ext_l
+                girou = True
             if ext_w > 18.0:
                 continue                              # furo grande: não é de parafuso de terça
             oblongos.append((centro, e3, e1))
             s = (comp - ext_l) / 2.0
-            if s <= 0.5:
+            if s <= 0.5 and not girou:
                 continue
-            novos = list(ent.vertices)
             for i in idx:
                 t = _dot(_sub(novos[i], centro), e1)
                 if abs(t) > 0.01:
@@ -1125,7 +1166,9 @@ def oblongar_furos_das_tercas(doc: Documento) -> dict:
             novos, mexeu = [], False
             for f in ch.furos:
                 d = float(f.get("diametro", 0) or 0)
-                if not (0 < d <= 18.0):
+                L_, A_ = float(f.get("largura", 0) or 0), float(f.get("altura", 0) or 0)
+                oblongo = d <= 0 and L_ > 0 and A_ > 0 and min(L_, A_) <= 18.0
+                if not (0 < d <= 18.0) and not oblongo:
                     novos.append(f)
                     continue
                 x, y = float(f.get("x", 0) or 0), float(f.get("y", 0) or 0)
@@ -1150,6 +1193,9 @@ def oblongar_furos_das_tercas(doc: Documento) -> dict:
                 ao_longo_x = abs(_dot(achou, ex)) >= abs(_dot(achou, ey))
                 g2 = {k: v for k, v in f.items() if k != "diametro"}
                 g2.update(largura=comp if ao_longo_x else larg, altura=larg if ao_longo_x else comp)
+                if oblongo and abs(L_ - g2["largura"]) < 0.5 and abs(A_ - g2["altura"]) < 0.5:
+                    novos.append(f)                   # já é o oblongo certo, no sentido certo
+                    continue
                 novos.append(g2)
                 mexeu = True
                 saida["chapas"] += 1

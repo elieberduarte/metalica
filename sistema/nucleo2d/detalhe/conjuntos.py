@@ -305,6 +305,33 @@ TOLERANCIA_CONJUNTO_SEMELHANTE = 20.0
 FRACAO_COMUM_CONJUNTO = 0.75
 
 
+def _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc):
+    """Os furos das barras do conjunto na elevação: uma cruz no centro de cada furo — os da
+    alma virada para baixo (fundo do banzo) não apareciam na vista. As medidas ficam no
+    detalhe de cada barra."""
+    from nucleo2d.detalhe.celulas import _posicao_bruta, _furos_da_malha, _indices_do_furo
+    from saida.detalhamento import analisar
+    r = 1.2 * esc
+    for e in instancia:
+        if _tipo_ifc(e).startswith("IfcPlate") or len(e.vertices or []) < 8:
+            continue
+        pos = _posicao_bruta(e, str(_marcas(e).get("posicao") or e.nome or e.id))
+        pos.tipo_ifc = _tipo_ifc(e)
+        try:
+            analisar(pos)
+        except Exception:                             # noqa: BLE001
+            continue
+        if pos.classe != "barra" or not pos.eixos:
+            continue
+        e1, e2, e3 = pos.eixos
+        for f, laco, vista in _furos_da_malha(pos):
+            c, _ = _indices_do_furo(e, laco, e3 if vista == "frente" else e2, f.d / 2 + 1.0)
+            x = _dot(_sub(c, origem), u) - u0
+            y = _dot(_sub(c, origem), v) - v0
+            p.linha(x - r, y, x + r, y, "FURO")
+            p.linha(x, y - r, x, y + r, "FURO")
+
+
 def _conjuntos_semelhantes(a: dict, b: dict) -> bool:
     """Mesmo lado, mesmas dimensões principais e composição quase igual: a tesoura de
     ponta com outra chapa de base ou uma diagonal a menos vai para a célula da tesoura
@@ -344,7 +371,10 @@ def _agrupar_conjuntos_iguais(candidatos, fundidas: Optional[Dict[str, str]] = N
     for cand in candidatos:
         ass = _assinatura_conjunto(cand[2], fundidas)
         for ass_g, grupo in grupos:
-            if _conjuntos_iguais(ass_g, ass) or _conjuntos_semelhantes(ass_g, ass):
+            # só os iguais dividem a célula: tesoura com outra furação (suporte a mais,
+            # furo na alma do banzo) ou outra chapa é detalhe próprio (pedido do usuário em
+            # 23/09 — antes as semelhantes iam juntas com a diferença anotada)
+            if _conjuntos_iguais(ass_g, ass):
                 grupo.append(tuple(cand) + (_diferenca_de_composicao(ass_g, ass),))
                 break
         else:
@@ -602,6 +632,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         m = _marcas(e)
         if rotular and m.get("posicao"):
             rotulos.append((nome_de(m["posicao"]), ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), ang))
+    _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc)
     banzos = [b for b in barras if (b[3] < 25.0 or b[3] > 155.0) and b[2] > 0.25 * larg]
     diagonais = [b for b in barras if b not in banzos]
     # nós: interseção do eixo de cada diagonal/montante com o eixo de cada banzo, perto da

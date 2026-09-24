@@ -175,6 +175,17 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
+**0.7.19.** Eixo da barra sem enviesar: barra de perfil pelo comprimento da aresta reta mais longa da face
+principal, redonda pelas geratrizes (arestas longas do cilindro) — o eixo dos vértices inclinava com
+furos, ponta cortada ou gancho, e o refino pelos centros das seções (`_alinhar_eixo`) só roda quando o eixo
+ainda é o dos vértices. Vista: vértice repetido na mesma posição vira um só (a "ponte" dos furos recortados
+aparecia como linha no meio da terça depois de um furo retirado). Terças uma por linha, do menor comprimento
+para o maior (`UMA_POR_LINHA`). Gancho com a rosca de 100 mm na ponta reta (`ROSCA_GANCHO`). Tipos novos:
+cantoneira de forro (CF., L comprida solta) e perfil de fechamento (PF., U/C dobrado solto). Tesouras: só as
+iguais dividem célula (as de outra composição saem em detalhe próprio) e os furos das barras aparecem na
+elevação (cruz na camada FURO). Oblongo em pé na terça (copiado de chapa) gira para o sentido da barra, e a
+chapa junto.
+
 **0.7.18.** Furos das terças "viradas": a detecção (`saida.detalhamento._lacos_2d`) aceitava só os laços
 no nível médio da alma (±0,6 mm), mas os eixos da barra vêm da nuvem de vértices e saem inclinados uma
 fração de grau — numa terça de 5 m a alma "sobe" ~7 mm de ponta a ponta, e só o furo do meio passava.

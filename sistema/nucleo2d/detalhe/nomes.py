@@ -197,6 +197,13 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
                     t = "terca_marquise"
         elif cls in ("barra", "barra_conformada"):
             t = "agulhamento" if (p.comprimento >= 1500.0 and not conjuntos_de(p)) else "barra"
+            if t == "agulhamento":
+                # barra comprida solta que não é agulha: a cantoneira do forro (L comprida
+                # sem chapas de ponta) e o perfil de fechamento dobrado (U/C com a ponta curva)
+                if re.match(r"^\s*L\s*\d", p.perfil or "", re.I):
+                    t = "cantoneira_forro"
+                elif cls == "barra_conformada" and re.match(r"^\s*[CUZ]\s*\d", p.perfil or "", re.I):
+                    t = "perfil_fechamento"
         else:
             t = "barra"
         tipo[p.marca] = t

@@ -1122,14 +1122,15 @@ PREFIXO_NOME = collections.OrderedDict([
     ("tesoura", "T"), ("terca_cobertura", "T.C."), ("terca_marquise", "T.M."), ("suporte_terca", "S.T."),
     ("agulhamento", "A.G."), ("suporte_agulhamento", "S.A.G."), ("contraventamento", "C.V."),
     ("suporte_contraventamento", "S.C.V."), ("castanha", "C.S."), ("chapa", "CH."),
-    ("barra_roscada", "B.R."), ("gancho", "G."), ("chumbador", "CB."), ("barra", "B."), ("telha", "TL."), ("conjunto", "CJ."), ("parte", ""),
+    ("barra_roscada", "B.R."), ("gancho", "G."), ("chumbador", "CB."), ("cantoneira_forro", "CF."), ("perfil_fechamento", "PF."), ("barra", "B."), ("telha", "TL."), ("conjunto", "CJ."), ("parte", ""),
 ])
 TIPOS_NOME = {
     "tesoura": "Tesoura", "terca_cobertura": "Terça de cobertura", "terca_marquise": "Terça de marquise",
     "suporte_terca": "Suporte de terça", "agulhamento": "Agulhamento", "suporte_agulhamento": "Suporte de agulhamento",
     "contraventamento": "Contraventamento", "suporte_contraventamento": "Suporte de contraventamento",
     "castanha": "Castanha", "chapa": "Chapa", "barra": "Barra", "telha": "Telha", "conjunto": "Conjunto",
-    "barra_roscada": "Barra roscada", "gancho": "Gancho", "chumbador": "Chumbador", "parte": "Parte de conjunto",
+    "barra_roscada": "Barra roscada", "gancho": "Gancho", "chumbador": "Chumbador", "cantoneira_forro": "Cantoneira de forro",
+    "perfil_fechamento": "Perfil de fechamento", "parte": "Parte de conjunto",
 }
 
 

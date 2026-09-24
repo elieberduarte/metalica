@@ -616,8 +616,10 @@ def test_nomes_de_producao_no_modelo_real():
     chave_m2 = next(k for k in nm["conjuntos"] if "M2" in k.split(" / "))
     assert nm["conjuntos"][chave_m2] == "T1"                  # as 8 tesouras correntes lideram
     tesouras = [c for c in r["conjuntos"] if c["categoria"] == "TESOURAS"]
-    assert len(tesouras) == 2                                  # um detalhe por lado
-    assert any(c["variantes"] for c in tesouras)               # com as variantes anotadas
+    # tesoura com outra composição (furação de suporte, chapa de base) é detalhe próprio
+    # (pedido do usuário em 23/09; antes era um detalhe por lado com as variantes anotadas)
+    assert len(tesouras) == 6
+    assert not any(c["variantes"] for c in tesouras)
     assert nm["posicoes"]["M13"] == "T.C.1"                    # a terça mais repetida
     # M16 = cantoneira de 1,5 m com duas chapinhas de ponta: agulhamento; a agulha leva o
     # nome do conjunto e as chapinhas são suportes de agulhamento
@@ -640,7 +642,7 @@ def test_nomes_de_producao_no_modelo_real():
     textos = [e.texto for e in r["desenhos"]["barras"].entidades.values() if isinstance(e, Texto)]
     assert any(tx.startswith("T.C.1 – ") and "(M13)" in tx for tx in textos)
     textos_c = [e.texto for e in r["desenhos"]["conjuntos"].entidades.values() if isinstance(e, Texto)]
-    assert any(tx.startswith("T1 – 10x") and "(M2 / " in tx for tx in textos_c)
+    assert any(tx.startswith("T1 – 08x") and "(M2)" in tx for tx in textos_c)
     # camadas por tipo de peça
     cams = {e.camada for e in r["desenhos"]["conjuntos"].entidades.values()}
     assert {"BANZOS", "DIAGONAIS", "CHAPAS"} <= cams
