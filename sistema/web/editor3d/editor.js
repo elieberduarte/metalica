@@ -2579,6 +2579,16 @@ export class Editor {
             texto: `${it.nome}${bitola ? ` (#${bitola} = ${p.t.toFixed(2).replace('.', ',')} mm)` : ''} · ${numero(it.massa, 2)} kg/m${fab.length ? ' · ' + [...new Set(fab)].join(', ') : ''}` }));
         }
       }).catch(() => {});
+      // perfis da fábrica já usados (fora do catálogo), da mesma família
+      fetch('/api/fabrica').then(r => r.json()).then(d => {
+        for (const reg of (d.perfis || [])) {
+          const p = lerPerfil(reg.perfil);
+          if (!p || p.familia !== pa.familia) continue;
+          const desde = String(reg.primeiro_uso || '').slice(0, 10).split('-').reverse().join('/');
+          sugestoes.append(el('option', { value: reg.perfil,
+            texto: `perfil da fábrica · tira ${numero(reg.desenvolvido || 0, 0)} mm · desde ${desde} · ${(reg.projetos || []).length} projeto(s)` }));
+        }
+      }).catch(() => {});
     }
     const alcance = el('select', {},
       el('option', { value: 'selecao', texto: ents.length > 1 ? `as ${ents.length} peças selecionadas` : 'só esta peça' }),
@@ -2589,12 +2599,30 @@ export class Editor {
       el('div', { class: 'explica', texto: `Perfil atual: ${antigoNome}. Digite o novo como a fábrica escreve — altura × aba × enrijecedor × espessura; a espessura pode ser a bitola (#14 = 2,00 mm, #13 = 2,25, #12 = 2,65, #11 = 3,00, #10 = 3,35, #9 = 3,75, #8 = 4,25, #16 = 1,50). A peça muda de seção no 3D (as espessuras, abas e enrijecedores ficam exatos; os furos acompanham), e o detalhamento e a lista de materiais passam a sair com o perfil novo — gere-os de novo depois.` }),
       el('div', { class: 'campos' }, el('label', { texto: 'Novo perfil' }), campo, el('label', { texto: 'Aplicar em' }), alcance),
       sugestoes, aviso);
+    // a fábrica tem de conseguir dobrar: bobina, largura da tira e limites da dobradeira
+    // (regras em Catálogo → Regras da fábrica); perfil do catálogo passa sempre
+    let validacao = null, esperaVal = null;
+    const validar = (nome) => fetch('/api/fabrica/validar', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ perfil: nome }) }).then(r => r.json()).catch(() => null);
     const conferir = () => {
       const nome = nomeDoPerfil(campo.value, antigoNome);
       const p = lerPerfil(nome), a = lerPerfil(antigoNome);
+      validacao = null;
       aviso.textContent = !campo.value.trim() ? '' : !p ? 'Não reconheci esse perfil (U ou Ue/C: 127X50X17X#14, U92X40X2.25).'
         : (a && p.familia !== a.familia) ? `O atual é ${a.familia}; a troca na malha é dentro da mesma família.`
-        : `${nome}: ${p.H} × ${p.B}${p.D ? ' × ' + p.D : ''} × ${String(p.t).replace('.', ',')} mm`;
+        : `${nome}: ${p.H} × ${p.B}${p.D ? ' × ' + p.D : ''} × ${String(p.t).replace('.', ',')} mm · conferindo com as regras da fábrica…`;
+      clearTimeout(esperaVal);
+      if (!p || (a && p.familia !== a.familia)) return;
+      esperaVal = setTimeout(async () => {
+        const v = await validar(nome);
+        if (!v || nomeDoPerfil(campo.value, antigoNome) !== nome) return;
+        validacao = v;
+        const med = `${nome}: ${p.H} × ${p.B}${p.D ? ' × ' + p.D : ''} × ${String(p.t).replace('.', ',')} mm`;
+        aviso.textContent = !v.ok ? `A fábrica não faz este perfil: ${v.motivos.join(' ')}`
+          : v.tipo === 'catalogo' ? `${med} · do catálogo`
+          : `${med} · perfil da fábrica (fora do catálogo), tira de ${numero(v.desenvolvido, 0)} mm` + (v.conferidas ? '' : ' · regras da fábrica ainda não conferidas');
+        aviso.style.color = v.ok ? '' : 'var(--erro, #b42318)';
+      }, 250);
     };
     campo.addEventListener('input', conferir);
     setTimeout(() => campo.focus(), 50);
@@ -2602,6 +2630,8 @@ export class Editor {
     const novoNome = nomeDoPerfil(campo.value, antigoNome);
     const novo = lerPerfil(novoNome), antigo = lerPerfil(antigoNome);
     if (!novo || !antigo) { this.aviso('Perfil não reconhecido: use U ou Ue/C, como 127X50X17X#14.', 'atencao'); return; }
+    const val = validacao || await validar(novoNome);
+    if (val && !val.ok) { this.aviso(`${novoNome} não foi trocado — a fábrica não faz este perfil: ${val.motivos.join(' ')} (as regras ficam em Catálogo → Regras da fábrica)`, 'atencao', 15000); return; }
     const alvos = alcance.value === 'posicao' ? daPosicao : alcance.value === 'perfil' ? doPerfil : ents;
     const mud = {}, falhas = [];
     for (const e of alvos) {
@@ -2618,6 +2648,11 @@ export class Editor {
     }
     const n = Object.keys(mud).length;
     if (n) this.executar(new ComandoAlterar(mud, `Trocar perfil ${antigoNome} → ${novoNome}`));
+    // perfil fora do catálogo: entra na lista dos perfis da fábrica (data, projeto, quem usou)
+    if (n && val && val.tipo === 'dobrado') {
+      fetch('/api/fabrica/perfis', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ perfil: novoNome, projeto: this.projeto || '' }) }).catch(() => {});
+    }
     this.aviso(`${n} peça(s) passaram de ${antigoNome} para ${novoNome}` +
                (falhas.length ? `; ${falhas.length} não: ${falhas.slice(0, 3).join(' · ')}` : '') +
                '. Gere o detalhamento de novo para os desenhos saírem com o perfil novo. Ctrl+Z desfaz.',

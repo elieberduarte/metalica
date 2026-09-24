@@ -26,6 +26,8 @@ Rotas da API:
     POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + lista de materiais
     POST /api/projetos/<slug>/detalhar-posicao {marca}   detalhe de uma peça (chapa vira paramétrica)
     POST /api/projetos/<slug>/atualizar-pecas {marcas}   furos das barras e células dessas peças, sem refazer tudo
+    GET  /api/fabrica                     regras da fábrica (bobinas, dobradeira) e os perfis da fábrica em uso
+    POST /api/fabrica/{regras|validar|perfis|perfis/remover}
     POST /api/projetos/<slug>/calcular {parametros, trocas, comparar}  cálculo estrutural do modelo importado
     GET  /api/projetos/<slug>/calculo[/geometria]        último cálculo gravado / dados para o diálogo
     GET  /api/projetos/<slug>/calculo/alternativas?marca=  perfis que podem substituir a peça, verificados
@@ -835,6 +837,28 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
             "convertidas": convertidas, "reorientadas": reorientadas.get("chapas", 0),
             "editavel": desenho.metadados["detalhe_posicao"]["editavel"],
             "furos": len(desenho.metadados["detalhe_posicao"]["furos"]), "quantidade": pos.quantidade}
+
+
+def _rota_fabrica(rota: str, corpo: dict) -> dict:
+    """POST /api/fabrica/{regras | validar | perfis | perfis/remover}: as regras da fábrica
+    (bobinas e limites da dobradeira), a validação de um perfil dobrado e a lista dos
+    perfis da fábrica em uso (ver fabrica.py)."""
+    import fabrica
+    try:
+        if rota == "/api/fabrica/regras":
+            return {"regras": fabrica.gravar_regras(PROJETOS, corpo.get("regras") or corpo)}
+        if rota == "/api/fabrica/validar":
+            v = fabrica.validar(str(corpo.get("perfil") or ""), PROJETOS)
+            v.pop("geometria", None)
+            return v
+        if rota == "/api/fabrica/perfis":
+            return {"registro": fabrica.registrar(PROJETOS, str(corpo.get("perfil") or ""),
+                                                  projeto=str(corpo.get("projeto") or ""), usuario=USUARIO, maquina=MAQUINA)}
+        if rota == "/api/fabrica/perfis/remover":
+            return {"removido": fabrica.remover(PROJETOS, str(corpo.get("perfil") or ""))}
+    except ValueError as e:
+        raise ErroDeDados(str(e))
+    raise ErroDeDados("rota desconhecida: %s" % rota)
 
 
 def atualizar_pecas_projeto(s: str, corpo: dict) -> dict:
@@ -1720,6 +1744,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(catalogo())
             if rota == "/api/catalogo/pecas":
                 return self._json(catalogo_de_pecas(parse_qs(urlparse(self.path).query)))
+            if rota == "/api/fabrica":
+                import fabrica
+                return self._json({"regras": fabrica.regras(PROJETOS), "padrao": fabrica.REGRAS_PADRAO,
+                                   "perfis": fabrica.perfis(PROJETOS)})
             if rota == "/api/projetos":
                 return self._json(_gerente().listar())
             if rota.startswith("/api/projetos/"):
@@ -1793,6 +1821,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(instalar_atualizacao(corpo if isinstance(corpo, dict) else None))
             if rota == "/api/projetos":
                 return self._json(criar_projeto(corpo))
+            if rota.startswith("/api/fabrica/"):
+                return self._json(_rota_fabrica(rota, corpo if isinstance(corpo, dict) else {}))
             if rota.startswith("/api/projetos/"):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
                 if len(partes) == 2 and partes[1] == "vista2d":

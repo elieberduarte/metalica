@@ -219,6 +219,76 @@ function desenharDetalhe(peca, alternativas) {
     'e o dobro da atual. Se a peça passa ou não nos esforços, quem diz é a análise do projeto.' }));
 }
 
+// ------------------------------------------------ regras da fábrica e perfis da fábrica
+
+const CAMPOS_REGRAS = [
+  ['espessuras', 'Espessuras de bobina (mm, separadas por ;)'],
+  ['largura_max_tira', 'Largura máxima da tira — desenvolvido (mm)'],
+  ['comprimento_max', 'Comprimento máximo da peça (mm)'],
+  ['altura_min', 'Altura mínima (mm)'], ['altura_max', 'Altura máxima (mm)'],
+  ['aba_min', 'Aba mínima (mm)'], ['aba_max', 'Aba máxima (mm)'],
+  ['enrijecedor_min', 'Enrijecedor mínimo (mm)'], ['enrijecedor_max', 'Enrijecedor máximo (mm)'],
+  ['raio_interno_em_t', 'Raio interno da dobra (em espessuras)'],
+];
+
+async function postar(rota, corpo) {
+  const r = await fetch(rota, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(corpo) });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.erro) throw new Error(d.erro || r.statusText);
+  return d;
+}
+
+async function desenharFabrica() {
+  let d;
+  try { d = await api('/api/fabrica'); }
+  catch (e) { $('#fabrica-regras').textContent = 'Indisponível: ' + e.message; return; }
+  const r = d.regras || {};
+  const campos = {};
+  const grade = el('div', { class: 'regras' });
+  for (const [k, rot] of CAMPOS_REGRAS) {
+    const v = k === 'espessuras' ? (r.espessuras || []).map(x => String(x).replace('.', ',')).join('; ') : String(r[k] ?? '').replace('.', ',');
+    campos[k] = el('input', { id: 'regra-' + k, type: 'text', value: v, spellcheck: 'false' });
+    grade.append(el('label', {}, rot, campos[k]));
+  }
+  const conferidas = el('input', { id: 'regra-conferidas', type: 'checkbox', checked: r.conferidas ? true : undefined });
+  const estado_ = el('span', { class: 'nota', texto: '' });
+  const salvar = el('button', { type: 'button', texto: 'Gravar regras', onclick: async () => {
+    const novas = { conferidas: conferidas.checked };
+    for (const [k] of CAMPOS_REGRAS) {
+      novas[k] = k === 'espessuras' ? campos[k].value.split(/[;\s]+/).filter(Boolean).map(x => x.replace(',', '.')) : campos[k].value.replace(',', '.');
+    }
+    try { await postar('/api/fabrica/regras', { regras: novas }); estado_.textContent = 'Regras gravadas.'; desenharFabrica(); }
+    catch (e) { estado_.textContent = 'Não gravou: ' + e.message; }
+  } });
+  $('#fabrica-regras').className = '';
+  $('#fabrica-regras').replaceChildren(
+    el('div', { class: 'aviso-regras' + (r.conferidas ? '' : ' pendente'),
+      texto: r.conferidas ? 'Regras conferidas com a fábrica.' : 'Valores de partida, típicos — confira com a fábrica (bobinas em estoque, largura de corte, limites da dobradeira) e marque "conferidas".' }),
+    grade,
+    el('div', { class: 'botoes' }, el('label', {}, conferidas, ' Regras conferidas com a fábrica'), salvar, estado_));
+  // perfis da fábrica em uso
+  const lista = d.perfis || [];
+  const dia = (iso) => String(iso || '').slice(0, 10).split('-').reverse().join('/');
+  if (!lista.length) {
+    $('#fabrica-perfis').className = 'vazio';
+    $('#fabrica-perfis').textContent = 'Nenhum perfil fora do catálogo usado ainda. Quando um for usado no Trocar perfil, ele aparece aqui.';
+    return;
+  }
+  const corpo = el('tbody');
+  for (const p of lista.slice().sort((a, b) => String(a.perfil).localeCompare(String(b.perfil), 'pt-BR', { numeric: true }))) {
+    corpo.append(el('tr', {},
+      el('td', { texto: p.perfil }), el('td', { class: 'r', texto: numero(p.desenvolvido, 0) }),
+      el('td', { texto: dia(p.primeiro_uso) }), el('td', { texto: dia(p.ultimo_uso) }), el('td', { class: 'r', texto: numero(p.usos) }),
+      el('td', { texto: (p.projetos || []).join(', ') }), el('td', { texto: [p.usuario, p.maquina].filter(Boolean).join(' · ') }),
+      el('td', {}, el('button', { type: 'button', texto: 'Remover', title: 'Tira da lista de sugestões (as peças já trocadas continuam com o perfil)',
+        onclick: async () => { await postar('/api/fabrica/perfis/remover', { perfil: p.perfil }); desenharFabrica(); } }))));
+  }
+  $('#fabrica-perfis').className = 'rolagem';
+  $('#fabrica-perfis').replaceChildren(el('table', {},
+    el('thead', {}, el('tr', {}, ...['Perfil', 'Tira (mm)', 'Primeiro uso', 'Último uso', 'Usos', 'Projetos', 'Quem usou', ''].map(t => el('th', { texto: t })))),
+    corpo));
+}
+
 async function iniciar() {
   const btnTema = $('#btn-tema');
   if (btnTema) {
@@ -239,6 +309,7 @@ async function iniciar() {
   if (estado.familia) await escolherFamilia(estado.familia);
   let t = null;
   $('#busca').addEventListener('input', () => { clearTimeout(t); t = setTimeout(buscar, 180); });
+  desenharFabrica();
   document.body.dataset.pronto = '1';
 }
 

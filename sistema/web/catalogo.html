@@ -22,6 +22,14 @@
   @media (max-width: 1100px) { .catalogo { grid-template-columns: 1fr; } }
   .catalogo .caixa { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 12px 14px; }
   .catalogo h2 { font-size: 14px; margin: 0 0 8px; color: var(--azul); }
+  .catalogo .fabrica { grid-column: 1 / -1; }
+  .fabrica .regras { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 16px; font-size: 13px; }
+  .fabrica .regras label { display: flex; flex-direction: column; gap: 3px; color: var(--texto2); }
+  .fabrica .regras input { font: inherit; padding: 5px 8px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
+    background: var(--painel); color: var(--texto); }
+  .fabrica .aviso-regras { margin: 8px 0; padding: 6px 10px; border-radius: var(--raio-p); background: var(--painel2); font-size: 13px; }
+  .fabrica .aviso-regras.pendente { border-left: 3px solid #d97706; }
+  .fabrica .botoes { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
   .catalogo .familias { display: flex; flex-direction: column; gap: 2px; }
   .catalogo .familias button { text-align: left; background: none; border: 0; border-radius: var(--raio-p);
     padding: 7px 9px; font: inherit; font-size: 13px; color: var(--texto); cursor: pointer; display: flex;
@@ -69,6 +77,7 @@
     <h1>Catálogo de peças<span id="sub-resumo"></span></h1>
   </div>
   <div class="acoes">
+    <a class="botao" href="#fabrica" title="Bobinas, largura da tira e limites da dobradeira; perfis da fábrica em uso">Regras da fábrica</a>
     <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
     <a class="botao" href="/" title="Voltar à tela de projetos">← Projetos</a>
   </div>
@@ -100,6 +109,17 @@
   <section class="caixa" id="detalhe">
     <h2>Peça</h2>
     <div class="vazio">Clique numa peça da lista.</div>
+  </section>
+
+  <section class="caixa fabrica" id="fabrica">
+    <h2>Regras da fábrica e perfis da fábrica</h2>
+    <p class="descricao">Um perfil dobrado (U, Ue/C, Z, cartola) fora do catálogo só é aceito no <b>Trocar perfil</b> se a fábrica
+      consegue fazê-lo: espessura de uma bobina que ela tem, tira desenvolvida dentro da largura que ela corta e medidas nos
+      limites da dobradeira. Perfis laminados (W, cantoneira em polegada, tubos) só pelo catálogo. Cada perfil da fábrica usado
+      fica registrado abaixo, com a data, os projetos e quem usou.</p>
+    <div id="fabrica-regras" class="vazio">Carregando…</div>
+    <h2 style="margin-top:14px">Perfis da fábrica em uso</h2>
+    <div id="fabrica-perfis" class="vazio">Carregando…</div>
   </section>
 </main>
 

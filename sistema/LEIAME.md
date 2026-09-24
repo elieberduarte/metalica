@@ -218,6 +218,12 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.7.31.** Regras da fábrica (`fabrica.py`, `<dados>/fabrica/regras.json`): bobinas, largura máxima da tira, limites
+da dobradeira e raio interno; o Trocar perfil do 3D valida pelo servidor (`POST /api/fabrica/validar`) e recusa o perfil
+dobrado que a fábrica não faz (laminado só do catálogo; MSG e ABNT da mesma bitola valem). Perfis fora do catálogo usados
+ficam em `<dados>/fabrica/perfis.json` com data, projetos, usuário e máquina, e entram nas sugestões. Tela: Catálogo →
+Regras da fábrica. Verificador `testes/verificadores/verif_fabrica.py`.
+
 **0.7.30.** Bitolas #7 (4,50), #9 (3,75) e #15 (1,70) em `nucleo/perfis_fabrica.BITOLAS` e no Trocar perfil do 3D
 (U100X50X#9 não era reconhecido). Histórico da troca de perfil: a peça guarda `marcas.perfil_original` e
 `atributos.trocas_de_perfil` ([{de, para, data}]), mostrados nas propriedades; a posição leva "perfil original X,
