@@ -71,8 +71,15 @@ def test_multidobra_reconhecida():
     assert len(r["telhas"]) == 1
     t = r["telhas"][0]
     assert t["instancias"] == 2 and abs(t["angulo"] - 90.0) < 1.0
-    assert abs(t["reta1"] - 600.0) < 25 or abs(t["reta2"] - 600.0) < 25
-    assert abs(max(t["reta1"], t["reta2"]) - 3000.0) < 25
-    assert abs(t["raio"] - R) < 0.03 * R
+    # 0.8.6: o raio do detalhe é o comercial da fábrica (R450 interno + h/2 na linha média),
+    # não o das facetas do modelo; as pontas livres ficam e as tangências recuam
+    # (R_modelo − R) · tan(θ/2) = 330 mm, então cada reta cresce isso
+    from nucleo2d.detalhe.telhas import RAIO_INTERNO_COMERCIAL
+    Rc = RAIO_INTERNO_COMERCIAL + h / 2
+    cresce = (R - Rc) * math.tan(math.radians(t["angulo"]) / 2)
+    assert abs(min(t["reta1"], t["reta2"]) - (600.0 + cresce)) < 25
+    assert abs(max(t["reta1"], t["reta2"]) - (3000.0 + cresce)) < 25
+    assert abs(t["raio"] - Rc) < 1.0 and abs(t["raio_int"] - RAIO_INTERNO_COMERCIAL) < 0.6
+    assert abs(t["raio_modelo"] - R) < 0.03 * R           # o do modelo fica anotado
     assert t["desenv_ext"] > t["desenv_int"]
     assert r["posicoes"] == {"PA", "FA", "CO"}

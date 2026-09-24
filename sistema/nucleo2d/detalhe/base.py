@@ -659,8 +659,12 @@ def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido],
             bate = any(math.hypot(u - g.x, v - g.y) <= max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0 for g in frente)
         # furo de topo (mesa): eixo ao longo de e2, centro perto do furo no plano (e1, e3)
         if not bate and topo and abs(_dot(eixo, e2)) > 0.7:
+            # o furo da mesa está no frame de pos.local, com w centrado (w0 é o meio): é o
+            # `w` de cima; o `wt` a partir do mínimo errava meia largura e o parafuso
+            # colocado no 3D na ponta da terça não entrava na contagem
             wt = _dot(_sub(cc, c), e3) - min(q[2] for q in P)
-            bate = any(math.hypot(u - g.x, wt - g.y) <= max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0 for g in topo)
+            tol = lambda g: max(g.d, g.larg, g.alt, 10.0) / 2 + 3.0     # noqa: E731
+            bate = any(math.hypot(u - g.x, w - g.y) <= tol(g) or math.hypot(u - g.x, wt - g.y) <= tol(g) for g in topo)
         if not bate:
             continue
         nome, pela_porca = _nome_do_parafuso(f, ext)
@@ -793,6 +797,16 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
         meio = ext[0] / 2
         if abs(a_l[2]) > 0.9:                           # atravessa a alma
             vista, t = "frente", -c_l[2] / a_l[2]
+            if pos.classe == "barra_conformada":
+                # peça curva (o perfil que acompanha o beiral): a alma, ali, não está no
+                # plano médio da peça inteira — vale a dos vértices em volta do parafuso
+                perto = [q[2] for q in pos.local if abs(q[0] - c_l[0]) < 80.0 and abs(q[2] - c_l[2]) <= meio + 10.0]
+                if not perto:
+                    # malha com vértices só nas pontas e nas dobras: os do trecho reto
+                    # na altura do parafuso, onde quer que estejam ao longo da peça
+                    perto = [q[2] for q in pos.local if abs(q[2] - c_l[2]) <= meio + 10.0]
+                if perto:
+                    t = ((min(perto) + max(perto)) / 2 - c_l[2]) / a_l[2]
         elif abs(a_l[1]) > 0.9:                         # atravessa a mesa
             vista, t = "topo", None
         else:
@@ -1030,6 +1044,30 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
         m = _marcas(ent)
         primeiro.setdefault(str(m.get("posicao") or ent.nome or ent.id), ent)
     centros = _centros_dos_fixadores(fixadores) if fixadores else {}
+    # parafuso colocado no 3D numa parte das peças da posição (as terças da empena): a peça
+    # que representa a posição é uma que tem esses parafusos — antes era a primeira do
+    # modelo, e se ela não tinha, o furo não saía no detalhe
+    do_editor = [centros[f.id] for f in (fixadores or []) if (f.atributos or {}).get("criado_no_editor") and f.id in centros]
+    com_parafuso: Dict[str, Tuple[int, int]] = {}
+    if do_editor:
+        por_marca_ents: Dict[str, List[Solido]] = collections.defaultdict(list)
+        for ent in pecas:
+            por_marca_ents[str(_marcas(ent).get("posicao") or ent.nome or ent.id)].append(ent)
+        for marca, ents in por_marca_ents.items():
+            if len(ents) < 2 or isinstance(getattr(ents[0], "parametrica", None), Chapa):
+                continue
+            contagem = []
+            for ent in ents:
+                cx = _caixa(ent)
+                contagem.append(sum(1 for c in do_editor if all(cx[i][0] - 30.0 <= c[i] <= cx[i][1] + 30.0 for i in range(3))))
+            melhor = max(range(len(ents)), key=lambda i: contagem[i])
+            if contagem[melhor] and ents[melhor] is not primeiro[marca]:
+                primeiro[marca] = ents[melhor]
+                pos = por_marca[marca]
+                pos.vertices = [tuple(v) for v in ents[melhor].vertices]
+                pos.faces = [list(f) for f in ents[melhor].faces]
+            if contagem[melhor]:
+                com_parafuso[marca] = (sum(1 for c in contagem if c), len(ents))
     eixos_fix = _eixos_dos_fixadores(fixadores) if fixadores else {}
     # barras que atravessam furos de chapa (barra roscada na castanha, tirante): uma de cada posição basta
     barras_r = [e for e in pecas if isinstance(e, Solido) and _RE_PASSANTE.search(e.nome or "")]
@@ -1043,7 +1081,11 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
                 analisar(pos)
                 if fixadores:
                     inferir_furos_de_parafusos(pos, primeiro[marca], fixadores, centros)
-                    inferir_furos_de_barra(pos, primeiro[marca], fixadores, centros)
+                    if inferir_furos_de_barra(pos, primeiro[marca], fixadores, centros) and marca in com_parafuso:
+                        n_c, n_t = com_parafuso[marca]
+                        if n_c < n_t:
+                            pos.observacoes.append("furo(s) pelo parafuso colocado no 3D em %d de %d peças desta posição — "
+                                                   "as outras não têm esse parafuso: conferir" % (n_c, n_t))
             if fixadores:
                 parafusos_da_posicao(pos, primeiro[marca], fixadores, eixos_fix)
             if barras_r and pos.classe in ("chapa", "chapa_dobrada"):

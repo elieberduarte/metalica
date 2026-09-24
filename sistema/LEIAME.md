@@ -218,6 +218,23 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.6.** (1) Emenda do banzo com a peça do canto em **meia-esquadria** (`conjuntos._quinas_da_emenda`): a quina é o
+cruzamento do contorno do banzo com o lado da peça do canto; a tampa e a linha da aba terminam na emenda entre as duas
+quinas; nós a menos de 12 mm são o mesmo (`nos_quina`). (2) Furos pelos **parafusos colocados no 3D**: a peça que representa
+a posição passa a ser uma que tem esses parafusos (antes era a primeira do modelo — as terças da empena ficavam sem o furo),
+com a nota "em N de Q peças" quando só parte tem; na peça curva (`barra_conformada`, o perfil de fechamento do beiral) a
+alma é a dos vértices na altura do parafuso, não o plano médio da peça inteira; a contagem dos parafusos de mesa usa o `w`
+centrado de `pos.local` (o `wt` a partir do mínimo errava meia largura). (3) **Multi-dobra no raio comercial e no formato
+da fábrica**: `telhas.RAIO_INTERNO_COMERCIAL` = 450 (R45 cm interno / R49 cm externo na TP40, decisão do usuário; o R800 das
+facetas do TecnoMETAL fica em `raio_modelo` e na legenda); pontas livres e vértice ficam os do modelo, tangências
+recalculadas. `desenho_da_multidobra`: dois quadros lado a lado (Medidas internas / externas) com o desenvolvido em metros,
+retas e corda por fora, ângulo em arco de cota com chamadas radiais, comprimento do arco com o símbolo, raio sobre a linha,
+detalhe **ampliado** por fator inteiro até ~120 mm de papel (textos com a medida real; `_cotas_dos_apoios` recebe `amp`),
+título "TMD.1 – 64x  MULTIDOBRA TP40 #0,65" (`_rotulo_telha`). (4) **Fechamentos frontal e de fundos**: o topo das chapas
+no canto é cortado pelo perfil interno da multi-dobra levado à face (`_perfis_nos_cantos`, um perfil por beiral, o segundo
+espelhado pela posição das instâncias; `_recortar_pelo_canto`), o comprimento de compra vai até o topo do canto e a face
+avisa "canto cortado pelo arco…".
+
 **0.8.5.** "Já usados no modelo" do Parafuso inclui os fixadores sem tamanho no nome ("BOLT () 0x0", porca de chumbador
 ou de barra roscada): `tamanhoDoFixador` mede a entre faces nos eixos principais da peça (Jacobi 3×3; a caixa do mundo
 engana com a porca girada) e usa a tabela `_PORCAS` do detalhamento; arruela (espessura < 1/4 da maior medida) fica fora.

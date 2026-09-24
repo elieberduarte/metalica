@@ -14,8 +14,9 @@ perfil (perpendicular à largura da telha).
 consomem (as facetas e os trechos retos não saem mais como telhas recortadas).
 """
 import collections
+import re
 import math
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from saida.detalhamento import _autovetores, _eh_telha, RHO_ACO, _ordem_natural
 from nucleo2d.detalhe.base import _marcas, _dot, _sub, _norm, _cruz, arredondar_telha
@@ -26,6 +27,11 @@ FACETA_MAX = 400.0
 #: Cobrimento da multi-dobra (regra da fábrica): ela passa 150 mm além da primeira terça,
 #: e a telha seguinte começa 150 mm antes dela — transpasse de 300 mm + a largura da terça.
 COBRIMENTO_TERCA = 150.0
+
+#: Raio interno comercial da multi-dobra (mm): R45 cm interno / R49 cm externo na TP40 —
+#: o padrão da fábrica. O modelo do TecnoMETAL vem com facetas de R800, que não é o que se
+#: dobra: o raio do detalhe é este, e o do modelo fica anotado.
+RAIO_INTERNO_COMERCIAL = 450.0
 
 #: Saia (regra da fábrica): a telha de fachada e a reta da parede da multi-dobra descem 150 mm
 #: abaixo da última longarina.
@@ -138,7 +144,11 @@ def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
     if abs(theta) < math.radians(10):
         return None
     arco = sum(s["L"] for s in meio)
-    R = arco / abs(theta)
+    raio_modelo = arco / abs(theta)
+    # o raio é o comercial (R450 interno na TP40): as pontas livres das retas e o vértice
+    # ficam os do modelo, as tangências são recalculadas para esse raio
+    h_onda = sorted(altura_onda)[len(altura_onda) // 2]
+    R = RAIO_INTERNO_COMERCIAL + h_onda / 2.0
     # tangência: interseção das retas, recuada de R·tan(θ/2)
     p1, d1 = reta1["p"][0], reta1["d"]
     p2, d2 = reta2["p"][1], reta2["d"]
@@ -243,7 +253,7 @@ def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
             "p1": p1, "p2": p2, "d1": d1, "d2": d2, "I": I, "T": T, "sentido": 1 if theta > 0 else -1,
             "cobrimento": cobrimento, "saia": saia, "eixos_perfil": (a, b, w),
             # como o raio sai do modelo: o arco das facetas (linha média) dividido pelo ângulo
-            "facetas": len(meio), "arco_modelo": round(arco, 1), "apoios": apoios}
+            "facetas": len(meio), "arco_modelo": round(arco, 1), "raio_modelo": round(raio_modelo, 1), "apoios": apoios}
 
 
 def _secao_2d(e, w, a, b):
@@ -357,44 +367,107 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
     todos = [q for lado in (1.0, -1.0) for parte in _perfil_da_face(md, lado)[:3] for q in parte]
     x0 = min(q[0] for q in todos)
     y0 = min(q[1] for q in todos)
-    alt = max(q[1] for q in todos) - y0
-    painel_y = 0.0
-    fmt = lambda v: "%d" % round(v)          # noqa: E731  (a fábrica trabalha no milímetro inteiro)
-    for lado, titulo, arco_v, desenv, raio_v in ((-1.0, "MEDIDAS INTERNAS", md["arco_int"], md["desenv_int"], md["raio_int"]),
-                                                 (1.0, "MEDIDAS EXTERNAS", md["arco_ext"], md["desenv_ext"], md["raio_ext"])):
+    larg0 = max(q[0] for q in todos) - x0
+    alt0 = max(q[1] for q in todos) - y0
+    # detalhe ampliado (fator inteiro): a peça ocupa uns 120 mm de papel; as cotas levam a
+    # medida real no texto
+    amp = float(max(1, min(20, int(120.0 * esc / max(larg0, alt0, 1.0)))))
+    larg, alt = larg0 * amp, alt0 * amp
+
+    def num(v, casas=2):
+        """60,69 · 176,5 · 92 — até duas casas, sem zeros à direita (como a fábrica cota)."""
+        t = ("%%.%df" % casas % v).rstrip("0").rstrip(".")
+        return t.replace(".", ",")
+    # o formato da fábrica: dois quadros lado a lado (medidas internas e externas), cada um
+    # com o título e o desenvolvido em metros, as retas cotadas por fora, a corda por
+    # dentro, o ângulo cotado em arco, o comprimento do arco e o raio sobre a linha
+    margem = 44.0 * esc                                   # em volta do perfil, dentro do quadro
+    passo = larg + 2 * margem + 12.0 * esc                # de um quadro ao outro
+    topo_q = alt + margem + 14.0 * esc                    # altura do quadro acima do perfil (título em 2 linhas)
+    paineis = ((-1.0, "Medidas internas", md["arco_int"], md["desenv_int"], md["raio_int"]),
+               (1.0, "Medidas externas", md["arco_ext"], md["desenv_ext"], md["raio_ext"]))
+    for k, (lado, titulo, arco_v, desenv, raio_v) in enumerate(paineis):
+        ox = k * passo
         r1, arco, r2, centro, r = _perfil_da_face(md, lado)
-        T = lambda q: (q[0] - x0, q[1] - y0 + painel_y)        # noqa: E731
+        T = lambda q, ox=ox: ((q[0] - x0) * amp + ox, (q[1] - y0) * amp)          # noqa: E731
         p.polilinha([T(r1[0]), T(r1[1])] + [T(q) for q in arco[1:-1]] + [T(r2[0]), T(r2[1])], camada="ACO")
-        for (a_, b_), desl in ((r1, 12.0), (r2, 12.0), ((r1[0], r2[1]), 30.0)):
-            pa, pb = T(a_), T(b_)
-            # do lado de fora da dobra (longe do centro do arco), para não cruzar o perfil
+        cx, cy = T(centro)
+
+        def lado_de_fora(pa, pb):
             ux, uy = pb[0] - pa[0], pb[1] - pa[1]
-            meio_seg = ((pa[0] + pb[0]) / 2 - T(centro)[0], (pa[1] + pb[1]) / 2 - T(centro)[1])
-            sinal = 1.0 if (-uy * meio_seg[0] + ux * meio_seg[1]) > 0 else -1.0
+            meio_seg = ((pa[0] + pb[0]) / 2 - cx, (pa[1] + pb[1]) / 2 - cy)
+            return 1.0 if (-uy * meio_seg[0] + ux * meio_seg[1]) > 0 else -1.0
+
+        def cota(a_, b_, desl, fora=True):
+            pa, pb = T(a_), T(b_)
+            ux, uy = pb[0] - pa[0], pb[1] - pa[1]
+            L = math.hypot(ux, uy) or 1.0
+            sinal = lado_de_fora(pa, pb) * (1.0 if fora else -1.0)
             desenho.add(Cota(modo="alinhada", p1=p._p(*pa), p2=p._p(*pb), deslocamento=desl * sinal,
-                             texto=str(int(round(math.dist(pa, pb)))), atributos=dict(atr)))
-            p._p(pa[0] - uy / (math.hypot(ux, uy) or 1) * desl * sinal * esc, pa[1] + ux / (math.hypot(ux, uy) or 1) * desl * sinal * esc)
+                             texto=num(math.dist(pa, pb) / amp), atributos=dict(atr)))
+            p._p(pa[0] - uy / L * desl * sinal * esc, pa[1] + ux / L * desl * sinal * esc)
+        cota(r1[0], r1[1], 12.0)                           # reta 1, por fora
+        cota(r2[0], r2[1], 12.0)                           # reta 2, por fora
+        cota(r1[0], r2[1], 30.0)                           # corda, por fora do canto (como a fábrica)
         # as terças/longarinas debaixo da telha (só para conferir fixação e espaçamento)
         for ap in md.get("apoios") or []:
             for poli in ap["secao"]:
                 p.polilinha([T(q) for q in poli], fechada=True, camada="TERCAS")
         if lado > 0:
-            _cotas_dos_apoios(md, p, T, r1, r2, T(centro), atr)
+            _cotas_dos_apoios(md, p, T, r1, r2, (cx, cy), atr, amp)
+        # ângulo da dobra: arco de cota por fora da curva, chamadas radiais nas tangências
+        a0 = math.atan2(arco[0][1] - centro[1], arco[0][0] - centro[0])
+        a1 = math.atan2(arco[-1][1] - centro[1], arco[-1][0] - centro[0])
+        da = (a1 - a0 + math.pi) % (2 * math.pi) - math.pi
+        am = a0 + da / 2
+        r = r * amp
+        r_ang = r + 20.0 * esc
+        ini_, fim_ = (a0, a1) if da > 0 else (a1, a0)
+        p.arco(cx, cy, r_ang, math.degrees(ini_), math.degrees(fim_), camada="COTA")
+        for ang in (a0, a1):
+            p.linha(cx + (r + 3.0 * esc) * math.cos(ang), cy + (r + 3.0 * esc) * math.sin(ang),
+                    cx + (r_ang + 2.0 * esc) * math.cos(ang), cy + (r_ang + 2.0 * esc) * math.sin(ang), "COTA")
+            # o traço da cota, a 45° com a chamada
+            tx, ty = cx + r_ang * math.cos(ang), cy + r_ang * math.sin(ang)
+            t45 = ang + math.radians(45.0)
+            p.linha(tx - 1.2 * esc * math.cos(t45), ty - 1.2 * esc * math.sin(t45),
+                    tx + 1.2 * esc * math.cos(t45), ty + 1.2 * esc * math.sin(t45), "COTA")
+        rot = math.degrees(am) + 90.0                       # o texto acompanha a tangente ao arco
+        rot = (rot + 90.0) % 180.0 - 90.0
+        p.texto(cx + (r_ang + 2.2 * esc) * math.cos(am), cy + (r_ang + 2.2 * esc) * math.sin(am),
+                num(md["angulo"]) + "°", 2.5 * esc, angulo=rot, alinhamento="centro")
+        # comprimento do arco (entre o perfil e a cota do ângulo), com o símbolo de arco
+        r_txt = r + 9.0 * esc
+        tx, ty = cx + r_txt * math.cos(am), cy + r_txt * math.sin(am)
+        txt_arco = num(arco_v, 1)
+        p.texto(tx, ty, txt_arco, 2.5 * esc, angulo=rot, alinhamento="centro")
+        w_txt = 0.62 * 2.5 * esc * len(txt_arco)
+        tg = math.radians(rot)
+        gx, gy = tx - math.cos(tg) * (w_txt / 2 + 1.4 * esc), ty - math.sin(tg) * (w_txt / 2 + 1.4 * esc)
+        p.arco(gx, gy, 1.1 * esc, rot + 20.0, rot + 160.0, camada="COTA")
+        # o raio: linha do centro ao meio do arco e o texto sobre ela
         meio = arco[len(arco) // 2]
-        cx, cy = T(centro)
         mx, my = T(meio)
         p.linha(cx, cy, mx, my, "VISTA-FINA")
-        p.texto((cx + mx) / 2, (cy + my) / 2, "R%s" % fmt(raio_v), 2.2 * esc)
-        p.texto(mx, my + 3.0 * esc, "arco %s · %s°" % (fmt(arco_v), ("%.1f" % md["angulo"]).replace(".", ",")), 2.2 * esc)
-        # o título acima das cotas externas (reta a 12, apoios a 21, corda a 30)
-        p.texto(0, painel_y + alt + 36.0 * esc, "%s  %s mm" % (titulo, fmt(desenv)), 3.0 * esc)
-        painel_y += alt + 70.0 * esc
-    # legenda enxuta: o que se compra e se dobra; a dedução do raio, as facetas do modelo
-    # e os apoios ficam no desenho e na lista de produção
-    linhas = ["%s – %02dx" % (nome or md["conjunto"], md["instancias"]),
-              "%s  largura 1050 mm (útil 980)" % md["perfil"],
-              "retas %s + %s mm · raio int. %s / ext. %s · %s°" % (fmt(md["reta1"]), fmt(md["reta2"]), fmt(md["raio_int"]),
-                                                               fmt(md["raio_ext"]), ("%.1f" % md["angulo"]).replace(".", ",")),
+        rot_r = math.degrees(math.atan2(my - cy, mx - cx))
+        rot_r = (rot_r + 90.0) % 180.0 - 90.0
+        p.texto((cx + mx) / 2 - 1.2 * esc * math.sin(math.radians(rot_r)), (cy + my) / 2 + 1.2 * esc * math.cos(math.radians(rot_r)),
+                "R%s" % num(raio_v, 1), 2.2 * esc, angulo=rot_r, alinhamento="centro")
+        # o quadro e o título dele (duas linhas centradas, o desenvolvido em metros)
+        p.retangulo(ox - margem, -margem, larg + 2 * margem, topo_q + margem, "AUXILIAR")
+        cxq = ox + larg / 2
+        p.texto(cxq, alt + margem + 6.5 * esc, titulo, 3.5 * esc, alinhamento="centro")
+        p.texto(cxq, alt + margem + 1.0 * esc, ("%.3f" % (desenv / 1000.0)).replace(".", ",") + " m", 3.5 * esc, alinhamento="centro")
+    # o título geral acima dos quadros: quantidade e a telha
+    p.texto(passo - 6.0 * esc, topo_q + 4.0 * esc, "%s – %02dx  MULTIDOBRA %s" % (nome or md["conjunto"], md["instancias"],
+                                                                                    _rotulo_telha(md["perfil"])), 4.0 * esc, alinhamento="centro")
+    # abaixo dos quadros: o que se compra e se dobra (o desenho já mostra as medidas)
+    fmt = lambda v: "%d" % round(v)          # noqa: E731
+    linhas = ["%s  largura 1050 mm (útil 980)%s" % (md["perfil"], ("   detalhe ampliado %dx" % amp) if amp > 1 else ""),
+              "retas %s + %s mm · raio int. %s / ext. %s · %s°%s" % (
+                  fmt(md["reta1"]), fmt(md["reta2"]), fmt(md["raio_int"]), fmt(md["raio_ext"]), num(md["angulo"], 1),
+                  ("   (raio comercial; o modelo veio com R%s)" % fmt(md["raio_modelo"]))
+                  if abs(float(md.get("raio_modelo") or md["raio"]) - md["raio"]) > 5.0 else ""),
               "desenvolvida: ext. %s mm · int. %s mm   %s kg/pç  total %s kg" % (
                   fmt(md["desenv_ext"]), fmt(md["desenv_int"]), ("%.2f" % md["peso"]).replace(".", ","),
                   ("%.1f" % (md["peso"] * md["instancias"])).replace(".", ","))]
@@ -405,15 +478,20 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
         linhas.append("cobrimento: passa %d mm da 1ª terça (%s) — transpasse %s mm" % (
             COBRIMENTO_TERCA, cb["terca"], fmt(cb["transpasse"])))
         linhas.append("telha complementar %s-C: %02dx  L = %s mm" % (nome or md["conjunto"], md["instancias"], fmt(cb["resto"])))
-    y = painel_y + 4.0 * esc
-    for i, txt in enumerate(reversed(linhas)):
-        altura = 3.5 if i == len(linhas) - 1 else 2.5
-        p.texto(0, y, txt, altura * esc)
-        y += (altura + 1.2) * esc
+    y = -margem - 6.0 * esc
+    for txt in linhas:
+        p.texto(0, y, txt, 2.5 * esc)
+        y -= 3.7 * esc
     return p.extremos
 
 
-def _cotas_dos_apoios(md, p, T, r1, r2, centro, atr):
+def _rotulo_telha(perfil: str) -> str:
+    """"TELHA TP40 0.65MM" → "TP40 #0,65" (como a fábrica escreve no título)."""
+    t = re.sub(r"(?i)^\s*TELHA\s+", "", str(perfil or "")).strip()
+    return re.sub(r"(\d+[.,]\d+)\s*MM", lambda m: "#" + m.group(1).replace(".", ","), t, flags=re.I)
+
+
+def _cotas_dos_apoios(md, p, T, r1, r2, centro, atr, amp: float = 1.0):
     """Cadeia de cotas em cada reta: da ponta livre ao centro de cada apoio e entre apoios,
     do lado de fora da dobra (entre a cota da reta e a da corda)."""
     from nucleo2d.desenho import Cota
@@ -421,10 +499,10 @@ def _cotas_dos_apoios(md, p, T, r1, r2, centro, atr):
         # ponta livre → tangência (reta 1: r1[0] → r1[1]; reta 2: r2[1] → r2[0])
         ini, fim = (u, v) if reta == "reta1" else (v, u)
         pa, pb = T(ini), T(fim)
-        L = math.dist(pa, pb)
+        L = math.dist(pa, pb) / amp                        # comprimento real da reta
         if L < 1.0:
             continue
-        dx_, dy_ = (pb[0] - pa[0]) / L, (pb[1] - pa[1]) / L
+        dx_, dy_ = (pb[0] - pa[0]) / (L * amp), (pb[1] - pa[1]) / (L * amp)
         pos = sorted(ap["posicao"] for ap in md.get("apoios") or [] if ap["onde"] == reta and ap["posicao"] is not None)
         if not pos:
             continue
@@ -437,19 +515,20 @@ def _cotas_dos_apoios(md, p, T, r1, r2, centro, atr):
         off = 21.0 * sinal * esc
         n = len(marcas) - 1
         for i, (q0, q1) in enumerate(zip(marcas, marcas[1:])):
-            a_ = (pa[0] + dx_ * q0, pa[1] + dy_ * q0)
-            b_ = (pa[0] + dx_ * q1, pa[1] + dy_ * q1)
+            # posições reais (q) no desenho ampliado (q · amp); o número é o real
+            a_ = (pa[0] + dx_ * q0 * amp, pa[1] + dy_ * q0 * amp)
+            b_ = (pa[0] + dx_ * q1 * amp, pa[1] + dy_ * q1 * amp)
             txt = str(int(round(q1 - q0)))
             # número que não cabe entre as chamadas: sai pela ponta ou um degrau para fora
-            onde = p._texto_fora(q1 - q0, len(txt), i, n)
+            onde = p._texto_fora((q1 - q0) * amp, len(txt), i, n)
             tw = 0.62 * h * len(txt)
             pos = None
             if onde == "antes":
-                q = q0 - tw / 2 - 1.5 * esc
+                q = q0 * amp - tw / 2 - 1.5 * esc
             elif onde == "depois":
-                q = q1 + tw / 2 + 1.5 * esc
+                q = q1 * amp + tw / 2 + 1.5 * esc
             elif onde == "fora":
-                q = (q0 + q1) / 2
+                q = (q0 + q1) / 2 * amp
             if onde:
                 extra = off + sinal * (0.55 * h + (1.9 * h if onde == "fora" else 0.0))
                 pos = p._p(pa[0] + dx_ * q + nx * extra, pa[1] + dy_ * q + ny * extra)
@@ -675,6 +754,104 @@ def desenho_da_cumeeira(cm: dict, desenho, dx: float, dy: float, nome: str = "")
 
 
 # ============================================================ paginação
+def _perfis_nos_cantos(md: dict, pecas: Sequence, n, u, v, ponto=(0.0, 0.0, 0.0)) -> List[List[Tuple[float, float]]]:
+    """O perfil interno da multi-dobra (reta da água, arco R450, reta da parede) levado às
+    coordenadas (v, u) de uma face de fachada perpendicular ao beiral — um perfil por
+    beiral (o analisado e o espelhado no outro lado, pela posição das instâncias). É por
+    ele que as telhas de fechamento frontal e de fundos são cortadas no canto."""
+    saida = []
+    for t in (md or {}).get("telhas", []):
+        ep = t.get("eixos_perfil")
+        if not ep:
+            continue
+        a, b, w = ep
+        if abs(_dot(n, w)) < 0.95:
+            continue
+        r1, arco, r2, _centro, _r = _perfil_da_face(t, -1.0)
+        pl = [r1[0], r1[1]] + list(arco[1:-1]) + [r2[0], r2[1]]
+        ids = set(t.get("ids", []))
+        # só as facetas (peças curtas): elas só existem nos beirais, um grupo por beiral. A
+        # reta da água do modelo é um sólido de 8 m — o centro dela cai no meio do vão e
+        # emendava os dois grupos num só
+        # (as extensões vêm em ordem decrescente: numa faceta ext[0] é a largura da telha e
+        # ext[1] o comprimento dela, 110 mm)
+        qas = sorted(_dot(m[0], a) for e in pecas if e.id in ids for m in [_medidas(e)]
+                     if m[2][1] < FACETA_MAX and m[2][0] > 300.0)
+        grupos: List[List[float]] = []
+        for q in qas:
+            if grupos and q - grupos[-1][-1] < 1500.0:
+                grupos[-1].append(q)
+            else:
+                grupos.append([q])
+        perfis = [pl]
+        if len(grupos) == 2:
+            a_mid = (sum(grupos[0]) / len(grupos[0]) + sum(grupos[1]) / len(grupos[1])) / 2.0
+            perfis.append([(2.0 * a_mid - qa, qb) for qa, qb in pl])
+        # o perfil vai para a posição da face ao longo do beiral (qw): a normal da face
+        # raramente é exata, e uma inclinação de 0,02 em 31 m deslocava as chapas 600 mm
+        # em v em relação a um perfil posto em w = 0
+        qw = _dot(ponto, w)
+        for pf in perfis:
+            pts = []
+            for qa, qb in pf:
+                p3 = tuple(a[i] * qa + b[i] * qb + w[i] * qw for i in range(3))
+                pts.append((_dot(p3, v), _dot(p3, u)))
+            saida.append(pts)
+    return saida
+
+
+def _recortar_pelo_canto(contorno: List[Tuple[float, float]], perfis: List[List[Tuple[float, float]]]):
+    """Topo da chapa de fachada pelo perfil da multi-dobra onde ele existe (o canto): a
+    reta da água, o arco e a parede. Devolve o contorno novo, ou None se nada muda."""
+    if len(contorno) < 3:
+        return None
+    n = len(contorno)
+
+    def envelope(x):
+        ys = []
+        for i in range(n):
+            (px, py), (qx, qy) = contorno[i], contorno[(i + 1) % n]
+            if abs(qx - px) < 1e-9:
+                if abs(px - x) < 1e-6:
+                    ys += [py, qy]
+                continue
+            if min(px, qx) - 1e-6 <= x <= max(px, qx) + 1e-6:
+                ys.append(py + (qy - py) * (x - px) / (qx - px))
+        return (min(ys), max(ys)) if ys else None
+
+    def topo_perfil(x):
+        ys = []
+        for pl in perfis:
+            for (px, py), (qx, qy) in zip(pl, pl[1:]):
+                if abs(qx - px) < 1e-6:
+                    continue                    # a reta da parede é vertical: não limita o topo
+                if min(px, qx) - 1e-6 <= x <= max(px, qx) + 1e-6:
+                    ys.append(py + (qy - py) * (x - px) / (qx - px))
+        return min(ys) if ys else None
+    xa, xb = min(q[0] for q in contorno), max(q[0] for q in contorno)
+    xs = sorted({q[0] for q in contorno} | {q[0] for pl in perfis for q in pl if xa <= q[0] <= xb})
+    mudou = False
+    baixo, cima = [], []
+    for x in xs:
+        env = envelope(x)
+        if env is None:
+            continue
+        b_, t_ = env
+        tp = topo_perfil(x)
+        if tp is not None and abs(tp - t_) > 2.0:
+            mudou = True
+        cima.append((x, tp if tp is not None else t_))
+        baixo.append((x, b_))
+    if not mudou:
+        return None
+    poli = baixo + cima[::-1]
+    saida = []
+    for q in poli:
+        if not saida or math.dist(q, saida[-1]) > 0.5:
+            saida.append(q)
+    return saida
+
+
 def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, saias: Optional[dict] = None) -> List[dict]:
     """As telhas do modelo agrupadas por face (água da cobertura, fachada), cada uma com as
     chapas na posição de montagem: [{"normal", "u", "v", "chapas": [{"contorno": [(x, y)],
@@ -717,7 +894,9 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
     for e in pecas:
         if e.id in em_md:
             c, eixos, ext = _medidas(e)
-            if ext[0] < FACETA_MAX and max(ext[1], ext[2]) > 300:
+            # ext em ordem decrescente: ext[0] é a largura da telha, ext[1] o comprimento
+            # da faceta (o filtro antigo comparava a largura e nunca achava faceta)
+            if ext[1] < FACETA_MAX and ext[0] > 300:
                 facetas.append(c)
     faces: List[dict] = []
     for ch in chapas:
@@ -738,6 +917,9 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
         if _dot(u, (0.0, 0.0, 1.0)) < 0 or (abs(u[2]) < 1e-6 and u[0] + u[1] < 0):
             u = (-u[0], -u[1], -u[2])
         v = _norm(_cruz(n, u))
+        # fachada frontal ou de fundos (perpendicular ao beiral): o canto das telhas segue o
+        # arco da multi-dobra, no raio comercial
+        perfis_canto = _perfis_nos_cantos(md, pecas, n, u, v, f["ponto"]) if abs(n[2]) < 0.7 else []
         lista = []
         for ch in f["itens"]:
             pts = [(_dot(p, v), _dot(p, u)) for p in ch["e"].vertices]
@@ -758,6 +940,15 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
                 contorno = [(q[0], q[1] - desce) if q[1] <= y_min + 1.0 else q for q in contorno]
                 corte = list(contorno)
                 ys = ys + [y_min - desce]
+            corte_arco = False
+            if perfis_canto and not ch["multidobra"] and not ch["cumeeira"]:
+                novo = _recortar_pelo_canto(contorno, perfis_canto)
+                if novo is not None:
+                    contorno, corte = novo, list(novo)
+                    topo_novo = max(q[1] for q in novo)
+                    ys = [min(ys), topo_novo]
+                    comp = topo_novo - min(ys)              # a chapa é comprada até o topo do canto
+                    corte_arco = True
             if not ch["multidobra"]:
                 # a sobra da fábrica: a chapa sobe até o comprimento arredondado
                 comp_r = arredondar_telha(comp)
@@ -784,6 +975,7 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
                               "x": (x0_ + x1_) / 2 + 1e-3, "y0": min(yc, yf), "y1": max(yc, yf), "multidobra": False})
                 continue
             lista.append({"contorno": contorno, "corte": corte, "comprimento": comp, "nome": ch["nome"], "saia": desce,
+                          "corte_arco": corte_arco,
                           "x": (min(xs) + max(xs)) / 2, "y0": min(ys), "y1": max(ys), "cumeeira": ch["cumeeira"],
                           "multidobra": bool(ch["multidobra"]), "alinhada": abs(_dot(uu, u)) > 0.9})
         inclinacao = math.degrees(math.acos(max(-1.0, min(1.0, abs(n[2])))))
@@ -963,6 +1155,8 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     if pernas:
         cont_cm = collections.Counter(ch["nome"] for ch in pernas)
         resumo += "   cumeeira: " + " · ".join("%s %dx" % (k, q) for k, q in sorted(cont_cm.items(), key=lambda kv: _ordem_natural(kv[0])))
+    if any(ch.get("corte_arco") for ch in chapas):
+        resumo += "   canto cortado pelo arco da multi-dobra (R%d int., tracejado; corte em obra)" % RAIO_INTERNO_COMERCIAL
     titulo = "FACE %d – %s%s – %d chapas%s" % (indice, face["tipo"].upper(),
                                               (" (%.0f°)" % face["inclinacao"]) if face["tipo"] == "cobertura" else "",
                                               len(chapas) - len(pernas),

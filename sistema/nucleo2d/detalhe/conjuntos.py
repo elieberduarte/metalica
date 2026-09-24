@@ -732,6 +732,16 @@ def _emendas_do_chanfro(desenho: Desenho, novas: List, ids: set, camada_de: Dict
             e.vertices = [v for r, v in enumerate(vs) if r not in tirar]
     # a ponta antiga m (emenda com o banzo) vai para o nó nas linhas do banzo: para o nó
     # mais perto dela entre os que a apontaram (contorno de fora ou de dentro)
+    # a linha de emenda de cada nó: o par dele (o nó do outro contorno da mesma peça, a
+    # menos de EMENDA_MAX). O banzo termina nela, em meia-esquadria com a peça do canto
+    todos_nos = [(float(q[0]), float(q[1])) for e in canto for q in e.atributos["nos_chanfro"]]
+
+    def par_do_no(q):
+        cand = [(math.dist(q, r), r) for r in todos_nos if 5.0 < math.dist(q, r) <= EMENDA_MAX]
+        return min(cand)[1] if cand else None
+
+    compridas: Dict[tuple, list] = collections.defaultdict(list)   # nó → [(ponta de longe, ponta nova)]
+
     def destino(w, longe=None):
         cand = [(math.dist(w, q), q) for m, q in movimentos if perto(w, m)]
         if not cand:
@@ -739,6 +749,19 @@ def _emendas_do_chanfro(desenho: Desenho, novas: List, ids: set, camada_de: Dict
         q = min(cand)[1]
         if longe is None or math.dist(w, longe) < 1e-6:
             return q
+        # linha comprida do banzo (anda na própria direção): termina onde cruza a linha de
+        # emenda — o contorno de fora cai no nó de fora, o de dentro no de dentro, a aba no
+        # meio; a ponta do banzo fica colada na peça do canto
+        par = par_do_no(q)
+        L0 = math.dist(w, longe)
+        d0 = ((w[0] - longe[0]) / L0, (w[1] - longe[1]) / L0)
+        mv0 = math.dist(w, q)
+        if par is not None and mv0 > 1e-6 and                 abs(((q[0] - w[0]) * d0[0] + (q[1] - w[1]) * d0[1]) / mv0) >= math.cos(math.radians(15.0)):
+            x = _cruzamento(longe, w, q, par)
+            if x is not None and math.dist(x, q) <= EMENDA_MAX + 20.0:
+                x = (round(x[0], 2), round(x[1], 2))
+                compridas[q].append((longe, x))
+                return x
         # a ponta desliza na direção da própria linha até a altura do nó: a linha da aba,
         # que não passa pelo nó, ia girar em volta da outra ponta (o banzo "torcia")
         L = math.dist(w, longe)
@@ -766,13 +789,22 @@ def _emendas_do_chanfro(desenho: Desenho, novas: List, ids: set, camada_de: Dict
                 o.vertices = novos
             else:
                 o.a, o.b = destino(o.a, o.b), destino(o.b, o.a)
+        _quinas_da_emenda(canto, outras, compridas, par_do_no, perto)
     # 2) a linha de emenda em cada nó: o nó do contorno de fora com o do de dentro
     por_origem: Dict[str, list] = collections.defaultdict(list)
+    candidatos: Dict[str, list] = collections.defaultdict(list)
     for e in canto:
-        for q in e.atributos["nos_chanfro"]:
+        antigos = [(float(q[0]), float(q[1])) for q in e.atributos["nos_chanfro"]]
+        for k, q in enumerate(e.atributos.get("nos_quina") or e.atributos["nos_chanfro"]):
             q = (float(q[0]), float(q[1]))
-            lista = por_origem[e.atributos.get("origem")]
-            if not any(perto(q, w, 1.0) for w in lista):
+            movido = k < len(antigos) and math.dist(q, antigos[k]) > 0.05
+            candidatos[e.atributos.get("origem")].append((not movido, q))
+    for origem, cand in candidatos.items():
+        lista = por_origem[origem]
+        # o nó que foi para a quina vale mais; outro nó a menos de 12 mm dele é o mesmo
+        # (a ponta da linha de aba da peça do canto)
+        for _, q in sorted(cand, key=lambda t: t[0]):
+            if not any(math.dist(q, w) < 12.0 for w in lista):
                 lista.append(q)
     for origem, nos in por_origem.items():
         usados = set()
@@ -783,7 +815,114 @@ def _emendas_do_chanfro(desenho: Desenho, novas: List, ids: set, camada_de: Dict
             usados |= {i, j}
             desenho.add(Linha(camada=camada_de.get(origem, "VISTA"), a=nos[i], b=nos[j],
                               atributos=dict(next(e for e in canto if e.atributos.get("origem") == origem).atributos,
-                                             emenda=True, chanfro=None, nos_chanfro=None)))
+                                             emenda=True, chanfro=None, nos_chanfro=None, nos_quina=None)))
+
+
+def _quinas_da_emenda(canto, outras, compridas, par_do_no, perto) -> None:
+    """Fecha a meia-esquadria do banzo com a peça do canto: em cada nó, a quina é o
+    cruzamento da linha de contorno do banzo (a comprida mais perto do nó) com o lado da
+    peça do canto que chega nele — no modelo as faces não se encontram exatamente no nó, e
+    sobrava um degrau de alguns milímetros. O nó da peça do canto, a tampa do banzo e a
+    linha da aba (que termina na emenda entre as duas quinas) acompanham."""
+    quina: Dict[tuple, tuple] = {}
+    lado: Dict[tuple, tuple] = {}
+    for e in canto:
+        vs = [tuple(v) for v in e.vertices]
+        n = len(vs)
+        for k, v in enumerate(vs):
+            q = next((q for q in compridas if perto(v, q, 0.05)), None)
+            if q is None:
+                continue
+            viz = [vs[j % n] for j in (k - 1, k + 1) if (0 <= j < n) or e.fechada]
+            if viz:
+                lado[q] = max(viz, key=lambda x: math.dist(x, v))
+    for q, lista in compridas.items():
+        if q not in lado or not lista:
+            continue
+        # a linha de contorno do banzo é a que passa mais perto do nó
+        def afastamento(item):
+            longe, x = item
+            L = math.dist(longe, x)
+            return abs((q[0] - longe[0]) * (x[1] - longe[1]) - (q[1] - longe[1]) * (x[0] - longe[0])) / L if L > 1e-6 else 1e9
+        longe, x = min(lista, key=afastamento)
+        X = _cruzamento(longe, x, lado[q], q)
+        if X is not None and math.dist(X, q) <= 40.0:
+            quina[q] = (round(X[0], 2), round(X[1], 2))
+    if not quina:
+        return
+
+    def nova(w):
+        for q, X in quina.items():
+            if perto(w, q, 0.05):
+                return X
+        return w
+    # pontas novas das linhas compridas: o contorno vai para a quina; as outras (a aba)
+    # terminam na emenda entre as duas quinas
+    troca_ponta: Dict[tuple, tuple] = {}
+    for q, lista in compridas.items():
+        par = par_do_no(q)
+        a_ = quina.get(q, q)
+        b_ = quina.get(par, par) if par is not None else None
+        for longe, x in lista:
+            if q in quina and math.dist(x, a_) < 1e-9:
+                continue
+            if b_ is None:
+                continue
+            X = _cruzamento(longe, x, a_, b_)
+            if X is not None and math.dist(X, x) <= 40.0:
+                troca_ponta[x] = (round(X[0], 2), round(X[1], 2))
+        # a de contorno
+        if q in quina:
+            longe, x = min(lista, key=lambda it: math.dist(it[1], quina[q]))
+            troca_ponta[x] = quina[q]
+
+    def ajuste(w):
+        w2 = troca_ponta.get(tuple(w))
+        return w2 if w2 is not None else nova(tuple(w))
+    for o in outras:
+        if o.camada == "CHAPAS":
+            continue
+        if isinstance(o, Polilinha):
+            o.vertices = [ajuste(w) for w in o.vertices]
+        else:
+            o.a, o.b = ajuste(o.a), ajuste(o.b)
+    # as emendas (quina de fora – quina de dentro): a linha de aba da peça do canto, que
+    # tem o nó dela a poucos milímetros do de fora, também termina na emenda
+    emendas = []
+    for q, X in quina.items():
+        par = par_do_no(q)
+        if par is not None and par in quina:
+            emendas.append((X, quina[par]))
+
+    def na_emenda(v, viz):
+        for a_, b_ in emendas:
+            L = math.dist(a_, b_)
+            if L < 1e-6:
+                continue
+            dist_ = abs((v[0] - a_[0]) * (b_[1] - a_[1]) - (v[1] - a_[1]) * (b_[0] - a_[0])) / L
+            if dist_ > 15.0 or min(math.dist(v, a_), math.dist(v, b_)) > L + 15.0:
+                continue
+            X = _cruzamento(viz, v, a_, b_)
+            if X is not None and math.dist(X, v) <= 20.0:
+                return (round(X[0], 2), round(X[1], 2))
+        return v
+    for e in canto:
+        vs = [tuple(v) for v in e.vertices]
+        n = len(vs)
+        nos = [(float(a), float(b)) for a, b in e.atributos["nos_chanfro"]]
+        movidos = {}
+        novos = []
+        for k, v in enumerate(vs):
+            w = nova(v)
+            if w == v and any(perto(v, q, 0.05) for q in nos):
+                viz = [vs[j % n] for j in (k - 1, k + 1) if (0 <= j < n) or e.fechada]
+                if viz:
+                    w = na_emenda(v, max(viz, key=lambda x: math.dist(x, v)))
+            if w != v:
+                movidos[v] = w
+            novos.append(w)
+        e.vertices = novos
+        e.atributos = dict(e.atributos, nos_quina=[list(movidos.get(q, nova(q))) for q in nos])
 
 
 def _cruzamento(a0, a1, b0, b1):
