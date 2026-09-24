@@ -410,13 +410,42 @@ export class Esticar extends Ferramenta {
     if (!melhor) return false;
     const [s, t] = melhor, L = dist(s, t) || 1;
     const tol = Math.max(0.5, 2 * tela.mmPorPixel);
-    this.dentro = (q) => dist(q, s) <= tol || dist(q, t) <= tol;
+    // anda tudo o que termina SOBRE a aresta, não só nas pontas dela: as linhas internas do
+    // perfil (a aba, a dobra) chegam no meio da aresta da ponta da barra
+    this.dentro = (q) => dist(q, maisProximoSeg(q, s, t)) <= tol;
     this.regiao = [[Math.min(s[0], t[0]) - tol, Math.min(s[1], t[1]) - tol], [Math.max(s[0], t[0]) + tol, Math.max(s[1], t[1]) + tol]];
     this.normal = [-(t[1] - s[1]) / L, (t[0] - s[0]) / L];
+    // direção do movimento: a das linhas que chegam na aresta, quando são todas paralelas
+    // (o eixo de uma barra cuja ponta é um corte inclinado — a diagonal da tesoura);
+    // senão a perpendicular da aresta. Andar na perpendicular de um corte inclinado
+    // entortava a barra.
+    const eixo = this._eixoDasVizinhas(s, t, tol);
+    if (eixo) this.normal = eixo;
     this.base = p; this.editor.snap.ultimo = p;
     this.editor.previa([criar({ tipo: 'linha', camada: this.camada, a: s, b: t })]);
     this.dica('Leve a aresta até a nova posição, ou digite a distância · Esc cancela');
     return true;
+  }
+  /** Direção unitária comum às linhas que têm uma ponta sobre a aresta s–t e seguem para
+   *  fora dela (±2°), ou null se não há vizinhas ou elas não são paralelas. */
+  _eixoDasVizinhas(s, t, tol) {
+    const lo = [Math.min(s[0], t[0]) - tol, Math.min(s[1], t[1]) - tol], hi = [Math.max(s[0], t[0]) + tol, Math.max(s[1], t[1]) + tol];
+    const naAresta = (q) => dist(q, maisProximoSeg(q, s, t)) <= tol;
+    const dirs = [];
+    for (const e of this.doc.naRegiao([lo, hi])) {
+      if (!this.doc.visivel(e) || (e.tipo !== 'linha' && e.tipo !== 'polilinha')) continue;
+      for (const [a, b] of segmentosDe(e)) {
+        const ia = naAresta(a), ib = naAresta(b);
+        if (ia === ib) continue;                        // a própria aresta, ou longe dela
+        const [p0, p1] = ia ? [a, b] : [b, a];
+        const n = dist(p0, p1);
+        if (n > 1e-6) dirs.push([(p1[0] - p0[0]) / n, (p1[1] - p0[1]) / n]);
+      }
+    }
+    if (!dirs.length) return null;
+    const d0 = dirs[0];
+    if (!dirs.every(d => Math.abs(d[0] * d0[0] + d[1] * d0[1]) > Math.cos(2 * Math.PI / 180))) return null;
+    return d0;
   }
   onSoltar(p, ev) {
     if (!ev.arrasto || this.dentro) return;

@@ -218,6 +218,11 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.7.26.** Esticar (S) na ponta de barra inclinada com corte oblíquo (a diagonal da tesoura): a aresta andava
+na perpendicular dela mesma e entortava a barra, e as linhas internas do perfil, que chegam no meio da aresta,
+ficavam paradas. Agora anda tudo o que termina sobre a aresta, na direção das linhas que chegam nela quando são
+paralelas (`_eixoDasVizinhas`, ±2°); sem vizinhas paralelas, na perpendicular, como antes.
+
 **0.7.25.** Lista de materiais: o seletor "Barra comercial" (6/12 m) ficava no topo, ao lado de "Recalcular do
 modelo", e parecia escolher outro projeto; agora está dentro do quadro Perfis ("Comprimento da barra de aço para
 compra"), que é o único que ele muda, o topo diz "Projeto: <nome>" e o botão virou "Atualizar pelo modelo 3D".
