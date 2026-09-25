@@ -39,6 +39,7 @@ from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desen
 from saida.desenhos import Estilo, _mm
 
 from nucleo2d.detalhe.base import (  # noqa: E402,F401
+    _extremos_de,
     CAMADAS_PECAS,
     CATEGORIAS,
     FAIXAS_COMPLETO,
@@ -183,35 +184,6 @@ from nucleo2d.detalhe.celulas import (  # noqa: E402,F401
 __all__ = ["detalhar", "GRUPOS", "GRUPOS_BASE", "TITULOS_ANTIGOS", "regra_furacao_terca"]
 
 
-def _extremos_de(e, esc: float) -> List[Ponto]:
-    """Pontos que cercam o que a entidade ocupa no desenho — não só os que a definem: a
-    linha de cota deslocada (com o número) e a largura estimada do texto. Sem isso a
-    moldura de um quadro passava por cima das cotas e dos títulos das células."""
-    if isinstance(e, Cota):
-        (x1, y1), (x2, y2) = e.p1, e.p2
-        if e.modo == "h":
-            y2 = y1
-        elif e.modo == "v":
-            x2 = x1
-        dx, dy = x2 - x1, y2 - y1
-        comp = math.hypot(dx, dy)
-        if comp < 1e-9:
-            return [e.p1, e.p2]
-        nx, ny = -dy / comp, dx / comp
-        d = float(e.deslocamento or 0.0) * esc
-        d2 = d + math.copysign(1.6 * float(e.altura or 2.5) * esc, d if d else 1.0)
-        return [e.p1, e.p2, (x1 + nx * d, y1 + ny * d), (x2 + nx * d, y2 + ny * d),
-                (x1 + nx * d2, y1 + ny * d2), (x2 + nx * d2, y2 + ny * d2)]
-    if isinstance(e, Texto):
-        x, y = e.posicao
-        h = float(e.altura or 2.5) * esc
-        larg = 0.75 * h * len(e.texto or "")
-        if e.angulo:
-            r = max(larg, h)
-            return [(x - r, y - r), (x + r, y + r)]
-        x0 = x - larg / 2 if e.alinhamento == "centro" else x - larg if e.alinhamento == "direita" else x
-        return [(x0, y), (x0 + larg, y + h)]
-    return e.pontos() if hasattr(e, "pontos") else []
 
 
 def _anexar_faixa(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_faixa: Optional[dict] = None) -> float:
@@ -419,7 +391,12 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     lista de materiais usa. Devolve {"pecas", "acessorios", "posicoes", "camadas",
     "regra_tercas", "categorias": {marca: categoria}}."""
     avisar = avisar or (lambda *a: None)
-    pecas, acessorios = _pecas(doc)
+    puladas: list = []
+    pecas, acessorios = _pecas(doc, puladas)
+    avisos_lev: List[str] = []
+    if puladas:
+        avisos_lev.append("%d peça(s) do modelo não entraram no detalhamento (geometria que não se monta): %s"
+                          % (len(puladas), "; ".join("%s (%s)" % p for p in puladas[:12])))
     if not pecas:
         raise ErroDeDados("o modelo não tem peças com marcas de IFC (IfcBeam, IfcPlate…) para detalhar.")
     posicoes, camadas = _posicoes_de(pecas, _fixadores(doc))
@@ -434,10 +411,12 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     try:
         from nucleo2d.detalhe.telhas import aplicar_saias
         saias = aplicar_saias(posicoes, pecas)
-    except Exception:                               # noqa: BLE001 — a regra não pode derrubar o levantamento
+    except Exception as exc:                        # noqa: BLE001 — a regra não pode derrubar o levantamento
         saias = {}
+        avisos_lev.append("a saia das telhas de fachada (150 mm abaixo da última longarina) não foi aplicada: %s — "
+                          "confira o comprimento dessas telhas" % exc)
     return {"pecas": pecas, "acessorios": acessorios, "posicoes": posicoes, "camadas": camadas,
-            "regra_tercas": mudadas, "ajustes": ajustadas, "saias": saias,
+            "regra_tercas": mudadas, "ajustes": ajustadas, "saias": saias, "avisos": avisos_lev,
             "categorias": {p.marca: _categoria(p, camadas.get(p.marca, "")) for p in posicoes}}
 
 
@@ -482,7 +461,7 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
         parametricas[m_] = parametricas.get(m_, True) and getattr(e, "parametrica", None) is not None
     desenhos: Dict[str, Desenho] = collections.OrderedDict()
     base: Dict[str, Desenho] = {}             # os desenhos por classe (GRUPOS_BASE)
-    avisos: List[str] = []
+    avisos: List[str] = list(lev.get("avisos") or [])
 
     conjuntos_info = []
     familias_completo: List[tuple] = []       # (família, tipo, célula): completo e desenhos por família
@@ -922,6 +901,16 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                            "largura": round(p.H), "espessura": round(p.espessura or p.T, 1), "furos": p.rotulo_furos(),
                            "peso": round(p.peso, 3), "peso_total": round(p.peso_total, 2),
                            "conjuntos": list(p.conjuntos), "observacoes": list(p.observacoes)})
+    # peças sem geometria nas vistas dos conjuntos e montagens: o aviso ficava só dentro do
+    # desenho (metadado da vista), e ninguém via
+    sem_geo = []
+    for d_ in desenhos.values():
+        for v_ in getattr(d_, "vistas", None) or []:
+            sem_geo.extend(v_.get("avisos") or [])
+    if sem_geo:
+        unicos = list(dict.fromkeys(sem_geo))
+        avisos.append("%d peça(s) ficaram fora das vistas por falta de geometria: %s"
+                      % (len(unicos), "; ".join(unicos[:10])))
     return {"desenhos": desenhos, "posicoes": resumo_pos, "conjuntos": conjuntos_info,
             "multidobras": [{k: v for k, v in t.items() if k not in ("ids", "p1", "p2", "d1", "d2", "I", "T", "sentido")}
                             for t in md["telhas"]],

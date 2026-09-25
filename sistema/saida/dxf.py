@@ -47,8 +47,12 @@ def _par(codigo, valor):
 class Desenho:
     """Acumula entidades e grava o arquivo DXF."""
 
-    def __init__(self, nome="desenho", unidade_mm=True):
+    def __init__(self, nome="desenho", unidade_mm=True, texto_unicode=False):
         self.nome = nome
+        #: texto como veio (acentos, °, …): o arquivo sai em UTF-8 e só serve para o PDF do
+        #: próprio programa (`nucleo2d.pranchas.pdf_dos_desenhos`); o DXF R12 para o AutoCAD
+        #: continua em ASCII
+        self.texto_unicode = texto_unicode
         self.entidades: List[str] = []
         self.extremos = [1e20, 1e20, -1e20, -1e20]   # xmin, ymin, xmax, ymax
         self.unidade_mm = unidade_mm
@@ -120,7 +124,7 @@ class Desenho:
         self._limites((x, y), (x + len(str(texto)) * altura * 0.7, y + altura))
         e = (_par(0, "TEXT") + _par(8, camada) +
              _par(10, f"{x:.4f}") + _par(20, f"{y:.4f}") + _par(30, "0.0") +
-             _par(40, f"{altura:.4f}") + _par(1, _ascii(str(texto))) +
+             _par(40, f"{altura:.4f}") + _par(1, str(texto).replace("\n", " ") if self.texto_unicode else _ascii(str(texto))) +
              _par(50, f"{angulo:.4f}"))
         if hj or vj:
             e += _par(72, hj) + _par(73, vj)
@@ -338,7 +342,8 @@ class Desenho:
 
     def gravar(self, caminho) -> str:
         os.makedirs(os.path.dirname(os.path.abspath(caminho)), exist_ok=True)
-        with open(caminho, "w", encoding="cp1252", errors="replace", newline="\r\n") as f:
+        codificacao = "utf-8" if self.texto_unicode else "cp1252"
+        with open(caminho, "w", encoding=codificacao, errors="replace", newline="\r\n") as f:
             f.write(self.dxf())
         return caminho
 

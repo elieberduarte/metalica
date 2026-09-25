@@ -24,8 +24,13 @@ TRACOS = {"CONTINUOUS": (0, ()), "CENTER": (0, (12, 3, 2, 3)),
 
 def ler_dxf(caminho: str) -> dict:
     """Extrai camadas e entidades de um DXF R12."""
-    with open(caminho, encoding="cp1252", errors="replace") as f:
-        bruto = f.read().split("\n")
+    # o DXF do programa para o PDF vem em UTF-8 (com acentos, °, …); o R12 de fora, em ANSI
+    with open(caminho, "rb") as f:
+        dados = f.read()
+    try:
+        bruto = dados.decode("utf-8").split("\n")
+    except UnicodeDecodeError:
+        bruto = dados.decode("cp1252", errors="replace").split("\n")
     pares = []
     i = 0
     while i < len(bruto) - 1:

@@ -22,7 +22,7 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional, Sequence
 
-from saida.detalhamento import Posicao, CLASSES, _ordenar, gravar_romaneio
+from saida.detalhamento import Posicao, CLASSES, _ordenar
 
 #: Comprimento das barras comerciais (mm) e perda por corte considerada no encaixe.
 BARRAS_COMERCIAIS = (6000.0, 12000.0)
@@ -421,16 +421,34 @@ def _num_csv(x, casas=2) -> str:
     return ("%.*f" % (casas, x)).replace(".", ",")
 
 
+def gravar_romaneio_da_lista(caminho: str, lista: dict) -> str:
+    """O romaneio em CSV com as MESMAS linhas da lista impressa: a telha multi-dobra (TMD),
+    o complemento e a cumeeira entram como na lista, as telhas no comprimento de compra, e
+    as facetas das multi-dobras não aparecem soltas (antes o CSV saía das posições cruas:
+    832 telhas soltas, sem TMD/CM, com o peso do modelo)."""
+    linhas = []
+    for li in lista.get("posicoes") or []:
+        linhas.append([li.get("nome", ""), li.get("marca", ""), " ".join(li.get("conjuntos") or []),
+                       li.get("classe", ""), li.get("perfil", ""), li.get("material", ""), li.get("quantidade", 0),
+                       li.get("comprimento") or "", li.get("largura") or "", _num_csv(li["espessura"], 1) if li.get("espessura") else "",
+                       li.get("furos", ""), li.get("parafusos", ""), _num_csv(li.get("peso") or 0.0, 3),
+                       _num_csv(li.get("peso_total") or 0.0, 2), "; ".join(li.get("observacoes") or [])])
+    for a in lista.get("acessorios") or []:
+        linhas.append(["", "", "", "Acessório", a["nome"], "", a["quantidade"], "", "", "", "", "", "", "", "só na lista"])
+    return _csv(caminho, ["Nome", "Posicao", "Conjuntos", "Tipo", "Perfil / chapa", "Material", "Qtd",
+                          "Comprimento (mm)", "Largura (mm)", "Espessura (mm)", "Furos", "Parafusos",
+                          "Peso unit (kg)", "Peso total (kg)", "Observacoes"], linhas)
+
+
 def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dict[str, int]) -> dict:
     """JSON, CSVs e HTML em `pasta`. Devolve {nome: caminho}."""
-    import json
+    from projetos import _gravar_json
     os.makedirs(pasta, exist_ok=True)
     arquivos = {}
     caminho = os.path.join(pasta, ARQUIVO_JSON)
-    with open(caminho, "w", encoding="utf-8") as f:
-        json.dump(lista, f, ensure_ascii=False, indent=1)
+    _gravar_json(caminho, lista, indent=1)             # temporário + troca: a tela nunca lê meio arquivo
     arquivos["json"] = caminho
-    arquivos["romaneio"] = gravar_romaneio(os.path.join(pasta, "romaneio.csv"), posicoes, acessorios)
+    arquivos["romaneio"] = gravar_romaneio_da_lista(os.path.join(pasta, "romaneio.csv"), lista)
     arquivos["perfis"] = _csv(os.path.join(pasta, "resumo-perfis.csv"),
                               ["Perfil", "Material", "Categoria", "Posicoes", "Pecas", "Comprimento total (m)", "kg/m",
                                "Peso (kg)", "Barra comercial (m)", "Barras", "Aproveitamento (%)", "Sobra (m)", "Pecas com emenda"],

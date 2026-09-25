@@ -520,7 +520,9 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
                 larg = (bx1 - bx0) / k + 2 * margem
                 alt = (by1 - by0) / k + 2 * margem
                 x0, y0 = bx0 - margem * k, by0 - margem * k
-            arq = d.para_dxf(k).gravar(os.path.join(tmp, "p%d.dxf" % i))
+            # texto como está no desenho: o PDF não passa pelo ASCII do DXF R12 ("dobra 12,5°",
+            # "TERÇAS" e "…" saíam "dobra 12,5 ", "TERCAS" e "?")
+            arq = d.para_dxf(k, texto_unicode=True).gravar(os.path.join(tmp, "p%d.dxf" % i))
             fig = plt.figure(figsize=(larg / 25.4, alt / 25.4))
             ax = fig.add_axes((0, 0, 1, 1))
             # as camadas por tipo de peça (banzos, diagonais…) saem na cor delas, como no CAD

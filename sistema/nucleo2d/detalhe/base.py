@@ -374,12 +374,14 @@ def _material(ent) -> str:
     return str(getattr(ent, "material", "") or "")
 
 
-def _pecas(doc: Documento):
+def _pecas(doc: Documento, puladas: Optional[list] = None):
     """Sólidos do modelo que são peças de produção, e os acessórios contados.
 
     Chapa e barra paramétricas (modelo desenhado em 2D ou gerado do galpão) entram como
     o sólido equivalente, com a malha montada dos próprios parâmetros: daí para a frente
-    o detalhamento não distingue de onde a peça veio.
+    o detalhamento não distingue de onde a peça veio. A peça que não se monta (barra de
+    comprimento zero, chapa sem contorno) não derruba o lote, mas vai para `puladas`
+    (nome, motivo), para o Detalhar avisar — antes ela sumia calada.
     """
     pecas, acessorios = [], collections.Counter()
     for ent in doc.entidades.values():
@@ -387,15 +389,17 @@ def _pecas(doc: Documento):
             if (_tipo_ifc(ent) or ent.tipo_ifc()) in TIPOS_PECA:
                 try:
                     pecas.append(_proxy_da_barra(ent))
-                except Exception:                     # noqa: BLE001 — barra degenerada não derruba o lote
-                    pass
+                except Exception as exc:              # noqa: BLE001 — barra degenerada não derruba o lote
+                    if puladas is not None:
+                        puladas.append((str(_marcas(ent).get("posicao") or ent.nome or ent.id), str(exc) or "sem geometria"))
             continue
         if isinstance(ent, Chapa):
             if (_tipo_ifc(ent) or "IfcPlate") in TIPOS_PECA:
                 try:
                     pecas.append(_proxy_da_chapa(ent))
-                except Exception:                     # noqa: BLE001 — chapa degenerada não derruba o lote
-                    pass
+                except Exception as exc:              # noqa: BLE001 — chapa degenerada não derruba o lote
+                    if puladas is not None:
+                        puladas.append((str(_marcas(ent).get("posicao") or ent.nome or ent.id), str(exc) or "sem geometria"))
             continue
         if not isinstance(ent, Solido):
             continue
@@ -948,6 +952,20 @@ def _assinatura_posicao(p: Posicao) -> tuple:
 
 #: Comprimentos até esta diferença (mm) são a mesma peça.
 TOLERANCIA_COMPRIMENTO = 1.0
+#: Volumes até esta diferença relativa são a mesma peça. A assinatura não vê o corte da
+#: ponta (esquadro ou meia-esquadria, recorte de aba) nem o contorno de uma chapa com a
+#: mesma caixa; o volume vê. Peças iguais da mesma malha diferem bem menos de 0,1 %.
+TOLERANCIA_VOLUME = 0.01
+
+
+def _volume_igual(a: Posicao, b: Posicao) -> bool:
+    if a.classe in ("barra_redonda", "barra_conformada") and _eh_redonda_perfil(a.perfil):
+        return True                                    # tirante: o polígono da malha varia
+    if a.classe == "telha":
+        return True                                    # telha se compra inteira; o recorte é na obra
+    if a.volume <= 0 or b.volume <= 0:
+        return True                                    # sem volume medido, fica o que havia
+    return abs(a.volume - b.volume) <= TOLERANCIA_VOLUME * max(a.volume, b.volume)
 
 
 def fundir_posicoes_iguais(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> List[Posicao]:
@@ -962,18 +980,26 @@ def fundir_posicoes_iguais(posicoes: Sequence[Posicao], camadas: Dict[str, str])
             fora.append(p)
             continue
         chaves.setdefault(_assinatura_posicao(p), []).append(p)
-    # dentro da mesma assinatura, comprimentos a até 1 mm um do outro são a mesma peça
+    # dentro da mesma assinatura, comprimentos a até 1 mm um do outro são a mesma peça,
+    # desde que o volume também bata (o corte da ponta muda o volume, não o comprimento)
     grupos: List[List[Posicao]] = []
     for lista in chaves.values():
         lista.sort(key=lambda q: q.comprimento)
-        atual = [lista[0]]
+        por_comprimento: List[List[Posicao]] = [[lista[0]]]
         for q in lista[1:]:
-            if q.comprimento - atual[-1].comprimento <= TOLERANCIA_COMPRIMENTO:
-                atual.append(q)
+            if q.comprimento - por_comprimento[-1][-1].comprimento <= TOLERANCIA_COMPRIMENTO:
+                por_comprimento[-1].append(q)
             else:
-                grupos.append(atual)
-                atual = [q]
-        grupos.append(atual)
+                por_comprimento.append([q])
+        for mesmo_comp in por_comprimento:
+            sub: List[List[Posicao]] = []
+            for q in mesmo_comp:
+                alvo = next((g for g in sub if _volume_igual(g[0], q)), None)
+                if alvo is None:
+                    sub.append([q])
+                else:
+                    alvo.append(q)
+            grupos.extend(sub)
     for grupo in grupos:
         if len(grupo) == 1:
             fora.append(grupo[0])
@@ -1378,6 +1404,49 @@ def _mover(e, dx: float, dy: float):
         e.alvo, e.posicao = mv(e.alvo), mv(e.posicao)
 
 
+def _extremos_de(e, esc: float) -> list:
+    """Pontos que cercam o que a entidade ocupa no desenho — não só os que a definem: a
+    linha de cota deslocada (com o número) e a largura estimada do texto. Sem isso a
+    moldura de um quadro passava por cima das cotas e dos títulos das células."""
+    if isinstance(e, Cota):
+        (x1, y1), (x2, y2) = e.p1, e.p2
+        if e.modo == "h":
+            y2 = y1
+        elif e.modo == "v":
+            x2 = x1
+        dx, dy = x2 - x1, y2 - y1
+        comp = math.hypot(dx, dy)
+        if comp < 1e-9:
+            return [e.p1, e.p2]
+        nx, ny = -dy / comp, dx / comp
+        d = float(e.deslocamento or 0.0) * esc
+        d2 = d + math.copysign(1.6 * float(e.altura or 2.5) * esc, d if d else 1.0)
+        return [e.p1, e.p2, (x1 + nx * d, y1 + ny * d), (x2 + nx * d, y2 + ny * d),
+                (x1 + nx * d2, y1 + ny * d2), (x2 + nx * d2, y2 + ny * d2)]
+    if isinstance(e, Texto):
+        x, y = e.posicao
+        h = float(e.altura or 2.5) * esc
+        larg = 0.75 * h * len(e.texto or "")
+        if e.angulo:
+            r = max(larg, h)
+            return [(x - r, y - r), (x + r, y + r)]
+        x0 = x - larg / 2 if e.alinhamento == "centro" else x - larg if e.alinhamento == "direita" else x
+        return [(x0, y), (x0 + larg, y + h)]
+    return e.pontos() if hasattr(e, "pontos") else []
+
+
+def _extremos_reais(desenho: Desenho, chaves, ext):
+    """A caixa que a célula ocupa no papel: a que a célula devolveu somada às cotas
+    deslocadas e aos textos dela. Pela caixa devolvida só, células vizinhas se sobrepunham
+    menos de 1 mm (a cota de uma entrava no título da outra)."""
+    xs, ys = [ext[0], ext[2]], [ext[1], ext[3]]
+    for k in chaves:
+        for q in _extremos_de(desenho.entidades[k], desenho.escala):
+            xs.append(q[0])
+            ys.append(q[1])
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
 def _em_colunas(desenho: Desenho, celulas, altura_max_papel: float = 560.0):
     """Células uma embaixo da outra, em colunas: quando a coluna passa de
     `altura_max_papel` (mm de papel), a próxima célula começa outra coluna à direita. As
@@ -1395,10 +1464,11 @@ def _em_colunas(desenho: Desenho, celulas, altura_max_papel: float = 560.0):
         antes = set(desenho.entidades)
         ext = desenhar(x0, 0.0)
         novas = [k for k in desenho.entidades if k not in antes]
+        ext = _extremos_reais(desenho, novas, ext)
         alt = ext[3] - ext[1]
         ddx = 0.0
         if na_coluna and topo - alt < -altura_max:
-            ddx = direita + folga - x0
+            ddx = direita + folga - ext[0]          # pela borda real (cota à esquerda da peça)
             x0 = direita + folga
             topo = 0.0
             na_coluna = 0
@@ -1432,10 +1502,17 @@ def _empilhar(desenho: Desenho, celulas, largura_max_papel: float = 800.0):
         antes = set(desenho.entidades)
         ext = desenhar(x, y)
         novas = [k for k in desenho.entidades if k not in antes]
+        ext = _extremos_reais(desenho, novas, ext)
+        if x > 0 and ext[0] < x:
+            # o que a célula desenha à esquerda da origem (cota, título alinhado à direita)
+            # não entra na célula de antes
+            for k in novas:
+                _mover(desenho.entidades[k], x - ext[0], 0.0)
+            ext = (x, ext[1], ext[2] + x - ext[0], ext[3])
         if x > 0 and ext[2] > largura_max:
             limite = y - fundo_linha - folga
             novo_y = limite - (ext[3] - y)       # título desta célula sob as cotas da linha de cima
-            ddx, ddy = -x, novo_y - y
+            ddx, ddy = -ext[0], novo_y - y
             for k in novas:
                 _mover(desenho.entidades[k], ddx, ddy)
             ext = (ext[0] + ddx, ext[1] + ddy, ext[2] + ddx, ext[3] + ddy)

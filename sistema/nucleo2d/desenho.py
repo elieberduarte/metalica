@@ -292,12 +292,12 @@ class Desenho:
         return des
 
     # ---- saída ----
-    def para_dxf(self, escala: Optional[float] = None):
+    def para_dxf(self, escala: Optional[float] = None, texto_unicode: bool = False):
         """Desenho DXF (saida/dxf.py), em milímetro 1:1, com o que é "de papel"
         multiplicado pela escala: cota de 2,5 mm no papel em 1:20 vira texto de 50 mm."""
         from saida.dxf import Desenho as DXF
         k = float(escala or self.escala or 1.0)
-        d = DXF(self.nome)
+        d = DXF(self.nome, texto_unicode=texto_unicode)
         for e in self.entidades.values():
             cam = self.camadas.get(e.camada)
             if cam is not None and not cam.visivel:
@@ -317,11 +317,12 @@ class Desenho:
             elif isinstance(e, Cota):
                 _cota_dxf(d, e, k, camada)
             elif isinstance(e, Hachura):
-                for contorno in e.contornos[:1]:      # furos: só o externo por enquanto
+                for contorno in e.contornos[:1]:      # o primeiro é o externo; os outros ficam vazios
                     if e.padrao == "solido" and len(contorno) >= 3:
                         d.hachura(contorno, espacamento=0.5 * k, angulo=e.angulo, camada=camada, furos=e.contornos[1:])
                     else:
-                        d.hachura(contorno, espacamento=e.espacamento * k, angulo=e.angulo, camada=camada)
+                        # tubo e perfil caixa: o vazio de dentro não se hachura
+                        d.hachura(contorno, espacamento=e.espacamento * k, angulo=e.angulo, camada=camada, furos=e.contornos[1:])
             elif isinstance(e, Chamada):
                 _chamada_dxf(d, e, k, camada)
         return d

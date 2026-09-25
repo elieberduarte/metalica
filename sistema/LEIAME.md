@@ -218,6 +218,21 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.13.** Números da produção iguais (revisão geral de 24/09, bloco 2). (1) Romaneio CSV:
+`gravar_romaneio_da_lista` sai das linhas da lista impressa (TMD, complemento e cumeeira como na lista, telhas no
+comprimento de compra, acessórios no fim), não das posições cruas; o JSON da lista por `_gravar_json`. (2) PDF dos
+desenhos com o texto original: `DXF(texto_unicode=True)` grava em UTF-8 sem passar pelo ASCII do R12 (`para_dxf(...,
+texto_unicode=True)` em `pdf_dos_desenhos`; "12,5°", "TERÇAS" e "…" saíam "12,5 ", "TERCAS" e "?"); `ler_dxf` tenta
+UTF-8 e cai para cp1252; o DXF para o AutoCAD continua ASCII. (3) Nada some calado: `_pecas(doc, puladas)` junta a
+barra/chapa paramétrica que não se monta, a regra da saia das telhas que falha vira aviso, e os avisos das vistas (peça
+sem geometria) chegam ao resultado do Detalhar. (4) `fundir_posicoes_iguais` separa por volume (1 %) dentro do mesmo
+comprimento — nos projetos reais P104 (ponta a 45°) estava fundida com P112/P113 (corte reto) no ÁGUA GELADA e P78 com
+P87 na Sala dos Compressores; telha e tirante ficam fora da regra (telha se compra inteira). (5) Seção vazada sem
+hachura por dentro (o contorno interno passa para a hachura comum também). (6) Células: a caixa de cada uma é o que as
+entidades ocupam (`_extremos_de` mudou do detalhar para a base; `_extremos_reais`) e a célula que desenha à esquerda da
+origem é empurrada — na Sala dos Compressores eram 5 pares sobrepostos (até 32 mm no papel), agora nenhum. Testes
+`test_producao_saidas.py`.
+
 **0.8.12.** Proteção dos dados (revisão geral de 24/09, bloco 1). Servidor: `projetos.ler` não recria o projeto.json
 que existe e não se lê (cópia `projeto.json.ilegivel-<data>`, projeto marcado `ilegivel`, `_atualizar` recusa, `tocar`
 não quebra a entrega); `_atualizar` sob `_trava_do_projeto` (RLock por projeto: gravações simultâneas não trazem estado
