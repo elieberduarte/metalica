@@ -262,8 +262,34 @@ export class FerramentaFuro extends FerramentaParafuso {
    * e o cilindro entre elas. Devolve {vertices, faces, profundidade} ou null (a face de
    * trás não foi reconhecida, ou o furo não cabe na face).
    */
+  /**
+   * A face da peça onde está o ponto clicado: normal no sentido de `n`, plano passando
+   * pelo ponto e o ponto dentro do contorno. O índice que vem do clique (`iFace`) é o do
+   * triângulo da malha desenhada, não o da face da peça — só serve como palpite.
+   */
+  _faceDoPonto(ent, ponto, n, iFace) {
+    if (!ent || ent.tipo !== 'solido' || !ent.faces) return -1;
+    const candidatos = [];
+    const ordem = [];
+    if (iFace >= 0 && ent.faces[iFace]) ordem.push(iFace);
+    for (let k = 0; k < ent.faces.length; k++) if (k !== iFace) ordem.push(k);
+    for (const k of ordem) {
+      const f = ent.faces[k];
+      if (!f || f.length < 3) continue;
+      const nf = C.normalizar(C.normalDaFace(ent, k));
+      if (!(C.comp(nf) > 0.5) || C.dot(nf, n) < 0.7) continue;
+      if (Math.abs(C.dot(C.sub(ponto, ent.vertices[f[0]]), nf)) > 1.0) continue;
+      const e1 = C.normalizar(C.perpendicular(nf)), e2 = C.normalizar(C.cross(nf, e1));
+      const p2 = f.map(i => [C.dot(C.sub(ent.vertices[i], ponto), e1), C.dot(C.sub(ent.vertices[i], ponto), e2)]);
+      if (dentroDoPoligono([0, 0], p2)) candidatos.push(k);
+    }
+    return candidatos.length ? candidatos[0] : -1;
+  }
+
   _furarMalha(ent, iFace, ponto, n, d) {
-    if (!ent || ent.tipo !== 'solido' || !(iFace >= 0) || !ent.faces[iFace]) return null;
+    if (!ent || ent.tipo !== 'solido' || !ent.faces || !ent.faces.length) return null;
+    iFace = this._faceDoPonto(ent, ponto, n, iFace);
+    if (!(iFace >= 0)) return null;
     const nf = C.normalizar(C.normalDaFace(ent, iFace));
     if (C.dot(nf, n) < 0.7) return null;
     const r = d / 2;

@@ -182,3 +182,90 @@ def test_joelho_que_termina_no_arco_acaba_no_no_e_o_banzo_vem_ate_ele():
 
 def _dot3(a, b):
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _modelo_com_joelho_banzo_e_diagonal():
+    doc = Documento(nome="t")
+    joelho = doc.add(_joelho(reto_antes=500.0, reto_depois=0.0))
+    th = math.radians(ANG)
+    C = (500.0, R, 0.0)
+    p1 = (C[0] + R * math.sin(th), C[1] - R * math.cos(th), 0.0)
+    t1 = (math.cos(th), math.sin(th), 0.0)
+    banzo = doc.add(_caixa_barra(p1, tuple(p1[i] + t1[i] * 3000.0 for i in range(3)), largura=100.0, altura=50.0, nome="U100X50X4.18", posicao="P20"))
+    meio = (C[0] + (R - 20.0) * math.sin(th / 2), C[1] - (R - 20.0) * math.cos(th / 2), 0.0)
+    diagonal = doc.add(_caixa_barra((500.0, -1500.0, 0.0), meio, posicao="P13"))
+    return doc, joelho, banzo, diagonal
+
+
+def _foto(doc):
+    return {e.id: ([tuple(round(x, 3) for x in v) for v in e.vertices], [list(f) for f in e.faces])
+            for e in doc.entidades.values() if isinstance(e, Solido)}
+
+
+def test_voltar_ao_canto_redondo_devolve_joelho_banzo_e_diagonal():
+    """Depois da quebra, `desfazer_modelo` devolve a malha original do joelho (guardada em
+    quebras.original), os vértices de antes do banzo esticado e a diagonal antiga no lugar
+    das refeitas; o canto volta a ser reconhecido."""
+    doc, joelho, banzo, diagonal = _modelo_com_joelho_banzo_e_diagonal()
+    antes = _foto(doc)
+    r = cantos.quebrar_modelo(doc, {"P15": 2})
+    assert r["pecas"] == 1 and r["estendidas"] == 1 and r["diagonais"] == 3
+    q = cantos.quebradas_do_modelo(doc)
+    assert [(x["marca"], x["n"], x["instancias"], x["original"]) for x in q] == [("P15", 2, 1, True)]
+    assert diagonal.id not in doc.entidades and banzo.atributos.get("antes_de_estender")
+    d = cantos.desfazer_modelo(doc)
+    assert d["pecas"] == 1 and d["posicoes"] == ["P15"] and not d["falhas"], d
+    assert _foto(doc) == antes                                         # tudo como era, inclusive a diagonal antiga
+    assert not any((e.atributos or {}).get(k) for e in doc.entidades.values() for k in ("quebras", "estendida_ate_no", "antes_de_estender", "diagonal_da_quebra"))
+    assert [a["marca"] for a in cantos.analisar_modelo(doc)] == ["P15"]
+    assert cantos.quebradas_do_modelo(doc) == []
+    # quebra de novo, depois só uma posição pedida que não existe: nada muda
+    cantos.quebrar_modelo(doc, {"P15": 1})
+    assert cantos.desfazer_modelo(doc, ["P99"])["pecas"] == 0
+
+
+def test_voltar_sem_a_malha_guardada_vem_do_historico():
+    """Peça quebrada por uma versão que não guardava a original (0.8.20): sem `buscar`
+    fica como está (com aviso); com `buscar` (o histórico do projeto) volta."""
+    doc, joelho, banzo, diagonal = _modelo_com_joelho_banzo_e_diagonal()
+    historico = {e.id: e.dict() for e in doc.entidades.values()}
+    cantos.quebrar_modelo(doc, {"P15": 2})
+    joelho.atributos["quebras"].pop("original")
+    banzo.atributos.pop("antes_de_estender")
+    r = cantos.desfazer_modelo(doc)
+    assert r["pecas"] == 0 and len(r["falhas"]) == 1 and "P15" in r["falhas"][0]
+    assert joelho.atributos.get("quebras")                            # ficou quebrada
+
+    def buscar(id_, chave):
+        e = historico.get(id_)
+        return e if e and not (e.get("atributos") or {}).get(chave) else None
+    r = cantos.desfazer_modelo(doc, buscar=buscar)
+    assert r["pecas"] == 1 and not r["falhas"], r
+    assert len(joelho.vertices) == len(historico[joelho.id]["vertices"]) and not joelho.atributos.get("quebras")
+    assert [tuple(v) for v in banzo.vertices] == [tuple(v) for v in historico[banzo.id]["vertices"]]
+    assert not banzo.atributos.get("estendida_ate_no")
+
+
+def test_emendas_nao_mexem_na_peca_quebrada_no_3d():
+    """A peça quebrada no 3D já vem como a fábrica monta: no 2D ela e o banzo ficam onde
+    estão (era o que torcia a aba do banzo até a cumeeira) e só entra a linha de emenda
+    entre o nó de fora e o de dentro."""
+    from nucleo2d.desenho import Desenho, Polilinha, Linha
+    from nucleo2d.detalhe.conjuntos import _emendas_do_chanfro, _nos_das_quebras
+    desenho = Desenho(nome="t", escala=25.0)
+    fora = Polilinha(vertices=[(0.0, 0.0), (1000.0, 0.0), (1200.0, 0.0)], camada="BANZOS", atributos={"origem": "j"})
+    dentro = Polilinha(vertices=[(0.0, 100.0), (1030.0, 100.0), (1200.0, 100.0)], camada="BANZOS", atributos={"origem": "j"})
+    # os "nós" são as quinas de verdade: aqui, forçados como a quebra marca
+    fora.atributos.update(chanfro="quebra", nos_chanfro=[[1000.0, 0.0]])
+    dentro.atributos.update(chanfro="quebra", nos_chanfro=[[1030.0, 100.0]])
+    # o banzo começa onde a peça do canto termina (a ponta antiga, que não é nó)
+    banzo = Polilinha(vertices=[(1200.0, 0.0), (1200.0, 100.0), (4000.0, 100.0), (4000.0, 0.0)], fechada=True, camada="BANZOS", atributos={"origem": "b"})
+    aba = Linha(a=(1200.0, 4.0), b=(4000.0, 4.0), camada="BANZOS", atributos={"origem": "b"})
+    novas = [fora, dentro, banzo, aba]
+    for e in novas:
+        desenho.add(e)
+    antes = [list(e.vertices) if isinstance(e, Polilinha) else [e.a, e.b] for e in novas]
+    _emendas_do_chanfro(desenho, novas, {"j"}, {"j": "BANZOS", "b": "BANZOS"})
+    assert [list(e.vertices) if isinstance(e, Polilinha) else [e.a, e.b] for e in novas] == antes
+    emendas = [e for e in desenho.entidades.values() if (e.atributos or {}).get("emenda")]
+    assert len(emendas) == 1 and {tuple(emendas[0].a), tuple(emendas[0].b)} == {(1000.0, 0.0), (1030.0, 100.0)}

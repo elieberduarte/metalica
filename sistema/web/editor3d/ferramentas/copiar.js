@@ -1,10 +1,11 @@
-// Copiar e colar posicionado.
+// Copiar com ponto de referência, como no AutoCAD.
 //
-// Ao entrar, se há seleção, ela vai para a área de transferência do editor e o
-// ponteiro passa a carregar a cópia: cada clique cola uma vez, no ponto apontado.
-// Sem seleção, a ferramenta cola o que já estiver na área de transferência. O
-// ponto de referência é o canto inferior da caixa envolvente do que foi copiado,
-// de modo que colar sobre uma extremidade encaixa a cópia ali.
+// Ao entrar, se há seleção, ela vai para a área de transferência do editor. O primeiro
+// clique é o ponto de referência (a base: um canto, um furo, uma extremidade da peça
+// copiada); cada clique seguinte cola uma cópia com a base naquele ponto — vários
+// cliques, várias cópias, todas medidas da mesma base. Também aceita a distância na
+// direção do ponteiro ou "dx;dy;dz". Sem seleção, a ferramenta cola o que já estiver na
+// área de transferência (a base pedida do mesmo jeito).
 
 import { Ferramenta, listaDeMedidas, paraMilimetros, formatar } from './base.js';
 import * as C from './_comum.js';
@@ -34,13 +35,14 @@ export class FerramentaCopiar extends Ferramenta {
   static nome = 'Copiar/Colar';
   static atalho = 'K';
   static grupo = 'edicao';
-  static dica = 'Selecione para copiar, depois clique onde colar';
+  static dica = 'Selecione, clique o ponto de referência e depois onde colar';
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 <rect x="8.5" y="8.5" width="12" height="12" rx="1.5"/><path d="M15.5 5.5h-11a1 1 0 0 0-1 1v11"/></svg>`;
 
   ativar() {
     this.delta = [0, 0, 0];
     this.atual = null;
+    this.base = null;                  // o ponto de referência: o primeiro clique
     this.coladas = 0;
     const ids = C.idsSelecionados(this.editor);
     if (ids.length) this.copiarSelecao(ids);
@@ -50,8 +52,8 @@ export class FerramentaCopiar extends Ferramenta {
       this.medida('');
       return;
     }
-    this.dica(`${this.conteudo.entidades.length} entidade(s) na área de transferência — ` +
-              'clique onde colar, ou digite "dx;dy;dz"');
+    this.dica(`${this.conteudo.entidades.length} entidade(s) para copiar — clique o ponto de referência ` +
+              '(um canto, furo ou extremidade da peça); Enter usa o canto da caixa dela');
     this.medida('');
   }
 
@@ -62,13 +64,18 @@ export class FerramentaCopiar extends Ferramenta {
   onMover(p) {
     if (!p || !this.conteudo) return;
     this.atual = C.copiar(p.ponto);
-    this.delta = C.sub(this.atual, this.conteudo.base);
+    if (!this.base) { this.desenharBase(); return; }
+    this.delta = C.sub(this.atual, this.base);
     this.desenhar();
   }
 
   onPonto(p) {
     if (!p || !this.conteudo) return;
-    this.colar(C.sub(C.copiar(p.ponto), this.conteudo.base));
+    if (!this.base) {
+      this.definirBase(C.copiar(p.ponto));
+      return;
+    }
+    this.colar(C.sub(C.copiar(p.ponto), this.base));
   }
 
   onValor(texto) {
@@ -76,20 +83,24 @@ export class FerramentaCopiar extends Ferramenta {
     const t = String(texto).trim();
     if (t.includes(';')) {
       const m = listaDeMedidas(t);
-      if (m.length >= 3 && m.every(isFinite)) { this.colar([m[0], m[1], m[2]]); return true; }
+      if (m.length >= 3 && m.every(isFinite)) {
+        if (!this.base) this.definirBase(this.baseDaCaixa());
+        this.colar([m[0], m[1], m[2]]);
+        return true;
+      }
       return false;
     }
     const d = paraMilimetros(t);
-    if (!isFinite(d) || !C.comp(this.delta)) return false;
+    if (!isFinite(d) || !this.base || !C.comp(this.delta)) return false;
     this.colar(C.mul(C.normalizar(this.delta), d));
     return true;
   }
 
   onTecla(ev) {
     if (ev.type && ev.type !== 'keydown') return false;
-    if (ev.key === 'Enter' && this.conteudo && C.comp(this.delta) > 0) {
-      this.colar(this.delta); return true;
-    }
+    if (ev.key !== 'Enter' || !this.conteudo) return false;
+    if (!this.base) { this.definirBase(this.baseDaCaixa()); return true; }
+    if (C.comp(this.delta) > 0) { this.colar(this.delta); return true; }
     return false;
   }
 
@@ -110,6 +121,24 @@ export class FerramentaCopiar extends Ferramenta {
     gravarAreaTransferencia(this.editor, { entidades, base: caixa.min });
   }
 
+  /** O canto inferior da caixa do que foi copiado: a base quando o usuário não clica uma. */
+  baseDaCaixa() {
+    if (this.conteudo && this.conteudo.base) return C.copiar(this.conteudo.base);
+    const pts = [];
+    for (const ent of (this.conteudo ? this.conteudo.entidades : [])) pts.push(...C.pontosDaEntidade(ent));
+    if (!pts.length) return [0, 0, 0];
+    return [0, 1, 2].map(a => Math.min(...pts.map(q => q[a])));
+  }
+
+  definirBase(q) {
+    this.base = q;
+    this.delta = [0, 0, 0];
+    this.limparPrevia();
+    this.dica('Referência marcada — clique onde colar (cada clique cola uma cópia medida da referência), ' +
+              'ou digite a distância na direção do ponteiro, ou "dx;dy;dz"; Esc sai');
+    this.medida('');
+  }
+
   colar(delta) {
     if (!this.conteudo) return;
     const fp = (q) => C.add(q, delta);
@@ -121,7 +150,13 @@ export class FerramentaCopiar extends Ferramenta {
     if (!lote.length) return;
     this.executar(C.cmdAdicionar(lote, 'Colar'));
     this.coladas += 1;
-    this.dica(`Colado ${this.coladas}× — clique de novo para repetir, Esc para sair`);
+    this.dica(`Colado ${this.coladas}× — clique de novo para outra cópia (sempre medida da mesma referência), Esc para sair`);
+  }
+
+  /** Antes da referência: só o ponto sob o ponteiro, para o usuário ver o snap. */
+  desenharBase() {
+    this.limparPrevia();
+    if (this.atual) this.previa(C.grupo(C.gPonto(this.atual, C.CORES.desenho)));
   }
 
   desenhar() {
@@ -136,7 +171,11 @@ export class FerramentaCopiar extends Ferramenta {
         g.add(C.gMalha(ent.vertices.map(q => C.add(q, this.delta)), ent.faces, C.CORES.ok, 0.18));
       }
     }
-    if (this.atual) g.add(C.gPonto(this.atual, C.CORES.desenho));
+    if (this.base) g.add(C.gPonto(this.base, C.CORES.desenho));
+    if (this.atual) {
+      g.add(C.gPonto(this.atual, C.CORES.desenho));
+      if (this.base && C.comp(this.delta) > 0) g.add(C.gLinha([this.base, this.atual], C.CORES.desenho));
+    }
     this.medida(formatar(C.comp(this.delta)));
     this.previa(g);
   }

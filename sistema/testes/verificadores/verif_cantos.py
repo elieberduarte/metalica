@@ -64,6 +64,28 @@ try:
     ok(r[0] == 14 and r[1] == ["P15"] and r[2] == 14 and r[3] == 1 and r[4] == 32, f"quebra aplicada e recarregada: {r}")
     r2 = json.loads(aba.avaliar("""(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify(d.pecas.map(p => p.marca)); })()"""))
     ok("P15" not in r2, f"P15 já não aparece como canto redondo: {r2}")
+    # as quebradas aparecem no diálogo com a opção de voltar
+    q = json.loads(aba.avaliar("""(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify((d.quebradas || []).map(p => [p.marca, p.n, p.instancias, p.original])); })()"""))
+    ok(q == [["P15", 1, 14, True]], f"quebradas listadas com a malha original guardada: {q}")
+    aba.avaliar("window.editor.dialogoCantosRedondos(); 1")
+    t0 = time.time()
+    while time.time() - t0 < 60 and not aba.avaliar("window.editor.el.dialogo.open && window.editor.el.dialogoCorpo.querySelectorAll('input[type=checkbox]').length > 0"): aba.drenar(0.5)
+    txt = aba.avaliar("window.editor.el.dialogoCorpo.textContent")
+    ok("Voltar ao canto redondo" in txt and "P15" in txt, "diálogo com a tabela das já quebradas: " + txt[:120])
+    foto(aba, "_cantos_voltar.png")
+    aba.avaliar("window.editor.el.dialogo.close('cancelar'); 1")
+    aba.drenar(0.5)
+    # volta ao canto redondo pela API: joelho com a malha original (216 vértices), banzo e diagonais como eram
+    r3 = json.loads(aba.avaliar("""(async () => { const r = await window.editor.api.desfazerCantos('compressores', ['P15']); await window.editor._abrirProjeto();
+      const ents = [...window.editor.documento.entidades.values()];
+      const quebradas = ents.filter(e => e.atributos && e.atributos.quebras).length;
+      const esticadas = ents.filter(e => e.atributos && e.atributos.estendida_ate_no).length;
+      const refeitas = ents.filter(e => e.atributos && e.atributos.diagonal_da_quebra).length;
+      const p15 = ents.filter(e => e.atributos && e.atributos.marcas && e.atributos.marcas.posicao === 'P15');
+      return JSON.stringify([r.pecas, r.posicoes, (r.falhas || []).length, quebradas, esticadas, refeitas, p15.length, p15[0] ? p15[0].vertices.length : 0]); })()"""))
+    ok(r3[0] == 14 and r3[1] == ["P15"] and r3[2] == 0 and r3[3] == 0 and r3[4] == 0 and r3[5] == 0 and r3[6] == 14 and r3[7] == 216, f"voltou ao canto redondo: {r3}")
+    r4 = json.loads(aba.avaliar("""(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify([d.pecas.map(p => p.marca), (d.quebradas || []).length]); })()"""))
+    ok("P15" in r4[0] and r4[1] == 0, f"P15 volta à lista de cantos redondos: {r4}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

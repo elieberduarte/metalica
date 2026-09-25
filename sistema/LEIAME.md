@@ -218,6 +218,20 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.22.** As linhas das tesouras com o canto quebrado no 3D (prints do usuário: a aba do banzo ia parar no contorno
+de baixo e cruzava o perfil até a cumeeira; a perna e o banzo "entortavam" antes da ligação): `_emendas_do_chanfro`
+levava o banzo até o nó também nas peças já quebradas no 3D — feito para o arco chanfrado só no desenho —, e mexia nos
+vértices errados. A peça com `quebras` agora só ganha a linha de emenda (a geometria já vem do modelo como a fábrica
+monta), e é banzo na classificação das camadas. **Voltar ao canto redondo** (diálogo Cantos redondos, tabela das já
+quebradas): a quebra guarda a malha original em `quebras.original`, os vértices de antes do banzo esticado em
+`antes_de_estender` e a diagonal antiga em `quebras.diagonais_antes`; `cantos.desfazer_modelo` devolve tudo, e a peça
+quebrada pela 0.8.20 (sem a malha guardada) vem da gravação mais nova do histórico em que ainda era arco
+(`_buscar_no_historico`). **Copiar com ponto de referência** no 3D, como no AutoCAD: o primeiro clique é a base (canto,
+furo, extremidade da peça), cada clique seguinte cola uma cópia com a base ali, todas medidas da mesma referência
+(Enter aceita o canto da caixa; "dx;dy;dz" cola pelo vetor). **Furo que virava marcador** na peça do IFC: o índice de
+face do clique é o do triângulo da malha desenhada, não o da face da peça — a ferramenta acha a face pelo ponto e
+pela normal (`_faceDoPonto`) e abre o furo de verdade.
+
 **0.8.21.** O canto quebrado como a fábrica monta (pedido do usuário vendo a 0.8.20): quando o arco vai até a ponta
 da peça (o joelho que encosta no banzo), a peça passa a terminar **no nó**, em meia-esquadria — o nó cai R·tan(θ/4N)
 antes da ponta antiga, e antes a peça sobrava esses 200 mm por cima do banzo —, e o **banzo é esticado até o nó**

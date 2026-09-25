@@ -81,12 +81,15 @@ try:
       ed.ativa._caixas = new Map();
       const iFace = cima.faces.findIndex(f => f.every(i => cima.vertices[i][2] === 106));
       const nv = cima.vertices.length, nf = cima.faces.length;
-      ed.ativa.onPonto({ entidade: cima.id, ponto: [60300, 50, 106], normal: [0, 0, 1], face: iFace });
+      // o clique traz o índice do triângulo da malha desenhada (aqui um qualquer, 10), não o da
+      // face da peça: a ferramenta acha a face pelo ponto e pela normal
+      ed.ativa.onPonto({ entidade: cima.id, ponto: [60300, 50, 106], normal: [0, 0, 1], face: 10 });
       const e = doc.get(cima.id);
       const furos = ed.ferramentas.get('furo') ? null : null;
       return [e.vertices.length - nv, e.faces.length - nf, (e.atributos.furos_editor || []).length, e.faces[iFace].length, cima.id, baixo.id];
     })())"""))
-    ok(r[0] == 32 and r[1] == 16 and r[2] == 1 and r[3] == 4 + 16 + 2, f"furo aberto na malha (32 vértices, 16 faces da parede, laço costurado): {r}")
+    ok(r[0] == 32 and r[1] == 16 and r[2] == 1 and r[3] == 4 + 16 + 2, f"furo aberto na malha com o índice de triângulo errado do clique (32 vértices, 16 faces da parede, laço costurado): {r}")
+    ok(aba.avaliar("[...window.editor.documento.entidades.values()].filter(x => x.atributos && x.atributos.furo).length") == 0, "não virou marcador")
     id_cima, id_baixo = r[4], r[5]
     # os furos da malha são lidos de volta; um furo na peça de baixo alinha o de cima
     bruto = aba.avaliar("""JSON.stringify((() => { try {

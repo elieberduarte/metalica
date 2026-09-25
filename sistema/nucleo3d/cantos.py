@@ -355,12 +355,15 @@ def quebrar_peca(e: Solido, n: int) -> Optional[dict]:
         for i in range(k):
             j = (i + 1) % k
             faces.append([a[i], a[j], c[j], c[i]] if sentido else [a[i], c[i], c[j], a[j]])
+    original = {"vertices": [list(v) for v in e.vertices], "faces": [list(f) for f in e.faces],
+                "arestas_vivas": [list(a) for a in (e.arestas_vivas or [])]}
     e.vertices = vertices
     e.faces = faces
     e.arestas_vivas = []
     quebras = {"n": n, "nos": [[round(x, 2) for x in q] for q in nos], "raio": round(arco["raio"], 1),
                "angulo": round(arco["angulo"], 2)}
-    e.atributos = dict(e.atributos or {}, quebras=quebras)
+    # a malha de antes fica guardada na peça: "Voltar ao canto redondo" a devolve
+    e.atributos = dict(e.atributos or {}, quebras=dict(quebras, original=original))
     return dict(quebras, pontas=pontas, arco=arco)
 
 
@@ -432,8 +435,9 @@ def _estender_vizinha(doc: Documento, e: Solido, ponta: dict) -> Optional[Solido
             else:
                 novos.append(tuple(v))
         if mudou >= 3:
+            b.atributos = dict(b.atributos or {}, estendida_ate_no=[round(x, 2) for x in no],
+                               antes_de_estender=[list(v) for v in b.vertices])
             b.vertices = novos
-            b.atributos = dict(b.atributos or {}, estendida_ate_no=[round(x, 2) for x in no])
             return b
     return None
 
@@ -515,11 +519,106 @@ def _diagonais_do_canto(doc: Documento, e: Solido, q: dict) -> List[Solido]:
             nova = Solido(nome=d.nome, camada=d.camada, material=d.material, visivel=d.visivel,
                           vertices=vs, faces=[list(f) for f in d.faces], arestas_vivas=[],
                           atributos=dict(d.atributos or {}, marcas=dict(marcas, posicao="%s-Q%d" % (pos_old, k + 1)),
-                                         diagonal_da_quebra={"de": pos_old, "no": k + 1}))
+                                         diagonal_da_quebra={"de": pos_old, "no": k + 1, "canto": e.id}))
             doc.add(nova)
             novas.append(nova)
         doc.remover(d.id)
+        q_e = dict((e.atributos or {}).get("quebras") or {})
+        q_e["diagonais_antes"] = list(q_e.get("diagonais_antes") or []) + [d.dict()]
+        e.atributos = dict(e.atributos or {}, quebras=q_e)
     return novas
+
+
+# ============================================================ voltar ao canto redondo
+def quebradas_do_modelo(doc: Documento) -> List[dict]:
+    """As posições já quebradas em retas, uma linha por posição: marca, nome, perfil,
+    instancias, n, e se a malha original está guardada (senão, só volta pelo histórico)."""
+    por_marca: Dict[str, List[Solido]] = collections.OrderedDict()
+    for e in doc.entidades.values():
+        if isinstance(e, Solido) and (e.atributos or {}).get("quebras"):
+            por_marca.setdefault(_marca(e), []).append(e)
+    saida = []
+    for marca, ents in por_marca.items():
+        q = ents[0].atributos["quebras"]
+        m = (ents[0].atributos or {}).get("marcas") or {}
+        saida.append({"marca": marca, "nome": _nome(ents[0]), "perfil": str(m.get("perfil") or ents[0].nome or ""),
+                      "conjunto": str(m.get("conjunto") or ""), "instancias": len(ents), "n": int(q.get("n") or 0),
+                      "raio": q.get("raio"), "angulo": q.get("angulo"),
+                      "original": all("original" in (x.atributos["quebras"] or {}) for x in ents)})
+    return saida
+
+
+def desfazer_modelo(doc: Documento, marcas: Optional[Sequence[str]] = None, buscar=None) -> dict:
+    """Voltar ao canto redondo: a peça quebrada recebe a malha original guardada em
+    `quebras.original`, a barra esticada até o nó volta aos vértices de antes, as diagonais
+    refeitas saem e a antiga volta. Peça quebrada por uma versão que não guardava a malha
+    (0.8.20) vem de `buscar(id, chave)` — que procura a entidade no histórico do projeto,
+    devolvendo o dict dela sem a chave (`quebras`/`estendida_ate_no`) — ou fica como está.
+    Devolve {"pecas", "posicoes", "falhas"}."""
+    saida = {"pecas": 0, "posicoes": [], "falhas": []}
+    quer = set(str(m) for m in marcas) if marcas else None
+
+    def de_dict(reg):
+        d = Documento.de_dict({"entidades": [reg]})
+        return next(iter(d.entidades.values()), None)
+
+    def perto(a, b, tol=1.0):
+        return math.dist(a, b) <= tol
+    for e in list(doc.entidades.values()):
+        if not isinstance(e, Solido) or not (e.atributos or {}).get("quebras"):
+            continue
+        marca = _marca(e)
+        if quer is not None and marca not in quer:
+            continue
+        q = dict(e.atributos["quebras"] or {})
+        original = q.get("original")
+        if not original and buscar is not None:
+            reg = buscar(e.id, "quebras")
+            if reg and reg.get("vertices"):
+                original = {"vertices": reg["vertices"], "faces": reg.get("faces") or [], "arestas_vivas": reg.get("arestas_vivas") or []}
+        if not original:
+            saida["falhas"].append("%s: sem a malha original (quebrada por uma versão anterior e sem gravação no histórico) — ficou como está" % marca)
+            continue
+        nos = [tuple(float(x) for x in no) for no in (q.get("nos") or [])]
+        # a barra esticada até um nó desta peça volta
+        for b in doc.entidades.values():
+            if not isinstance(b, Solido) or b is e:
+                continue
+            no_b = (b.atributos or {}).get("estendida_ate_no")
+            if not no_b or not any(perto(tuple(float(x) for x in no_b), no, 1.0) for no in nos):
+                continue
+            antes = (b.atributos or {}).get("antes_de_estender")
+            if not antes and buscar is not None:
+                reg = buscar(b.id, "estendida_ate_no")
+                antes = reg.get("vertices") if reg else None
+            if antes:
+                b.vertices = [tuple(v) for v in antes]
+            else:
+                saida["falhas"].append("%s: a barra %s ficou esticada até o nó (sem os vértices de antes)" % (marca, _marca(b)))
+            b.atributos = {k: v for k, v in (b.atributos or {}).items() if k not in ("estendida_ate_no", "antes_de_estender")}
+        # as diagonais refeitas saem (as desta peça: pelo id do canto ou, sem ele, pela ponta num nó)
+        for d in list(doc.entidades.values()):
+            dq = (d.atributos or {}).get("diagonal_da_quebra") if isinstance(d, Solido) else None
+            if not dq:
+                continue
+            minha = dq.get("canto") == e.id
+            if not minha and not dq.get("canto"):
+                pontas = _pontas_da_barra(d)
+                minha = bool(pontas) and any(perto(p, no, 2.0) for p in pontas for no in nos)
+            if minha:
+                doc.remover(d.id)
+        for reg in q.get("diagonais_antes") or []:
+            ent = de_dict(reg)
+            if ent is not None and ent.id not in doc.entidades:
+                doc.add(ent)
+        e.vertices = [tuple(v) for v in original["vertices"]]
+        e.faces = [list(f) for f in original.get("faces") or []]
+        e.arestas_vivas = [tuple(a) for a in original.get("arestas_vivas") or []]
+        e.atributos = {k: v for k, v in (e.atributos or {}).items() if k != "quebras"}
+        saida["pecas"] += 1
+        if marca not in saida["posicoes"]:
+            saida["posicoes"].append(marca)
+    return saida
 
 
 # ============================================================ o modelo inteiro

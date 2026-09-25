@@ -1327,13 +1327,56 @@ def cantos_do_projeto(s: str) -> dict:
     modelo, com raio, ângulo e as opções de quebra em retas (nucleo3d.cantos)."""
     from nucleo3d import cantos
     doc = _documento3d_do_projeto(s)
-    return {"pecas": cantos.analisar_modelo(doc)}
+    return {"pecas": cantos.analisar_modelo(doc), "quebradas": cantos.quebradas_do_modelo(doc)}
+
+
+def _buscar_no_historico(s: str):
+    """buscar(id, chave) para `cantos.desfazer_modelo`: a entidade `id` na gravação mais
+    nova do histórico em que ela ainda não tinha `chave` nos atributos (peça quebrada por
+    uma versão que não guardava a malha original)."""
+    import gzip
+    g = _gerente()
+    pasta = g._pasta_historico(s)
+    arquivos = [h["arquivo"] for h in g.listar_historico(s)]
+    lidos: dict = {}
+
+    def entidades_de(arquivo):
+        if arquivo not in lidos:
+            try:
+                with gzip.open(os.path.join(pasta, arquivo), "rb") as f:
+                    d = json.loads(f.read().decode("utf-8"))
+                lidos[arquivo] = {e.get("id"): e for e in (d.get("entidades") or []) if isinstance(e, dict)}
+            except (OSError, ValueError):
+                lidos[arquivo] = {}
+        return lidos[arquivo]
+
+    def buscar(id_, chave):
+        for arquivo in arquivos:
+            e = entidades_de(arquivo).get(id_)
+            if e is not None and not (e.get("atributos") or {}).get(chave):
+                return e
+        return None
+    return buscar
 
 
 def quebrar_cantos_projeto(s: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/cantos {escolhas: {marca: n}}: troca o arco de cada instância
-    dessas posições por n retas tangentes no modelo 3D (o anterior vai para o histórico)."""
+    dessas posições por n retas tangentes no modelo 3D (o anterior vai para o histórico).
+    Com {desfazer: true, marcas: [...]}: volta ao canto redondo nessas posições (todas as
+    quebradas, sem `marcas`) — pela malha guardada na peça ou, faltando, pelo histórico."""
     from nucleo3d import cantos
+    if corpo.get("desfazer"):
+        marcas = corpo.get("marcas") or None
+        try:
+            _progresso(s, "voltando ao canto redondo…")
+            doc = _documento3d_do_projeto(s)
+            r = cantos.desfazer_modelo(doc, marcas, buscar=_buscar_no_historico(s))
+            if r["pecas"]:
+                _regravar_modelo(s, doc, marco=True)
+                _gerente().tocar(s)
+            return r
+        finally:
+            _fim_progresso(s)
     escolhas = corpo.get("escolhas") or {}
     if not isinstance(escolhas, dict) or not escolhas:
         raise ErroDeDados("escolha ao menos uma posição e o número de retas.")

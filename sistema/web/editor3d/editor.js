@@ -1688,17 +1688,37 @@ export class Editor {
       dados = await this.api.cantosDoProjeto(this.projeto);
     } catch (e) { this.aviso(`Não deu para analisar os cantos: ${e.message}`, 'erro', 0); return; }
     const pecas = dados.pecas || [];
+    const quebradas = dados.quebradas || [];
     const mm = (x, c = 0) => Number(x).toLocaleString('pt-BR', { maximumFractionDigits: c });
-    if (!pecas.length) {
-      await this.dialogo({ titulo: 'Cantos redondos', corpo: el('p', { texto: 'Nenhuma barra calandrada com canto foi reconhecida no modelo (peças já quebradas não entram; barra redonda com gancho não é canto).' }), ok: null });
+    if (!pecas.length && !quebradas.length) {
+      await this.dialogo({ titulo: 'Cantos redondos', corpo: el('p', { texto: 'Nenhuma barra calandrada com canto foi reconhecida no modelo (barra redonda com gancho não é canto).' }), ok: null });
       return;
     }
     const corpo = el('div', { class: 'cantos' });
-    corpo.append(el('p', { texto: `${pecas.length} posição(ões) com canto redondo. Cada arco vira N retas tangentes (o canto quinado da fábrica: os trechos retos se prolongam até a primeira e a última reta). O desvio é quanto o nó sai do arco — escolha N e aplique.` }));
+    const selects = new Map();
+    const voltar = new Map();
+    if (quebradas.length) {
+      // as posições já quebradas: dá para voltar ao arco (a malha original fica guardada
+      // na peça; quebrada por uma versão anterior, vem do histórico do projeto)
+      corpo.append(el('p', { texto: `${quebradas.length} posição(ões) já quebradas em retas. Marque as que devem voltar ao canto redondo — a peça, o banzo esticado e a diagonal do canto voltam como eram.` }));
+      const tq = el('table', { class: 'tabela-cantos' });
+      tq.append(el('thead', {}, el('tr', {}, ...['Posição', 'Perfil', 'Inst.', 'Raio', 'Ângulo', 'Retas', 'Voltar ao canto redondo'].map(t => el('th', { texto: t })))));
+      const cq = el('tbody');
+      for (const p of quebradas) {
+        const cx = el('input', { type: 'checkbox', title: p.original ? 'A malha original está guardada na peça' : 'Quebrada por uma versão anterior: a malha original vem do histórico do projeto' });
+        voltar.set(p.marca, cx);
+        cq.append(el('tr', {},
+          el('td', { texto: p.nome ? `${p.nome} (${p.marca})` : p.marca }), el('td', { texto: p.perfil }), el('td', { texto: String(p.instancias) }),
+          el('td', { texto: p.raio ? `${mm(p.raio)} mm` : '' }), el('td', { texto: p.angulo ? `${mm(p.angulo, 1)}°` : '' }), el('td', { texto: String(p.n || '') }),
+          el('td', {}, cx)));
+      }
+      tq.append(cq);
+      corpo.append(tq);
+    }
+    if (pecas.length) corpo.append(el('p', { texto: `${pecas.length} posição(ões) com canto redondo. Cada arco vira N retas tangentes (o canto quinado da fábrica: os trechos retos se prolongam até a primeira e a última reta). O desvio é quanto o nó sai do arco — escolha N e aplique.` }));
     const tabela = el('table', { class: 'tabela-cantos' });
     tabela.append(el('thead', {}, el('tr', {}, ...['Posição', 'Perfil', 'Inst.', 'Raio', 'Ângulo', 'Arco', 'Quebrar em'].map(t => el('th', { texto: t })))));
     const corpoT = el('tbody');
-    const selects = new Map();
     for (const p of pecas) {
       const sel = el('select', { title: 'Em quantas retas quebrar o arco' });
       sel.append(el('option', { value: '', texto: 'não quebrar' }));
@@ -1714,20 +1734,33 @@ export class Editor {
         el('td', {}, sel)));
     }
     tabela.append(corpoT);
-    corpo.append(tabela);
-    corpo.append(el('p', { class: 'nota', texto: 'A malha nova reaproveita a seção da própria peça, com os nós em meia-esquadria; a peça continua "barra dobrada/curva" no detalhamento e a elevação ganha a linha de emenda em cada nó. Gere o detalhamento de novo depois.' }));
-    if (await this.dialogo({ titulo: 'Cantos redondos', corpo, ok: 'Quebrar no modelo' }) !== 'ok') return;
+    if (pecas.length) {
+      corpo.append(tabela);
+      corpo.append(el('p', { class: 'nota', texto: 'A malha nova reaproveita a seção da própria peça, com os nós em meia-esquadria; quando o joelho encosta no banzo, ele termina no nó, o banzo é esticado até ele e a diagonal do canto é refeita do nó de baixo a cada nó. A elevação ganha a linha de emenda em cada nó. Gere o detalhamento de novo depois.' }));
+    }
+    if (await this.dialogo({ titulo: 'Cantos redondos', corpo, ok: pecas.length ? 'Quebrar no modelo' : 'Aplicar' }) !== 'ok') return;
     const escolhas = {};
     for (const [marca, sel] of selects) if (sel.value) escolhas[marca] = +sel.value;
-    if (!Object.keys(escolhas).length) { this.aviso('Nenhuma posição marcada para quebrar.', 'info'); return; }
-    this.dica('Quebrando os cantos no modelo…');
+    const marcasVoltar = [...voltar].filter(([, cx]) => cx.checked).map(([marca]) => marca);
+    if (!Object.keys(escolhas).length && !marcasVoltar.length) { this.aviso('Nenhuma posição marcada para quebrar ou voltar.', 'info'); return; }
+    const avisos = [];
     try {
-      const r = await this.api.quebrarCantos(this.projeto, escolhas);
+      if (marcasVoltar.length) {
+        this.dica('Voltando ao canto redondo…');
+        const r = await this.api.desfazerCantos(this.projeto, marcasVoltar);
+        avisos.push(`${r.pecas} peça(s) de ${(r.posicoes || []).join(', ') || '—'} voltaram ao canto redondo.` +
+                    ((r.falhas || []).length ? ` Avisos: ${r.falhas.slice(0, 4).join(' · ')}` : ''));
+      }
+      if (Object.keys(escolhas).length) {
+        this.dica('Quebrando os cantos no modelo…');
+        const r = await this.api.quebrarCantos(this.projeto, escolhas);
+        avisos.push(`${r.pecas} peça(s) de ${(r.posicoes || []).join(', ')} quebradas em retas no modelo 3D (o anterior está no histórico).` +
+                    ((r.falhas || []).length ? ` Avisos: ${r.falhas.slice(0, 4).join(' · ')}` : ''));
+      }
       await this._abrirProjeto();
       this.dica('');
-      this.aviso(`${r.pecas} peça(s) de ${(r.posicoes || []).join(', ')} quebradas em retas no modelo 3D (o anterior está no histórico). Gere o detalhamento de novo: Detalhamentos → Detalhar peças e conjuntos.` +
-                 ((r.falhas || []).length ? ` Avisos: ${r.falhas.slice(0, 4).join(' · ')}` : ''), 'info', 16000);
-    } catch (e) { this.dica(''); this.aviso(`Não foi possível quebrar os cantos: ${e.message}`, 'erro', 0); }
+      this.aviso(avisos.join(' ') + ' Gere o detalhamento de novo: Detalhamentos → Detalhar peças e conjuntos.', 'info', 16000);
+    } catch (e) { this.dica(''); this.aviso(`Não foi possível aplicar nos cantos: ${e.message}`, 'erro', 0); }
   }
 
   async dialogoDetalharPecas() {

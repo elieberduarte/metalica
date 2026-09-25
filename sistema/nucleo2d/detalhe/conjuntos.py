@@ -56,6 +56,9 @@ def _classificar_pecas_do_conjunto(instancia: Sequence[Solido], eixos=None) -> D
         else:
             # IfcColumn não quer dizer pilar: o TecnoMETAL exporta montantes e diagonais
             # assim; o que decide é a posição da barra na elevação
+            if (e.atributos or {}).get("quebras"):
+                fora[e.id] = "BANZOS"                # o joelho quebrado em retas é banzo
+                continue
             eixo = _eixo_da_peca(e)
             if not eixo:
                 fora[e.id] = "VIGAS"
@@ -823,6 +826,11 @@ def _emendas_do_chanfro(desenho: Desenho, novas: List, ids: set, camada_de: Dict
     canto = [e for e in novas if isinstance(e, Polilinha) and (e.atributos or {}).get("nos_chanfro")]
     if not canto:
         return
+    # A peça quebrada em retas no 3D (Cantos redondos) já vem do modelo como a fábrica
+    # monta — o joelho termina no nó em meia-esquadria e o banzo já foi esticado até ele —,
+    # então só ganha a linha de emenda; mexer nas pontas do banzo aqui torcia as linhas
+    # (a aba ia parar no contorno de baixo e cruzava o perfil até a cumeeira).
+    moveis = [e for e in canto if (e.atributos or {}).get("chanfro") != "quebra"]
     outras = [e for e in novas if isinstance(e, (Polilinha, Linha)) and (e.atributos or {}).get("origem") not in ids]
     banzos = [e for e in outras if e.camada == "BANZOS"]
 
@@ -833,7 +841,7 @@ def _emendas_do_chanfro(desenho: Desenho, novas: List, ids: set, camada_de: Dict
     # várias linhas da peça), depois move.
     juncoes = [w for b_ in banzos for w in vertices(b_)]
     movimentos = []                                  # (ponta antiga m, nó q)
-    for e in canto:
+    for e in moveis:
         nos = [tuple(q) for q in e.atributos["nos_chanfro"]]
         vs = [tuple(q) for q in e.vertices]
         n = len(vs)
@@ -868,7 +876,7 @@ def _emendas_do_chanfro(desenho: Desenho, novas: List, ids: set, camada_de: Dict
     # mais perto dela entre os que a apontaram (contorno de fora ou de dentro)
     # a linha de emenda de cada nó: o par dele (o nó do outro contorno da mesma peça, a
     # menos de EMENDA_MAX). O banzo termina nela, em meia-esquadria com a peça do canto
-    todos_nos = [(float(q[0]), float(q[1])) for e in canto for q in e.atributos["nos_chanfro"]]
+    todos_nos = [(float(q[0]), float(q[1])) for e in moveis for q in e.atributos["nos_chanfro"]]
 
     def par_do_no(q):
         cand = [(math.dist(q, r), r) for r in todos_nos if 5.0 < math.dist(q, r) <= EMENDA_MAX]
@@ -923,7 +931,7 @@ def _emendas_do_chanfro(desenho: Desenho, novas: List, ids: set, camada_de: Dict
                 o.vertices = novos
             else:
                 o.a, o.b = destino(o.a, o.b), destino(o.b, o.a)
-        _quinas_da_emenda(canto, outras, compridas, par_do_no, perto)
+        _quinas_da_emenda(moveis, outras, compridas, par_do_no, perto)
     # 2) a linha de emenda em cada nó: o nó do contorno de fora com o do de dentro
     por_origem: Dict[str, list] = collections.defaultdict(list)
     candidatos: Dict[str, list] = collections.defaultdict(list)
