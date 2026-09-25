@@ -1603,9 +1603,136 @@ export class Editor {
    * Detalhamento para produção: uma célula por posição (peças iguais contadas uma vez)
    * e a elevação de cada conjunto, em desenhos por grupo, mais o romaneio.
    */
+  /**
+   * Eixos da obra: os numerados (as tesouras, atravessados ao galpão) e os com letra (os
+   * apoios — chumbadores ou chapas de base), identificados do modelo (nucleo3d/eixos.py)
+   * e gravados no projeto para renomear, mover e acrescentar. As plantas de localização e
+   * de chumbação desenham os eixos gravados (bolinhas e cotas entre eixos).
+   */
+  async dialogoEixos() {
+    if (!this.projeto) { this.aviso('Abra um projeto para identificar os eixos.', 'atencao'); return; }
+    let dados;
+    try { await this._gravarAntesDeGerar(); dados = await this.api.eixosDoProjeto(this.projeto); }
+    catch (e) { this.aviso(`Não deu para identificar os eixos: ${e.message}`, 'erro', 0); return; }
+    const mm = (x) => Number(x).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+    const corpo = el('div', { class: 'eixos' });
+    const cabecalho = el('p', {});
+    corpo.append(cabecalho);
+    const tabelas = el('div', { class: 'eixos-tabelas' });
+    corpo.append(tabelas);
+    let atual = dados.eixos;
+    const linhas = { letras: [], numeros: [] };
+    const proximoNome = (chave) => {
+      const nomes = linhas[chave].map(l => l.nome.value.trim());
+      if (chave === 'numeros') { let n = 1; while (nomes.includes(String(n))) n++; return String(n); }
+      for (let i = 0; i < 26; i++) { const c = String.fromCharCode(65 + i); if (!nomes.includes(c)) return c; }
+      return 'Z' + nomes.length;
+    };
+    const montar = () => {
+      tabelas.replaceChildren();
+      cabecalho.textContent = (dados.gravados ? 'Eixos gravados no projeto. ' : `Eixos identificados do modelo agora (as letras: ${atual.fonte_letras || 'apoios'}); grave para as plantas usarem sempre estes. `)
+        + 'Posição em mm: os numerados ao longo do galpão, os com letra atravessados. Renomeie, mova, acrescente ou apague.';
+      for (const [chave, titulo] of [['letras', 'Eixos com letra (apoios, atravessados)'], ['numeros', 'Eixos numerados (tesouras, ao longo)']]) {
+        linhas[chave] = [];
+        const t = el('table', { class: 'tabela-cantos' });
+        t.append(el('thead', {}, el('tr', {}, el('th', { texto: titulo }), el('th', { texto: 'Posição (mm)' }), el('th', { texto: '' }))));
+        const tb = el('tbody');
+        const addLinha = (nome, pos) => {
+          const inNome = el('input', { type: 'text', value: nome, size: '4', maxlength: '6' });
+          const inPos = el('input', { type: 'number', step: '1', value: String(Math.round(pos)) });
+          const tr = el('tr', {}, el('td', {}, inNome), el('td', {}, inPos), el('td', {}, el('button', { type: 'button', class: 'mini', texto: '×', title: 'Apagar este eixo', onclick: () => { linhas[chave] = linhas[chave].filter(l => l.tr !== tr); tr.remove(); } })));
+          tb.append(tr);
+          linhas[chave].push({ tr, nome: inNome, pos: inPos });
+        };
+        for (const e of (atual[chave] || [])) addLinha(e.nome, e.pos);
+        t.append(tb);
+        tabelas.append(t, el('div', { class: 'acoes' }, el('button', { type: 'button', texto: '+ eixo', onclick: () => {
+          const ult = linhas[chave].length ? parseFloat(linhas[chave][linhas[chave].length - 1].pos.value) || 0 : 0;
+          addLinha(proximoNome(chave), ult + 5000);
+        } })));
+      }
+    };
+    montar();
+    const ler = () => ({ eixo_g: atual.eixo_g, perp_g: atual.perp_g, z_base: atual.z_base, fonte_letras: atual.fonte_letras,
+      letras: linhas.letras.map(l => ({ nome: l.nome.value.trim(), pos: parseFloat(l.pos.value) })).filter(x => x.nome && isFinite(x.pos)),
+      numeros: linhas.numeros.map(l => ({ nome: l.nome.value.trim(), pos: parseFloat(l.pos.value) })).filter(x => x.nome && isFinite(x.pos)) });
+    const acoes = el('div', { class: 'acoes' },
+      el('button', { type: 'button', texto: 'Identificar de novo do modelo', onclick: async () => {
+        try { const r = await this.api.gravarEixos(this.projeto, { identificar: true }); atual = r.eixos; dados.gravados = false; montar(); }
+        catch (e) { this.aviso(`Não deu para identificar: ${e.message}`, 'erro'); }
+      } }),
+      el('button', { type: 'button', texto: 'Apagar do projeto (voltar ao automático)', onclick: async () => {
+        try { await this.api.gravarEixos(this.projeto, { apagar: true }); const r = await this.api.eixosDoProjeto(this.projeto); atual = r.eixos; dados.gravados = false; montar(); this.aviso('Eixos apagados do projeto: as plantas voltam a identificar do modelo.', 'info'); }
+        catch (e) { this.aviso(`Não deu para apagar: ${e.message}`, 'erro'); }
+      } }));
+    corpo.append(acoes);
+    corpo.append(el('p', { class: 'nota', texto: `Eixo do galpão: (${mm(atual.eixo_g[0] * 1000) / 1000}, ${mm(atual.eixo_g[1] * 1000) / 1000}); nível de base ${mm(atual.z_base)} mm. Depois de gravar, gere o detalhamento de novo (planta de localização e de chumbação).` }));
+    if (await this.dialogo({ titulo: 'Eixos da obra', corpo, ok: 'Gravar no projeto' }) !== 'ok') return;
+    try {
+      const r = await this.api.gravarEixos(this.projeto, { eixos: ler() });
+      this.aviso(`Eixos gravados: ${(r.eixos.letras || []).map(e => e.nome).join(', ')} e ${(r.eixos.numeros || []).map(e => e.nome).join(', ')}. Gere o detalhamento de novo para as plantas saírem com eles.`, 'info', 12000);
+    } catch (e) { this.aviso(`Não foi possível gravar os eixos: ${e.message}`, 'erro', 0); }
+  }
+
+  /**
+   * Cantos redondos: as barras calandradas do modelo (o joelho da tesoura vem do
+   * TecnoMETAL como um arco facetado) com raio, ângulo e as opções de quebra em N retas
+   * tangentes — o canto quinado da fábrica —, com o desvio de cada opção. A quebra vai
+   * para o modelo 3D em todas as instâncias; o modelo anterior fica no histórico.
+   */
+  async dialogoCantosRedondos() {
+    if (!this.projeto) { this.aviso('Abra um projeto para analisar os cantos.', 'atencao'); return; }
+    let dados;
+    try {
+      await this._gravarAntesDeGerar();
+      dados = await this.api.cantosDoProjeto(this.projeto);
+    } catch (e) { this.aviso(`Não deu para analisar os cantos: ${e.message}`, 'erro', 0); return; }
+    const pecas = dados.pecas || [];
+    const mm = (x, c = 0) => Number(x).toLocaleString('pt-BR', { maximumFractionDigits: c });
+    if (!pecas.length) {
+      await this.dialogo({ titulo: 'Cantos redondos', corpo: el('p', { texto: 'Nenhuma barra calandrada com canto foi reconhecida no modelo (peças já quebradas não entram; barra redonda com gancho não é canto).' }), ok: null });
+      return;
+    }
+    const corpo = el('div', { class: 'cantos' });
+    corpo.append(el('p', { texto: `${pecas.length} posição(ões) com canto redondo. Cada arco vira N retas tangentes (o canto quinado da fábrica: os trechos retos se prolongam até a primeira e a última reta). O desvio é quanto o nó sai do arco — escolha N e aplique.` }));
+    const tabela = el('table', { class: 'tabela-cantos' });
+    tabela.append(el('thead', {}, el('tr', {}, ...['Posição', 'Perfil', 'Inst.', 'Raio', 'Ângulo', 'Arco', 'Quebrar em'].map(t => el('th', { texto: t })))));
+    const corpoT = el('tbody');
+    const selects = new Map();
+    for (const p of pecas) {
+      const sel = el('select', { title: 'Em quantas retas quebrar o arco' });
+      sel.append(el('option', { value: '', texto: 'não quebrar' }));
+      for (const o of p.opcoes) sel.append(el('option', { value: String(o.n), texto: `${o.n} reta${o.n > 1 ? 's' : ''} · sai ${mm(o.desvio)} mm` }));
+      // sugestão: a menor N com desvio até a altura do perfil (o que o 2D já desenha é N = 1)
+      const alt = parseFloat((p.perfil.match(/(\d+(?:[.,]\d+)?)/) || [0, 100])[1]) || 100;
+      const sug = p.opcoes.find(o => o.desvio <= alt) || p.opcoes[0];
+      sel.value = String(sug.n);
+      selects.set(p.marca, sel);
+      corpoT.append(el('tr', {},
+        el('td', { texto: p.nome ? `${p.nome} (${p.marca})` : p.marca }), el('td', { texto: p.perfil }), el('td', { texto: String(p.instancias) }),
+        el('td', { texto: `${mm(p.raio)} mm` }), el('td', { texto: `${mm(p.angulo, 1)}°` }), el('td', { texto: `${mm(p.comprimento_arco)} mm` }),
+        el('td', {}, sel)));
+    }
+    tabela.append(corpoT);
+    corpo.append(tabela);
+    corpo.append(el('p', { class: 'nota', texto: 'A malha nova reaproveita a seção da própria peça, com os nós em meia-esquadria; a peça continua "barra dobrada/curva" no detalhamento e a elevação ganha a linha de emenda em cada nó. Gere o detalhamento de novo depois.' }));
+    if (await this.dialogo({ titulo: 'Cantos redondos', corpo, ok: 'Quebrar no modelo' }) !== 'ok') return;
+    const escolhas = {};
+    for (const [marca, sel] of selects) if (sel.value) escolhas[marca] = +sel.value;
+    if (!Object.keys(escolhas).length) { this.aviso('Nenhuma posição marcada para quebrar.', 'info'); return; }
+    this.dica('Quebrando os cantos no modelo…');
+    try {
+      const r = await this.api.quebrarCantos(this.projeto, escolhas);
+      await this._abrirProjeto();
+      this.dica('');
+      this.aviso(`${r.pecas} peça(s) de ${(r.posicoes || []).join(', ')} quebradas em retas no modelo 3D (o anterior está no histórico). Gere o detalhamento de novo: Detalhamentos → Detalhar peças e conjuntos.` +
+                 ((r.falhas || []).length ? ` Avisos: ${r.falhas.slice(0, 4).join(' · ')}` : ''), 'info', 16000);
+    } catch (e) { this.dica(''); this.aviso(`Não foi possível quebrar os cantos: ${e.message}`, 'erro', 0); }
+  }
+
   async dialogoDetalharPecas() {
     if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para detalhar.', 'atencao'); return; }
-    const grupos = [['tesouras', 'Tesouras (com as barras e chapas delas)'], ['conjuntos', 'Conjuntos (vigas, pilares e outros)'], ['tercas', 'Terças (com suportes e chapas)'], ['contraventamentos', 'Contraventamentos (com tirantes e peças de ponta)'], ['agulhamentos', 'Agulhamentos'], ['extras', 'Extras (perfil de forro, de fechamento, barras soltas)'], ['telhas', 'Telhas'], ['chaparias', 'Chaparias (todas as chapas, 1:10)'], ['localizacao', 'Planta de localização (marcas no lugar de montagem)'], ['completo', 'Desenho completo (tudo num desenho só, 1:25)']];
+    const grupos = [['tesouras', 'Tesouras (com as barras e chapas delas)'], ['conjuntos', 'Conjuntos (vigas, pilares e outros)'], ['tercas', 'Terças (com suportes e chapas)'], ['contraventamentos', 'Contraventamentos (com tirantes e peças de ponta)'], ['agulhamentos', 'Agulhamentos'], ['extras', 'Extras (perfil de forro, de fechamento, barras soltas)'], ['telhas', 'Telhas'], ['chaparias', 'Chaparias (todas as chapas, 1:10)'], ['localizacao', 'Planta de localização (marcas no lugar de montagem, com os eixos)'], ['chumbacao', 'Planta de chumbação (chumbadores e chapas de base nos eixos)'], ['completo', 'Desenho completo (tudo num desenho só, 1:25)']];
     const caixas = {};
     const grade = el('div', { class: 'campos' });
     for (const [k, r] of grupos) { caixas[k] = el('input', { type: 'checkbox', checked: 'checked' }); grade.append(el('label', { texto: r }), caixas[k]); }
@@ -1742,6 +1869,8 @@ export class Editor {
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
+      'cantos-redondos': () => this.dialogoCantosRedondos(),
+      'eixos-obra': () => this.dialogoEixos(),
       'abrir-cad': () => this._abrirCADDoProjeto(),
       'materiais': () => this._abrirMateriais(),
       'resultado-analise': () => this._abrirResultadoDaAnalise(),

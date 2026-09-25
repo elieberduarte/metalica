@@ -218,6 +218,36 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.20.** Quatro frentes pedidas no dia. (1) **Eixos da obra** (`nucleo3d/eixos.py`; editor 3D, Detalhamentos →
+Eixos da obra…): os numerados são as tesouras (agrupamento dos centroides das peças de tesoura ao longo do galpão — PCA
+em planta: várias tesouras, o maior espalhamento; uma só, o menor) e os com letra são os apoios (chumbadores pelo
+nomes.json; sem eles, as chapas horizontais junto do nível mais baixo; sem nada, as pontas das tesouras). O diálogo
+mostra os dois grupos, deixa renomear, mover, acrescentar e apagar, identifica de novo e grava em `projeto.json` →
+`eixos` (rotas `GET/POST /api/projetos/<s>/eixos`); a planta de localização e a de chumbação desenham os eixos gravados
+(ou identificam na hora): linha em EIXO com a bolinha e o nome nas duas pontas e a cadeia de cotas entre eixos com a
+total (`_desenhar_eixos`). (2) **Planta de chumbação** (grupo `chumbacao` do Detalhar): chumbadores e chapas de base
+vistos de cima, com a marca de cada chumbador, os eixos e as cotas. (3) **Corte no CAD** (ferramenta Corte, `Y`, três
+cliques: começo, fim e o lado para onde se olha): marca a linha de corte na camada CORTES — setas para o lado que se
+olha e bolinhas com o nome nas pontas (1-1, 2-2…) — e gera a vista do corte no modelo pela planta em que a linha
+está: as vistas passaram a gravar `ref2d` (a origem do papel nas direções u e v), e com ela um ponto do papel volta ao 3D
+(`dot(q − origem, u) = X − canto_x + ref2d[0]`); o corte é vertical, olhando para o lado clicado, com a profundidade
+perguntada. (4) **Furo de verdade na malha** (ferramenta Furo): a face clicada e a face de trás da parede recebem o
+laço do furo costurado ao contorno — o mesmo formato dos furos do IFC do TecnoMETAL, com o vértice da ponte repetido —
+e a parede ganha o cilindro vazado (`_furarMalha`); o detalhamento lê o laço como lê os do IFC; o marcador de antes só
+fica quando a parede de trás não é reconhecida ou na barra paramétrica. E os **furos da peça de baixo** aparecem
+projetados na face (circulinhos) e prendem o furo novo no mesmo alinhamento (`furosDaMalha`: o laço entre um vértice
+repetido e a sua repetição), como o eixo da peça de baixo já fazia. **Cantos redondos** (editor 3D, Detalhamentos → Cantos redondos…): a barra calandrada do modelo — o
+joelho da tesoura, que o TecnoMETAL exporta como um arco facetado de anéis (27 seções a cada 3°) — é reconhecida
+pelos anéis da malha (`nucleo3d/cantos.py`: eixo pelos centroides, arco por ajuste de círculo: raio, ângulo,
+comprimento, trechos retos), e o diálogo mostra, por posição, em quantas retas quebrar com o desvio de cada opção
+(R·(1/cos(θ/2N) − 1); com N = 1 são as pontas, R·(1/cos(θ/4) − 1)). A quebra troca o arco por N retas **tangentes**
+(o canto quinado que `_chanfrar_cantos` já desenhava no 2D com N = 1: os trechos retos se prolongam até a primeira e a
+última tangente), reconstrói a malha com a seção do próprio anel nos nós em meia-esquadria, em todas as instâncias, e
+grava `atributos.quebras`; a peça continua "barra dobrada/curva" e a elevação ganha a linha de emenda em cada quina
+(`_nos_das_quebras`). Barra redonda (gancho, tirante) fica de fora. Testes em `test_cantos.py` e
+`verificadores/verif_cantos.py`. Motivo: as correções do canto feitas à mão na elevação não valiam para o completo — com
+o canto certo no 3D, tudo sai dele.
+
 **0.8.19.** Ferramenta **Furo** no editor 3D (`F`), no molde da Parafuso: diâmetro no painel (usuais, os que o
 modelo já usa — furos das chapas e parafusos + 1 mm — ou digitado: 14, 17,5, M12 = 13), eixos da face para prender e
 medir, clique na face fura só aquela parede (a profundidade é a camada de vértices logo atrás da face). Na chapa

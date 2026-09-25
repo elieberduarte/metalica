@@ -653,7 +653,8 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
                  rotular=bool(corpo.get("rotular", False)),
                  converter=corpo.get("converter", True) is not False, ajustes=_ajustes_furos(s),
-                 nomes=_nomes_producao(s), avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+                 nomes=_nomes_producao(s), eixos=g.ler(s).get("eixos"),
+                 avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
     _gravar_nomes_producao(s, r.get("nomes") or {})
     nomeadas = _nomes_no_modelo(doc, r.get("nomes") or {})
     # a furação padrão de fábrica (regra das terças) também nas chapas do 3D, e as terças
@@ -1282,6 +1283,70 @@ def _ajustes_furos(s: str) -> dict:
 
 def _gravar_ajustes_furos(s: str, ajustes: dict):
     _gravar_ajuste(os.path.join(_gerente()._existente(s), "detalhamento", "ajustes-furos.json"), ajustes)
+
+
+def eixos_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/eixos: os eixos gravados no projeto, ou identificados do modelo
+    (com o nomes.json do detalhamento, quando há)."""
+    from nucleo3d import eixos as _eixos
+    p = _gerente().ler(s)
+    gravados = _eixos.de_dict(p.get("eixos"))
+    if gravados:
+        return {"eixos": gravados, "gravados": True}
+    doc = _documento3d_do_projeto(s)
+    try:
+        return {"eixos": _eixos.identificar_eixos(doc, _nomes_producao(s)), "gravados": False}
+    except ValueError as e:
+        raise ErroDeDados(str(e))
+
+
+def gravar_eixos_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/eixos {eixos} grava; {identificar: true} identifica de novo do
+    modelo e devolve (sem gravar); {apagar: true} volta ao automático."""
+    from nucleo3d import eixos as _eixos
+    g = _gerente()
+    if corpo.get("identificar"):
+        doc = _documento3d_do_projeto(s)
+        try:
+            return {"eixos": _eixos.identificar_eixos(doc, _nomes_producao(s)), "gravados": False}
+        except ValueError as e:
+            raise ErroDeDados(str(e))
+    if corpo.get("apagar"):
+        g._atualizar(s, eixos=None)
+        return {"eixos": None, "gravados": False}
+    ex = _eixos.de_dict(corpo.get("eixos"))
+    if not ex:
+        raise ErroDeDados("eixos inválidos: informe ao menos um eixo com nome e posição.")
+    ex["origem"] = "usuario"
+    g._atualizar(s, eixos=ex)
+    return {"eixos": ex, "gravados": True}
+
+
+def cantos_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/cantos: as posições com canto redondo (barra calandrada) do
+    modelo, com raio, ângulo e as opções de quebra em retas (nucleo3d.cantos)."""
+    from nucleo3d import cantos
+    doc = _documento3d_do_projeto(s)
+    return {"pecas": cantos.analisar_modelo(doc)}
+
+
+def quebrar_cantos_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/cantos {escolhas: {marca: n}}: troca o arco de cada instância
+    dessas posições por n retas tangentes no modelo 3D (o anterior vai para o histórico)."""
+    from nucleo3d import cantos
+    escolhas = corpo.get("escolhas") or {}
+    if not isinstance(escolhas, dict) or not escolhas:
+        raise ErroDeDados("escolha ao menos uma posição e o número de retas.")
+    try:
+        _progresso(s, "quebrando os cantos…")
+        doc = _documento3d_do_projeto(s)
+        r = cantos.quebrar_modelo(doc, escolhas)
+        if r["pecas"]:
+            _regravar_modelo(s, doc, marco=True)
+            _gerente().tocar(s)
+        return r
+    finally:
+        _fim_progresso(s)
 
 
 CAMPOS_RESUMO = ("revisao", "descricao", "telha", "eixos", "notas_tesouras", "data")
@@ -2185,6 +2250,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(_gerente().listar_desenhos(partes[0]))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(dados_dos_resumos(partes[0]))
+                if len(partes) == 2 and partes[1] == "cantos":
+                    return self._json(cantos_do_projeto(partes[0]))
+                if len(partes) == 2 and partes[1] == "eixos":
+                    return self._json(eixos_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":
                     q = parse_qs(urlparse(self.path).query)
                     return self._json(lista_de_materiais(partes[0], recalcular=q.get("recalcular", ["0"])[0] in ("1", "true")))
@@ -2282,6 +2351,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(gerar_resumos_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "cantos":
+                    return self._json(quebrar_cantos_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "eixos":
+                    return self._json(gravar_eixos_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
                     return self._json(detalhar_posicao_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "atualizar-pecas":

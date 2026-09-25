@@ -782,6 +782,31 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence =
 #: Arco com corda menor que esta fração da do maior arco da mesma peça não é o joelho.
 FRACAO_JOELHO = 0.5
 
+
+def _nos_das_quebras(novas: List, ids: set, giro_minimo: float = 2.0) -> None:
+    """Peça quebrada em retas no 3D: cada linha dela ganha `nos_chanfro` nas quinas (o
+    vértice interno onde a direção muda), como `_chanfrar_cantos` faz na peça com arco."""
+    for e in novas:
+        if not isinstance(e, Polilinha) or (e.atributos or {}).get("origem") not in ids or (e.atributos or {}).get("nos_chanfro"):
+            continue
+        pts = [tuple(p) for p in e.vertices]
+        n = len(pts)
+        nos = []
+        for k in range(n):
+            if not e.fechada and (k == 0 or k == n - 1):
+                continue
+            a, b, c = pts[k - 1], pts[k], pts[(k + 1) % n]
+            u = (b[0] - a[0], b[1] - a[1])
+            v = (c[0] - b[0], c[1] - b[1])
+            lu, lv = math.hypot(*u), math.hypot(*v)
+            if lu < 1e-6 or lv < 1e-6:
+                continue
+            cosang = max(-1.0, min(1.0, (u[0] * v[0] + u[1] * v[1]) / (lu * lv)))
+            if math.degrees(math.acos(cosang)) >= giro_minimo:
+                nos.append([round(b[0], 2), round(b[1], 2)])
+        if nos:
+            e.atributos = dict(e.atributos or {}, chanfro="quebra", nos_chanfro=nos)
+
 #: Distância (mm) entre o nó do contorno de fora e o de dentro do mesmo perfil, para a
 #: linha de emenda que atravessa o perfil; e o maior trecho reto que o banzo absorve.
 EMENDA_MAX = 160.0
@@ -1116,6 +1141,11 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                     if pp:
                         apoios.append((min(q[0] for q in pp), min(q[1] for q in pp), max(q[0] for q in pp), max(q[1] for q in pp)))
             novas = _chanfrar_cantos(desenho, novas, ids_conformadas, apoios)
+            # peça já quebrada em retas no 3D (Cantos redondos): os nós são as quinas das
+            # linhas dela — a emenda entra neles como no chanfro desenhado
+            ids_quebradas = {e.id for e in instancia if e.id in ids_conformadas and (e.atributos or {}).get("quebras")}
+            if ids_quebradas:
+                _nos_das_quebras(novas, ids_quebradas)
     for e in novas:
         e.atributos["conjunto"] = marca
         e.atributos["detalhe"] = "conjunto"
@@ -1714,9 +1744,185 @@ def _itens_de_localizacao(pecas: Sequence[Solido]) -> List[Tuple[str, List[Solid
 MENOR_ITEM_LOCALIZACAO = 500.0
 
 
+def _eixos_do_modelo(doc: Documento, eixos: Optional[dict], nomes_producao: Optional[dict]) -> Optional[dict]:
+    """Os eixos gravados no projeto, ou identificados do modelo agora (None se não der)."""
+    from nucleo3d import eixos as _eixos
+    pronto = _eixos.de_dict(eixos)
+    if pronto:
+        return pronto
+    try:
+        return _eixos.identificar_eixos(doc, nomes_producao)
+    except Exception:                                           # noqa: BLE001 — planta sai sem eixos
+        return None
+
+
+def _desenhar_eixos(p: "_Papel", eixos: dict, u, v, u0: float, v0: float, esc: float,
+                    largura: float, altura: float) -> None:
+    """Os eixos na planta: linha em EIXO com a bolinha e o nome nas duas pontas, e a cadeia
+    de cotas entre eixos (com a total) fora das bolinhas. `u`, `v`: eixos 3D da vista;
+    `u0`, `v0`: a origem do papel nessas direções (o mesmo que as peças usam)."""
+    from nucleo3d.eixos import segmentos
+    r = 4.0 * esc                                     # raio da bolinha (mm de modelo)
+    h = 2.5 * esc
+    xs_letras, ys_numeros = [], []
+    horizontais_sao_numeros = None
+    for seg in segmentos(eixos):
+        a = (_dot(seg["a"], u) - u0, _dot(seg["a"], v) - v0)
+        b = (_dot(seg["b"], u) - u0, _dot(seg["b"], v) - v0)
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L < 1e-6:
+            continue
+        d = ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
+        # a linha vai de bolinha a bolinha; a bolinha fica encostada na ponta da linha
+        p.linha(a[0], a[1], b[0], b[1], camada="EIXO")
+        for ponta, sinal in ((a, -1.0), (b, 1.0)):
+            cx, cy = ponta[0] + sinal * d[0] * r, ponta[1] + sinal * d[1] * r
+            p.circulo(cx, cy, r, camada="EIXO")
+            p.texto(cx, cy - 0.35 * h, seg["nome"], h, "EIXO", alinhamento="centro")
+        horizontal = abs(d[0]) >= abs(d[1])
+        if seg["tipo"] == "numero":
+            if horizontais_sao_numeros is None:
+                horizontais_sao_numeros = horizontal
+            ys_numeros.append(a[1] if horizontal else a[0])
+        else:
+            xs_letras.append(a[0] if not horizontal else a[1])
+    # cadeias de cotas: as posições dos eixos de um tipo ao longo da direção do outro
+    if horizontais_sao_numeros is None:
+        return
+    if horizontais_sao_numeros:
+        # números em linhas horizontais (posições em y), letras em verticais (posições em x)
+        if len(xs_letras) >= 2:
+            y_topo = altura + 2.0 * r + 8.0 * esc
+            p.cadeia_h(xs_letras, y_topo, 4.0, exigir_espaco=False)
+            p.cota_h(min(xs_letras), max(xs_letras), y_topo, 12.0)
+        if len(ys_numeros) >= 2:
+            x_esq = -(2.0 * r + 8.0 * esc)
+            p.cadeia_v(ys_numeros, x_esq, -4.0, exigir_espaco=False)
+            p.cota_v(min(ys_numeros), max(ys_numeros), x_esq, -12.0)
+    else:
+        if len(ys_numeros) >= 2:
+            y_topo = altura + 2.0 * r + 8.0 * esc
+            p.cadeia_h(ys_numeros, y_topo, 4.0, exigir_espaco=False)
+            p.cota_h(min(ys_numeros), max(ys_numeros), y_topo, 12.0)
+        if len(xs_letras) >= 2:
+            x_esq = -(2.0 * r + 8.0 * esc)
+            p.cadeia_v(xs_letras, x_esq, -4.0, exigir_espaco=False)
+            p.cota_v(min(xs_letras), max(xs_letras), x_esq, -12.0)
+
+
+def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao: Optional[dict],
+                         titulo: str = "Detalhamento – chumbação", eixos: Optional[dict] = None,
+                         nomes: Optional[Dict[str, str]] = None) -> Desenho:
+    """Planta de chumbação: os chumbadores e as chapas de base vistos de cima, no lugar em
+    que ficam, com a marca de cada um, os eixos com as bolinhas e as cotas entre eixos —
+    o que a obra precisa para posicionar os chumbadores no concreto."""
+    from nucleo2d.pranchas import escala_normalizada
+    tipos = (nomes_producao or {}).get("tipos") or {}
+    chumb = [e for e in pecas if tipos.get(str(_marcas(e).get("posicao") or "")) == "chumbador"]
+    ex = _eixos_do_modelo(doc, eixos, nomes_producao)
+    if not chumb:
+        # sem chumbador reconhecido: as chapas horizontais junto do nível de base
+        z_base = float(ex["z_base"]) if ex else min(v[2] for e in pecas for v in e.vertices)
+        chumb = []
+        for e in pecas:
+            zs = [v[2] for v in e.vertices]
+            xs = [v[0] for v in e.vertices]
+            ys = [v[1] for v in e.vertices]
+            if max(zs) - min(zs) <= 25.0 and max(max(xs) - min(xs), max(ys) - min(ys)) >= 80.0 and min(zs) <= z_base + 300.0:
+                chumb.append(e)
+    if not chumb:
+        raise ErroDeDados("sem chumbadores nem chapas de base no modelo.")
+    # as chapas que estão nos chumbadores (a chapa de base): perto em planta e em altura
+    centros = []
+    for e in chumb:
+        vs = e.vertices
+        centros.append((sum(v[0] for v in vs) / len(vs), sum(v[1] for v in vs) / len(vs), sum(v[2] for v in vs) / len(vs)))
+    ids_ch = {e.id for e in chumb}
+    chapas = []
+    for e in pecas:
+        if e.id in ids_ch or tipos.get(str(_marcas(e).get("posicao") or "")) not in ("chapa", "castanha", "suporte_terca", None):
+            continue
+        zs = [v[2] for v in e.vertices]
+        if max(zs) - min(zs) > 25.0:
+            continue
+        cx = sum(v[0] for v in e.vertices) / len(e.vertices)
+        cy = sum(v[1] for v in e.vertices) / len(e.vertices)
+        if any(math.hypot(cx - c[0], cy - c[1]) <= 400.0 and abs(min(zs) - c[2]) <= 500.0 for c in centros):
+            chapas.append(e)
+    itens = chumb + chapas
+    todos = [v for e in itens for v in e.vertices]
+    if ex:
+        # a planta abrange os eixos inteiros (com a folga das bolinhas)
+        from nucleo3d.eixos import segmentos
+        todos = todos + [q for s in segmentos(ex) for q in (s["a"], s["b"])]
+    minimo = [min(v[i] for v in todos) for i in range(3)]
+    maximo = [max(v[i] for v in todos) for i in range(3)]
+    ext = [maximo[i] - minimo[i] for i in range(3)]
+    comprido_em_y = ext[1] > ext[0]
+    if comprido_em_y:
+        u, v, w = (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0), (0.0, 0.0, -1.0)
+    else:
+        u, v, w = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, -1.0)
+    us = [_dot(q, u) for q in todos]
+    vs_ = [_dot(q, v) for q in todos]
+    u0, v0 = min(us), min(vs_)
+    larg_v, alt_v = max(us) - u0, max(vs_) - v0
+    esc = escala_normalizada(max(larg_v / 700.0, alt_v / 450.0, 1.0))
+    d = Desenho(nome=titulo, escala=esc)
+    h_txt = 2.5 * esc
+    atr_base = {"detalhe": "chumbacao"}
+    p = _Papel(d, dict(atr_base, vista="PLANTA DE CHUMBAÇÃO"), 0.0, 0.0)
+    _registrar_camadas_de_pecas(d)
+    rotulos = []
+    for e in itens:
+        pts = [(_dot(q, u) - u0, _dot(q, v) - v0) for q in e.vertices]
+        casco = _casco(pts)
+        if len(casco) < 3:
+            continue
+        m = _marcas(e)
+        atr = dict(atr_base, vista="PLANTA DE CHUMBAÇÃO", origem=e.id, nome=e.nome or "")
+        if m.get("posicao"):
+            atr["posicao"] = str(m["posicao"])
+        if m.get("conjunto"):
+            atr["conjunto"] = str(m["conjunto"])
+        pp = _Papel(d, atr, 0.0, 0.0)
+        eh_chumb = e.id in ids_ch
+        pp.polilinha(casco, fechada=True, camada="TIRANTES" if eh_chumb else "CHAPAS")
+        p.pontos.extend(pp.pontos)
+        if eh_chumb:
+            marca = str(m.get("posicao") or e.nome or "")
+            cx = sum(q[0] for q in pts) / len(pts)
+            cy = sum(q[1] for q in pts) / len(pts)
+            rotulos.append(((nomes or {}).get(marca) or marca, cx, cy))
+    postos: List[Tuple[str, float, float]] = []
+    for rotulo, cx, cy in sorted(rotulos, key=lambda r: (r[2], r[1])):
+        if any(t == rotulo and math.hypot(cx - x_, cy - y_) < 8.0 * h_txt for t, x_, y_ in postos):
+            continue
+        postos.append((rotulo, cx, cy))
+        p.texto(cx + 3.0 * esc, cy + 3.0 * esc, rotulo, h_txt, "TEXTO")
+    if ex:
+        _desenhar_eixos(p, ex, u, v, u0, v0, esc, larg_v, alt_v)
+    p.cota_h(0, larg_v, 0, -10.0)
+    p.cota_v(0, alt_v, larg_v, 10.0)
+    p.texto(0, -(10.0 + 8.0) * esc, "PLANTA DE CHUMBAÇÃO", 3.5 * esc)
+    p.texto(0, -(10.0 + 8.0 + 4.5) * esc, "escala 1:%s · %d chumbador(es) e %d chapa(s) de base, vistos de cima, nos eixos da obra"
+            % (int(esc) if float(esc).is_integer() else esc, len(chumb), len(chapas)), 2.0 * esc)
+    ext_c = p.extremos
+    d.metadados.setdefault("celulas", []).append([round(t, 1) for t in ext_c])
+    d.vistas.append({"origem": [minimo[0], minimo[1], minimo[2]], "normal": list(w), "acima": list(v),
+                     "profundidade": None, "cortar": False, "entidades": None, "rotular": True,
+                     "nome": "PLANTA DE CHUMBAÇÃO", "tipo": "topo", "pecas_cortadas": 0, "pecas_projetadas": len(itens),
+                     "largura": round(larg_v, 1), "altura": round(alt_v, 1), "canto": [0.0, 0.0], "avisos": [],
+                     "ref2d": [round(u0 - _dot(minimo, u), 2), round(v0 - _dot(minimo, v), 2)]})
+    d.metadados["detalhamento"] = {"grupo": "chumbacao", "posicoes": [], "itens": {}}
+    d.metadados["eixos"] = ex
+    return d
+
+
 def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str = "Detalhamento – localização",
                            ignorar: Sequence[str] = (), nomes: Optional[Dict[str, str]] = None,
-                           camadas_pecas: Optional[Dict[str, str]] = None) -> Desenho:
+                           camadas_pecas: Optional[Dict[str, str]] = None, eixos: Optional[dict] = None,
+                           nomes_producao: Optional[dict] = None) -> Desenho:
     """Planta e duas elevações esquemáticas do modelo inteiro (cada peça é o contorno
     convexo da sua projeção, em linha fina) com a marca de cada conjunto e de cada peça
     solta escrita no lugar em que está montada: é a planta de montagem que diz onde vai
@@ -1824,6 +2030,11 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
             postos.append((rotulo, cx, cy))
             p.texto(cx, caixa[1], rotulo, h_txt, "TEXTO", alinhamento="centro")
         larg_v, alt_v = max(us) - u0, max(vs) - v0
+        if tipo == "topo":
+            ex = _eixos_do_modelo(doc, eixos, nomes_producao)
+            if ex:
+                _desenhar_eixos(p, ex, u, v, u0, v0, esc, larg_v, alt_v)
+                d.metadados["eixos"] = ex
         p.cota_h(0, larg_v, 0, -10.0)
         p.cota_v(0, alt_v, larg_v, 10.0)
         p.texto(0, -(10.0 + 8.0) * esc, nome, 3.5 * esc)
@@ -1833,6 +2044,7 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
         d.vistas.append({"origem": [minimo[0], minimo[1], minimo[2]], "normal": list(w), "acima": list(v),
                          "profundidade": None, "cortar": False, "entidades": None, "rotular": True,
                          "nome": nome, "tipo": tipo, "pecas_cortadas": 0, "pecas_projetadas": n_pecas,
-                         "largura": round(larg_v, 1), "altura": round(alt_v, 1), "canto": [x0, y0], "avisos": []})
+                         "largura": round(larg_v, 1), "altura": round(alt_v, 1), "canto": [x0, y0], "avisos": [],
+                         "ref2d": [round(u0 - _dot(minimo, u), 2), round(v0 - _dot(minimo, v), 2)]})
     d.metadados["detalhamento"] = {"grupo": "localizacao", "posicoes": [], "itens": {}}
     return d

@@ -455,5 +455,7 @@ def gerar(doc: Documento, vista: Vista, desenho: Optional[Desenho] = None,
     des.vistas.append({**vista.dict(), "pecas_cortadas": len(secoes),
                        "pecas_projetadas": len({id(e) for e, *_ in fortes}),
                        "largura": round(larg, 1), "altura": round(alt, 1),
-                       "canto": [deslocamento[0], deslocamento[1]], "avisos": avisos[:20]})
+                       "canto": [deslocamento[0], deslocamento[1]], "avisos": avisos[:20],
+                       # ponto do papel → 3D: dot(q - origem, u) = X - canto_x + ref2d[0] (idem v)
+                       "ref2d": [round(x0, 2), round(y0, 2)]})
     return des

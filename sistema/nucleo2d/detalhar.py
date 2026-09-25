@@ -133,6 +133,7 @@ from nucleo2d.detalhe.conjuntos import (  # noqa: E402,F401
     _tirante_principal,
     desenho_de_contraventamentos,
     desenho_de_localizacao,
+    desenho_de_chumbacao,
     desenho_do_conjunto,
     tesouras_montadas)
 from nucleo2d.detalhe.nomes import (  # noqa: E402,F401
@@ -515,18 +516,19 @@ def converter_chapas_planas(doc: Documento, posicoes: Sequence[Posicao], pecas: 
 
 def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_tercas: bool = True,
              rotular: bool = True, avisar=None, converter: bool = True, ajustes: Optional[dict] = None,
-             nomes: Optional[dict] = None) -> dict:
+             nomes: Optional[dict] = None, eixos: Optional[dict] = None) -> dict:
     """Gera os desenhos de detalhamento do modelo. Devolve
     {"desenhos": {chave: Desenho}, "posicoes": [...], "conjuntos": [...], "acessorios": {},
-     "regra_tercas": {marca: texto}, "avisos": [...]}."""
+     "regra_tercas": {marca: texto}, "avisos": [...]}. `eixos`: os eixos gravados no projeto
+    (senão as plantas os identificam do modelo)."""
     _gravadas().clear()
     try:
-        return _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes)
+        return _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes, eixos)
     finally:
         _gravadas().clear()
 
 
-def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes):
+def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes, eixos=None):
     avisar = avisar or (lambda *a: None)
     pedidos = list(grupos or GRUPOS.keys())
     # os grupos por classe (chapas, barras, tirantes, telhas, conjuntos em 1:50) são a base de
@@ -935,9 +937,18 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         try:
             localizacao = desenho_de_localizacao(doc, pecas, GRUPOS["localizacao"]["titulo"],
                                                  ignorar=[p.marca for p in posicoes if p.classe == "telha"],
-                                                 nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc)
+                                                 nomes=nomeacao["ifc"], camadas_pecas=camadas_ifc,
+                                                 eixos=eixos, nomes_producao=nomeacao)
         except ErroDeDados as e:
             avisos.append("planta de localização não gerada: %s" % e)
+    chumbacao = None
+    if "chumbacao" in pedidos:
+        avisar("planta de chumbação…")
+        try:
+            chumbacao = desenho_de_chumbacao(doc, pecas, nomeacao, GRUPOS["chumbacao"]["titulo"], eixos=eixos,
+                                             nomes=nomeacao["ifc"])
+        except ErroDeDados as e:
+            avisos.append("planta de chumbação não gerada: %s" % e)
 
     if familias_completo:
         # metadados de todos os grupos juntos (itens, editáveis, furos originais)
@@ -957,6 +968,9 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         if chave == "localizacao":
             if localizacao is not None:
                 desenhos[chave] = localizacao
+        elif chave == "chumbacao":
+            if chumbacao is not None:
+                desenhos[chave] = chumbacao
         elif chave == "completo":
             if faixas or localizacao is not None:
                 avisar("desenho completo…")

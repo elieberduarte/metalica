@@ -139,6 +139,12 @@ export class Api {
 
   /** Catálogo do sistema de cálculo — usado pelo diálogo "gerar do galpão". */
   catalogoCalculo() { return pedir(this._r('/api/catalogo')); }
+  /** Eixos da obra: gravados no projeto ou identificados do modelo. */
+  eixosDoProjeto(s) { return pedir(this._r('/api/projetos/' + encodeURIComponent(s) + '/eixos')); }
+  gravarEixos(s, corpo) { return postar(this._r('/api/projetos/' + encodeURIComponent(s) + '/eixos'), corpo); }
+  /** Posições com canto redondo (barra calandrada) e as opções de quebra em retas. */
+  cantosDoProjeto(s) { return pedir(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos')); }
+  quebrarCantos(s, escolhas) { return postar(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos'), { escolhas }); }
 }
 
 /** Lê um File e devolve só a parte base64 (sem o prefixo data:). */

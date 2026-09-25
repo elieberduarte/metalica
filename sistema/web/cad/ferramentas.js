@@ -1124,6 +1124,114 @@ export class Medir extends Ferramenta {
   onMover(p) { if (this.a) { this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.a, b: p })]); this.editor.medida(`${fmt(dist(this.a, p))} mm`); } }
 }
 
-export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, Chamada, Hachura,
+
+// ------------------------------------------------------------ corte (marcar e gerar)
+
+/** A vista do modelo (com referência 2D) que contém o ponto do papel, ou null. */
+function vistaDoPonto(doc, p) {
+  for (const v of doc.vistas || []) {
+    const c = v.canto || [0, 0];
+    if (!v.ref2d || !v.origem || !v.normal) continue;
+    if (p[0] >= c[0] - 1 && p[0] <= c[0] + (v.largura || 0) + 1 && p[1] >= c[1] - 1 && p[1] <= c[1] + (v.altura || 0) + 1) return v;
+  }
+  return null;
+}
+const _n3 = (a) => { const L = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / L, a[1] / L, a[2] / L]; };
+const _x3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+/** (u, v, w) da vista, como `nucleo2d.vistas.Vista.eixos`. */
+function eixosDaVista(vista) {
+  const w = _n3(vista.normal);
+  let acima = vista.acima || (Math.abs(w[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0]);
+  acima = _n3(acima);
+  const u = _n3(_x3(w, acima));
+  return { u, v: _n3(_x3(u, w)), w };
+}
+/** Ponto do papel → 3D no plano da vista: dot(q − origem, u) = X − canto_x + ref2d[0] (idem v). */
+function para3d(vista, p) {
+  const { u, v } = eixosDaVista(vista);
+  const c = vista.canto || [0, 0];
+  const lu = p[0] - c[0] + vista.ref2d[0], lv = p[1] - c[1] + vista.ref2d[1];
+  return [0, 1, 2].map(i => vista.origem[i] + u[i] * lu + v[i] * lv);
+}
+
+/**
+ * Corte: marca a linha de corte no desenho (linha, setas para o lado que se olha e as
+ * bolinhas com o nome nas pontas, como 1-1, 2-2) e gera a vista do corte no modelo 3D
+ * pela planta em que a linha foi desenhada. Três cliques: começo, fim e o lado para onde
+ * se olha. Precisa de um desenho com vista do modelo (planta de localização, de chumbação,
+ * vista inserida pelo CAD) — é por ela que a linha do papel vira o plano no 3D.
+ */
+export class Corte extends Ferramenta {
+  static id = 'corte'; static nome = 'Corte (marcar e gerar)'; static atalho = 'y'; static grupo = 'desenho';
+  static dica = 'Corte: clique no começo da linha de corte (numa planta do modelo)';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 11h16"/><path d="M6 11v5M18 11v5"/><path d="M4 14l2 2 2-2M16 14l2 2 2-2"/><circle cx="4" cy="8" r="2"/><circle cx="20" cy="8" r="2"/></svg>';
+  reiniciar() { super.reiniciar(); this.p1 = null; this.p2 = null; }
+
+  _nome() {
+    const usados = new Set();
+    for (const e of this.doc.entidades.values()) if (e.atributos && e.atributos.marca_corte) usados.add(String(e.atributos.marca_corte));
+    let n = 1;
+    while (usados.has(String(n))) n++;
+    return String(n);
+  }
+
+  /** As entidades da marca: linha, setas e bolinhas com o nome. */
+  _marcas(p1, p2, lado, nome) {
+    const esc = this.doc.escala;
+    const L = dist(p1, p2) || 1;
+    const d = [(p2[0] - p1[0]) / L, (p2[1] - p1[1]) / L];
+    let nrm = [-d[1], d[0]];
+    if (lado && ((lado[0] - p1[0]) * nrm[0] + (lado[1] - p1[1]) * nrm[1]) < 0) nrm = [-nrm[0], -nrm[1]];
+    const atr = { marca_corte: nome };
+    const cam = 'CORTES';
+    const h = this.editor.alturaTexto || 2.5;
+    const seta = 8 * esc, r = 4 * esc, ponta = 2.2 * esc;
+    const ents = [criar({ tipo: 'linha', camada: cam, a: p1, b: p2, atributos: atr })];
+    for (const [ponta0, fora] of [[p1, [-d[0], -d[1]]], [p2, d]]) {
+      const fim = [ponta0[0] + nrm[0] * seta, ponta0[1] + nrm[1] * seta];
+      ents.push(criar({ tipo: 'linha', camada: cam, a: ponta0, b: fim, atributos: atr }));
+      // ponta de seta no lado que se olha
+      for (const s of [1, -1]) {
+        ents.push(criar({ tipo: 'linha', camada: cam, a: fim, b: [fim[0] - nrm[0] * ponta + s * d[0] * ponta * 0.8, fim[1] - nrm[1] * ponta + s * d[1] * ponta * 0.8], atributos: atr }));
+      }
+      const c = [ponta0[0] + fora[0] * (r + 2 * esc), ponta0[1] + fora[1] * (r + 2 * esc)];
+      ents.push(criar({ tipo: 'circulo', camada: cam, centro: c, raio: r, atributos: atr }));
+      ents.push(criar({ tipo: 'texto', camada: cam, posicao: [c[0], c[1] - 0.35 * h * esc], texto: nome, altura: h, alinhamento: 'centro', atributos: atr }));
+    }
+    return ents;
+  }
+
+  async onPonto(p) {
+    if (!this.p1) { this.p1 = p; this.editor.snap.ultimo = p; this.dica('Fim da linha de corte'); return; }
+    if (!this.p2) { if (dist(p, this.p1) < 1e-6) return; this.p2 = p; this.editor.snap.ultimo = null; this.dica('Clique do lado para onde se olha'); return; }
+    const p1 = this.p1, p2 = this.p2, lado = p;
+    const nome = this._nome();
+    this.editor.executar(new ComandoAdicionar(this._marcas(p1, p2, lado, nome), `Corte ${nome}`));
+    this.reiniciar();
+    const vista = vistaDoPonto(this.doc, p1);
+    if (!vista) {
+      this.editor.aviso(`Corte ${nome}-${nome} marcado. Para gerar a vista, a linha tem de estar sobre uma vista do modelo com referência (planta de localização ou de chumbação gerada nesta versão, ou vista inserida pelo CAD).`, 'atencao', 12000);
+      return;
+    }
+    const { w } = eixosDaVista(vista);
+    if (Math.abs(w[2]) < 0.9) { this.editor.aviso(`Corte ${nome}-${nome} marcado; a vista só é gerada a partir de uma planta (vista de cima).`, 'atencao', 10000); return; }
+    const prof = await this.editor.perguntar(`Corte ${nome}-${nome}`, 'Gerar a vista do corte no modelo — profundidade de vista (mm); vazio cancela', '3000');
+    if (prof == null || !String(prof).trim()) return;
+    const q1 = para3d(vista, p1), q2 = para3d(vista, p2), q3 = para3d(vista, lado);
+    const d3 = [q2[0] - q1[0], q2[1] - q1[1], 0];
+    let n3 = _n3(_x3(d3, [0, 0, 1]));
+    if ((q3[0] - q1[0]) * n3[0] + (q3[1] - q1[1]) * n3[1] < 0) n3 = [-n3[0], -n3[1], 0];
+    const pf = parseFloat(String(prof).replace(',', '.'));
+    await this.editor.inserirVista({ origem: q1, normal: n3, acima: [0, 0, 1], profundidade: isFinite(pf) && pf > 0 ? pf : null, cortar: true,
+                                     nome: `Corte ${nome}-${nome}`, tipo: 'corte' }, `Corte ${nome}-${nome}`);
+  }
+
+  onMover(p) {
+    if (this.p1 && !this.p2) this.editor.previa([criar({ tipo: 'linha', camada: 'CORTES', a: this.p1, b: p })]);
+    else if (this.p2) this.editor.previa(this._marcas(this.p1, this.p2, p, '?'));
+  }
+}
+
+export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, Chamada, Corte, Hachura,
   Mover, Copiar, Girar, Espelhar, Esticar, Offset, Aparar, Estender, Concordar, Explodir, Juntar, MoverCota, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];

@@ -740,3 +740,14 @@ dialog p.explica { margin: 0 0 10px; color: var(--texto2); font-size: 12.5px; }
 
 /* linha de botões dentro de um bloco do painel (Dimensionar no resumo do cálculo) */
 .acoes-linha { display: flex; gap: .4em; flex-wrap: wrap; margin: .45em 0 .2em; }
+
+/* Cantos redondos: a tabela das barras calandradas no diálogo */
+.tabela-cantos { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
+.tabela-cantos th, .tabela-cantos td { padding: 3px 5px; text-align: left; white-space: nowrap; border-bottom: 1px solid rgba(128, 128, 128, 0.25); }
+.tabela-cantos th { font-weight: 600; }
+.tabela-cantos select { max-width: 230px; font-size: 12px; }
+
+/* Eixos da obra: as duas tabelas lado a lado */
+.eixos-tabelas { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.eixos-tabelas table { width: auto; }
+.eixos-tabelas input[type=number] { width: 90px; }

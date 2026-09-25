@@ -66,6 +66,48 @@ try:
     ok(r[0] == 1 and r[1] == "Furos" and r[2] == "IfcOpeningElement" and r[3] is False and r[4] == 14 and r[7] == 32, f"marcador criado: {r}")
     ok(r[5] == [0, -1, 0] and r[6] is not None and 0 < r[6] <= 60, f"eixo para dentro da face e profundidade da parede: {r[5]} {r[6]}")
     ok(aba.avaliar("(window.editor.desfazer(), [...window.editor.documento.entidades.values()].every(x => !(x.atributos && x.atributos.furo)))"), "Ctrl+Z desfaz")
+    # furo de verdade na malha: caixa 1000 × 100 × 6 (uma chapa deitada), clique na face de
+    # cima com o índice da face → a face e a de trás ganham o laço costurado e a parede o cilindro
+    r = json.loads(aba.avaliar("""JSON.stringify((() => {
+      const ed = window.editor, doc = ed.documento;
+      const caixa = (x0, y0, z0, x1, y1, z1, nome) => { const v = [];
+        for (const z of [z0, z1]) for (const [x, y] of [[x0,y0],[x1,y0],[x1,y1],[x0,y1]]) v.push([x, y, z]);
+        return doc.add({ tipo: 'solido', nome, camada: 'Chapas', vertices: v,
+          faces: [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]], arestas_vivas: [], atributos: { marcas: { nome } } }); };
+      const cima = caixa(60000, 0, 100, 61000, 100, 106, 'CIMA');
+      const baixo = caixa(60000, -200, 50, 61000, 300, 100, 'BAIXO');      // parede de 50: a face de trás é reconhecida
+      ed.ativarFerramenta('furo');
+      ed.ativa._definir(14);
+      ed.ativa._caixas = new Map();
+      const iFace = cima.faces.findIndex(f => f.every(i => cima.vertices[i][2] === 106));
+      const nv = cima.vertices.length, nf = cima.faces.length;
+      ed.ativa.onPonto({ entidade: cima.id, ponto: [60300, 50, 106], normal: [0, 0, 1], face: iFace });
+      const e = doc.get(cima.id);
+      const furos = ed.ferramentas.get('furo') ? null : null;
+      return [e.vertices.length - nv, e.faces.length - nf, (e.atributos.furos_editor || []).length, e.faces[iFace].length, cima.id, baixo.id];
+    })())"""))
+    ok(r[0] == 32 and r[1] == 16 and r[2] == 1 and r[3] == 4 + 16 + 2, f"furo aberto na malha (32 vértices, 16 faces da parede, laço costurado): {r}")
+    id_cima, id_baixo = r[4], r[5]
+    # os furos da malha são lidos de volta; um furo na peça de baixo alinha o de cima
+    bruto = aba.avaliar("""JSON.stringify((() => { try {
+      const ed = window.editor, doc = ed.documento;
+      const cima = doc.get('%s'), baixo = doc.get('%s');
+      const iTopo = baixo.faces.findIndex(f => f.every(i => baixo.vertices[i][2] === 100));
+      ed.ativa.onPonto({ entidade: baixo.id, ponto: [60700, 40, 100], normal: [0, 0, 1], face: iTopo });
+      ed.ativa._caixas = new Map();
+      const aj = ed.ativa.ajustar({ entidade: cima.id, ponto: [60706, 44, 106], normal: [0, 0, 1] }, [0, 0, 1]);
+      const longe = ed.ativa.ajustar({ entidade: cima.id, ponto: [60800, 20, 106], normal: [0, 0, 1] }, [0, 0, 1]);
+      return [aj.ponto.map(Math.round), longe.ponto.map(Math.round), doc.get(baixo.id).atributos.furos_editor.length];
+    } catch (e) { return { erro: String(e), stack: String(e.stack).slice(0, 400) }; } })())""" % (id_cima, id_baixo))
+    r = json.loads(bruto) if bruto else {"erro": "avaliação sem resultado"}
+    if isinstance(r, dict):
+        print("     ERRO JS:", r)
+        r = [None, None, None]
+    # o furo de baixo foi para y = 50 (a linha de centro da peça larga prendeu o clique em 40); o de cima
+    # cai em x = 60700 (o furo) e y = 50 (o furo e a linha de centro da terça coincidem)
+    ok(r[0] == [60700, 50, 106] and r[2] == 1, f"perto do furo de baixo o furo de cima prende no alinhamento: {r}")
+    ok(r[1] == [60800, 20, 106], f"longe dele fica onde clicou: {r[1]}")
+    ok(aba.avaliar("(window.editor.desfazer(), window.editor.desfazer(), [...window.editor.documento.entidades.values()].every(x => !(x.atributos && x.atributos.furos_editor)))"), "Ctrl+Z devolve as malhas")
     # chapa paramétrica: o furo entra na própria chapa
     r = json.loads(aba.avaliar("""JSON.stringify((() => {
       const ed = window.editor, doc = ed.documento;

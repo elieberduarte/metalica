@@ -32,6 +32,7 @@ GRUPOS = collections.OrderedDict([
     ("telhas", {"titulo": "Detalhamento – telhas", "escala": 50.0, "base": "telhas"}),
     ("chaparias", {"titulo": "Detalhamento – chaparias", "escala": 10.0, "base": "chapas"}),
     ("localizacao", {"titulo": "Detalhamento – localização", "escala": 100.0}),
+    ("chumbacao", {"titulo": "Detalhamento – chumbação", "escala": 100.0}),
     ("completo", {"titulo": "Detalhamento – completo", "escala": 25.0}),
 ])
 #: Títulos dos desenhos de antes da 0.7.22: ao detalhar de novo com "substituir", saem.
