@@ -151,6 +151,7 @@ class Cota(Entidade2D):
     texto: Optional[str] = None
     altura: float = 2.5
     texto_pos: Optional[Ponto2] = None   # onde o número foi posto à mão (None = no meio da linha)
+    terminador: Optional[str] = None     # seta (padrão), bola ou traco; None = o do desenho (metadados.estilo)
 
     def pontos(self):
         return [self.p1, self.p2]
@@ -315,7 +316,7 @@ class Desenho:
                 d.texto(e.posicao[0], e.posicao[1], e.texto, e.altura * k, camada,
                         angulo=e.angulo, alinhamento=e.alinhamento, vertical=e.vertical)
             elif isinstance(e, Cota):
-                _cota_dxf(d, e, k, camada)
+                _cota_dxf(d, e, k, camada, terminador=(e.terminador or (self.metadados.get("estilo") or {}).get("terminador") or "seta"))
             elif isinstance(e, Hachura):
                 for contorno in e.contornos[:1]:      # o primeiro é o externo; os outros ficam vazios
                     if e.padrao == "solido" and len(contorno) >= 3:
@@ -337,9 +338,21 @@ def _camada_dxf(nome: str) -> str:
     return _MAPA_CAMADAS.get(nome, nome)
 
 
-def _cota_dxf(d, c: Cota, k: float, camada: str):
-    """Cota com setas e texto proporcionais à escala (o que `saida/desenhos._cota` faz
-    para o galpão, aqui sobre o documento 2D)."""
+def _terminador_dxf(d, x: float, y: float, ang: float, tam: float, camada: str, tipo: str):
+    """A ponta da cota: seta cheia, bola (círculo) ou traço oblíquo a 45°."""
+    if tipo == "bola":
+        d.circulo(x, y, 0.35 * tam, camada)
+    elif tipo == "traco":
+        a = math.radians(ang + 45.0)
+        cx, cy = 0.5 * tam * math.cos(a), 0.5 * tam * math.sin(a)
+        d.linha(x - cx, y - cy, x + cx, y + cy, camada)
+    else:
+        d.seta(x, y, ang, tam, camada)
+
+
+def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = "seta"):
+    """Cota com setas (ou bolas, ou traços) e texto proporcionais à escala (o que
+    `saida/desenhos._cota` faz para o galpão, aqui sobre o documento 2D)."""
     x1, y1 = c.p1
     x2, y2 = c.p2
     if c.modo == "h":
@@ -366,11 +379,11 @@ def _cota_dxf(d, c: Cota, k: float, camada: str):
     tam = min(seta, max(0.4 * seta, comp / 4))
     fora = comp < 3.0 * tam
     if fora:
-        d.seta(a1[0], a1[1], ang, tam, camada)
-        d.seta(a2[0], a2[1], ang + 180, tam, camada)
+        _terminador_dxf(d, a1[0], a1[1], ang, tam, camada, terminador)
+        _terminador_dxf(d, a2[0], a2[1], ang + 180, tam, camada, terminador)
     else:
-        d.seta(a1[0], a1[1], ang + 180, tam, camada)
-        d.seta(a2[0], a2[1], ang, tam, camada)
+        _terminador_dxf(d, a1[0], a1[1], ang + 180, tam, camada, terminador)
+        _terminador_dxf(d, a2[0], a2[1], ang, tam, camada, terminador)
     txt = c.texto if c.texto is not None else formatar_mm(c.valor())
     if c.texto_pos:
         d.texto(c.texto_pos[0], c.texto_pos[1], txt, h, camada, angulo=(ang if -90 < ang <= 90 else ang + 180), alinhamento="centro")

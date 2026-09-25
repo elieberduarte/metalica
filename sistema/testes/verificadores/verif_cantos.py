@@ -60,7 +60,8 @@ try:
     r = json.loads(aba.avaliar("""(async () => { const r = await window.editor.api.quebrarCantos('compressores', { P15: 1 }); await window.editor._abrirProjeto();
       const ents = [...window.editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.quebras);
       return JSON.stringify([r.pecas, r.posicoes, ents.length, ents[0] ? ents[0].atributos.quebras.n : null, ents[0] ? ents[0].vertices.length : 0]); })()"""))
-    ok(r[0] == 14 and r[1] == ["P15"] and r[2] == 14 and r[3] == 1 and r[4] == 40, f"quebra aplicada e recarregada: {r}")
+    # o joelho encosta no banzo: termina no nó (perna: 2 anéis + 2 nós = 32 vértices)
+    ok(r[0] == 14 and r[1] == ["P15"] and r[2] == 14 and r[3] == 1 and r[4] == 32, f"quebra aplicada e recarregada: {r}")
     r2 = json.loads(aba.avaliar("""(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify(d.pecas.map(p => p.marca)); })()"""))
     ok("P15" not in r2, f"P15 já não aparece como canto redondo: {r2}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]

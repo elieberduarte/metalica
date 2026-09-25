@@ -358,6 +358,18 @@ export class Tela {
     ctx.closePath(); ctx.fill();
   }
 
+  /** A ponta da cota: seta cheia (padrão), bola ou traço oblíquo a 45°, como no AutoCAD. */
+  _terminador(ctx, p, ang, tam, tipo) {
+    if (tipo === 'bola') {
+      ctx.beginPath(); ctx.arc(p[0], p[1], Math.max(1.2, 0.35 * tam), 0, 2 * Math.PI); ctx.fill();
+    } else if (tipo === 'traco') {
+      const a = -(ang + Math.PI / 4), c = 0.5 * tam * Math.cos(a), s = 0.5 * tam * Math.sin(a);
+      ctx.beginPath(); ctx.moveTo(p[0] - c, p[1] - s); ctx.lineTo(p[0] + c, p[1] + s); ctx.stroke();
+    } else {
+      this._seta(ctx, p, ang, tam);
+    }
+  }
+
   /** Geometria da cota em coordenadas do modelo (compartilhada com o acerto). */
   static geometriaCota(c, k) {
     let [x1, y1] = c.p1, [x2, y2] = c.p2;
@@ -409,8 +421,9 @@ export class Tela {
     ctx.moveTo(A1[0], A1[1]); ctx.lineTo(A2[0], A2[1]); ctx.stroke();
     const ang = Math.atan2(g.uy, g.ux);
     const fora = g.comp < 3 * seta;
-    this._seta(ctx, A1, fora ? ang : ang + Math.PI, seta * z);
-    this._seta(ctx, A2, fora ? ang + Math.PI : ang, seta * z);
+    const term = c.terminador || ((this.doc.metadados || {}).estilo || {}).terminador || 'seta';
+    this._terminador(ctx, A1, fora ? ang : ang + Math.PI, seta * z, term);
+    this._terminador(ctx, A2, fora ? ang + Math.PI : ang, seta * z, term);
     const t = Tela.textoCota(c, k);
     this._texto(ctx, t.pos, t.txt, t.h, t.angG, 'centro', 'base', cor);
   }

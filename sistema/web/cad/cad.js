@@ -616,6 +616,7 @@ class CAD {
       'pdf-pranchas': () => this.pdfDasPranchas(),
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
+      estilos: () => this.dialogoEstilos(),
       detalhar: () => this.dialogoDetalhar(),
       'peca-catalogo': () => this.dialogoPeca(),
       'gerar-3d': () => this.dialogoGerar3D(),
@@ -1338,6 +1339,75 @@ class CAD {
     this.carregar({ nome, escala: 20 });
     const url = new URL(location.href); url.searchParams.set('desenho', this.nomeDesenho); history.replaceState(null, '', url);
     this._agendarAutosave();
+  }
+
+  /**
+   * Aplica estilos a um conjunto de entidades (ou ao desenho inteiro): altura dos textos e
+   * cotas, terminador das cotas (seta, bola, traco) e padrão/espaçamento/ângulo das
+   * hachuras. `opcoes`: {altura, terminador, padrao, espacamento, angulo} — o que vier
+   * vazio não muda. Com `ids` nulo vale para todas as entidades, e o desenho guarda o
+   * padrão em metadados.estilo (as cotas sem terminador próprio usam o do desenho).
+   */
+  aplicarEstilos(opcoes, ids = null) {
+    const alvo = ids ? ids.map(id => this.doc.get(id)).filter(Boolean) : [...this.doc.entidades.values()];
+    const mud = {};
+    const alt = opcoes.altura != null && isFinite(opcoes.altura) && opcoes.altura > 0 ? +opcoes.altura : null;
+    for (const e of alvo) {
+      const m = {};
+      if (alt && (e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada')) m.altura = alt;
+      if (opcoes.terminador && e.tipo === 'cota') m.terminador = opcoes.terminador === 'padrao' ? null : opcoes.terminador;
+      if (e.tipo === 'hachura') {
+        if (opcoes.padrao) m.padrao = opcoes.padrao;
+        if (opcoes.espacamento != null && isFinite(opcoes.espacamento) && opcoes.espacamento > 0) m.espacamento = +opcoes.espacamento;
+        if (opcoes.angulo != null && isFinite(opcoes.angulo)) m.angulo = +opcoes.angulo;
+      }
+      if (Object.keys(m).length) mud[e.id] = m;
+    }
+    if (!ids) {
+      const estilo = { ...((this.doc.metadados || {}).estilo || {}) };
+      if (alt) { estilo.texto = alt; this.alturaTexto = alt; }
+      if (opcoes.terminador && opcoes.terminador !== 'padrao') estilo.terminador = opcoes.terminador;
+      if (opcoes.padrao) estilo.hachura = opcoes.padrao;
+      this.doc.metadados = { ...(this.doc.metadados || {}), estilo };
+    }
+    const n = Object.keys(mud).length;
+    if (n) this.executar(new ComandoAlterar(mud, 'Estilos do desenho'));
+    else this._aposMudanca({ acao: 'aparencia' });
+    return n;
+  }
+
+  async dialogoEstilos() {
+    const sel = [...this.tela.selecao];
+    const estilo = ((this.doc.metadados || {}).estilo || {});
+    const campos = {
+      escopo: el('select', {}, ...[[sel.length ? 'selecao' : 'todos', sel.length ? `Seleção (${sel.length} objeto(s))` : 'Todo o desenho'], [sel.length ? 'todos' : 'selecao', sel.length ? 'Todo o desenho' : 'Seleção (nada selecionado)']].map(([v, t]) => el('option', { value: v, texto: t }))),
+      altura: el('input', { type: 'number', step: '0.5', min: '0.5', value: String(estilo.texto || this.alturaTexto || 2.5), placeholder: 'mm no papel' }),
+      terminador: el('select', {}, ...[['', 'manter'], ['seta', 'Seta'], ['bola', 'Bola (ponto)'], ['traco', 'Traço oblíquo']].map(([v, t]) => el('option', { value: v, texto: t, selected: (estilo.terminador || 'seta') === v && v ? 'selected' : undefined }))),
+      padrao: el('select', {}, ...[['', 'manter'], ['aco', 'Aço (linhas a 45°)'], ['concreto', 'Concreto'], ['solido', 'Sólido']].map(([v, t]) => el('option', { value: v, texto: t }))),
+      espacamento: el('input', { type: 'number', step: '0.5', min: '0.5', placeholder: 'manter (mm no papel)' }),
+      angulo: el('input', { type: 'number', step: '15', placeholder: 'manter (graus)' }),
+      mudarAltura: el('input', { type: 'checkbox' }),
+    };
+    campos.terminador.value = '';
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: 'Como os estilos do AutoCAD: a altura vale para textos, cotas e chamadas; o terminador para as cotas; padrão, espaçamento e ângulo para as hachuras. Com "todo o desenho", a altura vira a altura padrão dos textos novos e o terminador o das cotas novas.' }),
+      el('label', {}, 'Aplicar a', campos.escopo),
+      el('label', {}, el('span', {}, campos.mudarAltura, ' Altura de texto e cota (mm)'), campos.altura),
+      el('label', {}, 'Terminador das cotas', campos.terminador),
+      el('label', {}, 'Padrão das hachuras', campos.padrao),
+      el('label', {}, 'Espaçamento da hachura (mm)', campos.espacamento),
+      el('label', {}, 'Ângulo da hachura (°)', campos.angulo));
+    if (await this.dialogo({ titulo: 'Estilos do desenho', corpo, ok: 'Aplicar' }) !== 'ok') return;
+    const opcoes = {
+      altura: campos.mudarAltura.checked ? parseFloat(campos.altura.value) : null,
+      terminador: campos.terminador.value || null,
+      padrao: campos.padrao.value || null,
+      espacamento: campos.espacamento.value ? parseFloat(campos.espacamento.value) : null,
+      angulo: campos.angulo.value ? parseFloat(campos.angulo.value) : null,
+    };
+    const ids = campos.escopo.value === 'selecao' ? sel : null;
+    const n = this.aplicarEstilos(opcoes, ids);
+    this.aviso(n ? `Estilos aplicados em ${n} objeto(s).` : 'Nada a mudar com essas opções.', 'info');
   }
 
   async dialogoCorte() {

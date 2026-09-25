@@ -1762,8 +1762,8 @@ def _desenhar_eixos(p: "_Papel", eixos: dict, u, v, u0: float, v0: float, esc: f
     de cotas entre eixos (com a total) fora das bolinhas. `u`, `v`: eixos 3D da vista;
     `u0`, `v0`: a origem do papel nessas direções (o mesmo que as peças usam)."""
     from nucleo3d.eixos import segmentos
-    r = 4.0 * esc                                     # raio da bolinha (mm de modelo)
-    h = 2.5 * esc
+    r = 4.5 * esc                                     # raio da bolinha (mm de modelo)
+    h = 3.5 * esc                                     # o nome do eixo maior que o texto corrente (pedido do usuário)
     xs_letras, ys_numeros = [], []
     horizontais_sao_numeros = None
     for seg in segmentos(eixos):

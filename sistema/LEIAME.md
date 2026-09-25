@@ -218,6 +218,19 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.21.** O canto quebrado como a fábrica monta (pedido do usuário vendo a 0.8.20): quando o arco vai até a ponta
+da peça (o joelho que encosta no banzo), a peça passa a terminar **no nó**, em meia-esquadria — o nó cai R·tan(θ/4N)
+antes da ponta antiga, e antes a peça sobrava esses 200 mm por cima do banzo —, e o **banzo é esticado até o nó**
+(`_estender_vizinha`: os vértices da ponta encostada andam pelo eixo até o plano da meia-esquadria). A **diagonal do
+canto**, que apontava para o meio do arco, é refeita **do nó de baixo até cada nó da quebra** (`_diagonais_do_canto`:
+mesma seção pela transformação afim que gira e estica só no eixo; posições `P13-Q1`, `P13-Q2`…; o banzo e a perna,
+tangentes ao arco, ficam de fora pela componente radial). Quem já quebrou o canto na 0.8.20 restaura o modelo anterior
+(Arquivo → Restaurar modelo anterior…) e quebra de novo. **Estilos do desenho** no CAD (Desenho → Estilos do
+desenho…, como os estilos do AutoCAD): altura de texto e cota, terminador das cotas (seta, bola ou traço oblíquo —
+`Cota.terminador`, ou o padrão do desenho em `metadados.estilo`, no papel e no DXF) e padrão, espaçamento e ângulo das
+hachuras, na seleção ou no desenho inteiro (`aplicarEstilos`). E os nomes dos eixos nas plantas saem maiores (3,5 mm),
+com a bolinha de 4,5 mm.
+
 **0.8.20.** Quatro frentes pedidas no dia. (1) **Eixos da obra** (`nucleo3d/eixos.py`; editor 3D, Detalhamentos →
 Eixos da obra…): os numerados são as tesouras (agrupamento dos centroides das peças de tesoura ao longo do galpão — PCA
 em planta: várias tesouras, o maior espalhamento; uma só, o menor) e os com letra são os apoios (chumbadores pelo

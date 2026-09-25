@@ -23,7 +23,8 @@ def _joelho(reto_antes=500.0, reto_depois=400.0, passos=25, raio=R, angulo=ANG, 
     th = math.radians(angulo)
     # eixo: reto ao longo de x, arco de centro (reto_antes, raio, 0), reto tangente no fim
     eixo, tangentes = [], []
-    eixo.append((0.0, 0.0, 0.0)); tangentes.append((1.0, 0.0, 0.0))
+    if reto_antes > 0:
+        eixo.append((0.0, 0.0, 0.0)); tangentes.append((1.0, 0.0, 0.0))
     eixo.append((reto_antes, 0.0, 0.0)); tangentes.append((1.0, 0.0, 0.0))
     C = (reto_antes, raio, 0.0)
     for k in range(1, passos + 1):
@@ -31,7 +32,8 @@ def _joelho(reto_antes=500.0, reto_depois=400.0, passos=25, raio=R, angulo=ANG, 
         eixo.append((C[0] + raio * math.sin(a), C[1] - raio * math.cos(a), 0.0))
         tangentes.append((math.cos(a), math.sin(a), 0.0))
     t = tangentes[-1]
-    eixo.append((eixo[-1][0] + t[0] * reto_depois, eixo[-1][1] + t[1] * reto_depois, 0.0)); tangentes.append(t)
+    if reto_depois > 0:
+        eixo.append((eixo[-1][0] + t[0] * reto_depois, eixo[-1][1] + t[1] * reto_depois, 0.0)); tangentes.append(t)
     vertices, faces = [], []
     b = (0.0, 0.0, 1.0)
     for c, t in zip(eixo, tangentes):
@@ -116,3 +118,67 @@ def test_nos_das_quebras_no_2d():
     assert not reta.atributos.get("nos_chanfro")
     assert quina.atributos.get("chanfro") == "quebra" and quina.atributos["nos_chanfro"] == [[100.0, 0.0]]
     assert not outra.atributos.get("nos_chanfro")
+
+
+def _caixa_barra(a, b, largura=92.0, altura=30.0, nome="U92X30X2.25", posicao="P9", conjunto="M2"):
+    """Barra reta de `a` a `b` como caixa por anéis de 4 vértices (tampa em cada ponta)."""
+    d = [b[i] - a[i] for i in range(3)]
+    L = math.sqrt(sum(x * x for x in d))
+    d = [x / L for x in d]
+    up = (0.0, 0.0, 1.0) if abs(d[2]) < 0.9 else (1.0, 0.0, 0.0)
+    e1 = [d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0]]
+    n1 = math.sqrt(sum(x * x for x in e1)) or 1.0
+    e1 = [x / n1 for x in e1]
+    e2 = [d[1] * e1[2] - d[2] * e1[1], d[2] * e1[0] - d[0] * e1[2], d[0] * e1[1] - d[1] * e1[0]]
+    vs = []
+    oct_ = [(math.cos(2 * math.pi * k / 8), math.sin(2 * math.pi * k / 8)) for k in range(8)]
+    for c in (a, b):
+        for sx, sy in oct_:
+            vs.append(tuple(c[i] + e1[i] * sx * largura / 2 + e2[i] * sy * altura / 2 for i in range(3)))
+    faces = [list(range(8))[::-1], list(range(8, 16))] + [[i, (i + 1) % 8, 8 + (i + 1) % 8, 8 + i] for i in range(8)]
+    return Solido(nome=nome, camada="Vigas", vertices=vs, faces=faces,
+                  atributos={"tipo_ifc": "IfcBeam", "marcas": {"posicao": posicao, "conjunto": conjunto, "perfil": nome}})
+
+
+def test_joelho_que_termina_no_arco_acaba_no_no_e_o_banzo_vem_ate_ele():
+    """Sem trecho reto depois do arco (o joelho encosta no banzo): a peça passa a terminar
+    no nó, em meia-esquadria, e o banzo que encostava na ponta antiga é esticado até o nó;
+    a diagonal que apontava para o meio do arco vira uma diagonal do nó de baixo a cada nó."""
+    doc = Documento(nome="t")
+    joelho = _joelho(reto_antes=500.0, reto_depois=0.0)
+    doc.add(joelho)
+    th = math.radians(ANG)
+    C = (500.0, R, 0.0)
+    # ponta antiga do arco e a tangente que sai dele
+    p1 = (C[0] + R * math.sin(th), C[1] - R * math.cos(th), 0.0)
+    t1 = (math.cos(th), math.sin(th), 0.0)
+    banzo = doc.add(_caixa_barra(p1, tuple(p1[i] + t1[i] * 3000.0 for i in range(3)), largura=100.0, altura=50.0, nome="U100X50X4.18", posicao="P20"))
+    # diagonal do canto: do nó de baixo até o meio do arco (por dentro, a meia altura do perfil)
+    meio = (C[0] + (R - 20.0) * math.sin(th / 2), C[1] - (R - 20.0) * math.cos(th / 2), 0.0)
+    A = (500.0, -1500.0, 0.0)
+    doc.add(_caixa_barra(A, meio, posicao="P13"))
+    r = cantos.quebrar_modelo(doc, {"P15": 2})
+    assert r["pecas"] == 1 and r["estendidas"] == 1 and r["diagonais"] == 3, r
+    # o joelho: anéis 0 e 1 (o trecho reto) + os 3 nós; o último nó é a tampa
+    assert len(joelho.vertices) == 8 * (2 + 3)
+    q = joelho.atributos["quebras"]
+    no_fim = q["nos"][-1]
+    # o banzo veio até o nó: a ponta encostada andou R·tan(θ/8) para trás, sobre o seu eixo
+    recuo = R * math.tan(th / 8)
+    xs = [_dot3(v, t1) for v in banzo.vertices[:8]]                      # o anel da ponta, cortado em meia-esquadria
+    assert abs(sum(xs) / 8 - (_dot3(p1, t1) - recuo)) < 2.0, (sum(xs) / 8, _dot3(p1, t1) - recuo)
+    assert max(xs) - min(xs) > 5.0                                        # a ponta ficou inclinada (meia-esquadria)
+    assert banzo.atributos.get("estendida_ate_no")
+    # a diagonal antiga saiu; as novas vão do nó de baixo a cada nó
+    marcas = sorted(str(e.atributos["marcas"]["posicao"]) for e in doc.entidades.values() if isinstance(e, Solido))
+    assert "P13" not in marcas and marcas.count("P13-Q1") == 1 and "P13-Q3" in marcas
+    for k, no in enumerate(q["nos"]):
+        d = next(e for e in doc.entidades.values() if isinstance(e, Solido) and e.atributos["marcas"]["posicao"] == "P13-Q%d" % (k + 1))
+        pa, pb = cantos._pontas_da_barra(d)
+        assert min(math.dist(pa, A), math.dist(pb, A)) < 1.0
+        assert min(math.dist(pa, no), math.dist(pb, no)) < 1.0
+    assert abs(math.dist(no_fim, C) - R / math.cos(th / 8)) < 1.0
+
+
+def _dot3(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]

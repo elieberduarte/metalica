@@ -76,6 +76,15 @@ try:
     ok(n_marcas == 11, f"marca do corte 1-1: {n_marcas} entidades (linha, 2 setas com pontas, 2 bolinhas com nome)")
     v = json.loads(js("const v = c.doc.vistas[c.doc.vistas.length - 1]; return JSON.stringify([v.tipo, v.nome, v.pecas_cortadas, v.normal, v.origem, v.profundidade]);"))
     ok(v[0] == "corte" and v[1] == "Corte 1-1" and v[2] > 0 and v[3] == [0, 1, 0] and v[4] == [0, 5000, 0] and v[5] == 2500, f"vista: {v}")
+    # estilos do desenho: altura dos textos e terminador das cotas na seleção e no desenho inteiro
+    r = json.loads(js("""
+      const ids = [...c.doc.entidades.values()].filter(e => e.atributos && e.atributos.marca_corte === '1').map(e => e.id);
+      const n1 = c.aplicarEstilos({ altura: 4, terminador: 'bola' }, ids);
+      const textos = [...c.doc.entidades.values()].filter(e => e.tipo === 'texto' && e.atributos && e.atributos.marca_corte === '1');
+      const cota = c.doc.add ? null : null;
+      const n2 = c.aplicarEstilos({ terminador: 'traco' }, null);
+      return JSON.stringify([n1, textos.map(t => t.altura), (c.doc.metadados.estilo || {}).terminador, n2]);"""))
+    ok(r[0] == 2 and r[1] == [4, 4] and r[2] == "traco", f"estilos: altura na seleção e terminador padrão do desenho: {r}")
     # o próximo corte é o 2
     ok(js("c.ativarFerramenta('corte'); return c.ferramenta._nome();") == "2", "o próximo corte chama-se 2")
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
