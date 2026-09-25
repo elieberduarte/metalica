@@ -26,11 +26,31 @@
       const m = ev.data || {};
       if (m.de === EU || typeof window.__antesDeAtualizar !== 'function') return;
       if (m.tipo === 'quem') canal.postMessage({ tipo: 'eu', para: m.de, de: EU, tela: document.title || location.pathname });
+      if (m.tipo === 'atualizando') { veu(m.versao); esperarVoltar(m.atual); }
       if (m.tipo === 'gravar' && m.para === EU) {
         try { await window.__antesDeAtualizar(); canal.postMessage({ tipo: 'gravado', para: m.de, de: EU, ok: true }); }
         catch (e) { canal.postMessage({ tipo: 'gravado', para: m.de, de: EU, ok: false, erro: String(e && e.message || e), tela: document.title || location.pathname }); }
       }
     };
+  }
+  function veu(versaoNova) {
+    document.body.append(el('div', { id: 'veu-atualizacao', style: 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(10,16,26,.82);color:#fff;font:16px/1.5 system-ui,sans-serif;text-align:center;padding:24px' },
+      el('div', {}, el('div', { style: 'font-size:22px;font-weight:600;margin-bottom:8px', texto: `Instalando a versão ${versaoNova}…` }),
+                    el('div', { texto: 'Esta janela volta sozinha para onde estava quando a instalação terminar (uns 20 segundos). Se não voltar em dois minutos, abra o Metálica pelo atalho.' }))));
+  }
+  // O servidor novo responde na mesma porta: quando a versão muda, a tela recarrega no
+  // mesmo lugar — é a mesma janela de antes, não uma nova (o programa reaberto vê o sinal
+  // de vida dela e não abre outra).
+  function esperarVoltar(versaoAtual) {
+    const inicio = Date.now();
+    const t = setInterval(async () => {
+      if (Date.now() - inicio > 5 * 60 * 1000) { clearInterval(t); return; }
+      try {
+        const r = await fetch('/api/versao', { cache: 'no-store' });
+        const v = await r.json();
+        if (v && v.versao && v.versao !== versaoAtual) { clearInterval(t); location.reload(); }
+      } catch (e) { /* ainda instalando */ }
+    }, 2000);
   }
   async function gravarTodasAsJanelas() {
     if (typeof window.__antesDeAtualizar === 'function') await window.__antesDeAtualizar();     // esta janela
@@ -81,10 +101,9 @@
         }
         botao.textContent = 'Baixando…';
         const r = await json('/api/atualizacao/instalar', { reabrir: location.pathname + location.search });
-        const veu = el('div', { style: 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(10,16,26,.82);color:#fff;font:16px/1.5 system-ui,sans-serif;text-align:center;padding:24px' },
-          el('div', {}, el('div', { style: 'font-size:22px;font-weight:600;margin-bottom:8px', texto: `Instalando a versão ${r.versao}…` }),
-                        el('div', { texto: 'O programa fecha e reabre sozinho nesta mesma tela. Se não voltar em um minuto, abra o Metálica pelo atalho.' })));
-        document.body.append(veu);
+        veu(r.versao);
+        esperarVoltar(a.atual);
+        if (canal) canal.postMessage({ tipo: 'atualizando', de: EU, versao: r.versao, atual: a.atual });
       } catch (e) {
         botao.disabled = false; botao.textContent = `Atualizar → ${a.ultima}`;
         window.alert('Não foi possível atualizar: ' + e.message);

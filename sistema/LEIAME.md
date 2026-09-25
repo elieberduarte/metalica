@@ -218,6 +218,28 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.18.** Resumo da obra e resumo de materiais direto do sistema — os dois documentos que a fábrica emite por
+obra —, na tela Lista de materiais, botão "Resumos da obra…" (revisão, descrição, telha, letras dos eixos e notas
+ficam no projeto e são pedidos na primeira vez). (1) Nomenclatura de produção no padrão da fábrica: T.C./T.L./T.O./T.M.
+(terças), A.C./A.L./A.D. (agulhamentos), CV. (contraventos), DP. (dispositivos), F.T., A.T., CH (chapas), CB (chumbadores),
+TL/MD/CU (telhas); as obras já detalhadas renumeram uma vez ao detalhar de novo. (2) Peso teórico como padrão em todos os
+levantamentos: formados a frio pela NBR 6355 com o desconto das dobras (≈1,64·t por dobra — a planilha da fábrica dá o
+mesmo número), laminados, tubos e barras pelo catálogo, chapas pelo retângulo envolvente; o peso da malha 3D fica guardado
+para conferir. (3) Terça de parede (T.L./T.O.) pela orientação da seção — alma deitada —, não pela altura: a mesma
+posição pode viajar na cobertura e na saia, o nome vai pela maioria e as linhas nas saias contam peça a peça. (4)
+Meias-tesouras emendadas na cumeeira viram uma tesoura no resumo: vão entre as chapas de apoio, comprimento entre os
+beirais, altura e nível de apoio pela chapa, inclinação pelo banzo mais comprido, flecha pela subida do banzo no
+meio-vão; o corpo principal é o trecho com mais tesouras e o degrau entre coberturas sai como linha. (5) Porcas e arruelas
+soltas do IFC ("BOLT () 0x0") reconhecidas pela geometria (disco fino = arruela; bitola pelo diâmetro externo ou entre
+cantos) e o local de uso de cada parafuso pelas peças que ele atravessa. (6) A impressão dos resumos leva o Paged.js (sem o
+sinal de fim de paginação o PDF não saía). Na obra ÁGUA GELADA R00 os números batem com o documento R11 da fábrica onde
+os modelos coincidem: 12,30/16,95 m de vão, 14,70/19,15 m, flecha 1,23/1,69 m, altura 2,13/2,57 m, +6,6 m, 20 %,
+10 + 4 linhas de terça, 126/126/64/52/32/56 porcas e arruelas. (7) Atualização com uma janela só (vale a partir da
+próxima atualização, porque o .cmd é gerado pelo programa que está rodando): o lote roda sem console — com
+DETACHED_PROCESS cada filho (timeout, tasklist, find) abria o próprio console, a janela preta "find /i Metalica.exe"
+que ficava na tela —, a janela de antes recarrega sozinha no mesmo lugar quando o servidor novo responde (todas as
+janelas abertas, pelo canal entre elas) e o programa reaberto, vendo o sinal de vida dela, não abre outra.
+
 **0.8.17.** O que ficou da revisão geral. (1) Atualização com acento no caminho: o .cmd sai de
 `gravar_lote_de_atualizacao` e `test_atualizacao_lote.py` o roda de verdade numa pasta "José Ação" com um executável
 marcador compilado pelo csc — o instalador é chamado com os argumentos do modo silencioso, apagado e o programa reaberto;

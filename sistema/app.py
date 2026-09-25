@@ -37,6 +37,8 @@ Rotas da API:
     POST /api/projetos/<slug>/desenhos/<nome>/gerar-3d       desenho 2D → modelo 3D (peças do catálogo)
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
     POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
+    GET  /api/projetos/<slug>/resumos                    dados dos resumos (revisão, telha, eixos…) e sugestões
+    POST /api/projetos/<slug>/resumos {dados}            grava os dados e gera o resumo da obra e o de materiais (HTML + PDF)
     POST /api/projetos/<slug>/pranchas  pranchas (folhas com carimbo) a partir dos desenhos 2D
     POST /api/projetos/<slug>/importar-dxf  DXF em texto → entidades do CAD
     POST /api/projetos/<slug>/importar-pdf  PDF vetorial (base64) → entidades do CAD, em mm de papel
@@ -1267,6 +1269,74 @@ def _gravar_ajustes_furos(s: str, ajustes: dict):
     _gravar_ajuste(os.path.join(_gerente()._existente(s), "detalhamento", "ajustes-furos.json"), ajustes)
 
 
+CAMPOS_RESUMO = ("revisao", "descricao", "telha", "eixos", "notas_tesouras", "data")
+
+
+def dados_dos_resumos(s: str) -> dict:
+    """GET /api/projetos/<s>/resumos: o que o IFC não traz (revisão, descrição do projeto,
+    descrição comercial da telha, letras dos eixos, notas das tesouras) e as sugestões."""
+    p = _gerente().ler(s)
+    dados = dict(p.get("dados_resumo") or {})
+    origem = str(p.get("origem_ifc") or "")
+    m = re.search(r"\.(R\d+)", origem, re.I)
+    sug = {"revisao": (m.group(1).upper() if m else ""), "descricao": "Projeto de fabricação da cobertura metálica",
+           "telha": "", "eixos": "", "notas_tesouras": "", "data": time.strftime("%d/%m/%Y")}
+    lista = None
+    caminho = os.path.join(_gerente()._existente(s), "detalhamento", "lista-de-materiais.json")
+    if os.path.exists(caminho):
+        try:
+            with open(caminho, encoding="utf-8") as f:
+                lista = json.load(f)
+        except (OSError, ValueError):
+            lista = None
+    if lista:
+        telhas = [t.get("perfil") for t in (lista.get("telhas") or []) if t.get("perfil")]
+        if telhas:
+            sug["telha"] = "Telha %s" % telhas[0]
+    return {"dados": dados, "sugestoes": sug, "campos": list(CAMPOS_RESUMO)}
+
+
+def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/resumos {dados}: grava `dados_resumo` no projeto e gera os
+    dois documentos do mesmo levantamento da lista de materiais (nomes de produção
+    atualizados e gravados; peso teórico), em detalhamento/."""
+    from nucleo2d.detalhar import detalhar
+    from nucleo2d.detalhe.base import _categoria
+    from saida import lista_producao, resumos
+    g = _gerente()
+    dados = {k: str((corpo.get("dados") or {}).get(k) or "") for k in CAMPOS_RESUMO}
+    if any(dados.values()):
+        g._atualizar(s, dados_resumo=dados)
+    else:
+        dados = dict(g.ler(s).get("dados_resumo") or {})
+    try:
+        _progresso(s, "levantando as peças do modelo…")
+        doc = _documento3d_do_projeto(s)
+        r = detalhar(doc, grupos=["localizacao"], nomes=_nomes_producao(s), converter=False, ajustes=_ajustes_furos(s),
+                     avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+        nomes = r.get("nomes") or {}
+        _gravar_nomes_producao(s, nomes)
+        _progresso(s, "lista de materiais…")
+        categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
+        lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
+                                      projeto=_identificacao_do_projeto(s), nomes_conjuntos=nomes.get("ifc_conjuntos"))
+        lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
+        _progresso(s, "montando os resumos…")
+        R = resumos.levantar_resumos(doc, lev, lista, nomes, dados)
+        _progresso(s, "imprimindo os PDFs…")
+        pasta = os.path.join(g._existente(s), "detalhamento")
+        arquivos = resumos.gerar_resumos(pasta, R)
+        g.tocar(s)
+        saida = {"numeros": R["numeros"], "avisos": R.get("avisos") or [], "dados": dados}
+        for k, v in arquivos.items():
+            saida[k] = {n: _descrever_arquivo(c, pasta) for n, c in v.items() if n in ("html", "pdf")}
+            if v.get("erro_pdf"):
+                saida[k]["erro_pdf"] = v["erro_pdf"]
+        return saida
+    finally:
+        _fim_progresso(s)
+
+
 def _identificacao_do_projeto(s: str) -> dict:
     p = _gerente().ler(s)
     return {k: p.get(k, "") for k in ("nome", "cliente", "local", "responsavel", "origem_ifc")}
@@ -1399,6 +1469,10 @@ def _gravar_reabrir(caminho: str):
         pass
 
 
+#: True quando este processo é o que a atualização reabriu (a tela de antes está aberta).
+REABERTO_POR_ATUALIZACAO = [False]
+
+
 def _url_para_reabrir(base: str) -> str:
     """A URL inicial: a tela gravada por _gravar_reabrir, se foi há menos de 15 min."""
     arq = os.path.join(PROJETOS, ARQUIVO_REABRIR)
@@ -1408,6 +1482,7 @@ def _url_para_reabrir(base: str) -> str:
         os.remove(arq)
         caminho = str(dados.get("caminho") or "")
         if caminho.startswith("/") and time.time() - float(dados.get("quando") or 0) < 900:
+            REABERTO_POR_ATUALIZACAO[0] = True
             return base.rstrip("/") + caminho
     except (OSError, ValueError, TypeError):
         pass
@@ -1450,8 +1525,12 @@ def instalar_atualizacao(corpo: Optional[dict] = None) -> dict:
     # separado deste processo, que fecha. O instalador também reabre o programa por
     # conta própria quando roda em silêncio ([Run] com Check: WizardSilent).
     lote = gravar_lote_de_atualizacao(os.path.join(tempfile.gettempdir(), "metalica-atualizar.cmd"), destino, exe_atual)
-    subprocess.Popen(["cmd.exe", "/c", lote], creationflags=0x00000008 | 0x00000200,   # DETACHED | NEW_PROCESS_GROUP
-                     close_fds=True, cwd=tempfile.gettempdir())
+    # CREATE_NO_WINDOW (console escondido, herdado por timeout/tasklist/find): com
+    # DETACHED_PROCESS cada um desses filhos abria o próprio console — a janela preta
+    # "find /i Metalica.exe" que ficava na tela até o usuário fechar
+    subprocess.Popen(["cmd.exe", "/c", lote], creationflags=0x08000000 | 0x00000200,   # NO_WINDOW | NEW_PROCESS_GROUP
+                     close_fds=True, cwd=tempfile.gettempdir(),
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def sair():
         time.sleep(1.5)
@@ -2089,6 +2168,8 @@ class Handler(BaseHTTPRequestHandler):
                         (q.get("todas") or ["0"])[0] in ("1", "true")))
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
+                if len(partes) == 2 and partes[1] == "resumos":
+                    return self._json(dados_dos_resumos(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":
                     q = parse_qs(urlparse(self.path).query)
                     return self._json(lista_de_materiais(partes[0], recalcular=q.get("recalcular", ["0"])[0] in ("1", "true")))
@@ -2184,6 +2265,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(dimensionar_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "materiais":
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
+                if len(partes) == 2 and partes[1] == "resumos":
+                    return self._json(gerar_resumos_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
                     return self._json(detalhar_posicao_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "atualizar-pecas":
@@ -2455,8 +2538,17 @@ def main():
     if com_janela:
         def vigiar():
             time.sleep(0.6)                     # o servidor já está ouvindo
-            if _abrir_janela(url) is None:
-                webbrowser.open(url)            # sem Edge nem Chrome: navegador padrão
+            # Reaberto pela atualização: a janela de antes continua na tela, com o aviso
+            # de instalação, e volta sozinha para onde estava assim que este servidor
+            # responde (web/atualizacao.js). Se ela dá sinal de vida, não se abre outra;
+            # se o usuário a fechou no meio, abre-se uma nova como sempre.
+            espera = 10.0 if REABERTO_POR_ATUALIZACAO[0] else 0.0
+            inicio_espera = time.time()
+            while time.time() - inicio_espera < espera and not _janelas_abertas():
+                time.sleep(0.25)
+            if not _janelas_abertas():
+                if _abrir_janela(url) is None:
+                    webbrowser.open(url)        # sem Edge nem Chrome: navegador padrão
             # Encerra quando nenhuma janela dá sinal de vida (web/vivo.js). O processo do
             # navegador não serve de referência: havendo outro Chrome com o mesmo perfil,
             # o que lançamos entrega a janela a ele e sai na hora, com a janela aberta.

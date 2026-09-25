@@ -132,6 +132,7 @@ def _linha_posicao(p: Posicao, categoria: str) -> dict:
             "espessura": round(p.espessura or p.T, 1) if chapa else 0,
             "area_m2": round(_area_m2(p) * p.quantidade, 3) if chapa or p.classe == "telha" else 0,
             "furos": p.rotulo_furos(), "parafusos": p.rotulo_parafusos(), "peso": round(p.peso, 3), "peso_total": round(p.peso_total, 2),
+            "peso_malha": round(getattr(p, "peso_malha", p.peso), 3),
             "conjuntos": list(p.conjuntos), "observacoes": list(p.observacoes)}
 
 
@@ -198,7 +199,7 @@ def comparar_dobras(perfis: Sequence[dict]) -> dict:
         linhas.append({"perfil": g["perfil"], "material": g["material"], "pecas": g["pecas"], "comprimento_m": g["comprimento_m"],
                        "t": r["t"], "dobras": r["dobras"], "soma_externa": r["soma_externa"], "desenvolvido": r["desenvolvido"],
                        "kg_m_teorico": r["kg_m_teorico"], "kg_m_desconto": r["kg_m_desconto"], "kg_m_norma": norma,
-                       "kg_m_modelo": g["kg_m"], "peso_modelo": g["peso"],
+                       "kg_m_modelo": g.get("kg_m_malha", g["kg_m"]), "peso_modelo": g.get("peso_malha", g["peso"]),
                        "peso_teorico": round(r["peso_teorico"], 1), "peso_desconto": round(r["peso_desconto"], 1),
                        "diferenca": round(r["peso_teorico"] - r["peso_desconto"], 1),
                        "diferenca_pct": round(100.0 * (1.0 - r["kg_m_desconto"] / r["kg_m_teorico"]), 2) if r["kg_m_teorico"] else 0.0})
@@ -234,7 +235,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     lista = [p for p in lista if not consumida(p)]
     linhas = [_linha_posicao(p, categorias.get(p.marca, "OUTROS")) for p in lista]
     for i, t in enumerate(md["telhas"], 1):
-        linhas.append({"marca": t["conjunto"], "nome": "TMD.%d" % i, "categoria": "TELHAS", "classe": "Telha multi-dobra",
+        linhas.append({"marca": t["conjunto"], "nome": "MD%d" % i, "categoria": "TELHAS", "classe": "Telha multi-dobra",
                        "perfil": t["perfil"], "material": t["material"], "quantidade": t["instancias"],
                        "comprimento": round(t["desenv_ext"]), "largura": 980, "espessura": 0,
                        "area_m2": round(t["desenv_ext"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
@@ -243,7 +244,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            t["reta1"], t["reta2"], t["raio_int"], t["angulo"], t["desenv_int"])]})
         cb = t.get("cobrimento")
         if cb:
-            linhas.append({"marca": t["conjunto"] + "-C", "nome": "TMD.%d-C" % i, "categoria": "TELHAS",
+            linhas.append({"marca": t["conjunto"] + "-C", "nome": "MD%d-C" % i, "categoria": "TELHAS",
                            "classe": "Telha (complemento da multi-dobra)", "perfil": t["perfil"], "material": t["material"],
                            "quantidade": t["instancias"], "comprimento": round(cb["resto"]), "largura": 980, "espessura": 0,
                            "area_m2": round(cb["resto"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
@@ -252,7 +253,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            "observacoes": ["começa %d mm antes da terça %s (transpasse %.0f mm)" % (150, cb["terca"], cb["transpasse"])]})
 
     for i, t in enumerate(md["cumeeiras"], 1):
-        linhas.append({"marca": t["conjunto"], "nome": "CM.%d" % i, "categoria": "TELHAS", "classe": "Cumeeira",
+        linhas.append({"marca": t["conjunto"], "nome": "CU%d" % i, "categoria": "TELHAS", "classe": "Cumeeira",
                        "perfil": t["perfil"], "material": t["material"], "quantidade": t["instancias"],
                        "comprimento": round(t["desenv"]), "largura": 980, "espessura": 0,
                        "area_m2": round(t["desenv"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
@@ -266,11 +267,12 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
             continue
         g = perfis.setdefault((p.perfil, p.material), {
             "perfil": p.perfil, "material": p.material, "categoria": categorias.get(p.marca, "BARRAS"),
-            "posicoes": [], "pecas": 0, "comprimento_m": 0.0, "peso": 0.0, "_comps": []})
+            "posicoes": [], "pecas": 0, "comprimento_m": 0.0, "peso": 0.0, "peso_malha": 0.0, "_comps": []})
         g["posicoes"].append(p.marca)
         g["pecas"] += p.quantidade
         g["comprimento_m"] += p.comprimento * p.quantidade / 1000.0
         g["peso"] += p.peso_total
+        g["peso_malha"] += getattr(p, "peso_malha", p.peso) * p.quantidade
         g["_comps"].extend([p.comprimento] * p.quantidade)
         if categorias.get(p.marca) == "TERÇAS":
             g["categoria"] = "TERÇAS"
@@ -280,8 +282,10 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         b = _barra_para(comps, barra)
         g["barras"] = encaixar(comps, b)
         g["kg_m"] = round(g["peso"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0
+        g["kg_m_malha"] = round(g["peso_malha"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0
         g["comprimento_m"] = round(g["comprimento_m"], 2)
         g["peso"] = round(g["peso"], 1)
+        g["peso_malha"] = round(g["peso_malha"], 1)
         g["posicoes"] = sorted(g["posicoes"], key=_ordem_natural)
         lista_perfis.append(g)
     lista_perfis.sort(key=lambda g: (-g["peso"], g["perfil"]))

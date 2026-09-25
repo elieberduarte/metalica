@@ -34,6 +34,7 @@ def _modelo():
     for i in range(3):
         doc.add(_solido("PLATE 130x50x3", "IfcPlate", v, f, "P1", "M%d" % (i + 1), "PLATE 130x50x3", dx=i * 5000))
     v, f = perfil_u(5000, 150, 50, 2.25)
+    v = [(x, z, y) for x, y, z in v]                   # alma de pé: terça de cobertura (deitada seria de parede)
     for i in range(2):
         doc.add(_solido("U150X50X2.25", "IfcBeam", v, f, "M5", "M5", "U150X50X2.25", dy=1000 + i * 1500, dz=3000))
     # conjunto M1..M3: chapa + duas barras encostadas (composição igual, 3 instâncias
@@ -629,22 +630,25 @@ def test_nomes_de_producao_no_modelo_real():
     assert nm["posicoes"]["M13"] == "T.C.1"                    # a terça mais repetida
     # M16 = cantoneira de 1,5 m com duas chapinhas de ponta: agulhamento; a agulha leva o
     # nome do conjunto e as chapinhas são suportes de agulhamento
-    assert nm["tipos_conjuntos"]["M16"] == "agulhamento" and nm["conjuntos"]["M16"].startswith("A.G.")
+    assert nm["tipos_conjuntos"]["M16"] in ("agulhamento", "agulhamento_lateral") and nm["conjuntos"]["M16"].startswith(("A.C.", "A.L."))
     assert nm["posicoes"]["P37"] == nm["conjuntos"]["M16"]
-    assert nm["posicoes"]["P36"].startswith("S.A.G.")
+    assert nm["posicoes"]["P36"].startswith("CH")
     # suporte de terça é a chapa em que a terça encosta (P12, na tesoura)
-    assert nm["posicoes"]["P12"].startswith("S.T.") and nm["tipos"]["P12"] == "suporte_terca"
+    assert nm["posicoes"]["P12"].startswith("CH") and nm["tipos"]["P12"] == "suporte_terca"
     # o tirante do contraventamento tem o nome do conjunto; as castanhas são C.S.n
     cv = next(k for k, v in nm["tipos_conjuntos"].items() if v == "contraventamento" and "M17" in k.split(" / "))
-    assert nm["posicoes"]["P38"] == nm["conjuntos"][cv] and nm["posicoes"]["P42"].startswith("C.S.")
-    terca_var = [n for n in nm["posicoes"].values() if n.startswith("T.C.") and "-A" in n]
-    assert terca_var                                           # mesmo perfil e comprimento, outra furação
+    assert nm["posicoes"]["P38"] == nm["conjuntos"][cv] and nm["posicoes"]["P42"].startswith("CH")
+    # terça de parede pela orientação da seção (alma deitada), não pela altura: M61 é o
+    # U150 de 6035 com outra furação que viaja na saia (antes "T.C.5-A"), M74 corre
+    # atravessado no oitão
+    assert nm["posicoes"]["M61"].startswith("T.L.") and nm["tipos"]["M61"] == "terca_lateral"
+    assert nm["posicoes"]["M74"].startswith("T.O.") and nm["tipos"]["M74"] == "terca_oitao"
     # sem nome repetido entre posições nem entre conjuntos; a agulha e o tirante levam o
     # nome do próprio conjunto (é o mesmo detalhe), e só eles coincidem
     pos_nomes, conj_nomes = list(nm["posicoes"].values()), list(nm["conjuntos"].values())
     assert len(pos_nomes) == len(set(pos_nomes)) and len(conj_nomes) == len(set(conj_nomes))
     comuns = set(pos_nomes) & set(conj_nomes)
-    assert all(n_.startswith(("C.V.", "A.G.")) for n_ in comuns)
+    assert all(n_.startswith(("CV.", "A.C.", "A.L.", "A.D.")) for n_ in comuns)
     textos = [e.texto for e in r["desenhos"]["barras"].entidades.values() if isinstance(e, Texto)]
     assert any(tx.startswith("T.C.1 – ") and "L = " in tx for tx in textos)
     assert not any("(M13)" in tx or tx == "TERÇA DE COBERTURA" for tx in textos)   # legenda enxuta
@@ -674,7 +678,7 @@ def test_nomes_sinteticos_e_estaveis():
     doc = _modelo()
     r = det.detalhar(doc, grupos=["chapas"], regra_tercas=False, converter=False)
     nomes = r["nomes"]["posicoes"]
-    assert nomes["P1"] == "CJ.1.1"                     # chapa exclusiva do conjunto M1 / M2 / M3
+    assert nomes["P1"] == "DP.1.1"                     # chapa exclusiva do conjunto M1 / M2 / M3 (dispositivo)
     assert nomes["M5"] == "T.C.1"
     anteriores = {"posicoes": {"M5": "T.C.7"}, "conjuntos": {}}
     r2 = det.detalhar(doc, grupos=["chapas"], regra_tercas=False, converter=False, nomes=anteriores)

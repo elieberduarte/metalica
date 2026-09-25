@@ -65,6 +65,16 @@
   }
   .obra-atual { font-size: 15px; }
   .obra-atual b { font-weight: 600; }
+  #dlg-resumos { border: 1px solid var(--borda-forte); border-radius: var(--raio); background: var(--painel); color: var(--texto); padding: 18px 22px; width: min(640px, 92vw); }
+  #dlg-resumos::backdrop { background: rgba(0, 0, 0, .45); }
+  #dlg-resumos h2 { margin: 0 0 6px; font-size: 16px; color: var(--azul); }
+  #dlg-resumos .campos { display: grid; grid-template-columns: 160px 1fr; gap: 8px 12px; align-items: center; margin: 12px 0; }
+  #dlg-resumos .campos label { font-size: 13px; color: var(--texto2); }
+  #dlg-resumos .campos input, #dlg-resumos .campos textarea { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p); background: var(--campo-fundo, var(--painel)); color: var(--texto); width: 100%; box-sizing: border-box; }
+  #dlg-resumos .campos textarea { min-height: 54px; resize: vertical; }
+  #dlg-resumos .botoes { display: flex; justify-content: flex-end; gap: 8px; }
+  #dlg-resumos .botoes button { font: inherit; padding: 6px 14px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p); background: var(--painel2); color: var(--texto); cursor: pointer; }
+  #dlg-resumos .botoes button.principal { background: var(--azul); color: #fff; border-color: var(--azul); }
   .controle-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 10px; font-size: 13px; color: var(--texto2); }
   @media print { .controle-barra { display: none; } }
 </style>
@@ -99,6 +109,7 @@
     <button type="button" id="btn-pdf" title="Gera Lista-de-materiais.pdf na pasta detalhamento/ do projeto e abre">PDF</button>
     <button type="button" id="btn-imprimir" title="Imprime esta tela">Imprimir</button>
     <button type="button" id="btn-pasta" title="Abre a pasta detalhamento/ do projeto, onde estão os CSVs para o Excel">Abrir pasta</button>
+    <button type="button" id="btn-resumos" class="principal" title="Resumo da obra e resumo de materiais em PDF (como a fábrica emite), do mesmo levantamento desta lista">Resumos da obra…</button>
   </div>
 
   <div class="arquivos" id="arquivos"></div>
@@ -117,6 +128,15 @@
   <div id="conteudo"></div>
 </main>
 
+<dialog id="dlg-resumos" class="dialogo">
+  <form method="dialog" id="dlg-resumos-form">
+    <h2>Resumo da obra e resumo de materiais</h2>
+    <p class="nota">O que o modelo IFC não traz. Fica gravado no projeto; os dois PDFs saem em detalhamento/.</p>
+    <div id="dlg-resumos-campos" class="campos"></div>
+    <p class="nota" id="dlg-resumos-erro" hidden></p>
+    <div class="botoes"><button type="button" id="dlg-resumos-cancelar">Cancelar</button><button type="submit" class="principal">Gerar os dois PDFs</button></div>
+  </form>
+</dialog>
 <script src="/materiais.js"></script>
 <script src="/versao.js" defer></script>
 <script src="/vivo.js"></script>

@@ -15,6 +15,7 @@ from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desen
 from saida.desenhos import Estilo, _mm
 
 from nucleo2d.detalhe.base import (  # noqa: E402
+    DIAMETRO_AGULHAMENTO_DIAGONAL,
     PREFIXO_NOME,
     _assinatura,
     _caixa,
@@ -25,6 +26,7 @@ from nucleo2d.detalhe.base import (  # noqa: E402
     _eixos_da_assinatura,
     _grupos_de_furos,
     _marcas,
+    _parede_da_peca,
     _tipo_ifc,
     marcas_de)
 from nucleo2d.detalhe.conjuntos import (  # noqa: E402
@@ -149,6 +151,43 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
         for m in c.get("marcas") or [c["marca"]]:
             conj_de_marca[m] = c["marca"]
     tesouras = {c["marca"] for c in conjuntos_info if c.get("categoria") == "TESOURAS"}
+    # nível de apoio e eixo do galpão pelas tesouras: a terça e o agulhamento abaixo do
+    # apoio são de parede (lateral, ao longo do galpão; de oitão, atravessado)
+    marcas_tes = set()
+    for c in conjuntos_info:
+        if c.get("categoria") == "TESOURAS":
+            marcas_tes.update(c.get("marcas") or [c["marca"]])
+    pecas_tes = [e for e in pecas if str(_marcas(e).get("conjunto") or "") in marcas_tes and e.vertices]
+    eixo_galpao = None
+    if pecas_tes:
+        centros_tes = [(sum(v[0] for v in e.vertices) / len(e.vertices), sum(v[1] for v in e.vertices) / len(e.vertices),
+                        sum(v[2] for v in e.vertices) / len(e.vertices)) for e in pecas_tes]
+        _c, pca = _autovetores(centros_tes) if len(centros_tes) >= 3 else (None, None)
+        if pca:
+            # várias tesouras: o maior espalhamento dos centros é o eixo do galpão; uma só:
+            # o menor espalhamento dos vértices (a normal dela)
+            xs = [c_[0] for c_ in centros_tes]
+            ys = [c_[1] for c_ in centros_tes]
+            eixo_galpao = pca[0] if max(max(xs) - min(xs), max(ys) - min(ys)) > 500.0 else _autovetores([v for e in pecas_tes for v in e.vertices])[1][2]
+
+    limites_g = None
+    if eixo_galpao is not None:
+        gs = [v[0] * eixo_galpao[0] + v[1] * eixo_galpao[1] + v[2] * eixo_galpao[2] for e in pecas if e.vertices for v in e.vertices]
+        if gs:
+            limites_g = (min(gs), max(gs))
+
+    def de_parede(p: Posicao) -> Optional[str]:
+        """"lateral", "oitao" ou None (na cobertura) para uma terça ou agulhamento, pela
+        maioria das peças da posição (`_parede_da_peca`): a mesma terça pode viajar na
+        cobertura e na saia, e o nome vai pela maioria."""
+        ms = marcas_de(p)
+        votos = collections.Counter(
+            _parede_da_peca(e, eixo_galpao, limites_g)
+            for e in pecas if str(_marcas(e).get("posicao") or e.nome or e.id) in ms and e.vertices)
+        parede = sorted(((n, k) for k, n in votos.items() if k), reverse=True)
+        if not parede or parede[0][0] <= votos.get(None, 0):
+            return None
+        return parede[0][1]
 
     def conjuntos_de(p: Posicao) -> set:
         proprias = set(marcas_de(p))
@@ -186,8 +225,13 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             t = "chumbador"
         elif cls == "barra_redonda" or (cls == "barra_conformada" and _eh_redonda_perfil(p.perfil)):
             t = "contraventamento" if p.comprimento >= MENOR_TIRANTE else "gancho"
+            if t == "contraventamento" and 0 < min(p.H or 0.0, p.T or 0.0) < DIAMETRO_AGULHAMENTO_DIAGONAL:
+                t = "agulhamento_diagonal"           # Ø3/8" com gancho: agulha diagonal, não contravento
         elif cls == "barra" and _eh_terca(p, camadas.get(p.marca, "")):
             t = "terca_cobertura"
+            parede = de_parede(p)
+            if parede:
+                t = "terca_lateral" if parede == "lateral" else "terca_oitao"
             pts = [q for m in marcas_de(p) for q in centros.get(m, [])]
             if caixa_pil and pts:
                 cx = sum(q[0] for q in pts) / len(pts)
@@ -197,7 +241,9 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
                     t = "terca_marquise"
         elif cls in ("barra", "barra_conformada"):
             t = "agulhamento" if (p.comprimento >= 1500.0 and not conjuntos_de(p)) else "barra"
-            if t == "agulhamento":
+            if t == "agulhamento" and de_parede(p):
+                t = "agulhamento_lateral"
+            if t in ("agulhamento", "agulhamento_lateral"):
                 # barra comprida solta que não é agulha: a cantoneira do forro (L comprida
                 # sem chapas de ponta) e o perfil de fechamento dobrado (U/C com a ponta curva)
                 if re.match(r"^\s*L\s*\d", p.perfil or "", re.I):
@@ -224,10 +270,15 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             tipo_conj[c["marca"]] = "chumbador"
         elif cont.get("contraventamento"):
             tipo_conj[c["marca"]] = "contraventamento"
+        elif cont.get("agulhamento_diagonal"):
+            tipo_conj[c["marca"]] = "agulhamento_diagonal"
         elif len(barras_conj) == 1 and n <= 6 and n == len(barras_conj) + cont.get("chapa", 0) + cont.get("suporte_terca", 0):
-            # uma barra com chapinhas de ponta: agulhamento (a barra é a agulha)
-            tipo_conj[c["marca"]] = "agulhamento"
-            tipo[barras_conj[0]] = "agulhamento"
+            # uma barra com chapinhas de ponta: agulhamento (a barra é a agulha); de parede
+            # quando fica abaixo do apoio das tesouras
+            pb = next((q for q in posicoes if q.marca == barras_conj[0]), None)
+            lateral = pb is not None and de_parede(pb) is not None
+            tipo_conj[c["marca"]] = "agulhamento_lateral" if lateral else "agulhamento"
+            tipo[barras_conj[0]] = tipo_conj[c["marca"]]
         elif cont.get("suporte_terca") and n <= 6:
             tipo_conj[c["marca"]] = "suporte_terca"
         else:
@@ -238,9 +289,9 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             continue
         if tipo[p.marca] == "chapa" and p.L <= 250.0 and any(tipo_conj.get(c) == "contraventamento" for c in cs):
             tipo[p.marca] = "castanha"
-        elif tipo[p.marca] in ("chapa", "suporte_terca") and all(tipo_conj.get(c) == "agulhamento" for c in cs):
+        elif tipo[p.marca] in ("chapa", "suporte_terca") and all(tipo_conj.get(c) in ("agulhamento", "agulhamento_lateral") for c in cs):
             tipo[p.marca] = "suporte_agulhamento"          # as chapinhas de ponta da agulha
-        elif tipo[p.marca] in ("chapa", "barra") and all(tipo_conj.get(c) == "contraventamento" for c in cs):
+        elif tipo[p.marca] in ("chapa", "barra") and all(tipo_conj.get(c) in ("contraventamento", "agulhamento_diagonal") for c in cs):
             tipo[p.marca] = "suporte_contraventamento"     # cantoneiras e chapas de ponta do tirante
 
     def anterior(mapa, chaves, prefixo):

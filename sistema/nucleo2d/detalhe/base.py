@@ -1377,20 +1377,120 @@ def _eh_redonda_perfil(perfil: str) -> bool:
 
 # ============================================================ nomes de produção
 #: Prefixo do nome de produção por tipo de item (padrão dos desenhos da fábrica).
+#: Prefixo do nome de produção por tipo de peça — a nomenclatura da fábrica (0.8.18):
+#: terças de cobertura, laterais e de oitão; agulhamentos de cobertura, laterais/oitão e
+#: diagonais (Ø3/8" com gancho); contraventos; dispositivos (os conjuntos menores); fixação
+#: de telha e acabamento; chapas todas CH (suporte de terça, castanha, chapinha de ponta:
+#: uma numeração só); chumbadores CB; telhas TL. As chaves mudaram em relação às versões
+#: anteriores (S.T., A.G., C.V., CJ.…): projeto com nomes.json antigo renumera na 1ª geração.
 PREFIXO_NOME = collections.OrderedDict([
-    ("tesoura", "T"), ("terca_cobertura", "T.C."), ("terca_marquise", "T.M."), ("suporte_terca", "S.T."),
-    ("agulhamento", "A.G."), ("suporte_agulhamento", "S.A.G."), ("contraventamento", "C.V."),
-    ("suporte_contraventamento", "S.C.V."), ("castanha", "C.S."), ("chapa", "CH."),
-    ("barra_roscada", "B.R."), ("gancho", "G."), ("chumbador", "CB."), ("cantoneira_forro", "CF."), ("perfil_fechamento", "PF."), ("barra", "B."), ("telha", "TL."), ("conjunto", "CJ."), ("parte", ""),
+    ("tesoura", "T"), ("terca_cobertura", "T.C."), ("terca_lateral", "T.L."), ("terca_oitao", "T.O."),
+    ("terca_marquise", "T.M."), ("suporte_terca", "CH"),
+    ("agulhamento", "A.C."), ("agulhamento_lateral", "A.L."), ("agulhamento_diagonal", "A.D."),
+    ("suporte_agulhamento", "CH"), ("contraventamento", "CV."),
+    ("suporte_contraventamento", "CH"), ("castanha", "CH"), ("chapa", "CH"),
+    ("barra_roscada", "BR"), ("gancho", "G."), ("chumbador", "CB"), ("cantoneira_forro", "A.T."), ("perfil_fechamento", "F.T."),
+    ("barra", "B."), ("telha", "TL"), ("conjunto", "DP."), ("parte", ""),
 ])
 TIPOS_NOME = {
-    "tesoura": "Tesoura", "terca_cobertura": "Terça de cobertura", "terca_marquise": "Terça de marquise",
-    "suporte_terca": "Suporte de terça", "agulhamento": "Agulhamento", "suporte_agulhamento": "Suporte de agulhamento",
+    "tesoura": "Tesoura", "terca_cobertura": "Terça de cobertura", "terca_lateral": "Terça lateral",
+    "terca_oitao": "Terça de oitão", "terca_marquise": "Terça de marquise",
+    "suporte_terca": "Suporte de terça", "agulhamento": "Agulhamento de cobertura",
+    "agulhamento_lateral": "Agulhamento lateral / de oitão", "agulhamento_diagonal": "Agulhamento diagonal",
+    "suporte_agulhamento": "Suporte de agulhamento",
     "contraventamento": "Contraventamento", "suporte_contraventamento": "Suporte de contraventamento",
-    "castanha": "Castanha", "chapa": "Chapa", "barra": "Barra", "telha": "Telha", "conjunto": "Conjunto",
-    "barra_roscada": "Barra roscada", "gancho": "Gancho", "chumbador": "Chumbador", "cantoneira_forro": "Cantoneira de forro",
-    "perfil_fechamento": "Perfil de fechamento", "parte": "Parte de conjunto",
+    "castanha": "Castanha", "chapa": "Chapa", "barra": "Barra", "telha": "Telha", "conjunto": "Dispositivo",
+    "barra_roscada": "Barra roscada", "gancho": "Gancho", "chumbador": "Chumbador", "cantoneira_forro": "Acabamento de telha",
+    "perfil_fechamento": "Fixação de telha", "parte": "Parte de conjunto",
 }
+#: Diâmetro (mm) abaixo do qual a barra redonda comprida é agulhamento diagonal (Ø3/8"
+#: com gancho), não contraventamento (Ø1/2" com esticador).
+DIAMETRO_AGULHAMENTO_DIAGONAL = 11.5
+#: Terça ou agulhamento com o centro abaixo do nível de apoio das tesouras (menos esta
+#: folga, mm) é de parede: lateral ou de oitão.
+FOLGA_NIVEL_APOIO = 100.0
+#: Peça em pé (agulhamento de parede) a menos disso das pontas do galpão é de oitão.
+FOLGA_OITAO = 1500.0
+
+
+def _parede_da_peca(e: Solido, eixo_galpao=None, limites_g=None) -> Optional[str]:
+    """"lateral", "oitao" ou None (cobertura) para UMA peça de terça ou agulhamento, pela
+    orientação dela e não pela altura: a terça de parede viaja com a alma deitada (as mesas
+    para cima e para baixo), a de cobertura com a alma de pé ou perpendicular à água; o
+    agulhamento de parede é o que está em pé, ligando terças de parede. Lateral quando a
+    peça corre ao longo do galpão (`eixo_galpao`), de oitão quando atravessada; a peça em
+    pé vai pela posição: de oitão quando está nas pontas do galpão (`limites_g`)."""
+    if len(e.vertices) < 4:
+        return None
+    cc, pca = _autovetores(e.vertices)
+    ext = []
+    for ax in pca:
+        ts = [_dot(_sub(v, cc), ax) for v in e.vertices]
+        ext.append(max(ts) - min(ts))
+    eixo = pca[0]
+    if abs(eixo[2]) <= 0.7:
+        # deitada: a alma é a direção de maior extensão da seção; alma deitada = parede.
+        # Seção quadrada (cantoneira, tubo) não diz nada: fica na cobertura.
+        if ext[1] < 1.3 * ext[2] or abs(pca[1][2]) > 0.5:
+            return None
+        if eixo_galpao is None:
+            return "lateral"
+        return "lateral" if abs(_dot(eixo, eixo_galpao)) > 0.7 else "oitao"
+    if eixo_galpao is None or limites_g is None:
+        return "lateral"
+    g = _dot(cc, eixo_galpao)
+    return "oitao" if min(g - limites_g[0], limites_g[1] - g) < FOLGA_OITAO else "lateral"
+
+
+def peso_teorico(pos: Posicao) -> Optional[float]:
+    """Peso por peça (kg) como a fábrica calcula: perfil dobrado pela tira desenvolvida
+    com o desconto das dobras (NBR 6355 — confere com a planilha da fábrica), laminado,
+    tubo e barra redonda pelo kg/m do catálogo, chapa pelo retângulo envolvente ×
+    espessura. None quando não há como (telha, perfil desconhecido, sem geometria)."""
+    if pos.classe in ("indefinida", "telha"):
+        return None
+    if pos.classe in ("chapa", "chapa_dobrada"):
+        t = float(pos.espessura or pos.T or 0.0)
+        if t <= 0:
+            return None
+        if pos.desenvolvimento:
+            area = float(pos.desenvolvimento[0]) * float(pos.desenvolvimento[1])
+        else:
+            area = float(pos.L) * float(pos.H)
+        return area * t * 7.85e-6 if area > 0 else None
+    comp_m = float(pos.comprimento or 0.0) / 1000.0
+    if comp_m <= 0:
+        return None
+    from saida import dobras
+    r = dobras.pesos(pos.perfil or "")
+    if r is not None and r.get("kg_m_desconto"):
+        return r["kg_m_desconto"] * comp_m
+    try:
+        from nucleo import catalogo
+        it = catalogo.perfil_de(pos.perfil or "")
+    except Exception:                                   # noqa: BLE001 — catálogo indisponível
+        it = None
+    massa = getattr(it, "massa", None) if it is not None else None
+    if massa:
+        return float(massa) * comp_m
+    return None
+
+
+def aplicar_peso_teorico(posicoes: Sequence[Posicao]) -> int:
+    """Troca `peso` pelo teórico em cada posição (o da malha fica em `peso_malha`).
+    Devolve quantas posições ficaram com o da malha por falta de regra (a telha não conta:
+    o peso dela é pela área da malha mesmo); essas ficam com `sem_peso_teorico = True`."""
+    sem = 0
+    for p in posicoes:
+        if getattr(p, "peso_malha", None) is None:
+            p.peso_malha = p.peso
+        pt = peso_teorico(p)
+        p.sem_peso_teorico = pt is None and p.classe != "telha"
+        if pt is None:
+            sem += int(p.sem_peso_teorico)
+            continue
+        p.peso = pt
+    return sem
 
 
 def _ordenar(posicoes: Sequence[Posicao]) -> List[Posicao]:

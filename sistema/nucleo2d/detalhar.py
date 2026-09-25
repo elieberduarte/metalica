@@ -486,6 +486,14 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
         saias = {}
         avisos_lev.append("a saia das telhas de fachada (150 mm abaixo da última longarina) não foi aplicada: %s — "
                           "confira o comprimento dessas telhas" % exc)
+    # o peso da fábrica: teórico (dobrado pela tira com o desconto das dobras, laminado pelo
+    # catálogo, chapa pelo retângulo envolvente); o da malha fica em `peso_malha`
+    from nucleo2d.detalhe.base import aplicar_peso_teorico
+    sem_teorico = aplicar_peso_teorico(posicoes)
+    if sem_teorico:
+        perfis = sorted({str(p.perfil or "?") for p in posicoes if getattr(p, "sem_peso_teorico", False)})
+        avisos_lev.append("%d posição(ões) sem peso teórico (perfil fora do catálogo: %s): ficou o peso da malha 3D"
+                          % (sem_teorico, ", ".join(perfis[:8]) + (" …" if len(perfis) > 8 else "")))
     return {"pecas": pecas, "acessorios": acessorios, "posicoes": posicoes, "camadas": camadas,
             "regra_tercas": mudadas, "ajustes": ajustadas, "saias": saias, "avisos": avisos_lev,
             "fora_do_aco": fora_do_aco, "estrutura_a_conferir": a_conferir,

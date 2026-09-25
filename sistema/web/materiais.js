@@ -302,7 +302,65 @@ async function gerarPDF() {
   } finally { b.disabled = false; }
 }
 
+/* ------------------------------------------------------------ resumos da obra */
+const CAMPOS_RESUMO = [
+  ['revisao', 'Revisão do projeto', 'ex.: R11', false],
+  ['data', 'Data', 'dd/mm/aaaa', false],
+  ['descricao', 'Descrição do projeto', 'ex.: Projeto de fabricação da cobertura metálica', false],
+  ['telha', 'Telha (descrição comercial)', 'ex.: Telha TP40 #0,50 Aluzinc RAL 1015 (bege)', false],
+  ['eixos', 'Eixos das tesouras', 'letras na ordem ao longo do galpão, separadas por vírgula (ex.: A, C, E, G, I, K, L, N); vazio = A, B, C…', false],
+  ['notas_tesouras', 'Notas das tesouras', 'ex.: canto quinado; fabricadas em 2 meias-tesouras emendadas na cumeeira; T3 e T5 são as dos oitões', true],
+];
+
+async function dialogoResumos() {
+  let atual = { dados: {}, sugestoes: {} };
+  try { atual = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/resumos`); } catch (e) { aviso(e.message, true); return; }
+  const dlg = $('#dlg-resumos');
+  const entradas = {};
+  $('#dlg-resumos-campos').replaceChildren(...CAMPOS_RESUMO.map(([id, rotulo, dica, longa]) => {
+    entradas[id] = el(longa ? 'textarea' : 'input', { id: 'dlg-resumos-' + id, placeholder: dica, spellcheck: 'false' });
+    entradas[id].value = atual.dados[id] || atual.sugestoes[id] || '';
+    return [el('label', { for: 'dlg-resumos-' + id, texto: rotulo }), entradas[id]];
+  }).flat());
+  $('#dlg-resumos-erro').hidden = true;
+  const valores = await new Promise((resolver) => {
+    const fechar = (v) => { $('#dlg-resumos-form').onsubmit = null; $('#dlg-resumos-cancelar').onclick = null; dlg.oncancel = null; dlg.close(); resolver(v); };
+    $('#dlg-resumos-form').onsubmit = (ev) => { ev.preventDefault(); const v = {}; for (const [k, i] of Object.entries(entradas)) v[k] = i.value.trim(); fechar(v); };
+    $('#dlg-resumos-cancelar').onclick = () => fechar(null);
+    dlg.oncancel = (ev) => { ev.preventDefault(); fechar(null); };
+    dlg.showModal();
+    entradas.revisao.focus();
+  });
+  if (!valores) return;
+  const b = $('#btn-resumos');
+  b.disabled = true;
+  aviso('Levantando as peças do modelo, montando os resumos e imprimindo os PDFs (leva um pouco)…');
+  try {
+    const r = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/resumos`, { dados: valores });
+    const n = r.numeros || {};
+    const links = [];
+    for (const [k, rot] of [['obra', 'Resumo da obra'], ['materiais', 'Resumo de materiais']]) {
+      const a = r[k] || {};
+      if (a.pdf) links.push(el('a', { href: a.pdf.url, target: '_blank', rel: 'noopener', texto: rot + ' (PDF)' }));
+      if (a.html) links.push(el('a', { href: a.html.url, target: '_blank', rel: 'noopener', texto: rot + ' (HTML)' }));
+    }
+    const caixa = $('#aviso');
+    caixa.hidden = false; caixa.classList.remove('erro');
+    caixa.replaceChildren(`Resumos gerados: ${n.tesouras} tesouras, estrutura ${nfmt(n.peso_aco)} kg, telhas ${nfmt(n.ml_telhas, 2)} ml, ${n.parafusos} parafusos. `,
+      ...links.flatMap(a => [a, ' · ']).slice(0, -1),
+      (r.avisos || []).length ? el('div', { class: 'nota', texto: 'Avisos: ' + r.avisos.slice(0, 4).join(' · ') }) : null);
+    if (r.obra && r.obra.pdf) window.open(r.obra.pdf.url, '_blank');
+    if (r.materiais && r.materiais.pdf) window.open(r.materiais.pdf.url, '_blank');
+    // a lista foi levantada de novo com os nomes atualizados: recarrega
+    carregar(false);
+  } catch (e) {
+    aviso(`Não foi possível gerar os resumos: ${e.message}`, true);
+  } finally { b.disabled = false; }
+}
+const nfmt = (x, casas = 1) => (x === null || x === undefined) ? '—' : Number(x).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+
 document.addEventListener('DOMContentLoaded', () => {
+  $('#btn-resumos').addEventListener('click', dialogoResumos);
   $('#btn-tema').addEventListener('click', alternarTema);
   $('#btn-3d').addEventListener('click', () => { location.href = `/editor?projeto=${encodeURIComponent(PROJETO)}`; });
   $('#btn-cad').addEventListener('click', () => { location.href = `/cad?projeto=${encodeURIComponent(PROJETO)}`; });
