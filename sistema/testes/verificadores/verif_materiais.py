@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Rotas /materiais + tela: detalha o modelo dos compressores, abre a lista de materiais,
 recalcula com barra de 12 m, gera o PDF e confere a navegação 3D → 2D na mesma janela."""
-import base64, json, os, shutil, subprocess, sys, tempfile, time, urllib.request
+import base64, json, os, shutil, subprocess, sys, tempfile, time, urllib.parse, urllib.request
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
@@ -106,7 +106,11 @@ try:
     ok(aba.avaliar("location.pathname === '/cad' && location.search.includes('projeto=compressores')"), "Desenho 2D troca de tela na mesma janela (%s)" % aba.avaliar("location.pathname + location.search"))
     t0 = time.time()
     while time.time() - t0 < 20 and not aba.avaliar("document.body.dataset.pronto === '1'"): aba.drenar(0.5)
-    ok(aba.avaliar("document.querySelector('#link-editor').getAttribute('href')") == "/editor?projeto=compressores", "CAD tem o link de volta ao modelo 3D")
+    # desde a 0.8.10 o link leva também o desenho aberto (o "← Desenho 2D" do editor volta a ele)
+    href = aba.avaliar("document.querySelector('#link-editor').getAttribute('href')")
+    desenho = aba.avaliar("window.cad.nomeDesenho || ''")
+    esperado = "/editor?projeto=compressores" + ("&desenho=" + urllib.parse.quote(desenho, safe="-_.!~*'()") if desenho else "")
+    ok(href == esperado, "CAD tem o link de volta ao modelo 3D (%s)" % href)
     ok(aba.avaliar("!!document.querySelector('[data-acao=materiais]')"), "CAD tem 'Lista de materiais…' no menu")
     aba.avaliar("document.querySelector('[data-acao=materiais]').click(); 1")
     t0 = time.time()

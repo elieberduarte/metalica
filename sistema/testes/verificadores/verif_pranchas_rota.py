@@ -30,8 +30,10 @@ nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swi
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
-    r = post("/api/projetos/compressores/detalhar", {"grupos": ["chapas", "barras"]})
+    # grupos por família (0.7.22): as chapas estão no desenho "chaparias" (era "chapas")
+    r = post("/api/projetos/compressores/detalhar", {"grupos": ["chaparias", "tercas"]})
     nomes = [d["nome"] for d in r["desenhos"]]
+    chaparias = next(d["nome"] for d in r["desenhos"] if d["grupo"] == "chaparias")
     t0 = time.time()
     p = post("/api/projetos/compressores/pranchas", {"desenhos": nomes, "formato": "A1", "carimbo": {"revisao": "01"}})
     ok(len(p["pranchas"]) >= 3, "rota montou %d pranchas A1 em %.1f s: %s" % (len(p["pranchas"]), time.time() - t0, [(x["titulo"], x["celulas"]) for x in p["pranchas"]]))
@@ -53,7 +55,7 @@ try:
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1500, height=950, deviceScaleFactor=1, mobile=False)
     aba.navegar(base + "/"); aba.avaliar("localStorage.setItem('galpao.tema','claro'); 1"); aba.console.clear()
-    aba.navegar(base + "/cad?projeto=compressores&desenho=" + nomes[0], limite=30)
+    aba.navegar(base + "/cad?projeto=compressores&desenho=" + chaparias, limite=30)
     t0 = time.time()
     while time.time() - t0 < 30 and not aba.avaliar("document.body.dataset.pronto === '1' && window.cad && window.cad.doc.tamanho > 50"): aba.drenar(0.5)
     # seleciona duas células (P36 e P12) e monta só com elas
@@ -63,15 +65,18 @@ try:
     aba.avaliar("document.querySelector('dialog[open] .botao-ok').click(); 1")
     t0 = time.time()
     while time.time() - t0 < 120 and not aba.avaliar("document.title.startsWith('Prancha')"): aba.drenar(1.0)
-    # as chapas ficam no quadro CHAPAS, que pode cair noutra prancha: olha todas
+    # as chapas ficam no quadro CHAPAS, que pode cair noutra prancha: olha todas. O título da
+    # célula agora é o nome de produção (S.A.G.1 – 168x); a posição do modelo vai em "marca"
+    # (peças iguais fundidas: "P36 / P40")
     cel = []
     for d in json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos")):
         if d["nome"].startswith("prancha-"):
             meta = json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos/" + d["nome"]))["desenho"]["metadados"]["prancha"]
-            cel += [c["titulo"] for c in meta["celulas"] if c["fonte"] == "detalhamento-chapas"]
-    ok(len(cel) == 2 and all(c.startswith(("P36", "P12")) for c in cel), f"do desenho de chapas entraram só as células selecionadas: {cel}")
+            cel += [(c["titulo"], c.get("marca")) for c in meta["celulas"] if c["fonte"] == chaparias]
+    marcas = sorted(m for _, mc in cel for m in str(mc or "").split(" / ") if m in ("P36", "P12"))
+    ok(len(cel) == 2 and marcas == ["P12", "P36"], f"do desenho de chaparias entraram só as células selecionadas (P36 e P12): {cel}")
     aba.avaliar("window.cad.selecionar([]); 1")
-    aba.navegar(base + "/cad?projeto=compressores&desenho=" + nomes[0], limite=30)
+    aba.navegar(base + "/cad?projeto=compressores&desenho=" + chaparias, limite=30)
     t0 = time.time()
     while time.time() - t0 < 30 and not aba.avaliar("document.body.dataset.pronto === '1' && window.cad && window.cad.doc.tamanho > 50"): aba.drenar(0.5)
     aba.avaliar("window.cad.dialogoPranchas(); 1"); aba.drenar(1.5)

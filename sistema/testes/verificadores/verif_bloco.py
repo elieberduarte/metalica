@@ -99,9 +99,14 @@ try:
     ok(not erros, "sem erros no console do editor (chapas com oblongos na cena): %s" % erros[:3])
     # 6) duplo clique numa peça → detalhe no CAD
     aba.avaliar("""(() => { const e = [...window.editor.documento.entidades.values()].find(x => x.atributos && x.atributos.marcas && x.atributos.marcas.posicao === 'P42'); window.editor.abrirDetalheDaPeca(e); return 1; })()""")
+    # o detalhe é gerado no servidor antes de trocar de tela (location.href): na máquina
+    # ocupada passa de 60 s. Espera o CAD ou o aviso de erro do editor, e mostra qual veio.
+    erro_det = "(() => { const a = [...document.querySelectorAll('.aviso')].find(x => x.dataset.tipo === 'erro'); return a ? a.textContent : ''; })()"
     t0 = time.time()
-    while time.time() - t0 < 60 and not aba.avaliar("location.pathname === '/cad' && location.search.includes('detalhe-p42')"): aba.drenar(1.0)
-    ok(aba.avaliar("location.search.includes('detalhe-p42')"), "duplo clique na peça abre o CAD no detalhe (%s)" % aba.avaliar("location.search"))
+    while time.time() - t0 < 240 and not aba.avaliar("(location.pathname === '/cad' && location.search.includes('detalhe-p42')) || (location.pathname === '/editor' && !!" + erro_det + ")"): aba.drenar(1.0)
+    onde = aba.avaliar("location.pathname + location.search")
+    ok(aba.avaliar("location.pathname === '/cad' && location.search.includes('detalhe-p42')"),
+       "duplo clique na peça abre o CAD no detalhe em %.0f s (%s%s)" % (time.time() - t0, onde, (" — " + aba.avaliar(erro_det)) if onde.startswith("/editor") else ""))
     t0 = time.time()
     while time.time() - t0 < 30 and not aba.avaliar("document.body.dataset.pronto === '1' && window.cad && window.cad.doc.tamanho > 5"): aba.drenar(0.5)
     ok(aba.avaliar("window.cad.doc.metadados.detalhe_posicao.marca") == "P42", "detalhe de P42 aberto")

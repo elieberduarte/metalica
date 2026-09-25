@@ -95,12 +95,21 @@ try:
     d = json.load(open(arq, encoding="utf-8"))
     ok(any(e["tipo"] == "cota" for e in d["entidades"]), "a cota está no arquivo gravado")
     aba.avaliar("window.cad.exportarDXF(); 1")
+    # o arquivo aparece antes de a ezdxf terminar de escrevê-lo: espera o aviso da tela
+    fim_dxf = "[...document.querySelectorAll('.aviso')].map(a => a.textContent).find(t => /DXF gerado|Não foi possível exportar/.test(t)) || ''"
     t0 = time.time(); dxf = os.path.join(DADOS, "compressores", "desenhos-2d", "corte-tesoura.dxf")
-    while time.time() - t0 < 30 and not os.path.exists(dxf): aba.drenar(1.0)
-    ok(os.path.exists(dxf), "DXF exportado pelo botão")
+    while time.time() - t0 < 60 and not aba.avaliar(fim_dxf): aba.drenar(1.0)
+    ok(os.path.exists(dxf) and "DXF gerado" in aba.avaliar(fim_dxf), "DXF exportado pelo botão: %s" % aba.avaliar(fim_dxf)[:120])
     if os.path.exists(dxf):
         txt = open(dxf, encoding="cp1252", errors="replace").read()
-        ok(txt.rstrip().endswith("EOF") and "\n8\nACO\n" in txt and "\n8\nCOTA\n" in txt and "\n8\nHACHURA\n" in txt, "DXF com camadas ACO, COTA e HACHURA")
+        # DXF R2010 (nucleo2d/dxf_cad.py): as camadas do CAD vão com o nome delas (a peça
+        # cortada em CORTE, a vista em VISTA; o ACO era do DXF R12 antigo), a cota vira
+        # DIMENSION e a hachura, HATCH
+        import re as _re
+        camadas = set(_re.findall(r"\n  8\n([A-Za-z][^\n]*)\n", txt))
+        tipos = set(_re.findall(r"\n\s*0\n([A-Z_]+)\n", txt))
+        ok(txt.rstrip().endswith("EOF") and {"CORTE", "VISTA", "COTA", "HACHURA"} <= camadas and {"DIMENSION", "HATCH"} <= tipos,
+           "DXF com camadas CORTE, VISTA, COTA e HACHURA, cota DIMENSION e HATCH (%s)" % sorted(camadas))
         from saida import dxf_render
         dxf_render.para_png(dxf, os.path.join(SCR, "cad_3_dxf.png"), dpi=80, largura=16)
 

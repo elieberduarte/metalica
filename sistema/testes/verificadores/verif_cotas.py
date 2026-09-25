@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Cotas associativas: mover um furo no CAD leva a cota da coluna junto; vínculo chapa → terça
 gravado no projeto ao aplicar furos."""
-import json, os, shutil, subprocess, sys, tempfile, time, urllib.request
+import json, os, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, _json, _porta_livre
@@ -17,7 +17,11 @@ base = f"http://localhost:{PORTA}"
 def get(rota):
     return json.load(urllib.request.urlopen(base + rota, timeout=600))
 def post(rota, corpo):
-    return json.load(urllib.request.urlopen(urllib.request.Request(base + rota, data=json.dumps(corpo).encode(), headers={"Content-Type": "application/json"}), timeout=600))
+    try:
+        return json.load(urllib.request.urlopen(urllib.request.Request(base + rota, data=json.dumps(corpo).encode(), headers={"Content-Type": "application/json"}), timeout=600))
+    except urllib.error.HTTPError as e:
+        # a mensagem do servidor vai junto (antes só aparecia "400 Bad Request")
+        raise RuntimeError("%s → HTTP %s: %s" % (rota, e.code, e.read().decode("utf-8", "replace")[:500])) from None
 falhas = []
 def ok(c, m):
     print(("  ok    " if c else "  FALHA ") + m)
@@ -26,8 +30,9 @@ chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); pe
 nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars", "--no-first-run",
                         "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
-    r = post("/api/projetos/compressores/detalhar", {"grupos": ["chapas", "barras"]})
-    nome = [d["nome"] for d in r["desenhos"] if "chapas" in d["nome"]][0]
+    # grupos por família (0.7.22): as chapas estão no desenho "chaparias" e as terças no "terças"
+    r = post("/api/projetos/compressores/detalhar", {"grupos": ["chaparias", "tercas"]})
+    nome = [d["nome"] for d in r["desenhos"] if d["grupo"] == "chaparias"][0]
     for _ in range(60):
         alvos = [t for t in _json(f"http://127.0.0.1:{cdp}/json/list") if t.get("type") == "page"]
         if alvos: break
@@ -62,9 +67,14 @@ try:
     aba.avaliar("(() => { const rot = %s; const c = window.cad._contornoDe(rot); window.cad.selecionar([c.id]); window.cad.aplicarFuros(); return 1; })()" % json.dumps(rotulo)); aba.drenar(1.5)
     aba.avaliar("document.querySelector('dialog[open] .botao-ok').click(); 1")
     caminho = os.path.join(DADOS, "compressores", "detalhamento", "ajustes-furos.json")
+    # espera o Aplicar terminar de todo (o vínculo é gravado antes; depois vêm o modelo 3D e
+    # a célula regenerada): detalhar antes disso leria o modelo que o Aplicar ainda vai
+    # regravar, e o servidor recusa com "gravado por outra tela" (ModeloMudouNoMeio, 0.8.12)
+    fim = "[...document.querySelectorAll('.aviso')].map(a => a.textContent).find(t => /desenho regenerado|Não foi possível aplicar/.test(t)) || ''"
     t0 = time.time()
-    while time.time() - t0 < 60 and not os.path.exists(caminho): aba.drenar(0.5)
-    aba.drenar(3.0)
+    while time.time() - t0 < 120 and not aba.avaliar(fim): aba.drenar(0.5)
+    aviso = aba.avaliar(fim)
+    ok("desenho regenerado" in aviso, "Aplicar furos terminou: %s" % aviso[:160])
     aj = json.load(open(caminho, encoding="utf-8")) if os.path.exists(caminho) else {}
     ok(len(aj) >= 1, "vínculo gravado: %d terça(s) ajustada(s) %s" % (len(aj), sorted(aj)[:6]))
     if aj:
@@ -72,11 +82,11 @@ try:
         print("       origem:", primeira.get("origem", "")[:90])
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, "sem erros no console: %s" % erros[:3])
-    # o detalhamento seguinte das barras aplica o ajuste
-    r2 = post("/api/projetos/compressores/detalhar", {"grupos": ["barras"]})
+    # o detalhamento seguinte das terças aplica o ajuste
+    r2 = post("/api/projetos/compressores/detalhar", {"grupos": ["tercas"]})
     rel = json.load(open(os.path.join(DADOS, "compressores", "detalhamento", "relatorio.json"), encoding="utf-8"))
     vinculadas = [p["marca"] for p in rel["posicoes"] if any("vinculada" in o for o in p.get("observacoes", []))]
-    ok(len(vinculadas) >= 1, "detalhamento das barras aplicou a furação vinculada em %s" % vinculadas[:6])
+    ok(len(vinculadas) >= 1, "detalhamento das terças aplicou a furação vinculada em %s" % vinculadas[:6])
 finally:
     nav.kill(); srv.kill(); shutil.rmtree(perfil, ignore_errors=True)
 print("\n%d falha(s)." % len(falhas))

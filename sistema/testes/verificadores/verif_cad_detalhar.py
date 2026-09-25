@@ -47,9 +47,16 @@ try:
     aba.avaliar("window.cad.dialogoDetalhar(); 1"); aba.drenar(1.0)
     ok(aba.avaliar("!!document.querySelector('dialog[open]')"), "diálogo abriu")
     aba.avaliar("document.querySelector('dialog[open] .botao-ok').click(); 1")
+    # o detalhamento completo (dez desenhos por família) leva perto de 2 min nesta máquina:
+    # espera o primeiro desenho abrir ou o aviso de erro, com folga para a máquina ocupada
     t0 = time.time()
-    while time.time() - t0 < 120 and not aba.avaliar("window.cad.doc.tamanho > 100"): aba.drenar(1.0)
-    ok(aba.avaliar("window.cad.doc.tamanho") > 100 and aba.avaliar("document.title").startswith("Detalhamento"), "detalhou e abriu o desenho de chapas no CAD: %s" % aba.avaliar("document.title"))
+    while time.time() - t0 < 420 and not aba.avaliar("(window.cad.doc.tamanho > 100 && /^detalhamento/.test(window.cad.nomeDesenho || '')) || !!document.querySelector('.aviso[data-tipo=\"erro\"]')"): aba.drenar(1.0)
+    erro = aba.avaliar("(document.querySelector('.aviso[data-tipo=\"erro\"]') || {}).textContent || ''")
+    ok(not erro, "Detalhar sem aviso de erro: %s" % erro[:300])
+    # os grupos agora são por família; o primeiro desenho é o das tesouras (antes era o das chapas)
+    ok(aba.avaliar("window.cad.doc.tamanho") > 100 and aba.avaliar("window.cad.nomeDesenho") == "detalhamento-tesouras"
+       and aba.avaliar("document.title").startswith("Detalhamento") and aba.avaliar("document.title").endswith("— Desenho 2D"),
+       "detalhou em %.0f s e abriu o primeiro desenho (tesouras) no CAD: %s / %s" % (time.time() - t0, aba.avaliar("window.cad.nomeDesenho"), aba.avaliar("document.title")))
     erros = [c for c in aba.console if c[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")
     for t, x in erros[:6]: print("     [%s] %s" % (t, x[:300]))

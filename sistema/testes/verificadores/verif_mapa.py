@@ -6,6 +6,9 @@ sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, CHAVE_ESTADO, CONTAR_OBJETOS, _json, _porta_livre
 from nucleo.modelo_galpao import DadosGalpao
 
+if len(sys.argv) < 3:
+    print("precisa do servidor rodando e de onde gravar a imagem: python verif_mapa.py PORTA SAIDA.png [claro|escuro]")
+    sys.exit(0)
 porta = int(sys.argv[1]); saida = sys.argv[2]; tema = sys.argv[3] if len(sys.argv) > 3 else "claro"
 base_url = f"http://localhost:{porta}"
 dados = DadosGalpao(nome="Verificação do mapa").dict()

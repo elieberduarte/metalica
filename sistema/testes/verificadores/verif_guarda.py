@@ -70,14 +70,23 @@ try:
        "os parafusos junto do furo 0 mudaram de lugar no modelo (%d)" % len(movidos))
     novo = p77(doc1)
     # 3) o editor velho tenta gravar: recusado, modelo intacto
-    aba.avaliar("window.editor._autosavePendente = true; window.editor._autosalvar(); 1"); aba.drenar(5.0)
+    aba.avaliar("window.editor._autosavePendente = true; window.editor._autosalvar(); 1"); aba.drenar(1.0)
+    t0 = time.time()
+    while time.time() - t0 < 60 and aba.avaliar("window.editor._autosalvando"): aba.drenar(0.5)
     ok(p77(modelo()) == novo, "modelo continua com a furação nova depois do autosave do editor velho (%s)" % (novo[:2],))
     ok(aba.avaliar("!!document.querySelector('.aviso.erro, .avisos .erro, [class*=aviso]') && /Recarregue/i.test(document.body.textContent)"), "editor velho avisou para recarregar")
     # 4) editor recarregado grava normalmente
     aba.navegar(base + "/editor?projeto=compressores", limite=60)
     t0 = time.time()
     while time.time() - t0 < 60 and not aba.avaliar("window.editor && window.editor.documento && window.editor.documento.tamanho > 10 && window.editor._modeloAlterado"): aba.drenar(1.0)
-    aba.avaliar("window.editor._autosavePendente = true; window.editor._autosalvar(); 1"); aba.drenar(6.0)
+    # espera a gravação terminar antes de sair da tela: sair com ela em curso dispara o aviso
+    # de edição por gravar (beforeunload, 0.8.12), que é o comportamento certo do editor
+    alterado0 = aba.avaliar("window.editor._modeloAlterado")
+    aba.avaliar("window.editor._autosavePendente = true; window.editor._autosalvar(); 1"); aba.drenar(1.0)
+    t0 = time.time()
+    while time.time() - t0 < 120 and aba.avaliar("window.editor._autosalvando || window.editor._autosavePendente"): aba.drenar(0.5)
+    ok(aba.avaliar("!window.editor._autosalvando && !window.editor._autosavePendente") and aba.avaliar("window.editor._modeloAlterado") != alterado0,
+       "gravação do editor recarregado terminou e o servidor devolveu a data nova do modelo")
     ok(p77(modelo()) == novo and aba.avaliar("!/Recarregue/i.test((document.querySelector('.dica') || {}).textContent || '')"), "editor recarregado grava sem recusa e mantém a furação nova")
     # 5) fantasma opaco
     aba.navegar(base + "/editor?projeto=compressores&destacar=posicao:P77", limite=60)
@@ -85,8 +94,11 @@ try:
     while time.time() - t0 < 60 and not aba.avaliar("window.editor && window.editor.selecao && window.editor.selecao.ids.size > 0"): aba.drenar(1.0)
     aba.drenar(2.5)
     ok(aba.avaliar("(() => { const c = window.editor.cena; const m = c._materialFantasma(); return m.transparent === false && c.destaque && c.destaque.size === 18; })()"), "fantasma opaco ligado no Ver no 3D")
-    erros = [m for m in aba.console if m[0] in ("error", "excecao")]
-    ok(not erros, "sem erros no console: %s" % erros[:3])
+    # o 400 do /modelo é a recusa do servidor à gravação do editor velho, provocada no passo 3
+    recusas = [m for m in aba.console if m[0] == "error" and "400" in m[1] and "/api/projetos/compressores/modelo" in m[1]]
+    erros = [m for m in aba.console if m[0] in ("error", "excecao") and m not in recusas]
+    ok(len(recusas) == 1, "uma única recusa (400) do /modelo, a do editor velho: %d" % len(recusas))
+    ok(not erros, "sem outros erros no console: %s" % erros[:3])
 finally:
     nav.kill(); srv.kill(); shutil.rmtree(perfil, ignore_errors=True)
 print("\n%d falha(s)." % len(falhas))
