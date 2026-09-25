@@ -118,6 +118,30 @@ try:
       return JSON.stringify(out); })()"""))
     for x in r5:
         ok(x["desvio"] < 6 and x["pega"], f"quadro do parafuso do IFC {x['nome']}: pega {x['pega']} mm, a peça refeita fica a {x['desvio']:.1f} mm da original")
+    # 6) o caso da terça: clique na mesa perto da ponta chega grudado no vértice do canto
+    #    (snap de extremidade); o furo tem de ir para o ponto da face sob o cursor
+    r6 = json.loads(aba.avaliar("""(async () => { const ed = window.editor, doc = ed.documento; %s
+      const mesa = caixa(100000, 0, 100, 101000, 50, 102.3, 'MESA');
+      ed.camera.enquadrar(doc.caixa([mesa.id])); ed.camera.controles.update();
+      await new Promise(r => setTimeout(r, 300));
+      const alvoMM = [100930, 25, 102.3];                      // 70 mm da ponta, no meio da mesa
+      const t = ed.camera.paraTela(alvoMM);
+      ed.ativarFerramenta('furo'); ed.ativa._definir(14); ed.ativa.constructor.comp = null; ed.ativa.constructor.eixos = true;
+      ed.ativa.onPonto({ entidade: mesa.id, ponto: [101000, 50, 102.3], normal: [0, 0, 1], face: 1, tipoSnap: 'extremidade', tela: [t[0], t[1]] });
+      const e = doc.get(mesa.id);
+      const reg = (e.atributos.furos_editor || [])[0];
+      const marcadores = [...doc.entidades.values()].filter(x => x.atributos && x.atributos.furo && x.atributos.furo.peca === mesa.id).length;
+      return JSON.stringify({ reg: reg ? reg.ponto.map(v => Math.round(v)) : null, marcadores }); })()""" % CAIXA))
+    ok(r6["reg"] and abs(r6["reg"][0] - 100930) <= 15 and abs(r6["reg"][1] - 25) <= 3 and r6["marcadores"] == 0,
+       f"clique grudado no canto: o furo foi para a face sob o cursor, no eixo da mesa, sem marcador: {r6}")
+    # 7) perto demais da borda: nada é criado
+    r7 = json.loads(aba.avaliar("""(() => { const ed = window.editor, doc = ed.documento;
+      const mesa = [...doc.entidades.values()].find(x => x.nome === 'MESA');
+      const antes = doc.entidades.size, nv = mesa.vertices.length;
+      ed.ativa.constructor.eixos = false;
+      ed.ativa.onPonto({ entidade: mesa.id, ponto: [100995, 25, 102.3], normal: [0, 0, 1], face: 1, tipoSnap: 'sobre_face' });
+      return JSON.stringify([doc.entidades.size - antes, doc.get(mesa.id).vertices.length - nv]); })()"""))
+    ok(r7 == [0, 0], f"furo que não cabe na face (5 mm da ponta) não cria nada: {r7}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

@@ -22,7 +22,7 @@
 
 import { FerramentaParafuso, tamanhoDoFixador } from './parafuso.js';
 import * as C from './_comum.js';
-import { LADOS, furarMalha, furoNaChapa, lacoDaForma, ehOblongo, rotuloDaForma, comMalhaBase } from './_furar.js';
+import { LADOS, furarMalha, furoNaChapa, lacoDaForma, ehOblongo, rotuloDaForma, comMalhaBase, faceDoPonto } from './_furar.js';
 
 //: diâmetros usuais de furo (parafuso + 1 mm, e os oblongos da terça abertos por broca)
 const DIAMETROS = [9, 11, 13, 14, 15, 17.5, 18, 20, 22, 24, 26, 28];
@@ -107,6 +107,9 @@ export class FerramentaFuro extends FerramentaParafuso {
   }
 
   get rotuloAtual() { return rotuloDaForma({ d: this.diametro, comp: this.constructor.comp, dir: [1, 0, 0] }); }
+
+  /** Folga do centro até a borda: metade do furo (do comprimento, no oblongo) + 1 mm. */
+  _margemDaBorda() { return (this.oblongo ? Math.max(this.constructor.comp, this.diametro) : this.diametro) / 2 + 1; }
 
   get oblongo() { return !!(this.constructor.comp && this.constructor.comp > this.diametro + 0.5); }
 
@@ -289,7 +292,7 @@ export class FerramentaFuro extends FerramentaParafuso {
         const q = C.sub(f.c, C.mul(n, t));                           // o furo de baixo levado ao plano da face
         const dd = C.dist(q, ponto);
         if (dd > 400) continue;
-        if (dd <= tol && (!preso || dd < preso.dd)) preso = { q, dd, f, e };
+        if (dd <= tol && (!preso || dd < preso.dd) && this._dentroDaFace(q, base.face)) preso = { q, dd, f, e };
         else extra.push(this._circulo(C.add(q, C.mul(n, 0.5)), n, Math.max(f.d, 6) / 2, '#8a94a6'));
       }
     }
@@ -299,7 +302,7 @@ export class FerramentaFuro extends FerramentaParafuso {
       const nomeB = (preso.e.atributos && preso.e.atributos.marcas && (preso.e.atributos.marcas.nome || preso.e.atributos.marcas.posicao)) || preso.e.nome || 'peça de baixo';
       extra.push(C.gRotulo(`no furo Ø${mm(preso.f.d)} de ${nomeB}`, C.add(ponto, C.mul(n, 90)), '#0a8f3c'));
     }
-    return { ponto, extra };
+    return { ponto, extra, face: base.face };
   }
 
   /**
@@ -309,6 +312,7 @@ export class FerramentaFuro extends FerramentaParafuso {
    */
   onMover(p) {
     this.limparPrevia();
+    p = this._naFace(p);
     if (!p || !p.entidade) return;
     const n = this.normalDoPonto(p);
     if (!n) return;
@@ -320,6 +324,7 @@ export class FerramentaFuro extends FerramentaParafuso {
   }
 
   onPonto(p) {
+    p = this._naFace(p);
     if (!p || !p.entidade) { this.dica('Clique numa face de uma peça (barra, chapa, perfil)'); return; }
     const n = this.normalDoPonto(p);
     if (!n) { this.dica('Não deu para saber a face: clique no meio de uma face plana'); return; }
@@ -343,6 +348,15 @@ export class FerramentaFuro extends FerramentaParafuso {
       this.executar(C.cmdAlterar(alvo.id, { vertices: malha.vertices, faces: malha.faces, atributos }, 'Furo'));
       this.dica(`Furo ${this.rotuloAtual} aberto na peça (parede de ${mm(malha.profundidade)} mm) · clique no próximo, ou troque o diâmetro no painel (Esc sai)`);
       return;
+    }
+    // o furo não coube na face (perto demais da borda, ou em cima de outro furo): nada é
+    // criado — antes virava um marcador no canto da peça
+    if (alvo && alvo.tipo === 'solido' && alvo.faces && alvo.faces.length) {
+      const k = faceDoPonto(alvo, ponto, n, p.face);
+      if (k < 0 || !this._dentroDaFace(ponto, this.eixosDaFace(p, n))) {
+        this.dica(`O furo ${this.rotuloAtual} não cabe aí: fica a menos de ${mm(this._margemDaBorda())} mm da borda da face ou em cima de outro furo — clique mais para dentro`);
+        return;
+      }
     }
     // sem a face de trás (parede não reconhecida, barra paramétrica): o marcador
     const prof = this._profundidade(alvo, ponto, n);

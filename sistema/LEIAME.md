@@ -218,6 +218,13 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.26.** Furo que ia para o canto da peça (print do usuário: clicou na mesa da terça perto da ponta e o furo foi
+para o vértice): o ponto que chega às ferramentas Furo e Parafuso vinha grudado pela inferência do editor (snap de
+extremidade/aresta); agora elas usam o raio contra a peça sob o cursor (`_naFace`). O ajuste pelo eixo da peça de baixo e
+pelos furos de baixo só vale se o ponto continua dentro da face com a folga do furo (`_dentroDaFace`) — a terça que
+termina antes do eixo do banzo levava o furo para fora dela —, e o furo que não cabe na face não cria nada (antes virava
+um marcador no canto).
+
 **0.8.25.** Rodada de ajustes do editor 3D e da lista de materiais. (1) **O parafuso fura o que atravessa**: ao
 colocar, cada parede que o corpo cruza de frente (a face clicada, a mesa de baixo, a chapa do suporte) ganha o furo
 d + 1 mm na malha, e a chapa paramétrica em `furos`; onde já há furo no eixo (o do IFC), nada muda. Parafuso e furos são

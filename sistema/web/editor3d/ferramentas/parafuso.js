@@ -341,6 +341,31 @@ export class FerramentaParafuso extends Ferramenta {
     return extra;
   }
 
+  /**
+   * O ponto de verdade na face sob o cursor. A inferência do editor gruda o cursor em
+   * extremidades e arestas perto dele — ótimo para desenhar, errado para furar: clicando na
+   * mesa perto da ponta da terça, o furo ia para o vértice do canto. Aqui vale o raio
+   * contra a peça (a face, o ponto e a normal dela).
+   */
+  _naFace(p) {
+    if (!p || !p.tela || p.tipoSnap === 'sobre_face') return p;
+    const sel = this.editor && this.editor.selecao;
+    const alvo = sel && sel.sob ? sel.sob(p.tela[0], p.tela[1]) : null;
+    if (!alvo || !alvo.id) return p;
+    return { ...p, ponto: alvo.ponto, entidade: alvo.id, face: alvo.face, normal: alvo.normal || p.normal, tipoSnap: 'sobre_face' };
+  }
+
+  /** Folga (mm) do centro do furo/parafuso até a borda da face: metade do furo + 1 mm. */
+  _margemDaBorda() { return furoDoParafuso(this.tamanho ? this.tamanho.d : 12) / 2 + 1; }
+
+  /** O ponto está dentro da face (a extensão dos vértices no plano dela), com a folga? */
+  _dentroDaFace(q, f) {
+    if (!f) return true;
+    const m = this._margemDaBorda();
+    const a_ = C.dot(q, f.e1), b_ = C.dot(q, f.e2);
+    return a_ >= f.min1 + m - 0.01 && a_ <= f.max1 - m + 0.01 && b_ >= f.min2 + m - 0.01 && b_ <= f.max2 - m + 0.01;
+  }
+
   normalDoPonto(p) {
     const ent = p.entidade && this.documento && this.documento.get(p.entidade);
     if (ent && ent.tipo === 'chapa') {
@@ -513,10 +538,13 @@ export class FerramentaParafuso extends Ferramenta {
       let preso = false;
       if (Math.abs(dist_) <= tol) {
         // anda na direção atravessada ao eixo de baixo; se o eixo da face estava preso e as
-        // duas linhas não são paralelas, fica no cruzamento (anda ao longo do eixo da face)
-        if (presoC2 && Math.abs(C.dot(ax.f, e1)) > 0.2) ponto = C.add(ponto, C.mul(e1, -dist_ / C.dot(ax.f, e1)));
-        else ponto = C.add(ponto, C.mul(ax.f, -dist_));
-        preso = true;
+        // duas linhas não são paralelas, fica no cruzamento (anda ao longo do eixo da face).
+        // Só vale se o ponto continua na face: a terça que termina antes do eixo do banzo
+        // levava o furo para fora dela.
+        let novo;
+        if (presoC2 && Math.abs(C.dot(ax.f, e1)) > 0.2) novo = C.add(ponto, C.mul(e1, -dist_ / C.dot(ax.f, e1)));
+        else novo = C.add(ponto, C.mul(ax.f, -dist_));
+        if (this._dentroDaFace(novo, f)) { ponto = novo; preso = true; }
       }
       baixo.push({ e, ax, preso });
       if (baixo.length >= 1) break;              // o primeiro de baixo basta (o banzo)
@@ -548,11 +576,12 @@ export class FerramentaParafuso extends Ferramenta {
       const t2 = `${nomeB}: ${preso ? 'no eixo' : mm(Math.abs(s)) + ' mm do eixo'} · bordas ${mm(q - ax.min)} | ${mm(ax.max - q)} mm`;
       extra.push(C.gRotulo(t2, C.add(ponto, C.add(C.mul(n, 60), C.mul(ax.f, 0.5 * (ax.max - ax.min) + 60))), '#7a5a00'));
     }
-    return { ponto, extra };
+    return { ponto, extra, face: f };
   }
 
   onMover(p) {
     this.limparPrevia();
+    p = this._naFace(p);
     if (!p || !p.entidade) return;
     const n = this.normalDoPonto(p);
     if (!n) return;
@@ -563,6 +592,7 @@ export class FerramentaParafuso extends Ferramenta {
   }
 
   onPonto(p) {
+    p = this._naFace(p);
     if (!p || !p.entidade) { this.dica('Clique numa face de uma peça (barra, chapa, perfil)'); return; }
     const n = this.normalDoPonto(p);
     if (!n) { this.dica('Não deu para saber a face: clique no meio de uma face plana'); return; }

@@ -51,20 +51,25 @@ try:
     txt = aba.avaliar("window.editor.el.props.textContent")
     ok("Furo a fazer" in txt and "Já usados no modelo" in txt and "Ø13" in txt, "painel do furo: " + txt[:160])
     aba.avaliar("window.editor.ativa._definir(14); 1")
-    # a alma da P80: o marcador nasce na face, com a profundidade da parede e o eixo para dentro
+    # parede grossa demais para achar a face de trás (100 mm): o marcador nasce na face, com a
+    # profundidade da parede e o eixo para dentro
     r = json.loads(aba.avaliar("""JSON.stringify((() => {
       const ed = window.editor, doc = ed.documento;
-      const e = [...doc.entidades.values()].find(x => x.atributos && x.atributos.marcas && x.atributos.marcas.posicao === 'P80');
-      const vs = e.vertices; const c = [0,1,2].map(i => vs.reduce((s, v) => s + v[i], 0) / vs.length);
+      const v = [];
+      for (const z of [0, 100]) for (const [x, y] of [[50000,0],[51000,0],[51000,100],[50000,100]]) v.push([x, y, z]);
+      const e = doc.add({ tipo: 'solido', nome: 'BLOCO', camada: 'Vigas', vertices: v,
+        faces: [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]], arestas_vivas: [], atributos: {} });
       const n0 = doc.entidades.size;
-      ed.ativa.onPonto({ entidade: e.id, ponto: c, normal: [0, 1, 0] });
+      ed.ativa.constructor.eixos = false;
+      ed.ativa.onPonto({ entidade: e.id, ponto: [50500, 50, 100], normal: [0, 0, 1], face: 1, tipoSnap: 'sobre_face' });
+      ed.ativa.constructor.eixos = true;
       const novo = [...doc.entidades.values()].find(x => x.atributos && x.atributos.furo);
       const fu = novo && novo.atributos.furo;
       return [doc.entidades.size - n0, novo ? novo.camada : null, novo ? novo.atributos.tipo_ifc : null, novo ? novo.atributos.exportar : null,
               fu ? fu.d : null, fu ? fu.eixo.map(v => Math.round(v * 100) / 100) : null, fu ? Math.round(fu.profundidade * 10) / 10 : null, novo ? novo.vertices.length : 0];
     })())"""))
     ok(r[0] == 1 and r[1] == "Furos" and r[2] == "IfcOpeningElement" and r[3] is False and r[4] == 14 and r[7] == 32, f"marcador criado: {r}")
-    ok(r[5] == [0, -1, 0] and r[6] is not None and 0 < r[6] <= 60, f"eixo para dentro da face e profundidade da parede: {r[5]} {r[6]}")
+    ok(r[5] == [0, 0, -1] and r[6] is not None and 0 < r[6] <= 60, f"eixo para dentro da face e profundidade da parede: {r[5]} {r[6]}")
     ok(aba.avaliar("(window.editor.desfazer(), [...window.editor.documento.entidades.values()].every(x => !(x.atributos && x.atributos.furo)))"), "Ctrl+Z desfaz")
     # furo de verdade na malha: caixa 1000 × 100 × 6 (uma chapa deitada), clique na face de
     # cima com o índice da face → a face e a de trás ganham o laço costurado e a parede o cilindro
