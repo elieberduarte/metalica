@@ -931,8 +931,16 @@ export class Editor {
     this.documento.nome = n;
     try {
       if (this.projeto && !nome) {
+        if (this._modeloNaoAbriu) throw new Error('o modelo do projeto não abriu nesta tela; nada foi gravado, para não sobrescrevê-lo — recarregue (F5)');
+        // Ctrl+S junto com a gravação automática: espera ela terminar (senão a segunda
+        // gravação levava a data velha e dava o falso "gravado por outra tela")
+        if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+        const t0 = Date.now();
+        while (this._autosalvando && Date.now() - t0 < 120000) await new Promise(r => setTimeout(r, 200));
+        const versao = this._versaoEdicao || 0;
         const s = await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON(), this._modeloAlterado);
         if (s && s.alterado) this._modeloAlterado = s.alterado;
+        if ((this._versaoEdicao || 0) === versao) this._autosavePendente = false;
         this.aviso(`Modelo salvo no projeto (${s.entidades} objetos).`, 'info');
         return;
       }
@@ -978,6 +986,7 @@ export class Editor {
   /** Agenda a gravação no servidor depois de um intervalo sem mudanças. */
   _agendarAutosave() {
     this._autosavePendente = true;
+    this._versaoEdicao = (this._versaoEdicao || 0) + 1;
     if (this._autosaveTimer) clearTimeout(this._autosaveTimer);
     this._autosaveTimer = setTimeout(() => this._autosalvar(), ATRASO_AUTOSAVE);
   }
@@ -992,6 +1001,7 @@ export class Editor {
     this._autosaveTimer = null;
     if (this._autosalvando) { this._agendarAutosave(); return; }
     if (!this._autosavePendente || !this.documento.tamanho) return;
+    if (this.projeto && this._modeloNaoAbriu) return;          // não grava por cima do que não abriu
     this._autosavePendente = false;
     this._autosalvando = true;
     const nome = this.el.nome.value.trim() || this.documento.nome || 'modelo';
@@ -1008,6 +1018,7 @@ export class Editor {
       }
     } catch (e) {
       this.dica(`Gravação automática falhou: ${e.message}`);
+      this._autosavePendente = true;           // continua por gravar (antes a marca sumia e a edição ficava sem gravar)
       if (/outra tela|recarregue/i.test(e.message || '')) {
         // modelo mais novo no servidor: parar de insistir e avisar com destaque
         this._autosavePendente = false;
@@ -1112,7 +1123,13 @@ export class Editor {
     }
     const dados = (projeto.dados && typeof projeto.dados === 'object') ? projeto.dados : null;
     let modelo = null;
-    try { modelo = await this.api.modeloDoProjeto(s); } catch { modelo = null; }
+    try { modelo = await this.api.modeloDoProjeto(s); } catch (e) {
+      // não abrir não é "não ter modelo": nada de gerar do galpão nem gravar a tela vazia
+      // por cima do modelo.json que existe
+      this._modeloNaoAbriu = e.message || 'erro';
+      this.aviso(`O modelo do projeto não abriu: ${e.message}. Nada será gravado nesta tela, para não sobrescrevê-lo — recarregue (F5) para tentar de novo.`, 'erro', 0);
+      return;
+    }
     this._modeloAlterado = modelo && modelo.alterado ? modelo.alterado : null;
     if (modelo && modelo.aberto_por && modelo.aberto_por.maquina) {
       const a = modelo.aberto_por;
@@ -1121,7 +1138,11 @@ export class Editor {
     }
 
     if (modelo && modelo.documento) {
-      this.carregarDocumento(modelo.documento, { autosalvar: false });
+      try { this.carregarDocumento(modelo.documento, { autosalvar: false }); } catch (e) {
+        this._modeloNaoAbriu = e.message || 'erro';
+        this.aviso(`O modelo do projeto não pôde ser montado na tela: ${e.message}. Nada será gravado nesta tela, para não sobrescrevê-lo.`, 'erro', 0);
+        return;
+      }
       if (dados) {                      // é o que "Calcular estrutura" analisa
         this._dadosGalpao = dados;
         this._atualizarBotaoCalcular();
@@ -1453,8 +1474,13 @@ export class Editor {
   }
 
   /** Navega na mesma janela depois de gravar o que estiver pendente do autosave. */
-  _irPara(url) {
-    this._gravarAntesDeGerar().catch(() => {}).then(() => { window.location.href = url; });
+  async _irPara(url) {
+    try { await this.gravarConfirmado(); } catch (e) {
+      const corpo = el('div', { class: 'explica', texto: `Não foi possível gravar o modelo: ${e.message}. Sair perde o que não foi gravado.` });
+      if (await this.dialogo({ titulo: 'Modelo não gravado', corpo, ok: 'Sair mesmo assim' }) !== 'ok') return;
+      this._autosavePendente = false;
+    }
+    window.location.href = url;
   }
 
   /**
@@ -1496,8 +1522,40 @@ export class Editor {
 
   async _gravarAntesDeGerar() {
     // a vista é feita do modelo.json do projeto: o que está por gravar vai antes
+    await this.gravarConfirmado();
+  }
+
+  /**
+   * Grava o que está pendente e só volta quando gravou (ou lança o erro): espera a
+   * gravação automática em curso — ela saía na hora e a gravação "antes de" não esperava
+   * — e não engole a falha. Usado pelo Atualizar, pelas vistas e pelas saídas da tela.
+   */
+  async gravarConfirmado() {
     if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
-    if (this._autosavePendente) await this._autosalvar();
+    const t0 = Date.now();
+    while (this._autosalvando) {
+      if (Date.now() - t0 > 120000) throw new Error('a gravação automática em curso não terminou');
+      await new Promise(r => setTimeout(r, 200));
+    }
+    if (!this._autosavePendente || !this.documento.tamanho) return;
+    if (this.projeto && this._modeloNaoAbriu) throw new Error('o modelo do projeto não abriu nesta tela; nada foi gravado, para não sobrescrevê-lo');
+    this._autosalvando = true;
+    const versao = this._versaoEdicao || 0;
+    try {
+      const json = this.documento.paraJSON();
+      if (this.projeto) {
+        const s = await this.api.salvarModeloDoProjeto(this.projeto, json, this._modeloAlterado);
+        if (s && s.alterado) this._modeloAlterado = s.alterado;
+      } else {
+        const nome = this.el.nome.value.trim() || this.documento.nome || 'modelo';
+        const r = await this.api.salvar(json, nome);
+        this._lembrar(r.salvo || nome);
+      }
+      if ((this._versaoEdicao || 0) === versao) this._autosavePendente = false;
+    } finally {
+      this._autosalvando = false;
+      if (this._autosavePendente) this._agendarAutosave();
+    }
   }
 
   /**
@@ -4454,7 +4512,11 @@ export function modeloDeExemplo(d, perfis) {
 const editor = new Editor();
 window.editor = editor;                // útil no console do navegador
 // o botão "Atualizar" (web/atualizacao.js) grava o modelo antes de instalar
-window.__antesDeAtualizar = () => editor._gravarAntesDeGerar();
+window.__antesDeAtualizar = () => editor.gravarConfirmado();
+// fechar a janela com edição por gravar avisa (o navegador pergunta se quer sair)
+window.addEventListener('beforeunload', (e) => {
+  if ((editor._autosavePendente || editor._autosalvando) && !(editor.projeto && editor._modeloNaoAbriu)) { e.preventDefault(); e.returnValue = ''; }
+});
 editor.iniciar().catch((e) => {
   console.error('o editor não conseguiu iniciar:', e);
   editor.aviso(`O editor não conseguiu iniciar: ${e.message}`, 'erro', 0);

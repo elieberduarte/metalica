@@ -39,7 +39,7 @@ import versao
 ARQUIVO = "projeto.json"
 HISTORICO = "historico"
 #: pasta/limite do histórico do modelo; marca de projeto aberto
-MAX_HISTORICO = 8
+MAX_HISTORICO = 20
 
 INTERVALO_HISTORICO = 600.0
 
@@ -80,6 +80,42 @@ def _trava(caminho: str) -> threading.Lock:
         return _TRAVAS.setdefault(os.path.normcase(os.path.abspath(caminho)), threading.Lock())
 
 
+_TRAVAS_PROJETO: Dict[str, threading.RLock] = {}
+
+
+def _trava_do_projeto(pasta: str) -> threading.RLock:
+    """Uma trava por projeto para ler, mudar e regravar o projeto.json: sem ela, o CAD, o
+    3D e o formulário gravando juntos traziam de volta um estado antigo (a segunda
+    gravação partia do que leu antes da primeira terminar)."""
+    with _TRAVA_DAS_TRAVAS:
+        return _TRAVAS_PROJETO.setdefault(os.path.normcase(os.path.abspath(pasta)), threading.RLock())
+
+
+#: Desenho apagado fica na lixeira este tempo; depois sai (cada um tem dezenas de MB, dentro do OneDrive).
+DIAS_NA_LIXEIRA = 30
+
+
+def esvaziar_lixeira_antiga(raiz: str, dias: float = DIAS_NA_LIXEIRA) -> int:
+    """Apaga da lixeira os DESENHOS apagados há mais de `dias` (os projetos excluídos
+    ficam: saem só pela mão do usuário). Devolve quantos saíram."""
+    lixo = os.path.join(raiz, LIXEIRA)
+    if not os.path.isdir(lixo):
+        return 0
+    limite = time.time() - dias * 86400.0
+    n = 0
+    for nome in os.listdir(lixo):
+        caminho = os.path.join(lixo, nome)
+        if not os.path.isfile(caminho) or not nome.endswith(".desenho.json") and ".desenho.json-" not in nome:
+            continue
+        try:
+            if os.path.getmtime(caminho) < limite:
+                os.remove(caminho)
+                n += 1
+        except OSError:
+            continue
+    return n
+
+
 def trocar_arquivo(parcial: str, caminho: str, espera: float = ESPERA_TROCA):
     """`os.replace` insistente: no Windows, o OneDrive, o antivírus ou o indexador seguram
     por alguns segundos um arquivo recém-gravado, e a troca falha com "arquivo em uso"
@@ -116,6 +152,18 @@ def _gravar_json(caminho: str, dados, indent=None):
                     os.remove(parcial)
                 except OSError:
                     pass
+
+
+def _guardar_ilegivel(caminho: str) -> str:
+    """Cópia do projeto.json que não se lê, uma por dia, ao lado dele (o nome diz o que é);
+    sem conseguir copiar (arquivo só na nuvem), devolve ''."""
+    destino = "%s.ilegivel-%s" % (caminho, time.strftime("%Y%m%d"))
+    if not os.path.exists(destino):
+        try:
+            shutil.copy2(caminho, destino)
+        except OSError:
+            return ""
+    return destino
 
 
 def _ler_json(caminho: str, lixeira: Optional[str] = None):
@@ -225,14 +273,26 @@ class Projetos:
         pasta = self._existente(s)
         caminho = os.path.join(pasta, ARQUIVO)
         if os.path.exists(caminho):
+            motivo = "o conteúdo não é um projeto"
             try:
                 p = _ler_json(caminho)
                 if isinstance(p, dict):
                     p.setdefault("nome", s)
                     p.setdefault("tipo", "galpao")
                     return p
-            except (OSError, ValueError):
-                pass                                  # arquivo estragado: reconstrói abaixo
+            except (OSError, ValueError) as e:
+                motivo = str(e) or e.__class__.__name__
+            # Existe e não se lê (OneDrive com o arquivo só na nuvem e sem internet,
+            # antivírus segurando, gravação cortada): NÃO se grava nada por cima — antes o
+            # projeto era recriado vazio e o formulário e a identificação se perdiam. Fica
+            # uma cópia do que havia e um projeto de leitura só, marcado.
+            copia = _guardar_ilegivel(caminho)
+            quando = datetime.datetime.fromtimestamp(os.path.getmtime(pasta)).replace(microsecond=0).isoformat()
+            return {"formato": 1, "nome": s.replace("-", " ").strip().capitalize() or s,
+                    "cliente": "", "local": "", "responsavel": "", "tipo": "galpao",
+                    "criado": quando, "alterado": quando, "programa": versao.VERSAO,
+                    "dados": None, "origem_ifc": None,
+                    "ilegivel": {"motivo": motivo[:300], "copia": copia}}
         quando = datetime.datetime.fromtimestamp(os.path.getmtime(pasta)).replace(
             microsecond=0).isoformat()
         p = {"formato": 1, "nome": s.replace("-", " ").strip().capitalize() or s,
@@ -254,7 +314,7 @@ class Projetos:
                 entregas.append({"pasta": sub, "rotulo": rotulo})
         modelo = os.path.join(pasta, MODELO)
         dados = p.get("dados") or {}
-        return {"slug": s, "nome": p.get("nome") or s, "cliente": p.get("cliente", ""),
+        return {"slug": s, "nome": p.get("nome") or s, "ilegivel": p.get("ilegivel"), "cliente": p.get("cliente", ""),
                 "local": p.get("local", ""), "responsavel": p.get("responsavel", ""),
                 "tipo": p.get("tipo", "galpao"), "tipo_rotulo": TIPOS.get(p.get("tipo"), "Projeto"),
                 "criado": p.get("criado"), "alterado": p.get("alterado"),
@@ -309,7 +369,17 @@ class Projetos:
         return self.resumo(s)
 
     def _atualizar(self, s: str, **campos) -> dict:
+        with _trava_do_projeto(self._existente(s)):
+            return self._atualizar_travado(s, **campos)
+
+    def _atualizar_travado(self, s: str, **campos) -> dict:
         p = self.ler(s)
+        if p.get("ilegivel"):
+            raise ErroDeDados(
+                "o arquivo do projeto (%s) não pôde ser lido (%s) e nada foi gravado por cima, para não perder o "
+                "original%s. Confira se o OneDrive baixou o arquivo ou se outro programa o segura, e tente de novo."
+                % (os.path.join(self._existente(s), ARQUIVO), p["ilegivel"].get("motivo", ""),
+                   ("; há uma cópia em " + p["ilegivel"]["copia"]) if p["ilegivel"].get("copia") else ""))
         p.update(campos)
         p["alterado"] = _agora()
         p["programa"] = versao.VERSAO
@@ -332,8 +402,13 @@ class Projetos:
         return self.resumo(s)
 
     def tocar(self, s: str, **campos):
-        """Marca o projeto como alterado agora (entrega gerada, modelo salvo)."""
-        self._atualizar(s, **campos)
+        """Marca o projeto como alterado agora (entrega gerada, modelo salvo). Com o
+        projeto.json ilegível não marca nada (a entrega em si já foi gravada)."""
+        try:
+            self._atualizar(s, **campos)
+        except ErroDeDados:
+            if not self.ler(s).get("ilegivel"):
+                raise
 
     def renomear(self, s: str, nome: str) -> dict:
         """Muda o nome e, se der, a pasta junto, para o Explorer mostrar o mesmo nome."""

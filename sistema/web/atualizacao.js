@@ -16,6 +16,49 @@
     for (const f of filhos) if (f) e.append(f);
     return e;
   }
+  // Todas as janelas do programa gravam antes de atualizar: a que clicou pergunta quem
+  // tem trabalho aberto (canal entre janelas do mesmo endereço), pede para gravar e espera
+  // cada uma confirmar. Antes só a janela do clique gravava, e engolindo a falha.
+  const canal = ('BroadcastChannel' in window) ? new BroadcastChannel('metalica-gravar') : null;
+  const EU = Math.random().toString(36).slice(2);
+  if (canal) {
+    canal.onmessage = async (ev) => {
+      const m = ev.data || {};
+      if (m.de === EU || typeof window.__antesDeAtualizar !== 'function') return;
+      if (m.tipo === 'quem') canal.postMessage({ tipo: 'eu', para: m.de, de: EU, tela: document.title || location.pathname });
+      if (m.tipo === 'gravar' && m.para === EU) {
+        try { await window.__antesDeAtualizar(); canal.postMessage({ tipo: 'gravado', para: m.de, de: EU, ok: true }); }
+        catch (e) { canal.postMessage({ tipo: 'gravado', para: m.de, de: EU, ok: false, erro: String(e && e.message || e), tela: document.title || location.pathname }); }
+      }
+    };
+  }
+  async function gravarTodasAsJanelas() {
+    if (typeof window.__antesDeAtualizar === 'function') await window.__antesDeAtualizar();     // esta janela
+    if (!canal) return;
+    const outras = new Map();
+    const ouvir = (ev) => { const m = ev.data || {}; if (m.para === EU && m.tipo === 'eu') outras.set(m.de, m.tela); };
+    canal.addEventListener('message', ouvir);
+    canal.postMessage({ tipo: 'quem', de: EU });
+    await new Promise(r => setTimeout(r, 800));
+    canal.removeEventListener('message', ouvir);
+    if (!outras.size) return;
+    const falhas = [];
+    await new Promise((resolve) => {
+      const faltam = new Set(outras.keys());
+      const fim = setTimeout(() => { for (const j of faltam) falhas.push(`${outras.get(j)}: não respondeu`); resolve(); }, 120000);
+      const resp = (ev) => {
+        const m = ev.data || {};
+        if (m.para !== EU || m.tipo !== 'gravado' || !faltam.has(m.de)) return;
+        faltam.delete(m.de);
+        if (!m.ok) falhas.push(`${m.tela || outras.get(m.de)}: ${m.erro}`);
+        if (!faltam.size) { clearTimeout(fim); canal.removeEventListener('message', resp); resolve(); }
+      };
+      canal.addEventListener('message', resp);
+      for (const j of outras.keys()) canal.postMessage({ tipo: 'gravar', para: j, de: EU });
+    });
+    if (falhas.length) throw new Error('outra janela não gravou — ' + falhas.join('; '));
+  }
+
   async function verificar() {
     let v, a;
     try { v = await json('/api/versao'); if (!v.janela || !v.instalado) return; a = await json('/api/atualizacao'); } catch { return; }
@@ -30,7 +73,12 @@
       if (!window.confirm(`Instalar a versão ${a.ultima} agora?\n\nO trabalho aberto é gravado antes; o programa fecha e reabre nesta mesma tela (leva uns 20 segundos).`)) return;
       botao.disabled = true; botao.textContent = 'Gravando…';
       try {
-        if (typeof window.__antesDeAtualizar === 'function') { try { await window.__antesDeAtualizar(); } catch (e) { console.warn('gravação antes de atualizar:', e); } }
+        try { await gravarTodasAsJanelas(); } catch (e) {
+          // não gravou: a atualização não segue (antes seguia e a edição se perdia)
+          botao.disabled = false; botao.textContent = `Atualizar → ${a.ultima}`;
+          window.alert('A atualização foi cancelada porque o trabalho aberto não pôde ser gravado: ' + e.message + '\n\nGrave de novo (ou feche o que não precisa) e tente outra vez.');
+          return;
+        }
         botao.textContent = 'Baixando…';
         const r = await json('/api/atualizacao/instalar', { reabrir: location.pathname + location.search });
         const veu = el('div', { style: 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(10,16,26,.82);color:#fff;font:16px/1.5 system-ui,sans-serif;text-align:center;padding:24px' },

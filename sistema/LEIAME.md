@@ -218,6 +218,24 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.12.** Proteção dos dados (revisão geral de 24/09, bloco 1). Servidor: `projetos.ler` não recria o projeto.json
+que existe e não se lê (cópia `projeto.json.ilegivel-<data>`, projeto marcado `ilegivel`, `_atualizar` recusa, `tocar`
+não quebra a entrega); `_atualizar` sob `_trava_do_projeto` (RLock por projeto: gravações simultâneas não trazem estado
+antigo); nomes.json, ajustes-furos.json e relatorio.json por `_gravar_json` (temporário + troca) e lidos por `_ler_ajuste`
+(ilegível vira ErroDeDados com cópia, não "vazio" calado); `_documento3d_do_projeto` anota `_mtime_lido` e
+`_regravar_modelo` (14 regravações) recusa gravar por cima do que o editor gravou no meio (`ModeloMudouNoMeio`; no
+Detalhar vira aviso); o encerramento automático espera pedidos e progresso em curso (`_em_curso`, `_trabalho_em_curso`);
+`_de_fora` recusa Host e Origin que não são do servidor local (GET e POST); `_arquivo` compara pasta por
+`commonpath`; nome do PDF limpo; o .cmd da atualização em UTF-8 com `chcp 65001` (usuário com acento — não testado numa
+atualização real); histórico do modelo com 20 cópias; `esvaziar_lixeira_antiga` apaga desenhos da lixeira com mais de 30
+dias na abertura (projetos excluídos ficam). Telas: `gravarConfirmado` no CAD e no 3D (espera a gravação em curso, não
+engole a falha) usado pelo Atualizar, pela troca de desenho, pelo Voltar e pelas saídas ("Modelo 3D", Materiais, Ver no
+3D); desenho que não abriu fica bloqueado para gravar (`_naoAbriu`); modelo que não abriu no 3D (`_modeloNaoAbriu`) não
+gera do galpão nem grava por cima; Novo desenho com nome existente pergunta; aviso ao fechar com edição pendente; a
+gravação automática do 3D que falha continua pendente; Ctrl+S espera a gravação automática (sem o falso "gravado por
+outra tela"). `atualizacao.js`: todas as janelas gravam antes (BroadcastChannel `metalica-gravar`), e a atualização é
+cancelada se alguma falhar. Testes `test_protecao_dados.py`; verificador `verif_protecao_telas.py`.
+
 **0.8.11.** Projeto recebido "limpo" pelo usuário (as vistas remanejadas): (1) `classificar` — o vão de referência é o
 da vista com mais treliça (não a mediana das larguras), e a vista em pé tipada pela forma com pilares na altura do
 pórtico, largura que não é o vão e mais larga que alta é fachada lateral (o pilar treliçado dela tem diagonal curta e a

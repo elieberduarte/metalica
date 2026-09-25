@@ -53,6 +53,7 @@ import platform
 import posixpath
 import socket
 import re
+import shutil
 import sys
 import threading
 import time
@@ -461,7 +462,7 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
         _progresso(s, "lendo o IFC (%.0f MB; leva uns 20 s)…" % (os.path.getsize(destino) / 1048576))
         doc = imp.importar(destino)
         _progresso(s, "gravando o modelo 3D…")
-        g.salvar_modelo(s, doc.dict(), marco=True)
+        _regravar_modelo(s, doc)
         g.tocar(s, tipo="ifc", origem_ifc=nome)
     finally:
         _fim_progresso(s)
@@ -471,12 +472,43 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
 
 # ---- desenhos 2D (CAD): ver nucleo2d/
 
+def _mtime_do_modelo(s: str):
+    caminho = _gerente().caminho_modelo(s)
+    try:
+        return os.stat(caminho).st_mtime_ns
+    except OSError:
+        return None
+
+
 def _documento3d_do_projeto(s: str):
     from nucleo3d.modelo import Documento
+    lido = _mtime_do_modelo(s)
     d = _gerente().abrir_modelo(s)
     if d is None:
         raise ErroDeDados("o projeto ainda não tem modelo 3D: importe o IFC ou gere o galpão.")
-    return Documento.de_dict(d)
+    doc = Documento.de_dict(d)
+    doc._mtime_lido = lido               # para a regravação conferir que ninguém gravou no meio
+    return doc
+
+
+class ModeloMudouNoMeio(ErroDeDados):
+    pass
+
+
+def _regravar_modelo(s: str, doc, marco: bool = True) -> dict:
+    """Grava o modelo que uma operação leu, mudou e devolve (detalhar, aplicar furos,
+    dimensionar…). Se o editor 3D gravou o modelo enquanto a operação rodava, não grava
+    por cima: aquela edição se perderia calada."""
+    lido = getattr(doc, "_mtime_lido", None)
+    if lido is not None:
+        agora = _mtime_do_modelo(s)
+        if agora is not None and agora != lido:
+            raise ModeloMudouNoMeio(
+                "o modelo 3D foi gravado por outra tela enquanto esta operação rodava; para não desfazer aquela "
+                "edição, esta operação não regravou o modelo. Rode de novo.")
+    r = _gerente().salvar_modelo(s, doc.dict(), marco=marco)
+    doc._mtime_lido = _mtime_do_modelo(s)
+    return r
 
 
 def gerar_vista_2d(s: str, corpo: dict) -> dict:
@@ -569,7 +601,7 @@ def gerar_3d_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         doc = de_vistas.modelo_das_vistas(desenho, corpo["montagens"], aco_padrao=str(corpo.get("aco") or "ASTM A572 Gr.50"),
                                           nome=str(corpo.get("nome") or "") or desenho.nome, doc=base,
                                           perfis=corpo.get("perfis") if isinstance(corpo.get("perfis"), dict) else None)
-        g.salvar_modelo(s, doc.dict(), marco=True)
+        _regravar_modelo(s, doc)
         g.tocar(s)
         r = {"modelo": {"entidades": len(doc.entidades), "barras": len(doc.barras)},
              "gerado": {k: v for k, v in doc.metadados.get("de_desenho", {}).items() if k != "montagens"},
@@ -585,7 +617,7 @@ def gerar_3d_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         conjunto=str(corpo.get("conjunto") or "M"),
         aco_padrao=str(corpo.get("aco") or "ASTM A572 Gr.50"),
         nome=str(corpo.get("nome") or "") or None, doc=base)
-    g.salvar_modelo(s, doc.dict(), marco=True)      # o modelo anterior vai para o histórico
+    _regravar_modelo(s, doc)      # o modelo anterior vai para o histórico
     g.tocar(s)
     info = doc.metadados.get("de_desenho", {})
     return {"modelo": {"entidades": len(doc.entidades), "barras": len(doc.barras)},
@@ -631,7 +663,14 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
                                           % (padr["chapas"], ", ".join(padr["posicoes"][:12])))
     if r.get("convertidas") or nomeadas or padr["chapas"]:
         _progresso(s, "gravando o modelo…")
-        g.salvar_modelo(s, doc.dict(), marco=True)            # chapas planas viraram paramétricas / nomes nas peças
+        try:
+            _regravar_modelo(s, doc)            # chapas planas viraram paramétricas / nomes nas peças
+        except ModeloMudouNoMeio:
+            # o detalhamento em si vale (sai dos desenhos); só os nomes e as chapas
+            # paramétricas não foram para o modelo, que o editor gravou no meio
+            r.setdefault("avisos", []).append(
+                "o modelo 3D foi gravado pelo editor durante o detalhamento: os nomes de produção e as chapas "
+                "paramétricas não foram gravados nele (detalhe de novo para levá-los)")
     _progresso(s, "gravando os desenhos…")
     substituir = corpo.get("substituir", True) is not False
     if substituir:
@@ -661,8 +700,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     arquivos = lista_producao.gravar(pasta, lista, r["objetos_posicoes"], r["acessorios"])
     relatorio = {k: v for k, v in r.items() if k not in ("desenhos", "objetos_posicoes", "objetos_pecas", "camadas")}
     relatorio["desenhos"] = desenhos
-    with open(os.path.join(pasta, "relatorio.json"), "w", encoding="utf-8") as f:
-        json.dump(relatorio, f, ensure_ascii=False, indent=1)
+    _gravar_ajuste(os.path.join(pasta, "relatorio.json"), relatorio)
     g.tocar(s)
     return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
             "pecas": sum(p["quantidade"] for p in r["posicoes"]), "peso_total": r["peso_total"],
@@ -789,7 +827,7 @@ def dimensionar_projeto(s: str, corpo: dict) -> dict:
             _progresso(s, "trocando os perfis no modelo…")
             ap = calculo_ifc.aplicar_perfis(doc, d["trocas"])
             g = _gerente()
-            g.salvar_modelo(s, doc.dict(), marco=True)        # o modelo anterior vai para o histórico
+            _regravar_modelo(s, doc)        # o modelo anterior vai para o histórico
             saida["aplicado"] = ap
             _progresso(s, "calculando o modelo com os perfis novos…")
             r = calculo_ifc.calcular(doc, nomes, dict(par, trocas=ap["so_calculo"]))
@@ -841,7 +879,7 @@ def _alinhar_furos_das_barras(s: str, doc) -> dict:
     # e os que ficam, oblongos como a regra manda (a chapa parafusada neles também)
     r3 = det.oblongar_furos_das_tercas(doc)
     if r.get("barras") or r2.get("furos") or r2.get("limpas") or r3.get("furos") or r3.get("chapas"):
-        _gerente().salvar_modelo(s, doc.dict(), marco=True)
+        _regravar_modelo(s, doc)
         print("[detalhamento] %s: %d furo(s) de %d barra(s) alinhados às chapas (%d oblongos); %d furo(s) sem uso retirados de %d terça(s)"
               % (s, r["furos"], r["barras"], r["oblongos"], r2["furos"], r2["barras"]))
     r["retirados"] = r2
@@ -871,7 +909,7 @@ def _conferir_eixos_das_chapas(s: str, doc) -> dict:
     _progresso(s, "reorientando as chapas…")
     r = det.reorientar_chapas(doc, doc_ifc)
     if r.get("chapas"):
-        g.salvar_modelo(s, doc.dict(), marco=True)
+        _regravar_modelo(s, doc)
         print("[detalhamento] %s: %d chapa(s) de %d posição(ões) reorientadas pelo IFC; %d parafuso(s) movidos"
               % (s, r["chapas"], r["posicoes"], r["parafusos"]))
     return r
@@ -895,7 +933,7 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
     convertidas = (det.converter_chapas(doc, marca, referencia=str(corpo.get("referencia") or "") or None)
                    if corpo.get("converter", True) is not False else 0)
     if convertidas:
-        g.salvar_modelo(s, doc.dict(), marco=True)
+        _regravar_modelo(s, doc)
     desenho, pos = det.detalhar_posicao(doc, marca, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
     nome = desenho.nome
     if corpo.get("substituir", True) is not False and os.path.exists(g._caminho_desenho(s, nome)):
@@ -950,7 +988,7 @@ def atualizar_pecas_projeto(s: str, corpo: dict) -> dict:
         r1 = det.alinhar_furos_das_barras_as_chapas(doc)
         r2 = det.alinhar_furos_das_barras_aos_parafusos(doc)
         if r1["barras"] or r2["barras"]:
-            g.salvar_modelo(s, doc.dict(), marco=True)
+            _regravar_modelo(s, doc)
         _progresso(s, "levantando as peças…")
         lev = det.levantar(doc, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
         pedidas = []
@@ -1052,7 +1090,7 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
                       posicoes=sorted(set(r3.get("posicoes", [])) | set(r4["posicoes"])))
         if r3["barras"]:
             barras3d.update(r3)
-            g.salvar_modelo(s, doc.dict(), marco=True)
+            _regravar_modelo(s, doc)
         return sorted(vinc)
     def aplicar_em_barra(marca_, furos_):
         # barra (terça, diagonal…): a furação nova fica como ajuste do projeto e os furos
@@ -1060,7 +1098,7 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         r_ = det.aplicar_furos_de_barra(doc, marca_, furos_, ajustes)
         _gravar_ajustes_furos(s, ajustes)
         if r_["barras3d"].get("barras"):
-            g.salvar_modelo(s, doc.dict(), marco=True)
+            _regravar_modelo(s, doc)
         barras3d.update(r_["barras3d"])
         return r_
     if meta.get("marca"):
@@ -1075,7 +1113,7 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
             vinculadas = []
         else:
             r = det.aplicar_furos(doc, marca, furos, meta.get("furos") or [], contorno)
-            g.salvar_modelo(s, doc.dict(), marco=True)
+            _regravar_modelo(s, doc)
             vinculadas = vincular(marca, meta.get("furos") or [], furos)
         novo, pos = det.detalhar_posicao(doc, marca, ajustes=ajustes, nomes=_nomes_producao(s))
         if os.path.exists(g._caminho_desenho(s, novo.nome)):
@@ -1107,32 +1145,52 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
                              and str(((e.atributos or {}).get("marcas") or {}).get("posicao")) == marca), None)
             originais = det.furos_da_chapa(primeira) if primeira else []
         r = det.aplicar_furos(doc, marca, furos, originais, contorno)
-        g.salvar_modelo(s, doc.dict(), marco=True)
+        _regravar_modelo(s, doc)
         vinculadas = vincular(marca, originais, furos)
     det.regenerar_celula(d, doc, marca, ajustes=ajustes, nomes_producao=_nomes_producao(s))
     salvo = g.salvar_desenho(s, nome, d.dict())
     return dict(r, nome=salvo["nome"], marca=marca, vinculadas=vinculadas, barras3d=barras3d)
 
 
-def _nomes_producao(s: str) -> dict:
-    """Nomes de produção já dados (detalhamento/nomes.json): {"posicoes": {marca: nome}, "conjuntos": {...}}."""
-    caminho = os.path.join(_gerente()._existente(s), "detalhamento", "nomes.json")
+def _ler_ajuste(caminho: str, rotulo: str) -> dict:
+    """Um arquivo de ajuste do projeto (nomes de produção, furação ajustada à mão).
+    Ausente é vazio; existente e ilegível NÃO é vazio calado — antes a furação ajustada à
+    mão e os nomes dados sumiam sem aviso. Tenta três vezes (OneDrive e antivírus seguram
+    o arquivo por instantes); depois guarda uma cópia e para com a explicação."""
     if not os.path.exists(caminho):
         return {}
+    erro = None
+    for tentativa in range(3):
+        try:
+            with open(caminho, encoding="utf-8") as f:
+                dados = json.load(f)
+            return dados if isinstance(dados, dict) else {}
+        except (OSError, ValueError) as e:
+            erro = e
+            time.sleep(0.3 * (tentativa + 1))
+    copia = "%s.ilegivel-%s" % (caminho, time.strftime("%Y%m%d-%H%M%S"))
     try:
-        with open(caminho, encoding="utf-8") as f:
-            dados = json.load(f)
-        return dados if isinstance(dados, dict) else {}
-    except (OSError, ValueError):
-        return {}
+        shutil.copy2(caminho, copia)
+    except OSError:
+        copia = ""
+    raise ErroDeDados("%s (%s) não pôde ser lido: %s. Nada foi feito, para não perder o que estava nele%s."
+                      % (rotulo, caminho, erro, ("; há uma cópia em " + copia) if copia else ""))
+
+
+def _gravar_ajuste(caminho: str, dados: dict):
+    from projetos import _gravar_json
+    _gravar_json(caminho, dados, indent=1)            # temporário + troca: nunca meio arquivo
+
+
+def _nomes_producao(s: str) -> dict:
+    """Nomes de produção já dados (detalhamento/nomes.json): {"posicoes": {marca: nome}, "conjuntos": {...}}."""
+    return _ler_ajuste(os.path.join(_gerente()._existente(s), "detalhamento", "nomes.json"), "Os nomes de produção")
 
 
 def _gravar_nomes_producao(s: str, nomes: dict):
     pasta = os.path.join(_gerente()._existente(s), "detalhamento")
-    os.makedirs(pasta, exist_ok=True)
-    with open(os.path.join(pasta, "nomes.json"), "w", encoding="utf-8") as f:
-        json.dump({k: nomes.get(k) or {} for k in ("posicoes", "conjuntos", "tipos", "tipos_conjuntos", "ifc", "ifc_conjuntos", "camadas_2d")},
-                  f, ensure_ascii=False, indent=1)
+    _gravar_ajuste(os.path.join(pasta, "nomes.json"),
+                   {k: nomes.get(k) or {} for k in ("posicoes", "conjuntos", "tipos", "tipos_conjuntos", "ifc", "ifc_conjuntos", "camadas_2d")})
 
 
 def _nomes_no_modelo(doc, nomes: dict) -> int:
@@ -1161,22 +1219,12 @@ def _nomes_no_modelo(doc, nomes: dict) -> int:
 
 def _ajustes_furos(s: str) -> dict:
     """Furação guardada no projeto (vínculo chapa → terças): detalhamento/ajustes-furos.json."""
-    caminho = os.path.join(_gerente()._existente(s), "detalhamento", "ajustes-furos.json")
-    if not os.path.exists(caminho):
-        return {}
-    try:
-        with open(caminho, encoding="utf-8") as f:
-            dados = json.load(f)
-        return dados if isinstance(dados, dict) else {}
-    except (OSError, ValueError):
-        return {}
+    return _ler_ajuste(os.path.join(_gerente()._existente(s), "detalhamento", "ajustes-furos.json"),
+                       "A furação ajustada à mão")
 
 
 def _gravar_ajustes_furos(s: str, ajustes: dict):
-    pasta = os.path.join(_gerente()._existente(s), "detalhamento")
-    os.makedirs(pasta, exist_ok=True)
-    with open(os.path.join(pasta, "ajustes-furos.json"), "w", encoding="utf-8") as f:
-        json.dump(ajustes, f, ensure_ascii=False, indent=1)
+    _gravar_ajuste(os.path.join(_gerente()._existente(s), "detalhamento", "ajustes-furos.json"), ajustes)
 
 
 def _identificacao_do_projeto(s: str) -> dict:
@@ -1362,6 +1410,7 @@ def instalar_atualizacao(corpo: Optional[dict] = None) -> dict:
     lote = os.path.join(tempfile.gettempdir(), "metalica-atualizar.cmd")
     linhas = [
         "@echo off",
+        "chcp 65001 >nul",                                 # as linhas abaixo são UTF-8 (C:\Users\José\…)
         "timeout /t 2 /nobreak >nul",
         '"%s" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS' % destino,
         "timeout /t 3 /nobreak >nul",
@@ -1369,7 +1418,7 @@ def instalar_atualizacao(corpo: Optional[dict] = None) -> dict:
         'if not exist "%s" exit /b 1' % exe_atual,
         'tasklist /fi "imagename eq Metalica.exe" | find /i "Metalica.exe" >nul || start "" "%s"' % exe_atual,
     ]
-    with open(lote, "w", encoding="cp1252", errors="replace", newline="") as f:
+    with open(lote, "w", encoding="utf-8", newline="") as f:
         f.write("\r\n".join(linhas) + "\r\n")
     subprocess.Popen(["cmd.exe", "/c", lote], creationflags=0x00000008 | 0x00000200,   # DETACHED | NEW_PROCESS_GROUP
                      close_fds=True, cwd=tempfile.gettempdir())
@@ -1554,7 +1603,7 @@ def projeto_2d_para_modelo(s: str, corpo: dict) -> dict:
             base = Documento.de_dict(atual) if atual else None
         doc = de_vistas.modelo_das_vistas(des, mont["montagens"], nome=os.path.splitext(arquivo)[0], doc=base,
                                           perfis=corpo.get("perfis") if isinstance(corpo.get("perfis"), dict) else None)
-        g.salvar_modelo(s, doc.dict(), marco=True)
+        _regravar_modelo(s, doc)
         g.tocar(s)
         saida["modelo"] = {"entidades": len(doc.entidades), "barras": len(doc.barras)}
         saida["gerado"] = {k: v for k, v in doc.metadados.get("de_desenho", {}).items() if k != "montagens"}
@@ -1601,6 +1650,8 @@ def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
             desenhos.append(Desenho.de_dict(g.abrir_desenho(s, n)))
     pasta = os.path.join(g._existente(s), "pranchas" if any(d.metadados.get("prancha") for d in desenhos) else "desenhos-2d")
     base = corpo.get("arquivo") or (_slug(nome) if len(nomes) == 1 else _slug(corpo.get("titulo") or "pranchas"))
+    # o nome vem da tela: sem pasta nem caracteres de caminho, e com a extensão só uma vez
+    base = _slug(re.sub(r"\.pdf$", "", os.path.basename(str(base).replace("\\", "/")), flags=re.I)) or "desenho"
     caminho = pdf_dos_desenhos(desenhos, os.path.join(pasta, base + ".pdf"))
     g.tocar(s)
     return {"arquivo": _descrever_arquivo(caminho, pasta), "paginas": len(desenhos)}
@@ -1901,7 +1952,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _arquivo(self, caminho, raiz):
         caminho = os.path.abspath(caminho)
-        if not caminho.startswith(os.path.abspath(raiz)):
+        raiz_abs = os.path.abspath(raiz)
+        try:
+            dentro = os.path.commonpath([os.path.normcase(caminho), os.path.normcase(raiz_abs)]) == os.path.normcase(raiz_abs)
+        except ValueError:                                   # outro disco
+            dentro = False
+        if not dentro:
             return self._erro("caminho fora da pasta permitida", 403)
         if not os.path.isfile(caminho):
             return self._erro("arquivo não encontrado: " + os.path.basename(caminho), 404)
@@ -1934,6 +1990,8 @@ class Handler(BaseHTTPRequestHandler):
     # -- rotas --
     def do_GET(self):
         rota = unquote(urlparse(self.path).path)
+        if self._de_fora():
+            return self._erro("pedido de fora do programa recusado", 403)
         try:
             if rota == "/":
                 return self._arquivo(os.path.join(WEB, "inicio.html"), WEB)
@@ -2012,12 +2070,40 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._erro(f"falha interna: {e}", 500, traceback.format_exc())
 
+    def _de_fora(self) -> bool:
+        """O pedido não veio das telas do programa? O servidor local não pode obedecer a
+        uma página qualquer aberta no navegador (excluir projeto, sobrescrever modelo pelo
+        127.0.0.1): o navegador manda Origin nos pedidos de outro site, e o Host de um
+        nome que aponta para cá (troca de DNS) não é o nosso."""
+        porta = self.server.server_address[1]
+        nossos = {"localhost", "127.0.0.1", "[::1]"}
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host:
+            nome, _, p = host.rpartition(":") if not host.endswith("]") else (host, "", "")
+            if (nome or host) not in nossos or (p and p != str(porta)):
+                return True
+        origem = (self.headers.get("Origin") or "").strip().lower()
+        if origem and origem not in {"http://%s:%d" % (h, porta) for h in nossos}:
+            return True
+        return False
+
     def do_POST(self):
         rota = unquote(urlparse(self.path).path)
+        if self._de_fora():
+            return self._erro("pedido de fora do programa recusado", 403)
+        if rota in ("/api/vivo", "/api/fechou"):
+            _sinal_de_vida(self.path, rota == "/api/fechou")
+            return self._json({"ok": True})
+        # pedido em curso segura o encerramento automático (fechar a janela no meio do
+        # Detalhar deixava o projeto com os desenhos antigos na lixeira e os novos por gravar)
+        _em_curso(+1)
         try:
-            if rota in ("/api/vivo", "/api/fechou"):
-                _sinal_de_vida(self.path, rota == "/api/fechou")
-                return self._json({"ok": True})
+            return self._do_post(rota)
+        finally:
+            _em_curso(-1)
+
+    def _do_post(self, rota):
+        try:
             corpo = self._corpo()
             if rota == "/api/dimensionar":
                 return self._json(dimensionar(corpo))
@@ -2171,6 +2257,22 @@ def _sinal_de_vida(rota_completa: str, fechou: bool):
             JANELAS_VIVAS[j] = time.time()
 
 
+_PEDIDOS_EM_CURSO = [0]
+
+
+def _em_curso(delta: int):
+    with _TRAVA_JANELAS:
+        _PEDIDOS_EM_CURSO[0] = max(0, _PEDIDOS_EM_CURSO[0] + delta)
+
+
+def _trabalho_em_curso() -> bool:
+    """Há gravação ou operação longa (Detalhar, cálculo, importação) em andamento?"""
+    with _TRAVA_JANELAS:
+        if _PEDIDOS_EM_CURSO[0]:
+            return True
+    return bool(PROGRESSO)
+
+
 def _janelas_abertas() -> int:
     agora = time.time()
     with _TRAVA_JANELAS:
@@ -2275,6 +2377,16 @@ def main():
         limpar_instaladores_antigos()                           # o que as atualizações anteriores deixaram
     except Exception:                                           # noqa: BLE001
         pass
+
+    def lixeira():
+        try:
+            from projetos import esvaziar_lixeira_antiga
+            n = esvaziar_lixeira_antiga(PROJETOS)               # desenhos apagados há mais de 30 dias
+            if n:
+                print("  lixeira: %d desenho(s) apagado(s) há mais de 30 dias removido(s)" % n, flush=True)
+        except Exception:                                       # noqa: BLE001
+            pass
+    threading.Thread(target=lixeira, daemon=True).start()
     # flush: com a saída redirecionada para arquivo o Python retém o texto, e quem lê o
     # registro para descobrir a porta ficaria sem resposta
     print(f"{versao.identificacao()} — dimensionamento de estruturas metálicas", flush=True)
@@ -2298,8 +2410,10 @@ def main():
             while True:
                 time.sleep(1.0)
                 abertas = _janelas_abertas()
-                if abertas:
-                    ja_abriu, vazio_desde = True, None
+                if abertas or _trabalho_em_curso():
+                    # janela aberta, ou operação em andamento com a janela já fechada:
+                    # termina o que começou antes de sair
+                    ja_abriu, vazio_desde = ja_abriu or bool(abertas), None
                     continue
                 # nunca abriu: dá dois minutos (máquina lenta, antivírus); depois de aberta,
                 # seis segundos sem ninguém cobrem a troca de uma página para outra

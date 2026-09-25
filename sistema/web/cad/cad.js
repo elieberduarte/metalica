@@ -119,8 +119,20 @@ class CAD {
     this._atualizarCarimbo();
     document.body.dataset.pronto = '1';
     window.cad = this;
-    // o botão "Atualizar" (web/atualizacao.js) grava o desenho antes de instalar
-    window.__antesDeAtualizar = () => this.salvar({ avisar: false });
+    // o botão "Atualizar" (web/atualizacao.js) grava o desenho antes de instalar — e
+    // espera confirmar: falhou, a atualização não segue
+    window.__antesDeAtualizar = () => this.gravarConfirmado();
+    // fechar a janela com edição por gravar avisa (o navegador pergunta se quer sair)
+    window.addEventListener('beforeunload', (e) => {
+      if (this.projeto && (this._editado || this._salvando) && !this._desenhoBloqueado()) { e.preventDefault(); e.returnValue = ''; }
+    });
+    // "Modelo 3D" grava o pendente antes de sair (antes ia direto e perdia os últimos segundos)
+    const link3d = $('#link-editor');
+    if (link3d) link3d.addEventListener('click', (ev) => {
+      if (!this.projeto || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+      ev.preventDefault();
+      this._sairPara(link3d.href);
+    });
   }
 
   // ---------------------------------------------------------- documento
@@ -133,21 +145,89 @@ class CAD {
     this._refletirEscala();
     if (enquadrar) this.tela.enquadrar();
     this._autosavePendente = false;
+    this._editado = false;
     if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
     this._agendarPaineis('props', 'camadas', 'vistas');
     document.title = `${this.doc.nome} — Desenho 2D`;
   }
 
   async abrirDesenho(nome) {
+    // trocar de desenho grava antes o que ainda não foi (eram 3 s, ou 15 s em desenho grande, perdidos)
+    if (this.nomeDesenho && this.nomeDesenho !== nome && this._temPendente()) {
+      if (!(await this._gravarOuConfirmar('Abrir o outro desenho mesmo assim'))) return;
+    }
     try {
       const r = await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(nome)}`);
       this.nomeDesenho = nome;
+      this._naoAbriu = null;
       this.carregar(r.desenho);
       const url = new URL(location.href); url.searchParams.set('desenho', nome); history.replaceState(null, '', url);
       const link3d = $('#link-editor');
       if (link3d && this.projeto) link3d.href = this.urlDoEditor();       // o 3D sabe voltar a este desenho
       this.dica(`Desenho "${this.doc.nome}" aberto: ${numero(this.doc.tamanho)} objetos, escala 1:${this.doc.escala}.`);
-    } catch (e) { this.aviso(`Não foi possível abrir "${nome}": ${e.message}`, 'erro', 0); }
+    } catch (e) {
+      // o desenho não veio: nada é gravado com o nome dele, senão a tela vazia (ou o que se
+      // desenhasse nela) ia por cima do arquivo que existe
+      if (this.nomeDesenho === nome || !this.nomeDesenho) { this.nomeDesenho = nome; this._naoAbriu = nome; }
+      this.aviso(`Não foi possível abrir "${nome}": ${e.message}. Nada será gravado com esse nome nesta tela — recarregue (F5) para tentar de novo.`, 'erro', 0);
+    }
+  }
+
+  _desenhoBloqueado() { return !!(this._naoAbriu && this._naoAbriu === this.nomeDesenho); }
+
+  _temPendente() { return !!(this._editado || this._salvando || this._autosaveTimer || this._autosavePendente); }
+
+  /**
+   * Grava o desenho e só volta quando gravou (ou lança o erro): espera a gravação que já
+   * estiver em curso — o `salvar` da gravação automática sai na hora nesse caso — e não
+   * engole a falha. É o que o Atualizar, a troca de desenho e as saídas da tela usam.
+   */
+  async gravarConfirmado({ forcar = false } = {}) {
+    if (!this.projeto) return null;
+    if (this._desenhoBloqueado()) throw new Error(`o desenho "${this.nomeDesenho}" não abriu nesta tela; nada foi gravado, para não sobrescrevê-lo`);
+    if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
+    const t0 = Date.now();
+    while (this._salvando) {
+      if (Date.now() - t0 > 90000) throw new Error('a gravação em curso não terminou');
+      await new Promise(r => setTimeout(r, 150));
+    }
+    if (!forcar && !this._editado && !this._autosavePendente) return null;
+    if (!this.doc.tamanho && !forcar) return null;
+    if (!this.nomeDesenho) this.nomeDesenho = slug(this.el.nome.value || this.doc.nome || 'desenho');
+    this.doc.nome = this.el.nome.value.trim() || this.doc.nome;
+    this._salvando = true;
+    this.el.estadoSalvo.textContent = 'gravando…';
+    const versao = this._versaoEdicao || 0;
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}`, { desenho: this.doc.paraJSON() });
+      this.el.estadoSalvo.textContent = 'gravado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      if ((this._versaoEdicao || 0) === versao) this._editado = false;
+      this._autosavePendente = false;
+      return r;
+    } catch (e) {
+      this.el.estadoSalvo.textContent = 'não foi possível gravar';
+      throw e;
+    } finally {
+      this._salvando = false;
+    }
+  }
+
+  /** Grava o pendente; falhou, pergunta se segue mesmo assim. Devolve se pode seguir. */
+  async _gravarOuConfirmar(rotuloSeguir) {
+    try { await this.gravarConfirmado(); return true; } catch (e) {
+      const corpo = el('div', { class: 'explica', texto: `Não foi possível gravar o desenho "${this.nomeDesenho}": ${e.message}. Seguir perde o que não foi gravado.` });
+      if (await this.dialogo({ titulo: 'Desenho não gravado', corpo, ok: rotuloSeguir }) !== 'ok') return false;
+      this._editado = false;
+      return true;
+    }
+  }
+
+  /** Sai para outra tela depois de gravar o pendente (e esperar a gravação em curso). */
+  async _sairPara(url) {
+    if (this._temPendente() && !this._desenhoBloqueado() && !(await this._gravarOuConfirmar('Sair mesmo assim'))) return false;
+    this._editado = false;
+    location.href = url;
+    return true;
   }
 
   async _listaDesenhos() {
@@ -156,13 +236,19 @@ class CAD {
 
   async salvar({ avisar = true } = {}) {
     if (!this.projeto) { if (avisar) this.aviso('Sem projeto aberto: nada para gravar.', 'atencao'); return; }
+    if (this._desenhoBloqueado()) {
+      if (avisar) this.aviso(`O desenho "${this.nomeDesenho}" não abriu nesta tela: nada foi gravado, para não sobrescrevê-lo. Recarregue (F5).`, 'erro', 0);
+      return;
+    }
     if (!this.nomeDesenho) this.nomeDesenho = slug(this.el.nome.value || this.doc.nome || 'desenho');
     this.doc.nome = this.el.nome.value.trim() || this.doc.nome;
     if (this._salvando) { this._autosavePendente = true; return; }
     this._salvando = true;
     this.el.estadoSalvo.textContent = 'gravando…';
+    const versao = this._versaoEdicao || 0;
     try {
       const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}`, { desenho: this.doc.paraJSON() });
+      if ((this._versaoEdicao || 0) === versao) this._editado = false;
       this.el.estadoSalvo.textContent = 'gravado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       if (avisar) this.aviso(`Desenho salvo no projeto (${numero(r.entidades)} objetos).`, 'info');
     } catch (e) {
@@ -180,11 +266,17 @@ class CAD {
    * Voltar simples também grava o pendente, para nada se perder na troca de tela.
    */
   async voltar(fechar) {
-    const pendente = this._autosaveTimer || this._autosavePendente;
-    if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
-    if (this.nomeDesenho && this.doc.tamanho && (fechar || pendente)) {
-      try { await this.salvar({ avisar: !!fechar }); } catch { /* o aviso de erro já saiu */ }
+    if (this.nomeDesenho && this.doc.tamanho && !this._desenhoBloqueado() && (fechar || this._temPendente())) {
+      // espera a gravação em curso e confirma; falhou, pergunta antes de sair
+      try {
+        await this.gravarConfirmado({ forcar: !!fechar });
+        if (fechar) this.aviso('Desenho salvo no projeto.', 'info');
+      } catch (e) {
+        const corpo = el('div', { class: 'explica', texto: `Não foi possível gravar o desenho: ${e.message}. Sair perde o que não foi gravado.` });
+        if (await this.dialogo({ titulo: 'Desenho não gravado', corpo, ok: 'Sair mesmo assim' }) !== 'ok') return;
+      }
     }
+    this._editado = false;
     const mesmaOrigem = document.referrer && new URL(document.referrer).origin === location.origin;
     if (mesmaOrigem && history.length > 1) { history.back(); return; }
     location.href = this.projeto ? this.urlDoEditor() : '/';
@@ -197,6 +289,8 @@ class CAD {
   }
 
   _agendarAutosave() {
+    this._editado = true;
+    this._versaoEdicao = (this._versaoEdicao || 0) + 1;
     if (!this.projeto) return;
     if (this._autosaveTimer) clearTimeout(this._autosaveTimer);
     // desenho enorme (modelo inteiro): serializar 100 MB trava a tela por um instante,
@@ -307,8 +401,7 @@ class CAD {
       if (meta && meta.marca) alvo = 'posicao:' + meta.marca;
     }
     if (!alvo) { this.aviso('Selecione uma peça do detalhamento (título, contorno ou furo) para vê-la no 3D.', 'atencao'); return; }
-    const ir = () => { location.href = this.urlDoEditor(`&destacar=${encodeURIComponent(alvo)}`); };
-    if (this.doc.tamanho && this.nomeDesenho) this.salvar({ avisar: false }).then(ir, ir); else ir();
+    this._sairPara(this.urlDoEditor(`&destacar=${encodeURIComponent(alvo)}`));
   }
 
   /** As linhas da mesma peça em volta desta (contorno, abas, linha oculta de uma barra
@@ -525,8 +618,7 @@ class CAD {
       apagar: () => this.apagarSelecao(),
       materiais: async () => {
         if (!this.projeto) { this.aviso('A lista de materiais precisa de um projeto aberto.', 'atencao'); return; }
-        if (this.doc.tamanho && this.nomeDesenho) { try { await this.salvar({ avisar: false }); } catch { /* segue */ } }
-        location.href = `/materiais?projeto=${encodeURIComponent(this.projeto)}`;
+        await this._sairPara(`/materiais?projeto=${encodeURIComponent(this.projeto)}`);
       },
       'selecionar-peca': () => this.selecionarMesmaPeca(),
       'zoom-extensao': () => this.tela.enquadrar(),
@@ -1190,8 +1282,18 @@ class CAD {
   }
 
   async dialogoNovo() {
-    const nome = await this.perguntar('Novo desenho', 'Nome', 'Desenho ' + ((await this._listaDesenhos()).length + 1));
+    const lista = this.projeto ? await this._listaDesenhos() : [];
+    const nome = await this.perguntar('Novo desenho', 'Nome', 'Desenho ' + (lista.length + 1));
     if (!nome) return;
+    // nome que já existe no projeto: gravar o desenho novo apagaria o que está nele
+    const existente = lista.find(d => d.nome === slug(nome) || (d.titulo || '') === nome.trim());
+    if (existente) {
+      const corpo = el('div', { class: 'explica', texto: `Já existe o desenho "${existente.titulo || existente.nome}" neste projeto; um desenho novo com esse nome apagaria o que está nele. Escolha outro nome, ou abra o existente.` });
+      if (await this.dialogo({ titulo: 'Nome já usado', corpo, ok: 'Abrir o existente' }) === 'ok') await this.abrirDesenho(existente.nome);
+      return;
+    }
+    if (this.nomeDesenho && this._temPendente() && !(await this._gravarOuConfirmar('Criar mesmo assim'))) return;
+    this._naoAbriu = null;
     this.nomeDesenho = slug(nome);
     this.carregar({ nome, escala: 20 });
     const url = new URL(location.href); url.searchParams.set('desenho', this.nomeDesenho); history.replaceState(null, '', url);
