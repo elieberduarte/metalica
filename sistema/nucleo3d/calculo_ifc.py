@@ -58,7 +58,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo import analise, cargas, nbr8800, nbr14762, perfis_fabrica, verificar
 from nucleo import materiais as mat
-from nucleo.base import ErroDeDados, Resultado, Verificacao, fmt
+from nucleo.base import ErroDeDados, Resultado, Verificacao, fmt, nao_verificada
 from nucleo.perfis import Perfil
 from nucleo3d.modelo import Chapa, Documento, Solido
 from nucleo3d.mapa_esforcos import (ENVOLTORIA, ESTACOES, GRANDEZAS, UNIDADES,
@@ -1042,7 +1042,7 @@ def _carregar_tesoura(t: _Tesoura, g_cob: float, sc: float, vento: dict, par: di
 
 
 def _combinar(t: _Tesoura, vento: dict) -> Dict[str, str]:
-    from nucleo.galpao import _somar
+    from nucleo.galpao import _somar, combinacoes_com_vento
     m = t.modelo
     combos: Dict[str, str] = {}
     m.caso("C1 gravidade")
@@ -1053,10 +1053,11 @@ def _combinar(t: _Tesoura, vento: dict) -> Dict[str, str]:
         m.caso(n2)
         _somar(m, n2, {"PP": 1.0, caso: 1.4})
         combos[n2] = "1,0·PP + 1,4·Vento (%s)" % v["descricao"]
-        n3 = "C3 vento+SC %d" % i
-        m.caso(n3)
-        _somar(m, n3, {"PP": 1.25, "SC": 1.5 * 0.6, caso: 1.4 * 0.6})
-        combos[n3] = "1,25·PP + 0,9·SC + 0,84·Vento (%s)" % v["descricao"]
+        for nome_c, parcelas, texto in combinacoes_com_vento(caso):
+            nome_c = "%s %d" % (nome_c, i)
+            m.caso(nome_c)
+            _somar(m, nome_c, parcelas)
+            combos[nome_c] = "%s (%s)" % (texto, v["descricao"])
     m.caso("S rara gravidade")
     _somar(m, "S rara gravidade", {"PP": 1.0, "SC": 1.0})
     combos["S rara gravidade"] = "PP + SC (serviço)"
@@ -1100,7 +1101,7 @@ def _elemento_extra(marca: str, nome: str, tit: str, tipo: str, r: Resultado, pe
     return {
         "nome": nome, "titulo": tit, "tipo": tipo, "posicao": "",
         "perfil": perfil.nome, "material": aco, "n": 1,
-        "aproveitamento": round(r.razao, 3), "ok": bool(r.ok),
+        "aproveitamento": round(r.razao, 3), "ok": bool(r.ok), "indeterminada": bool(r.indeterminada),
         "governa": crit.titulo if crit else "", "norma": getattr(crit, "norma", "") if crit else "",
         "Sd": round(crit.Sd, 2) if crit else 0.0, "Rd": round(crit.Rd, 2) if crit else 0.0,
         "unidade": getattr(crit, "unidade", "") if crit else "",
@@ -1145,9 +1146,7 @@ def _verificar_pilar(perfil: Perfil, aco: str, Nc: float, Nt: float, M: float, H
         return r
     except ErroDeDados as exc:
         r = Resultado(elemento, perfil=perfil.nome, material=aco)
-        v = Verificacao("Não verificada", Sd=0.0, Rd=1.0, unidade="—")
-        v.observacao = str(exc)
-        r.add(v)
+        r.add(nao_verificada(exc))
         return r
 
 
@@ -1356,9 +1355,7 @@ def _verificar_complementares(tes: List[_Tesoura], soltas: List[_Peca], cruz: Di
                 v.titulo = v.titulo.replace("gravidade", "pressão do vento")
         except ErroDeDados as exc:
             r = Resultado(tit, perfil=p.perfil.nome, material=p.aco)
-            v = Verificacao("Não verificada", Sd=0.0, Rd=1.0, unidade="—")
-            v.observacao = str(exc)
-            r.add(v)
+            r.add(nao_verificada(exc))
         q = max(q_p, q_s)
         elementos[marca] = _elemento_extra(
             marca, nome, tit, "longarina", r, p.perfil, p.aco,
@@ -1710,7 +1707,7 @@ def _ligacoes_das_tesouras(tes: List[_Tesoura], par: dict, nomes_pos: dict, elem
             "n_parafusos": entrada.get("n_parafusos", 0), "diametro": entrada.get("diametro", ""),
             "perna_mm": round(entrada.get("perna_cm", 0.0) * 10.0, 1) if g["tipo"] != "parafusada" else 0.0,
             "angulo_graus": g.get("angulo_graus"),
-            "aproveitamento": round(r.razao, 3), "ok": bool(r.ok),
+            "aproveitamento": round(r.razao, 3), "ok": bool(r.ok), "indeterminada": bool(r.indeterminada),
             "governa": crit.titulo if crit else "", "norma": getattr(crit, "norma", "") if crit else "",
             "Sd": round(crit.Sd, 2) if crit else 0.0, "Rd": round(crit.Rd, 2) if crit else 0.0,
             "unidade": getattr(crit, "unidade", "") if crit else "",
@@ -1834,9 +1831,7 @@ def _verificar_ligacao(perfil: Perfil, entrada: dict, elemento: str) -> Resultad
                 v.observacao = "compressão verificada como escoamento da seção de Whitmore, sem flambagem da chapa"
     except ErroDeDados as exc:
         r = Resultado(elemento, perfil=perfil.nome, material=entrada.get("aco_chapa", ""))
-        v = Verificacao("Não verificada", Sd=0.0, Rd=1.0, unidade="—")
-        v.observacao = str(exc)
-        r.add(v)
+        r.add(nao_verificada(exc))
         r.dados["erro"] = str(exc)
     r.dados.update({"N": N, "largura_ligacao": largura, "t_barra": t_b, "tipo": entrada.get("tipo", "")})
     return r
@@ -1977,7 +1972,7 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         elementos[marca] = {
             "nome": nome, "titulo": tit, "tipo": reg["tipo"], "posicao": reg["posicao"],
             "perfil": reg["perfil"].nome, "material": reg["aco"], "n": reg["n"],
-            "aproveitamento": round(r.razao, 3), "ok": bool(r.ok),
+            "aproveitamento": round(r.razao, 3), "ok": bool(r.ok), "indeterminada": bool(r.indeterminada),
             "governa": crit.titulo if crit else "", "norma": getattr(crit, "norma", "") if crit else "",
             "Sd": round(crit.Sd, 2) if crit else 0.0, "Rd": round(crit.Rd, 2) if crit else 0.0,
             "unidade": getattr(crit, "unidade", "") if crit else "",
@@ -2022,7 +2017,10 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         nome = nomes_pos.get(marca, "")
         pp = p.perfil.massa * G
         g = g_cob * larg + pp
-        q_g = 1.25 * g + 1.5 * sc * larg * math.cos(math.radians(theta)) + max(0.0, 1.4 * 0.6 * p_max * larg)
+        q_sc = sc * larg * math.cos(math.radians(theta))
+        q_v = max(0.0, p_max * larg)
+        q_g = max(1.25 * g + 1.5 * q_sc + 1.4 * 0.6 * q_v,            # SC principal
+                  1.25 * g + 1.5 * 0.8 * q_sc + 1.4 * q_v)            # vento principal (pressão)
         q_s = max(0.0, 1.4 * abs(min(p_min, 0.0)) * larg - 1.0 * g)
         q_gs = g + sc * larg * math.cos(math.radians(theta))
         q_ss = max(0.0, abs(min(p_min, 0.0)) * larg - g)
@@ -2040,9 +2038,7 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
                                            elemento=tit)
         except ErroDeDados as exc:
             r = Resultado(tit, perfil=p.perfil.nome, material=p.aco)
-            v = Verificacao("Não verificada", Sd=0.0, Rd=1.0, unidade="—")
-            v.observacao = str(exc)
-            r.add(v)
+            r.add(nao_verificada(exc))
         crit = r.critica
         caso = "gravidade" if q_g >= q_s else "sucção"
         q = max(q_g, q_s)
@@ -2050,7 +2046,7 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         elementos[marca] = {
             "nome": nome, "titulo": tit, "tipo": "terca", "posicao": "",
             "perfil": p.perfil.nome, "material": p.aco, "n": 1,
-            "aproveitamento": round(r.razao, 3), "ok": bool(r.ok),
+            "aproveitamento": round(r.razao, 3), "ok": bool(r.ok), "indeterminada": bool(r.indeterminada),
             "governa": crit.titulo if crit else "", "norma": getattr(crit, "norma", "") if crit else "",
             "Sd": round(crit.Sd, 2) if crit else 0.0, "Rd": round(crit.Rd, 2) if crit else 0.0,
             "unidade": getattr(crit, "unidade", "") if crit else "",

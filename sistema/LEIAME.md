@@ -218,6 +218,30 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.14.** Cálculo pela revisão geral de 24/09 (bloco 3) — **muda a impressão digital do núcleo**; memoriais
+emitidos com perfis formados a frio comprimidos, cantoneiras simples de tesoura ou pórtico de alma cheia devem ser
+conferidos. (1) `nbr14762.GAMA_COMPRESSAO = 1,20` (Tabela 4, compressão centrada) em `compressao_mrd`, e
+`nbr8800.compressao` usa 1,20 no perfil `formado_a_frio` (U, Ue, cantoneira dobrada): Ue 127×50×17×2,00, CIVIL 300,
+1,50 m → 66,7 kN (era 72,7). Tubos ficam na NBR 8800 (1,10). (2) `esbeltez_equivalente_cantoneira(..., trelica="plana")`
+por padrão — E.1.4.2, 72 + 0,75·L/r até 80 e 32 + 1,25·L/r acima; "espacial" (E.1.4.3) com o limite corrigido para 75:
+L 2"×3/16", A36, 1,0/1,5/2,0 m → 48,7/31,4/19,7 kN (eram 54,2/36,5/24,3). (3) `verificar_frio`: KL/r ≤ 200 na barra
+comprimida (item 9.7.4). (4) `Verificacao.indeterminada` e `base.nao_verificada()`: a peça sem dado não aprova (`ok`
+falso, `Resultado.indeterminada`), sai marcada na serialização e nos elementos do cálculo do IFC e do mapa, e o mapa de
+aproveitamento a pinta de violeta (`COR_INDETERMINADA`); o Dimensionar não a aceita mais como "o mais leve que passa".
+(5) `galpao.combinacoes_com_vento`: C3 1,25·PP + 1,5·SC + 0,84·V (SC principal), C4 1,25·PP + 1,4·V + 1,2·SC (vento
+principal), C5 1,25·PP + 1,4·V, no galpão e nas tesouras do IFC (antes só 1,25·PP + 0,9·SC + 0,84·V, sem ação
+principal); a terça do IFC pega a maior entre SC e vento principal; o memorial documenta as mesmas. (6) 2ª ordem no
+pórtico: `_forcas_nocionais` (0,3 % da carga gravitacional de cada combinação última, no topo dos pilares) e
+`segunda_ordem` — B2 pela flexibilidade lateral com 0,8·EI e R_s = 0,85, B1 com C_m = 1; pilar e viga dimensionados com
+M × máx(B1, B2) e N do pilar × B2 (no treliçado, só o pilar); aviso para grande deslocabilidade; seção "Efeitos de
+segunda ordem" no memorial, nota nos diagramas (que continuam de 1ª ordem) e `joelho_kNm_analise`. Pórtico padrão:
+B2 = 1,14 (média deslocabilidade). (7) Catálogo: `conferir_massas` troca a massa do fornecedor que não bate com a área
+(35 itens, com `massa_fornecedor` e `obs_massa`: L 5"×7/16" 23,52 → 21,16; TC 42,4×1,35; TQ 30×30×1,8; série TR 100×70
+e 150×80/130×100 da Marcegaglia, que batem com outra medida — a conferir no catálogo deles); tubo retangular calculado
+com cantos arredondados (raio 2t/t); chapas CH 2,0 (#14) e CH 3,35 (#10) como a fábrica usa, a CH 1,9 e a CH 3,4
+marcadas MSG. Galpão treliçado de 20 m trapezoidal Howe: o banzo inferior deixa de passar com Ue simples (1,03) e o
+aviso aponta os banzos duplos. Testes `test_calculo_revisao.py`.
+
 **0.8.13.** Números da produção iguais (revisão geral de 24/09, bloco 2). (1) Romaneio CSV:
 `gravar_romaneio_da_lista` sai das linhas da lista impressa (TMD, complemento e cumeeira como na lista, telhas no
 comprimento de compra, acessórios no fim), não das posições cruas; o JSON da lista por `_gravar_json`. (2) PDF dos

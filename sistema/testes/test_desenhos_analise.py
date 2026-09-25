@@ -32,7 +32,11 @@ class BaseDesenhos(unittest.TestCase):
 class TestDiagramas(BaseDesenhos):
     def test_cota_os_picos_do_calculo(self):
         texto = _texto(self.diagramas)
-        joelho = self.projeto.esforcos["joelho_kNm"]
+        # o desenho cota a análise; o momento de cálculo do joelho é esse × o fator de 2ª ordem
+        so = self.projeto.esforcos["segunda_ordem"]
+        joelho = self.projeto.esforcos["joelho_kNm_analise"]
+        self.assertAlmostEqual(self.projeto.esforcos["joelho_kNm"], joelho * so["fator_pilar"], delta=0.15)
+        self.assertIn("2a ordem", texto)
         self.assertIn(f"{joelho:.1f}".replace(".", ","), texto,
                       "o momento do joelho tem de aparecer cotado")
         for titulo in ("MOMENTO FLETOR", "ESFORCO CORTANTE", "FORCA NORMAL"):

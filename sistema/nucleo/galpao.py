@@ -442,7 +442,7 @@ def _analise_alma_cheia(p: ProjetoGalpao):
 
     for _ in range(6):
         modelo, env, combos = _rodar_analise(p, pilar0, viga0)
-        esf = _extrair_esforcos(env)
+        esf = _amplificar_esforcos(_extrair_esforcos(env), segunda_ordem(modelo, combos))
 
         # viga: sob gravidade a terca trava a mesa superior; sob succao a mesa
         # inferior fica comprimida e quem trava sao as maos-francesas
@@ -475,26 +475,32 @@ def _analise_alma_cheia(p: ProjetoGalpao):
     # o deslocamento horizontal do topo costuma governar o pilar de galpao com base
     # rotulada; percorre-se o catalogo ate atender ao limite de servico
     if d.perfil_forcado("perfil_pilar") is None:
+        _m, _env, _c = _rodar_analise(p, pilar0, viga0)
         pilar0, res_pilar = _pilar_por_deslocamento(
-            p, viga0, pilar0, res_pilar, _extrair_esforcos(
-                _rodar_analise(p, pilar0, viga0)[1]), H, Kx, Ly, a)
+            p, viga0, pilar0, res_pilar, _amplificar_esforcos(
+                _extrair_esforcos(_env), segunda_ordem(_m, _c)), H, Kx, Ly, a)
 
     # analise final com os perfis adotados
     modelo, env, combos = _rodar_analise(p, pilar0, viga0)
+    so = segunda_ordem(modelo, combos)
     esf = _extrair_esforcos(env)
     desloc = _deslocamento_horizontal(p, modelo)
     extremos = _momentos_nos_nos(modelo, combos)
     esf["joelho"] = extremos["joelho"]
-    esf["cumeeira"] = extremos["cumeeira"]
+    esf["cumeeira"] = extremos["cumeeira"] * so["fator_viga"]
+    esf = _amplificar_esforcos(esf, so)
+    _aviso_segunda_ordem(p, so)
 
     p.esforcos = {
         "modelo": modelo, "envoltoria": env, "combinacoes": combos,
         "viga": esf["viga"], "pilar": esf["pilar"],
         "joelho_kNm": round(esf["joelho"] / 100, 1),
+        "joelho_kNm_analise": round(extremos["joelho"] / 100, 1),       # 1ª ordem, o que o diagrama cota
         "cumeeira_kNm": round(esf["cumeeira"] / 100, 1),
         "deslocamento": desloc,
         "pre_viga": viga0.nome, "pre_pilar": pilar0.nome,
         "iteracoes": historico,
+        "segunda_ordem": so,
     }
     p.esforcos["casos_modelo"] = combos
     p.combinacoes = _combinacoes_documentadas(p)
@@ -611,11 +617,25 @@ def _combinacoes_documentadas(p: ProjetoGalpao) -> list:
         cargas.Acao("Vento (sucção no telhado)", "vento", -succao),
     ]
     try:
-        ultimas = cargas.combinacoes_ultimas(acoes)
+        ultimas = list(cargas.combinacoes_ultimas(acoes))
         servico = cargas.combinacoes_servico(acoes)
-        return list(ultimas) + list(servico)
     except Exception:
         return []
+    # as combinações com vento e sobrecarga que o modelo resolve (combinacoes_com_vento);
+    # a de sinais da função geral só junta ações do mesmo sentido e não as gera
+    rotulos = {"PP": ("Peso próprio da cobertura", g, "permanente desfavorável"),
+               "SC": ("Sobrecarga de cobertura", sc, None), "V": ("Vento (sucção no telhado)", -succao, None)}
+    for nome_c, parcelas, _texto in combinacoes_com_vento("V"):
+        principal = "Sobrecarga de cobertura" if nome_c.startswith("C3") else "Vento (sucção no telhado)"
+        ps = []
+        for caso, fator in parcelas.items():
+            rot, valor, papel = rotulos[caso]
+            if papel is None:
+                papel = "variável principal" if rot == principal else "variável secundária (ψ₀)"
+            gama = 1.25 if caso == "PP" else (1.5 if caso == "SC" else 1.4)
+            ps.append(cargas.Parcela(rot, gama, fator / gama, valor, papel, "NBR 8800, Tabelas 1 e 2"))
+        ultimas.append(cargas.Combinacao("C%d" % (len(ultimas) + 1), "última normal", "±", principal, ps))
+    return ultimas + list(servico)
 
 
 def _rodar_analise(p: ProjetoGalpao, pilar: Perfil, viga: Perfil):
@@ -759,6 +779,30 @@ def _deslocamento_horizontal(p: ProjetoGalpao, modelo) -> dict:
             "criterio": "H/%d" % d.desloc_horizontal}
 
 
+def combinacoes_com_vento(caso_vento: str):
+    """As combinações últimas com vento e sobrecarga (NBR 8681, item 5.1.3; NBR 8800,
+    item 4.7.7.2), cada ação variável uma vez como principal:
+
+        C3  1,25·PP + 1,5·SC + 1,4·ψ₀·V     (sobrecarga principal, ψ₀ do vento = 0,6)
+        C4  1,25·PP + 1,4·V + 1,5·ψ₀·SC     (vento principal, ψ₀ da cobertura = 0,8)
+        C5  1,25·PP + 1,4·V                  (vento com a permanente desfavorável, sem SC)
+
+    Até a 0.8.13 havia só 1,25·PP + 0,9·SC + 0,84·V — as duas variáveis reduzidas e
+    nenhuma principal —, que deixava de fora a combinação que governa o pilar.
+    Devolve [(nome, {caso: fator}, texto)]."""
+    psi0_v = cargas.psi("vento")[0]
+    psi0_sc = cargas.psi("cobertura")[0]
+    def n(x):
+        return ("%.2f" % x).rstrip("0").rstrip(".").replace(".", ",")
+    return [
+        ("C3 SC+vento", {"PP": 1.25, "SC": 1.5, caso_vento: 1.4 * psi0_v},
+         "1,25·PP + 1,5·SC + %s·Vento" % n(1.4 * psi0_v)),
+        ("C4 vento+SC", {"PP": 1.25, "SC": 1.5 * psi0_sc, caso_vento: 1.4},
+         "1,25·PP + 1,4·Vento + %s·SC" % n(1.5 * psi0_sc)),
+        ("C5 vento+PP", {"PP": 1.25, caso_vento: 1.4}, "1,25·PP + 1,4·Vento"),
+    ]
+
+
 def _combinar(modelo, p: ProjetoGalpao, acoes) -> dict:
     """Monta os casos combinados dentro do modelo e devolve {nome: descrição}."""
     d = p.dados
@@ -773,10 +817,11 @@ def _combinar(modelo, p: ProjetoGalpao, acoes) -> dict:
         modelo.caso(nome)
         _somar(modelo, nome, {"PP": 1.0, f"V{rot}": 1.4})
         combos[nome] = f"1,0·PP + 1,4·Vento ({rot})"
-        nome3 = f"C3 vento+SC ({rot})"
-        modelo.caso(nome3)
-        _somar(modelo, nome3, {"PP": 1.25, "SC": 1.5 * 0.6, f"V{rot}": 1.4 * 0.6})
-        combos[nome3] = f"1,25·PP + 0,9·SC + 0,84·Vento ({rot})"
+        for nome_c, parcelas, texto in combinacoes_com_vento(f"V{rot}"):
+            nome_c = f"{nome_c} ({rot})"
+            modelo.caso(nome_c)
+            _somar(modelo, nome_c, parcelas)
+            combos[nome_c] = f"{texto} ({rot})"
     # serviço, para flecha e deslocamento
     modelo.caso("S rara gravidade")
     _somar(modelo, "S rara gravidade", {"PP": 1.0, "SC": 1.0})
@@ -784,7 +829,138 @@ def _combinar(modelo, p: ProjetoGalpao, acoes) -> dict:
     modelo.caso("S vento")
     _somar(modelo, "S vento", {"PP": 1.0, "Vcpi-": 0.3})
     combos["S vento"] = "PP + 0,3·Vento (frequente)"
+    _forcas_nocionais(modelo, [c for c in combos if c.startswith("C")])
     return combos
+
+
+#: Força nocional: fração das cargas gravitacionais de cálculo (NBR 8800, item 4.9.7.1).
+FRACAO_NOCIONAL = 0.003
+#: Rigidez reduzida da análise que alimenta o B2 (NBR 8800, item 4.9.4.3 — média
+#: deslocabilidade); adotada sempre, a favor da segurança.
+RIGIDEZ_REDUZIDA = 0.8
+#: R_s do B2: pórtico cuja estabilidade lateral vem da rigidez das ligações (D.2.2).
+RS_PORTICO = 0.85
+
+
+def _topos_dos_pilares(modelo) -> list:
+    dd = modelo.dados or {}
+    return [dd.get("no_apoio_esq") or "B", dd.get("no_apoio_dir") or "D"]
+
+
+def _forcas_nocionais(modelo, casos) -> None:
+    """0,3 % da carga gravitacional de cada combinação última, horizontal, no topo dos
+    pilares, no sentido da resultante horizontal da combinação (a de gravidade, para a
+    direita). Representa a imperfeição geométrica inicial (NBR 8800, item 4.9.7.1)."""
+    topos = _topos_dos_pilares(modelo)
+    for caso in casos:
+        try:
+            Fx, Fy, _ = analise.resolver(modelo, caso, 3).cargas_aplicadas()
+        except Exception:
+            continue
+        H = FRACAO_NOCIONAL * max(0.0, -Fy)
+        if H <= 0:
+            continue
+        sentido = -1.0 if Fx < -1e-9 else 1.0
+        for no in topos:
+            modelo.nodal(caso, no, Fx=sentido * H / len(topos))
+
+
+def segunda_ordem(modelo, combos, barras_pilar=("pilar_esq", "pilar_dir"),
+                  barras_viga=("viga_esq", "viga_dir")) -> dict:
+    """Amplificação dos esforços pelo Anexo D da NBR 8800 (B1/B2), sem a análise nt:
+
+        B2 = 1 / (1 − (1/R_s)·(Δh/h)·(ΣN_Sd/ΣH_Sd))  pela flexibilidade lateral do
+             pórtico (Δh/ΣH de uma força horizontal no topo, com 0,8·EI) e o maior ΣN_Sd
+             das combinações últimas;
+        B1 = C_m / (1 − N_Sd1/N_e1) ≥ 1,  C_m = 1,0 e N_e1 = π²·E·I/L² (K = 1).
+
+    Os momentos saem multiplicados por máx(B1, B2) e a normal do pilar por B2 — a
+    simplificação a favor da segurança do Anexo D quando não há análise nt."""
+    topos = _topos_dos_pilares(modelo)
+    dd = modelo.dados or {}
+    h = float(dd.get("pe_direito") or 0.0)
+    caso_h = "_unitaria_horizontal"
+    modelo.caso(caso_h)
+    for no in topos:
+        modelo.nodal(caso_h, no, Fx=1.0 / len(topos))
+    try:
+        r = analise.resolver(modelo, caso_h, 3)
+        dh = sum(r.deslocamento(no)[0] for no in topos) / len(topos)       # cm, por 1 kN
+    finally:
+        modelo.casos.pop(caso_h, None)
+    flex = abs(dh) / RIGIDEZ_REDUZIDA
+    soma_N, caso_N = 0.0, ""
+    for caso in [c for c in combos if c.startswith("C")]:
+        try:
+            Fy = analise.resolver(modelo, caso, 3).cargas_aplicadas()[1]
+        except Exception:
+            continue
+        if -Fy > soma_N:
+            soma_N, caso_N = -Fy, caso
+    termo = flex * soma_N / (RS_PORTICO * h) if h > 0 else 0.0
+    B2 = 1.0 / (1.0 - termo) if termo < 1.0 else float("inf")
+
+    def B1(rotulos) -> float:
+        pior = 1.0
+        for rot in rotulos:
+            try:
+                k = modelo.indice_barra(rot)
+            except Exception:
+                continue
+            b = modelo.barras[k]
+            L = modelo.comprimento(rot)
+            Ne1 = math.pi ** 2 * b.E * b.I / L ** 2 if L > 0 else float("inf")
+            N = 0.0
+            for caso in [c for c in combos if c.startswith("C")]:
+                try:
+                    dN = analise.resolver(modelo, caso, 5).barra(rot).diagrama.N
+                except Exception:
+                    continue
+                N = max(N, -min(dN) if dN else 0.0)
+            if N >= Ne1:
+                return float("inf")
+            pior = max(pior, 1.0 / (1.0 - N / Ne1))
+        return pior
+
+    B1_p, B1_v = B1(barras_pilar), B1(barras_viga)
+    if B2 <= analise.LIMITE_PEQUENA:
+        classe = "pequena deslocabilidade"
+    elif B2 <= analise.LIMITE_MEDIA:
+        classe = "média deslocabilidade"
+    else:
+        classe = "grande deslocabilidade"
+    return {"B2": B2, "B1_pilar": B1_p, "B1_viga": B1_v,
+            "fator_pilar": max(B1_p, B2), "fator_viga": max(B1_v, B2),
+            "delta_por_kN_cm": abs(dh), "soma_N_kN": soma_N, "caso_N": caso_N, "h_cm": h,
+            "Rs": RS_PORTICO, "classificacao": classe}
+
+
+def _amplificar_esforcos(esf: dict, so: dict) -> dict:
+    """Aplica `segunda_ordem` aos esforços do pilar e da viga (e aos nós da ligação)."""
+    fp, fv = so["fator_pilar"], so["fator_viga"]
+    for chave, f in (("pilar", fp), ("viga", fv)):
+        e = esf.get(chave)
+        if not e:
+            continue
+        for g in ("M", "M_max", "M_min"):
+            if g in e:
+                e[g] = e[g] * f
+        if chave == "pilar" and "N" in e:
+            e["N"] = e["N"] * so["B2"]
+    for chave in ("joelho",):
+        if chave in esf and isinstance(esf[chave], (int, float)):
+            esf[chave] = esf[chave] * fp
+    esf["segunda_ordem"] = so
+    return esf
+
+
+def _aviso_segunda_ordem(p, so: dict) -> None:
+    if so["classificacao"] == "grande deslocabilidade":
+        p.avisos.append(
+            "Pórtico de grande deslocabilidade (B2 = %s): a NBR 8800 (item 4.9.4.2) exige "
+            "análise rigorosa de 2ª ordem; a amplificação B1/B2 usada aqui é só indicativa. "
+            "Enrijeça o pórtico (pilar mais alto, base engastada ou contraventamento)."
+            % fmt(so["B2"], 2))
 
 
 def _somar(modelo, destino: str, parcelas: dict):
@@ -1006,6 +1182,13 @@ def _esforcos_da_tesoura(env, modelo, t, d: DadosGalpao) -> dict:
                 ep["M"], ep["caso_M"] = abs(_v(ext)), _caso(ext)
         for ext in (eb.V_max, eb.V_min):
             ep["V"] = max(ep["V"], abs(_v(ext)))
+    # 2ª ordem no pilar (a tesoura é triangulada: as barras dela não se amplificam)
+    pilares = (modelo.dados or {}).get("barras_pilar") or []
+    if pilares:
+        so = segunda_ordem(modelo, list(modelo.casos), barras_pilar=pilares, barras_viga=())
+        ep["M"] *= so["fator_pilar"]
+        ep["N_c"] *= so["B2"]
+        saida["segunda_ordem"] = so
     saida["pilar"] = ep
     return saida
 
@@ -1165,7 +1348,10 @@ def _analise_tesoura(p: ProjetoGalpao):
         "travamento_banzo_inferior_m": round(trava / 100.0, 2),
         "linhas_de_travamento": n_travas,
         "iteracoes": len(historico),
+        "segunda_ordem": esf.get("segunda_ordem"),
     }
+    if esf.get("segunda_ordem"):
+        _aviso_segunda_ordem(p, esf["segunda_ordem"])
     for papel in tesouras.PAPEIS:
         if papel in esf:
             p.esforcos["N_c_%s_kN" % papel.replace(" ", "_")] = round(esf[papel]["N_c"], 1)
@@ -1191,8 +1377,11 @@ def _analise_tesoura(p: ProjetoGalpao):
             p.avisos.append(
                 "O %s não passa nem com o perfil mais pesado de altura compatível com o "
                 "painel (%s, aproveitamento %s). A tesoura está rasa para o vão: aumente "
-                "a altura dela, reduza o vão ou aproxime os pórticos."
-                % (NOME_DA_BARRA[papel].lower(), perf.nome, fmt(r.razao, 2)))
+                "a altura dela, reduza o vão ou aproxime os pórticos%s."
+                % (NOME_DA_BARRA[papel].lower(), perf.nome, fmt(r.razao, 2),
+                   "; ou marque %s duplos (2× o perfil, costas com costas)"
+                   % ("banzos" if papel.startswith("banzo") else "diagonais")
+                   if n_pecas == 1 and papel != "pilar" else ""))
         if papel.startswith("banzo") and perf.d >= altura_max(papel, e) - 1.0:
             p.avisos.append(
                 "O %s ficou na altura máxima admitida (%s, um oitavo do painel de %s). "

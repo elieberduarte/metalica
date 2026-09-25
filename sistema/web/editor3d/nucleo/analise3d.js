@@ -47,6 +47,9 @@ export const APROVEITAMENTO_MAX = 1.2;
  * 1,00 e 1,02 é de propósito: passar de 1,0 tem de aparecer como uma virada, e não como
  * mais um tom de laranja.
  */
+/** Peça que não se verificou por falta de dado: nem verde (não passou) nem da rampa. */
+export const COR_INDETERMINADA = '#b04fc4';
+
 const RAMPA_APROVEITAMENTO = [
   [0.00, '#1a8a4b'], [0.45, '#3f9f3f'], [0.70, '#93bd2c'],
   [0.88, '#e9bb23'], [1.00, '#ef8a1d'], [1.02, '#df4f27'], [1.20, '#a5121f'],
@@ -302,7 +305,8 @@ export class MapaDeEsforcos {
         valor,
         aproveitamento: Number.isFinite(aprov) ? aprov : null,
         ok: el.ok !== false,
-        governa: el.governa || '',
+        indeterminada: !!el.indeterminada,
+        governa: el.indeterminada ? 'não verificada (falta dado)' : (el.governa || ''),
         pecas: ents.length,
       });
     }
@@ -325,6 +329,10 @@ export class MapaDeEsforcos {
 
   /** Cor de uma peça, ou null quando ela não tem valor (a cena a deixa cinza). */
   _corDaEntidade(ent) {
+    if (this.grandeza === 'aproveitamento' && this.pronto) {
+      const el = this._porElemento.get(elementoDaEntidade(ent));
+      if (el && el.indeterminada) return COR_INDETERMINADA;
+    }
     const v = this.valorDaEntidade(ent);
     if (v === null) return null;
     const f = this._faixa || this.faixa();

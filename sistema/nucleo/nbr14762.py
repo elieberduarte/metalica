@@ -59,9 +59,12 @@ K_AA = 4.0            # elemento AA (dois bordos apoiados), compressão uniforme
 K_AL = 0.43           # elemento AL (um bordo livre), compressão uniforme
 K_AA_FLEXAO = 23.9    # elemento AA sob flexão pura (ψ = −1)
 
-# --- coeficiente de ponderação (NBR 14762:2010, Tabela 4) ---
-GAMA = GAMA_A1        # 1,10 — escoamento, flambagem e instabilidade
+# --- coeficientes de ponderação (NBR 14762:2010, Tabela 4) ---
+GAMA = GAMA_A1        # 1,10 — tração (escoamento), flexão e cortante
+GAMA_COMPRESSAO = 1.20  # 1,20 — compressão centrada (a 0.8.13 e anteriores usavam 1,10)
 GAMA_RUPTURA = GAMA_A2  # 1,35 — ruptura (esmagamento em furos)
+#: Índice de esbeltez máximo da barra comprimida (NBR 14762:2010, item 9.7.4).
+ESBELTEZ_MAX_COMPRESSAO = 200.0
 
 _D_PLACA = E / (12.0 * (1.0 - NU ** 2))   # rigidez de placa por unidade de t³
 
@@ -709,7 +712,7 @@ def _chi_global(lambda_0: float) -> float:
 
 def compressao_mrd(sec: SecaoUe, aco, N_Sd: float = 0.0, KxLx: float = 0.0,
                    KyLy: float = 0.0, KtLt: Optional[float] = None,
-                   k_mola: float = 0.0, gama: float = GAMA) -> Verificacao:
+                   k_mola: float = 0.0, gama: float = GAMA_COMPRESSAO) -> Verificacao:
     """Compressão centrada pelo MRD (NBR 14762:2010, item 9.8.2).
 
     Devolve o **menor** entre os três modos:
@@ -720,7 +723,7 @@ def compressao_mrd(sec: SecaoUe, aco, N_Sd: float = 0.0, KxLx: float = 0.0,
         distorcional  λ_dist = √(A·f_y/N_dist);  λ_dist ≤ 0,561 → N_c,Rdist = A·f_y
                       senão N_c,Rdist = (1 − 0,25·(N_dist/A f_y)^0,6)·(N_dist/A f_y)^0,6·A·f_y
 
-    N_c,Rd = min(...)/γ, com γ = 1,10 (Tabela 4).
+    N_c,Rd = min(...)/γ, com γ = 1,20 (Tabela 4, compressão centrada).
     """
     if isinstance(aco, str):
         aco = mat.aco(aco)

@@ -764,31 +764,48 @@ def forcas_flambagem_elastica(perfil, Lx: float, Ly: float = None, Kx: float = 1
     return modos, passos
 
 
-def esbeltez_equivalente_cantoneira(perfil, L: float) -> Tuple[float, Passo]:
-    """(KL/r)ef de cantoneira simples ligada por uma aba (NBR 8800, item E.1.4)."""
+def esbeltez_equivalente_cantoneira(perfil, L: float, trelica: str = "plana") -> Tuple[float, Passo]:
+    """(KL/r)ef de cantoneira simples ligada por uma aba (NBR 8800, item E.1.4).
+
+    `trelica` "plana" (E.1.4.2 — diagonal ou montante de treliça plana, a tesoura e a
+    viga treliçada): 72 + 0,75·L/r até L/r = 80 e 32 + 1,25·L/r acima. "espacial"
+    (E.1.4.3 — torres, treliça espacial): 60 + 0,8·L/r até 75 e 45 + L/r acima. Até a
+    0.8.13 a tesoura usava a da treliça espacial, que dá 11 a 23 % a mais de resistência."""
     p = _perfil_obj(perfil)
     rx = p.rx or p.rmin
     if rx <= 0:
         raise ErroDeDados(f"raio de giração indisponível no perfil {p.nome}")
     lam = L / rx
-    if lam <= 80:
-        ef = 60.0 + 0.8 * lam
-        conta = f"60 + 0,8 × {fmt(lam)}"
+    if trelica == "espacial":
+        if lam <= 75:
+            ef, conta = 60.0 + 0.8 * lam, f"60 + 0,8 × {fmt(lam)}"
+        else:
+            ef, conta = 45.0 + lam, f"45 + {fmt(lam)}"
+        formula = ("(KL/r)<sub>ef</sub> = 60 + 0,8·L/r<sub>x</sub> (L/r<sub>x</sub> ≤ 75); "
+                   "45 + L/r<sub>x</sub> (acima) — treliça espacial")
+        norma = "NBR 8800, item E.1.4.3"
     else:
-        ef = 45.0 + lam
-        conta = f"45 + {fmt(lam)}"
+        if lam <= 80:
+            ef, conta = 72.0 + 0.75 * lam, f"72 + 0,75 × {fmt(lam)}"
+        else:
+            ef, conta = 32.0 + 1.25 * lam, f"32 + 1,25 × {fmt(lam)}"
+        formula = ("(KL/r)<sub>ef</sub> = 72 + 0,75·L/r<sub>x</sub> (L/r<sub>x</sub> ≤ 80); "
+                   "32 + 1,25·L/r<sub>x</sub> (acima) — treliça plana")
+        norma = "NBR 8800, item E.1.4.2"
     return ef, Passo("Esbeltez equivalente da cantoneira ligada por uma aba",
-                     formula="(KL/r)<sub>ef</sub> = 60 + 0,8·L/r<sub>x</sub> (L/r<sub>x</sub> ≤ 80); "
-                             "45 + L/r<sub>x</sub> (acima)",
-                     conta=conta, valor=fmt(ef), norma="NBR 8800, item E.1.4")
+                     formula=formula, conta=conta, valor=fmt(ef), norma=norma)
 
 
 def compressao(perfil, aco, Lx: float, Ly: float = None, Kx: float = 1.0, Ky: float = 1.0,
                Lt: float = None, Kt: float = 1.0, N_Sd: float = 0.0,
                x0: float = None, y0: float = None, fabricacao: str = "laminado",
-               cantoneira_simplificada: bool = False,
+               cantoneira_simplificada: bool = False, trelica: str = "plana",
                elemento: str = "Barra comprimida") -> Resultado:
     """Barra comprimida — NBR 8800, item 5.3.
+
+    Perfil formado a frio (`formado_a_frio` no catálogo: U, Ue e cantoneira dobrados)
+    usa γ = 1,20, o da compressão centrada da NBR 14762:2010 (Tabela 4); os demais,
+    γ<sub>a1</sub> = 1,10.
 
     Nc,Rd = χ·Q·Ag·fy/γa1, com λ0 = √(Q·Ag·fy/Ne), Ne = menor força de flambagem
     elástica entre os modos aplicáveis (flexão em x, flexão em y, torção e
@@ -813,7 +830,7 @@ def compressao(perfil, aco, Lx: float, Ly: float = None, Kx: float = 1.0, Ky: fl
     lam_x = Kx * Lx / rx if rx else 0.0
     lam_y = Ky * Ly / ry if ry else 0.0
     if cantoneira_simplificada:
-        lam_ef, passo_ef = esbeltez_equivalente_cantoneira(p, Lx)
+        lam_ef, passo_ef = esbeltez_equivalente_cantoneira(p, Lx, trelica)
         lam_max = lam_ef
     else:
         passo_ef = None
@@ -846,7 +863,9 @@ def compressao(perfil, aco, Lx: float, Ly: float = None, Kx: float = 1.0, Ky: fl
 
     lambda_0 = math.sqrt(Q * Ag * fy / Ne)
     chi = fator_chi(lambda_0)
-    Nc_Rd = chi * Q * Ag * fy / GAMA_A1
+    frio = bool(p.dados.get("formado_a_frio"))
+    gama = 1.20 if frio else GAMA_A1
+    Nc_Rd = chi * Q * Ag * fy / gama
 
     v = Verificacao("Compressão — flambagem global",
                     norma="NBR 8800:2008, item 5.3.3", Sd=N_Sd, Rd=Nc_Rd, unidade="kN")
@@ -868,9 +887,10 @@ def compressao(perfil, aco, Lx: float, Ly: float = None, Kx: float = 1.0, Ky: fl
                    else f"0,877 / {fmt(lambda_0 ** 2, 3)}"),
             valor=fmt(chi, 3), norma="item 5.3.3")
     v.passo("Força axial resistente de cálculo",
-            formula="N<sub>c,Rd</sub> = χ·Q·A<sub>g</sub>·f<sub>y</sub>/γ<sub>a1</sub>",
-            conta=f"{fmt(chi, 3)} × {fmt(Q, 3)} × {fmt(Ag)} × {fmt(fy)} / {fmt(GAMA_A1)}",
-            valor=fmt(Nc_Rd, 0, "kN"), norma="item 5.3.2")
+            formula="N<sub>c,Rd</sub> = χ·Q·A<sub>g</sub>·f<sub>y</sub>/γ",
+            conta=f"{fmt(chi, 3)} × {fmt(Q, 3)} × {fmt(Ag)} × {fmt(fy)} / {fmt(gama)}",
+            valor=fmt(Nc_Rd, 0, "kN"),
+            norma="item 5.3.2; γ = 1,20 do formado a frio, NBR 14762, Tabela 4" if frio else "item 5.3.2")
     if p.tipo == "L" and not cantoneira_simplificada:
         v.observacao = ("cantoneira simples: a flambagem por flexo-torção depende da "
                         "posição do centro de cisalhamento, que o catálogo não traz. "

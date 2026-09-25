@@ -61,10 +61,13 @@ class TestValoresBatemComOCalculo(BaseMapa):
         esf = self.projeto.esforcos
         viga = self.mapa["elementos"]["Viga do pórtico"]["valores"][me.ENVOLTORIA]
         pilar = self.mapa["elementos"]["Pilar"]["valores"][me.ENVOLTORIA]
-        self.assertAlmostEqual(viga["M"], esf["viga"]["M"] / 100.0, delta=0.5)
+        # o mapa mostra a análise (1ª ordem); o dimensionamento usa os esforços
+        # amplificados pela 2ª ordem (máx(B1, B2) no momento, B2 na normal do pilar)
+        so = esf["segunda_ordem"]
+        self.assertAlmostEqual(viga["M"] * so["fator_viga"], esf["viga"]["M"] / 100.0, delta=0.5)
         self.assertAlmostEqual(viga["V"], esf["viga"]["V"], delta=0.5)
-        self.assertAlmostEqual(pilar["M"], esf["pilar"]["M"] / 100.0, delta=0.5)
-        self.assertAlmostEqual(pilar["N"], esf["pilar"]["N"], delta=0.5)
+        self.assertAlmostEqual(pilar["M"] * so["fator_pilar"], esf["pilar"]["M"] / 100.0, delta=0.5)
+        self.assertAlmostEqual(pilar["N"] * so["B2"], esf["pilar"]["N"], delta=0.5)
 
     def test_viga_nao_conta_o_momento_da_misula(self):
         # a mísula tem seção maior e é verificada com a ligação de joelho; se entrasse

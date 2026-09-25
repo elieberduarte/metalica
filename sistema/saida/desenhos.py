@@ -41,6 +41,7 @@ cega do dicionário — uma chave homônima em outra unidade estragaria o desenh
 silêncio. O que o projeto ainda não traz sai dos padrões documentados em `PADRAO_*`.
 """
 import math
+import re
 import os
 import sys
 from typing import Dict, List, Optional, Sequence, Tuple, Union
@@ -3101,9 +3102,13 @@ def diagramas_portico(projeto) -> Desenho:
 
     if mapa:
         casos = [c["chave"] for c in mapa["combinacoes"] if c["tipo"] == "ultima"]
+        # uma vez cada combinação: as de vento se repetem com cpi+ e cpi- (a nota numa
+        # linha só ficava mais larga que os diagramas)
+        bases = list(dict.fromkeys(re.sub(r"\s*\(cpi.*?\)$", "", c) for c in casos))
+        cpi = " (as de vento com cpi+ e cpi-)" if len(bases) < len(casos) else ""
         desloc = mapa["servico"].get("deslocamento") or {}
         notas = [
-            "Envoltoria das combinacoes ultimas: " + "; ".join(casos) + ".",
+            "Envoltoria das combinacoes ultimas: " + "; ".join(bases) + cpi + ".",
             "Ordenadas perpendiculares a barra; o momento positivo fica do lado "
             "tracionado.",
             "Valores em kN e kN.m, por portico, para o espacamento adotado.",
@@ -3113,6 +3118,12 @@ def diagramas_portico(projeto) -> Desenho:
                 f"Deslocamento horizontal do topo: {_mm(desloc.get('u_cm', 0), 2)} cm "
                 f"<= {_mm(desloc.get('limite_cm', 0), 2)} cm ({desloc.get('criterio', '')}).")
         notas.append("Diagramas gerados pela mesma analise que dimensionou as pecas.")
+        so = (getattr(projeto, "esforcos", None) or {}).get("segunda_ordem") if isinstance(
+            getattr(projeto, "esforcos", None), dict) else None
+        if so:
+            notas.append("Valores de 1a ordem; pilar e viga verificados com os momentos x %s "
+                         "(2a ordem, B1/B2 da NBR 8800, Anexo D)."
+                         % _mm(max(so["fator_pilar"], so["fator_viga"]), 2))
     else:
         notas = ["Sem analise disponivel: gere os desenhos a partir de um galpao "
                  "dimensionado para ver os diagramas."]

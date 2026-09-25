@@ -165,11 +165,13 @@ CHAPAS_FINAS = [
     ("20", 0.90, 7.1, "steel deck leve, dutos"),
     ("18", 1.20, 9.4, "steel deck, perfis leves"),
     ("16", 1.50, 11.8, "Ue leves, forros"),
-    ("14", 1.90, 14.9, "Ue leves"),
+    ("14", 1.90, 14.9, "Ue leves (MSG; a #14 da fábrica é a CH 2,0)"),
+    ("14 (fábrica)", 2.00, 15.7, "Ue leves, a #14 da chapa a quente"),
     ("13", 2.25, 17.7, "Ue de terças"),
     ("12", 2.65, 20.8, "Ue de terças e longarinas"),
     ("11", 3.00, 23.6, "Ue, chapa xadrez, perfis dobrados"),
-    ("10", 3.40, 26.7, "perfis dobrados"),
+    ("10", 3.40, 26.7, "perfis dobrados (MSG; a #10 da fábrica é a CH 3,35)"),
+    ("10 (fábrica)", 3.35, 26.3, "perfis dobrados, a #10 da chapa a quente"),
     ("8", 4.25, 33.4, "perfis dobrados pesados, chapa xadrez"),
 ]
 #: Chapas grossas (polegada) — espessura em mm e massa em kg/m². Tabela 17.5.
@@ -397,9 +399,23 @@ def laminados_de_fornecedores():
     return itens
 
 
+#: Raios dos cantos do tubo retangular com costura (externo 2t, interno t), como nas
+#: tabelas de fabricante; em canto vivo a área e a inércia saíam 3 % a 5 % acima.
+RAIO_EXTERNO_TUBO = 2.0
+RAIO_INTERNO_TUBO = 1.0
+
+
+def _cantos(r):
+    """Área que o arredondamento de raio r tira de um canto e a distância do centroide
+    dela ao vértice, em cada eixo."""
+    a = (1.0 - math.pi / 4.0) * r * r
+    c = r * (10.0 - 3.0 * math.pi) / (12.0 - 3.0 * math.pi)
+    return a, c
+
+
 def _props_tubo(tipo, D, b, h, t):
-    """Propriedades de tubo pela seção cheia menos o furo (cantos vivos no retangular:
-    fica 1 % a 3 % acima da tabela, que desconta o raio). mm → cm."""
+    """Propriedades de tubo pela seção cheia menos o furo; o retangular desconta os quatro
+    cantos arredondados (raio externo 2t, interno t). mm → cm."""
     t = t / 10.0
     if tipo == "redondo":
         De = D / 10.0
@@ -412,9 +428,13 @@ def _props_tubo(tipo, D, b, h, t):
                 "Wy": _fmt(W, 2), "rx": _fmt(r, 2), "ry": _fmt(r, 2), "J": _fmt(2 * I, 2)}
     B, H = b / 10.0, h / 10.0
     bi, hi = B - 2 * t, H - 2 * t
-    A = B * H - bi * hi
-    Ix = (B * H ** 3 - bi * hi ** 3) / 12
-    Iy = (H * B ** 3 - hi * bi ** 3) / 12
+    ae, ce = _cantos(RAIO_EXTERNO_TUBO * t)
+    ai, ci = _cantos(RAIO_INTERNO_TUBO * t)
+    A = (B * H - 4 * ae) - (bi * hi - 4 * ai)
+    Ix = ((B * H ** 3 / 12 - 4 * ae * (H / 2 - ce) ** 2)
+          - (bi * hi ** 3 / 12 - 4 * ai * (hi / 2 - ci) ** 2))
+    Iy = ((H * B ** 3 / 12 - 4 * ae * (B / 2 - ce) ** 2)
+          - (hi * bi ** 3 / 12 - 4 * ai * (bi / 2 - ci) ** 2))
     Am = (B - t) * (H - t)
     J = 4 * Am ** 2 * t / (2 * ((B - t) + (H - t)))
     return {"A": _fmt(A, 3), "Ix": _fmt(Ix, 2), "Iy": _fmt(Iy, 2),
@@ -573,6 +593,35 @@ def _juntar(base, novos):
     return base
 
 
+#: Diferença entre a massa do catálogo e A·ρ acima da qual a massa é tida por errada.
+TOLERANCIA_MASSA = 0.05
+
+
+def conferir_massas(itens):
+    """Massa por metro contra a área (A·7850): a que difere mais de 5 % é erro de
+    transcrição (L 5"×7/16" com 23,52 no lugar de 21,16 kg/m, TC 42,4×1,35, TQ 30×30×1,8)
+    e passa a ser a da área, com a do fornecedor guardada em `massa_fornecedor`."""
+    corrigidos = []
+    for it in itens:
+        A, m = it.get("A"), it.get("massa")
+        if not A or not m or it.get("familia") in ("chapa", "telha", "parafuso"):
+            continue
+        esperada = A * RHO * 1e-4
+        teto = esperada
+        if it.get("familia") == "tubo" and it.get("tipo") != "redondo" and it.get("b") and it.get("h"):
+            # o fornecedor dá a massa com o canto vivo ou com raio menor que 2t: entre as
+            # duas áreas a massa está certa
+            bb, hh, tt = it["b"], it["h"], it.get("t") or 0.0
+            teto = (bb * hh - (bb - 2 * tt) * (hh - 2 * tt)) / 100.0 * RHO * 1e-4
+        if m < esperada * (1.0 - TOLERANCIA_MASSA) or m > teto * (1.0 + TOLERANCIA_MASSA):
+            it["massa_fornecedor"] = m
+            it["massa"] = _fmt(esperada, 3 if esperada < 2 else 2)
+            it["obs_massa"] = ("a massa do catálogo (%s kg/m) não bate com a área (%s cm²); "
+                               "adotada A·7850" % (m, A))
+            corrigidos.append((it["nome"], m, it["massa"]))
+    return corrigidos
+
+
 def bitolas():
     """Tabela de bitolas (#14 etc.) dos fornecedores: a mesma bitola muda de espessura
     conforme a chapa é laminada a quente, a frio ou zincada."""
@@ -609,6 +658,8 @@ def montar():
     dados["fabricantes_perfis"] = {s["nome"]: s["fabricantes"] for s in base[:n_sombra]
                                    if s.get("fabricantes")}
     dados["itens"] = base[n_sombra:]
+    dados["massas_corrigidas"] = [{"nome": n, "catalogo": a, "adotada": b}
+                                  for n, a, b in conferir_massas(dados["itens"])]
     dados["bitolas"] = bitolas()
     return dados
 

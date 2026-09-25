@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from . import materiais as mat, nbr8800, nbr14762, perfis_fabrica
-from .base import ErroDeDados, Resultado, Verificacao, fmt
+from .base import ErroDeDados, Resultado, Verificacao, fmt, nao_verificada
 from .perfis import Perfil
 
 __all__ = ["verificar_membro", "verificar_frio", "verificar_laminado",
@@ -38,6 +38,15 @@ def verificar_frio(perfil: Perfil, aco: str, Nc: float, Nt: float, M: float,
     Nc, Nt, M = abs(Nc) / n, abs(Nt) / n, abs(M) / n
     vc = None
     if Nc > 1e-6:
+        # NBR 14762, item 9.7.4: KL/r ≤ 200 (antes o U 92×40 com 6 m, L/r = 484, passava)
+        lam_x = Lx / perfil.rx if perfil.rx else 0.0
+        lam_y = Ly / perfil.ry if perfil.ry else 0.0
+        ve = Verificacao("Esbeltez da barra comprimida", norma="NBR 14762:2010, item 9.7.4",
+                         Sd=max(lam_x, lam_y), Rd=nbr14762.ESBELTEZ_MAX_COMPRESSAO, unidade="")
+        ve.passo("KL/r ≤ 200", "K<sub>x</sub>L<sub>x</sub>/r<sub>x</sub>; K<sub>y</sub>L<sub>y</sub>/r<sub>y</sub>",
+                 "%s/%s; %s/%s" % (fmt(Lx, 0), fmt(perfil.rx), fmt(Ly, 0), fmt(perfil.ry)),
+                 "%s; %s" % (fmt(lam_x, 1), fmt(lam_y, 1)), "item 9.7.4")
+        r.add(ve)
         vc = nbr14762.compressao_mrd(sec, a, N_Sd=Nc, KxLx=Lx, KyLy=Ly, KtLt=Ly)
         r.add(vc)
     if Nt > 1e-6:
@@ -117,9 +126,7 @@ def verificar_membro(perfil: Perfil, aco: str, Nc, Nt, M, Lx, Ly, n, elemento,
         return verificar_laminado(perfil, aco, Nc, Nt, M, Lx, Ly, n, elemento, avisos)
     except ErroDeDados as exc:
         r = Resultado(elemento, perfil=perfil.nome, material=aco)
-        v = Verificacao("Não verificada", Sd=0.0, Rd=1.0, unidade="—")
-        v.observacao = str(exc)
-        r.add(v)
+        r.add(nao_verificada(exc))
         r.dados["erro"] = str(exc)
         return r
 
@@ -127,9 +134,10 @@ def verificar_membro(perfil: Perfil, aco: str, Nc, Nt, M, Lx, Ly, n, elemento,
 def serializar_resultado(r: Resultado) -> dict:
     """Resultado em dicionário simples, do jeito que a interface web consome."""
     return {"elemento": r.elemento, "perfil": r.perfil, "material": r.material, "razao": round(r.razao, 3),
-            "ok": bool(r.ok),
+            "ok": bool(r.ok), "indeterminada": bool(r.indeterminada),
             "verificacoes": [{"titulo": v.titulo, "norma": v.norma, "Sd": round(v.Sd, 3), "Rd": round(v.Rd, 3),
                               "unidade": v.unidade, "razao": round(v.razao, 3), "ok": bool(v.ok),
+                              "indeterminada": bool(v.indeterminada),
                               "observacao": getattr(v, "observacao", "") or "",
                               "passos": [{"texto": p.texto, "formula": p.formula, "conta": p.conta, "valor": p.valor,
                                           "norma": p.norma} for p in v.passos]}

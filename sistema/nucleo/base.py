@@ -50,6 +50,9 @@ class Verificacao:
     passos: List[Passo] = field(default_factory=list)
     observacao: str = ""
     dispensada: bool = False   # verificação que não se aplica ao caso
+    #: faltou dado para verificar (perfil sem propriedade, geometria que não fecha): não é
+    #: aprovada — antes saía Sd = 0 / Rd = 1, verde no mapa e "o mais leve que passa"
+    indeterminada: bool = False
 
     def passo(self, texto, formula="", conta="", valor="", norma=""):
         self.passos.append(Passo(texto, formula, conta, valor, norma))
@@ -66,6 +69,8 @@ class Verificacao:
 
     @property
     def ok(self) -> bool:
+        if self.indeterminada:
+            return False
         return self.dispensada or self.razao <= 1.0001
 
     @property
@@ -76,9 +81,18 @@ class Verificacao:
     def resumo(self) -> str:
         if self.dispensada:
             return f"{self.titulo}: não se aplica"
+        if self.indeterminada:
+            return f"{self.titulo}: indeterminada ({self.observacao})"
         s = "OK" if self.ok else "NÃO PASSA"
         return (f"{self.titulo}: {self.Sd:,.1f} / {self.Rd:,.1f} {self.unidade} "
                 f"= {self.razao:.2f} {s}").replace(",", " ")
+
+
+def nao_verificada(motivo) -> Verificacao:
+    """A verificação que não se fez por falta de dado: conta como não aprovada."""
+    v = Verificacao("Não verificada", Sd=0.0, Rd=1.0, unidade="—", indeterminada=True)
+    v.observacao = str(motivo)
+    return v
 
 
 @dataclass
@@ -103,6 +117,10 @@ class Resultado:
     @property
     def ok(self) -> bool:
         return all(v.ok for v in self.verificacoes)
+
+    @property
+    def indeterminada(self) -> bool:
+        return any(v.indeterminada for v in self.verificacoes)
 
     @property
     def critica(self) -> Optional[Verificacao]:

@@ -714,7 +714,8 @@ ROTULOS_GRANDEZA = {
     "pre_viga": "Pré-dimensionamento da viga",
     "g_cobertura": "Carga permanente da cobertura g",
     "succao_telhado": "Sucção no telhado",
-    "joelho_kNm": "Momento no joelho (kN·m)",
+    "joelho_kNm": "Momento no joelho, com a 2ª ordem (kN·m)",
+    "joelho_kNm_analise": "Momento no joelho, análise de 1ª ordem (kN·m)",
     "cumeeira_kNm": "Momento na cumeeira (kN·m)",
     "razao_N": "Parcela de N na interação",
     "razao_Mx": "Parcela de M<sub>x</sub> na interação",
@@ -1337,6 +1338,28 @@ def _cap_esforcos(doc: _Doc, projeto: ProjetoGalpao):
                     "Caso de V<sub>mín</sub>"], linhas,
                    "Reações de apoio (kN e kN·m) — V negativo é arrancamento",
                    larguras=["11%", "11%", "11%", "11%", "11%", "11%", "11%", "23%"])
+
+    so = (projeto.esforcos or {}).get("segunda_ordem") if isinstance(projeto.esforcos, dict) else None
+    if so:
+        doc.sec("Efeitos de segunda ordem")
+        doc.p("Imperfeições geométricas por forças nocionais de 0,3 % da carga gravitacional "
+              "de cálculo, horizontais no topo dos pilares, em todas as combinações últimas "
+              "(NBR 8800, item 4.9.7.1). Esforços amplificados pelo Anexo D (B<sub>1</sub>/"
+              "B<sub>2</sub>) sem a análise nt: os momentos do pilar e da viga multiplicados por "
+              "máx(B<sub>1</sub>, B<sub>2</sub>) e a normal do pilar por B<sub>2</sub>, a favor "
+              "da segurança. A flexibilidade lateral usa 0,8·EI (item 4.9.4.3) e C<sub>m</sub> = 1,0.")
+        linhas = [
+            [("Δh por 1 kN no topo (EI integral)", "l"), (fmt(so["delta_por_kN_cm"], 4, "cm"), "r")],
+            [("ΣN<sub>Sd</sub> (" + _esc(so.get("caso_N", "")) + ")", "l"), (fmt(so["soma_N_kN"], 1, "kN"), "r")],
+            [("Altura do andar h", "l"), (fmt(so["h_cm"] / 100.0, 2, "m"), "r")],
+            [("R<sub>s</sub>", "l"), (fmt(so["Rs"], 2), "r")],
+            [("B<sub>2</sub> = 1/(1 − (1/R<sub>s</sub>)·(Δh/h)·(ΣN/ΣH))", "l"), (fmt(so["B2"], 3), "r b")],
+            [("B<sub>1</sub> do pilar", "l"), (fmt(so["B1_pilar"], 3), "r")],
+            [("B<sub>1</sub> da viga", "l"), (fmt(so["B1_viga"], 3), "r")],
+            [("Classificação (item 4.9.4.2)", "l"), (_esc(so["classificacao"]), "r b")],
+        ]
+        doc.tabela(["Grandeza", "Valor"], linhas, "Amplificação B1/B2 (NBR 8800, Anexo D)",
+                   larguras=["70%", "30%"])
 
     extras = {k: x for k, x in _itens(projeto.esforcos)
               if isinstance(x, (int, float, str, bool))}

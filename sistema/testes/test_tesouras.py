@@ -134,6 +134,16 @@ def test_galpao_trelicado_fecha(formato, diagonais, ligacao, rotulada, inclinaca
     nomes = {e.nome for e in p.elementos}
     assert {"Banzo superior da tesoura", "Banzo inferior da tesoura", "Pilar"} <= nomes
     reprovados = [(e.nome, round(e.razao, 2)) for e in p.elementos if not e.ok]
+    if (formato, diagonais, ligacao, rotulada) == ("trapezoidal", "Howe", "apoiada", False):
+        # com o γ = 1,20 da compressão do formado a frio (0.8.14) o banzo inferior deste
+        # galpão de 20 m não passa com Ue simples em nenhum passo de travamento: o
+        # programa diz e aponta os banzos duplos, com os quais fecha
+        assert [n for n, _ in reprovados] == ["Banzo inferior da tesoura"], reprovados
+        assert any("banzos duplos" in a for a in p.avisos), p.avisos
+        p = galpao.dimensionar(_dados(formato_tesoura=formato, diagonais_tesoura=diagonais,
+                                      ligacao_tesoura=ligacao, base_rotulada=rotulada,
+                                      inclinacao=inclinacao, banzos_duplos=True))
+        reprovados = [(e.nome, round(e.razao, 2)) for e in p.elementos if not e.ok]
     assert not reprovados, reprovados
     assert p.base is not None, "a base do pilar ficou sem dimensionamento"
     assert 10.0 < p.resumo_pesos["kg_por_m2"] < 45.0, p.resumo_pesos
