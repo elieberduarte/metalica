@@ -16,11 +16,12 @@
 
 import { Ferramenta } from './base.js';
 import * as C from './_comum.js';
+import { furosDoParafuso, cruzamentosDoEixo } from './_furar.js';
 
 //: Medida entre faces da cabeça sextavada (ISO 4017/4032) por diâmetro nominal, mm.
 const ENTRE_FACES = { 8: 13, 10: 16, 12: 18, 14: 21, 16: 24, 18: 27, 20: 30, 22: 34, 24: 36 };
-const DIAMETROS = [8, 10, 12, 14, 16, 18, 20, 22, 24];
-const CLASSES = ['A307', 'A325', 'A490', '8.8', '5.8'];
+export const DIAMETROS = [8, 10, 12, 14, 16, 18, 20, 22, 24];
+export const CLASSES = ['A307', 'A325', 'A490', '8.8', '5.8'];
 
 /** Prisma de n lados em volta do eixo `a` (unitário), da base `c` até c + a·h. */
 export function prisma(c, a, raio, n, h, giro = 0) {
@@ -40,6 +41,84 @@ export function prisma(c, a, raio, n, h, giro = 0) {
     faces.push([i, j, n + j, n + i]);
   }
   return { vertices, faces };
+}
+
+/** Nome do parafuso como o IFC grava: "BOLT (A325) 12x35" (sem classe: "BOLT (A) …"). */
+export function nomeDoParafuso(classe, d, L) {
+  return `BOLT (${classe || 'A'}) ${num(d)}x${num(L)}`;
+}
+
+/** Diâmetro do furo do parafuso: d + 1 mm (M12 → 13, M16 → 17, como os do modelo). */
+export function furoDoParafuso(d) { return d + 1; }
+
+/**
+ * Geometria do parafuso: cabeça sextavada do lado de fora de `ponto` (o apoio dela na
+ * peça), corpo de comprimento L entrando contra `normal` e a porca — na pega `pega` (a
+ * distância do apoio da cabeça à arruela, a espessura do pacote) quando se sabe, senão
+ * perto da ponta.
+ */
+export function geometriaDoParafuso(d, L, ponto, normal, pega = null) {
+  const s = ENTRE_FACES[Math.round(d)] || 1.5 * d;
+  const rHex = s / Math.sqrt(3);                   // raio do sextavado pelos cantos
+  const k = 0.65 * d, m = 0.85 * d;
+  const n = C.normalizar(normal);
+  const dentro = C.mul(n, -1);
+  const cabeca = prisma(ponto, n, rHex, 6, k);
+  const corpo = prisma(ponto, dentro, d / 2, 12, L);
+  const onde = pega && pega > 0 && pega + m <= L ? pega : Math.max(L - m - 2, m);
+  const porca = prisma(C.add(ponto, C.mul(dentro, onde)), dentro, rHex, 6, m);
+  return juntar(cabeca, corpo, porca);
+}
+
+/**
+ * Onde o parafuso está: {ponto, eixo, pega} — o apoio da cabeça, a direção da cabeça para
+ * a ponta e a pega. O posto pelo editor guarda isso em `atributos.parafuso`; o do IFC é lido
+ * da malha: o eixo é o maior eixo principal, a cabeça é a ponta de raio grande (a outra
+ * ponta é o corpo, fino), o apoio é o nível logo depois da cabeça e a pega vai até o
+ * próximo nível largo (a arruela ou a porca).
+ */
+export function quadroDoParafuso(ent) {
+  const reg = ent && ent.atributos && ent.atributos.parafuso;
+  if (reg && reg.ponto && reg.eixo) return { ponto: reg.ponto.slice(), eixo: C.normalizar(reg.eixo), pega: reg.pega || null };
+  const vs = (ent && ent.vertices) || [];
+  if (vs.length < 8) return null;
+  const c = [0, 1, 2].map(i => vs.reduce((s, q) => s + q[i], 0) / vs.length);
+  const eixos = eixosPrincipais(vs);
+  let ax = eixos[0], maior = -1;
+  for (const e of eixos) {
+    const t = vs.map(q => C.dot(C.sub(q, c), e));
+    const ext = Math.max(...t) - Math.min(...t);
+    if (ext > maior) { maior = ext; ax = e; }
+  }
+  // níveis ao longo do eixo (1 mm), com o maior raio de cada um
+  const niveis = new Map();
+  for (const q of vs) {
+    const rel = C.sub(q, c);
+    const t = C.dot(rel, ax);
+    const r = C.comp(C.sub(rel, C.mul(ax, t)));
+    const k = Math.round(t);
+    let achou = null;
+    for (const kk of niveis.keys()) if (Math.abs(kk - k) <= 1) { achou = kk; break; }
+    const chave = achou === null ? k : achou;
+    niveis.set(chave, Math.max(niveis.get(chave) || 0, r));
+  }
+  let lista = [...niveis.entries()].sort((a, b) => a[0] - b[0]);
+  if (lista.length < 3) return null;
+  // cabeça: a ponta com o raio maior
+  let dir = ax;
+  if (lista[0][1] > lista[lista.length - 1][1]) {
+    // a cabeça está em t mínimo: o eixo vai de t mínimo para t máximo (já é `ax`)
+  } else {
+    dir = C.mul(ax, -1);
+    lista = lista.map(([t, r]) => [-t, r]).sort((a, b) => a[0] - b[0]);
+  }
+  const rCorpo = Math.min(...lista.map(([, r]) => r));
+  const tApoio = lista[1][0];
+  let pega = null;
+  for (let i = 2; i < lista.length; i++) {
+    if (lista[i][1] > rCorpo + 1.0) { pega = lista[i][0] - tApoio; break; }
+  }
+  return { ponto: C.add(c, C.mul(dir, tApoio)), eixo: dir, pega: pega && pega > 0.5 ? pega : null };
 }
 
 /** Número sem unidade: 12, 12.5 (vai no nome "BOLT (A325) 12x35"). */
@@ -156,7 +235,7 @@ export class FerramentaParafuso extends Ferramenta {
 
   get nomeAtual() {
     const { d, L, classe } = this.tamanho;
-    return `BOLT (${classe || 'A'}) ${num(d)}x${num(L)}`;
+    return nomeDoParafuso(classe, d, L);
   }
 
   get rotuloAtual() {
@@ -242,15 +321,24 @@ export class FerramentaParafuso extends Ferramenta {
   /** Geometria do parafuso com a cabeça sobre `ponto`, corpo entrando contra `normal`. */
   geometria(ponto, normal) {
     const { d, L } = this.tamanho;
-    const s = ENTRE_FACES[Math.round(d)] || 1.5 * d;
-    const rHex = s / Math.sqrt(3);                   // raio do sextavado pelos cantos
-    const k = 0.65 * d, m = 0.85 * d;
-    const n = C.normalizar(normal);
-    const dentro = C.mul(n, -1);
-    const cabeca = prisma(ponto, n, rHex, 6, k);
-    const corpo = prisma(ponto, dentro, d / 2, 12, L);
-    const porca = prisma(C.add(ponto, C.mul(dentro, Math.max(L - m - 2, m))), dentro, rHex, 6, m);
-    return juntar(cabeca, corpo, porca);
+    return geometriaDoParafuso(d, L, ponto, normal);
+  }
+
+  /**
+   * A linha do eixo (a direção do furo, através da peça) e onde ela cruza as paredes das
+   * peças: mostra na prévia onde o parafuso ou o furo cai na peça de baixo.
+   */
+  _linhaDoEixo(ponto, n, alvo) {
+    const alcance = 600;
+    const extra = [C.gLinha([C.add(ponto, C.mul(n, 250)), C.add(ponto, C.mul(n, -alcance))], '#1f6fd6', { tracejada: true })];
+    const cruz = cruzamentosDoEixo(this.documento, ponto, C.mul(n, -1), alcance, new Set(), (e) => this._caixaDe(e));
+    for (const c of cruz.slice(0, 6)) {
+      if (c.id === alvo && c.t < 1) continue;
+      extra.push(C.gPonto(c.p, '#1f6fd6'));
+    }
+    const baixo = cruz.find(c => c.id !== alvo);
+    if (baixo) extra.push(C.gRotulo(`eixo cruza a peça de baixo a ${mm(baixo.t)} mm`, C.add(baixo.p, C.mul(n, -25)), '#1f6fd6'));
+    return extra;
   }
 
   normalDoPonto(p) {
@@ -437,6 +525,8 @@ export class FerramentaParafuso extends Ferramenta {
     const em = (s1, s2) => C.add(ponto, C.add(C.mul(e1, s1 - a), C.mul(e2, s2 - b)));
     const folga = Math.max(20, 0.1 * larg);
     const extra = [
+      // o eixo do parafuso/furo, atravessando a peça (onde ele cai na de baixo)
+      ...this._linhaDoEixo(ponto, n, p.entidade),
       // linha de centro ao longo da peça e a atravessada no centro da face
       C.gLinha([em(f.min1 - folga, c2), em(f.max1 + folga, c2)], presoC2 ? '#0a8f3c' : '#2a63c8', { tracejada: true }),
       C.gLinha([em(c1, f.min2 - folga), em(c1, f.max2 + folga)], presoC1 ? '#0a8f3c' : '#2a63c8', { tracejada: true }),
@@ -482,19 +572,26 @@ export class FerramentaParafuso extends Ferramenta {
     const alvo = this.documento.get(p.entidade);
     const marcas = (alvo && alvo.atributos && alvo.atributos.marcas) || {};
     const nome = this.nomeAtual;
+    const id = C.novoId('paraf');
+    // os furos: cada parede que o corpo atravessa (a face clicada, a mesa de baixo, a
+    // chapa do suporte) ganha o furo d + 1; onde a peça já tem furo no eixo, nada muda
+    const furos = furosDoParafuso(this.documento, ponto, C.mul(n, -1), L, { d: furoDoParafuso(d) }, new Set(), id);
     const ent = {
-      tipo: 'solido', id: C.novoId('paraf'), nome, camada: 'Parafusos', material: 'Cor #ff0000',
+      tipo: 'solido', id, nome, camada: 'Parafusos', material: 'Cor #ff0000',
       visivel: true, bloqueada: false, grupo: '',
       vertices: g.vertices, faces: g.faces, arestas_vivas: [],
       atributos: {
         tipo_ifc: 'IfcMechanicalFastener',
         marcas: { perfil: nome, ...(marcas.conjunto ? { conjunto: marcas.conjunto } : {}) },
         criado_no_editor: true,
-        parafuso: { d, L, classe: classe || '', ponto: C.copiar(ponto), eixo: C.mul(n, -1) },
+        parafuso: { d, L, classe: classe || '', ponto: C.copiar(ponto), eixo: C.mul(n, -1), furos: furos.map(f => f.id) },
       },
     };
-    this.executar(C.cmdAdicionar(ent, 'Parafuso'));
-    this.dica(`${this.rotuloAtual} colocado · clique no próximo, ou troque o parafuso no painel (Esc sai)`);
+    const cmds = [C.cmdAdicionar(ent, 'Parafuso'), ...furos.map(f => C.cmdAlterar(f.id, f.campos, 'Furo do parafuso'))];
+    this.executar(cmds.length > 1 ? C.cmdComposto(cmds, 'Parafuso com furos') : cmds[0]);
+    const paredes = furos.reduce((s, f) => s + f.paredes, 0);
+    this.dica(`${this.rotuloAtual} colocado` + (paredes ? ` · furo Ø${num(furoDoParafuso(d))} aberto em ${paredes} parede(s) de ${furos.length} peça(s)` : ' (as peças já tinham furo no eixo)')
+              + ' · clique no próximo, ou troque o parafuso no painel (Esc sai)');
   }
 
   cancelar() { this.limparPrevia(); C.voltarParaSelecao(this.editor); }

@@ -58,6 +58,12 @@ try:
       return { id: melhor.id, L };
     })())"""))
     aba.drenar(1.0)
+    # como depois de aproximar com a roda: o alvo da câmera fica a 0,1 m dela, e a ponta da
+    # barra fica bem mais longe que 1,5 × essa distância (o limite que derrubava a órbita
+    # para o centro da seleção)
+    aba.avaliar("""(() => { const c = window.editor.camera, d = c.controles.target.clone().sub(c.ativa.position).normalize();
+      c.controles.target.copy(c.ativa.position.clone().addScaledVector(d, 0.1)); c.controles.update(); return 1; })()""")
+    aba.drenar(0.5)
     # procura, ao longo da barra, um pixel em que o raio acerta a própria barra, perto de uma ponta
     alvo = json.loads(aba.avaliar("""JSON.stringify((() => {
       const ed = window.editor, c = ed.camera, e = ed.documento.get('%s');
@@ -67,8 +73,7 @@ try:
         const p = [0, 1, 2].map(a => lo[a] + (hi[a] - lo[a]) * (a === [0, 1, 2].reduce((m, b) => (hi[b] - lo[b] > hi[m] - lo[m] ? b : m), 0) ? f : 0.5));
         const [x, y] = c.paraTela(p);
         const ndc = c._ndcDoEvento({ clientX: r.left + x, clientY: r.top + y });
-        c._focoDoCursor(ndc);
-        if (c.apoioDoZoom === 'peça') return { x: r.left + x, y: r.top + y, f };
+        if (c._pecaSobCursor(ndc)) return { x: r.left + x, y: r.top + y, f };
       }
       return null;
     })())""" % info["id"]))
@@ -95,6 +100,31 @@ try:
         ok(abs(dx) < 3 and abs(dy) < 3, f"o ponto sob o cursor ficou parado na tela (desvio {dx:.1f}, {dy:.1f} px)")
     mudou = sum((a - b) ** 2 for a, b in zip(antes["pos"], depois["pos"])) ** 0.5
     ok(mudou > 1e-3, f"a câmera girou (andou {mudou:.3f} unidades)")
+    # no vazio, com a barra ainda selecionada: o alvo não pula para o centro dela
+    vazio = json.loads(aba.avaliar("""JSON.stringify((() => {
+      const ed = window.editor, c = ed.camera, r = ed.el.canvas.getBoundingClientRect();
+      for (const [fx, fy] of [[0.05, 0.05], [0.95, 0.05], [0.05, 0.5], [0.5, 0.03], [0.95, 0.5]]) {
+        const x = r.left + fx * r.width, y = r.top + fy * r.height;
+        if (!c._pecaSobCursor(c._ndcDoEvento({ clientX: x, clientY: y }))) return { x, y };
+      }
+      return null; })())"""))
+    if vazio:
+        antes_v = json.loads(aba.avaliar("""JSON.stringify((() => { const c = window.editor.camera, s = [...window.editor.selecao.ids];
+          const cx = window.editor.documento.caixa(s); const ctr = cx ? [0, 1, 2].map(i => (cx[0][i] + cx[1][i]) / 2 * 0.001) : null;
+          return { alvo: c.controles.target.toArray(), centro: ctr }; })())"""))
+        vx, vy = round(vazio["x"]), round(vazio["y"])
+        mouse(aba, "mousePressed", vx, vy)
+        aba.drenar(0.2)
+        mouse(aba, "mouseMoved", vx + 2, vy)
+        aba.drenar(0.1)
+        mouse(aba, "mouseReleased", vx + 2, vy, botoes=0)
+        aba.drenar(0.5)
+        depois_v = json.loads(aba.avaliar("JSON.stringify(window.editor.camera.controles.target.toArray())"))
+        salto = sum((a_ - b_) ** 2 for a_, b_ in zip(antes_v["alvo"], depois_v)) ** 0.5
+        ao_centro = sum((a_ - b_) ** 2 for a_, b_ in zip(depois_v, antes_v["centro"])) ** 0.5 if antes_v["centro"] else 99
+        ok(ao_centro > 0.05, f"no vazio com a barra selecionada, o alvo não foi para o centro dela (ficou a {ao_centro:.2f} m do centro; andou {salto:.2f})")
+    else:
+        ok(False, "não achei um ponto vazio na tela para o teste do vazio")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

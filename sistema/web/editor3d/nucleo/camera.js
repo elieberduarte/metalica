@@ -311,24 +311,12 @@ export class Camera {
    * metros atrás e a peça sumia da tela.
    */
   _pivoDaOrbita(ev) {
+    // no vazio (sem peça sob o cursor): o pivô vai para a profundidade do plano de trabalho
+    // sob o cursor, no eixo da vista — a tela não pula. A seleção não puxa mais o pivô para
+    // o centro dela: com uma terça comprida selecionada, a câmera ia para o meio da barra.
     const alvo = this.controles.target;
-    const ids = this.idsSelecionados ? this.idsSelecionados() : [];
-    if (ids && ids.length && this.cena) {
-      const caixa = this.cena.documento.caixa(ids);
-      if (caixa) {
-        const { centro } = esferaDe(caixa);
-        const d = centro.clone().sub(alvo);
-        if (d.lengthSq() > 1e-12) {
-          this._animacao = null;
-          this.ativa.position.add(d);
-          alvo.copy(centro);
-          this.controles.update();
-        }
-        return;
-      }
-    }
     const p = this._focoDoCursor(this._ndcDoEvento(ev));
-    if (this.apoioDoZoom !== 'peça') return;
+    if (this.apoioDoZoom !== 'peça' && this.apoioDoZoom !== 'plano') return;
     const dir = new THREE.Vector3();
     this.ativa.getWorldDirection(dir);
     const prof = p.clone().sub(this.ativa.position).dot(dir);
@@ -347,8 +335,11 @@ export class Camera {
    * Devolve false quando não há peça sob o cursor (fica o pivô de `_pivoDaOrbita`).
    */
   _orbitarNoCursor(ev) {
-    const p = this._focoDoCursor(this._ndcDoEvento(ev));
-    if (this.apoioDoZoom !== 'peça') return false;
+    // qualquer peça sob o cursor serve, a qualquer distância: o limite do apoio do zoom
+    // (LONGE_DEMAIS) descartava o ponto depois de aproximar com a roda, e a órbita caía no
+    // centro da peça selecionada — a câmera ia para o meio da tesoura
+    const p = this._pecaSobCursor(this._ndcDoEvento(ev));
+    if (!p) return false;
     this._animacao = null;
     this.pivoDaOrbita = p.clone();                 // conferido pela verificação
     let ultimo = { x: ev.clientX, y: ev.clientY };
@@ -366,6 +357,17 @@ export class Camera {
     window.addEventListener('pointerup', soltar, true);
     window.addEventListener('pointercancel', soltar, true);
     return true;
+  }
+
+  /** O ponto da peça sob o cursor (o raio contra as malhas do modelo), sem limite de
+   *  distância; null no vazio. */
+  _pecaSobCursor(ndc) {
+    const raio = this._raio || (this._raio = new THREE.Raycaster());
+    raio.setFromCamera(ndc, this.ativa);
+    raio.params.Line.threshold = 6 * this.mmPorPixel() * ESCALA;
+    const alvos = (this.cena && this.cena.alvos) || [];
+    const encontros = alvos.length ? raio.intersectObjects(alvos, false) : [];
+    return encontros.length ? encontros[0].point.clone() : null;
   }
 
   /** Gira câmera e alvo em volta de `pivo` pelo arrasto (dx, dy) em pixels, no mesmo

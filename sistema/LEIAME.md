@@ -218,6 +218,27 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.25.** Rodada de ajustes do editor 3D e da lista de materiais. (1) **O parafuso fura o que atravessa**: ao
+colocar, cada parede que o corpo cruza de frente (a face clicada, a mesa de baixo, a chapa do suporte) ganha o furo
+d + 1 mm na malha, e a chapa paramétrica em `furos`; onde já há furo no eixo (o do IFC), nada muda. Parafuso e furos são
+um passo só no Ctrl+Z (`cmdComposto`). O corte da malha saiu da ferramenta Furo para `ferramentas/_furar.js`
+(`furarMalha`, `faceDoPonto`, `furosDoParafuso`), e a peça guarda a malha de antes do primeiro furo do editor
+(`malha_sem_furos_editor`) para os furos poderem ser refeitos com outra medida (`refazerFurosEditor`). (2) **Trocar
+parafuso…** no painel de propriedades (um, vários, ou todos iguais no modelo): diâmetro, comprimento e classe; a peça é
+refeita no mesmo lugar — apoio da cabeça, eixo e pega vêm de `atributos.parafuso` ou, no parafuso do IFC, da malha
+(`quadroDoParafuso`: maior eixo principal, cabeça na ponta de raio grande, pega até o próximo nível largo) — e os furos
+do editor desses parafusos são refeitos com o diâmetro novo; os do IFC ficam. (3) **Furo oblongo** na ferramenta Furo:
+forma, comprimento total e direção (ao longo da peça ou atravessado), ou digitar "13x23"; o laço em estádio é o que o
+detalhamento lê como oblongo (`_classificar_laco`), e na chapa paramétrica entra como largura × altura. (4) **Linha do
+eixo** na prévia do Furo e do Parafuso: atravessa a peça e marca (e cota) onde cai na peça de baixo. (5) **Órbita**:
+qualquer peça sob o cursor vale como pivô, a qualquer distância (o limite do apoio do zoom descartava o ponto depois de
+aproximar com a roda, e a órbita caía no centro da seleção); a seleção não puxa mais o pivô, nem no clique no vazio.
+(6) **Lista de materiais** refeita em abas (visão geral com barras de peso, perfis, chapas, telhas e rufos, conjuntos,
+romaneio, acessórios, resumos da obra, arquivos), cartão do aço separado das telhas; os **Resumos da obra** saem numa
+aba com o formulário ao lado da prévia do documento na própria página (antes a tela abria os PDFs com `window.open`
+e o usuário não sabia para onde iam), com a etapa do servidor enquanto gera, "Abrir o PDF" e "Abrir pasta"; a aba
+Arquivos lista tudo de `detalhamento/` com a data. O GET dos resumos devolve os já gerados.
+
 **0.8.24.** Rufos e calhas (pedido do usuário no DEPÓSITO QUÍMICO: "não foi reconhecida a camada dos rufos"). O
 TecnoMETAL grava a funilaria de aluzinc como IfcBeam com o nome do perfil ("RUFO CHAPEU 1", "CALHA 1", "CUMEEIRA
 I7.5"), e ela caía em Vigas; no detalhamento, a barra comprida solta virava **agulhamento** (A.C.) e somava no peso

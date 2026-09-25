@@ -26,6 +26,9 @@ import { Inferencia } from './nucleo/inferencia.js';
 import { api, ErroServidor } from './nucleo/api.js';
 import { carregarFerramentas, GRUPOS } from './ferramentas/indice.js';
 import { Ferramenta, formatar } from './ferramentas/base.js';
+import { tamanhoDoFixador, quadroDoParafuso, geometriaDoParafuso, nomeDoParafuso, furoDoParafuso,
+         DIAMETROS as DIAMETROS_PARAFUSO, CLASSES as CLASSES_PARAFUSO } from './ferramentas/parafuso.js';
+import { refazerFurosEditor } from './ferramentas/_furar.js';
 
 const CHAVE_TEMA = 'galpao.tema';               // a mesma da interface principal
 const CHAVE_GALPAO = 'galpao.estado.v1';        // dados do galpão dimensionado
@@ -2414,6 +2417,11 @@ export class Editor {
           }
         }
         if (a.tipo_ifc) linha('Tipo IFC', a.tipo_ifc);
+        if (um.tipo === 'solido' && this._ehParafuso(um)) {
+          gi.append(el('span'), el('button', { type: 'button', class: 'mini', texto: 'Trocar parafuso…',
+            title: 'Troca o diâmetro, o comprimento e a classe deste parafuso (ou de todos iguais a ele) — a peça 3D muda no mesmo lugar, e os furos abertos pelo editor acompanham o diâmetro',
+            onclick: () => this.dialogoTrocarParafuso([um.id]) }));
+        }
         if (um.tipo === 'solido') {
           const dims = dimensoesPrincipais(um);
           if (dims) {
@@ -2438,6 +2446,10 @@ export class Editor {
       if (perfisSel.size === 1 && lerPerfil([...perfisSel][0])) {
         gs.append(el('span'), el('button', { type: 'button', class: 'mini', texto: 'Trocar perfil…',
           title: 'Troca o perfil das peças selecionadas (a malha 3D muda de seção)', onclick: () => this.dialogoTrocarPerfil(ents.map(e => e.id)) }));
+      }
+      if (ents.every(e => this._ehParafuso(e))) {
+        gs.append(el('span'), el('button', { type: 'button', class: 'mini', texto: 'Trocar parafuso…',
+          title: 'Troca o diâmetro, o comprimento e a classe dos parafusos selecionados', onclick: () => this.dialogoTrocarParafuso(ents.map(e => e.id)) }));
       }
       const pos = new Set(ents.map(e => e.atributos && e.atributos.marcas && e.atributos.marcas.posicao).filter(Boolean));
       if (pos.size) gs.append(el('label', { texto: 'Posições' }), el('span', { class: 'valor', texto: [...pos].slice(0, 12).join(', ') + (pos.size > 12 ? ' …' : '') }));
@@ -2847,6 +2859,93 @@ export class Editor {
    * então o detalhamento, a lista de materiais e o cálculo saem com ela. Alcance: as
    * peças escolhidas, a posição inteira ou todas com o mesmo perfil. Desfaz com Ctrl+Z.
    */
+  /** Parafuso com tamanho (do IFC, "BOLT (A) 12x35", ou posto no editor); porca e arruela soltas não. */
+  _ehParafuso(e) {
+    if (!e || e.tipo !== 'solido') return false;
+    const t = tamanhoDoFixador(e);
+    return !!(t && !t.semTamanho && t.L > 0);
+  }
+
+  /**
+   * Troca de parafuso: diâmetro, comprimento e classe dos selecionados (ou de todos com o
+   * mesmo nome no modelo). A peça 3D é refeita no mesmo lugar — o apoio da cabeça, o eixo e
+   * a pega vêm do registro do editor ou da própria malha do IFC — com o nome "BOLT (classe)
+   * dxL" que a lista de materiais e o detalhamento leem. Os furos abertos pelo editor para
+   * esses parafusos são refeitos com o diâmetro novo (d + 1), a partir da malha guardada
+   * antes deles; os furos que vieram do IFC ficam como estão.
+   */
+  async dialogoTrocarParafuso(ids) {
+    const doc = this.documento;
+    const sel = ids.map(i => doc.get(i)).filter(e => this._ehParafuso(e));
+    if (!sel.length) { this.aviso('Selecione um parafuso com tamanho (BOLT … dxL).', 'atencao'); return; }
+    const t0 = tamanhoDoFixador(sel[0]);
+    const nomes = new Set(sel.map(e => e.nome));
+    const iguais = nomes.size === 1 ? [...doc.entidades.values()].filter(e => e.tipo === 'solido' && e.nome === sel[0].nome) : sel;
+    const num = (x) => String(Math.round(x * 10) / 10).replace('.', ',');
+    const selD = el('select', { title: 'Diâmetro nominal (mm)' });
+    for (const d of DIAMETROS_PARAFUSO) selD.append(el('option', { value: String(d), texto: `M${d}` }));
+    if (!DIAMETROS_PARAFUSO.includes(t0.d)) selD.append(el('option', { value: String(t0.d), texto: `M${num(t0.d)}` }));
+    selD.value = String(t0.d);
+    const inL = el('input', { type: 'number', min: '10', step: '5', value: String(t0.L), title: 'Comprimento do corpo (mm)' });
+    const selC = el('select', { title: 'Classe (vai no nome e na lista de materiais)' });
+    selC.append(el('option', { value: '', texto: 'sem classe (A)' }));
+    for (const c of CLASSES_PARAFUSO) selC.append(el('option', { value: c, texto: c }));
+    selC.value = CLASSES_PARAFUSO.includes(t0.classe) ? t0.classe : '';
+    const todos = el('input', { type: 'checkbox' });
+    const novoRotulo = el('strong');
+    const atualizar = () => { novoRotulo.textContent = nomeDoParafuso(selC.value, +selD.value, +inL.value || t0.L); };
+    for (const x of [selD, inL, selC]) x.addEventListener('input', atualizar);
+    atualizar();
+    const g = el('div', { class: 'campos' },
+      el('label', { texto: 'Diâmetro' }), selD,
+      el('label', { texto: 'Comprimento (mm)' }), inL,
+      el('label', { texto: 'Classe' }), selC);
+    const corpo = el('div', {},
+      el('p', { texto: sel.length === 1 ? `Parafuso selecionado: ${sel[0].nome}.` : `${sel.length} parafusos selecionados (${[...nomes].slice(0, 4).join(', ')}${nomes.size > 4 ? '…' : ''}).` }),
+      g, el('p', {}, 'Fica: ', novoRotulo));
+    if (iguais.length > sel.length) {
+      corpo.append(el('label', { class: 'linha-opcao' }, todos, ` todos os ${iguais.length} "${sel[0].nome}" do modelo`));
+    }
+    corpo.append(el('p', { class: 'nota', texto: 'A peça muda no mesmo lugar (a cabeça no mesmo apoio, a porca na mesma pega). Os furos abertos pelo editor para estes parafusos passam para o diâmetro novo (d + 1 mm); os furos que vieram do IFC ficam como estão — confira na peça se o diâmetro subiu.' }));
+    if (await this.dialogo({ titulo: 'Trocar parafuso', corpo, ok: 'Trocar' }) !== 'ok') return;
+    const d = +selD.value, L = +inL.value, classe = selC.value;
+    if (!(d > 0) || !(L > 0)) { this.aviso('Diâmetro e comprimento precisam ser maiores que zero.', 'atencao'); return; }
+    const alvo = todos.checked ? iguais : sel;
+    const nome = nomeDoParafuso(classe, d, L);
+    const mud = {};
+    let falhas = 0;
+    const agora = new Date().toISOString().slice(0, 19);
+    for (const e of alvo) {
+      const q = quadroDoParafuso(e);
+      if (!q) { falhas++; continue; }
+      const gg = geometriaDoParafuso(d, L, q.ponto, q.eixo.map(v => -v), q.pega);
+      const atributos = clonar(e.atributos || {});
+      atributos.marcas = { ...(atributos.marcas || {}), perfil: nome };
+      atributos.parafuso = { ...(atributos.parafuso || {}), d, L, classe, ponto: q.ponto, eixo: q.eixo, ...(q.pega ? { pega: q.pega } : {}) };
+      atributos.trocas_de_parafuso = [...(atributos.trocas_de_parafuso || []), { de: e.nome, para: nome, data: agora }];
+      mud[e.id] = { vertices: gg.vertices, faces: gg.faces, arestas_vivas: [], nome, atributos };
+    }
+    // os furos do editor desses parafusos, refeitos com o diâmetro novo
+    const trocados = new Set(Object.keys(mud));
+    let refeitas = 0, semBase = 0;
+    for (const p of doc.entidades.values()) {
+      const regs = p.tipo === 'solido' && p.atributos && p.atributos.furos_editor;
+      if (!regs || !regs.some(r => trocados.has(r.parafuso))) continue;
+      const novos = regs.map(r => (trocados.has(r.parafuso) ? { ...r, d: furoDoParafuso(d) } : r));
+      const rf = refazerFurosEditor(p, novos);
+      if (!rf) { semBase++; continue; }
+      mud[p.id] = { vertices: rf.vertices, faces: rf.faces, atributos: { ...clonar(p.atributos), furos_editor: rf.registros } };
+      refeitas++;
+    }
+    const n = trocados.size;
+    if (!n) { this.aviso('Não deu para achar o eixo dos parafusos selecionados; nada mudou.', 'atencao'); return; }
+    this.executar(new ComandoAlterar(mud, `Trocar parafuso → ${nome}`));
+    this.aviso(`${n} parafuso(s) passaram para ${nome}` +
+               (refeitas ? ` · furos refeitos com Ø${num(furoDoParafuso(d))} em ${refeitas} peça(s)` : '') +
+               (semBase ? ` · ${semBase} peça(s) com furo feito por versão anterior ficaram com o furo antigo` : '') +
+               (falhas ? ` · ${falhas} sem eixo reconhecível ficaram como estavam` : '') + '.', 'info', 12000);
+  }
+
   async dialogoTrocarPerfil(ids) {
     const ents = ids.map(id => this.documento.get(id)).filter(e => e && e.tipo === 'solido');
     if (!ents.length) return;

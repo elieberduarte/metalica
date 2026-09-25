@@ -92,7 +92,7 @@ def test_marcador_nao_vai_para_o_ifc(tmp_path):
     assert "FURO" not in texto and "IFCOPENINGELEMENT" not in texto.upper()
 
 
-def _furar_malha(e, i_face, ponto, n, d, lados=16):
+def _furar_malha(e, i_face, ponto, n, d, lados=16, comp=None, direcao=None):
     """Réplica em Python do `_furarMalha` da ferramenta Furo (furo.js): laço costurado na
     face clicada e na de trás, cilindro entre elas — para o detalhamento ler o furo."""
     import math as _m
@@ -120,8 +120,19 @@ def _furar_malha(e, i_face, ponto, n, d, lados=16):
     sinal = -1.0 if dot(nf, n) < 0 else 1.0    # malha sintética com o sentido das faces para dentro
     nf = (sinal * nf[0], sinal * nf[1], sinal * nf[2])
     e1 = unit(cruz(nf, (0.0, 0.0, 1.0)) if abs(nf[2]) < 0.9 else cruz(nf, (1.0, 0.0, 0.0)))
+    if comp and direcao:                          # oblongo (web/editor3d/ferramentas/_furar.js)
+        e1 = unit(sub(direcao, tuple(nf[j] * dot(direcao, nf) for j in range(3))))
     e2 = unit(cruz(nf, e1))
     r = d / 2.0
+    # o laço: círculo de `lados` pontos, ou o estádio (lacoDaForma)
+    if comp and direcao and comp > d + 0.5:
+        a_ = (comp - d) / 2.0
+        meio = lados // 2
+        laco2 = [(a_ + r * _m.cos(-_m.pi / 2 + _m.pi * i / meio), r * _m.sin(-_m.pi / 2 + _m.pi * i / meio)) for i in range(meio + 1)]
+        laco2 += [(-a_ + r * _m.cos(_m.pi / 2 + _m.pi * i / meio), r * _m.sin(_m.pi / 2 + _m.pi * i / meio)) for i in range(meio + 1)]
+    else:
+        a_ = 0.0
+        laco2 = [(r * _m.cos(2 * _m.pi * i / lados), r * _m.sin(2 * _m.pi * i / lados)) for i in range(lados)]
     # a face de trás: paralela ao contrário, logo atrás
     i_tras, prof = -1, None
     for k, f in enumerate(e.faces):
@@ -137,9 +148,8 @@ def _furar_malha(e, i_face, ponto, n, d, lados=16):
     vertices = [tuple(v) for v in e.vertices]
     faces = [list(f) for f in e.faces]
     H, B = [], []
-    for i in range(lados):
-        t = 2 * _m.pi * i / lados
-        h = tuple(ponto[j] + e1[j] * r * _m.cos(t) + e2[j] * r * _m.sin(t) for j in range(3))
+    for x, y in laco2:
+        h = tuple(ponto[j] + e1[j] * x + e2[j] * y for j in range(3))
         H.append(len(vertices)); vertices.append(h)
         B.append(len(vertices)); vertices.append(tuple(h[j] - nf[j] * prof for j in range(3)))
 
@@ -154,9 +164,10 @@ def _furar_malha(e, i_face, ponto, n, d, lados=16):
         return f[:k + 1] + giro + [giro[0], f[k]] + f[k + 1:]
     faces[i_face] = costurar(e.faces[i_face], H)
     faces[i_tras] = costurar(e.faces[i_tras], B)
-    eixo = tuple(ponto[j] - nf[j] * prof / 2 for j in range(3))
-    for i in range(lados):
-        j = (i + 1) % lados
+    eixo0 = tuple(ponto[j] - nf[j] * prof / 2 for j in range(3))
+    m = len(H)
+    for i in range(m):
+        j = (i + 1) % m
         q = [H[i], H[j], B[j], B[i]]
         # normal do quad para o vazio do furo
         pts = [vertices[k] for k in q]
@@ -165,6 +176,8 @@ def _furar_malha(e, i_face, ponto, n, d, lados=16):
         for k in range(4):
             a, b = pts[k], pts[(k + 1) % 4]
             nx += (a[1] - b[1]) * (a[2] + b[2]); ny += (a[2] - b[2]) * (a[0] + b[0]); nz += (a[0] - b[0]) * (a[1] + b[1])
+        s_ = max(-a_, min(a_, dot(sub(c, eixo0), e1)))
+        eixo = tuple(eixo0[k] + e1[k] * s_ for k in range(3))
         if dot((nx, ny, nz), sub(eixo, c)) < 0:
             q = [H[i], B[i], B[j], H[j]]
         faces.append(q)
@@ -199,3 +212,32 @@ def test_furo_aberto_na_malha_e_lido_pelo_detalhamento():
     furos = [f for f in pos.furos if f.vista == "frente"]
     assert len(furos) == 1 and abs(furos[0].d - 14.0) < 1.0, [(f.vista, f.d) for f in pos.furos]
     assert not any("ferramenta Furo" in o for o in pos.observacoes)            # é furo da malha, não marcador
+
+
+def test_oblongo_aberto_na_malha_sai_oblongo_no_detalhe():
+    """O oblongo da ferramenta Furo (laço em estádio ao longo da peça) sai no detalhe da
+    barra como furo oblongo 13 × 24 de frente, não como recorte."""
+    doc = _modelo()
+    lev = det.levantar(doc)
+    pos = next(p for p in lev["posicoes"] if p.classe == "barra" and not p.furos)
+    marca = det.marcas_de(pos)[0]
+    ent = next(e for e in doc.entidades.values() if str(_marcas(e).get("posicao") or "") == marca)
+    c, pca = _autovetores(ent.vertices)
+    e1, e3 = pca[0], pca[2]
+    zs = [sum((v[j] - c[j]) * e3[j] for j in range(3)) for v in ent.vertices]
+    lado = None
+    for z0, sinal in ((min(zs), 1.0), (max(zs), -1.0)):
+        if any(abs(z - (z0 + sinal * 2.25)) < 0.3 for z in zs):
+            lado = (z0, sinal)
+    z0, sinal = lado
+    n = tuple(-sinal * x for x in e3)
+    i_face = max(range(len(ent.faces)), key=lambda k: (
+        all(abs(sum((ent.vertices[i][j] - c[j]) * e3[j] for j in range(3)) - z0) < 0.3 for i in ent.faces[k]), len(ent.faces[k])))
+    face = tuple(c[j] + e3[j] * z0 + e1[j] * 100.0 for j in range(3))
+    n_v = len(ent.vertices)
+    _furar_malha(ent, i_face, face, n, 13.0, comp=24.0, direcao=tuple(e1))
+    assert len(ent.vertices) == n_v + 36
+    pos = next(p for p in det.levantar(doc)["posicoes"] if marca in det.marcas_de(p))
+    furos = [f for f in pos.furos if f.vista == "frente"]
+    assert len(furos) == 1 and furos[0].tipo == "oblongo", [(f.vista, f.tipo, f.d, f.larg, f.alt) for f in pos.furos]
+    assert sorted((round(furos[0].larg), round(furos[0].alt))) == [13, 24], (furos[0].larg, furos[0].alt)

@@ -318,7 +318,8 @@ def _descrever_arquivo(caminho, pasta_projeto):
         cam, extra = caminho, {}
     rel = os.path.relpath(cam, PROJETOS).replace("\\", "/")
     d = {"nome": os.path.basename(cam), "url": "/saida/" + rel,
-         "tamanho_kb": round(os.path.getsize(cam) / 1024, 1) if os.path.exists(cam) else 0}
+         "tamanho_kb": round(os.path.getsize(cam) / 1024, 1) if os.path.exists(cam) else 0,
+         "alterado": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(os.path.getmtime(cam))) if os.path.exists(cam) else ""}
     d.update(extra)
     return d
 
@@ -1452,8 +1453,20 @@ def dados_dos_resumos(s: str) -> dict:
     if lista:
         telhas = [t.get("perfil") for t in (lista.get("telhas") or []) if t.get("perfil")]
         if telhas:
-            sug["telha"] = "Telha %s" % telhas[0]
-    return {"dados": dados, "sugestoes": sug, "campos": list(CAMPOS_RESUMO)}
+            t0 = str(telhas[0]).strip()
+            sug["telha"] = t0 if re.match(r"(?i)telha", t0) else "Telha %s" % t0
+    # os resumos já gerados (a tela mostra o último ao abrir)
+    pasta = os.path.join(_gerente()._existente(s), "detalhamento")
+    arquivos = {}
+    for chave, nome in (("obra", "resumo-da-obra"), ("materiais", "resumo-de-materiais")):
+        a = {}
+        for ext in ("html", "pdf"):
+            cam = os.path.join(pasta, "%s.%s" % (nome, ext))
+            if os.path.exists(cam):
+                a[ext] = _descrever_arquivo(cam, pasta)
+        if a:
+            arquivos[chave] = a
+    return {"dados": dados, "sugestoes": sug, "campos": list(CAMPOS_RESUMO), "arquivos": arquivos}
 
 
 def gerar_resumos_projeto(s: str, corpo: dict) -> dict:

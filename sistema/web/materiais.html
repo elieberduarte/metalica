@@ -17,66 +17,111 @@
 </script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M8 9h16M8 16h16M8 23h10' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/></svg>">
 <style>
-  .materiais { max-width: 1280px; margin: 0 auto; padding: 18px 24px 60px; }
-  .materiais .barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 14px; }
-  .materiais .barra .sep { flex: 1; }
-  .materiais .barra label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto2); }
-  .materiais .barra select, .materiais .barra input[type=search], .controle-barra select { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--borda-forte);
-    border-radius: var(--raio-p); background: var(--painel); color: var(--texto); }
-  .materiais .barra input[type=search] { width: 220px; }
-  .materiais .cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 6px 0 18px; }
-  .materiais .cartao-n { padding: 10px 14px; background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); }
-  .materiais .cartao-n b { display: block; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
-  .materiais .cartao-n span { font-size: 12px; color: var(--texto2); text-transform: uppercase; letter-spacing: .05em; }
-  .materiais h2 { font-size: 16px; margin: 22px 0 8px; color: var(--azul); display: flex; align-items: baseline; gap: 10px; }
-  .materiais h2 small { font-size: 12px; font-weight: 400; color: var(--texto3); }
+  .materiais { max-width: 1320px; margin: 0 auto; padding: 18px 24px 60px; }
+  /* ---- cabeçalho da obra */
+  .obra { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; margin: 4px 0 14px; }
+  .obra .titulo { flex: 1; min-width: 260px; }
+  .obra .titulo h2 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -.01em; color: var(--texto); }
+  .obra .titulo p { margin: 3px 0 0; font-size: 13px; color: var(--texto2); }
+  .obra .acoes-obra { display: flex; flex-wrap: wrap; gap: 6px; }
+  .botao-m { font: inherit; font-size: 13px; padding: 6px 12px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
+             background: var(--painel); color: var(--texto); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+  .botao-m:hover { border-color: var(--azul2); color: var(--azul2); }
+  .botao-m.principal { background: var(--azul); border-color: var(--azul); color: #fff; }
+  .botao-m.principal:hover { background: var(--azul2); color: #fff; }
+  .botao-m:disabled { opacity: .55; cursor: default; }
+  .botao-m svg { width: 15px; height: 15px; }
+  /* ---- cartões */
+  .cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 16px; }
+  .cartao-n { padding: 11px 14px 10px; background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); box-shadow: var(--sombra); }
+  .cartao-n b { display: block; font-size: 22px; font-weight: 650; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .cartao-n span { font-size: 11.5px; color: var(--texto2); text-transform: uppercase; letter-spacing: .05em; }
+  .cartao-n small { display: block; font-size: 12px; color: var(--texto3); margin-top: 2px; }
+  .cartao-n.destaque { border-color: var(--azul-linha); background: var(--azul-fraco); }
+  .cartao-n.destaque b { color: var(--azul-tinta); }
+  /* ---- abas */
+  .abas { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--borda); margin: 0 0 14px; position: sticky; top: 52px; z-index: 5; background: var(--fundo); padding-top: 4px; }
+  .abas button { font: inherit; font-size: 13.5px; padding: 8px 14px 9px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--texto2); cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  .abas button:hover { color: var(--texto); }
+  .abas button.ativa { color: var(--azul); border-bottom-color: var(--azul); font-weight: 600; }
+  .abas .qtd { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--painel2); border: 1px solid var(--borda); color: var(--texto3); font-weight: 500; }
+  .abas .sep { flex: 1; }
+  .abas input[type=search] { font: inherit; font-size: 13px; padding: 5px 9px; margin: 2px 0 4px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); width: 230px; }
+  .painel-aba[hidden] { display: none; }
+  /* ---- quadros */
+  .materiais h3 { font-size: 15px; margin: 18px 0 8px; color: var(--azul); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .materiais h3:first-child { margin-top: 2px; }
+  .materiais h3 small { font-size: 12px; font-weight: 400; color: var(--texto3); }
   .materiais table { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--painel); }
-  .materiais th, .materiais td { border: 1px solid var(--borda); padding: 4px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+  .materiais th, .materiais td { border: 1px solid var(--borda); padding: 5px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
   .materiais td.quebra, .materiais th.quebra { white-space: normal; }
-  .materiais th { background: var(--painel2); font-weight: 600; position: sticky; top: 52px; z-index: 2; cursor: pointer; user-select: none; }
-  .materiais .rolagem th { top: 0; }
+  .materiais th { background: var(--painel2); font-weight: 600; position: sticky; top: 0; z-index: 2; cursor: pointer; user-select: none; }
   .materiais th.ordem-asc::after { content: " ▲"; font-size: 9px; color: var(--texto3); }
   .materiais th.ordem-desc::after { content: " ▼"; font-size: 9px; color: var(--texto3); }
   .materiais td.r, .materiais th.r { text-align: right; font-variant-numeric: tabular-nums; }
   .materiais td.c, .materiais th.c { text-align: center; }
   .materiais td.b { font-weight: 600; }
+  .materiais tbody tr:hover td { background: var(--azul-fraco); }
   .materiais tfoot td { background: var(--painel2); font-weight: 600; }
   .materiais tr.oculta { display: none; }
   .materiais .mono { font-family: var(--mono); font-size: 12px; }
-  .materiais .vazio { padding: 14px; color: var(--texto3); font-size: 13px; border: 1px dashed var(--borda); border-radius: var(--raio); }
+  .materiais .vazio { padding: 18px; color: var(--texto3); font-size: 13.5px; border: 1px dashed var(--borda-forte); border-radius: var(--raio); text-align: center; background: var(--painel); }
   .materiais .nota { font-size: 12.5px; color: var(--texto2); margin: 6px 0 0; }
-  .materiais .ressalvas li { font-size: 13px; margin: 3px 0; }
-  .materiais .aviso-topo { padding: 10px 14px; border-left: 3px solid var(--amarelo); background: var(--amarelo-fundo); border-radius: var(--raio-p); margin: 0 0 14px; font-size: 13.5px; }
-  .materiais .aviso-topo.erro { border-color: var(--vermelho, #c33); }
-  .materiais .rolagem { overflow: auto; max-height: 70vh; border: 1px solid var(--borda); border-radius: var(--raio); }
+  .materiais .rolagem { overflow: auto; max-height: 68vh; border: 1px solid var(--borda); border-radius: var(--raio); }
   .materiais .rolagem table { border: 0; }
-  .materiais .arquivos { display: flex; flex-wrap: wrap; gap: 6px; }
-  .materiais .arquivos a { font-size: 12.5px; padding: 3px 9px; border: 1px solid var(--borda-forte); border-radius: 999px; text-decoration: none; color: var(--texto); }
-  .materiais .arquivos a:hover { border-color: var(--azul); color: var(--azul); }
+  .aviso-topo { padding: 10px 14px; border-left: 3px solid var(--amarelo); background: var(--amarelo-fundo); border-radius: var(--raio-p); margin: 0 0 14px; font-size: 13.5px; }
+  .aviso-topo.erro { border-color: var(--verm); background: var(--verm-fundo); }
+  .aviso-topo.ok { border-color: var(--verde); background: var(--verde-fundo); }
+  .controle-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; color: var(--texto2); }
+  .controle-barra select { font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); }
+  /* ---- visão geral */
+  .grade-geral { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .grade-geral { grid-template-columns: 1fr; } }
+  .caixa { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 14px 16px; box-shadow: var(--sombra); }
+  .caixa h3 { margin-top: 0 !important; }
+  .barras-peso { display: grid; grid-template-columns: minmax(120px, 190px) 1fr auto; gap: 7px 12px; align-items: center; font-size: 13px; }
+  .barras-peso .nome { color: var(--texto); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .barras-peso .trilho { height: 10px; background: var(--painel2); border: 1px solid var(--borda); border-radius: 999px; overflow: hidden; }
+  .barras-peso .trilho i { display: block; height: 100%; background: var(--azul2); border-radius: 999px; }
+  .barras-peso .trilho i.telha { background: var(--texto3); }
+  .barras-peso .kg { font-variant-numeric: tabular-nums; color: var(--texto2); text-align: right; white-space: nowrap; }
+  .barras-peso .kg b { color: var(--texto); font-weight: 600; }
+  .lista-simples { margin: 0; padding-left: 18px; font-size: 13px; }
+  .lista-simples li { margin: 3px 0; }
+  .passos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  /* ---- resumos */
+  .grade-resumos { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 980px) { .grade-resumos { grid-template-columns: 1fr; } }
+  .form-resumo { display: grid; gap: 10px; }
+  .form-resumo label { display: grid; gap: 4px; font-size: 12.5px; color: var(--texto2); }
+  .form-resumo input, .form-resumo textarea { font: inherit; font-size: 13px; padding: 6px 9px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); width: 100%; box-sizing: border-box; }
+  .form-resumo textarea { min-height: 62px; resize: vertical; }
+  .form-resumo input:focus, .form-resumo textarea:focus { outline: 2px solid var(--campo-foco); outline-offset: -1px; }
+  .progresso { font-size: 13px; color: var(--texto2); display: flex; gap: 8px; align-items: center; }
+  .progresso .giro { width: 14px; height: 14px; border: 2px solid var(--borda-forte); border-top-color: var(--azul2); border-radius: 50%; animation: giro .8s linear infinite; }
+  @keyframes giro { to { transform: rotate(360deg); } }
+  .doc-previa { display: flex; flex-direction: column; min-height: 70vh; }
+  .doc-barra { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+  .doc-barra .alternar { display: inline-flex; border: 1px solid var(--borda-forte); border-radius: var(--raio-p); overflow: hidden; }
+  .doc-barra .alternar button { font: inherit; font-size: 13px; padding: 6px 12px; border: 0; background: var(--painel); color: var(--texto2); cursor: pointer; }
+  .doc-barra .alternar button + button { border-left: 1px solid var(--borda-forte); }
+  .doc-barra .alternar button.ativa { background: var(--azul); color: #fff; }
+  .doc-barra .sep { flex: 1; }
+  .doc-barra .quando { font-size: 12px; color: var(--texto3); }
+  .doc-previa iframe { flex: 1; width: 100%; min-height: 68vh; border: 1px solid var(--borda); border-radius: var(--raio); background: #fff; }
+  .numeros-resumo { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 4px; }
+  .numeros-resumo div { padding: 8px 10px; border: 1px solid var(--borda); border-radius: var(--raio-p); background: var(--painel2); font-size: 12px; color: var(--texto2); }
+  .numeros-resumo b { display: block; font-size: 16px; color: var(--texto); font-variant-numeric: tabular-nums; }
   @media print {
-    .topo, .materiais .barra, .materiais .arquivos, .materiais .rolagem { display: block; }
-    .topo, .materiais .barra, .materiais .arquivos { display: none !important; }
+    .topo, .obra .acoes-obra, .abas, .controle-barra, #aviso { display: none !important; }
+    .painel-aba[hidden] { display: block !important; }
+    #aba-resumos, #aba-arquivos { display: none !important; }
     .materiais { max-width: none; padding: 0; }
     .materiais .rolagem { max-height: none; overflow: visible; border: 0; }
     .materiais th { position: static; }
     .materiais table { font-size: 10px; }
-    .materiais tr.oculta { display: none; }
     body { background: #fff; color: #000; }
   }
-  .obra-atual { font-size: 15px; }
-  .obra-atual b { font-weight: 600; }
-  #dlg-resumos { border: 1px solid var(--borda-forte); border-radius: var(--raio); background: var(--painel); color: var(--texto); padding: 18px 22px; width: min(640px, 92vw); }
-  #dlg-resumos::backdrop { background: rgba(0, 0, 0, .45); }
-  #dlg-resumos h2 { margin: 0 0 6px; font-size: 16px; color: var(--azul); }
-  #dlg-resumos .campos { display: grid; grid-template-columns: 160px 1fr; gap: 8px 12px; align-items: center; margin: 12px 0; }
-  #dlg-resumos .campos label { font-size: 13px; color: var(--texto2); }
-  #dlg-resumos .campos input, #dlg-resumos .campos textarea { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p); background: var(--campo-fundo, var(--painel)); color: var(--texto); width: 100%; box-sizing: border-box; }
-  #dlg-resumos .campos textarea { min-height: 54px; resize: vertical; }
-  #dlg-resumos .botoes { display: flex; justify-content: flex-end; gap: 8px; }
-  #dlg-resumos .botoes button { font: inherit; padding: 6px 14px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p); background: var(--painel2); color: var(--texto); cursor: pointer; }
-  #dlg-resumos .botoes button.principal { background: var(--azul); color: #fff; border-color: var(--azul); }
-  .controle-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 10px; font-size: 13px; color: var(--texto2); }
-  @media print { .controle-barra { display: none; } }
 </style>
 </head>
 <body>
@@ -101,20 +146,23 @@
 <main class="materiais">
   <div id="aviso" class="aviso-topo" hidden></div>
 
-  <div class="barra">
-    <div class="obra-atual" id="obra-atual" title="A lista é sempre do projeto aberto">Projeto: <b>—</b></div>
-    <button type="button" id="btn-recalcular" title="Levanta de novo as peças do modelo 3D deste projeto (use depois de mudar o modelo)">Atualizar pelo modelo 3D</button>
-    <span class="sep"></span>
-    <input type="search" id="filtro" placeholder="Filtrar posição, perfil, conjunto…" title="Filtra as linhas de todos os quadros">
-    <button type="button" id="btn-pdf" title="Gera Lista-de-materiais.pdf na pasta detalhamento/ do projeto e abre">PDF</button>
-    <button type="button" id="btn-imprimir" title="Imprime esta tela">Imprimir</button>
-    <button type="button" id="btn-pasta" title="Abre a pasta detalhamento/ do projeto, onde estão os CSVs para o Excel">Abrir pasta</button>
-    <button type="button" id="btn-resumos" class="principal" title="Resumo da obra e resumo de materiais em PDF (como a fábrica emite), do mesmo levantamento desta lista">Resumos da obra…</button>
-  </div>
-
-  <div class="arquivos" id="arquivos"></div>
+  <section class="obra">
+    <div class="titulo">
+      <h2 id="obra-nome">—</h2>
+      <p id="obra-sub">—</p>
+    </div>
+    <div class="acoes-obra">
+      <button type="button" class="botao-m" id="btn-recalcular" title="Levanta de novo as peças do modelo 3D deste projeto (use depois de mudar o modelo)">Atualizar pelo modelo 3D</button>
+      <button type="button" class="botao-m" id="btn-pdf" title="Gera a lista em PDF na pasta detalhamento/ do projeto e abre">Lista em PDF</button>
+      <button type="button" class="botao-m" id="btn-imprimir" title="Imprime os quadros desta tela">Imprimir</button>
+      <button type="button" class="botao-m" id="btn-pasta" title="Abre a pasta detalhamento/ do projeto, onde estão os PDFs e os CSVs">Abrir pasta</button>
+      <button type="button" class="botao-m principal" id="btn-resumos" title="Resumo da obra e resumo de materiais, como a fábrica emite">Resumos da obra</button>
+    </div>
+  </section>
 
   <div class="cartoes" id="cartoes"></div>
+
+  <nav class="abas" id="abas" aria-label="Quadros da lista"></nav>
 
   <!-- vai para dentro do quadro Perfis: só muda a estimativa de barras de compra -->
   <label class="controle-barra" id="controle-barra" hidden>Comprimento da barra de aço para compra
@@ -128,15 +176,6 @@
   <div id="conteudo"></div>
 </main>
 
-<dialog id="dlg-resumos" class="dialogo">
-  <form method="dialog" id="dlg-resumos-form">
-    <h2>Resumo da obra e resumo de materiais</h2>
-    <p class="nota">O que o modelo IFC não traz. Fica gravado no projeto; os dois PDFs saem em detalhamento/.</p>
-    <div id="dlg-resumos-campos" class="campos"></div>
-    <p class="nota" id="dlg-resumos-erro" hidden></p>
-    <div class="botoes"><button type="button" id="dlg-resumos-cancelar">Cancelar</button><button type="submit" class="principal">Gerar os dois PDFs</button></div>
-  </form>
-</dialog>
 <script src="/materiais.js"></script>
 <script src="/versao.js" defer></script>
 <script src="/vivo.js"></script>
