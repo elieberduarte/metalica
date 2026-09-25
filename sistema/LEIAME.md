@@ -218,6 +218,16 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.11.** Projeto recebido "limpo" pelo usuário (as vistas remanejadas): (1) `classificar` — o vão de referência é o
+da vista com mais treliça (não a mediana das larguras), e a vista em pé tipada pela forma com pilares na altura do
+pórtico, largura que não é o vão e mais larga que alta é fachada lateral (o pilar treliçado dela tem diagonal curta e a
+fazia passar por pórtico, que então virava o "pórtico principal" e tirava o oitão da montagem); (2) `_lateral` — inclinada
+curta (< 6 % da largura) é diagonal de pilar treliçado, não contraventamento; (3) `_portico` — a faixa da treliça sai dos
+grupos de diagonais ligadas pelas pontas que atravessam 40 % do vão, sem as diagonais das tiras dos pilares
+(±1,5 % da largura); sem grupo largo, os grupos com pelo menos um quarto do maior (o V de contraventamento de 2 barras
+fica de fora — ele descia a faixa e a longarina virava banzo). No desenho limpo do IVAN: 857 barras, dimensionado com 4
+pendências (banzo inferior sem travamento); o original segue com 838.
+
 **0.8.10.** Projeto recebido com área cancelada: o retângulo riscado em X de canto a canto (`_areas_riscadas`: as duas
 diagonais usam os quatro cantos, as bordas de cima e de baixo desenhadas, pelo menos 30 linhas dentro e nada
 atravessando a borda — o painel de contraventamento em X tem terças e tesouras passando por ela) sai do reconhecimento

@@ -164,17 +164,28 @@ def classificar(vistas: Sequence[dict], analises: Dict[int, dict]) -> dict:
     marca as repetidas (`repetida` = id da primeira). Devolve {W, H} de referência (em
     unidades do desenho) — None quando não há pórtico."""
     quadros = [v for v in vistas if analises[v["id"]]["quadro"] or v.get("tipo") in ("trelica", "elevacao")]
+    pela_forma = set()
     for v in quadros:
         if not v.get("tipo"):
             v["tipo"] = analises[v["id"]]["tipo_geo"]
+            pela_forma.add(v["id"])
     com_pilar = [v for v in quadros if analises[v["id"]]["pilares"]]
     W_ref = H_ref = None
     if quadros:
-        ws = sorted(analises[v["id"]]["W"] for v in quadros)
-        W_ref = ws[len(ws) // 2]
+        # o vão é o da vista com mais treliça (a fachada lateral com pilar treliçado também
+        # tem diagonal curta, mas bem menos que a tesoura)
+        W_ref = analises[max(quadros, key=lambda v: len(analises[v["id"]]["reticulado"]))["id"]]["W"]
     if com_pilar:
         alturas = sorted(max(p[2] for p in analises[v["id"]]["pilares"]) for v in com_pilar)
         H_ref = alturas[len(alturas) // 2]
+        # "pórtico" pela forma com pilares na altura dos outros, mas largura que não é o
+        # vão: é a fachada lateral (o reticulado dela é o dos pilares treliçados)
+        for v in list(quadros):
+            a = analises[v["id"]]
+            if v["id"] in pela_forma and W_ref and abs(a["W"] - W_ref) > 0.06 * W_ref and len(a["pilares"]) >= 2                     and 0.5 * H_ref <= a["H"] <= 1.8 * H_ref and a["W"] >= a["H"]:
+                v["tipo"] = "lateral"
+                quadros.remove(v)
+        com_pilar = [v for v in quadros if analises[v["id"]]["pilares"]]
         # "elevação" com pilares muito mais baixos que os do pórtico (os montantes de uma
         # tesoura desenhada de lado, a axonometria): é só a treliça
         for v in com_pilar:
@@ -455,13 +466,54 @@ def _portico(v: dict, a: dict) -> List[dict]:
     ret = a["reticulado"]
     # a faixa da treliça sai do reticulado ligado (diagonal encostada em outras duas
     # linhas do reticulado); o traço da seta de cota, solto, fica de fora
-    nos_ret = _nos_de(ret, tol)
+    # a faixa da treliça sai das diagonais ligadas umas às outras pelas pontas (o traço da
+    # seta de cota, solto, não entra) — e só dos grupos ligados que atravessam boa parte do
+    # vão: o V de contraventamento logo abaixo da tesoura e a treliça do pilar treliçado
+    # também são diagonais ligadas, mas curtas na largura
+    # a treliça do pilar treliçado (as faixas em pé dos pilares) não entra: ela sobe até
+    # encostar na tesoura e levaria a faixa até o chão
+    em_pe_longos = [x for x in a["ativos"] if _vertical(x.ang) and x.L >= 0.35 * H] +                    [x for x in a["finos"] if x["ang"] == 90.0]
+    tiras = []
+    for x in em_pe_longos:
+        xa = (x.a[0] + x.b[0]) / 2 if hasattr(x, "a") and not isinstance(x, dict) else (x["a"][0] + x["b"][0]) / 2
+        tiras.append((xa - 0.015 * W, xa + 0.015 * W))
+
+    def na_tira(x) -> bool:
+        return any(lo <= min(x.a[0], x.b[0]) and max(x.a[0], x.b[0]) <= hi for lo, hi in tiras)
+
+    ret_web = [x for x in ret if not na_tira(x)] or ret
+    nos_ret = _nos_de(ret_web, tol)
     ligados = []
-    for s in ret:
-        outros = {id(o) for p in (s.a, s.b) for o in _vizinhos(nos_ret, p, tol) if o is not s}
+    for x in ret_web:
+        outros = {id(o) for p in (x.a, x.b) for o in _vizinhos(nos_ret, p, tol) if o is not x}
         if len(outros) >= 2:
-            ligados.append(s)
-    base_faixa = ligados if len(ligados) >= 4 else ret
+            ligados.append(x)
+    pai = {id(x): id(x) for x in ligados}
+
+    def raiz(k):
+        while pai[k] != k:
+            pai[k] = pai[pai[k]]
+            k = pai[k]
+        return k
+
+    ids_lig = set(pai)
+    for x in ligados:
+        for p in (x.a, x.b):
+            for o in _vizinhos(nos_ret, p, tol):
+                if id(o) in ids_lig and o is not x:
+                    pai[raiz(id(o))] = raiz(id(x))
+    grupos_lig: Dict[int, List[object]] = collections.defaultdict(list)
+    for x in ligados:
+        grupos_lig[raiz(id(x))].append(x)
+    largos = [x for g in grupos_lig.values()
+              if max(p[0] for y in g for p in (y.a, y.b)) - min(p[0] for y in g for p in (y.a, y.b)) >= 0.4 * W
+              for x in g]
+    # sem grupo que atravesse o vão (a alma partida pelos postes do oitão): os grupos de
+    # tamanho parecido com o maior; o V de contraventamento, de 2 ou 4 barras, fica de fora
+    maior_grupo = max((len(g) for g in grupos_lig.values()), default=0)
+    grandes = [x for g in grupos_lig.values() if len(g) >= max(3, 0.25 * maior_grupo) for x in g]
+    base_faixa = largos if len(largos) >= 4 else (grandes if len(grandes) >= 4 else
+                                                  (ligados if len(ligados) >= 4 else ret_web))
     if base_faixa:
         ys = [p[1] for s in base_faixa for p in (s.a, s.b)]
         alt = max(ys) - min(ys)
@@ -701,8 +753,9 @@ def _lateral(v: dict, a: dict) -> List[dict]:
             if s.L >= 0.5 * W and (abs(ym - y0) <= 0.03 * H or abs(ym - y1) <= 0.03 * H):
                 continue                                 # beiral e chão
             outras.append(_barra(s.a, s.b, "longarina"))
-        else:
+        elif s.L >= 0.06 * W:
             outras.append(_barra(s.a, s.b, "contraventamento"))
+        # inclinada curta: diagonal do pilar treliçado, detalhe — não é contraventamento
     for f in a["finos"]:
         if f["ang"] == 0.0:
             outras.append(_barra(f["a"], f["b"], "longarina", True))
