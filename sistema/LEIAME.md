@@ -218,6 +218,13 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.23.** O programa instalado se encerrava sozinho com a janela na tela ("não é possível acessar esse site"
+ao clicar em voltar): a página que sai manda `fechou` na hora e a que entra, pesada (o CAD com o completo de 8 MB),
+levava mais que os 6 s que o vigia dava para a troca de página. O vigia (`vigiar`, em `main`) agora espera 30 s
+(`SILENCIO_TROCA_DE_PAGINA`) e conta **qualquer pedido HTTP atendido** como sinal de vida (`_ULTIMO_PEDIDO`,
+`_pedido_recente`): uma página carregando pede arquivos antes de conseguir mandar o sinal, e isso já prova que há
+janela. Encontrado no log do usuário: "nenhuma janela aberta: encerrando" às 15:01:54, antes da 0.8.22 existir.
+
 **0.8.22.** As linhas das tesouras com o canto quebrado no 3D (prints do usuário: a aba do banzo ia parar no contorno
 de baixo e cruzava o perfil até a cumeeira; a perna e o banzo "entortavam" antes da ligação): `_emendas_do_chanfro`
 levava o banzo até o nó também nas peças já quebradas no 3D — feito para o arco chanfrado só no desenho —, e mexia nos

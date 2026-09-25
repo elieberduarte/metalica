@@ -2244,6 +2244,7 @@ class Handler(BaseHTTPRequestHandler):
         rota = unquote(urlparse(self.path).path)
         if self._de_fora():
             return self._erro("pedido de fora do programa recusado", 403)
+        _ULTIMO_PEDIDO[0] = time.time()
         try:
             if rota == "/":
                 return self._arquivo(os.path.join(WEB, "inicio.html"), WEB)
@@ -2351,6 +2352,7 @@ class Handler(BaseHTTPRequestHandler):
         rota = unquote(urlparse(self.path).path)
         if self._de_fora():
             return self._erro("pedido de fora do programa recusado", 403)
+        _ULTIMO_PEDIDO[0] = time.time()
         if rota in ("/api/vivo", "/api/fechou"):
             _sinal_de_vida(self.path, rota == "/api/fechou")
             return self._json({"ok": True})
@@ -2541,6 +2543,22 @@ def _trabalho_em_curso() -> bool:
     return bool(PROGRESSO)
 
 
+#: Instante do último pedido HTTP atendido (qualquer rota): uma página que ainda está
+#: carregando — o CAD lendo um desenho de 8 MB, o 3D montando o modelo — pede arquivos
+#: antes de conseguir mandar o sinal de vida, e isso já prova que há janela.
+_ULTIMO_PEDIDO = [0.0]
+#: Quanto tempo depois do último sinal/pedido o vigia conclui que não há mais janela,
+#: depois de uma ter aberto. Cobre a troca de página pelo "voltar" do navegador: a
+#: página que sai manda "fechou" na hora e a que entra pode levar bem mais que os 6 s
+#: de antes para dar sinal (o servidor se encerrava com a janela na tela — o usuário
+#: via "não é possível acessar esse site").
+SILENCIO_TROCA_DE_PAGINA = 30.0
+
+
+def _pedido_recente(limite: float = SILENCIO_TROCA_DE_PAGINA) -> bool:
+    return time.time() - _ULTIMO_PEDIDO[0] < limite
+
+
 def _janelas_abertas() -> int:
     agora = time.time()
     with _TRAVA_JANELAS:
@@ -2687,14 +2705,15 @@ def main():
             while True:
                 time.sleep(1.0)
                 abertas = _janelas_abertas()
-                if abertas or _trabalho_em_curso():
-                    # janela aberta, ou operação em andamento com a janela já fechada:
-                    # termina o que começou antes de sair
+                if abertas or _trabalho_em_curso() or _pedido_recente():
+                    # janela aberta, operação em andamento com a janela já fechada (termina
+                    # o que começou antes de sair), ou uma página ainda carregando (pediu
+                    # algo há pouco: há janela, mesmo sem o sinal de vida ainda)
                     ja_abriu, vazio_desde = ja_abriu or bool(abertas), None
                     continue
                 # nunca abriu: dá dois minutos (máquina lenta, antivírus); depois de aberta,
-                # seis segundos sem ninguém cobrem a troca de uma página para outra
-                limite = 6.0 if ja_abriu else 120.0
+                # SILENCIO_TROCA_DE_PAGINA sem ninguém cobre a troca de uma página para outra
+                limite = SILENCIO_TROCA_DE_PAGINA if ja_abriu else 120.0
                 vazio_desde = vazio_desde or (time.time() if ja_abriu else inicio)
                 if time.time() - vazio_desde >= limite:
                     print("nenhuma janela aberta: encerrando.", flush=True)
