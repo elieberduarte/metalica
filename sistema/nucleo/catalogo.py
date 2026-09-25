@@ -314,11 +314,19 @@ def itens(familia: Optional[str] = None, grupo: Optional[str] = None) -> List[It
 
 
 def item(nome) -> Optional[Item]:
-    """Um item pelo nome, tolerante à grafia ("ue150x60x20x2,65")."""
+    """Um item pelo nome, tolerante à grafia ("ue150x60x20x2,65").
+
+    O perfil de cálculo de alguns itens leva a medida em mm no nome ("Barra redonda
+    ø 1/2\" (12,7 mm)"), e é esse nome que o modelo 3D grava: sem achar o item de novo, a
+    barra ficava fora do cálculo. O parêntese do fim só sai quando o nome inteiro não
+    existe — "(FF)" faz parte do nome dos formados a frio."""
     if isinstance(nome, Item):
         return nome
     _carregar()
-    return _por_chave.get(_chave(nome))
+    it = _por_chave.get(_chave(nome))
+    if it is None and isinstance(nome, str) and re.search(r"\([^()]*\)\s*$", nome):
+        it = _por_chave.get(_chave(re.sub(r"\s*\([^()]*\)\s*$", "", nome)))
+    return it
 
 
 def familias() -> List[dict]:

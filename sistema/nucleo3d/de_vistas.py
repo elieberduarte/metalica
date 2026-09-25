@@ -213,8 +213,10 @@ def modelo_das_vistas(desenho: Desenho, montagens: Sequence[dict], *, aco_padrao
                     p0, p1 = P(pa), P(pb)
                     if math.dist(p0, p1) < 1.0:
                         continue
+                    # só banzo, montante e diagonal formam o conjunto da vista (a tesoura);
+                    # pilar, longarina e contraventamento desenhados junto são peças soltas
                     base = {"peca": peca, "vista": vid, "inst": k, "ent": ent,
-                            "sozinha": sozinhas or peca.papel == "pilar"}
+                            "sozinha": sozinhas or peca.papel not in ("banzo", "montante", "diagonal")}
                     if mult > 1:
                         # perfil duplo (2U, 2L): costas com costas, com a chapa de nó entre eles
                         pp = catalogo.perfil_de(peca.perfil)

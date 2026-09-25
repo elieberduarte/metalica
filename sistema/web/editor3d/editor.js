@@ -1670,6 +1670,7 @@ export class Editor {
       'zoom-extensao': () => this.camera.zoomExtensao(),
       'zoom-selecao': () => this.camera.zoomSelecao([...this.selecao.ids]),
       'mapa-esforcos': () => this.alternarAnalise(),
+      dimensionar: () => this.dimensionarEstrutura(),
       sombras: () => this.alternarSombras(),
       desempenho: () => this.dialogoDesempenho(),
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
@@ -2972,6 +2973,89 @@ export class Editor {
     return true;
   }
 
+  /**
+   * "Dimensionar": o servidor calcula, escolhe em cada posição o perfil mais leve do
+   * catálogo que passa (repetindo até a escolha se repetir), troca os perfis nas barras
+   * do modelo do projeto — o anterior vai para o histórico — e grava o cálculo novo. Aqui:
+   * gravar o que está aberto, pedir os parâmetros, mostrar o que mudou e reabrir.
+   */
+  async dimensionarEstrutura() {
+    if (this._calculando) return false;
+    if (!this.projeto) {
+      this.aviso('Dimensionar trabalha no modelo de um projeto: abra o modelo pela tela de projetos.', 'atencao');
+      return false;
+    }
+    const par = await this._dialogoParametrosCalculo({
+      titulo: 'Dimensionar a estrutura', ok: 'Dimensionar',
+      nota: 'Em cada posição verificada entra o perfil mais leve do catálogo (séries padrão) que passa na barra e na ligação; ' +
+            'o banzo leva um perfil só por linha, e a tesoura segue as regras da fábrica do galpão (parede de 2 mm, esbeltez). ' +
+            'Os perfis trocam no modelo, e o modelo atual fica no histórico. Leva de meio minuto a alguns minutos.' });
+    if (!par) return false;
+    try {
+      const s = await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON(), this._modeloAlterado);
+      if (s && s.alterado) this._modeloAlterado = s.alterado;
+    } catch (e) {
+      this.aviso(`Não foi possível gravar o modelo antes de dimensionar: ${e.message}`, 'erro', 0);
+      return false;
+    }
+    this._calculando = true;
+    this._atualizarBotaoCalcular();
+    this.dica('Dimensionando a estrutura…');
+    const parar = this._acompanharProgresso('Dimensionamento: ');
+    let r = null;
+    try {
+      r = await this.api.dimensionarProjeto(this.projeto, { parametros: par, aplicar: true });
+    } catch (e) {
+      this.aviso(`Não foi possível dimensionar: ${e.message}`, 'erro', 0);
+    } finally {
+      parar();
+      this._calculando = false;
+      this._atualizarBotaoCalcular();
+    }
+    if (!r) { this.dica(''); return false; }
+    const pct = (v) => (v === null || v === undefined) ? '—' : `${numero(v * 100, 0)} %`;
+    const corpo = el('div', {});
+    const mud = r.mudancas || [];
+    const ap = r.aplicado || {};
+    const antes = r.peso_antes_kg, depois = r.peso_depois_kg;
+    corpo.append(el('p', { class: 'explica', texto:
+      (mud.length ? `${mud.length} posição(ões) trocaram de perfil` + (ap.barras ? ` (${numero(ap.barras)} barra(s) no modelo)` : '') : 'Nenhuma posição precisou trocar de perfil') +
+      (antes != null && depois != null ? `; peso das peças verificadas ${numero(antes, 0)} → ${numero(depois, 0)} kg` : '') +
+      `. Reprovadas: ${(r.reprovadas_antes || []).length} antes, ${(r.reprovadas || []).length} depois.` +
+      (r.convergiu === false ? ' A escolha não se repetiu nas rodadas permitidas: ficou a última — dimensione de novo para confirmar.' : '') }));
+    if (mud.length) {
+      const lista = el('div', { class: 'lista-linhas comparacao dimensionamento' });
+      for (const x of mud) {
+        lista.append(el('div', { class: 'linha', title: `${x.de} → ${x.para}` },
+          el('span', { class: 'marca', texto: x.marca }),
+          el('span', { class: 'nome', texto: `${x.tipo || ''} · ${x.de} → ${x.para}` }),
+          el('span', { class: 'contagem', texto: `${pct(x.aproveitamento_antes)} → ` }),
+          el('span', { class: 'aprov', dados: { ok: x.ok ? '1' : '' }, texto: pct(x.aproveitamento) }),
+          el('span', { class: 'contagem delta', texto: `${x.delta_kg > 0 ? '+' : ''}${numero(x.delta_kg, 0)} kg` })));
+      }
+      corpo.append(lista);
+    }
+    const pend = r.pendentes || [];
+    if (pend.length) {
+      corpo.append(el('p', { class: 'explica atencao', texto: `Ficaram como estavam (${pend.length}): ` +
+        pend.map(x => `${x.marca} ${x.perfil} (${pct(x.aproveitamento)})`).join(', ') + ' — ' + pend[0].motivo + '.' }));
+    }
+    const sem = r.sem_solucao || [];
+    if (sem.length) {
+      corpo.append(el('p', { class: 'explica atencao', texto: `Continuam reprovadas (${sem.length}): nenhum perfil das séries padrão passa, e ficou o que chegou mais perto — ` +
+        sem.map(x => `${x.marca} ${x.tipo} ${x.perfil} (${pct(x.aproveitamento)})`).join(', ') + '. Mude a solução (outro sistema, mais peças, mais travamento) nessas posições.' }));
+    }
+    const so = Object.entries(ap.so_calculo || {});
+    if (so.length) {
+      corpo.append(el('p', { class: 'explica', texto: `${so.length} posição(ões) do IFC (sólidos) ficaram só como perfil de cálculo: troque no 3D com Trocar perfil.` }));
+    }
+    this.dica('Dimensionamento pronto.');
+    const acao = await this.dialogo({ titulo: 'Dimensionamento', corpo, ok: ap.barras ? 'Abrir o modelo com os perfis novos' : 'Fechar' });
+    if (ap.barras && acao === 'ok') location.reload();
+    else if (r.calculo && r.calculo.elementos) { await this._carregarMapa(); this.aplicarAnalise(r.calculo); }
+    return true;
+  }
+
   /** Cálculo gravado no projeto (calculo.json): entra como análise pronta, sem ligar o mapa. */
   async _carregarCalculoGravado(s) {
     let r = null;
@@ -2983,13 +3067,13 @@ export class Editor {
   }
 
   /** Diálogo dos parâmetros do cálculo: vento, cargas, apoios, aços. Devolve null se cancelado. */
-  async _dialogoParametrosCalculo() {
+  async _dialogoParametrosCalculo({ titulo = 'Calcular a estrutura do modelo importado', ok = 'Calcular', nota = '' } = {}) {
     let g;
     try { g = await this.api.geometriaParaCalculo(this.projeto); }
     catch (e) { this.aviso(`Não foi possível ler o modelo para o cálculo: ${e.message}`, 'erro', 0); return null; }
     if (!g.detalhado) {
       this.aviso('Gere o detalhamento primeiro (Detalhamentos → Detalhar peças e conjuntos): é ele que ' +
-                 'classifica tesouras, terças e contraventamentos para o cálculo.', 'atencao', 0);
+                 'classifica tesouras, terças e contraventamentos para o cálculo (o modelo gerado de um desenho 2D dispensa: o papel das barras já diz).', 'atencao', 0);
       return null;
     }
     if (!g.tesouras) {
@@ -3026,6 +3110,7 @@ export class Editor {
     grade.append(el('h4', { texto: 'Travamentos e apoios', style: 'grid-column:1/-1;margin:.4em 0 0' }));
     num('correntes', 'Correntes por vão de terça', 'vazio = contadas no modelo (barras curtas que encostam na terça)');
     num('trava_inferior', 'Travamento do banzo inferior (m)', 'espaçamento dos travamentos laterais; vazio = os lidos no modelo (nenhum = banzo inteiro)');
+    num('correntes_longarina', 'Correntes por vão de longarina', 'linhas de correntes das longarinas de fechamento; vazio = 1');
     sel('apoio', 'Apoios da tesoura', [['rotulado', 'rotulados nos dois lados'], ['movel', 'rotulado + móvel']]);
     grade.append(el('h4', { texto: 'Aços e critérios', style: 'grid-column:1/-1;margin:.4em 0 0' }));
     const acos = (this.catalogo && this.catalogo.acos && this.catalogo.acos.length) ? this.catalogo.acos
@@ -3044,12 +3129,14 @@ export class Editor {
       el('p', { class: 'explica', texto: `O modelo tem ${g.tesouras} tesoura(s) (${(g.conjuntos || []).join(', ')}), ` +
         `vão ${numero(g.vao_m, 2)} m, inclinação ${numero(g.inclinacao_graus, 1)}°, apoio na cota ${numero(g.cota_apoio_m, 2)} m, ` +
         `${numero(g.barras)} barras com perfil reconhecido. O peso próprio e a telha são medidos do modelo; ` +
-        'as tesouras viram pórticos planos, as terças vigas entre tesouras. Vento pela NBR 6123 nas tabelas de galpão de duas águas.' }),
+        'as tesouras viram pórticos planos (apoiadas no topo dos pilares do modelo), as terças vigas entre tesouras; pilares, ' +
+      'longarinas, contraventamentos e correntes pelos modelos simples do galpão. Vento pela NBR 6123 nas tabelas de galpão de duas águas.' }),
       grade);
     for (const t of (g.avisos || []).slice(0, 3)) corpo.append(el('p', { class: 'explica', texto: t }));
-    if (await this.dialogo({ titulo: 'Calcular a estrutura do modelo importado', corpo, ok: 'Calcular' }) !== 'ok') return null;
+    if (nota) corpo.prepend(el('p', { class: 'explica', texto: nota }));
+    if (await this.dialogo({ titulo, corpo, ok }) !== 'ok') return null;
     const par = {};
-    const numeros = ['v0', 'altura_beiral', 'telha', 'sobrecarga', 'carga_extra', 'correntes', 'trava_inferior', 'flecha_tesoura', 'flecha_terca'];
+    const numeros = ['v0', 'altura_beiral', 'telha', 'sobrecarga', 'carga_extra', 'correntes', 'trava_inferior', 'correntes_longarina', 'flecha_tesoura', 'flecha_terca'];
     for (const [k, e] of Object.entries(entradas)) {
       const v = String(e.value ?? '').trim();
       if (numeros.includes(k)) {
@@ -3229,6 +3316,10 @@ export class Editor {
                  (res.pior_ligacao ? ` · pior ${numero(res.pior_ligacao * 100, 0)} %` : '') })));
     }
     caixa.append(campos);
+    caixa.append(el('div', { class: 'acoes-linha' }, el('button', { type: 'button', class: 'mini',
+      texto: 'Dimensionar: o perfil mais leve que passa…',
+      title: 'Escolhe, em cada posição, o perfil mais leve do catálogo que passa e troca no modelo',
+      onclick: () => this.dimensionarEstrutura() })));
     if (ligs.length) caixa.append(this._blocoLigacoes(ligs));
     const trocas = (a.parametros && a.parametros.trocas) || {};
     const ts = Object.entries(trocas);
@@ -3251,7 +3342,7 @@ export class Editor {
     const nv = res.nao_verificadas || [];
     if (nv.length) {
       const d = el('details', {}, el('summary', { texto: `${nv.length} posição(ões) não verificadas` }));
-      d.append(el('p', { class: 'analise-descricao', texto: 'Fora das tesouras e das terças: contraventamentos, agulhamentos, consoles de apoio. Ficam para uma próxima etapa.' }));
+      d.append(el('p', { class: 'analise-descricao', texto: 'Consoles de apoio, suportes e peças sem papel reconhecido (pilar sem tesoura em cima, por exemplo).' }));
       const lista = el('div', { class: 'lista-linhas' });
       for (const x of nv.slice(0, 60)) {
         lista.append(el('div', { class: 'linha' }, el('span', { class: 'marca', texto: x.marca }),

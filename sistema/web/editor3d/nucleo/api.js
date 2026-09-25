@@ -118,6 +118,10 @@ export class Api {
   calcularProjeto(s, corpo) {
     return postar(this._r(`/api/projetos/${encodeURIComponent(s)}/calcular`), corpo || {});
   }
+  /** O perfil mais leve que passa em cada posição; com `aplicar`, troca no modelo do projeto. */
+  dimensionarProjeto(s, corpo) {
+    return postar(this._r(`/api/projetos/${encodeURIComponent(s)}/dimensionar`), corpo || {});
+  }
   /** Último cálculo gravado no projeto ({calculo, parametros, quando}). */
   calculoDoProjeto(s) {
     return pedir(this._r(`/api/projetos/${encodeURIComponent(s)}/calculo`), { cache: 'no-store' });

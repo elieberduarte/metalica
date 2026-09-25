@@ -218,6 +218,38 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.9.** Cálculo e dimensionamento do modelo gerado do projeto recebido (e mais do IFC). (1) `calculo_ifc`: o
+perfil de cálculo cai no catálogo por último (`_perfil_do_catalogo`) e `catalogo.item` acha o nome com a medida em mm
+entre parênteses ("Barra redonda ø 1/2\" (12,7 mm)", que o 2D → 3D grava) — o contraventamento ficava fora; o papel da
+barra desenhada vale como tipo (`TIPO_DO_PAPEL`); a tesoura desenhada é montada pelo papel (`PAPEIS_DA_TRELICA`) e só com
+banzo, montante e diagonal (`_fora_da_trelica`); pilar, longarina, contraventamento, corrente, tirante, suporte e barra
+roscada não são terça nem travamento (`TIPOS_NAO_TERCA` — no IFC eles roubavam faixa da terça ou somavam carga falsa:
+no ÁGUA GELADA a carga por tesoura mudou de −18 % a +14 %). (2) Apoios no topo dos pilares do modelo
+(`_apoios_nos_pilares`, `_definir_apoios`; ponto a mais de `TOL_APOIO` de um nó ganha nó no banzo, `_no_no_banzo`); com
+mais de dois apoios, um fixo e os outros só na vertical (sem efeito de arco). (3) `_verificar_complementares`: pilar
+(reação da tesoura + peso; fachada lateral engastada com a tesoura de escora, X = 3H(w₁−w₂)/16, K = 2; oitão biapoiado
+sob o vento no oitão; interno só normal; fora do plano o trecho entre longarinas — `_verificar_pilar` com K no plano e a
+tração com o comprimento real), longarina (rotina da terça com a pressão do vento, faixa entre as vizinhas,
+`correntes_longarina`, 1 se não informar), contraventamento em X só à tração (cobertura: F = 1,4·q·área do oitão até
+meia altura do frontão, cortante F/2 decrescendo até o meio do vão, N = V·L/profundidade; parede lateral: o cortante à
+base; oitão: o vento transversal da faixa do pórtico da ponta), corrente (componente do peso ao longo da água, mínimo
+2 kN), travamento do banzo inferior (2 % da compressão). `_vento` guarda as pressões das paredes. (4) `dimensionar`: a
+cada rodada o candidato mais leve de `alternativas` (agora com `limite_catalogo` e `so_padrao`) que passa, aceito pelas
+regras de fábrica do galpão (`_aceito_no_automatico`: parede ≥ `tesouras.MIN_ESPESSURA` e esbeltez 200/300 na tesoura,
+K·L/r ≤ 200 no pilar), com o perfil atual na disputa; banzo por linha (`_grupo_do_elemento`); sem esforço fica; banzo
+inferior sem travamento vai para `pendentes`; repete até a escolha se repetir (ciclo: o mais pesado); `sem_solucao` são
+as reprovadas que nada das séries padrão resolve. `aplicar_perfis` troca nas barras (perfil original, histórico da
+troca, peso); sólido fica como perfil de cálculo. `nomes_das_barras`: o modelo desenhado calcula sem detalhamento. Rota
+`POST /api/projetos/<s>/dimensionar {parametros, aplicar}` (modelo anterior no histórico, cálculo gravado). Editor 3D:
+"Dimensionar: o perfil mais leve que passa…" (menu e painel do cálculo), campo das correntes da longarina, resultado com
+as trocas. (5) `analise.resolver`: cargas agrupadas por barra e K/fatoração guardadas no modelo (`_montagem`,
+`_fatorar`, `_resolver_fatorado`; a mesma eliminação de Gauss) — no IVAN o cálculo foi de 83 s a 20 s. (6) Projeto
+recebido: vistas em pé com oitão — o pórtico interno só nos eixos de dentro e um oitão em cada ponta (dois desenhos) ou
+nas duas (um); longarina do oitão partida nos pilares da vista; no pórtico, o pé vem dos pilares que chegam à treliça,
+linha comprida da faixa sem diagonal da alma chegando não é banzo (a longarina de topo do oitão), traço curto abaixo da
+treliça (pilar treliçado) sai; `de_vistas`: só banzo, montante e diagonal levam o conjunto da vista. Testes
+`test_dimensionar_modelo.py`; verificador `verif_dimensionar.py`.
+
 **0.8.8.** Projeto recebido **sem perfil escrito** (o DXF exportado de um modelo 3D: só linhas, sem título de vista,
 sem eixo, em centímetros sem unidade declarada — o "IVAN.dxf" do usuário): `nucleo2d/reconhecer_geo.py`. `analisar`
 (retângulo fino fechado alinhado → barra no eixo, com o que está entre as faces — a hachura, o reticulado do pilar

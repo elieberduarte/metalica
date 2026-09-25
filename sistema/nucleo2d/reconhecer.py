@@ -1514,33 +1514,54 @@ def sugerir_montagem(resultado: dict) -> dict:
                          "origens": [[0.0, 0.0, round(altura_pilar, 1)]], "fator": fp,
                          "cobertura": bool(em_pe), "conjunto": "", "cortar_nos_eixos": True,
                          "eixos_corte": [{"a": e["a"], "b": e["b"]} for e in fam_t]})
-            usados_t = False
             n_pil_ref = len(pilares(em_pe[0])) if em_pe else 0
+
+            def medidas(v):
+                fv = float(v["fator"] or 1.0)
+                ext = _extensao(barras, v["id"])
+                return ((ext[2] - ext[0]) * fv if ext else 0.0), ((ext[3] - ext[1]) * fv if ext else 0.0)
+
+            larg_ref, alt_ref = medidas(em_pe[0]) if em_pe else (0.0, 0.0)
+            # o oitão: mesmo vão e altura do pórtico interno, com mais pilares (os de fechamento)
+            eh_oitao = {}
+            for v in em_pe[1:]:
+                larg, alt = medidas(v)
+                mesmo_vao = vao is None or abs(larg - (vao or larg)) <= 0.2 * max(larg, 1.0)
+                mesma_altura = abs(alt - alt_ref) <= 0.25 * max(alt_ref, 1.0)
+                eh_oitao[v["id"]] = bool(mesmo_vao and mesma_altura and pilares(v) and len(pilares(v)) > n_pil_ref
+                                         and len(origens_t) >= 2)
+            oitoes_v = [v for v in em_pe[1:] if eh_oitao.get(v["id"])]
+            # dois desenhos de oitão: um em cada ponta (frontal e fundos); um só: nas duas.
+            # Com oitão, o pórtico interno fica nos eixos de dentro.
+            origens_oitao = {}
+            if len(oitoes_v) >= 2:
+                origens_oitao = {oitoes_v[0]["id"]: [origens_t[0]], oitoes_v[1]["id"]: [origens_t[-1]]}
+            elif oitoes_v:
+                origens_oitao = {oitoes_v[0]["id"]: [origens_t[0], origens_t[-1]]}
+            usados_t = False
             oitoes = 0
             for v in em_pe:
                 fv = float(v["fator"] or 1.0)
                 tem_pilar = bool(pilares(v))
                 z0 = 0.0 if tem_pilar else altura_pilar
-                ext = _extensao(barras, v["id"])
-                larg = (ext[2] - ext[0]) * fv if ext else 0.0
-                mesmo_vao = vao is None or abs(larg - (vao or larg)) <= 0.2 * max(larg, 1.0)
-                alt = (ext[3] - ext[1]) * fv if ext else 0.0
-                if not usados_t:
-                    alt_ref = alt
-                mesma_altura = abs(alt - alt_ref) <= 0.25 * max(alt_ref, 1.0)
                 origens = origens_t
                 if not usados_t:
                     usar = True
-                elif mesmo_vao and mesma_altura and tem_pilar and len(pilares(v)) > n_pil_ref and len(origens_t) >= 2:
-                    usar = True                       # o oitão: só nas pontas
-                    origens = [origens_t[0], origens_t[-1]]
+                    if origens_oitao and len(origens_t) > 2:
+                        origens = origens_t[1:-1]
+                elif v["id"] in origens_oitao:
+                    usar = True
+                    origens = origens_oitao[v["id"]]
                     oitoes += 1
                 else:
                     usar = False
+                # longarina do oitão partida nos pilares da própria vista: uma por vão
+                cortes_v = [{"a": list(b_["a"]), "b": list(b_["b"])} for b_ in pilares(v)]
                 mont.append({"vista": v["id"], "titulo": v["titulo"] or "Vista %d" % v["id"], "tipo": v["tipo"] or "elevacao",
                              "usar": usar, "u": [round(d[0], 6), round(d[1], 6), 0.0], "v": [0.0, 0.0, 1.0],
                              "base": base_de(v), "origens": [[o[0], o[1], round(z0, 1)] for o in origens], "fator": fv,
-                             "cobertura": False, "conjunto": "T" if v["tipo"] == "trelica" else "PT"})
+                             "cobertura": False, "conjunto": "T" if v["tipo"] == "trelica" else "PT",
+                             "cortar_nos_eixos": bool(cortes_v), "eixos_corte": cortes_v})
                 usados_t = True
             if len(em_pe) > 1:
                 avisos.append("há %d vistas em pé: a primeira foi posta em todos os eixos das tesouras%s; as outras "

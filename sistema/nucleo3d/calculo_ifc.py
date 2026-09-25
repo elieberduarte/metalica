@@ -40,8 +40,11 @@ da diagonal no banzo, com o contato medido pela altura do banzo e o ângulo entr
 A troca de perfil reverifica a ligação com o candidato: a barra mais fina passa na barra e
 pode reprovar na solda, porque a perna fica limitada pela chapa mais fina.
 
-Limites desta versão (declarados em `avisos`): contraventamentos e tirantes não são
-verificados (sem cargas de oitão no modelo); o IFC não traz solda nem classe de parafuso,
+Fora das tesouras e das terças (0.8.9): pilares, longarinas, contraventamentos, correntes e
+travamentos do banzo inferior pelos modelos simples do galpão (`_verificar_complementares`).
+O topo dos pilares do modelo é o apoio da tesoura (o do meio também).
+
+Limites desta versão (declarados em `avisos`): o IFC não traz solda nem classe de parafuso,
 então a perna é a mínima da Tabela 10 (limitada pela chapa mais fina) e a classe é a do
 parâmetro `parafuso`; a chapa de nó comprimida é verificada como escoamento de Whitmore,
 sem flambagem; cantoneira formada a frio é verificada pela NBR 8800 com o fator Q
@@ -61,7 +64,7 @@ from nucleo3d.modelo import Chapa, Documento, Solido
 from nucleo3d.mapa_esforcos import (ENVOLTORIA, ESTACOES, GRANDEZAS, UNIDADES,
                                     _amostrar, _combinacoes, _envoltoria)
 
-__all__ = ["calcular", "PARAMETROS_PADRAO", "geometria_do_modelo"]
+__all__ = ["calcular", "dimensionar", "aplicar_perfis", "PARAMETROS_PADRAO", "geometria_do_modelo"]
 
 PARAMETROS_PADRAO = {
     "v0": 40.0,                      # m/s
@@ -87,6 +90,7 @@ PARAMETROS_PADRAO = {
     "parafuso": "ASTM A307",         # classe dos parafusos das chapas de nó (o IFC não diz)
     "eletrodo": "E70XX",             # eletrodo das soldas das chapas de nó
     "aco_chapa": None,               # aço das chapas de nó; None = o da chapa no modelo ou o laminado
+    "correntes_longarina": None,     # linhas de correntes por vão de longarina; None = nenhuma
 }
 
 #: Peso da telha pela espessura no nome (kN/m² de superfície).
@@ -100,6 +104,17 @@ TOL_CHAPA = 320.0        # ponta solta a menos disto de um nó liga-se a ele (ch
 TOL_DUPLA = 45.0         # peças com eixos a menos disto são geminadas
 TOL_PLANO = {"superior": 520.0, "inferior": 400.0}   # terça/trava: distância do cruzamento ao banzo
 TOL_APOIO = 450.0        # ponto de apoio informado a menos disto de um nó
+TOL_PILAR_PLANO = 600.0  # pilar a menos disto do plano da tesoura é pilar dela
+
+#: Papel gravado na barra (modelo desenhado em 2D) → tipo do cálculo.
+TIPO_DO_PAPEL = {"pilar": "pilar", "longarina": "longarina", "contraventamento": "contraventamento",
+                 "tirante": "contraventamento", "corrente": "corrente", "terça": "terca_cobertura",
+                 "terca": "terca_cobertura"}
+#: Papéis que são da treliça; os outros ficam fora da tesoura mesmo com a marca de conjunto dela.
+PAPEIS_DA_TRELICA = {"banzo": "BANZOS", "montante": "MONTANTES", "diagonal": "DIAGONAIS"}
+#: Tipos que nunca são terça nem travamento do banzo, mesmo cruzando o plano da tesoura.
+TIPOS_NAO_TERCA = {"pilar", "longarina", "contraventamento", "corrente", "gancho", "chumbador",
+                   "barra_roscada", "suporte_contraventamento"}
 MARGEM_CRUZAMENTO = 260.0   # a terça/trava pode parar até isto antes do plano da tesoura
 G = 9.81e-3              # kN por kg
 ESTACOES_TESOURA = 11    # estações dos diagramas nas barras da treliça
@@ -238,13 +253,27 @@ def _perfil_de(nome: str, marca: str, trocas: dict, cache: dict) -> Optional[Per
                 p = geometria.resolver_perfil(troca)
             except Exception:
                 p = None
+    if p is None and troca:
+        p = _perfil_do_catalogo(troca)
     if p is None:
         try:
             p = perfis_fabrica.perfil_de_fabrica(nome)
         except Exception:
             p = None
+    if p is None:
+        p = _perfil_do_catalogo(nome)
     cache[chave] = p
     return p
+
+
+def _perfil_do_catalogo(nome: str) -> Optional[Perfil]:
+    """O perfil pelo catálogo de peças (barra redonda, laminados dos fornecedores, os
+    nomes que o 2D → 3D grava)."""
+    try:
+        from nucleo import catalogo
+        return catalogo.perfil_de(nome)
+    except Exception:
+        return None
 
 
 def _por_marca(dic: dict) -> dict:
@@ -287,10 +316,12 @@ def _levantar_pecas(doc: Documento, nomes: dict, par: dict, avisos: List[str]):
         if perfil is None:
             sem_perfil[b.perfil] += 1
             continue
+        # o papel gravado na barra (pilar, longarina, contraventamento…) vale mais que o
+        # tipo que o nomeador deu pela forma: ele veio do desenho
+        tipo = TIPO_DO_PAPEL.get(b.papel or "") or str(tipos.get(str(m.get("posicao") or "")) or b.papel or "")
         pecas.append(_Peca(_CorpoDaBarra(b, perfil), str(m.get("posicao") or b.id),
                            str(m.get("conjunto") or ""), b.perfil, perfil,
-                           b.aco or _aco_da_peca(b, perfil, par),
-                           str(tipos.get(str(m.get("posicao") or "")) or b.papel or ""),
+                           b.aco or _aco_da_peca(b, perfil, par), tipo,
                            (tuple(b.inicio), tuple(b.fim))))
     for e in list(doc.solidos) + list(doc.chapas):
         m = _marcas(e)
@@ -322,6 +353,8 @@ def _levantar_pecas(doc: Documento, nomes: dict, par: dict, avisos: List[str]):
         eixo = _eixo_pca(e)
         if not eixo:
             continue
+        if not tipo and str((getattr(e, "atributos", None) or {}).get("tipo_ifc") or "") == "IfcColumn":
+            tipo = "pilar"
         pecas.append(_Peca(e, marca, conj, nome_perfil, perfil, _aco_da_peca(e, perfil, par), tipo, eixo))
     for nome, n in sem_perfil.most_common():
         avisos.append("perfil \"%s\" não reconhecido: %d peça(s) fora do cálculo" % (nome, n))
@@ -386,8 +419,13 @@ class _Tesoura:
         ents = [p.ent for p in self.pecas]
         self.c, self.u, self.v, self.w = _eixos_do_conjunto(ents)
         # a vertical do desenho é a vertical da obra projetada no plano; a normal
-        # horizontal — uma tesoura montada em pé
-        classes = _classificar_pecas_do_conjunto(ents)
+        # horizontal — uma tesoura montada em pé. A barra desenhada já diz o que é
+        # (banzo, montante, diagonal); o sólido do IFC é classificado pela forma.
+        if ents and all(isinstance(e, _CorpoDaBarra) for e in ents) and \
+                any(e.barra.papel in PAPEIS_DA_TRELICA for e in ents):
+            classes = {e.id: PAPEIS_DA_TRELICA.get(e.barra.papel, "") for e in ents}
+        else:
+            classes = _classificar_pecas_do_conjunto(ents)
         por_id = {p.id: p for p in self.pecas}
         membros: List[_Membro] = []
         for pid, classe in classes.items():
@@ -613,9 +651,10 @@ class _Tesoura:
     def nos_usados(self) -> List[int]:
         return sorted({i for b in self.barras for i in (b["ni"], b["nf"])})
 
-    def definir_apoios(self, pontos_apoio, modo: str):
-        """Apoios: nos nós mais próximos dos pontos informados (mm, 3D); sem eles, o nó
-        mais baixo de cada extremidade da treliça (é onde ela assenta)."""
+    def definir_apoios(self, pontos_apoio, modo: str, origem: str = "informados"):
+        """Apoios: nos nós mais próximos dos pontos (mm, 3D) — os informados ou o topo dos
+        pilares do modelo; o ponto que cai no meio de um painel do banzo ganha um nó ali.
+        Sem pontos, o nó mais baixo de cada extremidade da treliça (é onde ela assenta)."""
         usados = self.nos_usados()
         cands = []
         for c in pontos_apoio or []:
@@ -623,6 +662,13 @@ class _Tesoura:
                 continue
             P = self.p2(c)
             i = min(usados, key=lambda k: math.dist(self.nos[k], P))
+            if math.dist(self.nos[i], P) > TOL_APOIO:
+                # nenhum nó perto (o poste do oitão no meio do painel): o banzo ganha um nó;
+                # havendo nó até TOL_APOIO, o pilar chega nele, como na obra
+                novo = self._no_no_banzo(P)
+                if novo is not None:
+                    i = novo
+                    usados = self.nos_usados()
             if math.dist(self.nos[i], P) <= TOL_APOIO and i not in cands:
                 cands.append(i)
         if len(cands) < 2:
@@ -637,7 +683,8 @@ class _Tesoura:
             cands = [min((i for i in esq if self.nos[i][1] <= ye + 250.0), key=lambda i: self.nos[i][0]),
                      max((i for i in dir_ if self.nos[i][1] <= yd + 250.0), key=lambda i: self.nos[i][0])]
             if pontos_apoio:
-                self.avisos.append("%s: pontos de apoio informados não caem em nós; apoios nos nós de extremidade" % self.chave)
+                self.avisos.append("%s: pontos de apoio %s não caem em nós; apoios nos nós de extremidade"
+                                   % (self.chave, origem))
         cands.sort(key=lambda i: self.nos[i][0])
         self.apoios = cands
         self.vao_mm = self.nos[cands[-1]][0] - self.nos[cands[0]][0]
@@ -646,6 +693,31 @@ class _Tesoura:
         sup = [m for m in self.membros if m.tipo == "banzo" and m.posicao == "superior"]
         sinais = {1 if (m.b[1] - m.a[1]) > 20.0 else (-1 if (m.b[1] - m.a[1]) < -20.0 else 0) for m in sup}
         self.uma_agua = len(sinais - {0}) <= 1
+
+    def _no_no_banzo(self, P) -> Optional[int]:
+        """Divide o trecho de banzo mais perto de P (até TOL_APOIO) com um nó novo no pé
+        da perpendicular; devolve o índice do nó, ou None."""
+        melhor = None
+        for k, b in enumerate(self.barras):
+            if self.membros[b["membro"]].tipo != "banzo":
+                continue
+            A, B = self.nos[b["ni"]], self.nos[b["nf"]]
+            L = math.dist(A, B)
+            if L < 1.0:
+                continue
+            ex, ey = (B[0] - A[0]) / L, (B[1] - A[1]) / L
+            t = (P[0] - A[0]) * ex + (P[1] - A[1]) * ey
+            d = abs(-(P[0] - A[0]) * ey + (P[1] - A[1]) * ex)
+            if 30.0 < t < L - 30.0 and d <= TOL_APOIO and (melhor is None or d < melhor[0]):
+                melhor = (d, k, t, A, ex, ey)
+        if melhor is None:
+            return None
+        _d, k, t, A, ex, ey = melhor
+        self.nos.append((A[0] + ex * t, A[1] + ey * t))
+        i = len(self.nos) - 1
+        b = self.barras[k]
+        self.barras[k:k + 1] = [dict(b, nf=i), dict(b, ni=i)]
+        return i
 
     # --- ligação com terças e travamentos
     def ponto_no_banzo(self, P2, posicao: str):
@@ -679,13 +751,49 @@ class _Tesoura:
         return min(pts, key=lambda p: p[0]), max(pts, key=lambda p: p[0])
 
 
+def _fora_da_trelica(p: _Peca) -> bool:
+    """Barra desenhada com papel de fora da treliça (pilar, longarina, contraventamento):
+    num modelo gerado antes da 0.8.9 ela vinha com a marca de conjunto da tesoura."""
+    return isinstance(p.ent, _CorpoDaBarra) and bool(TIPO_DO_PAPEL.get(p.ent.barra.papel or ""))
+
+
+def _eh_pilar(p: _Peca) -> bool:
+    d = _unit(_sub(p.b, p.a))
+    return p.tipo == "pilar" and abs(d[2]) >= 0.9
+
+
+def _apoios_nos_pilares(t: "_Tesoura", pilares: Sequence[_Peca]) -> List[Tuple[float, float, float]]:
+    """Topo dos pilares que estão no plano da tesoura e debaixo dela: são os apoios."""
+    xs = [t.nos[i][0] for i in t.nos_usados()]
+    if not xs:
+        return []
+    pts = []
+    for p in pilares:
+        base, topo = sorted((p.a, p.b), key=lambda q: q[2])
+        if t.dist_plano(topo) > TOL_PILAR_PLANO or t.dist_plano(base) > TOL_PILAR_PLANO:
+            continue
+        x = t.p2(topo)[0]
+        if min(xs) - 600.0 <= x <= max(xs) + 600.0:
+            pts.append(tuple(topo))
+    return pts if len(pts) >= 2 else []
+
+
+def _definir_apoios(tes: List["_Tesoura"], pecas: List[_Peca], par: dict):
+    pilares = [p for p in pecas if _eh_pilar(p)]
+    for t in tes:
+        if par.get("apoios"):
+            t.definir_apoios(par["apoios"], par["apoio"])
+        else:
+            t.definir_apoios(_apoios_nos_pilares(t, pilares), par["apoio"], origem="nos pilares")
+
+
 def _tesouras(pecas: List[_Peca], nomes: dict, chapas_por_conjunto, avisos) -> List[_Tesoura]:
     from nucleo2d.detalhe.conjuntos import _instancias
     tipos_conj = _mapas_de_nomes(nomes)[1]
     conjuntos = sorted({p.conjunto for p in pecas if p.conjunto and tipos_conj.get(p.conjunto) == "tesoura"})
     saida: List[_Tesoura] = []
     for conj in conjuntos:
-        do_conj = [p for p in pecas if p.conjunto == conj]
+        do_conj = [p for p in pecas if p.conjunto == conj and not _fora_da_trelica(p)]
         por_id = {p.id: p for p in do_conj}
         chapas = [(c, _vertices(c)) for c in chapas_por_conjunto.get(conj, [])]
         chapas = [(c, tuple(sum(v[i] for v in vs) / len(vs) for i in range(3))) for c, vs in chapas if vs]
@@ -716,6 +824,8 @@ def _ligar_barras_soltas(tesouras: List[_Tesoura], soltas: List[_Peca]):
     banzo superior é terça (ponto de carga), junto ao inferior é travamento."""
     cruzamentos: Dict[str, List[dict]] = collections.defaultdict(list)     # id da peça → [{t, tesoura, ...}]
     for p in soltas:
+        if p.tipo in TIPOS_NAO_TERCA:
+            continue
         d = _sub(p.b, p.a)
         for ti, t in enumerate(tesouras):
             den = _dot(d, t.w)
@@ -859,6 +969,19 @@ def _vento(tesouras: List[_Tesoura], par: dict, avisos: List[str]) -> dict:
             casos["V90 esq %s" % rot] = {"esq": eb, "dir": es, "descricao": "vento perpendicular à cumeeira pela esquerda, %s" % c.nome}
             casos["V90 dir %s" % rot] = {"esq": es, "dir": eb, "descricao": "vento perpendicular à cumeeira pela direita, %s" % c.nome}
             casos["V0 %s" % rot] = {"esq": lo, "dir": lo, "descricao": "vento paralelo à cumeeira, %s" % c.nome}
+        pares = []
+        for c in vg.casos_cpi:
+            pA = [l["p (kN/m²)"] for l in tab if l["direção"] == "transversal" and abs(l["Cpi"] - c.valor) < 1e-6
+                  and "parede lateral barlavento" in l["superfície"].lower()]
+            pB = [l["p (kN/m²)"] for l in tab if l["direção"] == "transversal" and abs(l["Cpi"] - c.valor) < 1e-6
+                  and "parede lateral sotavento" in l["superfície"].lower()]
+            if pA and pB:
+                pares.append((max(pA), min(pB)))
+        lat = [l["p (kN/m²)"] for l in tab if "parede lateral" in l["superfície"].lower()]
+        oit = [l["p (kN/m²)"] for l in tab if "oitão" in l["superfície"].lower()]
+        paredes = {"pares": pares or [(0.8 * vg.q, -0.5 * vg.q)],
+                   "lateral_pressao": max(lat + [0.0]), "lateral_succao": min(lat + [0.0]),
+                   "oitao_pressao": max(oit + [0.0]), "oitao_succao": min(oit + [0.0])}
         memoria = {"V0": vg.V0, "S1": vg.S1, "S2": round(vg.S2, 3), "S3": vg.S3, "Vk": round(vg.Vk, 2),
                    "q": round(vg.q, 4), "b": round(b, 2), "a": round(a, 2), "h": round(hb, 2),
                    "theta": round(theta, 2), "categoria": vg.categoria, "classe": vg.classe,
@@ -868,7 +991,9 @@ def _vento(tesouras: List[_Tesoura], par: dict, avisos: List[str]) -> dict:
         q = 0.613 * (par["v0"] ** 2) / 1000.0
         casos["V cpi+0.2"] = {"esq": -1.1 * q, "dir": -0.6 * q, "descricao": "sucção de referência"}
         memoria = {"V0": par["v0"], "q": round(q, 4), "b": b, "a": a, "h": hb, "theta": theta, "casos": casos}
-    return {"casos": casos, "memoria": memoria, "theta": theta, "b": b, "a": a, "h": hb}
+        paredes = {"pares": [(1.0 * q, -0.8 * q)], "lateral_pressao": 1.0 * q, "lateral_succao": -1.1 * q,
+                   "oitao_pressao": 1.0 * q, "oitao_succao": -1.1 * q}
+    return {"casos": casos, "memoria": memoria, "theta": theta, "b": b, "a": a, "h": hb, "paredes": paredes}
 
 
 def _carregar_tesoura(t: _Tesoura, g_cob: float, sc: float, vento: dict, par: dict):
@@ -949,6 +1074,10 @@ def _montar_modelo(t: _Tesoura):
         if i in t.apoios:
             if getattr(t, "modo_apoio", "rotulado") == "movel" and i == t.apoios[-1]:
                 apoio = (False, True, False)
+            elif len(t.apoios) > 2 and i != t.apoios[0]:
+                # vários pilares: travar todos na horizontal faria da tesoura um arco que não
+                # existe (o pilar cede); um fixo, os outros só na vertical
+                apoio = (False, True, False)
             else:
                 apoio = (True, True, False)
         m.add_no(n[0] / 10.0, n[1] / 10.0, apoio, "n%d" % i)
@@ -960,6 +1089,382 @@ def _montar_modelo(t: _Tesoura):
         m.add_barra(b["ni"], b["nf"], A, I, rotulo="%s:%d" % (t.chave, k),
                     rotula_i=b["rotula"], rotula_f=b["rotula"])
     t.modelo = m
+
+
+# ------------------------------------------------------------------ fora das tesouras
+
+def _elemento_extra(marca: str, nome: str, tit: str, tipo: str, r: Resultado, perfil: Perfil, aco: str,
+                    dimensionamento: dict, entrada: dict, comprimento_total: Dict[str, float]) -> dict:
+    crit = r.critica
+    L_tot = comprimento_total.get(marca, 0.0)
+    return {
+        "nome": nome, "titulo": tit, "tipo": tipo, "posicao": "",
+        "perfil": perfil.nome, "material": aco, "n": 1,
+        "aproveitamento": round(r.razao, 3), "ok": bool(r.ok),
+        "governa": crit.titulo if crit else "", "norma": getattr(crit, "norma", "") if crit else "",
+        "Sd": round(crit.Sd, 2) if crit else 0.0, "Rd": round(crit.Rd, 2) if crit else 0.0,
+        "unidade": getattr(crit, "unidade", "") if crit else "",
+        "barras": [], "no_portico": False, "dimensionamento": dimensionamento, "entrada": entrada,
+        "comprimento_total_m": round(L_tot, 2), "peso_kg": round(perfil.massa * L_tot, 1),
+        "diagrama": None, "valores": {},
+    }
+
+
+def _verificar_tirante(perfil: Perfil, aco: str, Nc: float, Nt: float, L_cm: float, elemento: str) -> Resultado:
+    """Tirante: barra redonda com esticador (rosqueada, pré-tensionada — NBR 8800 5.2.8
+    dispensa o L/r ≤ 300) só à tração; outro perfil (cantoneira) pela verificação de barra."""
+    if perfil.tipo == "barra":
+        return nbr8800.tracao(perfil, aco, N_Sd=Nt, L=L_cm, rosqueada=True, pretensionada=True, elemento=elemento)
+    return _verificar_membro(perfil, aco, Nc, Nt, 0.0, L_cm, L_cm, 1, elemento, [])
+
+
+def _verificar_pilar(perfil: Perfil, aco: str, Nc: float, Nt: float, M: float, H_cm: float, K: float,
+                     Ly_cm: float, elemento: str, avisos: List[str]) -> Resultado:
+    """Pilar: flexo-compressão com K no plano (NBR 8800) ou pelo MRD (formado a frio, com
+    K·H); a tração e a esbeltez dela com o comprimento real, não com K·H."""
+    try:
+        if perfis_fabrica.tipo_de_verificacao(perfil) == "frio":
+            return verificar.verificar_frio(perfil, aco, Nc, Nt, M, K * H_cm, Ly_cm, 1, elemento)
+        a = mat.aco(aco)
+        r = Resultado(elemento, perfil=perfil.nome, material=a.nome)
+        if Nc > 1e-6 and M > 1e-6:
+            rc = nbr8800.flexao_composta(perfil, a, N_Sd=Nc, Mx_Sd=M, Lx=H_cm, Ly=Ly_cm, Kx=K, Ky=1.0,
+                                         Lb=Ly_cm, Cb=1.0, elemento=elemento)
+            r.verificacoes.extend(rc.verificacoes)
+        elif Nc > 1e-6:
+            rc = nbr8800.compressao(perfil, a, Lx=K * H_cm, Ly=Ly_cm, N_Sd=Nc, elemento=elemento)
+            r.verificacoes.extend(rc.verificacoes)
+        elif M > 1e-6:
+            rf = nbr8800.flexao(perfil, a, M_Sd=M, Lb=Ly_cm, elemento=elemento)
+            r.verificacoes.extend(rf.verificacoes)
+        if Nt > 1e-6:
+            rt = nbr8800.tracao(perfil, a, N_Sd=Nt, L=max(H_cm, Ly_cm), elemento=elemento)
+            r.verificacoes.extend(rt.verificacoes)
+        if not r.verificacoes:
+            r.add(Verificacao("Sem esforço", Sd=0.0, Rd=1.0, unidade="—"))
+        return r
+    except ErroDeDados as exc:
+        r = Resultado(elemento, perfil=perfil.nome, material=aco)
+        v = Verificacao("Não verificada", Sd=0.0, Rd=1.0, unidade="—")
+        v.observacao = str(exc)
+        r.add(v)
+        return r
+
+
+def _travamento_do_pilar(p: _Peca, longarinas: Sequence[_Peca]) -> float:
+    """Maior trecho do pilar (mm) sem longarina encostada: é o comprimento destravado
+    fora do plano."""
+    base, topo = sorted((p.a, p.b), key=lambda q: q[2])
+    zs = [base[2], topo[2]]
+    for o in longarinas:
+        ax, ay, bx, by = o.a[0], o.a[1], o.b[0], o.b[1]
+        L2 = (bx - ax) ** 2 + (by - ay) ** 2
+        if L2 < 1.0:
+            continue
+        t = max(0.0, min(1.0, ((base[0] - ax) * (bx - ax) + (base[1] - ay) * (by - ay)) / L2))
+        d = math.hypot(ax + (bx - ax) * t - base[0], ay + (by - ay) * t - base[1])
+        z = (o.a[2] + o.b[2]) / 2.0
+        if d <= 400.0 and base[2] + 50.0 < z < topo[2] - 50.0:
+            zs.append(z)
+    zs.sort()
+    return max(b - a for a, b in zip(zs, zs[1:]))
+
+
+def _verificar_complementares(tes: List[_Tesoura], soltas: List[_Peca], cruz: Dict[str, List[dict]],
+                              correntes: Dict[str, int], vento: dict, par: dict, g_cob: float, sc: float,
+                              nomes_pos: dict, comprimento_total: Dict[str, float], por_marca: Dict[str, dict],
+                              avisos: List[str]) -> Tuple[Dict[str, dict], List[dict]]:
+    """Pilares, longarinas, contraventamentos, correntes e travamentos do banzo inferior —
+    as peças fora das tesouras e das terças, pelos modelos simples do galpão (`nucleo.galpao`):
+
+    * **pilar** debaixo de um apoio da tesoura: N = reação da tesoura (a maior compressão
+      entre as combinações últimas) + peso próprio; o de fachada lateral é engastado na base
+      e tem a tesoura como escora rotulada no topo (dois pilares ligados: X = 3·H·(w₁ − w₂)/16),
+      K = 2,0; o do oitão é biapoiado (base e tesoura) sob o vento no oitão, M = q·H²/8; o
+      interno leva só a normal. Fora do plano, o trecho entre longarinas. A maior compressão
+      entra com o maior momento (a favor da segurança);
+    * **longarina**: a verificação da terça com a pressão do vento no lugar da gravidade,
+      na faixa de parede entre as vizinhas (o peso próprio no eixo fraco vai às correntes);
+    * **contraventamento** (tirante): o da cobertura é a treliça horizontal que leva metade
+      do vento no oitão até os beirais (cortante = F/2, N = cortante·L/profundidade); o da
+      parede lateral leva esse cortante até a base; o do oitão, o vento transversal da faixa
+      do pórtico da ponta. Barra redonda só à tração;
+    * **corrente**: a componente do peso da cobertura ao longo da água, na faixa entre
+      correntes (mínimo 2 kN);
+    * **travamento do banzo inferior**: 2 % da maior compressão do banzo (NBR 8800, 4.11).
+    """
+    elementos: Dict[str, dict] = {}
+    verificacoes: List[dict] = []
+    w0 = tes[0].w
+    paredes = vento.get("paredes") or {}
+    pares = paredes.get("pares") or [(0.0, 0.0)]
+    h = float(vento.get("h") or 6.0)
+    b = float(vento.get("b") or 10.0)
+    theta = float(vento.get("theta") or 0.0)
+    z_top = max((t.p3(*t.nos[i])[2] for t in tes for i in t.nos_usados()), default=h * 1000.0)
+    hc = max(z_top / 1000.0, h)
+    ws = sorted({round(_dot(t.c, w0)) for t in tes})
+
+    def faixa_w(pos: float) -> float:
+        antes = [x for x in ws if x < pos - 200.0]
+        depois = [x for x in ws if x > pos + 200.0]
+        if not antes and not depois:
+            return 5000.0
+        return ((pos - antes[-1]) / 2.0 if antes else 0.0) + ((depois[0] - pos) / 2.0 if depois else 0.0)
+
+    def titulo(marca, tipo_txt, perfil):
+        nome = nomes_pos.get(marca, "")
+        return nome, "%s%s · %s · %s" % (marca, (" " + nome) if nome else "", tipo_txt, perfil.nome)
+
+    pilares = [p for p in soltas if _eh_pilar(p)]
+    longarinas = [p for p in soltas if p.tipo == "longarina"]
+    z_chao = min((min(p.a[2], p.b[2]) for p in pilares), default=0.0)
+
+    # ---- pilares
+    regs: Dict[str, dict] = {}
+    sem_tesoura = collections.Counter()
+    for p in pilares:
+        base, topo = sorted((p.a, p.b), key=lambda q: q[2])
+        H = topo[2] - base[2]
+        achado = None
+        for t in tes:
+            if t.env is None or t.dist_plano(topo) > TOL_PILAR_PLANO or t.dist_plano(base) > TOL_PILAR_PLANO:
+                continue
+            P2 = t.p2(topo)
+            for i in t.apoios:
+                d = math.dist(t.nos[i], P2)
+                if d <= TOL_APOIO + 150.0 and (achado is None or d < achado[0]):
+                    achado = (d, t, i)
+        if achado is None:
+            sem_tesoura[p.marca] += 1
+            continue
+        _d, t, i = achado
+        rea = t.env.reacoes.get(i) or {}
+        Ry_max = rea["Ry_max"].valor if "Ry_max" in rea else 0.0
+        Ry_min = rea["Ry_min"].valor if "Ry_min" in rea else 0.0
+        pp = p.perfil.massa * G * H / 1000.0
+        Nc = max(Ry_max, 0.0) + 1.25 * pp
+        Nt = max(-Ry_min - pp, 0.0)
+        Hm = H / 1000.0
+        xs = [t.nos[k][0] for k in t.nos_usados()]
+        x = t.nos[i][0]
+        pos = _dot(t.c, w0)
+        if x <= min(xs) + 300.0 or x >= max(xs) - 300.0:
+            trib = faixa_w(pos) / 1000.0
+            M = 0.0
+            for pA, pB in pares:
+                w1 = 1.4 * max(pA, 0.0) * trib
+                w2 = 1.4 * max(-pB, 0.0) * trib
+                X = 3.0 * Hm * (w1 - w2) / 16.0
+                M = max(M, abs(w1 * Hm * Hm / 2.0 - X * Hm), abs(w2 * Hm * Hm / 2.0 + X * Hm))
+            K, modelo = 2.0, "fachada lateral: base engastada, tesoura rotulada no topo, vento na parede"
+            V = max((1.4 * max(pA, 0.0) * trib * Hm for pA, _pB in pares), default=0.0)
+        elif pos <= ws[0] + 200.0 or pos >= ws[-1] - 200.0:
+            aps = sorted(t.nos[k][0] for k in t.apoios)
+            esq = [a for a in aps if a < x - 10.0]
+            dir_ = [a for a in aps if a > x + 10.0]
+            trib_u = (((x - esq[-1]) / 2.0 if esq else 0.0) + ((dir_[0] - x) / 2.0 if dir_ else 0.0)) / 1000.0
+            q = 1.4 * max(paredes.get("oitao_pressao", 0.0), abs(min(paredes.get("oitao_succao", 0.0), 0.0))) * trib_u
+            M, V = q * Hm * Hm / 8.0, q * Hm / 2.0
+            K, modelo = 1.0, "oitão: biapoiado na base e na tesoura, vento no oitão"
+        else:
+            M, V, K, modelo = 0.0, 0.0, 1.0, "interno: só a reação da tesoura"
+        Ly = _travamento_do_pilar(p, longarinas)
+        reg = regs.setdefault(p.marca, {"peca": p, "Nc": 0.0, "Nt": 0.0, "M": 0.0, "V": 0.0, "Lx": 0.0, "Ly": 0.0,
+                                        "H": 0.0, "K": K, "modelo": modelo})
+        reg["Nc"] = max(reg["Nc"], Nc)
+        reg["Nt"] = max(reg["Nt"], Nt)
+        if M * 100.0 >= reg["M"]:
+            reg["M"], reg["K"], reg["modelo"] = M * 100.0, K, modelo
+        reg["V"] = max(reg["V"], V)
+        reg["Lx"] = max(reg["Lx"], K * H / 10.0)
+        reg["Ly"] = max(reg["Ly"], Ly / 10.0)
+        reg["H"] = max(reg["H"], H)
+    for marca, reg in sorted(regs.items()):
+        p = reg["peca"]
+        nome, tit = titulo(marca, "pilar", p.perfil)
+        r = _verificar_pilar(p.perfil, p.aco, reg["Nc"], reg["Nt"], reg["M"], reg["H"] / 10.0, reg["K"],
+                             reg["Ly"], tit, avisos)
+        r.dados["observacao"] = "pilar " + reg["modelo"]
+        elementos[marca] = _elemento_extra(
+            marca, nome, tit, "pilar", r, p.perfil, p.aco,
+            {"M": round(reg["M"] / 100.0, 2), "V": round(reg["V"], 2), "N": round(max(reg["Nc"], reg["Nt"]), 2),
+             "caso": "reação da tesoura + vento", "modelo": reg["modelo"], "altura_m": round(reg["H"] / 1000.0, 2),
+             "K": reg["K"], "Lx_cm": round(reg["Lx"], 1), "Ly_cm": round(reg["Ly"], 1)},
+            {"tipo": "pilar", "Nc": round(reg["Nc"], 3), "Nt": round(reg["Nt"], 3), "M_kNcm": round(reg["M"], 3),
+             "H_cm": round(reg["H"] / 10.0, 2), "K": reg["K"], "Ly_cm": round(reg["Ly"], 2), "aco": p.aco},
+            comprimento_total)
+        verificacoes.append(dict(_serializar_resultado(r), marca=marca, nome=nome, tipo="pilar"))
+    if sem_tesoura:
+        avisos.append("pilar(es) sem tesoura apoiada no topo, fora do cálculo: %s"
+                      % ", ".join(sorted(sem_tesoura)))
+
+    # ---- longarinas
+    regs = {}
+    for p in longarinas:
+        d = _unit(_sub(p.b, p.a))
+        if abs(d[2]) > 0.3:
+            continue
+        lateral = abs(_dot(d, w0)) >= 0.7
+        z = (p.a[2] + p.b[2]) / 2.0
+        dp = math.hypot(d[0], d[1]) or 1.0
+        zs = [z]
+        for o in longarinas:
+            if o is p:
+                continue
+            do = _unit(_sub(o.b, o.a))
+            if abs(_dot(do, d)) < 0.95:
+                continue
+            mx, my = (o.a[0] + o.b[0]) / 2.0 - p.a[0], (o.a[1] + o.b[1]) / 2.0 - p.a[1]
+            if abs(-mx * d[1] + my * d[0]) / dp <= 500.0:
+                zs.append((o.a[2] + o.b[2]) / 2.0)
+        niveis: List[float] = []
+        for zz in sorted(zs):
+            if not niveis or zz - niveis[-1] > 100.0:
+                niveis.append(zz)
+        k = min(range(len(niveis)), key=lambda j: abs(niveis[j] - z))
+        abaixo = niveis[k - 1] if k > 0 else z_chao
+        acima = niveis[k + 1] if k + 1 < len(niveis) else max(h * 1000.0, z)
+        faixa = max((acima - abaixo) / 2.0 / 1000.0, 0.3)
+        pres = paredes.get("lateral_pressao" if lateral else "oitao_pressao", 0.0)
+        suc = paredes.get("lateral_succao" if lateral else "oitao_succao", 0.0)
+        reg = regs.setdefault(p.marca, {"peca": p, "vao": 0.0, "faixa": 0.0, "pres": 0.0, "suc": 0.0,
+                                        "parede": "lateral" if lateral else "oitão"})
+        reg["vao"] = max(reg["vao"], p.L / 1000.0)
+        reg["faixa"] = max(reg["faixa"], faixa)
+        reg["pres"] = max(reg["pres"], max(pres, 0.0))
+        reg["suc"] = min(reg["suc"], min(suc, 0.0))
+    # o modelo desenhado raramente traz as correntes da parede: sem informar, uma linha
+    # por vão (a do galpão), dita no aviso e trocável no diálogo
+    n_corr = int(par["correntes_longarina"]) if par.get("correntes_longarina") is not None else 1
+    for marca, reg in sorted(regs.items()):
+        p = reg["peca"]
+        nome, tit = titulo(marca, "longarina (%s)" % reg["parede"], p.perfil)
+        vao, faixa = reg["vao"], reg["faixa"]
+        q_p, q_s = 1.4 * reg["pres"] * faixa, 1.4 * abs(reg["suc"]) * faixa
+        q_ps, q_ss = reg["pres"] * faixa, abs(reg["suc"]) * faixa
+        try:
+            if perfis_fabrica.tipo_de_verificacao(p.perfil) == "frio":
+                r = nbr14762.terca(perfis_fabrica.secao_frio(p.perfil), p.aco, vao, q_p, q_s, n_corr, inclinacao=0.0,
+                                   carga_servico_gravidade=q_ps, carga_servico_succao=q_ss,
+                                   limite_flecha_gravidade=float(par["flecha_terca"]), elemento=tit)
+            else:
+                r = nbr8800.verificar_viga(p.perfil, p.aco, L=vao * 100, q_Sd=max(q_p, q_s) / 100.0,
+                                           q_servico=max(q_ps, q_ss) / 100.0, limite="L/%d" % int(par["flecha_terca"]),
+                                           elemento=tit)
+            for v in r.verificacoes:
+                v.titulo = v.titulo.replace("gravidade", "pressão do vento")
+        except ErroDeDados as exc:
+            r = Resultado(tit, perfil=p.perfil.nome, material=p.aco)
+            v = Verificacao("Não verificada", Sd=0.0, Rd=1.0, unidade="—")
+            v.observacao = str(exc)
+            r.add(v)
+        q = max(q_p, q_s)
+        elementos[marca] = _elemento_extra(
+            marca, nome, tit, "longarina", r, p.perfil, p.aco,
+            {"M": round(q * vao * vao / 8.0, 2), "V": round(q * vao / 2.0, 2), "N": 0.0,
+             "caso": "pressão do vento" if q_p >= q_s else "sucção", "vao_m": round(vao, 2),
+             "faixa_m": round(faixa, 3), "parede": reg["parede"], "correntes": n_corr},
+            {"tipo": "terca", "vao_m": round(vao, 4), "largura_m": round(faixa, 4), "q_g": round(q_p, 4),
+             "q_s": round(q_s, 4), "q_gs": round(q_ps, 4), "q_ss": round(q_ss, 4), "theta": 0.0, "aco": p.aco,
+             "correntes": n_corr, "flecha": int(par["flecha_terca"])},
+            comprimento_total)
+        verificacoes.append(dict(_serializar_resultado(r), marca=marca, nome=nome, tipo="longarina"))
+
+    # ---- contraventamentos e correntes (tirantes)
+    q_oit = max(paredes.get("oitao_pressao", 0.0), abs(min(paredes.get("oitao_succao", 0.0), 0.0)))
+    area_oitao = b * (h + (hc - h) / 2.0) / 2.0
+    F_oitao = 1.4 * q_oit * area_oitao
+    cortante = F_oitao / 2.0
+    esp_ponta = (ws[1] - ws[0]) / 1000.0 if len(ws) > 1 else 5.0
+    p_soma = max((max(pA, 0.0) + max(-pB, 0.0) for pA, pB in pares), default=0.0)
+    F_trans = 1.4 * p_soma * (esp_ponta / 2.0) * (h / 2.0)
+    vaos_terca = sorted(r_.get("vao", 0.0) for lista in cruz.values() for r_ in lista if r_.get("vao"))
+    vao_terca = vaos_terca[len(vaos_terca) // 2] / 1000.0 if vaos_terca else esp_ponta
+    ns_corr = sorted(correntes.values()) if correntes else []
+    n_linhas = max(ns_corr[len(ns_corr) // 2] if ns_corr else 1, 1)
+    agua = (b / 2.0) / max(math.cos(math.radians(theta)), 0.5)
+    N_corrente = max(2.0, (1.25 * g_cob + 1.5 * sc) * math.sin(math.radians(theta)) * (vao_terca / (n_linhas + 1)) * agua)
+    # a treliça horizontal da cobertura vence o vão entre os beirais: o cortante vai de
+    # F/2 no apoio a zero no meio, e o painel leva o da ponta mais perto do apoio
+    t0 = tes[0]
+    xs0 = [t0.nos[i][0] for i in t0.nos_usados()]
+    x_esq, x_dir = (min(xs0), max(xs0)) if xs0 else (0.0, b * 1000.0)
+    meio_vao = max((x_dir - x_esq) / 2.0, 1.0)
+    regs = {}
+    for p in soltas:
+        if p.tipo not in ("contraventamento", "corrente"):
+            continue
+        d = _sub(p.b, p.a)
+        L = p.L
+        Lh = math.hypot(d[0], d[1])
+        zm = (p.a[2] + p.b[2]) / 2.0
+        if p.tipo == "corrente":
+            plano, N = "corrente", N_corrente
+        elif abs(d[2]) <= 0.35 * L and zm >= 0.6 * h * 1000.0:
+            plano = "cobertura"
+            dist_apoio = min(min(t0.p2(q)[0] - x_esq, x_dir - t0.p2(q)[0]) for q in (p.a, p.b))
+            V = cortante * max(1.0 - max(dist_apoio, 0.0) / meio_vao, 0.1)
+            N = V * L / max(abs(_dot(d, w0)), 0.2 * L)
+        elif Lh > 1.0 and abs(_dot(_unit((d[0], d[1], 0.0)), w0)) >= 0.5:
+            plano = "parede lateral"
+            N = cortante * L / max(Lh, 0.2 * L)
+        else:
+            plano = "oitão"
+            N = F_trans * L / max(Lh, 0.2 * L)
+        reg = regs.setdefault(p.marca, {"peca": p, "N": 0.0, "L": 0.0, "planos": set()})
+        reg["N"] = max(reg["N"], N)
+        reg["L"] = max(reg["L"], L)
+        reg["planos"].add(plano)
+    for marca, reg in sorted(regs.items()):
+        p = reg["peca"]
+        tipo_txt = "corrente" if reg["planos"] == {"corrente"} else "contraventamento (%s)" % ", ".join(sorted(reg["planos"]))
+        nome, tit = titulo(marca, tipo_txt, p.perfil)
+        r = _verificar_tirante(p.perfil, p.aco, 0.0, reg["N"], reg["L"] / 10.0, tit)
+        elementos[marca] = _elemento_extra(
+            marca, nome, tit, "corrente" if reg["planos"] == {"corrente"} else "contraventamento", r, p.perfil, p.aco,
+            {"M": 0.0, "V": 0.0, "N": round(reg["N"], 2), "caso": "vento no oitão" if "cobertura" in reg["planos"] else "",
+             "comprimento_m": round(reg["L"] / 1000.0, 2), "planos": sorted(reg["planos"]),
+             "F_oitao_kN": round(F_oitao, 2), "cortante_kN": round(cortante, 2)},
+            {"tipo": "tirante", "Nt": round(reg["N"], 3), "Nc": 0.0, "L_cm": round(reg["L"] / 10.0, 2), "aco": p.aco},
+            comprimento_total)
+        verificacoes.append(dict(_serializar_resultado(r), marca=marca, nome=nome, tipo="contraventamento"))
+
+    # ---- travamento do banzo inferior (as barras que cruzam o banzo inferior)
+    Nc_inf = max((reg["Nc"] for reg in por_marca.values() if reg.get("tipo") == "banzo" and reg.get("posicao") == "inferior"),
+                 default=0.0)
+    regs = {}
+    for t in tes:
+        for tr in t.travas:
+            p = tr["peca"]
+            if p.marca in elementos:
+                continue
+            reg = regs.setdefault(p.marca, {"peca": p, "L": 0.0})
+            reg["L"] = max(reg["L"], p.L)
+    for marca, reg in sorted(regs.items()):
+        p = reg["peca"]
+        N = max(0.02 * Nc_inf, 2.0)
+        nome, tit = titulo(marca, "travamento do banzo inferior", p.perfil)
+        if p.perfil.tipo == "barra":
+            r = _verificar_tirante(p.perfil, p.aco, 0.0, N, reg["L"] / 10.0, tit)
+            entrada = {"tipo": "tirante", "Nt": round(N, 3), "Nc": 0.0, "L_cm": round(reg["L"] / 10.0, 2), "aco": p.aco}
+        else:
+            r = _verificar_membro(p.perfil, p.aco, N, N, 0.0, reg["L"] / 10.0, reg["L"] / 10.0, 1, tit, avisos)
+            entrada = {"tipo": "barra", "Nc": round(N, 3), "Nt": round(N, 3), "M_kNcm": 0.0,
+                       "Lx_cm": round(reg["L"] / 10.0, 2), "Ly_cm": round(reg["L"] / 10.0, 2), "n": 1, "aco": p.aco}
+        elementos[marca] = _elemento_extra(
+            marca, nome, tit, "travamento", r, p.perfil, p.aco,
+            {"M": 0.0, "V": 0.0, "N": round(N, 2), "caso": "2 % da compressão do banzo inferior (NBR 8800, 4.11)",
+             "comprimento_m": round(reg["L"] / 1000.0, 2)},
+            entrada, comprimento_total)
+        verificacoes.append(dict(_serializar_resultado(r), marca=marca, nome=nome, tipo="travamento"))
+    if elementos:
+        avisos.append("pilares, longarinas e contraventamentos verificados pelos modelos simples do galpão: pilar de "
+                      "fachada engastado na base com a tesoura de escora (K = 2), pilar do oitão biapoiado, "
+                      "contraventamento em X só à tração com o vento no oitão, longarina como terça sob o vento "
+                      "(%d linha(s) de correntes por vão%s)" % (
+                          n_corr, "" if par.get("correntes_longarina") is not None else ", adotada — informe no diálogo"))
+    return elementos, verificacoes
 
 
 # ------------------------------------------------------------------ verificação
@@ -1347,8 +1852,7 @@ def geometria_do_modelo(doc: Documento, nomes: dict, parametros: Optional[dict] 
     avisos: List[str] = []
     pecas, telhas, castanhas, chapas_conj = _levantar_pecas(doc, nomes, par, avisos)
     tes = _tesouras(pecas, nomes, chapas_conj, avisos)
-    for t in tes:
-        t.definir_apoios(par.get("apoios") or [], par["apoio"])
+    _definir_apoios(tes, pecas, par)
     zs = [t.p3(*t.nos[i])[2] for t in tes for i in t.apoios]
     return {"tesouras": len(tes), "conjuntos": sorted({t.conjunto for t in tes}),
             "vao_m": round(max([t.vao_mm for t in tes] or [0]) / 1000.0, 2),
@@ -1373,8 +1877,8 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
     if not tes:
         raise ErroDeDados("não encontrei tesouras no modelo: gere o detalhamento primeiro (é ele que "
                           "classifica os conjuntos) ou confira se o IFC tem conjuntos de treliça")
+    _definir_apoios(tes, pecas, par)
     for t in tes:
-        t.definir_apoios(par.get("apoios") or [], par["apoio"])
         avisos.extend(t.avisos)
     if any(getattr(t, "uma_agua", False) for t in tes):
         avisos.append("cobertura de uma água: as pressões de vento vêm das tabelas de duas águas da "
@@ -1477,7 +1981,8 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
             "governa": crit.titulo if crit else "", "norma": getattr(crit, "norma", "") if crit else "",
             "Sd": round(crit.Sd, 2) if crit else 0.0, "Rd": round(crit.Rd, 2) if crit else 0.0,
             "unidade": getattr(crit, "unidade", "") if crit else "",
-            "barras": [], "no_portico": True,
+            "barras": [], "no_portico": True, "sem_trava": bool(reg.get("sem_trava")),
+            "conjuntos": sorted(reg["tesouras"]),
             "dimensionamento": {"M": round(reg["M"] / 100.0, 2), "V": round(reg["V"], 2),
                                 "N": round(max(reg["Nc"], reg["Nt"]), 2), "caso": reg["caso"],
                                 "Lx_cm": round(reg["Lx"], 1), "Ly_cm": round(reg["Ly"], 1)},
@@ -1573,8 +2078,16 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         }
         verificacoes.append(dict(_serializar_resultado(r), marca=marca, nome=nome, tipo="terca"))
 
+    # pilares, longarinas, contraventamentos, correntes e travamentos
+    avisar("verificando pilares, longarinas e contraventamentos…")
+    el_extra, ver_extra = _verificar_complementares(tes, soltas, cruz, correntes, vento, par, g_cob, sc, nomes_pos,
+                                                    comprimento_total, por_marca, avisos)
+    for m_, e_ in el_extra.items():
+        elementos.setdefault(m_, e_)
+    verificacoes.extend(ver_extra)
+
     # o que ficou sem verificação
-    ids_verif = set(por_marca) | set(por_terca)
+    ids_verif = set(por_marca) | set(por_terca) | set(el_extra)
     outras = collections.Counter()
     for p in soltas:
         if p.marca not in ids_verif:
@@ -1582,8 +2095,8 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
     nao_verificadas = [{"marca": m, "nome": nomes_pos.get(m, ""), "tipo": tp, "perfil": pf, "pecas": n}
                        for (m, tp, pf), n in sorted(outras.items())]
     if nao_verificadas:
-        avisos.append("%d posição(ões) fora das tesouras e das terças não foram verificadas (contraventamentos, "
-                      "agulhamentos, apoios): ver a lista" % len(nao_verificadas))
+        avisos.append("%d posição(ões) não foram verificadas (consoles, suportes, peças sem papel reconhecido): "
+                      "ver a lista" % len(nao_verificadas))
 
     # tesouras típicas (uma por conjunto, a mais solicitada) para os diagramas
     avisar("montando o mapa…")
@@ -1696,7 +2209,8 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
     }
 
 
-def alternativas(calculo: dict, marca: str, limite: int = 10, todas: bool = False) -> dict:
+def alternativas(calculo: dict, marca: str, limite: int = 10, todas: bool = False,
+                 limite_catalogo: int = 90, so_padrao: bool = False) -> dict:
     """Perfis do catálogo que podem entrar no lugar do desta posição, **verificados**.
 
     Usa os esforços já calculados (guardados em `elementos[marca]["entrada"]`), então
@@ -1723,7 +2237,7 @@ def alternativas(calculo: dict, marca: str, limite: int = 10, todas: bool = Fals
         # Varre a família inteira (dentro da faixa de altura): quando a peça atual não
         # passa, o que interessa é o mais leve que passa — e ele pode estar longe da
         # massa atual. A ordenação final põe quem passa na frente.
-        candidatos = catalogo.alternativas(atual, modo="todos", limite=90)
+        candidatos = catalogo.alternativas(atual, modo="todos", limite=limite_catalogo)
     except ErroDeDados:
         # perfil de fábrica fora do catálogo (U92X40X2.25): oferece o que casa em altura
         p = catalogo.perfil_de(atual)
@@ -1739,6 +2253,8 @@ def alternativas(calculo: dict, marca: str, limite: int = 10, todas: bool = Fals
             c["mais_leve"] = bool(base and (c["massa"] or 0.0) < base)
     saida = []
     for c in candidatos:
+        if so_padrao and c.get("fornecedor"):
+            continue                  # o dimensionamento automático fica nas séries padrão
         perfil = catalogo.perfil_de(c["nome"])
         if perfil is None:
             continue
@@ -1798,6 +2314,13 @@ def _verificar_candidato(perfil, entrada: dict, el: dict):
                 r = nbr8800.verificar_viga(perfil, entrada["aco"], L=vao * 100, q_Sd=q / 100.0,
                                            q_servico=max(float(entrada["q_gs"]), float(entrada["q_ss"])) / 100.0,
                                            limite="L/%d" % int(entrada.get("flecha") or 180))
+        elif entrada.get("tipo") == "pilar":
+            r = _verificar_pilar(perfil, entrada["aco"], float(entrada["Nc"]), float(entrada["Nt"]),
+                                 float(entrada["M_kNcm"]), float(entrada["H_cm"]), float(entrada["K"]),
+                                 float(entrada["Ly_cm"]), el.get("titulo", ""), [])
+        elif entrada.get("tipo") == "tirante":
+            r = _verificar_tirante(perfil, entrada["aco"], float(entrada.get("Nc") or 0.0), float(entrada["Nt"]),
+                                   float(entrada["L_cm"]), el.get("titulo", ""))
         else:
             r = _verificar_membro(perfil, entrada["aco"], float(entrada["Nc"]), float(entrada["Nt"]),
                                   float(entrada["M_kNcm"]), float(entrada["Lx_cm"]), float(entrada["Ly_cm"]),
@@ -1806,6 +2329,219 @@ def _verificar_candidato(perfil, entrada: dict, el: dict):
         return None
     crit = r.critica
     return (r.razao, crit.titulo if crit else "", getattr(crit, "norma", "") if crit else "", r.ok)
+
+
+# ------------------------------------------------------------------ dimensionamento
+
+def _aceito_no_automatico(nome: str, el: dict) -> bool:
+    """As regras que o dimensionamento da tesoura do galpão segue (`nucleo.tesouras`):
+    barra de tesoura com parede de pelo menos 2 mm (o que a fábrica dobra e chega à obra
+    sem amassar) e esbeltez até 200 na compressão e 300 na tração; no pilar, K·L/r ≤ 200."""
+    from nucleo import catalogo, tesouras
+    p = catalogo.perfil_de(nome)
+    if p is None:
+        return False
+    tipo = el.get("tipo")
+    ent = el.get("entrada") or {}
+    r_min = min(getattr(p, "rx", 0.0) or 1e9, getattr(p, "ry", 0.0) or 1e9)
+    if tipo in ("banzo", "diagonal", "montante", "travamento"):
+        esp = tesouras._espessura(p)
+        if 0 < esp < tesouras.MIN_ESPESSURA:
+            return False
+        L = max(float(ent.get("Lx_cm") or 0.0), float(ent.get("Ly_cm") or 0.0))
+        limite = 200.0 if float(ent.get("Nc") or 0.0) > 1e-6 else 300.0
+        return not (r_min and L / r_min > limite)
+    if tipo == "pilar":
+        rx, ry = getattr(p, "rx", 0.0) or 1e9, getattr(p, "ry", 0.0) or 1e9
+        KL = float(ent.get("K") or 1.0) * float(ent.get("H_cm") or 0.0)
+        return KL / rx <= 200.0 and float(ent.get("Ly_cm") or 0.0) / ry <= 200.0
+    return True
+
+
+def _grupo_do_elemento(marca: str, el: dict) -> tuple:
+    """Banzo: cada linha (superior, inferior) leva um perfil só em todas as tesouras — é
+    uma peça contínua, e é assim que o galpão dimensiona; os pedaços escolhem juntos. O
+    resto escolhe sozinho."""
+    if el.get("tipo") == "banzo":
+        return ("banzo", el.get("posicao") or "")
+    return ("posicao", marca)
+
+
+def dimensionar(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avisar=None,
+                max_rodadas: int = 6) -> dict:
+    """O perfil mais leve do catálogo que passa, em cada posição verificada.
+
+    Cada rodada calcula a estrutura com os perfis da rodada anterior e escolhe o primeiro
+    candidato de `alternativas` que passa (na barra e na ligação) — elas vêm do mais leve
+    ao mais pesado —, nas séries padrão e dentro das regras de `_aceito_no_automatico`. O
+    banzo escolhe por linha (`_grupo_do_elemento`): o mais leve que passa em todos os
+    pedaços. Quando nenhum passa, fica o que chegou mais perto. Trocar um perfil muda a
+    rigidez e redistribui os esforços da treliça, por isso repete-se até a escolha devolver
+    os mesmos perfis que a geraram; num ciclo, fica o mais pesado de cada posição.
+
+    Posição sem esforço fica como está; banzo inferior que só não passa por falta de
+    travamento lateral no modelo vai para `pendentes` (é o usuário quem diz onde trava).
+
+    Devolve {trocas: {marca: perfil}, calculo, rodadas, mudancas, pendentes, reprovadas,
+    reprovadas_antes, peso_antes_kg, peso_depois_kg}."""
+    from nucleo import catalogo
+    avisar = avisar or (lambda *a: None)
+    par = dict(parametros or {})
+    originais: Dict[str, str] = {}
+    trocas: Dict[str, str] = {}
+    historico = []
+    pendentes: Dict[str, str] = {}
+    antes = r = None
+    rodadas = 0
+    convergiu = False
+    for rodada in range(1, max_rodadas + 1):
+        rodadas = rodada
+        avisar("dimensionando: rodada %d de até %d…" % (rodada, max_rodadas))
+        r = calcular(doc, nomes, dict(par, trocas=dict(trocas)), avisar=lambda *a: None)
+        if rodada == 1:
+            antes = r
+            originais = {m: el["perfil"] for m, el in r["elementos"].items()}
+        pendentes = {}
+        grupos: Dict[tuple, List[str]] = collections.defaultdict(list)
+        for marca, el in r["elementos"].items():
+            if not el.get("entrada") or not (el.get("aproveitamento") or 0.0) > 1e-3:
+                continue                       # sem esforço: fica o perfil do modelo
+            if el.get("sem_trava") and not el.get("ok"):
+                pendentes[marca] = ("banzo inferior sem travamento lateral no modelo: informe o espaçamento dos "
+                                    "travamentos (Travamento do banzo inferior) e dimensione de novo")
+                continue
+            grupos[_grupo_do_elemento(marca, el)].append(marca)
+        novas = dict(trocas)
+        for _chave, marcas in grupos.items():
+            opcoes: Dict[str, List[dict]] = {}
+            for marca in marcas:
+                el = r["elementos"][marca]
+                try:
+                    alt = alternativas(r, marca, limite=400, limite_catalogo=600, so_padrao=True).get("alternativas") or []
+                except ErroDeDados:
+                    alt = []
+                # o perfil atual disputa também: sem ele, quem já era o mais leve que passa
+                # trocava pelo vizinho e voltava na rodada seguinte
+                atual = {"nome": el["perfil"], "massa": getattr(catalogo.perfil_de(el["perfil"]), "massa", 0.0) or 0.0,
+                         "ok": bool(el.get("ok")), "aproveitamento": el.get("aproveitamento") or 0.0}
+                lista = [a for a in alt if _aceito_no_automatico(a["nome"], el)]
+                if _aceito_no_automatico(atual["nome"], el) or not atual["ok"]:
+                    lista.append(atual)
+                lista.sort(key=lambda a: (not a["ok"], (a["massa"] or 0.0) if a["ok"] else a["aproveitamento"]))
+                opcoes[marca] = lista
+            passam = {m: {a["nome"]: a["massa"] or 0.0 for a in lista if a["ok"]} for m, lista in opcoes.items()}
+            comuns = set.intersection(*(set(v) for v in passam.values())) if passam and all(passam.values()) else set()
+            if comuns:
+                escolha = min(comuns, key=lambda n: (passam[marcas[0]][n], n))
+            else:
+                # nada serve para todos: vale a escolha da posição mais solicitada
+                pior = max(marcas, key=lambda m: r["elementos"][m].get("aproveitamento") or 0.0)
+                lista = opcoes.get(pior) or []
+                ok = [a for a in lista if a["ok"]]
+                if ok:
+                    escolha = ok[0]["nome"]
+                elif all(r["elementos"][m].get("ok") for m in marcas):
+                    continue                   # passa e nada mais leve serve: fica
+                elif lista:
+                    escolha = lista[0]["nome"]  # nada passa: o que chegou mais perto
+                else:
+                    continue
+            for marca in marcas:
+                if escolha == originais.get(marca):
+                    novas.pop(marca, None)
+                else:
+                    novas[marca] = escolha
+        if novas == trocas:
+            convergiu = True
+            break
+        chave = tuple(sorted(novas.items()))
+        if chave in historico:
+            # ciclo: o mais pesado de cada posição entre as duas escolhas
+            for marca in set(novas) | set(trocas):
+                a_, b_ = trocas.get(marca, originais.get(marca)), novas.get(marca, originais.get(marca))
+                pa, pb = catalogo.perfil_de(a_), catalogo.perfil_de(b_)
+                pesado = a_ if (pa and pb and (pa.massa or 0) >= (pb.massa or 0)) else b_
+                if pesado == originais.get(marca):
+                    novas.pop(marca, None)
+                else:
+                    novas[marca] = pesado
+            trocas = novas
+            r = calcular(doc, nomes, dict(par, trocas=dict(trocas)), avisar=lambda *a: None)
+            convergiu = True
+            break
+        historico.append(chave)
+        trocas = novas
+    else:
+        avisar("dimensionando: conferindo a última escolha…")
+        r = calcular(doc, nomes, dict(par, trocas=dict(trocas)), avisar=lambda *a: None)
+    mudancas = []
+    for marca, novo in sorted(trocas.items()):
+        el = r["elementos"].get(marca) or {}
+        el0 = antes["elementos"].get(marca) or {}
+        mudancas.append({"marca": marca, "nome": el.get("nome", ""), "tipo": el.get("tipo", ""),
+                         "de": originais.get(marca, ""), "para": novo,
+                         "aproveitamento_antes": el0.get("aproveitamento"), "aproveitamento": el.get("aproveitamento"),
+                         "ok": el.get("ok"), "delta_kg": round((el.get("peso_kg") or 0.0) - (el0.get("peso_kg") or 0.0), 1)})
+    res = r.get("resumo") or {}
+    return {"trocas": trocas, "calculo": r, "rodadas": rodadas, "convergiu": convergiu, "mudancas": mudancas,
+            "pendentes": [{"marca": m, "motivo": motivo, "perfil": (r["elementos"].get(m) or {}).get("perfil", ""),
+                           "aproveitamento": (r["elementos"].get(m) or {}).get("aproveitamento")}
+                          for m, motivo in sorted(pendentes.items())],
+            "reprovadas": list(res.get("reprovadas") or []),
+            # o que continua reprovado sem ser pendência: nada das séries padrão passa, e ficou o
+            # que chegou mais perto
+            "sem_solucao": [{"marca": m, "perfil": (r["elementos"].get(m) or {}).get("perfil", ""),
+                             "aproveitamento": (r["elementos"].get(m) or {}).get("aproveitamento"),
+                             "tipo": (r["elementos"].get(m) or {}).get("tipo", "")}
+                            for m in sorted(res.get("reprovadas") or []) if m not in pendentes],
+            "reprovadas_antes": list((antes.get("resumo") or {}).get("reprovadas") or []),
+            "peso_antes_kg": (antes.get("resumo") or {}).get("peso_verificado_kg"),
+            "peso_depois_kg": res.get("peso_verificado_kg")}
+
+
+def aplicar_perfis(doc: Documento, trocas: Dict[str, str]) -> dict:
+    """Põe no modelo os perfis escolhidos: cada `Barra` da posição troca de perfil (e de
+    peso), guardando o perfil original e o histórico da troca, como o "Trocar perfil" do
+    3D. Sólido do IFC não se refaz aqui: a posição fica como perfil de cálculo.
+
+    Devolve {barras: quantas mudaram, posicoes: [...], so_calculo: {marca: perfil}}."""
+    import time as _time
+    from nucleo import catalogo
+    hoje = _time.strftime("%Y-%m-%d")
+    mudou = collections.Counter()
+    for b in doc.barras:
+        m = _marcas(b)
+        marca = str(m.get("posicao") or b.id)
+        novo = trocas.get(marca)
+        if not novo or novo == b.perfil:
+            continue
+        p = catalogo.perfil_de(novo)
+        nome = p.nome if p is not None else novo
+        antigo = b.perfil
+        if b.nome == antigo:
+            b.nome = nome
+        b.perfil = nome
+        at = dict(b.atributos or {})
+        marcas = dict(at.get("marcas") or {})
+        marcas.setdefault("perfil_original", antigo)
+        marcas["perfil"] = nome
+        at["marcas"] = marcas
+        at["trocas_de_perfil"] = list(at.get("trocas_de_perfil") or []) + [
+            {"de": antigo, "para": nome, "data": hoje, "por": "dimensionamento"}]
+        if p is not None:
+            at["peso_kg"] = round((p.massa or 0.0) * _norma(_sub(b.fim, b.inicio)) / 1000.0, 3)
+        b.atributos = at
+        mudou[marca] += 1
+    so_calculo = {m: v for m, v in trocas.items() if m not in mudou}
+    return {"barras": sum(mudou.values()), "posicoes": sorted(mudou), "so_calculo": so_calculo}
+
+
+def nomes_das_barras(doc: Documento) -> dict:
+    """Classificação mínima de um modelo desenhado (sem detalhamento): o conjunto que tem
+    banzo é tesoura. É o que o cálculo precisa para começar; o resto sai do papel das barras."""
+    tesouras = sorted({str(_marcas(b).get("conjunto") or "") for b in doc.barras
+                       if b.papel == "banzo" and _marcas(b).get("conjunto")})
+    return {"tipos_conjuntos": {c: "tesoura" for c in tesouras}, "tipos": {}} if tesouras else {}
 
 
 def _gaps(t: _Tesoura, posicao: str, pontos: List[dict]) -> Optional[float]:

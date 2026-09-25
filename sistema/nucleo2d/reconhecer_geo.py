@@ -429,6 +429,18 @@ def _nos_interiores(s, ativos: Sequence[object], tol: float) -> int:
     return n
 
 
+def _pontas_sobre(s, reticulado: Sequence[object], tol: float) -> int:
+    """Quantas pontas de diagonal da treliça caem sobre a linha, fora das pontas dela."""
+    n = 0
+    for o in reticulado:
+        if o is s:
+            continue
+        for p in (o.a, o.b):
+            if s.dist_linha(p) <= tol and 0.02 < s.param(p) < 0.98:
+                n += 1
+    return n
+
+
 def _portico(v: dict, a: dict) -> List[dict]:
     """Pórtico ou tesoura: pilar (em pé, comprido), banzo (contorno de cima e de baixo
     do reticulado), montante (em pé, dentro da treliça), diagonal; abaixo da treliça, a
@@ -472,8 +484,12 @@ def _portico(v: dict, a: dict) -> List[dict]:
     # pilar: em pé, do pé do pórtico até a treliça (o montante da treliça não parte do
     # pé; a linha em pé debaixo da vista, o fechamento desenhado abaixo do chão, não
     # chega à treliça)
-    pe0 = min([min(f["a"][1], f["b"][1]) for f in a["finos"] if f["ang"] == 90.0] +
-              [min(s.a[1], s.b[1]) for s in a["ativos"] if _vertical(s.ang) and s.L >= L_pilar] + [y0])
+    # o pé do pórtico é o das linhas em pé que chegam à treliça: um desenho de detalhe logo
+    # abaixo, que o agrupamento juntou à vista, não o rebaixa
+    chega = lambda y_topo: y_topo >= faixa[0] - 0.05 * H          # noqa: E731
+    pes = [min(f["a"][1], f["b"][1]) for f in a["finos"] if f["ang"] == 90.0 and chega(max(f["a"][1], f["b"][1]))] + \
+          [min(s.a[1], s.b[1]) for s in a["ativos"] if _vertical(s.ang) and s.L >= 0.2 * H and chega(max(s.a[1], s.b[1]))]
+    pe0 = min(pes) if pes else y0
 
     def e_pilar(s):
         return _vertical(s.ang) and s.L >= 0.2 * H and max(s.a[1], s.b[1]) >= faixa[0] - 0.05 * H \
@@ -486,6 +502,9 @@ def _portico(v: dict, a: dict) -> List[dict]:
     duplas = [p for p in pilares if p.get("caixa")]
     ativos = [s for s in a["ativos"] if not e_pilar(s) and not _dentro_de_dupla(s, duplas)]
     pe = min([min(p["a"][1], p["b"][1]) for p in pilares] + [y0])
+    # a alma da treliça: as diagonais com as duas pontas na faixa (o V do contraventamento
+    # que chega por baixo na longarina de topo não conta)
+    alma = [x for x in ret if faixa[0] <= min(x.a[1], x.b[1]) and max(x.a[1], x.b[1]) <= faixa[1]]
     for s in ativos:
         ym = (s.a[1] + s.b[1]) / 2
         na_faixa = faixa[0] <= ym <= faixa[1]
@@ -499,8 +518,18 @@ def _portico(v: dict, a: dict) -> List[dict]:
         if s.L >= 0.15 * W and _nos_interiores(s, ativos, tol) < 2:
             continue                                     # comprida e sem nó no meio: cota
         if na_faixa:
+            # a linha comprida da faixa em que nenhuma diagonal chega não é banzo: a longarina
+            # de topo do oitão (atravessando o vão, logo abaixo da treliça) ou um traço solto
+            if s.L >= 0.15 * W and _pontas_sobre(s, alma, tol) < 2:
+                if _horizontal(s.ang) and s.L >= 0.5 * W:
+                    membros.append(_barra(s.a, s.b, "longarina"))
+                continue
             membros.append(_barra(s.a, s.b, "?"))
         elif ym < faixa[0]:
+            if s.L < 0.06 * W and min(s.a[1], s.b[1]) >= pe0 - 0.05 * H:
+                continue                                 # degrau ou diagonal de pilar treliçado, detalhe
+            if min(s.a[1], s.b[1]) < pe0 - 0.05 * H:
+                continue                                 # abaixo do pé: o desenho de detalhe ao lado
             membros.append(_barra(s.a, s.b, "contraventamento" if _inclinada(s.ang) else "longarina"))
         # acima da treliça: cota, beiral desenhado — não é peça
     # banzo: o que está no contorno de cima ou de baixo da treliça (entre os membros da faixa)

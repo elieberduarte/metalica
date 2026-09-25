@@ -128,6 +128,64 @@ def resolver_sistema(A: List[List[float]], b: List[float],
     return x
 
 
+def _fatorar(A: List[List[float]], rotulos: Optional[Sequence[str]] = None):
+    """A mesma eliminação de Gauss de `resolver_sistema` (mesmo pivô, mesmo critério de
+    singularidade, mesma mensagem), guardando os multiplicadores: a fatoração serve a
+    todos os casos de carga do mesmo modelo, que só mudam o vetor de cargas."""
+    n = len(A)
+    escala = [max((abs(A[i][j]) for i in range(n)), default=0.0) or 1.0 for j in range(n)]
+    M = [list(linha) for linha in A]
+    piv = list(range(n))
+    for k in range(n):
+        p = k
+        maior = abs(M[k][k])
+        for i in range(k + 1, n):
+            if abs(M[i][k]) > maior:
+                maior, p = abs(M[i][k]), i
+        if maior <= TOL_PIVO * escala[k]:
+            nome = rotulos[k] if rotulos and k < len(rotulos) else f"incógnita {k}"
+            raise ErroDeDados(
+                "Matriz de rigidez singular: a estrutura é hipostática (um mecanismo) "
+                f"no grau de liberdade {nome}. Acrescente apoio, barra ou remova a rótula "
+                "que deixou o nó livre para girar/transladar.")
+        if p != k:
+            M[k], M[p] = M[p], M[k]
+            piv[k], piv[p] = piv[p], piv[k]
+        pivo = M[k][k]
+        linha_k = M[k]
+        for i in range(k + 1, n):
+            linha_i = M[i]
+            if linha_i[k] == 0.0:
+                continue
+            f = linha_i[k] / pivo
+            linha_i[k] = f
+            for j in range(k + 1, n):
+                if linha_k[j] != 0.0:
+                    linha_i[j] -= f * linha_k[j]
+    return M, piv
+
+
+def _resolver_fatorado(M: List[List[float]], piv: List[int], b: Sequence[float]) -> List[float]:
+    n = len(M)
+    y = [b[piv[i]] for i in range(n)]
+    for i in range(n):
+        linha = M[i]
+        s = y[i]
+        for j in range(i):
+            if linha[j] != 0.0:
+                s -= linha[j] * y[j]
+        y[i] = s
+    x = [0.0] * n
+    for i in range(n - 1, -1, -1):
+        linha = M[i]
+        s = y[i]
+        for j in range(i + 1, n):
+            if linha[j] != 0.0:
+                s -= linha[j] * x[j]
+        x[i] = s / linha[i]
+    return x
+
+
 def _inverter(M: List[List[float]]) -> List[List[float]]:
     """Inversa de uma matriz pequena (1×1 ou 2×2) por Gauss-Jordan."""
     n = len(M)
@@ -923,84 +981,116 @@ def _pontos_amostragem(L: float, qy: float, f1: float,
     return saida
 
 
+def _montagem(modelo: Modelo) -> dict:
+    """K global, elementos, graus soltos e a fatoração — o que não depende do caso de
+    carga. Fica guardado no modelo enquanto nós, apoios e barras não mudam: a envoltória
+    resolve uma dúzia de combinações do mesmo modelo, e montar e fatorar K a cada uma era
+    quase todo o tempo do cálculo de uma cobertura com muitas tesouras."""
+    assinatura = (tuple((n.x, n.y, tuple(n.apoio)) for n in modelo.nos),
+                  tuple((b.ni, b.nf, b.A, b.I, b.E, b.rotula_i, b.rotula_f) for b in modelo.barras))
+    guardada = getattr(modelo, "_montagem_guardada", None)
+    if guardada is not None and guardada["assinatura"] == assinatura:
+        return guardada
+    ngl = modelo.ngl
+    K = [[0.0] * ngl for _ in range(ngl)]
+    elementos: List[_Elemento] = []
+    zeros = [0.0] * 6
+    for k in range(len(modelo.barras)):
+        el = _Elemento(modelo, k)
+        elementos.append(el)
+        kc, _Qc = el.condensar(zeros)
+        kg = el.rigidez_global(kc)
+        gl = el.gl
+        for i in range(6):
+            linha = K[gl[i]]
+            for j in range(6):
+                linha[gl[j]] += kg[i][j]
+    restritos = set()
+    for i, n in enumerate(modelo.nos):
+        for d, r in enumerate(n.apoio):
+            if r:
+                restritos.add(3 * i + d)
+    # graus de liberdade sem rigidez nenhuma (rotação de nó de treliça, por exemplo):
+    # travam-se automaticamente, mas só se não houver carga aplicada neles (caso a caso)
+    maior_k = max((abs(K[i][i]) for i in range(ngl)), default=1.0) or 1.0
+    soltos = [i for i in range(ngl) if i not in restritos and max(abs(v) for v in K[i]) <= TOL_RIGIDEZ * maior_k]
+    travados = restritos | set(soltos)
+    livres = [i for i in range(ngl) if i not in travados]
+    fatoracao, erro = None, None
+    if livres:
+        rotulos = []
+        for g in livres:
+            no = g // 3
+            nome = modelo.nos[no].nome or f"nó {no}"
+            rotulos.append(f"{('ux', 'uy', 'rz')[g % 3]} do {nome}")
+        try:
+            fatoracao = _fatorar([[K[i][j] for j in livres] for i in livres], rotulos)
+        except ErroDeDados as exc:
+            erro = exc
+    guardada = {"assinatura": assinatura, "K": K, "elementos": elementos, "soltos": soltos,
+                "livres": livres, "fatoracao": fatoracao, "erro": erro}
+    try:
+        modelo._montagem_guardada = guardada
+    except AttributeError:
+        pass
+    return guardada
+
+
 def resolver(modelo: Modelo, caso: str, n_pontos: int = 21) -> ResultadoAnalise:
     """Resolve um caso de carga pelo método da rigidez direta (pórtico plano).
 
     Monta K global, aplica as condições de contorno, resolve K·u = F por eliminação
     de Gauss com pivotamento parcial e recupera os esforços internos de cada barra
-    por superposição da solução engastada (cargas de engastamento perfeito).
+    por superposição da solução engastada (cargas de engastamento perfeito). K e a
+    fatoração servem a todos os casos do mesmo modelo (`_montagem`).
     """
     modelo.validar(caso)
     cargas = modelo.casos[caso]
     ngl = modelo.ngl
-    K = [[0.0] * ngl for _ in range(ngl)]
+    mont = _montagem(modelo)
+    K = mont["K"]
+    elementos: List[_Elemento] = mont["elementos"]
     F = [0.0] * ngl
 
+    por_barra: Dict[int, list] = {}
     for c in cargas:
         if c.tipo == "nodal":
             i = modelo.indice_no(c.alvo)
             F[3 * i] += c.Fx
             F[3 * i + 1] += c.Fy
             F[3 * i + 2] += c.Mz
+        elif c.tipo in ("distribuida", "concentrada"):
+            por_barra.setdefault(modelo.indice_barra(c.alvo), []).append(c)
 
-    elementos: List[_Elemento] = []
     dados_barra: List[Tuple[float, float, list, List[float]]] = []
-    for k in range(len(modelo.barras)):
-        el = _Elemento(modelo, k)
-        elementos.append(el)
-        cargas_k = [c for c in cargas
-                    if c.tipo in ("distribuida", "concentrada")
-                    and modelo.indice_barra(c.alvo) == k]
-        qx, qy, pontos = _cargas_do_elemento(el, cargas_k)
+    for k, el in enumerate(elementos):
+        qx, qy, pontos = _cargas_do_elemento(el, por_barra.get(k, []))
         Q = _cargas_equivalentes(el.L, qx, qy, pontos)
-        kc, Qc = el.condensar(Q)
-        kg = el.rigidez_global(kc)
+        _kc, Qc = el.condensar(Q)
         Qg = el.para_global(Qc)
         gl = el.gl
         for i in range(6):
             F[gl[i]] += Qg[i]
-            linha = K[gl[i]]
-            for j in range(6):
-                linha[gl[j]] += kg[i][j]
         dados_barra.append((qx, qy, pontos, Q))
 
-    restritos = set()
-    for i, n in enumerate(modelo.nos):
-        for d, r in enumerate(n.apoio):
-            if r:
-                restritos.add(3 * i + d)
-
-    # graus de liberdade sem rigidez nenhuma (rotação de nó de treliça, por exemplo):
-    # travam-se automaticamente, mas só se não houver carga aplicada neles
-    maior_k = max((abs(K[i][i]) for i in range(ngl)), default=1.0) or 1.0
     maior_f = max((abs(v) for v in F), default=1.0) or 1.0
-    soltos: List[int] = []
-    for i in range(ngl):
-        if i in restritos:
-            continue
-        if max(abs(v) for v in K[i]) <= TOL_RIGIDEZ * maior_k:
-            if abs(F[i]) > 1e-9 * maior_f:
-                no = i // 3
-                gdl = ("ux", "uy", "rz")[i % 3]
-                nome = modelo.nos[no].nome or f"nó {no}"
-                raise ErroDeDados(
-                    f"Estrutura hipostática: o grau de liberdade {gdl} do {nome} não tem "
-                    "rigidez alguma e recebe carga. Provável causa: todas as barras que "
-                    "chegam ao nó estão rotuladas (nó de treliça) e foi aplicado momento.")
-            soltos.append(i)
-            restritos.add(i)
+    soltos: List[int] = list(mont["soltos"])
+    for i in soltos:
+        if abs(F[i]) > 1e-9 * maior_f:
+            no = i // 3
+            gdl = ("ux", "uy", "rz")[i % 3]
+            nome = modelo.nos[no].nome or f"nó {no}"
+            raise ErroDeDados(
+                f"Estrutura hipostática: o grau de liberdade {gdl} do {nome} não tem "
+                "rigidez alguma e recebe carga. Provável causa: todas as barras que "
+                "chegam ao nó estão rotuladas (nó de treliça) e foi aplicado momento.")
 
-    livres = [i for i in range(ngl) if i not in restritos]
+    livres = mont["livres"]
     u = [0.0] * ngl
     if livres:
-        A = [[K[i][j] for j in livres] for i in livres]
-        b = [F[i] for i in livres]
-        rotulos = []
-        for g in livres:
-            no = g // 3
-            nome = modelo.nos[no].nome or f"nó {no}"
-            rotulos.append(f"{('ux', 'uy', 'rz')[g % 3]} do {nome}")
-        x = resolver_sistema(A, b, rotulos)
+        if mont["erro"] is not None:
+            raise mont["erro"]
+        x = _resolver_fatorado(*mont["fatoracao"], [F[i] for i in livres])
         for j, g in enumerate(livres):
             u[g] = x[j]
 

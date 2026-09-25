@@ -518,7 +518,10 @@ kbd {
 .linha:hover { background: var(--painel2); }
 .linha .nome { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; font-size: 12.5px; }
-.linha .contagem { font-family: var(--mono); font-size: 11px; color: var(--texto3); }
+.linha .contagem { font-family: var(--mono); font-size: 11px; color: var(--texto3);
+  white-space: nowrap; flex: 0 0 auto; }
+/* resultado do dimensionamento: a diferença de peso numa coluna alinhada à direita */
+.lista-linhas.dimensionamento .contagem.delta { min-width: 6.5em; text-align: right; }
 .linha .amostra {
   width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--borda-forte);
   flex: 0 0 auto; padding: 0; cursor: pointer;
@@ -734,3 +737,6 @@ dialog p.explica { margin: 0 0 10px; color: var(--texto2); font-size: 12.5px; }
 /* dois links de volta no topo: projetos e dimensionamento */
 .topo a.voltar[hidden] { display: none; }
 .topo a.voltar + a.voltar { margin-left: -6px; }
+
+/* linha de botões dentro de um bloco do painel (Dimensionar no resumo do cálculo) */
+.acoes-linha { display: flex; gap: .4em; flex-wrap: wrap; margin: .45em 0 .2em; }

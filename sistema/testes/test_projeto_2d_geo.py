@@ -76,11 +76,12 @@ class TestGeometria(unittest.TestCase):
         rec = self.des.metadados["reconhecimento"]
         self.assertEqual(rec["perfis_padrao"]["pilar"], PERFIS_PADRAO["pilar"])
 
-    def test_montagem_interno_em_todos_os_eixos_e_oitao_nas_pontas(self):
+    def test_montagem_interno_nos_eixos_de_dentro_e_oitao_nas_pontas(self):
         m = self.m
         em_pe = [x for x in m["montagens"] if x["tipo"] == "elevacao"]
         self.assertEqual([x["usar"] for x in em_pe], [True, True])
-        self.assertEqual(len(em_pe[0]["origens"]), ex.N_EIXOS)
+        # com oitão, o pórtico interno fica só nos eixos de dentro
+        self.assertEqual(len(em_pe[0]["origens"]), ex.N_EIXOS - 2)
         self.assertEqual([o[1] for o in em_pe[1]["origens"]], [0.0, ex.COMPRIMENTO * 10])
         planta = next(x for x in m["montagens"] if x["tipo"] == "planta")
         self.assertTrue(planta["cobertura"])
@@ -92,7 +93,9 @@ class TestGeometria(unittest.TestCase):
         self.assertEqual(c["pilar"], 3 * ex.N_EIXOS + 2 * len(ex.POSTES))
         self.assertEqual(c["terça"], 11 * (ex.N_EIXOS - 1))
         self.assertEqual(c["banzo"], 3 * ex.N_EIXOS)
-        self.assertEqual(c["longarina"], 2 * 2 * (ex.N_EIXOS - 1) + len(ex.GIRTS) * 2)
+        # a lateral: 2 alturas × 2 lados × 4 vãos; o oitão: 3 fiadas partidas nos 7 pilares, nas 2 pontas
+        vaos_oitao = len(ex.POSTES) + 3 - 1
+        self.assertEqual(c["longarina"], 2 * 2 * (ex.N_EIXOS - 1) + len(ex.GIRTS) * vaos_oitao * 2)
         ys = sorted({round(b.inicio[1]) for b in doc.barras if b.papel == "pilar"})
         self.assertEqual(ys, [round(i * ex.MODULO * 10) for i in range(ex.N_EIXOS)])
         for b in doc.barras:

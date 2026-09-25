@@ -29,6 +29,7 @@ Rotas da API:
     GET  /api/fabrica                     regras da fábrica (bobinas, dobradeira) e os perfis da fábrica em uso
     POST /api/fabrica/{regras|validar|perfis|perfis/remover}
     POST /api/projetos/<slug>/calcular {parametros, trocas, comparar}  cálculo estrutural do modelo importado
+    POST /api/projetos/<slug>/dimensionar {parametros, aplicar}  o perfil mais leve que passa em cada posição
     GET  /api/projetos/<slug>/calculo[/geometria]        último cálculo gravado / dados para o diálogo
     GET  /api/projetos/<slug>/calculo/alternativas?marca=  perfis que podem substituir a peça, verificados
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-furos   furos do detalhe → chapas do modelo
@@ -694,12 +695,19 @@ def calculo_do_projeto(s: str) -> dict:
             "quando": dados.get("quando")}
 
 
+def _nomes_para_calculo(s: str, doc) -> dict:
+    """Os nomes do detalhamento; sem eles, num modelo desenhado (2D → 3D), a
+    classificação que o papel das barras já dá (o conjunto com banzo é tesoura)."""
+    from nucleo3d import calculo_ifc
+    return _nomes_producao(s) or calculo_ifc.nomes_das_barras(doc)
+
+
 def geometria_para_calculo(s: str) -> dict:
     """GET /api/projetos/<s>/calculo/geometria: o que o diálogo precisa saber do modelo
     antes de calcular (tesouras, vão, cota do apoio, peso da telha)."""
     from nucleo3d import calculo_ifc
     doc = _documento3d_do_projeto(s)
-    nomes = _nomes_producao(s)
+    nomes = _nomes_para_calculo(s, doc)
     g = calculo_ifc.geometria_do_modelo(doc, nomes) if nomes else {"tesouras": 0, "avisos": []}
     g["detalhado"] = bool(nomes)
     g["padrao"] = {k: v for k, v in calculo_ifc.PARAMETROS_PADRAO.items() if k != "trocas"}
@@ -731,7 +739,7 @@ def calcular_projeto(s: str, corpo: dict) -> dict:
     try:
         _progresso(s, "abrindo o modelo…")
         doc = _documento3d_do_projeto(s)
-        nomes = _nomes_producao(s)
+        nomes = _nomes_para_calculo(s, doc)
         if not nomes:
             raise ErroDeDados("gere o detalhamento primeiro (Desenho 2D → Detalhar peças e conjuntos): "
                               "é ele que classifica tesouras, terças e contraventamentos.")
@@ -752,6 +760,50 @@ def calcular_projeto(s: str, corpo: dict) -> dict:
                                           "quando": time.strftime("%Y-%m-%d %H:%M:%S")})
         _gerente().tocar(s)
         return r
+    finally:
+        _fim_progresso(s)
+
+
+def dimensionar_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/dimensionar {parametros, aplicar}: escolhe, em cada posição
+    verificada, o perfil mais leve do catálogo que passa (repetindo o cálculo até a escolha
+    se repetir) e, com `aplicar`, põe esses perfis nas barras do modelo — o anterior vai
+    para o histórico — e grava o cálculo do modelo novo em calculo.json."""
+    from nucleo3d import calculo_ifc
+    from projetos import _gravar_json
+    try:
+        _progresso(s, "abrindo o modelo…")
+        doc = _documento3d_do_projeto(s)
+        nomes = _nomes_para_calculo(s, doc)
+        if not nomes:
+            raise ErroDeDados("gere o detalhamento primeiro (Desenho 2D → Detalhar peças e conjuntos): "
+                              "é ele que classifica tesouras, terças e contraventamentos.")
+        anterior = calculo_do_projeto(s)
+        par = dict(anterior.get("parametros") or {})
+        par.update({k: v for k, v in (corpo.get("parametros") or {}).items()})
+        par["trocas"] = {}
+        d = calculo_ifc.dimensionar(doc, nomes, par, avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+        saida = {k: v for k, v in d.items() if k != "calculo"}
+        r = d["calculo"]
+        if corpo.get("aplicar", True) and d["trocas"]:
+            _progresso(s, "trocando os perfis no modelo…")
+            ap = calculo_ifc.aplicar_perfis(doc, d["trocas"])
+            g = _gerente()
+            g.salvar_modelo(s, doc.dict(), marco=True)        # o modelo anterior vai para o histórico
+            saida["aplicado"] = ap
+            _progresso(s, "calculando o modelo com os perfis novos…")
+            r = calculo_ifc.calcular(doc, nomes, dict(par, trocas=ap["so_calculo"]))
+            par["trocas"] = dict(ap["so_calculo"])
+        elif d["trocas"]:
+            par["trocas"] = dict(d["trocas"])
+        r["parametros"] = par
+        _gravar_json(_caminho_calculo(s), {"parametros": par, "resultado": r,
+                                          "quando": time.strftime("%Y-%m-%d %H:%M:%S")})
+        _gerente().tocar(s)
+        saida["calculo"] = r
+        saida["reprovadas"] = list((r.get("resumo") or {}).get("reprovadas") or [])
+        saida["peso_depois_kg"] = (r.get("resumo") or {}).get("peso_verificado_kg")
+        return saida
     finally:
         _fim_progresso(s)
 
@@ -1990,6 +2042,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(detalhar_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "calcular":
                     return self._json(calcular_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "dimensionar":
+                    return self._json(dimensionar_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "materiais":
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
