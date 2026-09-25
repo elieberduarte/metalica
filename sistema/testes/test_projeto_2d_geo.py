@@ -114,6 +114,16 @@ class TestGeometria(unittest.TestCase):
         with self.assertRaises(ErroDeDados):
             de_vistas.modelo_das_vistas(self.des, self.m["montagens"], perfis={"pilar": "XYZ 1"})
 
+    def test_area_riscada_em_x_fica_de_fora(self):
+        caminho = ex.dxf(os.path.join(self.pasta, "galpao_riscado.dxf"), riscado=True)
+        des = dxf_ler.para_desenho(dxf_ler.texto_de_bytes(open(caminho, "rb").read()), escala=50)[0]
+        r = reconhecer.reconhecer(des)
+        self.assertTrue(any("riscada" in a for a in r["avisos"]))
+        self.assertEqual(r["resumo"]["barras"], self.r["resumo"]["barras"])
+        self.assertEqual(sorted(v["tipo"] for v in r["vistas"]), sorted(v["tipo"] for v in self.r["vistas"]))
+        # sem o X, o mesmo retângulo é só moldura: nada sai
+        self.assertFalse(any("riscada" in a for a in self.r["avisos"]))
+
     def test_ifc(self):
         from ifc import exportar, importar
         doc = de_vistas.modelo_das_vistas(self.des, self.m["montagens"])

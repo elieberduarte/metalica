@@ -99,7 +99,7 @@ class CAD {
     this.ativarFerramenta('selecionar');
 
     if (this.projeto) {
-      $('#link-editor').href = '/editor?projeto=' + encodeURIComponent(this.projeto);
+      $('#link-editor').href = this.urlDoEditor();
       try {
         const p = (await pedir('/api/projetos/' + encodeURIComponent(this.projeto))).projeto;
         this.tituloProjeto = p.nome || this.projeto;
@@ -144,6 +144,8 @@ class CAD {
       this.nomeDesenho = nome;
       this.carregar(r.desenho);
       const url = new URL(location.href); url.searchParams.set('desenho', nome); history.replaceState(null, '', url);
+      const link3d = $('#link-editor');
+      if (link3d && this.projeto) link3d.href = this.urlDoEditor();       // o 3D sabe voltar a este desenho
       this.dica(`Desenho "${this.doc.nome}" aberto: ${numero(this.doc.tamanho)} objetos, escala 1:${this.doc.escala}.`);
     } catch (e) { this.aviso(`Não foi possível abrir "${nome}": ${e.message}`, 'erro', 0); }
   }
@@ -185,7 +187,13 @@ class CAD {
     }
     const mesmaOrigem = document.referrer && new URL(document.referrer).origin === location.origin;
     if (mesmaOrigem && history.length > 1) { history.back(); return; }
-    location.href = this.projeto ? `/editor?projeto=${encodeURIComponent(this.projeto)}` : '/';
+    location.href = this.projeto ? this.urlDoEditor() : '/';
+  }
+
+  /** O editor 3D deste projeto, levando o nome do desenho para o "← Desenho 2D" de lá. */
+  urlDoEditor(extra = '') {
+    return `/editor?projeto=${encodeURIComponent(this.projeto)}` +
+      (this.nomeDesenho ? `&desenho=${encodeURIComponent(this.nomeDesenho)}` : '') + extra;
   }
 
   _agendarAutosave() {
@@ -299,7 +307,7 @@ class CAD {
       if (meta && meta.marca) alvo = 'posicao:' + meta.marca;
     }
     if (!alvo) { this.aviso('Selecione uma peça do detalhamento (título, contorno ou furo) para vê-la no 3D.', 'atencao'); return; }
-    const ir = () => { location.href = `/editor?projeto=${encodeURIComponent(this.projeto)}&destacar=${encodeURIComponent(alvo)}`; };
+    const ir = () => { location.href = this.urlDoEditor(`&destacar=${encodeURIComponent(alvo)}`); };
     if (this.doc.tamanho && this.nomeDesenho) this.salvar({ avisar: false }).then(ir, ir); else ir();
   }
 
@@ -715,7 +723,7 @@ class CAD {
     // o aviso do servidor sobre as peças sem perfil já foi dito acima, com os perfis usados
     for (const a of r.avisos || []) if (!(semPerfil.length && /só pela forma/.test(a))) itens.push(el('div', { class: 'explica atencao', texto: a }));
     const acao = await this.dialogo({ titulo: 'Projeto recebido', corpo: el('div', {}, ...itens), ok: r.modelo ? 'Abrir o modelo 3D' : 'OK' });
-    if (acao === 'ok' && r.modelo) location.href = `/editor?projeto=${encodeURIComponent(this.projeto)}`;
+    if (acao === 'ok' && r.modelo) location.href = this.urlDoEditor();
   }
 
   /** Várias vistas reconhecidas: cada uma no seu lugar (a montagem sugerida, editável). */
@@ -794,7 +802,7 @@ class CAD {
       const itens = [el('div', { class: 'explica', texto: `Modelo 3D gerado: ${numero(g.barras || 0)} barra(s), ${g.posicoes || 0} posição(ões), ${g.conjuntos || 0} conjunto(s), ${numero(g.peso_kg || 0)} kg. O modelo anterior foi guardado no histórico.` })];
       if (r.ifc) itens.push(el('div', { class: 'explica' }, 'IFC: ', el('a', { href: r.ifc.url, download: r.ifc.nome, texto: `${r.ifc.nome} (${numero(r.ifc.tamanho_kb, 0)} kB)` })));
       this.dica('Modelo 3D gerado.');
-      if (await this.dialogo({ titulo: 'Modelo 3D gerado', corpo: el('div', {}, ...itens), ok: 'Abrir o modelo 3D' }) === 'ok') location.href = `/editor?projeto=${encodeURIComponent(this.projeto)}`;
+      if (await this.dialogo({ titulo: 'Modelo 3D gerado', corpo: el('div', {}, ...itens), ok: 'Abrir o modelo 3D' }) === 'ok') location.href = this.urlDoEditor();
     } catch (e) { this.aviso(`Não foi possível gerar o modelo: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 

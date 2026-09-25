@@ -573,6 +573,21 @@ def reconhecer(des: Desenho, *, papel_unidade: Optional[bool] = None, fator: Opt
             textos.append(_Txt(e.id, e.texto.strip(), c, (e.angulo or 0.0) % 180.0, h, w))
     fechadas = [e for e in des.entidades.values() if isinstance(e, Polilinha) and e.fechada]
     avisos: List[str] = []
+    # retângulo riscado em X de canto a canto é o "cancelado" do desenho: o que está
+    # dentro dele (e o próprio risco) não é o projeto a montar
+    riscados = _areas_riscadas(segs)
+    if riscados:
+        def dentro(pts) -> bool:
+            return any(all(x0 <= p[0] <= x1 and y0 <= p[1] <= y1 for p in pts) for x0, y0, x1, y1 in riscados)
+        n_antes = len(segs)
+        segs = [x for x in segs if not dentro((x.a, x.b))]
+        for k, x in enumerate(segs):
+            x.i = k
+        circulos = [c for c in circulos if not dentro((c.centro,))]
+        textos = [t for t in textos if not dentro((t.centro,))]
+        fechadas = [e for e in fechadas if not dentro(e.vertices)]
+        avisos.append("%d área(s) riscada(s) em X (cancelada) ficaram fora do reconhecimento, com %d linha(s) — "
+                      "apague o X se aquele conjunto é para valer." % (len(riscados), n_antes - len(segs)))
     if not segs:
         return {"vistas": [], "barras": [], "chapas": [], "textos_sem_linha": [], "avisos": ["o desenho não tem linhas."],
                 "resumo": {"barras": 0, "vistas": 0}}
@@ -770,6 +785,65 @@ def reconhecer(des: Desenho, *, papel_unidade: Optional[bool] = None, fator: Opt
               "textos_de_perfil": sum(1 for t in textos if t.perfil), "sem_linha": len(sem_linha)}
     return {"vistas": saida_vistas, "barras": barras, "chapas": chapas, "textos_sem_linha": sem_linha,
             "avisos": avisos, "resumo": resumo, "papel_unidade": bool(papel_unidade)}
+
+
+def _areas_riscadas(segs: List[_Seg]) -> List[Tuple[float, float, float, float]]:
+    """Retângulos com as duas diagonais traçadas de canto a canto (o X do "cancelado"):
+    devolve as caixas (x0, y0, x1, y1), com uma folga, para o que está dentro sair."""
+    if not segs:
+        return []
+    xs = [p[0] for x in segs for p in (x.a, x.b)]
+    ys = [p[1] for x in segs for p in (x.a, x.b)]
+    diag_total = math.hypot(max(xs) - min(xs), max(ys) - min(ys)) or 1.0
+    # só as linhas longas podem ser o risco (a diagonal do cancelado atravessa vistas)
+    longas = [x for x in segs if x.L >= 0.1 * diag_total and 5.0 < x.ang < 175.0 and abs(x.ang - 90.0) > 5.0]
+    if len(longas) < 2:
+        return []
+    horiz = [x for x in segs if x.L >= 0.1 * diag_total and (x.ang < 1.0 or x.ang > 179.0)]
+    caixas = []
+    for i, d1 in enumerate(longas):
+        for d2 in longas[i + 1:]:
+            c1 = [d1.a, d1.b]
+            c2 = [d2.a, d2.b]
+            xs4 = [p[0] for p in c1 + c2]
+            ys4 = [p[1] for p in c1 + c2]
+            x0, x1, y0, y1 = min(xs4), max(xs4), min(ys4), max(ys4)
+            w, h = x1 - x0, y1 - y0
+            if w <= 0 or h <= 0:
+                continue
+            tol = 0.01 * math.hypot(w, h)
+            cantos = [(x0, y0), (x1, y1), (x0, y1), (x1, y0)]
+            # cada diagonal liga dois cantos opostos, e as duas usam os quatro cantos
+            usados = set()
+            for p in c1 + c2:
+                k = min(range(4), key=lambda j: math.dist(p, cantos[j]))
+                if math.dist(p, cantos[k]) > tol:
+                    break
+                usados.add(k)
+            else:
+                if usados != {0, 1, 2, 3}:
+                    continue
+                # o retângulo tem de estar desenhado: as bordas de cima e de baixo
+                bordas = sum(1 for x in horiz if abs(x.a[1] - x.b[1]) <= tol
+                             and any(abs(x.a[1] - yy) <= tol for yy in (y0, y1))
+                             and min(x.a[0], x.b[0]) <= x0 + tol and max(x.a[0], x.b[0]) >= x1 - tol)
+                if bordas < 2:
+                    continue
+                # o cancelado cerca vistas inteiras e nada o atravessa; o painel de
+                # contraventamento em X tem terças e tesouras passando pela borda
+                X0, Y0, X1, Y1 = x0 - tol, y0 - tol, x1 + tol, y1 + tol
+                ins = lambda p: X0 <= p[0] <= X1 and Y0 <= p[1] <= Y1                  # noqa: E731
+                miolo = lambda p: x0 + tol < p[0] < x1 - tol and y0 + tol < p[1] < y1 - tol   # noqa: E731
+                dentro = cruzam = 0
+                for x in segs:
+                    a_in, b_in = ins(x.a), ins(x.b)
+                    if a_in and b_in:
+                        dentro += 1
+                    elif (a_in and miolo(x.a)) or (b_in and miolo(x.b)):
+                        cruzam += 1
+                if dentro >= 30 and cruzam <= max(2, 0.01 * dentro):
+                    caixas.append((X0, Y0, X1, Y1))
+    return caixas
 
 
 def _legenda(textos: List[_Txt]) -> Dict[str, dict]:

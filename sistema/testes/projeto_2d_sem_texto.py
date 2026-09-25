@@ -115,11 +115,23 @@ def _lateral(msp, ox, oy):
     msp.add_line((ox, oy + H_PILAR), (ox + MODULO, oy))
 
 
-def dxf(caminho: str) -> str:
+Y_RISCADO = 8000.0
+
+
+def dxf(caminho: str, riscado: bool = False) -> str:
+    """`riscado`: acima de tudo, uma versão antiga (planta e pórtico) dentro de um
+    retângulo riscado em X de canto a canto — o "cancelado" do desenho."""
     import ezdxf
     doc = ezdxf.new("R2010")
     doc.header["$INSUNITS"] = 0
     msp = doc.modelspace()
+    if riscado:
+        _planta(msp, 0.0, Y_RISCADO)
+        _portico(msp, 5000.0, Y_RISCADO)
+        x0, y0, x1, y1 = -1000.0, Y_RISCADO - 500.0, 9500.0, Y_RISCADO + COMPRIMENTO + 500.0
+        msp.add_lwpolyline([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], close=True)
+        msp.add_line((x0, y0), (x1, y1))
+        msp.add_line((x0, y1), (x1, y0))
     _planta(msp, 0.0, 0.0)
     _portico(msp, 0.0, Y_PORTICO)
     _portico(msp, 0.0, Y_OITAO, oitao=True)

@@ -218,6 +218,16 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.10.** Projeto recebido com área cancelada: o retângulo riscado em X de canto a canto (`_areas_riscadas`: as duas
+diagonais usam os quatro cantos, as bordas de cima e de baixo desenhadas, pelo menos 30 linhas dentro e nada
+atravessando a borda — o painel de contraventamento em X tem terças e tesouras passando por ela) sai do reconhecimento
+com tudo o que está dentro, e o aviso diz quantas linhas. No IVAN.dxf a versão antiga riscada virava uma vista só de
+30 m, tomava o lugar do pórtico e desligava a detecção de centímetros ("3D todo desmontado"). Teste
+`test_area_riscada_em_x_fica_de_fora` (`projeto_2d_sem_texto.dxf(riscado=True)`). Editor 3D: "← Desenho 2D" (`#link-desenho`,
+`_ligarVoltaAoDesenho`) volta ao desenho de onde se veio — o CAD manda `desenho=` na URL do editor (`cad.urlDoEditor`,
+atualizado ao abrir outro desenho); sem ele, vale o desenho do CAD que abriu a página, e sem nada, o CAD do projeto.
+Verificador `verif_voltar_desenho.py`.
+
 **0.8.9.** Cálculo e dimensionamento do modelo gerado do projeto recebido (e mais do IFC). (1) `calculo_ifc`: o
 perfil de cálculo cai no catálogo por último (`_perfil_do_catalogo`) e `catalogo.item` acha o nome com a medida em mm
 entre parênteses ("Barra redonda ø 1/2\" (12,7 mm)", que o 2D → 3D grava) — o contraventamento ficava fora; o papel da

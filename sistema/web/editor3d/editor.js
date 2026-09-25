@@ -1094,6 +1094,7 @@ export class Editor {
    */
   async _abrirProjeto() {
     const s = this.projeto;
+    this._ligarVoltaAoDesenho(s);
     const dim = document.getElementById('link-dimensionamento');
     let projeto = null;
     try {
@@ -3054,6 +3055,25 @@ export class Editor {
     if (ap.barras && acao === 'ok') location.reload();
     else if (r.calculo && r.calculo.elementos) { await this._carregarMapa(); this.aplicarAnalise(r.calculo); }
     return true;
+  }
+
+  /**
+   * "← Desenho 2D": volta ao desenho de onde se veio. O CAD manda o nome (`desenho=` na
+   * URL); vindo de outro lugar, vale o desenho do CAD que abriu esta página, e sem nenhum
+   * dos dois o CAD abre o primeiro desenho do projeto.
+   */
+  _ligarVoltaAoDesenho(s) {
+    const a = document.getElementById('link-desenho');
+    if (!a || !s) return;
+    let nome = this.parametros.get('desenho') || '';
+    if (!nome) {
+      try {
+        const ref = document.referrer ? new URL(document.referrer) : null;
+        if (ref && ref.origin === location.origin && ref.pathname === '/cad') nome = ref.searchParams.get('desenho') || '';
+      } catch { nome = ''; }
+    }
+    a.href = `/cad?projeto=${encodeURIComponent(s)}` + (nome ? `&desenho=${encodeURIComponent(nome)}` : '');
+    a.hidden = false;
   }
 
   /** Cálculo gravado no projeto (calculo.json): entra como análise pronta, sem ligar o mapa. */
