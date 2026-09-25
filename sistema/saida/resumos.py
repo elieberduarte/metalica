@@ -34,7 +34,11 @@ FAMILIAS = collections.OrderedDict([
     ("agul_cob", "Agulhamentos cob. A.C."), ("agul_lat", "Agulhamentos lat. e oit. A.L."),
     ("agul_diag", "Agulhamentos diagonais A.D."), ("contrav", "Contraventos CV."),
     ("dispositivos", "Dispositivos DP."), ("chapas", "Chapas soltas CH"),
+    ("funilaria", "Rufos RF e calhas CL"),
 ])
+#: Famílias fora do peso da estrutura metálica: a funilaria de aluzinc acompanha a telha
+#: (no resumo da fábrica, a cumeeira de telha entra nas telhas, não no aço).
+FORA_DO_ACO = ("telhas", "funilaria")
 _FAMILIA_DO_TIPO = {
     "tesoura": "tesouras", "terca_cobertura": "tercas_cob", "terca_lateral": "tercas_lat", "terca_oitao": "tercas_oit",
     "terca_marquise": "tercas_marq", "agulhamento": "agul_cob", "agulhamento_lateral": "agul_lat",
@@ -42,6 +46,7 @@ _FAMILIA_DO_TIPO = {
     "conjunto": "dispositivos", "perfil_fechamento": "fix_telha", "cantoneira_forro": "acabamento",
     "chumbador": "chumbadores", "barra": "vigas", "chapa": "chapas", "suporte_terca": "chapas", "castanha": "chapas",
     "suporte_agulhamento": "chapas", "suporte_contraventamento": "chapas",
+    "rufo": "funilaria", "calha": "funilaria",
 }
 #: Grupos do quadro de pesos do resumo da obra, na ordem.
 GRUPOS_PESO = [
@@ -178,6 +183,8 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         fams = {familia_do_conjunto(c) for c in conjs} - {None}
         if p.classe == "telha":
             return "telhas"
+        if t in ("rufo", "calha"):
+            return "funilaria"
         if fams and len(fams) == 1:
             return next(iter(fams))
         if fams:
@@ -525,18 +532,20 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         kg = sum(peso_fam.get(c, 0.0) for c in chaves)
         if kg > 0:
             grupos_peso.append({"grupo": titulo, "kg": kg})
-    peso_aco = sum(kg for f, kg in peso_fam.items() if f != "telhas")
+    peso_aco = sum(kg for f, kg in peso_fam.items() if f not in FORA_DO_ACO)
     peso_telhas = telhas["kg_total"]
     ml_telhas = telhas["ml_total"]
+    peso_funilaria = peso_fam.get("funilaria", 0.0)
     for g in grupos_peso:
         g["pct"] = 100.0 * g["kg"] / peso_aco if peso_aco else 0.0
-    perfis_kg = sum(f["kg"] for f in familias) - peso_fam.get("chapas", 0.0)
+    perfis_kg = sum(f["kg"] for f in familias if f["chave"] not in FORA_DO_ACO) - peso_fam.get("chapas", 0.0)
 
     identificacao = dict(lista.get("projeto") or {})
     return {
         "projeto": identificacao, "dados": dados,
         "numeros": {"tesouras": sum(t["qtd"] for t in tipos_tes), "peso_aco": peso_aco, "ml_telhas": ml_telhas,
-                    "peso_telhas": peso_telhas, "total": peso_aco + peso_telhas, "parafusos": n_parafusos,
+                    "peso_telhas": peso_telhas, "peso_funilaria": peso_funilaria,
+                    "total": peso_aco + peso_telhas + peso_funilaria, "parafusos": n_parafusos,
                     "inclinacao": inclinacao, "kg_m2": (peso_aco / area_m2) if area_m2 else None},
         "dimensoes": {"eixos": " ".join(t["eixo"] for t in tes_inst), "comprimento_total": (tes_inst[-1]["pos_g"] - tes_inst[0]["pos_g"]) if tes_inst else 0.0,
                       "trechos": [{k: v for k, v in tr.items() if k not in ("inicio", "fim", "tesouras")} for tr in trechos],
@@ -878,7 +887,9 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     linhas = [[g["grupo"], (_n(g["kg"], 1), "r"), (_n(g["pct"], 1) + "%", "r")] for g in gp]
     linhas.append([("TOTAL ESTRUTURA METÁLICA", "b"), (_n(n["peso_aco"], 1), "r"), ("100%", "r")])
     linhas.append(["Telhas (%s ml)" % _n(n["ml_telhas"], 2), (_n(n["peso_telhas"], 1), "r"), ""])
-    linhas.append([("TOTAL GERAL (AÇO + TELHAS)", "b"), (_n(n["total"], 1), "r"), ""])
+    if n.get("peso_funilaria"):
+        linhas.append(["Rufos e calhas", (_n(n["peso_funilaria"], 1), "r"), ""])
+    linhas.append([("TOTAL GERAL (AÇO + TELHAS%s)" % (" + RUFOS" if n.get("peso_funilaria") else ""), "b"), (_n(n["total"], 1), "r"), ""])
     partes.append("<h2>4. Pesos</h2>" + _tabela(["Grupo", ("Peso (kg)", "r"), ("%", "r")], linhas, larguras=["70%", "18%", "12%"]))
     partes.append("<p class=\"nota\">Pesos teóricos: perfis formados a frio pela NBR 6355 (tira desenvolvida com o desconto das dobras), "
                   "laminados, tubos e barras pelas tabelas do catálogo, chapas pelo retângulo envolvente. Não inclui solda, pintura, "
@@ -984,9 +995,10 @@ def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
     blocos.append(h)
     # total
     blocos.append("<div class=\"total-box\"><b>*Total estrutura metálica: %s kg</b><br><span class=\"cinza\">perfis e barras %s kg + chaparia %s kg · "
-                  "telhas %s ml (%s kg) · total geral c/ telhas %s kg · %s kg/m² de aço</span></div>"
+                  "telhas %s ml (%s kg)%s · total geral c/ telhas %s kg · %s kg/m² de aço</span></div>"
                   % (_n(n["peso_aco"], 2), _n(R["perfis_kg"], 2), _n(R["chaparia_total"]["kg"], 2), _n(n["ml_telhas"], 2),
-                     _n(n["peso_telhas"], 1), _n(n["total"], 2), _n(n["kg_m2"], 1) if n.get("kg_m2") else "—"))
+                     _n(n["peso_telhas"], 1), (" · rufos e calhas %s kg" % _n(n["peso_funilaria"], 1)) if n.get("peso_funilaria") else "",
+                     _n(n["total"], 2), _n(n["kg_m2"], 1) if n.get("kg_m2") else "—"))
     partes.append("<div class=\"colunas\">%s</div>" % "".join(blocos))
     return _doc("Resumo de materiais", "".join(partes), paginado)
 

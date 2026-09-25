@@ -59,7 +59,8 @@ from ifc.step import Arquivo, Entidade, Ref, Tipado, ler                # noqa: 
 from nucleo3d.modelo import (Barra, Camada, Chapa, Documento, Grupo,   # noqa: E402
                              Material, Solido)
 
-__all__ = ["importar", "inspecionar", "Importador", "LIMITACOES", "camada_semantica",
+__all__ = ["importar", "inspecionar", "Importador", "LIMITACOES", "camada_semantica", "funilaria",
+           "migrar_camadas_de_funilaria",
            "marcas_de", "CAMADAS_SEMANTICAS"]
 
 LIMITACOES = [
@@ -2279,13 +2280,71 @@ class Importador:
 
 #: Camadas atribuídas pelo tipo da peça quando o arquivo não traz camada nenhuma.
 CAMADAS_SEMANTICAS = {
-    "Telhas": "#9aa4b2", "Chapas": "#b8860b", "Parafusos": "#7a5c3a",
+    "Telhas": "#9aa4b2", "Rufos": "#17b8c9", "Calhas": "#3a7bd5", "Chapas": "#b8860b", "Parafusos": "#7a5c3a",
     "Tirantes": "#2e8b57", "Pilares": "#4b5563", "Vigas": "#0b3d91", "Barras": "#6a7f99",
 }
 
 _RE_TELHA = re.compile(r"TELHA|TP\s*\d{2}|TRAPEZ|ONDUL", re.I)
 _RE_PARAFUSO = re.compile(r"\bBOLT\b|PARAF|\bNUT\b|PORCA|ARRUELA|WASHER", re.I)
 _RE_TIRANTE = re.compile(r"FE\s*RED|BARRA\s*ROSC|REDOND|VERG|TIRANTE", re.I)
+#: Funilaria (chapa fina de aluzinc/galvalume dobrada que acompanha a telha): o TecnoMETAL
+#: grava como IfcBeam com o nome do perfil — "RUFO CHAPEU 1", "CALHA 1", "CUMEEIRA I7.5".
+#: A cumeeira de telha (TELHA/TP40…) é telha e fica na regra da telha.
+_RE_CALHA = re.compile(r"\bCALHA", re.I)
+_RE_RUFO = re.compile(r"RUFO|PINGADEIRA|ARREMATE|FUNILARIA|TESTEIRA|^\s*CUMEEIRA\b", re.I)   # RUFO pega CONTRARRUFO
+
+
+def funilaria(nome: str) -> str:
+    """"rufo", "calha" ou "" pelo nome (ou perfil) da peça. Telha nunca é funilaria."""
+    n = nome or ""
+    if not n or _RE_TELHA.search(n):
+        return ""
+    if _RE_CALHA.search(n):
+        return "calha"
+    if _RE_RUFO.search(n):
+        return "rufo"
+    return ""
+
+
+#: Camada do modelo 3D de cada tipo de funilaria.
+CAMADA_DA_FUNILARIA = {"rufo": "Rufos", "calha": "Calhas"}
+#: Camadas automáticas de onde a funilaria de um modelo importado antes da 0.8.24 sai.
+_CAMADAS_AUTOMATICAS = ("Vigas", "Barras", "Pilares", "")
+
+
+def migrar_camadas_de_funilaria(documento: dict) -> int:
+    """Modelo importado antes da 0.8.24 (os rufos e calhas caíram em Vigas): passa as peças
+    de funilaria para as camadas Rufos e Calhas e cria as camadas. Só mexe em peça que está
+    numa camada automática, e roda uma vez por modelo (`metadados.camadas_funilaria`): se o
+    usuário mover um rufo de volta, fica onde ele pôs. Devolve quantas peças mudaram."""
+    if not isinstance(documento, dict):
+        return 0
+    meta = documento.get("metadados")
+    if not isinstance(meta, dict):
+        meta = {}
+        documento["metadados"] = meta
+    if meta.get("camadas_funilaria"):
+        return 0
+    n = 0
+    camadas = documento.get("camadas")
+    if not isinstance(camadas, dict):
+        camadas = {}
+        documento["camadas"] = camadas
+    for e in documento.get("entidades") or []:
+        if not isinstance(e, dict) or (e.get("camada") or "") not in _CAMADAS_AUTOMATICAS:
+            continue
+        a = e.get("atributos") or {}
+        perfil = str((a.get("marcas") or {}).get("perfil") or "")
+        f = funilaria(perfil) or funilaria(str(e.get("nome") or ""))
+        if not f:
+            continue
+        nome = CAMADA_DA_FUNILARIA[f]
+        e["camada"] = nome
+        if nome not in camadas:
+            camadas[nome] = {"nome": nome, "cor": CAMADAS_SEMANTICAS[nome], "visivel": True, "bloqueada": False}
+        n += 1
+    meta["camadas_funilaria"] = True
+    return n
 
 
 #: Pilar de verdade: pelo menos isto (mm) de altura, e mais alto que largo.
@@ -2312,6 +2371,9 @@ def camada_semantica(tipo: str, nome: str) -> str:
     n = nome or ""
     if _RE_TELHA.search(n):
         return "Telhas"
+    f = funilaria(n)
+    if f:
+        return CAMADA_DA_FUNILARIA[f]
     if t in ("IFCPLATE", "IFCPLATESTANDARDCASE"):
         return "Chapas"
     if t in ("IFCMECHANICALFASTENER", "IFCFASTENER") or _RE_PARAFUSO.search(n):

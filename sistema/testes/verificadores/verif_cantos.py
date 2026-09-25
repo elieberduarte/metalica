@@ -53,7 +53,20 @@ try:
     txt = aba.avaliar("window.editor.el.dialogoCorpo.textContent")
     n_sel = aba.avaliar("window.editor.el.dialogoCorpo.querySelectorAll('select').length")
     ok("P15" in txt and "Quebrar em" in txt and n_sel >= 1, f"diálogo com a tabela ({n_sel} seletores): " + txt[:120])
+    # a pré-visualização: desenha o canto da primeira posição e muda com a opção
+    t0 = time.time()
+    while time.time() - t0 < 60 and not aba.avaliar("!!window.editor.el.dialogoCorpo.querySelector('.previa-canto svg path')"): aba.drenar(0.5)
+    leg = aba.avaliar("(window.editor.el.dialogoCorpo.querySelector('.previa-canto + .nota') || {}).textContent || ''")
+    n_path = aba.avaliar("window.editor.el.dialogoCorpo.querySelectorAll('.previa-canto svg path').length")
+    n_nos = aba.avaliar("window.editor.el.dialogoCorpo.querySelectorAll('.previa-canto svg circle').length")
+    ok(n_path >= 2 and n_nos >= 2 and "Pré-visualização" in leg, f"pré-visualização desenhada ({n_path} traços, {n_nos} nós): {leg[:140]}")
     foto(aba, "_cantos.png")
+    aba.avaliar("""(() => { const s = [...window.editor.el.dialogoCorpo.querySelectorAll('.tabela-cantos select')].find(x => x.closest('tr').dataset.marca === 'P15');
+      s.value = '3'; s.dispatchEvent(new Event('change')); return 1; })()""")
+    t0 = time.time()
+    while time.time() - t0 < 60 and aba.avaliar("window.editor.el.dialogoCorpo.querySelectorAll('.previa-canto svg circle').length") != 4: aba.drenar(0.5)
+    ok(aba.avaliar("window.editor.el.dialogoCorpo.querySelectorAll('.previa-canto svg circle').length") == 4, "trocando para 3 retas a prévia mostra 4 nós")
+    foto(aba, "_cantos_previa3.png")
     aba.avaliar("window.editor.el.dialogo.close('cancelar'); 1")
     aba.drenar(0.5)
     # a quebra pela API e o modelo recarregado

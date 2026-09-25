@@ -88,7 +88,16 @@ export class Camera {
           ev.shiftKey ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
       }
       const orbita = (ev.button === 1 && !ev.shiftKey) || (ev.button === 2 && ev.shiftKey);
-      if (orbita && this.controles.enabled) this._pivoDaOrbita(ev);
+      if (orbita && this.controles.enabled) {
+        // sobre uma peça: gira em volta do ponto sob o cursor, e o OrbitControls fica de
+        // fora deste arrasto (botão sem ação); no vazio, o pivô de sempre
+        if (this._orbitarNoCursor(ev)) {
+          if (ev.button === 1) this.controles.mouseButtons.MIDDLE = null;
+          else this.controles.mouseButtons.RIGHT = null;
+        } else {
+          this._pivoDaOrbita(ev);
+        }
+      }
     };
     elemento.addEventListener('pointerdown', this._antesDoDown, { capture: true });
     elemento.addEventListener('contextmenu', e => e.preventDefault());
@@ -327,6 +336,59 @@ export class Camera {
       alvo.copy(this.ativa.position).addScaledVector(dir, prof);
       this.controles.update();
     }
+  }
+
+  /**
+   * Órbita em volta do ponto da peça sob o cursor, como no SketchUp: a câmera e o alvo
+   * giram juntos em torno desse ponto (em volta do Z e do eixo horizontal da tela), então
+   * ele fica parado na tela e nada pula. Antes, com peça selecionada, o pivô ia para o
+   * centro da seleção e a vista deslizava até ele — com uma terça de 8 m selecionada, o
+   * usuário que queria girar na ponta dela via a câmera ir para o meio da barra.
+   * Devolve false quando não há peça sob o cursor (fica o pivô de `_pivoDaOrbita`).
+   */
+  _orbitarNoCursor(ev) {
+    const p = this._focoDoCursor(this._ndcDoEvento(ev));
+    if (this.apoioDoZoom !== 'peça') return false;
+    this._animacao = null;
+    this.pivoDaOrbita = p.clone();                 // conferido pela verificação
+    let ultimo = { x: ev.clientX, y: ev.clientY };
+    const mover = (e) => {
+      const dx = e.clientX - ultimo.x, dy = e.clientY - ultimo.y;
+      ultimo = { x: e.clientX, y: e.clientY };
+      if (dx || dy) this.girarEmVolta(p, dx, dy);
+    };
+    const soltar = () => {
+      window.removeEventListener('pointermove', mover, true);
+      window.removeEventListener('pointerup', soltar, true);
+      window.removeEventListener('pointercancel', soltar, true);
+    };
+    window.addEventListener('pointermove', mover, true);
+    window.addEventListener('pointerup', soltar, true);
+    window.addEventListener('pointercancel', soltar, true);
+    return true;
+  }
+
+  /** Gira câmera e alvo em volta de `pivo` pelo arrasto (dx, dy) em pixels, no mesmo
+   *  sentido e na mesma velocidade da órbita do OrbitControls. */
+  girarEmVolta(pivo, dx, dy) {
+    const k = (2 * Math.PI / Math.max(this.elemento.clientHeight || 1, 1)) * this.controles.rotateSpeed;
+    const cam = this.ativa, alvo = this.controles.target;
+    const cima = new THREE.Vector3(0, 0, 1);
+    const dir = alvo.clone().sub(cam.position).normalize();
+    const direita = new THREE.Vector3().crossVectors(dir, cima);
+    const q = new THREE.Quaternion().setFromAxisAngle(cima, -dx * k);
+    if (direita.lengthSq() > 1e-10) {
+      const qx = new THREE.Quaternion().setFromAxisAngle(direita.normalize(), -dy * k);
+      const junto = q.clone().multiply(qx);
+      const nova = dir.clone().applyQuaternion(junto);
+      const polar = Math.acos(Math.max(-1, Math.min(1, nova.dot(cima))));
+      if (polar > 0.02 && polar < Math.PI - 0.02) q.copy(junto);   // não passa do zênite
+    }
+    for (const v of [cam.position, alvo]) v.sub(pivo).applyQuaternion(q).add(pivo);
+    cam.lookAt(alvo);
+    cam.updateMatrixWorld();
+    this.controles.update();
+    this.controles.dispatchEvent({ type: 'change' });
   }
 
   /** Zoom no que está selecionado. */

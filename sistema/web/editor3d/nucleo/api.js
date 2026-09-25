@@ -145,6 +145,7 @@ export class Api {
   /** Posições com canto redondo (barra calandrada) e as opções de quebra em retas. */
   cantosDoProjeto(s) { return pedir(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos')); }
   quebrarCantos(s, escolhas) { return postar(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos'), { escolhas }); }
+  previaCanto(s, marca, n) { return pedir(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos/previa?marca=' + encodeURIComponent(marca) + '&n=' + (n || 0))); }
   desfazerCantos(s, marcas = null) { return postar(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos'), { desfazer: true, marcas }); }
 }
 

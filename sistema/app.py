@@ -483,10 +483,22 @@ def _mtime_do_modelo(s: str):
         return None
 
 
+def _migrar_modelo(d):
+    """Ajustes de versão no modelo lido do disco (só na memória; vão para o disco na próxima
+    gravação): rufos e calhas importados antes da 0.8.24 passam para as camadas deles."""
+    if isinstance(d, dict):
+        try:
+            from ifc.importar import migrar_camadas_de_funilaria
+            migrar_camadas_de_funilaria(d)
+        except Exception:                                             # noqa: BLE001
+            pass
+    return d
+
+
 def _documento3d_do_projeto(s: str):
     from nucleo3d.modelo import Documento
     lido = _mtime_do_modelo(s)
-    d = _gerente().abrir_modelo(s)
+    d = _migrar_modelo(_gerente().abrir_modelo(s))
     if d is None:
         raise ErroDeDados("o projeto ainda não tem modelo 3D: importe o IFC ou gere o galpão.")
     doc = Documento.de_dict(d)
@@ -1330,6 +1342,31 @@ def cantos_do_projeto(s: str) -> dict:
     return {"pecas": cantos.analisar_modelo(doc), "quebradas": cantos.quebradas_do_modelo(doc)}
 
 
+#: Modelo lido para as pré-visualizações dos cantos, por projeto: (mtime, Documento). O
+#: diálogo pede uma prévia a cada troca de opção; reler 20 MB a cada vez travava.
+_CACHE_PREVIA_CANTOS: dict = {}
+
+
+def previa_de_canto(s: str, marca: str, n) -> dict:
+    """GET /api/projetos/<s>/cantos/previa?marca=P15&n=1: o canto de uma instância antes e
+    depois da quebra em n retas, no plano do arco (`cantos.previa`), sem mexer no modelo."""
+    from nucleo3d import cantos
+    try:
+        n = int(n or 0)
+    except (TypeError, ValueError):
+        n = 0
+    agora = _mtime_do_modelo(s)
+    guardado = _CACHE_PREVIA_CANTOS.get(s)
+    if not guardado or guardado[0] != agora:
+        _CACHE_PREVIA_CANTOS.clear()                     # um projeto por vez na memória
+        guardado = (agora, _documento3d_do_projeto(s))
+        _CACHE_PREVIA_CANTOS[s] = guardado
+    r = cantos.previa(guardado[1], str(marca or ""), max(0, min(n, 12)))
+    if r is None:
+        raise ErroDeDados("a posição %s não tem canto redondo para mostrar." % marca)
+    return r
+
+
 def _buscar_no_historico(s: str):
     """buscar(id, chave) para `cantos.desfazer_modelo`: a entidade `id` na gravação mais
     nova do histórico em que ela ainda não tinha `chave` nos atributos (peça quebrada por
@@ -1946,7 +1983,7 @@ def modelo_do_projeto(s: str) -> dict:
     outro = g.aberto_por(s)
     if outro and outro.get("maquina") == MAQUINA:
         outro = None                                   # a própria máquina (outra janela) não é aviso
-    doc = g.abrir_modelo(s)
+    doc = _migrar_modelo(g.abrir_modelo(s))
     g.marcar_aberto(s, MAQUINA, USUARIO)
     return {"documento": doc, "existe": doc is not None, "alterado": _alterado_modelo(s), "aberto_por": outro}
 
@@ -2296,6 +2333,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(dados_dos_resumos(partes[0]))
                 if len(partes) == 2 and partes[1] == "cantos":
                     return self._json(cantos_do_projeto(partes[0]))
+                if len(partes) == 3 and partes[1] == "cantos" and partes[2] == "previa":
+                    q = parse_qs(urlparse(self.path).query)
+                    return self._json(previa_de_canto(partes[0], (q.get("marca") or [""])[0], (q.get("n") or ["0"])[0]))
                 if len(partes) == 2 and partes[1] == "eixos":
                     return self._json(eixos_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":

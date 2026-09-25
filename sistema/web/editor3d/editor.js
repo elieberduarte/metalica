@@ -1719,6 +1719,61 @@ export class Editor {
     const tabela = el('table', { class: 'tabela-cantos' });
     tabela.append(el('thead', {}, el('tr', {}, ...['Posição', 'Perfil', 'Inst.', 'Raio', 'Ângulo', 'Arco', 'Quebrar em'].map(t => el('th', { texto: t })))));
     const corpoT = el('tbody');
+    // pré-visualização: o canto da primeira instância antes (cinza tracejado) e depois
+    // (cor) da quebra escolhida, no plano do arco — muda junto com a opção
+    const previa = el('div', { class: 'previa-canto' });
+    const legenda = el('p', { class: 'nota' });
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const cacheP = new Map();
+    let pedido = 0;
+    const mostrar = async (marca, n, rotulo) => {
+      const meu = ++pedido;
+      for (const tr of corpoT.children) tr.classList.toggle('em-previa', tr.dataset.marca === marca);
+      legenda.textContent = `Pré-visualização de ${rotulo}: carregando…`;
+      const chave = marca + '|' + n;
+      let r = cacheP.get(chave);
+      try { if (!r) { r = await this.api.previaCanto(this.projeto, marca, n); cacheP.set(chave, r); } }
+      catch (e) { if (meu === pedido) legenda.textContent = `Pré-visualização de ${rotulo}: ${e.message}`; return; }
+      if (meu !== pedido) return;
+      const [x0, y0, x1, y1] = r.caixa;
+      const svg = document.createElementNS(svgNS, 'svg');
+      svg.setAttribute('viewBox', `${x0} ${-y1} ${x1 - x0} ${y1 - y0}`);
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      const grupo = (segs, cor, larg, tracejado) => {
+        if (!segs || !segs.length) return;
+        const p = document.createElementNS(svgNS, 'path');
+        p.setAttribute('d', segs.map(s => `M${s[0]} ${-s[1]}L${s[2]} ${-s[3]}`).join(''));
+        p.setAttribute('stroke', cor); p.setAttribute('stroke-width', larg); p.setAttribute('fill', 'none');
+        p.setAttribute('vector-effect', 'non-scaling-stroke');
+        if (tracejado) p.setAttribute('stroke-dasharray', '4 3');
+        svg.append(p);
+      };
+      if (r.depois) {
+        grupo(r.antes.peca, '#9aa3ad', 1, true);
+        grupo(r.depois.outras, 'var(--previa-outras, #3b6fd1)', 0.8, false);
+        grupo(r.depois.peca, '#e67e22', 1.6, false);
+      } else {
+        grupo(r.antes.outras, 'var(--previa-outras, #3b6fd1)', 0.8, false);
+        grupo(r.antes.peca, '#e67e22', 1.6, false);
+      }
+      for (const [x, y] of r.nos || []) {
+        const c = document.createElementNS(svgNS, 'circle');
+        c.setAttribute('cx', x); c.setAttribute('cy', -y); c.setAttribute('r', Math.max((x1 - x0), (y1 - y0)) / 150);
+        c.setAttribute('fill', '#d62728');
+        svg.append(c);
+      }
+      previa.replaceChildren(svg);
+      const extra = [];
+      if (r.depois) {
+        extra.push(`nó sai ${mm(r.desvio)} mm do arco`);
+        if (r.estendidas) extra.push('banzo esticado até o nó');
+        if (r.pontas_mantidas) extra.push('ponta mantida (sem banzo alinhado para vir até o nó)');
+        if (r.diagonais) extra.push(`${r.diagonais} diagonal(is) do nó de baixo a cada nó`);
+      }
+      legenda.textContent = r.depois
+        ? `Pré-visualização de ${rotulo} em ${r.n} reta${r.n > 1 ? 's' : ''}: laranja como fica, cinza tracejado o arco de hoje, pontos vermelhos os nós — ${extra.join(' · ')}. Mude a opção para comparar.`
+        : `Pré-visualização de ${rotulo}: como está hoje (não quebrar).`;
+    };
     for (const p of pecas) {
       const sel = el('select', { title: 'Em quantas retas quebrar o arco' });
       sel.append(el('option', { value: '', texto: 'não quebrar' }));
@@ -1728,7 +1783,10 @@ export class Editor {
       const sug = p.opcoes.find(o => o.desvio <= alt) || p.opcoes[0];
       sel.value = String(sug.n);
       selects.set(p.marca, sel);
-      corpoT.append(el('tr', {},
+      const rotulo = p.nome ? `${p.nome} (${p.marca})` : p.marca;
+      sel.addEventListener('change', () => mostrar(p.marca, +sel.value || 0, rotulo));
+      sel.addEventListener('focus', () => mostrar(p.marca, +sel.value || 0, rotulo));
+      corpoT.append(el('tr', { 'data-marca': p.marca, title: 'Clique para ver este canto na pré-visualização', onclick: (ev) => { if (ev.target !== sel) mostrar(p.marca, +sel.value || 0, rotulo); } },
         el('td', { texto: p.nome ? `${p.nome} (${p.marca})` : p.marca }), el('td', { texto: p.perfil }), el('td', { texto: String(p.instancias) }),
         el('td', { texto: `${mm(p.raio)} mm` }), el('td', { texto: `${mm(p.angulo, 1)}°` }), el('td', { texto: `${mm(p.comprimento_arco)} mm` }),
         el('td', {}, sel)));
@@ -1736,6 +1794,9 @@ export class Editor {
     tabela.append(corpoT);
     if (pecas.length) {
       corpo.append(tabela);
+      corpo.append(previa, legenda);
+      const p0 = pecas[0];
+      mostrar(p0.marca, +selects.get(p0.marca).value || 0, p0.nome ? `${p0.nome} (${p0.marca})` : p0.marca);
       corpo.append(el('p', { class: 'nota', texto: 'A malha nova reaproveita a seção da própria peça, com os nós em meia-esquadria; quando o joelho encosta no banzo, ele termina no nó, o banzo é esticado até ele e a diagonal do canto é refeita do nó de baixo a cada nó. A elevação ganha a linha de emenda em cada nó. Gere o detalhamento de novo depois.' }));
     }
     if (await this.dialogo({ titulo: 'Cantos redondos', corpo, ok: pecas.length ? 'Quebrar no modelo' : 'Aplicar' }) !== 'ok') return;

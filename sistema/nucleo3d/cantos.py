@@ -266,8 +266,11 @@ def _nos_da_quebra(arco: dict, n: int) -> List[Ponto]:
     return nos
 
 
-def quebrar_peca(e: Solido, n: int) -> Optional[dict]:
-    """Reconstrói a malha da peça com o arco trocado por `n` retas tangentes. Devolve
+def quebrar_peca(e: Solido, n: int, manter: Sequence[str] = ()) -> Optional[dict]:
+    """Reconstrói a malha da peça com o arco trocado por `n` retas tangentes. `manter`
+    ("inicio"/"fim"): o lado em que o arco vai até a ponta mas a peça **não** é encurtada
+    até o nó — segue reta do nó até a ponta antiga (não há banzo alinhado para vir até o
+    nó, e encurtar abria um vão: o joelho "descolava" da barra de cima). Devolve
     {"n", "nos", "raio", "angulo", "pontas"} (também gravado em `e.atributos["quebras"]`,
     sem "pontas"), ou None quando a peça não tem canto reconhecível.
 
@@ -302,7 +305,7 @@ def quebrar_peca(e: Solido, n: int) -> Optional[dict]:
         return tg if _dot(tg, sentido) >= 0 else _mul(tg, -1.0)
     t_ini = tangente_em(cs[i0], dirs[i0])                 # entra no arco
     t_fim = tangente_em(cs[i1], dirs[i1 - 1])             # sai do arco
-    cap_ini, cap_fim = i0 == 0, i1 == ultimo
+    cap_ini, cap_fim = i0 == 0 and "inicio" not in manter, i1 == ultimo and "fim" not in manter
     # eixo novo: anéis antes do arco ficam, os do arco saem, os nós entram, anéis depois
     # ficam; sem anel antes/depois (o arco vai até a ponta), o nó da ponta vira a tampa
     pontos_eixo: List[Tuple[str, object]] = []
@@ -684,17 +687,172 @@ def quebrar_modelo(doc: Documento, escolhas: Dict[str, int], diagonais: bool = T
         for e in list(doc.entidades.values()):
             if not isinstance(e, Solido) or _marca(e) != marca or (e.atributos or {}).get("quebras"):
                 continue
-            q = quebrar_peca(e, n)
-            if not q:
+            if quebrar_instancia(doc, e, n, diagonais, saida) is None:
                 saida["falhas"].append("%s: uma instância sem canto reconhecível ficou como estava" % marca)
                 continue
             feitas += 1
-            for lado in ("inicio", "fim"):
-                if _estender_vizinha(doc, e, q["pontas"][lado]) is not None:
-                    saida["estendidas"] += 1
-            if diagonais:
-                saida["diagonais"] += len(_diagonais_do_canto(doc, e, q))
         if feitas:
             saida["pecas"] += feitas
             saida["posicoes"].append(marca)
     return saida
+
+
+def quebrar_instancia(doc: Documento, e: Solido, n: int, diagonais: bool = True, saida: Optional[dict] = None) -> Optional[dict]:
+    """Uma instância: a malha do joelho, a barra que encostava na ponta esticada até o nó
+    e as diagonais do canto. Sem barra alinhada na ponta (tesoura de oitão com o banzo ao
+    lado, joelho que desce sobre uma viga), a peça **fica com a ponta antiga** — encurtada
+    até o nó ela descolava da barra de cima. Soma em `saida` ("estendidas", "diagonais",
+    "pontas_mantidas"); devolve o resultado de `quebrar_peca` ou None."""
+    saida = saida if saida is not None else {}
+    antes = (list(e.vertices), [list(f) for f in e.faces], list(e.arestas_vivas or []), dict(e.atributos or {}))
+    q = quebrar_peca(e, n)
+    if not q:
+        return None
+    sem_vizinha = []
+    for lado in ("inicio", "fim"):
+        if _estender_vizinha(doc, e, q["pontas"][lado]) is not None:
+            saida["estendidas"] = saida.get("estendidas", 0) + 1
+        elif q["pontas"][lado].get("cap"):
+            sem_vizinha.append(lado)
+    if sem_vizinha:
+        e.vertices, e.faces, e.arestas_vivas, e.atributos = antes[0], antes[1], antes[2], antes[3]
+        q = quebrar_peca(e, n, manter=sem_vizinha)
+        saida["pontas_mantidas"] = saida.get("pontas_mantidas", 0) + len(sem_vizinha)
+    if diagonais:
+        saida["diagonais"] = saida.get("diagonais", 0) + len(_diagonais_do_canto(doc, e, q))
+    return q
+
+
+# ============================================================ pré-visualização
+#: Folga (mm) além do raio em volta do canto que entra na pré-visualização.
+FOLGA_PREVIA = 700.0
+#: Peças mais longe que isto (mm) do plano do arco ficam fora da pré-visualização.
+FORA_DO_PLANO_PREVIA = 400.0
+#: Aresta entre faces que dobram menos que isto (graus) não é desenhada (a faceta do arco).
+DOBRA_MINIMA_PREVIA = 25.0
+
+
+def _arestas_vivas_da_malha(e: Solido) -> List[Tuple[Ponto, Ponto]]:
+    """As arestas do contorno do sólido: as de uma face só e as entre faces que dobram
+    mais que DOBRA_MINIMA_PREVIA (a triangulação e as facetas do arco somem)."""
+    normais: Dict[Tuple[int, int], List[Ponto]] = collections.defaultdict(list)
+    vs = e.vertices
+    for f in e.faces:
+        if len(f) < 3:
+            continue
+        nf = _normal_de([vs[i] for i in f])
+        for k in range(len(f)):
+            a, b = f[k], f[(k + 1) % len(f)]
+            if a != b:
+                normais[(min(a, b), max(a, b))].append(nf)
+    lim = math.cos(math.radians(DOBRA_MINIMA_PREVIA))
+    fora = []
+    for (a, b), ns in normais.items():
+        if len(ns) == 1 or any(abs(_dot(ns[0], m)) < lim for m in ns[1:]):
+            fora.append((vs[a], vs[b]))
+    return fora
+
+
+def _normal_de(pts) -> Ponto:
+    n = [0.0, 0.0, 0.0]
+    for i in range(len(pts)):
+        a, b = pts[i], pts[(i + 1) % len(pts)]
+        n[0] += (a[1] - b[1]) * (a[2] + b[2])
+        n[1] += (a[2] - b[2]) * (a[0] + b[0])
+        n[2] += (a[0] - b[0]) * (a[1] + b[1])
+    return _unit(tuple(n))
+
+
+def _recortar(pa, pb, L: float):
+    """O trecho do segmento pa–pb dentro do quadrado [-L, L]² (Liang–Barsky), ou None: a
+    barra comprida que passa pelo canto aparece até a borda da prévia."""
+    x0, y0 = pa
+    dx, dy = pb[0] - x0, pb[1] - y0
+    t0, t1 = 0.0, 1.0
+    for p_, q_ in ((-dx, x0 + L), (dx, L - x0), (-dy, y0 + L), (dy, L - y0)):
+        if abs(p_) < 1e-12:
+            if q_ < 0:
+                return None
+            continue
+        r = q_ / p_
+        if p_ < 0:
+            t0 = max(t0, r)
+        else:
+            t1 = min(t1, r)
+        if t0 > t1:
+            return None
+    return (x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy)
+
+
+def previa(doc: Documento, marca: str, n: int) -> Optional[dict]:
+    """O canto de uma instância de `marca` antes e depois da quebra em `n` retas (0 = só
+    como está), no plano do arco, para o diálogo mostrar antes de aplicar. Roda a mesma
+    quebra de `quebrar_instancia` numa cópia das peças em volta — o modelo não muda.
+    {"antes": {"peca": [[x1, y1, x2, y2]…], "outras": […]}, "depois": {…}, "nos": [[x, y]…],
+    "caixa": [x0, y0, x1, y1], "n", "raio", "angulo", "estendidas", "diagonais",
+    "pontas_mantidas"} em mm, x para o lado e y para cima; None sem canto nessa posição."""
+    import copy
+    e = next((x for x in doc.entidades.values() if isinstance(x, Solido) and _marca(x) == marca
+              and not (x.atributos or {}).get("quebras") and analisar_peca(x)), None)
+    if e is None:
+        return None
+    arco = analisar_peca(e)["arco"]
+    C, R, nrm = arco["centro"], arco["raio"], _unit(arco["normal"])
+    meia = R + FOLGA_PREVIA
+    # quadro do desenho: y é o Z projetado no plano do arco (o canto fica em pé)
+    cima = _sub((0.0, 0.0, 1.0), _mul(nrm, nrm[2]))
+    if _norma(cima) < 0.2:
+        cima = _cruz(nrm, (1.0, 0.0, 0.0)) if abs(nrm[0]) < 0.9 else _cruz(nrm, (0.0, 1.0, 0.0))
+    cima = _unit(cima)
+    lado = _unit(_cruz(cima, nrm))
+
+    def perto(x) -> bool:
+        if not isinstance(x, Solido) or not x.vertices:
+            return False
+        a = x.atributos or {}
+        if str(a.get("tipo_ifc") or "").upper().startswith("IFCBUILDINGELEMENTPROXY"):
+            return False                                  # parafusos, porcas: poluem
+        if re.search(r"TELHA", str((a.get("marcas") or {}).get("perfil") or x.nome or ""), re.I):
+            return False
+        for v in x.vertices:
+            rel = _sub(v, C)
+            if abs(_dot(rel, nrm)) <= FORA_DO_PLANO_PREVIA and abs(_dot(rel, lado)) <= meia and abs(_dot(rel, cima)) <= meia:
+                return True
+        return False
+    proximas = [x for x in doc.entidades.values() if x is e or perto(x)]
+
+    def em2d(p):
+        rel = _sub(p, C)
+        return (_dot(rel, lado), _dot(rel, cima))
+
+    def desenhar(pecas, id_peca):
+        saida = {"peca": [], "outras": []}
+        for x in pecas:
+            chave = "peca" if x.id == id_peca else "outras"
+            for a, b in _arestas_vivas_da_malha(x):
+                seg = _recortar(em2d(a), em2d(b), meia * 1.15)
+                if seg:
+                    saida[chave].append([round(c) for c in seg])
+        return saida
+    fora = {"antes": desenhar(proximas, e.id), "n": int(n or 0), "raio": round(R, 1),
+            "angulo": round(arco["angulo"], 2), "nos": [], "caixa": [-meia, -meia, meia, meia]}
+    if n and int(n) >= 1:
+        copia = Documento(nome="previa")
+        for x in proximas:
+            copia.add(copy.deepcopy(x))
+        e2 = copia.entidades[e.id]
+        conta: dict = {}
+        q = quebrar_instancia(copia, e2, int(n), True, conta)
+        if q is None:
+            return fora
+        fora["depois"] = desenhar(list(copia.entidades.values()), e.id)
+        fora["nos"] = [[round(c, 1) for c in em2d(no)] for no in q["nos"]]
+        fora.update({k: conta.get(k, 0) for k in ("estendidas", "diagonais", "pontas_mantidas")})
+        op = next((o for o in opcoes_de_quebra(R, arco["angulo"]) if o["n"] == int(n)), None)
+        fora["desvio"] = round(op["desvio"], 1) if op else None
+    # a caixa justa do que foi desenhado (com margem), para o SVG
+    xs = [c for grupo in ("antes", "depois") for k in ("peca", "outras") for s in (fora.get(grupo) or {}).get(k, []) for c in (s[0], s[2])]
+    ys = [c for grupo in ("antes", "depois") for k in ("peca", "outras") for s in (fora.get(grupo) or {}).get(k, []) for c in (s[1], s[3])]
+    if xs:
+        fora["caixa"] = [min(xs) - 40, min(ys) - 40, max(xs) + 40, max(ys) + 40]
+    return fora

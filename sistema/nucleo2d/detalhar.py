@@ -247,6 +247,7 @@ QUADROS_POSICOES = [("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS
                     ("suporte_contraventamento", "SUPORTES DE CONTRAVENTAMENTO"), ("castanha", "CASTANHAS"),
                     ("barra_roscada", "BARRAS ROSCADAS"), ("gancho", "GANCHOS"), ("chumbador", "CHUMBADORES"), ("cantoneira_forro", "CANTONEIRAS DE FORRO"),
                     ("perfil_fechamento", "PERFIS DE FECHAMENTO"), ("parte", "PEÇAS DE CONJUNTOS"),
+                    ("rufo", "RUFOS"), ("calha", "CALHAS"),
                     ("barra", "BARRAS"), ("chapa", "CHAPAS"), ("telha", "TELHAS")]
 
 
@@ -273,6 +274,8 @@ def _familia_da_posicao(p, tipo_pos: str, tipo_de_conj: Dict[str, str]) -> str:
         return "terca"
     if tipo_pos == "chumbador":
         return "tesoura"                              # junto das chapas de base das tesouras"
+    if tipo_pos in ("rufo", "calha"):
+        return "outros"                               # desenho de extras, quadros RUFOS e CALHAS
     if p.classe == "telha":
         return "telha"
     tipos = collections.Counter(tipo_de_conj[c] for c in (p.conjuntos or []) if tipo_de_conj.get(c))

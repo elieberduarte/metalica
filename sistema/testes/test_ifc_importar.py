@@ -1163,3 +1163,42 @@ def test_pilar_pela_geometria():
     assert pilar_pela_geometria(caixa(150, 150, 3000))
     assert not pilar_pela_geometria(caixa(88, 40, 700))          # montante
     assert not pilar_pela_geometria(caixa(2500, 40, 800))        # diagonal deitada
+
+
+def test_funilaria_rufos_e_calhas_na_camada_propria():
+    """Rufo, calha e cumeeira de funilaria (o TecnoMETAL grava como IfcBeam com o nome do
+    perfil) vão para as camadas Rufos e Calhas; a cumeeira de telha continua telha."""
+    from ifc.importar import camada_semantica, funilaria, CAMADAS_SEMANTICAS
+    assert camada_semantica("IFCBEAM", "RUFO CHAPEU 1") == "Rufos"
+    assert camada_semantica("IFCBEAM", "CUMEEIRA I7.5") == "Rufos"
+    assert camada_semantica("IFCBEAM", "CONTRARRUFO 2") == "Rufos"
+    assert camada_semantica("IFCCOLUMN", "PINGADEIRA 1") == "Rufos"
+    assert camada_semantica("IFCBEAM", "CALHA 1") == "Calhas"
+    assert camada_semantica("IFCBEAM", "TELHA TP40 CUMEEIRA") == "Telhas"
+    assert camada_semantica("IFCBEAM", "CUMEEIRA TP40") == "Telhas"
+    assert camada_semantica("IFCBEAM", "VIGA CUMEEIRA") == "Vigas"
+    assert funilaria("U150X50X2.28") == "" and funilaria("") == ""
+    assert "Rufos" in CAMADAS_SEMANTICAS and "Calhas" in CAMADAS_SEMANTICAS
+
+
+def test_migracao_das_camadas_de_funilaria_roda_uma_vez():
+    """Modelo importado antes da 0.8.24: os rufos saem de Vigas, as camadas nascem, e a
+    migração não roda de novo (o usuário que mover um rufo de volta manda)."""
+    from ifc.importar import migrar_camadas_de_funilaria
+    d = {"camadas": {"Vigas": {"nome": "Vigas", "cor": "#0b3d91", "visivel": True, "bloqueada": False}},
+         "entidades": [
+             {"id": "a", "tipo": "solido", "nome": "RUFO CHAPEU 1", "camada": "Vigas", "atributos": {"marcas": {"perfil": "RUFO CHAPEU 1"}}},
+             {"id": "b", "tipo": "solido", "nome": "CALHA 1", "camada": "Vigas", "atributos": {}},
+             {"id": "c", "tipo": "solido", "nome": "U150X50X2.28", "camada": "Vigas", "atributos": {}},
+             {"id": "d", "tipo": "solido", "nome": "RUFO CHAPEU 2", "camada": "Minha camada", "atributos": {}},
+         ]}
+    assert migrar_camadas_de_funilaria(d) == 2
+    cam = {e["id"]: e["camada"] for e in d["entidades"]}
+    assert cam == {"a": "Rufos", "b": "Calhas", "c": "Vigas", "d": "Minha camada"}
+    assert set(d["camadas"]) == {"Vigas", "Rufos", "Calhas"} and d["metadados"]["camadas_funilaria"]
+    d["entidades"][0]["camada"] = "Vigas"
+    assert migrar_camadas_de_funilaria(d) == 0 and d["entidades"][0]["camada"] == "Vigas"
+    # e o Documento lê as camadas novas
+    from nucleo3d.modelo import Documento
+    doc = Documento.de_dict(dict(d, entidades=[]))
+    assert doc.camadas["Rufos"].cor == "#17b8c9"

@@ -210,9 +210,15 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
                                             for e in (por_id[i] for i in g["pecas"] if i in por_id))}
     except Exception:                                 # noqa: BLE001 — sem isso, fica a regra antiga
         marcas_chumbador = set()
+    from ifc.importar import funilaria
     for p in posicoes:
         cls = p.classe
-        if cls in ("chapa", "chapa_dobrada"):
+        # rufo e calha: barra comprida solta como o agulhamento, mas é funilaria de aluzinc
+        # (antes saíam como A.C. e somavam no peso dos agulhamentos)
+        f = funilaria(p.perfil) if cls != "telha" else ""
+        if f:
+            t = f
+        elif cls in ("chapa", "chapa_dobrada"):
             # suporte de terça é a chapa em que a terça encosta (geometria), não a que
             # tem a furação parecida: a chapinha de ponta do agulhamento tem os mesmos furos
             t = "suporte_terca" if any(m in suportes for m in marcas_de(p)) else "chapa"

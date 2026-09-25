@@ -269,3 +269,40 @@ def test_emendas_nao_mexem_na_peca_quebrada_no_3d():
     assert [list(e.vertices) if isinstance(e, Polilinha) else [e.a, e.b] for e in novas] == antes
     emendas = [e for e in desenho.entidades.values() if (e.atributos or {}).get("emenda")]
     assert len(emendas) == 1 and {tuple(emendas[0].a), tuple(emendas[0].b)} == {(1000.0, 0.0), (1030.0, 100.0)}
+
+
+def test_sem_banzo_alinhado_a_ponta_fica_onde_era():
+    """Joelho que termina no arco sem barra alinhada na ponta (tesoura de oitão com o
+    banzo ao lado): a peça não é encurtada até o nó — segue reta até a ponta antiga, senão
+    descolava da barra de cima (ÁGUA GELADA, 0.8.21)."""
+    doc = Documento(nome="t")
+    joelho = doc.add(_joelho(reto_antes=500.0, reto_depois=0.0))
+    th = math.radians(ANG)
+    C = (500.0, R, 0.0)
+    p1 = (C[0] + R * math.sin(th), C[1] - R * math.cos(th), 0.0)
+    t1 = (math.cos(th), math.sin(th), 0.0)
+    # o "banzo" passa 250 mm ao lado da ponta, fora do alinhamento
+    lado = (0.0, 0.0, 250.0)
+    a = tuple(p1[i] + lado[i] for i in range(3))
+    doc.add(_caixa_barra(a, tuple(a[i] + t1[i] * 3000.0 for i in range(3)), largura=100.0, altura=50.0, nome="U100X50X4.18", posicao="P20"))
+    ponta_antes = max(_dot3(v, t1) for v in joelho.vertices)
+    r = cantos.quebrar_modelo(doc, {"P15": 1}, diagonais=False)
+    assert r["pecas"] == 1 and r.get("estendidas", 0) == 0 and r.get("pontas_mantidas") == 1, r
+    assert abs(max(_dot3(v, t1) for v in joelho.vertices) - ponta_antes) < 1.0     # a ponta não recuou
+    assert len(joelho.vertices) == 8 * (2 + 2 + 1)                                  # 2 anéis retos + 2 nós + a ponta antiga
+    # e volta ao canto redondo do mesmo jeito
+    assert cantos.desfazer_modelo(doc)["pecas"] == 1 and len(joelho.vertices) == len(_joelho(reto_antes=500.0, reto_depois=0.0).vertices)
+
+
+def test_previa_mostra_antes_e_depois_sem_mexer_no_modelo():
+    doc, joelho, banzo, diagonal = _modelo_com_joelho_banzo_e_diagonal()
+    antes = _foto(doc)
+    r = cantos.previa(doc, "P15", 2)
+    assert _foto(doc) == antes and not cantos.quebradas_do_modelo(doc)             # o modelo não mudou
+    assert r["n"] == 2 and len(r["nos"]) == 3 and r["estendidas"] == 1 and r["diagonais"] == 3
+    assert r["antes"]["peca"] and r["depois"]["peca"] and r["depois"]["outras"]
+    x0, y0, x1, y1 = r["caixa"]
+    assert all(x0 <= s[0] <= x1 and y0 <= s[1] <= y1 for s in r["depois"]["peca"])
+    so = cantos.previa(doc, "P15", 0)
+    assert "depois" not in so and so["antes"]["peca"]
+    assert cantos.previa(doc, "P99", 1) is None

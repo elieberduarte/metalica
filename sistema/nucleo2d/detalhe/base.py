@@ -434,6 +434,7 @@ CAMADAS_PECAS = collections.OrderedDict([
     ("TERCAS", ("#3b82f6", 0.35)), ("BANZOS", ("#22a7c2", 0.35)), ("DIAGONAIS", ("#e67e22", 0.35)),
     ("MONTANTES", ("#a855f7", 0.35)), ("CHAPAS", ("#d4a017", 0.35)), ("TIRANTES", ("#2eaf63", 0.35)),
     ("PILARES", ("#8b95a5", 0.35)), ("VIGAS", ("#5b7db1", 0.35)), ("TELHAS", ("#9aa4b2", 0.25)),
+    ("RUFOS", ("#17b8c9", 0.25)), ("CALHAS", ("#3a7bd5", 0.25)),
 ])
 
 
@@ -448,6 +449,8 @@ def _camada_da_posicao(pos: Posicao, tipo: str, votos: Optional[Dict[str, collec
     """Camada 2D de uma posição: pelo tipo de produção (terça, tirante, chapa, telha) ou,
     para a barra de conjunto, pelo que ela é na elevação (banzo, diagonal, montante —
     a classificação mais votada entre as instâncias); pilar do IFC é PILARES."""
+    if tipo in ("rufo", "calha") or _funilaria(pos.perfil):
+        return "CALHAS" if (tipo == "calha" or _funilaria(pos.perfil) == "calha") else "RUFOS"
     if pos.classe in ("chapa", "chapa_dobrada"):
         return "CHAPAS"
     if pos.classe == "telha":
@@ -1421,11 +1424,19 @@ def _eixo_da_peca(ent: Solido):
 CATEGORIAS = collections.OrderedDict([
     ("TESOURAS", "Tesouras e pórticos"), ("CONJUNTOS", "Conjuntos menores"), ("TERÇAS", "Terças"),
     ("BARRAS", "Barras"), ("CHAPAS", "Chapas"), ("TIRANTES", "Tirantes e barras redondas"),
-    ("TELHAS", "Telhas"), ("VISTAS", "Vistas e cortes"), ("OUTROS", "Outros"),
+    ("TELHAS", "Telhas"), ("RUFOS", "Rufos e calhas"), ("VISTAS", "Vistas e cortes"), ("OUTROS", "Outros"),
 ])
 
 
+def _funilaria(perfil: str) -> str:
+    """"rufo", "calha" ou "" (a mesma regra da camada do modelo 3D, `ifc.importar.funilaria`)."""
+    from ifc.importar import funilaria
+    return funilaria(perfil or "")
+
+
 def _categoria(pos: Posicao, camada: str) -> str:
+    if _funilaria(pos.perfil):
+        return "RUFOS"
     if pos.classe in ("chapa", "chapa_dobrada"):
         return "CHAPAS"
     if pos.classe == "telha":
@@ -1456,6 +1467,7 @@ PREFIXO_NOME = collections.OrderedDict([
     ("suporte_agulhamento", "CH"), ("contraventamento", "CV."),
     ("suporte_contraventamento", "CH"), ("castanha", "CH"), ("chapa", "CH"),
     ("barra_roscada", "BR"), ("gancho", "G."), ("chumbador", "CB"), ("cantoneira_forro", "A.T."), ("perfil_fechamento", "F.T."),
+    ("rufo", "RF"), ("calha", "CL"),
     ("barra", "B."), ("telha", "TL"), ("conjunto", "DP."), ("parte", ""),
 ])
 TIPOS_NOME = {
@@ -1468,6 +1480,7 @@ TIPOS_NOME = {
     "castanha": "Castanha", "chapa": "Chapa", "barra": "Barra", "telha": "Telha", "conjunto": "Dispositivo",
     "barra_roscada": "Barra roscada", "gancho": "Gancho", "chumbador": "Chumbador", "cantoneira_forro": "Acabamento de telha",
     "perfil_fechamento": "Fixação de telha", "parte": "Parte de conjunto",
+    "rufo": "Rufo", "calha": "Calha",
 }
 #: Diâmetro (mm) abaixo do qual a barra redonda comprida é agulhamento diagonal (Ø3/8"
 #: com gancho), não contraventamento (Ø1/2" com esticador).
@@ -1551,7 +1564,7 @@ def aplicar_peso_teorico(posicoes: Sequence[Posicao]) -> int:
         if getattr(p, "peso_malha", None) is None:
             p.peso_malha = p.peso
         pt = peso_teorico(p)
-        p.sem_peso_teorico = pt is None and p.classe != "telha"
+        p.sem_peso_teorico = pt is None and p.classe != "telha" and not _funilaria(p.perfil)   # chapa fina: pela geometria
         if pt is None:
             sem += int(p.sem_peso_teorico)
             continue

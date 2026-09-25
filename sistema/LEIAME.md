@@ -218,6 +218,28 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.24.** Rufos e calhas (pedido do usuário no DEPÓSITO QUÍMICO: "não foi reconhecida a camada dos rufos"). O
+TecnoMETAL grava a funilaria de aluzinc como IfcBeam com o nome do perfil ("RUFO CHAPEU 1", "CALHA 1", "CUMEEIRA
+I7.5"), e ela caía em Vigas; no detalhamento, a barra comprida solta virava **agulhamento** (A.C.) e somava no peso
+dos agulhamentos. Agora `ifc.importar.funilaria` reconhece rufo (RUFO, contrarrufo, pingadeira, arremate, testeira,
+cumeeira de funilaria) e calha pelo nome — a cumeeira de telha (TELHA/TP40) continua telha —, e a peça vai para as
+camadas **Rufos** e **Calhas** do modelo 3D. Modelo importado antes muda de camada ao abrir
+(`migrar_camadas_de_funilaria`, uma vez por modelo, só das camadas automáticas Vigas/Barras/Pilares; marca
+`metadados.camadas_funilaria`). No detalhamento: tipos `rufo` e `calha`, nomes **RF1, RF2… e CL1…** (prefixo a
+confirmar com a fábrica), camadas 2D RUFOS e CALHAS, quadros RUFOS e CALHAS no desenho de extras, categoria "Rufos e
+calhas" na lista de materiais, sem o aviso de peso teórico (chapa fina: pelo volume da malha). No resumo de
+materiais, bloco "Rufos RF e calhas CL" **fora do peso da estrutura metálica** (como a telha; entra no total geral).
+Na mesma versão: **o joelho que descolava** (ÁGUA GELADA: nas tesouras de oitão o banzo passa 235 mm ao lado da ponta,
+e no M100 o joelho desce sobre uma viga; sem barra alinhada para esticar, a 0.8.21 encurtava o joelho até o nó e abria
+o vão) — agora `quebrar_instancia` refaz a peça com `quebrar_peca(manter=[lado])`: segue reta do nó até a ponta antiga
+(`pontas_mantidas`). **Pré-visualização** no diálogo Cantos redondos (`cantos.previa`, rota
+`GET /api/projetos/<s>/cantos/previa?marca=&n=`, modelo em cache pelo mtime): o canto da primeira instância no plano do
+arco, antes (cinza tracejado) e depois (laranja) da opção escolhida, com os nós, o banzo esticado e as diagonais novas,
+rodando a mesma quebra numa cópia das peças em volta; muda ao trocar a opção ou clicar na linha. **Órbita no ponto sob
+o cursor** (editor 3D, botão do meio ou Shift + direito sobre uma peça): câmera e alvo giram juntos em volta do ponto
+(`Camera.girarEmVolta`), que fica parado na tela; antes, com peça selecionada, o pivô ia para o centro da seleção e a
+vista deslizava até ele (a terça de 8 m: a câmera ia para o meio da barra). No vazio, a órbita de antes.
+
 **0.8.23.** O programa instalado se encerrava sozinho com a janela na tela ("não é possível acessar esse site"
 ao clicar em voltar): a página que sai manda `fechou` na hora e a que entra, pesada (o CAD com o completo de 8 MB),
 levava mais que os 6 s que o vigia dava para a troca de página. O vigia (`vigiar`, em `main`) agora espera 30 s
