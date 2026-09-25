@@ -218,6 +218,40 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.8.** Projeto recebido **sem perfil escrito** (o DXF exportado de um modelo 3D: só linhas, sem título de vista,
+sem eixo, em centímetros sem unidade declarada — o "IVAN.dxf" do usuário): `nucleo2d/reconhecer_geo.py`. `analisar`
+(retângulo fino fechado alinhado → barra no eixo, com o que está entre as faces — a hachura, o reticulado do pilar
+treliçado, até 2,5 larguras para cada lado — consumido; retângulo pequeno → marca de seção; reticulado = inclinadas
+curtas; assinatura ângulo × comprimento). `classificar`: pórtico = reticulado espalhado por ≥ 50 % da largura e mais
+largo que alto, com pilares (em pé ≥ 0,35 H) é elevação, senão treliça; W = mediana das larguras, H = mediana dos
+pilares; elevação cujos pilares têm menos de H/2 vira treliça (a axonometria); planta = uma medida é o vão (±6 %) e há
+≥ 3 linhas atravessando; fachada = ≥ 2 pilares, altura entre 0,5 e 1,8 H, mais larga que alta e a largura não é o vão;
+o resto é detalhe (sem peças); vista parecida (mesmo tipo, tamanho, ±10 % de linhas e ≥ 90 % da assinatura) e a treliça
+solta com o vão do pórtico ficam como `repetida`. `unidade_em_cm`: pórtico com menos de 6 m (ou, sem pórtico, tudo
+com menos de 8 m) → fator ×10, `fator_origem` "cm", aviso. `barras_da_vista` → `_portico` (faixa da treliça pelo
+reticulado ligado — a diagonal encostada em outras duas, o traço da seta de cota não —; pilar = em pé, ≥ 0,2 H, do pé
+do pórtico até a faixa, faces paralelas fundidas (`_fundir_paralelas`, sobreposição com a extensão da própria linha) e
+o que fica entre elas consumido; banzo = contorno de cima e de baixo entre os membros da faixa, montante em pé na faixa,
+o resto diagonal; linha ≥ 0,15 W sem dois nós interiores — chegada ou cruzamento — é cota desenhada como linha e sai;
+a linha do chão (≥ 0,5 W a 5 % de H do pé) e o que está acima da faixa saem; abaixo, inclinada é contraventamento e
+deitada longarina), `_planta` (eixos das tesouras pelas marcas de seção com ≥ 2 marcas na fila, na posição exata da
+linha que atravessa o vão; filas A, B, C… pelas marcas presentes em ≥ metade das tesouras; terça, contraventamento,
+corrente = linha que atravessa o vão fora de eixo, partida nas terças e marcada `fixa` para o `_emendar` não juntar),
+`_lateral`; `conferir_pilares` tira das elevações o pilar que não está numa fila de pilares da planta (a linha de cota em
+pé). `reconhecer`: título e escala de todas as vistas primeiro, depois a classificação e a unidade, depois as barras;
+união das vistas pela distância real entre linhas (≤ 1,5 gap; a tira fina — a fila de cotas — vai para a vista mais
+perto a ≤ 3 gap; antes a célula da grade juntava a elevação com a planta de baixo); a forma só entra na vista sem barra
+por texto; `resumo.sem_perfil`, `repetidas`; `aplicar` grava `sem_perfil` e `perfis_padrao`. `sugerir_montagem`: vistas
+em pé ordenadas (com pilar e menos pilares primeiro — o pórtico interno, cuja altura de pilar é a `altura_pilar`), o
+oitão (mais pilares, mesmo vão e ±25 % da altura) só nos eixos das pontas, o resto desmarcado.
+`de_vistas.modelo_das_vistas(perfis=)`: linha com papel e sem perfil ganha o perfil do papel (`PERFIS_PADRAO` sem
+escolha; nome fora do catálogo é `ErroDeDados`), `de_desenho.perfis_por_papel`. Rotas `gerar-3d` e `projeto-2d` aceitam
+`perfis`; `projeto-2d` devolve `sem_perfil`/`perfis_padrao`. CAD: bloco "Perfil das peças reconhecidas só pela forma"
+no diálogo das montagens (um campo por papel com datalist do catálogo; guardado em `reconhecimento.perfis`), aviso no
+resultado do Projeto recebido e no Reconhecer, "desenho em cm" na escala. `PAPEIS` ganha "corrente". Testes
+`test_projeto_2d_geo.py` sobre `projeto_2d_sem_texto.py` (galpão 35 × 25 m só de linhas, em cm); verificador
+`verif_projeto_2d_geo.py`.
+
 **0.8.7.** (1) Cópia no CAD é outra peça: `copiaDe` (ferramentas.js) dá às linhas copiadas por Mover+Ctrl, Copiar, Girar
 em modo cópia e Espelhar um `atributos.grupo_copia` por operação, e `cad.pecaDe` separa por ele — original e cópia, com a
 mesma `origem` do 3D e encostados, eram selecionados juntos. (2) Canto da tesoura com a silhueta partida (M8 + M9: as

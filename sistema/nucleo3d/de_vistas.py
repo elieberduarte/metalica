@@ -22,6 +22,9 @@ peça por vão, como a fábrica corta).
 Marcas: posição por perfil, papel e comprimento; conjunto igual para instâncias iguais,
 como no IFC do TecnoMETAL — a tesoura (o que não é pilar numa vista em pé) é um
 conjunto; cada pilar, terça ou contraventamento é o conjunto dele.
+
+Linha reconhecida só pela forma (perfil vazio, com papel): o perfil vem de `perfis`
+(papel → nome no catálogo), senão de `reconhecer_geo.PERFIS_PADRAO`.
 """
 from __future__ import annotations
 
@@ -98,8 +101,10 @@ class _Cobertura:
         return self.o[2] + max(zs) if zs else None
 
 
-def _linhas_por_vista(desenho: Desenho) -> Dict[int, List[tuple]]:
+def _linhas_por_vista(desenho: Desenho, perfis: Optional[Dict[str, str]] = None) -> Dict[int, List[tuple]]:
+    from nucleo2d.reconhecer_geo import PERFIS_PADRAO
     rec = (desenho.metadados or {}).get("reconhecimento") or {}
+    perfis = dict(perfis or {})
     caixas = {int(v["id"]): v.get("caixa") for v in rec.get("vistas") or []}
 
     def vista_de(ent) -> Optional[int]:
@@ -119,6 +124,14 @@ def _linhas_por_vista(desenho: Desenho) -> Dict[int, List[tuple]]:
     out: Dict[int, List[tuple]] = collections.defaultdict(list)
     for ent in desenho.entidades.values():
         peca = peca_da_entidade(ent, desenho)
+        if peca is None:
+            bruto = (ent.atributos or {}).get("peca")
+            if isinstance(bruto, dict) and not bruto.get("perfil") and bruto.get("papel") \
+                    and bruto.get("papel") != "chapa":
+                papel = str(bruto["papel"])
+                nome = perfis.get(papel) or PERFIS_PADRAO.get(papel) or PERFIS_PADRAO["barra"]
+                peca = Peca(perfil=nome, papel=papel, aco=str(bruto.get("aco") or ""),
+                            rotacao=float(bruto.get("rotacao") or 0.0))
         if peca is None or _eh_contorno_de_chapa(ent, peca):
             continue
         vid = vista_de(ent)
@@ -132,13 +145,19 @@ def _linhas_por_vista(desenho: Desenho) -> Dict[int, List[tuple]]:
 
 
 def modelo_das_vistas(desenho: Desenho, montagens: Sequence[dict], *, aco_padrao: str = "ASTM A572 Gr.50",
-                      nome: str = "", doc: Optional[Documento] = None) -> Documento:
-    """Documento 3D com as peças de todas as vistas usadas (veja o módulo)."""
+                      nome: str = "", doc: Optional[Documento] = None,
+                      perfis: Optional[Dict[str, str]] = None) -> Documento:
+    """Documento 3D com as peças de todas as vistas usadas (veja o módulo). `perfis`:
+    papel → perfil do catálogo para as linhas reconhecidas sem perfil escrito."""
     from nucleo import catalogo
+    perfis = {str(k): str(v).strip() for k, v in (perfis or {}).items() if str(v).strip()}
+    for papel, nome_p in perfis.items():
+        if catalogo.perfil_de(nome_p) is None:
+            raise ErroDeDados("perfil não encontrado no catálogo para %s: \"%s\"." % (papel, nome_p))
     doc = doc or Documento(nome=nome or desenho.nome or "Modelo")
     for nome_camada in set(CAMADA_DO_PAPEL.values()):
         doc.camadas.setdefault(nome_camada, Camada(nome=nome_camada))
-    por_vista = _linhas_por_vista(desenho)
+    por_vista = _linhas_por_vista(desenho, perfis)
     usadas = [m for m in montagens if m.get("usar", True) and int(m["vista"]) in por_vista]
     if not usadas:
         raise ErroDeDados("nenhuma vista com peças para montar: reconheça as peças do desenho primeiro "
@@ -259,5 +278,6 @@ def modelo_das_vistas(desenho: Desenho, montagens: Sequence[dict], *, aco_padrao
         "pecas": len(pecas), "posicoes": len(posicao_de), "conjuntos": len(marca_conj), "peso_kg": round(peso, 1),
         "repetidas": repetidas,
         "montagens": [dict(m) for m in usadas],
+        "perfis_por_papel": perfis,
     }
     return doc

@@ -52,7 +52,7 @@ const TIPOS_VISTA = { planta: 'planta', trelica: 'tesoura/treliça', elevacao: '
 const tipoDeVista = (t) => TIPOS_VISTA[t] || 'vista';
 const textoEscala = (v) => {
   const f = Number(v.fator || 1);
-  const de = { cotas: 'pelas cotas', titulo: 'pelo título', padrao: 'a conferir', informado: 'informada' }[v.fator_origem] || '';
+  const de = { cotas: 'pelas cotas', titulo: 'pelo título', padrao: 'a conferir', informado: 'informada', cm: 'desenho em cm' }[v.fator_origem] || '';
   return (f >= 2 && Number.isInteger(Math.round(f * 100) / 100) ? `1:${Math.round(f)}` : `${Math.round(f * 1000) / 1000} mm/unidade`) + (de ? ` (${de})` : '');
 };
 const numero = (v, casas = 0) => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
@@ -659,10 +659,12 @@ class CAD {
       lista.append(el('li', { texto: `${v.titulo || 'Vista ' + v.id} — ${tipoDeVista(v.tipo)}, ${v.barras} barra(s), escala ${textoEscala(v)}` + (v.eixos && v.eixos.length ? `, eixos ${v.eixos.map(e => e.rotulo).join(' ')}` : '') }));
     }
     const perfis = Object.entries(res.perfis || {}).sort((a, b) => b[1] - a[1]).map(([n, q]) => `${q}× ${n}`).join(' · ');
+    const semPerfil = Object.entries(res.sem_perfil || {}).sort((a, b) => b[1] - a[1]).map(([p, q]) => `${q} ${p}`).join(', ');
     const corpo = el('div', {},
       el('div', { class: 'explica', texto: `${res.barras || 0} barra(s) reconhecida(s) em ${res.vistas || 0} vista(s)` + (res.a_conferir ? `; ${res.a_conferir} herdaram o perfil da camada e estão em PEÇAS A CONFERIR (rosa)` : '') + '. As peças estão em linhas novas por cima do desenho — apague, desenhe ou mude a peça (Peça do catálogo…) do que estiver errado antes de gerar o 3D.' }),
       lista,
       el('div', { class: 'explica', texto: perfis || '' }),
+      ...(semPerfil ? [el('div', { class: 'explica', texto: `Sem perfil escrito, reconhecidas só pela forma (${semPerfil}): o perfil de cada papel é escolhido ao gerar o modelo 3D.` })] : []),
       ...(r.textos_sem_linha || []).length ? [el('div', { class: 'explica', texto: `Perfis escritos sem linha achada (${r.textos_sem_linha.length}): ` + r.textos_sem_linha.slice(0, 12).map(t => t.texto).join(' · ') })] : [],
       ...(r.avisos || []).map(a => el('div', { class: 'explica atencao', texto: a })));
     const acao = await this.dialogo({ titulo: 'Peças reconhecidas', corpo, ok: novas.length ? 'Gerar o modelo 3D…' : 'OK' });
@@ -705,7 +707,13 @@ class CAD {
     ];
     if (r.ifc) itens.push(el('div', { class: 'explica' }, 'IFC: ', el('a', { href: r.ifc.url, download: r.ifc.nome, texto: `${r.ifc.nome} (${numero(r.ifc.tamanho_kb, 0)} kB)` })));
     if (res.a_conferir) itens.push(el('div', { class: 'explica atencao', texto: `${res.a_conferir} peça(s) herdaram o perfil da camada (sem texto junto): estão em PEÇAS A CONFERIR, em rosa.` }));
-    for (const a of r.avisos || []) itens.push(el('div', { class: 'explica atencao', texto: a }));
+    const semPerfil = Object.entries(r.sem_perfil || {});
+    if (semPerfil.length) {
+      const pp = r.perfis_padrao || {};
+      itens.push(el('div', { class: 'explica atencao', texto: `${semPerfil.reduce((s, [, q]) => s + q, 0)} peça(s) reconhecida(s) só pela forma, sem perfil escrito, entraram no 3D com o perfil padrão de cada papel: ` + semPerfil.map(([p, q]) => `${q} ${p} → ${pp[p] || '?'}`).join('; ') + '. Para trocar, no CAD use Vistas do modelo → Gerar modelo 3D do desenho… (um perfil por papel) ou, no 3D, Trocar perfil.' }));
+    }
+    // o aviso do servidor sobre as peças sem perfil já foi dito acima, com os perfis usados
+    for (const a of r.avisos || []) if (!(semPerfil.length && /só pela forma/.test(a))) itens.push(el('div', { class: 'explica atencao', texto: a }));
     const acao = await this.dialogo({ titulo: 'Projeto recebido', corpo: el('div', {}, ...itens), ok: r.modelo ? 'Abrir o modelo 3D' : 'OK' });
     if (acao === 'ok' && r.modelo) location.href = `/editor?projeto=${encodeURIComponent(this.projeto)}`;
   }
@@ -739,9 +747,33 @@ class CAD {
     modo.append(el('option', { value: 'substituir', texto: 'substituir o modelo do projeto' }));
     modo.append(el('option', { value: 'acrescentar', texto: 'acrescentar ao modelo do projeto' }));
     const ifc = el('input', { type: 'checkbox', checked: 'checked' });
+    // peças reconhecidas só pela forma (sem perfil escrito): um perfil por papel
+    const rec = (this.doc.metadados || {}).reconhecimento || {};
+    const semPerfil = Object.entries(rec.sem_perfil || {}).sort((a, b) => b[1] - a[1]);
+    const perfisEscolhidos = rec.perfis || {};
+    const camposPerfil = [];
+    let blocoPerfis = null;
+    if (semPerfil.length) {
+      const grade = el('div', { class: 'campos' });
+      const sugestoes = el('datalist', { id: 'perfis-por-papel' });
+      grade.append(sugestoes);
+      for (const [papel, q] of semPerfil) {
+        const campo = el('input', { type: 'text', value: perfisEscolhidos[papel] || (rec.perfis_padrao || {})[papel] || '', list: 'perfis-por-papel', spellcheck: 'false', style: 'width:16em', title: 'Nome do perfil como no catálogo (W 250 x 32,7; Ue 150x60x20x2,00; U 100x50#12; L 2"x1/8"; Barra redonda 1/2")' });
+        camposPerfil.push({ papel, campo });
+        grade.append(el('label', { texto: `${papel} (${q})` }), campo);
+      }
+      fetch('/api/catalogo/pecas?q=x&limite=400').then(r => r.json()).then(d => {
+        for (const it of (d.itens || [])) sugestoes.append(el('option', { value: it.nome }));
+      }).catch(() => {});
+      blocoPerfis = el('fieldset', { class: 'montagem' },
+        el('legend', { texto: 'Perfil das peças reconhecidas só pela forma' }),
+        el('div', { class: 'explica', texto: 'O desenho não tem o perfil escrito nessas peças: diga o perfil de cada papel (nome do catálogo). Dá para trocar depois, peça a peça, no 3D.' }),
+        grade);
+    }
     const corpo = el('div', {},
       el('div', { class: 'explica', texto: 'Cada vista reconhecida entra no espaço por uma montagem: o ponto base da vista vai para cada origem (uma cópia por linha — as tesouras de todos os eixos saem de uma vista só), o X e o Y do desenho seguem os vetores. A montagem abaixo foi sugerida pelos eixos da planta; confira antes de gerar.' }),
       tabela,
+      ...(blocoPerfis ? [blocoPerfis] : []),
       el('div', { class: 'campos' }, el('label', { texto: 'Modelo' }), modo),
       el('label', { class: 'linha' }, ifc, ' Gravar também o IFC'));
     if (await this.dialogo({ titulo: 'Gerar modelo 3D das vistas', corpo, ok: 'Gerar' }) !== 'ok') return;
@@ -749,12 +781,14 @@ class CAD {
       ...m, usar: usar.checked, fator: parseFloat(fator.value) || 1, u: lerVec(u.value), v: lerVec(v.value), cobertura: cob.checked,
       origens: origens.value.split('\n').map(l => lerVec(l)).filter(o => o.length).map(o => [o[0] || 0, o[1] || 0, o[2] || 0]),
     }));
-    this.doc.metadados = { ...(this.doc.metadados || {}), reconhecimento: { ...(this.doc.metadados.reconhecimento || {}), montagens: novas } };
+    const perfis = {};
+    for (const { papel, campo } of camposPerfil) if (campo.value.trim()) perfis[papel] = campo.value.trim();
+    this.doc.metadados = { ...(this.doc.metadados || {}), reconhecimento: { ...(this.doc.metadados.reconhecimento || {}), montagens: novas, perfis } };
     await this.salvar({ avisar: false });
     this.dica('Gerando o modelo 3D…');
     try {
       const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/gerar-3d`, {
-        montagens: novas, modo: modo.value, ifc: ifc.checked,
+        montagens: novas, modo: modo.value, ifc: ifc.checked, perfis,
       });
       const g = r.gerado || {};
       const itens = [el('div', { class: 'explica', texto: `Modelo 3D gerado: ${numero(g.barras || 0)} barra(s), ${g.posicoes || 0} posição(ões), ${g.conjuntos || 0} conjunto(s), ${numero(g.peso_kg || 0)} kg. O modelo anterior foi guardado no histórico.` })];
@@ -1219,7 +1253,7 @@ class CAD {
     const busca = el('input', { type: 'search', placeholder: 'buscar: 150x60, W 310, 3/8…', spellcheck: 'false' });
     const selPapel = el('select');
     for (const p of ['banzo', 'diagonal', 'montante', 'terça', 'longarina', 'viga', 'pilar',
-                     'contraventamento', 'tirante', 'barra', 'chapa']) {
+                     'contraventamento', 'tirante', 'corrente', 'barra', 'chapa']) {
       selPapel.append(el('option', { value: p, texto: p }));
     }
     const selAco = el('select');

@@ -566,7 +566,8 @@ def gerar_3d_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         # projeto recebido (DXF/PDF reconhecido): cada vista no seu lugar
         from nucleo3d import de_vistas
         doc = de_vistas.modelo_das_vistas(desenho, corpo["montagens"], aco_padrao=str(corpo.get("aco") or "ASTM A572 Gr.50"),
-                                          nome=str(corpo.get("nome") or "") or desenho.nome, doc=base)
+                                          nome=str(corpo.get("nome") or "") or desenho.nome, doc=base,
+                                          perfis=corpo.get("perfis") if isinstance(corpo.get("perfis"), dict) else None)
         g.salvar_modelo(s, doc.dict(), marco=True)
         g.tocar(s)
         r = {"modelo": {"entidades": len(doc.entidades), "barras": len(doc.barras)},
@@ -1452,7 +1453,8 @@ def projeto_2d_para_modelo(s: str, corpo: dict) -> dict:
     do projeto e o IFC.
 
     corpo: {arquivo: nome do arquivo, conteudo_b64, tipo: "dxf"|"pdf" (pela extensão),
-            modo: "substituir"|"acrescentar", ifc: true, fator: força a escala}"""
+            modo: "substituir"|"acrescentar", ifc: true, fator: força a escala,
+            perfis: {papel: perfil} para as peças reconhecidas só pela forma (sem perfil escrito)}"""
     import base64
     from nucleo2d import reconhecer
     from nucleo2d.desenho import Desenho
@@ -1488,7 +1490,9 @@ def projeto_2d_para_modelo(s: str, corpo: dict) -> dict:
         g.salvar_desenho(s, nome_des, des.dict())
         saida = {"desenho": nome_des, "lido": {k: v for k, v in lido.items() if k != "ids"},
                  "vistas": r["vistas"], "resumo": r["resumo"], "textos_sem_linha": r["textos_sem_linha"][:60],
-                 "avisos": list(lido.get("avisos") or []) + r["avisos"] + mont["avisos"], "montagens": mont["montagens"]}
+                 "avisos": list(lido.get("avisos") or []) + r["avisos"] + mont["avisos"], "montagens": mont["montagens"],
+                 "sem_perfil": des.metadados["reconhecimento"].get("sem_perfil") or {},
+                 "perfis_padrao": des.metadados["reconhecimento"].get("perfis_padrao") or {}}
         if not r["barras"] or corpo.get("gerar") is False:
             return saida
         _progresso(s, "montando o modelo 3D…")
@@ -1496,7 +1500,8 @@ def projeto_2d_para_modelo(s: str, corpo: dict) -> dict:
         if str(corpo.get("modo") or "substituir") == "acrescentar":
             atual = g.abrir_modelo(s)
             base = Documento.de_dict(atual) if atual else None
-        doc = de_vistas.modelo_das_vistas(des, mont["montagens"], nome=os.path.splitext(arquivo)[0], doc=base)
+        doc = de_vistas.modelo_das_vistas(des, mont["montagens"], nome=os.path.splitext(arquivo)[0], doc=base,
+                                          perfis=corpo.get("perfis") if isinstance(corpo.get("perfis"), dict) else None)
         g.salvar_modelo(s, doc.dict(), marco=True)
         g.tocar(s)
         saida["modelo"] = {"entidades": len(doc.entidades), "barras": len(doc.barras)}

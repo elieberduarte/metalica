@@ -417,6 +417,23 @@ class _Grade:
                         yield i
 
 
+def _dist_segs(a: _Seg, b: _Seg) -> float:
+    """Distância entre dois trechos (zero se se cruzam)."""
+    d = min(a.dist(b.a), a.dist(b.b), b.dist(a.a), b.dist(a.b))
+    if d <= 1e-9:
+        return 0.0
+    # cruzam-se?
+    r = (a.b[0] - a.a[0], a.b[1] - a.a[1])
+    q = (b.b[0] - b.a[0], b.b[1] - b.a[1])
+    den = r[0] * q[1] - r[1] * q[0]
+    if abs(den) > 1e-12:
+        t = ((b.a[0] - a.a[0]) * q[1] - (b.a[1] - a.a[1]) * q[0]) / den
+        u = ((b.a[0] - a.a[0]) * r[1] - (b.a[1] - a.a[1]) * r[0]) / den
+        if 0.0 <= t <= 1.0 and 0.0 <= u <= 1.0:
+            return 0.0
+    return d
+
+
 def _segmentos(des: Desenho) -> List[_Seg]:
     segs: List[_Seg] = []
     for e in des.entidades.values():
@@ -580,22 +597,54 @@ def reconhecer(des: Desenho, *, papel_unidade: Optional[bool] = None, fator: Opt
         return i
 
     # só as linhas de peça ligam uma vista à outra: cota, eixo e texto de anotação passam
-    # de uma vista para a vizinha no desenho de fábrica e juntariam tudo numa vista só
+    # de uma vista para a vizinha no desenho de fábrica e juntariam tudo numa vista só.
+    # Duas linhas se ligam quando estão de fato a menos de um gap (não só na mesma célula
+    # ou na vizinha: a elevação e a planta logo abaixo, a um gap e meio, são duas vistas)
     for (cx, cy), lista in grade.d.items():
         viz = [i for i in lista if not segs[i].anotacao]
         for dx, dy in ((1, 0), (0, 1), (1, 1), (1, -1)):
             viz.extend(i for i in grade.d.get((cx + dx, cy + dy), ()) if not segs[i].anotacao)
-        if not viz:
+        if len(viz) < 2:
             continue
-        r0 = raiz(viz[0])
-        for i in viz[1:]:
-            ri = raiz(i)
-            if ri != r0:
-                pai[ri] = r0
+        for k in range(1, len(viz)):
+            a_ = segs[viz[k]]
+            for j in range(k):
+                b_ = segs[viz[j]]
+                ra, rb = raiz(a_.i), raiz(b_.i)
+                if ra == rb:
+                    continue
+                if _dist_segs(a_, b_) <= 1.5 * gap:
+                    pai[ra] = rb
     grupos: Dict[int, List[_Seg]] = collections.defaultdict(list)
     for s in segs:
         if not s.anotacao:
             grupos[raiz(s.i)].append(s)
+    # a tira fina (a fila de cotas desenhada como linhas, debaixo da vista) vai para a
+    # vista mais perto: é anotação dela, e as cotas dão a escala da vista
+    def caixa_de(g):
+        xs = [p[0] for s in g for p in (s.a, s.b)]
+        ys = [p[1] for s in g for p in (s.a, s.b)]
+        return min(xs), min(ys), max(xs), max(ys)
+
+    def dist_caixas(c1, c2):
+        dx = max(c1[0] - c2[2], 0.0, c2[0] - c1[2])
+        dy = max(c1[1] - c2[3], 0.0, c2[1] - c1[3])
+        return math.hypot(dx, dy)
+
+    caixas = {k: caixa_de(g) for k, g in grupos.items()}
+    for k in list(grupos):
+        c = caixas[k]
+        w, h = c[2] - c[0], c[3] - c[1]
+        if min(w, h) >= 0.05 * max(w, h, 1e-9):
+            continue
+        perto = [(dist_caixas(c, caixas[j]), j) for j in grupos if j != k and len(grupos[j]) > len(grupos[k])]
+        if perto and min(perto)[0] <= 3.0 * gap:
+            j = min(perto)[1]
+            grupos[j].extend(grupos[k])
+            for s in grupos[k]:
+                pai[raiz(s.i)] = raiz(grupos[j][0].i)
+            caixas[j] = caixa_de(grupos[j])
+            del grupos[k]
     ordem = sorted(grupos.values(), key=lambda g: -len(g))
     vistas: List[dict] = []
     for k, g in enumerate(ordem):
@@ -651,27 +700,58 @@ def reconhecer(des: Desenho, *, papel_unidade: Optional[bool] = None, fator: Opt
     barras: List[dict] = []
     chapas: List[dict] = []
     sem_linha: List[dict] = []
+    from nucleo2d import reconhecer_geo as geo
+    fech_por_id = {e.id: e for e in fechadas}
+    analises: Dict[int, dict] = {}
+    ativas: List[dict] = []
     for v in vistas:
         g = v["segs"]
         if len(g) < 2 and not any(t.perfil for t in v["textos"]):
             continue
+        ativas.append(v)
         v["titulo"], v["tipo"], v["escala_texto"] = _titulo(v, textos)
         v["fator"], v["fator_origem"] = _fator_da_vista(v, segs, grade, papel_unidade, fator, esc)
+        analises[v["id"]] = geo.analisar(v, fech_por_id)
+    # sem título, a forma diz o que a vista é (pórtico, planta, fachada, repetição)
+    ref = geo.classificar(ativas, analises)
+    if not papel_unidade and not fator and geo.unidade_em_cm(ativas, analises):
+        for v in ativas:
+            v["fator"] = float(v["fator"] or 1.0) * 10.0
+            v["fator_origem"] = "cm"
+        avisos.append("o desenho parece estar em centímetros (o pórtico teria menos de 6 m de vão em mm): tomei "
+                      "10 mm por unidade do desenho — se estiver errado, force a escala ao gerar o 3D.")
+    avisar("lendo as barras…")
+    for v in ativas:
         v["eixos"] = _eixos(v, circulos, textos, grade, segs)
         v["_fechadas"] = fechadas
         _rotular(v, segs, grade, legenda)
         _herdar(v)
         bs, chs = _barras_da_vista(v, segs, grade)
+        if not bs:
+            # nenhum perfil escrito nesta vista: as barras saem da forma, sem perfil
+            bs, eixos_geo = geo.barras_da_vista(v, analises[v["id"]], ref)
+            if eixos_geo and not v["eixos"]:
+                v["eixos"] = eixos_geo
         barras.extend(bs)
         chapas.extend(chs)
         for t in v["textos"]:
             if t.perfil and not t.usado and not t.perfil.get("chapa"):
                 sem_linha.append({"texto": t.texto, "perfil": t.perfil["perfil"], "vista": v["id"],
                                   "ponto": [round(t.centro[0], 2), round(t.centro[1], 2)]})
+    geo.conferir_pilares(ativas, barras, analises)
     vistas_uteis = [v for v in vistas if any(b["vista"] == v["id"] for b in barras) or v.get("eixos")]
     if not barras:
         avisos.append("nenhum perfil escrito ficou ligado a uma linha: o desenho tem os perfis em texto? "
                       "(PDF digitalizado ou texto em fonte SHX não se lê)")
+    sem_perfil = collections.Counter(b["papel"] for b in barras if not b["perfil"])
+    if sem_perfil:
+        avisos.append("%d barra(s) reconhecida(s) só pela forma, sem perfil escrito (%s): o perfil de cada papel é "
+                      "escolhido ao gerar o modelo 3D." % (sum(sem_perfil.values()),
+                                                           ", ".join("%d %s" % (n, p) for p, n in sem_perfil.most_common())))
+    repetidas = [v for v in vistas if v.get("repetida") is not None]
+    if repetidas:
+        avisos.append("%d vista(s) repetida(s) (mesmo tamanho e as mesmas linhas de outra) ficaram de fora."
+                      % len(repetidas))
     for v in vistas_uteis:
         if v.get("fator_origem") == "padrao":
             avisos.append("vista \"%s\": escala não encontrada pelas cotas; usei %s — confira."
@@ -684,8 +764,9 @@ def reconhecer(des: Desenho, *, papel_unidade: Optional[bool] = None, fator: Opt
                              "barras": sum(1 for b in barras if b["vista"] == v["id"])})
     resumo = {"vistas": len(saida_vistas), "barras": len(barras), "chapas": len(chapas),
               "a_conferir": sum(1 for b in barras if b["conferir"]),
-              "perfis": dict(collections.Counter(b["perfil"] for b in barras)),
+              "perfis": dict(collections.Counter(b["perfil"] for b in barras if b["perfil"])),
               "papeis": dict(collections.Counter(b["papel"] for b in barras)),
+              "sem_perfil": dict(sem_perfil), "repetidas": len(repetidas),
               "textos_de_perfil": sum(1 for t in textos if t.perfil), "sem_linha": len(sem_linha)}
     return {"vistas": saida_vistas, "barras": barras, "chapas": chapas, "textos_sem_linha": sem_linha,
             "avisos": avisos, "resumo": resumo, "papel_unidade": bool(papel_unidade)}
@@ -1287,8 +1368,12 @@ def aplicar(des: Desenho, resultado: dict, substituir: bool = True) -> List[Linh
         des.add(ln)
         novas.append(ln)
     md = dict(des.metadados or {})
+    from nucleo2d.reconhecer_geo import PERFIS_PADRAO
+    sem_perfil = dict((resultado.get("resumo") or {}).get("sem_perfil") or {})
     md["reconhecimento"] = {"vistas": resultado.get("vistas") or [], "resumo": resultado.get("resumo") or {},
-                            "papel_unidade": bool(resultado.get("papel_unidade"))}
+                            "papel_unidade": bool(resultado.get("papel_unidade")),
+                            "sem_perfil": sem_perfil,
+                            "perfis_padrao": {p: PERFIS_PADRAO.get(p, PERFIS_PADRAO["barra"]) for p in sem_perfil}}
     des.metadados = md
     return novas
 
@@ -1357,12 +1442,16 @@ def sugerir_montagem(resultado: dict) -> dict:
     def pilares(v):
         return [b for b in barras if b["vista"] == v["id"] and b["papel"] == "pilar"]
 
+    # o pórtico com pilares e com menos deles (o interno) vai primeiro; o com mais (o oitão,
+    # com o pilar do meio) só nos eixos das pontas; a tesoura sem pilar por último
+    em_pe.sort(key=lambda v: (not pilares(v), len(pilares(v))))
     altura_pilar = 0.0
     for v in em_pe + laterais:
         ps = pilares(v)
         if ps:
             f = float(v["fator"] or 1.0)
-            altura_pilar = max(altura_pilar, max(abs(b["b"][1] - b["a"][1]) for b in ps) * f)
+            altura_pilar = max(abs(b["b"][1] - b["a"][1]) for b in ps) * f
+            break
 
     def base_de(v):
         ext = _extensao(barras, v["id"])
@@ -1426,21 +1515,37 @@ def sugerir_montagem(resultado: dict) -> dict:
                          "cobertura": bool(em_pe), "conjunto": "", "cortar_nos_eixos": True,
                          "eixos_corte": [{"a": e["a"], "b": e["b"]} for e in fam_t]})
             usados_t = False
+            n_pil_ref = len(pilares(em_pe[0])) if em_pe else 0
+            oitoes = 0
             for v in em_pe:
                 fv = float(v["fator"] or 1.0)
                 tem_pilar = bool(pilares(v))
                 z0 = 0.0 if tem_pilar else altura_pilar
                 ext = _extensao(barras, v["id"])
                 larg = (ext[2] - ext[0]) * fv if ext else 0.0
-                usar = not usados_t and (vao is None or abs(larg - (vao or larg)) <= 0.2 * max(larg, 1.0))
+                mesmo_vao = vao is None or abs(larg - (vao or larg)) <= 0.2 * max(larg, 1.0)
+                alt = (ext[3] - ext[1]) * fv if ext else 0.0
+                if not usados_t:
+                    alt_ref = alt
+                mesma_altura = abs(alt - alt_ref) <= 0.25 * max(alt_ref, 1.0)
+                origens = origens_t
+                if not usados_t:
+                    usar = True
+                elif mesmo_vao and mesma_altura and tem_pilar and len(pilares(v)) > n_pil_ref and len(origens_t) >= 2:
+                    usar = True                       # o oitão: só nas pontas
+                    origens = [origens_t[0], origens_t[-1]]
+                    oitoes += 1
+                else:
+                    usar = False
                 mont.append({"vista": v["id"], "titulo": v["titulo"] or "Vista %d" % v["id"], "tipo": v["tipo"] or "elevacao",
-                             "usar": usar or not usados_t, "u": [round(d[0], 6), round(d[1], 6), 0.0], "v": [0.0, 0.0, 1.0],
-                             "base": base_de(v), "origens": [[o[0], o[1], round(z0, 1)] for o in origens_t], "fator": fv,
+                             "usar": usar, "u": [round(d[0], 6), round(d[1], 6), 0.0], "v": [0.0, 0.0, 1.0],
+                             "base": base_de(v), "origens": [[o[0], o[1], round(z0, 1)] for o in origens], "fator": fv,
                              "cobertura": False, "conjunto": "T" if v["tipo"] == "trelica" else "PT"})
                 usados_t = True
             if len(em_pe) > 1:
-                avisos.append("há %d vistas em pé; todas foram postas nos eixos das tesouras — desmarque as que são "
-                              "detalhe ou repetição." % len(em_pe))
+                avisos.append("há %d vistas em pé: a primeira foi posta em todos os eixos das tesouras%s; as outras "
+                              "ficaram desmarcadas — confira." % (len(em_pe), (", %d com mais pilares (oitão) só nos "
+                                                                            "eixos das pontas" % oitoes) if oitoes else ""))
             for v in laterais:
                 fv = float(v["fator"] or 1.0)
                 dl = fam_o[0]["dir"]

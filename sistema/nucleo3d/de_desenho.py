@@ -67,7 +67,7 @@ CAMADA_DO_PAPEL: Dict[str, str] = {
 
 #: Papéis que uma peça desenhada pode ter (o que a interface oferece).
 PAPEIS: List[str] = ["banzo", "diagonal", "montante", "terça", "longarina", "viga",
-                     "pilar", "contraventamento", "tirante", "barra", "chapa"]
+                     "pilar", "contraventamento", "tirante", "corrente", "barra", "chapa"]
 
 TOL_NO = 2.0          # mm: pontas a menos disto são o mesmo nó
 
