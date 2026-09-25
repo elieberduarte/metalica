@@ -2059,6 +2059,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "cad", "cad.html"), WEB)
             if rota in ("/materiais", "/lista-de-materiais"):
                 return self._arquivo(os.path.join(WEB, "materiais.html"), WEB)
+            if rota in ("/analise", "/resultado-da-analise"):
+                return self._arquivo(os.path.join(WEB, "analise.html"), WEB)
             if rota in ("/catalogo", "/pecas"):
                 return self._arquivo(os.path.join(WEB, "catalogo.html"), WEB)
             if rota in ("/editor", "/editor3d", "/3d"):

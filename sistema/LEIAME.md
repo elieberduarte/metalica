@@ -218,6 +218,15 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.16.** Tela do resultado da análise (`/analise?projeto=…`, `web/analise.html` e `analise.js`): lê o cálculo gravado
+(`GET /api/projetos/<s>/calculo`) e mostra o resumo em cartões (posições verificadas, não passam, pior aproveitamento,
+peso verificado, ligações, flecha, peças fora do cálculo), a situação por tipo de peça, todas as peças da mais carregada
+para a menos (a linha abre as verificações com os passos da conta, "Perfis que servem no lugar…" pela rota de
+alternativas e "Ver no 3D" com a posição em destaque; o banzo inferior sem travamento lateral vem marcado), as ligações,
+o que ficou fora do cálculo, os avisos, os dados de entrada (cargas e vento NBR 6123 com os casos) e as combinações;
+filtro por texto e "só as reprovadas", impressão, tema claro/escuro e tela estreita. No 3D: Ver → Resultado da análise…
+e o botão "Resultado em tela…" no painel do cálculo. Verificador `verif_analise.py`.
+
 **0.8.15.** Revisão geral de 24/09, blocos 4 e 5. Telas: o Detalhar do 3D ganhou a opção "Chapas planas viram
 chapas paramétricas" (ia sempre ligada); na tela inicial, o erro de "Novo projeto desenhando" aparece (`aviso` não
 existia ali — `recado`) e Enter num botão do cartão (Excluir) não abre mais o projeto; no CAD, com um diálogo aberto,

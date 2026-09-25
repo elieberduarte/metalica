@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101b2e">
+<script src="/tema-janela.js"></script>
+<script src="/atualizacao.js" defer></script>
+<title>Resultado da análise — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M7 24V14M13 24V9M19 24V16M25 24V6' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'/></svg>">
+<style>
+  .analise { max-width: 1380px; margin: 0 auto; padding: 18px 24px 60px; }
+  .analise .barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 14px; }
+  .analise .barra .sep { flex: 1; }
+  .analise .barra select, .analise .barra input[type=search] { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--borda-forte);
+    border-radius: var(--raio-p); background: var(--painel); color: var(--texto); }
+  .analise .barra input[type=search] { width: 240px; }
+  .analise .obra-atual { font-size: 15px; }
+  .analise .obra-atual b { font-weight: 600; }
+  .analise .cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 6px 0 18px; }
+  .analise .cartao-n { padding: 10px 14px; background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); }
+  .analise .cartao-n b { display: block; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+  .analise .cartao-n span { font-size: 12px; color: var(--texto2); text-transform: uppercase; letter-spacing: .05em; }
+  .analise .cartao-n small { display: block; font-size: 12px; color: var(--texto3); margin-top: 2px; }
+  .analise .cartao-n.ruim { border-left: 4px solid var(--verm); }
+  .analise .cartao-n.bom { border-left: 4px solid var(--verde); }
+  .analise .cartao-n.atencao { border-left: 4px solid var(--amarelo); }
+  .analise h2 { font-size: 16px; margin: 24px 0 8px; color: var(--azul); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .analise h2 small { font-size: 12px; font-weight: 400; color: var(--texto3); }
+  .analise table { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--painel); }
+  .analise th, .analise td { border: 1px solid var(--borda); padding: 4px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+  .analise td.quebra, .analise th.quebra { white-space: normal; }
+  .analise th { background: var(--painel2); font-weight: 600; position: sticky; top: 0; z-index: 2; cursor: pointer; user-select: none; }
+  .analise th.ordem-asc::after { content: " ▲"; font-size: 9px; color: var(--texto3); }
+  .analise th.ordem-desc::after { content: " ▼"; font-size: 9px; color: var(--texto3); }
+  .analise td.r, .analise th.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .analise td.c, .analise th.c { text-align: center; }
+  .analise td.b { font-weight: 600; }
+  .analise tr.oculta { display: none; }
+  .analise tbody tr.linha-peca { cursor: pointer; }
+  .analise tbody tr.linha-peca:hover td { background: var(--azul-fraco); }
+  .analise tr.aberta td { background: var(--azul-fraco); }
+  .analise .rolagem { overflow: auto; max-height: 72vh; border: 1px solid var(--borda); border-radius: var(--raio); }
+  .analise .rolagem table { border: 0; }
+  .analise .vazio { padding: 14px; color: var(--texto3); font-size: 13px; border: 1px dashed var(--borda); border-radius: var(--raio); }
+  .analise .nota { font-size: 12.5px; color: var(--texto2); margin: 6px 0 0; }
+  .analise .aviso-topo { padding: 10px 14px; border-left: 3px solid var(--amarelo); background: var(--amarelo-fundo); border-radius: var(--raio-p); margin: 0 0 14px; font-size: 13.5px; }
+  .analise .aviso-topo.erro { border-color: var(--verm); background: var(--verm-fundo); }
+  .analise ul.lista { margin: 4px 0; padding-left: 20px; }
+  .analise ul.lista li { font-size: 13px; margin: 3px 0; }
+  /* barra do aproveitamento: a largura é o aproveitamento até 100 %; passou, fica cheia e vermelha */
+  .aprov { display: inline-flex; align-items: center; gap: 6px; min-width: 150px; }
+  .aprov .trilho { position: relative; width: 90px; height: 8px; border-radius: 4px; background: var(--painel2); border: 1px solid var(--borda); overflow: hidden; flex: none; }
+  .aprov .cheio { position: absolute; inset: 0 auto 0 0; background: var(--verde-barra, var(--verde)); }
+  .aprov[data-faixa=alto] .cheio { background: var(--amarelo-barra, var(--amarelo)); }
+  .aprov[data-faixa=reprovado] .cheio { background: var(--verm-barra, var(--verm)); }
+  .aprov[data-faixa=indeterminado] .cheio { background: #b04fc4; }
+  .aprov b { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 52px; text-align: right; }
+  .situacao { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+  .situacao.ok { background: var(--verde-fundo); color: var(--verde); }
+  .situacao.nao { background: var(--verm-fundo); color: var(--verm); }
+  .situacao.ind { background: #f3e3f7; color: #8e3aa3; }
+  :root[data-tema=escuro] .situacao.ind { background: #3b2342; color: #e3a8f0; }
+  /* detalhe de uma peça: as verificações com os passos da conta */
+  .detalhe-peca { padding: 8px 6px 12px; white-space: normal; }
+  .detalhe-peca .acoes { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+  .detalhe-peca .verif { margin: 0 0 10px; border: 1px solid var(--borda); border-radius: var(--raio-p); background: var(--painel); }
+  .detalhe-peca .verif > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 6px 10px; background: var(--painel2); border-bottom: 1px solid var(--borda); font-size: 13px; }
+  .detalhe-peca .verif > header .norma { color: var(--texto3); font-size: 12px; }
+  .detalhe-peca .verif > header .conta { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .detalhe-peca .verif table { font-size: 12.5px; }
+  .detalhe-peca .verif td { white-space: normal; border-left: 0; border-right: 0; }
+  .detalhe-peca .verif .obs { padding: 6px 10px; font-size: 12.5px; color: var(--texto2); }
+  .detalhe-peca .alternativas { margin: 8px 0 0; }
+  .analise .larga { overflow-x: auto; }
+  .analise .sem-trava { color: var(--verm); font-size: 11.5px; font-weight: 600; }
+  @media (max-width: 760px) {
+    .topo { height: auto; flex-wrap: wrap; padding: 8px 12px; gap: 6px 12px; }
+    .topo .acoes { flex: 1 1 100%; flex-wrap: wrap; }
+    .analise { padding: 12px 12px 40px; }
+    .analise .barra input[type=search] { width: 100%; }
+  }
+  .grade-dados { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .grade-dados table td:first-child { color: var(--texto2); }
+  @media print {
+    .topo, .analise .barra { display: none !important; }
+    .analise { max-width: none; padding: 0; }
+    .analise .rolagem { max-height: none; overflow: visible; border: 0; }
+    .analise th { position: static; }
+    .analise table { font-size: 10px; }
+    body { background: #fff; color: #000; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M7 24V14M13 24V9M19 24V16M25 24V6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+    <h1>Resultado da análise<span id="sub-projeto">projeto</span></h1>
+  </div>
+  <div class="projeto-atual" id="quando" title="Quando o cálculo foi feito">—</div>
+  <div class="acoes">
+    <button type="button" id="btn-voltar" title="Volta para a tela anterior">&larr; Voltar</button>
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" id="btn-3d" title="Voltar ao modelo 3D deste projeto (lá se recalcula, troca perfil e dimensiona)">Modelo 3D</button>
+    <button type="button" id="btn-materiais" title="Lista de materiais do projeto">Lista de materiais</button>
+    <button type="button" onclick="location.href='/'" title="Voltar à lista de projetos">Projetos</button>
+  </div>
+</header>
+
+<main class="analise">
+  <div id="aviso" class="aviso-topo" hidden></div>
+
+  <div class="barra">
+    <div class="obra-atual" id="obra-atual">Projeto: <b>—</b></div>
+    <span class="sep"></span>
+    <select id="situacao" title="Quais peças mostrar">
+      <option value="">Todas as peças</option>
+      <option value="nao">Só as reprovadas</option>
+      <option value="ok">Só as que passam</option>
+    </select>
+    <input type="search" id="filtro" placeholder="Filtrar posição, perfil, tipo…" title="Filtra as peças e as ligações">
+    <button type="button" id="btn-imprimir" title="Imprime esta tela (ou salva em PDF pela impressora do Windows)">Imprimir</button>
+  </div>
+
+  <div class="cartoes" id="cartoes"></div>
+  <div id="conteudo"></div>
+</main>
+
+<script src="/analise.js"></script>
+<script src="/versao.js" defer></script>
+<script src="/vivo.js"></script>
+</body>
+</html>

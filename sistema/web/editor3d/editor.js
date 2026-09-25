@@ -1324,6 +1324,12 @@ export class Editor {
     this._abrirCAD(alvo);
   }
 
+  /** Tela do resultado da análise (o último cálculo gravado do projeto). */
+  _abrirResultadoDaAnalise() {
+    if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para ver o resultado da análise.', 'atencao'); return; }
+    this._irPara(`/analise?projeto=${encodeURIComponent(this.projeto)}`);
+  }
+
   /** Tela da lista de materiais do projeto (romaneio, perfis, chapas, conjuntos). */
   _abrirMateriais() {
     if (!this.projeto) { this.aviso('Abra o modelo por um projeto (gerenciador) para ver a lista de materiais.', 'atencao'); return; }
@@ -1738,6 +1744,7 @@ export class Editor {
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
       'abrir-cad': () => this._abrirCADDoProjeto(),
       'materiais': () => this._abrirMateriais(),
+      'resultado-analise': () => this._abrirResultadoDaAnalise(),
       'excluir-desenhos': () => this._excluirDesenhos(),
       isolar: () => (this._isolamento ? this.sairDoIsolamento() : this.isolarSelecao()),
     };
@@ -3395,10 +3402,14 @@ export class Editor {
                  (res.pior_ligacao ? ` · pior ${numero(res.pior_ligacao * 100, 0)} %` : '') })));
     }
     caixa.append(campos);
-    caixa.append(el('div', { class: 'acoes-linha' }, el('button', { type: 'button', class: 'mini',
-      texto: 'Dimensionar: o perfil mais leve que passa…',
-      title: 'Escolhe, em cada posição, o perfil mais leve do catálogo que passa e troca no modelo',
-      onclick: () => this.dimensionarEstrutura() })));
+    caixa.append(el('div', { class: 'acoes-linha' },
+      el('button', { type: 'button', class: 'mini', texto: 'Resultado em tela…',
+        title: 'Abre o resultado completo numa tela: todas as peças com a conta de cada verificação, ligações, cargas e vento',
+        onclick: () => this._abrirResultadoDaAnalise() }),
+      el('button', { type: 'button', class: 'mini',
+        texto: 'Dimensionar: o perfil mais leve que passa…',
+        title: 'Escolhe, em cada posição, o perfil mais leve do catálogo que passa e troca no modelo',
+        onclick: () => this.dimensionarEstrutura() })));
     if (ligs.length) caixa.append(this._blocoLigacoes(ligs));
     const trocas = (a.parametros && a.parametros.trocas) || {};
     const ts = Object.entries(trocas);
