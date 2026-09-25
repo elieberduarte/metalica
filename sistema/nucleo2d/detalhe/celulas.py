@@ -757,6 +757,20 @@ def _mover_fixadores(ch: Chapa, furo_local, delta_local, raio: float, fixadores:
     return _mover_fixadores_mundo(centro, nz, delta, raio, fixadores, movidos)
 
 
+def _centro_do_fixador(f: Solido):
+    """Centro dos vértices, guardado na peça enquanto a lista de vértices for a mesma (o
+    padronizar dos furos pedia o centro de cada parafuso para cada furo: 78 milhões de
+    somas no projeto dos compressores)."""
+    guardado = getattr(f, "_centro_guardado", None)
+    if guardado is not None and guardado[0] is f.vertices:
+        return guardado[1]
+    xs, ys, zs = zip(*f.vertices)
+    n = len(xs)
+    c = (sum(xs) / n, sum(ys) / n, sum(zs) / n)
+    f._centro_guardado = (f.vertices, c)
+    return c
+
+
 def _mover_fixadores_mundo(centro, nz, delta, raio: float, fixadores: Sequence[Solido], movidos: set,
                            alcance: float = 120.0) -> int:
     """Fixadores cujo centro está a menos de `raio` do eixo `nz` que passa por `centro`
@@ -765,7 +779,7 @@ def _mover_fixadores_mundo(centro, nz, delta, raio: float, fixadores: Sequence[S
     for f in fixadores:
         if f.id in movidos:
             continue
-        cf = tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3))
+        cf = _centro_do_fixador(f)
         d = _sub(cf, centro)
         t = _dot(d, nz)
         lateral = math.sqrt(max(0.0, _dot(d, d) - t * t))

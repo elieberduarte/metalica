@@ -70,7 +70,10 @@ function tabela(colunas, linhas, rodape, chaveFiltro) {
       const v = c.valor ? c.valor(li) : li[c.chave];
       const td = el('td', { class: c.classe || '' });
       if (v && v.nodeType) td.append(v); else td.textContent = c.num ? n(v, c.casas || 0) : (v === 0 && c.zero ? '—' : (v ?? '—'));
-      td.dataset.v = c.num ? String(Number(v) || 0) : String(v ?? '');
+      // coluna que mostra um elemento (as marcas das posições e dos conjuntos) ordena pelo
+      // texto dele, não por "[object HTMLSpanElement]"
+      td.dataset.v = c.num ? String(Number(v) || 0)
+        : (v && v.nodeType ? (v.getAttribute && v.getAttribute('title')) || v.textContent || '' : String(v ?? ''));
       tr.append(td);
     }
     tbody.append(tr);

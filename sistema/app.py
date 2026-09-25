@@ -697,6 +697,8 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                   barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
                                   nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"))
+    lista["pre_moldados"] = r.get("fora_do_aco") or []
+    lista["estrutura_a_conferir"] = r.get("estrutura_a_conferir") or []
     arquivos = lista_producao.gravar(pasta, lista, r["objetos_posicoes"], r["acessorios"])
     relatorio = {k: v for k, v in r.items() if k not in ("desenhos", "objetos_posicoes", "objetos_pecas", "camadas")}
     relatorio["desenhos"] = desenhos
@@ -1253,6 +1255,8 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
         lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
                                       nomes_conjuntos=nomes.get("ifc_conjuntos"))
+        lista["pre_moldados"] = lev.get("fora_do_aco") or []
+        lista["estrutura_a_conferir"] = lev.get("estrutura_a_conferir") or []
         lista_producao.gravar(pasta, lista, lev["posicoes"], lev["acessorios"])
         g.tocar(s)
     arquivos = {}

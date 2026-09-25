@@ -7,6 +7,9 @@ SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, CONTAR_OBJETOS, _json, _porta_livre
 
+if len(sys.argv) < 2:
+    print("precisa do servidor rodando com o projeto importado: python verif_grupos.py PORTA")
+    sys.exit(0)
 porta = int(sys.argv[1]); base_url = f"http://localhost:{porta}"
 chrome = next(c for c in CHROMES if os.path.exists(c))
 porta_cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_grupos_")

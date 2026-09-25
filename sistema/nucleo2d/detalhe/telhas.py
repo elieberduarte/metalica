@@ -1006,20 +1006,26 @@ def _direcao_da_onda_calc(e, normal):
     na largura, nenhuma no comprimento. O maior eixo da malha não serve: numa telha curta
     (258 mm) o maior eixo é a largura."""
     import numpy as np
-    P = e.vertices
-    M = np.zeros((3, 3))
-    for f in e.faces:
-        if len(f) < 3:
-            continue
-        s = np.zeros(3)
-        a = np.array(P[f[0]])
+    P = np.asarray(e.vertices, dtype=float)
+    # as faces em leque de triângulos, todas de uma vez (um np.cross por triângulo levava
+    # 45 s do Detalhar do ÁGUA GELADA)
+    ia, ib, ic, face = [], [], [], []
+    for k, f in enumerate(e.faces):
         for i in range(1, len(f) - 1):
-            s += np.cross(np.array(P[f[i]]) - a, np.array(P[f[i + 1]]) - a)
-        area = np.linalg.norm(s)
-        if area < 1e-9:
-            continue
-        n = s / area
-        M += (area / 2.0) * np.outer(n, n)
+            ia.append(f[0])
+            ib.append(f[i])
+            ic.append(f[i + 1])
+            face.append(k)
+    M = np.zeros((3, 3))
+    if ia:
+        A = P[ia]
+        cr = np.cross(P[ib] - A, P[ic] - A)
+        S = np.zeros((len(e.faces), 3))
+        np.add.at(S, face, cr)
+        area = np.linalg.norm(S, axis=1)
+        ok = area >= 1e-9
+        n = S[ok] / area[ok][:, None]
+        M = (n * (area[ok] / 2.0)[:, None]).T @ n
     # no plano da chapa (tira a normal), o autovetor de menor peso
     nrm = np.array(normal)
     Pp = np.eye(3) - np.outer(nrm, nrm)

@@ -566,6 +566,8 @@ class CAD {
     });
     this.el.canvas.addEventListener('pointerdown', () => { ctrlSozinho = false; }, true);
     document.addEventListener('keydown', (ev) => {
+      // com um diálogo aberto, Del, Ctrl+Z e os atalhos são dele, não do desenho por trás
+      if (document.querySelector('dialog[open]')) return;
       const alvo = ev.target;
       const emCampo = alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'SELECT' || alvo.tagName === 'TEXTAREA');
       if (emCampo && alvo !== this.el.medida) return;

@@ -477,6 +477,21 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
                                   "Peso unitario (kg)", "Peso total (kg)"],
                                  [[c.get("nome", ""), c["marca"], c["categoria"], c["instancias"], c["pecas_unidade"], c["composicao_texto"],
                                    _num_csv(c["peso_unitario"]), _num_csv(c["peso_total"])] for c in lista["conjuntos"]])
+    if lista.get("pre_moldados"):
+        arquivos["pre_moldados"] = _csv(os.path.join(pasta, "pre-moldados.csv"),
+                                        ["Nome", "Material", "Categoria", "Tipo IFC", "Pecas", "Volume (m3)",
+                                         "Massa especifica (kg/m3)", "Peso (kg)"],
+                                        [[g["nome"], g["material"], g["categoria"], g.get("tipo_ifc", ""), g["quantidade"],
+                                          _num_csv(g["volume_m3"], 3), _num_csv(g["massa_especifica"], 0),
+                                          _num_csv(g["peso_kg"], 1)] for g in lista["pre_moldados"]])
+    if lista.get("estrutura_a_conferir"):
+        arquivos["estrutura_a_conferir"] = _csv(os.path.join(pasta, "estrutura-a-conferir.csv"),
+                                                ["Tipo", "Secao medida (mm)", "kg/m medido", "Comprimento (mm)", "Pecas",
+                                                 "Peso (kg)", "Origem (malha do IFC)"],
+                                                [[g["tipo"], g["secao"], _num_csv(g["kg_m"], 1) if g["kg_m"] is not None else "malha aberta",
+                                                  g["comprimento"], g["quantidade"],
+                                                  _num_csv(g["peso_kg"], 1) if g["peso_kg"] is not None else "", g["origem"]]
+                                                 for g in lista["estrutura_a_conferir"]])
     caminho = os.path.join(pasta, ARQUIVO_HTML)
     with open(caminho, "w", encoding="utf-8") as f:
         f.write(documento_html(lista))
@@ -602,6 +617,27 @@ def corpo_html(lista: dict) -> str:
                               [("Item", "l"), ("Quantidade", "c")],
                               [[(a["nome"], "l"), (a["quantidade"], "c")] for a in lista["acessorios"]],
                               larguras=["70%", "30%"]))
+    pm = lista.get("pre_moldados") or []
+    if pm:
+        partes.append(_tabela("Quadro 8 — Fora do aço: pré-moldado e outros materiais (volume da malha do IFC)",
+                              [("Nome", "l"), ("Material", "l"), ("Peças", "c"), ("Volume (m³)", "r"), ("kg/m³", "r"), ("Peso (kg)", "r")],
+                              [[(g["nome"], "l b"), (g["material"], "l"), (g["quantidade"], "c"), (_n(g["volume_m3"], 3), "r"),
+                                (_n(g["massa_especifica"]), "r"), (_n(g["peso_kg"], 1), "r b")] for g in pm],
+                              rodape=[("TOTAL", "l b"), ("", "l"), (_n(sum(g["quantidade"] for g in pm)), "c b"),
+                                      (_n(sum(g["volume_m3"] for g in pm), 3), "r b"), ("", "r"),
+                                      (_n(sum(g["peso_kg"] for g in pm), 1), "r b")],
+                              larguras=["26%", "26%", "10%", "13%", "10%", "15%"]))
+    ec = lista.get("estrutura_a_conferir") or []
+    if ec:
+        partes.append(_tabela("Quadro 9 — Estrutura de aço a conferir (malhas sem peças separadas: seção e comprimento medidos, "
+                              "sem o perfil; fora dos totais acima)",
+                              [("Tipo", "l"), ("Seção (mm)", "c"), ("kg/m", "r"), ("Compr. (mm)", "r"), ("Peças", "c"), ("Peso (kg)", "r")],
+                              [[(g["tipo"], "l"), (g["secao"], "c b"),
+                                (_n(g["kg_m"], 1) if g["kg_m"] is not None else "malha aberta", "r"), (_n(g["comprimento"]), "r"),
+                                (g["quantidade"], "c"), (_n(g["peso_kg"], 1) if g["peso_kg"] is not None else "—", "r b")] for g in ec],
+                              rodape=[("TOTAL medido", "l b"), ("", "c"), ("", "r"), ("", "r"), (_n(sum(g["quantidade"] for g in ec)), "c b"),
+                                      (_n(sum(g["peso_kg"] or 0.0 for g in ec), 1), "r b")],
+                              larguras=["30%", "16%", "12%", "14%", "12%", "16%"]))
     if lista["ressalvas"]:
         itens = "".join("<li><b>%s</b> %s — %s</li>" % (_esc(r["marca"]), _esc(r["perfil"]), _esc("; ".join(r["observacoes"]))) for r in lista["ressalvas"])
         partes.append("<p class=\"pequeno\"><b>Observações do detalhamento</b> (conferir antes de mandar cortar)</p><ul class=\"pequeno\">%s</ul>" % itens)

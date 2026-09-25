@@ -280,6 +280,58 @@ def _familia_da_posicao(p, tipo_pos: str, tipo_de_conj: Dict[str, str]) -> str:
     return "outros"
 
 
+#: Células já desenhadas nesta execução do Detalhar, por (célula, escala): o desenho
+#: "completo" (1:25) repete as dos desenhos por família na mesma escala, e desenhar cada
+#: conjunto de novo era um terço do tempo. Limpo no começo e no fim de `detalhar`; um por
+#: thread (o servidor detalha projetos diferentes ao mesmo tempo).
+_LOCAL = __import__("threading").local()
+
+
+def _gravadas() -> Dict[tuple, tuple]:
+    if not hasattr(_LOCAL, "gravadas"):
+        _LOCAL.gravadas = {}
+    return _LOCAL.gravadas
+
+
+def _desenhar_celula(f, banda: Desenho, x: float, y: float):
+    """`f(banda, x, y)` — ou, para as células de conjunto (`f.reaproveitar`), a gravação
+    dela na mesma escala, transladada; as de posição mudam com o desenho (furo editável
+    ou não) e são sempre desenhadas. Grava cópias
+    rasas das entidades (o `_mover` troca as coordenadas, não as altera no lugar) e as
+    vistas que a célula acrescentou."""
+    import copy as _copy
+    from nucleo2d.desenho import novo_id
+    if not getattr(f, "reaproveitar", False):
+        return f(banda, x, y)
+    chave = (id(f), banda.escala)
+    rec = _gravadas().get(chave)
+    if rec is None:
+        antes = set(banda.entidades)
+        n_vistas = len(banda.vistas)
+        ext = f(banda, x, y)
+        novas = [_copy.copy(banda.entidades[k]) for k in banda.entidades if k not in antes]
+        for e in novas:
+            e.atributos = dict(e.atributos or {})
+        _gravadas()[chave] = (x, y, ext, novas, [dict(v) for v in banda.vistas[n_vistas:]], f)
+        return ext
+    x0, y0, ext, ents, vistas, _f = rec
+    dx, dy = x - x0, y - y0
+    for e in ents:
+        e2 = _copy.copy(e)
+        e2.id = novo_id()
+        e2.atributos = dict(e.atributos or {})
+        _mover(e2, dx, dy)
+        banda.add(e2)
+    for v in vistas:
+        v2 = dict(v)
+        if v2.get("canto"):
+            v2["canto"] = [v2["canto"][0] + dx, v2["canto"][1] + dy]
+        banda.vistas.append(v2)
+    if ext is None:
+        return ext
+    return (ext[0] + dx, ext[1] + dy, ext[2] + dx, ext[3] + dy)
+
+
 def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float = 1400.0,
                       y: float = 0.0, meta: Optional[dict] = None, titulos: Optional[Sequence[tuple]] = None) -> float:
     """Desenha as células agrupadas por tipo, cada grupo dentro de um quadro com título.
@@ -301,7 +353,7 @@ def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float
         banda.camadas = {k: v for k, v in d.camadas.items()}
         # terças: uma embaixo da outra (já vêm do menor comprimento para o maior) — as do
         # mesmo tamanho com furação diferente ficam lado a lado para conferir
-        fs = [(lambda x, y_, f=f: f(banda, x, y_)) for f in grupos[chave]]
+        fs = [(lambda x, y_, f=f: _desenhar_celula(f, banda, x, y_)) for f in grupos[chave]]
         if chave in UMA_POR_LINHA:
             _em_colunas(banda, fs)
         else:
@@ -364,7 +416,7 @@ def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho]) -
             y = _quadros_por_tipo(dc, celulas, largura_max_papel=largura, y=y, meta=meta, titulos=titulos)
             continue
         banda = Desenho(nome=titulo, escala=g["escala"])
-        _empilhar(banda, [(lambda x, y_, f=f: f(banda, x, y_)) for f in celulas], largura_max_papel=largura)
+        _empilhar(banda, [(lambda x, y_, f=f: _desenhar_celula(f, banda, x, y_)) for f in celulas], largura_max_papel=largura)
         y = _anexar_quadro(dc, banda, titulo, y, meta)
     dc.metadados.setdefault("detalhamento", {"grupo": "completo", "posicoes": [], "itens": {}, "editaveis": [], "furos_originais": {}, "conjuntos": []})
     dc.metadados["detalhamento"]["grupo"] = "completo"
@@ -392,8 +444,27 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     "regra_tercas", "categorias": {marca: categoria}}."""
     avisar = avisar or (lambda *a: None)
     puladas: list = []
-    pecas, acessorios = _pecas(doc, puladas)
+    fora: list = []
+    proxies: list = []
+    pecas, acessorios = _pecas(doc, puladas, fora, proxies)
     avisos_lev: List[str] = []
+    from nucleo2d.detalhe.fora_do_aco import resumo_fora_do_aco, estrutura_a_conferir
+    fora_do_aco = resumo_fora_do_aco(fora) if fora else []
+    if fora_do_aco:
+        cats = collections.Counter()
+        for g in fora_do_aco:
+            cats[g["categoria"]] += g["quantidade"]
+        avisos_lev.append("%d peça(s) que não são de aço (%s) ficaram fora do detalhamento e do peso de aço: estão na "
+                          "lista de pré-moldados (volume e peso), na lista de materiais"
+                          % (len(fora), ", ".join("%s: %d" % kv for kv in cats.most_common())))
+    a_conferir = []
+    if proxies:
+        avisar("medindo a estrutura de aço que veio sem peças separadas…")
+        a_conferir = estrutura_a_conferir(proxies, avisar)
+        avisos_lev.append("%d malha(s) de aço sem peças separadas (IfcBuildingElementProxy) foram medidas em %d parte(s): "
+                          "estão em \"Estrutura a conferir\" na lista de materiais (seção e comprimento medidos, sem o "
+                          "perfil — o IFC não traz); para detalhar, o ideal é o IFC da estrutura metálica exportado do "
+                          "programa em que ela foi feita" % (len(proxies), sum(g["quantidade"] for g in a_conferir)))
     if puladas:
         avisos_lev.append("%d peça(s) do modelo não entraram no detalhamento (geometria que não se monta): %s"
                           % (len(puladas), "; ".join("%s (%s)" % p for p in puladas[:12])))
@@ -417,6 +488,7 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
                           "confira o comprimento dessas telhas" % exc)
     return {"pecas": pecas, "acessorios": acessorios, "posicoes": posicoes, "camadas": camadas,
             "regra_tercas": mudadas, "ajustes": ajustadas, "saias": saias, "avisos": avisos_lev,
+            "fora_do_aco": fora_do_aco, "estrutura_a_conferir": a_conferir,
             "categorias": {p.marca: _categoria(p, camadas.get(p.marca, "")) for p in posicoes}}
 
 
@@ -438,6 +510,14 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
     """Gera os desenhos de detalhamento do modelo. Devolve
     {"desenhos": {chave: Desenho}, "posicoes": [...], "conjuntos": [...], "acessorios": {},
      "regra_tercas": {marca: texto}, "avisos": [...]}."""
+    _gravadas().clear()
+    try:
+        return _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes)
+    finally:
+        _gravadas().clear()
+
+
+def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, nomes):
     avisar = avisar or (lambda *a: None)
     pedidos = list(grupos or GRUPOS.keys())
     # os grupos por classe (chapas, barras, tirantes, telhas, conjuntos em 1:50) são a base de
@@ -702,7 +782,13 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
                                    "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                                    "categoria": "CONJUNTOS", "marcas": [mk for m in membros for mk in m[0].split(" / ")],
                                    "nome": " / ".join(nomes_conj.get(m[0], m[0]) for m in membros)}
-        _quadros_por_tipo(d, fns, largura_max_papel=1400.0)
+        for _t, f_ in fns:
+            f_.reaproveitar = True       # o conjunto sai igual no "completo" (mesma escala)
+        # o desenho por classe dos conjuntos (1:50) não sai mais — "conjuntos" é o nome de
+        # um desenho por família (1:25) — e desenhá-lo era um terço do tempo do Detalhar:
+        # as células ficam em `faixas` para os desenhos por família e o completo
+        if "conjuntos" in antigos:
+            _quadros_por_tipo(d, fns, largura_max_papel=1400.0)
         itens = {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
                               "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                               "categoria": c["categoria"], "marcas": c["marcas"], "nome": c["nome"]}
@@ -917,4 +1003,5 @@ def detalhar(doc: Documento, grupos: Optional[Sequence[str]] = None, regra_terca
             "acessorios": acessorios, "regra_tercas": mudadas, "avisos": avisos,
             "peso_total": round(sum(p.peso_total for p in posicoes), 1),
             "objetos_posicoes": posicoes, "objetos_pecas": pecas, "camadas": camadas,
-            "convertidas": convertidas, "nomes": nomeacao}
+            "convertidas": convertidas, "nomes": nomeacao,
+            "fora_do_aco": lev.get("fora_do_aco") or [], "estrutura_a_conferir": lev.get("estrutura_a_conferir") or []}

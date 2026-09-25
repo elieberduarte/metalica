@@ -9,7 +9,13 @@ import { criar, dist, transladar, transformar, clonar, pontosDe, segmentosDe, in
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto } from './nucleo/comandos.js';
 
 export function paraMilimetros(texto) {
-  const t = String(texto || '').trim().toLowerCase().replace(',', '.');
+  let t = String(texto || '').trim().toLowerCase().replace(/\s+(?=(mm|cm|m)$)/, '');
+  // ponto de milhar ("1.500", "12.000 mm", "1.500,5"): no Brasil a vírgula é a decimal
+  const semUnidade = t.replace(/(mm|cm|m)$/, '');
+  const unidade = t.slice(semUnidade.length);
+  if (semUnidade.includes(',') && semUnidade.includes('.')) t = semUnidade.replace(/\./g, '') + unidade;
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(semUnidade) && (unidade === '' || unidade === 'mm')) t = semUnidade.replace(/\./g, '') + unidade;
+  t = t.replace(',', '.');
   const m = t.match(/^(-?\d+(?:\.\d+)?)\s*(mm|cm|m)?$/);
   if (!m) return null;
   const v = parseFloat(m[1]);

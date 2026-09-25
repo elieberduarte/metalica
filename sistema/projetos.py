@@ -143,8 +143,11 @@ def _gravar_json(caminho: str, dados, indent=None):
     parcial = "%s.%d-%d.parcial" % (caminho, os.getpid(), next(_CONTADOR))
     with _trava(caminho):
         try:
+            # dumps + write, e não dump: o dump vai pelo codificador em Python puro (o
+            # modelo de 80 MB levava ~20 s); o dumps sem recuo usa o de C
+            texto = json.dumps(dados, ensure_ascii=False, indent=indent)
             with open(parcial, "w", encoding="utf-8") as f:
-                json.dump(dados, f, ensure_ascii=False, indent=indent)
+                f.write(texto)
             trocar_arquivo(parcial, caminho)
         finally:
             if os.path.exists(parcial):

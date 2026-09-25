@@ -146,7 +146,8 @@ function cartao(p) {
   const c = el('article', { class: 'cartao', tabindex: '0', role: 'button',
                             'aria-label': `Abrir o projeto ${p.nome}`,
                             onclick: () => { location.href = urlDoProjeto(p); },
-                            onkeydown: (ev) => { if (ev.key === 'Enter') location.href = urlDoProjeto(p); } },
+                            // só o próprio cartão: Enter num botão dele (Excluir, Renomear…) é do botão
+                            onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) location.href = urlDoProjeto(p); } },
     icone,
     el('div', { class: 'cartao-corpo' },
       el('div', { class: 'cartao-linha1' },
@@ -266,7 +267,7 @@ async function novoProjetoDesenhado() {
     location.href = `/cad?projeto=${encodeURIComponent(criado.slug)}`;
   } catch (e) {
     carregando(false);
-    aviso(`Não foi possível criar o projeto: ${e.message}`, 'erro');
+    recado('Não foi possível criar o projeto', e.message, 'erro');
   }
 }
 

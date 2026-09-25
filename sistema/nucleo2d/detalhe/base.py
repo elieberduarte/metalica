@@ -374,7 +374,8 @@ def _material(ent) -> str:
     return str(getattr(ent, "material", "") or "")
 
 
-def _pecas(doc: Documento, puladas: Optional[list] = None):
+def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional[list] = None,
+           proxies: Optional[list] = None):
     """Sólidos do modelo que são peças de produção, e os acessórios contados.
 
     Chapa e barra paramétricas (modelo desenhado em 2D ou gerado do galpão) entram como
@@ -382,7 +383,12 @@ def _pecas(doc: Documento, puladas: Optional[list] = None):
     o detalhamento não distingue de onde a peça veio. A peça que não se monta (barra de
     comprimento zero, chapa sem contorno) não derruba o lote, mas vai para `puladas`
     (nome, motivo), para o Detalhar avisar — antes ela sumia calada.
+
+    Sólido de concreto, neoprene, madeira… (pelo material) não é peça de aço: vai para
+    `fora_do_aco` como (entidade, categoria, massa específica). Malha solta de aço grande
+    (IfcBuildingElementProxy com mais de 1,5 m) não é parafuso: vai para `proxies`.
     """
+    from nucleo2d.detalhe.fora_do_aco import material_nao_aco, proxy_estrutural
     pecas, acessorios = [], collections.Counter()
     for ent in doc.entidades.values():
         if isinstance(ent, Barra):
@@ -404,9 +410,18 @@ def _pecas(doc: Documento, puladas: Optional[list] = None):
         if not isinstance(ent, Solido):
             continue
         t = _tipo_ifc(ent)
+        nao_aco = material_nao_aco(ent)
+        if nao_aco is not None:
+            if fora_do_aco is not None:
+                fora_do_aco.append((ent, nao_aco[0], nao_aco[1]))
+            continue
         if t in TIPOS_PECA:
             pecas.append(ent)
         elif t in TIPOS_ACESSORIO:
+            if t == "IfcBuildingElementProxy" and proxy_estrutural(ent):
+                if proxies is not None:
+                    proxies.append(ent)
+                continue
             acessorios[ent.nome or t] += 1
     return pecas, dict(acessorios)
 
@@ -1320,8 +1335,8 @@ def _rotulo_espessura(pos: Posicao) -> str:
 
 # ============================================================ conjuntos
 def _caixa(ent: Solido):
-    vs = ent.vertices
-    return tuple((min(v[i] for v in vs), max(v[i] for v in vs)) for i in range(3))
+    xs, ys, zs = zip(*ent.vertices)
+    return ((min(xs), max(xs)), (min(ys), max(ys)), (min(zs), max(zs)))
 
 
 def _eixo_da_peca(ent: Solido):

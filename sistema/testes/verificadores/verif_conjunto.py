@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """Um conjunto por vez, ampliado."""
 import collections, json, math, os, sys
+if len(sys.argv) < 2:
+    print("ferramenta de diagnóstico, não verificador: python verif_conjunto.py M2,M7")
+    sys.exit(0)
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE)
 SCR = os.path.dirname(os.path.abspath(__file__))

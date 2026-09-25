@@ -121,9 +121,14 @@ def _normal_area(pontos: Sequence[Ponto]):
 
 def _autovetores(verts: Sequence[Ponto]):
     """Eixos principais por covariância (Jacobi 3×3), do maior ao menor espalhamento."""
-    n = len(verts)
-    c = [sum(v[k] for v in verts) / n for k in range(3)]
-    A = [[sum((v[i] - c[i]) * (v[j] - c[j]) for v in verts) for j in range(3)] for i in range(3)]
+    import numpy as np
+    X = np.asarray(verts, dtype=float)
+    cn = X.mean(axis=0)
+    D = X - cn
+    # a covariância em numpy (em Python puro eram 13 s do Detalhar); a rotação de Jacobi
+    # continua a mesma, para os eixos — e o sinal deles — saírem iguais
+    c = [float(x) for x in cn]
+    A = (D.T @ D).tolist()
     V = [[1.0 if i == j else 0.0 for j in range(3)] for i in range(3)]
     for _ in range(60):
         p, q = max(((i, j) for i in range(3) for j in range(i + 1, 3)),
@@ -820,12 +825,57 @@ def _cortes_de_ponta(pos: Posicao, area_secao: float):
             pos.vista_topo = True
 
 
+#: Análises já feitas nesta execução, pela geometria. A chave é o próprio conteúdo
+#: (vértices, faces, tipo, perfil, eixos), então peça movida ou editada é outra chave.
+_ANALISES: Dict[tuple, tuple] = {}
+LIMITE_ANALISES = 20000
+#: Campos que dizem quem é a posição (quantidade, conjuntos…), não o que a análise mede.
+_IDENTIDADE = {"marca", "quantidade", "conjuntos", "global_ids", "vertices", "faces", "observacoes",
+               "nome", "camada_2d", "tipo_nome", "parafusos", "porcas", "passantes", "marcas"}
+
+
+def _copia(v):
+    if isinstance(v, list):
+        return [_copia(x) for x in v]
+    if isinstance(v, Furo):
+        return Furo(**{k: _copia(x) for k, x in v.__dict__.items()})
+    return v
+
+
+def _chave_analise(pos: Posicao, eixos):
+    try:
+        e = tuple(tuple(float(k) for k in x) for x in eixos) if eixos is not None else None
+        return (pos.tipo_ifc, pos.perfil, e, tuple(tuple(v) for v in pos.vertices),
+                tuple(tuple(f) for f in pos.faces))
+    except (TypeError, ValueError):
+        return None
+
+
 def analisar(pos: Posicao, eixos=None) -> Posicao:
     """Classifica a posição e mede o que a produção precisa; medidas ao milímetro inteiro.
     `eixos` força (e1, e2, e3): é como as instâncias de uma mesma chapa saem no mesmo
-    sistema (ver nucleo2d.detalhar.converter_chapas)."""
+    sistema (ver nucleo2d.detalhar.converter_chapas).
+
+    A mesma geometria analisada de novo (as etapas do Detalhar passam pelas mesmas peças
+    várias vezes) sai da memória: aplica-se o que a análise mudou, em cópias."""
+    chave = _chave_analise(pos, eixos)
+    feito = _ANALISES.get(chave) if chave is not None else None
+    if feito is not None:
+        campos, obs = feito
+        for k, v in campos.items():
+            setattr(pos, k, _copia(v))
+        pos.observacoes.extend(obs)
+        return pos
+    antes = {k: _copia(v) for k, v in pos.__dict__.items() if k not in _IDENTIDADE}
+    n_obs = len(pos.observacoes)
     _analisar(pos, eixos)
     _arredondar(pos)
+    if chave is not None:
+        campos = {k: _copia(v) for k, v in pos.__dict__.items()
+                  if k not in _IDENTIDADE and (k not in antes or antes[k] != v)}
+        if len(_ANALISES) >= LIMITE_ANALISES:
+            _ANALISES.clear()
+        _ANALISES[chave] = (campos, list(pos.observacoes[n_obs:]))
     return pos
 
 

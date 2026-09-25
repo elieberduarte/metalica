@@ -218,6 +218,25 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.15.** Revisão geral de 24/09, blocos 4 e 5. Telas: o Detalhar do 3D ganhou a opção "Chapas planas viram
+chapas paramétricas" (ia sempre ligada); na tela inicial, o erro de "Novo projeto desenhando" aparece (`aviso` não
+existia ali — `recado`) e Enter num botão do cartão (Excluir) não abre mais o projeto; no CAD, com um diálogo aberto,
+Del/Ctrl+Z/atalhos não agem no desenho por trás; na lista de materiais, ordenar por Posições/Conjuntos ordena pelo texto
+das marcas; `paraMilimetros` lê "1.500" e "12.000 mm" como milhar ("1.5m" continua 1,5 m). Desempenho, com a saída
+idêntica (desenhos, modelo regravado e lista conferidos contra a versão anterior): direção da onda da telha vetorizada,
+covariância dos autovetores em numpy (o Jacobi fica, para os eixos saírem iguais), `_caixa` por zip, célula de conjunto
+reaproveitada no desenho completo (`_desenhar_celula`, cache por thread), o desenho por classe dos conjuntos (1:50, que
+não saía) deixou de ser desenhado, `_gravar_json` por `json.dumps` (codificador em C), centro dos fixadores guardado na
+peça e `analisar` com memória pela geometria — Detalhar do ÁGUA GELADA 50 → 24 s; rota /detalhar dos compressores
+85 → 50 s (a meta de 20 s não foi alcançada). Obra Capitão (`nucleo2d/detalhe/fora_do_aco.py`): concreto, neoprene,
+madeira… saem do aço pelo material para a lista de pré-moldados (quadro 8 e pre-moldados.csv: peças, volume da malha,
+peso pela massa específica), o terreno ("SOLO") fica de fora de tudo, e a malha solta de aço grande
+(IfcBuildingElementProxy > 1,5 m, que era contada como parafuso) é separada pelas partes conectadas e medida (seção,
+kg/m só em malha fechada, comprimento) no quadro 9 "Estrutura de aço a conferir" e estrutura-a-conferir.csv. PI1/PI2 não
+são chapas, como a análise sugeriu: são alças de barra redonda dobrada (Ø12,5 e Ø16), e a classificação "barra
+dobrada" que já tinham está certa. Verificadores de diagnóstico sem argumento dão o uso em vez de quebrar. Testes
+`test_fora_do_aco.py`.
+
 **0.8.14.** Cálculo pela revisão geral de 24/09 (bloco 3) — **muda a impressão digital do núcleo**; memoriais
 emitidos com perfis formados a frio comprimidos, cantoneiras simples de tesoura ou pórtico de alma cheia devem ser
 conferidos. (1) `nbr14762.GAMA_COMPRESSAO = 1,20` (Tabela 4, compressão centrada) em `compressao_mrd`, e

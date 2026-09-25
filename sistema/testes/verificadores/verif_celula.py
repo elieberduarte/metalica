@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """Uma célula por vez, ampliada: posições e conjuntos escolhidos."""
 import json, os, sys
+if len(sys.argv) < 2:
+    print("ferramenta de diagnóstico, não verificador: python verif_celula.py P12,P77 [escala]")
+    sys.exit(0)
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE)
 SCR = os.path.dirname(os.path.abspath(__file__))

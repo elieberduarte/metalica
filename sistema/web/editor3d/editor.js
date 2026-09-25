@@ -1611,6 +1611,7 @@ export class Editor {
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
     grade.append(el('label', { texto: 'Furação das terças no padrão da fábrica', title: 'Terça com menos de 200 mm: furos a 50 mm na vertical e 60 na horizontal; com 200 mm ou mais: 100 × 60. Vale para os suportes com a mesma furação.' }), regra,
                  el('label', { texto: 'Rotular posições nos conjuntos', title: 'Escreve o nome de cada barra ao lado dela na elevação da tesoura. Desligado por padrão: a fábrica gabarita a tesoura e mede peça a peça.' }), rotular,
+                 el('label', { texto: 'Chapas planas viram chapas paramétricas no 3D', title: 'Furos e tamanho da chapa ficam editáveis no desenho. Desligado, a chapa continua o sólido que veio do IFC.' }), converter,
                  el('label', { texto: 'Substituir os desenhos de detalhamento anteriores' }), substituir);
     const corpo = el('div', {},
       el('p', { class: 'explica', texto: 'Cada posição (marca de peça do IFC) vira uma célula com título "P12 – 112x", perfil ou chapa, contorno, furos e cotas; as peças iguais são contadas, não repetidas. Cada conjunto (marca de montagem) vira uma elevação com a cadeia de cotas dos nós e a lista de perfis. Sai também o romaneio em detalhamento/romaneio.csv.' }),
