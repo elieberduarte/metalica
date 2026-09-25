@@ -18,7 +18,7 @@ acontece na fronteira, em `de_projeto.py`.
 Eixos: Z para cima, X ao longo do comprimento do galpão, Y no sentido do vão. É a
 convenção usada nos desenhos e a que o IFC recebe sem rotação adicional.
 """
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields, is_dataclass
 from typing import Dict, List, Optional, Tuple
 import math
 import uuid
@@ -69,6 +69,34 @@ def produto_escalar(a: Ponto, b: Ponto) -> float:
 
 # --------------------------------------------------------------- organização
 
+
+_ATOMOS = (int, float, str, bool, type(None))
+_NUMEROS = {int, float}
+
+
+def _copia_para_dict(v):
+    """O mesmo que `asdict` faz com o valor, sem copiar número por número: tupla só de
+    números é imutável e vai inteira (o modelo tem milhões de coordenadas; o `asdict`
+    levava ~8 s por gravação no projeto dos compressores)."""
+    if isinstance(v, _ATOMOS):
+        return v
+    if isinstance(v, list):
+        if not v:
+            return []
+        tipos = {type(x) for x in v}
+        if tipos <= _NUMEROS:
+            return list(v)                                  # índices de uma face
+        if tipos == {tuple} and {type(k) for x in v for k in x} <= _NUMEROS:
+            return list(v)                                  # vértices: as tuplas vão inteiras
+        return [_copia_para_dict(x) for x in v]
+    if isinstance(v, tuple):
+        return v if all(isinstance(k, _ATOMOS) for k in v) else tuple(_copia_para_dict(x) for x in v)
+    if isinstance(v, dict):
+        return {k: _copia_para_dict(x) for k, x in v.items()}
+    if is_dataclass(v) and not isinstance(v, type):
+        return asdict(v)
+    return v
+
 @dataclass
 class Camada:
     """Tag no sentido do SketchUp: controla visibilidade e cor padrão."""
@@ -105,7 +133,7 @@ class Entidade:
     atributos: Dict[str, object] = field(default_factory=dict)
 
     def dict(self) -> dict:
-        d = asdict(self)
+        d = {f.name: _copia_para_dict(getattr(self, f.name)) for f in fields(self)}
         d["tipo"] = self.tipo
         return d
 

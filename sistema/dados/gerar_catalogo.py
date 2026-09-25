@@ -618,6 +618,13 @@ def conferir_massas(itens):
             it["massa"] = _fmt(esperada, 3 if esperada < 2 else 2)
             it["obs_massa"] = ("a massa do catálogo (%s kg/m) não bate com a área (%s cm²); "
                                "adotada A·7850" % (m, A))
+            if any("Marcegaglia" in f for f in (it.get("fabricantes") or [])) and it.get("tipo") != "redondo":
+                # conferido no catálogo (pág. 4–7): a tabela dá a massa do tubo redondo de
+                # partida, a mesma para retângulos de perímetros diferentes (80×150, 100×130
+                # e 100×140 saem do Ø152,4 com a mesma massa; o "70×100" sai do Ø114,3, que é
+                # o perímetro de um 100×80)
+                it["obs_massa"] += (" — o catálogo da Marcegaglia publica a massa do tubo redondo de partida, "
+                                    "igual para retângulos de perímetros diferentes")
             corrigidos.append((it["nome"], m, it["massa"]))
     return corrigidos
 

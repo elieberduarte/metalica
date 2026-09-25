@@ -218,6 +218,35 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.17.** O que ficou da revisão geral. (1) Atualização com acento no caminho: o .cmd sai de
+`gravar_lote_de_atualizacao` e `test_atualizacao_lote.py` o roda de verdade numa pasta "José Ação" com um executável
+marcador compilado pelo csc — o instalador é chamado com os argumentos do modo silencioso, apagado e o programa reaberto;
+sem o `chcp 65001` nada roda (era o caso até a 0.8.11). (2) Catálogo: as massas da Marcegaglia conferidas no PDF do
+fornecedor — a tabela dá a massa do tubo redondo de partida, igual para retângulos de perímetros diferentes (o "70×100"
+sai do Ø114,3, perímetro de um 100×80); a nota do item corrigido diz isso. (3) Obra Capitão: a parte de malha aberta
+(sem tampas) e a barra contínua ganham a área da seção pelo corte (`area_pelo_corte`: três estações, laço dentro de laço
+é furo, vetorizado); o corte que ramifica ou acha dois perfis é "aglomerado de barras"; sem kg/m sobraram 10 partes de
+3.507 (eram 517), 56 t medidas (eram 20 t), as terças contínuas de 84 m saem Ue 200×75 com 5,9 kg/m. (4) Desempenho: o
+custo de forma da conversão de chapas em numpy e `Entidade.dict` sem o `asdict` número por número (a mesma saída,
+conferida contra a anterior); a meta de 20 s da rota do Detalhar não foi alcançada. (5) CAD: linha e polilinha
+selecionadas ganham **alças** nas pontas e nos vértices (`Tela.alcas`, `Selecionar._editada`): a ponta vai até outro
+ponto, com o snap seguindo a continuação da linha (`snap.ultimo`/`direcoes`) e comprimento digitado; **Esticar** anda no
+eixo da própria peça (`_eixoDasVizinhas` só com as linhas da mesma `origem` e, entre direções, a de mais comprimento —
+a barra de outra peça no mesmo nó entortava a terça); `pecaDe` pega a peça pela **ligação** das linhas (ponta sobre
+outra), não pela proximidade: a cópia espelhada no mesmo nó era selecionada junto; **Explodir** (B) e **Juntar** (W)
+(`SobreSelecao`; a linha solta guarda `origem_explodida` e o Juntar devolve a `origem`). (6) Chanfro do canto só no
+**joelho**: a transição curta do banzo para o arco (8 segmentos, ~200 mm de corda) virava um segundo chanfro e o banzo
+avançava até ele, fechando as duas linhas num trecho inteiro (a terça 3 da Sala dos Compressores) — `FRACAO_JOELHO`,
+arco pequeno vira a reta entre as pontas. (7) **Aplicar peças das elevações ao modelo 3D**
+(`nucleo2d/detalhe/aplicar_pecas.py`, rota `POST …/desenhos/<nome>/aplicar-pecas`, Vistas do modelo no CAD): o
+desenho é comparado com um detalhamento gerado na hora (os artifícios de geração se cancelam), peça a peça pelo
+segmento do eixo — apagada, movida/espelhada (rotação + translação no plano da vista), esticada (a ponta anda no eixo)
+e cópia (`grupo_copia`, na célula em que caiu, na profundidade daquela instância) —, e a mudança vai para todas as
+instâncias de mesma composição (`_instancias_iguais`); exige desenho gerado pela versão atual (`metadados.versao`).
+Ensaio na Sala dos Compressores: as diagonais corrigidas dos cantos de M2 + M2 e M2 + M7 subiram para o 3D (uma das
+tesouras M2 + M7 não é reconhecida como instância — aviso já existente do modelo). Testes `test_aplicar_pecas.py`;
+verificador `verif_cad_edicao.py`.
+
 **0.8.16.** Tela do resultado da análise (`/analise?projeto=…`, `web/analise.html` e `analise.js`): lê o cálculo gravado
 (`GET /api/projetos/<s>/calculo`) e mostra o resumo em cartões (posições verificadas, não passam, pior aproveitamento,
 peso verificado, ligações, flecha, peças fora do cálculo), a situação por tipo de peça, todas as peças da mais carregada

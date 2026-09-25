@@ -357,28 +357,25 @@ def _posicao_bruta(ent: Solido, marca: str) -> Posicao:
 
 def _custo_forma(A: Sequence[Tuple[float, float]], B: Sequence[Tuple[float, float]], celula: float = 4.0, teto: float = 8.0) -> float:
     """Distância média (mm) de cada ponto de A ao ponto mais próximo de B e vice-versa,
-    com grade de `celula` mm e distâncias acima de `teto` saturadas: mede se dois
-    conjuntos de vértices projetados têm a mesma forma."""
-    def grade(P):
-        g: Dict[Tuple[int, int], List[Tuple[float, float]]] = collections.defaultdict(list)
-        for p in P:
-            g[(int(math.floor(p[0] / celula)), int(math.floor(p[1] / celula)))].append(p)
-        return g
+    com as distâncias acima de `teto` saturadas: mede se dois conjuntos de vértices
+    projetados têm a mesma forma. Em numpy, por blocos (a grade de `celula` mm em Python
+    puro era metade do tempo de converter as chapas); o resultado é o mesmo."""
+    import numpy as np
+    a = np.asarray(A, dtype=float).reshape(-1, 2)
+    b = np.asarray(B, dtype=float).reshape(-1, 2)
 
-    def lado(P, gq):
+    def lado(P, Q):
+        if not len(P):
+            return 0.0
+        if not len(Q):
+            return teto
         total = 0.0
-        for p in P:
-            i, j = int(math.floor(p[0] / celula)), int(math.floor(p[1] / celula))
-            m = teto
-            for di in (-2, -1, 0, 1, 2):
-                for dj in (-2, -1, 0, 1, 2):
-                    for q in gq.get((i + di, j + dj), ()):
-                        d = math.hypot(p[0] - q[0], p[1] - q[1])
-                        if d < m:
-                            m = d
-            total += m
-        return total / max(1, len(P))
-    return (lado(A, grade(B)) + lado(B, grade(A))) / 2.0
+        for i in range(0, len(P), 1024):
+            bloco = P[i:i + 1024]
+            d = np.sqrt(((bloco[:, None, :] - Q[None, :, :]) ** 2).sum(axis=2)).min(axis=1)
+            total += float(np.minimum(d, teto).sum())
+        return total / len(P)
+    return (lado(a, b) + lado(b, a)) / 2.0
 
 
 def _pontuacao_vista(eixos) -> int:

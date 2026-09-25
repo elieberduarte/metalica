@@ -103,13 +103,126 @@ def resumo_fora_do_aco(itens: Sequence[tuple]) -> List[dict]:
     return linhas
 
 
-def _eixos(X):
+def _pca(X):
+    """(centro, eixos em colunas do maior espalhamento ao menor, extensões nesses eixos)."""
     import numpy as np
     c = X.mean(axis=0)
     w, U = np.linalg.eigh(np.cov((X - c).T) if len(X) > 3 else np.eye(3))
-    U = U[:, ::-1]                                   # do maior espalhamento ao menor
+    U = U[:, ::-1]
     Y = (X - c) @ U
-    return Y.max(axis=0) - Y.min(axis=0)
+    return c, U, Y.max(axis=0) - Y.min(axis=0), Y[:, 0].min()
+
+
+def _eixos(X):
+    return _pca(X)[2]
+
+
+def _triangulos(P, fs, c, U):
+    """Os triângulos (leque) da parte no sistema dos eixos: (abscissa no eixo 1 de cada
+    vértice, coordenadas nos eixos 2 e 3), arrays (n, 3) e (n, 3, 2)."""
+    import numpy as np
+    ia, ib, ic = [], [], []
+    for f in fs:
+        for i in range(1, len(f) - 1):
+            ia.append(f[0])
+            ib.append(f[i])
+            ic.append(f[i + 1])
+    T = np.stack([P[ia], P[ib], P[ic]], axis=1) - c          # (n, 3, 3)
+    Y = T @ U                                                 # no sistema dos eixos
+    return Y[:, :, 0], Y[:, :, 1:]
+
+
+def _lacos_do_corte(P, fs, c, U, s0, tri=None):
+    """Os laços (polígonos 2D no plano dos eixos 2 e 3) do corte da malha pelo plano
+    perpendicular ao eixo 1 na abscissa s0, e se o corte ramifica (um ponto com mais de
+    dois segmentos: perfis encostados, que o laço não separa). Laço que não fecha não entra."""
+    import numpy as np
+    S, W = tri if tri is not None else _triangulos(P, fs, c, U)
+    sv = S - s0
+    neg = sv < 0
+    cruza = neg.any(axis=1) & ~neg.all(axis=1)                # o plano passa pelo triângulo
+    sv, W, neg = sv[cruza], W[cruza], neg[cruza]
+    pontos = []
+    for a, b in ((0, 1), (1, 2), (2, 0)):
+        corta = neg[:, a] != neg[:, b]
+        den = np.where(corta, sv[:, a] - sv[:, b], 1.0)
+        t = np.where(corta, sv[:, a] / den, 0.0)[:, None]
+        pontos.append((corta, W[:, a] + t * (W[:, b] - W[:, a])))
+    segs = []
+    for k in range(len(sv)):
+        pts = [tuple(round(float(x), 2) for x in q[k]) for corta, q in pontos if corta[k]]
+        if len(pts) == 2 and pts[0] != pts[1]:
+            segs.append((pts[0], pts[1]))
+    vizinhos = collections.defaultdict(list)
+    for k, (a, b) in enumerate(segs):
+        vizinhos[a].append(k)
+        vizinhos[b].append(k)
+    ramificado = any(len(ks) > 2 for ks in vizinhos.values())
+    usados, lacos = set(), []
+    for k0 in range(len(segs)):
+        if k0 in usados:
+            continue
+        usados.add(k0)
+        inicio, atual = segs[k0]
+        laco = [inicio, atual]
+        fechou = False
+        for _ in range(len(segs)):
+            prox = [k for k in vizinhos[atual] if k not in usados]
+            if not prox:
+                break
+            k = prox[0]
+            usados.add(k)
+            a, b = segs[k]
+            atual = b if a == atual else a
+            if atual == inicio:
+                fechou = True
+                break
+            laco.append(atual)
+        if fechou and len(laco) >= 3:
+            lacos.append(laco)
+    return lacos, ramificado
+
+
+def _area_laco(laco):
+    return 0.5 * sum(laco[i][0] * laco[(i + 1) % len(laco)][1] - laco[(i + 1) % len(laco)][0] * laco[i][1]
+                     for i in range(len(laco)))
+
+
+def _dentro(pt, laco):
+    x, y = pt
+    dentro = False
+    for i in range(len(laco)):
+        (x1, y1), (x2, y2) = laco[i], laco[(i + 1) % len(laco)]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            dentro = not dentro
+    return dentro
+
+
+def area_pelo_corte(P, fs, estacoes=(0.3, 0.5, 0.7)):
+    """(área da seção em mm², perfis separados no corte) pela mediana dos cortes que
+    fecham. Laço dentro de laço é furo (tubo). None quando nenhum corte fecha."""
+    c, U, ext, s_min = _pca(P[sorted({v for f in fs for v in f})])
+    tri = _triangulos(P, fs, c, U)
+    resultados = []
+    for e in estacoes:
+        s0 = s_min + e * ext[0] + 0.37                     # fora dos vértices da malha
+        lacos, ramificado = _lacos_do_corte(P, fs, c, U, s0, tri)
+        if not lacos:
+            continue
+        area, externos = 0.0, 0
+        for i, l in enumerate(lacos):
+            prof = sum(1 for j, o in enumerate(lacos) if j != i and _dentro(l[0], o))
+            area += abs(_area_laco(l)) * (1 if prof % 2 == 0 else -1)
+            externos += prof % 2 == 0
+        if ramificado:
+            externos = max(externos, 2)                   # perfis encostados: não é um só
+        # área menor que 2 % da caixa: laços que se anulam, não uma seção
+        if area > 0.02 * ext[1] * ext[2]:
+            resultados.append((area, externos))
+    if not resultados:
+        return None, 0
+    resultados.sort()
+    return resultados[len(resultados) // 2]
 
 
 def proxy_estrutural(ent) -> bool:
@@ -189,17 +302,23 @@ def estrutura_a_conferir(proxies: Sequence, avisar=None) -> List[dict]:
             L, H, T = (float(x) for x in _eixos(P[vs]))
             if L <= 0:
                 continue
-            if _fechada(fs, idx):
+            perfis = 1
+            if _fechada(fs, idx) and L <= COMPRIMENTO_CONTINUO:
                 mapa = {v: i for i, v in enumerate(vs)}
                 area = volume_da_malha(P[vs], [[mapa[v] for v in f] for f in fs]) / L      # mm²
-                kg_m = area * 7.85e-3
-                # mais pesado que a seção cheia da caixa: a medida não fecha
-                if area > 1.02 * H * T:
-                    kg_m = None
             else:
-                area, kg_m = 0.0, None
-            if L > COMPRIMENTO_CONTINUO:
-                tipo = "contínua ou aglomerado (dividir/separar)"
+                # malha aberta (sem as tampas) ou comprida demais para o volume dizer a
+                # seção: corta a peça atravessada ao eixo
+                area, perfis = area_pelo_corte(P, fs)
+                area = area or 0.0
+            kg_m = area * 7.85e-3 if area > 0 else None
+            # mais pesado que a seção cheia da caixa: a medida não fecha
+            if kg_m is not None and area > 1.02 * H * T:
+                kg_m = None
+            if L > COMPRIMENTO_CONTINUO and perfis <= 1 and kg_m is not None:
+                tipo = "barra contínua (dividir em barras comerciais)"
+            elif L > COMPRIMENTO_CONTINUO:
+                tipo = "aglomerado de barras (separar)"
             elif L < 3.0 * H:
                 tipo = "chapa ou ligação"
             elif H > 0 and abs(H - T) <= 0.15 * H and kg_m is not None and area >= 0.6 * math.pi * (H / 2) ** 2:
@@ -207,7 +326,7 @@ def estrutura_a_conferir(proxies: Sequence, avisar=None) -> List[dict]:
             else:
                 tipo = "barra"
             chave = (tipo, int(round(H)), int(round(T)), round(kg_m, 1) if kg_m is not None else None,
-                     int(round(L / 10.0)) * 10 if tipo != "contínua ou aglomerado (dividir/separar)" else int(round(L / 1000.0)) * 1000)
+                     int(round(L / 10.0)) * 10 if L <= COMPRIMENTO_CONTINUO else int(round(L / 1000.0)) * 1000)
             g = grupos.setdefault(chave, {"tipo": tipo, "secao": "%d × %d" % (chave[1], chave[2]), "kg_m": chave[3],
                                           "comprimento": chave[4], "quantidade": 0, "peso_kg": 0.0,
                                           "origem": set()})

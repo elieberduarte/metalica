@@ -98,3 +98,25 @@ def test_lista_grava_pre_moldados_e_estrutura_a_conferir():
         assert "Fora do aço" in html and "Estrutura de aço a conferir" in html
     # o peso de aço não leva o concreto
     assert lista["totais"]["peso"] < 1000
+
+
+def test_malha_sem_tampas_mede_a_secao_pelo_corte():
+    # o U sem as duas tampas (as faces de 8 vértices): o volume não vale, o corte vale
+    vu, fu = perfil_u(6000.0, 127.0, 50.0, 2.0)
+    laterais = [list(f) for f in fu if len(f) == 4]
+    assert len(laterais) < len(fu)
+    linhas = fa.estrutura_a_conferir([_solido("CPLAN_X", "IfcBuildingElementProxy", vu, laterais, "")])
+    area = 127 * 2 + 2 * (50 - 2) * 2
+    assert len(linhas) == 1 and abs(linhas[0]["kg_m"] - area * 7.85e-3) < 0.1
+    assert linhas[0]["tipo"] == "barra"
+
+
+def test_barra_continua_de_30_m_ganha_kg_m_e_aglomerado_nao():
+    vu, fu = perfil_u(30000.0, 127.0, 50.0, 2.0)
+    linhas = fa.estrutura_a_conferir([_solido("CPLAN_X", "IfcBuildingElementProxy", vu, [list(f) for f in fu], "")])
+    assert linhas[0]["tipo"].startswith("barra contínua") and linhas[0]["kg_m"] > 3.0
+    # duas barras de 30 m encostadas pela quina (como os banzos da Capitão): dois perfis
+    v2 = vu + [(x, y + 127.0, z + 50.0) for x, y, z in vu]
+    f2 = [list(f) for f in fu] + [[k + len(vu) for k in f] for f in fu]
+    linhas = fa.estrutura_a_conferir([_solido("CPLAN_X", "IfcBuildingElementProxy", v2, f2, "")])
+    assert linhas[0]["tipo"].startswith("aglomerado"), linhas

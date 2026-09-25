@@ -59,11 +59,12 @@ function deslocamentoPara(c, p, escala) {
 
 export class Selecionar extends Ferramenta {
   static id = 'selecionar'; static nome = 'Selecionar'; static atalho = ' '; static grupo = 'navegacao';
-  static dica = 'Clique seleciona (a peça inteira; Alt+clique, só a linha) · Shift soma · Ctrl alterna · arraste uma janela · Del apaga · na cota selecionada, arraste as alças';
+  static dica = 'Clique seleciona (a peça inteira; Alt+clique, só a linha) · Shift soma · Ctrl alterna · arraste uma janela · Del apaga · arraste as alças (pontas das linhas, vértices, cotas)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 3l14 8-6 2-3 6z"/></svg>';
   reiniciar() { this._soltarAlca(); super.reiniciar(); }
 
-  // ---- alças da cota: a do meio leva a linha de cota; as das pontas, o ponto medido
+  // ---- alças: na cota, a do meio leva a linha de cota e as das pontas o ponto medido; na
+  // linha e na polilinha, a alça leva aquela ponta (ou vértice) até o novo ponto
   onPressionar(p, ev) {
     if (this.alca) return true;               // alça já presa ao cursor: este clique a solta
     const a = this.editor.tela.alcaSob(ev.px);
@@ -76,6 +77,19 @@ export class Selecionar extends Ferramenta {
     this.alca = a;
     this.editor.tela.alcaQuente = a;
     this.editor.snap.ignorar = new Set([a.id]);
+    const e = this.doc.get(a.id);
+    if (e && e.tipo !== 'cota') {
+      // a outra ponta do trecho fica fixa: o snap segue a continuação dele (a ponta anda
+      // reta, esticando ou encurtando a linha) e pega extremidades, interseções…
+      const fixo = this._vizinhoFixo(e, a.parte);
+      if (fixo) {
+        const d = dist(fixo, a.ponto);
+        this.editor.snap.ultimo = fixo;
+        this.editor.snap.direcoes = d > 1e-6 ? [[(a.ponto[0] - fixo[0]) / d, (a.ponto[1] - fixo[1]) / d]] : [];
+      }
+      this.dica('Leve a ponta até o novo ponto (extremidade, interseção…); perto da continuação ela segue reta · digite o comprimento · Esc cancela');
+      return;
+    }
     this.dica(a.parte === 'texto' ? 'Leve o número da cota para onde ele fica legível · Esc cancela'
       : a.parte === 'linha'
       ? 'Leve a linha de cota até a posição (o snap pega a linha de outra cota) · Esc cancela'
@@ -85,6 +99,34 @@ export class Selecionar extends Ferramenta {
     this.alca = null;
     this.editor.tela.alcaQuente = null;
     this.editor.snap.ignorar = new Set();
+    this.editor.snap.ultimo = null;
+    this.editor.snap.direcoes = [];
+  }
+  /** A outra ponta do trecho da alça (fica parada enquanto a alça anda). */
+  _vizinhoFixo(e, parte) {
+    if (e.tipo === 'linha') return parte === 'a' ? e.b : e.a;
+    if (e.tipo === 'polilinha') {
+      const i = Number(parte.slice(1)), n = e.vertices.length;
+      if (n < 2) return null;
+      if (i > 0) return e.vertices[i - 1];
+      return e.fechada ? e.vertices[n - 1] : e.vertices[1];
+    }
+    return null;
+  }
+  /** A entidade da alça com a ponta levada a `p` (linha, polilinha ou cota). */
+  _editada(p) {
+    const e = this.doc.get(this.alca.id);
+    if (!e) return null;
+    if (e.tipo === 'linha') {
+      const nova = { ...e, [this.alca.parte]: [p[0], p[1]] };
+      return dist(nova.a, nova.b) < 1e-6 ? null : criar(nova);
+    }
+    if (e.tipo === 'polilinha') {
+      const i = Number(this.alca.parte.slice(1));
+      const vertices = e.vertices.map((v, k) => (k === i ? [p[0], p[1]] : v));
+      return criar({ ...e, vertices });
+    }
+    return this._cotaEditada(p);
   }
   _cotaEditada(p) {
     const c = this.doc.get(this.alca.id);
@@ -105,9 +147,29 @@ export class Selecionar extends Ferramenta {
   }
   onMover(p) {
     if (!this.alca) return;
-    const c = this._cotaEditada(p);
+    const c = this._editada(p);
     this.editor.previa(c ? [c] : []);
-    if (c) this.editor.medida(`${fmt(valorDaCota(c))} mm`);
+    if (!c) return;
+    if (c.tipo === 'cota') this.editor.medida(`${fmt(valorDaCota(c))} mm`);
+    else {
+      const fixo = this._vizinhoFixo(this.doc.get(this.alca.id), this.alca.parte);
+      if (fixo) this.editor.medida(`${fmt(dist(fixo, p))} mm`);
+    }
+  }
+  /** Comprimento digitado: a ponta vai na direção do cursor (ou da própria linha), a essa
+   *  distância da outra ponta do trecho. */
+  onValor(t) {
+    if (!this.alca) return;
+    const e = this.doc.get(this.alca.id);
+    const fixo = e && e.tipo !== 'cota' ? this._vizinhoFixo(e, this.alca.parte) : null;
+    const v = paraMilimetros(t);
+    if (!fixo || v == null || v <= 0) return;
+    const alvo = this.editor.tela.cursor || this.alca.ponto;
+    let dx = alvo[0] - fixo[0], dy = alvo[1] - fixo[1];
+    if (Math.hypot(dx, dy) < 1e-6) { dx = this.alca.ponto[0] - fixo[0]; dy = this.alca.ponto[1] - fixo[1]; }
+    const n = Math.hypot(dx, dy) || 1;
+    this._recemPega = false;
+    this.onPonto([fixo[0] + dx / n * v, fixo[1] + dy / n * v], {});
   }
   cancelar() { this._soltarAlca(); super.cancelar(); }
 
@@ -115,12 +177,13 @@ export class Selecionar extends Ferramenta {
     if (this.alca) {
       if (ev.semMover && this._recemPega) { this._recemPega = false; return; }   // clicou na alça: agora ela segue o cursor
       this._recemPega = false;
-      const c = this._cotaEditada(p);
+      const c = this._editada(p);
       const id = this.alca.id;
+      const selecao = [...this.editor.tela.selecao];
       this._soltarAlca();
       this.editor.previa([]);
-      if (c) this.editor.executar(new ComandoSubstituir([c], 'Ajustar cota'));
-      this.editor.selecionar([id]);
+      if (c) this.editor.executar(new ComandoSubstituir([c], c.tipo === 'cota' ? 'Ajustar cota' : 'Esticar a ponta'));
+      this.editor.selecionar(c && c.tipo !== 'cota' ? selecao : [id]);
       this.dica(this.constructor.dica);
       return;
     }
@@ -429,33 +492,43 @@ export class Esticar extends Ferramenta {
     // (o eixo de uma barra cuja ponta é um corte inclinado — a diagonal da tesoura);
     // senão a perpendicular da aresta. Andar na perpendicular de um corte inclinado
     // entortava a barra.
-    const eixo = this._eixoDasVizinhas(s, t, tol);
+    const eixo = this._eixoDasVizinhas(s, t, tol, (e.atributos || {}).origem || null);
     if (eixo) this.normal = eixo;
     this.base = p; this.editor.snap.ultimo = p;
     this.editor.previa([criar({ tipo: 'linha', camada: this.camada, a: s, b: t })]);
     this.dica('Leve a aresta até a nova posição, ou digite a distância · Esc cancela');
     return true;
   }
-  /** Direção unitária comum às linhas que têm uma ponta sobre a aresta s–t e seguem para
-   *  fora dela (±2°), ou null se não há vizinhas ou elas não são paralelas. */
-  _eixoDasVizinhas(s, t, tol) {
+  /** Direção das linhas que têm uma ponta sobre a aresta s–t e seguem para fora dela: só
+   *  as da mesma peça (`origem`), quando a aresta é de uma peça — a barra vizinha que chega
+   *  no mesmo nó não conta —, e, se ainda houver direções diferentes, a que soma mais
+   *  comprimento (±2°). null se não há vizinhas. Antes, qualquer linha não paralela fazia a
+   *  aresta andar na perpendicular dela, e o corte inclinado entortava a barra. */
+  _eixoDasVizinhas(s, t, tol, origem = null) {
     const lo = [Math.min(s[0], t[0]) - tol, Math.min(s[1], t[1]) - tol], hi = [Math.max(s[0], t[0]) + tol, Math.max(s[1], t[1]) + tol];
     const naAresta = (q) => dist(q, maisProximoSeg(q, s, t)) <= tol;
     const dirs = [];
     for (const e of this.doc.naRegiao([lo, hi])) {
       if (!this.doc.visivel(e) || (e.tipo !== 'linha' && e.tipo !== 'polilinha')) continue;
+      if (origem && (e.atributos || {}).origem !== origem) continue;
       for (const [a, b] of segmentosDe(e)) {
         const ia = naAresta(a), ib = naAresta(b);
         if (ia === ib) continue;                        // a própria aresta, ou longe dela
         const [p0, p1] = ia ? [a, b] : [b, a];
         const n = dist(p0, p1);
-        if (n > 1e-6) dirs.push([(p1[0] - p0[0]) / n, (p1[1] - p0[1]) / n]);
+        if (n > 1e-6) dirs.push([(p1[0] - p0[0]) / n, (p1[1] - p0[1]) / n, n]);
       }
     }
     if (!dirs.length) return null;
-    const d0 = dirs[0];
-    if (!dirs.every(d => Math.abs(d[0] * d0[0] + d[1] * d0[1]) > Math.cos(2 * Math.PI / 180))) return null;
-    return d0;
+    // agrupa as paralelas (±2°) e fica com o grupo de mais comprimento
+    const cos2 = Math.cos(2 * Math.PI / 180);
+    const grupos = [];
+    for (const d of dirs) {
+      const g = grupos.find(x => Math.abs(d[0] * x.d[0] + d[1] * x.d[1]) > cos2);
+      if (g) g.soma += d[2]; else grupos.push({ d: [d[0], d[1]], soma: d[2] });
+    }
+    grupos.sort((x, y) => y.soma - x.soma);
+    return grupos[0].d;
   }
   onSoltar(p, ev) {
     if (!ev.arrasto || this.dentro) return;
@@ -729,6 +802,134 @@ export class Apagar extends Ferramenta {
   onPonto(p, ev) { const e = this.editor.tela.sob(ev.px); if (e) this.editor.executar(new ComandoRemover([e.id])); }
 }
 
+/**
+ * Ferramenta que age na seleção (ou, sem seleção, no que for clicado) e volta para a
+ * Selecionar: a base de Explodir e Juntar.
+ */
+class SobreSelecao extends Ferramenta {
+  static grupo = 'edicao';
+  ativar() {
+    super.ativar();
+    const ids = [...this.editor.tela.selecao];
+    if (ids.length) { this.aplicar(ids); this.editor.ativarFerramenta('selecionar'); }
+  }
+  onPonto(p, ev) {
+    const e = this.editor.tela.sob(ev.px);
+    if (!e) return;
+    this.aplicar(ev.altKey ? [e.id] : this.editor.pecaDe(e.id));
+  }
+  aplicar(ids) {}
+}
+
+/** Linha solta, sem o vínculo de peça: a origem vai para `origem_explodida` (o Juntar a
+ *  devolve) e os atributos de peça saem. */
+function soltaDePeca(atributos) {
+  const a = { ...(atributos || {}) };
+  if (a.origem) { a.origem_explodida = a.origem; delete a.origem; }
+  delete a.nos_chanfro; delete a.chanfro;
+  return a;
+}
+
+export class Explodir extends SobreSelecao {
+  static id = 'explodir'; static nome = 'Explodir (em linhas)'; static atalho = 'b';
+  static dica = 'Clique na peça (ou selecione antes): vira linhas soltas, editáveis uma a uma · Juntar (W) volta';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 12h5M15 12h5M12 4v5M12 15v5M6 6l3 3M18 6l-3 3M6 18l3-3M18 18l-3-3"/></svg>';
+  aplicar(ids) {
+    const remover = [], novas = [];
+    for (const id of ids) {
+      const e = this.doc.get(id);
+      if (!e || !this.doc.visivel(e)) continue;
+      if (e.tipo === 'polilinha') {
+        const vs = e.vertices, n = vs.length;
+        const segs = [];
+        for (let i = 0; i + 1 < n; i++) segs.push([vs[i], vs[i + 1]]);
+        if (e.fechada && n > 2) segs.push([vs[n - 1], vs[0]]);
+        for (const [a, b] of segs) {
+          if (dist(a, b) < 1e-6) continue;
+          novas.push(criar({ tipo: 'linha', camada: e.camada, a: [...a], b: [...b], atributos: soltaDePeca(e.atributos) }));
+        }
+        remover.push(id);
+      } else if (e.tipo === 'linha' && (e.atributos || {}).origem) {
+        novas.push(criar({ ...clonar(e), id: undefined, atributos: soltaDePeca(e.atributos) }));
+        remover.push(id);
+      }
+    }
+    if (!remover.length) { this.dica('Nada para explodir: só polilinhas e linhas de peça viram linhas soltas'); return; }
+    this.editor.executar(new ComandoComposto([new ComandoRemover(remover), new ComandoAdicionar(novas)], `Explodir ${remover.length} objeto(s)`));
+    this.editor.selecionar(novas.map(e => e.id));
+    this.dica(`${novas.length} linha(s) soltas · Juntar (W) volta a juntar`);
+  }
+}
+
+export class Juntar extends SobreSelecao {
+  static id = 'juntar'; static nome = 'Juntar (join)'; static atalho = 'w';
+  static dica = 'Selecione as linhas (janela ou Shift+clique) e escolha Juntar: as que se tocam viram polilinha; se vieram da mesma peça, voltam a ser a peça';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 18 10 8l5 7 5-9"/><circle cx="10" cy="8" r="1.6" fill="currentColor"/><circle cx="15" cy="15" r="1.6" fill="currentColor"/></svg>';
+  onPonto(p, ev) {
+    // um clique solto só acrescenta à seleção; juntar é com a seleção feita
+    const e = this.editor.tela.sob(ev.px);
+    if (e) this.editor.selecionar([...this.editor.tela.selecao, e.id]);
+  }
+  onTecla(ev) {
+    if (ev.key === 'Enter') { this.aplicar([...this.editor.tela.selecao]); return true; }
+    return false;
+  }
+  aplicar(ids) {
+    const tol = 0.5;
+    const pecas = ids.map(id => this.doc.get(id)).filter(e => e && (e.tipo === 'linha' || e.tipo === 'polilinha') && this.doc.visivel(e));
+    if (pecas.length < 2) { this.dica('Selecione duas ou mais linhas que se tocam e tecle Enter'); return; }
+    // cada objeto vira uma cadeia de pontos; as cadeias que se tocam pelas pontas emendam
+    let cadeias = pecas.map(e => ({ pts: e.tipo === 'linha' ? [e.a, e.b] : [...e.vertices], fechada: e.tipo === 'polilinha' && !!e.fechada, fontes: [e] }));
+    const perto = (a, b) => dist(a, b) <= tol;
+    let emendou = true;
+    while (emendou) {
+      emendou = false;
+      for (let i = 0; i < cadeias.length && !emendou; i++) {
+        const c = cadeias[i];
+        if (c.fechada) continue;
+        for (let j = i + 1; j < cadeias.length && !emendou; j++) {
+          const d = cadeias[j];
+          if (d.fechada) continue;
+          const a0 = c.pts[0], a1 = c.pts[c.pts.length - 1], b0 = d.pts[0], b1 = d.pts[d.pts.length - 1];
+          let pts = null;
+          if (perto(a1, b0)) pts = c.pts.concat(d.pts.slice(1));
+          else if (perto(a1, b1)) pts = c.pts.concat([...d.pts].reverse().slice(1));
+          else if (perto(a0, b1)) pts = d.pts.concat(c.pts.slice(1));
+          else if (perto(a0, b0)) pts = [...d.pts].reverse().concat(c.pts.slice(1));
+          if (!pts) continue;
+          const fechada = pts.length > 3 && perto(pts[0], pts[pts.length - 1]);
+          if (fechada) pts = pts.slice(0, -1);
+          cadeias[i] = { pts, fechada, fontes: c.fontes.concat(d.fontes) };
+          cadeias.splice(j, 1);
+          emendou = true;
+        }
+      }
+    }
+    const juntadas = cadeias.filter(c => c.fontes.length > 1);
+    if (!juntadas.length) { this.dica('Nenhuma ponta encosta em outra (tolerância 0,5 mm): nada juntado'); return; }
+    const remover = [], novas = [];
+    for (const c of juntadas) {
+      const base = c.fontes[0];
+      const origens = new Set(c.fontes.map(f => (f.atributos || {}).origem || (f.atributos || {}).origem_explodida || ''));
+      const atr = { ...(base.atributos || {}) };
+      delete atr.origem_explodida;
+      // todas da mesma peça: voltam a ser a peça (seleção, Mesma peça, Ver no 3D)
+      if (origens.size === 1 && [...origens][0]) atr.origem = [...origens][0];
+      else delete atr.origem;
+      novas.push(criar({ tipo: 'polilinha', camada: base.camada, vertices: c.pts.map(q => [...q]), fechada: c.fechada, atributos: atr }));
+      for (const f of c.fontes) remover.push(f.id);
+    }
+    this.editor.executar(new ComandoComposto([new ComandoRemover(remover), new ComandoAdicionar(novas)], `Juntar ${remover.length} objeto(s)`));
+    this.editor.selecionar(novas.map(e => e.id));
+    this.dica(`${remover.length} objeto(s) juntados em ${novas.length} polilinha(s)`);
+  }
+  ativar() {
+    Ferramenta.prototype.ativar.call(this);
+    const ids = [...this.editor.tela.selecao];
+    if (ids.length > 1) { this.aplicar(ids); this.editor.ativarFerramenta('selecionar'); }
+  }
+}
+
 export class Aparar extends Ferramenta {
   static id = 'aparar'; static nome = 'Aparar (trim)'; static atalho = 'x'; static grupo = 'edicao'; static dica = 'Clique no trecho da linha a remover (corta nas interseções com outras linhas)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h16M4 18h16M12 3v18" stroke-dasharray="4 2"/><path d="M9 9l6 6"/></svg>';
@@ -924,5 +1125,5 @@ export class Medir extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, Chamada, Hachura,
-  Mover, Copiar, Girar, Espelhar, Esticar, Offset, Aparar, Estender, Concordar, MoverCota, Apagar, Medir];
+  Mover, Copiar, Girar, Espelhar, Esticar, Offset, Aparar, Estender, Concordar, Explodir, Juntar, MoverCota, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];

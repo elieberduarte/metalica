@@ -51,22 +51,27 @@ export class Tela {
   get mmPorPixel() { return 1 / this.vp.z; }
 
   /**
-   * Alças das cotas selecionadas: os dois pontos de referência (p1, p2) e o meio da linha
-   * de cota. É por elas que a cota se ajusta com o mouse, como nos CADs.
+   * Alças da seleção: nas cotas, os dois pontos de referência (p1, p2), o meio da linha de
+   * cota e o número; nas linhas, as duas pontas; nas polilinhas, cada vértice. É por elas
+   * que se ajusta com o mouse, como nos CADs (a ponta da linha vai até outro ponto).
    */
   alcas() {
     if (!this.selecao.size || this.selecao.size > 300) return [];
-    const k = this.doc.escala, fora = [];
+    const k = this.doc.escala, fora = [], pontas = [];
     for (const id of this.selecao) {
       const e = this.doc.get(id);
-      if (!e || e.tipo !== 'cota' || !this.doc.visivel(e)) continue;
+      if (!e || !this.doc.visivel(e)) continue;
+      if (e.tipo === 'linha') { pontas.push({ id, parte: 'a', ponto: e.a }, { id, parte: 'b', ponto: e.b }); continue; }
+      if (e.tipo === 'polilinha') { e.vertices.forEach((v, i) => pontas.push({ id, parte: 'v' + i, ponto: v })); continue; }
+      if (e.tipo !== 'cota') continue;
       const pc = pontosCota(e, k);
       fora.push({ id, parte: 'p1', ponto: e.p1 }, { id, parte: 'p2', ponto: e.p2 });
       if (pc.length === 4) fora.push({ id, parte: 'linha', ponto: [(pc[2][0] + pc[3][0]) / 2, (pc[2][1] + pc[3][1]) / 2] });
       const t = Tela.textoCota(e, k);
       if (t) fora.push({ id, parte: 'texto', ponto: t.pos });
     }
-    return fora;
+    // muitas pontas (uma janela sobre o desenho todo) viram poluição: só as cotas
+    return pontas.length <= 400 ? fora.concat(pontas) : fora;
   }
 
   /** A alça a até `raio` pixels de `px`, ou null. */
@@ -239,7 +244,7 @@ export class Tela {
       if (e && this.doc.visivel(e)) this._entidade(ctx, e, cores.realce, this.doc.camadas.get(e.camada), k, false);
     }
     for (const e of this.previa) this._entidade(ctx, e, cores.previa, null, k, false, true);
-    // alças das cotas selecionadas (quadradinhos; a que está sendo arrastada, cheia)
+    // alças da seleção (quadradinhos; a que está sendo arrastada, cheia)
     for (const a of this.alcas()) {
       const [x, y] = this.paraTela(a.ponto);
       const quente = this.alcaQuente && this.alcaQuente.id === a.id && this.alcaQuente.parte === a.parte;

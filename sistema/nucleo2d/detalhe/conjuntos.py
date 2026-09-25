@@ -671,13 +671,12 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence =
     preparadas = []
     recuos: Dict[tuple, float] = {}              # (peça, direção do trecho reto) → avanço
     direcoes: Dict[str, list] = {}               # peça → direções das retas junto ao arco (do contorno fechado)
-    for e in novas:
-        if not isinstance(e, Polilinha) or (e.atributos or {}).get("origem") not in ids:
-            continue
+
+    def trechos_de(e):
         pts = [tuple(p) for p in e.vertices]
         n = len(pts)
         if n < 6:
-            continue
+            return pts, []
         # numa polilinha fechada, gira a lista até nenhum arco atravessar a emenda dela
         trechos = _trechos_curvos(pts, e.fechada)
         if e.fechada:
@@ -686,10 +685,33 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence =
                     break
                 pts = pts[1:] + pts[:1]
                 trechos = _trechos_curvos(pts, True)
-        if not trechos:
+        return pts, trechos
+
+    def corda_do_arco(pts, i, j):
+        a, b = min(i + 1, len(pts) - 1), max(min(j, len(pts)) - 1, 0)
+        return math.dist(pts[a], pts[b])
+    # o joelho de cada peça: o maior arco dela. Arco bem menor (a transição curta do banzo
+    # para o joelho) não é canto e fica como o modelo traz
+    maior: Dict[str, float] = {}
+    for e in novas:
+        if isinstance(e, Polilinha) and (e.atributos or {}).get("origem") in ids:
+            pts, trechos = trechos_de(e)
+            for i, j in trechos:
+                o_ = (e.atributos or {}).get("origem")
+                maior[o_] = max(maior.get(o_, 0.0), corda_do_arco(pts, i, j))
+    for e in novas:
+        if not isinstance(e, Polilinha) or (e.atributos or {}).get("origem") not in ids:
             continue
+        pts, trechos = trechos_de(e)
+        n = len(pts)
         origem = (e.atributos or {}).get("origem")
-        preparadas.append((e, pts, trechos, origem))
+        todos = trechos
+        trechos = [(i, j) for i, j in todos if corda_do_arco(pts, i, j) >= FRACAO_JOELHO * maior.get(origem, 0.0)]
+        # os arcos pequenos (transição do banzo para o joelho) viram a reta entre as pontas
+        pequenos = [t for t in todos if t not in trechos]
+        if not trechos and not pequenos:
+            continue
+        preparadas.append((e, pts, trechos, origem, pequenos))
         if not (len(trechos) == 1 and trechos[0][0] == 0 and trechos[0][1] == n - 1 and not e.fechada):
             # as direções das retas junto ao arco (de qualquer polilinha que as tenha, aberta
             # ou fechada), para as arestas que vierem só como arco
@@ -720,11 +742,15 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence =
                 if s > 0:
                     chave = (origem, round(math.degrees(math.atan2(volta[1], volta[0])) / 5.0))
                     recuos[chave] = min(max(recuos.get(chave, 0.0), s), 0.8 * corda)
-    for e, pts, trechos, origem in preparadas:
+    for e, pts, trechos, origem, pequenos in preparadas:
         mudou = False
         nos_e = []                                  # as pontas da diagonal: os nós do chanfro
-        for i, j in sorted(trechos, reverse=True):
+        for i, j in sorted(trechos + pequenos, reverse=True):
             if j >= len(pts) or j - i < 3:
+                continue
+            if (i, j) in pequenos:
+                pts = pts[:i + 2] + pts[j - 1:]          # só as pontas do arco: a reta entre elas
+                mudou = True
                 continue
             # o arco vai de pts[i+1] a pts[j-1] (pts[i] e pts[j] são as outras pontas dos
             # trechos retos vizinhos): os vértices do meio saem, fica a diagonal
@@ -747,10 +773,14 @@ def _chanfrar_cantos(desenho: Desenho, novas: List, ids: set, apoios: Sequence =
         if not mudou:
             continue
         e.vertices = [(round(x, 2), round(y, 2)) for x, y in pts]
-        e.atributos = dict(e.atributos or {}, chanfro="diagonal",
-                           nos_chanfro=[[round(x, 2), round(y, 2)] for x, y in nos_e])
+        if nos_e:
+            e.atributos = dict(e.atributos or {}, chanfro="diagonal",
+                               nos_chanfro=[[round(x, 2), round(y, 2)] for x, y in nos_e])
     return saida
 
+
+#: Arco com corda menor que esta fração da do maior arco da mesma peça não é o joelho.
+FRACAO_JOELHO = 0.5
 
 #: Distância (mm) entre o nó do contorno de fora e o de dentro do mesmo perfil, para a
 #: linha de emenda que atravessa o perfil; e o maior trecho reto que o banzo absorve.

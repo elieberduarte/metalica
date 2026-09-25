@@ -4,7 +4,7 @@
 // Mouse: botão esquerdo é da ferramenta; do meio ou direito arrasta a vista; roda dá
 // zoom no cursor. Shift trava orto. Esc cancela; Enter e espaço confirmam/repetem.
 
-import { Desenho2D, clonar, valorCota, pontosDe, criar } from './nucleo/desenho2d.js';
+import { Desenho2D, clonar, valorCota, pontosDe, criar, segmentosDe, dist, maisProximoSeg } from './nucleo/desenho2d.js';
 import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar, ComandoComposto } from './nucleo/comandos.js';
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { Snap } from './nucleo/snap.js';
@@ -404,36 +404,43 @@ class CAD {
     this._sairPara(this.urlDoEditor(`&destacar=${encodeURIComponent(alvo)}`));
   }
 
-  /** As linhas da mesma peça em volta desta (contorno, abas, linha oculta de uma barra
-   *  no detalhe): mesma origem no 3D e na mesma célula, encostadas. Cota, texto e linha
-   *  sem origem são só eles. */
+  /** As linhas da mesma peça desta (contorno, abas, linha oculta de uma barra no
+   *  detalhe): mesma origem no 3D, mesma célula e mesmo grupo de cópia, e **ligadas** —
+   *  cada uma com uma ponta sobre outra da peça. Pela proximidade só, duas barras da mesma
+   *  origem que se encontram no mesmo nó (a cópia espelhada da ponta da tesoura) eram
+   *  pegas juntas. Cota, texto e linha sem origem são só eles. */
   pecaDe(id) {
     const e = this.doc.get(id);
     const a = (e && e.atributos) || {};
     if (!e || !a.origem || e.tipo === 'cota' || e.tipo === 'texto' || e.tipo === 'chamada') return [id];
-    const caixaDe = (ent) => {
-      const pts = pontosDe(ent);
-      if (!pts.length) return null;
-      let a0 = Infinity, b0 = Infinity, a1 = -Infinity, b1 = -Infinity;
-      for (const [x, y] of pts) { if (x < a0) a0 = x; if (y < b0) b0 = y; if (x > a1) a1 = x; if (y > b1) b1 = y; }
-      return [[a0, b0], [a1, b1]];
-    };
-    const cx = caixaDe(e);
-    if (!cx) return [id];
-    const [[x0, y0], [x1, y1]] = cx;
-    const m = Math.max(20, 0.15 * Math.hypot(x1 - x0, y1 - y0));
-    const ids = [];
+    const candidatas = [];
     for (const o of this.doc.entidades.values()) {
       const b = o.atributos || {};
       if (b.origem !== a.origem || (b.conjunto || '') !== (a.conjunto || '') || (b.detalhe || '') !== (a.detalhe || '')) continue;
       if ((b.grupo_copia || '') !== (a.grupo_copia || '')) continue;      // a cópia é outra peça
       if (o.tipo === 'cota' || o.tipo === 'texto') continue;
       if (!this.doc.visivel(o)) continue;
-      const c = caixaDe(o);
-      if (!c || c[0][0] > x1 + m || c[1][0] < x0 - m || c[0][1] > y1 + m || c[1][1] < y0 - m) continue;
-      ids.push(o.id);
+      candidatas.push(o);
     }
-    return ids.length ? ids : [id];
+    if (candidatas.length <= 1) return [id];
+    const tol = 1.0;                                     // mm do modelo
+    const pontos = new Map(candidatas.map(o => [o.id, pontosDe(o)]));
+    const segs = new Map(candidatas.map(o => [o.id, segmentosDe(o)]));
+    const encosta = (p, oid) => {
+      for (const [s, t] of segs.get(oid)) if (dist(p, maisProximoSeg(p, s, t)) <= tol) return true;
+      return false;
+    };
+    const ligadas = (x, y) => pontos.get(x).some(p => encosta(p, y)) || pontos.get(y).some(p => encosta(p, x));
+    const na = new Set([id]), fila = [id];
+    while (fila.length) {
+      const x = fila.pop();
+      for (const o of candidatas) {
+        if (na.has(o.id) || !ligadas(x, o.id)) continue;
+        na.add(o.id);
+        fila.push(o.id);
+      }
+    }
+    return [...na];
   }
 
   selecionarMesmaPeca() {
@@ -600,6 +607,7 @@ class CAD {
       novo: () => this.dialogoNovo(),
       'excluir-desenhos': () => this.dialogoExcluir(),
       'aplicar-furos': () => this.aplicarFuros(),
+      'aplicar-pecas': () => this.aplicarPecas(),
       'ajustar-tamanho': () => this.ajustarTamanho(),
       'ver-3d': () => this.verNo3D(),
       salvar: () => this.salvar(),
@@ -1199,6 +1207,34 @@ class CAD {
    * no modelo 3D. Detalhe aberto pelo 3D: regenerado inteiro; desenho geral: só a
    * célula. O servidor regrava o modelo e o desenho, que é reaberto.
    */
+  /** O conjunto (célula) da seleção: o `conjunto` das linhas selecionadas, um só. */
+  _conjuntoEmFoco() {
+    const ents = [...this.tela.selecao].map(id => this.doc.get(id)).filter(Boolean);
+    const conjs = [...new Set(ents.map(e => (e.atributos || {}).conjunto).filter(Boolean))];
+    return conjs.length === 1 ? conjs[0] : null;
+  }
+
+  /** As barras movidas/espelhadas/esticadas/copiadas/apagadas nas elevações vão para o 3D. */
+  async aplicarPecas() {
+    if (!this.projeto || !this.nomeDesenho) { this.aviso('Abra um desenho de detalhamento do projeto.', 'atencao'); return; }
+    const celulas = (this.doc.vistas || []).filter(v => v.tipo === 'conjunto').length;
+    if (!celulas) { this.aviso('Este desenho não tem elevações de conjunto (tesouras): abra o detalhamento de tesouras, de conjuntos ou o completo.', 'atencao'); return; }
+    const corpo = el('div', {}, el('p', {}, `Levar para o modelo 3D o que mudou nas elevações dos conjuntos deste desenho: barras movidas ou espelhadas são movidas no 3D, esticadas têm a ponta movida, cópias viram peças novas e barras apagadas saem do modelo — em todas as tesouras de cada tipo. O modelo anterior vai para o histórico. O programa detalha o modelo de novo para comparar (leva um pouco).`));
+    if (await this.dialogo({ titulo: 'Aplicar peças das elevações ao modelo 3D', corpo, ok: 'Aplicar' }) !== 'ok') return;
+    this.dica('Comparando o desenho com o modelo…');
+    const parar = this._acompanharProgresso ? this._acompanharProgresso('Aplicando: ') : () => {};
+    try {
+      if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/aplicar-pecas`, { desenho: this.doc.paraJSON() });
+      parar(); this.dica('');
+      const t = r.total || {};
+      const mudou = Object.keys(r.celulas || {});
+      if (!mudou.length) { this.aviso('Nada mudou nas elevações em relação ao modelo 3D.' + ((r.avisos || []).length ? ' ' + r.avisos.join(' · ') : ''), 'info', 10000); return; }
+      this.aviso(`${mudou.join(', ')}: ${t.movidas} barra(s) movidas, ${t.esticadas} esticada(s), ${t.copiadas} nova(s), ${t.apagadas} apagada(s) no modelo 3D (em todas as instâncias). O próximo Detalhar já sai com a correção.` +
+                 ((r.avisos || []).length ? ` Avisos: ${r.avisos.join(' · ')}` : ''), 'info', 16000);
+    } catch (e) { parar(); this.aviso(`Não foi possível aplicar: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
   async aplicarFuros() {
     if (!this.projeto || !this.nomeDesenho) { this.aviso('Abra um desenho de detalhamento do projeto.', 'atencao'); return; }
     const foco = this._marcaEmFoco();

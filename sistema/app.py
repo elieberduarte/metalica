@@ -33,6 +33,7 @@ Rotas da API:
     GET  /api/projetos/<slug>/calculo[/geometria]        último cálculo gravado / dados para o diálogo
     GET  /api/projetos/<slug>/calculo/alternativas?marca=  perfis que podem substituir a peça, verificados
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-furos   furos do detalhe → chapas do modelo
+    POST /api/projetos/<slug>/desenhos/<nome>/aplicar-pecas {desenho}  barras movidas/esticadas/copiadas/apagadas nas elevações → modelo 3D
     POST /api/projetos/<slug>/desenhos/<nome>/gerar-3d       desenho 2D → modelo 3D (peças do catálogo)
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
     POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
@@ -686,6 +687,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         if substituir and os.path.exists(g._caminho_desenho(s, nome)):
             g.excluir_desenho(s, nome)
         desenho.metadados["gerado_por"] = "detalhamento"
+        desenho.metadados["versao"] = versao.VERSAO
         salvo = g.salvar_desenho(s, nome, desenho.dict())
         desenhos.append({"grupo": chave, "nome": salvo["nome"], "titulo": nome,
                          "entidades": desenho.tamanho, "escala": desenho.escala})
@@ -941,6 +943,7 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
     if corpo.get("substituir", True) is not False and os.path.exists(g._caminho_desenho(s, nome)):
         g.excluir_desenho(s, nome)
     desenho.metadados["gerado_por"] = "detalhamento"
+    desenho.metadados["versao"] = versao.VERSAO
     salvo = g.salvar_desenho(s, nome, desenho.dict())
     return {"nome": salvo["nome"], "titulo": nome, "marca": marca, "classe": pos.classe,
             "convertidas": convertidas, "reorientadas": reorientadas.get("chapas", 0),
@@ -1048,12 +1051,46 @@ def atualizar_pecas_projeto(s: str, corpo: dict) -> dict:
                 if os.path.exists(g._caminho_desenho(s, desenho.nome)):
                     g.excluir_desenho(s, desenho.nome)
                 desenho.metadados["gerado_por"] = "detalhamento"
+                desenho.metadados["versao"] = versao.VERSAO
                 g.salvar_desenho(s, desenho.nome, desenho.dict())
                 detalhes.append(desenho.nome)
         g.tocar(s)
         return {"pecas": [p.nome or p.marca for p in pedidas], "furos_barras": r1["furos"] + r2["furos"],
                 "barras": sorted(set(r1["posicoes"]) | set(r2["posicoes"])),
                 "desenhos": atualizados, "detalhes": detalhes}
+    finally:
+        _fim_progresso(s)
+
+
+def aplicar_pecas_do_desenho(s: str, nome: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/desenhos/<nome>/aplicar-pecas {desenho}: as barras que o
+    usuário moveu, espelhou, esticou, copiou ou apagou nas elevações dos conjuntos mudam
+    igual no modelo 3D, em todas as instâncias de cada tipo de conjunto; o modelo anterior
+    vai para o histórico. O desenho não é regenerado aqui (o próximo Detalhar já sai do 3D
+    novo). Só desenho gerado pela versão atual, para as diferenças de geração não subirem."""
+    from nucleo2d.desenho import Desenho
+    from nucleo2d.detalhar import detalhar
+    from nucleo2d.detalhe.aplicar_pecas import aplicar_desenho_ao_modelo
+    g = _gerente()
+    try:
+        _progresso(s, "lendo o desenho…")
+        d = Desenho.de_dict(corpo["desenho"]) if isinstance(corpo.get("desenho"), dict) else Desenho.de_dict(g.abrir_desenho(s, nome))
+        if str(d.metadados.get("versao") or "") != versao.VERSAO:
+            raise ErroDeDados("este desenho foi gerado por outra versão do programa (%s): gere o detalhamento de novo, "
+                              "faça a correção nele e aplique — senão as diferenças de geração iriam para o 3D como se "
+                              "fossem edição sua." % (d.metadados.get("versao") or "anterior à 0.8.17"))
+        doc = _documento3d_do_projeto(s)
+        # o mesmo modelo detalhado agora, pelo mesmo código: só a edição feita à mão sobra
+        _progresso(s, "detalhando de novo o modelo para comparar…")
+        r0 = detalhar(doc, grupos=["tesouras", "conjuntos", "contraventamentos", "agulhamentos", "extras"],
+                      nomes=_nomes_producao(s), converter=False, ajustes=_ajustes_furos(s),
+                      avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+        _progresso(s, "comparando e aplicando no modelo…")
+        r = aplicar_desenho_ao_modelo(doc, d, list(r0["desenhos"].values()), todas_instancias=corpo.get("todas", True) is not False)
+        if r["celulas"]:
+            _regravar_modelo(s, doc, marco=True)
+            g.tocar(s)
+        return r
     finally:
         _fim_progresso(s)
 
@@ -1121,6 +1158,7 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         if os.path.exists(g._caminho_desenho(s, novo.nome)):
             g.excluir_desenho(s, novo.nome)
         novo.metadados["gerado_por"] = "detalhamento"
+        novo.metadados["versao"] = versao.VERSAO
         salvo = g.salvar_desenho(s, novo.nome, novo.dict())
         return dict(r, nome=salvo["nome"], marca=marca, quantidade=pos.quantidade, vinculadas=vinculadas, barras3d=barras3d)
     # desenho geral (Detalhamento – chapas): a célula da posição pedida
@@ -1411,19 +1449,7 @@ def instalar_atualizacao(corpo: Optional[dict] = None) -> dict:
     # com aspas dentro de aspas passada ao cmd /c não era interpretada inteira); roda
     # separado deste processo, que fecha. O instalador também reabre o programa por
     # conta própria quando roda em silêncio ([Run] com Check: WizardSilent).
-    lote = os.path.join(tempfile.gettempdir(), "metalica-atualizar.cmd")
-    linhas = [
-        "@echo off",
-        "chcp 65001 >nul",                                 # as linhas abaixo são UTF-8 (C:\Users\José\…)
-        "timeout /t 2 /nobreak >nul",
-        '"%s" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS' % destino,
-        "timeout /t 3 /nobreak >nul",
-        'del /q "%s" >nul 2>&1' % destino,                # o instalador já cumpriu o papel
-        'if not exist "%s" exit /b 1' % exe_atual,
-        'tasklist /fi "imagename eq Metalica.exe" | find /i "Metalica.exe" >nul || start "" "%s"' % exe_atual,
-    ]
-    with open(lote, "w", encoding="utf-8", newline="") as f:
-        f.write("\r\n".join(linhas) + "\r\n")
+    lote = gravar_lote_de_atualizacao(os.path.join(tempfile.gettempdir(), "metalica-atualizar.cmd"), destino, exe_atual)
     subprocess.Popen(["cmd.exe", "/c", lote], creationflags=0x00000008 | 0x00000200,   # DETACHED | NEW_PROCESS_GROUP
                      close_fds=True, cwd=tempfile.gettempdir())
 
@@ -1433,6 +1459,26 @@ def instalar_atualizacao(corpo: Optional[dict] = None) -> dict:
     threading.Thread(target=sair, daemon=True).start()
     return {"baixado": destino, "tamanho_mb": round(tamanho / 1048576, 1), "versao": info["ultima"],
             "mensagem": "Instalando a versão %s: o programa vai fechar e reabrir sozinho." % info["ultima"]}
+
+
+def gravar_lote_de_atualizacao(lote: str, instalador: str, exe_atual: str, espera: int = 2) -> str:
+    r"""O .cmd que instala em silêncio e reabre o programa. Gravado em UTF-8 com `chcp 65001`
+    na frente: o usuário com acento no nome (C:\Users\José\…) tem acento nos caminhos, e o
+    cmd lê o arquivo na página de código ativa. Separado de `instalar_atualizacao` para o
+    teste rodar o arquivo de verdade (testes/test_atualizacao_lote.py)."""
+    linhas = [
+        "@echo off",
+        "chcp 65001 >nul",                                 # as linhas abaixo são UTF-8
+        "timeout /t %d /nobreak >nul" % espera,
+        '"%s" /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS' % instalador,
+        "timeout /t %d /nobreak >nul" % (espera + 1),
+        'del /q "%s" >nul 2>&1' % instalador,              # o instalador já cumpriu o papel
+        'if not exist "%s" exit /b 1' % exe_atual,
+        'tasklist /fi "imagename eq Metalica.exe" | find /i "Metalica.exe" >nul || start "" "%s"' % exe_atual,
+    ]
+    with open(lote, "w", encoding="utf-8", newline="") as f:
+        f.write("\r\n".join(linhas) + "\r\n")
+    return lote
 
 
 def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
@@ -2146,6 +2192,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gerar_3d_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-furos":
                     return self._json(aplicar_furos_do_desenho(partes[0], partes[2], corpo))
+                if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-pecas":
+                    return self._json(aplicar_pecas_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "pdf":
                     return self._json(pdf_da_lista_de_materiais(partes[0]))
                 if len(partes) == 2 and partes[1] == "pranchas":
