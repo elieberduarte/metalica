@@ -1068,19 +1068,23 @@ def aplicar_pecas_do_desenho(s: str, nome: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/desenhos/<nome>/aplicar-pecas {desenho}: as barras que o
     usuário moveu, espelhou, esticou, copiou ou apagou nas elevações dos conjuntos mudam
     igual no modelo 3D, em todas as instâncias de cada tipo de conjunto; o modelo anterior
-    vai para o histórico. O desenho não é regenerado aqui (o próximo Detalhar já sai do 3D
-    novo). Só desenho gerado pela versão atual, para as diferenças de geração não subirem."""
+    vai para o histórico. Depois, os desenhos de detalhamento são gerados de novo a partir
+    do 3D corrigido (`regerar`, ligado por padrão) — o completo e os demais passam a ter a
+    mesma correção — e este desenho fica como o usuário o deixou. Desenho de antes da
+    0.8.17 (sem versão gravada) é recusado; de outra versão desde então, aplica com aviso."""
     from nucleo2d.desenho import Desenho
-    from nucleo2d.detalhar import detalhar
+    from nucleo2d.detalhar import detalhar, GRUPOS, _categoria
     from nucleo2d.detalhe.aplicar_pecas import aplicar_desenho_ao_modelo
+    from saida import lista_producao
     g = _gerente()
     try:
         _progresso(s, "lendo o desenho…")
         d = Desenho.de_dict(corpo["desenho"]) if isinstance(corpo.get("desenho"), dict) else Desenho.de_dict(g.abrir_desenho(s, nome))
-        if str(d.metadados.get("versao") or "") != versao.VERSAO:
-            raise ErroDeDados("este desenho foi gerado por outra versão do programa (%s): gere o detalhamento de novo, "
-                              "faça a correção nele e aplique — senão as diferenças de geração iriam para o 3D como se "
-                              "fossem edição sua." % (d.metadados.get("versao") or "anterior à 0.8.17"))
+        gerado_por = str(d.metadados.get("versao") or "")
+        if not gerado_por:
+            raise ErroDeDados("este desenho foi gerado antes da 0.8.17, sem a versão gravada: gere o detalhamento de "
+                              "novo, faça a correção nele e aplique — senão as diferenças de geração iriam para o 3D "
+                              "como se fossem edição sua.")
         doc = _documento3d_do_projeto(s)
         # o mesmo modelo detalhado agora, pelo mesmo código: só a edição feita à mão sobra
         _progresso(s, "detalhando de novo o modelo para comparar…")
@@ -1089,9 +1093,20 @@ def aplicar_pecas_do_desenho(s: str, nome: str, corpo: dict) -> dict:
                       avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
         _progresso(s, "comparando e aplicando no modelo…")
         r = aplicar_desenho_ao_modelo(doc, d, list(r0["desenhos"].values()), todas_instancias=corpo.get("todas", True) is not False)
+        if gerado_por != versao.VERSAO:
+            r.setdefault("avisos", []).append("desenho gerado pela versão %s (esta é a %s): se a geração mudou entre elas, "
+                                              "a diferença foi para o 3D como se fosse edição — confira" % (gerado_por, versao.VERSAO))
         if r["celulas"]:
             _regravar_modelo(s, doc, marco=True)
             g.tocar(s)
+            if corpo.get("regerar", True) is not False:
+                # os outros desenhos (o completo, os conjuntos…) saem do 3D corrigido; o
+                # desenho editado volta a ser gravado como o usuário o deixou
+                _progresso(s, "gerando os desenhos de detalhamento de novo…")
+                res = _detalhar_projeto(s, {"grupos": list(GRUPOS.keys())}, g, detalhar, GRUPOS, _categoria, lista_producao)
+                g.salvar_desenho(s, nome, d.dict())
+                r["regenerados"] = [x["nome"] for x in res.get("desenhos", [])]
+                r["avisos"].extend(res.get("avisos") or [])
         return r
     finally:
         _fim_progresso(s)

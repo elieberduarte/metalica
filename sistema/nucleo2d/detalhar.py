@@ -98,6 +98,7 @@ from nucleo2d.detalhe.base import (  # noqa: E402,F401
     aplicar_ajustes_de_furos,
     fundir_posicoes_iguais,
     inferir_furos_de_parafusos,
+    _so_parafusos,
     marcas_de,
     oblongar_tercas,
     parafusos_da_posicao,
@@ -830,7 +831,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         from nucleo2d.detalhe.montagens import grupos_montados
         nome_pc0 = lambda m: nomes_pos.get(fundidas.get(m, m)) or nomes_conj.get(m) or fundidas.get(m, m)    # noqa: E731
         try:
-            montagens_cache = grupos_montados(pecas, _fixadores(doc), nome_pc0)
+            montagens_cache = grupos_montados(pecas, _so_parafusos(_fixadores(doc)), nome_pc0)
         except Exception as exc:                  # noqa: BLE001 — o resto do detalhamento sai
             montagens_cache = []
             avisos.append("peças montadas não levantadas: %s" % exc)

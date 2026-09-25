@@ -23,7 +23,7 @@ const DIAMETROS = [8, 10, 12, 14, 16, 18, 20, 22, 24];
 const CLASSES = ['A307', 'A325', 'A490', '8.8', '5.8'];
 
 /** Prisma de n lados em volta do eixo `a` (unitário), da base `c` até c + a·h. */
-function prisma(c, a, raio, n, h, giro = 0) {
+export function prisma(c, a, raio, n, h, giro = 0) {
   const u = C.normalizar(C.perpendicular(a));
   const v = C.cross(a, u);
   const base = [], topo = [];

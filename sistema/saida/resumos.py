@@ -21,7 +21,7 @@ import re
 from typing import Dict, List, Optional, Tuple
 
 from nucleo3d.modelo import Documento, Solido
-from nucleo2d.detalhe.base import (_marcas, marcas_de, _autovetores, _eixos_dos_fixadores, _fixadores, _parede_da_peca,
+from nucleo2d.detalhe.base import (_marcas, marcas_de, _autovetores, _eixos_dos_fixadores, _fixadores, _parede_da_peca, _so_parafusos,
                                    _eixo_da_peca)
 from saida.dobras import com_bitola
 
@@ -509,7 +509,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     chaparia_total = {"kg": sum(c["kg"] for c in chaparia), "pecas": sum(c["pecas"] for c in chaparia)}
 
     # ---- parafusos e fixadores, com o local de uso
-    fixadores = _fixadores(doc)
+    fixadores = _so_parafusos(_fixadores(doc))
     parafusos = _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_conj, conj_info)
     n_parafusos = sum(p["qtd"] for p in parafusos if p["parafuso"])
 

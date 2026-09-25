@@ -514,8 +514,39 @@ def _furo_de_dict(f: dict) -> Furo:
 _PORCAS = ((10, 6), (13, 8), (16, 10), (18, 12), (19, 12), (21, 14), (24, 16), (27, 18), (30, 20), (34, 22), (36, 24))
 
 
+def _eh_furo(ent) -> bool:
+    """Marcador de furo feito no editor 3D (ferramenta Furo): sólido com `atributos.furo`
+    = {d, ponto, eixo, profundidade}. Viaja com os fixadores — dá furo na peça como o
+    parafuso colocado no 3D —, mas não é parafuso: não conta em lista nenhuma."""
+    return bool((getattr(ent, "atributos", None) or {}).get("furo"))
+
+
+def _so_parafusos(fixadores: Sequence[Solido]) -> List[Solido]:
+    """Os fixadores sem os marcadores de furo (para contar, agrupar, emparelhar)."""
+    return [f for f in fixadores if not _eh_furo(f)]
+
+
+def _furo_marcado(f: Solido):
+    """(centro, eixo unitário, meio comprimento, diâmetro do furo) do marcador, ou None."""
+    fu = (f.atributos or {}).get("furo")
+    if not fu:
+        return None
+    try:
+        ponto = tuple(float(x) for x in fu["ponto"])
+        eixo = tuple(float(x) for x in fu["eixo"])
+        d = float(fu["d"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    L = math.sqrt(_dot(eixo, eixo)) or 1.0
+    eixo = tuple(x / L for x in eixo)
+    prof = float(fu.get("profundidade") or 10.0)
+    centro = tuple(ponto[i] + eixo[i] * prof / 2.0 for i in range(3))
+    return centro, eixo, prof / 2.0 + 1.0, d
+
+
 def _fixadores(doc: Documento) -> List[Solido]:
-    return [e for e in doc.entidades.values() if isinstance(e, Solido) and _tipo_ifc(e) in TIPOS_ACESSORIO and len(e.vertices) >= 4]
+    return [e for e in doc.entidades.values() if isinstance(e, Solido) and len(e.vertices) >= 4
+            and (_tipo_ifc(e) in TIPOS_ACESSORIO or _eh_furo(e))]
 
 
 def _diametro_do_fixador(ent: Solido, ext) -> Tuple[float, bool]:
@@ -562,6 +593,11 @@ def _eixos_dos_fixadores(fixadores: Sequence[Solido]) -> Dict[str, tuple]:
     fora = {}
     for f in fixadores:
         if len(f.vertices) < 4:
+            continue
+        marcado = _furo_marcado(f)
+        if marcado:
+            cc, eixo, meio, d = marcado
+            fora[f.id] = (cc, eixo, meio, [2 * meio, d, d], False)
             continue
         cc, pca = _autovetores(f.vertices)
         ext = []
@@ -666,7 +702,7 @@ def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido],
     porcas = 0
     for f in fixadores:
         info = eixos_fix.get(f.id)
-        if info is None:
+        if info is None or _eh_furo(f):
             continue
         cc, eixo, meio, ext, porca = info
         if not all(caixa[i][0] - folga <= cc[i] <= caixa[i][1] + folga for i in range(3)):
@@ -704,7 +740,7 @@ def parafusos_no_conjunto(doc: Documento, instancia: Sequence[Solido]) -> Tuple[
     maximo = [max(cx[i][1] for cx in caixas) + 20.0 for i in range(3)]
     contagem: Dict[str, int] = collections.Counter()
     porcas = 0
-    for f in _fixadores(doc):
+    for f in _so_parafusos(_fixadores(doc)):
         cc = tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3))
         if not all(minimo[i] <= cc[i] <= maximo[i] for i in range(3)):
             continue
@@ -738,19 +774,26 @@ def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[So
     centro_plano = tuple(c[i] + e3[i] * w0 for i in range(3))
     caixa = _caixa(ent)
     folga = 40.0
-    novos, porca = 0, False
+    novos, porca, marcados = 0, False, 0
     for f in fixadores:
         cf = centros.get(f.id)
         if cf is None or not all(caixa[i][0] - folga <= cf[i] <= caixa[i][1] + folga for i in range(3)):
             continue
-        cc, pca = _autovetores(f.vertices)
-        ext = []
-        for ax in pca:
-            ts = [_dot(_sub(v, cc), ax) for v in f.vertices]
-            ext.append(max(ts) - min(ts))
-        # parafuso comprido: eixo é o maior; só a porca (achatada): eixo é o menor
-        eixo = pca[0] if ext[0] > 1.5 * ext[1] else pca[2]
-        alcance = (ext[0] if ext[0] > 1.5 * ext[1] else ext[2]) / 2 + pos.T + folga
+        marcado = _furo_marcado(f)
+        if marcado:
+            # furo feito no editor 3D: o eixo e o diâmetro são os gravados no marcador
+            cc, eixo, meio, d_marcado = marcado
+            ext = None
+            alcance = meio + pos.T + folga
+        else:
+            cc, pca = _autovetores(f.vertices)
+            ext = []
+            for ax in pca:
+                ts = [_dot(_sub(v, cc), ax) for v in f.vertices]
+                ext.append(max(ts) - min(ts))
+            # parafuso comprido: eixo é o maior; só a porca (achatada): eixo é o menor
+            eixo = pca[0] if ext[0] > 1.5 * ext[1] else pca[2]
+            alcance = (ext[0] if ext[0] > 1.5 * ext[1] else ext[2]) / 2 + pos.T + folga
         den = _dot(eixo, e3)
         if abs(den) < 0.7:
             continue
@@ -761,17 +804,25 @@ def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[So
         u, v = _dot(_sub(p, c), e1) - u0, _dot(_sub(p, c), e2) - v0
         if not _ponto_no_poligono(u, v, pos.contorno, 1.0):
             continue
-        d, inferido = _diametro_do_fixador(f, ext)
-        d_furo = d + 1.0
+        if marcado:
+            d_furo, inferido = d_marcado, False
+        else:
+            d, inferido = _diametro_do_fixador(f, ext)
+            d_furo = d + 1.0
         if any(math.hypot(u - g.x, v - g.y) < max(d_furo, g.d, g.larg) for g in pos.furos):
             continue                                     # o furo já está na malha
         pos.furos.append(Furo("redondo", float(round(u)), float(round(v)), d_furo))
-        novos += 1
+        if marcado:
+            marcados += 1
+        else:
+            novos += 1
         porca = porca or inferido
     if novos:
         pos.observacoes.append("%d furo(s) pelo parafuso do modelo (a chapa veio sem furo no IFC)%s"
                                % (novos, "; diametro pela porca, conferir" if porca else ""))
-    return novos
+    if marcados:
+        pos.observacoes.append("%d furo(s) feito(s) no editor 3D (ferramenta Furo)" % marcados)
+    return novos + marcados
 
 
 def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido], centros=None) -> int:
@@ -793,7 +844,7 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
     folga = 60.0
     ws = [q[2] for q in pos.local]
     w_min, w_max = min(ws), max(ws)
-    novos = 0
+    novos, marcados = 0, 0
     for f in fixadores:
         # só os parafusos colocados no editor: os do IFC vêm com o furo da barra modelado,
         # e nos poucos em que a análise não o casa (furo movido pela regra, oblongo) um furo
@@ -803,17 +854,23 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
         cf = centros.get(f.id)
         if cf is None or not all(caixa[i][0] - folga <= cf[i] <= caixa[i][1] + folga for i in range(3)):
             continue
-        cc, pca = _autovetores(f.vertices)
-        ext = []
-        for ax in pca:
-            ts = [_dot(_sub(q, cc), ax) for q in f.vertices]
-            ext.append(max(ts) - min(ts))
-        if ext[0] <= 1.5 * ext[1]:
-            continue                                    # só a porca: sem eixo confiável
-        eixo = pca[0]
+        marcado = _furo_marcado(f)
+        if marcado:
+            cc, eixo, meio, d_marcado = marcado           # furo feito no editor: eixo e diâmetro gravados
+            meio += pos.T + 2.0                           # o plano da alma pode ser a face de fora ou o meio da parede
+            ext = None
+        else:
+            cc, pca = _autovetores(f.vertices)
+            ext = []
+            for ax in pca:
+                ts = [_dot(_sub(q, cc), ax) for q in f.vertices]
+                ext.append(max(ts) - min(ts))
+            if ext[0] <= 1.5 * ext[1]:
+                continue                                # só a porca: sem eixo confiável
+            eixo = pca[0]
+            meio = ext[0] / 2
         a_l = (_dot(eixo, e1), _dot(eixo, e2), _dot(eixo, e3))
         c_l = local(cc)
-        meio = ext[0] / 2
         if abs(a_l[2]) > 0.9:                           # atravessa a alma
             vista, t = "frente", -c_l[2] / a_l[2]
             if pos.classe == "barra_conformada":
@@ -847,15 +904,23 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
             x, y = p[0], p[2]
             if not (0.0 < x < pos.L and w_min - 1.0 < y < w_max + 1.0):
                 continue
-        d, _ = _diametro_do_fixador(f, ext)
-        d_furo = d + 1.0
+        if marcado:
+            d_furo = d_marcado
+        else:
+            d, _ = _diametro_do_fixador(f, ext)
+            d_furo = d + 1.0
         if any(g.vista == vista and math.hypot(x - g.x, y - g.y) < max(d_furo, g.d, g.larg) for g in pos.furos):
             continue
         pos.furos.append(Furo("redondo", float(round(x)), float(round(y)), d_furo, vista=vista))
-        novos += 1
+        if marcado:
+            marcados += 1
+        else:
+            novos += 1
     if novos:
         pos.observacoes.append("%d furo(s) pelo parafuso do modelo (a barra veio sem o furo)" % novos)
-    return novos
+    if marcados:
+        pos.observacoes.append("%d furo(s) feito(s) no editor 3D (ferramenta Furo)" % marcados)
+    return novos + marcados
 
 
 def aplicar_ajustes_de_furos(posicoes: Sequence[Posicao], ajustes: Optional[dict]) -> List[str]:

@@ -39,6 +39,7 @@ from nucleo2d.detalhe.base import (  # noqa: E402
     aplicar_ajustes_de_furos,
     fundir_posicoes_iguais,
     inferir_furos_de_parafusos,
+    _so_parafusos,
     marcas_de,
     oblongar_tercas)
 from nucleo2d.detalhe.nomes import (  # noqa: E402
@@ -782,6 +783,9 @@ def _mover_fixadores_mundo(centro, nz, delta, raio: float, fixadores: Sequence[S
         lateral = math.sqrt(max(0.0, _dot(d, d) - t * t))
         if lateral <= raio and abs(t) <= alcance:
             f.vertices = [tuple(v[i] + delta[i] for i in range(3)) for v in f.vertices]
+            fu = (f.atributos or {}).get("furo")
+            if fu and fu.get("ponto"):                    # marcador de furo: o ponto gravado anda junto
+                fu["ponto"] = [float(fu["ponto"][i]) + delta[i] for i in range(3)]
             movidos.add(f.id)
             n += 1
     return n
@@ -1118,7 +1122,7 @@ def alinhar_furos_das_barras_aos_parafusos(doc: Documento, ids: Optional[Sequenc
     40 mm, e o oblongo); este cobre o deslocamento grande. `ids`: só essas barras.
     Devolve {"barras", "furos", "posicoes"}."""
     saida = {"barras": 0, "furos": 0, "posicoes": []}
-    eixos_fix = _eixos_dos_fixadores(_fixadores(doc))
+    eixos_fix = _eixos_dos_fixadores(_so_parafusos(_fixadores(doc)))
     parafusos = [(c, a, meio) for c, a, meio, _ext, porca in eixos_fix.values() if not porca]
     if not parafusos:
         return saida
@@ -1448,7 +1452,7 @@ def retirar_furos_sem_uso(doc: Documento, so_tercas: bool = True) -> dict:
     pecas, _ = _pecas(doc)
     # parafusos e barras que podem passar num furo; a caixa só pré-seleciona — a de um
     # tirante em diagonal cobre metros de terça, e o furo tem de estar na barra de verdade
-    passantes_e = [f for f in _fixadores(doc)]
+    passantes_e = list(_so_parafusos(_fixadores(doc)))
     passantes_e += [e for e in pecas if _eh_redonda_perfil(str(_marcas(e).get("perfil") or e.nome or ""))]
     passantes = [_caixa(e) for e in passantes_e]
     grade: Dict[tuple, list] = collections.defaultdict(list)

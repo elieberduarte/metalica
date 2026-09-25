@@ -28,6 +28,7 @@ const ARQUIVOS = [
   ['./barra.js', 'estrutura'],
   ['./chapa.js', 'estrutura'],
   ['./parafuso.js', 'estrutura'],
+  ['./furo.js', 'estrutura'],
 ];
 
 /**

@@ -218,6 +218,19 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.19.** Ferramenta **Furo** no editor 3D (`F`), no molde da Parafuso: diâmetro no painel (usuais, os que o
+modelo já usa — furos das chapas e parafusos + 1 mm — ou digitado: 14, 17,5, M12 = 13), eixos da face para prender e
+medir, clique na face fura só aquela parede (a profundidade é a camada de vértices logo atrás da face). Na chapa
+paramétrica o furo entra em `furos`; na peça do IFC e na barra fica um marcador — cilindro na camada Furos, tipo
+IfcOpeningElement, `atributos.furo = {d, ponto, eixo, profundidade}`, `exportar: false` — que viaja com os fixadores no
+detalhamento (`_fixadores`) e dá o furo na barra (alma ou mesa) e na chapa com o diâmetro marcado
+(`inferir_furos_de_barra/parafusos`), anda com o furo da chapa movido no CAD (`_mover_fixadores`), e fica de fora de tudo
+que conta parafuso (`_so_parafusos`: posição, conjunto, montagens, resumos, passantes). Testes em
+`test_furo_editor.py` e `verificadores/verif_furo.py`. **Levar para o 3D** agora gera de novo os outros desenhos de
+detalhamento a partir do 3D corrigido (o completo, os conjuntos…), e o desenho editado fica como o usuário o deixou —
+antes o completo continuava com o desenho anterior até o próximo Detalhar; desenho de outra versão desde a 0.8.17 é
+aceito com aviso (só o de antes, sem versão gravada, é recusado).
+
 **0.8.18.** Resumo da obra e resumo de materiais direto do sistema — os dois documentos que a fábrica emite por
 obra —, na tela Lista de materiais, botão "Resumos da obra…" (revisão, descrição, telha, letras dos eixos e notas
 ficam no projeto e são pedidos na primeira vez). (1) Nomenclatura de produção no padrão da fábrica: T.C./T.L./T.O./T.M.

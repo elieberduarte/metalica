@@ -1219,7 +1219,7 @@ class CAD {
     if (!this.projeto || !this.nomeDesenho) { this.aviso('Abra um desenho de detalhamento do projeto.', 'atencao'); return; }
     const celulas = (this.doc.vistas || []).filter(v => v.tipo === 'conjunto').length;
     if (!celulas) { this.aviso('Este desenho não tem elevações de conjunto (tesouras): abra o detalhamento de tesouras, de conjuntos ou o completo.', 'atencao'); return; }
-    const corpo = el('div', {}, el('p', {}, `Levar para o modelo 3D o que mudou nas elevações dos conjuntos deste desenho: barras movidas ou espelhadas são movidas no 3D, esticadas têm a ponta movida, cópias viram peças novas e barras apagadas saem do modelo — em todas as tesouras de cada tipo. O modelo anterior vai para o histórico. O programa detalha o modelo de novo para comparar (leva um pouco).`));
+    const corpo = el('div', {}, el('p', {}, `Levar para o modelo 3D o que mudou nas elevações dos conjuntos deste desenho: barras movidas ou espelhadas são movidas no 3D, esticadas têm a ponta movida, cópias viram peças novas e barras apagadas saem do modelo — em todas as tesouras de cada tipo. O modelo anterior vai para o histórico. Em seguida os outros desenhos de detalhamento (o completo, os conjuntos…) são gerados de novo a partir do 3D corrigido; este fica como você o deixou. Leva um pouco.`));
     if (await this.dialogo({ titulo: 'Aplicar peças das elevações ao modelo 3D', corpo, ok: 'Aplicar' }) !== 'ok') return;
     this.dica('Comparando o desenho com o modelo…');
     const parar = this._acompanharProgresso ? this._acompanharProgresso('Aplicando: ') : () => {};
@@ -1230,8 +1230,10 @@ class CAD {
       const t = r.total || {};
       const mudou = Object.keys(r.celulas || {});
       if (!mudou.length) { this.aviso('Nada mudou nas elevações em relação ao modelo 3D.' + ((r.avisos || []).length ? ' ' + r.avisos.join(' · ') : ''), 'info', 10000); return; }
-      this.aviso(`${mudou.join(', ')}: ${t.movidas} barra(s) movidas, ${t.esticadas} esticada(s), ${t.copiadas} nova(s), ${t.apagadas} apagada(s) no modelo 3D (em todas as instâncias). O próximo Detalhar já sai com a correção.` +
-                 ((r.avisos || []).length ? ` Avisos: ${r.avisos.join(' · ')}` : ''), 'info', 16000);
+      const reg = (r.regenerados || []).length;
+      this.aviso(`${mudou.join(', ')}: ${t.movidas} barra(s) movidas, ${t.esticadas} esticada(s), ${t.copiadas} nova(s), ${t.apagadas} apagada(s) no modelo 3D (em todas as instâncias).` +
+                 (reg ? ` ${reg} desenho(s) de detalhamento gerados de novo a partir do 3D corrigido; este ficou como você o deixou.` : ' O próximo Detalhar já sai com a correção.') +
+                 ((r.avisos || []).length ? ` Avisos: ${r.avisos.join(' · ')}` : ''), 'info', 20000);
     } catch (e) { parar(); this.aviso(`Não foi possível aplicar: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
