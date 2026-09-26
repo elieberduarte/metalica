@@ -70,6 +70,7 @@ PADRAO = {
     "sobrecarga_cobertura": 0.25, "carga_extra": 0.0,
     "aco_perfis": "ASTM A572 Gr.50", "aco_tercas": "CF-26 (NBR 6650)", "aco_chapas": "ASTM A36",
     "fechamento": False,                # telhas e paredes como sólidos (só visual)
+    "ligacoes": True,                   # suportes de terça, apoio da tesoura no pilar e chumbadores (biblioteca)
     "dimensionar": True,                # dimensiona pelo motor do galpão antes de montar
 }
 
@@ -580,8 +581,13 @@ def marcar_modelo(doc) -> dict:
             inst[("tesoura", k)].append(e)
         elif isinstance(e, Barra) and e.papel == "pilar":
             inst[("pilar", k, a.get("lado"))].append(e)
-        elif isinstance(e, Chapa) and a.get("marca") == "CH3":                   # placa de base
+        elif isinstance(e, Chapa) and a.get("marca") in ("CH3", "CH5"):          # placa de base, chapa de topo
             inst[("pilar", k, a.get("lado"))].append(e)
+        elif isinstance(e, Chapa) and a.get("marca") in ("CH6", "CH7", "CH8"):   # apoio da tesoura, suportes de terça
+            if any(isinstance(b, Barra) and b.papel == "banzo" for b in barras):
+                inst[("tesoura", k)].append(e)
+            else:
+                inst[("viga", k, a.get("agua"))].append(e)
         elif isinstance(e, Barra) and e.papel == "viga":
             inst[("viga", k, a.get("agua"))].append(e)
         elif isinstance(e, Chapa) and a.get("marca") in ("M1", "M2", "CH2"):     # mísula e chapa de cumeeira
@@ -675,6 +681,163 @@ def _limpar_duplicadas(doc, V: float):
         vistas.add(chave)
 
 
+# =====================================================================================
+# 4. Ligações e acessórios no modelo lançado (da biblioteca `nucleo.acessorios`)
+# =====================================================================================
+
+def _parafuso_solido(centro, eixo, d: float, L: float, classe: str):
+    """Parafuso como o editor 3D grava ("BOLT (A307) 12x25", IfcMechanicalFastener): um
+    prisma sextavado ao longo do eixo, centrado na pega. O detalhamento conta quantos
+    atravessam cada chapa e põe na lista de materiais."""
+    from nucleo3d import geometria as geo
+    ex = eixo
+    n = math.sqrt(sum(c * c for c in ex)) or 1.0
+    ex = tuple(c / n for c in ex)
+    ref = (0.0, 0.0, 1.0) if abs(ex[2]) < 0.9 else (1.0, 0.0, 0.0)
+    u = (ex[1] * ref[2] - ex[2] * ref[1], ex[2] * ref[0] - ex[0] * ref[2], ex[0] * ref[1] - ex[1] * ref[0])
+    nu = math.sqrt(sum(c * c for c in u)) or 1.0
+    u = tuple(c / nu for c in u)
+    v = (ex[1] * u[2] - ex[2] * u[1], ex[2] * u[0] - ex[0] * u[2], ex[0] * u[1] - ex[1] * u[0])
+    r = 0.5 * d
+    base = tuple(centro[i] - ex[i] * L / 2.0 for i in range(3))
+    cantos = [tuple(base[i] + r * (math.cos(a) * u[i] + math.sin(a) * v[i]) for i in range(3))
+              for a in (k * math.pi / 3.0 for k in range(6))]
+    cl = classe.replace("ASTM ", "").replace("ISO ", "")
+    sol = geo.prisma(cantos, tuple(ex[i] * L for i in range(3)), nome="BOLT (%s) %gx%d" % (cl, d, int(L)),
+                     camada="Parafusos", material="Aço")
+    sol.atributos = {"tipo_ifc": "IfcMechanicalFastener", "parafuso": {"d": d, "L": L, "classe": classe}}
+    return sol
+
+
+def _gerar_ligacoes(c, doc, par: dict) -> dict:
+    """Suporte de terça (cadeirinha) em cada cruzamento terça × tesoura (ou viga), a tesoura
+    apoiada no topo do pilar (chapa de topo + chapa de apoio, parafusadas) e os chumbadores
+    nos furos das placas de base — com as medidas-padrão da biblioteca de ligações, nas
+    coordenadas do galpão (antes de ir para os eixos). Devolve a contagem."""
+    from nucleo import acessorios as A
+    from nucleo3d.modelo import Barra, Chapa
+    from nucleo3d import geometria as geo
+    from saida import desenhos as dsn
+    cont = {"suportes_terca": 0, "apoios_tesoura": 0, "chumbadores": 0, "parafusos": 0}
+
+    def pad(tipo):
+        return {x.chave: x.padrao for x in A.REGISTRO[tipo].parametros}
+
+    def chapa(nome, marca, origem, ex, ey, cont2d, t, furos, centrada, **atr):
+        ch = Chapa(nome=nome, origem=tuple(origem), eixo_x=tuple(ex), eixo_y=tuple(ey),
+                   contorno=[tuple(q) for q in cont2d], espessura=float(t), centrada=centrada, furos=list(furos),
+                   camada="Chapas", material="Aço", aco=c.dg.aco_chapas)
+        ch.atributos = dict({"marca": marca, "peso_kg": round(geo.peso_chapa(ch), 2)}, **atr)
+        doc.add(ch)
+        return ch
+
+    # ---- suportes de terça (cadeirinha)
+    if par.get("suportes_terca", True):
+        q = pad("suporte_terca_cadeirinha")
+        B, H, t = float(q["largura"]), float(q["altura"]), float(q["t"])
+        bl, bb, bt = float(q["base_l"]), float(q["base_b"]), float(q["base_t"])
+        gv = 100.0 if c.terca.d >= 200.0 else float(q["gab_v"])      # regra da furação da fábrica
+        gh, borda = float(q["gab_h"]), float(q["borda_topo"])
+        dpar = A.d_parafuso_mm(q["parafuso"])
+        w = A.furo_mm(q["parafuso"])
+        comp = w + 12.0
+        banzo = c._banzo_superior() if c.dg.eh_trelicado else c.viga
+        Lpar = A.comprimento_parafuso(t + 2.25, dpar)
+        furos = [{"x": sx * gh / 2.0, "y": H - borda - i * gv, "largura": comp, "altura": w}
+                 for i in range(2) for sx in (-1, 1)]
+        vistos = set()
+        for k, x in enumerate(c.xs):
+            for agua, j, y in c.linhas_tercas:
+                if (k, round(y)) in vistos:
+                    continue
+                vistos.add((k, round(y)))
+                nrm = c._normal_agua(y if abs(y - c.V / 2) > 1.0 else c.V / 2 - 1.0)
+                tv = (0.0, nrm[2], -nrm[1])                     # ao longo da água, subindo
+                topo = (x, y + nrm[1] * banzo.d / 2.0, c._z_agua(y) + nrm[2] * banzo.d / 2.0)
+                chapa("CH8", "CH8", topo, (1.0, 0.0, 0.0), tv,
+                      [(-bl / 2, -bb / 2), (bl / 2, -bb / 2), (bl / 2, bb / 2), (-bl / 2, bb / 2)], bt, [], False,
+                      portico=k + 1, agua=agua, linha=j, elemento="Suporte de terça (base)",
+                      tipo_ligacao="suporte_terca_cadeirinha")
+                off = c.terca.bf / 2.0 + t / 2.0 if getattr(c.terca, "bf", 0) else 40.0
+                o2 = tuple(topo[i] + nrm[i] * bt + tv[i] * off for i in range(3))
+                chapa("CH7", "CH7", o2, (1.0, 0.0, 0.0), nrm,
+                      [(-B / 2, 0.0), (B / 2, 0.0), (B / 2, H), (-B / 2, H)], t, furos, True,
+                      portico=k + 1, agua=agua, linha=j, elemento="Suporte de terça",
+                      tipo_ligacao="suporte_terca_cadeirinha")
+                cont["suportes_terca"] += 1
+                eixo_par = tuple(-tv[i] for i in range(3))
+                for f in furos:
+                    ctr = tuple(o2[0] + f["x"] * 1.0 if i == 0 else o2[i] + nrm[i] * f["y"] for i in range(3))
+                    ctr = (o2[0] + f["x"], o2[1] + nrm[1] * f["y"], o2[2] + nrm[2] * f["y"])
+                    ctr = tuple(ctr[i] - tv[i] * (t + 2.25) / 2.0 for i in range(3))
+                    doc.add(_parafuso_solido(ctr, eixo_par, dpar, Lpar, q["classe"]))
+                    cont["parafusos"] += 1
+
+    # ---- tesoura apoiada no topo do pilar
+    apoiada = c.dg.eh_trelicado and not str(c.dg.ligacao_tesoura).lower().startswith("r")
+    if par.get("apoios_tesoura", True) and apoiada:
+        q = pad("tesoura_topo_pilar")
+        Bq, Lq, tq = float(q["B"]), float(q["L"]), float(q["t"])
+        gB, gL = float(q["gab_B"]), float(q["gab_L"])
+        dpar = A.d_parafuso_mm(q["parafuso"])
+        fd = A.furo_mm(q["parafuso"])
+        from nucleo.galpao import NOME_DA_BARRA
+        el = c._elemento(NOME_DA_BARRA["banzo inferior"])
+        dbi = (dsn._perfil(el.perfil).d if el and el.perfil else 150.0)
+        furos = [{"x": sx * gB / 2.0, "y": sy * gL / 2.0, "diametro": fd} for sx in (-1, 1) for sy in (-1, 1)]
+        pilares = [b for b in doc.entidades.values() if isinstance(b, Barra) and b.papel == "pilar"]
+        Lpar = A.comprimento_parafuso(2 * tq, dpar)
+        for b in pilares:
+            a = b.atributos or {}
+            base, topo_ = sorted((b.inicio, b.fim), key=lambda P: P[2])
+            z_face = topo_[2] - dbi / 2.0                 # face de baixo do banzo inferior
+            cont2d = [(-Bq / 2, -Lq / 2), (Bq / 2, -Lq / 2), (Bq / 2, Lq / 2), (-Bq / 2, Lq / 2)]
+            chapa("CH5", "CH5", (topo_[0], topo_[1], z_face - 2 * tq), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), cont2d, tq, furos,
+                  False, portico=a.get("portico"), lado=a.get("lado"), elemento="Chapa de topo do pilar",
+                  tipo_ligacao="tesoura_topo_pilar")
+            chapa("CH6", "CH6", (topo_[0], topo_[1], z_face - tq), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), cont2d, tq, furos,
+                  False, portico=a.get("portico"), lado=a.get("lado"), elemento="Chapa de apoio da tesoura",
+                  tipo_ligacao="tesoura_topo_pilar")
+            # o pilar termina na chapa de topo
+            novo_topo = (topo_[0], topo_[1], z_face - 2 * tq)
+            if b.fim[2] >= b.inicio[2]:
+                b.fim = novo_topo
+            else:
+                b.inicio = novo_topo
+            b.atributos["peso_kg"] = round(geo.peso_barra(b), 2)
+            for f in furos:
+                doc.add(_parafuso_solido((topo_[0] + f["x"], topo_[1] + f["y"], z_face - tq), (0.0, 0.0, 1.0), dpar, Lpar,
+                                         q["classe"]))
+                cont["parafusos"] += 1
+            cont["apoios_tesoura"] += 1
+
+    # ---- chumbadores nos furos das placas de base
+    if par.get("chumbadores", True):
+        q = pad("chumbador_gancho")
+        proj = float(q["projecao"])
+        Lc = float(q["comprimento"])
+        for ch in [e for e in doc.entidades.values() if isinstance(e, Chapa) and (e.atributos or {}).get("marca") == "CH3"]:
+            for f in ch.furos or []:
+                dfuro = float(f.get("diametro") or 0.0)
+                if dfuro <= 0:
+                    continue
+                d = min((v for v in A.DIAMETROS_BARRA.values()), key=lambda v: abs(v - (dfuro - 8.0)))
+                nome = next(k for k, v in A.DIAMETROS_BARRA.items() if v == d and '"' in k) \
+                    if any(v == d and '"' in k for k, v in A.DIAMETROS_BARRA.items()) else "Ø%g" % d
+                perfil = geo.registrar_perfil(geo.barra_redonda(d, "FE RED %s" % nome.replace('"', "''")))
+                x = ch.origem[0] + ch.eixo_x[0] * f["x"] + ch.eixo_y[0] * f["y"]
+                y = ch.origem[1] + ch.eixo_x[1] * f["x"] + ch.eixo_y[1] * f["y"]
+                z0 = ch.origem[2]
+                bar = Barra(nome="CB", inicio=(x, y, z0 + ch.espessura + 60.0), fim=(x, y, z0 + ch.espessura + 60.0 - Lc),
+                            perfil=perfil.nome, papel="chumbador", camada="Referência", material="Aço", aco="ASTM A36")
+                bar.atributos = {"marca": "CB", "elemento": "Chumbador", "portico": (ch.atributos or {}).get("portico"),
+                                 "lado": (ch.atributos or {}).get("lado"), "tipo_ligacao": "chumbador_gancho",
+                                 "peso_kg": round(math.pi * d * d / 4.0 * Lc * 7.85e-6, 2)}
+                doc.add(bar)
+                cont["chumbadores"] += 1
+    return cont
+
+
 def lancar(eixos: dict, parametros: Optional[dict] = None, nome: str = "Galpão", avisar=None) -> dict:
     """Lança a estrutura nos eixos. Devolve {doc, projeto (ProjetoGalpao ou None), dados
     (DadosGalpao), geometria, resumo, avisos}. Com `dimensionar`, o motor do galpão
@@ -703,6 +866,7 @@ def lancar(eixos: dict, parametros: Optional[dict] = None, nome: str = "Galpão"
     c.vaos_cobertura = c.vaos_vertical = c.vaos_x
     doc = c.montar()
     _limpar_duplicadas(doc, c.V)
+    ligacoes = _gerar_ligacoes(c, doc, par) if par.get("ligacoes", True) else {}
     doc.nome = nome or doc.nome
     g, p = ex["eixo_g"], ex["perp_g"]
     o = (g[0] * geo["origem_g"] + p[0] * geo["origem_p"], g[1] * geo["origem_g"] + p[1] * geo["origem_p"],
@@ -725,6 +889,7 @@ def lancar(eixos: dict, parametros: Optional[dict] = None, nome: str = "Galpão"
               "barras": len(doc.barras), "chapas": len(doc.chapas), "posicoes": marcas["posicoes"],
               "conjuntos": marcas["conjuntos"], "peso_kg": peso.get("total_aco_kg", 0.0),
               "dimensionado": projeto is not None, "ok": all(e["ok"] for e in elementos) if elementos else None,
+              "ligacoes": ligacoes,
               "elementos": elementos}
     doc.metadados["lancamento"] = {"eixos": {k: ex[k] for k in ("eixo_g", "perp_g", "numeros", "letras", "z_base")},
                                    "parametros": {k: par[k] for k in PADRAO if k in par},

@@ -62,6 +62,7 @@
 </ol>
 <div class="indice">
   <a href="#lancamento">Do arquitetônico à estrutura</a>
+  <a href="#ligacoes">Ligações e acessórios</a>
   <a href="#projetos">Projetos e arquivos</a>
   <a href="#modelo3d">Modelo 3D e IFC</a>
   <a href="#pesquisa">Pesquisar e colorir peças</a>
@@ -87,6 +88,15 @@
   <li><b>Lançamento → Gravar eixos no projeto</b> e <b>Lançar estrutura no 3D…</b>: escolha o sistema (tesoura ou alma cheia), pé-direito, inclinação, terças, telha, cargas e vento. O programa dimensiona e monta a estrutura nos eixos; o modelo anterior fica no histórico.</li>
   <li>No 3D: <b>Lançamento → Memorial do dimensionamento (PDF)</b>, <b>Detalhamentos → Detalhar peças e conjuntos</b>, lista de materiais, <b>Calcular estrutura</b> para conferir depois de mexer no modelo, e o IFC. <b>Ver → Arquitetônico e eixos</b> liga e desliga a planta no chão.</li>
 </ol>
+
+<h2 id="ligacoes">Ligações e acessórios</h2>
+<p>Na tela de projetos, <b>Ligações e acessórios</b> (também no menu Lançamento do 3D e do CAD) abre a biblioteca: suportes de terça, emendas, agulhamentos, contraventos com castanha ou esticador, gussets, apoios da tesoura, placas de base, chumbadores, consoles, nós e emendas de tesoura, chapa de topo, ligação flexível, fixação da telha e a tabela de resistência dos parafusos.</p>
+<ul>
+  <li>Escolha o tipo à esquerda (o número ao lado é quantas peças desse tipo há nas obras já detalhadas). Mude os parâmetros: o desenho, as peças e o peso se refazem na hora.</li>
+  <li>Em <b>Verificação</b>, informe os esforços de cálculo (a reação da terça, a tração do tirante…): as contas aparecem passo a passo, com o item da norma, como no memorial.</li>
+  <li><b>Nas obras</b> lista as peças reais que correspondem ao tipo, com o link para a lista de materiais da obra. Os padrões da biblioteca vêm dessas peças.</li>
+  <li>No <b>Lançar estrutura</b>, a opção <b>Ligações</b> põe no modelo a cadeirinha em cada cruzamento terça × tesoura, o apoio da tesoura no topo do pilar (chapas e parafusos) e os chumbadores. O detalhamento e a lista de materiais já saem com eles e com os parafusos.</li>
+</ul>
 
 <h2 id="projetos">Projetos e arquivos</h2>
 <p><b>Histórico do modelo:</b> antes de cada operação que muda peças (aplicar furos, detalhamento, restauro) e no máximo a cada 10 minutos nas gravações comuns, o modelo anterior é guardado comprimido na pasta <code>historico</code> do projeto (ficam as 8 últimas). No Modelo 3D, <b>Arquivo → Restaurar modelo anterior…</b> lista essas gravações e volta a uma delas; a atual vai para o histórico antes, então dá para desfazer o restauro. Os desenhos 2D não mudam: gere o detalhamento de novo depois.</p>

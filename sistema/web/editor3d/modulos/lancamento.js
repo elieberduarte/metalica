@@ -167,7 +167,9 @@ export class MetodosLancamento {
     titulo('Modelo');
     const dimensionar = el('input', { type: 'checkbox' }); dimensionar.checked = p.dimensionar !== false;
     const fechamento = el('input', { type: 'checkbox' }); fechamento.checked = !!p.fechamento;
+    const ligacoes = el('input', { type: 'checkbox' }); ligacoes.checked = p.ligacoes !== false;
     grade.append(el('label', { texto: 'Dimensionar' }), el('label', { class: 'marcar' }, dimensionar, ' escolher os perfis pelo cálculo do galpão'));
+    grade.append(el('label', { texto: 'Ligações' }), el('label', { class: 'marcar', title: 'Da biblioteca de ligações: cadeirinha em cada cruzamento terça × tesoura, tesoura apoiada no topo do pilar (chapas e parafusos) e chumbadores nas placas de base' }, ligacoes, ' suportes de terça, apoio da tesoura e chumbadores'));
     grade.append(el('label', { texto: 'Telhas e paredes' }), el('label', { class: 'marcar' }, fechamento, ' mostrar como sólidos (só visual)'));
     const esp = g.espacamentos || [];
     const iguais = esp.every(v => Math.abs(v - esp[0]) < 1);
@@ -196,6 +198,7 @@ export class MetodosLancamento {
     par.base_rotulada = baseSel.value === '' ? null : baseSel.value === 'rotulada';
     par.dimensionar = dimensionar.checked;
     par.fechamento = fechamento.checked;
+    par.ligacoes = ligacoes.checked;
     await this._lancar(par);
   }
 
@@ -222,7 +225,8 @@ export class MetodosLancamento {
     const corpo = el('div', {},
       el('p', { class: 'explica', texto: `${s.sistema}: vão ${numero(s.vao_m, 2)} m, ${s.porticos} pórticos, pé-direito ${numero(s.pe_direito_m, 2)} m, ` +
         `${numero(s.barras)} barras e ${numero(s.chapas)} chapas em ${s.posicoes} posições e ${s.conjuntos} conjuntos, ${numero(s.peso_kg, 0)} kg de aço.` +
-        (s.dimensionado ? (s.ok ? ' Todos os elementos passam no dimensionamento.' : ' Há elemento que não passa: veja a lista.') : ' Perfis padrão, sem dimensionar.') }),
+        (s.dimensionado ? (s.ok ? ' Todos os elementos passam no dimensionamento.' : ' Há elemento que não passa: veja a lista.') : ' Perfis padrão, sem dimensionar.') +
+        (s.ligacoes && s.ligacoes.parafusos ? ` Ligações: ${s.ligacoes.suportes_terca} suportes de terça, ${s.ligacoes.apoios_tesoura} apoios de tesoura, ${s.ligacoes.chumbadores} chumbadores, ${s.ligacoes.parafusos} parafusos.` : '') }),
       ...(s.elementos && s.elementos.length ? [lista] : []),
       ...(r.avisos || []).map(a => el('p', { class: 'explica atencao', texto: a })),
       el('p', { class: 'explica', texto: 'Próximos passos: Memorial do dimensionamento (PDF, com cargas, vento, combinações e cada elemento), Detalhamentos → Detalhar peças e conjuntos, e Calcular estrutura para conferir o modelo depois de editar.' }));

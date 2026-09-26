@@ -193,6 +193,19 @@ try:
     nomes = json.load(open(os.path.join(DADOS, s, "detalhamento", "nomes.json"), encoding="utf-8"))
     ok("pilar" in nomes["tipos_conjuntos"].values() and "tesoura" in nomes["tipos_conjuntos"].values(),
        "detalhamento: conjuntos %s" % nomes["conjuntos"])
+    ok("chumbador" in nomes["tipos"].values() and "suporte_terca" in nomes["tipos"].values(),
+       "ligações geradas no modelo chegam ao detalhamento (suportes de terça e chumbadores)")
+    L2 = json.load(open(os.path.join(DADOS, s, "detalhamento", "lista-de-materiais.json"), encoding="utf-8"))
+    ok(any("BOLT" in a["nome"] for a in L2.get("acessorios") or []), "parafusos na lista de materiais: %s" % L2.get("acessorios"))
+
+    # 8) biblioteca de ligações
+    aba.navegar(base + "/ligacoes?tipo=suporte_terca_cadeirinha", limite=30)
+    ok(esperar(aba, "!!document.querySelector('#figura svg') && document.querySelectorAll('#indice button').length >= 20", 20),
+       "tela de ligações com %s tipos e o desenho" % aba.avaliar("document.querySelectorAll('#indice button').length"))
+    ok(esperar(aba, "document.querySelectorAll('#verif .verif').length >= 3", 20), "verificação da cadeirinha com as contas")
+    aba.avaliar("(() => { const i = [...document.querySelectorAll('#esforcos input')][0]; i.value = '60'; i.dispatchEvent(new Event('change')); })(); 1")
+    ok(esperar(aba, "document.querySelector('#verif .selo').textContent.includes('não atende')", 20), "esforço maior reprova na tela")
+    foto(aba, "lanc_8_ligacoes.png")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, "sem erro de JavaScript" + ("" if not erros else ": %s" % erros[:3]))
 finally:

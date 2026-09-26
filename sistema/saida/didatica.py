@@ -19,9 +19,9 @@ o memorial escreve "explicação ainda não escrita" quando não há, para a lac
 from typing import Dict, Optional
 
 # ---------------------------------------------------------------- desenhos (SVG pequenos)
-_ESTILO = ('<style>.l{stroke:#1f5fbf;stroke-width:1.6;fill:none}.f{fill:#dbe6f7;stroke:#1f5fbf;stroke-width:1.2}'
-           '.q{stroke:#a5231a;stroke-width:1.2;fill:none}.t{font:10px Arial,sans-serif;fill:#333}'
-           '.d{stroke:#888;stroke-width:1;stroke-dasharray:3 2;fill:none}</style>')
+_ESTILO = ('<style>svg.fenomeno .l{stroke:#1f5fbf;stroke-width:1.6;fill:none}svg.fenomeno .f{fill:#dbe6f7;stroke:#1f5fbf;stroke-width:1.2}'
+           'svg.fenomeno .q{stroke:#a5231a;stroke-width:1.2;fill:none}svg.fenomeno .t{font:10px Arial,sans-serif;fill:#333}'
+           'svg.fenomeno .d{stroke:#888;stroke-width:1;stroke-dasharray:3 2;fill:none}</style>')
 
 
 def _svg(corpo: str, w: int = 300, h: int = 110) -> str:

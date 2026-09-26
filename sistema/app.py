@@ -34,6 +34,8 @@ Rotas da API:
     POST /api/projetos/<slug>/arquitetonico {arquivo, conteudo_b64, tipo, fator, escala}   arquitetônico → Planta de lançamento
     POST /api/projetos/<slug>/lancamento/{malha|eixos|estrutura|memorial}   malha de eixos, eixos da planta, lançar, memorial
     GET  /api/projetos/<slug>/lancamento[/referencia]   dados do diálogo Lançar estrutura; linhas do arquitetônico e dos eixos
+    GET  /api/ligacoes · GET /api/ligacoes/exemplos?tipo= · POST /api/ligacoes/montar {tipo, parametros, esforcos}
+                                        biblioteca de ligações e acessórios (tela /ligacoes)
     POST /api/projetos/<slug>/memorial/pdf {marca, didatico}   o memorial da peça em PDF (<projeto>/memorial/)
     GET  /api/projetos/<slug>/calculo[/geometria]        último cálculo gravado / dados para o diálogo
     GET  /api/projetos/<slug>/calculo/alternativas?marca=  perfis que podem substituir a peça, verificados
@@ -2141,6 +2143,39 @@ def memorial_do_lancamento(s: str, corpo: dict) -> dict:
     return {"pdf": _descrever_arquivo(pdf, pasta)}
 
 
+# ----------------------------------------------------------- biblioteca de ligações e acessórios
+
+def ligacoes_catalogo() -> dict:
+    """GET /api/ligacoes: os tipos da biblioteca, por categoria, e quantos exemplos cada um
+    tem nas obras detalhadas da pasta de dados."""
+    from nucleo import acessorios
+    ex = acessorios.exemplos_das_obras(PROJETOS)
+    tipos = acessorios.lista()
+    for t in tipos:
+        t["exemplos"] = len(ex.get(t["id"]) or [])
+    return {"categorias": [{"id": c, "nome": n} for c, n in acessorios.CATEGORIAS], "tipos": tipos}
+
+
+def ligacoes_montar(corpo: dict) -> dict:
+    """POST /api/ligacoes/montar {tipo, parametros, esforcos}: peças, desenho e verificação
+    (com o HTML das contas, no mesmo formato do memorial)."""
+    from nucleo import acessorios
+    from saida import memorial_peca
+    r = acessorios.montar(str(corpo.get("tipo") or ""), corpo.get("parametros") or {}, corpo.get("esforcos") or {})
+    v = r.get("verificacao")
+    if v:
+        r["verificacao_html"] = "".join(memorial_peca._verificacao_html(x, True) for x in v.get("verificacoes") or [])
+    return r
+
+
+def ligacoes_exemplos(q: dict) -> dict:
+    """GET /api/ligacoes/exemplos?tipo=: as peças das obras detalhadas que correspondem ao tipo."""
+    from nucleo import acessorios
+    ex = acessorios.exemplos_das_obras(PROJETOS)
+    tipo = (q.get("tipo") or [""])[0]
+    return {"exemplos": ex.get(tipo) or [] if tipo else ex}
+
+
 def importar_dxf_no_desenho(s: str, corpo: dict) -> dict:
     """DXF (texto) → entidades do CAD, para o desenho aberto acrescentar como um comando.
 
@@ -2544,6 +2579,10 @@ class Handler(BaseHTTPRequestHandler):
                 import fabrica
                 return self._json({"regras": fabrica.regras(PROJETOS), "padrao": fabrica.REGRAS_PADRAO,
                                    "perfis": fabrica.perfis(PROJETOS)})
+            if rota == "/api/ligacoes":
+                return self._json(ligacoes_catalogo())
+            if rota == "/api/ligacoes/exemplos":
+                return self._json(ligacoes_exemplos(parse_qs(urlparse(self.path).query)))
             if rota == "/api/projetos":
                 return self._json(_gerente().listar())
             if rota.startswith("/api/projetos/"):
@@ -2601,6 +2640,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "analise.html"), WEB)
             if rota in ("/memorial", "/memorial-de-calculo"):
                 return self._arquivo(os.path.join(WEB, "memorial.html"), WEB)
+            if rota in ("/ligacoes", "/acessorios"):
+                return self._arquivo(os.path.join(WEB, "ligacoes.html"), WEB)
             if rota in ("/catalogo", "/pecas"):
                 return self._arquivo(os.path.join(WEB, "catalogo.html"), WEB)
             if rota in ("/editor", "/editor3d", "/3d"):
@@ -2652,6 +2693,8 @@ class Handler(BaseHTTPRequestHandler):
     def _do_post(self, rota):
         try:
             corpo = self._corpo()
+            if rota == "/api/ligacoes/montar":
+                return self._json(ligacoes_montar(corpo))
             if rota == "/api/dimensionar":
                 return self._json(dimensionar(corpo))
             if rota == "/api/tesoura":

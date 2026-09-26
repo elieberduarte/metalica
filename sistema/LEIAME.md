@@ -218,6 +218,36 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.30.** **Ligações e acessórios** (pedido do usuário: "a tela de todas as ligações, começando pelas peças da
+Sooro"). (1) **Biblioteca** (`nucleo/acessorios.py`): 23 tipos em 7 categorias — terças (cadeirinha, chapa simples,
+cantoneira, emenda por transpasse), correntes (agulhamento rígido, agulhamento diagonal com gancho, corrente roscada),
+contraventamento (tirante com castanha e barra roscada, tirante com esticador, gusset), apoios e bases (apoio da
+tesoura em pilar de concreto, placa de base rotulada e engastada, tesoura no topo do pilar metálico, console),
+tesoura e pórtico (nó soldado, emenda de banzo, chapa de topo do joelho, ligação flexível), fechamento (fixação da
+telha) e fixadores (chumbador em J, com placa de ancoragem, tabela de resistências dos parafusos). Cada tipo tem os
+parâmetros (padrões tirados das obras da Sooro, onde há: cadeirinha 150×145×4,75 com 4 oblongos e base 153×44×3,
+castanha 200×76×6,35 com chapas-arruela 80×80×8, apoio 400×120×12,7 com chumbador 3/4" de 996 mm), as peças com
+furos, quantidade e peso, o desenho em SVG com cotas, furos, oblongos e solda (classes de estilo: acompanha o tema) e a
+verificação pela NBR 8800 com as rotinas que o núcleo já tinha (grupo de parafusos, esmagamento, solda de filete,
+tração de barra roscada, chumbadores com aderência e cone, placa de base, chapa de topo, gusset, dupla cantoneira,
+compressão da agulha). `exemplos_das_obras` lê a lista de materiais e os nomes de cada obra detalhada e diz a que tipo
+cada acessório corresponde. (2) **Tela `/ligacoes`** (tela inicial, menu Lançamento do 3D e do CAD): tipos por categoria
+com quantos exemplos há nas obras; desenho, parâmetros (a peça remonta a cada mudança), peças com peso, esforços e as
+contas no formato do memorial, e a tabela "Nas obras" com as peças reais (obra, nome, perfil, furos, parafusos,
+quantidade) e o link para a lista de materiais da obra. Rotas `GET /api/ligacoes`, `GET /api/ligacoes/exemplos?tipo=`,
+`POST /api/ligacoes/montar`. O que a biblioteca revelou das obras: o agulhamento L 1¼"×⅛" de 1,54 m da Sooro tem
+esbeltez 240, acima do limite de 200 da barra comprimida (NBR 8800, 5.3.4); a tela acusa e explica. (3) **O lançamento
+gera as ligações no modelo** (opção "Ligações" no diálogo, ligada por padrão): cadeirinha em cada cruzamento terça ×
+tesoura (base no banzo, chapa em pé com os oblongos da regra da fábrica, 4 parafusos M12), tesoura apoiada no topo do
+pilar (chapa de topo no pilar, chapa de apoio na tesoura, 4 M16 A325; o pilar termina na chapa) e chumbadores nos furos
+das placas de base; os parafusos entram como no editor ("BOLT (A307) 12x25"), então o detalhamento conta quantos
+atravessam cada chapa e a lista de materiais traz os acessórios. As chapas vão para o conjunto soldado certo (suportes e
+apoio na tesoura, chapa de topo no pilar). (4) Correções: o detalhamento tomava toda **barra paramétrica** (modelo
+desenhado em 2D ou lançado) por chapa na busca de peças montadas, e nunca achava o chumbador (`montagens._eh_chapa`);
+os desenhos didáticos do memorial traziam um `<style>` com classes curtas (`.t`, `.l`) que valiam para a página
+inteira; a regra global `.corpo` (o layout de duas colunas) dava a cada verificação do memorial e da biblioteca a altura
+de uma tela. Testes em `testes/test_acessorios.py`.
+
 **0.8.29.** O meio do caminho que faltava: **lançar a estrutura sobre o arquitetônico do cliente** (análise
 "caminho do início ao fim", rodadas 1 e 2). (1) **Arquitetônico como referência** (`nucleo3d/lancamento.py`,
 `ler_arquitetonico`; rota `POST /api/projetos/<s>/arquitetonico`): DXF (unidade pelo $INSUNITS ou informada) ou PDF
@@ -1469,6 +1499,17 @@ O caminho de um projeto que começa na planta do cliente (`nucleo3d/lancamento.p
    depois de editado), Memorial do dimensionamento (PDF) e Exportar IFC.
 
 Limites: galpão retangular de vão livre (eixos com letra intermediários ficam sem pilar), sem ponte rolante nem mezanino.
+
+## Ligações e acessórios
+
+`nucleo/acessorios.py` é a biblioteca das ligações e dos acessórios de uma estrutura metálica: cada tipo gera as peças
+(chapas com furos e oblongos, barras, parafusos, porcas, com peso), o desenho em SVG com cotas e, com os esforços de
+cálculo, a verificação pela NBR 8800 com as rotinas de `nucleo/ligacoes.py` e `nucleo/bases.py`. Os padrões vêm das
+obras da Sooro. A tela `/ligacoes` mostra tudo isso e, em "Nas obras", as peças reais das obras detalhadas que
+correspondem ao tipo (`exemplos_das_obras`, lendo `detalhamento/lista-de-materiais.json` e `nomes.json`). O lançamento
+usa a biblioteca para gerar no modelo os suportes de terça, o apoio da tesoura no pilar e os chumbadores
+(`nucleo3d/lancamento._gerar_ligacoes`). Um tipo novo é um `Tipo` registrado com `_registrar`: parâmetros, esforços,
+`gerar(p) -> (peças, svg, notas)` e `verificar(p, e) -> Resultado`.
 
 ## Versão que cada janela está rodando
 

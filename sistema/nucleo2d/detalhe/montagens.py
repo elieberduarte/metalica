@@ -39,8 +39,13 @@ def _perfil(e) -> str:
 
 
 def _eh_chapa(e) -> bool:
-    return getattr(e, "parametrica", None) is not None or "PLATE" in _perfil(e).upper() \
-        or str((e.atributos or {}).get("tipo_ifc") or "") == "IfcPlate"
+    # a barra paramétrica (modelo desenhado em 2D ou lançado) também tem `parametrica`: só a
+    # chapa paramétrica é chapa — antes toda barra desses modelos contava como chapa e o
+    # chumbador nunca era achado
+    par = getattr(e, "parametrica", None)
+    if par is not None:
+        return type(par).__name__ == "Chapa"
+    return "PLATE" in _perfil(e).upper() or str((e.atributos or {}).get("tipo_ifc") or "") == "IfcPlate"
 
 
 def _extensao(e) -> float:
