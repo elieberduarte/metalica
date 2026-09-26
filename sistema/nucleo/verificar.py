@@ -143,4 +143,7 @@ def serializar_resultado(r: Resultado) -> dict:
                                           "norma": p.norma} for p in v.passos]}
                              for v in r.verificacoes if not v.dispensada],
             "dados": {k: (round(v, 4) if isinstance(v, float) else v) for k, v in r.dados.items()
-                      if isinstance(v, (int, float, str, bool)) or v is None}}
+                      if isinstance(v, (int, float, str, bool)) or v is None},
+            "hipoteses": [{"chave": h.chave, "texto": h.texto, "fonte": h.fonte} for h in r.hipoteses],
+            "cargas": [{"texto": p.texto, "formula": p.formula, "conta": p.conta, "valor": p.valor,
+                        "norma": p.norma} for p in r.cargas]}

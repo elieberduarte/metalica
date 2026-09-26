@@ -30,6 +30,8 @@ Rotas da API:
     POST /api/fabrica/{regras|validar|perfis|perfis/remover}
     POST /api/projetos/<slug>/calcular {parametros, trocas, comparar}  cálculo estrutural do modelo importado
     POST /api/projetos/<slug>/dimensionar {parametros, aplicar}  o perfil mais leve que passa em cada posição
+    GET  /api/projetos/<slug>/memorial?marca=&didatico=   memorial de cálculo da peça em quatro camadas (tela /memorial)
+    POST /api/projetos/<slug>/memorial/pdf {marca, didatico}   o memorial da peça em PDF (<projeto>/memorial/)
     GET  /api/projetos/<slug>/calculo[/geometria]        último cálculo gravado / dados para o diálogo
     GET  /api/projetos/<slug>/calculo/alternativas?marca=  perfis que podem substituir a peça, verificados
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-furos   furos do detalhe → chapas do modelo
@@ -751,6 +753,51 @@ def calculo_do_projeto(s: str) -> dict:
         return {"calculo": None}
     return {"calculo": dados.get("resultado"), "parametros": dados.get("parametros") or {},
             "quando": dados.get("quando")}
+
+
+def memorial_da_peca(s: str, q: dict) -> dict:
+    """GET /api/projetos/<s>/memorial?marca=M15&didatico=1: o memorial em quatro camadas da
+    peça (do cálculo gravado em calculo.json). Sem `marca`, a terça mais solicitada."""
+    from saida import memorial_peca
+    guardado = calculo_do_projeto(s)
+    calculo = guardado.get("calculo")
+    if not calculo or not calculo.get("verificacoes"):
+        raise ErroDeDados("este projeto ainda não tem cálculo: no Modelo 3D use Calcular estrutura")
+    calculo = dict(calculo, parametros=guardado.get("parametros") or calculo.get("parametros") or {})
+    marca = (q.get("marca") or [""])[0].strip()
+    if not marca:
+        marca = memorial_peca.marca_sugerida(calculo) or ""
+    didatico = (q.get("didatico") or ["1"])[0] not in ("0", "false", "nao", "não")
+    try:
+        d = memorial_peca.documento(calculo, marca, didatico=didatico, obra=_gerente().ler(s).get("nome") or s,
+                                    quando=guardado.get("quando") or "")
+    except KeyError as exc:
+        raise ErroDeDados(str(exc))
+    d["quando"] = guardado.get("quando")
+    d["obra"] = _gerente().ler(s).get("nome") or s
+    return d
+
+
+def pdf_do_memorial(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/memorial/pdf {marca, didatico}: imprime o memorial da peça em
+    <projeto>/memorial/ e devolve o arquivo."""
+    from saida import memorial_peca
+    guardado = calculo_do_projeto(s)
+    calculo = guardado.get("calculo")
+    if not calculo or not calculo.get("verificacoes"):
+        raise ErroDeDados("este projeto ainda não tem cálculo: no Modelo 3D use Calcular estrutura")
+    calculo = dict(calculo, parametros=guardado.get("parametros") or calculo.get("parametros") or {})
+    marca = str(corpo.get("marca") or memorial_peca.marca_sugerida(calculo) or "")
+    pasta = os.path.join(_gerente()._existente(s), "memorial")
+    _progresso(s, "imprimindo o memorial de %s…" % marca)
+    try:
+        pdf = memorial_peca.gerar_pdf(calculo, marca, pasta, didatico=bool(corpo.get("didatico")),
+                                      obra=_gerente().ler(s).get("nome") or s, quando=guardado.get("quando") or "")
+    except KeyError as exc:
+        raise ErroDeDados(str(exc))
+    finally:
+        _fim_progresso(s)
+    return {"pdf": _descrever_arquivo(pdf, pasta), "marca": marca}
 
 
 def _nomes_para_calculo(s: str, doc) -> dict:
@@ -2340,6 +2387,8 @@ class Handler(BaseHTTPRequestHandler):
                         partes[0], (q.get("marca") or [""])[0],
                         int((q.get("limite") or ["10"])[0] or 10),
                         (q.get("todas") or ["0"])[0] in ("1", "true")))
+                if len(partes) == 2 and partes[1] == "memorial":
+                    return self._json(memorial_da_peca(partes[0], parse_qs(urlparse(self.path).query)))
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
                 if len(partes) == 2 and partes[1] == "resumos":
@@ -2369,6 +2418,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "materiais.html"), WEB)
             if rota in ("/analise", "/resultado-da-analise"):
                 return self._arquivo(os.path.join(WEB, "analise.html"), WEB)
+            if rota in ("/memorial", "/memorial-de-calculo"):
+                return self._arquivo(os.path.join(WEB, "memorial.html"), WEB)
             if rota in ("/catalogo", "/pecas"):
                 return self._arquivo(os.path.join(WEB, "catalogo.html"), WEB)
             if rota in ("/editor", "/editor3d", "/3d"):
@@ -2465,6 +2516,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(aplicar_pecas_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "pdf":
                     return self._json(pdf_da_lista_de_materiais(partes[0]))
+                if len(partes) == 3 and partes[1] == "memorial" and partes[2] == "pdf":
+                    return self._json(pdf_do_memorial(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "pranchas":
                     return self._json(montar_pranchas_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "importar-dxf":

@@ -218,6 +218,31 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.28.** Memorial de cálculo por peça, em quatro camadas — o piloto é a terça do modelo importado. (1) **Hipóteses
+por extenso** (`nucleo/base.py`: `Hipotese(chave, texto, fonte)` e `Resultado.hipoteses`; `Resultado.cargas` são os passos
+da carga por m² ao esforço): a rotina da terça (`nbr14762.terca`) registra modelo estático, seção, aço, travamento da mesa
+na gravidade e na sucção (L_b, L_t), C_b, flexão no eixo fraco, apoio (N = 10 cm adotado, não lido), interação M–V e
+serviço; o cálculo do IFC (`calculo_ifc._hipoteses_da_terca`) põe antes o que mediu no modelo (vão, largura tributária,
+inclinação, correntes contadas) e o que veio do diálogo (cargas por m², vento com os coeficientes e o pior caso, limites de
+flecha) e da norma (combinações). Cada hipótese leva a **fonte** (medido no modelo, informado no diálogo, adotado pela
+rotina, exigido pela norma, do catálogo), que é a ordem em que o profissional confere. Tudo vai ao `calculo.json`
+(`serializar_resultado`). (2) **`saida/memorial_peca.py`** monta o documento a partir do cálculo gravado, sem calcular:
+1 resumo (uma linha por peça do mesmo tipo, a escolhida destacada), 2 hipóteses, 3 conta (passos das cargas e cada
+verificação com fórmula, números, item da norma, S_d/R_d e barra), 4 explicação — recolhida em cada item ("Entender") e
+reunida no fim: o que a verificação protege, o fenômeno com um desenho, o que pesa no resultado e o erro típico. Os textos
+da camada 4 ficam em `saida/didatica.py`, por título da verificação, chave da hipótese e texto do passo; o que não tem
+explicação aparece em vermelho como lacuna. (3) **Tela `/memorial?projeto=&marca=`** (`web/memorial.html/.js`), aberta pelo
+painel do cálculo no 3D ("Memorial desta peça" na peça selecionada; "Memorial de cálculo" nas ações abre a terça mais
+solicitada): caixa com todas as posições verificadas, interruptor da camada didática, "abrir todas", "Ver no 3D" volta
+com a peça em destaque; rotas `GET /api/projetos/<s>/memorial?marca=&didatico=` e `POST .../memorial/pdf {marca, didatico}`
+(PDF profissional sem a camada 4, ou didático com as explicações abertas, em `<projeto>/memorial/`). (4) Duas correções que
+o memorial fez aparecer na Sala dos Compressores: a **inclinação do telhado** era a média simples dos ângulos dos banzos
+superiores e o joelho do canto quebrado (peça curta a 78°) levava a média para 44° em vez de 11° — vento, sobrecarga e a
+flexão no eixo fraco de todas as terças iam junto; agora vale o ângulo do banzo comprido, ponderado pelo comprimento
+(`_Tesoura._classificar_banzos`). E os **valores por combinação** da terça eram todos a envoltória (o painel do 3D mostrava
+o mesmo M em C1 e C2): cada combinação leva o momento da carga dela (`_valores_da_terca`). Testes em
+`testes/test_memorial_peca.py`, com a T.C.5 resolvida à mão como caso de referência.
+
 **0.8.27.** Rodada de consolidação e produção (panorama de 25/09, caminhos A e B). (1) **Antes de publicar, um comando
 só**: `testes/antes_de_publicar.py` roda o pytest, os verificadores das telas (`testes/rodar_verificadores.py`, todos os
 que se verificam sozinhos, um depois do outro) e a **bateria das obras reais** (`testes/bateria_obras.py`: Sala dos
@@ -1379,6 +1404,18 @@ observação de cada verificação; a chapa de nó comprimida é verificada como
 Whitmore, sem flambagem; terças de beiral apoiadas nos consoles ficam sem apoio; sem
 travamento lido no modelo o banzo inferior é verificado com o comprimento inteiro (informe
 `trava_inferior`); as tabelas de vento são de galpão fechado de duas águas.
+
+### Memorial de cálculo por peça (quatro camadas)
+
+`saida/memorial_peca.py` escreve, para cada posição verificada do cálculo do IFC, um memorial que o profissional confere
+e o iniciante entende: **1 resumo** (uma linha por peça do mesmo tipo), **2 hipóteses** (as decisões anteriores à conta,
+por extenso, cada uma com a fonte — medida no modelo, informada no diálogo, adotada pela rotina, exigida pela norma, do
+catálogo), **3 conta** (da carga por m² ao esforço, e cada verificação passo a passo com o item da norma) e **4 explicação**
+(recolhida em cada item: o que protege, o fenômeno, o que pesa, o erro típico; textos em `saida/didatica.py`). As hipóteses
+e os passos das cargas nascem no cálculo (`Resultado.hipoteses`, `Resultado.cargas`) e vão ao `calculo.json`; o memorial não
+calcula. Tela `/memorial?projeto=<s>&marca=<posição>` (pelo painel do cálculo no 3D), PDF profissional (sem a camada 4) e
+didático em `<projeto>/memorial/`. Hoje só a terça registra hipóteses e cargas; as outras peças saem com as camadas 1 e 3 e
+a lacuna marcada. A trilha combinada estende isso na ordem terça → tesoura → pilar → vento → ligações.
 
 ## Versão que cada janela está rodando
 

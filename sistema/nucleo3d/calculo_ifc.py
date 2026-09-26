@@ -487,8 +487,19 @@ class _Tesoura:
             m.posicao = "superior" if not acima else ("inferior" if not abaixo else "meio")
         sup = [m for m in banzos if m.posicao == "superior"]
         if sup:
-            angs = [abs(math.degrees(math.atan2(m.b[1] - m.a[1], m.b[0] - m.a[0]))) for m in sup]
-            self.theta = sum(angs) / len(angs)
+            # a inclinação do telhado é a do banzo comprido; o joelho da tesoura (peça curta e
+            # quase vertical que o canto quebrado deixa como banzo) não entra na média — com
+            # ele, a Sala dos Compressores saía com 44° em vez de 11°, e o vento, a sobrecarga
+            # e a flexão no eixo fraco de todas as terças iam junto
+            def ang(m):
+                return abs(math.degrees(math.atan2(m.b[1] - m.a[1], m.b[0] - m.a[0])))
+
+            def comp(m):
+                return math.hypot(m.b[0] - m.a[0], m.b[1] - m.a[1])
+            ref = ang(max(sup, key=comp))
+            iguais = [m for m in sup if abs(ang(m) - ref) <= 20.0] or sup
+            peso = sum(comp(m) for m in iguais) or 1.0
+            self.theta = sum(ang(m) * comp(m) for m in iguais) / peso
 
     def _ponto_de_trabalho(self, P, d, proprio: _Membro):
         """Interseção da reta (P, d) com o eixo do banzo mais próximo da ponta P."""
@@ -1093,6 +1104,112 @@ def _montar_modelo(t: _Tesoura):
 
 
 # ------------------------------------------------------------------ fora das tesouras
+
+def _valores_da_terca(ent: dict, ultimas: List[str], servico: List[str]) -> Dict[str, dict]:
+    """M e V de uma terça (viga biapoiada) em cada combinação: as de gravidade (C1, C3 e a
+    rara de serviço) com q_g, as de sucção (C2 e a de vento) com q_s."""
+    L = float(ent["vao_m"])
+
+    def mv(q):
+        return {"M": round(q * L * L / 8.0, 2), "V": round(q * L / 2.0, 2), "N": 0.0}
+    saida = {}
+    for c in ultimas + servico + [ENVOLTORIA]:
+        if c == ENVOLTORIA:
+            q = max(ent.get("q_g", 0.0), ent.get("q_s", 0.0))
+        elif c.startswith("C2"):
+            q = ent.get("q_s", 0.0)
+        elif c.startswith("S vento"):
+            q = ent.get("q_ss", 0.0)
+        elif c.startswith("S"):
+            q = ent.get("q_gs", 0.0)
+        else:
+            q = ent.get("q_g", 0.0)
+        saida[c] = mv(float(q or 0.0))
+    return saida
+
+
+def _hipoteses_da_terca(r: Resultado, par: dict, marca: str, reg: dict, vao: float, larg: float, theta: float,
+                        pp: float, g_cob: float, g_telha: float, sc: float, p_min: float, p_max: float,
+                        vento: dict, n_corr: int, g: float, q_sc: float, q_v: float,
+                        q_g: float, q_s: float, q_gs: float, q_ss: float):
+    """As decisões que o cálculo do IFC toma antes de chamar a rotina da terça — medidas no
+    modelo ou vindas do diálogo — escritas por extenso, e os passos que levam da carga por m²
+    à carga por metro. Entram antes das hipóteses e dos passos da própria rotina."""
+    from nucleo.base import Hipotese, Passo
+    n_vaos = int(reg.get("n") or 0)
+    casos = vento.get("casos") or {}
+    caso_min = min(casos.items(), key=lambda kv: min(kv[1]["esq"], kv[1]["dir"]))[1]["descricao"] if casos else ""
+    caso_max = max(casos.items(), key=lambda kv: max(kv[1]["esq"], kv[1]["dir"]))[1]["descricao"] if casos else ""
+    mem = vento.get("memoria") or {}
+    q_vs = abs(min(p_min, 0.0)) * larg
+    hip = [
+        Hipotese("vao", "Vão L = %s m: a maior distância entre duas tesouras consecutivas que esta terça "
+                        "cruza no modelo (%d cruzamento(s) com tesoura na posição %s). Cada vão é verificado "
+                        "como biapoiado." % (fmt(vao, 2), n_vaos, marca), "modelo"),
+        Hipotese("largura", "Largura tributária %s m: metade da distância até a terça vizinha de cada lado, "
+                            "medida ao longo do banzo (no beiral, até a ponta do banzo). É a faixa de telhado "
+                            "que descarrega nesta terça." % fmt(larg, 3), "modelo"),
+        Hipotese("inclinacao", "Inclinação do telhado θ = %s°, média das tesouras do modelo." % fmt(theta, 2), "modelo"),
+        Hipotese("cargas_area",
+                 "Cargas por m² de telhado: telha %s kN/m² %s%s; sobrecarga de uso %s kN/m² em projeção "
+                 "horizontal (mínimo da NBR 8800, Anexo B, para coberturas leves); peso próprio da terça "
+                 "%s kgf/m = %s kN/m (massa do perfil)."
+                 % (fmt(g_telha, 3), "(informada no diálogo)" if par.get("telha") else "(pela espessura no nome da telha)",
+                    (" + %s kN/m² de carga extra" % fmt(float(par.get("carga_extra") or 0.0), 3)) if par.get("carga_extra") else "",
+                    fmt(sc, 2), fmt(pp * 100, 1), fmt(pp, 4)),
+                 "parametro"),
+        Hipotese("vento",
+                 "Vento pela NBR 6123 com V<sub>0</sub> = %s m/s, categoria %s, classe %s, S<sub>1</sub> = %s, "
+                 "S<sub>2</sub> = %s, S<sub>3</sub> = %s → q = %s kN/m²; galpão b = %s m, a = %s m, h = %s m. "
+                 "Entre todos os casos de vento e de pressão interna, a terça recebe a pior sucção do telhado "
+                 "(%s kN/m², caso '%s') e a pior pressão (%s kN/m²%s). O vento age perpendicular ao telhado."
+                 % (fmt(mem.get("V0", par.get("v0")), 0), mem.get("categoria", par.get("categoria")),
+                    mem.get("classe", par.get("classe")), fmt(mem.get("S1", 1.0), 2), fmt(mem.get("S2", 1.0), 3),
+                    fmt(mem.get("S3", 1.0), 2), fmt(mem.get("q", 0.0), 4), fmt(mem.get("b", 0.0), 2),
+                    fmt(mem.get("a", 0.0), 2), fmt(mem.get("h", 0.0), 2), fmt(p_min, 4), caso_min,
+                    fmt(max(p_max, 0.0), 4),
+                    (", caso '%s'" % caso_max) if p_max > 0 else ", nenhum caso comprime a cobertura"),
+                 "parametro"),
+        Hipotese("combinacoes",
+                 "Combinações últimas da NBR 8681/8800: gravidade 1,25·PP + 1,5·SC + 0,84·V<sub>pressão</sub> "
+                 "(sobrecarga principal) e 1,25·PP + 1,2·SC + 1,4·V<sub>pressão</sub> (vento principal), valendo a "
+                 "maior; sucção 1,0·PP + 1,4·V<sub>sucção</sub>, com o peso próprio favorável entrando com 1,0 "
+                 "(ele segura a terça contra o vento, por isso não se majora). Serviço: PP + SC e PP + V<sub>sucção</sub>.",
+                 "norma"),
+        Hipotese("correntes",
+                 ("%d linha(s) de correntes no vão, informada(s) no diálogo." % n_corr) if par.get("correntes") is not None
+                 else ("%d linha(s) de correntes no vão, contadas no modelo: barras curtas (até 3,5 m) fora das "
+                       "tesouras cuja ponta encosta no eixo desta terça entre duas tesouras; com vãos diferentes "
+                       "vale a mediana." % n_corr),
+                 "parametro" if par.get("correntes") is not None else "modelo"),
+        Hipotese("flecha_limite", "Limite de flecha na gravidade L/%d (diálogo); na sucção L/120, fixo da rotina."
+                 % int(par["flecha_terca"]), "parametro"),
+    ]
+    r.hipoteses[0:0] = hip
+    passos = [
+        Passo("Carga permanente por metro", "g = (telha + extra)·largura + peso próprio",
+              "%s × %s + %s" % (fmt(g_cob, 3), fmt(larg, 3), fmt(pp, 4)), fmt(g, 3, "kN/m"), "NBR 6120"),
+        Passo("Sobrecarga por metro (projeção horizontal → telhado inclinado)", "q<sub>sc</sub> = SC·largura·cos θ",
+              "%s × %s × cos %s°" % (fmt(sc, 2), fmt(larg, 3), fmt(theta, 2)), fmt(q_sc, 3, "kN/m"), "NBR 8800, Anexo B"),
+        Passo("Vento por metro", "q<sub>v,pressão</sub> = p<sub>máx</sub>·largura; q<sub>v,sucção</sub> = |p<sub>mín</sub>|·largura",
+              "%s × %s; %s × %s" % (fmt(max(p_max, 0.0), 4), fmt(larg, 3), fmt(abs(min(p_min, 0.0)), 4), fmt(larg, 3)),
+              "%s kN/m; %s kN/m" % (fmt(q_v, 3), fmt(q_vs, 3)), "NBR 6123"),
+        Passo("Carga de cálculo, gravidade (a maior das duas combinações)",
+              "q<sub>g</sub> = máx(1,25·g + 1,5·q<sub>sc</sub> + 0,84·q<sub>v</sub>; 1,25·g + 1,2·q<sub>sc</sub> + 1,4·q<sub>v</sub>)",
+              "máx(1,25×%s + 1,5×%s + 0,84×%s; 1,25×%s + 1,2×%s + 1,4×%s)"
+              % (fmt(g, 3), fmt(q_sc, 3), fmt(q_v, 3), fmt(g, 3), fmt(q_sc, 3), fmt(q_v, 3)),
+              fmt(q_g, 3, "kN/m"), "NBR 8681, Tabela 1"),
+        Passo("Carga de cálculo, sucção (peso próprio favorável)",
+              "q<sub>s</sub> = 1,4·|p<sub>mín</sub>|·largura − 1,0·g",
+              "1,4 × %s × %s − %s" % (fmt(abs(min(p_min, 0.0)), 4), fmt(larg, 3), fmt(g, 3)), fmt(q_s, 3, "kN/m"),
+              "NBR 8681, Tabela 1"),
+        Passo("Cargas de serviço (para as flechas)",
+              "q<sub>g,ser</sub> = g + q<sub>sc</sub>; q<sub>s,ser</sub> = |p<sub>mín</sub>|·largura − g",
+              "%s + %s; %s − %s" % (fmt(g, 3), fmt(q_sc, 3), fmt(q_vs, 3), fmt(g, 3)),
+              "%s kN/m; %s kN/m" % (fmt(q_gs, 3), fmt(q_ss, 3)), "NBR 8681, item 5.1.3"),
+    ]
+    r.cargas[0:0] = passos
+
 
 def _elemento_extra(marca: str, nome: str, tit: str, tipo: str, r: Resultado, perfil: Perfil, aco: str,
                     dimensionamento: dict, entrada: dict, comprimento_total: Dict[str, float]) -> dict:
@@ -2025,9 +2142,9 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         q_gs = g + sc * larg * math.cos(math.radians(theta))
         q_ss = max(0.0, abs(min(p_min, 0.0)) * larg - g)
         tit = "%s%s · terça · %s" % (marca, (" " + nome) if nome else "", p.perfil.nome)
+        n_corr = int(par["correntes"]) if par.get("correntes") is not None else int(correntes.get(marca, 0))
         try:
             if perfis_fabrica.tipo_de_verificacao(p.perfil) == "frio":
-                n_corr = int(par["correntes"]) if par.get("correntes") is not None else int(correntes.get(marca, 0))
                 r = nbr14762.terca(perfis_fabrica.secao_frio(p.perfil), p.aco, vao, q_g, q_s,
                                    n_corr, inclinacao=theta,
                                    carga_servico_gravidade=q_gs, carga_servico_succao=q_ss,
@@ -2039,6 +2156,8 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         except ErroDeDados as exc:
             r = Resultado(tit, perfil=p.perfil.nome, material=p.aco)
             r.add(nao_verificada(exc))
+        _hipoteses_da_terca(r, par, marca, reg, vao, larg, theta, pp, g_cob, g_telha, sc, p_min, p_max,
+                            vento, n_corr, g, q_sc, q_v, q_g, q_s, q_gs, q_ss)
         crit = r.critica
         caso = "gravidade" if q_g >= q_s else "sucção"
         q = max(q_g, q_s)
@@ -2152,6 +2271,13 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         elementos[marca]["valores"] = {c: {k: round(x, 2) for k, x in v.items()} for c, v in por_caso.items()}
     for marca, el in elementos.items():
         if not el["valores"]:
+            ent = el.get("entrada") or {}
+            if ent.get("tipo") == "terca" and ent.get("vao_m"):
+                # a terça não passa pela análise de pórtico: cada combinação leva o momento da
+                # carga dela (gravidade ou sucção), não o da envoltória — o painel do 3D mostrava
+                # o mesmo M em todas
+                el["valores"] = _valores_da_terca(ent, ultimas, servico)
+                continue
             fixo = {"M": el["dimensionamento"]["M"], "V": el["dimensionamento"]["V"], "N": el["dimensionamento"]["N"]}
             el["valores"] = {c: dict(fixo) for c in ultimas + servico + [ENVOLTORIA]}
 

@@ -742,6 +742,11 @@ export class MetodosAnalise {
     acoes.append(el('button', { type: 'button', texto: 'Ocultar',
       title: 'Tira as cores e os desenhos da cena (F9)',
       onclick: () => this._mostrarAnalise(false) }));
+    if (a.origem === 'ifc' && this.projeto) {
+      acoes.append(el('button', { type: 'button', texto: 'Memorial de cálculo',
+        title: 'Memorial em quatro camadas (resumo, hipóteses, conta e explicação), começando pela terça mais solicitada',
+        onclick: () => this._irPara(`/memorial?projeto=${encodeURIComponent(this.projeto)}`) }));
+    }
     raiz.append(acoes);
 
     if (this._mapaTentado && !this.mapa) {
@@ -1036,6 +1041,13 @@ export class MetodosAnalise {
     }
     caixa.append(campos);
     if (this.analise.origem === 'ifc' && this.projeto) {
+      // o memorial em quatro camadas da peça (resumo, hipóteses, conta, explicação): a
+      // página /memorial lê o calculo.json gravado, por isso só existe para o cálculo do IFC
+      const acoes = el('div', { class: 'acoes-painel' });
+      acoes.append(el('button', { type: 'button', texto: 'Memorial desta peça',
+        title: 'Abre o memorial de cálculo desta posição: o que foi considerado, a conta passo a passo com o item da norma e a explicação para quem aprende',
+        onclick: () => this._irPara(`/memorial?projeto=${encodeURIComponent(this.projeto)}&marca=${encodeURIComponent(nome)}`) }));
+      caixa.append(acoes);
       caixa.append(this._blocoTrocaPerfil(nome, info));
       if (info.entrada) caixa.append(this._blocoAlternativas(nome));
     }

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101b2e">
+<script src="/tema-janela.js"></script>
+<script src="/atualizacao.js" defer></script>
+<title>Memorial de cálculo — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M9 8h14M9 13h14M9 18h9M9 23h11' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/></svg>">
+<style>
+  .memorial { max-width: 1120px; margin: 0 auto; padding: 18px 24px 60px; }
+  .obra { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; margin: 4px 0 14px; }
+  .obra .titulo { flex: 1; min-width: 260px; }
+  .obra .titulo h2 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -.01em; color: var(--texto); }
+  .obra .titulo p { margin: 3px 0 0; font-size: 13px; color: var(--texto2); }
+  .obra .acoes-obra { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .botao-m { font: inherit; font-size: 13px; padding: 6px 12px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
+             background: var(--painel); color: var(--texto); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+  .botao-m:hover { border-color: var(--azul2); color: var(--azul2); }
+  .botao-m.principal { background: var(--azul); border-color: var(--azul); color: #fff; }
+  .botao-m.principal:hover { background: var(--azul2); color: #fff; }
+  .botao-m:disabled { opacity: .55; cursor: default; }
+  .controle { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 14px; font-size: 13px; color: var(--texto2);
+              position: sticky; top: 52px; z-index: 5; background: var(--fundo); padding: 6px 0; border-bottom: 1px solid var(--borda); }
+  .controle select { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); max-width: 420px; }
+  .controle label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .controle .sep { flex: 1; }
+  .controle .camadas { display: inline-flex; gap: 2px; }
+  .controle .camadas a { font-size: 12.5px; padding: 4px 9px; border-radius: 999px; color: var(--texto2); text-decoration: none; border: 1px solid transparent; }
+  .controle .camadas a:hover { border-color: var(--borda-forte); color: var(--texto); }
+  .aviso-topo { padding: 10px 14px; border-left: 3px solid var(--amarelo); background: var(--amarelo-fundo); border-radius: var(--raio-p); margin: 0 0 14px; font-size: 13.5px; }
+  .aviso-topo.erro { border-color: var(--verm); background: var(--verm-fundo); }
+  .aviso-topo a { color: inherit; }
+  .progresso { font-size: 13px; color: var(--texto2); display: inline-flex; gap: 8px; align-items: center; }
+  .progresso .giro { width: 14px; height: 14px; border: 2px solid var(--borda-forte); border-top-color: var(--azul2); border-radius: 50%; animation: giro .8s linear infinite; }
+  @keyframes giro { to { transform: rotate(360deg); } }
+
+  /* ---- o documento (estilo de tela, mesma identidade do memorial em PDF) */
+  .doc { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 22px 28px 30px; box-shadow: var(--sombra); font-size: 13.5px; line-height: 1.45; }
+  .doc .cabecalho h1 { font-size: 21px; margin: 0 0 4px; color: var(--azul); }
+  .doc .cabecalho .sub { margin: 0 0 2px; color: var(--texto2); }
+  .doc .pequeno { font-size: 12px; color: var(--texto3); }
+  .doc section.capitulo { margin-top: 22px; }
+  .doc h1.cap { font-size: 18px; margin: 0 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--azul); color: var(--azul); }
+  .doc h1.cap .num { color: var(--azul2); margin-right: 8px; }
+  .doc h2 { font-size: 15px; margin: 18px 0 6px; padding-left: 8px; border-left: 4px solid var(--azul2); color: var(--azul-tinta); }
+  .doc p { margin: 0 0 8px; }
+  .doc table.tab { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 6px 0 12px; }
+  .doc table.tab th, .doc table.tab td { border: 1px solid var(--borda); padding: 4px 7px; vertical-align: top; text-align: left; }
+  .doc table.tab th { background: var(--painel2); font-weight: 600; }
+  .doc td.r, .doc th.r { text-align: right; font-variant-numeric: tabular-nums; }
+  .doc td.c, .doc th.c { text-align: center; }
+  .doc td.b { font-weight: 600; }
+  .doc td.ok { color: var(--verde); font-weight: 600; }
+  .doc td.nao { color: var(--verm); font-weight: 600; }
+  .doc table.resumo td.sel { background: var(--amarelo-fundo); }
+  .doc table.resumo a.marca { color: var(--azul); font-weight: 600; text-decoration: none; }
+  .doc table.passos { font-size: 12.5px; }
+  .doc table.passos td.frm, .doc table.passos td.cta { font-family: Georgia, "Times New Roman", serif; font-size: 13px; }
+  .doc table.passos td.val { font-weight: 600; white-space: nowrap; }
+  .doc table.passos td.nrm { color: var(--texto3); font-size: 11.5px; white-space: nowrap; }
+  .doc table.passos td.txt .dica { font-size: 11.5px; color: var(--texto2); font-style: italic; margin-top: 3px; }
+  .doc .verif { border: 1px solid var(--borda); border-left: 5px solid var(--azul2); border-radius: var(--raio-p); margin: 0 0 12px; background: var(--painel); }
+  .doc .verif > .cab { display: flex; align-items: baseline; gap: 10px; padding: 7px 12px; background: var(--azul-fraco); border-bottom: 1px solid var(--borda); }
+  .doc .verif > .cab .t { font-weight: 600; color: var(--azul-tinta); flex: 1; }
+  .doc .verif > .cab .n { font-size: 11.5px; color: var(--texto3); }
+  .doc .verif > .corpo { padding: 8px 12px 10px; }
+  .doc .verif.reprova { border-left-color: var(--verm); }
+  .doc .verif.reprova > .cab { background: var(--verm-fundo); }
+  .doc .verif .obs { font-size: 12.5px; color: var(--texto2); margin: 6px 0 0; }
+  .doc .selo { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+  .doc .selo.ok { background: var(--verde-fundo); color: var(--verde); border: 1px solid var(--verde); }
+  .doc .selo.nao { background: var(--verm-fundo); color: var(--verm); border: 1px solid var(--verm); }
+  .doc .resultado { display: flex; gap: 8px; margin: 6px 0 0; flex-wrap: wrap; }
+  .doc .resultado .c { flex: 1 1 0; min-width: 110px; border: 1px solid var(--borda); border-radius: var(--raio-p); padding: 6px 10px; text-align: center; background: var(--painel2); }
+  .doc .resultado .c .k { font-size: 10.5px; color: var(--texto3); text-transform: uppercase; letter-spacing: .04em; }
+  .doc .resultado .c .v { font-size: 16px; font-weight: 650; color: var(--azul-tinta); font-variant-numeric: tabular-nums; }
+  .doc .resultado .c .u { font-size: 10.5px; color: var(--texto3); }
+  .doc .barra { height: 10px; background: var(--painel2); border: 1px solid var(--borda); border-radius: 999px; position: relative; margin: 8px 0 2px; overflow: visible; }
+  .doc .barra i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--verde-barra); border-radius: 999px; }
+  .doc .barra.reprova i { background: var(--verm); }
+  .doc .barra .lim { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--texto); }
+  .doc .box { border: 1px solid var(--borda); border-left: 5px solid var(--azul2); background: var(--azul-fraco); padding: 8px 12px; margin: 10px 0 12px; border-radius: var(--raio-p); }
+  .doc .box .t { font-weight: 600; color: var(--azul); margin-bottom: 3px; }
+  .doc .box.atencao { border-left-color: var(--verm); background: var(--verm-fundo); }
+  .doc .box.atencao .t { color: var(--verm); }
+  .doc .box.ok { border-left-color: var(--verde); background: var(--verde-fundo); }
+  .doc .box.ok .t { color: var(--verde); }
+  .doc .box p:last-child { margin-bottom: 0; }
+  .doc ol.hipoteses { list-style: none; padding: 0 0 0 30px; margin: 0 0 12px; counter-reset: hip; }
+  .doc ol.hipoteses li.hip { position: relative; border: 1px solid var(--borda); border-left: 4px solid var(--azul2); border-radius: var(--raio-p); padding: 8px 12px; margin: 0 0 8px; counter-increment: hip; background: var(--painel); }
+  .doc ol.hipoteses li.hip::before { content: counter(hip) "."; position: absolute; left: -28px; top: 8px; width: 22px; text-align: right; color: var(--azul2); font-weight: 600; }
+  .doc ol.hipoteses .fonte { float: right; margin: 0 0 4px 12px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--borda); color: var(--texto2); background: var(--painel2); }
+  .doc ol.hipoteses .fonte.modelo { border-color: var(--azul2); color: var(--azul); background: var(--azul-fraco); }
+  .doc ol.hipoteses .fonte.parametro { border-color: var(--amarelo); color: var(--amarelo); background: var(--amarelo-fundo); }
+  .doc ol.hipoteses .fonte.norma { border-color: var(--verde); color: var(--verde); background: var(--verde-fundo); }
+  .doc details.explica { margin: 8px 0 0; border: 1px dashed var(--borda-forte); border-radius: var(--raio-p); background: var(--painel2); font-size: 13px; }
+  .doc details.explica summary { cursor: pointer; padding: 6px 12px; color: var(--azul2); font-weight: 600; font-size: 12.5px; }
+  .doc details.explica .corpo { padding: 0 12px 8px; }
+  .doc details.explica .corpo p { margin: 0 0 6px; }
+  .doc details.explica .desenho { text-align: center; margin: 6px 0; }
+  .doc details.explica .desenho svg { max-width: 100%; height: auto; background: #fff; border-radius: 4px; }
+  .doc .lacuna { color: var(--verm); }
+  .doc.profissional details.explica, .doc.profissional .dica { display: none; }
+  @media print {
+    .topo, .obra .acoes-obra, .controle, #aviso { display: none !important; }
+    .memorial { max-width: none; padding: 0; }
+    .doc { border: 0; box-shadow: none; padding: 0; }
+    body { background: #fff; color: #000; }
+    .doc details.explica { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M9 8h14M9 13h14M9 18h9M9 23h11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+    </svg>
+    <h1>Memorial de cálculo<span id="sub-projeto">projeto</span></h1>
+  </div>
+  <div class="projeto-atual" id="quando" title="Quando o cálculo foi gravado">—</div>
+  <div class="acoes">
+    <button type="button" id="btn-voltar" title="Volta para a tela anterior">&larr; Voltar</button>
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" id="btn-3d" title="Voltar ao modelo 3D com esta peça em destaque">Ver no 3D</button>
+    <button type="button" onclick="location.href='/'" title="Voltar à lista de projetos">Projetos</button>
+  </div>
+</header>
+
+<main class="memorial">
+  <div id="aviso" class="aviso-topo" hidden></div>
+
+  <section class="obra">
+    <div class="titulo">
+      <h2 id="obra-nome">—</h2>
+      <p id="obra-sub">Memorial de cálculo de uma peça, em quatro camadas: resumo, hipóteses, conta e explicação.</p>
+    </div>
+    <div class="acoes-obra">
+      <span class="progresso" id="progresso" hidden><span class="giro"></span><span id="progresso-texto">gerando…</span></span>
+      <button type="button" class="botao-m" id="btn-pdf-pro" title="Imprime a versão profissional (sem a camada de explicação) em PDF na pasta memorial/ do projeto">PDF profissional</button>
+      <button type="button" class="botao-m" id="btn-pdf-did" title="Imprime a versão didática (com as explicações abertas) em PDF">PDF didático</button>
+      <button type="button" class="botao-m" id="btn-imprimir" title="Imprime o que está na tela">Imprimir</button>
+    </div>
+  </section>
+
+  <div class="controle">
+    <label>Peça
+      <select id="marca" title="A peça verificada de que se quer o memorial; a lista traz todas as posições do cálculo"></select>
+    </label>
+    <label title="Mostra, em cada hipótese e verificação, o bloco 'Entender' e as dicas dos passos"><input type="checkbox" id="didatico" checked> Explicações para quem aprende</label>
+    <label title="Abre todos os blocos de explicação de uma vez"><input type="checkbox" id="abrir-tudo"> abrir todas</label>
+    <span class="sep"></span>
+    <nav class="camadas" aria-label="Camadas do memorial">
+      <a href="#c1">1 Resumo</a><a href="#c2">2 Hipóteses</a><a href="#c3">3 Conta</a><a href="#c4" id="link-c4">4 Explicação</a>
+    </nav>
+  </div>
+
+  <article class="doc" id="doc"><p class="pequeno">Carregando…</p></article>
+</main>
+
+<script src="/memorial.js"></script>
+<script src="/versao.js" defer></script>
+<script src="/vivo.js"></script>
+</body>
+</html>

@@ -39,6 +39,29 @@ class Passo:
     norma: str = ""            # item da norma que justifica o passo
 
 
+#: De onde veio uma hipótese: o profissional confere primeiro o que foi medido e o que foi
+#: adotado; o que veio da norma ou do catálogo ele só confirma.
+FONTES_DE_HIPOTESE = {
+    "modelo": "medido no modelo 3D",
+    "parametro": "informado no diálogo do cálculo",
+    "rotina": "adotado pela rotina de cálculo",
+    "norma": "exigido pela norma",
+    "catalogo": "do catálogo de perfis e aços",
+}
+
+
+@dataclass
+class Hipotese:
+    """Uma decisão tomada antes da conta — o que o memorial escreve por extenso.
+
+    `chave` identifica o assunto (vao, largura, correntes, succao_travamento…) e é por ela
+    que a explicação didática é encontrada; `texto` é a hipótese em linguagem comum, com
+    os números; `fonte` é uma das `FONTES_DE_HIPOTESE`."""
+    chave: str
+    texto: str
+    fonte: str = "rotina"
+
+
 @dataclass
 class Verificacao:
     """Resultado de uma verificação de estado-limite."""
@@ -103,11 +126,24 @@ class Resultado:
     material: str = ""
     verificacoes: List[Verificacao] = field(default_factory=list)
     dados: dict = field(default_factory=dict)
+    #: as decisões anteriores à conta (vão, travamentos, cargas e de onde vieram), na
+    #: ordem em que o profissional confere: primeiro o modelo, depois a rotina
+    hipoteses: List[Hipotese] = field(default_factory=list)
+    #: como a carga chegou à peça e virou esforço: passos como os das verificações
+    cargas: List[Passo] = field(default_factory=list)
 
     def add(self, v: Optional[Verificacao]):
         if v is not None:
             self.verificacoes.append(v)
         return v
+
+    def hipotese(self, chave: str, texto: str, fonte: str = "rotina"):
+        self.hipoteses.append(Hipotese(chave, texto, fonte))
+        return self
+
+    def carga(self, texto, formula="", conta="", valor="", norma=""):
+        self.cargas.append(Passo(texto, formula, conta, valor, norma))
+        return self
 
     @property
     def razao(self) -> float:

@@ -1244,6 +1244,10 @@ def flecha(w_servico_kN_cm: float, vao_cm: float, I: float,
 # 6. TERÇA / LONGARINA
 # =============================================================================
 
+def posicao_txt(apoio: str) -> str:
+    return "extremidade" if apoio == "extremidade" else "trecho interno (terça contínua)"
+
+
 def terca(perfil_ue, aco="CF-26 (NBR 6650)", vao: float = 5.0,
           carga_gravidade: float = 0.0, carga_succao: float = 0.0,
           n_correntes: int = 1, *,
@@ -1318,9 +1322,84 @@ def terca(perfil_ue, aco="CF-26 (NBR 6650)", vao: float = 5.0,
     r = Resultado(f"{elemento} L = {vao:g} m", perfil=sec.nome, material=aco.nome)
     segs = segmentos_viga_uniforme(n_correntes)
 
+    # ---------- hipóteses da rotina (o memorial escreve por extenso) ----------
+    r.hipotese("modelo_estatico",
+               f"A terça é calculada como viga biapoiada de vão L = {fmt(vao, 2)} m com carga "
+               "uniformemente distribuída: M = q·L²/8 no meio do vão e V = q·L/2 nos apoios. A "
+               "continuidade sobre o apoio, quando existe, não é aproveitada.")
+    r.hipotese("secao",
+               f"Seção {sec.nome}: alma {fmt(sec.h_mm, 0)} mm, mesa {fmt(sec.bf_mm, 0)} mm"
+               + (f", enrijecedor {fmt(sec.d_mm, 0)} mm" if sec.d_mm else ", sem enrijecedor")
+               + f", chapa t = {fmt(sec.t_mm, 2)} mm, raio interno de dobra r = {fmt(sec.r_mm, 2)} mm. "
+               f"Propriedades pela linha média: A = {fmt(sec.A, 2)} cm², I<sub>x</sub> = {fmt(sec.Ix, 1)} cm⁴, "
+               f"W<sub>x</sub> = {fmt(sec.Wx, 2)} cm³, W<sub>y</sub> = {fmt(sec.Wy, 2)} cm³, "
+               f"massa {fmt(sec.massa, 2)} kg/m."
+               + ("" if sec.d_mm else " Sem enrijecedor a mesa é elemento com uma borda livre (AL, "
+                                       "k = 0,43) e não há modo distorcional."),
+               "catalogo")
+    r.hipotese("aco", f"Aço {aco.nome}: f<sub>y</sub> = {fmt(aco.fy, 1)} kN/cm² "
+                      f"({fmt(aco.fy_MPa, 0)} MPa), f<sub>u</sub> = {fmt(aco.fu, 1)} kN/cm²; "
+                      f"E = {fmt(E, 0)} kN/cm². Coeficiente γ = {GAMA:.2f} nas resistências.", "catalogo")
+    if telha_trava_mesa:
+        r.hipotese("gravidade_travamento",
+                   "Sob carga de cima para baixo (gravidade) a mesa comprimida é a superior, e a telha "
+                   "parafusada nela a segura em toda a extensão: L<sub>b</sub> = 0, sem flambagem lateral "
+                   "com torção.")
+    else:
+        r.hipotese("gravidade_travamento",
+                   f"Sob gravidade a mesa superior comprimida não é contada como travada pela telha: "
+                   f"L<sub>b</sub> = {fmt(Lb, 0)} cm.")
+    r.hipotese("succao_travamento",
+               f"Sob sucção do vento a mesa comprimida é a inferior, que a telha não segura. Só as "
+               f"correntes a travam: {n_correntes} linha(s) de correntes no vão dão "
+               f"L<sub>b</sub> = L/({n_correntes} + 1) = {fmt(Lb, 0)} cm. "
+               + ("As correntes travam também o giro: L<sub>t</sub> = L<sub>b</sub>."
+                  if correntes_travam_torcao else
+                  f"As correntes seguram o deslocamento lateral mas não o giro da seção: o comprimento "
+                  f"destravado à torção é o vão inteiro, L<sub>t</sub> = {fmt(Lt, 0)} cm."))
+    r.hipotese("cb", "O fator C<sub>b</sub> (forma do diagrama de momentos) é calculado em cada trecho "
+                     "entre correntes; o trecho que governa é o de maior M<sub>Sd</sub>/M<sub>Rd</sub>.")
+    if inclinacao > 0:
+        r.hipotese("flexao_y",
+                   f"O telhado tem inclinação {fmt(inclinacao, 2)}°: a parcela da carga paralela ao "
+                   f"telhado (q·sen θ) dobra a terça no eixo fraco, com vão igual ao espaçamento das "
+                   f"correntes ({fmt(Lb, 0)} cm), biapoiado. Entra na flexão oblíqua.")
+    r.hipotese("apoio",
+               f"Apoio de {posicao_txt(apoio)} sobre a chapa de terça, com comprimento de apoio "
+               f"N = {fmt(comprimento_apoio, 1)} cm e a mesa fixada ao apoio. O comprimento de apoio "
+               f"não é lido do modelo: confira com a chapa usada na fábrica.")
+    r.hipotese("interacao_mv",
+               "A interação momento–cortante é verificada a L/4 do apoio (M = 0,75·M<sub>máx</sub> e "
+               "V = 0,5·V<sub>máx</sub>), onde os dois coexistem; no apoio M = 0 e no meio V = 0.")
+    r.hipotese("servico",
+               f"Flechas com a carga de serviço "
+               + ("informada" if carga_servico_gravidade is not None else "= carga de cálculo/1,4")
+               + f", limites L/{limite_flecha_gravidade:g} na gravidade e L/{limite_flecha_succao:g} "
+               f"na sucção (NBR 14762, Anexo C).",
+               "norma")
+
     # ---------- gravidade ----------
     Mx_g = wg * math.cos(theta) * L ** 2 / 8.0
     My_g = wg * math.sin(theta) * Lb ** 2 / 8.0
+    r.carga("Momento máximo, gravidade (parcela normal ao telhado)",
+            "M<sub>x</sub> = q<sub>g</sub>·cos θ·L²/8",
+            f"{fmt(carga_gravidade, 3)} kN/m × cos {fmt(inclinacao, 2)}° × {fmt(vao, 2)}²/8",
+            fmt(Mx_g / 100.0, 2, "kN·m") + f" = {fmt(Mx_g, 0)} kN·cm")
+    if inclinacao > 0:
+        r.carga("Momento no plano do telhado (parcela paralela)",
+                "M<sub>y</sub> = q<sub>g</sub>·sen θ·L<sub>b</sub>²/8",
+                f"{fmt(carga_gravidade, 3)} × sen {fmt(inclinacao, 2)}° × {fmt(Lb / 100.0, 2)}²/8",
+                fmt(My_g, 1, "kN·cm"))
+    if carga_succao > 0:
+        r.carga("Momento máximo, sucção", "M<sub>x</sub> = q<sub>s</sub>·L²/8",
+                f"{fmt(carga_succao, 3)} × {fmt(vao, 2)}²/8",
+                fmt(carga_succao * vao ** 2 / 8.0, 2, "kN·m") + f" = {fmt(ws * L ** 2 / 8.0, 0)} kN·cm")
+    r.carga("Reação no apoio (cortante máximo)", "V = q·L/2",
+            f"{fmt(max(carga_gravidade, carga_succao), 3)} × {fmt(vao, 2)}/2",
+            fmt(max(wg, ws) * L / 2.0, 2, "kN"))
+    r.carga("Comprimentos destravados na sucção", "L<sub>b</sub> = L/(n + 1); L<sub>t</sub>",
+            f"{fmt(L, 0)}/({n_correntes} + 1); {'L<sub>b</sub>' if correntes_travam_torcao else 'L'}",
+            f"L<sub>b</sub> = {fmt(Lb, 0)} cm; L<sub>t</sub> = {fmt(Lt, 0)} cm")
     Lb_g = 0.0 if telha_trava_mesa else Lb
     Lt_g = 0.0 if telha_trava_mesa else Lt
     vg = flexao_mrd(sec, aco, Mx_g, Lb_g, Lt_g, Cb=1.0, k_mola=k_mola,
