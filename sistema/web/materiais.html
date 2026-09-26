@@ -89,6 +89,17 @@
   .lista-simples { margin: 0; padding-left: 18px; font-size: 13px; }
   .lista-simples li { margin: 3px 0; }
   .passos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  /* ---- plano de corte */
+  .corte-celula { width: 100%; }
+  .barra-corte { display: flex; width: 100%; min-width: 420px; height: 30px; border: 1px solid var(--borda-forte); border-radius: 3px; overflow: hidden; background: var(--painel2); }
+  .barra-corte .seg { display: flex; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; white-space: nowrap;
+                      background: var(--azul-fraco); border-right: 2px solid var(--painel); color: var(--azul-tinta); font-size: 11px; line-height: 1.1; }
+  .barra-corte .seg:nth-child(even) { background: var(--painel2); }
+  .barra-corte .seg.emenda { background: var(--amarelo-fundo); color: var(--amarelo); }
+  .barra-corte .seg b { font-weight: 600; }
+  .barra-corte .seg small { font-size: 10px; color: var(--texto2); }
+  .cortes-texto { font-size: 11.5px; color: var(--texto2); margin-top: 3px; white-space: normal; }
+  .barra-corte .sobra { background: repeating-linear-gradient(45deg, transparent 0 4px, var(--borda) 4px 6px); }
   /* ---- resumos */
   .grade-resumos { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
   @media (max-width: 980px) { .grade-resumos { grid-template-columns: 1fr; } }

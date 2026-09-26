@@ -24,6 +24,20 @@ def ok(c, m):
     if not c: falhas.append(m)
 def foto(aba, nome):
     open(os.path.join(SCR, nome), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
+def longo(aba, js, limite=600):
+    """Roda uma chamada assíncrona demorada na página sem prender o canal: o resultado vai
+    para window.__longo e o verificador consulta até chegar (a quebra dos cantos no servidor
+    passa de um minuto com a máquina carregada, e a espera numa chamada só estourava)."""
+    aba.avaliar("window.__longo = undefined; (async () => { try { window.__longo = await (" + js + "); } catch (e) { window.__longo = 'ERRO: ' + e.message; } })(); 1")
+    t0 = time.time()
+    while time.time() - t0 < limite:
+        v = aba.avaliar("window.__longo === undefined ? null : window.__longo")
+        if v is not None:
+            return v
+        aba.drenar(1.0)
+    return None
+
+
 chrome = next(c for c in CHROMES if os.path.exists(c)); cdp = _porta_livre(); perfil = tempfile.mkdtemp(prefix="verif_cantos_")
 nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--hide-scrollbars",
                         "--no-first-run", "--remote-allow-origins=*", f"--user-data-dir={perfil}", f"--remote-debugging-port={cdp}", "about:blank"],
@@ -41,7 +55,7 @@ try:
     t0 = time.time()
     while time.time() - t0 < 90 and not aba.avaliar("window.editor && window.editor.documento && window.editor.documento.entidades.size > 100"): aba.drenar(0.5)
     # a análise pela API
-    r = json.loads(aba.avaliar("""(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify(d.pecas.map(p => [p.marca, p.perfil, p.instancias, Math.round(p.raio), Math.round(p.angulo), p.opcoes.length])); })()"""))
+    r = json.loads(longo(aba, """(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify(d.pecas.map(p => [p.marca, p.perfil, p.instancias, Math.round(p.raio), Math.round(p.angulo), p.opcoes.length])); })()"""))
     print("     peças:", r)
     p15 = next((x for x in r if x[0] == "P15"), None)
     ok(p15 is not None and p15[2] == 14 and 500 < p15[3] < 700 and 70 < p15[4] < 85 and p15[5] == 4, f"P15 reconhecido: {p15}")
@@ -70,15 +84,15 @@ try:
     aba.avaliar("window.editor.el.dialogo.close('cancelar'); 1")
     aba.drenar(0.5)
     # a quebra pela API e o modelo recarregado
-    r = json.loads(aba.avaliar("""(async () => { const r = await window.editor.api.quebrarCantos('compressores', { P15: 1 }); await window.editor._abrirProjeto();
+    r = json.loads(longo(aba, """(async () => { const r = await window.editor.api.quebrarCantos('compressores', { P15: 1 }); await window.editor._abrirProjeto();
       const ents = [...window.editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.quebras);
       return JSON.stringify([r.pecas, r.posicoes, ents.length, ents[0] ? ents[0].atributos.quebras.n : null, ents[0] ? ents[0].vertices.length : 0]); })()"""))
     # o joelho encosta no banzo: termina no nó (perna: 2 anéis + 2 nós = 32 vértices)
     ok(r[0] == 14 and r[1] == ["P15"] and r[2] == 14 and r[3] == 1 and r[4] == 32, f"quebra aplicada e recarregada: {r}")
-    r2 = json.loads(aba.avaliar("""(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify(d.pecas.map(p => p.marca)); })()"""))
+    r2 = json.loads(longo(aba, """(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify(d.pecas.map(p => p.marca)); })()"""))
     ok("P15" not in r2, f"P15 já não aparece como canto redondo: {r2}")
     # as quebradas aparecem no diálogo com a opção de voltar
-    q = json.loads(aba.avaliar("""(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify((d.quebradas || []).map(p => [p.marca, p.n, p.instancias, p.original])); })()"""))
+    q = json.loads(longo(aba, """(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify((d.quebradas || []).map(p => [p.marca, p.n, p.instancias, p.original])); })()"""))
     ok(q == [["P15", 1, 14, True]], f"quebradas listadas com a malha original guardada: {q}")
     aba.avaliar("window.editor.dialogoCantosRedondos(); 1")
     t0 = time.time()
@@ -89,7 +103,7 @@ try:
     aba.avaliar("window.editor.el.dialogo.close('cancelar'); 1")
     aba.drenar(0.5)
     # volta ao canto redondo pela API: joelho com a malha original (216 vértices), banzo e diagonais como eram
-    r3 = json.loads(aba.avaliar("""(async () => { const r = await window.editor.api.desfazerCantos('compressores', ['P15']); await window.editor._abrirProjeto();
+    r3 = json.loads(longo(aba, """(async () => { const r = await window.editor.api.desfazerCantos('compressores', ['P15']); await window.editor._abrirProjeto();
       const ents = [...window.editor.documento.entidades.values()];
       const quebradas = ents.filter(e => e.atributos && e.atributos.quebras).length;
       const esticadas = ents.filter(e => e.atributos && e.atributos.estendida_ate_no).length;
@@ -97,7 +111,7 @@ try:
       const p15 = ents.filter(e => e.atributos && e.atributos.marcas && e.atributos.marcas.posicao === 'P15');
       return JSON.stringify([r.pecas, r.posicoes, (r.falhas || []).length, quebradas, esticadas, refeitas, p15.length, p15[0] ? p15[0].vertices.length : 0]); })()"""))
     ok(r3[0] == 14 and r3[1] == ["P15"] and r3[2] == 0 and r3[3] == 0 and r3[4] == 0 and r3[5] == 0 and r3[6] == 14 and r3[7] == 216, f"voltou ao canto redondo: {r3}")
-    r4 = json.loads(aba.avaliar("""(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify([d.pecas.map(p => p.marca), (d.quebradas || []).length]); })()"""))
+    r4 = json.loads(longo(aba, """(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify([d.pecas.map(p => p.marca), (d.quebradas || []).length]); })()"""))
     ok("P15" in r4[0] and r4[1] == 0, f"P15 volta à lista de cantos redondos: {r4}")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")

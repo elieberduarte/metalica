@@ -15,7 +15,8 @@ from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desen
 from saida.desenhos import Estilo, _mm
 from saida.dobras import com_bitola
 
-from nucleo2d.detalhe.base import (  # noqa: E402
+from nucleo2d.detalhe.base import (
+    parafusos_posicionados, largura_da_chamada,  # noqa: E402
     CAMADAS_PECAS,
     TIPOS_NOME,
     _Papel,
@@ -1078,6 +1079,66 @@ def _cruzamento(a0, a1, b0, b1):
     return (a0[0] + t * r[0], a0[1] + t * r[1])
 
 
+#: Parafusos a menos disto (mm) um do outro são da mesma ligação: uma chamada só.
+GRUPO_DE_PARAFUSOS = 150.0
+#: Mais que isto de ligações e a elevação fica só com a lista do título (chamada demais polui).
+MAX_CHAMADAS_PARAFUSOS = 10
+
+
+def chamadas_de_parafusos(p, doc, instancia, origem, u, v, u0: float, v0: float, esc: float) -> int:
+    """Nas elevações dos conjuntos menores (dispositivos, vigas, pilares): uma chamada por
+    ligação com os parafusos dela ("4x M12 x 30"). O texto vai para fora, no lado que tiver
+    lugar; a que encostaria em outra chamada não sai (a lista no título continua). A
+    tesoura fica sem: os parafusos dela são os dos suportes de terça, que estão no detalhe
+    das terças. Devolve quantas saíram."""
+    pts = []
+    for c, nome in parafusos_posicionados(doc, instancia):
+        rel = _sub(c, origem)
+        pts.append(((_dot(rel, u) - u0, _dot(rel, v) - v0), nome))
+    if not pts:
+        return 0
+    grupos: List[list] = []
+    for q, nome in sorted(pts, key=lambda t: (t[0][0], t[0][1])):
+        for g in grupos:
+            if any(math.hypot(q[0] - r[0][0], q[1] - r[0][1]) <= GRUPO_DE_PARAFUSOS for r in g):
+                g.append((q, nome))
+                break
+        else:
+            grupos.append([(q, nome)])
+    if len(grupos) > MAX_CHAMADAS_PARAFUSOS:
+        return 0
+    xs = [x for x, _ in p.pontos] or [0.0]
+    ys = [y for _, y in p.pontos] or [0.0]
+    cx = (min(xs) + max(xs)) / 2 - p.dx
+    cy = (min(ys) + max(ys)) / 2 - p.dy
+    ocupado: List[Tuple[float, float, float, float]] = []
+    feitas = 0
+    alt = 2.0
+    for g in grupos:
+        cont = collections.Counter(n for _, n in g)
+        txt = " + ".join("%dx %s" % (q, n) for n, q in sorted(cont.items(), key=lambda kv: _ordem_natural(kv[0])))
+        gx = sum(q[0] for q, _ in g) / len(g)
+        gy = sum(q[1] for q, _ in g) / len(g)
+        larg = largura_da_chamada(txt, alt, esc)
+        # para fora do conjunto: o lado do centro para o grupo
+        sx = 1.0 if gx >= cx else -1.0
+        sy = 1.0 if gy >= cy else -1.0
+        for k in (1.0, 1.8, 2.6):
+            for fx, fy in ((sx, sy), (sx, -sy), (-sx, sy)):
+                xt, yt = gx + fx * 8.0 * esc * k, gy + fy * 8.0 * esc * k
+                caixa = (min(xt, xt + fx * larg), yt - 1.0 * esc, max(xt, xt + fx * larg), yt + (alt + 1.0) * esc)
+                if any(_sobrepoe(caixa, o, 1.0 * esc) for o in ocupado):
+                    continue
+                p.chamada(gx, gy, xt, yt, txt, alt)
+                ocupado.append(caixa)
+                feitas += 1
+                break
+            else:
+                continue
+            break
+    return feitas
+
+
 def _rotular_barras(p: "_Papel", rotulos, esc: float, altura_papel: float = 1.8):
     """Rótulo de posição ao lado do meio de cada barra, deslocado na perpendicular da
     barra; quando cai em cima de outro rótulo, afasta-se mais um passo (até quatro)."""
@@ -1385,6 +1446,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     cadeia = len(alturas) > 2 and p.cadeia_v(alturas, larg, off)
     p.cota_v(0, alt, larg, off2 if cadeia else off)
     _rotular_barras(p, rotulos, esc)
+    if tipo != "tesoura":
+        chamadas_de_parafusos(p, doc, instancia, origem, u, v, u0, v0, esc)
     if barras_furadas:
         # os detalhes de furação abaixo de tudo o que a elevação já desenhou
         fundo = min([0.0] + [q[1] - dy for q in p.pontos])

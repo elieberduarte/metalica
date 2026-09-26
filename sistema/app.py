@@ -1544,7 +1544,7 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
     for chave, nome in (("json", lista_producao.ARQUIVO_JSON), ("html", lista_producao.ARQUIVO_HTML),
                         ("pdf", lista_producao.ARQUIVO_PDF), ("romaneio", "romaneio.csv"),
                         ("perfis", "resumo-perfis.csv"), ("dobras", "peso-dobras.csv"), ("chapas", "resumo-chapas.csv"),
-                        ("conjuntos", "conjuntos.csv")):
+                        ("conjuntos", "conjuntos.csv"), ("plano_corte", "plano-de-corte.csv")):
         cam = os.path.join(pasta, nome)
         if os.path.exists(cam):
             arquivos[chave] = _descrever_arquivo(cam, pasta)

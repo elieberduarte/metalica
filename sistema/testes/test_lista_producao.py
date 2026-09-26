@@ -125,3 +125,21 @@ if __name__ == "__main__":
     print(f"\n{falhas} falha(s).")
     sys.exit(1 if falhas else 0)
 
+
+
+def test_plano_de_corte_diz_o_que_sai_de_cada_barra():
+    """O encaixe guarda o que sai de cada barra: barras de corte igual juntas, a soma das
+    barras do plano é a contagem, e em cada barra peças + perdas de corte + sobra = barra."""
+    comps = [5000, 5000, 1200, 1200, 1200, 1200, 1200, 1200, 7000]
+    nomes = ["A", "A", "B", "B", "B", "B", "B", "B", "C"]
+    r = lp.encaixar(comps, 6000, rotulos=nomes)
+    assert sum(b["barras"] for b in r["plano"]) == r["quantidade"] == 5
+    for b in r["plano"]:
+        pecas = sum(c["comprimento"] * c["qtd"] for c in b["cortes"])
+        cortes = sum(c["qtd"] for c in b["cortes"])
+        emenda = any("emenda" in c["nome"] and "resto" not in c["nome"] for c in b["cortes"])
+        assert emenda or abs(pecas + cortes * lp.PERDA_CORTE + b["sobra"] - 6000) <= 1.0, b
+    # as duas barras de 5 m são iguais: uma linha com 2 barras
+    assert any(b["barras"] == 2 and b["cortes"] == [{"nome": "A", "comprimento": 5000, "qtd": 1}] for b in r["plano"])
+    assert any("C (emenda)" in c["nome"] for b in r["plano"] for c in b["cortes"])
+    assert "2× B 1.200" in lp.texto_dos_cortes([{"nome": "B", "comprimento": 1200, "qtd": 2}])

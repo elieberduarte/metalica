@@ -14,7 +14,8 @@ from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desen
                                 _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d)
 from saida.desenhos import Estilo, _mm
 
-from nucleo2d.detalhe.base import (  # noqa: E402
+from nucleo2d.detalhe.base import (
+    largura_da_chamada,  # noqa: E402
     TIPOS_NOME,
     TIPOS_PECA,
     _Papel,
@@ -139,6 +140,51 @@ def _furos_editaveis(p: "_Papel", atr: dict, furos: Sequence[Furo]):
     p.atr = atr
 
 
+#: Furos a menos disto (mm, ao longo da peça) um do outro são da mesma ligação: uma chamada só.
+GRUPO_DE_FUROS = 150.0
+#: Alturas (mm de papel, acima da peça) das duas linhas de chamadas dos furos; o título
+#: começa a 12 mm.
+NIVEIS_DE_CHAMADA = (3.5, 7.5)
+ALTURA_CHAMADA = 2.0
+
+
+def chamadas_de_furos(p, furos, H: float, esc: float, L: Optional[float] = None) -> int:
+    """Uma chamada por grupo de furos ("2x OBL 25x13", "4x Ø13"), com a seta no furo de
+    cima do grupo e o texto logo acima da peça, em até duas linhas. Uma chamada que não
+    cabe sem encostar na anterior não sai (o total continua no título da célula) — texto
+    por cima de texto não pode. Devolve quantas saíram."""
+    redondos = sorted((f for f in furos if f.tipo in ("redondo", "oblongo")), key=lambda f: f.x)
+    grupos: List[list] = []
+    for f in redondos:
+        if grupos and f.x - grupos[-1][-1].x <= GRUPO_DE_FUROS:
+            grupos[-1].append(f)
+        else:
+            grupos.append([f])
+    ocupado = {n: [] for n in NIVEIS_DE_CHAMADA}            # trechos (x0, x1) já ocupados em cada linha
+    feitas = 0
+    for g in grupos:
+        cont = collections.Counter(f.rotulo() for f in g)
+        txt = ", ".join("%dx %s" % (q, r) for r, q in sorted(cont.items()))
+        alvo = max(g, key=lambda f: (f.y, -f.x))
+        raio = (alvo.d / 2.0) if alvo.tipo == "redondo" else (min(alvo.larg, alvo.alt) / 2.0)
+        larg = largura_da_chamada(txt, ALTURA_CHAMADA, esc)
+        # o texto vai para a direita; se passaria da ponta da peça (onde ficam a cota
+        # vertical e o número dela), vai para a esquerda
+        x_dir = alvo.x + 2.5 * esc
+        if L is None or x_dir + larg <= L:
+            x_txt, trecho = x_dir, (x_dir, x_dir + larg)
+        else:
+            x_txt = alvo.x - 2.5 * esc
+            trecho = (x_txt - larg, x_txt)
+        for nivel in NIVEIS_DE_CHAMADA:
+            if all(trecho[1] + 2.0 * esc <= a or trecho[0] >= b + 2.0 * esc for a, b in ocupado[nivel]):
+                p.chamada(alvo.x, alvo.y + raio, x_txt, H + nivel * esc, txt, ALTURA_CHAMADA)
+                ocupado[nivel].append(trecho)
+                feitas += 1
+                break
+    return feitas
+
+
 def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
                        editavel: bool = False) -> Tuple[float, float, float, float]:
     """Célula da posição em `desenho`, com a vista de frente em (dx, dy). Devolve os
@@ -223,6 +269,10 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
 
     if pos.tipo_nome == "gancho" and pos.local:
         _rosca_do_gancho(p, pos, esc, off)
+
+    # chamada de cada grupo de furos (os de uma ligação), entre a peça e o título
+    if furos_frente:
+        chamadas_de_furos(p, furos_frente, H, esc, L)
 
     # título acima da peça (as observações ficam nos metadados e na lista de produção)
     y = H + (off + 2.0) * esc

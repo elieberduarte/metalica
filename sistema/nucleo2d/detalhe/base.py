@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from nucleo.base import ErroDeDados
 from nucleo3d.modelo import Barra, Chapa, Documento, Solido
 from nucleo3d import geometria as _geo
-from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota
+from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Chamada
 from nucleo2d import vistas as _vistas
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
                                 _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d)
@@ -212,6 +212,16 @@ class _Papel:
             x0 = x - larg / 2 if alinhamento == "centro" else x - larg if alinhamento == "direita" else x
             self._p(x0, y)
             self._p(x0 + larg, y + altura)
+
+    def chamada(self, x_alvo, y_alvo, x_txt, y_txt, texto, altura=2.0, camada="TEXTO"):
+        """Linha de chamada: seta no alvo, texto na ponta (altura em mm de papel). O texto
+        entra nos extremos da célula, como os títulos."""
+        self.d.add(Chamada(camada=self._cam(camada), alvo=self._p(x_alvo, y_alvo), posicao=self._p(x_txt, y_txt),
+                           texto=str(texto), altura=float(altura), atributos=dict(self.atr, chamada=True)))
+        esc = self.d.escala
+        direita = x_txt >= x_alvo
+        larg = largura_da_chamada(texto, altura, esc)
+        self._p(x_txt + (larg if direita else -larg), y_txt + (altura + 1.0) * esc)
 
     def seta(self, x, y, angulo_graus, tamanho=3.0, camada="COTA"):
         a = math.radians(angulo_graus)
@@ -733,6 +743,37 @@ def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido],
             contagem[nome] += 1
     pos.parafusos = dict(contagem)
     pos.porcas = porcas
+
+
+def largura_da_chamada(texto: str, altura: float, esc: float) -> float:
+    """Quanto a chamada ocupa para o lado do texto (mm de modelo): o traço de 8 mm de papel,
+    a folga e o texto (0,62 × altura por caractere, a mesma estimativa das cotas)."""
+    return (8.0 + 1.5 + 0.62 * altura * len(str(texto))) * esc
+
+
+def parafusos_posicionados(doc: Documento, instancia: Sequence[Solido]) -> List[Tuple[Tuple[float, float, float], str]]:
+    """Os parafusos (sem porcas e chumbadores soltos) dentro da caixa da instância do
+    conjunto, com o centro de cada um: [(centro, "M12 x 30")]."""
+    if not instancia:
+        return []
+    caixas = [_caixa(e) for e in instancia]
+    minimo = [min(cx[i][0] for cx in caixas) - 20.0 for i in range(3)]
+    maximo = [max(cx[i][1] for cx in caixas) + 20.0 for i in range(3)]
+    saida = []
+    for f in _so_parafusos(_fixadores(doc)):
+        cc = tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3))
+        if not all(minimo[i] <= cc[i] <= maximo[i] for i in range(3)):
+            continue
+        ext = []
+        _, pca = _autovetores(f.vertices)
+        for ax in pca:
+            ts = [_dot(_sub(v, cc), ax) for v in f.vertices]
+            ext.append(max(ts) - min(ts))
+        nome, pela_porca = _nome_do_parafuso(f, ext)
+        if pela_porca or ext[0] <= 1.5 * ext[1]:
+            continue
+        saida.append((cc, nome))
+    return saida
 
 
 def parafusos_no_conjunto(doc: Documento, instancia: Sequence[Solido]) -> Tuple[Dict[str, int], int]:

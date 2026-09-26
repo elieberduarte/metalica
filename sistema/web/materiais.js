@@ -124,11 +124,11 @@ const dataBR = (iso) => {
 /* ------------------------------------------------------------------- abas */
 // cada aba: [chave, título, função que monta o conteúdo (ou null se não há nada)]
 const ABAS = [
-  ['geral', 'Visão geral'], ['perfis', 'Perfis'], ['chapas', 'Chapas'], ['telhas', 'Telhas e rufos'],
+  ['geral', 'Visão geral'], ['perfis', 'Perfis'], ['corte', 'Plano de corte'], ['chapas', 'Chapas'], ['telhas', 'Telhas e rufos'],
   ['conjuntos', 'Conjuntos'], ['romaneio', 'Romaneio'], ['acessorios', 'Acessórios'],
   ['resumos', 'Resumos da obra'], ['arquivos', 'Arquivos'],
 ];
-const COM_FILTRO = new Set(['perfis', 'chapas', 'telhas', 'conjuntos', 'romaneio', 'acessorios']);
+const COM_FILTRO = new Set(['perfis', 'corte', 'chapas', 'telhas', 'conjuntos', 'romaneio', 'acessorios']);
 let ABA = 'geral';
 try { ABA = (location.hash || '').slice(1) || localStorage.getItem('materiais.aba') || 'geral'; } catch (e) { /* sem armazenamento */ }
 if (!ABAS.some(([k]) => k === ABA)) ABA = 'geral';
@@ -189,7 +189,7 @@ function desenhar(L) {
   const c = $('#conteudo');
   c.replaceChildren();
   const painel = (k, ...filhos) => el('div', { class: 'painel-aba', 'data-aba': k, id: 'aba-' + k, hidden: k !== ABA }, ...filhos);
-  const contagem = { perfis: (L.perfis || []).length, chapas: (L.chapas || []).length, telhas: (L.telhas || []).length,
+  const contagem = { corte: (L.perfis || []).reduce((s, g) => s + (g.barras?.quantidade || 0), 0), perfis: (L.perfis || []).length, chapas: (L.chapas || []).length, telhas: (L.telhas || []).length,
                      conjuntos: (L.conjuntos || []).length, romaneio: (L.posicoes || []).length, acessorios: (L.acessorios || []).length };
 
   // ---- visão geral
@@ -269,6 +269,24 @@ function desenhar(L) {
       (d) => d.perfil))));
   }
   c.append(pPerfis);
+
+  // ---- plano de corte: o que sai de cada barra, as barras iguais juntas, desenhadas em escala
+  const pCorte = painel('corte');
+  const comPlano = (L.perfis || []).filter(g => (g.barras?.plano || []).length);
+  if (comPlano.length) {
+    pCorte.append(el('p', { class: 'nota', texto: 'Encaixe do maior para o menor, com 3 mm de perda por corte. Cada linha é um jeito de cortar a barra; o número à esquerda diz quantas barras são cortadas assim. A parte hachurada é a sobra.' }));
+    for (const g of comPlano) {
+      const b = g.barras;
+      const linhas = b.plano.map(pl => ({ ...pl, _g: g }));
+      pCorte.append(secao(g.perfil, `barras de ${n(b.comprimento / 1000)} m · ${n(b.quantidade)} barras · aproveitamento ${n(b.aproveitamento, 1)}% · sobra ${n(b.sobra_m, 2)} m${b.emendas ? ` · ${b.emendas} peça(s) com emenda` : ''}`,
+        tabela([
+          { titulo: 'Barras', chave: 'barras', classe: 'c b', num: true },
+          { titulo: 'Cortes', valor: (pl) => barraDesenhada(pl, b.comprimento), classe: 'quebra corte-celula' },
+          { titulo: 'Sobra (mm)', chave: 'sobra', classe: 'r', num: true },
+        ], linhas, null, (pl) => [g.perfil, ...pl.cortes.map(c => c.nome)].join(' '))));
+    }
+  } else pCorte.append(vazio('Sem perfis para cortar nesta lista. Use "Atualizar pelo modelo 3D" para levantar o plano de corte.'));
+  c.append(pCorte);
 
   // ---- chapas
   c.append(painel('chapas', (L.chapas || []).length
@@ -358,6 +376,22 @@ function desenhar(L) {
   filtrar();
 }
 
+/** A barra em escala: um segmento por peça (nome e comprimento), e a sobra hachurada. */
+function barraDesenhada(pl, comprimento) {
+  const barra = el('div', { class: 'barra-corte', title: pl.cortes.map(c => `${c.qtd}× ${c.nome || 'peça'} ${n(c.comprimento)} mm`).join(' + ') + ` · sobra ${n(pl.sobra)} mm` });
+  for (const c of pl.cortes) {
+    for (let i = 0; i < c.qtd; i++) {
+      const pct = 100 * c.comprimento / comprimento;
+      barra.append(el('span', { class: 'seg' + (/emenda/.test(c.nome) ? ' emenda' : ''), style: `width:${pct.toFixed(2)}%`, title: `${c.nome || 'peça'} · ${n(c.comprimento)} mm` },
+        pct > 4 ? el('b', { texto: c.nome || 'peça' }) : null, pct > 12 ? el('small', { texto: n(c.comprimento) }) : null));
+    }
+  }
+  if (pl.sobra > 0) barra.append(el('span', { class: 'sobra', style: `width:${(100 * pl.sobra / comprimento).toFixed(2)}%`, title: `sobra ${n(pl.sobra)} mm` }));
+  // embaixo, o mesmo em texto: peça curta demais para o nome caber no desenho aparece aqui
+  const legenda = el('div', { class: 'cortes-texto', texto: pl.cortes.map(c => `${c.qtd}× ${c.nome || 'peça'} ${n(c.comprimento)}`).join(' + ') });
+  return el('div', {}, barra, legenda);
+}
+
 const CATEGORIAS = { TESOURAS: 'Tesoura/pórtico', CONJUNTOS: 'Conjunto', 'TERÇAS': 'Terça', BARRAS: 'Barra', CHAPAS: 'Chapa',
                      TIRANTES: 'Tirante', TELHAS: 'Telha', RUFOS: 'Rufo/calha', VISTAS: 'Vista', OUTROS: 'Outro' };
 const rotuloCategoria = (k) => CATEGORIAS[k] || k || '—';
@@ -378,7 +412,7 @@ function filtrar() {
 const DESCRICOES = {
   romaneio: ['romaneio.csv', 'Romaneio por posição (Excel)'], perfis: ['resumo-perfis.csv', 'Perfis com barras de compra (Excel)'],
   dobras: ['peso-dobras.csv', 'Perfis dobrados: peso teórico × com desconto (Excel)'], chapas: ['resumo-chapas.csv', 'Chapas por espessura (Excel)'],
-  conjuntos: ['conjuntos.csv', 'Conjuntos e composição (Excel)'], html: ['Lista (HTML)', 'Esta lista, para abrir no navegador'],
+  conjuntos: ['conjuntos.csv', 'Conjuntos e composição (Excel)'], plano_corte: ['plano-de-corte.csv', 'Plano de corte: o que sai de cada barra (Excel)'], html: ['Lista (HTML)', 'Esta lista, para abrir no navegador'],
   pdf: ['Lista (PDF)', 'Esta lista em PDF, para imprimir'],
 };
 

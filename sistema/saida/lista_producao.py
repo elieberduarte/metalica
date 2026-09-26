@@ -54,38 +54,64 @@ def _ordem_natural(texto):
 
 # ============================================================ encaixe em barras
 
-def encaixar(comprimentos: Sequence[float], barra: float, perda: float = PERDA_CORTE) -> dict:
+def encaixar(comprimentos: Sequence[float], barra: float, perda: float = PERDA_CORTE,
+             rotulos: Optional[Sequence[str]] = None) -> dict:
     """Quantas barras de `barra` mm saem as peças, por "primeiro que cabe" do maior para o
     menor. Peça maior que a barra conta como emenda (uma barra inteira por trecho, o resto
-    volta para o encaixe)."""
+    volta para o encaixe).
+
+    `plano`: o que sai de cada barra — as barras de corte igual juntas, da mais repetida
+    para a menos: [{"barras": n, "cortes": [{"nome", "comprimento", "qtd"}], "sobra": mm}].
+    `rotulos` (um por comprimento) é o nome de cada peça no plano."""
+    rot = list(rotulos) if rotulos is not None else [""] * len(comprimentos)
     sobras: List[float] = []
+    cortes: List[List[tuple]] = []                 # por barra: [(nome, comprimento)]
     colocado = 0.0
     emendas = 0
     fila = []
-    for L in sorted(comprimentos, reverse=True):
+    for L, nome in sorted(zip(comprimentos, rot), key=lambda t: -t[0]):
         if L > barra + 1e-6:
             emendas += 1
             inteiras = int(L // barra)
-            sobras.extend([0.0] * inteiras)
+            for _ in range(inteiras):
+                sobras.append(0.0)
+                cortes.append([("%s (emenda)" % nome if nome else "emenda", barra)])
             colocado += inteiras * barra
             resto = L - inteiras * barra
             if resto > 1e-6:
-                fila.append(resto)
+                fila.append((resto, "%s (resto da emenda)" % nome if nome else "resto da emenda"))
         else:
-            fila.append(L)
-    for L in sorted(fila, reverse=True):
+            fila.append((L, nome))
+    for L, nome in sorted(fila, key=lambda t: -t[0]):
         for i, s in enumerate(sobras):
             if s >= L + perda or abs(s - L) < 1e-6:
                 sobras[i] = max(0.0, s - L - perda)
+                cortes[i].append((nome, L))
                 break
         else:
             sobras.append(max(0.0, barra - L - perda))
+            cortes.append([(nome, L)])
         colocado += L
     n = len(sobras)
     total = n * barra
+    # barras de corte igual juntas
+    iguais: Dict[tuple, int] = collections.OrderedDict()
+    for c, s in zip(cortes, sobras):
+        cont = collections.Counter((nm, round(L, 1)) for nm, L in c)
+        chave = (tuple(sorted(cont.items(), key=lambda kv: (-kv[0][1], _ordem_natural(kv[0][0])))), round(s))
+        iguais[chave] = iguais.get(chave, 0) + 1
+    plano = [{"barras": q, "sobra": sobra,
+              "cortes": [{"nome": nm, "comprimento": L, "qtd": k} for (nm, L), k in itens]}
+             for (itens, sobra), q in iguais.items()]
+    plano.sort(key=lambda b: (-b["barras"], b["sobra"]))
     return {"comprimento": barra, "quantidade": n, "emendas": emendas,
             "aproveitamento": round(100.0 * colocado / total, 1) if total else 0.0,
-            "sobra_m": round(sum(sobras) / 1000.0, 2)}
+            "sobra_m": round(sum(sobras) / 1000.0, 2), "plano": plano}
+
+
+def texto_dos_cortes(cortes: Sequence[dict]) -> str:
+    """"2× T.C.1 5.990 + 1× B.3 1.200" (mm)."""
+    return " + ".join("%d× %s %s" % (c["qtd"], c["nome"] or "peça", _n(c["comprimento"])) for c in cortes)
 
 
 def _barra_para(comprimentos: Sequence[float], barra: float) -> float:
@@ -267,20 +293,22 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
             continue
         g = perfis.setdefault((p.perfil, p.material), {
             "perfil": p.perfil, "material": p.material, "categoria": categorias.get(p.marca, "BARRAS"),
-            "posicoes": [], "pecas": 0, "comprimento_m": 0.0, "peso": 0.0, "peso_malha": 0.0, "_comps": []})
+            "posicoes": [], "pecas": 0, "comprimento_m": 0.0, "peso": 0.0, "peso_malha": 0.0, "_comps": [], "_rotulos": []})
         g["posicoes"].append(p.marca)
         g["pecas"] += p.quantidade
         g["comprimento_m"] += p.comprimento * p.quantidade / 1000.0
         g["peso"] += p.peso_total
         g["peso_malha"] += getattr(p, "peso_malha", p.peso) * p.quantidade
         g["_comps"].extend([p.comprimento] * p.quantidade)
+        g["_rotulos"].extend([getattr(p, "nome", "") or p.marca] * p.quantidade)
         if categorias.get(p.marca) == "TERÇAS":
             g["categoria"] = "TERÇAS"
     lista_perfis = []
     for g in perfis.values():
         comps = g.pop("_comps")
+        rotulos = g.pop("_rotulos")
         b = _barra_para(comps, barra)
-        g["barras"] = encaixar(comps, b)
+        g["barras"] = encaixar(comps, b, rotulos=rotulos)
         g["kg_m"] = round(g["peso"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0
         g["kg_m_malha"] = round(g["peso_malha"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0
         g["comprimento_m"] = round(g["comprimento_m"], 2)
@@ -461,6 +489,11 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
                                 _num_csv(g["barras"]["comprimento"] / 1000.0, 0), g["barras"]["quantidade"],
                                 _num_csv(g["barras"]["aproveitamento"], 1), _num_csv(g["barras"]["sobra_m"]), g["barras"]["emendas"]]
                                for g in lista["perfis"]])
+    arquivos["plano_corte"] = _csv(os.path.join(pasta, "plano-de-corte.csv"),
+                                   ["Perfil", "Material", "Barra (m)", "Barras iguais", "Cortes", "Sobra por barra (mm)"],
+                                   [[g["perfil"], g["material"], _num_csv(g["barras"]["comprimento"] / 1000.0, 0), b["barras"],
+                                     texto_dos_cortes(b["cortes"]), _num_csv(b["sobra"], 0)]
+                                    for g in lista["perfis"] for b in (g["barras"].get("plano") or [])])
     dob = (lista.get("dobrados") or {}).get("linhas") or []
     if dob:
         arquivos["dobras"] = _csv(os.path.join(pasta, "peso-dobras.csv"),
@@ -568,6 +601,13 @@ def corpo_html(lista: dict) -> str:
                                       (_n(sum(g["peso"] for g in lista["perfis"]), 1), "r b"), ("", "c"),
                                       (_n(sum(g["barras"]["quantidade"] for g in lista["perfis"])), "c b"), ("", "c"), ("", "c")],
                               larguras=["15%", "10%", "23%", "6%", "8%", "6%", "8%", "6%", "6%", "6%", "6%"]))
+    plano = [(g, b) for g in lista["perfis"] for b in (g["barras"].get("plano") or [])]
+    if plano:
+        partes.append(_tabela("Quadro 2A — Plano de corte por barra (o que sai de cada barra; barras de corte igual juntas; perda de corte %s mm)" % _n(PERDA_CORTE),
+                              [("Perfil", "l"), ("Barra", "c"), ("Barras", "c"), ("Cortes (qtd × nome comprimento mm)", "l"), ("Sobra (mm)", "r")],
+                              [[(g["perfil"], "l b"), ("%s m" % _n(g["barras"]["comprimento"] / 1000.0), "c"), (b["barras"], "c b"),
+                                (texto_dos_cortes(b["cortes"]), "l"), (_n(b["sobra"]), "r")] for g, b in plano],
+                              larguras=["16%", "7%", "7%", "58%", "12%"]))
     dob = lista.get("dobrados") or {}
     if dob.get("linhas"):
         td = dob["totais"]

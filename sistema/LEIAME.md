@@ -218,6 +218,25 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.27.** Rodada de consolidação e produção (panorama de 25/09, caminhos A e B). (1) **Antes de publicar, um comando
+só**: `testes/antes_de_publicar.py` roda o pytest, os verificadores das telas (`testes/rodar_verificadores.py`, todos os
+que se verificam sozinhos, um depois do outro) e a **bateria das obras reais** (`testes/bateria_obras.py`: Sala dos
+Compressores, ÁGUA GELADA, Depósito Químico e Capitão refeitas pelo caminho do servidor numa pasta temporária, a partir
+de entradas congeladas em `Projeto/bateria/entradas/`, e comparadas com a última rodada aceita — posições, pesos,
+totais, resumo, entidades por camada e vistas de cada desenho; relatório em `Projeto/bateria/ultima-comparacao.txt`).
+O verif_cantos passou a consultar a chamada longa ao servidor em vez de esperar (estourava tempo com a máquina
+carregada). (2) **Editor 3D dividido**: `editor.js` tinha 4.858 linhas; os métodos de cantos/eixos, painéis, troca de
+peças, análise/cálculo e diagnóstico saíram para `web/editor3d/modulos/` (classes só com os métodos, copiados para
+`Editor.prototype` por `aplicarMetodos`, que acusa nome repetido), sem mudar o corpo; ficou com 2.400. (3) **Plano de
+corte por barra**: o encaixe da lista (`lista_producao.encaixar`) guarda o que sai de cada barra, as barras de corte
+igual juntas (`plano`), no JSON, no `plano-de-corte.csv`, no quadro 2A do PDF e numa aba da tela com cada barra
+desenhada em escala (peças, emendas e sobra hachurada); a contagem de barras não mudou. (4) **Chamadas nos desenhos**:
+cada grupo de furos da peça ganha a chamada ("3x OBL 25x13") logo acima dela, em até duas linhas, sem texto por cima de
+texto e, perto da ponta, para o outro lado (longe da cota vertical) — `celulas.chamadas_de_furos`; nas elevações dos
+conjuntos menores (dispositivos, vigas, pilares), uma chamada por ligação com os parafusos dela ("4x M12 x 30") —
+`conjuntos.chamadas_de_parafusos`; a tesoura fica sem (os parafusos dela são os dos suportes de terça). A bateria
+confirmou: nas quatro obras só os textos dos desenhos mudaram; posições, pesos e totais iguais.
+
 **0.8.26.** Furo que ia para o canto da peça (print do usuário: clicou na mesa da terça perto da ponta e o furo foi
 para o vértice): o ponto que chega às ferramentas Furo e Parafuso vinha grudado pela inferência do editor (snap de
 extremidade/aresta); agora elas usam o raio contra a peça sob o cursor (`_naFace`). O ajuste pelo eixo da peça de baixo e

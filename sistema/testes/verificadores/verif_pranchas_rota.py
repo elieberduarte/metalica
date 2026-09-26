@@ -36,7 +36,11 @@ try:
     chaparias = next(d["nome"] for d in r["desenhos"] if d["grupo"] == "chaparias")
     t0 = time.time()
     p = post("/api/projetos/compressores/pranchas", {"desenhos": nomes, "formato": "A1", "carimbo": {"revisao": "01"}})
-    ok(len(p["pranchas"]) >= 3, "rota montou %d pranchas A1 em %.1f s: %s" % (len(p["pranchas"]), time.time() - t0, [(x["titulo"], x["celulas"]) for x in p["pranchas"]]))
+    # a prancha 01 é o índice (sem células); as outras levam as células — hoje as 37 das
+    # chaparias e terças cabem numa A1 (antes da 0.8.x eram duas)
+    cel = [x["celulas"] for x in p["pranchas"]]
+    ok(len(p["pranchas"]) >= 2 and cel[0] == 0 and sum(cel) >= 30 and all(c > 0 for c in cel[1:]),
+       "rota montou %d pranchas A1 em %.1f s (índice + células): %s" % (len(p["pranchas"]), time.time() - t0, [(x["titulo"], x["celulas"]) for x in p["pranchas"]]))
     lista = json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos"))
     n1 = len(lista)
     p2 = post("/api/projetos/compressores/pranchas", {"desenhos": nomes, "formato": "A0"})
