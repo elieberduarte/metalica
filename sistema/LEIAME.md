@@ -218,6 +218,27 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.36.** Montar o 3D pela planta: **as regras de apoio** (pedido do usuário com os prints do 3D do Posto CB: "não
+pode ter elemento voando; tesoura apoiada em pilar; terça apoiada nos nós"). Leitura: a linha dupla interrompida onde
+outra peça cruza volta a ser uma linha só **antes** de emendar os arcos (o arco da borda levava junto o pedaço reto de
+outra peça); o trecho de cada nome é escolhido **entre dois nós** (cruzamentos, pontas encostadas, emendas de arco com
+reta, pilares) com o comprimento da elevação e o nome dentro (`_escolher_trechos`), em vez de centrado no nome — o nome
+fica muitas vezes perto de uma ponta, e o tamanho do texto no arquivo depende da escala de impressão (o meio do nome
+não passa de 35 % da peça); o arco que o projetista esticou além da tangência emenda na reta; viga VM segue pelos
+pedaços da mesma linha sem nome (interrompida no pilar) e o nome escrito duas vezes dá uma viga só. Terças: começam e
+terminam num apoio (aparadas até 1,5 m, esticadas até 1 m; na face do painel e da transição, no eixo das outras
+treliças — `_pontas_da_terca`), a emenda é sempre em cima de um apoio, painel e transição no meio da linha são
+barreira, a terça deitada ao longo da transição tem apoio contínuo, a altura segue os apoios vizinhos e a transição
+alta perto da ponta não tira mais as tesouras certas. Treliças: a elevação entra sem esticar, e anda até os nós
+caírem nas linhas das terças (`ajustar_aos_nos`, mediana dos desencontros quando concordam, até 300 mm). No posto:
+comprimento diferente da elevação 36 → 4, pontas de treliça sem apoio 35 → 2 (a passarela, que não entrou), terças
+em balanço 120 → 20, TRANSIÇÃO 1 duplicada saiu, 54,9 t. **Ver → Verificar apoios…** no editor 3D
+(`nucleo3d/apoios.py`, rota `POST /api/modelo/apoios`): peça voando (o que não chega à base seguindo o que encosta),
+ponta de treliça sem apoio (pela marca `origem.peca` que a montagem agora grava), terça em balanço e fora do nó (só a
+que senta em cima; o par da cumeeira fica a ~150 mm e passa), pilar sem carga, viga sem apoio; clicar no achado
+seleciona e enquadra as peças. Sólido importado entra como cápsula (eixo + meia seção). Verificador:
+`testes/verificadores/verif_apoios_ui.py`; testes em `test_apoios.py` e `test_de_planta.py`.
+
 **0.8.35.** Montar o 3D pela planta: **o resto da estrutura**. O diálogo lista as outras plantas com nível no título
 ("PLANTA NO NÍVEL 3,17m", "PLANTA DA BASE DA CX DÁGUA NIVEL 8,20", "COBERTURA DA CX DÁGUA NIVEL 11,00"), com o nível ao
 lado; cada uma é alinhada à planta estrutural pelos balões dos eixos de mesmo nome e entra no nível dela — vigas VM com o
@@ -1644,7 +1665,10 @@ ST pela ponta da chamada). Planta: `pecas_da_planta` (linhas de centro retas, ar
 corte pelo comprimento da elevação). Sentido: `orientar`. Montagem, pilares, terças e acessórios: `montar`, que devolve
 o documento, o resumo (com as quantidades do projeto) e a conferência por nome de treliça. As barras levam em
 `atributos.origem` o nome da planta e como o sentido foi decidido ("marcas ST", "encontro dos banzos", "costume do
-desenho"); pilar sem cobertura em cima leva `a_conferir`. Limites: agulhas (AG) e suportes de terça (ST, SC) não entram
+desenho") e a peça de que fazem parte (`origem.peca`, "TESOURA 1#12"); pilar sem cobertura em cima leva `a_conferir`.
+As regras de apoio (0.8.36) estão na montagem — treliça termina num nó ou pilar, terça termina num apoio e emenda em
+cima de um, a elevação anda até os nós caírem nas terças — e são conferidas depois por `nucleo3d/apoios.py`
+(Ver → Verificar apoios…). Limites: agulhas (AG) e suportes de terça (ST, SC) não entram
 (são acessórios: chapas); a planta sem nome escrito na peça fica de fora (o resumo diz quantas); vigas VM entram no
 nível do banzo inferior (a conferir no projeto); estruturas em outros níveis (mezanino, caixa d'água, passarela) ainda
 não são montadas.

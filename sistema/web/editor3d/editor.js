@@ -35,6 +35,7 @@ import { MetodosTrocaDePecas } from './modulos/troca_de_pecas.js';
 import { MetodosAnalise } from './modulos/analise.js';
 import { MetodosDiagnostico } from './modulos/diagnostico.js';
 import { MetodosLancamento } from './modulos/lancamento.js';
+import { MetodosApoios } from './modulos/apoios.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -1779,6 +1780,7 @@ export class Editor {
       dimensionar: () => this.dimensionarEstrutura(),
       sombras: () => this.alternarSombras(),
       desempenho: () => this.dialogoDesempenho(),
+      'verificar-apoios': () => this.verificarApoios(),
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
@@ -2193,7 +2195,8 @@ export class Editor {
 }
 
 // os métodos que moram nos módulos (web/editor3d/modulos/)
-aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento);
+aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
+  MetodosApoios);
 
 // ================================================================= apoio
 

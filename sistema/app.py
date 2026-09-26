@@ -43,6 +43,7 @@ Rotas da API:
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-pecas {desenho}  barras movidas/esticadas/copiadas/apagadas nas elevações → modelo 3D
     POST /api/projetos/<slug>/desenhos/<nome>/gerar-3d       desenho 2D → modelo 3D (peças do catálogo)
     POST /api/modelo/perfis {nomes}                           seção e massa de perfis fora do banco básico (editor)
+    POST /api/modelo/apoios {documento}                        regras de apoio: peça voando, terça em balanço…
     POST /api/projetos/<slug>/desenhos/<nome>/montar-pela-planta  projeto recebido sem 3D → modelo pela planta,
                                                               elevações nomeadas, locação e planta das terças
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
@@ -2446,6 +2447,14 @@ def perfis_para_o_editor(corpo: dict) -> dict:
     return {"perfis": saida}
 
 
+def verificar_apoios(corpo: dict) -> dict:
+    """POST /api/modelo/apoios {documento}: as regras de apoio do modelo (nucleo3d/apoios.py) —
+    peça voando, ponta de treliça sem apoio, terça em balanço ou fora do nó, pilar sem
+    carga, viga sem apoio. Cada achado traz as ids das peças para o editor mostrar."""
+    from nucleo3d import apoios
+    return apoios.verificar(_documento_de(corpo))
+
+
 def malhas_do_documento(corpo: dict) -> dict:
     """Converte barras e chapas em malhas para a cena do navegador."""
     from nucleo3d import geometria
@@ -2896,6 +2905,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(malhas_do_documento(corpo))
             if rota == "/api/modelo/perfis":
                 return self._json(perfis_para_o_editor(corpo))
+            if rota == "/api/modelo/apoios":
+                return self._json(verificar_apoios(corpo))
             if rota == "/api/modelo/ifc/exportar":
                 return self._json(exportar_ifc(corpo))
             if rota == "/api/modelo/ifc/importar":

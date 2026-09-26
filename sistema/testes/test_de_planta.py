@@ -212,3 +212,58 @@ def test_outra_planta_no_seu_nivel():
     assert len(vigas) == 2                                  # 2Ue: os dois perfis
     assert all(abs(b.inicio[2] - (3170.0 - 75.0)) < 1.0 for b in vigas)
     assert any(n["nome"] == "NÍVEL 3,17" for n in r["niveis"])
+
+
+# ------------------------------------------------------------------ leitura mais firme (0.8.36)
+
+def test_trecho_de_cada_nome_entre_dois_nos():
+    """o nome perto da ponta (não no meio) fica com o trecho entre dois nós que tem o
+    comprimento da elevação; os vizinhos não disputam o mesmo trecho"""
+    nos = [0.0, 1500.0, 4000.0, 9000.0]
+    faixas = de_planta._escolher_trechos(9000.0, nos, [(200.0, 1500.0), (4300.0, 5000.0)])
+    assert faixas == [(0.0, 1500.0), (4000.0, 9000.0)]
+
+
+def test_dois_paineis_dividem_o_vao_sem_no_no_meio():
+    faixas = de_planta._escolher_trechos(8340.0, [0.0, 8340.0], [(700.0, 3500.0), (5000.0, 4600.0)])
+    (a0, a1), (b0, b1) = faixas
+    assert a0 == 0.0 and abs(a1 - 3500.0) < 1.0 and abs(b1 - 8340.0) < 1.0 and b0 >= a1
+
+
+def test_viga_segue_pelo_pedaco_sem_nome_e_nao_duplica():
+    c = de_planta.Caminho("reta", a=(0.0, 0.0), b=(10000.0, 0.0), largura=100.0)
+    pedacos = [de_planta.Caminho("reta", a=(0.0, 0.0), b=(5000.0, 0.0)),
+               de_planta.Caminho("reta", a=(5150.0, 0.0), b=(10000.0, 0.0))]
+    t1, t2 = {"texto": "VM-2Ue150X70X20X2,65"}, {"texto": "VM-2Ue150X70X20X2,65"}
+    rot = [(7000.0, t1["texto"], t1), (7600.0, t2["texto"], t2)]
+    f = de_planta._faixas_das_vigas(c, rot, pedacos)
+    assert len(f) == 1                                   # o nome repetido não vira outra viga
+    assert f[id(t1)] == (0.0, 10000.0)                   # e a viga vai até o pilar do outro lado
+
+
+def test_terca_termina_no_apoio():
+    """a terça que passa 0,8 m da tesoura é aparada nela; a que encosta no painel da borda
+    termina na face dele"""
+    def trecho(y, familia):
+        return de_planta.Trecho(caminho=de_planta.Caminho("reta", a=(-3000.0, y), b=(3000.0, y), largura=100.0),
+                                nome=familia + " 1", familia=familia)
+    ts = [trecho(0.0, "TESOURA"), trecho(5000.0, "PAINEL")]
+    polis = [(t, de_planta._polilinha(t.caminho)) for t in ts]
+    caixas = [de_planta._caixa_pts(p, 300.0) for _t, p in polis]
+    s0, s1, cruz = de_planta._pontas_da_terca((0.0, -800.0), (0.0, 5200.0), polis, caixas)
+    assert abs(s0 - 800.0) < 1.0                          # aparada no eixo da tesoura
+    assert abs(s1 - (5800.0 - 50.0)) < 1.0                # na face do painel (meia largura 50)
+
+
+def test_viga_vm_escrita_duas_vezes_da_uma_viga():
+    ents = planta() + [texto((-250.0, 4000.0), "VM-2Ue200X70X20X2,65", angulo=90.0)]
+    ents += locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False})
+    vigas = [b for b in r["doc"].barras if b.papel == "viga"]
+    assert len(vigas) == 2                                # 2Ue: os dois perfis, uma vez só
+
+
+def test_barras_da_trelica_sabem_de_qual_trelica_sao(resultado):
+    pecas = {(b.atributos or {}).get("origem", {}).get("peca") for b in resultado["doc"].barras if b.camada == "Treliças"}
+    assert None not in pecas and len(pecas) == 3          # duas tesouras e o painel

@@ -760,3 +760,20 @@ dialog p.explica { margin: 0 0 10px; color: var(--texto2); font-size: 12.5px; }
 /* diálogo Lançar estrutura: rótulos mais longos que o painel de propriedades */
 .campos.lancamento { grid-template-columns: minmax(150px, 200px) minmax(240px, 1fr); }
 .campos .marcar { display: flex; gap: 6px; align-items: center; color: var(--texto); font-size: 12px; }
+
+/* Ver → Verificar apoios: os achados das regras de apoio, clicáveis */
+.painel-apoios { position: absolute; top: 10px; left: 10px; z-index: 20; width: min(380px, calc(100% - 20px));
+  max-height: calc(100% - 20px); display: flex; flex-direction: column; background: var(--painel);
+  color: var(--texto); border: 1px solid var(--borda); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  font-size: 12.5px; }
+.painel-apoios-titulo { display: flex; align-items: center; gap: 6px; padding: 7px 8px 7px 12px;
+  border-bottom: 1px solid var(--borda); }
+.painel-apoios-titulo strong { flex: 1; }
+.painel-apoios-titulo button { border: 1px solid var(--borda); border-radius: 6px; background: var(--painel);
+  color: var(--texto); padding: 3px 8px; cursor: pointer; }
+.painel-apoios-corpo { overflow: auto; padding: 4px 12px 10px; }
+.painel-apoios-corpo summary { cursor: pointer; font-weight: 600; margin: 6px 0 2px; }
+.painel-apoios-corpo ul { margin: 0; padding-left: 16px; }
+.painel-apoios-corpo li { cursor: pointer; padding: 1px 0; }
+.painel-apoios-corpo li:hover { color: var(--azul); text-decoration: underline; }
+.painel-apoios-corpo li.mais { cursor: default; text-decoration: none; opacity: .7; }

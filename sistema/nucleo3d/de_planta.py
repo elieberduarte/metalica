@@ -409,11 +409,17 @@ def encadear(caminhos: List[Caminho], tol: float = 40.0, ang_max: float = 12.0) 
             (a, ta), (b, tb) = info[j]
             if abs(c.largura - caminhos[excluir_ref[0]].largura) > 60.0:
                 continue
-            if math.dist(p, a) < tol and t[0] * ta[0] + t[1] * ta[1] > cosmax:
+
+            def encosta(q):
+                # a ponta encostada, ou passando um pouco por cima da outra linha (o arco que
+                # o projetista esticou além da tangência)
+                d = math.dist(p, q)
+                return d < tol or (d < 300.0 and c.projetar(p)[1] < tol)
+            if encosta(a) and t[0] * ta[0] + t[1] * ta[1] > cosmax:
                 d = math.dist(p, a)
                 if melhor is None or d < melhor[0]:
                     melhor = (d, j, False)
-            if math.dist(p, b) < tol and -(t[0] * tb[0] + t[1] * tb[1]) > cosmax:
+            if encosta(b) and -(t[0] * tb[0] + t[1] * tb[1]) > cosmax:
                 d = math.dist(p, b)
                 if melhor is None or d < melhor[0]:
                     melhor = (d, j, True)
@@ -854,21 +860,33 @@ class Trecho:
     perfil: Optional[dict] = None
     sentido_por: str = "costume do desenho"
     rotulo_id: Optional[str] = None
+    ajuste: float = 0.0             # mm que a elevação anda na peça para os nós caírem nas terças
 
 
 _RX_ROTULO = re.compile(r"(?i)^\s*(TESOURA|PAINEL|TRANSI[ÇC][ÃA]O|TRELI[ÇC]A|COMP|TES|VM)[\s.\-]*([\w]*)")
 
 
-def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None) -> Tuple[List[Trecho], dict]:
-    """as peças nomeadas da planta estrutural, cortadas no comprimento de cada elevação"""
+def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
+                    apoios: Sequence[Ponto2] = ()) -> Tuple[List[Trecho], dict]:
+    """as peças nomeadas da planta estrutural, cortadas no comprimento de cada elevação.
+    `apoios`: os pilares (x, y) — a treliça que passa por cima de um pode terminar ali"""
     from nucleo2d.reconhecer import perfil_do_texto
     regiao = [e for e in ents if _dentro(_pt(e), caixa)]
     segs = _segmentos(regiao)
     retas, _soltas = centros_retos(segs, lmin=300.0, larg=(40.0, 260.0))
-    caminhos: List[Caminho] = encadear(retas + centros_arcos(regiao))
+    arcos = centros_arcos(regiao)
+    # a linha dupla interrompida onde outra peça cruza volta a ser uma linha só antes de
+    # emendar os arcos: senão o arco da borda leva junto o pedaço reto de outra peça (a
+    # treliça que continua na mesma tangente). As pontas dos pedaços viram nós
+    caminhos: List[Caminho] = encadear(juntar_colineares(retas) + arcos)
+    pedacos = retas + arcos
     # o nome da peça da borda fica do lado de fora do desenho
     folga = (caixa[0] - 2500, caixa[1] - 2500, caixa[2] + 2500, caixa[3] + 2500)
     textos = [e for e in ents if e["tipo"] == "texto" and _dentro(e["posicao"], folga) and _RX_ROTULO.match(e["texto"])]
+
+    def nome_do(texto):
+        m = _RX_ROTULO.match(texto)
+        return (_sem_acento(m.group(1)) + " " + m.group(2).upper()).replace("TES ", "TESOURA ")
     # cada rótulo vai para a peça paralela mais perto
     por_caminho: Dict[int, List[Tuple[float, str, dict]]] = collections.defaultdict(list)
     sem_peca = []
@@ -891,32 +909,23 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None) ->
         if melhor is None:
             sem_peca.append(t["texto"].strip())
             continue
-        # o texto é escrito a partir do começo: o meio do rótulo é o que marca a peça
+        # o texto é escrito a partir do começo: o meio do rótulo é o que marca a peça. A
+        # altura do texto no arquivo depende da escala de impressão (que o arquivo não diz):
+        # o nome fica dentro da peça, então o meio não passa de 35 % do comprimento dela
         comp_txt = len(t["texto"].strip()) * (t.get("altura") or 2.5) * 50.0 * 0.8
-        tan = caminhos[melhor[1]].tangente(melhor[2])
+        el_t = elevacoes.get(nome_do(t["texto"]))
+        meia = min(comp_txt / 2, 0.35 * el_t.comprimento) if el_t is not None else comp_txt / 2
         rad = math.radians(t.get("angulo") or 0.0)
-        meio = (p[0] + math.cos(rad) * comp_txt / 2, p[1] + math.sin(rad) * comp_txt / 2)
+        meio = (p[0] + math.cos(rad) * meia, p[1] + math.sin(rad) * meia)
         s_meio, _d = caminhos[melhor[1]].projetar(meio)
         por_caminho[melhor[1]].append((s_meio, t["texto"].strip(), t))
-    # nós: cruzamentos das linhas de centro (onde uma treliça apoia na outra)
-    nos: Dict[int, List[float]] = collections.defaultdict(list)
-    amostras = {i: [c.ponto(c.comprimento * k / 40.0) for k in range(41)] for i, c in enumerate(caminhos)}
-    for i, c in enumerate(caminhos):
-        nos[i] += [0.0, c.comprimento]
-        for j, d in enumerate(caminhos):
-            if i == j:
-                continue
-            for q in amostras[j][::2] + [d.ponto(0.0), d.ponto(d.comprimento)]:
-                s, dist = c.projetar(q)
-                if dist < 200.0:
-                    nos[i].append(s)
+    # nós: onde uma treliça pode terminar (cruzamentos, pontas encostadas, emendas)
+    polis = [_polilinha(c) for c in caminhos]
+    nos: Dict[int, List[float]] = {i: _nos_de(c, i, caminhos, polis, pedacos, apoios) for i, c in enumerate(caminhos)}
     trechos: List[Trecho] = []
     stats = {"caminhos": len(caminhos), "rotulos": len(textos), "sem_peca": sem_peca, "sem_rotulo": 0,
              "sem_elevacao": collections.Counter(), "vigas": 0}
 
-    def nome_do(texto):
-        m = _RX_ROTULO.match(texto)
-        return (_sem_acento(m.group(1)) + " " + m.group(2).upper()).replace("TES ", "TESOURA ")
     # a peça comprida tem o nome escrito mais de uma vez. Quando a planta tem mais nomes
     # de uma peça do que o título dela pede ("- 1X"), os nomes repetidos na mesma linha, a
     # menos de um comprimento um do outro, são a mesma peça: viram um só, no meio deles
@@ -946,13 +955,21 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None) ->
             stats["sem_rotulo"] += 1
             continue
         L = c.comprimento
-        ns = sorted(set(round(s, 0) for s in nos[i]))
+        ns = nos[i]
+        pedidos = []                # (s do nome, nome, família, elevação, texto)
+        faixas_vm = None
         for s_meio, texto, _t in rot:
             m = _RX_ROTULO.match(texto)
             fam = _sem_acento(m.group(1))
             if fam in ("VM",):
                 perf = perfil_do_texto(texto)
-                trechos.append(Trecho(caminho=c, nome=texto, familia="VIGA", perfil=perf, rotulo_id=_t.get("id")))
+                if faixas_vm is None:
+                    faixas_vm = _faixas_das_vigas(c, rot, pedacos)
+                faixa = faixas_vm.get(id(_t))
+                if faixa is None:
+                    continue            # o mesmo nome escrito de novo na mesma viga
+                cv = c.trecho(*faixa) if c.tipo == "reta" else c
+                trechos.append(Trecho(caminho=cv, nome=texto, familia="VIGA", perfil=perf, rotulo_id=_t.get("id")))
                 stats["vigas"] += 1
                 continue
             num = m.group(2).upper()
@@ -963,27 +980,219 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None) ->
             if el is None:
                 stats["sem_elevacao"][nome] += 1
                 continue
+            pedidos.append((s_meio, nome, fam, el, _t))
+        if len(pedidos) == 1:
+            s_meio, nome, fam, el, _t = pedidos[0]
             Le = el.comprimento
-            if len(rot) == 1 and c.tipo == "reta" and L < 0.92 * Le:
+            if c.tipo == "reta" and L < 0.92 * Le:
                 # a linha da treliça foi interrompida onde outra peça cruza: segue pelos
                 # trechos na mesma linha até ter o comprimento da elevação
-                c = _estender_na_linha(c, caminhos, Le)
-                L = c.comprimento
-                ns = sorted(set([0.0, L] + [round(c.projetar(q)[0], 0) for j, d in enumerate(caminhos)
-                                              for q in amostras.get(j, [])[::2] if c.projetar(q)[1] < 200.0]))
-                s_meio = c.projetar(caminhos[i].ponto(s_meio))[0] if caminhos[i] is not c else s_meio
-            if len(rot) == 1 and abs(L - Le) <= max(0.08 * Le, 300.0):
-                s0, s1 = 0.0, L
-            else:
-                s0, s1 = s_meio - Le / 2, s_meio + Le / 2
-                # encosta as pontas no nó mais perto (a treliça termina onde apoia)
-                s0 = min(ns, key=lambda n: abs(n - s0)) if min(abs(n - s0) for n in ns) < max(600.0, 0.12 * Le) else s0
-                s1 = min(ns, key=lambda n: abs(n - s1)) if min(abs(n - s1) for n in ns) < max(600.0, 0.12 * Le) else s1
-                s0, s1 = max(0.0, s0), min(L, s1)
-            if s1 - s0 < 0.5 * Le:
-                s0, s1 = max(0.0, s_meio - Le / 2), min(L, s_meio + Le / 2)
+                c2 = _estender_na_linha(c, caminhos, Le)
+                if c2 is not c:
+                    s_meio = c2.projetar(c.ponto(s_meio))[0]
+                    c, L = c2, c2.comprimento
+                    ns = _nos_de(c, i, caminhos, polis, pedacos, apoios)
+            if abs(L - Le) <= max(0.08 * Le, 300.0):
+                # a linha toda é a peça
+                trechos.append(Trecho(caminho=c, nome=nome, familia=fam, elevacao=el, rotulo_id=_t.get("id")))
+                continue
+            pedidos = [(s_meio, nome, fam, el, _t)]
+        faixas = _escolher_trechos(L, ns, [(p[0], p[3].comprimento) for p in pedidos]) if pedidos else []
+        for (s_meio, nome, fam, el, _t), (s0, s1) in zip(pedidos, faixas):
             trechos.append(Trecho(caminho=c.trecho(s0, s1), nome=nome, familia=fam, elevacao=el, rotulo_id=_t.get("id")))
     return trechos, stats
+
+
+def _faixas_das_vigas(c: Caminho, rot, pedacos) -> Dict[int, Tuple[float, float]]:
+    """o trecho de cada viga VM na linha `c`: o pedaço onde está o nome mais os pedaços da
+    mesma linha sem nome nenhum (a linha dupla da viga é interrompida no pilar e o nome vem
+    escrito uma vez só), cada um para o nome mais perto. O mesmo nome escrito duas vezes
+    na mesma viga dá uma viga só. {id do texto: (s0, s1)}"""
+    if c.tipo != "reta":
+        return {id(t): (0.0, c.comprimento) for _s, _x, t in rot}
+    faixas = []
+    for d in pedacos:
+        if d.tipo != "reta" or c.projetar(d.ponto(d.comprimento / 2))[1] >= 60.0:
+            continue
+        (ux, uy), _L = _unit(c.a, c.b)
+        (vx, vy), _M = _unit(d.a, d.b)
+        if abs(ux * vy - uy * vx) > 0.02:
+            continue
+        s0, s1 = sorted((c.projetar(d.a)[0], c.projetar(d.b)[0]))
+        faixas.append([s0, s1, None])
+    if not faixas:
+        return {id(t): (0.0, c.comprimento) for _s, _x, t in rot}
+    faixas.sort()
+    for k, (s_m, _x, t) in enumerate(rot):
+        f = min(faixas, key=lambda f: 0.0 if f[0] - 50 <= s_m <= f[1] + 50 else min(abs(s_m - f[0]), abs(s_m - f[1])))
+        if f[2] is None:
+            f[2] = k
+    for f in faixas:
+        if f[2] is None:
+            meio = (f[0] + f[1]) / 2
+            f[2] = min(range(len(rot)), key=lambda k: abs(rot[k][0] - meio))
+    out: Dict[int, Tuple[float, float]] = {}
+    vistos = set()
+    for k, (s_m, texto, t) in enumerate(rot):
+        minhas = [f for f in faixas if f[2] == k]
+        if not minhas:
+            # o nome caiu num pedaço de outro nome igual: a mesma viga
+            dono = min(faixas, key=lambda f: 0.0 if f[0] - 50 <= s_m <= f[1] + 50 else min(abs(s_m - f[0]), abs(s_m - f[1])))
+            if rot[dono[2]][1] == texto:
+                continue
+            minhas = [dono]
+        faixa = (min(f[0] for f in minhas), max(f[1] for f in minhas))
+        chave = (texto, round(faixa[0] / 50), round(faixa[1] / 50))
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        out[id(t)] = faixa
+    return out
+
+
+def _polilinha(c: Caminho, passo: float = 150.0) -> List[Ponto2]:
+    if c.tipo == "reta":
+        return [c.a, c.b]
+    L = c.comprimento
+    n = max(2, int(L / passo) + 1)
+    return [c.ponto(L * k / n) for k in range(n + 1)]
+
+
+def _caixa_pts(pts, folga: float = 0.0):
+    return (min(p[0] for p in pts) - folga, min(p[1] for p in pts) - folga,
+            max(p[0] for p in pts) + folga, max(p[1] for p in pts) + folga)
+
+
+def _cruzam(c1, c2) -> bool:
+    return not (c1[2] < c2[0] or c2[2] < c1[0] or c1[3] < c2[1] or c2[3] < c1[1])
+
+
+def _cruzamento(a, b, p, q) -> Optional[Ponto2]:
+    """ponto onde os segmentos a–b e p–q se cruzam (None se não se cruzam)"""
+    rx, ry = b[0] - a[0], b[1] - a[1]
+    sx, sy = q[0] - p[0], q[1] - p[1]
+    den = rx * sy - ry * sx
+    if abs(den) < 1e-9:
+        return None
+    wx, wy = p[0] - a[0], p[1] - a[1]
+    t = (wx * sy - wy * sx) / den
+    u = (wx * ry - wy * rx) / den
+    if -1e-9 <= t <= 1 + 1e-9 and -1e-9 <= u <= 1 + 1e-9:
+        return (a[0] + rx * t, a[1] + ry * t)
+    return None
+
+
+def _nos_de(c: Caminho, i: int, caminhos: List[Caminho], polis, pedacos, apoios: Sequence[Ponto2] = (),
+            tol: float = 200.0) -> List[float]:
+    """onde a peça `c` pode terminar, medido ao longo dela: as pontas dela, os cruzamentos
+    com as outras linhas, as pontas das outras encostadas nela (a treliça que apoia do
+    lado) e as pontas dos pedaços que a formam (a emenda do arco com a reta, a
+    interrupção da linha dupla) e os pilares embaixo dela"""
+    L = c.comprimento
+    pc = _polilinha(c)
+    cx = _caixa_pts(pc, tol)
+    ns = [0.0, L]
+    for j, d in enumerate(caminhos):
+        if j == i or d is c:
+            continue
+        pd = polis[j]
+        if not _cruzam(cx, _caixa_pts(pd)):
+            continue
+        for q in (pd[0], pd[-1]):
+            if _dentro(q, cx):
+                s, dist = c.projetar(q)
+                if dist < tol:
+                    ns.append(s)
+        for a, b in zip(pc, pc[1:]):
+            ca = _caixa_pts((a, b))
+            for p, q in zip(pd, pd[1:]):
+                if not _cruzam(ca, _caixa_pts((p, q))):
+                    continue
+                x = _cruzamento(a, b, p, q)
+                if x is not None:
+                    ns.append(c.projetar(x)[0])
+    for d in pedacos:
+        for q in (d.ponto(0.0), d.ponto(d.comprimento)):
+            if _dentro(q, cx):
+                s, dist = c.projetar(q)
+                if dist < 60.0:
+                    ns.append(s)
+    for q in apoios:
+        if _dentro(q, cx):
+            s, dist = c.projetar(q)
+            if dist < 400.0:
+                ns.append(s)
+    return sorted(set(round(min(max(s, 0.0), L), 0) for s in ns))
+
+
+def _centrado(s_meio: float, Le: float, ns: List[float], L: float) -> Tuple[float, float]:
+    """o trecho do comprimento da elevação centrado no nome, com as pontas encostadas no
+    nó mais perto quando há um perto"""
+    s0, s1 = s_meio - Le / 2, s_meio + Le / 2
+    lim = max(600.0, 0.12 * Le)
+    n0 = min(ns, key=lambda n: abs(n - s0))
+    n1 = min(ns, key=lambda n: abs(n - s1))
+    s0 = n0 if abs(n0 - s0) < lim else s0
+    s1 = n1 if abs(n1 - s1) < lim else s1
+    s0, s1 = max(0.0, s0), min(L, s1)
+    if s1 - s0 < 0.5 * Le:
+        s0, s1 = max(0.0, s_meio - Le / 2), min(L, s_meio + Le / 2)
+    return s0, s1
+
+
+def _escolher_trechos(L: float, ns: List[float], pedidos: List[Tuple[float, float]],
+                      folga: float = 300.0) -> List[Tuple[float, float]]:
+    """o trecho de cada nome na linha: entre dois nós, com o nome dentro e o comprimento da
+    elevação (o projetista escreve o nome em qualquer ponto da peça, muitas vezes perto de
+    uma ponta). Os nomes vizinhos não disputam o mesmo trecho. Sem par de nós que sirva,
+    o trecho centrado no nome (`_centrado`), com custo alto.
+    `pedidos`: [(s do nome, comprimento da elevação)] em ordem de s."""
+    cands = []
+    for s_meio, Le in pedidos:
+        tol = max(0.08 * Le, 300.0)
+        lst = []
+        for ia, a in enumerate(ns):
+            if a > s_meio + folga:
+                break
+            for b in ns[ia + 1:]:
+                if b - a > Le + tol:
+                    break
+                if b < s_meio - folga:
+                    continue
+                d = abs(b - a - Le)
+                if d <= tol:
+                    lst.append((d / Le + 0.05 * abs((a + b) / 2 - s_meio) / Le, a, b))
+        # uma ponta num nó e a outra onde o comprimento da elevação acabar: as duas peças
+        # que dividem um vão sem nó entre elas (painel 4 e painel 5 da mesma borda)
+        for n in ns:
+            for a, b in ((n, n + Le), (n - Le, n)):
+                if 0.0 <= a and b <= L and a - folga <= s_meio <= b + folga:
+                    lst.append((0.15 + 0.05 * abs((a + b) / 2 - s_meio) / Le, a, b))
+        lst.sort()
+        lst = lst[:12]
+        a, b = _centrado(s_meio, Le, ns, L)
+        lst.append((0.5 + abs(b - a - Le) / Le, a, b))
+        cands.append(lst)
+    # o menor custo somado sem que dois trechos vizinhos se sobreponham
+    melhor = [(c_, None) for c_, _a, _b in cands[0]]
+    passos = [melhor]
+    for k in range(1, len(cands)):
+        atual = []
+        for c_, a, _b in cands[k]:
+            opcoes = []
+            for j, (custo_j, _v) in enumerate(passos[-1]):
+                fim_j = cands[k - 1][j][2]
+                multa = 0.0 if fim_j <= a + folga else 1.0
+                opcoes.append((custo_j + c_ + multa, j))
+            atual.append(min(opcoes))
+        passos.append(atual)
+    j = min(range(len(passos[-1])), key=lambda j: passos[-1][j][0])
+    escolha = []
+    for k in range(len(cands) - 1, -1, -1):
+        escolha.append(j)
+        j = passos[k][j][1]
+    escolha.reverse()
+    return [(cands[k][j][1], cands[k][j][2]) for k, j in enumerate(escolha)]
 
 
 # =====================================================================================
@@ -999,11 +1208,36 @@ def _altura_no_ponto(t: Trecho, p: Ponto2, tol: float = 350.0) -> Optional[float
     s, d = t.caminho.projetar(p)
     if d > tol:
         return None
-    L = t.caminho.comprimento or 1.0
-    k = el.comprimento / L
-    se = (L - s if t.invertida else s) * k
+    se = _s_na_elevacao(t, s)
     se = min(max(se, 60.0), el.comprimento - 60.0)
     return el.topo(se)
+
+
+def _folga_da_elevacao(t: Trecho) -> float:
+    """a elevação entra na planta sem esticar (os nós ficam no passo dela, onde a terça
+    apoia), centrada no vão: a diferença de comprimento fica meio a meio nas pontas"""
+    L, Le = t.caminho.comprimento, t.elevacao.comprimento
+    return ((L - Le) / 2.0 if Le and 0.9 < L / Le < 1.1 else 0.0) + t.ajuste
+
+
+def _s_na_planta(t: Trecho, s_el: float) -> float:
+    """ponto da elevação (s a partir da ponta esquerda dela) → s ao longo da peça na
+    planta. As pontas da elevação vão às pontas da peça (a barra da ponta absorve a folga)"""
+    L, Le = t.caminho.comprimento, t.elevacao.comprimento
+    if s_el <= 1.0:
+        sp = 0.0
+    elif s_el >= Le - 1.0:
+        sp = L
+    else:
+        sp = s_el + _folga_da_elevacao(t)
+    sp = min(max(sp, 0.0), L)
+    return L - sp if t.invertida else sp
+
+
+def _s_na_elevacao(t: Trecho, s: float) -> float:
+    L = t.caminho.comprimento
+    sp = L - s if t.invertida else s
+    return sp - _folga_da_elevacao(t)
 
 
 def _votos_das_marcas(t: Trecho, linhas_terca) -> Optional[Tuple[int, int]]:
@@ -1028,10 +1262,10 @@ def _votos_das_marcas(t: Trecho, linhas_terca) -> Optional[Tuple[int, int]]:
             cruz.append(s)
     if len(cruz) < 2:
         return None
-    k = el.comprimento / L if L else 1.0
+    folga = (L - el.comprimento) / 2.0 if el.comprimento and 0.9 < L / el.comprimento < 1.1 else 0.0
     out = []
     for inv in (False, True):
-        ss = [((L - s) if inv else s) * k for s in cruz]
+        ss = [((L - s) if inv else s) - folga for s in cruz]
         votos = collections.Counter(int(round((m - s) / 50.0)) for s in ss for m in el.marcas_terca if abs(m - s) < 700)
         if not votos:
             out.append((0, None))
@@ -1039,6 +1273,61 @@ def _votos_das_marcas(t: Trecho, linhas_terca) -> Optional[Tuple[int, int]]:
         b0 = max(votos, key=lambda v: votos[v] + votos.get(v - 1, 0) + votos.get(v + 1, 0)) * 50.0
         out.append((sum(1 for s in ss if any(abs(m - s - b0) < 90 for m in el.marcas_terca)), b0))
     return out[0], out[1]
+
+
+def _nos_do_banzo(el: Elevacao) -> List[float]:
+    """s dos nós do banzo de cima da elevação: onde chega um montante ou uma diagonal"""
+    ns = set()
+    for m in el.membros:
+        if m.papel not in ("montante", "diagonal"):
+            continue
+        for s_, h_ in ((m.s0, m.h0), (m.s1, m.h1)):
+            topo = el.topo(s_)
+            if topo is not None and abs(h_ - topo) < 150.0:
+                ns.add(round(s_))
+    return sorted(ns)
+
+
+def ajustar_aos_nos(trechos: List[Trecho], linhas_terca, familias=("TESOURA", "COMP", "TRELICA")) -> int:
+    """a terça apoia no nó da treliça (as marcas "ST" da elevação caem nos nós). A peça na
+    planta costuma ter um pouco mais ou menos que a elevação (a treliça termina na face do
+    apoio): em vez de centrar, a elevação anda até os nós caírem nas linhas das terças — a
+    mediana dos desencontros, quando eles concordam entre si e não passam de 300 mm.
+    Devolve quantas treliças andaram."""
+    n = 0
+    for t in trechos:
+        if t.elevacao is None or t.familia not in familias or t.caminho.tipo != "reta":
+            continue
+        nos = _nos_do_banzo(t.elevacao)
+        if len(nos) < 2:
+            continue
+        a, b = t.caminho.a, t.caminho.b
+        (ux, uy), L = _unit(a, b)
+        deltas = []
+        for p, q in linhas_terca:
+            (vx, vy), M = _unit(p, q)
+            den = ux * vy - uy * vx
+            if abs(den) < 0.2:
+                continue
+            wx, wy = p[0] - a[0], p[1] - a[1]
+            s = (wx * vy - wy * vx) / den
+            r = (wx * uy - wy * ux) / den
+            if not (0.0 <= s <= L and -50 <= r <= M + 50):
+                continue
+            se = _s_na_elevacao(t, s)
+            nx = min(nos, key=lambda x: abs(x - se))
+            if abs(se - nx) < 400.0:
+                deltas.append(se - nx)
+        if len(deltas) < 2:
+            continue
+        deltas.sort()
+        med = deltas[len(deltas) // 2]
+        concordam = sum(1 for d in deltas if abs(d - med) <= 60.0)
+        if 30.0 < abs(med) <= 300.0 and concordam >= 0.6 * len(deltas):
+            # andar a elevação no sentido da planta: invertida, o s da elevação cresce ao contrário
+            t.ajuste += med
+            n += 1
+    return n
 
 
 def orientar(trechos: List[Trecho], linhas_terca=None,
@@ -1216,6 +1505,132 @@ def _tabela_de_siglas(textos, rx: str) -> Dict[str, dict]:
     return out
 
 
+def _pontas_da_terca(a: Ponto2, b: Ponto2, polis_tr, caixas_tr, tol: float = 300.0, aparar: float = 1500.0,
+                     esticar: float = 1000.0) -> Tuple[float, float]:
+    """(s do começo, s do fim, cruzamentos) da terça a–b apoiada: onde a linha dela cruza as
+    treliças (qualquer uma, também o painel da borda e a transição em que ela encosta).
+    Cada cruzamento: (s, meia largura da face em que a terça encosta, família)"""
+    (ux, uy), L = _unit(a, b)
+    a2 = (a[0] - ux * esticar, a[1] - uy * esticar)
+    b2 = (b[0] + ux * esticar, b[1] + uy * esticar)
+    cx = _caixa_pts((a2, b2))
+    cruz = []                       # (s do cruzamento, meia largura em que a terça encosta)
+    for (t, pl), ct in zip(polis_tr, caixas_tr):
+        if not _cruzam(cx, ct):
+            continue
+        # o painel da borda e a transição sobem acima do telhado: a terça encosta na face
+        # deles; nas outras treliças ela senta em cima, no eixo
+        meia = t.caminho.largura / 2.0 if t.familia in ("PAINEL", "TRANSICAO") else 0.0
+        for p, q in zip(pl, pl[1:]):
+            x = _cruzamento(a2, b2, p, q)
+            if x is not None:
+                cruz.append(((x[0] - a[0]) * ux + (x[1] - a[1]) * uy, meia, t.familia))
+    if not cruz:
+        return 0.0, L, cruz
+
+    def ponta(s_p, sinal):
+        # sinal +1: a ponta do começo (o lado de dentro é s crescente); a ponta vai para a
+        # face (ou o eixo) do apoio mais perto
+        perto = [c for c in cruz if abs(c[0] - s_p) <= tol]
+        dentro = [c for c in cruz if 0.0 <= (c[0] - s_p) * sinal <= aparar]
+        fora = [c for c in cruz if 0.0 < (s_p - c[0]) * sinal <= esticar]
+        esc = (min(perto, key=lambda c: abs(c[0] - s_p)) if perto else
+               min(fora, key=lambda c: abs(c[0] - s_p)) if fora else
+               min(dentro, key=lambda c: abs(c[0] - s_p)) if dentro else None)
+        if esc is None:
+            return s_p
+        return esc[0] + sinal * esc[1]
+    s0, s1 = ponta(0.0, 1), ponta(L, -1)
+    if s1 - s0 < 300.0:
+        return 0.0, L, cruz
+    return s0, s1, cruz
+
+
+def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: List[str]) -> List[dict]:
+    """os pilares da locação: cada nome "PM3(200X70X20X2,65)" casado com a placa de base (ou,
+    sem placa, com a seção do perfil) — posição já trazida para a planta estrutural"""
+    from nucleo2d.reconhecer import perfil_do_texto
+    folga = (caixa_l[0] - 2500, caixa_l[1] - 2500, caixa_l[2] + 2500, caixa_l[3] + 2500)
+    placas = []
+    placas_ids = []
+    for e in ents:
+        if e["tipo"] == "polilinha" and e.get("fechada") and re.search(r"(?i)chapa", e.get("camada", "")) \
+                and _dentro(e["vertices"][0], folga):
+            xs = [v[0] for v in e["vertices"]]
+            ys = [v[1] for v in e["vertices"]]
+            w, h = max(xs) - min(xs), max(ys) - min(ys)
+            if 120 <= w <= 900 and 120 <= h <= 900:
+                placas.append(((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2))
+                placas_ids.append(e.get("id"))
+    secoes = []
+    secoes_ids = []
+    for e in ents:
+        if e["tipo"] == "polilinha" and not _ANOT.search(e.get("camada", "")) and _dentro(e["vertices"][0], folga):
+            vs = [(v[0], v[1]) for v in e["vertices"]]
+            xs, ys = [v[0] for v in vs], [v[1] for v in vs]
+            if max(xs) - min(xs) < 520 and max(ys) - min(ys) < 520 and len(vs) >= 4:
+                lados = [(math.dist(vs[i], vs[(i + 1) % len(vs)]), vs[i], vs[(i + 1) % len(vs)]) for i in range(len(vs))]
+                L, a, b = max(lados)
+                secoes_ids.append(e.get("id"))
+                secoes.append((((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2),
+                               math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180))
+    out: List[dict] = []
+    nomes_p = []
+    for t in textos:
+        if not _dentro(t["posicao"], folga):
+            continue
+        r = perfil_do_texto(t["texto"])
+        if r and r.get("papel") == "pilar":
+            nomes_p.append((t, r))
+    # o nome fica sempre no mesmo lugar em relação à placa: esse deslocamento típico
+    # (a mediana dos pares mais próximos) casa cada nome com a sua placa, sem que o
+    # vizinho a tome
+    prox = []
+    for t, _r in nomes_p:
+        p = (t["posicao"][0], t["posicao"][1])
+        if placas:
+            q = min(placas, key=lambda q: math.dist(p, q))
+            if math.dist(p, q) < 1500:
+                prox.append((p[0] - q[0], p[1] - q[1]))
+    off = (sorted(d[0] for d in prox)[len(prox) // 2], sorted(d[1] for d in prox)[len(prox) // 2]) if prox else (0.0, 0.0)
+    pares = []
+    for k, (t, _r) in enumerate(nomes_p):
+        alvo = (t["posicao"][0] - off[0], t["posicao"][1] - off[1])
+        for i, q in enumerate(placas):
+            d = math.dist(alvo, q)
+            if d < 2500:
+                pares.append((d, k, i))
+    pares.sort()
+    casado: Dict[int, Ponto2] = {}
+    usadas = set()
+    for d, k, i in pares:
+        if k in casado or i in usadas:
+            continue
+        casado[k] = placas[i]
+        usados_loc.add(placas_ids[i])
+        usadas.add(i)
+    for k, (t, r) in enumerate(nomes_p):
+        q = casado.get(k)
+        if q is None:
+            # sem placa desenhada (pilar da torre): a seção do perfil mais perto
+            alvo = (t["posicao"][0] - off[0], t["posicao"][1] - off[1])
+            sc = [s for s in secoes if math.dist(s[0], alvo) < 2500]
+            if sc:
+                q = min(sc, key=lambda s: math.dist(s[0], alvo))[0]
+        if q is None:
+            avisos.append("pilar \"%s\" sem placa de base nem seção perto do nome." % t["texto"].strip())
+            continue
+        rot = 0.0
+        sc = [s for s in secoes if math.dist(s[0], q) < 300]
+        if sc:
+            rot = min(sc, key=lambda s: math.dist(s[0], q))[1]
+        x, y = q[0] + desl_l[0], q[1] + desl_l[1]
+        usados_loc.add(t.get("id"))
+        usados_loc.update(secoes_ids[i_s] for i_s, s_ in enumerate(secoes) if math.dist(s_[0], q) < 300)
+        out.append({"x": x, "y": y, "rot": rot, "nome": t["texto"].strip(), "perfil": r["perfil"]})
+    return out
+
+
 def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) -> dict:
     """o modelo 3D do projeto recebido, montado pela planta. Devolve
     {doc, resumo, conferencia, avisos}."""
@@ -1258,8 +1673,12 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
 
     avisar("lendo as elevações…")
     elevacoes = ler_elevacoes(ents, par["familias"])
+    # os pilares da locação vêm antes das treliças: a treliça termina em cima deles
+    avisar("pilares da locação…")
+    caixa_l, desl_l = outra_planta(par.get("locacao"))
+    locados = _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados["locacao"], avisos) if caixa_l else []
     avisar("lendo as peças da planta…")
-    trechos, st = pecas_da_planta(ents, caixa_p, elevacoes)
+    trechos, st = pecas_da_planta(ents, caixa_p, elevacoes, apoios=[(p["x"], p["y"]) for p in locados])
     # a planta das terças, trazida para cima da planta estrutural: as linhas das terças
     # decidem o sentido das treliças (marcas "ST") e depois viram as terças
     caixa_t, desl_t = outra_planta(par.get("tercas"))
@@ -1280,6 +1699,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             eixos_t = [(_mv(c.a), _mv(c.b)) for c in ret_t]
             eixos_t_ids = [next(iter(c.fontes), None) if c.fontes else None for c in ret_t]
     ori = orientar(trechos, eixos_t)
+    ori["ajustadas_aos_nos"] = ajustar_aos_nos(trechos, eixos_t)
 
     doc = doc or Documento(nome=str(par.get("nome") or "Modelo pela planta"))
     for nome_c in ("Treliças", "Vigas", "Pilares", "Terças", "Contraventamento", "Correntes"):
@@ -1309,8 +1729,6 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 continue
             el = t.elevacao
             c = t.caminho
-            Lc = c.comprimento
-            esc = Lc / el.comprimento if el.comprimento and 0.9 < Lc / el.comprimento < 1.1 else 1.0
             contagem[t.nome] += 1
             conj = "%s#%d" % (t.nome, k_t)
             p_banzo = (el.banzo or {}).get("perfil")
@@ -1321,8 +1739,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 continue
 
             def P(s, h):
-                sp = (Lc - s * esc) if t.invertida else s * esc
-                sp = min(max(sp, 0.0), Lc)
+                sp = _s_na_planta(t, s)
                 x, y = c.ponto(sp)
                 return (x, y, nivel_z + h), sp
             for m in el.membros:
@@ -1348,7 +1765,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     raios = [c.raio] if c.tipo == "arco" else [q.raio for q, _r in c.partes if q.tipo == "arco"]
                     sol.atributos = {"tipo_ifc": "IfcMember", "calandrada": {"raio": round(min(raios), 1),
                                                                               "raios": [round(r_, 1) for r_ in raios]},
-                                     "origem": {"planta": _bonito(t.nome), "sentido": t.sentido_por}}
+                                     "origem": {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj}}
                     doc.add(sol)
                     pecas.append({"ent": sol, "perfil": perfil, "papel": "banzo", "L": comp, "conjunto": conj})
                     continue
@@ -1362,10 +1779,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     for sinal, rot in ((1, 0.0), (-1, 180.0)):
                         d = (nx * af * sinal, ny * af * sinal, 0.0)
                         barra(tuple(q0[i] + d[i] for i in range(3)), tuple(q1[i] + d[i] for i in range(3)), perfil,
-                              papel, "Treliças", conj, rot, {"planta": _bonito(t.nome), "sentido": t.sentido_por})
+                              papel, "Treliças", conj, rot, {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj})
                 else:
                     rot = 90.0 if (m.papel == "banzo") else 0.0
-                    barra(q0, q1, perfil, papel, "Treliças", conj, rot, {"planta": _bonito(t.nome), "sentido": t.sentido_por})
+                    barra(q0, q1, perfil, papel, "Treliças", conj, rot, {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj})
 
         # vigas
         for t in trechos_lista:
@@ -1431,99 +1848,21 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                               "baloes": d_o[2]})
 
     # ---------------------------------------------------------------- pilares
-    avisar("pilares da locação…")
     pilares = 0
-    caixa_l, desl_l = outra_planta(par.get("locacao"))
-    if caixa_l:
-        from nucleo2d.reconhecer import perfil_do_texto
-        folga = (caixa_l[0] - 2500, caixa_l[1] - 2500, caixa_l[2] + 2500, caixa_l[3] + 2500)
-        placas = []
-        placas_ids = []
-        for e in ents:
-            if e["tipo"] == "polilinha" and e.get("fechada") and re.search(r"(?i)chapa", e.get("camada", "")) \
-                    and _dentro(e["vertices"][0], folga):
-                xs = [v[0] for v in e["vertices"]]
-                ys = [v[1] for v in e["vertices"]]
-                w, h = max(xs) - min(xs), max(ys) - min(ys)
-                if 120 <= w <= 900 and 120 <= h <= 900:
-                    placas.append(((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2))
-                    placas_ids.append(e.get("id"))
-        secoes = []
-        secoes_ids = []
-        for e in ents:
-            if e["tipo"] == "polilinha" and not _ANOT.search(e.get("camada", "")) and _dentro(e["vertices"][0], folga):
-                vs = [(v[0], v[1]) for v in e["vertices"]]
-                xs, ys = [v[0] for v in vs], [v[1] for v in vs]
-                if max(xs) - min(xs) < 520 and max(ys) - min(ys) < 520 and len(vs) >= 4:
-                    lados = [(math.dist(vs[i], vs[(i + 1) % len(vs)]), vs[i], vs[(i + 1) % len(vs)]) for i in range(len(vs))]
-                    L, a, b = max(lados)
-                    secoes_ids.append(e.get("id"))
-                    secoes.append((((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2),
-                                   math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180))
-        nomes_p = []
-        for t in textos:
-            if not _dentro(t["posicao"], folga):
-                continue
-            r = perfil_do_texto(t["texto"])
-            if r and r.get("papel") == "pilar":
-                nomes_p.append((t, r))
-        # o nome fica sempre no mesmo lugar em relação à placa: esse deslocamento típico
-        # (a mediana dos pares mais próximos) casa cada nome com a sua placa, sem que o
-        # vizinho a tome
-        prox = []
-        for t, _r in nomes_p:
-            p = (t["posicao"][0], t["posicao"][1])
-            if placas:
-                q = min(placas, key=lambda q: math.dist(p, q))
-                if math.dist(p, q) < 1500:
-                    prox.append((p[0] - q[0], p[1] - q[1]))
-        off = (sorted(d[0] for d in prox)[len(prox) // 2], sorted(d[1] for d in prox)[len(prox) // 2]) if prox else (0.0, 0.0)
-        pares = []
-        for k, (t, _r) in enumerate(nomes_p):
-            alvo = (t["posicao"][0] - off[0], t["posicao"][1] - off[1])
-            for i, q in enumerate(placas):
-                d = math.dist(alvo, q)
-                if d < 2500:
-                    pares.append((d, k, i))
-        pares.sort()
-        casado: Dict[int, Ponto2] = {}
-        usadas = set()
-        for d, k, i in pares:
-            if k in casado or i in usadas:
-                continue
-            casado[k] = placas[i]
-            usados["locacao"].add(placas_ids[i])
-            usadas.add(i)
-        for k, (t, r) in enumerate(nomes_p):
-            q = casado.get(k)
-            if q is None:
-                # sem placa desenhada (pilar da torre): a seção do perfil mais perto
-                alvo = (t["posicao"][0] - off[0], t["posicao"][1] - off[1])
-                sc = [s for s in secoes if math.dist(s[0], alvo) < 2500]
-                if sc:
-                    q = min(sc, key=lambda s: math.dist(s[0], alvo))[0]
-            if q is None:
-                avisos.append("pilar \"%s\" sem placa de base nem seção perto do nome." % t["texto"].strip())
-                continue
-            rot = 0.0
-            sc = [s for s in secoes if math.dist(s[0], q) < 300]
-            if sc:
-                rot = min(sc, key=lambda s: math.dist(s[0], q))[1]
-            x, y = q[0] + desl_l[0], q[1] + desl_l[1]
-            em_cima = [nv for u, nv in todos_trechos if u.caminho.projetar((x, y))[1] < 600.0]
-            longe = 0.0 if em_cima else min((u.caminho.projetar((x, y))[1] for u, _nv in todos_trechos), default=0.0)
-            orig = {"locacao": t["texto"].strip()}
-            topo_p = max(em_cima) if em_cima else nivel
-            if longe > 600.0:
-                # não há treliça nem viga da planta estrutural em cima dele: é de outra
-                # estrutura (mezanino, torre); a altura fica a conferir
-                orig["a_conferir"] = "altura: nenhuma peça da planta estrutural em cima (%.1f m)" % (longe / 1000.0)
-                avisos.append("pilar %s em (%.0f; %.0f) sem peça da cobertura em cima (a %.1f m): foi até o nível "
-                              "do banzo; confira a altura dele." % (t["texto"].strip(), x, y, longe / 1000.0))
-            barra((x, y, base), (x, y, topo_p), r["perfil"], "pilar", "Pilares", None, rot, orig)
-            usados["locacao"].add(t.get("id"))
-            usados["locacao"] |= {secoes_ids[i_s] for i_s, s_ in enumerate(secoes) if math.dist(s_[0], q) < 300}
-            pilares += 1
+    for pl in locados:
+        x, y = pl["x"], pl["y"]
+        em_cima = [nv for u, nv in todos_trechos if u.caminho.projetar((x, y))[1] < 600.0]
+        longe = 0.0 if em_cima else min((u.caminho.projetar((x, y))[1] for u, _nv in todos_trechos), default=0.0)
+        orig = {"locacao": pl["nome"]}
+        topo_p = max(em_cima) if em_cima else nivel
+        if longe > 600.0:
+            # não há treliça nem viga da planta estrutural em cima dele: é de outra
+            # estrutura (mezanino, torre); a altura fica a conferir
+            orig["a_conferir"] = "altura: nenhuma peça da planta estrutural em cima (%.1f m)" % (longe / 1000.0)
+            avisos.append("pilar %s em (%.0f; %.0f) sem peça da cobertura em cima (a %.1f m): foi até o nível "
+                          "do banzo; confira a altura dele." % (pl["nome"], x, y, longe / 1000.0))
+        barra((x, y, base), (x, y, topo_p), pl["perfil"], "pilar", "Pilares", None, pl["rot"], orig)
+        pilares += 1
 
     # ---------------------------------------------------------------- terças e acessórios
     avisar("terças e acessórios…")
@@ -1582,59 +1921,100 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             if melhor:
                 nomes_da_linha[melhor[1]].append(melhor[2])
                 usados["tercas"].add(id_tc)
+        polis_tr = [(t, _polilinha(t.caminho)) for t in trechos if t.elevacao is not None]
+        caixas_tr = [_caixa_pts(pl, 300.0) for _t, pl in polis_tr]
         for i_l, (a, b) in enumerate(eixos_t):
             L = math.dist(a, b)
             if L < 500.0:
                 continue
             (ux, uy), _L = _unit(a, b)
+            # a terça começa e termina num apoio: a ponta que passa do último apoio até 1,5 m
+            # é aparada nele; a que para a menos de 1 m de uma treliça segue até ela. Mais
+            # que isso não se corrige às cegas (falta estrutura): fica para a verificação
+            s_ini, s_fim, cruz_t = _pontas_da_terca(a, b, polis_tr, caixas_tr)
             # apoios: onde a linha da terça passa por cima de uma treliça (o meio de cada
             # travessia, com a altura do banzo ali)
             apoios = []
-            npas = max(2, int(L / 50.0))
+            tirados: List[Tuple[float, float]] = []
+            npas = max(2, int((s_fim - s_ini) / 50.0))
             corrida: List[Tuple[float, float]] = []
             for k in range(npas + 2):
-                s = L * k / npas
+                s = s_ini + (s_fim - s_ini) * k / npas
                 h = topo_em((a[0] + ux * s, a[1] + uy * s)) if k <= npas else None
                 if h is not None:
                     corrida.append((s, h))
                 elif corrida:
-                    apoios.append((sum(c_[0] for c_ in corrida) / len(corrida), sum(c_[1] for c_ in corrida) / len(corrida)))
+                    if corrida[-1][0] - corrida[0][0] <= 1000.0:
+                        apoios.append((sum(c_[0] for c_ in corrida) / len(corrida), sum(c_[1] for c_ in corrida) / len(corrida)))
+                    else:
+                        # a terça corre em cima da treliça (ao longo da transição): apoio
+                        # contínuo, um a cada ~1 m com a altura de cada ponto
+                        passo_c = max(1, int(round(1000.0 / max(1.0, corrida[1][0] - corrida[0][0]))))
+                        apoios += corrida[::passo_c] + ([corrida[-1]] if (len(corrida) - 1) % passo_c else [])
                     corrida = []
             if not apoios:
                 continue
             # a treliça alta que a terça cruza (a transição que carrega as tesouras) passa
             # acima do telhado: a terça encosta nela, não senta em cima. O apoio que foge da
             # reta dos vizinhos mais de 400 mm sai (a cumeeira desvia uns 200 mm e fica)
+            # Primeiro os do meio (com vizinho dos dois lados); as pontas só depois, senão
+            # a transição alta perto da ponta faz a extrapolação tirar a treliça certa
             while len(apoios) >= 3:
-                desvios = []
-                for k in range(len(apoios)):
-                    if 0 < k < len(apoios) - 1:
-                        (sa, ha), (sb, hb) = apoios[k - 1], apoios[k + 1]
-                    elif k == 0:
-                        (sa, ha), (sb, hb) = apoios[1], apoios[2]
-                    else:
-                        (sa, ha), (sb, hb) = apoios[-3], apoios[-2]
+                def desvio(k, sa_ha, sb_hb):
+                    (sa, ha), (sb, hb) = sa_ha, sb_hb
                     sk, hk = apoios[k]
                     prev = ha + (hb - ha) * (sk - sa) / (sb - sa) if abs(sb - sa) > 1.0 else ha
-                    desvios.append((abs(hk - prev), k))
-                pior, k = max(desvios)
+                    return abs(hk - prev)
+                meio_d = [(desvio(k, apoios[k - 1], apoios[k + 1]), k) for k in range(1, len(apoios) - 1)]
+                pior, k = max(meio_d)
                 if pior <= 400.0:
-                    break
-                apoios.pop(k)
+                    pontas_d = [(desvio(0, apoios[1], apoios[2]), 0),
+                                (desvio(len(apoios) - 1, apoios[-3], apoios[-2]), len(apoios) - 1)]
+                    pior, k = max(pontas_d)
+                    if pior <= 400.0:
+                        break
+                tirados.append(apoios.pop(k))
             # uma terça por nome TC escrito junto da linha: o corte entre duas terças é o
-            # apoio mais perto do meio entre os dois nomes
+            # apoio mais perto do meio entre os dois nomes (a emenda é sempre em cima de um
+            # apoio; só sem apoio nenhum entre as pontas fica o meio entre os nomes)
+            # a treliça alta (tirada acima), o painel e a transição no meio da linha são
+            # barreira: a terça não passa por dentro deles — termina na face de um lado e
+            # recomeça do outro (a transição carrega as tesouras e sobe acima do telhado)
+            barreiras = []
+            for s_b in sorted([ap[0] for ap in tirados] + [c[0] for c in cruz_t if c[2] in ("PAINEL", "TRANSICAO")]):
+                if s_ini + 300.0 < s_b < s_fim - 300.0:
+                    viz_c = [c for c in cruz_t if abs(c[0] - s_b) < 300.0]
+                    meia_b = 0.0
+                    if viz_c:
+                        # a posição do cruzamento de verdade (o meio da travessia desvia)
+                        s_b, meia_b = min(viz_c, key=lambda c: abs(c[0] - s_b))[:2]
+                    if barreiras and s_b - barreiras[-1][0] < 300.0:
+                        barreiras[-1] = (barreiras[-1][0], max(barreiras[-1][1], meia_b))
+                        continue
+                    barreiras.append((s_b, meia_b))
+            vaos = []
+            lo = s_ini
+            for s_b, meia in barreiras:
+                if s_b - meia - lo > 300.0:
+                    vaos.append((lo, s_b - meia))
+                lo = max(lo, s_b + meia)
+            if s_fim - lo > 300.0:
+                vaos.append((lo, s_fim))
             nomes_l = sorted(nomes_da_linha.get(i_l, []))
-            cortes = []
-            for s_a, s_b in zip(nomes_l, nomes_l[1:]):
-                meio = (s_a + s_b) / 2
-                ap = min(apoios, key=lambda ap: abs(ap[0] - meio))
-                # sem apoio achado entre os dois nomes, o meio entre eles (o nome fica no
-                # meio da terça)
-                s_c = ap[0] if s_a < ap[0] < s_b else meio
-                if not cortes or s_c - cortes[-1] > 300.0:
-                    cortes.append(s_c)
-            pontos = [0.0] + cortes + [L]
-            for s0, s1 in zip(pontos, pontos[1:]):
+            pecas_t = []
+            for lo, hi in vaos:
+                nomes_v = [x for x in nomes_l if lo <= x <= hi]
+                cortes = []
+                for s_a, s_b in zip(nomes_v, nomes_v[1:]):
+                    meio = (s_a + s_b) / 2
+                    antes = cortes[-1] if cortes else lo
+                    bons = [ap[0] for ap in apoios if antes + 300.0 < ap[0] < hi - 300.0]
+                    s_c = min(bons, key=lambda x: abs(x - meio)) if bons else meio
+                    if s_c - antes > 300.0 and hi - s_c > 300.0:
+                        cortes.append(s_c)
+                pts_v = [lo] + cortes + [hi]
+                pecas_t += list(zip(pts_v, pts_v[1:]))
+            for s0, s1 in pecas_t:
                 if s1 - s0 < 300.0:
                     continue
                 mid = ((a[0] + ux * (s0 + s1) / 2), (a[1] + uy * (s0 + s1) / 2))
@@ -1647,13 +2027,15 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 dz = pa_bz / 2 + (float(pt_.d or 100) / 2 if pt_ else 50.0)
 
                 def zem(s):
-                    if len(apoios) == 1:
-                        return nivel + apoios[0][1] + dz
-                    # reta pelos apoios do trecho (a terça é reta)
-                    (sa, ha), (sb, hb) = apoios[0], apoios[-1]
-                    dentro = [ap for ap in apoios if s0 - 1 <= ap[0] <= s1 + 1]
-                    if len(dentro) >= 2:
-                        (sa, ha), (sb, hb) = dentro[0], dentro[-1]
+                    # a altura dos apoios vizinhos (de apoio em apoio; fora deles, seguindo
+                    # os dois mais perto): cada ponta da terça senta na treliça dela
+                    aps = sorted(apoios)
+                    if len(aps) == 1:
+                        return nivel + aps[0][1] + dz
+                    k = 1
+                    while k < len(aps) - 1 and aps[k][0] < s:
+                        k += 1
+                    (sa, ha), (sb, hb) = aps[k - 1], aps[k]
                     if abs(sb - sa) < 1.0:
                         return nivel + ha + dz
                     return nivel + ha + (hb - ha) * (s - sa) / (sb - sa) + dz
