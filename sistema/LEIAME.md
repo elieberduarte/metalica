@@ -218,6 +218,13 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.38.** Montar o 3D pela planta, pelos prints do Posto CB: **banzo com as abas para dentro da treliça** — o U
+do banzo de cima fica com a alma em cima (onde a terça apoia) e as abas para baixo, o de baixo com as abas para
+cima (antes os dois saíam com as abas para cima, rotação 90; agora 270 no de cima). Cima ou baixo pelo meio da
+altura da treliça, a mesma regra do banzo calandrado. **Viga até o pilar**: a ponta da viga que para antes de um
+pilar na linha dela (até 50 cm antes, pilar a até 25 cm da linha) vai até a face do pilar (`_viga_ate_o_pilar`);
+a que já encosta fica como está, e o pilar mais de lado que isso é do desenho, para conferir.
+
 **0.8.37.** 3D: os eixos da obra (tracejado vermelho), o contorno dos níveis (tracejado azul) e as direções
 X/Y/Z ficam apagados, só de referência — no Posto CB eles disputavam com a estrutura (pedido do usuário). Os
 balões e as cabeças de nível continuam legíveis. Verificar apoios: peça sem nome não deixa mais espaço duplo no

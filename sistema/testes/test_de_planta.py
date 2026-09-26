@@ -267,3 +267,29 @@ def test_viga_vm_escrita_duas_vezes_da_uma_viga():
 def test_barras_da_trelica_sabem_de_qual_trelica_sao(resultado):
     pecas = {(b.atributos or {}).get("origem", {}).get("peca") for b in resultado["doc"].barras if b.camada == "Treliças"}
     assert None not in pecas and len(pecas) == 3          # duas tesouras e o painel
+
+
+# ------------------------------------------------------------------ prints do Posto CB (0.8.38)
+
+def test_banzo_de_cima_com_as_abas_para_baixo(resultado):
+    """o U do banzo fica deitado com as abas para dentro da treliça: o de cima com a alma em
+    cima (onde a terça apoia) e as abas para baixo; o de baixo com as abas para cima"""
+    from nucleo3d.geometria import base_local
+    banzos = [b for b in resultado["doc"].barras if b.papel == "banzo"
+              and "TESOURA" in (b.atributos or {}).get("origem", {}).get("peca", "")]
+    assert banzos
+    for b in banzos:
+        u, _v, _w = base_local(tuple(b.fim[i] - b.inicio[i] for i in range(3)), b.rotacao)
+        de_cima = (b.inicio[2] + b.fim[2]) / 2 > 6000.0 + 400.0
+        assert (u[2] < -0.9) if de_cima else (u[2] > 0.9)   # u: o lado das abas do U
+
+
+def test_viga_vai_ate_o_pilar_na_linha_dela():
+    """a ponta que para 17 cm antes do pilar (e 17 cm de lado) vai até a face dele; a outra
+    ponta, com o pilar 38 cm de lado da linha, é do desenho e fica como está"""
+    pts = de_planta._viga_ate_o_pilar([(0.0, 0.0), (7000.0, 0.0)], [(7170.0, 175.0, 100.0), (-50.0, 380.0, 100.0)])
+    assert abs(pts[1][0] - 7070.0) < 1.0 and abs(pts[1][1]) < 1e-6
+    assert pts[0] == (0.0, 0.0)
+    # a que já chega no pilar não é puxada até o pilar seguinte
+    pts = de_planta._viga_ate_o_pilar([(0.0, 0.0), (7000.0, 0.0)], [(7080.0, 0.0, 100.0), (7400.0, 0.0, 100.0)])
+    assert pts[1] == (7000.0, 0.0)

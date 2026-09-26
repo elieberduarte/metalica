@@ -1003,6 +1003,35 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
     return trechos, stats
 
 
+def _viga_ate_o_pilar(pts: Sequence[Ponto2], pilares: Sequence[Tuple[float, float, float]], frente: float = 500.0,
+                      lado: float = 250.0, folga: float = 30.0) -> List[Ponto2]:
+    """A ponta da viga que para antes de um pilar na linha dela vai até a face do pilar.
+    `pilares`: (x, y, meia) — `meia` é a metade da seção do pilar. Vale para o pilar até `frente`
+    mm além da ponta e a no máximo `lado` mm da linha da viga; a viga que já chega na face (ou
+    passa dela) fica como está, e o pilar mais de lado que isso é do desenho, para conferir."""
+    a, b = pts
+    L = math.dist(a, b)
+    if L < 1.0:
+        return [a, b]
+    ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+    novos = [a, b]
+    for k, (p, sinal) in enumerate(((a, -1.0), (b, 1.0))):
+        falta = None
+        encosta = False
+        for qx, qy, meia in pilares:
+            dx, dy = qx - p[0], qy - p[1]
+            adiante = (dx * ux + dy * uy) * sinal          # positivo: o pilar está além da ponta
+            if abs(-dx * uy + dy * ux) > lado:
+                continue
+            if -meia - folga <= adiante <= meia + folga:
+                encosta = True                             # a ponta já está no pilar
+            elif meia + folga < adiante <= frente and (falta is None or adiante - meia < falta):
+                falta = adiante - meia
+        if falta is not None and not encosta:
+            novos[k] = (p[0] + ux * sinal * falta, p[1] + uy * sinal * falta)
+    return novos
+
+
 def _faixas_das_vigas(c: Caminho, rot, pedacos) -> Dict[int, Tuple[float, float]]:
     """o trecho de cada viga VM na linha `c`: o pedaço onde está o nome mais os pedaços da
     mesma linha sem nome nenhum (a linha dupla da viga é interrompida no pilar e o nome vem
@@ -1718,6 +1747,11 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
 
     # ---------------------------------------------------------------- treliças e vigas
     contagem = collections.Counter()
+    # os pilares com a metade da seção: a viga que para antes deles vai até a face
+    pilares_meia = []
+    for pl in locados:
+        pa_pl = _perfil(pl["perfil"])
+        pilares_meia.append((pl["x"], pl["y"], float(pa_pl.d or 200.0) / 2.0 if pa_pl else 100.0))
     serie = iter(range(10 ** 7))
 
     def montar_trechos(trechos_lista, nivel_z):
@@ -1742,6 +1776,11 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 sp = _s_na_planta(t, s)
                 x, y = c.ponto(sp)
                 return (x, y, nivel_z + h), sp
+            # banzo de cima ou de baixo: acima ou abaixo do meio da altura da treliça. O U do
+            # banzo fica deitado com as abas para dentro da treliça — o de cima com a alma em
+            # cima (onde a terça apoia) e as abas para baixo, o de baixo com as abas para cima
+            alturas = [h for m in el.membros for h in (m.h0, m.h1)]
+            meio_h = (min(alturas) + max(alturas)) / 2.0 if alturas else 0.0
             for m in el.membros:
                 dupla = m.altura_linha > 0.0
                 perfil = p_banzo if (m.papel == "banzo" or dupla) else (p_alma or p_banzo)
@@ -1758,7 +1797,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         sp = s0p + (s1p - s0p) * f
                         x, y = c.ponto(sp)
                         pts.append((x, y, q0[2] + (q1[2] - q0[2]) * f))
-                    sol = varrer(perfil, pts, deitado=True, abas_para_baixo=(m.h0 + m.h1) / 2 > 100.0)
+                    sol = varrer(perfil, pts, deitado=True, abas_para_baixo=(m.h0 + m.h1) / 2 > meio_h)
                     sol.nome = perfil
                     sol.camada = "Treliças"
                     comp = sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
@@ -1781,7 +1820,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         barra(tuple(q0[i] + d[i] for i in range(3)), tuple(q1[i] + d[i] for i in range(3)), perfil,
                               papel, "Treliças", conj, rot, {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj})
                 else:
-                    rot = 90.0 if (m.papel == "banzo") else 0.0
+                    # rotação 90 leva as abas do U para cima (banzo de baixo); 270, para baixo
+                    rot = (270.0 if (m.h0 + m.h1) / 2 > meio_h else 90.0) if m.papel == "banzo" else 0.0
                     barra(q0, q1, perfil, papel, "Treliças", conj, rot, {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj})
 
         # vigas
@@ -1793,7 +1833,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             pa = _perfil(pf)
             d = float(pa.d or 150.0) if pa else 150.0
             z = nivel_z - d / 2.0
-            pts = [c.ponto(0.0), c.ponto(c.comprimento)]
+            pts = _viga_ate_o_pilar([c.ponto(0.0), c.ponto(c.comprimento)], pilares_meia)
             if int(t.perfil.get("mult") or 1) > 1:
                 af = (float(pa.bf or 50.0) if pa else 50.0) / 2 + 1.0
                 tx, ty = c.tangente(0.0)
