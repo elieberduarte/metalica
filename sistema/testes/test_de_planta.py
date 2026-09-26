@@ -120,7 +120,7 @@ def elevacao_painel(x0, y0):
 def resultado():
     ents = planta() + locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
     ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
-    return de_planta.montar(ents, {"nivel": 6000.0})
+    return de_planta.montar(ents, {"nivel": 6000.0, "origem": False})
 
 
 def test_le_os_perfis_da_nota_da_elevacao():
@@ -177,3 +177,21 @@ def test_pilares_no_lugar_da_planta(resultado):
     pil = sorted((round(b.inicio[0]), round(b.inicio[1])) for b in doc.barras if b.papel == "pilar")
     assert pil == [(0, 0), (0, 6000), (9000, 0), (9000, 6000)]
     assert all(b.fim[2] == 6000.0 for b in doc.barras if b.papel == "pilar")
+
+
+def test_modelo_vem_para_perto_da_origem():
+    ents = planta() + locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    longe = [dict(e) for e in ents]
+    for e in longe:                       # a obra desenhada a 400 m do zero do DXF
+        for k in ("a", "b", "centro", "posicao"):
+            if k in e:
+                e[k] = [e[k][0] + 400000.0, e[k][1] + 50000.0]
+        if "vertices" in e:
+            e["vertices"] = [[v[0] + 400000.0, v[1] + 50000.0] for v in e["vertices"]]
+    r = de_planta.montar(longe, {"nivel": 6000.0})
+    xs = [c for b in r["doc"].barras for c in (b.inicio[0], b.fim[0])]
+    ys = [c for b in r["doc"].barras for c in (b.inicio[1], b.fim[1])]
+    assert 0.0 <= min(xs) < 1000.0 and 0.0 <= min(ys) < 1000.0
+    d = r["doc"].metadados["de_planta"]["deslocamento"]
+    assert d["x"] < -390000.0 and d["y"] < -40000.0

@@ -1477,6 +1477,25 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         correntes = acessorio(r"(?i)corrente", 'L 1"×1/8"', "corrente", "Correntes", pa_bz / 2 + 50.0)
         esticadores = acessorio(r"(?i)esticador", "Barra redonda 10", "corrente", "Correntes", pa_bz / 2 + 50.0)
 
+    # ---------------------------------------------------------------- perto da origem
+    # a planta do projetista fica onde ele desenhou (no posto, a 400 m do zero do DXF): o
+    # modelo vem para perto da origem, com o canto da planta no zero (em metros redondos),
+    # e o deslocamento fica guardado para voltar às coordenadas do desenho
+    xs = [c for p in pecas for c in ((p["ent"].inicio[0], p["ent"].fim[0]) if p["ent"].tipo == "barra"
+                                     else [v[0] for v in p["ent"].vertices])]
+    ys = [c for p in pecas for c in ((p["ent"].inicio[1], p["ent"].fim[1]) if p["ent"].tipo == "barra"
+                                     else [v[1] for v in p["ent"].vertices])]
+    desl = (0.0, 0.0)
+    if xs and par.get("origem", True):
+        desl = (-math.floor(min(xs) / 1000.0) * 1000.0, -math.floor(min(ys) / 1000.0) * 1000.0)
+        for p in pecas:
+            e = p["ent"]
+            if e.tipo == "barra":
+                e.inicio = (e.inicio[0] + desl[0], e.inicio[1] + desl[1], e.inicio[2])
+                e.fim = (e.fim[0] + desl[0], e.fim[1] + desl[1], e.fim[2])
+            else:
+                e.vertices = [(v[0] + desl[0], v[1] + desl[1], v[2]) for v in e.vertices]
+
     # ---------------------------------------------------------------- marcas
     grupos: Dict[tuple, List[dict]] = collections.defaultdict(list)
     for p in pecas:
@@ -1541,5 +1560,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     "contraventos": sum(v["qtd"] for v in tab_cv.values()),
                     "esticadores": sum(v["qtd"] for v in tab_est.values()), "pilares": pm_total},
     }
-    doc.metadados["de_planta"] = {"parametros": {k: v for k, v in par.items()}, "resumo": resumo}
+    resumo["deslocamento_mm"] = [desl[0], desl[1]]
+    doc.metadados["de_planta"] = {"parametros": {k: v for k, v in par.items()}, "resumo": resumo,
+                                  "deslocamento": {"x": desl[0], "y": desl[1],
+                                                   "nota": "somado às coordenadas do desenho; subtraia para voltar a ele"}}
     return {"doc": doc, "resumo": resumo, "conferencia": conf, "avisos": avisos}

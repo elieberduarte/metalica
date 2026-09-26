@@ -218,6 +218,11 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.33.** Montar o 3D pela planta: o modelo vem para perto da origem. A planta do Posto CB está a 400 m do zero do
+DXF e o modelo abria pequeno no fim de uma malha enorme (a malha do chão vai do zero até o modelo); agora o canto da
+planta vai para o zero, em metros redondos, e o deslocamento fica em `metadados.de_planta.deslocamento` (e no resumo)
+para voltar às coordenadas do desenho.
+
 **0.8.32.** **Montar o 3D pela planta** (projeto recebido sem 3D; pedido do usuário com o projeto do Posto CB, um DXF
 de 30 MB sem limpeza, com a cobertura de forma livre de um posto, mezaninos, caixa d'água e passarela). No CAD,
 **Desenho → Montar o 3D pela planta (projeto recebido)…** (`nucleo3d/de_planta.py`, rota
