@@ -838,6 +838,17 @@ def alternativas_de_perfil(s: str, marca: str, limite: int = 10, todas: bool = F
     return calculo_ifc.alternativas(guardado, marca, limite=limite, todas=todas)
 
 
+def _sem_tesoura_no_lancamento(s: str):
+    """Projeto lançado sem tesoura (pórtico de alma cheia): o cálculo do modelo 3D começa
+    pelas tesouras e ainda não analisa o pórtico de vigas — o cálculo que vale é o do
+    lançamento. Diz isso em vez de mandar gerar o detalhamento."""
+    reg = (_gerente().ler(s).get("lancamento") or {}).get("resumo") or {}
+    if reg and not str(reg.get("sistema", "")).lower().startswith("tre"):
+        raise ErroDeDados("este projeto é um pórtico de alma cheia lançado: o cálculo dele é o do lançamento "
+                          "(Lançamento → Memorial do dimensionamento). O Calcular estrutura do modelo 3D começa "
+                          "pelas tesouras e ainda não analisa pórtico de vigas.")
+
+
 def calcular_projeto(s: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/calcular {parametros, trocas, comparar}: monta o modelo de
     cálculo a partir dos sólidos do IFC, analisa, verifica e grava em calculo.json.
@@ -851,6 +862,7 @@ def calcular_projeto(s: str, corpo: dict) -> dict:
         doc = _documento3d_do_projeto(s)
         nomes = _nomes_para_calculo(s, doc)
         if not nomes:
+            _sem_tesoura_no_lancamento(s)
             raise ErroDeDados("gere o detalhamento primeiro (Desenho 2D → Detalhar peças e conjuntos): "
                               "é ele que classifica tesouras, terças e contraventamentos.")
         anterior = calculo_do_projeto(s)
@@ -886,6 +898,7 @@ def dimensionar_projeto(s: str, corpo: dict) -> dict:
         doc = _documento3d_do_projeto(s)
         nomes = _nomes_para_calculo(s, doc)
         if not nomes:
+            _sem_tesoura_no_lancamento(s)
             raise ErroDeDados("gere o detalhamento primeiro (Desenho 2D → Detalhar peças e conjuntos): "
                               "é ele que classifica tesouras, terças e contraventamentos.")
         anterior = calculo_do_projeto(s)

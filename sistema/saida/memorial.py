@@ -393,19 +393,35 @@ def _svg_modelo(modelo, largura_px: float = 900.0) -> str:
          f'{valt * k:.1f}" width="{LARGURA_FIGURA_PT:.1f}pt" '
          f'height="{LARGURA_FIGURA_PT * valt * k / largura_px:.1f}pt" '
          f'font-family="Arial, Helvetica, sans-serif" font-size="{f:.1f}">']
+    postos = []                                         # caixas (x0, y0, x1, y1) dos rótulos já escritos
+    fr = f * 0.85
+
+    def livre(cx, cy, texto):
+        w, h = 0.56 * fr * len(texto), fr
+        cx0, cy0, cx1, cy1 = cx - w / 2 - 1.5, cy - h, cx + w / 2 + 1.5, cy + 0.2 * h
+        if any(cx0 < q[2] and q[0] < cx1 and cy0 < q[3] and q[1] < cy1 for q in postos):
+            return False
+        postos.append((cx0, cy0, cx1, cy1))
+        return True
     for b in modelo.barras:
         ni, nf = nos[b.ni], nos[b.nf]
         p.append(f'<line x1="{px(ni.x):.1f}" y1="{py(ni.y):.1f}" x2="{px(nf.x):.1f}" '
                  f'y2="{py(nf.y):.1f}" stroke="#0b3d91" stroke-width="3.2"/>')
-        mx, my = (ni.x + nf.x) / 2, (ni.y + nf.y) / 2
+    for b in modelo.barras:
+        ni, nf = nos[b.ni], nos[b.nf]
         if b.rotulo:
             comp = math.hypot(nf.x - ni.x, nf.y - ni.y) or 1.0
             nx, ny = -(nf.y - ni.y) / comp, (nf.x - ni.x) / comp
             desloc = 1.6 * f
-            p.append(f'<text x="{px(mx) + nx * desloc:.1f}" '
-                     f'y="{py(my) - ny * desloc:.1f}" '
-                     f'text-anchor="middle" fill="#1f5fbf" '
-                     f'font-size="{f * 0.85:.1f}">{_esc(b.rotulo)}</text>')
+            # no meio da barra, de um lado; senão do outro, ou mais para uma ponta: numa treliça
+            # de painéis curtos o rótulo do banzo e o do montante se encontravam junto do nó
+            for t, sinal in ((0.5, 1), (0.5, -1), (0.35, 1), (0.65, 1), (0.35, -1), (0.65, -1)):
+                mx, my = ni.x + (nf.x - ni.x) * t, ni.y + (nf.y - ni.y) * t
+                X, Y = px(mx) + sinal * nx * desloc, py(my) - sinal * ny * desloc
+                if livre(X, Y, str(b.rotulo)):
+                    p.append(f'<text x="{X:.1f}" y="{Y:.1f}" text-anchor="middle" fill="#1f5fbf" '
+                             f'font-size="{fr:.1f}">{_esc(b.rotulo)}</text>')
+                    break
     for n in nos:
         X, Y = px(n.x), py(n.y)
         p.append(f'<circle cx="{X:.1f}" cy="{Y:.1f}" r="{f * 0.32:.1f}" fill="#fff" '

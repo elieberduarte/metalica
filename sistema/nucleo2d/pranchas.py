@@ -100,6 +100,13 @@ def _caixa_de(ents: Sequence[Entidade2D], escala: float = 1.0) -> Optional[Tuple
             x, y = e.posicao
             x0 = x - larg / 2 if e.alinhamento == "centro" else x - larg if e.alinhamento == "direita" else x
             pts += [(x0, y), (x0 + larg, y + e.altura * escala)]
+        elif type(e).__name__ == "Chamada":
+            # a chamada vai da seta até o fim do texto (o texto sai do lado de fora do alvo):
+            # sem a largura dele, a célula vizinha era posta em cima das chamadas de parafuso
+            larg = 0.75 * e.altura * escala * len(e.texto or "") + 10.0 * escala
+            (xa, ya), (xt, yt) = e.alvo, e.posicao
+            xf = xt + larg if xt >= xa else xt - larg
+            pts += [e.alvo, e.posicao, (xf, yt + e.altura * escala)]
         else:
             pts += e.pontos()
     if not pts:

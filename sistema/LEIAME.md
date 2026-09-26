@@ -218,6 +218,30 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.31.** Ensaio geral de um projeto do zero até a entrega (pedido do usuário para começar o dia seguinte com um
+projeto novo): 19 etapas pelo caminho do servidor — criar, arquitetônico, malha, eixos, lançar, memorial do lançamento,
+Calcular estrutura, memorial por peça, Dimensionar, Detalhar, lista, PDF da lista, plano de corte, resumos da obra,
+pranchas A1 com carimbo, PDF das pranchas, IFC e DXF —, tesoura treliçada (42 s de processamento) e alma cheia (25 s). O
+que o ensaio corrigiu: (1) **texto sobreposto**, medido pela caixa do miolo das letras em cada PDF: o título "SEÇÃO" da
+barra fina (13 a 25 mm) caía no número da cota vertical, que não cabe ao lado e sobe (`celulas.py`); o título da planta de
+localização ficava a distância fixa das peças e a bolinha do primeiro eixo (1,5 m além delas) caía nele — agora vai abaixo
+do ponto mais baixo desenhado (`conjuntos.py`); na prancha, a célula vizinha era posta em cima das chamadas de parafuso,
+porque a caixa da chamada não contava a largura do texto (`pranchas._caixa_de`); na figura da tesoura do memorial do
+galpão, os rótulos do banzo e dos montantes se encontravam junto dos nós — agora cada rótulo procura um lugar livre (outro
+lado, mais para uma ponta); na paginação das telhas, o nome da chapa emendada no comprimento caía na
+cota da chapa de baixo (agora fica dentro da própria chapa, do outro lado da linha de cota), a telha em camada (duas
+chapas no mesmo lugar do modelo) tem a cota e o nome deslocados para o lado, e as cotas da largura útil e total descem
+abaixo do nome mais longo da face; na chapa curta demais para o número da cota, o título da face sobe acima dele
+(`telhas.py`; nas três obras da Sooro, a paginação das telhas foi de 430 textos cruzados para 2). (2) **Dimensionar em projeto lançado pede confirmação**: o Dimensionar do modelo 3D analisa a
+tesoura isolada, apoiada no topo dos pilares, e no ensaio aliviava os banzos pela metade (banzo inferior de Ue
+150×75×20×4,75 para U 100×50×2,25, −730 kg) contra o pórtico inteiro do lançamento, que o deixa a 95 %; até os dois
+cálculos serem conciliados com casos de referência, a troca de perfil em projeto lançado avisa e pede confirmação. (3)
+Pórtico de alma cheia lançado: o Calcular estrutura e o Dimensionar do modelo 3D dizem que o cálculo que vale é o do
+lançamento (antes mandavam "gerar o detalhamento"). (4) **Excluir desenho insistente**: a conferência completa
+pegou, uma vez em algumas rodadas, erro 500 ao excluir um desenho logo depois de o 3D pedir a lista (o Windows ainda
+segurava o arquivo); a ida para a lixeira agora tenta de novo por alguns segundos, como a gravação já fazia
+(`projetos.excluir_desenho`). Análise para o dia seguinte em `Projeto/Analise-geral-2026-09-26.pdf`.
+
 **0.8.30.** **Ligações e acessórios** (pedido do usuário: "a tela de todas as ligações, começando pelas peças da
 Sooro"). (1) **Biblioteca** (`nucleo/acessorios.py`): 23 tipos em 7 categorias — terças (cadeirinha, chapa simples,
 cantoneira, emenda por transpasse), correntes (agulhamento rígido, agulhamento diagonal com gancho, corrente roscada),

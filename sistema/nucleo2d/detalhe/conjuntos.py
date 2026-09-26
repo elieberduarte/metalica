@@ -2123,8 +2123,11 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
                 d.metadados["eixos"] = ex
         p.cota_h(0, larg_v, 0, -10.0)
         p.cota_v(0, alt_v, larg_v, 10.0)
-        p.texto(0, -(10.0 + 8.0) * esc, nome, 3.5 * esc)
-        p.texto(0, -(10.0 + 8.0 + 4.5) * esc, "escala 1:%s · marcas de conjunto no lugar de montagem; peça solta com a própria marca" % (int(esc) if float(esc).is_integer() else esc), 2.0 * esc)
+        # o título vai abaixo de tudo o que já foi desenhado: as linhas de eixo passam 1,5 m
+        # além das peças, com a bolinha na ponta, e a bolinha do primeiro eixo caía no título
+        y_tit = min(-(10.0 + 8.0) * esc, p.extremos[1] - p.dy - 6.0 * esc)      # extremos: absolutos; texto: da vista
+        p.texto(0, y_tit, nome, 3.5 * esc)
+        p.texto(0, y_tit - 4.5 * esc, "escala 1:%s · marcas de conjunto no lugar de montagem; peça solta com a própria marca" % (int(esc) if float(esc).is_integer() else esc), 2.0 * esc)
         ext_c = p.extremos
         d.metadados.setdefault("celulas", []).append([round(t, 1) for t in ext_c])
         d.vistas.append({"origem": [minimo[0], minimo[1], minimo[2]], "normal": list(w), "acima": list(v),

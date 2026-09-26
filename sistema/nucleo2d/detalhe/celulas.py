@@ -243,7 +243,9 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
             p.polilinha([(x_dir + (w - w_min), v) for v, w in laco], fechada=True, camada="ACO")
         p.cota_h(x_dir, x_dir + (w_max - w_min), 0, -off)
         p.cota_v(0, H, x_dir + (w_max - w_min), off)
-        p.texto(x_dir, H + 3.0 * esc, "SEÇÃO", 2.0 * esc)
+        # seção baixa (barra redonda de 13 a 25 mm): o número da cota vertical não cabe ao lado
+        # e sobe para cima da linha — o título vai acima dele
+        p.texto(x_dir, H + (3.0 if H >= 8.0 * esc else 7.5) * esc, "SEÇÃO", 2.0 * esc)
     if pos.classe == "chapa_dobrada" and pos.local:
         w_min = min(q[2] for q in pos.local)
         _vista(p, pos, (2, 1), 0, +1.0, x_dir - w_min, 0)
@@ -356,7 +358,7 @@ def _desenho_da_telha(pos: Posicao, p: "_Papel", esc: float, off: float, off2: f
         p.polilinha([(x_dir + (w - w_min), v * k) for v, w in perfil_onda], fechada=False, camada="ACO")
         p.cota_h(x_dir, x_dir + (w_max - w_min), 0, -off)
         p.cota_v(0, B, x_dir + (w_max - w_min), off)
-        p.texto(x_dir, B + 3.0 * esc, "SEÇÃO", 2.0 * esc)
+        p.texto(x_dir, B + (3.0 if B >= 8.0 * esc else 7.5) * esc, "SEÇÃO", 2.0 * esc)
     y = B + (off + 2.0) * esc
     linhas = _cabecalho(pos)
     for i, txt in enumerate(reversed(linhas)):

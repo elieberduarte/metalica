@@ -1100,17 +1100,44 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
             cotada = True
             xa = min(q[0] for q in contorno) - x0
             yb = ch["y0"] - y0
-            desenho.add(Cota(modo="h", p1=p._p(xa, yb), p2=p._p(xa + LARGURA_COMPRA_TELHA, yb), deslocamento=-14.0,
+            # abaixo dos nomes das chapas (em pé, descendo 4 mm abaixo da chapa): o nome mais
+            # longo da face decide onde as cotas da largura começam
+            nome_max = max(len(str(c["nome"])) for c in ordenadas)
+            d_util = max(14.0, 4.0 + nome_max * 1.8 * 0.8 + 5.0)
+            desenho.add(Cota(modo="h", p1=p._p(xa, yb), p2=p._p(xa + LARGURA_COMPRA_TELHA, yb), deslocamento=-d_util,
                              texto="%d útil" % LARGURA_COMPRA_TELHA, atributos=dict(atr)))
-            desenho.add(Cota(modo="h", p1=p._p(xa, yb), p2=p._p(xa + LARGURA_TOTAL_TELHA, yb), deslocamento=-22.0,
-                             texto="%d total" % LARGURA_TOTAL_TELHA, atributos=dict(atr)))
-            p._p(xa, yb - 26.0 * esc)
+            desenho.add(Cota(modo="h", p1=p._p(xa, yb), p2=p._p(xa + LARGURA_TOTAL_TELHA, yb),
+                             deslocamento=-(d_util + 8.0), texto="%d total" % LARGURA_TOTAL_TELHA, atributos=dict(atr)))
+            p._p(xa, yb - (d_util + 12.0) * esc)
         xm = ch["x"] - x0
+        # telha em camada: outra chapa já desenhada no mesmo alinhamento, cobrindo o mesmo
+        # trecho (telha dupla ou sobreposta no modelo) — a cota e o nome dela vão para o lado,
+        # senão os números das duas caem um em cima do outro
+        camada = sum(1 for o in ordenadas[:n]
+                     if abs(o["x"] - ch["x"]) < 0.25 * LARGURA_COMPRA_TELHA
+                     and min(o["y1"], ch["y1"]) - max(o["y0"], ch["y0"])
+                     > 0.2 * min(o["y1"] - o["y0"], ch["y1"] - ch["y0"]))
+        desl = 7.0 * camada
         a, b = (xm, ch["y0"] - y0), (xm, ch["y1"] - y0)
         texto = "%d" % round(ch["comprimento"])
-        desenho.add(Cota(modo="v", p1=p._p(*a), p2=p._p(*b), deslocamento=0.0, texto=texto, altura=1.8,
+        desenho.add(Cota(modo="v", p1=p._p(*a), p2=p._p(*b), deslocamento=-desl, texto=texto, altura=1.8,
                          atributos=dict(atr, chapa=ch["nome"])))
-        p.texto(xm, ch["y0"] - y0 - 4.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0, alinhamento="direita")
+        # o nome vai abaixo da chapa; na face com telhas emendadas no comprimento, abaixo dela
+        # já começa a chapa de baixo (com a cota dela no mesmo alinhamento) — aí o nome fica
+        # dentro da própria chapa, junto da ponta de baixo e do outro lado da linha de cota
+        emendada = any(o is not ch and abs(o["x"] - ch["x"]) < 0.25 * LARGURA_COMPRA_TELHA
+                       and o["y0"] < ch["y0"] - 1.0 and o["y1"] > ch["y0"] - 20.0 * esc for o in ordenadas)
+        cabe = (ch["y1"] - ch["y0"]) / esc >= len(str(ch["nome"])) * 1.8 * 0.8 + 8.0
+        if emendada and cabe:
+            p.texto(xm + (desl + 3.0) * esc, ch["y0"] - y0 + 3.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0,
+                    alinhamento="esquerda")
+        elif emendada:
+            # chapa curta demais para o nome: abaixo dela, mas do outro lado da linha de cota
+            p.texto(xm + (desl + 3.0) * esc, ch["y0"] - y0 - 4.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0,
+                    alinhamento="direita")
+        else:
+            p.texto(xm + desl * esc, ch["y0"] - y0 - 4.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0,
+                    alinhamento="direita")
     if pernas:
         # a cumeeira por cima das telhas: cada perna hachurada (é a peça que cobre o topo
         # das chapas), a linha da cumeeira e um rótulo só — nome e comprimento da perna
@@ -1155,6 +1182,13 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
                          texto="%d" % SAIA_TELHA, altura=1.8, atributos=dict(atr)))
         p._p(xb_f + 14.0 * esc, y_fundo)
     alt = max(q[1] for ch in chapas for q in ch["contorno"]) - y0
+    # na chapa curta o número da cota passa do topo (e, se nem cabe entre as setas, a cota o
+    # põe para fora, depois da ponta de cima — `desenho._cota_dxf`): o título e o resumo sobem
+    for ch in ordenadas:
+        comp, h, n_txt = ch["y1"] - ch["y0"], 1.8 * esc, len("%d" % round(ch["comprimento"]))
+        tam = min(2.5 * esc, max(esc, comp / 4.0))
+        ponta = (2.4 * tam + 0.8 * h * n_txt) if comp < 3.0 * tam else 0.4 * h * n_txt
+        alt = max(alt, (ch["y0"] + ch["y1"]) / 2.0 - y0 + ponta + 1.0 * esc)
     pernas = [ch for ch in chapas if ch.get("cumeeira")]
     cont = collections.Counter(ch["nome"] for ch in chapas if not ch.get("cumeeira"))
     resumo = " · ".join("%s %dx" % (k, q) for k, q in sorted(cont.items(), key=lambda kv: _ordem_natural(kv[0])))

@@ -156,6 +156,20 @@ export class MetodosAnalise {
       this.aviso('Dimensionar trabalha no modelo de um projeto: abra o modelo pela tela de projetos.', 'atencao');
       return false;
     }
+    // Projeto lançado: os perfis já saíram do cálculo do pórtico inteiro (vento, 2ª ordem,
+    // pilar com a tesoura). Este dimensionar analisa a tesoura isolada, apoiada no topo dos
+    // pilares, e tende a aliviar os banzos — no ensaio de 26/09 o banzo inferior ia de
+    // Ue 150×75×20×4,75 para U 100×50×2,25. Até os dois cálculos serem conciliados com casos
+    // de referência, trocar perfil de projeto lançado pede confirmação.
+    try {
+      const l = await (await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/lancamento`, { cache: 'no-store' })).json();
+      if (l && l.resumo) {
+        const corpo = el('div', {},
+          el('p', { class: 'explica atencao', texto: 'Este projeto foi lançado e dimensionado pelo cálculo do pórtico inteiro (memorial do lançamento). O Dimensionar do modelo 3D analisa cada tesoura isolada, apoiada no topo dos pilares, sem a ação de pórtico: ele tende a aliviar os banzos e pode trocar por perfis que o pórtico não aceita.' }),
+          el('p', { class: 'explica', texto: 'Use o Calcular estrutura para conferir o modelo depois de editado. Se dimensionar mesmo assim, o modelo atual fica no histórico (Restaurar modelo anterior).' }));
+        if (await this.dialogo({ titulo: 'Projeto lançado', corpo, ok: 'Dimensionar mesmo assim' }) !== 'ok') return false;
+      }
+    } catch (e) { /* sem lançamento: segue */ }
     const par = await this._dialogoParametrosCalculo({
       titulo: 'Dimensionar a estrutura', ok: 'Dimensionar',
       nota: 'Em cada posição verificada entra o perfil mais leve do catálogo (séries padrão) que passa na barra e na ligação; ' +

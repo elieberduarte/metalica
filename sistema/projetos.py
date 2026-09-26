@@ -517,8 +517,16 @@ class Projetos:
         if os.path.exists(caminho):
             lixo = os.path.join(self.raiz, LIXEIRA)
             os.makedirs(lixo, exist_ok=True)
-            shutil.move(caminho, os.path.join(lixo, "%s-%s-%s" % (
-                s, os.path.basename(caminho), time.strftime("%Y%m%d-%H%M%S"))))
+            destino = os.path.join(lixo, "%s-%s-%s" % (
+                s, os.path.basename(caminho), time.strftime("%Y%m%d-%H%M%S")))
+            # insistente: logo depois de o CAD ou o 3D pedir a lista (que lê o cabeçalho de
+            # cada desenho), o Windows ainda pode segurar o arquivo por um instante
+            try:
+                trocar_arquivo(caminho, destino)
+            except PermissionError:
+                raise
+            except OSError:
+                shutil.move(caminho, destino)
         return {"excluido": slug(nome)}
 
     # ------------------------------------------------------------ modelo 3D
