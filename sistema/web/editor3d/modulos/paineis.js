@@ -246,7 +246,8 @@ export class MetodosPaineis {
 
     const est = this.documento.estatisticas();
     const massa = this.documento.barras.reduce((s, e) => s + this._massaBarra(e), 0) +
-      this.documento.chapas.reduce((s, e) => s + areaDaChapa(e) * (e.espessura || 0) * 7.85e-6, 0);
+      this.documento.chapas.reduce((s, e) => s + areaDaChapa(e) * (e.espessura || 0) * 7.85e-6, 0) +
+      (this.documento.solidos || []).reduce((s, e) => s + (Number((e.atributos || {}).peso_kg) || 0), 0);
     const gm = this._grupo(raiz, 'Modelo');
     const linha = (r, v) => gm.append(el('label', { texto: r }), el('span', { class: 'valor', texto: v }));
     linha('Objetos', numero(est.entidades));
@@ -258,7 +259,10 @@ export class MetodosPaineis {
 
   _massaBarra(b) {
     const p = this.cena.perfil(b.perfil);
-    return p && p.massa ? p.massa * comprimentoDaBarra(b) / 1000 : 0;
+    if (p && p.massa) return p.massa * comprimentoDaBarra(b) / 1000;
+    // perfil que o editor não traz (dobrado de fábrica, do catálogo dos fornecedores): o
+    // peso que o gerador do modelo gravou na peça
+    return Number((b.atributos || {}).peso_kg) || 0;
   }
 
   _grupo(raiz, titulo) {

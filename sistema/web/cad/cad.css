@@ -52,6 +52,11 @@ dialog.dialogo h3 { font-size: 16px; color: var(--azul); margin: 0 0 10px; }
 .dialogo-corpo fieldset.montagem legend { font-weight: 600; color: var(--texto); padding: 0 4px; }
 .dialogo-corpo .lista-avisos { margin: 0; padding-left: 18px; color: var(--texto2); line-height: 1.45; }
 .dialogo-corpo .explica.atencao { color: #d97706; }
+.dialogo-corpo table.conferencia { border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+.dialogo-corpo table.conferencia th, .dialogo-corpo table.conferencia td { border: 1px solid var(--borda); padding: 3px 10px; text-align: right; }
+.dialogo-corpo table.conferencia th:first-child, .dialogo-corpo table.conferencia td:first-child { text-align: left; }
+.dialogo-corpo table.conferencia tr.ok td:last-child { color: #16a34a; }
+.dialogo-corpo table.conferencia tr.difere td:last-child { color: #d97706; font-weight: 600; }
 .dialogo-corpo .explica { color: var(--texto2); line-height: 1.45; }
 .dialogo-corpo .lista-opcoes { display: flex; flex-direction: column; gap: 4px; }
 .dialogo-corpo label.linha { flex-direction: row; align-items: center; gap: 8px; color: var(--texto); font-size: 13px; }

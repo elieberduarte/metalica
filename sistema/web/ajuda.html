@@ -75,6 +75,7 @@
   <a href="#memorial">Memorial de cálculo por peça</a>
   <a href="#pranchas">Pranchas, PDF e DXF</a>
   <a href="#dxf">Importar um DXF</a>
+  <a href="#pela-planta">Projeto recebido sem 3D → montar pela planta</a>
   <a href="#recebido">Projeto recebido em DXF ou PDF → modelo 3D e IFC</a>
   <a href="#instalar">Instalar e atualizar</a>
   <a href="#limites">O que o programa ainda não faz</a>
@@ -280,6 +281,17 @@
 
 <h2 id="dxf">Importar um DXF</h2>
 <p><b>Desenho → Importar DXF neste desenho…</b> traz um DXF de outro CAD para o desenho aberto: linhas, polilinhas, círculos, arcos, textos, blocos e cotas (como o CAD de origem as desenhou). Informe a unidade do arquivo se ele não a declarar (muitos DWGs antigos estão em centímetro) e o ponto de inserção. Entra como um comando: <kbd>Ctrl+Z</kbd> desfaz. DWG não é lido diretamente: no CAD de origem, salve como DXF.</p>
+
+<h2 id="pela-planta">Projeto recebido sem 3D → montar pela planta</h2>
+<p>Quando o projeto chega completo em DXF — planta estrutural com o nome de cada treliça escrito nela, a elevação de cada treliça com o título "TESOURA 1 - 7X", a locação dos pilares e a planta das terças — mas sem o modelo 3D, abra o desenho no CAD e use <b>Desenho → Montar o 3D pela planta (projeto recebido)…</b>. O diálogo pergunta quais são as plantas (pelos títulos do desenho) e o <b>nível do banzo inferior</b> das treliças.</p>
+<ul>
+  <li>Cada linha com nome na planta ("TESOURA 1", "PAINEL 8", "TRANSIÇÃO 4") recebe a treliça da elevação de mesmo nome, em pé, com os perfis da nota da elevação ("BANZO U100X40X2,25", "DIAGONAIS E MONTANTES 2L 1"X1/8"").</li>
+  <li>A peça curva na planta sai <b>calandrada</b>.</li>
+  <li>O <b>sentido</b> de cada treliça sai das marcas ST (apoio de terça) da elevação, que têm de cair onde as terças cruzam a treliça; sem marcas, do encontro dos banzos. O resultado diz quantas foram decididas de cada jeito: confira no 3D as de uma água só.</li>
+  <li>Os <b>pilares</b> saem da locação ("PM3(200X70X20X2,65)" sobre a placa), da base até o banzo; as <b>terças</b>, correntes e contraventos, da planta das terças, sentados no banzo superior. As plantas são alinhadas pelos balões dos eixos.</li>
+  <li>No fim aparece a <b>conferência</b>: o que o modelo tem contra o que o próprio projeto pede (título "- 7X", lista das terças, das correntes e dos contraventos), e o que ficou de fora.</li>
+</ul>
+<p>Ainda não entram: agulhas e suportes de terça (são chapas e acessórios), peças da planta sem nome escrito e as estruturas em outros níveis (mezanino, caixa d'água, passarela).</p>
 
 <h2 id="recebido">Projeto recebido em DXF ou PDF → modelo 3D e IFC</h2>
 <p>O projeto estrutural que chega do escritório de cálculo (planta de cobertura, tesoura, pórtico, fachada, com os perfis escritos junto das barras) vira modelo 3D e IFC sem ser redesenhado. No CAD, <b>Desenho → Projeto recebido (DXF/PDF) → modelo 3D e IFC…</b>, escolha o arquivo e pronto: o programa grava um desenho "Projeto recebido – nome" com as peças reconhecidas, monta o modelo 3D do projeto e grava o IFC (o link aparece no fim).</p>

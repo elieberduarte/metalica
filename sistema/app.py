@@ -42,6 +42,8 @@ Rotas da API:
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-furos   furos do detalhe → chapas do modelo
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-pecas {desenho}  barras movidas/esticadas/copiadas/apagadas nas elevações → modelo 3D
     POST /api/projetos/<slug>/desenhos/<nome>/gerar-3d       desenho 2D → modelo 3D (peças do catálogo)
+    POST /api/projetos/<slug>/desenhos/<nome>/montar-pela-planta  projeto recebido sem 3D → modelo pela planta,
+                                                              elevações nomeadas, locação e planta das terças
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
     POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
     GET  /api/projetos/<slug>/resumos                    dados dos resumos (revisão, telha, eixos…) e sugestões
@@ -646,6 +648,51 @@ def gerar_3d_do_desenho(s: str, nome: str, corpo: dict) -> dict:
     return {"modelo": {"entidades": len(doc.entidades), "barras": len(doc.barras)},
             "gerado": info, "modo": modo,
             "estatisticas": doc.estatisticas()}
+
+
+def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/desenhos/<nome>/montar-pela-planta: o projeto recebido em
+    DXF, sem 3D, vira modelo pela planta estrutural (nucleo3d/de_planta.py): cada linha
+    nomeada da planta ("TESOURA 1") recebe a treliça da elevação de mesmo nome ("TESOURA 1
+    - 7X"), com o banzo inferior no nível; pilares da locação, terças, correntes e
+    contraventos da planta das terças.
+
+    corpo: {sugerir: true → só os títulos de planta do desenho e os valores padrão;
+            parametros: {planta, nivel (mm), locacao, base (mm), tercas, aco},
+            modo: "substituir"|"acrescentar", ifc: bool}"""
+    import re as _re
+    from nucleo3d import de_planta
+    from nucleo3d.modelo import Documento
+    g = _gerente()
+    bruto = g.abrir_desenho(s, nome)
+    if not bruto:
+        raise ErroDeDados("desenho não encontrado: %s" % nome)
+    ents = bruto.get("entidades") or []
+    if isinstance(ents, dict):
+        ents = list(ents.values())
+    if corpo.get("sugerir"):
+        titulos = sorted({str(e.get("texto") or "").strip() for e in ents if e.get("tipo") == "texto"
+                          and _re.match(r"(?i)^\s*(PLANTA|LOCA[ÇC][ÃA]O)", str(e.get("texto") or ""))})
+        return {"titulos": titulos[:200], "padrao": dict(de_planta.PADRAO)}
+    par = dict(corpo.get("parametros") or {})
+    modo = str(corpo.get("modo") or "substituir")
+    base = None
+    if modo == "acrescentar":
+        atual = g.abrir_modelo(s)
+        base = Documento.de_dict(atual) if atual else None
+    try:
+        r = de_planta.montar(ents, par, avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)), doc=base)
+    finally:
+        _fim_progresso(s)
+    doc = r["doc"]
+    doc.nome = doc.nome or nome
+    _regravar_modelo(s, doc)          # o modelo anterior vai para o histórico
+    g.tocar(s)
+    saida = {"resumo": r["resumo"], "conferencia": r["conferencia"], "avisos": r["avisos"],
+             "modelo": {"entidades": len(doc.entidades), "barras": len(doc.barras)}, "modo": modo}
+    if corpo.get("ifc"):
+        saida["ifc"] = _exportar_ifc_do_projeto(s, doc, nome)
+    return saida
 
 
 def detalhar_projeto(s: str, corpo: dict) -> dict:
@@ -2747,6 +2794,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(atualizar_pecas_projeto(partes[0], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "gerar-3d":
                     return self._json(gerar_3d_do_desenho(partes[0], partes[2], corpo))
+                if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "montar-pela-planta":
+                    return self._json(montar_pela_planta(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-furos":
                     return self._json(aplicar_furos_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-pecas":

@@ -10,6 +10,7 @@ import { Tela, formatarMm } from './nucleo/tela.js';
 import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta } from './ferramentas.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
+import { MetodosMontarPlantaCAD } from './montar_planta.js';
 
 const CHAVE_TEMA = 'galpao.tema';
 const ATRASO_AUTOSAVE = 3000;
@@ -645,6 +646,7 @@ class CAD {
       'lancar-3d': () => this.lancarNo3D(),
       'projeto-2d': () => $('#arquivo-projeto-2d').click(),
       reconhecer: () => this.reconhecerPecas(),
+      'montar-planta': () => this.dialogoMontarPelaPlanta(),
       desfazer: () => this.desfazer(), refazer: () => this.refazer(),
       'selecionar-tudo': () => this.selecionar([...this.doc.entidades.keys()].filter(id => this.doc.visivel(this.doc.get(id)))),
       apagar: () => this.apagarSelecao(),
@@ -1753,11 +1755,14 @@ const evInfo = (ev) => ({ shiftKey: ev.shiftKey, ctrlKey: ev.ctrlKey, altKey: ev
 const slug = (s) => String(s || '').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().toLowerCase().replace(/[\s_-]+/g, '-').slice(0, 60).replace(/^-+|-+$/g, '') || 'desenho';
 function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { return null; } }
 
-// os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js
-for (const k of Object.getOwnPropertyNames(MetodosLancamentoCAD.prototype)) {
-  if (k === 'constructor') continue;
-  if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);
-  Object.defineProperty(CAD.prototype, k, Object.getOwnPropertyDescriptor(MetodosLancamentoCAD.prototype, k));
+// os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js; os do
+// projeto recebido montado pela planta, em montar_planta.js
+for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD]) {
+  for (const k of Object.getOwnPropertyNames(M.prototype)) {
+    if (k === 'constructor') continue;
+    if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);
+    Object.defineProperty(CAD.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
+  }
 }
 
 const cad = new CAD();

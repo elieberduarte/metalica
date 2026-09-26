@@ -86,6 +86,8 @@ _RE_PERFIL = re.compile(
     r"(?<![A-Z0-9])(?P<mult>[2-4]\s*)?(?P<fam>UE|ZE|Z45|CR|TQ|TR|TC|HP|CVS|CS|VS|PS|W|U|C|Z|L|I|TUBO)"
     r"\s*(?P<resto>\d[\d.,X/\"#\s]*(?:#\s*(?:" + _POL + r"|\d+))?)")
 _RE_CHAPA = re.compile(r"(?<![A-Z])(?:CH|CHAPA|PL)\s*[.#]?\s*(?P<resto>[\d.,X/\"#\s]+)")
+#: "3 PRESILHAS L 1"X1/8"" depois do perfil da peça (o projetista às vezes escreve PRELILHAS)
+_RE_PRESILHA = re.compile(r"(?:\b\d+\s*)?\bPRE[SL]ILHAS?\b")
 _NAO_PECA = re.compile(r"FURO|PARAF|PORCA|ARRUELA|CHUMB|PINO|SOLDA|A-?325|A-?307|A-?490|FILETE|\bESC\b|ESCALA|OBS")
 
 
@@ -217,6 +219,21 @@ def _perfil_do_texto(texto: str) -> Optional[dict]:
     t = _limpo(texto)
     if not t or len(t) > 160:
         return None
+    # "2L 1"X1/8"  3 PRESILHAS L 1"X1/8"": a peça é a primeira; as presilhas são acessório
+    m = re.search(_RE_PRESILHA, t)
+    if m and m.start() > 0:
+        t = t[:m.start()].strip()
+    # sigla com o perfil entre parênteses: "PM3(200X70X20X2,65)" (Ue: altura, aba, dobra,
+    # espessura) ou "VM1(150X60X3,00)" (U) — o projetista escreve só as medidas
+    m = re.match(r"^([A-Z]{1,3})\d+[A-Z]?\s*\(\s*(\d[\d.,]*(?:\s*X\s*\d[\d.,]*){2,3})\s*\)", t)
+    if m:
+        n = len(re.findall(r"X", m.group(2)))
+        t = ("UE " if n == 3 else "U ") + m.group(2).replace(" ", "")
+        papel_sigla = {"PM": "pilar", "P": "pilar", "PL": "pilar", "VM": "viga", "V": "viga", "VG": "viga"}.get(m.group(1))
+        r = _perfil_do_texto(t)
+        if r:
+            r["papel"] = r.get("papel") or papel_sigla
+        return r
     papel = next((p for rx, p in PALAVRAS_PAPEL if re.search(rx, t)), None)
     if _NAO_PECA.search(t) and not re.search(r"CONTRAV|TIRANTE|CORRENTE|BANZO|TER[ÇC]A|DIAGONA|MONTANTE", t):
         return None

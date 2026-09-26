@@ -218,6 +218,35 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.32.** **Montar o 3D pela planta** (projeto recebido sem 3D; pedido do usuário com o projeto do Posto CB, um DXF
+de 30 MB sem limpeza, com a cobertura de forma livre de um posto, mezaninos, caixa d'água e passarela). No CAD,
+**Desenho → Montar o 3D pela planta (projeto recebido)…** (`nucleo3d/de_planta.py`, rota
+`POST /api/projetos/<s>/desenhos/<nome>/montar-pela-planta`). O diálogo pergunta só quais são as plantas, pelos títulos
+do desenho (planta estrutural, locação, planta das terças), e o nível do banzo inferior. O que ele faz: (1) lê cada
+**elevação** pelo título "FAMÍLIA n - kX" (TESOURA, PAINEL, TRANSIÇÃO, TRELIÇA, COMP; "COMP.10 2X" também): banzo em
+linha dupla, montantes e diagonais em linha simples, a nota dos perfis entre o desenho e o título ("BANZO U100X40X2,25",
+"DIAGONAIS E MONTANTES 2L 1"X1/8" 3 PRESILHAS…" → cantoneira dupla) e as marcas "ST" de apoio de terça, seguindo a
+linha de chamada até o apoio; (2) na **planta estrutural**, acha a linha de centro de cada peça desenhada pela largura
+(duas linhas paralelas, dois arcos, ou a borda curva feita de arcos e retas emendados na mesma tangente) e liga o
+nome escrito a ela; a linha comprida com vários nomes é cortada no comprimento de cada elevação, encostando as pontas
+nos nós, e o nome repetido na mesma peça (a transição de 36 m) conta uma vez quando a planta tem mais nomes do que o
+título pede; (3) põe cada treliça em pé na sua linha, com o banzo inferior no nível; o **sentido** (qual ponta da
+elevação vai em qual ponta da planta) sai das marcas ST — no sentido certo elas caem onde as linhas de terça cruzam a
+treliça, com a mesma distância do texto ao apoio em todo o desenho —, senão do encontro dos banzos superiores, senão do
+costume do desenho; (4) o banzo na borda curva sai **calandrado**, um sólido varrido com um anel a cada ~3° (como o IFC
+do TecnoMETAL); (5) **pilares** da locação: o nome "PM3(200X70X20X2,65)" casado com a placa de base pelo deslocamento
+típico nome–placa, alinhados à planta pelos **balões dos eixos** de mesmo nome (28 balões concordam no posto); pilar sem
+peça da cobertura em cima (mezanino) é avisado; (6) **terças** da planta das terças (camada da linha de eixo da terça),
+uma por nome TC, cortadas no apoio entre dois nomes, com o perfil da lista "TC13-U100X40X2,65 - 56X", sentadas no banzo
+superior das treliças da cobertura (a testeira, PAINEL, e o apoio que foge mais de 400 mm da reta dos
+vizinhos — a transição que sobe acima do telhado — não são apoio); correntes, esticadores e contraventos na altura da cobertura; vigas VM em perfil duplo. O resultado confere as
+quantidades com o que o próprio projeto pede. No Posto CB: 150 treliças (4 tipos diferentes do título, por nome que
+falta ou sobra na planta), 79 de 79 pilares, 430 terças (427 nomes na planta; a lista pede 450), 90 de 90
+contraventos, 26 peças calandradas, 44,7 t, em 15 s; o Detalhar roda sobre o modelo (6.249 peças). Também: o
+reconhecedor lê a cantoneira dupla antes das presilhas e o perfil entre parênteses da sigla ("PM3(200X70X20X2,65)" →
+Ue, pilar); o "Aço estimado" do painel do 3D soma o peso gravado nas peças de perfil que o editor não traz (dobrados de
+fábrica). Testes em `testes/test_de_planta.py` (projeto sintético com o mesmo desenho).
+
 **0.8.31.** Ensaio geral de um projeto do zero até a entrega (pedido do usuário para começar o dia seguinte com um
 projeto novo): 19 etapas pelo caminho do servidor — criar, arquitetônico, malha, eixos, lançar, memorial do lançamento,
 Calcular estrutura, memorial por peça, Dimensionar, Detalhar, lista, PDF da lista, plano de corte, resumos da obra,
@@ -1571,6 +1600,21 @@ código 1 quando alguma conferência falha.
 `testes/verificadores/verif_*.py` sobem o servidor numa pasta temporária e exercitam a interface pelo Chrome
 sem janela (CDP); a maioria usa o modelo de exemplo do cliente, que não está no repositório — ver o LEIAME
 da pasta. `.github/workflows/testes.yml` roda o `pytest` no GitHub a cada push (Windows, Python 3.12).
+
+## Montar o 3D pela planta (projeto recebido sem 3D)
+
+`nucleo3d/de_planta.py`. Para o projeto de escritório que chega completo em DXF (plantas, elevações de cada treliça,
+listas) mas sem modelo. As plantas ficam em lugares diferentes do arquivo; a moldura de cada uma é o desenho logo acima
+do título (os grupos a menos de 8 m se juntam), e o alinhamento entre elas é a mediana dos balões de eixo de mesmo nome.
+Elevações: `ler_elevacoes` (título "FAMÍLIA n - kX", o desenho logo acima dele, nota dos perfis entre os dois, marcas
+ST pela ponta da chamada). Planta: `pecas_da_planta` (linhas de centro retas, arcos e compostos; nome → peça;
+corte pelo comprimento da elevação). Sentido: `orientar`. Montagem, pilares, terças e acessórios: `montar`, que devolve
+o documento, o resumo (com as quantidades do projeto) e a conferência por nome de treliça. As barras levam em
+`atributos.origem` o nome da planta e como o sentido foi decidido ("marcas ST", "encontro dos banzos", "costume do
+desenho"); pilar sem cobertura em cima leva `a_conferir`. Limites: agulhas (AG) e suportes de terça (ST, SC) não entram
+(são acessórios: chapas); a planta sem nome escrito na peça fica de fora (o resumo diz quantas); vigas VM entram no
+nível do banzo inferior (a conferir no projeto); estruturas em outros níveis (mezanino, caixa d'água, passarela) ainda
+não são montadas.
 
 ## Do desenho 2D para o modelo 3D
 
