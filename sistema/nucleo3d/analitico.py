@@ -1,0 +1,340 @@
+"""Modelo analítico: o esqueleto de nós e barras que o cálculo de esforços usa.
+
+O modelo físico põe cada perfil no lugar dele — a terça meia altura acima do banzo, a viga
+meia altura abaixo do nó, a cantoneira dupla em duas barras, uma de cada lado do plano da
+treliça. Para ver a estrutura (e para calcular), cada peça é o eixo que liga um nó a outro:
+
+1. o perfil duplo (a cantoneira dupla, a viga 2Ue) vira uma barra só, no meio dos dois — o
+   "duplo" fica anotado para o detalhamento;
+2. as pontas a menos de `TOL_NO` mm umas das outras viram o mesmo nó;
+3. a ponta que não chegou em nada desce/sobe até a peça em que ela apoia (a terça no banzo de
+   cima ou na viga, a viga no pilar, a corrente na terça, o pilar no banzo…), a até
+   `TOL_APOIO` mm — é a excentricidade física, que volta no detalhamento; a peça de apoio ganha
+   um nó ali;
+4. a terça que passa por cima de outras treliças ganha um nó em cada uma;
+5. o que sobrar sem ligar é ponta solta: um erro de verdade do modelo.
+
+`analitico(doc)` devolve {nos, barras, soltas, resumo}; cada barra lembra as ids das peças de
+onde saiu, para o editor selecionar e pintar.
+"""
+from __future__ import annotations
+
+import collections
+import math
+from typing import Dict, List, Optional, Tuple
+
+TOL_NO = 60.0           # pontas mais perto que isso são o mesmo nó
+TOL_DUPLO = 200.0       # as duas barras do perfil duplo: pontas a até isso uma da outra
+TOL_APOIO = 450.0       # a peça desce/sobe até a de apoio a até isso (meia altura dos dois perfis)
+TOL_CRUZA = 250.0       # a terça sobre o banzo que ela cruza: diferença de altura aceita
+
+# em que cada papel apoia a ponta dele
+APOIA_EM = {
+    "terça": ("banzo", "viga"),
+    "corrente": ("terça",),
+    "viga": ("pilar", "viga", "banzo"),
+    "contraventamento": ("banzo", "pilar", "viga", "montante", "diagonal", "terça"),
+    "pilar": ("banzo", "viga"),
+    "banzo": ("pilar", "banzo", "viga", "montante"),
+    "montante": ("banzo", "diagonal", "montante"),
+    "diagonal": ("banzo", "diagonal", "montante"),
+}
+ALMA = ("montante", "diagonal")
+TOL_ALMA = 120.0        # alma que chega no meio de outra barra de alma (o painel subdividido): bem perto
+
+Ponto = Tuple[float, float, float]
+
+
+def _sub(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _proj(p, a, b) -> Tuple[float, float, Ponto]:
+    """distância de p ao segmento ab, o parâmetro t (0..1) e o ponto"""
+    d = _sub(b, a)
+    L2 = _dot(d, d)
+    t = 0.0 if L2 <= 1e-9 else min(max(_dot(_sub(p, a), d) / L2, 0.0), 1.0)
+    q = (a[0] + d[0] * t, a[1] + d[1] * t, a[2] + d[2] * t)
+    return math.dist(p, q), t, q
+
+
+def _origem(ent) -> dict:
+    return (getattr(ent, "atributos", None) or {}).get("origem") or {}
+
+
+def _linhas_do(doc) -> List[dict]:
+    """as peças como linhas: a barra do início ao fim; a calandrada pelos centros dos anéis"""
+    out = []
+    for ent in doc.entidades.values():
+        o = _origem(ent)
+        if ent.tipo == "barra":
+            out.append({"a": tuple(ent.inicio), "b": tuple(ent.fim), "papel": ent.papel or "barra",
+                        "peca": o.get("peca"), "grupo": o.get("peca") or o.get("planta") or ent.id,
+                        "perfil": ent.perfil, "ids": [ent.id], "duplo": False})
+        elif ent.tipo == "solido" and (ent.atributos or {}).get("calandrada") and ent.faces:
+            v = ent.vertices
+            k = len(ent.faces[0])
+            if k < 3 or len(v) % k or len(v) // k < 2:
+                continue
+            c = [tuple(sum(v[j][m] for j in range(i, i + k)) / k for m in range(3)) for i in range(0, len(v), k)]
+            for a, b in zip(c, c[1:]):
+                out.append({"a": a, "b": b, "papel": "banzo", "peca": o.get("peca"),
+                            "grupo": o.get("peca") or ent.id, "perfil": ent.nome, "ids": [ent.id], "duplo": False,
+                            "curva": True})
+        elif ent.tipo == "solido" and ent.vertices:
+            # peça importada (IFC): a linha pela direção em que ela é mais comprida; a chapa não
+            # é barra. Sem o papel dela, a ponta não vira alarme de peça solta
+            from nucleo3d.apoios import _eixo_do_solido, _papel_do_solido
+            papel = _papel_do_solido(ent)
+            if papel == "chapa":
+                continue
+            (a, b), = _eixo_do_solido([tuple(p) for p in ent.vertices])[0][:1]
+            if math.dist(a, b) < 50.0:
+                continue
+            out.append({"a": a, "b": b, "papel": papel, "peca": o.get("peca"), "grupo": o.get("peca") or ent.id,
+                        "perfil": ent.nome, "ids": [ent.id], "duplo": False, "importada": True})
+    return out
+
+
+def _juntar_duplos(linhas: List[dict]) -> Tuple[List[dict], int]:
+    """o perfil duplo (duas barras paralelas lado a lado, da mesma peça e do mesmo papel) vira
+    uma barra só, no meio das duas"""
+    grupos = collections.defaultdict(list)
+    for i, ln in enumerate(linhas):
+        if not ln.get("curva"):
+            grupos[(ln["grupo"], ln["papel"], ln["perfil"])].append(i)
+    fora = set()
+    novas = []
+    for idx in grupos.values():
+        if len(idx) < 2:
+            continue
+        for x in range(len(idx)):
+            i = idx[x]
+            if i in fora:
+                continue
+            a1, b1 = linhas[i]["a"], linhas[i]["b"]
+            for y in range(x + 1, len(idx)):
+                j = idx[y]
+                if j in fora:
+                    continue
+                a2, b2 = linhas[j]["a"], linhas[j]["b"]
+                if math.dist(a1, a2) < TOL_DUPLO and math.dist(b1, b2) < TOL_DUPLO:
+                    pa, pb = a2, b2
+                elif math.dist(a1, b2) < TOL_DUPLO and math.dist(b1, a2) < TOL_DUPLO:
+                    pa, pb = b2, a2
+                else:
+                    continue
+                if max(math.dist(a1, pa), math.dist(b1, pb)) < 1.0:
+                    continue                                 # a mesma barra repetida, não o par
+                fora.update((i, j))
+                ln = dict(linhas[i])
+                ln["a"] = tuple((a1[m] + pa[m]) / 2 for m in range(3))
+                ln["b"] = tuple((b1[m] + pb[m]) / 2 for m in range(3))
+                ln["ids"] = linhas[i]["ids"] + linhas[j]["ids"]
+                ln["duplo"] = True
+                novas.append(ln)
+                break
+    return [ln for i, ln in enumerate(linhas) if i not in fora] + novas, len(novas)
+
+
+class _Grade:
+    def __init__(self, cel: float):
+        self.cel = cel
+        self.c = collections.defaultdict(list)
+
+    def chave(self, p):
+        return (int(math.floor(p[0] / self.cel)), int(math.floor(p[1] / self.cel)), int(math.floor(p[2] / self.cel)))
+
+    def por(self, p, item):
+        self.c[self.chave(p)].append(item)
+
+    def perto(self, p, r=1):
+        cx, cy, cz = self.chave(p)
+        for dx in range(-r, r + 1):
+            for dy in range(-r, r + 1):
+                for dz in range(-r, r + 1):
+                    yield from self.c.get((cx + dx, cy + dy, cz + dz), ())
+
+
+def analitico(doc, base: Optional[float] = None) -> dict:
+    linhas, duplos = _juntar_duplos(_linhas_do(doc))
+    if base is None:
+        zs = [ln[k][2] for ln in linhas if ln["papel"] == "pilar" for k in ("a", "b")]
+        base = min(zs) if zs else 0.0
+
+    # --- 2. as pontas perto umas das outras viram o mesmo nó (união das pontas próximas)
+    pts: List[Ponto] = []
+    for ln in linhas:
+        pts += [ln["a"], ln["b"]]
+    pai = list(range(len(pts)))
+
+    def raiz(i):
+        while pai[i] != i:
+            pai[i] = pai[pai[i]]
+            i = pai[i]
+        return i
+    g = _Grade(TOL_NO)
+    for i, p in enumerate(pts):
+        for j in g.perto(p):
+            if math.dist(p, pts[j]) <= TOL_NO:
+                ri, rj = raiz(i), raiz(j)
+                if ri != rj:
+                    pai[ri] = rj
+        g.por(p, i)
+    grupo_no: Dict[int, int] = {}
+    nos: List[List[float]] = []
+    soma = collections.defaultdict(lambda: [0.0, 0.0, 0.0, 0])
+    for i, p in enumerate(pts):
+        s = soma[raiz(i)]
+        s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3] += 1
+    for r, s in soma.items():
+        grupo_no[r] = len(nos)
+        nos.append([s[0] / s[3], s[1] / s[3], s[2] / s[3]])
+    for k, ln in enumerate(linhas):
+        ln["na"] = grupo_no[raiz(2 * k)]
+        ln["nb"] = grupo_no[raiz(2 * k + 1)]
+
+    def grau():
+        gr = collections.Counter()
+        for ln in linhas:
+            gr[ln["na"]] += 1
+            gr[ln["nb"]] += 1
+        return gr
+
+    # índice das linhas por onde passam (para achar o apoio)
+    gl = _Grade(1000.0)
+    for k, ln in enumerate(linhas):
+        a, b = nos[ln["na"]], nos[ln["nb"]]
+        n = int(math.dist(a, b) // 500.0) + 1
+        vistos = set()
+        for j in range(n + 1):
+            p = tuple(a[m] + (b[m] - a[m]) * j / n for m in range(3))
+            ch = gl.chave(p)
+            if ch not in vistos:
+                vistos.add(ch)
+                gl.c[ch].append(k)
+
+    cortes = collections.defaultdict(list)       # linha -> [(t, nó)] onde ganha um nó
+
+    def no_em(k, q, t):
+        """o nó na linha k no ponto q: a ponta dela, se perto; senão um nó novo que a corta ali"""
+        ln = linhas[k]
+        a, b = nos[ln["na"]], nos[ln["nb"]]
+        if math.dist(q, a) <= 2 * TOL_NO:
+            return ln["na"]
+        if math.dist(q, b) <= 2 * TOL_NO:
+            return ln["nb"]
+        for t2, n2 in cortes[k]:
+            if math.dist(nos[n2], q) <= 2 * TOL_NO:
+                return n2
+        nos.append([q[0], q[1], q[2]])
+        cortes[k].append((t, len(nos) - 1))
+        return len(nos) - 1
+
+    # --- 3. a ponta solta desce/sobe até a peça em que apoia
+    gr = grau()
+    ligadas = 0
+    for k, ln in enumerate(linhas):
+        alvo = APOIA_EM.get(ln["papel"])
+        if not alvo:
+            continue
+        for lado in ("na", "nb"):
+            n = ln[lado]
+            if gr[n] > 1:
+                continue
+            p = nos[n]
+            if ln["papel"] == "pilar" and p[2] <= base + 50.0:
+                continue                                   # o pé do pilar é a base
+            melhor = None
+            for j in set(gl.perto(p)):
+                if j == k or linhas[j]["papel"] not in alvo or linhas[j]["grupo"] == ln["grupo"] and ln["papel"] in ("terça", "viga"):
+                    continue
+                d, t, q = _proj(p, nos[linhas[j]["na"]], nos[linhas[j]["nb"]])
+                tol = TOL_ALMA if linhas[j]["papel"] in ALMA else TOL_APOIO
+                if d <= tol and (melhor is None or d < melhor[0]):
+                    melhor = (d, j, t, q)
+            if melhor:
+                _d, j, t, q = melhor
+                novo = no_em(j, q, t)
+                ln[lado] = novo
+                gr[novo] += 1
+                ligadas += 1
+
+    # --- 4. a terça que passa sobre as treliças ganha um nó em cada banzo que ela cruza
+    for k, ln in enumerate(linhas):
+        if ln["papel"] != "terça":
+            continue
+        a, b = nos[ln["na"]], nos[ln["nb"]]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy)
+        if L < 1.0:
+            continue
+        cand = set()
+        n = int(L // 500.0) + 1
+        for s in range(n + 1):
+            cand.update(gl.perto(tuple(a[m] + (b[m] - a[m]) * s / n for m in range(3))))
+        for j in cand:
+            lj = linhas[j]
+            if lj["papel"] not in ("banzo", "viga"):
+                continue
+            c, e = nos[lj["na"]], nos[lj["nb"]]
+            ex, ey = e[0] - c[0], e[1] - c[1]
+            den = dx * ey - dy * ex
+            if abs(den) <= 1e-3 * L * max(math.hypot(ex, ey), 1.0):
+                continue                                   # paralelas (ou banzo vertical): não cruzam
+            t = ((c[0] - a[0]) * ey - (c[1] - a[1]) * ex) / den
+            u = ((c[0] - a[0]) * dy - (c[1] - a[1]) * dx) / den
+            if not (0.02 < t < 0.98 and 0.0 <= u <= 1.0):
+                continue
+            zt = a[2] + (b[2] - a[2]) * t
+            q = (c[0] + ex * u, c[1] + ey * u, c[2] + (e[2] - c[2]) * u)
+            if abs(zt - q[2]) > TOL_CRUZA:
+                continue
+            nj = no_em(j, q, u)
+            cortes[k].append((t, nj))
+
+    # --- corta as linhas nos nós que ganharam
+    barras = []
+    for k, ln in enumerate(linhas):
+        seq = [(0.0, ln["na"])] + sorted(cortes.get(k, [])) + [(1.0, ln["nb"])]
+        for (t0, n0), (t1, n1) in zip(seq, seq[1:]):
+            if n0 == n1:
+                continue
+            barras.append({"a": n0, "b": n1, "papel": ln["papel"], "peca": ln["peca"], "perfil": ln["perfil"],
+                           "ids": ln["ids"], "duplo": ln["duplo"], "importada": bool(ln.get("importada"))})
+
+    # --- 5. o que sobrou sem ligar
+    gr = collections.Counter()
+    for br in barras:
+        gr[br["a"]] += 1
+        gr[br["b"]] += 1
+    soltas = []
+    for br in barras:
+        for lado in ("a", "b"):
+            n = br[lado]
+            if gr[n] != 1:
+                continue
+            if br["papel"] == "pilar" and nos[n][2] <= base + 50.0:
+                continue
+            if br["importada"] or br["papel"] in ("solido", "barra"):
+                continue                                   # peça importada ou sem papel: não se sabe onde apoia
+            soltas.append({"no": n, "ponto": [round(c) for c in nos[n]], "papel": br["papel"], "peca": br["peca"],
+                           "ids": br["ids"]})
+    usados = sorted({br["a"] for br in barras} | {br["b"] for br in barras})
+    renum = {n: i for i, n in enumerate(usados)}
+    for br in barras:
+        br["a"], br["b"] = renum[br["a"]], renum[br["b"]]
+    for s in soltas:
+        s["no"] = renum[s["no"]]
+    return {
+        "nos": [[round(c, 1) for c in nos[n]] for n in usados],
+        "barras": barras,
+        "soltas": soltas,
+        "resumo": {"nos": len(usados), "barras": len(barras), "duplos_juntados": duplos,
+                   "pontas_levadas_ao_apoio": ligadas, "soltas": len(soltas),
+                   "soltas_por_papel": dict(collections.Counter(s["papel"] for s in soltas))},
+    }

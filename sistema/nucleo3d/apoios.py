@@ -71,6 +71,15 @@ def _dist_pt_seg(p, a, b) -> Tuple[float, float]:
     return math.dist(p, q), t
 
 
+def _no_banzo_em(p, sg) -> Tuple[float, float]:
+    """a distância em planta de p ao segmento e a altura do segmento nesse ponto"""
+    a, b = sg
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    L2 = dx * dx + dy * dy
+    t = 0.0 if L2 <= 1e-9 else min(max(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2, 0.0), 1.0)
+    return math.hypot(p[0] - (a[0] + dx * t), p[1] - (a[1] + dy * t)), a[2] + (b[2] - a[2]) * t
+
+
 def _canto_de_vigas(s1, s2, p, tol: float) -> bool:
     """a ponta `p` da viga s1 encosta só na ponta da viga s2, e as duas fazem ângulo (o canto em
     L no ar). A viga que continua na mesma linha (emenda) e a que apoia no meio da outra não são
@@ -328,8 +337,10 @@ def verificar(doc, tol: float = TOL_ENCOSTO) -> dict:
             p = tuple(a[k] + (b[k] - a[k]) * s / L for k in range(3))
             # só vale para a terça que senta em cima: a que encosta do lado (painel,
             # transição que sobe acima do telhado) não tem nó do banzo onde cair
-            topo = max((q[2] for k in por_peca.get(ej.peca, []) if els[k].papel == "banzo" for sg in els[k].segs
-                        for q in sg if math.dist(q[:2], p[:2]) < 600.0), default=None)
+            # a altura do banzo ali: no ponto do banzo mais perto em planta (não nas pontas dele:
+            # o banzo comprido tem as pontas longe do cruzamento)
+            topo = max((z for k in por_peca.get(ej.peca, []) if els[k].papel == "banzo" for sg in els[k].segs
+                        for d_xy, z in [_no_banzo_em(p, sg)] if d_xy < 600.0), default=None)
             if topo is not None and p[2] < topo - 50.0:
                 continue
             nos = [q for k in por_peca.get(ej.peca, []) if els[k].papel in ALMA for sg in els[k].segs for q in sg

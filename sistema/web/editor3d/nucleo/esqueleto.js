@@ -1,4 +1,7 @@
-// Esqueleto: o modelo só em linhas, para conferir a estrutura antes dos perfis.
+// Esqueleto: o modelo só em linhas, para conferir a estrutura antes dos perfis. Desenha o modelo
+// analítico que o servidor monta (nucleo3d/analitico.py): nós e barras, o perfil duplo numa linha só,
+// cada peça no eixo em que apoia, e as pontas que sobraram sem ligar em vermelho — cada ponto
+// vermelho é um erro do modelo. Enquanto ele não chega, o eixo de cada peça como está no espaço.
 //
 // Cada peça vira o eixo dela — barra: do início ao fim; peça calandrada: a polilinha pelos
 // centros dos anéis da varredura; outro sólido: a maior dimensão dele — numa cor por papel
@@ -67,8 +70,10 @@ export class Esqueleto {
     this.selecao = selecao;
     this.ativo = false;
     this.objeto = null;
+    this.pontos = null;
+    this._segs = [];
     this._idDoSegmento = [];
-    this._faixas = new Map();          // id -> [primeiro vértice, quantos vértices]
+    this._faixas = new Map();
     this._porPeca = new Map();         // peça de origem -> [ids]
     this._agendado = null;
     documento.aoMudar(() => { if (this.ativo) this._agendar(); });
@@ -100,7 +105,6 @@ export class Esqueleto {
       if (!this.ativo) return;
       this._montar();
       this._esconderModelo(true);
-      this.cena.alvosExtras = this.objeto ? [this.objeto] : null;
       this.cena.pedirQuadro();
     });
   }
@@ -110,39 +114,77 @@ export class Esqueleto {
   }
 
   _descartar() {
-    if (!this.objeto) return;
-    this.cena.cena.remove(this.objeto);
-    this.objeto.geometry.dispose();
-    this.objeto.material.dispose();
+    for (const o of [this.objeto, this.pontos]) {
+      if (!o) continue;
+      this.cena.cena.remove(o);
+      o.geometry.dispose();
+      o.material.dispose();
+    }
     this.objeto = null;
+    this.pontos = null;
   }
 
+  /**
+   * Primeiro o eixo de cada peça, na hora (o modelo físico); em seguida o servidor devolve o
+   * modelo analítico — perfil duplo numa linha só, pontas juntadas no nó, cada peça no eixo em
+   * que apoia — e ele toma o lugar, com as pontas que sobraram sem ligar em vermelho.
+   */
   _montar() {
-    this._descartar();
-    const pos = [];
-    this._idDoSegmento = [];
-    this._faixas = new Map();
     this._porPeca = new Map();
-    this._grupoCor = new Map();
+    for (const ent of this.documento.entidades.values()) {
+      const p = pecaDe(ent);
+      if (!p) continue;
+      if (!this._porPeca.has(p)) this._porPeca.set(p, []);
+      this._porPeca.get(p).push(ent.id);
+    }
+    const pos = [];
+    const segs = [];
     for (const ent of this.documento.entidades.values()) {
       if (!this.documento.aparece(ent)) continue;
       let pts = null;
       if (ent.tipo === 'barra' && ent.inicio && ent.fim) pts = [ent.inicio, ent.fim];
       else if (ent.tipo === 'solido') pts = eixoDoSolido(ent);
       if (!pts || pts.length < 2) continue;
-      const v0 = pos.length / 3;
       for (let i = 0; i < pts.length - 1; i++) {
         pos.push(...pts[i], ...pts[i + 1]);
-        this._idDoSegmento.push(ent.id);
-      }
-      this._faixas.set(ent.id, [v0, pos.length / 3 - v0]);
-      this._grupoCor.set(ent.id, grupoDoPapel(ent));
-      const p = pecaDe(ent);
-      if (p) {
-        if (!this._porPeca.has(p)) this._porPeca.set(p, []);
-        this._porPeca.get(p).push(ent.id);
+        segs.push({ ids: [ent.id], cor: grupoDoPapel(ent) });
       }
     }
+    this.analitico = null;
+    this._desenhar(pos, segs, []);
+    this._pedirAnalitico();
+  }
+
+  async _pedirAnalitico() {
+    const api = this.cena.api;
+    if (!api || typeof api.analitico !== 'function') return;
+    const pedido = (this._pedido = (this._pedido || 0) + 1);
+    let r;
+    try {
+      r = await api.analitico(this.documento.paraJSON());
+    } catch (e) {
+      if (this.aoAnalitico) this.aoAnalitico(null, e);
+      return;
+    }
+    if (!this.ativo || pedido !== this._pedido || !r || !r.nos) return;
+    const pos = [];
+    const segs = [];
+    for (const b of r.barras) {
+      pos.push(...r.nos[b.a], ...r.nos[b.b]);
+      segs.push({ ids: b.ids, cor: grupoDoPapel({ papel: b.papel, tipo: 'barra' }), duplo: b.duplo });
+    }
+    this.analitico = r;
+    this._desenhar(pos, segs, r.soltas.map(s => r.nos[s.no]));
+    this._esconderModelo(true);
+    if (this.aoAnalitico) this.aoAnalitico(r.resumo);
+  }
+
+  _desenhar(pos, segs, soltas) {
+    this._descartar();
+    this._segs = segs;
+    this._idDoSegmento = segs.map(s => s.ids[0]);
+    this._faixas = new Map();          // id -> [primeiro vértice, 2] (o primeiro trecho dela)
+    segs.forEach((s, k) => { for (const id of s.ids) if (!this._faixas.has(id)) this._faixas.set(id, [2 * k, 2]); });
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
@@ -152,6 +194,17 @@ export class Esqueleto {
     // o raycast de linha devolve o índice do vértice: o segmento diz de qual peça é
     this.objeto.userData.entidadeDe = (indice) => this._idDoSegmento[Math.floor(indice / 2)];
     this.cena.cena.add(this.objeto);
+    if (soltas.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(soltas.flat(), 3));
+      this.pontos = new THREE.Points(g, new THREE.PointsMaterial({
+        color: 0xe5484d, size: 9, sizeAttenuation: false, depthTest: false }));
+      this.pontos.name = 'esqueleto-soltas';
+      this.pontos.renderOrder = 20;
+      this.pontos.scale.setScalar(ESCALA);
+      this.cena.cena.add(this.pontos);
+    }
+    this.cena.alvosExtras = this.ativo ? [this.objeto] : null;
     this._pintar();
   }
 
@@ -161,10 +214,11 @@ export class Esqueleto {
     const col = this.objeto.geometry.getAttribute('color');
     const c = new THREE.Color();
     const sel = this.selecao.ids;
-    for (const [id, [v0, n]] of this._faixas) {
-      c.set(sel.has(id) ? cores.selecao : cores[this._grupoCor.get(id)] || cores.outro);
-      for (let i = v0; i < v0 + n; i++) col.setXYZ(i, c.r, c.g, c.b);
-    }
+    this._segs.forEach((s, k) => {
+      c.set(s.ids.some(id => sel.has(id)) ? cores.selecao : cores[s.cor] || cores.outro);
+      col.setXYZ(2 * k, c.r, c.g, c.b);
+      col.setXYZ(2 * k + 1, c.r, c.g, c.b);
+    });
     col.needsUpdate = true;
     this.cena.pedirQuadro();
   }

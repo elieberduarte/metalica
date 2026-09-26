@@ -2002,8 +2002,15 @@ export class Editor {
         }
       });
     }
-    this.dica(ligar ? 'Esqueleto: cada peça pelo eixo — treliças em cinza, terças em azul, contraventos em verde, correntes em laranja, '
-      + 'pilares e vigas em destaque. Clique pega a treliça inteira.' : 'Modelo com os perfis.');
+    this.esqueleto.aoAnalitico = (r, erro) => {
+      if (!this.esqueleto.ativo) return;
+      if (erro) { this.dica(`Esqueleto só pelos eixos (o analítico não veio: ${erro.message}).`); return; }
+      this.dica(`Esqueleto analítico: ${r.barras.toLocaleString('pt-BR')} barras em ${r.nos.toLocaleString('pt-BR')} nós`
+        + ` (${r.duplos_juntados.toLocaleString('pt-BR')} perfis duplos numa linha só). `
+        + (r.soltas ? `${r.soltas} ponta(s) sem ligar, em vermelho.` : 'Nenhuma ponta solta.'));
+    };
+    this.dica(ligar ? 'Esqueleto: montando o modelo analítico (nós e barras)… treliças em cinza, terças em azul, contraventos em verde, '
+      + 'correntes em laranja, pilares e vigas em destaque; pontas soltas em vermelho. Clique pega a treliça inteira.' : 'Modelo com os perfis.');
   }
 
   /** Eixos, níveis e arquitetônico redesenhados nas cores do tema novo. */

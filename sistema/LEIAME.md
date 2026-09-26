@@ -218,6 +218,24 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.41.** **Esqueleto analítico** (pedido do usuário: "olhando só as linhas quase todas estão desconectadas;
+as duplas podem virar uma linha só"): `nucleo3d/analitico.py` e `POST /api/modelo/analitico` montam o modelo de nós
+e barras — o perfil duplo (cantoneira dupla, viga 2Ue) numa barra só, as pontas a menos de 6 cm no mesmo nó, a
+ponta solta levada ao eixo em que apoia (terça no banzo, viga no pilar, corrente na terça, alma no meio de outra
+alma do painel subdividido…, até 45 cm — a excentricidade física volta no detalhamento), a terça com um nó em cada
+banzo que cruza; o que sobra sem ligar é ponta solta. Ver → Esqueleto desenha esse modelo, com as pontas soltas em
+vermelho (peça importada do IFC entra pelo eixo, sem alarme). No Posto CB: 7.018 barras em 5.127 nós, 2.486 duplos,
+30 pontas soltas (todas erros reais). **Montagem pela planta, pelos casos do Posto CB**: corrente e esticador na
+altura da terça que ligam (antes, da treliça mais alta ali — a transição levava a corrente a 1 m da terça); a
+emenda entre duas terças fica num apoio ENTRE os dois nomes, e sem apoio ali fica onde o projetista separou (o
+meio) e vira aviso — não mais levada além do nome da outra terça; o perfil da terça vem do nome da própria linha
+(o da linha vizinha dava TC19 num pedaço da TC2A); a elevação que desenha a tesoura de trás e as chapinhas dos nós
+(TRANSIÇÃO 1) fica só com os dois banzos e a alma (`_tirar_vista_de_fundo`, só quando há várias inclinadas por
+dentro e muitas chapinhas; as outras 121 elevações ficam iguais); a transição/painel que barra a terça não dá a
+altura da ponta dela; `deitadas` aceita a lista das treliças deitadas confirmadas. **Verificar apoios**: a altura
+do banzo no cruzamento é medida no ponto (não só nas pontas das barras) — com o banzo comprido a terça que encosta
+de lado contava como sentada (no Posto, 159 → 125 terças fora do nó).
+
 **0.8.40.** **Ver → Esqueleto (só linhas)** no editor 3D (pedido do usuário: ver a estrutura antes dos perfis; é o
 modelo do cálculo de esforços, e o detalhamento só vem depois que ele estiver estruturalmente certo). Cada peça
 vira o eixo dela, numa cor por tipo (treliça, terça, contravento, corrente, pilar, viga); a calandrada é a polilinha

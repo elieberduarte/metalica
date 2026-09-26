@@ -843,7 +843,48 @@ def _elevacao_do_grupo(nome: str, qtd: int, segs) -> Elevacao:
         vistos.add(k)
         unicos.append(m)
     el.membros = unicos
+    _tirar_vista_de_fundo(el)
     return el
+
+
+def _tirar_vista_de_fundo(el: "Elevacao") -> int:
+    """A elevação que desenha junto o que fica atrás da treliça (as tesouras paralelas vistas ao
+    fundo, com o caimento do telhado) e as chapinhas dos nós: fica só a treliça — os banzos de
+    baixo e de cima e a alma que liga um ao outro. Só age quando o desenho mostra isso (várias
+    linhas inclinadas entre os banzos e muitas chapinhas): a treliça de altura variável ou com
+    travessa no meio fica como está. Devolve quantas linhas saíram (e avisa)."""
+    L = el.comprimento
+    ban = [m for m in el.membros if m.papel == "banzo"]
+    retos = [m for m in ban if abs(m.s1 - m.s0) >= 0.3 * L and abs(m.h1 - m.h0) <= 30.0]
+    if len(retos) < 2:
+        return 0
+    hs = [(m.h0 + m.h1) / 2 for m in retos]
+    baixo, cima = min(hs), max(hs)
+
+    def entre(h):
+        return baixo + 250.0 < h < cima - 250.0
+    inclinados = [m for m in ban if abs(m.h1 - m.h0) > 30.0 and abs(m.s1 - m.s0) >= 500.0 and entre(m.h0) and entre(m.h1)]
+    curtos = [m for m in ban if abs(m.s1 - m.s0) < 500.0]
+    if len(inclinados) < 3 or len(curtos) < 10:
+        return 0
+    lin_b = max(h for h in hs if h <= baixo + 250.0)
+    lin_c = min(h for h in hs if h >= cima - 250.0)
+
+    def no_banzo(h):
+        return baixo - 150.0 <= h <= lin_b + 150.0 or lin_c - 150.0 <= h <= cima + 150.0
+    fora = set()
+    for m in el.membros:
+        if m.papel == "banzo":
+            if abs(m.s1 - m.s0) < 500.0 or (entre(m.h0) and entre(m.h1)):
+                fora.add(id(m))
+        elif not (no_banzo(m.h0) and no_banzo(m.h1)):
+            fora.add(id(m))
+    if not fora:
+        return 0
+    el.membros = [m for m in el.membros if id(m) not in fora]
+    el.avisos.append("%s: tiradas %d linhas que não são desta treliça (as tesouras desenhadas ao fundo e as "
+                     "chapinhas dos nós); ficaram os dois banzos e a alma entre eles." % (_bonito(el.nome), len(fora)))
+    return len(fora)
 
 
 # =====================================================================================
@@ -1029,16 +1070,18 @@ def _trelicas_deitadas(segs, textos, elevacoes: Dict[str, "Elevacao"], nome_do, 
             cam = Caminho("reta", a=pt(s0, f1), b=pt(s1, f1), largura=0.0, fontes=fontes)
             trechos.append(Trecho(caminho=cam, nome=nome, familia=_sem_acento(nome.split()[0]), elevacao=el,
                                   sentido_por="deitada: a planta desenha a treliça vista de cima", rotulo_id=t.get("id"),
-                                  deitada={"n": n, "largura": W, "almas": [(x["seg"][0], x["seg"][1]) for x in p]}))
+                                  deitada={"n": n, "largura": W, "almas": [(x["seg"][0], x["seg"][1]) for x in p],
+                                           "faixa": (u, n, o, f1, f2, s0, s1), "texto": id(t)}))
     return trechos, usados, faixas
 
 
 def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
-                    apoios: Sequence[Ponto2] = (), deitadas: bool = False) -> Tuple[List[Trecho], dict]:
+                    apoios: Sequence[Ponto2] = (), deitadas=False) -> Tuple[List[Trecho], dict]:
     """as peças nomeadas da planta estrutural, cortadas no comprimento de cada elevação.
     `apoios`: os pilares (x, y) — a treliça que passa por cima de um pode terminar ali.
-    `deitadas`: a faixa em que a planta desenha a treliça vista de cima vira treliça deitada;
-    sem isso (o padrão), ela só é apontada para conferir (stats["deitadas_a_conferir"])"""
+    `deitadas`: a faixa em que a planta desenha a treliça vista de cima vira treliça deitada —
+    True para todas, ou a lista dos nomes confirmados ("TRELICA 1"); as outras (e todas, sem o
+    parâmetro) só são apontadas para conferir (stats["deitadas_a_conferir"])"""
     from nucleo2d.reconhecer import perfil_do_texto
     regiao = [e for e in ents if _dentro(_pt(e), caixa)]
     segs = _segmentos(regiao)
@@ -1064,8 +1107,18 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
     a_conferir = [{"nome": _bonito(t.nome), "comprimento": round(t.caminho.comprimento),
                    "ponto": [round((t.caminho.a[0] + t.caminho.b[0]) / 2), round((t.caminho.a[1] + t.caminho.b[1]) / 2)]}
                   for t in achadas]
-    deitadas = achadas if deitadas else []
+    if deitadas is True:
+        escolhidas = achadas
+    elif deitadas:
+        confirmadas = {_sem_acento(str(n)).upper().strip() for n in deitadas}
+        escolhidas = [t for t in achadas if _sem_acento(t.nome).upper() in confirmadas]
+    else:
+        escolhidas = []
+    a_conferir = [fx for fx, t in zip(a_conferir, achadas) if t not in escolhidas]
+    deitadas = escolhidas
     if deitadas:
+        rot_deitadas = {d.deitada["texto"] for d in deitadas}
+        faixas_d = [d.deitada["faixa"] for d in deitadas]
         textos = [t for t in textos if id(t) not in rot_deitadas]
 
         def na_faixa(c):
@@ -1120,7 +1173,7 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
     trechos: List[Trecho] = []
     stats = {"caminhos": len(caminhos), "rotulos": len(textos), "sem_peca": sem_peca, "sem_rotulo": 0,
              "sem_elevacao": collections.Counter(), "vigas": 0, "deitadas": deitadas,
-             "deitadas_a_conferir": [] if deitadas else a_conferir}
+             "deitadas_a_conferir": a_conferir}
 
     # a peça comprida tem o nome escrito mais de uma vez. Quando a planta tem mais nomes
     # de uma peça do que o título dela pede ("- 1X"), os nomes repetidos na mesma linha, a
@@ -1926,7 +1979,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     locados = _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados["locacao"], avisos) if caixa_l else []
     avisar("lendo as peças da planta…")
     trechos, st = pecas_da_planta(ents, caixa_p, elevacoes, apoios=[(p["x"], p["y"]) for p in locados],
-                                  deitadas=bool(par.get("deitadas")))
+                                  deitadas=par.get("deitadas") or False)
     for fx in st.get("deitadas_a_conferir") or []:
         avisos.append("%s (%.1f m): a planta desenha uma faixa de treliça vista de cima (os dois banzos e a alma entre "
                       "eles) com a altura e o comprimento dessa elevação — pode ser treliça deitada. Ficou como está; "
@@ -2132,7 +2185,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         f_o = (caixa_o[0] - 2500, caixa_o[1] - 2500, caixa_o[2] + 2500, caixa_o[3] + 2500)
         movidas = [_copiar_mov(e, d_o[0], d_o[1]) for e in ents if _dentro(_pt(e), f_o)]
         cx_m = (caixa_o[0] + d_o[0], caixa_o[1] + d_o[1], caixa_o[2] + d_o[0], caixa_o[3] + d_o[1])
-        tr_o, _st_o = pecas_da_planta(movidas, cx_m, elevacoes, deitadas=bool(par.get("deitadas")))
+        tr_o, _st_o = pecas_da_planta(movidas, cx_m, elevacoes, deitadas=par.get("deitadas") or False)
         orientar(tr_o, [])
         montar_trechos(tr_o, nivel_o)
         montar_deitadas(_st_o.get("deitadas") or [], nivel_o)
@@ -2208,7 +2261,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                   if t["tipo"] == "texto" and re.match(r"^TC\s?\d+[A-Z]?$", t["texto"].strip().upper())]
         pa_bz = 40.0
         # cada nome TC vale para a linha de terça mais perto dele (e só para ela)
-        nomes_da_linha: Dict[int, List[float]] = collections.defaultdict(list)
+        nomes_da_linha: Dict[int, List[Tuple[float, tuple]]] = collections.defaultdict(list)
         for pr, sg, id_tc in rot_tc:
             melhor = None
             for i_l, (a, b) in enumerate(eixos_t):
@@ -2220,7 +2273,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 if -300 <= s <= L + 300 and d < 700 and (melhor is None or d < melhor[0]):
                     melhor = (d, i_l, s)
             if melhor:
-                nomes_da_linha[melhor[1]].append(melhor[2])
+                nomes_da_linha[melhor[1]].append((melhor[2], (pr, sg, id_tc)))
                 usados["tercas"].add(id_tc)
         polis_tr = [(t, _polilinha(t.caminho)) for t in trechos if t.elevacao is not None]
         caixas_tr = [_caixa_pts(pl, 300.0) for _t, pl in polis_tr]
@@ -2293,6 +2346,12 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         barreiras[-1] = (barreiras[-1][0], max(barreiras[-1][1], meia_b))
                         continue
                     barreiras.append((s_b, meia_b))
+            # a barreira (transição, painel) não é apoio de altura: a terça termina na face dela,
+            # na altura do telhado que as tesouras vizinhas dão (na TRANSIÇÃO 1 o telhado passa
+            # abaixo do banzo de cima dela — a elevação desenha a tesoura de trás com os suportes)
+            sem_barreira = [ap for ap in apoios if all(abs(ap[0] - s_b) > max(300.0, m_b + 150.0) for s_b, m_b in barreiras)]
+            if len(sem_barreira) >= 1:
+                apoios = sem_barreira
             vaos = []
             lo = s_ini
             for s_b, meia in barreiras:
@@ -2301,7 +2360,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 lo = max(lo, s_b + meia)
             if s_fim - lo > 300.0:
                 vaos.append((lo, s_fim))
-            nomes_l = sorted(nomes_da_linha.get(i_l, []))
+            nomes_rot = sorted(nomes_da_linha.get(i_l, []), key=lambda r: r[0])
+            nomes_l = [r[0] for r in nomes_rot]
             pecas_t = []
             for lo, hi in vaos:
                 nomes_v = [x for x in nomes_l if lo <= x <= hi]
@@ -2309,19 +2369,36 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 for s_a, s_b in zip(nomes_v, nomes_v[1:]):
                     meio = (s_a + s_b) / 2
                     antes = cortes[-1] if cortes else lo
-                    bons = [ap[0] for ap in apoios if antes + 300.0 < ap[0] < hi - 300.0]
+                    # a emenda entre as duas terças fica num apoio ENTRE os dois nomes; sem
+                    # apoio ali, fica onde o projetista separou as terças (o meio) e vira
+                    # apontamento — não se leva a emenda para além do nome da outra terça
+                    bons = [ap[0] for ap in apoios if max(antes, s_a) + 300.0 < ap[0] < min(hi, s_b) - 300.0]
                     s_c = min(bons, key=lambda x: abs(x - meio)) if bons else meio
                     if s_c - antes > 300.0 and hi - s_c > 300.0:
                         cortes.append(s_c)
+                        if not bons:
+                            pm = (a[0] + ux * s_c, a[1] + uy * s_c)
+                            avisos.append("terça: o projeto separa duas terças (%s) sem apoio entre elas — emenda fora de "
+                                          "apoio em (%.0f; %.0f); confira no projeto." % (
+                                              " / ".join(r[1][1] for r in nomes_rot if r[0] in (s_a, s_b)), pm[0], pm[1]))
                 pts_v = [lo] + cortes + [hi]
                 pecas_t += list(zip(pts_v, pts_v[1:]))
             for s0, s1 in pecas_t:
                 if s1 - s0 < 300.0:
                     continue
                 mid = ((a[0] + ux * (s0 + s1) / 2), (a[1] + uy * (s0 + s1) / 2))
-                sig = min(rot_tc, key=lambda r: math.dist(r[0], mid)) if rot_tc else None
+                # o nome da terça é o da própria linha: o que está dentro do pedaço, ou o mais
+                # perto ao longo dela (o nome da linha vizinha não vale)
+                dentro_p = [r for r in nomes_rot if s0 - 1.0 <= r[0] <= s1 + 1.0]
+                da_linha = bool(nomes_rot)
+                if dentro_p:
+                    sig = dentro_p[0][1]
+                elif nomes_rot:
+                    sig = min(nomes_rot, key=lambda r: abs(r[0] - (s0 + s1) / 2))[1]
+                else:
+                    sig = min(rot_tc, key=lambda r: math.dist(r[0], mid)) if rot_tc else None
                 perf = None
-                if sig and math.dist(sig[0], mid) < 3000 and sig[1] in tab_tc:
+                if sig and (da_linha or math.dist(sig[0], mid) < 3000) and sig[1] in tab_tc:
                     perf = tab_tc[sig[1]].get("perfil")
                 perf = perf or "U 100×40×2,65 (FF)"
                 pt_ = _perfil(perf)
@@ -2347,7 +2424,25 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         usados["tercas"].add(eixos_t_ids[i_l])
                     tercas += 1
 
-        def acessorio(camada_rx, perfil, papel, camada, acima):
+        # as terças já montadas: a corrente (o agulhamento) liga uma terça à outra, na altura
+        # delas — não na da treliça mais alta ali (a transição alta levava a corrente a 1 m
+        # acima da terça)
+        tercas_3d = [(p_["ent"].inicio, p_["ent"].fim) for p_ in pecas if p_["papel"] == "terça"]
+
+        def z_na_terca(p, tol=400.0):
+            melhor = None
+            for ta, tb in tercas_3d:
+                dx, dy = tb[0] - ta[0], tb[1] - ta[1]
+                L2 = dx * dx + dy * dy
+                if L2 < 1.0:
+                    continue
+                t = max(0.0, min(1.0, ((p[0] - ta[0]) * dx + (p[1] - ta[1]) * dy) / L2))
+                d = math.dist(p, (ta[0] + dx * t, ta[1] + dy * t))
+                if d <= tol and (melhor is None or d < melhor[0]):
+                    melhor = (d, ta[2] + (tb[2] - ta[2]) * t)
+            return melhor[1] if melhor else None
+
+        def acessorio(camada_rx, perfil, papel, camada, acima, na_terca=False):
             n = 0
             for sg in _segmentos(reg, re.compile(camada_rx)):
                 a, b, _c = sg
@@ -2357,13 +2452,18 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 za, zb = superficie(a), superficie(b)
                 if za is None or zb is None:
                     continue
-                if barra((a[0], a[1], nivel + za + acima), (b[0], b[1], nivel + zb + acima), perfil, papel, camada):
+                z0, z1 = nivel + za + acima, nivel + zb + acima
+                if na_terca:
+                    z0 = z_na_terca(a) or z0
+                    z1 = z_na_terca(b) or z1
+                if barra((a[0], a[1], z0), (b[0], b[1], z1), perfil, papel, camada):
                     usados["tercas"].add(getattr(sg, "id", None))
                     n += 1
             return n
         contravs = acessorio(r"(?i)contravent", "Barra redonda 12,5", "contraventamento", "Contraventamento", 0.0)
-        correntes = acessorio(r"(?i)corrente", 'L 1"×1/8"', "corrente", "Correntes", pa_bz / 2 + 50.0)
-        esticadores = acessorio(r"(?i)esticador", "Barra redonda 10", "corrente", "Correntes", pa_bz / 2 + 50.0)
+        correntes = acessorio(r"(?i)corrente", 'L 1"×1/8"', "corrente", "Correntes", pa_bz / 2 + 50.0, na_terca=True)
+        esticadores = acessorio(r"(?i)esticador", "Barra redonda 10", "corrente", "Correntes", pa_bz / 2 + 50.0,
+                                na_terca=True)
 
     # ---------------------------------------------------------------- perto da origem
     # a planta do projetista fica onde ele desenhou (no posto, a 400 m do zero do DXF): o

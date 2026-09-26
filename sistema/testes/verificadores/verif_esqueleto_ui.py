@@ -53,13 +53,22 @@ try:
     aba.drenar(1.0)
     ok(aba.avaliar("window.editor.esqueleto.ativo === true"), "Ver → Esqueleto liga")
     n_seg = aba.avaliar("window.editor.esqueleto._idDoSegmento.length") or 0
-    ok(n_seg >= n_pecas > 0, f"{n_seg} trechos de linha para {n_pecas} peças")
+    ok(n_seg >= n_pecas > 0, f"{n_seg} trechos de linha para {n_pecas} peças (o eixo de cada uma, na hora)")
+    t0 = time.time()
+    while time.time() - t0 < 90 and not aba.avaliar("!!window.editor.esqueleto.analitico"): aba.drenar(0.5)
+    res = aba.avaliar("window.editor.esqueleto.analitico && window.editor.esqueleto.analitico.resumo") or {}
+    ok(res.get("barras", 0) > 0 and res.get("nos", 0) > 0,
+       f"o modelo analítico chega do servidor: {res.get('barras')} barras em {res.get('nos')} nós, {res.get('soltas')} soltas")
+    dica = aba.avaliar("(document.querySelector('#dica, .dica, [data-dica]') || {}).textContent || ''") or ""
+    ok("analítico" in dica or "Esqueleto" in dica or dica == "", f"a dica diz o resumo: {dica[:90]}")
     ok(aba.avaliar("window.editor.cena.raiz.children.filter(c => c !== window.editor.cena.previa).every(c => !c.visible)"),
        "o modelo com perfis fica escondido")
     # três peças da mesma treliça (peça de origem): o clique no esqueleto pega as três
     ids = aba.avaliar("""(() => { const e = window.editor; const ids = [...e.esqueleto._faixas.keys()].slice(0, 3);
         ids.forEach(i => { const x = e.documento.get(i); x.atributos = x.atributos || {}; x.atributos.origem = { peca: 'TESOURA 9#1' }; });
-        e.esqueleto._montar(); e.cena.alvosExtras = [e.esqueleto.objeto]; return ids; })()""") or []
+        e.esqueleto._montar(); return ids; })()""") or []
+    t0 = time.time()
+    while time.time() - t0 < 90 and not aba.avaliar("!!window.editor.esqueleto.analitico"): aba.drenar(0.5)
     grupo = aba.avaliar(f"window.editor.esqueleto.grupoDe({ids[0]!r}).length") if ids else 0
     ok(grupo == 3, f"o grupo da treliça tem {grupo} barras (esperado 3)")
     # clique de verdade sobre o meio da primeira barra, em pixels da tela
