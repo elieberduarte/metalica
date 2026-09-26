@@ -51,6 +51,19 @@
         <button type="button" data-acao="abrir-pasta">Abrir a pasta dos desenhos</button>
       </div>
     </div>
+    <div class="menu" data-menu="lancamento">
+      <button type="button" class="menu-botao">Lançamento</button>
+      <div class="menu-lista">
+        <button type="button" data-acao="arquitetonico" title="A planta do cliente (DXF ou PDF vetorial) vira a referência da Planta de lançamento: camadas ARQ em cinza e travadas, em milímetro real">Arquitetônico do cliente (DXF/PDF)…</button>
+        <button type="button" data-acao="planta-lancamento">Abrir a planta de lançamento</button>
+        <button type="button" data-acao="calibrar" title="Dois cliques numa medida conhecida do arquitetônico (uma cota, a largura de um vão) e a medida real: o arquitetônico é escalado">Calibrar escala do arquitetônico</button>
+        <input type="file" id="arquivo-arquitetonico" accept=".dxf,.pdf,.dwg" hidden>
+        <hr>
+        <button type="button" data-acao="malha" title="Linhas de eixo na camada EIXO, com as bolinhas e as cotas: vãos entre os pórticos (numerados) e entre as filas de pilares (letras)">Malha de eixos…</button>
+        <button type="button" data-acao="gravar-eixos" title="Lê as linhas da camada EIXO deste desenho (duas direções perpendiculares, nomes nas bolinhas) e grava os eixos no projeto">Gravar eixos no projeto</button>
+        <button type="button" data-acao="lancar-3d" title="Grava os eixos e abre o Modelo 3D com o diálogo Lançar estrutura">Lançar estrutura no 3D…</button>
+      </div>
+    </div>
     <div class="menu" data-menu="vistas">
       <button type="button" class="menu-botao">Vistas do modelo</button>
       <div class="menu-lista">

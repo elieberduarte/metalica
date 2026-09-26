@@ -31,6 +31,9 @@ Rotas da API:
     POST /api/projetos/<slug>/calcular {parametros, trocas, comparar}  cálculo estrutural do modelo importado
     POST /api/projetos/<slug>/dimensionar {parametros, aplicar}  o perfil mais leve que passa em cada posição
     GET  /api/projetos/<slug>/memorial?marca=&didatico=   memorial de cálculo da peça em quatro camadas (tela /memorial)
+    POST /api/projetos/<slug>/arquitetonico {arquivo, conteudo_b64, tipo, fator, escala}   arquitetônico → Planta de lançamento
+    POST /api/projetos/<slug>/lancamento/{malha|eixos|estrutura|memorial}   malha de eixos, eixos da planta, lançar, memorial
+    GET  /api/projetos/<slug>/lancamento[/referencia]   dados do diálogo Lançar estrutura; linhas do arquitetônico e dos eixos
     POST /api/projetos/<slug>/memorial/pdf {marca, didatico}   o memorial da peça em PDF (<projeto>/memorial/)
     GET  /api/projetos/<slug>/calculo[/geometria]        último cálculo gravado / dados para o diálogo
     GET  /api/projetos/<slug>/calculo/alternativas?marca=  perfis que podem substituir a peça, verificados
@@ -1964,6 +1967,180 @@ def projeto_2d_para_modelo(s: str, corpo: dict) -> dict:
         _fim_progresso(s)
 
 
+# ----------------------------------------------------------- lançamento sobre o arquitetônico
+
+def importar_arquitetonico(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/arquitetonico {arquivo, conteudo_b64, tipo, fator, escala}: o
+    arquitetônico do cliente (DXF ou PDF vetorial) vira a referência travada da Planta de
+    lançamento, em milímetro real. Os eixos e as notas que já estavam na planta ficam."""
+    import base64
+    from nucleo3d import lancamento
+    g = _gerente()
+    arquivo = str(corpo.get("arquivo") or "arquitetonico")
+    tipo = str(corpo.get("tipo") or os.path.splitext(arquivo)[1].lstrip(".")).lower()
+    if not corpo.get("conteudo_b64"):
+        raise ErroDeDados("mande o arquivo em base64.")
+    _progresso(s, "lendo %s…" % arquivo)
+    try:
+        ref, resumo = lancamento.ler_arquitetonico(
+            base64.b64decode(corpo["conteudo_b64"]), tipo,
+            fator=float(corpo["fator"]) if corpo.get("fator") else None,
+            escala_pdf=float(corpo["escala"]) if corpo.get("escala") else None)
+        ref.metadados["arquitetonico"]["arquivo"] = arquivo
+        anterior = None
+        try:
+            anterior = g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO)
+        except ErroDeDados:
+            pass
+        des = lancamento.desenho_de_lancamento(ref, anterior)
+        _progresso(s, "gravando a planta de lançamento…")
+        r = g.salvar_desenho(s, lancamento.DESENHO_LANCAMENTO, des.dict())
+        g._atualizar(s, arquitetonico={"arquivo": arquivo, "tipo": tipo, "escala": resumo["escala"],
+                                        "quando": time.strftime("%Y-%m-%d %H:%M:%S")})
+        return {"desenho": r["nome"], "resumo": resumo}
+    finally:
+        _fim_progresso(s)
+
+
+def malha_de_eixos_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/lancamento/malha {origem, vaos_numeros, vaos_letras, angulo,
+    escala}: as linhas, bolinhas e cotas da malha de eixos, para o CAD acrescentar como
+    um comando (Ctrl+Z desfaz)."""
+    from dataclasses import asdict
+    from nucleo3d import lancamento
+    o = corpo.get("origem") or [0.0, 0.0]
+    m = lancamento.malha_de_eixos((float(o[0]), float(o[1])), corpo.get("vaos_numeros"), corpo.get("vaos_letras"),
+                                  angulo=float(corpo.get("angulo") or 0.0), escala=float(corpo.get("escala") or 100.0),
+                                  primeiro_numero=int(corpo.get("primeiro_numero") or 1),
+                                  primeira_letra=str(corpo.get("primeira_letra") or "A"))
+    return {"entidades": [asdict(e) for e in m.entidades.values()],
+            "camadas": {k: asdict(m.camadas[k]) for k in ("EIXO", "COTA")}}
+
+
+def gravar_eixos_do_desenho(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/lancamento/eixos {desenho?}: lê os eixos da camada EIXO do
+    desenho aberto (senão da planta de lançamento gravada) e grava no projeto."""
+    from nucleo2d.desenho import Desenho
+    from nucleo3d import lancamento
+    from nucleo3d import eixos as _eixos
+    g = _gerente()
+    bruto = corpo.get("desenho") if isinstance(corpo.get("desenho"), dict) else g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO)
+    ex = lancamento.eixos_do_desenho(Desenho.de_dict(bruto))
+    avisos = ex.pop("avisos", [])
+    valido = _eixos.de_dict(ex)
+    valido["origem"] = "desenho"
+    g._atualizar(s, eixos=valido)
+    geo = None
+    try:
+        geo = lancamento.geometria_dos_eixos(valido)
+    except ErroDeDados as e:
+        avisos.append(str(e))
+    return {"eixos": valido, "avisos": avisos + (geo["avisos"] if geo else []),
+            "geometria": {k: geo[k] for k in ("vao", "comprimento", "espacamentos", "numeros", "letras")} if geo else None}
+
+
+def dados_do_lancamento(s: str) -> dict:
+    """GET /api/projetos/<s>/lancamento: o que o diálogo Lançar estrutura precisa — os eixos
+    gravados, o que eles dizem do galpão, os parâmetros do último lançamento e os padrões."""
+    from nucleo3d import lancamento
+    from nucleo3d import eixos as _eixos
+    p = _gerente().ler(s)
+    ex = _eixos.de_dict(p.get("eixos"))
+    geo, erro = None, ""
+    if ex:
+        try:
+            geo = lancamento.geometria_dos_eixos(ex)
+        except ErroDeDados as e:
+            erro = str(e)
+    else:
+        erro = "o projeto ainda não tem eixos: grave os eixos da planta de lançamento (CAD → Lançamento)."
+    anterior = p.get("lancamento") or {}
+    par = dict(lancamento.PADRAO)
+    par.update(anterior.get("parametros") or {})
+    return {"eixos": ex, "geometria": {k: geo[k] for k in ("vao", "comprimento", "espacamentos", "numeros", "letras", "avisos")} if geo else None,
+            "erro": erro, "parametros": par, "padrao": lancamento.PADRAO, "resumo": anterior.get("resumo"),
+            "quando": anterior.get("quando"), "arquitetonico": p.get("arquitetonico")}
+
+
+_CACHE_REFERENCIA: Dict[str, tuple] = {}
+
+
+def referencia_do_lancamento(s: str) -> dict:
+    """GET /api/projetos/<s>/lancamento/referencia: as linhas do arquitetônico (segmentos em
+    mm, no chão) e as dos eixos gravados, para o modelo 3D desenhar por baixo."""
+    from nucleo2d.desenho import Desenho
+    from nucleo3d import lancamento
+    from nucleo3d import eixos as _eixos
+    g = _gerente()
+    saida = {"segmentos": [], "eixos": []}
+    try:
+        caminho = g._caminho_desenho(s, lancamento.DESENHO_LANCAMENTO)
+    except ErroDeDados:
+        caminho = ""
+    if caminho and os.path.exists(caminho):
+        chave = (os.path.getmtime(caminho), os.path.getsize(caminho))
+        guardado = _CACHE_REFERENCIA.get(s)
+        if guardado and guardado[0] == chave:
+            saida["segmentos"] = guardado[1]
+        else:
+            segs = lancamento.segmentos_da_referencia(Desenho.de_dict(g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO)))
+            _CACHE_REFERENCIA[s] = (chave, segs)
+            saida["segmentos"] = segs
+    ex = _eixos.de_dict(g.ler(s).get("eixos"))
+    if ex:
+        saida["eixos"] = [{"nome": e["nome"], "tipo": e["tipo"], "a": [round(c, 1) for c in e["a"]],
+                           "b": [round(c, 1) for c in e["b"]]} for e in _eixos.segmentos(ex)]
+    return saida
+
+
+def lancar_estrutura(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/lancamento/estrutura {parametros}: lança a estrutura nos eixos
+    gravados (dimensionada pelo motor do galpão) e grava como o modelo 3D do projeto — o
+    modelo anterior vai para o histórico. Guarda em projeto.json os parâmetros e os dados
+    do galpão, de onde sai o memorial do dimensionamento."""
+    from nucleo3d import lancamento
+    g = _gerente()
+    p = g.ler(s)
+    try:
+        r = lancamento.lancar(p.get("eixos") or {}, corpo.get("parametros") or {}, nome=p.get("nome") or s,
+                              avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+        _progresso(s, "gravando o modelo 3D…")
+        _regravar_modelo(s, r["doc"])
+        registro = {"parametros": r["parametros"], "dados_galpao": r["dados"].dict(), "resumo": r["resumo"],
+                    "avisos": r["avisos"], "quando": time.strftime("%Y-%m-%d %H:%M:%S")}
+        g._atualizar(s, lancamento=registro)
+        g.tocar(s)
+        return {"resumo": r["resumo"], "avisos": r["avisos"], "parametros": r["parametros"]}
+    finally:
+        _fim_progresso(s)
+
+
+def memorial_do_lancamento(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/lancamento/memorial: o memorial completo do dimensionamento do
+    lançamento (o mesmo do galpão: cargas, vento, combinações, esforços, cada elemento, ligações
+    e base), refeito dos dados gravados no último lançamento."""
+    from nucleo.modelo_galpao import DadosGalpao
+    from nucleo import galpao
+    from saida import memorial
+    from dataclasses import fields
+    g = _gerente()
+    reg = g.ler(s).get("lancamento") or {}
+    dados = reg.get("dados_galpao")
+    if not dados:
+        raise ErroDeDados("o projeto ainda não foi lançado: use Lançar estrutura no Modelo 3D.")
+    campos = {f.name for f in fields(DadosGalpao)}
+    dg = DadosGalpao(**{k: v for k, v in dados.items() if k in campos})
+    _progresso(s, "refazendo o dimensionamento…")
+    try:
+        projeto = galpao.dimensionar(dg)
+        _progresso(s, "imprimindo o memorial…")
+        pasta = os.path.join(g._existente(s), "memorial", "lancamento")
+        pdf = memorial.gerar(projeto, pasta)
+    finally:
+        _fim_progresso(s)
+    return {"pdf": _descrever_arquivo(pdf, pasta)}
+
+
 def importar_dxf_no_desenho(s: str, corpo: dict) -> dict:
     """DXF (texto) → entidades do CAD, para o desenho aberto acrescentar como um comando.
 
@@ -2389,6 +2566,10 @@ class Handler(BaseHTTPRequestHandler):
                         (q.get("todas") or ["0"])[0] in ("1", "true")))
                 if len(partes) == 2 and partes[1] == "memorial":
                     return self._json(memorial_da_peca(partes[0], parse_qs(urlparse(self.path).query)))
+                if len(partes) == 2 and partes[1] == "lancamento":
+                    return self._json(dados_do_lancamento(partes[0]))
+                if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "referencia":
+                    return self._json(referencia_do_lancamento(partes[0]))
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
                 if len(partes) == 2 and partes[1] == "resumos":
@@ -2518,6 +2699,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(pdf_da_lista_de_materiais(partes[0]))
                 if len(partes) == 3 and partes[1] == "memorial" and partes[2] == "pdf":
                     return self._json(pdf_do_memorial(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "arquitetonico":
+                    return self._json(importar_arquitetonico(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "malha":
+                    return self._json(malha_de_eixos_projeto(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "eixos":
+                    return self._json(gravar_eixos_do_desenho(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "estrutura":
+                    return self._json(lancar_estrutura(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "memorial":
+                    return self._json(memorial_do_lancamento(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "pranchas":
                     return self._json(montar_pranchas_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "importar-dxf":

@@ -211,13 +211,33 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     except Exception:                                 # noqa: BLE001 — sem isso, fica a regra antiga
         marcas_chumbador = set()
     from ifc.importar import funilaria
+    # o papel que a barra paramétrica traz (modelo lançado, desenhado em 2D ou gerado do
+    # galpão): pilar e viga de pórtico não existem na cobertura que vem do TecnoMETAL, e a
+    # corrente e o travamento do banzo, que o galpão faz de barra redonda, não são contravento
+    papeis: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    for e in pecas:
+        b = getattr(e, "parametrica", None)
+        papel = str(getattr(b, "papel", "") or "") if b is not None and hasattr(b, "perfil") else ""
+        if papel:
+            papeis[str(_marcas(e).get("posicao") or e.nome or e.id)][papel] += 1
+
+    def papel_da(p: Posicao) -> str:
+        votos = collections.Counter()
+        for m in marcas_de(p):
+            votos.update(papeis.get(m) or {})
+        return votos.most_common(1)[0][0] if votos else ""
     for p in posicoes:
         cls = p.classe
         # rufo e calha: barra comprida solta como o agulhamento, mas é funilaria de aluzinc
         # (antes saíam como A.C. e somavam no peso dos agulhamentos)
         f = funilaria(p.perfil) if cls != "telha" else ""
+        pap = papel_da(p) if cls not in ("chapa", "chapa_dobrada", "telha") else ""
         if f:
             t = f
+        elif pap in ("pilar", "viga"):
+            t = pap
+        elif pap in ("corrente", "travamento"):
+            t = "agulhamento"
         elif cls in ("chapa", "chapa_dobrada"):
             # suporte de terça é a chapa em que a terça encosta (geometria), não a que
             # tem a furação parecida: a chapinha de ponta do agulhamento tem os mesmos furos
@@ -272,7 +292,11 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             cont[tipo.get(fundidas.get(m, m), "")] += q
         n = sum(comp.values())
         barras_conj = [fundidas.get(m, m) for m, q in comp.items() if tipo.get(fundidas.get(m, m)) in ("barra", "agulhamento") for _ in range(q)]
-        if cont.get("chumbador") and n == cont.get("chumbador"):
+        if cont.get("pilar"):
+            tipo_conj[c["marca"]] = "pilar"                 # o pilar com a placa de base
+        elif cont.get("viga"):
+            tipo_conj[c["marca"]] = "viga"                  # a viga de alma cheia com mísulas e chapas de topo
+        elif cont.get("chumbador") and n == cont.get("chumbador"):
             tipo_conj[c["marca"]] = "chumbador"
         elif cont.get("contraventamento"):
             tipo_conj[c["marca"]] = "contraventamento"

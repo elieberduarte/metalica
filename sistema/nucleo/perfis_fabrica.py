@@ -87,7 +87,9 @@ def _medida_mm(texto: str) -> Optional[float]:
     t = _norm(texto)
     if '"' in t or "/" in t:
         return polegadas_mm(t)
-    m = re.fullmatch(r"\d+(?:\.\d+)?", t.strip())
+    # "13 MM" (o nome dos perfis sintéticos do galpão: "Barra redonda ø 13 mm")
+    t = re.sub(r"\s*MM$", "", t.strip())
+    m = re.fullmatch(r"\d+(?:\.\d+)?", t)
     return float(t) if m else None
 
 
@@ -199,7 +201,9 @@ _RE_UE = re.compile(r"^(?:C|UE|U\s*E)\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)\s*
 _RE_L3 = re.compile(r"^L\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)$")
 _RE_L2 = re.compile(r"^L\s*(.+?)\s*X\s*(.+?)$")
 _RE_W = re.compile(r"^(W|HP)\s*(\d+)\s*X\s*(\d+(?:\.\d+)?)$")
-_RE_RED = re.compile(r"^(?:FE\s*RED\w*|RD|RED\w*|BARRA\s*RED\w*|VERG\w*)\s*(.+)$")
+# "Barra ø 16 mm" (o nome que o galpão dá às correntes) chega aqui como "BARRA 16 MM":
+# barra seguida de número é redonda (a chata diz "BARRA CHATA")
+_RE_RED = re.compile(r"^(?:FE\s*RED\w*|RD|RED\w*|BARRA\s*RED\w*|BARRA(?=\s*\d)|VERG\w*)\s*(.+)$")
 _RE_ROSCA = re.compile(r"^BARRA\s*ROSC\w*\s*(.+)$")
 _RE_TUBO = re.compile(r"^(TQ|TR|TC)\s*(.+)$")
 
@@ -241,7 +245,12 @@ def perfil_de_fabrica(nome: str) -> Optional[Perfil]:
     m = _RE_RED.match(s)
     if m:
         d = _medida_mm(m.group(1))
-        return _barra_redonda(d, "Barra redonda ø %s" % _rotulo_d(m.group(1), d)) if d else None
+        if not d:
+            return None
+        # nome que já diz "Barra …" (o do galpão, o declarado no IFC) fica como veio; o
+        # nome de fábrica abreviado (FE RED 3/8'') ganha o rótulo por extenso
+        rotulo = str(nome).strip() if s.startswith("BARRA") else "Barra redonda ø %s" % _rotulo_d(m.group(1), d)
+        return _barra_redonda(d, rotulo)
     m = _RE_TUBO.match(s)
     if m:
         return banco().get(s)

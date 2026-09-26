@@ -27,7 +27,8 @@ from saida.dobras import com_bitola
 
 #: Família de produção de cada tipo de peça/conjunto: (chave, título do resumo de materiais).
 FAMILIAS = collections.OrderedDict([
-    ("chumbadores", "Chumbadores"), ("tesouras", "Tesouras"),
+    ("chumbadores", "Chumbadores"), ("pilares", "Pilares PL"), ("vigas_portico", "Vigas de pórtico VG"),
+    ("tesouras", "Tesouras"),
     ("tercas_cob", "Terças cob. T.C."), ("tercas_lat", "Terças lat. T.L."), ("tercas_oit", "Terças oit. T.O."),
     ("tercas_marq", "Terças de marquise T.M."), ("vigas", "Vigas e barras B."),
     ("fix_telha", "Fixação de telha F.T."), ("acabamento", "Acabamento A.T."),
@@ -40,7 +41,7 @@ FAMILIAS = collections.OrderedDict([
 #: (no resumo da fábrica, a cumeeira de telha entra nas telhas, não no aço).
 FORA_DO_ACO = ("telhas", "funilaria")
 _FAMILIA_DO_TIPO = {
-    "tesoura": "tesouras", "terca_cobertura": "tercas_cob", "terca_lateral": "tercas_lat", "terca_oitao": "tercas_oit",
+    "tesoura": "tesouras", "pilar": "pilares", "viga": "vigas_portico", "terca_cobertura": "tercas_cob", "terca_lateral": "tercas_lat", "terca_oitao": "tercas_oit",
     "terca_marquise": "tercas_marq", "agulhamento": "agul_cob", "agulhamento_lateral": "agul_lat",
     "agulhamento_diagonal": "agul_diag", "gancho": "agul_diag", "contraventamento": "contrav", "barra_roscada": "contrav",
     "conjunto": "dispositivos", "perfil_fechamento": "fix_telha", "cantoneira_forro": "acabamento",
@@ -50,7 +51,7 @@ _FAMILIA_DO_TIPO = {
 }
 #: Grupos do quadro de pesos do resumo da obra, na ordem.
 GRUPOS_PESO = [
-    ("Tesouras", ("tesouras",)), ("Terças e longarinas", ("tercas_cob", "tercas_lat", "tercas_oit", "tercas_marq")),
+    ("Pilares", ("pilares",)), ("Vigas de pórtico", ("vigas_portico",)), ("Tesouras", ("tesouras",)), ("Terças e longarinas", ("tercas_cob", "tercas_lat", "tercas_oit", "tercas_marq")),
     ("Vigas e barras", ("vigas",)), ("Perfis de fixação e acabamento de telhas", ("fix_telha", "acabamento")),
     ("Agulhamentos (correntes rígidas)", ("agul_cob", "agul_lat")), ("Agulhamentos diagonais", ("agul_diag",)),
     ("Contraventamentos", ("contrav",)), ("Dispositivos", ("dispositivos",)), ("Chapas soltas", ("chapas",)),

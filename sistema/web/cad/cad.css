@@ -64,3 +64,8 @@ dialog.dialogo h3 { font-size: 16px; color: var(--azul); margin: 0 0 10px; }
 .dialogo-botoes button { padding: 6px 12px; border-radius: var(--raio-p); border: 1px solid var(--borda); background: var(--painel2);
   color: var(--texto); cursor: pointer; font: inherit; }
 .dialogo-botoes .botao-ok { background: var(--azul); border-color: var(--azul); color: #fff; }
+
+/* diálogo Malha de eixos: campos em duas colunas, o botão de pegar a origem ao lado */
+.grade-malha { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; align-items: end; min-width: 520px; }
+.grade-malha .explica { grid-column: 1 / -1; }
+.grade-malha label { display: grid; gap: 4px; }

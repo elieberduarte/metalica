@@ -89,6 +89,14 @@ window.__errosEditor = [];
         <button type="button" data-acao="restaurar-modelo" title="Voltar o modelo do projeto a uma gravação anterior (histórico)">Restaurar modelo anterior…</button>
       </div>
     </div>
+    <div class="menu" data-menu="lancamento">
+      <button type="button" class="menu-botao">Lançamento</button>
+      <div class="menu-lista">
+        <button type="button" data-acao="planta-lancamento" title="A planta no CAD com o arquitetônico do cliente (travado, em cinza) e os eixos: importe o DXF/PDF, gere a malha de eixos e grave os eixos no projeto">Planta de lançamento (arquitetônico e eixos)…</button>
+        <button type="button" data-acao="lancar-estrutura" title="Monta o galpão nos eixos gravados: pilares, tesouras ou vigas, terças, correntes, longarinas, contraventos e bases, dimensionados pelo cálculo do galpão">Lançar estrutura nos eixos…</button>
+        <button type="button" data-acao="memorial-lancamento" title="O memorial completo do dimensionamento do lançamento: dados, normas, cargas, vento, combinações, esforços, cada elemento, ligações e base">Memorial do dimensionamento (PDF)</button>
+      </div>
+    </div>
     <div class="menu" data-menu="desenho2d">
       <button type="button" class="menu-botao">Detalhamentos</button>
       <div class="menu-lista">
@@ -135,6 +143,7 @@ window.__errosEditor = [];
         <hr>
         <button type="button" data-acao="desempenho">Diagnóstico de desempenho…</button>
         <button type="button" data-acao="sombras" id="menu-sombras" title="Modelo com mais de 1.500 peças abre sem sombra, para a navegação ficar leve">Sombras</button>
+        <button type="button" data-acao="referencia" title="O arquitetônico e os eixos da planta de lançamento, no chão do modelo (só na tela)">Arquitetônico e eixos</button>
         <hr>
         <button type="button" data-acao="mapa-esforcos" id="menu-calcular">Calcular estrutura <kbd>F9</kbd></button>
         <button type="button" data-acao="resultado-analise" title="O último cálculo numa tela: resumo, situação por tipo, todas as peças com a conta de cada verificação, ligações, cargas e vento; dá para imprimir">Resultado da análise…</button>

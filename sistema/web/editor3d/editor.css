@@ -756,3 +756,7 @@ dialog p.explica { margin: 0 0 10px; color: var(--texto2); font-size: 12.5px; }
 .eixos-tabelas { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
 .eixos-tabelas table { width: auto; }
 .eixos-tabelas input[type=number] { width: 90px; }
+
+/* diálogo Lançar estrutura: rótulos mais longos que o painel de propriedades */
+.campos.lancamento { grid-template-columns: minmax(150px, 200px) minmax(240px, 1fr); }
+.campos .marcar { display: flex; gap: 6px; align-items: center; color: var(--texto); font-size: 12px; }

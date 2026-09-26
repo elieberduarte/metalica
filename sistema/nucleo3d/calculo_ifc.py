@@ -886,7 +886,13 @@ def _correntes(cruzamentos: Dict[str, List[dict]], soltas: List[_Peca]) -> Dict[
                     toques.append(t)
                     break
         for t0, t1 in zip(ts, ts[1:]):
-            n = sum(1 for t in toques if t0 + 150.0 < t < t1 - 150.0)
+            # uma linha de corrente é um ponto da terça: a corrente feita em trechos (um de
+            # cada lado da terça, como o galpão monta) encosta duas vezes no mesmo lugar
+            n, ultimo = 0, None
+            for t in sorted(t for t in toques if t0 + 150.0 < t < t1 - 150.0):
+                if ultimo is None or t - ultimo > 150.0:
+                    n += 1
+                ultimo = t
             por_marca[terca.marca].append(n)
     saida = {}
     for marca, ns in por_marca.items():

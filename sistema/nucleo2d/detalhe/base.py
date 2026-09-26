@@ -1502,7 +1502,7 @@ def _eh_redonda_perfil(perfil: str) -> bool:
 #: uma numeração só); chumbadores CB; telhas TL. As chaves mudaram em relação às versões
 #: anteriores (S.T., A.G., C.V., CJ.…): projeto com nomes.json antigo renumera na 1ª geração.
 PREFIXO_NOME = collections.OrderedDict([
-    ("tesoura", "T"), ("terca_cobertura", "T.C."), ("terca_lateral", "T.L."), ("terca_oitao", "T.O."),
+    ("tesoura", "T"), ("pilar", "PL"), ("viga", "VG"), ("terca_cobertura", "T.C."), ("terca_lateral", "T.L."), ("terca_oitao", "T.O."),
     ("terca_marquise", "T.M."), ("suporte_terca", "CH"),
     ("agulhamento", "A.C."), ("agulhamento_lateral", "A.L."), ("agulhamento_diagonal", "A.D."),
     ("suporte_agulhamento", "CH"), ("contraventamento", "CV."),
@@ -1512,7 +1512,7 @@ PREFIXO_NOME = collections.OrderedDict([
     ("barra", "B."), ("telha", "TL"), ("conjunto", "DP."), ("parte", ""),
 ])
 TIPOS_NOME = {
-    "tesoura": "Tesoura", "terca_cobertura": "Terça de cobertura", "terca_lateral": "Terça lateral",
+    "tesoura": "Tesoura", "pilar": "Pilar", "viga": "Viga de pórtico", "terca_cobertura": "Terça de cobertura", "terca_lateral": "Terça lateral",
     "terca_oitao": "Terça de oitão", "terca_marquise": "Terça de marquise",
     "suporte_terca": "Suporte de terça", "agulhamento": "Agulhamento de cobertura",
     "agulhamento_lateral": "Agulhamento lateral / de oitão", "agulhamento_diagonal": "Agulhamento diagonal",

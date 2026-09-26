@@ -136,8 +136,13 @@ class TestDimensionar(unittest.TestCase):
             self.assertEqual(b.atributos["trocas_de_perfil"][-1]["por"], "dimensionamento")
         # o modelo trocado, calculado sem troca nenhuma, dá o mesmo que o dimensionamento
         r = ci.calcular(doc2, ci.nomes_das_barras(doc2), {"trava_inferior": 3.0})
+
+        def nome(p):
+            # a barra redonda do galpão (corrente, tirante) é perfil sintético, fora do catálogo
+            it = catalogo.item(p)
+            return it.nome if it is not None else p
         for m, e in self.d["calculo"]["elementos"].items():
-            self.assertEqual(catalogo.item(r["elementos"][m]["perfil"]).nome, catalogo.item(e["perfil"]).nome, m)
+            self.assertEqual(nome(r["elementos"][m]["perfil"]), nome(e["perfil"]), m)
 
     def test_banzo_inferior_sem_travamento_fica_pendente(self):
         calc = ci.calcular(self.doc, self.nomes, {})

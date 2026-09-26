@@ -95,6 +95,7 @@ function urlDoProjeto(p, destino) {
   if (destino === 'dimensionar') return `/dimensionar?projeto=${s}`;
   if (destino === 'cad') return `/cad?projeto=${s}`;
   if (p.tipo === 'desenho') return `/cad?projeto=${s}`;    // começa desenhando
+  if (p.tipo === 'lancamento') return p.tem_modelo ? `/editor?projeto=${s}` : `/cad?projeto=${s}&desenho=${encodeURIComponent('planta-de-lançamento')}`;
   return p.tipo === 'ifc' ? `/editor?projeto=${s}` : `/dimensionar?projeto=${s}`;
 }
 
@@ -271,6 +272,28 @@ async function novoProjetoDesenhado() {
   }
 }
 
+/**
+ * Projeto que nasce da planta do cliente: abre o CAD na Planta de lançamento, que pede o
+ * DXF/PDF do arquitetônico. Dali: malha de eixos, gravar os eixos e lançar a estrutura no 3D.
+ */
+async function novoProjetoDoArquitetonico() {
+  const v = await perguntar({
+    titulo: 'Novo projeto a partir do arquitetônico',
+    texto: 'Abre o CAD na Planta de lançamento e pede a planta do cliente (DXF ou PDF vetorial). Por cima dela ' +
+           'você lança os eixos (Malha de eixos…), grava, e o Modelo 3D monta e dimensiona o galpão nos eixos: ' +
+           'pilares, tesouras ou vigas, terças, correntes, longarinas, contraventos e bases.',
+    campos: CAMPOS_PROJETO, ok: 'Criar e abrir a planta' });
+  if (!v) return;
+  try {
+    carregando(true, 'Criando o projeto…');
+    const criado = await postar('/api/projetos', { ...v, tipo: 'lancamento' });
+    location.href = `/cad?projeto=${encodeURIComponent(criado.slug)}&arquitetonico=1`;
+  } catch (e) {
+    carregando(false);
+    recado('Não foi possível criar o projeto', e.message, 'erro');
+  }
+}
+
 const CAMPOS_PROJETO = [
   { id: 'nome', rotulo: 'Nome do projeto', dica: 'ex.: Galpão da fazenda São João', obrigatorio: true },
   { id: 'cliente', rotulo: 'Cliente' },
@@ -387,11 +410,13 @@ async function iniciar() {
   $('#btn-novo').addEventListener('click', novoProjeto);
   $('#btn-novo-ifc').addEventListener('click', novoDeIFC);
   $('#btn-novo-desenho').addEventListener('click', novoProjetoDesenhado);
+  $('#btn-novo-arquitetonico').addEventListener('click', novoProjetoDoArquitetonico);
   $('#btn-pasta').addEventListener('click', () => abrirPasta(null));
   $('#busca').addEventListener('input', desenhar);
   for (const b of document.querySelectorAll('[data-acao="novo"]')) b.addEventListener('click', novoProjeto);
   for (const b of document.querySelectorAll('[data-acao="novo-ifc"]')) b.addEventListener('click', novoDeIFC);
   for (const b of document.querySelectorAll('[data-acao="novo-desenho"]')) b.addEventListener('click', novoProjetoDesenhado);
+  for (const b of document.querySelectorAll('[data-acao="novo-arquitetonico"]')) b.addEventListener('click', novoProjetoDoArquitetonico);
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'n' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); novoProjeto(); }
     if (ev.key === '/' && document.activeElement === document.body) { ev.preventDefault(); $('#busca').focus(); }

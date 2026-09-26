@@ -9,6 +9,7 @@ import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicion
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta } from './ferramentas.js';
+import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
 
 const CHAVE_TEMA = 'galpao.tema';
 const ATRASO_AUTOSAVE = 3000;
@@ -108,11 +109,24 @@ class CAD {
       $('#link-editor').hidden = true;
       this.aviso('Sem projeto: o desenho fica só nesta janela. Abra pelo gerenciador para gravar no projeto.', 'atencao', 0);
     }
-    if (this.projeto && this.nomeDesenho) await this.abrirDesenho(this.nomeDesenho);
+    const pedirArquitetonico = this.projeto && this.parametros.get('arquitetonico') === '1';
+    if (pedirArquitetonico) {
+      // projeto novo "a partir do arquitetônico": abre (ou cria) a planta e pede o arquivo
+      const url = new URL(location.href); url.searchParams.delete('arquitetonico'); history.replaceState(null, '', url);
+      if (!this.nomeDesenho) this.nomeDesenho = DESENHO_LANCAMENTO;
+    }
+    if (this.projeto && this.nomeDesenho && !(pedirArquitetonico && !(await this._listaDesenhos()).some(d => d.nome === this.nomeDesenho))) await this.abrirDesenho(this.nomeDesenho);
     else if (this.projeto) {
       const lista = await this._listaDesenhos();
       if (lista.length) await this.abrirDesenho(lista[0].nome);
       else this.dica('Desenho novo. Use "Vistas do modelo" para trazer uma vista do 3D, ou desenhe à mão.');
+    }
+    if (pedirArquitetonico) {
+      // o seletor de arquivo só abre com um clique do usuário: o botão do diálogo é esse clique
+      setTimeout(async () => {
+        const corpo = el('div', {}, el('div', { class: 'explica', texto: 'Projeto a partir do arquitetônico. O caminho: (1) o DXF ou PDF da planta do cliente vira a referência, travada e em cinza; (2) Malha de eixos… desenha os eixos por cima dela; (3) Gravar eixos no projeto; (4) Lançar estrutura no 3D monta e dimensiona o galpão nos eixos.' }));
+        if (await this.dialogo({ titulo: 'Arquitetônico do cliente', corpo, ok: 'Escolher o arquivo (DXF ou PDF)…' }) === 'ok') $('#arquivo-arquitetonico').click();
+      }, 200);
     }
     try { if (localStorage.getItem('cad.orto') === '1') this.snap.orto = true; } catch { /* sem armazenamento */ }
     this._agendarPaineis('props', 'camadas', 'snap', 'vistas');
@@ -462,6 +476,7 @@ class CAD {
         barra.append(b);
       }
     }
+    this._registrarFerramentasDoLancamento();
   }
 
   ativarFerramenta(id) {
@@ -622,6 +637,12 @@ class CAD {
       'gerar-3d': () => this.dialogoGerar3D(),
       pranchas: () => this.dialogoPranchas(),
       'importar-dxf': () => $('#arquivo-dxf').click(),
+      arquitetonico: () => $('#arquivo-arquitetonico').click(),
+      'planta-lancamento': () => this.abrirPlantaDeLancamento(),
+      calibrar: () => this.ativarFerramenta('calibrar'),
+      malha: () => this.dialogoMalha(),
+      'gravar-eixos': () => this.gravarEixos(),
+      'lancar-3d': () => this.lancarNo3D(),
       'projeto-2d': () => $('#arquivo-projeto-2d').click(),
       reconhecer: () => this.reconhecerPecas(),
       desfazer: () => this.desfazer(), refazer: () => this.refazer(),
@@ -662,6 +683,7 @@ class CAD {
       $('#arquivo-dxf').value = '';
       if (f && /\.pdf$/i.test(f.name)) this.importarPDF(f); else this.importarDXF(f);
     });
+    $('#arquivo-arquitetonico').addEventListener('change', () => { const f = $('#arquivo-arquitetonico').files && $('#arquivo-arquitetonico').files[0]; $('#arquivo-arquitetonico').value = ''; this.importarArquitetonico(f); });
     $('#arquivo-projeto-2d').addEventListener('change', () => { const f = $('#arquivo-projeto-2d').files && $('#arquivo-projeto-2d').files[0]; $('#arquivo-projeto-2d').value = ''; this.projetoRecebido(f); });
     $('#btn-tema').addEventListener('click', () => this._alternarTema());
     this.el.nome.addEventListener('change', () => { this.doc.nome = this.el.nome.value.trim() || 'Desenho'; document.title = `${this.doc.nome} — Desenho 2D`; this._agendarAutosave(); });
@@ -1730,6 +1752,13 @@ class CAD {
 const evInfo = (ev) => ({ shiftKey: ev.shiftKey, ctrlKey: ev.ctrlKey, altKey: ev.altKey, button: ev.button });
 const slug = (s) => String(s || '').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().toLowerCase().replace(/[\s_-]+/g, '-').slice(0, 60).replace(/^-+|-+$/g, '') || 'desenho';
 function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { return null; } }
+
+// os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js
+for (const k of Object.getOwnPropertyNames(MetodosLancamentoCAD.prototype)) {
+  if (k === 'constructor') continue;
+  if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);
+  Object.defineProperty(CAD.prototype, k, Object.getOwnPropertyDescriptor(MetodosLancamentoCAD.prototype, k));
+}
 
 const cad = new CAD();
 cad.iniciar();

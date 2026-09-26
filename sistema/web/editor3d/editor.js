@@ -34,6 +34,7 @@ import { MetodosPaineis } from './modulos/paineis.js';
 import { MetodosTrocaDePecas } from './modulos/troca_de_pecas.js';
 import { MetodosAnalise } from './modulos/analise.js';
 import { MetodosDiagnostico } from './modulos/diagnostico.js';
+import { MetodosLancamento } from './modulos/lancamento.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -278,6 +279,11 @@ export class Editor {
     else if (this.parametros.get('galpao') === '1') await this._carregarGalpaoDaInterface();
     else if (this.parametros.get('exemplo')) this.carregarExemplo();
     else if (this.parametros.get('abrir')) await this.abrirModelo(this.parametros.get('abrir'));
+    if (this.projeto) this._carregarReferencia();
+    if (this.projeto && this.parametros.get('lancar') === '1') {
+      const url = new URL(location.href); url.searchParams.delete('lancar'); history.replaceState(null, '', url);
+      setTimeout(() => this.dialogoLancar(), 300);
+    }
     if (this.parametros.get('destacar')) this._destacar(this.parametros.get('destacar'));
     else if (!pedidoNaUrl) {
       // Só sem pedido na URL volta ao último modelo (o documento é gravado no servidor a
@@ -1758,6 +1764,10 @@ export class Editor {
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
       'cantos-redondos': () => this.dialogoCantosRedondos(),
       'eixos-obra': () => this.dialogoEixos(),
+      'lancar-estrutura': () => this.dialogoLancar(),
+      'memorial-lancamento': () => this.memorialDoLancamento(),
+      'planta-lancamento': () => this._irPara(`/cad?projeto=${encodeURIComponent(this.projeto || '')}&desenho=${encodeURIComponent('planta-de-lançamento')}`),
+      referencia: () => this.alternarReferencia(),
       'abrir-cad': () => this._abrirCADDoProjeto(),
       'materiais': () => this._abrirMateriais(),
       'resultado-analise': () => this._abrirResultadoDaAnalise(),
@@ -2163,7 +2173,7 @@ export class Editor {
 }
 
 // os métodos que moram nos módulos (web/editor3d/modulos/)
-aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico);
+aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento);
 
 // ================================================================= apoio
 

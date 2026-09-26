@@ -218,6 +218,42 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.29.** O meio do caminho que faltava: **lançar a estrutura sobre o arquitetônico do cliente** (análise
+"caminho do início ao fim", rodadas 1 e 2). (1) **Arquitetônico como referência** (`nucleo3d/lancamento.py`,
+`ler_arquitetonico`; rota `POST /api/projetos/<s>/arquitetonico`): DXF (unidade pelo $INSUNITS ou informada) ou PDF
+vetorial (escala 1:N pelas cotas escritas, pelo leitor do projeto recebido, ou informada) vira a **Planta de lançamento**
+do CAD, em milímetro real, trazida para perto da origem (DWG de topografia chega em coordenadas UTM), com as camadas
+"ARQ ..." em cinza e travadas (aparecem e dão snap, não se selecionam). Importar de novo mantém os eixos. **Calibrar
+escala** (dois cliques numa medida conhecida e a medida real) corrige arquivo com unidade errada. O DXF de 39 MB do
+cliente (118 mil objetos) entra em 24 s e o CAD o abre em 4 s. (2) **Eixos**: **Malha de eixos...** desenha as linhas na
+camada EIXO com as bolinhas e as cotas entre eixos e totais por fora (vãos como 5x6000 ou 6000 6000 7500, ângulo,
+origem pegada no desenho); **Gravar eixos no projeto** lê as linhas da camada EIXO (duas famílias perpendiculares, nomes
+nas bolinhas; a família de números são os pórticos; sem nomes, a que tem mais linhas) e grava em projeto.json ->
+`eixos`, o formato de `nucleo3d/eixos.py` que as plantas de localização e chumbação já usam. (3) **Lançar estrutura**
+(Modelo 3D, menu Lançamento; rota `POST .../lancamento/estrutura`): o motor do galpão é o gerador. Ele dimensiona o
+pórtico (tesoura treliçada ou alma cheia) com o maior espaçamento entre eixos, e o construtor do 3D monta pilares,
+tesouras ou vigas com mísulas, terças, correntes, longarinas, contraventos e placas de base nas posições reais dos eixos
+(girados e deslocados como a planta), com **marcas de posição e conjunto** (tesouras iguais, um conjunto; pilar + placa;
+viga + mísulas + chapas de topo). Na tesoura, as terças sentam **nos nós do banzo superior** (o galpão as desenhava a
+200 mm do beiral, fora dos nós, e calculava com a carga no nó) e a cumeeira não sai em dobro. Padrão da tesoura:
+**apoiada** no pilar com **base engastada**, o arranjo que o cálculo do modelo 3D representa igual ao do galpão; a
+ligação rígida continua possível, com aviso. O modelo anterior vai para o histórico; **Memorial do dimensionamento
+(PDF)** refaz o memorial completo do galpão com os dados gravados do lançamento (`memorial/lancamento`). No chão do 3D,
+o arquitetônico em cinza e os eixos com as bolinhas (Ver -> Arquitetônico e eixos; rota `GET .../lancamento/referencia`,
+com cache). Tela inicial: **Novo a partir do arquitetônico...** (tipo de projeto `lancamento`) abre a planta e pede o
+arquivo. (4) O que o modelo lançado ensinou ao resto do sistema, comparando os dois motores na mesma estrutura: o
+cálculo do modelo 3D não reconhecia as barras redondas do galpão ("Barra ø 16 mm", "Barra redonda ø 13 mm": terça sem
+correntes, banzo sem travamento), e `perfis_fabrica` agora lê; a corrente feita em trechos era contada duas vezes por
+terça (`_correntes` junta toques a menos de 150 mm; nas obras reais nada muda, as correntes atravessam a terça); o
+travamento do banzo inferior ganha o papel `travamento` (o cálculo exclui contravento de propósito). O
+**detalhamento** aprendeu pilar e viga de pórtico pelo papel da barra (conjuntos **PL** e **VG**, peças PL1.1,
+PL1.2...; famílias Pilares e Vigas de pórtico nos resumos), correntes e travamentos como agulhamento (A.C.), e a
+**planta de chumbação** aceita placa de base de até 3" (a do pilar engastado sai com 2"), desenha os **furos das
+placas** (onde passam os chumbadores), põe o nome a partir da borda da peça e, sem chumbador no modelo, conta chapas de
+base em vez de chumbadores (no Depósito Químico as placas iam para a camada dos tirantes; a bateria aceitou essas
+mudanças nas três obras que têm placa de base). Testes em `testes/test_lancamento.py` (inclui o PDF a 1:100 lido de
+volta pelas cotas); verificador das telas `testes/verificadores/verif_lancamento.py`.
+
 **0.8.28.** Memorial de cálculo por peça, em quatro camadas — o piloto é a terça do modelo importado. (1) **Hipóteses
 por extenso** (`nucleo/base.py`: `Hipotese(chave, texto, fonte)` e `Resultado.hipoteses`; `Resultado.cargas` são os passos
 da carga por m² ao esforço): a rotina da terça (`nbr14762.terca`) registra modelo estático, seção, aço, travamento da mesa
@@ -1416,6 +1452,23 @@ e os passos das cargas nascem no cálculo (`Resultado.hipoteses`, `Resultado.car
 calcula. Tela `/memorial?projeto=<s>&marca=<posição>` (pelo painel do cálculo no 3D), PDF profissional (sem a camada 4) e
 didático em `<projeto>/memorial/`. Hoje só a terça registra hipóteses e cargas; as outras peças saem com as camadas 1 e 3 e
 a lacuna marcada. A trilha combinada estende isso na ordem terça → tesoura → pilar → vento → ligações.
+
+## Lançar a estrutura sobre o arquitetônico
+
+O caminho de um projeto que começa na planta do cliente (`nucleo3d/lancamento.py`):
+
+1. **Arquitetônico do cliente** (CAD -> Lançamento, ou "Novo a partir do arquitetônico..." na tela inicial): DXF ou PDF
+   vetorial vira a Planta de lançamento, em milímetro real, com as camadas "ARQ ..." cinza e travadas. Confira uma medida
+   com Medir (U); se a unidade do arquivo estiver errada, **Calibrar escala** (dois cliques e a medida real).
+2. **Malha de eixos...** (ou linhas desenhadas à mão na camada EIXO, com os nomes nas bolinhas) e **Gravar eixos no
+   projeto**. Números são os pórticos; letras, as filas de pilares. As duas direções têm de ser perpendiculares.
+3. **Lançar estrutura no 3D**: sistema (tesoura apoiada com base engastada, tesoura rígida ou alma cheia), pé-direito,
+   inclinação, terças, correntes, telha, cargas, vento. O galpão é dimensionado com o maior espaçamento entre eixos e
+   montado nos eixos reais, com marcas de posição e conjunto; o modelo anterior vai para o histórico.
+4. Dali o caminho é o de sempre: Detalhar peças e conjuntos, Lista de materiais, Calcular estrutura (confere o modelo
+   depois de editado), Memorial do dimensionamento (PDF) e Exportar IFC.
+
+Limites: galpão retangular de vão livre (eixos com letra intermediários ficam sem pilar), sem ponte rolante nem mezanino.
 
 ## Versão que cada janela está rodando
 

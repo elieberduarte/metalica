@@ -61,6 +61,7 @@
   <li><span class="passo">Lista de materiais</span>: romaneio, perfis com barras comerciais, chapas e conjuntos, em tela, Excel e PDF.</li>
 </ol>
 <div class="indice">
+  <a href="#lancamento">Do arquitetônico à estrutura</a>
   <a href="#projetos">Projetos e arquivos</a>
   <a href="#modelo3d">Modelo 3D e IFC</a>
   <a href="#pesquisa">Pesquisar e colorir peças</a>
@@ -77,6 +78,15 @@
   <a href="#instalar">Instalar e atualizar</a>
   <a href="#limites">O que o programa ainda não faz</a>
 </div>
+
+<h2 id="lancamento">Do arquitetônico à estrutura (lançamento)</h2>
+<p>Para um projeto que começa na planta do cliente: na tela de projetos, <b>Novo a partir do arquitetônico…</b>. O CAD abre a <b>Planta de lançamento</b> e pede o DXF ou o PDF.</p>
+<ol>
+  <li><b>Arquitetônico</b>: entra em milímetro real, em cinza e travado (dá snap, não se seleciona). Meça uma parede com <b>Medir</b> (U); se não bater, <b>Lançamento → Calibrar escala</b>: dois cliques numa medida conhecida e a medida real.</li>
+  <li><b>Lançamento → Malha de eixos…</b>: vãos entre os pórticos (números) e entre as filas de pilares (letras), como <code>5x6000</code> ou <code>6000 6000 7500</code>; a origem pode ser pegada no desenho (o centro do pilar do canto). Ajuste o que precisar na camada EIXO.</li>
+  <li><b>Lançamento → Gravar eixos no projeto</b> e <b>Lançar estrutura no 3D…</b>: escolha o sistema (tesoura ou alma cheia), pé-direito, inclinação, terças, telha, cargas e vento. O programa dimensiona e monta a estrutura nos eixos; o modelo anterior fica no histórico.</li>
+  <li>No 3D: <b>Lançamento → Memorial do dimensionamento (PDF)</b>, <b>Detalhamentos → Detalhar peças e conjuntos</b>, lista de materiais, <b>Calcular estrutura</b> para conferir depois de mexer no modelo, e o IFC. <b>Ver → Arquitetônico e eixos</b> liga e desliga a planta no chão.</li>
+</ol>
 
 <h2 id="projetos">Projetos e arquivos</h2>
 <p><b>Histórico do modelo:</b> antes de cada operação que muda peças (aplicar furos, detalhamento, restauro) e no máximo a cada 10 minutos nas gravações comuns, o modelo anterior é guardado comprimido na pasta <code>historico</code> do projeto (ficam as 8 últimas). No Modelo 3D, <b>Arquivo → Restaurar modelo anterior…</b> lista essas gravações e volta a uma delas; a atual vai para o histórico antes, então dá para desfazer o restauro. Os desenhos 2D não mudam: gere o detalhamento de novo depois.</p>

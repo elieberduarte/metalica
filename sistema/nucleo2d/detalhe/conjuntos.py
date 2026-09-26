@@ -1891,6 +1891,7 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
     tipos = (nomes_producao or {}).get("tipos") or {}
     chumb = [e for e in pecas if tipos.get(str(_marcas(e).get("posicao") or "")) == "chumbador"]
     ex = _eixos_do_modelo(doc, eixos, nomes_producao)
+    so_chapas = not chumb            # sem chumbador no modelo: o que se desenha são as chapas de base
     if not chumb:
         # sem chumbador reconhecido: as chapas horizontais junto do nível de base
         z_base = float(ex["z_base"]) if ex else min(v[2] for e in pecas for v in e.vertices)
@@ -1899,7 +1900,10 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
             zs = [v[2] for v in e.vertices]
             xs = [v[0] for v in e.vertices]
             ys = [v[1] for v in e.vertices]
-            if max(zs) - min(zs) <= 25.0 and max(max(xs) - min(xs), max(ys) - min(ys)) >= 80.0 and min(zs) <= z_base + 300.0:
+            # chapa até 3" de espessura: a placa de base de pilar engastado passa de 1" (a do
+            # galpão lançado sai com 2"); o resto (barra deitada perto da base) até 25 mm, como antes
+            chapa = _tipo_ifc(e).startswith("IfcPlate") or type(getattr(e, "parametrica", None)).__name__ == "Chapa"
+            if max(zs) - min(zs) <= (80.0 if chapa else 25.0) and max(max(xs) - min(xs), max(ys) - min(ys)) >= 80.0                     and min(zs) <= z_base + 300.0:
                 chumb.append(e)
     if not chumb:
         raise ErroDeDados("sem chumbadores nem chapas de base no modelo.")
@@ -1958,11 +1962,20 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
             atr["conjunto"] = str(m["conjunto"])
         pp = _Papel(d, atr, 0.0, 0.0)
         eh_chumb = e.id in ids_ch
-        pp.polilinha(casco, fechada=True, camada="TIRANTES" if eh_chumb else "CHAPAS")
+        pp.polilinha(casco, fechada=True, camada="TIRANTES" if (eh_chumb and not so_chapas) else "CHAPAS")
+        # os furos da chapa de base paramétrica são onde os chumbadores passam: é o que a
+        # obra marca no concreto (a chapa do IFC traz o chumbador como peça própria)
+        par = getattr(e, "parametrica", None)
+        if par is not None and getattr(par, "furos", None) and hasattr(par, "eixo_x"):
+            for f in par.furos:
+                P = tuple(par.origem[i] + par.eixo_x[i] * float(f.get("x", 0.0)) + par.eixo_y[i] * float(f.get("y", 0.0))
+                          for i in range(3))
+                pp.circulo(_dot(P, u) - u0, _dot(P, v) - v0, float(f.get("diametro", 20.0)) / 2.0, camada="FURO")
         p.pontos.extend(pp.pontos)
         if eh_chumb:
             marca = str(m.get("posicao") or e.nome or "")
-            cx = sum(q[0] for q in pts) / len(pts)
+            # o nome começa na borda direita da peça (do centro, encostava na chapa estreita)
+            cx = max(q[0] for q in pts)
             cy = sum(q[1] for q in pts) / len(pts)
             rotulos.append(((nomes or {}).get(marca) or marca, cx, cy))
     postos: List[Tuple[str, float, float]] = []
@@ -1970,14 +1983,16 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
         if any(t == rotulo and math.hypot(cx - x_, cy - y_) < 8.0 * h_txt for t, x_, y_ in postos):
             continue
         postos.append((rotulo, cx, cy))
-        p.texto(cx + 3.0 * esc, cy + 3.0 * esc, rotulo, h_txt, "TEXTO")
+        p.texto(cx + 1.5 * esc, cy + 3.0 * esc, rotulo, h_txt, "TEXTO")
     if ex:
         _desenhar_eixos(p, ex, u, v, u0, v0, esc, larg_v, alt_v)
     p.cota_h(0, larg_v, 0, -10.0)
     p.cota_v(0, alt_v, larg_v, 10.0)
     p.texto(0, -(10.0 + 8.0) * esc, "PLANTA DE CHUMBAÇÃO", 3.5 * esc)
+    n_chumb, n_chapas = (0, len(chumb) + len(chapas)) if so_chapas else (len(chumb), len(chapas))
     p.texto(0, -(10.0 + 8.0 + 4.5) * esc, "escala 1:%s · %d chumbador(es) e %d chapa(s) de base, vistos de cima, nos eixos da obra"
-            % (int(esc) if float(esc).is_integer() else esc, len(chumb), len(chapas)), 2.0 * esc)
+            % (int(esc) if float(esc).is_integer() else esc, n_chumb, n_chapas)
+            + (" (sem chumbador no modelo: os furos das chapas marcam onde eles passam)" if so_chapas else ""), 2.0 * esc)
     ext_c = p.extremos
     d.metadados.setdefault("celulas", []).append([round(t, 1) for t in ext_c])
     d.vistas.append({"origem": [minimo[0], minimo[1], minimo[2]], "normal": list(w), "acima": list(v),
