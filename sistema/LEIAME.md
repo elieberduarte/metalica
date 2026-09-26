@@ -218,6 +218,20 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.34.** (1) **Seção certa no 3D para qualquer perfil do catálogo**: em modelo grande (modo lote) o editor monta as
+seções no navegador com o banco básico, e perfil fora dele (dobrado de fábrica "(FF)", barra redonda, perfis dos
+fornecedores) saía com a seção padrão de 100 × 200 mm — no posto, 18 dos 23 perfis, e os contraventos de Ø12,5
+pareciam perfis grandes. O editor agora pede ao servidor a seção e a massa dos que faltam (`POST /api/modelo/perfis`,
+`Cena.acrescentarPerfis`) e refaz essas barras. (2) **Quadro do projeto considerado**: a montagem pela planta desenha,
+no próprio desenho e abaixo de tudo, o quadro "PROJETO CONSIDERADO NO MODELO 3D" com só o que virou peça — a planta
+estrutural, a das terças e a locação (com os eixos) e cada elevação usada, cada uma na sua moldura, em camadas
+QUADRO … (que a montagem seguinte ignora e refaz); o CAD recarrega o desenho e o botão "Ver o quadro no desenho"
+enquadra. Cada peça guarda de que entidades do desenho saiu (`Caminho.fontes`, `Elevacao.fontes`). (3) **Eixos e
+níveis no 3D, como no Revit**: a montagem grava no projeto os eixos lidos dos balões da planta (numerados e com letra;
+os inclinados em `extras`) e os níveis (base, banzo inferior e os escritos nos títulos: "NÍVEL 3,17", "NIVEL 8,20"…);
+o 3D mostra os eixos com o balão nas duas pontas e cada nível como um contorno tracejado com a cabeça (triângulo,
+nome e cota); Ver → Arquitetônico, eixos e níveis liga e desliga.
+
 **0.8.33.** Montar o 3D pela planta: o modelo vem para perto da origem. A planta do Posto CB está a 400 m do zero do
 DXF e o modelo abria pequeno no fim de uma malha enorme (a malha do chão vai do zero até o modelo); agora o canto da
 planta vai para o zero, em metros redondos, e o deslocamento fica em `metadados.de_planta.deslocamento` (e no resumo)

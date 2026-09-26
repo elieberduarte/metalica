@@ -35,7 +35,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
 
-__all__ = ["montar", "PADRAO", "ler_elevacoes", "pecas_da_planta"]
+__all__ = ["montar", "PADRAO", "ler_elevacoes", "pecas_da_planta", "quadro_do_usado"]
 
 Ponto2 = Tuple[float, float]
 
@@ -87,6 +87,15 @@ def _dentro(p, caixa) -> bool:
     return caixa[0] <= p[0] <= caixa[2] and caixa[1] <= p[1] <= caixa[3]
 
 
+class _Seg(tuple):
+    """segmento (a, b, camada) que lembra de qual entidade do desenho saiu (`id`)"""
+
+    def __new__(cls, a, b, cam, eid=None):
+        s_ = tuple.__new__(cls, (a, b, cam))
+        s_.id = eid
+        return s_
+
+
 def _segmentos(ents: Iterable[dict], so_camadas=None) -> List[Tuple[Ponto2, Ponto2, str]]:
     out = []
     for e in ents:
@@ -97,14 +106,14 @@ def _segmentos(ents: Iterable[dict], so_camadas=None) -> List[Tuple[Ponto2, Pont
         if e["tipo"] == "linha":
             a, b = (e["a"][0], e["a"][1]), (e["b"][0], e["b"][1])
             if math.dist(a, b) > 1.0:
-                out.append((a, b, cam))
+                out.append(_Seg(a, b, cam, e.get("id")))
         elif e["tipo"] == "polilinha":
             v = [(p[0], p[1]) for p in e["vertices"]]
             if e.get("fechada") and len(v) > 2:
                 v.append(v[0])
             for a, b in zip(v, v[1:]):
                 if math.dist(a, b) > 1.0:
-                    out.append((a, b, cam))
+                    out.append(_Seg(a, b, cam, e.get("id")))
     return out
 
 
@@ -128,6 +137,7 @@ class Caminho:
     largura: float = 0.0
     camada: str = ""
     partes: Optional[list] = None
+    fontes: Optional[frozenset] = None      # ids das entidades do desenho que formam a peça
 
     @property
     def varredura(self) -> float:
@@ -215,15 +225,15 @@ class Caminho:
                 acum += L
             if len(novas) == 1 and not novas[0][1]:
                 return novas[0][0]
-            return Caminho("composto", partes=novas, largura=self.largura, camada=self.camada)
+            return Caminho("composto", partes=novas, largura=self.largura, camada=self.camada, fontes=self.fontes)
         if self.tipo == "reta":
-            return Caminho("reta", a=self.ponto(s0), b=self.ponto(s1), largura=self.largura, camada=self.camada)
+            return Caminho("reta", a=self.ponto(s0), b=self.ponto(s1), largura=self.largura, camada=self.camada, fontes=self.fontes)
         return Caminho("arco", centro=self.centro, raio=self.raio, ini=(self.ini + math.degrees(s0 / self.raio)) % 360,
-                       fim=(self.ini + math.degrees(s1 / self.raio)) % 360, largura=self.largura, camada=self.camada)
+                       fim=(self.ini + math.degrees(s1 / self.raio)) % 360, largura=self.largura, camada=self.camada, fontes=self.fontes)
 
     def invertido(self) -> "Caminho":
         if self.tipo == "reta":
-            return Caminho("reta", a=self.b, b=self.a, largura=self.largura, camada=self.camada)
+            return Caminho("reta", a=self.b, b=self.a, largura=self.largura, camada=self.camada, fontes=self.fontes)
         # o arco não inverte o sentido dos ângulos: quem inverte é o mapeamento (s → L − s)
         return self
 
@@ -232,13 +242,14 @@ def centros_retos(segs, lmin: float = 250.0, larg=(15.0, 260.0)) -> List[Caminho
     """Pares de segmentos paralelos, a uma distância de largura de perfil, que correm
     juntos → linha de centro. Um segmento entra em um par só."""
     info = []
-    for a, b, cam in segs:
+    for sg in segs:
+        a, b, cam = sg
         (ux, uy), L = _unit(a, b)
         if L < lmin:
             continue
         if ux < -1e-9 or (abs(ux) < 1e-9 and uy < 0):
             a, b, ux, uy = b, a, -ux, -uy
-        info.append((a, b, ux, uy, L, cam))
+        info.append((a, b, ux, uy, L, cam, getattr(sg, "id", None)))
     por_ang: Dict[int, List[int]] = collections.defaultdict(list)
     for i, s in enumerate(info):
         por_ang[int(round(math.degrees(math.atan2(s[3], s[2])))) % 180].append(i)
@@ -248,7 +259,7 @@ def centros_retos(segs, lmin: float = 250.0, larg=(15.0, 260.0)) -> List[Caminho
     for i in ordem:
         if i in usados:
             continue
-        a, b, ux, uy, L, cam = info[i]
+        a, b, ux, uy, L, cam, _id = info[i]
         ang = int(round(math.degrees(math.atan2(uy, ux)))) % 180
         cands = set()
         for d in (-1, 0, 1):
@@ -257,7 +268,7 @@ def centros_retos(segs, lmin: float = 250.0, larg=(15.0, 260.0)) -> List[Caminho
         for j in cands:
             if j == i or j in usados:
                 continue
-            c, d_, vx, vy, M, _ = info[j]
+            c, d_, vx, vy, M, _, _id2 = info[j]
             if abs(ux * vy - uy * vx) > 0.01:
                 continue
             n = (-uy, ux)
@@ -280,7 +291,8 @@ def centros_retos(segs, lmin: float = 250.0, larg=(15.0, 260.0)) -> List[Caminho
             n = (-uy, ux)
             m = (a[0] + n[0] * dist / 2, a[1] + n[1] * dist / 2)
             out.append(Caminho("reta", a=(m[0] + ux * lo2, m[1] + uy * lo2), b=(m[0] + ux * hi2, m[1] + uy * hi2),
-                               largura=abs(dist), camada=cam))
+                               largura=abs(dist), camada=cam,
+                               fontes=frozenset(x for x in (info[i][6], info[j][6]) if x)))
     return out, [info[i] for i in range(len(info)) if i not in usados]
 
 
@@ -347,7 +359,8 @@ def encadear(caminhos: List[Caminho], tol: float = 40.0, ang_max: float = 12.0) 
             out.append(c)
         else:
             out.append(Caminho("composto", partes=[(caminhos[k], r) for k, r in cadeia], largura=c.largura,
-                               camada=c.camada))
+                               camada=c.camada,
+                               fontes=frozenset().union(*[caminhos[k].fontes or frozenset() for k, _r in cadeia])))
     out += [c for k, c in enumerate(caminhos) if k not in usados]
     return out
 
@@ -374,7 +387,8 @@ def centros_arcos(ents, dr=(15.0, 260.0), raio_min: float = 400.0) -> List[Camin
             usados.add(j)
             ini, fim = (a0, a1) if (a1 - a0) % 360 >= (b1 - b0) % 360 else (b0, b1)
             out.append(Caminho("arco", centro=(p["centro"][0], p["centro"][1]), raio=(p["raio"] + q["raio"]) / 2,
-                               ini=ini, fim=fim, largura=d, camada=p.get("camada", "")))
+                               ini=ini, fim=fim, largura=d, camada=p.get("camada", ""),
+                               fontes=frozenset(x for x in (p.get("id"), q.get("id")) if x)))
             break
     return out
 
@@ -534,6 +548,7 @@ class Elevacao:
     x_esq: float = 0.0                                          # onde começa, no desenho
     caixa: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     marcas_terca: List[float] = field(default_factory=list)     # s das marcas "ST" (suporte de terça)
+    fontes: set = field(default_factory=set)                    # ids das entidades do desenho dela
 
     def topo(self, s: float) -> Optional[float]:
         """altura do eixo do banzo superior em `s` (o mais alto que passa por ali)"""
@@ -606,6 +621,7 @@ def ler_elevacoes(ents, familias: Sequence[str]) -> Dict[str, Elevacao]:
         x0, y0, x1, y1 = c["caixa"]
         # a nota dos perfis fica entre o desenho e o título
         banzo = alma = None
+        notas_ids = set()
         for n in textos:
             px, py = n["posicao"][0], n["posicao"][1]
             if not (x0 - 1500 <= px <= x1 and ty - 50 <= py <= y0 + 50):
@@ -616,8 +632,10 @@ def ler_elevacoes(ents, familias: Sequence[str]) -> Dict[str, Elevacao]:
                 continue
             if "BANZO" in s and banzo is None:
                 banzo = r
+                notas_ids.add(n.get("id"))
             elif re.search(r"DIAG|MONT", s) and alma is None:
                 alma = r
+                notas_ids.add(n.get("id"))
         el = _elevacao_do_grupo(nome, qtd, c["segs"])
         el.banzo, el.alma = banzo, alma
         el.titulo_em = (tx, ty)
@@ -631,7 +649,9 @@ def ler_elevacoes(ents, familias: Sequence[str]) -> Dict[str, Elevacao]:
                 continue
             x_apoio = _ponta_da_chamada(n, chamadas)
             marcas.append((x_apoio if x_apoio is not None else n["posicao"][0]) - el.x_esq)
+            notas_ids.add(n.get("id"))
         el.marcas_terca = sorted(marcas)
+        el.fontes = ({getattr(sg, "id", None) for sg in c["segs"]} | notas_ids | {t.get("id")}) - {None}
         if el.membros:
             out[nome] = el
     return out
@@ -686,7 +706,7 @@ def _elevacao_do_grupo(nome: str, qtd: int, segs) -> Elevacao:
             papel = "diagonal"
         el.membros.append(Membro(a[0], a[1], b[0], b[1], papel, c.largura))
     # as linhas simples: montantes e diagonais (as curtas são marcas, tampas, detalhes)
-    for a, b, _ux, _uy, L, _cam in simples:
+    for a, b, _ux, _uy, L, _cam, _id in simples:
         if L < 250.0:
             continue
         pa, pb = S(a), S(b)
@@ -726,6 +746,7 @@ class Trecho:
     invertida: bool = False
     perfil: Optional[dict] = None
     sentido_por: str = "costume do desenho"
+    rotulo_id: Optional[str] = None
 
 
 _RX_ROTULO = re.compile(r"(?i)^\s*(TESOURA|PAINEL|TRANSI[ÇC][ÃA]O|TRELI[ÇC]A|COMP|TES|VM)[\s.\-]*([\w]*)")
@@ -824,7 +845,7 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None) ->
             fam = _sem_acento(m.group(1))
             if fam in ("VM",):
                 perf = perfil_do_texto(texto)
-                trechos.append(Trecho(caminho=c, nome=texto, familia="VIGA", perfil=perf))
+                trechos.append(Trecho(caminho=c, nome=texto, familia="VIGA", perfil=perf, rotulo_id=_t.get("id")))
                 stats["vigas"] += 1
                 continue
             num = m.group(2).upper()
@@ -846,7 +867,7 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None) ->
                 s0, s1 = max(0.0, s0), min(L, s1)
             if s1 - s0 < 0.5 * Le:
                 s0, s1 = max(0.0, s_meio - Le / 2), min(L, s_meio + Le / 2)
-            trechos.append(Trecho(caminho=c.trecho(s0, s1), nome=nome, familia=fam, elevacao=el))
+            trechos.append(Trecho(caminho=c.trecho(s0, s1), nome=nome, familia=fam, elevacao=el, rotulo_id=_t.get("id")))
     return trechos, stats
 
 
@@ -1091,6 +1112,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     aco = str(par["aco"])
     avisar = avisar or (lambda *a: None)
     ents = desenho.dict()["entidades"] if hasattr(desenho, "dict") else list(desenho)
+    # o quadro do que foi usado (gerado numa montagem anterior) não é projeto: fica de fora
+    ents = [e for e in ents if not str(e.get("camada", "")).upper().startswith(PREFIXO_QUADRO)]
+    usados: Dict[str, set] = {"planta": set(), "tercas": set(), "locacao": set()}
     textos = [e for e in ents if e["tipo"] == "texto"]
     avisos: List[str] = []
 
@@ -1125,16 +1149,20 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     caixa_t, desl_t = outra_planta(par.get("tercas"))
     reg_t: List[dict] = []
     eixos_t: List[Tuple[Ponto2, Ponto2]] = []
+    eixos_t_ids: List[Optional[str]] = []
     if caixa_t:
         folga_t = (caixa_t[0] - 2500, caixa_t[1] - 2500, caixa_t[2] + 2500, caixa_t[3] + 2500)
         reg_t = [e for e in ents if _dentro(_pt(e), folga_t)]
 
         def _mv(p):
             return (p[0] + desl_t[0], p[1] + desl_t[1])
-        eixos_t = [(_mv(a), _mv(b)) for a, b, _c in _segmentos(reg_t, re.compile(r"(?i)ter[çc]a\s*eixo"))]
+        segs_t = _segmentos(reg_t, re.compile(r"(?i)ter[çc]a\s*eixo"))
+        eixos_t = [(_mv(a), _mv(b)) for a, b, _c in segs_t]
+        eixos_t_ids = [getattr(sg, "id", None) for sg in segs_t]
         if not eixos_t:
             ret_t, _s = centros_retos(_segmentos(reg_t, re.compile(r"(?i)ter[çc]a")), lmin=500.0, larg=(20.0, 160.0))
             eixos_t = [(_mv(c.a), _mv(c.b)) for c in ret_t]
+            eixos_t_ids = [next(iter(c.fontes), None) if c.fontes else None for c in ret_t]
     ori = orientar(trechos, eixos_t)
 
     doc = doc or Documento(nome=str(par.get("nome") or "Modelo pela planta"))
@@ -1247,6 +1275,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         from nucleo2d.reconhecer import perfil_do_texto
         folga = (caixa_l[0] - 2500, caixa_l[1] - 2500, caixa_l[2] + 2500, caixa_l[3] + 2500)
         placas = []
+        placas_ids = []
         for e in ents:
             if e["tipo"] == "polilinha" and e.get("fechada") and re.search(r"(?i)chapa", e.get("camada", "")) \
                     and _dentro(e["vertices"][0], folga):
@@ -1255,7 +1284,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 w, h = max(xs) - min(xs), max(ys) - min(ys)
                 if 120 <= w <= 900 and 120 <= h <= 900:
                     placas.append(((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2))
+                    placas_ids.append(e.get("id"))
         secoes = []
+        secoes_ids = []
         for e in ents:
             if e["tipo"] == "polilinha" and not _ANOT.search(e.get("camada", "")) and _dentro(e["vertices"][0], folga):
                 vs = [(v[0], v[1]) for v in e["vertices"]]
@@ -1263,6 +1294,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 if max(xs) - min(xs) < 520 and max(ys) - min(ys) < 520 and len(vs) >= 4:
                     lados = [(math.dist(vs[i], vs[(i + 1) % len(vs)]), vs[i], vs[(i + 1) % len(vs)]) for i in range(len(vs))]
                     L, a, b = max(lados)
+                    secoes_ids.append(e.get("id"))
                     secoes.append((((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2),
                                    math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180))
         nomes_p = []
@@ -1297,6 +1329,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             if k in casado or i in usadas:
                 continue
             casado[k] = placas[i]
+            usados["locacao"].add(placas_ids[i])
             usadas.add(i)
         for k, (t, r) in enumerate(nomes_p):
             q = casado.get(k)
@@ -1323,6 +1356,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 avisos.append("pilar %s em (%.0f; %.0f) sem peça da cobertura em cima (a %.1f m): foi até o nível "
                               "do banzo; confira a altura dele." % (t["texto"].strip(), x, y, longe / 1000.0))
             barra((x, y, base), (x, y, nivel), r["perfil"], "pilar", "Pilares", None, rot, orig)
+            usados["locacao"].add(t.get("id"))
+            usados["locacao"] |= {secoes_ids[i_s] for i_s, s_ in enumerate(secoes) if math.dist(s_[0], q) < 300}
             pilares += 1
 
     # ---------------------------------------------------------------- terças e acessórios
@@ -1364,12 +1399,12 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
 
         def mover(p):
             return (p[0] + desl_t[0], p[1] + desl_t[1])
-        rot_tc = [(mover(t["posicao"]), t["texto"].strip().upper().replace(" ", "")) for t in reg
+        rot_tc = [(mover(t["posicao"]), t["texto"].strip().upper().replace(" ", ""), t.get("id")) for t in reg
                   if t["tipo"] == "texto" and re.match(r"^TC\s?\d+[A-Z]?$", t["texto"].strip().upper())]
         pa_bz = 40.0
         # cada nome TC vale para a linha de terça mais perto dele (e só para ela)
         nomes_da_linha: Dict[int, List[float]] = collections.defaultdict(list)
-        for pr, sg in rot_tc:
+        for pr, sg, id_tc in rot_tc:
             melhor = None
             for i_l, (a, b) in enumerate(eixos_t):
                 if math.dist(a, b) < 500.0:
@@ -1381,6 +1416,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     melhor = (d, i_l, s)
             if melhor:
                 nomes_da_linha[melhor[1]].append(melhor[2])
+                usados["tercas"].add(id_tc)
         for i_l, (a, b) in enumerate(eixos_t):
             L = math.dist(a, b)
             if L < 500.0:
@@ -1459,11 +1495,14 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 p0 = (a[0] + ux * s0, a[1] + uy * s0, zem(s0))
                 p1 = (a[0] + ux * s1, a[1] + uy * s1, zem(s1))
                 if barra(p0, p1, perf, "terça", "Terças", None, 0.0, {"sigla": sig[1] if sig else ""}):
+                    if i_l < len(eixos_t_ids):
+                        usados["tercas"].add(eixos_t_ids[i_l])
                     tercas += 1
 
         def acessorio(camada_rx, perfil, papel, camada, acima):
             n = 0
-            for a, b, _c in _segmentos(reg, re.compile(camada_rx)):
+            for sg in _segmentos(reg, re.compile(camada_rx)):
+                a, b, _c = sg
                 a, b = mover(a), mover(b)
                 if math.dist(a, b) < 300.0:
                     continue
@@ -1471,6 +1510,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 if za is None or zb is None:
                     continue
                 if barra((a[0], a[1], nivel + za + acima), (b[0], b[1], nivel + zb + acima), perfil, papel, camada):
+                    usados["tercas"].add(getattr(sg, "id", None))
                     n += 1
             return n
         contravs = acessorio(r"(?i)contravent", "Barra redonda 12,5", "contraventamento", "Contraventamento", 0.0)
@@ -1564,4 +1604,280 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     doc.metadados["de_planta"] = {"parametros": {k: v for k, v in par.items()}, "resumo": resumo,
                                   "deslocamento": {"x": desl[0], "y": desl[1],
                                                    "nota": "somado às coordenadas do desenho; subtraia para voltar a ele"}}
-    return {"doc": doc, "resumo": resumo, "conferencia": conf, "avisos": avisos}
+    for t in trechos:
+        if t.familia == "VIGA" and not t.perfil:
+            continue
+        usados["planta"] |= set(t.caminho.fontes or ()) | {t.rotulo_id}
+    elevacoes_usadas = {_bonito(n): sorted(elevacoes[n].fontes) for n in contagem if n in elevacoes}
+    blocos = {"planta": (caixa_p, t_planta), "tercas": (caixa_t, _achar_titulo(textos, par.get("tercas")) if par.get("tercas") else None),
+              "locacao": (caixa_l, _achar_titulo(textos, par.get("locacao")) if par.get("locacao") else None)}
+    for chave, (cx, tit) in blocos.items():
+        if cx:
+            usados[chave] |= _ids_dos_eixos(ents, cx)
+            if tit is not None:
+                usados[chave].add(tit.get("id"))
+    usados = {k: sorted(v - {None}) for k, v in usados.items()}
+    return {"doc": doc, "resumo": resumo, "conferencia": conf, "avisos": avisos,
+            "usados": usados, "elevacoes_usadas": elevacoes_usadas,
+            "eixos": eixos_da_planta(ents, caixa_p, desl), "niveis": niveis_do_desenho(textos, par)}
+
+
+# =====================================================================================
+# Quadro do que foi usado: o projeto limpo, só com o que virou modelo
+# =====================================================================================
+
+PREFIXO_QUADRO = "QUADRO "
+CAMADAS_QUADRO = {
+    "QUADRO PEÇAS": {"cor": "#1f6feb", "espessura": 0.35},
+    "QUADRO NOMES": {"cor": "#16202e", "espessura": 0.25},
+    "QUADRO EIXOS": {"cor": "#c0392b", "espessura": 0.18},
+    "QUADRO MOLDURA": {"cor": "#16202e", "espessura": 0.5},
+}
+
+
+def _ids_dos_eixos(ents, caixa, folga: float = 4000.0) -> set:
+    """as linhas de eixo da planta e os balões (círculo e nome) em volta dela"""
+    x0, y0, x1, y1 = caixa
+    cx = (x0 - folga, y0 - folga, x1 + folga, y1 + folga)
+    ids = set()
+    circ = []
+    for e in ents:
+        if not _dentro(_pt(e), cx):
+            continue
+        cam = str(e.get("camada", ""))
+        if e["tipo"] == "linha" and re.search(r"(?i)\beixo\b", cam) and not re.search(r"(?i)ter", cam):
+            ids.add(e.get("id"))
+        elif e["tipo"] == "circulo" and 120 < e["raio"] < 800:
+            circ.append(e)
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    for c in circ:
+        grade[(int(c["centro"][0] // 1000), int(c["centro"][1] // 1000))].append(c)
+    for t in ents:
+        if t["tipo"] != "texto" or not _dentro(t["posicao"], cx):
+            continue
+        if not re.fullmatch(r"[A-Za-z]{0,2}\d{0,2}[A-Za-z]?", t["texto"].strip() or "-"):
+            continue
+        gx, gy = int(t["posicao"][0] // 1000), int(t["posicao"][1] // 1000)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for c in grade.get((gx + dx, gy + dy), []):
+                    r = c["raio"]
+                    if abs(t["posicao"][0] - c["centro"][0]) < 1.3 * r and abs(t["posicao"][1] - c["centro"][1]) < 1.3 * r:
+                        ids.add(t.get("id"))
+                        ids.add(c.get("id"))
+    return ids - {None}
+
+
+def _caixa_das(ents: List[dict]) -> Optional[Tuple[float, float, float, float]]:
+    xs, ys = [], []
+    for e in ents:
+        t = e["tipo"]
+        if t == "linha":
+            xs += [e["a"][0], e["b"][0]]
+            ys += [e["a"][1], e["b"][1]]
+        elif t == "polilinha":
+            xs += [v[0] for v in e["vertices"]]
+            ys += [v[1] for v in e["vertices"]]
+        elif t in ("arco", "circulo"):
+            xs += [e["centro"][0] - e["raio"], e["centro"][0] + e["raio"]]
+            ys += [e["centro"][1] - e["raio"], e["centro"][1] + e["raio"]]
+        elif t == "texto":
+            xs.append(e["posicao"][0])
+            ys.append(e["posicao"][1])
+    if not xs:
+        return None
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _copiar(e: dict, dx: float, dy: float, camada: str) -> dict:
+    import uuid
+    n = dict(e)
+    n["id"] = "q" + uuid.uuid4().hex[:12]
+    n["camada"] = camada
+    n["atributos"] = {"quadro": True, "de": e.get("id")}
+    for k in ("a", "b", "centro", "posicao"):
+        if k in n and n[k] is not None:
+            n[k] = [n[k][0] + dx, n[k][1] + dy] + list(n[k][2:])
+    if "vertices" in n:
+        n["vertices"] = [[v[0] + dx, v[1] + dy] + list(v[2:]) for v in n["vertices"]]
+    return n
+
+
+def quadro_do_usado(ents: List[dict], montagem: dict, escala: float = 20.0, data: str = "") -> dict:
+    """o quadro, no próprio desenho, com o projeto limpo: só as entidades que viraram peça do
+    modelo (plantas com os eixos, locação, elevações usadas), cada grupo na sua moldura,
+    abaixo de tudo o que o desenho já tem. Devolve {entidades, camadas, caixa}."""
+    import uuid
+    ents = [e for e in ents if not str(e.get("camada", "")).upper().startswith(PREFIXO_QUADRO)]
+    por_id = {e.get("id"): e for e in ents if e.get("id")}
+    usados = montagem.get("usados") or {}
+    eixos = set()
+    for chave in ("planta", "tercas", "locacao"):
+        # os eixos entram no grupo de cada planta; a camada deles é a dos eixos
+        for i in usados.get(chave, []):
+            e = por_id.get(i)
+            if e is not None and (e["tipo"] == "circulo" or re.search(r"(?i)\beixo\b", str(e.get("camada", "")))):
+                eixos.add(i)
+    grupos = []
+    for chave, titulo in (("planta", "PLANTA ESTRUTURAL"), ("tercas", "PLANTA DAS TERÇAS"), ("locacao", "LOCAÇÃO DOS PILARES")):
+        lst = [por_id[i] for i in usados.get(chave, []) if i in por_id]
+        if lst:
+            grupos.append((titulo, lst, "planta"))
+    for nome, ids in sorted((montagem.get("elevacoes_usadas") or {}).items()):
+        lst = [por_id[i] for i in ids if i in por_id]
+        if lst:
+            grupos.append((nome, lst, "elevacao"))
+    if not grupos:
+        return {"entidades": [], "camadas": {}, "caixa": None}
+    geral = _caixa_das(ents) or (0.0, 0.0, 0.0, 0.0)
+    h_txt = 25.0 * escala                       # altura real do título do grupo
+    margem = 3000.0
+    novas: List[dict] = []
+
+    def texto_q(x, y, t, alt):
+        return {"id": "q" + uuid.uuid4().hex[:12], "tipo": "texto", "camada": "QUADRO MOLDURA", "posicao": [x, y],
+                "texto": t, "altura": alt, "angulo": 0.0, "alinhamento": "esquerda", "vertical": "base",
+                "atributos": {"quadro": True}}
+
+    def moldura(x0, y0, x1, y1):
+        return {"id": "q" + uuid.uuid4().hex[:12], "tipo": "polilinha", "camada": "QUADRO MOLDURA",
+                "vertices": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], "fechada": True, "atributos": {"quadro": True}}
+    # as plantas lado a lado; as elevações em fileiras embaixo delas
+    topo = geral[1] - 40000.0
+    x_ini = geral[0]
+    x = x_ini
+    y_linha = topo
+    altura_linha = 0.0
+    largura_max = 0.0
+    plantas = [g for g in grupos if g[2] == "planta"]
+    elevs = [g for g in grupos if g[2] == "elevacao"]
+
+    def pousar(titulo, lst, x_esq, y_topo, grande):
+        c = _caixa_das(lst)
+        dx = x_esq + margem - c[0]
+        dy = y_topo - margem - c[3]
+        for e in lst:
+            cam = "QUADRO EIXOS" if e.get("id") in eixos else ("QUADRO NOMES" if e["tipo"] == "texto" else "QUADRO PEÇAS")
+            novas.append(_copiar(e, dx, dy, cam))
+        w = (c[2] - c[0]) + 2 * margem
+        h = (c[3] - c[1]) + 2 * margem
+        novas.append(moldura(x_esq, y_topo - h, x_esq + w, y_topo))
+        alt = 25.0 if grande else 15.0
+        novas.append(texto_q(x_esq, y_topo - h - 1.6 * alt * escala, titulo, alt))
+        return w, h + 2.2 * alt * escala
+    for titulo, lst, _k in plantas:
+        w, h = pousar(titulo, lst, x, y_linha, True)
+        x += w + 12000.0
+        altura_linha = max(altura_linha, h)
+    largura_max = max(x - x_ini, 120000.0)
+    y_linha -= altura_linha + 12000.0
+    x = x_ini
+    altura_linha = 0.0
+    for titulo, lst, _k in elevs:
+        c = _caixa_das(lst)
+        w_prev = (c[2] - c[0]) + 2 * margem
+        if x > x_ini and x - x_ini + w_prev > largura_max:
+            x = x_ini
+            y_linha -= altura_linha + 4000.0
+            altura_linha = 0.0
+        w, h = pousar(titulo, lst, x, y_linha, False)
+        x += w + 4000.0
+        altura_linha = max(altura_linha, h)
+    y_fim = y_linha - altura_linha
+    # a moldura geral e o título
+    X0, Y0, X1, Y1 = x_ini - 6000.0, y_fim - 6000.0, x_ini + largura_max + 6000.0, topo + 6000.0
+    novas.append(moldura(X0, Y0, X1, Y1))
+    novas.append(texto_q(X0, Y1 + 1.2 * 50.0 * escala, "PROJETO CONSIDERADO NO MODELO 3D", 50.0))
+    sub = ("só o que virou peça do modelo: %d plantas e %d elevações%s — gerado pela montagem pela planta; "
+           "a montagem seguinte refaz este quadro" % (len(plantas), len(elevs), (" · " + data) if data else ""))
+    novas.append(texto_q(X0, Y1 + 0.3 * 50.0 * escala, sub, 18.0))
+    camadas = {nome: {"nome": nome, "cor": v["cor"], "visivel": True, "bloqueada": False, "tipo_linha": "CONTINUOUS",
+                      "espessura": v["espessura"]} for nome, v in CAMADAS_QUADRO.items()}
+    return {"entidades": novas, "camadas": camadas, "caixa": [[X0, Y0], [X1, Y1 + 2.0 * 50.0 * escala]],
+            "grupos": [g[0] for g in grupos]}
+
+
+# =====================================================================================
+# Eixos e níveis do projeto (para o 3D mostrar como o Revit)
+# =====================================================================================
+
+_RX_NIVEL = re.compile(r"(?i)N[ÍI]VEL\s*(?:DE\s*)?\+?\s*(\d{1,3}[.,]\d{1,3})")
+
+
+def eixos_da_planta(ents, caixa, desl=(0.0, 0.0)) -> Optional[dict]:
+    """os eixos da planta estrutural no formato do projeto (`projeto.json` → `eixos`):
+    os ortogonais pela posição (numerados atravessados, com letra ao longo) e os
+    inclinados em `extras`, com a linha inteira — já no lugar do modelo (`desl`)"""
+    bs = baloes(ents, caixa)
+    if not bs:
+        return None
+    x0, y0, x1, y1 = caixa
+    folga = 6000.0
+    linhas = []
+    for e in ents:
+        if e["tipo"] != "linha":
+            continue
+        cam = str(e.get("camada", ""))
+        if not re.search(r"(?i)\beixo\b", cam) or re.search(r"(?i)ter", cam):
+            continue
+        a, b = (e["a"][0], e["a"][1]), (e["b"][0], e["b"][1])
+        if not (_dentro(a, (x0 - folga, y0 - folga, x1 + folga, y1 + folga))
+                or _dentro(b, (x0 - folga, y0 - folga, x1 + folga, y1 + folga))):
+            continue
+        if math.dist(a, b) > 1000.0:
+            linhas.append((a, b))
+    achados = []
+    for nome, c in bs.items():
+        melhor = None
+        for a, b in linhas:
+            d = min(math.dist(c, a), math.dist(c, b))
+            if d < 900.0 and (melhor is None or d < melhor[0]):
+                melhor = (d, a, b)
+        if melhor is None:
+            continue
+        _d, a, b = melhor
+        (ux, uy), L = _unit(a, b)
+        achados.append((nome, a, b, ux, uy))
+    if not achados:
+        return None
+    # a direção dos eixos numerados decide o eixo do galpão (g): eles correm atravessados
+    num = [x for x in achados if re.match(r"^\d", x[0])]
+    vert = sum(1 for x in num if abs(x[3]) < 0.02)
+    horiz = sum(1 for x in num if abs(x[4]) < 0.02)
+    g = (1.0, 0.0) if vert >= horiz else (0.0, 1.0)
+    p = (-g[1], g[0])
+    numeros, letras, extras = [], [], []
+    for nome, a, b, ux, uy in achados:
+        a = (a[0] + desl[0], a[1] + desl[1])
+        b = (b[0] + desl[0], b[1] + desl[1])
+        ao_longo_de_p = abs(ux * g[0] + uy * g[1]) < 0.02        # linha perpendicular a g
+        ao_longo_de_g = abs(ux * p[0] + uy * p[1]) < 0.02
+        if ao_longo_de_p:
+            numeros.append({"nome": nome, "pos": round(a[0] * g[0] + a[1] * g[1], 1)})
+        elif ao_longo_de_g:
+            letras.append({"nome": nome, "pos": round(a[0] * p[0] + a[1] * p[1], 1)})
+        else:
+            extras.append({"nome": nome, "a": [round(a[0], 1), round(a[1], 1)], "b": [round(b[0], 1), round(b[1], 1)]})
+    if not numeros and not letras and not extras:
+        return None
+    return {"eixo_g": list(g), "numeros": sorted(numeros, key=lambda e: e["pos"]),
+            "letras": sorted(letras, key=lambda e: e["pos"]), "extras": extras, "z_base": 0.0,
+            "origem": "planta", "fonte_letras": "balões da planta estrutural"}
+
+
+def niveis_do_desenho(textos, par) -> List[dict]:
+    """os níveis do projeto: a base dos pilares, o banzo inferior e os escritos nos títulos
+    das plantas ("PLANTA NO NÍVEL 3,17m", "COBERTURA DA CX DÁGUA NIVEL 11,00")"""
+    out = [{"nome": "BASE DOS PILARES", "z": float(par.get("base") or 0.0)},
+           {"nome": "BANZO INFERIOR", "z": float(par.get("nivel") or 0.0)}]
+    for t in sorted(textos, key=lambda t: -(t.get("altura") or 0)):
+        if (t.get("altura") or 0) < 15:
+            continue
+        m = _RX_NIVEL.search(t["texto"])
+        if not m:
+            continue
+        z = round(float(m.group(1).replace(",", ".")) * 1000.0, 1)
+        if any(abs(z - n["z"]) < 20.0 for n in out):
+            continue
+        out.append({"nome": "NÍVEL %s" % m.group(1).replace(".", ","), "z": z, "de": t["texto"].strip()[:60]})
+    return sorted(out, key=lambda n: n["z"])

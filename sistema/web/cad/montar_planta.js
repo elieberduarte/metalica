@@ -69,6 +69,7 @@ export class MetodosMontarPlantaCAD {
     const modo = el('select', {}, el('option', { value: 'substituir', texto: 'Substituir o modelo 3D (o atual vai para o histórico)' }),
       el('option', { value: 'acrescentar', texto: 'Acrescentar ao modelo 3D' }));
     const ifc = el('input', { type: 'checkbox' });
+    const quadro = el('input', { type: 'checkbox', checked: true });
     const corpo = el('div', {},
       el('div', { class: 'explica', texto: 'O modelo sai da planta estrutural: cada linha com nome ("TESOURA 1", "PAINEL 8", "TRANSIÇÃO 4") recebe a treliça da elevação de mesmo nome ("TESOURA 1 - 7X"), em pé, com o banzo inferior no nível abaixo. A peça curva na planta sai calandrada. Os pilares vêm da locação (nome "PM3(200X70X20X2,65)" sobre a placa) e as terças, correntes e contraventos da planta das terças; as plantas são alinhadas pelos balões dos eixos.' }),
       el('div', { class: 'campos' },
@@ -79,6 +80,7 @@ export class MetodosMontarPlantaCAD {
         el('label', { texto: 'Planta das terças' }), tercas,
         el('label', { texto: 'Aço' }), aco,
         el('label', { texto: 'Modelo' }), modo),
+      el('label', { class: 'linha' }, quadro, ' Desenhar, abaixo do projeto, o quadro com só o que virou modelo (plantas e elevações usadas)'),
       el('label', { class: 'linha' }, ifc, ' Gravar também o IFC'));
     if (await this.dialogo({ titulo: 'Montar o 3D pela planta', corpo, ok: 'Montar' }) !== 'ok') return;
     this.dica('Montando o modelo 3D pela planta…');
@@ -86,10 +88,12 @@ export class MetodosMontarPlantaCAD {
     try {
       r = await postar(rota, {
         parametros: { planta: planta.value, nivel: lerMetros(nivel.value), locacao: locacao.value, base: lerMetros(base.value), tercas: tercas.value, aco: aco.value.trim() },
-        modo: modo.value, ifc: ifc.checked,
+        modo: modo.value, ifc: ifc.checked, quadro: quadro.checked,
       });
     } catch (e) { this.dica(''); this.aviso(`Não foi possível montar: ${e.message}`, 'erro', 0); return; }
     this.dica('Modelo 3D montado.');
+    // o servidor desenhou o quadro no desenho: a tela passa a mostrar o que está gravado
+    if (r.quadro) await this.abrirDesenho(this.nomeDesenho);
     const z = r.resumo || {};
     const pj = z.projeto || {};
     const o = z.orientacao || {};
@@ -115,7 +119,9 @@ export class MetodosMontarPlantaCAD {
     if (sem.length) itens.push(el('div', { class: 'explica atencao', texto: 'Nome na planta sem elevação no desenho (ficaram de fora): ' + sem.map(([k, q]) => `${k} (${q}×)`).join(', ') + '.' }));
     if (z.planta_sem_nome) itens.push(el('div', { class: 'explica', texto: `${z.planta_sem_nome} peça(s) da planta sem nome escrito ficaram de fora.` }));
     for (const a of (r.avisos || []).slice(0, 8)) itens.push(el('div', { class: 'explica atencao', texto: a }));
+    if (r.quadro) itens.push(el('div', { class: 'explica', texto: `O quadro "PROJETO CONSIDERADO NO MODELO 3D" está no desenho, abaixo do projeto, com ${(r.quadro.grupos || []).length} grupo(s): as plantas e as elevações que viraram peça, sem o resto (camadas QUADRO …). A próxima montagem refaz o quadro.` }));
     if (r.ifc) itens.push(el('div', { class: 'explica' }, 'IFC: ', el('a', { href: r.ifc.url, download: r.ifc.nome, texto: `${r.ifc.nome} (${numero(r.ifc.tamanho_kb, 0)} kB)` })));
-    if (await this.dialogo({ titulo: 'Modelo 3D montado pela planta', corpo: el('div', {}, ...itens), ok: 'Abrir o modelo 3D' }) === 'ok') location.href = this.urlDoEditor();
+    if (await this.dialogo({ titulo: 'Modelo 3D montado pela planta', corpo: el('div', {}, ...itens), ok: 'Abrir o modelo 3D', cancelar: r.quadro ? 'Ver o quadro no desenho' : undefined }) === 'ok') { location.href = this.urlDoEditor(); return; }
+    if (r.quadro && r.quadro.caixa) this.tela.enquadrar(r.quadro.caixa, 0.04);
   }
 }

@@ -307,6 +307,7 @@ export class Editor {
       const cat = await this.api.catalogo();
       this.catalogo = { ...cat, perfis: cat.perfis || [] };
       this.cena.definirCatalogo(this.catalogo);
+      this._completarPerfis();
       if (this.catalogo.perfis.length &&
           !this.catalogo.perfis.some(p => p.nome === this.perfilAtivo)) {
         this.perfilAtivo = this.catalogo.perfis[0].nome;
@@ -901,6 +902,24 @@ export class Editor {
   }
 
   /** Troca o documento inteiro (abrir, importar, gerar do galpão). */
+  /** O modelo usa perfis que o catálogo do editor (o banco básico) não traz — dobrados de
+   *  fábrica, barras redondas, perfis dos fornecedores: pede ao servidor a seção deles; sem
+   *  isso a peça sai com a seção padrão de 100 × 200 mm. */
+  async _completarPerfis() {
+    const cat = this.cena.catalogo && this.cena.catalogo.perfis;
+    if (!(cat instanceof Map) || !cat.size) return;
+    const faltam = [...new Set(this.documento.barras.map(b => b.perfil))].filter(n => n && !cat.has(n));
+    if (!faltam.length) return;
+    try {
+      const r = await this.api.perfis(faltam);
+      const lista = (r && r.perfis) || [];
+      const ja = new Set((this.catalogo.perfis || []).map(p => p.nome));
+      for (const p of lista) if (!ja.has(p.nome)) this.catalogo.perfis.push(p);
+      this.cena.acrescentarPerfis(lista);
+      this._agendarPaineis('props');
+    } catch (e) { console.warn('perfis fora do catálogo do editor:', e.message || e); }
+  }
+
   carregarDocumento(json, { enquadrar = true, autosalvar = true } = {}) {
     // A análise é de um modelo só: trocar o documento a invalida. Quem gera do galpão
     // repõe os dados logo em seguida; modelo aberto ou importado fica sem o que calcular.
@@ -910,6 +929,7 @@ export class Editor {
     this.selecao.limpar();
     this.documento.substituirPor(novo);
     this.pilha.limpar();
+    this._completarPerfis();
     this.el.nome.value = this.documento.nome || 'Modelo';
     if (!this.documento.camadas.has(this.camadaAtiva)) {
       this.camadaAtiva = this.documento.camadas.keys().next().value || 'Estrutura';

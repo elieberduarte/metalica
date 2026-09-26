@@ -1107,12 +1107,13 @@ class CAD {
   }
 
   // ------------------------------------------------------------ diálogos
-  dialogo({ titulo, corpo, ok = 'OK' }) {
+  dialogo({ titulo, corpo, ok = 'OK', cancelar = 'Cancelar' }) {
     return new Promise((resolver) => {
       const d = $('#dialogo');
       $('#dialogo-titulo').textContent = titulo;
       $('#dialogo-corpo').replaceChildren(corpo);
       $('#dialogo-ok').textContent = ok; $('#dialogo-ok').hidden = ok === null;
+      $('#dialogo-cancelar').textContent = cancelar || 'Cancelar';
       const fechar = (v) => { d.querySelector('form').onsubmit = null; $('#dialogo-cancelar').onclick = null; d.oncancel = null; d.close(); resolver(v); };
       d.querySelector('form').onsubmit = (ev) => { ev.preventDefault(); fechar('ok'); };
       $('#dialogo-cancelar').onclick = () => fechar(null);

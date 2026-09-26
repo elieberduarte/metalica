@@ -780,6 +780,24 @@ export class Cena {
     this.catalogo = { ...cat, perfis };
   }
 
+  /** Perfis que chegaram depois (fora do banco básico: dobrados de fábrica, barras
+   *  redondas): entram no catálogo e as barras deles são refeitas com a seção certa. */
+  acrescentarPerfis(lista) {
+    if (!this.catalogo || !(this.catalogo.perfis instanceof Map)) this.catalogo = { ...(this.catalogo || {}), perfis: new Map() };
+    const nomes = new Set();
+    for (const p of lista || []) { this.catalogo.perfis.set(p.nome, p); nomes.add(p.nome); }
+    if (!nomes.size) return 0;
+    for (const chave of [...this.cacheGeometria.keys()]) {
+      if (chave.startsWith('barra|') && nomes.has(chave.split('|')[1])) {
+        this.cacheGeometria.delete(chave);
+        this.origemGeometria.delete(chave);
+      }
+    }
+    const ids = this.documento.barras.filter(b => nomes.has(b.perfil)).map(b => b.id);
+    if (ids.length) this.atualizar(ids);
+    return ids.length;
+  }
+
   _secaoDoPerfil(nome) {
     const p = this.perfil(nome);
     if (!p) return secaoRetangulo(100, 200);

@@ -52,6 +52,9 @@ export class Api {
   /** Perfis com dimensões (e seção pronta, quando `nucleo3d/geometria.py` existir). */
   catalogo() { return pedir(this._r('/api/modelo/catalogo')); }
 
+  /** Seção e massa de perfis que o catálogo do editor não traz (dobrados de fábrica, barras redondas…). */
+  perfis(nomes) { return postar(this._r('/api/modelo/perfis'), { nomes }); }
+
   /** Malhas de um documento. `ids` limita o pedido ao que mudou. */
   malhas(documentoJSON, ids = null) {
     const corpo = { documento: documentoJSON };

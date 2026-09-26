@@ -42,6 +42,7 @@ Rotas da API:
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-furos   furos do detalhe → chapas do modelo
     POST /api/projetos/<slug>/desenhos/<nome>/aplicar-pecas {desenho}  barras movidas/esticadas/copiadas/apagadas nas elevações → modelo 3D
     POST /api/projetos/<slug>/desenhos/<nome>/gerar-3d       desenho 2D → modelo 3D (peças do catálogo)
+    POST /api/modelo/perfis {nomes}                           seção e massa de perfis fora do banco básico (editor)
     POST /api/projetos/<slug>/desenhos/<nome>/montar-pela-planta  projeto recebido sem 3D → modelo pela planta,
                                                               elevações nomeadas, locação e planta das terças
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
@@ -690,6 +691,29 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     g.tocar(s)
     saida = {"resumo": r["resumo"], "conferencia": r["conferencia"], "avisos": r["avisos"],
              "modelo": {"entidades": len(doc.entidades), "barras": len(doc.barras)}, "modo": modo}
+    # os eixos (dos balões da planta) e os níveis vão para o projeto: o 3D os mostra, as
+    # plantas de localização e chumbação os desenham. Eixos que o usuário gravou ficam.
+    campos = {"niveis": r.get("niveis") or []}
+    atuais = g.ler(s).get("eixos") or {}
+    if r.get("eixos") and str(atuais.get("origem") or "") != "usuario":
+        campos["eixos"] = r["eixos"]
+    g._atualizar(s, **campos)
+    saida["eixos"] = bool(campos.get("eixos"))
+    saida["niveis"] = campos["niveis"]
+    if corpo.get("quadro", True):
+        # o quadro com o projeto limpo (só o que virou peça), no próprio desenho, abaixo de
+        # tudo; o quadro da montagem anterior sai
+        q = de_planta.quadro_do_usado(ents, r, escala=float(bruto.get("escala") or 20.0),
+                                      data=time.strftime("%d/%m/%Y %H:%M"))
+        if q["entidades"]:
+            fica = [e for e in ents if not str(e.get("camada", "")).upper().startswith(de_planta.PREFIXO_QUADRO)]
+            novo_des = dict(bruto)
+            novo_des["entidades"] = fica + q["entidades"]
+            camadas = dict(novo_des.get("camadas") or {})
+            camadas.update(q["camadas"])
+            novo_des["camadas"] = camadas
+            g.salvar_desenho(s, nome, novo_des)
+            saida["quadro"] = {"caixa": q["caixa"], "grupos": q["grupos"], "entidades": len(q["entidades"])}
     if corpo.get("ifc"):
         saida["ifc"] = _exportar_ifc_do_projeto(s, doc, nome)
     return saida
@@ -2148,10 +2172,21 @@ def referencia_do_lancamento(s: str) -> dict:
             segs = lancamento.segmentos_da_referencia(Desenho.de_dict(g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO)))
             _CACHE_REFERENCIA[s] = (chave, segs)
             saida["segmentos"] = segs
-    ex = _eixos.de_dict(g.ler(s).get("eixos"))
+    p = g.ler(s)
+    ex = _eixos.de_dict(p.get("eixos"))
     if ex:
         saida["eixos"] = [{"nome": e["nome"], "tipo": e["tipo"], "a": [round(c, 1) for c in e["a"]],
                            "b": [round(c, 1) for c in e["b"]]} for e in _eixos.segmentos(ex)]
+    # eixos inclinados (fora da malha ortogonal) e os níveis do projeto
+    z0 = float((ex or {}).get("z_base") or 0.0)
+    for e in ((p.get("eixos") or {}).get("extras") or []):
+        try:
+            saida["eixos"].append({"nome": str(e["nome"])[:6], "tipo": "extra",
+                                   "a": [float(e["a"][0]), float(e["a"][1]), z0], "b": [float(e["b"][0]), float(e["b"][1]), z0]})
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+    saida["niveis"] = [{"nome": str(n.get("nome") or "")[:40], "z": float(n.get("z") or 0.0)}
+                       for n in (p.get("niveis") or []) if isinstance(n, dict)]
     return saida
 
 
@@ -2388,6 +2423,27 @@ def catalogo_3d() -> dict:
                            "aco": m.aco} for m in doc.materiais.values()]
     saida["camadas"] = [{"nome": c.nome, "cor": c.cor} for c in doc.camadas.values()]
     return saida
+
+
+def perfis_para_o_editor(corpo: dict) -> dict:
+    """POST /api/modelo/perfis {nomes}: a seção e a massa de perfis que o catálogo do editor
+    (o banco básico) não traz — dobrados de fábrica "(FF)", barras redondas, perfis dos
+    fornecedores. Sem isso, o editor desenha a peça com a seção padrão de 100 × 200 mm."""
+    from nucleo import catalogo
+    from nucleo3d import geometria
+    saida = []
+    for nome in list(dict.fromkeys(str(n) for n in (corpo.get("nomes") or [])))[:500]:
+        perf = catalogo.perfil_de(nome)
+        if perf is None:
+            continue
+        reg = {"nome": nome, "tipo": getattr(perf, "tipo", "") or "", "massa": perf.massa,
+               "d": perf.d, "bf": perf.bf, "tw": perf.tw, "tf": perf.tf, "A": perf.A}
+        try:
+            reg["secao"] = geometria.secao(perf)
+        except Exception:
+            pass
+        saida.append(reg)
+    return {"perfis": saida}
 
 
 def malhas_do_documento(corpo: dict) -> dict:
@@ -2838,6 +2894,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(acao_de_projeto(partes[0], partes[1], corpo))
             if rota == "/api/modelo/malha":
                 return self._json(malhas_do_documento(corpo))
+            if rota == "/api/modelo/perfis":
+                return self._json(perfis_para_o_editor(corpo))
             if rota == "/api/modelo/ifc/exportar":
                 return self._json(exportar_ifc(corpo))
             if rota == "/api/modelo/ifc/importar":

@@ -30,6 +30,32 @@ function rotuloDoEixo(nome, raio_mm) {
   return s;
 }
 
+const COR_NIVEL = '#1f5fbf';
+
+/** Cabeça do nível, como a do Revit: o triângulo, o nome e a cota, em azul. */
+function rotuloDoNivel(nome, z_mm, altura_mm) {
+  const cota = (z_mm >= 0 ? '+' : '−') + (Math.abs(z_mm) / 1000).toFixed(2).replace('.', ',');
+  const c = document.createElement('canvas');
+  const g0 = c.getContext('2d');
+  g0.font = 'bold 44px Arial, sans-serif';
+  const w = Math.ceil(Math.max(g0.measureText(nome).width, g0.measureText(cota).width) + 110);
+  c.width = w; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = COR_NIVEL; g.strokeStyle = COR_NIVEL; g.lineWidth = 4;
+  g.beginPath(); g.moveTo(16, 60); g.lineTo(64, 60); g.lineTo(40, 100); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(0, 60); g.lineTo(w, 60); g.stroke();
+  g.font = 'bold 44px Arial, sans-serif'; g.textBaseline = 'alphabetic';
+  g.fillText(nome, 84, 50);
+  g.font = '40px Arial, sans-serif'; g.fillText(cota, 84, 104);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.scale.set(altura_mm * w / 128, altura_mm, 1);
+  sp.center.set(0.02, 60 / 128);                 // a linha do marcador no ponto do nível
+  sp.renderOrder = 10;
+  return sp;
+}
+
 export class MetodosLancamento {
   /**
    * Arquitetônico e eixos no chão do modelo (só tela: não entram no documento, na lista
@@ -46,7 +72,8 @@ export class MetodosLancamento {
     this._descartarReferencia();
     const segs = r.segmentos || [];
     const eixos = r.eixos || [];
-    if (!segs.length && !eixos.length) return;
+    const niveis = r.niveis || [];
+    if (!segs.length && !eixos.length && !niveis.length) return;
     const grupo = new THREE.Group();
     grupo.name = 'referencia-lancamento';
     grupo.scale.setScalar(ESCALA);
@@ -70,14 +97,49 @@ export class MetodosLancamento {
       linhas.computeLineDistances();
       linhas.name = 'eixos';
       grupo.add(linhas);
-      // bolinha com o nome antes da ponta de cada eixo (como a planta)
+      // o balão com o nome nas duas pontas de cada eixo, como no Revit
       const L = Math.max(...eixos.map(e => Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1])));
       const raio = Math.min(Math.max(L * 0.012, 250), 700);
       for (const e of eixos) {
         const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1], d = Math.hypot(dx, dy) || 1;
-        const s = rotuloDoEixo(e.nome, raio);
-        s.position.set(e.a[0] - dx / d * raio * 1.2, e.a[1] - dy / d * raio * 1.2, e.a[2]);
-        grupo.add(s);
+        for (const [p, sinal] of [[e.a, -1], [e.b, 1]]) {
+          const s = rotuloDoEixo(e.nome, raio);
+          s.position.set(p[0] + sinal * dx / d * raio * 1.2, p[1] + sinal * dy / d * raio * 1.2, p[2]);
+          grupo.add(s);
+        }
+      }
+    }
+    if (niveis.length) {
+      // cada nível: o contorno tracejado em volta da obra, na altura dele, e a cabeça (o
+      // triângulo, o nome e a cota) nos dois cantos — o que o Revit mostra
+      let x0, y0, x1, y1;
+      if (eixos.length) {
+        const xs = eixos.flatMap(e => [e.a[0], e.b[0]]), ys = eixos.flatMap(e => [e.a[1], e.b[1]]);
+        [x0, y0, x1, y1] = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+      } else {
+        const c = this.documento && this.documento.caixa && this.documento.caixa();
+        if (c) [x0, y0, x1, y1] = [c[0][0] - 1500, c[0][1] - 1500, c[1][0] + 1500, c[1][1] + 1500];
+      }
+      if (x0 !== undefined) {
+        const pos = [];
+        for (const n of niveis) {
+          const z = n.z;
+          pos.push(x0, y0, z, x1, y0, z, x1, y0, z, x1, y1, z, x1, y1, z, x0, y1, z, x0, y1, z, x0, y0, z);
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+        const linhas = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({ color: COR_NIVEL, dashSize: 1200, gapSize: 400, transparent: true, opacity: 0.8 }));
+        linhas.computeLineDistances();
+        linhas.name = 'niveis';
+        grupo.add(linhas);
+        const alt = Math.min(Math.max(Math.max(x1 - x0, y1 - y0) * 0.012, 300), 900);
+        for (const n of niveis) {
+          for (const [x, y] of [[x1, y0], [x0, y1]]) {
+            const sp = rotuloDoNivel(n.nome, n.z, alt);
+            sp.position.set(x, y, n.z);
+            grupo.add(sp);
+          }
+        }
       }
     }
     grupo.visible = this._referenciaVisivel !== false;
@@ -103,7 +165,7 @@ export class MetodosLancamento {
     this._referenciaVisivel = this._referenciaVisivel === false;
     if (this._referencia) { this._referencia.visible = this._referenciaVisivel; this.cena.pedirQuadro(); }
     else if (this._referenciaVisivel) this._carregarReferencia();
-    this.dica(this._referenciaVisivel ? 'Arquitetônico e eixos à mostra.' : 'Arquitetônico e eixos escondidos.');
+    this.dica(this._referenciaVisivel ? 'Arquitetônico, eixos e níveis à mostra.' : 'Arquitetônico, eixos e níveis escondidos.');
   }
 
   /**
