@@ -22,6 +22,7 @@ import { Cena, MODOS, ESCALA, PESADOS, medir } from './nucleo/cena.js';
 import { lerPerfil, nomeDoPerfil, trocarSecao, BITOLAS } from './nucleo/trocar_perfil.js';
 import { Camera, VISTAS } from './nucleo/camera.js';
 import { Selecao } from './nucleo/selecao.js';
+import { Esqueleto, pecaDe } from './nucleo/esqueleto.js';
 import { Inferencia } from './nucleo/inferencia.js';
 import { api, ErroServidor } from './nucleo/api.js';
 import { carregarFerramentas, GRUPOS } from './ferramentas/indice.js';
@@ -192,6 +193,7 @@ export class Editor {
     this.camera = new Camera(this.el.canvas, this.cena);
     this.selecao = new Selecao(this.documento, this.cena, this.camera);
     this.camera.idsSelecionados = () => [...this.selecao.ids];    // pivô da órbita
+    this.esqueleto = new Esqueleto(this.cena, this.documento, this.selecao);
     this.inferencia = new Inferencia(this.documento, this.cena, this.camera,
                                      this.selecao, this.el.snap);
 
@@ -1781,6 +1783,7 @@ export class Editor {
       sombras: () => this.alternarSombras(),
       desempenho: () => this.dialogoDesempenho(),
       'verificar-apoios': () => this.verificarApoios(),
+      esqueleto: () => this.alternarEsqueleto(),
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
@@ -1982,9 +1985,31 @@ export class Editor {
     this._referenciaNoTema();
   }
 
+  /** Ver → Esqueleto: o modelo só em linhas (a estrutura antes dos perfis). */
+  alternarEsqueleto() {
+    const ligar = !this.esqueleto.ativo;
+    this.esqueleto.ligar(ligar);
+    const b = document.querySelector('[data-acao="esqueleto"]');
+    if (b) { b.setAttribute('aria-pressed', String(ligar)); b.textContent = ligar ? 'Esqueleto (só linhas) ✓' : 'Esqueleto (só linhas)'; }
+    if (ligar && !this._ouvinteEsqueleto) {
+      // o nome do bloco escolhido, na dica
+      this._ouvinteEsqueleto = this.selecao.aoMudar((ids) => {
+        if (!this.esqueleto.ativo || !ids.length) return;
+        const pecas = new Set(ids.map(i => pecaDe(this.documento.get(i))).filter(Boolean));
+        if (pecas.size === 1) {
+          const p = [...pecas][0];
+          this.dica(`${p.split('#')[0]} — ${ids.length} barras. Esc limpa a seleção; Ver → Esqueleto volta aos perfis.`);
+        }
+      });
+    }
+    this.dica(ligar ? 'Esqueleto: cada peça pelo eixo — treliças em cinza, terças em azul, contraventos em verde, correntes em laranja, '
+      + 'pilares e vigas em destaque. Clique pega a treliça inteira.' : 'Modelo com os perfis.');
+  }
+
   /** Eixos, níveis e arquitetônico redesenhados nas cores do tema novo. */
   _referenciaNoTema() {
     if (this._referencia && typeof this._carregarReferencia === 'function') this._carregarReferencia();
+    if (this.esqueleto) this.esqueleto.repintar();
   }
 
   // --------------------------------------------------------------- avisos

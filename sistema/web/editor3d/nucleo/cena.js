@@ -1108,6 +1108,8 @@ export class Cena {
 
   /** Objetos que entram no raycast. */
   get alvos() {
+    // esqueleto ligado: só as linhas dele (o modelo com perfis está escondido)
+    if (this.alvosExtras) return this.alvosExtras.slice();
     const out = this.lote ? this.lote.alvos() : [];
     for (const obj of this.objetos.values()) {
       if (!obj.visible) continue;

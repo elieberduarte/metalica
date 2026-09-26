@@ -218,6 +218,15 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.40.** **Ver → Esqueleto (só linhas)** no editor 3D (pedido do usuário: ver a estrutura antes dos perfis; é o
+modelo do cálculo de esforços, e o detalhamento só vem depois que ele estiver estruturalmente certo). Cada peça
+vira o eixo dela, numa cor por tipo (treliça, terça, contravento, corrente, pilar, viga); a calandrada é a polilinha
+pelos centros dos anéis da varredura (a tampa diz quantos pontos tem o anel) e outro sólido, a maior dimensão dele.
+Tudo num objeto só (`nucleo/esqueleto.js`), leve no modelo grande; o modelo com perfis fica escondido enquanto o
+esqueleto está ligado. O clique pega o bloco — a treliça inteira, pelas barras de mesma peça de origem
+(`selecao.grupoDe`) — e a dica diz o nome dela; o raio acha a linha pelo índice do vértice (`entidadeDe` recebe o
+índice da face ou, na linha, o do vértice). Verificador `verif_esqueleto_ui`.
+
 **0.8.39.** Terceira leva de prints do Posto CB. **Eixos e níveis no tema escuro**: o balão do eixo tinha
 fundo branco e ofuscava; agora cada tema tem as suas cores (no escuro, o fundo da cena e o traço mais claro;
 níveis em azul claro), redesenhados ao trocar o tema. **Viga repetida**: a viga lida de novo (o nome em duas

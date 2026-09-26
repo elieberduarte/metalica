@@ -65,8 +65,9 @@ export class Selecao {
     this.raio.params.Line.threshold = 6 * this.camera.mmPorPixel();
     // Malha em lote: a peça vem do índice da face (lote.js); as demais trazem o id no objeto.
     const idDe = (h) => h.entidadeId
-      || (h.object.userData.entidadeDe ? h.object.userData.entidadeDe(h.faceIndex)
-                                       : h.object.userData.entidade);
+      || (h.object.userData.entidadeDe
+        ? h.object.userData.entidadeDe(h.faceIndex != null ? h.faceIndex : h.index)   // linha em lote: o vértice
+        : h.object.userData.entidade);
     const hits = this.raio.intersectObjects(alvos, false).filter(h => {
       const e = this.documento.get(idDe(h));
       return e && this.documento.aparece(e);
@@ -110,9 +111,12 @@ export class Selecao {
       if (!ev.shiftKey && !ev.ctrlKey && !ev.metaKey) this.limpar();
       return;
     }
-    if (ev.ctrlKey || ev.metaKey) this.alternar(id);
-    else if (ev.shiftKey) this.somar([id]);
-    else this.definir([id]);
+    // no esqueleto o clique pega o bloco (a treliça inteira): `grupoDe` diz quem vai junto
+    const grupo = this.grupoDe ? this.grupoDe(id) : [id];
+    if (ev.ctrlKey || ev.metaKey) {
+      if (grupo.every(i => this.ids.has(i))) this.tirar(grupo); else this.somar(grupo);
+    } else if (ev.shiftKey) this.somar(grupo);
+    else this.definir(grupo);
   }
 
   definir(ids) {
