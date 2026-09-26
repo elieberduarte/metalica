@@ -11,16 +11,20 @@ import { el, numero, metros } from '../editor.js';
 
 const ESCALA = 0.001;                  // metros de cena por mm, como a Cena
 const COR_REFERENCIA = { claro: 0x9aa3ae, escuro: 0x5b6573 };
-const COR_EIXO = 0xc0392b;
+// eixo e nível em cada tema: no escuro, o balão branco ofuscava — fundo da cena e traço mais claro
+const TEMA_EIXO = {
+  claro: { linha: 0xc0392b, fundo: '#ffffff', traco: '#c0392b', nivel: '#1f5fbf' },
+  escuro: { linha: 0xe0786e, fundo: '#1b2130', traco: '#e0786e', nivel: '#7fb0ff' },
+};
 
-/** Sprite com o nome do eixo (bolinha branca, texto vermelho), do tamanho de `raio_mm`. */
-function rotuloDoEixo(nome, raio_mm) {
+/** Sprite com o nome do eixo (bolinha com o nome), do tamanho de `raio_mm`, nas cores do tema. */
+function rotuloDoEixo(nome, raio_mm, cores = TEMA_EIXO.claro) {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
   const g = c.getContext('2d');
-  g.fillStyle = '#ffffff'; g.strokeStyle = '#c0392b'; g.lineWidth = 8;
+  g.fillStyle = cores.fundo; g.strokeStyle = cores.traco; g.lineWidth = 8;
   g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.fill(); g.stroke();
-  g.fillStyle = '#c0392b'; g.font = `bold ${nome.length > 2 ? 44 : 60}px Arial, sans-serif`;
+  g.fillStyle = cores.traco; g.font = `bold ${nome.length > 2 ? 44 : 60}px Arial, sans-serif`;
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(nome, 64, 68);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -30,10 +34,8 @@ function rotuloDoEixo(nome, raio_mm) {
   return s;
 }
 
-const COR_NIVEL = '#1f5fbf';
-
 /** Cabeça do nível, como a do Revit: o triângulo, o nome e a cota, em azul. */
-function rotuloDoNivel(nome, z_mm, altura_mm) {
+function rotuloDoNivel(nome, z_mm, altura_mm, COR_NIVEL = TEMA_EIXO.claro.nivel) {
   const cota = (z_mm >= 0 ? '+' : '−') + (Math.abs(z_mm) / 1000).toFixed(2).replace('.', ',');
   const c = document.createElement('canvas');
   const g0 = c.getContext('2d');
@@ -74,6 +76,8 @@ export class MetodosLancamento {
     const eixos = r.eixos || [];
     const niveis = r.niveis || [];
     if (!segs.length && !eixos.length && !niveis.length) return;
+    const escuro = !!this.escuro;
+    const cores = escuro ? TEMA_EIXO.escuro : TEMA_EIXO.claro;
     const grupo = new THREE.Group();
     grupo.name = 'referencia-lancamento';
     grupo.scale.setScalar(ESCALA);
@@ -82,7 +86,6 @@ export class MetodosLancamento {
       segs.forEach((s, i) => { pos.set([s[0], s[1], -2, s[2], s[3], -2], i * 6); });
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const escuro = !!(this.cena && this.cena.escuro);
       const linhas = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
         color: escuro ? COR_REFERENCIA.escuro : COR_REFERENCIA.claro, transparent: true, opacity: 0.9 }));
       linhas.name = 'arquitetonico';
@@ -95,7 +98,7 @@ export class MetodosLancamento {
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       // eixo apagado, só de referência: traço fino e transparente, sem esconder a estrutura
       const linhas = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({
-        color: COR_EIXO, dashSize: 900, gapSize: 600, transparent: true, opacity: 0.25, depthWrite: false }));
+        color: cores.linha, dashSize: 900, gapSize: 600, transparent: true, opacity: 0.25, depthWrite: false }));
       linhas.computeLineDistances();
       linhas.name = 'eixos';
       grupo.add(linhas);
@@ -105,7 +108,7 @@ export class MetodosLancamento {
       for (const e of eixos) {
         const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1], d = Math.hypot(dx, dy) || 1;
         for (const [p, sinal] of [[e.a, -1], [e.b, 1]]) {
-          const s = rotuloDoEixo(e.nome, raio);
+          const s = rotuloDoEixo(e.nome, raio, cores);
           s.position.set(p[0] + sinal * dx / d * raio * 1.2, p[1] + sinal * dy / d * raio * 1.2, p[2]);
           grupo.add(s);
         }
@@ -131,14 +134,14 @@ export class MetodosLancamento {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
         const linhas = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({
-          color: COR_NIVEL, dashSize: 1200, gapSize: 800, transparent: true, opacity: 0.2, depthWrite: false }));
+          color: cores.nivel, dashSize: 1200, gapSize: 800, transparent: true, opacity: 0.2, depthWrite: false }));
         linhas.computeLineDistances();
         linhas.name = 'niveis';
         grupo.add(linhas);
         const alt = Math.min(Math.max(Math.max(x1 - x0, y1 - y0) * 0.012, 300), 900);
         for (const n of niveis) {
           for (const [x, y] of [[x1, y0], [x0, y1]]) {
-            const sp = rotuloDoNivel(n.nome, n.z, alt);
+            const sp = rotuloDoNivel(n.nome, n.z, alt, cores.nivel);
             sp.position.set(x, y, n.z);
             grupo.add(sp);
           }

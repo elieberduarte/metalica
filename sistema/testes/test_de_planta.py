@@ -293,3 +293,34 @@ def test_viga_vai_ate_o_pilar_na_linha_dela():
     # a que já chega no pilar não é puxada até o pilar seguinte
     pts = de_planta._viga_ate_o_pilar([(0.0, 0.0), (7000.0, 0.0)], [(7080.0, 0.0, 100.0), (7400.0, 0.0, 100.0)])
     assert pts[1] == (7000.0, 0.0)
+
+
+def test_viga_lida_duas_vezes_entra_uma_vez():
+    feitas = [([(0.0, 0.0), (7000.0, 0.0)], 3000.0, "Ue 250×70×20×2,65")]
+    assert de_planta._viga_repetida([(10.0, 30.0), (6990.0, 20.0)], 3000.0, "Ue 250×70×20×2,65", feitas)
+    assert not de_planta._viga_repetida([(0.0, 0.0), (7000.0, 0.0)], 6000.0, "Ue 250×70×20×2,65", feitas)   # outro nível
+    assert not de_planta._viga_repetida([(0.0, 400.0), (7000.0, 400.0)], 3000.0, "Ue 250×70×20×2,65", feitas)  # outra linha
+    assert not de_planta._viga_repetida([(5000.0, 0.0), (9000.0, 0.0)], 3000.0, "Ue 250×70×20×2,65", feitas)  # só encosta
+
+
+def test_faixa_de_trelica_vista_de_cima():
+    """os dois banzos a 1,5 m e a alma entre eles (montantes e diagonais): é a treliça deitada,
+    longe da origem do desenho (o Posto CB fica a 400 m do zero), com o nome da elevação de
+    mesma altura e comprimento"""
+    X0, Y0 = 400000.0, 50000.0
+    ang = math.radians(56.0)
+    u, n = (math.cos(ang), math.sin(ang)), (-math.sin(ang), math.cos(ang))
+
+    def P(s, f):
+        return (X0 + u[0] * s + n[0] * f, Y0 + u[1] * s + n[1] * f)
+    segs = [de_planta._Seg(P(0, 0), P(6000, 0), "m"), de_planta._Seg(P(0, 1500), P(6000, 1500), "m")]
+    for k in range(6):
+        segs.append(de_planta._Seg(P(k * 1000, 0), P(k * 1000, 1500), "m"))
+        segs.append(de_planta._Seg(P(k * 1000, 0), P((k + 1) * 1000, 1500), "m"))
+    segs.append(de_planta._Seg(P(6000, 0), P(6000, 1500), "m"))
+    el = de_planta.Elevacao(nome="TRELICA 1", familia="TRELICA", qtd=1, comprimento=6000.0)
+    el.membros = [de_planta.Membro(0.0, 0.0, 6000.0, 0.0, "banzo"), de_planta.Membro(0.0, 1550.0, 6000.0, 1550.0, "banzo")]
+    textos = [{"tipo": "texto", "texto": "TRELIÇA 1", "posicao": P(2500, -300), "angulo": 56.0, "id": "r1"}]
+    trs, usados, faixas = de_planta._trelicas_deitadas(segs, textos, {"TRELICA 1": el}, lambda t: "TRELICA 1")
+    assert len(faixas) == 1 and abs(faixas[0][4] - faixas[0][3] - 1500.0) < 5.0
+    assert [t.nome for t in trs] == ["TRELICA 1"] and abs(trs[0].caminho.comprimento - 6000.0) < 5.0

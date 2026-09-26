@@ -1965,7 +1965,7 @@ export class Editor {
     if (tema === 'claro' || tema === 'escuro') document.documentElement.setAttribute('data-tema', tema);
     this._consulta = matchMedia('(prefers-color-scheme: dark)');
     this._consulta.addEventListener('change', () => {
-      if (!document.documentElement.hasAttribute('data-tema')) this.cena.aplicarTema(this.escuro);
+      if (!document.documentElement.hasAttribute('data-tema')) { this.cena.aplicarTema(this.escuro); this._referenciaNoTema(); }
     });
   }
 
@@ -1979,6 +1979,12 @@ export class Editor {
     document.documentElement.setAttribute('data-tema', novo);
     try { localStorage.setItem(CHAVE_TEMA, novo); } catch { /* janela privativa */ }
     this.cena.aplicarTema(this.escuro);
+    this._referenciaNoTema();
+  }
+
+  /** Eixos, níveis e arquitetônico redesenhados nas cores do tema novo. */
+  _referenciaNoTema() {
+    if (this._referencia && typeof this._carregarReferencia === 'function') this._carregarReferencia();
   }
 
   // --------------------------------------------------------------- avisos

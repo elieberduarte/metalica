@@ -49,3 +49,31 @@ def test_acha_cada_regra():
     regras = {a["regra"] for a in apoios.verificar(doc)["achados"]}
     assert {"voando", "terca_em_balanco", "terca_fora_do_no", "pilar_sem_carga", "viga_sem_apoio",
             "ponta_sem_apoio"} <= regras
+
+
+def test_canto_de_vigas_no_ar_nao_se_apoiam():
+    """duas vigas que se encontram em L longe do pilar: uma não segura a outra (o canto do
+    mezanino do Posto CB); a viga que apoia no meio de outra continua apoiada"""
+    doc = Documento()
+    for x, y in ((0.0, 0.0), (6000.0, 6000.0), (0.0, 6000.0)):
+        doc.add(barra((x, y, 0.0), (x, y, 3000.0), "pilar", perfil="W 200×19,3"))
+    doc.add(barra((0.0, 0.0, 3000.0), (6000.0, 0.0, 3000.0), "viga", perfil="W 250×25,3"))   # canto em (6000, 0)
+    doc.add(barra((6000.0, 0.0, 3000.0), (6000.0, 6000.0, 3000.0), "viga", perfil="W 250×25,3"))
+    doc.add(barra((0.0, 6000.0, 3000.0), (6000.0, 6000.0, 3000.0), "viga", perfil="W 250×25,3"))
+    doc.add(barra((3000.0, 6000.0, 3000.0), (3000.0, 9000.0, 3000.0), "viga", perfil="W 150×13"))  # no meio da outra
+    doc.add(barra((3000.0, 9000.0, 0.0), (3000.0, 9000.0, 3000.0), "pilar", perfil="W 200×19,3"))
+    soltas = [a["ponto"][:2] for a in apoios.verificar(doc)["achados"] if a["regra"] == "viga_sem_apoio"]
+    assert sorted(soltas) == [[6000, 0], [6000, 0]]
+
+
+def test_viga_partida_no_cruzamento_segura_a_que_chega():
+    """a linha da viga interrompida onde a outra chega (o desenho corta a linha dupla) continua
+    sendo viga contínua: a que chega em T fica apoiada"""
+    doc = Documento()
+    for y in (0.0, 8000.0):
+        doc.add(barra((0.0, y, 0.0), (0.0, y, 3000.0), "pilar", perfil="W 200×19,3"))
+    doc.add(barra((0.0, 0.0, 3000.0), (0.0, 3930.0, 3000.0), "viga", perfil="W 250×25,3"))
+    doc.add(barra((0.0, 4070.0, 3000.0), (0.0, 8000.0, 3000.0), "viga", perfil="W 250×25,3"))
+    doc.add(barra((5000.0, 4000.0, 0.0), (5000.0, 4000.0, 3000.0), "pilar", perfil="W 200×19,3"))
+    doc.add(barra((5000.0, 4000.0, 3000.0), (70.0, 4000.0, 3000.0), "viga", perfil="W 150×13"))
+    assert not [a for a in apoios.verificar(doc)["achados"] if a["regra"] == "viga_sem_apoio"]

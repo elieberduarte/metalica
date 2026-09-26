@@ -218,6 +218,18 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.39.** Terceira leva de prints do Posto CB. **Eixos e níveis no tema escuro**: o balão do eixo tinha
+fundo branco e ofuscava; agora cada tema tem as suas cores (no escuro, o fundo da cena e o traço mais claro;
+níveis em azul claro), redesenhados ao trocar o tema. **Viga repetida**: a viga lida de novo (o nome em duas
+linhas da mesma peça) não entra duas vezes (`_viga_repetida`: mesmo perfil e nível, na mesma linha, cobrindo
+90 %). **Verificar apoios — canto de vigas no ar**: duas vigas que só se tocam pelas pontas, em ângulo, longe
+de pilar (mais de 90 cm), não se apoiam uma na outra; a viga que apoia no meio da outra, e a que chega numa
+linha partida no cruzamento (a viga contínua), continuam apoiadas. **Treliça deitada, a conferir**: a faixa em
+que a planta desenha a treliça vista de cima (os dois banzos e a alma entre eles) é achada
+(`_trelicas_deitadas`, medindo tudo no mesmo referencial — o desenho fica a 400 m do zero e 0,1° ali vira 70
+cm) e o nome da elevação de mesma altura e comprimento é apontado nos avisos; só vira treliça deitada com o
+parâmetro `deitadas` (no Posto CB a faixa ao lado da TRANSIÇÃO 14 ficou a conferir com o usuário).
+
 **0.8.38.** Montar o 3D pela planta, pelos prints do Posto CB: **banzo com as abas para dentro da treliça** — o U
 do banzo de cima fica com a alma em cima (onde a terça apoia) e as abas para baixo, o de baixo com as abas para
 cima (antes os dois saíam com as abas para cima, rotação 90; agora 270 no de cima). Cima ou baixo pelo meio da

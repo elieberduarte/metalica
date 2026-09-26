@@ -71,6 +71,22 @@ def _dist_pt_seg(p, a, b) -> Tuple[float, float]:
     return math.dist(p, q), t
 
 
+def _canto_de_vigas(s1, s2, p, tol: float) -> bool:
+    """a ponta `p` da viga s1 encosta só na ponta da viga s2, e as duas fazem ângulo (o canto em
+    L no ar). A viga que continua na mesma linha (emenda) e a que apoia no meio da outra não são
+    canto."""
+    if min(math.dist(p, s2[0]), math.dist(p, s2[1])) >= tol:
+        return False
+    d1, d2 = _sub(s1[1], s1[0]), _sub(s2[1], s2[0])
+    L1, L2 = math.sqrt(_dot(d1, d1)), math.sqrt(_dot(d2, d2))
+    if L1 < 1.0 or L2 < 1.0:
+        return False
+    cx = d1[1] * d2[2] - d1[2] * d2[1]
+    cy = d1[2] * d2[0] - d1[0] * d2[2]
+    cz = d1[0] * d2[1] - d1[1] * d2[0]
+    return math.sqrt(cx * cx + cy * cy + cz * cz) / (L1 * L2) > 0.34      # mais de 20°
+
+
 class _Elem:
     __slots__ = ("id", "papel", "camada", "peca", "segs", "nome", "ent", "raio")
 
@@ -342,6 +358,37 @@ def verificar(doc, tol: float = TOL_ENCOSTO) -> dict:
         if not carrega:
             achados.append(_achado("pilar_sem_carga", "pilar %s sem peça em cima" % (e.nome or ""), topo, [e.id],
                                    peca=e.nome))
+    vigas = [i for i, e in enumerate(els) if e.papel == "viga"]
+
+    def perto_de_pilar(p, raio=900.0):
+        """o canto que fica no pilar (as vigas chegam nele): não é canto no ar"""
+        return any(_dist_pt_seg(p, *els[k].segs[0])[0] < raio for k in pil)
+
+    def continua(i, j, p):
+        """a viga j segue na mesma linha depois do ponto: outro pedaço dela (a linha partida no
+        cruzamento) começa ali, alinhado — é viga contínua, e segura a que chega"""
+        sj = els[j].segs[0]
+        dj = _sub(sj[1], sj[0])
+        Lj = math.sqrt(_dot(dj, dj)) or 1.0
+        for k in vigas:
+            if k in (i, j):
+                continue
+            sk = els[k].segs[0]
+            if min(math.dist(p, sk[0]), math.dist(p, sk[1])) >= tol + 150.0:
+                continue
+            dk = _sub(sk[1], sk[0])
+            Lk = math.sqrt(_dot(dk, dk)) or 1.0
+            if abs(_dot(dj, dk)) / (Lj * Lk) < 0.995:
+                continue                                    # outra direção
+            # alinhada: as pontas do pedaço k ficam na reta da viga j
+            ux = (dj[0] / Lj, dj[1] / Lj, dj[2] / Lj)
+            if not all(math.dist(q, tuple(sj[0][m] + ux[m] * _dot(_sub(q, sj[0]), ux) for m in range(3))) < 150.0 for q in sk):
+                continue
+            # e segue além da viga j (o outro perfil da mesma viga dupla fica ao lado dela, não além)
+            if any(_dot(_sub(q, sj[0]), ux) < -300.0 or _dot(_sub(q, sj[0]), ux) > Lj + 300.0 for q in sk):
+                return True
+        return False
+
     for i, e in enumerate(els):
         if e.papel != "viga":
             continue
@@ -355,6 +402,9 @@ def verificar(doc, tol: float = TOL_ENCOSTO) -> dict:
                 if ej.papel == "viga" and ej.nome == e.nome and all(
                         _dist_pt_seg(q, *e.segs[0])[0] < 300.0 for q in ej.segs[0]):
                     continue            # o outro perfil da mesma viga dupla
+                if (ej.papel == "viga" and _canto_de_vigas(e.segs[0], ej.segs[0], p, tol + 150.0)
+                        and not perto_de_pilar(p) and not continua(i, j, p)):
+                    continue            # duas vigas que só se tocam pelas pontas, em ângulo: uma não segura a outra
                 if min(_dist_pt_seg(p, c, d)[0] for c, d in ej.segs) < tol + 150.0:
                     apoiada = True
                     break
