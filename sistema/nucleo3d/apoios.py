@@ -183,7 +183,8 @@ def _m(mm: float) -> str:
 
 
 def _achado(regra, texto, ponto, ids, peca="", **extra) -> dict:
-    d = {"regra": regra, "texto": texto, "ponto": [round(c) for c in ponto], "ids": list(ids), "peca": peca}
+    # peça sem nome deixaria dois espaços no texto ("viga  com a ponta sem apoio")
+    d = {"regra": regra, "texto": " ".join(texto.split()), "ponto": [round(c) for c in ponto], "ids": list(ids), "peca": peca}
     d.update(extra)
     return d
 

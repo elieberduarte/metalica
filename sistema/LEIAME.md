@@ -218,6 +218,11 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.37.** 3D: os eixos da obra (tracejado vermelho), o contorno dos níveis (tracejado azul) e as direções
+X/Y/Z ficam apagados, só de referência — no Posto CB eles disputavam com a estrutura (pedido do usuário). Os
+balões e as cabeças de nível continuam legíveis. Verificar apoios: peça sem nome não deixa mais espaço duplo no
+texto do achado.
+
 **0.8.36.** Montar o 3D pela planta: **as regras de apoio** (pedido do usuário com os prints do 3D do Posto CB: "não
 pode ter elemento voando; tesoura apoiada em pilar; terça apoiada nos nós"). Leitura: a linha dupla interrompida onde
 outra peça cruza volta a ser uma linha só **antes** de emendar os arcos (o arco da borda levava junto o pedaço reto de

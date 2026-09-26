@@ -371,8 +371,9 @@ export class Cena {
       const m = tracejado
         ? new THREE.LineDashedMaterial({ color: cor, dashSize: tamanho / 40,
                                          gapSize: tamanho / 40, transparent: true,
-                                         opacity: 0.5, depthWrite: false })
-        : new THREE.LineBasicMaterial({ color: cor, transparent: true, opacity: 0.95,
+                                         opacity: 0.25, depthWrite: false })
+        // só de referência: apagado, para não disputar com a estrutura
+        : new THREE.LineBasicMaterial({ color: cor, transparent: true, opacity: 0.45,
                                         depthWrite: false });
       const l = new THREE.Line(g, m);
       if (tracejado) l.computeLineDistances();

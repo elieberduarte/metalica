@@ -93,7 +93,9 @@ export class MetodosLancamento {
       eixos.forEach((e, i) => { pos.set([e.a[0], e.a[1], e.a[2], e.b[0], e.b[1], e.b[2]], i * 6); });
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const linhas = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({ color: COR_EIXO, dashSize: 900, gapSize: 250 }));
+      // eixo apagado, só de referência: traço fino e transparente, sem esconder a estrutura
+      const linhas = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({
+        color: COR_EIXO, dashSize: 900, gapSize: 600, transparent: true, opacity: 0.25, depthWrite: false }));
       linhas.computeLineDistances();
       linhas.name = 'eixos';
       grupo.add(linhas);
@@ -128,7 +130,8 @@ export class MetodosLancamento {
         }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
-        const linhas = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({ color: COR_NIVEL, dashSize: 1200, gapSize: 400, transparent: true, opacity: 0.8 }));
+        const linhas = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({
+          color: COR_NIVEL, dashSize: 1200, gapSize: 800, transparent: true, opacity: 0.2, depthWrite: false }));
         linhas.computeLineDistances();
         linhas.name = 'niveis';
         grupo.add(linhas);
