@@ -70,6 +70,18 @@ export class MetodosMontarPlantaCAD {
       el('option', { value: 'acrescentar', texto: 'Acrescentar ao modelo 3D' }));
     const ifc = el('input', { type: 'checkbox' });
     const quadro = el('input', { type: 'checkbox', checked: true });
+    // as outras plantas com nível no título (mezanino, base e cobertura da caixa d'água…)
+    const RX_NIVEL = /N[ÍI]VEL\s*(?:DE\s*)?\+?\s*(\d{1,3}[.,]\d{1,3})/i;
+    const outras = [];
+    const tabOutras = el('div', { class: 'campos' });
+    for (const t of titulos) {
+      const m = t.match(RX_NIVEL);
+      if (!m) continue;
+      const usar = el('input', { type: 'checkbox', checked: !semAcento(t).startsWith(semAcento(p.planta)) });
+      const nv = el('input', { type: 'text', value: m[1].replace('.', ','), size: 6, title: 'Nível, em metros: o banzo inferior das treliças e o topo das vigas dessa planta' });
+      outras.push({ titulo: t, usar, nv });
+      tabOutras.append(el('label', { class: 'linha' }, usar, ' ' + t), nv);
+    }
     const corpo = el('div', {},
       el('div', { class: 'explica', texto: 'O modelo sai da planta estrutural: cada linha com nome ("TESOURA 1", "PAINEL 8", "TRANSIÇÃO 4") recebe a treliça da elevação de mesmo nome ("TESOURA 1 - 7X"), em pé, com o banzo inferior no nível abaixo. A peça curva na planta sai calandrada. Os pilares vêm da locação (nome "PM3(200X70X20X2,65)" sobre a placa) e as terças, correntes e contraventos da planta das terças; as plantas são alinhadas pelos balões dos eixos.' }),
       el('div', { class: 'campos' },
@@ -80,6 +92,9 @@ export class MetodosMontarPlantaCAD {
         el('label', { texto: 'Planta das terças' }), tercas,
         el('label', { texto: 'Aço' }), aco,
         el('label', { texto: 'Modelo' }), modo),
+      ...(outras.length ? [el('fieldset', { class: 'montagem' }, el('legend', { texto: 'Outras plantas, cada uma no seu nível' }),
+        el('div', { class: 'explica', texto: 'Vigas VM e treliças nomeadas dessas plantas entram no nível ao lado (m), alinhadas pelos balões dos eixos; o pilar sobe até a peça mais alta que tiver em cima. Desmarque a da planta estrutural e as que não são de estrutura.' }),
+        tabOutras)] : []),
       el('label', { class: 'linha' }, quadro, ' Desenhar, abaixo do projeto, o quadro com só o que virou modelo (plantas e elevações usadas)'),
       el('label', { class: 'linha' }, ifc, ' Gravar também o IFC'));
     if (await this.dialogo({ titulo: 'Montar o 3D pela planta', corpo, ok: 'Montar' }) !== 'ok') return;
@@ -87,7 +102,8 @@ export class MetodosMontarPlantaCAD {
     let r;
     try {
       r = await postar(rota, {
-        parametros: { planta: planta.value, nivel: lerMetros(nivel.value), locacao: locacao.value, base: lerMetros(base.value), tercas: tercas.value, aco: aco.value.trim() },
+        parametros: { planta: planta.value, nivel: lerMetros(nivel.value), locacao: locacao.value, base: lerMetros(base.value), tercas: tercas.value, aco: aco.value.trim(),
+          outras: outras.filter(o => o.usar.checked && o.titulo !== planta.value).map(o => ({ planta: o.titulo, nivel: lerMetros(o.nv.value) })) },
         modo: modo.value, ifc: ifc.checked, quadro: quadro.checked,
       });
     } catch (e) { this.dica(''); this.aviso(`Não foi possível montar: ${e.message}`, 'erro', 0); return; }
@@ -117,6 +133,7 @@ export class MetodosMontarPlantaCAD {
     if (dif.length) itens.push(el('div', { class: 'explica atencao', texto: 'Quantidade diferente da que o título pede: ' + dif.map(c => `${c.peca} (modelo ${c.modelo}, projeto ${c.projeto})`).join('; ') + '.' }));
     const sem = Object.entries(z.nomes_sem_elevacao || {});
     if (sem.length) itens.push(el('div', { class: 'explica atencao', texto: 'Nome na planta sem elevação no desenho (ficaram de fora): ' + sem.map(([k, q]) => `${k} (${q}×)`).join(', ') + '.' }));
+    for (const o of (z.outras_plantas || [])) itens.push(el('div', { class: 'explica', texto: `${o.planta}: ${o.pecas} peça(s) no nível ${numero(o.nivel / 1000, 2)} m (alinhada por ${o.baloes} balões).` }));
     if (z.planta_sem_nome) itens.push(el('div', { class: 'explica', texto: `${z.planta_sem_nome} peça(s) da planta sem nome escrito ficaram de fora.` }));
     for (const a of (r.avisos || []).slice(0, 8)) itens.push(el('div', { class: 'explica atencao', texto: a }));
     if (r.quadro) itens.push(el('div', { class: 'explica', texto: `O quadro "PROJETO CONSIDERADO NO MODELO 3D" está no desenho, abaixo do projeto, com ${(r.quadro.grupos || []).length} grupo(s): as plantas e as elevações que viraram peça, sem o resto (camadas QUADRO …). A próxima montagem refaz o quadro.` }));

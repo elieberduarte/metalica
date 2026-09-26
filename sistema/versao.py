@@ -17,7 +17,7 @@ import os
 import sys
 
 NOME = "Metálica"
-VERSAO = "0.8.34"
+VERSAO = "0.8.35"
 
 _AQUI = os.path.dirname(os.path.abspath(__file__))
 ARQUIVO_IMPRESSAO = "impressao_nucleo.txt"

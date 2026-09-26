@@ -218,6 +218,20 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.35.** Montar o 3D pela planta: **o resto da estrutura**. O diálogo lista as outras plantas com nível no título
+("PLANTA NO NÍVEL 3,17m", "PLANTA DA BASE DA CX DÁGUA NIVEL 8,20", "COBERTURA DA CX DÁGUA NIVEL 11,00"), com o nível ao
+lado; cada uma é alinhada à planta estrutural pelos balões dos eixos de mesmo nome e entra no nível dela — vigas VM com o
+topo no nível, treliças nomeadas com o banzo inferior nele (`parametros.outras`). O **pilar sobe até a peça mais alta
+que passa em cima dele** (no posto: 64 até 6,00, 12 até 11,00 na torre da caixa d'água, 2 até 8,20, 1 até 3,17). A
+moldura de cada planta ficou mais esperta: o título pode ficar até 5 m ao lado do desenho, as partes a até 12 m se
+juntam, o grupo que tem outro título logo embaixo (a vista empilhada ao lado) não entra, e a moldura da folha (retângulo
+de poucas linhas em volta de várias vistas) é ignorada — era ela que levava a caixa d'água a engolir os cortes. No
+posto: mezanino com 89 peças, base da caixa com 23, cobertura com as treliças 7 a 15 (as quantidades batem com os
+títulos), 55,0 t; ficam de fora a passarela e os painéis solares (desenhados de outro jeito). Também: o arco grande
+cujo centro cai fora da planta (a curva em S da borda) agora entra (o filtro olhava o centro, não o arco), e a treliça
+cuja linha dupla foi interrompida onde outra peça cruza segue pelos trechos na mesma linha até o comprimento da
+elevação (`_estender_na_linha`). No posto: 59,0 t; conferência dos títulos com 3 diferenças.
+
 **0.8.34.** (1) **Seção certa no 3D para qualquer perfil do catálogo**: em modelo grande (modo lote) o editor monta as
 seções no navegador com o banco básico, e perfil fora dele (dobrado de fábrica "(FF)", barra redonda, perfis dos
 fornecedores) saía com a seção padrão de 100 × 200 mm — no posto, 18 dos 23 perfis, e os contraventos de Ø12,5

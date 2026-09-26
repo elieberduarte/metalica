@@ -195,3 +195,20 @@ def test_modelo_vem_para_perto_da_origem():
     assert 0.0 <= min(xs) < 1000.0 and 0.0 <= min(ys) < 1000.0
     d = r["doc"].metadados["de_planta"]["deslocamento"]
     assert d["x"] < -390000.0 and d["y"] < -40000.0
+
+
+def test_outra_planta_no_seu_nivel():
+    """o mezanino (outra planta, com balões em comum) entra no nível dele: a viga VM com o
+    topo em 3,17 m"""
+    DX = 100000.0
+    mez = [linha((0.0 + DX, 2950.0), (L_TES + DX, 2950.0), "metalica4"), linha((0.0 + DX, 3050.0), (L_TES + DX, 3050.0), "metalica4"),
+           texto((3000.0 + DX, 3150.0), "VM-2Ue150X70X20X2,65"), texto((2000.0 + DX, -4000.0), "PLANTA NO NÍVEL 3,17m", altura=25.0)]
+    ents = planta() + locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += baloes(DX, 0) + mez + elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False,
+                                "outras": [{"planta": "PLANTA NO NÍVEL 3,17m", "nivel": 3170.0}]})
+    assert r["resumo"]["outras_plantas"] and r["resumo"]["outras_plantas"][0]["baloes"] >= 2
+    vigas = [b for b in r["doc"].barras if b.papel == "viga" and abs(b.inicio[1] - 3000.0) < 200.0]
+    assert len(vigas) == 2                                  # 2Ue: os dois perfis
+    assert all(abs(b.inicio[2] - (3170.0 - 75.0)) < 1.0 for b in vigas)
+    assert any(n["nome"] == "NÍVEL 3,17" for n in r["niveis"])
