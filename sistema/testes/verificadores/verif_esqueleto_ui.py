@@ -65,7 +65,7 @@ try:
        "o modelo com perfis fica escondido")
     # três peças da mesma treliça (peça de origem): o clique no esqueleto pega as três
     ids = aba.avaliar("""(() => { const e = window.editor; const ids = [...e.esqueleto._faixas.keys()].slice(0, 3);
-        ids.forEach(i => { const x = e.documento.get(i); x.atributos = x.atributos || {}; x.atributos.origem = { peca: 'TESOURA 9#1' }; });
+        ids.forEach(i => { const x = e.documento.get(i); x.atributos = x.atributos || {}; x.atributos.origem = { peca: 'TESOURA 9#1', encaixe: { vao: 5300, elevacao: 5000 } }; });
         e.esqueleto._montar(); return ids; })()""") or []
     t0 = time.time()
     while time.time() - t0 < 90 and not aba.avaliar("!!window.editor.esqueleto.analitico"): aba.drenar(0.5)
@@ -98,6 +98,8 @@ try:
         painel = aba.avaliar("(document.querySelector('.painel-bloco') || {}).textContent || ''") or ""
         ok(n_b == 3 and "Bloco TESOURA 9" in painel and "Ponta 1" in painel and "Ponta 2" in painel,
            f"clique no modo normal pega o bloco ({n_b} barras) e o painel mostra as pontas: {painel[:90]}")
+        ok("0,30 m a mais no vão" in painel and "Confira no projeto" in painel,
+           "o painel diz o encaixe da elevação no vão (5,00 m em 5,30 m)")
         aba.avaliar(f"window.editor.selecao.clicar({ids[0]!r}, {{altKey: true}}); 1")
         aba.drenar(0.3)
         ok((aba.avaliar("window.editor.selecao.ids.size") or 0) == 1 and not aba.avaliar("!!document.querySelector('.painel-bloco')"),

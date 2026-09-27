@@ -608,8 +608,8 @@ def baloes(ents, caixa, folga: float = 4000.0) -> Dict[str, Ponto2]:
     grade: Dict[tuple, List[dict]] = collections.defaultdict(list)
     for t in txt:
         grade[(int(t["posicao"][0] // 1000), int(t["posicao"][1] // 1000))].append(t)
-    out: Dict[str, List[Ponto2]] = collections.defaultdict(list)
-    for c in circ:
+    pares = []
+    for ic, c in enumerate(circ):
         r = c["raio"]
         gx, gy = int(c["centro"][0] // 1000), int(c["centro"][1] // 1000)
         for dx in (-1, 0, 1):
@@ -617,7 +617,18 @@ def baloes(ents, caixa, folga: float = 4000.0) -> Dict[str, Ponto2]:
                 for t in grade.get((gx + dx, gy + dy), []):
                     # o texto do balão começa um pouco à esquerda e abaixo do centro
                     if abs(t["posicao"][0] - c["centro"][0]) < 1.3 * r and abs(t["posicao"][1] - c["centro"][1]) < 1.3 * r:
-                        out[t["texto"].strip().upper()].append((c["centro"][0], c["centro"][1]))
+                        pares.append((math.dist(t["posicao"][:2], c["centro"][:2]), ic, id(t), t))
+    # um texto por balão e um balão por texto, do par mais perto para o mais longe: nos balões
+    # encostados (eixos 9 e 10 do Posto CB, a 50 cm) o "10" também cabe no balão do 9
+    out: Dict[str, List[Ponto2]] = collections.defaultdict(list)
+    c_usados, t_usados = set(), set()
+    for _d, ic, it, t in sorted(pares, key=lambda x: x[0]):
+        if ic in c_usados or it in t_usados:
+            continue
+        c_usados.add(ic)
+        t_usados.add(it)
+        c = circ[ic]["centro"]
+        out[t["texto"].strip().upper()].append((c[0], c[1]))
     return {k: v[0] for k, v in out.items() if len(v) >= 1}
 
 
@@ -1987,6 +1998,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     outras_feitas: List[dict] = []
     textos = [e for e in ents if e["tipo"] == "texto"]
     avisos: List[str] = []
+    encaixe: List[dict] = []
 
     avisar("procurando as plantas…")
     t_planta = _achar_titulo(textos, par["planta"])
@@ -2092,6 +2104,14 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             if not p_banzo:
                 avisos.append("%s: sem a nota do banzo; ficou sem perfil." % t.nome)
                 continue
+            # o encaixe do bloco (a elevação como desenhada) no vão da planta: o que sobra
+            # ou falta fica nas barras das pontas — anotado, para conferir com o projeto
+            L_v, L_e = c.comprimento, el.comprimento
+            meio = c.ponto(L_v / 2.0)
+            encaixe.append({"peca": _bonito(t.nome), "conjunto": conj, "vao": round(L_v), "elevacao": round(L_e),
+                            "dif": round(L_v - L_e), "ajuste": round(t.ajuste),
+                            "centrada": bool(L_e and 0.9 < L_v / L_e < 1.1), "ponto": [round(meio[0]), round(meio[1])]})
+            enc_o = {"vao": round(L_v), "elevacao": round(L_e)}          # vai em cada barra: o painel do bloco mostra
 
             def P(s, h):
                 sp = _s_na_planta(t, s)
@@ -2130,7 +2150,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         raios = [c.raio] if c.tipo == "arco" else [q.raio for q, _r in c.partes if q.tipo == "arco"]
                         sol.atributos = {"tipo_ifc": "IfcMember", "calandrada": {"raio": round(min(raios), 1),
                                                                                   "raios": [round(r_, 1) for r_ in raios]},
-                                         "origem": {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj}}
+                                         "origem": {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o}}
                         doc.add(sol)
                         pecas.append({"ent": sol, "perfil": perfil, "papel": "banzo", "L": comp, "conjunto": conj})
                         continue
@@ -2144,11 +2164,11 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         for sinal, rot in ((1, 0.0), (-1, 180.0)):
                             d = (nx * af * sinal, ny * af * sinal, 0.0)
                             barra(tuple(q0[i] + d[i] for i in range(3)), tuple(q1[i] + d[i] for i in range(3)), perfil,
-                                  papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj})
+                                  papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o})
                     else:
                         # rotação 90 leva as abas do U para cima (banzo de baixo); 270, para baixo
                         rot = (270.0 if (m.h0 + m.h1) / 2 > meio_h else 90.0) if m.papel == "banzo" else 0.0
-                        barra(q0, q1, perfil, papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj})
+                        barra(q0, q1, perfil, papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o})
 
         # vigas
         for t in trechos_lista:
@@ -2638,9 +2658,53 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             if tit is not None:
                 usados[chave].add(tit.get("id"))
     usados = {k: sorted(v - {None}) for k, v in usados.items()}
-    return {"doc": doc, "resumo": resumo, "conferencia": conf, "avisos": avisos,
+    # o bloco que não cabe no vão (a elevação desenhada maior ou menor que a peça na planta)
+    # é apontamento: as barras das pontas absorvem a diferença, e isso tem de ser visto
+    for e_ in encaixe:
+        if abs(e_["dif"]) > ENCAIXE_MAX or not e_["centrada"]:
+            e_["a_conferir"] = True
+            avisos.append("%s em (%d; %d): a elevação mede %s e o vão na planta %s — %s %s; as barras das pontas "
+                          "absorvem a diferença. Confira no projeto." % (
+                              e_["peca"], e_["ponto"][0], e_["ponto"][1], _m_txt(e_["elevacao"]), _m_txt(e_["vao"]),
+                              _m_txt(abs(e_["dif"])), "a mais no vão" if e_["dif"] > 0 else "a menos no vão"))
+    for e_ in encaixe:
+        e_["ponto"] = [e_["ponto"][0] + round(desl[0]), e_["ponto"][1] + round(desl[1])]      # no modelo
+    resumo["encaixe"] = {"blocos": len(encaixe), "justos": sum(1 for e_ in encaixe if abs(e_["dif"]) <= 50),
+                         "a_conferir": sum(1 for e_ in encaixe if e_.get("a_conferir"))}
+    eixos_p = eixos_da_planta(ents, caixa_p, desl)
+    return {"doc": doc, "resumo": resumo, "conferencia": conf, "avisos": avisos_pelos_eixos(avisos, eixos_p, desl),
             "usados": usados, "elevacoes_usadas": elevacoes_usadas,
-            "eixos": eixos_da_planta(ents, caixa_p, desl), "niveis": niveis_do_desenho(textos, par)}
+            "eixos": eixos_p, "niveis": niveis_do_desenho(textos, par), "encaixe": encaixe}
+
+
+ENCAIXE_MAX = 200.0     # mm: diferença entre a elevação e o vão na planta que vira apontamento
+_RX_M = re.compile(r"(\d)\.(\d+(?: m\b|°))")
+
+
+def _m_txt(mm: float) -> str:
+    return ("%.2f m" % (mm / 1000.0)).replace(".", ",")
+
+
+_RX_XY = re.compile(r"\((-?\d+(?:\.\d+)?); (-?\d+(?:\.\d+)?)\)")
+
+
+def avisos_pelos_eixos(avisos: List[str], eixos_p: Optional[dict], desl=(0.0, 0.0)) -> List[str]:
+    """o ponto dos avisos, "(400820; 65950)" em mm do desenho, dito como no projeto: pelos
+    eixos, com a coordenada do modelo (o desenho + `desl`) em metros ao lado —
+    "(eixo 4 / B — 21,72; 50,76 m)" """
+    from nucleo3d import eixos as _eixos
+    ex = _eixos.de_dict(eixos_p)
+    segs = _eixos.segmentos(ex) if ex else []
+    for e in (eixos_p or {}).get("extras") or []:
+        segs.append({"nome": e["nome"], "tipo": "extra", "a": list(e["a"]) + [0.0], "b": list(e["b"]) + [0.0]})
+
+    def troca(m):
+        x, y = float(m.group(1)) + desl[0], float(m.group(2)) + desl[1]
+        xy = ("%.2f; %.2f m" % (x / 1000.0, y / 1000.0)).replace(".", ",")
+        o = _eixos.onde((x, y), segs) if segs else ""
+        return "(%s — %s)" % (o, xy) if o else "(%s)" % xy
+    # e os metros com vírgula, como no projeto ("6.00 m" → "6,00 m")
+    return [_RX_M.sub(r"\1,\2", _RX_XY.sub(troca, a)) for a in avisos]
 
 
 # =====================================================================================

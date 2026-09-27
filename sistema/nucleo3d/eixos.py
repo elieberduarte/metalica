@@ -15,6 +15,7 @@ entre eixos em `nucleo2d.detalhe.conjuntos._desenhar_eixos`), e `de_dict` valida
 usuário gravou no projeto (`projeto.json` → `eixos`).
 """
 import math
+import re
 import string
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -200,3 +201,69 @@ def segmentos(eixos: dict, folga: float = FOLGA_EIXO) -> List[dict]:
         b = (g[0] * g1 + p[0] * e["pos"], g[1] * g1 + p[1] * e["pos"], z)
         saida.append({"nome": e["nome"], "tipo": "letra", "a": a, "b": b})
     return saida
+
+
+def _ordem_do_nome(nome: str):
+    """1 < 2 < 10; A < B < AA"""
+    m = re.match(r"^(\d+)(.*)$", nome)
+    return (0, int(m.group(1)), m.group(2)) if m else (1, len(nome), nome)
+
+
+def fora_do_eixo(ponto, segs: Sequence[dict], perto: float = 600.0) -> List[Tuple[str, float]]:
+    """o eixo mais perto do ponto em cada direção (nome, distância em mm), quando a menos de
+    `perto`. Serve para o pilar que a locação põe fora do eixo."""
+    out = {}
+    for s in segs:
+        a, b = s["a"], s["b"]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy)
+        if L < 1e-6:
+            continue
+        d = abs((ponto[0] - a[0]) * dy - (ponto[1] - a[1]) * dx) / L
+        tipo = s.get("tipo") or s["nome"]
+        if d < perto and (tipo not in out or d < out[tipo][1]):
+            out[tipo] = (s["nome"], d)
+    return list(out.values())
+
+
+def onde(ponto, segs: Sequence[dict], perto: float = 600.0) -> str:
+    """Onde fica um ponto (x, y) na malha de eixos, como no projeto: "eixos 4 / C",
+    "eixo 4 / entre B e C", "entre 3 e 4 / C". `segs` são as linhas de `segmentos` (e as
+    inclinadas, tipo "extra"); a menos de `perto` mm o ponto está no eixo."""
+    partes = []
+    for tipo in ("numero", "letra"):
+        fam = [s for s in segs if s.get("tipo") == tipo]
+        if not fam:
+            continue
+        a, b = fam[0]["a"], fam[0]["b"]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L < 1e-6:
+            continue
+        n = (-(b[1] - a[1]) / L, (b[0] - a[0]) / L)
+        pos = sorted((s["a"][0] * n[0] + s["a"][1] * n[1], s["nome"]) for s in fam)
+        v = ponto[0] * n[0] + ponto[1] * n[1]
+        q, nome = min(pos, key=lambda x: abs(x[0] - v))
+        if abs(q - v) < perto:
+            partes.append((True, nome))
+            continue
+        antes = [x for x in pos if x[0] < v]
+        depois = [x for x in pos if x[0] > v]
+        if antes and depois:
+            par = sorted((antes[-1][1], depois[0][1]), key=_ordem_do_nome)
+            partes.append((False, "entre %s e %s" % tuple(par)))
+        else:
+            partes.append((False, "fora do %s" % nome))
+    for s in segs:
+        if s.get("tipo") != "extra":
+            continue
+        a, b = s["a"], s["b"]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L2 = dx * dx + dy * dy
+        t = 0.0 if L2 < 1e-9 else min(max(((ponto[0] - a[0]) * dx + (ponto[1] - a[1]) * dy) / L2, 0.0), 1.0)
+        if math.hypot(ponto[0] - a[0] - dx * t, ponto[1] - a[1] - dy * t) < perto:
+            partes.append((True, s["nome"]))
+    if not partes:
+        return ""
+    if len(partes) > 1 and all(e for e, _n in partes):
+        return "eixos " + " / ".join(n for _e, n in partes)
+    return " / ".join(("eixo " + n) if e else n for e, n in partes)

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Regras de apoio do modelo 3D (nucleo3d/apoios.py): peça voando, ponta de treliça sem
-apoio, terça em balanço e fora do nó, pilar sem carga, viga sem apoio."""
+apoio, terça em balanço e fora do nó, pilar sem carga, viga sem apoio, pilar fora da linha e
+do eixo, treliça por dentro de outra, telhado sem contravento."""
 from nucleo3d import apoios
 from nucleo3d.modelo import Barra, Documento
 
@@ -30,6 +31,7 @@ def modelo_certo():
     trelica(doc, 5000.0, 0.0, 6000.0, "T#2")
     for x in (1000.0, 3000.0, 5000.0):                  # terças nos nós
         doc.add(barra((x, 0.0, 6870.0), (x, 5000.0, 6870.0), "terça"))
+    doc.add(barra((0.0, 0.0, 6800.0), (1000.0, 5000.0, 6800.0), "contraventamento"))   # o vão travado
     return doc
 
 
@@ -101,3 +103,52 @@ def test_ponta_de_trelica_ligada_em_diagonal():
     assert len(em_diag) == 1 and em_diag[0]["peca"] == "T" and 400 <= em_diag[0]["dist_mm"] <= 600, r["achados"]
     r2 = apoios.verificar(cena(1000.0))                                # no montante de x = 1000: um nó
     assert not [a for a in r2["achados"] if a["regra"] in ("ponta_em_diagonal", "ponta_sem_apoio") and a["peca"] == "T#9"], r2["achados"]
+
+
+def test_telhado_sem_contravento():
+    doc = Documento()
+    for b in modelo_certo().barras:
+        if b.papel != "contraventamento":
+            doc.add(b)
+    r = apoios.verificar(doc)
+    assert [a["regra"] for a in r["achados"]] == ["plano_sem_contravento"], r["achados"]
+    assert r["resumo"]["planos_telhado"] == 1 and r["resumo"]["planos_travados"] == 0
+
+
+def test_trelica_por_dentro_de_outra():
+    """a treliça baixa no meio da alta, no mesmo plano: o banzo dela fica entre os banzos da outra"""
+    doc = modelo_certo()
+    trelica(doc, 0.0, 1000.0, 5000.0, "T#5", h=300.0)            # dentro da T#1 (6000 a 6800)
+    doc.add(barra((1000.0, 0.0, 6300.0), (1000.0, 0.0, 6300.0), "montante", "T#5"))
+    dentro = [a for a in apoios.verificar(doc)["achados"] if a["regra"] == "trelica_dentro"]
+    assert dentro and {a["peca"] for a in dentro} <= {"T"}, dentro
+    # empilhada (uma em cima da outra, banzo com banzo) não é "por dentro"
+    doc = modelo_certo()
+    trelica(doc, 0.0, 1000.0, 5000.0, "T#6", h=600.0)
+    for b in [b for b in doc.barras if (b.atributos["origem"] or {}).get("peca") == "T#6"]:
+        b.inicio = (b.inicio[0], b.inicio[1], b.inicio[2] + 800.0)
+        b.fim = (b.fim[0], b.fim[1], b.fim[2] + 800.0)
+    assert not [a for a in apoios.verificar(doc)["achados"] if a["regra"] == "trelica_dentro"]
+
+
+def test_pilar_fora_do_eixo_e_da_linha():
+    from nucleo3d import eixos as E
+    ex = E.de_dict({"eixo_g": [1, 0], "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6000.0}],
+                    "letras": [{"nome": "A", "pos": 0.0}, {"nome": "B", "pos": 5000.0}]})
+    segs = E.segmentos(ex)
+    assert E.onde((3000.0, 2500.0), segs) == "entre 1 e 2 / entre A e B"
+    assert E.onde((6100.0, 0.0), segs) == "eixos 2 / A"
+    doc = modelo_certo()
+    assert not apoios.verificar(doc, eixos=segs)["achados"]
+    # o pilar deslocado 35 cm do eixo 2 (a treliça continua em cima dele: fica na linha dela)
+    p = next(b for b in doc.barras if b.papel == "pilar" and b.inicio[0] == 6000.0 and b.inicio[1] == 5000.0)
+    p.inicio, p.fim = (6000.0 - 350.0, 5000.0, 0.0), (6000.0 - 350.0, 5000.0, 6000.0)
+    achs = apoios.verificar(doc, eixos=segs)["achados"]
+    fora = [a for a in achs if a["regra"] == "pilar_fora_do_eixo"]
+    assert len(fora) == 1 and fora[0]["dist_mm"] == 350 and "eixo 2" in fora[0]["texto"] and "eixo B" in fora[0]["texto"], achs
+    # deslocado 20 cm para o lado da treliça: fora da linha dela
+    doc = modelo_certo()
+    p = next(b for b in doc.barras if b.papel == "pilar" and b.inicio[0] == 6000.0 and b.inicio[1] == 5000.0)
+    p.inicio, p.fim = (6000.0, 5200.0, 0.0), (6000.0, 5200.0, 6000.0)
+    linha = [a for a in apoios.verificar(doc)["achados"] if a["regra"] == "pilar_fora_da_linha"]
+    assert len(linha) == 1 and linha[0]["dist_mm"] == 200, linha

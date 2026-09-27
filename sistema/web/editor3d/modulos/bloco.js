@@ -150,6 +150,15 @@ export class MetodosBloco {
     const nome = (ent0 && nomeDaPeca(ent0)) || peca.split('#')[0];
     const corpo = el('div', { class: 'painel-apoios-corpo' });
     corpo.append(el('p', { texto: `${ids.length} barras · ${m(r.comprimento)} m de comprimento · altura ${m(r.altura)} m (de ${m(r.zmin)} a ${m(r.zmax)} m)` }));
+    // o encaixe no vão, gravado pela montagem pela planta: a elevação entra como desenhada
+    const enc = ((ent0 && ent0.atributos && ent0.atributos.origem) || {}).encaixe;
+    if (enc && enc.vao && enc.elevacao) {
+      const dif = enc.vao - enc.elevacao;
+      const txt = Math.abs(dif) <= 50
+        ? `A elevação (${m(enc.elevacao)} m) cabe no vão da planta (${m(enc.vao)} m).`
+        : `A elevação mede ${m(enc.elevacao)} m e o vão na planta ${m(enc.vao)} m — ${m(Math.abs(dif))} m ${dif > 0 ? 'a mais no vão' : 'a menos no vão'}, nas barras das pontas.`;
+      corpo.append(el('p', { class: Math.abs(dif) > 200 ? 'bloco-encaixe atencao' : 'bloco-encaixe', texto: txt + (Math.abs(dif) > 200 ? ' Confira no projeto.' : '') }));
+    }
     const destacar = new Set(ids);
     r.pontas.forEach((pt, k) => {
       const onde = `Ponta ${k + 1} — (${m(pt.ponto[0])}; ${m(pt.ponto[1])}; ${m(pt.ponto[2])}) m ${this._eixosPerto(pt.ponto)}`.trim();

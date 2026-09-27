@@ -15,6 +15,10 @@ const REGRAS = [
   ['terca_em_balanco', 'Terça passando do último apoio'],
   ['viga_sem_apoio', 'Viga com a ponta sem apoio'],
   ['pilar_sem_carga', 'Pilar sem peça em cima'],
+  ['trelica_dentro', 'Treliça passando por dentro de outra'],
+  ['plano_sem_contravento', 'Telhado sem contravento no plano'],
+  ['pilar_fora_da_linha', 'Pilar fora da linha da peça que carrega'],
+  ['pilar_fora_do_eixo', 'Pilar fora do eixo (locação × eixos — conferir com o projeto)'],
   ['terca_fora_do_no', 'Terça fora do nó da treliça'],
 ];
 
@@ -24,7 +28,7 @@ export class MetodosApoios {
     this.dica('Conferindo os apoios…');
     let r;
     try {
-      r = await this.api.apoios(this.documento.paraJSON());
+      r = await this.api.apoios(this.documento.paraJSON(), this._eixosRef);
     } catch (e) {
       this.aviso(`Não foi possível conferir os apoios: ${e.message}`, 'erro');
       return;
@@ -61,7 +65,7 @@ export class MetodosApoios {
     for (const [regra, titulo] of REGRAS) {
       const lista = achados.filter(a => a.regra === regra);
       if (!lista.length) continue;
-      const det = el('details', { open: regra !== 'terca_fora_do_no' && lista.length <= 40 });
+      const det = el('details', { open: !['terca_fora_do_no', 'pilar_fora_do_eixo'].includes(regra) && lista.length <= 40 });
       det.append(el('summary', { texto: `${titulo} (${lista.length})` }));
       const ul = el('ul');
       for (const a of lista.slice(0, 400)) {

@@ -324,3 +324,29 @@ def test_faixa_de_trelica_vista_de_cima():
     trs, usados, faixas = de_planta._trelicas_deitadas(segs, textos, {"TRELICA 1": el}, lambda t: "TRELICA 1")
     assert len(faixas) == 1 and abs(faixas[0][4] - faixas[0][3] - 1500.0) < 5.0
     assert [t.nome for t in trs] == ["TRELICA 1"] and abs(trs[0].caminho.comprimento - 6000.0) < 5.0
+
+
+def test_encaixe_de_cada_bloco_no_vao(resultado):
+    """cada treliça entra como a elevação desenha; a diferença para o vão da planta é medida"""
+    enc = resultado["encaixe"]
+    tes = [e for e in enc if e["peca"] == "TESOURA 1"]
+    assert len(tes) == 2 and all(abs(e["vao"] - e["elevacao"]) == abs(e["dif"]) for e in tes)
+    z = resultado["resumo"]["encaixe"]
+    assert z["blocos"] == len(enc) and z["a_conferir"] == sum(1 for e in enc if e.get("a_conferir"))
+
+
+def test_baloes_encostados_um_texto_por_balao():
+    """eixos 9 e 10 do Posto CB: balões a 51 cm, o texto "10" cabe nos dois — cada um fica com o seu"""
+    ents = [{"tipo": "circulo", "camada": "Eixo", "centro": [0.0, 0.0], "raio": 246.0},
+            {"tipo": "circulo", "camada": "Eixo", "centro": [510.0, 0.0], "raio": 246.0},
+            texto((-102.0, -104.0), "9", camada="Eixo"), texto((245.0, -104.0), "10", camada="Eixo")]
+    b = de_planta.baloes(ents, (-1000.0, -1000.0, 1000.0, 1000.0))
+    assert b["9"] == (0.0, 0.0) and b["10"] == (510.0, 0.0)
+
+
+def test_avisos_dizem_os_eixos():
+    eixos = {"eixo_g": [1.0, 0.0], "numeros": [{"nome": "1", "pos": 0.0}, {"nome": "2", "pos": 6000.0}],
+             "letras": [{"nome": "A", "pos": 0.0}, {"nome": "B", "pos": 5000.0}]}
+    # coordenada do desenho (o modelo é o desenho + desl)
+    av = de_planta.avisos_pelos_eixos(["pilar P1 em (106010; 202500) a 7.5 m"], eixos, desl=(-100000.0, -200000.0))
+    assert av == ["pilar P1 em (eixo 2 / entre A e B — 6,01; 2,50 m) a 7,5 m"]

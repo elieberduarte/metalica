@@ -256,6 +256,22 @@ própria ponta, não no elemento inteiro — o banzo comprido tocava um pilar l�
 deitada). A copa do pilar em árvore fica fora das regras de ponta (é apoio, não apoiada). O nome da peça nos
 achados vem da treliça de origem antes do perfil. **Decisões gravadas** (0.8.42) valem ao montar de novo.
 
+**Verificar apoios — as regras que faltavam do Guia básico.** D3: o pilar fica na linha de alguma peça que ele
+carrega ("pilar_fora_da_linha", > 15 cm) e, com os eixos do projeto, em cima do eixo de que está perto
+("pilar_fora_do_eixo", de 10 a 60 cm — no Posto CB, 14, entre eles PM3/PM4 a 35 cm do eixo 4; é locação a conferir
+com o projetista). B4: uma treliça não passa por dentro da outra — o banzo dela entre os banzos da outra, com 15 cm
+de folga dos dois lados, longe das pontas ("trelica_dentro"; empilhada banzo com banzo não conta). A3: as treliças
+ligadas pelas terças formam um plano de telhado, que precisa de ao menos um contravento ("plano_sem_contravento";
+o resumo diz planos e planos travados). O editor manda os eixos da referência junto, e cada achado diz onde fica na
+malha ("eixo 7 / entre J e K"; `nucleo3d.eixos.onde`). **Avisos da montagem pelos eixos**: o "(x; y)" em mm do
+desenho vira "(eixo 13 / entre A e B — 50,17; 53,19 m)", na coordenada do modelo, e os metros e graus saem com
+vírgula. **Encaixe dos blocos**: cada treliça entra como a elevação desenha (sem esticar); a montagem mede a
+elevação contra o vão na planta (`encaixe` no resultado, `origem.encaixe` em cada barra) e o que passa de 20 cm
+vira aviso — no Posto CB, 122 de 162 com até 5 cm, 5 a conferir (COMP 25 com 0,44 m a menos no vão, TRANSIÇÃO 14,
+PAINEL 12, PAINEL 1, PAINEL 8). O diálogo da montagem diz o encaixe e mostra todos os avisos; o painel do bloco no
+3D diz "a elevação mede … e o vão …". **Balões encostados**: um texto por balão, do par mais perto para o mais
+longe — os eixos 9 e 10 do Posto CB (balões a 51 cm) caíam os dois na mesma linha.
+
 **0.8.42.** **O elemento treliçado é um bloco** (pedido do usuário: "selecionar uma tesoura e toda ela se
 selecionar, para ver como estão se ligando, de onde até onde"; vale para tesoura, transição, painel, treliça,
 COMP): no editor 3D o clique pega o bloco inteiro — as barras de mesma peça de origem — e Alt+clique pega uma

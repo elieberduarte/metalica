@@ -55,7 +55,7 @@ export class Api {
   /** Seção e massa de perfis que o catálogo do editor não traz (dobrados de fábrica, barras redondas…). */
   perfis(nomes) { return postar(this._r('/api/modelo/perfis'), { nomes }); }
   /** Regras de apoio do modelo: peça voando, ponta de treliça sem apoio, terça em balanço… */
-  apoios(documentoJSON) { return postar(this._r('/api/modelo/apoios'), { documento: documentoJSON }); }
+  apoios(documentoJSON, eixos) { return postar(this._r('/api/modelo/apoios'), { documento: documentoJSON, eixos: eixos || [] }); }
   analitico(documentoJSON) { return postar(this._r('/api/modelo/analitico'), { documento: documentoJSON }); }
 
   /** Malhas de um documento. `ids` limita o pedido ao que mudou. */

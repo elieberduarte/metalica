@@ -435,7 +435,7 @@ def montar(cortes: Dict[str, dict], locados: Sequence[dict], barra, nivel: float
                 if barra(p0, p1, perfil_pl, "pilar", "Pilares", None, 0.0, orig):
                     n += 1
             avisos.append("%s: montado inclinado a %.1f° pelo corte (%.2f m, chega ao nível %.2f m aos %.2f m e segue até "
-                          "%.2f m); sentido escolhido pela estrutura mais perta do topo — confira." % (
+                          "%.2f m); sentido escolhido pela estrutura mais perto do topo — confira." % (
                               nome, ang, L / 1000.0, nivel / 1000.0, (nivel - base) / math.sin(math.radians(ang)) / 1000.0, (base + dz) / 1000.0))
             continue
         if lido["tipo"] != "reto" or not lido.get("copa"):

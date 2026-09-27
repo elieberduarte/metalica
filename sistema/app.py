@@ -2493,9 +2493,12 @@ def perfis_para_o_editor(corpo: dict) -> dict:
 def verificar_apoios(corpo: dict) -> dict:
     """POST /api/modelo/apoios {documento}: as regras de apoio do modelo (nucleo3d/apoios.py) —
     peça voando, ponta de treliça sem apoio, terça em balanço ou fora do nó, pilar sem
-    carga, viga sem apoio. Cada achado traz as ids das peças para o editor mostrar."""
+    carga, viga sem apoio, pilar fora do eixo, treliça por dentro de outra, telhado sem
+    contravento. Cada achado traz as ids das peças para o editor mostrar; com {eixos} (as
+    linhas da referência), diz também onde fica na malha."""
     from nucleo3d import apoios
-    return apoios.verificar(_documento_de(corpo))
+    eixos = [e for e in (corpo.get("eixos") or []) if isinstance(e, dict) and e.get("a") and e.get("b")]
+    return apoios.verificar(_documento_de(corpo), eixos=eixos or None)
 
 
 def modelo_analitico(corpo: dict) -> dict:

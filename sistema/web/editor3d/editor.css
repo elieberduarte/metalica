@@ -782,3 +782,5 @@ dialog p.explica { margin: 0 0 10px; color: var(--texto2); font-size: 12.5px; }
 .painel-bloco { top: auto; bottom: 44px; }
 .painel-bloco .bloco-ponta { margin: 8px 0 2px; font-weight: 600; }
 .painel-bloco li.solta { color: #e5484d; cursor: default; }
+.painel-bloco .bloco-encaixe { margin: 4px 0; }
+.painel-bloco .bloco-encaixe.atencao { color: #d97706; font-weight: 600; }

@@ -130,12 +130,22 @@ export class MetodosMontarPlantaCAD {
       tabela,
       el('div', { class: 'explica', texto: `Sentido das treliças: ${o.pelas_marcas || 0} decidida(s) pelas marcas de apoio de terça (ST) da elevação, ${o.pelas_alturas || 0} pelo encontro dos banzos; as outras seguem o costume do desenho (ponta esquerda da elevação no menor x). Confira no 3D as de uma água só.` }),
     ];
+    const enc = z.encaixe;
+    if (enc && enc.blocos) itens.push(el('div', { class: 'explica' + (enc.a_conferir ? ' atencao' : ''), texto: `Encaixe dos blocos (cada treliça como a elevação desenha, sem esticar): ${enc.justos} de ${enc.blocos} com até 5 cm de diferença do vão na planta; ${enc.a_conferir ? `${enc.a_conferir} com mais de 20 cm — estão nos avisos, para conferir com o projeto` : 'nenhum com mais de 20 cm'}.` }));
     if (dif.length) itens.push(el('div', { class: 'explica atencao', texto: 'Quantidade diferente da que o título pede: ' + dif.map(c => `${c.peca} (modelo ${c.modelo}, projeto ${c.projeto})`).join('; ') + '.' }));
     const sem = Object.entries(z.nomes_sem_elevacao || {});
     if (sem.length) itens.push(el('div', { class: 'explica atencao', texto: 'Nome na planta sem elevação no desenho (ficaram de fora): ' + sem.map(([k, q]) => `${k} (${q}×)`).join(', ') + '.' }));
     for (const o of (z.outras_plantas || [])) itens.push(el('div', { class: 'explica', texto: `${o.planta}: ${o.pecas} peça(s) no nível ${numero(o.nivel / 1000, 2)} m (alinhada por ${o.baloes} balões).` }));
     if (z.planta_sem_nome) itens.push(el('div', { class: 'explica', texto: `${z.planta_sem_nome} peça(s) da planta sem nome escrito ficaram de fora.` }));
-    for (const a of (r.avisos || []).slice(0, 8)) itens.push(el('div', { class: 'explica atencao', texto: a }));
+    const avisos = r.avisos || [];
+    for (const a of avisos.slice(0, 8)) itens.push(el('div', { class: 'explica atencao', texto: a }));
+    if (avisos.length > 8) {
+      const det = el('details', { class: 'explica' }, el('summary', { texto: `… e mais ${avisos.length - 8} aviso(s)` }));
+      const ul = el('ul', { class: 'avisos-montagem' });
+      for (const a of avisos.slice(8)) ul.append(el('li', { texto: a }));
+      det.append(ul);
+      itens.push(det);
+    }
     if (r.quadro) itens.push(el('div', { class: 'explica', texto: `O quadro "PROJETO CONSIDERADO NO MODELO 3D" está no desenho, abaixo do projeto, com ${(r.quadro.grupos || []).length} grupo(s): as plantas e as elevações que viraram peça, sem o resto (camadas QUADRO …). A próxima montagem refaz o quadro.` }));
     if (r.ifc) itens.push(el('div', { class: 'explica' }, 'IFC: ', el('a', { href: r.ifc.url, download: r.ifc.nome, texto: `${r.ifc.nome} (${numero(r.ifc.tamanho_kb, 0)} kB)` })));
     if (await this.dialogo({ titulo: 'Modelo 3D montado pela planta', corpo: el('div', {}, ...itens), ok: 'Abrir o modelo 3D', cancelar: r.quadro ? 'Ver o quadro no desenho' : undefined }) === 'ok') { location.href = this.urlDoEditor(); return; }
