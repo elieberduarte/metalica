@@ -672,6 +672,7 @@ class Elevacao:
     titulo_em: Ponto2 = (0.0, 0.0)
     avisos: List[str] = field(default_factory=list)
     x_esq: float = 0.0                                          # onde começa, no desenho
+    y_base: float = 0.0                                         # eixo do banzo inferior, no desenho
     caixa: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     marcas_terca: List[float] = field(default_factory=list)     # s das marcas "ST" (suporte de terça)
     fontes: set = field(default_factory=set)                    # ids das entidades do desenho dela
@@ -817,7 +818,7 @@ def _elevacao_do_grupo(nome: str, qtd: int, segs) -> Elevacao:
     y_base = (inf.a[1] + inf.b[1]) / 2
     xs = [p[0] for c in duplas for p in (c.a, c.b)]
     x_esq, x_dir = min(xs), max(xs)
-    el = Elevacao(nome=nome, familia=nome.split()[0], qtd=qtd, comprimento=x_dir - x_esq, x_esq=x_esq)
+    el = Elevacao(nome=nome, familia=nome.split()[0], qtd=qtd, comprimento=x_dir - x_esq, x_esq=x_esq, y_base=y_base)
 
     def S(p):
         return (p[0] - x_esq, p[1] - y_base)
@@ -2207,6 +2208,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             if not p_banzo:
                 avisos.append("%s: sem a nota do banzo; ficou sem perfil." % t.nome)
                 continue
+            meio_d = t.caminho.ponto(t.caminho.comprimento / 2.0)
+            encaixe.append({"peca": _bonito(t.nome), "conjunto": conj, "vao": round(t.caminho.comprimento),
+                            "elevacao": round(el.comprimento), "dif": round(t.caminho.comprimento - el.comprimento),
+                            "ajuste": 0, "centrada": True, "deitada": True, "ponto": [round(meio_d[0]), round(meio_d[1])]})
             nx, ny = t.deitada["n"]
             W = t.deitada["largura"]
             a, b = t.caminho.a, t.caminho.b
@@ -2672,9 +2677,12 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     resumo["encaixe"] = {"blocos": len(encaixe), "justos": sum(1 for e_ in encaixe if abs(e_["dif"]) <= 50),
                          "a_conferir": sum(1 for e_ in encaixe if e_.get("a_conferir"))}
     eixos_p = eixos_da_planta(ents, caixa_p, desl)
+    from nucleo3d.trelicas_lidas import montar_lista
+    trelicas = montar_lista(ents, elevacoes, contagem, encaixe, eixos_p, float(par.get("escala") or 20.0), _bonito)
     return {"doc": doc, "resumo": resumo, "conferencia": conf, "avisos": avisos_pelos_eixos(avisos, eixos_p, desl),
             "usados": usados, "elevacoes_usadas": elevacoes_usadas,
-            "eixos": eixos_p, "niveis": niveis_do_desenho(textos, par), "encaixe": encaixe}
+            "eixos": eixos_p, "niveis": niveis_do_desenho(textos, par), "encaixe": encaixe,
+            "trelicas": trelicas}
 
 
 ENCAIXE_MAX = 200.0     # mm: diferença entre a elevação e o vão na planta que vira apontamento

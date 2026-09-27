@@ -34,6 +34,7 @@ Rotas da API:
     POST /api/projetos/<slug>/arquitetonico {arquivo, conteudo_b64, tipo, fator, escala}   arquitetônico → Planta de lançamento
     POST /api/projetos/<slug>/lancamento/{malha|eixos|estrutura|memorial}   malha de eixos, eixos da planta, lançar, memorial
     GET  /api/projetos/<slug>/lancamento[/referencia]   dados do diálogo Lançar estrutura; linhas do arquitetônico e dos eixos
+    GET  /api/projetos/<slug>/trelicas                   treliças lidas: cada elevação × o bloco que entrou (tela /trelicas)
     GET  /api/ligacoes · GET /api/ligacoes/exemplos?tipo= · POST /api/ligacoes/montar {tipo, parametros, esforcos}
                                         biblioteca de ligações e acessórios (tela /ligacoes)
     POST /api/projetos/<slug>/memorial/pdf {marca, didatico}   o memorial da peça em PDF (<projeto>/memorial/)
@@ -660,6 +661,28 @@ def gerar_3d_do_desenho(s: str, nome: str, corpo: dict) -> dict:
             "estatisticas": doc.estatisticas()}
 
 
+ARQ_TRELICAS = "trelicas-lidas.json"
+
+
+def _gravar_trelicas_lidas(s: str, dados: dict) -> None:
+    caminho = os.path.join(_gerente()._existente(s), ARQ_TRELICAS)
+    tmp = caminho + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(dados, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, caminho)
+
+
+def trelicas_lidas(s: str) -> dict:
+    """GET /api/projetos/<s>/trelicas: as elevações do projeto recebido × os blocos que a
+    montagem pela planta leu delas (nucleo3d/trelicas_lidas.py); vazio até a primeira montagem."""
+    caminho = os.path.join(_gerente()._existente(s), ARQ_TRELICAS)
+    if not os.path.exists(caminho):
+        return {"trelicas": [], "vazio": "Este projeto ainda não foi montado pela planta nesta versão: "
+                                          "no Desenho 2D, use Montar o 3D pela planta."}
+    with open(caminho, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/desenhos/<nome>/montar-pela-planta: o projeto recebido em
     DXF, sem 3D, vira modelo pela planta estrutural (nucleo3d/de_planta.py): cada linha
@@ -692,6 +715,7 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     for k in ("deitadas", "duas_pecas"):
         if k not in par and decisoes.get(k):
             par[k] = decisoes[k]
+    par.setdefault("escala", float(bruto.get("escala") or 20.0))     # altura dos textos das elevações (Treliças lidas)
     modo = str(corpo.get("modo") or "substituir")
     base = None
     if modo == "acrescentar":
@@ -707,6 +731,10 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     g.tocar(s)
     saida = {"resumo": r["resumo"], "conferencia": r["conferencia"], "avisos": r["avisos"],
              "modelo": {"entidades": len(doc.entidades), "barras": len(doc.barras)}, "modo": modo}
+    # as treliças lidas (cada elevação × o bloco que entrou): a tela /trelicas mostra
+    trel = r.get("trelicas") or []
+    _gravar_trelicas_lidas(s, {"desenho": nome, "montado_em": time.strftime("%d/%m/%Y %H:%M"), "trelicas": trel})
+    saida["trelicas"] = {"total": len(trel), "conferir": sum(1 for t in trel if t["situacao"] != "ok")}
     # os eixos (dos balões da planta) e os níveis vão para o projeto: o 3D os mostra, as
     # plantas de localização e chumbação os desenham. Eixos que o usuário gravou ficam.
     campos = {"niveis": r.get("niveis") or []}
@@ -2800,6 +2828,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(previa_de_canto(partes[0], (q.get("marca") or [""])[0], (q.get("n") or ["0"])[0]))
                 if len(partes) == 2 and partes[1] == "eixos":
                     return self._json(eixos_do_projeto(partes[0]))
+                if len(partes) == 2 and partes[1] == "trelicas":
+                    return self._json(trelicas_lidas(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":
                     q = parse_qs(urlparse(self.path).query)
                     return self._json(lista_de_materiais(partes[0], recalcular=q.get("recalcular", ["0"])[0] in ("1", "true")))
@@ -2822,6 +2852,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "memorial.html"), WEB)
             if rota in ("/ligacoes", "/acessorios"):
                 return self._arquivo(os.path.join(WEB, "ligacoes.html"), WEB)
+            if rota in ("/trelicas", "/trelicas-lidas"):
+                return self._arquivo(os.path.join(WEB, "trelicas.html"), WEB)
             if rota in ("/catalogo", "/pecas"):
                 return self._arquivo(os.path.join(WEB, "catalogo.html"), WEB)
             if rota in ("/editor", "/editor3d", "/3d"):

@@ -176,6 +176,12 @@ export class MetodosBloco {
       }
       corpo.append(ul);
     });
+    if (enc && this.projeto) {
+      // o bloco veio de uma elevação do projeto: a tela Treliças lidas a mostra ao lado do que entrou
+      const nomeEl = String(nome).replace(/ \(tesoura de cima\)$/, '');
+      corpo.append(el('p', {}, el('a', { href: '#', class: 'bloco-elevacao', texto: `Ver a elevação ${nomeEl} do projeto (Treliças lidas)`,
+        onclick: (ev) => { ev.preventDefault(); this.abrirTrelicasLidas(nomeEl); } })));
+    }
     corpo.append(el('p', { class: 'explica', texto: 'Alt+clique pega uma barra só. Esc limpa a seleção.' }));
     this._painelBloco = el('div', { class: 'painel-apoios painel-bloco' },
       el('div', { class: 'painel-apoios-titulo' },

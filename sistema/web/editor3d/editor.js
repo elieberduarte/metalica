@@ -1510,12 +1510,19 @@ export class Editor {
    * seleciona as peças com essa marca e enquadra a câmera nelas.
    */
   _destacar(spec) {
-    const m = /^(posicao|conjunto):(.+)$/.exec(String(spec || ''));
+    const m = /^(posicao|conjunto|peca):(.+)$/.exec(String(spec || ''));
     if (!m) return;
     const chave = m[1];
     const marcas = new Set(m[2].split(',').map(s => s.trim()).filter(Boolean));
+    // peca: o bloco da montagem pela planta — a cópia ("TESOURA 16#12") ou todas as cópias pelo nome
+    // do projeto ("TESOURA 16"), vindo da tela Treliças lidas
+    const daPeca = (e) => {
+      const o = (e.atributos && e.atributos.origem) || {};
+      if (!o.peca) return false;
+      return marcas.has(String(o.peca)) || marcas.has(String(o.planta || '').replace(/ \(tesoura de cima\)$/, ''));
+    };
     const ids = [...this.documento.entidades.values()]
-      .filter(e => e.atributos && e.atributos.marcas && marcas.has(String(e.atributos.marcas[chave])))
+      .filter(e => chave === 'peca' ? daPeca(e) : (e.atributos && e.atributos.marcas && marcas.has(String(e.atributos.marcas[chave]))))
       .map(e => e.id);
     if (!ids.length) { this.aviso(`Nenhuma peça com ${chave} ${[...marcas].join(', ')} no modelo.`, 'atencao'); return; }
     this.selecao.definir(ids);
@@ -1526,6 +1533,12 @@ export class Editor {
     setTimeout(() => { if (this.selecao.ids.size === ids.length) { this.camera.zoomSelecao(ids); this.cena.destacar(ids); } }, 1500);
     this.aviso(`${ids.length} peça(s) ${[...marcas].join(', ')} em destaque; o resto do modelo está esmaecido. Esc limpa a seleção e devolve o modelo; Detalhamentos volta ao CAD.`, 'info', 14000);
     const url = new URL(location.href); url.searchParams.delete('destacar'); history.replaceState(null, '', url);
+  }
+
+  /** A tela Treliças lidas do projeto (a elevação de `peca` aberta, quando vier). */
+  abrirTrelicasLidas(peca) {
+    if (!this.projeto) { this.aviso('Abra um projeto: as treliças lidas vêm da montagem pela planta dele.', 'atencao'); return; }
+    this._irPara(`/trelicas?projeto=${encodeURIComponent(this.projeto)}` + (peca ? `&peca=${encodeURIComponent(peca)}` : ''));
   }
 
   /** Navega na mesma janela depois de gravar o que estiver pendente do autosave. */
@@ -1786,6 +1799,7 @@ export class Editor {
       desempenho: () => this.dialogoDesempenho(),
       'verificar-apoios': () => this.verificarApoios(),
       esqueleto: () => this.alternarEsqueleto(),
+      'trelicas-lidas': () => this.abrirTrelicasLidas(),
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),

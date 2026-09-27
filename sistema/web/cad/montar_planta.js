@@ -130,6 +130,10 @@ export class MetodosMontarPlantaCAD {
       tabela,
       el('div', { class: 'explica', texto: `Sentido das treliças: ${o.pelas_marcas || 0} decidida(s) pelas marcas de apoio de terça (ST) da elevação, ${o.pelas_alturas || 0} pelo encontro dos banzos; as outras seguem o costume do desenho (ponta esquerda da elevação no menor x). Confira no 3D as de uma água só.` }),
     ];
+    const trl = r.trelicas;
+    if (trl && trl.total) itens.push(el('div', { class: 'explica' + (trl.conferir ? ' atencao' : '') },
+      `Treliças lidas: ${trl.total} elevação(ões), ${trl.conferir ? `${trl.conferir} com algo a conferir` : 'nada a conferir'} — `,
+      el('a', { href: `/trelicas?projeto=${encodeURIComponent(this.projeto)}`, target: '_self', texto: 'ver cada elevação ao lado do bloco que entrou' }), '.'));
     const enc = z.encaixe;
     if (enc && enc.blocos) itens.push(el('div', { class: 'explica' + (enc.a_conferir ? ' atencao' : ''), texto: `Encaixe dos blocos (cada treliça como a elevação desenha, sem esticar): ${enc.justos} de ${enc.blocos} com até 5 cm de diferença do vão na planta; ${enc.a_conferir ? `${enc.a_conferir} com mais de 20 cm — estão nos avisos, para conferir com o projeto` : 'nenhum com mais de 20 cm'}.` }));
     if (dif.length) itens.push(el('div', { class: 'explica atencao', texto: 'Quantidade diferente da que o título pede: ' + dif.map(c => `${c.peca} (modelo ${c.modelo}, projeto ${c.projeto})`).join('; ') + '.' }));

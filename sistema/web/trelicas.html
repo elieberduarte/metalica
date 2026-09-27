@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101b2e">
+<script src="/tema-janela.js"></script>
+<script src="/atualizacao.js" defer></script>
+<title>Treliças lidas — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M4 22 L28 22 L16 10 Z M10 22 L16 10 L22 22' fill='none' stroke='%23fff' stroke-width='2'/></svg>">
+<style>
+  .trelicas { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 18px; max-width: 1600px; margin: 0 auto; padding: 16px 22px 60px; }
+  @media (max-width: 960px) { .trelicas { grid-template-columns: 1fr; } }
+  .indice { position: sticky; top: 62px; align-self: start; max-height: calc(100vh - 80px); overflow: auto; background: var(--painel);
+            border: 1px solid var(--borda); border-radius: var(--raio); padding: 10px 10px 14px; }
+  .indice .resumo { font-size: 12.5px; color: var(--texto2); margin: 0 4px 8px; line-height: 1.4; }
+  .indice input[type=search] { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 6px 9px; margin-bottom: 6px;
+            border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); }
+  .indice label.filtro { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--texto2); margin: 0 4px 4px; cursor: pointer; }
+  .indice h3 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto3); margin: 12px 4px 4px; }
+  .indice button { display: flex; width: 100%; text-align: left; gap: 7px; align-items: center; font: inherit; font-size: 13px; padding: 5px 8px;
+            border: 0; border-radius: var(--raio-p); background: none; color: var(--texto); cursor: pointer; }
+  .indice button:hover { background: var(--azul-fraco); }
+  .indice button.ativo { background: var(--azul); color: #fff; }
+  .indice button .pt { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--verde); }
+  .indice button .pt.conferir { background: #d97706; }
+  .indice button .n { margin-left: auto; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--painel2); color: var(--texto3); border: 1px solid var(--borda); white-space: nowrap; }
+  .indice button.ativo .n { background: rgba(255,255,255,.2); color: #fff; border-color: transparent; }
+  .detalhe h2 { font-size: 21px; margin: 2px 0 4px; color: var(--texto); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .detalhe h2 .sub { font-size: 14px; font-weight: 400; color: var(--texto2); }
+  .etiquetas { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+  .etiquetas span { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--borda); background: var(--painel2); color: var(--texto2); }
+  .pendencias { padding: 8px 14px; border-left: 3px solid #d97706; background: color-mix(in srgb, #d97706 10%, transparent);
+            border-radius: var(--raio-p); margin: 0 0 12px; font-size: 13.5px; }
+  .pendencias ul { margin: 4px 0 0; padding-left: 18px; }
+  .tudo-ok { padding: 8px 14px; border-left: 3px solid var(--verde); background: var(--verde-fundo); border-radius: var(--raio-p); margin: 0 0 12px; font-size: 13.5px; }
+  .caixa { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 12px 14px; box-shadow: var(--sombra); margin: 0 0 14px; }
+  .caixa h3 { font-size: 13px; margin: 0 0 8px; color: var(--azul); text-transform: uppercase; letter-spacing: .04em; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .caixa h3 .acoes { margin-left: auto; display: flex; gap: 6px; text-transform: none; letter-spacing: 0; }
+  .caixa h3 .acoes button { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid var(--borda); border-radius: var(--raio-p); background: var(--painel2); color: var(--texto); cursor: pointer; }
+  .caixa h3 .acoes button.ativo { background: var(--azul); color: #fff; border-color: var(--azul); }
+  .figura { background: var(--painel2); border-radius: var(--raio-p); padding: 8px; margin: 0 0 8px; }
+  .figura .rotulo { font-size: 12px; color: var(--texto2); margin: 0 0 4px; }
+  .figura svg { width: 100%; height: auto; max-height: 460px; display: block; }
+  .legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--texto2); }
+  .legenda i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+  table.tab { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table.tab th, table.tab td { border: 1px solid var(--borda); padding: 4px 7px; text-align: left; vertical-align: top; }
+  table.tab th { background: var(--painel2); font-weight: 600; color: var(--texto); }
+  table.tab td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.tab tr.conferir td { background: color-mix(in srgb, #d97706 9%, transparent); }
+  table.tab a { color: var(--azul2); }
+  .avisos { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--texto2); }
+  .avisos li { margin: 3px 0; }
+  .vazio { color: var(--texto3); font-size: 13px; padding: 10px 0; }
+  svg.elev * { vector-effect: non-scaling-stroke; }
+  svg.elev .orig { stroke: var(--texto2); stroke-width: 1; fill: none; }
+  svg.elev .orig-tx { fill: var(--texto2); font-family: Arial, sans-serif; }
+  svg.elev.sobreposto .orig { stroke: var(--texto3); opacity: .55; }
+  svg.elev.sobreposto .orig-tx { fill: var(--texto3); opacity: .55; }
+  svg.elev .banzo { stroke: var(--azul); stroke-width: 3; stroke-linecap: round; }
+  svg.elev .montante { stroke: #16a34a; stroke-width: 2.2; stroke-linecap: round; }
+  svg.elev .diagonal { stroke: #d97706; stroke-width: 2.2; stroke-linecap: round; }
+  svg.elev .base { stroke: var(--verm); stroke-width: .8; stroke-dasharray: 8 4; }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 23 L28 23 L16 9 Z M10 23 L16 9 L22 23" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    <h1>Treliças lidas<span id="nome-projeto">projeto</span></h1>
+  </div>
+  <div class="acoes">
+    <button type="button" id="btn-voltar" title="Volta para a tela anterior">&larr; Voltar</button>
+    <button type="button" id="btn-3d" title="Abrir o modelo 3D do projeto">Modelo 3D</button>
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" onclick="location.href='/'" title="Voltar à lista de projetos">Projetos</button>
+  </div>
+</header>
+
+<main class="trelicas">
+  <nav class="indice" id="indice" aria-label="Elevações">
+    <p class="resumo" id="resumo">Carregando…</p>
+    <input type="search" id="busca" placeholder="Procurar: TESOURA 16, painel…" aria-label="Procurar treliça">
+    <label class="filtro"><input type="checkbox" id="so-conferir"> só as que têm algo a conferir</label>
+    <div id="lista"></div>
+  </nav>
+  <section class="detalhe" id="detalhe"><p class="vazio">Carregando as treliças lidas…</p></section>
+</main>
+
+<script src="/trelicas.js"></script>
+<script src="/versao.js" defer></script>
+<script src="/vivo.js"></script>
+</body>
+</html>

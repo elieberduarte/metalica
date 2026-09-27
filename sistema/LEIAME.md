@@ -225,7 +225,7 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
-**0.8.43 (em desenvolvimento).** **Modo de desenvolvimento** (`dev.py`, `app.py --dev`, atalho "Metálica
+**0.8.43.** **Modo de desenvolvimento** (`dev.py`, `app.py --dev`, atalho "Metálica
 (desenvolvimento)"): porta 8766, os mesmos projetos do instalado, faixa laranja e "[DEV]" no título, sem oferta de
 atualização, reinício automático ao mudar um `.py` (o vigia passa `--reaberto`, e o servidor espera a janela que já
 está aberta em vez de abrir outra), rótulo "código novo — recarregar (F5)" quando js/html/css mudam no disco
@@ -270,7 +270,17 @@ elevação contra o vão na planta (`encaixe` no resultado, `origem.encaixe` em 
 vira aviso — no Posto CB, 122 de 162 com até 5 cm, 5 a conferir (COMP 25 com 0,44 m a menos no vão, TRANSIÇÃO 14,
 PAINEL 12, PAINEL 1, PAINEL 8). O diálogo da montagem diz o encaixe e mostra todos os avisos; o painel do bloco no
 3D diz "a elevação mede … e o vão …". **Balões encostados**: um texto por balão, do par mais perto para o mais
-longe — os eixos 9 e 10 do Posto CB (balões a 51 cm) caíam os dois na mesma linha.
+longe — os eixos 9 e 10 do Posto CB (balões a 51 cm) caíam os dois na mesma linha. **Tela Treliças lidas**
+(`/trelicas?projeto=…`, `web/trelicas.html`/`.js`, `nucleo3d/trelicas_lidas.py`, `GET /api/projetos/<s>/trelicas`): cada
+elevação do projeto recebido ao lado do bloco que a montagem leu dela — o desenho do projetista (tudo o que está na
+moldura: linhas, arcos, textos, cotas; sem o título da elevação vizinha) e as barras lidas no mesmo referencial (s ao
+longo do banzo inferior, h acima dele), lado a lado ou uma sobre a outra; o título × o modelo; e cada cópia colocada,
+pelos eixos, com o encaixe no vão e o atalho "ver no 3D" (`/editor?destacar=peca:TESOURA 16#12`, ou pelo nome para
+todas as cópias). O índice marca em laranja o que tem algo a conferir (quantidade diferente do título, cópia com mais de
+20 cm de diferença, elevação que não entrou, sem nota do banzo). A montagem pela planta grava `trelicas-lidas.json` no
+projeto; a tela abre pelo diálogo da montagem, por Ver → Treliças lidas… no 3D e pelo painel do bloco ("Ver a
+elevação … do projeto"). No Posto CB: 122 elevações, 7 a conferir — além dos 5 encaixes, PAINEL 4 (o título pede 2, a
+planta tem 1) e TESOURA 1A (o nome não aparece na planta). Verificador `verif_trelicas_ui`.
 
 **0.8.42.** **O elemento treliçado é um bloco** (pedido do usuário: "selecionar uma tesoura e toda ela se
 selecionar, para ver como estão se ligando, de onde até onde"; vale para tesoura, transição, painel, treliça,

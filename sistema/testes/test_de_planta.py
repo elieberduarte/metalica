@@ -350,3 +350,18 @@ def test_avisos_dizem_os_eixos():
     # coordenada do desenho (o modelo é o desenho + desl)
     av = de_planta.avisos_pelos_eixos(["pilar P1 em (106010; 202500) a 7.5 m"], eixos, desl=(-100000.0, -200000.0))
     assert av == ["pilar P1 em (eixo 2 / entre A e B — 6,01; 2,50 m) a 7,5 m"]
+
+
+def test_trelicas_lidas_cada_elevacao_com_o_desenho_e_as_copias(resultado):
+    """a tela Treliças lidas: a elevação no referencial dela (s, h), o desenho do projetista na
+    mesma moldura e as cópias colocadas, com os eixos"""
+    tl = {t["nome"]: t for t in resultado["trelicas"]}
+    t = tl["TESOURA 1"]
+    assert t["qtd_projeto"] == 2 and t["no_modelo"] == 2 and t["situacao"] in ("ok", "conferir")
+    assert t["membros"] and all(len(m) == 6 for m in t["membros"])
+    assert min(min(m[1], m[3]) for m in t["membros"]) >= -1 and max(max(m[1], m[3]) for m in t["membros"]) <= t["comprimento"] + 1
+    assert any(d["t"] == "x" and d["s"].startswith("TESOURA 1") for d in t["desenho"])        # o título dela
+    assert not any(d["t"] == "x" and d["s"].startswith("PAINEL 1 -") for d in t["desenho"])   # não o de outra
+    # (o desenho de teste não tem as linhas dos eixos: "onde" fica vazio e a tela mostra a coordenada)
+    assert len(t["colocadas"]) == 2 and all("onde" in c and len(c["ponto"]) == 2 for c in t["colocadas"])
+    assert "PAINEL 1" in tl
