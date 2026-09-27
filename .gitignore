@@ -5,6 +5,8 @@ __pycache__/
 
 # Dados de clientes e arquivos recebidos (não publicar)
 Projeto/
+# normas da ABNT (direitos autorais): só para consulta local
+Normas/
 *.ifc
 !sistema/testes/dados_ifc/*.ifc
 
