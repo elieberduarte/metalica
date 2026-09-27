@@ -447,7 +447,8 @@ def analitico(doc, base: Optional[float] = None) -> dict:
             if n0 == n1:
                 continue
             barras.append({"a": n0, "b": n1, "papel": ln["papel"], "peca": ln["peca"], "perfil": ln["perfil"],
-                           "ids": ln["ids"], "duplo": ln["duplo"], "importada": bool(ln.get("importada"))})
+                           "ids": ln["ids"], "duplo": ln["duplo"], "importada": bool(ln.get("importada")),
+                           "deitada": bool(ln.get("deitada"))})
 
     # --- 5. o que sobrou sem ligar
     gr = collections.Counter()

@@ -148,7 +148,7 @@ function caixaVento() {
 
 function caixaMezanino() {
   const mz = DADOS.mezanino;
-  const cx = el('div', { class: 'caixa' }, el('h3', { texto: 'Mezanino — piso' }));
+  const cx = el('div', { class: 'caixa' }, el('h3', { texto: 'Mezanino e passarela — cargas de uso' }));
   if (!mz) { cx.append(el('p', { class: 'vazio', texto: 'O modelo não tem a camada Mezanino.' })); return cx; }
   cx.append(el('p', { class: 'mem' }, 'Barrotes do piso achados: ', el('b', { texto: (mz.barrotes || []).join(', ') || '—' }),
     ` — ${num(mz.area_m2, 0)} m² de faixa. O projeto não escreve estas cargas: informe o peso do piso (painel, contrapiso) e a sobrecarga de uso (NBR 6120:2019, pelo uso do mezanino).`));
@@ -156,8 +156,14 @@ function caixaMezanino() {
   const sc = el('input', { type: 'number', step: '0.25', min: '0', id: 'mz-sc', value: mz.sobrecarga ?? '', placeholder: 'kN/m²', style: 'width:110px' });
   cx.append(el('div', { class: 'campos' }, el('label', { for: 'mz-peso', texto: 'Peso do piso (kN/m²)' }), peso,
     el('label', { for: 'mz-sc', texto: 'Sobrecarga de uso (kN/m²)' }), sc));
-  cx.append(el('button', { type: 'button', class: 'botao-p', texto: 'Calcular com o mezanino',
-    onclick: () => calcular({ cargas: { mezanino_peso: peso.value, mezanino_sobrecarga: sc.value } }) }));
+  const ps = DADOS.passarela;
+  const scp = el('input', { type: 'number', step: '0.25', min: '0', id: 'ps-sc', value: ps && ps.sobrecarga != null ? ps.sobrecarga : '', placeholder: 'kN/m²', style: 'width:110px' });
+  if (ps) {
+    cx.append(el('p', { class: 'mem', texto: `Passarela (treliça deitada): ${num(ps.area_m2, 0)} m² de piso.` }),
+      el('div', { class: 'campos' }, el('label', { for: 'ps-sc', texto: 'Sobrecarga da passarela (kN/m²)' }), scp));
+  }
+  cx.append(el('button', { type: 'button', class: 'botao-p', texto: 'Calcular com estas cargas',
+    onclick: () => calcular({ cargas: { mezanino_peso: peso.value, mezanino_sobrecarga: sc.value, passarela_sobrecarga: scp.value } }) }));
   return cx;
 }
 
@@ -178,7 +184,7 @@ function caixaDetalhe() {
   const tab = el('table', { class: 'tab' }, el('tr', {}, ['Caso', 'Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'].map(t => el('th', { texto: t }))));
   const desc = {};
   for (const c of (DADOS.vento ? DADOS.vento.casos : [])) desc[c.caso] = c.descricao;
-  Object.assign(desc, { PP: 'peso próprio', CP: 'telha, forro, painéis e piso do mezanino', SC: 'sobrecarga da cobertura', AG: 'água das caixas', SM: 'sobrecarga do mezanino' });
+  Object.assign(desc, { PP: 'peso próprio', CP: 'telha, forro, painéis e piso do mezanino', SC: 'sobrecarga da cobertura', AG: 'água das caixas', SM: 'sobrecarga do mezanino', SP: 'sobrecarga da passarela' });
   for (const [c, v] of Object.entries(p.reacoes_kN)) {
     tab.append(el('tr', { title: desc[c] || '' }, el('td', { texto: c }), ...v.map((x, k) => el('td', { class: 'r', texto: num(k < 3 ? tf(x) : tf(x), 2) }))));
   }

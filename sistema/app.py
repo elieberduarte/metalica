@@ -1530,7 +1530,7 @@ def esforcos_do_projeto(s: str, corpo: Optional[dict] = None, recalcular: bool =
     # as cargas que o projeto não escreve (o piso do mezanino): informadas na tela, gravadas no projeto
     extras = dict(proj.get("esforcos_cargas") or {})
     novas_c = {k: (None if v in (None, "") else float(v)) for k, v in ((corpo or {}).get("cargas") or {}).items()
-               if k in ("mezanino_peso", "mezanino_sobrecarga")}
+               if k in ("mezanino_peso", "mezanino_sobrecarga", "passarela_sobrecarga")}
     extras.update(novas_c)
     car = esforcos.cargas_do_projeto(proj)
     car.update({k: v for k, v in extras.items() if v is not None})
@@ -1549,7 +1549,7 @@ def esforcos_do_projeto(s: str, corpo: Optional[dict] = None, recalcular: bool =
              "resumo": {k: (float(v) if isinstance(v, float) else v) for k, v in r["resumo"].items()},
              "cargas": r["cargas"], "avisos": r["avisos"], "hipoteses": esforcos.hipoteses(r),
              "planta": r["planta"], "cargas_sem_pilar": r["cargas_sem_pilar"], "parametros_vento": par,
-             "mezanino": r.get("mezanino")}
+             "mezanino": r.get("mezanino"), "passarela": r.get("passarela")}
     if novos:
         g._atualizar(s, esforcos_parametros=par)
     if novas_c:

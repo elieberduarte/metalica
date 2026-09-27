@@ -42,6 +42,7 @@ CARGAS_PADRAO = {
     "sobrecarga": 0.25,      # NBR 8800, B.5.1: cobertura comum, projeção horizontal
     "mezanino_peso": None,   # kN/m²: o piso do mezanino (painel, contrapiso) — sem valor, fora
     "mezanino_sobrecarga": None,  # kN/m²: a sobrecarga de uso do mezanino (NBR 6120) — sem valor, fora
+    "passarela_sobrecarga": None,  # kN/m²: a passarela (treliça deitada) — sem valor, fora
 }
 PISO_LARGURA_MAX = 1.5       # m: barrote do piso — vigas paralelas até esta faixa, em grupo
 PISO_MIN_BARROTES = 5
@@ -364,6 +365,10 @@ def hipoteses(r: dict) -> List[str]:
         h.append("Mezanino: piso %s kN/m² (permanente) e sobrecarga %s kN/m² (variável, ψ0 0,7) nos barrotes %s — %.0f m², "
                  "cada um com a faixa até a meia distância dos vizinhos." % (
                      mz.get("peso"), mz.get("sobrecarga"), ", ".join(mz.get("barrotes") or []), mz.get("area_m2") or 0))
+    ps = r.get("passarela") or {}
+    if ps.get("sobrecarga"):
+        h.append("Passarela de manutenção (a treliça deitada): sobrecarga %s kN/m² em %.0f m², meia largura para cada banzo; "
+                 "o piso de chapa expandida não entra no peso." % (ps["sobrecarga"], ps.get("area_m2") or 0))
     if r.get("caixas_dagua"):
         h.append("Caixas d'água: volume × 10 kN/m³ (NBR 6120:2019, Tabela A.1) nos nós das vigas embaixo de cada uma, "
                  "como ação variável (γ 1,5; ψ0 0,8).")
@@ -385,7 +390,7 @@ def combinacoes_ultimas(casos: List[str]) -> List[dict]:
     pag = C.PSI[next(k for k in C.PSI if k.startswith("dep"))][0]                  # 0,8 (água: como depósito)
     perm = {"PP": gpp, "CP": gcp}
     pmz = C.PSI["comercial"][0]                                                    # 0,7 (mezanino)
-    grav = [(c, g, p) for c, g, p in (("SC", gsc, psc), ("AG", gsc, pag), ("SM", gsc, pmz)) if c in casos]
+    grav = [(c, g, p) for c, g, p in (("SC", gsc, psc), ("AG", gsc, pag), ("SM", gsc, pmz), ("SP", gsc, psc)) if c in casos]
     vs = [c for c in casos if c.startswith("V")]
     out = []
     for vento in [None] + vs:
@@ -538,6 +543,23 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
                         casos[caso][ia[i] * 6 + 2] -= f
                         casos[caso][ib[i] * 6 + 2] -= f
 
+    # --- a passarela: a treliça deitada, com a faixa entre os dois banzos (meia largura para cada)
+    memoria_passarela = None
+    dei = [e for e in usadas if barras[e].get("deitada") and barras[e]["papel"] == "banzo"]
+    if dei:
+        w_p = _larguras(nos, dei, barras)
+        area_p = sum(w * float(np.hypot(d[pos[e]][0], d[pos[e]][1])) for e, w in w_p.items())
+        memoria_passarela = {"area_m2": round(area_p, 1), "sobrecarga": car.get("passarela_sobrecarga")}
+        if car.get("passarela_sobrecarga"):
+            casos["SP"] = np.zeros(ndof)
+            for e, w in w_p.items():
+                i = pos[e]
+                f = car["passarela_sobrecarga"] * w * float(np.hypot(d[i][0], d[i][1])) / 2
+                casos["SP"][ia[i] * 6 + 2] -= f
+                casos["SP"][ib[i] * 6 + 2] -= f
+        else:
+            avisos.append("passarela sem sobrecarga (%.0f m² de treliça deitada): informe a carga de uso" % area_p)
+
     # --- a água das caixas desenhadas nas outras plantas (a base da caixa d'água), nos nós das
     # vigas e banzos daquele nível embaixo de cada caixa
     caixas = ((doc.metadados or {}).get("de_planta") or {}).get("caixas_dagua") or []
@@ -641,7 +663,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         vals = [(sum(f * rz.get(c, 0.0) for c, f in cb["fatores"].items()), cb["nome"]) for cb in combs]
         mx, mn = max(vals), min(vals)
         p["envoltoria_kN"] = {"max": round(mx[0], 2), "max_comb": mx[1], "min": round(mn[0], 2), "min_comb": mn[1]}
-        p["caracteristico_kN"] = round(rz["PP"] + rz["CP"] + rz["SC"] + rz.get("AG", 0.0) + rz.get("SM", 0.0), 2)
+        p["caracteristico_kN"] = round(rz["PP"] + rz["CP"] + rz["SC"] + sum(rz.get(c, 0.0) for c in ("AG", "SM", "SP")), 2)
 
     # --- esforços nas barras (N, Vy, Vz, T, My, Mz nas duas pontas, eixos locais), por caso
     Ue = U[gl]                                             # (n, 12, casos)
@@ -670,6 +692,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         "vento": memoria_vento,
         "caixas_dagua": memoria_caixas,
         "mezanino": memoria_piso,
+        "passarela": memoria_passarela,
         "combinacoes": combs,
         "avisos": avisos,
         "_U": U, "_casos": list(casos),

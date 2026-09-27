@@ -145,3 +145,21 @@ def test_piso_do_mezanino_pelos_barrotes():
     assert area == pytest.approx(0.48 * 5 * 3.0, rel=0.05)                  # 5 vãos de 0,48 m × 3 m
     assert r["casos"]["SM"]["carga_kN"] == pytest.approx(2.0 * area, rel=1e-3) and r["casos"]["SM"]["erro"] < 1e-6
     assert any(c["nome"] == "ELU[SM]" for c in r["combinacoes"])
+
+
+def test_sobrecarga_da_passarela_na_trelica_deitada():
+    # a passarela: treliça deitada de 6 m e 1,5 m de largura, presa pela lateral no banzo de baixo
+    # da treliça do pórtico (a 100 mm dele), no mesmo nível
+    doc = modelo()
+    for y in (-100.0, -1600.0):
+        b = barra((0.0, y, 6000.0), (6000.0, y, 6000.0), "banzo", "P#9")
+        b.atributos["origem"]["sentido"] = "deitada: a planta desenha a treliça vista de cima"
+        doc.add(b)
+    for x in (0.0, 3000.0, 6000.0):
+        m = barra((x, -100.0, 6000.0), (x, -1600.0, 6000.0), "montante", "P#9")
+        m.atributos["origem"]["sentido"] = "deitada"
+        doc.add(m)
+    sem = esforcos.calcular(doc)
+    assert sem["passarela"]["area_m2"] == pytest.approx(9.0, rel=0.05) and any("passarela sem" in a for a in sem["avisos"])
+    r = esforcos.calcular(doc, {"passarela_sobrecarga": 1.0})
+    assert r["casos"]["SP"]["carga_kN"] == pytest.approx(9.0, rel=0.05) and r["casos"]["SP"]["erro"] < 1e-6
