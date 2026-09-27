@@ -432,3 +432,18 @@ def test_sentido_pelo_cruzamento_na_emenda():
     assert r["pelo_cruzamento"] == 1 and t2.sentido_por == "cruzamento na emenda"
     # a ponta esquerda da elevação (s = 0) na ponta sul (y = 9708)
     assert abs(t2.caminho.ponto(de_planta._s_na_planta(t2, 0.0))[1] - 9708.0) < 1.0
+
+
+def test_pilar_vai_para_a_secao_da_planta():
+    """a planta estrutural desenha a seção do pilar (os dois U de 400 × 200, costas com costas) a
+    0,72 m de onde a locação o põe: vale a planta (os três PM6 do Posto CB), com aviso"""
+    def u(x0, y0, y1):
+        return {"tipo": "polilinha", "camada": "metalica4", "fechada": False,
+                "vertices": [[x0 + 50, y0], [x0, y0], [x0, y1], [x0 + 400, y1], [x0 + 400, y0], [x0 + 350, y0]]}
+    ents = [u(1000.0, 5000.0, 5200.0), u(1000.0, 5000.0, 4800.0)]           # centro (1200; 5000)
+    locados = [{"x": 500.0, "y": 4840.0, "nome": "PM6(400X200X50X3,75)", "perfil": "Ue 400×200×50×3,75"},
+               {"x": 9000.0, "y": 9000.0, "nome": "PM3(200X70X20X2,65)", "perfil": "Ue 200×70×20×2,65"}]
+    avisos = []
+    assert de_planta._pilares_pela_planta(ents, (0.0, 0.0, 20000.0, 20000.0), locados, avisos) == 1
+    assert (round(locados[0]["x"]), round(locados[0]["y"])) == (1200, 5000) and "pela_planta" in locados[0]
+    assert (locados[1]["x"], locados[1]["y"]) == (9000.0, 9000.0) and len(avisos) == 1

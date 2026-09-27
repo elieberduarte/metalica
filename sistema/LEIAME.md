@@ -245,7 +245,11 @@ sobre o cruzamento, e ele vale antes do "encontro dos banzos" (`orientar`: `_jun
 emenda de 250 mm ficavam em y ≈ 16,6 m, e a TRANSIÇÃO 1 (y = 19,45 m, contínua na planta) atravessava a lateral da
 tesoura; agora a emenda cai em 19,32–19,57 m, o espaço que a planta deixa na linha delas, e a TRANSIÇÃO 1 passa no
 centro da tesoura. Terças fora do nó 125 → 121. As curvas de 90° nos cantos da planta (6, sem nome) ficam de fora: o
-usuário confirmou que são um detalhe descontinuado.
+usuário confirmou que são um detalhe descontinuado. **Pilar no lugar que a planta estrutural desenha**
+(`_pilares_pela_planta`; print do usuário: "deslocar um pouco para o lado"): quando a planta desenha a seção do pilar
+(o retângulo com as medidas do perfil, ou os dois U costas com costas) a menos de 1,2 m do lugar da locação, vale a da
+planta — é nela que as treliças apoiam —, com aviso e `origem.a_conferir`. No Posto CB, os três PM6 (a copa em cruz vai
+junto) andaram 0,72 m para o cruzamento das treliças; encaixes justos 123 → 125, pilares fora do eixo 14 → 13.
 
 **0.8.45.** **Área de trabalho do projeto** (`/dividida?projeto=…&vista=2d|3d|ambos`, pedido do
 usuário: "a transição entre 2D, 3D e 2D+3D muda o menu superior… e ao sair do 2D para o 3D ele renderiza o modelo todas

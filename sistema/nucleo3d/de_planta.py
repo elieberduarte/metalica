@@ -2187,6 +2187,62 @@ def _pontas_da_terca(a: Ponto2, b: Ponto2, polis_tr, caixas_tr, tol: float = 300
     return s0, s1, cruz
 
 
+def _pilares_pela_planta(ents, caixa_p, locados: List[dict], avisos: List[str], raio: float = 1200.0) -> int:
+    """O pilar que a planta estrutural desenha (a seção dele — o retângulo com as medidas do perfil,
+    onde as treliças se cruzam) perto do lugar da locação, mas fora dele: vale o da planta, que é
+    onde a estrutura apoia. A diferença entre os dois desenhos vira aviso para o projetista (os três
+    PM6 do Posto CB: a locação os põe a 0,72 m da seção 400 × 200 da planta de 6,00 m). Devolve
+    quantos mudaram."""
+    if not locados:
+        return 0
+    CEL = 2000.0
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    for e in ents:
+        if e["tipo"] != "polilinha" or not (4 <= len(e["vertices"]) <= 8):
+            continue                     # a seção: o retângulo, ou o U (aberto) de cada perfil
+        if _ANOT.search(str(e.get("camada", ""))) or not _dentro(_pt(e), caixa_p):
+            continue
+        xs = [v[0] for v in e["vertices"]]
+        ys = [v[1] for v in e["vertices"]]
+        w, h = max(xs) - min(xs), max(ys) - min(ys)
+        if 100.0 <= min(w, h) and max(w, h) <= 900.0:
+            c = ((max(xs) + min(xs)) / 2.0, (max(ys) + min(ys)) / 2.0)
+            grade[(int(c[0] // CEL), int(c[1] // CEL))].append((c, w, h, (min(xs), min(ys), max(xs), max(ys))))
+    mudou = 0
+    for pl in locados:
+        pa = _perfil(pl.get("perfil"))
+        if pa is None or not pa.d or not pa.bf:
+            continue
+        d_, bf = float(pa.d), float(pa.bf)
+        x, y = pl["x"], pl["y"]
+        achados = []
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for c, w, h, cx in grade.get((int(x // CEL) + dx, int(y // CEL) + dy), []):
+                    if not ((abs(w - d_) <= 40.0 and abs(h - bf) <= 40.0) or (abs(w - bf) <= 40.0 and abs(h - d_) <= 40.0)):
+                        continue
+                    if math.dist(c, (x, y)) < raio:
+                        achados.append((math.dist(c, (x, y)), cx))
+        if not achados:
+            continue
+        # o mais perto e os que ficam junto dele (os dois U do perfil desenhados costas com costas)
+        achados.sort()
+        base = achados[0][1]
+        grupo = [cx for _d, cx in achados if cx[0] <= base[2] + 30.0 and cx[2] >= base[0] - 30.0
+                 and cx[1] <= base[3] + 30.0 and cx[3] >= base[1] - 30.0]
+        c = ((min(g[0] for g in grupo) + max(g[2] for g in grupo)) / 2.0, (min(g[1] for g in grupo) + max(g[3] for g in grupo)) / 2.0)
+        dd = math.dist(c, (x, y))
+        if dd < 40.0:
+            continue
+        pl["x"], pl["y"] = c
+        pl["pela_planta"] = "posição: a locação e a planta estrutural diferem em %.2f m; ficou a da planta" % (dd / 1000.0)
+        avisos.append("pilar %s em (%.0f; %.0f): a locação o põe a %.2f m da seção que a planta estrutural desenha; "
+                      "ficou no lugar da planta, onde as treliças apoiam — confira com o projetista." % (
+                          pl["nome"], c[0], c[1], dd / 1000.0))
+        mudou += 1
+    return mudou
+
+
 def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: List[str]) -> List[dict]:
     """os pilares da locação: cada nome "PM3(200X70X20X2,65)" casado com a placa de base (ou,
     sem placa, com a seção do perfil) — posição já trazida para a planta estrutural"""
@@ -2319,6 +2375,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     avisar("pilares da locação…")
     caixa_l, desl_l = outra_planta(par.get("locacao"))
     locados = _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados["locacao"], avisos) if caixa_l else []
+    _pilares_pela_planta(ents, caixa_p, locados, avisos)
     # os pilares com corte próprio ("PM6 - 3X", "PM8 - 1X"): a forma deles vem do corte
     from nucleo3d import pilares_corte
     cortes_pm = pilares_corte.ler_cortes_de_pilar(ents, textos)
@@ -2609,6 +2666,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         em_cima = [nv for u, nv in todos_trechos if u.caminho.projetar((x, y))[1] < 600.0]
         longe = 0.0 if em_cima else min((u.caminho.projetar((x, y))[1] for u, _nv in todos_trechos), default=0.0)
         orig = {"locacao": pl["nome"]}
+        if pl.get("pela_planta"):
+            orig["a_conferir"] = pl["pela_planta"]
         topo_p = max(em_cima) if em_cima else nivel
         if longe > 600.0:
             # não há treliça nem viga da planta estrutural em cima dele: é de outra
