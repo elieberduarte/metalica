@@ -2049,8 +2049,39 @@ def orientar(trechos: List[Trecho], linhas_terca=None,
                 t.invertida = not t.invertida
         if not mudou:
             break
+    # as marcas ST erram na treliça curta (poucas marcas, quase simétricas): a decidida por elas
+    # que fica com o banzo de cima desencontrado das vizinhas (> 150 mm em cada encontro) e,
+    # invertida, se encontra com elas (< 50 mm), vira — a TESOURA 20 do Posto CB começava baixa
+    # na cumeeira, colada na TESOURA 18 que chega alta ali
+    # só as vizinhas na mesma linha (a continuação do banzo); a que cruza na ponta (a transição
+    # que passa na cumeeira) é outra estrutura, de outra altura
+    def na_linha(t, u):
+        if t.caminho.tipo != "reta" or u.caminho.tipo != "reta":
+            return False
+        (tx, ty), _ = _unit(t.caminho.a, t.caminho.b)
+        (ux_, uy_), _ = _unit(u.caminho.a, u.caminho.b)
+        return abs(tx * uy_ - ty * ux_) < 0.1
+
+    def custo_linha(t, viz) -> float:
+        return sum(min(abs(ht - hu), 600.0) for p, u in viz
+                   for ht, hu in [(_altura_no_ponto(t, p), _altura_no_ponto(u, p))] if ht is not None and hu is not None)
+    contra_marcas = []
+    for t in ts_alt:
+        viz = [(p, u) for p, u in vizinhos[id(t)] if na_linha(t, u)]
+        n_v = len(viz)
+        if not n_v or t.sentido_por != "marcas ST":
+            continue
+        c0 = custo_linha(t, viz)
+        t.invertida = not t.invertida
+        c1 = custo_linha(t, viz)
+        if c0 / n_v > 150.0 and c1 / n_v < 50.0:
+            t.sentido_por = "encontro dos banzos (contra as marcas ST)"
+            contra_marcas.append((_bonito(t.nome), round(c0 / n_v), t.caminho.ponto(t.caminho.comprimento / 2.0)))
+        else:
+            t.invertida = not t.invertida
     resto = [custo(t) / max(1, len(vizinhos[id(t)])) for t in ts_alt if vizinhos[id(t)]]
     return {"trelicas": len(ts), "pelas_marcas": pelas_marcas, "pelo_cruzamento": pelo_cruzamento, "pelas_alturas": trocas,
+            "contra_as_marcas": contra_marcas,
             "desencontro_medio_mm": round(sum(resto) / len(resto), 1) if resto else 0.0}
 
 
@@ -2760,6 +2791,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             eixos_t = [(_mv(c.a), _mv(c.b)) for c in ret_t]
             eixos_t_ids = [next(iter(c.fontes), None) if c.fontes else None for c in ret_t]
     ori = orientar(trechos, eixos_t)
+    for nome_t, dif, meio_t in ori.pop("contra_as_marcas", []):
+        avisos.append("%s em (%.0f; %.0f): as marcas ST da elevação davam o sentido com o banzo de cima %d mm "
+                      "desencontrado das treliças vizinhas; ficou virada, encontrando com elas — confira."
+                      % (nome_t, meio_t[0], meio_t[1], dif))
     ori["ajustadas_aos_nos"] = ajustar_aos_nos(trechos, eixos_t)
 
     doc = doc or Documento(nome=str(par.get("nome") or "Modelo pela planta"))
