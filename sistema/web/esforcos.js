@@ -139,10 +139,25 @@ function caixaVento() {
   cx.append(el('div', { class: 'campos' }, el('label', { texto: 'Categoria do terreno', for: 'categoria' }), cat,
     el('label', { texto: 'Grupo (S3)', for: 'grupo' }), gr));
   const bt = el('button', { type: 'button', class: 'botao-p', texto: 'Calcular de novo' });
-  bt.addEventListener('click', () => calcular({ categoria: cat.value, grupo: Number(gr.value) }));
+  bt.addEventListener('click', () => calcular({ vento: { categoria: cat.value, grupo: Number(gr.value) } }));
   cx.append(bt, el('span', { class: 'mem', texto: `  cálculo de ${DADOS.calculado_em} (${num(DADOS.segundos, 1)} s, v${DADOS.versao})` }));
   const casos = el('ul', { class: 'lista' }, v.casos.map(c => el('li', { texto: `${c.caso}: ${c.descricao} — ${num(c.para_cima_kN / TF, 0)} tf para cima` })));
   cx.append(el('details', {}, el('summary', { class: 'mem', texto: `os ${v.casos.length} casos de vento` }), casos));
+  return cx;
+}
+
+function caixaMezanino() {
+  const mz = DADOS.mezanino;
+  const cx = el('div', { class: 'caixa' }, el('h3', { texto: 'Mezanino — piso' }));
+  if (!mz) { cx.append(el('p', { class: 'vazio', texto: 'O modelo não tem a camada Mezanino.' })); return cx; }
+  cx.append(el('p', { class: 'mem' }, 'Barrotes do piso achados: ', el('b', { texto: (mz.barrotes || []).join(', ') || '—' }),
+    ` — ${num(mz.area_m2, 0)} m² de faixa. O projeto não escreve estas cargas: informe o peso do piso (painel, contrapiso) e a sobrecarga de uso (NBR 6120:2019, pelo uso do mezanino).`));
+  const peso = el('input', { type: 'number', step: '0.05', min: '0', id: 'mz-peso', value: mz.peso ?? '', placeholder: 'kN/m²', style: 'width:110px' });
+  const sc = el('input', { type: 'number', step: '0.25', min: '0', id: 'mz-sc', value: mz.sobrecarga ?? '', placeholder: 'kN/m²', style: 'width:110px' });
+  cx.append(el('div', { class: 'campos' }, el('label', { for: 'mz-peso', texto: 'Peso do piso (kN/m²)' }), peso,
+    el('label', { for: 'mz-sc', texto: 'Sobrecarga de uso (kN/m²)' }), sc));
+  cx.append(el('button', { type: 'button', class: 'botao-p', texto: 'Calcular com o mezanino',
+    onclick: () => calcular({ cargas: { mezanino_peso: peso.value, mezanino_sobrecarga: sc.value } }) }));
   return cx;
 }
 
@@ -163,7 +178,7 @@ function caixaDetalhe() {
   const tab = el('table', { class: 'tab' }, el('tr', {}, ['Caso', 'Fx', 'Fy', 'Fz', 'Mx', 'My', 'Mz'].map(t => el('th', { texto: t }))));
   const desc = {};
   for (const c of (DADOS.vento ? DADOS.vento.casos : [])) desc[c.caso] = c.descricao;
-  Object.assign(desc, { PP: 'peso próprio', CP: 'telha, forro, painéis', SC: 'sobrecarga', AG: 'água das caixas' });
+  Object.assign(desc, { PP: 'peso próprio', CP: 'telha, forro, painéis e piso do mezanino', SC: 'sobrecarga da cobertura', AG: 'água das caixas', SM: 'sobrecarga do mezanino' });
   for (const [c, v] of Object.entries(p.reacoes_kN)) {
     tab.append(el('tr', { title: desc[c] || '' }, el('td', { texto: c }), ...v.map((x, k) => el('td', { class: 'r', texto: num(k < 3 ? tf(x) : tf(x), 2) }))));
   }
@@ -212,7 +227,7 @@ function montar() {
        el('span', {}, el('i', { style: `background:${COR.laranja}` }), '1,2 a 2'), el('span', {}, el('i', { style: `background:${COR.verm}` }), 'mais que o dobro'),
        el('span', {}, el('i', { style: `background:${COR.cinza}` }), 'sem carga na locação'), el('span', { texto: '· o tamanho é a compressão ELU' })]
     : el('span', { texto: MODO === 'compressao' ? 'O tamanho é a maior compressão das combinações últimas.' : 'O tamanho é o maior arrancamento (combinações de levantamento com o vento).' })));
-  const lateral = el('div', {}, caixaDetalhe(), caixaVento());
+  const lateral = el('div', {}, caixaDetalhe(), caixaVento(), caixaMezanino());
   raiz.append(el('div', { class: 'linha2' }, cxPlanta, lateral));
   const filtro = el('label', { class: 'filtro' }, el('input', { type: 'checkbox', checked: SO_DESTOAM || undefined,
     onchange: (ev) => { SO_DESTOAM = ev.target.checked; montar(); } }), 'só os que destoam da locação (fora de 0,5 a 1,2)');
@@ -236,12 +251,12 @@ function escolher(i, rolar) {
   else { const d = $('#detalhe'); if (d) d.scrollIntoView({ block: 'nearest' }); }
 }
 
-async function calcular(vento) {
+async function calcular(corpo) {
   const raiz = $('#principal');
   raiz.classList.add('ocupado');
   document.body.style.cursor = 'progress';
   try {
-    DADOS = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/esforcos`, vento ? { vento } : {});
+    DADOS = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/esforcos`, corpo || {});
     montar();
   } catch (e) {
     alert(`Não foi possível calcular: ${e.message}`);

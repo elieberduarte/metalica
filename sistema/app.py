@@ -1527,8 +1527,15 @@ def esforcos_do_projeto(s: str, corpo: Optional[dict] = None, recalcular: bool =
     par = dict(proj.get("esforcos_parametros") or {})
     novos = {k: v for k, v in ((corpo or {}).get("vento") or {}).items() if v not in (None, "")}
     par.update(novos)
+    # as cargas que o projeto não escreve (o piso do mezanino): informadas na tela, gravadas no projeto
+    extras = dict(proj.get("esforcos_cargas") or {})
+    novas_c = {k: (None if v in (None, "") else float(v)) for k, v in ((corpo or {}).get("cargas") or {}).items()
+               if k in ("mezanino_peso", "mezanino_sobrecarga")}
+    extras.update(novas_c)
+    car = esforcos.cargas_do_projeto(proj)
+    car.update({k: v for k, v in extras.items() if v is not None})
     t0 = time.time()
-    r = esforcos.calcular(doc, esforcos.cargas_do_projeto(proj), vento=par)
+    r = esforcos.calcular(doc, car, vento=par)
     ex = _eixos.de_dict(proj.get("eixos"))
     segs = _eixos.segmentos(ex) if ex else []
     pilares = []
@@ -1541,9 +1548,12 @@ def esforcos_do_projeto(s: str, corpo: Optional[dict] = None, recalcular: bool =
              "caixas_dagua": r["caixas_dagua"], "combinacoes": r["combinacoes"],
              "resumo": {k: (float(v) if isinstance(v, float) else v) for k, v in r["resumo"].items()},
              "cargas": r["cargas"], "avisos": r["avisos"], "hipoteses": esforcos.hipoteses(r),
-             "planta": r["planta"], "cargas_sem_pilar": r["cargas_sem_pilar"], "parametros_vento": par}
+             "planta": r["planta"], "cargas_sem_pilar": r["cargas_sem_pilar"], "parametros_vento": par,
+             "mezanino": r.get("mezanino")}
     if novos:
         g._atualizar(s, esforcos_parametros=par)
+    if novas_c:
+        g._atualizar(s, esforcos_cargas=extras)
     _gravar_json(arq, saida)
     return saida
 

@@ -122,3 +122,26 @@ def test_vento_levanta_a_cobertura_e_entra_nas_combinacoes():
     assert "ELU[SC]" in nomes and "ELU[V1]-levantamento" in nomes
     p = r["pilares"][0]
     assert p["envoltoria_kN"]["min"] < 0 < p["envoltoria_kN"]["max"]         # arrancamento e compressão
+
+
+def test_piso_do_mezanino_pelos_barrotes():
+    # quatro pilares de 3 m, duas vigas em x a y = 0 e 3000, seis barrotes em y a cada 600 mm
+    doc = Documento()
+    for x in (0.0, 3000.0):
+        for y in (0.0, 3000.0):
+            doc.add(barra((x, y, 0.0), (x, y, 3000.0), "pilar", perfil="W 200×19,3"))
+    for y in (0.0, 3000.0):
+        v = barra((0.0, y, 3000.0), (3000.0, y, 3000.0), "viga", perfil="W 200×19,3")
+        v.camada = "Mezanino"
+        doc.add(v)
+    for k in range(6):
+        b = barra((300.0 + 480.0 * k, 0.0, 3000.0), (300.0 + 480.0 * k, 3000.0, 3000.0), "viga", perfil="Ue 150×70×20×2,65")
+        b.camada = "Mezanino"
+        doc.add(b)
+    sem = esforcos.calcular(doc)
+    assert sem["mezanino"]["barrotes"] == ["Ue 150×70×20×2,65"] and any("mezanino sem carga" in a for a in sem["avisos"])
+    r = esforcos.calcular(doc, {"mezanino_peso": 0.3, "mezanino_sobrecarga": 2.0})
+    area = r["mezanino"]["area_m2"]
+    assert area == pytest.approx(0.48 * 5 * 3.0, rel=0.05)                  # 5 vãos de 0,48 m × 3 m
+    assert r["casos"]["SM"]["carga_kN"] == pytest.approx(2.0 * area, rel=1e-3) and r["casos"]["SM"]["erro"] < 1e-6
+    assert any(c["nome"] == "ELU[SM]" for c in r["combinacoes"])
