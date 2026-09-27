@@ -736,9 +736,17 @@ dialog p.explica { margin: 0 0 10px; color: var(--texto2); font-size: 12.5px; }
   .nome-modelo input { width: 130px; }
 }
 @media (max-width: 900px) {
-  .paineis { display: none; }
   .nome-modelo { display: none; }
 }
+
+/* painéis da direita recolhíveis (web/area.js): a aba na borda, Ver → Painéis laterais, F4 */
+.area { position: relative; }
+html.sem-paineis .paineis { display: none; }
+.aba-paineis { position: absolute; top: 10px; right: var(--larg-paineis); z-index: 30; width: 16px; height: 46px; padding: 0;
+               border: 1px solid var(--borda); border-right: 0; border-radius: 6px 0 0 6px; background: var(--painel);
+               color: var(--texto2); cursor: pointer; font-size: 12px; line-height: 1; opacity: .8; }
+.aba-paineis:hover { opacity: 1; color: var(--texto); background: var(--painel2, var(--painel)); }
+html.sem-paineis .aba-paineis { right: 0; }
 
 /* dois links de volta no topo: projetos e dimensionamento */
 .topo a.voltar[hidden] { display: none; }

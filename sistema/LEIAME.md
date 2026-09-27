@@ -238,7 +238,10 @@ lado que mudou; o que não é 2D nem 3D (materiais, análise, memorial) sai da �
 enxutas na metade da tela (o nome da tela só no ícone, busca que encolhe, Tema/Escala/Fechar escondidos). O 2D
 escondido não pinta (canvas de tamanho zero). **Montante de ponta em U** gira pela largura desenhada (a aba: alma
 atravessada, abas para o meio da treliça — a ponta do caixão da TRANSIÇÃO 1) e pela direção da treliça. **Seletor do
-desenho** da tela dividida no padrão escuro.
+desenho** da tela dividida no padrão escuro. **Painéis da direita recolhíveis** (Propriedades, Camadas, Snap… no 2D;
+Propriedades, Camadas, Materiais… no 3D): a aba na borda do painel, Ver → Esconder os painéis laterais e F4, em cada
+tela; na área de trabalho, o botão "Painéis" da barra de fora esconde ou mostra os dois lados. A escolha fica guardada
+por tela (e à parte dentro da área, onde o espaço é metade); sem escolha, a janela estreita (< 900 px) começa sem eles.
 
 **0.8.44.** **Tela dividida 2D + 3D** (`/dividida?projeto=…`, `web/dividida.html`/`.js`,
 `web/editor3d/modulos/divisao.js`; pedido do usuário: "dividir a visualização entre 2D e 3D no mesmo quadro, vai

@@ -31,6 +31,64 @@
     window.location.href = url;
   };
 
+  // ---------------------------------------------------------- painéis da direita recolhíveis
+  // (Propriedades, Camadas, Snap… no 2D; Propriedades, Camadas, Materiais… no 3D). A escolha fica
+  // guardada por tela — e à parte dentro da área de trabalho, onde o espaço é metade
+  function ligarPaineis() {
+    var aside = document.getElementById('paineis');
+    var area = aside && aside.parentElement;
+    if (!aside || !area || document.querySelector('.aba-paineis')) return;
+    var tela = location.pathname.indexOf('/cad') === 0 || location.pathname === '/desenho' ? '2d' : '3d';
+    var chave = 'metalica.paineis.' + tela + (embutida ? '.area' : '');
+    var oculto = null;
+    try { oculto = localStorage.getItem(chave); } catch (e) { oculto = null; }
+    oculto = oculto === null ? window.innerWidth < 900 : oculto === '1';
+    var aba = document.createElement('button');
+    aba.type = 'button';
+    aba.className = 'aba-paineis';
+    area.appendChild(aba);
+    var itemMenu = null;
+    function aplicar(guardar) {
+      document.documentElement.classList.toggle('sem-paineis', oculto);
+      aba.textContent = oculto ? '‹' : '›';
+      aba.title = (oculto ? 'Mostrar' : 'Esconder') + ' os painéis da direita (F4)';
+      aba.setAttribute('aria-label', aba.title);
+      if (itemMenu) itemMenu.textContent = (oculto ? 'Mostrar' : 'Esconder') + ' os painéis laterais';
+      if (guardar) { try { localStorage.setItem(chave, oculto ? '1' : '0'); } catch (e) { /* sem armazenamento */ } }
+    }
+    window.metalicaPaineis = function (mostrar) {
+      oculto = mostrar === undefined ? !oculto : !mostrar;
+      aplicar(true);
+      return !oculto;
+    };
+    aba.addEventListener('click', function () { window.metalicaPaineis(); });
+    // Ver → Esconder os painéis laterais
+    var lista = document.querySelector('.menu[data-menu="ver"] .menu-lista');
+    if (lista) {
+      itemMenu = document.createElement('button');
+      itemMenu.type = 'button';
+      itemMenu.title = 'Propriedades, camadas e os outros painéis da direita (F4)';
+      itemMenu.addEventListener('click', function () {
+        window.metalicaPaineis();
+        var m = itemMenu.closest('.menu'); if (m) m.classList.remove('aberto');
+      });
+      lista.insertBefore(itemMenu, lista.firstChild);
+    }
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'F4' || ev.ctrlKey || ev.altKey || ev.metaKey) return;
+      ev.preventDefault();
+      window.metalicaPaineis();
+    });
+    // a área de trabalho manda mostrar ou esconder (o botão "Painéis" da barra de fora)
+    window.addEventListener('message', function (ev) {
+      if (ev.origin !== location.origin || !ev.data || ev.data.metalica !== 'paineis') return;
+      window.metalicaPaineis(!!ev.data.mostrar);
+    });
+    aplicar(false);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ligarPaineis);
+  else ligarPaineis();
+
   if (embutida) {
     // os links internos que levam ao 2D ou ao 3D também passam pela área
     document.addEventListener('click', function (ev) {

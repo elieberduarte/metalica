@@ -149,6 +149,17 @@ try:
     aba.avaliar("document.querySelector('.vistas button[data-vista=\"ambos\"]').click(); 1"); aba.drenar(0.5)
     txt = aba.avaliar(f"({F3}.document.querySelector('#btn-salvar') || {{}}).textContent || ''") or ""
     ok(txt.startswith("✓ Salvo") or txt.startswith("● Salvar"), f"o 3D tem o botão Salvar com o estado da gravação ({txt})")
+    # os painéis da direita: o botão "Painéis" da área esconde os dois lados; a aba de cada lado devolve
+    antes = [aba.avaliar(f"{F}.document.documentElement.classList.contains('sem-paineis')") for F in (F2, F3)]
+    aba.avaliar("document.querySelector('#btn-paineis').click(); 1"); aba.drenar(0.6)
+    depois = [aba.avaliar(f"{F}.document.documentElement.classList.contains('sem-paineis')") for F in (F2, F3)]
+    ok(depois[0] == depois[1] and depois != antes or depois == [True, True],
+       f"o botão Painéis esconde (ou mostra) os painéis dos dois lados: {antes} → {depois}")
+    larg = aba.avaliar(f"{F3}.document.querySelector('#paineis').offsetWidth") if depois[1] else None
+    ok(not depois[1] or larg == 0, f"escondido, o painel do 3D some de verdade (largura {larg})")
+    aba.avaliar(f"{F3}.document.querySelector('.aba-paineis').click(); 1"); aba.drenar(0.4)
+    ok(aba.avaliar(f"{F3}.document.documentElement.classList.contains('sem-paineis')") != depois[1],
+       "a aba na borda do 3D alterna o painel dele")
     # a tela sozinha ganha o seletor de vista, que leva à área de trabalho
     aba.navegar(base + "/cad?projeto=posto&desenho=desenho", limite=60)
     t0 = time.time()
@@ -156,6 +167,13 @@ try:
     sel = aba.avaliar("[...document.querySelectorAll('.seletor-vista a')].map(a => a.textContent + (a.classList.contains('ativo') ? '*' : '') + '=' + a.getAttribute('href'))") or []
     ok(len(sel) == 3 and sel[0].startswith("2D*") and "/dividida?projeto=posto&vista=3d" in sel[1],
        f"o 2D sozinho tem o seletor 2D | 3D | 2D + 3D ({sel})")
+    tinha = aba.avaliar("document.documentElement.classList.contains('sem-paineis')")
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="F4", code="F4", windowsVirtualKeyCode=115)
+    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="F4", code="F4", windowsVirtualKeyCode=115)
+    aba.drenar(0.3)
+    ok(aba.avaliar("document.documentElement.classList.contains('sem-paineis')") != tinha
+       and "painéis laterais" in (aba.avaliar("[...document.querySelectorAll('.menu[data-menu=ver] .menu-lista button')].map(b => b.textContent).join('|')") or ""),
+       "no 2D sozinho, F4 alterna os painéis e Ver tem o item dos painéis laterais")
     alt = aba.avaliar("[...document.querySelectorAll('header.topo > *')].filter(e => e.offsetParent !== null && e.getBoundingClientRect().height > 46).map(e => e.className || e.id)") or []
     ok(not alt, f"a barra do 2D não quebra linha ({alt})")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]

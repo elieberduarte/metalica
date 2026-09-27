@@ -152,6 +152,16 @@ function doDoisD(m) {
 
 async function iniciar() {
   for (const b of document.querySelectorAll('.vistas button')) b.addEventListener('click', () => mostrarVista(b.dataset.vista));
+  // os painéis da direita dos dois lados de uma vez: segue o estado do lado que está à vista
+  $('#btn-paineis').addEventListener('click', () => {
+    let visiveis = true;
+    for (const id of ['f3d', 'f2d']) {
+      try { const d = $('#' + id).contentDocument; if (d && d.querySelector('#paineis') && $('#' + id).offsetParent) { visiveis = !d.documentElement.classList.contains('sem-paineis'); break; } }
+      catch (e) { /* quadro ainda carregando */ }
+    }
+    para2d({ metalica: 'paineis', mostrar: !visiveis });
+    para3d({ metalica: 'paineis', mostrar: !visiveis });
+  });
   $('#btn-trocar').addEventListener('click', () => { pref.trocado = !pref.trocado; aplicarLayout(); guardar(); });
   $('#seguir').addEventListener('change', () => { pref.seguir = $('#seguir').checked; guardar(); if (!pref.seguir) para2d({ metalica: 'enquadrar2d', caixa: null }); });
   for (const b of document.querySelectorAll('.grupo-modo button')) {
