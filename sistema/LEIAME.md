@@ -225,7 +225,7 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
-**0.8.47 (em desenvolvimento).** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
+**0.8.47.** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
 print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e
 as regras de apoio não mudam), e a peça termina antes — `recorte_inicio`/`recorte_fim` da barra, que o 3D, o IFC e o
 Detalhar já descontam: a quina da ponta reta da cantoneira (ou do U) fica 10 mm fora da face do banzo, pela seção
@@ -249,6 +249,27 @@ usuário: "a transição 3 está estranha"): no vão da emenda TRANSIÇÃO 2 | 3
 em corte — os lados dela entravam como montantes 2L soltos nas duas partes; agora saem, os U de ponta das tesouras de
 cima (sobre a TRANSIÇÃO 1) ficam como U 200×100, e a ponta da viga da TRANSIÇÃO 3/6, que perdeu uma das linhas do U
 para o lado da treliça em corte, ganha o U de ponta de volta.
+
+**Esforços na estrutura inteira** (`nucleo3d/esforcos.py`, primeiro passo da frente de esforços): cada barra do
+esqueleto é uma barra de pórtico espacial (12 graus de liberdade, nós rígidos, matriz esparsa pelo scipy — o Posto
+CB tem ~29 mil graus e resolve em ~2 s), com os casos PP (kg/m do perfil), CP (telha, forro e painéis) e SC
+(sobrecarga) chegando pelas terças, cada uma com a faixa até a meia distância das vizinhas. O pé do pilar é rotulado,
+e engastado onde a locação dá momento; a parte sem caminho até um pilar fica de fora, com aviso. As reações saem
+por pilar, ao lado das cargas que a locação escreve: a montagem pela planta agora lê embaixo do nome de cada pilar o
+"7,0tf" ou o bloco "Fz/Fx/Fy/MX/My" (o bloco sem nome — a outra placa do PM8 — vai para a placa livre mais perto) e
+grava em `metadados.de_planta.cargas_locacao` (82 blocos, 515,9 tf no Posto CB). O cálculo mostrou dois defeitos do
+esqueleto, corrigidos: a ponta da treliça (fim do banzo, só com o montante da própria peça) não descia ao pilar a
+8 cm dela — agora desce, levando as barras dela; e a terça com a corrente presa na ponta não descia mais ao banzo (a
+ponta só conta como apoiada se chega nela uma peça em que ela apoia). **As folhas do projeto recebido**
+(`nucleo2d/folhas_recebidas.py`; Desenho 2D → "Ler folhas e considerações de cálculo do DXF…"; rota
+`projeto-recebido`): o espaço do papel do DXF (os layouts), que a importação não lia — número, título e formato de
+cada folha, carimbo (cliente, obra, local, responsável, revisão), as considerações de cálculo (cargas em kgf/m² e o
+vento), as normas e os materiais —, gravado no projeto em `projeto_recebido`; o cliente, o local e o responsável vêm
+do carimbo quando estão vazios, e o cálculo de esforços parte dessas cargas (`esforcos.cargas_do_projeto`). No
+Posto CB: 15 folhas, Maringá-PR, telha 5 / forro 15 / sobrecarga 25 / painéis 17 kgf/m², V0 45 m/s → 179 tf
+característicos na cobertura (a locação soma 514 tf: faltam vento, mezanino e caixa d'água). **Pesquisa de peças**
+pelo nome do projeto (TRANSIÇÃO 8, TESOURA 3B, PM6…), sem olhar acento, no 3D e na tela Treliças lidas; a caixa
+MEDIDAS do Desenho 2D no tema escuro.
 
 **0.8.46.** **Conferência seletiva antes de publicar** (`testes/selecao.py`, pedido do
 usuário: a completa levava ~20 min a cada versão; "as demais obras já estão fechadas, em produção"): o pytest roda
