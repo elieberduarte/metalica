@@ -2017,6 +2017,28 @@ def _largura_do_perfil(w: float, nome: Optional[str]) -> bool:
     return False
 
 
+def _giro_da_alma_em_u(q0, q1, q_meio, tangente, largura: float, nome: Optional[str]) -> float:
+    """O giro (graus, o de `geometria.base_local`) da barra de alma em U vista com a `largura` na
+    elevação: com a largura da aba, as abas apontam ao longo da treliça, para o meio dela (a alma
+    atravessada, fechando a ponta — o montante de ponta da TRANSIÇÃO 1 do Posto CB); com a da
+    alma, as abas apontam para fora do plano (a alma no plano da treliça)."""
+    from nucleo3d.geometria import base_local
+    pa = _perfil(nome)
+    tx, ty = tangente
+    d = (q1[0] - q0[0], q1[1] - q0[1], q1[2] - q0[2])
+    if pa is not None and pa.bf and pa.d and abs(largura - float(pa.bf)) <= abs(largura - float(pa.d)):
+        meio = ((q0[0] + q1[0]) / 2.0, (q0[1] + q1[1]) / 2.0)
+        sinal = 1.0 if (q_meio[0] - meio[0]) * tx + (q_meio[1] - meio[1]) * ty >= 0.0 else -1.0
+        f = (tx * sinal, ty * sinal, 0.0)                 # as abas: para o meio da treliça
+    else:
+        f = (-ty, tx, 0.0)                                # as abas: para fora do plano
+    u, v, w = base_local(d, 0.0)
+    fw = f[0] * w[0] + f[1] * w[1] + f[2] * w[2]          # só a parte de f perpendicular ao eixo
+    f = (f[0] - fw * w[0], f[1] - fw * w[1], f[2] - fw * w[2])
+    return round(math.degrees(math.atan2(f[0] * v[0] + f[1] * v[1] + f[2] * v[2],
+                                         f[0] * u[0] + f[1] * u[1] + f[2] * u[2])) % 360.0, 1)
+
+
 def _meio_caixao(nome: Optional[str]) -> float:
     """do eixo do caixão (a junta das bocas) ao eixo de cada U: a aba menos a distância da alma ao
     centroide (Ue 250×70: 70 − 19 = 51 mm)"""
@@ -2390,6 +2412,12 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     else:
                         # rotação 90 leva as abas do U para cima (banzo de baixo); 270, para baixo
                         rot = (270.0 if (m.h0 + m.h1) / 2 > meio_h else 90.0) if m.papel == "banzo" else 0.0
+                        if m.papel != "banzo" and dupla and perfil == p_banzo:
+                            # a barra da alma no perfil do banzo (o montante de ponta em U): a largura
+                            # desenhada diz a face que se vê — a aba (alma atravessada ao plano, abas para
+                            # dentro da treliça, fechando a ponta) ou a alma (no plano da treliça)
+                            (qm, _) = P(el.comprimento / 2.0, (m.h0 + m.h1) / 2.0)
+                            rot = _giro_da_alma_em_u(q0, q1, qm, c.tangente((s0p + s1p) / 2.0), m.altura_linha, perfil)
                         barra(q0, q1, perfil, papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o})
 
         # vigas
