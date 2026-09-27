@@ -242,7 +242,13 @@ vista lateral (agora vale o rótulo de texto maior) e montava só a perna da pla
 TRANSIÇÃO 16, solta. Agora a outra perna nasce na outra placa (no plano da TRANSIÇÃO 16, chega no nó com a
 TRANSIÇÃO 1, como a "VISTA NO PILAR INCLINADO PM8" desenha) e as travessas ligam as duas (0,71; 6,82; 8,41 m);
 pilar sem carga 2 → 0. A origem das peças do corte levava a quantidade do último corte lido ("PM8 - 3X"): agora a do
-próprio corte.
+próprio corte. As duas Ue de cada perna (e das travessas) ficam de boca uma para a outra, formando o tubo, como o
+banzo em caixão (print do usuário: "as bocas precisam estar viradas uma pra outra"); a travessa com a seção no plano
+das pernas, de face a face delas. **A treliça que passa desenhada em corte na emenda** (`_limpar_emenda`; print do
+usuário: "a transição 3 está estranha"): no vão da emenda TRANSIÇÃO 2 | 3 (e 5 | 6) a elevação desenha a TRANSIÇÃO 1
+em corte — os lados dela entravam como montantes 2L soltos nas duas partes; agora saem, os U de ponta das tesouras de
+cima (sobre a TRANSIÇÃO 1) ficam como U 200×100, e a ponta da viga da TRANSIÇÃO 3/6, que perdeu uma das linhas do U
+para o lado da treliça em corte, ganha o U de ponta de volta.
 
 **0.8.46.** **Conferência seletiva antes de publicar** (`testes/selecao.py`, pedido do
 usuário: a completa levava ~20 min a cada versão; "as demais obras já estão fechadas, em produção"): o pytest roda

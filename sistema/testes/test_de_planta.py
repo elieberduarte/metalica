@@ -514,3 +514,24 @@ def test_camada_de_cada_outra_planta():
     assert de_planta.camada_da_outra("COBERTURA DA CX DÁGUA NIVEL 11,00", 11000.0, 6000.0) == "Caixa d'água 11,00"
     assert de_planta.camada_da_outra("PLANTA NO NÍVEL 9,00", 9000.0, 6000.0) == "Nível 9,00"
     assert de_planta.camada_da_outra("PLANTA NO NÍVEL 3,17m", 3170.0, 6000.0, "Mezanino da loja") == "Mezanino da loja"
+
+
+def test_emenda_com_a_trelica_que_passa_em_corte():
+    """a junta TRANSIÇÃO 2 | 3 do Posto CB: no vão da emenda (9647–9864) a elevação desenha a
+    TRANSIÇÃO 1 em corte (lados de −50 a 1410) e, em cima dela, os U de ponta das tesouras (1550 a
+    2350); a ponta da viga da TRANSIÇÃO 3 perdeu uma das linhas do U para o lado da treliça em corte"""
+    M = de_planta.Membro
+    el = de_planta.Elevacao(nome="TRANSICAO 2", familia="TRANSICAO", qtd=1, comprimento=16625.0)
+    el.banzo = {"perfil": "U 200×100×6,35 (FF)", "mult": 1}
+    el.membros = [M(0, 0, 9614, 0, "banzo"), M(9898, 0, 16625, 0, "banzo"), M(0, 700, 9614, 700, "banzo"),
+                  M(9898, 700, 16625, 700, "banzo"), M(1697, 1001, 9647, 2301, "banzo"), M(9864, 2301, 16625, 1001, "banzo"),
+                  M(9564, -111, 9564, 750, "montante", 100.0),                   # o U da viga da TRANSIÇÃO 2
+                  M(9658, 90, 9658, 1410, "montante"), M(9622, -50, 9622, 1410, "montante"),   # a TRANSIÇÃO 1 em corte
+                  M(9855, 90, 9855, 1410, "montante"), M(9890, -50, 9890, 1410, "montante"),
+                  M(9689, 1550, 9689, 2350, "montante"), M(9873, 1550, 9873, 2350, "montante"),  # os U em cima
+                  M(9998, 50, 9998, 650, "montante"),                              # a linha que sobrou do U da viga
+                  M(12000, 0, 12000, 700, "montante")]
+    assert de_planta._limpar_emenda(el, 9647.0, 9864.0) == 4
+    em_pe = sorted((round(m.s0), round(m.h0), round(m.h1), m.altura_linha) for m in el.membros if m.papel == "montante")
+    assert em_pe == [(9564, -111, 750, 100.0), (9689, 1550, 2350, 100.0), (9873, 1550, 2350, 100.0),
+                     (9948, 0, 700, 100.0), (12000, 0, 700, 0.0)]

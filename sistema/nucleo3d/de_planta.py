@@ -2146,6 +2146,8 @@ def _separar_nas_emendas(ents, caixa_p, elevacoes: Dict[str, "Elevacao"], avisos
 
 def _dividir(el: "Elevacao", partes, k: int, nome_novo: str, qtd: int, elevacoes, avisos) -> None:
     """a parte k da elevação vira a peça `nome_novo`; a elevação fica com a outra"""
+    _limpar_emenda(el, partes[0][1], partes[1][0])
+
     def pedaco(a_, b_):
         out = []
         for m in el.membros:
@@ -2174,6 +2176,57 @@ def _dividir(el: "Elevacao", partes, k: int, nome_novo: str, qtd: int, elevacoes
                _bonito(nome_novo), (b_n - a_n) / 1000.0, qtd))
     el.avisos.append(msg)
     nova.avisos.append(msg)
+
+
+def _limpar_emenda(el: "Elevacao", esq: float, dir_: float) -> int:
+    """O vão da emenda entre as duas peças desenhadas juntas (TRANSIÇÃO 2 | 3 do Posto CB): ali a
+    elevação desenha a treliça que passa (a TRANSIÇÃO 1) em corte — os lados dela, em pé, que começam
+    embaixo e passam da viga, não são alma de nenhuma das duas partes e saem; em cima dela, os U de
+    ponta das tesouras (costas com costas), que a leitura tomava por cantoneira, ficam como U; e a
+    ponta da viga de cada parte fica com o seu montante em U (a linha dupla da largura da aba), quando
+    uma das linhas dele se juntou ao lado da treliça em corte. Devolve quantas linhas saíram."""
+    pb = _perfil((el.banzo or {}).get("perfil"))
+    bf = float(pb.bf) if pb is not None and pb.bf else 100.0
+    banzos = [m for m in el.membros if m.papel == "banzo"]
+    retos = [m for m in banzos if abs(m.h1 - m.h0) < 30.0 and abs(m.s1 - m.s0) > 400.0]
+    base = min((min(m.h0, m.h1) for m in retos), default=0.0)
+    meio = sorted({round((m.h0 + m.h1) / 2.0) for m in retos if (m.h0 + m.h1) / 2.0 > base + 100.0})
+    if not meio:
+        return 0
+    h_viga = float(meio[0])                                   # o banzo de cima da viga de transição
+
+    def em_pe(m):
+        return m.papel != "banzo" and abs(m.s1 - m.s0) < 30.0
+
+    def s_de(m):
+        return (m.s0 + m.s1) / 2.0
+    no_vao = [m for m in el.membros if em_pe(m) and esq - 60.0 <= s_de(m) <= dir_ + 60.0]
+    corte = [m for m in no_vao if min(m.h0, m.h1) < h_viga + 100.0 and max(m.h0, m.h1) > h_viga + 300.0]
+    if not corte:
+        return 0
+    h_sec = max(max(m.h0, m.h1) for m in corte)
+    for m in no_vao:
+        if min(m.h0, m.h1) >= h_sec - 60.0:
+            m.altura_linha = bf                               # o U de ponta da tesoura, em cima da que passa
+    fora = {id(m) for m in corte}
+    # a ponta da viga de cada parte: o U de ponta (a linha dupla da largura da aba)
+    novos = []
+    fim_esq = max((max(m.s0, m.s1) for m in retos if max(m.s0, m.s1) <= esq + 60.0), default=None)
+    ini_dir = min((min(m.s0, m.s1) for m in retos if min(m.s0, m.s1) >= dir_ - 60.0), default=None)
+    for ponta, lado in ((fim_esq, -1.0), (ini_dir, 1.0)):
+        if ponta is None:
+            continue
+        s_u = ponta + lado * bf / 2.0
+        perto = [m for m in el.membros if em_pe(m) and id(m) not in fora and abs(s_de(m) - s_u) <= 150.0
+                 and max(m.h0, m.h1) <= h_viga + 150.0]
+        if any(m.altura_linha > 0.0 and _largura_do_perfil(m.altura_linha, (el.banzo or {}).get("perfil")) for m in perto):
+            continue
+        fora |= {id(m) for m in perto}
+        novos.append(Membro(s_u, base, s_u, h_viga, "montante", bf))
+    el.membros = [m for m in el.membros if id(m) not in fora] + novos
+    el.avisos.append("%s: na emenda, a treliça que passa desenhada em corte (%d linhas) não é alma das peças; os U de "
+                     "ponta ficaram como U (%d refeitos na viga)." % (_bonito(el.nome), len(corte), len(novos)))
+    return len(corte)
 
 
 def _juntas_dos_banzos(el: "Elevacao") -> List[float]:
