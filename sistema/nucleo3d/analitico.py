@@ -27,10 +27,12 @@ TOL_NO = 60.0           # pontas mais perto que isso são o mesmo nó
 TOL_DUPLO = 200.0       # as duas barras do perfil duplo: pontas a até isso uma da outra
 TOL_APOIO = 450.0       # a peça desce/sobe até a de apoio a até isso (meia altura dos dois perfis)
 TOL_CRUZA = 250.0       # a terça sobre o banzo que ela cruza: diferença de altura aceita
+TOL_LADO = 200.0        # a treliça deitada presa pela lateral no banzo de outra: afastamento aceito
 
 # em que cada papel apoia a ponta dele
 APOIA_EM = {
-    "terça": ("banzo", "viga", "apoio_terca"),
+    # a terça que chega na lateral da transição (mais alta que o telhado) encosta na alma dela
+    "terça": ("banzo", "viga", "apoio_terca", "montante", "diagonal"),
     # o perfil ao lado da treliça que recebe as terças (o U da TRANSIÇÃO 1 do Posto CB): preso nela
     "apoio_terca": ("montante", "banzo", "diagonal", "pilar", "viga"),
     "corrente": ("terça",),
@@ -65,6 +67,23 @@ def _proj(p, a, b) -> Tuple[float, float, Ponto]:
     return math.dist(p, q), t, q
 
 
+def _entre_segmentos(a, b, c, d) -> Tuple[float, float, float, Ponto]:
+    """a menor distância entre os segmentos ab e cd, os parâmetros t (em ab) e u (em cd) dos
+    pontos mais próximos, e o ponto de cd"""
+    u_ = _sub(b, a)
+    v_ = _sub(d, c)
+    w_ = _sub(a, c)
+    A, B, C = _dot(u_, u_), _dot(u_, v_), _dot(v_, v_)
+    D, E = _dot(u_, w_), _dot(v_, w_)
+    den = A * C - B * B
+    t = 0.0 if den < 1e-9 else min(max((B * E - C * D) / den, 0.0), 1.0)
+    u = 0.0 if C < 1e-9 else min(max((B * t + E) / C, 0.0), 1.0)
+    t = 0.0 if A < 1e-9 else min(max((B * u - D) / A, 0.0), 1.0)
+    p = (a[0] + u_[0] * t, a[1] + u_[1] * t, a[2] + u_[2] * t)
+    q = (c[0] + v_[0] * u, c[1] + v_[1] * u, c[2] + v_[2] * u)
+    return math.dist(p, q), t, u, q
+
+
 def _origem(ent) -> dict:
     return (getattr(ent, "atributos", None) or {}).get("origem") or {}
 
@@ -77,7 +96,8 @@ def _linhas_do(doc) -> List[dict]:
         if ent.tipo == "barra":
             out.append({"a": tuple(ent.inicio), "b": tuple(ent.fim), "papel": ent.papel or "barra",
                         "peca": o.get("peca"), "grupo": o.get("peca") or o.get("planta") or ent.id,
-                        "perfil": ent.perfil, "ids": [ent.id], "duplo": False})
+                        "perfil": ent.perfil, "ids": [ent.id], "duplo": False,
+                        "deitada": "deitada" in str(o.get("sentido") or "")})
         elif ent.tipo == "solido" and (ent.atributos or {}).get("calandrada") and ent.faces:
             v = ent.vertices
             k = len(ent.faces[0])
@@ -271,6 +291,59 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                     cortes[j].append((t, n))
                     na_alma += 1
 
+    # --- 2c. a treliça deitada presa pela lateral: o banzo dela que corre colado e paralelo ao
+    # banzo de outra treliça, no mesmo nível, liga nele em cada nó (a passarela do Posto CB, a
+    # TRELIÇA 1 deitada, corre 24 m a 11 cm do banzo de baixo da TRANSIÇÃO 16 e ficava solta)
+    ao_lado = 0
+    for k, ln in enumerate(linhas):
+        if not ln.get("deitada") or ln["papel"] != "banzo":
+            continue
+        a, b = nos[ln["na"]], nos[ln["nb"]]
+        dk = _sub(b, a)
+        Lk = math.sqrt(_dot(dk, dk))
+        if Lk < 1.0:
+            continue
+        nos_k = {ln["na"], ln["nb"]} | {n2 for _t2, n2 in cortes[k]}     # as pontas e os nós da alma (2b)
+        for n in nos_k:
+            p = nos[n]
+            for j in set(gl.perto(p)):
+                lj = linhas[j]
+                if lj["papel"] != "banzo" or lj["grupo"] == ln["grupo"] or lj.get("deitada"):
+                    continue
+                c, e = nos[lj["na"]], nos[lj["nb"]]
+                dj = _sub(e, c)
+                Lj = math.sqrt(_dot(dj, dj))
+                if Lj < 1.0 or abs(_dot(dk, dj)) < 0.996 * Lk * Lj:
+                    continue                               # não é paralelo
+                dd, t, q = _proj(p, c, e)
+                if dd <= TOL_LADO and abs(q[2] - p[2]) <= TOL_NO and 0.0 < t < 1.0                         and all(n2 != n for _t2, n2 in cortes[j]) and n not in (lj["na"], lj["nb"]):
+                    cortes[j].append((t, n))
+                    ao_lado += 1
+
+    # --- 2d. o perfil de apoio das terças corre ao lado da treliça e é fixado em cada montante
+    # dela: onde passa a até TOL_LADO de um montante da própria peça, os dois ganham um nó comum
+    # (o U da TRANSIÇÃO 1 do Posto CB ficava preso só nas pontas, e as terças nele cediam)
+    no_montante = 0
+    for k, ln in enumerate(linhas):
+        if ln["papel"] != "apoio_terca":
+            continue
+        a, b = nos[ln["na"]], nos[ln["nb"]]
+        cand = set()
+        n_p = int(math.dist(a, b) // 500.0) + 1
+        for s_ in range(n_p + 1):
+            cand.update(gl.perto(tuple(a[m] + (b[m] - a[m]) * s_ / n_p for m in range(3))))
+        for j in cand:
+            lj = linhas[j]
+            if lj["papel"] != "montante" or lj["grupo"] != ln["grupo"]:
+                continue
+            dd, t, u, q = _entre_segmentos(a, b, nos[lj["na"]], nos[lj["nb"]])
+            if dd > TOL_LADO or not (0.0 < t < 1.0) or not (0.0 <= u <= 1.0):
+                continue
+            nj = no_em(j, q, u)
+            if all(n2 != nj for _t2, n2 in cortes[k]) and nj not in (ln["na"], ln["nb"]):
+                cortes[k].append((t, nj))
+                no_montante += 1
+
     # --- 3. a ponta solta desce/sobe até a peça em que apoia
     gr = grau()
     # a ponta da treliça: o fim do banzo, onde só chegam barras da própria peça (o montante de
@@ -310,7 +383,11 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                 d, t, q = _proj(p, nos[linhas[j]["na"]], nos[linhas[j]["nb"]])
                 # alma de outra peça: só bem perto (senão liga treliças vizinhas); da mesma
                 # peça (o painel subdividido, a mão-francesa treliçada), a tolerância normal
-                tol = TOL_ALMA if linhas[j]["papel"] in ALMA and linhas[j]["grupo"] != ln["grupo"] else TOL_APOIO
+                alma_de_outra = linhas[j]["papel"] in ALMA and linhas[j]["grupo"] != ln["grupo"]
+                tol = TOL_ALMA if alma_de_outra and ln["papel"] != "terça" else TOL_APOIO
+                # o banzo (onde a terça senta) vale mais que a alma ao lado: a alma só se for bem mais perto
+                if ln["papel"] == "terça" and linhas[j]["papel"] in ALMA:
+                    d = d + TOL_APOIO / 2.0
                 if d <= tol and (melhor is None or d < melhor[0]):
                     melhor = (d, j, t, q)
             if melhor:
@@ -400,6 +477,7 @@ def analitico(doc, base: Optional[float] = None) -> dict:
         "barras": barras,
         "soltas": soltas,
         "resumo": {"nos": len(usados), "barras": len(barras), "duplos_juntados": duplos,
-                   "pontas_levadas_ao_apoio": ligadas, "alma_no_banzo": na_alma, "soltas": len(soltas),
+                   "pontas_levadas_ao_apoio": ligadas, "alma_no_banzo": na_alma, "deitada_ao_lado": ao_lado, "apoio_no_montante": no_montante,
+                   "soltas": len(soltas),
                    "soltas_por_papel": dict(collections.Counter(s["papel"] for s in soltas))},
     }
