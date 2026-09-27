@@ -120,6 +120,14 @@ try:
     aba.avaliar("(() => { const b = document.querySelector('#busca'); b.value = 'recebida'; b.dispatchEvent(new Event('input')); return 1; })()"); aba.drenar(0.3)
     ok(aba.avaliar("document.querySelectorAll('.cartao').length") == 1, "busca filtra")
     aba.avaliar("(() => { const b = document.querySelector('#busca'); b.value = ''; b.dispatchEvent(new Event('input')); return 1; })()"); aba.drenar(0.3)
+    # arquivar: sai da lista principal para "Arquivados" (nada apagado) e volta com Desarquivar
+    aba.avaliar("[...document.querySelectorAll('#lista > .cartao .cartao-menu button')].find(x => x.textContent === 'Arquivar').click(); 1")
+    ok(esperar(aba, "document.querySelectorAll('#lista > .cartao').length === 1 && document.querySelectorAll('#arquivados .cartao').length === 1", 15),
+       "arquivar tira o projeto da lista principal e põe em Arquivados")
+    ok("arquivado" in (aba.avaliar("document.querySelector('#contagem').textContent") or ""), "a contagem diz quantos estão arquivados")
+    aba.avaliar("[...document.querySelectorAll('#arquivados .cartao-menu button')].find(x => x.textContent === 'Desarquivar').click(); 1")
+    ok(esperar(aba, "document.querySelectorAll('#lista > .cartao').length === 2 && !document.querySelector('#arquivados')", 15),
+       "desarquivar traz de volta")
     aba.avaliar("[...document.querySelectorAll('.cartao-menu button')].find(x => x.textContent === 'Renomear').click(); 1"); aba.drenar(0.6)
     print("   diálogo aberto para renomear:", aba.avaliar("document.querySelector('#dlg').open"), "| campo:", aba.avaliar("!!document.querySelector('#dlg-nome')"))
     aba.avaliar("document.querySelector('#dlg-nome').value = 'Estrutura renomeada'; document.querySelector('#dlg-ok').click(); 1")

@@ -65,7 +65,7 @@ def _no_referencial(e, x0: float, y0: float, escala: float) -> Optional[dict]:
 
 
 def montar_lista(ents: List[dict], elevacoes: Dict[str, object], contagem: Dict[str, int], encaixe: List[dict],
-                 eixos_p: Optional[dict], escala: float, bonito) -> List[dict]:
+                 eixos_p: Optional[dict], escala: float, bonito, sem_elevacao: Optional[Dict[str, list]] = None) -> List[dict]:
     """uma entrada por elevação lida (as usadas na planta e as que ficaram de fora), na ordem do
     nome; `encaixe` são as cópias colocadas (ponto já no modelo), `eixos_p` os eixos da planta
     no modelo, `bonito` o nome com acento ("TRANSICAO 14" → "TRANSIÇÃO 14")."""
@@ -135,7 +135,19 @@ def montar_lista(ents: List[dict], elevacoes: Dict[str, object], contagem: Dict[
             "contagem_membros": dict(collections.Counter(m.papel for m in el.membros)),
             "avisos": list(el.avisos), "colocadas": colocadas, "pendencias": pendencias,
             "situacao": "conferir" if pendencias else "ok", "desenho": desenho,
+            # a moldura da elevação no desenho (a tela dividida enquadra o 2D nela)
+            "caixa_desenho": [[round(cx[0]), round(cx[1])], [round(cx[2]), round(cx[3])]],
         })
+    # os nomes escritos na planta sem elevação com esse título no desenho: ficaram fora do modelo
+    for nb, pontos in sorted((sem_elevacao or {}).items(), key=lambda kv: _ordem(kv[0])):
+        ondes = [(_eixos.onde(p, segs) if segs else "") or "(%.2f; %.2f) m" % (p[0] / 1000.0, p[1] / 1000.0) for p in pontos]
+        out.append({
+            "nome": nb, "familia": nb.split()[0], "qtd_projeto": 0, "no_modelo": 0, "comprimento": 0, "altura": 0,
+            "banzo": None, "alma": None, "alma_mult": 1, "membros": [], "marcas_terca": [], "contagem_membros": {},
+            "avisos": [], "colocadas": [], "sem_elevacao": True,
+            "pendencias": ["o nome está na planta (%d×: %s), mas o desenho não tem elevação com esse título — ficou fora "
+                           "do modelo" % (len(pontos), "; ".join(ondes))],
+            "situacao": "conferir", "desenho": []})
     return out
 
 

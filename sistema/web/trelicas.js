@@ -71,7 +71,7 @@ function montarIndice() {
         title: t.pendencias.length ? t.pendencias.join('; ') : 'nada a conferir',
         onclick: () => escolher(t.nome),
       }, el('span', { class: 'pt' + (t.situacao === 'ok' ? '' : ' conferir') }), t.nome,
-      el('span', { class: 'n', texto: `${t.no_modelo}/${t.qtd_projeto}` })));
+      el('span', { class: 'n', texto: t.sem_elevacao ? 'sem elevação' : `${t.no_modelo}/${t.qtd_projeto}` })));
     }
   }
   if (!lista.children.length) lista.append(el('p', { class: 'vazio', texto: 'Nenhuma elevação com esse filtro.' }));
@@ -171,6 +171,13 @@ function mostrar(t) {
   const det = $('#detalhe');
   det.replaceChildren();
   if (!t) { det.append(el('p', { class: 'vazio', texto: 'Escolha uma elevação à esquerda.' })); return; }
+  if (t.sem_elevacao) {
+    det.append(el('h2', {}, t.nome, el('span', { class: 'sub', texto: 'nome escrito na planta, sem elevação no desenho' })));
+    det.append(el('div', { class: 'pendencias' }, el('strong', { texto: 'A conferir com o projeto:' }),
+      el('ul', {}, t.pendencias.map(p => el('li', { texto: p })))));
+    det.append(el('p', { class: 'vazio', texto: 'Sem a elevação, o programa não sabe a forma nem os perfis desta peça: ela não entra no modelo. Peça ao projetista o desenho dela, ou confirme se o nome se refere a outra elevação.' }));
+    return;
+  }
   det.append(el('h2', {}, t.nome, el('span', { class: 'sub', texto: `o título pede ${t.qtd_projeto}, o modelo tem ${t.no_modelo}` })));
   det.append(el('div', { class: 'etiquetas' },
     el('span', { texto: `comprimento ${m(t.comprimento)} m` }),
@@ -218,6 +225,7 @@ async function iniciar() {
   $('#btn-voltar').addEventListener('click', () => { if (history.length > 1) history.back(); else location.href = '/'; });
   $('#btn-tema').addEventListener('click', alternarTema);
   $('#btn-3d').addEventListener('click', () => { location.href = url3d(''); });
+  $('#btn-dividida').addEventListener('click', () => { location.href = `/dividida?projeto=${encodeURIComponent(PROJETO)}`; });
   $('#busca').addEventListener('input', montarIndice);
   $('#so-conferir').addEventListener('change', montarIndice);
   if (!PROJETO) { $('#detalhe').replaceChildren(el('p', { class: 'vazio', texto: 'Abra esta tela pelo projeto (Desenho 2D ou modelo 3D).' })); return; }

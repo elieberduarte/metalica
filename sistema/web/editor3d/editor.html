@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+<script>if (window.parent !== window) document.documentElement.classList.add('embutida');</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#101b2e">
@@ -147,6 +148,7 @@ window.__errosEditor = [];
         <button type="button" data-acao="sombras" id="menu-sombras" title="Modelo com mais de 1.500 peças abre sem sombra, para a navegação ficar leve">Sombras</button>
         <button type="button" data-acao="referencia" title="O arquitetônico do lançamento no chão, os eixos do projeto com os balões nas pontas e os níveis (base, banzo, mezanino…) com o nome e a cota, como no Revit — só na tela">Arquitetônico, eixos e níveis</button>
         <button type="button" data-acao="esqueleto" title="O modelo só em linhas, cada peça pelo eixo, numa cor por tipo (treliça, terça, contravento, corrente, pilar, viga): a estrutura antes dos perfis. O clique pega a treliça inteira. De novo volta aos perfis">Esqueleto (só linhas)</button>
+        <button type="button" data-acao="dividir-2d" title="O Desenho 2D do projeto de um lado e este modelo do outro, no mesmo quadro: escolher uma peça num lado mostra ela no outro">Dividir com o 2D (tela dividida)…</button>
         <button type="button" data-acao="trelicas-lidas" title="Cada elevação do projeto recebido ao lado do bloco que entrou no modelo: quantidades, onde cada cópia foi colocada (pelos eixos) e o encaixe no vão da planta">Treliças lidas…</button>
         <hr>
         <button type="button" data-acao="verificar-apoios" title="Confere o modelo pelas regras de qualquer estrutura: nenhuma peça voando, treliça apoiada em pilar ou em outra peça, terça apoiada nas pontas e sobre os nós, pilar com o que carregar, viga apoiada nas duas pontas. Clique num achado para ver as peças">Verificar apoios…</button>
@@ -161,6 +163,7 @@ window.__errosEditor = [];
 
   <div class="nome-modelo">
     <input id="nome-modelo" value="Modelo" spellcheck="false" aria-label="Nome do modelo">
+    <button type="button" id="btn-salvar" class="btn-salvar salvo" title="O modelo grava sozinho alguns segundos depois de cada mudança. Clique (ou Ctrl+S) para gravar agora.">✓ Salvo</button>
   </div>
 
   <div class="busca-pecas" id="busca-pecas">

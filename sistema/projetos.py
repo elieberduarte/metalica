@@ -328,7 +328,7 @@ class Projetos:
                 "modelo_mb": round(os.path.getsize(modelo) / 1048576, 1) if os.path.exists(modelo) else 0,
                 "origem_ifc": p.get("origem_ifc"), "entregas": entregas, "pasta": pasta,
                 "tem_materiais": os.path.exists(os.path.join(pasta, "detalhamento", "lista-de-materiais.json")),
-                "aberto_por": self.aberto_por(s),
+                "aberto_por": self.aberto_por(s), "arquivado": bool(p.get("arquivado")),
                 "desenhos": [{"nome": d["nome"], "titulo": d.get("titulo") or d["nome"], "vistas": d.get("vistas") or []}
                              for d in self.listar_desenhos(s, contar=False)]}
 
@@ -412,6 +412,21 @@ class Projetos:
         except ErroDeDados:
             if not self.ler(s).get("ilegivel"):
                 raise
+
+    def arquivar(self, s: str, sim: bool = True) -> dict:
+        """Tira o projeto da lista principal (ou devolve): nada é apagado nem movido, só a marca
+        "arquivado" no projeto.json. A data de alteração fica como estava — arquivar não é mexer
+        no projeto, e ao voltar ele reaparece no lugar dele."""
+        with _trava_do_projeto(self._existente(s)):
+            p = self.ler(s)
+            if p.get("ilegivel"):
+                raise ErroDeDados("o arquivo do projeto não pôde ser lido; nada foi gravado.")
+            if sim:
+                p["arquivado"] = True
+            else:
+                p.pop("arquivado", None)
+            _gravar_json(os.path.join(self._existente(s), ARQUIVO), p, indent=1)
+        return self.resumo(s)
 
     def renomear(self, s: str, nome: str) -> dict:
         """Muda o nome e, se der, a pasta junto, para o Explorer mostrar o mesmo nome."""

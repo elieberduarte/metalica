@@ -139,6 +139,9 @@ function cartao(p) {
                    onclick: (ev) => { ev.stopPropagation(); abrirPasta(p); } }, 'Pasta'),
     el('button', { type: 'button', class: 'discreto', onclick: (ev) => { ev.stopPropagation(); renomear(p); } }, 'Renomear'),
     el('button', { type: 'button', class: 'discreto', onclick: (ev) => { ev.stopPropagation(); duplicar(p); } }, 'Duplicar'),
+    el('button', { type: 'button', class: 'discreto', 'data-acao': 'arquivar',
+                   title: p.arquivado ? 'Volta para a lista principal' : 'Tira da lista principal sem apagar nada (fica em "Arquivados", no fim da lista)',
+                   onclick: (ev) => { ev.stopPropagation(); arquivar(p, !p.arquivado); } }, p.arquivado ? 'Desarquivar' : 'Arquivar'),
     el('button', { type: 'button', class: 'discreto perigo', onclick: (ev) => { ev.stopPropagation(); excluir(p); } }, 'Excluir'));
 
   const icone = el('div', { class: 'cartao-icone ' + p.tipo });
@@ -184,12 +187,25 @@ function desenhar() {
         .filter(Boolean).join(' ').toLowerCase().includes(termo))
     : projetos;
   const lista = $('#lista');
-  lista.replaceChildren(...visiveis.map(cartao));
+  // os arquivados ficam numa seção recolhida no fim (a busca procura neles também)
+  const ativos = visiveis.filter(p => !p.arquivado);
+  const guardados = visiveis.filter(p => p.arquivado);
+  lista.replaceChildren(...ativos.map(cartao));
+  if (guardados.length) {
+    const det = el('details', { class: 'arquivados', id: 'arquivados' },
+      el('summary', { texto: `Arquivados (${guardados.length}) — fora da lista, nada apagado; "Desarquivar" traz de volta` }));
+    if (termo || abertosArquivados) det.open = true;
+    det.addEventListener('toggle', () => { abertosArquivados = det.open; });
+    det.append(el('div', { class: 'lista-projetos' }, ...guardados.map(cartao)));
+    lista.append(det);
+  }
   $('#vazio').hidden = projetos.length > 0;
   $('.gerenciador-cabeca').hidden = projetos.length === 0;
+  const nAtivos = projetos.filter(p => !p.arquivado).length;
+  const nArq = projetos.length - nAtivos;
   $('#contagem').textContent = !projetos.length ? ''
     : termo ? `${visiveis.length} de ${projetos.length} projeto(s)`
-    : `${projetos.length} projeto(s), do mais recente ao mais antigo`;
+    : `${nAtivos} projeto(s), do mais recente ao mais antigo` + (nArq ? ` · ${nArq} arquivado(s) no fim` : '');
   if (termo && !visiveis.length) lista.append(el('p', { class: 'nota', texto: 'Nenhum projeto com esse termo.' }));
 }
 
@@ -380,6 +396,17 @@ async function duplicar(p) {
   } catch (e) { recado('Não foi possível duplicar', e.message, 'erro'); }
   carregando(false);
   carregar();
+}
+
+let abertosArquivados = false;
+
+async function arquivar(p, sim) {
+  try {
+    await postar(`/api/projetos/${encodeURIComponent(p.slug)}/arquivar`, { arquivar: sim });
+    await carregar();
+    recado(sim ? `"${p.nome}" arquivado` : `"${p.nome}" de volta na lista`,
+           sim ? 'Está em "Arquivados", no fim da lista. Nada foi apagado.' : '', 'ok');
+  } catch (e) { recado('Não foi possível arquivar', e.message, 'erro'); }
 }
 
 async function excluir(p) {

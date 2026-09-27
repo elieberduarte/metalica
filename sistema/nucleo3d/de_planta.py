@@ -658,6 +658,7 @@ class Membro:
     h1: float
     papel: str                  # banzo, montante, diagonal
     altura_linha: float = 0.0   # distância entre as duas linhas (perfil deitado no banzo)
+    caixa: float = 0.0          # banzo em caixão (2U boca com boca): a altura dele (2 × aba)
 
 
 @dataclass
@@ -726,9 +727,9 @@ def ler_elevacoes(ents, familias: Sequence[str]) -> Dict[str, Elevacao]:
             alto, baixo = (a, b) if a[1] > b[1] else (b, a)
             chamadas[(int(alto[0] // 1000), int(alto[1] // 1000))].append((alto, baixo))
     out: Dict[str, Elevacao] = {}
-    for nome, qtd, t in titulos:
-        if nome in out:
-            continue
+
+    def do_titulo(t):
+        """o desenho de um título: o componente logo acima dele, começando perto do texto"""
         tx, ty = t["posicao"][0], t["posicao"][1]
         melhor = None
         for c in comps:
@@ -742,9 +743,22 @@ def ler_elevacoes(ents, familias: Sequence[str]) -> Dict[str, Elevacao]:
             nota = abs(dx) * 1.5 + abs(dy)
             if melhor is None or nota < melhor[0]:
                 melhor = (nota, c)
-        if melhor is None:
+        return melhor[1] if melhor else None
+    # os desenhos que têm título; o que sobra ao lado de um deles pode ser a continuação dele
+    com_titulo = {id(c) for c in (do_titulo(t) for _n, _q, t in titulos) if c is not None}
+    for nome, qtd, t in titulos:
+        if nome in out:
             continue
-        c = melhor[1]
+        tx, ty = t["posicao"][0], t["posicao"][1]
+        c = do_titulo(t)
+        if c is None:
+            continue
+        cont = _continuacao(c, comps, com_titulo)
+        if cont is not None:
+            com_titulo.add(id(cont))
+            c = {"segs": c["segs"] + cont["segs"],
+                 "caixa": (c["caixa"][0], min(c["caixa"][1], cont["caixa"][1]), cont["caixa"][2], max(c["caixa"][3], cont["caixa"][3])),
+                 "emenda": (c["caixa"][2], cont["caixa"][0])}
         x0, y0, x1, y1 = c["caixa"]
         # a nota dos perfis fica entre o desenho e o título
         banzo = alma = None
@@ -765,6 +779,11 @@ def ler_elevacoes(ents, familias: Sequence[str]) -> Dict[str, Elevacao]:
                 notas_ids.add(n.get("id"))
         el = _elevacao_do_grupo(nome, qtd, c["segs"])
         el.banzo, el.alma = banzo, alma
+        if c.get("emenda"):
+            _ligar_emenda(el, c["emenda"][0] - el.x_esq, c["emenda"][1] - el.x_esq)
+        _alma_lida_duas_vezes(el)
+        if banzo and int(banzo.get("mult") or 1) >= 2 and re.match(r"(?i)^U", str(banzo.get("perfil") or "")):
+            _banzo_em_caixao(el, c["segs"])
         el.titulo_em = (tx, ty)
         el.caixa = (x0, y0, x1, y1)
         # as marcas "ST2" em cima do banzo: onde cada terça apoia (o texto fica sempre do
@@ -858,6 +877,146 @@ def _elevacao_do_grupo(nome: str, qtd: int, segs) -> Elevacao:
     el.membros = unicos
     _tirar_vista_de_fundo(el)
     return el
+
+
+
+def _alma_lida_duas_vezes(el: Elevacao) -> int:
+    """A mesma barra da alma lida duas vezes: a 2L desenhada com linha dupla de nó a nó e mais uma
+    linha de face a face (TRANSIÇÃO 1 do Posto CB), ou a mesma dupla com quatro linhas. Fica uma:
+    a menos de 30 mm, a mais larga; a linha simples a menos de 70 mm da dupla, a dupla. Os pares de
+    verdade (os dois montantes da cumeeira, a 150 mm) ficam."""
+    alma = [m for m in el.membros if m.papel != "banzo"]
+    fora = set()
+
+    def paralela(m, n):
+        ax, ay = m.s1 - m.s0, m.h1 - m.h0
+        bx, by = n.s1 - n.s0, n.h1 - n.h0
+        La, Lb = math.hypot(ax, ay), math.hypot(bx, by)
+        if La < 1.0 or Lb < 1.0 or abs(ax * by - ay * bx) / (La * Lb) > 0.05:
+            return None
+        mx, my = (n.s0 + n.s1) / 2.0, (n.h0 + n.h1) / 2.0
+        t = ((mx - m.s0) * ax + (my - m.h0) * ay) / (La * La)
+        if not 0.0 < t < 1.0:
+            return None
+        return abs((mx - m.s0) * ay - (my - m.h0) * ax) / La
+    for i, m in enumerate(alma):
+        if id(m) in fora:
+            continue
+        for n in alma[i + 1:]:
+            if id(n) in fora:
+                continue
+            d = paralela(m, n)
+            if d is None:
+                d = paralela(n, m)
+            if d is None:
+                continue
+            if d <= 30.0:
+                fica, sai = (m, n) if (m.altura_linha, _comp_m(m)) >= (n.altura_linha, _comp_m(n)) else (n, m)
+            elif d <= 70.0 and (m.altura_linha > 0.0) != (n.altura_linha > 0.0):
+                fica, sai = (m, n) if m.altura_linha > 0.0 else (n, m)
+                if _comp_m(sai) > _comp_m(fica) + 50.0:
+                    continue                    # a linha simples maior que a dupla é outra barra
+            else:
+                continue
+            fora.add(id(sai))
+            if sai is m:
+                break
+    if fora:
+        el.membros = [m for m in el.membros if id(m) not in fora]
+        el.avisos.append("%s: %d barra(s) da alma desenhadas duas vezes (a linha dupla da cantoneira e mais uma linha "
+                         "ao lado) entraram uma vez só." % (_bonito(el.nome), len(fora)))
+    return len(fora)
+
+
+def _comp_m(m: Membro) -> float:
+    return math.hypot(m.s1 - m.s0, m.h1 - m.h0)
+
+
+def _banzo_em_caixao(el: Elevacao, segs) -> int:
+    """BANZO 2Ue/2U: os dois perfis de boca um para o outro formam um caixão (a TRANSIÇÃO 1 do Posto
+    CB: 2Ue 250×70 → 250 × 140). A elevação desenha cada caixão com três linhas compridas — as duas
+    faces e a junta das bocas no meio. Cada caixão vira um banzo só, no eixo da junta; e a base da
+    elevação (h = 0) passa a ser o eixo do caixão de baixo."""
+    pa = _perfil((el.banzo or {}).get("perfil"))
+    bf = float(pa.bf) if pa is not None and pa.bf else 0.0
+    if bf <= 0.0:
+        return 0
+    L = el.comprimento
+    alturas = []
+    for a, b, _cam in segs:
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        if abs(dx) > 0.3 * L and abs(dy) < 0.02 * abs(dx):
+            alturas.append(((a[1] + b[1]) / 2.0 - el.y_base, min(a[0], b[0]) - el.x_esq, max(a[0], b[0]) - el.x_esq))
+    alturas.sort()
+    grupos: List[list] = []
+    for h in alturas:
+        if grupos and h[0] - grupos[-1][-1][0] <= 1.3 * bf:
+            grupos[-1].append(h)
+        else:
+            grupos.append([h])
+    caixas = []
+    for g in grupos:
+        lo, hi = g[0][0], g[-1][0]
+        if abs((hi - lo) - 2.0 * bf) <= 0.25 * bf:
+            caixas.append(((lo + hi) / 2.0, hi - lo, min(x[1] for x in g), max(x[2] for x in g), lo, hi))
+    if len(caixas) < 2:
+        return 0
+    base = caixas[0][0]
+    novos = []
+    for m in el.membros:
+        if m.papel == "banzo" and any(lo - 60.0 <= (m.h0 + m.h1) / 2.0 <= hi + 60.0 and abs(m.h1 - m.h0) < 30.0
+                                      for _hc, _alt, _s0, _s1, lo, hi in caixas):
+            continue                        # as linhas do caixão lidas como banzos soltos
+        novos.append(m)
+    for hc, alt, s0, s1, _lo, _hi in caixas:
+        novos.append(Membro(s0, hc, s1, hc, "banzo", alt, caixa=alt))
+    for m in novos:
+        m.h0 -= base
+        m.h1 -= base
+    el.membros = novos
+    el.y_base += base
+    el.avisos.append("%s: banzo em caixão (%s, os dois perfis boca com boca, %d mm de altura): um banzo só em cada "
+                     "caixão, no eixo da junta." % (_bonito(el.nome), (el.banzo or {}).get("trecho") or "2U", round(caixas[0][1])))
+    return len(caixas)
+
+
+def _continuacao(c: dict, comps: list, com_titulo: set) -> Optional[dict]:
+    """A elevação desenhada em duas partes, com um espaço pequeno entre elas (a TRANSIÇÃO 16 do
+    Posto CB: 12,12 m + emenda de 270 mm + 19,73 m = 32,12 m, a cota total e o comprimento da linha
+    na planta): o desenho sem título logo à direita, com a mesma altura, é a mesma peça."""
+    x0, y0, x1, y1 = c["caixa"]
+    h = y1 - y0
+    melhor = None
+    for o in comps:
+        if o is c or id(o) in com_titulo:
+            continue
+        a0, b0, a1, b1 = o["caixa"]
+        if not (0.0 <= a0 - x1 <= 600.0):
+            continue
+        if abs((b1 - b0) - h) > 0.15 * h or min(b1, y1) - max(b0, y0) < 0.8 * h:
+            continue
+        if melhor is None or a0 < melhor["caixa"][0]:
+            melhor = o
+    return melhor
+
+
+def _ligar_emenda(el: Elevacao, s_a: float, s_b: float) -> int:
+    """Os banzos das duas partes, interrompidos no espaço da emenda, se encontram no meio dele
+    (a peça é uma só: o título pede 1X e a cota total passa por cima); a emenda fica anotada."""
+    meio = (s_a + s_b) / 2.0
+    ligados = 0
+    for m in el.membros:
+        if m.papel != "banzo" or abs(m.h1 - m.h0) >= 30.0:
+            continue
+        for k in ("s0", "s1"):
+            v = getattr(m, k)
+            if s_a - 80.0 <= v <= s_b + 80.0:
+                setattr(m, k, meio)
+                ligados += 1
+    el.avisos.append("%s: desenhada em duas partes (%.2f m + %.2f m) com %d mm entre elas — a mesma peça, com emenda "
+                     "dos banzos aos %.2f m; o detalhe da emenda é a conferir." % (
+                         _bonito(el.nome), s_a / 1000.0, (el.comprimento - s_b) / 1000.0, round(s_b - s_a), meio / 1000.0))
+    return ligados
 
 
 def _partes_da_elevacao(el: "Elevacao", dividir: bool) -> List[Tuple[str, List["Membro"]]]:
@@ -1099,20 +1258,31 @@ def _trelicas_deitadas(segs, textos, elevacoes: Dict[str, "Elevacao"], nome_do, 
             da = min(abs(ang_t - g[0]["ang"]), 180.0 - abs(ang_t - g[0]["ang"]))
             if max(0.0, f1 - f, f - f2) <= 3000.0 and smin - 3000.0 <= s <= smax + 3000.0 and da <= 15.0:
                 cands.append((t, nome, el))
+        # cada faixa de alma, e as faixas seguidas com um espaço pequeno entre elas (a mesma
+        # treliça em duas partes com emenda: a TRELIÇA 1 do Posto CB, 3,12 + 0,25 + 20,80 m)
+        combos = []
+        for k in range(len(partes)):
+            fim = max(x["s1"] for x in partes[k])
+            combos.append((k, k))
+            for k2 in range(k + 1, len(partes)):
+                if partes[k2][0]["s0"] - fim > 600.0:
+                    break
+                fim = max(fim, max(x["s1"] for x in partes[k2]))
+                combos.append((k, k2))
         pares = []
-        for k, p in enumerate(partes):
-            Lp = max(x["s1"] for x in p) - p[0]["s0"]
+        for ka, kb in combos:
+            Lp = max(x["s1"] for q in partes[ka:kb + 1] for x in q) - partes[ka][0]["s0"]
             for t, nome, el in cands:
                 err = abs(Lp - el.comprimento) / el.comprimento
                 if err <= 0.08:
-                    pares.append((err, k, id(t), t, nome, el))
+                    pares.append((err, (ka, kb), id(t), t, nome, el))
         feitas = set()
-        for err, k, it, t, nome, el in sorted(pares, key=lambda x: x[0]):
-            if k in feitas or it in usados:
+        for err, (ka, kb), it, t, nome, el in sorted(pares, key=lambda x: x[0]):
+            if any(k in feitas for k in range(ka, kb + 1)) or it in usados:
                 continue
-            feitas.add(k)
+            feitas.update(range(ka, kb + 1))
             usados.add(it)
-            p = partes[k]
+            p = [x for q in partes[ka:kb + 1] for x in q]
             s0, s1 = p[0]["s0"], max(x["s1"] for x in p)
 
             def pt(s, f):
@@ -1165,7 +1335,16 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
         escolhidas = [t for t in achadas if _sem_acento(t.nome).upper() in confirmadas]
     else:
         escolhidas = []
-    a_conferir = [fx for fx, t in zip(a_conferir, achadas) if t not in escolhidas]
+    def na_faixa_escolhida(t):
+        """a faixa já é de uma treliça deitada confirmada (a TRELIÇA 1 do Posto CB, 24,17 m, é a
+        passarela inteira): a outra elevação que também caberia nela não fica a conferir"""
+        m_ = ((t.caminho.a[0] + t.caminho.b[0]) / 2, (t.caminho.a[1] + t.caminho.b[1]) / 2)
+        for e_ in escolhidas:
+            s_, d_ = e_.caminho.projetar(m_)
+            if d_ <= float((e_.deitada or {}).get("largura") or 0.0) + 300.0 and -300.0 <= s_ <= e_.caminho.comprimento + 300.0:
+                return True
+        return False
+    a_conferir = [fx for fx, t in zip(a_conferir, achadas) if t not in escolhidas and not na_faixa_escolhida(t)]
     deitadas = escolhidas
     if deitadas:
         rot_deitadas = {d.deitada["texto"] for d in deitadas}
@@ -1827,6 +2006,31 @@ def _perfil(nome: Optional[str]):
     return catalogo.perfil_de(nome) if nome else None
 
 
+def _largura_do_perfil(w: float, nome: Optional[str]) -> bool:
+    """a largura `w` da linha dupla é a do perfil (a aba ou a altura, 30 % para mais ou menos)?"""
+    pa = _perfil(nome)
+    if pa is None:
+        return True                          # sem o catálogo, fica como sempre foi
+    for dim in (pa.bf, pa.d):
+        if dim and abs(w - float(dim)) <= 0.3 * float(dim):
+            return True
+    return False
+
+
+def _meio_caixao(nome: Optional[str]) -> float:
+    """do eixo do caixão (a junta das bocas) ao eixo de cada U: a aba menos a distância da alma ao
+    centroide (Ue 250×70: 70 − 19 = 51 mm)"""
+    pa = _perfil(nome)
+    if pa is None or not pa.bf:
+        return 35.0
+    try:
+        from nucleo3d.geometria import secao
+        xg = -min(q[0] for q in secao(pa))
+    except Exception:                        # noqa: BLE001
+        xg = float(pa.bf) / 3.0
+    return float(pa.bf) - xg
+
+
 def _massa(nome: Optional[str]) -> float:
     p = _perfil(nome)
     return float(p.massa) if p is not None and p.massa else 0.0
@@ -2130,7 +2334,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 meio_h = (min(alturas) + max(alturas)) / 2.0 if alturas else 0.0
                 for m in membros:
                     dupla = m.altura_linha > 0.0
-                    perfil = p_banzo if (m.papel == "banzo" or dupla) else (p_alma or p_banzo)
+                    # a alma desenhada com linha dupla é do perfil do banzo só quando a largura da
+                    # linha é a do banzo (o montante de ponta em U); a 2L também se desenha dupla
+                    perfil = p_banzo if (m.papel == "banzo" or (dupla and _largura_do_perfil(m.altura_linha, p_banzo))) \
+                        else (p_alma or p_banzo)
                     papel = m.papel
                     (q0, s0p), (q1, s1p) = P(m.s0, m.h0), P(m.s1, m.h1)
                     if m.papel == "banzo" and c.curvo and abs(s1p - s0p) > 300.0:
@@ -2155,7 +2362,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         doc.add(sol)
                         pecas.append({"ent": sol, "perfil": perfil, "papel": "banzo", "L": comp, "conjunto": conj})
                         continue
-                    if perfil == p_alma and mult_alma > 1 and not dupla:
+                    if m.papel != "banzo" and perfil == p_alma and mult_alma > 1:
                         # cantoneira dupla: costas com costas, uma de cada lado do plano da treliça
                         pa = _perfil(perfil)
                         af = (float(pa.bf or 25.0) if pa else 25.0) / 2 + 3.0
@@ -2166,6 +2373,20 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                             d = (nx * af * sinal, ny * af * sinal, 0.0)
                             barra(tuple(q0[i] + d[i] for i in range(3)), tuple(q1[i] + d[i] for i in range(3)), perfil,
                                   papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o})
+                    elif m.papel == "banzo" and m.caixa > 0.0:
+                        # banzo em caixão: os dois U de boca um para o outro, a junta no eixo — o de
+                        # cima com as abas para baixo (270), o de baixo com as abas para cima (90)
+                        off = _meio_caixao(perfil)
+                        dsx, dhx = m.s1 - m.s0, m.h1 - m.h0
+                        Lm = math.hypot(dsx, dhx) or 1.0
+                        ns, nh = -dhx / Lm, dsx / Lm
+                        if nh < 0.0:
+                            ns, nh = -ns, -nh
+                        for sinal, rot in ((1.0, 270.0), (-1.0, 90.0)):
+                            (qa, _), (qb, _) = P(m.s0 + ns * off * sinal, m.h0 + nh * off * sinal), \
+                                P(m.s1 + ns * off * sinal, m.h1 + nh * off * sinal)
+                            barra(qa, qb, perfil, papel, "Treliças", conj, rot,
+                                  {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o, "caixao": True})
                     else:
                         # rotação 90 leva as abas do U para cima (banzo de baixo); 270, para baixo
                         rot = (270.0 if (m.h0 + m.h1) / 2 > meio_h else 90.0) if m.papel == "banzo" else 0.0
@@ -2678,7 +2899,18 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                          "a_conferir": sum(1 for e_ in encaixe if e_.get("a_conferir"))}
     eixos_p = eixos_da_planta(ents, caixa_p, desl)
     from nucleo3d.trelicas_lidas import montar_lista
-    trelicas = montar_lista(ents, elevacoes, contagem, encaixe, eixos_p, float(par.get("escala") or 20.0), _bonito)
+    # os nomes da planta sem elevação no desenho: onde estão escritos (no modelo), para a tela
+    sem_el: Dict[str, List[list]] = collections.defaultdict(list)
+    faltam = {_sem_acento(str(k)).upper() for k in (st.get("sem_elevacao") or {})}
+    for t_ in textos:
+        m_ = _RX_ROTULO.match(t_["texto"])
+        if not m_ or not _dentro((t_["posicao"][0], t_["posicao"][1]), caixa_p):
+            continue
+        nm = (_sem_acento(m_.group(1)) + " " + m_.group(2).upper()).replace("TES ", "TESOURA ")
+        if nm in faltam:
+            sem_el[_bonito(nm)].append([round(t_["posicao"][0] + desl[0]), round(t_["posicao"][1] + desl[1])])
+    trelicas = montar_lista(ents, elevacoes, contagem, encaixe, eixos_p, float(par.get("escala") or 20.0), _bonito,
+                            sem_elevacao=dict(sem_el))
     return {"doc": doc, "resumo": resumo, "conferencia": conf, "avisos": avisos_pelos_eixos(avisos, eixos_p, desl),
             "usados": usados, "elevacoes_usadas": elevacoes_usadas,
             "eixos": eixos_p, "niveis": niveis_do_desenho(textos, par), "encaixe": encaixe,

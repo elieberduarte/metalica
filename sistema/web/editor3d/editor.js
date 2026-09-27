@@ -38,6 +38,7 @@ import { MetodosDiagnostico } from './modulos/diagnostico.js';
 import { MetodosLancamento } from './modulos/lancamento.js';
 import { MetodosApoios } from './modulos/apoios.js';
 import { MetodosBloco } from './modulos/bloco.js';
+import { MetodosDivisao } from './modulos/divisao.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -161,7 +162,7 @@ export class Editor {
       materiais: $('#painel-materiais'), arvore: $('#painel-arvore'),
       dica: $('#dica'), trava: $('#trava'), medida: $('#medida'),
       servidor: $('#estado-servidor'), avisos: $('#avisos'),
-      nome: $('#nome-modelo'), modos: $('#modos-exibicao'),
+      nome: $('#nome-modelo'), modos: $('#modos-exibicao'), salvar: $('#btn-salvar'),
       projecao: $('#btn-projecao'), tema: $('#btn-tema'),
       analise: $('#painel-analise'), painelAnalise: $('.painel[data-painel="analise"]'),
       paineis: $('#paineis'),
@@ -196,6 +197,11 @@ export class Editor {
     this.camera.idsSelecionados = () => [...this.selecao.ids];    // pivô da órbita
     this.esqueleto = new Esqueleto(this.cena, this.documento, this.selecao);
     this._ligarBlocos();          // o elemento treliçado é um bloco: o clique pega ele inteiro
+    this._ligarDivisao();         // na tela dividida, a seleção conversa com o 2D ao lado
+    if (this.el.salvar) {
+      this.el.salvar.addEventListener('click', () => this.salvar());
+      setInterval(() => this._mostrarEstadoGravacao(), 600);
+    }
     this.inferencia = new Inferencia(this.documento, this.cena, this.camera,
                                      this.selecao, this.el.snap);
 
@@ -990,11 +996,13 @@ export class Editor {
         const s = await this.api.salvarModeloDoProjeto(this.projeto, this.documento.paraJSON(), this._modeloAlterado);
         if (s && s.alterado) this._modeloAlterado = s.alterado;
         if ((this._versaoEdicao || 0) === versao) this._autosavePendente = false;
+        this._salvoEm = new Date(); this._erroGravacao = null;
         this.aviso(`Modelo salvo no projeto (${s.entidades} objetos).`, 'info');
         return;
       }
       const r = await this.api.salvar(this.documento.paraJSON(), n);
       this._lembrar(r.salvo || n);
+      this._salvoEm = new Date(); this._erroGravacao = null;
       this.aviso(`Modelo salvo: projetos/modelos/${r.salvo} (${r.entidades} objetos).`, 'info');
     } catch (e) {
       this.aviso(`Não foi possível salvar: ${e.message}`, 'erro');
@@ -1065,7 +1073,9 @@ export class Editor {
         const r = await this.api.salvar(json, nome);
         this._lembrar(r.salvo || nome);
       }
+      this._salvoEm = new Date(); this._erroGravacao = null;
     } catch (e) {
+      this._erroGravacao = e.message;
       this.dica(`Gravação automática falhou: ${e.message}`);
       this._autosavePendente = true;           // continua por gravar (antes a marca sumia e a edição ficava sem gravar)
       if (/outra tela|recarregue/i.test(e.message || '')) {
@@ -1535,6 +1545,13 @@ export class Editor {
     const url = new URL(location.href); url.searchParams.delete('destacar'); history.replaceState(null, '', url);
   }
 
+  /** A tela dividida: o Desenho 2D do projeto de um lado, este modelo do outro. */
+  abrirDividida() {
+    if (!this.projeto) { this.aviso('Abra um projeto: a tela dividida mostra o desenho e o modelo dele.', 'atencao'); return; }
+    if (window.parent !== window) { this.aviso('Já está na tela dividida.', 'info'); return; }
+    this._irPara(`/dividida?projeto=${encodeURIComponent(this.projeto)}`);
+  }
+
   /** A tela Treliças lidas do projeto (a elevação de `peca` aberta, quando vier). */
   abrirTrelicasLidas(peca) {
     if (!this.projeto) { this.aviso('Abra um projeto: as treliças lidas vêm da montagem pela planta dele.', 'atencao'); return; }
@@ -1620,9 +1637,29 @@ export class Editor {
         this._lembrar(r.salvo || nome);
       }
       if ((this._versaoEdicao || 0) === versao) this._autosavePendente = false;
+      this._salvoEm = new Date(); this._erroGravacao = null;
     } finally {
       this._autosalvando = false;
       if (this._autosavePendente) this._agendarAutosave();
+    }
+  }
+
+  /** O botão Salvar diz o estado da gravação: salvo (com a hora), por gravar, gravando, falhou. */
+  _mostrarEstadoGravacao() {
+    const b = this.el.salvar;
+    if (!b) return;
+    let cls, txt, dica;
+    if (this._autosalvando) { cls = 'gravando'; txt = 'Salvando…'; dica = 'Gravando o modelo no servidor.'; }
+    else if (this._erroGravacao && this._autosavePendente) { cls = 'erro'; txt = '⚠ Salvar'; dica = `A última gravação falhou: ${this._erroGravacao}. Clique para tentar de novo.`; }
+    else if (this._autosavePendente) { cls = 'pendente'; txt = '● Salvar'; dica = 'Há mudanças ainda não gravadas (gravam sozinhas em alguns segundos). Clique ou Ctrl+S para gravar agora.'; }
+    else {
+      cls = 'salvo';
+      const h = this._salvoEm ? this._salvoEm.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+      txt = h ? `✓ Salvo ${h}` : '✓ Salvo';
+      dica = 'Tudo gravado. O modelo grava sozinho alguns segundos depois de cada mudança; Ctrl+S grava na hora.';
+    }
+    if (b.dataset.estado !== cls || b.textContent !== txt) {
+      b.className = 'btn-salvar ' + cls; b.dataset.estado = cls; b.textContent = txt; b.title = dica;
     }
   }
 
@@ -1800,6 +1837,7 @@ export class Editor {
       'verificar-apoios': () => this.verificarApoios(),
       esqueleto: () => this.alternarEsqueleto(),
       'trelicas-lidas': () => this.abrirTrelicasLidas(),
+      'dividir-2d': () => this.abrirDividida(),
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
@@ -2250,7 +2288,7 @@ export class Editor {
 
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
-  MetodosApoios, MetodosBloco);
+  MetodosApoios, MetodosBloco, MetodosDivisao);
 
 // ================================================================= apoio
 

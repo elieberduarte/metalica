@@ -21,7 +21,7 @@ Rotas da API:
     GET  /api/projetos/<slug>           projeto.json e resumo
     GET  /api/projetos/<slug>/modelo    documento do editor 3D
     POST /api/projetos/<slug>/<ação>    dados, modelo, importar-ifc, renomear, duplicar,
-                                        excluir, abrir-pasta
+                                        excluir, arquivar {arquivar: bool}, abrir-pasta
     POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
     POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + lista de materiais
     POST /api/projetos/<slug>/detalhar-posicao {marca}   detalhe de uma peça (chapa vira paramétrica)
@@ -34,6 +34,7 @@ Rotas da API:
     POST /api/projetos/<slug>/arquitetonico {arquivo, conteudo_b64, tipo, fator, escala}   arquitetônico → Planta de lançamento
     POST /api/projetos/<slug>/lancamento/{malha|eixos|estrutura|memorial}   malha de eixos, eixos da planta, lançar, memorial
     GET  /api/projetos/<slug>/lancamento[/referencia]   dados do diálogo Lançar estrutura; linhas do arquitetônico e dos eixos
+    GET  /dividida?projeto=<slug>                        tela dividida: o Desenho 2D e o modelo 3D lado a lado, a seleção de um mostra o outro
     GET  /api/projetos/<slug>/trelicas                   treliças lidas: cada elevação × o bloco que entrou (tela /trelicas)
     GET  /api/ligacoes · GET /api/ligacoes/exemplos?tipo= · POST /api/ligacoes/montar {tipo, parametros, esforcos}
                                         biblioteca de ligações e acessórios (tela /ligacoes)
@@ -424,6 +425,8 @@ def acao_de_projeto(s: str, acao: str, corpo: dict) -> dict:
         return g.duplicar(s, corpo.get("nome"))
     if acao == "excluir":
         return g.excluir(s)
+    if acao == "arquivar":
+        return g.arquivar(s, corpo.get("arquivar", True) is not False)
     if acao == "abrir-pasta":
         pasta = g._existente(s)
         sub = os.path.basename(str(corpo.get("sub") or ""))
@@ -737,7 +740,9 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     saida["trelicas"] = {"total": len(trel), "conferir": sum(1 for t in trel if t["situacao"] != "ok")}
     # os eixos (dos balões da planta) e os níveis vão para o projeto: o 3D os mostra, as
     # plantas de localização e chumbação os desenham. Eixos que o usuário gravou ficam.
-    campos = {"niveis": r.get("niveis") or []}
+    campos = {"niveis": r.get("niveis") or [],
+              # a tela dividida leva o 3D ao desenho: o modelo é o desenho + este deslocamento
+              "planta_modelo": {"desenho": nome, "deslocamento": list(r["resumo"].get("deslocamento_mm") or [0.0, 0.0])}}
     novas = {k: list(par[k]) for k in ("deitadas", "duas_pecas") if isinstance(par.get(k), (list, tuple))}
     if novas:
         decisoes.update(novas)
@@ -2852,6 +2857,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "memorial.html"), WEB)
             if rota in ("/ligacoes", "/acessorios"):
                 return self._arquivo(os.path.join(WEB, "ligacoes.html"), WEB)
+            if rota in ("/dividida", "/2d-3d"):
+                return self._arquivo(os.path.join(WEB, "dividida.html"), WEB)
             if rota in ("/trelicas", "/trelicas-lidas"):
                 return self._arquivo(os.path.join(WEB, "trelicas.html"), WEB)
             if rota in ("/catalogo", "/pecas"):
@@ -3264,11 +3271,16 @@ def main():
             # responde (web/atualizacao.js). Se ela dá sinal de vida, não se abre outra;
             # se o usuário a fechou no meio, abre-se uma nova como sempre.
             # (--reaberto: o vigia do desenvolvimento reiniciou o servidor e a janela continua lá)
-            espera = 10.0 if (REABERTO_POR_ATUALIZACAO[0] or "--reaberto" in sys.argv) else 0.0
+            # A janela minimizada ou atrás de outras tem o temporizador freado pelo navegador:
+            # o sinal dela chega uma vez por minuto. Por isso a espera é de 70 s — com 10 s, cada
+            # atualização (e cada reinício do vigia) abria mais uma janela ao lado da que já estava.
+            # O vigia do desenvolvimento só reinicia com a janela aberta (fechada, o servidor
+            # encerra e o vigia junto): no reinício dele não se abre janela nenhuma.
+            espera = 70.0 if REABERTO_POR_ATUALIZACAO[0] else 0.0
             inicio_espera = time.time()
             while time.time() - inicio_espera < espera and not _janelas_abertas():
                 time.sleep(0.25)
-            if not _janelas_abertas():
+            if "--reaberto" not in sys.argv and not _janelas_abertas():
                 if _abrir_janela(url) is None:
                     webbrowser.open(url)        # sem Edge nem Chrome: navegador padrão
             # Encerra quando nenhuma janela dá sinal de vida (web/vivo.js). O processo do

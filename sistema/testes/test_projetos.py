@@ -267,3 +267,15 @@ def test_historico_e_aberto(tmp_path):
     assert g.aberto_por(s) is not None
     g.desmarcar_aberto(s, "maquina-A")
     assert g.aberto_por(s) is None
+
+
+def test_arquivar_tira_da_lista_principal_sem_apagar(tmp_path):
+    """arquivar só marca o projeto: a pasta e a data de alteração ficam; desarquivar tira a marca"""
+    g = Projetos(str(tmp_path))
+    p = g.criar("Posto antigo")
+    s = p["slug"]
+    antes = g.ler(s)["alterado"]
+    r = g.arquivar(s, True)
+    assert r["arquivado"] is True and g.ler(s)["alterado"] == antes
+    assert [x["arquivado"] for x in g.listar() if x["slug"] == s] == [True]
+    assert g.arquivar(s, False)["arquivado"] is False and "arquivado" not in g.ler(s)

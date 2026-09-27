@@ -850,6 +850,9 @@ body.inicio { display: block; }
 .gerenciador-acoes input[type="search"]:focus { outline: 2px solid var(--campo-foco); outline-offset: 0; }
 
 .lista-projetos { display: flex; flex-direction: column; gap: 10px; }
+details.arquivados { margin-top: 18px; border-top: 1px solid var(--borda); padding-top: 10px; }
+details.arquivados > summary { cursor: pointer; color: var(--texto3); font-size: 13px; padding: 4px 2px; }
+details.arquivados > .lista-projetos { margin-top: 10px; opacity: .8; }
 .cartao { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 16px; align-items: center;
   background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio);
   padding: 14px 16px; box-shadow: var(--sombra); cursor: pointer;

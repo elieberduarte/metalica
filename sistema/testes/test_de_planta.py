@@ -365,3 +365,49 @@ def test_trelicas_lidas_cada_elevacao_com_o_desenho_e_as_copias(resultado):
     # (o desenho de teste não tem as linhas dos eixos: "onde" fica vazio e a tela mostra a coordenada)
     assert len(t["colocadas"]) == 2 and all("onde" in c and len(c["ponto"]) == 2 for c in t["colocadas"])
     assert "PAINEL 1" in tl
+
+
+def _el(membros, banzo=None):
+    el = de_planta.Elevacao(nome="TRANSICAO 1", familia="TRANSICAO", qtd=1, comprimento=6000.0)
+    el.membros = membros
+    el.banzo = banzo
+    return el
+
+
+def test_alma_desenhada_duas_vezes_entra_uma():
+    """a 2L com linha dupla de nó a nó e mais uma linha ao lado (a 50 mm) é uma barra; os dois
+    montantes da cumeeira, a 150 mm, são dois"""
+    M = de_planta.Membro
+    el = _el([M(1000, 0, 2000, 1500, "diagonal", 35.0), M(1050, 100, 1950, 1400, "diagonal"),
+              M(3000, 0, 3000, 1500, "montante"), M(3150, 0, 3150, 1500, "montante")])
+    assert de_planta._alma_lida_duas_vezes(el) == 1
+    assert sorted((m.papel, m.altura_linha) for m in el.membros) == [("diagonal", 35.0), ("montante", 0.0), ("montante", 0.0)]
+
+
+def test_banzo_em_caixao_vira_um_banzo_no_eixo_da_junta():
+    """2Ue 250×70: três linhas compridas por caixão (as faces a 140 mm e a junta no meio) → um banzo
+    por caixão, no eixo da junta; a base passa a ser o eixo do caixão de baixo"""
+    M = de_planta.Membro
+    el = _el([M(0, 0, 6000, 0, "banzo", 70.0), M(0, 155, 6000, 155, "banzo", 100.0),
+              M(0, 1375, 6000, 1375, "banzo", 100.0), M(0, 1530, 6000, 1530, "banzo", 70.0),
+              M(1000, -40, 2000, 1570, "diagonal", 35.0)],
+             banzo={"perfil": "Ue 250×70×25×4,75", "mult": 2, "trecho": "2UE 250X70X25X4,75"})
+    segs = [((0.0, h), (6000.0, h), "metalica3") for h in (-35.0, 35.0, 105.0, 1425.0, 1495.0, 1565.0)]
+    assert de_planta._banzo_em_caixao(el, segs) == 2
+    ban = sorted((round(m.h0), round(m.caixa)) for m in el.membros if m.papel == "banzo")
+    assert ban == [(0, 140), (1460, 140)] and round(el.y_base) == 35
+    assert de_planta._meio_caixao("Ue 250×70×25×4,75") == pytest.approx(51.0, abs=1.0)
+
+
+def test_largura_da_linha_dupla_decide_o_perfil_da_alma():
+    assert de_planta._largura_do_perfil(40.0, "U 100×40×2,25 (FF)")          # o montante de ponta em U
+    assert not de_planta._largura_do_perfil(35.0, "Ue 250×70×25×4,75")       # a 2L desenhada dupla
+
+
+def test_emenda_liga_os_banzos_das_duas_partes():
+    M = de_planta.Membro
+    el = _el([M(0, 0, 12120, 0, "banzo"), M(12390, 0, 32122, 0, "banzo"), M(0, 1500, 12120, 1500, "banzo")])
+    el.comprimento = 32122.0
+    de_planta._ligar_emenda(el, 12120.0, 12390.0)
+    assert sorted((round(m.s0), round(m.s1)) for m in el.membros if m.h0 == 0) == [(0, 12255), (12255, 32122)]
+    assert "duas partes" in el.avisos[-1]

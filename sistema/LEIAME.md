@@ -225,6 +225,36 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.44.** **Tela dividida 2D + 3D** (`/dividida?projeto=…`, `web/dividida.html`/`.js`,
+`web/editor3d/modulos/divisao.js`; pedido do usuário: "dividir a visualização entre 2D e 3D no mesmo quadro, vai
+facilitar muito a conferência"): o Desenho 2D e o modelo 3D do projeto lado a lado, cada um a própria tela num quadro,
+com a divisória arrastável, trocar os lados e "seguir a seleção". 3D → 2D: a caixa em planta do que se escolheu vira
+a região marcada (retângulo laranja) na planta do desenho — o modelo é o desenho + o deslocamento que a montagem pela
+planta agora grava em `projeto.json` (`planta_modelo`) —, ou, no modo "a elevação", a moldura da elevação da treliça
+escolhida (`caixa_desenho` da tela Treliças lidas). 2D → 3D: o que se escolhe dentro da moldura de uma elevação
+seleciona o bloco dela (todas as cópias); na planta, as peças da região (e o bloco de cada uma). As telas conversam
+por postMessage (mesma origem); dentro da divisão a navegação de cada lado some (`html.embutida`). Abre por Ver →
+Dividir com o 2D (3D), pelo "2D + 3D" do Desenho 2D e da tela Treliças lidas. Verificador `verif_dividida_ui`.
+**Leitura das elevações** (prints do usuário no Posto CB): *alma desenhada duas vezes* — a 2L com linha dupla de nó a
+nó e mais uma linha ao lado virava duas barras (e a linha dupla ganhava o perfil do banzo: um Ue 250 no meio de cada
+2L da TRANSIÇÃO 1); agora a linha dupla da alma só é do perfil do banzo quando a largura dela é a do banzo (o montante
+de ponta em U), e barras paralelas a menos de 30 mm (ou a linha simples a menos de 70 mm da dupla) entram uma vez —
+os pares de verdade (os montantes da cumeeira, a 150 mm) ficam; *banzo em caixão* — "BANZO 2Ue 250X70X25X4,75" com
+três linhas compridas por caixão vira um banzo só, no eixo da junta, montado com os dois Ue boca com boca (±51 mm,
+abas para baixo em cima e para cima embaixo); *elevação em duas partes* — o desenho sem título logo à direita, com a
+mesma altura e um espaço de até 60 cm, é a mesma peça (a TRANSIÇÃO 16: 12,12 + 0,27 + 19,73 = 32,12 m, a linha
+inclinada inteira da planta; a TRELIÇA 1 deitada: 3,12 + 0,25 + 20,80 = 24,17 m, a passarela inteira), com os banzos
+ligados na emenda e aviso; e a faixa deitada da planta em dois pedaços com um espaço pequeno é uma treliça só. No
+Posto: pontas de treliça sem apoio 4 → 0, a TRANSIÇÃO 14 deixa de ser "pode ser deitada" (a faixa é a TRELIÇA 1).
+O Verificar apoios não cobra ponta de treliça deitada (ela se liga ao longo). Os nomes da planta sem elevação no
+desenho (TRANSIÇÃO 3 e 6) aparecem na tela Treliças lidas, com onde estão escritos. **Arquivar projeto** (tela
+inicial): tira da lista principal sem apagar nem mover nada (marca `arquivado` no projeto.json, a data de alteração
+fica); os arquivados ficam numa seção recolhida no fim da lista, com Desarquivar. **Botão Salvar no 3D**: ao lado do
+nome do modelo, com o estado da gravação automática ("✓ Salvo 10:42", "● Salvar" com mudança por gravar,
+"Salvando…", "⚠ Salvar" quando falhou); clicar ou Ctrl+S grava na hora. **Janelas repetidas**: a janela minimizada
+tem o sinal de vida freado pelo navegador (um por minuto), e a espera de 10 s abria outra a cada atualização e a cada
+reinício do vigia do desenvolvimento; agora a atualização espera 70 s e o reinício do vigia não abre janela.
+
 **0.8.43.** **Modo de desenvolvimento** (`dev.py`, `app.py --dev`, atalho "Metálica
 (desenvolvimento)"): porta 8766, os mesmos projetos do instalado, faixa laranja e "[DEV]" no título, sem oferta de
 atualização, reinício automático ao mudar um `.py` (o vigia passa `--reaberto`, e o servidor espera a janela que já

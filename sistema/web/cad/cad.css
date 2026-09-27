@@ -76,3 +76,6 @@ dialog.dialogo h3 { font-size: 16px; color: var(--azul); margin: 0 0 10px; }
 .grade-malha { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; align-items: end; min-width: 520px; }
 .grade-malha .explica { grid-column: 1 / -1; }
 .grade-malha label { display: grid; gap: 4px; }
+
+/* dentro da tela dividida (/dividida): a navegação entre telas fica na barra de fora */
+html.embutida #btn-voltar, html.embutida #link-projetos, html.embutida #link-editor, html.embutida #link-dividida { display: none !important; }

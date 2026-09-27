@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101b2e">
+<script src="/tema-janela.js"></script>
+<script src="/atualizacao.js" defer></script>
+<title>2D + 3D — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><rect x='5' y='7' width='10' height='18' fill='none' stroke='%23fff' stroke-width='2'/><path d='M19 12 L24 9 L29 12 L29 22 L24 25 L19 22 Z' fill='none' stroke='%23fff' stroke-width='2'/></svg>">
+<style>
+  html, body { height: 100%; }
+  body { display: flex; flex-direction: column; overflow: hidden; margin: 0; }
+  .topo .controles { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+  .topo .controles label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+  .topo .grupo-modo { display: inline-flex; border: 1px solid rgba(255,255,255,.22); border-radius: 5px; overflow: hidden; }
+  .topo .grupo-modo button { border: 0; border-radius: 0; padding: 4px 10px; font-size: 12.5px; }
+  .topo .grupo-modo button.ativo { background: var(--azul); color: #fff; }
+  .quadro { flex: 1; display: flex; min-height: 0; position: relative; }
+  .quadro.trocado { flex-direction: row-reverse; }
+  .lado { position: relative; min-width: 200px; display: flex; flex-direction: column; }
+  .lado iframe { flex: 1; border: 0; width: 100%; height: 100%; background: var(--fundo); }
+  .lado .rotulo { position: absolute; left: 50%; transform: translateX(-50%); bottom: 6px; z-index: 2; pointer-events: none;
+                  font-size: 11px; padding: 2px 10px; border-radius: 999px; background: rgba(15,23,42,.72); color: #e2e8f0; }
+  .divisor { flex: 0 0 7px; cursor: col-resize; background: var(--borda); position: relative; }
+  .divisor:hover, .divisor.arrastando { background: var(--azul); }
+  .divisor::after { content: ''; position: absolute; top: 50%; left: 2px; width: 3px; height: 34px; margin-top: -17px;
+                    border-left: 1px solid rgba(255,255,255,.55); border-right: 1px solid rgba(255,255,255,.55); }
+  .arrastando iframe { pointer-events: none; }
+  .aviso-dividida { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 5; max-width: 70%;
+                    padding: 7px 14px; border-radius: 6px; font-size: 13px; background: #d97706; color: #fff; box-shadow: var(--sombra); }
+  .aviso-dividida[hidden] { display: none; }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="7" width="10" height="18" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 12 L23 9 L28 12 L28 22 L23 25 L18 22 Z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    <h1>2D + 3D<span id="nome-projeto">projeto</span></h1>
+  </div>
+  <div class="controles">
+    <label title="Escolher uma peça num lado mostra ela no outro"><input type="checkbox" id="seguir" checked> seguir a seleção</label>
+    <span title="O que o 2D mostra quando se escolhe uma treliça no 3D">o 2D mostra:</span>
+    <span class="grupo-modo" role="group" aria-label="O que o 2D mostra">
+      <button type="button" data-modo="planta" class="ativo" title="O lugar da peça na planta estrutural">a planta</button>
+      <button type="button" data-modo="elevacao" title="A elevação da treliça escolhida, como o projetista desenhou">a elevação</button>
+    </span>
+    <label title="Qual desenho do projeto fica no lado 2D">desenho <select id="desenho"></select></label>
+  </div>
+  <div class="acoes">
+    <button type="button" id="btn-trocar" title="Troca o 2D e o 3D de lado">⇄ Trocar lados</button>
+    <button type="button" id="btn-voltar" title="Volta para a tela anterior">&larr; Voltar</button>
+    <button type="button" onclick="location.href='/'" title="Voltar à lista de projetos">Projetos</button>
+  </div>
+</header>
+
+<main class="quadro" id="quadro">
+  <div class="lado" id="lado-2d"><iframe id="f2d" title="Desenho 2D"></iframe></div>
+  <div class="divisor" id="divisor" role="separator" aria-orientation="vertical" title="Arraste para mudar a largura; duplo clique divide ao meio"></div>
+  <div class="lado" id="lado-3d"><iframe id="f3d" title="Modelo 3D"></iframe></div>
+  <div class="aviso-dividida" id="aviso" hidden></div>
+</main>
+
+<script src="/dividida.js"></script>
+<script src="/versao.js" defer></script>
+<script src="/vivo.js"></script>
+</body>
+</html>

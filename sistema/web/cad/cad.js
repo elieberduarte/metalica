@@ -102,6 +102,12 @@ class CAD {
 
     if (this.projeto) {
       $('#link-editor').href = this.urlDoEditor();
+      // a tela dividida (fora dela; dentro, o link não tem sentido)
+      const ld = $('#link-dividida');
+      if (ld && window.parent === window) {
+        ld.hidden = false;
+        ld.href = `/dividida?projeto=${encodeURIComponent(this.projeto)}` + (this.nomeDesenho ? `&desenho=${encodeURIComponent(this.nomeDesenho)}` : '');
+      }
       try {
         const p = (await pedir('/api/projetos/' + encodeURIComponent(this.projeto))).projeto;
         this.tituloProjeto = p.nome || this.projeto;
@@ -134,6 +140,7 @@ class CAD {
     this._atualizarCarimbo();
     document.body.dataset.pronto = '1';
     window.cad = this;
+    this._ouvirDivisao();
     // o botão "Atualizar" (web/atualizacao.js) grava o desenho antes de instalar — e
     // espera confirmar: falhou, a atualização não segue
     window.__antesDeAtualizar = () => this.gravarConfirmado();
@@ -392,6 +399,29 @@ class CAD {
     this.tela.pedirQuadro();
     this._agendarPaineis('props');
     this._atualizarCarimbo();
+    this._avisarDivisao();
+  }
+
+  /** Na tela dividida (/dividida), a seleção vai para o 3D ao lado: a caixa dela, no desenho. */
+  _avisarDivisao() {
+    if (window.parent === window || this._daDivisao) return;
+    const c = this.tela.selecao.size ? this.doc.caixa(this.tela.selecao) : null;
+    try { window.parent.postMessage({ metalica: 'sel2d', caixa: c, n: this.tela.selecao.size, desenho: this.nomeDesenho }, location.origin); }
+    catch (e) { /* sem a tela de fora */ }
+  }
+
+  /** O que a tela dividida manda: enquadrar a região que o 3D escolheu e marcá-la. */
+  _ouvirDivisao() {
+    if (window.parent === window) return;
+    window.addEventListener('message', (ev) => {
+      if (ev.origin !== location.origin || !ev.data || ev.data.metalica !== 'enquadrar2d') return;
+      const c = ev.data.caixa;
+      this.tela.regiao = c || null;
+      if (c) this.tela.enquadrar(c, ev.data.margem ?? 0.25);
+      else this.tela.pedirQuadro();
+      if (ev.data.dica) this.dica(ev.data.dica);
+    });
+    try { window.parent.postMessage({ metalica: 'pronto2d', desenho: this.nomeDesenho }, location.origin); } catch (e) { /* idem */ }
   }
   alternarSelecao(id) { const s = new Set(this.tela.selecao); s.has(id) ? s.delete(id) : s.add(id); this.selecionar([...s]); }
   _podarSelecao() { const antes = this.tela.selecao.size; this.tela.selecao = new Set([...this.tela.selecao].filter(id => this.doc.get(id))); if (this.tela.selecao.size !== antes) this._agendarPaineis('props'); }

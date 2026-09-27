@@ -287,6 +287,8 @@ def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None) -> dict:
         if ((getattr(els[lst[0]].ent, "atributos", None) or {}).get("origem") or {}).get("corte"):
             continue                        # a copa do pilar em árvore é apoio, não apoiada: as pontas dela são livres
         pts = [(p, i) for i in lst for s in els[i].segs for p in s]
+        if max(p[2] for p, _i in pts) - min(p[2] for p, _i in pts) < 150.0:
+            continue                        # a treliça deitada (passarela) se liga ao longo, não pelas pontas
         xy = [p[:2] for p, _i in pts]
         # eixo da treliça: as duas pontas mais distantes em planta (o caminho pode ser curvo)
         a = max(xy, key=lambda q: math.dist(q, xy[0]))

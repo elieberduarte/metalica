@@ -30,6 +30,7 @@ export class Tela {
     this.vp = { x: -100, y: -100, z: 0.5 };
     this.selecao = new Set();
     this.realce = null;                 // id sob o cursor
+    this.regiao = null;                 // [[x0, y0], [x1, y1]] marcada pela tela dividida (o que o 3D escolheu)
     this.previa = [];                   // entidades temporárias da ferramenta
     this.snap = null;                   // {ponto, tipo}
     this.cursor = null;                 // ponto do modelo sob o mouse
@@ -244,6 +245,13 @@ export class Tela {
       if (e && this.doc.visivel(e)) this._entidade(ctx, e, cores.realce, this.doc.camadas.get(e.camada), k, false);
     }
     for (const e of this.previa) this._entidade(ctx, e, cores.previa, null, k, false, true);
+    // a região que o 3D escolheu (tela dividida): retângulo laranja tracejado
+    if (this.regiao) {
+      const [a, b] = [this.paraTela(this.regiao[0]), this.paraTela(this.regiao[1])];
+      ctx.setLineDash([8, 5]); ctx.lineWidth = 2; ctx.strokeStyle = '#f59e0b';
+      ctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+      ctx.setLineDash([]);
+    }
     // alças da seleção (quadradinhos; a que está sendo arrastada, cheia)
     for (const a of this.alcas()) {
       const [x, y] = this.paraTela(a.ponto);
