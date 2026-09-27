@@ -74,6 +74,7 @@ export class MetodosLancamento {
     this._descartarReferencia();
     const segs = r.segmentos || [];
     const eixos = r.eixos || [];
+    this._eixosRef = eixos;           // o painel do bloco diz os eixos perto de cada ponta
     const niveis = r.niveis || [];
     if (!segs.length && !eixos.length && !niveis.length) return;
     const escuro = !!this.escuro;

@@ -777,3 +777,8 @@ dialog p.explica { margin: 0 0 10px; color: var(--texto2); font-size: 12.5px; }
 .painel-apoios-corpo li { cursor: pointer; padding: 1px 0; }
 .painel-apoios-corpo li:hover { color: var(--azul); text-decoration: underline; }
 .painel-apoios-corpo li.mais { cursor: default; text-decoration: none; opacity: .7; }
+
+/* painel do bloco (elemento treliçado selecionado): abaixo do painel dos apoios, se os dois abrirem */
+.painel-bloco { top: auto; bottom: 44px; }
+.painel-bloco .bloco-ponta { margin: 8px 0 2px; font-weight: 600; }
+.painel-bloco li.solta { color: #e5484d; cursor: default; }

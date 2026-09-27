@@ -40,7 +40,7 @@ export function pecaDe(ent) {
 
 /** O eixo do sólido: os centros dos anéis quando é varredura (a tampa diz quantos pontos
  *  tem o anel); senão, a reta entre as pontas da maior dimensão. */
-function eixoDoSolido(ent) {
+export function eixoDoSolido(ent) {
   const v = ent.vertices || [];
   if (v.length < 2) return [];
   const k = ent.faces && ent.faces[0] ? ent.faces[0].length : 0;
@@ -85,8 +85,6 @@ export class Esqueleto {
     if (this.ativo) this._montar();
     else this._descartar();
     this._esconderModelo(this.ativo);
-    // o clique pega a treliça inteira só no esqueleto
-    this.selecao.grupoDe = this.ativo ? (id) => this.grupoDe(id) : null;
     this.cena.alvosExtras = this.ativo && this.objeto ? [this.objeto] : null;
     this.cena.pedirQuadro();
   }

@@ -88,7 +88,20 @@ try:
     aba.drenar(0.5)
     ok(aba.avaliar("!window.editor.esqueleto.ativo && !window.editor.esqueleto.objeto && window.editor.cena.raiz.children.every(c => c.visible)"),
        "desligado, volta o modelo com perfis")
-    ok(aba.avaliar("window.editor.selecao.grupoDe === null && window.editor.cena.alvosExtras === null"), "e o clique volta a ser por peça")
+    ok(aba.avaliar("typeof window.editor.selecao.grupoDe === 'function' && window.editor.cena.alvosExtras === null"),
+       "desligado, o clique continua pegando o bloco (e o raio volta ao modelo com perfis)")
+    # o bloco também no modo normal: clique pega a treliça inteira e abre o painel; Alt+clique, uma barra só
+    if ids:
+        aba.avaliar(f"window.editor.selecao.clicar({ids[0]!r}, {{}}); 1")
+        aba.drenar(0.5)
+        n_b = aba.avaliar("window.editor.selecao.ids.size") or 0
+        painel = aba.avaliar("(document.querySelector('.painel-bloco') || {}).textContent || ''") or ""
+        ok(n_b == 3 and "Bloco TESOURA 9" in painel and "Ponta 1" in painel and "Ponta 2" in painel,
+           f"clique no modo normal pega o bloco ({n_b} barras) e o painel mostra as pontas: {painel[:90]}")
+        aba.avaliar(f"window.editor.selecao.clicar({ids[0]!r}, {{altKey: true}}); 1")
+        aba.drenar(0.3)
+        ok((aba.avaliar("window.editor.selecao.ids.size") or 0) == 1 and not aba.avaliar("!!document.querySelector('.painel-bloco')"),
+           "Alt+clique pega uma barra só (e o painel do bloco fecha)")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

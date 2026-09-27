@@ -218,6 +218,18 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.42.** **O elemento treliçado é um bloco** (pedido do usuário: "selecionar uma tesoura e toda ela se
+selecionar, para ver como estão se ligando, de onde até onde"; vale para tesoura, transição, painel, treliça,
+COMP): no editor 3D o clique pega o bloco inteiro — as barras de mesma peça de origem — e Alt+clique pega uma
+barra só (a convenção do Desenho 2D), em qualquer modo (`modulos/bloco.js`, `selecao.grupoDe`). Com um bloco
+selecionado, o painel do bloco diz as barras, o comprimento, a altura e, para cada ponta, onde ela está (com os
+eixos mais perto) e no que encosta — pilar, outra treliça, viga; "nada encosta" em vermelho —, com essas peças em
+destaque; clicar numa vizinha passa a seleção para ela. **Decisões do projeto gravadas**: `deitadas` e
+`duas_pecas` ficam em `decisoes_planta` do projeto; montar de novo pela planta, do zero, as mantém. **Elevação em
+duas peças** (`duas_pecas`, confirmado pelo usuário nas TRANSIÇÕES 2 e 5 do Posto CB): a viga de transição embaixo
+e a tesoura em cima dela, dois blocos na mesma linha; a barra que atravessa é cortada no banzo do meio. Os avisos
+de cada elevação usada (vista de fundo tirada, duas peças) passam para os avisos da montagem.
+
 **0.8.41.** **Esqueleto analítico** (pedido do usuário: "olhando só as linhas quase todas estão desconectadas;
 as duplas podem virar uma linha só"): `nucleo3d/analitico.py` e `POST /api/modelo/analitico` montam o modelo de nós
 e barras — o perfil duplo (cantoneira dupla, viga 2Ue) numa barra só, as pontas a menos de 6 cm no mesmo nó, a

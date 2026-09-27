@@ -37,6 +37,7 @@ import { MetodosAnalise } from './modulos/analise.js';
 import { MetodosDiagnostico } from './modulos/diagnostico.js';
 import { MetodosLancamento } from './modulos/lancamento.js';
 import { MetodosApoios } from './modulos/apoios.js';
+import { MetodosBloco } from './modulos/bloco.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -194,6 +195,7 @@ export class Editor {
     this.selecao = new Selecao(this.documento, this.cena, this.camera);
     this.camera.idsSelecionados = () => [...this.selecao.ids];    // pivô da órbita
     this.esqueleto = new Esqueleto(this.cena, this.documento, this.selecao);
+    this._ligarBlocos();          // o elemento treliçado é um bloco: o clique pega ele inteiro
     this.inferencia = new Inferencia(this.documento, this.cena, this.camera,
                                      this.selecao, this.el.snap);
 
@@ -2234,7 +2236,7 @@ export class Editor {
 
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
-  MetodosApoios);
+  MetodosApoios, MetodosBloco);
 
 // ================================================================= apoio
 

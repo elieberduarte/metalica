@@ -49,6 +49,7 @@ PADRAO = {
     "aco": "ASTM A36",
     "outras": [],                               # [{planta, nivel}]: mezanino, caixa d'água…
     "deitadas": False,                          # faixa de treliça vista de cima vira treliça deitada (senão, a conferir)
+    "duas_pecas": [],                           # elevações que são duas peças: a viga de transição e a tesoura em cima
 }
 
 #: camadas de anotação: não têm peça
@@ -845,6 +846,44 @@ def _elevacao_do_grupo(nome: str, qtd: int, segs) -> Elevacao:
     el.membros = unicos
     _tirar_vista_de_fundo(el)
     return el
+
+
+def _partes_da_elevacao(el: "Elevacao", dividir: bool) -> List[Tuple[str, List["Membro"]]]:
+    """A elevação que o projeto confirma como duas peças — a viga de transição embaixo e a tesoura
+    em cima dela (TRANSIÇÕES 2 e 5 do Posto CB): o que fica abaixo do banzo reto do meio é a viga,
+    o que fica acima é a tesoura; a barra que atravessa é cortada nele (onde a tesoura apoia).
+    Sem a confirmação, ou sem esse desenho (banzos retos embaixo e no meio, inclinados acima),
+    uma peça só."""
+    if not dividir:
+        return [("", el.membros)]
+    L = el.comprimento
+    ban = [m for m in el.membros if m.papel == "banzo"]
+    retos = sorted({round((m.h0 + m.h1) / 2) for m in ban if abs(m.s1 - m.s0) >= 0.3 * L and abs(m.h1 - m.h0) <= 30.0})
+    incl = [m for m in ban if abs(m.h1 - m.h0) > 30.0 and abs(m.s1 - m.s0) >= 500.0]
+    if len(retos) < 2 or not incl:
+        return [("", el.membros)]
+    base_incl = min(min(m.h0, m.h1) for m in incl)
+    meio = [h for h in retos if retos[0] + 250.0 < h < base_incl + 100.0]
+    if not meio:
+        return [("", el.membros)]
+    hm = max(meio)
+    baixo: List[Membro] = []
+    cima: List[Membro] = []
+    for m in el.membros:
+        lo, hi = min(m.h0, m.h1), max(m.h0, m.h1)
+        if hi <= hm + 150.0:
+            baixo.append(m)
+        elif lo >= hm - 150.0:
+            cima.append(m)
+        else:
+            t = (hm - m.h0) / (m.h1 - m.h0)
+            sm = m.s0 + (m.s1 - m.s0) * t
+            a_, b_ = Membro(m.s0, m.h0, sm, hm, m.papel), Membro(sm, hm, m.s1, m.h1, m.papel)
+            (baixo if m.h0 < hm else cima).append(a_)
+            (cima if m.h0 < hm else baixo).append(b_)
+    el.avisos.append("%s: montada em duas peças — a viga de transição (até %.2f m) e a tesoura em cima dela."
+                     % (_bonito(el.nome), hm / 1000.0))
+    return [("", baixo), (" (tesoura de cima)", cima)]
 
 
 def _tirar_vista_de_fundo(el: "Elevacao") -> int:
@@ -2031,6 +2070,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     serie = iter(range(10 ** 7))
 
     vigas_feitas: List[tuple] = []
+    duas_pecas = {_sem_acento(str(n)).upper().strip() for n in (par.get("duas_pecas") or [])}
 
     def montar_trechos(trechos_lista, nivel_z):
         """as treliças (cada uma em pé na sua linha, banzo inferior em `nivel_z`) e as vigas VM
@@ -2057,50 +2097,55 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             # banzo de cima ou de baixo: acima ou abaixo do meio da altura da treliça. O U do
             # banzo fica deitado com as abas para dentro da treliça — o de cima com a alma em
             # cima (onde a terça apoia) e as abas para baixo, o de baixo com as abas para cima
-            alturas = [h for m in el.membros for h in (m.h0, m.h1)]
-            meio_h = (min(alturas) + max(alturas)) / 2.0 if alturas else 0.0
-            for m in el.membros:
-                dupla = m.altura_linha > 0.0
-                perfil = p_banzo if (m.papel == "banzo" or dupla) else (p_alma or p_banzo)
-                papel = m.papel
-                (q0, s0p), (q1, s1p) = P(m.s0, m.h0), P(m.s1, m.h1)
-                if m.papel == "banzo" and c.curvo and abs(s1p - s0p) > 300.0:
-                    # banzo calandrado: varre o perfil pelo arco, com a altura variando junto
-                    # um anel a cada ~3° no arco (ou 120 mm, no caminho composto)
-                    passo = c.raio * math.radians(3.0) if c.tipo == "arco" else 120.0
-                    n = max(2, int(abs(s1p - s0p) / passo) + 1)
-                    pts = []
-                    for i in range(n + 1):
-                        f = i / n
-                        sp = s0p + (s1p - s0p) * f
-                        x, y = c.ponto(sp)
-                        pts.append((x, y, q0[2] + (q1[2] - q0[2]) * f))
-                    sol = varrer(perfil, pts, deitado=True, abas_para_baixo=(m.h0 + m.h1) / 2 > meio_h)
-                    sol.nome = perfil
-                    sol.camada = "Treliças"
-                    comp = sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
-                    raios = [c.raio] if c.tipo == "arco" else [q.raio for q, _r in c.partes if q.tipo == "arco"]
-                    sol.atributos = {"tipo_ifc": "IfcMember", "calandrada": {"raio": round(min(raios), 1),
-                                                                              "raios": [round(r_, 1) for r_ in raios]},
-                                     "origem": {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj}}
-                    doc.add(sol)
-                    pecas.append({"ent": sol, "perfil": perfil, "papel": "banzo", "L": comp, "conjunto": conj})
-                    continue
-                if perfil == p_alma and mult_alma > 1 and not dupla:
-                    # cantoneira dupla: costas com costas, uma de cada lado do plano da treliça
-                    pa = _perfil(perfil)
-                    af = (float(pa.bf or 25.0) if pa else 25.0) / 2 + 3.0
-                    smid = (s0p + s1p) / 2
-                    tx, ty = c.tangente(smid)
-                    nx, ny = -ty, tx
-                    for sinal, rot in ((1, 0.0), (-1, 180.0)):
-                        d = (nx * af * sinal, ny * af * sinal, 0.0)
-                        barra(tuple(q0[i] + d[i] for i in range(3)), tuple(q1[i] + d[i] for i in range(3)), perfil,
-                              papel, "Treliças", conj, rot, {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj})
-                else:
-                    # rotação 90 leva as abas do U para cima (banzo de baixo); 270, para baixo
-                    rot = (270.0 if (m.h0 + m.h1) / 2 > meio_h else 90.0) if m.papel == "banzo" else 0.0
-                    barra(q0, q1, perfil, papel, "Treliças", conj, rot, {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj})
+            # a elevação confirmada como duas peças (a viga de transição embaixo e a tesoura em
+            # cima) vira dois blocos na mesma linha; as outras, um só
+            conj_base = conj
+            for sufixo, membros in _partes_da_elevacao(el, _sem_acento(t.nome).upper() in duas_pecas):
+                conj = conj_base if not sufixo else "%s%s#%d" % (t.nome, sufixo, k_t)
+                alturas = [h for m in membros for h in (m.h0, m.h1)]
+                meio_h = (min(alturas) + max(alturas)) / 2.0 if alturas else 0.0
+                for m in membros:
+                    dupla = m.altura_linha > 0.0
+                    perfil = p_banzo if (m.papel == "banzo" or dupla) else (p_alma or p_banzo)
+                    papel = m.papel
+                    (q0, s0p), (q1, s1p) = P(m.s0, m.h0), P(m.s1, m.h1)
+                    if m.papel == "banzo" and c.curvo and abs(s1p - s0p) > 300.0:
+                        # banzo calandrado: varre o perfil pelo arco, com a altura variando junto
+                        # um anel a cada ~3° no arco (ou 120 mm, no caminho composto)
+                        passo = c.raio * math.radians(3.0) if c.tipo == "arco" else 120.0
+                        n = max(2, int(abs(s1p - s0p) / passo) + 1)
+                        pts = []
+                        for i in range(n + 1):
+                            f = i / n
+                            sp = s0p + (s1p - s0p) * f
+                            x, y = c.ponto(sp)
+                            pts.append((x, y, q0[2] + (q1[2] - q0[2]) * f))
+                        sol = varrer(perfil, pts, deitado=True, abas_para_baixo=(m.h0 + m.h1) / 2 > meio_h)
+                        sol.nome = perfil
+                        sol.camada = "Treliças"
+                        comp = sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+                        raios = [c.raio] if c.tipo == "arco" else [q.raio for q, _r in c.partes if q.tipo == "arco"]
+                        sol.atributos = {"tipo_ifc": "IfcMember", "calandrada": {"raio": round(min(raios), 1),
+                                                                                  "raios": [round(r_, 1) for r_ in raios]},
+                                         "origem": {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj}}
+                        doc.add(sol)
+                        pecas.append({"ent": sol, "perfil": perfil, "papel": "banzo", "L": comp, "conjunto": conj})
+                        continue
+                    if perfil == p_alma and mult_alma > 1 and not dupla:
+                        # cantoneira dupla: costas com costas, uma de cada lado do plano da treliça
+                        pa = _perfil(perfil)
+                        af = (float(pa.bf or 25.0) if pa else 25.0) / 2 + 3.0
+                        smid = (s0p + s1p) / 2
+                        tx, ty = c.tangente(smid)
+                        nx, ny = -ty, tx
+                        for sinal, rot in ((1, 0.0), (-1, 180.0)):
+                            d = (nx * af * sinal, ny * af * sinal, 0.0)
+                            barra(tuple(q0[i] + d[i] for i in range(3)), tuple(q1[i] + d[i] for i in range(3)), perfil,
+                                  papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj})
+                    else:
+                        # rotação 90 leva as abas do U para cima (banzo de baixo); 270, para baixo
+                        rot = (270.0 if (m.h0 + m.h1) / 2 > meio_h else 90.0) if m.papel == "banzo" else 0.0
+                        barra(q0, q1, perfil, papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj})
 
         # vigas
         for t in trechos_lista:
@@ -2557,6 +2602,11 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             continue
         usados["planta"] |= set(t.caminho.fontes or ()) | {t.rotulo_id}
     elevacoes_usadas = {_bonito(n): sorted(elevacoes[n].fontes) for n in contagem if n in elevacoes}
+    # o que a leitura de cada elevação usada tirou ou dividiu vai para os avisos
+    for n in contagem:
+        for a_el in (elevacoes[n].avisos if n in elevacoes else []):
+            if a_el not in avisos:
+                avisos.append(a_el)
     blocos = {"planta": (caixa_p, t_planta), "tercas": (caixa_t, _achar_titulo(textos, par.get("tercas")) if par.get("tercas") else None),
               "locacao": (caixa_l, _achar_titulo(textos, par.get("locacao")) if par.get("locacao") else None)}
     for chave, (cx, tit) in blocos.items():

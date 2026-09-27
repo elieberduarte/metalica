@@ -661,7 +661,8 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     contraventos da planta das terças.
 
     corpo: {sugerir: true → só os títulos de planta do desenho e os valores padrão;
-            parametros: {planta, nivel (mm), locacao, base (mm), tercas, aco},
+            parametros: {planta, nivel (mm), locacao, base (mm), tercas, aco, deitadas, duas_pecas},
+            (deitadas/duas_pecas: as decisões do projeto; sem elas, valem as gravadas no projeto)
             modo: "substituir"|"acrescentar", ifc: bool}"""
     import re as _re
     from nucleo3d import de_planta
@@ -678,6 +679,12 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
                           and _re.match(r"(?i)^\s*(PLANTA|LOCA[ÇC][ÃA]O)", str(e.get("texto") or ""))})
         return {"titulos": titulos[:200], "padrao": dict(de_planta.PADRAO)}
     par = dict(corpo.get("parametros") or {})
+    # as decisões do usuário sobre o projeto (treliça deitada, elevação que é duas peças) ficam
+    # gravadas no projeto: montar de novo, do zero, as mantém
+    decisoes = dict(g.ler(s).get("decisoes_planta") or {})
+    for k in ("deitadas", "duas_pecas"):
+        if k not in par and decisoes.get(k):
+            par[k] = decisoes[k]
     modo = str(corpo.get("modo") or "substituir")
     base = None
     if modo == "acrescentar":
@@ -696,6 +703,10 @@ def montar_pela_planta(s: str, nome: str, corpo: dict) -> dict:
     # os eixos (dos balões da planta) e os níveis vão para o projeto: o 3D os mostra, as
     # plantas de localização e chumbação os desenham. Eixos que o usuário gravou ficam.
     campos = {"niveis": r.get("niveis") or []}
+    novas = {k: list(par[k]) for k in ("deitadas", "duas_pecas") if isinstance(par.get(k), (list, tuple))}
+    if novas:
+        decisoes.update(novas)
+        campos["decisoes_planta"] = decisoes
     atuais = g.ler(s).get("eixos") or {}
     if r.get("eixos") and str(atuais.get("origem") or "") != "usuario":
         campos["eixos"] = r["eixos"]
