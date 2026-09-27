@@ -2514,9 +2514,11 @@ def _pilares_pela_planta(ents, caixa_p, locados: List[dict], avisos: List[str], 
     return mudou
 
 
-def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: List[str]) -> List[dict]:
+def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: List[str],
+                        cargas: Optional[list] = None) -> List[dict]:
     """os pilares da locação: cada nome "PM3(200X70X20X2,65)" casado com a placa de base (ou,
-    sem placa, com a seção do perfil) — posição já trazida para a planta estrutural"""
+    sem placa, com a seção do perfil) — posição já trazida para a planta estrutural. Em `cargas`,
+    as cargas que a locação escreve por pilar (`_cargas_da_locacao`)"""
     from nucleo2d.reconhecer import perfil_do_texto
     folga = (caixa_l[0] - 2500, caixa_l[1] - 2500, caixa_l[2] + 2500, caixa_l[3] + 2500)
     placas = []
@@ -2595,7 +2597,75 @@ def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: 
         x, y = q[0] + desl_l[0], q[1] + desl_l[1]
         usados_loc.add(t.get("id"))
         usados_loc.update(secoes_ids[i_s] for i_s, s_ in enumerate(secoes) if math.dist(s_[0], q) < 300)
-        out.append({"x": x, "y": y, "rot": rot, "nome": t["texto"].strip(), "perfil": r["perfil"]})
+        out.append({"x": x, "y": y, "rot": rot, "nome": t["texto"].strip(), "perfil": r["perfil"], "_texto": t.get("id")})
+    if cargas is not None:
+        # onde pode estar o pilar do bloco sem nome: a placa que nenhum nome tomou, ou a seção de
+        # perfil desenhada longe dos pilares achados (a placa girada passa do tamanho das placas)
+        ocupados = [(pl["x"] - desl_l[0], pl["y"] - desl_l[1]) for pl in out]
+        livres = [q for i, q in enumerate(placas) if i not in usadas]
+        livres += [s_[0] for s_ in secoes if min((math.dist(s_[0], o) for o in ocupados + livres), default=1e9) > 300]
+        cargas.extend(_cargas_da_locacao(textos, folga, livres, off, desl_l, out))
+    for pl in out:
+        pl.pop("_texto", None)
+    return out
+
+
+# a carga que a locação escreve embaixo do nome do pilar: "7,0tf" (só a vertical) ou o bloco
+# "Fz: 9,00 tf / Fx: 4,00 tf / Fy: 5,00 tf / MX: 2,00 tf.m / My:-1,00 tf.m"
+_CARGA_LOC = re.compile(r"^\s*(?:(F[xyz]|M[xy])\s*:\s*)?(-?\d+(?:[.,]\d+)?)\s*tf(\.m)?\s*$", re.I)
+
+
+def _cargas_da_locacao(textos, folga, livres, off, desl_l, locados: List[dict]) -> List[dict]:
+    """as cargas por pilar da locação, em tf e tf·m como o projeto escreve. Cada bloco começa na
+    vertical (Fz) e segue para baixo, na mesma coluna. O bloco embaixo de um nome é daquele pilar;
+    o bloco sem nome em cima (a outra placa do pilar em quadro, PM8) é da placa livre — a que
+    nenhum nome tomou — mais perto dele."""
+    cand = []
+    for t in textos:
+        if not _dentro(t["posicao"], folga):
+            continue
+        m = _CARGA_LOC.match(str(t.get("texto") or ""))
+        if m and bool(m.group(1) and m.group(1)[0].upper() == "M") == bool(m.group(3)):
+            cand.append((t, (m.group(1) or "Fz").capitalize(), float(m.group(2).replace(",", "."))))
+    por_texto = {pl["_texto"]: pl for pl in locados if pl.get("_texto")}
+    nomes = [t for t in textos if t.get("id") in por_texto]
+    blocos = []
+    dy_nome = []
+    for t, chave, v in cand:
+        if chave != "Fz":
+            continue
+        x, y = t["posicao"][0], t["posicao"][1]
+        alt = float(t.get("altura") or 10.0)
+        bloco = {"Fz": v}
+        # o resto do bloco: na mesma coluna, logo abaixo, cada uma a menos de ~4 alturas da anterior
+        abaixo = sorted((c for c in cand if c[1] != "Fz" and abs(c[0]["posicao"][0] - x) < 3 * alt
+                         and 0 < y - c[0]["posicao"][1] < 200 * alt), key=lambda c: -c[0]["posicao"][1])
+        ult = y
+        for c, ch, vv in abaixo:
+            if ult - c["posicao"][1] > 50 * alt or ch in bloco:
+                break
+            bloco[ch] = vv
+            ult = c["posicao"][1]
+        nome = min((n for n in nomes if abs(n["posicao"][0] - x) < 6 * alt and 0 < n["posicao"][1] - y < 60 * alt),
+                   key=lambda n: n["posicao"][1] - y, default=None)
+        if nome is not None:
+            dy_nome.append(nome["posicao"][1] - y)
+        blocos.append((x, y, nome, bloco))
+    dy = sorted(dy_nome)[len(dy_nome) // 2] if dy_nome else 0.0
+    out = []
+    for x, y, nome, bloco in blocos:
+        item = {k: bloco[k] for k in ("Fz", "Fx", "Fy", "Mx", "My") if k in bloco}
+        if nome is not None:
+            pl = por_texto[nome["id"]]
+            pl["cargas"] = dict(item)
+            item.update({"pilar": pl["nome"], "_pl": pl})
+        else:
+            alvo = (x - off[0], y + dy - off[1])
+            q = min(livres, key=lambda q: math.dist(q, (x, y)), default=None)
+            if q is None or math.dist(q, (x, y)) > 3000:
+                q = alvo
+            item.update({"pilar": None, "x": q[0] + desl_l[0], "y": q[1] + desl_l[1]})
+        out.append(item)
     return out
 
 
@@ -2650,7 +2720,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     # os pilares da locação vêm antes das treliças: a treliça termina em cima deles
     avisar("pilares da locação…")
     caixa_l, desl_l = outra_planta(par.get("locacao"))
-    locados = _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados["locacao"], avisos) if caixa_l else []
+    cargas_loc: List[dict] = []
+    locados = _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados["locacao"], avisos, cargas_loc) if caixa_l else []
     _pilares_pela_planta(ents, caixa_p, locados, avisos)
     # os pilares com corte próprio ("PM6 - 3X", "PM8 - 1X"): a forma deles vem do corte
     from nucleo3d import pilares_corte
@@ -2964,6 +3035,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         em_cima = [nv for u, nv in todos_trechos if u.caminho.projetar((x, y))[1] < 600.0]
         longe = 0.0 if em_cima else min((u.caminho.projetar((x, y))[1] for u, _nv in todos_trechos), default=0.0)
         orig = {"locacao": pl["nome"]}
+        if pl.get("cargas"):
+            orig["cargas_locacao"] = pl["cargas"]
         if pl.get("pela_planta"):
             orig["a_conferir"] = pl["pela_planta"]
         topo_p = max(em_cima) if em_cima else nivel
@@ -3320,6 +3393,15 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     doc.metadados["de_planta"] = {"parametros": {k: v for k, v in par.items()}, "resumo": resumo,
                                   "deslocamento": {"x": desl[0], "y": desl[1],
                                                    "nota": "somado às coordenadas do desenho; subtraia para voltar a ele"}}
+    # as cargas da locação (tf, tf·m, como o projeto escreve), no lugar do pilar no modelo: a
+    # prova real das reações do cálculo
+    if cargas_loc:
+        itens = []
+        for c in cargas_loc:
+            pl = c.pop("_pl", None)
+            x, y = (pl["x"], pl["y"]) if pl else (c.pop("x"), c.pop("y"))
+            itens.append(dict(c, x=round(x + desl[0], 1), y=round(y + desl[1], 1)))
+        doc.metadados["de_planta"]["cargas_locacao"] = {"unidade": "tf e tf·m", "pilares": itens}
     for t in trechos + list(st.get("deitadas") or []):
         if t.familia == "VIGA" and not t.perfil:
             continue

@@ -10,6 +10,15 @@
 .escala-topo select option { color: var(--texto); background: var(--painel); }
 
 .rodape .estado-salvo { margin-left: 12px; font-size: 11px; color: var(--texto3); white-space: nowrap; }
+/* a caixa de medidas do rodapé, como a do 3D: fundo e borda do tema (no escuro ficava branca) */
+.rodape .medidas { display: flex; align-items: center; gap: 6px; margin-left: 12px; font-size: 11px;
+  color: var(--texto3); letter-spacing: .05em; white-space: nowrap; }
+.rodape .medidas input { width: 150px; text-align: right; font-family: var(--mono); font-size: 12.5px;
+  letter-spacing: 0; color: var(--texto); background: var(--campo-fundo); border: 1px solid var(--campo-borda);
+  border-radius: var(--raio-p); padding: 2px 7px; }
+.rodape .medidas input::placeholder { color: var(--texto3); }
+.rodape .medidas input:focus { outline: 0; border-color: var(--campo-foco);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--campo-foco) 22%, transparent); }
 
 .carimbo #carimbo-coord { font-family: var(--mono); }
 

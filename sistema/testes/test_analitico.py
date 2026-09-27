@@ -54,3 +54,35 @@ def test_ponta_solta_aparece():
     doc.add(barra((10000.0, 0.0, 6000.0), (12000.0, 0.0, 6000.0), "viga"))    # viga no ar
     r = analitico.analitico(doc)
     assert any(s["papel"] == "viga" for s in r["soltas"])
+
+
+def test_ponta_da_trelica_desce_ate_o_pilar():
+    # a treliça começa 80 mm ao lado do topo do pilar (mais que a tolerância de nó), e o topo já
+    # tem a viga que chega nele: a ponta do banzo, que só tem o montante da própria treliça, vai
+    # até o pilar levando o montante junto
+    doc = Documento()
+    for x in (0.0, 6000.0):
+        for y in (0.0, 5000.0):
+            doc.add(barra((x, y, 0.0), (x, y, 6000.0), "pilar", perfil="W 200×19,3"))
+        doc.add(barra((x, 0.0, 6000.0), (x, 5000.0, 6000.0), "viga"))
+    doc.add(barra((80.0, 0.0, 6000.0), (5920.0, 0.0, 6000.0), "banzo", "T#1"))
+    doc.add(barra((80.0, 0.0, 6800.0), (5920.0, 0.0, 6800.0), "banzo", "T#1"))
+    for x in (80.0, 5920.0):
+        doc.add(barra((x, 0.0, 6000.0), (x, 0.0, 6800.0), "montante", "T#1"))
+    r = analitico.analitico(doc)
+    topos = {i for i, p in enumerate(r["nos"]) if p[2] == 6000.0 and p[0] in (0.0, 6000.0) and p[1] == 0.0}
+    ligados = {b[k] for b in r["barras"] if b["peca"] == "T#1" for k in ("a", "b")}
+    assert topos and topos <= ligados, (topos, r["nos"])
+
+
+def test_terca_com_corrente_na_ponta_ainda_desce_ao_banzo():
+    doc = modelo()
+    # a terça termina a 15 cm da treliça e a corrente está presa na ponta dela
+    doc.add(barra((1500.0, 150.0, 6890.0), (1500.0, 4850.0, 6890.0), "terça"))
+    doc.add(barra((1500.0, 150.0, 6890.0), (3000.0, 150.0, 6890.0), "corrente", perfil="Barra redonda 10"))
+    r = analitico.analitico(doc)
+    nos = r["nos"]
+    t = [b for b in r["barras"] if b["papel"] == "terça" and nos[b["a"]][0] == 1500.0]
+    ys = sorted(nos[b[k]][1] for b in t for k in ("a", "b"))
+    assert ys[0] == 0.0 and ys[-1] == 5000.0                 # das duas pontas até os banzos
+    assert not any(s["papel"] == "corrente" for s in r["soltas"])

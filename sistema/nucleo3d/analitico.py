@@ -240,6 +240,19 @@ def analitico(doc, base: Optional[float] = None) -> dict:
 
     # --- 3. a ponta solta desce/sobe até a peça em que apoia
     gr = grau()
+    # a ponta da treliça: o fim do banzo, onde só chegam barras da própria peça (o montante de
+    # ponta) — ela também desce até o apoio (o pilar, a viga, a outra treliça), levando junto
+    # as barras dela que chegam ali
+    no_linhas = collections.defaultdict(list)
+    for k, ln in enumerate(linhas):
+        no_linhas[ln["na"]].append(k)
+        no_linhas[ln["nb"]].append(k)
+
+    def fim_de_trelica(k, n):
+        ls = [i for i in no_linhas[n] if n in (linhas[i]["na"], linhas[i]["nb"])]
+        return linhas[k]["papel"] == "banzo" and linhas[k]["peca"] and len(ls) > 1 \
+            and all(linhas[i]["grupo"] == linhas[k]["grupo"] for i in ls) \
+            and sum(1 for i in ls if linhas[i]["papel"] == "banzo") == 1
     ligadas = 0
     for k, ln in enumerate(linhas):
         alvo = APOIA_EM.get(ln["papel"])
@@ -247,14 +260,19 @@ def analitico(doc, base: Optional[float] = None) -> dict:
             continue
         for lado in ("na", "nb"):
             n = ln[lado]
-            if gr[n] > 1:
+            # a ponta está apoiada se chega nela uma peça em que ela apoia; a corrente presa na
+            # ponta da terça não a apoia (é a terça que apoia a corrente)
+            outras = [i for i in no_linhas[n] if i != k and n in (linhas[i]["na"], linhas[i]["nb"])]
+            ponta_trelica = bool(outras) and fim_de_trelica(k, n)
+            if any(linhas[i]["papel"] in alvo for i in outras) and not ponta_trelica:
                 continue
             p = nos[n]
             if ln["papel"] == "pilar" and p[2] <= base + 50.0:
                 continue                                   # o pé do pilar é a base
             melhor = None
             for j in set(gl.perto(p)):
-                if j == k or linhas[j]["papel"] not in alvo or linhas[j]["grupo"] == ln["grupo"] and ln["papel"] in ("terça", "viga"):
+                if j == k or linhas[j]["papel"] not in alvo or linhas[j]["grupo"] == ln["grupo"] and (
+                        ln["papel"] in ("terça", "viga") or ponta_trelica):
                     continue
                 d, t, q = _proj(p, nos[linhas[j]["na"]], nos[linhas[j]["nb"]])
                 # alma de outra peça: só bem perto (senão liga treliças vizinhas); da mesma
@@ -265,8 +283,17 @@ def analitico(doc, base: Optional[float] = None) -> dict:
             if melhor:
                 _d, j, t, q = melhor
                 novo = no_em(j, q, t)
-                ln[lado] = novo
-                gr[novo] += 1
+                if novo == n:
+                    continue
+                # o nó inteiro vai junto: as barras da própria treliça na ponta dela, a corrente
+                # presa na ponta da terça
+                for i in [k] + outras:
+                    for ld in ("na", "nb"):
+                        if linhas[i][ld] == n:
+                            linhas[i][ld] = novo
+                            no_linhas[novo].append(i)
+                            gr[novo] += 1
+                            gr[n] -= 1
                 ligadas += 1
 
     # --- 4. a terça que passa sobre as treliças ganha um nó em cada banzo que ela cruza
