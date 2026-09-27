@@ -225,6 +225,20 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.46 (em desenvolvimento).** **Conferência seletiva antes de publicar** (`testes/selecao.py`, pedido do
+usuário: a completa levava ~20 min a cada versão; "as demais obras já estão fechadas, em produção"): o pytest roda
+sempre; os verificadores das telas, só os da tela que cada um testa (a primeira que abre) quando os arquivos dela
+mudaram desde a última versão publicada (a navegação entre telas, `web/area.js`, chama quem passa por elas; os
+arquivos comuns, todos; o servidor, a "fumaça": tela inicial, 2D, 3D, área de trabalho; a montagem 3D, as telas que
+a mostram); a bateria das obras de detalhamento (IFC, em produção) só quando mudou o núcleo — e aí a conferência é
+completa; a completa volta também a cada 4 versões e com `--completa`, e fica registrada em
+`Projeto/bateria/ultima-completa.json`. Exemplos pelo histórico: o montante em U (de_planta) → 4 verificadores +
+Posto; o seletor do desenho → 1 verificador; mudança só nas ferramentas de teste → só o pytest (1,4 min). **O Posto
+CB na bateria** (`OBRAS_PLANTA`, `--so-planta`/`--sem-planta`): o desenho recebido congelado em
+`Projeto/bateria/entradas/projeto-posto-cb/`, montado pela planta pelo caminho do programa (13 s) e fotografado —
+quantidades, peso, cada treliça lida (quantidade, comprimento, barras, situação), encaixe, apoios por regra, esqueleto
+e avisos.
+
 **0.8.45.** **Área de trabalho do projeto** (`/dividida?projeto=…&vista=2d|3d|ambos`, pedido do
 usuário: "a transição entre 2D, 3D e 2D+3D muda o menu superior… e ao sair do 2D para o 3D ele renderiza o modelo todas
 as vezes, carrega um modelo antigo e depois o correto"): o 2D e o 3D são vistas da mesma tela, com o seletor
