@@ -51,14 +51,29 @@ function alternarTema() {
 
 const url3d = (destacar) => `/editor?projeto=${encodeURIComponent(PROJETO)}` + (destacar ? `&destacar=${encodeURIComponent('peca:' + destacar)}` : '');
 
+// a pesquisa sem acento e sem diferença de espaço; "viga de transição 8" acha a TRANSIÇÃO 8
+// (o nome dentro da frase), e o número vale inteiro: "8" não acha a 18
+const normalizar = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/\s+/g, ' ').trim();
+const LIGACOES = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+
+function casaNome(filtro, nome) {
+  if (!filtro) return true;
+  const n = normalizar(nome);
+  if ((' ' + filtro + ' ').includes(' ' + n + ' ')) return true;
+  const tokens = n.split(' ');
+  return filtro.split(' ').filter(w => !LIGACOES.has(w))
+    .every(w => /^\d+$/.test(w) ? tokens.includes(w) : n.includes(w));
+}
+
 function montarIndice() {
   const lista = $('#lista');
   lista.replaceChildren();
-  const filtro = $('#busca').value.trim().toLowerCase();
+  const filtro = normalizar($('#busca').value);
   const so = $('#so-conferir').checked;
   const grupos = new Map();
   for (const t of DADOS.trelicas) {
-    if (filtro && !t.nome.toLowerCase().includes(filtro)) continue;
+    if (!casaNome(filtro, t.nome)) continue;
     if (so && t.situacao === 'ok') continue;
     if (!grupos.has(t.familia)) grupos.set(t.familia, []);
     grupos.get(t.familia).push(t);

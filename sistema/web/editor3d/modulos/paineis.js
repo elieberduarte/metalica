@@ -496,23 +496,43 @@ export class MetodosPaineis {
     });
   }
 
-  /** Peças cujo texto casa com todas as palavras do termo; agrupadas por posição ou nome. */
+  /**
+   * Peças cujo texto casa com todas as palavras do termo; agrupadas por posição ou nome. O
+   * texto inclui o nome da peça no projeto recebido (TRANSIÇÃO 8, TESOURA 3B, PM6…) e não
+   * olha acento. Quando o termo inteiro é o nome de uma peça do projeto ("transição 8"), só
+   * ela vem — e não a TRANSIÇÃO 18 nem tudo que tem um 8 —, um grupo por peça montada.
+   */
   pesquisarPecas(termo) {
-    const palavras = termo.toLowerCase().split(/\s+/).filter(Boolean);
+    const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[×*]/g, 'x').replace(/\s+/g, ' ').trim();
+    const frase = norm(termo);
+    const palavras = frase.split(' ').filter(Boolean);
+    const itens = [];
+    for (const ent of this.documento.entidades.values()) {
+      const a = ent.atributos || {}, m = a.marcas || {}, o = a.origem || {};
+      const peca = o.peca ? String(o.peca).split('#')[0] : '';
+      const nomes = [o.planta, peca, o.locacao, o.corte].filter(Boolean).map(norm);
+      const texto = norm([ent.nome, m.posicao, m.conjunto, m.nome, m.nome_conjunto, m.perfil, ent.perfil, ent.camada,
+        a.tipo_ifc, ent.origem_ifc, ent.papel, ...nomes].filter(Boolean).join(' '));
+      itens.push({ ent, m, o, nomes, texto });
+    }
+    // o nome da peça é o termo, ou está inteiro dentro dele ("viga de transição 8")
+    const dentro = (n) => n === frase || (' ' + frase + ' ').includes(' ' + n + ' ');
+    const pelaPeca = itens.filter(it => it.nomes.some(dentro));
+    const achados = pelaPeca.length ? pelaPeca : itens.filter(it => palavras.every(p => it.texto.includes(p)));
     const grupos = new Map();
     let total = 0;
     const ids = [];
-    for (const ent of this.documento.entidades.values()) {
-      const a = ent.atributos || {}, m = a.marcas || {};
-      const texto = [ent.nome, m.posicao, m.conjunto, m.nome, m.nome_conjunto, m.perfil, ent.perfil, ent.camada, a.tipo_ifc, ent.origem_ifc, ent.papel]
-        .filter(Boolean).join(' ').toLowerCase();
-      if (!palavras.every(p => texto.includes(p))) continue;
+    for (const { ent, m, o } of achados) {
       total++; ids.push(ent.id);
-      const chave = m.posicao || ent.nome || ent.tipo;
+      const chave = pelaPeca.length ? (o.peca || o.planta || o.locacao || o.corte) : (m.posicao || ent.nome || ent.tipo);
       let g = grupos.get(chave);
       if (!g) {
-        const detalhe = [m.perfil && m.perfil !== chave ? m.perfil : (ent.perfil || ''), m.conjunto ? `conj. ${m.conjunto}` : '', ent.camada].filter(Boolean).join(' · ');
-        g = { chave, detalhe, ids: [], cor: '#7d8a9e' };
+        const detalhe = pelaPeca.length
+          ? [o.peca && o.peca.includes('#') ? `peça nº ${o.peca.split('#')[1]}` : '', ent.camada].filter(Boolean).join(' · ')
+          : [m.perfil && m.perfil !== chave ? m.perfil : (ent.perfil || ''), m.conjunto ? `conj. ${m.conjunto}` : '', ent.camada].filter(Boolean).join(' · ');
+        const rotulo = pelaPeca.length ? (o.planta || String(chave).split('#')[0]) : chave;
+        g = { chave: rotulo, detalhe, ids: [], cor: '#7d8a9e' };
         grupos.set(chave, g);
       }
       g.ids.push(ent.id);
