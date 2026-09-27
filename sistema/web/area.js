@@ -89,28 +89,33 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ligarPaineis);
   else ligarPaineis();
 
+  var aqui = location.pathname.indexOf('/cad') === 0 || location.pathname === '/desenho' ? '2d' : '3d';
+  var paraFora = function (msg) { try { window.parent.postMessage(msg, location.origin); } catch (e) { /* sem a área */ } };
+
   if (embutida) {
     // os links internos que levam ao 2D ou ao 3D também passam pela área
     document.addEventListener('click', function (ev) {
       var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
       if (!a || a.target === '_blank' || a.hasAttribute('download') || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+      if (a.closest('.seletor-vista')) return;
       var u = destino(a.getAttribute('href'));
       if (!u || u.origin !== location.origin || u.pathname === location.pathname && u.search === location.search) return;
       if (a.getAttribute('href').charAt(0) === '#') return;
       ev.preventDefault();
       window.metalicaNavegar(u.pathname + u.search);
     }, true);
-    return;
   }
 
-  // sozinha: o seletor de vista no começo da barra
+  // O seletor de vista no começo da barra — a mesma linha da tela: sozinha, ele leva à área de
+  // trabalho; dentro dela, pede a troca de vista (e, no 2D + 3D, o 2D ganha ao lado os controles da
+  // ligação entre os lados: seguir a seleção, planta ou elevação, trocar os lados)
+  var estado = { vista: aqui, seguir: true, modo: 'planta' };
   function montarSeletor() {
     var topo = document.querySelector('header.topo');
     var marca = topo && topo.querySelector('.marca');
     var p = new URLSearchParams(location.search);
     var projeto = p.get('projeto');
     if (!topo || !marca || !projeto || document.querySelector('.seletor-vista')) return;
-    var aqui = location.pathname.indexOf('/cad') === 0 || location.pathname === '/desenho' ? '2d' : '3d';
     var nav = document.createElement('nav');
     nav.className = 'seletor-vista';
     nav.setAttribute('aria-label', 'Vista do projeto');
@@ -119,28 +124,71 @@
       var a = document.createElement('a');
       a.textContent = v[1];
       a.title = v[2] + ' — troca de vista sem recarregar';
-      a.dataset.vista = v[0];
-      if (v[0] === aqui) { a.className = 'ativo'; a.setAttribute('aria-current', 'page'); a.href = '#'; }
-      else {
+      a.dataset.vistaArea = v[0];
+      a.href = '#';
+      a.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        if (embutida) { paraFora({ metalica: 'vista', vista: v[0] }); return; }
+        if (v[0] === aqui) return;
         var q = new URLSearchParams({ projeto: projeto, vista: v[0] });
-        var desenho = p.get('desenho') || (window.cad && window.cad.nomeDesenho) || '';
-        if (desenho) q.set('desenho', desenho);
-        a.href = '/dividida?' + q.toString();
+        var d = (window.cad && window.cad.nomeDesenho) || p.get('desenho') || '';
+        if (d) q.set('desenho', d);
+        var url = '/dividida?' + q.toString();
         // o 2D sai gravando o desenho (e o 3D, o modelo): o mesmo caminho dos outros "sair"
-        a.addEventListener('click', function (ev) {
-          ev.preventDefault();
-          var sair = (window.cad && window.cad._sairPara) ? window.cad._sairPara.bind(window.cad)
-            : (window.editor && window.editor._irPara) ? window.editor._irPara.bind(window.editor) : null;
-          var q2 = new URLSearchParams(q);
-          var d2 = (window.cad && window.cad.nomeDesenho) || p.get('desenho') || '';
-          if (d2) q2.set('desenho', d2);
-          var url = '/dividida?' + q2.toString();
-          if (sair) sair(url); else location.href = url;
-        });
+        var sair = (window.cad && window.cad._sairPara) ? window.cad._sairPara.bind(window.cad)
+          : (window.editor && window.editor._irPara) ? window.editor._irPara.bind(window.editor) : null;
+        if (sair) sair(url); else location.href = url;
+      });
+      if (!embutida && v[0] !== aqui) {
+        var q0 = new URLSearchParams({ projeto: projeto, vista: v[0] });
+        if (p.get('desenho')) q0.set('desenho', p.get('desenho'));
+        a.href = '/dividida?' + q0.toString();       // o endereço à mostra (e o clique do meio)
       }
       nav.appendChild(a);
     });
     marca.insertAdjacentElement('afterend', nav);
+    if (embutida && aqui === '2d') {
+      var lig = document.createElement('div');
+      lig.className = 'ligacao-vistas';
+      lig.innerHTML = '<button type="button" data-c="seguir" title="Seguir a seleção: escolher uma peça num lado mostra ela no outro">🔗</button>' +
+        '<span class="seg"><button type="button" data-c="planta" title="Escolher no 3D mostra o lugar da peça na planta">planta</button>' +
+        '<button type="button" data-c="elevacao" title="Escolher uma treliça no 3D mostra a elevação dela, como o projetista desenhou">elevação</button></span>' +
+        '<button type="button" data-c="trocar" title="Trocar o 2D e o 3D de lado">⇄</button>';
+      lig.addEventListener('click', function (ev) {
+        var b = ev.target.closest('button');
+        if (!b) return;
+        var c = b.dataset.c;
+        if (c === 'seguir') paraFora({ metalica: 'controle', seguir: !estado.seguir });
+        else if (c === 'planta' || c === 'elevacao') paraFora({ metalica: 'controle', modo: c });
+        else if (c === 'trocar') paraFora({ metalica: 'controle', trocar: true });
+      });
+      nav.insertAdjacentElement('afterend', lig);
+    }
+    mostrarEstado();
+    if (embutida) paraFora({ metalica: 'pedir-estado' });
+  }
+  function mostrarEstado() {
+    var ativa = embutida ? estado.vista : aqui;
+    var links = document.querySelectorAll('.seletor-vista a');
+    for (var i = 0; i < links.length; i++) {
+      var on = links[i].dataset.vistaArea === ativa;
+      links[i].classList.toggle('ativo', on);
+      if (on) links[i].setAttribute('aria-current', 'page'); else links[i].removeAttribute('aria-current');
+    }
+    var lig = document.querySelector('.ligacao-vistas');
+    if (lig) {
+      lig.hidden = estado.vista !== 'ambos';
+      lig.querySelector('[data-c="seguir"]').classList.toggle('ativo', !!estado.seguir);
+      lig.querySelector('[data-c="planta"]').classList.toggle('ativo', estado.modo === 'planta');
+      lig.querySelector('[data-c="elevacao"]').classList.toggle('ativo', estado.modo === 'elevacao');
+    }
+  }
+  if (embutida) {
+    window.addEventListener('message', function (ev) {
+      if (ev.origin !== location.origin || !ev.data || ev.data.metalica !== 'estado') return;
+      estado = { vista: ev.data.vista, seguir: ev.data.seguir !== false, modo: ev.data.modo || 'planta' };
+      mostrarEstado();
+    });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montarSeletor);
   else montarSeletor();

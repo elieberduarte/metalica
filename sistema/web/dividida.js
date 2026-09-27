@@ -52,6 +52,12 @@ function carregarQuadros() {
   }
 }
 
+/** o estado da área para as barras das duas telas (o seletor e a ligação moram nelas) */
+function avisarEstado() {
+  const msg = { metalica: 'estado', vista, seguir: !!pref.seguir, modo: pref.modo };
+  para2d(msg); para3d(msg);
+}
+
 function mostrarVista(v, gravar = true) {
   vista = v;
   document.body.classList.remove('v-2d', 'v-3d', 'v-ambos');
@@ -61,6 +67,7 @@ function mostrarVista(v, gravar = true) {
   if (v !== 'ambos') para2d({ metalica: 'enquadrar2d', caixa: null });
   const u = new URL(location.href); u.searchParams.set('vista', v); history.replaceState(null, '', u);
   if (gravar) guardar();
+  avisarEstado();
 }
 
 /** um pedido de ir ao 2D ou ao 3D, vindo de dentro de um quadro */
@@ -151,6 +158,25 @@ function doDoisD(m) {
 }
 
 async function iniciar() {
+  // ouvido antes de carregar os quadros: o primeiro pedido de estado chega logo
+  window.addEventListener('message', (ev) => {
+    if (ev.origin !== location.origin || !ev.data || !ev.data.metalica) return;
+    const deUmLado = ev.source === $('#f2d').contentWindow || ev.source === $('#f3d').contentWindow;
+    if (ev.data.metalica === 'navegar' && deUmLado) { navegar(ev.data.url); return; }
+    // o seletor e os controles da ligação estão na barra de cada tela
+    if (ev.data.metalica === 'vista' && deUmLado) { mostrarVista(ev.data.vista); return; }
+    if (ev.data.metalica === 'pedir-estado' && deUmLado) { avisarEstado(); return; }
+    if (ev.data.metalica === 'controle' && deUmLado) {
+      if (ev.data.seguir !== undefined) { pref.seguir = !!ev.data.seguir; if (!pref.seguir) para2d({ metalica: 'enquadrar2d', caixa: null }); }
+      if (ev.data.modo) pref.modo = ev.data.modo;
+      if (ev.data.trocar) pref.trocado = !pref.trocado;
+      aplicarLayout(); guardar(); avisarEstado();
+      return;
+    }
+    if (vista !== 'ambos') return;
+    if (ev.data.metalica === 'sel3d' && ev.source === $('#f3d').contentWindow) doTresD(ev.data);
+    else if (ev.data.metalica === 'sel2d' && ev.source === $('#f2d').contentWindow) doDoisD(ev.data);
+  });
   for (const b of document.querySelectorAll('.vistas button')) b.addEventListener('click', () => mostrarVista(b.dataset.vista));
   // os painéis da direita dos dois lados de uma vez: segue o estado do lado que está à vista
   $('#btn-paineis').addEventListener('click', () => {
@@ -199,13 +225,6 @@ async function iniciar() {
   mostrarVista(vista, false);
   try { trelicas = ((await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/trelicas`)).trelicas || []).filter(t => t.caixa_desenho); }
   catch (e) { trelicas = []; }
-  window.addEventListener('message', (ev) => {
-    if (ev.origin !== location.origin || !ev.data || !ev.data.metalica) return;
-    if (ev.data.metalica === 'navegar' && (ev.source === $('#f2d').contentWindow || ev.source === $('#f3d').contentWindow)) { navegar(ev.data.url); return; }
-    if (vista !== 'ambos') return;
-    if (ev.data.metalica === 'sel3d' && ev.source === $('#f3d').contentWindow) doTresD(ev.data);
-    else if (ev.data.metalica === 'sel2d' && ev.source === $('#f2d').contentWindow) doDoisD(ev.data);
-  });
   document.body.dataset.pronto = '1';
 }
 

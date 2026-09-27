@@ -225,7 +225,7 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
-**0.8.45 (em desenvolvimento).** **Área de trabalho do projeto** (`/dividida?projeto=…&vista=2d|3d|ambos`, pedido do
+**0.8.45.** **Área de trabalho do projeto** (`/dividida?projeto=…&vista=2d|3d|ambos`, pedido do
 usuário: "a transição entre 2D, 3D e 2D+3D muda o menu superior… e ao sair do 2D para o 3D ele renderiza o modelo todas
 as vezes, carrega um modelo antigo e depois o correto"): o 2D e o 3D são vistas da mesma tela, com o seletor
 [2D | 3D | 2D + 3D] numa barra só; trocar de vista mostra ou esconde o quadro — o 3D de milhares de peças é montado uma
@@ -241,7 +241,13 @@ atravessada, abas para o meio da treliça — a ponta do caixão da TRANSIÇÃO 
 desenho** da tela dividida no padrão escuro. **Painéis da direita recolhíveis** (Propriedades, Camadas, Snap… no 2D;
 Propriedades, Camadas, Materiais… no 3D): a aba na borda do painel, Ver → Esconder os painéis laterais e F4, em cada
 tela; na área de trabalho, o botão "Painéis" da barra de fora esconde ou mostra os dois lados. A escolha fica guardada
-por tela (e à parte dentro da área, onde o espaço é metade); sem escolha, a janela estreita (< 900 px) começa sem eles.
+por tela (e à parte dentro da área, onde o espaço é metade); sem escolha, a janela estreita (< 900 px) começa sem eles. **Uma linha só** (pedido do usuário: "pode unir isso tudo em uma linha apenas"): a
+barra de fora da área de trabalho saiu; o seletor [2D | 3D | 2D + 3D] mora na barra de cada tela, também dentro da
+área (ele pede a troca por postMessage), e na vista 2D + 3D a barra do 2D ganha a ligação (🔗 seguir a seleção,
+planta / elevação, ⇄ trocar os lados). Na metade da área, a barra do 3D encolhe para caber (a busca vira lupa, o
+Salvar fica no sinal, "Projetos" vira ⌂, a perspectiva fica na vista 3D cheia) e o 2D tira o Exportar DXF (continua no
+menu Desenho). O atributo do seletor é `data-vista-area`: `data-vista` é dos itens de "Vistas do modelo" do 2D, e o
+clique no seletor chegava a pedir uma vista "3d" ao servidor.
 
 **0.8.44.** **Tela dividida 2D + 3D** (`/dividida?projeto=…`, `web/dividida.html`/`.js`,
 `web/editor3d/modulos/divisao.js`; pedido do usuário: "dividir a visualização entre 2D e 3D no mesmo quadro, vai

@@ -78,10 +78,13 @@ dialog.dialogo h3 { font-size: 16px; color: var(--azul); margin: 0 0 10px; }
 .grade-malha label { display: grid; gap: 4px; }
 
 /* dentro da tela dividida (/dividida): a navegação entre telas fica na barra de fora */
-html.embutida #btn-voltar, html.embutida #link-projetos, html.embutida #link-editor, html.embutida #link-dividida { display: none !important; }
+html.embutida #btn-voltar, html.embutida #link-editor, html.embutida #link-dividida { display: none !important; }
 
 /* barra do 2D sem quebra de linha; estreita (metade da área 2D + 3D), só o essencial à direita */
 .escala-topo { white-space: nowrap; }
+@media (max-width: 1000px) {
+  #btn-dxf { display: none; }          /* também em Desenho → Exportar DXF… */
+}
 @media (max-width: 1150px) {
   #btn-fechar, #btn-tema, .escala-topo { display: none; }
   #nome-desenho { width: 110px; }

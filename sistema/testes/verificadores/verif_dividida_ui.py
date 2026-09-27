@@ -90,10 +90,15 @@ try:
         aba.drenar(0.5)
     aba.drenar(1.5)
     ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 4, "os dois lados abrem: o desenho e o modelo do projeto")
-    ok(aba.avaliar("document.querySelector('#nome-projeto').textContent") == "Posto dividido", "o nome do projeto no topo")
-    ok(aba.avaliar("document.querySelector('.vistas button.ativo').dataset.vista") == "ambos", "sem vista na URL, abre no 2D + 3D")
-    ok(aba.avaliar(f"getComputedStyle({F2}.document.querySelector('#link-projetos')).display") == "none"
-       and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('#link-projetos')).display") == "none",
+    ok("Posto dividido" in (aba.avaliar("document.title") or ""), "o nome do projeto no título da janela")
+    t0 = time.time()
+    while time.time() - t0 < 10 and not aba.avaliar(f"!!{F3}.document.querySelector('.seletor-vista a.ativo')"): aba.drenar(0.3)
+    ok(aba.avaliar("getComputedStyle(document.querySelector('.area-topo')).display") == "none"
+       and aba.avaliar(f"{F2}.document.querySelector('.seletor-vista a.ativo').dataset.vistaArea") == "ambos"
+       and aba.avaliar(f"{F3}.document.querySelector('.seletor-vista a.ativo').dataset.vistaArea") == "ambos",
+       "uma linha só: o seletor mora na barra de cada tela (sem a barra de fora), e abre no 2D + 3D")
+    ok(aba.avaliar(f"getComputedStyle({F2}.document.querySelector('#btn-voltar')).display") == "none"
+       and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('#link-projetos')).display") != "none",
        "a navegação de cada lado some dentro da tela dividida")
     # 3D → 2D, planta: a TESOURA 1#2 (y = 6000 no modelo) → y = 56000 no desenho
     aba.avaliar(f"""(() => {{ const e = {F3}.editor; const ids = [...e.documento.entidades.values()].filter(x => x.atributos.origem.peca === 'TESOURA 1#2').map(x => x.id);
@@ -104,7 +109,7 @@ try:
        f"3D → 2D: a cópia escolhida vira a região na planta do desenho {reg}")
     foto(aba, "_dividida.png")
     # 3D → 2D, elevação
-    aba.avaliar("document.querySelector('.grupo-modo button[data-modo=elevacao]').click(); 1")
+    aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas [data-c=elevacao]').click(); 1"); aba.drenar(0.3)
     aba.avaliar(f"(() => {{ const e = {F3}.editor; const ids = [...e.selecao.ids]; e.selecao.definir([]); e.selecao.definir(ids); return 1; }})()")
     aba.drenar(1.0)
     reg = aba.avaliar(f"{F2}.cad.tela.regiao")
@@ -120,46 +125,44 @@ try:
     pecas = aba.avaliar(f"[...new Set([...{F3}.editor.selecao.ids].map(id => {F3}.editor.documento.get(id).atributos.origem.peca))]") or []
     ok(pecas == ["TESOURA 1#1"], f"2D → 3D: a linha da planta seleciona a cópia que está ali ({pecas})")
     # sem seguir, nada passa
-    aba.avaliar("document.querySelector('#seguir').click(); 1")
+    aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas [data-c=seguir]').click(); 1"); aba.drenar(0.3)
     aba.avaliar(f"{F2}.cad.selecionar(['l3']); 1")
     aba.drenar(0.8)
     pecas2 = aba.avaliar(f"[...new Set([...{F3}.editor.selecao.ids].map(id => {F3}.editor.documento.get(id).atributos.origem.peca))]") or []
     ok(pecas2 == ["TESOURA 1#1"], "com \"seguir a seleção\" desligado, um lado não mexe no outro")
-    aba.avaliar("document.querySelector('#seguir').click(); document.querySelector('#btn-trocar').click(); 1")
+    aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas [data-c=seguir]').click(); {F2}.document.querySelector('.ligacao-vistas [data-c=trocar]').click(); 1"); aba.drenar(0.3)
     ok(aba.avaliar("document.querySelector('#quadro').classList.contains('trocado')"), "trocar lados põe o 3D à esquerda")
-    aba.avaliar("document.querySelector('#btn-trocar').click(); 1")
+    aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas [data-c=trocar]').click(); 1"); aba.drenar(0.3)
     # as vistas: trocar só mostra/esconde o quadro — o 3D não é montado de novo
     aba.avaliar(f"{F3}.__marca = 'mesmo'; 1")
-    aba.avaliar("document.querySelector('.vistas button[data-vista=\"2d\"]').click(); 1"); aba.drenar(0.5)
+    aba.avaliar(f"{F3}.document.querySelector('.seletor-vista a[data-vista-area=\"2d\"]').click(); 1"); aba.drenar(0.5)
     ok(aba.avaliar("getComputedStyle(document.querySelector('#lado-3d')).display") == "none"
        and aba.avaliar("getComputedStyle(document.querySelector('#lado-2d')).display") != "none"
        and "vista=2d" in (aba.avaliar("location.search") or ""), "a vista 2D mostra só o desenho (e a URL diz a vista)")
-    aba.avaliar("document.querySelector('.vistas button[data-vista=\"3d\"]').click(); 1"); aba.drenar(0.5)
+    aba.avaliar(f"{F2}.document.querySelector('.seletor-vista a[data-vista-area=\"3d\"]').click(); 1"); aba.drenar(0.5)
     ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 4,
        "voltar ao 3D não recarrega o modelo (o mesmo 3D, montado uma vez)")
-    ok(aba.avaliar("!document.querySelector('.so-ambos') || getComputedStyle(document.querySelector('.so-ambos')).display === 'none'"),
+    ok(aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas').hidden") is True,
        "fora do 2D + 3D, os controles da seleção somem")
     # o pedido de ir ao 3D, vindo do 2D (o "Abrir o modelo 3D" depois de montar pela planta): recarrega o 3D e troca a vista
-    aba.avaliar("document.querySelector('.vistas button[data-vista=\"2d\"]').click(); 1"); aba.drenar(0.3)
+    aba.avaliar(f"{F3}.document.querySelector('.seletor-vista a[data-vista-area=\"2d\"]').click(); 1"); aba.drenar(0.3)
     aba.avaliar(f"{F2}.metalicaNavegar('/editor?projeto=posto'); 1")
     t0 = time.time()
     while time.time() - t0 < 60 and not aba.avaliar(f"!!({F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 4 && !{F3}.__marca)"): aba.drenar(0.5)
     ok("vista=3d" in (aba.avaliar("location.search") or "") and not aba.avaliar(f"{F3}.__marca"),
        "o 2D pede o 3D: a área troca a vista e recarrega o 3D (o modelo pode ter mudado)")
-    aba.avaliar("document.querySelector('.vistas button[data-vista=\"ambos\"]').click(); 1"); aba.drenar(0.5)
+    aba.avaliar(f"{F3}.document.querySelector('.seletor-vista a[data-vista-area=\"ambos\"]').click(); 1"); aba.drenar(0.8)
     txt = aba.avaliar(f"({F3}.document.querySelector('#btn-salvar') || {{}}).textContent || ''") or ""
     ok(txt.startswith("✓ Salvo") or txt.startswith("● Salvar"), f"o 3D tem o botão Salvar com o estado da gravação ({txt})")
-    # os painéis da direita: o botão "Painéis" da área esconde os dois lados; a aba de cada lado devolve
-    antes = [aba.avaliar(f"{F}.document.documentElement.classList.contains('sem-paineis')") for F in (F2, F3)]
-    aba.avaliar("document.querySelector('#btn-paineis').click(); 1"); aba.drenar(0.6)
-    depois = [aba.avaliar(f"{F}.document.documentElement.classList.contains('sem-paineis')") for F in (F2, F3)]
-    ok(depois[0] == depois[1] and depois != antes or depois == [True, True],
-       f"o botão Painéis esconde (ou mostra) os painéis dos dois lados: {antes} → {depois}")
-    larg = aba.avaliar(f"{F3}.document.querySelector('#paineis').offsetWidth") if depois[1] else None
-    ok(not depois[1] or larg == 0, f"escondido, o painel do 3D some de verdade (largura {larg})")
+    # os painéis da direita: a aba na borda de cada lado esconde e mostra
+    antes = aba.avaliar(f"{F3}.document.documentElement.classList.contains('sem-paineis')")
     aba.avaliar(f"{F3}.document.querySelector('.aba-paineis').click(); 1"); aba.drenar(0.4)
-    ok(aba.avaliar(f"{F3}.document.documentElement.classList.contains('sem-paineis')") != depois[1],
-       "a aba na borda do 3D alterna o painel dele")
+    depois = aba.avaliar(f"{F3}.document.documentElement.classList.contains('sem-paineis')")
+    ok(depois != antes, f"a aba na borda do 3D alterna o painel dele ({antes} → {depois})")
+    if not depois:
+        aba.avaliar(f"{F3}.document.querySelector('.aba-paineis').click(); 1"); aba.drenar(0.4)
+    larg = aba.avaliar(f"{F3}.document.querySelector('#paineis').offsetWidth")
+    ok(larg == 0, f"escondido, o painel do 3D some de verdade (largura {larg})")
     # a tela sozinha ganha o seletor de vista, que leva à área de trabalho
     aba.navegar(base + "/cad?projeto=posto&desenho=desenho", limite=60)
     t0 = time.time()

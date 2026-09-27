@@ -243,11 +243,11 @@ kbd {
   border-color: var(--campo-foco); }
 
 /* pesquisa de peças: campo no topo e lista de resultados por baixo */
-.busca-pecas { display: flex; align-items: center; margin-left: 8px; position: relative; }
+.busca-pecas { display: flex; align-items: center; margin-left: 8px; position: relative; flex: 0 1 300px; min-width: 110px; }
 .busca-pecas input {
   background: rgba(255, 255, 255, .09); border: 1px solid transparent;
   color: var(--topo-texto); border-radius: var(--raio-p);
-  padding: 3px 9px; width: 300px; font-size: 12.5px;
+  padding: 3px 9px; width: 100%; font-size: 12.5px;
 }
 .busca-pecas input::placeholder { color: rgba(255, 255, 255, .5); }
 .busca-pecas input:hover { border-color: rgba(255, 255, 255, .22); }
@@ -736,7 +736,7 @@ dialog p.explica { margin: 0 0 10px; color: var(--texto2); font-size: 12.5px; }
   .nome-modelo input { width: 130px; }
 }
 @media (max-width: 900px) {
-  .nome-modelo { display: none; }
+  .nome-modelo input { display: none; }
 }
 
 /* painéis da direita recolhíveis (web/area.js): a aba na borda, Ver → Painéis laterais, F4 */
@@ -800,7 +800,7 @@ html.sem-paineis .aba-paineis { right: 0; }
 .painel-bloco .bloco-encaixe.atencao { color: #d97706; font-weight: 600; }
 
 /* dentro da tela dividida (/dividida): a navegação entre telas fica na barra de fora */
-html.embutida #link-projetos, html.embutida #link-desenho, html.embutida #link-dimensionamento { display: none !important; }
+html.embutida #link-desenho, html.embutida #link-dimensionamento { display: none !important; }
 
 /* ------------------------------------------------ seletor de vista (web/area.js) e barras sem quebra */
 /* o seletor [2D | 3D | 2D + 3D] substitui os links "Modelo 3D", "2D + 3D" e "← Desenho 2D" */
@@ -812,6 +812,17 @@ html.embutida #link-projetos, html.embutida #link-desenho, html.embutida #link-d
 .seletor-vista a:first-child { border-radius: 5px 0 0 5px; }
 .seletor-vista a:last-child { border-radius: 0 5px 5px 0; }
 .seletor-vista a:hover { opacity: 1; background: var(--topo-sobre); }
+.ligacao-vistas { display: flex; align-items: center; gap: 4px; margin-right: 8px; flex-shrink: 0; }
+.ligacao-vistas[hidden] { display: none; }
+.ligacao-vistas button { height: 26px; padding: 0 8px; font-size: 12px; border: 1px solid rgba(255, 255, 255, .22); border-radius: 5px;
+                         background: transparent; color: var(--topo-texto); cursor: pointer; opacity: .8; }
+.ligacao-vistas button:hover { opacity: 1; background: var(--topo-sobre); }
+.ligacao-vistas button.ativo { background: rgba(245, 158, 11, .22); border-color: #f59e0b; opacity: 1; }
+.ligacao-vistas .seg { display: inline-flex; }
+.ligacao-vistas .seg button { border-radius: 0; }
+.ligacao-vistas .seg button + button { border-left: 0; }
+.ligacao-vistas .seg button:first-child { border-radius: 5px 0 0 5px; }
+.ligacao-vistas .seg button:last-child { border-radius: 0 5px 5px 0; }
 .seletor-vista a.ativo { background: var(--azul, #1f6feb); border-color: var(--azul, #1f6feb); color: #fff; opacity: 1; cursor: default; }
 .topo .voltar, .menu-botao, .marca, .topo button { white-space: nowrap; flex-shrink: 0; }
 .menus { flex-shrink: 0; }
@@ -828,4 +839,32 @@ html.embutida #link-projetos, html.embutida #link-desenho, html.embutida #link-d
   .busca-pecas input:focus { width: 100%; }
   #btn-tema, #link-dimensionamento { display: none; }
   .nome-modelo input { width: 110px; }
+}
+
+/* dentro da área de trabalho o seletor diz a tela: o nome dela fica só no ícone */
+html.embutida .marca span { display: none; }
+html.embutida .marca { padding: 0 8px 0 10px; }
+/* a metade da área (2D + 3D): a busca de peças vira uma lupa e abre por cima ao receber o foco (clique ou Ctrl+F) */
+@media (max-width: 1000px) {
+  .busca-pecas { flex: 0 0 34px; min-width: 34px; }
+  .busca-pecas input { width: 34px; padding: 3px 6px; cursor: pointer;
+    background: rgba(255, 255, 255, .09) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2.4'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cpath d='M15 15l6 6'/%3E%3C/svg%3E") no-repeat center; }
+  .busca-pecas input::placeholder { color: transparent; }
+  .busca-pecas input:focus { position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 300px; z-index: 60;
+    background-image: none; cursor: text; }
+  .busca-pecas input:focus::placeholder { color: rgba(128, 128, 128, .8); }
+  /* o resto da barra do 3D cabe na metade: o nome do modelo sai (Arquivo → Salvar como), o Salvar
+     fica só no sinal (✓ / ●), "Projetos" vira a casinha, os botões compridos encolhem */
+  .nome-modelo input { display: none; }
+  .btn-salvar { font-size: 0; padding: 3px 7px; }
+  .btn-salvar::before { font-size: 12px; content: '✓'; }
+  .btn-salvar.pendente::before { content: '●'; }
+  .btn-salvar.gravando::before { content: '…'; }
+  .btn-salvar.erro::before { content: '⚠'; }
+  .seletor-vista a { padding: 0 8px; }
+  html.embutida #link-projetos { font-size: 0; padding: 0 9px; }
+  html.embutida #link-projetos::before { content: '⌂'; font-size: 16px; }
+  .menu-botao { padding: 0 4px; }
+  #btn-calcular { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+  #btn-projecao { display: none; }     /* a perspectiva fica na vista 3D cheia */
 }
