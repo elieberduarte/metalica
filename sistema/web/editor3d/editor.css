@@ -793,3 +793,31 @@ dialog p.explica { margin: 0 0 10px; color: var(--texto2); font-size: 12.5px; }
 
 /* dentro da tela dividida (/dividida): a navegação entre telas fica na barra de fora */
 html.embutida #link-projetos, html.embutida #link-desenho, html.embutida #link-dimensionamento { display: none !important; }
+
+/* ------------------------------------------------ seletor de vista (web/area.js) e barras sem quebra */
+/* o seletor [2D | 3D | 2D + 3D] substitui os links "Modelo 3D", "2D + 3D" e "← Desenho 2D" */
+#link-editor, #link-dividida, #link-desenho { display: none !important; }
+.seletor-vista { display: flex; align-items: center; gap: 0; margin: 0 8px 0 2px; flex-shrink: 0; }
+.seletor-vista a { display: flex; align-items: center; height: 26px; padding: 0 11px; font-size: 12.5px; white-space: nowrap;
+                   color: var(--topo-texto); text-decoration: none; border: 1px solid rgba(255, 255, 255, .22); opacity: .85; }
+.seletor-vista a + a { border-left: 0; }
+.seletor-vista a:first-child { border-radius: 5px 0 0 5px; }
+.seletor-vista a:last-child { border-radius: 0 5px 5px 0; }
+.seletor-vista a:hover { opacity: 1; background: var(--topo-sobre); }
+.seletor-vista a.ativo { background: var(--azul, #1f6feb); border-color: var(--azul, #1f6feb); color: #fff; opacity: 1; cursor: default; }
+.topo .voltar, .menu-botao, .marca, .topo button { white-space: nowrap; flex-shrink: 0; }
+.menus { flex-shrink: 0; }
+/* tela estreita (a metade da área 2D + 3D): tudo mais junto, o nome da tela só no ícone */
+@media (max-width: 1150px) {
+  .marca span { display: none; }
+  .marca { padding: 0 8px; }
+  .menu-botao { padding: 0 7px; font-size: 12.5px; }
+  .topo .voltar { padding: 0 7px; }
+}
+@media (max-width: 1150px) {
+  .busca-pecas { min-width: 0; flex: 1 1 60px; }
+  .busca-pecas input { width: 100%; min-width: 60px; }
+  .busca-pecas input:focus { width: 100%; }
+  #btn-tema, #link-dimensionamento { display: none; }
+  .nome-modelo input { width: 110px; }
+}

@@ -1,7 +1,11 @@
-/* Tela dividida (/dividida?projeto=…): o Desenho 2D e o modelo 3D do mesmo projeto lado a lado.
+/* A área de trabalho do projeto (/dividida?projeto=…&vista=2d|3d|ambos): o Desenho 2D e o modelo 3D
+ * como vistas da mesma tela. Cada um é a própria tela, no seu quadro; trocar de vista só mostra ou
+ * esconde o quadro — o 3D é montado uma vez (antes, cada troca abria a outra tela do zero e o modelo
+ * de milhares de peças levava segundos para aparecer). Cada quadro carrega na primeira vez que é
+ * mostrado. As telas pedem para ir ao outro lado por postMessage ("navegar", web/area.js): o
+ * "Abrir o modelo 3D" depois de montar pela planta recarrega o 3D (o modelo mudou) e troca a vista.
  *
- * Cada lado é a própria tela (o CAD e o editor 3D, cada um no seu quadro); esta página só os
- * põe juntos e passa a seleção de um para o outro (postMessage, mesma origem):
+ * Na vista 2D + 3D, a seleção passa de um lado para o outro:
  *   3D → 2D  a caixa em planta do que se escolheu vira a região no desenho (o modelo é o desenho
  *            + o deslocamento que a montagem pela planta gravou), ou, no modo "a elevação", a
  *            moldura da elevação da treliça escolhida (da tela Treliças lidas);
@@ -15,6 +19,8 @@ const PARAMS = new URLSearchParams(location.search);
 const PROJETO = PARAMS.get('projeto') || '';
 const CHAVE = 'metalica.dividida';
 let pref = { largura: 0.5, trocado: false, modo: 'planta', seguir: true };
+let vista = ['2d', '3d', 'ambos'].includes(PARAMS.get('vista')) ? PARAMS.get('vista') : 'ambos';
+const fontes = { f2d: '', f3d: '' };      // o endereço de cada quadro (carregado na primeira vez que aparece)
 try { pref = { ...pref, ...JSON.parse(localStorage.getItem(CHAVE) || '{}') }; } catch (e) { /* sem armazenamento */ }
 const guardar = () => { try { localStorage.setItem(CHAVE, JSON.stringify(pref)); } catch (e) { /* idem */ } };
 
@@ -36,6 +42,43 @@ async function pedir(rota) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
   return j;
+}
+
+function carregarQuadros() {
+  for (const [id, lado] of [['f2d', '2d'], ['f3d', '3d']]) {
+    const f = $('#' + id);
+    const visivel = vista === 'ambos' || vista === lado;
+    if (visivel && fontes[id] && f.dataset.src !== fontes[id]) { f.dataset.src = fontes[id]; f.src = fontes[id]; }
+  }
+}
+
+function mostrarVista(v, gravar = true) {
+  vista = v;
+  document.body.classList.remove('v-2d', 'v-3d', 'v-ambos');
+  document.body.classList.add('v-' + v);
+  for (const b of document.querySelectorAll('.vistas button')) b.classList.toggle('ativo', b.dataset.vista === v);
+  carregarQuadros();
+  if (v !== 'ambos') para2d({ metalica: 'enquadrar2d', caixa: null });
+  const u = new URL(location.href); u.searchParams.set('vista', v); history.replaceState(null, '', u);
+  if (gravar) guardar();
+}
+
+/** um pedido de ir ao 2D ou ao 3D, vindo de dentro de um quadro */
+function navegar(url) {
+  const u = new URL(url, location.origin);
+  if (u.pathname === '/dividida' || u.pathname === '/2d-3d') {
+    const v = u.searchParams.get('vista');
+    if (v) mostrarVista(v);
+    return;
+  }
+  const tres = ['/editor', '/editor3d', '/3d'].includes(u.pathname);
+  const id = tres ? 'f3d' : 'f2d';
+  if (!u.searchParams.get('projeto')) u.searchParams.set('projeto', PROJETO);
+  fontes[id] = u.pathname + u.search;
+  $('#' + id).dataset.src = '';                // recarrega: o pedido traz o que mudou (modelo novo, destaque…)
+  if (!tres && u.searchParams.get('desenho')) $('#desenho').value = u.searchParams.get('desenho');
+  mostrarVista(vista === 'ambos' ? 'ambos' : (tres ? '3d' : '2d'));
+  carregarQuadros();
 }
 
 function aplicarLayout() {
@@ -88,7 +131,7 @@ function doTresD(m) {
     if (m.nomes && m.nomes.length > 1) avisar('Várias treliças escolhidas: o 2D mostra a elevação quando o 3D tem uma só.');
     else if (!(m.nomes || []).length) avisar('Essa peça não veio de uma elevação: o 2D mostra o lugar dela na planta.', 4000);
   }
-  if (!desl) { avisar('Este projeto não tem a ligação entre o desenho e o modelo: monte o 3D pela planta de novo (Desenho 2D → Montar o 3D pela planta).', 0); return; }
+  if (!desl) { avisar('Este projeto não tem a ligação entre o desenho e o modelo: monte o 3D pela planta de novo (Desenho 2D → Montar o 3D pela planta).', 8000); return; }
   if (!m.caixa) return;
   const c = [[m.caixa[0][0] - desl[0], m.caixa[0][1] - desl[1]], [m.caixa[1][0] - desl[0], m.caixa[1][1] - desl[1]]];
   // uma peça pequena não pode virar um zoom de milímetros: a região tem ao menos 3 m
@@ -103,12 +146,12 @@ function doDoisD(m) {
   const meio = [(m.caixa[0][0] + m.caixa[1][0]) / 2, (m.caixa[0][1] + m.caixa[1][1]) / 2];
   const t = trelicas.find(x => x.caixa_desenho && dentro(x.caixa_desenho, meio));
   if (t) { para3d({ metalica: 'selecionar3d', nome: t.nome }); return; }
-  if (!desl) { avisar('Sem a ligação entre o desenho e o modelo: monte o 3D pela planta de novo.', 0); return; }
+  if (!desl) { avisar('Sem a ligação entre o desenho e o modelo: monte o 3D pela planta de novo.', 8000); return; }
   para3d({ metalica: 'selecionar3d', caixa: [[m.caixa[0][0] + desl[0], m.caixa[0][1] + desl[1]], [m.caixa[1][0] + desl[0], m.caixa[1][1] + desl[1]]] });
 }
 
 async function iniciar() {
-  $('#btn-voltar').addEventListener('click', () => { if (history.length > 1) history.back(); else location.href = '/'; });
+  for (const b of document.querySelectorAll('.vistas button')) b.addEventListener('click', () => mostrarVista(b.dataset.vista));
   $('#btn-trocar').addEventListener('click', () => { pref.trocado = !pref.trocado; aplicarLayout(); guardar(); });
   $('#seguir').addEventListener('change', () => { pref.seguir = $('#seguir').checked; guardar(); if (!pref.seguir) para2d({ metalica: 'enquadrar2d', caixa: null }); });
   for (const b of document.querySelectorAll('.grupo-modo button')) {
@@ -123,7 +166,7 @@ async function iniciar() {
     projeto = p.projeto || {};
     desenhos = (p.resumo && p.resumo.desenhos) || [];
     $('#nome-projeto').textContent = projeto.nome || PROJETO;
-    document.title = `2D + 3D — ${projeto.nome || PROJETO}`;
+    document.title = `${projeto.nome || PROJETO} — Metálica`;
   } catch (e) { avisar(`Projeto não encontrado: ${e.message}`, 0); return; }
   const pm = projeto.planta_modelo || {};
   if (Array.isArray(pm.deslocamento) && pm.deslocamento.length === 2) desl = pm.deslocamento.map(Number);
@@ -137,15 +180,19 @@ async function iniciar() {
     sel.append(o);
   }
   if (!desenhos.length) { const o = document.createElement('option'); o.textContent = '— sem desenho —'; sel.append(o); sel.disabled = true; }
-  const carregar2d = (nome) => { $('#f2d').src = `/cad?projeto=${encodeURIComponent(PROJETO)}` + (nome ? `&desenho=${encodeURIComponent(nome)}` : ''); };
+  const carregar2d = (nome) => { fontes.f2d = `/cad?projeto=${encodeURIComponent(PROJETO)}` + (nome ? `&desenho=${encodeURIComponent(nome)}` : ''); carregarQuadros(); };
   sel.addEventListener('change', () => carregar2d(sel.value));
+  // o 3D leva junto o que veio na URL para ele (destacar=…, lancar=1)
+  const extra3d = ['destacar', 'lancar'].filter(k => PARAMS.get(k)).map(k => `&${k}=${encodeURIComponent(PARAMS.get(k))}`).join('');
+  fontes.f3d = `/editor?projeto=${encodeURIComponent(PROJETO)}` + extra3d;
   carregar2d(inicial);
-  $('#f3d').src = `/editor?projeto=${encodeURIComponent(PROJETO)}`;
+  mostrarVista(vista, false);
   try { trelicas = ((await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/trelicas`)).trelicas || []).filter(t => t.caixa_desenho); }
   catch (e) { trelicas = []; }
-  if (!desl) avisar('Para ligar os dois lados, monte o 3D pela planta de novo (a montagem grava onde o desenho fica no modelo).', 12000);
   window.addEventListener('message', (ev) => {
     if (ev.origin !== location.origin || !ev.data || !ev.data.metalica) return;
+    if (ev.data.metalica === 'navegar' && (ev.source === $('#f2d').contentWindow || ev.source === $('#f3d').contentWindow)) { navegar(ev.data.url); return; }
+    if (vista !== 'ambos') return;
     if (ev.data.metalica === 'sel3d' && ev.source === $('#f3d').contentWindow) doTresD(ev.data);
     else if (ev.data.metalica === 'sel2d' && ev.source === $('#f2d').contentWindow) doDoisD(ev.data);
   });

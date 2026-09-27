@@ -300,7 +300,7 @@ export class MetodosLancamento {
       ...(r.avisos || []).map(a => el('p', { class: 'explica atencao', texto: a })),
       el('p', { class: 'explica', texto: 'Próximos passos: Memorial do dimensionamento (PDF, com cargas, vento, combinações e cada elemento), Detalhamentos → Detalhar peças e conjuntos, e Calcular estrutura para conferir o modelo depois de editar.' }));
     const acao = await this.dialogo({ titulo: 'Estrutura lançada', corpo, ok: 'Abrir o modelo lançado' });
-    if (acao === 'ok') location.href = `/editor?projeto=${encodeURIComponent(this.projeto)}`;
+    if (acao === 'ok') (window.metalicaNavegar || ((u) => { location.href = u; }))(`/editor?projeto=${encodeURIComponent(this.projeto)}`);
   }
 
   /** O memorial completo do dimensionamento do lançamento, em PDF (pasta memorial/lancamento). */

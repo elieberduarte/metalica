@@ -91,6 +91,7 @@ try:
     aba.drenar(1.5)
     ok(aba.avaliar(f"!!{F2}.cad") and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 4, "os dois lados abrem: o desenho e o modelo do projeto")
     ok(aba.avaliar("document.querySelector('#nome-projeto').textContent") == "Posto dividido", "o nome do projeto no topo")
+    ok(aba.avaliar("document.querySelector('.vistas button.ativo').dataset.vista") == "ambos", "sem vista na URL, abre no 2D + 3D")
     ok(aba.avaliar(f"getComputedStyle({F2}.document.querySelector('#link-projetos')).display") == "none"
        and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('#link-projetos')).display") == "none",
        "a navegação de cada lado some dentro da tela dividida")
@@ -127,8 +128,36 @@ try:
     aba.avaliar("document.querySelector('#seguir').click(); document.querySelector('#btn-trocar').click(); 1")
     ok(aba.avaliar("document.querySelector('#quadro').classList.contains('trocado')"), "trocar lados põe o 3D à esquerda")
     aba.avaliar("document.querySelector('#btn-trocar').click(); 1")
+    # as vistas: trocar só mostra/esconde o quadro — o 3D não é montado de novo
+    aba.avaliar(f"{F3}.__marca = 'mesmo'; 1")
+    aba.avaliar("document.querySelector('.vistas button[data-vista=\"2d\"]').click(); 1"); aba.drenar(0.5)
+    ok(aba.avaliar("getComputedStyle(document.querySelector('#lado-3d')).display") == "none"
+       and aba.avaliar("getComputedStyle(document.querySelector('#lado-2d')).display") != "none"
+       and "vista=2d" in (aba.avaliar("location.search") or ""), "a vista 2D mostra só o desenho (e a URL diz a vista)")
+    aba.avaliar("document.querySelector('.vistas button[data-vista=\"3d\"]').click(); 1"); aba.drenar(0.5)
+    ok(aba.avaliar(f"{F3}.__marca") == "mesmo" and aba.avaliar(f"{F3}.editor.documento.entidades.size") == 4,
+       "voltar ao 3D não recarrega o modelo (o mesmo 3D, montado uma vez)")
+    ok(aba.avaliar("!document.querySelector('.so-ambos') || getComputedStyle(document.querySelector('.so-ambos')).display === 'none'"),
+       "fora do 2D + 3D, os controles da seleção somem")
+    # o pedido de ir ao 3D, vindo do 2D (o "Abrir o modelo 3D" depois de montar pela planta): recarrega o 3D e troca a vista
+    aba.avaliar("document.querySelector('.vistas button[data-vista=\"2d\"]').click(); 1"); aba.drenar(0.3)
+    aba.avaliar(f"{F2}.metalicaNavegar('/editor?projeto=posto'); 1")
+    t0 = time.time()
+    while time.time() - t0 < 60 and not aba.avaliar(f"!!({F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 4 && !{F3}.__marca)"): aba.drenar(0.5)
+    ok("vista=3d" in (aba.avaliar("location.search") or "") and not aba.avaliar(f"{F3}.__marca"),
+       "o 2D pede o 3D: a área troca a vista e recarrega o 3D (o modelo pode ter mudado)")
+    aba.avaliar("document.querySelector('.vistas button[data-vista=\"ambos\"]').click(); 1"); aba.drenar(0.5)
     txt = aba.avaliar(f"({F3}.document.querySelector('#btn-salvar') || {{}}).textContent || ''") or ""
     ok(txt.startswith("✓ Salvo") or txt.startswith("● Salvar"), f"o 3D tem o botão Salvar com o estado da gravação ({txt})")
+    # a tela sozinha ganha o seletor de vista, que leva à área de trabalho
+    aba.navegar(base + "/cad?projeto=posto&desenho=desenho", limite=60)
+    t0 = time.time()
+    while time.time() - t0 < 30 and not aba.avaliar("!!window.cad"): aba.drenar(0.3)
+    sel = aba.avaliar("[...document.querySelectorAll('.seletor-vista a')].map(a => a.textContent + (a.classList.contains('ativo') ? '*' : '') + '=' + a.getAttribute('href'))") or []
+    ok(len(sel) == 3 and sel[0].startswith("2D*") and "/dividida?projeto=posto&vista=3d" in sel[1],
+       f"o 2D sozinho tem o seletor 2D | 3D | 2D + 3D ({sel})")
+    alt = aba.avaliar("[...document.querySelectorAll('header.topo > *')].filter(e => e.offsetParent !== null && e.getBoundingClientRect().height > 46).map(e => e.className || e.id)") or []
+    ok(not alt, f"a barra do 2D não quebra linha ({alt})")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

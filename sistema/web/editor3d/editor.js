@@ -1510,7 +1510,7 @@ export class Editor {
       });
       const j = await r.json();
       if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
-      window.location.href = `/cad?projeto=${encodeURIComponent(this.projeto)}&desenho=${encodeURIComponent(j.nome)}`;
+      (window.metalicaNavegar || ((u) => { location.href = u; }))(`/cad?projeto=${encodeURIComponent(this.projeto)}&desenho=${encodeURIComponent(j.nome)}`);
     } catch (e) { this.aviso(`Não foi possível abrir o detalhe de ${marca}: ${e.message}`, 'erro', 0); this.dica(''); }
     finally { pararDet(); }
   }
@@ -1549,7 +1549,7 @@ export class Editor {
   abrirDividida() {
     if (!this.projeto) { this.aviso('Abra um projeto: a tela dividida mostra o desenho e o modelo dele.', 'atencao'); return; }
     if (window.parent !== window) { this.aviso('Já está na tela dividida.', 'info'); return; }
-    this._irPara(`/dividida?projeto=${encodeURIComponent(this.projeto)}`);
+    this._irPara(`/dividida?projeto=${encodeURIComponent(this.projeto)}&vista=ambos`);
   }
 
   /** A tela Treliças lidas do projeto (a elevação de `peca` aberta, quando vier). */
@@ -1565,7 +1565,7 @@ export class Editor {
       if (await this.dialogo({ titulo: 'Modelo não gravado', corpo, ok: 'Sair mesmo assim' }) !== 'ok') return;
       this._autosavePendente = false;
     }
-    window.location.href = url;
+    (window.metalicaNavegar || ((u) => { location.href = u; }))(url);
   }
 
   /**

@@ -222,6 +222,9 @@ export class Tela {
   }
 
   desenhar() {
+    // escondido (a vista 3D da área de trabalho): o canvas tem tamanho zero e não há o que pintar;
+    // ao aparecer, o redimensionamento pede o quadro de novo
+    if (!this.canvas.width || !this.canvas.height || !this.largura || !this.altura) return;
     const ctx = this.ctx, dpr = window.devicePixelRatio || 1;
     const cores = this.cores();
     // quadro pesado (> 40 ms) durante pan/zoom: aproxima com o cache e só refaz de

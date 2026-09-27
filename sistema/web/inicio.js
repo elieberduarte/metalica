@@ -91,12 +91,15 @@ function quando(iso) {
 
 function urlDoProjeto(p, destino) {
   const s = encodeURIComponent(p.slug);
-  if (destino === 'editor') return `/editor?projeto=${s}`;
+  // o 2D e o 3D abrem na área de trabalho do projeto: as duas vistas na mesma tela, trocar de uma
+  // para a outra não recarrega nada
+  const area = (vista, desenho) => `/dividida?projeto=${s}&vista=${vista}` + (desenho ? `&desenho=${encodeURIComponent(desenho)}` : '');
+  if (destino === 'editor') return area('3d');
   if (destino === 'dimensionar') return `/dimensionar?projeto=${s}`;
-  if (destino === 'cad') return `/cad?projeto=${s}`;
-  if (p.tipo === 'desenho') return `/cad?projeto=${s}`;    // começa desenhando
-  if (p.tipo === 'lancamento') return p.tem_modelo ? `/editor?projeto=${s}` : `/cad?projeto=${s}&desenho=${encodeURIComponent('planta-de-lançamento')}`;
-  return p.tipo === 'ifc' ? `/editor?projeto=${s}` : `/dimensionar?projeto=${s}`;
+  if (destino === 'cad') return area('2d');
+  if (p.tipo === 'desenho') return area('2d');    // começa desenhando
+  if (p.tipo === 'lancamento') return p.tem_modelo ? area('3d') : area('2d', 'planta-de-lançamento');
+  return p.tipo === 'ifc' ? area('3d') : `/dimensionar?projeto=${s}`;
 }
 
 const expandidos = new Set();   // projetos com todos os desenhos à mostra

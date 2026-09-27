@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#101b2e">
 <script src="/tema-janela.js"></script>
 <script src="/atualizacao.js" defer></script>
-<title>2D + 3D — Metálica</title>
+<title>Projeto — Metálica</title>
 <link rel="stylesheet" href="/estilo.css">
 <script>
 (function () {
@@ -18,6 +18,23 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><rect x='5' y='7' width='10' height='18' fill='none' stroke='%23fff' stroke-width='2'/><path d='M19 12 L24 9 L29 12 L29 22 L24 25 L19 22 Z' fill='none' stroke='%23fff' stroke-width='2'/></svg>">
 <style>
   html, body { height: 100%; }
+  .area-topo { min-height: 40px; height: 40px; padding: 0 10px; gap: 12px; }
+  .area-topo .marca { gap: 8px; min-width: 0; }
+  .area-topo .marca .nome { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34vw; }
+  .area-topo .vistas { display: inline-flex; flex-shrink: 0; }
+  .area-topo .vistas button { border-radius: 0; padding: 4px 14px; font-size: 13px; border: 1px solid rgba(255,255,255,.22); background: transparent; color: #e2e8f0; }
+  .area-topo .vistas button + button { border-left: 0; }
+  .area-topo .vistas button:first-child { border-radius: 5px 0 0 5px; }
+  .area-topo .vistas button:last-child { border-radius: 0 5px 5px 0; }
+  .area-topo .vistas button.ativo { background: var(--azul); border-color: var(--azul); color: #fff; }
+  .area-topo .controles { flex-wrap: nowrap; overflow: hidden; }
+  .area-topo .acoes { margin-left: auto; }
+  .area-topo .acoes button, .area-topo #btn-trocar { padding: 4px 10px; font-size: 12.5px; white-space: nowrap; }
+  body:not(.v-ambos) .so-ambos { display: none !important; }
+  body.v-3d .com-2d { display: none !important; }
+  body.v-2d #lado-3d, body.v-2d #divisor { display: none; }
+  body.v-3d #lado-2d, body.v-3d #divisor { display: none; }
+  body.v-2d #lado-2d, body.v-3d #lado-3d { flex: 1 1 auto !important; }
   body { display: flex; flex-direction: column; overflow: hidden; margin: 0; }
   .topo .controles { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
   .topo .controles label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
@@ -47,23 +64,27 @@
 </head>
 <body>
 
-<header class="topo">
+<header class="topo area-topo">
   <div class="marca">
-    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="7" width="10" height="18" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 12 L23 9 L28 12 L28 22 L23 25 L18 22 Z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-    <h1>2D + 3D<span id="nome-projeto">projeto</span></h1>
+    <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="7" width="10" height="18" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 12 L23 9 L28 12 L28 22 L23 25 L18 22 Z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    <span class="nome" id="nome-projeto" title="Projeto">projeto</span>
   </div>
+  <nav class="vistas" role="group" aria-label="Vista do projeto">
+    <button type="button" data-vista="2d" title="O desenho do projeto (a troca não recarrega nada)">2D</button>
+    <button type="button" data-vista="3d" title="O modelo 3D do projeto (a troca não recarrega nada)">3D</button>
+    <button type="button" data-vista="ambos" title="O desenho e o modelo lado a lado: escolher uma peça num mostra ela no outro">2D + 3D</button>
+  </nav>
   <div class="controles">
-    <label title="Escolher uma peça num lado mostra ela no outro"><input type="checkbox" id="seguir" checked> seguir a seleção</label>
-    <span title="O que o 2D mostra quando se escolhe uma treliça no 3D">o 2D mostra:</span>
-    <span class="grupo-modo" role="group" aria-label="O que o 2D mostra">
+    <label class="so-ambos" title="Escolher uma peça num lado mostra ela no outro"><input type="checkbox" id="seguir" checked> seguir a seleção</label>
+    <span class="so-ambos" title="O que o 2D mostra quando se escolhe uma treliça no 3D">o 2D mostra:</span>
+    <span class="grupo-modo so-ambos" role="group" aria-label="O que o 2D mostra">
       <button type="button" data-modo="planta" class="ativo" title="O lugar da peça na planta estrutural">a planta</button>
       <button type="button" data-modo="elevacao" title="A elevação da treliça escolhida, como o projetista desenhou">a elevação</button>
     </span>
-    <label title="Qual desenho do projeto fica no lado 2D">desenho <select id="desenho"></select></label>
+    <button type="button" id="btn-trocar" class="so-ambos" title="Troca o 2D e o 3D de lado">⇄ Trocar lados</button>
+    <label class="com-2d" title="Qual desenho do projeto fica no 2D">desenho <select id="desenho"></select></label>
   </div>
   <div class="acoes">
-    <button type="button" id="btn-trocar" title="Troca o 2D e o 3D de lado">⇄ Trocar lados</button>
-    <button type="button" id="btn-voltar" title="Volta para a tela anterior">&larr; Voltar</button>
     <button type="button" onclick="location.href='/'" title="Voltar à lista de projetos">Projetos</button>
   </div>
 </header>

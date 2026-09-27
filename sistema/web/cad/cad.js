@@ -248,7 +248,7 @@ class CAD {
   async _sairPara(url) {
     if (this._temPendente() && !this._desenhoBloqueado() && !(await this._gravarOuConfirmar('Sair mesmo assim'))) return false;
     this._editado = false;
-    location.href = url;
+    (window.metalicaNavegar || ((u) => { location.href = u; }))(url);
     return true;
   }
 
@@ -880,7 +880,7 @@ class CAD {
     // o aviso do servidor sobre as peças sem perfil já foi dito acima, com os perfis usados
     for (const a of r.avisos || []) if (!(semPerfil.length && /só pela forma/.test(a))) itens.push(el('div', { class: 'explica atencao', texto: a }));
     const acao = await this.dialogo({ titulo: 'Projeto recebido', corpo: el('div', {}, ...itens), ok: r.modelo ? 'Abrir o modelo 3D' : 'OK' });
-    if (acao === 'ok' && r.modelo) location.href = this.urlDoEditor();
+    if (acao === 'ok' && r.modelo) (window.metalicaNavegar || ((u) => { location.href = u; }))(this.urlDoEditor());
   }
 
   /** Várias vistas reconhecidas: cada uma no seu lugar (a montagem sugerida, editável). */
@@ -959,7 +959,7 @@ class CAD {
       const itens = [el('div', { class: 'explica', texto: `Modelo 3D gerado: ${numero(g.barras || 0)} barra(s), ${g.posicoes || 0} posição(ões), ${g.conjuntos || 0} conjunto(s), ${numero(g.peso_kg || 0)} kg. O modelo anterior foi guardado no histórico.` })];
       if (r.ifc) itens.push(el('div', { class: 'explica' }, 'IFC: ', el('a', { href: r.ifc.url, download: r.ifc.nome, texto: `${r.ifc.nome} (${numero(r.ifc.tamanho_kb, 0)} kB)` })));
       this.dica('Modelo 3D gerado.');
-      if (await this.dialogo({ titulo: 'Modelo 3D gerado', corpo: el('div', {}, ...itens), ok: 'Abrir o modelo 3D' }) === 'ok') location.href = this.urlDoEditor();
+      if (await this.dialogo({ titulo: 'Modelo 3D gerado', corpo: el('div', {}, ...itens), ok: 'Abrir o modelo 3D' }) === 'ok') (window.metalicaNavegar || ((u) => { location.href = u; }))(this.urlDoEditor());
     } catch (e) { this.aviso(`Não foi possível gerar o modelo: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 

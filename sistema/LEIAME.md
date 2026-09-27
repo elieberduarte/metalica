@@ -225,6 +225,21 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.45 (em desenvolvimento).** **Área de trabalho do projeto** (`/dividida?projeto=…&vista=2d|3d|ambos`, pedido do
+usuário: "a transição entre 2D, 3D e 2D+3D muda o menu superior… e ao sair do 2D para o 3D ele renderiza o modelo todas
+as vezes, carrega um modelo antigo e depois o correto"): o 2D e o 3D são vistas da mesma tela, com o seletor
+[2D | 3D | 2D + 3D] numa barra só; trocar de vista mostra ou esconde o quadro — o 3D de milhares de peças é montado uma
+vez (antes, cada troca abria a outra tela do zero: 5–7 s de tela travada, com o modelo pela metade à vista). Cada
+quadro carrega na primeira vez que aparece. A tela inicial abre os projetos na área (na vista de antes: o desenho no
+2D, o IFC e o lançado no 3D); a tela sozinha (/cad, /editor) ganha o mesmo seletor no começo da barra, no lugar de
+"Modelo 3D", "2D + 3D" e "← Desenho 2D". `web/area.js`: dentro da área, as idas de uma tela à outra ("Abrir o modelo
+3D" depois de montar pela planta, "Lançar estrutura", "Abrir no 3D" do detalhe) viram troca de vista e recarregam só o
+lado que mudou; o que não é 2D nem 3D (materiais, análise, memorial) sai da área. Barras sem quebra de linha e mais
+enxutas na metade da tela (o nome da tela só no ícone, busca que encolhe, Tema/Escala/Fechar escondidos). O 2D
+escondido não pinta (canvas de tamanho zero). **Montante de ponta em U** gira pela largura desenhada (a aba: alma
+atravessada, abas para o meio da treliça — a ponta do caixão da TRANSIÇÃO 1) e pela direção da treliça. **Seletor do
+desenho** da tela dividida no padrão escuro.
+
 **0.8.44.** **Tela dividida 2D + 3D** (`/dividida?projeto=…`, `web/dividida.html`/`.js`,
 `web/editor3d/modulos/divisao.js`; pedido do usuário: "dividir a visualização entre 2D e 3D no mesmo quadro, vai
 facilitar muito a conferência"): o Desenho 2D e o modelo 3D do projeto lado a lado, cada um a própria tela num quadro,

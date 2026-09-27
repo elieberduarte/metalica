@@ -152,7 +152,7 @@ export class MetodosMontarPlantaCAD {
     }
     if (r.quadro) itens.push(el('div', { class: 'explica', texto: `O quadro "PROJETO CONSIDERADO NO MODELO 3D" está no desenho, abaixo do projeto, com ${(r.quadro.grupos || []).length} grupo(s): as plantas e as elevações que viraram peça, sem o resto (camadas QUADRO …). A próxima montagem refaz o quadro.` }));
     if (r.ifc) itens.push(el('div', { class: 'explica' }, 'IFC: ', el('a', { href: r.ifc.url, download: r.ifc.nome, texto: `${r.ifc.nome} (${numero(r.ifc.tamanho_kb, 0)} kB)` })));
-    if (await this.dialogo({ titulo: 'Modelo 3D montado pela planta', corpo: el('div', {}, ...itens), ok: 'Abrir o modelo 3D', cancelar: r.quadro ? 'Ver o quadro no desenho' : undefined }) === 'ok') { location.href = this.urlDoEditor(); return; }
+    if (await this.dialogo({ titulo: 'Modelo 3D montado pela planta', corpo: el('div', {}, ...itens), ok: 'Abrir o modelo 3D', cancelar: r.quadro ? 'Ver o quadro no desenho' : undefined }) === 'ok') { (window.metalicaNavegar || ((u) => { location.href = u; }))(this.urlDoEditor()); return; }
     if (r.quadro && r.quadro.caixa) this.tela.enquadrar(r.quadro.caixa, 0.04);
   }
 }
