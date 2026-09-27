@@ -10,6 +10,7 @@ import { el } from '../editor.js';
 const REGRAS = [
   ['voando', 'Peças voando (sem ligação até a base)'],
   ['ponta_sem_apoio', 'Ponta de treliça sem apoio'],
+  ['ponta_em_diagonal', 'Ponta de treliça ligada em diagonal, não num nó'],
   ['terca_sem_apoio', 'Terça sem apoio'],
   ['terca_em_balanco', 'Terça passando do último apoio'],
   ['viga_sem_apoio', 'Viga com a ponta sem apoio'],

@@ -29,8 +29,19 @@ def etapa(titulo, cmd):
     return r.returncode == 0
 
 
+def _paralelo_pytest() -> list:
+    """`-n N` quando o pytest-xdist está instalado: a suíte inteira em metade dos núcleos
+    (medido: 200 s → 93 s com 6). Sem ele, roda como sempre."""
+    import importlib.util
+    if importlib.util.find_spec("xdist") is None:
+        return []
+    return ["-n", str(max(1, min(6, (os.cpu_count() or 2) // 2)))]
+
+
 def main(argv):
-    resultados = [("testes automáticos", etapa("testes automáticos", [sys.executable, "-m", "pytest", "testes/", "-q", "-p", "no:warnings"]))]
+    t_inicio = time.time()
+    resultados = [("testes automáticos", etapa("testes automáticos",
+                                                [sys.executable, "-m", "pytest", "testes/", "-q", "-p", "no:warnings"] + _paralelo_pytest()))]
     if "--sem-telas" not in argv:
         resultados.append(("verificadores das telas", etapa("verificadores das telas", [sys.executable, "testes/rodar_verificadores.py"])))
     if "--sem-bateria" not in argv:
@@ -40,6 +51,7 @@ def main(argv):
         print(f"  {'ok    ' if ok else 'FALHOU'} {nome}")
     if "--sem-bateria" not in argv:
         print("  confira as diferenças das obras em ../Projeto/bateria/ultima-comparacao.txt")
+    print(f"  tudo em {(time.time() - t_inicio) / 60:.1f} min")
     return 0 if all(ok for _, ok in resultados) else 1
 
 

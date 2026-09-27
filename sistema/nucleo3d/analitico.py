@@ -36,8 +36,9 @@ APOIA_EM = {
     "contraventamento": ("banzo", "pilar", "viga", "montante", "diagonal", "terça"),
     "pilar": ("banzo", "viga"),
     "banzo": ("pilar", "banzo", "viga", "montante"),
-    "montante": ("banzo", "diagonal", "montante"),
-    "diagonal": ("banzo", "diagonal", "montante"),
+    # a alma da mão-francesa (PM6) termina na face do pilar, a meia seção do eixo
+    "montante": ("banzo", "diagonal", "montante", "pilar", "viga"),
+    "diagonal": ("banzo", "diagonal", "montante", "pilar", "viga"),
 }
 ALMA = ("montante", "diagonal")
 TOL_ALMA = 120.0        # alma que chega no meio de outra barra de alma (o painel subdividido): bem perto
@@ -254,7 +255,9 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                 if j == k or linhas[j]["papel"] not in alvo or linhas[j]["grupo"] == ln["grupo"] and ln["papel"] in ("terça", "viga"):
                     continue
                 d, t, q = _proj(p, nos[linhas[j]["na"]], nos[linhas[j]["nb"]])
-                tol = TOL_ALMA if linhas[j]["papel"] in ALMA else TOL_APOIO
+                # alma de outra peça: só bem perto (senão liga treliças vizinhas); da mesma
+                # peça (o painel subdividido, a mão-francesa treliçada), a tolerância normal
+                tol = TOL_ALMA if linhas[j]["papel"] in ALMA and linhas[j]["grupo"] != ln["grupo"] else TOL_APOIO
                 if d <= tol and (melhor is None or d < melhor[0]):
                     melhor = (d, j, t, q)
             if melhor:

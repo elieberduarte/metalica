@@ -36,6 +36,13 @@ Telas: `/` gerenciador, `/dimensionar?projeto=<pasta>` dimensionamento,
 `/editor?projeto=<pasta>` editor 3D. Sem `?projeto=`, o dimensionamento funciona como
 rascunho guardado no navegador, e o botão Salvar cria o projeto.
 
+**Modo de desenvolvimento** (`python dev.py`, ou o atalho "Metálica (desenvolvimento)" na área de trabalho):
+o programa roda do código, na porta 8766, com os mesmos projetos do instalado (Documentos\Metálica), uma faixa
+laranja no alto das telas e "[DEV]" no título, sem oferecer atualização. Mudou um `.py`, o vigia reinicia o servidor
+sozinho e a janela aberta volta a responder em segundos; mudou js/html/css, o rótulo da versão pede F5. É onde as
+rodadas de correção acontecem; a versão oficial (conferência completa, instalador, GitHub) sai no fim de cada leva.
+Não abra o mesmo projeto no instalado e no desenvolvimento ao mesmo tempo: um grava por cima do outro.
+
 Opções: `--porta 9000` muda a porta, `--sem-navegador` não abre o navegador sozinho,
 `--dados pasta` muda a pasta de dados.
 
@@ -217,6 +224,37 @@ os quadros internos) —, telhas (1:50), chaparias (todas as chapas e as peças 
 localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, barras, tirantes, conjuntos em
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
+
+**0.8.43 (em desenvolvimento).** **Modo de desenvolvimento** (`dev.py`, `app.py --dev`, atalho "Metálica
+(desenvolvimento)"): porta 8766, os mesmos projetos do instalado, faixa laranja e "[DEV]" no título, sem oferta de
+atualização, reinício automático ao mudar um `.py` (o vigia passa `--reaberto`, e o servidor espera a janela que já
+está aberta em vez de abrir outra), rótulo "código novo — recarregar (F5)" quando js/html/css mudam no disco
+(`/api/versao` traz `dev` e o carimbo `codigo`); verificador `verif_dev_ui`. **Conferência em paralelo**:
+`rodar_verificadores.py` roda N verificadores de cada vez (`--paralelo N`, `--serie`), os mais demorados primeiro
+(`_duracoes.json`), trava por porta fixa (8781/8783/8784/8787 aparecem duas vezes) e repete em série o que falhou;
+`antes_de_publicar.py` roda o pytest com `-n` quando há pytest-xdist (200 s → 93 s). A placa de vídeo no Chrome sem
+janela não ajudou (medido nos verificadores pesados): fica o desenho por software. **Pilares com corte próprio**
+(`nucleo3d/pilares_corte.py`): o título "PMn - kX" com as vistas rotuladas acima dá a forma do pilar — o aglomerado
+de linhas estruturais acima de cada rótulo (varredura em grade), o pilar pelas linhas compridas paralelas
+(inclinação, comprimento, largura), a copa pelos banzos que passam sobre o eixo logo acima do topo (uma altura só,
+ou treliça), os braços pela vista superior, a mão-francesa pelos segmentos desenhados entre o pilar e a ponta do
+braço (linha dupla da cantoneira numa só), os perfis pelas notas BANZO/DIAG-MONT. No Posto CB: PM6 (3×) vira pilar
+com viga em cruz de ±2,06 m em 5,93–5,97 m e 4 MF1 treliçadas; PM8 vira o perfil duplo inclinado a 50,9° (10,96 m)
+no sentido do lado comprido da placa de base, para o lado da estrutura mais perto — chega ao nível 6,00 na borda da
+passarela e segue até 8,51 m sem nada em cima (o Verificar apoios aponta; é do projeto). Tudo o que precisou de
+escolha fica em `origem.a_conferir`, e os cortes usados entram no quadro do projeto. (Os ângulos do arco no desenho
+são `inicio`/`fim`, em graus — com `ini` o arco virava um círculo de cordas fantasmas.) No modelo analítico, a alma
+liga também em pilar e viga (a mão-francesa termina na face do pilar), e a alma da mesma peça aceita a tolerância
+normal. **Registro de lentidão** (`web/lentidao.js`, `POST /api/lento`): a janela conta ao servidor cada tarefa que
+a segurou por mais de meio segundo (PerformanceObserver de longtask) e cada erro de JavaScript, com a tela, a
+ferramenta ativa e o número de objetos; vai por sendBeacon e fica no metalica.log como "[lento] …" — para achar o
+travamento da cota no desenho de 77 mil objetos, que ninguém reproduziu. **Verificar apoios — ponta de treliça
+ligada em diagonal** (regra B3 do Guia básico): a ponta que só toca a alma (montante, diagonal) de outra treliça, a
+mais de 20 cm de um nó dela, é apontada ("ponta_em_diagonal"); e a vizinhança da ponta passou a ser medida na
+própria ponta, não no elemento inteiro — o banzo comprido tocava um pilar lá longe e a ponta contava como apoiada
+(no Posto CB, 4 pontas sem apoio de verdade apareceram: PAINEL 14, TESOURA 20, TRANSIÇÃO 16 e a TRELIÇA 1
+deitada). A copa do pilar em árvore fica fora das regras de ponta (é apoio, não apoiada). O nome da peça nos
+achados vem da treliça de origem antes do perfil. **Decisões gravadas** (0.8.42) valem ao montar de novo.
 
 **0.8.42.** **O elemento treliçado é um bloco** (pedido do usuário: "selecionar uma tesoura e toda ela se
 selecionar, para ver como estão se ligando, de onde até onde"; vale para tesoura, transição, painel, treliça,

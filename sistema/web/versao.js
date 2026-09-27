@@ -18,6 +18,41 @@
   var minha = null;                 // versão do código desta janela
   var alvo = null;
   var avisada = false;
+  var codigoMeu = null;             // desenvolvimento: carimbo do código de tela que esta janela carregou
+  var faixa = null;
+
+  // Modo de desenvolvimento: uma faixa laranja no alto da janela e "[DEV]" no título, para
+  // não confundir com o programa instalado; e quando o código de tela muda no disco, o
+  // rótulo da versão pede para recarregar (F5).
+  function marcarDev(v) {
+    if (!faixa) {
+      faixa = document.createElement('div');
+      faixa.id = 'faixa-dev';
+      faixa.title = 'Metálica em DESENVOLVIMENTO — rodando do código, porta ' + location.port +
+                    '. O programa instalado é outro; não abra o mesmo projeto nos dois.';
+      faixa.style.cssText = 'position:fixed;left:0;top:0;right:0;height:4px;z-index:99999;' +
+        'background:repeating-linear-gradient(90deg,#f0a050 0 14px,#c0392b 14px 28px);pointer-events:none';
+      document.body.appendChild(faixa);
+      if (document.title.indexOf('[DEV]') !== 0) document.title = '[DEV] ' + document.title;
+    }
+    if (codigoMeu === null) codigoMeu = v.codigo;
+    var e = elemento();
+    if (v.codigo && codigoMeu && v.codigo !== codigoMeu) {
+      e.textContent = 'v' + minha + ' dev · código novo — recarregar (F5)';
+      e.title = 'Os arquivos de tela mudaram no disco depois que esta janela carregou. Clique (ou F5) para ver a versão nova.';
+      e.style.cursor = 'pointer';
+      e.style.color = '#f0a050';
+      e.style.background = 'rgba(240,160,80,.14)';
+      e.onclick = function () { location.reload(); };
+      return true;
+    }
+    e.textContent = 'v' + minha + ' dev';
+    e.title = 'DESENVOLVIMENTO: rodando do código (porta ' + location.port + ')';
+    e.style.color = '#f0a050';
+    e.style.cursor = '';
+    e.onclick = null;
+    return true;
+  }
 
   function elemento() {
     if (alvo && alvo.isConnected) return alvo;
@@ -70,6 +105,7 @@
       .then(function (v) {
         if (!v || !v.versao) return;
         if (minha === null) { minha = v.versao; window.__versaoPrograma = minha; }
+        if (v.dev) { window.__dev = true; marcarDev(v); return; }
         mostrar(v.versao);
       })
       .catch(function () { /* servidor ocupado: pergunta de novo no próximo minuto */ });
@@ -78,5 +114,7 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', perguntar);
   else perguntar();
   setInterval(perguntar, 60000);
+  // no desenvolvimento, o carimbo do código muda a cada edição: pergunta mais vezes
+  setInterval(function () { if (window.__dev) perguntar(); }, 4000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) perguntar(); });
 })();

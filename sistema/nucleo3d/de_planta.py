@@ -2016,6 +2016,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     avisar("pilares da locação…")
     caixa_l, desl_l = outra_planta(par.get("locacao"))
     locados = _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados["locacao"], avisos) if caixa_l else []
+    # os pilares com corte próprio ("PM6 - 3X", "PM8 - 1X"): a forma deles vem do corte
+    from nucleo3d import pilares_corte
+    cortes_pm = pilares_corte.ler_cortes_de_pilar(ents, textos)
     avisar("lendo as peças da planta…")
     trechos, st = pecas_da_planta(ents, caixa_p, elevacoes, apoios=[(p["x"], p["y"]) for p in locados],
                                   deitadas=par.get("deitadas") or False)
@@ -2247,9 +2250,24 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                               "baloes": d_o[2]})
 
     # ---------------------------------------------------------------- pilares
+    # primeiro os que têm corte: a copa e as mãos-francesas por cima do pilar reto, e o
+    # inclinado inteiro (esse não vira pilar reto abaixo)
+    res_pm = {"inclinados": set(), "n": 0, "lidos": {}}
+    if cortes_pm and locados and caixa_l:
+        folga_l = (caixa_l[0] - 2500, caixa_l[1] - 2500, caixa_l[2] + 2500, caixa_l[3] + 2500)
+        ents_loc = [e for e in ents if _dentro(_pt(e), folga_l)]
+
+        def mover_loc(p):
+            return (p[0] + desl_l[0], p[1] + desl_l[1])
+
+        def perto_da_estrutura(p):
+            return min((u.caminho.projetar(p)[1] for u, _nv in todos_trechos), default=1e9)
+        res_pm = pilares_corte.montar(cortes_pm, locados, barra, nivel, base, perto_da_estrutura, ents_loc, mover_loc, avisos)
     pilares = 0
     for pl in locados:
         x, y = pl["x"], pl["y"]
+        if pl["nome"] in res_pm["inclinados"]:
+            continue                                   # montado inclinado pelo corte
         em_cima = [nv for u, nv in todos_trechos if u.caminho.projetar((x, y))[1] < 600.0]
         longe = 0.0 if em_cima else min((u.caminho.projetar((x, y))[1] for u, _nv in todos_trechos), default=0.0)
         orig = {"locacao": pl["nome"]}
@@ -2583,7 +2601,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     pm_total = sum(1 for t in textos if caixa_l and _dentro(t["posicao"], caixa_l) and re.match(r"^PM\d", t["texto"].strip()))
     resumo = {
         "trelicas": sum(contagem.values()), "tipos_de_trelica": len(contagem), "elevacoes": len(elevacoes),
-        "vigas": st.get("vigas", 0), "pilares": pilares, "tercas": tercas, "correntes": correntes,
+        "vigas": st.get("vigas", 0), "pilares": pilares, "pilares_com_corte": res_pm["n"], "tercas": tercas, "correntes": correntes,
         "esticadores": esticadores, "contraventamentos": contravs,
         "barras": len(doc.barras), "calandradas": sum(1 for p in pecas if p["ent"].tipo == "solido"),
         "posicoes": len(posicao_de and set(posicao_de.values())), "conjuntos": n_conj, "peso_kg": round(peso, 1),
@@ -2602,6 +2620,11 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             continue
         usados["planta"] |= set(t.caminho.fontes or ()) | {t.rotulo_id}
     elevacoes_usadas = {_bonito(n): sorted(elevacoes[n].fontes) for n in contagem if n in elevacoes}
+    # os cortes de pilar usados vão para o quadro como as elevações
+    for nome_c, corte_c in cortes_pm.items():
+        if nome_c in res_pm.get("lidos", {}) and any(str(pl.get("nome") or "").upper().replace(" ", "").startswith(nome_c + "(") or
+                                                    str(pl.get("nome") or "").upper().replace(" ", "") == nome_c for pl in locados):
+            elevacoes_usadas["%s - %dX" % (nome_c, corte_c["qtd"])] = sorted(corte_c["ids"])
     # o que a leitura de cada elevação usada tirou ou dividiu vai para os avisos
     for n in contagem:
         for a_el in (elevacoes[n].avisos if n in elevacoes else []):

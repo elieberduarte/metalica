@@ -108,7 +108,10 @@ class _Elem:
         self.segs = segs
         self.raio = 0.0                 # meia seção do sólido (a barra usa a tolerância)
         orig = (getattr(ent, "atributos", None) or {}).get("origem") or {}
-        self.nome = orig.get("planta") or orig.get("locacao") or orig.get("sigla") or getattr(ent, "nome", "")
+        # o nome da peça no projeto; sem ele, o da treliça de origem ("TESOURA 1#12" → "TESOURA 1");
+        # o nome da barra (o perfil) é o último recurso
+        self.nome = (orig.get("planta") or orig.get("locacao") or orig.get("sigla")
+                     or (str(peca).split("#")[0] if peca else "") or getattr(ent, "nome", ""))
 
 
 def _eixo_do_solido(v: List[Ponto]) -> Tuple[list, float]:
@@ -262,6 +265,8 @@ def verificar(doc, tol: float = TOL_ENCOSTO) -> dict:
             por_peca[e.peca].append(i)
     pontas_ok = pontas_total = 0
     for peca, lst in por_peca.items():
+        if ((getattr(els[lst[0]].ent, "atributos", None) or {}).get("origem") or {}).get("corte"):
+            continue                        # a copa do pilar em árvore é apoio, não apoiada: as pontas dela são livres
         pts = [(p, i) for i in lst for s in els[i].segs for p in s]
         xy = [p[:2] for p, _i in pts]
         # eixo da treliça: as duas pontas mais distantes em planta (o caminho pode ser curvo)
@@ -270,21 +275,46 @@ def verificar(doc, tol: float = TOL_ENCOSTO) -> dict:
         for ponta in (a, b):
             perto = [(p, i) for p, i in pts if math.dist(p[:2], ponta) < 200.0]
             ids_ponta = {i for _p, i in perto}
-            apoiada = False
+            # o que a ponta toca: banzo, pilar ou viga é apoio; só a alma (montante, diagonal)
+            # de outra treliça não é — a ponta tem de chegar num nó do banzo, senão ela dobra a
+            # diagonal, que foi feita para esforço axial
+            apoio = False
+            so_alma: Dict[str, List[int]] = collections.defaultdict(list)
+            pontos_ponta = [p for p, _i in perto]
             for i in ids_ponta:
                 for j in viz.get(i, {}):
                     ej = els[j]
                     if ej.peca == peca or ej.papel in ACESSORIOS:
                         continue
-                    apoiada = True
-                    break
-                if apoiada:
-                    break
+                    # o vizinho tem de estar na ponta, não em qualquer lugar do banzo (o banzo
+                    # comprido toca pilares e treliças ao longo dele)
+                    if min(_dist_pt_seg(q, c, d)[0] for q in pontos_ponta for c, d in ej.segs) > tol + 150.0:
+                        continue
+                    if ej.papel in ALMA and ej.peca:
+                        so_alma[ej.peca].append(j)
+                    else:
+                        apoio = True
             pontas_total += 1
-            if apoiada:
+            if apoio:
                 pontas_ok += 1
                 continue
             baixo = min(perto, key=lambda pi: pi[0][2])[0] if perto else (ponta[0], ponta[1], 0.0)
+            if so_alma:
+                # perto de um nó dessa treliça (a ponta da alma no banzo) ainda é nó
+                outra, js = max(so_alma.items(), key=lambda kv: len(kv[1]))
+                # o nó em planta: a ponta da alma no banzo (o montante é vertical: qualquer altura da treliça)
+                nos = [q for k in por_peca.get(outra, []) if els[k].papel in ALMA for sg in els[k].segs for q in sg
+                       if abs(q[2] - baixo[2]) < 2500.0]
+                d_no = min((math.dist(q[:2], ponta) for q in nos), default=None)
+                if d_no is not None and d_no <= FORA_DO_NO:
+                    pontas_ok += 1
+                    continue
+                achados.append(_achado("ponta_em_diagonal", "%s: ponta ligada na %s de %s, %s do nó — não num nó do banzo" % (
+                    els[lst[0]].nome or peca, els[js[0]].papel, els[js[0]].nome or outra,
+                    ("a " + _m(d_no)) if d_no is not None else "longe"), baixo,
+                    [els[i].id for i in lst] + [els[j].id for j in js], peca=els[lst[0]].nome or peca,
+                    dist_mm=round(d_no) if d_no is not None else None))
+                continue
             achados.append(_achado("ponta_sem_apoio", "%s: ponta sem pilar, treliça ou viga embaixo" % (
                 els[lst[0]].nome or peca), baixo, [els[i].id for i in lst], peca=els[lst[0]].nome or peca))
 

@@ -77,3 +77,27 @@ def test_viga_partida_no_cruzamento_segura_a_que_chega():
     doc.add(barra((5000.0, 4000.0, 0.0), (5000.0, 4000.0, 3000.0), "pilar", perfil="W 200×19,3"))
     doc.add(barra((5000.0, 4000.0, 3000.0), (70.0, 4000.0, 3000.0), "viga", perfil="W 150×13"))
     assert not [a for a in apoios.verificar(doc)["achados"] if a["regra"] == "viga_sem_apoio"]
+
+
+def test_ponta_de_trelica_ligada_em_diagonal():
+    """a ponta que chega no meio de uma diagonal de outra treliça (não num nó do banzo) é
+    apontada; a que chega num montante (um nó) não. A treliça de apoio é mais alta (2 m), e
+    a que chega tem os banzos no meio dela: só a diagonal fica ao alcance da ponta"""
+    def cena(x_ponta):
+        doc = Documento()
+        for x in (0.0, 6000.0):
+            doc.add(barra((x, 0.0, 0.0), (x, 0.0, 6000.0), "pilar", perfil="W 200×19,3"))
+        trelica(doc, 0.0, 0.0, 6000.0, "T#1", h=2000.0)                 # montantes em x = 0, 1000, …
+        doc.add(barra((0.0, 0.0, 6000.0), (1000.0, 0.0, 8000.0), "diagonal", "T#1"))   # passa por (500, 0, 7000)
+        for z in (6800.0, 7200.0):
+            doc.add(barra((x_ponta, -3000.0, z), (x_ponta, 0.0, z), "banzo", "T#9"))
+        for y in (-3000.0, 0.0):
+            doc.add(barra((x_ponta, y, 6800.0), (x_ponta, y, 7200.0), "montante", "T#9"))
+        doc.add(barra((x_ponta, -3000.0, 0.0), (x_ponta, -3000.0, 6800.0), "pilar", perfil="W 200×19,3"))
+        return doc
+    r = apoios.verificar(cena(500.0))
+    em_diag = [a for a in r["achados"] if a["regra"] == "ponta_em_diagonal"]
+    # o nome exibido é o da treliça de origem sem o "#n" ("T#9" → "T")
+    assert len(em_diag) == 1 and em_diag[0]["peca"] == "T" and 400 <= em_diag[0]["dist_mm"] <= 600, r["achados"]
+    r2 = apoios.verificar(cena(1000.0))                                # no montante de x = 1000: um nó
+    assert not [a for a in r2["achados"] if a["regra"] in ("ponta_em_diagonal", "ponta_sem_apoio") and a["peca"] == "T#9"], r2["achados"]

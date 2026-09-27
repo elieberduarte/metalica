@@ -109,6 +109,13 @@ def _documentos() -> str:
     return os.path.join(os.path.expanduser("~"), "Documents")
 
 
+#: Modo de desenvolvimento (`python dev.py` ou `app.py --dev`): o programa roda do código, na
+#: porta 8766, com os mesmos projetos do instalado, uma faixa DESENVOLVIMENTO nas telas e sem
+#: oferecer atualização — o que se mexe aparece na hora (F5), sem instalador nem publicação.
+DEV = "--dev" in sys.argv
+PORTA_DEV = 8766
+
+
 def _pasta_de_dados() -> str:
     """Onde ficam projetos, modelos e arquivos gerados.
 
@@ -123,7 +130,7 @@ def _pasta_de_dados() -> str:
             return os.path.abspath(sys.argv[i + 1])
     if os.environ.get("METALICA_DADOS"):
         return os.path.abspath(os.environ["METALICA_DADOS"])
-    if versao.CONGELADO:
+    if versao.CONGELADO or DEV:
         return os.path.join(_documentos(), versao.NOME)
     return os.path.join(BASE, "projetos")
 
@@ -1724,9 +1731,33 @@ _ULTIMA_CONSULTA = {"quando": 0.0, "dados": None}
 CACHE_ATUALIZACAO = 300.0
 
 
+_CARIMBO = {"quando": 0.0, "valor": 0}
+
+
+def _carimbo_do_codigo() -> int:
+    """Modo de desenvolvimento: a data do arquivo de tela mais recente (js, html, css). A
+    janela compara com o que carregou e avisa que há código novo para recarregar."""
+    if time.time() - _CARIMBO["quando"] < 2.0:
+        return _CARIMBO["valor"]
+    maior = 0
+    for raiz, _pastas, arquivos in os.walk(WEB):
+        for a in arquivos:
+            if a.endswith((".js", ".html", ".css")):
+                try:
+                    maior = max(maior, int(os.stat(os.path.join(raiz, a)).st_mtime))
+                except OSError:
+                    pass
+    _CARIMBO.update(quando=time.time(), valor=maior)
+    return maior
+
+
 def verificar_atualizacao() -> dict:
     """Consulta a última versão publicada no GitHub (releases) e diz se há uma mais nova
     que esta. Sem internet, devolve `disponivel: None` em vez de erro: a tela segue."""
+    if DEV:
+        # o desenvolvimento roda do código: não há o que instalar por cima
+        return {"atual": versao.VERSAO, "ultima": None, "nova": False, "url": None, "arquivo": None,
+                "disponivel": None, "dev": True}
     if _ULTIMA_CONSULTA["dados"] is not None and time.time() - _ULTIMA_CONSULTA["quando"] < CACHE_ATUALIZACAO:
         return dict(_ULTIMA_CONSULTA["dados"])
     import urllib.request
@@ -2713,7 +2744,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"programa": versao.NOME, "versao": versao.VERSAO,
                                    "nucleo": versao.impressao_do_nucleo(),
                                    "dados": PROJETOS, "instalado": versao.CONGELADO,
-                                   "janela": JANELA_PROPRIA, "maquina": MAQUINA, "usuario": USUARIO})
+                                   "janela": JANELA_PROPRIA, "maquina": MAQUINA, "usuario": USUARIO,
+                                   "dev": DEV, "codigo": _carimbo_do_codigo() if DEV else None})
             if rota == "/api/atualizacao":
                 return self._json(verificar_atualizacao())
             if rota == "/api/catalogo":
@@ -2929,6 +2961,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(verificar_apoios(corpo))
             if rota == "/api/modelo/analitico":
                 return self._json(modelo_analitico(corpo))
+            if rota == "/api/lento":
+                # a janela conta o que a segurou (web/lentidao.js): fica no registro para
+                # achar o travamento que ninguém reproduz
+                d = corpo if isinstance(corpo, dict) else {}
+                print("[lento] %s %s %s%s%s objetos=%s ferramenta=%s%s" % (
+                    d.get("quando", ""), d.get("tipo", "?"), d.get("tela", ""),
+                    (" %s ms" % d.get("ms")) if d.get("ms") else "", (" [%s]" % d["atribuicao"]) if d.get("atribuicao") else "",
+                    d.get("objetos", "?"), d.get("ferramenta", ""),
+                    (" — %s (%s)" % (d.get("mensagem"), d.get("onde", ""))) if d.get("mensagem") else ""), flush=True)
+                return self._json({"ok": True})
             if rota == "/api/modelo/ifc/exportar":
                 return self._json(exportar_ifc(corpo))
             if rota == "/api/modelo/ifc/importar":
@@ -3126,7 +3168,7 @@ def _registro_em_arquivo():
     if sys.stdout is not None and sys.stderr is not None:
         return
     try:
-        arq = open(os.path.join(PROJETOS, "metalica.log"), "a", encoding="utf-8", buffering=1)
+        arq = open(os.path.join(PROJETOS, "metalica-dev.log" if DEV else "metalica.log"), "a", encoding="utf-8", buffering=1)
     except OSError:
         arq = open(os.devnull, "w")
     sys.stdout = sys.stdout or arq
@@ -3137,17 +3179,18 @@ def main():
     global JANELA_PROPRIA
     os.makedirs(PROJETOS, exist_ok=True)
     _registro_em_arquivo()
-    com_janela = "--janela" in sys.argv or (versao.CONGELADO and "--sem-navegador" not in sys.argv)
+    com_janela = "--janela" in sys.argv or ((versao.CONGELADO or DEV) and "--sem-navegador" not in sys.argv)
+    preferida = PORTA_DEV if DEV else PORTA_PADRAO
     if "--porta" in sys.argv:
         porta = int(sys.argv[sys.argv.index("--porta") + 1])
     else:
-        if com_janela and _ja_esta_rodando(PORTA_PADRAO):
+        if com_janela and _ja_esta_rodando(preferida):
             # segundo clique no atalho: mostra o que já está aberto, não sobe outro
-            janela = _abrir_janela(f"http://localhost:{PORTA_PADRAO}/")
+            janela = _abrir_janela(f"http://localhost:{preferida}/")
             if janela is None:
-                webbrowser.open(f"http://localhost:{PORTA_PADRAO}/")
+                webbrowser.open(f"http://localhost:{preferida}/")
             return
-        porta = _porta_livre(PORTA_PADRAO)
+        porta = _porta_livre(preferida)
     servidor, extras = _servidores(porta)
     for s in extras:
         threading.Thread(target=s.serve_forever, daemon=True).start()
@@ -3168,7 +3211,8 @@ def main():
     threading.Thread(target=lixeira, daemon=True).start()
     # flush: com a saída redirecionada para arquivo o Python retém o texto, e quem lê o
     # registro para descobrir a porta ficaria sem resposta
-    print(f"{versao.identificacao()} — dimensionamento de estruturas metálicas", flush=True)
+    print(f"{versao.identificacao()} — dimensionamento de estruturas metálicas"
+          + (" — DESENVOLVIMENTO (rodando do código)" if DEV else ""), flush=True)
     print(f"  interface: {url}", flush=True)
     print(f"  projetos:  {PROJETOS}", flush=True)
 
@@ -3184,7 +3228,8 @@ def main():
             # de instalação, e volta sozinha para onde estava assim que este servidor
             # responde (web/atualizacao.js). Se ela dá sinal de vida, não se abre outra;
             # se o usuário a fechou no meio, abre-se uma nova como sempre.
-            espera = 10.0 if REABERTO_POR_ATUALIZACAO[0] else 0.0
+            # (--reaberto: o vigia do desenvolvimento reiniciou o servidor e a janela continua lá)
+            espera = 10.0 if (REABERTO_POR_ATUALIZACAO[0] or "--reaberto" in sys.argv) else 0.0
             inicio_espera = time.time()
             while time.time() - inicio_espera < espera and not _janelas_abertas():
                 time.sleep(0.25)
