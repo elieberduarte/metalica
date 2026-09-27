@@ -26,8 +26,10 @@ def _registro():
         return
     sys.path.insert(0, BASE)
     try:
-        import app                                  # noqa: F401 — só para achar a pasta de dados
-        pasta = app.PROJETOS
+        # a mesma pasta que o servidor em --dev usa (o vigia não tem o --dev no argv: sem isto
+        # o app resolveria sistema/projetos e o "[dev] …" ia parar noutro arquivo)
+        import app
+        pasta = app.PROJETOS if "--dados" in sys.argv else os.path.join(app._documentos(), app.versao.NOME)
     except Exception:                                # noqa: BLE001
         pasta = BASE
     try:
