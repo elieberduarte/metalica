@@ -335,6 +335,34 @@ def _casos_de_vento(casos: dict, faixas, nos, ia, ib, d, base: float, car: dict,
                      "Tabela 3 (S2), Tabela 4 (S3), Tabela 10 (telhados múltiplos, linha de 5°)"}
 
 
+def hipoteses(r: dict) -> List[str]:
+    """as hipóteses do cálculo, em texto, para quem confere (a tela de esforços as mostra)"""
+    car = r.get("cargas") or {}
+    h = ["Estrutura inteira como pórtico espacial no esqueleto (eixo a eixo), nós rígidos; o contravento redondo "
+         "trabalha também à compressão.",
+         "Perfil duplo (2L, 2Ue) como duas vezes o simples (área e inércias), sem o afastamento entre eles.",
+         "Pé do pilar rotulado; engastado onde a locação do projeto dá momento na base.",
+         "Cargas de cobertura pelas terças, cada uma com a faixa até a meia distância das vizinhas: telha %.3f, forro "
+         "%.3f, painéis %.3f (permanentes) e sobrecarga %.3f kN/m² — %s." % (
+             car.get("telha", 0), car.get("forro", 0), car.get("paineis", 0), car.get("sobrecarga", 0),
+             car.get("fonte", "padrão do programa")),
+         "Peso próprio pelo kg/m do perfil no comprimento de eixo a eixo (sem chapas e ligações)."]
+    v = r.get("vento")
+    if v:
+        h.append("Vento NBR 6123:2023: V0 %.0f m/s, S1 %.2f, S2 %.3f (categoria %s, classe %s, h %.1f m), S3 %.2f (grupo %d) → "
+                 "Vk %.1f m/s, q %.3f kN/m². Cobertura com altura livre menor que metade da profundidade: edificação "
+                 "fechada (7.2.1), telhado múltiplo pela Tabela 10 (linha de 5°), cpi %s. Tramo médio %.1f m. Só a "
+                 "pressão na cobertura (sem as forças horizontais nos painéis e no frontão, nem o atrito)." % (
+                     v["v0"], v["s1"], v["s2"], v["categoria"], v["classe"], v["h"], v["s3"], v["grupo"], v["vk"], v["q"],
+                     " e ".join("%+.1f" % c for c in v["cpi"]), v["tramo"]))
+    if r.get("caixas_dagua"):
+        h.append("Caixas d'água: volume × 10 kN/m³ (NBR 6120:2019, Tabela A.1) nos nós das vigas embaixo de cada uma, "
+                 "como ação variável (γ 1,5; ψ0 0,8).")
+    h.append("Combinações últimas normais: γ 1,25 (peso próprio), 1,40 (telha, forro, painéis), 1,50 (sobrecarga), "
+             "1,40 (vento); ψ0 0,8 (cobertura) e 0,6 (vento); no levantamento, permanentes com γ 1,0.")
+    return h
+
+
 def combinacoes_ultimas(casos: List[str]) -> List[dict]:
     """as combinações últimas normais (NBR 8800, Tabelas 1 e 2; γ e ψ de nucleo/cargas.py): com
     as permanentes desfavoráveis, cada ação variável (sobrecarga, água das caixas, cada vento)
@@ -529,9 +557,12 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         else:
             grupos.append([n])
     nome_do_no = {}
+    ids_do_no = collections.defaultdict(set)
     for e in usadas:
         br = barras[e]
         if br["papel"] == "pilar":
+            for k in ("a", "b"):
+                ids_do_no[br[k]].update(br["ids"])
             ent = doc.entidades.get(br["ids"][0]) if hasattr(doc.entidades, "get") else None
             nome = (((getattr(ent, "atributos", None) or {}).get("origem") or {}).get("locacao")) if ent else None
             for k in ("a", "b"):
@@ -543,6 +574,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         pilares.append({"x": round(float(xy[0]) * 1000), "y": round(float(xy[1]) * 1000), "nos": g_,
                         "nome": next((nome_do_no.get(n) for n in g_ if nome_do_no.get(n)), None),
                         "engastado": any(n in engaste for n in g_),
+                        "ids": sorted(set().union(*(ids_do_no[n] for n in g_))),
                         "reacoes_kN": {c: [round(v, 2) for v in r[c]] for c in r}})
     # a carga da locação de cada pilar: a mais perto, uma para cada
     pares = sorted((math.dist((c["x"] / 1000.0, c["y"] / 1000.0), (p["x"] / 1000.0, p["y"] / 1000.0)), i, k)
@@ -572,7 +604,14 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
     for i, e in enumerate(usadas):
         esforcos[e] = {c: [round(float(v), 3) for v in fl[i, :, j]] for j, c in enumerate(casos)}
 
+    # a planta (banzos e vigas vistos de cima), para a tela desenhar os pilares no lugar
+    planta = []
+    for i, e in enumerate(usadas):
+        if barras[e]["papel"] in ("banzo", "viga") and abs(d[i][2]) < 0.5 * L[i]:
+            a_, b_ = nos[ia[i]], nos[ib[i]]
+            planta.append([round(a_[0], 2), round(a_[1], 2), round(b_[0], 2), round(b_[1], 2)])
     return {
+        "planta": planta,
         "casos": resumo_casos,
         "pilares": pilares,
         "cargas_sem_pilar": sem_pilar,

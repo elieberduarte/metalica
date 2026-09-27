@@ -1516,11 +1516,11 @@ export class Editor {
   }
 
   /**
-   * `destacar=posicao:P77,P12` ou `conjunto:M2` na URL (vindo do "Ver no 3D" do CAD):
+   * `destacar=posicao:P77,P12`, `conjunto:M2` ou `ids:…` na URL (vindo do "Ver no 3D" do CAD e das telas):
    * seleciona as peças com essa marca e enquadra a câmera nelas.
    */
   _destacar(spec) {
-    const m = /^(posicao|conjunto|peca):(.+)$/.exec(String(spec || ''));
+    const m = /^(posicao|conjunto|peca|ids):(.+)$/.exec(String(spec || ''));
     if (!m) return;
     const chave = m[1];
     const marcas = new Set(m[2].split(',').map(s => s.trim()).filter(Boolean));
@@ -1531,8 +1531,10 @@ export class Editor {
       if (!o.peca) return false;
       return marcas.has(String(o.peca)) || marcas.has(String(o.planta || '').replace(/ \(tesoura de cima\)$/, ''));
     };
+    // ids: as peças pelo identificador (o pilar da tela de esforços)
     const ids = [...this.documento.entidades.values()]
-      .filter(e => chave === 'peca' ? daPeca(e) : (e.atributos && e.atributos.marcas && marcas.has(String(e.atributos.marcas[chave]))))
+      .filter(e => chave === 'ids' ? marcas.has(e.id) : chave === 'peca' ? daPeca(e)
+        : (e.atributos && e.atributos.marcas && marcas.has(String(e.atributos.marcas[chave]))))
       .map(e => e.id);
     if (!ids.length) { this.aviso(`Nenhuma peça com ${chave} ${[...marcas].join(', ')} no modelo.`, 'atencao'); return; }
     this.selecao.definir(ids);
@@ -1541,7 +1543,7 @@ export class Editor {
     this.camera.zoomSelecao(ids);
     // as malhas do servidor chegam depois: enquadra de novo quando a cena já as tem
     setTimeout(() => { if (this.selecao.ids.size === ids.length) { this.camera.zoomSelecao(ids); this.cena.destacar(ids); } }, 1500);
-    this.aviso(`${ids.length} peça(s) ${[...marcas].join(', ')} em destaque; o resto do modelo está esmaecido. Esc limpa a seleção e devolve o modelo; Detalhamentos volta ao CAD.`, 'info', 14000);
+    this.aviso(`${ids.length} peça(s) ${chave === 'ids' ? 'escolhida(s)' : [...marcas].join(', ')} em destaque; o resto do modelo está esmaecido. Esc limpa a seleção e devolve o modelo; Detalhamentos volta ao CAD.`, 'info', 14000);
     const url = new URL(location.href); url.searchParams.delete('destacar'); history.replaceState(null, '', url);
   }
 
@@ -1837,6 +1839,10 @@ export class Editor {
       'verificar-apoios': () => this.verificarApoios(),
       esqueleto: () => this.alternarEsqueleto(),
       'trelicas-lidas': () => this.abrirTrelicasLidas(),
+      'esforcos': () => {
+        if (!this.projeto) { this.aviso('Abra um projeto: os esforços são calculados no modelo dele.', 'atencao'); return; }
+        this._irPara(`/esforcos?projeto=${encodeURIComponent(this.projeto)}`);
+      },
       'dividir-2d': () => this.abrirDividida(),
       'desenho-corte': () => this.gerarDesenhoDoCorte(),
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),

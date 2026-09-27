@@ -47,6 +47,7 @@ Rotas da API:
     POST /api/modelo/perfis {nomes}                           seção e massa de perfis fora do banco básico (editor)
     POST /api/modelo/apoios {documento}                        regras de apoio: peça voando, terça em balanço…
     POST /api/modelo/analitico {documento}                     esqueleto de nós e barras e as pontas soltas
+    GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
     POST /api/projetos/<slug>/projeto-recebido  folhas, carimbo e considerações de cálculo do DXF recebido
     POST /api/projetos/<slug>/desenhos/<nome>/montar-pela-planta  projeto recebido sem 3D → modelo pela planta,
                                                               elevações nomeadas, locação e planta das terças
@@ -1503,6 +1504,50 @@ def eixos_do_projeto(s: str) -> dict:
         raise ErroDeDados(str(e))
 
 
+ARQ_ESFORCOS = "esforcos.json"
+
+
+def esforcos_do_projeto(s: str, corpo: Optional[dict] = None, recalcular: bool = False) -> dict:
+    """GET /api/projetos/<s>/esforcos: o último cálculo de esforços da estrutura inteira gravado
+    no projeto (vazio se nunca rodou); POST calcula de novo — {vento: {categoria, grupo, classe,
+    v0, s1}} muda os parâmetros do vento e fica gravado no projeto (nucleo3d/esforcos.py)."""
+    g = _gerente()
+    arq = os.path.join(g._existente(s), ARQ_ESFORCOS)
+    if not recalcular:
+        try:
+            with open(arq, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {"vazio": "Os esforços deste projeto ainda não foram calculados."}
+    from nucleo3d import eixos as _eixos
+    from nucleo3d import esforcos
+    from projetos import _gravar_json
+    doc = _documento3d_do_projeto(s)
+    proj = g.ler(s)
+    par = dict(proj.get("esforcos_parametros") or {})
+    novos = {k: v for k, v in ((corpo or {}).get("vento") or {}).items() if v not in (None, "")}
+    par.update(novos)
+    t0 = time.time()
+    r = esforcos.calcular(doc, esforcos.cargas_do_projeto(proj), vento=par)
+    ex = _eixos.de_dict(proj.get("eixos"))
+    segs = _eixos.segmentos(ex) if ex else []
+    pilares = []
+    for p in r["pilares"]:
+        q = {k: v for k, v in p.items() if k != "nos"}
+        q["onde"] = _eixos.onde((p["x"], p["y"]), segs) if segs else ""
+        pilares.append(q)
+    saida = {"calculado_em": time.strftime("%d/%m/%Y %H:%M"), "segundos": round(time.time() - t0, 1),
+             "versao": versao.VERSAO, "pilares": pilares, "casos": r["casos"], "vento": r["vento"],
+             "caixas_dagua": r["caixas_dagua"], "combinacoes": r["combinacoes"],
+             "resumo": {k: (float(v) if isinstance(v, float) else v) for k, v in r["resumo"].items()},
+             "cargas": r["cargas"], "avisos": r["avisos"], "hipoteses": esforcos.hipoteses(r),
+             "planta": r["planta"], "cargas_sem_pilar": r["cargas_sem_pilar"], "parametros_vento": par}
+    if novos:
+        g._atualizar(s, esforcos_parametros=par)
+    _gravar_json(arq, saida)
+    return saida
+
+
 def ler_projeto_recebido(s: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/projeto-recebido {conteudo_b64, arquivo}: as folhas do DXF recebido
     (espaço do papel) — número e título de cada folha, carimbo, considerações de cálculo (cargas
@@ -2919,6 +2964,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(eixos_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "trelicas":
                     return self._json(trelicas_lidas(partes[0]))
+                if len(partes) == 2 and partes[1] == "esforcos":
+                    return self._json(esforcos_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":
                     q = parse_qs(urlparse(self.path).query)
                     return self._json(lista_de_materiais(partes[0], recalcular=q.get("recalcular", ["0"])[0] in ("1", "true")))
@@ -2945,6 +2992,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "dividida.html"), WEB)
             if rota in ("/trelicas", "/trelicas-lidas"):
                 return self._arquivo(os.path.join(WEB, "trelicas.html"), WEB)
+            if rota == "/esforcos":
+                return self._arquivo(os.path.join(WEB, "esforcos.html"), WEB)
             if rota in ("/catalogo", "/pecas"):
                 return self._arquivo(os.path.join(WEB, "catalogo.html"), WEB)
             if rota in ("/editor", "/editor3d", "/3d"):
@@ -3033,6 +3082,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gravar_eixos_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "projeto-recebido":
                     return self._json(ler_projeto_recebido(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "esforcos":
+                    return self._json(esforcos_do_projeto(partes[0], corpo, recalcular=True))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
                     return self._json(detalhar_posicao_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "atualizar-pecas":
