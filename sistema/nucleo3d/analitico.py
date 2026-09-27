@@ -222,9 +222,16 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                 gl.c[ch].append(k)
 
     cortes = collections.defaultdict(list)       # linha -> [(t, nó)] onde ganha um nó
+    # os nós por lugar: o nó novo no meio de uma linha é o que já existe ali, se houver (o topo do
+    # pilar em que a TRELIÇA 10 do Posto CB desceu ficava a 4 mm do nó das TRELIÇAS 9 e 13, sem
+    # ligar as duas)
+    gn = _Grade(2 * TOL_NO)
+    for i_n, p_n in enumerate(nos):
+        gn.por(p_n, i_n)
 
     def no_em(k, q, t):
-        """o nó na linha k no ponto q: a ponta dela, se perto; senão um nó novo que a corta ali"""
+        """o nó na linha k no ponto q: a ponta dela, se perto; o nó que já existe ali (a linha é
+        cortada nele); senão um nó novo que a corta ali"""
         ln = linhas[k]
         a, b = nos[ln["na"]], nos[ln["nb"]]
         if math.dist(q, a) <= 2 * TOL_NO:
@@ -234,7 +241,13 @@ def analitico(doc, base: Optional[float] = None) -> dict:
         for t2, n2 in cortes[k]:
             if math.dist(nos[n2], q) <= 2 * TOL_NO:
                 return n2
+        perto = min((n2 for n2 in gn.perto(q) if math.dist(nos[n2], q) <= 2 * TOL_NO),
+                    key=lambda n2: math.dist(nos[n2], q), default=None)
+        if perto is not None:
+            cortes[k].append((t, perto))
+            return perto
         nos.append([q[0], q[1], q[2]])
+        gn.por(q, len(nos) - 1)
         cortes[k].append((t, len(nos) - 1))
         return len(nos) - 1
 

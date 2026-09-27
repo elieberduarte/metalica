@@ -119,6 +119,6 @@ def test_vento_levanta_a_cobertura_e_entra_nas_combinacoes():
     assert all(c["para_cima_kN"] > 0 for c in v["casos"][::2])
     assert all(x["erro"] < 1e-6 for x in r["casos"].values())
     nomes = [c["nome"] for c in r["combinacoes"]]
-    assert "ELU1" in nomes and "ELU-V1-c" in nomes
+    assert "ELU[SC]" in nomes and "ELU[V1]-levantamento" in nomes
     p = r["pilares"][0]
     assert p["envoltoria_kN"]["min"] < 0 < p["envoltoria_kN"]["max"]         # arrancamento e compressão

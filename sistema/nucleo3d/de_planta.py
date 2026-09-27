@@ -2648,6 +2648,10 @@ def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: 
     return out
 
 
+# a caixa d'água desenhada na planta dela, com o volume: "CX.5.000 l", "CX 10000 L"
+_CAIXA_DAGUA = re.compile(r"(?i)^\s*CX\.?\s*(\d{1,3}(?:[.,]?\d{3})*)\s*l(?:itros)?\s*$")
+
+
 # a carga que a locação escreve embaixo do nome do pilar: "7,0tf" (só a vertical) ou o bloco
 # "Fz: 9,00 tf / Fx: 4,00 tf / Fy: 5,00 tf / MX: 2,00 tf.m / My:-1,00 tf.m"
 _CARGA_LOC = re.compile(r"^\s*(?:(F[xyz]|M[xy])\s*:\s*)?(-?\d+(?:[.,]\d+)?)\s*tf(\.m)?\s*$", re.I)
@@ -2722,6 +2726,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     ents = [e for e in ents if not str(e.get("camada", "")).upper().startswith(PREFIXO_QUADRO)]
     usados: Dict[str, set] = {"planta": set(), "tercas": set(), "locacao": set()}
     outras_feitas: List[dict] = []
+    caixas_dagua: List[dict] = []
     textos = [e for e in ents if e["tipo"] == "texto"]
     avisos: List[str] = []
     encaixe: List[dict] = []
@@ -3054,6 +3059,26 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         usados["outra:" + t_o["texto"].strip()] = ids_o
         outras_feitas.append({"planta": t_o["texto"].strip(), "nivel": nivel_o, "pecas": len(tr_o), "camada": nome_c,
                               "baloes": d_o[2]})
+        # as caixas d'água desenhadas nesta planta ("CX.5.000 l"): o volume e o lugar, para a carga
+        # da água no cálculo de esforços
+        # o lugar é o centro do círculo da caixa mais perto do texto (o texto fica ao lado dela)
+        circ_o = [e for e in ents if e["tipo"] == "circulo" and 400.0 <= float(e.get("raio") or 0) <= 2500.0
+                  and _dentro(e["centro"], f_o)]
+        tomados_c = set()
+        for t_c in textos:
+            m_c = _CAIXA_DAGUA.match(str(t_c.get("texto") or ""))
+            if not (m_c and _dentro(t_c["posicao"], f_o)):
+                continue
+            pc = t_c["posicao"]
+            livres_c = [e for e in circ_o if id(e) not in tomados_c and math.dist(e["centro"], pc) < 2500.0 + e["raio"]]
+            circ = min(livres_c, key=lambda e: math.dist(e["centro"], pc), default=None)
+            if circ is not None:
+                tomados_c.add(id(circ))
+                pc = circ["centro"]
+            caixas_dagua.append({"litros": int(m_c.group(1).replace(".", "").replace(",", "")),
+                                 "x": pc[0] + d_o[0], "y": pc[1] + d_o[1], "nivel": nivel_o,
+                                 "diametro": round(2 * circ["raio"]) if circ is not None else None,
+                                 "planta": t_o["texto"].strip()})
 
     # ---------------------------------------------------------------- pilares
     # primeiro os que têm corte: a copa e as mãos-francesas por cima do pilar reto, e o
@@ -3451,6 +3476,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             x, y = (pl["x"], pl["y"]) if pl else (c.pop("x"), c.pop("y"))
             itens.append(dict(c, x=round(x + desl[0], 1), y=round(y + desl[1], 1)))
         doc.metadados["de_planta"]["cargas_locacao"] = {"unidade": "tf e tf·m", "pilares": itens}
+    if caixas_dagua:
+        doc.metadados["de_planta"]["caixas_dagua"] = [dict(c, x=round(c["x"] + desl[0], 1), y=round(c["y"] + desl[1], 1))
+                                                     for c in caixas_dagua]
     for t in trechos + list(st.get("deitadas") or []):
         if t.familia == "VIGA" and not t.perfil:
             continue

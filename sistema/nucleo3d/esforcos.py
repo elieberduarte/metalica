@@ -42,6 +42,8 @@ CARGAS_PADRAO = {
     "sobrecarga": 0.25,      # NBR 8800, B.5.1: cobertura comum, projeção horizontal
 }
 PERMANENTES = ("telha", "forro", "paineis")
+PESO_AGUA = 10.0             # kN/m³ — NBR 6120:2019, Tabela A.1 (água doce)
+RAIO_CAIXA = 1.5             # m: a caixa d'água descarrega nos nós das vigas até esta distância do centro
 
 
 def cargas_do_projeto(projeto: dict) -> dict:
@@ -334,20 +336,31 @@ def _casos_de_vento(casos: dict, faixas, nos, ia, ib, d, base: float, car: dict,
 
 
 def combinacoes_ultimas(casos: List[str]) -> List[dict]:
-    """as combinações últimas normais (NBR 8800, Tabelas 1 e 2; γ e ψ de nucleo/cargas.py):
-    a gravidade com a sobrecarga principal, cada vento principal com a sobrecarga reduzida, cada
-    vento secundário, e o levantamento — permanentes com γ = 1,0 e o vento de sucção."""
+    """as combinações últimas normais (NBR 8800, Tabelas 1 e 2; γ e ψ de nucleo/cargas.py): com
+    as permanentes desfavoráveis, cada ação variável (sobrecarga, água das caixas, cada vento)
+    uma vez como principal e as outras reduzidas por ψ0 — um vento de cada vez; e o
+    levantamento, com as permanentes favoráveis (γ = 1,0) e o vento de sucção sozinho."""
     from nucleo import cargas as C
     gpp = C.GAMA_G[next(k for k in C.GAMA_G if k.startswith("met"))][0]            # 1,25
     gcp = C.GAMA_G[next(k for k in C.GAMA_G if k.startswith("industrializado"))][0]  # 1,40
     gsc, gv = C.GAMA_Q["sobrecarga"][0], C.GAMA_Q["vento"][0]                      # 1,50 e 1,40
     psc, pv = C.PSI["cobertura"][0], C.PSI["vento"][0]                             # 0,8 e 0,6
+    pag = C.PSI[next(k for k in C.PSI if k.startswith("dep"))][0]                  # 0,8 (água: como depósito)
+    perm = {"PP": gpp, "CP": gcp}
+    grav = [(c, g, p) for c, g, p in (("SC", gsc, psc), ("AG", gsc, pag)) if c in casos]
     vs = [c for c in casos if c.startswith("V")]
-    out = [{"nome": "ELU1", "fatores": {"PP": gpp, "CP": gcp, "SC": gsc}}]
+    out = []
+    for vento in [None] + vs:
+        var = grav + ([(vento, gv, pv)] if vento else [])
+        for principal, g1, _p1 in var:
+            f = dict(perm)
+            f[principal] = g1
+            for c, g, p in var:
+                if c != principal:
+                    f[c] = g * p
+            out.append({"nome": "ELU[%s]%s" % (principal, "+" + vento if vento and vento != principal else ""), "fatores": f})
     for c in vs:
-        out.append({"nome": "ELU-%s-a" % c, "fatores": {"PP": gpp, "CP": gcp, "SC": gsc, c: gv * pv}})
-        out.append({"nome": "ELU-%s-b" % c, "fatores": {"PP": gpp, "CP": gcp, c: gv, "SC": gsc * psc}})
-        out.append({"nome": "ELU-%s-c" % c, "fatores": {"PP": 1.0, "CP": 1.0, c: gv}})
+        out.append({"nome": "ELU[%s]-levantamento" % c, "fatores": {"PP": 1.0, "CP": 1.0, c: gv}})
     for cb in out:
         cb["expressao"] = " + ".join("%s·%s" % (("%.2f" % f).replace(".", ","), k) for k, f in cb["fatores"].items())
     return out
@@ -451,6 +464,30 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
             casos[caso][ib[i] * 6 + 2] -= f
     if sem_vizinha:
         avisos.append("%d trechos de terça sem outra terça paralela a até %.1f m: sem carga de cobertura" % (sem_vizinha, LARG_MAX))
+    # --- a água das caixas desenhadas nas outras plantas (a base da caixa d'água), nos nós das
+    # vigas e banzos daquele nível embaixo de cada caixa
+    caixas = ((doc.metadados or {}).get("de_planta") or {}).get("caixas_dagua") or []
+    memoria_caixas = []
+    if caixas:
+        casos["AG"] = np.zeros(ndof)
+        horiz = [i for i, e in enumerate(usadas) if barras[e]["papel"] in ("viga", "banzo")]
+        cand = np.array(sorted({int(ia[i]) for i in horiz} | {int(ib[i]) for i in horiz}))
+        for c in caixas:
+            P = float(c["litros"]) / 1000.0 * PESO_AGUA
+            xy = np.array([c["x"], c["y"]]) / 1000.0
+            dz = np.abs(nos[cand, 2] - float(c["nivel"]) / 1000.0)
+            dxy = np.linalg.norm(nos[cand, :2] - xy, axis=1)
+            sel = cand[(dz < 0.6) & (dxy < RAIO_CAIXA)]
+            if not len(sel):
+                perto = np.nonzero((dz < 0.6) & (dxy < 3.0))[0]
+                sel = cand[perto[np.argsort(dxy[perto])[:4]]] if len(perto) else sel
+            if not len(sel):
+                avisos.append("caixa d'água de %d l em (%.1f; %.1f) sem viga no nível %.2f m embaixo: fora do cálculo"
+                              % (c["litros"], xy[0], xy[1], c["nivel"] / 1000.0))
+                continue
+            casos["AG"][sel * 6 + 2] -= P / len(sel)
+            memoria_caixas.append({"litros": c["litros"], "kN": round(P, 1), "nos": len(sel),
+                                   "x": round(xy[0], 2), "y": round(xy[1], 2), "nivel": c["nivel"]})
     memoria_vento = _casos_de_vento(casos, faixas, nos, ia, ib, d, base, car, vento, avisos)
 
     # --- restrições
@@ -526,7 +563,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         vals = [(sum(f * rz.get(c, 0.0) for c, f in cb["fatores"].items()), cb["nome"]) for cb in combs]
         mx, mn = max(vals), min(vals)
         p["envoltoria_kN"] = {"max": round(mx[0], 2), "max_comb": mx[1], "min": round(mn[0], 2), "min_comb": mn[1]}
-        p["caracteristico_kN"] = round(rz["PP"] + rz["CP"] + rz["SC"], 2)
+        p["caracteristico_kN"] = round(rz["PP"] + rz["CP"] + rz["SC"] + rz.get("AG", 0.0), 2)
 
     # --- esforços nas barras (N, Vy, Vz, T, My, Mz nas duas pontas, eixos locais), por caso
     Ue = U[gl]                                             # (n, 12, casos)
@@ -546,6 +583,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
                    "peso_aco_kg": round(float(peso.sum() / G), 0), "graus_de_liberdade": int(len(livre))},
         "cargas": car,
         "vento": memoria_vento,
+        "caixas_dagua": memoria_caixas,
         "combinacoes": combs,
         "avisos": avisos,
         "_U": U, "_casos": list(casos),
