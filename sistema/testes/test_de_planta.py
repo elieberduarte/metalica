@@ -411,3 +411,24 @@ def test_emenda_liga_os_banzos_das_duas_partes():
     de_planta._ligar_emenda(el, 12120.0, 12390.0)
     assert sorted((round(m.s0), round(m.s1)) for m in el.membros if m.h0 == 0) == [(0, 12255), (12255, 32122)]
     assert "duas partes" in el.avisos[-1]
+
+
+def test_sentido_pelo_cruzamento_na_emenda():
+    """a TRANSIÇÃO 2 do Posto CB: a elevação tem a junta dos banzos (emenda de 250 mm) a 9,74 m da
+    ponta esquerda; na planta, a TRANSIÇÃO 1 atravessa a linha dela a 9,74 m da ponta sul — a ponta
+    esquerda vai para o sul (o encontro dos banzos tinha invertido)"""
+    M = de_planta.Membro
+    el = de_planta.Elevacao(nome="TRANSICAO 2", familia="TRANSICAO", qtd=1, comprimento=16625.0)
+    el.membros = [M(0, 0, 9614, 0, "banzo"), M(9864, 0, 16625, 0, "banzo"), M(9614, 20, 9864, 20, "banzo"),
+                  M(0, 700, 9614, 700, "banzo"), M(9864, 700, 16625, 700, "banzo")]
+    assert [round(j) for j in de_planta._juntas_dos_banzos(el)] == [9739]
+    C = de_planta.Caminho
+    t2 = de_planta.Trecho(caminho=C("reta", a=(21370.0, 26333.0), b=(21370.0, 9708.0)), nome="TRANSICAO 2", familia="TRANSICAO", elevacao=el)
+    el1 = de_planta.Elevacao(nome="TRANSICAO 1", familia="TRANSICAO", qtd=1, comprimento=35850.0)
+    el1.membros = [M(0, 0, 35850, 0, "banzo"), M(0, 1460, 35850, 1460, "banzo")]
+    t1 = de_planta.Trecho(caminho=C("reta", a=(1000.0, 19448.0), b=(36850.0, 19448.0)), nome="TRANSICAO 1", familia="TRANSICAO", elevacao=el1)
+    assert [round(s) for s in de_planta._cruzamentos(t2, [t1, t2])] == [6885]
+    r = de_planta.orientar([t2, t1])
+    assert r["pelo_cruzamento"] == 1 and t2.sentido_por == "cruzamento na emenda"
+    # a ponta esquerda da elevação (s = 0) na ponta sul (y = 9708)
+    assert abs(t2.caminho.ponto(de_planta._s_na_planta(t2, 0.0))[1] - 9708.0) < 1.0

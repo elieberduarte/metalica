@@ -1906,6 +1906,33 @@ def orientar(trechos: List[Trecho], linhas_terca=None,
                 t.sentido_por = "marcas ST"
                 decididas.add(id(t))
                 pelas_marcas += 1
+    # o cruzamento na emenda: onde outra treliça atravessa a linha desta na planta (a planta a
+    # interrompe ali), a elevação tem a junta dos banzos (a emenda de 250 mm na cumeeira das
+    # TRANSIÇÕES 2 e 5 do Posto CB, onde passa a TRANSIÇÃO 1). Só um sentido põe a junta no
+    # cruzamento: esse vale antes do encontro dos banzos (que as inverteu)
+    pelo_cruzamento = 0
+    for t in ts:
+        if id(t) in decididas or t.caminho.tipo != "reta":
+            continue
+        juntas = _juntas_dos_banzos(t.elevacao)
+        cruz = _cruzamentos(t, ts)
+        if not juntas or not cruz:
+            continue
+        L, Le = t.caminho.comprimento, t.elevacao.comprimento
+        folga = (L - Le) / 2.0 if Le and 0.9 < L / Le < 1.1 else 0.0
+        acertos = []
+        for inv in (False, True):
+            n = 0
+            for s_c in cruz:
+                s_e = (L - s_c if inv else s_c) - folga
+                if any(abs(s_e - j) <= 300.0 for j in juntas):
+                    n += 1
+            acertos.append(n)
+        if acertos[0] != acertos[1] and max(acertos) > 0 and min(acertos) == 0:
+            t.invertida = acertos[1] > acertos[0]
+            t.sentido_por = "cruzamento na emenda"
+            decididas.add(id(t))
+            pelo_cruzamento += 1
     # os painéis da borda são mais altos que a cobertura: não entram na regra das alturas
     ts_alt = [t for t in ts if t.familia != "PAINEL"]
     pontas = {id(t): (t.caminho.ponto(0.0), t.caminho.ponto(t.caminho.comprimento)) for t in ts_alt}
@@ -1951,8 +1978,45 @@ def orientar(trechos: List[Trecho], linhas_terca=None,
         if not mudou:
             break
     resto = [custo(t) / max(1, len(vizinhos[id(t)])) for t in ts_alt if vizinhos[id(t)]]
-    return {"trelicas": len(ts), "pelas_marcas": pelas_marcas, "pelas_alturas": trocas,
+    return {"trelicas": len(ts), "pelas_marcas": pelas_marcas, "pelo_cruzamento": pelo_cruzamento, "pelas_alturas": trocas,
             "desencontro_medio_mm": round(sum(resto) / len(resto), 1) if resto else 0.0}
+
+
+def _juntas_dos_banzos(el: "Elevacao") -> List[float]:
+    """s (na elevação) das juntas dos banzos longe das pontas: onde um pedaço de banzo termina e
+    outro começa (a emenda) — o meio de cada grupo de pontas a menos de 400 mm uma da outra"""
+    L = el.comprimento
+    pts = sorted(s for m in el.membros if m.papel == "banzo" and abs(m.s1 - m.s0) > 100.0
+                 for s in (m.s0, m.s1) if 400.0 < s < L - 400.0)
+    grupos: List[List[float]] = []
+    for s in pts:
+        if grupos and s - grupos[-1][-1] <= 400.0:
+            grupos[-1].append(s)
+        else:
+            grupos.append([s])
+    return [sum(g) / len(g) for g in grupos if len(g) >= 2]
+
+
+def _cruzamentos(t: "Trecho", outros: List["Trecho"]) -> List[float]:
+    """s ao longo de t onde outra treliça reta atravessa t (as duas seguem além do cruzamento)"""
+    a, b = t.caminho.a, t.caminho.b
+    out = []
+    for u in outros:
+        if u is t or u.caminho.tipo != "reta":
+            continue
+        c, d = u.caminho.a, u.caminho.b
+        r = (b[0] - a[0], b[1] - a[1])
+        q = (d[0] - c[0], d[1] - c[1])
+        den = r[0] * q[1] - r[1] * q[0]
+        if abs(den) < 1e-9 * max(1.0, math.hypot(*r) * math.hypot(*q)):
+            continue
+        w = (c[0] - a[0], c[1] - a[1])
+        tt = (w[0] * q[1] - w[1] * q[0]) / den
+        uu = (w[0] * r[1] - w[1] * r[0]) / den
+        Lt, Lu = math.hypot(*r), math.hypot(*q)
+        if 500.0 < tt * Lt < Lt - 500.0 and 500.0 < uu * Lu < Lu - 500.0:
+            out.append(tt * Lt)
+    return out
 
 
 # =====================================================================================

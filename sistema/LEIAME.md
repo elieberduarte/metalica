@@ -237,7 +237,15 @@ Posto; o seletor do desenho → 1 verificador; mudança só nas ferramentas de t
 CB na bateria** (`OBRAS_PLANTA`, `--so-planta`/`--sem-planta`): o desenho recebido congelado em
 `Projeto/bateria/entradas/projeto-posto-cb/`, montado pela planta pelo caminho do programa (13 s) e fotografado —
 quantidades, peso, cada treliça lida (quantidade, comprimento, barras, situação), encaixe, apoios por regra, esqueleto
-e avisos.
+e avisos. **Sentido da treliça pelo cruzamento na emenda** (print do usuário: "na TRANSIÇÃO 2 a viga
+de transição 1 para no centro da tesoura e no 3D ela está passando na aba lateral"): onde outra treliça atravessa a linha
+de uma na planta (a planta a interrompe ali), a elevação tem a junta dos banzos (a emenda) — só um sentido põe a junta
+sobre o cruzamento, e ele vale antes do "encontro dos banzos" (`orientar`: `_juntas_dos_banzos`, `_cruzamentos`,
+`pelo_cruzamento`). No Posto CB, as TRANSIÇÕES 2 e 5 estavam invertidas pelo encontro dos banzos: a cumeeira e a
+emenda de 250 mm ficavam em y ≈ 16,6 m, e a TRANSIÇÃO 1 (y = 19,45 m, contínua na planta) atravessava a lateral da
+tesoura; agora a emenda cai em 19,32–19,57 m, o espaço que a planta deixa na linha delas, e a TRANSIÇÃO 1 passa no
+centro da tesoura. Terças fora do nó 125 → 121. As curvas de 90° nos cantos da planta (6, sem nome) ficam de fora: o
+usuário confirmou que são um detalhe descontinuado.
 
 **0.8.45.** **Área de trabalho do projeto** (`/dividida?projeto=…&vista=2d|3d|ambos`, pedido do
 usuário: "a transição entre 2D, 3D e 2D+3D muda o menu superior… e ao sair do 2D para o 3D ele renderiza o modelo todas
