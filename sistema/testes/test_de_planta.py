@@ -535,3 +535,22 @@ def test_emenda_com_a_trelica_que_passa_em_corte():
     em_pe = sorted((round(m.s0), round(m.h0), round(m.h1), m.altura_linha) for m in el.membros if m.papel == "montante")
     assert em_pe == [(9564, -111, 750, 100.0), (9689, 1550, 2350, 100.0), (9873, 1550, 2350, 100.0),
                      (9948, 0, 700, 100.0), (12000, 0, 700, 0.0)]
+
+
+def test_terca_nao_senta_no_frontao_da_elevacao_em_duas_pecas():
+    # a TRANSIÇÃO 2 do Posto CB: viga de transição (banzos retos em 0 e 1100) e, em cima dela, a
+    # tesoura de duas águas até 2300 — o frontão "revestir com telha ou rufo" (corte BB): a telha
+    # passa reta embaixo dele, e a terça senta no topo da viga
+    M = de_planta.Membro
+    el = de_planta.Elevacao("TRANSIÇÃO 2", "TRANSICAO", 1, 10000.0, membros=[
+        M(0, 0, 10000, 0, "banzo"), M(0, 1100, 10000, 1100, "banzo"),
+        M(0, 1100, 5000, 2300, "banzo"), M(5000, 2300, 10000, 1100, "banzo"),
+        M(2500, 0, 2500, 1100, "montante"), M(2500, 1100, 2500, 1700, "montante")])
+    partes = de_planta._partes_da_elevacao(el, True)
+    assert [s for s, _ in partes] == ["", " (tesoura de cima)"]
+    t = de_planta.Trecho(de_planta.Caminho("reta", a=(0.0, 0.0), b=(10000.0, 0.0)), "TRANSIÇÃO 2", "TRANSICAO", elevacao=el)
+    assert de_planta._altura_no_ponto(t, (5000.0, 0.0)) == pytest.approx(1100.0)
+    # a elevação de uma peça só continua dando o topo dela
+    el1 = de_planta.Elevacao("TESOURA 1", "TESOURA", 1, 10000.0, membros=list(el.membros))
+    t1 = de_planta.Trecho(de_planta.Caminho("reta", a=(0.0, 0.0), b=(10000.0, 0.0)), "TESOURA 1", "TESOURA", elevacao=el1)
+    assert de_planta._altura_no_ponto(t1, (5000.0, 0.0)) == pytest.approx(2300.0)

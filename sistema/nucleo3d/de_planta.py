@@ -681,6 +681,7 @@ class Elevacao:
     fundo: list = field(default_factory=list)                   # as linhas que a leitura tirou (a vista de fundo)
     apoio_terca: Optional[dict] = None                          # o perfil de apoio das terças, dos dois lados
     parte_de: Optional[str] = None                              # a elevação desenhada junto (a TRANSIÇÃO 3 na da 2)
+    topo_telhado: Optional[float] = None                        # em duas peças: o topo da viga (o telhado passa ali)
 
     def topo(self, s: float) -> Optional[float]:
         """altura do eixo do banzo superior em `s` (o mais alto que passa por ali)"""
@@ -1104,6 +1105,9 @@ def _partes_da_elevacao(el: "Elevacao", dividir: bool) -> List[Tuple[str, List["
             (cima if m.h0 < hm else baixo).append(b_)
     el.avisos.append("%s: montada em duas peças — a viga de transição (até %.2f m) e a tesoura em cima dela."
                      % (_bonito(el.nome), hm / 1000.0))
+    # a tesoura de cima é o frontão acima do telhado ("REVESTIR TRANSIÇÃO 2/3 COM TELHA OU RUFO" no
+    # corte BB do Posto CB): a telha passa reta embaixo dele, e a terça senta na viga de transição
+    el.topo_telhado = hm
     return [("", baixo), (" (tesoura de cima)", cima)]
 
 
@@ -1791,7 +1795,10 @@ def _altura_no_ponto(t: Trecho, p: Ponto2, tol: float = 350.0) -> Optional[float
         return None
     se = _s_na_elevacao(t, s)
     se = min(max(se, 60.0), el.comprimento - 60.0)
-    return el.topo(se)
+    h = el.topo(se)
+    # na elevação em duas peças, o telhado é o topo da viga de transição, não o do frontão em cima
+    corte = getattr(el, "topo_telhado", None)
+    return h if corte is None or h is None else min(h, corte)
 
 
 def _folga_da_elevacao(t: Trecho) -> float:
@@ -3065,8 +3072,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     trelicas_3d = [t for t in trechos if t.elevacao is not None and t.familia != "PAINEL"]
 
     def topo_em(p: Ponto2) -> Optional[float]:
-        hs = [h for t in trelicas_3d for h in [_altura_no_ponto(t, p, 250.0)] if h is not None]
-        return max(hs) if hs else None
+        # a transição sobe acima do telhado: onde uma tesoura comum também passa, a altura é a dela
+        hs = [(h, t.familia == "TRANSICAO") for t in trelicas_3d for h in [_altura_no_ponto(t, p, 250.0)] if h is not None]
+        comuns = [h for h, tr in hs if not tr]
+        return max(comuns) if comuns else (max(h for h, _ in hs) if hs else None)
     amostras: List[Tuple[float, float, float]] = []
     for t in trelicas_3d:
         L = t.caminho.comprimento
@@ -3189,7 +3198,12 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             # a barreira (transição, painel) não é apoio de altura: a terça termina na face dela,
             # na altura do telhado que as tesouras vizinhas dão (na TRANSIÇÃO 1 o telhado passa
             # abaixo do banzo de cima dela — a elevação desenha a tesoura de trás com os suportes)
-            sem_barreira = [ap for ap in apoios if all(abs(ap[0] - s_b) > max(300.0, m_b + 150.0) for s_b, m_b in barreiras)]
+            # a transição na PONTA da terça também não dá altura: a terça termina na face dela, na
+            # altura do telhado (TRANSIÇÕES 1, 15 e 16 do Posto CB, 0,3–0,6 m acima dele — a terça
+            # subia no banzo de cima dela; o corte BB desenha a telha reta até a face)
+            de_altura = barreiras + [c[:2] for c in cruz_t if c[2] == "TRANSICAO"
+                                     and (abs(c[0] - s_ini) <= 300.0 + c[1] or abs(c[0] - s_fim) <= 300.0 + c[1])]
+            sem_barreira = [ap for ap in apoios if all(abs(ap[0] - s_b) > max(300.0, m_b + 150.0) for s_b, m_b in de_altura)]
             if len(sem_barreira) >= 1:
                 apoios = sem_barreira
             vaos = []
