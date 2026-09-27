@@ -225,6 +225,17 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.47 (em desenvolvimento).** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
+print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e
+as regras de apoio não mudam), e a peça termina antes — `recorte_inicio`/`recorte_fim` da barra, que o 3D, o IFC e o
+Detalhar já descontam: a quina da ponta reta da cantoneira (ou do U) fica 10 mm fora da face do banzo, pela seção
+girada de cada um (o caixão com os dois U; o banzo calandrado pelo eixo que o sólido varrido agora guarda em
+`atributos.banzo`). Vale para os banzos do mesmo bloco e da outra parte da treliça montada em duas peças (a tesoura
+de cima apoia no banzo da viga de transição); o banzo só conta se a ponta recortada ainda estiver sobre ele (o toco
+do apoio). No Posto CB: 5.311 de 5.414 peças de alma recortadas (mediana ~10 cm; até ~40 cm nas diagonais quase
+deitadas, a ~22° do banzo); as 103 restantes terminam em outra peça da alma ou no pilar. Peso 55,2 → 53,1 t (a alma
+pelo comprimento de corte, não de eixo a eixo).
+
 **0.8.46.** **Conferência seletiva antes de publicar** (`testes/selecao.py`, pedido do
 usuário: a completa levava ~20 min a cada versão; "as demais obras já estão fechadas, em produção"): o pytest roda
 sempre; os verificadores das telas, só os da tela que cada um testa (a primeira que abre) quando os arquivos dela

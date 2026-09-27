@@ -2717,13 +2717,17 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                             sp = s0p + (s1p - s0p) * f
                             x, y = c.ponto(sp)
                             pts.append((x, y, q0[2] + (q1[2] - q0[2]) * f))
-                        sol = varrer(perfil, pts, deitado=True, abas_para_baixo=(m.h0 + m.h1) / 2 > meio_h)
+                        de_cima = (m.h0 + m.h1) / 2 > meio_h
+                        sol = varrer(perfil, pts, deitado=True, abas_para_baixo=de_cima)
                         sol.nome = perfil
                         sol.camada = "Treliças"
                         comp = sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
                         raios = [c.raio] if c.tipo == "arco" else [q.raio for q, _r in c.partes if q.tipo == "arco"]
+                        # o eixo do banzo (e o giro do U, como o do banzo reto) para a alma parar na face dele
                         sol.atributos = {"tipo_ifc": "IfcMember", "calandrada": {"raio": round(min(raios), 1),
                                                                                   "raios": [round(r_, 1) for r_ in raios]},
+                                         "banzo": {"perfil": perfil, "rotacao": 270.0 if de_cima else 90.0,
+                                                   "eixo": [[round(v, 1) for v in q] for q in pts]},
                                          "origem": {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o}}
                         doc.add(sol)
                         pecas.append({"ent": sol, "perfil": perfil, "papel": "banzo", "L": comp, "conjunto": conj})
@@ -2918,6 +2922,15 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                           "do banzo; confira a altura dele." % (pl["nome"], x, y, longe / 1000.0))
         barra((x, y, base), (x, y, topo_p), pl["perfil"], "pilar", "Pilares", None, pl["rot"], orig)
         pilares += 1
+
+    # ---------------------------------------------------------------- a alma na face do banzo
+    # montantes e diagonais param na face interna do banzo, com folga (o nó continua no eixo)
+    from nucleo3d import alma_na_face
+    na_face = alma_na_face.aparar([p["ent"] for p in pecas])
+    for p in pecas:
+        e = p["ent"]
+        if e.tipo == "barra" and (e.recorte_inicio or e.recorte_fim):
+            p["L"] = math.dist(e.inicio, e.fim) - e.recorte_inicio - e.recorte_fim
 
     # ---------------------------------------------------------------- terças e acessórios
     avisar("terças e acessórios…")
@@ -3242,6 +3255,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         "vigas": st.get("vigas", 0), "pilares": pilares, "pilares_com_corte": res_pm["n"], "tercas": tercas, "correntes": correntes,
         "esticadores": esticadores, "contraventamentos": contravs,
         "barras": len(doc.barras), "calandradas": sum(1 for p in pecas if p["ent"].tipo == "solido"),
+        "alma_na_face": na_face,
         "posicoes": len(posicao_de and set(posicao_de.values())), "conjuntos": n_conj, "peso_kg": round(peso, 1),
         "orientacao": ori, "planta_sem_nome": st.get("sem_rotulo", 0), "outras_plantas": outras_feitas,
         "nomes_sem_elevacao": {_bonito(k): v for k, v in (st.get("sem_elevacao") or {}).items()},
