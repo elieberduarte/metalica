@@ -132,8 +132,9 @@ def ler_cortes_de_pilar(ents, textos) -> Dict[str, dict]:
             rx, ry = r["posicao"][0], r["posicao"][1]
             if not (tx - 12000.0 <= rx <= tx + 12000.0 and ty - 400.0 <= ry <= ty + 16000.0):
                 continue
-            # o rótulo desta vista é o mais perto do título entre os do mesmo tipo
-            d = math.hypot(rx - tx, ry - ty)
+            # o rótulo desta vista: o título (o texto maior — a seta "VISTA FRONTAL" dentro da vista
+            # lateral do PM8 é menor) e, entre os do mesmo tamanho, o mais perto do título do corte
+            d = (-round(float(r.get("altura") or 0.0), 1), math.hypot(rx - tx, ry - ty))
             if tipo in vistas and vistas[tipo][0] <= d:
                 continue
             vistas[tipo] = (d, r)
@@ -359,7 +360,42 @@ def interpretar(corte: dict) -> dict:
         frontal = vistas.get("frontal") or []
         pf = _pilar_na_vista(frontal) if frontal else None
         r["afastamento"] = pf["largura"] if pf else None
+        r["quadro"] = _pernas_na_frontal(frontal) if frontal else None
     return r
+
+
+def _pernas_na_frontal(ents_v) -> Optional[dict]:
+    """na vista frontal do pilar inclinado, o quadro: as duas pernas (as linhas compridas em pé,
+    em dois grupos afastados) e as travessas entre elas (as horizontais que vão de uma perna à
+    outra, em pares — as duas faces do perfil). {"entre": distância de eixo a eixo das pernas,
+    "L": comprimento da perna, "travessas": [s do eixo de cada uma, a partir do pé]}; None quando
+    a vista desenha uma perna só"""
+    segs = [(a, b) for e in ents_v for a, b in _segs(e)]
+    em_pe = [(a, b) for a, b in segs if abs(a[0] - b[0]) < 5.0 and abs(a[1] - b[1]) >= PILAR_MIN]
+    if len(em_pe) < 3:
+        return None
+    L0 = max(abs(a[1] - b[1]) for a, b in em_pe)
+    em_pe = [(a, b) for a, b in em_pe if abs(a[1] - b[1]) >= 0.6 * L0]
+    xs = sorted((a[0] + b[0]) / 2.0 for a, b in em_pe)
+    # dois grupos: o maior salto entre as bordas separa as pernas
+    saltos = [(xs[i + 1] - xs[i], i) for i in range(len(xs) - 1)]
+    salto, i = max(saltos)
+    if salto < 500.0:
+        return None
+    esq, dir_ = xs[:i + 1], xs[i + 1:]
+    c_esq, c_dir = (min(esq) + max(esq)) / 2.0, (min(dir_) + max(dir_)) / 2.0
+    pe = min(min(a[1], b[1]) for a, b in em_pe)
+    vao = (max(esq), min(dir_))
+    ys = sorted((a[1] + b[1]) / 2.0 for a, b in segs if abs(a[1] - b[1]) < 5.0
+                and min(a[0], b[0]) <= vao[0] + 30.0 and max(a[0], b[0]) >= vao[1] - 30.0)
+    travessas, k = [], 0
+    while k < len(ys):
+        j = k
+        while j + 1 < len(ys) and ys[j + 1] - ys[k] <= 400.0:
+            j += 1
+        travessas.append(round((ys[k] + ys[j]) / 2.0 - pe, 1))
+        k = j + 1
+    return {"entre": round(c_dir - c_esq, 1), "L": round(L0, 1), "travessas": travessas}
 
 
 def _u(a, b):
@@ -381,6 +417,41 @@ def sentido_da_placa(ents_loc, mover, ponto: Ponto2, raio=900.0) -> Optional[Pon
             L = math.dist(a, b)
             if melhor is None or L > melhor[0]:
                 melhor = (L, _u(a, b)[0])
+    return melhor[1] if melhor else None
+
+
+def outra_placa(ents_loc, mover, ponto: Ponto2, u: Ponto2, entre: float, tol: float = 250.0) -> Optional[Ponto2]:
+    """a placa de base da outra perna do quadro: a placa (camada Chapas, fechada) com o lado
+    comprido no sentido u, a `entre` da placa deste ponto na perpendicular a u (e no mesmo lugar
+    ao longo de u). A perna fica na outra placa como esta fica na sua (o ponto do pilar é o da
+    locação, que pode não ser o centro da placa)."""
+    placas = []
+    for e in ents_loc:
+        if not re.search(r"(?i)chapa", str(e.get("camada") or "")) or e.get("tipo") != "polilinha" or not e.get("fechada"):
+            continue
+        pts = [mover(p) for p in _pts(e)]
+        if not (4 <= len(pts) <= 5):
+            continue
+        placas.append(((sum(p[0] for p in pts[:4]) / 4.0, sum(p[1] for p in pts[:4]) / 4.0), pts))
+    if not placas:
+        return None
+    propria = min(placas, key=lambda q: math.dist(q[0], ponto))[0]
+    if math.dist(propria, ponto) > 700.0:
+        return None
+    melhor = None
+    for c, pts in placas:
+        dx, dy = c[0] - propria[0], c[1] - propria[1]
+        ao_longo = dx * u[0] + dy * u[1]
+        ao_lado = abs(-dx * u[1] + dy * u[0])
+        if abs(ao_longo) > tol or abs(ao_lado - entre) > tol:
+            continue
+        lados = [(math.dist(a, b), _u(a, b)[0]) for a, b in zip(pts, pts[1:] + pts[:1])]
+        _Lm, dir_ = max(lados)
+        if abs(dir_[0] * u[0] + dir_[1] * u[1]) < 0.95:
+            continue
+        err = abs(ao_lado - entre) + abs(ao_longo)
+        if melhor is None or err < melhor[0]:
+            melhor = (err, (c[0] + ponto[0] - propria[0], c[1] + ponto[1] - propria[1]))
     return melhor[1] if melhor else None
 
 
@@ -426,14 +497,39 @@ def montar(cortes: Dict[str, dict], locados: Sequence[dict], barra, nivel: float
             mult = int((lido["perfis"].get("pilar") or {}).get("mult") or 1)
             af = (float(pa.bf or 125.0) if pa else 125.0) / 2 + 3.0 if mult > 1 else 0.0
             nx, ny = -uy, ux
-            orig = {"locacao": pl["nome"], "corte": "%s - %dX" % (nome, corte["qtd"]),
+            orig = {"locacao": pl["nome"], "corte": "%s - %dX" % (nome, cortes[nome]["qtd"]),
                     "a_conferir": "pilar inclinado a %.1f°, %.2f m, no sentido do lado comprido da placa de base; o lado "
                                   "foi o que leva o topo para a estrutura mais perto (%.1f m)" % (ang, L / 1000.0, d_perto / 1000.0)}
-            for sinal in ((1.0, -1.0) if mult > 1 else (0.0,)):
-                p0 = (x + nx * af * sinal, y + ny * af * sinal, base)
-                p1 = (x + ux * dxy + nx * af * sinal, y + uy * dxy + ny * af * sinal, base + dz)
-                if barra(p0, p1, perfil_pl, "pilar", "Pilares", None, 0.0, orig):
-                    n += 1
+            # o quadro da vista frontal: a outra perna na outra placa da locação, ao lado desta (a
+            # distância das pernas, na perpendicular ao sentido da inclinação), e as travessas
+            pes = [(x, y)]
+            quadro = lido.get("quadro")
+            if quadro:
+                outra = outra_placa(ents_loc, mover_loc, (x, y), u, quadro["entre"])
+                if outra is None:
+                    avisos.append("%s: a vista frontal desenha duas pernas a %.2f m, mas não achei a outra placa na locação; "
+                                  "montada uma perna só." % (nome, quadro["entre"] / 1000.0))
+                else:
+                    pes.append(outra)
+            for k_pe, (bx, by) in enumerate(pes):
+                o_pe = dict(orig, perna=k_pe + 1) if len(pes) > 1 else orig
+                for sinal in ((1.0, -1.0) if mult > 1 else (0.0,)):
+                    p0 = (bx + nx * af * sinal, by + ny * af * sinal, base)
+                    p1 = (bx + ux * dxy + nx * af * sinal, by + uy * dxy + ny * af * sinal, base + dz)
+                    if barra(p0, p1, perfil_pl, "pilar", "Pilares", None, 0.0, o_pe):
+                        n += 1
+            if len(pes) > 1:
+                # as travessas, de perna a perna, na altura que a vista frontal dá (s ao longo da perna,
+                # na proporção do comprimento dela)
+                (ax_, ay_), (bx_, by_) = pes
+                c_a, s_a = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+                for s_t in quadro["travessas"]:
+                    s_m = s_t * L / (quadro["L"] or L)
+                    dx_, dz_ = s_m * c_a, s_m * s_a
+                    q0 = (ax_ + ux * dx_, ay_ + uy * dx_, base + dz_)
+                    q1 = (bx_ + ux * dx_, by_ + uy * dx_, base + dz_)
+                    if barra(q0, q1, perfil_pl, "viga", "Pilares", None, 0.0, dict(orig, travessa=round(s_m))):
+                        n += 1
             avisos.append("%s: montado inclinado a %.1f° pelo corte (%.2f m, chega ao nível %.2f m aos %.2f m e segue até "
                           "%.2f m); sentido escolhido pela estrutura mais perto do topo — confira." % (
                               nome, ang, L / 1000.0, nivel / 1000.0, (nivel - base) / math.sin(math.radians(ang)) / 1000.0, (base + dz) / 1000.0))

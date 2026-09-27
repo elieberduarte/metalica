@@ -234,7 +234,15 @@ girada de cada um (o caixão com os dois U; o banzo calandrado pelo eixo que o s
 de cima apoia no banzo da viga de transição); o banzo só conta se a ponta recortada ainda estiver sobre ele (o toco
 do apoio). No Posto CB: 5.311 de 5.414 peças de alma recortadas (mediana ~10 cm; até ~40 cm nas diagonais quase
 deitadas, a ~22° do banzo); as 103 restantes terminam em outra peça da alma ou no pilar. Peso 55,2 → 53,1 t (a alma
-pelo comprimento de corte, não de eixo a eixo).
+pelo comprimento de corte, não de eixo a eixo). **O pilar inclinado em quadro** (`pilares_corte`: `_pernas_na_frontal`,
+`outra_placa`; print do usuário: "estruturalmente não faz sentido essa viga da frente estar nesse ponto"): o PM8 do
+Posto CB é um quadro de duas pernas 2Ue 250×125 a 1,35 m de eixo a eixo, com três travessas (a vista frontal e o
+"LOCAÇÃO DO CHUMBADOR PM8": duas placas CH7); a leitura tomava por vista frontal a seta "VISTA FRONTAL" dentro da
+vista lateral (agora vale o rótulo de texto maior) e montava só a perna da placa com o rótulo — 1,5 m ao lado da
+TRANSIÇÃO 16, solta. Agora a outra perna nasce na outra placa (no plano da TRANSIÇÃO 16, chega no nó com a
+TRANSIÇÃO 1, como a "VISTA NO PILAR INCLINADO PM8" desenha) e as travessas ligam as duas (0,71; 6,82; 8,41 m);
+pilar sem carga 2 → 0. A origem das peças do corte levava a quantidade do último corte lido ("PM8 - 3X"): agora a do
+próprio corte.
 
 **0.8.46.** **Conferência seletiva antes de publicar** (`testes/selecao.py`, pedido do
 usuário: a completa levava ~20 min a cada versão; "as demais obras já estão fechadas, em produção"): o pytest roda

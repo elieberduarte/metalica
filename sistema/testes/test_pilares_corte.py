@@ -137,3 +137,27 @@ def test_monta_copa_em_cruz_e_inclinado():
     assert abs(p1[2] - 8000.0 * math.sin(math.radians(50.0))) < 5.0
     assert any("inclinado" in a for a in avisos) and any("cruz" in a for a in avisos)
     assert {b[6] for b in barras} == {"Pilares"}                  # a copa e as mãos-francesas vão com o pilar
+
+
+def test_quadro_de_duas_pernas_na_vista_frontal_e_a_outra_placa():
+    """o PM8 do Posto CB: a vista frontal desenha duas pernas de 250 com 1100 entre elas (1350 de
+    eixo a eixo) e três travessas; na locação, a placa da outra perna fica a 1350 ao lado"""
+    ents = []
+    for x in (0.0, 250.0, 1350.0, 1600.0):                          # as bordas das duas pernas
+        ents.append(_linha((x, 0.0), (x, 11064.0)))
+    for s0 in (802.0, 8741.0, 10814.0):                              # as travessas: as duas faces
+        ents += [_linha((250.0, s0), (1350.0, s0)), _linha((250.0, s0 + 250.0), (1350.0, s0 + 250.0))]
+    q = pc._pernas_na_frontal(ents)
+    assert q == {"entre": 1350.0, "L": 11064.0, "travessas": [927.0, 8866.0, 10939.0]}
+    assert pc._pernas_na_frontal([_linha((0.0, 0.0), (0.0, 9000.0)), _linha((250.0, 0.0), (250.0, 9000.0)),
+                                  _linha((125.0, 0.0), (125.0, 9000.0))]) is None
+    u = (math.cos(math.radians(56.3)), math.sin(math.radians(56.3)))
+
+    def placa(cx, cy, id_):
+        v = [(cx + u[0] * a + -u[1] * b, cy + u[1] * a + u[0] * b) for a, b in ((-450, -200), (450, -200), (450, 200), (-450, 200))]
+        return {"id": id_, "tipo": "polilinha", "camada": "Chapas", "fechada": True, "vertices": [list(p) for p in v]}
+    n = (-u[1], u[0])
+    ents_loc = [placa(0.0, 0.0, "a"), placa(n[0] * 1350.0, n[1] * 1350.0, "b"), placa(5000.0, 0.0, "c")]
+    # o pilar da locação a 288 mm do centro da placa: a outra perna vai com o mesmo afastamento
+    p = pc.outra_placa(ents_loc, lambda q: q, (200.0, 200.0), u, 1350.0)
+    assert p is not None and math.dist(p, (n[0] * 1350.0 + 200.0, n[1] * 1350.0 + 200.0)) < 1.0
