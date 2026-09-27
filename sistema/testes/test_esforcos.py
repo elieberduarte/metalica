@@ -87,3 +87,38 @@ def test_cargas_da_locacao_embaixo_do_nome_e_na_placa_livre():
                                                                              "Mx": 2.0, "My": -1.0}
     assert por[9.0]["pilar"] is None and (por[9.0]["x"], por[9.0]["y"]) == (3910.0, 1520.0)
     assert por[9.0]["Fx"] == 4.0
+
+
+def test_s2_e_s3_da_6123_2023():
+    # Tabela 3: categoria II, classe C — 0,89 até 5 m e 0,95 a 10 m; no meio, interpolado
+    assert esforcos.s2_2023(4.0, "II", "C") == pytest.approx(0.89)
+    assert esforcos.s2_2023(7.5, "II", "C") == pytest.approx(0.92)
+    assert esforcos.s2_2023(10.0, "IV", "A") == pytest.approx(0.86)
+    assert esforcos.classe_por_dimensao(60.0) == "C" and esforcos.classe_por_dimensao(30.0) == "B"
+    assert esforcos.S3_2023[1] == 1.11 and esforcos.S3_2023[3] == 1.00
+
+
+def test_tramos_do_telhado_multiplo_e_coeficientes_da_tabela_10():
+    # três tramos de 10 m: calhas em 10 e 20, cumeeiras no meio de cada um
+    u = np.arange(0.0, 30.01, 0.5)
+    z = 7.0 + 0.3 * (1.0 - np.abs(((u % 10.0) - 5.0) / 5.0))
+    calhas, cumeeiras, _u0, _u1 = esforcos._tramos(u, z)
+    assert calhas == pytest.approx([10.0, 20.0], abs=0.6) and cumeeiras == pytest.approx([5.0, 15.0, 25.0], abs=0.6)
+    cpe = [esforcos._cpe_alfa0(x, calhas, cumeeiras) for x in (2.0, 8.0, 12.0, 18.0, 28.0)]
+    assert cpe == [-0.9, -0.6, -0.4, -0.3, -0.3]
+
+
+def test_vento_levanta_a_cobertura_e_entra_nas_combinacoes():
+    doc = modelo()
+    for x in (1500.0, 4500.0):
+        doc.add(barra((x, -300.0, 6890.0), (x, 5300.0, 6890.0), "terça"))
+    r = esforcos.calcular(doc, {"sobrecarga": 0.25, "telha": 0.05}, vento={"v0": 45.0, "grupo": 3, "categoria": "II"})
+    v = r["vento"]
+    assert v["s3"] == 1.00 and len(v["casos"]) == 8
+    # cpi +0,8 com cpe negativo: força para cima em toda a cobertura
+    assert all(c["para_cima_kN"] > 0 for c in v["casos"][::2])
+    assert all(x["erro"] < 1e-6 for x in r["casos"].values())
+    nomes = [c["nome"] for c in r["combinacoes"]]
+    assert "ELU1" in nomes and "ELU-V1-c" in nomes
+    p = r["pilares"][0]
+    assert p["envoltoria_kN"]["min"] < 0 < p["envoltoria_kN"]["max"]         # arrancamento e compressão

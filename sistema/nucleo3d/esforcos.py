@@ -57,6 +57,90 @@ def cargas_do_projeto(projeto: dict) -> dict:
     out["fonte"] = "considerações de cálculo do projetista (%s)" % (rec.get("arquivo") or "folhas do DXF")
     return out
 LARG_MAX = 3.5               # m: vizinha mais longe que isso não é a terça do lado
+
+# ------------------------------------------------------------------ vento (NBR 6123:2023)
+#: Tabela 3 — fator S2 pela altura z (m), categoria de rugosidade e classe (A, B, C)
+S2_2023 = {
+    5: {"I": (1.06, 1.04, 1.01), "II": (0.94, 0.92, 0.89), "III": (0.88, 0.86, 0.82), "IV": (0.79, 0.76, 0.73), "V": (0.74, 0.72, 0.67)},
+    10: {"I": (1.10, 1.09, 1.06), "II": (1.00, 0.98, 0.95), "III": (0.94, 0.92, 0.88), "IV": (0.86, 0.83, 0.80), "V": (0.74, 0.72, 0.67)},
+    15: {"I": (1.13, 1.12, 1.09), "II": (1.04, 1.02, 0.99), "III": (0.98, 0.96, 0.93), "IV": (0.90, 0.88, 0.84), "V": (0.79, 0.76, 0.72)},
+    20: {"I": (1.15, 1.14, 1.12), "II": (1.06, 1.04, 1.02), "III": (1.01, 0.99, 0.96), "IV": (0.93, 0.91, 0.88), "V": (0.82, 0.80, 0.76)},
+    30: {"I": (1.17, 1.17, 1.15), "II": (1.10, 1.08, 1.06), "III": (1.05, 1.03, 1.00), "IV": (0.98, 0.96, 0.93), "V": (0.87, 0.85, 0.82)},
+    40: {"I": (1.20, 1.19, 1.17), "II": (1.13, 1.11, 1.09), "III": (1.08, 1.07, 1.04), "IV": (1.02, 0.99, 0.96), "V": (0.91, 0.89, 0.86)},
+    50: {"I": (1.21, 1.21, 1.19), "II": (1.15, 1.13, 1.12), "III": (1.10, 1.09, 1.06), "IV": (1.04, 1.02, 0.99), "V": (0.94, 0.93, 0.89)},
+}
+#: Tabela 4 — fator estatístico S3 por grupo (1: abriga substâncias inflamáveis; 3: comércio)
+S3_2023 = {1: 1.11, 2: 1.06, 3: 1.00, 4: 0.95, 5: 0.83}
+#: Tabela 10 — telhados múltiplos simétricos de tramos iguais (h ≤ a'), θ = 5°: vento
+#: perpendicular às cumeeiras (α = 0°), água a barlavento e a sotavento de cada tramo
+TAB10_ALFA0 = {"a": -0.9, "b": -0.6, "c": -0.4, "d": -0.3, "m": -0.3, "n": -0.3, "x": -0.3, "z": -0.3}
+#: e vento paralelo às cumeeiras (α = 90°): faixas b1 = h, b2 = h a partir da borda, b3 o resto
+TAB10_ALFA90 = (-0.8, -0.6, -0.2)
+VENTO_PADRAO = {"v0": None, "s1": 1.0, "categoria": "II", "classe": None, "grupo": 1, "cpi": (0.8, -0.3)}
+
+
+def s2_2023(z: float, categoria: str = "II", classe: str = "C") -> float:
+    """fator S2 da Tabela 3 da NBR 6123:2023, interpolado na altura (até 5 m, a linha de 5 m)"""
+    col = "ABC".index(str(classe).upper())
+    cat = str(categoria).upper()
+    zs = sorted(S2_2023)
+    z = max(zs[0], min(float(z), zs[-1]))
+    for z0, z1 in zip(zs, zs[1:]):
+        if z0 <= z <= z1:
+            a, b = S2_2023[z0][cat][col], S2_2023[z1][cat][col]
+            return a + (b - a) * (z - z0) / (z1 - z0)
+    return S2_2023[zs[-1]][cat][col]
+
+
+def classe_por_dimensao(maior_m: float) -> str:
+    """NBR 6123:2023, 5.3.2: A até 20 m, B até 50 m, C acima"""
+    return "A" if maior_m <= 20.0 else ("B" if maior_m <= 50.0 else "C")
+
+
+def _tramos(u: np.ndarray, z: np.ndarray, passo: float = 0.5):
+    """as calhas (vales) e as cumeeiras do telhado múltiplo ao longo de u (m), pela altura das
+    terças: (calhas, cumeeiras de cada tramo, u mín., u máx.)"""
+    u0, u1 = float(u.min()), float(u.max())
+    n = int((u1 - u0) / passo) + 1
+    soma, cont = np.zeros(n), np.zeros(n)
+    k = ((u - u0) / passo).astype(int)
+    np.add.at(soma, k, z)
+    np.add.at(cont, k, 1)
+    ok = cont > 0
+    xs = np.arange(n)
+    perfil = np.interp(xs, xs[ok], soma[ok] / cont[ok])
+    perfil = np.convolve(perfil, np.ones(5) / 5.0, mode="same")
+    calhas = []
+    viz = int(3.0 / passo)
+    longe = int(12.0 / passo)
+    for i in range(viz, n - viz):
+        janela = perfil[i - viz:i + viz + 1]
+        if perfil[i] <= janela.min() + 1e-9:
+            alto = min(perfil[max(0, i - longe):i].max(initial=perfil[i]), perfil[i:i + longe].max(initial=perfil[i]))
+            if alto - perfil[i] > 0.08 and (not calhas or u0 + i * passo - calhas[-1] > 3.0):
+                calhas.append(u0 + i * passo)
+    bordas = [u0] + calhas + [u1]
+    cumeeiras = []
+    for a, b in zip(bordas, bordas[1:]):
+        ia, ib = int((a - u0) / passo), max(int((b - u0) / passo), int((a - u0) / passo) + 1)
+        cumeeiras.append(u0 + (ia + int(np.argmax(perfil[ia:ib]))) * passo)
+    return calhas, cumeeiras, u0, u1
+
+
+def _cpe_alfa0(u: float, calhas, cumeeiras) -> float:
+    """Tabela 10, α = 0°: o coeficiente da água em que u está (u cresce no sentido do vento)"""
+    k = sum(1 for c in calhas if c < u)
+    n = len(calhas) + 1
+    barlavento = u < cumeeiras[k]
+    if k == 0:
+        par = ("a", "b")
+    elif k == 1:
+        par = ("c", "d")
+    elif k == n - 1:
+        par = ("x", "z")
+    else:
+        par = ("m", "n")
+    return TAB10_ALFA0[par[0] if barlavento else par[1]]
 BASE_TOL = 50.0              # mm: o pé do pilar
 
 
@@ -176,10 +260,104 @@ def _transformacao(R: np.ndarray) -> np.ndarray:
 
 # ------------------------------------------------------------------ o cálculo
 
-def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None) -> dict:
+def _casos_de_vento(casos: dict, faixas, nos, ia, ib, d, base: float, car: dict, vento: Optional[dict],
+                    avisos: List[str]) -> Optional[dict]:
+    """os casos de vento na cobertura (NBR 6123:2023), acrescentados a `casos`: quatro sentidos
+    (perpendicular e paralelo às cumeeiras, de um lado e do outro) × cada cpi. A cobertura cuja
+    altura livre não chega à metade da profundidade (7.2.1) vai como edificação fechada de mesma
+    cobertura — telhado múltiplo, Tabela 10 — com cpi = +0,8 e −0,3. A força sai pela diferença
+    entre a pressão de dentro e a de fora, na faixa de cada terça. Devolve a memória do vento."""
+    v = dict(VENTO_PADRAO)
+    v.update({k: val for k, val in (vento or {}).items() if val not in (None, "")})
+    if v.get("v0") is None:
+        v["v0"] = car.get("v0")
+    if not v.get("v0") or not faixas:
+        return None
+    idx = np.array([f[0] for f in faixas])
+    w = np.array([f[1] for f in faixas])
+    Lh = np.array([f[2] for f in faixas])
+    meio = (nos[ia[idx]] + nos[ib[idx]]) / 2.0
+    # as cumeeiras correm ao longo das terças: a direção dominante delas (ângulo dobrado, sem sinal)
+    ang2 = np.arctan2(d[idx, 1], d[idx, 0]) * 2.0
+    a_t = 0.5 * math.atan2(float((np.sin(ang2) * Lh).sum()), float((np.cos(ang2) * Lh).sum()))
+    ev = np.array([math.cos(a_t), math.sin(a_t)])        # ao longo das cumeeiras
+    eu = np.array([-ev[1], ev[0]])                         # perpendicular a elas
+    u = meio[:, :2] @ eu
+    vv = meio[:, :2] @ ev
+    z = meio[:, 2]
+    h = float(z.max() - base)
+    maior = float(max(u.max() - u.min(), vv.max() - vv.min()))
+    classe = v.get("classe") or classe_por_dimensao(maior)
+    s2 = s2_2023(h, v["categoria"], classe)
+    s3 = S3_2023[int(v["grupo"])]
+    vk = float(v["v0"]) * float(v["s1"]) * s2 * s3
+    q = 0.613 * vk ** 2 / 1000.0                           # kN/m²
+    calhas, _cum, u0, u1 = _tramos(u, z)
+    bordas = [u0] + calhas + [u1]
+    tramo = float(np.median(np.diff(bordas))) if len(bordas) > 1 else u1 - u0
+    if h > tramo:
+        avisos.append("vento: altura %.1f m maior que o tramo %.1f m do telhado múltiplo — a Tabela 10 pede h ≤ a'"
+                      % (h, tramo))
+
+    def nome_eixo(vetor, sinal):
+        x, y = vetor * sinal
+        return ("+x" if x > 0 else "−x") if abs(x) >= abs(y) else ("+y" if y > 0 else "−y")
+    cpes = {}
+    for sinal in (1.0, -1.0):                              # α = 0°: vento perpendicular às cumeeiras
+        cal_s, cum_s, _a, _b = _tramos(u * sinal, z)
+        cpes["vento %s (perpendicular às cumeeiras)" % nome_eixo(eu, sinal)] = np.array(
+            [_cpe_alfa0(ui, cal_s, cum_s) for ui in u * sinal])
+    for sinal in (1.0, -1.0):                              # α = 90°: faixas a partir da borda
+        vs = vv * sinal
+        tira = np.floor(u / 2.0).astype(int)
+        vmin = {t: vs[tira == t].min() for t in set(tira.tolist())}
+        dist = vs - np.array([vmin[t] for t in tira])
+        cpes["vento %s (paralelo às cumeeiras)" % nome_eixo(ev, sinal)] = np.where(
+            dist < h, TAB10_ALFA90[0], np.where(dist < 2 * h, TAB10_ALFA90[1], TAB10_ALFA90[2]))
+    nomes = []
+    for rot, cpe in cpes.items():
+        for cpi in v["cpi"]:
+            nome = "V%d" % (len(nomes) + 1)
+            f = np.zeros_like(casos["PP"])
+            para_cima = (float(cpi) - cpe) * q * w * Lh / 2.0   # kN em cada ponta (+ para cima)
+            np.add.at(f, ia[idx] * 6 + 2, para_cima)
+            np.add.at(f, ib[idx] * 6 + 2, para_cima)
+            casos[nome] = f
+            nomes.append({"caso": nome, "descricao": "%s, cpi %+.1f" % (rot, float(cpi)),
+                          "para_cima_kN": round(float(para_cima.sum() * 2), 1)})
+    return {"v0": float(v["v0"]), "s1": float(v["s1"]), "categoria": v["categoria"], "classe": classe,
+            "grupo": int(v["grupo"]), "s2": round(s2, 3), "s3": s3, "vk": round(vk, 2), "q": round(q, 3),
+            "h": round(h, 2), "tramo": round(tramo, 2), "calhas_m": [round(c, 2) for c in calhas],
+            "cpi": list(v["cpi"]), "casos": nomes,
+            "norma": "NBR 6123:2023 — 7.2.1 (cobertura isolada com h < 0,5·ℓ2 → edificação fechada, cpi +0,8/−0,3), "
+                     "Tabela 3 (S2), Tabela 4 (S3), Tabela 10 (telhados múltiplos, linha de 5°)"}
+
+
+def combinacoes_ultimas(casos: List[str]) -> List[dict]:
+    """as combinações últimas normais (NBR 8800, Tabelas 1 e 2; γ e ψ de nucleo/cargas.py):
+    a gravidade com a sobrecarga principal, cada vento principal com a sobrecarga reduzida, cada
+    vento secundário, e o levantamento — permanentes com γ = 1,0 e o vento de sucção."""
+    from nucleo import cargas as C
+    gpp = C.GAMA_G[next(k for k in C.GAMA_G if k.startswith("met"))][0]            # 1,25
+    gcp = C.GAMA_G[next(k for k in C.GAMA_G if k.startswith("industrializado"))][0]  # 1,40
+    gsc, gv = C.GAMA_Q["sobrecarga"][0], C.GAMA_Q["vento"][0]                      # 1,50 e 1,40
+    psc, pv = C.PSI["cobertura"][0], C.PSI["vento"][0]                             # 0,8 e 0,6
+    vs = [c for c in casos if c.startswith("V")]
+    out = [{"nome": "ELU1", "fatores": {"PP": gpp, "CP": gcp, "SC": gsc}}]
+    for c in vs:
+        out.append({"nome": "ELU-%s-a" % c, "fatores": {"PP": gpp, "CP": gcp, "SC": gsc, c: gv * pv}})
+        out.append({"nome": "ELU-%s-b" % c, "fatores": {"PP": gpp, "CP": gcp, c: gv, "SC": gsc * psc}})
+        out.append({"nome": "ELU-%s-c" % c, "fatores": {"PP": 1.0, "CP": 1.0, c: gv}})
+    for cb in out:
+        cb["expressao"] = " + ".join("%s·%s" % (("%.2f" % f).replace(".", ","), k) for k, f in cb["fatores"].items())
+    return out
+
+
+def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, vento: Optional[dict] = None) -> dict:
     """reações e esforços da estrutura inteira para os casos PP (peso próprio), CP (telha, forro
-    e painéis) e SC (sobrecarga). Devolve {casos, reacoes, pilares, barras, soltas, resumo,
-    hipoteses, avisos}"""
+    e painéis), SC (sobrecarga) e os de vento (NBR 6123:2023, quando há V0: nas cargas do
+    projetista ou em `vento`), e as combinações últimas com a envoltória por pilar. Devolve
+    {casos, pilares, combinacoes, vento, esforcos, resumo, cargas, avisos}"""
     import scipy.sparse as sp
     import scipy.sparse.linalg as spl
     from scipy.sparse.csgraph import connected_components
@@ -258,6 +436,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None) -> 
     larg = _larguras(nos, tercas, barras)
     area = 0.0
     sem_vizinha = 0
+    faixas = []                                            # (barra, largura, comprimento na horizontal)
     for e, w in larg.items():
         i = pos[e]
         if w <= 0:
@@ -265,12 +444,14 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None) -> 
             continue
         Lh = float(np.hypot(d[i][0], d[i][1]))
         area += w * Lh
+        faixas.append((i, w, Lh))
         for caso, q, comp in (("CP", sum(car[k] for k in PERMANENTES), L[i]), ("SC", car["sobrecarga"], Lh)):
             f = q * w * comp / 2
             casos[caso][ia[i] * 6 + 2] -= f
             casos[caso][ib[i] * 6 + 2] -= f
     if sem_vizinha:
         avisos.append("%d trechos de terça sem outra terça paralela a até %.1f m: sem carga de cobertura" % (sem_vizinha, LARG_MAX))
+    memoria_vento = _casos_de_vento(casos, faixas, nos, ia, ib, d, base, car, vento, avisos)
 
     # --- restrições
     presos = np.zeros(ndof, bool)
@@ -338,6 +519,15 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None) -> 
         pilares[k]["locacao"] = dict(loc_itens[i], distancia_m=round(dist, 2))
     sem_pilar = [c for i, c in enumerate(loc_itens) if i not in tomado_c]
 
+    # --- as combinações últimas e a envoltória da vertical em cada pilar (+ compressão)
+    combs = combinacoes_ultimas(list(casos))
+    for p in pilares:
+        rz = {c: v[2] for c, v in p["reacoes_kN"].items()}
+        vals = [(sum(f * rz.get(c, 0.0) for c, f in cb["fatores"].items()), cb["nome"]) for cb in combs]
+        mx, mn = max(vals), min(vals)
+        p["envoltoria_kN"] = {"max": round(mx[0], 2), "max_comb": mx[1], "min": round(mn[0], 2), "min_comb": mn[1]}
+        p["caracteristico_kN"] = round(rz["PP"] + rz["CP"] + rz["SC"], 2)
+
     # --- esforços nas barras (N, Vy, Vz, T, My, Mz nas duas pontas, eixos locais), por caso
     Ue = U[gl]                                             # (n, 12, casos)
     fl = np.einsum("nij,njk,nkc->nic", kl, T, Ue)
@@ -355,6 +545,8 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None) -> 
                    "engastados": len(engaste), "pilares": len(pilares), "area_cobertura_m2": round(area, 1),
                    "peso_aco_kg": round(float(peso.sum() / G), 0), "graus_de_liberdade": int(len(livre))},
         "cargas": car,
+        "vento": memoria_vento,
+        "combinacoes": combs,
         "avisos": avisos,
         "_U": U, "_casos": list(casos),
     }

@@ -86,3 +86,14 @@ def test_terca_com_corrente_na_ponta_ainda_desce_ao_banzo():
     ys = sorted(nos[b[k]][1] for b in t for k in ("a", "b"))
     assert ys[0] == 0.0 and ys[-1] == 5000.0                 # das duas pontas até os banzos
     assert not any(s["papel"] == "corrente" for s in r["soltas"])
+
+
+def test_alma_corta_o_banzo_continuo_da_propria_trelica():
+    # a treliça do modelo tem os banzos numa barra só, de 0 a 6000, e o montante do meio em 3000:
+    # o banzo ganha o nó do montante (senão a alma fica presa só nas pontas)
+    r = analitico.analitico(modelo())
+    assert r["resumo"]["alma_no_banzo"] >= 2
+    nos = r["nos"]
+    meio = [i for i, p in enumerate(nos) if p[0] == 3000.0 and p[1] == 0.0 and p[2] in (6000.0, 6800.0)]
+    banzos = [b for b in r["barras"] if b["papel"] == "banzo" and b["peca"] == "T#1"]
+    assert meio and all(any(n in (b["a"], b["b"]) for b in banzos) for n in meio)

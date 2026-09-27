@@ -238,6 +238,26 @@ def analitico(doc, base: Optional[float] = None) -> dict:
         cortes[k].append((t, len(nos) - 1))
         return len(nos) - 1
 
+    # --- 2b. a alma no banzo da própria treliça: o banzo desenhado de ponta a ponta numa barra só
+    # ganha um nó em cada montante e diagonal que chega nele (sem isso a alma ficava presa só nas
+    # pontas do banzo e a treliça não trabalhava — o pilar do meio da TESOURA 2 do Posto CB, sob o
+    # banzo contínuo, não recebia quase nada)
+    na_alma = 0
+    for k, ln in enumerate(linhas):
+        if ln["papel"] not in ALMA:
+            continue
+        for lado in ("na", "nb"):
+            n = ln[lado]
+            p = nos[n]
+            for j in set(gl.perto(p)):
+                lj = linhas[j]
+                if lj["papel"] != "banzo" or lj["grupo"] != ln["grupo"] or n in (lj["na"], lj["nb"]):
+                    continue
+                dd, t, _q = _proj(p, nos[lj["na"]], nos[lj["nb"]])
+                if dd <= 2 * TOL_NO and 0.0 < t < 1.0 and all(n2 != n for _t2, n2 in cortes[j]):
+                    cortes[j].append((t, n))
+                    na_alma += 1
+
     # --- 3. a ponta solta desce/sobe até a peça em que apoia
     gr = grau()
     # a ponta da treliça: o fim do banzo, onde só chegam barras da própria peça (o montante de
@@ -367,6 +387,6 @@ def analitico(doc, base: Optional[float] = None) -> dict:
         "barras": barras,
         "soltas": soltas,
         "resumo": {"nos": len(usados), "barras": len(barras), "duplos_juntados": duplos,
-                   "pontas_levadas_ao_apoio": ligadas, "soltas": len(soltas),
+                   "pontas_levadas_ao_apoio": ligadas, "alma_no_banzo": na_alma, "soltas": len(soltas),
                    "soltas_por_papel": dict(collections.Counter(s["papel"] for s in soltas))},
     }
