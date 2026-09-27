@@ -461,7 +461,7 @@ def montar(cortes: Dict[str, dict], locados: Sequence[dict], barra, nivel: float
     montagem normal já fez) e o pilar inclinado inteiro. `perto_da_estrutura(p)` diz a distância
     em planta do ponto à estrutura montada (para escolher o lado da inclinação).
     Devolve {"inclinados": {nomes dos locados que não devem virar pilar reto}, "n": peças}"""
-    from nucleo3d.de_planta import _perfil
+    from nucleo3d.de_planta import _perfil, _meio_caixao, _giro_abas_para
     inclinados = set()
     n = 0
     lidos = {}
@@ -511,25 +511,42 @@ def montar(cortes: Dict[str, dict], locados: Sequence[dict], barra, nivel: float
                                   "montada uma perna só." % (nome, quadro["entre"] / 1000.0))
                 else:
                     pes.append(outra)
+            # o perfil duplo (2Ue) é um caixão: os dois U de boca um para o outro, formando o tubo
+            if mult > 1:
+                af = _meio_caixao(perfil_pl)
             for k_pe, (bx, by) in enumerate(pes):
                 o_pe = dict(orig, perna=k_pe + 1) if len(pes) > 1 else orig
                 for sinal in ((1.0, -1.0) if mult > 1 else (0.0,)):
                     p0 = (bx + nx * af * sinal, by + ny * af * sinal, base)
                     p1 = (bx + ux * dxy + nx * af * sinal, by + uy * dxy + ny * af * sinal, base + dz)
-                    if barra(p0, p1, perfil_pl, "pilar", "Pilares", None, 0.0, o_pe):
+                    rot_pe = _giro_abas_para(p0, p1, (-nx * sinal, -ny * sinal, 0.0)) if mult > 1 else 0.0
+                    if barra(p0, p1, perfil_pl, "pilar", "Pilares", None, rot_pe, o_pe):
                         n += 1
             if len(pes) > 1:
                 # as travessas, de perna a perna, na altura que a vista frontal dá (s ao longo da perna,
                 # na proporção do comprimento dela)
                 (ax_, ay_), (bx_, by_) = pes
                 c_a, s_a = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+                # a travessa também em caixão, com a seção no plano do quadro (a vista frontal cota os
+                # 250 ao longo da perna): os dois U um acima do outro, ao longo da perna, de boca
+                w = (ux * c_a, uy * c_a, s_a)
                 for s_t in quadro["travessas"]:
                     s_m = s_t * L / (quadro["L"] or L)
                     dx_, dz_ = s_m * c_a, s_m * s_a
                     q0 = (ax_ + ux * dx_, ay_ + uy * dx_, base + dz_)
                     q1 = (bx_ + ux * dx_, by_ + uy * dx_, base + dz_)
-                    if barra(q0, q1, perfil_pl, "viga", "Pilares", None, 0.0, dict(orig, travessa=round(s_m))):
-                        n += 1
+                    for sinal in ((1.0, -1.0) if mult > 1 else (0.0,)):
+                        d_ = (w[0] * af * sinal, w[1] * af * sinal, w[2] * af * sinal)
+                        qa = (q0[0] + d_[0], q0[1] + d_[1], q0[2] + d_[2])
+                        qb = (q1[0] + d_[0], q1[1] + d_[1], q1[2] + d_[2])
+                        rot_t = _giro_abas_para(qa, qb, (-w[0] * sinal, -w[1] * sinal, -w[2] * sinal)) if mult > 1 else 0.0
+                        bt = barra(qa, qb, perfil_pl, "viga", "Pilares", None, rot_t, dict(orig, travessa=round(s_m)))
+                        if bt:
+                            n += 1
+                            if hasattr(bt, "recorte_inicio"):
+                                # de face a face das pernas (o nó continua no eixo delas)
+                                meia = (float(pa.bf) if mult > 1 else float(pa.d) / 2.0) if pa else 125.0
+                                bt.recorte_inicio = bt.recorte_fim = round(meia, 1)
             avisos.append("%s: montado inclinado a %.1f° pelo corte (%.2f m, chega ao nível %.2f m aos %.2f m e segue até "
                           "%.2f m); sentido escolhido pela estrutura mais perto do topo — confira." % (
                               nome, ang, L / 1000.0, nivel / 1000.0, (nivel - base) / math.sin(math.radians(ang)) / 1000.0, (base + dz) / 1000.0))

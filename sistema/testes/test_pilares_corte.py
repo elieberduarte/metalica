@@ -3,6 +3,8 @@
 rotuladas dá o pilar — reto com copa e mão-francesa, ou inclinado — sem misturar com o desenho
 vizinho, e a linha dupla da cantoneira vira uma barra só."""
 import math
+
+import pytest
 from nucleo3d import pilares_corte as pc
 
 
@@ -113,7 +115,7 @@ def test_monta_copa_em_cruz_e_inclinado():
     barras = []
 
     def barra(p0, p1, perfil, papel, camada, conjunto=None, rot=0.0, origem=None):
-        barras.append((p0, p1, perfil, papel, conjunto, origem or {}, camada))
+        barras.append((p0, p1, perfil, papel, conjunto, origem or {}, camada, rot))
         return True
     locados = [{"x": 0.0, "y": 0.0, "rot": 0.0, "nome": "PM6(400X200X50X3,75)", "perfil": "Ue 400×200×50×3,75"},
                {"x": 10000.0, "y": 0.0, "rot": 0.0, "nome": "PM8(250X125X25X4,75)", "perfil": "Ue 250×125×25×4,75"}]
@@ -132,6 +134,9 @@ def test_monta_copa_em_cruz_e_inclinado():
     assert len(maos) == 4
     incl = [b for b in barras if b[3] == "pilar"]
     assert len(incl) == 2                                            # perfil duplo
+    # o 2Ue é um caixão: os dois U de boca um para o outro (giros opostos), a 2 × 86 mm
+    assert abs(abs(incl[0][7] - incl[1][7]) - 180.0) < 0.5
+    assert math.dist(incl[0][0], incl[1][0]) == pytest.approx(2 * 85.7, abs=1.0)
     p0, p1 = incl[0][0], incl[0][1]
     assert p1[0] > p0[0] + 4000.0 and abs(p1[1] - p0[1]) < 200.0   # inclina em +x, para a estrutura em x=14000
     assert abs(p1[2] - 8000.0 * math.sin(math.radians(50.0))) < 5.0
