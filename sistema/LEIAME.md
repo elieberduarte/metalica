@@ -225,7 +225,7 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
-**0.8.46 (em desenvolvimento).** **Conferência seletiva antes de publicar** (`testes/selecao.py`, pedido do
+**0.8.46.** **Conferência seletiva antes de publicar** (`testes/selecao.py`, pedido do
 usuário: a completa levava ~20 min a cada versão; "as demais obras já estão fechadas, em produção"): o pytest roda
 sempre; os verificadores das telas, só os da tela que cada um testa (a primeira que abre) quando os arquivos dela
 mudaram desde a última versão publicada (a navegação entre telas, `web/area.js`, chama quem passa por elas; os
@@ -264,7 +264,9 @@ barras na TRANSIÇÃO 1); o esqueleto os prende à treliça e as terças a eles 
 "uma camada para as vigas do mezanino"): as vigas e treliças de uma outra planta vão para a camada dela — "Mezanino"
 (abaixo do nível da planta estrutural, ou com MEZANINO no título), "Caixa d'água 8,20"/"11,00" (CX ou CAIXA no
 título), senão "Nível x,xx"; `outras[i].camada` escolhe outro nome. No Posto CB: Mezanino 138 vigas, caixa d'água
-20 + 12, nível 6,00 fica com 50 na camada "Vigas".
+20 + 12, nível 6,00 fica com 50 na camada "Vigas". A copa em cruz e as mãos-francesas MF1 do PM6 vão com o
+pilar, na camada "Pilares" (pedido do usuário: "colocar esses elementos no mesmo grupo dos pilares"), com o papel
+de treliça (banzo/montante/diagonal) para o esqueleto e as regras de apoio.
 
 **0.8.45.** **Área de trabalho do projeto** (`/dividida?projeto=…&vista=2d|3d|ambos`, pedido do
 usuário: "a transição entre 2D, 3D e 2D+3D muda o menu superior… e ao sair do 2D para o 3D ele renderiza o modelo todas

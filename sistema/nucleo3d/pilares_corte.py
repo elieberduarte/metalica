@@ -451,6 +451,7 @@ def montar(cortes: Dict[str, dict], locados: Sequence[dict], barra, nivel: float
         z1 = z0 + copa["altura"]
         rot = math.radians(float(pl.get("rot") or 0.0))
         conj = "%s copa#%d" % (nome, int(abs(x) + abs(y)) % 100000)
+        # a copa e as mãos-francesas vão com o pilar (na camada dele), com o papel de treliça
         orig = {"locacao": pl["nome"], "corte": "%s - %dX" % (nome, corte["qtd"]), "peca": conj}
         if abs(z1 - nivel) > 150.0:
             orig["a_conferir"] = "copa em %.2f m; a estrutura sobre o pilar está no nível %.2f m" % (z1 / 1000, nivel / 1000)
@@ -471,18 +472,18 @@ def montar(cortes: Dict[str, dict], locados: Sequence[dict], barra, nivel: float
         for ex, ey, s_fim in bracos_lista:
             niveis = ((z0, 90.0), (z1, 270.0)) if copa["altura"] > 0 else ((z0, 270.0),)
             for z, r_ in niveis:
-                if barra(P(ex * meia, ey * meia, z), P(ex * s_fim, ey * s_fim, z), p_banzo, "banzo", "Treliças", conj, r_, orig):
+                if barra(P(ex * meia, ey * meia, z), P(ex * s_fim, ey * s_fim, z), p_banzo, "banzo", "Pilares", conj, r_, orig):
                     n += 1
             for a0, h0, a1, h1, papel in alma:
                 if max(a0, a1) > s_fim + 60.0 or min(a0, a1) < meia - 60.0:
                     continue
-                if barra(P(ex * a0, ey * a0, z0 + h0), P(ex * a1, ey * a1, z0 + h1), p_alma, papel, "Treliças", conj, 0.0, orig):
+                if barra(P(ex * a0, ey * a0, z0 + h0), P(ex * a1, ey * a1, z0 + h1), p_alma, papel, "Pilares", conj, 0.0, orig):
                     n += 1
             orig_mf = dict(orig, mao_francesa="MF1")
             for s0, dz0, s1, dz1 in mao:
                 a0, a1 = min(abs(s0), s_fim), min(abs(s1), s_fim)
                 papel = "montante" if abs(a1 - a0) < 0.1 * abs(dz1 - dz0) + 1.0 else "diagonal"
-                if barra(P(ex * a0, ey * a0, topo_pilar + dz0), P(ex * a1, ey * a1, topo_pilar + dz1), p_alma, papel, "Treliças", conj, 0.0, orig_mf):
+                if barra(P(ex * a0, ey * a0, topo_pilar + dz0), P(ex * a1, ey * a1, topo_pilar + dz1), p_alma, papel, "Pilares", conj, 0.0, orig_mf):
                     n += 1
         maior = max(abs(v) for par in bracos.values() for v in par) / 1000.0
         avisos.append("%s: copa em cruz pelo corte (braços de %.2f m em %.2f m%s) com mão-francesa MF1 de %d peças em cada braço; %s" % (

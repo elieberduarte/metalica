@@ -113,7 +113,7 @@ def test_monta_copa_em_cruz_e_inclinado():
     barras = []
 
     def barra(p0, p1, perfil, papel, camada, conjunto=None, rot=0.0, origem=None):
-        barras.append((p0, p1, perfil, papel, conjunto, origem or {}))
+        barras.append((p0, p1, perfil, papel, conjunto, origem or {}, camada))
         return True
     locados = [{"x": 0.0, "y": 0.0, "rot": 0.0, "nome": "PM6(400X200X50X3,75)", "perfil": "Ue 400×200×50×3,75"},
                {"x": 10000.0, "y": 0.0, "rot": 0.0, "nome": "PM8(250X125X25X4,75)", "perfil": "Ue 250×125×25×4,75"}]
@@ -136,3 +136,4 @@ def test_monta_copa_em_cruz_e_inclinado():
     assert p1[0] > p0[0] + 4000.0 and abs(p1[1] - p0[1]) < 200.0   # inclina em +x, para a estrutura em x=14000
     assert abs(p1[2] - 8000.0 * math.sin(math.radians(50.0))) < 5.0
     assert any("inclinado" in a for a in avisos) and any("cruz" in a for a in avisos)
+    assert {b[6] for b in barras} == {"Pilares"}                  # a copa e as mãos-francesas vão com o pilar
