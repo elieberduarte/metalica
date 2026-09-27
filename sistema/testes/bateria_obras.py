@@ -326,7 +326,9 @@ def main(argv):
         congelar([s for s in obras if "--congelar" in argv or not os.path.isdir(os.path.join(ENTRADAS, _pasta_da_obra(s)))])
     aceitar = "--aceitar" in argv
     erros, relatorio = 0, []
-    for s in obras:
+    import progresso
+    for i_o, s in enumerate(obras):
+        progresso.passo("bateria das obras", i_o, len(obras), s)
         if not os.path.isdir(os.path.join(ENTRADAS, _pasta_da_obra(s))):
             continue
         print(f"\n== {s}", flush=True)

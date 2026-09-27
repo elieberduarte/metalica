@@ -1812,6 +1812,61 @@ def _carimbo_do_codigo() -> int:
     return maior
 
 
+#: depois do fim, a barrinha da conferência fica na tela este tempo (s), com o resultado
+CONFERENCIA_MOSTRA = 600.0
+#: sem notícia da conferência há este tempo (s), sem ter terminado: ela parou no meio
+CONFERENCIA_PARADA = 1200.0
+
+
+def estado_da_conferencia(d: Optional[dict], agora: float) -> Optional[dict]:
+    """o que a barrinha da conferência mostra, pelo arquivo que ela grava (testes/progresso.py):
+    a fração feita (cada etapa pesa a duração dela na rodada anterior; dentro da etapa, pelos
+    itens contados, ou pelo tempo quando ela não conta), a etapa atual e quanto falta. None
+    quando não há conferência para mostrar."""
+    if not d or not d.get("etapas"):
+        return None
+    fim = d.get("fim")
+    if fim and agora - fim > CONFERENCIA_MOSTRA:
+        return None
+    parada = not fim and agora - float(d.get("atualizado") or d.get("inicio") or agora) > CONFERENCIA_PARADA
+    total_est = sum(max(1.0, float(e.get("est") or 1.0)) for e in d["etapas"]) or 1.0
+    feito_est, resta, atual = 0.0, 0.0, None
+    for e in d["etapas"]:
+        est = max(1.0, float(e.get("est") or 1.0))
+        if e.get("fim"):
+            fr = 1.0
+        elif e.get("ini"):
+            atual = atual or e
+            gasto = agora - float(e["ini"])
+            if e.get("total"):
+                fr = min(1.0, (e.get("feito") or 0) / float(e["total"]))
+                resta += est * (1.0 - fr)
+            else:
+                fr = min(0.95, gasto / est)
+                resta += max(0.0, est - gasto)
+        else:
+            fr = 0.0
+            resta += est
+        feito_est += est * fr
+    etapa = atual or next((e for e in d["etapas"] if not e.get("fim")), d["etapas"][-1])
+    return {"pct": 100.0 if fim else round(100.0 * feito_est / total_est, 1),
+            "etapa": etapa["nome"], "n_etapa": d["etapas"].index(etapa) + 1, "etapas": len(d["etapas"]),
+            "feito": etapa.get("feito"), "total": etapa.get("total"), "texto": d.get("texto") or "",
+            "resta_s": 0 if fim else round(resta), "decorrido_s": round((fim or agora) - float(d.get("inicio") or agora)),
+            "fim": bool(fim), "ok": d.get("ok"), "parada": parada,
+            "falhas": [e["nome"] for e in d["etapas"] if e.get("fim") and e.get("ok") is False]}
+
+
+def _conferencia_dev() -> Optional[dict]:
+    """modo de desenvolvimento: a conferência antes de publicar que está rodando (ou acabou de rodar)"""
+    try:
+        with open(os.path.join(BASE, "testes", "_conferencia.json"), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return estado_da_conferencia(d, time.time())
+
+
 def verificar_atualizacao() -> dict:
     """Consulta a última versão publicada no GitHub (releases) e diz se há uma mais nova
     que esta. Sem internet, devolve `disponivel: None` em vez de erro: a tela segue."""
@@ -2809,7 +2864,8 @@ class Handler(BaseHTTPRequestHandler):
                                    "nucleo": versao.impressao_do_nucleo(),
                                    "dados": PROJETOS, "instalado": versao.CONGELADO,
                                    "janela": JANELA_PROPRIA, "maquina": MAQUINA, "usuario": USUARIO,
-                                   "dev": DEV, "codigo": _carimbo_do_codigo() if DEV else None})
+                                   "dev": DEV, "codigo": _carimbo_do_codigo() if DEV else None,
+                                   "conferencia": _conferencia_dev() if DEV else None})
             if rota == "/api/atualizacao":
                 return self._json(verificar_atualizacao())
             if rota == "/api/catalogo":

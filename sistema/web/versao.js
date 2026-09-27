@@ -36,6 +36,7 @@
       if (document.title.indexOf('[DEV]') !== 0) document.title = '[DEV] ' + document.title;
     }
     if (codigoMeu === null) codigoMeu = v.codigo;
+    mostrarConferencia(v.conferencia);
     var e = elemento();
     if (v.codigo && codigoMeu && v.codigo !== codigoMeu) {
       e.textContent = 'v' + minha + ' dev · código novo — recarregar (F5)';
@@ -52,6 +53,50 @@
     e.style.cursor = '';
     e.onclick = null;
     return true;
+  }
+
+  // Modo de desenvolvimento: a conferência antes de publicar rodando (testes, verificadores das
+  // telas, bateria das obras) numa caixinha embaixo à direita, com a barra, a etapa e quanto
+  // falta. Só na janela de cima (a área de trabalho tem o 2D e o 3D em quadros: não repete).
+  var caixaConf = null;
+  function minutos(s) {
+    if (s < 60) return 'menos de 1 min';
+    return '~' + Math.round(s / 60) + ' min';
+  }
+  function mostrarConferencia(c) {
+    try { if (window.top !== window) return; } catch (err) { return; }
+    if (!c) { if (caixaConf) { caixaConf.remove(); caixaConf = null; } return; }
+    if (!caixaConf) {
+      caixaConf = document.createElement('div');
+      caixaConf.id = 'conferencia-dev';
+      caixaConf.style.cssText = 'position:fixed;right:8px;bottom:30px;z-index:99998;width:290px;padding:6px 9px 7px;' +
+        'border-radius:7px;font:11px/1.45 system-ui,Segoe UI,sans-serif;color:var(--texto,#e4eaf3);' +
+        'background:var(--painel,#1b2230);border:1px solid var(--borda,#33405a);box-shadow:0 4px 14px rgba(0,0,0,.28);' +
+        'pointer-events:none;opacity:.96';
+      caixaConf.innerHTML = '<div data-l1 style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>' +
+        '<div data-l2 style="color:var(--texto3,#8a94a6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>' +
+        '<div style="margin-top:5px;height:5px;border-radius:3px;background:rgba(128,140,160,.25);overflow:hidden">' +
+        '<div data-barra style="height:100%;width:0;border-radius:3px;transition:width .6s"></div></div>';
+      document.body.appendChild(caixaConf);
+    }
+    var cor = c.fim ? (c.ok ? '#3fae6a' : '#d9534f') : (c.parada ? '#8a94a6' : '#f0a050');
+    var l1, l2;
+    if (c.fim) {
+      l1 = c.ok ? 'Conferência concluída: tudo ok' : 'Conferência terminou com falha';
+      l2 = (c.falhas && c.falhas.length ? 'falhou: ' + c.falhas.join(', ') + ' · ' : '') + 'em ' + minutos(c.decorrido_s).replace('~', '');
+    } else if (c.parada) {
+      l1 = 'Conferência parada (sem notícia há 20 min)';
+      l2 = c.etapa;
+    } else {
+      l1 = 'Conferência ' + Math.round(c.pct) + '% · falta ' + minutos(c.resta_s);
+      l2 = c.n_etapa + '/' + c.etapas + ' ' + c.etapa + (c.total ? ' ' + c.feito + '/' + c.total : '') + (c.texto ? ' · ' + c.texto : '');
+    }
+    caixaConf.querySelector('[data-l1]').textContent = l1;
+    caixaConf.querySelector('[data-l2]').textContent = l2;
+    var b = caixaConf.querySelector('[data-barra]');
+    b.style.width = Math.max(2, Math.min(100, c.pct)) + '%';
+    b.style.background = cor;
+    caixaConf.title = l1 + ' — ' + l2;
   }
 
   function elemento() {

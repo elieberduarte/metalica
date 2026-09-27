@@ -225,6 +225,13 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.48 (em desenvolvimento).** **Barrinha da conferência no modo desenvolvimento** (pedido do usuário: "uma
+barrinha que mostre o progresso da conferência"): `testes/antes_de_publicar.py` grava o andamento em
+`testes/_conferencia.json` (`testes/progresso.py`: as etapas, os verificadores e as obras da bateria contados um a um,
+a duração da rodada anterior como estimativa) e o servidor em `--dev` o devolve junto de `/api/versao`
+(`estado_da_conferencia`); a caixinha fica embaixo à direita, na janela de cima, com a barra, a etapa e quanto
+falta — laranja rodando, verde ou vermelha no fim (10 min), cinza se parou (20 min sem notícia).
+
 **0.8.47.** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
 print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e
 as regras de apoio não mudam), e a peça termina antes — `recorte_inicio`/`recorte_fim` da barra, que o 3D, o IFC e o

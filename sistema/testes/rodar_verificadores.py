@@ -223,8 +223,13 @@ def main(argv):
     fila = _Fila([(c, _porta_fixa(c)) for c in roda])
     t0 = time.time()
 
+    import progresso
+    progresso.passo("verificadores das telas", 0, len(roda))
+
     def mostrar(nome, ok, dt, falhas, oks, nota=""):
         with tela:
+            progresso.passo("verificadores das telas", len(resultados), len(roda),
+                            ("repetindo " + nome) if nota else nome)
             print(f"{'ok   ' if ok else 'FALHA'}  {nome:28s} {dt:6.0f} s  {oks} verificações{nota}", flush=True)
             for f in falhas[:6]:
                 print(f"         {f[:220]}", flush=True)

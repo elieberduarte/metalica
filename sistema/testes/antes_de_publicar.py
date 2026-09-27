@@ -27,12 +27,16 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(RAIZ, "testes"))
 sys.path.insert(0, RAIZ)
 
+import progresso  # noqa: E402
+
 
 def etapa(titulo, cmd):
     print(f"\n==== {titulo}", flush=True)
     t0 = time.time()
+    progresso.comecar(titulo)
     env = dict(os.environ, PYTHONIOENCODING="utf-8")
     r = subprocess.run(cmd, cwd=RAIZ, env=env)
+    progresso.terminar(titulo, r.returncode == 0)
     print(f"==== {titulo}: {'ok' if r.returncode == 0 else 'FALHOU'} em {(time.time() - t0) / 60:.1f} min", flush=True)
     return r.returncode == 0
 
@@ -50,6 +54,20 @@ def main(argv):
     import selecao
     t_inicio = time.time()
     esc = selecao.escolher("--completa" in argv)
+    # as etapas que vão rodar, para a barrinha de progresso da faixa do modo desenvolvimento
+    com_telas = "--sem-telas" not in argv and bool(esc["verificadores"])
+    com_bateria = "--sem-bateria" not in argv and bool(esc["bateria_ifc"] or esc["bateria_planta"])
+    progresso.iniciar(["testes automáticos"] + (["verificadores das telas"] if com_telas else [])
+                      + (["bateria das obras"] if com_bateria else []))
+    try:
+        return _conferir(argv, esc, t_inicio)
+    except BaseException:
+        progresso.fim(False)
+        raise
+
+
+def _conferir(argv, esc, t_inicio):
+    import selecao
     print(("CONFERÊNCIA COMPLETA — " if esc["completa"] else "CONFERÊNCIA SELETIVA — ") + esc["motivo"], flush=True)
     if not esc["completa"]:
         print(f"  verificadores ({len(esc['verificadores'])}): " + (", ".join(esc["verificadores"]) or "nenhum"))
@@ -73,6 +91,7 @@ def main(argv):
     if any(n == "bateria das obras" for n, _ in resultados):
         print("  confira as diferenças das obras em ../Projeto/bateria/ultima-comparacao.txt")
     tudo_ok = all(ok for _, ok in resultados)
+    progresso.fim(tudo_ok)
     if tudo_ok and esc["completa"] and "--sem-telas" not in argv and "--sem-bateria" not in argv:
         import versao
         selecao.registrar_completa("v" + versao.VERSAO)
