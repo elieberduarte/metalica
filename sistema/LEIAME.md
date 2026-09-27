@@ -231,6 +231,20 @@ barrinha que mostre o progresso da conferência"): `testes/antes_de_publicar.py`
 a duração da rodada anterior como estimativa) e o servidor em `--dev` o devolve junto de `/api/versao`
 (`estado_da_conferencia`); a caixinha fica embaixo à direita, na janela de cima, com a barra, a etapa e quanto
 falta — laranja rodando, verde ou vermelha no fim (10 min), cinza se parou (20 min sem notícia).
+**Vento, caixas d'água, mezanino e combinações nos esforços** (`nucleo3d/esforcos.py`): NBR 6123:2023 — a cobertura
+isolada com altura livre menor que metade da profundidade vai como edificação fechada (7.2.1), telhado múltiplo pela
+Tabela 10 (os tramos pelas calhas e cumeeiras achadas na altura das terças), S2 da Tabela 3, S3 da Tabela 4 (grupo 1:
+abriga inflamáveis), cpi +0,8/−0,3, quatro sentidos; a água das caixas desenhadas nas outras plantas ("CX.5.000 l", o
+centro pelo círculo da caixa) a 10 kN/m³ (NBR 6120:2019, Tabela A.1); o piso do mezanino nos barrotes achados na camada
+Mezanino, com o peso e a sobrecarga informados na tela; combinações últimas (γ e ψ da NBR 8800) com a envoltória da
+vertical por pilar. **Tela de esforços** (`/esforcos`; 3D → Ver → Esforços da estrutura…): a planta dos pilares
+coloridos pela comparação com a locação (ou pela compressão, ou pelo arrancamento), a tabela ordenável, as reações por
+caso do pilar escolhido com "ver no 3D" (`destacar=ids:`), a memória do vento com a categoria e o grupo para
+recalcular, o mezanino, os casos, as combinações e as hipóteses; o resultado fica em `esforcos.json` no projeto.
+**O esqueleto, pelo que o cálculo mostrou**: a alma corta o banzo contínuo da própria treliça (ficava presa só nas
+pontas); o nó novo no meio de uma linha é o que já existe ali; a treliça deitada presa pela lateral no banzo da outra
+(a passarela); o perfil de apoio das terças fixado em cada montante; a terça que chega na lateral da transição encosta
+na alma dela. No Posto CB, pontas soltas 15 → 3 e a comparação com a locação passou a ter sentido (PM7: 24,9 × 24 tf).
 
 **0.8.47.** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
 print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e
