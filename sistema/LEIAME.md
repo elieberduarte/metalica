@@ -250,6 +250,21 @@ usuário confirmou que são um detalhe descontinuado. **Pilar no lugar que a pla
 (o retângulo com as medidas do perfil, ou os dois U costas com costas) a menos de 1,2 m do lugar da locação, vale a da
 planta — é nela que as treliças apoiam —, com aviso e `origem.a_conferir`. No Posto CB, os três PM6 (a copa em cruz vai
 junto) andaram 0,72 m para o cruzamento das treliças; encaixes justos 123 → 125, pilares fora do eixo 14 → 13.
+**Elevação que desenha duas peças separada na emenda** (`_separar_nas_emendas`, `_dividir`): o nome da planta sem
+elevação, na mesma linha de uma elevação com emenda, cujo pedaço na planta tem o comprimento de uma das partes, fica
+com essa parte (quantidade = os rótulos da planta); a peça separada sabe qual ponta é a emenda, e essa ponta vai para
+onde a outra treliça passa (`orientar`: "emenda na treliça que passa"). No Posto CB, a elevação "TRANSIÇÃO 2" (16,63 m)
+vira TRANSIÇÃO 2 (9,61 m) + TRANSIÇÃO 3 (6,76 m, 2×), e a "TRANSIÇÃO 5", TRANSIÇÃO 5 + TRANSIÇÃO 6 — a segunda
+TRANSIÇÃO 3 (x = 33,96) aparece. **Perfil de apoio das terças dos dois lados da treliça** (`_apoio_das_tercas`,
+pedido do usuário: "na viga de transição 1 tem um perfil em ambos os lados para receber as terças"): a linha dupla
+inclinada, no caimento do telhado, com a nota "U100X40X2,25 NO EIXO DA TRELIÇA" ao lado, era tirada como a tesoura
+vista ao fundo; agora volta como `apoio_terca`, um U de cada lado com a alma na face do banzo e as abas para fora (12
+barras na TRANSIÇÃO 1); o esqueleto os prende à treliça e as terças a eles (`analitico.APOIA_EM`). Terças em balanço
+29 → 18, pontas soltas no esqueleto 45 → 17. **Camada de cada outra planta** (`camada_da_outra`, pedido do usuário:
+"uma camada para as vigas do mezanino"): as vigas e treliças de uma outra planta vão para a camada dela — "Mezanino"
+(abaixo do nível da planta estrutural, ou com MEZANINO no título), "Caixa d'água 8,20"/"11,00" (CX ou CAIXA no
+título), senão "Nível x,xx"; `outras[i].camada` escolhe outro nome. No Posto CB: Mezanino 138 vigas, caixa d'água
+20 + 12, nível 6,00 fica com 50 na camada "Vigas".
 
 **0.8.45.** **Área de trabalho do projeto** (`/dividida?projeto=…&vista=2d|3d|ambos`, pedido do
 usuário: "a transição entre 2D, 3D e 2D+3D muda o menu superior… e ao sair do 2D para o 3D ele renderiza o modelo todas

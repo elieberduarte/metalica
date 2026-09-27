@@ -30,7 +30,9 @@ TOL_CRUZA = 250.0       # a terça sobre o banzo que ela cruza: diferença de al
 
 # em que cada papel apoia a ponta dele
 APOIA_EM = {
-    "terça": ("banzo", "viga"),
+    "terça": ("banzo", "viga", "apoio_terca"),
+    # o perfil ao lado da treliça que recebe as terças (o U da TRANSIÇÃO 1 do Posto CB): preso nela
+    "apoio_terca": ("montante", "banzo", "diagonal", "pilar", "viga"),
     "corrente": ("terça",),
     "viga": ("pilar", "viga", "banzo"),
     "contraventamento": ("banzo", "pilar", "viga", "montante", "diagonal", "terça"),

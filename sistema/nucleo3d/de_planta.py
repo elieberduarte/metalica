@@ -677,6 +677,10 @@ class Elevacao:
     caixa: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     marcas_terca: List[float] = field(default_factory=list)     # s das marcas "ST" (suporte de terça)
     fontes: set = field(default_factory=set)                    # ids das entidades do desenho dela
+    emenda: Optional[str] = None                                # "inicio" | "fim": a ponta que é a emenda (peça separada)
+    fundo: list = field(default_factory=list)                   # as linhas que a leitura tirou (a vista de fundo)
+    apoio_terca: Optional[dict] = None                          # o perfil de apoio das terças, dos dois lados
+    parte_de: Optional[str] = None                              # a elevação desenhada junto (a TRANSIÇÃO 3 na da 2)
 
     def topo(self, s: float) -> Optional[float]:
         """altura do eixo do banzo superior em `s` (o mais alto que passa por ali)"""
@@ -797,6 +801,7 @@ def ler_elevacoes(ents, familias: Sequence[str]) -> Dict[str, Elevacao]:
             marcas.append((x_apoio if x_apoio is not None else n["posicao"][0]) - el.x_esq)
             notas_ids.add(n.get("id"))
         el.marcas_terca = sorted(marcas)
+        _apoio_das_tercas(el, [n for n in textos if x0 - 500 <= n["posicao"][0] <= x1 + 500 and y0 - 200 <= n["posicao"][1] <= y1 + 200])
         el.fontes = ({getattr(sg, "id", None) for sg in c["segs"]} | notas_ids | {t.get("id")}) - {None}
         if el.membros:
             out[nome] = el
@@ -885,7 +890,7 @@ def _alma_lida_duas_vezes(el: Elevacao) -> int:
     linha de face a face (TRANSIÇÃO 1 do Posto CB), ou a mesma dupla com quatro linhas. Fica uma:
     a menos de 30 mm, a mais larga; a linha simples a menos de 70 mm da dupla, a dupla. Os pares de
     verdade (os dois montantes da cumeeira, a 150 mm) ficam."""
-    alma = [m for m in el.membros if m.papel != "banzo"]
+    alma = [m for m in el.membros if m.papel in ("montante", "diagonal")]
     fora = set()
 
     def paralela(m, n):
@@ -926,6 +931,51 @@ def _alma_lida_duas_vezes(el: Elevacao) -> int:
         el.avisos.append("%s: %d barra(s) da alma desenhadas duas vezes (a linha dupla da cantoneira e mais uma linha "
                          "ao lado) entraram uma vez só." % (_bonito(el.nome), len(fora)))
     return len(fora)
+
+
+def _apoio_das_tercas(el: Elevacao, notas: list) -> int:
+    """O perfil que corre ao lado da treliça, no caimento do telhado, para receber as terças (a
+    TRANSIÇÃO 1 do Posto CB: "U100X40X2,25 NO EIXO DA TRELIÇA" em cada trecho, um U de cada lado):
+    a leitura o tomava pela tesoura vista ao fundo. As linhas duplas inclinadas que ela tirou e que
+    têm essa nota ao lado voltam, como "apoio_terca", com o perfil da nota."""
+    from nucleo2d.reconhecer import perfil_do_texto
+    if not el.fundo:
+        return 0
+    marcadas = []
+    for n in notas:
+        txt = _sem_acento(n["texto"]).upper()
+        if "BANZO" in txt or "DIAG" in txt or "MONT" in txt:
+            continue
+        r = perfil_do_texto(n["texto"])
+        if not r or not re.match(r"(?i)^U", str(r.get("perfil") or "")):
+            continue
+        marcadas.append(((n["posicao"][0] - el.x_esq, n["posicao"][1] - el.y_base), r))
+    if not marcadas:
+        return 0
+    volta = []
+    perfil = None
+    for m in el.fundo:
+        if m.papel != "banzo" or m.altura_linha <= 0.0 or abs(m.s1 - m.s0) < 1500.0 or abs(m.h1 - m.h0) < 30.0:
+            continue
+        lo, hi = min(m.s0, m.s1), max(m.s0, m.s1)
+        for (sx, hy), r in marcadas:
+            if lo - 300.0 <= sx <= hi + 300.0:
+                t = min(max((sx - m.s0) / ((m.s1 - m.s0) or 1.0), 0.0), 1.0)
+                if abs(hy - (m.h0 + (m.h1 - m.h0) * t)) <= 700.0:
+                    volta.append(m)
+                    perfil = r
+                    break
+    if not volta:
+        return 0
+    for m in volta:
+        m.papel = "apoio_terca"
+    ids = {id(m) for m in volta}
+    el.fundo = [m for m in el.fundo if id(m) not in ids]
+    el.membros += volta
+    el.apoio_terca = {"perfil": perfil["perfil"], "trecho": perfil.get("trecho")}
+    el.avisos.append("%s: o perfil %s ao lado da treliça, no caimento do telhado (%d trechos), recebe as terças — "
+                     "um de cada lado." % (_bonito(el.nome), perfil["perfil"], len(volta)))
+    return len(volta)
 
 
 def _comp_m(m: Membro) -> float:
@@ -1091,6 +1141,7 @@ def _tirar_vista_de_fundo(el: "Elevacao") -> int:
             fora.add(id(m))
     if not fora:
         return 0
+    el.fundo = [m for m in el.membros if id(m) in fora]
     el.membros = [m for m in el.membros if id(m) not in fora]
     el.avisos.append("%s: tiradas %d linhas que não são desta treliça (as tesouras desenhadas ao fundo e as "
                      "chapinhas dos nós); ficaram os dois banzos e a alma entre eles." % (_bonito(el.nome), len(fora)))
@@ -1906,6 +1957,20 @@ def orientar(trechos: List[Trecho], linhas_terca=None,
                 t.sentido_por = "marcas ST"
                 decididas.add(id(t))
                 pelas_marcas += 1
+    # a peça separada na emenda (TRANSIÇÃO 2 | TRANSIÇÃO 3): a ponta da emenda fica onde a outra
+    # treliça passa (a TRANSIÇÃO 1, contínua na planta)
+    for t in ts:
+        el = t.elevacao
+        if id(t) in decididas or not el.emenda or t.caminho.tipo != "reta":
+            continue
+        pontas = [t.caminho.ponto(0.0), t.caminho.ponto(t.caminho.comprimento)]
+        passa = [any(u is not t and u.caminho.tipo == "reta" and _passa_por(u, q) for u in ts) for q in pontas]
+        if passa[0] != passa[1]:
+            ponta_emenda = 0 if passa[0] else 1             # 0: começo do caminho; 1: fim
+            # sem inverter, s = 0 da elevação vai para o começo do caminho
+            t.invertida = (ponta_emenda == 1) if el.emenda == "inicio" else (ponta_emenda == 0)
+            t.sentido_por = "emenda na treliça que passa"
+            decididas.add(id(t))
     # o cruzamento na emenda: onde outra treliça atravessa a linha desta na planta (a planta a
     # interrompe ali), a elevação tem a junta dos banzos (a emenda de 250 mm na cumeeira das
     # TRANSIÇÕES 2 e 5 do Posto CB, onde passa a TRANSIÇÃO 1). Só um sentido põe a junta no
@@ -1980,6 +2045,135 @@ def orientar(trechos: List[Trecho], linhas_terca=None,
     resto = [custo(t) / max(1, len(vizinhos[id(t)])) for t in ts_alt if vizinhos[id(t)]]
     return {"trelicas": len(ts), "pelas_marcas": pelas_marcas, "pelo_cruzamento": pelo_cruzamento, "pelas_alturas": trocas,
             "desencontro_medio_mm": round(sum(resto) / len(resto), 1) if resto else 0.0}
+
+
+def camada_da_outra(titulo: str, nivel_o: float, nivel: float, pedida: Optional[str] = None) -> str:
+    """a camada das peças de uma outra planta: a pedida; a da caixa d'água com o nível (base e
+    cobertura separadas); abaixo do nível da planta estrutural, o mezanino; senão, o nível"""
+    if pedida and str(pedida).strip():
+        return str(pedida).strip()
+    t = _sem_acento(str(titulo or "")).upper()
+    nv = ("%.2f" % (nivel_o / 1000.0)).replace(".", ",")
+    if re.search(r"\bCX\b|CAIXA", t):
+        return "Caixa d'água %s" % nv
+    if "MEZANINO" in t or nivel_o < nivel:
+        return "Mezanino"
+    return "Nível %s" % nv
+
+
+def _passa_por(u: "Trecho", q) -> bool:
+    """a treliça u passa pelo ponto q (a menos de 400 mm da linha dela, longe das pontas dela)"""
+    s_, d_ = u.caminho.projetar(q)
+    return d_ < 400.0 and 500.0 < s_ < u.caminho.comprimento - 500.0
+
+
+def _separar_nas_emendas(ents, caixa_p, elevacoes: Dict[str, "Elevacao"], avisos: List[str]) -> Dict[str, str]:
+    """A elevação que desenha duas peças juntas, separadas pela emenda: a planta dá um nome a cada
+    parte (no Posto CB, a linha em x = 21,37 é a TRANSIÇÃO 2 ao sul da TRANSIÇÃO 1 e a TRANSIÇÃO 3 ao
+    norte; a elevação "TRANSIÇÃO 2" tem 16,63 m = 9,61 + 0,25 + 6,76). O nome da planta sem
+    elevação, na mesma linha de uma elevação com emenda, cujo pedaço na planta tem o comprimento de
+    uma das partes, fica com essa parte; a elevação fica com a outra. A quantidade da nova é o
+    número de vezes que o nome aparece na planta. Devolve {nome novo: nome da elevação}."""
+    regiao = [e for e in ents if _dentro(_pt(e), caixa_p)]
+    textos = [e for e in regiao if e["tipo"] == "texto" and _RX_ROTULO.match(e["texto"])]
+
+    def nome_do(texto):
+        m = _RX_ROTULO.match(texto)
+        return (_sem_acento(m.group(1)) + " " + m.group(2).upper()).replace("TES ", "TESOURA ")
+    faltam = collections.defaultdict(list)
+    for t in textos:
+        n = nome_do(t["texto"])
+        if n not in elevacoes and not n.startswith("VM"):
+            faltam[n].append(t)
+    if not faltam:
+        return {}
+    retas, _s = centros_retos(_segmentos(regiao), lmin=1000.0, larg=(40.0, 300.0))
+
+    def peca_do_rotulo(t):
+        """a linha dupla da planta ao lado do rótulo, paralela a ele"""
+        p = (t["posicao"][0], t["posicao"][1])
+        ang = math.radians(t.get("angulo") or 0.0)
+        melhor = None
+        for c in retas:
+            s_, d_ = c.projetar(p)
+            if d_ > 900.0 or not (-200.0 <= s_ <= c.comprimento + 200.0):
+                continue
+            tx, ty = c.tangente(s_)
+            if abs(tx * math.cos(ang) + ty * math.sin(ang)) < 0.95:
+                continue
+            if melhor is None or d_ < melhor[0]:
+                melhor = (d_, c)
+        return melhor[1] if melhor else None
+    novos: Dict[str, str] = {}
+    for n, rots in faltam.items():
+        for t in rots:
+            c = peca_do_rotulo(t)
+            if c is None:
+                continue
+            Lm = c.comprimento
+            # as elevações com rótulo na mesma linha (colinear) e com emenda
+            for t2 in textos:
+                pai = nome_do(t2["texto"])
+                el = elevacoes.get(pai)
+                if el is None or el.emenda:
+                    continue                                   # já separada
+                c2 = peca_do_rotulo(t2)
+                if c2 is None or c2 is c:
+                    continue
+                (ux, uy), _L = _unit(c.a, c.b)
+                (vx, vy), _L2 = _unit(c2.a, c2.b)
+                if abs(ux * vy - uy * vx) > 0.02 or abs(-(c2.a[0] - c.a[0]) * uy + (c2.a[1] - c.a[1]) * ux) > 300.0:
+                    continue                                   # não é a mesma linha
+                for j in _juntas_dos_banzos(el):
+                    # a emenda: o espaço entre as pontas dos banzos em volta da junta
+                    esq = max((max(m.s0, m.s1) for m in el.membros if m.papel == "banzo" and max(m.s0, m.s1) <= j + 5.0), default=j)
+                    dir_ = min((min(m.s0, m.s1) for m in el.membros if m.papel == "banzo" and min(m.s0, m.s1) >= j - 5.0
+                                and abs(m.s1 - m.s0) > 400.0), default=j)
+                    partes = [(0.0, esq), (dir_, el.comprimento)]
+                    for k, (a_, b_) in enumerate(partes):
+                        if abs((b_ - a_) - Lm) <= 80.0 and abs((partes[1 - k][1] - partes[1 - k][0]) - Lm) > 80.0:
+                            _dividir(el, partes, k, n, len(rots), elevacoes, avisos)
+                            novos[n] = pai
+                            break
+                    if n in novos:
+                        break
+                if n in novos:
+                    break
+            if n in novos:
+                break
+    return novos
+
+
+def _dividir(el: "Elevacao", partes, k: int, nome_novo: str, qtd: int, elevacoes, avisos) -> None:
+    """a parte k da elevação vira a peça `nome_novo`; a elevação fica com a outra"""
+    def pedaco(a_, b_):
+        out = []
+        for m in el.membros:
+            lo, hi = min(m.s0, m.s1), max(m.s0, m.s1)
+            if lo >= a_ - 60.0 and hi <= b_ + 60.0:
+                out.append(Membro(m.s0 - a_, m.h0, m.s1 - a_, m.h1, m.papel, m.altura_linha, m.caixa))
+        return out
+    (a_n, b_n), (a_v, b_v) = partes[k], partes[1 - k]
+    nova = Elevacao(nome=nome_novo, familia=el.familia, qtd=qtd, comprimento=b_n - a_n, membros=pedaco(a_n, b_n),
+                    banzo=el.banzo, alma=el.alma, titulo_em=el.titulo_em, x_esq=el.x_esq + a_n, y_base=el.y_base,
+                    caixa=el.caixa, marcas_terca=[m_ - a_n for m_ in el.marcas_terca if a_n - 60.0 <= m_ <= b_n + 60.0],
+                    fontes=set(el.fontes))
+    nova.emenda = "inicio" if k == 1 else "fim"
+    nova.parte_de = el.nome
+    fica = pedaco(a_v, b_v)
+    el.membros = fica
+    el.marcas_terca = [m_ - a_v for m_ in el.marcas_terca if a_v - 60.0 <= m_ <= b_v + 60.0]
+    el.x_esq += a_v
+    el.comprimento = b_v - a_v
+    el.emenda = "fim" if k == 1 else "inicio"
+    elevacoes[nome_novo] = nova
+    msg = ("%s: a elevação desenha junto a %s (%.2f m, depois da emenda de %d mm); a planta dá esse nome à parte "
+           "%s — separadas: %s com %.2f m e %s com %.2f m (%d×, os rótulos da planta)." % (
+               _bonito(el.nome), _bonito(nome_novo), (b_n - a_n) / 1000.0, round(abs(partes[1][0] - partes[0][1])),
+               "de depois da emenda" if k == 1 else "de antes da emenda", _bonito(el.nome), (b_v - a_v) / 1000.0,
+               _bonito(nome_novo), (b_n - a_n) / 1000.0, qtd))
+    el.avisos.append(msg)
+    nova.avisos.append(msg)
 
 
 def _juntas_dos_banzos(el: "Elevacao") -> List[float]:
@@ -2098,6 +2292,30 @@ def _giro_da_alma_em_u(q0, q1, q_meio, tangente, largura: float, nome: Optional[
         f = (-ty, tx, 0.0)                                # as abas: para fora do plano
     u, v, w = base_local(d, 0.0)
     fw = f[0] * w[0] + f[1] * w[1] + f[2] * w[2]          # só a parte de f perpendicular ao eixo
+    f = (f[0] - fw * w[0], f[1] - fw * w[1], f[2] - fw * w[2])
+    return round(math.degrees(math.atan2(f[0] * v[0] + f[1] * v[1] + f[2] * v[2],
+                                         f[0] * u[0] + f[1] * u[1] + f[2] * u[2])) % 360.0, 1)
+
+
+def _lado_do_apoio(banzo: Optional[str], perfil: Optional[str]) -> float:
+    """do plano da treliça ao eixo do U de apoio das terças: a meia largura do banzo (a alma do U
+    encosta na face dele) mais a distância da alma do U ao centroide"""
+    pb, pu = _perfil(banzo), _perfil(perfil)
+    meia = float(pb.d) / 2.0 if pb is not None and pb.d else 100.0
+    try:
+        from nucleo3d.geometria import secao
+        xg = -min(q[0] for q in secao(pu)) if pu is not None else 12.0
+    except Exception:                        # noqa: BLE001
+        xg = 12.0
+    return meia + xg
+
+
+def _giro_abas_para(q0, q1, f) -> float:
+    """o giro da barra (o de `geometria.base_local`) que põe as abas do U na direção f"""
+    from nucleo3d.geometria import base_local
+    d = (q1[0] - q0[0], q1[1] - q0[1], q1[2] - q0[2])
+    u, v, w = base_local(d, 0.0)
+    fw = f[0] * w[0] + f[1] * w[1] + f[2] * w[2]
     f = (f[0] - fw * w[0], f[1] - fw * w[1], f[2] - fw * w[2])
     return round(math.degrees(math.atan2(f[0] * v[0] + f[1] * v[1] + f[2] * v[2],
                                          f[0] * u[0] + f[1] * u[1] + f[2] * u[2])) % 360.0, 1)
@@ -2371,6 +2589,11 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
 
     avisar("lendo as elevações…")
     elevacoes = ler_elevacoes(ents, par["familias"])
+    for novo, pai in _separar_nas_emendas(ents, caixa_p, elevacoes, avisos).items():
+        # a parte separada herda a decisão "duas peças" da elevação em que estava desenhada
+        dp_ = [_sem_acento(str(n)).upper().strip() for n in (par.get("duas_pecas") or [])]
+        if pai in dp_ and novo not in dp_:
+            par["duas_pecas"] = list(par.get("duas_pecas") or []) + [novo]
     # os pilares da locação vêm antes das treliças: a treliça termina em cima deles
     avisar("pilares da locação…")
     caixa_l, desl_l = outra_planta(par.get("locacao"))
@@ -2505,7 +2728,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         doc.add(sol)
                         pecas.append({"ent": sol, "perfil": perfil, "papel": "banzo", "L": comp, "conjunto": conj})
                         continue
-                    if m.papel != "banzo" and perfil == p_alma and mult_alma > 1:
+                    if m.papel in ("montante", "diagonal") and perfil == p_alma and mult_alma > 1:
                         # cantoneira dupla: costas com costas, uma de cada lado do plano da treliça
                         pa = _perfil(perfil)
                         af = (float(pa.bf or 25.0) if pa else 25.0) / 2 + 3.0
@@ -2516,6 +2739,18 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                             d = (nx * af * sinal, ny * af * sinal, 0.0)
                             barra(tuple(q0[i] + d[i] for i in range(3)), tuple(q1[i] + d[i] for i in range(3)), perfil,
                                   papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o})
+                    elif m.papel == "apoio_terca" and el.apoio_terca:
+                        pu = el.apoio_terca["perfil"]
+                        off = _lado_do_apoio(p_banzo, pu)
+                        tx, ty = c.tangente((s0p + s1p) / 2.0)
+                        nx, ny = -ty, tx
+                        for sinal in (1.0, -1.0):
+                            d_ = (nx * off * sinal, ny * off * sinal)
+                            qa = (q0[0] + d_[0], q0[1] + d_[1], q0[2])
+                            qb = (q1[0] + d_[0], q1[1] + d_[1], q1[2])
+                            rot = _giro_abas_para(qa, qb, (nx * sinal, ny * sinal, 0.0))
+                            barra(qa, qb, pu, "apoio_terca", "Treliças", conj, rot,
+                                  {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o})
                     elif m.papel == "banzo" and m.caixa > 0.0:
                         # banzo em caixão: os dois U de boca um para o outro, a junta no eixo — o de
                         # cima com as abas para baixo (270), o de baixo com as abas para cima (90)
@@ -2630,8 +2865,14 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         cx_m = (caixa_o[0] + d_o[0], caixa_o[1] + d_o[1], caixa_o[2] + d_o[0], caixa_o[3] + d_o[1])
         tr_o, _st_o = pecas_da_planta(movidas, cx_m, elevacoes, deitadas=par.get("deitadas") or False)
         orientar(tr_o, [])
+        n_antes = len(pecas)
         montar_trechos(tr_o, nivel_o)
         montar_deitadas(_st_o.get("deitadas") or [], nivel_o)
+        # as vigas e treliças desta planta na camada dela (o mezanino separado das vigas do nível da cobertura)
+        nome_c = camada_da_outra(t_o["texto"], nivel_o, nivel, outra.get("camada"))
+        doc.camadas.setdefault(nome_c, Camada(nome=nome_c))
+        for pc in pecas[n_antes:]:
+            pc["ent"].camada = nome_c
         tr_o = tr_o + list(_st_o.get("deitadas") or [])
         todos_trechos += [(t, nivel_o) for t in tr_o]
         ids_o = set()
@@ -2641,7 +2882,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             ids_o |= set(t.caminho.fontes or ()) | {t.rotulo_id}
         ids_o |= _ids_dos_eixos(ents, caixa_o) | {t_o.get("id")}
         usados["outra:" + t_o["texto"].strip()] = ids_o
-        outras_feitas.append({"planta": t_o["texto"].strip(), "nivel": nivel_o, "pecas": len(tr_o),
+        outras_feitas.append({"planta": t_o["texto"].strip(), "nivel": nivel_o, "pecas": len(tr_o), "camada": nome_c,
                               "baloes": d_o[2]})
 
     # ---------------------------------------------------------------- pilares

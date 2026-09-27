@@ -447,3 +447,70 @@ def test_pilar_vai_para_a_secao_da_planta():
     assert de_planta._pilares_pela_planta(ents, (0.0, 0.0, 20000.0, 20000.0), locados, avisos) == 1
     assert (round(locados[0]["x"]), round(locados[0]["y"])) == (1200, 5000) and "pela_planta" in locados[0]
     assert (locados[1]["x"], locados[1]["y"]) == (9000.0, 9000.0) and len(avisos) == 1
+
+
+def test_elevacao_desenhada_junto_separa_na_emenda():
+    """a elevação "TRANSIÇÃO 2" do Posto CB desenha a TRANSIÇÃO 3 depois da emenda: a parte de
+    depois vira a TRANSIÇÃO 3 (com a emenda no começo) e a TRANSIÇÃO 2 fica com a de antes"""
+    M = de_planta.Membro
+    el = de_planta.Elevacao(nome="TRANSICAO 2", familia="TRANSICAO", qtd=1, comprimento=16625.0)
+    el.membros = [M(0, 0, 9614, 0, "banzo"), M(9864, 0, 16625, 0, "banzo"),
+                  M(0, 700, 9614, 700, "banzo"), M(9864, 700, 16625, 700, "banzo"),
+                  M(1000, 0, 1000, 700, "montante"), M(12000, 0, 12000, 700, "montante")]
+    el.marcas_terca = [3000.0, 13000.0]
+    elevacoes = {"TRANSICAO 2": el}
+    avisos = []
+    de_planta._dividir(el, [(0.0, 9614.0), (9864.0, 16625.0)], 1, "TRANSICAO 3", 2, elevacoes, avisos)
+    t3 = elevacoes["TRANSICAO 3"]
+    assert t3.qtd == 2 and round(t3.comprimento) == 6761 and t3.emenda == "inicio" and t3.parte_de == "TRANSICAO 2"
+    assert round(el.comprimento) == 9614 and el.emenda == "fim"
+    assert [round(m.s0) for m in t3.membros if m.papel == "montante"] == [2136]
+    assert [round(m.s0) for m in el.membros if m.papel == "montante"] == [1000]
+    assert [round(s) for s in t3.marcas_terca] == [3136] and el.marcas_terca == [3000.0]
+
+
+def test_ponta_da_emenda_vai_para_a_trelica_que_passa():
+    """a TRANSIÇÃO 3 (emenda no começo da elevação) entre a TRANSIÇÃO 1, que passa por uma ponta
+    dela, e o nada: s = 0 fica na ponta da TRANSIÇÃO 1"""
+    M = de_planta.Membro
+    C = de_planta.Caminho
+    el3 = de_planta.Elevacao(nome="TRANSICAO 3", familia="TRANSICAO", qtd=1, comprimento=6761.0)
+    el3.membros = [M(0, 0, 6761, 0, "banzo"), M(0, 700, 6761, 700, "banzo")]
+    el3.emenda = "inicio"
+    t3 = de_planta.Trecho(caminho=C("reta", a=(21370.0, 26333.0), b=(21370.0, 19572.0)), nome="TRANSICAO 3",
+                          familia="TRANSICAO", elevacao=el3)
+    el1 = de_planta.Elevacao(nome="TRANSICAO 1", familia="TRANSICAO", qtd=1, comprimento=35850.0)
+    el1.membros = [M(0, 0, 35850, 0, "banzo"), M(0, 1460, 35850, 1460, "banzo")]
+    t1 = de_planta.Trecho(caminho=C("reta", a=(1000.0, 19448.0), b=(36850.0, 19448.0)), nome="TRANSICAO 1",
+                          familia="TRANSICAO", elevacao=el1)
+    de_planta.orientar([t3, t1])
+    assert t3.sentido_por == "emenda na treliça que passa"
+    assert abs(t3.caminho.ponto(de_planta._s_na_planta(t3, 0.0))[1] - 19572.0) < 1.0
+
+
+def test_perfil_de_apoio_das_tercas_dos_dois_lados():
+    """a TRANSIÇÃO 1 do Posto CB: a linha dupla inclinada, no caimento do telhado, com a nota
+    "U100X40X2,25 NO EIXO DA TRELIÇA" ao lado, não é a tesoura vista ao fundo — volta como o
+    apoio das terças, com o perfil da nota"""
+    M = de_planta.Membro
+    el = _el([M(0, 0, 8600, 0, "banzo"), M(0, 1460, 8600, 1460, "banzo")])
+    el.fundo = [M(50, 800, 8670, 1270, "banzo", 40.0), M(2000, 300, 2000, 1400, "montante")]
+    notas = [{"texto": "U100X40X2,25", "posicao": [4000.0, 1300.0]}, {"texto": "NO EIXO DA TRELIÇA", "posicao": [4000.0, 1200.0]},
+             {"texto": "BANZO 2UE250X70X25X4,75", "posicao": [4000.0, -300.0]}]
+    assert de_planta._apoio_das_tercas(el, notas) == 1
+    assert el.apoio_terca["perfil"].startswith("U 100") and [m.papel for m in el.membros].count("apoio_terca") == 1
+    assert len(el.fundo) == 1 and "um de cada lado" in el.avisos[-1]
+    # dos lados: a alma do U encosta na face do banzo (a meia altura do Ue 250 mais o centroide do U)
+    assert 125.0 + 5.0 < de_planta._lado_do_apoio("Ue 250×70×25×4,75", "U 100×40×2,25 (FF)") < 125.0 + 20.0
+    # sem a nota, fica de fundo
+    el2 = _el([])
+    el2.fundo = [M(50, 800, 8670, 1270, "banzo", 40.0)]
+    assert de_planta._apoio_das_tercas(el2, []) == 0 and el2.apoio_terca is None
+
+
+def test_camada_de_cada_outra_planta():
+    assert de_planta.camada_da_outra("PLANTA NO NÍVEL 3,17m", 3170.0, 6000.0) == "Mezanino"
+    assert de_planta.camada_da_outra("PLANTA DA BASE DA CX DÁGUA NIVEL 8,20", 8200.0, 6000.0) == "Caixa d'água 8,20"
+    assert de_planta.camada_da_outra("COBERTURA DA CX DÁGUA NIVEL 11,00", 11000.0, 6000.0) == "Caixa d'água 11,00"
+    assert de_planta.camada_da_outra("PLANTA NO NÍVEL 9,00", 9000.0, 6000.0) == "Nível 9,00"
+    assert de_planta.camada_da_outra("PLANTA NO NÍVEL 3,17m", 3170.0, 6000.0, "Mezanino da loja") == "Mezanino da loja"
