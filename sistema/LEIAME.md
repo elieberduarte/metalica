@@ -269,7 +269,16 @@ do carimbo quando estão vazios, e o cálculo de esforços parte dessas cargas (
 Posto CB: 15 folhas, Maringá-PR, telha 5 / forro 15 / sobrecarga 25 / painéis 17 kgf/m², V0 45 m/s → 179 tf
 característicos na cobertura (a locação soma 514 tf: faltam vento, mezanino e caixa d'água). **Pesquisa de peças**
 pelo nome do projeto (TRANSIÇÃO 8, TESOURA 3B, PM6…), sem olhar acento, no 3D e na tela Treliças lidas; a caixa
-MEDIDAS do Desenho 2D no tema escuro.
+MEDIDAS do Desenho 2D no tema escuro. **Terças no nível do telhado** (prints do usuário: "essas terças estão
+erradas"): a tesoura de cima das elevações em duas peças (TRANSIÇÕES 2/3 e 5/6) é o frontão acima do telhado — o
+corte BB do projeto desenha a telha reta embaixo dele e a nota "REVESTIR TRANSIÇÃO 2/3 COM TELHA OU RUFO" —, então a
+terça senta no topo da viga de transição (`Elevacao.topo_telhado`); a transição na ponta da terça não dá altura a ela,
+e onde uma tesoura comum também passa, a altura é a da tesoura. Trechos de terça inclinados ao longo do comprimento
+27 → 5 (as linhas da cumeeira e das calhas subiam até 8,3 m na TRANSIÇÃO 1). **Sentido da treliça**: a decidida pelas
+marcas ST que fica com o banzo de cima desencontrado da vizinha da mesma linha (> 150 mm) e, virada, se encontra com
+ela (< 50 mm), vira, com aviso — a TESOURA 20 do Posto CB (3,5 m, marcas quase simétricas) começava baixa na
+cumeeira. O modo desenvolvimento só se encerra sozinho depois de meia hora sem janela (`SILENCIO_DEV`; a página
+pesada do projeto e a janela minimizada atrasavam o sinal de vida e ele saía em 30 s).
 
 **0.8.46.** **Conferência seletiva antes de publicar** (`testes/selecao.py`, pedido do
 usuário: a completa levava ~20 min a cada versão; "as demais obras já estão fechadas, em produção"): o pytest roda
