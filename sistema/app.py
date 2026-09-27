@@ -3160,6 +3160,8 @@ _ULTIMO_PEDIDO = [0.0]
 #: de antes para dar sinal (o servidor se encerrava com a janela na tela — o usuário
 #: via "não é possível acessar esse site").
 SILENCIO_TROCA_DE_PAGINA = 30.0
+#: no modo desenvolvimento, a espera sem janela antes de encerrar (s)
+SILENCIO_DEV = 1800.0
 
 
 def _pedido_recente(limite: float = SILENCIO_TROCA_DE_PAGINA) -> bool:
@@ -3329,6 +3331,11 @@ def main():
                 # nunca abriu: dá dois minutos (máquina lenta, antivírus); depois de aberta,
                 # SILENCIO_TROCA_DE_PAGINA sem ninguém cobre a troca de uma página para outra
                 limite = SILENCIO_TROCA_DE_PAGINA if ja_abriu else 120.0
+                if DEV:
+                    # o modo desenvolvimento fica aberto a sessão inteira, com a página pesada do
+                    # projeto e a janela muitas vezes minimizada (o Chrome segura o sinal de vida
+                    # dela): só sai depois de meia hora sem janela nenhuma
+                    limite = SILENCIO_DEV
                 vazio_desde = vazio_desde or (time.time() if ja_abriu else inicio)
                 if time.time() - vazio_desde >= limite:
                     print("nenhuma janela aberta: encerrando.", flush=True)
