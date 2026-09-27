@@ -47,6 +47,7 @@ Rotas da API:
     POST /api/modelo/perfis {nomes}                           seção e massa de perfis fora do banco básico (editor)
     POST /api/modelo/apoios {documento}                        regras de apoio: peça voando, terça em balanço…
     POST /api/modelo/analitico {documento}                     esqueleto de nós e barras e as pontas soltas
+    POST /api/projetos/<slug>/projeto-recebido  folhas, carimbo e considerações de cálculo do DXF recebido
     POST /api/projetos/<slug>/desenhos/<nome>/montar-pela-planta  projeto recebido sem 3D → modelo pela planta,
                                                               elevações nomeadas, locação e planta das terças
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
@@ -1502,6 +1503,33 @@ def eixos_do_projeto(s: str) -> dict:
         raise ErroDeDados(str(e))
 
 
+def ler_projeto_recebido(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/projeto-recebido {conteudo_b64, arquivo}: as folhas do DXF recebido
+    (espaço do papel) — número e título de cada folha, carimbo, considerações de cálculo (cargas
+    e vento do projetista), normas e materiais — gravadas no projeto em `projeto_recebido`. O
+    cliente, o local e o responsável do projeto vêm do carimbo quando estão vazios.
+    {ler: true} só devolve o que está gravado."""
+    import datetime as _dt
+    from nucleo2d import folhas_recebidas
+    g = _gerente()
+    if corpo.get("ler"):
+        return {"projeto_recebido": g.ler(s).get("projeto_recebido")}
+    dados = folhas_recebidas.ler(_texto_do_dxf(corpo))
+    if not dados["folhas"] and not dados["cargas"]:
+        raise ErroDeDados("o DXF não tem folhas com carimbo no espaço do papel (os layouts): nada a ler.")
+    dados["arquivo"] = os.path.basename(str(corpo.get("arquivo") or ""))
+    dados["lido_em"] = _dt.datetime.now().isoformat(timespec="seconds")
+    campos = {"projeto_recebido": dados}
+    p = g.ler(s)
+    c = dados["carimbo"]
+    for chave, valor in (("cliente", c.get("cliente")), ("local", c.get("local")),
+                         ("responsavel", " — ".join(v for v in (c.get("responsavel"), c.get("crea")) if v))):
+        if valor and not str(p.get(chave) or "").strip():
+            campos[chave] = valor
+    g._atualizar(s, **campos)
+    return {"projeto_recebido": dados, "preenchidos": sorted(k for k in campos if k != "projeto_recebido")}
+
+
 def gravar_eixos_projeto(s: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/eixos {eixos} grava; {identificar: true} identifica de novo do
     modelo e devolve (sem gravar); {apagar: true} volta ao automático."""
@@ -2947,6 +2975,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(quebrar_cantos_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "eixos":
                     return self._json(gravar_eixos_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "projeto-recebido":
+                    return self._json(ler_projeto_recebido(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
                     return self._json(detalhar_posicao_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "atualizar-pecas":

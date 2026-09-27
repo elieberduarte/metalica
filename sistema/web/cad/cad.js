@@ -677,6 +677,7 @@ class CAD {
       'projeto-2d': () => $('#arquivo-projeto-2d').click(),
       reconhecer: () => this.reconhecerPecas(),
       'montar-planta': () => this.dialogoMontarPelaPlanta(),
+      'folhas-recebidas': () => this.lerFolhasRecebidas(),
       desfazer: () => this.desfazer(), refazer: () => this.refazer(),
       'selecionar-tudo': () => this.selecionar([...this.doc.entidades.keys()].filter(id => this.doc.visivel(this.doc.get(id)))),
       apagar: () => this.apagarSelecao(),

@@ -37,9 +37,25 @@ TF = 9.80665           # kN por tf
 #: cargas de cobertura padrão (kN/m²) — cada uma é uma hipótese, a conferir com o projeto
 CARGAS_PADRAO = {
     "telha": 0.055,          # telha de aço 0,50 mm (TR40 0,50 mm no desenho do Posto CB)
+    "forro": 0.0,            # forro e instalações pendurados na cobertura
     "paineis": 0.0,          # painéis solares espalhados na cobertura (kN/m² de cobertura)
     "sobrecarga": 0.25,      # NBR 8800, B.5.1: cobertura comum, projeção horizontal
 }
+PERMANENTES = ("telha", "forro", "paineis")
+
+
+def cargas_do_projeto(projeto: dict) -> dict:
+    """as cargas que o projetista escreveu nas folhas (considerações de cálculo), em kN/m², com
+    a fonte; sem elas, as padrão"""
+    from nucleo2d.folhas_recebidas import cargas_kN
+    rec = (projeto or {}).get("projeto_recebido") or {}
+    c = cargas_kN(rec)
+    if not c:
+        return dict(CARGAS_PADRAO, fonte="padrão do programa")
+    out = dict(CARGAS_PADRAO, forro=0.0, paineis=0.0)
+    out.update(c)
+    out["fonte"] = "considerações de cálculo do projetista (%s)" % (rec.get("arquivo") or "folhas do DXF")
+    return out
 LARG_MAX = 3.5               # m: vizinha mais longe que isso não é a terça do lado
 BASE_TOL = 50.0              # mm: o pé do pilar
 
@@ -161,15 +177,15 @@ def _transformacao(R: np.ndarray) -> np.ndarray:
 # ------------------------------------------------------------------ o cálculo
 
 def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None) -> dict:
-    """reações e esforços da estrutura inteira para os casos PP (peso próprio), CP (telha e
-    painéis) e SC (sobrecarga). Devolve {casos, reacoes, pilares, barras, soltas, resumo,
+    """reações e esforços da estrutura inteira para os casos PP (peso próprio), CP (telha, forro
+    e painéis) e SC (sobrecarga). Devolve {casos, reacoes, pilares, barras, soltas, resumo,
     hipoteses, avisos}"""
     import scipy.sparse as sp
     import scipy.sparse.linalg as spl
     from scipy.sparse.csgraph import connected_components
 
     car = dict(CARGAS_PADRAO)
-    car.update({k: float(v) for k, v in (cargas or {}).items() if v not in (None, "")})
+    car.update({k: (v if k == "fonte" else float(v)) for k, v in (cargas or {}).items() if v not in (None, "")})
     esq = esq or analitico(doc)
     nos = np.array(esq["nos"], float) / 1000.0
     barras = esq["barras"]
@@ -249,7 +265,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None) -> 
             continue
         Lh = float(np.hypot(d[i][0], d[i][1]))
         area += w * Lh
-        for caso, q, comp in (("CP", car["telha"] + car["paineis"], L[i]), ("SC", car["sobrecarga"], Lh)):
+        for caso, q, comp in (("CP", sum(car[k] for k in PERMANENTES), L[i]), ("SC", car["sobrecarga"], Lh)):
             f = q * w * comp / 2
             casos[caso][ia[i] * 6 + 2] -= f
             casos[caso][ib[i] * 6 + 2] -= f

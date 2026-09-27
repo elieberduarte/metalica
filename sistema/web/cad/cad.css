@@ -98,3 +98,9 @@ html.embutida #btn-voltar, html.embutida #link-editor, html.embutida #link-divid
   #btn-fechar, #btn-tema, .escala-topo { display: none; }
   #nome-desenho { width: 110px; }
 }
+
+/* tabelas curtas dentro dos diálogos (folhas do projeto recebido) */
+.dialogo-corpo .tabela-simples { border-collapse: collapse; margin: 4px 0 10px; font-size: 12.5px; }
+.dialogo-corpo .tabela-simples th { text-align: left; font-weight: 600; color: var(--texto2); padding: 2px 12px 2px 0; white-space: nowrap; }
+.dialogo-corpo .tabela-simples td { padding: 2px 12px 2px 0; }
+.dialogo-corpo h4 { margin: 10px 0 2px; font-size: 13px; }

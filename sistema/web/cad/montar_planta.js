@@ -50,7 +50,53 @@ function seletor(titulos, padrao, comNenhuma) {
   return s;
 }
 
+function base64DoArquivo(arquivo) {
+  return new Promise((ok, erro) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).replace(/^data:[^,]*,/, ''));
+    r.onerror = () => erro(r.error || new Error('não foi possível ler o arquivo'));
+    r.readAsDataURL(arquivo);
+  });
+}
+
+const ROTULO_CARGA = { telha: 'Peso das telhas', forro: 'Forro e instalações', sobrecarga: 'Sobrecarga de utilização',
+  paineis: 'Painéis solares (reserva)', vento: 'Vento (V0)' };
+
 export class MetodosMontarPlantaCAD {
+  /** As folhas do DXF recebido (espaço do papel): número e título, carimbo, considerações de
+   *  cálculo, normas e materiais — o servidor lê e grava no projeto (`projeto_recebido`). */
+  async lerFolhasRecebidas() {
+    if (!this.projeto) { this.aviso('Abra o desenho dentro de um projeto.', 'atencao'); return; }
+    const entrada = el('input', { type: 'file', accept: '.dxf' });
+    const arquivo = await new Promise((ok) => { entrada.addEventListener('change', () => ok(entrada.files && entrada.files[0])); entrada.click(); });
+    if (!arquivo) return;
+    this.dica('Lendo as folhas do DXF…');
+    let r;
+    try {
+      r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/projeto-recebido`,
+        { arquivo: arquivo.name, conteudo_b64: await base64DoArquivo(arquivo) });
+    } catch (e) { this.aviso(`Não foi possível ler as folhas: ${e.message}`, 'erro', 0); this.dica(''); return; }
+    this.dica('');
+    const d = r.projeto_recebido || {};
+    const c = d.carimbo || {};
+    const itens = [el('div', { class: 'explica', texto: `"${d.arquivo}": ${d.folhas.length} folha(s), ${d.janelas} janela(s) de vista. Gravado no projeto; o cálculo de esforços parte destas cargas.` })];
+    const linhasCarimbo = [['Cliente', c.cliente], ['Obra', c.obra], ['Local', c.local], ['Responsável', [c.responsavel, c.crea].filter(Boolean).join(' — ')],
+      ['Revisão / data', [c.revisao, c.data].filter(Boolean).join(' · ')]].filter(([, v]) => v);
+    if (linhasCarimbo.length) itens.push(el('table', { class: 'tabela-simples' }, ...linhasCarimbo.map(([k, v]) => el('tr', {}, el('th', { texto: k }), el('td', { texto: v })))));
+    const cargas = Object.entries(d.cargas || {});
+    if (cargas.length) {
+      itens.push(el('h4', { texto: 'Considerações de cálculo' }));
+      itens.push(el('table', { class: 'tabela-simples' }, ...cargas.map(([k, v]) => el('tr', {},
+        el('th', { texto: ROTULO_CARGA[k] || v.texto }), el('td', { texto: `${numero(v.valor, 2)} ${v.unidade.toLowerCase().replace('m2', 'm²')}` })))));
+    } else itens.push(el('div', { class: 'explica atencao', texto: 'Não achei o quadro "Considerações de cálculo" nas folhas.' }));
+    if ((d.folhas || []).length) {
+      itens.push(el('h4', { texto: 'Folhas' }));
+      itens.push(el('table', { class: 'tabela-simples' }, ...d.folhas.map(f => el('tr', {}, el('th', { texto: f.numero }), el('td', { texto: f.titulo || '—' }), el('td', { texto: f.formato || '' })))));
+    }
+    if ((r.preenchidos || []).length) itens.push(el('div', { class: 'explica', texto: `Preenchido no projeto pelo carimbo: ${r.preenchidos.join(', ')}.` }));
+    await this.dialogo({ titulo: 'Folhas do projeto recebido', corpo: el('div', {}, ...itens), ok: 'Fechar' });
+  }
+
   async dialogoMontarPelaPlanta() {
     if (!this.projeto) { this.aviso('Abra o desenho dentro de um projeto.', 'atencao'); return; }
     await this.salvar({ avisar: false });
