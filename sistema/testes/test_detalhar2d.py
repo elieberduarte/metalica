@@ -777,3 +777,35 @@ def test_terca_sem_furo_ganha_os_furos_da_chapa_de_apoio():
     assert all(f.tipo == "oblongo" for f in m5.furos)
     assert any("chapa de liga" in o for o in m5.observacoes)
 
+
+def test_barras_do_gabarito_da_tesoura_sem_desenho_proprio():
+    """Barra em U que só aparece nas tesouras e nos complementos delas (conjunto comum com 3+ barras
+    em U, os DP da Sala) não ganha desenho próprio: a obra corta no gabarito (pedido do usuário,
+    28/09). O W150 do DP, a avulsa, a que está noutro conjunto e as chapas continuam."""
+    from types import SimpleNamespace as N
+    from nucleo2d.detalhar import _conjuntos_de_gabarito, _so_da_tesoura, _tipico
+    tipos = {"M2": "tesoura", "M85": "conjunto", "M75": "conjunto", "M19": "agulhamento_diagonal"}
+    pos = [N(classe="barra", perfil="U92X30X#13", conjuntos=["M2"]),              # alma da tesoura
+           N(classe="barra", perfil="U100X50X3.04", conjuntos=["M2"]),            # banzo
+           N(classe="barra", perfil="U100X60X3.04", conjuntos=["M85"]),           # barras do DP
+           N(classe="barra", perfil="U92X30X#13", conjuntos=["M85"]),
+           N(classe="barra", perfil="U100X60X3.04", conjuntos=["M85"]),
+           N(classe="barra", perfil="W150X13.00", conjuntos=["M85"]),             # o pilarete do DP
+           N(classe="barra", perfil="L1.1/4''X1/8''", conjuntos=["M75"]),         # conjunto de cantoneiras
+           N(classe="barra", perfil="U92X30X#13", conjuntos=["M2", "M19"]),       # também na agulha
+           N(classe="barra", perfil="U150X50X2.28", conjuntos=[]),                # terça avulsa
+           N(classe="chapa", perfil="PLATE 200x60x6", conjuntos=["M2"])]
+    gab = _conjuntos_de_gabarito(pos, tipos)
+    assert gab == {"M2", "M85"}
+    assert [_so_da_tesoura(p, gab) for p in pos] == [True, True, True, True, True, False, False, False, False, False]
+    assert _tipico("contraventamento") and _tipico("agulhamento_diagonal") and _tipico("agulhamento")
+    assert not _tipico("tesoura") and not _tipico("conjunto")
+
+
+def test_bitola_da_barra_redonda():
+    from nucleo2d.detalhe.conjuntos import _bitola
+    assert _bitola("FE RED 3/8''") == '3/8"'
+    assert _bitola("BARRA ROSCADA Ø 5/8''") == '5/8"'
+    assert _bitola('FE RED 1"') == '1"'
+    assert _bitola("U100X50X3.04") == ""
+

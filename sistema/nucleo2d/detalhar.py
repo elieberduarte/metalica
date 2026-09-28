@@ -286,6 +286,32 @@ def _familia_da_posicao(p, tipo_pos: str, tipo_de_conj: Dict[str, str]) -> str:
     return "outros"
 
 
+def _tipico(tipo: str) -> bool:
+    """Tipo de conjunto (ou de peça) que sai no detalhe típico por grupo: contraventamento e agulha."""
+    return tipo == "contraventamento" or tipo.startswith("agulhamento")
+
+
+def _em_u(p) -> bool:
+    return str(p.perfil or "").strip().upper().startswith("U")
+
+
+def _conjuntos_de_gabarito(posicoes, tipo_de_conj: Dict[str, str]) -> set:
+    """Os conjuntos montados no gabarito da tesoura: as tesouras e os complementos delas — o
+    conjunto comum treliçado, com três ou mais posições de barra em U (os DP.1–DP.7 da Sala)."""
+    em_u = collections.Counter(c for p in posicoes if p.classe == "barra" and _em_u(p) for c in set(p.conjuntos or []))
+    return {c for c, t in tipo_de_conj.items() if t == "tesoura" or (t == "conjunto" and em_u[c] >= 3)}
+
+
+def _so_da_tesoura(p, gabarito: set) -> bool:
+    """Barra em U que só aparece nas tesouras e nos complementos delas (banzos, diagonais,
+    montantes, os pedaços do joelho, as barras dos DP): não ganha desenho próprio no detalhamento
+    por família nem no completo — a obra corta medindo no gabarito da tesoura (pedido do usuário,
+    28/09). Fica cotada no desenho do conjunto e na lista de materiais. A avulsa, a que também está
+    noutro conjunto, o perfil que não é U (o W150 dos DP), chapas e chumbadores continuam."""
+    conjs = list(p.conjuntos or [])
+    return p.classe == "barra" and _em_u(p) and bool(conjs) and all(c in gabarito for c in conjs)
+
+
 #: Células já desenhadas nesta execução do Detalhar, por (célula, escala): o desenho
 #: "completo" (1:25) repete as dos desenhos por família na mesma escala, e desenhar cada
 #: conjunto de novo era um terço do tempo. Limpo no começo e no fim de `detalhar`; um por
@@ -780,7 +806,9 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         for rotulo, inst, n, nota in celulas:
             if rotulo in meias_cobertas:
                 continue
-            tir = _tirante_principal(inst) if tipos_conj.get(rotulo) == "contraventamento" else None
+            # contraventamentos e agulhas (a barra redonda com as mesmas peças de ponta, mudando só o
+            # comprimento) saem num detalhe típico por grupo, no estilo do Posto (pedido do usuário, 28/09)
+            tir = _tirante_principal(inst) if _tipico(tipos_conj.get(rotulo, "")) else None
             if tir is not None:
                 marca_t = fundidas.get(str(_marcas(tir).get("posicao") or tir.nome), str(_marcas(tir).get("posicao") or tir.nome))
                 chave = tuple(sorted((fundidas.get(m, m), q) for m, q in collections.Counter(
@@ -795,10 +823,13 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         itens_cv = {}
         for membros in cv.values():
             membros.sort(key=lambda m: _ordem_natural(nomes_conj.get(m[0], m[0])))   # mesma ordem do rótulo da célula
-            fns.append(("contraventamento", lambda dd, x, y, membros=membros: desenho_de_contraventamentos(
+            tipo_g = tipos_conj.get(membros[0][0], "") or "contraventamento"
+            fam_g = "agulhamento" if tipo_g.startswith("agulhamento") else "contraventamento"
+            fns.append((fam_g, lambda dd, x, y, membros=membros: desenho_de_contraventamentos(
                 doc, membros, dd, x, y, nomes_pos, nomes_conj, fundidas, comprimentos, rotular)))
             chave_cel = " / ".join(m[0] for m in membros)
-            itens_cv[chave_cel] = {"quantidade": sum(m[2] for m in membros), "perfil": "contraventamentos %s" % " / ".join(nomes_conj.get(m[0], m[0]) for m in membros),
+            itens_cv[chave_cel] = {"quantidade": sum(m[2] for m in membros), "perfil": "%s %s" % (
+                                       "agulhas" if fam_g == "agulhamento" else "contraventamentos", " / ".join(nomes_conj.get(m[0], m[0]) for m in membros)),
                                    "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                                    "categoria": "CONJUNTOS", "marcas": [mk for m in membros for mk in m[0].split(" / ")],
                                    "nome": " / ".join(nomes_conj.get(m[0], m[0]) for m in membros)}
@@ -850,6 +881,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             tipos_m = {fundidas.get(m, m): nomeacao["tipos"].get(fundidas.get(m, m)) for m in gm["marcas"]}
             if "chumbador" in tipos_m.values():
                 chapas_de_chumbador |= {m for m, t in tipos_m.items() if t != "chumbador"}
+    gabarito = _conjuntos_de_gabarito(posicoes, tipo_de_conj)
     for chave in grupos:
         g = GRUPOS_BASE.get(chave)
         if not g or chave in ("conjuntos", "localizacao", "completo"):
@@ -942,11 +974,14 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         familias_completo.extend(("telha", t, f) for t, f in celulas_g[:n_frente])
         # o tirante que já está no detalhe do contraventamento (barra, comprimento e dobra
         # cotados lá) não ganha célula própria: era o mesmo desenho repetido
+        # a barra que só existe dentro das tesouras também não: a obra corta no gabarito da tesoura,
+        # medindo nele (pedido do usuário, 28/09) — fica cotada no conjunto e na lista de materiais
         familias_completo.extend((_familia_da_posicao(p, t if t == "chumbador" else (nomeacao["tipos"].get(p.marca) or p.tipo_nome),
                                                       tipo_de_conj), t, f)
                                  for p, (t, f) in zip(lista, celulas_g[n_frente:n_frente + len(lista)])
                                  if not (p.marca in tirantes_em_grupo
-                                         and (nomeacao["tipos"].get(p.marca) or p.tipo_nome) == "contraventamento"))
+                                         and _tipico(nomeacao["tipos"].get(p.marca) or p.tipo_nome or ""))
+                                 and not _so_da_tesoura(p, gabarito))
         familias_completo.extend((fam, t, f) for fam, (t, f) in zip(familias_mont, celulas_mont))
         base[chave] = d
 

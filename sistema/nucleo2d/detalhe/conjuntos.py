@@ -2770,6 +2770,90 @@ def _barra_mais_longa(instancia: Sequence[Solido]):
     return melhor
 
 
+def _bitola(perfil: str) -> str:
+    """A bitola em polegadas escrita no perfil da barra redonda: "FE RED 3/8''" → '3/8"'."""
+    m = re.search(r"(\d+(?:[ .\-]\d+/\d+|/\d+)?)\s*(?:''|\"|”)", perfil)
+    return (m.group(1).strip() + '"') if m else ""
+
+
+def _roscas(doc: Documento, inst: Sequence[Solido], origem, u, v, u0: float, v0: float, comprimento: float) -> List[tuple]:
+    """As roscas do conjunto na vista (u, v): cada porca (ou arruela) solta perto da instância vai
+    para a peça redonda em que ela está — o tirante, o gancho da agulha (G.1), a barra roscada do
+    esticador — e a rosca é a ponta dessa peça mais perto da porca, `comprimento` mm (a barra
+    roscada, inteira). Devolve [(peça, u0, u1, v do eixo, diâmetro)], uma por ponta roscada."""
+    from nucleo2d.detalhe.base import _fixadores, _so_parafusos, _nome_do_parafuso, _autovetores
+    from nucleo.perfis_fabrica import polegadas_mm
+    redondas = []
+    for e in inst:
+        perfil = str(_marcas(e).get("perfil") or e.nome or "")
+        if not _eh_redonda_perfil(perfil) or not getattr(e, "vertices", None):
+            continue
+        pu = [_dot(_sub(q, origem), u) - u0 for q in e.vertices]
+        pv = [_dot(_sub(q, origem), v) - v0 for q in e.vertices]
+        d = polegadas_mm(_bitola(perfil)) or 10.0
+        redondas.append((e, pu, pv, d, "ROSCAD" in perfil.upper()))
+    if not redondas:
+        return []
+    caixas = [_caixa(e) for e in inst if getattr(e, "vertices", None)]
+    minimo = [min(cx[i][0] for cx in caixas) - 200.0 for i in range(3)]
+    maximo = [max(cx[i][1] for cx in caixas) + 200.0 for i in range(3)]
+    fora, feitas, porcas_da = [], set(), {}
+    for f in _so_parafusos(_fixadores(doc)):
+        cc = tuple(sum(q[i] for q in f.vertices) / len(f.vertices) for i in range(3))
+        if not all(minimo[i] <= cc[i] <= maximo[i] for i in range(3)):
+            continue
+        # só a porca e a arruela soltas (o parafuso de verdade — o M16 da castanha — traz a dele),
+        # pela forma, como a legenda do conjunto as conta
+        ext = []
+        _, pca = _autovetores(f.vertices)
+        for ax in pca:
+            ts = [_dot(_sub(q, cc), ax) for q in f.vertices]
+            ext.append(max(ts) - min(ts))
+        _nome, pela_porca = _nome_do_parafuso(f, ext)
+        if not (pela_porca or ext[0] <= 1.5 * ext[1]):
+            continue
+        fu = _dot(_sub(cc, origem), u) - u0
+        fv = _dot(_sub(cc, origem), v) - v0
+        # a peça redonda que passa pela porca: a que a contém no comprimento (a porca da agulha fica
+        # além da ponta do ferro, no gancho; a do contravento, na barra roscada do esticador, não no
+        # ferro liso soldado nela) e no eixo; só sem nenhuma, a de ponta até 40 mm dela
+        no_eixo = [r for r in redondas if min(r[2]) - 15.0 <= fv <= max(r[2]) + 15.0]
+        cand = ([r for r in no_eixo if min(r[1]) <= fu <= max(r[1])]
+                or [r for r in no_eixo if min(r[1]) - 40.0 <= fu <= max(r[1]) + 40.0])
+        if not cand:
+            continue
+        e, pu, pv, d, roscada = min(cand, key=lambda r: min(abs(fu - min(r[1])), abs(fu - max(r[1]))))
+        a_, b_ = min(pu), max(pu)
+        if roscada:
+            x_a, x_b = a_, b_
+        elif fu - a_ <= b_ - fu:
+            x_a, x_b = a_, a_ + min(comprimento, 0.9 * (b_ - a_))
+        else:
+            x_a, x_b = b_ - min(comprimento, 0.9 * (b_ - a_)), b_
+        # a porca e a arruela da mesma ponta contam uma vez; na barra roscada, cada grupo de porcas
+        # (as duas pontas do esticador) é uma ponta roscada, com a rosca desenhada uma vez só
+        if roscada:
+            # as porcas a até 40 mm umas das outras são da mesma ponta
+            ja = porcas_da.setdefault(e.id, [])
+            if any(abs(fu - x) <= 40.0 for x in ja):
+                continue
+            ja.append(fu)
+        else:
+            chave = (e.id, round(x_a))
+            if chave in feitas:
+                continue
+            feitas.add(chave)
+        if roscada and any(r[0] is e for r in fora):
+            fora.append((e, None, None, None, d))     # conta a ponta, sem desenhar de novo
+            continue
+        # o eixo na ponta roscada: os vértices do anel da ponta (o gancho da outra ponta espalha)
+        ponta = x_a if abs(fu - x_a) <= abs(fu - x_b) else x_b
+        anel = [q for q_u, q in zip(pu, pv) if abs(q_u - ponta) <= 15.0]
+        v_c = (min(anel) + max(anel)) / 2 if anel and max(anel) - min(anel) <= 2.5 * d else fv
+        fora.append((e, x_a, x_b, v_c, d))
+    return fora
+
+
 def _comprimento_na_vista(peca: Solido, instancia: Sequence[Solido]) -> float:
     """Extensão da peça ao longo do comprimento da vista do conjunto dela."""
     c, u, v, w = _eixos_do_conjunto(instancia)
@@ -2790,11 +2874,12 @@ def _extensao_do_conjunto(instancia: Sequence[Solido]) -> Tuple[float, float]:
 def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desenho: Desenho, dx: float, dy: float,
                                  nomes: Dict[str, str], nomes_conj: Dict[str, str], fundidas: Dict[str, str],
                                  comprimentos: Dict[str, float], rotular: bool = True) -> Tuple[float, float, float, float]:
-    """Detalhe limpo dos contraventamentos que só diferem no comprimento do tirante
-    (mesmas peças de ponta): a elevação do mais comprido, as cotas empilhadas — uma por
-    contraventamento, "C.V.3 (02x) – 5150" — e, embaixo, as cotas das peças de ponta
-    (barra roscada do esticador, cantoneiras, chapa). `membros` = [(rotulo do grupo,
-    instância, nº de instâncias)]."""
+    """Detalhe típico dos conjuntos que só diferem no comprimento da barra principal (mesmas
+    peças de ponta): contraventamentos e agulhas. A elevação do mais comprido com o nome das
+    peças de ponta embaixo e, no estilo do projeto do Posto (pedido do usuário, 28/09), as cotas
+    empilhadas debaixo dela, todas do tamanho da barra desenhada, com o nome, o comprimento e a
+    quantidade no meio — "CV.3 COMP=5150mm – 02X"; a rosca desenhada e cotada nas pontas da
+    barra que têm porca. `membros` = [(rotulo do grupo, instância, nº de instâncias)]."""
     membros = sorted(membros, key=lambda m: _ordem_natural(nomes_conj.get(m[0], m[0])))
     maior = max(membros, key=lambda m: _extensao_do_conjunto(m[1])[0])
     rotulo, inst, _ = maior
@@ -2863,20 +2948,48 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         t0, t1 = min(pu_t), max(pu_t)
     else:
         t0, t1 = 0.0, larg
+    # a rosca nas pontas da barra que têm porca (o fixador perto da ponta, no eixo): as linhas
+    # do fundo da rosca e os traços dos filetes ao longo de ROSCA_GANCHO, "ROSCA" embaixo e a
+    # cota do comprimento em cima, como o Posto desenha (pedido do usuário, 28/09)
+    linhas_lado = {False: 0, True: 0}
+    n_roscas = 0
+    for r_ in extremos_pecas:
+        lado_ = (r_[0] + r_[1]) / 2 > meio
+        linhas_lado[lado_] = max(linhas_lado[lado_], r_[2])
+    from nucleo2d.detalhe.celulas import ROSCA_GANCHO
+    bitola_rosca = ""
+    for peca_r, x_a, x_b, v_c, d_b in _roscas(doc, inst, origem, u, v, u0, v0, ROSCA_GANCHO):
+        if x_a is None:
+            n_roscas += 1                             # outra ponta da mesma barra roscada
+            continue
+        for s_ in (-1.0, 1.0):
+            p.linha(x_a, v_c + s_ * d_b * 0.32, x_b, v_c + s_ * d_b * 0.32, "ACO-FINO")
+        passo_f = max(d_b * 0.6, 1.2 * esc)
+        x_f = x_a + passo_f / 2
+        while x_f < x_b:
+            p.linha(x_f - d_b * 0.25, v_c - d_b / 2, x_f + d_b * 0.25, v_c + d_b / 2, "ACO-FINO")
+            x_f += passo_f
+        p.cota_h(x_a, x_b, v_c + d_b / 2, 4.0)
+        n_roscas += 1
+        lado_ = (x_a + x_b) / 2 > meio
+        linhas_lado[lado_] += 1
+        p.texto((x_a + x_b) / 2, -(3.0 + 3.0 * (linhas_lado[lado_] - 1)) * esc - h_nome, "ROSCA", h_nome, "TEXTO", alinhamento="centro")
+        bitola_rosca = bitola_rosca or _bitola(str(_marcas(peca_r).get("perfil") or peca_r.nome or ""))
+    # as cotas empilhadas debaixo da peça, uma por conjunto, todas do tamanho da barra desenhada
+    # (o comprimento de cada uma vai no texto, no meio): "CV.1 COMP=4258mm – 08X", como o Posto
+    y_base = -(3.0 + 3.0 * max(linhas_lado.values() or [0]) + 4.0) * esc - h_nome
+    passo_c = 6.0
     for i, (rot, inst_m, n_inst) in enumerate(membros):
         tir_m = _tirante_principal(inst_m) or _barra_mais_longa(inst_m)
-        comp_m = _comprimento_na_vista(tir_m, inst_m) if tir_m is not None else _extensao_do_conjunto(inst_m)[0]
+        marca_m = (fundidas.get(str(_marcas(tir_m).get("posicao") or tir_m.nome), str(_marcas(tir_m).get("posicao") or tir_m.nome))
+                   if tir_m is not None else None)
+        comp_m = (comprimentos.get(marca_m) if marca_m else None) or (
+            _comprimento_na_vista(tir_m, inst_m) if tir_m is not None else _extensao_do_conjunto(inst_m)[0])
         nome_m = nomes_conj.get(rot, rot)
-        # a cota na própria linha (deslocamento zero): só a linha com as setas e o texto —
-        # as linhas de chamada de cada cota até a barra enchiam a célula de traços.
-        # Os textos ficam alinhados à esquerda, na mesma abscissa (centrados em cotas de
-        # comprimentos diferentes ziguezagueavam), e cada ponta da cota ganha um traço
-        y_c = alt + (off + passo * i) * esc
-        txt = "%s (%02dx) – %d" % (nome_m, n_inst, round(comp_m))
-        h_t = 2.5 * esc
-        p.cota_h(round(t0), round(t0 + comp_m), y_c, 0.0, texto=txt,
-                 texto_pos=p._p(t0 + 5.0 * esc + 0.62 * h_t * len(txt) / 2.0, y_c + 1.0 * esc))
-        for x_ in (round(t0), round(t0 + comp_m)):
+        y_c = y_base - passo_c * i * esc
+        txt = "%s COMP=%dmm – %02dX" % (nome_m, round(comp_m), n_inst)
+        p.cota_h(round(t0), round(t1), y_c, 0.0, texto=txt)
+        for x_ in (round(t0), round(t1)):
             p.linha(x_, y_c - 1.5 * esc, x_, y_c + 1.5 * esc, "COTA")
     # a dobra da barra (gancho na ponta): a altura da perna, cotada na própria ponta
     if tirante is not None:
@@ -2908,22 +3021,27 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
     # título: tipo, nomes e, por contraventamento, o tirante com o comprimento de corte
     total = sum(m[2] for m in membros)
     linhas = ["%s – %02dx" % (" / ".join(nomes_conj.get(m[0], m[0]) for m in membros), total)]
+    # a barra de cada um (nome e perfil); o comprimento de corte está na cota empilhada
+    barras_ = collections.OrderedDict()
     for rot, inst_m, n_inst in membros:
         tir = _tirante_principal(inst_m)
         if tir is None:
             continue
         marca_t = fundidas.get(str(_marcas(tir).get("posicao") or tir.nome), str(_marcas(tir).get("posicao") or tir.nome))
-        comp_t = comprimentos.get(marca_t)
-        nome_t = nomes.get(marca_t) or marca_t
-        linhas.append("%s – %02dx: tirante %s%s%s" % (nomes_conj.get(rot, rot), n_inst,
-                                                    "" if nome_t == nomes_conj.get(rot, rot) else nome_t + " ",
-                                                    str(_marcas(tir).get("perfil") or tir.nome or ""),
-                                                    "  L = %d mm" % round(comp_t) if comp_t else ""))
+        barras_.setdefault(str(_marcas(tir).get("perfil") or tir.nome or ""), []).append(nomes.get(marca_t) or marca_t)
+    for perfil_b, nomes_b in barras_.items():
+        linhas.append("Barra %s: %s" % (perfil_b, ", ".join(nomes_b)))
+    # o padrão da fábrica na ponta roscada: 1 porca e 2 arruelas (pedido do usuário, 28/09) — não
+    # o que o modelo tem (o projetista põe porcas e arruelas soltas, lidas pela forma)
+    if n_roscas:
+        bitola = (" Ø%s" % bitola_rosca) if bitola_rosca else ""
+        linhas.append("Por ponta roscada: 1 porca sextavada%s + 2 arruelas lisas%s (%d ponta%s por unidade)"
+                      % (bitola, bitola, n_roscas, "s" if n_roscas > 1 else ""))
     pecas_ponta = collections.Counter(nome_de(_marcas(e).get("posicao") or e.nome) for e in inst if e is not tirante)
     if pecas_ponta:
         linhas.append("Pecas de ponta (por unidade): "
                       + ", ".join("%s x%d" % (k, q) for k, q in sorted(pecas_ponta.items(), key=lambda kv: _ordem_natural(kv[0]))))
-    y = alt + (off + passo * len(membros) + 4.0) * esc
+    y = alt + (off + 4.0) * esc
     for i, txt in enumerate(reversed(linhas)):
         alt_t = 3.5 if i == len(linhas) - 1 else 2.5
         p.texto(0, y, txt, alt_t * esc)
