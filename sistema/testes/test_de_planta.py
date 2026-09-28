@@ -642,3 +642,16 @@ def test_viga_curva_sai_calandrada_e_o_esqueleto_passa_pelo_centro_do_par():
         assert min(xs) < -3000.0 + 100.0
     linhas = [ln for ln in analitico._linhas_do(doc) if ln["papel"] == "viga"]
     assert linhas and all(abs(math.hypot(ln["a"][0], ln["a"][1] - 3000.0) - 3000.0) < 1.0 for ln in linhas)
+
+
+def test_nome_de_chamada_vai_para_a_curva_onde_a_chamada_termina():
+    """o "VM-2Ue200…" das curvas dos cantos do Posto: escrito sobre um sublinhado, com a linha de
+    chamada saindo da ponta dele até o arco; o nome é da curva, não da linha paralela mais perto"""
+    canto = de_planta.Caminho("arco", centro=(0.0, 0.0), raio=1000.0, ini=90.0, fim=180.0, largura=140.0)
+    reta = de_planta.Caminho("reta", a=(-6000.0, 1300.0), b=(3000.0, 1300.0), largura=100.0)
+    t = texto((-5000.0, 1600.0), "VM-2Ue200X70X20X2,65")
+    ents = [t, linha((-4920.0, 1500.0), (-1920.0, 1500.0), "1-Metalica2"),
+            linha((-1920.0, 1500.0), (-707.0, 707.0), "REG60-100")]
+    ch = de_planta._chamadas([t], ents, [reta, canto], (-1e5, -1e5, 1e5, 1e5))
+    assert ch[id(t)][0] == 1                              # a curva, não a reta ao lado do texto
+    assert de_planta._curva_de_canto(canto) and not de_planta._curva_de_canto(reta)

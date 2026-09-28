@@ -1363,6 +1363,61 @@ def _trelicas_deitadas(segs, textos, elevacoes: Dict[str, "Elevacao"], nome_do, 
     return trechos, usados, faixas
 
 
+def _chamadas(textos, ents, caminhos: List[Caminho], caixa, tol: float = 60.0) -> Dict[int, Tuple[int, float, dict]]:
+    """o nome VM escrito como chamada: sobre um sublinhado, com a linha de chamada saindo da ponta
+    dele até a peça (no Posto CB, as curvas dos cantos — "VM-2Ue200…" ao lado, a chamada até o
+    arco). {id do texto: (caminho, s, texto)} com a peça onde a chamada termina (a até 400 mm)"""
+    linhas = [e for e in ents if e["tipo"] == "linha" and _dentro(e["a"], caixa)]
+    out: Dict[int, Tuple[int, float, dict]] = {}
+    for t in textos:
+        if not re.match(r"(?i)^\s*VM", t["texto"]) or not t.get("posicao"):
+            continue
+        p = t["posicao"]
+        ang = math.radians(float(t.get("angulo") or 0.0))
+        u, n = (math.cos(ang), math.sin(ang)), (-math.sin(ang), math.cos(ang))
+        rel = lambda q: ((q[0] - p[0]) * u[0] + (q[1] - p[1]) * u[1], (q[0] - p[0]) * n[0] + (q[1] - p[1]) * n[1])
+        sub = None
+        for ln in linhas:
+            a, b = ln["a"], ln["b"]
+            L = math.dist(a, b)
+            if L < 300.0 or abs(((b[0] - a[0]) * n[0] + (b[1] - a[1]) * n[1]) / L) > 0.05:
+                continue                                     # curta ou não paralela ao texto
+            (sa, oa), (sb, _ob) = rel(a), rel(b)
+            sa, sb = min(sa, sb), max(sa, sb)
+            if -400.0 <= oa <= 50.0 and sa <= 400.0 and sb >= 300.0:
+                sub = ln                                     # o sublinhado, logo abaixo do texto
+                break
+        if sub is None:
+            continue
+        alvo = None
+        for q in (sub["a"], sub["b"]):
+            for ln in linhas:
+                if ln is sub:
+                    continue
+                for x, y in ((ln["a"], ln["b"]), (ln["b"], ln["a"])):
+                    L = math.dist(x, y)
+                    if L < 100.0 or math.dist(x, q) > tol:
+                        continue
+                    if abs(((y[0] - x[0]) * u[0] + (y[1] - x[1]) * u[1]) / L) > 0.95:
+                        continue                             # continuação do sublinhado, não a chamada
+                    alvo = y
+        if alvo is None:
+            continue
+        melhor = None
+        for i, c in enumerate(caminhos):
+            s, d = c.projetar(alvo)
+            if d <= 400.0 and (melhor is None or d < melhor[0]):
+                melhor = (d, i, s)
+        if melhor is not None:
+            out[id(t)] = (melhor[1], melhor[2], t)
+    return out
+
+
+def _curva_de_canto(c: Caminho) -> bool:
+    """o arco de ~90° e raio pequeno que dobra a borda num canto (o "redondo" do Posto CB: tubo de 2U)"""
+    return c.tipo == "arco" and 800.0 <= c.raio <= 1600.0 and 60.0 <= c.varredura <= 120.0
+
+
 def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
                     apoios: Sequence[Ponto2] = (), deitadas=False) -> Tuple[List[Trecho], dict]:
     """as peças nomeadas da planta estrutural, cortadas no comprimento de cada elevação.
@@ -1432,10 +1487,16 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
                     return True
             return False
         caminhos = [c for c in caminhos if not na_faixa(c)]
-    # cada rótulo vai para a peça paralela mais perto
+    # cada rótulo vai para a peça paralela mais perto; o de chamada, para onde a chamada aponta
     por_caminho: Dict[int, List[Tuple[float, str, dict]]] = collections.defaultdict(list)
     sem_peca = []
+    avisos_leitura: List[str] = []
+    chamadas = _chamadas(textos, ents, caminhos, folga)
+    for i_c, s_c, t in chamadas.values():
+        por_caminho[i_c].append((s_c, t["texto"].strip(), t))
     for t in textos:
+        if id(t) in chamadas:
+            continue
         p = (t["posicao"][0], t["posicao"][1])
         ang_t = (t.get("angulo") or 0.0) % 180.0
         melhor = None
@@ -1464,13 +1525,30 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
         meio = (p[0] + math.cos(rad) * meia, p[1] + math.sin(rad) * meia)
         s_meio, _d = caminhos[melhor[1]].projetar(meio)
         por_caminho[melhor[1]].append((s_meio, t["texto"].strip(), t))
+    # a curva de canto sem nome, igual (raio e largura da linha dupla) a uma que tem o nome da
+    # viga na mesma planta, é a mesma peça: o projetista escreveu a chamada em duas das seis
+    nomeadas = [(caminhos[i], next(x for x in lst if re.match(r"(?i)^\s*VM", x[1])))
+                for i, lst in por_caminho.items()
+                if _curva_de_canto(caminhos[i]) and any(re.match(r"(?i)^\s*VM", x[1]) for x in lst)]
+    for i, c in enumerate(caminhos):
+        if por_caminho.get(i) or not _curva_de_canto(c):
+            continue
+        igual = next((x for cn, x in nomeadas if abs(cn.largura - c.largura) <= 15.0 and abs(cn.raio - c.raio) <= 700.0), None)
+        if igual is None:
+            continue
+        texto = igual[1]
+        por_caminho[i].append((c.comprimento / 2.0, texto, {"texto": texto, "id": None, "herdado": True}))
+        meio_c = c.ponto(c.comprimento / 2.0)
+        avisos_leitura.append("curva de canto sem nome em (%.0f; %.0f), raio %.2f m: montada como %s, a curva igual "
+                              "(mesma largura da linha dupla) que tem o nome na chamada — confira."
+                              % (meio_c[0], meio_c[1], c.raio / 1000.0, texto))
     # nós: onde uma treliça pode terminar (cruzamentos, pontas encostadas, emendas)
     polis = [_polilinha(c) for c in caminhos]
     nos: Dict[int, List[float]] = {i: _nos_de(c, i, caminhos, polis, pedacos, apoios) for i, c in enumerate(caminhos)}
     trechos: List[Trecho] = []
     stats = {"caminhos": len(caminhos), "rotulos": len(textos), "sem_peca": sem_peca, "sem_rotulo": 0,
              "sem_elevacao": collections.Counter(), "vigas": 0, "deitadas": deitadas,
-             "deitadas_a_conferir": a_conferir}
+             "deitadas_a_conferir": a_conferir, "avisos": avisos_leitura}
 
     # a peça comprida tem o nome escrito mais de uma vez. Quando a planta tem mais nomes
     # de uma peça do que o título dela pede ("- 1X"), os nomes repetidos na mesma linha, a
@@ -2855,6 +2933,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     avisar("lendo as peças da planta…")
     trechos, st = pecas_da_planta(ents, caixa_p, elevacoes, apoios=[(p["x"], p["y"]) for p in locados],
                                   deitadas=par.get("deitadas") or False)
+    avisos += st.get("avisos") or []
     for fx in st.get("deitadas_a_conferir") or []:
         avisos.append("%s (%.1f m): a planta desenha uma faixa de treliça vista de cima (os dois banzos e a alma entre "
                       "eles) com a altura e o comprimento dessa elevação — pode ser treliça deitada. Ficou como está; "
@@ -3227,6 +3306,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         movidas = [_copiar_mov(e, d_o[0], d_o[1]) for e in ents if _dentro(_pt(e), f_o)]
         cx_m = (caixa_o[0] + d_o[0], caixa_o[1] + d_o[1], caixa_o[2] + d_o[0], caixa_o[3] + d_o[1])
         tr_o, _st_o = pecas_da_planta(movidas, cx_m, elevacoes, deitadas=par.get("deitadas") or False)
+        avisos += ["%s: %s" % (t_o["texto"].strip(), a_) for a_ in _st_o.get("avisos") or []]
         orientar(tr_o, [])
         n_antes = len(pecas)
         # a planta de piso com VMs em cima de treliças (a base da caixa d'água): o nível é o do piso
