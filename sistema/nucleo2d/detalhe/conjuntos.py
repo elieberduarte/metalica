@@ -2487,11 +2487,14 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # cada ponta: as alturas das quinas e dos nós (a face de fora como referência, as chamadas saem
         # da face da peça, não da chapa de apoio) e a altura da ponta por fora
         maior = 0.0
+        ponta_dir = None                                  # (x da face, deslocamento da cota mais de fora)
         for pt in pontas:
             sg = 1.0 if pt["lado"] > 0 else -1.0
             desl0 = abs((larg if pt["lado"] > 0 else 0.0) - pt["face"]) / esc     # a chapa além da face
             nv = 1 if len(pt["ys"]) > 2 and p.cadeia_v(pt["ys"], pt["face"], sg * (off + desl0), exigir_espaco=False) else 0
             p.cota_v(pt["ys"][0], pt["ys"][-1], pt["face"], sg * (off * (nv + 1) + desl0))
+            if pt["lado"] > 0:
+                ponta_dir = (pt["face"], off * (nv + 1) + desl0)
             maior = max(maior, pt["ys"][-1] - pt["ys"][0])
             if pt["chanfro"]:
                 a_, b_, lado_ = pt["chanfro"]
@@ -2524,11 +2527,14 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                 p.cota_v(min(ys_m), max(ys_m), x_, para_dentro * off * 0.6)
                 topo_descida = max(ys_m) if topo_descida is None else min(topo_descida, max(ys_m))
             if len(ts_cima) > 1:
-                # tesoura montada: a altura toda junto da cumeeira, do lado de fora do montante central,
-                # e a flecha (da descida do banzo ao ápice), escritas como no projeto
-                p.cota_v(base_bz, apice, ts_cima[1][0], off * 0.6, texto="ALTURA TOTAL %d" % round(apice - base_bz))
+                # tesoura montada: a flecha (da descida do banzo ao ápice) e a altura toda escritas como no
+                # projeto, na ponta da direita por fora das alturas do joelho (pedido do usuário, 28/09 —
+                # na cumeeira ficavam em cima do montante); sem a ponta, junto da cumeeira
+                x_t, d_t = ponta_dir if ponta_dir else (ts_cima[1][0], off * -0.4)
                 if topo_descida is not None and apice - topo_descida > 100.0:
-                    p.cota_v(topo_descida, apice, ts_cima[1][0], off * 1.6, texto="FLECHA TOTAL %d" % round(apice - topo_descida))
+                    p.cota_v(topo_descida, apice, x_t, d_t + off, texto="FLECHA TOTAL %d" % round(apice - topo_descida))
+                    d_t += off
+                p.cota_v(base_bz, apice, x_t, d_t + off, texto="ALTURA TOTAL %d" % round(apice - base_bz))
             elif apice - base_bz - maior > 5.0:
                 p.cota_v(base_bz, apice, larg, off * 3 + abs(larg - max(pt["face"] for pt in pontas)) / esc if pontas else off * 3)
         ts_b = trechos(False)
