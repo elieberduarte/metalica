@@ -94,13 +94,13 @@ try:
     t0 = time.time()
     while time.time() - t0 < 10 and not aba.avaliar(f"!!{F3}.document.querySelector('.seletor-vista a.ativo')"): aba.drenar(0.3)
     t0 = time.time()
-    while time.time() - t0 < 20 and not aba.avaliar("document.querySelectorAll('#menus-unicos .menu-botao').length >= 6"): aba.drenar(0.3)
+    while time.time() - t0 < 20 and not aba.avaliar("document.querySelectorAll('#menus-unicos .menu-botao').length >= 5"): aba.drenar(0.3)
     menus_u = aba.avaliar("[...document.querySelectorAll('#menus-unicos .menu-botao')].map(b => b.textContent).join(',')") or ""
     ok(aba.avaliar("getComputedStyle(document.querySelector('.area-topo')).display") != "none"
        and aba.avaliar(f"getComputedStyle({F2}.document.querySelector('header.topo')).display") == "none"
        and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('header.topo')).display") == "none"
        and aba.avaliar("document.querySelector('.vistas button.ativo').dataset.vista") == "ambos"
-       and "Desenho" in menus_u and "Detalhamentos" in menus_u,
+       and menus_u == "Arquivo,Desenhos,Estrutura,Cálculo,Ver",
        f"uma barra só, a de fora: o menu geral do 2D e do 3D ({menus_u}); as barras das telas escondidas; abre no 2D + 3D")
     ok(aba.avaliar(f"getComputedStyle({F2}.document.querySelector('#btn-voltar')).display") == "none"
        and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('#link-projetos')).display") != "none",
