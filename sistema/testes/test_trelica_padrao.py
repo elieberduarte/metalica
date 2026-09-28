@@ -91,3 +91,25 @@ def test_encadear_telha():
     polis = C._encadear(segs)
     assert len(polis) == 1 and len(polis[0]) == 4
     assert polis[0][0] == (0, 0) or polis[0][-1] == (0, 0)
+
+
+def test_telha_assentada_com_o_raio_da_multidobra_e_os_parafusos():
+    """a linha da telha no corte: a água desce até encostar na terça (o modelo deixava 12 mm), o canto
+    facetado do modelo (R700) vira o arco R450 interno tangente à água e à parede, anotado com o
+    externo (R490 na TP40), a crista sai 40 mm por fora, e cada terça encostada ganha um parafuso"""
+    arco_modelo = [(700 + 700 * math.cos(math.radians(a)), 500 + 700 * math.sin(math.radians(a)))
+                   for a in (180, 157.5, 135, 112.5, 90)]
+    poli = [(0.0, 0.0), (0.0, 500.0)] + arco_modelo[1:-1] + [(700.0, 1200.0), (3000.0, 1200.0)]
+    terca = [((1500.0, 1188.0), (1550.0, 1188.0)), ((1500.0, 1188.0), (1500.0, 1050.0))]
+    polis, extras = C._telha_assentada([poli], [terca], (1500.0, 300.0), raio=450.0, onda=40.0)
+    baixo, cima = polis
+    assert any(abs(q[1] - 1188.0) < 0.01 and q[0] > 2000 for q in baixo)          # assentou na terça
+    centro = (450.0, 1188.0 - 450.0)
+    no_arco = [q for q in baixo if 1.0 < q[0] < 449.0]
+    assert no_arco and all(abs(math.dist(q, centro) - 450.0) < 0.5 for q in no_arco)
+    assert any(abs(q[1] - 1228.0) < 0.5 and q[0] > 2000 for q in cima)             # a crista
+    textos = [x[2] for x in extras if x[0] == "texto"]
+    assert textos == ["R450 int. / R490 ext."]
+    parafusos = [x for x in extras if x[0] == "linha"]
+    assert len(parafusos) == 2 and all(1500.0 <= x[1][0] <= 1550.0 for x in parafusos)
+

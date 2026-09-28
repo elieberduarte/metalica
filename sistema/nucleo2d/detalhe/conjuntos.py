@@ -1194,12 +1194,18 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
         return n % 2 == 1
 
     fora = []
+    por_peca: List[list] = []                                 # as seções das terças, uma lista por peça
     telha: List[tuple] = []
+    ondas: List[float] = []                                   # a altura da onda (TP40 → 40 mm)
     centros: List[tuple] = []
     for ent in doc.entidades.values():
         if ent.id in ids or getattr(ent, "tipo", "") not in ("barra", "solido"):
             continue
         eh_telha = "telha" in str(getattr(ent, "camada", "") or "").lower()
+        if eh_telha:
+            m_onda = re.search(r"TP\s*(\d+)", str(_marcas(ent).get("perfil") or getattr(ent, "nome", "") or "").upper())
+            if m_onda:
+                ondas.append(float(m_onda.group(1)))
         try:
             vs, fs = malha(ent)
         except Exception:                                     # peça sem malha (perfil desconhecido)
@@ -1282,6 +1288,7 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
             continue                                          # as duas terças da emenda: um corte só
         centros.append((mx, my))
         fora += segs
+        por_peca.append(segs)
     # no traspasse o plano corta as duas telhas, e o chapéu da cumeeira passa por cima delas: fica só
     # o de baixo — o trecho de uma face que tem outra telha paralela logo abaixo dela (até 60 mm, entre
     # ela e a estrutura) sai; no vão entre as telhas (a cumeeira) o chapéu fica
@@ -1311,7 +1318,188 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
             livres.append((t, L))
         return [((a_[0] + tx * s0, a_[1] + ty * s0), (a_[0] + tx * s1, a_[1] + ty * s1)) for s0, s1 in livres]
     telha = [pedaco for i, sg in enumerate(telha) for pedaco in de_baixo(i, sg)]
-    return fora, _encadear(telha)
+    onda = sorted(ondas)[len(ondas) // 2] if ondas else 40.0
+    polis, extras = _telha_assentada(_encadear(telha), por_peca, (cx, cy), onda=onda)
+    return fora, polis, extras
+
+
+def _telha_assentada(polis: Sequence[list], tercas: Sequence[list], centro: tuple, raio: Optional[float] = None,
+                     folga_max: float = 60.0, onda: float = 40.0) -> Tuple[List[list], List[tuple]]:
+    """A linha da telha como ela é montada (pedidos do usuário, 28/09):
+
+    - assentada nas terças: cada reta comprida (a água, a parede, o forro de baixo do joelho — 500 mm
+      ou mais) desce até encostar na terça mais alta embaixo dela (o modelo do TecnoMETAL deixa a
+      telha uns 12 mm acima);
+    - o canto com o raio da multi-dobra: as facetas entre duas retas (3 ou mais) viram o arco de raio
+      interno comercial (R450 na TP40, o do detalhe das telhas) tangente às duas retas, anotado;
+    - os parafusos: onde a reta encosta numa terça, um parafuso no meio do encosto (a haste entrando
+      na aba e a cabeça na crista), para ver que a telha está na posição certa;
+    - o perfil inteiro: a linha de baixo (a onda que assenta) e a de cima (a crista, a altura da onda
+      acima; no canto o raio externo, R490 na TP40).
+
+    `tercas`: os segmentos da seção de cada terça cortada. Devolve (polilinhas, extras), com os extras
+    como ("linha", a, b, papel) e ("texto", posição, texto)."""
+    if raio is None:
+        from nucleo2d.detalhe.telhas import RAIO_INTERNO_COMERCIAL
+        raio = RAIO_INTERNO_COMERCIAL
+    pts_t = [[q for sg in segs for q in sg] for segs in tercas]
+    saida, extras = [], []
+
+    def direcoes(a_, b_):
+        L = math.dist(a_, b_)
+        t = ((b_[0] - a_[0]) / L, (b_[1] - a_[1]) / L)
+        n = (-t[1], t[0])
+        m = ((a_[0] + b_[0]) / 2, (a_[1] + b_[1]) / 2)
+        if n[0] * (centro[0] - m[0]) + n[1] * (centro[1] - m[1]) < 0:
+            n = (-n[0], -n[1])                                 # para o lado da estrutura
+        return t, n, L
+
+    for poli in polis:
+        retas: List[list] = []
+        for i in range(len(poli) - 1):
+            a_, b_ = tuple(poli[i]), tuple(poli[i + 1])
+            if math.dist(a_, b_) < 0.5:
+                continue
+            if retas and math.dist(retas[-1][1], a_) < 1.0:
+                ra, rb = retas[-1]
+                t1, _n1, _L1 = direcoes(ra, rb)
+                t2, _n2, _L2 = direcoes(a_, b_)
+                if abs(t1[0] * t2[1] - t1[1] * t2[0]) < 0.0175 and t1[0] * t2[0] + t1[1] * t2[1] > 0:
+                    retas[-1] = [ra, b_]                       # a mesma reta em dois pedaços
+                    continue
+            retas.append([a_, b_])
+        longa = [math.dist(*r) >= 500.0 for r in retas]
+        # assentar cada reta comprida na terça mais alta embaixo dela; os parafusos nos encostos
+        for k, r in enumerate(retas):
+            t, n, L = direcoes(*r)
+            if L < 200.0:
+                continue                                       # faceta do canto
+            hs = [(q[0] - r[0][0]) * n[0] + (q[1] - r[0][1]) * n[1]
+                  for pts in pts_t for q in pts
+                  if -1.0 <= (q[0] - r[0][0]) * t[0] + (q[1] - r[0][1]) * t[1] <= L + 1.0]
+            hs = [h for h in hs if -5.0 <= h <= folga_max]
+            if not hs:
+                continue
+            g = min(hs)
+            # só a reta comprida desce até a terça; o trecho curto (o chapéu da cumeeira) fica onde está
+            # e ganha os parafusos da terça em que encosta
+            if longa[k] and abs(g) > 0.3:
+                r[0] = (r[0][0] + n[0] * g, r[0][1] + n[1] * g)
+                r[1] = (r[1][0] + n[0] * g, r[1][1] + n[1] * g)
+            for pts in pts_t:
+                ss = [(q[0] - r[0][0]) * t[0] + (q[1] - r[0][1]) * t[1] for q in pts
+                      if -1.0 <= (q[0] - r[0][0]) * n[0] + (q[1] - r[0][1]) * n[1] <= (5.0 if longa[k] else g + 5.0)]   # as terças da água variam uns mm
+                ss = [x for x in ss if -1.0 <= x <= L + 1.0]
+                if not ss:
+                    continue
+                sm = (min(ss) + max(ss)) / 2.0
+                pq = (r[0][0] + t[0] * sm, r[0][1] + t[1] * sm)
+                cab = (pq[0] - n[0] * (onda + 2.0), pq[1] - n[1] * (onda + 2.0))
+                extras.append(("linha", cab, (pq[0] + n[0] * 25.0, pq[1] + n[1] * 25.0), "parafuso_telha"))
+                extras.append(("linha", (cab[0] - t[0] * 6.0, cab[1] - t[1] * 6.0),
+                               (cab[0] + t[0] * 6.0, cab[1] + t[1] * 6.0), "parafuso_telha"))
+        # o canto: as facetas entre duas retas viram o arco do raio comercial
+        idx = [k for k in range(len(retas)) if longa[k]]
+        cantos = {}
+        for i, j in zip(idx, idx[1:]):
+            if j - i - 1 < 3:
+                continue
+            (a1, b1), (a2, b2) = retas[i], retas[j]
+            d1, _n, L1 = direcoes(a1, b1)
+            d2, _n, L2 = direcoes(a2, b2)
+            den = d1[0] * d2[1] - d1[1] * d2[0]
+            if abs(den) < 0.17:                                # menos de 10°: não é canto
+                continue
+            tt = ((a2[0] - a1[0]) * d2[1] - (a2[1] - a1[1]) * d2[0]) / den
+            I = (a1[0] + d1[0] * tt, a1[1] + d1[1] * tt)
+            theta = math.atan2(den, d1[0] * d2[0] + d1[1] * d2[1])
+            T = raio * math.tan(abs(theta) / 2.0)
+            s1 = (I[0] - a1[0]) * d1[0] + (I[1] - a1[1]) * d1[1] - T
+            s2 = (I[0] - a2[0]) * d2[0] + (I[1] - a2[1]) * d2[1] + T
+            if s1 <= 0.0 or s2 >= L2:
+                continue
+            P1 = (a1[0] + d1[0] * s1, a1[1] + d1[1] * s1)
+            P2 = (a2[0] + d2[0] * s2, a2[1] + d2[1] * s2)
+            sg = 1.0 if theta > 0 else -1.0
+            C = (P1[0] - d1[1] * raio * sg, P1[1] + d1[0] * raio * sg)
+            ang1 = math.atan2(P1[1] - C[1], P1[0] - C[0])
+            npt = max(4, int(abs(math.degrees(theta)) / 5.0))
+            arco = [(C[0] + raio * math.cos(ang1 + theta * f / npt), C[1] + raio * math.sin(ang1 + theta * f / npt))
+                    for f in range(npt + 1)]
+            cantos[i] = (j, P1, P2, arco)
+            meio = arco[len(arco) // 2]
+            fora_ = (meio[0] - C[0]) / raio, (meio[1] - C[1]) / raio
+            # por dentro do arco (por fora ele caía em cima das cotas do joelho)
+            extras.append(("texto", (meio[0] - fora_[0] * 90.0, meio[1] - fora_[1] * 90.0),
+                           "R%d int. / R%d ext." % (round(raio), round(raio + onda))))
+        verts: List[tuple] = []
+
+        def por(q):
+            if not verts or math.dist(verts[-1], q) > 0.5:
+                verts.append(q)
+        k = 0
+        while k < len(retas):
+            if k in cantos:
+                j, P1, P2, arco = cantos[k]
+                por(retas[k][0])
+                for q in arco:
+                    por(q)
+                retas[j][0] = P2
+                k = j
+                continue
+            por(retas[k][0])
+            por(retas[k][1])
+            k += 1
+        # as retas assentadas descem uns 12 mm e as pontas que ficaram (o chapéu da cumeeira) viram
+        # ganchos: sai o vértice em que a linha volta para trás (mais de 150°)
+        mudou = True
+        while mudou and len(verts) > 2:
+            mudou = False
+            for i in range(1, len(verts) - 1):
+                p0, p1, p2 = verts[i - 1], verts[i], verts[i + 1]
+                u1 = (p1[0] - p0[0], p1[1] - p0[1])
+                u2 = (p2[0] - p1[0], p2[1] - p1[1])
+                l1, l2 = math.hypot(*u1), math.hypot(*u2)
+                if l1 < 1.0 or l2 < 1.0 or (u1[0] * u2[0] + u1[1] * u2[1]) / (l1 * l2) < -0.866:
+                    del verts[i]
+                    mudou = True
+                    break
+        if len(verts) >= 2:
+            saida.append(verts)
+            if onda > 0:
+                saida.append(_deslocar_polilinha(verts, onda, centro))
+    return saida, extras
+
+
+def _deslocar_polilinha(verts: Sequence[tuple], d: float, centro: tuple) -> List[tuple]:
+    """A polilinha deslocada de `d` para o lado de fora (o contrário de `centro`, decidido pelo
+    trecho mais comprido e mantido na polilinha inteira), com os cantos em meia-esquadria."""
+    segs = [(verts[i], verts[i + 1]) for i in range(len(verts) - 1) if math.dist(verts[i], verts[i + 1]) > 1e-6]
+    if not segs:
+        return list(verts)
+    a_, b_ = max(segs, key=lambda sg: math.dist(*sg))
+    L = math.dist(a_, b_)
+    esq = (-(b_[1] - a_[1]) / L, (b_[0] - a_[0]) / L)
+    m = ((a_[0] + b_[0]) / 2, (a_[1] + b_[1]) / 2)
+    lado = -1.0 if esq[0] * (centro[0] - m[0]) + esq[1] * (centro[1] - m[1]) > 0 else 1.0   # para fora
+
+    def nrm(sg):
+        L_ = math.dist(*sg)
+        return (-(sg[1][1] - sg[0][1]) / L_ * lado, (sg[1][0] - sg[0][0]) / L_ * lado)
+    pts = []
+    for i in range(len(segs) + 1):
+        n1 = nrm(segs[max(i - 1, 0)])
+        n2 = nrm(segs[min(i, len(segs) - 1)])
+        q = segs[i][0] if i < len(segs) else segs[-1][1]
+        bx, by = n1[0] + n2[0], n1[1] + n2[1]
+        c = (bx * bx + by * by) ** 0.5
+        if c < 1e-6:
+            bx, by, f = n1[0], n1[1], d
+        else:
+            bx, by = bx / c, by / c
+            f = d / max(bx * n1[0] + by * n1[1], 0.2)          # meia-esquadria (limitada nos cantos vivos)
+        pts.append((q[0] + bx * f, q[1] + by * f))
+    return pts
 
 
 def _encadear(segs: Sequence[tuple], tol: float = 10.0) -> List[List[tuple]]:
@@ -1969,7 +2157,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     if segs_bz:
         # as terças em corte, onde cruzam o plano da tesoura sobre o banzo de cima (como o corte das
         # tesouras do projetista): a posição e o lado das abas se leem no próprio desenho
-        tercas, telhas = _cortes_das_tercas(doc, instancia, origem, u, v, w, u0, v0, segs_bz, dx, dy)
+        tercas, telhas, extras = _cortes_das_tercas(doc, instancia, origem, u, v, w, u0, v0, segs_bz, dx, dy)
         for a_, b_ in tercas:
             desenho.add(Linha(camada="TERCAS", a=(round(a_[0], 2), round(a_[1], 2)), b=(round(b_[0], 2), round(b_[1], 2)),
                               atributos=dict(atr, terca_em_corte=True)))
@@ -1977,6 +2165,14 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             # só o contorno de baixo da telha, para ver se ela pega na estrutura
             desenho.add(Polilinha(camada="TELHAS", vertices=[(round(q[0], 2), round(q[1], 2)) for q in poli],
                                   atributos=dict(atr, telha_em_corte=True)))
+        for x in extras:
+            if x[0] == "linha":
+                # o parafuso que prende a telha na terça
+                desenho.add(Linha(camada="TELHAS", a=(round(x[1][0], 2), round(x[1][1], 2)), b=(round(x[2][0], 2), round(x[2][1], 2)),
+                                  atributos=dict(atr, **{x[3]: True})))
+            else:
+                desenho.add(Texto(camada="TELHAS", posicao=(round(x[1][0], 2), round(x[1][1], 2)), texto=x[2], altura=2.0,
+                                  alinhamento="centro", atributos=dict(atr, raio_da_telha=True)))
     p = _Papel(desenho, atr, dx, dy)
     esc = desenho.escala
     off, off2, off3 = 10.0, 20.0, 30.0
