@@ -1725,26 +1725,34 @@ class CAD {
     if (!this.projeto) { this.aviso('Inserir folha precisa de um projeto aberto.', 'atencao'); return; }
     const formato = el('select', {}, ...['A0', 'A1', 'A2', 'A3', 'A4'].map(f => el('option', { value: f, texto: f, selected: f === 'A1' ? 'selected' : undefined })));
     const titulo = el('input', { type: 'text', value: '', placeholder: 'ex.: TESOURAS T1 A T4', title: 'Título do carimbo desta folha (pode mudar depois, na prancha)' });
+    const quantas = el('input', { type: 'number', min: '1', max: '20', step: '1', value: '1', title: 'Várias folhas iguais, lado a lado, para montar as pranchas de uma vez' });
     const corpo = el('div', {},
       el('div', { class: 'explica', texto: `A folha entra na escala deste desenho (1:${this.doc.escala}), à direita do que já está desenhado. Mova ou copie os detalhes para dentro dela (Mover, Copiar); clicar na borda pega a folha inteira. Depois, Desenho → Gerar pranchas das folhas faz de cada folha uma prancha em papel 1:1.` }),
-      el('label', {}, 'Formato', formato), el('label', {}, 'Título no carimbo', titulo));
+      el('label', {}, 'Formato', formato), el('label', {}, 'Título no carimbo', titulo), el('label', {}, 'Quantas folhas', quantas));
     if (await this.dialogo({ titulo: 'Inserir folha (prancha)', corpo, ok: 'Inserir' }) !== 'ok') return;
     if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });
     const tudo = this.doc.caixa();
     const folga = 20 * (this.doc.escala || 1);
     const origem = tudo ? [tudo[1][0] + folga, tudo[0][1]] : [0, 0];
+    const n = Math.max(1, Math.min(20, Math.round(Number(quantas.value) || 1)));
     try {
-      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/folha`,
-                             { formato: formato.value, titulo: titulo.value, origem });
-      for (const [nome, c] of Object.entries(r.camadas || {})) {
-        if (!this.doc.camadas.has(nome)) this.doc.camadas.set(nome, { nome, cor: c.cor, visivel: true, bloqueada: false, tipo_linha: c.tipo_linha || 'CONTINUOUS', espessura: c.espessura || 0.18 });
+      // as folhas lado a lado, da esquerda para a direita, cada uma com a sua borda e o seu carimbo
+      const novas = [];
+      let x = origem[0], lx = 0, ly = 0;
+      for (let i = 0; i < n; i++) {
+        const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/folha`,
+                               { formato: formato.value, titulo: titulo.value, origem: [x, origem[1]] });
+        for (const [nome, c] of Object.entries(r.camadas || {})) {
+          if (!this.doc.camadas.has(nome)) this.doc.camadas.set(nome, { nome, cor: c.cor, visivel: true, bloqueada: false, tipo_linha: c.tipo_linha || 'CONTINUOUS', espessura: c.espessura || 0.18 });
+        }
+        novas.push(...(r.entidades || []).map(e => criar({ ...e, id: undefined })));      // cada folha com o seu id
+        [lx, ly] = r.folha.tamanho;
+        x += lx + folga;
       }
-      const novas = (r.entidades || []).map(e => criar({ ...e, id: undefined }));
-      this.executar(new ComandoAdicionar(novas, `Folha ${formato.value}`));
-      const [lx, ly] = r.folha.tamanho;
-      this.tela.enquadrar([[origem[0], origem[1]], [origem[0] + lx, origem[1] + ly]], 0.1);
+      this.executar(new ComandoAdicionar(novas, n > 1 ? `${n} folhas ${formato.value}` : `Folha ${formato.value}`));
+      this.tela.enquadrar([[origem[0], origem[1]], [x - folga, origem[1] + ly]], 0.1);
       this.selecionar(novas.map(e => e.id));
-      this.aviso(`Folha ${formato.value} 1:${this.doc.escala} inserida. Mova ou copie os detalhes para dentro dela; depois, Desenho → Gerar pranchas das folhas.`, 'info', 10000);
+      this.aviso(`${n > 1 ? `${n} folhas` : 'Folha'} ${formato.value} 1:${this.doc.escala} ${n > 1 ? 'inseridas' : 'inserida'}. Mova ou copie os detalhes para dentro; depois, Desenhos → Gerar pranchas das folhas.`, 'info', 10000);
     } catch (e) { this.aviso(`Não foi possível inserir a folha: ${e.message}`, 'erro', 0); }
   }
 
