@@ -2950,10 +2950,17 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 pa_p = _perfil(p_banzo)
                 af = (float(pa_p.bf or 40.0) if pa_p else 40.0) / 2 + 1.0
                 mult_p = int((el.banzo or {}).get("mult") or 1)
-                for m in el.membros:
-                    if m.papel != "banzo":
-                        continue
-                    (q0, s0p), (q1, s1p) = P(m.s0, m.h0), P(m.s1, m.h1)
+                trechos_p = sorted([[m.s0, m.h0, m.s1, m.h1] for m in el.membros if m.papel == "banzo"],
+                                   key=lambda q: min(q[0], q[2]))
+                for q, q2 in zip(trechos_p, trechos_p[1:]):
+                    # o dente que passa por baixo do começo do trecho seguinte (a mesma peça, soldada):
+                    # termina onde o outro começa, para os dois se encontrarem no mesmo ponto
+                    ini2 = min(q2[0], q2[2])
+                    if q[2] > ini2 > q[0]:
+                        q[3] = q[1] + (q[3] - q[1]) * (ini2 - q[0]) / (q[2] - q[0])
+                        q[2] = ini2
+                for m_s0, m_h0, m_s1, m_h1 in trechos_p:
+                    (q0, s0p), (q1, s1p) = P(m_s0, m_h0), P(m_s1, m_h1)
                     orig_p = {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o}
                     if mult_p > 1:
                         tx, ty = c.tangente((s0p + s1p) / 2.0)

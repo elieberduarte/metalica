@@ -258,7 +258,16 @@ na escada 1), as vigas do meio do patamar e o piso de chapa xadrez (espessura pe
 d'água** (print do usuário, a VM P30 embaixo da treliça): na planta de piso acima da cobertura ("NIVEL 8,20") as
 treliças ficam embaixo do nível, como os cortes mostram — a que recebe as VMs por cima com o topo no fundo delas
 (7,40–8,00), as outras com o topo no nível (7,40–8,20); no esqueleto a viga que passa sobre um banzo ganha nó nele, e a
-água da caixa desce pelas VMs embaixo do fundo dela (proporcional ao trecho dentro do círculo), não mais nos nós perto.
+água da caixa desce pelas VMs embaixo do fundo dela (proporcional ao trecho dentro do círculo), não mais nos nós perto. **Pisantes**
+(pedido do usuário): a chapa xadrez dobrada de cada degrau (# 2,65 dos cortes), entre as faces de dentro das longarinas,
+com abas de 40 mm para baixo na frente e atrás; os pisantes de cada lance pelo comprimento dele e o passo, e um espelho a
+mais que pisantes por lance — o **patamar de cada escada** pela cota do corte que confirma os espelhos iguais (a ESCADA 2
+tem 8 + 10 pisantes, 20 espelhos: patamar a 1,421 m, a cota do corte FF; antes pegava o 1,70 da escada 1). **PERFIL 1**
+(print do usuário, a cobertura da caixa d'água): a família "PERFIL" — peça de um perfil só, a elevação em linha dupla na
+altura dele e a nota "PERFIL 1 2U100X40X2,65" dentro do desenho — vira viga 2U100 inclinada a 5% nas faces E e H, com o
+topo de 10,64 a 11,00 junto do banzo de cima da TESOURA 38 e o dente da calha a 10,49. No editor, o **esqueleto** virou o
+5º quadradinho dos modos de exibição (pedido do usuário). Falta: as terças TC69/TC70 da cobertura da caixa (desenhadas
+na planta 11,00, não na das terças).
 
 **0.8.47.** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
 print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e
