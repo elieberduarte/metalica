@@ -425,7 +425,7 @@ def combinacoes_ultimas(casos: List[str]) -> List[dict]:
 ALMA_ROTULADA = ("montante", "diagonal", "corrente", "contraventamento")
 # as treliças de travamento entre tesouras ("COMP 21": banzo de cima de uma na de cima da vizinha, de
 # baixo na de baixo, nos vãos do contravento): só escora — a alma delas não passa carga vertical de
-# uma tesoura para a outra (decisão do usuário, 28/09: o projeto as faz com 2L 1"×1/8", que não
+# uma tesoura para a outra (decisão do usuário, 27/09: o projeto as faz com 2L 1"×1/8", que não
 # levariam a carga de cobertura que o modelo rígido dá a elas)
 SO_TRAVAMENTO = ("COMP",)
 
