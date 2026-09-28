@@ -420,6 +420,15 @@
         else if (a && a.id === 'f3d') ultimoLado = '3d';
       }, 0);
     });
+    // voltar: a tela anterior; aberta direto (ou vinda dela mesma), a lista de projetos
+    var voltar = $('#btn-voltar-area');
+    if (voltar) voltar.addEventListener('click', function () {
+      // a tela que abriu a área (o histórico do navegador também guarda as trocas de desenho dos quadros:
+      // voltar por ele desfaria essas trocas em vez de sair)
+      var r = document.referrer || '';
+      var daqui = r.indexOf(location.origin) === 0 && !/\/(dividida|2d-3d)(\/|\?|$)/.test(r.slice(location.origin.length));
+      location.href = daqui ? r : '/';
+    });
     var tema = $('#btn-tema-area');
     if (tema) tema.addEventListener('click', function () { funcao('tema'); });
     window.addEventListener('resize', function () { requestAnimationFrame(compactar); });

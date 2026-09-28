@@ -55,6 +55,11 @@
   .area-topo .controles button:hover, .area-topo .acoes button:hover { background: rgba(255,255,255,.12); }
   .area-topo .acoes { display: flex; gap: 6px; flex-shrink: 0; }
   .area-topo .casa { font-size: 16px; padding: 1px 9px !important; }
+  .area-topo .voltar-area { flex-shrink: 0; background: transparent; color: #e2e8f0; border: 1px solid rgba(255,255,255,.22);
+                            border-radius: 5px; cursor: pointer; padding: 3px 10px; font-size: 12.5px; white-space: nowrap; }
+  .area-topo .voltar-area:hover { background: rgba(255,255,255,.12); }
+  html.topo-c3 .area-topo .voltar-area { font-size: 0; padding: 3px 8px; }
+  html.topo-c3 .area-topo .voltar-area::before { content: '←'; font-size: 14px; }
   .menu-lista .secao-lado { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto2); font-weight: 600; padding: 6px 9px 2px; }
   .menu-lista .secao-lado + * { margin-top: 0; }
   html.topo-c1 .area-topo .marca .nome { display: none; }
@@ -104,6 +109,7 @@
     <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="7" width="10" height="18" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 12 L23 9 L28 12 L28 22 L23 25 L18 22 Z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
     <span class="nome" id="nome-projeto" title="Projeto">projeto</span>
   </div>
+  <button type="button" id="btn-voltar-area" class="voltar-area" title="Volta para a tela anterior">&larr; Voltar</button>
   <nav class="vistas" role="group" aria-label="Vista do projeto">
     <button type="button" data-vista="2d" title="O desenho do projeto (a troca não recarrega nada)">2D</button>
     <button type="button" data-vista="3d" title="O modelo 3D do projeto (a troca não recarrega nada)">3D</button>
