@@ -45,6 +45,7 @@ APOIA_EM = {
     "diagonal": ("banzo", "diagonal", "montante", "pilar", "viga"),
 }
 ALMA = ("montante", "diagonal")
+TOL_NA_LINHA = 15.0     # o nó que já existe serve para cortar a linha se estiver a até isso dela
 TOL_VIGA_PILAR = 200.0  # a ponta de viga a até isso do eixo do pilar (no meio da altura dele) apoia nele
 TOL_ALMA = 120.0        # alma que chega no meio de outra barra de alma (o painel subdividido): bem perto
 
@@ -262,7 +263,12 @@ def analitico(doc, base: Optional[float] = None) -> dict:
         for t2, n2 in cortes[k]:
             if math.dist(nos[n2], q) <= 2 * TOL_NO:
                 return n2
-        perto = min((n2 for n2 in gn.perto(q) if math.dist(nos[n2], q) <= 2 * TOL_NO),
+        # o nó que já existe ali só serve se estiver na linha: a ponta do contravento 7 cm abaixo do
+        # banzo, reaproveitada, fazia o banzo da TRANSIÇÃO 1 passar em zigue-zague por ela (com 500 kN
+        # de compressão, 35 kN·m de momento que não existe) — fora da linha, o nó novo fica nela e a
+        # peça que chega vem até ele
+        perto = min((n2 for n2 in gn.perto(q) if math.dist(nos[n2], q) <= 2 * TOL_NO
+                     and _proj(nos[n2], a, b)[0] <= TOL_NA_LINHA),
                     key=lambda n2: math.dist(nos[n2], q), default=None)
         if perto is not None:
             cortes[k].append((t, perto))
@@ -277,6 +283,10 @@ def analitico(doc, base: Optional[float] = None) -> dict:
     # pontas do banzo e a treliça não trabalhava — o pilar do meio da TESOURA 2 do Posto CB, sob o
     # banzo contínuo, não recebia quase nada)
     na_alma = 0
+    pontas_de = collections.defaultdict(list)             # nó → as linhas que terminam nele
+    for k, ln in enumerate(linhas):
+        pontas_de[ln["na"]].append(k)
+        pontas_de[ln["nb"]].append(k)
     for k, ln in enumerate(linhas):
         if ln["papel"] not in ALMA:
             continue
@@ -287,10 +297,26 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                 lj = linhas[j]
                 if lj["papel"] != "banzo" or lj["grupo"] != ln["grupo"] or n in (lj["na"], lj["nb"]):
                     continue
-                dd, t, _q = _proj(p, nos[lj["na"]], nos[lj["nb"]])
-                if dd <= 2 * TOL_NO and 0.0 < t < 1.0 and all(n2 != n for _t2, n2 in cortes[j]):
+                dd, t, q_ = _proj(p, nos[lj["na"]], nos[lj["nb"]])
+                if not (dd <= 2 * TOL_NO and 0.0 < t < 1.0) or any(n2 == n for _t2, n2 in cortes[j]):
+                    continue
+                if dd <= TOL_NA_LINHA:
                     cortes[j].append((t, n))
-                    na_alma += 1
+                else:
+                    # a ponta da alma fora da linha do banzo (a face dele): o nó fica no eixo do banzo
+                    # e as barras que terminam na ponta vêm até ele — o banzo não passa em zigue-zague
+                    novo = no_em(j, q_, t)
+                    if novo == n:
+                        continue
+                    for i in list(pontas_de[n]):
+                        for ld in ("na", "nb"):
+                            if linhas[i][ld] == n:
+                                linhas[i][ld] = novo
+                                pontas_de[novo].append(i)
+                    pontas_de[n] = []
+                    n = novo
+                na_alma += 1
+                break
 
     # --- 2c. a treliça deitada presa pela lateral: o banzo dela que corre colado e paralelo ao
     # banzo de outra treliça, no mesmo nível, liga nele em cada nó (a passarela do Posto CB, a
