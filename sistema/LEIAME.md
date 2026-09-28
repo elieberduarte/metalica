@@ -242,7 +242,13 @@ se seleciona em qualquer ponto dele (o índice espacial guarda a caixa inteira).
 desenho só** ("Pranchas", papel 1:1): Montar pranchas e Gerar pranchas das folhas gravam as folhas uma ao lado
 da outra; o PDF sai uma página por folha (a da Sala em 32 s, eram 5 min). Revisão da montagem automática: a
 caixa da célula conta a linha de cota (as cotas da terça invadiam a linha de baixo), "(continuação)" só quando o
-quadro já começou antes, células alinhadas pelo topo.
+quadro já começou antes, células alinhadas pelo topo. **Barras cortadas no gabarito**: as barras em U das
+tesouras e dos complementos delas (o conjunto treliçado com três ou mais barras em U, os DP) não ganham desenho
+próprio — a obra corta medindo no gabarito da tesoura; ficam cotadas no conjunto e na lista (W150, avulsas, peças
+dobradas e chapas continuam). **Detalhe típico de contraventos e agulhas** no estilo do projeto do Posto: as agulhas
+também num detalhe por grupo; as cotas empilhadas debaixo da peça, do tamanho da barra desenhada, com
+"NOME COMP=Lmm – NNX" no meio; a rosca desenhada e cotada na peça em que a porca solta está (o gancho da agulha, a
+barra roscada do esticador); o padrão da fábrica na ponta roscada, 1 porca sextavada + 2 arruelas lisas.
 
 **0.8.48.** **Barrinha da conferência no modo desenvolvimento** (pedido do usuário: "uma
 barrinha que mostre o progresso da conferência"): `testes/antes_de_publicar.py` grava o andamento em
