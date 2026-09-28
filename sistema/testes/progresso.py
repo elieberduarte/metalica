@@ -17,8 +17,10 @@ import threading
 import time
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
-ARQ = os.path.join(AQUI, "_conferencia.json")
-DURACOES = os.path.join(AQUI, "_conferencia_duracoes.json")
+#: a conferência da noite roda numa cópia limpa do repositório e grava o andamento aqui, no do
+#: modo desenvolvimento, pela variável (a barrinha do servidor de desenvolvimento acompanha)
+ARQ = os.environ.get("METALICA_CONFERENCIA_ARQ") or os.path.join(AQUI, "_conferencia.json")
+DURACOES = os.path.join(os.path.dirname(ARQ), "_conferencia_duracoes.json")
 #: s, quando não há rodada anterior medida
 PADRAO = {"testes automáticos": 90.0, "verificadores das telas": 1000.0, "bateria das obras": 200.0}
 _trava = threading.Lock()

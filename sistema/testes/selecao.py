@@ -27,9 +27,13 @@ REPO = os.path.dirname(RAIZ)
 REGISTRO = os.path.abspath(os.path.join(RAIZ, "..", "Projeto", "bateria", "ultima-completa.json"))
 MAX_SEM_COMPLETA = 4
 
-#: Mexer aqui é mexer no núcleo: cálculo, detalhamento, saídas, IFC, geometria das peças.
-NUCLEO = ("nucleo/", "nucleo2d/", "saida/", "ifc/", "nucleo3d/geometria.py", "nucleo3d/modelo.py",
+#: Mexer aqui é mexer no núcleo: cálculo, saídas, IFC, geometria das peças.
+NUCLEO = ("nucleo/", "saida/", "ifc/", "nucleo3d/geometria.py", "nucleo3d/modelo.py",
           "nucleo3d/eixos.py", "empacotar/", "dados/")
+#: O detalhamento e o CAD 2D (28/09): só o 2D depende dele — as telas do CAD, os verificadores do
+#: detalhamento sem tela e a bateria das obras (que compara os desenhos). O 3D fica de fora.
+DETALHAMENTO = ("nucleo2d/",)
+DO_DETALHAMENTO = ["verif_detalhar", "verif_pranchas", "verif_vistas_gerais"]
 #: A montagem 3D (a bateria do Posto CB).
 MONTAGEM = ("nucleo3d/",)
 #: Arquivos das telas: o caminho (começo) → as telas que usam.
@@ -155,6 +159,13 @@ def escolher(forcar_completa: bool = False, base: str = None) -> dict:
             for n in FUMACA:
                 pega(n, a)
             continue
+        if a.startswith(DETALHAMENTO):
+            for n, (tv, _t, _p) in verifs.items():
+                if "cad" in tv:
+                    pega(n, a)
+            for n in DO_DETALHAMENTO:
+                pega(n, a)
+            continue
         if a.startswith(MONTAGEM):
             for n in DA_MONTAGEM:
                 pega(n, a)
@@ -166,7 +177,8 @@ def escolher(forcar_completa: bool = False, base: str = None) -> dict:
                     pega(n, a)
     return {"completa": False, "motivo": f"seletiva: {len(arqs)} arquivo(s) mudados desde {base}", "base": base,
             "mudados": arqs, "verificadores": sorted(escolhidos), "porque": porque,
-            "bateria_ifc": False, "bateria_planta": any(a.startswith(MONTAGEM) for a in arqs)}
+            "bateria_ifc": any(a.startswith(DETALHAMENTO) for a in arqs),
+            "bateria_planta": any(a.startswith(MONTAGEM) for a in arqs)}
 
 
 if __name__ == "__main__":
