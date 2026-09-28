@@ -35,6 +35,8 @@
   /* a barra é a mesma nas três vistas: a ligação 2D + 3D fica no menu Ver (os controles, escondidos, continuam
      aqui para o dividida.js) */
   .area-topo .so-ambos { display: none !important; }
+  /* o nome do projeto já está no título da janela; a escolha do desenho do 2D fica em Desenhos → Desenho no 2D */
+  .area-topo .marca .nome, .area-topo .com-2d { display: none !important; }
   .area-topo { flex-wrap: nowrap; overflow: visible; }
   .area-topo .setas-desfazer { display: inline-flex; align-items: center; gap: 2px; margin: 0 4px 0 6px; }
   .area-topo .setas-desfazer button { background: transparent; color: #e2e8f0; border: 1px solid rgba(255,255,255,.22); border-radius: 5px;
@@ -119,6 +121,7 @@
   <div class="menus" id="menus-unicos" aria-label="Menus do desenho 2D e do modelo 3D"></div>
   <div class="rapidos" id="rapidos-3d"></div>
   <div class="acoes">
+    <button type="button" id="btn-tema-area" title="Tema claro / escuro (o desenho, o modelo e a barra juntos)">Tema</button>
     <button type="button" id="btn-paineis" title="Mostra ou esconde os painéis da direita (Propriedades, Camadas…) do 2D e do 3D — F4 em cada lado">Painéis</button>
     <button type="button" class="casa" onclick="location.href='/'" title="Voltar à lista de projetos">⌂</button>
   </div>

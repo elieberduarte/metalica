@@ -203,6 +203,7 @@ async function iniciar() {
     projeto = p.projeto || {};
     desenhos = (p.resumo && p.resumo.desenhos) || [];
     $('#nome-projeto').textContent = projeto.nome || PROJETO;
+    document.querySelector('.area-topo .marca').title = projeto.nome || PROJETO;
     document.title = `${projeto.nome || PROJETO} — Metálica`;
   } catch (e) { avisar(`Projeto não encontrado: ${e.message}`, 0); return; }
   const pm = projeto.planta_modelo || {};

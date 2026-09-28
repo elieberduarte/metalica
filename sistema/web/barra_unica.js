@@ -53,6 +53,9 @@
       I('Novo modelo em branco', '3d', 'novo'),
     ] },
     { nome: 'Desenhos', itens: [
+      T('Desenho no 2D'),
+      { lista: 'desenhos' },
+      HR,
       I('Abrir desenho do projeto…', '2d', 'abrir'),
       I('Novo desenho em branco…', '2d', 'novo'),
       I('Excluir desenhos…', '2d', 'excluir-desenhos'),
@@ -220,6 +223,7 @@
     lista.replaceChildren();
     menu.itens.forEach(function (it) {
       if (it === HR) { lista.appendChild(document.createElement('hr')); return; }
+      if (it.lista === 'desenhos') { listaDeDesenhos(lista); return; }
       if (it.titulo) {
         var t = document.createElement('div');
         t.className = 'menu-titulo';
@@ -244,6 +248,27 @@
     });
     m.classList.add('aberto');
     aberto = m;
+  }
+
+  /** os desenhos do projeto (o seletor da área, que continua escondido na barra): escolher um abre no 2D */
+  function listaDeDesenhos(lista) {
+    var sel = $('#desenho');
+    if (!sel) return;
+    [].forEach.call(sel.options, function (o) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'marcavel';
+      var atual = o.value === sel.value;
+      b.textContent = (atual ? '✓ ' : '   ') + o.textContent;
+      if (sel.disabled) b.disabled = true;
+      b.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        fechar();
+        if (!visivel('2d') && window.mostrarVista) window.mostrarVista('2d');
+        if (sel.value !== o.value) { sel.value = o.value; sel.dispatchEvent(new Event('change')); }
+      });
+      lista.appendChild(b);
+    });
   }
 
   function fechar() {
@@ -395,6 +420,8 @@
         else if (a && a.id === 'f3d') ultimoLado = '3d';
       }, 0);
     });
+    var tema = $('#btn-tema-area');
+    if (tema) tema.addEventListener('click', function () { funcao('tema'); });
     window.addEventListener('resize', function () { requestAnimationFrame(compactar); });
     setTimeout(compactar, 800);
   }
