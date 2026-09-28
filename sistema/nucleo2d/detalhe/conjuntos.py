@@ -1559,7 +1559,7 @@ def _alma_em_eixo(desenho: Desenho, entidades: Sequence, alma: Dict[str, Tuple[t
     soltas = []                                          # (k, i) das pontas sem montante nem quina
     linhas_apoio = [tuple(ab) for ab in montantes] + [tuple(ab) for ab in apoios]
 
-    def no_da_ponta(q, outra):
+    def no_da_ponta(q, outra, so_cruzamento=False):
         tops_m = [(tip, (ma, mb)) for ma, mb in montantes for tip in (ma, mb)]
         # o primeiro eixo (montante ou banzo) que a reta da barra cruza, logo depois da ponta
         L = math.dist(q, outra)
@@ -1583,6 +1583,8 @@ def _alma_em_eixo(desenho: Desenho, entidades: Sequence, alma: Dict[str, Tuple[t
                     cruz = (abs(t), x, i_l < len(montantes))
         if cruz is not None:
             x, no_montante = cruz[1], cruz[2]
+            if so_cruzamento:
+                return x
             # o nó do banzo: a barra chega no banzo junto da ponta de um montante — liga na ponta dele;
             # a que chega no próprio montante fica no cruzamento (no meio dele, no joelho), a não ser que
             # caia na ponta
@@ -1599,15 +1601,29 @@ def _alma_em_eixo(desenho: Desenho, entidades: Sequence, alma: Dict[str, Tuple[t
             return perto
         return None
 
+    def reta_ou_prumo(ab):
+        ang = abs(math.degrees(math.atan2(ab[1][1] - ab[0][1], ab[1][0] - ab[0][0]))) % 180.0
+        return min(ang, 180.0 - ang) < 5.0 or abs(ang - 90.0) < 5.0
+
     for k, ab in eixos.items():
         if camada_de.get(k) == "MONTANTES":
             continue
         originais = list(ab)
+        # a barra deitada ou em pé (a horizontal do joelho) é como o montante: fica no eixo dela e só
+        # vai até o cruzamento — a ponta anda na reta dela, não sai torta para um nó ao lado (regra do
+        # usuário, 28/09: "não mexer nos montantes")
+        fixa = reta_ou_prumo(originais)
         for i, q in enumerate(originais):
-            achou = no_da_ponta(q, originais[1 - i])
+            achou = no_da_ponta(q, originais[1 - i], so_cruzamento=fixa)
+            if achou is not None and fixa:
+                o_ = originais[1 - i]
+                L_ = math.dist(q, o_)
+                ux, uy = (q[0] - o_[0]) / L_, (q[1] - o_[1]) / L_
+                t_ = (achou[0] - o_[0]) * ux + (achou[1] - o_[1]) * uy
+                achou = (o_[0] + ux * t_, o_[1] + uy * t_)
             if achou is not None:
                 ab[i] = achou
-            else:
+            elif not fixa:
                 soltas.append((k, i))
     usadas = set()
     for j, (k, i) in enumerate(soltas):
@@ -1624,14 +1640,13 @@ def _alma_em_eixo(desenho: Desenho, entidades: Sequence, alma: Dict[str, Tuple[t
     # de nó a nó: a ponta da barra inclinada que fica a até 80 mm da ponta de uma barra horizontal ou em
     # pé (a barra do joelho, o montante) vai para ela — no joelho a diagonal cruzava o B.14 a uns 50 mm do
     # nó da horizontal que chega ali
-    def reta_ou_prumo(ab):
-        ang = abs(math.degrees(math.atan2(ab[1][1] - ab[0][1], ab[1][0] - ab[0][0]))) % 180.0
-        return min(ang, 180.0 - ang) < 5.0 or abs(ang - 90.0) < 5.0
     ancoras = [(k2, q2) for k2, ab2 in eixos.items() if reta_ou_prumo(ab2) for q2 in ab2]
     for k, ab in eixos.items():
         if camada_de.get(k) == "MONTANTES" or reta_ou_prumo(ab):
             continue
         for i, q in enumerate(list(ab)):
+            if any(math.dist(q, q2) <= 0.5 for k2, q2 in ancoras if k2 != k):
+                continue                                 # já está num nó
             perto = [(math.dist(q, q2), q2) for k2, q2 in ancoras if k2 != k and 0.5 < math.dist(q, q2) <= 80.0]
             if perto:
                 ab[i] = min(perto)[1]
