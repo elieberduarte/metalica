@@ -98,6 +98,8 @@
       HR, T('Modelo'),
       I('Eixos da obra…', '3d', 'eixos-obra'),
       I('Cantos redondos…', '3d', 'cantos-redondos'),
+      I('Explodir peça em trechos', '3d', 'explodir'),
+      I('Juntar peças', '3d', 'juntar'),
       I('Verificar apoios…', '3d', 'verificar-apoios'),
       HR,
       { texto: 'Ligações e acessórios…', link: '/ligacoes' },

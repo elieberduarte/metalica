@@ -39,6 +39,7 @@ import { MetodosLancamento } from './modulos/lancamento.js';
 import { MetodosApoios } from './modulos/apoios.js';
 import { MetodosBloco } from './modulos/bloco.js';
 import { MetodosDivisao } from './modulos/divisao.js';
+import { MetodosExplodir } from './modulos/explodir.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -1858,6 +1859,8 @@ export class Editor {
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
       'cantos-redondos': () => this.dialogoCantosRedondos(),
+      explodir: () => this.explodirSelecao(),
+      juntar: () => this.juntarSelecao(),
       'eixos-obra': () => this.dialogoEixos(),
       'lancar-estrutura': () => this.dialogoLancar(),
       'memorial-lancamento': () => this.memorialDoLancamento(),
@@ -2315,7 +2318,7 @@ export class Editor {
 
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
-  MetodosApoios, MetodosBloco, MetodosDivisao);
+  MetodosApoios, MetodosBloco, MetodosDivisao, MetodosExplodir);
 
 // ================================================================= apoio
 
