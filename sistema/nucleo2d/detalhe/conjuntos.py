@@ -2670,8 +2670,16 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     paraf, porcas = parafusos_no_conjunto(doc, instancia)
     if paraf or porcas:
         itens_p = ["%dx %s" % (q, k) for k, q in sorted(paraf.items(), key=lambda kv: _ordem_natural(kv[0]))]
+        # as soltas de ponta roscada no padrão da fábrica: 1 porca + 2 arruelas por ponta (28/09)
+        from nucleo2d.detalhe.base import pontas_roscadas, PORCAS_POR_PONTA, ARRUELAS_POR_PONTA, _fixadores
+        pontas, usados = pontas_roscadas(instancia, _fixadores(doc))
+        por_bitola = collections.Counter(pt["bitola"] or "" for pt in pontas)
+        for bit, n_ in sorted(por_bitola.items()):
+            b_ = " Ø%s" % bit if bit else ""
+            itens_p.append("%dx porca sext.%s + %dx arruela lisa%s" % (n_ * PORCAS_POR_PONTA, b_, n_ * ARRUELAS_POR_PONTA, b_))
+        porcas -= min(porcas, len(usados))
         if porcas:
-            itens_p.append("%dx porca/chumbador" % porcas)
+            itens_p.append("%dx porca/arruela" % porcas)
         linhas += [(t, "TEXTO") for t in quebrar("Parafusos: ", itens_p)]
     if peso_un > 0:
         linhas.append(("%s kg/un  total %s kg" % (_mm(peso_un, 1), _mm(peso_un * n_instancias, 1)), "TEXTO"))

@@ -225,6 +225,14 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.50.** **Porcas e arruelas no padrão da fábrica** (pedido do usuário, 28/09: "é 1 porca e 2 arruelas por
+padrão … para tudo"): cada ponta roscada de barra redonda — tirante, agulha, gancho, barra roscada, chumbador —
+conta 1 porca sextavada + 2 arruelas lisas na bitola da barra, e não as porcas e arruelas soltas que o projetista
+modelou (`base.pontas_roscadas`: cada solta vai para a barra cuja malha passa rente a ela; as de uma barra a até
+45 mm são uma ponta). Vale na lista de materiais (o Quadro 7 deixa de mostrar "BOLT () 0x0": porcas e arruelas por
+bitola), no resumo de materiais (no local da barra) e na legenda dos conjuntos. Na Sala: 168 pontas (agulhas,
+barras roscadas dos contraventos, as duas pernas de cada chumbador em U).
+
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
 sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da
 descida do banzo (B.14); a altura da descida (o 463 do projeto); na cumeeira, a cadeia do banzo de baixo termina

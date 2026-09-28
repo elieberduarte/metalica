@@ -809,3 +809,36 @@ def test_bitola_da_barra_redonda():
     assert _bitola('FE RED 1"') == '1"'
     assert _bitola("U100X50X3.04") == ""
 
+
+def test_ponta_roscada_1_porca_2_arruelas():
+    """Padrão da fábrica (28/09): cada ponta roscada de barra redonda — com as porcas e arruelas
+    soltas que o projetista modelou em volta, quantas forem — conta 1 porca + 2 arruelas na bitola da
+    barra; a solta longe de barra segue pela forma."""
+    import math
+    from nucleo3d.modelo import Solido
+    from nucleo2d.detalhe.base import pontas_roscadas, acessorios_no_padrao
+
+    def barra(x0, x1, r=4.8):
+        vs, fs = [], []
+        for x in (x0, x1):
+            for k in range(8):
+                a = 2 * math.pi * k / 8
+                vs.append((x, r * math.cos(a), r * math.sin(a)))
+        for k in range(8):
+            fs.append([k, (k + 1) % 8, 8 + (k + 1) % 8, 8 + k])
+        return Solido(nome="FE RED 3/8''", vertices=vs, faces=fs, atributos={"marcas": {"perfil": "FE RED 3/8''", "posicao": "P1"}})
+
+    def disco(x, espessura, raio, y=0.0):
+        vs = [(x + dx, y + raio * math.cos(2 * math.pi * k / 6), raio * math.sin(2 * math.pi * k / 6))
+              for dx in (0.0, espessura) for k in range(6)]
+        return Solido(nome="BOLT () 0x0", vertices=vs, faces=[list(range(6)), list(range(6, 12))],
+                      atributos={"tipo_ifc": "IfcMechanicalFastener"})
+    b = barra(0.0, 1000.0)
+    # a ponta da direita com 2 porcas e 1 arruela (o modelo), a da esquerda com 1 porca; uma arruela solta longe
+    fx = [disco(960, 8, 9), disco(970, 8, 9), disco(980, 2, 12), disco(20, 8, 9), disco(500, 2, 12, y=400.0)]
+    pontas, usados = pontas_roscadas([b], fx)
+    assert len(pontas) == 2 and len(usados) == 4 and all(p["bitola"] == '3/8"' for p in pontas)
+    ac = acessorios_no_padrao({"BOLT () 0x0": 5}, [b], fx)
+    assert ac.get("Porca sextavada Ø3/8\" UNC") == 2 and ac.get("Arruela lisa Ø3/8\"") == 4 + 1
+    assert "BOLT () 0x0" not in ac
+

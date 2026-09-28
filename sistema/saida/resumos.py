@@ -605,7 +605,13 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
                "cantoneira_forro": "acabamento (A.T.)", "barra_roscada": "barra roscada (BR)", "gancho": "gancho", "barra": "barra (B.)",
                "parte": "peça", "telha": "telha"}
     contagem: Dict[str, dict] = collections.OrderedDict()
+    # as porcas e arruelas soltas de ponta roscada saem no padrão da fábrica (1 porca + 2 arruelas por
+    # ponta, na bitola da barra — pedido do usuário, 28/09), no local da barra; as outras, como estão
+    from nucleo2d.detalhe.base import pontas_roscadas, PORCAS_POR_PONTA, ARRUELAS_POR_PONTA
+    pontas, usados = pontas_roscadas(pecas, fixadores)
     for f in fixadores:
+        if f.id in usados:
+            continue
         info = eixos.get(f.id)
         if info is None:
             continue
@@ -646,6 +652,15 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
         lr = r["locais"].setdefault(local[0], {"qtd": 0, "pecas": set()})
         lr["qtd"] += 1
         lr["pecas"].update(local[1])
+    for pt in pontas:
+        fam = familia_peca(pt["peca"])
+        local = rotulos.get(fam[0], fam[0])
+        for chave, q in (("Porca %s" % (pt["bitola"] or "?"), PORCAS_POR_PONTA), ("Arruela %s" % (pt["bitola"] or "?"), ARRUELAS_POR_PONTA)):
+            r = contagem.setdefault(chave, {"parafuso": False, "qtd": 0, "locais": collections.OrderedDict(), "d": pt["d"]})
+            r["qtd"] += q
+            lr = r["locais"].setdefault(local, {"qtd": 0, "pecas": set()})
+            lr["qtd"] += q
+            lr["pecas"].add(fam[1])
     saida = []
     for chave, r in contagem.items():
         if r["parafuso"]:

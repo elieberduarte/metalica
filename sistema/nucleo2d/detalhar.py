@@ -508,6 +508,13 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
     if not pecas:
         raise ErroDeDados("o modelo não tem peças com marcas de IFC (IfcBeam, IfcPlate…) para detalhar.")
     posicoes, camadas = _posicoes_de(pecas, _fixadores(doc))
+    # as porcas e arruelas soltas no padrão da fábrica: 1 porca + 2 arruelas por ponta roscada
+    try:
+        from nucleo2d.detalhe.base import acessorios_no_padrao
+        acessorios = acessorios_no_padrao(acessorios, pecas, _fixadores(doc))
+    except Exception as exc:                        # noqa: BLE001 — a contagem não derruba o levantamento
+        avisos_lev.append("porcas e arruelas soltas contadas como no modelo (o padrão 1 porca + 2 arruelas "
+                          "por ponta roscada não foi aplicado: %s)" % exc)
     posicoes = fundir_posicoes_iguais(posicoes, camadas)
     avisar("%d peças em %d posições" % (len(pecas), len(posicoes)))
     mudadas = regra_furacao_terca(posicoes, camadas) if regra_tercas else {}

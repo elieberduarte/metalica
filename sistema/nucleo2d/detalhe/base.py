@@ -1570,6 +1570,109 @@ def _eh_redonda_perfil(perfil: str) -> bool:
     return bool(re.search(r"FE\s*RED|BARRA\s*ROSC|REDOND|\bFR\b|Ø\s*\d|VERG", perfil or "", re.I))
 
 
+# ============================================================ pontas roscadas (padrão da fábrica)
+#: Na ponta roscada de toda barra redonda — tirante, agulha, gancho, barra roscada, chumbador — a
+#: fábrica põe 1 porca sextavada e 2 arruelas lisas (pedido do usuário, 28/09: "é 1 porca e 2
+#: arruelas por padrão … mantenha esse padrão para tudo"), e não o que o projetista modelou.
+PORCAS_POR_PONTA = 1
+ARRUELAS_POR_PONTA = 2
+
+
+def bitola_da_barra(perfil: str) -> str:
+    """A bitola em polegadas escrita no perfil da barra redonda: "FE RED 3/8''" → '3/8"'."""
+    m = re.search(r"(\d+(?:[ .\-]\d+/\d+|/\d+)?)\s*(?:''|\"|”)", perfil or "")
+    return (m.group(1).strip() + '"') if m else ""
+
+
+def _fixador_sem_tamanho(f: Solido) -> bool:
+    """porca ou arruela solta do IFC ("BOLT () 0x0"): sem o diâmetro no nome"""
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)", f.nome or "")
+    return not (m and float(m.group(1).replace(",", ".")) > 0)
+
+
+def pontas_roscadas(pecas: Sequence[Solido], fixadores: Sequence[Solido]) -> Tuple[List[dict], set]:
+    """As pontas roscadas das barras redondas, pelas porcas e arruelas soltas do modelo em volta delas:
+    cada porca/arruela vai para a barra cuja superfície passa rente a ela (a distância do centro dela
+    às arestas da malha da barra até o raio + 12 mm — vale para a barra reta, o gancho e cada perna do
+    chumbador em U) e as de uma barra a até 45 mm umas das outras são uma ponta só. Devolve
+    ([{"peca", "bitola", "d", "centro"}], {ids das porcas/arruelas soltas que viraram ponta}) — o resto
+    (solta longe de qualquer barra redonda) segue contada como o modelo tem."""
+    from nucleo.perfis_fabrica import polegadas_mm
+    import numpy as np
+    soltas = [f for f in _so_parafusos(fixadores) if len(f.vertices) >= 4 and _fixador_sem_tamanho(f)]
+    if not soltas:
+        return [], set()
+    barras = []
+    for e in pecas:
+        perfil = str(_marcas(e).get("perfil") or getattr(e, "nome", "") or "")
+        vs = getattr(e, "vertices", None)
+        fs = getattr(e, "faces", None)
+        if not vs or not fs or not _eh_redonda_perfil(perfil):
+            continue
+        V = np.asarray(vs, dtype=float)
+        arestas = {(min(a, b), max(a, b)) for f in fs for a, b in zip(f, list(f[1:]) + [f[0]]) if a != b}
+        if not arestas:
+            continue
+        ia = np.fromiter((a for a, _b in arestas), dtype=int, count=len(arestas))
+        ib = np.fromiter((b for _a, b in arestas), dtype=int, count=len(arestas))
+        d = polegadas_mm(bitola_da_barra(perfil)) or 10.0
+        barras.append({"peca": e, "A": V[ia], "AB": V[ib] - V[ia], "min": V.min(axis=0) - 60.0,
+                       "max": V.max(axis=0) + 60.0, "d": d, "bitola": bitola_da_barra(perfil)})
+    if not barras:
+        return [], set()
+    usados, grupos = set(), {}
+    for f in soltas:
+        cc = np.asarray(f.vertices, dtype=float).mean(axis=0)
+        melhor = None
+        for b in barras:
+            if not ((cc >= b["min"]).all() and (cc <= b["max"]).all()):
+                continue
+            AB, AP = b["AB"], cc - b["A"]
+            L2 = (AB * AB).sum(axis=1)
+            t = np.clip((AP * AB).sum(axis=1) / np.where(L2 > 1e-12, L2, 1.0), 0.0, 1.0)
+            dist = float(np.sqrt(((AP - AB * t[:, None]) ** 2).sum(axis=1)).min())
+            if dist <= b["d"] / 2.0 + 12.0 and (melhor is None or dist < melhor[0]):
+                melhor = (dist, b)
+        if melhor is None:
+            continue
+        b = melhor[1]
+        usados.add(f.id)
+        lista = grupos.setdefault(id(b), (b, []))[1]
+        if not any(float(np.sqrt(((cc - x) ** 2).sum())) <= 45.0 for x in lista):
+            lista.append(cc)
+    pontas = [{"peca": b["peca"], "bitola": b["bitola"], "d": b["d"], "centro": tuple(float(v) for v in x)}
+              for b, xs in grupos.values() for x in xs]
+    return pontas, usados
+
+
+def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fixadores: Sequence[Solido]) -> Dict[str, int]:
+    """A contagem de acessórios da lista de materiais com as porcas e arruelas soltas no padrão da
+    fábrica: as de ponta roscada viram 1 porca + 2 arruelas por ponta, na bitola da barra; as que
+    sobram, nomeadas pela forma (porca ou arruela e a bitola) em vez de "BOLT () 0x0"."""
+    from saida.resumos import _fixador_solto
+    pontas, usados = pontas_roscadas(pecas, fixadores)
+    fora = collections.Counter(acessorios or {})
+    for f in _so_parafusos(fixadores):
+        if len(f.vertices) < 4 or not _fixador_sem_tamanho(f):
+            continue
+        nome = f.nome or ""
+        if fora.get(nome):
+            fora[nome] -= 1
+            if not fora[nome]:
+                del fora[nome]
+        if f.id in usados:
+            continue
+        cc, pca = _autovetores(f.vertices)
+        ext = [max(_dot(_sub(v, cc), a) for v in f.vertices) - min(_dot(_sub(v, cc), a) for v in f.vertices) for a in pca]
+        chave, _d, arruela = _fixador_solto(ext)
+        pol = chave.split(" ", 1)[1]
+        fora[("Arruela lisa Ø%s" if arruela else "Porca sextavada Ø%s UNC") % pol] += 1
+    for p in pontas:
+        pol = p["bitola"] or "?"
+        fora["Porca sextavada Ø%s UNC" % pol] += PORCAS_POR_PONTA
+        fora["Arruela lisa Ø%s" % pol] += ARRUELAS_POR_PONTA
+    return dict(fora)
+
 # ============================================================ nomes de produção
 #: Prefixo do nome de produção por tipo de item (padrão dos desenhos da fábrica).
 #: Prefixo do nome de produção por tipo de peça — a nomenclatura da fábrica (0.8.18):
