@@ -2348,6 +2348,19 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         ts = trechos(em_cima)
         return ts[0][2] if len(ts) == 1 else None
 
+    # as peças em pé com contorno (a descida do banzo no joelho, o montante da cumeeira): as faces delas,
+    # na célula — a cadeia do joelho mede a face da descida, e a do banzo de baixo termina na face do
+    # montante da cumeeira, onde o banzo acaba (pedidos do usuário, 28/09)
+    pecas_em_pe = []
+    for k_ in contorno:
+        if camada_de.get(k_) != "MONTANTES":
+            continue
+        pts_ = [q for e_ in desenho.entidades.values() if isinstance(e_, Linha) and (e_.atributos or {}).get("origem") == k_
+                for q in (e_.a, e_.b)]
+        if pts_:
+            pecas_em_pe.append((min(q[0] for q in pts_) - dx, max(q[0] for q in pts_) - dx,
+                                min(q[1] for q in pts_) - dy, max(q[1] for q in pts_) - dy))
+
     def cadeia_do_banzo(nos, em_cima):
         ts = trechos(em_cima)
         sinal = off if em_cima else -off
@@ -2360,7 +2373,18 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             return p.cadeia_alinhada(reta, nos, sinal, exigir_espaco=apertada)
         # um trecho por água: os nós dele e as pontas dele, cada cadeia na sua reta
         feita = False
+        meio_ts = (ts[0][1] + ts[-1][0]) / 2.0
         for x0, x1, reta, ytopo in ts:
+            if not em_cima:
+                # o banzo de baixo acaba na face do montante da cumeeira: a cadeia termina ali, não
+                # no eixo (o 863 ia até o meio da cumeeira)
+                for a_, b_, _y0, _y1 in pecas_em_pe:
+                    if abs((a_ + b_) / 2.0 - meio_ts) > 300.0:
+                        continue
+                    if abs(x1 - meio_ts) < 300.0 and (a_ + b_) / 2.0 < meio_ts:
+                        x1 = a_
+                    elif abs(x0 - meio_ts) < 300.0 and (a_ + b_) / 2.0 > meio_ts:
+                        x0 = b_
             # os nós da água (até 40 mm fora das pontas) e as pontas; nó colado na ponta (a
             # cumeeira tem dois montantes a 70 mm) funde com ela
             pontas = (round(x0, 1), round(x1, 1))
@@ -2393,6 +2417,12 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                                                                 if face_esq - 1.0 <= x <= face_dir + 1.0}
             ts_c = trechos(True)
             fixos = {round(face_esq, 1), round(face_dir, 1)}
+            # a descida do banzo no joelho: as faces dela no lugar dos nós em cima dela (o eixo do B.14,
+            # o nó das diagonais a 30 mm da face — que parecia a borda da cantoneira, pedido do usuário)
+            for a_, b_, _y0, _y1 in pecas_em_pe:
+                if min((a_ + b_) / 2.0 - face_esq, face_dir - (a_ + b_) / 2.0) > 0.25 * (face_dir - face_esq):
+                    continue
+                xs_h = {x for x in xs_h if not (a_ - 40.0 <= x <= b_ + 40.0)} | {round(a_, 1), round(b_, 1)}
             if len(ts_c) > 1:
                 xs_h.add(round(ts_c[0][1], 1))
                 xs_h.add(round(ts_c[1][0], 1))          # a folga entre as duas metades
