@@ -823,7 +823,10 @@ html.embutida #link-desenho, html.embutida #link-dimensionamento { display: none
 .ligacao-vistas .seg button + button { border-left: 0; }
 .ligacao-vistas .seg button:first-child { border-radius: 5px 0 0 5px; }
 .ligacao-vistas .seg button:last-child { border-radius: 0 5px 5px 0; }
-.seletor-vista a.ativo { background: var(--azul, #1f6feb); border-color: var(--azul, #1f6feb); color: #fff; opacity: 1; cursor: default; }
+/* a vista aberta em destaque: o azul da própria barra não aparecia sobre ela */
+.seletor-vista a.ativo { background: #fff; border-color: #fff; color: #0b3d91; font-weight: 700; opacity: 1; cursor: default;
+                         box-shadow: 0 0 0 1px rgba(255, 255, 255, .35), 0 1px 3px rgba(0, 0, 0, .35); }
+.seletor-vista a.ativo:hover { background: #fff; }
 .topo .voltar, .menu-botao, .marca, .topo button { white-space: nowrap; flex-shrink: 0; }
 .menus { flex-shrink: 0; }
 /* tela estreita (a metade da área 2D + 3D): tudo mais junto, o nome da tela só no ícone */
