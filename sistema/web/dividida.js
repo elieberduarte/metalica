@@ -59,6 +59,7 @@ function avisarEstado() {
 }
 
 function mostrarVista(v, gravar = true) {
+  if (window.barraUnica) window.barraUnica.vista(v);
   vista = v;
   document.body.classList.remove('v-2d', 'v-3d', 'v-ambos');
   document.body.classList.add('v-' + v);
@@ -228,4 +229,6 @@ async function iniciar() {
   document.body.dataset.pronto = '1';
 }
 
+window.mostrarVista = mostrarVista;
+window.vistaAtual = () => vista;
 iniciar();

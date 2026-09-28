@@ -93,10 +93,15 @@ try:
     ok("Posto dividido" in (aba.avaliar("document.title") or ""), "o nome do projeto no título da janela")
     t0 = time.time()
     while time.time() - t0 < 10 and not aba.avaliar(f"!!{F3}.document.querySelector('.seletor-vista a.ativo')"): aba.drenar(0.3)
-    ok(aba.avaliar("getComputedStyle(document.querySelector('.area-topo')).display") == "none"
-       and aba.avaliar(f"{F2}.document.querySelector('.seletor-vista a.ativo').dataset.vistaArea") == "ambos"
-       and aba.avaliar(f"{F3}.document.querySelector('.seletor-vista a.ativo').dataset.vistaArea") == "ambos",
-       "uma linha só: o seletor mora na barra de cada tela (sem a barra de fora), e abre no 2D + 3D")
+    t0 = time.time()
+    while time.time() - t0 < 20 and not aba.avaliar("document.querySelectorAll('#menus-unicos .menu-botao').length >= 6"): aba.drenar(0.3)
+    menus_u = aba.avaliar("[...document.querySelectorAll('#menus-unicos .menu-botao')].map(b => b.textContent).join(',')") or ""
+    ok(aba.avaliar("getComputedStyle(document.querySelector('.area-topo')).display") != "none"
+       and aba.avaliar(f"getComputedStyle({F2}.document.querySelector('header.topo')).display") == "none"
+       and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('header.topo')).display") == "none"
+       and aba.avaliar("document.querySelector('.vistas button.ativo').dataset.vista") == "ambos"
+       and "Desenho" in menus_u and "Detalhamentos" in menus_u,
+       f"uma barra só, a de fora: o menu geral do 2D e do 3D ({menus_u}); as barras das telas escondidas; abre no 2D + 3D")
     ok(aba.avaliar(f"getComputedStyle({F2}.document.querySelector('#btn-voltar')).display") == "none"
        and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('#link-projetos')).display") != "none",
        "a navegação de cada lado some dentro da tela dividida")
@@ -152,8 +157,10 @@ try:
     ok("vista=3d" in (aba.avaliar("location.search") or "") and not aba.avaliar(f"{F3}.__marca"),
        "o 2D pede o 3D: a área troca a vista e recarrega o 3D (o modelo pode ter mudado)")
     aba.avaliar(f"{F3}.document.querySelector('.seletor-vista a[data-vista-area=\"ambos\"]').click(); 1"); aba.drenar(0.8)
-    txt = aba.avaliar(f"({F3}.document.querySelector('#btn-salvar') || {{}}).textContent || ''") or ""
-    ok(txt.startswith("✓ Salvo") or txt.startswith("● Salvar"), f"o 3D tem o botão Salvar com o estado da gravação ({txt})")
+    t0 = time.time()
+    while time.time() - t0 < 30 and not aba.avaliar("!!document.querySelector('#rapidos-3d #btn-salvar')"): aba.drenar(0.5)
+    txt = aba.avaliar("(document.querySelector('#rapidos-3d #btn-salvar') || {}).textContent || ''") or ""
+    ok(txt.startswith("✓ Salvo") or txt.startswith("● Salvar"), f"o Salvar do 3D (recarregado) está na barra única com o estado da gravação ({txt})")
     # os painéis da direita: a aba na borda de cada lado esconde e mostra
     antes = aba.avaliar(f"{F3}.document.documentElement.classList.contains('sem-paineis')")
     aba.avaliar(f"{F3}.document.querySelector('.aba-paineis').click(); 1"); aba.drenar(0.4)

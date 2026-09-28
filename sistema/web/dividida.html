@@ -8,6 +8,7 @@
 <script src="/atualizacao.js" defer></script>
 <title>Projeto — Metálica</title>
 <link rel="stylesheet" href="/estilo.css">
+<link rel="stylesheet" href="/editor3d/editor.css">
 <script>
 (function () {
   var t = null;
@@ -26,12 +27,28 @@
   .area-topo .vistas button + button { border-left: 0; }
   .area-topo .vistas button:first-child { border-radius: 5px 0 0 5px; }
   .area-topo .vistas button:last-child { border-radius: 0 5px 5px 0; }
-  .area-topo .vistas button.ativo { background: var(--azul); border-color: var(--azul); color: #fff; }
+  .area-topo .vistas button.ativo { background: #fff; border-color: #fff; color: #0b3d91; font-weight: 700; }
+  .area-topo { align-items: center; gap: 6px; padding: 0 8px; }
+  .area-topo .marca { padding: 0 4px 0 2px; flex-shrink: 1; }
+  .area-topo .menus { align-self: stretch; }
+  .area-topo .rapidos { display: flex; align-items: center; gap: 6px; flex-shrink: 1; min-width: 0; }
+  body.v-2d .area-topo .rapidos { display: none; }
+  .area-topo .controles { gap: 6px; }
+  .area-topo .controles button, .area-topo .acoes button { background: transparent; color: #e2e8f0; border: 1px solid rgba(255,255,255,.22);
+                                                             border-radius: 5px; cursor: pointer; }
+  .area-topo .controles button:hover, .area-topo .acoes button:hover { background: rgba(255,255,255,.12); }
+  .area-topo .acoes { display: flex; gap: 6px; flex-shrink: 0; }
+  .area-topo .casa { font-size: 16px; padding: 1px 9px !important; }
+  .menu-lista .secao-lado { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto3); padding: 6px 9px 2px; }
+  .menu-lista .secao-lado + * { margin-top: 0; }
+  html.topo-c1 .area-topo .marca .nome { display: none; }
+  html.topo-c2 .area-topo .com-2d select { max-width: 120px; }
+  html.topo-c3 #btn-paineis { display: none; }
   .area-topo .controles { flex-wrap: nowrap; overflow: hidden; }
   .area-topo .acoes { margin-left: auto; }
   .area-topo .acoes button, .area-topo #btn-trocar { padding: 4px 10px; font-size: 12.5px; white-space: nowrap; }
-  /* a barra é a de cada tela (o seletor e a ligação moram nela, web/area.js): esta fica escondida */
-  .area-topo { display: none !important; }
+  /* a barra única da área de trabalho (web/barra_unica.js): os menus do 2D e do 3D juntos, fixos nas
+     três vistas; as barras das telas de dentro ficam escondidas (html.barra-unica, web/area.js) */
   body:not(.v-ambos) .so-ambos { display: none !important; }
   body.v-3d .com-2d { display: none !important; }
   body.v-2d #lado-3d, body.v-2d #divisor { display: none; }
@@ -77,18 +94,19 @@
     <button type="button" data-vista="ambos" title="O desenho e o modelo lado a lado: escolher uma peça num mostra ela no outro">2D + 3D</button>
   </nav>
   <div class="controles">
-    <label class="so-ambos" title="Escolher uma peça num lado mostra ela no outro"><input type="checkbox" id="seguir" checked> seguir a seleção</label>
-    <span class="so-ambos" title="O que o 2D mostra quando se escolhe uma treliça no 3D">o 2D mostra:</span>
-    <span class="grupo-modo so-ambos" role="group" aria-label="O que o 2D mostra">
-      <button type="button" data-modo="planta" class="ativo" title="O lugar da peça na planta estrutural">a planta</button>
-      <button type="button" data-modo="elevacao" title="A elevação da treliça escolhida, como o projetista desenhou">a elevação</button>
+    <label class="so-ambos" title="Seguir a seleção: escolher uma peça num lado mostra ela no outro"><input type="checkbox" id="seguir" checked> 🔗</label>
+    <span class="grupo-modo so-ambos" role="group" aria-label="O que o 2D mostra quando se escolhe uma treliça no 3D">
+      <button type="button" data-modo="planta" class="ativo" title="Escolher no 3D mostra o lugar da peça na planta estrutural">planta</button>
+      <button type="button" data-modo="elevacao" title="Escolher uma treliça no 3D mostra a elevação dela, como o projetista desenhou">elevação</button>
     </span>
-    <button type="button" id="btn-trocar" class="so-ambos" title="Troca o 2D e o 3D de lado">⇄ Trocar lados</button>
-    <label class="com-2d" title="Qual desenho do projeto fica no 2D">desenho <select id="desenho"></select></label>
+    <button type="button" id="btn-trocar" class="so-ambos" title="Troca o 2D e o 3D de lado">⇄</button>
+    <label class="com-2d" title="Qual desenho do projeto fica no 2D"><select id="desenho"></select></label>
   </div>
+  <div class="menus" id="menus-unicos" aria-label="Menus do desenho 2D e do modelo 3D"></div>
+  <div class="rapidos" id="rapidos-3d"></div>
   <div class="acoes">
     <button type="button" id="btn-paineis" title="Mostra ou esconde os painéis da direita (Propriedades, Camadas…) do 2D e do 3D — F4 em cada lado">Painéis</button>
-    <button type="button" onclick="location.href='/'" title="Voltar à lista de projetos">Projetos</button>
+    <button type="button" class="casa" onclick="location.href='/'" title="Voltar à lista de projetos">⌂</button>
   </div>
 </header>
 
@@ -99,6 +117,7 @@
   <div class="aviso-dividida" id="aviso" hidden></div>
 </main>
 
+<script src="/barra_unica.js"></script>
 <script src="/dividida.js"></script>
 <script src="/versao.js" defer></script>
 <script src="/vivo.js"></script>

@@ -12,6 +12,10 @@
 (function () {
   'use strict';
   var embutida = window.parent !== window;
+  // dentro da área de trabalho (/dividida) a barra é a única de fora (web/barra_unica.js): a desta tela some
+  try {
+    if (embutida && ['/dividida', '/2d-3d'].indexOf(window.parent.location.pathname) >= 0) document.documentElement.classList.add('barra-unica');
+  } catch (e) { /* outra origem */ }
   var TELAS = { '/editor': '3d', '/editor3d': '3d', '/3d': '3d', '/cad': '2d', '/desenho': '2d', '/dividida': null, '/2d-3d': null };
 
   function destino(url) {

@@ -33,7 +33,7 @@ NUCLEO = ("nucleo/", "nucleo2d/", "saida/", "ifc/", "nucleo3d/geometria.py", "nu
 #: A montagem 3D (a bateria do Posto CB).
 MONTAGEM = ("nucleo3d/",)
 #: Arquivos das telas: o caminho (começo) → as telas que usam.
-TELAS = [("web/cad/", {"cad"}), ("web/editor3d/", {"editor"}), ("web/dividida", {"dividida"}),
+TELAS = [("web/cad/", {"cad"}), ("web/editor3d/", {"editor"}), ("web/dividida", {"dividida"}), ("web/barra_unica", {"dividida"}),
          ("web/area.js", {"cad", "editor", "dividida"}), ("web/trelicas", {"trelicas"}),
          ("web/materiais", {"materiais"}), ("web/analise", {"analise"}), ("web/memorial", {"memorial"}),
          ("web/ligacoes", {"ligacoes"}), ("web/catalogo", {"catalogo"}), ("web/inicio", {"inicio"}),

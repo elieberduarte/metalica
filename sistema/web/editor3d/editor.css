@@ -908,3 +908,8 @@ html.topo-c3 .menu-botao { padding: 0 5px; }
 html.topo-c4 #btn-calcular { max-width: 84px; overflow: hidden; text-overflow: ellipsis; }
 html.topo-c4 #btn-projecao { display: none; }
 html.topo-c4 .menu-botao { padding: 0 4px; font-size: 12px; }
+
+/* dentro da área de trabalho (/dividida) a barra é a única, de fora (web/barra_unica.js): os menus desta
+   tela aparecem nela; a barra própria some e a altura dela volta para o desenho/modelo */
+html.barra-unica { --alt-topo: 0px; }
+html.barra-unica header.topo { display: none !important; }
