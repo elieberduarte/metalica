@@ -373,8 +373,8 @@ def analitico(doc, base: Optional[float] = None) -> dict:
             if any(linhas[i]["papel"] in alvo for i in outras) and not ponta_trelica:
                 continue
             p = nos[n]
-            if ln["papel"] == "pilar" and p[2] <= base + 50.0:
-                continue                                   # o pé do pilar é a base
+            if p[2] <= base + 50.0 and ln["papel"] in ("pilar", "viga"):
+                continue                                   # o pé do pilar (e da escada) é a base
             melhor = None
             for j in set(gl.perto(p)):
                 if j == k or linhas[j]["papel"] not in alvo or linhas[j]["grupo"] == ln["grupo"] and (
@@ -461,7 +461,7 @@ def analitico(doc, base: Optional[float] = None) -> dict:
             n = br[lado]
             if gr[n] != 1:
                 continue
-            if br["papel"] == "pilar" and nos[n][2] <= base + 50.0:
+            if br["papel"] in ("pilar", "viga") and nos[n][2] <= base + 50.0:
                 continue
             if br["importada"] or br["papel"] in ("solido", "barra"):
                 continue                                   # peça importada ou sem papel: não se sabe onde apoia

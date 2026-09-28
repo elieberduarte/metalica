@@ -1530,7 +1530,7 @@ def esforcos_do_projeto(s: str, corpo: Optional[dict] = None, recalcular: bool =
     # as cargas que o projeto não escreve (o piso do mezanino): informadas na tela, gravadas no projeto
     extras = dict(proj.get("esforcos_cargas") or {})
     novas_c = {k: (None if v in (None, "") else float(v)) for k, v in ((corpo or {}).get("cargas") or {}).items()
-               if k in ("mezanino_peso", "mezanino_sobrecarga", "passarela_sobrecarga")}
+               if k in ("mezanino_peso", "mezanino_sobrecarga", "passarela_sobrecarga", "escada_peso", "escada_sobrecarga")}
     extras.update(novas_c)
     car = esforcos.cargas_do_projeto(proj)
     car.update({k: v for k, v in extras.items() if v is not None})
@@ -1549,7 +1549,7 @@ def esforcos_do_projeto(s: str, corpo: Optional[dict] = None, recalcular: bool =
              "resumo": {k: (float(v) if isinstance(v, float) else v) for k, v in r["resumo"].items()},
              "cargas": r["cargas"], "avisos": r["avisos"], "hipoteses": esforcos.hipoteses(r),
              "planta": r["planta"], "cargas_sem_pilar": r["cargas_sem_pilar"], "parametros_vento": par,
-             "mezanino": r.get("mezanino"), "passarela": r.get("passarela")}
+             "mezanino": r.get("mezanino"), "passarela": r.get("passarela"), "escadas": r.get("escadas")}
     if novos:
         g._atualizar(s, esforcos_parametros=par)
     if novas_c:
@@ -1726,7 +1726,7 @@ def dados_dos_resumos(s: str) -> dict:
         telhas = [t.get("perfil") for t in (lista.get("telhas") or []) if t.get("perfil")]
         if telhas:
             t0 = str(telhas[0]).strip()
-            sug["telha"] = t0 if re.match(r"(?i)telha", t0) else "Telha %s" % t0
+            sug["telha"] = t0 if re.match(r"(?i)telha\b", t0) else "Telha %s" % t0
     # os resumos já gerados (a tela mostra o último ao abrir)
     pasta = os.path.join(_gerente()._existente(s), "detalhamento")
     arquivos = {}

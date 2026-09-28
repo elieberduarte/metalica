@@ -43,6 +43,8 @@ CARGAS_PADRAO = {
     "mezanino_peso": None,   # kN/m²: o piso do mezanino (painel, contrapiso) — sem valor, fora
     "mezanino_sobrecarga": None,  # kN/m²: a sobrecarga de uso do mezanino (NBR 6120) — sem valor, fora
     "passarela_sobrecarga": None,  # kN/m²: a passarela (treliça deitada) — sem valor, fora
+    "escada_peso": None,     # kN/m²: degraus e piso das escadas (camada Escadas) — sem valor, fora
+    "escada_sobrecarga": None,  # kN/m²: o uso das escadas (NBR 6120, Tabela 10) — sem valor, fora
 }
 PISO_LARGURA_MAX = 1.5       # m: barrote do piso — vigas paralelas até esta faixa, em grupo
 PISO_MIN_BARROTES = 5
@@ -369,6 +371,10 @@ def hipoteses(r: dict) -> List[str]:
     if ps.get("sobrecarga"):
         h.append("Passarela de manutenção (a treliça deitada): sobrecarga %s kN/m² em %.0f m², meia largura para cada banzo; "
                  "o piso de chapa expandida não entra no peso." % (ps["sobrecarga"], ps.get("area_m2") or 0))
+    es = r.get("escadas") or {}
+    if es.get("peso") is not None or es.get("sobrecarga") is not None:
+        h.append("Escadas: degraus %s kN/m² (permanente) e sobrecarga %s kN/m² (variável, ψ0 0,7) em %.0f m² de lances e patamares, "
+                 "na projeção horizontal; o pé da longarina no chão é apoio." % (es.get("peso"), es.get("sobrecarga"), es.get("area_m2") or 0))
     if r.get("caixas_dagua"):
         h.append("Caixas d'água: volume × 10 kN/m³ (NBR 6120:2019, Tabela A.1) nos nós das vigas embaixo de cada uma, "
                  "como ação variável (γ 1,5; ψ0 0,8).")
@@ -390,7 +396,8 @@ def combinacoes_ultimas(casos: List[str]) -> List[dict]:
     pag = C.PSI[next(k for k in C.PSI if k.startswith("dep"))][0]                  # 0,8 (água: como depósito)
     perm = {"PP": gpp, "CP": gcp}
     pmz = C.PSI["comercial"][0]                                                    # 0,7 (mezanino)
-    grav = [(c, g, p) for c, g, p in (("SC", gsc, psc), ("AG", gsc, pag), ("SM", gsc, pmz), ("SP", gsc, psc)) if c in casos]
+    grav = [(c, g, p) for c, g, p in (("SC", gsc, psc), ("AG", gsc, pag), ("SM", gsc, pmz), ("SP", gsc, psc),
+                                       ("SE", gsc, pmz)) if c in casos]
     vs = [c for c in casos if c.startswith("V")]
     out = []
     for vento in [None] + vs:
@@ -446,8 +453,11 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
 
     # --- apoios: o pé dos pilares
     base = min((nos[barras[i][k]][2] for i in usadas if barras[i]["papel"] == "pilar" for k in ("a", "b")), default=0.0)
-    pes = sorted({barras[i][k] for i in usadas if barras[i]["papel"] == "pilar" for k in ("a", "b")
-                  if nos[barras[i][k]][2] <= base + BASE_TOL / 1000.0})
+    # os apoios: o pé dos pilares e o das escadas (a longarina que chega no chão, na placa dela)
+    camada_de0 = {e.id: getattr(e, "camada", None) for e in doc.entidades.values()} if hasattr(doc.entidades, "values") else {}
+    pes = sorted({barras[i][k] for i in usadas for k in ("a", "b")
+                  if (barras[i]["papel"] == "pilar" or camada_de0.get(barras[i]["ids"][0]) == "Escadas")
+                  and nos[barras[i][k]][2] <= base + BASE_TOL / 1000.0})
     loc = ((doc.metadados or {}).get("de_planta") or {}).get("cargas_locacao") or {}
     loc_itens = list(loc.get("pilares") or [])
     engaste = set()
@@ -560,6 +570,47 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         else:
             avisos.append("passarela sem sobrecarga (%.0f m² de treliça deitada): informe a carga de uso" % area_p)
 
+    # --- as escadas (camada Escadas): os lances com a faixa de meia largura para cada longarina, na
+    # projeção horizontal; o patamar pelos quatro cantos
+    memoria_escadas = None
+    esc = [e for e in usadas if camada_de.get(barras[e]["ids"][0]) == "Escadas"]
+    if esc:
+        lances = [e for e in esc if abs(d[pos[e]][2]) > 0.2 * L[pos[e]]]
+        w_e = _larguras(nos, lances, barras)
+        area_l = sum(w * float(np.hypot(d[pos[e]][0], d[pos[e]][1])) for e, w in w_e.items())
+        pat_por = collections.defaultdict(set)
+        for e in esc:
+            if e in w_e:
+                continue
+            ent_e = doc.entidades.get(barras[e]["ids"][0]) if hasattr(doc.entidades, "get") else None
+            nome_e = (((getattr(ent_e, "atributos", None) or {}).get("origem") or {}).get("escada")) or "?"
+            pat_por[nome_e].update((int(ia[pos[e]]), int(ib[pos[e]])))
+        cantos = {k: sorted(v) for k, v in pat_por.items()}
+        area_p = 0.0
+        for v in cantos.values():
+            xs, ys = [nos[n][0] for n in v], [nos[n][1] for n in v]
+            area_p += (max(xs) - min(xs)) * (max(ys) - min(ys))
+        memoria_escadas = {"area_m2": round(area_l + area_p, 1), "peso": car.get("escada_peso"),
+                           "sobrecarga": car.get("escada_sobrecarga")}
+        if car.get("escada_peso") is None and car.get("escada_sobrecarga") is None:
+            avisos.append("escadas sem carga (%.0f m²): informe o peso dos degraus e a sobrecarga de uso" % (area_l + area_p))
+        else:
+            if car.get("escada_sobrecarga"):
+                casos["SE"] = np.zeros(ndof)
+            for caso, q in (("CP", car.get("escada_peso") or 0.0), ("SE", car.get("escada_sobrecarga") or 0.0)):
+                if not q:
+                    continue
+                for e, w in w_e.items():
+                    i = pos[e]
+                    f = q * w * float(np.hypot(d[i][0], d[i][1])) / 2
+                    casos[caso][ia[i] * 6 + 2] -= f
+                    casos[caso][ib[i] * 6 + 2] -= f
+                for v in cantos.values():
+                    xs, ys = [nos[n][0] for n in v], [nos[n][1] for n in v]
+                    f = q * (max(xs) - min(xs)) * (max(ys) - min(ys)) / max(len(v), 1)
+                    for n in v:
+                        casos[caso][n * 6 + 2] -= f
+
     # --- a água das caixas desenhadas nas outras plantas (a base da caixa d'água), nos nós das
     # vigas e banzos daquele nível embaixo de cada caixa
     caixas = ((doc.metadados or {}).get("de_planta") or {}).get("caixas_dagua") or []
@@ -663,7 +714,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         vals = [(sum(f * rz.get(c, 0.0) for c, f in cb["fatores"].items()), cb["nome"]) for cb in combs]
         mx, mn = max(vals), min(vals)
         p["envoltoria_kN"] = {"max": round(mx[0], 2), "max_comb": mx[1], "min": round(mn[0], 2), "min_comb": mn[1]}
-        p["caracteristico_kN"] = round(rz["PP"] + rz["CP"] + rz["SC"] + sum(rz.get(c, 0.0) for c in ("AG", "SM", "SP")), 2)
+        p["caracteristico_kN"] = round(rz["PP"] + rz["CP"] + rz["SC"] + sum(rz.get(c, 0.0) for c in ("AG", "SM", "SP", "SE")), 2)
 
     # --- esforços nas barras (N, Vy, Vz, T, My, Mz nas duas pontas, eixos locais), por caso
     Ue = U[gl]                                             # (n, 12, casos)
@@ -693,6 +744,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         "caixas_dagua": memoria_caixas,
         "mezanino": memoria_piso,
         "passarela": memoria_passarela,
+        "escadas": memoria_escadas,
         "combinacoes": combs,
         "avisos": avisos,
         "_U": U, "_casos": list(casos),

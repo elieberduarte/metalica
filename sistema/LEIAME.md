@@ -244,7 +244,15 @@ recalcular, o mezanino, os casos, as combinações e as hipóteses; o resultado 
 **O esqueleto, pelo que o cálculo mostrou**: a alma corta o banzo contínuo da própria treliça (ficava presa só nas
 pontas); o nó novo no meio de uma linha é o que já existe ali; a treliça deitada presa pela lateral no banzo da outra
 (a passarela); o perfil de apoio das terças fixado em cada montante; a terça que chega na lateral da transição encosta
-na alma dela. No Posto CB, pontas soltas 15 → 3 e a comparação com a locação passou a ter sentido (PM7: 24,9 × 24 tf).
+na alma dela. No Posto CB, pontas soltas 15 → 3 e a comparação com a locação passou a ter sentido (PM7: 24,9 × 24 tf). **Escadas** (`nucleo3d/escadas.py`, ligado em `de_planta.montar`; pedido do usuário: "tem uma escada no projeto"): a
+planta baixa de cada escada ("PLANTA BAIXA DA ESCADA 1") — as longarinas pela linha dupla do perfil, os lances em pares, o
+patamar onde dois lances se cruzam, os degraus numerados para o sentido de subida — no lugar pelos balões em comum com a
+planta estrutural, a locação e as outras plantas (a letra dá y, o número dá x) e, o que faltar, pelos pés da escada na
+locação (a placa com a seção da longarina dentro); do chão ao piso de cima, com o patamar pelas cotas dos cortes (as duas
+da mesma corrente que somam a altura; a de baixo). Camada "Escadas"; o pé no chão é apoio no cálculo, e o peso dos
+degraus e a sobrecarga de uso entram pela tela de esforços. Pesos e sobrecargas de uso do mezanino e da passarela também.
+No Posto CB: ESCADA 1 (E/F/G + pés CH8) e ESCADA 2 (1A/1B, A6–A8), patamar a 1,70 m, topo a 3,17 m; o pé da escada 1
+dá 0,63 tf × 0,6 tf da locação.
 
 **0.8.47.** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
 print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e

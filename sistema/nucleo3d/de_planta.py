@@ -2648,6 +2648,48 @@ def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: 
     return out
 
 
+def _perfil_escrito(texto: Optional[str]) -> Optional[str]:
+    """o perfil de um texto do desenho ("Ue 200X40X20X3,04" → "Ue 200×40×20×3,04")"""
+    if not texto:
+        return None
+    from nucleo2d.reconhecer import perfil_do_texto
+    r = perfil_do_texto(texto)
+    return r["perfil"] if r else None
+
+
+def _pes_da_escada(ents, caixa_l, desl_l, locados: List[dict], textos) -> List[Ponto2]:
+    """os pés das escadas na locação: a placa (camada de chapas) com a seção da longarina desenhada
+    dentro — a Ue 200×40 do texto "ESC Ue200X40X3,0" — longe dos pilares; já na planta estrutural"""
+    folga = (caixa_l[0] - 2500, caixa_l[1] - 2500, caixa_l[2] + 2500, caixa_l[3] + 2500)
+    medidas = set()
+    for t in textos:
+        m = re.search(r"(?i)\bESC\b.*?(\d{2,3})\s*[X×]\s*(\d{2,3})", str(t.get("texto") or ""))
+        if m and _dentro(t["posicao"], folga):
+            medidas.add(tuple(sorted((float(m.group(1)), float(m.group(2))))))
+    if not medidas:
+        return []
+    placas, secoes = [], []
+    for e in ents:
+        if e["tipo"] != "polilinha" or not _dentro(e["vertices"][0], folga):
+            continue
+        xs = [v[0] for v in e["vertices"]]
+        ys = [v[1] for v in e["vertices"]]
+        c = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+        lados = tuple(sorted((max(xs) - min(xs), max(ys) - min(ys))))
+        if e.get("fechada") and re.search(r"(?i)chapa", e.get("camada", "")) and 100 <= lados[1] <= 900:
+            placas.append((c, (min(xs), min(ys), max(xs), max(ys))))
+        elif any(abs(lados[0] - m[0]) <= 15 and abs(lados[1] - m[1]) <= 15 for m in medidas):
+            secoes.append(c)
+    pes = []
+    for c, cx in placas:
+        if not any(_dentro(s, cx) for s in secoes):
+            continue
+        p = (c[0] + desl_l[0], c[1] + desl_l[1])
+        if all(math.dist(p, (pl["x"], pl["y"])) > 400 for pl in locados):
+            pes.append(p)
+    return pes
+
+
 # a caixa d'água desenhada na planta dela, com o volume: "CX.5.000 l", "CX 10000 L"
 _CAIXA_DAGUA = re.compile(r"(?i)^\s*CX\.?\s*(\d{1,3}(?:[.,]?\d{3})*)\s*l(?:itros)?\s*$")
 
@@ -2727,6 +2769,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     usados: Dict[str, set] = {"planta": set(), "tercas": set(), "locacao": set()}
     outras_feitas: List[dict] = []
     caixas_dagua: List[dict] = []
+    baloes_outras: List[Tuple[Dict[str, Ponto2], Tuple[float, float], float]] = []   # (balões, deslocamento, nível)
     textos = [e for e in ents if e["tipo"] == "texto"]
     avisos: List[str] = []
     encaixe: List[dict] = []
@@ -3057,6 +3100,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             ids_o |= set(t.caminho.fontes or ()) | {t.rotulo_id}
         ids_o |= _ids_dos_eixos(ents, caixa_o) | {t_o.get("id")}
         usados["outra:" + t_o["texto"].strip()] = ids_o
+        baloes_outras.append((baloes(ents, caixa_o), (d_o[0], d_o[1]), nivel_o))
         outras_feitas.append({"planta": t_o["texto"].strip(), "nivel": nivel_o, "pecas": len(tr_o), "camada": nome_c,
                               "baloes": d_o[2]})
         # as caixas d'água desenhadas nesta planta ("CX.5.000 l"): o volume e o lugar, para a carga
@@ -3115,6 +3159,45 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                           "do banzo; confira a altura dele." % (pl["nome"], x, y, longe / 1000.0))
         barra((x, y, base), (x, y, topo_p), pl["perfil"], "pilar", "Pilares", None, pl["rot"], orig)
         pilares += 1
+
+    # ---------------------------------------------------------------- escadas
+    # a planta baixa de cada escada, no lugar pelos balões (os da planta estrutural, da locação e
+    # das outras plantas) e pelos pés dela na locação; do chão ao piso de cima (o mezanino)
+    from nucleo3d import escadas as _escadas
+    referencia: Dict[str, List[Ponto2]] = collections.defaultdict(list)
+    for k_b, p_b in b_planta.items():
+        referencia[k_b].append(p_b)
+    if caixa_l:
+        for k_b, p_b in baloes(ents, caixa_l).items():
+            referencia[k_b].append((p_b[0] + desl_l[0], p_b[1] + desl_l[1]))
+    for bs_o, d_o2, _nv in baloes_outras:
+        for k_b, p_b in bs_o.items():
+            referencia[k_b].append((p_b[0] + d_o2[0], p_b[1] + d_o2[1]))
+    niveis_baixo = [nv for _b, _d, nv in baloes_outras if base < nv < nivel]
+    altura_esc = (max(niveis_baixo) if niveis_baixo else nivel) - base
+    escadas_feitas = []
+    if any(_escadas.TITULO.match(str(t_.get("texto") or "")) for t_ in textos):
+        pes_esc = _pes_da_escada(ents, caixa_l, desl_l, locados, textos) if caixa_l else []
+        for esc in _escadas.ler(ents, textos, referencia, pes_esc, altura_esc, avisos,
+                                baloes_de=lambda reg: baloes(ents, reg, folga=0.0)):
+            doc.camadas.setdefault("Escadas", Camada(nome="Escadas"))
+            p_l = _perfil_escrito(esc["perfil"])
+            p_p = _perfil_escrito(esc["perfil_patamar"]) or p_l
+            orig_e = {"escada": esc["nome"], "a_conferir": "patamar a %.2f m (%s); confira nos cortes da escada" % (
+                (esc["patamar_z"] or 0) / 1000.0, "cotas dos cortes" if esc.get("patamar_por") == "cortes" else "número de degraus")}
+            n_e = 0
+            for a_, b_ in esc["lances"]:
+                if barra((a_[0], a_[1], a_[2] + base), (b_[0], b_[1], b_[2] + base), p_l, "viga", "Escadas", None, 0.0, dict(orig_e)):
+                    n_e += 1
+            for a_, b_ in esc["patamar"]:
+                if barra((a_[0], a_[1], a_[2] + base), (b_[0], b_[1], b_[2] + base), p_p, "viga", "Escadas", None, 0.0, dict(orig_e)):
+                    n_e += 1
+            escadas_feitas.append({"nome": esc["nome"], "pecas": n_e, "alinhada_por": esc["alinhada_por"],
+                                   "patamar_z": esc["patamar_z"], "altura": esc["altura"]})
+            avisos.append("%s: montada pela planta baixa (%s), %d degraus até %.2f m, patamar a %.2f m (%s); confira "
+                          "nos cortes." % (esc["nome"], esc["alinhada_por"], esc["degraus"], (esc["altura"] + base) / 1000.0,
+                                           (esc["patamar_z"] or 0) / 1000.0,
+                                           "pelas cotas dos cortes" if esc.get("patamar_por") == "cortes" else "pelo número de degraus"))
 
     # ---------------------------------------------------------------- a alma na face do banzo
     # montantes e diagonais param na face interna do banzo, com folga (o nó continua no eixo)
@@ -3464,6 +3547,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     "esticadores": sum(v["qtd"] for v in tab_est.values()), "pilares": pm_total},
     }
     resumo["deslocamento_mm"] = [desl[0], desl[1]]
+    resumo["escadas"] = escadas_feitas
     doc.metadados["de_planta"] = {"parametros": {k: v for k, v in par.items()}, "resumo": resumo,
                                   "deslocamento": {"x": desl[0], "y": desl[1],
                                                    "nota": "somado às coordenadas do desenho; subtraia para voltar a ele"}}
