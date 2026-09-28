@@ -190,6 +190,50 @@
       mostrarEstado();
     });
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montarSeletor);
-  else montarSeletor();
+  // A barra do topo que não cabe: em vez de deixar botões fora da tela, liga níveis de compactação
+  // (topo-c1…c4 no <html>, CSS em editor3d/editor.css) até o conteúdo caber na largura
+  var NIVEIS = 4;
+  function compactarTopo() {
+    var topo = document.querySelector('header.topo');
+    if (!topo) return;
+    var raiz = document.documentElement;
+    for (var i = 1; i <= NIVEIS; i++) raiz.classList.remove('topo-c' + i);
+    for (var n = 1; n <= NIVEIS && naoCabe(topo); n++) raiz.classList.add('topo-c' + n);
+  }
+  /** os itens da barra passam da borda direita dela? (pela caixa de cada item: a lista da busca e os
+   *  menus abertos flutuam por cima e não contam) */
+  function naoCabe(topo) {
+    var r = topo.getBoundingClientRect();
+    var limite = r.right - (parseFloat(getComputedStyle(topo).paddingRight) || 0) + 1;
+    for (var i = 0; i < topo.children.length; i++) {
+      var c = topo.children[i];
+      if (c.offsetParent === null && getComputedStyle(c).position !== 'fixed') continue;     // escondido
+      if (c.getBoundingClientRect().right > limite) return true;
+    }
+    // a busca espremida (menos de 140 px) não serve para ler: melhor a lupa do nível seguinte
+    var busca = document.getElementById('busca-campo');
+    var raiz = document.documentElement;
+    if (busca && busca.offsetParent !== null && !raiz.classList.contains('topo-c2') && document.activeElement !== busca &&
+        busca.getBoundingClientRect().width < 140) return true;
+    return false;
+  }
+  var agendado = null;
+  function pedirCompactar() {
+    if (agendado) return;
+    agendado = requestAnimationFrame(function () { agendado = null; compactarTopo(); });
+  }
+  function iniciar() {
+    montarSeletor();
+    compactarTopo();
+    window.addEventListener('resize', pedirCompactar);
+    // o texto do "Salvo", o nome da tela e os botões que aparecem depois mudam a largura da barra
+    var topo = document.querySelector('header.topo');
+    if (topo && window.MutationObserver) {
+      new MutationObserver(pedirCompactar).observe(topo, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['hidden', 'class'] });
+    }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(pedirCompactar);
+    setTimeout(pedirCompactar, 800);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
+  else iniciar();
 })();

@@ -681,6 +681,7 @@ class CAD {
       'gerar-3d': () => this.dialogoGerar3D(),
       pranchas: () => this.dialogoPranchas(),
       'inserir-folha': () => this.inserirFolha(),
+      'alternar-tema': () => this._alternarTema(),
       'pranchas-das-folhas': () => this.pranchasDasFolhas(),
       'importar-dxf': () => $('#arquivo-dxf').click(),
       arquitetonico: () => $('#arquivo-arquitetonico').click(),

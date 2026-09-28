@@ -1842,6 +1842,9 @@ export class Editor {
       'mapa-esforcos': () => this.alternarAnalise(),
       dimensionar: () => this.dimensionarEstrutura(),
       sombras: () => this.alternarSombras(),
+      // os botões Perspectiva e Tema do topo saem quando a barra não cabe: o menu Ver faz o mesmo
+      'alternar-projecao': () => this.el.projecao.click(),
+      'alternar-tema': () => this.alternarTema(),
       desempenho: () => this.dialogoDesempenho(),
       'verificar-apoios': () => this.verificarApoios(),
       esqueleto: () => this.alternarEsqueleto(),

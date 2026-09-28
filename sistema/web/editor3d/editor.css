@@ -871,3 +871,40 @@ html.embutida .marca { padding: 0 8px 0 10px; }
   #btn-calcular { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
   #btn-projecao { display: none; }     /* a perspectiva fica na vista 3D cheia */
 }
+
+/* ------------------------------------------------------- barra do topo que não cabe
+   web/area.js mede a barra e, enquanto o conteúdo passa da largura, liga um nível a mais
+   (topo-c1…c4 no <html>), do que menos faz falta ao que mais faz: nada fica fora da tela.
+   Perspectiva e Tema ficam também no menu Ver. */
+html.topo-c1 .marca span { display: none; }
+html.topo-c1 .marca { padding: 0 8px; }
+html.topo-c1 .menu-botao { padding: 0 7px; font-size: 12.5px; }
+html.topo-c1 .topo .voltar { padding: 0 7px; }
+html.topo-c1 .seletor-vista a { padding: 0 8px; }
+html.topo-c1 .nome-modelo input { width: 130px; }
+html.topo-c1 .busca-pecas { flex: 1 1 60px; min-width: 0; }
+html.topo-c1 .busca-pecas input { min-width: 60px; }
+/* nível 2: a busca vira a lupa (abre por cima ao receber o foco: clique ou Ctrl+F); o Salvar, só o sinal */
+html.topo-c2 .busca-pecas { flex: 0 0 34px; min-width: 34px; }
+html.topo-c2 .busca-pecas input { width: 34px; min-width: 34px; padding: 3px 6px; cursor: pointer;
+  background: rgba(255, 255, 255, .09) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2.4'%3E%3Ccircle cx='10' cy='10' r='6.5'/%3E%3Cpath d='M15 15l6 6'/%3E%3C/svg%3E") no-repeat center; }
+html.topo-c2 .busca-pecas input::placeholder { color: transparent; }
+html.topo-c2 .busca-pecas input:focus { position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 300px; z-index: 60;
+  background-image: none; cursor: text; }
+html.topo-c2 .busca-pecas input:focus::placeholder { color: rgba(128, 128, 128, .8); }
+html.topo-c2 .btn-salvar { font-size: 0; padding: 3px 7px; }
+html.topo-c2 .btn-salvar::before { font-size: 12px; content: '✓'; }
+html.topo-c2 .btn-salvar.pendente::before { content: '●'; }
+html.topo-c2 .btn-salvar.gravando::before { content: '…'; }
+html.topo-c2 .btn-salvar.erro::before { content: '⚠'; }
+html.topo-c2 .nome-modelo input { width: 100px; }
+/* nível 3: saem o nome do modelo (Arquivo → Salvar como), o Dimensionamento e o Tema (Ver → Tema);
+   "Projetos" vira a casinha */
+html.topo-c3 .nome-modelo input, html.topo-c3 #btn-tema, html.topo-c3 #link-dimensionamento { display: none; }
+html.topo-c3 #link-projetos { font-size: 0; padding: 0 9px; }
+html.topo-c3 #link-projetos::before { content: '⌂'; font-size: 16px; }
+html.topo-c3 .menu-botao { padding: 0 5px; }
+/* nível 4: os botões compridos encolhem; a Perspectiva fica só no menu Ver */
+html.topo-c4 #btn-calcular { max-width: 84px; overflow: hidden; text-overflow: ellipsis; }
+html.topo-c4 #btn-projecao { display: none; }
+html.topo-c4 .menu-botao { padding: 0 4px; font-size: 12px; }
