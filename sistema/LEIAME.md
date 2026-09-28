@@ -266,8 +266,12 @@ tem 8 + 10 pisantes, 20 espelhos: patamar a 1,421 m, a cota do corte FF; antes p
 (print do usuário, a cobertura da caixa d'água): a família "PERFIL" — peça de um perfil só, a elevação em linha dupla na
 altura dele e a nota "PERFIL 1 2U100X40X2,65" dentro do desenho — vira viga 2U100 inclinada a 5% nas faces E e H, com o
 topo de 10,64 a 11,00 junto do banzo de cima da TESOURA 38 e o dente da calha a 10,49. No editor, o **esqueleto** virou o
-5º quadradinho dos modos de exibição (pedido do usuário). Falta: as terças TC69/TC70 da cobertura da caixa (desenhadas
-na planta 11,00, não na das terças).
+5º quadradinho dos modos de exibição (pedido do usuário). **Terças da planta de piso**: a cobertura da caixa desenha as
+terças dela na própria planta 11,00 (camada "Terça Eixo", TC69/TC70) — cada eixo senta no topo das peças daquela planta
+que cruza (PERFIL 1 nas faces, TESOURA 38 no meio), a emenda entre dois nomes no apoio do meio; as correntes, agulhas e
+esticadores dela na altura das terças. **Agulhas** (camada "1-Agulha", AG1–AG6: barra redonda Ø 10 rosqueada, pelo
+"DETALHE TÍPICO DAS AGULHAS"): a montagem só lia "corrente" e "esticador" — as 199 da cobertura principal ficavam de
+fora; agora entram, com linha própria na conferência (204 no modelo × 239 na lista do projeto).
 
 **0.8.47.** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
 print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e
