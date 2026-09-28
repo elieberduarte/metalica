@@ -7,11 +7,20 @@
 
 import { pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dist, pontosCota } from './desenho2d.js';
 
-/** Segmentos que o snap enxerga: na cota, a linha de cota também (é o que se alinha). */
+/** Segmentos que o snap enxerga: na cota, a linha de cota também (é o que se alinha) e as duas
+ *  pernas, do ponto medido até um pouco além da linha de cota, como são desenhadas — a interseção
+ *  da perna com outra linha é ponto de snap (pedido do usuário, 28/09). */
 function segmentosSnap(e, escala) {
   if (e.tipo !== 'cota') return segmentosDe(e);
   const pc = pontosCota(e, escala);
-  return pc.length === 4 ? [[pc[2], pc[3]], [e.p1, e.p2]] : [[e.p1, e.p2]];
+  if (pc.length !== 4) return [[e.p1, e.p2]];
+  const [a1, a2] = [pc[2], pc[3]];
+  // a perna vai do ponto medido à linha de cota e passa dela 2 mm de papel
+  const alem = (p, a) => {
+    const dx = a[0] - p[0], dy = a[1] - p[1], L = Math.hypot(dx, dy);
+    return L < 1e-9 ? a : [a[0] + dx / L * 2 * escala, a[1] + dy / L * 2 * escala];
+  };
+  return [[a1, a2], [e.p1, e.p2], [e.p1, alem(e.p1, a1)], [e.p2, alem(e.p2, a2)]];
 }
 
 export class Snap {
