@@ -465,6 +465,11 @@ class CAD {
       const g = a.grupo_copia || '';
       return [...this.doc.entidades.values()].filter(o => { const b = o.atributos || {}; return b.folha === a.folha && (b.grupo_copia || '') === g; }).map(o => o.id);
     }
+    if (e && a.corte) {
+      // a seção de uma peça cortada (a terça no corte da tesoura): as linhas dela, como um bloco
+      const g = a.grupo_copia || '';
+      return [...this.doc.entidades.values()].filter(o => { const b = o.atributos || {}; return b.corte === a.corte && (b.conjunto || '') === (a.conjunto || '') && (b.grupo_copia || '') === g; }).map(o => o.id);
+    }
     if (!e || !a.origem || e.tipo === 'cota' || e.tipo === 'texto' || e.tipo === 'chamada') return [id];
     // "dxf"/"pdf" só diz de onde a linha foi importada, não é uma peça do 3D: no projeto recebido
     // (Posto CB, 77 mil linhas com a mesma origem) o clique comparava a linha com o desenho inteiro

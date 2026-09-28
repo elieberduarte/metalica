@@ -1147,7 +1147,7 @@ def _so_bordas_externas(desenho: Desenho, entidades: Sequence, ids_barras: set, 
 
 
 def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0: float, v0: float,
-                       segs_bz: Sequence[tuple], dx: float, dy: float) -> Tuple[List[tuple], List[List[tuple]]]:
+                       segs_bz: Sequence[tuple], dx: float, dy: float) -> Tuple[List[tuple], List[List[tuple]], List[tuple]]:
     """O que o plano da tesoura (o do meio da instância) corta em volta dela, como no corte das
     tesouras do projetista: (segmentos das terças, polilinhas da telha), já na célula.
 
@@ -1162,7 +1162,7 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
     from nucleo3d.geometria import malha
     ws = [_dot(_sub(q, origem), w) for e in instancia for q in e.vertices]
     if not ws or not segs_bz:
-        return [], []
+        return [], [], []
     w0 = (min(ws) + max(ws)) / 2.0
     ids = {e.id for e in instancia}
     # o contorno das barras (sem as chapas: as cantoneiras de apoio saem da tesoura e o casco com elas
@@ -1170,7 +1170,7 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
     casco = _casco([(_dot(_sub(q, origem), u) - u0 + dx, _dot(_sub(q, origem), v) - v0 + dy)
                     for e in instancia if not _tipo_ifc(e).startswith("IfcPlate") for q in e.vertices])
     if len(casco) < 3:
-        return [], []
+        return [], [], []
     cx = sum(q[0] for q in casco) / len(casco)
     cy = sum(q[1] for q in casco) / len(casco)
     bx0, bx1 = min(q[0] for q in casco) - 400.0, max(q[0] for q in casco) + 400.0
@@ -1308,7 +1308,7 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
         if any(math.dist((mx, my), c_) < 30.0 for c_ in centros):
             continue                                          # as duas terças da emenda: um corte só
         centros.append((mx, my))
-        fora += segs
+        fora.append((ent.id, str(_marcas(ent).get("nome") or _marcas(ent).get("posicao") or ent.nome or ""), segs))
         por_peca.append(segs)
     # no traspasse o plano corta as duas telhas, e o chapéu da cumeeira passa por cima delas: fica só
     # o de baixo — o trecho de uma face que tem outra telha paralela logo abaixo dela (até 60 mm, entre
@@ -2203,9 +2203,12 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # as terças em corte, onde cruzam o plano da tesoura sobre o banzo de cima (como o corte das
         # tesouras do projetista): a posição e o lado das abas se leem no próprio desenho
         tercas, telhas, extras = _cortes_das_tercas(doc, instancia, origem, u, v, w, u0, v0, segs_bz, dx, dy)
-        for a_, b_ in tercas:
-            desenho.add(Linha(camada="TERCAS", a=(round(a_[0], 2), round(a_[1], 2)), b=(round(b_[0], 2), round(b_[1], 2)),
-                              atributos=dict(atr, terca_em_corte=True)))
+        for id_t, nome_t, segs_t in tercas:
+            # cada seção é uma peça só no CAD (o clique pega ela inteira — pedido do usuário, 28/09):
+            # "corte" é a terça de onde ela veio; não é "origem", que o Aplicar peças ao 3D lê
+            for a_, b_ in segs_t:
+                desenho.add(Linha(camada="TERCAS", a=(round(a_[0], 2), round(a_[1], 2)), b=(round(b_[0], 2), round(b_[1], 2)),
+                                  atributos=dict(atr, terca_em_corte=True, corte=id_t, nome_corte=nome_t)))
         for poli in telhas:
             # só o contorno de baixo da telha, para ver se ela pega na estrutura
             desenho.add(Polilinha(camada="TELHAS", vertices=[(round(q[0], 2), round(q[1], 2)) for q in poli],
