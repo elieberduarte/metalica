@@ -3124,6 +3124,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     # ---------------------------------------------------------------- outras plantas
     # mezanino, base e cobertura da caixa d'água…: cada uma no seu nível, alinhada à planta
     # estrutural pelos balões dos eixos
+    pecas_das_outras: List[tuple] = []     # (região, deslocamento, peças montadas, título): as terças delas depois
     for k_o, outra in enumerate(par.get("outras") or []):
         titulo_o = str((outra or {}).get("planta") or "").strip()
         t_o = _achar_titulo(textos, titulo_o) if titulo_o else None
@@ -3166,6 +3167,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         ids_o |= _ids_dos_eixos(ents, caixa_o) | {t_o.get("id")}
         usados["outra:" + t_o["texto"].strip()] = ids_o
         baloes_outras.append((baloes(ents, caixa_o), (d_o[0], d_o[1]), nivel_o))
+        pecas_das_outras.append((f_o, (d_o[0], d_o[1]), [pc["ent"] for pc in pecas[n_antes:]], t_o["texto"].strip()))
         outras_feitas.append({"planta": t_o["texto"].strip(), "nivel": nivel_o, "pecas": len(tr_o), "camada": nome_c,
                               "baloes": d_o[2]})
         # as caixas d'água desenhadas nesta planta ("CX.5.000 l"): o volume e o lugar, para a carga
@@ -3348,7 +3350,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         w = [(1.0 / max(1.0, math.dist(p, a[:2])) ** 2, a[2]) for a in viz[:4]]
         return sum(a * b for a, b in w) / sum(a for a, _ in w)
 
-    tercas = correntes = contravs = esticadores = 0
+    tercas = correntes = contravs = esticadores = agulhas = 0
     tab_tc: Dict[str, dict] = _tabela_de_siglas(textos, r"TC\s?\d+[A-Z]?")
     if caixa_t:
         reg = reg_t
@@ -3567,6 +3569,108 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         correntes = acessorio(r"(?i)corrente", 'L 1"×1/8"', "corrente", "Correntes", pa_bz / 2 + 50.0, na_terca=True)
         esticadores = acessorio(r"(?i)esticador", "Barra redonda 10", "corrente", "Correntes", pa_bz / 2 + 50.0,
                                 na_terca=True)
+        # as agulhas (AG): barra redonda Ø 10 rosqueada ("DETALHE TÍPICO DAS AGULHAS"), de terça a terça
+        agulhas = acessorio(r"(?i)agulha", "Barra redonda 10", "corrente", "Correntes", pa_bz / 2 + 50.0, na_terca=True)
+
+    # ---------------------------------------------------------------- terças das outras plantas
+    # a cobertura da caixa d'água ("COBERTURA DA CX DÁGUA NIVEL 11,00") desenha as terças dela
+    # na própria planta, como a planta das terças: o eixo na camada "Terça Eixo", o nome TC ao
+    # lado; cada uma senta nas peças daquela planta que ela cruza (o PERFIL 1 das faces e a
+    # TESOURA 38 do meio), no topo delas, e a emenda entre dois nomes fica no apoio do meio
+    for f_o, d_o, ents_o, titulo_o in pecas_das_outras:
+        reg_o = [e for e in ents if _dentro(_pt(e), f_o)]
+
+        def mv(p, d_o=d_o):
+            return (p[0] + d_o[0], p[1] + d_o[1])
+        eixos_o = [(mv(a), mv(b)) for a, b, _c in _segmentos(reg_o, re.compile(r"(?i)ter[çc]a\s*eixo"))
+                   if math.dist(a, b) >= 500.0]
+        if not eixos_o:
+            continue
+        # os apoios: o topo de cada peça horizontal (em planta) da planta — o banzo de cima da
+        # treliça (o U deitado: meia aba acima do eixo) e a viga (meia altura)
+        sup = []
+        for e in ents_o:
+            if e.tipo != "barra" or e.papel not in ("banzo", "viga"):
+                continue
+            pf = _perfil(e.perfil)
+            meia = (float(pf.bf or 40.0) / 2.0 if e.papel == "banzo" else float(pf.d or 100.0) / 2.0) if pf else 50.0
+            sup.append((e.inicio, e.fim, meia))
+        rot_o = [(mv(t["posicao"]), t["texto"].strip().upper().replace(" ", "")) for t in reg_o
+                 if t["tipo"] == "texto" and re.match(r"^TC\s?\d+[A-Z]?$", t["texto"].strip().upper())]
+        tercas_o = []
+        for a, b in eixos_o:
+            (ux, uy), L = _unit(a, b)
+            apoios = {}
+            for p0, p1, meia in sup:
+                x = _cruzamento(a, b, p0[:2], p1[:2])
+                if x is None:
+                    continue
+                s_x = (x[0] - a[0]) * ux + (x[1] - a[1]) * uy
+                Lp = math.dist(p0[:2], p1[:2])
+                f = math.dist(p0[:2], x) / Lp if Lp > 1.0 else 0.0
+                z = p0[2] + (p1[2] - p0[2]) * f + meia
+                k = round(s_x / 150.0)
+                apoios[k] = max(apoios.get(k, (s_x, -1e9)), (s_x, z), key=lambda q: q[1])
+            aps = sorted(apoios.values())
+            if not aps:
+                continue
+            nomes = sorted(((q[0] - a[0]) * ux + (q[1] - a[1]) * uy, sg) for q, sg in rot_o
+                           if abs((q[0] - a[0]) * -uy + (q[1] - a[1]) * ux) < 700.0
+                           and -300.0 <= (q[0] - a[0]) * ux + (q[1] - a[1]) * uy <= L + 300.0)
+            cortes = []
+            for (sa, _na), (sb, _nb) in zip(nomes, nomes[1:]):
+                bons = [ap[0] for ap in aps if sa + 300.0 < ap[0] < sb - 300.0]
+                if bons:
+                    cortes.append(min(bons, key=lambda x_: abs(x_ - (sa + sb) / 2.0)))
+            pts_c = [0.0] + cortes + [L]
+
+            def zem(s_, aps=aps):
+                if len(aps) == 1:
+                    return aps[0][1]
+                k = 1
+                while k < len(aps) - 1 and aps[k][0] < s_:
+                    k += 1
+                (sa, ha), (sb, hb) = aps[k - 1], aps[k]
+                return ha if abs(sb - sa) < 1.0 else ha + (hb - ha) * (s_ - sa) / (sb - sa)
+            for s0, s1 in zip(pts_c, pts_c[1:]):
+                if s1 - s0 < 300.0:
+                    continue
+                meio_s = (s0 + s1) / 2.0
+                sig = min(nomes, key=lambda r: abs(r[0] - meio_s))[1] if nomes else ""
+                perf = (tab_tc.get(sig) or {}).get("perfil") or "U 100×40×2,65 (FF)"
+                pt_ = _perfil(perf)
+                dz = float(pt_.d or 100.0) / 2.0 if pt_ else 50.0
+                p0 = (a[0] + ux * s0, a[1] + uy * s0, zem(s0) + dz)
+                p1 = (a[0] + ux * s1, a[1] + uy * s1, zem(s1) + dz)
+                if barra(p0, p1, perf, "terça", "Terças", None, 0.0, {"sigla": sig, "planta": titulo_o}):
+                    tercas_o.append((p0, p1))
+                    tercas += 1
+
+        def z_da_terca(p, tercas_o=tercas_o, tol=400.0):
+            melhor = None
+            for ta, tb in tercas_o:
+                dx, dy = tb[0] - ta[0], tb[1] - ta[1]
+                L2 = dx * dx + dy * dy
+                t = max(0.0, min(1.0, ((p[0] - ta[0]) * dx + (p[1] - ta[1]) * dy) / L2)) if L2 > 1.0 else 0.0
+                d = math.dist(p, (ta[0] + dx * t, ta[1] + dy * t))
+                if d <= tol and (melhor is None or d < melhor[0]):
+                    melhor = (d, ta[2] + (tb[2] - ta[2]) * t)
+            return melhor[1] if melhor else None
+        n_ac = {"corrente": 0, "agulha": 0, "esticador": 0}
+        for chave, rx_c, perfil_c in (("corrente", r"(?i)corrente", 'L 1"×1/8"'), ("agulha", r"(?i)agulha", "Barra redonda 10"),
+                                      ("esticador", r"(?i)esticador", "Barra redonda 10")):
+            for a, b, _c in _segmentos(reg_o, re.compile(rx_c)):
+                a, b = mv(a), mv(b)
+                if math.dist(a, b) < 300.0:
+                    continue
+                za, zb = z_da_terca(a), z_da_terca(b)
+                if za is None or zb is None:
+                    continue
+                if barra((a[0], a[1], za), (b[0], b[1], zb), perfil_c, "corrente", "Correntes", None, 0.0, {"planta": titulo_o}):
+                    n_ac[chave] += 1
+        correntes += n_ac["corrente"]
+        agulhas += n_ac["agulha"]
+        esticadores += n_ac["esticador"]
 
     # ---------------------------------------------------------------- perto da origem
     # a planta do projetista fica onde ele desenhou (no posto, a 400 m do zero do DXF): o
@@ -3640,11 +3744,12 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     tab_cr = _tabela_de_siglas(textos, r"CR\s?\d+[A-Z]?")
     tab_cv = _tabela_de_siglas(textos, r"CV\s?\d+[A-Z]?")
     tab_est = _tabela_de_siglas(textos, r"EST\s?\d+[A-Z]?")
+    tab_ag = _tabela_de_siglas(textos, r"AG\s?\d+[A-Z]?")
     pm_total = sum(1 for t in textos if caixa_l and _dentro(t["posicao"], caixa_l) and re.match(r"^PM\d", t["texto"].strip()))
     resumo = {
         "trelicas": sum(contagem.values()), "tipos_de_trelica": len(contagem), "elevacoes": len(elevacoes),
         "vigas": st.get("vigas", 0), "pilares": pilares, "pilares_com_corte": res_pm["n"], "tercas": tercas, "correntes": correntes,
-        "esticadores": esticadores, "contraventamentos": contravs,
+        "esticadores": esticadores, "agulhas": agulhas, "contraventamentos": contravs,
         "barras": len(doc.barras), "calandradas": sum(1 for p in pecas if p["ent"].tipo == "solido"),
         "alma_na_face": na_face,
         "posicoes": len(posicao_de and set(posicao_de.values())), "conjuntos": n_conj, "peso_kg": round(peso, 1),
@@ -3652,7 +3757,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         "nomes_sem_elevacao": {_bonito(k): v for k, v in (st.get("sem_elevacao") or {}).items()},
         "projeto": {"tercas": tc_total, "correntes": sum(v["qtd"] for v in tab_cr.values()),
                     "contraventos": sum(v["qtd"] for v in tab_cv.values()),
-                    "esticadores": sum(v["qtd"] for v in tab_est.values()), "pilares": pm_total},
+                    "esticadores": sum(v["qtd"] for v in tab_est.values()),
+                    "agulhas": sum(v["qtd"] for v in tab_ag.values()), "pilares": pm_total},
     }
     resumo["deslocamento_mm"] = [desl[0], desl[1]]
     resumo["escadas"] = escadas_feitas

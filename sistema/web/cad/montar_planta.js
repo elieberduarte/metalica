@@ -168,6 +168,7 @@ export class MetodosMontarPlantaCAD {
       linha('Terças', z.tercas, pj.tercas),
       linha('Correntes', z.correntes, pj.correntes),
       linha('Esticadores', z.esticadores, pj.esticadores),
+      linha('Agulhas', z.agulhas, pj.agulhas),
       linha('Contraventos', z.contraventamentos, pj.contraventos),
       linha('Vigas VM', z.vigas));
     const dif = (r.conferencia || []).filter(c => !c.ok);

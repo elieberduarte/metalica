@@ -575,3 +575,19 @@ def test_peca_de_um_perfil_so_pela_nota_dentro_do_desenho():
     inclinada = max(el.membros, key=lambda m: m.s1 - m.s0)
     assert inclinada.papel == "banzo" and inclinada.altura_linha == pytest.approx(100.0, abs=5)
     assert inclinada.h1 - inclinada.h0 == pytest.approx(363.0, abs=15)
+
+
+def test_agulha_de_terca_a_terca_em_barra_redonda():
+    """a agulha (camada "1-Agulha", "DETALHE TÍPICO DAS AGULHAS": barra redonda Ø 10 rosqueada) liga
+    uma terça à vizinha, na altura delas — antes ficava de fora (só "corrente" e "esticador")"""
+    xa, xb = L_TES - S_TERCAS[1], L_TES - S_TERCAS[2]
+    ag = [linha((xa, 3000.0 + DY_TER), (xb, 3000.0 + DY_TER), "1-Agulha"), texto((-20000.0, -20500.0), "AG 1 COMP. 1470   1X")]
+    ents = planta() + locacao() + plantas_das_tercas() + ag + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    r = de_planta.montar(ents, {"nivel": 6000.0, "origem": False})
+    assert r["resumo"]["agulhas"] == 1 and r["resumo"]["projeto"]["agulhas"] == 1
+    b = [b for b in r["doc"].barras if b.papel == "corrente" and b.perfil == "Barra redonda 10"]
+    assert len(b) == 1
+    tercas = [t for t in r["doc"].barras if t.papel == "terça"]
+    z_t = {round(t.inicio[0]): t.inicio[2] for t in tercas}
+    assert b[0].inicio[2] == pytest.approx(z_t[round(b[0].inicio[0])], abs=60)
