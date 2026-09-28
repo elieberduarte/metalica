@@ -379,20 +379,37 @@ export class Chamada extends Ferramenta {
   onMover(p) { if (this.alvo) this.editor.previa([criar({ tipo: 'chamada', camada: 'TEXTO', alvo: this.alvo, posicao: p, texto: '…', altura: this.editor.alturaTexto })]); }
 }
 
+/**
+ * Cota. Modo linear (o padrão, como a cota linear do AutoCAD): dois pontos quaisquer — não precisam
+ * estar alinhados — e a posição do mouse escolhe a medida: com o mouse acima ou abaixo dos pontos, a
+ * horizontal; ao lado deles, a vertical (pedido do usuário, 28/09). H e V fixam uma delas, A faz a
+ * alinhada (a distância em linha reta) e L volta ao linear.
+ */
 export class Cota extends Ferramenta {
-  static id = 'cota'; static nome = 'Cota'; static atalho = 'd'; static dica = 'Primeiro ponto da cota · H/V/A troca o modo (alinhada)';
+  static id = 'cota'; static nome = 'Cota'; static atalho = 'd'; static dica = 'Primeiro ponto da cota · L linear (o mouse escolhe horizontal ou vertical) · H/V fixa · A alinhada';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16V8M20 16V8M4 12h16"/><path d="M7 10l-3 2 3 2M17 10l3 2-3 2"/></svg>';
-  reiniciar() { super.reiniciar(); this.p1 = null; this.p2 = null; this.modo = this.modo || 'alinhada'; this.dica(`Primeiro ponto da cota · modo: ${this.modo} (H/V/A troca)`); }
+  reiniciar() { super.reiniciar(); this.p1 = null; this.p2 = null; this.modo = this.modo || 'linear'; this.dica(`Primeiro ponto da cota · modo: ${Cota.NOMES[this.modo]} (L/H/V/A troca)`); }
+  static NOMES = { linear: 'linear', h: 'horizontal', v: 'vertical', alinhada: 'alinhada' };
+  /** No linear, a medida que a posição do mouse pede: fora da faixa dos pontos em y (acima ou
+   *  abaixo) é a horizontal; fora da faixa em x (ao lado) é a vertical; nos dois, a mais afastada. */
+  static modoLinear(p1, p2, p3) {
+    if (!p3) return Math.abs(p2[0] - p1[0]) >= Math.abs(p2[1] - p1[1]) ? 'h' : 'v';
+    const fx = Math.max(Math.min(p1[0], p2[0]) - p3[0], p3[0] - Math.max(p1[0], p2[0]), 0);
+    const fy = Math.max(Math.min(p1[1], p2[1]) - p3[1], p3[1] - Math.max(p1[1], p2[1]), 0);
+    if (fx === 0 && fy === 0) return Math.abs(p2[0] - p1[0]) >= Math.abs(p2[1] - p1[1]) ? 'h' : 'v';
+    return fy >= fx ? 'h' : 'v';
+  }
   _cota(p1, p2, p3) {
     let desl = 10;
+    const modo = this.modo === 'linear' ? Cota.modoLinear(p1, p2, p3) : this.modo;
     if (p3) {
       let [x1, y1] = p1, [x2, y2] = p2;
-      if (this.modo === 'h') y2 = y1; else if (this.modo === 'v') x2 = x1;
+      if (modo === 'h') y2 = y1; else if (modo === 'v') x2 = x1;
       const dx = x2 - x1, dy = y2 - y1, c = Math.hypot(dx, dy) || 1;
       desl = (-(dy / c) * (p3[0] - x1) + (dx / c) * (p3[1] - y1)) / this.doc.escala;
       if (Math.abs(desl) < 2) desl = desl < 0 ? -2 : 2;
     }
-    return criar({ tipo: 'cota', camada: 'COTA', modo: this.modo, p1, p2, deslocamento: desl, altura: this.editor.alturaTexto });
+    return criar({ tipo: 'cota', camada: 'COTA', modo, p1, p2, deslocamento: desl, altura: this.editor.alturaTexto });
   }
   onPonto(p) {
     if (!this.p1) { this.p1 = p; this.editor.snap.ultimo = p; this.dica('Segundo ponto'); return; }
@@ -406,7 +423,12 @@ export class Cota extends Ferramenta {
   }
   onTecla(ev) {
     const k = ev.key.toLowerCase();
-    if (k === 'h' || k === 'v' || k === 'a') { this.modo = k === 'a' ? 'alinhada' : k; this.dica(`Modo: ${this.modo}`); if (this.p2) this.onMover(this.editor.tela.cursor || this.p2); return true; }
+    if (k === 'h' || k === 'v' || k === 'a' || k === 'l') {
+      this.modo = k === 'a' ? 'alinhada' : k === 'l' ? 'linear' : k;
+      this.dica(`Modo: ${Cota.NOMES[this.modo]}`);
+      if (this.p2) this.onMover(this.editor.tela.cursor || this.p2);
+      return true;
+    }
     return false;
   }
 }
