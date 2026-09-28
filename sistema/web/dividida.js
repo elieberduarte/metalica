@@ -209,7 +209,12 @@ async function iniciar() {
   const pm = projeto.planta_modelo || {};
   if (Array.isArray(pm.deslocamento) && pm.deslocamento.length === 2) desl = pm.deslocamento.map(Number);
   desenhoDaPlanta = pm.desenho || '';
-  const inicial = PARAMS.get('desenho') || desenhoDaPlanta || (desenhos[0] && desenhos[0].nome) || '';
+  // o detalhamento completo (tudo num desenho só) primeiro na lista, e é nele que o 2D abre quando o
+  // endereço não pede outro desenho
+  const eCompleto = (d) => /(^|-)completo$/.test(d.nome || '');
+  desenhos.sort((a, b) => Number(eCompleto(b)) - Number(eCompleto(a)));
+  const completo = desenhos.find(eCompleto);
+  const inicial = PARAMS.get('desenho') || (completo && completo.nome) || desenhoDaPlanta || (desenhos[0] && desenhos[0].nome) || '';
   const sel = $('#desenho');
   for (const d of desenhos) {
     const o = document.createElement('option');
