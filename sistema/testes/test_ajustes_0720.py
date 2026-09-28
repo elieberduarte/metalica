@@ -20,13 +20,14 @@ def test_cotas_da_terca_duplos_e_simples():
              Furo("oblongo", 2362.0, 55.0, larg=25, alt=13), Furo("oblongo", 2562.0, 55.0, larg=25, alt=13)]
     assert _cotas_da_terca(p, furos, 4925.0, 10.0, 20.0) == ("dupla", 0)
     cotas = _cotas(d)
-    # cadeia dos duplos: 0|25|2462|4925 (3 trechos) + 3 simples a partir do duplo mais perto
+    # os simples a partir do duplo mais perto, junto da peça, e a cadeia dos duplos 0|25|2462|4925
+    # (3 trechos) depois deles (padrão de 28/09: o 110 antes da cota dos furos duplos)
     xs = sorted((round(min(c.p1[0], c.p2[0])), round(max(c.p1[0], c.p2[0])), c.deslocamento) for c in cotas)
-    assert (0, 25, -10.0) in xs and (25, 2462, -10.0) in xs and (2462, 4925, -10.0) in xs
-    simples = [c for c in xs if c[2] != -10.0]
+    assert (0, 25, -26.0) in xs and (25, 2462, -26.0) in xs and (2462, 4925, -26.0) in xs
+    simples = [c for c in xs if c[2] != -26.0]
     # os dois simples do duplo do meio (100 | 100) na mesma linha, numa cadeia só (0.7.21)
-    assert len(simples) == 3 and (25, 135, -26.0) in simples and (2362, 2462, -26.0) in simples
-    assert (2462, 2562, -26.0) in simples
+    assert len(simples) == 3 and (25, 135, -10.0) in simples and (2362, 2462, -10.0) in simples
+    assert (2462, 2562, -10.0) in simples
     # sem furo duplo não se aplica
     d2 = Desenho(nome="t", escala=25.0)
     assert _cotas_da_terca(_Papel(d2, {}, 0.0, 0.0), furos[2:3], 4925.0, 10.0, 20.0) is False

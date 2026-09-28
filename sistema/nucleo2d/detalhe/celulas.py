@@ -85,11 +85,13 @@ def _cabecalho(pos: Posicao) -> List[str]:
 
 
 def _cotas_da_terca(p: "_Papel", furos: Sequence[Furo], L: float, off: float, off2: float):
-    """Cotas da terça como a máquina de furar trabalha: primeiro a cadeia dos furos duplos
-    (duas furações na mesma abscissa — a ligação ao suporte), de ponta a ponta; depois
-    cada furo simples (tirante, esticador) cotado a partir do furo duplo mais próximo,
-    numa segunda linha. Devolve False sem furo duplo (vale a cadeia comum), True com a
-    linha dos duplos só, "dupla" quando também há a linha dos simples."""
+    """Cotas da terça como a máquina de furar trabalha: a cadeia dos furos duplos (duas
+    furações na mesma abscissa — a ligação ao suporte), de ponta a ponta, e cada furo simples
+    (tirante, esticador) cotado a partir do furo duplo mais próximo. O simples vem antes, junto
+    da peça, e a cadeia dos duplos logo depois dele, com a total em seguida (padrão pedido pelo
+    usuário, 28/09: o 110 antes da cota dos furos duplos, a total colada na cadeia). Devolve
+    False sem furo duplo (vale a cadeia comum), True com a linha dos duplos só, ("dupla",
+    linhas a mais) quando também há a linha dos simples."""
     colunas: List[List[float]] = []
     for x in sorted(f.x for f in furos):
         if colunas and x - colunas[-1][-1] <= 2.0:
@@ -100,9 +102,9 @@ def _cotas_da_terca(p: "_Papel", furos: Sequence[Furo], L: float, off: float, of
     simples = [c[0] for c in colunas if len(c) < 2]
     if not duplos:
         return False
-    p.cadeia_h([0.0] + duplos + [L], 0, -off, exigir_espaco=False)
-    # a linha dos simples fica a 6 mm a mais: o número de um trecho curto da cadeia (60)
-    # sai por baixo da linha dela e cairia em cima dos números dos simples
+    if not simples:
+        p.cadeia_h([0.0] + duplos + [L], 0, -off, exigir_espaco=False)
+        return True
     por_duplo: Dict[float, Dict[float, List[float]]] = collections.defaultdict(lambda: {-1.0: [], 1.0: []})
     for x in simples:
         xd = min(duplos, key=lambda d: abs(d - x))
@@ -113,12 +115,15 @@ def _cotas_da_terca(p: "_Papel", furos: Sequence[Furo], L: float, off: float, of
         dir_ = sorted(lados[1.0], key=lambda x: x - xd)
         # o simples mais perto de cada lado numa cadeia só (100 | 100 do furo duplo do meio):
         # uma linha, e os números dos trechos curtos saem para fora, um para cada lado
-        p.cadeia_h(esq[:1] + [xd] + dir_[:1], 0, -(off2 + FOLGA_COTA_TERCA), exigir_espaco=False)
+        p.cadeia_h(esq[:1] + [xd] + dir_[:1], 0, -off, exigir_espaco=False)
         # um 2º simples do mesmo lado (raro) desce uma linha
         for k, x in enumerate(esq[1:] + dir_[1:], 1):
-            p.cadeia_h([xd, x], 0, -(off2 + FOLGA_COTA_TERCA + 7.0 * k), exigir_espaco=False)
+            p.cadeia_h([xd, x], 0, -(off + 7.0 * k), exigir_espaco=False)
             extra = max(extra, k)
-    return ("dupla", extra) if simples else True
+    # a cadeia dos duplos 6 mm a mais que o passo: o número de um trecho curto dos simples (110)
+    # sai por baixo da linha dele e cairia em cima dos números da cadeia
+    p.cadeia_h([0.0] + duplos + [L], 0, -(off2 + FOLGA_COTA_TERCA + 7.0 * extra), exigir_espaco=False)
+    return ("dupla", extra)
 
 
 #: Na terça, quanto a linha dos furos simples e a total descem a mais (mm de papel).
