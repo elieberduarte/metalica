@@ -143,6 +143,7 @@ class CAD {
     document.body.dataset.pronto = '1';
     window.cad = this;
     this._ouvirDivisao();
+    if (this.projeto) this._vigiarDesenhosVivos();
     // o botão "Atualizar" (web/atualizacao.js) grava o desenho antes de instalar — e
     // espera confirmar: falhou, a atualização não segue
     window.__antesDeAtualizar = () => this.gravarConfirmado();
@@ -198,6 +199,56 @@ class CAD {
   }
 
   _desenhoBloqueado() { return !!(this._naoAbriu && this._naoAbriu === this.nomeDesenho); }
+
+  /**
+   * Desenhos que se atualizam sozinhos (desenhos_vivos.py, pedido do usuário, 28/09): a cada poucos
+   * segundos pergunta ao servidor — que refaz o detalhamento em segundo plano quando o modelo 3D, a
+   * versão do detalhamento, a furação ou os eixos mudaram, e as pranchas quando as folhas mudaram — e
+   * recarrega o desenho aberto quando a geração dele muda, na mesma vista. Com edição por gravar, não
+   * recarrega por cima: avisa (a gravação é recusada pelo servidor e a tela recarrega).
+   */
+  _vigiarDesenhosVivos() {
+    const url = `/api/projetos/${encodeURIComponent(this.projeto)}/desenhos-vivos`;
+    let avisouAtualizando = false, avisouErro = '';
+    const olhar = async () => {
+      if (document.hidden || !this.nomeDesenho || this._recarregando) return;
+      let e;
+      try { e = await pedir(url); } catch { return; }
+      if (e.atualizando && !avisouAtualizando) {
+        avisouAtualizando = true;
+        this.aviso(`Atualizando os desenhos de detalhamento${e.motivo ? ` (${e.motivo})` : ''}… a tela recarrega sozinha quando terminar.`, 'info', 12000);
+      }
+      if (!e.atualizando) avisouAtualizando = false;
+      if (e.erro && e.erro !== avisouErro) { avisouErro = e.erro; this.aviso(`A atualização automática dos desenhos não terminou: ${e.erro}`, 'atencao', 0); }
+      const nova = (e.desenhos || {})[this.nomeDesenho];
+      const minha = (this.doc.metadados || {}).geracao;
+      if (nova && minha && nova !== minha) {
+        if (this._temPendente()) {
+          if (this._avisouPendente !== nova) {
+            this._avisouPendente = nova;
+            this.aviso('Este desenho foi atualizado (modelo ou versão nova). Há uma edição sua ainda não gravada: a tela recarrega depois que ela for gravada.', 'atencao', 12000);
+          }
+          return;
+        }
+        await this._recarregarNaVista('Desenho atualizado com o modelo e a versão atuais.');
+      }
+    };
+    setInterval(olhar, 5000);
+    setTimeout(olhar, 1500);
+  }
+
+  /** Recarrega o desenho aberto do disco, na mesma vista (zoom e posição). */
+  async _recarregarNaVista(msg) {
+    this._recarregando = true;
+    try {
+      const vp = { ...this.tela.vp };
+      const r = await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}`);
+      this.carregar(r.desenho, { enquadrar: false });
+      this.tela.vp = vp;
+      this.tela.pedirQuadro();
+      if (msg) this.dica(msg);
+    } catch { /* tenta de novo na próxima volta */ } finally { this._recarregando = false; }
+  }
 
   _temPendente() { return !!(this._editado || this._salvando || this._autosaveTimer || this._autosavePendente); }
 
@@ -276,6 +327,14 @@ class CAD {
       this.el.estadoSalvo.textContent = 'gravado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       if (avisar) this.aviso(`Desenho salvo no projeto (${numero(r.entidades)} objetos).`, 'info');
     } catch (e) {
+      if (/DESENHO_ATUALIZADO/.test(e.message || '')) {
+        this._editado = false;
+        this.el.estadoSalvo.textContent = 'desenho atualizado';
+        this.aviso('Este desenho foi refeito (modelo ou versão nova) enquanto estava aberto: recarregado com a versão nova — a última edição não foi gravada.', 'atencao', 15000);
+        this._salvando = false;
+        await this._recarregarNaVista();
+        return;
+      }
       this.el.estadoSalvo.textContent = 'não foi possível gravar';
       if (avisar) this.aviso(`Não foi possível salvar: ${e.message}`, 'erro', 0);
     } finally {
@@ -696,6 +755,7 @@ class CAD {
       'inserir-folha': () => this.inserirFolha(),
       'alternar-tema': () => this._alternarTema(),
       'pranchas-das-folhas': () => this.pranchasDasFolhas(),
+      'atualizar-desenhos': () => this.atualizarDesenhosAgora(),
       'importar-dxf': () => $('#arquivo-dxf').click(),
       arquitetonico: () => $('#arquivo-arquitetonico').click(),
       'planta-lancamento': () => this.abrirPlantaDeLancamento(),
@@ -1866,6 +1926,17 @@ class CAD {
       this.selecionar(novas.map(e => e.id));
       this.aviso(`${n > 1 ? `${n} folhas` : 'Folha'} ${formato.value} 1:${this.doc.escala} ${n > 1 ? 'inseridas' : 'inserida'}. Mova ou copie os detalhes para dentro; depois, Desenhos → Gerar pranchas das folhas.`, 'info', 10000);
     } catch (e) { this.aviso(`Não foi possível inserir a folha: ${e.message}`, 'erro', 0); }
+  }
+
+  /** Refaz agora o detalhamento e as pranchas, em segundo plano (o normal é sozinho, quando o modelo
+   *  ou a versão mudam): grava antes o que está pendente; a tela recarrega quando terminar. */
+  async atualizarDesenhosAgora() {
+    if (!this.projeto) { this.aviso('Precisa de um projeto aberto.', 'atencao'); return; }
+    if (this._temPendente() && !(await this._gravarOuConfirmar('Atualizar mesmo assim'))) return;
+    try {
+      await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos-vivos/atualizar`, {});
+      this.aviso('Atualizando os desenhos de detalhamento e as pranchas… a tela recarrega sozinha quando terminar.', 'info', 10000);
+    } catch (e) { this.aviso(`Não foi possível atualizar: ${e.message}`, 'erro', 0); }
   }
 
   /** Cada folha posta neste desenho vira uma prancha com o que está dentro dela; todas ficam lado a

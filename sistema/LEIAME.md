@@ -231,7 +231,14 @@ conta 1 porca sextavada + 2 arruelas lisas na bitola da barra, e não as porcas 
 modelou (`base.pontas_roscadas`: cada solta vai para a barra cuja malha passa rente a ela; as de uma barra a até
 45 mm são uma ponta). Vale na lista de materiais (o Quadro 7 deixa de mostrar "BOLT () 0x0": porcas e arruelas por
 bitola), no resumo de materiais (no local da barra) e na legenda dos conjuntos. Na Sala: 168 pontas (agulhas,
-barras roscadas dos contraventos, as duas pernas de cada chumbador em U).
+barras roscadas dos contraventos, as duas pernas de cada chumbador em U). **Desenhos e pranchas que se atualizam
+sozinhos** (`desenhos_vivos.py`, pedido do usuário, 28/09): o detalhamento grava um carimbo do que usou (o modelo
+3D, o código do detalhamento, a furação ajustada, os eixos); quando algo muda — o 3D foi gravado, saiu versão nova —,
+os desenhos são refeitos em segundo plano pelo mesmo caminho do botão Detalhar (a montagem das folhas fica), sem
+regravar o modelo (que o editor pode estar editando), e o CAD aberto recarrega o desenho na mesma vista; com edição
+por gravar, avisa, e a gravação por cima do desenho refeito é recusada (a tela recarrega). O desenho "Pranchas"
+se refaz junto e quando um desenho de trabalho com folhas é gravado. Desenhos → Atualizar desenhos e pranchas agora
+força a atualização. Verificador: `verif_desenhos_vivos`.
 
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
 sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da

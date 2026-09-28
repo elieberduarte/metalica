@@ -72,6 +72,7 @@
       I('Montar pranchas (automático)…', '2d', 'pranchas'),
       I('Inserir folha (prancha)…', '2d', 'inserir-folha'),
       I('Gerar pranchas das folhas', '2d', 'pranchas-das-folhas'),
+      I('Atualizar desenhos e pranchas agora', '2d', 'atualizar-desenhos'),
       HR, T('Detalhamento ↔ modelo 3D'),
       I('Ver no 3D a peça selecionada', '2d', 'ver-3d'),
       I('Selecionar tudo da mesma peça', '2d', 'selecionar-peca'),

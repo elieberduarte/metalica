@@ -447,6 +447,7 @@ def acao_de_projeto(s: str, acao: str, corpo: dict) -> dict:
                                   "você abri-lo; recarregue o modelo (F5) antes de continuar. Nada foi gravado.")
         r = g.salvar_modelo(s, corpo.get("documento", corpo))
         r["alterado"] = _alterado_modelo(s)
+        _vivos().modelo_gravado(s)
         return r
     if acao == "importar-ifc":
         return importar_ifc_no_projeto(s, corpo)
@@ -784,29 +785,48 @@ def detalhar_projeto(s: str, corpo: dict) -> dict:
     from nucleo2d.detalhar import detalhar, GRUPOS, _categoria  # noqa: F401
     from saida import lista_producao
     g = _gerente()
-    try:
-        return _detalhar_projeto(s, corpo, g, detalhar, GRUPOS, _categoria, lista_producao)
-    finally:
-        _fim_progresso(s)
+    with _vivos().trava(s):           # nunca junto da atualização automática (desenhos_vivos)
+        try:
+            return _detalhar_projeto(s, corpo, g, detalhar, GRUPOS, _categoria, lista_producao)
+        finally:
+            _fim_progresso(s)
+
+
+_VIVOS = None
+
+
+def _vivos():
+    """desenhos_vivos configurado com o que faz o trabalho (o mesmo do botão Detalhar e das pranchas)"""
+    global _VIVOS
+    if _VIVOS is None:
+        import desenhos_vivos
+        desenhos_vivos.configurar(detalhar=lambda s: detalhar_projeto(s, {"automatico": True}), pranchas=refazer_pranchas,
+                                  gerente=_gerente)
+        _VIVOS = desenhos_vivos
+    return _VIVOS
 
 
 def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, lista_producao) -> dict:
     _progresso(s, "abrindo o modelo…")
     doc = _documento3d_do_projeto(s)
-    _conferir_eixos_das_chapas(s, doc)
-    _alinhar_furos_das_barras(s, doc)
+    # a atualização automática (desenhos_vivos) só refaz os desenhos: não regrava o modelo 3D (eixos das
+    # chapas, furos alinhados, nomes nas peças, chapas paramétricas, furação padrão), que o editor pode
+    # estar editando — as correções valem na memória, para o desenho sair igual; gravar é do botão
+    automatico = bool(corpo.get("automatico"))
+    _conferir_eixos_das_chapas(s, doc, gravar=not automatico)
+    _alinhar_furos_das_barras(s, doc, gravar=not automatico)
     grupos = corpo.get("grupos") or list(GRUPOS.keys())
     r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
                  rotular=bool(corpo.get("rotular", False)),
-                 converter=corpo.get("converter", True) is not False, ajustes=_ajustes_furos(s),
+                 converter=corpo.get("converter", True) is not False and not automatico, ajustes=_ajustes_furos(s),
                  nomes=_nomes_producao(s), eixos=g.ler(s).get("eixos"),
                  avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
     _gravar_nomes_producao(s, r.get("nomes") or {})
-    nomeadas = _nomes_no_modelo(doc, r.get("nomes") or {})
+    nomeadas = 0 if automatico else _nomes_no_modelo(doc, r.get("nomes") or {})
     # a furação padrão de fábrica (regra das terças) também nas chapas do 3D, e as terças
     # parafusadas nelas acompanham
     from nucleo2d.detalhar import padronizar_furos_das_chapas, alinhar_furos_das_barras_as_chapas
-    padr = padronizar_furos_das_chapas(doc, r.get("objetos_posicoes") or [])
+    padr = {"chapas": 0, "posicoes": []} if automatico else padronizar_furos_das_chapas(doc, r.get("objetos_posicoes") or [])
     if padr["chapas"]:
         alinhar_furos_das_barras_as_chapas(doc)
         r.setdefault("avisos", []).append("furação padrão de fábrica aplicada no 3D a %d chapa(s): %s"
@@ -831,6 +851,8 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
             if os.path.exists(g._caminho_desenho(s, nome)):
                 g.excluir_desenho(s, nome)
     desenhos = []
+    geracao = _vivos().nova_geracao()
+    geracoes = {}
     for chave, desenho in r["desenhos"].items():
         nome = desenho.nome
         if substituir and os.path.exists(g._caminho_desenho(s, nome)):
@@ -852,7 +874,9 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
             g.excluir_desenho(s, nome)
         desenho.metadados["gerado_por"] = "detalhamento"
         desenho.metadados["versao"] = versao.VERSAO
+        desenho.metadados["geracao"] = geracao       # o CAD recarrega o desenho aberto quando ela muda
         salvo = g.salvar_desenho(s, nome, desenho.dict())
+        geracoes[salvo["nome"]] = geracao
         desenhos.append({"grupo": chave, "nome": salvo["nome"], "titulo": nome,
                          "entidades": desenho.tamanho, "escala": desenho.escala})
     pasta = os.path.join(g._existente(s), "detalhamento")
@@ -869,6 +893,8 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     relatorio = {k: v for k, v in r.items() if k not in ("desenhos", "objetos_posicoes", "objetos_pecas", "camadas")}
     relatorio["desenhos"] = desenhos
     _gravar_ajuste(os.path.join(pasta, "relatorio.json"), relatorio)
+    # o carimbo do que foi usado (modelo, código, furação, eixos): mudou, os desenhos se refazem sozinhos
+    _vivos().gravar_carimbo(s, geracoes, completo=set(grupos) >= set(GRUPOS.keys()))
     g.tocar(s)
     return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
             "pecas": sum(p["quantidade"] for p in r["posicoes"]), "peso_total": r["peso_total"],
@@ -1087,10 +1113,10 @@ def progresso_do_projeto(s: str) -> dict:
     return {"etapa": p["etapa"], "ha_s": round(time.time() - p["quando"], 1)}
 
 
-def _alinhar_furos_das_barras(s: str, doc) -> dict:
+def _alinhar_furos_das_barras(s: str, doc, gravar: bool = True) -> dict:
     """Furos das terças no lugar (e no formato) dos furos das chapas de suporte
     parafusadas nelas — nucleo2d.detalhar.alinhar_furos_das_barras_as_chapas. Grava o
-    modelo quando algo mudou."""
+    modelo quando algo mudou (`gravar`; a atualização automática só usa o resultado)."""
     from nucleo2d import detalhar as det
     _progresso(s, "conferindo os furos das terças com os das chapas de suporte…")
     r = det.alinhar_furos_das_barras_as_chapas(doc)
@@ -1104,7 +1130,7 @@ def _alinhar_furos_das_barras(s: str, doc) -> dict:
     r2 = det.retirar_furos_sem_uso(doc)
     # e os que ficam, oblongos como a regra manda (a chapa parafusada neles também)
     r3 = det.oblongar_furos_das_tercas(doc)
-    if r.get("barras") or r2.get("furos") or r2.get("limpas") or r3.get("furos") or r3.get("chapas"):
+    if gravar and (r.get("barras") or r2.get("furos") or r2.get("limpas") or r3.get("furos") or r3.get("chapas")):
         _regravar_modelo(s, doc)
         print("[detalhamento] %s: %d furo(s) de %d barra(s) alinhados às chapas (%d oblongos); %d furo(s) sem uso retirados de %d terça(s)"
               % (s, r["furos"], r["barras"], r["oblongos"], r2["furos"], r2["barras"]))
@@ -1113,7 +1139,7 @@ def _alinhar_furos_das_barras(s: str, doc) -> dict:
     return r
 
 
-def _conferir_eixos_das_chapas(s: str, doc) -> dict:
+def _conferir_eixos_das_chapas(s: str, doc, gravar: bool = True) -> dict:
     """Chapas convertidas por versões anteriores (eixos por peça, `eixos_conferidos`
     ausente) são refeitas a partir do IFC de origem do projeto, todas no mesmo sistema
     — ver nucleo2d.detalhar.reorientar_chapas. Uma vez por projeto; sem o IFC, ficam
@@ -1134,7 +1160,7 @@ def _conferir_eixos_das_chapas(s: str, doc) -> dict:
     doc_ifc = imp.importar(caminho)
     _progresso(s, "reorientando as chapas…")
     r = det.reorientar_chapas(doc, doc_ifc)
-    if r.get("chapas"):
+    if gravar and r.get("chapas"):
         _regravar_modelo(s, doc)
         print("[detalhamento] %s: %d chapa(s) de %d posição(ões) reorientadas pelo IFC; %d parafuso(s) movidos"
               % (s, r["chapas"], r["posicoes"], r["parafusos"]))
@@ -2138,6 +2164,8 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
                              indice=corpo.get("indice", True) is not False)
     junto = juntar_pranchas(folhas, nome=titulo)
     junto.metadados["gerado_por"] = "pranchas"
+    junto.metadados["pedido"] = {k: v for k, v in corpo.items() if k != "substituir"}
+    junto.metadados["geracao"] = _vivos().nova_geracao()
     if corpo.get("substituir", True) is not False:
         # apaga o desenho anterior com este nome e as pranchas soltas de antes (Prancha 01, 02, …
         # montadas automaticamente; as geradas das folhas ficam)
@@ -2150,6 +2178,7 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
                 if meta.get("gerado_por") == "pranchas":
                     g.excluir_desenho(s, n)
     salvo = g.salvar_desenho(s, titulo, junto.dict())
+    _vivos().registrar_desenho(s, salvo["nome"], junto.metadados["geracao"])
     saida = [{"titulo": f.nome, "numero": f.metadados["prancha"]["numero"], "entidades": f.tamanho,
               "celulas": len(f.metadados["prancha"]["celulas"])} for f in folhas]
     g.tocar(s)
@@ -2228,11 +2257,51 @@ def pranchas_das_folhas(s: str, nome: str, corpo: dict) -> dict:
             folhas += _pranchas(d, fo, carimbo, titulo="Prancha", primeira=len(folhas) + 1, total=total)
     junto = juntar_pranchas(folhas, nome=titulo)
     junto.metadados["gerado_por"] = "folhas"
+    junto.metadados["geracao"] = _vivos().nova_geracao()
     salvo = g.salvar_desenho(s, titulo, junto.dict())
+    _vivos().registrar_desenho(s, salvo["nome"], junto.metadados["geracao"])
     g.tocar(s)
     return {"desenho": salvo["nome"],
             "pranchas": [{"titulo": f.nome, "numero": f.metadados["prancha"]["numero"], "fonte": f.metadados["prancha"]["fontes"][0],
                           "entidades": f.tamanho, "do_desenho": f.metadados["prancha"]["entidades_do_desenho"]} for f in folhas]}
+
+
+def refazer_pranchas(s: str):
+    """Refaz o desenho das pranchas do projeto, se houver (a atualização automática, depois do
+    detalhamento ou das folhas gravadas): das folhas, com as fontes que ele já tem; da montagem
+    automática, com o mesmo pedido da última vez. Devolve a geração nova, ou None."""
+    g = _gerente()
+    for info in g.listar_desenhos(s, contar=False):
+        if not info.get("pranchas"):
+            continue
+        meta = (g.abrir_desenho(s, info["nome"]) or {}).get("metadados") or {}
+        titulo = str(info.get("titulo") or "Pranchas")
+        if meta.get("gerado_por") == "folhas":
+            fontes = [fo for f in meta.get("pranchas") or [] for fo in (f.get("fontes") or [])]
+            existentes = {d["nome"] for d in g.listar_desenhos(s, contar=False)}
+            fontes = [fo for fo in dict.fromkeys(fontes) if fo in existentes]
+            if fontes:
+                return pranchas_das_folhas(s, fontes[-1], {"titulo": titulo})["desenho"]
+        elif meta.get("gerado_por") == "pranchas" and meta.get("pedido"):
+            return montar_pranchas_projeto(s, dict(meta["pedido"], titulo=titulo))["desenho"]
+    return None
+
+
+def salvar_desenho_do_cad(s: str, nome: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/desenhos/<nome> (o CAD grava): se o desenho foi refeito pela atualização
+    automática depois que o CAD o abriu (a geração mudou), não grava por cima — o CAD recarrega. Com
+    folhas, as pranchas se refazem sozinhas logo depois."""
+    d = corpo.get("desenho", corpo)
+    vivos = _vivos()
+    geracao = ((d or {}).get("metadados") or {}).get("geracao") if isinstance(d, dict) else None
+    if geracao:
+        atual = (vivos.ler_carimbo(s).get("desenhos") or {}).get(_slug(nome))
+        if atual and atual != geracao:
+            raise ErroDeDados("DESENHO_ATUALIZADO: este desenho foi refeito (modelo ou versão nova) enquanto estava "
+                              "aberto; a tela recarrega com ele — a última edição não foi gravada.")
+    r = _gerente().salvar_desenho(s, nome, d)
+    vivos.desenho_gravado(s, _slug(nome), d)
+    return r
 
 
 def _texto_do_dxf(corpo: dict) -> str:
@@ -3070,6 +3139,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(referencia_do_lancamento(partes[0]))
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
+                if len(partes) == 2 and partes[1] == "desenhos-vivos":
+                    return self._json(_vivos().estado(partes[0]))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(dados_dos_resumos(partes[0]))
                 if len(partes) == 2 and partes[1] == "cantos":
@@ -3238,8 +3309,10 @@ class Handler(BaseHTTPRequestHandler):
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "reconhecer":
                     return self._json(reconhecer_no_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 3 and partes[1] == "desenhos":
-                    return self._json(_gerente().salvar_desenho(partes[0], partes[2],
-                                                                corpo.get("desenho", corpo)))
+                    return self._json(salvar_desenho_do_cad(partes[0], partes[2], corpo))
+                if len(partes) == 3 and partes[1] == "desenhos-vivos" and partes[2] == "atualizar":
+                    _vivos().atualizar(partes[0], "pedido na tela")
+                    return self._json(_vivos().estado(partes[0], conferir=False))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "dxf":
                     return self._json(exportar_desenho_dxf(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "pdf":
