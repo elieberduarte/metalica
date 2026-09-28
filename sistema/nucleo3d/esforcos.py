@@ -619,9 +619,42 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         casos["AG"] = np.zeros(ndof)
         horiz = [i for i, e in enumerate(usadas) if barras[e]["papel"] in ("viga", "banzo")]
         cand = np.array(sorted({int(ia[i]) for i in horiz} | {int(ib[i]) for i in horiz}))
+        vigas_h = [i for i in horiz if barras[usadas[i]]["papel"] == "viga"]
         for c in caixas:
             P = float(c["litros"]) / 1000.0 * PESO_AGUA
             xy = np.array([c["x"], c["y"]]) / 1000.0
+            # o fundo da caixa sobre as vigas que passam embaixo dele: cada uma leva a parte do
+            # peso proporcional ao trecho dela dentro do círculo, repartida nos dois nós do trecho
+            # pela alavanca (o centro do trecho de dentro)
+            R = float(c.get("diametro") or 0.0) / 2000.0
+            if R > 0.1:
+                partes = []
+                for i in vigas_h:
+                    a_, b_ = nos[int(ia[i])], nos[int(ib[i])]
+                    if abs((a_[2] + b_[2]) / 2 - float(c["nivel"]) / 1000.0) >= 0.6:
+                        continue
+                    u = b_[:2] - a_[:2]
+                    L2 = float(u @ u)
+                    if L2 < 1e-9:
+                        continue
+                    t0 = float((xy - a_[:2]) @ u) / L2
+                    h2 = R * R - float(np.sum((a_[:2] + u * t0 - xy) ** 2))
+                    if h2 <= 0.0:
+                        continue
+                    dt = math.sqrt(h2 / L2)
+                    t1, t2 = max(t0 - dt, 0.0), min(t0 + dt, 1.0)
+                    if t2 - t1 > 1e-6:
+                        partes.append((i, (t2 - t1) * math.sqrt(L2), (t1 + t2) / 2))
+                tot = sum(l_ for _i, l_, _t in partes)
+                if tot > 0.0:
+                    for i, l_, tm in partes:
+                        f = P * l_ / tot
+                        casos["AG"][int(ia[i]) * 6 + 2] -= f * (1.0 - tm)
+                        casos["AG"][int(ib[i]) * 6 + 2] -= f * tm
+                    memoria_caixas.append({"litros": c["litros"], "kN": round(P, 1), "vigas": len(partes),
+                                           "nos": len({int(ia[i]) for i, _l, _t in partes} | {int(ib[i]) for i, _l, _t in partes}),
+                                           "x": round(xy[0], 2), "y": round(xy[1], 2), "nivel": c["nivel"]})
+                    continue
             dz = np.abs(nos[cand, 2] - float(c["nivel"]) / 1000.0)
             dxy = np.linalg.norm(nos[cand, :2] - xy, axis=1)
             sel = cand[(dz < 0.6) & (dxy < RAIO_CAIXA)]

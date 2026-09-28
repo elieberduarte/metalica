@@ -163,3 +163,22 @@ def test_sobrecarga_da_passarela_na_trelica_deitada():
     assert sem["passarela"]["area_m2"] == pytest.approx(9.0, rel=0.05) and any("passarela sem" in a for a in sem["avisos"])
     r = esforcos.calcular(doc, {"passarela_sobrecarga": 1.0})
     assert r["casos"]["SP"]["carga_kN"] == pytest.approx(9.0, rel=0.05) and r["casos"]["SP"]["erro"] < 1e-6
+
+
+def test_agua_da_caixa_pelas_vigas_embaixo_do_fundo():
+    # a base da caixa: quatro pilares de 8,2 m, duas vigas em x nas pontas e cinco VMs em y a cada
+    # 600 mm; a caixa de 5.000 l (Ø 2 m) no meio: a água desce pelas VMs que passam embaixo dela
+    doc = Documento()
+    for x in (0.0, 3600.0):
+        for y in (0.0, 4000.0):
+            doc.add(barra((x, y, 0.0), (x, y, 8200.0), "pilar", perfil="W 200×19,3"))
+    for y in (0.0, 4000.0):
+        doc.add(barra((0.0, y, 8200.0), (3600.0, y, 8200.0), "viga", perfil="W 200×19,3"))
+    for k in range(1, 6):
+        doc.add(barra((600.0 * k, 0.0, 8200.0), (600.0 * k, 4000.0, 8200.0), "viga", perfil="Ue 200×70×20×2,65"))
+    doc.metadados = {"de_planta": {"caixas_dagua": [{"litros": 5000, "x": 1800.0, "y": 2000.0, "nivel": 8200.0,
+                                                    "diametro": 2000}]}}
+    r = esforcos.calcular(doc)
+    c = r["caixas_dagua"][0]
+    assert c["vigas"] == 3                                   # as VMs em x 1200, 1800 e 2400
+    assert r["casos"]["AG"]["carga_kN"] == pytest.approx(50.0, rel=1e-3) and r["casos"]["AG"]["erro"] < 1e-6

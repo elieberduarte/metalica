@@ -252,7 +252,13 @@ locação (a placa com a seção da longarina dentro); do chão ao piso de cima,
 da mesma corrente que somam a altura; a de baixo). Camada "Escadas"; o pé no chão é apoio no cálculo, e o peso dos
 degraus e a sobrecarga de uso entram pela tela de esforços. Pesos e sobrecargas de uso do mezanino e da passarela também.
 No Posto CB: ESCADA 1 (E/F/G + pés CH8) e ESCADA 2 (1A/1B, A6–A8), patamar a 1,70 m, topo a 3,17 m; o pé da escada 1
-dá 0,63 tf × 0,6 tf da locação.
+dá 0,63 tf × 0,6 tf da locação. As peças da planta da escada que não são longarina nem degrau também entram (pedido do usuário:
+"faltou um elemento de ligação dela com o mezanino"): a viga de chegada e a ligação dela até o pilar do mezanino (1,08 m
+na escada 1), as vigas do meio do patamar e o piso de chapa xadrez (espessura pela nota dos cortes). **Base da caixa
+d'água** (print do usuário, a VM P30 embaixo da treliça): na planta de piso acima da cobertura ("NIVEL 8,20") as
+treliças ficam embaixo do nível, como os cortes mostram — a que recebe as VMs por cima com o topo no fundo delas
+(7,40–8,00), as outras com o topo no nível (7,40–8,20); no esqueleto a viga que passa sobre um banzo ganha nó nele, e a
+água da caixa desce pelas VMs embaixo do fundo dela (proporcional ao trecho dentro do círculo), não mais nos nós perto.
 
 **0.8.47.** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
 print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e
