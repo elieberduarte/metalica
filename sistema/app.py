@@ -1550,6 +1550,13 @@ def esforcos_do_projeto(s: str, corpo: Optional[dict] = None, recalcular: bool =
              "cargas": r["cargas"], "avisos": r["avisos"], "hipoteses": esforcos.hipoteses(r),
              "planta": r["planta"], "cargas_sem_pilar": r["cargas_sem_pilar"], "parametros_vento": par,
              "mezanino": r.get("mezanino"), "passarela": r.get("passarela"), "escadas": r.get("escadas")}
+    # a verificação dos perfis com esses esforços (NBR 14762 / NBR 8800), em três cenários de vento
+    from nucleo3d import verificacao_perfis
+    try:
+        saida["perfis"] = verificacao_perfis.verificar_cenarios(doc, r)
+    except Exception as exc:                      # a verificação não derruba os esforços
+        saida["perfis"] = {"erro": str(exc), "detalhe": traceback.format_exc()}
+    saida["segundos"] = round(time.time() - t0, 1)
     if novos:
         g._atualizar(s, esforcos_parametros=par)
     if novas_c:

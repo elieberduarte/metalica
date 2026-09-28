@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import collections
 import math
+import re
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -270,7 +271,7 @@ def _transformacao(R: np.ndarray) -> np.ndarray:
 # ------------------------------------------------------------------ o cálculo
 
 def _casos_de_vento(casos: dict, faixas, nos, ia, ib, d, base: float, car: dict, vento: Optional[dict],
-                    avisos: List[str]) -> Optional[dict]:
+                    avisos: List[str], m0: Optional[dict] = None, L=None) -> Optional[dict]:
     """os casos de vento na cobertura (NBR 6123:2023), acrescentados a `casos`: quatro sentidos
     (perpendicular e paralelo às cumeeiras, de um lado e do outro) × cada cpi. A cobertura cuja
     altura livre não chega à metade da profundidade (7.2.1) vai como edificação fechada de mesma
@@ -332,6 +333,8 @@ def _casos_de_vento(casos: dict, faixas, nos, ia, ib, d, base: float, car: dict,
             np.add.at(f, ia[idx] * 6 + 2, para_cima)
             np.add.at(f, ib[idx] * 6 + 2, para_cima)
             casos[nome] = f
+            if m0 is not None and L is not None:
+                np.add.at(m0[nome], idx, -2.0 * para_cima * L[idx] / 8.0)
             nomes.append({"caso": nome, "descricao": "%s, cpi %+.1f" % (rot, float(cpi)),
                           "para_cima_kN": round(float(para_cima.sum() * 2), 1)})
     return {"v0": float(v["v0"]), "s1": float(v["s1"]), "categoria": v["categoria"], "classe": classe,
@@ -348,6 +351,7 @@ def hipoteses(r: dict) -> List[str]:
     h = ["Estrutura inteira como pórtico espacial no esqueleto (eixo a eixo), nós rígidos; o contravento redondo "
          "trabalha também à compressão.",
          "Perfil duplo (2L, 2Ue) como duas vezes o simples (área e inércias), sem o afastamento entre eles.",
+         "Banzo em U deitado (abas para dentro da treliça): a inércia fraca no plano vertical da treliça, a forte na horizontal.",
          "Pé do pilar rotulado; engastado onde a locação do projeto dá momento na base.",
          "Cargas de cobertura pelas terças, cada uma com a faixa até a meia distância das vizinhas: telha %.3f, forro "
          "%.3f, painéis %.3f (permanentes) e sobrecarga %.3f kN/m² — %s." % (
@@ -416,7 +420,11 @@ def combinacoes_ultimas(casos: List[str]) -> List[dict]:
     return out
 
 
-def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, vento: Optional[dict] = None) -> dict:
+ALMA_ROTULADA = ("montante", "diagonal", "corrente", "contraventamento")
+
+
+def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, vento: Optional[dict] = None,
+             alma_rotulada: bool = False) -> dict:
     """reações e esforços da estrutura inteira para os casos PP (peso próprio), CP (telha, forro
     e painéis), SC (sobrecarga) e os de vento (NBR 6123:2023, quando há V0: nas cargas do
     projetista ou em `vento`), e as combinações últimas com a envoltória por pilar. Devolve
@@ -441,6 +449,10 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         if s is None or br["a"] == br["b"]:
             sem_perfil[br["perfil"] or "(sem perfil)"] += 1
             continue
+        if br["papel"] == "banzo" and not br.get("deitada") and re.match(r"(?i)^\s*U", br["perfil"] or ""):
+            # o banzo em U fica deitado, com as abas para dentro da treliça: no plano vertical dela
+            # trabalha a inércia fraca, a forte na horizontal
+            s = (s[0], s[2], s[1], s[3], s[4])
         props.append(s)
         usadas.append(i)
     if sem_perfil:
@@ -485,7 +497,16 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
     # --- rigidez
     R = _eixos_locais(d)
     T = _transformacao(R)
-    kl = _rigidez_local(L, P[:, 0], P[:, 1], P[:, 2], P[:, 3])
+    Iy_, Iz_, J_ = P[:, 1].copy(), P[:, 2].copy(), P[:, 3].copy()
+    if alma_rotulada:
+        # a alma da treliça, as correntes e os contraventos rotulados nas pontas (só força normal),
+        # como o projeto de treliça: sem os momentos secundários do nó rígido
+        rot = np.array([barras[e]["papel"] in ALMA_ROTULADA for e in usadas])
+        # (1/1000 da rigidez à flexão: a rótula sem deixar mecanismo na ponta que só tem barras dessas)
+        Iy_[rot] *= 1e-3
+        Iz_[rot] *= 1e-3
+        J_[rot] *= 1e-3
+    kl = _rigidez_local(L, P[:, 0], Iy_, Iz_, J_)
     kg = np.einsum("nji,njk,nkl->nil", T, kl, T)
     gl = np.concatenate([ia[:, None] * 6 + np.arange(6), ib[:, None] * 6 + np.arange(6)], axis=1)
     lin = np.repeat(gl, 12, axis=1).ravel()
@@ -495,9 +516,19 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
 
     # --- casos de carga (forças nodais, kN)
     casos = {"PP": np.zeros(ndof), "CP": np.zeros(ndof), "SC": np.zeros(ndof)}
+    # as cargas entram nos nós, metade em cada ponta (as reações da barra biapoiada): o momento de
+    # verdade na barra é o do cálculo mais o da barra biapoiada com a carga dela — guardado por
+    # caso, em kN·m, com a carga vertical para baixo positiva (a verificação dos perfis soma)
+    m0 = collections.defaultdict(lambda: np.zeros(len(L)))
+
+    def pontas(caso, i, f):
+        casos[caso][ia[i] * 6 + 2] -= f
+        casos[caso][ib[i] * 6 + 2] -= f
+        m0[caso][i] += 2.0 * f * L[i] / 8.0
     peso = P[:, 4] * L * G
     np.add.at(casos["PP"], ia * 6 + 2, -peso / 2)
     np.add.at(casos["PP"], ib * 6 + 2, -peso / 2)
+    m0["PP"] += peso * L / 8.0
     pos = {e: i for i, e in enumerate(usadas)}
     tercas = [e for e in usadas if barras[e]["papel"] == "terça"]
     larg = _larguras(nos, tercas, barras)
@@ -514,8 +545,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         faixas.append((i, w, Lh))
         for caso, q, comp in (("CP", sum(car[k] for k in PERMANENTES), L[i]), ("SC", car["sobrecarga"], Lh)):
             f = q * w * comp / 2
-            casos[caso][ia[i] * 6 + 2] -= f
-            casos[caso][ib[i] * 6 + 2] -= f
+            pontas(caso, i, f)
     if sem_vizinha:
         avisos.append("%d trechos de terça sem outra terça paralela a até %.1f m: sem carga de cobertura" % (sem_vizinha, LARG_MAX))
     # --- o piso do mezanino: os barrotes (as vigas paralelas e próximas da camada Mezanino, em
@@ -550,8 +580,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
                 for caso, q in (("CP", car.get("mezanino_peso") or 0.0), ("SM", car.get("mezanino_sobrecarga") or 0.0)):
                     if q:
                         f = q * w * Lh / 2
-                        casos[caso][ia[i] * 6 + 2] -= f
-                        casos[caso][ib[i] * 6 + 2] -= f
+                        pontas(caso, i, f)
 
     # --- a passarela: a treliça deitada, com a faixa entre os dois banzos (meia largura para cada)
     memoria_passarela = None
@@ -565,8 +594,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
             for e, w in w_p.items():
                 i = pos[e]
                 f = car["passarela_sobrecarga"] * w * float(np.hypot(d[i][0], d[i][1])) / 2
-                casos["SP"][ia[i] * 6 + 2] -= f
-                casos["SP"][ib[i] * 6 + 2] -= f
+                pontas("SP", i, f)
         else:
             avisos.append("passarela sem sobrecarga (%.0f m² de treliça deitada): informe a carga de uso" % area_p)
 
@@ -603,8 +631,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
                 for e, w in w_e.items():
                     i = pos[e]
                     f = q * w * float(np.hypot(d[i][0], d[i][1])) / 2
-                    casos[caso][ia[i] * 6 + 2] -= f
-                    casos[caso][ib[i] * 6 + 2] -= f
+                    pontas(caso, i, f)
                 for v in cantos.values():
                     xs, ys = [nos[n][0] for n in v], [nos[n][1] for n in v]
                     f = q * (max(xs) - min(xs)) * (max(ys) - min(ys)) / max(len(v), 1)
@@ -651,6 +678,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
                         f = P * l_ / tot
                         casos["AG"][int(ia[i]) * 6 + 2] -= f * (1.0 - tm)
                         casos["AG"][int(ib[i]) * 6 + 2] -= f * tm
+                        m0["AG"][i] += f * tm * (1.0 - tm) * L[i]
                     memoria_caixas.append({"litros": c["litros"], "kN": round(P, 1), "vigas": len(partes),
                                            "nos": len({int(ia[i]) for i, _l, _t in partes} | {int(ib[i]) for i, _l, _t in partes}),
                                            "x": round(xy[0], 2), "y": round(xy[1], 2), "nivel": c["nivel"]})
@@ -668,7 +696,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
             casos["AG"][sel * 6 + 2] -= P / len(sel)
             memoria_caixas.append({"litros": c["litros"], "kN": round(P, 1), "nos": len(sel),
                                    "x": round(xy[0], 2), "y": round(xy[1], 2), "nivel": c["nivel"]})
-    memoria_vento = _casos_de_vento(casos, faixas, nos, ia, ib, d, base, car, vento, avisos)
+    memoria_vento = _casos_de_vento(casos, faixas, nos, ia, ib, d, base, car, vento, avisos, m0, L)
 
     # --- restrições
     presos = np.zeros(ndof, bool)
@@ -781,4 +809,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         "combinacoes": combs,
         "avisos": avisos,
         "_U": U, "_casos": list(casos),
+        # para a verificação dos perfis: as barras usadas (índices no esqueleto), o momento de vão
+        # simples por caso e o comprimento de cada uma (m)
+        "_usadas": list(usadas), "_m0": {c: m0[c] for c in casos}, "_L": L, "_d": d,
     }

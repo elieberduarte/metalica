@@ -273,6 +273,23 @@ esticadores dela na altura das terças. **Agulhas** (camada "1-Agulha", AG1–AG
 "DETALHE TÍPICO DAS AGULHAS"): a montagem só lia "corrente" e "esticador" — as 199 da cobertura principal ficavam de
 fora; agora entram, com linha própria na conferência (204 no modelo × 239 na lista do projeto).
 
+**Verificação dos perfis** (`nucleo3d/verificacao_perfis.py`, na tela de esforços; pedido do usuário "bora" para o passo
+2 da frente): cada barra do esqueleto verificada em todas as combinações últimas pelas rotinas de `nucleo/verificar.py`
+(U/Ue a frio pela NBR 14762 — MRD, interação linear —; laminados e cantoneiras pela NBR 8800; redonda só à tração),
+com as resistências calculadas uma vez por perfil e comprimentos de flambagem. O momento é o das pontas mais o da barra
+biapoiada com a carga dela (o cálculo guarda o momento de vão simples por caso: as cargas entram nos nós). Banzo em U
+deitado: no plano da treliça flamba e flete no eixo fraco (conferência elástica W·fy/γ), fora dele no forte, com a
+distância entre os nós travados (onde chega peça fora do plano); o cálculo também passou a dar a inércia fraca ao
+banzo em U no plano vertical. Terça: gravidade com a mesa de cima travada pela telha. Alma em 2L: a compressão do par
+(NBR 8800). O limite KL/r ≤ 200 à parte da resistência. Três cenários — só gravidade, vento de cpi −0,3, todas (cpi
++0,8) — com a pior razão de cada peça e o "3D" que a destaca. No esqueleto: a viga horizontal que cruza outra no mesmo
+nível ganha nó ali (o barrote sobre a viga principal); alma rotulada disponível como opção (`alma_rotulada`). Na
+montagem: a linha de terça sem nome TC não vira terça com perfil inventado — com o nome VM escrito ao longo dela, é
+barrote (no mezanino do Posto, já lido pelas VMs; o repetido é pulado); sem nome, fica de fora com aviso. No Posto
+(primeira passada): só gravidade 848 de 9.702 barras sem resistência, vento leve 1.007, todas 2.432 — com pontos do
+esqueleto ainda a acertar (patamares das escadas sem os pilaretes PM4/PM5 dos cortes, a copa do PM6, pontas das
+tesouras sobre os pilares, banzos com carga de terça fora do nó).
+
 **0.8.47.** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
 print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e
 as regras de apoio não mudam), e a peça termina antes — `recorte_inicio`/`recorte_fim` da barra, que o 3D, o IFC e o

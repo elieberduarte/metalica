@@ -226,6 +226,61 @@ function tabela(linhas) {
   return tab;
 }
 
+// ------------------------------------------------------------------ verificação dos perfis
+const NOME_PAPEL = { banzo: 'Banzos', diagonal: 'Diagonais', montante: 'Montantes', 'terça': 'Terças', pilar: 'Pilares',
+  viga: 'Vigas', corrente: 'Correntes e agulhas', contraventamento: 'Contraventos', apoio_terca: 'Apoio das terças' };
+let CENARIO = 'todas';
+let SO_NAO_PASSAM = true;
+function corDoAproveitamento(r) {
+  if (r === null || r === undefined) return COR.cinza;
+  if (r <= 0.8) return COR.verde;
+  if (r <= 1.0) return COR.azul;
+  if (r <= 1.5) return COR.laranja;
+  return COR.verm;
+}
+function caixaPerfis() {
+  const pf = DADOS.perfis;
+  const cx = el('div', { class: 'caixa' });
+  if (!pf) return cx.append(el('h3', { texto: 'Verificação dos perfis' }), el('p', { class: 'vazio', texto: 'Recalcule os esforços para verificar os perfis.' })), cx;
+  if (pf.erro) return cx.append(el('h3', { texto: 'Verificação dos perfis' }), el('p', { class: 'vazio', texto: `A verificação falhou: ${pf.erro}` })), cx;
+  const cen = pf.cenarios.find(c => c.chave === CENARIO) || pf.cenarios[pf.cenarios.length - 1];
+  cx.append(el('h3', {}, 'Verificação dos perfis', el('span', { class: 'acoes' },
+    pf.cenarios.map(c => el('button', { type: 'button', class: c.chave === cen.chave ? 'ativo' : '', title: c.descricao,
+      texto: c.chave === 'gravidade' ? 'Só gravidade' : c.chave === 'vento_leve' ? 'Vento cpi −0,3' : 'Todas (cpi +0,8)',
+      onclick: () => { CENARIO = c.chave; montar(); } })))));
+  const r = cen.resumo;
+  const box = (v, t) => el('div', {}, el('b', { texto: v }), el('span', { texto: t }));
+  cx.append(el('div', { class: 'numeros' },
+    box(num(r.barras, 0), 'barras do esqueleto'), box(num(r.passam, 0), 'passam'),
+    box(num(r.nao_passam, 0), 'não passam (resistência)'), box(num(r.esbeltez_excede, 0), 'com KL/r > 200 (comprimidas)'),
+    box(num(cen.combinacoes, 0), 'combinações')));
+  cx.append(el('p', { class: 'mem', texto: `${cen.descricao[0].toUpperCase() + cen.descricao.slice(1)}. A razão é o esforço de cálculo dividido pela resistência (≤ 1 passa): U e Ue formados a frio pela NBR 14762, laminados e cantoneiras pela NBR 8800, barra redonda só à tração.` }));
+  const tp = el('table', { class: 'tab' }, el('tr', {}, ['Barras', 'No esqueleto', 'Não passam', 'Pior razão', 'KL/r > 200'].map(t => el('th', { texto: t }))),
+    Object.entries(cen.por_papel).map(([k, v]) => el('tr', {}, el('td', { texto: NOME_PAPEL[k] || k }), el('td', { class: 'r', texto: num(v.barras, 0) }),
+      el('td', { class: 'r', texto: num(v.nao_passam, 0) }),
+      el('td', { class: 'r' }, el('span', { class: 'pt', style: `background:${corDoAproveitamento(v.pior)}` }), num(v.pior)),
+      el('td', { class: 'r', texto: num(v.esbeltez_excede, 0) }))));
+  cx.append(tp);
+  const filtro = el('label', { class: 'filtro' }, el('input', { type: 'checkbox', checked: SO_NAO_PASSAM || undefined,
+    onchange: (ev) => { SO_NAO_PASSAM = ev.target.checked; montar(); } }), 'só as que não passam neste cenário');
+  const pecas = pf.pecas.filter(p => !SO_NAO_PASSAM || (p.razoes[cen.chave] || 0) > 1).sort((a, b) => (b.razoes[cen.chave] || 0) - (a.razoes[cen.chave] || 0));
+  const tab = el('table', { class: 'tab' }, el('tr', {}, ['Peça', 'Perfil', 'Só gravidade', 'Vento cpi −0,3', 'Todas', 'Governa', 'Lx / Ly (m)', 'Nc / Nt (kN)', 'M (kN·m)', ''].map(t => el('th', { texto: t }))));
+  const rz = (v) => v === undefined ? el('td', { class: 'r', texto: '—' }) : el('td', { class: 'r' }, el('span', { class: 'pt', style: `background:${corDoAproveitamento(v)}` }), num(v));
+  for (const p of pecas.slice(0, 250)) {
+    tab.append(el('tr', {}, el('td', { texto: p.peca.split('#')[0] }), el('td', { texto: p.perfil }),
+      rz(p.razoes.gravidade), rz(p.razoes.vento_leve), rz(p.razoes.todas),
+      el('td', { texto: `${p.verificacao || ''} · ${p.combinacao || ''}` }),
+      el('td', { class: 'r', texto: `${num(p.Lx_m)} / ${num(p.Ly_m)}` }),
+      el('td', { class: 'r', texto: `${num(p.Nc_kN, 1)} / ${num(p.Nt_kN, 1)}` }), el('td', { class: 'r', texto: num(p.M_kNm) }),
+      el('td', {}, el('button', { type: 'button', class: 'botao-p', texto: '3D', title: 'Ver a peça no modelo 3D',
+        onclick: () => { location.href = `/editor?projeto=${encodeURIComponent(PROJETO)}&destacar=${encodeURIComponent('ids:' + (p.todos_ids || p.ids).join(','))}`; } }))));
+  }
+  cx.append(el('h3', {}, `Peças (${pecas.length}${pecas.length > 250 ? ', as 250 piores' : ''})`, el('span', { class: 'acoes' }, filtro)), tab);
+  cx.append(el('details', {}, el('summary', { class: 'mem', texto: 'hipóteses da verificação' }),
+    el('ul', { class: 'lista' }, (pf.hipoteses || []).map(h => el('li', { texto: h })))));
+  return cx;
+}
+
 function montar() {
   const d = DADOS;
   const linhas = d.pilares.map(linha);
@@ -247,6 +302,7 @@ function montar() {
   const filtro = el('label', { class: 'filtro' }, el('input', { type: 'checkbox', checked: SO_DESTOAM || undefined,
     onchange: (ev) => { SO_DESTOAM = ev.target.checked; montar(); } }), 'só os que destoam da locação (fora de 0,5 a 1,2)');
   raiz.append(el('div', { class: 'caixa' }, el('h3', {}, `Pilares (${linhas.length})`, el('span', { class: 'acoes' }, filtro)), tabela(linhas)));
+  raiz.append(caixaPerfis());
   const casos = el('table', { class: 'tab' }, el('tr', {}, ['Caso', 'Carga (tf)', 'Reações (tf)', 'Erro de equilíbrio', 'Maior deslocamento'].map(t => el('th', { texto: t }))),
     Object.entries(d.casos).map(([c, x]) => el('tr', {}, el('td', { texto: c }), el('td', { class: 'r', texto: num(x.carga_kN / TF, 1) }),
       el('td', { class: 'r', texto: num(x.reacoes_kN / TF, 1) }), el('td', { class: 'r', texto: x.erro < 1e-4 ? 'fecha' : num(100 * x.erro, 2) + ' %' }),

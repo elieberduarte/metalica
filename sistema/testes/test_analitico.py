@@ -111,3 +111,20 @@ def test_viga_deitada_sobre_as_trelicas_ganha_no_em_cada_banzo():
     assert len(vigas) == 2, vigas                            # cortada no banzo do meio
     ys = sorted(round(nos[b[k]][1]) for b in vigas for k in ("a", "b"))
     assert ys == [0, 2500, 2500, 5000]
+
+
+def test_canto_de_vigas_ao_lado_do_pilar_apoia_nele():
+    # o canto do patamar: duas vigas se encontram a 15 cm do eixo de um pilar, na metade da altura
+    # dele — as duas juntas não chegam ao chão; o canto vai para o pilar
+    doc = modelo()
+    doc.add(barra((10000.0, 0.0, 0.0), (10000.0, 0.0, 3000.0), "pilar", perfil="W 200×19,3"))
+    doc.add(barra((13000.0, 0.0, 0.0), (13000.0, 0.0, 3000.0), "pilar", perfil="W 200×19,3"))
+    doc.add(barra((10150.0, 0.0, 1500.0), (13000.0, 0.0, 1500.0), "viga"))
+    doc.add(barra((10150.0, 0.0, 1500.0), (10150.0, 2000.0, 1500.0), "viga"))
+    r = analitico.analitico(doc)
+    nos = r["nos"]
+    vigas = [b for b in r["barras"] if b["papel"] == "viga"]
+    cantos = {tuple(round(c) for c in nos[b[k]]) for b in vigas for k in ("a", "b") if round(nos[b[k]][2]) == 1500}
+    assert (10000, 0, 1500) in cantos, cantos
+    pilar = [b for b in r["barras"] if b["papel"] == "pilar" and round(nos[b["a"]][0]) == 10000]
+    assert len(pilar) == 2                                   # o pilar ganhou o nó do canto

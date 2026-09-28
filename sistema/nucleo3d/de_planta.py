@@ -3167,7 +3167,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         ids_o |= _ids_dos_eixos(ents, caixa_o) | {t_o.get("id")}
         usados["outra:" + t_o["texto"].strip()] = ids_o
         baloes_outras.append((baloes(ents, caixa_o), (d_o[0], d_o[1]), nivel_o))
-        pecas_das_outras.append((f_o, (d_o[0], d_o[1]), [pc["ent"] for pc in pecas[n_antes:]], t_o["texto"].strip()))
+        pecas_das_outras.append((f_o, (d_o[0], d_o[1]), [pc["ent"] for pc in pecas[n_antes:]], t_o["texto"].strip(),
+                                 nivel_o, nome_c))
         outras_feitas.append({"planta": t_o["texto"].strip(), "nivel": nivel_o, "pecas": len(tr_o), "camada": nome_c,
                               "baloes": d_o[2]})
         # as caixas d'água desenhadas nesta planta ("CX.5.000 l"): o volume e o lugar, para a carga
@@ -3577,7 +3578,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     # na própria planta, como a planta das terças: o eixo na camada "Terça Eixo", o nome TC ao
     # lado; cada uma senta nas peças daquela planta que ela cruza (o PERFIL 1 das faces e a
     # TESOURA 38 do meio), no topo delas, e a emenda entre dois nomes fica no apoio do meio
-    for f_o, d_o, ents_o, titulo_o in pecas_das_outras:
+    for f_o, d_o, ents_o, titulo_o, nivel_o, camada_o in pecas_das_outras:
         reg_o = [e for e in ents if _dentro(_pt(e), f_o)]
 
         def mv(p, d_o=d_o):
@@ -3598,6 +3599,25 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         rot_o = [(mv(t["posicao"]), t["texto"].strip().upper().replace(" ", "")) for t in reg_o
                  if t["tipo"] == "texto" and re.match(r"^TC\s?\d+[A-Z]?$", t["texto"].strip().upper())]
         tercas_o = []
+        # o nome VM escrito junto da linha (o barrote do mezanino desenhado na camada de terça) e as
+        # peças desenhadas (o retângulo estreito da camada "Terça": a linha de centro dele)
+        vm_o = [(mv(t["posicao"]), t["texto"], float(t.get("angulo") or 0.0)) for t in reg_o
+                if t["tipo"] == "texto" and re.match(r"(?i)^\s*VM", t["texto"])]
+        rets_o = []
+        for e in reg_o:
+            if e["tipo"] != "polilinha" or not re.search(r"(?i)ter[çc]a$", str(e.get("camada") or "")):
+                continue
+            v_ = [(q[0], q[1]) for q in e["vertices"]]
+            if len(v_) < 4:
+                continue
+            lados = sorted(((math.dist(v_[k], v_[(k + 1) % 4]), k) for k in range(4)))
+            (curto, k1), (curto2, k2) = lados[0], lados[1]
+            if curto > 250.0 or lados[-1][0] < 300.0:
+                continue
+            m1 = ((v_[k1][0] + v_[(k1 + 1) % 4][0]) / 2, (v_[k1][1] + v_[(k1 + 1) % 4][1]) / 2)
+            m2 = ((v_[k2][0] + v_[(k2 + 1) % 4][0]) / 2, (v_[k2][1] + v_[(k2 + 1) % 4][1]) / 2)
+            rets_o.append((mv(m1), mv(m2)))
+        barrotes_o = sem_nome_o = 0
         for a, b in eixos_o:
             (ux, uy), L = _unit(a, b)
             apoios = {}
@@ -3612,11 +3632,48 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 k = round(s_x / 150.0)
                 apoios[k] = max(apoios.get(k, (s_x, -1e9)), (s_x, z), key=lambda q: q[1])
             aps = sorted(apoios.values())
-            if not aps:
-                continue
             nomes = sorted(((q[0] - a[0]) * ux + (q[1] - a[1]) * uy, sg) for q, sg in rot_o
                            if abs((q[0] - a[0]) * -uy + (q[1] - a[1]) * ux) < 700.0
                            and -300.0 <= (q[0] - a[0]) * ux + (q[1] - a[1]) * uy <= L + 300.0)
+            if not nomes:
+                # a linha de terça sem nome TC: no mezanino do Posto CB é o barrote do piso, com o nome
+                # "VM-2Ue150X70X20X2,65" escrito ao lado dela; cada peça desenhada (o retângulo, que
+                # para nas vigas que ele cruza) vira uma viga no perfil do nome, com o topo no nível
+                # da planta. Sem o nome VM ao lado, fica de fora (não se inventa o perfil)
+                ang_l = math.degrees(math.atan2(uy, ux)) % 180.0
+                # o nome da própria linha: escrito ao longo dela (o da viga que cruza fica atravessado)
+                vm_l = [(abs((q[0] - a[0]) * -uy + (q[1] - a[1]) * ux), tx_) for q, tx_, ang_t in vm_o
+                        if min(abs(ang_t % 180.0 - ang_l), 180.0 - abs(ang_t % 180.0 - ang_l)) <= 10.0
+                        and abs((q[0] - a[0]) * -uy + (q[1] - a[1]) * ux) < 450.0
+                        and -300.0 <= (q[0] - a[0]) * ux + (q[1] - a[1]) * uy <= L + 300.0]
+                from nucleo2d.reconhecer import perfil_do_texto
+                perf_d = perfil_do_texto(min(vm_l)[1]) if vm_l else None
+                if not perf_d or not perf_d.get("perfil"):
+                    sem_nome_o += 1
+                    continue
+                pf_v = perf_d["perfil"]
+                pa_v = _perfil(pf_v)
+                z_v = nivel_o - (float(pa_v.d or 150.0) if pa_v else 150.0) / 2.0
+                af_v = (float(pa_v.bf or 50.0) if pa_v else 50.0) / 2 + 1.0
+                pec_l = [(p0, p1) for p0, p1 in rets_o
+                         if all(abs((q[0] - a[0]) * -uy + (q[1] - a[1]) * ux) < 40.0 for q in (p0, p1))
+                         and abs(abs(_unit(p0, p1)[0][0] * ux + _unit(p0, p1)[0][1] * uy) - 1.0) < 0.01]
+                for p0, p1 in (pec_l or [(a, b)]):
+                    if _viga_repetida([p0, p1], z_v, pf_v, vigas_feitas):
+                        continue            # a mesma viga, já lida pelo nome VM nas linhas de metálica
+                    vigas_feitas.append(([p0, p1], z_v, pf_v))
+                    if int(perf_d.get("mult") or 1) > 1:
+                        for sinal, rot_v in ((1, 180.0), (-1, 0.0)):
+                            bv = barra((p0[0] - uy * af_v * sinal, p0[1] + ux * af_v * sinal, z_v),
+                                       (p1[0] - uy * af_v * sinal, p1[1] + ux * af_v * sinal, z_v), pf_v, "viga", camada_o,
+                                       None, rot_v, {"planta": min(vm_l)[1].strip(), "desenho": "barrote na camada de terça"})
+                    else:
+                        barra((p0[0], p0[1], z_v), (p1[0], p1[1], z_v), pf_v, "viga", camada_o, None, 0.0,
+                              {"planta": min(vm_l)[1].strip(), "desenho": "barrote na camada de terça"})
+                    barrotes_o += 1
+                continue
+            if not aps:
+                continue
             cortes = []
             for (sa, _na), (sb, _nb) in zip(nomes, nomes[1:]):
                 bons = [ap[0] for ap in aps if sa + 300.0 < ap[0] < sb - 300.0]
@@ -3671,6 +3728,11 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         correntes += n_ac["corrente"]
         agulhas += n_ac["agulha"]
         esticadores += n_ac["esticador"]
+        if barrotes_o:
+            avisos.append("%s: %d peça(s) de barrote do piso desenhadas na camada de terça, com o nome VM ao lado — "
+                          "montadas como vigas no nível da planta." % (titulo_o, barrotes_o))
+        if sem_nome_o:
+            avisos.append("%s: %d linha(s) de terça sem nome TC nem VM ao lado; ficaram de fora — confira." % (titulo_o, sem_nome_o))
 
     # ---------------------------------------------------------------- perto da origem
     # a planta do projetista fica onde ele desenhou (no posto, a 400 m do zero do DXF): o

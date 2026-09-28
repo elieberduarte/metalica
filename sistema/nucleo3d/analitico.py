@@ -11,7 +11,7 @@ treliça. Para ver a estrutura (e para calcular), cada peça é o eixo que liga 
    cima ou na viga, a viga no pilar, a corrente na terça, o pilar no banzo…), a até
    `TOL_APOIO` mm — é a excentricidade física, que volta no detalhamento; a peça de apoio ganha
    um nó ali;
-4. a terça que passa por cima de outras treliças ganha um nó em cada uma (a viga, em cada banzo que cruza);
+4. a terça que passa por cima de outras treliças ganha um nó em cada uma (a viga, em cada banzo e em cada viga horizontal que cruza);
 5. o que sobrar sem ligar é ponta solta: um erro de verdade do modelo.
 
 `analitico(doc)` devolve {nos, barras, soltas, resumo}; cada barra lembra as ids das peças de
@@ -45,6 +45,7 @@ APOIA_EM = {
     "diagonal": ("banzo", "diagonal", "montante", "pilar", "viga"),
 }
 ALMA = ("montante", "diagonal")
+TOL_VIGA_PILAR = 200.0  # a ponta de viga a até isso do eixo do pilar (no meio da altura dele) apoia nele
 TOL_ALMA = 120.0        # alma que chega no meio de outra barra de alma (o painel subdividido): bem perto
 
 Ponto = Tuple[float, float, float]
@@ -406,8 +407,44 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                             gr[n] -= 1
                 ligadas += 1
 
+    # --- 3b. a ponta de viga ao lado de um pilar, no meio da altura dele, apoia nele (o canto do
+    # patamar da escada junto do pilarete, a viga presa na lateral do pilar): mesmo quando outras
+    # vigas já chegam no mesmo nó, que sozinhas não levam a carga ao chão
+    for k, ln in enumerate(linhas):
+        if ln["papel"] != "viga":
+            continue
+        for lado in ("na", "nb"):
+            n = ln[lado]
+            outras = [i for i in no_linhas[n] if i != k and n in (linhas[i]["na"], linhas[i]["nb"])]
+            if any(linhas[i]["papel"] == "pilar" for i in outras):
+                continue
+            p = nos[n]
+            if p[2] <= base + 50.0:
+                continue
+            melhor = None
+            for j in set(gl.perto(p)):
+                if linhas[j]["papel"] != "pilar":
+                    continue
+                d, t, q = _proj(p, nos[linhas[j]["na"]], nos[linhas[j]["nb"]])
+                if d <= TOL_VIGA_PILAR and 0.02 < t < 0.98 and (melhor is None or d < melhor[0]):
+                    melhor = (d, j, t, q)
+            if melhor:
+                _d, j, t, q = melhor
+                novo = no_em(j, q, t)
+                if novo == n:
+                    continue
+                for i in [k] + outras:
+                    for ld in ("na", "nb"):
+                        if linhas[i][ld] == n:
+                            linhas[i][ld] = novo
+                            no_linhas[novo].append(i)
+                            gr[novo] += 1
+                            gr[n] -= 1
+                ligadas += 1
+
     # --- 4. a terça que passa sobre as treliças ganha um nó em cada banzo que ela cruza; a viga
-    # também, no banzo que ela cruza (a VM do piso da caixa d'água deitada sobre as treliças)
+    # também, no banzo que ela cruza (a VM do piso da caixa d'água deitada sobre as treliças) e na
+    # viga horizontal que ela cruza no mesmo nível (o barrote do mezanino sobre a viga principal)
     for k, ln in enumerate(linhas):
         if ln["papel"] not in ("terça", "viga"):
             continue
@@ -422,9 +459,12 @@ def analitico(doc, base: Optional[float] = None) -> dict:
             cand.update(gl.perto(tuple(a[m] + (b[m] - a[m]) * s / n for m in range(3))))
         for j in cand:
             lj = linhas[j]
-            if lj["papel"] not in (("banzo", "viga") if ln["papel"] == "terça" else ("banzo",)):
+            if lj["papel"] not in (("banzo", "viga") if ln["papel"] == "terça" else ("banzo", "viga")):
                 continue
             c, e = nos[lj["na"]], nos[lj["nb"]]
+            if ln["papel"] == "viga" and lj["papel"] == "viga" and (abs(b[2] - a[2]) > 0.1 * L or
+                                                                  abs(e[2] - c[2]) > 0.1 * max(math.hypot(e[0] - c[0], e[1] - c[1]), 1.0)):
+                continue                                   # viga sobre viga: só as duas horizontais (o piso do mezanino)
             ex, ey = e[0] - c[0], e[1] - c[1]
             den = dx * ey - dy * ex
             if abs(den) <= 1e-3 * L * max(math.hypot(ex, ey), 1.0):
