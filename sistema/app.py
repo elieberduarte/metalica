@@ -834,6 +834,21 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     for chave, desenho in r["desenhos"].items():
         nome = desenho.nome
         if substituir and os.path.exists(g._caminho_desenho(s, nome)):
+            # a montagem das pranchas feita no desenho de antes (as folhas, as células postas
+            # nelas, o desenhado à mão) passa para o novo, com as células atualizadas
+            try:
+                from nucleo2d.desenho import Desenho
+                from nucleo2d.pranchas import manter_montagem
+                mm = manter_montagem(Desenho.de_dict(g.abrir_desenho(s, nome)), desenho)
+                if mm["folhas"] or mm["a_mao"]:
+                    r.setdefault("avisos", []).append(
+                        "%s: montagem mantida — %d folha(s), %d célula(s) atualizada(s) dentro delas%s%s" % (
+                            nome, mm["folhas"], mm["atualizadas"],
+                            ", %d objeto(s) desenhado(s) à mão" % mm["a_mao"] if mm["a_mao"] else "",
+                            "; não estão mais no modelo (ficaram como antes): " + ", ".join(mm["sem_modelo"][:10])
+                            if mm["sem_modelo"] else ""))
+            except ErroDeDados:
+                pass                                   # o desenho de antes não abre: vai para a lixeira como sempre
             g.excluir_desenho(s, nome)
         desenho.metadados["gerado_por"] = "detalhamento"
         desenho.metadados["versao"] = versao.VERSAO

@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
 from nucleo2d.desenho import (Desenho, Entidade2D, Linha, Polilinha, Circulo, Arco, Texto,
-                              Cota, Hachura, Chamada, Camada2D, formatar_mm)
+                              Cota, Hachura, Chamada, Camada2D, formatar_mm, transladar, novo_id)
 
 __all__ = ["montar_pranchas", "FOLHAS", "CARIMBO", "texto_escala"]
 
@@ -665,3 +665,134 @@ def pranchas_das_folhas(desenho: Desenho, fonte: str, carimbo: Optional[dict] = 
         d.metadados["gerado_por"] = "folhas"
         saida.append(d)
     return saida
+
+
+def _chave_da_celula(a: dict):
+    """A célula do detalhamento a que a entidade pertence: (tipo do detalhe, campo, valor) — o
+    conjunto, a montagem ou a posição. None para o que não é de célula (a faixa, o desenhado à mão)."""
+    d = a.get("detalhe")
+    if not d:
+        return None
+    for k in ("conjunto", "montagem", "posicao"):
+        if a.get(k):
+            return (str(d), k, str(a[k]))
+    return None
+
+
+def _assinatura(e: Entidade2D, k: float):
+    """O que não muda quando a entidade é só deslocada — para achar a mesma entidade no desenho novo:
+    (tipo, camada, forma) e o ponto de referência dela."""
+    if isinstance(e, Linha):
+        a, b = (e.a, e.b) if (e.a[0], e.a[1]) <= (e.b[0], e.b[1]) else (e.b, e.a)
+        return ("L", e.camada, round(b[0] - a[0]), round(b[1] - a[1])), a
+    if isinstance(e, Texto):
+        return ("T", e.camada, e.texto, round(e.altura, 2), round(e.angulo, 1)), e.posicao
+    if isinstance(e, Circulo):
+        return ("C", e.camada, round(e.raio, 1)), e.centro
+    if isinstance(e, Cota):
+        return ("D", e.camada, round(e.p2[0] - e.p1[0]), round(e.p2[1] - e.p1[1]), e.modo), e.p1
+    return None, None
+
+
+def manter_montagem(antigo: Desenho, novo: Desenho) -> dict:
+    """Gerar o detalhamento de novo sem perder a montagem das pranchas (pergunta do usuário, 28/09).
+
+    Do desenho de antes vão para o novo: as folhas (com o carimbo), o que foi desenhado à mão e, para
+    cada pedaço de detalhe posto dentro de uma folha (a elevação, o bloco de texto, uma peça — movido
+    ou copiado para lá), o mesmo pedaço do desenho **novo** no mesmo lugar. O pedaço se acha pelas
+    entidades que não mudaram (linhas, textos e cotas iguais, só deslocados): o deslocamento mais
+    votado leva do desenho novo à folha, e entram as entidades novas do mesmo detalhe que caem na
+    área dele. O pedaço movido sai do lugar padrão do desenho novo; o copiado fica nos dois. O que
+    não se acha no desenho novo (a peça saiu do modelo) fica como estava, contado em `sem_modelo`."""
+    folhas = _folhas_do(antigo)
+    k = float(antigo.escala or 1.0)
+    rel = {"folhas": len(folhas), "atualizadas": 0, "sem_modelo": [], "a_mao": 0}
+
+    def caixa(ents):
+        cx = _caixa_de(ents, k)
+        return None if cx is None else (cx[0][0], cx[0][1], cx[1][0], cx[1][1])
+
+    def na_folha(e):
+        cx = caixa([e])
+        if cx is None:
+            return False
+        mx, my = (cx[0] + cx[2]) / 2.0, (cx[1] + cx[3]) / 2.0
+        return any(f["caixa"][0] <= mx <= f["caixa"][2] and f["caixa"][1] <= my <= f["caixa"][3] for f in folhas)
+
+    postos: Dict[tuple, list] = collections.OrderedDict()   # (grupo de cópia ou chave) → entidades na folha
+    a_mao, de_folha = [], []
+    for e in antigo.entidades.values():
+        a = e.atributos or {}
+        if a.get("folha"):
+            de_folha.append(e)
+            continue
+        ch = _chave_da_celula(a)
+        if ch is None:
+            if not a.get("faixa") and not a.get("quadro"):
+                a_mao.append(e)                     # o que o gerador não põe: foi desenhado à mão
+            continue
+        if folhas and na_folha(e):
+            g = a.get("grupo_copia") or ""
+            # a cópia é um grupo só (uma operação de Copiar); o movido, pela célula
+            postos.setdefault(("c", g) if g else ("m", ch), []).append(e)
+    if not folhas and not a_mao:
+        return rel
+    for nome_c, cam in antigo.camadas.items():
+        novo.camadas.setdefault(nome_c, copy.deepcopy(cam))
+    # o desenho novo pela assinatura, só as entidades de detalhe (sem as cópias)
+    por_assin: Dict[tuple, list] = collections.defaultdict(list)
+    por_chave: Dict[tuple, list] = collections.defaultdict(list)
+    for e in novo.entidades.values():
+        a = e.atributos or {}
+        ch = _chave_da_celula(a)
+        if ch is None or a.get("grupo_copia"):
+            continue
+        por_chave[ch].append(e)
+        sg, ref = _assinatura(e, k)
+        if sg is not None:
+            por_assin[(ch, sg)].append((e, ref))
+    tirar = set()
+    for (modo, _g), ents in postos.items():
+        chaves = {_chave_da_celula(e.atributos or {}) for e in ents}
+        votos = collections.Counter()
+        for e in ents:
+            sg, ref = _assinatura(e, k)
+            if sg is None:
+                continue
+            ch = _chave_da_celula(e.atributos or {})
+            for n, rn in por_assin.get((ch, sg), [])[:200]:
+                votos[(round(ref[0] - rn[0]), round(ref[1] - rn[1]))] += 1
+        melhor = votos.most_common(1)
+        if not melhor or melhor[0][1] < (1 if len(ents) == 1 else 2):
+            for e in ents:                          # não se acha no desenho novo: fica o de antes
+                novo.add(transladar(e, 0.0, 0.0))
+            rel["sem_modelo"].extend(sorted({c[2] for c in chaves if c}))
+            continue
+        dx, dy = melhor[0][0]
+        x0, y0, x1, y1 = caixa(ents)
+        folga = 0.02 * max(x1 - x0, y1 - y0) + 5.0 * k       # o que cresceu no desenho novo, sem pegar a célula vizinha
+        pedaco = []
+        for ch in chaves:
+            for n in por_chave.get(ch, []):
+                cn = caixa([n])
+                if cn is None:
+                    continue
+                mx, my = (cn[0] + cn[2]) / 2.0 + dx, (cn[1] + cn[3]) / 2.0 + dy
+                if x0 - folga <= mx <= x1 + folga and y0 - folga <= my <= y1 + folga:
+                    pedaco.append(n)
+        grupo = _g if modo == "c" else ""
+        for n in pedaco:
+            c = transladar(n, dx, dy)
+            c.id = novo_id()
+            if grupo:
+                c.atributos = dict(c.atributos or {}, grupo_copia=grupo)
+            novo.add(c)
+        if modo == "m":
+            tirar.update(n.id for n in pedaco)      # foi movido (não copiado): sai do lugar padrão
+        rel["atualizadas"] += 1
+    for i in tirar:
+        novo.remover(i)
+    for e in de_folha + a_mao:
+        novo.add(transladar(e, 0.0, 0.0))
+    rel["a_mao"] = len(a_mao)
+    return rel

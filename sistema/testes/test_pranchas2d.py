@@ -174,3 +174,61 @@ def test_folha_posta_no_desenho_vira_prancha_com_o_que_esta_dentro():
         c.atributos = dict(c.atributos, grupo_copia="c1")
         d.add(c)
     assert len(P.pranchas_das_folhas(d, "x", {})) == 2
+
+
+def test_gerar_de_novo_mantem_a_montagem_das_folhas():
+    """gerar o detalhamento de novo não apaga as pranchas montadas (pergunta do usuário, 28/09): a
+    folha fica; a célula movida para dentro dela volta atualizada no mesmo lugar (e sai do lugar
+    padrão); a copiada fica nos dois; a peça que saiu do modelo fica como antes; o desenhado à mão fica"""
+    from nucleo2d import pranchas as P
+    from nucleo2d.desenho import Desenho, Linha, Texto
+
+    def celula(d, marca, x, y, larg, grupo=""):
+        atr = {"detalhe": "conjunto", "conjunto": marca, "faixa": "tesouras"}
+        if grupo:
+            atr["grupo_copia"] = grupo
+        d.add(Linha(camada="BANZOS", a=(x, y), b=(x + larg, y), atributos=dict(atr)))
+        d.add(Linha(camada="BANZOS", a=(x, y), b=(x + larg / 2, y + 1000.0), atributos=dict(atr)))
+        d.add(Linha(camada="MONTANTES", a=(x + 1000.0, y), b=(x + 1000.0, y + 800.0), atributos=dict(atr)))   # não muda
+        d.add(Texto(camada="TEXTO", posicao=(x, y + 1500.0), texto=marca, altura=2.5, atributos=dict(atr)))
+
+    antigo = Desenho(nome="Detalhamento – tesouras", escala=25.0)
+    folha = P.folha_no_desenho("A1", 25.0, (30000.0, 0.0), {"obra": "X"}, titulo="TESOURAS")
+    for e in folha.entidades.values():
+        antigo.add(e)
+    celula(antigo, "T1", 32000.0, 5000.0, 8000.0)                  # movida para a folha
+    celula(antigo, "T2", 0.0, 10000.0, 8000.0)                     # no lugar padrão
+    celula(antigo, "T2", 32000.0, 9000.0, 8000.0, grupo="c1")      # e uma cópia na folha
+    celula(antigo, "T9", 42000.0, 5000.0, 3000.0)                  # saiu do modelo
+    antigo.add(Texto(camada="TEXTO", posicao=(33000.0, 1000.0), texto="NOTA À MÃO", altura=2.5))
+    novo = Desenho(nome="Detalhamento – tesouras", escala=25.0)
+    celula(novo, "T1", 0.0, 0.0, 9000.0)                           # a T1 mudou: 9 m
+    celula(novo, "T2", 0.0, 10000.0, 8000.0)
+
+    rel = P.manter_montagem(antigo, novo)
+    assert rel["folhas"] == 1 and rel["atualizadas"] == 2 and rel["sem_modelo"] == ["T9"] and rel["a_mao"] == 1
+    t1 = [e for e in novo.entidades.values() if (e.atributos or {}).get("conjunto") == "T1" and e.tipo == "linha"]
+    assert len(t1) == 3                                             # só a da folha (a padrão saiu)
+    base = next(e for e in t1 if e.a[1] == e.b[1])
+    assert base.a == (32000.0, 5000.0) and base.b == (41000.0, 5000.0)   # a nova (9 m), no canto da antiga
+    t2 = [e for e in novo.entidades.values() if (e.atributos or {}).get("conjunto") == "T2" and e.tipo == "linha"]
+    assert len(t2) == 6                                             # a padrão e a cópia na folha
+    assert any((e.atributos or {}).get("grupo_copia") == "c1" and e.a == (32000.0, 9000.0) for e in t2)
+    assert any((e.atributos or {}).get("conjunto") == "T9" for e in novo.entidades.values())
+    assert sum(1 for e in novo.entidades.values() if (e.atributos or {}).get("folha")) == len(folha.entidades)
+    assert any(getattr(e, "texto", "") == "NOTA À MÃO" for e in novo.entidades.values())
+    # e a prancha sai da folha com as células novas
+    ps = P.pranchas_das_folhas(novo, "detalhamento-tesouras", {"obra": "X"})
+    assert ps[0].metadados["prancha"]["entidades_do_desenho"] == 4 + 4 + 4 + 1
+
+
+def test_gerar_de_novo_sem_montagem_nao_mexe():
+    from nucleo2d import pranchas as P
+    from nucleo2d.desenho import Desenho, Linha
+    antigo = Desenho(nome="d", escala=25.0)
+    antigo.add(Linha(camada="0", a=(0, 0), b=(1, 0), atributos={"detalhe": "conjunto", "conjunto": "T1", "faixa": "x"}))
+    novo = Desenho(nome="d", escala=25.0)
+    novo.add(Linha(camada="0", a=(0, 0), b=(2, 0), atributos={"detalhe": "conjunto", "conjunto": "T1", "faixa": "x"}))
+    assert P.manter_montagem(antigo, novo) == {"folhas": 0, "atualizadas": 0, "sem_modelo": [], "a_mao": 0}
+    assert len(novo.entidades) == 1
+
