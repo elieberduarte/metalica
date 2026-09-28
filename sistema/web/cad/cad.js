@@ -748,7 +748,7 @@ class CAD {
     $('#arquivo-projeto-2d').addEventListener('change', () => { const f = $('#arquivo-projeto-2d').files && $('#arquivo-projeto-2d').files[0]; $('#arquivo-projeto-2d').value = ''; this.projetoRecebido(f); });
     $('#btn-tema').addEventListener('click', () => this._alternarTema());
     this.el.nome.addEventListener('change', () => { this.doc.nome = this.el.nome.value.trim() || 'Desenho'; document.title = `${this.doc.nome} — Desenho 2D`; this._agendarAutosave(); });
-    this.el.escala.addEventListener('change', () => { this.doc.escala = parseFloat(this.el.escala.value) || 20; this.doc.notificar([], 'aparencia'); this.dica(`Escala 1:${this.doc.escala}: textos, cotas e hachuras redimensionados.`); });
+    this.el.escala.addEventListener('change', () => { this.doc.mudarEscala(parseFloat(this.el.escala.value) || 20); this.dica(`Escala 1:${this.doc.escala}: textos, cotas e hachuras redimensionados.`); });
   }
   _fecharMenus() { for (const m of document.querySelectorAll('.menu.aberto')) m.classList.remove('aberto'); }
   _atualizarMenuEditar() {

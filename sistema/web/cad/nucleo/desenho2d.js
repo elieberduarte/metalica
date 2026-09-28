@@ -155,15 +155,34 @@ export function intersecaoSeg(a, b, c, d) {
   return [a[0] + t * r[0], a[1] + t * r[1]];
 }
 
+/** Caixa do texto no referencial dele: a largura estimada pelo número de letras, a partir do
+ *  ponto de inserção conforme o alinhamento. */
+function caixaLocalDoTexto(e, escalaTexto) {
+  const h = (e.altura || 2.5) * escalaTexto, w = Math.max(h, (e.texto || '').length * h * 0.65);
+  const x = e.alinhamento === 'centro' ? -w / 2 : e.alinhamento === 'direita' ? -w : 0;
+  return [x, w, h];
+}
+
+/** Os quatro cantos do texto no desenho, girados pelo ângulo: é a caixa que o índice espacial
+ *  guarda — só o ponto de inserção deixava um título comprido sem clique no meio (28/09). */
+export function cantosDoTexto(e, escalaTexto = 1) {
+  const [x, w, h] = caixaLocalDoTexto(e, escalaTexto);
+  const a = (e.angulo || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+  return [[x, 0], [x + w, 0], [x + w, h], [x, h]].map(([u, v]) => [e.posicao[0] + u * c - v * s, e.posicao[1] + u * s + v * c]);
+}
+
 /** Distância do ponto à entidade (para seleção por clique). `escala` é mm/px, para o
  *  texto ter uma caixa mínima clicável. */
 export function distanciaEntidade(p, e, escalaTexto = 1) {
   switch (e.tipo) {
     case 'circulo': return Math.abs(dist(p, e.centro) - e.raio);
     case 'texto': {
-      const h = (e.altura || 2.5) * escalaTexto, w = Math.max(h, (e.texto || '').length * h * 0.65);
-      const x = e.alinhamento === 'centro' ? e.posicao[0] - w / 2 : e.alinhamento === 'direita' ? e.posicao[0] - w : e.posicao[0];
-      const dx = Math.max(x - p[0], 0, p[0] - (x + w)), dy = Math.max(e.posicao[1] - p[1], 0, p[1] - (e.posicao[1] + h));
+      // no referencial do texto (girado pelo ângulo dele)
+      const [x, w, h] = caixaLocalDoTexto(e, escalaTexto);
+      const a = (e.angulo || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+      const qx = p[0] - e.posicao[0], qy = p[1] - e.posicao[1];
+      const u = qx * c + qy * s, v = -qx * s + qy * c;
+      const dx = Math.max(x - u, 0, u - (x + w)), dy = Math.max(-v, 0, v - h);
       return Math.hypot(dx, dy);
     }
     case 'hachura': {
@@ -275,6 +294,13 @@ export class Desenho2D {
     return e;
   }
 
+  /** A escala muda o tamanho de textos e cotas no desenho todo: o índice é refeito. */
+  mudarEscala(escala) {
+    this.escala = escala;
+    this._grade = null;
+    this.notificar([], 'aparencia');
+  }
+
   alterarCamada(nome, campos) {
     const c = this.camadas.get(nome);
     if (!c) return;
@@ -311,7 +337,7 @@ export class Desenho2D {
     const caixas = new Map();
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, n = 0;
     for (const e of this.entidades.values()) {
-      const c = caixaDe(e.tipo === 'cota' ? pontosCota(e, this.escala) : pontosDe(e));
+      const c = this._caixaDoIndice(e);
       if (!c) continue;
       caixas.set(e.id, c); n++;
       if (c[0][0] < x0) x0 = c[0][0]; if (c[0][1] < y0) y0 = c[0][1];
@@ -324,6 +350,13 @@ export class Desenho2D {
     this._grade = { celula, caixas, celulas: new Map() };
     for (const [id, c] of caixas) this._indexar(id, c);
     return this._grade;
+  }
+
+  /** Caixa da entidade no índice: a cota com a linha deslocada, o texto com a largura dele. */
+  _caixaDoIndice(e) {
+    if (e.tipo === 'cota') return caixaDe(pontosCota(e, this.escala));
+    if (e.tipo === 'texto') return caixaDe(cantosDoTexto(e, this.escala));
+    return caixaDe(pontosDe(e));
   }
 
   _chavesDe(c) {
@@ -361,7 +394,7 @@ export class Desenho2D {
     for (const id of ids) {
       this._desindexar(id);
       const e = this.entidades.get(id);
-      const c = e ? caixaDe(e.tipo === 'cota' ? pontosCota(e, this.escala) : pontosDe(e)) : null;
+      const c = e ? this._caixaDoIndice(e) : null;
       if (c) { this._grade.caixas.set(id, c); this._indexar(id, c); }
     }
   }
@@ -400,7 +433,8 @@ export class Desenho2D {
 
   notificar(ids, acao) {
     this.versao = (this.versao || 0) + 1;         // a tela compara para saber se redesenha
-    if (acao !== 'aparencia') this._atualizarIndice(ids, acao);
+    // a aparência de entidades também mexe nas caixas (a altura do texto muda a largura dele)
+    if (acao !== 'aparencia' || ids.length) this._atualizarIndice(ids, acao);
     if (this._lote) { for (const i of ids) this._lote.ids.add(i); if (acao === 'tudo') this._lote.acao = 'tudo'; return; }
     this._emitir(ids, acao);
   }

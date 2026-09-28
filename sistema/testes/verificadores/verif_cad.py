@@ -64,7 +64,8 @@ try:
     aba.drenar(0.3)
     ok(aba.avaliar("window.cad.doc.tamanho") == antes + 2, "linha e cota criadas pelas ferramentas")
     cota = aba.avaliar("JSON.stringify([...window.cad.doc.entidades.values()].filter(e => e.tipo === 'cota').map(c => [c.modo, c.deslocamento < 0, Math.round(Math.hypot(c.p2[0]-c.p1[0], c.p2[1]-c.p1[1]))]))")
-    ok('["alinhada",true,5000]' in cota, f"cota alinhada de 5000 mm com o deslocamento para baixo: {cota}")
+    # a cota é linear automática (28/09): pontos na horizontal e o mouse abaixo dão a horizontal
+    ok('["h",true,5000]' in cota, f"cota horizontal de 5000 mm com o deslocamento para baixo: {cota}")
     aba.avaliar("window.cad.desfazer(); 1")
     ok(aba.avaliar("window.cad.doc.tamanho") == antes + 1, "desfazer remove a cota")
     aba.avaliar("window.cad.refazer(); 1")
