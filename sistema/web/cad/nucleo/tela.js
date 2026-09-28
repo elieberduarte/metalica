@@ -432,7 +432,7 @@ export class Tela {
     ctx.moveTo(A1[0], A1[1]); ctx.lineTo(A2[0], A2[1]); ctx.stroke();
     const ang = Math.atan2(g.uy, g.ux);
     const fora = g.comp < 3 * seta;
-    const term = c.terminador || ((this.doc.metadados || {}).estilo || {}).terminador || 'seta';
+    const term = c.terminador || ((this.doc.metadados || {}).estilo || {}).terminador || 'traco';   // padrão: o traço oblíquo da produção
     this._terminador(ctx, A1, fora ? ang : ang + Math.PI, seta * z, term);
     this._terminador(ctx, A2, fora ? ang + Math.PI : ang, seta * z, term);
     const t = Tela.textoCota(c, k);

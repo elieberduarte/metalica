@@ -151,7 +151,7 @@ class Cota(Entidade2D):
     texto: Optional[str] = None
     altura: float = 2.5
     texto_pos: Optional[Ponto2] = None   # onde o número foi posto à mão (None = no meio da linha)
-    terminador: Optional[str] = None     # seta (padrão), bola ou traco; None = o do desenho (metadados.estilo)
+    terminador: Optional[str] = None     # traco (padrão: o traço oblíquo da produção), seta ou bola; None = o do desenho (metadados.estilo)
 
     def pontos(self):
         return [self.p1, self.p2]
@@ -316,7 +316,7 @@ class Desenho:
                 d.texto(e.posicao[0], e.posicao[1], e.texto, e.altura * k, camada,
                         angulo=e.angulo, alinhamento=e.alinhamento, vertical=e.vertical)
             elif isinstance(e, Cota):
-                _cota_dxf(d, e, k, camada, terminador=(e.terminador or (self.metadados.get("estilo") or {}).get("terminador") or "seta"))
+                _cota_dxf(d, e, k, camada, terminador=(e.terminador or (self.metadados.get("estilo") or {}).get("terminador") or TERMINADOR_PADRAO))
             elif isinstance(e, Hachura):
                 for contorno in e.contornos[:1]:      # o primeiro é o externo; os outros ficam vazios
                     if e.padrao == "solido" and len(contorno) >= 3:
@@ -350,7 +350,12 @@ def _terminador_dxf(d, x: float, y: float, ang: float, tam: float, camada: str, 
         d.seta(x, y, ang, tam, camada)
 
 
-def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = "seta"):
+#: a ponta das cotas sem terminador próprio nem do desenho: o traço oblíquo, como a produção lê (pedido do
+#: usuário, 28/09)
+TERMINADOR_PADRAO = "traco"
+
+
+def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PADRAO):
     """Cota com setas (ou bolas, ou traços) e texto proporcionais à escala (o que
     `saida/desenhos._cota` faz para o galpão, aqui sobre o documento 2D)."""
     x1, y1 = c.p1

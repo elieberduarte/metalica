@@ -1454,7 +1454,7 @@ class CAD {
     const campos = {
       escopo: el('select', {}, ...[[sel.length ? 'selecao' : 'todos', sel.length ? `Seleção (${sel.length} objeto(s))` : 'Todo o desenho'], [sel.length ? 'todos' : 'selecao', sel.length ? 'Todo o desenho' : 'Seleção (nada selecionado)']].map(([v, t]) => el('option', { value: v, texto: t }))),
       altura: el('input', { type: 'number', step: '0.5', min: '0.5', value: String(estilo.texto || this.alturaTexto || 2.5), placeholder: 'mm no papel' }),
-      terminador: el('select', {}, ...[['', 'manter'], ['seta', 'Seta'], ['bola', 'Bola (ponto)'], ['traco', 'Traço oblíquo']].map(([v, t]) => el('option', { value: v, texto: t, selected: (estilo.terminador || 'seta') === v && v ? 'selected' : undefined }))),
+      terminador: el('select', {}, ...[['', 'manter'], ['seta', 'Seta'], ['bola', 'Bola (ponto)'], ['traco', 'Traço oblíquo']].map(([v, t]) => el('option', { value: v, texto: t, selected: (estilo.terminador || 'traco') === v && v ? 'selected' : undefined }))),
       padrao: el('select', {}, ...[['', 'manter'], ['aco', 'Aço (linhas a 45°)'], ['concreto', 'Concreto'], ['solido', 'Sólido']].map(([v, t]) => el('option', { value: v, texto: t }))),
       espacamento: el('input', { type: 'number', step: '0.5', min: '0.5', placeholder: 'manter (mm no papel)' }),
       angulo: el('input', { type: 'number', step: '15', placeholder: 'manter (graus)' }),

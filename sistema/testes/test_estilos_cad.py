@@ -18,8 +18,11 @@ def _dxf(terminador=None, estilo=None):
 
 
 def test_terminador_seta_bola_e_traco_no_dxf():
-    seta = _dxf()
+    seta = _dxf("seta")
     assert seta.count("SOLID") == 2 and "CIRCLE" not in seta                  # duas setas cheias
+    # sem terminador na cota nem no desenho: o traço oblíquo (o padrão da produção, 28/09)
+    padrao = _dxf()
+    assert "SOLID" not in padrao and "CIRCLE" not in padrao and padrao.count("\nLINE\n") == 5
     bola = _dxf("bola")
     assert bola.count("CIRCLE") == 2 and "SOLID" not in bola                  # duas bolas
     traco = _dxf("traco")
