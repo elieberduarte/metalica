@@ -2,6 +2,8 @@
 """Escadas do projeto recebido (nucleo3d/escadas.py): a planta baixa de uma escada em "L", como a
 ESCADA 1 do Posto CB — o 1º lance em −x, o patamar, o 2º lance em −y —, posta no lugar pelos balões
 das letras (y) e pelos pés da escada na locação (x), com o patamar pelas cotas do corte."""
+import math
+
 import pytest
 
 from nucleo3d import escadas
@@ -62,3 +64,30 @@ def test_sem_como_por_no_lugar_fica_de_fora_com_aviso():
     avisos = []
     r = escadas.ler(ents, textos, {}, [], 3170.0, avisos, baloes_de=lambda reg: {})
     assert r == [] and any("não consegui pôr no lugar" in a for a in avisos)
+
+
+def test_ligacao_ao_mezanino_vigas_do_patamar_e_o_piso():
+    """as peças da planta que não são longarina nem degrau: a viga de chegada e a ligação dela ao
+    mezanino (no alto, junto do fim do último lance), as vigas do patamar (na altura dele) e o piso
+    de chapa xadrez do patamar"""
+    ents, textos = _planta()
+    # a chegada: U em linha dupla atravessando o fim do 2º lance; a ligação: dali até o pilar, em −y
+    ents += [_linha((-20.0, -2400.0), (1120.0, -2400.0)), _linha((-20.0, -2440.0), (1120.0, -2440.0)),
+             _linha((0.0, -2440.0), (0.0, -3500.0)), _linha((40.0, -2440.0), (40.0, -3500.0)),
+             # uma viga do patamar, no meio dele
+             _linha((40.0, 480.0), (1060.0, 480.0)), _linha((40.0, 520.0), (1060.0, 520.0))]
+    textos.append(_texto(3000.0, -3000.0, "PISO EM CHAPA XADREZ 2,65 mm"))
+    referencia = {"E": [(100.0, 33000.0)], "F": [(100.0, 32000.0)]}
+    baloes = {"E": (-1500.0, 1000.0), "F": (-1500.0, 0.0)}
+    pes = [(4716.0, 33020.0), (4716.0, 32020.0)]
+    avisos = []
+    e = escadas.ler(ents, textos, referencia, pes, 3170.0, avisos, baloes_de=lambda reg: baloes)[0]
+    alturas = sorted(round(a[2]) for a, _b in e["vigas"])
+    assert alturas.count(3170) == 2, e["vigas"]          # a chegada e a ligação
+    assert alturas.count(1700) == 1, e["vigas"]          # a viga do patamar
+    compr = sorted(round(math.dist(a[:2], b[:2])) for a, b in e["vigas"] if round(a[2]) == 3170)
+    assert compr[0] == pytest.approx(1080, abs=50) and compr[1] == pytest.approx(1140, abs=50)
+    assert len(e["pisos"]) == 1
+    p = e["pisos"][0]
+    assert p["espessura"] == pytest.approx(2.65) and p["canto"][2] == pytest.approx(1700.0)
+    assert p["lx"] > 900 and p["ly"] > 900

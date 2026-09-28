@@ -171,6 +171,33 @@ def patamar_dos_cortes(textos, regs, altura: float) -> Optional[float]:
     return max(votos, key=lambda k: votos[k]) if votos else None
 
 
+def _pecas_de_linha(ents, reg) -> List[dict]:
+    """as linhas e polilinhas de peça (fora das camadas de anotação) da região, como segmentos
+    {a, b}: a polilinha fechada estreita (o U desenhado em planta) vira o segmento do lado maior"""
+    out = []
+    for e in ents:
+        if ANOTACAO.search(str(e.get("camada") or "")):
+            continue
+        if e["tipo"] == "linha" and _dentro(e["a"], reg) and _dentro(e["b"], reg):
+            out.append({"a": tuple(e["a"][:2]), "b": tuple(e["b"][:2])})
+        elif e["tipo"] == "polilinha" and len(e.get("vertices") or ()) >= 4 and all(_dentro(v, reg) for v in e["vertices"]):
+            xs = [v[0] for v in e["vertices"]]
+            ys = [v[1] for v in e["vertices"]]
+            w, h = max(xs) - min(xs), max(ys) - min(ys)
+            if max(w, h) < 400.0 or min(w, h) > 120.0:
+                continue                                   # a seção do pilar, o pé: não é barra
+            cy, cx = (min(ys) + max(ys)) / 2.0, (min(xs) + max(xs)) / 2.0
+            out.append({"a": (min(xs), cy), "b": (max(xs), cy)} if w >= h else {"a": (cx, min(ys)), "b": (cx, max(ys))})
+    return out
+
+
+def _dist_seg(p, a, b) -> float:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    L2 = dx * dx + dy * dy
+    t = 0.0 if L2 < 1e-9 else min(max(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2, 0.0), 1.0)
+    return math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t)
+
+
 def ler(ents, textos, referencia: Dict[str, List[Ponto2]], pes_esc: Sequence[Ponto2], altura: float,
         avisos: List[str], baloes_de=None) -> List[dict]:
     """as escadas desenhadas em planta baixa, no lugar da planta estrutural: [{nome, perfil,
@@ -267,7 +294,75 @@ def ler(ents, textos, referencia: Dict[str, List[Ponto2]], pes_esc: Sequence[Pon
             c = patamar
             cantos = [(c[0], c[1]), (c[2], c[1]), (c[2], c[3]), (c[0], c[3])]
             pat_segs = [(mover(cantos[k], z_pat), mover(cantos[(k + 1) % 4], z_pat)) for k in range(4)]
+        # o que a planta desenha além das longarinas e dos degraus: os perfis do patamar (no nível
+        # dele) e, na chegada, a travessa entre as longarinas e a ligação com o piso de cima (a
+        # ESCADA 1 do Posto CB continua a longarina de fora até a face do pilar do eixo 1/G)
+        ultimo = partes[-1]
+        lu = ultimo["l"]
+        lbu = lu["base"][0] * lu["n"][0] + lu["base"][1] * lu["n"][1]
+        s_topo = ultimo["s1"] if ultimo["sobe"] else ultimo["s0"]
+        topo = [(lu["base"][0] + lu["u"][0] * s_topo + lu["n"][0] * (lat - lbu),
+                 lu["base"][1] + lu["u"][1] * s_topo + lu["n"][1] * (lat - lbu)) for lat in lu["lats"]]
+        eixos_long = [e_ for l in lances for e_ in l["eixos"]]
+
+        def da_longarina(sg):
+            (ux, uy), _L = _unit(sg["a"], sg["b"])
+            for e_ in eixos_long:
+                if abs(ux * e_["u"][1] - uy * e_["u"][0]) < 0.02 and \
+                        abs(sg["a"][0] * e_["n"][0] + sg["a"][1] * e_["n"][1] - e_["lat"]) < 60.0:
+                    s_ = [(p[0] - e_["base"][0]) * e_["u"][0] + (p[1] - e_["base"][1]) * e_["u"][1] for p in (sg["a"], sg["b"])]
+                    if min(s_) >= e_["s0"] - 60.0 and max(s_) <= e_["s1"] + 60.0:
+                        return True
+            return False
+
+        def degrau(sg):
+            for p in partes:
+                l = p["l"]
+                (ux, uy), _L = _unit(sg["a"], sg["b"])
+                if abs(ux * l["u"][0] + uy * l["u"][1]) > 0.05:
+                    continue                               # não é transversal ao lance
+                s_ = sum((q[0] - l["base"][0]) * l["u"][0] + (q[1] - l["base"][1]) * l["u"][1] for q in (sg["a"], sg["b"])) / 2
+                if p["s0"] + 100.0 < s_ < p["s1"] - 100.0:
+                    return True
+            return False
+        sobra = [sg for sg in _pecas_de_linha(ents, reg) if math.dist(sg["a"], sg["b"]) >= 400.0
+                 and not da_longarina(sg) and not degrau(sg)]
+        # as duas linhas do mesmo perfil viram uma (o eixo)
+        pares = _eixos_das_longarinas([{"a": sg["a"], "b": sg["b"]} for sg in sobra])
+        juntas = [({"a": (e_["base"][0] + e_["u"][0] * e_["s0"], e_["base"][1] + e_["u"][1] * e_["s0"]),
+                    "b": (e_["base"][0] + e_["u"][0] * e_["s1"], e_["base"][1] + e_["u"][1] * e_["s1"])}) for e_ in pares]
+        usadas_p = set()
+        for e_ in pares:
+            for i_s, sg in enumerate(sobra):
+                (ux, uy), _L = _unit(sg["a"], sg["b"])
+                if abs(ux * e_["u"][1] - uy * e_["u"][0]) < 0.02 and \
+                        abs(sg["a"][0] * e_["n"][0] + sg["a"][1] * e_["n"][1] - e_["lat"]) < 60.0:
+                    usadas_p.add(i_s)
+        vigas = []
+        vistos = []
+        for sg in juntas + [sg for i_s, sg in enumerate(sobra) if i_s not in usadas_p]:
+            meio = ((sg["a"][0] + sg["b"][0]) / 2, (sg["a"][1] + sg["b"][1]) / 2)
+            if any(math.dist(meio, m) < 80.0 for m in vistos):
+                continue
+            vistos.append(meio)
+            if patamar and z_pat is not None and all(_dentro(q, (patamar[0] - 120, patamar[1] - 120, patamar[2] + 120,
+                                                                 patamar[3] + 120)) for q in (sg["a"], sg["b"])):
+                vigas.append((mover(sg["a"], z_pat), mover(sg["b"], z_pat)))
+            elif min(_dist_seg(q, sg["a"], sg["b"]) for q in topo) < 150.0:
+                vigas.append((mover(sg["a"], altura), mover(sg["b"], altura)))
+        # o piso do patamar (a chapa xadrez dos cortes)
+        pisos = []
+        if patamar and z_pat is not None:
+            esp = 3.0
+            for x in textos:
+                m = re.search(r"(?i)CHAPA\s+XADREZ\D*(\d+[.,]\d+)", str(x.get("texto") or ""))
+                if m:
+                    esp = float(m.group(1).replace(",", "."))
+                    break
+            pisos.append({"canto": mover((patamar[0], patamar[1]), z_pat), "lx": patamar[2] - patamar[0],
+                          "ly": patamar[3] - patamar[1], "espessura": esp})
         out.append({"nome": nome, "perfil": p_long, "perfil_patamar": p_pat, "lances": segs, "patamar": pat_segs,
+                    "vigas": vigas, "pisos": pisos,
                     "degraus": N, "altura": altura, "patamar_z": z_pat, "alinhada_por": por,
                     "patamar_por": "cortes" if z_cortes is not None else "degraus"})
     # a planta que não escreve o perfil da longarina: o das outras escadas

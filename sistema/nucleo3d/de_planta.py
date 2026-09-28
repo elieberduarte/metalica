@@ -2620,9 +2620,12 @@ def _pilares_da_locacao(ents, textos, caixa_l, desl_l, usados_loc: set, avisos: 
     for k, (t, r) in enumerate(nomes_p):
         q = casado.get(k)
         if q is None:
-            # sem placa desenhada (pilar da torre): a seção do perfil mais perto
+            # sem placa desenhada (pilar da torre): a seção do perfil mais perto — a que não está na
+            # placa de outro pilar (o PM5 do Posto CB tomava a seção do PM2 ao lado e os dois
+            # ficavam um dentro do outro)
             alvo = (t["posicao"][0] - off[0], t["posicao"][1] - off[1])
-            sc = [s for s in secoes if math.dist(s[0], alvo) < 2500]
+            tomadas = list(casado.values())
+            sc = [s for s in secoes if math.dist(s[0], alvo) < 2500 and all(math.dist(s[0], c_) > 300 for c_ in tomadas)]
             if sc:
                 q = min(sc, key=lambda s: math.dist(s[0], alvo))[0]
         if q is None:
@@ -2849,6 +2852,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     for nome_c in ("Treliças", "Vigas", "Pilares", "Terças", "Contraventamento", "Correntes"):
         doc.camadas.setdefault(nome_c, Camada(nome=nome_c))
     pecas: List[dict] = []          # {ent, perfil, papel, L, conjunto}
+    chapas_postas: list = []        # as chapas (pisos dos patamares), deslocadas junto no fim
 
     def barra(p0, p1, perfil, papel, camada, conjunto=None, rot=0.0, origem=None):
         if math.dist(p0, p1) < 5.0:
@@ -3192,6 +3196,26 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             for a_, b_ in esc["patamar"]:
                 if barra((a_[0], a_[1], a_[2] + base), (b_[0], b_[1], b_[2] + base), p_p, "viga", "Escadas", None, 0.0, dict(orig_e)):
                     n_e += 1
+            # os perfis do patamar e a chegada no piso de cima (sem repetir as bordas do patamar)
+            ja = list(esc["patamar"]) + list(esc["lances"])
+            for a_, b_ in esc.get("vigas") or []:
+                if any(min(math.dist(a_, c_) + math.dist(b_, d_), math.dist(a_, d_) + math.dist(b_, c_)) < 250.0 for c_, d_ in ja):
+                    continue
+                if barra((a_[0], a_[1], a_[2] + base), (b_[0], b_[1], b_[2] + base), p_p, "viga", "Escadas", None, 0.0, dict(orig_e)):
+                    n_e += 1
+            # o piso do patamar: a chapa xadrez
+            from nucleo3d.modelo import Chapa as _Chapa
+            for pz in esc.get("pisos") or []:
+                c0 = pz["canto"]
+                ch = _Chapa(nome="Piso do patamar (%s)" % esc["nome"].lower(), origem=(c0[0], c0[1], c0[2] + base),
+                            eixo_x=(1.0, 0.0, 0.0), eixo_y=(0.0, 1.0, 0.0),
+                            contorno=[(0.0, 0.0), (pz["lx"], 0.0), (pz["lx"], pz["ly"]), (0.0, pz["ly"])],
+                            espessura=pz["espessura"], centrada=False, aco=aco)
+                ch.camada = "Escadas"
+                ch.atributos = {"origem": dict(orig_e, piso="chapa xadrez")}
+                doc.add(ch)
+                chapas_postas.append(ch)
+                n_e += 1
             escadas_feitas.append({"nome": esc["nome"], "pecas": n_e, "alinhada_por": esc["alinhada_por"],
                                    "patamar_z": esc["patamar_z"], "altura": esc["altura"]})
             avisos.append("%s: montada pela planta baixa (%s), %d degraus até %.2f m, patamar a %.2f m (%s); confira "
@@ -3480,6 +3504,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 e.fim = (e.fim[0] + desl[0], e.fim[1] + desl[1], e.fim[2])
             else:
                 e.vertices = [(v[0] + desl[0], v[1] + desl[1], v[2]) for v in e.vertices]
+        for ch in chapas_postas:
+            ch.origem = (ch.origem[0] + desl[0], ch.origem[1] + desl[1], ch.origem[2])
 
     # ---------------------------------------------------------------- marcas
     grupos: Dict[tuple, List[dict]] = collections.defaultdict(list)
