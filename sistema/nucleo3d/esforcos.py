@@ -352,6 +352,8 @@ def hipoteses(r: dict) -> List[str]:
          "trabalha também à compressão.",
          "Perfil duplo (2L, 2Ue) como duas vezes o simples (área e inércias), sem o afastamento entre eles.",
          "Banzo em U deitado (abas para dentro da treliça): a inércia fraca no plano vertical da treliça, a forte na horizontal.",
+         "Treliças de travamento entre tesouras (COMP): só escora — a alma delas não passa carga vertical de uma tesoura "
+         "para a outra (a confirmar com o projetista).",
          "Pé do pilar rotulado; engastado onde a locação do projeto dá momento na base.",
          "Cargas de cobertura pelas terças, cada uma com a faixa até a meia distância das vizinhas: telha %.3f, forro "
          "%.3f, painéis %.3f (permanentes) e sobrecarga %.3f kN/m² — %s." % (
@@ -421,6 +423,11 @@ def combinacoes_ultimas(casos: List[str]) -> List[dict]:
 
 
 ALMA_ROTULADA = ("montante", "diagonal", "corrente", "contraventamento")
+# as treliças de travamento entre tesouras ("COMP 21": banzo de cima de uma na de cima da vizinha, de
+# baixo na de baixo, nos vãos do contravento): só escora — a alma delas não passa carga vertical de
+# uma tesoura para a outra (decisão do usuário, 28/09: o projeto as faz com 2L 1"×1/8", que não
+# levariam a carga de cobertura que o modelo rígido dá a elas)
+SO_TRAVAMENTO = ("COMP",)
 
 
 def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, vento: Optional[dict] = None,
@@ -498,6 +505,14 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
     R = _eixos_locais(d)
     T = _transformacao(R)
     Iy_, Iz_, J_ = P[:, 1].copy(), P[:, 2].copy(), P[:, 3].copy()
+    A_ = P[:, 0].copy()
+    trav = np.array([barras[e]["papel"] in ("montante", "diagonal") and
+                     str(barras[e].get("peca") or "").split(" ")[0].upper() in SO_TRAVAMENTO for e in usadas], dtype=bool)
+    if trav.any():
+        A_[trav] *= 1e-3
+        Iy_[trav] *= 1e-3
+        Iz_[trav] *= 1e-3
+        J_[trav] *= 1e-3
     if alma_rotulada:
         # a alma da treliça, as correntes e os contraventos rotulados nas pontas (só força normal),
         # como o projeto de treliça: sem os momentos secundários do nó rígido
@@ -506,7 +521,7 @@ def calcular(doc, cargas: Optional[dict] = None, esq: Optional[dict] = None, ven
         Iy_[rot] *= 1e-3
         Iz_[rot] *= 1e-3
         J_[rot] *= 1e-3
-    kl = _rigidez_local(L, P[:, 0], Iy_, Iz_, J_)
+    kl = _rigidez_local(L, A_, Iy_, Iz_, J_)
     kg = np.einsum("nji,njk,nkl->nil", T, kl, T)
     gl = np.concatenate([ia[:, None] * 6 + np.arange(6), ib[:, None] * 6 + np.arange(6)], axis=1)
     lin = np.repeat(gl, 12, axis=1).ravel()

@@ -188,6 +188,7 @@ def verificar(doc, r: dict, aco_padrao: str = "ASTM A36") -> dict:
 
     # os esforços de cálculo de cada combinação: N (+ tração) e o maior momento no eixo forte (kN·m)
     N = np.zeros((len(combs), n))
+    M0v = np.zeros((len(combs), n))                     # o momento de vão simples (a carga da própria barra)
     Mp = np.zeros((len(combs), n))                      # o maior momento positivo (traciona embaixo)
     Mn = np.zeros((len(combs), n))                      # o maior negativo, em módulo
     for k, cb in enumerate(combs):
@@ -195,6 +196,7 @@ def verificar(doc, r: dict, aco_padrao: str = "ASTM A36") -> dict:
         soma = sum(fa * FL[c] for c, fa in f.items() if c in FL)
         mv = sum(fa * np.asarray(m0[c]) for c, fa in f.items() if c in m0) * cperp
         N[k] = soma[:, 6]
+        M0v[k] = mv
         # o momento interno (positivo tracionando embaixo): f4 na ponta 1, −f10 na ponta 2, e a
         # parábola da carga da barra por cima da reta entre os dois; o maior em módulo ao longo dela
         ma, mb = soma[:, 4], -soma[:, 10]
@@ -204,6 +206,15 @@ def verificar(doc, r: dict, aco_padrao: str = "ASTM A36") -> dict:
         Mp[k] = np.clip(np.maximum.reduce([ma, mb, m_pico]), 0.0, None)
         Mn[k] = np.clip(-np.minimum.reduce([ma, mb, m_pico]), 0.0, None)
 
+    # o banzo entre dois nós da alma (ou de apoio): o momento das pontas é o secundário do nó rígido,
+    # que o projeto de treliça (nós rotulados) desconsidera — fica só o da carga da própria barra; o
+    # trecho com um nó onde só chega carga (a terça fora do nó da alma) leva a flexão local, que é real
+    no_de_alma = collections.defaultdict(set)            # peça → nós onde chega alma dela ou pilar
+    for e in usadas:
+        b = barras[e]
+        if b["papel"] in ("montante", "diagonal") and b.get("peca"):
+            no_de_alma[b["peca"]].update((b["a"], b["b"]))
+    nos_pilar = {n for e in usadas if barras[e]["papel"] == "pilar" for n in (barras[e]["a"], barras[e]["b"])}
     res = _Resistencias()
     saida = []
     for i, e in enumerate(usadas):
@@ -247,7 +258,13 @@ def verificar(doc, r: dict, aco_padrao: str = "ASTM A36") -> dict:
             # elástica W_y·f_y/γ (a NBR 14762 não traz o MRD nesse eixo para o U)
             from nucleo import materiais as mat
             MRd = (p.Wy or 0.0) * mat.aco(aco).fy / 1.10
-            M_ = np.maximum(Mp[:, i], Mn[:, i]) / n_calc * 100.0
+            alma_ = no_de_alma.get(b.get("peca"), set()) | nos_pilar
+            if b["a"] in alma_ and b["b"] in alma_:
+                M_ = np.abs(M0v[:, i]) / n_calc * 100.0       # entre nós da alma: só a carga da barra
+                item["momento"] = "só o do vão (nós da alma rotulados)"
+            else:
+                M_ = np.maximum(Mp[:, i], Mn[:, i]) / n_calc * 100.0
+                item["momento"] = "carga fora do nó da alma"
             rm = M_ / MRd if MRd > 0 else np.zeros(len(combs))
             mrd_txt = MRd
         elif banzo_deitado_u:
@@ -291,6 +308,8 @@ def verificar(doc, r: dict, aco_padrao: str = "ASTM A36") -> dict:
             item["esbeltez"] = round(R["esb_c"][0], 1)
             item["esbeltez_excede"] = R["esb_c"][0] > R["esb_c"][1] + 1e-6
         M_max = float(np.max(np.maximum(Mp[:, i], Mn[:, i]))) if papel not in SO_NORMAL else 0.0
+        if item.get("momento", "").startswith("só o do vão"):
+            M_max = float(np.max(np.abs(M0v[:, i])))
         item.update({"razao": round(rz, 3) if math.isfinite(rz) else 99.0, "combinacao": combs[k]["nome"],
                      "verificacao": str(tipo[k]), "norma": R["norma"],
                      "Nc_kN": round(float(comp.max()) * n_calc, 2), "Nt_kN": round(float(trac.max()) * n_calc, 2),
@@ -344,6 +363,8 @@ def hipoteses() -> List[str]:
         "fora do plano da treliça, ou pilar); nas outras barras, o trecho entre nós. Sem efeitos de 2ª ordem.",
         "Banzo em U com as abas para dentro da treliça: no plano dela flamba e flete em torno do eixo fraco (flexão pela "
         "conferência elástica W·fy/γ), fora do plano em torno do forte; na treliça deitada, a flexão vertical é no eixo forte.",
+        "Banzo entre dois nós da alma (ou de apoio): nós rotulados, como o projeto de treliça — o momento de continuidade do "
+        "nó rígido não entra, só o da carga da própria barra; o trecho com carga fora do nó da alma (a terça) leva a flexão toda.",
         "Terça: o momento positivo (gravidade) com a mesa de cima travada pela telha; o negativo (sucção) com a de baixo livre "
         "entre as correntes.",
         "Alma em 2L (costas com costas, com presilhas): a compressão do par (NBR 8800, flexão; r de uma no plano, do par fora "
