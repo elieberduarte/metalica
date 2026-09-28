@@ -2135,6 +2135,69 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     return {"pranchas": saida, "formato": corpo.get("formato") or "A1"}
 
 
+def _carimbo_do_projeto(s: str, corpo: dict) -> dict:
+    p = _gerente().ler(s)
+    carimbo = {"obra": p.get("nome") or s, "cliente": p.get("cliente") or "",
+               "responsavel": p.get("responsavel") or "", "revisao": "00"}
+    carimbo.update({k: v for k, v in (corpo.get("carimbo") or {}).items() if v not in (None, "")})
+    return carimbo
+
+
+def folha_no_desenho(s: str, nome: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/desenhos/<nome>/folha {formato, origem: [x, y], titulo}: a folha com o
+    carimbo para o desenho de trabalho, na escala dele, para o CAD acrescentar (Ctrl+Z desfaz). Os
+    detalhes são movidos ou copiados para dentro dela; "pranchas-das-folhas" faz as pranchas."""
+    from dataclasses import asdict
+    from nucleo2d.desenho import Desenho
+    from nucleo2d.pranchas import folha_no_desenho as _folha, _folhas_do
+    bruto = _gerente().abrir_desenho(s, nome)
+    if not bruto:
+        raise ErroDeDados("desenho não encontrado: %s" % nome)
+    d = Desenho.de_dict(bruto)
+    ja = len(_folhas_do(d))
+    o = corpo.get("origem") or [0.0, 0.0]
+    f = _folha(str(corpo.get("formato") or "A1"), float(d.escala or 1.0), (float(o[0]), float(o[1])),
+               _carimbo_do_projeto(s, corpo), titulo=str(corpo.get("titulo") or "").strip(), numero=ja + 1, total=ja + 1)
+    return {"entidades": [asdict(e) for e in f.entidades.values()],
+            "camadas": {k: asdict(c) for k, c in f.camadas.items()}, "folha": f.metadados["folha"]}
+
+
+def pranchas_das_folhas(s: str, nome: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/desenhos/<nome>/pranchas-das-folhas {titulo}: cada folha posicionada no
+    desenho vira uma prancha em papel 1:1 (Prancha NN), com o que está dentro dela. As pranchas feitas
+    antes a partir deste desenho são refeitas; a numeração segue as outras pranchas do projeto."""
+    import re as _re
+    from nucleo2d.desenho import Desenho
+    from nucleo2d.pranchas import pranchas_das_folhas as _pranchas
+    g = _gerente()
+    bruto = g.abrir_desenho(s, nome)
+    if not bruto:
+        raise ErroDeDados("desenho não encontrado: %s" % nome)
+    d = Desenho.de_dict(bruto)
+    titulo = (corpo.get("titulo") or "Prancha").strip() or "Prancha"
+    base = _slug(titulo)
+    fonte = _slug(nome)
+    outras = []
+    for info in g.listar_desenhos(s, contar=False):
+        m = _re.match(r"^%s-(\d+)$" % _re.escape(base), info["nome"])
+        if not m:
+            continue
+        meta = (g.abrir_desenho(s, info["nome"]) or {}).get("metadados") or {}
+        if meta.get("gerado_por") == "folhas" and fonte in ((meta.get("prancha") or {}).get("fontes") or []):
+            g.excluir_desenho(s, info["nome"])            # refeita agora
+        else:
+            outras.append(int(m.group(1)))
+    primeira = max(outras) + 1 if outras else 1
+    folhas = _pranchas(d, fonte, _carimbo_do_projeto(s, corpo), titulo=titulo, primeira=primeira)
+    saida = []
+    for folha in folhas:
+        salvo = g.salvar_desenho(s, folha.nome, folha.dict())
+        saida.append({"nome": salvo["nome"], "titulo": folha.nome, "entidades": folha.tamanho,
+                      "do_desenho": folha.metadados["prancha"]["entidades_do_desenho"]})
+    g.tocar(s)
+    return {"pranchas": saida}
+
+
 def _texto_do_dxf(corpo: dict) -> str:
     """O DXF vem em texto (`conteudo`) ou em base64 (`conteudo_b64`, que preserva os
     acentos dos DXF antigos, gravados em ANSI/cp1252 e não em UTF-8)."""
@@ -3146,6 +3209,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(exportar_desenho_pdf(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "excluir":
                     return self._json(_gerente().excluir_desenho(partes[0], partes[2]))
+                if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "folha":
+                    return self._json(folha_no_desenho(partes[0], partes[2], corpo))
+                if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "pranchas-das-folhas":
+                    return self._json(pranchas_das_folhas(partes[0], partes[2], corpo))
                 if len(partes) != 2:
                     raise ErroDeDados("rota de projeto inválida: " + rota)
                 return self._json(acao_de_projeto(partes[0], partes[1], corpo))

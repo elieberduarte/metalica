@@ -459,6 +459,12 @@ class CAD {
   pecaDe(id) {
     const e = this.doc.get(id);
     const a = (e && e.atributos) || {};
+    if (e && a.folha) {
+      // a folha posta no desenho (borda, carimbo e textos dele): move e copia inteira
+      // (a folha copiada tem o mesmo id e outro grupo de cópia: é outra folha)
+      const g = a.grupo_copia || '';
+      return [...this.doc.entidades.values()].filter(o => { const b = o.atributos || {}; return b.folha === a.folha && (b.grupo_copia || '') === g; }).map(o => o.id);
+    }
     if (!e || !a.origem || e.tipo === 'cota' || e.tipo === 'texto' || e.tipo === 'chamada') return [id];
     // "dxf"/"pdf" só diz de onde a linha foi importada, não é uma peça do 3D: no projeto recebido
     // (Posto CB, 77 mil linhas com a mesma origem) o clique comparava a linha com o desenho inteiro
@@ -674,6 +680,8 @@ class CAD {
       'peca-catalogo': () => this.dialogoPeca(),
       'gerar-3d': () => this.dialogoGerar3D(),
       pranchas: () => this.dialogoPranchas(),
+      'inserir-folha': () => this.inserirFolha(),
+      'pranchas-das-folhas': () => this.pranchasDasFolhas(),
       'importar-dxf': () => $('#arquivo-dxf').click(),
       arquitetonico: () => $('#arquivo-arquitetonico').click(),
       'planta-lancamento': () => this.abrirPlantaDeLancamento(),
@@ -1707,6 +1715,55 @@ class CAD {
   }
 
   /** Pranchas com carimbo a partir dos desenhos do projeto (rota /pranchas); abre a primeira. */
+  /**
+   * A folha com o carimbo no próprio desenho de trabalho, na escala dele, à direita do que já
+   * existe: os detalhes são movidos ou copiados para dentro dela com as ferramentas de sempre, e
+   * "Gerar pranchas das folhas" faz de cada folha uma prancha em papel 1:1.
+   */
+  async inserirFolha() {
+    if (!this.projeto) { this.aviso('Inserir folha precisa de um projeto aberto.', 'atencao'); return; }
+    const formato = el('select', {}, ...['A0', 'A1', 'A2', 'A3', 'A4'].map(f => el('option', { value: f, texto: f, selected: f === 'A1' ? 'selected' : undefined })));
+    const titulo = el('input', { type: 'text', value: '', placeholder: 'ex.: TESOURAS T1 A T4', title: 'Título do carimbo desta folha (pode mudar depois, na prancha)' });
+    const corpo = el('div', {},
+      el('div', { class: 'explica', texto: `A folha entra na escala deste desenho (1:${this.doc.escala}), à direita do que já está desenhado. Mova ou copie os detalhes para dentro dela (Mover, Copiar); clicar na borda pega a folha inteira. Depois, Desenho → Gerar pranchas das folhas faz de cada folha uma prancha em papel 1:1.` }),
+      el('label', {}, 'Formato', formato), el('label', {}, 'Título no carimbo', titulo));
+    if (await this.dialogo({ titulo: 'Inserir folha (prancha)', corpo, ok: 'Inserir' }) !== 'ok') return;
+    if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });
+    const tudo = this.doc.caixa();
+    const folga = 20 * (this.doc.escala || 1);
+    const origem = tudo ? [tudo[1][0] + folga, tudo[0][1]] : [0, 0];
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/folha`,
+                             { formato: formato.value, titulo: titulo.value, origem });
+      for (const [nome, c] of Object.entries(r.camadas || {})) {
+        if (!this.doc.camadas.has(nome)) this.doc.camadas.set(nome, { nome, cor: c.cor, visivel: true, bloqueada: false, tipo_linha: c.tipo_linha || 'CONTINUOUS', espessura: c.espessura || 0.18 });
+      }
+      const novas = (r.entidades || []).map(e => criar({ ...e, id: undefined }));
+      this.executar(new ComandoAdicionar(novas, `Folha ${formato.value}`));
+      const [lx, ly] = r.folha.tamanho;
+      this.tela.enquadrar([[origem[0], origem[1]], [origem[0] + lx, origem[1] + ly]], 0.1);
+      this.selecionar(novas.map(e => e.id));
+      this.aviso(`Folha ${formato.value} 1:${this.doc.escala} inserida. Mova ou copie os detalhes para dentro dela; depois, Desenho → Gerar pranchas das folhas.`, 'info', 10000);
+    } catch (e) { this.aviso(`Não foi possível inserir a folha: ${e.message}`, 'erro', 0); }
+  }
+
+  /** Cada folha posta neste desenho vira uma prancha (Prancha NN) com o que está dentro dela. */
+  async pranchasDasFolhas() {
+    if (!this.projeto) { this.aviso('Gerar pranchas precisa de um projeto aberto.', 'atencao'); return; }
+    const folhas = new Set([...this.doc.entidades.values()].map(e => e.atributos || {}).filter(b => b.folha).map(b => `${b.folha}|${b.grupo_copia || ''}`));
+    if (!folhas.size) { this.aviso('Este desenho não tem folhas: Desenho → Inserir folha (prancha)… e ponha os detalhes dentro dela.', 'atencao'); return; }
+    await this.salvar({ avisar: false });
+    this.dica(`Gerando ${folhas.size} prancha(s)…`);
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/pranchas-das-folhas`, { titulo: 'Prancha' });
+      const vazias = r.pranchas.filter(p => !p.do_desenho).map(p => p.titulo);
+      this.aviso(`${r.pranchas.length} prancha(s): ${r.pranchas.map(p => `${p.titulo} (${p.do_desenho} objetos)`).join(', ')}.`
+                 + (vazias.length ? ` Sem nada dentro: ${vazias.join(', ')} — só entra o que está inteiro dentro da borda da folha.` : '')
+                 + ' Abra em Desenho → Abrir desenho do projeto; o PDF de todas as pranchas junta todas.', vazias.length ? 'atencao' : 'info', 15000);
+      this.dica('');
+    } catch (e) { this.aviso(`Não foi possível gerar as pranchas: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
   async dialogoPranchas() {
     if (!this.projeto) { this.aviso('Montar pranchas precisa de um projeto aberto.', 'atencao'); return; }
     if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });

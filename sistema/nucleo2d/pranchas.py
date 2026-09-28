@@ -544,3 +544,124 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
             pdf.savefig(fig)
             plt.close(fig)
     return caminho_pdf
+
+
+# ============================================================ folhas no desenho de trabalho
+# O caminho manual: a folha (borda, quadro, dobras e carimbo) entra no próprio desenho de
+# detalhamento, ampliada pela escala dele; o usuário move ou copia os detalhes para dentro
+# dela com as ferramentas do CAD, e cada folha posicionada vira depois uma prancha em papel.
+
+def _do_papel(e: Entidade2D, k: float, ox: float, oy: float, atr: dict) -> Entidade2D:
+    """o inverso de `_para_papel`: do mm de papel para o mm do desenho (× k, a partir de ox, oy);
+    o que é de papel (altura de texto, afastamentos) fica como está"""
+    n = copy.deepcopy(e)
+    n.id = Entidade2D().id
+    mv = lambda p: (round(p[0] * k + ox, 3), round(p[1] * k + oy, 3))    # noqa: E731
+    if isinstance(n, Linha):
+        n.a, n.b = mv(n.a), mv(n.b)
+    elif isinstance(n, Polilinha):
+        n.vertices = [mv(p) for p in n.vertices]
+    elif isinstance(n, (Circulo, Arco)):
+        n.centro = mv(n.centro)
+        n.raio = round(n.raio * k, 4)
+    elif isinstance(n, Texto):
+        n.posicao = mv(n.posicao)
+    elif isinstance(n, Hachura):
+        n.contornos = [[mv(p) for p in c] for c in n.contornos]
+    n.atributos = dict(n.atributos or {}, **atr)
+    return n
+
+
+def folha_no_desenho(formato: str, escala: float, origem: Ponto2, carimbo: Optional[dict] = None,
+                     titulo: str = "", numero: int = 1, total: int = 1) -> Desenho:
+    """A folha para o desenho de trabalho, com o canto de baixo à esquerda em `origem` (mm do
+    desenho) e ampliada pela `escala` dele. Todas as linhas levam `folha` (o id: o clique pega a
+    folha inteira), o formato e a escala. Devolve um Desenho só com ela."""
+    if formato not in FOLHAS:
+        raise ErroDeDados("formato de folha desconhecido: %s" % formato)
+    k = float(escala or 1.0)
+    larg, alt = FOLHAS[formato]
+    papel = Desenho(nome="folha", escala=1.0)
+    info = dict(carimbo or {})
+    if titulo:
+        info["titulo"] = titulo
+    quadro, carimbo_cx = _modelo.desenhar_folha(papel, formato, larg, alt, info, numero, total, texto_escala(k), [])
+    ident = "folha-" + Entidade2D().id
+    atr = {"folha": ident, "formato": formato, "escala": k, "titulo": titulo}
+    out = Desenho(nome="folha", escala=k)
+    out.camadas.update(copy.deepcopy(papel.camadas))
+    for e in papel.entidades.values():
+        out.add(_do_papel(e, k, origem[0], origem[1], atr))
+    out.metadados["folha"] = {"id": ident, "formato": formato, "escala": k, "origem": [origem[0], origem[1]],
+                              "tamanho": [larg * k, alt * k],
+                              "quadro": [round(v * k + (origem[0] if i % 2 == 0 else origem[1]), 1) for i, v in enumerate(quadro)]}
+    return out
+
+
+def _folhas_do(desenho: Desenho) -> List[dict]:
+    """as folhas posicionadas no desenho: {id, formato, escala, titulo, caixa (mm do desenho)}"""
+    por = collections.OrderedDict()
+    for e in desenho.entidades.values():
+        a = e.atributos or {}
+        if a.get("folha"):
+            # a folha copiada (Copiar do CAD) tem o mesmo id e outro grupo de cópia: é outra folha
+            por.setdefault("%s|%s" % (a["folha"], a.get("grupo_copia") or ""), []).append(e)
+    out = []
+    for ident, ents in por.items():
+        a = ents[0].atributos
+        formato = a.get("formato") if a.get("formato") in FOLHAS else "A1"
+        k = float(a.get("escala") or desenho.escala or 1.0)
+        # o canto da folha: a borda externa (a polilinha de moldura com o maior contorno)
+        pts = [p for e in ents if isinstance(e, Polilinha) for p in e.vertices]
+        if not pts:
+            continue
+        x0, y0 = min(p[0] for p in pts), min(p[1] for p in pts)
+        larg, alt = FOLHAS[formato]
+        out.append({"id": ident, "formato": formato, "escala": k, "titulo": a.get("titulo") or "",
+                    "caixa": (x0, y0, x0 + larg * k, y0 + alt * k), "entidades": ents})
+    # a ordem de leitura: de cima para baixo, da esquerda para a direita
+    out.sort(key=lambda f: (-round(f["caixa"][3] / 1000.0), f["caixa"][0]))
+    return out
+
+
+def pranchas_das_folhas(desenho: Desenho, fonte: str, carimbo: Optional[dict] = None, titulo: str = "Prancha",
+                        primeira: int = 1, total: Optional[int] = None) -> List[Desenho]:
+    """Cada folha posicionada no desenho vira uma prancha em papel 1:1: a folha redesenhada (o número
+    e o total da vez) e tudo o que está inteiro dentro da borda dela, reduzido pela escala."""
+    folhas = _folhas_do(desenho)
+    if not folhas:
+        raise ErroDeDados("o desenho não tem folhas: use Desenho → Inserir folha (prancha)… e ponha os detalhes dentro dela.")
+    total = total or (primeira - 1 + len(folhas))
+    carimbo = dict(carimbo or {})
+    de_folha = {e.id for f in folhas for e in f["entidades"]}
+    soltas = [e for e in desenho.entidades.values() if e.id not in de_folha]
+    saida = []
+    for i, f in enumerate(folhas):
+        n = primeira + i
+        x0, y0, x1, y1 = f["caixa"]
+        k = f["escala"]
+        d = Desenho(nome="%s %02d" % (titulo, n), escala=1.0)
+        for nome_c, cam in desenho.camadas.items():
+            d.camadas.setdefault(nome_c, copy.deepcopy(cam))
+        info = dict(carimbo)
+        if f["titulo"]:
+            info["titulo"] = f["titulo"]
+        info.setdefault("titulo", desenho.nome.replace("Detalhamento – ", "")[:48])
+        larg, alt = FOLHAS[f["formato"]]
+        quadro, carimbo_cx = _modelo.desenhar_folha(d, f["formato"], larg, alt, info, n, total, texto_escala(k), [])
+        dentro = 0
+        for e in soltas:
+            cx = _caixa_de([e], k)
+            if cx is None:
+                continue
+            (ex0, ey0), (ex1, ey1) = cx
+            if ex0 >= x0 - 1e-6 and ey0 >= y0 - 1e-6 and ex1 <= x1 + 1e-6 and ey1 <= y1 + 1e-6:
+                d.add(_para_papel(e, k, -x0 / k, -y0 / k, fonte))
+                dentro += 1
+        d.metadados["prancha"] = {"formato": f["formato"], "numero": n, "total": total, "fontes": [fonte],
+                                  "titulo": info.get("titulo", ""), "folha": f["id"], "escala": k,
+                                  "quadro": [round(v, 2) for v in quadro], "carimbo": [round(v, 2) for v in carimbo_cx],
+                                  "celulas": [], "entidades_do_desenho": dentro}
+        d.metadados["gerado_por"] = "folhas"
+        saida.append(d)
+    return saida

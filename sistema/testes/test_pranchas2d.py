@@ -145,3 +145,32 @@ def test_prancha_de_indice():
     assert any(t == "02" for t in textos)                                       # coluna da prancha
     sem = montar_pranchas(fontes, formato="A1", titulo="Prancha", indice=False)
     assert sem[0].metadados["prancha"]["numero"] == 1 and len(sem) == len(folhas) - 1
+
+
+def test_folha_posta_no_desenho_vira_prancha_com_o_que_esta_dentro():
+    """o caminho manual: a folha entra no desenho de trabalho na escala dele; o que está inteiro
+    dentro da borda vai para a prancha, reduzido; o que está fora, não; a folha copiada é outra"""
+    import copy
+    from nucleo2d import pranchas as P
+    from nucleo2d.desenho import Desenho, Linha, Texto
+    d = Desenho(nome="Detalhamento – tesouras", escala=25.0)
+    f = P.folha_no_desenho("A1", 25.0, (10000.0, 0.0), {"obra": "X"}, titulo="TESOURAS")
+    assert f.metadados["folha"]["tamanho"] == [841.0 * 25, 594.0 * 25]
+    for e in f.entidades.values():
+        d.add(e)
+    dentro = d.add(Linha(camada="0", a=(12000.0, 5000.0), b=(15000.0, 5000.0)))
+    d.add(Texto(camada="0", posicao=(12000.0, 6000.0), texto="P1", altura=2.5))
+    d.add(Linha(camada="0", a=(0.0, 0.0), b=(100.0, 100.0)))                  # fora da folha
+    ps = P.pranchas_das_folhas(d, "detalhamento-tesouras", {"obra": "X"}, primeira=3)
+    assert [p.nome for p in ps] == ["Prancha 03"]
+    pr = ps[0]
+    assert pr.metadados["prancha"]["entidades_do_desenho"] == 2
+    linha = next(e for e in pr.entidades.values() if (e.atributos or {}).get("fonte") == "detalhamento-tesouras" and e.tipo == "linha")
+    assert linha.a == ((12000.0 - 10000.0) / 25.0, 5000.0 / 25.0) and dentro.a == (12000.0, 5000.0)
+    # a folha copiada (mesmo id, outro grupo de cópia) é outra folha
+    for e in list(f.entidades.values()):
+        c = copy.deepcopy(e)
+        c.id = type(e)().id
+        c.atributos = dict(c.atributos, grupo_copia="c1")
+        d.add(c)
+    assert len(P.pranchas_das_folhas(d, "x", {})) == 2
