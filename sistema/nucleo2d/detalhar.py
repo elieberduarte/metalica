@@ -391,7 +391,7 @@ def _anexar_quadro(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta
     return y0 - 12.0 * esc
 
 
-def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho]) -> Desenho:
+def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho], chumbacao: Optional[Desenho] = None) -> Desenho:
     """"Detalhamento – completo": cada grupo é um quadro (moldura com título), todos na
     escala 1:25 — as células são desenhadas de novo nessa escala, com os furos das
     chapas editáveis como no desenho do grupo; os conjuntos saem nos mesmos quadros por
@@ -406,6 +406,11 @@ def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho]) -
         if chave == "localizacao":
             if localizacao is not None:
                 y = _anexar_quadro(dc, localizacao, titulo, y)
+            continue
+        if chave == "chumbacao":
+            # a planta de chumbação também (faltava no completo — pedido do usuário, 28/09)
+            if chumbacao is not None:
+                y = _anexar_quadro(dc, chumbacao, titulo, y)
             continue
         if "familias" in faixas:
             # quadros por família: cada conjunto junto das peças dele (a planta vem depois)
@@ -956,7 +961,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         except ErroDeDados as e:
             avisos.append("planta de localização não gerada: %s" % e)
     chumbacao = None
-    if "chumbacao" in pedidos:
+    if "chumbacao" in pedidos or "completo" in pedidos:
         avisar("planta de chumbação…")
         try:
             chumbacao = desenho_de_chumbacao(doc, pecas, nomeacao, GRUPOS["chumbacao"]["titulo"], eixos=eixos,
@@ -988,7 +993,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         elif chave == "completo":
             if faixas or localizacao is not None:
                 avisar("desenho completo…")
-                desenhos[chave] = desenho_completo(faixas, localizacao)
+                desenhos[chave] = desenho_completo(faixas, localizacao, chumbacao)
         elif g.get("base"):
             d = base.get(g["base"])
             if d is not None and g["base"] in antigos:

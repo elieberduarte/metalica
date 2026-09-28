@@ -55,7 +55,8 @@ GRUPOS_BASE = collections.OrderedDict([
 ])
 #: Ordem e título das faixas do desenho completo.
 FAIXAS_COMPLETO = [("chapas", "CHAPAS"), ("barras", "BARRAS E TERÇAS"), ("tirantes", "TIRANTES E BARRAS REDONDAS"),
-                   ("telhas", "TELHAS"), ("conjuntos", "CONJUNTOS"), ("localizacao", "PLANTA DE LOCALIZAÇÃO")]
+                   ("telhas", "TELHAS"), ("conjuntos", "CONJUNTOS"), ("localizacao", "PLANTA DE LOCALIZAÇÃO"),
+                   ("chumbacao", "PLANTA DE CHUMBAÇÃO")]
 
 TIPOS_PECA = {"IfcBeam", "IfcColumn", "IfcMember", "IfcPlate", "IfcPlateStandardCase",
               "IfcMemberStandardCase", "IfcBeamStandardCase", "IfcColumnStandardCase"}
