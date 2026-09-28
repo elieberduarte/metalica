@@ -1175,6 +1175,7 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
     cy = sum(q[1] for q in casco) / len(casco)
     bx0, bx1 = min(q[0] for q in casco) - 400.0, max(q[0] for q in casco) + 400.0
     by0, by1 = min(q[1] for q in casco) - 400.0, max(q[1] for q in casco) + 400.0
+    casco_y0 = by0 + 400.0
 
     def dentro_do_casco(q, folga=0.0):
         return _trecho_dentro(q, q, casco, folga) is not None
@@ -1267,9 +1268,13 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
         if not segs:
             continue
         if eh_telha:
+            pts = [q for sg in segs for q in sg]
+            # a telha toda abaixo das barras é o forro (TP40 0,50 da Sala, a 4,50 m): o corte dele
+            # saía em riscos soltos debaixo do banzo (pedido do usuário, 28/09) — aqui fica só a cobertura
+            if max(q[1] for q in pts) < casco_y0 + 1.0:
+                continue
             # a direção da telha no corte (a maior extensão da seção) e, dela, só as faces compridas
             # viradas para a estrutura
-            pts = [q for sg in segs for q in sg]
             mx_ = sum(q[0] for q in pts) / len(pts)
             my_ = sum(q[1] for q in pts) / len(pts)
             sxx = sum((q[0] - mx_) ** 2 for q in pts)
@@ -2214,13 +2219,11 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             desenho.add(Polilinha(camada="TELHAS", vertices=[(round(q[0], 2), round(q[1], 2)) for q in poli],
                                   atributos=dict(atr, telha_em_corte=True)))
         for x in extras:
+            # o parafuso que prende a telha na terça; o texto do raio da multidobra não vai (pedido do
+            # usuário, 28/09: fica só a linha da telha)
             if x[0] == "linha":
-                # o parafuso que prende a telha na terça
                 desenho.add(Linha(camada="TELHAS", a=(round(x[1][0], 2), round(x[1][1], 2)), b=(round(x[2][0], 2), round(x[2][1], 2)),
                                   atributos=dict(atr, **{x[3]: True})))
-            else:
-                desenho.add(Texto(camada="TELHAS", posicao=(round(x[1][0], 2), round(x[1][1], 2)), texto=x[2], altura=2.0,
-                                  alinhamento="centro", atributos=dict(atr, raio_da_telha=True)))
     p = _Papel(desenho, atr, dx, dy)
     esc = desenho.escala
     off, off2, off3 = 10.0, 20.0, 30.0
