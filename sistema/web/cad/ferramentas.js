@@ -386,17 +386,23 @@ export class Chamada extends Ferramenta {
  * alinhada (a distância em linha reta) e L volta ao linear.
  */
 export class Cota extends Ferramenta {
-  static id = 'cota'; static nome = 'Cota'; static atalho = 'd'; static dica = 'Primeiro ponto da cota · L linear (o mouse escolhe horizontal ou vertical) · H/V fixa · A alinhada';
+  static id = 'cota'; static nome = 'Cota'; static atalho = 'd'; static dica = 'Primeiro ponto da cota · o mouse escolhe: acima/abaixo horizontal, ao lado vertical, entre os pontos alinhada · H/V/A fixa · L volta ao automático';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16V8M20 16V8M4 12h16"/><path d="M7 10l-3 2 3 2M17 10l3 2-3 2"/></svg>';
   reiniciar() { super.reiniciar(); this.p1 = null; this.p2 = null; this.modo = this.modo || 'linear'; this.dica(`Primeiro ponto da cota · modo: ${Cota.NOMES[this.modo]} (L/H/V/A troca)`); }
   static NOMES = { linear: 'linear', h: 'horizontal', v: 'vertical', alinhada: 'alinhada' };
   /** No linear, a medida que a posição do mouse pede: fora da faixa dos pontos em y (acima ou
-   *  abaixo) é a horizontal; fora da faixa em x (ao lado) é a vertical; nos dois, a mais afastada. */
+   *  abaixo) é a horizontal; fora da faixa em x (ao lado) é a vertical; nos dois, a mais afastada.
+   *  Com o mouse entre os dois pontos (dentro da caixa deles) e os pontos fora de prumo e de nível,
+   *  é a alinhada — a cota inclinada (pedido do usuário, 28/09). */
   static modoLinear(p1, p2, p3) {
-    if (!p3) return Math.abs(p2[0] - p1[0]) >= Math.abs(p2[1] - p1[1]) ? 'h' : 'v';
+    const ax = Math.abs(p2[0] - p1[0]), ay = Math.abs(p2[1] - p1[1]);
+    if (!p3) return ax >= ay ? 'h' : 'v';
     const fx = Math.max(Math.min(p1[0], p2[0]) - p3[0], p3[0] - Math.max(p1[0], p2[0]), 0);
     const fy = Math.max(Math.min(p1[1], p2[1]) - p3[1], p3[1] - Math.max(p1[1], p2[1]), 0);
-    if (fx === 0 && fy === 0) return Math.abs(p2[0] - p1[0]) >= Math.abs(p2[1] - p1[1]) ? 'h' : 'v';
+    if (fx === 0 && fy === 0) {
+      const inclinada = Math.min(ax, ay) > 0.05 * Math.max(ax, ay);
+      return inclinada ? 'alinhada' : (ax >= ay ? 'h' : 'v');
+    }
     return fy >= fx ? 'h' : 'v';
   }
   _cota(p1, p2, p3) {
@@ -414,7 +420,7 @@ export class Cota extends Ferramenta {
   }
   onPonto(p) {
     if (!this.p1) { this.p1 = p; this.editor.snap.ultimo = p; this.dica('Segundo ponto'); return; }
-    if (!this.p2) { if (dist(p, this.p1) < 1e-6) return; this.p2 = p; this.editor.snap.ultimo = null; this.dica('Posição da linha de cota'); return; }
+    if (!this.p2) { if (dist(p, this.p1) < 1e-6) return; this.p2 = p; this.editor.snap.ultimo = null; this.dica('Posição da linha de cota · entre os pontos: alinhada · acima ou abaixo: horizontal · ao lado: vertical (A/H/V fixa)'); return; }
     this.editor.executar(new ComandoAdicionar([this._cota(this.p1, this.p2, p)], 'Cota'));
     this.reiniciar();
   }
