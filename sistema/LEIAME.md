@@ -225,7 +225,7 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
-**0.8.48 (em desenvolvimento).** **Barrinha da conferência no modo desenvolvimento** (pedido do usuário: "uma
+**0.8.48.** **Barrinha da conferência no modo desenvolvimento** (pedido do usuário: "uma
 barrinha que mostre o progresso da conferência"): `testes/antes_de_publicar.py` grava o andamento em
 `testes/_conferencia.json` (`testes/progresso.py`: as etapas, os verificadores e as obras da bateria contados um a um,
 a duração da rodada anterior como estimativa) e o servidor em `--dev` o devolve junto de `/api/versao`
@@ -290,6 +290,31 @@ barrote (no mezanino do Posto, já lido pelas VMs; o repetido é pulado); sem no
 esqueleto ainda a acertar (a copa do PM6, pontas das tesouras sobre os pilares, banzos de COMP 21 e TESOURA 18 com
 150–290 kN de compressão, banzos com carga de terça fora do nó).
 
+
+**Leva de 28/09 (pedidos do usuário).** **Vigas VM e curvas de canto pela planta**: o nome marca o pedaço pelo começo
+do texto (cada vão com o seu nome vira uma viga, apoiada no pilar); os redondos do mezanino (tubo de 2U) entram
+calandrados, com o nome escrito como chamada levado à peça onde a chamada termina. **Área de trabalho (2D, 3D, 2D + 3D)
+com um menu só**, fixo em qualquer vista e projeto (`web/barra_unica.js`): Arquivo (com o IFC), Desenhos (Desenho +
+Detalhamentos + Vistas), Estrutura (o antigo Lançamento, o projeto recebido, eixos, apoios, Explodir/Juntar), Cálculo e
+Ver; setas de desfazer no lado mexido por último; Voltar; a barra se compacta quando a janela é estreita; o seletor da
+vista em destaque; o completo é o primeiro desenho e é nele que o 2D abre; detalhar também abre no completo.
+**Elevação da treliça no padrão do corte das tesouras do projetista** (`nucleo2d/detalhe/conjuntos.py`): cada barra
+só com as bordas de fora; a alma pela linha de trabalho (montante no eixo, diagonal de nó a nó; a barra deitada ou em
+pé fica no eixo dela, só até o cruzamento); as peças com o perfil do banzo ligadas a ele com contorno (a descida do
+banzo no joelho, a horizontal e o montante da cumeeira), o banzo parando na face do montante; cotas para a produção
+(água inteira nos dois banzos, nós do banzo de cima, cadeia horizontal de face a face sem a chapa de apoio que fecha
+com a total, alturas das pontas e do montante da cumeeira, chanfro); ponta de cota em traço oblíquo por padrão. Em
+volta da tesoura, o corte: as terças encostadas no contorno (de cima, da cumeeira e de parede) e a telha pelo perfil
+inteiro (onda e crista), assentada nas terças, com o canto no raio comercial da multi-dobra (R450 int. / R490 ext.) e
+os parafusos nos encostos. **Terça que veio do IFC sem o furo da ligação** ganha os furos da chapa de apoio encostada
+nela (água gelada: o suporte CH1 com os oblongos, a terça sem nenhum); a regra de fábrica põe no padrão.
+**Pranchas montadas à mão**: Desenhos → Inserir folha (prancha)… põe folhas com o carimbo no desenho de trabalho (várias
+de uma vez), para mover ou copiar os detalhes para dentro; Gerar pranchas das folhas faz de cada uma uma prancha 1:1; e
+**detalhar de novo mantém a montagem** — as folhas, o desenhado à mão e cada pedaço posto numa folha voltam no mesmo
+lugar, já com o desenho novo (achado pelas linhas e textos que não mudaram). No tema escuro, a folha e o carimbo claros.
+**3D**: Explodir peça em trechos (a dobrada do joelho, a quebrada em retas, o tirante com gancho: uma peça por trecho,
+marca .1, .2…) e Juntar peças (os trechos voltam à peça; barras na mesma reta viram uma); balões dos eixos e cabeças
+dos níveis com tamanho fixo na tela. **CAD**: o clique numa linha de desenho importado (DXF/PDF) não trava mais.
 **0.8.47.** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
 print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e
 as regras de apoio não mudam), e a peça termina antes — `recorte_inicio`/`recorte_fim` da barra, que o 3D, o IFC e o
