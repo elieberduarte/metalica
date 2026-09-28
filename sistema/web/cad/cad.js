@@ -647,6 +647,13 @@ class CAD {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); this.salvar(); return; }
       if (ev.key === 'Escape') { if (this.ferramenta) { this.ferramenta.cancelar(); } this.selecionar([]); if (this.ferramenta.constructor.id !== 'selecionar') this.ativarFerramenta('selecionar'); return; }
       if (ev.key === 'F8') { ev.preventDefault(); this.definirOrto(!this.snap.orto); return; }
+      // MA (o MATCHPROP do AutoCAD): M e logo depois A abre Copiar propriedades — o M sozinho continua
+      // sendo Mover e o A sozinho, Arco
+      const k_ = ev.key.toLowerCase(), agora_ = Date.now();
+      if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && k_ === 'a' && this._teclaAnterior && this._teclaAnterior.k === 'm' && agora_ - this._teclaAnterior.t < 1000) {
+        ev.preventDefault(); this._teclaAnterior = null; this.ativarFerramenta('copiar_propriedades'); return;
+      }
+      this._teclaAnterior = { k: k_, t: agora_ };
       if (this.ferramenta && this.ferramenta.onTecla(ev)) { ev.preventDefault(); return; }
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
       if (ev.key === ' ' && this.ferramenta && this.ferramenta.constructor.id === 'selecionar' && this.ferramentaAnterior) {
@@ -1035,6 +1042,7 @@ class CAD {
     g.append(el('label', { texto: 'Camada' }), this._seletorCamada(camadas.size === 1 ? ents[0].camada : '', (v) => {
       const m = {}; for (const id of ids) m[id] = { camada: v }; this.executar(new ComandoAlterar(m, 'Trocar camada'));
     }, camadas.size !== 1));
+    this._carimboDaFolha(g, ents);
     if (ids.length === 1) {
       const e = ents[0];
       const campo = (rotulo, chave, tipo = 'text', extra = {}) => {
@@ -1045,8 +1053,15 @@ class CAD {
       if (e.tipo === 'texto' || e.tipo === 'chamada') { campo('Texto', 'texto'); campo('Altura (mm)', 'altura', 'number', { step: '0.5' }); }
       if (e.tipo === 'texto') campo('Ângulo', 'angulo', 'number', { step: '15' });
       if (e.tipo === 'cota') {
-        g.append(el('label', { texto: 'Valor' }), el('div', { texto: formatarMm(valorCota(e)) + ' mm' }));
-        campo('Texto (vazio = medida)', 'texto'); campo('Deslocamento', 'deslocamento', 'number', { step: '1' });
+        g.append(el('label', { texto: 'Valor' }), el('div', { texto: formatarMm(valorCota(e), 2) + ' mm' }));
+        campo('Texto (vazio = medida)', 'texto');
+        // o deslocamento guardado com a sobra da conta (-10,000000005): mostra com 2 casas
+        campo('Deslocamento', 'deslocamento', 'number', { step: '1', value: String(Math.round((e.deslocamento || 0) * 100) / 100) });
+        // casas depois da vírgula no número da cota (pedido do usuário, 28/09)
+        const casas = el('select', {}, ...[['', 'automático'], ['0', '0 (ao mm)'], ['1', '1'], ['2', '2'], ['3', '3']].map(([v, t]) =>
+          el('option', { value: v, texto: t, selected: String(e.casas ?? '') === v ? 'selected' : undefined })));
+        casas.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { casas: casas.value === '' ? null : +casas.value } }, 'Casas decimais da cota')));
+        g.append(el('label', { texto: 'Casas decimais' }), casas);
         const modo = el('select', {}, ...['alinhada', 'h', 'v'].map(m => el('option', { value: m, texto: m, selected: e.modo === m ? 'selected' : undefined })));
         modo.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { modo: modo.value } }, 'Modo da cota')));
         g.append(el('label', { texto: 'Modo' }), modo);
@@ -1420,6 +1435,62 @@ class CAD {
    * vazio não muda. Com `ids` nulo vale para todas as entidades, e o desenho guarda o
    * padrão em metadados.estilo (as cotas sem terminador próprio usam o do desenho).
    */
+  /** A folha selecionada (o clique na borda pega ela inteira): os textos do carimbo para editar —
+   *  conteúdo, obra, projetista, data, escala e revisão (pedido do usuário, 28/09). O que se escreve
+   *  aqui é o que "Gerar pranchas das folhas" põe no carimbo da prancha. */
+  _carimboDaFolha(g, ents) {
+    const a0 = ents[0] && ents[0].atributos || {};
+    if (!a0.folha) return;
+    const mesma = (e) => { const a = e.atributos || {}; return a.folha === a0.folha && (a.grupo_copia || '') === (a0.grupo_copia || ''); };
+    if (!ents.every(mesma)) return;
+    const textos = [...this.doc.entidades.values()].filter(e => e.tipo === 'texto' && mesma(e));
+    const de = (c) => textos.filter(t => (t.atributos || {}).campo === c);
+    const um = (c) => de(c)[0] || null;
+    const linhas = de('conteudo').sort((a, b) => b.posicao[1] - a.posicao[1]);
+    const pr = um('prancha');
+    const rev = pr ? ((/REV\.\s*(\S+)/.exec(pr.texto) || [])[1] || '') : '';
+    g.append(el('div', { class: 'origem' }, el('b', { texto: 'Carimbo da folha' })));
+    const conteudo = el('textarea', { rows: '3', placeholder: 'uma linha por item (ex.: TESOURAS T1 E T2)' });
+    conteudo.value = linhas.map(t => t.texto).filter(t => t !== '-').join('\n');
+    g.append(el('label', { texto: 'Conteúdo' }), conteudo);
+    const campos = {};
+    for (const [c, rot] of [['obra', 'Obra'], ['projetista', 'Projetista'], ['data', 'Data'], ['escala', 'Escala']]) {
+      const t = um(c);
+      campos[c] = el('input', { type: 'text', value: t ? t.texto : '' });
+      g.append(el('label', { texto: rot }), campos[c]);
+    }
+    const revisao = el('input', { type: 'text', value: rev, placeholder: '00' });
+    g.append(el('label', { texto: 'Revisão' }), revisao);
+    const aplicar = () => {
+      const mud = {};
+      for (const [c, i] of Object.entries(campos)) {
+        const t = um(c);
+        const v = i.value.trim().toUpperCase();
+        if (t && v !== t.texto) mud[t.id] = { texto: v };
+      }
+      if (pr) {
+        const novo = pr.texto.replace(/\s*REV\.\s*\S+/, '') + (revisao.value.trim() ? `   REV. ${revisao.value.trim().toUpperCase()}` : '');
+        if (novo !== pr.texto) mud[pr.id] = { texto: novo };
+      }
+      const cmds = [];
+      if (Object.keys(mud).length) cmds.push(new ComandoAlterar(mud, 'Carimbo'));
+      // o conteúdo: uma linha de texto por item, no lugar das de antes, de cima para baixo
+      const novas = conteudo.value.split('\n').map(s => s.trim().toUpperCase()).filter(Boolean);
+      const antigas = linhas.map(t => t.texto);
+      if (linhas.length && JSON.stringify(novas.length ? novas : ['-']) !== JSON.stringify(antigas)) {
+        const base = linhas[0], h = base.altura || 2.5, k = this.doc.escala || 1;
+        const passo = 1.55 * h * (h < 20 ? k : 1);
+        cmds.push(new ComandoRemover(linhas.map(t => t.id)));
+        cmds.push(new ComandoAdicionar((novas.length ? novas : ['-']).map((s, i) => criar({ ...clonar(base), id: undefined, texto: s,
+          posicao: [base.posicao[0], base.posicao[1] - i * passo] })), 'Conteúdo do carimbo'));
+      }
+      if (!cmds.length) { this.dica('O carimbo já está assim.'); return; }
+      this.executar(cmds.length === 1 ? cmds[0] : new ComandoComposto(cmds, 'Carimbo da folha'));
+      this.dica('Carimbo atualizado. "Gerar pranchas das folhas" leva estes textos para a prancha.');
+    };
+    g.append(el('div', { class: 'botoes' }, el('button', { type: 'button', texto: 'Aplicar no carimbo', onclick: aplicar })));
+  }
+
   aplicarEstilos(opcoes, ids = null) {
     const alvo = ids ? ids.map(id => this.doc.get(id)).filter(Boolean) : [...this.doc.entidades.values()];
     const mud = {};
@@ -1428,6 +1499,7 @@ class CAD {
       const m = {};
       if (alt && (e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada')) m.altura = alt;
       if (opcoes.terminador && e.tipo === 'cota') m.terminador = opcoes.terminador === 'padrao' ? null : opcoes.terminador;
+      if (opcoes.casas != null && e.tipo === 'cota') m.casas = opcoes.casas === 'auto' ? null : opcoes.casas;
       if (e.tipo === 'hachura') {
         if (opcoes.padrao) m.padrao = opcoes.padrao;
         if (opcoes.espacamento != null && isFinite(opcoes.espacamento) && opcoes.espacamento > 0) m.espacamento = +opcoes.espacamento;
@@ -1440,6 +1512,7 @@ class CAD {
       if (alt) { estilo.texto = alt; this.alturaTexto = alt; }
       if (opcoes.terminador && opcoes.terminador !== 'padrao') estilo.terminador = opcoes.terminador;
       if (opcoes.padrao) estilo.hachura = opcoes.padrao;
+      if (opcoes.casas != null) { if (opcoes.casas === 'auto') delete estilo.casas; else estilo.casas = opcoes.casas; }
       this.doc.metadados = { ...(this.doc.metadados || {}), estilo };
     }
     const n = Object.keys(mud).length;
@@ -1459,6 +1532,7 @@ class CAD {
       espacamento: el('input', { type: 'number', step: '0.5', min: '0.5', placeholder: 'manter (mm no papel)' }),
       angulo: el('input', { type: 'number', step: '15', placeholder: 'manter (graus)' }),
       mudarAltura: el('input', { type: 'checkbox' }),
+      casas: el('select', {}, ...[['', 'manter'], ['auto', 'automático (inteiro, ou 1 casa)'], ['0', '0 (ao mm)'], ['1', '1'], ['2', '2'], ['3', '3']].map(([v, t]) => el('option', { value: v, texto: t }))),
     };
     campos.terminador.value = '';
     const corpo = el('div', {},
@@ -1466,6 +1540,7 @@ class CAD {
       el('label', {}, 'Aplicar a', campos.escopo),
       el('label', {}, el('span', {}, campos.mudarAltura, ' Altura de texto e cota (mm)'), campos.altura),
       el('label', {}, 'Terminador das cotas', campos.terminador),
+      el('label', {}, 'Casas decimais das cotas', campos.casas),
       el('label', {}, 'Padrão das hachuras', campos.padrao),
       el('label', {}, 'Espaçamento da hachura (mm)', campos.espacamento),
       el('label', {}, 'Ângulo da hachura (°)', campos.angulo));
@@ -1476,6 +1551,7 @@ class CAD {
       padrao: campos.padrao.value || null,
       espacamento: campos.espacamento.value ? parseFloat(campos.espacamento.value) : null,
       angulo: campos.angulo.value ? parseFloat(campos.angulo.value) : null,
+      casas: campos.casas.value === '' ? null : campos.casas.value === 'auto' ? 'auto' : +campos.casas.value,
     };
     const ids = campos.escopo.value === 'selecao' ? sel : null;
     const n = this.aplicarEstilos(opcoes, ids);

@@ -409,7 +409,8 @@ export class Cota extends Ferramenta {
       desl = (-(dy / c) * (p3[0] - x1) + (dx / c) * (p3[1] - y1)) / this.doc.escala;
       if (Math.abs(desl) < 2) desl = desl < 0 ? -2 : 2;
     }
-    return criar({ tipo: 'cota', camada: 'COTA', modo, p1, p2, deslocamento: desl, altura: this.editor.alturaTexto });
+    const casas = ((this.doc.metadados || {}).estilo || {}).casas;            // as casas padrão do desenho (Estilos)
+    return criar({ tipo: 'cota', camada: 'COTA', modo, p1, p2, deslocamento: desl, altura: this.editor.alturaTexto, casas: casas ?? null });
   }
   onPonto(p) {
     if (!this.p1) { this.p1 = p; this.editor.snap.ultimo = p; this.dica('Segundo ponto'); return; }
@@ -815,6 +816,42 @@ export class Espelhar extends Transformadora {
     this.reiniciar();
   }
   onMover(p) { if (this.base) this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.base, b: p }), ...this._espelhar(this.base, p)]); }
+}
+
+/**
+ * Copiar propriedades — o MATCHPROP (MA) do AutoCAD (pedido do usuário, 28/09): clique no objeto de
+ * origem (ou selecione-o antes) e depois em cada objeto que recebe; Esc termina. Vão a camada e o
+ * estilo do tipo: na cota a altura, o terminador e as casas decimais; no texto e na chamada a altura;
+ * na hachura o padrão, o espaçamento e o ângulo. Atalho: M e logo depois A (M sozinho é Mover).
+ */
+export class CopiarPropriedades extends Ferramenta {
+  static id = 'copiar_propriedades'; static nome = 'Copiar propriedades (MA)'; static atalho = ''; static grupo = 'edicao';
+  static dica = 'Clique no objeto de origem (o que tem as propriedades certas)';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 4l6 6-8 8H6v-6z"/><path d="M4 20h6"/></svg>';
+  static CAMPOS = { cota: ['altura', 'terminador', 'casas'], texto: ['altura'], chamada: ['altura'], hachura: ['padrao', 'espacamento', 'angulo'] };
+  reiniciar() {
+    super.reiniciar();
+    const sel = [...this.editor.tela.selecao];
+    this.fonte = sel.length === 1 ? this.doc.get(sel[0]) : null;
+    this.dica(this.fonte ? `Origem: ${this.fonte.tipo} na camada ${this.fonte.camada}. Clique nos objetos que recebem · Esc termina` : this.constructor.dica);
+  }
+  onPonto(p, ev) {
+    const e = this.editor.tela.sob(ev.px);
+    if (!e) { this.dica(this.fonte ? 'Clique num objeto para receber as propriedades · Esc termina' : this.constructor.dica); return; }
+    if (!this.fonte) {
+      this.fonte = e;
+      this.editor.selecionar([e.id]);
+      this.dica(`Origem: ${e.tipo} na camada ${e.camada}. Agora clique nos objetos que recebem · Esc termina`);
+      return;
+    }
+    if (e.id === this.fonte.id) return;
+    const m = { camada: this.fonte.camada };
+    if (e.tipo === this.fonte.tipo) for (const k of CopiarPropriedades.CAMPOS[e.tipo] || []) m[k] = clonar(this.fonte[k] ?? null);
+    else if ((e.tipo === 'texto' || e.tipo === 'chamada' || e.tipo === 'cota') && this.fonte.altura) m.altura = this.fonte.altura;
+    const novo = criar({ ...clonar(e), ...m });
+    this.editor.executar(new ComandoSubstituir([novo], 'Copiar propriedades'));
+    this.dica(`Propriedades copiadas para ${e.tipo}. Clique em outro objeto · Esc termina`);
+  }
 }
 
 export class Apagar extends Ferramenta {
@@ -1255,5 +1292,5 @@ export class Corte extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, Chamada, Corte, Hachura,
-  Mover, Copiar, Girar, Espelhar, Esticar, Offset, Aparar, Estender, Concordar, Explodir, Juntar, MoverCota, Apagar, Medir];
+  Mover, Copiar, Girar, Espelhar, Esticar, Offset, Aparar, Estender, Concordar, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];

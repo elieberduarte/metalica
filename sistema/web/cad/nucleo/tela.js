@@ -17,7 +17,10 @@ import { pontosArco, valorCota, dentroDe, segmentosDe, caixaDe, pontosDe, distan
 const TRACOS = { CONTINUOUS: [], HIDDEN: [6, 4], CENTER: [16, 4, 4, 4], DASHED: [8, 6], DOT: [2, 3] };
 const PX_GRADE_ALVO = 60;
 
-export function formatarMm(v) {
+/** Número de cota: inteiro quando é, senão uma casa; com `casas` (0 a 3), sempre esse número de
+ *  casas depois da vírgula (pedido do usuário, 28/09). */
+export function formatarMm(v, casas = null) {
+  if (casas != null && casas !== '' && isFinite(casas) && +casas >= 0) return v.toFixed(+casas).replace('.', ',');
   if (Math.abs(v - Math.round(v)) < 0.05) return String(Math.round(v));
   return v.toFixed(1).replace('.', ',');
 }
@@ -414,7 +417,7 @@ export class Tela {
     const g = Tela.geometriaCota(c, k);
     if (!g) return null;
     const sg = g.desl >= 0 ? 1 : -1, seta = Math.min(2.5 * k, Math.max(1 * k, g.comp / 4));
-    const txt = c.texto != null && c.texto !== '' ? String(c.texto) : formatarMm(valorCota(c));
+    const txt = c.texto != null && c.texto !== '' ? String(c.texto) : formatarMm(valorCota(c), c.casas);
     const ang = Math.atan2(g.uy, g.ux);
     let angG = ang * 180 / Math.PI;
     const lado = (angG > -90 && angG <= 90) ? 1 : -1;
@@ -525,11 +528,22 @@ export class Tela {
       let d;
       if (e.tipo === 'cota') {
         const g = Tela.geometriaCota(e, this.doc.escala);
-        d = g ? Math.min(distanciaEntidade(p, e), this._distSeg(p, g.a1, g.a2)) : Infinity;
+        d = g ? Math.min(distanciaEntidade(p, e), this._distSeg(p, g.a1, g.a2), this._distTextoCota(p, e)) : Infinity;
       } else d = distanciaEntidade(p, e, this.doc.escala);
       if (d < t && d < dm) { dm = d; melhor = e; }
     }
     return melhor;
+  }
+
+  /** Distância ao número da cota (a caixa do texto, girada com ele): clicar no número pega a cota
+   *  (pedido do usuário, 28/09 — só a linha e os pontos contavam). */
+  _distTextoCota(p, c) {
+    const t = Tela.textoCota(c, this.doc.escala);
+    if (!t) return Infinity;
+    const a = -t.angG * Math.PI / 180, dx = p[0] - t.pos[0], dy = p[1] - t.pos[1];
+    const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
+    const w = Math.max(t.h, String(t.txt).length * t.h * 0.65);
+    return Math.hypot(Math.max(Math.abs(lx) - w / 2, 0), Math.max(-ly, 0, ly - t.h));
   }
 
   _distSeg(p, a, b) {

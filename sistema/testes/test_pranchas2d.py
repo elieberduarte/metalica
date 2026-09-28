@@ -232,3 +232,25 @@ def test_gerar_de_novo_sem_montagem_nao_mexe():
     assert P.manter_montagem(antigo, novo) == {"folhas": 0, "atualizadas": 0, "sem_modelo": [], "a_mao": 0}
     assert len(novo.entidades) == 1
 
+
+def test_carimbo_editado_na_folha_vai_para_a_prancha():
+    """os textos do carimbo mudados no CAD (obra, projetista, revisão, conteúdo) são os da prancha
+    (pedido do usuário, 28/09); antes a prancha reescrevia com os dados do projeto e o conteúdo "-" """
+    from nucleo2d import pranchas as P
+    from nucleo2d.desenho import Desenho, Texto
+    d = Desenho(nome="Detalhamento – tesouras", escala=25.0)
+    f = P.folha_no_desenho("A1", 25.0, (0.0, 0.0), {"obra": "X", "responsavel": "Y"}, titulo="T")
+    for e in f.entidades.values():
+        a = e.atributos or {}
+        if isinstance(e, Texto) and a.get("campo") == "obra":
+            e.texto = "OBRA EDITADA"
+        if isinstance(e, Texto) and a.get("campo") == "prancha":
+            e.texto = "PRANCHA 01/01   REV. 03"
+        d.add(e)
+    base = next(e for e in d.entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("campo") == "conteudo")
+    base.texto = "TESOURAS T1 E T2"
+    ps = P.pranchas_das_folhas(d, "detalhamento-tesouras", {"obra": "DO PROJETO"})
+    txt = {(e.atributos or {}).get("campo"): e.texto for e in ps[0].entidades.values() if isinstance(e, Texto)}
+    assert txt["obra"] == "OBRA EDITADA" and txt["conteudo"] == "TESOURAS T1 E T2"
+    assert "REV. 03" in txt["prancha"]
+

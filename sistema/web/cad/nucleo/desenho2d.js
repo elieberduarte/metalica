@@ -38,7 +38,7 @@ export function criar(reg) {
       altura: reg.altura ?? 2.5, angulo: reg.angulo || 0, alinhamento: reg.alinhamento || 'esquerda', vertical: reg.vertical || 'base' };
     case 'cota': return { ...base, camada: base.camada || 'COTA', modo: reg.modo || 'alinhada', p1: reg.p1, p2: reg.p2,
       deslocamento: reg.deslocamento ?? 10, texto: reg.texto ?? null, altura: reg.altura ?? 2.5, texto_pos: reg.texto_pos ?? null,
-      terminador: reg.terminador ?? null };
+      terminador: reg.terminador ?? null, casas: reg.casas ?? null };
     case 'hachura': return { ...base, camada: base.camada || 'HACHURA', contornos: reg.contornos || [], padrao: reg.padrao || 'aco',
       angulo: reg.angulo ?? 45, espacamento: reg.espacamento ?? 2.5 };
     case 'chamada': return { ...base, camada: base.camada || 'TEXTO', alvo: reg.alvo, posicao: reg.posicao, texto: reg.texto || '', altura: reg.altura ?? 2.5 };

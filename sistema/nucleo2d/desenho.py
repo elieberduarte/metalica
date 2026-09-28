@@ -152,6 +152,7 @@ class Cota(Entidade2D):
     altura: float = 2.5
     texto_pos: Optional[Ponto2] = None   # onde o número foi posto à mão (None = no meio da linha)
     terminador: Optional[str] = None     # traco (padrão: o traço oblíquo da produção), seta ou bola; None = o do desenho (metadados.estilo)
+    casas: Optional[int] = None          # casas depois da vírgula no número (None = automático: inteiro, ou uma casa)
 
     def pontos(self):
         return [self.p1, self.p2]
@@ -389,7 +390,7 @@ def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PA
     else:
         _terminador_dxf(d, a1[0], a1[1], ang + 180, tam, camada, terminador)
         _terminador_dxf(d, a2[0], a2[1], ang, tam, camada, terminador)
-    txt = c.texto if c.texto is not None else formatar_mm(c.valor())
+    txt = c.texto if c.texto is not None else formatar_mm(c.valor(), c.casas)
     if c.texto_pos:
         d.texto(c.texto_pos[0], c.texto_pos[1], txt, h, camada, angulo=(ang if -90 < ang <= 90 else ang + 180), alinhamento="centro")
         return
@@ -415,8 +416,11 @@ def _chamada_dxf(d, c: Chamada, k: float, camada: str):
             c.texto, h, camada, alinhamento="esquerda" if direita else "direita")
 
 
-def formatar_mm(v: float) -> str:
-    """Número de cota: inteiro quando é, senão uma casa com vírgula."""
+def formatar_mm(v: float, casas: Optional[int] = None) -> str:
+    """Número de cota: inteiro quando é, senão uma casa com vírgula; com `casas`, sempre esse
+    número de casas depois da vírgula (0 arredonda ao mm)."""
+    if casas is not None and int(casas) >= 0:
+        return ("%.*f" % (int(casas), v)).replace(".", ",")
     if abs(v - round(v)) < 0.05:
         return "%d" % round(v)
     return ("%.1f" % v).replace(".", ",")

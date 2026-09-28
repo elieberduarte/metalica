@@ -1227,22 +1227,43 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
             corte = max(pw) - 1.0
         else:
             corte = 0.0
-        pw = [x - corte for x in pw]
         pu = [_dot(_sub(q, origem), u) - u0 + dx for q in vs]
         pv = [_dot(_sub(q, origem), v) - v0 + dy for q in vs]
         if not eh_telha and (max(pu) - min(pu) > 600.0 or max(pv) - min(pv) > 600.0):
             continue                                          # peça de través (mão-francesa, corrente)
-        segs = []
-        for f in fs:
-            pts = []
-            for i in range(len(f)):
-                a_i, b_i = f[i], f[(i + 1) % len(f)]
-                da, db = pw[a_i], pw[b_i]
-                if (da > 0) != (db > 0):
-                    t = da / (da - db)
-                    pts.append((pu[a_i] + (pu[b_i] - pu[a_i]) * t, pv[a_i] + (pv[b_i] - pv[a_i]) * t))
-            if len(pts) >= 2 and math.dist(pts[0], pts[1]) > 0.5:
-                segs.append((pts[0], pts[1]))
+
+        def fatiar(c):
+            """os segmentos da malha cortada em w = c (a face com mais de dois cruzamentos — a alma com
+            os furos — dá os pares em ordem ao longo dela)"""
+            pw_ = [x - c for x in pw]
+            fora_ = []
+            for f in fs:
+                pts = []
+                for i in range(len(f)):
+                    a_i, b_i = f[i], f[(i + 1) % len(f)]
+                    da, db = pw_[a_i], pw_[b_i]
+                    if (da > 0) != (db > 0):
+                        t = da / (da - db)
+                        pts.append((pu[a_i] + (pu[b_i] - pu[a_i]) * t, pv[a_i] + (pv[b_i] - pv[a_i]) * t))
+                if len(pts) > 2:
+                    ex_ = max(pts, key=lambda q: q[0])[0] - min(pts, key=lambda q: q[0])[0]
+                    ey_ = max(pts, key=lambda q: q[1])[1] - min(pts, key=lambda q: q[1])[1]
+                    pts.sort(key=lambda q: q[0] if ex_ >= ey_ else q[1])
+                for k in range(0, len(pts) - 1, 2):
+                    if math.dist(pts[k], pts[k + 1]) > 0.5:
+                        fora_.append((pts[k], pts[k + 1]))
+            return fora_
+
+        def soltas(sg_):
+            cont = collections.Counter((round(q[0] * 2) / 2, round(q[1] * 2) / 2) for ab in sg_ for q in ab)
+            return sum(1 for n_ in cont.values() if n_ == 1)
+        # a terça é reta: a seção é a mesma ao longo dela. No plano da tesoura (ou na ponta dela) o
+        # corte pode cair num furo da ligação ou na ponta cortada e sair em pedaços (pedido do usuário,
+        # 28/09: "corrija a representação do corte das terças") — fica o corte ali perto, dentro da
+        # peça, que fecha o contorno
+        candidatos = [corte] if eh_telha else [corte + o for o in (0.0, 20.0, -20.0, 45.0, -45.0, 90.0, -90.0, 150.0, -150.0)
+                                              if min(pw) + 0.5 < corte + o < max(pw) - 0.5] or [corte]
+        segs = min((fatiar(c) for c in candidatos), key=lambda sg_: (soltas(sg_), -sum(math.dist(*ab) for ab in sg_)))
         if not segs:
             continue
         if eh_telha:

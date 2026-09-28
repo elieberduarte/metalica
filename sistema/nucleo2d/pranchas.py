@@ -20,6 +20,7 @@ fixo, porque a distância entre os seus pontos na prancha é a de papel.
 import collections
 import copy
 import math
+import re
 from datetime import date
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -80,7 +81,7 @@ def _para_papel(e: Entidade2D, k: float, dx: float, dy: float, fonte: str) -> En
         n.posicao = mv(n.posicao)
     elif isinstance(n, Cota):
         if n.texto is None or n.texto == "":
-            n.texto = formatar_mm(n.valor())
+            n.texto = formatar_mm(n.valor(), n.casas)
         n.p1, n.p2 = mv(n.p1), mv(n.p2)
     elif isinstance(n, Hachura):
         n.contornos = [[mv(p) for p in c] for c in n.contornos]
@@ -647,8 +648,25 @@ def pranchas_das_folhas(desenho: Desenho, fonte: str, carimbo: Optional[dict] = 
         if f["titulo"]:
             info["titulo"] = f["titulo"]
         info.setdefault("titulo", desenho.nome.replace("Detalhamento – ", "")[:48])
+        # o carimbo como está na folha do desenho (editado à mão no CAD — pedido do usuário, 28/09):
+        # obra, projetista, data, escala, revisão e as linhas do conteúdo
+        tx = [e for e in f["entidades"] if isinstance(e, Texto)]
+        por_campo = collections.defaultdict(list)
+        for e in tx:
+            por_campo[(e.atributos or {}).get("campo")].append(e)
+        for c in ("obra", "projetista", "data"):
+            if por_campo.get(c):
+                info[c] = por_campo[c][0].texto
+                if c == "obra":
+                    info["cliente"] = ""                 # o texto da obra já vem inteiro
+        escala_txt = por_campo["escala"][0].texto if por_campo.get("escala") else texto_escala(k)
+        conteudo = [e.texto for e in sorted(por_campo.get("conteudo", []), key=lambda e: -e.posicao[1]) if e.texto.strip() not in ("", "-")]
+        if por_campo.get("prancha"):
+            m_rev = re.search(r"REV\.\s*(\S+)", por_campo["prancha"][0].texto)
+            if m_rev:
+                info["revisao"] = m_rev.group(1)
         larg, alt = FOLHAS[f["formato"]]
-        quadro, carimbo_cx = _modelo.desenhar_folha(d, f["formato"], larg, alt, info, n, total, texto_escala(k), [])
+        quadro, carimbo_cx = _modelo.desenhar_folha(d, f["formato"], larg, alt, info, n, total, escala_txt, conteudo)
         dentro = 0
         for e in soltas:
             cx = _caixa_de([e], k)
