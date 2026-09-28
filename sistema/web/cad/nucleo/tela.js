@@ -22,6 +22,17 @@ export function formatarMm(v) {
   return v.toFixed(1).replace('.', ',');
 }
 
+/** Cor quase preta (luminância abaixo de 6%) — no tema escuro some no fundo: a do traço do
+ *  desenho (#16202e, #2b3646) e a da folha e do carimbo (#111827) viram claras. */
+function escuraDemais(c) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c || '').trim());
+  if (!m) return false;
+  const h = m[1].length === 3 ? m[1].split('').map(x => x + x).join('') : m[1];
+  const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const [r, g, b] = [0, 2, 4].map(k => lin(parseInt(h.slice(k, k + 2), 16)));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.06;
+}
+
 export class Tela {
   constructor(canvas, documento) {
     this.canvas = canvas;
@@ -131,7 +142,7 @@ export class Tela {
     return this.escuro
       ? { fundo: '#0e131a', grade: 'rgba(255,255,255,.06)', grade10: 'rgba(255,255,255,.13)', eixo: 'rgba(255,255,255,.22)',
           selecao: '#4b9bf0', realce: '#7aa7f0', previa: '#e6bb52', snap: '#5fd08d', cursor: 'rgba(255,255,255,.35)',
-          textoInvertido: (c) => (c === '#16202e' || c === '#2b3646') ? '#e4eaf3' : c }
+          textoInvertido: (c) => (escuraDemais(c) ? '#e4eaf3' : c) }
       : { fundo: '#f4f6fa', grade: 'rgba(16,32,60,.06)', grade10: 'rgba(16,32,60,.12)', eixo: 'rgba(16,32,60,.28)',
           selecao: '#1f7ae0', realce: '#3d8fe6', previa: '#c07a00', snap: '#1c7a43', cursor: 'rgba(16,32,60,.45)',
           textoInvertido: (c) => c };
