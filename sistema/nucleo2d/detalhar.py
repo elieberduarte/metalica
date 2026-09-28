@@ -241,7 +241,8 @@ QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("c
 
 
 #: Título do quadro de cada tipo de posição (peça avulsa), na ordem em que saem.
-QUADROS_POSICOES = [("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("cumeeira", "CUMEEIRAS"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
+QUADROS_POSICOES = [("planta_telhas", "PAGINAÇÃO DAS TELHAS DA COBERTURA (PLANTA)"), ("quadro_telhas", "QUADRO DAS TELHAS DA COBERTURA"),
+                    ("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("cumeeira", "CUMEEIRAS"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
                     ("suporte_terca", "SUPORTES DE TERÇA"), ("montagem", "PEÇAS MONTADAS – FRENTE E LATERAL"), ("agulhamento", "AGULHAMENTOS"),
                     ("suporte_agulhamento", "SUPORTES DE AGULHAMENTO"), ("contraventamento", "CONTRAVENTAMENTOS"),
                     ("suporte_contraventamento", "SUPORTES DE CONTRAVENTAMENTO"), ("castanha", "CASTANHAS"),
@@ -879,6 +880,16 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             except Exception as exc:              # noqa: BLE001
                 faces = []
                 avisos.append("paginação das telhas não gerada: %s" % exc)
+            if faces:
+                # a planta da cobertura com os eixos e o quadro das telhas, antes das faixas (o modelo
+                # de paginação do usuário, 28/09)
+                from nucleo2d.detalhe.telhas import desenho_da_planta_das_telhas, desenho_do_quadro_das_telhas
+                # só os eixos gravados no projeto: os achados no modelo erram em obra sem pórticos
+                # regulares (a água gelada saía com os eixos tortos, pelas terças)
+                from nucleo3d import eixos as _eixos_mod
+                eixos_t = _eixos_mod.de_dict(eixos) if eixos else None
+                celulas_g += [("planta_telhas", (lambda dd, x, y: desenho_da_planta_das_telhas(faces, eixos_t, dd, x, y))),
+                              ("quadro_telhas", (lambda dd, x, y: desenho_do_quadro_das_telhas(faces, md.get("cumeeiras") or [], dd, x, y)))]
             celulas_g += [("paginacao", (lambda dd, x, y, f=f, i=i: desenho_da_paginacao(f, dd, x, y, i)))
                           for i, f in enumerate(faces, 1)]
         celulas_g += [("multidobra", (lambda dd, x, y, t=t: desenho_da_multidobra(t, dd, x, y, t["nome"]))) for t in extra_md]

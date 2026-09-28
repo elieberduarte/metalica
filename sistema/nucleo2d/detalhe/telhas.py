@@ -969,17 +969,24 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
                 ym = yt + sg * cb["reta_nova"]
                 yc = yt + sg * (cb["terca_ini"] - COBRIMENTO_TERCA)
                 yf = y1_ if de_baixo else y0_
-                lista.append({"contorno": ret(yt, ym), "comprimento": comp, "nome": ch["nome"],
+                perfil_ = str(_marcas(ch["e"]).get("perfil") or ch["e"].nome or "")
+                lista.append({"contorno": ret(yt, ym), "comprimento": comp, "nome": ch["nome"], "perfil": perfil_,
+                              "peso": ch["multidobra"].get("peso"),
                               "x": (x0_ + x1_) / 2, "y0": min(yt, ym), "y1": max(yt, ym), "multidobra": True})
-                lista.append({"contorno": ret(yc, yf), "comprimento": cb["resto"], "nome": ch["nome"] + "-C",
+                lista.append({"contorno": ret(yc, yf), "comprimento": cb["resto"], "nome": ch["nome"] + "-C", "perfil": perfil_,
+                              "peso": cb.get("peso"),
                               "x": (x0_ + x1_) / 2 + 1e-3, "y0": min(yc, yf), "y1": max(yc, yf), "multidobra": False})
                 continue
+            vol_ = _volume(ch["e"]) * RHO_ACO
+            peso_ = (ch["multidobra"].get("peso") if ch["multidobra"] else
+                     vol_ * comp / max(max(proj) - min(proj), 1.0))
             lista.append({"contorno": contorno, "corte": corte, "comprimento": comp, "nome": ch["nome"], "saia": desce,
+                          "peso": peso_, "perfil": str(_marcas(ch["e"]).get("perfil") or ch["e"].nome or ""),
                           "corte_arco": corte_arco,
                           "x": (min(xs) + max(xs)) / 2, "y0": min(ys), "y1": max(ys), "cumeeira": ch["cumeeira"],
                           "multidobra": bool(ch["multidobra"]), "alinhada": abs(_dot(uu, u)) > 0.9})
         inclinacao = math.degrees(math.acos(max(-1.0, min(1.0, abs(n[2])))))
-        saida.append({"normal": n, "chapas": lista, "inclinacao": inclinacao,
+        saida.append({"normal": n, "u": u, "v": v, "plano": _dot(f["ponto"], n), "chapas": lista, "inclinacao": inclinacao,
                       "tipo": "cobertura" if inclinacao < 45 else "fachada"})
     saida.sort(key=lambda f: (f["tipo"] != "cobertura", -len(f["chapas"])))
     return saida
@@ -1297,3 +1304,200 @@ def aplicar_saias(posicoes, pecas, md: Optional[dict] = None) -> Dict[str, float
             p.saia = max(vals, key=abs)
             p.observacoes.append("saia: desce %d mm abaixo da última longarina (%+d mm no comprimento)" % (SAIA_TELHA, round(p.saia)))
     return por_peca
+
+
+#: Cores das telhas na planta, uma por tipo, como o modelo de paginação que o usuário mandou (28/09):
+#: as retas em laranja, preto, cinza…; a multi-dobra magenta; a cumeeira azul.
+CORES_TELHA = ["#e67e22", "#1f2937", "#6b7280", "#16a34a", "#0891b2", "#7c3aed", "#b45309", "#be123c",
+               "#0f766e", "#4d7c0f", "#9333ea", "#c2410c"]
+COR_MULTIDOBRA = "#d946ef"
+COR_CUMEEIRA = "#2563eb"
+
+
+def _camada_da_telha(desenho, nome: str, cor: str) -> str:
+    from nucleo2d.desenho import Camada2D
+    cam = "TELHA " + nome
+    if cam not in desenho.camadas:
+        desenho.camadas[cam] = Camada2D(cam, cor, espessura=0.35)
+    return cam
+
+
+def _na_planta(f: dict):
+    """Leva o ponto (x, y) da face (x ao longo de v, y ao longo da onda) à planta (x, y do mundo)."""
+    u, v, n, d0 = f["u"], f["v"], f["normal"], f["plano"]
+    return lambda q: (v[0] * q[0] + u[0] * q[1] + n[0] * d0, v[1] * q[0] + u[1] * q[1] + n[1] * d0)
+
+
+def _retangulo_da_chapa(ch: dict) -> List[Tuple[float, float]]:
+    xs = [q[0] for q in ch["contorno"]]
+    return [(min(xs), ch["y0"]), (max(xs), ch["y0"]), (max(xs), ch["y1"]), (min(xs), ch["y1"])]
+
+
+def chapas_da_cobertura(faces: Sequence[dict]) -> List[dict]:
+    """As chapas das águas da cobertura na planta (vista de cima): o contorno em (x, y) do mundo, o
+    nome, o comprimento, o peso, o perfil e a direção da onda na planta. A cumeeira fica de fora
+    (tem o quadro dela)."""
+    fora = []
+    for f in faces:
+        # só as águas: a face quase plana (o forro do beiral em volta do prédio) não entra
+        if f.get("tipo") != "cobertura" or "u" not in f or f.get("inclinacao", 0.0) < 3.0:
+            continue
+        P = _na_planta(f)
+        u = f["u"]
+        ang = math.degrees(math.atan2(u[1], u[0]))
+        for ch in f["chapas"]:
+            if ch.get("cumeeira"):
+                continue
+            fora.append({"contorno": [P(q) for q in _retangulo_da_chapa(ch)], "nome": ch["nome"],
+                         "comprimento": ch["comprimento"], "peso": ch.get("peso"), "perfil": ch.get("perfil", ""),
+                         "angulo": ang, "multidobra": bool(ch.get("multidobra"))})
+    return fora
+
+
+def _cores_por_tipo(chapas: Sequence[dict]) -> Dict[str, str]:
+    nomes = sorted({c["nome"] for c in chapas if not c["multidobra"]}, key=_ordem_natural)
+    cores = {nm: CORES_TELHA[i % len(CORES_TELHA)] for i, nm in enumerate(nomes)}
+    for c in chapas:
+        if c["multidobra"]:
+            cores[c["nome"]] = COR_MULTIDOBRA
+    return cores
+
+
+def _m(mm: float) -> str:
+    return ("%.2f" % (mm / 1000.0)).replace(".", ",")
+
+
+def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: float, dy: float):
+    """A paginação da cobertura em planta, como o modelo do usuário (28/09): cada chapa no lugar dela,
+    na cor do tipo, com o tipo e o comprimento escritos ao longo dela ("TL1  6,80 m"); os eixos com
+    as cotas entre eixos e a total; a legenda das cores. É a vista que a obra usa para distribuir as
+    telhas — as faixas de "comprimentos reais" ficam para a conferência."""
+    from nucleo2d.detalhe.base import _Papel
+    esc = desenho.escala
+    chapas = chapas_da_cobertura(faces)
+    p = _Papel(desenho, {"detalhe": "planta_telhas"}, dx, dy)
+    if not chapas:
+        p.texto(0, 0, "sem telhas de cobertura no modelo", 2.5 * esc)
+        return p.extremos
+    xs = [q[0] for c in chapas for q in c["contorno"]]
+    ys = [q[1] for c in chapas for q in c["contorno"]]
+    x0, y0 = min(xs), min(ys)
+    cores = _cores_por_tipo(chapas)
+    h = 2.2 * esc
+    for c in chapas:
+        cam = _camada_da_telha(desenho, c["nome"], cores[c["nome"]])
+        pts = [(q[0] - x0, q[1] - y0) for q in c["contorno"]]
+        p.polilinha(pts, fechada=True, camada=cam)
+        if c["comprimento"] < 500.0:
+            continue                      # a faceta da curva (11 cm): o nome não cabe, fica na legenda e no quadro
+        cx = sum(q[0] for q in pts) / 4.0
+        cy = sum(q[1] for q in pts) / 4.0
+        txt = "%s  %s m" % (c["nome"], _m(c["comprimento"]))
+        ang = c["angulo"]
+        if ang > 90.0:
+            ang -= 180.0
+        elif ang <= -90.0:
+            ang += 180.0
+        # o texto ao longo da chapa, centrado nela
+        a_ = math.radians(ang)
+        larg = 0.62 * h * len(txt)
+        p.texto(cx - math.cos(a_) * larg / 2 + math.sin(a_) * h / 2,
+                cy - math.sin(a_) * larg / 2 - math.cos(a_) * h / 2, txt, h, camada=cam, angulo=ang)
+    # a cumeeira: as pernas, na cor dela
+    for f in faces:
+        if f.get("tipo") != "cobertura" or "u" not in f or f.get("inclinacao", 0.0) < 3.0:
+            continue
+        P = _na_planta(f)
+        for ch in f["chapas"]:
+            if ch.get("cumeeira"):
+                cam = _camada_da_telha(desenho, ch["nome"], COR_CUMEEIRA)
+                cores.setdefault(ch["nome"], COR_CUMEEIRA)
+                p.polilinha([(q[0] - x0, q[1] - y0) for q in (P(r) for r in _retangulo_da_chapa(ch))], fechada=True, camada=cam)
+    largura, altura = max(xs) - x0, max(ys) - y0
+    feito = False
+    if eixos:
+        try:
+            from nucleo2d.detalhe.conjuntos import _desenhar_eixos
+            _desenhar_eixos(p, eixos, (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), x0, y0, esc, largura, altura)
+            feito = True
+        except Exception:                                   # noqa: BLE001 — a planta sai sem os eixos
+            pass
+    if not feito:
+        # sem os eixos gravados no projeto: as medidas totais da cobertura
+        p.cota_h(0.0, largura, altura, 12.0)
+        p.cota_v(0.0, altura, 0.0, -12.0)
+    # a legenda das cores, à direita da planta
+    xl = largura + 40.0 * esc
+    p.texto(xl, altura, "TIPOS DE TELHA (CORES)", 2.5 * esc)
+    qtd = collections.Counter(c["nome"] for c in chapas)
+    comp = {}
+    for c in chapas:
+        comp.setdefault(c["nome"], c["comprimento"])
+    for i, nm in enumerate(sorted(cores, key=_ordem_natural)):
+        yy = altura - (i + 1) * 5.0 * esc
+        cam = _camada_da_telha(desenho, nm, cores[nm])
+        p.retangulo(xl, yy, 8.0 * esc, 3.0 * esc, camada=cam)
+        if nm in comp:
+            txt = "%s - %dx - %s m%s" % (nm, qtd[nm], _m(comp[nm]), "  (multi-dobra)" if cores[nm] == COR_MULTIDOBRA else "")
+        else:
+            txt = "%s - cumeeira" % nm
+        p.texto(xl + 11.0 * esc, yy + 0.4 * esc, txt, 2.2 * esc)
+    return p.extremos
+
+
+def desenho_do_quadro_das_telhas(faces: Sequence[dict], cumeeiras: Sequence[dict], desenho, dx: float, dy: float):
+    """O quadro das telhas da cobertura, como o modelo do usuário: tipo, descrição, quantidade,
+    comprimento, total em metros, peso e observação, com o total da cobertura."""
+    from nucleo2d.detalhe.base import _Papel
+    esc = desenho.escala
+    chapas = chapas_da_cobertura(faces)
+    p = _Papel(desenho, {"detalhe": "quadro_telhas"}, dx, dy)
+    grupos: Dict[str, dict] = collections.OrderedDict()
+    for c in sorted(chapas, key=lambda c: _ordem_natural(c["nome"])):
+        g = grupos.setdefault(c["nome"], {"qtd": 0, "comp": c["comprimento"], "peso": 0.0, "perfil": c["perfil"],
+                                          "md": c["multidobra"], "comps": set()})
+        g["qtd"] += 1
+        g["peso"] += float(c.get("peso") or 0.0)
+        g["comps"].add(round(c["comprimento"]))
+    for cm in cumeeiras or []:
+        nm = cm.get("nome") or cm.get("conjunto") or "CUMEEIRA"
+        inst = int(cm.get("instancias") or 0)
+        grupos[nm] = {"qtd": inst, "comp": float(cm.get("desenv") or cm.get("comprimento") or 0.0),
+                      "peso": float(cm.get("peso") or 0.0) * inst, "perfil": "CUMEEIRA " + str(cm.get("perfil") or ""), "md": False,
+                      "comps": set(), "cumeeira": True}
+    colunas = [("TIPO", 18), ("DESCRIÇÃO", 60), ("QTD", 12), ("COMP. (m)", 20), ("TOTAL (m)", 20), ("PESO (kg)", 22),
+               ("OBS.", 60)]
+    lh = 6.0 * esc
+    larg_tot = sum(w for _n, w in colunas) * esc
+    fmt = lambda v, c=2: ("%.*f" % (c, v)).replace(".", ",")    # noqa: E731
+    linhas = []
+    tot_m = tot_kg = 0.0
+    for nm, g in grupos.items():
+        total_m = g["qtd"] * g["comp"] / 1000.0
+        tot_m += total_m
+        tot_kg += g["peso"]
+        if g["md"]:
+            obs = "multi-dobra: comprimento desenvolvido externo"
+        elif g.get("cumeeira"):
+            obs = "cumeeira: comprimento desenvolvido (as duas pernas)"
+        elif len(g["comps"]) > 1:
+            obs = "comprimentos " + ", ".join(fmt(x / 1000.0) for x in sorted(g["comps"]))
+        else:
+            obs = ""
+        linhas.append([nm, g["perfil"], "%d" % g["qtd"], fmt(g["comp"] / 1000.0) if g["comp"] else "-", fmt(total_m),
+                       fmt(g["peso"], 1), obs])
+    linhas.append(["", "TOTAL DA COBERTURA", "", "", fmt(tot_m), fmt(tot_kg, 1), ""])
+    n = len(linhas) + 1
+    for i in range(n + 1):
+        p.linha(0, -i * lh, larg_tot, -i * lh, camada="TEXTO" if i in (0, 1, n - 1, n) else "VISTA-FINA")
+    x = 0.0
+    for _nome, w in colunas:
+        p.linha(x, 0, x, -n * lh, camada="VISTA-FINA")
+        x += w * esc
+    p.linha(larg_tot, 0, larg_tot, -n * lh, camada="VISTA-FINA")
+    for i, linha in enumerate([[c for c, _w in colunas]] + linhas):
+        x = 0.0
+        for (col, w), val in zip(colunas, linha):
+            p.texto(x + 1.5 * esc, -(i + 1) * lh + 1.8 * esc, val, 2.2 * esc)
+            x += w * esc
+    return p.extremos
