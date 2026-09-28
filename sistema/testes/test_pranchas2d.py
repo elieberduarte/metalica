@@ -19,11 +19,24 @@ def _detalhe(n_celulas=3, larg=1200.0, escala=10.0):
         d.add(Linha(a=(x, 0), b=(x + larg, 0), atributos=dict(atr)))
         d.add(Linha(a=(x + larg, 0), b=(x + larg, 500), atributos=dict(atr)))
         d.add(Circulo(camada="FURO", centro=(x + 300, 250), raio=6.5, atributos=dict(atr)))
-        d.add(Cota(modo="h", p1=(x, 0), p2=(x + larg, 0), deslocamento=-10, atributos=dict(atr)))
+        # a cota por cima da peça (dentro da caixa): a que fica por baixo alarga a célula (teste próprio)
+        d.add(Cota(modo="h", p1=(x, 0), p2=(x + larg, 0), deslocamento=10, atributos=dict(atr)))
         d.add(Texto(posicao=(x, 700), texto="P%d – 04x" % (i + 1), altura=3.5, atributos=dict(atr)))
         d.metadados.setdefault("celulas", []).append([x, -150, x + larg, 750])
         x += larg + 400
     return d
+
+
+def test_caixa_da_celula_inclui_a_linha_de_cota():
+    """A caixa da célula conta a linha de cota deslocada e o número dela (revisão de 28/09: a
+    cadeia de cotas sob a terça invadia o título da linha de baixo da prancha)."""
+    c = Cota(modo="h", p1=(0, 0), p2=(1000, 0), deslocamento=-10, altura=2.5)
+    (x0, y0), (x1, y1) = pranchas._caixa_de([c], 10.0)
+    assert (x0, x1, y1) == (0, 1000, 0)
+    assert abs(y0 - (-(10 + 2 + 2.5 + 1) * 10)) < 1e-6
+    c2 = Cota(modo="v", p1=(0, 0), p2=(0, 500), deslocamento=8, altura=2.5)
+    (x0, y0), (x1, y1) = pranchas._caixa_de([c2], 10.0)
+    assert x1 == 0 and abs(x0 - (-(8 + 5.5) * 10)) < 1e-6
 
 
 def test_celulas_e_transformacao():
@@ -253,4 +266,81 @@ def test_carimbo_editado_na_folha_vai_para_a_prancha():
     txt = {(e.atributos or {}).get("campo"): e.texto for e in ps[0].entidades.values() if isinstance(e, Texto)}
     assert txt["obra"] == "OBRA EDITADA" and txt["conteudo"] == "TESOURAS T1 E T2"
     assert "REV. 03" in txt["prancha"]
+
+def test_pranchas_lado_a_lado_num_desenho_so(tmp_path):
+    """As pranchas juntas num desenho só, em papel 1:1 (pedido do usuário, 28/09): cada folha
+    deslocada para a direita da anterior, com a moldura marcada com `folha` (o clique pega a folha
+    inteira, o carimbo edita como na folha do desenho de trabalho) e `metadados.pranchas` com a
+    origem de cada uma; o PDF sai uma página por folha, cada uma só com o que é dela."""
+    import pymupdf
+    folhas = pranchas.montar_pranchas([{"nome": "det", "desenho": _detalhe()}], formato="A3", titulo="Prancha", indice=True)
+    assert len(folhas) == 2
+    junto = pranchas.juntar_pranchas(folhas, nome="Pranchas")
+    larg, alt = pranchas.FOLHAS["A3"]
+    meta = junto.metadados["pranchas"]
+    assert [m["numero"] for m in meta] == [1, 2] and meta[0]["origem"] == [0.0, 0.0]
+    assert abs(meta[1]["origem"][0] - (larg + pranchas.FOLGA_ENTRE_FOLHAS)) < 1e-6
+    assert junto.tamanho == sum(f.tamanho for f in folhas)
+    x0 = meta[1]["origem"][0]
+    seg = [e for e in junto.entidades.values() if e.atributos.get("prancha_numero") == 2]
+    assert seg and all(x0 - 0.01 <= p[0] <= x0 + larg + 0.01 for e in seg for p in e.pontos())
+    molduras = {e.atributos.get("folha") for e in seg if e.atributos.get("prancha") == "moldura"}
+    assert molduras == {meta[1]["folha"]}
+    assert len(pranchas._folhas_do(junto)) == 2
+    # a caixa da célula acompanha a folha
+    cel = meta[1]["celulas"][0]["caixa"]
+    assert x0 <= cel[0] <= cel[2] <= x0 + larg
+    # grava e lê de volta
+    d2 = Desenho.de_dict(junto.dict())
+    assert d2.tamanho == junto.tamanho and len(d2.metadados["pranchas"]) == 2
+    # o PDF: uma página por folha, no tamanho do papel, cada uma com o seu conteúdo
+    assert len(pranchas.paginas_de(junto)) == 2
+    doc = pymupdf.open(pranchas.pdf_dos_desenhos([junto], str(tmp_path / "p.pdf")))
+    assert len(doc) == 2
+    assert abs(doc[1].rect.width / 72 * 25.4 - larg) < 1
+    assert "ESC. 1:10" in doc[1].get_text() and "ESC. 1:10" not in doc[0].get_text()
+    assert "PRANCHA 02/02" in doc[1].get_text() and "PRANCHA 01/02" in doc[0].get_text()
+
+def test_gerar_pranchas_das_folhas_junta_num_desenho_so(tmp_path, monkeypatch):
+    """O caminho à mão pelo app (28/09): as folhas de cada desenho de trabalho viram pranchas lado
+    a lado num desenho só ("Pranchas"); as geradas antes de outro desenho ficam, na ordem, e as do
+    desenho atual são refeitas, com a numeração correndo por todas. O desenho das pranchas não
+    serve de fonte, e o PDF dele sai uma página por folha."""
+    import pytest
+    import app
+    monkeypatch.setattr(app, "PROJETOS", str(tmp_path))
+    g = app._gerente()
+    r = g.criar("Obra teste", tipo="ifc")
+    s = r.get("slug") or r.get("id") or r.get("nome")
+
+    def com_folhas(nome, n):
+        d = Desenho(nome=nome, escala=10.0)
+        x = 0.0
+        for i in range(n):
+            f = pranchas.folha_no_desenho("A4", 10.0, (x, 0.0), {"obra": "Obra"}, titulo="%s %d" % (nome, i + 1))
+            d.camadas.update(f.camadas)
+            for e in f.entidades.values():
+                d.add(e)
+            d.add(Linha(a=(x + 500, 500), b=(x + 1500, 500)))
+            x += 297 * 10 + 500
+        return d
+    g.salvar_desenho(s, "trabalho-a", com_folhas("A", 2).dict())
+    g.salvar_desenho(s, "trabalho-b", com_folhas("B", 1).dict())
+    r1 = app.pranchas_das_folhas(s, "trabalho-a", {})
+    assert r1["desenho"] == "pranchas" and [p["numero"] for p in r1["pranchas"]] == [1, 2]
+    r2 = app.pranchas_das_folhas(s, "trabalho-b", {})
+    assert [(p["fonte"], p["numero"]) for p in r2["pranchas"]] == [("trabalho-a", 1), ("trabalho-a", 2), ("trabalho-b", 3)]
+    j = g.abrir_desenho(s, "pranchas")
+    assert len(j["metadados"]["pranchas"]) == 3 and j["metadados"]["gerado_por"] == "folhas"
+    assert all(p["do_desenho"] == 1 for p in r2["pranchas"])
+    # o A refeito com uma folha só: o B fica, e a numeração corre de novo
+    g.salvar_desenho(s, "trabalho-a", com_folhas("A", 1).dict())
+    r3 = app.pranchas_das_folhas(s, "trabalho-a", {})
+    assert [(p["fonte"], p["numero"]) for p in r3["pranchas"]] == [("trabalho-b", 1), ("trabalho-a", 2)]
+    assert [d["nome"] for d in g.listar_desenhos(s) if d.get("pranchas")] == ["pranchas"]
+    with pytest.raises(ErroDeDados):
+        app.pranchas_das_folhas(s, "pranchas", {})
+    with pytest.raises(ErroDeDados):
+        app.montar_pranchas_projeto(s, {"desenhos": ["pranchas"]})
+    assert app.exportar_desenho_pdf(s, "pranchas", {})["paginas"] == 2
 

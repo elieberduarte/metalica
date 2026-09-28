@@ -28,7 +28,7 @@ from nucleo.base import ErroDeDados
 from nucleo2d.desenho import (Desenho, Entidade2D, Linha, Polilinha, Circulo, Arco, Texto,
                               Cota, Hachura, Chamada, Camada2D, formatar_mm, transladar, novo_id)
 
-__all__ = ["montar_pranchas", "FOLHAS", "CARIMBO", "texto_escala"]
+__all__ = ["montar_pranchas", "juntar_pranchas", "FOLHAS", "CARIMBO", "texto_escala"]
 
 Ponto2 = Tuple[float, float]
 
@@ -48,6 +48,8 @@ FAIXA = 7.0
 #: Quadros por categoria: recuo das células dentro do quadro e altura da faixa do título.
 QUADRO_MARGEM = 6.0
 QUADRO_CABECALHO = 9.0
+#: Folga entre as folhas postas lado a lado no desenho único das pranchas (mm de papel).
+FOLGA_ENTRE_FOLHAS = 40.0
 
 
 def texto_escala(escala: float) -> str:
@@ -91,12 +93,41 @@ def _para_papel(e: Entidade2D, k: float, dx: float, dy: float, fonte: str) -> En
     return n
 
 
+def _pontos_da_cota(c: Cota, k: float) -> List[Ponto2]:
+    """A linha de cota (deslocada dos pontos medidos por `deslocamento` mm de papel) e a faixa
+    do número acima dela: o que a cota ocupa de verdade no desenho. Só com os pontos medidos, a
+    cadeia de cotas sob a terça saía da caixa da célula e invadia o título da linha de baixo da
+    prancha (revisão de 28/09)."""
+    x1, y1 = c.p1
+    x2, y2 = c.p2
+    if c.modo == "h":
+        y2 = y1
+    elif c.modo == "v":
+        x2 = x1
+    dx, dy = x2 - x1, y2 - y1
+    comp = math.hypot(dx, dy)
+    if comp < 1e-9:
+        return [c.p1, c.p2]
+    nx, ny = -dy / comp, dx / comp
+    desl = c.deslocamento * k
+    sg = 1.0 if desl >= 0 else -1.0
+    alem = desl + sg * (2.0 + c.altura + 1.0) * k          # a linha passa 2 mm; o número fica em cima
+    pts = [(x1 + nx * desl, y1 + ny * desl), (x2 + nx * desl, y2 + ny * desl),
+           (x1 + nx * alem, y1 + ny * alem), (x2 + nx * alem, y2 + ny * alem)]
+    if c.texto_pos:
+        pts.append(c.texto_pos)
+    return pts
+
+
 def _caixa_de(ents: Sequence[Entidade2D], escala: float = 1.0) -> Optional[Tuple[Ponto2, Ponto2]]:
     """Caixa das entidades; um texto ocupa a largura estimada (0,75 × altura × caracteres,
-    em mm de modelo pela escala), senão o título "P12 – 112x" sai da célula na folha."""
+    em mm de modelo pela escala), senão o título "P12 – 112x" sai da célula na folha; a cota,
+    a linha de cota e o número dela."""
     pts = []
     for e in ents:
-        if isinstance(e, Texto) and e.angulo == 0.0:
+        if isinstance(e, Cota):
+            pts += e.pontos() + _pontos_da_cota(e, escala)
+        elif isinstance(e, Texto) and e.angulo == 0.0:
             larg = 0.75 * e.altura * escala * len(e.texto or "")
             x, y = e.posicao
             x0 = x - larg / 2 if e.alinhamento == "centro" else x - larg if e.alinhamento == "direita" else x
@@ -327,19 +358,23 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             precisa = linha["h"] + FOLGA + (QUADRO_CABECALHO + FOLGA if aberto is None else 0.0)
             if y_topo - precisa < uy0 and (pranchas[-1] or aberto is not None):
                 if aberto is not None:
+                    # o quadro já começou numa prancha anterior: o da próxima é "(continuação)" — o
+                    # que só não cabe na prancha de antes e abre a próxima não é (revisão de 28/09)
                     aberto["y0"] = y_topo
                     aberto = None
+                    continuacao = True
                 pranchas.append([])
                 molduras.append([])
                 y_topo = uy1
-                continuacao = True
             if aberto is None:
                 aberto = {"categoria": q["categoria"], "titulo": q["titulo"] + (" (continuação)" if continuacao else ""),
                           "y1": y_topo, "y0": None}
                 molduras[-1].append(aberto)
                 y_topo -= QUADRO_CABECALHO + FOLGA
             for c in linha["celulas"]:
-                c["px"], c["py"] = c["px_rel"], y_topo - linha["h"]
+                # as células da prateleira alinhadas pelo topo: os títulos numa linha só (a de baixo
+                # deixava a peça de célula mais alta flutuando acima das vizinhas — revisão de 28/09)
+                c["px"], c["py"] = c["px_rel"], y_topo - c["h"]
                 pranchas[-1].append(c)
             y_topo -= linha["h"] + FOLGA
         if aberto is not None:
@@ -384,6 +419,102 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     if indice:
         saida.insert(0, _prancha_indice(formato, carimbo, titulo, saida, total))
     return saida
+
+
+def juntar_pranchas(pranchas: Sequence[Desenho], nome: str = "Pranchas", folga: float = FOLGA_ENTRE_FOLHAS) -> Desenho:
+    """Um desenho só com todas as pranchas lado a lado, em papel 1:1 (pedido do usuário, 28/09:
+    as pranchas "uma do lado da outra no mesmo ambiente, sem abas separadas"). Cada folha fica em
+    `metadados.pranchas` com a origem dela (o canto de baixo à esquerda) e o que a prancha solta
+    tinha em `metadados.prancha`; a moldura e o carimbo levam `folha` (o clique na borda pega a
+    folha inteira, e o carimbo edita como na folha do desenho de trabalho) e todas as entidades
+    levam `prancha_numero`. O PDF sai uma página por folha (`pdf_dos_desenhos`)."""
+    out = Desenho(nome=nome, escala=1.0)
+    lista = []
+    x = 0.0
+    for p in pranchas:
+        info = dict(p.metadados.get("prancha") or {})
+        formato = info.get("formato") if info.get("formato") in FOLHAS else "A1"
+        larg, alt = FOLHAS[formato]
+        for k, cam in p.camadas.items():
+            out.camadas.setdefault(k, copy.deepcopy(cam))
+        ident = "folha-" + Entidade2D().id
+        numero = int(info.get("numero") or len(lista) + 1)
+        for e in p.entidades.values():
+            n = transladar(e, x, 0.0)
+            n.id = Entidade2D().id
+            a = dict(n.atributos or {}, prancha_numero=numero)
+            if a.get("prancha") == "moldura":
+                a.update(folha=ident, formato=formato, escala=1.0, titulo=str(info.get("titulo") or ""))
+            n.atributos = a
+            out.add(n)
+        for chave in ("quadro", "carimbo"):
+            if info.get(chave):
+                info[chave] = [round(v + (x if i % 2 == 0 else 0.0), 2) for i, v in enumerate(info[chave])]
+        for c in info.get("celulas") or []:
+            if c.get("caixa"):
+                c["caixa"] = [round(v + (x if i % 2 == 0 else 0.0), 2) for i, v in enumerate(c["caixa"])]
+        info.update(numero=numero, folha=ident, origem=[round(x, 2), 0.0], tamanho=[larg, alt], nome=p.nome)
+        lista.append(info)
+        x += larg + folga
+    out.metadados["pranchas"] = lista
+    out.metadados["formato"] = lista[0]["formato"] if lista else "A1"
+    return out
+
+
+def paginas_de(d: Desenho, margem: float = 10.0) -> List[tuple]:
+    """As páginas de um desenho no PDF: (largura, altura, k, x0, y0) em mm de papel e mm do desenho.
+    O desenho único das pranchas dá uma página por folha; a prancha solta, a folha do formato; o
+    desenho comum, uma página do tamanho dele na sua escala mais a margem."""
+    folhas = d.metadados.get("pranchas")
+    if folhas:
+        out = []
+        for f in folhas:
+            if f.get("formato") in FOLHAS:
+                larg, alt = FOLHAS[f["formato"]]
+                o = f.get("origem") or [0.0, 0.0]
+                out.append((larg, alt, 1.0, float(o[0]), float(o[1])))
+        return out
+    info = d.metadados.get("prancha")
+    if info and info.get("formato") in FOLHAS:
+        larg, alt = FOLHAS[info["formato"]]
+        return [(larg, alt, 1.0, 0.0, 0.0)]
+    k = float(d.escala or 1.0)
+    caixa = d.caixa()
+    if not caixa:
+        return []
+    (bx0, by0), (bx1, by1) = caixa
+    return [((bx1 - bx0) / k + 2 * margem, (by1 - by0) / k + 2 * margem, k, bx0 - margem * k, by0 - margem * k)]
+
+
+def _por_folha(d: Desenho) -> List[Desenho]:
+    """O desenho das pranchas lado a lado repartido por folha, na ordem de `metadados.pranchas`:
+    pelo `prancha_numero` das entidades; o que não tem (acrescentado à mão no CAD) vai pela folha
+    em que o centro dele cai."""
+    folhas = [f for f in d.metadados.get("pranchas") or [] if f.get("formato") in FOLHAS]
+    partes, caixas = [], []
+    for f in folhas:
+        p = Desenho(nome=d.nome, escala=d.escala)
+        p.camadas.update(copy.deepcopy(d.camadas))
+        partes.append(p)
+        larg, alt = FOLHAS[f["formato"]]
+        o = f.get("origem") or [0.0, 0.0]
+        caixas.append((float(o[0]), float(o[1]), float(o[0]) + larg, float(o[1]) + alt))
+    por_num = {int(f.get("numero") or 0): i for i, f in enumerate(folhas)}
+    for e in d.entidades.values():
+        n = (e.atributos or {}).get("prancha_numero")
+        i = por_num.get(int(n)) if n is not None else None
+        if i is None:
+            pts = e.pontos()
+            if not pts:
+                continue
+            cx = sum(q[0] for q in pts) / len(pts)
+            cy = sum(q[1] for q in pts) / len(pts)
+            i = next((j for j, (x0, y0, x1, y1) in enumerate(caixas)
+                      if x0 - 1e-6 <= cx <= x1 + 1e-6 and y0 - 1e-6 <= cy <= y1 + 1e-6), None)
+            if i is None:
+                continue
+        partes[i].add(e)
+    return partes
 
 
 def _item_resumido(it: Optional[dict]) -> Optional[dict]:
@@ -512,38 +643,31 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
     from matplotlib.backends.backend_pdf import PdfPages
     from saida import dxf_render
     os.makedirs(os.path.dirname(os.path.abspath(caminho_pdf)), exist_ok=True)
+    from nucleo2d.detalhe.base import CAMADAS_PECAS
     with PdfPages(caminho_pdf) as pdf, tempfile.TemporaryDirectory() as tmp:
         for i, d in enumerate(desenhos):
-            info = d.metadados.get("prancha")
-            if info and info.get("formato") in FOLHAS:
-                larg, alt = FOLHAS[info["formato"]]
-                k = 1.0
-                x0, y0 = 0.0, 0.0
-            else:
-                k = float(d.escala or 1.0)
-                caixa = d.caixa()
-                if not caixa:
-                    continue
-                (bx0, by0), (bx1, by1) = caixa
-                larg = (bx1 - bx0) / k + 2 * margem
-                alt = (by1 - by0) / k + 2 * margem
-                x0, y0 = bx0 - margem * k, by0 - margem * k
-            # texto como está no desenho: o PDF não passa pelo ASCII do DXF R12 ("dobra 12,5°",
-            # "TERÇAS" e "…" saíam "dobra 12,5 ", "TERCAS" e "?")
-            arq = d.para_dxf(k, texto_unicode=True).gravar(os.path.join(tmp, "p%d.dxf" % i))
-            fig = plt.figure(figsize=(larg / 25.4, alt / 25.4))
-            ax = fig.add_axes((0, 0, 1, 1))
+            paginas = paginas_de(d, margem)
+            if not paginas:
+                continue
             # as camadas por tipo de peça (banzos, diagonais…) saem na cor delas, como no CAD
-            from nucleo2d.detalhe.base import CAMADAS_PECAS
             cores = {n: (d.camadas[n].cor if n in d.camadas else c) for n, (c, _e) in CAMADAS_PECAS.items()}
-            dxf_render.desenhar(arq, ax, escala_texto=_FATOR_TEXTO / k, cores=cores)
-            _preencher_solidas(d, ax)
-            ax.set_xlim(x0, x0 + larg * k)
-            ax.set_ylim(y0, y0 + alt * k)
-            ax.set_aspect("equal")
-            ax.axis("off")
-            pdf.savefig(fig)
-            plt.close(fig)
+            # o desenho das pranchas lado a lado: uma página por folha, cada uma renderizando só o que
+            # é dela (as 12 folhas da Sala inteiras, 12 vezes, levavam 5 min)
+            partes = _por_folha(d) if d.metadados.get("pranchas") else [d]
+            for j, ((larg, alt, k, x0, y0), parte) in enumerate(zip(paginas, partes)):
+                # texto como está no desenho: o PDF não passa pelo ASCII do DXF R12 ("dobra 12,5°",
+                # "TERÇAS" e "…" saíam "dobra 12,5 ", "TERCAS" e "?")
+                arq = parte.para_dxf(k, texto_unicode=True).gravar(os.path.join(tmp, "p%d_%d.dxf" % (i, j)))
+                fig = plt.figure(figsize=(larg / 25.4, alt / 25.4))
+                ax = fig.add_axes((0, 0, 1, 1))
+                dxf_render.desenhar(arq, ax, escala_texto=_FATOR_TEXTO / k, cores=cores)
+                _preencher_solidas(parte, ax)
+                ax.set_xlim(x0, x0 + larg * k)
+                ax.set_ylim(y0, y0 + alt * k)
+                ax.set_aspect("equal")
+                ax.axis("off")
+                pdf.savefig(fig)
+                plt.close(fig)
     return caminho_pdf
 
 

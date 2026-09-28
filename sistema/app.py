@@ -2108,13 +2108,14 @@ def gravar_lote_de_atualizacao(lote: str, instalador: str, exe_atual: str, esper
 
 def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     """Pranchas a partir de desenhos 2D do projeto: uma célula por posição/conjunto dos
-    desenhos de detalhamento, ou o desenho inteiro, em folhas ISO com carimbo.
+    desenhos de detalhamento, ou o desenho inteiro, em folhas ISO com carimbo. Todas ficam lado a
+    lado num desenho só, em papel 1:1 (`titulo`, "Pranchas" — pedido do usuário, 28/09).
 
-    corpo: {desenhos: [nome | {nome, escala, chaves: [posições/conjuntos]}], formato: "A1", titulo: "Prancha",
+    corpo: {desenhos: [nome | {nome, escala, chaves: [posições/conjuntos]}], formato: "A1", titulo: "Pranchas",
             carimbo: {obra, cliente, responsavel, crea, revisao, data, titulo, subtitulo},
             substituir: bool}"""
     from nucleo2d.desenho import Desenho
-    from nucleo2d.pranchas import montar_pranchas
+    from nucleo2d.pranchas import montar_pranchas, juntar_pranchas
     g = _gerente()
     pedidos = corpo.get("desenhos") or []
     if not pedidos:
@@ -2123,7 +2124,7 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     for item in pedidos:
         nome = item.get("nome") if isinstance(item, dict) else str(item)
         d = Desenho.de_dict(g.abrir_desenho(s, nome))
-        if d.metadados.get("prancha"):
+        if d.metadados.get("prancha") or d.metadados.get("pranchas"):
             raise ErroDeDados("\"%s\" já é uma prancha; escolha os desenhos de origem." % d.nome)
         fontes.append({"nome": _slug(nome), "desenho": d,
                        "escala": (item.get("escala") if isinstance(item, dict) else None),
@@ -2132,22 +2133,27 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     carimbo = {"obra": p.get("nome") or s, "cliente": p.get("cliente") or "",
                "responsavel": p.get("responsavel") or "", "revisao": "00"}
     carimbo.update({k: v for k, v in (corpo.get("carimbo") or {}).items() if v not in (None, "")})
-    titulo = (corpo.get("titulo") or "Prancha").strip() or "Prancha"
-    folhas = montar_pranchas(fontes, formato=corpo.get("formato") or "A1", carimbo=carimbo, titulo=titulo,
+    titulo = (corpo.get("titulo") or "Pranchas").strip() or "Pranchas"
+    folhas = montar_pranchas(fontes, formato=corpo.get("formato") or "A1", carimbo=carimbo, titulo="Prancha",
                              indice=corpo.get("indice", True) is not False)
+    junto = juntar_pranchas(folhas, nome=titulo)
+    junto.metadados["gerado_por"] = "pranchas"
     if corpo.get("substituir", True) is not False:
-        # apaga as pranchas anteriores com o mesmo título-base (Prancha 01, 02, …)
+        # apaga o desenho anterior com este nome e as pranchas soltas de antes (Prancha 01, 02, …
+        # montadas automaticamente; as geradas das folhas ficam)
         for d in g.listar_desenhos(s, contar=False):
-            if d["nome"].startswith(_slug(titulo) + "-") and d["nome"][len(_slug(titulo)) + 1:].isdigit():
-                g.excluir_desenho(s, d["nome"])
-    saida = []
-    for folha in folhas:
-        folha.metadados["gerado_por"] = "pranchas"
-        salvo = g.salvar_desenho(s, folha.nome, folha.dict())
-        saida.append({"nome": salvo["nome"], "titulo": folha.nome, "entidades": folha.tamanho,
-                      "celulas": len(folha.metadados["prancha"]["celulas"])})
+            n = d["nome"]
+            if n == _slug(titulo):
+                g.excluir_desenho(s, n)
+            elif n.startswith("prancha-") and n[len("prancha-"):].isdigit():
+                meta = (g.abrir_desenho(s, n) or {}).get("metadados") or {}
+                if meta.get("gerado_por") == "pranchas":
+                    g.excluir_desenho(s, n)
+    salvo = g.salvar_desenho(s, titulo, junto.dict())
+    saida = [{"titulo": f.nome, "numero": f.metadados["prancha"]["numero"], "entidades": f.tamanho,
+              "celulas": len(f.metadados["prancha"]["celulas"])} for f in folhas]
     g.tocar(s)
-    return {"pranchas": saida, "formato": corpo.get("formato") or "A1"}
+    return {"desenho": salvo["nome"], "pranchas": saida, "formato": corpo.get("formato") or "A1"}
 
 
 def _carimbo_do_projeto(s: str, corpo: dict) -> dict:
@@ -2179,38 +2185,54 @@ def folha_no_desenho(s: str, nome: str, corpo: dict) -> dict:
 
 def pranchas_das_folhas(s: str, nome: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/desenhos/<nome>/pranchas-das-folhas {titulo}: cada folha posicionada no
-    desenho vira uma prancha em papel 1:1 (Prancha NN), com o que está dentro dela. As pranchas feitas
-    antes a partir deste desenho são refeitas; a numeração segue as outras pranchas do projeto."""
+    desenho vira uma prancha em papel 1:1, e todas ficam lado a lado num desenho só (`titulo`,
+    "Pranchas" — pedido do usuário, 28/09). As folhas geradas antes a partir de outros desenhos
+    ficam nele, na ordem, e as deste são refeitas; a numeração corre por todas."""
     import re as _re
     from nucleo2d.desenho import Desenho
-    from nucleo2d.pranchas import pranchas_das_folhas as _pranchas
+    from nucleo2d.pranchas import pranchas_das_folhas as _pranchas, juntar_pranchas, _folhas_do
     g = _gerente()
     bruto = g.abrir_desenho(s, nome)
     if not bruto:
         raise ErroDeDados("desenho não encontrado: %s" % nome)
-    d = Desenho.de_dict(bruto)
-    titulo = (corpo.get("titulo") or "Prancha").strip() or "Prancha"
+    titulo = (corpo.get("titulo") or "Pranchas").strip() or "Pranchas"
     base = _slug(titulo)
     fonte = _slug(nome)
-    outras = []
-    for info in g.listar_desenhos(s, contar=False):
-        m = _re.match(r"^%s-(\d+)$" % _re.escape(base), info["nome"])
-        if not m:
-            continue
-        meta = (g.abrir_desenho(s, info["nome"]) or {}).get("metadados") or {}
-        if meta.get("gerado_por") == "folhas" and fonte in ((meta.get("prancha") or {}).get("fontes") or []):
-            g.excluir_desenho(s, info["nome"])            # refeita agora
-        else:
-            outras.append(int(m.group(1)))
-    primeira = max(outras) + 1 if outras else 1
-    folhas = _pranchas(d, fonte, _carimbo_do_projeto(s, corpo), titulo=titulo, primeira=primeira)
-    saida = []
-    for folha in folhas:
-        salvo = g.salvar_desenho(s, folha.nome, folha.dict())
-        saida.append({"nome": salvo["nome"], "titulo": folha.nome, "entidades": folha.tamanho,
-                      "do_desenho": folha.metadados["prancha"]["entidades_do_desenho"]})
+    if fonte == base:
+        raise ErroDeDados("\"%s\" já é o desenho das pranchas: gere a partir do desenho de trabalho com as folhas." % nome)
+    existentes = {d["nome"] for d in g.listar_desenhos(s, contar=False)}
+    fontes = []
+    if base in existentes:
+        meta = (g.abrir_desenho(s, base) or {}).get("metadados") or {}
+        if meta.get("gerado_por") == "folhas":
+            for f in meta.get("pranchas") or []:
+                for fo in f.get("fontes") or []:
+                    if fo != fonte and fo not in fontes and fo in existentes:
+                        fontes.append(fo)
+    fontes.append(fonte)
+    # as pranchas soltas de antes do desenho único (Prancha NN desta fonte) saem
+    for n in sorted(existentes):
+        if _re.match(r"^prancha-\d+$", n):
+            meta = (g.abrir_desenho(s, n) or {}).get("metadados") or {}
+            if meta.get("gerado_por") == "folhas" and fonte in ((meta.get("prancha") or {}).get("fontes") or []):
+                g.excluir_desenho(s, n)
+    carimbo = _carimbo_do_projeto(s, corpo)
+    docs = [(fo, Desenho.de_dict(bruto if fo == fonte else g.abrir_desenho(s, fo))) for fo in fontes]
+    contagens = [len(_folhas_do(d)) for _fo, d in docs]
+    if not contagens[-1]:
+        raise ErroDeDados("o desenho não tem folhas: use Desenho → Inserir folha (prancha)… e ponha os detalhes dentro dela.")
+    total = sum(contagens)
+    folhas = []
+    for (fo, d), n_f in zip(docs, contagens):
+        if n_f:
+            folhas += _pranchas(d, fo, carimbo, titulo="Prancha", primeira=len(folhas) + 1, total=total)
+    junto = juntar_pranchas(folhas, nome=titulo)
+    junto.metadados["gerado_por"] = "folhas"
+    salvo = g.salvar_desenho(s, titulo, junto.dict())
     g.tocar(s)
-    return {"pranchas": saida}
+    return {"desenho": salvo["nome"],
+            "pranchas": [{"titulo": f.nome, "numero": f.metadados["prancha"]["numero"], "fonte": f.metadados["prancha"]["fontes"][0],
+                          "entidades": f.tamanho, "do_desenho": f.metadados["prancha"]["entidades_do_desenho"]} for f in folhas]}
 
 
 def _texto_do_dxf(corpo: dict) -> str:
@@ -2595,7 +2617,7 @@ def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
     """PDF de um desenho (ou, com `desenhos: [...]`, de vários numa só saída): prancha no
     tamanho da folha, desenho comum no tamanho do desenho na sua escala."""
     from nucleo2d.desenho import Desenho
-    from nucleo2d.pranchas import pdf_dos_desenhos
+    from nucleo2d.pranchas import pdf_dos_desenhos, paginas_de
     g = _gerente()
     nomes = corpo.get("desenhos") or [nome]
     desenhos = []
@@ -2604,13 +2626,13 @@ def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
             desenhos.append(Desenho.de_dict(corpo["desenho"]))
         else:
             desenhos.append(Desenho.de_dict(g.abrir_desenho(s, n)))
-    pasta = os.path.join(g._existente(s), "pranchas" if any(d.metadados.get("prancha") for d in desenhos) else "desenhos-2d")
+    pasta = os.path.join(g._existente(s), "pranchas" if any(d.metadados.get("prancha") or d.metadados.get("pranchas") for d in desenhos) else "desenhos-2d")
     base = corpo.get("arquivo") or (_slug(nome) if len(nomes) == 1 else _slug(corpo.get("titulo") or "pranchas"))
     # o nome vem da tela: sem pasta nem caracteres de caminho, e com a extensão só uma vez
     base = _slug(re.sub(r"\.pdf$", "", os.path.basename(str(base).replace("\\", "/")), flags=re.I)) or "desenho"
     caminho = pdf_dos_desenhos(desenhos, os.path.join(pasta, base + ".pdf"))
     g.tocar(s)
-    return {"arquivo": _descrever_arquivo(caminho, pasta), "paginas": len(desenhos)}
+    return {"arquivo": _descrever_arquivo(caminho, pasta), "paginas": sum(len(paginas_de(d)) for d in desenhos)}
 
 
 def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:

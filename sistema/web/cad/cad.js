@@ -351,12 +351,13 @@ class CAD {
     } catch (e) { this.aviso(`Não foi possível gerar o PDF: ${e.message}`, 'erro', 0); }
   }
 
-  /** Um PDF com todas as pranchas do projeto (as de nome "Prancha NN"), em ordem. */
+  /** Um PDF com todas as pranchas do projeto: o desenho das pranchas lado a lado (uma página por
+   *  folha) e as pranchas soltas antigas ("Prancha NN"), em ordem. */
   async pdfDasPranchas() {
     if (!this.projeto) { this.aviso('Precisa de um projeto aberto.', 'atencao'); return; }
-    const lista = (await this._listaDesenhos()).filter(d => /^prancha-\d+$/i.test(d.nome))
+    const lista = (await this._listaDesenhos()).filter(d => d.pranchas || /^prancha-\d+$/i.test(d.nome))
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
-    if (!lista.length) { this.aviso('O projeto não tem pranchas ainda: Desenho → Montar pranchas…', 'atencao'); return; }
+    if (!lista.length) { this.aviso('O projeto não tem pranchas ainda: Desenho → Montar pranchas (automático)… ou Gerar pranchas das folhas.', 'atencao'); return; }
     if (this.nomeDesenho && lista.some(d => d.nome === this.nomeDesenho)) await this.salvar({ avisar: false });
     this.dica(`Gerando o PDF de ${lista.length} prancha(s)…`);
     try {
@@ -1393,7 +1394,7 @@ class CAD {
     const marcar = (teste) => { for (const d of lista) caixas.get(d.nome).checked = teste(d); };
     const atalhos = el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin:8px 0' },
       el('button', { type: 'button', onclick: () => marcar(d => /^detalhamento/i.test(d.nome)) }, 'Marcar detalhamentos'),
-      el('button', { type: 'button', onclick: () => marcar(d => /^prancha(-\d+)?$/i.test(d.nome)) }, 'Marcar pranchas'),
+      el('button', { type: 'button', onclick: () => marcar(d => d.pranchas || /^prancha(-\d+)?$/i.test(d.nome)) }, 'Marcar pranchas'),
       el('button', { type: 'button', onclick: () => marcar(() => true) }, 'Marcar todos'),
       el('button', { type: 'button', onclick: () => marcar(() => false) }, 'Desmarcar'));
     const corpo = el('div', {},
@@ -1867,7 +1868,8 @@ class CAD {
     } catch (e) { this.aviso(`Não foi possível inserir a folha: ${e.message}`, 'erro', 0); }
   }
 
-  /** Cada folha posta neste desenho vira uma prancha (Prancha NN) com o que está dentro dela. */
+  /** Cada folha posta neste desenho vira uma prancha com o que está dentro dela; todas ficam lado a
+   *  lado no desenho "Pranchas" (pedido do usuário, 28/09). */
   async pranchasDasFolhas() {
     if (!this.projeto) { this.aviso('Gerar pranchas precisa de um projeto aberto.', 'atencao'); return; }
     const folhas = new Set([...this.doc.entidades.values()].map(e => e.atributos || {}).filter(b => b.folha).map(b => `${b.folha}|${b.grupo_copia || ''}`));
@@ -1875,19 +1877,20 @@ class CAD {
     await this.salvar({ avisar: false });
     this.dica(`Gerando ${folhas.size} prancha(s)…`);
     try {
-      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/pranchas-das-folhas`, { titulo: 'Prancha' });
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/pranchas-das-folhas`, { titulo: 'Pranchas' });
       const vazias = r.pranchas.filter(p => !p.do_desenho).map(p => p.titulo);
       this.aviso(`${r.pranchas.length} prancha(s): ${r.pranchas.map(p => `${p.titulo} (${p.do_desenho} objetos)`).join(', ')}.`
                  + (vazias.length ? ` Sem nada dentro: ${vazias.join(', ')} — só entra o que está inteiro dentro da borda da folha.` : '')
-                 + ' Abra em Desenho → Abrir desenho do projeto; o PDF de todas as pranchas junta todas.', vazias.length ? 'atencao' : 'info', 15000);
+                 + ` Estão lado a lado no desenho "${r.desenho}"; o PDF de todas as pranchas sai uma página por folha.`, vazias.length ? 'atencao' : 'info', 15000);
       this.dica('');
+      await this.abrirDesenho(r.desenho);
     } catch (e) { this.aviso(`Não foi possível gerar as pranchas: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 
   async dialogoPranchas() {
     if (!this.projeto) { this.aviso('Montar pranchas precisa de um projeto aberto.', 'atencao'); return; }
     if (this.doc.tamanho && this.nomeDesenho) await this.salvar({ avisar: false });
-    const lista = (await this._listaDesenhos()).filter(d => !/^prancha(-\d+)?$/i.test(d.nome));
+    const lista = (await this._listaDesenhos()).filter(d => !d.pranchas && !/^prancha(-\d+)?$/i.test(d.nome));
     if (!lista.length) { this.aviso('O projeto ainda não tem desenhos: gere cortes, vistas ou o detalhamento primeiro.', 'atencao'); return; }
     let projeto = {};
     try { projeto = (await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}`)).projeto || {}; } catch { /* sem dados */ }
@@ -1906,7 +1909,7 @@ class CAD {
       responsavel: el('input', { type: 'text', value: projeto.responsavel || '' }),
       revisao: el('input', { type: 'text', value: '00' }),
       data: el('input', { type: 'text', value: '', placeholder: 'mês / ano de hoje' }),
-      titulo: el('input', { type: 'text', value: 'Prancha', title: 'Nome base das pranchas: Prancha 01, 02, …' }),
+      titulo: el('input', { type: 'text', value: 'Pranchas', title: 'Nome do desenho com todas as pranchas lado a lado' }),
     };
     const substituir = el('input', { type: 'checkbox', checked: 'checked' });
     const indice = el('input', { type: 'checkbox', checked: 'checked' });
@@ -1919,16 +1922,16 @@ class CAD {
     }
     const soSelecao = el('input', { type: 'checkbox', checked: chavesSel.size ? 'checked' : undefined, disabled: chavesSel.size ? undefined : 'disabled' });
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: 'Cada posição ou conjunto dos desenhos de detalhamento vira uma vista na escala do próprio desenho; cortes e vistas entram inteiros. O que não cabe na escala desce para a seguinte, com nota; o que não cabe na folha vai para a prancha seguinte. Cada prancha traz a tabela das posições que contém.' }),
+      el('div', { class: 'explica', texto: 'Cada posição ou conjunto dos desenhos de detalhamento vira uma vista na escala do próprio desenho; cortes e vistas entram inteiros. O que não cabe na escala desce para a seguinte, com nota; o que não cabe na folha vai para a prancha seguinte. Cada prancha traz a tabela das posições que contém. Todas ficam lado a lado num desenho só, em papel 1:1; o PDF sai uma página por folha.' }),
       el('div', { class: 'explica', texto: 'Desenhos de origem:' }), opcoes,
       el('label', { class: 'linha', title: 'Selecione no desenho as células que quer na prancha (clique na peça, Shift soma) antes de abrir este diálogo' }, soSelecao,
          chavesSel.size ? ` Deste desenho, só as ${chavesSel.size} peça(s) selecionada(s): ${[...chavesSel].slice(0, 8).join(', ')}${chavesSel.size > 8 ? '…' : ''}` : ' Deste desenho, só as peças selecionadas (nada selecionado)'),
       el('label', {}, 'Formato da folha', formato),
       el('label', {}, 'Obra', campos.obra), el('label', {}, 'Cliente', campos.cliente),
       el('label', {}, 'Projetista', campos.responsavel), el('label', {}, 'Data (mês / ano)', campos.data), el('label', {}, 'Revisão', campos.revisao),
-      el('label', {}, 'Nome base', campos.titulo),
-      el('label', { class: 'linha' }, indice, ' Prancha 01 de índice: relação das pranchas e tabela de todas as posições com a prancha de cada uma'),
-      el('label', { class: 'linha' }, substituir, ' Substituir as pranchas anteriores com este nome'));
+      el('label', {}, 'Nome do desenho', campos.titulo),
+      el('label', { class: 'linha' }, indice, ' Primeira folha de índice: relação das pranchas e tabela de todas as posições com a prancha de cada uma'),
+      el('label', { class: 'linha' }, substituir, ' Substituir o desenho das pranchas anterior com este nome'));
     if (await this.dialogo({ titulo: 'Montar pranchas', corpo, ok: 'Montar' }) !== 'ok') return;
     const escolhidos = [...caixas].filter(([, c]) => c.checked).map(([n]) => n);
     if (!escolhidos.length) { this.aviso('Escolha ao menos um desenho.', 'atencao'); return; }
@@ -1939,8 +1942,8 @@ class CAD {
         desenhos, formato: formato.value, titulo: campos.titulo.value, substituir: substituir.checked, indice: indice.checked,
         carimbo: { obra: campos.obra.value, cliente: campos.cliente.value, responsavel: campos.responsavel.value, revisao: campos.revisao.value, data: campos.data.value },
       });
-      this.aviso(`${j.pranchas.length} prancha(s) ${j.formato} montada(s): ${j.pranchas.map(p => p.titulo).join(', ')}. Abra as outras em Desenho → Abrir desenho do projeto; Exportar DXF grava cada uma em papel 1:1.`, 'info', 15000);
-      if (j.pranchas.length) await this.abrirDesenho(j.pranchas[0].nome);
+      this.aviso(`${j.pranchas.length} prancha(s) ${j.formato} montada(s), lado a lado no desenho "${j.desenho}": ${j.pranchas.map(p => p.titulo).join(', ')}. Exportar DXF grava em papel 1:1; o PDF de todas as pranchas sai uma página por folha.`, 'info', 15000);
+      await this.abrirDesenho(j.desenho);
     } catch (e) { this.aviso(`Não foi possível montar as pranchas: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Rota /pranchas + diálogo do CAD: monta pranchas do detalhamento e abre a primeira."""
+"""Rota /pranchas + diálogo do CAD: monta as pranchas do detalhamento lado a lado num desenho só
+("Pranchas", 28/09) e abre esse desenho."""
 import base64, json, os, shutil, subprocess, sys, tempfile, time, urllib.request
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
@@ -45,9 +46,12 @@ try:
     n1 = len(lista)
     p2 = post("/api/projetos/compressores/pranchas", {"desenhos": nomes, "formato": "A0"})
     lista = json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos"))
-    ok(len(lista) == 2 + len(p2["pranchas"]), "substituir apagou as pranchas anteriores (%d desenhos agora, %d pranchas A0)" % (len(lista), len(p2["pranchas"])))
+    junto = next((d for d in lista if d["nome"] == p2["desenho"]), None)
+    ok(len(lista) == 3 and junto is not None and junto.get("pranchas") == len(p2["pranchas"]),
+       "as pranchas lado a lado num desenho só, e substituir apagou o anterior (%d desenhos agora; \"%s\" com %s folhas A0)"
+       % (len(lista), p2["desenho"], junto and junto.get("pranchas")))
     try:
-        post("/api/projetos/compressores/pranchas", {"desenhos": [p2["pranchas"][0]["nome"]]})
+        post("/api/projetos/compressores/pranchas", {"desenhos": [p2["desenho"]]})
         ok(False, "prancha de prancha devia falhar")
     except urllib.error.HTTPError as e:
         ok(e.code == 400, "montar prancha a partir de uma prancha é recusado")
@@ -74,9 +78,9 @@ try:
     # (peças iguais fundidas: "P36 / P40")
     cel = []
     for d in json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos")):
-        if d["nome"].startswith("prancha-"):
-            meta = json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos/" + d["nome"]))["desenho"]["metadados"]["prancha"]
-            cel += [(c["titulo"], c.get("marca")) for c in meta["celulas"] if c["fonte"] == chaparias]
+        if d.get("pranchas"):
+            for meta in json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos/" + d["nome"]))["desenho"]["metadados"]["pranchas"]:
+                cel += [(c["titulo"], c.get("marca")) for c in meta["celulas"] if c["fonte"] == chaparias]
     marcas = sorted(m for _, mc in cel for m in str(mc or "").split(" / ") if m in ("P36", "P12"))
     ok(len(cel) == 2 and marcas == ["P12", "P36"], f"do desenho de chaparias entraram só as células selecionadas (P36 e P12): {cel}")
     aba.avaliar("window.cad.selecionar([]); 1")
@@ -89,8 +93,14 @@ try:
     aba.avaliar("document.querySelector('dialog[open] .botao-ok').click(); 1")
     t0 = time.time()
     while time.time() - t0 < 120 and not aba.avaliar("document.title.startsWith('Prancha')"): aba.drenar(1.0)
-    ok(aba.avaliar("document.title").startswith("Prancha 01"), "diálogo montou e abriu a Prancha 01 no CAD: %s" % aba.avaliar("document.title"))
+    ok(aba.avaliar("document.title").startswith("Pranchas"), "diálogo montou e abriu o desenho das pranchas no CAD: %s" % aba.avaliar("document.title"))
     ok(aba.avaliar("window.cad.doc.escala") == 1, "prancha em escala 1 (mm de papel)")
+    n_f = aba.avaliar("(window.cad.doc.metadados.pranchas || []).length")
+    x_ult = aba.avaliar("(window.cad.doc.metadados.pranchas || []).slice(-1).map(f => f.origem[0])[0]")
+    ok(n_f >= 2 and x_ult and x_ult > 800, "%d folhas lado a lado (a última começa em x = %s mm)" % (n_f, x_ult))
+    # o clique na borda de uma folha pega a folha inteira (moldura e carimbo levam `folha`)
+    ok(aba.avaliar("(() => { const e = [...window.cad.doc.entidades.values()].find(o => (o.atributos || {}).folha && (o.atributos || {}).prancha_numero === 2); return e ? window.cad.pecaDe(e.id).length > 20 : false; })()"),
+       "a moldura da folha 2 é um grupo (o clique pega a folha inteira)")
     # PDF de todas as pranchas pelo CAD
     aba.avaliar("window.__aberto = null; window.open = (u) => { window.__aberto = u; return null; }; window.cad.pdfDasPranchas(); 1")
     t0 = time.time()

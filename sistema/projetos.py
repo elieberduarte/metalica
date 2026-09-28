@@ -210,9 +210,12 @@ def _cabecalho_do_desenho(caminho: str, contar: bool = True) -> dict:
     tamanho = os.path.getsize(caminho)
     if tamanho <= DESENHO_GRANDE:
         d = _ler_json(caminho)
+        meta = d.get("metadados") or {}
         return {"titulo": d.get("nome") or None, "escala": d.get("escala"),
                 "entidades": len(d.get("entidades") or []),
-                "vistas": [v.get("nome") or v.get("tipo") for v in d.get("vistas") or []]}
+                "vistas": [v.get("nome") or v.get("tipo") for v in d.get("vistas") or []],
+                # quantas folhas: o desenho das pranchas lado a lado, ou a prancha solta
+                "pranchas": len(meta.get("pranchas") or []) or (1 if meta.get("prancha") else 0)}
     fora: dict = {}
     with open(caminho, "rb") as f:
         if contar:
@@ -225,6 +228,7 @@ def _cabecalho_do_desenho(caminho: str, contar: bool = True) -> dict:
             cabeca = f.read(4096).decode("utf-8", "ignore")
             f.seek(max(0, tamanho - 256 * 1024))
             cauda = f.read().decode("utf-8", "ignore")
+    fora["pranchas"] = 1 if ('"pranchas": [' in cauda or '"prancha": {' in cauda) else 0
     m = re.match(r'\s*\{"nome":\s*"((?:[^"\\]|\\.)*)"', cabeca)
     if m:
         fora["titulo"] = json.loads('"%s"' % m.group(1))

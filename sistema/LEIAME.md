@@ -1799,9 +1799,17 @@ ou conjunto dos desenhos de detalhamento vira uma vista na escala do desenho de 
 cortes e vistas entram inteiros, agrupados em **quadros por categoria** com título —
 tesouras e pórticos, conjuntos menores, terças, barras, chapas, tirantes, telhas, vistas —
 que continuam na prancha seguinte quando não cabem. O que não cabe na escala desce para
-a normalizada seguinte, com nota. A prancha é um
-desenho em milímetro de papel (escala 1), editável como qualquer outro, e o DXF sai em
-papel 1:1: a cota guarda o valor original como texto. Cada prancha traz, no rodapé à
+a normalizada seguinte, com nota. **Todas as pranchas ficam lado a lado num desenho só**
+("Pranchas", 28/09), em milímetro de papel (escala 1), editável como qualquer outro; cada
+folha está em `metadados.pranchas` com a origem dela, a moldura e o carimbo levam `folha`
+(o clique na borda pega a folha inteira; o carimbo edita pelo painel) e o DXF sai em
+papel 1:1: a cota guarda o valor original como texto. As células de uma prateleira alinham
+pelo topo (os títulos numa linha), a caixa de cada célula conta a linha de cota e o número
+(a cadeia de cotas sob a terça não invade a linha de baixo), e "(continuação)" só aparece
+quando o quadro já começou na folha anterior. **Gerar pranchas das folhas** (o caminho à mão,
+com folhas postas no desenho de trabalho) grava no mesmo desenho "Pranchas": as folhas
+geradas antes de outros desenhos ficam, na ordem, e as do desenho atual são refeitas, com a
+numeração correndo por todas. Cada prancha traz, no rodapé à
 esquerda do carimbo, a **tabela das posições** que contém (marca, quantidade, perfil,
 comprimento, peso). Para escolher à mão o que vai numa prancha, selecione as células no
 desenho de detalhamento antes de abrir o diálogo e marque "só as peças selecionadas".
@@ -1810,9 +1818,10 @@ polilinhas com arcos, círculos, textos e MTEXT, blocos aninhados, cotas como o 
 origem as desenhou; hachura e imagem ficam de fora) para a escala do desenho aberto,
 com a unidade do arquivo (`$INSUNITS` ou escolhida) e ponto de inserção; entra como um
 comando, então Ctrl+Z desfaz. DWG não é lido: salve como DXF no CAD de origem.
-**Desenho → Exportar PDF** gera o PDF vetorial do desenho aberto (prancha no tamanho da
+**Desenho → Exportar PDF** gera o PDF vetorial do desenho aberto (o desenho das pranchas sai
+uma página por folha, cada uma renderizando só o que é dela; a prancha solta no tamanho da
 folha; desenho comum no tamanho dele na escala) e **PDF de todas as pranchas…** junta as
-pranchas do projeto num arquivo em `pranchas/`, uma por página, pronto para plotar.
+pranchas do projeto num arquivo em `pranchas/`, pronto para plotar.
 
 ## O que sai
 

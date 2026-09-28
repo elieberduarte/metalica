@@ -1441,7 +1441,7 @@ export class Editor {
     const marcar = (teste) => { for (const d of lista) caixas.get(d.nome).checked = teste(d); };
     const atalhos = el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin:8px 0' },
       el('button', { type: 'button', onclick: () => marcar(d => /^detalhamento/i.test(d.nome)) }, 'Marcar detalhamentos'),
-      el('button', { type: 'button', onclick: () => marcar(d => /^prancha(-\d+)?$/i.test(d.nome)) }, 'Marcar pranchas'),
+      el('button', { type: 'button', onclick: () => marcar(d => d.pranchas || /^prancha(-\d+)?$/i.test(d.nome)) }, 'Marcar pranchas'),
       el('button', { type: 'button', onclick: () => marcar(() => true) }, 'Marcar todos'),
       el('button', { type: 'button', onclick: () => marcar(() => false) }, 'Desmarcar'));
     const corpo = el('div', {},
