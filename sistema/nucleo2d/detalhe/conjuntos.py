@@ -1667,6 +1667,29 @@ def _esconder_atras_dos_montantes(desenho: Desenho, entidades: Sequence, montant
                                   atributos=dict(e.atributos or {})))
 
 
+def _sem_larguras(xs: Sequence[float], fixos: set, meio: float, minimo: float = 60.0) -> Tuple[List[float], List[float]]:
+    """A cadeia sem a largura dos perfis: de dois pontos seguidos a menos de `minimo`, fica o fixo
+    (a face da ponta, as faces da cumeeira) ou o mais perto do meio da treliça. Devolve (os que
+    ficam, os que saíram)."""
+    ficam: List[float] = []
+    sairam: List[float] = []
+    for x in xs:
+        if ficam and x - ficam[-1] < minimo:
+            ant = ficam[-1]
+            if ant in fixos and x in fixos:
+                ficam.append(x)                      # a folga da cumeeira fica
+            elif ant in fixos:
+                sairam.append(x)
+            elif x in fixos or abs(x - meio) < abs(ant - meio):
+                sairam.append(ant)
+                ficam[-1] = x
+            else:
+                sairam.append(x)
+        else:
+            ficam.append(x)
+    return ficam, sairam
+
+
 def _contorno_dos_banzos(desenho: Desenho, marca: str) -> Tuple[List[tuple], List[tuple]]:
     """O contorno dos banzos do conjunto desenhado: (segmentos, quinas). Quina é o vértice em que o
     contorno dobra (mais de 10°) — o vértice no meio de uma reta (a peça partida em dois traços) não
@@ -2119,6 +2142,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     u0, v0 = min(us), min(vs)
     # na treliça, a alma pela linha de trabalho: montante no eixo, diagonal de nó a nó
     segs_bz, quinas_bz, nos_alma = [], [], []
+    contorno = set()
     if any(c_ == "BANZOS" for c_ in camada_de.values()):
         alma = {}
         for e in instancia:
@@ -2249,6 +2273,9 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         for q in (qa, qb):
             alturas.add(round(q[1], 1))
 
+    def ys_topo_ok(ts):
+        return all(t[3] is not None for t in ts)
+
     def fundir(vals, tol=60.0, fixos=()):
         """Nós a menos de `tol` viram um só, na média: as duas diagonais que chegam ao mesmo
         nó cruzam o eixo do banzo com alguns centímetros de excentricidade. Os extremos
@@ -2344,11 +2371,33 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             xs_h = {round(face_esq, 1), round(face_dir, 1)} | {x for pt in pontas for x in pt["xs"]
                                                                 if face_esq - 1.0 <= x <= face_dir + 1.0}
             ts_c = trechos(True)
+            fixos = {round(face_esq, 1), round(face_dir, 1)}
             if len(ts_c) > 1:
                 xs_h.add(round(ts_c[0][1], 1))
                 xs_h.add(round(ts_c[1][0], 1))          # a folga entre as duas metades
-            if p.cadeia_h(sorted(xs_h), 0.0, -off * (nivel_baixo + 1), exigir_espaco=False):
+                fixos |= {round(ts_c[0][1], 1), round(ts_c[1][0], 1)}
+            # a largura do perfil não se cota na cadeia (os 50 do pilar, os 55 da descida do banzo —
+            # pedido do usuário, 28/09): de dois pontos a menos de 60 mm fica a face de fora da peça
+            # (a ponta da treliça) ou o que está mais para o meio; o outro vira a medida de dentro
+            xs_c, tirados = _sem_larguras(sorted(xs_h), fixos, (face_esq + face_dir) / 2.0)
+            if p.cadeia_h(xs_c, 0.0, -off * (nivel_baixo + 1), exigir_espaco=False):
                 nivel_baixo += 1
+            # o joelho: o vão livre por dentro (da face de dentro do pilar à da descida do banzo) e a
+            # largura toda por fora (da face da ponta à face de dentro da descida)
+            joelho = False
+            for lado_, face_ in ((1, face_esq), (-1, face_dir)):
+                dentro_ = sorted((x for x in tirados if abs(x - face_) < 0.25 * (face_dir - face_esq)),
+                                 key=lambda x: abs(x - face_))
+                if len(dentro_) < 2:
+                    continue
+                fora_ = [x for x in xs_c if abs(x - face_) < 0.25 * (face_dir - face_esq) and x != round(face_, 1)
+                         and (x - dentro_[1]) * lado_ > 0 and abs(x - dentro_[1]) < 60.0]
+                p.cota_h(min(dentro_[0], dentro_[1]), max(dentro_[0], dentro_[1]), 0, -off * (nivel_baixo + 1))
+                if fora_:
+                    p.cota_h(min(face_, fora_[0]), max(face_, fora_[0]), 0, -off * (nivel_baixo + 2))
+                joelho = True
+            if joelho:
+                nivel_baixo += 2
     p.cota_h(face_esq, face_dir, 0, -off * (nivel_baixo + 1))
     cadeia_cima = len(nos_cima) > 2 and nos_cima != nos_baixo and cadeia_do_banzo(nos_cima, True)
     # suportes de terça (chapinhas/cantoneiras curtas encostadas no banzo de cima): a
@@ -2424,6 +2473,15 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                 agua = (p.cadeia_alinhada(reta, [x0, x1], off * (n_topo + 1), exigir_espaco=False) if reta is not None
                         else p.cadeia_h([x0, x1], ytopo, off * (n_topo + 1), exigir_espaco=False)) or agua
         n_topo += 1 if agua else 0
+        ts_meia = trechos(True)
+        if len(ts_meia) > 1 and ys_topo_ok(ts_meia):
+            # tesoura montada: cada metade na horizontal, da face da ponta ao meio da cumeeira (como o
+            # 7200 do projeto), por cima das cotas das águas
+            meio_c = (ts_meia[0][1] + ts_meia[1][0]) / 2.0
+            y_ap = max(yt for _a, _b, _r, yt in ts_meia)
+            p.cota_h(face_esq, meio_c, y_ap, off * (n_topo + 1.5))
+            p.cota_h(meio_c, face_dir, y_ap, off * (n_topo + 1.5))
+            n_topo += 2
         # cada ponta: as alturas trecho a trecho (onde o banzo dobra, a base do joelho, o topo) e a
         # altura dela por fora; o chanfro do joelho pelo comprimento, na própria inclinação
         # cada ponta: as alturas das quinas e dos nós (a face de fora como referência, as chamadas saem
@@ -2444,11 +2502,46 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         ts_cima = trechos(True)
         if ys_bz:
             base_bz, apice = min(ys_bz), max(ys_bz)
+            # a descida do banzo de baixo no joelho (a peça em pé com o contorno): a altura dela, do lado
+            # de dentro (pedido do usuário, 28/09) — é a base da flecha
+            topo_descida = None
+            for k_ in contorno:
+                if camada_de.get(k_) != "MONTANTES":
+                    continue
+                pts_ = [q for e_ in desenho.entidades.values() if isinstance(e_, Linha) and (e_.atributos or {}).get("origem") == k_
+                        for q in (e_.a, e_.b)]
+                if not pts_:
+                    continue
+                xs_m = [q[0] - dx for q in pts_]
+                ys_m = [q[1] - dy for q in pts_]
+                xm = (min(xs_m) + max(xs_m)) / 2.0
+                if len(ts_cima) > 1 and ts_cima[0][1] - 300.0 <= xm <= ts_cima[1][0] + 300.0:
+                    continue                                  # o montante da cumeeira tem a cota dele
+                if min(xm - face_esq, face_dir - xm) > 0.25 * (face_dir - face_esq):
+                    continue
+                para_dentro = 1.0 if xm < (face_esq + face_dir) / 2.0 else -1.0
+                x_ = max(xs_m) if para_dentro > 0 else min(xs_m)
+                p.cota_v(min(ys_m), max(ys_m), x_, para_dentro * off * 0.6)
+                topo_descida = max(ys_m) if topo_descida is None else min(topo_descida, max(ys_m))
             if len(ts_cima) > 1:
-                # tesoura montada: a altura toda junto da cumeeira, do lado de fora do montante central
-                p.cota_v(base_bz, apice, ts_cima[1][0], off * 0.6)
+                # tesoura montada: a altura toda junto da cumeeira, do lado de fora do montante central,
+                # e a flecha (da descida do banzo ao ápice), escritas como no projeto
+                p.cota_v(base_bz, apice, ts_cima[1][0], off * 0.6, texto="ALTURA TOTAL %d" % round(apice - base_bz))
+                if topo_descida is not None and apice - topo_descida > 100.0:
+                    p.cota_v(topo_descida, apice, ts_cima[1][0], off * 1.6, texto="FLECHA TOTAL %d" % round(apice - topo_descida))
             elif apice - base_bz - maior > 5.0:
                 p.cota_v(base_bz, apice, larg, off * 3 + abs(larg - max(pt["face"] for pt in pontas)) / esc if pontas else off * 3)
+        ts_b = trechos(False)
+        if len(ts_cima) > 1 and len(ts_b) > 1:
+            xa_, xb_ = ts_cima[0][1], ts_cima[1][0]
+            esq_ = [x for x in nos_baixo if x < xa_ - 60.0]
+            dir_ = [x for x in nos_baixo if x > xb_ + 60.0]
+            if esq_ and dir_:
+                # o último nó de cada lado, as faces das metades e a folga entre elas, na horizontal, logo
+                # abaixo do banzo de baixo na cumeeira (pedido do usuário, 28/09)
+                xs_r = [max(esq_), xa_, xb_, min(dir_)]
+                y_r = min(yb for _a, _b, _r, yb in ts_b if yb is not None) if all(t[3] is not None for t in ts_b) else 0.0
+                p.cadeia_h(xs_r, y_r, -off * 2.0, exigir_espaco=False)
         if len(ts_cima) > 1 and nos_alma:
             # tesoura montada: a altura do montante da cumeeira, curta e junto dele
             xr = ts_cima[0][1]
