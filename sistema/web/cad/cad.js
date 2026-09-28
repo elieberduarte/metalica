@@ -1048,6 +1048,7 @@ class CAD {
       const m = {}; for (const id of ids) m[id] = { camada: v }; this.executar(new ComandoAlterar(m, 'Trocar camada'));
     }, camadas.size !== 1));
     this._carimboDaFolha(g, ents);
+    this._tamanhoDoTexto(g, ents);
     if (ids.length === 1) {
       const e = ents[0];
       const campo = (rotulo, chave, tipo = 'text', extra = {}) => {
@@ -1055,7 +1056,7 @@ class CAD {
         i.addEventListener('change', () => { const v = tipo === 'number' ? parseFloat(i.value.replace(',', '.')) : i.value; if (tipo === 'number' && !isFinite(v)) return; this.executar(new ComandoAlterar({ [e.id]: { [chave]: v } }, `Alterar ${rotulo}`)); });
         g.append(el('label', { texto: rotulo }), i);
       };
-      if (e.tipo === 'texto' || e.tipo === 'chamada') { campo('Texto', 'texto'); campo('Altura (mm)', 'altura', 'number', { step: '0.5' }); }
+      if (e.tipo === 'texto' || e.tipo === 'chamada') campo('Texto', 'texto');     // a altura: "Tamanho do texto", acima
       if (e.tipo === 'texto') campo('Ângulo', 'angulo', 'number', { step: '15' });
       if (e.tipo === 'cota') {
         g.append(el('label', { texto: 'Valor' }), el('div', { texto: formatarMm(valorCota(e), 2) + ' mm' }));
@@ -1494,6 +1495,35 @@ class CAD {
       this.dica('Carimbo atualizado. "Gerar pranchas das folhas" leva estes textos para a prancha.');
     };
     g.append(el('div', { class: 'botoes' }, el('button', { type: 'button', texto: 'Aplicar no carimbo', onclick: aplicar })));
+  }
+
+  /** O tamanho dos textos, cotas e chamadas da seleção (pedido do usuário, 28/09): o valor para
+   *  todos, ou A− / A+ (20 / 25 %) mantendo a proporção entre eles; com um texto só, o botão que
+   *  seleciona todos os textos da mesma camada — para aumentar todos de uma vez. */
+  _tamanhoDoTexto(g, ents) {
+    const comTexto = ents.filter(e => e && (e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada'));
+    if (!comTexto.length) return;
+    const alts = [...new Set(comTexto.map(e => +(e.altura || 2.5)))];
+    const inp = el('input', { type: 'number', step: '0.5', min: '0.5', value: alts.length === 1 ? String(alts[0]) : '', placeholder: 'vários', title: 'Altura do texto em mm no papel' });
+    const aplicar = (f) => {
+      const m = {};
+      for (const e of comTexto) {
+        const a = Math.round(f(+(e.altura || 2.5)) * 100) / 100;
+        if (a > 0 && a !== e.altura) m[e.id] = { altura: a };
+      }
+      if (Object.keys(m).length) this.executar(new ComandoAlterar(m, 'Tamanho do texto'));
+    };
+    inp.addEventListener('change', () => { const v = parseFloat(String(inp.value).replace(',', '.')); if (v > 0) aplicar(() => v); });
+    const menos = el('button', { type: 'button', texto: 'A−', title: 'Diminui 20%', onclick: () => aplicar(a => a / 1.25) });
+    const mais = el('button', { type: 'button', texto: 'A+', title: 'Aumenta 25%', onclick: () => aplicar(a => a * 1.25) });
+    g.append(el('label', { texto: comTexto.length > 1 ? `Tamanho do texto (${comTexto.length})` : 'Tamanho do texto (mm)' }),
+      el('div', { style: 'display:flex;gap:4px;align-items:center' }, inp, menos, mais));
+    if (ents.length === 1 && comTexto.length === 1) {
+      const e = ents[0];
+      g.append(el('div', { class: 'botoes' }, el('button', { type: 'button', texto: `Todos os ${e.tipo === 'cota' ? 'cotas' : 'textos'} da camada ${e.camada}`,
+        title: 'Seleciona todos iguais a este na mesma camada, para mudar o tamanho de todos de uma vez',
+        onclick: () => this.selecionar([...this.doc.entidades.values()].filter(o => o.tipo === e.tipo && o.camada === e.camada && this.doc.visivel(o)).map(o => o.id)) })));
+    }
   }
 
   aplicarEstilos(opcoes, ids = null) {
