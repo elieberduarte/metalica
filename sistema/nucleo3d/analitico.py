@@ -11,7 +11,7 @@ treliça. Para ver a estrutura (e para calcular), cada peça é o eixo que liga 
    cima ou na viga, a viga no pilar, a corrente na terça, o pilar no banzo…), a até
    `TOL_APOIO` mm — é a excentricidade física, que volta no detalhamento; a peça de apoio ganha
    um nó ali;
-4. a terça que passa por cima de outras treliças ganha um nó em cada uma;
+4. a terça que passa por cima de outras treliças ganha um nó em cada uma (a viga, em cada banzo que cruza);
 5. o que sobrar sem ligar é ponta solta: um erro de verdade do modelo.
 
 `analitico(doc)` devolve {nos, barras, soltas, resumo}; cada barra lembra as ids das peças de
@@ -406,9 +406,10 @@ def analitico(doc, base: Optional[float] = None) -> dict:
                             gr[n] -= 1
                 ligadas += 1
 
-    # --- 4. a terça que passa sobre as treliças ganha um nó em cada banzo que ela cruza
+    # --- 4. a terça que passa sobre as treliças ganha um nó em cada banzo que ela cruza; a viga
+    # também, no banzo que ela cruza (a VM do piso da caixa d'água deitada sobre as treliças)
     for k, ln in enumerate(linhas):
-        if ln["papel"] != "terça":
+        if ln["papel"] not in ("terça", "viga"):
             continue
         a, b = nos[ln["na"]], nos[ln["nb"]]
         dx, dy = b[0] - a[0], b[1] - a[1]
@@ -421,7 +422,7 @@ def analitico(doc, base: Optional[float] = None) -> dict:
             cand.update(gl.perto(tuple(a[m] + (b[m] - a[m]) * s / n for m in range(3))))
         for j in cand:
             lj = linhas[j]
-            if lj["papel"] not in ("banzo", "viga"):
+            if lj["papel"] not in (("banzo", "viga") if ln["papel"] == "terça" else ("banzo",)):
                 continue
             c, e = nos[lj["na"]], nos[lj["nb"]]
             ex, ey = e[0] - c[0], e[1] - c[1]

@@ -97,3 +97,17 @@ def test_alma_corta_o_banzo_continuo_da_propria_trelica():
     meio = [i for i, p in enumerate(nos) if p[0] == 3000.0 and p[1] == 0.0 and p[2] in (6000.0, 6800.0)]
     banzos = [b for b in r["barras"] if b["papel"] == "banzo" and b["peca"] == "T#1"]
     assert meio and all(any(n in (b["a"], b["b"]) for b in banzos) for n in meio)
+
+
+def test_viga_deitada_sobre_as_trelicas_ganha_no_em_cada_banzo():
+    # a VM do piso da caixa d'água: 125 mm acima do eixo do banzo de cima, apoiada nas treliças
+    # das pontas e passando por cima da do meio: ganha nó também no banzo do meio
+    doc = modelo()
+    trelica(doc, 2500.0, "T#3")
+    doc.add(barra((1500.0, -60.0, 6925.0), (1500.0, 5060.0, 6925.0), "viga", perfil="Ue 200×70×20×2,65"))
+    r = analitico.analitico(doc)
+    nos = r["nos"]
+    vigas = [b for b in r["barras"] if b["papel"] == "viga"]
+    assert len(vigas) == 2, vigas                            # cortada no banzo do meio
+    ys = sorted(round(nos[b[k]][1]) for b in vigas for k in ("a", "b"))
+    assert ys == [0, 2500, 2500, 5000]

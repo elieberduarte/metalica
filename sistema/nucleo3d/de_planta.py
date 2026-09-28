@@ -2876,15 +2876,31 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     vigas_feitas: List[tuple] = []
     duas_pecas = {_sem_acento(str(n)).upper().strip() for n in (par.get("duas_pecas") or [])}
 
-    def montar_trechos(trechos_lista, nivel_z):
+    def montar_trechos(trechos_lista, nivel_z, piso=False):
         """as treliças (cada uma em pé na sua linha, banzo inferior em `nivel_z`) e as vigas VM
-        (com o topo em `nivel_z`) de uma planta"""
+        (com o topo em `nivel_z`) de uma planta. Na planta de piso (`piso`: a base da caixa
+        d'água, "NIVEL 8,20"), o nível é o do piso: as treliças ficam embaixo dele, como os
+        cortes mostram — a que recebe as VMs por cima com o topo no fundo delas, as outras com o
+        topo no nível"""
+        vms = []
+        if piso:
+            for t in trechos_lista:
+                if t.familia == "VIGA" and t.perfil and t.caminho.tipo == "reta":
+                    pa_v = _perfil(t.perfil["perfil"])
+                    vms.append((t.caminho.a, t.caminho.b, float(pa_v.d or 150.0) if pa_v else 150.0))
         for t in trechos_lista:
             k_t = next(serie)
             if t.familia == "VIGA":
                 continue
             el = t.elevacao
             c = t.caminho
+            z_t = nivel_z
+            if piso:
+                h_banzo = [h for m in el.membros if m.papel == "banzo" for h in (m.h0, m.h1)]
+                pa_b = _perfil((el.banzo or {}).get("perfil"))
+                meia = (float(pa_b.bf or 50.0) if pa_b else 50.0) / 2.0
+                por_cima = [d_v for a_v, b_v, d_v in vms if c.tipo == "reta" and _cruzamento(a_v, b_v, c.a, c.b)]
+                z_t = nivel_z - (max(por_cima) if por_cima else 0.0) - (max(h_banzo) if h_banzo else 0.0) - meia
             contagem[t.nome] += 1
             conj = "%s#%d" % (t.nome, k_t)
             p_banzo = (el.banzo or {}).get("perfil")
@@ -2905,7 +2921,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             def P(s, h):
                 sp = _s_na_planta(t, s)
                 x, y = c.ponto(sp)
-                return (x, y, nivel_z + h), sp
+                return (x, y, z_t + h), sp
             # banzo de cima ou de baixo: acima ou abaixo do meio da altura da treliça. O U do
             # banzo fica deitado com as abas para dentro da treliça — o de cima com a alma em
             # cima (onde a terça apoia) e as abas para baixo, o de baixo com as abas para cima
@@ -3088,7 +3104,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         tr_o, _st_o = pecas_da_planta(movidas, cx_m, elevacoes, deitadas=par.get("deitadas") or False)
         orientar(tr_o, [])
         n_antes = len(pecas)
-        montar_trechos(tr_o, nivel_o)
+        # a planta de piso com VMs em cima de treliças (a base da caixa d'água): o nível é o do piso
+        montar_trechos(tr_o, nivel_o, piso=nivel_o > nivel)
         montar_deitadas(_st_o.get("deitadas") or [], nivel_o)
         # as vigas e treliças desta planta na camada dela (o mezanino separado das vigas do nível da cobertura)
         nome_c = camada_da_outra(t_o["texto"], nivel_o, nivel, outra.get("camada"))
