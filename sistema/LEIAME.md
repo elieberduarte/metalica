@@ -286,9 +286,9 @@ banzo em U no plano vertical. Terça: gravidade com a mesa de cima travada pela 
 nível ganha nó ali (o barrote sobre a viga principal); alma rotulada disponível como opção (`alma_rotulada`). Na
 montagem: a linha de terça sem nome TC não vira terça com perfil inventado — com o nome VM escrito ao longo dela, é
 barrote (no mezanino do Posto, já lido pelas VMs; o repetido é pulado); sem nome, fica de fora com aviso. No Posto
-(primeira passada): só gravidade 848 de 9.702 barras sem resistência, vento leve 1.007, todas 2.432 — com pontos do
-esqueleto ainda a acertar (patamares das escadas sem os pilaretes PM4/PM5 dos cortes, a copa do PM6, pontas das
-tesouras sobre os pilares, banzos com carga de terça fora do nó).
+(primeira passada): só gravidade 809 de 9.715 barras sem resistência, vento leve 975, todas 2.397 — com pontos do
+esqueleto ainda a acertar (a copa do PM6, pontas das tesouras sobre os pilares, banzos de COMP 21 e TESOURA 18 com
+150–290 kN de compressão, banzos com carga de terça fora do nó).
 
 **0.8.47.** **A alma da treliça para na face interna do banzo** (`nucleo3d/alma_na_face.py`;
 print do usuário: "as treliças e montantes não furarem os banzos"): o nó continua no eixo do banzo (o esqueleto e
