@@ -839,7 +839,7 @@ export class CopiarPropriedades extends Ferramenta {
     super.reiniciar();
     const sel = [...this.editor.tela.selecao];
     this.fonte = sel.length === 1 ? this.doc.get(sel[0]) : null;
-    this.dica(this.fonte ? `Origem: ${this.fonte.tipo} na camada ${this.fonte.camada}. Clique nos objetos que recebem · Esc termina` : this.constructor.dica);
+    this.dica(this.fonte ? `Origem: ${this.fonte.tipo} na camada ${this.fonte.camada}. Clique nos objetos que recebem (ou arraste uma caixa) · Esc termina` : this.constructor.dica);
   }
   onPonto(p, ev) {
     const e = this.editor.tela.sob(ev.px);
@@ -847,16 +847,33 @@ export class CopiarPropriedades extends Ferramenta {
     if (!this.fonte) {
       this.fonte = e;
       this.editor.selecionar([e.id]);
-      this.dica(`Origem: ${e.tipo} na camada ${e.camada}. Agora clique nos objetos que recebem · Esc termina`);
+      this.dica(`Origem: ${e.tipo} na camada ${e.camada}. Agora clique nos objetos que recebem (ou arraste uma caixa) · Esc termina`);
       return;
     }
     if (e.id === this.fonte.id) return;
-    const m = { camada: this.fonte.camada };
-    if (e.tipo === this.fonte.tipo) for (const k of CopiarPropriedades.CAMPOS[e.tipo] || []) m[k] = clonar(this.fonte[k] ?? null);
-    else if ((e.tipo === 'texto' || e.tipo === 'chamada' || e.tipo === 'cota') && this.fonte.altura) m.altura = this.fonte.altura;
-    const novo = criar({ ...clonar(e), ...m });
-    this.editor.executar(new ComandoSubstituir([novo], 'Copiar propriedades'));
-    this.dica(`Propriedades copiadas para ${e.tipo}. Clique em outro objeto · Esc termina`);
+    this._aplicar([e]);
+  }
+  /** Caixa de seleção (janela ou cruzamento, como na Selecionar): todos os objetos dela recebem
+   *  as propriedades de uma vez (pedido do usuário, 28/09). */
+  onSoltar(p, ev) {
+    if (!ev.arrasto) return;
+    if (!this.fonte) { this.dica('Clique primeiro no objeto de origem; depois a caixa passa as propriedades dele'); return; }
+    const alvos = this.editor.tela.naJanela(ev.arrasto.de, ev.arrasto.para)
+      .filter(id => id !== this.fonte.id).map(id => this.doc.get(id)).filter(Boolean);
+    if (!alvos.length) { this.dica('Nenhum objeto na caixa · Esc termina'); return; }
+    this._aplicar(alvos);
+  }
+  _aplicar(alvos) {
+    const novos = alvos.filter(e => !this.doc.bloqueada(e)).map(e => {
+      const m = { camada: this.fonte.camada };
+      if (e.tipo === this.fonte.tipo) for (const k of CopiarPropriedades.CAMPOS[e.tipo] || []) m[k] = clonar(this.fonte[k] ?? null);
+      else if ((e.tipo === 'texto' || e.tipo === 'chamada' || e.tipo === 'cota') && this.fonte.altura) m.altura = this.fonte.altura;
+      return criar({ ...clonar(e), ...m });
+    });
+    if (!novos.length) return;
+    this.editor.executar(new ComandoSubstituir(novos, 'Copiar propriedades'));
+    const o = novos.length === 1 ? novos[0].tipo : `${novos.length} objetos`;
+    this.dica(`Propriedades copiadas para ${o}. Clique em outro objeto ou arraste uma caixa · Esc termina`);
   }
 }
 
