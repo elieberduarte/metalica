@@ -105,9 +105,13 @@ def _cotas_da_terca(p: "_Papel", furos: Sequence[Furo], L: float, off: float, of
     if not simples:
         p.cadeia_h([0.0] + duplos + [L], 0, -off, exigir_espaco=False)
         return True
+    # as linhas próximas umas das outras, PASSO_COTA_TERCA mm de papel entre elas (pedido do usuário,
+    # 28/09: "deixar elas mais próximas")
     por_duplo: Dict[float, Dict[float, List[float]]] = collections.defaultdict(lambda: {-1.0: [], 1.0: []})
     for x in simples:
-        xd = min(duplos, key=lambda d: abs(d - x))
+        # a referência mais perto: o furo duplo ou a ponta da peça (o furo a 78 mm da ponta não se mede
+        # do duplo a 1 m dali)
+        xd = min(duplos + [0.0, L], key=lambda d: abs(d - x))
         por_duplo[xd][1.0 if x > xd else -1.0].append(x)
     extra = 0
     for xd, lados in por_duplo.items():
@@ -118,16 +122,16 @@ def _cotas_da_terca(p: "_Papel", furos: Sequence[Furo], L: float, off: float, of
         p.cadeia_h(esq[:1] + [xd] + dir_[:1], 0, -off, exigir_espaco=False)
         # um 2º simples do mesmo lado (raro) desce uma linha
         for k, x in enumerate(esq[1:] + dir_[1:], 1):
-            p.cadeia_h([xd, x], 0, -(off + 7.0 * k), exigir_espaco=False)
+            p.cadeia_h([xd, x], 0, -(off + PASSO_COTA_TERCA * k), exigir_espaco=False)
             extra = max(extra, k)
-    # a cadeia dos duplos 6 mm a mais que o passo: o número de um trecho curto dos simples (110)
-    # sai por baixo da linha dele e cairia em cima dos números da cadeia
-    p.cadeia_h([0.0] + duplos + [L], 0, -(off2 + FOLGA_COTA_TERCA + 7.0 * extra), exigir_espaco=False)
+    p.cadeia_h([0.0] + duplos + [L], 0, -(off + PASSO_COTA_TERCA * (extra + 1)), exigir_espaco=False)
     return ("dupla", extra)
 
 
 #: Na terça, quanto a linha dos furos simples e a total descem a mais (mm de papel).
 FOLGA_COTA_TERCA = 6.0
+#: Na terça, a distância entre as linhas de cota — simples, duplos, total (mm de papel).
+PASSO_COTA_TERCA = 7.0
 
 
 def _furos_editaveis(p: "_Papel", atr: dict, furos: Sequence[Furo]):
@@ -228,11 +232,14 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     ys = sorted({round(f.y, 1) for f in furos_frente})
     # as cotas dos furos saem sempre (a produção precisa delas), mesmo quando um trecho
     # curto — 35 mm da ponta numa terça em 1:25 — deixa os textos apertados
-    terca = pos.tipo_nome in ("terca_cobertura", "terca_marquise")
+    # as terças de parede (T.L) e de oitão (T.O) também: a mesma máquina fura todas
+    terca = pos.tipo_nome in ("terca_cobertura", "terca_marquise", "terca_lateral", "terca_oitao")
     cadeia = bool(xs) and ((terca and _cotas_da_terca(p, furos_frente, L, off, off2))
                            or p.cadeia_h([0.0] + xs + [L], 0, -off, exigir_espaco=False))
-    if isinstance(cadeia, tuple):                 # terça com a linha dos simples
-        p.cota_h(0, L, 0, -(off3 + FOLGA_COTA_TERCA + 7.0 * cadeia[1]))
+    if isinstance(cadeia, tuple):                 # terça com a linha dos simples: a total colada na dos duplos
+        p.cota_h(0, L, 0, -(off + PASSO_COTA_TERCA * (cadeia[1] + 2)))
+    elif terca and cadeia is True:                # terça só com os duplos
+        p.cota_h(0, L, 0, -(off + PASSO_COTA_TERCA))
     else:
         p.cota_h(0, L, 0, -(off3 if cadeia == "dupla" else off2 if cadeia else off))
     # na terça a altura dos furos é o padrão da máquina de corte (50 ou 100 mm): a cadeia
