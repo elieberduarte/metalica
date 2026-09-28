@@ -34,6 +34,28 @@ function rotuloDoEixo(nome, raio_mm, cores = TEMA_EIXO.claro) {
   return s;
 }
 
+/**
+ * Tamanho do balão na tela, como no Revit: `alvo_px` na tela a cada quadro (de perto o balão de
+ * 0,5 a 1,4 m do chão enchia a tela — pedido do usuário, 28/09), nunca maior que `max_mm` no
+ * modelo (de longe ele diminui com a obra). `aplicar(mm)` põe a escala e a posição do tamanho.
+ */
+function manterNaTela(sp, alvo_px, max_mm, aplicar) {
+  const p = new THREE.Vector3();
+  aplicar(max_mm);
+  sp.onBeforeRender = (renderer, _cena, camera) => {
+    const h = renderer.domElement.clientHeight || 800;
+    let porPx;                                    // metros de cena por pixel, onde está o balão
+    if (camera.isOrthographicCamera) porPx = (camera.top - camera.bottom) / (camera.zoom || 1) / h;
+    else {
+      sp.getWorldPosition(p);
+      const d = p.sub(camera.position).dot(camera.getWorldDirection(new THREE.Vector3()));
+      porPx = 2 * Math.max(d, 1e-3) * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / h;
+    }
+    aplicar(Math.min(alvo_px * porPx / ESCALA, max_mm));
+    sp.updateMatrixWorld();
+  };
+}
+
 /** Cabeça do nível, como a do Revit: o triângulo, o nome e a cota, em azul. */
 function rotuloDoNivel(nome, z_mm, altura_mm, COR_NIVEL = TEMA_EIXO.claro.nivel) {
   const cota = (z_mm >= 0 ? '+' : '−') + (Math.abs(z_mm) / 1000).toFixed(2).replace('.', ',');
@@ -110,7 +132,11 @@ export class MetodosLancamento {
         const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1], d = Math.hypot(dx, dy) || 1;
         for (const [p, sinal] of [[e.a, -1], [e.b, 1]]) {
           const s = rotuloDoEixo(e.nome, raio, cores);
-          s.position.set(p[0] + sinal * dx / d * raio * 1.2, p[1] + sinal * dy / d * raio * 1.2, p[2]);
+          // o balão fora da ponta do eixo, encostado nela, do tamanho que ele tem na tela
+          manterNaTela(s, 28, 2 * raio, diam => {
+            s.scale.setScalar(diam);
+            s.position.set(p[0] + sinal * dx / d * diam * 0.6, p[1] + sinal * dy / d * diam * 0.6, p[2]);
+          });
           grupo.add(s);
         }
       }
@@ -144,6 +170,8 @@ export class MetodosLancamento {
           for (const [x, y] of [[x1, y0], [x0, y1]]) {
             const sp = rotuloDoNivel(n.nome, n.z, alt, cores.nivel);
             sp.position.set(x, y, n.z);
+            const proporcao = sp.scale.x / sp.scale.y;
+            manterNaTela(sp, 26, alt, a => sp.scale.set(a * proporcao, a, 1));
             grupo.add(sp);
           }
         }
