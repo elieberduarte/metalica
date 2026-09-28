@@ -105,6 +105,9 @@
     if (!alvo) {
       alvo = document.createElement('span');
       alvo.id = 'versao-programa';
+      // a página com as telas em quadros (a área de trabalho 2D + 3D): cada quadro já mostra a
+      // versão no rodapé dele; o rótulo solto no canto ficava por cima dos rodapés deles
+      if (document.querySelector('iframe')) return alvo;
       alvo.style.cssText = 'position:fixed;right:8px;bottom:6px;z-index:60;font:11px/1.4 ' +
         'ui-monospace,Consolas,monospace;color:var(--texto3,#8a94a6);opacity:.85;' +
         'padding:1px 6px;border-radius:5px;pointer-events:auto';
