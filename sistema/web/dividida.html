@@ -41,14 +41,19 @@
                                       cursor: pointer; font-size: 15px; line-height: 1; padding: 3px 7px; }
   .area-topo .setas-desfazer button:hover { background: rgba(255,255,255,.12); }
   .menu-lista button.marcavel { white-space: pre; }
-  .menu-lista .menu-titulo { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto3); padding: 6px 9px 2px; }
+  /* os itens da lista do menu: o texto do painel (a regra dos botões da faixa azul do topo, texto claro,
+     pegava também estes e sumiam no tema claro) */
+  .area-topo .menu-lista button, .area-topo .menu-lista a { color: var(--texto); background: none; border-color: transparent; }
+  .area-topo .menu-lista button:hover:not(:disabled), .area-topo .menu-lista a:hover { background: var(--azul-fraco); color: var(--azul-tinta); }
+  .area-topo .menu-lista button:disabled { color: var(--texto3); }
+  .menu-lista .menu-titulo { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto2); font-weight: 600; padding: 6px 9px 2px; }
   .area-topo .controles { gap: 6px; }
   .area-topo .controles button, .area-topo .acoes button { background: transparent; color: #e2e8f0; border: 1px solid rgba(255,255,255,.22);
                                                              border-radius: 5px; cursor: pointer; }
   .area-topo .controles button:hover, .area-topo .acoes button:hover { background: rgba(255,255,255,.12); }
   .area-topo .acoes { display: flex; gap: 6px; flex-shrink: 0; }
   .area-topo .casa { font-size: 16px; padding: 1px 9px !important; }
-  .menu-lista .secao-lado { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto3); padding: 6px 9px 2px; }
+  .menu-lista .secao-lado { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto2); font-weight: 600; padding: 6px 9px 2px; }
   .menu-lista .secao-lado + * { margin-top: 0; }
   html.topo-c1 .area-topo .marca .nome { display: none; }
   html.topo-c2 .area-topo .com-2d select { max-width: 120px; }
@@ -65,11 +70,12 @@
   body { display: flex; flex-direction: column; overflow: hidden; margin: 0; }
   .topo .controles { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
   .topo .controles label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
-  .topo .controles select { font: inherit; font-size: 12.5px; padding: 4px 8px; border-radius: 5px; cursor: pointer; color-scheme: dark;
+  .topo .controles select { font: inherit; font-size: 12.5px; padding: 4px 8px; border-radius: 5px; cursor: pointer;
                             border: 1px solid rgba(255,255,255,.22); background: rgba(255,255,255,.06); color: #e2e8f0; max-width: 260px; }
   .topo .controles select:hover { border-color: rgba(255,255,255,.4); }
   .topo .controles select:focus { outline: 2px solid var(--azul2); outline-offset: 1px; }
-  .topo .controles select option { background: #16202e; color: #e2e8f0; }
+  /* a lista aberta segue o tema (a caixa fechada fica na faixa azul, com o texto claro) */
+  .topo .controles select option { background: var(--painel); color: var(--texto); }
   .topo .grupo-modo { display: inline-flex; border: 1px solid rgba(255,255,255,.22); border-radius: 5px; overflow: hidden; }
   .topo .grupo-modo button { border: 0; border-radius: 0; padding: 4px 10px; font-size: 12.5px; }
   .topo .grupo-modo button.ativo { background: var(--azul); color: #fff; }
