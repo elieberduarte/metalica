@@ -701,7 +701,10 @@ def test_desenho_completo():
     # de conjunto e a planta no fim — todos com moldura
     assert "PLANTA DE LOCALIZAÇÃO" in faixas and len(faixas) >= 3
     quadros = [e.atributos["quadro"] for e in dc.entidades.values() if (e.atributos or {}).get("quadro")]
-    assert quadros[-1] == "PLANTA DE LOCALIZAÇÃO" and len(quadros) == len(faixas)
+    # a planta de localização e, depois dela, a de chumbação (quando o modelo tem chumbadores)
+    assert quadros[-1] in ("PLANTA DE LOCALIZAÇÃO", "PLANTA DE CHUMBAÇÃO") and len(quadros) == len(faixas)
+    if quadros[-1] == "PLANTA DE CHUMBAÇÃO":
+        assert quadros[-2] == "PLANTA DE LOCALIZAÇÃO"
     meta = dc.metadados["detalhamento"]
     assert meta["grupo"] == "completo" and "P1" in meta["editaveis"] and "P1" in meta["itens"] and "M5" in meta["itens"]
     assert any(isinstance(e, Circulo) and e.camada == "FURO" and (e.atributos or {}).get("posicao") == "P1" for e in dc.entidades.values())
