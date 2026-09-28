@@ -1747,7 +1747,9 @@ export class Editor {
                  (j.avisos && j.avisos.length ? ` ${j.avisos.length} aviso(s) no relatório.` : ''), 'info', 15000);
       parar();
       this.dica('Detalhamento pronto.');
-      if (j.desenhos.length) this._abrirCAD(j.desenhos[0].nome);
+      // abre no desenho completo (pedido do usuário, 28/09); sem ele, no primeiro gerado
+      const abrir = j.desenhos.find(d => d.grupo === 'completo') || j.desenhos[0];
+      if (abrir) this._abrirCAD(abrir.nome);
     } catch (e) { parar(); this.aviso(`Não foi possível detalhar: ${e.message}`, 'erro', 0); this.dica(''); }
   }
 

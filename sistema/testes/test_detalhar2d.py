@@ -750,3 +750,27 @@ def test_furos_de_barra_editaveis():
     xs = [e.centro[0] if isinstance(e, Circulo) else (min(p[0] for p in e.vertices) + max(p[0] for p in e.vertices)) / 2
           for e in d2.entidades.values() if e.camada == "FURO"]
     assert any(abs(x - (antes + 20.0)) < 1.0 for x in xs)
+
+
+def test_terca_sem_furo_ganha_os_furos_da_chapa_de_apoio():
+    """a terça que veio do IFC sem o furo da ligação (a água gelada: o suporte CH1 tem os oblongos,
+    a terça nenhum e os parafusos vazios — 28/09) ganha os furos da chapa encostada na alma, e a
+    regra de fábrica os põe no padrão (par vertical a 50 mm, oblongos 25x13)"""
+    from nucleo3d.modelo import Chapa
+    doc = _modelo()
+    ch = Chapa(nome="PLATE 170x150x6.4", camada="Chapas", origem=(-100.0, 1000.0 - 3.2, 3000.0),
+               eixo_x=(1.0, 0.0, 0.0), eixo_y=(0.0, 0.0, 1.0), contorno=[(0, 0), (170, 0), (170, 150), (0, 150)],
+               espessura=6.4, centrada=True,
+               furos=[{"x": 135.0, "y": 35.0, "largura": 25.0, "altura": 13.0},
+                      {"x": 135.0, "y": 115.0, "largura": 25.0, "altura": 13.0}])
+    ch.atributos["tipo_ifc"] = "IfcPlate"
+    ch.atributos["marcas"] = {"posicao": "P9", "conjunto": "P9", "perfil": "PLATE 170x150x6.4"}
+    doc.add(ch)
+    lev = det.levantar(doc)
+    m5 = next(p for p in lev["posicoes"] if p.marca == "M5")
+    na_ponta = sorted((round(f.x), round(f.y)) for f in m5.furos if f.x < 100)
+    assert len(na_ponta) == 2 and na_ponta[0][0] == na_ponta[1][0] == 35
+    assert abs(abs(na_ponta[1][1] - na_ponta[0][1]) - 50) <= 1          # o par a 50 mm (regra de fábrica)
+    assert all(f.tipo == "oblongo" for f in m5.furos)
+    assert any("chapa de liga" in o for o in m5.observacoes)
+

@@ -893,7 +893,8 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
     for f in fixadores:
         # só os parafusos colocados no editor: os do IFC vêm com o furo da barra modelado,
         # e nos poucos em que a análise não o casa (furo movido pela regra, oblongo) um furo
-        # a mais mudaria o desenho já conferido
+        # a mais mudaria o desenho já conferido (a barra que veio sem o furo da ligação acha
+        # o furo pela chapa encostada nela: inferir_furos_das_chapas)
         if not (f.atributos or {}).get("criado_no_editor"):
             continue
         cf = centros.get(f.id)
@@ -966,6 +967,76 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
     if marcados:
         pos.observacoes.append("%d furo(s) feito(s) no editor 3D (ferramenta Furo)" % marcados)
     return novos + marcados
+
+
+def _furos_das_chapas_no_mundo(pecas: Sequence[Solido]) -> list:
+    """Os furos das chapas paramétricas das peças, no mundo: (centro no plano da origem, normal,
+    espessura, rasgo), com rasgo = (sentido, comprimento, largura) no oblongo e None no redondo;
+    no redondo, o comprimento guarda o diâmetro."""
+    fora = []
+    for ent in pecas:
+        ch = getattr(ent, "parametrica", None)
+        if not isinstance(ch, Chapa) or not ch.furos:
+            continue
+        ex, ey = _norm(tuple(ch.eixo_x)), _norm(tuple(ch.eixo_y))
+        n = _norm(_cruz(ex, ey))
+        for f in ch.furos:
+            x, y = float(f.get("x", 0) or 0), float(f.get("y", 0) or 0)
+            c = tuple(ch.origem[i] + ex[i] * x + ey[i] * y for i in range(3))
+            d = float(f.get("diametro", 0) or 0)
+            L, A = float(f.get("largura", 0) or 0), float(f.get("altura", 0) or 0)
+            if d <= 0 and L > 0 and A > 0:
+                fora.append((c, n, float(ch.espessura or 0), ((ex if L >= A else ey), max(L, A), min(L, A))))
+            elif d >= 9.0:                                   # o furo de 5 mm é de parafuso autobrocante: a barra não tem
+                fora.append((c, n, float(ch.espessura or 0), (None, d, d)))
+    return fora
+
+
+def inferir_furos_das_chapas(pos: Posicao, ent: Solido, furos_ch: Sequence[tuple]) -> int:
+    """Barra que veio do IFC sem o furo da ligação com a chapa encostada nela (a terça da
+    água gelada sobre o suporte CH1: a chapa tem os 4 oblongos, a terça nenhum, e os parafusos
+    vieram vazios — 28/09): cada furo da chapa que encosta na alma ou na mesa da barra, dentro
+    dela, vira um furo da barra no mesmo ponto — oblongo como o da chapa quando o rasgo vai no
+    sentido da barra, senão redondo do tamanho menor. Furo que a barra já tem a menos de 40 mm
+    não repete. A regra de fábrica das terças vem depois e põe no padrão."""
+    if not pos.classe.startswith("barra") or not getattr(pos, "local", None) or not pos.eixos or not furos_ch:
+        return 0
+    e1, e2, e3 = pos.eixos
+    v0, l0 = pos.vertices[0], pos.local[0]
+
+    def local(q):
+        d = _sub(q, v0)
+        return (l0[0] + _dot(d, e1), l0[1] + _dot(d, e2), l0[2] + _dot(d, e3))
+    caixa = _caixa(ent)
+    ws = [q[2] for q in pos.local]
+    w_min, w_max = min(ws), max(ws)
+    novos = 0
+    for c, n, esp, (sentido, comp, larg) in furos_ch:
+        if not all(caixa[i][0] - 40.0 <= c[i] <= caixa[i][1] + 40.0 for i in range(3)):
+            continue
+        c_l = local(c)
+        encosta = esp + 15.0                            # da chapa até a face da barra
+        m_ = larg / 2.0 + 3.0                           # o furo inteiro na face (fora da parede do lado)
+        if abs(_dot(n, e3)) > 0.95:                     # a chapa encostada na alma
+            vista, x, y = "frente", c_l[0], c_l[1]
+            if min(abs(c_l[2] - w_min), abs(c_l[2] - w_max)) > encosta or not (0.0 < x < pos.L and m_ < y < pos.H - m_):
+                continue
+        elif abs(_dot(n, e2)) > 0.95:                   # na mesa
+            vista, x, y = "topo", c_l[0], c_l[2]
+            if min(abs(c_l[1]), abs(c_l[1] - pos.H)) > encosta or not (0.0 < x < pos.L and w_min + m_ < y < w_max - m_):
+                continue
+        else:
+            continue
+        if any(g.vista == vista and math.hypot(x - g.x, y - g.y) < max(40.0, g.d, g.larg) for g in pos.furos):
+            continue
+        if sentido is not None and abs(_dot(sentido, e1)) > 0.7:
+            pos.furos.append(Furo("oblongo", float(round(x)), float(round(y)), larg=comp, alt=larg, vista=vista))
+        else:
+            pos.furos.append(Furo("redondo", float(round(x)), float(round(y)), larg, vista=vista))
+        novos += 1
+    if novos:
+        pos.observacoes.append("%d furo(s) pelos furos da chapa de ligação (a barra veio sem o furo no IFC)" % novos)
+    return novos
 
 
 def aplicar_ajustes_de_furos(posicoes: Sequence[Posicao], ajustes: Optional[dict]) -> List[str]:
@@ -1195,6 +1266,7 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
         m = _marcas(ent)
         primeiro.setdefault(str(m.get("posicao") or ent.nome or ent.id), ent)
     centros = _centros_dos_fixadores(fixadores) if fixadores else {}
+    furos_ch = _furos_das_chapas_no_mundo(pecas)
     # parafuso colocado no 3D numa parte das peças da posição (as terças da empena): a peça
     # que representa a posição é uma que tem esses parafusos — antes era a primeira do
     # modelo, e se ela não tinha, o furo não saía no detalhe
@@ -1237,6 +1309,10 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
                         if n_c < n_t:
                             pos.observacoes.append("furo(s) pelo parafuso colocado no 3D em %d de %d peças desta posição — "
                                                    "as outras não têm esse parafuso: conferir" % (n_c, n_t))
+                if furos_ch and _eh_terca(pos, camadas.get(marca, "")):
+                    # só na terça (o domínio da regra de fábrica): numa barra qualquer a chapa com
+                    # furo encostada na alma pode ser soldada, e o furo seria falso
+                    inferir_furos_das_chapas(pos, primeiro[marca], furos_ch)
             if fixadores:
                 parafusos_da_posicao(pos, primeiro[marca], fixadores, eixos_fix)
             if barras_r and pos.classe in ("chapa", "chapa_dobrada"):
