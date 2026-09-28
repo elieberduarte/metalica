@@ -225,6 +225,25 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
+**0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
+sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da
+descida do banzo (B.14); a altura da descida (o 463 do projeto); na cumeeira, a cadeia do banzo de baixo termina
+na face do montante e cada metade leva a horizontal por cima; FLECHA TOTAL e ALTURA TOTAL na ponta da direita,
+como no projeto. No corte, o forro (a telha toda abaixo das barras) não entra — saía em riscos soltos debaixo do
+banzo — e o texto do raio da multidobra sai (fica a linha da telha). **Terças**: o corte com o contorno fechado
+e como bloco (o clique pega a seção inteira); as cotas com o furo simples primeiro (medido da referência mais
+perto), a cadeia dos duplos e a total, a 7 mm uma da outra, também nas terças laterais e de oitão. **Desenho
+completo** com a planta de chumbação. **Telhas**: a planta da cobertura no padrão do modelo de paginação (cada
+chapa no lugar, na cor do tipo, com tipo e comprimento, eixos e legenda) e o quadro das telhas. **CAD**: cota
+linear automática (a posição do mouse escolhe horizontal, vertical ou alinhada; H/V/A fixam, L volta); casas
+decimais da cota; a cota se seleciona pelo número; snap nas pernas das cotas; carimbo da folha editável; MA
+(copiar propriedades), também com caixa de seleção; tamanho do texto (A−/A+ e todos da camada); o texto comprido
+se seleciona em qualquer ponto dele (o índice espacial guarda a caixa inteira). **Pranchas lado a lado num
+desenho só** ("Pranchas", papel 1:1): Montar pranchas e Gerar pranchas das folhas gravam as folhas uma ao lado
+da outra; o PDF sai uma página por folha (a da Sala em 32 s, eram 5 min). Revisão da montagem automática: a
+caixa da célula conta a linha de cota (as cotas da terça invadiam a linha de baixo), "(continuação)" só quando o
+quadro já começou antes, células alinhadas pelo topo.
+
 **0.8.48.** **Barrinha da conferência no modo desenvolvimento** (pedido do usuário: "uma
 barrinha que mostre o progresso da conferência"): `testes/antes_de_publicar.py` grava o andamento em
 `testes/_conferencia.json` (`testes/progresso.py`: as etapas, os verificadores e as obras da bateria contados um a um,
