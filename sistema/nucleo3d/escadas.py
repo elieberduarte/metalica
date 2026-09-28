@@ -12,8 +12,11 @@ patamar e os degraus numerados do primeiro ao último (o último é a chegada no
 4. o lugar no modelo: os balões da planta da escada com o mesmo nome dos balões já alinhados (a
    planta estrutural, a locação, as outras plantas) — a letra do eixo dá y, o número dá x; o que os
    balões não dão vem dos pés da escada na locação (as placas "ESC ..."), na linha das longarinas;
-5. as alturas: do chão ao piso de cima (o nível da planta que ela serve), com o degrau de altura
-   igual — o patamar na altura do degrau dele.
+5. as alturas: do chão ao piso de cima (o nível da planta que ela serve), com os espelhos iguais —
+   os pisantes de cada lance pelo comprimento dele e o passo, um espelho a mais que pisantes em
+   cada lance; o patamar pela cota do corte que confirma essa conta (a ESCADA 1 do Posto CB a
+   1.700, 10 espelhos; a 2 a 1.421, 9 espelhos);
+6. os pisantes: a chapa xadrez dobrada de cada degrau, entre as longarinas, na altura dele.
 
 `ler(ents, textos, referencia, pes_esc, altura, avisos)` devolve as escadas: lances e patamar com as
 pontas em mm, já no lugar da planta estrutural.
@@ -26,6 +29,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 Ponto2 = Tuple[float, float]
 TITULO = re.compile(r"(?i)^\s*PLANTA\s+BAIXA\s+DA\s+ESCADA\s*(.*)$")
+ABA_DEGRAU = 40.0            # mm: a aba do pisante dobrado, para baixo na frente e atrás (os cortes do Posto CB)
 LINHA_MIN = 1500.0           # mm: longarina (as linhas curtas são degraus e cotas)
 PAR_PERFIL = (15.0, 90.0)    # mm entre as duas linhas do perfil da longarina
 LARGURA_LANCE = (600.0, 1600.0)
@@ -151,24 +155,16 @@ def _alinhar(proprios: Dict[str, Ponto2], referencia: Dict[str, List[Ponto2]]) -
     return med(dxs), med(dys), usados
 
 
-def patamar_dos_cortes(textos, regs, altura: float) -> Optional[float]:
-    """a altura do patamar pelas cotas dos cortes das escadas (em volta das plantas): as duas cotas
-    da mesma corrente vertical que somam a altura da escada (1.700 + 1.470 = 3.170) — o patamar é a
-    de baixo, do chão até ele"""
+def cotas_dos_cortes(textos, regs, altura: float) -> List[float]:
+    """as cotas verticais dos cortes das escadas (em volta das plantas) que podem ser a altura de um
+    patamar: entre 30% e 70% da altura da escada"""
     x0 = min(r[0] for r in regs) - 3000.0
     x1 = max(r[2] for r in regs) + 3000.0
     y0 = min(r[1] for r in regs) - 16000.0
     y1 = max(r[3] for r in regs) + 16000.0
-    cotas = [(float(t["texto"]), t["posicao"]) for t in textos if re.fullmatch(r"\d{3,5}", str(t.get("texto") or "").strip())
-             and "cota" in str(t.get("camada") or "").lower() and x0 <= t["posicao"][0] <= x1 and y0 <= t["posicao"][1] <= y1]
-    votos: Dict[float, int] = {}
-    for i, (a, pa) in enumerate(cotas):
-        for b, pb in cotas[i + 1:]:
-            # as duas cotas da mesma corrente vertical (mesmo x); a de baixo vai do chão ao patamar
-            if abs(a + b - altura) <= 20.0 and abs(pa[0] - pb[0]) < 400.0 and 0.3 * altura < min(a, b) < 0.7 * altura:
-                z = a if pa[1] < pb[1] else b
-                votos[z] = votos.get(z, 0) + 1
-    return max(votos, key=lambda k: votos[k]) if votos else None
+    return sorted({float(t["texto"]) for t in textos if re.fullmatch(r"\d{3,5}", str(t.get("texto") or "").strip())
+                   and "cota" in str(t.get("camada") or "").lower() and x0 <= t["posicao"][0] <= x1
+                   and y0 <= t["posicao"][1] <= y1 and 0.3 * altura < float(t["texto"]) < 0.7 * altura})
 
 
 def _pecas_de_linha(ents, reg) -> List[dict]:
@@ -205,7 +201,7 @@ def ler(ents, textos, referencia: Dict[str, List[Ponto2]], pes_esc: Sequence[Pon
     (pontos (x, y, z) em mm)"""
     out = []
     todas = regioes(textos)
-    z_cortes = patamar_dos_cortes(textos, [r for _t, r in todas], altura) if todas else None
+    cotas_p = cotas_dos_cortes(textos, [r for _t, r in todas], altura) if todas else []
     for t, reg in todas:
         nome = "ESCADA " + (TITULO.match(t["texto"]).group(1).strip() or str(len(out) + 1))
         linhas = [e for e in ents if e["tipo"] == "linha" and not ANOTACAO.search(str(e.get("camada") or ""))
@@ -274,9 +270,29 @@ def ler(ents, textos, referencia: Dict[str, List[Ponto2]], pes_esc: Sequence[Pon
 
         def mover(p, z):
             return (p[0] + dx, p[1] + dy, z)
+        # os pisantes de cada lance: o comprimento dele pelo passo (os números dos degraus nem sempre
+        # ficam no meio da faixa, e o da ponta pode cair no patamar); a escada com um espelho a mais
+        # que pisantes em cada lance (do chão ou do patamar ao pisante 1, do último ao patamar ou ao
+        # piso de cima)
+        ss_n = sorted(((q[0] - partes[0]["l"]["base"][0]) * partes[0]["l"]["u"][0]
+                       + (q[1] - partes[0]["l"]["base"][1]) * partes[0]["l"]["u"][1], k) for k, q in numeros
+                      if partes[0]["kmin"] <= k <= partes[0]["kmax"])
+        passos = sorted(abs(b_[0] - a_[0]) / max(abs(b_[1] - a_[1]), 1) for a_, b_ in zip(ss_n, ss_n[1:]))
+        g_esc = passos[len(passos) // 2] if passos else 300.0
+        for p in partes:
+            p["n"] = max(1, int(round((p["s1"] - p["s0"]) / g_esc)))
         z_pat = None
+        patamar_por = None
         if len(partes) > 1:
-            z_pat = z_cortes if z_cortes is not None else altura * (partes[0]["kmax"] + 1) / float(N)
+            n1, n2 = partes[0]["n"], sum(p["n"] for p in partes[1:])
+            z_est = altura * (n1 + 1) / float(n1 + n2 + 2)
+            # a cota do corte que confirma o patamar (a mais perto da estimativa, dentro de meio espelho)
+            tol_p = max(60.0, 0.5 * altura / float(n1 + n2 + 2))
+            perto_c = [c for c in cotas_p if abs(c - z_est) <= tol_p]
+            if perto_c:
+                z_pat, patamar_por = min(perto_c, key=lambda c: abs(c - z_est)), "cortes"
+            else:
+                z_pat, patamar_por = z_est, "degraus"
         segs = []
         for i_p, p in enumerate(partes):
             l = p["l"]
@@ -361,10 +377,43 @@ def ler(ents, textos, referencia: Dict[str, List[Ponto2]], pes_esc: Sequence[Pon
                     break
             pisos.append({"canto": mover((patamar[0], patamar[1]), z_pat), "lx": patamar[2] - patamar[0],
                           "ly": patamar[3] - patamar[1], "espessura": esp})
+        # os pisantes: a chapa xadrez dobrada de cada degrau (o piso entre as faces de dentro das
+        # longarinas, as abas para baixo na frente e atrás, sem espelho), os espelhos iguais do chão
+        # ao patamar e do patamar ao piso de cima
+        esp_d = pisos[0]["espessura"] if pisos else 3.0
+        m_b = re.search(r"(?i)X\s*(\d+)", p_long or "")
+        bf_long = float(m_b.group(1)) if m_b else 40.0
+        pisantes = []
+        for i_p, p in enumerate(partes):
+            l = p["l"]
+            lb = l["base"][0] * l["n"][0] + l["base"][1] * l["n"][1]
+            ux, uy = l["u"]
+            nx, ny = -uy, ux                                   # u × n para cima: a espessura sobe
+            z0 = 0.0 if i_p == 0 else z_pat
+            z1 = z_pat if (i_p == 0 and z_pat is not None) else altura
+            n_p = p["n"]
+            g = (p["s1"] - p["s0"]) / n_p
+            faces = []
+            for lat in l["lats"]:
+                q = (l["base"][0] + l["n"][0] * (lat - lb), l["base"][1] + l["n"][1] * (lat - lb))
+                faces.append(q[0] * nx + q[1] * ny)
+            if len(faces) < 2:
+                continue
+            c0, c1 = min(faces) + bf_long / 2.0, max(faces) - bf_long / 2.0
+            b_n = l["base"][0] * nx + l["base"][1] * ny
+            # a numeração do desenho: o primeiro lance do 1; os seguintes terminam no penúltimo número
+            # (o último é a chegada no piso de cima)
+            k_ini = 1 if i_p == 0 else N - sum(q["n"] for q in partes[i_p:])
+            for i in range(1, n_p + 1):
+                s_a = (p["s0"] + (i - 1) * g) if p["sobe"] else (p["s1"] - i * g)
+                o_ = (l["base"][0] + ux * s_a + nx * (c0 - b_n), l["base"][1] + uy * s_a + ny * (c0 - b_n))
+                pisantes.append({"k": k_ini + i - 1, "origem": mover(o_, z0 + (z1 - z0) * i / float(n_p + 1)),
+                                 "u": (ux, uy), "n": (nx, ny), "piso": g, "largura": c1 - c0, "aba": ABA_DEGRAU,
+                                 "espessura": esp_d})
         out.append({"nome": nome, "perfil": p_long, "perfil_patamar": p_pat, "lances": segs, "patamar": pat_segs,
-                    "vigas": vigas, "pisos": pisos,
+                    "vigas": vigas, "pisos": pisos, "pisantes": pisantes,
                     "degraus": N, "altura": altura, "patamar_z": z_pat, "alinhada_por": por,
-                    "patamar_por": "cortes" if z_cortes is not None else "degraus"})
+                    "patamar_por": patamar_por})
     # a planta que não escreve o perfil da longarina: o das outras escadas
     perfis = [e["perfil"] for e in out if e["perfil"]]
     for e in out:

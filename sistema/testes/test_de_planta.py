@@ -554,3 +554,24 @@ def test_terca_nao_senta_no_frontao_da_elevacao_em_duas_pecas():
     el1 = de_planta.Elevacao("TESOURA 1", "TESOURA", 1, 10000.0, membros=list(el.membros))
     t1 = de_planta.Trecho(de_planta.Caminho("reta", a=(0.0, 0.0), b=(10000.0, 0.0)), "TESOURA 1", "TESOURA", elevacao=el1)
     assert de_planta._altura_no_ponto(t1, (5000.0, 0.0)) == pytest.approx(2300.0)
+
+
+def test_peca_de_um_perfil_so_pela_nota_dentro_do_desenho():
+    """a viga inclinada "PERFIL 1 - 2X" da cobertura da caixa d'água do Posto CB: a elevação é o
+    perfil em linha dupla (a altura dele), subindo 5%, com um dente na ponta baixa (onde a calha
+    assenta); a nota "PERFIL 1 2U100X40X2,65" fica dentro do desenho, não embaixo"""
+    x0, y0 = 50000.0, -150000.0
+    ents = [linha((x0 + 360.0, y0 + 200.0), (x0 + 7600.0, y0 + 563.0), "1-Metalica2"),
+            linha((x0 + 460.0, y0 + 105.0), (x0 + 7605.0, y0 + 463.0), "1-Metalica2"),
+            linha((x0, y0 + 100.0), (x0 + 360.0, y0 + 100.0), "1-Metalica2"),
+            linha((x0, y0), (x0 + 460.0, y0), "1-Metalica2"),
+            linha((x0 + 360.0, y0 + 200.0), (x0 + 360.0, y0 + 100.0), "1-Metalica2"),
+            linha((x0 + 460.0, y0 + 105.0), (x0 + 460.0, y0), "1-Metalica2"),
+            linha((x0, y0 + 100.0), (x0, y0), "1-Metalica2"),
+            texto((x0 + 3000.0, y0 + 90.0), "PERFIL 1 2U100X40X2,65"),
+            texto((x0, y0 - 700.0), "PERFIL 1 - 2X", altura=3.5)]
+    el = de_planta.ler_elevacoes(ents, ["PERFIL"])["PERFIL 1"]
+    assert el.qtd == 2 and el.banzo["perfil"] == "U 100×40×2,65 (FF)" and el.banzo["mult"] == 2
+    inclinada = max(el.membros, key=lambda m: m.s1 - m.s0)
+    assert inclinada.papel == "banzo" and inclinada.altura_linha == pytest.approx(100.0, abs=5)
+    assert inclinada.h1 - inclinada.h0 == pytest.approx(363.0, abs=15)

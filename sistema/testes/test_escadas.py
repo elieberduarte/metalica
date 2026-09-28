@@ -19,15 +19,16 @@ def _texto(x, y, t, h=4.0, camada="REG60-100"):
 
 def _planta():
     ents, textos = [], []
-    # o 1º lance: longarinas (linha dupla a 40 mm) em y 1000 e 0, de x 4000 (pé) a 1060 (patamar)
+    # o 1º lance: longarinas (linha dupla a 40 mm) em y 1000 e 0, de x 3800 (pé) a 0 (o patamar
+    # até 1100): 9 pisantes de 300
     for y in (1000.0, 0.0):
-        ents += [_linha((4000.0, y), (0.0, y)), _linha((4000.0, y + 40.0), (0.0, y + 40.0))]
+        ents += [_linha((3800.0, y), (0.0, y)), _linha((3800.0, y + 40.0), (0.0, y + 40.0))]
     # o 2º lance: em x 0 e 1060, de y 1040 a −2400
     for x in (0.0, 1060.0):
         ents += [_linha((x, 1040.0), (x, -2400.0)), _linha((x + 40.0, 1040.0), (x + 40.0, -2400.0))]
     # os degraus: 1 a 9 no 1º lance, 10 no patamar, 11 a 18 no 2º e 19 a chegada
     for k in range(1, 10):
-        textos.append(_texto(4000.0 - 150.0 - 300.0 * (k - 1), 500.0, str(k)))
+        textos.append(_texto(3800.0 - 150.0 - 300.0 * (k - 1), 500.0, str(k)))
     textos.append(_texto(500.0, 500.0, "10"))
     for k in range(11, 20):
         textos.append(_texto(500.0, -150.0 - 300.0 * (k - 11), str(k)))
@@ -57,6 +58,14 @@ def test_escada_em_L_no_lugar_com_o_patamar_do_corte():
     assert any(p[2] == 0.0 and p[0] == pytest.approx(4736.0, abs=30) for p in pontos)
     assert any(p[2] == pytest.approx(3170.0) for p in pontos)
     assert len(e["patamar"]) == 4 and all(p[2] == pytest.approx(1700.0) for seg in e["patamar"] for p in seg)
+    # os pisantes: 9 no 1º lance (espelho 1700/10) e 8 no 2º (1470/9), numerados como o desenho,
+    # de 300 entre as faces de dentro das longarinas, em chapa dobrada com as abas para baixo
+    ps = {p["k"]: p for p in e["pisantes"]}
+    assert sorted(ps) == list(range(1, 10)) + list(range(11, 19))
+    assert ps[1]["origem"][2] == pytest.approx(170.0) and ps[9]["origem"][2] == pytest.approx(1530.0)
+    assert ps[11]["origem"][2] == pytest.approx(1700.0 + 1470.0 / 9) and ps[18]["origem"][2] == pytest.approx(3170.0 - 1470.0 / 9)
+    assert ps[1]["piso"] == pytest.approx(300.0, abs=5) and ps[1]["largura"] == pytest.approx(960.0, abs=5)
+    assert ps[1]["aba"] == escadas.ABA_DEGRAU
 
 
 def test_sem_como_por_no_lugar_fica_de_fora_com_aviso():

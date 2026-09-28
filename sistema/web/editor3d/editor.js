@@ -892,9 +892,16 @@ export class Editor {
   }
 
   definirModo(modo) {
+    // um modo de exibição dos perfis desliga o esqueleto (o quadradinho dele é o último do grupo)
+    if (this.esqueleto && this.esqueleto.ativo) this.alternarEsqueleto();
     this.cena.definirModo(modo);
+    this._marcarModos();
+  }
+
+  _marcarModos() {
+    const esq = !!(this.esqueleto && this.esqueleto.ativo);
     for (const b of this.el.modos.querySelectorAll('button')) {
-      b.setAttribute('aria-pressed', String(b.dataset.modo === this.cena.modo));
+      b.setAttribute('aria-pressed', String(b.dataset.esqueleto ? esq : (!esq && b.dataset.modo === this.cena.modo)));
     }
   }
 
@@ -1950,6 +1957,16 @@ export class Editor {
       b.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16">${icones[modo]}</svg>`;
       this.el.modos.append(b);
     }
+    // o esqueleto (Ver → Esqueleto): o modelo só em linhas, cada peça pelo eixo
+    const rot = 'Esqueleto (só linhas): cada peça pelo eixo, numa cor por tipo — a estrutura antes dos perfis. De novo volta aos perfis';
+    const be = el('button', {
+      type: 'button', title: rot, 'aria-label': 'Esqueleto (só linhas)', dados: { esqueleto: '1' },
+      'aria-pressed': 'false', onclick: () => this.alternarEsqueleto(),
+    });
+    be.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 12.5L8 3.5l6 9M2 12.5h12M5 8h6M8 3.5v9M5 8l3 4.5 3-4.5" '
+      + 'fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle cx="2" cy="12.5" r="1.3" fill="currentColor"/>'
+      + '<circle cx="14" cy="12.5" r="1.3" fill="currentColor"/><circle cx="8" cy="3.5" r="1.3" fill="currentColor"/></svg>';
+    this.el.modos.append(be);
   }
 
   _montarVistasRapidas() {
@@ -2051,6 +2068,7 @@ export class Editor {
     this.esqueleto.ligar(ligar);
     const b = document.querySelector('[data-acao="esqueleto"]');
     if (b) { b.setAttribute('aria-pressed', String(ligar)); b.textContent = ligar ? 'Esqueleto (só linhas) ✓' : 'Esqueleto (só linhas)'; }
+    this._marcarModos();
     if (ligar && !this._ouvinteEsqueleto) {
       // o nome do bloco escolhido, na dica
       this._ouvinteEsqueleto = this.selecao.aoMudar((ids) => {

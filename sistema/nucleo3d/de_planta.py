@@ -45,7 +45,7 @@ PADRAO = {
     "locacao": "LOCAÇÃO",                       # título da locação dos pilares
     "base": 0.0,                                # nível da base dos pilares, mm
     "tercas": "PLANTA NO NÍVEL DAS TERÇAS",     # título da planta das terças
-    "familias": ["TESOURA", "PAINEL", "TRANSIÇÃO", "TRELIÇA", "COMP"],
+    "familias": ["TESOURA", "PAINEL", "TRANSIÇÃO", "TRELIÇA", "COMP", "PERFIL"],
     "aco": "ASTM A36",
     "outras": [],                               # [{planta, nivel}]: mezanino, caixa d'água…
     "deitadas": False,                          # faixa de treliça vista de cima vira treliça deitada (senão, a conferir)
@@ -782,12 +782,24 @@ def ler_elevacoes(ents, familias: Sequence[str]) -> Dict[str, Elevacao]:
             elif re.search(r"DIAG|MONT", s) and alma is None:
                 alma = r
                 notas_ids.add(n.get("id"))
+        if banzo is None and nome.startswith("PERFIL "):
+            # a peça de um perfil só (a viga inclinada "PERFIL 1"): a nota "PERFIL 1 2U100X40X2,65"
+            # fica dentro do desenho dela
+            for n in textos:
+                px, py = n["posicao"][0], n["posicao"][1]
+                if x0 - 1500 <= px <= x1 and ty - 50 <= py <= y1 + 50 and _sem_acento(n["texto"]).upper().startswith(nome + " "):
+                    r = perfil_do_texto(n["texto"][len(nome):])
+                    if r:
+                        banzo = r
+                        notas_ids.add(n.get("id"))
+                        break
         el = _elevacao_do_grupo(nome, qtd, c["segs"])
         el.banzo, el.alma = banzo, alma
         if c.get("emenda"):
             _ligar_emenda(el, c["emenda"][0] - el.x_esq, c["emenda"][1] - el.x_esq)
         _alma_lida_duas_vezes(el)
-        if banzo and int(banzo.get("mult") or 1) >= 2 and re.match(r"(?i)^U", str(banzo.get("perfil") or "")):
+        if banzo and int(banzo.get("mult") or 1) >= 2 and re.match(r"(?i)^U", str(banzo.get("perfil") or "")) \
+                and not nome.startswith("PERFIL "):
             _banzo_em_caixao(el, c["segs"])
         el.titulo_em = (tx, ty)
         el.caixa = (x0, y0, x1, y1)
@@ -1174,7 +1186,7 @@ class Trecho:
     deitada: Optional[dict] = None
 
 
-_RX_ROTULO = re.compile(r"(?i)^\s*(TESOURA|PAINEL|TRANSI[ÇC][ÃA]O|TRELI[ÇC]A|COMP|TES|VM)[\s.\-]*([\w]*)")
+_RX_ROTULO = re.compile(r"(?i)^\s*(TESOURA|PAINEL|TRANSI[ÇC][ÃA]O|TRELI[ÇC]A|COMP|TES|VM|PERFIL)[\s.\-]*([\w]*)")
 
 
 def _altura_da_elevacao(el: Elevacao) -> float:
@@ -2899,6 +2911,11 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 h_banzo = [h for m in el.membros if m.papel == "banzo" for h in (m.h0, m.h1)]
                 pa_b = _perfil((el.banzo or {}).get("perfil"))
                 meia = (float(pa_b.bf or 50.0) if pa_b else 50.0) / 2.0
+                # o banzo mais alto: a metade da largura desenhada (o U deitado mostra a aba; a
+                # viga inclinada de um perfil só, a altura dele)
+                alto = max((m for m in el.membros if m.papel == "banzo"), key=lambda m: max(m.h0, m.h1), default=None)
+                if alto is not None and alto.altura_linha > 1.0:
+                    meia = alto.altura_linha / 2.0
                 por_cima = [d_v for a_v, b_v, d_v in vms if c.tipo == "reta" and _cruzamento(a_v, b_v, c.a, c.b)]
                 z_t = nivel_z - (max(por_cima) if por_cima else 0.0) - (max(h_banzo) if h_banzo else 0.0) - meia
             contagem[t.nome] += 1
@@ -2927,6 +2944,26 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             # cima (onde a terça apoia) e as abas para baixo, o de baixo com as abas para cima
             # a elevação confirmada como duas peças (a viga de transição embaixo e a tesoura em
             # cima) vira dois blocos na mesma linha; as outras, um só
+            if t.familia == "PERFIL":
+                # a peça de um perfil só (a viga inclinada "PERFIL 1" da cobertura da caixa d'água):
+                # cada trecho desenhado vira uma viga no perfil da nota, a dupla lado a lado
+                pa_p = _perfil(p_banzo)
+                af = (float(pa_p.bf or 40.0) if pa_p else 40.0) / 2 + 1.0
+                mult_p = int((el.banzo or {}).get("mult") or 1)
+                for m in el.membros:
+                    if m.papel != "banzo":
+                        continue
+                    (q0, s0p), (q1, s1p) = P(m.s0, m.h0), P(m.s1, m.h1)
+                    orig_p = {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o}
+                    if mult_p > 1:
+                        tx, ty = c.tangente((s0p + s1p) / 2.0)
+                        nx, ny = -ty, tx
+                        for sinal, rot in ((1, 180.0), (-1, 0.0)):
+                            barra((q0[0] + nx * af * sinal, q0[1] + ny * af * sinal, q0[2]),
+                                  (q1[0] + nx * af * sinal, q1[1] + ny * af * sinal, q1[2]), p_banzo, "viga", "Vigas", conj, rot, orig_p)
+                    else:
+                        barra(q0, q1, p_banzo, "viga", "Vigas", conj, 0.0, orig_p)
+                continue
             conj_base = conj
             for sufixo, membros in _partes_da_elevacao(el, _sem_acento(t.nome).upper() in duas_pecas):
                 conj = conj_base if not sufixo else "%s%s#%d" % (t.nome, sufixo, k_t)
@@ -3233,12 +3270,33 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 doc.add(ch)
                 chapas_postas.append(ch)
                 n_e += 1
+            # os pisantes: o piso do degrau e as duas abas para baixo (a chapa dobrada)
+            for pd in esc.get("pisantes") or []:
+                o_ = pd["origem"]
+                ux, uy = pd["u"]
+                nx, ny = pd["n"]
+                g, w, ab, e_ = pd["piso"], pd["largura"], pd["aba"], pd["espessura"]
+                zt = o_[2] + base
+                orig_d = {"origem": dict(orig_e, pisante=pd["k"], piso="chapa xadrez dobrada")}
+                partes_d = [((o_[0], o_[1], zt - e_), (ux, uy, 0.0), (nx, ny, 0.0), g, w, False)]
+                for s_ in (e_ / 2.0, g - e_ / 2.0):
+                    partes_d.append(((o_[0] + ux * s_, o_[1] + uy * s_, zt - ab), (nx, ny, 0.0), (0.0, 0.0, 1.0), w, ab, True))
+                for org, ex_, ey_, lx, ly, cen in partes_d:
+                    ch = _Chapa(nome="Pisante %d (%s)" % (pd["k"], esc["nome"].lower()), origem=org, eixo_x=ex_, eixo_y=ey_,
+                                contorno=[(0.0, 0.0), (lx, 0.0), (lx, ly), (0.0, ly)], espessura=e_, centrada=cen, aco=aco)
+                    ch.camada = "Escadas"
+                    ch.atributos = dict(orig_d)
+                    doc.add(ch)
+                    chapas_postas.append(ch)
+                n_e += 1
             escadas_feitas.append({"nome": esc["nome"], "pecas": n_e, "alinhada_por": esc["alinhada_por"],
                                    "patamar_z": esc["patamar_z"], "altura": esc["altura"]})
-            avisos.append("%s: montada pela planta baixa (%s), %d degraus até %.2f m, patamar a %.2f m (%s); confira "
-                          "nos cortes." % (esc["nome"], esc["alinhada_por"], esc["degraus"], (esc["altura"] + base) / 1000.0,
+            n_pis = len(esc.get("pisantes") or [])
+            avisos.append("%s: montada pela planta baixa (%s), %d pisantes até %.2f m, patamar a %.2f m (%s); confira "
+                          "nos cortes." % (esc["nome"], esc["alinhada_por"], n_pis or esc["degraus"], (esc["altura"] + base) / 1000.0,
                                            (esc["patamar_z"] or 0) / 1000.0,
-                                           "pelas cotas dos cortes" if esc.get("patamar_por") == "cortes" else "pelo número de degraus"))
+                                           "pela cota do corte, que bate com os espelhos iguais" if esc.get("patamar_por") == "cortes"
+                                           else "pelos espelhos iguais; o corte não confirmou"))
 
     # ---------------------------------------------------------------- a alma na face do banzo
     # montantes e diagonais param na face interna do banzo, com folga (o nó continua no eixo)
