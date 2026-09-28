@@ -1147,25 +1147,59 @@ def _so_bordas_externas(desenho: Desenho, entidades: Sequence, ids_barras: set, 
 
 
 def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0: float, v0: float,
-                       segs_bz: Sequence[tuple], dx: float, dy: float) -> List[tuple]:
-    """As terças cortadas pelo plano da tesoura (o do meio da instância): as peças fora da tesoura que
-    atravessam o plano quase de frente (compridas na direção dele, com seção de até 400 mm) e ficam logo
-    acima do banzo de cima (até 400 mm do contorno dele). Cada face da malha cortada pelo plano dá um
-    segmento; devolve os segmentos já na célula (coordenadas do desenho)."""
+                       segs_bz: Sequence[tuple], dx: float, dy: float) -> Tuple[List[tuple], List[List[tuple]]]:
+    """O que o plano da tesoura (o do meio da instância) corta em volta dela, como no corte das
+    tesouras do projetista: (segmentos das terças, polilinhas da telha), já na célula.
+
+    Terça: a peça fora da tesoura, comprida na direção do plano (atravessa, ou termina a até 300 mm
+    dele — a emendada em cima da tesoura), de frente para ele (a peça toda cabe em 600 mm no
+    desenho: a mão-francesa e a corrente inclinadas não entram), seção de 25 a 400 mm, encostada por
+    fora no contorno da tesoura (até 400 mm): as de cima do banzo, as da cumeeira e as de parede ao
+    lado do pilar. Cada face da malha cortada dá um segmento.
+
+    Telha (camada de telhas): só o contorno de baixo, o lado virado para a estrutura, numa polilinha
+    — para ver se a telha pega na estrutura (pedido do usuário, 28/09)."""
     from nucleo3d.geometria import malha
     ws = [_dot(_sub(q, origem), w) for e in instancia for q in e.vertices]
     if not ws or not segs_bz:
-        return []
+        return [], []
     w0 = (min(ws) + max(ws)) / 2.0
     ids = {e.id for e in instancia}
-    topo = [q for sg in segs_bz for q in sg]                 # o contorno dos banzos, no desenho
-    xs_t = [q[0] for q in topo]
-    x_min, x_max = min(xs_t), max(xs_t)
+    # o contorno das barras (sem as chapas: as cantoneiras de apoio saem da tesoura e o casco com elas
+    # engolia a terça da cumeeira e a de parede entre dois apoios)
+    casco = _casco([(_dot(_sub(q, origem), u) - u0 + dx, _dot(_sub(q, origem), v) - v0 + dy)
+                    for e in instancia if not _tipo_ifc(e).startswith("IfcPlate") for q in e.vertices])
+    if len(casco) < 3:
+        return [], []
+    cx = sum(q[0] for q in casco) / len(casco)
+    cy = sum(q[1] for q in casco) / len(casco)
+    bx0, bx1 = min(q[0] for q in casco) - 400.0, max(q[0] for q in casco) + 400.0
+    by0, by1 = min(q[1] for q in casco) - 400.0, max(q[1] for q in casco) + 400.0
+
+    def dentro_do_casco(q, folga=0.0):
+        return _trecho_dentro(q, q, casco, folga) is not None
+
+    def ate_o_casco(q):
+        if dentro_do_casco(q):
+            return 0.0
+        return min(_dist_ponto_seg(q, casco[i], casco[(i + 1) % len(casco)]) for i in range(len(casco)))
+
+    def dentro_da_secao(q, segs):
+        n = 0
+        for a_, b_ in segs:
+            if (a_[1] > q[1]) != (b_[1] > q[1]):
+                xq = a_[0] + (q[1] - a_[1]) * (b_[0] - a_[0]) / (b_[1] - a_[1])
+                if xq > q[0]:
+                    n += 1
+        return n % 2 == 1
+
     fora = []
+    telha: List[tuple] = []
     centros: List[tuple] = []
     for ent in doc.entidades.values():
         if ent.id in ids or getattr(ent, "tipo", "") not in ("barra", "solido"):
             continue
+        eh_telha = "telha" in str(getattr(ent, "camada", "") or "").lower()
         try:
             vs, fs = malha(ent)
         except Exception:                                     # peça sem malha (perfil desconhecido)
@@ -1190,6 +1224,8 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
         pw = [x - corte for x in pw]
         pu = [_dot(_sub(q, origem), u) - u0 + dx for q in vs]
         pv = [_dot(_sub(q, origem), v) - v0 + dy for q in vs]
+        if not eh_telha and (max(pu) - min(pu) > 600.0 or max(pv) - min(pv) > 600.0):
+            continue                                          # peça de través (mão-francesa, corrente)
         segs = []
         for f in fs:
             pts = []
@@ -1203,25 +1239,244 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
                 segs.append((pts[0], pts[1]))
         if not segs:
             continue
+        if eh_telha:
+            # a direção da telha no corte (a maior extensão da seção) e, dela, só as faces compridas
+            # viradas para a estrutura
+            pts = [q for sg in segs for q in sg]
+            mx_ = sum(q[0] for q in pts) / len(pts)
+            my_ = sum(q[1] for q in pts) / len(pts)
+            sxx = sum((q[0] - mx_) ** 2 for q in pts)
+            syy = sum((q[1] - my_) ** 2 for q in pts)
+            sxy = sum((q[0] - mx_) * (q[1] - my_) for q in pts)
+            ang = 0.5 * math.atan2(2 * sxy, sxx - syy)
+            tx, ty = math.cos(ang), math.sin(ang)
+            for a_, b_ in segs:
+                L = math.dist(a_, b_)
+                sx, sy = (b_[0] - a_[0]) / L, (b_[1] - a_[1]) / L
+                if abs(sx * tx + sy * ty) < 0.866:            # face de ponta (mais de 30° da telha)
+                    continue
+                m = ((a_[0] + b_[0]) / 2, (a_[1] + b_[1]) / 2)
+                nx, ny = -sy, sx
+                if dentro_da_secao((m[0] + nx * 0.3, m[1] + ny * 0.3), segs):
+                    nx, ny = -nx, -ny                         # normal para fora da telha
+                if nx * (cx - m[0]) + ny * (cy - m[1]) <= 0:
+                    continue                                  # a face de cima
+                tt = _trecho_dentro(a_, b_, [(bx0, by0), (bx1, by0), (bx1, by1), (bx0, by1)], 0.0)
+                if tt:
+                    em = lambda t: (a_[0] + (b_[0] - a_[0]) * t, a_[1] + (b_[1] - a_[1]) * t)
+                    telha.append((em(tt[0]), em(tt[1]), ent.id, (nx, ny)))
+            continue
         cu = [q[0] for sg in segs for q in sg]
         cv = [q[1] for sg in segs for q in sg]
-        if max(cu) - min(cu) > 400.0 or max(cv) - min(cv) > 400.0:
+        if max(max(cu) - min(cu), max(cv) - min(cv)) > 400.0:
             continue                                          # seção grande demais: não é terça
+        if max(max(cu) - min(cu), max(cv) - min(cv)) < 25.0:
+            continue                                          # a corrente, o tirante
         mx, my = (min(cu) + max(cu)) / 2, (min(cv) + max(cv)) / 2
-        if not (x_min - 200.0 <= mx <= x_max + 200.0):
+        # encostada por fora no contorno da tesoura (a de dentro — o travamento — não é terça)
+        if dentro_do_casco((mx, my), 20.0):
             continue
-        # logo acima do banzo de cima, no x dela
-        # a altura do contorno dos banzos no x dela (a linha do banzo é longa: interpola, não só as pontas)
-        ys_aqui = [a_[1] + (b_[1] - a_[1]) * (mx - a_[0]) / (b_[0] - a_[0]) for a_, b_ in segs_bz
-                   if abs(b_[0] - a_[0]) > 1e-6 and min(a_[0], b_[0]) <= mx <= max(a_[0], b_[0])]
-        ys_aqui += [q[1] for q in topo if abs(q[0] - mx) <= 400.0]
-        if not ys_aqui or not (max(ys_aqui) - 60.0 <= min(cv) <= max(ys_aqui) + 400.0):
+        if min(ate_o_casco(q) for sg in segs for q in sg) > 400.0:
             continue
         if any(math.dist((mx, my), c_) < 30.0 for c_ in centros):
             continue                                          # as duas terças da emenda: um corte só
         centros.append((mx, my))
         fora += segs
-    return fora
+    # no traspasse o plano corta as duas telhas, e o chapéu da cumeeira passa por cima delas: fica só
+    # o de baixo — o trecho de uma face que tem outra telha paralela logo abaixo dela (até 60 mm, entre
+    # ela e a estrutura) sai; no vão entre as telhas (a cumeeira) o chapéu fica
+    def de_baixo(i, sg):
+        a_, b_, id_, (nx, ny) = sg
+        L = math.dist(a_, b_)
+        tx, ty = (b_[0] - a_[0]) / L, (b_[1] - a_[1]) / L
+        cobertos = []
+        for j, (c_, d_, id2, _n2) in enumerate(telha):
+            if id2 == id_:
+                continue
+            L2 = math.dist(c_, d_)
+            if L2 < 1e-6 or abs(tx * (d_[1] - c_[1]) / L2 - ty * (d_[0] - c_[0]) / L2) > 0.087:
+                continue
+            h = [((q[0] - a_[0]) * nx + (q[1] - a_[1]) * ny) for q in (c_, d_)]
+            if not all(0.3 < x_ <= 60.0 for x_ in h) and not (j < i and all(abs(x_) <= 0.3 for x_ in h)):
+                continue
+            s0, s1 = sorted(((q[0] - a_[0]) * tx + (q[1] - a_[1]) * ty) for q in (c_, d_))
+            if s1 > 0.0 and s0 < L:
+                cobertos.append((max(s0, 0.0), min(s1, L)))
+        livres, t = [], 0.0
+        for s0, s1 in sorted(cobertos):
+            if s0 > t + 5.0:
+                livres.append((t, s0))
+            t = max(t, s1)
+        if L > t + 5.0:
+            livres.append((t, L))
+        return [((a_[0] + tx * s0, a_[1] + ty * s0), (a_[0] + tx * s1, a_[1] + ty * s1)) for s0, s1 in livres]
+    telha = [pedaco for i, sg in enumerate(telha) for pedaco in de_baixo(i, sg)]
+    return fora, _encadear(telha)
+
+
+def _encadear(segs: Sequence[tuple], tol: float = 10.0) -> List[List[tuple]]:
+    """Junta segmentos em polilinhas pelas pontas (até `tol`); o segmento repetido (a telha que
+    sobrepõe a outra) entra uma vez só."""
+    unicos: List[tuple] = []
+    for a_, b_ in segs:
+        if any((math.dist(a_, c_) < 2.0 and math.dist(b_, d_) < 2.0) or (math.dist(a_, d_) < 2.0 and math.dist(b_, c_) < 2.0)
+               for c_, d_ in unicos):
+            continue
+        unicos.append((a_, b_))
+    polis: List[List[tuple]] = []
+    livres = list(unicos)
+    while livres:
+        a_, b_ = livres.pop(0)
+        poli = [a_, b_]
+        cresceu = True
+        while cresceu:
+            cresceu = False
+            for i, (c_, d_) in enumerate(livres):
+                if math.dist(poli[-1], c_) <= tol:
+                    poli.append(d_)
+                elif math.dist(poli[-1], d_) <= tol:
+                    poli.append(c_)
+                elif math.dist(poli[0], d_) <= tol:
+                    poli.insert(0, c_)
+                elif math.dist(poli[0], c_) <= tol:
+                    poli.insert(0, d_)
+                else:
+                    continue
+                livres.pop(i)
+                cresceu = True
+                break
+        polis.append(poli)
+    return polis
+
+
+def _familia_do_perfil(e) -> str:
+    """"U100X50X3.04" → "U100X50": o perfil sem a espessura (o banzo e a descida dele no joelho têm a
+    mesma seção nominal, às vezes em chapas diferentes)."""
+    p_ = str(_marcas(e).get("perfil") or "").upper().replace(" ", "")
+    partes = p_.split("X")
+    return "X".join(partes[:2]) if len(partes) >= 3 else p_
+
+
+def _alma_com_contorno(instancia: Sequence, alma: Dict[str, Tuple[tuple, tuple]], banzos: Sequence[tuple],
+                       camada_de: Dict[str, str]) -> set:
+    """As barras fora dos banzos que ficam com o contorno (peças de banzo, não da alma).
+
+    Quando o banzo tem um perfil que a alma não usa (a treliça em U100X50 com a alma em U92X30): as
+    barras com o perfil do banzo ligadas a ele, em cadeia — a horizontal e a descida do banzo de
+    baixo no joelho, o montante de fechamento e a horizontal de baixo da cumeeira (pedido do usuário,
+    28/09: "faltou essa parte do banzo inferior"; o U92X30 do joelho fica em eixo).
+
+    Quando a alma tem o mesmo perfil do banzo, pela posição: a barra na continuação de um banzo (até
+    5° e no eixo dele, ou até 20° saindo da ponta dele) e o montante com as duas pontas nas pontas
+    dos banzos (o fechamento da cumeeira). Só contra os banzos, não contra as barras já aceitas."""
+    pecas = {e.id: e for e in instancia}
+    fam_bz = {_familia_do_perfil(e) for e in instancia if camada_de.get(e.id) == "BANZOS"} - {""}
+    do_banzo = {k for k in alma if k in pecas and _familia_do_perfil(pecas[k]) in fam_bz}
+    contorno = set()
+    if do_banzo and len(do_banzo) <= len(alma) / 2.0:
+        ligadas = list(banzos)
+        mudou = True
+        while mudou:
+            mudou = False
+            for k in sorted(do_banzo - contorno):
+                a_, b_ = alma[k]
+                if math.dist(a_, b_) < 100.0:
+                    continue
+                if any(_dist_ponto_seg(q, ca, cb) <= 150.0 for q in (a_, b_) for ca, cb in ligadas):
+                    contorno.add(k)
+                    ligadas.append((a_, b_))
+                    mudou = True
+        return contorno
+    pontas_bz = [q for ab in banzos for q in ab]
+    for k, (a_, b_) in alma.items():
+        L = math.dist(a_, b_)
+        if L < 100.0:
+            continue
+        vx, vy = (b_[0] - a_[0]) / L, (b_[1] - a_[1]) / L
+        na_linha = False
+        for ca, cb in banzos:
+            Lc = math.dist(ca, cb)
+            ux, uy = (cb[0] - ca[0]) / Lc, (cb[1] - ca[1]) / Lc
+            sen = abs(ux * vy - uy * vx)
+            if sen <= 0.087:                                # até 5°: no eixo do banzo
+                if max(abs(-(q[0] - ca[0]) * uy + (q[1] - ca[1]) * ux) for q in (a_, b_)) <= 40.0:
+                    na_linha = True
+                    break
+            if sen <= 0.342 and min(math.dist(q, w_) for q in (a_, b_) for w_ in (ca, cb)) <= 60.0:
+                na_linha = True                             # até 20°, saindo da ponta
+                break
+        fechamento = camada_de.get(k) == "MONTANTES" and all(
+            any(math.dist(q, w_) <= 200.0 for w_ in pontas_bz) for q in (a_, b_))
+        if na_linha or fechamento:
+            contorno.add(k)
+    return contorno
+
+
+def _trecho_dentro(a_, b_, casco: Sequence[tuple], folga: float = 1.0):
+    """O trecho [t0, t1] do segmento a→b dentro do polígono convexo (anti-horário), a mais de
+    `folga` das bordas; None se não entra."""
+    t0, t1 = 0.0, 1.0
+    n = len(casco)
+    for i in range(n):
+        p0, p1 = casco[i], casco[(i + 1) % n]
+        ex, ey = p1[0] - p0[0], p1[1] - p0[1]
+        L = math.hypot(ex, ey)
+        if L < 1e-9:
+            continue
+        # distância com sinal para dentro (à esquerda da aresta)
+        da = (ex * (a_[1] - p0[1]) - ey * (a_[0] - p0[0])) / L - folga
+        db = (ex * (b_[1] - p0[1]) - ey * (b_[0] - p0[0])) / L - folga
+        if da < 0 and db < 0:
+            return None
+        if da < 0 or db < 0:
+            t = da / (da - db)
+            if da < 0:
+                t0 = max(t0, t)
+            else:
+                t1 = min(t1, t)
+        if t1 - t0 <= 1e-6:
+            return None
+    return t0, t1
+
+
+def _esconder_atras_dos_montantes(desenho: Desenho, entidades: Sequence, montantes: set, atras: set) -> None:
+    """As linhas das peças de `atras` que passam por dentro do contorno de um montante de `montantes`
+    saem nesse trecho (o banzo de baixo entrava 46 mm no montante de fechamento da cumeeira)."""
+    if not montantes:
+        return
+    cascos = {}
+    for e in entidades:
+        o = (e.atributos or {}).get("origem")
+        if o in montantes and isinstance(e, Linha):
+            cascos.setdefault(o, []).extend([tuple(e.a), tuple(e.b)])
+    cascos = {o: _casco(pts) for o, pts in cascos.items() if len(pts) >= 3}
+    for e in entidades:
+        o = (e.atributos or {}).get("origem")
+        if o not in atras or o in montantes or not isinstance(e, Linha) or e.id not in desenho.entidades:
+            continue
+        pedacos = [(tuple(e.a), tuple(e.b))]
+        for om, casco in cascos.items():
+            if len(casco) < 3:
+                continue
+            novos = []
+            for a_, b_ in pedacos:
+                tt = _trecho_dentro(a_, b_, casco)
+                if not tt:
+                    novos.append((a_, b_))
+                    continue
+                em = lambda t: (a_[0] + (b_[0] - a_[0]) * t, a_[1] + (b_[1] - a_[1]) * t)
+                if tt[0] > 1e-6:
+                    novos.append((a_, em(tt[0])))
+                if tt[1] < 1.0 - 1e-6:
+                    novos.append((em(tt[1]), b_))
+            pedacos = novos
+        if len(pedacos) == 1 and pedacos[0] == (tuple(e.a), tuple(e.b)):
+            continue
+        desenho.remover(e.id)
+        for a_, b_ in pedacos:
+            if math.dist(a_, b_) > 0.5:
+                desenho.add(Linha(camada=e.camada, a=(round(a_[0], 2), round(a_[1], 2)), b=(round(b_[0], 2), round(b_[1], 2)),
+                                  atributos=dict(e.atributos or {})))
 
 
 def _contorno_dos_banzos(desenho: Desenho, marca: str) -> Tuple[List[tuple], List[tuple]]:
@@ -1682,37 +1937,14 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # ficam com o contorno (peças de banzo, não da alma): a barra na continuação de um banzo (a
         # horizontal que leva o banzo de baixo até o pilar do joelho) e o montante que fecha a
         # meia-tesoura na cumeeira (as pontas dos dois banzos chegam nas pontas dele)
-        pontas_bz = [q for ab in apoios_bz for q in ab]
-        for k, (a_, b_) in list(alma.items()):
-            L = math.dist(a_, b_)
-            if L < 100.0:
-                continue
-            na_linha = False
-            for ca, cb in apoios_bz:
-                Lc = math.dist(ca, cb)
-                ux, uy = (cb[0] - ca[0]) / Lc, (cb[1] - ca[1]) / Lc
-                vx, vy = (b_[0] - a_[0]) / L, (b_[1] - a_[1]) / L
-                if abs(ux * vy - uy * vx) > 0.087:          # mais de 5°
-                    continue
-                mx, my = (a_[0] + b_[0]) / 2, (a_[1] + b_[1]) / 2
-                if abs(-(mx - ca[0]) * uy + (my - ca[1]) * ux) <= 150.0:
-                    na_linha = True
-                    break
-            if not na_linha:
-                for ca, cb in apoios_bz:
-                    Lc = math.dist(ca, cb)
-                    ux, uy = (cb[0] - ca[0]) / Lc, (cb[1] - ca[1]) / Lc
-                    vx, vy = (b_[0] - a_[0]) / L, (b_[1] - a_[1]) / L
-                    if abs(ux * vy - uy * vx) > 0.342:          # mais de 20°
-                        continue
-                    if min(math.dist(q, w_) for q in (a_, b_) for w_ in (ca, cb)) <= 150.0:
-                        na_linha = True
-                        break
-            fechamento = camada_de.get(k) == "MONTANTES" and all(
-                any(math.dist(q, w_) <= 200.0 for w_ in pontas_bz) for q in (a_, b_))
-            if na_linha or fechamento:
-                apoios_bz.append((a_, b_))                  # as outras barras ainda encaixam no eixo dela
-                del alma[k]
+        contorno = _alma_com_contorno(instancia, alma, apoios_bz, camada_de)
+        for k in contorno:
+            apoios_bz.append(alma.pop(k))                  # as outras barras ainda encaixam no eixo dela
+        # o montante com contorno (o de fechamento da cumeeira, a descida do banzo no joelho) fica
+        # na frente: o banzo e a barra com contorno que entram nele param na face dele
+        _esconder_atras_dos_montantes(desenho, [desenho.entidades[k] for k in desenho.entidades if k not in antes],
+                                      {k for k in contorno if camada_de.get(k) == "MONTANTES"},
+                                      {e.id for e in instancia if camada_de.get(e.id) == "BANZOS"} | set(contorno))
         apoios_bz += _eixos_das_faces(segs_bz)
         nos_alma = _alma_em_eixo(desenho, [desenho.entidades[k] for k in desenho.entidades if k not in antes], alma, camada_de,
                                  quinas=quinas_bz, apoios=apoios_bz)
@@ -1722,9 +1954,14 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     if segs_bz:
         # as terças em corte, onde cruzam o plano da tesoura sobre o banzo de cima (como o corte das
         # tesouras do projetista): a posição e o lado das abas se leem no próprio desenho
-        for a_, b_ in _cortes_das_tercas(doc, instancia, origem, u, v, w, u0, v0, segs_bz, dx, dy):
+        tercas, telhas = _cortes_das_tercas(doc, instancia, origem, u, v, w, u0, v0, segs_bz, dx, dy)
+        for a_, b_ in tercas:
             desenho.add(Linha(camada="TERCAS", a=(round(a_[0], 2), round(a_[1], 2)), b=(round(b_[0], 2), round(b_[1], 2)),
                               atributos=dict(atr, terca_em_corte=True)))
+        for poli in telhas:
+            # só o contorno de baixo da telha, para ver se ela pega na estrutura
+            desenho.add(Polilinha(camada="TELHAS", vertices=[(round(q[0], 2), round(q[1], 2)) for q in poli],
+                                  atributos=dict(atr, telha_em_corte=True)))
     p = _Papel(desenho, atr, dx, dy)
     esc = desenho.escala
     off, off2, off3 = 10.0, 20.0, 30.0

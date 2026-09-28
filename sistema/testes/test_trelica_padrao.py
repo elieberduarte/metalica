@@ -4,6 +4,7 @@ de fora do perfil; a alma pela linha de trabalho — montante no eixo, diagonal 
 import math
 import os
 import sys
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -43,3 +44,50 @@ def test_alma_liga_os_nos():
     assert abs(h.a[1] - 500.0) < 1e-6 and abs(h.b[1] - 500.0) < 1e-6          # reta
     assert min(abs(h.a[0]), abs(h.b[0])) < 1e-6                                 # até o eixo do montante
     assert (0.0, 1000.0) in [tuple(q) for q in nos]
+
+
+def _peca(id_, perfil):
+    return SimpleNamespace(id=id_, atributos={"marcas": {"perfil": perfil}})
+
+
+def test_barra_com_o_perfil_do_banzo_fica_com_contorno():
+    """no joelho da Sala: a descida do banzo de baixo (U100X50, o perfil do banzo) ligada na horizontal
+    que continua o banzo fica com contorno; a barra de U92X30 da alma, ao lado dela, fica em eixo
+    (pedido do usuário, 28/09)"""
+    instancia = [_peca("bz", "U100X50X#9"), _peca("hz", "U100X50X3.04"), _peca("desce", "U100X50X3.04"),
+                 _peca("d1", "U92X30X#13"), _peca("d2", "U92X30X#13"), _peca("d3", "U92X30X#13"),
+                 _peca("d4", "U92X30X#13")]
+    camada_de = {"bz": "BANZOS", "hz": "DIAGONAIS", "desce": "MONTANTES", "d1": "DIAGONAIS", "d2": "DIAGONAIS",
+                 "d3": "DIAGONAIS", "d4": "DIAGONAIS"}
+    banzo = ((2000.0, 600.0), (9000.0, 2000.0))
+    alma = {
+        "hz": ((1500.0, 600.0), (1990.0, 600.0)),        # continua o banzo até o nó do joelho
+        "desce": ((1500.0, 600.0), (1500.0, 100.0)),     # desce do fim da horizontal
+        "d1": ((200.0, 520.0), (1500.0, 580.0)),         # a de U92X30 que chega perto dela
+        "d2": ((200.0, 100.0), (1500.0, 500.0)),
+        "d3": ((200.0, 100.0), (1500.0, 100.0)),
+        "d4": ((2500.0, 700.0), (3000.0, 1500.0)),
+    }
+    assert C._alma_com_contorno(instancia, alma, [banzo], camada_de) == {"hz", "desce"}
+
+
+def test_banzo_para_na_face_do_montante_de_fechamento():
+    """na cumeeira a borda do banzo de baixo entrava no montante de fechamento: o trecho de dentro sai"""
+    d = Desenho(nome="t", escala=25.0)
+    for a_, b_ in (((0, 0), (0, 1000)), ((0, 1000), (100, 1000)), ((100, 1000), (100, 0)), ((100, 0), (0, 0))):
+        d.add(Linha(camada="MONTANTES", a=a_, b=b_, atributos={"origem": "m"}))
+    d.add(Linha(camada="BANZOS", a=(-500, 400), b=(60, 500), atributos={"origem": "bz"}))
+    d.add(Linha(camada="BANZOS", a=(-500, 300), b=(0, 300), atributos={"origem": "bz"}))    # até a face: fica
+    C._esconder_atras_dos_montantes(d, list(d.entidades.values()), {"m"}, {"bz", "m"})
+    bz = sorted((e for e in d.entidades.values() if e.atributos["origem"] == "bz"), key=lambda e: e.a[1])
+    assert len(bz) == 2
+    assert abs(max(bz[1].a[0], bz[1].b[0]) - 1.0) < 0.6          # parou na face (x = 0, 1 mm de folga)
+    assert tuple(bz[0].b) == (0, 300)
+
+
+def test_encadear_telha():
+    """as faces de baixo das telhas, uma por peça, viram uma polilinha; a repetida entra uma vez"""
+    segs = [((0, 0), (100, 10)), ((100.0, 10.0), (200, 30)), ((300, 60), (200.5, 30.2)), ((0, 0), (100, 10))]
+    polis = C._encadear(segs)
+    assert len(polis) == 1 and len(polis[0]) == 4
+    assert polis[0][0] == (0, 0) or polis[0][-1] == (0, 0)
