@@ -15,6 +15,8 @@ import { MetodosMontarPlantaCAD } from './montar_planta.js';
 const CHAVE_TEMA = 'galpao.tema';
 const ATRASO_AUTOSAVE = 3000;
 const ARRASTO_MIN = 4;
+/** `atributos.origem` das linhas importadas (nucleo2d/dxf_ler.py, pdf_ler.py): o arquivo, não a peça do 3D */
+const ORIGENS_DE_IMPORTACAO = new Set(['dxf', 'pdf']);
 const $ = (s, r = document) => r.querySelector(s);
 
 function el(tag, attrs = {}, ...filhos) {
@@ -458,6 +460,10 @@ class CAD {
     const e = this.doc.get(id);
     const a = (e && e.atributos) || {};
     if (!e || !a.origem || e.tipo === 'cota' || e.tipo === 'texto' || e.tipo === 'chamada') return [id];
+    // "dxf"/"pdf" só diz de onde a linha foi importada, não é uma peça do 3D: no projeto recebido
+    // (Posto CB, 77 mil linhas com a mesma origem) o clique comparava a linha com o desenho inteiro
+    // e seguia tudo o que encosta — a tela travava
+    if (ORIGENS_DE_IMPORTACAO.has(a.origem)) return [id];
     const candidatas = [];
     for (const o of this.doc.entidades.values()) {
       const b = o.atributos || {};
@@ -489,7 +495,8 @@ class CAD {
   }
 
   selecionarMesmaPeca() {
-    const origens = new Set([...this.tela.selecao].map(id => (this.doc.get(id).atributos || {}).origem).filter(Boolean));
+    const origens = new Set([...this.tela.selecao].map(id => (this.doc.get(id).atributos || {}).origem)
+      .filter(o => o && !ORIGENS_DE_IMPORTACAO.has(o)));
     if (!origens.size) { this.dica('Selecione um objeto que veio do modelo 3D.'); return; }
     this.selecionar([...this.doc.entidades.values()].filter(e => origens.has((e.atributos || {}).origem)).map(e => e.id));
   }

@@ -1600,6 +1600,20 @@ def _viga_repetida(pts: Sequence[Ponto2], z: float, perfil: str, feitas: Sequenc
     return False
 
 
+def _ancora_do_nome(c: Caminho, s_meio: float, t: dict, dentro: float = 150.0) -> float:
+    """onde o nome marca a peça na linha `c`: o começo do texto alinhado à esquerda e paralelo à
+    linha, um pouco para dentro (`dentro` mm no sentido da leitura); nos outros casos, o meio"""
+    p = t.get("posicao")
+    if c.tipo != "reta" or not p or str(t.get("alinhamento") or "esquerda") != "esquerda":
+        return s_meio
+    ang = math.radians(float(t.get("angulo") or 0.0))
+    (ux, uy), _L = _unit(c.a, c.b)
+    if abs(ux * math.sin(ang) - uy * math.cos(ang)) > 0.1:
+        return s_meio                          # texto atravessado à linha
+    q = (p[0] + dentro * math.cos(ang), p[1] + dentro * math.sin(ang))
+    return c.projetar(q)[0]
+
+
 def _faixas_das_vigas(c: Caminho, rot, pedacos) -> Dict[int, Tuple[float, float]]:
     """o trecho de cada viga VM na linha `c`: o pedaço onde está o nome mais os pedaços da
     mesma linha sem nome nenhum (a linha dupla da viga é interrompida no pilar e o nome vem
@@ -1620,8 +1634,13 @@ def _faixas_das_vigas(c: Caminho, rot, pedacos) -> Dict[int, Tuple[float, float]
     if not faixas:
         return {id(t): (0.0, c.comprimento) for _s, _x, t in rot}
     faixas.sort()
-    for k, (s_m, _x, t) in enumerate(rot):
-        f = min(faixas, key=lambda f: 0.0 if f[0] - 50 <= s_m <= f[1] + 50 else min(abs(s_m - f[0]), abs(s_m - f[1])))
+    # cada nome pelo começo do texto (a planta escreve alinhado à esquerda, a partir do começo
+    # do pedaço dele): o meio estimado de um nome comprido cai no pedaço seguinte — na linha
+    # VM | COMP | VM | COMP a viga tomava o pedaço da COMP
+    ancoras = [_ancora_do_nome(c, s_m, t) for s_m, _x, t in rot]
+    for k in sorted(range(len(rot)), key=lambda k: ancoras[k]):
+        s_a = ancoras[k]
+        f = min(faixas, key=lambda f: 0.0 if f[0] - 50 <= s_a <= f[1] + 50 else min(abs(s_a - f[0]), abs(s_a - f[1])))
         if f[2] is None:
             f[2] = k
     for f in faixas:
@@ -1633,9 +1652,13 @@ def _faixas_das_vigas(c: Caminho, rot, pedacos) -> Dict[int, Tuple[float, float]
     for k, (s_m, texto, t) in enumerate(rot):
         minhas = [f for f in faixas if f[2] == k]
         if not minhas:
-            # o nome caiu num pedaço de outro nome igual: a mesma viga
-            dono = min(faixas, key=lambda f: 0.0 if f[0] - 50 <= s_m <= f[1] + 50 else min(abs(s_m - f[0]), abs(s_m - f[1])))
+            s_a = ancoras[k]
+            dono = min(faixas, key=lambda f: 0.0 if f[0] - 50 <= s_a <= f[1] + 50 else min(abs(s_a - f[0]), abs(s_a - f[1])))
             if rot[dono[2]][1] == texto:
+                continue            # o nome caiu num pedaço de outro nome igual: a mesma viga
+            if not re.match(r"(?i)^\s*VM", rot[dono[2]][1]):
+                # o pedaço é de outra peça com nome (tesoura, COMP…): o nome da viga está ali
+                # de chamada (a legenda com linha de chamada para outro lugar), não é dela
                 continue
             minhas = [dono]
         faixa = (min(f[0] for f in minhas), max(f[1] for f in minhas))
@@ -2321,10 +2344,11 @@ def _cruzamentos(t: "Trecho", outros: List["Trecho"]) -> List[float]:
 # =====================================================================================
 
 def varrer(perfil_nome: str, pontos: Sequence[Tuple[float, float, float]], deitado: bool = True,
-           abas_para_baixo: bool = False):
+           abas_para_baixo: bool = False, espelhar: bool = False):
     """sólido do perfil varrido pelos pontos (um anel por ponto, tampas nas pontas): a
     peça calandrada como o TecnoMETAL a exporta. `deitado`: a alma fica horizontal (banzo
-    de treliça plana em U); senão, em pé."""
+    de treliça plana em U); senão, em pé (viga), com o lado das abas para a esquerda do
+    caminho — `espelhar` vira para a direita (o giro de 180° da barra reta)."""
     from nucleo3d.geometria import secao
     from nucleo3d.modelo import Solido
     sec = secao(perfil_nome)
@@ -2346,7 +2370,8 @@ def varrer(perfil_nome: str, pontos: Sequence[Tuple[float, float, float]], deita
                 hz = -x if abas_para_baixo else x
                 anel.append((p[0] + nx * y, p[1] + ny * y, p[2] + hz))
             else:
-                anel.append((p[0] + nx * x, p[1] + ny * x, p[2] + y))
+                xl = -x if espelhar else x
+                anel.append((p[0] + nx * xl, p[1] + ny * xl, p[2] + (-y if espelhar else y)))
         anel_pts.append(anel)
     k = len(sec)
     vertices = [q for anel in anel_pts for q in anel]
@@ -2888,6 +2913,54 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     vigas_feitas: List[tuple] = []
     duas_pecas = {_sem_acento(str(n)).upper().strip() for n in (par.get("duas_pecas") or [])}
 
+    def viga_curva(t, c, pf, pa, z):
+        """a viga VM de borda curva como a planta desenha: cada trecho reto uma barra e cada arco
+        calandrado (o perfil em pé varrido pelo arco); o perfil duplo (2Ue) com um U de cada lado
+        da linha de centro, virados como na viga reta"""
+        mult = int(t.perfil.get("mult") or 1)
+        af = (float(pa.bf or 50.0) if pa else 50.0) / 2 + 1.0
+        lados = ((1, True, 180.0), (-1, False, 0.0)) if mult > 1 else ((0, False, 0.0),)
+        partes = c.partes if c.tipo == "composto" else [(c, False)]
+        # o arco quase reto (flecha abaixo de 10 mm: no Posto, o trecho de 2,3 m com raio de 105 m
+        # entre os dois arcos da borda) é peça reta na fábrica
+        partes = [(Caminho("reta", a=q.ponto(0.0), b=q.ponto(q.comprimento), largura=q.largura, camada=q.camada), r_)
+                  if q.tipo == "arco" and q.raio * (1 - math.cos(math.radians(q.varredura) / 2)) < 10.0 else (q, r_)
+                  for q, r_ in partes]
+        raios = [q.raio for q, _r in partes if q.tipo == "arco"]
+        for q, _rev in partes:
+            if q.tipo == "reta":
+                (tx, ty), _L = _unit(q.a, q.b)
+                nx, ny = -ty, tx
+                for sinal, _esp, rot in lados:
+                    barra((q.a[0] + nx * af * sinal, q.a[1] + ny * af * sinal, z),
+                          (q.b[0] + nx * af * sinal, q.b[1] + ny * af * sinal, z), pf, "viga", "Vigas", None, rot,
+                          {"planta": t.nome, "curva": True})
+                continue
+            n = max(2, int(q.varredura / 3.0) + 1)             # um anel a cada ~3°
+            Lq = q.comprimento
+            eixo = [(*q.ponto(Lq * i / n), z) for i in range(n + 1)]
+            primeiro = None
+            for sinal, esp, _rot in lados:
+                pts = []
+                for i in range(n + 1):
+                    tx, ty = q.tangente(Lq * i / n)
+                    pts.append((eixo[i][0] - ty * af * sinal, eixo[i][1] + tx * af * sinal, z))
+                sol = varrer(pf, pts, deitado=False, espelhar=esp)
+                sol.nome = pf
+                sol.camada = "Vigas"
+                comp = sum(math.dist(pts[i], pts[i + 1]) for i in range(n))
+                sol.atributos = {"tipo_ifc": "IfcBeam", "papel": "viga",
+                                 "calandrada": {"raio": round(q.raio, 1), "raios": [round(r_, 1) for r_ in raios]},
+                                 "origem": {"planta": t.nome, "curva": True}}
+                if primeiro is None:
+                    # o esqueleto passa pela linha de centro da viga (uma linha só para o par)
+                    sol.atributos["eixo"] = [[round(v, 1) for v in p_] for p_ in eixo]
+                    primeiro = sol
+                else:
+                    sol.atributos["par_de"] = primeiro.id
+                doc.add(sol)
+                pecas.append({"ent": sol, "perfil": pf, "papel": "viga", "L": comp, "conjunto": None})
+
     def montar_trechos(trechos_lista, nivel_z, piso=False):
         """as treliças (cada uma em pé na sua linha, banzo inferior em `nivel_z`) e as vigas VM
         (com o topo em `nivel_z`) de uma planta. Na planta de piso (`piso`: a base da caixa
@@ -3067,6 +3140,13 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             pa = _perfil(pf)
             d = float(pa.d or 150.0) if pa else 150.0
             z = nivel_z - d / 2.0
+            if c.curvo:
+                pts_c = [c.ponto(0.0), c.ponto(c.comprimento)]
+                if _viga_repetida(pts_c, z, pf, vigas_feitas):
+                    continue
+                vigas_feitas.append((pts_c, z, pf))
+                viga_curva(t, c, pf, pa, z)
+                continue
             pts = _viga_ate_o_pilar([c.ponto(0.0), c.ponto(c.comprimento)], pilares_meia)
             if _viga_repetida(pts, z, pf, vigas_feitas):
                 continue                # a mesma viga, lida de novo (o nome em duas linhas da mesma peça)
@@ -3752,6 +3832,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 e.fim = (e.fim[0] + desl[0], e.fim[1] + desl[1], e.fim[2])
             else:
                 e.vertices = [(v[0] + desl[0], v[1] + desl[1], v[2]) for v in e.vertices]
+                if (e.atributos or {}).get("eixo"):
+                    e.atributos["eixo"] = [[round(v[0] + desl[0], 1), round(v[1] + desl[1], 1), v[2]] for v in e.atributos["eixo"]]
         for ch in chapas_postas:
             ch.origem = (ch.origem[0] + desl[0], ch.origem[1] + desl[1], ch.origem[2])
 

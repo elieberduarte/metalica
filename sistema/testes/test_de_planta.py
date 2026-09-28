@@ -591,3 +591,54 @@ def test_agulha_de_terca_a_terca_em_barra_redonda():
     tercas = [t for t in r["doc"].barras if t.papel == "terça"]
     z_t = {round(t.inicio[0]): t.inicio[2] for t in tercas}
     assert b[0].inicio[2] == pytest.approx(z_t[round(b[0].inicio[0])], abs=60)
+
+
+# ------------------------------------------------------------------ vigas VM do Posto CB (28/09)
+
+def test_nome_da_viga_marca_o_pedaco_pelo_comeco_do_texto():
+    """a linha VM | COMP 27 | VM | COMP 26 | COMP 25 (Posto, x 54,13): cada nome escrito a partir do
+    começo do seu pedaço; o meio estimado do nome comprido caía no pedaço da COMP seguinte"""
+    c = de_planta.Caminho("reta", a=(0.0, 0.0), b=(14550.0, 0.0), largura=100.0)
+    cortes = [(0.0, 3150.0), (3300.0, 6680.0), (6810.0, 10400.0), (10530.0, 13020.0), (13120.0, 14550.0)]
+    pedacos = [de_planta.Caminho("reta", a=(a, 0.0), b=(b, 0.0)) for a, b in cortes]
+    nomes = [(-100.0, 3900.0, "VM-2Ue100X50X17X2,65"), (4200.0, 5390.0, "COMP.27"), (6930.0, 10930.0, "VM-2Ue100X50X17X2,65"),
+             (11080.0, 11960.0, "COMP.26"), (13150.0, 13840.0, "COMP.25")]
+    ts = [texto((x, -180.0), t) for x, _s, t in nomes]
+    rot = [(s, t, e) for (_x, s, t), e in zip(nomes, ts)]
+    f = de_planta._faixas_das_vigas(c, rot, pedacos)
+    assert f[id(ts[0])] == (0.0, 3150.0)
+    assert f[id(ts[2])] == (6810.0, 10400.0)
+
+
+def test_nome_de_chamada_nao_toma_o_pedaco_da_tesoura():
+    """o "VM-…" escrito sobre a linha de chamada das curvas do canto, 0,53 m ao lado da TESOURA 33,
+    não é viga da linha da tesoura (virava uma VM em cima da treliça)"""
+    c = de_planta.Caminho("reta", a=(0.0, 0.0), b=(18260.0, 0.0), largura=100.0)
+    pedacos = [de_planta.Caminho("reta", a=(a, 0.0), b=(b, 0.0)) for a, b in ((0.0, 2600.0), (2750.0, 10330.0), (10480.0, 18260.0))]
+    t22, vm, t33 = texto((6080.0, -400.0), "TESOURA 22"), texto((6950.0, 530.0), "VM-2Ue200X70X20X2,65"), texto((11630.0, -400.0), "TESOURA 33")
+    rot = [(8230.0, t22["texto"], t22), (10950.0, vm["texto"], vm), (13780.0, t33["texto"], t33)]
+    f = de_planta._faixas_das_vigas(c, rot, pedacos)
+    assert id(vm) not in f
+
+
+def test_viga_curva_sai_calandrada_e_o_esqueleto_passa_pelo_centro_do_par():
+    """a VM de borda curva segue o arco da planta (antes era uma corda reta); o 2Ue são dois U
+    calandrados, e o esqueleto tem uma linha só, pelo centro deles, com o papel de viga"""
+    from nucleo3d import analitico
+    ents = [e for e in planta() if not (e.get("camada") == "metalica4" or str(e.get("texto", "")).startswith("VM"))]
+    for r in (3000.0 - 100.0, 3000.0 + 100.0):
+        ents.append({"tipo": "arco", "camada": "metalica4", "centro": [0.0, 3000.0], "raio": r, "inicio": 90.0, "fim": 270.0})
+    ents.append(texto((-3300.0, 1500.0), "VM-2Ue200X70X20X2,65", angulo=90.0))
+    ents += locacao() + plantas_das_tercas() + baloes(0, 0) + baloes(DX_LOC, 0) + baloes(0, DY_TER)
+    ents += elevacao_tesoura(0.0, -120000.0) + elevacao_painel(20000.0, -120000.0)
+    doc = de_planta.montar(ents, {"nivel": 6000.0, "origem": False})["doc"]
+    curvas = [e for e in doc.entidades.values() if e.tipo == "solido" and (e.atributos or {}).get("papel") == "viga"]
+    assert len(curvas) == 2 and all(abs(e.atributos["calandrada"]["raio"] - 3000.0) < 1.0 for e in curvas)
+    assert sum(1 for e in curvas if e.atributos.get("par_de")) == 1
+    assert not [b for b in doc.barras if b.papel == "viga"]            # nenhuma corda reta
+    # os U ficam a ~36 mm de cada lado do arco de centro, um virado para o outro
+    for e in curvas:
+        xs = [v[0] for v in e.vertices]
+        assert min(xs) < -3000.0 + 100.0
+    linhas = [ln for ln in analitico._linhas_do(doc) if ln["papel"] == "viga"]
+    assert linhas and all(abs(math.hypot(ln["a"][0], ln["a"][1] - 3000.0) - 3000.0) < 1.0 for ln in linhas)

@@ -101,13 +101,19 @@ def _linhas_do(doc) -> List[dict]:
                         "perfil": ent.perfil, "ids": [ent.id], "duplo": False,
                         "deitada": "deitada" in str(o.get("sentido") or "")})
         elif ent.tipo == "solido" and (ent.atributos or {}).get("calandrada") and ent.faces:
-            v = ent.vertices
-            k = len(ent.faces[0])
-            if k < 3 or len(v) % k or len(v) // k < 2:
-                continue
-            c = [tuple(sum(v[j][m] for j in range(i, i + k)) / k for m in range(3)) for i in range(0, len(v), k)]
+            at = ent.atributos or {}
+            if at.get("par_de"):
+                continue                # o outro U da viga dupla curva: a linha é a do centro do par
+            if at.get("eixo"):
+                c = [tuple(p) for p in at["eixo"]]
+            else:
+                v = ent.vertices
+                k = len(ent.faces[0])
+                if k < 3 or len(v) % k or len(v) // k < 2:
+                    continue
+                c = [tuple(sum(v[j][m] for j in range(i, i + k)) / k for m in range(3)) for i in range(0, len(v), k)]
             for a, b in zip(c, c[1:]):
-                out.append({"a": a, "b": b, "papel": "banzo", "peca": o.get("peca"),
+                out.append({"a": a, "b": b, "papel": at.get("papel") or "banzo", "peca": o.get("peca"),
                             "grupo": o.get("peca") or ent.id, "perfil": ent.nome, "ids": [ent.id], "duplo": False,
                             "curva": True})
         elif ent.tipo == "solido" and ent.vertices:
