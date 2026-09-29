@@ -40,8 +40,12 @@ try:
     # sem folha de índice (28/09): a relação das pranchas vai na faixa da primeira, e as faixas das
     # outras recebem as células pequenas — toda prancha tem células
     cel = [x["celulas"] for x in p["pranchas"]]
-    ok(len(p["pranchas"]) >= 1 and sum(cel) >= 30 and all(c > 0 for c in cel),
+    ok(len(p["pranchas"]) >= 1 and sum(cel) >= 25 and all(c > 0 for c in cel),
        "rota montou %d pranchas A1 em %.1f s (células por prancha): %s" % (len(p["pranchas"]), time.time() - t0, [(x["titulo"], x["celulas"]) for x in p["pranchas"]]))
+    # a mesma posição ou montagem de dois desenhos sai uma vez só (28/09)
+    pr_ = json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos/" + p["desenho"]))["desenho"]["metadados"]["pranchas"]
+    titulos = [c["titulo"] for f in pr_ for c in f["celulas"]]
+    ok(len(titulos) == len(set(titulos)), "nenhuma célula repetida nas pranchas (%d células)" % len(titulos))
     lista = json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos"))
     n1 = len(lista)
     p2 = post("/api/projetos/compressores/pranchas", {"desenhos": nomes, "formato": "A0"})
