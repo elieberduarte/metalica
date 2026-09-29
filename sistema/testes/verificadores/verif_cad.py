@@ -121,6 +121,19 @@ try:
     ok(aba.avaliar("window.cad.doc.vistas.length") == 2, "segunda vista inserida no desenho (%s objetos)" % aba.avaliar("window.cad.doc.tamanho"))
     aba.drenar(1.0); foto(aba, "cad_4_duas_vistas.png")
 
+    # a janela de seleção com zoom no meio do arrasto: o primeiro canto fica no ponto do desenho clicado (29/09)
+    desvio = aba.avaliar("""(() => { const cad = window.cad, c = cad.el.canvas, r = c.getBoundingClientRect();
+        cad.ativarFerramenta('selecionar');
+        const ev = (t, x, y, b) => c.dispatchEvent(new PointerEvent(t, {clientX: r.left + x, clientY: r.top + y, button: 0,
+            buttons: b, pointerId: 7, bubbles: true}));
+        const m0 = cad.tela.paraMundo([200, 200]);
+        ev('pointerdown', 200, 200, 1); ev('pointermove', 420, 330, 1);
+        c.dispatchEvent(new WheelEvent('wheel', {clientX: r.left + 420, clientY: r.top + 330, deltaY: -100, bubbles: true, cancelable: true}));
+        ev('pointermove', 440, 340, 1);
+        const a = cad.tela.retangulo ? cad.tela.retangulo[0] : null, q = cad.tela.paraTela(m0);
+        ev('pointerup', 440, 340, 0);
+        return a ? Math.hypot(a[0] - q[0], a[1] - q[1]) : -1; })()""")
+    ok(desvio is not None and 0 <= desvio < 1.0, f"janela de seleção com zoom no meio: o 1º canto fica no ponto clicado (desvio {desvio} px)")
     # tema escuro no painel de propriedades e a cor da camada pela seleção, gravada no projeto (28/09)
     aba.avaliar("document.documentElement.dataset.tema = 'escuro'; 1")
     alvo = aba.avaliar("(() => { const e = [...window.cad.doc.entidades.values()].find(e => e.tipo === 'texto') || [...window.cad.doc.entidades.values()][0]; window.cad.selecionar([e.id]); return e.camada; })()")

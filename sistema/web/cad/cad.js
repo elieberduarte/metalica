@@ -647,10 +647,12 @@ class CAD {
     const px = (ev) => { const r = c.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
     c.addEventListener('contextmenu', (ev) => ev.preventDefault());
     c.addEventListener('pointerdown', (ev) => {
-      c.setPointerCapture(ev.pointerId);
+      try { c.setPointerCapture(ev.pointerId); } catch (e) { /* ponteiro sintético (verificador) */ }
       if (ev.button === 1 || ev.button === 2) { arrastoVista = px(ev); this.el.palco.dataset.arrastando = '1'; return; }
       if (ev.button === 0) {
-        pressao = { px: px(ev), movido: false, capturado: false };
+        // o ponto do desenho onde a janela começou: o zoom e o pan no meio do arrasto não o tiram do lugar
+        // (antes ficava o pixel da tela, que depois do zoom apontava para outro ponto — pedido do usuário, 29/09)
+        pressao = { px: px(ev), mundo: this.tela.paraMundo(px(ev)), movido: false, capturado: false };
         // a ferramenta pode tomar o arrasto para si (a alça de uma cota, na Selecionar)
         if (this.ferramenta && this.ferramenta.onPressionar) {
           const s = this.snap.resolver(pressao.px, { orto: ev.shiftKey });
@@ -660,7 +662,11 @@ class CAD {
     });
     c.addEventListener('pointermove', (ev) => {
       const p = px(ev);
-      if (arrastoVista) { this.tela.arrastar([p[0] - arrastoVista[0], p[1] - arrastoVista[1]]); arrastoVista = p; return; }
+      if (arrastoVista) {
+        this.tela.arrastar([p[0] - arrastoVista[0], p[1] - arrastoVista[1]]); arrastoVista = p;
+        if (pressao && this.tela.retangulo) this.tela.retangulo = [this.tela.paraTela(pressao.mundo), this.tela.retangulo[1]];
+        return;
+      }
       const s = this.snap.resolver(p, { orto: ev.shiftKey });
       this.tela.cursor = s.ponto; this.tela.snap = s.tipo ? s : null;
       this.el.coord.textContent = `x ${formatarMm(s.ponto[0])}  y ${formatarMm(s.ponto[1])}`;
@@ -671,7 +677,7 @@ class CAD {
         return;
       }
       if (pressao && pressao.movido && this.ferramenta && this.ferramenta.onSoltar !== Ferramenta.prototype.onSoltar) {
-        this.tela.retangulo = [pressao.px, p];
+        this.tela.retangulo = [this.tela.paraTela(pressao.mundo), p];
       }
       if (!pressao || !pressao.movido) {
         this.tela.realce = this.ferramenta && this.ferramenta.constructor.id === 'selecionar' ? (this.tela.sob(p) || {}).id || null : null;
@@ -689,14 +695,19 @@ class CAD {
         if (this.ferramenta) this.ferramenta.onPonto(s.ponto, { ...evInfo(ev), px: p, semMover: !pressao.movido });
       } else if (pressao.movido && this.tela.retangulo) {
         this.tela.retangulo = null;
-        if (this.ferramenta) this.ferramenta.onSoltar(s.ponto, { ...evInfo(ev), px: p, arrasto: { de: pressao.px, para: p } });
+        if (this.ferramenta) this.ferramenta.onSoltar(s.ponto, { ...evInfo(ev), px: p, arrasto: { de: this.tela.paraTela(pressao.mundo), para: p } });
       } else if (this.ferramenta) {
         this.ferramenta.onPonto(s.ponto, { ...evInfo(ev), px: p });
       }
       pressao = null;
       this.tela.pedirQuadro();
     });
-    c.addEventListener('wheel', (ev) => { ev.preventDefault(); this.tela.zoom(ev.deltaY < 0 ? 1.15 : 1 / 1.15, px(ev)); }, { passive: false });
+    c.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      this.tela.zoom(ev.deltaY < 0 ? 1.15 : 1 / 1.15, px(ev));
+      // a janela de seleção em curso acompanha o zoom: o primeiro canto fica no ponto do desenho clicado
+      if (pressao && this.tela.retangulo) { this.tela.retangulo = [this.tela.paraTela(pressao.mundo), px(ev)]; this.tela.pedirQuadro(); }
+    }, { passive: false });
     c.addEventListener('dblclick', (ev) => { if (ev.button === 1) this.tela.enquadrar(); });
     c.addEventListener('pointerleave', () => { this.tela.cursor = null; this.tela.snap = null; this.tela.pedirQuadro(); });
   }
