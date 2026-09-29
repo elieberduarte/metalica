@@ -851,6 +851,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             for c, px_, py_ in postos:
                 c["px"], c["py"] = px_, py_
                 for m_ in _membros(c):
+                    m_["_na_faixa"] = True
                     na_faixa.append(m_)
                     if not m_.get("local"):
                         fila.remove(m_)
@@ -932,6 +933,9 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         return pranchas, molduras, legendas
 
     pranchas, molduras, legendas = distribuir(1)
+    # a prancha de continuação quase vazia vai para o espaço livre de outra (pedido do usuário, 29/09: "tentar
+    # juntar com a outra prancha" — o típico das terças sem furo sozinho numa prancha, 10 % dela)
+    _juntar_quase_vazias(pranchas, molduras, legendas, qx0, qx1, uy0, uy1, titulos_q)
     total = len(pranchas)
     # em que prancha cada posição está detalhada (a coluna PR. da legenda) e a relação das pranchas
     onde: Dict[str, int] = {}
@@ -1050,6 +1054,78 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         d.metadados["prancha"]["siglas"] = [x[0] for b in leg["blocos"] if b[0] == "SIGLAS" for x in b[1]]
         saida.append(d)
     return saida
+
+
+#: A prancha de continuação que ocupa menos que isto da área útil tenta ir para o espaço livre de outra.
+OCUPACAO_MINIMA = 0.2
+
+
+def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: float, qx1: float, uy0: float,
+                         uy1: float, titulos: dict) -> int:
+    """Os detalhes principais de uma prancha quase vazia (uma categoria só, pequenos — não a tesoura, a
+    planta ou as telhas; a faixa só com cópias) num retângulo livre da área útil de outra prancha, num
+    quadro com o título da categoria; a prancha vazia sai (a numeração é feita depois). Devolve quantas
+    saíram."""
+    area_util = (qx1 - qx0) * (uy1 - uy0)
+    saiu = 0
+    i = len(pranchas) - 1
+    while i > 0:
+        cels = pranchas[i]
+        princ = [c for c in cels if not c.get("_na_faixa")]
+        cats = {c["categoria"] for c in princ}
+        if (not princ or len(cats) != 1 or any(c.get("empilhada") or c.get("pai") is not None for c in princ)
+                or cats & {"LOCALIZACAO", "CHUMBACAO", "TELHAS", "TELHAS_TIPOS", "TELHAS_DET"}
+                or any(c.get("_na_faixa") and not c.get("local") for c in cels)
+                or sum(c["w"] * c["h"] for c in princ) > OCUPACAO_MINIMA * area_util):
+            i -= 1
+            continue
+        bx0 = min(c["px"] for c in princ)
+        by0 = min(c["py"] for c in princ)
+        bx1 = max(c["px"] + c["w"] for c in princ)
+        by1 = max(c["py"] + c["h"] for c in princ)
+        W = bx1 - bx0 + 2 * QUADRO_MARGEM
+        H = by1 - by0 + QUADRO_CABECALHO + FOLGA
+        destino = None
+        # a mais perto primeiro (a anterior, depois as de antes, depois as de depois): perto das outras da categoria
+        for j in list(range(i - 1, -1, -1)) + list(range(i + 1, len(pranchas))):
+            if j == i or any(c["categoria"] == "LOCALIZACAO" or c.get("empilhada") for c in pranchas[j]):
+                continue
+            obst = [(c["px"] - FOLGA * 0.5, c["py"] - FOLGA * 0.5, c["px"] + c["w"] + FOLGA * 0.5, c["py"] + c["h"] + FOLGA * 0.5)
+                    for c in pranchas[j] if not c.get("_na_faixa")]
+            obst += [(qx0 - QUADRO_MARGEM, mq["y1"] - QUADRO_CABECALHO - FOLGA * 0.5, qx1 + QUADRO_MARGEM, mq["y1"])
+                     for mq in molduras[j] if mq["categoria"] not in ("DETALHES", "LEGENDA")]
+            y = uy1 - H
+            while destino is None and y >= uy0:
+                x = qx0 - QUADRO_MARGEM
+                while x + W <= qx1 + QUADRO_MARGEM:
+                    r = (x, y, x + W, y + H)
+                    if not any(r[0] < o[2] and o[0] < r[2] and r[1] < o[3] and o[1] < r[3] for o in obst):
+                        destino = (j, x, y)
+                        break
+                    x += 5.0
+                y -= 5.0
+            if destino:
+                break
+        if destino is None:
+            i -= 1
+            continue
+        j, x, y = destino
+        dx = x + QUADRO_MARGEM - bx0
+        dy = (y + H - QUADRO_CABECALHO - FOLGA * 0.5) - by1
+        for c in princ:
+            c["px"] += dx
+            c["py"] += dy
+        pranchas[j] = pranchas[j] + princ
+        cat = next(iter(cats))
+        molduras[j].append({"categoria": cat, "titulo": titulos.get(cat, cat), "x0": x, "x1": x + W, "y1": y + H, "y0": y})
+        leg = legendas[j]
+        if leg.get("blocos"):
+            leg["blocos"] = _blocos_da_legenda([c for c in pranchas[j] if not c.get("_na_faixa")],
+                                               [c for c in pranchas[j] if c.get("_na_faixa")])
+        del pranchas[i], molduras[i], legendas[i]
+        saiu += 1
+        i -= 1
+    return saiu
 
 
 def _ids_das_celulas(cels: Sequence[dict]) -> Dict[int, str]:

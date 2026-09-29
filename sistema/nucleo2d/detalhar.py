@@ -987,7 +987,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             fora_sf = {id(p) for v in tipicas_sf.values() for p in v}
             lista = [p for p in lista if id(p) not in fora_sf]
         editaveis = ([p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))
-                      and _na_posicao_montada(p) is p]   # o suporte desenhado em pé (girado) não volta ao 3D
+]
                      + [p.marca for p in lista if p.classe == "barra" and any(f.vista == "frente" for f in p.furos)])
         # um quadro por tipo de peça (terças, suportes de terça, chapas…), como os conjuntos
         celulas_g = []

@@ -242,29 +242,82 @@ def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho:
     return p.extremos
 
 
+def _giro_montado(pos: Posicao):
+    """(ângulo, tx, ty) que leva a chapa do sistema dela (e1, e2) à posição montada no papel (pedido do
+    usuário, 29/09: "detalhe essas e outras chapas sempre pensando na posição que ela vai ficar montada, e
+    sempre mantenha a base reta"): a chapa em pé (ou inclinada) com o alto da obra para cima; a deitada
+    como na planta, com o norte (y) para cima. Giro de 1° ou menos de um múltiplo de 90° fica no múltiplo;
+    a base (a aresta de baixo, quase horizontal) fica reta. None quando não gira."""
+    if pos.classe != "chapa" or not pos.eixos or not pos.contorno or len(pos.eixos) < 3:
+        return None
+    e1, e2, e3 = pos.eixos
+    up = (0.0, 1.0, 0.0) if abs(e3[2]) > 0.7 else (0.0, 0.0, 1.0)
+    ux = sum(up[i] * e1[i] for i in range(3))
+    uy = sum(up[i] * e2[i] for i in range(3))
+    if math.hypot(ux, uy) < 1e-6:
+        return None
+    phi = math.atan2(ux, uy)
+    def gira(a, q):
+        c, s_ = math.cos(a), math.sin(a)
+        return (q[0] * c - q[1] * s_, q[0] * s_ + q[1] * c)
+    # a base reta: a aresta mais comprida perto do pé, a até 15° da horizontal, vai para a horizontal
+    pts = [gira(phi, q) for q in pos.contorno]
+    y0, y1 = min(q[1] for q in pts), max(q[1] for q in pts)
+    melhor = None
+    for i in range(len(pts)):
+        a, b = pts[i], pts[(i + 1) % len(pts)]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L < 1e-6 or (a[1] + b[1]) / 2.0 - y0 > 0.1 * (y1 - y0) + 1.0:
+            continue
+        ang = math.atan2(b[1] - a[1], b[0] - a[0])
+        ang = (ang + math.pi / 2) % math.pi - math.pi / 2          # entre −90° e 90°
+        if abs(ang) <= math.radians(15.0) and (melhor is None or L > melhor[0]):
+            melhor = (L, ang)
+    if melhor:
+        phi -= melhor[1]
+    quarto = round(phi / (math.pi / 2)) * (math.pi / 2)
+    if abs(phi - quarto) <= math.radians(1.0):
+        phi = quarto
+    if abs(phi) < 1e-9:
+        return None
+    pts = [gira(phi, q) for q in pos.contorno]
+    tx, ty = -min(q[0] for q in pts), -min(q[1] for q in pts)
+    return (phi, tx, ty)
+
+
 def _na_posicao_montada(pos: Posicao) -> Posicao:
-    """O suporte de terça em pé no modelo (o lado comprido na vertical) desenhado em pé, como fica
-    montado (pedido do usuário, 29/09: "girar para ficar na posição montada"): uma cópia girada 90°,
-    com o lado comprido subindo como no modelo; os oblongos giram junto. Outra peça volta como está."""
+    """A chapa desenhada na posição montada (`_giro_montado`): uma cópia com o contorno, os furos e os
+    recortes girados; o oblongo gira junto quando o giro é perto de 90°. `giro` na cópia leva o ângulo e
+    a translação — o desenho guarda para os furos editados voltarem ao sistema da chapa. Sem giro, a
+    mesma posição."""
     import copy
-    if pos.classe != "chapa" or pos.tipo_nome != "suporte_terca" or not pos.eixos or not pos.contorno:
+    gm = _giro_montado(pos)
+    if gm is None:
         return pos
-    e1 = pos.eixos[0]
-    if abs(e1[2]) < 0.7:
-        return pos
-    L, W = pos.L, max(q[1] for q in pos.contorno)
-    # para cima o sentido do lado comprido que sobe no modelo
-    gira = (lambda x, y: (W - y, x)) if e1[2] > 0 else (lambda x, y: (y, L - x))
+    phi, tx, ty = gm
+    c, s_ = math.cos(phi), math.sin(phi)
+    gira = lambda x, y: (round(x * c - y * s_ + tx, 3), round(x * s_ + y * c + ty, 3))    # noqa: E731
     g = copy.deepcopy(pos)
     g.contorno = [gira(x, y) for x, y in pos.contorno]
+    troca = abs(s_) > 0.7
     for f in g.furos:
         f.x, f.y = gira(f.x, f.y)
-        f.larg, f.alt = f.alt, f.larg
+        if troca:
+            f.larg, f.alt = f.alt, f.larg
         f.pontos = [gira(x, y) for x, y in f.pontos]
     xs = [q[0] for q in g.contorno]
     ys = [q[1] for q in g.contorno]
     g.L, g.H = max(xs) - min(xs), max(ys) - min(ys)
+    g.giro = [round(phi, 6), round(tx, 3), round(ty, 3)]
     return g
+
+
+def desenho_no_sistema_da_chapa(giro, x: float, y: float) -> Tuple[float, float]:
+    """O ponto do desenho girado (relativo ao canto da célula) de volta ao sistema da chapa."""
+    phi, tx, ty = giro
+    c, s_ = math.cos(-phi), math.sin(-phi)
+    x, y = x - tx, y - ty
+    return (x * c - y * s_, x * s_ + y * c)
 
 
 def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
@@ -283,8 +336,11 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
         return p.extremos
     if pos.classe == "telha":
         return _desenho_da_telha(pos, p, esc, off, off2, off3)
-    if not editavel:
-        pos = _na_posicao_montada(pos)
+    montada = _na_posicao_montada(pos)
+    if montada is not pos:
+        pos = montada
+        atr = dict(atr, giro=pos.giro)             # para os furos editados voltarem ao sistema da chapa
+        p.atr = atr
     L, H = pos.L, pos.H
     furos_frente = [f for f in pos.furos if f.vista == "frente"]
     furos_topo = [f for f in pos.furos if f.vista == "topo"]
@@ -490,7 +546,7 @@ def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes:
     escala = {"chapa": 10.0, "chapa_dobrada": 10.0, "telha": 50.0}.get(pos.classe, 25.0)
     d = Desenho(nome="Detalhe – %s" % marca, escala=escala)
     parametrica = all(isinstance(getattr(e, "parametrica", None), Chapa) for e in lista)
-    edit = bool(editavel and ((parametrica and pos.classe == "chapa" and _na_posicao_montada(pos) is pos) or pos.classe == "barra"))
+    edit = bool(editavel and ((parametrica and pos.classe == "chapa") or pos.classe == "barra"))
     ext = desenho_da_posicao(pos, d, 0.0, 0.0, editavel=edit)
     d.metadados["celulas"] = [[round(v, 1) for v in ext]]
     d.metadados["detalhamento"] = {
@@ -1206,8 +1262,13 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
             h = _norm(_cruz(nz, L))
             ph = [sum(v[k] * h[k] for k in range(3)) for v in e.vertices]
             H = max(ph) - min(ph)
+            # a altura pelo nome do perfil (C200X75… → 200): medida na terça inclinada do telhado, as abas somavam
+            # uns 5 mm e a C200 caía no passo de 100 (a CH36 do depósito, 29/09)
+            m_h = re.match(r"^\s*[A-Za-z]+\s*(\d+(?:[.,]\d+)?)", str(_marcas(e).get("perfil") or ""))
+            if m_h:
+                H = float(m_h.group(1).replace(",", "."))
             eixo_t = (max(ph) + min(ph)) / 2.0
-            passo = FURACAO_TERCA_BAIXA[0] if H <= LIMITE_TERCA + 5.0 else FURACAO_TERCA_ALTA[0]
+            passo = FURACAO_TERCA_BAIXA[0] if H <= LIMITE_TERCA + 0.5 else FURACAO_TERCA_ALTA[0]
             # colunas: furos na mesma abscissa ao longo da terça
             cols: List[list] = []
             for i in sorted(idx, key=lambda i: sum(pts[i][k] * L[k] for k in range(3))):
@@ -1884,6 +1945,10 @@ def contorno_do_desenho(d: Desenho, marca: Optional[str] = None):
     xs = [p[0] for p in melhor.vertices]
     ys = [p[1] for p in melhor.vertices]
     x0, y0 = min(xs), min(ys)
+    giro = (melhor.atributos or {}).get("giro")
+    if giro:
+        # a chapa desenhada na posição montada: o contorno volta ao sistema dela
+        return [tuple(round(v, 3) for v in desenho_no_sistema_da_chapa(giro, x - x0, y - y0)) for x, y in melhor.vertices], (x0, y0)
     return [(round(x - x0, 3), round(y - y0, 3)) for x, y in melhor.vertices], (x0, y0)
 
 
@@ -1894,10 +1959,19 @@ def furos_do_desenho(d: Desenho, marca: Optional[str] = None, origem=(0.0, 0.0))
     `origem` é o canto da chapa no desenho, descontado das coordenadas."""
     fora = []
     caixa = None
+    giro = None
     if marca is not None:
         cont, org = contorno_do_desenho(d, marca)
+        giro = next((e.atributos.get("giro") for e in d.entidades.values() if isinstance(e, Polilinha)
+                     and (e.atributos or {}).get("giro") and str((e.atributos or {}).get("posicao")) == marca), None)
         if cont:
-            caixa = (org[0] - 5.0, org[1] - 5.0, org[0] + max(x for x, _ in cont) + 5.0, org[1] + max(y for _, y in cont) + 5.0)
+            xs_d = [p[0] for e in d.entidades.values() if isinstance(e, Polilinha) and (e.atributos or {}).get("detalhe") == "posicao"
+                    and str((e.atributos or {}).get("posicao")) == marca and "furo" not in (e.atributos or {}) for p in e.vertices]
+            ys_d = [p[1] for e in d.entidades.values() if isinstance(e, Polilinha) and (e.atributos or {}).get("detalhe") == "posicao"
+                    and str((e.atributos or {}).get("posicao")) == marca and "furo" not in (e.atributos or {}) for p in e.vertices]
+            larg_d = (max(xs_d) - min(xs_d)) if xs_d else max(x for x, _ in cont)
+            alt_d = (max(ys_d) - min(ys_d)) if ys_d else max(y for _, y in cont)
+            caixa = (org[0] - 5.0, org[1] - 5.0, org[0] + larg_d + 5.0, org[1] + alt_d + 5.0)
     for e in d.entidades.values():
         if getattr(e, "camada", "") != "FURO":
             continue
@@ -1922,4 +1996,14 @@ def furos_do_desenho(d: Desenho, marca: Optional[str] = None, origem=(0.0, 0.0))
                 fora.append({"tipo": "oblongo", "x": cx, "y": cy, "larg": float(a.get("larg") or larg), "alt": float(a.get("alt") or alt), "furo": indice})
             else:
                 fora.append({"tipo": "redondo", "x": cx, "y": cy, "d": (larg + alt) / 2, "furo": indice})
+    if marca is None:
+        giro = next((e.atributos.get("giro") for e in d.entidades.values() if isinstance(e, Polilinha)
+                     and (e.atributos or {}).get("giro")), None)
+    if giro:
+        # a chapa desenhada na posição montada: cada furo volta ao sistema dela (o oblongo gira de volta perto de 90°)
+        troca = abs(math.sin(giro[0])) > 0.7
+        for f in fora:
+            f["x"], f["y"] = (round(v, 3) for v in desenho_no_sistema_da_chapa(giro, f["x"], f["y"]))
+            if troca and f.get("tipo") == "oblongo":
+                f["larg"], f["alt"] = f["alt"], f["larg"]
     return fora

@@ -3157,6 +3157,31 @@ def _extensao_do_conjunto(instancia: Sequence[Solido]) -> Tuple[float, float]:
     return max(us) - min(us), max(vs) - min(vs)
 
 
+def _direcao_pelas_arestas(e) -> Optional[Tuple[float, float, float]]:
+    """A direção da barra pelas arestas compridas da malha dela (as do comprimento, paralelas ao eixo),
+    somadas no mesmo sentido; None sem faces."""
+    vs, fs = getattr(e, "vertices", None) or [], getattr(e, "faces", None) or []
+    arestas = []
+    for f in fs:
+        for i in range(len(f)):
+            a, b = vs[f[i]], vs[f[(i + 1) % len(f)]]
+            d = _sub(b, a)
+            L = math.sqrt(_dot(d, d))
+            if L > 1e-6:
+                arestas.append((L, d))
+    if not arestas:
+        return None
+    Lmax = max(L for L, _d in arestas)
+    longas = [d for L, d in arestas if L >= 0.9 * Lmax]
+    ref = longas[0]
+    soma = [0.0, 0.0, 0.0]
+    for d in longas:
+        sg = 1.0 if _dot(d, ref) >= 0 else -1.0
+        for i in range(3):
+            soma[i] += sg * d[i]
+    return _norm(tuple(soma))
+
+
 def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desenho: Desenho, dx: float, dy: float,
                                  nomes: Dict[str, str], nomes_conj: Dict[str, str], fundidas: Dict[str, str],
                                  comprimentos: Dict[str, float], rotular: bool = True) -> Tuple[float, float, float, float]:
@@ -3189,12 +3214,10 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
     if eixo_b:
         # sempre na direção da barra: o eixo do conjunto (com as chapas das pontas) sai uns graus fora dela
         # e o montante lateral A.L. saía torto, com as cotas retas (pedido do usuário, 29/09)
-        a_ = _norm(_sub(eixo_b[1], eixo_b[0]))
-        # o eixo pela média dos vértices sai uns graus torto quando os furos ficam numa ponta: a barra a
-        # menos de 5° de x, y ou z (o montante em pé) fica nele
-        for eixo_m in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)):
-            if abs(_dot(a_, eixo_m)) > 0.996:
-                a_ = tuple(k * (1.0 if _dot(a_, eixo_m) > 0 else -1.0) for k in eixo_m)
+        # a direção pelas arestas compridas da própria barra: o eixo pela média dos vértices saía uns graus
+        # torto quando os furos ficam numa ponta (o montante lateral A.L., 3°), e alinhar a x/y/z entortava a
+        # cantoneira A.C. que segue o caimento do telhado (29/09)
+        a_ = _direcao_pelas_arestas(b0) or _norm(_sub(eixo_b[1], eixo_b[0]))
         if _dot(a_, u) < 0:
             a_ = tuple(-k for k in a_)
         a_ = _norm(_sub(a_, tuple(w[i] * _dot(a_, w) for i in range(3))))
