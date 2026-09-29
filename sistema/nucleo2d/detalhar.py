@@ -178,6 +178,9 @@ from nucleo2d.detalhe.celulas import (  # noqa: E402,F401
     converter_chapas,
     desenho_da_posicao,
     _na_posicao_montada,
+    terca_sem_furo,
+    desenho_de_tercas_sem_furo,
+    MINIMO_TIPICO_SEM_FURO,
     detalhar_posicao,
     furos_da_chapa,
     furos_do_desenho,
@@ -973,6 +976,16 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                       for p in lista}}
         # terças do menor comprimento para o maior (o resto na ordem de sempre)
         lista.sort(key=lambda p: p.comprimento if (nomeacao["tipos"].get(p.marca) or p.tipo_nome) in UMA_POR_LINHA else 0.0)
+        # as terças sem furo nenhum, num detalhe típico por perfil, empilhadas como os contraventos (pedido do
+        # usuário, 29/09) — com duas ou mais do mesmo perfil; a posição continua na tabela
+        tipicas_sf = collections.OrderedDict()
+        if chave == "barras":
+            for p in lista:
+                if terca_sem_furo(p, nomeacao["tipos"].get(p.marca) or p.tipo_nome):
+                    tipicas_sf.setdefault(re.sub(r"\s+", "", p.perfil or "").upper(), []).append(p)
+            tipicas_sf = collections.OrderedDict((k, v) for k, v in tipicas_sf.items() if len(v) >= MINIMO_TIPICO_SEM_FURO)
+            fora_sf = {id(p) for v in tipicas_sf.values() for p in v}
+            lista = [p for p in lista if id(p) not in fora_sf]
         editaveis = ([p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))
                       and _na_posicao_montada(p) is p]   # o suporte desenhado em pé (girado) não volta ao 3D
                      + [p.marca for p in lista if p.classe == "barra" and any(f.vista == "frente" for f in p.furos)])
@@ -1005,6 +1018,18 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         celulas_g += [("chumbador" if (p.classe == "chapa" and p.marca in chapas_de_chumbador)
                        else (nomeacao["tipos"].get(p.marca) or p.tipo_nome or p.classe),
                        (lambda dd, x, y, p=p: desenho_da_posicao(p, dd, x, y, editavel=p.marca in editaveis))) for p in lista]
+        celulas_sf = []
+        for perfil_sf, grupo_sf in tipicas_sf.items():
+            chave_sf = "TÍPICO %s" % perfil_sf
+            tipo_sf = nomeacao["tipos"].get(grupo_sf[0].marca) or grupo_sf[0].tipo_nome
+            celulas_sf.append((tipo_sf, (lambda dd, x, y, g_=grupo_sf, k_=chave_sf: desenho_de_tercas_sem_furo(g_, k_, dd, x, y))))
+            d.metadados["detalhamento"]["itens"][chave_sf] = {
+                "quantidade": sum(q.quantidade for q in grupo_sf), "perfil": "terças sem furo %s" % grupo_sf[0].perfil,
+                "material": grupo_sf[0].material, "comprimento": 0, "espessura": 0,
+                "peso": round(sum(float(q.peso_total or 0.0) for q in grupo_sf), 2), "classe": "Conjunto",
+                "categoria": "TERÇAS", "nome": ", ".join(q.nome or q.marca for q in grupo_sf),
+                "marcas": [m for q in grupo_sf for m in marcas_de(q)]}
+        celulas_g += celulas_sf
         # peças montadas (suporte de terça soldado, chapa de base com os chumbadores): junto
         # das chapas, com frente e lateral
         celulas_mont, familias_mont = [], []
@@ -1052,6 +1077,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                                  # repete na prancha dos tirantes (pedido do usuário, 28/09)
                                  if p.marca not in tirantes_em_grupo
                                  and not _so_da_tesoura(p, gabarito))
+        familias_completo.extend(("terca", t, f) for t, f in celulas_sf)
         familias_completo.extend((fam, t, f) for fam, (t, f) in zip(familias_mont, celulas_mont))
         base[chave] = d
 

@@ -201,6 +201,54 @@ def chamadas_de_furos(p, furos, H: float, esc: float, L: Optional[float] = None)
     return feitas
 
 
+#: Terças sem furo do mesmo perfil, a partir de quantas, vão para um detalhe típico só.
+MINIMO_TIPICO_SEM_FURO = 2
+
+
+def terca_sem_furo(pos: Posicao, tipo: str) -> bool:
+    """A terça sem furo nenhum (a de parede do depósito químico, só apoiada): vai para o detalhe típico
+    do perfil (`desenho_de_tercas_sem_furo`), como os contraventos."""
+    return pos.classe == "barra" and str(tipo or "").startswith("terca") and not pos.furos
+
+
+def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho: Desenho, dx: float, dy: float
+                               ) -> Tuple[float, float, float, float]:
+    """Detalhe típico das terças sem furo de um perfil (pedido do usuário, 29/09: "por não ter furação
+    nenhuma pode detalhar empilhado como os contraventos"): a mais comprida desenhada uma vez, com a
+    seção, e embaixo as cotas empilhadas, todas do tamanho dela, com o nome, o comprimento e a
+    quantidade de cada uma — "T.L.21 COMP=4579mm – 01X"."""
+    maior = max(posicoes, key=lambda q: q.comprimento)
+    atr = {"conjunto": chave, "detalhe": "conjunto", "perfil": maior.perfil}
+    p = _Papel(desenho, atr, dx, dy, camada_peca=maior.camada_2d or "")
+    esc = desenho.escala
+    off, passo = 10.0, 8.0
+    L, H = maior.L, maior.H
+    _vista(p, maior, (0, 1), 2, +1.0, 0, 0, set())
+    if maior.secao:
+        x_dir = L + 40.0 * esc
+        w_min = min(q[1] for l in maior.secao for q in l)
+        w_max = max(q[1] for l in maior.secao for q in l)
+        for laco in maior.secao:
+            p.polilinha([(x_dir + (w - w_min), v) for v, w in laco], fechada=True, camada="ACO")
+        p.cota_h(x_dir, x_dir + (w_max - w_min), 0, -off)
+        p.cota_v(0, H, x_dir + (w_max - w_min), off)
+        p.texto(x_dir, H + 3.0 * esc, "SEÇÃO", 2.0 * esc)
+    ordem = sorted(posicoes, key=lambda q: _ordem_natural(q.nome or q.marca))
+    for k, q in enumerate(ordem):
+        p.cota_h(0, L, 0, -(off + passo * k), texto="%s COMP=%dmm – %02dX" % (q.nome or q.marca, round(q.comprimento), q.quantidade))
+    total = sum(q.quantidade for q in ordem)
+    peso = sum(float(q.peso_total or 0.0) for q in ordem)
+    linhas = ["%s – %02dx   (sem furo)" % (", ".join(q.nome or q.marca for q in ordem), total),
+              com_bitola(maior.perfil),
+              "total %s kg" % _mm(peso, 1)]
+    y = H + (off + 2.0) * esc
+    for i, txt in enumerate(reversed(linhas)):
+        alt = 3.5 if i == len(linhas) - 1 else 2.5
+        p.texto(0, y, txt, alt * esc)
+        y += (alt + 1.2) * esc
+    return p.extremos
+
+
 def _na_posicao_montada(pos: Posicao) -> Posicao:
     """O suporte de terça em pé no modelo (o lado comprido na vertical) desenhado em pé, como fica
     montado (pedido do usuário, 29/09: "girar para ficar na posição montada"): uma cópia girada 90°,
