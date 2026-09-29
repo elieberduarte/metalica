@@ -386,37 +386,23 @@ def _perfil_laminado(pos) -> bool:
     return pos is not None and bool(re.match(r"^\s*(W|HP|I|H)\s*\d", str(pos.perfil or ""), re.I))
 
 
-def _barra_inteira(p, pos, nome: str, n: int, letra: str, esc: float, x_cel: float, y_topo: float) -> float:
-    """A barra da tesoura desenhada inteira na célula do conjunto, abaixo da elevação, com o desenho
-    da célula da peça (`desenho_da_posicao`: a vista de frente com os furos, a cadeia de cotas de ponta
-    a ponta, a seção e a vista de cima quando a mesa é furada). As entidades vão com o atributo
-    `detalhe_furos` (na prancha, um detalhe da tesoura, como os de furos). Devolve o topo da próxima."""
-    from nucleo2d.detalhe.celulas import desenho_da_posicao, _cabecalho, COTA_FUROS_DE_CIMA
-    pos.nome, pos.quantidade = nome, n
-    pos.cotar_por_linha = True                  # a linha de furos de cima com a cadeia dela em cima
-    alto = pos.H + (10.0 + 2.0 + COTA_FUROS_DE_CIMA - 4.0) * esc + sum((3.5 if i == 0 else 2.5) + 1.2 for i in range(len(_cabecalho(pos)))) * esc
-    antes = set(p.d.entidades)
-    ext = desenho_da_posicao(pos, p.d, p.dx + x_cel, p.dy + y_topo - alto)
-    for i in [i for i in p.d.entidades if i not in antes]:
-        p.d.entidades[i].atributos = dict(p.atr, detalhe_furos=letra)
-    p.pontos.extend([(ext[0], ext[1]), (ext[2], ext[3])])
-    return ext[1] - p.dy - 15.0 * esc
-
-
 def _detalhes_de_furos(p, barras: Sequence[dict], nome_de, esc: float, y_topo: float) -> None:
     """Um detalhe ampliado por barra furada da tesoura, lado a lado abaixo da elevação: a
     face furada vista de frente, da ponta da barra até depois do último furo (trechos
     longos sem furo interrompidos), com a cadeia dos furos a partir da ponta e as linhas de
     furação. Na elevação, uma chamada com a letra do detalhe. Os furos da alma virada para
-    baixo (escondidos na elevação) aparecem aqui."""
+    baixo (escondidos na elevação) aparecem aqui.
+
+    O perfil laminado (W, I, H — a tesoura de alma cheia do depósito químico, 29/09) não ganha
+    detalhe ampliado nem chamada: a peça inteira, com a furação original e as cotas dos furos de
+    ponta a ponta, é a célula da posição dela na prancha das barras (como a terça na dela). Desenhada
+    também aqui, embaixo da tesoura em 1:50, ela saía ilegível e repetida (pedido do usuário, 29/09)."""
     k = max(1.0, esc / ESCALA_DETALHE_FUROS)
     x_cel = 0.0
     letras = "ABCDEFGHJKLMNPQRSTUVWXYZ"
     vistos = set()
     n = 0
-    quantas = collections.Counter(nome_de(b_["marca"]) for b_ in barras)
     ordem = sorted(barras, key=lambda b_: _ordem_natural(nome_de(b_["marca"])))
-    inteiras = [b for b in ordem if _perfil_laminado(b.get("pos"))]
     for b in [b for b in ordem if not _perfil_laminado(b.get("pos"))]:
         nome = nome_de(b["marca"])
         for vista in ("frente", "topo"):
@@ -510,19 +496,6 @@ def _detalhes_de_furos(p, barras: Sequence[dict], nome_de, esc: float, y_topo: f
             p.texto(cx + raio * 0.75, cy - raio * 0.75 - 2.5 * esc, letra, 2.5 * esc, "COTA")
             p.atr = atr_conj
             x_cel = x_fim + 30.0 * esc
-    # o perfil laminado (W, I, H — a tesoura de alma cheia do depósito químico, 29/09): a peça inteira
-    # como a terça, com a furação original e as cotas dos furos de ponta a ponta, sem os trechos
-    # ampliados nem a chamada na elevação ("colocar o perfil inteiro e colocar as cotas dos furos"); uma
-    # embaixo da outra, abaixo dos detalhes comuns
-    y = y_topo if n == 0 else min(q[1] for q in p.pontos) - p.dy - 20.0 * esc
-    for b in inteiras:
-        nome = nome_de(b["marca"])
-        if (nome, "inteira") in vistos:
-            continue
-        vistos.add((nome, "inteira"))
-        letra = letras[n % len(letras)]
-        n += 1
-        y = _barra_inteira(p, b["pos"], nome, quantas[nome], letra, esc, 0.0, y)
 
 
 def _conjuntos_semelhantes(a: dict, b: dict) -> bool:
@@ -2896,7 +2869,9 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     # uma linha por tipo de peça, na cor dela: "U100X50X4.18" (banzos, azul), "U88X40X2.25 /
     # U100X50X3.04" (diagonais, laranja)…; as chapas pela espessura ("PLATE 400x120x13" → #13)
     por_cam: Dict[str, List[str]] = collections.OrderedDict()
-    ja_listados = set()                             # com as cores por perfil: cada perfil uma linha só
+    # cada perfil uma linha só, na cor da primeira função que o usa: a tesoura de alma cheia toda em
+    # W200X22.50 (banzos, montantes e diagonais) escrevia o mesmo perfil três vezes (29/09)
+    ja_listados = set()
     for (cam_, perfil_), _q in sorted(perfis_cam.items(), key=lambda kv: (ordem_cam.get(kv[0][0], 99), _ordem_natural(kv[0][1]))):
         if not perfil_:
             continue
@@ -2904,7 +2879,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             m_esp = re.search(r"x\s*([\d.,]+)\s*$", perfil_)
             perfil_ = "#" + m_esp.group(1).replace(".", ",") if m_esp else perfil_
         perfil_ = com_bitola(perfil_)               # U100X50X4.18 → U100X50X#8, como a fábrica escreve
-        if sub_camada and cam_ != "CHAPAS":
+        if cam_ != "CHAPAS":
             if perfil_ in ja_listados:
                 continue
             ja_listados.add(perfil_)

@@ -368,11 +368,12 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     # curto — 35 mm da ponta numa terça em 1:25 — deixa os textos apertados
     # as terças de parede (T.L) e de oitão (T.O) também: a mesma máquina fura todas
     terca = pos.tipo_nome in ("terca_cobertura", "terca_marquise", "terca_lateral", "terca_oitao")
-    # a barra inteira da tesoura de alma cheia (conjuntos._barra_inteira): a linha de furos de cima,
-    # defasada da de baixo por uns milímetros, ganha a cadeia dela em cima da peça — numa cadeia só os
-    # números se atropelavam ("7" e "43", pedido do usuário, 29/09)
+    # o perfil laminado (W, I, H — a barra da tesoura de alma cheia, detalhada inteira como a terça): a
+    # linha de furos de cima, defasada da de baixo por uns milímetros, ganha a cadeia dela em cima da
+    # peça — numa cadeia só os números se atropelavam ("7" e "43", pedido do usuário, 29/09)
     em_cima = []
-    if getattr(pos, "cotar_por_linha", False) and xs and not terca:
+    laminado = pos.classe == "barra" and bool(re.match(r"^\s*(W|HP|I|H)\s*\d", str(pos.perfil or ""), re.I))
+    if (laminado or getattr(pos, "cotar_por_linha", False)) and xs and not terca:
         cima = sorted({round(f.x, 1) for f in furos_frente if f.y > H / 2.0})
         baixo = sorted({round(f.x, 1) for f in furos_frente if f.y <= H / 2.0})
         if cima and baixo and cima != baixo:

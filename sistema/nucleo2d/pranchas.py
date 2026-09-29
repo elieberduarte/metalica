@@ -385,9 +385,13 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         alt_int = util_a - QUADRO_CABECALHO - 2 * FOLGA
         if w_mod / k > larg_int or (h_mod / k + FAIXA) > alt_int:
             k = escala_normalizada(max(w_mod / larg_int, h_mod / (alt_int - FAIXA)))
+            # pela `_reescalar`, que reespaça as pilhas de texto: a tesoura de 21 m do depósito, desenhada em
+            # 1:25 e reduzida a 1:50, ficava com as linhas do bloco do título uma em cima da outra (29/09)
+            _reescalar(c, k)
             c["nota"] = "reduzida para %s para caber na folha" % texto_escala(k)
-        c["k"] = k
-        c["w"], c["h"] = w_mod / k, h_mod / k + FAIXA
+        else:
+            c["k"] = k
+            c["w"], c["h"] = w_mod / k, h_mod / k + FAIXA
         _aplicar_arranjo(c, ux1 - ux0 - 2 * QUADRO_MARGEM)
         itens.append(c)
 
