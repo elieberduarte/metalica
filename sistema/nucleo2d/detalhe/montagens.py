@@ -311,7 +311,9 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
     y = topo + 4.0 * esc
     for i, txt in enumerate(reversed(linhas)):
         alt_t = 3.5 if i == len(linhas) - 1 else 2.2
+        p_txt.atr = dict(atr, cabecalho=len(linhas) - 1 - i)    # o bloco do título, para a prancha (29/09)
         p_txt.texto(dx, y, txt, alt_t * esc, "TEXTO")
         y += (alt_t + 1.2) * esc
+    p_txt.atr = atr
     caixas.append(p_txt.extremos)
     return (min(c[0] for c in caixas), min(c[1] for c in caixas), max(c[2] for c in caixas), max(c[3] for c in caixas))

@@ -1018,13 +1018,35 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             (bx0, by0), (bx1, by1) = c["caixa"]
             dx = c["px"] - bx0 / c["k"]
             dy = c["py"] + (0.0 if c.get("sem_escala") else FAIXA) - by0 / c["k"]
+            desloc = {}                                    # (dx, dy) por entidade, quando não é o da célula
             if c.get("slot_caixa") and not c.get("local") and c.get("pai") is None:
                 sx0, sy0, sx1, sy1 = c["slot_caixa"]
                 d.add(Polilinha(camada="PRANCHA", vertices=[(round(sx0, 2), round(sy0, 2)), (round(sx1, 2), round(sy0, 2)),
                                                             (round(sx1, 2), round(sy1, 2)), (round(sx0, 2), round(sy1, 2))],
                                 fechada=True, atributos={"prancha": "celula", "categoria": c["categoria"], "cel": ids_c[id(c)]}))
+                # o padrão do retângulo (pedido do usuário, 29/09): o cabeçalho no canto de cima à esquerda, com
+                # margem; a escala no canto de baixo à esquerda; o desenho centrado no que sobra
+                cab = [e for e in c["entidades"] if isinstance(e, Texto) and (e.atributos or {}).get("cabecalho") is not None]
+                resto = [e for e in c["entidades"] if not any(e is x_ for x_ in cab)]
+                cx_c = _caixa_de(cab, c["k"]) if cab else None
+                cx_r = _caixa_de(resto, c["k"], letra=0.58) if resto else None
+                if cx_c and cx_r:
+                    k_ = c["k"]
+                    dx_c = sx0 + MARGEM_RETANGULO - cx_c[0][0] / k_
+                    dy_c = sy1 - MARGEM_RETANGULO - cx_c[1][1] / k_
+                    for e in cab:
+                        desloc[id(e)] = (dx_c, dy_c)
+                    topo_ = sy1 - MARGEM_RETANGULO - (cx_c[1][1] - cx_c[0][1]) / k_ - MARGEM_RETANGULO * 0.5
+                    base_ = sy0 + MARGEM_RETANGULO + 2.0 + MARGEM_RETANGULO * 0.5
+                    dx_r = (sx0 + sx1) / 2.0 - (cx_r[0][0] + cx_r[1][0]) / 2.0 / k_
+                    dy_r = (topo_ + base_) / 2.0 - (cx_r[0][1] + cx_r[1][1]) / 2.0 / k_
+                    for e in resto:
+                        desloc[id(e)] = (dx_r, dy_r)
+                    c["px"], c["py"], c["w"], c["h"] = sx0, sy0, sx1 - sx0, sy1 - sy0
+                    c["escala_em"] = (sx0 + MARGEM_RETANGULO, sy0 + MARGEM_RETANGULO)
             for e in c["entidades"]:
-                n_ = _para_papel(e, c["k"], dx, dy, c["fonte"])
+                dx_e, dy_e = desloc.get(id(e), (dx, dy))
+                n_ = _para_papel(e, c["k"], dx_e, dy_e, c["fonte"])
                 n_.atributos = dict(n_.atributos or {}, cel=ids_c[id(c)])
                 d.add(n_)
             if c.get("alvo_furos"):
@@ -1039,7 +1061,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                                 atributos={"prancha": "chamada_furos", "fonte": c["fonte"], "letra": c.get("letra")}))
             rot = "ESC. " + texto_escala(c["k"]) + ("  (%s)" % c["nota"] if c.get("nota") else "")
             if not c.get("sem_escala"):
-                d.add(Texto(camada="TEXTO", posicao=(round(c["px"], 2), round(c["py"] + 1.5, 2)), texto=rot, altura=2.0,
+                ex_, ey_ = c.get("escala_em") or (c["px"], c["py"] + 1.5)
+                d.add(Texto(camada="TEXTO", posicao=(round(ex_, 2), round(ey_, 2)), texto=rot, altura=2.0,
                         atributos={"prancha": "escala", "fonte": c["fonte"], "celula": c["titulo"], "cel": ids_c[id(c)]}))
         d.metadados["prancha"] = {"formato": formato, "numero": i, "total": total, "fontes": fontes_da,
                                   "titulo": info.get("titulo", ""),
@@ -1080,6 +1103,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
 
 #: A prancha de continuação que ocupa menos que isto da área útil tenta ir para o espaço livre de outra.
 OCUPACAO_MINIMA = 0.2
+#: No retângulo da prancha de corte: a margem do cabeçalho e da escala até a borda (mm de papel).
+MARGEM_RETANGULO = 4.0
 
 
 def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: float, qx1: float, uy0: float,

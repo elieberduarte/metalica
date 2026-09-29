@@ -440,10 +440,14 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     # furos de cima quando ela existe
     y = H + (off + 2.0 + (COTA_FUROS_DE_CIMA - 4.0 if em_cima else 0.0)) * esc
     linhas = _cabecalho(pos)
+    atr0 = p.atr
     for i, txt in enumerate(reversed(linhas)):
         alt = 3.5 if i == len(linhas) - 1 else 2.5
+        # `cabecalho`: a linha do bloco do título (0 = o nome), que a prancha põe no canto do retângulo (29/09)
+        p.atr = dict(atr0, cabecalho=len(linhas) - 1 - i)
         p.texto(0, y, txt, alt * esc)
         y += (alt + 1.2) * esc
+    p.atr = atr0
     return p.extremos
 
 
