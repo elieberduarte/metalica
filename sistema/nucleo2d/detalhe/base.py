@@ -1729,7 +1729,7 @@ def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fi
 #: anteriores (S.T., A.G., C.V., CJ.…): projeto com nomes.json antigo renumera na 1ª geração.
 PREFIXO_NOME = collections.OrderedDict([
     ("tesoura", "T"), ("pilar", "PL"), ("viga", "VG"), ("terca_cobertura", "T.C."), ("terca_lateral", "T.L."), ("terca_oitao", "T.O."),
-    ("terca_marquise", "T.M."), ("suporte_terca", "CH"),
+    ("terca_marquise", "T.M."), ("suporte_terca", "CH"), ("suporte_tirante", "S.TI."),
     ("agulhamento", "A.C."), ("agulhamento_lateral", "A.L."), ("agulhamento_diagonal", "A.D."),
     ("suporte_agulhamento", "CH"), ("contraventamento", "CV."),
     ("suporte_contraventamento", "CH"), ("castanha", "CH"), ("chapa", "CH"),
@@ -1740,7 +1740,7 @@ PREFIXO_NOME = collections.OrderedDict([
 TIPOS_NOME = {
     "tesoura": "Tesoura", "pilar": "Pilar", "viga": "Viga de pórtico", "terca_cobertura": "Terça de cobertura", "terca_lateral": "Terça lateral",
     "terca_oitao": "Terça de oitão", "terca_marquise": "Terça de marquise",
-    "suporte_terca": "Suporte de terça", "agulhamento": "Agulhamento de cobertura",
+    "suporte_terca": "Suporte de terça", "suporte_tirante": "Suporte de tirante", "agulhamento": "Agulhamento de cobertura",
     "agulhamento_lateral": "Agulhamento lateral / de oitão", "agulhamento_diagonal": "Agulhamento diagonal",
     "suporte_agulhamento": "Suporte de agulhamento",
     "contraventamento": "Contraventamento", "suporte_contraventamento": "Suporte de contraventamento",

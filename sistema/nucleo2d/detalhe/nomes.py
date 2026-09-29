@@ -197,6 +197,9 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     tipo: Dict[str, str] = {}
     marcas_terca = {m for p in posicoes for m in marcas_de(p) if p.classe == "barra" and _eh_terca(p, camadas.get(p.marca, ""))}
     suportes = _chapas_onde_a_terca_encosta(pecas, marcas_terca)
+    # a chapa inteira em cima da mesa do banzo onde a ponta do tirante aparafusa (a S.TI, marcada no modelo)
+    marcas_sti = {str(_marcas(e).get("posicao") or "") for e in pecas
+                  if (getattr(e, "atributos", None) or {}).get("funcao") == "suporte_tirante"}
     # chumbador: barra redonda em pé que atravessa uma chapa de base deitada (no TecnoMETAL
     # vem como conjunto próprio e caía na regra do tirante: "C.V.")
     from nucleo2d.detalhe.montagens import grupos_montados, _eh_chapa
@@ -242,6 +245,8 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             # suporte de terça é a chapa em que a terça encosta (geometria), não a que
             # tem a furação parecida: a chapinha de ponta do agulhamento tem os mesmos furos
             t = "suporte_terca" if any(m in suportes for m in marcas_de(p)) else "chapa"
+            if any(m in marcas_sti for m in marcas_de(p)):
+                t = "suporte_tirante"
         elif cls == "telha":
             t = "telha"
         elif re.search(r"BARRA\s*ROSC", p.perfil or "", re.I):
