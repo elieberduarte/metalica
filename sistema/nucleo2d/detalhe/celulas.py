@@ -379,6 +379,22 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
         if cima and baixo and cima != baixo:
             em_cima, xs = cima, baixo
             p.cadeia_h([0.0] + cima + [L], H, COTA_FUROS_DE_CIMA, exigir_espaco=False)
+    # a barra redonda dobrada (o gancho do tirante, o chumbador em U): as cotas medem o que está desenhado —
+    # de ponta a ponta da vista, não o comprimento desenvolvido, que fica no título — e a altura vai do lado
+    # da dobra. Antes a total do gancho de 215 mm dizia 250 e passava 35 mm da ponta, e a altura do gancho
+    # ficava na ponta reta, no vazio (pedido do usuário, 29/09: "cotas pegando no vazio")
+    c0, c1, x_alt, lado_alt = 0.0, L, L, 1.0
+    dobrada = bool(pos.local) and not xs and (pos.tipo_nome == "gancho" or pos.classe == "barra_redonda" or (
+        pos.classe == "barra_conformada" and _eh_redonda_perfil(pos.perfil)))
+    if dobrada:
+        us = [q[0] for q in pos.local]
+        c0, c1 = min(us), max(us)
+        perto = lambda u0: [q[1] for q in pos.local if abs(q[0] - u0) <= 30.0]    # noqa: E731
+        a_, b_ = perto(c0), perto(c1)
+        if a_ and b_ and (max(a_) - min(a_)) > (max(b_) - min(b_)) + 1.0:
+            x_alt, lado_alt = c0, -1.0                  # a dobra no começo: a altura à esquerda
+        else:
+            x_alt = c1
     cadeia = bool(xs) and ((terca and _cotas_da_terca(p, furos_frente, L, off, off2))
                            or p.cadeia_h([0.0] + xs + [L], 0, -off, exigir_espaco=False))
     if isinstance(cadeia, tuple):                 # terça com a linha dos simples: a total colada na dos duplos
@@ -386,11 +402,11 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     elif terca and cadeia is True:                # terça só com os duplos
         p.cota_h(0, L, 0, -(off + PASSO_COTA_TERCA))
     else:
-        p.cota_h(0, L, 0, -(off3 if cadeia == "dupla" else off2 if cadeia else off))
+        p.cota_h(c0, c1, 0, -(off3 if cadeia == "dupla" else off2 if cadeia else off))
     # na terça a altura dos furos é o padrão da máquina de corte (50 ou 100 mm): a cadeia
     # vertical só atrapalha; ficam a altura da peça e as cotas horizontais
     cadeia = bool(ys) and not terca and p.cadeia_v([0.0] + ys + [H], L, off, exigir_espaco=False)
-    p.cota_v(0, H, L, off3 if cadeia == "dupla" else off2 if cadeia else off)
+    p.cota_v(0, H, x_alt, lado_alt * (off3 if cadeia == "dupla" else off2 if cadeia else off))
 
     x_dir = L + (off3 + off) * esc
     # a seção não vai na terça (o perfil está no título) nem na barra redonda (a bitola também) — prancha

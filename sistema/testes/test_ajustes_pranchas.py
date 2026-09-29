@@ -89,6 +89,31 @@ def test_ajustes_voltam_na_proxima_geracao():
     assert sum(1 for e in g3.entidades.values() if getattr(e, "texto", "") == "NOTA À MÃO") == 1
 
 
+def test_celula_montada_de_outro_jeito_nao_e_aprendida():
+    """A célula que saiu noutra escala/arranjo entre as gerações (quase tudo "movido dentro dela") não é
+    ajuste do usuário: nada é aprendido dela, e a célula de fato mexida ao lado continua aprendida."""
+    g1 = _gerado("g1")
+    imp1 = AP.marcar(g1)
+    ed = Desenho.de_dict(copy.deepcopy(g1.dict()))
+    A, B = "tesouras|conjunto:M1", "chaparias|posicao:P5"
+    o = (300.0, 100.0)
+    for e in _por(ed, B):                                   # B: a geometria noutra escala, as cotas e o texto não
+        if e.tipo == "linha":
+            AP._transformar(e, lambda p: (o[0] + 1.3 * (p[0] - o[0]) + 7.0, o[1] + 1.3 * (p[1] - o[1]) - 4.0), 1.3)
+        else:
+            ed.entidades[e.id] = transladar(e, 9.0, 0.0)
+    for e in _por(ed, A):                                   # A: movida inteira, um ajuste de verdade
+        ed.entidades[e.id] = transladar(e, 20.0, 0.0)
+    aj = AP.aprender(ed, {"impressoes": {"g1": imp1}})
+    assert B not in aj["celulas"] and aj["celulas"][A]["d"] == [20.0, 0.0]
+    assert any("montada de outro jeito" in x["ajuste"] and x["celula"] == B for x in aj["diario"])
+    g2 = _gerado("g2")
+    AP.marcar(g2)
+    antes = {e.id: copy.deepcopy(e) for e in _por(g2, B)}
+    AP.aplicar(g2, aj)
+    assert all(math.dist(AP._ref(e), AP._ref(antes[e.id])) < 1e-9 for e in _por(g2, B))
+
+
 def test_sem_ajuste_nao_muda_nada():
     g1 = _gerado("g1")
     imp1 = AP.marcar(g1)

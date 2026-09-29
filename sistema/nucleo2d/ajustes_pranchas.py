@@ -37,6 +37,10 @@ TOLERANCIA = 0.3
 TOLERANCIA_ESCALA = 0.005
 #: Quantas entradas o diário guarda.
 DIARIO_MAX = 500
+#: Tantas entidades quanto isto (e esta fração das da célula) "movidas dentro dela" não é ajuste do usuário:
+#: a célula foi montada de outro jeito entre as gerações, e nada se aprende dela.
+FORA_DO_LUGAR_MIN = 3
+FORA_DO_LUGAR_FRACAO = 0.5
 ARQUIVO = "ajustes-pranchas.json"
 
 
@@ -255,6 +259,15 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
                         aj["p"] = [round(e.posicao[0] - esp_p[0], 3), round(e.posicao[1] - esp_p[1], 3)]
                 if aj:
                     ents_aj[g["s"]] = aj
+            if len(ents_aj) >= max(FORA_DO_LUGAR_MIN, FORA_DO_LUGAR_FRACAO * len(originais)):
+                # quase tudo "movido dentro da célula": não foi o usuário — a célula foi montada de outro jeito
+                # entre as duas gerações (outra escala, outro arranjo) e a comparação não fecha. Nada é
+                # aprendido dela: o S.TI.2 do depósito ganhou "escala × 1,088 + 21 entidades movidas" e ficou
+                # com as cotas fora da chapa (29/09)
+                novo = {}
+                ents_aj = {}
+                diario.append({"quando": quando, "celula": cel,
+                               "ajuste": "célula montada de outro jeito nesta geração: nada aprendido dela"})
             if ents_aj:
                 novo["ents"] = ents_aj
                 diario.append({"quando": quando, "celula": cel, "ajuste": "%d entidade(s) movida(s) dentro dela" % len(ents_aj)})

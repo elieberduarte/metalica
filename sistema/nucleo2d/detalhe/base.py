@@ -298,11 +298,15 @@ class _Papel:
             self._p(p1[0] - uy * desl_papel * self.d.escala, p1[1] + ux * desl_papel * self.d.escala)
         return True
 
-    def cadeia_h(self, xs, y, desl_papel, exigir_espaco=True):
+    def cadeia_h(self, xs, y, desl_papel, exigir_espaco=True, alturas=None):
         """Cadeia de cotas, sempre numa linha só e contínua (30 | 210 | 30), com a total
         por fora — é o padrão da fábrica. Antes, trechos curtos saíam em duas linhas
         alternadas, e a cadeia ficava picada. Com `exigir_espaco`, sem espaço para os
-        números não sai cadeia (fica só a total)."""
+        números não sai cadeia (fica só a total). `alturas(x)`: a altura da peça em cada ponto
+        (até `y`) — cada cota parcial nasce na mais alta das duas pontas dela, a linha de chamada da
+        mais baixa desce até a peça (uma linha na camada COTA), e a linha da cadeia fica no mesmo
+        lugar; sem isso, a linha de chamada do suporte mais baixo do DP começava no ar, na altura da
+        chapa mais alta (pedido do usuário, 29/09: "cotas pegando no vazio")."""
         xs = sorted(set(float(round(x)) for x in xs))
         if exigir_espaco and not self._cabe(xs):
             return False
@@ -311,6 +315,7 @@ class _Papel:
         n = len(xs) - 1
         y_linha = y + desl_papel * esc                     # a linha de cota (h: normal para cima)
         sg = 1.0 if desl_papel >= 0 else -1.0
+        descidas = set()
         for i in range(n):
             comp = xs[i + 1] - xs[i]
             txt = "%d" % round(comp)
@@ -326,7 +331,15 @@ class _Papel:
             if pos:
                 self._p(pos[0] - self.dx - tw / 2, pos[1] - self.dy - h)
                 self._p(pos[0] - self.dx + tw / 2, pos[1] - self.dy + h)
-            self.cota_h(xs[i], xs[i + 1], y, desl_papel, texto_pos=pos)
+            y_i = y
+            if alturas is not None:
+                h_a, h_b = min(y, alturas(xs[i])), min(y, alturas(xs[i + 1]))
+                y_i = max(h_a, h_b)
+                for x_, h_ in ((xs[i], h_a), (xs[i + 1], h_b)):
+                    if y_i - h_ > 0.5 and (x_, h_) not in descidas:
+                        descidas.add((x_, h_))
+                        self.linha(x_, h_, x_, y_i, "COTA")
+            self.cota_h(xs[i], xs[i + 1], y_i, desl_papel + (y - y_i) / esc, texto_pos=pos)
         return True
 
     def cadeia_v(self, ys, x, desl_papel, exigir_espaco=True):

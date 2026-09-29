@@ -861,3 +861,21 @@ def test_ponta_roscada_1_porca_2_arruelas():
     assert ac.get("Porca sextavada Ø3/8\" UNC") == 2 and ac.get("Arruela lisa Ø3/8\"") == 4 + 1
     assert "BOLT () 0x0" not in ac
 
+
+
+def test_cadeia_com_a_altura_de_cada_ponto():
+    """A cadeia de cima do DP nasce na peça em cada ponto (pedido do usuário, 29/09: "cotas pegando no
+    vazio"): cada parcial na ponta mais alta dela, a linha de chamada da mais baixa descendo até a peça,
+    e a linha da cadeia no mesmo lugar."""
+    from nucleo2d.desenho import Desenho, Linha
+    from nucleo2d.detalhe.base import _Papel
+    d = Desenho(nome="t", escala=10.0)
+    p = _Papel(d, {}, 0.0, 0.0)
+    topo = {0.0: 50.0, 100.0: 30.0, 200.0: 30.0}
+    assert p.cadeia_h([0.0, 100.0, 200.0], 50.0, 10.0, exigir_espaco=False, alturas=lambda x: topo[x])
+    cotas = sorted((e for e in d.entidades.values() if isinstance(e, Cota)), key=lambda c: c.p1[0])
+    assert [c.p1[1] for c in cotas] == [50.0, 30.0]
+    # a linha de cota fica em 50 + 10 × 10 = 150 nas duas
+    assert all(abs(c.p1[1] + c.deslocamento * 10.0 - 150.0) < 1e-6 for c in cotas)
+    descidas = [e for e in d.entidades.values() if isinstance(e, Linha)]
+    assert len(descidas) == 1 and descidas[0].a == (100.0, 30.0) and descidas[0].b == (100.0, 50.0)

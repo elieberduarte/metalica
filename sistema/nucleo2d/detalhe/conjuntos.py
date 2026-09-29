@@ -2505,6 +2505,34 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         ts = trechos(em_cima)
         return ts[0][2] if len(ts) == 1 else None
 
+    # a borda de cima do que foi desenhado deste conjunto em cada abscissa: a cadeia de cima do DP (banzo
+    # reto) nasce na peça em cada ponto — o suporte mais baixo que a chapa da ponta tinha a linha de
+    # chamada começando no ar (M73 da Sala, "cotas pegando no vazio", 29/09)
+    segs_topo: list = []
+
+    def topo_em(x):
+        if not segs_topo:
+            for k_ in desenho.entidades:
+                if k_ in antes:
+                    continue
+                e_ = desenho.entidades[k_]
+                if e_.camada in ("COTA", "TEXTO", "EIXO") or not isinstance(e_, (Linha, Polilinha)):
+                    continue
+                pts_ = [e_.a, e_.b] if isinstance(e_, Linha) else list(e_.vertices) + ([e_.vertices[0]] if e_.fechada else [])
+                segs_topo.extend(zip(pts_, pts_[1:]))
+            segs_topo.append(((0.0, -1e9), (0.0, -1e9)))      # a lista não fica vazia (nada desenhado)
+        X = x + dx
+        melhor = None
+        for (ax_, ay_), (bx_, by_) in segs_topo:
+            if min(ax_, bx_) - 1.0 <= X <= max(ax_, bx_) + 1.0:
+                if abs(bx_ - ax_) < 1e-6:
+                    yy = max(ay_, by_)
+                else:
+                    t_ = min(1.0, max(0.0, (X - ax_) / (bx_ - ax_)))
+                    yy = ay_ + t_ * (by_ - ay_)
+                melhor = yy if melhor is None else max(melhor, yy)
+        return alt if melhor is None or melhor < -1e8 else min(alt, melhor - dy)
+
     # as peças em pé com contorno (a descida do banzo no joelho, o montante da cumeeira): as faces delas,
     # na célula — a cadeia do joelho mede a face da descida, e a do banzo de baixo termina na face do
     # montante da cumeeira, onde o banzo acaba (pedidos do usuário, 28/09)
@@ -2526,7 +2554,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         if len(ts) <= 1:
             reta = ts[0][2] if ts else None
             if reta is None:
-                return p.cadeia_h(nos, alt if em_cima else 0.0, sinal, exigir_espaco=apertada)
+                return p.cadeia_h(nos, alt if em_cima else 0.0, sinal, exigir_espaco=apertada,
+                                  alturas=topo_em if em_cima else None)
             return p.cadeia_alinhada(reta, nos, sinal, exigir_espaco=apertada)
         # um trecho por água: os nós dele e as pontas dele, cada cadeia na sua reta
         feita = False
@@ -2699,7 +2728,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             # a referência é o suporte da terça (regra da fábrica): a linha de chamada nasce
             # no pé do suporte, no banzo, e sobe por ele até a cadeia
             cadeia_suportes = (p.cadeia_alinhada(reta_cima, sup, desl, exigir_espaco=False) if reta_cima is not None
-                               else p.cadeia_h(sup, alt, desl, exigir_espaco=False))
+                               else p.cadeia_h(sup, alt, desl, exigir_espaco=False, alturas=topo_em))
     n_topo = (1 if cadeia_cima else 0) + (1 if cadeia_suportes else 0)
     if alma_cheia and len(trechos_cima) > 1:
         # o comprimento de cada água, na inclinação dela, por fora das cadeias
@@ -3666,8 +3695,12 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
         p.texto(cx + 1.5 * esc, cy + 3.0 * esc, rotulo, h_txt, "TEXTO")
     if ex:
         _desenhar_eixos(p, ex, u, v, u0, v0, esc, larg_v, alt_v)
-    p.cota_h(0, larg_v, 0, -10.0)
-    p.cota_v(0, alt_v, larg_v, 10.0)
+    # as totais medem as peças (chumbadores e chapas), com a linha da cota onde ficava, fora das bolinhas; antes
+    # iam até a ponta das linhas de eixo, que passam das peças — 37828 × 23520 no depósito, no vazio (29/09)
+    pu = [_dot(q, u) - u0 for e in itens for q in e.vertices]
+    pv = [_dot(q, v) - v0 for e in itens for q in e.vertices]
+    p.cota_h(min(pu), max(pu), min(pv), -10.0 - min(pv) / esc)
+    p.cota_v(min(pv), max(pv), max(pu), 10.0 + (larg_v - max(pu)) / esc)
     p.texto(0, -(10.0 + 8.0) * esc, "PLANTA DE CHUMBAÇÃO", 3.5 * esc)
     n_chumb, n_chapas = (0, len(chumb) + len(chapas)) if so_chapas else (len(chumb), len(chapas))
     p.texto(0, -(10.0 + 8.0 + 4.5) * esc, "escala 1:%s · %d chumbador(es) e %d chapa(s) de base, vistos de cima, nos eixos da obra"
