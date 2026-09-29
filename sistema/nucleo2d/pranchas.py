@@ -281,6 +281,7 @@ def _conteudo_de(cels: Sequence[dict]) -> List[str]:
             continue                                  # o detalhe de furos é da tesoura, que já está na lista
         it = c.get("item") or {}
         cat = (c.get("categoria") or it.get("categoria") or "VISTAS").upper()
+        cat = {"CHUMBACAO": "PLANTA DE CHUMBAÇÃO"}.get(cat, cat)
         nome = (it.get("nome") or c.get("montagem") or c.get("marca") or c.get("desenho_titulo") or c["titulo"]).replace("Detalhamento – ", "")
         q = _quantidade_da_celula(c) if (it or c.get("montagem")) else 0
         if q:
@@ -401,6 +402,27 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         if c["categoria"] == "CONJUNTOS" and re.match(r"(A\.[CLD]\.|CV\.)", str((c.get("item") or {}).get("nome") or c.get("titulo") or "")):
             c["categoria"] = "CONTRAVENTOS"
     qx0, qx1 = ux0 + QUADRO_MARGEM, ux1 - QUADRO_MARGEM
+    # a prancha dos chumbadores (pedido do usuário, 28/09): a planta de locação reduzida à esquerda e, à direita,
+    # as chapas e as barras de chumbamento; a primeira da obra (a ordem da fábrica: chumbadores → … → telhas)
+    planta_cb = [c for c in itens if "chumba" in str(c.get("fonte") or "").lower() and not c.get("chave")]
+    if planta_cb:
+        partes_cb = {pt.strip() for c in itens if _eh_chumbamento(c.get("montagem")) for pt in c["montagem"].split(" + ")}
+        for c in itens:
+            it = c.get("item") or {}
+            if _eh_chumbamento(c.get("montagem")) or it.get("tipo") == "chumbador" or (it.get("nome") in partes_cb):
+                c["categoria"] = "CHUMBAMENTO"
+                # os chumbamentos montados primeiro, depois os chumbadores e as chapas de base
+                c["_ordem"] = c.get("_ordem", 0) + (-3e6 if c.get("montagem") else -2e6 if it.get("tipo") == "chumbador" else -1e6)
+        meia = 0.5 * (qx1 - qx0) - 2 * QUADRO_MARGEM
+        for c in planta_cb:
+            c["categoria"] = "CHUMBACAO"
+            (bx0, by0), (bx1, by1) = c["caixa"]
+            if (bx1 - bx0) / c["k"] > meia:
+                c["k"] = escala_normalizada((bx1 - bx0) / meia)
+                c.pop("nota", None)
+                c["w"], c["h"] = (bx1 - bx0) / c["k"], (by1 - by0) / c["k"] + FAIXA
+        ordem["CHUMBACAO"], ordem["CHUMBAMENTO"] = -2, -1
+        titulos_q.update(CHUMBACAO="Planta de locação dos chumbadores", CHUMBAMENTO="Chumbamento – chapas e barras")
     # os detalhes de furos: os da tesoura vão para a faixa da prancha dela (na categoria dela, se não
     # couberem); os de um conjunto menor voltam para a célula dele, como antes
     for c in [c for c in itens if c.get("pai") is not None]:
@@ -527,7 +549,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 cheia = True
             # contraventos/agulhamentos e conjuntos: dois quadros lado a lado, cada um na altura toda
             seq_ = list(dict.fromkeys(c_["categoria"] for c_ in fila))
-            if not cels_p and len(seq_) >= 2 and seq_[:2] == ["CONTRAVENTOS", "CONJUNTOS"]:
+            if not cels_p and len(seq_) >= 2 and tuple(seq_[:2]) in (("CONTRAVENTOS", "CONJUNTOS"), ("CHUMBACAO", "CHUMBAMENTO")):
                 cheia = lado_a_lado(seq_[0], seq_[1], cels_p, mold_p)
             while fila and not cheia:
                 cat = fila[0]["categoria"]

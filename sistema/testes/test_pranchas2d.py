@@ -551,3 +551,26 @@ def test_tercas_alinhadas_e_suportes_na_faixa():
         assert not any(c["caixa"][3] <= y_faixa + 0.01 for c in ter), "terça na faixa de baixo"
         xs = sorted({round(c["caixa"][0], 1) for c in ter})
         assert len(xs) <= 2, xs                       # duas colunas, cada uma num x só
+
+
+def test_prancha_dos_chumbadores():
+    """A planta de locação dos chumbadores reduzida à esquerda e, à direita, as chapas e as barras de
+    chumbamento — a primeira prancha da obra (pedido do usuário, 28/09)."""
+    import os
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from test_detalhar2d import _modelo_real
+    from nucleo2d import detalhar as det
+    from nucleo2d.pranchas import montar_pranchas
+    from nucleo2d.desenho import Texto
+    doc = _modelo_real()
+    r = det.detalhar(doc, grupos=["chumbacao", "chaparias", "extras"], converter=False)
+    if "chumbacao" not in r["desenhos"]:
+        return
+    fontes = [{"nome": "detalhamento-" + k, "desenho": d} for k, d in r["desenhos"].items()]
+    folhas = montar_pranchas(fontes, formato="A1")
+    tit = {e.texto for e in folhas[0].entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("campo") == "titulo"}
+    assert "PLANTA DE LOCAÇÃO DOS CHUMBADORES" in tit
+    cels = [c["titulo"] for c in folhas[0].metadados["prancha"]["celulas"]]
+    if any(t.startswith("CB") for f in folhas for t in (c["titulo"] for c in f.metadados["prancha"]["celulas"])):
+        assert "CHUMBAMENTO – CHAPAS E BARRAS" in tit and any(t.startswith("CB") for t in cels), cels
