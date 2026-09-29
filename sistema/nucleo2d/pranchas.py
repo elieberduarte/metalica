@@ -312,13 +312,22 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         celulas.extend(cs)
     if not celulas:
         raise ErroDeDados("nenhum desenho com conteúdo para montar a prancha.")
+    # as células de montagem (o chumbamento "CB1 + CH9": o chumbador com a chapa de apoio) pelo nome dela
+    for c in celulas:
+        if c.get("chave"):
+            continue
+        conta = collections.Counter(str((e.atributos or {}).get("montagem") or "") for e in c["entidades"])
+        nome_m, n_m = conta.most_common(1)[0] if conta else ("", 0)
+        if nome_m and n_m >= 0.8 * len(c["entidades"]):
+            c["montagem"] = nome_m
+            c["chave"] = ("montagem", nome_m)
     # a mesma posição desenhada em dois desenhos (a chapa na tesoura, nas terças e nas chaparias, que é
     # o desenho para o corte): uma célula só, a do desenho da família, com o item de quem o tiver
     unicas, vistas = [], {}
     for c in celulas:
         ch = c.get("chave")
-        if ch and ch[0] == "posicao" and ch[1] in vistas:
-            j = vistas[ch[1]]
+        if ch and ch[0] in ("posicao", "montagem") and ch in vistas:
+            j = vistas[ch]
             antes = unicas[j]
             if (c.get("selecionada") and not antes.get("selecionada")) or (
                     not antes.get("selecionada") and "chaparia" in str(antes["fonte"]) and "chaparia" not in str(c["fonte"])):
@@ -330,8 +339,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             elif not antes.get("item") and c.get("item"):
                 antes["item"] = c["item"]
             continue
-        if ch and ch[0] == "posicao":
-            vistas[ch[1]] = len(unicas)
+        if ch and ch[0] in ("posicao", "montagem"):
+            vistas[ch] = len(unicas)
         unicas.append(c)
     celulas = unicas
     for i_c, c in enumerate(celulas):
@@ -439,9 +448,15 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             alvo = {x["marca"] for c in cels_p for x in ((c.get("item") or {}).get("composicao") or [])
                     if str(x.get("classe") or "").startswith("chapa")}
             cats_p = {c["categoria"] for c in cels_p}
+            nomes_alvo = {x["nome"] for c in cels_p for x in ((c.get("item") or {}).get("composicao") or [])
+                          if str(x.get("classe") or "").startswith("chapa")}
             if alvo:
+                # as chapas do conjunto e os chumbamentos delas ("CB1 + CH9": os chumbadores dos apoios da tesoura)
                 candidatas = [c for c in fila if c.get("marca") in alvo
-                              or any(mk in alvo for mk in ((c.get("item") or {}).get("marcas") or []))]
+                              or any(mk in alvo for mk in ((c.get("item") or {}).get("marcas") or []))
+                              or (c.get("montagem") and any(pt in nomes_alvo for pt in c["montagem"].split(" + ")))]
+                # o chumbamento primeiro (é o que a obra procura junto da tesoura), depois as chapas
+                candidatas.sort(key=lambda c: 0 if _eh_chumbamento(c.get("montagem")) else 1)
             else:
                 candidatas = [c for c in fila if c["categoria"] in cats_p]
             topo_cel = fy1 - QUADRO_CABECALHO - FOLGA * 0.5
@@ -486,6 +501,11 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             for mk in [c.get("marca")] + list((c.get("item") or {}).get("marcas") or []):
                 if mk:
                     onde.setdefault(str(mk), i_p)
+            if c.get("montagem"):
+                onde.setdefault("montagem:" + c["montagem"], i_p)
+    # a montagem de cada chapa ("CH9" -> "CB1 + CH9"): as chamadas apontam os chumbamentos nos apoios
+    montagem_de = {pt: c["montagem"] for cels in pranchas for c in cels if _eh_chumbamento(c.get("montagem"))
+                   for pt in c["montagem"].split(" + ")}
     relacao = [("%02d/%02d" % (i_p, total), (_conteudo_de(cels) or ["-"])[0].lstrip("- "))
                for i_p, cels in enumerate(pranchas, start=1)]
 
@@ -510,7 +530,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         destaque = de_cima[0] if (len(de_cima) == 1 and molduras[i0 - 1] and any(
             "legenda_conjunto" in (e.atributos or {}) for e in de_cima[0]["entidades"])) else None
         if destaque is not None:
-            _conjunto_centralizado(d, destaque, molduras[i0 - 1][0], qx0, qx1, onde, i)
+            _conjunto_centralizado(d, destaque, molduras[i0 - 1][0], qx0, qx1, onde, i, montagem_de)
         for c in cels:
             if c is destaque:
                 continue
@@ -688,7 +708,7 @@ def siglas_usadas(nomes: Sequence[str]) -> List[Tuple[str, str]]:
 
 
 def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float, onde: Dict[str, int] = None,
-                           numero: int = 0):
+                           numero: int = 0, montagem_de: Dict[str, str] = None):
     """O conjunto (a tesoura) no meio do quadro dele, com o bloco do título — as linhas marcadas com
     `legenda_conjunto` no detalhamento — embaixo, à esquerda, alinhado pela borda da tesoura (sem as
     cotas), em letra maior: 6 mm o nome, 4,2 mm o resto (pedido do usuário, 28/09; a posição como ele a
@@ -715,7 +735,7 @@ def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float
     geo = [e for e in resto if not isinstance(e, (Cota, Texto, Chamada))]
     g0 = (_caixa_de(geo, k) or ((bx0, by0), (bx1, by1)))[0][0]
     x_bloco = g0 / k + dx + 5.5                                # a borda da tesoura, sem as cotas da esquerda
-    _chamadas_das_chapas(d, c, geo, k, dx, dy, onde or {}, numero)
+    _chamadas_das_chapas(d, c, geo, k, dx, dy, onde or {}, numero, montagem_de or {})
     for i, e in enumerate(leg):
         alt = h_tit if i == 0 else h_lin
         d.add(Texto(camada=e.camada, posicao=(round(x_bloco, 2), round(y, 2)), texto=e.texto, altura=alt,
@@ -726,8 +746,14 @@ def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float
     c["px"], c["py"], c["w"], c["h"] = xc - w / 2.0, y - 2.0, w, topo - (y - 2.0)
 
 
+def _eh_chumbamento(montagem) -> bool:
+    """montagem com chumbador ("CB1 + CH9"), não as chapas soldadas entre si ("CH1 + CH2")"""
+    import re as _re
+    return bool(montagem) and any(_re.match(r"CB\d", pt.strip()) for pt in str(montagem).split(" + "))
+
+
 def _chamadas_das_chapas(d: Desenho, c: dict, geo: Sequence, k: float, dx: float, dy: float,
-                         onde: Dict[str, int], numero: int):
+                         onde: Dict[str, int], numero: int, montagem_de: Dict[str, str] = None):
     """Uma chamada por tipo de chapa da composição do conjunto, do centro de uma instância dela no desenho
     ao nome ("CH4"; detalhada noutra prancha, "CH3 – PR.02"). A instância é a mais longe das já apontadas,
     para as chamadas se espalharem; o texto sai para fora do desenho (para cima na metade de cima)."""
@@ -750,16 +776,25 @@ def _chamadas_das_chapas(d: Desenho, c: dict, geo: Sequence, k: float, dx: float
         if not por_inst:
             continue
         centros = [(sum(p[0] for p in ps) / len(ps), sum(p[1] for p in ps) / len(ps)) for ps in por_inst.values()]
-        alvo_m = max(centros, key=lambda q: min((math.hypot(q[0] - a_[0], q[1] - a_[1]) for a_ in apontados), default=0.0)
-                     - 1e-6 * q[0])
-        apontados.append(alvo_m)
-        ax, ay = alvo_m[0] / k + dx, alvo_m[1] / k + dy
-        sx = -1.0 if alvo_m[0] < cx_m else 1.0
-        sy = 1.0 if alvo_m[1] >= cy_m else -1.0
-        pr = onde.get(str(x["marca"])) or next((onde[m] for m in marcas if m in onde), None)
-        txt = x["nome"] + (" – PR.%02d" % pr if pr and pr != numero else "")
-        d.add(Chamada(camada="TEXTO", alvo=(round(ax, 2), round(ay, 2)), posicao=(round(ax + 10.0 * sx, 2), round(ay + 12.0 * sy, 2)),
-                      texto=txt, altura=2.5, atributos={"prancha": "chamada_chapa", "fonte": c["fonte"], "marca": x["marca"]}))
+        mont = (montagem_de or {}).get(x["nome"])
+        if mont:
+            # a chapa do chumbamento: os apoios, um de cada lado (pedido do usuário, 28/09), com o nome da
+            # montagem — "CB1 + CH9"; a meia tesoura com outro apoio do outro lado leva o dela
+            alvos = [min(centros, key=lambda q: q[0]), max(centros, key=lambda q: q[0])] if len(centros) >= 2 else centros
+            pr = onde.get("montagem:" + mont)
+            txt = mont + (" – PR.%02d" % pr if pr and pr != numero else "")
+        else:
+            alvos = [max(centros, key=lambda q: min((math.hypot(q[0] - a_[0], q[1] - a_[1]) for a_ in apontados), default=0.0)
+                         - 1e-6 * q[0])]
+            pr = onde.get(str(x["marca"])) or next((onde[m] for m in marcas if m in onde), None)
+            txt = x["nome"] + (" – PR.%02d" % pr if pr and pr != numero else "")
+        for alvo_m in alvos:
+            apontados.append(alvo_m)
+            ax, ay = alvo_m[0] / k + dx, alvo_m[1] / k + dy
+            sx = -1.0 if alvo_m[0] < cx_m else 1.0
+            sy = 1.0 if alvo_m[1] >= cy_m else -1.0
+            d.add(Chamada(camada="TEXTO", alvo=(round(ax, 2), round(ay, 2)), posicao=(round(ax + 10.0 * sx, 2), round(ay + 12.0 * sy, 2)),
+                          texto=txt, altura=2.5, atributos={"prancha": "chamada_chapa", "fonte": c["fonte"], "marca": x["marca"]}))
 
 
 def _blocos_da_legenda(cels: Sequence[dict]) -> List[tuple]:
