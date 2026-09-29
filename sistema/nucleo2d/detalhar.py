@@ -1030,9 +1030,9 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         familias_completo.extend((_familia_da_posicao(p, t if t == "chumbador" else (nomeacao["tipos"].get(p.marca) or p.tipo_nome),
                                                       tipo_de_conj), t, f)
                                  for p, (t, f) in zip(lista, celulas_g[n_frente:n_frente + len(lista)])
-                                 if not (p.marca in tirantes_em_grupo
-                                         and (_tipico(nomeacao["tipos"].get(p.marca) or p.tipo_nome or "")
-                                              or p.marca in barras_al_em_grupo))
+                                 # a barra que está no detalhe típico (A.D.1.1…: o comprimento cotado lá) não se
+                                 # repete na prancha dos tirantes (pedido do usuário, 28/09)
+                                 if p.marca not in tirantes_em_grupo
                                  and not _so_da_tesoura(p, gabarito))
         familias_completo.extend((fam, t, f) for fam, (t, f) in zip(familias_mont, celulas_mont))
         base[chave] = d

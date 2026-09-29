@@ -398,6 +398,9 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     for c in itens:
         c["categoria"] = (c.get("item") or {}).get("categoria") or (
             "CHAPAS" if c.get("montagem") else "VISTAS" if not c.get("marca") else "OUTROS")
+        # a barra roscada e o gancho (as peças de ponta dos contraventos e das agulhas) vão com eles (28/09)
+        if (c.get("item") or {}).get("tipo") in ("barra_roscada", "gancho"):
+            c["categoria"] = "CONTRAVENTOS"
         # os contraventos e os agulhamentos num quadro próprio, ao lado dos conjuntos (pedido do usuário, 28/09)
         if c["categoria"] == "CONJUNTOS" and re.match(r"(A\.[CLD]\.|CV\.)", str((c.get("item") or {}).get("nome") or c.get("titulo") or "")):
             c["categoria"] = "CONTRAVENTOS"
