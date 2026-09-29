@@ -238,7 +238,10 @@ os desenhos são refeitos em segundo plano pelo mesmo caminho do botão Detalhar
 regravar o modelo (que o editor pode estar editando), e o CAD aberto recarrega o desenho na mesma vista; com edição
 por gravar, avisa, e a gravação por cima do desenho refeito é recusada (a tela recarrega). O desenho "Pranchas"
 se refaz junto e quando um desenho de trabalho com folhas é gravado. Desenhos → Atualizar desenhos e pranchas agora
-força a atualização. Verificador: `verif_desenhos_vivos`.
+força a atualização. Verificador: `verif_desenhos_vivos`. **Índice na primeira prancha** (pedido do usuário, 28/09):
+sem a folha de índice separada, a relação das pranchas (número/total e o conteúdo de cada uma) vai na faixa livre
+ao lado do carimbo da prancha 01, com as **siglas** usadas nas pranchas e o que cada uma é (T.C. terça de cobertura,
+A.D. agulhamento diagonal, CB chumbador…); a tabela das posições fica na lista de materiais.
 
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
 sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da

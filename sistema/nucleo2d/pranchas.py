@@ -383,11 +383,11 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     if not pranchas[-1]:
         pranchas.pop()
         molduras.pop()
-    total = len(pranchas) + (1 if indice else 0)
+    total = len(pranchas)
 
     saida = []
     for i0, cels in enumerate(pranchas, start=1):
-        i = i0 + (1 if indice else 0)
+        i = i0
         d = Desenho(nome="%s %02d" % (titulo, i), escala=1.0)
         # as camadas dos desenhos de origem (cores por tipo de peça: banzos, diagonais…)
         for f in fontes:
@@ -415,9 +415,10 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                                                "marca": c.get("marca"), "item": _item_resumido(c.get("item")),
                                                "caixa": [round(c["px"], 2), round(c["py"], 2), round(c["px"] + c["w"], 2), round(c["py"] + c["h"], 2)]}
                                               for c in cels]}
+        d.metadados["prancha"]["conteudo"] = _conteudo_de(cels)
         saida.append(d)
-    if indice:
-        saida.insert(0, _prancha_indice(formato, carimbo, titulo, saida, total))
+    if indice and saida:
+        _relacao_na_faixa(saida[0], formato, saida)
     return saida
 
 
@@ -523,72 +524,113 @@ def _item_resumido(it: Optional[dict]) -> Optional[dict]:
     return {k: it.get(k) for k in ("nome", "quantidade", "perfil", "comprimento", "espessura", "peso", "classe", "categoria") if k in it}
 
 
-def _prancha_indice(formato: str, carimbo: dict, titulo: str, pranchas: Sequence[Desenho], total: int) -> Desenho:
-    """Prancha 01: relação das pranchas (número e conteúdo) e a tabela de todas as
-    posições e conjuntos — nome, marca, quantidade, perfil, comprimento e a prancha em
-    que cada um está desenhado —, em ordem de nome, em quantas colunas couberem."""
-    from saida.detalhamento import _ordem_natural
-    d = Desenho(nome="%s 01" % titulo, escala=1.0)
-    info = dict(carimbo)
-    info["titulo"] = "Índice"
-    quadro, carimbo_caixa = _moldura(d, formato, info, 1, total, [], ["- ÍNDICE DE PRANCHAS E POSIÇÕES"])
-    qx0, qy0, qx1, qy1 = quadro
-    cx0, cy0, cx1, cy1 = carimbo_caixa
-    cam = "CARIMBO"
-    atr = {"prancha": "indice"}
-    y = qy1 - 8.0
-    d.add(Texto(camada=cam, posicao=(round(qx0 + 6.0, 2), round(y, 2)), texto="ÍNDICE DE PRANCHAS E POSIÇÕES", altura=5.0, atributos=dict(atr, campo="titulo")))
-    y -= 9.0
-    # relação das pranchas
+#: Largura média de uma letra em relação à altura (a mesma estimativa da caixa das células).
+LARGURA_LETRA = 0.75
+#: Siglas das telhas (os nomes vêm do código da telha no modelo, não do tipo de peça).
+SIGLAS_TELHA = [("TMD", "Telha multi-dobra"), ("MD", "Telha multi-dobra"), ("CM", "Cumeeira"), ("CU", "Cumeeira"),
+                ("TL", "Telha")]
+
+
+def siglas_da_fabrica() -> List[Tuple[str, str]]:
+    """(sigla, o que é) da nomenclatura da fábrica (base.PREFIXO_NOME): uma linha por sigla; as chapas
+    (suporte de terça, de agulhamento, de contraventamento, castanha) numa só."""
+    from nucleo2d.detalhe.base import PREFIXO_NOME, TIPOS_NOME
+    por = collections.OrderedDict()
+    for tipo, sigla in PREFIXO_NOME.items():
+        if not sigla:
+            continue
+        por.setdefault(sigla, []).append(TIPOS_NOME.get(tipo, tipo))
+    fora = []
+    for sigla, nomes in por.items():
+        if sigla == "CH":
+            txt = "Chapa (suportes e castanhas)"
+        elif sigla == "DP.":
+            txt = "Dispositivo (conjunto menor)"
+        elif sigla == "T":
+            txt = "Tesoura (T1 + T1: as duas metades)"
+        else:
+            txt = nomes[0]
+        fora.append((sigla, txt))
+    return fora + [x for x in SIGLAS_TELHA if x[0] not in por]
+
+
+def siglas_usadas(nomes: Sequence[str]) -> List[Tuple[str, str]]:
+    """As siglas que aparecem nos nomes ("A.D.1 / A.D.2", "T1 + T1", "CH4", "TMD.1"…), na ordem da tabela:
+    a sigla mais longa que começa o nome e é seguida de número (T.C.1 é terça de cobertura, não tesoura)."""
+    tabela = siglas_da_fabrica()
+    ordem = sorted(tabela, key=lambda x: -len(x[0]))
+    achadas = set()
+    for nome in nomes:
+        for parte in re.split(r"\s*(?:/|\+)\s*", str(nome or "")):
+            parte = parte.strip()
+            for sigla, _t in ordem:
+                if parte.startswith(sigla) and re.match(r"\.?\d", parte[len(sigla):len(sigla) + 2] or ""):
+                    achadas.add(sigla)
+                    break
+    return [x for x in tabela if x[0] in achadas]
+
+
+def _relacao_na_faixa(d: Desenho, formato: str, pranchas: Sequence[Desenho]):
+    """A relação das pranchas na faixa livre ao lado do carimbo da primeira prancha (pedido do usuário,
+    28/09: "tem esse espaço inutilizado em baixo das pranchas … usaria ele para trazer o índice na
+    primeira prancha"), no lugar da folha de índice separada: número/total, o título e o conteúdo de
+    cada uma, em quantas colunas precisar. A tabela das posições fica na lista de materiais."""
+    larg, alt = FOLHAS[formato]
+    m = MARGENS
+    lc, ac = CARIMBO[formato]
+    x0, x1 = m["esquerda"] + FOLGA, larg - m["direita"] - lc - FOLGA
+    y_topo, y_fundo = m["inferior"] + ac - 3.0, m["inferior"] + FOLGA * 0.6
+    atr = {"prancha": "relacao"}
+    h_tit, h, passo = 3.5, 2.2, 3.8
+    # as siglas que aparecem nas pranchas, num bloco à direita da relação (pedido do usuário, 28/09:
+    # "no índice deveria ter um campo onde explique o que significa cada uma das siglas")
+    nomes = []
     for p in pranchas:
-        pr = p.metadados.get("prancha") or {}
-        d.add(Texto(camada=cam, posicao=(round(qx0 + 6.0, 2), round(y, 2)),
-                    texto="Prancha %02d/%02d — %s  (%d vista(s))" % (pr.get("numero", 0), total, pr.get("titulo") or "", len(pr.get("celulas") or [])),
-                    altura=2.5, atributos=dict(atr, campo="prancha")))
-        y -= 4.2
-    y -= 4.0
-    # tabela de posições/conjuntos: nome, marca, qtd, perfil, compr., prancha
+        for c in (p.metadados.get("prancha") or {}).get("celulas") or []:
+            nomes += [c.get("titulo") or "", ((c.get("item") or {}).get("nome") or "")]
+    siglas = siglas_usadas(nomes)
+    if siglas:
+        por_col_s = max(1, int((y_topo - h_tit - 3.0 - y_fundo) // passo))
+        n_col_s = -(-len(siglas) // por_col_s)
+        larg_col_s = LARGURA_LETRA * h * (max(len(x[0]) for x in siglas) + max(len(x[1]) for x in siglas)) + 9.0
+        larg_s = min(n_col_s * larg_col_s, 0.45 * (x1 - x0))
+        larg_col_s = larg_s / n_col_s
+        xs = x1 - larg_s
+        d.add(Texto(camada="TEXTO", posicao=(round(xs, 2), round(y_topo - h_tit, 2)), texto="SIGLAS",
+                    altura=h_tit, atributos=dict(atr, campo="titulo_siglas")))
+        # a sigla numa coluna e o que ela é noutra, alinhada (lê como tabela)
+        larg_sig = LARGURA_LETRA * h * max(len(x[0]) for x in siglas) + 3.0
+        cabe_s = max(8, int((larg_col_s - larg_sig - 3.0) / (LARGURA_LETRA * h)))
+        for i, (sigla, txt) in enumerate(siglas):
+            col, lin = divmod(i, por_col_s)
+            if len(txt) > cabe_s:
+                txt = txt[:cabe_s - 1].rstrip(" ,;(") + "…"
+            y_ = round(y_topo - h_tit - 3.0 - (lin + 1) * passo + (passo - h), 2)
+            x_ = xs + col * larg_col_s
+            d.add(Texto(camada="TEXTO", posicao=(round(x_, 2), y_), texto=sigla, altura=h, atributos=dict(atr, campo="sigla")))
+            d.add(Texto(camada="TEXTO", posicao=(round(x_ + larg_sig, 2), y_), texto=txt, altura=h,
+                        atributos=dict(atr, campo="sigla_texto")))
+        x1 = xs - 8.0                                              # a relação fica à esquerda
+    d.add(Texto(camada="TEXTO", posicao=(round(x0, 2), round(y_topo - h_tit, 2)), texto="RELAÇÃO DAS PRANCHAS",
+                altura=h_tit, atributos=dict(atr, campo="titulo")))
     linhas = []
-    vistos = set()
     for p in pranchas:
         pr = p.metadados.get("prancha") or {}
-        for c in pr.get("celulas") or []:
-            it, marca = c.get("item"), c.get("marca")
-            if not it or not marca or marca in vistos:
-                continue
-            vistos.add(marca)
-            comp = ("%d" % it["comprimento"]) if it.get("comprimento") else ("#%s" % it["espessura"] if it.get("espessura") else "")
-            marca_txt = marca if len(marca) <= 14 else marca[:13] + "…"
-            linhas.append(((it.get("nome") or marca)[:16], marca_txt, "%dx" % (it.get("quantidade") or 0), (it.get("perfil") or "")[:30], comp, "%02d" % pr.get("numero", 0)))
-    linhas.sort(key=lambda r: (_ordem_natural(r[0]), _ordem_natural(r[1])))
-    cabec = ("NOME", "MARCA", "QTD", "PERFIL / CHAPA / CONJUNTO", "COMPR.", "PRANCHA")
-    larguras = (26.0, 20.0, 10.0, 56.0, 16.0, 16.0)
-    h_linha, altura_txt = 3.6, 2.0
-    larg_col = sum(larguras) + 8.0
-    x0, x1 = qx0 + 6.0, qx1 - 6.0
-    y_fundo = max(qy0, cy1) + 6.0
-    n_cols = max(1, int((x1 - x0) // larg_col))
-    por_col = max(1, int((y - y_fundo) // h_linha) - 1)
-    if len(linhas) > n_cols * por_col:
-        linhas = linhas[:n_cols * por_col - 1] + [("…", "", "", "e mais %d item(ns): ver as pranchas" % (len(linhas) - n_cols * por_col + 1), "", "")]
-    for ci in range(n_cols):
-        bloco = linhas[ci * por_col:(ci + 1) * por_col]
-        if not bloco:
-            break
-        bx = x0 + ci * larg_col
-        yy = y
-        for j, (rot, larg) in enumerate(zip(cabec, larguras)):
-            d.add(Texto(camada=cam, posicao=(round(bx + sum(larguras[:j]), 2), round(yy - altura_txt, 2)), texto=rot, altura=altura_txt, atributos=dict(atr, campo="cabecalho")))
-        d.add(Linha(camada=cam, a=(round(bx, 2), round(yy - h_linha + 0.6, 2)), b=(round(bx + sum(larguras), 2), round(yy - h_linha + 0.6, 2)), atributos=dict(atr)))
-        yy -= h_linha
-        for linha in bloco:
-            for j, (txt, larg) in enumerate(zip(linha, larguras)):
-                if txt:
-                    d.add(Texto(camada=cam, posicao=(round(bx + sum(larguras[:j]), 2), round(yy - altura_txt, 2)), texto=str(txt), altura=altura_txt, atributos=dict(atr, campo="linha")))
-            yy -= h_linha
-    d.metadados["prancha"] = {"formato": formato, "numero": 1, "total": total, "fontes": [], "titulo": "Índice", "indice": True,
-                              "quadro": [round(v, 2) for v in quadro], "carimbo": [round(v, 2) for v in carimbo_caixa], "celulas": []}
-    return d
+        conteudo = "; ".join(t.lstrip("- ") for t in pr.get("conteudo") or []) or str(pr.get("titulo") or "")
+        linhas.append("%02d/%02d  %s" % (pr.get("numero", 0), pr.get("total", len(pranchas)), conteudo))
+    y_ini = y_topo - h_tit - 3.0
+    por_col = max(1, int((y_ini - y_fundo) // passo))
+    n_col = max(1, -(-len(linhas) // por_col))
+    larg_col = (x1 - x0) / n_col
+    cabe = max(12, int((larg_col - 4.0) / (LARGURA_LETRA * h)))           # caracteres que cabem na coluna
+    for i, txt in enumerate(linhas):
+        col, lin = divmod(i, por_col)
+        if len(txt) > cabe:
+            txt = txt[:cabe - 1].rstrip(" ,;") + "…"
+        d.add(Texto(camada="TEXTO", posicao=(round(x0 + col * larg_col, 2), round(y_ini - (lin + 1) * passo + (passo - h), 2)),
+                    texto=txt, altura=h, atributos=dict(atr, campo="prancha")))
+    d.metadados["prancha"]["relacao"] = True
+    d.metadados["prancha"]["siglas"] = [x[0] for x in siglas]
 
 
 def fontes_titulo(cels: Sequence[dict]) -> str:

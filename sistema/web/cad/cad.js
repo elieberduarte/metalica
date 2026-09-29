@@ -2001,7 +2001,7 @@ class CAD {
       el('label', {}, 'Obra', campos.obra), el('label', {}, 'Cliente', campos.cliente),
       el('label', {}, 'Projetista', campos.responsavel), el('label', {}, 'Data (mês / ano)', campos.data), el('label', {}, 'Revisão', campos.revisao),
       el('label', {}, 'Nome do desenho', campos.titulo),
-      el('label', { class: 'linha' }, indice, ' Primeira folha de índice: relação das pranchas e tabela de todas as posições com a prancha de cada uma'),
+      el('label', { class: 'linha' }, indice, ' Relação das pranchas na primeira prancha (na faixa ao lado do carimbo)'),
       el('label', { class: 'linha' }, substituir, ' Substituir o desenho das pranchas anterior com este nome'));
     if (await this.dialogo({ titulo: 'Montar pranchas', corpo, ok: 'Montar' }) !== 'ok') return;
     const escolhidos = [...caixas].filter(([, c]) => c.checked).map(([n]) => n);

@@ -137,8 +137,8 @@ def test_pdf_das_pranchas(tmp_path):
 
 
 def test_prancha_de_indice():
-    """Com índice, a prancha 01 relaciona as pranchas e lista todas as posições com o
-    número da prancha em que estão; sem índice, a numeração começa no conteúdo."""
+    """Com índice, a relação das pranchas vai na faixa livre ao lado do carimbo da prancha 01 (pedido
+    do usuário, 28/09) — sem folha de índice separada; a numeração começa no conteúdo."""
     import os
     import sys
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -150,14 +150,22 @@ def test_prancha_de_indice():
     r = det.detalhar(doc, grupos=["chapas", "barras"], regra_tercas=False, converter=False)
     fontes = [{"nome": k, "desenho": d} for k, d in r["desenhos"].items()]
     folhas = montar_pranchas(fontes, formato="A1", titulo="Prancha", indice=True)
-    assert folhas[0].nome == "Prancha 01" and folhas[0].metadados["prancha"]["indice"] is True
-    assert folhas[0].metadados["prancha"]["total"] == len(folhas) and folhas[1].metadados["prancha"]["numero"] == 2
-    textos = [e.texto for e in folhas[0].entidades.values() if isinstance(e, Texto)]
-    assert any(t.startswith("Prancha 02/") for t in textos)
-    assert any(t == "P1" for t in textos) and any(t == "M5" for t in textos)   # marcas na tabela
-    assert any(t == "02" for t in textos)                                       # coluna da prancha
+    pr = folhas[0].metadados["prancha"]
+    assert folhas[0].nome == "Prancha 01" and pr["relacao"] is True and pr["celulas"] and pr["numero"] == 1
+    assert pr["total"] == len(folhas)
+    rel = [e for e in folhas[0].entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("prancha") == "relacao"
+           and (e.atributos or {}).get("campo") in ("titulo", "prancha")]
+    sig = [e for e in folhas[0].entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("campo") in ("titulo_siglas", "sigla")]
+    assert sig and sig[0].texto == "SIGLAS" and pr["siglas"]
+    assert rel[0].texto == "RELAÇÃO DAS PRANCHAS" and len(rel) == len(folhas) + 1
+    assert rel[1].texto.startswith("01/%02d  " % len(folhas))
+    # tudo na faixa ao lado do carimbo, abaixo do quadro das células
+    from nucleo2d.pranchas import FOLHAS, CARIMBO, MARGENS
+    larg, _alt = FOLHAS["A1"]
+    lim_x, lim_y = larg - MARGENS["direita"] - CARIMBO["A1"][0], MARGENS["inferior"] + CARIMBO["A1"][1]
+    assert all(t.posicao[0] < lim_x and t.posicao[1] + t.altura <= lim_y for t in rel)
     sem = montar_pranchas(fontes, formato="A1", titulo="Prancha", indice=False)
-    assert sem[0].metadados["prancha"]["numero"] == 1 and len(sem) == len(folhas) - 1
+    assert len(sem) == len(folhas) and not sem[0].metadados["prancha"].get("relacao")
 
 
 def test_folha_posta_no_desenho_vira_prancha_com_o_que_esta_dentro():
@@ -273,7 +281,12 @@ def test_pranchas_lado_a_lado_num_desenho_so(tmp_path):
     inteira, o carimbo edita como na folha do desenho de trabalho) e `metadados.pranchas` com a
     origem de cada uma; o PDF sai uma página por folha, cada uma só com o que é dela."""
     import pymupdf
-    folhas = pranchas.montar_pranchas([{"nome": "det", "desenho": _detalhe()}], formato="A3", titulo="Prancha", indice=True)
+    folhas = pranchas.montar_pranchas([{"nome": "det", "desenho": _detalhe()}], formato="A3", titulo="Prancha",
+                                      carimbo={"obra": "OBRA PRIMEIRA"})
+    folhas += pranchas.montar_pranchas([{"nome": "det", "desenho": _detalhe()}], formato="A3", titulo="Prancha",
+                                       carimbo={"obra": "OBRA SEGUNDA"})
+    for i, f in enumerate(folhas, start=1):
+        f.metadados["prancha"].update(numero=i, total=2)
     assert len(folhas) == 2
     junto = pranchas.juntar_pranchas(folhas, nome="Pranchas")
     larg, alt = pranchas.FOLHAS["A3"]
@@ -298,8 +311,8 @@ def test_pranchas_lado_a_lado_num_desenho_so(tmp_path):
     doc = pymupdf.open(pranchas.pdf_dos_desenhos([junto], str(tmp_path / "p.pdf")))
     assert len(doc) == 2
     assert abs(doc[1].rect.width / 72 * 25.4 - larg) < 1
-    assert "ESC. 1:10" in doc[1].get_text() and "ESC. 1:10" not in doc[0].get_text()
-    assert "PRANCHA 02/02" in doc[1].get_text() and "PRANCHA 01/02" in doc[0].get_text()
+    assert "OBRA SEGUNDA" in doc[1].get_text() and "OBRA SEGUNDA" not in doc[0].get_text()
+    assert "OBRA PRIMEIRA" in doc[0].get_text() and "OBRA PRIMEIRA" not in doc[1].get_text()
 
 def test_gerar_pranchas_das_folhas_junta_num_desenho_so(tmp_path, monkeypatch):
     """O caminho à mão pelo app (28/09): as folhas de cada desenho de trabalho viram pranchas lado
@@ -344,3 +357,12 @@ def test_gerar_pranchas_das_folhas_junta_num_desenho_so(tmp_path, monkeypatch):
         app.montar_pranchas_projeto(s, {"desenhos": ["pranchas"]})
     assert app.exportar_desenho_pdf(s, "pranchas", {})["paginas"] == 2
 
+
+
+def test_siglas_da_relacao():
+    """A relação das pranchas explica as siglas que aparecem nelas (pedido do usuário, 28/09): a mais
+    longa que começa o nome e vem antes do número — T.C.1 é terça de cobertura, T1 é tesoura."""
+    from nucleo2d.pranchas import siglas_usadas
+    s = dict(siglas_usadas(["T1 + T1 – 03x", "A.D.1 / A.D.2", "T.C.1", "CH4 – 28x", "TMD.1", "PLANTA DE CHUMBAÇÃO"]))
+    assert set(s) == {"T", "A.D.", "T.C.", "CH", "TMD"}
+    assert s["T.C."] == "Terça de cobertura" and s["A.D."] == "Agulhamento diagonal" and s["TMD"] == "Telha multi-dobra"
