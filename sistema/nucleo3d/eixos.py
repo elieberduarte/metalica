@@ -332,9 +332,13 @@ def identificar_eixos(doc: Documento, nomes: Optional[dict] = None) -> dict:
         z_base = min(v[2] for v in vs_t)
     numeros = [{"nome": str(i + 1), "pos": round(v, 1)} for i, v in enumerate(gs_n)]
     letras = [{"nome": _letra(i), "pos": round(v, 1)} for i, v in enumerate(_agrupar(ps))]
+    # a caixa do modelo nas duas direções: a linha do eixo passa dela (beiral e marquise além do último eixo)
+    gv = [v[0] * g[0] + v[1] * g[1] for v in todos_v]
+    pv = [v[0] * p[0] + v[1] * p[1] for v in todos_v]
     return {"eixo_g": [round(g[0], 6), round(g[1], 6)], "perp_g": [round(p[0], 6), round(p[1], 6)],
             "numeros": numeros, "letras": letras, "z_base": round(z_base, 1),
-            "origem": "auto", "fonte_letras": origem_letras}
+            "origem": "auto", "fonte_letras": origem_letras,
+            "limites": {"g": [round(min(gv), 1), round(max(gv), 1)], "p": [round(min(pv), 1), round(max(pv), 1)]}}
 
 
 def de_dict(d: Optional[dict]) -> Optional[dict]:
@@ -359,9 +363,13 @@ def de_dict(d: Optional[dict]) -> Optional[dict]:
         numeros, letras = lista("numeros"), lista("letras")
         if not numeros and not letras:
             return None
-        return {"eixo_g": g, "perp_g": p, "numeros": numeros, "letras": letras,
-                "z_base": float(d.get("z_base") or 0.0), "origem": str(d.get("origem") or "usuario"),
-                "fonte_letras": str(d.get("fonte_letras") or "")}
+        saida = {"eixo_g": g, "perp_g": p, "numeros": numeros, "letras": letras,
+                 "z_base": float(d.get("z_base") or 0.0), "origem": str(d.get("origem") or "usuario"),
+                 "fonte_letras": str(d.get("fonte_letras") or "")}
+        lim = d.get("limites")
+        if isinstance(lim, dict) and all(len(lim.get(k) or []) == 2 for k in ("g", "p")):
+            saida["limites"] = {k: [float(lim[k][0]), float(lim[k][1])] for k in ("g", "p")}
+        return saida
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -376,6 +384,11 @@ def segmentos(eixos: dict, folga: float = FOLGA_EIXO) -> List[dict]:
     ps = [e["pos"] for e in eixos["letras"]] or [0.0]
     g0, g1 = min(gs) - folga, max(gs) + folga
     p0, p1 = min(ps) - folga, max(ps) + folga
+    lim = eixos.get("limites")
+    if lim:
+        # além da borda do modelo, para a bolinha não cair em cima do beiral (depósito químico, 29/09)
+        g0, g1 = min(g0, lim["g"][0] - 0.5 * folga), max(g1, lim["g"][1] + 0.5 * folga)
+        p0, p1 = min(p0, lim["p"][0] - 0.5 * folga), max(p1, lim["p"][1] + 0.5 * folga)
     saida = []
     for e in eixos["numeros"]:
         a = (g[0] * e["pos"] + p[0] * p0, g[1] * e["pos"] + p[1] * p0, z)

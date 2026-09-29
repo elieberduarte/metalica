@@ -2550,6 +2550,29 @@ def dados_do_lancamento(s: str) -> dict:
 _CACHE_REFERENCIA: Dict[str, tuple] = {}
 
 
+#: Eixos identificados do modelo, por projeto: ((mtime do modelo, mtime do nomes.json), eixos).
+_CACHE_EIXOS_AUTO: Dict[str, tuple] = {}
+
+
+def _eixos_automaticos(s: str) -> Optional[dict]:
+    """Os eixos identificados do modelo (nucleo3d.eixos) para quem só mostra — o 3D; None quando o
+    projeto não tem modelo ou o modelo não dá eixo. Guardados até o modelo ou os nomes mudarem."""
+    from nucleo3d import eixos as _eixos
+    try:
+        arq_nomes = os.path.join(_gerente()._existente(s), "detalhamento", "nomes.json")
+        chave = (_mtime_do_modelo(s), os.stat(arq_nomes).st_mtime_ns if os.path.exists(arq_nomes) else None)
+        if chave[0] is None:
+            return None
+        guardado = _CACHE_EIXOS_AUTO.get(s)
+        if guardado and guardado[0] == chave:
+            return guardado[1]
+        ex = _eixos.identificar_eixos(_documento3d_do_projeto(s), _nomes_producao(s))
+    except (ErroDeDados, ValueError, OSError):
+        return None
+    _CACHE_EIXOS_AUTO[s] = (chave, ex)
+    return ex
+
+
 def referencia_do_lancamento(s: str) -> dict:
     """GET /api/projetos/<s>/lancamento/referencia: as linhas do arquitetônico (segmentos em
     mm, no chão) e as dos eixos gravados, para o modelo 3D desenhar por baixo."""
@@ -2572,8 +2595,11 @@ def referencia_do_lancamento(s: str) -> dict:
             _CACHE_REFERENCIA[s] = (chave, segs)
             saida["segmentos"] = segs
     p = g.ler(s)
-    ex = _eixos.de_dict(p.get("eixos"))
+    # sem eixos gravados, os identificados do modelo — os mesmos das plantas (pedido do usuário, 29/09:
+    # "trazer os eixos para o modelo 3D para ver de que lado está cada coisa")
+    ex = _eixos.de_dict(p.get("eixos")) or _eixos_automaticos(s)
     if ex:
+        saida["automaticos"] = not p.get("eixos")
         saida["eixos"] = [{"nome": e["nome"], "tipo": e["tipo"], "a": [round(c, 1) for c in e["a"]],
                            "b": [round(c, 1) for c in e["b"]]} for e in _eixos.segmentos(ex)]
     # eixos inclinados (fora da malha ortogonal) e os níveis do projeto
