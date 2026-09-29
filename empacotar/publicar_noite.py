@@ -140,7 +140,7 @@ def subir_versao(etiqueta: str) -> str:
         s = s[:m.start()] + notas + s[m.start():] if m else s + nl + notas
         with open(caminho_l, "w", encoding="utf-8", newline="") as f:
             f.write(s)
-    git("commit", "-m", "%s: versão da noite (%d mudança(s) desde %s)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+    git("commit", "-m", "%s: versão da noite (%d mudança(s) desde %s)\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
         % (nova, len(assuntos), etiqueta), "--", "sistema/versao.py", "sistema/LEIAME.md")
     log("versão nova: %s (%d commits desde %s)" % (nova, len(assuntos), etiqueta))
     return nova
