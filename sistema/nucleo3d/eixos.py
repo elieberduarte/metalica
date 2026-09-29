@@ -33,6 +33,8 @@ FOLGA_EIXO = 1500.0
 ESPESSURA_TRELICA = 600.0
 VAO_MINIMO_TRELICA = 2000.0
 ALTURA_MINIMA_TRELICA = 300.0
+#: Para o conjunto ser tesoura (não a mão-francesa da marquise, 2 m em balanço — DP.17 do depósito).
+VAO_MINIMO_TESOURA = 4000.0
 #: Tipos de peça (nomes.json) que não são de treliça.
 _NAO_TRELICA = ("terca", "agulhamento", "contraventamento", "telha", "rufo", "calha", "chumbador", "corrente",
                 "suporte", "castanha", "cantoneira_forro", "perfil_fechamento")
@@ -164,7 +166,7 @@ def _altura_fora_do_caimento(ss: Sequence[float], zs: Sequence[float]) -> float:
     return max(r) - min(r)
 
 
-def _trelicas(pecas, vao: Tuple[float, float], serve) -> List[Tuple[float, int]]:
+def _trelicas(pecas, vao: Tuple[float, float], serve, vao_minimo: float = VAO_MINIMO_TRELICA) -> List[Tuple[float, int]]:
     """As treliças com o vão na direção `vao`: por conjunto (os que `serve` aceita), as peças
     agrupadas atravessado ao vão; o grupo fino, comprido e com altura, de 3 peças ou mais, é uma
     treliça. Devolve (posição atravessada, peças) de cada uma."""
@@ -193,9 +195,30 @@ def _trelicas(pecas, vao: Tuple[float, float], serve) -> List[Tuple[float, int]]
             vs = [v for _q, vv in gr for v in vv]
             gg = [v[0] * g[0] + v[1] * g[1] for v in vs]
             ss = [v[0] * vao[0] + v[1] * vao[1] for v in vs]
-            if (max(gg) - min(gg) <= ESPESSURA_TRELICA and max(ss) - min(ss) >= VAO_MINIMO_TRELICA
+            if (max(gg) - min(gg) <= ESPESSURA_TRELICA and max(ss) - min(ss) >= vao_minimo
                     and _altura_fora_do_caimento(ss, [v[2] for v in vs]) >= ALTURA_MINIMA_TRELICA):
                 saida.append((sum(q for q, _vv in gr) / len(gr), len(gr)))
+    return saida
+
+
+def conjuntos_trelicados(pecas) -> set:
+    """As marcas de conjunto que a geometria mostra que são tesoura (treliça ou alma cheia num plano
+    vertical, comprida e com altura fora do caimento — `_trelicas`), com o vão na direção das barras
+    dele. Para o IFC sem a categoria TESOURAS (o depósito químico, 29/09: as meias-tesouras de W
+    saíam como conjunto comum, DP.x)."""
+    por: Dict[str, list] = {}
+    for e in pecas:
+        m = str(_marcas(e).get("conjunto") or "")
+        if m:
+            por.setdefault(m, []).append(e)
+    saida = set()
+    for m, es in por.items():
+        vao = _direcao_dominante(es, 2)
+        if not vao:
+            continue
+        achadas = _trelicas(es, vao, lambda _m, _e: True, VAO_MINIMO_TESOURA)
+        if achadas and sum(n for _q, n in achadas) >= 0.5 * len(es):
+            saida.add(m)
     return saida
 
 

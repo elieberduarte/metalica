@@ -315,6 +315,15 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             tipo_conj[c["marca"]] = "suporte_terca"
         else:
             tipo_conj[c["marca"]] = "conjunto"
+    if not any(t == "tesoura" for t in tipo_conj.values()):
+        # o IFC sem a categoria TESOURAS: a tesoura pela geometria — o conjunto comum num plano vertical,
+        # comprido e com altura (o depósito químico, 29/09: "represente ela montada como é feito com as
+        # tesouras")
+        from nucleo3d.eixos import conjuntos_trelicados
+        trel = conjuntos_trelicados(pecas)
+        for c in conjuntos_info:
+            if tipo_conj.get(c["marca"]) == "conjunto" and any(m in trel for m in [c["marca"]] + list(c.get("marcas") or [])):
+                tipo_conj[c["marca"]] = "tesoura"
     for p in posicoes:
         cs = conjuntos_de(p)
         if not cs:
