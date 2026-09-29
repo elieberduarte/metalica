@@ -234,7 +234,15 @@ def testar_executavel(versao: str) -> bool:
             if urllib.request.urlopen(base + rota, timeout=15).status != 200:
                 log("executável: %s não abriu" % rota)
                 return False
-        log("executável %s ok (/, /cad, /editor, /api/projetos)" % versao)
+        # os módulos importados dentro de funções (desenhos_vivos…) foram para o pacote: a rota responde
+        # com o erro do projeto que não existe (400), não com módulo faltando (500)
+        try:
+            urllib.request.urlopen(base + "/api/projetos/nao-existe/desenhos-vivos", timeout=15)
+        except urllib.error.HTTPError as e:
+            if e.code >= 500:
+                log("executável: /desenhos-vivos deu %d (módulo fora do pacote?)" % e.code)
+                return False
+        log("executável %s ok (/, /cad, /editor, /api/projetos, desenhos-vivos)" % versao)
         return True
     finally:
         p.terminate()

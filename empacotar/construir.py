@@ -85,7 +85,7 @@ def executavel():
            # importados dentro de funções (o servidor só carrega o que a rota pede)
            "--collect-submodules", "nucleo", "--collect-submodules", "nucleo3d",
            "--collect-submodules", "saida", "--collect-submodules", "ifc",
-           "--hidden-import", "versao", "--hidden-import", "fabrica",
+           "--hidden-import", "versao", "--hidden-import", "fabrica", "--hidden-import", "desenhos_vivos",
            # DXF do CAD (R2010, cotas DIMENSION): a ezdxf traz tabelas de fontes em dados
            "--collect-submodules", "nucleo2d", "--collect-submodules", "ezdxf", "--collect-data", "ezdxf",
            # leitura do PDF do projeto recebido (nucleo2d/pdf_ler.py importa dentro da função)
