@@ -510,7 +510,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         destaque = de_cima[0] if (len(de_cima) == 1 and molduras[i0 - 1] and any(
             "legenda_conjunto" in (e.atributos or {}) for e in de_cima[0]["entidades"])) else None
         if destaque is not None:
-            _conjunto_centralizado(d, destaque, molduras[i0 - 1][0], qx0, qx1)
+            _conjunto_centralizado(d, destaque, molduras[i0 - 1][0], qx0, qx1, onde, i)
         for c in cels:
             if c is destaque:
                 continue
@@ -687,11 +687,13 @@ def siglas_usadas(nomes: Sequence[str]) -> List[Tuple[str, str]]:
     return [x for x in tabela if x[0] in achadas]
 
 
-def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float):
+def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float, onde: Dict[str, int] = None,
+                           numero: int = 0):
     """O conjunto (a tesoura) no meio do quadro dele, com o bloco do título — as linhas marcadas com
-    `legenda_conjunto` no detalhamento — embaixo, à esquerda, alinhado pela ponta esquerda do desenho,
-    em letra maior: 6 mm o nome, 4,2 mm o resto (pedido do usuário, 28/09). Atualiza a posição da
-    célula (px, py, w, h) para os metadados."""
+    `legenda_conjunto` no detalhamento — embaixo, à esquerda, alinhado pela borda da tesoura (sem as
+    cotas), em letra maior: 6 mm o nome, 4,2 mm o resto (pedido do usuário, 28/09; a posição como ele a
+    ajustou na Sala). Uma chamada por tipo de chapa da composição aponta onde ela fica na tesoura, com o
+    nome e, detalhada noutra prancha, qual. Atualiza a posição da célula (px, py, w, h) para os metadados."""
     k = c["k"]
     leg = sorted((e for e in c["entidades"] if isinstance(e, Texto) and "legenda_conjunto" in (e.atributos or {})),
                  key=lambda e: e.atributos["legenda_conjunto"])
@@ -710,7 +712,10 @@ def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float
     for e in resto:
         d.add(_para_papel(e, k, dx, dy, c["fonte"]))
     y = topo - h - vao - h_tit
-    x_bloco = xc - w / 2.0 + 5.0                               # a ponta esquerda do desenho
+    geo = [e for e in resto if not isinstance(e, (Cota, Texto, Chamada))]
+    g0 = (_caixa_de(geo, k) or ((bx0, by0), (bx1, by1)))[0][0]
+    x_bloco = g0 / k + dx + 5.5                                # a borda da tesoura, sem as cotas da esquerda
+    _chamadas_das_chapas(d, c, geo, k, dx, dy, onde or {}, numero)
     for i, e in enumerate(leg):
         alt = h_tit if i == 0 else h_lin
         d.add(Texto(camada=e.camada, posicao=(round(x_bloco, 2), round(y, 2)), texto=e.texto, altura=alt,
@@ -719,6 +724,42 @@ def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float
     d.add(Texto(camada="TEXTO", posicao=(round(x_bloco, 2), round(y - 1.0, 2)), texto="ESC. " + texto_escala(k), altura=2.5,
                 atributos={"prancha": "escala", "fonte": c["fonte"], "celula": c["titulo"]}))
     c["px"], c["py"], c["w"], c["h"] = xc - w / 2.0, y - 2.0, w, topo - (y - 2.0)
+
+
+def _chamadas_das_chapas(d: Desenho, c: dict, geo: Sequence, k: float, dx: float, dy: float,
+                         onde: Dict[str, int], numero: int):
+    """Uma chamada por tipo de chapa da composição do conjunto, do centro de uma instância dela no desenho
+    ao nome ("CH4"; detalhada noutra prancha, "CH3 – PR.02"). A instância é a mais longe das já apontadas,
+    para as chamadas se espalharem; o texto sai para fora do desenho (para cima na metade de cima)."""
+    comp = [x for x in ((c.get("item") or {}).get("composicao") or []) if str(x.get("classe") or "").startswith("chapa")]
+    if not comp:
+        return
+    pts_geo = [p for e in geo for p in e.pontos()]
+    if not pts_geo:
+        return
+    cx_m = (min(p[0] for p in pts_geo) + max(p[0] for p in pts_geo)) / 2.0
+    cy_m = (min(p[1] for p in pts_geo) + max(p[1] for p in pts_geo)) / 2.0
+    apontados: List[Ponto2] = []
+    for x in comp:
+        marcas = set(str(x["marca"]).split(" / "))
+        por_inst = collections.defaultdict(list)
+        for e in geo:
+            a = e.atributos or {}
+            if e.camada == "CHAPAS" and str(a.get("posicao") or "") in marcas:
+                por_inst[a.get("origem") or id(e)] += e.pontos()
+        if not por_inst:
+            continue
+        centros = [(sum(p[0] for p in ps) / len(ps), sum(p[1] for p in ps) / len(ps)) for ps in por_inst.values()]
+        alvo_m = max(centros, key=lambda q: min((math.hypot(q[0] - a_[0], q[1] - a_[1]) for a_ in apontados), default=0.0)
+                     - 1e-6 * q[0])
+        apontados.append(alvo_m)
+        ax, ay = alvo_m[0] / k + dx, alvo_m[1] / k + dy
+        sx = -1.0 if alvo_m[0] < cx_m else 1.0
+        sy = 1.0 if alvo_m[1] >= cy_m else -1.0
+        pr = onde.get(str(x["marca"])) or next((onde[m] for m in marcas if m in onde), None)
+        txt = x["nome"] + (" – PR.%02d" % pr if pr and pr != numero else "")
+        d.add(Chamada(camada="TEXTO", alvo=(round(ax, 2), round(ay, 2)), posicao=(round(ax + 10.0 * sx, 2), round(ay + 12.0 * sy, 2)),
+                      texto=txt, altura=2.5, atributos={"prancha": "chamada_chapa", "fonte": c["fonte"], "marca": x["marca"]}))
 
 
 def _blocos_da_legenda(cels: Sequence[dict]) -> List[tuple]:
