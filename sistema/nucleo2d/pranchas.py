@@ -282,7 +282,8 @@ def _conteudo_de(cels: Sequence[dict]) -> List[str]:
             continue                                  # o detalhe de furos é da tesoura, que já está na lista
         it = c.get("item") or {}
         cat = (c.get("categoria") or it.get("categoria") or "VISTAS").upper()
-        cat = {"CHUMBACAO": "PLANTA DE CHUMBAÇÃO", "TELHAS_DET": "TELHAS", "TELHAS_TIPOS": "TELHAS"}.get(cat, cat)
+        cat = {"CHUMBACAO": "PLANTA DE CHUMBAÇÃO", "TELHAS_DET": "TELHAS", "TELHAS_TIPOS": "TELHAS",
+               "LOCALIZACAO": "VISTAS"}.get(cat, cat)
         nome = (it.get("nome") or c.get("montagem") or c.get("marca") or c.get("desenho_titulo") or c["titulo"]).replace("Detalhamento – ", "")
         q = _quantidade_da_celula(c) if (it or c.get("montagem")) else 0
         if q:
@@ -469,6 +470,13 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         titulos_q["TELHAS_DET"] = "Telhas – detalhes"
     # a prancha dos chumbadores (pedido do usuário, 28/09): a planta de locação reduzida à esquerda e, à direita,
     # as chapas e as barras de chumbamento; a primeira da obra (a ordem da fábrica: chumbadores → … → telhas)
+    # a localização (a planta e as elevações com os nomes das peças) abre o jogo, com o índice das pranchas
+    # na faixa de baixo (pedido do usuário, 29/09)
+    for c in itens:
+        if "localiza" in str(c.get("fonte") or "").lower():
+            c["categoria"] = "LOCALIZACAO"
+            ordem["LOCALIZACAO"] = -3
+            titulos_q["LOCALIZACAO"] = "Localização"
     planta_cb = [c for c in itens if "chumba" in str(c.get("fonte") or "").lower() and not c.get("chave")]
     if planta_cb:
         partes_cb = {pt.strip() for c in itens if _eh_chumbamento(c.get("montagem")) for pt in c["montagem"].split(" + ")}
@@ -712,6 +720,15 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     y_topo -= alt + FOLGA * 0.6                # entre as fileiras (cada célula já tem a margem dela)
                 aberto["y0"] = y_topo
                 y_topo -= FOLGA * 0.5
+            indice_p = bool(cels_p) and all(c_["categoria"] == "LOCALIZACAO" for c_ in cels_p)
+            if indice_p:
+                # o desenho centrado no quadro
+                vis = [_caixa_visivel(c_) for c_ in cels_p]
+                ddx_ = (qx0 + qx1 - min(v_[0] for v_ in vis) - max(v_[2] for v_ in vis)) / 2.0
+                ddy_ = ((uy1 - QUADRO_CABECALHO - FOLGA * 0.5) + uy0 - min(v_[1] for v_ in vis) - max(v_[3] for v_ in vis)) / 2.0
+                for c_ in cels_p:
+                    c_["px"] += max(0.0, ddx_)
+                    c_["py"] += min(0.0, ddy_)
             if mold_p:
                 mold_p[-1]["y0"] = uy0 - FOLGA * 0.5            # o último quadro desce até a faixa
                 for mq_ in mold_p:
@@ -781,6 +798,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                                   if c.get("pai") is None and not c.get("local") and suporte(c) and id(c) not in suportes_postos
                                   and c["categoria"] != "TERÇAS" and not any(c is x_ for x_ in cels_p)]
             furos_p = [c for c in fila if c.get("pai") is not None and any(c["pai"] is x for x in cels_p)]
+            if indice_p:
+                candidatas = []                                 # a faixa dela é o índice
             # a legenda: só o que está na prancha — nome e quantidade — e as siglas (pedido do usuário, 28/09:
             # "precisa reduzir bastante o tamanho"); a largura sai do conteúdo com todos os detalhes possíveis
             leg = {"blocos": _blocos_da_legenda(cels_p, [m_ for c_ in candidatas for m_ in _membros(c_, False)] if alvo else ()),
@@ -886,6 +905,11 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 iniciadas.update(c["categoria"] for c in na_faixa if not c.get("local"))   # a cópia não abre a categoria
             if tem_legenda:
                 mold_p.append({"categoria": "LEGENDA", "titulo": "LEGENDA", "y1": fy1_p, "y0": fy0, "x0": leg["x0"], "x1": fx1})
+            if indice_p:
+                leg = {"blocos": [], "relacao": True, "indice": True, "x0": fx0, "y1": fy1_p, "n_rel": 1}
+                mold_p = [m_ for m_ in mold_p if m_["categoria"] not in ("LEGENDA", "DETALHES")]
+                mold_p.append({"categoria": "LEGENDA", "titulo": "ÍNDICE DAS PRANCHAS", "y1": fy1_p, "y0": fy0,
+                               "x0": fx0, "x1": fx1})
             for c in na_faixa + no_canto:
                 if c.get("local") and c.get("original") is not None:
                     suportes_postos.add(id(c["original"]))
@@ -980,6 +1004,26 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         leg = legendas[i0 - 1]
         if leg["blocos"]:
             _legenda(d, leg, leg["x0"], fy0, leg.get("y1", fy1), [], onde, largura=fx1 - leg["x0"])
+        elif leg.get("indice"):
+            rel_i = []
+            for i_p, cels_i in enumerate(pranchas, start=1):
+                tit_i = ", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i_p - 1]
+                                                if mq["categoria"] not in ("DETALHES", "LEGENDA")))
+                cont_i = "; ".join(l_.lstrip("- ") for l_ in _conteudo_de(cels_i))
+                txt_i = (tit_i + " — " + cont_i) if cont_i else tit_i
+                # a linha comprida quebra nas vírgulas (continua embaixo, sem o número), em vez de cortar
+                pedacos, atual = [], ""
+                for parte in re.split(r"(?<=[,;]) ", txt_i):
+                    if atual and len(atual) + len(parte) + 1 > 125:
+                        pedacos.append(atual)
+                        atual = "   " + parte
+                    else:
+                        atual = (atual + " " + parte) if atual else parte
+                pedacos.append(atual)
+                rel_i.append(("%02d/%02d" % (i_p, total), pedacos[0]))
+                rel_i += [("", p_) for p_ in pedacos[1:]]
+            leg["larg_rel"] = 400
+            _legenda(d, leg, leg["x0"], fy0, leg.get("y1", fy1), rel_i, onde, largura=fx1 - leg["x0"])
         d.metadados["prancha"]["relacao"] = leg["relacao"]
         d.metadados["prancha"]["siglas"] = [x[0] for b in leg["blocos"] if b[0] == "SIGLAS" for x in b[1]]
         saida.append(d)
@@ -1501,6 +1545,24 @@ def _espacar_textos(c: dict):
                 n = copy.copy(t)
                 n.posicao = (t.posicao[0], y0 + (t.posicao[1] - y0) * fator)
                 novo_de[id(t)] = n
+    # a amostra de cor da legenda (o quadradinho à esquerda do texto) vai junto com o texto dela (29/09)
+    for t in txts:
+        n = novo_de.get(id(t))
+        if n is None:
+            continue
+        dy_t = n.posicao[1] - t.posicao[1]
+        h_t = t.altura * esc0
+        for e in ents:
+            if id(e) in novo_de or not isinstance(e, (Polilinha, Linha, Hachura)):
+                continue
+            pts = e.pontos()
+            if not pts:
+                continue
+            xs_e, ys_e = [q[0] for q in pts], [q[1] for q in pts]
+            if (max(ys_e) - min(ys_e) <= 2.0 * h_t and max(xs_e) - min(xs_e) <= 15.0 * esc0
+                    and t.posicao[0] - 20.0 * esc0 <= max(xs_e) <= t.posicao[0] + 0.5 * esc0
+                    and t.posicao[1] - 0.8 * h_t <= (min(ys_e) + max(ys_e)) / 2.0 <= t.posicao[1] + 1.5 * h_t):
+                novo_de[id(e)] = transladar(e, 0.0, dy_t)
     finais = [novo_de.get(id(e), e) for e in ents]
     # e o que ainda encosta (o título largo acima das pilhas, mais longe que uma linha): acima do desenho,
     # sobe até sair do de baixo; abaixo, desce
@@ -1795,10 +1857,20 @@ def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tu
     a largura (mm)."""
     topo = y1 - QUADRO_CABECALHO - 1.5
     base = y0 + 2.0
+    if leg.get("indice"):
+        # o índice da primeira prancha: a faixa inteira, letra maior, em colunas se precisar
+        larg_i = (largura or 600.0) - 2 * QUADRO_MARGEM
+        for h_i, passo_i in ((2.8, 4.0), (2.4, 3.4), (2.0, 3.0)):
+            w_i = _tabela(None, 0.0, topo, base, "RELAÇÃO DAS PRANCHAS", relacao, h=h_i, passo=passo_i, h_tit=3.2)
+            if w_i <= larg_i:
+                break
+        return _tabela(d, x0 + QUADRO_MARGEM, topo, base, "RELAÇÃO DAS PRANCHAS", relacao, h=h_i, passo=passo_i, h_tit=3.2,
+                       max_larg=larg_i) + 2 * QUADRO_MARGEM
     blocos = []
     if leg.get("relacao"):
         rel = relacao or [("00/00", "X" * 40)] * max(1, int(leg.get("n_rel") or 1))
-        rel = [(a, b if len(b) <= 48 else b[:47] + "…") for a, b in rel]
+        n_rel = int(leg.get("larg_rel") or 48)
+        rel = [(a, b if len(b) <= n_rel else b[:n_rel - 1] + "…") for a, b in rel]
         blocos.append(["RELAÇÃO DAS PRANCHAS", rel, None])
     for titulo, linhas in leg["blocos"]:
         blocos.append([titulo, linhas, None])

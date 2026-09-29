@@ -225,7 +225,7 @@ localização e completo. Os grupos por classe de antes (`GRUPOS_BASE`: chapas, 
 1:50) continuam montados por dentro e saem só se pedidos pelo nome; ao detalhar com "substituir", os
 desenhos antigos (`TITULOS_ANTIGOS`) são apagados.
 
-**0.8.51.** **Prancha de corte mais cheia** (pedido do usuário, 29/09): quando a próxima fileira não cabe, as peças menores da mesma categoria que ainda cabem na altura que sobra vão antes de fechar a prancha; menos folga entre um quadro e o seguinte; a vista de cima das barras mais perto das cotas da de frente. Na Sala, as barras (A.T., F.T., DP.x.1, B.x) cabem na prancha das chapas — 9 pranchas.
+**0.8.51.** **Prancha de corte mais cheia** (pedido do usuário, 29/09): quando a próxima fileira não cabe, as peças menores da mesma categoria que ainda cabem na altura que sobra vão antes de fechar a prancha; menos folga entre um quadro e o seguinte; a vista de cima das barras mais perto das cotas da de frente. Na Sala, as barras (A.T., F.T., DP.x.1, B.x) cabem na prancha das chapas — 9 pranchas. **A localização é a prancha 01** (a planta e as elevações com os nomes das peças), centrada, com o **índice das pranchas** na faixa de baixo: número, título e o conteúdo de cada uma, as linhas longas quebradas. Na legenda de cores das telhas, a amostra de cor acompanha o texto dela quando a célula é reduzida.
 
 **0.8.50.** **Porcas e arruelas no padrão da fábrica** (pedido do usuário, 28/09: "é 1 porca e 2 arruelas por
 padrão … para tudo"): cada ponta roscada de barra redonda — tirante, agulha, gancho, barra roscada, chumbador —
