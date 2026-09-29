@@ -2213,7 +2213,11 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # ficam com o contorno (peças de banzo, não da alma): a barra na continuação de um banzo (a
         # horizontal que leva o banzo de baixo até o pilar do joelho) e o montante que fecha a
         # meia-tesoura na cumeeira (as pontas dos dois banzos chegam nas pontas dele)
-        contorno = _alma_com_contorno(instancia, alma, apoios_bz, camada_de)
+        contorno = set(_alma_com_contorno(instancia, alma, apoios_bz, camada_de))
+        if tipo == "conjunto":
+            # no conjunto (o DP), a diagonal com o perfil cheio — as duas bordas, como os outros perfis —, não
+            # só a linha de eixo (pedido do usuário, 28/09)
+            contorno |= {k for k in alma if camada_de.get(k) == "DIAGONAIS"}
         for k in contorno:
             apoios_bz.append(alma.pop(k))                  # as outras barras ainda encaixam no eixo dela
         # o montante com contorno (o de fechamento da cumeeira, a descida do banzo no joelho) fica
@@ -2261,12 +2265,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         ang = abs(math.degrees(math.atan2(pb[1] - pa[1], pb[0] - pa[0]))) % 180
         barras.append((pa, pb, comp, ang))
         m = _marcas(e)
-        if tipo == "conjunto" and camada_de.get(e.id) == "DIAGONAIS":
-            # a diagonal do conjunto (o DP) com o perfil dela escrito ao lado (pedido do usuário, 28/09)
-            perfil_d = com_bitola(str(m.get("perfil") or e.nome or ""))
-            if perfil_d:
-                rotulos.append((perfil_d, ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), ang))
-        elif rotular and m.get("posicao"):
+        if rotular and m.get("posicao"):
             rotulos.append((nome_de(m["posicao"]), ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), ang))
     barras_furadas = _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc)
     banzos = [b for b in barras if (b[3] < 25.0 or b[3] > 155.0) and b[2] > 0.25 * larg]

@@ -483,11 +483,14 @@ def test_contraventos_e_conjuntos_lado_a_lado():
     todas = set().union(*titulos)
     if "CONTRAVENTOS E AGULHAMENTOS" in todas and any(t.startswith("CONJUNTOS MENORES") for t in todas):
         assert any("CONTRAVENTOS E AGULHAMENTOS" in t_ and any(x.startswith("CONJUNTOS MENORES") for x in t_) for t_ in titulos)
-    # a diagonal do DP com o perfil
-    dp = [d for d in r["desenhos"].values() for e in d.entidades.values()
-          if isinstance(e, Texto) and str((e.atributos or {}).get("conjunto") or "") and e.texto.startswith(("U", "L")) and "X" in e.texto
-          and abs(e.angulo or 0.0) > 5.0]
-    nomes_dp = [it.get("nome") for d in r["desenhos"].values() for it in ((d.metadados.get("detalhamento") or {}).get("itens") or {}).values()
-                if str(it.get("nome") or "").startswith("DP.")]
-    if nomes_dp:
-        assert dp, "a diagonal do DP não tem o perfil escrito"
+    # a diagonal do DP com o perfil cheio (as duas bordas), não só a linha de eixo
+    from nucleo2d.desenho import Linha, Polilinha
+    itens_dp = {m: it for d in r["desenhos"].values() for m, it in ((d.metadados.get("detalhamento") or {}).get("itens") or {}).items()
+                if str(it.get("nome") or "").startswith("DP.")}
+    for marca_dp in itens_dp:
+        linhas_d = [e for d in r["desenhos"].values() for e in d.entidades.values()
+                    if isinstance(e, (Linha, Polilinha)) and str(e.camada).startswith("DIAGONAIS")
+                    and (e.atributos or {}).get("conjunto") == marca_dp]
+        n_diag = sum(x["qtd"] for x in itens_dp[marca_dp].get("composicao") or [] if str(x.get("perfil") or "").upper().startswith("U92"))
+        if n_diag:
+            assert len(linhas_d) >= 2 * n_diag, (marca_dp, len(linhas_d), n_diag)
