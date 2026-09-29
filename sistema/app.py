@@ -2181,7 +2181,7 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
                              indice=corpo.get("indice", True) is not False)
     junto = juntar_pranchas(folhas, nome=titulo)
     junto.metadados["gerado_por"] = "pranchas"
-    junto.metadados["pedido"] = {k: v for k, v in corpo.items() if k != "substituir"}
+    junto.metadados["pedido"] = {k: v for k, v in corpo.items() if k not in ("substituir", "esquecer_ajustes")}
     junto.metadados["geracao"] = _vivos().nova_geracao()
     # os ajustes que o usuário fez na prancha anterior (células movidas ou escaladas, cotas e textos
     # arrastados, o que apagou, o que desenhou à mão) voltam nesta (pedido do usuário, 29/09)
@@ -2191,6 +2191,11 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     try:
         caminho_ant = g._caminho_desenho(s, _slug(titulo))
     except ErroDeDados:
+        caminho_ant = ""
+    if corpo.get("esquecer_ajustes"):
+        # a prancha de novo do zero: sem aprender da anterior (que leva os ajustes reaplicados) e sem os guardados
+        ajustes = {"diario": (ajustes.get("diario") or []) + [{"quando": time.strftime("%Y-%m-%d %H:%M"), "celula": "",
+                                                               "ajuste": "ajustes esquecidos a pedido: a prancha do zero"}]}
         caminho_ant = ""
     if caminho_ant and os.path.exists(caminho_ant):
         try:
