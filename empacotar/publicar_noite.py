@@ -78,6 +78,9 @@ def git(*args, cwd=REPO, check=True) -> str:
 def rodar(cmd, cwd, env=None, arquivo=None) -> int:
     """roda e copia a saída para o relatório"""
     log("> " + " ".join(cmd))
+    # a saída vai para o relatório (arquivo): em UTF-8, senão a seta "→" do relatório da bateria derruba
+    # o processo no cp1252 do Windows
+    env = dict(env or os.environ, PYTHONIOENCODING="utf-8")
     with open(arquivo or _log_arq or os.devnull, "a", encoding="utf-8") as f:
         r = subprocess.run(cmd, cwd=cwd, env=env, stdout=f, stderr=subprocess.STDOUT)
     return r.returncode

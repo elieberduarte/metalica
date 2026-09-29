@@ -1585,9 +1585,16 @@ def bitola_da_barra(perfil: str) -> str:
 
 
 def _fixador_sem_tamanho(f: Solido) -> bool:
-    """porca ou arruela solta do IFC ("BOLT () 0x0"): sem o diâmetro no nome"""
+    """porca ou arruela solta do IFC ("BOLT () 0x0"): sem o diâmetro no nome — e não a malha de aço
+    inteira que veio como IfcBuildingElementProxy (a estrutura do CYPE do Capitão), nem o que não é aço;
+    o levantamento também as tira dos acessórios"""
     m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)", f.nome or "")
-    return not (m and float(m.group(1).replace(",", ".")) > 0)
+    if m and float(m.group(1).replace(",", ".")) > 0:
+        return False
+    from nucleo2d.detalhe.fora_do_aco import material_nao_aco, proxy_estrutural
+    if material_nao_aco(f) is not None:
+        return False
+    return not (_tipo_ifc(f) == "IfcBuildingElementProxy" and proxy_estrutural(f))
 
 
 def pontas_roscadas(pecas: Sequence[Solido], fixadores: Sequence[Solido]) -> Tuple[List[dict], set]:
