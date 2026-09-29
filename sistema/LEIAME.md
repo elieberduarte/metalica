@@ -262,7 +262,20 @@ juntos; numa camada de perfil, o perfil em todas as funções. A cor escolhida (
 projeto (`detalhamento/cores-camadas.json`): vale nos desenhos refeitos pela atualização automática, nas pranchas e
 nos desenhos já gravados. **A telha sai da tesoura**: a linha dela e o parafuso na terça ficam só na prancha das
 telhas (pedido do usuário, 28/09). No tema escuro, os botões do painel de Propriedades (Peça…, A−, A+) e as barras
-de rolagem saíam brancos: o tema diz ao navegador que é escuro (`color-scheme`).
+de rolagem saíam brancos: o tema diz ao navegador que é escuro (`color-scheme`). **Prancha da tesoura com as
+peças dela** (pedidos do usuário, 28/09):
+- A faixa de baixo passa a se chamar ACESSÓRIOS/DISPOSITIVOS. Ela recebe todas as chapas e os chumbamentos das
+  tesouras da prancha, com quantas estão desenhadas ali (CH4 – 08x: 4 na T1 + 4 na T2). O total da obra fica na
+  prancha das chapas, e a chamada na tesoura aponta o detalhe da própria prancha.
+- O que não cabe na faixa vai para o canto livre do quadro, embaixo da última tesoura. Com uma tesoura só, a faixa
+  sobe para uma segunda fileira.
+- A legenda ficou só com o que está NESTA PRANCHA (nome e quantidade) e as SIGLAS, uma embaixo da outra. Saíram
+  a relação das pranchas e as tabelas por unidade.
+- Os detalhes de furos das barras vão logo abaixo da cota de baixo da tesoura deles, com uma linha de chamada até
+  a marca dos furos. Eles ganharam a cota do último furo até a outra ponta, e furos a até 3 mm um do outro são uma
+  linha de furação só (24 e 26 mm davam "2" e "246" encavalados).
+- Nas cotas curtas das chapas, o número posto fora da linha voltava sem a conversão para a folha e sumia; agora
+  aparece.
 
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
 sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da

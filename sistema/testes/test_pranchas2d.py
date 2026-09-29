@@ -151,11 +151,12 @@ def test_prancha_de_indice():
     fontes = [{"nome": k, "desenho": d} for k, d in r["desenhos"].items()]
     folhas = montar_pranchas(fontes, formato="A1", titulo="Prancha", indice=True)
     pr = folhas[0].metadados["prancha"]
-    assert folhas[0].nome == "Prancha 01" and pr["relacao"] is True and pr["celulas"] and pr["numero"] == 1
+    assert folhas[0].nome == "Prancha 01" and not pr["relacao"] and pr["celulas"] and pr["numero"] == 1
     assert pr["total"] == len(folhas)
+    # a legenda é só do que está na prancha (pedido do usuário, 28/09): sem a relação das pranchas
     leg = [e for e in folhas[0].entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("prancha") == "legenda"]
-    assert any(e.texto == "RELAÇÃO DAS PRANCHAS" for e in leg)
-    assert any(e.texto == "01/%02d" % len(folhas) for e in leg)
+    assert not any(e.texto == "RELAÇÃO DAS PRANCHAS" for e in leg)
+    assert not any(e.texto == "01/%02d" % len(folhas) for e in leg)
     # a legenda, no quadro LEGENDA, fica na faixa ao lado do carimbo
     from nucleo2d.pranchas import FOLHAS, CARIMBO, MARGENS
     larg, _alt = FOLHAS["A1"]
@@ -383,7 +384,7 @@ def test_faixa_ao_lado_do_carimbo_recebe_celulas_pequenas():
                 assert na_faixa, "os DETALHES da prancha %d ficaram vazios" % (i + 1)
             legenda = [t for t in f.entidades.values() if isinstance(t, Texto) and (t.atributos or {}).get("prancha") == "legenda"]
             assert all(t.posicao[0] < x_carimbo and t.posicao[1] < y_faixa for t in legenda)
-            assert bool(legenda) == (indice and i == 0)          # sem dados de peça, só a relação na primeira
+            assert not any(t.texto == "RELAÇÃO DAS PRANCHAS" for t in legenda)   # a legenda é só da prancha
 
 
 def test_legenda_nunca_passa_da_caixa():
@@ -398,3 +399,53 @@ def test_legenda_nunca_passa_da_caixa():
     assert w <= 150.0 + 0.01
     textos = [e.texto for e in d.entidades.values()]
     assert "SIGLAS" in textos and "Tesoura" in textos and any(t.startswith("+") for t in textos)
+
+
+def test_chapas_da_tesoura_na_prancha_dela_com_a_quantidade_dela():
+    """Na prancha da tesoura, as chapas dela e os chumbamentos vão para os DETALHES (ou para o canto livre
+    do quadro) com quantas estão desenhadas ali; o total da obra fica na prancha das chapas (pedido do
+    usuário, 28/09). Os detalhes de furos das barras vão junto da tesoura, fora da célula dela; a legenda
+    é NESTA PRANCHA + SIGLAS; a chamada de uma chapa detalhada na própria prancha não leva "– PR.xx"."""
+    import os
+    import re
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from test_detalhar2d import _modelo_real
+    from nucleo2d import detalhar as det
+    from nucleo2d.pranchas import montar_pranchas
+    from nucleo2d.desenho import Chamada, Texto
+    doc = _modelo_real()
+    r = det.detalhar(doc, grupos=["tesouras", "chaparias"], converter=False)
+    fontes = [{"nome": "detalhamento-" + k, "desenho": d} for k, d in r["desenhos"].items()]
+    folhas = montar_pranchas(fontes, formato="A1")
+    tit = [[c["titulo"] for c in f.metadados["prancha"]["celulas"]] for f in folhas]
+    p1 = tit[0]
+    assert any(t.startswith("T1 ") for t in p1)
+    # as chapas da prancha 01 com a quantidade dela (a das tesouras desenhadas ali); o total da obra, na
+    # prancha das chapas — cada uma aparece de novo lá, com quantidade maior ou igual
+    q1 = {t.split(" – ")[0]: int(t.split(" – ")[1].rstrip("x")) for t in p1 if re.match(r"(CH|CB)\d", t) and " – " in t}
+    assert len(q1) >= 3, p1
+    total = {}
+    for ts in tit[1:]:
+        for t in ts:
+            if " – " in t and t.split(" – ")[0] in q1:
+                total[t.split(" – ")[0]] = int(t.split(" – ")[1].rstrip("x"))
+    assert total and all(q1[n] <= total[n] for n in total), (q1, total)
+    assert any(q1[n] < total[n] for n in total), (q1, total)
+    # a chamada de uma chapa detalhada na prancha 01 não aponta outra prancha
+    ch = [e.texto for e in folhas[0].entidades.values() if isinstance(e, Chamada)]
+    locais = [n for n in q1 if n.startswith("CH") and " + " not in n and n in ch]
+    assert locais and not any(t.startswith(locais[0] + " – PR.") for t in ch), (locais, ch)
+    # a legenda: nome e quantidade desta prancha e as siglas
+    leg = [e.texto for e in folhas[0].entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("prancha") == "legenda"]
+    assert "NESTA PRANCHA" in leg and "SIGLAS" in leg
+    assert not any(t.startswith("PEÇAS DE") for t in leg)
+    # os detalhes de furos das barras: na prancha da tesoura dona deles
+    furos = [(i, t) for i, ts in enumerate(tit) for t in ts if re.match(r"DETALHE [A-Z] – FUROS DE", t)]
+    assert furos and all(any(x.startswith(("T1 ", "T2 ", "T3 ", "T4 ")) for x in tit[i]) for i, _t in furos)
+    # no quadro da tesoura (não na faixa), com a linha de chamada até a marca dos furos (28/09)
+    from nucleo2d.desenho import Linha
+    for i, _t in furos:
+        assert any(isinstance(e, Linha) and (e.atributos or {}).get("prancha") == "chamada_furos" for e in folhas[i].entidades.values())
+    # a faixa de baixo: ACESSÓRIOS/DISPOSITIVOS
+    assert any(isinstance(e, Texto) and e.texto == "ACESSÓRIOS/DISPOSITIVOS" for e in folhas[0].entidades.values())

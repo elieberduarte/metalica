@@ -393,6 +393,10 @@ def _detalhes_de_furos(p, barras: Sequence[dict], nome_de, esc: float, y_topo: f
             vistos.add((nome, vista))
             letra = letras[n % len(letras)]
             n += 1
+            # o detalhe é uma célula própria na prancha (vai para os DETALHES, embaixo — pedido do usuário,
+            # 28/09); a chamada com a letra, na elevação, fica com a tesoura
+            atr_conj = p.atr
+            p.atr = dict(atr_conj, detalhe_furos=letra)
             L = b["L"]
             # a ponta de referência: a mais perto dos furos
             do_fim = sum(f["x"] for f in fs) / len(fs) > L / 2
@@ -439,7 +443,19 @@ def _detalhes_de_furos(p, barras: Sequence[dict], nome_de, esc: float, y_topo: f
             nos = [0.0] + cols
             for i_ in range(len(nos) - 1):
                 p.cota_h(X(nos[i_]), X(nos[i_ + 1]), y0, -8.0, texto="%d" % round(nos[i_ + 1] - nos[i_]))
-            linhas_y = sorted({round(fy) for _, fy, _ in dist})
+            # e do último furo até a outra ponta (pedido do usuário, 28/09: "para não gerar dúvida"): até a
+            # quebra do desenho, com a medida real
+            if L - cols[-1] > 1.0:
+                p.cota_h(X(cols[-1]), X(min(L, trechos[-1][1])), y0, -8.0, texto="%d" % round(L - cols[-1]))
+            # as linhas de furação: furos a até 3 mm um do outro são a mesma linha (24 e 26 mm davam duas
+            # cotas encavaladas — "2" e "246", 28/09)
+            linhas_y = []
+            for v_ in sorted(fy for _, fy, _ in dist):
+                if linhas_y and v_ - linhas_y[-1][-1] <= 3.0:
+                    linhas_y[-1].append(v_)
+                else:
+                    linhas_y.append([v_])
+            linhas_y = [round(sum(g_) / len(g_)) for g_ in linhas_y]
             ys = [0.0] + [float(v_) for v_ in linhas_y] + [H]
             x_fim = X(trechos[-1][1])
             for i_ in range(len(ys) - 1):
@@ -449,13 +465,17 @@ def _detalhes_de_furos(p, barras: Sequence[dict], nome_de, esc: float, y_topo: f
             h = 2.2 * esc
             p.texto(x_cel, y_topo + 5.0 * esc + 1.2 * h, "DETALHE %s – FUROS DE %s  (1:%d)" % (letra, nome, round(esc / k)), h)
             p.texto(x_cel, y_topo + 5.0 * esc, "da ponta %s%s" % (lado, " · face escondida na elevação" if escondido else ""), 1.8 * esc)
+            p.atr = atr_conj
             # chamada na elevação: círculo em volta dos furos e a letra
             xs_e = [f["p2"][0] for f in fs]
             ys_e = [f["p2"][1] for f in fs]
             cx, cy = (min(xs_e) + max(xs_e)) / 2, (min(ys_e) + max(ys_e)) / 2
             raio = max(6.0 * esc, 0.6 * max(max(xs_e) - min(xs_e), max(ys_e) - min(ys_e)))
+            # a marca na elevação leva a letra: na prancha, a linha de chamada do detalhe vem até ela
+            p.atr = dict(atr_conj, marca_furos=letra)
             p.circulo(cx, cy, raio, "COTA")
             p.texto(cx + raio * 0.75, cy - raio * 0.75 - 2.5 * esc, letra, 2.5 * esc, "COTA")
+            p.atr = atr_conj
             x_cel = x_fim + 30.0 * esc
 
 
