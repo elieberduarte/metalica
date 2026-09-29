@@ -687,7 +687,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     # nomes de produção (S.T.1, T.C.2-A, T1…) de posições e conjuntos, estáveis entre
     # gerações quando `nomes` traz os anteriores
     avisar("nomes de produção…")
-    nomeacao = nomear(posicoes, camadas, pecas, conjuntos_info, anteriores=nomes)
+    nomeacao = nomear(posicoes, camadas, pecas, conjuntos_info, anteriores=nomes, fixadores=_so_parafusos(_fixadores(doc)))
     nomes_pos, nomes_conj = nomeacao["posicoes"], nomeacao["conjuntos"]
     for c in conjuntos_info:
         c["nome"] = nomes_conj.get(c["marca"], "")

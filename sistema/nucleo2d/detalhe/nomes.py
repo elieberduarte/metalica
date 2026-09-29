@@ -59,19 +59,76 @@ def _tem_furacao_de_terca(pos: Posicao, assinaturas: set) -> bool:
 ALCANCE_SUPORTE_TERCA = 200.0
 
 
-def _chapas_onde_a_terca_encosta(pecas: Sequence[Solido], marcas_terca: set) -> set:
+def _segmento_na_caixa(a, b, caixa, folga: float = 3.0) -> bool:
+    """O segmento a–b passa pela caixa ((x0, x1), (y0, y1), (z0, z1)) aumentada de `folga` (método das faixas)."""
+    t0, t1 = 0.0, 1.0
+    for i in range(3):
+        lo, hi = caixa[i][0] - folga, caixa[i][1] + folga
+        d = b[i] - a[i]
+        if abs(d) < 1e-9:
+            if a[i] < lo or a[i] > hi:
+                return False
+            continue
+        u0, u1 = (lo - a[i]) / d, (hi - a[i]) / d
+        if u0 > u1:
+            u0, u1 = u1, u0
+        t0, t1 = max(t0, u0), min(t1, u1)
+        if t0 > t1:
+            return False
+    return True
+
+
+def _parafusos_como_segmentos(fixadores: Sequence[Solido]) -> list:
+    """Cada parafuso do modelo como o segmento do corpo dele (centro ± meio comprimento no eixo maior)."""
+    segs = []
+    for f in fixadores or ():
+        if not f.vertices or len(f.vertices) < 4:
+            continue
+        cc = tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3))
+        _, pca = _autovetores(f.vertices)
+        ax = pca[0]
+        ts = [sum((v[i] - cc[i]) * ax[i] for i in range(3)) for v in f.vertices]
+        a = tuple(cc[i] + ax[i] * min(ts) for i in range(3))
+        b = tuple(cc[i] + ax[i] * max(ts) for i in range(3))
+        segs.append((a, b, cc))
+    return segs
+
+
+def _chapas_onde_a_terca_encosta(pecas: Sequence[Solido], marcas_terca: set, fixadores: Sequence[Solido] = ()) -> set:
     """Marcas das chapas que têm a ponta de alguma terça a menos de ALCANCE_SUPORTE_TERCA
-    do seu centro: são os suportes de terça, seja qual for a furação."""
+    do seu centro: são os suportes de terça, seja qual for a furação. Com os parafusos no modelo, a
+    chapa só é suporte quando um parafuso atravessa ela e a terça — perto da ponta da terça ficavam a
+    chapa da cumeeira e o suporte de tirante da Sala e a chapa do chumbamento do depósito (análise das
+    pranchas, 29/09)."""
     pontas = collections.defaultdict(list)
     cel = 500.0
+    caixas_terca = []
     for e in pecas:
         if str(_marcas(e).get("posicao") or e.nome or e.id) not in marcas_terca:
             continue
+        if e.vertices:
+            caixas_terca.append(_caixa(e))
         eixo = _eixo_da_peca(e)
         if not eixo:
             continue
         for p in eixo:
             pontas[tuple(int(math.floor(p[i] / cel)) for i in range(3))].append(p)
+    segs = _parafusos_como_segmentos(fixadores)
+    segs_por_cel = collections.defaultdict(list)
+    for s in segs:
+        segs_por_cel[tuple(int(math.floor(s[2][i] / cel)) for i in range(3))].append(s)
+
+    def aparafusada_na_terca(e) -> bool:
+        cx_e = _caixa(e)
+        c = tuple((cx_e[i][0] + cx_e[i][1]) / 2.0 for i in range(3))
+        k = tuple(int(math.floor(c[i] / cel)) for i in range(3))
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for a, b, _cc in segs_por_cel.get((k[0] + dx, k[1] + dy, k[2] + dz), ()):
+                        if _segmento_na_caixa(a, b, cx_e) and any(_segmento_na_caixa(a, b, ct) for ct in caixas_terca):
+                            return True
+        return False
     fora = set()
     for e in pecas:
         if not (_tipo_ifc(e).startswith("IfcPlate") or isinstance(getattr(e, "parametrica", None), Chapa)) or not e.vertices:
@@ -92,7 +149,7 @@ def _chapas_onde_a_terca_encosta(pecas: Sequence[Solido], marcas_terca: set) -> 
                     break
             if perto:
                 break
-        if perto:
+        if perto and (not segs or aparafusada_na_terca(e)):
             fora.add(str(_marcas(e).get("posicao") or e.nome or e.id))
     return fora
 
@@ -116,7 +173,8 @@ def _nome_numero(nome: str, prefixo: str):
 
 
 def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence[Solido],
-           conjuntos_info: Sequence[dict], anteriores: Optional[dict] = None) -> dict:
+           conjuntos_info: Sequence[dict], anteriores: Optional[dict] = None,
+           fixadores: Sequence[Solido] = ()) -> dict:
     """Nome de produção de cada posição e conjunto, no padrão da fábrica:
 
     * tesouras (conjuntos com 8+ barras) T1, T2…; terças de cobertura T.C.n (mesmo
@@ -196,7 +254,7 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     # ---- tipo de cada posição
     tipo: Dict[str, str] = {}
     marcas_terca = {m for p in posicoes for m in marcas_de(p) if p.classe == "barra" and _eh_terca(p, camadas.get(p.marca, ""))}
-    suportes = _chapas_onde_a_terca_encosta(pecas, marcas_terca)
+    suportes = _chapas_onde_a_terca_encosta(pecas, marcas_terca, fixadores)
     # a chapa inteira em cima da mesa do banzo onde a ponta do tirante aparafusa (a S.TI, marcada no modelo)
     marcas_sti = {str(_marcas(e).get("posicao") or "") for e in pecas
                   if (getattr(e, "atributos", None) or {}).get("funcao") == "suporte_tirante"}

@@ -285,6 +285,8 @@ def _conteudo_de(cels: Sequence[dict]) -> List[str]:
         cat = {"CHUMBACAO": "PLANTA DE CHUMBAÇÃO", "TELHAS_DET": "TELHAS", "TELHAS_TIPOS": "TELHAS",
                "LOCALIZACAO": "VISTAS"}.get(cat, cat)
         nome = (it.get("nome") or c.get("montagem") or c.get("marca") or c.get("desenho_titulo") or c["titulo"]).replace("Detalhamento – ", "")
+        if it or c.get("montagem"):
+            nome = _nome_da_celula(c, nome)
         q = _quantidade_da_celula(c) if (it or c.get("montagem")) else 0
         if q:
             nome = "%s (%02dx)" % (nome, q)
@@ -2111,6 +2113,14 @@ def _quantidade_da_celula(c: dict) -> int:
     return int(m_q.group(1)) if m_q else 0
 
 
+def _nome_da_celula(c: dict, padrao: str) -> str:
+    """O nome como a caixa o mostra ("S.T.1", "CB1.1 + CH9 + CH14") pelo título dela ("S.T.1 – 48x"): a marca
+    da montagem repete as peças ("CB1.1 + CB1.1 + CB1.1 + …") e o suporte de terça saía "CH4 + CH5" na legenda,
+    no CONTEÚDO e no índice (análise das pranchas, 29/09). Sem título nesse formato, `padrao`."""
+    m = re.match(r"^\s*(.+?)\s+[–-]\s+\d+x\b", str(c.get("titulo") or ""))
+    return m.group(1).strip() if m else padrao
+
+
 def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> List[tuple]:
     """Os blocos da legenda da prancha: [(título, linhas)] — o que está NESTA PRANCHA (nome e
     quantidade: as tesouras, as peças e os detalhes da faixa, com a quantidade desta prancha) e as
@@ -2122,6 +2132,7 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
         nome = str(it.get("nome") or c.get("montagem") or c.get("marca") or "")
         if not nome:
             continue                                  # vistas e cortes: o título deles basta
+        nome = _nome_da_celula(c, nome)
         partes_n = nome.split(" / ")
         if len(partes_n) > 2:
             nome = "%s … %s" % (partes_n[0], partes_n[-1])     # "A.D.1 … A.D.10": a coluna não alarga
