@@ -2261,7 +2261,12 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         ang = abs(math.degrees(math.atan2(pb[1] - pa[1], pb[0] - pa[0]))) % 180
         barras.append((pa, pb, comp, ang))
         m = _marcas(e)
-        if rotular and m.get("posicao"):
+        if tipo == "conjunto" and camada_de.get(e.id) == "DIAGONAIS":
+            # a diagonal do conjunto (o DP) com o perfil dela escrito ao lado (pedido do usuário, 28/09)
+            perfil_d = com_bitola(str(m.get("perfil") or e.nome or ""))
+            if perfil_d:
+                rotulos.append((perfil_d, ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), ang))
+        elif rotular and m.get("posicao"):
             rotulos.append((nome_de(m["posicao"]), ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), ang))
     barras_furadas = _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc)
     banzos = [b for b in barras if (b[3] < 25.0 or b[3] > 155.0) and b[2] > 0.25 * larg]

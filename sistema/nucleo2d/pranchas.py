@@ -280,7 +280,7 @@ def _conteudo_de(cels: Sequence[dict]) -> List[str]:
         if c.get("pai") is not None:
             continue                                  # o detalhe de furos é da tesoura, que já está na lista
         it = c.get("item") or {}
-        cat = (it.get("categoria") or c.get("categoria") or "VISTAS").upper()
+        cat = (c.get("categoria") or it.get("categoria") or "VISTAS").upper()
         nome = (it.get("nome") or c.get("montagem") or c.get("marca") or c.get("desenho_titulo") or c["titulo"]).replace("Detalhamento – ", "")
         q = _quantidade_da_celula(c) if (it or c.get("montagem")) else 0
         if q:
@@ -392,9 +392,14 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     # na prancha seguinte, com o título "(continuação)"
     from nucleo2d.detalhar import CATEGORIAS
     ordem = {k: i for i, k in enumerate(CATEGORIAS)}
+    ordem["CONTRAVENTOS"] = ordem.get("CONJUNTOS", 1) - 0.5
+    titulos_q = dict(CATEGORIAS, CONTRAVENTOS="Contraventos e agulhamentos")
     for c in itens:
         c["categoria"] = (c.get("item") or {}).get("categoria") or (
             "CHAPAS" if c.get("montagem") else "VISTAS" if not c.get("marca") else "OUTROS")
+        # os contraventos e os agulhamentos num quadro próprio, ao lado dos conjuntos (pedido do usuário, 28/09)
+        if c["categoria"] == "CONJUNTOS" and re.match(r"(A\.[CLD]\.|CV\.)", str((c.get("item") or {}).get("nome") or c.get("titulo") or "")):
+            c["categoria"] = "CONTRAVENTOS"
     qx0, qx1 = ux0 + QUADRO_MARGEM, ux1 - QUADRO_MARGEM
     # os detalhes de furos: os da tesoura vão para a faixa da prancha dela (na categoria dela, se não
     # couberem); os de um conjunto menor voltam para a célula dele, como antes
@@ -443,6 +448,45 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 x += c["w"] + FOLGA
             return linha
 
+        def lado_a_lado(cat1, cat2, cels_p, mold_p):
+            """as duas categorias em dois quadros lado a lado, cada um com a largura na proporção da área
+            das células dele (e pelo menos a da mais larga); o que não cabe na altura continua na próxima"""
+            g1 = [c_ for c_ in fila if c_["categoria"] == cat1]
+            g2 = [c_ for c_ in fila if c_["categoria"] == cat2]
+            area = lambda g: sum((c_["w"] + FOLGA) * (c_["h"] + FOLGA) for c_ in g)    # noqa: E731
+            larg_t = ux1 - ux0 - FOLGA
+            w1_min = max(c_["w"] for c_ in g1) + 2 * QUADRO_MARGEM
+            w2_min = max(c_["w"] for c_ in g2) + 2 * QUADRO_MARGEM
+            if w1_min + w2_min > larg_t:
+                return False
+            w1 = min(max(larg_t * area(g1) / (area(g1) + area(g2)), w1_min), larg_t - w2_min)
+            xs = ux0 + w1
+            for cat_, x0_, x1_ in ((cat1, ux0, xs), (cat2, xs + FOLGA, ux1)):
+                y_ = uy1 - QUADRO_CABECALHO - FOLGA
+                grupo_ = [c_ for c_ in fila if c_["categoria"] == cat_]
+                while grupo_:
+                    linha_, x_ = [], x0_ + QUADRO_MARGEM
+                    for c_ in grupo_:
+                        if linha_ and x_ + c_["w"] > x1_ - QUADRO_MARGEM:
+                            break
+                        linha_.append(c_)
+                        x_ += c_["w"] + FOLGA
+                    alt_ = max(c_["h"] for c_ in linha_)
+                    if y_ - alt_ < uy0 and any(x["categoria"] == cat_ for x in cels_p):
+                        break
+                    x_ = x0_ + QUADRO_MARGEM
+                    for c_ in linha_:
+                        c_["px"], c_["py"] = x_, y_ - c_["h"]
+                        x_ += c_["w"] + FOLGA
+                        cels_p.append(c_)
+                        fila.remove(c_)
+                        grupo_.remove(c_)
+                    y_ -= alt_ + FOLGA
+                mold_p.append({"categoria": cat_, "titulo": titulos_q.get(cat_, cat_) + (" (continuação)" if cat_ in iniciadas else ""),
+                               "y1": uy1, "y0": uy0 - FOLGA * 0.5, "x0": x0_, "x1": x1_})
+                iniciadas.add(cat_)
+            return True
+
         while fila:
             cels_p, mold_p = [], []
             y_topo = uy1
@@ -463,7 +507,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 usado = (sep_ + _altura_empilhada(grupo[1])) if len(grupo) == 2 else _altura_empilhada(grupo[0])
                 sobra_v = max(0.0, util - usado - 4.0)
                 cat = fila[0]["categoria"]
-                mold_p.append({"categoria": cat, "titulo": CATEGORIAS.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
+                mold_p.append({"categoria": cat, "titulo": titulos_q.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
                                "y1": uy1, "y0": uy0 - FOLGA * 0.5})
                 iniciadas.add(cat)
                 for c in grupo:
@@ -472,13 +516,17 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     cels_p.append(c)
                     fila.remove(c)
                 cheia = True
+            # contraventos/agulhamentos e conjuntos: dois quadros lado a lado, cada um na altura toda
+            seq_ = list(dict.fromkeys(c_["categoria"] for c_ in fila))
+            if not cels_p and len(seq_) >= 2 and seq_[:2] == ["CONTRAVENTOS", "CONJUNTOS"]:
+                cheia = lado_a_lado(seq_[0], seq_[1], cels_p, mold_p)
             while fila and not cheia:
                 cat = fila[0]["categoria"]
                 linha = prateleira(cat, qx0, qx1)
                 alt = max(c["h"] for c in linha)
                 if y_topo - (QUADRO_CABECALHO + FOLGA + alt + FOLGA) < uy0 and cels_p:
                     break
-                aberto = {"categoria": cat, "titulo": CATEGORIAS.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
+                aberto = {"categoria": cat, "titulo": titulos_q.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
                           "y1": y_topo, "y0": None}
                 mold_p.append(aberto)
                 iniciadas.add(cat)
@@ -501,6 +549,9 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 y_topo -= FOLGA
             if mold_p:
                 mold_p[-1]["y0"] = uy0 - FOLGA * 0.5            # o último quadro desce até a faixa
+                for mq_ in mold_p:
+                    if "x0" in mq_:                              # os lado a lado: os dois até a faixa
+                        mq_["y0"] = uy0 - FOLGA * 0.5
             # os detalhes: as chapas dos conjuntos da prancha; sem conjunto, as das mesmas categorias
             comp_p = [x for c in cels_p for x in ((c.get("item") or {}).get("composicao") or [])
                       if str(x.get("classe") or "").startswith("chapa")]
@@ -1279,6 +1330,9 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
         nome = str(it.get("nome") or c.get("montagem") or c.get("marca") or "")
         if not nome:
             continue                                  # vistas e cortes: o título deles basta
+        partes_n = nome.split(" / ")
+        if len(partes_n) > 2:
+            nome = "%s … %s" % (partes_n[0], partes_n[-1])     # "A.D.1 … A.D.10": a coluna não alarga
         q = _quantidade_da_celula(c)
         linha = (nome, "%02dx" % q if q else "")
         if linha not in linhas:

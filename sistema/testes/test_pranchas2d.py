@@ -462,3 +462,32 @@ def test_chapas_da_tesoura_na_prancha_dela_com_a_quantidade_dela():
             assert perto, (cb, ch)
     # a faixa de baixo: ACESSÓRIOS/DISPOSITIVOS
     assert any(isinstance(e, Texto) and e.texto == "ACESSÓRIOS/DISPOSITIVOS" for e in folhas[0].entidades.values())
+
+
+def test_contraventos_e_conjuntos_lado_a_lado():
+    """Contraventos e agulhamentos (CV., A.C., A.L., A.D.) num quadro, os conjuntos (DP.) em outro, lado a
+    lado na mesma prancha quando cabem; a diagonal do DP com o perfil escrito (pedidos do usuário, 28/09)."""
+    import os
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from test_detalhar2d import _modelo_real
+    from nucleo2d import detalhar as det
+    from nucleo2d.pranchas import montar_pranchas
+    from nucleo2d.desenho import Texto
+    doc = _modelo_real()
+    r = det.detalhar(doc, grupos=["conjuntos", "contraventamentos", "agulhamentos"], converter=False)
+    fontes = [{"nome": "detalhamento-" + k, "desenho": d} for k, d in r["desenhos"].items()]
+    folhas = montar_pranchas(fontes, formato="A1")
+    titulos = [{e.texto for e in f.entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("campo") == "titulo"}
+               for f in folhas]
+    todas = set().union(*titulos)
+    if "CONTRAVENTOS E AGULHAMENTOS" in todas and any(t.startswith("CONJUNTOS MENORES") for t in todas):
+        assert any("CONTRAVENTOS E AGULHAMENTOS" in t_ and any(x.startswith("CONJUNTOS MENORES") for x in t_) for t_ in titulos)
+    # a diagonal do DP com o perfil
+    dp = [d for d in r["desenhos"].values() for e in d.entidades.values()
+          if isinstance(e, Texto) and str((e.atributos or {}).get("conjunto") or "") and e.texto.startswith(("U", "L")) and "X" in e.texto
+          and abs(e.angulo or 0.0) > 5.0]
+    nomes_dp = [it.get("nome") for d in r["desenhos"].values() for it in ((d.metadados.get("detalhamento") or {}).get("itens") or {}).values()
+                if str(it.get("nome") or "").startswith("DP.")]
+    if nomes_dp:
+        assert dp, "a diagonal do DP não tem o perfil escrito"

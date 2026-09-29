@@ -281,6 +281,9 @@ peças dela** (pedidos do usuário, 28/09):
   tesoura, porque a montagem já as cota, e a chamada delas fica sem "– PR.xx".
 - Os detalhes de furos ficam perto da marca deles, com espaço entre um e outro, e sem a linha "ESC." (a escala
   está no título). A legenda tem letra maior quando cabe.
+- A prancha dos conjuntos menores tem dois quadros lado a lado: "Contraventos e agulhamentos" (CV., A.C., A.L.,
+  A.D.) e "Conjuntos menores" (DP.). A diagonal de cada DP traz o perfil escrito ao longo dela. Na legenda, um
+  nome com muitas partes aparece resumido ("A.D.1 … A.D.10").
 
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
 sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da
