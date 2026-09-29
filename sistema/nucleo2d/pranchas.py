@@ -979,11 +979,18 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     for x_ in ((t_.get("item") or {}).get("composicao") or []):
                         if x_.get("nome") in partes:
                             onde_i[str(x_["marca"])] = i
+        # a identidade de cada célula (estável entre gerações): o que os ajustes do usuário usam para voltar
+        # na próxima geração (nucleo2d.ajustes_pranchas)
+        ids_c = _ids_das_celulas(cels)
         empilhadas = [c for c in cels if c.get("empilhada")]
         if empilhadas:
             mq = molduras[i0 - 1][0]
             for c, topo_c in zip(empilhadas, _topos_empilhadas(empilhadas, mq, qx0, qx1)):
+                antes_c = set(d.entidades)
                 _conjunto_centralizado(d, c, mq, qx0, qx1, onde_i, i, montagem_de, topo=topo_c)
+                for k_ in d.entidades:
+                    if k_ not in antes_c:
+                        d.entidades[k_].atributos = dict(d.entidades[k_].atributos or {}, cel=ids_c[id(c)])
         for c in cels:
             if c.get("empilhada"):
                 continue
@@ -991,7 +998,9 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             dx = c["px"] - bx0 / c["k"]
             dy = c["py"] + (0.0 if c.get("sem_escala") else FAIXA) - by0 / c["k"]
             for e in c["entidades"]:
-                d.add(_para_papel(e, c["k"], dx, dy, c["fonte"]))
+                n_ = _para_papel(e, c["k"], dx, dy, c["fonte"])
+                n_.atributos = dict(n_.atributos or {}, cel=ids_c[id(c)])
+                d.add(n_)
             if c.get("alvo_furos"):
                 (mx, my), mr = c["alvo_furos"]
                 # do canto de cima da caixa do detalhe mais perto da marca até a borda do círculo
@@ -1005,11 +1014,11 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             rot = "ESC. " + texto_escala(c["k"]) + ("  (%s)" % c["nota"] if c.get("nota") else "")
             if not c.get("sem_escala"):
                 d.add(Texto(camada="TEXTO", posicao=(round(c["px"], 2), round(c["py"] + 1.5, 2)), texto=rot, altura=2.0,
-                        atributos={"prancha": "escala", "fonte": c["fonte"], "celula": c["titulo"]}))
+                        atributos={"prancha": "escala", "fonte": c["fonte"], "celula": c["titulo"], "cel": ids_c[id(c)]}))
         d.metadados["prancha"] = {"formato": formato, "numero": i, "total": total, "fontes": fontes_da,
                                   "titulo": info.get("titulo", ""),
                                   "quadro": [round(v, 2) for v in quadro], "carimbo": [round(v, 2) for v in carimbo_caixa],
-                                  "celulas": [{"titulo": c["titulo"], "fonte": c["fonte"], "escala": c["k"], "copia": bool(c.get("local")),
+                                  "celulas": [{"titulo": c["titulo"], "id": ids_c[id(c)], "fonte": c["fonte"], "escala": c["k"], "copia": bool(c.get("local")),
                                                "marca": c.get("marca"), "item": _item_resumido(c.get("item")),
                                                "caixa": [round(c["px"], 2), round(c["py"], 2), round(c["px"] + c["w"], 2), round(c["py"] + c["h"], 2)]}
                                               for c in cels]}
@@ -1040,6 +1049,35 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         d.metadados["prancha"]["relacao"] = leg["relacao"]
         d.metadados["prancha"]["siglas"] = [x[0] for b in leg["blocos"] if b[0] == "SIGLAS" for x in b[1]]
         saida.append(d)
+    return saida
+
+
+def _ids_das_celulas(cels: Sequence[dict]) -> Dict[int, str]:
+    """A identidade de cada célula da prancha, estável entre gerações: o desenho de onde veio e a
+    posição, o conjunto ou a montagem (não o título, que leva a quantidade); a cópia local leva a
+    célula principal da prancha (a tesoura); repetidas ganham #2, #3…"""
+    def base(c):
+        if c.get("chave"):
+            b = "%s:%s" % tuple(c["chave"][:2]) if len(c["chave"]) >= 2 else str(c["chave"])
+        elif c.get("montagem"):
+            b = "montagem:" + str(c["montagem"])
+        elif c.get("marca"):
+            b = "marca:" + str(c["marca"])
+        else:
+            b = "titulo:" + re.sub(r"\s*[–-]\s*\d+x\s*$", "", str(c.get("titulo") or ""))
+        if c.get("letra"):
+            b += "/" + str(c["letra"])
+        return str(c.get("fonte") or "") + "|" + b
+    principal = next((base(c) for c in cels if not c.get("local") and c.get("pai") is None), "")
+    saida, vistos = {}, collections.Counter()
+    for c in cels:
+        b = base(c)
+        if c.get("local"):
+            b += "@" + principal
+        if c.get("pai") is not None:
+            b += "@" + base(c["pai"])
+        vistos[b] += 1
+        saida[id(c)] = b if vistos[b] == 1 else "%s#%d" % (b, vistos[b])
     return saida
 
 

@@ -2183,6 +2183,23 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     junto.metadados["gerado_por"] = "pranchas"
     junto.metadados["pedido"] = {k: v for k, v in corpo.items() if k != "substituir"}
     junto.metadados["geracao"] = _vivos().nova_geracao()
+    # os ajustes que o usuário fez na prancha anterior (células movidas ou escaladas, cotas e textos
+    # arrastados, o que apagou, o que desenhou à mão) voltam nesta (pedido do usuário, 29/09)
+    from nucleo2d import ajustes_pranchas
+    arq_aj = os.path.join(g._existente(s), "detalhamento", ajustes_pranchas.ARQUIVO)
+    ajustes = ajustes_pranchas.ler(arq_aj)
+    try:
+        caminho_ant = g._caminho_desenho(s, _slug(titulo))
+    except ErroDeDados:
+        caminho_ant = ""
+    if caminho_ant and os.path.exists(caminho_ant):
+        try:
+            ajustes = ajustes_pranchas.aprender(Desenho.de_dict(g.abrir_desenho(s, _slug(titulo))), ajustes)
+        except Exception as exc:                  # noqa: BLE001 — a prancha sai mesmo sem os ajustes
+            junto.metadados["ajustes_erro"] = "ajustes das pranchas não lidos: %s" % exc
+    ajustes_pranchas.marcar(junto)
+    junto.metadados["ajustes"] = ajustes_pranchas.aplicar(junto, ajustes)
+    ajustes_pranchas.gravar(arq_aj, ajustes)
     if corpo.get("substituir", True) is not False:
         # apaga o desenho anterior com este nome e as pranchas soltas de antes (Prancha 01, 02, …
         # montadas automaticamente; as geradas das folhas ficam)
