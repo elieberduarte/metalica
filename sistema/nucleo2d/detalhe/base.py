@@ -803,6 +803,24 @@ def parafusos_no_conjunto(doc: Documento, instancia: Sequence[Solido]) -> Tuple[
     return dict(contagem), porcas
 
 
+def soltas_no_conjunto(doc: Documento, instancia: Sequence[Solido]) -> List[str]:
+    """Os ids das porcas e arruelas soltas dentro da caixa da instância do conjunto (as que
+    `parafusos_no_conjunto` conta como porcas), para a legenda as levar ao padrão da ponta roscada."""
+    if not instancia:
+        return []
+    caixas = [_caixa(e) for e in instancia]
+    minimo = [min(cx[i][0] for cx in caixas) - 20.0 for i in range(3)]
+    maximo = [max(cx[i][1] for cx in caixas) + 20.0 for i in range(3)]
+    fora = []
+    for f in _so_parafusos(_fixadores(doc)):
+        if len(f.vertices) < 4 or not _fixador_sem_tamanho(f):
+            continue
+        cc = tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3))
+        if all(minimo[i] <= cc[i] <= maximo[i] for i in range(3)):
+            fora.append(f.id)
+    return fora
+
+
 def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[Solido], centros=None) -> int:
     """Chapa que veio do IFC sem o furo modelado: cada parafuso (ou chumbador) que
     atravessa a chapa vira um furo redondo de d + 1 mm no ponto em que o eixo cruza o
@@ -1645,11 +1663,32 @@ def pontas_roscadas(pecas: Sequence[Solido], fixadores: Sequence[Solido]) -> Tup
         b = melhor[1]
         usados.add(f.id)
         lista = grupos.setdefault(id(b), (b, []))[1]
-        if not any(float(np.sqrt(((cc - x) ** 2).sum())) <= 45.0 for x in lista):
-            lista.append(cc)
-    pontas = [{"peca": b["peca"], "bitola": b["bitola"], "d": b["d"], "centro": tuple(float(v) for v in x)}
-              for b, xs in grupos.values() for x in xs]
+        for x in lista:
+            if float(np.sqrt(((cc - x[0]) ** 2).sum())) <= 45.0:
+                x[1].append(f.id)
+                break
+        else:
+            lista.append((cc, [f.id]))
+    pontas = [{"peca": b["peca"], "bitola": b["bitola"], "d": b["d"], "centro": tuple(float(v) for v in x),
+               "fixadores": ids} for b, xs in grupos.values() for x, ids in xs]
     return pontas, usados
+
+
+def pontas_do_modelo(doc) -> Dict[str, dict]:
+    """{id da porca/arruela solta: a ponta roscada dela} com todas as barras redondas do modelo, uma vez
+    por documento (a legenda de cada conjunto consulta: a porca do chumbador, embaixo da chapa de apoio da
+    tesoura, é de uma barra que não está na tesoura)"""
+    cache = getattr(doc, "_pontas_roscadas", None)
+    if cache is None:
+        pecas = [e for e in doc.entidades.values() if getattr(e, "vertices", None) and getattr(e, "faces", None)
+                 and not isinstance(e, Chapa)]
+        pontas, _usados = pontas_roscadas(pecas, _fixadores(doc))
+        cache = {fid: p for p in pontas for fid in p["fixadores"]}
+        try:
+            doc._pontas_roscadas = cache
+        except AttributeError:
+            pass
+    return cache
 
 
 def acessorios_no_padrao(acessorios: Dict[str, int], pecas: Sequence[Solido], fixadores: Sequence[Solido]) -> Dict[str, int]:
