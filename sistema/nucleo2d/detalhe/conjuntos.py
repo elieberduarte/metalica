@@ -273,6 +273,14 @@ def _lado_do_conjunto(instancia: Sequence[Solido]) -> int:
     L, H = max(us) - min(us), max(vs) - min(vs)
     if L <= 0 or H <= 0:
         return 0
+    # o conjunto linear — uma barra comprida com as peças pequenas nas pontas (o tirante, a agulha) — não tem
+    # lado: a versão espelhada (o par de diagonais do X) é a mesma peça para a fábrica; saía com dois nomes,
+    # CV.1 e CV.2, com o mesmo comprimento (pedido do usuário, 29/09). A meia-tesoura espelhada continua
+    # um detalhe de cada lado
+    ext_pecas = sorted((max(_dot(_sub(p, c), u) for p in e.vertices) - min(_dot(_sub(p, c), u) for p in e.vertices)
+                        for e in instancia if e.vertices), reverse=True)
+    if ext_pecas and ext_pecas[0] >= 0.9 * L and (len(ext_pecas) == 1 or ext_pecas[1] <= 0.3 * L):
+        return 0
     esq = [cv for cu, cv in pontos if cu < -0.25 * L]
     dir_ = [cv for cu, cv in pontos if cu > 0.25 * L]
     if not esq or not dir_:
