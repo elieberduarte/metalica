@@ -504,7 +504,9 @@ class CAD {
   _ouvirDivisao() {
     if (window.parent === window) return;
     window.addEventListener('message', (ev) => {
-      if (ev.origin !== location.origin || !ev.data || ev.data.metalica !== 'enquadrar2d') return;
+      if (ev.origin !== location.origin || !ev.data) return;
+      if (ev.data.metalica === 'localizar2d') { this._localizarPelaMarca(ev.data); return; }
+      if (ev.data.metalica !== 'enquadrar2d') return;
       const c = ev.data.caixa;
       this.tela.regiao = c || null;
       if (c) this.tela.enquadrar(c, ev.data.margem ?? 0.25);
@@ -513,6 +515,39 @@ class CAD {
     });
     try { window.parent.postMessage({ metalica: 'pronto2d', desenho: this.nomeDesenho }, location.origin); } catch (e) { /* idem */ }
   }
+  /**
+   * A peça escolhida no 3D ao lado, neste desenho, pelas marcas dela (o projeto do IFC, sem a ligação pela
+   * planta): a célula da posição, senão a do conjunto (a tesoura montada "M16 + M17" acha as metades), senão
+   * a própria peça na localização (pela origem). Com a peça em mais de um lugar, o detalhe original (não a
+   * cópia local de outra prancha) e, entre eles, o maior. Enquadra e marca a região.
+   */
+  _localizarPelaMarca(m) {
+    const separar = (v) => String(v || '').split(/\s*(?:\/|\+)\s*/).filter(Boolean);
+    const pos = new Set(m.posicoes || []), conj = new Set(m.conjuntos || []), ids = new Set(m.ids || []);
+    const achar = (teste) => [...this.doc.entidades.values()].filter(e => teste(e.atributos || {}));
+    let ents = achar(a => a.posicao && separar(a.posicao).some(x => pos.has(x)) && a.detalhe !== 'localizacao');
+    if (!ents.length) ents = achar(a => a.conjunto && separar(a.conjunto).some(x => conj.has(x)) && a.detalhe !== 'localizacao');
+    if (!ents.length) ents = achar(a => a.origem && ids.has(a.origem));
+    if (!ents.length) { this.dica('Essa peça do 3D não está neste desenho: escolha outro na lista de desenhos.'); return; }
+    // agrupa por célula (pranchas) ou pelo que a marca diz; fica o grupo original maior
+    const grupos = new Map();
+    for (const e of ents) {
+      const a = e.atributos || {};
+      const k = a.cel || a.posicao || a.conjunto || a.origem || '';
+      if (!grupos.has(k)) grupos.set(k, []);
+      grupos.get(k).push(e);
+    }
+    let lista = [...grupos.entries()];
+    const originais = lista.filter(([k]) => !String(k).includes('@'));
+    if (originais.length) lista = originais;
+    const [, escolhidas] = lista.sort((a, b) => b[1].length - a[1].length)[0];
+    const c = this.doc.caixa(new Set(escolhidas.map(e => e.id)));
+    if (!c) return;
+    this.tela.regiao = c;
+    this.tela.enquadrar(c, 0.35);
+    this.dica(`${escolhidas.length} traço(s) da peça do 3D neste desenho${grupos.size > 1 ? ` (${grupos.size} lugares; mostrando o detalhe)` : ''}.`);
+  }
+
   alternarSelecao(id) { const s = new Set(this.tela.selecao); s.has(id) ? s.delete(id) : s.add(id); this.selecionar([...s]); }
   _podarSelecao() { const antes = this.tela.selecao.size; this.tela.selecao = new Set([...this.tela.selecao].filter(id => this.doc.get(id))); if (this.tela.selecao.size !== antes) this._agendarPaineis('props'); }
   apagarSelecao() { if (this.tela.selecao.size) this.executar(new ComandoRemover([...this.tela.selecao])); }

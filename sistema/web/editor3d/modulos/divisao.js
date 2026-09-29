@@ -30,9 +30,15 @@ export class MetodosDivisao {
     const lista = [...(ids || [])].slice(0, 5000);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     const nomes = new Set(), pecas = new Set();
+    // as marcas das peças (posição, conjunto, id): o 2D do projeto do IFC acha o detalhe por elas (29/09)
+    const posicoes = new Set(), conjuntos = new Set(), idsSel = [];
     for (const id of lista) {
       const e = this.documento.get(id);
       if (!e) continue;
+      const mk = (e.atributos && e.atributos.marcas) || {};
+      if (mk.posicao) posicoes.add(String(mk.posicao));
+      if (mk.conjunto) conjuntos.add(String(mk.conjunto));
+      if (idsSel.length < 200) idsSel.push(id);
       for (const p of pontosDe(e)) {
         if (!p) continue;
         x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
@@ -43,7 +49,8 @@ export class MetodosDivisao {
     }
     const caixa = isFinite(x0) ? [[x0, y0], [x1, y1]] : null;
     try {
-      window.parent.postMessage({ metalica: 'sel3d', n: lista.length, caixa, nomes: [...nomes], pecas: [...pecas] }, location.origin);
+      window.parent.postMessage({ metalica: 'sel3d', n: lista.length, caixa, nomes: [...nomes], pecas: [...pecas],
+        marcas: { posicoes: [...posicoes].slice(0, 50), conjuntos: [...conjuntos].slice(0, 50), ids: idsSel } }, location.origin);
     } catch (e) { /* idem */ }
   }
 

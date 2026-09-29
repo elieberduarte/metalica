@@ -141,7 +141,13 @@ function doTresD(m) {
     if (m.nomes && m.nomes.length > 1) avisar('Várias treliças escolhidas: o 2D mostra a elevação quando o 3D tem uma só.');
     else if (!(m.nomes || []).length) avisar('Essa peça não veio de uma elevação: o 2D mostra o lugar dela na planta.', 4000);
   }
-  if (!desl) { avisar('Este projeto não tem a ligação entre o desenho e o modelo: monte o 3D pela planta de novo (Desenho 2D → Montar o 3D pela planta).', 8000); return; }
+  if (!desl) {
+    // o projeto do IFC: o 2D vai ao detalhe da peça pelas marcas dela (a célula da posição ou do conjunto; na
+    // localização, a própria peça) — pedido do usuário, 29/09
+    const mk = m.marcas || {};
+    if ((mk.posicoes || []).length || (mk.conjuntos || []).length || (mk.ids || []).length) para2d({ metalica: 'localizar2d', ...mk });
+    return;
+  }
   if (!m.caixa) return;
   const c = [[m.caixa[0][0] - desl[0], m.caixa[0][1] - desl[1]], [m.caixa[1][0] - desl[0], m.caixa[1][1] - desl[1]]];
   // uma peça pequena não pode virar um zoom de milímetros: a região tem ao menos 3 m

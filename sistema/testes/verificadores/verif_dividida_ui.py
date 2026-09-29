@@ -149,6 +149,12 @@ try:
     aba.drenar(1.0)
     sel = aba.avaliar(f"[...{F3}.editor.selecao.ids]") or []
     ok(sel == [ids_barras[-1]], f"2D → 3D: a peça da localização destaca ela só, pela origem ({sel})")
+    # 3D → 2D pela marca (o projeto do IFC, sem ligação pela planta): o 2D vai à célula da posição
+    aba.avaliar(f"{F2}.cad._localizarPelaMarca({{posicoes: ['P2'], conjuntos: [], ids: []}}); 1")
+    aba.drenar(0.5)
+    reg = aba.avaliar(f"{F2}.cad.tela.regiao") or []
+    ok(bool(reg) and reg[0][0] <= 300001 and reg[1][0] >= 307999 and reg[0][1] <= 1 and reg[1][1] >= -1,
+       f"3D → 2D pela marca: o 2D enquadra a célula da posição P2 ({reg})")
     aba.avaliar(f"{F2}.cad.selecionar(['l1']); 1")         # de volta à cópia da planta (a próxima conta com ela)
     aba.drenar(1.0)
     # sem seguir, nada passa
