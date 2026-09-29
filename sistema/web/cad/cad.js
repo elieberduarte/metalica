@@ -473,8 +473,31 @@ class CAD {
   _avisarDivisao() {
     if (window.parent === window || this._daDivisao) return;
     const c = this.tela.selecao.size ? this.doc.caixa(this.tela.selecao) : null;
-    try { window.parent.postMessage({ metalica: 'sel2d', caixa: c, n: this.tela.selecao.size, desenho: this.nomeDesenho }, location.origin); }
+    // a peça do 3D pela marca, como o Ver no 3D (o projeto do IFC não tem a ligação pela planta: só a
+    // caixa não achava nada — pedido do usuário, 29/09)
+    const ents = [...this.tela.selecao].map(id => this.doc.get(id)).filter(Boolean);
+    const alvo = ents.length ? this._alvoNo3D(ents, true) : null;
+    try { window.parent.postMessage({ metalica: 'sel2d', caixa: c, n: this.tela.selecao.size, desenho: this.nomeDesenho, alvo }, location.origin); }
     catch (e) { /* sem a tela de fora */ }
+  }
+
+  /**
+   * O que destacar no 3D para estas entidades: `ids:…` quando elas são as próprias peças do modelo
+   * (a localização e a chumbação desenham cada peça no lugar, com a origem dela), `posicao:P77` (todas
+   * as peças da posição) ou `conjunto:M2`. `soPecas`: sem o recurso ao detalhe de posição aberto.
+   */
+  _alvoNo3D(ents, soPecas = false) {
+    const separar = (v) => String(v).split(/\s*\/\s*/).filter(Boolean);
+    const noLugar = ents.filter(e => ['localizacao', 'chumbacao'].includes((e.atributos || {}).detalhe) && (e.atributos || {}).origem);
+    if (noLugar.length) return 'ids:' + [...new Set(noLugar.map(e => e.atributos.origem))].slice(0, 200).join(',');
+    // célula de peças fundidas ou conjuntos iguais: "M5 / M7 / M8" são três marcas do modelo
+    const posicoes = [...new Set(ents.flatMap(e => (e.atributos || {}).posicao ? separar(e.atributos.posicao) : []))];
+    const conjuntos = [...new Set(ents.flatMap(e => (e.atributos || {}).conjunto ? separar(e.atributos.conjunto).flatMap(c => c.split(/\s*\+\s*/)) : []))];
+    if (posicoes.length) return 'posicao:' + posicoes.slice(0, 20).join(',');
+    if (conjuntos.length) return 'conjunto:' + conjuntos.slice(0, 20).join(',');
+    if (soPecas) return null;
+    const meta = (this.doc.metadados || {}).detalhe_posicao;
+    return meta && meta.marca ? 'posicao:' + meta.marca : null;
   }
 
   /** O que a tela dividida manda: enquadrar a região que o 3D escolheu e marcá-la. */
@@ -501,17 +524,7 @@ class CAD {
   verNo3D() {
     if (!this.projeto) { this.aviso('Ver no 3D precisa de um projeto aberto.', 'atencao'); return; }
     const ents = [...this.tela.selecao].map(id => this.doc.get(id)).filter(Boolean);
-    // célula de peças fundidas ou conjuntos iguais: "M5 / M7 / M8" são três marcas do modelo
-    const separar = (v) => String(v).split(/\s*\/\s*/).filter(Boolean);
-    const posicoes = [...new Set(ents.flatMap(e => (e.atributos || {}).posicao ? separar(e.atributos.posicao) : []))];
-    const conjuntos = [...new Set(ents.flatMap(e => (e.atributos || {}).conjunto ? separar(e.atributos.conjunto) : []))];
-    let alvo = null;
-    if (posicoes.length) alvo = 'posicao:' + posicoes.slice(0, 20).join(',');
-    else if (conjuntos.length) alvo = 'conjunto:' + conjuntos.slice(0, 20).join(',');
-    else {
-      const meta = (this.doc.metadados || {}).detalhe_posicao;
-      if (meta && meta.marca) alvo = 'posicao:' + meta.marca;
-    }
+    const alvo = this._alvoNo3D(ents);
     if (!alvo) { this.aviso('Selecione uma peça do detalhamento (título, contorno ou furo) para vê-la no 3D.', 'atencao'); return; }
     this._sairPara(this.urlDoEditor(`&destacar=${encodeURIComponent(alvo)}`));
   }

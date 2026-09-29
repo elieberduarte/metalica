@@ -46,12 +46,22 @@ json.dump({"desenho": "desenho", "montado_em": "27/09/2026 10:00",
                          "situacao": "ok", "desenho": [], "caixa_desenho": CAIXA_EL}]},
           open(os.path.join(PASTA, "trelicas-lidas.json"), "w", encoding="utf-8"), ensure_ascii=False)
 doc = Documento()
+ids_barras = []
 for conj, y in (("TESOURA 1#1", 0.0), ("TESOURA 1#2", 6000.0)):
     for z in (6000.0, 7000.0):
         b = Barra(nome="U 100×40×2,25 (FF)", inicio=(0.0, y, z), fim=(8000.0, y, z), perfil="U 100×40×2,25 (FF)", papel="banzo")
-        b.atributos = {"origem": {"peca": conj, "planta": "TESOURA 1"}}
+        b.atributos = {"origem": {"peca": conj, "planta": "TESOURA 1"}, "marcas": {"posicao": "P%d" % (1 if z < 6500 else 2)}}
         doc.add(b)
+        ids_barras.append(b.id)
 json.dump(doc.dict(), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
+# o detalhamento do projeto do IFC (sem ligação pela planta): a célula da posição P2 e a peça no lugar,
+# na localização, com a origem dela no 3D — longe da planta e da elevação
+d_ = json.load(open(os.path.join(PASTA, "desenhos-2d", "desenho.desenho.json"), encoding="utf-8"))
+d_["entidades"] += [{"id": "d1", "tipo": "linha", "camada": "VISTA", "a": [300000.0, 0.0], "b": [308000.0, 0.0],
+                     "atributos": {"detalhe": "posicao", "posicao": "P2"}},
+                    {"id": "d2", "tipo": "linha", "camada": "VISTA-FINA", "a": [300000.0, -9000.0], "b": [308000.0, -9000.0],
+                     "atributos": {"detalhe": "localizacao", "origem": ids_barras[-1], "posicao": "P2"}}]
+json.dump(d_, open(os.path.join(PASTA, "desenhos-2d", "desenho.desenho.json"), "w", encoding="utf-8"))
 
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -129,6 +139,18 @@ try:
     aba.drenar(1.0)
     pecas = aba.avaliar(f"[...new Set([...{F3}.editor.selecao.ids].map(id => {F3}.editor.documento.get(id).atributos.origem.peca))]") or []
     ok(pecas == ["TESOURA 1#1"], f"2D → 3D: a linha da planta seleciona a cópia que está ali ({pecas})")
+    # 2D → 3D pela marca (o projeto do IFC, 29/09): a célula da posição destaca as peças dela; a peça da
+    # localização, ela só
+    aba.avaliar(f"{F2}.cad.selecionar(['d1']); 1")
+    aba.drenar(1.0)
+    marcas = aba.avaliar(f"[...{F3}.editor.selecao.ids].map(id => {F3}.editor.documento.get(id).atributos.marcas.posicao).sort()") or []
+    ok(marcas == ["P2", "P2"], f"2D → 3D: a célula de uma posição destaca as peças dela no 3D ({marcas})")
+    aba.avaliar(f"{F2}.cad.selecionar(['d2']); 1")
+    aba.drenar(1.0)
+    sel = aba.avaliar(f"[...{F3}.editor.selecao.ids]") or []
+    ok(sel == [ids_barras[-1]], f"2D → 3D: a peça da localização destaca ela só, pela origem ({sel})")
+    aba.avaliar(f"{F2}.cad.selecionar(['l1']); 1")         # de volta à cópia da planta (a próxima conta com ela)
+    aba.drenar(1.0)
     # sem seguir, nada passa
     aba.avaliar(f"{F2}.document.querySelector('.ligacao-vistas [data-c=seguir]').click(); 1"); aba.drenar(0.3)
     aba.avaliar(f"{F2}.cad.selecionar(['l3']); 1")

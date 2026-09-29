@@ -1527,9 +1527,9 @@ export class Editor {
    * `destacar=posicao:P77,P12`, `conjunto:M2` ou `ids:…` na URL (vindo do "Ver no 3D" do CAD e das telas):
    * seleciona as peças com essa marca e enquadra a câmera nelas.
    */
-  _destacar(spec) {
+  _destacar(spec, silencioso = false) {
     const m = /^(posicao|conjunto|peca|ids):(.+)$/.exec(String(spec || ''));
-    if (!m) return;
+    if (!m) return 0;
     const chave = m[1];
     const marcas = new Set(m[2].split(',').map(s => s.trim()).filter(Boolean));
     // peca: o bloco da montagem pela planta — a cópia ("TESOURA 16#12") ou todas as cópias pelo nome
@@ -1544,15 +1544,20 @@ export class Editor {
       .filter(e => chave === 'ids' ? marcas.has(e.id) : chave === 'peca' ? daPeca(e)
         : (e.atributos && e.atributos.marcas && marcas.has(String(e.atributos.marcas[chave]))))
       .map(e => e.id);
-    if (!ids.length) { this.aviso(`Nenhuma peça com ${chave} ${[...marcas].join(', ')} no modelo.`, 'atencao'); return; }
+    if (!ids.length) {
+      if (!silencioso) this.aviso(`Nenhuma peça com ${chave} ${[...marcas].join(', ')} no modelo.`, 'atencao');
+      return 0;
+    }
     this.selecao.definir(ids);
     this.cena.destacar(ids);
     this._destaqueAtivo = true;
     this.camera.zoomSelecao(ids);
     // as malhas do servidor chegam depois: enquadra de novo quando a cena já as tem
     setTimeout(() => { if (this.selecao.ids.size === ids.length) { this.camera.zoomSelecao(ids); this.cena.destacar(ids); } }, 1500);
+    if (silencioso) return ids.length;               // a seleção que veio do 2D ao lado, a cada clique
     this.aviso(`${ids.length} peça(s) ${chave === 'ids' ? 'escolhida(s)' : [...marcas].join(', ')} em destaque; o resto do modelo está esmaecido. Esc limpa a seleção e devolve o modelo; Detalhamentos volta ao CAD.`, 'info', 14000);
     const url = new URL(location.href); url.searchParams.delete('destacar'); history.replaceState(null, '', url);
+    return ids.length;
   }
 
   /** A tela dividida: o Desenho 2D do projeto de um lado, este modelo do outro. */

@@ -50,6 +50,15 @@ export class MetodosDivisao {
   /** {nome}: as peças do bloco (todas as cópias); {caixa}: as que têm o meio dentro dela, em planta */
   _selecionarDaDivisao(pedido) {
     let ids = [];
+    if (pedido.destacar) {
+      // a peça do detalhamento (posicao:, conjunto: ou ids:), como o Ver no 3D, sem o aviso comprido
+      this._daDivisao = true;
+      try {
+        const n = this._destacar(pedido.destacar, true);
+        this.dica(n ? `${n} peça(s) do 2D em destaque no 3D.` : 'Essa seleção do 2D não tem peça no modelo.');
+      } finally { this._daDivisao = false; }
+      return;
+    }
     if (pedido.nome) {
       const alvo = String(pedido.nome);
       for (const e of this.documento.entidades.values()) {

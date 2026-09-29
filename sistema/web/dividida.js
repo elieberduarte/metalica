@@ -10,7 +10,8 @@
  *            + o deslocamento que a montagem pela planta gravou), ou, no modo "a elevação", a
  *            moldura da elevação da treliça escolhida (da tela Treliças lidas);
  *   2D → 3D  o que se escolhe dentro da moldura de uma elevação seleciona o bloco dela (todas as
- *            cópias); na planta, as peças que caem na caixa da seleção.
+ *            cópias); a peça do detalhamento, pela marca dela (a posição ou o conjunto — na
+ *            localização e na chumbação, a própria peça); na planta, as peças na caixa da seleção.
  */
 'use strict';
 
@@ -28,6 +29,7 @@ let desl = null;             // [dx, dy]: modelo = desenho + desl
 let desenhoDaPlanta = '';    // o desenho de onde a montagem leu a planta
 let trelicas = [];           // [{nome, caixa_desenho}] da tela Treliças lidas
 let avisoTimer = null;
+let avisouSemLigacao = false;
 
 function avisar(txt, ms = 6000) {
   const a = $('#aviso');
@@ -154,7 +156,15 @@ function doDoisD(m) {
   const meio = [(m.caixa[0][0] + m.caixa[1][0]) / 2, (m.caixa[0][1] + m.caixa[1][1]) / 2];
   const t = trelicas.find(x => x.caixa_desenho && dentro(x.caixa_desenho, meio));
   if (t) { para3d({ metalica: 'selecionar3d', nome: t.nome }); return; }
-  if (!desl) { avisar('Sem a ligação entre o desenho e o modelo: monte o 3D pela planta de novo.', 8000); return; }
+  // a peça do detalhamento pela marca (ou, na localização, a própria peça): vale no projeto do IFC, que
+  // não tem a ligação pela planta (pedido do usuário, 29/09)
+  if (m.alvo) { para3d({ metalica: 'selecionar3d', destacar: m.alvo }); return; }
+  if (!desl) {
+    // cota, texto ou traço sem peça: no projeto do IFC não há a ligação pela planta — avisa uma vez só
+    if (!avisouSemLigacao) avisar('Essa seleção não é de uma peça do modelo (cota, texto ou desenho à mão): o 3D fica como está.', 5000);
+    avisouSemLigacao = true;
+    return;
+  }
   para3d({ metalica: 'selecionar3d', caixa: [[m.caixa[0][0] + desl[0], m.caixa[0][1] + desl[1]], [m.caixa[1][0] + desl[0], m.caixa[1][1] + desl[1]]] });
 }
 
