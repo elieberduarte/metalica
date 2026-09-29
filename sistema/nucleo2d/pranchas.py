@@ -898,6 +898,19 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             if leg["blocos"]:
                 leg["x0"] = fx1 - min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0))
                 dx1 = leg["x0"] - FOLGA
+                # a legenda final pode sair mais larga que a estimada: o detalhe que passaria da borda nova dos
+                # ACESSÓRIOS sai da faixa — o original volta para a fila, a cópia local só sai (o S.TI.2 do depósito
+                # invadia a legenda, 29/09) — e a legenda é refeita sem ele
+                fora_f = [c for c in na_faixa if c.get("px") is not None and c["px"] + c["w"] > dx1 - QUADRO_MARGEM + 0.5]
+                if fora_f:
+                    for c in fora_f:
+                        na_faixa.remove(c)
+                        if not c.get("local") and not any(c is x_ for x_ in fila):
+                            fila.append(c)
+                    leg["blocos"] = _blocos_da_legenda(cels_p, na_faixa + no_canto)
+                    if leg["blocos"]:
+                        leg["x0"] = max(leg["x0"], fx1 - min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0)))
+                        dx1 = leg["x0"] - FOLGA
             tem_legenda = bool(leg["blocos"])
             if na_faixa:
                 # "ACESSÓRIOS/DISPOSITIVOS": as chapas e os acessórios das peças da prancha (pedido do usuário, 28/09)
@@ -1159,6 +1172,9 @@ def siglas_da_fabrica() -> List[Tuple[str, str]]:
         else:
             txt = nomes[0]
         fora.append((sigla, txt))
+    # o suporte de terça montado ganha o nome S.T.n no detalhar (as chapinhas dele seguem CH) — 29/09
+    if "S.T." not in por:
+        fora.append(("S.T.", "Suporte de terça"))
     return fora + [x for x in SIGLAS_TELHA if x[0] not in por]
 
 
