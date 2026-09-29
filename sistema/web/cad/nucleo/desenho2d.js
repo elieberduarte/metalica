@@ -171,6 +171,20 @@ export function cantosDoTexto(e, escalaTexto = 1) {
   return [[x, 0], [x + w, 0], [x + w, h], [x, h]].map(([u, v]) => [e.posicao[0] + u * c - v * s, e.posicao[1] + u * s + v * c]);
 }
 
+/** O texto da chamada: sai do fim do traço horizontal (8 mm de papel) para o lado de fora da seta. */
+export function textoDaChamada(e, k = 1) {
+  const direita = e.posicao[0] >= e.alvo[0];
+  const traco = (direita ? 8 : -8) * k;
+  return { traco, direita, posicao: [e.posicao[0] + traco + (direita ? 1.5 : -1.5) * k, e.posicao[1] + 0.8 * k],
+           alinhamento: direita ? 'esquerda' : 'direita' };
+}
+
+/** Os cantos da caixa do texto da chamada (o clique no texto pega a chamada; a alça dele fica no meio). */
+export function cantosDoTextoDaChamada(e, k = 1) {
+  const t = textoDaChamada(e, k);
+  return cantosDoTexto({ posicao: t.posicao, altura: e.altura, texto: e.texto, alinhamento: t.alinhamento, angulo: 0 }, k);
+}
+
 /** Distância do ponto à entidade (para seleção por clique). `escala` é mm/px, para o
  *  texto ter uma caixa mínima clicável. */
 export function distanciaEntidade(p, e, escalaTexto = 1) {
@@ -194,6 +208,14 @@ export function distanciaEntidade(p, e, escalaTexto = 1) {
     case 'cota': {
       // a linha de cota está deslocada: aproxima pela distância aos pontos e ao segmento
       return Math.min(distSeg(p, e.p1, e.p2), dist(p, e.p1), dist(p, e.p2));
+    }
+    case 'chamada': {
+      // a linha, o traço e o texto (clicar no texto pega a chamada — pedido do usuário, 28/09)
+      const t = textoDaChamada(e, escalaTexto);
+      const q = [e.posicao[0] + t.traco, e.posicao[1]];
+      const c = cantosDoTextoDaChamada(e, escalaTexto);
+      const dentro = dentroDe(p, c);
+      return dentro ? 0 : Math.min(distSeg(p, e.alvo, e.posicao), distSeg(p, e.posicao, q), ...c.map((a, i) => distSeg(p, a, c[(i + 1) % 4])));
     }
     default: {
       const segs = segmentosDe(e);
@@ -356,6 +378,7 @@ export class Desenho2D {
   _caixaDoIndice(e) {
     if (e.tipo === 'cota') return caixaDe(pontosCota(e, this.escala));
     if (e.tipo === 'texto') return caixaDe(cantosDoTexto(e, this.escala));
+    if (e.tipo === 'chamada') return caixaDe([e.alvo, e.posicao, ...cantosDoTextoDaChamada(e, this.escala)]);
     return caixaDe(pontosDe(e));
   }
 

@@ -12,7 +12,7 @@
 // a cada quadro. Um desenho do modelo inteiro passa de cem mil objetos e leva quase um
 // segundo para ser refeito; sem o cache, cada movimento do mouse custaria isso.
 
-import { pontosArco, valorCota, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota } from './desenho2d.js';
+import { pontosArco, valorCota, dentroDe, segmentosDe, caixaDe, pontosDe, distanciaEntidade, pontosCota, textoDaChamada, cantosDoTextoDaChamada } from './desenho2d.js';
 
 const TRACOS = { CONTINUOUS: [], HIDDEN: [6, 4], CENTER: [16, 4, 4, 4], DASHED: [8, 6], DOT: [2, 3] };
 const PX_GRADE_ALVO = 60;
@@ -78,6 +78,13 @@ export class Tela {
       if (!e || !this.doc.visivel(e)) continue;
       if (e.tipo === 'linha') { pontas.push({ id, parte: 'a', ponto: e.a }, { id, parte: 'b', ponto: e.b }); continue; }
       if (e.tipo === 'polilinha') { e.vertices.forEach((v, i) => pontas.push({ id, parte: 'v' + i, ponto: v })); continue; }
+      if (e.tipo === 'chamada') {
+        // a ponta da seta e o texto (arrastar o texto leva a linha junto, a seta fica — 28/09)
+        const c = cantosDoTextoDaChamada(e, k);
+        fora.push({ id, parte: 'alvo', ponto: e.alvo },
+                  { id, parte: 'texto', ponto: [(c[0][0] + c[2][0]) / 2, (c[0][1] + c[2][1]) / 2] });
+        continue;
+      }
       if (e.tipo !== 'cota') continue;
       const pc = pontosCota(e, k);
       fora.push({ id, parte: 'p1', ponto: e.p1 }, { id, parte: 'p2', ponto: e.p2 });
@@ -490,13 +497,11 @@ export class Tela {
     const T = (p) => this.paraTela(p);
     const a = T(e.alvo), p = T(e.posicao);
     ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(p[0], p[1]);
-    const direita = e.posicao[0] >= e.alvo[0];
-    const traco = (direita ? 8 : -8) * k;
-    const f = T([e.posicao[0] + traco, e.posicao[1]]);
+    const t = textoDaChamada(e, k);
+    const f = T([e.posicao[0] + t.traco, e.posicao[1]]);
     ctx.lineTo(f[0], f[1]); ctx.stroke();
     this._seta(ctx, a, Math.atan2(e.alvo[1] - e.posicao[1], e.alvo[0] - e.posicao[0]), 2.5 * k * this.vp.z);
-    this._texto(ctx, [e.posicao[0] + traco + (direita ? 1.5 : -1.5) * k, e.posicao[1] + 0.8 * k], e.texto, e.altura * k, 0,
-                direita ? 'esquerda' : 'direita', 'base', cor);
+    this._texto(ctx, t.posicao, e.texto, e.altura * k, 0, t.alinhamento, 'base', cor);
   }
 
   _glifoSnap(ctx, snap, cor) {

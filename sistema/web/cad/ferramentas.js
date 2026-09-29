@@ -78,6 +78,11 @@ export class Selecionar extends Ferramenta {
     this.editor.tela.alcaQuente = a;
     this.editor.snap.ignorar = new Set([a.id]);
     const e = this.doc.get(a.id);
+    if (e && e.tipo === 'chamada') {
+      this.dica(a.parte === 'texto' ? 'Leve o texto da chamada para onde ele fica legível — a linha acompanha, a seta fica · Esc cancela'
+        : 'Leve a ponta da seta até o ponto apontado (extremidade, interseção…) · Esc cancela');
+      return;
+    }
     if (e && e.tipo !== 'cota') {
       // a outra ponta do trecho fica fixa: o snap segue a continuação dele (a ponta anda
       // reta, esticando ou encurtando a linha) e pega extremidades, interseções…
@@ -125,6 +130,15 @@ export class Selecionar extends Ferramenta {
       const i = Number(this.alca.parte.slice(1));
       const vertices = e.vertices.map((v, k) => (k === i ? [p[0], p[1]] : v));
       return criar({ ...e, vertices });
+    }
+    if (e.tipo === 'chamada') {
+      if (this.alca.parte === 'alvo') return criar({ ...e, alvo: [p[0], p[1]] });
+      // o meio do texto vai para o cursor: a posição (o joelho da linha) sai dele, do lado em que o
+      // texto fica (à direita da seta, o texto sai para a direita)
+      const k = this.doc.escala, h = (e.altura || 2.5) * k;
+      const w = Math.max(h, (e.texto || '').length * h * 0.65);
+      const s = p[0] >= e.alvo[0] ? 1 : -1;
+      return criar({ ...e, posicao: [p[0] - s * (9.5 * k + w / 2), p[1] - 0.8 * k - h / 2] });
     }
     return this._cotaEditada(p);
   }
