@@ -1969,7 +1969,7 @@ class CAD {
     const opcoes = el('div', { class: 'lista-opcoes' });
     for (const d of lista) {
       // o "completo" repete as células dos grupos em 1:25: não entra por padrão
-      const c = el('input', { type: 'checkbox', checked: (/^detalhamento/.test(d.nome) && !/completo/.test(d.nome)) || d.nome === this.nomeDesenho ? 'checked' : undefined });
+      const c = el('input', { type: 'checkbox', checked: (/^detalhamento/.test(d.nome) && !/completo/.test(d.nome)) || (d.nome === this.nomeDesenho && !/completo/.test(d.nome)) ? 'checked' : undefined });
       caixas.set(d.nome, c);
       opcoes.append(el('label', { class: 'linha' }, c, ` ${d.titulo || d.nome}`, el('small', { texto: `  ${numero(d.entidades || 0)} objetos · 1:${d.escala || '?'}` })));
     }

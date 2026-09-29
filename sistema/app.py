@@ -2146,6 +2146,11 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     pedidos = corpo.get("desenhos") or []
     if not pedidos:
         raise ErroDeDados("escolha ao menos um desenho para a prancha.")
+    # o desenho completo é a soma dos outros de detalhamento: junto deles, repetia todas as peças e as
+    # vistas (29 pranchas na Sala, 28/09) — fica de fora
+    nome_de = lambda it: str(it.get("nome") if isinstance(it, dict) else it)          # noqa: E731
+    if any(nome_de(it).startswith("detalhamento-") and "completo" not in nome_de(it) for it in pedidos):
+        pedidos = [it for it in pedidos if nome_de(it) != "detalhamento-completo"]
     fontes = []
     for item in pedidos:
         nome = item.get("nome") if isinstance(item, dict) else str(item)

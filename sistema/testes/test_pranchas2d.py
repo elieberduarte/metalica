@@ -384,3 +384,17 @@ def test_faixa_ao_lado_do_carimbo_recebe_celulas_pequenas():
             legenda = [t for t in f.entidades.values() if isinstance(t, Texto) and (t.atributos or {}).get("prancha") == "legenda"]
             assert all(t.posicao[0] < x_carimbo and t.posicao[1] < y_faixa for t in legenda)
             assert bool(legenda) == (indice and i == 0)          # sem dados de peça, só a relação na primeira
+
+
+def test_legenda_nunca_passa_da_caixa():
+    """A legenda cabe na largura dada: as siglas ficam inteiras e a relação das pranchas perde colunas,
+    com "… +N" na última linha (a Sala com o desenho completo junto dava 29 pranchas e a legenda
+    invadia o carimbo — 28/09)."""
+    from nucleo2d.desenho import Desenho
+    leg = {"relacao": True, "blocos": [("SIGLAS", [("T", "Tesoura"), ("CH", "Chapa")])], "n_rel": 1}
+    rel = [("%02d/60" % i, "VISTAS: completo, localização, chaparias") for i in range(1, 61)]
+    d = Desenho(nome="t", escala=1.0)
+    w = pranchas._legenda(d, leg, 0.0, 0.0, 90.0, rel, {}, largura=150.0)
+    assert w <= 150.0 + 0.01
+    textos = [e.texto for e in d.entidades.values()]
+    assert "SIGLAS" in textos and "Tesoura" in textos and any(t.startswith("+") for t in textos)

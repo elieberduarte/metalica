@@ -377,100 +377,107 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     fy0, fy1 = m["inferior"] + 3.0, m["inferior"] + ac
     alt_faixa = fy1 - fy0 - QUADRO_CABECALHO - FOLGA
 
-    fila = list(itens)
-    pranchas: List[List[dict]] = []
-    molduras: List[List[dict]] = []        # por prancha: {categoria, titulo, y0, y1[, x0, x1]}
-    legendas: List[dict] = []
-    iniciadas = set()
+    def distribuir(n_rel):
+        fila = list(itens)
+        pranchas: List[List[dict]] = []
+        molduras: List[List[dict]] = []        # por prancha: {categoria, titulo, y0, y1[, x0, x1]}
+        legendas: List[dict] = []
+        iniciadas = set()
 
-    def prateleira(cat, x_ini, x_fim):
-        """as próximas células da fila, da categoria, que cabem lado a lado entre x_ini e x_fim"""
-        linha, x = [], x_ini
-        for c in fila:
-            if c["categoria"] != cat:
-                break
-            if linha and x + c["w"] > x_fim:
-                break
-            linha.append(c)
-            x += c["w"] + FOLGA
-        return linha
+        def prateleira(cat, x_ini, x_fim):
+            """as próximas células da fila, da categoria, que cabem lado a lado entre x_ini e x_fim"""
+            linha, x = [], x_ini
+            for c in fila:
+                if c["categoria"] != cat:
+                    break
+                if linha and x + c["w"] > x_fim:
+                    break
+                linha.append(c)
+                x += c["w"] + FOLGA
+            return linha
 
-    while fila:
-        cels_p, mold_p = [], []
-        y_topo = uy1
-        cheia = False
-        while fila and not cheia:
-            cat = fila[0]["categoria"]
-            linha = prateleira(cat, qx0, qx1)
-            alt = max(c["h"] for c in linha)
-            if y_topo - (QUADRO_CABECALHO + FOLGA + alt + FOLGA) < uy0 and cels_p:
-                break
-            aberto = {"categoria": cat, "titulo": CATEGORIAS.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
-                      "y1": y_topo, "y0": None}
-            mold_p.append(aberto)
-            iniciadas.add(cat)
-            y_topo -= QUADRO_CABECALHO + FOLGA
-            while fila and fila[0]["categoria"] == cat:
+        while fila:
+            cels_p, mold_p = [], []
+            y_topo = uy1
+            cheia = False
+            while fila and not cheia:
+                cat = fila[0]["categoria"]
                 linha = prateleira(cat, qx0, qx1)
                 alt = max(c["h"] for c in linha)
-                if y_topo - (alt + FOLGA) < uy0 and cels_p:
-                    cheia = True
+                if y_topo - (QUADRO_CABECALHO + FOLGA + alt + FOLGA) < uy0 and cels_p:
                     break
-                x = qx0
-                for c in linha:
-                    # alinhadas pelo topo: os títulos numa linha só
-                    c["px"], c["py"] = x, y_topo - c["h"]
-                    x += c["w"] + FOLGA
-                    cels_p.append(c)
-                    fila.remove(c)
-                y_topo -= alt + FOLGA
-            aberto["y0"] = y_topo
-            y_topo -= FOLGA
-        if mold_p:
-            mold_p[-1]["y0"] = uy0 - FOLGA * 0.5            # o último quadro desce até a faixa
-        # a legenda (a largura dela sai do conteúdo; na primeira, com a relação das pranchas)
-        leg = {"blocos": _blocos_da_legenda(cels_p), "relacao": bool(indice and not pranchas)}
-        tem_legenda = bool(leg["blocos"] or leg["relacao"])
-        larg_leg = min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0)) if tem_legenda else 0.0
-        leg["x0"] = fx1 - larg_leg
-        dx1 = leg["x0"] - FOLGA if tem_legenda else fx1
-        # os detalhes: as chapas dos conjuntos da prancha; sem conjunto, as das mesmas categorias
-        alvo = {x["marca"] for c in cels_p for x in ((c.get("item") or {}).get("composicao") or [])
-                if str(x.get("classe") or "").startswith("chapa")}
-        cats_p = {c["categoria"] for c in cels_p}
-        if alvo:
-            candidatas = [c for c in fila if c.get("marca") in alvo
-                          or any(mk in alvo for mk in ((c.get("item") or {}).get("marcas") or []))]
-        else:
-            candidatas = [c for c in fila if c["categoria"] in cats_p]
-        topo_cel = fy1 - QUADRO_CABECALHO - FOLGA * 0.5
-        x, y_linha, alt_linha, na_faixa = fx0 + QUADRO_MARGEM, topo_cel, 0.0, []
-        for c in candidatas:
-            if c["h"] > alt_faixa or c["w"] > dx1 - fx0 - 2 * QUADRO_MARGEM:
-                continue
-            if x + c["w"] > dx1 - QUADRO_MARGEM:                  # prateleira seguinte, embaixo
-                if y_linha - alt_linha - FOLGA - c["h"] < fy0 + FOLGA * 0.5:
+                aberto = {"categoria": cat, "titulo": CATEGORIAS.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
+                          "y1": y_topo, "y0": None}
+                mold_p.append(aberto)
+                iniciadas.add(cat)
+                y_topo -= QUADRO_CABECALHO + FOLGA
+                while fila and fila[0]["categoria"] == cat:
+                    linha = prateleira(cat, qx0, qx1)
+                    alt = max(c["h"] for c in linha)
+                    if y_topo - (alt + FOLGA) < uy0 and cels_p:
+                        cheia = True
+                        break
+                    x = qx0
+                    for c in linha:
+                        # alinhadas pelo topo: os títulos numa linha só
+                        c["px"], c["py"] = x, y_topo - c["h"]
+                        x += c["w"] + FOLGA
+                        cels_p.append(c)
+                        fila.remove(c)
+                    y_topo -= alt + FOLGA
+                aberto["y0"] = y_topo
+                y_topo -= FOLGA
+            if mold_p:
+                mold_p[-1]["y0"] = uy0 - FOLGA * 0.5            # o último quadro desce até a faixa
+            # a legenda (a largura dela sai do conteúdo; na primeira, com a relação das pranchas)
+            leg = {"blocos": _blocos_da_legenda(cels_p), "relacao": bool(indice and not pranchas), "n_rel": n_rel}
+            tem_legenda = bool(leg["blocos"] or leg["relacao"])
+            larg_leg = min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0)) if tem_legenda else 0.0
+            leg["x0"] = fx1 - larg_leg
+            dx1 = leg["x0"] - FOLGA if tem_legenda else fx1
+            # os detalhes: as chapas dos conjuntos da prancha; sem conjunto, as das mesmas categorias
+            alvo = {x["marca"] for c in cels_p for x in ((c.get("item") or {}).get("composicao") or [])
+                    if str(x.get("classe") or "").startswith("chapa")}
+            cats_p = {c["categoria"] for c in cels_p}
+            if alvo:
+                candidatas = [c for c in fila if c.get("marca") in alvo
+                              or any(mk in alvo for mk in ((c.get("item") or {}).get("marcas") or []))]
+            else:
+                candidatas = [c for c in fila if c["categoria"] in cats_p]
+            topo_cel = fy1 - QUADRO_CABECALHO - FOLGA * 0.5
+            x, y_linha, alt_linha, na_faixa = fx0 + QUADRO_MARGEM, topo_cel, 0.0, []
+            for c in candidatas:
+                if c["h"] > alt_faixa or c["w"] > dx1 - fx0 - 2 * QUADRO_MARGEM:
                     continue
-                y_linha -= alt_linha + FOLGA
-                x, alt_linha = fx0 + QUADRO_MARGEM, 0.0
-            if y_linha - c["h"] < fy0 + FOLGA * 0.5:
-                continue
-            c["px"], c["py"] = x, y_linha - c["h"]
-            x += c["w"] + FOLGA
-            alt_linha = max(alt_linha, c["h"])
-            na_faixa.append(c)
-            fila.remove(c)
-        if na_faixa and not alvo:
-            # sem conjunto, a legenda lista também as peças que foram para os detalhes
-            leg["blocos"] = _blocos_da_legenda(cels_p + na_faixa)
-        if na_faixa:
-            mold_p.append({"categoria": "DETALHES", "titulo": "DETALHES", "y1": fy1, "y0": fy0, "x0": fx0, "x1": dx1})
-            iniciadas.update(c["categoria"] for c in na_faixa)
-        if tem_legenda:
-            mold_p.append({"categoria": "LEGENDA", "titulo": "LEGENDA", "y1": fy1, "y0": fy0, "x0": leg["x0"], "x1": fx1})
-        pranchas.append(cels_p + na_faixa)
-        molduras.append(mold_p)
-        legendas.append(leg)
+                if x + c["w"] > dx1 - QUADRO_MARGEM:                  # prateleira seguinte, embaixo
+                    if y_linha - alt_linha - FOLGA - c["h"] < fy0 + FOLGA * 0.5:
+                        continue
+                    y_linha -= alt_linha + FOLGA
+                    x, alt_linha = fx0 + QUADRO_MARGEM, 0.0
+                if y_linha - c["h"] < fy0 + FOLGA * 0.5:
+                    continue
+                c["px"], c["py"] = x, y_linha - c["h"]
+                x += c["w"] + FOLGA
+                alt_linha = max(alt_linha, c["h"])
+                na_faixa.append(c)
+                fila.remove(c)
+            if na_faixa and not alvo:
+                # sem conjunto, a legenda lista também as peças que foram para os detalhes
+                leg["blocos"] = _blocos_da_legenda(cels_p + na_faixa)
+            if na_faixa:
+                mold_p.append({"categoria": "DETALHES", "titulo": "DETALHES", "y1": fy1, "y0": fy0, "x0": fx0, "x1": dx1})
+                iniciadas.update(c["categoria"] for c in na_faixa)
+            if tem_legenda:
+                mold_p.append({"categoria": "LEGENDA", "titulo": "LEGENDA", "y1": fy1, "y0": fy0, "x0": leg["x0"], "x1": fx1})
+            pranchas.append(cels_p + na_faixa)
+            molduras.append(mold_p)
+            legendas.append(leg)
+        return pranchas, molduras, legendas
+
+    pranchas, molduras, legendas = distribuir(1)
+    if indice:
+        # a relação das pranchas na legenda da primeira, com o número real delas
+        pranchas, molduras, legendas = distribuir(len(pranchas) + 1)
     total = len(pranchas)
     # em que prancha cada posição está detalhada (a coluna PR. da legenda) e a relação das pranchas
     onde: Dict[str, int] = {}
@@ -516,7 +523,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         d.metadados["prancha"]["conteudo"] = _conteudo_de(cels)
         leg = legendas[i0 - 1]
         if leg["blocos"] or leg["relacao"]:
-            _legenda(d, leg, leg["x0"], fy0, fy1, relacao if leg["relacao"] else [], onde)
+            _legenda(d, leg, leg["x0"], fy0, fy1, relacao if leg["relacao"] else [], onde, largura=fx1 - leg["x0"])
         d.metadados["prancha"]["relacao"] = leg["relacao"]
         d.metadados["prancha"]["siglas"] = [x[0] for b in leg["blocos"] if b[0] == "SIGLAS" for x in b[1]]
         saida.append(d)
@@ -704,11 +711,13 @@ def _blocos_da_legenda(cels: Sequence[dict]) -> List[tuple]:
 
 
 def _tabela(d, x0: float, y1: float, y0: float, titulo: str, linhas: Sequence[tuple], h: float = 2.0,
-            passo: float = 3.2, cabecalho: Optional[tuple] = None) -> float:
+            passo: float = 3.2, cabecalho: Optional[tuple] = None, max_larg: Optional[float] = None) -> float:
     """Uma tabela de texto com título, as linhas correndo em colunas de cima para baixo e da esquerda
-    para a direita entre y1 e y0. Com `d` None só mede. Devolve a largura usada (mm)."""
+    para a direita entre y1 e y0. Com `d` None só mede. `max_larg`: o que não cabe nela é cortado, com
+    "… +N" na última linha. Devolve a largura usada (mm)."""
     if not linhas:
         return 0.0
+    linhas = list(linhas)
     h_tit = 2.5
     n_campos = max(len(l) for l in linhas)
     todas = ([cabecalho] if cabecalho else []) + list(linhas)
@@ -719,6 +728,12 @@ def _tabela(d, x0: float, y1: float, y0: float, titulo: str, linhas: Sequence[tu
     y_ini = y1 - h_tit - 2.5 - (passo if cabecalho else 0.0)
     por_col = max(1, int((y_ini - y0) // passo))
     n_col = -(-len(linhas) // por_col)
+    if max_larg is not None and n_col * larg_col > max_larg + 0.01:
+        n_col = max(1, int(max_larg // larg_col))
+        cabe = n_col * por_col
+        if len(linhas) > cabe:
+            resto = len(linhas) - cabe + 1
+            linhas = linhas[:cabe - 1] + [("…", "+%d" % resto)]
     if d is not None:
         atr = {"prancha": "legenda"}
         d.add(Texto(camada="TEXTO", posicao=(round(x0, 2), round(y1 - h_tit, 2)), texto=titulo, altura=h_tit,
@@ -741,23 +756,44 @@ def _tabela(d, x0: float, y1: float, y0: float, titulo: str, linhas: Sequence[tu
     return max(n_col * larg_col, LARGURA_LETRA * h_tit * len(titulo) + 4.0)
 
 
-def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tuple], onde: Dict[str, int]) -> float:
+def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tuple], onde: Dict[str, int],
+             largura: Optional[float] = None) -> float:
     """A legenda da prancha, da esquerda para a direita a partir de x0: a relação das pranchas (na
     primeira), as peças (com a prancha em que cada uma está detalhada) e as siglas. Com `d` None só mede
-    (a relação ainda desconhecida conta como uma coluna). Devolve a largura (mm)."""
+    (a relação ainda desconhecida conta `n_rel` linhas). Com `largura`, nunca passa dela: as siglas ficam
+    inteiras, e a relação e as peças, nessa ordem, perdem colunas (o que não cabe vira "… +N"). Devolve
+    a largura (mm)."""
     topo = y1 - QUADRO_CABECALHO - 1.5
-    x = x0 + QUADRO_MARGEM
+    base = y0 + 2.0
+    blocos = []
     if leg.get("relacao"):
-        rel = relacao or [("00/00", "X" * 40)]
+        rel = relacao or [("00/00", "X" * 40)] * max(1, int(leg.get("n_rel") or 1))
         rel = [(a, b if len(b) <= 48 else b[:47] + "…") for a, b in rel]
-        x += _tabela(d, x, topo, y0 + 2.0, "RELAÇÃO DAS PRANCHAS", rel) + 4.0
+        blocos.append(["RELAÇÃO DAS PRANCHAS", rel, None])
     for titulo, linhas in leg["blocos"]:
         if titulo == "SIGLAS":
-            x += _tabela(d, x, topo, y0 + 2.0, titulo, linhas) + 4.0
-            continue
-        com_pr = [(n, q, pf, cp, "%02d" % onde[mk] if mk in onde else "") for n, q, pf, cp, mk in linhas]
-        x += _tabela(d, x, topo, y0 + 2.0, titulo, com_pr, cabecalho=("NOME", "QTD", "PERFIL", "COMPR.", "PR.")) + 4.0
-    return x - x0 + QUADRO_MARGEM - 4.0
+            blocos.append([titulo, linhas, None])
+        else:
+            com_pr = [(n, q, pf, cp, "%02d" % onde[mk] if mk in onde else "") for n, q, pf, cp, mk in linhas]
+            blocos.append([titulo, com_pr, ("NOME", "QTD", "PERFIL", "COMPR.", "PR.")])
+    folga = 4.0
+    naturais = [_tabela(None, 0.0, topo, base, t, l, cabecalho=c) for t, l, c in blocos]
+    limites = [None] * len(blocos)
+    if largura is not None:
+        disponivel = largura - 2 * QUADRO_MARGEM - folga * max(0, len(blocos) - 1)
+        usadas = list(naturais)
+        # quem encolhe: a relação primeiro, depois as peças (as siglas ficam inteiras)
+        for i in [i for i, b in enumerate(blocos) if b[0] == "RELAÇÃO DAS PRANCHAS"] + \
+                 [i for i, b in enumerate(blocos) if b[0] not in ("RELAÇÃO DAS PRANCHAS", "SIGLAS")]:
+            sobra = disponivel - (sum(usadas) - usadas[i])
+            if usadas[i] > sobra:
+                limites[i] = max(sobra, 1.0)
+                usadas[i] = _tabela(None, 0.0, topo, base, blocos[i][0], blocos[i][1], cabecalho=blocos[i][2],
+                                    max_larg=limites[i])
+    x = x0 + QUADRO_MARGEM
+    for (t, l, c), lim in zip(blocos, limites):
+        x += _tabela(d, x, topo, base, t, l, cabecalho=c, max_larg=lim) + folga
+    return x - x0 + QUADRO_MARGEM - folga
 
 
 def fontes_titulo(cels: Sequence[dict]) -> str:
