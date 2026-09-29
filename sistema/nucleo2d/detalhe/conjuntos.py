@@ -3320,6 +3320,12 @@ def _desenhar_eixos(p: "_Papel", eixos: dict, u, v, u0: float, v0: float, esc: f
         if L < 1e-6:
             continue
         d = ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
+        # a linha passa da borda das peças: com beiral ou marquise além do último eixo a bolinha
+        # caía em cima da estrutura (o depósito químico, 29/09)
+        ts = [(cx - a[0]) * d[0] + (cy - a[1]) * d[1] for cx in (0.0, largura) for cy in (0.0, altura)]
+        m = 2.0 * esc
+        t0, t1 = min(0.0, min(ts) - m), max(L, max(ts) + m)
+        a, b = (a[0] + d[0] * t0, a[1] + d[1] * t0), (a[0] + d[0] * t1, a[1] + d[1] * t1)
         # a linha vai de bolinha a bolinha; a bolinha fica encostada na ponta da linha
         p.linha(a[0], a[1], b[0], b[1], camada="EIXO")
         for ponta, sinal in ((a, -1.0), (b, 1.0)):

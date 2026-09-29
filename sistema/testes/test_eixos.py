@@ -55,6 +55,35 @@ def test_identifica_numeros_nas_tesouras_e_letras_nos_apoios():
     assert abs(math.dist(s1["a"], s1["b"]) - (15000 + 2 * E.FOLGA_EIXO)) < 1.0
 
 
+def test_trelicas_pela_geometria_sem_a_categoria_tesouras():
+    """O depósito químico (29/09): o IFC sem a categoria TESOURAS — as treliças vêm como conjunto
+    comum. Os eixos numerados saem das treliças pela geometria (plano vertical com altura), sem
+    inclinação; os com letra só das chapas de apoio do nível de baixo (as deitadas dos nós, mais
+    acima, davam uma letra cada); o eixo vai ao centro do apoio; a terça no caimento não é treliça;
+    o pilar do oitão ganha a sua letra."""
+    doc = Documento(nome="deposito")
+    xs = (0.0, 9000.0, 14000.0)
+    for k, x in enumerate(xs):
+        conj = "M%d" % (k + 1)
+        doc.add(_caixa(x - 40, 0, 5000, x + 40, 20000, 5100, "U100", "P1", conj))            # banzo de baixo
+        doc.add(_caixa(x - 40, 0, 6400, x + 40, 20000, 6500, "U100", "P2", conj))            # banzo de cima
+        for y in (2000.0, 6000.0, 10000.0, 14000.0, 18000.0):
+            doc.add(_caixa(x - 40, y - 40, 5100, x + 40, y + 40, 6400, "U75", "P3", conj))   # montantes
+            doc.add(_caixa(x - 60, y - 100, 5700, x + 60, y + 100, 5708, "CH11", "P4", conj))  # chapa deitada no nó
+        for y in (2500.0, 17500.0):
+            doc.add(_caixa(x + 20 - 105, y - 200, 4992, x + 20 + 105, y + 200, 5000, "CH17", "P5", "C%d" % k))  # apoio
+    doc.add(_caixa(14020 - 105, 10000 - 113, 4992, 14020 + 105, 10000 + 113, 5000, "CH23", "P5", "C9"))  # oitão
+    for k, y in enumerate((1000.0, 5000.0, 9000.0)):          # a terça no plano inclinado, em conjunto
+        doc.add(_caixa(4000, y - 40, 6500 + y * 0.1, 12000, y + 40, 6600 + y * 0.1, "U150", "P6", "T%d" % k))
+    nomes = {"tipos": {"P1": "parte", "P2": "parte", "P3": "parte", "P4": "chapa", "P5": "chapa", "P6": "barra"},
+             "tipos_conjuntos": {"M1": "conjunto", "M2": "conjunto", "M3": "conjunto"}}
+    ex = E.identificar_eixos(doc, nomes)
+    assert ex["eixo_g"] == [1.0, 0.0]
+    assert [round(n["pos"]) for n in ex["numeros"]] == [20, 9020, 14020]
+    assert [round(n["pos"]) for n in ex["letras"]] == [2500, 10000, 17500] and ex["fonte_letras"] == "chapas de base"
+    assert abs(ex["z_base"] - 4992.0) < 1e-6
+
+
 def test_de_dict_valida_e_ordena():
     assert E.de_dict(None) is None and E.de_dict({"eixo_g": [0, 0]}) is None
     d = E.de_dict({"eixo_g": [0, 2], "numeros": [{"nome": "2", "pos": 6000}, {"nome": "1", "pos": 0}], "letras": [], "z_base": 10})

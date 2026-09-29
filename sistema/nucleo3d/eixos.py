@@ -27,6 +27,17 @@ Ponto = Tuple[float, float, float]
 GAP_EIXO = 600.0
 #: Quanto a linha do eixo passa além do último eixo atravessado (mm).
 FOLGA_EIXO = 1500.0
+#: A treliça pela geometria: as peças de um conjunto num plano vertical — finas atravessado ao
+#: plano (mm), compridas ao longo do vão e com altura (a do depósito químico, 29/09, veio sem a
+#: categoria TESOURAS no IFC e os eixos eram adivinhados pelas peças altas).
+ESPESSURA_TRELICA = 600.0
+VAO_MINIMO_TRELICA = 2000.0
+ALTURA_MINIMA_TRELICA = 300.0
+#: Tipos de peça (nomes.json) que não são de treliça.
+_NAO_TRELICA = ("terca", "agulhamento", "contraventamento", "telha", "rufo", "calha", "chumbador", "corrente",
+                "suporte", "castanha", "cantoneira_forro", "perfil_fechamento")
+#: Tipos de conjunto que não são treliça.
+_CONJ_NAO_TRELICA = ("contraventamento", "agulhamento", "suporte_terca", "chumbador", "terca")
 
 
 def _centroide(vs: Sequence[Ponto]) -> Ponto:
@@ -87,10 +98,139 @@ def _vertices(e) -> List[Ponto]:
     return []
 
 
+def _eixo_em_planta(e):
+    """(direção unitária, comprimento) da peça em planta: a barra de ponta a ponta; o sólido e a
+    chapa pelo maior espalhamento dos vértices."""
+    if isinstance(e, Barra):
+        dx, dy = e.fim[0] - e.inicio[0], e.fim[1] - e.inicio[1]
+        L = math.hypot(dx, dy)
+        return ((dx / L, dy / L), L) if L > 1e-9 else (None, 0.0)
+    pts = [(v[0], v[1]) for v in _vertices(e)]
+    if len(pts) < 2:
+        return None, 0.0
+    d = _pca_2d(pts)[0]
+    q = [x * d[0] + y * d[1] for x, y in pts]
+    return d, max(q) - min(q)
+
+
+def _limpo(d: Tuple[float, float]) -> Tuple[float, float]:
+    """A direção sem o resíduo numérico: a quase alinhada ao x ou ao y fica alinhada."""
+    x, y = d
+    if abs(x) < 2e-4:
+        x = 0.0
+    if abs(y) < 2e-4:
+        y = 0.0
+    L = math.hypot(x, y)
+    return (x / L, y / L)
+
+
+def _direcao_dominante(pecas, simetria: int) -> Optional[Tuple[float, float]]:
+    """A direção em planta que mais se repete nas peças compridas (média do ângulo × `simetria`,
+    pesada pelo comprimento ao quadrado): 2 dá uma direção (o vão das treliças — banzos e
+    diagonais caem todos nele em planta), 4 dá o par ortogonal da malha."""
+    c = sn = 0.0
+    for e in pecas:
+        d, L = _eixo_em_planta(e)
+        if d is None or L < 300.0:
+            continue
+        a = math.atan2(d[1], d[0]) * simetria
+        c += L * L * math.cos(a)
+        sn += L * L * math.sin(a)
+    if math.hypot(c, sn) < 1e-9:
+        return None
+    a = math.atan2(sn, c) / simetria
+    return _limpo((math.cos(a), math.sin(a)))
+
+
+def _altura_fora_do_caimento(ss: Sequence[float], zs: Sequence[float]) -> float:
+    """A altura do grupo descontado o caimento (reta z = a·s + b pelos vértices): a treliça tem
+    banzo de cima e de baixo; a peça deitada no plano inclinado da cobertura só a do perfil."""
+    n = len(ss)
+    ms, mz = sum(ss) / n, sum(zs) / n
+    sss = sum((s - ms) ** 2 for s in ss)
+    a = sum((s - ms) * (z - mz) for s, z in zip(ss, zs)) / sss if sss > 1e-9 else 0.0
+    r = [z - mz - a * (s - ms) for s, z in zip(ss, zs)]
+    return max(r) - min(r)
+
+
+def _trelicas(pecas, vao: Tuple[float, float], serve) -> List[Tuple[float, int]]:
+    """As treliças com o vão na direção `vao`: por conjunto (os que `serve` aceita), as peças
+    agrupadas atravessado ao vão; o grupo fino, comprido e com altura, de 3 peças ou mais, é uma
+    treliça. Devolve (posição atravessada, peças) de cada uma."""
+    g = (vao[1], -vao[0])
+    por: Dict[str, list] = {}
+    for e in pecas:
+        m = str(_marcas(e).get("conjunto") or "")
+        if not m or not serve(m, e):
+            continue
+        vs = _vertices(e)
+        if vs:
+            c = _centroide(vs)
+            por.setdefault(m, []).append((c[0] * g[0] + c[1] * g[1], vs))
+    saida = []
+    for lst in por.values():
+        lst.sort(key=lambda t: t[0])
+        grupos: List[list] = []
+        for t in lst:
+            if grupos and t[0] - grupos[-1][-1][0] <= GAP_EIXO:
+                grupos[-1].append(t)
+            else:
+                grupos.append([t])
+        for gr in grupos:
+            if len(gr) < 3:
+                continue
+            vs = [v for _q, vv in gr for v in vv]
+            gg = [v[0] * g[0] + v[1] * g[1] for v in vs]
+            ss = [v[0] * vao[0] + v[1] * vao[1] for v in vs]
+            if (max(gg) - min(gg) <= ESPESSURA_TRELICA and max(ss) - min(ss) >= VAO_MINIMO_TRELICA
+                    and _altura_fora_do_caimento(ss, [v[2] for v in vs]) >= ALTURA_MINIMA_TRELICA):
+                saida.append((sum(q for q, _vv in gr) / len(gr), len(gr)))
+    return saida
+
+
+def _agrupar_pesado(valores: Sequence[Tuple[float, int]], gap: float = GAP_EIXO) -> List[float]:
+    """(posição, peso) agrupados por proximidade; a posição de cada grupo é a média pesada."""
+    grupos: List[list] = []
+    for v, w in sorted(valores):
+        if grupos and v - grupos[-1][-1][0] <= gap:
+            grupos[-1].append((v, w))
+        else:
+            grupos.append([(v, w)])
+    return [sum(v * w for v, w in gr) / sum(w for _v, w in gr) for gr in grupos]
+
+
+def _chapas_de_apoio(pecas, tipos: dict, z_teto: float) -> list:
+    """As chapas deitadas do nível mais baixo (até `z_teto`): onde a estrutura se apoia quando o
+    modelo não tem chumbadores. Só o nível de baixo — as chapas deitadas dos nós das treliças,
+    mais acima, davam uma letra cada (o depósito químico saiu com 10)."""
+    cand = []
+    for e in pecas:
+        if not isinstance(e, (Solido, Chapa)):
+            continue
+        t = str(tipos.get(str(_marcas(e).get("posicao") or "")) or "")
+        if t and t not in ("chapa", "parte"):
+            continue
+        vs = _vertices(e)
+        if len(vs) < 4:
+            continue
+        zs = [v[2] for v in vs]
+        xs = [v[0] for v in vs]
+        ys = [v[1] for v in vs]
+        if max(zs) - min(zs) <= 25.0 and max(max(xs) - min(xs), max(ys) - min(ys)) >= 80.0 and max(zs) <= z_teto:
+            cand.append((min(zs), e))
+    for z0 in sorted({round(z) for z, _e in cand}):
+        nivel = [e for z, e in cand if z0 - 1.0 <= z <= z0 + 100.0]
+        if len(nivel) >= 2:
+            return nivel
+    return []
+
+
 def identificar_eixos(doc: Documento, nomes: Optional[dict] = None) -> dict:
     """Os eixos pelo modelo. `nomes`: o nomes.json do detalhamento (tipos por marca e por
-    conjunto); sem ele, ou sem tesoura reconhecida, as tesouras são adivinhadas pelas
-    peças mais altas e os apoios pelas chapas mais baixas."""
+    conjunto). Os eixos numerados são as treliças — as tesouras do nomes.json ou, sem elas, os
+    conjuntos que a geometria mostra que são treliça (planos verticais); os com letra, os apoios
+    (chumbadores ou as chapas deitadas do nível mais baixo), e cada apoio cai num cruzamento.
+    Sem treliça nenhuma, as tesouras são adivinhadas pelas peças mais altas."""
     nomes = nomes or {}
     tipos = nomes.get("tipos") or {}
     tipos_conj = nomes.get("tipos_conjuntos") or {}
@@ -104,48 +244,82 @@ def identificar_eixos(doc: Documento, nomes: Optional[dict] = None) -> dict:
     def marca_conj(e) -> str:
         return str(_marcas(e).get("conjunto") or "")
 
+    def peca_de_trelica(e) -> bool:
+        t = str(tipos.get(str(_marcas(e).get("posicao") or "")) or "")
+        return not any(t.startswith(n) for n in _NAO_TRELICA)
+
+    def serve_tesoura(m, e) -> bool:
+        return m in conj_tes
+
+    def serve_conjunto(m, e) -> bool:
+        t = str(tipos_conj.get(m) or "")
+        return not any(t.startswith(n) for n in _CONJ_NAO_TRELICA) and peca_de_trelica(e)
+
+    # as treliças: as tesouras do nomes.json; sem elas, os conjuntos em plano vertical, com o vão na
+    # direção (das duas da malha) que der mais treliça
     tes = [e for e in pecas if marca_conj(e) in conj_tes] if conj_tes else []
-    if not tes:
-        # sem nomes: as peças da metade de cima do modelo desenham as tesouras
-        tes = [e for e in pecas if _centroide(_vertices(e))[2] >= z_min + 0.5 * (z_max - z_min)] or pecas
-    cs = [_centroide(_vertices(e)) for e in tes if _vertices(e)]
-    maior, menor, d_maior, d_menor = _pca_2d([(c[0], c[1]) for c in cs])
-    # várias tesouras: o maior espalhamento é o eixo do galpão; uma só: o menor
-    varias = d_maior > 500.0 and d_menor > 500.0 and d_maior / max(d_menor, 1.0) < 8.0
-    g = maior if (varias or d_maior > 4.0 * d_menor and len(_agrupar([c[0] * maior[0] + c[1] * maior[1] for c in cs])) >= 2) else menor
-    if d_maior < 500.0:
-        g = menor
-    if g[0] < 0 or (abs(g[0]) < 1e-9 and g[1] < 0):
-        g = (-g[0], -g[1])
+    trel: List[Tuple[float, int]] = []
+    vao = None
+    if tes:
+        vao = _direcao_dominante(tes, 2)
+        if vao:
+            trel = _trelicas(tes, vao, serve_tesoura)
+    if not trel:
+        malha = _direcao_dominante([e for e in pecas if marca_conj(e)], 4)
+        melhor: List[Tuple[float, int]] = []
+        for d in ((malha, (-malha[1], malha[0])) if malha else ()):
+            achadas = _trelicas(pecas, d, serve_conjunto)
+            if sum(n for _q, n in achadas) > sum(n for _q, n in melhor):
+                melhor, vao = achadas, d
+        trel = melhor
+        if trel:
+            tes = [e for e in pecas if marca_conj(e) and serve_conjunto(marca_conj(e), e)]
+    if trel:
+        g = (vao[1], -vao[0])
+        if g[0] < 0 or (abs(g[0]) < 1e-9 and g[1] < 0):
+            g = (-g[0], -g[1])
+            trel = [(-q, n) for q, n in trel]
+        gs_n = _agrupar_pesado(trel)
+    else:
+        # sem treliça reconhecida: as peças da metade de cima do modelo desenham as tesouras
+        tes = tes or [e for e in pecas if _centroide(_vertices(e))[2] >= z_min + 0.5 * (z_max - z_min)] or pecas
+        cs = [_centroide(_vertices(e)) for e in tes if _vertices(e)]
+        maior, menor, d_maior, d_menor = _pca_2d([(c[0], c[1]) for c in cs])
+        # várias tesouras: o maior espalhamento é o eixo do galpão; uma só: o menor
+        varias = d_maior > 500.0 and d_menor > 500.0 and d_maior / max(d_menor, 1.0) < 8.0
+        g = maior if (varias or d_maior > 4.0 * d_menor and len(_agrupar([c[0] * maior[0] + c[1] * maior[1] for c in cs])) >= 2) else menor
+        if d_maior < 500.0:
+            g = menor
+        if g[0] < 0 or (abs(g[0]) < 1e-9 and g[1] < 0):
+            g = (-g[0], -g[1])
+        gs_n = _agrupar([c[0] * g[0] + c[1] * g[1] for c in cs])
     p = (-g[1], g[0])
-    gs = [c[0] * g[0] + c[1] * g[1] for c in cs]
-    numeros = [{"nome": str(i + 1), "pos": round(v, 1)} for i, v in enumerate(_agrupar(gs))]
-    # apoios: chumbadores; senão chapas horizontais junto do nível mais baixo das tesouras
+    # apoios: chumbadores; senão as chapas deitadas do nível mais baixo, junto do pé das tesouras
     chumb = [e for e in pecas if tipos.get(str(_marcas(e).get("posicao") or "")) == "chumbador"]
     origem_letras = "chumbadores"
     if not chumb:
         z_tes = min(v[2] for e in tes for v in _vertices(e))
-        chumb = []
-        for e in pecas:
-            if not isinstance(e, (Solido, Chapa)):
-                continue
-            vs = _vertices(e)
-            if len(vs) < 4:
-                continue
-            zs = [v[2] for v in vs]
-            xs = [v[0] for v in vs]
-            ys = [v[1] for v in vs]
-            if max(zs) - min(zs) <= 25.0 and max(max(xs) - min(xs), max(ys) - min(ys)) >= 80.0 and max(zs) <= z_tes + 800.0:
-                chumb.append(e)
+        chumb = _chapas_de_apoio(pecas, tipos, z_tes + 800.0)
         origem_letras = "chapas de base" if chumb else "extremos das tesouras"
     if chumb:
         cc = [_centroide(_vertices(e)) for e in chumb]
         ps = [c[0] * p[0] + c[1] * p[1] for c in cc]
         z_base = min(v[2] for e in chumb for v in _vertices(e))
+        if trel:
+            # cada apoio num cruzamento: o eixo numerado vai ao centro dos apoios dele, e a linha de
+            # apoios sem treliça em cima ganha o seu
+            for q in _agrupar([c[0] * g[0] + c[1] * g[1] for c in cc]):
+                i = min(range(len(gs_n)), key=lambda k: abs(gs_n[k] - q))
+                if abs(gs_n[i] - q) <= GAP_EIXO:
+                    gs_n[i] = q
+                else:
+                    gs_n.append(q)
+            gs_n.sort()
     else:
         vs_t = [v for e in tes for v in _vertices(e)]
         ps = [min(v[0] * p[0] + v[1] * p[1] for v in vs_t), max(v[0] * p[0] + v[1] * p[1] for v in vs_t)]
         z_base = min(v[2] for v in vs_t)
+    numeros = [{"nome": str(i + 1), "pos": round(v, 1)} for i, v in enumerate(gs_n)]
     letras = [{"nome": _letra(i), "pos": round(v, 1)} for i, v in enumerate(_agrupar(ps))]
     return {"eixo_g": [round(g[0], 6), round(g[1], 6)], "perp_g": [round(p[0], 6), round(p[1], 6)],
             "numeros": numeros, "letras": letras, "z_base": round(z_base, 1),
