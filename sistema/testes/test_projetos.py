@@ -86,6 +86,60 @@ def test_renomear_duplicar_excluir():
         assert [p["slug"] for p in g.listar()] == [c["slug"]]
 
 
+def test_exportar_e_importar_pacote():
+    """O pacote (.metalica.zip) leva a pasta do projeto sem o histórico nem a marca de aberto, e a
+    importação cria um projeto novo com tudo dentro, guardando de onde veio; ZIP estranho é recusado."""
+    import zipfile
+    with tempfile.TemporaryDirectory() as raiz:
+        g = Projetos(raiz)
+        s = g.criar("Obra Exportada", cliente="Cliente X")["slug"]
+        g.salvar_modelo(s, {"nome": "Obra Exportada", "entidades": [{"tipo": "barra"}], "camadas": {}})
+        os.makedirs(os.path.join(raiz, s, "desenhos-2d"))
+        open(os.path.join(raiz, s, "desenhos-2d", "vistas.desenho.json"), "w", encoding="utf-8").write('{"nome": "vistas"}')
+        os.makedirs(os.path.join(raiz, s, "historico"))
+        open(os.path.join(raiz, s, "historico", "modelo-velho.json.gz"), "wb").write(b"x")
+        open(os.path.join(raiz, s, "aberto.json"), "w").write("{}")
+        open(os.path.join(raiz, s, "modelo.json.parcial"), "w").write("{}")
+        with tempfile.TemporaryDirectory() as saida:
+            r = g.exportar(s, saida)
+            assert r["nome"] == "Obra Exportada.metalica.zip" and os.path.exists(r["caminho"])
+            nomes = set(zipfile.ZipFile(r["caminho"]).namelist())
+            assert {"projeto.json", "modelo.json", "desenhos-2d/vistas.desenho.json", "pacote.json"} <= nomes
+            assert not [n for n in nomes if n.startswith("historico/") or n.endswith(".parcial") or n == "aberto.json"]
+            assert "historico/modelo-velho.json.gz" in set(zipfile.ZipFile(g.exportar(s, saida, historico=True)["caminho"]).namelist())
+            # importa na mesma pasta: vira outro projeto, com o nome do pacote e a origem anotada
+            c = g.importar_pacote(r["caminho"])
+            assert c["slug"] != s and c["nome"] == "Obra Exportada" and c["tem_modelo"] and c["cliente"] == "Cliente X"
+            assert g.abrir_modelo(c["slug"])["entidades"][0]["tipo"] == "barra"
+            assert g.ler(c["slug"])["importado"]["de"] == "Obra Exportada"
+            assert os.path.exists(os.path.join(raiz, c["slug"], "desenhos-2d", "vistas.desenho.json"))
+            assert not os.path.exists(os.path.join(raiz, c["slug"], "pacote.json"))
+            d = g.importar_pacote(r["caminho"], "Outro nome")
+            assert d["nome"] == "Outro nome" and g.ler(d["slug"])["dados"] is None
+            assert len(g.listar()) == 3
+            # ZIP que não é pacote e caminho que sai da pasta
+            ruim = os.path.join(saida, "ruim.zip")
+            with zipfile.ZipFile(ruim, "w") as z:
+                z.writestr("qualquer.txt", "x")
+            try:
+                g.importar_pacote(ruim)
+            except ErroDeDados:
+                pass
+            else:
+                raise AssertionError("ZIP sem projeto.json devia ser recusado")
+            fora = os.path.join(saida, "fora.zip")
+            with zipfile.ZipFile(fora, "w") as z:
+                z.writestr("projeto.json", "{}")
+                z.writestr("../fora.txt", "x")
+            try:
+                g.importar_pacote(fora)
+            except ErroDeDados:
+                pass
+            else:
+                raise AssertionError("caminho com .. devia ser recusado")
+            assert not os.path.exists(os.path.join(raiz, "fora.txt")) and len(g.listar()) == 3
+
+
 def test_modelo_3d_do_projeto():
     with tempfile.TemporaryDirectory() as raiz:
         g = Projetos(raiz)

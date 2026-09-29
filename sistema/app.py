@@ -22,6 +22,8 @@ Rotas da API:
     GET  /api/projetos/<slug>/modelo    documento do editor 3D
     POST /api/projetos/<slug>/<ação>    dados, modelo, importar-ifc, renomear, duplicar,
                                         excluir, arquivar {arquivar: bool}, abrir-pasta
+    GET  /api/projetos/<slug>/exportar[?historico=1]   o projeto inteiro num pacote (.metalica.zip), para outro usuário
+    POST /api/projetos/importar-pacote {nome, conteudo_b64, nome_projeto}   o pacote vira um projeto novo
     POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
     POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + lista de materiais
     POST /api/projetos/<slug>/detalhar-posicao {marca}   detalhe de uma peça (chapa vira paramétrica)
@@ -80,7 +82,7 @@ import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Dict, Optional
-from urllib.parse import unquote, urlparse, parse_qs
+from urllib.parse import unquote, urlparse, parse_qs, quote
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(BASE, "web")
@@ -468,6 +470,30 @@ def _abrir_no_explorador(pasta: str):
         subprocess.Popen(["open", pasta])
     else:
         subprocess.Popen(["xdg-open", pasta])
+
+
+def exportar_projeto(s: str, historico: bool = False, nome: str = "") -> dict:
+    """GET /api/projetos/<s>/exportar[?historico=1&nome=]: o pacote do projeto (projetos.Projetos.exportar)
+    num arquivo temporário; a rota o manda como download e o apaga."""
+    return _gerente().exportar(s, historico=historico, nome=nome)
+
+
+def importar_pacote_de_projeto(corpo: dict) -> dict:
+    """POST /api/projetos/importar-pacote {nome, conteudo_b64, nome_projeto}: o pacote (.metalica.zip)
+    recebido da tela vira um projeto novo da pasta de dados."""
+    import base64
+    import tempfile
+    dados = corpo.get("conteudo_b64")
+    if not dados:
+        raise ErroDeDados("nenhum pacote recebido.")
+    pasta = tempfile.mkdtemp(prefix="metalica-importa-")
+    caminho = os.path.join(pasta, os.path.basename(corpo.get("nome") or "pacote.zip"))
+    try:
+        with open(caminho, "wb") as f:
+            f.write(base64.b64decode(dados))
+        return _gerente().importar_pacote(caminho, corpo.get("nome_projeto"))
+    finally:
+        shutil.rmtree(pasta, ignore_errors=True)
 
 
 def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
@@ -3105,6 +3131,19 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError as e:
             raise ErroDeDados(f"JSON inválido: {e}")
 
+    def _baixar(self, caminho):
+        """Um arquivo gerado na hora (o pacote do projeto) como download, com o nome dele."""
+        dados = open(caminho, "rb").read()
+        self.send_response(200)
+        self.send_header("Content-Type", mimetypes.guess_type(caminho)[0] or "application/octet-stream")
+        self.send_header("Content-Length", str(len(dados)))
+        self.send_header("Cache-Control", "no-store")
+        nome = os.path.basename(caminho)
+        self.send_header("Content-Disposition", "attachment; filename=\"%s\"; filename*=UTF-8''%s"
+                         % (nome.encode("ascii", "replace").decode("ascii").replace('"', ""), quote(nome)))
+        self.end_headers()
+        self.wfile.write(dados)
+
     def _arquivo(self, caminho, raiz):
         caminho = os.path.abspath(caminho)
         raiz_abs = os.path.abspath(raiz)
@@ -3187,6 +3226,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(modelo_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "historico":
                     return self._json({"historico": _gerente().listar_historico(partes[0])})
+                if len(partes) == 2 and partes[1] == "exportar":
+                    q = parse_qs(urlparse(self.path).query)
+                    r = exportar_projeto(partes[0], (q.get("historico") or ["0"])[0] in ("1", "true"),
+                                         (q.get("nome") or [""])[0])
+                    try:
+                        return self._baixar(r["caminho"])
+                    finally:
+                        shutil.rmtree(os.path.dirname(r["caminho"]), ignore_errors=True)
                 if len(partes) == 2 and partes[1] == "progresso":
                     return self._json(progresso_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "calculo":
@@ -3316,6 +3363,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(instalar_atualizacao(corpo if isinstance(corpo, dict) else None))
             if rota == "/api/projetos":
                 return self._json(criar_projeto(corpo))
+            if rota == "/api/projetos/importar-pacote":
+                return self._json(importar_pacote_de_projeto(corpo))
             if rota.startswith("/api/fabrica/"):
                 return self._json(_rota_fabrica(rota, corpo if isinstance(corpo, dict) else {}))
             if rota.startswith("/api/projetos/"):

@@ -142,6 +142,8 @@ function cartao(p) {
                    onclick: (ev) => { ev.stopPropagation(); abrirPasta(p); } }, 'Pasta'),
     el('button', { type: 'button', class: 'discreto', onclick: (ev) => { ev.stopPropagation(); renomear(p); } }, 'Renomear'),
     el('button', { type: 'button', class: 'discreto', onclick: (ev) => { ev.stopPropagation(); duplicar(p); } }, 'Duplicar'),
+    el('button', { type: 'button', class: 'discreto', title: 'Baixa o projeto inteiro num arquivo (.metalica.zip) para outro usuário abrir com "Importar pacote…"',
+                   onclick: (ev) => { ev.stopPropagation(); exportar(p); } }, 'Exportar'),
     el('button', { type: 'button', class: 'discreto', 'data-acao': 'arquivar',
                    title: p.arquivado ? 'Volta para a lista principal' : 'Tira da lista principal sem apagar nada (fica em "Arquivados", no fim da lista)',
                    onclick: (ev) => { ev.stopPropagation(); arquivar(p, !p.arquivado); } }, p.arquivado ? 'Desarquivar' : 'Arquivar'),
@@ -401,6 +403,58 @@ async function duplicar(p) {
   carregar();
 }
 
+/**
+ * O projeto inteiro num arquivo só (.metalica.zip): modelo 3D, IFC de origem, cálculo, desenhos 2D,
+ * pranchas, detalhamento e ajustes. Outro usuário abre com "Importar pacote…". O histórico do modelo
+ * (cópias antigas) fica de fora.
+ */
+async function exportar(p) {
+  const v = await perguntar({ titulo: `Exportar "${p.nome}"`, ok: 'Baixar o pacote',
+    texto: 'Baixa um arquivo .metalica.zip com tudo o que foi feito no projeto: modelo 3D, IFC de origem, ' +
+           'cálculo, desenhos 2D, pranchas, detalhamento e os ajustes das pranchas. Quem receber abre em ' +
+           '"Importar pacote…". O histórico do modelo (cópias antigas) fica de fora. ' +
+           (p.modelo_mb ? `Modelo de ${String(p.modelo_mb).replace('.', ',')} MB: o pacote leva alguns segundos.` : ''),
+    campos: [{ id: 'nome', rotulo: 'Nome do projeto no pacote', valor: p.nome, obrigatorio: true }] });
+  if (!v) return;
+  const a = el('a', { href: `/api/projetos/${encodeURIComponent(p.slug)}/exportar?nome=${encodeURIComponent(v.nome)}`,
+                      download: true, hidden: true });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  recado('Preparando o pacote…', 'O download começa quando o arquivo estiver pronto.');
+}
+
+/** O pacote de outro usuário vira um projeto novo desta pasta de dados. */
+function importarPacote() {
+  const entrada = $('#arquivo-pacote');
+  entrada.value = '';
+  entrada.onchange = async () => {
+    const arquivo = entrada.files && entrada.files[0];
+    if (!arquivo) return;
+    const sugestao = arquivo.name.replace(/\.metalica\.zip$/i, '').replace(/\.zip$/i, '').trim();
+    const v = await perguntar({
+      titulo: 'Importar pacote de projeto',
+      texto: `${arquivo.name} · ${(arquivo.size / 1048576).toFixed(1).replace('.', ',')} MB. ` +
+             'Vira um projeto novo nesta pasta de dados, com tudo o que veio no pacote; nada existente é alterado.',
+      campos: [{ id: 'nome_projeto', rotulo: 'Nome do projeto', valor: sugestao, obrigatorio: true }],
+      ok: 'Importar' });
+    if (!v) return;
+    try {
+      carregando(true, `Lendo ${arquivo.name}…`);
+      const conteudo_b64 = await lerComoBase64(arquivo);
+      carregando(true, `Importando ${arquivo.name}… pacote grande leva um minuto.`);
+      const r = await postar('/api/projetos/importar-pacote', { nome: arquivo.name, conteudo_b64, nome_projeto: v.nome_projeto });
+      carregando(false);
+      recado('Projeto importado', r.nome);
+    } catch (e) {
+      carregando(false);
+      recado('Não foi possível importar o pacote', e.message, 'erro');
+    }
+    carregar();
+  };
+  entrada.click();
+}
+
 let abertosArquivados = false;
 
 async function arquivar(p, sim) {
@@ -439,6 +493,7 @@ async function iniciar() {
   $('#btn-tema').addEventListener('click', alternarTema);
   $('#btn-novo').addEventListener('click', novoProjeto);
   $('#btn-novo-ifc').addEventListener('click', novoDeIFC);
+  $('#btn-importar-pacote').addEventListener('click', importarPacote);
   $('#btn-novo-desenho').addEventListener('click', novoProjetoDesenhado);
   $('#btn-novo-arquitetonico').addEventListener('click', novoProjetoDoArquitetonico);
   $('#btn-pasta').addEventListener('click', () => abrirPasta(null));

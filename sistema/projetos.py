@@ -29,6 +29,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import threading
 import time
 from typing import Dict, List, Optional
@@ -44,6 +45,9 @@ MAX_HISTORICO = 20
 INTERVALO_HISTORICO = 600.0
 
 ABERTO = "aberto.json"
+#: o pacote do projeto (exportar/importar): sufixo do arquivo e o manifesto dentro dele
+PACOTE_SUFIXO = ".metalica.zip"
+PACOTE_MANIFESTO = "pacote.json"
 
 MODELO = "modelo.json"
 LIXEIRA = ".lixeira"
@@ -463,6 +467,99 @@ class Projetos:
             dados = dict(dados, nome=nome)
         agora = _agora()
         self._atualizar(novo, nome=nome, dados=dados, criado=agora)
+        return self.resumo(novo)
+
+    # ------------------------------------------------------------ pacote (levar o projeto a outro usuário)
+    def exportar(self, s: str, pasta_destino: Optional[str] = None, historico: bool = False,
+                 nome: Optional[str] = None) -> dict:
+        """O projeto inteiro num arquivo só, para outro usuário abrir com tudo que foi feito nele (pedido
+        do usuário, 29/09): um ZIP com a pasta do projeto — projeto.json, o modelo 3D, o cálculo, o IFC
+        de origem, os desenhos 2D, as pranchas, o detalhamento e os ajustes — mais um `pacote.json` com
+        a origem. Fora: o histórico do modelo (cópias antigas, dezenas de MB; entra com `historico`), a
+        marca de aberto, temporários e o que começa com ponto. `nome`: o nome que o projeto leva no
+        pacote (o de dentro fica; quem importa vê este). Devolve {caminho, nome, arquivos, mb}."""
+        import zipfile
+        origem = self._existente(s)
+        p = self.ler(s)
+        nome = re.sub(r"\s+", " ", str(nome or "")).strip() or p.get("nome") or s
+        base = re.sub(r"[^\w\s.-]", "", nome, flags=re.U).strip() or s
+        pasta_destino = pasta_destino or tempfile.mkdtemp(prefix="metalica-pacote-")
+        caminho = os.path.join(pasta_destino, base + PACOTE_SUFIXO)
+        n = 0
+        with zipfile.ZipFile(caminho, "w", zipfile.ZIP_DEFLATED) as z:
+            for raiz_, pastas, arquivos in os.walk(origem):
+                rel_pasta = os.path.relpath(raiz_, origem)
+                partes = [] if rel_pasta == "." else rel_pasta.replace("\\", "/").split("/")
+                if partes and (partes[0].startswith(".") or (partes[0] == HISTORICO and not historico)):
+                    pastas[:] = []
+                    continue
+                pastas[:] = sorted(d for d in pastas if not d.startswith("."))
+                for a in sorted(arquivos):
+                    if a.startswith(".") or a.endswith(".parcial") or (not partes and a == ABERTO):
+                        continue
+                    z.write(os.path.join(raiz_, a), "/".join(partes + [a]))
+                    n += 1
+            manifesto = {"formato": 1, "pacote": "projeto Metálica", "programa": versao.VERSAO,
+                         "exportado": _agora(), "slug": s, "nome": nome, "arquivos": n, "historico": bool(historico)}
+            z.writestr(PACOTE_MANIFESTO, json.dumps(manifesto, ensure_ascii=False, indent=1))
+        return {"caminho": caminho, "nome": os.path.basename(caminho), "arquivos": n,
+                "mb": round(os.path.getsize(caminho) / 1048576, 1)}
+
+    def importar_pacote(self, caminho_zip: str, nome: Optional[str] = None) -> dict:
+        """O pacote de `exportar` vira um projeto novo desta pasta de dados (nunca por cima de um que
+        exista): o nome vem do pacote, ou o dado; projeto.json guarda de onde veio. Recusa o que não é
+        pacote de projeto e qualquer caminho que saia da pasta (absoluto, "..", outro disco)."""
+        import zipfile
+        try:
+            z = zipfile.ZipFile(caminho_zip)
+        except (zipfile.BadZipFile, OSError) as e:
+            raise ErroDeDados("o arquivo não é um pacote de projeto (ZIP): %s" % e)
+        with z:
+            nomes = z.namelist()
+            if ARQUIVO not in nomes and PACOTE_MANIFESTO not in nomes:
+                raise ErroDeDados("o arquivo não é um pacote de projeto Metálica (falta %s)." % ARQUIVO)
+            manifesto = {}
+            if PACOTE_MANIFESTO in nomes:
+                try:
+                    manifesto = json.loads(z.read(PACOTE_MANIFESTO).decode("utf-8"))
+                except (ValueError, UnicodeDecodeError):
+                    manifesto = {}
+            original = {}
+            if ARQUIVO in nomes:
+                try:
+                    original = json.loads(z.read(ARQUIVO).decode("utf-8"))
+                except (ValueError, UnicodeDecodeError):
+                    original = {}
+            for m in nomes:
+                partes = m.replace("\\", "/").split("/")
+                if m.startswith(("/", "\\")) or ":" in m or ".." in partes or "" in partes[:-1]:
+                    raise ErroDeDados("pacote recusado: caminho inválido dentro dele (%s)." % m)
+            nome = re.sub(r"\s+", " ", str(nome or "")).strip() or str(manifesto.get("nome") or original.get("nome") or "").strip() \
+                or os.path.splitext(os.path.basename(caminho_zip))[0].replace(PACOTE_SUFIXO[:-4], "")
+            novo = self._slug_livre(nome)
+            destino = os.path.join(self.raiz, novo)
+            os.makedirs(destino)
+            try:
+                for m in nomes:
+                    if m == PACOTE_MANIFESTO or m.endswith("/"):
+                        continue
+                    alvo = os.path.join(destino, *m.replace("\\", "/").split("/"))
+                    os.makedirs(os.path.dirname(alvo), exist_ok=True)
+                    with z.open(m) as f, open(alvo, "wb") as g:
+                        shutil.copyfileobj(f, g)
+            except Exception:
+                shutil.rmtree(destino, ignore_errors=True)
+                raise
+        p = self.ler(novo)
+        dados = p.get("dados")
+        if isinstance(dados, dict):
+            dados = dict(dados, nome=nome)
+        self._atualizar(novo, nome=nome, dados=dados, importado={
+            "de": original.get("nome") or manifesto.get("nome") or nome, "slug": manifesto.get("slug") or "",
+            "exportado": manifesto.get("exportado") or "", "programa": manifesto.get("programa") or original.get("programa") or "",
+            "quando": _agora()})
+        if p.get("arquivado"):
+            self.arquivar(novo, False)               # chega na lista principal, como um projeto novo
         return self.resumo(novo)
 
     def excluir(self, s: str) -> dict:

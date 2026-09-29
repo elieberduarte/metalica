@@ -44,6 +44,7 @@
     </div>
     <div class="gerenciador-acoes">
       <input type="search" id="busca" placeholder="Buscar por nome, cliente ou local" aria-label="Buscar projeto">
+      <button type="button" id="btn-importar-pacote" title="Abre um pacote de projeto (.metalica.zip) exportado por outro usuário, com o modelo, os desenhos, as pranchas e tudo o que foi feito nele">Importar pacote…</button>
       <button type="button" id="btn-novo-ifc" title="Cria um projeto a partir de um modelo IFC de outro programa (TecnoMETAL, Tekla, Revit…)">Novo a partir de IFC…</button>
       <button type="button" id="btn-novo-arquitetonico" title="Cria o projeto a partir da planta do cliente (DXF ou PDF): os eixos são lançados por cima dela e a estrutura é montada e dimensionada nos eixos">Novo a partir do arquitetônico…</button>
       <button type="button" id="btn-novo-desenho" title="Cria um projeto vazio para desenhar a estrutura em 2D (uma tesoura, por exemplo) e gerar o modelo 3D a partir do desenho">Novo desenhando em 2D…</button>
@@ -86,6 +87,7 @@
 </dialog>
 
 <input type="file" id="arquivo-ifc" accept=".ifc,.IFC" hidden>
+<input type="file" id="arquivo-pacote" accept=".zip,.ZIP" hidden>
 
 <div class="carregando" id="carregando" hidden>
   <div class="caixa"><span class="giro"></span><span id="carregando-texto">Trabalhando…</span></div>
