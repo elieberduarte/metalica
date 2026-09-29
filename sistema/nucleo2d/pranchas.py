@@ -950,6 +950,10 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         return pranchas, molduras, legendas
 
     pranchas, molduras, legendas = distribuir(1)
+    # cada quadro fecha justo em volta das células dele (pedido do usuário, 29/09: "pode deixar isso padrão para
+    # todos", o quadro das terças encaixado na prancha dos contraventos); antes da junção, que assim tem mais
+    # espaço livre para encaixar
+    _quadros_justos(pranchas, molduras, ux0, ux1)
     # a prancha de continuação quase vazia vai para o espaço livre de outra (pedido do usuário, 29/09: "tentar
     # juntar com a outra prancha" — o típico das terças sem furo sozinho numa prancha, 10 % dela)
     _juntar_quase_vazias(pranchas, molduras, legendas, qx0, qx1, uy0, uy1, titulos_q)
@@ -1101,6 +1105,32 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     return saida
 
 
+def _quadros_justos(pranchas: list, molduras: list, ux0: float, ux1: float) -> None:
+    """Cada quadro de categoria fecha justo em volta das células dele — a largura e a altura pelo conteúdo, com a
+    margem (pedido do usuário, 29/09: "pode deixar isso padrão para todos"). O quadro da tesoura centrada
+    (empilhada) fica de borda a borda: ela ocupa quase tudo e é centrada nele na hora de desenhar."""
+    for cels, molds in zip(pranchas, molduras):
+        for mq in molds:
+            if mq["categoria"] in ("DETALHES", "LEGENDA") or mq.get("y0") is None:
+                continue
+            if any(c.get("empilhada") and c["categoria"] == mq["categoria"] for c in cels):
+                continue
+            x0, x1 = mq.get("x0", ux0), mq.get("x1", ux1)
+            caixas = []
+            for c in cels:
+                if c.get("_na_faixa") or c.get("px") is None:
+                    continue
+                cx_, cy_ = c["px"] + c["w"] / 2.0, c["py"] + c["h"] / 2.0
+                if x0 <= cx_ <= x1 and mq["y0"] <= cy_ <= mq["y1"]:
+                    caixas.append(c.get("slot_caixa") or (c["px"], c["py"], c["px"] + c["w"], c["py"] + c["h"]))
+            if not caixas:
+                continue
+            mq["x0"] = min(b[0] for b in caixas) - QUADRO_MARGEM
+            mq["x1"] = max(b[2] for b in caixas) + QUADRO_MARGEM
+            mq["y0"] = min(b[1] for b in caixas) - FOLGA * 0.5
+            mq["y1"] = max(b[3] for b in caixas) + QUADRO_CABECALHO + FOLGA * 0.6
+
+
 #: A prancha de continuação que ocupa menos que isto da área útil tenta ir para o espaço livre de outra.
 OCUPACAO_MINIMA = 0.2
 #: No retângulo da prancha de corte: a margem do cabeçalho e da escala até a borda (mm de papel).
@@ -1139,7 +1169,9 @@ def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: fl
                 continue
             obst = [(c["px"] - FOLGA * 0.5, c["py"] - FOLGA * 0.5, c["px"] + c["w"] + FOLGA * 0.5, c["py"] + c["h"] + FOLGA * 0.5)
                     for c in pranchas[j] if not c.get("_na_faixa")]
-            obst += [(qx0 - QUADRO_MARGEM, mq["y1"] - QUADRO_CABECALHO - FOLGA * 0.5, qx1 + QUADRO_MARGEM, mq["y1"])
+            # os quadros inteiros (justos ao conteúdo): um bloco não entra dentro do quadro de outra categoria
+            obst += [(mq.get("x0", qx0 - QUADRO_MARGEM), mq["y0"] if mq.get("y0") is not None else uy0,
+                      mq.get("x1", qx1 + QUADRO_MARGEM), mq["y1"])
                      for mq in molduras[j] if mq["categoria"] not in ("DETALHES", "LEGENDA")]
             y = uy1 - H
             while destino is None and y >= uy0:
