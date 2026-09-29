@@ -42,7 +42,8 @@ from nucleo2d.detalhe.base import (
     inferir_furos_de_parafusos,
     _so_parafusos,
     marcas_de,
-    oblongar_tercas)
+    oblongar_tercas,
+    _eh_redonda_perfil)
 from nucleo2d.detalhe.nomes import (  # noqa: E402
     aplicar_nomes)
 
@@ -224,15 +225,7 @@ def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho:
     off, passo = 10.0, 8.0
     L, H = maior.L, maior.H
     _vista(p, maior, (0, 1), 2, +1.0, 0, 0, set())
-    if maior.secao:
-        x_dir = L + 40.0 * esc
-        w_min = min(q[1] for l in maior.secao for q in l)
-        w_max = max(q[1] for l in maior.secao for q in l)
-        for laco in maior.secao:
-            p.polilinha([(x_dir + (w - w_min), v) for v, w in laco], fechada=True, camada="ACO")
-        p.cota_h(x_dir, x_dir + (w_max - w_min), 0, -off)
-        p.cota_v(0, H, x_dir + (w_max - w_min), off)
-        p.texto(x_dir, H + 3.0 * esc, "SEÇÃO", 2.0 * esc)
+    p.cota_v(0, H, L, off)                            # a altura; a seção não vai (o perfil está no título)
     ordem = sorted(posicoes, key=lambda q: _ordem_natural(q.nome or q.marca))
     for k, q in enumerate(ordem):
         p.cota_h(0, L, 0, -(off + passo * k), texto="%s COMP=%dmm – %02dX" % (q.nome or q.marca, round(q.comprimento), q.quantidade))
@@ -340,7 +333,10 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     p.cota_v(0, H, L, off3 if cadeia == "dupla" else off2 if cadeia else off)
 
     x_dir = L + (off3 + off) * esc
-    if pos.classe in ("barra", "barra_redonda", "telha") and pos.secao:
+    # a seção não vai na terça (o perfil está no título) nem na barra redonda (a bitola também) — prancha
+    # mais limpa (pedido do usuário, 29/09)
+    redonda = pos.classe == "barra_redonda" or (pos.classe == "barra_conformada" and _eh_redonda_perfil(pos.perfil))
+    if pos.classe in ("barra", "telha") and pos.secao and not terca:
         w_min = min(q[1] for l in pos.secao for q in l)
         w_max = max(q[1] for l in pos.secao for q in l)
         for laco in pos.secao:
@@ -362,7 +358,8 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
             p.cota_h(x_pl, x_pl + comp_d, 0, -off)
             p.cota_v(0, larg_d, x_pl + comp_d, off)
             p.texto(x_pl, larg_d + 3.0 * esc, "DESENVOLVIMENTO (linha média)", 2.0 * esc)
-    if (furos_topo or pos.vista_topo or pos.classe == "barra_conformada") and pos.local:
+    # o gancho (barra redonda dobrada) sem a vista de cima: a de frente já mostra a dobra
+    if (furos_topo or ((pos.vista_topo or pos.classe == "barra_conformada") and not redonda)) and pos.local:
         w_min = min(q[2] for q in pos.local)
         w_max = max(q[2] for q in pos.local)
         # logo abaixo das cotas da vista de frente, com o nome: sem ele parecia outra peça, sem nome

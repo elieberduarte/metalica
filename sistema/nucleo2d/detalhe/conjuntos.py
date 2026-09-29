@@ -3187,11 +3187,19 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
     b0 = barra_de(inst)
     eixo_b = _eixo_da_peca(b0) if b0 is not None else None
     if eixo_b:
+        # sempre na direção da barra: o eixo do conjunto (com as chapas das pontas) sai uns graus fora dela
+        # e o montante lateral A.L. saía torto, com as cotas retas (pedido do usuário, 29/09)
         a_ = _norm(_sub(eixo_b[1], eixo_b[0]))
-        if abs(_dot(a_, u)) < 0.7:
-            a_ = _norm(_sub(a_, tuple(w[i] * _dot(a_, w) for i in range(3))))
-            if _dot(a_, a_) > 0.5:
-                u, v = a_, _norm(_cruz(a_, w))
+        # o eixo pela média dos vértices sai uns graus torto quando os furos ficam numa ponta: a barra a
+        # menos de 5° de x, y ou z (o montante em pé) fica nele
+        for eixo_m in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)):
+            if abs(_dot(a_, eixo_m)) > 0.996:
+                a_ = tuple(k * (1.0 if _dot(a_, eixo_m) > 0 else -1.0) for k in eixo_m)
+        if _dot(a_, u) < 0:
+            a_ = tuple(-k for k in a_)
+        a_ = _norm(_sub(a_, tuple(w[i] * _dot(a_, w) for i in range(3))))
+        if _dot(a_, a_) > 0.5:
+            u, v = a_, _norm(_cruz(a_, w))
     ws = [_dot(_sub(p, c), w) for e in inst for p in e.vertices]
     origem = tuple(c[i] + w[i] * (min(ws) - 10.0) for i in range(3))
     vista = _vistas.Vista(origem=origem, normal=w, acima=v, profundidade=None, cortar=False,
