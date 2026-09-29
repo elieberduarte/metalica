@@ -13,9 +13,10 @@ from nucleo2d.desenho import Desenho, Linha, Texto, Cota, transladar          # 
 from nucleo2d import ajustes_pranchas as AP                                  # noqa: E402
 
 
-def _gerado():
+def _gerado(geracao="g1"):
     """Três células numa prancha, como a montagem as deixa (cel e a caixa com a origem)."""
     d = Desenho(nome="Pranchas", escala=1.0)
+    d.metadados["geracao"] = geracao
     celulas = []
     for cel, (x0, y0) in (("tesouras|conjunto:M1", (100.0, 100.0)), ("chaparias|posicao:P5", (300.0, 100.0)),
                           ("terças|posicao:M18", (100.0, 300.0))):
@@ -37,9 +38,11 @@ def _por(d, cel, tipo=None, texto=None):
 
 
 def test_ajustes_voltam_na_proxima_geracao():
-    g1 = _gerado()
-    AP.marcar(g1)
+    g1 = _gerado("g1")
+    imp1 = AP.marcar(g1)
     assert all("g" in (e.atributos or {}) for e in g1.entidades.values() if (e.atributos or {}).get("cel"))
+    assert all("s" not in v for v in g1.metadados["ajustaveis"].values())   # as assinaturas ficam fora do desenho
+    assert len(imp1) == 3 and all(v["s"] for v in imp1.values())
     # o que o usuário fez na prancha gravada
     ed = Desenho.de_dict(copy.deepcopy(g1.dict()))
     A, B, C = "tesouras|conjunto:M1", "chaparias|posicao:P5", "terças|posicao:M18"
@@ -55,15 +58,15 @@ def test_ajustes_voltam_na_proxima_geracao():
     apagada = [e for e in _por(ed, C, "linha") if e.a[1] == e.b[1] and e.a[1] > 310.0][0]
     ed.entidades.pop(apagada.id)                            # a linha de cima da C apagada
     ed.add(Texto(camada="TEXTO", posicao=(500.0, 500.0), texto="NOTA À MÃO", altura=2.5))
-    aj = AP.aprender(ed, {})
+    aj = AP.aprender(ed, {"impressoes": {"g1": imp1}})
     assert set(aj["celulas"]) == {A, B, C}, aj["celulas"].keys()
     assert aj["celulas"][A]["d"] == [40.0, -15.0] and aj["celulas"][A]["s"] == 1.0
     assert abs(aj["celulas"][B]["s"] - 1.5) < 1e-6
     assert len(aj["celulas"][C]["apagadas"]) == 1 and len(aj["celulas"][C]["ents"]) == 2
     assert aj["diario"] and aj["a_mao"]
     # a geração nova (pura, com ids novos) recebe tudo
-    g2 = _gerado()
-    AP.marcar(g2)
+    g2 = _gerado("g2")
+    imp2 = AP.marcar(g2)
     rel = AP.aplicar(g2, aj)
     assert rel["apagadas"] == 1 and rel["a_mao"] == 1 and rel["sem_alvo"] == 0, rel
     la = _por(g2, A, "linha")
@@ -76,22 +79,22 @@ def test_ajustes_voltam_na_proxima_geracao():
     assert len(_por(g2, C, "linha")) == 2
     assert any(getattr(e, "texto", "") == "NOTA À MÃO" for e in g2.entidades.values())
     # a segunda rodada mede de novo o ajuste inteiro (as impressões são do gerado puro): nada muda
-    aj2 = AP.aprender(Desenho.de_dict(copy.deepcopy(g2.dict())), aj)
+    aj2 = AP.aprender(Desenho.de_dict(copy.deepcopy(g2.dict())), dict(aj, impressoes={"g2": imp2}))
     assert aj2["celulas"][A]["d"] == [40.0, -15.0]
     assert abs(aj2["celulas"][B]["s"] - 1.5) < 1e-6
     assert len(aj2["celulas"][C]["apagadas"]) == 1
-    g3 = _gerado()
+    g3 = _gerado("g3")
     AP.marcar(g3)
     AP.aplicar(g3, aj2)
     assert sum(1 for e in g3.entidades.values() if getattr(e, "texto", "") == "NOTA À MÃO") == 1
 
 
 def test_sem_ajuste_nao_muda_nada():
-    g1 = _gerado()
-    AP.marcar(g1)
-    aj = AP.aprender(Desenho.de_dict(copy.deepcopy(g1.dict())), {})
+    g1 = _gerado("g1")
+    imp1 = AP.marcar(g1)
+    aj = AP.aprender(Desenho.de_dict(copy.deepcopy(g1.dict())), {"impressoes": {"g1": imp1}})
     assert not aj.get("celulas") and not aj.get("a_mao")
-    g2 = _gerado()
+    g2 = _gerado("g2")
     AP.marcar(g2)
     antes = {e.id: copy.deepcopy(e) for e in g2.entidades.values()}
     AP.aplicar(g2, aj)

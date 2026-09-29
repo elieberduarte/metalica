@@ -131,8 +131,11 @@ def _origens(junto: Desenho) -> Dict[str, Tuple[float, float]]:
     return o
 
 
-def marcar(junto: Desenho) -> int:
-    """A impressão do gerado em cada entidade das células (`g`) e a lista por célula nos metadados."""
+def marcar(junto: Desenho) -> dict:
+    """A impressão do gerado em cada entidade das células (`g`). Nos metadados do desenho fica só a origem de
+    cada célula (`ajustaveis`); a lista de assinaturas por célula — grande (560 KB no depósito), e no desenho
+    empurrava a chave `pranchas` para fora da janela que a listagem lê — volta ao chamador, que a guarda no
+    arquivo de ajustes pela geração (`impressoes`)."""
     origens = _origens(junto)
     lista: Dict[str, list] = collections.defaultdict(list)
     n = 0
@@ -151,9 +154,8 @@ def marcar(junto: Desenho) -> int:
         e.atributos = dict(a, g=g)
         lista[cel].append(s)
         n += 1
-    junto.metadados["ajustaveis"] = {c: {"o": [round(origens[c][0], 3), round(origens[c][1], 3)], "s": ss}
-                                     for c, ss in lista.items()}
-    return n
+    junto.metadados["ajustaveis"] = {c: {"o": [round(origens[c][0], 3), round(origens[c][1], 3)]} for c in lista}
+    return {c: {"o": [round(origens[c][0], 3), round(origens[c][1], 3)], "s": ss} for c, ss in lista.items()}
 
 
 # ------------------------------------------------------------------ aprender
@@ -169,7 +171,10 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
     ajustes = dict(ajustes or {})
     celulas = dict(ajustes.get("celulas") or {})
     diario = list(ajustes.get("diario") or [])
-    ajv = antigo.metadados.get("ajustaveis") or {}
+    # as impressões do gerado: no arquivo de ajustes pela geração do desenho; senão as do próprio desenho (o
+    # formato de antes, com as assinaturas), senão só as origens (sem saber o que foi apagado)
+    ajv = ((ajustes.get("impressoes") or {}).get(str(antigo.metadados.get("geracao") or ""))
+           or antigo.metadados.get("ajustaveis") or {})
     quando = time.strftime("%Y-%m-%d %H:%M")
     if not ajv:
         return ajustes

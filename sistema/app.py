@@ -2197,8 +2197,9 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
             ajustes = ajustes_pranchas.aprender(Desenho.de_dict(g.abrir_desenho(s, _slug(titulo))), ajustes)
         except Exception as exc:                  # noqa: BLE001 — a prancha sai mesmo sem os ajustes
             junto.metadados["ajustes_erro"] = "ajustes das pranchas não lidos: %s" % exc
-    ajustes_pranchas.marcar(junto)
+    impressoes = ajustes_pranchas.marcar(junto)
     junto.metadados["ajustes"] = ajustes_pranchas.aplicar(junto, ajustes)
+    ajustes["impressoes"] = {str(junto.metadados["geracao"]): impressoes}     # só a geração que fica gravada
     ajustes_pranchas.gravar(arq_aj, ajustes)
     if corpo.get("substituir", True) is not False:
         # apaga o desenho anterior com este nome e as pranchas soltas de antes (Prancha 01, 02, …
