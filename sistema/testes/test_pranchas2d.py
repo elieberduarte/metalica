@@ -366,3 +366,23 @@ def test_siglas_da_relacao():
     s = dict(siglas_usadas(["T1 + T1 – 03x", "A.D.1 / A.D.2", "T.C.1", "CH4 – 28x", "TMD.1", "PLANTA DE CHUMBAÇÃO"]))
     assert set(s) == {"T", "A.D.", "T.C.", "CH", "TMD"}
     assert s["T.C."] == "Terça de cobertura" and s["A.D."] == "Agulhamento diagonal" and s["TMD"] == "Telha multi-dobra"
+
+
+def test_faixa_ao_lado_do_carimbo_recebe_celulas_pequenas():
+    """A faixa ao lado do carimbo, embaixo, recebe as células pequenas da fila em toda prancha
+    (pedido do usuário, 28/09) — sem invadir o carimbo; com o índice, a primeira fica com a relação."""
+    d = _detalhe(n_celulas=120, larg=300.0, escala=50.0)
+    larg, _alt = pranchas.FOLHAS["A3"]
+    lc, ac = pranchas.CARIMBO["A3"]
+    x_carimbo = larg - pranchas.MARGENS["direita"] - lc
+    y_faixa = pranchas.MARGENS["inferior"] + ac
+    for indice in (False, True):
+        folhas = pranchas.montar_pranchas([{"nome": "det", "desenho": d}], formato="A3", indice=indice)
+        assert sum(len(f.metadados["prancha"]["celulas"]) for f in folhas) == 120
+        for i, f in enumerate(folhas):
+            na_faixa = [c for c in f.metadados["prancha"]["celulas"] if c["caixa"][3] <= y_faixa + 0.01]
+            assert all(c["caixa"][2] <= x_carimbo for c in na_faixa)
+            if indice and i == 0:
+                assert not na_faixa                      # a relação das pranchas
+            elif i < len(folhas) - 1:
+                assert na_faixa, "a faixa da prancha %d ficou vazia" % (i + 1)

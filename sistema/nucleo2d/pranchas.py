@@ -330,59 +330,89 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         c["categoria"] = (c.get("item") or {}).get("categoria") or ("VISTAS" if not c.get("marca") else "OUTROS")
     itens.sort(key=lambda c: (ordem.get(c["categoria"], 99), c.get("_ordem", 0)))
     qx0, qx1 = ux0 + QUADRO_MARGEM, ux1 - QUADRO_MARGEM
-    quadros: List[dict] = []
-    for cat in CATEGORIAS:
-        cels = [c for c in itens if c["categoria"] == cat]
-        if not cels:
-            continue
-        linhas: List[dict] = []
-        x, atual = qx0, None
-        for c in cels:
-            if atual is None or x + c["w"] > qx1:
-                atual = {"celulas": [], "h": 0.0}
-                linhas.append(atual)
-                x = qx0
-            c["px_rel"] = x
-            atual["celulas"].append(c)
-            atual["h"] = max(atual["h"], c["h"])
-            x += c["w"] + FOLGA
-        quadros.append({"categoria": cat, "titulo": CATEGORIAS[cat], "linhas": linhas})
+    # a faixa ao lado do carimbo (embaixo, à esquerda dele): em cada prancha, depois da área de cima,
+    # recebe as células pequenas que cabem nela, puxadas da fila (pedido do usuário, 28/09: "otimização
+    # desse espaço sem utilização na parte inferior de todas as pranchas"); na primeira, com o índice,
+    # fica a relação das pranchas
+    fx0, fx1 = ux0, larg - m["direita"] - lc - FOLGA
+    fy0, fy1 = m["inferior"] + 3.0, m["inferior"] + ac
+    alt_faixa = fy1 - fy0 - QUADRO_CABECALHO - 2 * FOLGA * 0.5
 
-    pranchas: List[List[dict]] = [[]]
-    molduras: List[List[dict]] = [[]]      # por prancha: {categoria, titulo, y0, y1}
-    y_topo = uy1
-    for q in quadros:
-        continuacao = False
-        aberto = None
-        for linha in q["linhas"]:
-            precisa = linha["h"] + FOLGA + (QUADRO_CABECALHO + FOLGA if aberto is None else 0.0)
-            if y_topo - precisa < uy0 and (pranchas[-1] or aberto is not None):
-                if aberto is not None:
-                    # o quadro já começou numa prancha anterior: o da próxima é "(continuação)" — o
-                    # que só não cabe na prancha de antes e abre a próxima não é (revisão de 28/09)
-                    aberto["y0"] = y_topo
-                    aberto = None
-                    continuacao = True
-                pranchas.append([])
-                molduras.append([])
-                y_topo = uy1
-            if aberto is None:
-                aberto = {"categoria": q["categoria"], "titulo": q["titulo"] + (" (continuação)" if continuacao else ""),
-                          "y1": y_topo, "y0": None}
-                molduras[-1].append(aberto)
-                y_topo -= QUADRO_CABECALHO + FOLGA
-            for c in linha["celulas"]:
-                # as células da prateleira alinhadas pelo topo: os títulos numa linha só (a de baixo
-                # deixava a peça de célula mais alta flutuando acima das vizinhas — revisão de 28/09)
-                c["px"], c["py"] = c["px_rel"], y_topo - c["h"]
-                pranchas[-1].append(c)
-            y_topo -= linha["h"] + FOLGA
-        if aberto is not None:
+    fila = list(itens)
+    pranchas: List[List[dict]] = []
+    molduras: List[List[dict]] = []        # por prancha: {categoria, titulo, y0, y1[, x0, x1]}
+    iniciadas = set()
+
+    def prateleira(cat, x_ini, x_fim):
+        """as próximas células da fila, da categoria, que cabem lado a lado entre x_ini e x_fim"""
+        linha, x = [], x_ini
+        for c in fila:
+            if c["categoria"] != cat:
+                break
+            if linha and x + c["w"] > x_fim:
+                break
+            linha.append(c)
+            x += c["w"] + FOLGA
+        return linha
+
+    while fila:
+        cels_p, mold_p = [], []
+        y_topo = uy1
+        cheia = False
+        while fila and not cheia:
+            cat = fila[0]["categoria"]
+            linha = prateleira(cat, qx0, qx1)
+            alt = max(c["h"] for c in linha)
+            if y_topo - (QUADRO_CABECALHO + FOLGA + alt + FOLGA) < uy0 and cels_p:
+                break
+            aberto = {"categoria": cat, "titulo": CATEGORIAS.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
+                      "y1": y_topo, "y0": None}
+            mold_p.append(aberto)
+            iniciadas.add(cat)
+            y_topo -= QUADRO_CABECALHO + FOLGA
+            while fila and fila[0]["categoria"] == cat:
+                linha = prateleira(cat, qx0, qx1)
+                alt = max(c["h"] for c in linha)
+                if y_topo - (alt + FOLGA) < uy0 and cels_p:
+                    cheia = True
+                    break
+                x = qx0
+                for c in linha:
+                    # alinhadas pelo topo: os títulos numa linha só
+                    c["px"], c["py"] = x, y_topo - c["h"]
+                    x += c["w"] + FOLGA
+                    cels_p.append(c)
+                    fila.remove(c)
+                y_topo -= alt + FOLGA
             aberto["y0"] = y_topo
-        y_topo -= FOLGA
-    if not pranchas[-1]:
-        pranchas.pop()
-        molduras.pop()
+            y_topo -= FOLGA
+        # a faixa: as células pequenas da fila (na ordem dela) que cabem nela, em prateleiras
+        if fila and not (indice and not pranchas):
+            topo_cel = fy1 - QUADRO_CABECALHO - FOLGA * 0.5
+            x, y_linha, alt_linha, na_faixa = fx0 + QUADRO_MARGEM, topo_cel, 0.0, []
+            for c in list(fila):
+                if c["h"] > alt_faixa or c["w"] > fx1 - fx0 - 2 * QUADRO_MARGEM:
+                    continue
+                if x + c["w"] > fx1 - QUADRO_MARGEM:               # prateleira seguinte, embaixo
+                    if y_linha - alt_linha - FOLGA - c["h"] < fy0 + FOLGA * 0.5:
+                        continue
+                    y_linha -= alt_linha + FOLGA
+                    x, alt_linha = fx0 + QUADRO_MARGEM, 0.0
+                if y_linha - c["h"] < fy0 + FOLGA * 0.5:
+                    continue
+                c["px"], c["py"] = x, y_linha - c["h"]
+                x += c["w"] + FOLGA
+                alt_linha = max(alt_linha, c["h"])
+                na_faixa.append(c)
+                fila.remove(c)
+            if na_faixa:
+                cats = list(dict.fromkeys(c["categoria"] for c in na_faixa))
+                mold_p.append({"categoria": cats[0], "titulo": " / ".join(CATEGORIAS.get(k, k) for k in cats),
+                               "y1": fy1, "y0": fy0, "x0": fx0, "x1": fx1})
+                cels_p += na_faixa
+                iniciadas.update(cats)
+        pranchas.append(cels_p)
+        molduras.append(mold_p)
     total = len(pranchas)
 
     saida = []
@@ -398,7 +428,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         info.setdefault("titulo", ", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i0 - 1]))[:48] or fontes_titulo(cels))
         quadro, carimbo_caixa = _moldura(d, formato, info, i, total, [c["k"] for c in cels], _conteudo_de(cels))
         for mq in molduras[i0 - 1]:
-            _quadro(d, mq, ux0, ux1)
+            _quadro(d, mq, mq.get("x0", ux0), mq.get("x1", ux1))
         for c in cels:
             (bx0, by0), (bx1, by1) = c["caixa"]
             dx = c["px"] - bx0 / c["k"]
