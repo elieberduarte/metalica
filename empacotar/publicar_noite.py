@@ -157,15 +157,24 @@ def notas_da_versao(v: str) -> str:
 
 
 # ------------------------------------------------------------------ cópia limpa e conferência
+#: As pastas fora do git que a cópia limpa usa, ligadas por junção às de verdade: os dados (Projeto/) e os
+#: modelos de exemplo dos verificadores (grandes demais para o git — sem eles, os verificadores das telas
+#: falhavam todos, 29/09).
+JUNCOES = (("Projeto",), ("sistema", "projetos", "modelos"))
+
+
 def _soltar_projeto():
-    """desfaz a junção Projeto/ da cópia ANTES de apagar a cópia: apagar a pasta seguindo a junção
-    apagaria os dados de verdade (a bateria, os relatórios). Se não for junção, não apaga nada."""
-    j = os.path.join(COPIA, "Projeto")
-    if not os.path.lexists(j):
-        return
-    if not os.path.isjunction(j):
-        raise RuntimeError("%s não é a junção esperada: a cópia não foi apagada" % j)
-    os.rmdir(j)                                                  # remove só a junção
+    """desfaz as junções da cópia ANTES de apagar a cópia: apagar a pasta seguindo a junção apagaria os
+    dados de verdade (a bateria, os relatórios, os modelos). Se não for junção, não apaga nada."""
+    for partes in JUNCOES:
+        j = os.path.join(COPIA, *partes)
+        if not os.path.lexists(j):
+            continue
+        if not os.path.isjunction(j):
+            if partes == ("Projeto",):
+                raise RuntimeError("%s não é a junção esperada: a cópia não foi apagada" % j)
+            continue
+        os.rmdir(j)                                              # remove só a junção
 
 
 def apagar_copia():
@@ -183,8 +192,16 @@ def copia_limpa(commit: str) -> str:
     git("worktree", "prune", check=False)
     os.makedirs(os.path.dirname(COPIA), exist_ok=True)
     git("worktree", "add", "--detach", COPIA, commit)
-    subprocess.run(["cmd", "/c", "mklink", "/J", os.path.join(COPIA, "Projeto"), PROJETO],
-                   capture_output=True, check=True)
+    for partes in JUNCOES:
+        destino = os.path.join(COPIA, *partes)
+        origem = os.path.join(REPO, *partes)
+        if not os.path.isdir(origem):
+            continue
+        if os.path.isdir(destino) and not os.listdir(destino):
+            os.rmdir(destino)                                    # a pasta vazia que o git criou
+        if not os.path.lexists(destino):
+            os.makedirs(os.path.dirname(destino), exist_ok=True)
+            subprocess.run(["cmd", "/c", "mklink", "/J", destino, origem], capture_output=True, check=True)
     return COPIA
 
 
