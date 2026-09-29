@@ -596,3 +596,20 @@ def test_telhas_numa_prancha_so():
     faces = [t for t in tit if t.startswith("FACE")]
     if faces:
         assert len(folhas) == 1, [[c["titulo"] for c in f.metadados["prancha"]["celulas"]] for f in folhas]
+
+
+def test_manter_montagem_nao_empilha_as_vistas_geradas():
+    """A vista gerada (detalhe "vista", sem posição nem conjunto — a localização, a chumbação) é refeita,
+    não copiada como desenho à mão: a cada atualização automática ela se empilhava (29/09). O desenhado
+    à mão (sem marca de detalhe) continua indo para o desenho novo."""
+    from nucleo2d.desenho import Desenho, Linha, Texto
+    from nucleo2d.pranchas import manter_montagem
+    antigo = Desenho(nome="loc", escala=75.0)
+    antigo.add(Texto(posicao=(0, 0), texto="A.C.1", altura=2.5, atributos={"detalhe": "vista"}))
+    antigo.add(Linha(a=(0, 0), b=(100, 0), atributos={"detalhe": "vista"}))
+    antigo.add(Linha(a=(0, 50), b=(100, 50)))                                   # à mão
+    novo = Desenho(nome="loc", escala=75.0)
+    novo.add(Texto(posicao=(0, 0), texto="A.C.1", altura=2.5, atributos={"detalhe": "vista"}))
+    novo.add(Linha(a=(0, 0), b=(100, 0), atributos={"detalhe": "vista"}))
+    rel = manter_montagem(antigo, novo)
+    assert rel["a_mao"] == 1 and novo.tamanho == 3, (rel, novo.tamanho)

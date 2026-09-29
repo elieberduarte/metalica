@@ -2191,8 +2191,11 @@ def manter_montagem(antigo: Desenho, novo: Desenho) -> dict:
             continue
         ch = _chave_da_celula(a)
         if ch is None:
-            if not a.get("faixa") and not a.get("quadro"):
-                a_mao.append(e)                     # o que o gerador não põe: foi desenhado à mão
+            # o que o gerador não põe foi desenhado à mão; o que ele marca como detalhe (as vistas da
+            # localização e da chumbação, sem posição nem conjunto) é refeito — antes ia junto a cada
+            # atualização e se empilhava (a localização da Sala chegou a 100 cópias, 75 mil entidades; 29/09)
+            if not a.get("faixa") and not a.get("quadro") and not a.get("detalhe"):
+                a_mao.append(e)
             continue
         if folhas and na_folha(e):
             g = a.get("grupo_copia") or ""
