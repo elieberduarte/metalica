@@ -529,3 +529,25 @@ def test_agulhamentos_de_cantoneira_num_detalhe_tipico():
         its = (d_.metadados.get("detalhamento") or {}).get("itens") or {}
         nomes_cel += [str((its.get(c["chave"][1]) or {}).get("nome") or "") for c in celulas_de(d_, k) if c.get("chave")]
     assert nomes_cel and not any(n in barras_do_grupo for n in nomes_cel), nomes_cel
+
+
+def test_tercas_alinhadas_e_suportes_na_faixa():
+    """Terças em colunas alinhadas (o mesmo x no começo de cada coluna) e, na faixa de baixo, os suportes
+    de terça — terça nenhuma (pedido do usuário, 28/09)."""
+    import os
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from test_detalhar2d import _modelo_real
+    from nucleo2d import detalhar as det
+    from nucleo2d.pranchas import montar_pranchas, MARGENS, CARIMBO
+    doc = _modelo_real()
+    r = det.detalhar(doc, grupos=["tercas"], converter=False)
+    fontes = [{"nome": "detalhamento-" + k, "desenho": d} for k, d in r["desenhos"].items()]
+    folhas = montar_pranchas(fontes, formato="A1")
+    y_faixa = MARGENS["inferior"] + CARIMBO["A1"][1]
+    for f in folhas:
+        cels = f.metadados["prancha"]["celulas"]
+        ter = [c for c in cels if (c.get("item") or {}).get("categoria") == "TERÇAS"]
+        assert not any(c["caixa"][3] <= y_faixa + 0.01 for c in ter), "terça na faixa de baixo"
+        xs = sorted({round(c["caixa"][0], 1) for c in ter})
+        assert len(xs) <= 2, xs                       # duas colunas, cada uma num x só

@@ -273,9 +273,12 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     if (furos_topo or pos.vista_topo or pos.classe == "barra_conformada") and pos.local:
         w_min = min(q[2] for q in pos.local)
         w_max = max(q[2] for q in pos.local)
-        y_topo = -((off3 + off) * esc + (w_max - w_min) + (w_min if w_min > 0 else 0))
+        # logo abaixo das cotas da vista de frente, com o nome: sem ele parecia outra peça, sem nome
+        # (pedido do usuário, 28/09)
+        y_topo = -((off2 + off) * esc + (w_max - w_min) + (w_min if w_min > 0 else 0))
         ignorar_t = _arestas_dos_furos(pos, 1, -1.0, (0, 2)) if furos_topo else set()
         _vista(p, pos, (0, 2), 1, -1.0, 0, y_topo, ignorar_t)
+        p.texto(0, y_topo + w_max + 1.2 * esc, "VISTA DE CIMA – %s" % (pos.nome or pos.marca), 2.0 * esc)
         _desenhar_furos(p, est, furos_topo, 0, y_topo)
         if furos_topo:
             p.cadeia_h([0.0] + sorted({round(f.x, 1) for f in furos_topo}) + [L], y_topo + w_min, -off, exigir_espaco=False)

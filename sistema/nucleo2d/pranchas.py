@@ -419,6 +419,15 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         pai["w"], pai["h"] = (bx1 - bx0) / pai["k"], (by1 - by0) / pai["k"] + FAIXA
         itens = [x for x in itens if x is not c]
     itens.sort(key=lambda c: (ordem.get(c["categoria"], 99), c.get("_ordem", 0)))
+    tipo_por_nome = {str((c.get("item") or {}).get("nome")): (c.get("item") or {}).get("tipo") for c in itens if c.get("item")}
+    # as terças em colunas alinhadas: cada uma no começo de uma coluna da largura da mais comprida (pedido do
+    # usuário, 28/09: "alinhar")
+    ter = [c for c in itens if c["categoria"] == "TERÇAS"]
+    if ter:
+        larg_col = max(c["w"] for c in ter)
+        if 2 * larg_col + FOLGA <= qx1 - qx0:
+            for c in ter:
+                c["slot_w"] = larg_col
     # a faixa ao lado do carimbo, embaixo (pedido do usuário, 28/09): DETALHES à esquerda — as chapas dos
     # conjuntos desenhados na prancha (a composição deles), ou, sem conjunto, mais células das mesmas
     # categorias — e LEGENDA junto do carimbo — as peças da prancha, as siglas e, na primeira, a relação das
@@ -442,10 +451,10 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             for c in fila:
                 if c["categoria"] != cat:
                     break
-                if linha and x + c["w"] > x_fim:
+                if linha and x + c.get("slot_w", c["w"]) > x_fim:
                     break
                 linha.append(c)
-                x += c["w"] + FOLGA
+                x += c.get("slot_w", c["w"]) + FOLGA
             return linha
 
         def lado_a_lado(cat1, cat2, cels_p, mold_p):
@@ -541,7 +550,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     for c in linha:
                         # alinhadas pelo topo: os títulos numa linha só
                         c["px"], c["py"] = x, y_topo - c["h"]
-                        x += c["w"] + FOLGA
+                        x += c.get("slot_w", c["w"]) + FOLGA
                         cels_p.append(c)
                         fila.remove(c)
                     y_topo -= alt + FOLGA
@@ -601,6 +610,15 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 candidatas.sort(key=lambda c: 0 if _eh_chumbamento(c.get("montagem")) else 1)
             else:
                 candidatas = [c for c in fila if c["categoria"] in cats_p and c.get("pai") is None]
+                if "TERÇAS" in cats_p:
+                    # a prancha das terças leva nos ACESSÓRIOS/DISPOSITIVOS os suportes de terça, não mais terças
+                    # (pedido do usuário, 28/09)
+                    def suporte(c_):
+                        if (c_.get("item") or {}).get("tipo") == "suporte_terca":
+                            return True
+                        return bool(c_.get("montagem")) and all(
+                            tipo_por_nome.get(pt.strip()) == "suporte_terca" for pt in c_["montagem"].split(" + "))
+                    candidatas = [c for c in fila if c.get("pai") is None and suporte(c)]
             furos_p = [c for c in fila if c.get("pai") is not None and any(c["pai"] is x for x in cels_p)]
             # a legenda: só o que está na prancha — nome e quantidade — e as siglas (pedido do usuário, 28/09:
             # "precisa reduzir bastante o tamanho"); a largura sai do conteúdo com todos os detalhes possíveis

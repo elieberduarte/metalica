@@ -951,6 +951,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                                 "comprimento": round(p.comprimento), "espessura": round(p.espessura or p.T, 1),
                                 "peso": round(p.peso, 2), "classe": CLASSES.get(p.classe, p.classe),
                                 "categoria": _categoria(p, camadas.get(p.marca, "")), "marcas": marcas_de(p),
+                                "tipo": nomeacao["tipos"].get(p.marca) or p.tipo_nome or "",
                                 "nome": p.nome}
                       for p in lista}}
         # terças do menor comprimento para o maior (o resto na ordem de sempre)
