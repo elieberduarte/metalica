@@ -276,6 +276,17 @@ def _giro_montado(pos: Posicao):
         ang = (ang + math.pi / 2) % math.pi - math.pi / 2          # entre −90° e 90°
         if abs(ang) <= math.radians(15.0) and (melhor is None or L > melhor[0]):
             melhor = (L, ang)
+    if melhor is None:
+        # nenhuma aresta de baixo perto da horizontal (a chapa 200x76 do depósito e da Sala, montada a 45°, saía
+        # inclinada): a aresta mais comprida vai para a horizontal, pelo menor giro (análise das pranchas, 29/09)
+        for i in range(len(pts)):
+            a, b = pts[i], pts[(i + 1) % len(pts)]
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            if L < 1e-6:
+                continue
+            ang = (math.atan2(b[1] - a[1], b[0] - a[0]) + math.pi / 2) % math.pi - math.pi / 2
+            if melhor is None or L > melhor[0] + 1e-6:
+                melhor = (L, ang)
     if melhor:
         phi -= melhor[1]
     quarto = round(phi / (math.pi / 2)) * (math.pi / 2)
@@ -315,6 +326,48 @@ def _na_posicao_montada(pos: Posicao) -> Posicao:
     return g
 
 
+#: Chapa com aresta inclinada maior que esta fração do lado maior não é retangular: cada lado ganha a cota dele.
+ARESTA_INCLINADA = 0.25
+#: Aresta menor que isto (mm) não se cota (o chanfro do canto; nas chapas pequenas os números encavalavam).
+MENOR_ARESTA_COTADA = 30.0
+
+
+def _cotas_das_arestas(p, contorno, L: float, H: float) -> int:
+    """A chapa não retangular (a cartela, o trapézio, o triângulo) com a medida de cada lado, alinhada a ele e
+    por fora: as cotas da caixa (L × H) sozinhas não davam os lados — a CH21 "343x183" saía cotada 307 × 200
+    (análise das pranchas, 29/09). Os lados que a caixa já mede (horizontal ou vertical de ponta a ponta) e os
+    chanfros pequenos ficam sem. Devolve quantas cotas pôs."""
+    n = len(contorno or ())
+    if n < 3:
+        return 0
+    arestas = [(contorno[i], contorno[(i + 1) % n]) for i in range(n)]
+    maior = max(L, H, 1.0)
+
+    def inclinada(a, b):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        c = math.hypot(dx, dy)
+        return c > 1e-6 and abs(dx) > 0.02 * c and abs(dy) > 0.02 * c
+    if not any(inclinada(a, b) and math.dist(a, b) > ARESTA_INCLINADA * maior for a, b in arestas):
+        return 0
+    area = sum(a[0] * b[1] - b[0] * a[1] for a, b in arestas) / 2.0
+    fora = -1.0 if area > 0 else 1.0               # anti-horário: o lado de fora é a direita de a→b
+    postas = 0
+    for a, b in arestas:
+        c = math.dist(a, b)
+        if c < MENOR_ARESTA_COTADA:
+            continue
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        if not inclinada(a, b):
+            continue                                # as horizontais e verticais: pelas cotas da caixa
+        p.d.add(Cota(modo="alinhada", p1=p._p(*a), p2=p._p(*b), deslocamento=fora * 6.0,
+                     texto="%d" % round(c), atributos=dict(p.atr)))
+        ux, uy = dx / c, dy / c
+        p._p(a[0] - uy * fora * 9.0 * p.d.escala, a[1] + ux * fora * 9.0 * p.d.escala)
+        p._p(b[0] - uy * fora * 9.0 * p.d.escala, b[1] + ux * fora * 9.0 * p.d.escala)
+        postas += 1
+    return postas
+
+
 def desenho_no_sistema_da_chapa(giro, x: float, y: float) -> Tuple[float, float]:
     """O ponto do desenho girado (relativo ao canto da célula) de volta ao sistema da chapa."""
     phi, tx, ty = giro
@@ -350,6 +403,7 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
 
     if pos.classe == "chapa":
         p.polilinha(pos.contorno, fechada=True, camada="ACO")
+        _cotas_das_arestas(p, pos.contorno, L, H)
         if editavel:
             _furos_editaveis(p, atr, furos_frente)
         else:
