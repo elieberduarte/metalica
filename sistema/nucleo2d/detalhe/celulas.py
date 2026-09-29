@@ -1223,6 +1223,15 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
         return saida
     fixadores = _fixadores(doc)
     movidos: set = set()
+    eixos_t: Dict[str, tuple] = {}
+
+    def eixo_da_terca(e):
+        # pelas arestas compridas da terça: o eixo pela média dos vértices (com os furos) sai um fio inclinado
+        # e o meio da terça escorregava ±9 mm nas pontas de uma de 9 m (a CH36 e a P27 do depósito, 29/09)
+        if e.id not in eixos_t:
+            from nucleo2d.detalhe.conjuntos import _direcao_pelas_arestas
+            eixos_t[e.id] = _direcao_pelas_arestas(e) or _norm(tuple(_autovetores(e.vertices)[1][0]))
+        return eixos_t[e.id]
     for ch in doc.entidades.values():
         # só o suporte de terça (`suportes`: as marcas dele); a chapinha da agulha e a castanha, que
         # também prendem na terça, ficam com a furação delas
@@ -1236,6 +1245,10 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
         terca_de = {}
         for i, P in enumerate(pts):
             for e, (lo, hi) in pecas_t:
+                # só a terça que corre ao longo da face da chapa: a que a atravessa (a de parede no oitão, que
+                # encosta no suporte da ponta) levava dois furos para fora da chapa (29/09)
+                if abs(sum(eixo_da_terca(e)[k] * nz[k] for k in range(3))) > 0.5:
+                    continue
                 if all(lo[k] - 20.0 <= P[k] <= hi[k] + 20.0 for k in range(3)):
                     por_terca[e.id].append(i)
                     terca_de[e.id] = e
@@ -1257,8 +1270,7 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
         mudou = False
         for id_t, idx in por_terca.items():
             e = terca_de[id_t]
-            c_t, pca = _autovetores(e.vertices)
-            L = _norm(tuple(pca[0]))
+            L = eixo_da_terca(e)
             h = _norm(_cruz(nz, L))
             ph = [sum(v[k] * h[k] for k in range(3)) for v in e.vertices]
             H = max(ph) - min(ph)
