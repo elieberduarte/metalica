@@ -2242,6 +2242,33 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         f = fundidas.get(str(marca_ifc), str(marca_ifc))
         return nomes.get(f) or f
     c, u, v, w = _eixos_do_conjunto(instancia)
+    if tipo == "chumbador":
+        # o chumbador de parede (a chapa em pé com as barras deitadas entrando no concreto): a elevação olha ao
+        # longo da chapa, com o alto da obra para cima — a chapa em pé, as barras deitadas para a esquerda, as
+        # nervuras para a direita; pelos eixos principais o desenho saía enviesado ("o corte dessa chapa está
+        # bem estranho", 29/09). O chumbador de pilar (barras em pé) fica como está.
+        from saida.detalhamento import _autovetores
+        chapas_pe = []
+        for e_ in instancia:
+            if not (_tipo_ifc(e_).startswith("IfcPlate") or isinstance(getattr(e_, "parametrica", None), Chapa)):
+                continue
+            c_e, pca_e = _autovetores(e_.vertices)
+            n_e = _norm(tuple(pca_e[2]))
+            if abs(n_e[2]) < 0.3:
+                ext_e = [max(_dot(_sub(q, c_e), pca_e[k]) for q in e_.vertices) - min(_dot(_sub(q, c_e), pca_e[k]) for q in e_.vertices)
+                         for k in range(2)]
+                chapas_pe.append((ext_e[0] * ext_e[1], c_e, n_e))
+        redondas = [e_ for e_ in instancia if _eh_redonda_perfil(str(_marcas(e_).get("perfil") or e_.nome or ""))]
+        if chapas_pe and redondas:
+            _a, c_ch, n_ch = max(chapas_pe, key=lambda t: t[0])
+            z_ = (0.0, 0.0, 1.0)
+            h_ = _norm(_cruz(z_, n_ch))
+            u_ = _norm(_cruz(h_, z_))                          # a convenção da vista: direita = w × v
+            c_r = [sum(q[k] for e_ in redondas for q in e_.vertices) / sum(len(e_.vertices) for e_ in redondas) for k in range(3)]
+            if _dot(_sub(tuple(c_r), c_ch), u_) > 0:           # as barras para a esquerda
+                h_ = tuple(-k for k in h_)
+                u_ = tuple(-k for k in u_)
+            u, v, w = u_, z_, h_
     # observador em -w (convenção do motor de vistas): origem atrás de tudo
     ws = [_dot(_sub(p, c), w) for e in instancia for p in e.vertices]
     origem = tuple(c[i] + w[i] * (min(ws) - 10.0) for i in range(3))
