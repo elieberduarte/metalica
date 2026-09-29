@@ -221,7 +221,22 @@ def celulas_de(desenho: Desenho, nome: str) -> List[dict]:
                 alvo["chave"] = chave
                 por_chave[chave] = alvo
         alvo["entidades"].append(e)
-    celulas = [c for c in celulas if c["entidades"]]
+    # as chapas da cumeeira desenhadas debaixo da tesoura (detalhe_cumeeira) viram células próprias: na
+    # prancha elas vão para os DETALHES, e a tesoura fica só com ela (pedido do usuário, 28/09)
+    extra = []
+    for c in celulas:
+        cume = [e for e in c["entidades"] if (e.atributos or {}).get("detalhe_cumeeira")]
+        if not cume:
+            continue
+        c["entidades"] = [e for e in c["entidades"] if not (e.atributos or {}).get("detalhe_cumeeira")]
+        por = collections.OrderedDict()
+        for e in cume:
+            por.setdefault(str((e.atributos or {}).get("posicao") or ""), []).append(e)
+        for mk, ents in por.items():
+            extra.append({"fonte": nome, "titulo": desenho.nome, "desenho_titulo": desenho.nome,
+                          "escala": c["escala"], "caixa": c["caixa"], "entidades": ents,
+                          **({"chave": ("posicao", mk)} if mk else {})})
+    celulas = [c for c in celulas + extra if c["entidades"]]
     for c in celulas:                      # a caixa real do que caiu na célula
         c["caixa"] = _caixa_de(c["entidades"], float(desenho.escala or 1.0)) or c["caixa"]
         # título da célula: o texto mais alto dentro dela (o "P12 – 112x")
@@ -284,6 +299,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         if f.get("chaves"):                      # só as posições/conjuntos pedidos
             pedidas = {str(k) for k in f["chaves"]}
             cs = [c for c in cs if (c.get("chave") and c["chave"][1] in pedidas) or c["titulo"] in pedidas]
+            for c in cs:
+                c["selecionada"] = True               # escolhida à mão: é a que fica, se repetir
         if f.get("escala"):
             for c in cs:
                 c["escala"] = float(f["escala"])
@@ -295,6 +312,28 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         celulas.extend(cs)
     if not celulas:
         raise ErroDeDados("nenhum desenho com conteúdo para montar a prancha.")
+    # a mesma posição desenhada em dois desenhos (a chapa na tesoura, nas terças e nas chaparias, que é
+    # o desenho para o corte): uma célula só, a do desenho da família, com o item de quem o tiver
+    unicas, vistas = [], {}
+    for c in celulas:
+        ch = c.get("chave")
+        if ch and ch[0] == "posicao" and ch[1] in vistas:
+            j = vistas[ch[1]]
+            antes = unicas[j]
+            if (c.get("selecionada") and not antes.get("selecionada")) or (
+                    not antes.get("selecionada") and "chaparia" in str(antes["fonte"]) and "chaparia" not in str(c["fonte"])):
+                c.setdefault("item", antes.get("item"))
+                if not c.get("item"):
+                    c["item"] = antes.get("item")
+                c.setdefault("marca", antes.get("marca"))
+                unicas[j] = c
+            elif not antes.get("item") and c.get("item"):
+                antes["item"] = c["item"]
+            continue
+        if ch and ch[0] == "posicao":
+            vistas[ch[1]] = len(unicas)
+        unicas.append(c)
+    celulas = unicas
     for i_c, c in enumerate(celulas):
         c["_ordem"] = i_c
     larg, alt = FOLHAS[formato]
@@ -330,17 +369,18 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         c["categoria"] = (c.get("item") or {}).get("categoria") or ("VISTAS" if not c.get("marca") else "OUTROS")
     itens.sort(key=lambda c: (ordem.get(c["categoria"], 99), c.get("_ordem", 0)))
     qx0, qx1 = ux0 + QUADRO_MARGEM, ux1 - QUADRO_MARGEM
-    # a faixa ao lado do carimbo (embaixo, à esquerda dele): em cada prancha, depois da área de cima,
-    # recebe as células pequenas que cabem nela, puxadas da fila (pedido do usuário, 28/09: "otimização
-    # desse espaço sem utilização na parte inferior de todas as pranchas"); na primeira, com o índice,
-    # fica a relação das pranchas
+    # a faixa ao lado do carimbo, embaixo (pedido do usuário, 28/09): DETALHES à esquerda — as chapas dos
+    # conjuntos desenhados na prancha (a composição deles), ou, sem conjunto, mais células das mesmas
+    # categorias — e LEGENDA junto do carimbo — as peças da prancha, as siglas e, na primeira, a relação das
+    # pranchas. O último quadro de cima desce até a faixa.
     fx0, fx1 = ux0, larg - m["direita"] - lc - FOLGA
     fy0, fy1 = m["inferior"] + 3.0, m["inferior"] + ac
-    alt_faixa = fy1 - fy0 - QUADRO_CABECALHO - 2 * FOLGA * 0.5
+    alt_faixa = fy1 - fy0 - QUADRO_CABECALHO - FOLGA
 
     fila = list(itens)
     pranchas: List[List[dict]] = []
     molduras: List[List[dict]] = []        # por prancha: {categoria, titulo, y0, y1[, x0, x1]}
+    legendas: List[dict] = []
     iniciadas = set()
 
     def prateleira(cat, x_ini, x_fim):
@@ -386,34 +426,61 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 y_topo -= alt + FOLGA
             aberto["y0"] = y_topo
             y_topo -= FOLGA
-        # a faixa: as células pequenas da fila (na ordem dela) que cabem nela, em prateleiras
-        if fila and not (indice and not pranchas):
-            topo_cel = fy1 - QUADRO_CABECALHO - FOLGA * 0.5
-            x, y_linha, alt_linha, na_faixa = fx0 + QUADRO_MARGEM, topo_cel, 0.0, []
-            for c in list(fila):
-                if c["h"] > alt_faixa or c["w"] > fx1 - fx0 - 2 * QUADRO_MARGEM:
+        if mold_p:
+            mold_p[-1]["y0"] = uy0 - FOLGA * 0.5            # o último quadro desce até a faixa
+        # a legenda (a largura dela sai do conteúdo; na primeira, com a relação das pranchas)
+        leg = {"blocos": _blocos_da_legenda(cels_p), "relacao": bool(indice and not pranchas)}
+        tem_legenda = bool(leg["blocos"] or leg["relacao"])
+        larg_leg = min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0)) if tem_legenda else 0.0
+        leg["x0"] = fx1 - larg_leg
+        dx1 = leg["x0"] - FOLGA if tem_legenda else fx1
+        # os detalhes: as chapas dos conjuntos da prancha; sem conjunto, as das mesmas categorias
+        alvo = {x["marca"] for c in cels_p for x in ((c.get("item") or {}).get("composicao") or [])
+                if str(x.get("classe") or "").startswith("chapa")}
+        cats_p = {c["categoria"] for c in cels_p}
+        if alvo:
+            candidatas = [c for c in fila if c.get("marca") in alvo
+                          or any(mk in alvo for mk in ((c.get("item") or {}).get("marcas") or []))]
+        else:
+            candidatas = [c for c in fila if c["categoria"] in cats_p]
+        topo_cel = fy1 - QUADRO_CABECALHO - FOLGA * 0.5
+        x, y_linha, alt_linha, na_faixa = fx0 + QUADRO_MARGEM, topo_cel, 0.0, []
+        for c in candidatas:
+            if c["h"] > alt_faixa or c["w"] > dx1 - fx0 - 2 * QUADRO_MARGEM:
+                continue
+            if x + c["w"] > dx1 - QUADRO_MARGEM:                  # prateleira seguinte, embaixo
+                if y_linha - alt_linha - FOLGA - c["h"] < fy0 + FOLGA * 0.5:
                     continue
-                if x + c["w"] > fx1 - QUADRO_MARGEM:               # prateleira seguinte, embaixo
-                    if y_linha - alt_linha - FOLGA - c["h"] < fy0 + FOLGA * 0.5:
-                        continue
-                    y_linha -= alt_linha + FOLGA
-                    x, alt_linha = fx0 + QUADRO_MARGEM, 0.0
-                if y_linha - c["h"] < fy0 + FOLGA * 0.5:
-                    continue
-                c["px"], c["py"] = x, y_linha - c["h"]
-                x += c["w"] + FOLGA
-                alt_linha = max(alt_linha, c["h"])
-                na_faixa.append(c)
-                fila.remove(c)
-            if na_faixa:
-                cats = list(dict.fromkeys(c["categoria"] for c in na_faixa))
-                mold_p.append({"categoria": cats[0], "titulo": " / ".join(CATEGORIAS.get(k, k) for k in cats),
-                               "y1": fy1, "y0": fy0, "x0": fx0, "x1": fx1})
-                cels_p += na_faixa
-                iniciadas.update(cats)
-        pranchas.append(cels_p)
+                y_linha -= alt_linha + FOLGA
+                x, alt_linha = fx0 + QUADRO_MARGEM, 0.0
+            if y_linha - c["h"] < fy0 + FOLGA * 0.5:
+                continue
+            c["px"], c["py"] = x, y_linha - c["h"]
+            x += c["w"] + FOLGA
+            alt_linha = max(alt_linha, c["h"])
+            na_faixa.append(c)
+            fila.remove(c)
+        if na_faixa and not alvo:
+            # sem conjunto, a legenda lista também as peças que foram para os detalhes
+            leg["blocos"] = _blocos_da_legenda(cels_p + na_faixa)
+        if na_faixa:
+            mold_p.append({"categoria": "DETALHES", "titulo": "DETALHES", "y1": fy1, "y0": fy0, "x0": fx0, "x1": dx1})
+            iniciadas.update(c["categoria"] for c in na_faixa)
+        if tem_legenda:
+            mold_p.append({"categoria": "LEGENDA", "titulo": "LEGENDA", "y1": fy1, "y0": fy0, "x0": leg["x0"], "x1": fx1})
+        pranchas.append(cels_p + na_faixa)
         molduras.append(mold_p)
+        legendas.append(leg)
     total = len(pranchas)
+    # em que prancha cada posição está detalhada (a coluna PR. da legenda) e a relação das pranchas
+    onde: Dict[str, int] = {}
+    for i_p, cels in enumerate(pranchas, start=1):
+        for c in cels:
+            for mk in [c.get("marca")] + list((c.get("item") or {}).get("marcas") or []):
+                if mk:
+                    onde.setdefault(str(mk), i_p)
+    relacao = [("%02d/%02d" % (i_p, total), (_conteudo_de(cels) or ["-"])[0].lstrip("- "))
+               for i_p, cels in enumerate(pranchas, start=1)]
 
     saida = []
     for i0, cels in enumerate(pranchas, start=1):
@@ -425,7 +492,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 d.camadas.setdefault(k, copy.deepcopy(cam))
         fontes_da = sorted({c["fonte"] for c in cels})
         info = dict(carimbo)
-        info.setdefault("titulo", ", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i0 - 1]))[:48] or fontes_titulo(cels))
+        info.setdefault("titulo", ", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i0 - 1]
+                                                          if mq["categoria"] not in ("DETALHES", "LEGENDA")))[:48] or fontes_titulo(cels))
         quadro, carimbo_caixa = _moldura(d, formato, info, i, total, [c["k"] for c in cels], _conteudo_de(cels))
         for mq in molduras[i0 - 1]:
             _quadro(d, mq, mq.get("x0", ux0), mq.get("x1", ux1))
@@ -446,9 +514,12 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                                                "caixa": [round(c["px"], 2), round(c["py"], 2), round(c["px"] + c["w"], 2), round(c["py"] + c["h"], 2)]}
                                               for c in cels]}
         d.metadados["prancha"]["conteudo"] = _conteudo_de(cels)
+        leg = legendas[i0 - 1]
+        if leg["blocos"] or leg["relacao"]:
+            _legenda(d, leg, leg["x0"], fy0, fy1, relacao if leg["relacao"] else [], onde)
+        d.metadados["prancha"]["relacao"] = leg["relacao"]
+        d.metadados["prancha"]["siglas"] = [x[0] for b in leg["blocos"] if b[0] == "SIGLAS" for x in b[1]]
         saida.append(d)
-    if indice and saida:
-        _relacao_na_faixa(saida[0], formato, saida)
     return saida
 
 
@@ -600,67 +671,93 @@ def siglas_usadas(nomes: Sequence[str]) -> List[Tuple[str, str]]:
     return [x for x in tabela if x[0] in achadas]
 
 
-def _relacao_na_faixa(d: Desenho, formato: str, pranchas: Sequence[Desenho]):
-    """A relação das pranchas na faixa livre ao lado do carimbo da primeira prancha (pedido do usuário,
-    28/09: "tem esse espaço inutilizado em baixo das pranchas … usaria ele para trazer o índice na
-    primeira prancha"), no lugar da folha de índice separada: número/total, o título e o conteúdo de
-    cada uma, em quantas colunas precisar. A tabela das posições fica na lista de materiais."""
-    larg, alt = FOLHAS[formato]
-    m = MARGENS
-    lc, ac = CARIMBO[formato]
-    x0, x1 = m["esquerda"] + FOLGA, larg - m["direita"] - lc - FOLGA
-    y_topo, y_fundo = m["inferior"] + ac - 3.0, m["inferior"] + FOLGA * 0.6
-    atr = {"prancha": "relacao"}
-    h_tit, h, passo = 3.5, 2.2, 3.8
-    # as siglas que aparecem nas pranchas, num bloco à direita da relação (pedido do usuário, 28/09:
-    # "no índice deveria ter um campo onde explique o que significa cada uma das siglas")
-    nomes = []
-    for p in pranchas:
-        for c in (p.metadados.get("prancha") or {}).get("celulas") or []:
-            nomes += [c.get("titulo") or "", ((c.get("item") or {}).get("nome") or "")]
+def _blocos_da_legenda(cels: Sequence[dict]) -> List[tuple]:
+    """Os blocos da legenda da prancha: [(título, linhas)]. As peças — de um ou dois conjuntos, a
+    composição por unidade (nome, quantidade, perfil, comprimento, marca); de mais, ou de peças soltas,
+    a lista das células — e as siglas que aparecem nelas."""
+    blocos, nomes = [], []
+    conj = [c for c in cels if (c.get("item") or {}).get("composicao")]
+    if conj and len(conj) <= 2:
+        for c in conj:
+            it = c["item"]
+            linhas = [(x["nome"], "%dx" % x["qtd"], x.get("perfil") or "",
+                       "%d" % x["comprimento"] if x.get("comprimento") else "", x["marca"]) for x in it["composicao"]]
+            blocos.append(("PEÇAS DE %s (%02dX) — POR UNIDADE" % (it.get("nome") or c["titulo"], it.get("quantidade") or 0), linhas))
+            nomes += [it.get("nome") or ""] + [x["nome"] for x in it["composicao"]]
+    else:
+        linhas = []
+        for c in cels:
+            it = c.get("item") or {}
+            if not it:
+                continue
+            nome = str(it.get("nome") or c.get("marca") or c["titulo"])
+            perfil = str(it.get("perfil") or "")
+            linhas.append((nome, "%dx" % (it.get("quantidade") or 0), perfil[:28],
+                           "%d" % it["comprimento"] if it.get("comprimento") else "", str(c.get("marca") or "")))
+            nomes.append(nome)
+        if linhas:
+            blocos.append(("PEÇAS DESTA PRANCHA", linhas))
     siglas = siglas_usadas(nomes)
     if siglas:
-        por_col_s = max(1, int((y_topo - h_tit - 3.0 - y_fundo) // passo))
-        n_col_s = -(-len(siglas) // por_col_s)
-        larg_col_s = LARGURA_LETRA * h * (max(len(x[0]) for x in siglas) + max(len(x[1]) for x in siglas)) + 9.0
-        larg_s = min(n_col_s * larg_col_s, 0.45 * (x1 - x0))
-        larg_col_s = larg_s / n_col_s
-        xs = x1 - larg_s
-        d.add(Texto(camada="TEXTO", posicao=(round(xs, 2), round(y_topo - h_tit, 2)), texto="SIGLAS",
-                    altura=h_tit, atributos=dict(atr, campo="titulo_siglas")))
-        # a sigla numa coluna e o que ela é noutra, alinhada (lê como tabela)
-        larg_sig = LARGURA_LETRA * h * max(len(x[0]) for x in siglas) + 3.0
-        cabe_s = max(8, int((larg_col_s - larg_sig - 3.0) / (LARGURA_LETRA * h)))
-        for i, (sigla, txt) in enumerate(siglas):
-            col, lin = divmod(i, por_col_s)
-            if len(txt) > cabe_s:
-                txt = txt[:cabe_s - 1].rstrip(" ,;(") + "…"
-            y_ = round(y_topo - h_tit - 3.0 - (lin + 1) * passo + (passo - h), 2)
-            x_ = xs + col * larg_col_s
-            d.add(Texto(camada="TEXTO", posicao=(round(x_, 2), y_), texto=sigla, altura=h, atributos=dict(atr, campo="sigla")))
-            d.add(Texto(camada="TEXTO", posicao=(round(x_ + larg_sig, 2), y_), texto=txt, altura=h,
-                        atributos=dict(atr, campo="sigla_texto")))
-        x1 = xs - 8.0                                              # a relação fica à esquerda
-    d.add(Texto(camada="TEXTO", posicao=(round(x0, 2), round(y_topo - h_tit, 2)), texto="RELAÇÃO DAS PRANCHAS",
-                altura=h_tit, atributos=dict(atr, campo="titulo")))
-    linhas = []
-    for p in pranchas:
-        pr = p.metadados.get("prancha") or {}
-        conteudo = "; ".join(t.lstrip("- ") for t in pr.get("conteudo") or []) or str(pr.get("titulo") or "")
-        linhas.append("%02d/%02d  %s" % (pr.get("numero", 0), pr.get("total", len(pranchas)), conteudo))
-    y_ini = y_topo - h_tit - 3.0
-    por_col = max(1, int((y_ini - y_fundo) // passo))
-    n_col = max(1, -(-len(linhas) // por_col))
-    larg_col = (x1 - x0) / n_col
-    cabe = max(12, int((larg_col - 4.0) / (LARGURA_LETRA * h)))           # caracteres que cabem na coluna
-    for i, txt in enumerate(linhas):
-        col, lin = divmod(i, por_col)
-        if len(txt) > cabe:
-            txt = txt[:cabe - 1].rstrip(" ,;") + "…"
-        d.add(Texto(camada="TEXTO", posicao=(round(x0 + col * larg_col, 2), round(y_ini - (lin + 1) * passo + (passo - h), 2)),
-                    texto=txt, altura=h, atributos=dict(atr, campo="prancha")))
-    d.metadados["prancha"]["relacao"] = True
-    d.metadados["prancha"]["siglas"] = [x[0] for x in siglas]
+        blocos.append(("SIGLAS", siglas))
+    return blocos
+
+
+def _tabela(d, x0: float, y1: float, y0: float, titulo: str, linhas: Sequence[tuple], h: float = 2.0,
+            passo: float = 3.2, cabecalho: Optional[tuple] = None) -> float:
+    """Uma tabela de texto com título, as linhas correndo em colunas de cima para baixo e da esquerda
+    para a direita entre y1 e y0. Com `d` None só mede. Devolve a largura usada (mm)."""
+    if not linhas:
+        return 0.0
+    h_tit = 2.5
+    n_campos = max(len(l) for l in linhas)
+    todas = ([cabecalho] if cabecalho else []) + list(linhas)
+    # as letras da tabela (maiúsculas e números, "C127X50X17X#14") são mais largas que a média do texto
+    larg_campo = [max(len(str(l[i])) if i < len(l) else 0 for l in todas) * 0.85 * h + (4.0 if i < n_campos - 1 else 0.0)
+                  for i in range(n_campos)]
+    larg_col = sum(larg_campo) + 6.0
+    y_ini = y1 - h_tit - 2.5 - (passo if cabecalho else 0.0)
+    por_col = max(1, int((y_ini - y0) // passo))
+    n_col = -(-len(linhas) // por_col)
+    if d is not None:
+        atr = {"prancha": "legenda"}
+        d.add(Texto(camada="TEXTO", posicao=(round(x0, 2), round(y1 - h_tit, 2)), texto=titulo, altura=h_tit,
+                    atributos=dict(atr, campo="titulo_bloco")))
+        for col in range(n_col):
+            xc = x0 + col * larg_col
+            if cabecalho:
+                xx = xc
+                for i, txt in enumerate(cabecalho):
+                    d.add(Texto(camada="TEXTO", posicao=(round(xx, 2), round(y_ini + passo - h - 0.4, 2)), texto=str(txt),
+                                altura=h * 0.9, atributos=dict(atr, campo="cabecalho")))
+                    xx += larg_campo[i]
+            for lin, linha in enumerate(linhas[col * por_col:(col + 1) * por_col]):
+                xx = xc
+                for i, txt in enumerate(linha):
+                    if txt:
+                        d.add(Texto(camada="TEXTO", posicao=(round(xx, 2), round(y_ini - (lin + 1) * passo + (passo - h), 2)),
+                                    texto=str(txt), altura=h, atributos=dict(atr, campo="linha")))
+                    xx += larg_campo[i]
+    return max(n_col * larg_col, LARGURA_LETRA * h_tit * len(titulo) + 4.0)
+
+
+def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tuple], onde: Dict[str, int]) -> float:
+    """A legenda da prancha, da esquerda para a direita a partir de x0: a relação das pranchas (na
+    primeira), as peças (com a prancha em que cada uma está detalhada) e as siglas. Com `d` None só mede
+    (a relação ainda desconhecida conta como uma coluna). Devolve a largura (mm)."""
+    topo = y1 - QUADRO_CABECALHO - 1.5
+    x = x0 + QUADRO_MARGEM
+    if leg.get("relacao"):
+        rel = relacao or [("00/00", "X" * 40)]
+        rel = [(a, b if len(b) <= 48 else b[:47] + "…") for a, b in rel]
+        x += _tabela(d, x, topo, y0 + 2.0, "RELAÇÃO DAS PRANCHAS", rel) + 4.0
+    for titulo, linhas in leg["blocos"]:
+        if titulo == "SIGLAS":
+            x += _tabela(d, x, topo, y0 + 2.0, titulo, linhas) + 4.0
+            continue
+        com_pr = [(n, q, pf, cp, "%02d" % onde[mk] if mk in onde else "") for n, q, pf, cp, mk in linhas]
+        x += _tabela(d, x, topo, y0 + 2.0, titulo, com_pr, cabecalho=("NOME", "QTD", "PERFIL", "COMPR.", "PR.")) + 4.0
+    return x - x0 + QUADRO_MARGEM - 4.0
 
 
 def fontes_titulo(cels: Sequence[dict]) -> str:

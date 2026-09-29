@@ -853,6 +853,30 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                  for c in conjuntos_info}
         itens.update(itens_cv)
         itens.update(itens_montadas)
+        # a composição de cada conjunto (por unidade): a legenda da prancha lista as peças dele, e as chapas
+        # dele vão para os detalhes da prancha em que ele está (pedido do usuário, 28/09)
+        pos_por = {p.marca: p for p in posicoes}
+
+        def _composicao(unid):
+            soma = collections.Counter()
+            for k, q in unid.items():
+                soma[fundidas.get(k, k)] += q
+            fora = []
+            for mk, q in soma.items():
+                p_ = pos_por.get(mk)
+                fora.append({"marca": mk, "nome": nomes_pos.get(mk) or mk, "qtd": int(q),
+                             "perfil": str(p_.perfil or "") if p_ else "", "classe": p_.classe if p_ else "",
+                             "comprimento": round(p_.comprimento or 0) if p_ else 0})
+            fora.sort(key=lambda x: _ordem_natural(x["nome"]))
+            return fora
+        for c in conjuntos_info:
+            if c["marca"] in itens:
+                itens[c["marca"]]["composicao"] = _composicao(c["composicao"])
+        for m in montadas:
+            rot_m = " + ".join(m["rotulos"])
+            if rot_m in itens:
+                itens[rot_m]["composicao"] = _composicao(collections.Counter(
+                    str(_marcas(e).get("posicao") or e.nome) for e in m["pecas"]))
         d.metadados["detalhamento"] = {"grupo": "conjuntos", "conjuntos": [c["marca"] for c in conjuntos_info], "itens": itens}
         faixas["conjuntos"] = (fns, 1400.0, dict(d.metadados["detalhamento"]))
         familias_completo.extend(((t if t in dict(FAMILIAS) else "conjunto") or "conjunto", t or "conjunto", f) for t, f in fns)

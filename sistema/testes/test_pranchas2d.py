@@ -153,17 +153,14 @@ def test_prancha_de_indice():
     pr = folhas[0].metadados["prancha"]
     assert folhas[0].nome == "Prancha 01" and pr["relacao"] is True and pr["celulas"] and pr["numero"] == 1
     assert pr["total"] == len(folhas)
-    rel = [e for e in folhas[0].entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("prancha") == "relacao"
-           and (e.atributos or {}).get("campo") in ("titulo", "prancha")]
-    sig = [e for e in folhas[0].entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("campo") in ("titulo_siglas", "sigla")]
-    assert sig and sig[0].texto == "SIGLAS" and pr["siglas"]
-    assert rel[0].texto == "RELAÇÃO DAS PRANCHAS" and len(rel) == len(folhas) + 1
-    assert rel[1].texto.startswith("01/%02d  " % len(folhas))
-    # tudo na faixa ao lado do carimbo, abaixo do quadro das células
+    leg = [e for e in folhas[0].entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("prancha") == "legenda"]
+    assert any(e.texto == "RELAÇÃO DAS PRANCHAS" for e in leg)
+    assert any(e.texto == "01/%02d" % len(folhas) for e in leg)
+    # a legenda, no quadro LEGENDA, fica na faixa ao lado do carimbo
     from nucleo2d.pranchas import FOLHAS, CARIMBO, MARGENS
     larg, _alt = FOLHAS["A1"]
     lim_x, lim_y = larg - MARGENS["direita"] - CARIMBO["A1"][0], MARGENS["inferior"] + CARIMBO["A1"][1]
-    assert all(t.posicao[0] < lim_x and t.posicao[1] + t.altura <= lim_y for t in rel)
+    assert all(t.posicao[0] < lim_x and t.posicao[1] + t.altura <= lim_y for t in leg)
     sem = montar_pranchas(fontes, formato="A1", titulo="Prancha", indice=False)
     assert len(sem) == len(folhas) and not sem[0].metadados["prancha"].get("relacao")
 
@@ -382,7 +379,8 @@ def test_faixa_ao_lado_do_carimbo_recebe_celulas_pequenas():
         for i, f in enumerate(folhas):
             na_faixa = [c for c in f.metadados["prancha"]["celulas"] if c["caixa"][3] <= y_faixa + 0.01]
             assert all(c["caixa"][2] <= x_carimbo for c in na_faixa)
-            if indice and i == 0:
-                assert not na_faixa                      # a relação das pranchas
-            elif i < len(folhas) - 1:
-                assert na_faixa, "a faixa da prancha %d ficou vazia" % (i + 1)
+            if i < len(folhas) - 1:
+                assert na_faixa, "os DETALHES da prancha %d ficaram vazios" % (i + 1)
+            legenda = [t for t in f.entidades.values() if isinstance(t, Texto) and (t.atributos or {}).get("prancha") == "legenda"]
+            assert all(t.posicao[0] < x_carimbo and t.posicao[1] < y_faixa for t in legenda)
+            assert bool(legenda) == (indice and i == 0)          # sem dados de peça, só a relação na primeira
