@@ -24,6 +24,7 @@ Rotas da API:
                                         excluir, arquivar {arquivar: bool}, abrir-pasta
     GET  /api/projetos/<slug>/exportar[?historico=1]   o projeto inteiro num pacote (.metalica.zip), para outro usuário
     POST /api/projetos/importar-pacote {nome, conteudo_b64, nome_projeto}   o pacote vira um projeto novo
+    POST /api/conferencia/cancelar      derruba a conferência antes de publicar que está rodando (botão da barrinha)
     POST /api/projetos/<slug>/vista2d   vista 2D do modelo (corte/projeção) → desenho
     POST /api/projetos/<slug>/detalhar  detalhamento de peças e conjuntos → desenhos + lista de materiais
     POST /api/projetos/<slug>/detalhar-posicao {marca}   detalhe de uma peça (chapa vira paramétrica)
@@ -1994,18 +1995,63 @@ def estado_da_conferencia(d: Optional[dict], agora: float) -> Optional[dict]:
             "etapa": etapa["nome"], "n_etapa": d["etapas"].index(etapa) + 1, "etapas": len(d["etapas"]),
             "feito": etapa.get("feito"), "total": etapa.get("total"), "texto": d.get("texto") or "",
             "resta_s": 0 if fim else round(resta), "decorrido_s": round((fim or agora) - float(d.get("inicio") or agora)),
-            "fim": bool(fim), "ok": d.get("ok"), "parada": parada,
+            "fim": bool(fim), "ok": d.get("ok"), "parada": parada, "cancelada": bool(d.get("cancelada")),
             "falhas": [e["nome"] for e in d["etapas"] if e.get("fim") and e.get("ok") is False]}
+
+
+ARQ_CONFERENCIA = os.path.join(BASE, "testes", "_conferencia.json")
 
 
 def _conferencia_dev() -> Optional[dict]:
     """modo de desenvolvimento: a conferência antes de publicar que está rodando (ou acabou de rodar)"""
     try:
-        with open(os.path.join(BASE, "testes", "_conferencia.json"), encoding="utf-8") as f:
+        with open(ARQ_CONFERENCIA, encoding="utf-8") as f:
             d = json.load(f)
     except (OSError, ValueError):
         return None
     return estado_da_conferencia(d, time.time())
+
+
+def _matar_arvore(pid: int) -> str:
+    """derruba o processo e tudo o que ele abriu (pytest, verificadores, servidores de teste, Chrome)"""
+    import subprocess
+    if os.name == "nt":
+        r = subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        return (r.stdout or r.stderr).strip()[:300]
+    import signal
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGTERM)
+    except OSError as e:
+        return str(e)
+    return "encerrado"
+
+
+def cancelar_conferencia(matar=_matar_arvore, arquivo: Optional[str] = None) -> dict:
+    """POST /api/conferencia/cancelar (o botão da barrinha do modo desenvolvimento — pedido do usuário,
+    29/09: parar a verificação sem pedir por fora): derruba a árvore do processo da conferência (o pid que
+    testes/progresso.py gravou) e marca o arquivo dela como cancelada; a rodada da noite vê a marca, não
+    publica e desfaz a cópia limpa. Sem conferência rodando, não faz nada."""
+    arquivo = arquivo or ARQ_CONFERENCIA
+    try:
+        with open(arquivo, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        d = None
+    if not d or d.get("fim"):
+        return {"cancelada": False, "motivo": "não há conferência rodando"}
+    saida = ""
+    if d.get("pid"):
+        saida = matar(int(d["pid"]))
+    d.update(fim=time.time(), ok=False, cancelada=True, texto="cancelada", atualizado=time.time())
+    for e in d.get("etapas") or []:
+        if e.get("ini") and not e.get("fim"):
+            e["fim"], e["ok"] = d["fim"], False
+    tmp = arquivo + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False)
+    os.replace(tmp, arquivo)
+    return {"cancelada": True, "pid": d.get("pid"), "detalhe": saida}
 
 
 def verificar_atualizacao() -> dict:
@@ -3365,6 +3411,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(criar_projeto(corpo))
             if rota == "/api/projetos/importar-pacote":
                 return self._json(importar_pacote_de_projeto(corpo))
+            if rota == "/api/conferencia/cancelar":
+                return self._json(cancelar_conferencia())
             if rota.startswith("/api/fabrica/"):
                 return self._json(_rota_fabrica(rota, corpo if isinstance(corpo, dict) else {}))
             if rota.startswith("/api/projetos/"):

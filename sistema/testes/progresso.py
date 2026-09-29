@@ -53,7 +53,9 @@ def ativo() -> bool:
 def iniciar(nomes):
     """a conferência começa com estas etapas (na ordem)"""
     dur = _ler(DURACOES) or {}
-    d = {"inicio": time.time(), "fim": None, "ok": None, "texto": "",
+    # o processo da conferência (o que roda os testes, os verificadores e a bateria): é a árvore que o
+    # botão Cancelar da barrinha derruba (app.cancelar_conferencia)
+    d = {"inicio": time.time(), "fim": None, "ok": None, "texto": "", "pid": os.getpid(), "cancelada": False,
          "etapas": [{"nome": n, "est": float(dur.get(n) or PADRAO.get(n, 120.0)), "ini": None, "fim": None,
                      "ok": None, "feito": None, "total": None} for n in nomes]}
     with _trava:

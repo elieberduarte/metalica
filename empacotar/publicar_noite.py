@@ -219,10 +219,21 @@ def bateria_igual(desde: float) -> tuple:
     return iguais, texto
 
 
+ARQ_CONFERENCIA = os.path.join(SISTEMA, "testes", "_conferencia.json")
+
+
 def conferir(copia: str) -> bool:
-    env = dict(os.environ, PYTHONIOENCODING="utf-8",
-               METALICA_CONFERENCIA_ARQ=os.path.join(SISTEMA, "testes", "_conferencia.json"))
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", METALICA_CONFERENCIA_ARQ=ARQ_CONFERENCIA)
     return rodar([PY, "testes/antes_de_publicar.py", "--completa"], os.path.join(copia, "sistema"), env) == 0
+
+
+def cancelada() -> bool:
+    """o botão Cancelar da barrinha (app.cancelar_conferencia) derrubou a conferência e marcou o arquivo dela"""
+    try:
+        with open(ARQ_CONFERENCIA, encoding="utf-8") as f:
+            return bool(json.load(f).get("cancelada"))
+    except (OSError, ValueError):
+        return False
 
 
 # ------------------------------------------------------------------ pacote e publicação
@@ -421,6 +432,11 @@ def _rodada(argv) -> int:
               relatorio=_log_arq)
     copia = copia_limpa(commit)
     ok = conferir(copia)
+    if not ok and cancelada():
+        registrar(estado="cancelada", conferencia_ok=False)
+        log("cancelada pelo usuário (botão da barrinha) após %.0f min: nada publicado; a cópia limpa é desfeita"
+            % ((time.time() - t0) / 60))
+        return 1
     igual, _texto = bateria_igual(t0)
     log("conferência: %s · bateria: %s (%.0f min)" % ("ok" if ok else "FALHOU", "igual" if igual else "COM DIFERENÇAS",
                                                         (time.time() - t0) / 60))

@@ -45,6 +45,26 @@ def test_sem_noticia_ha_muito_tempo_e_parada():
     assert app.estado_da_conferencia(d, agora)["parada"]
 
 
+def test_cancelar_derruba_o_processo_e_marca_o_arquivo(tmp_path):
+    """O botão Cancelar: a árvore do pid gravado pela conferência é derrubada, o arquivo fica com fim,
+    ok=False e cancelada, a etapa aberta fechada; sem conferência rodando, nada é feito."""
+    import json
+    arq = tmp_path / "_conferencia.json"
+    agora = 10000.0
+    d = dict(_arquivo(agora), pid=4321)
+    arq.write_text(json.dumps(d), encoding="utf-8")
+    mortos = []
+    r = app.cancelar_conferencia(matar=lambda pid: mortos.append(pid) or "ok", arquivo=str(arq))
+    assert r["cancelada"] and mortos == [4321]
+    d2 = json.loads(arq.read_text(encoding="utf-8"))
+    assert d2["cancelada"] and d2["fim"] and d2["ok"] is False and d2["etapas"][1]["fim"] and d2["etapas"][1]["ok"] is False
+    c = app.estado_da_conferencia(d2, d2["fim"] + 1)
+    assert c["fim"] and c["cancelada"] and c["ok"] is False
+    # de novo: já terminou, não derruba nada
+    assert not app.cancelar_conferencia(matar=lambda pid: mortos.append(pid), arquivo=str(arq))["cancelada"] and mortos == [4321]
+    assert not app.cancelar_conferencia(matar=lambda pid: None, arquivo=str(tmp_path / "nao-existe.json"))["cancelada"]
+
+
 def test_progresso_grava_as_etapas(tmp_path, monkeypatch):
     import progresso
     importlib.reload(progresso)
@@ -59,6 +79,7 @@ def test_progresso_grava_as_etapas(tmp_path, monkeypatch):
     progresso.passo("bateria das obras", 2, 5, "posto-cb")
     d = progresso._ler()
     assert d["etapas"][0]["ok"] is True and d["etapas"][1]["feito"] == 2 and d["texto"] == "posto-cb"
+    assert d["pid"] == os.getpid() and d["cancelada"] is False
     assert "testes automáticos" in progresso._ler(progresso.DURACOES)
     progresso.fim(True)
     assert progresso._ler()["ok"] is True

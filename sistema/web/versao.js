@@ -76,12 +76,33 @@
       caixaConf.innerHTML = '<div data-l1 style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>' +
         '<div data-l2 style="color:var(--texto3,#8a94a6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>' +
         '<div style="margin-top:5px;height:5px;border-radius:3px;background:rgba(128,140,160,.25);overflow:hidden">' +
-        '<div data-barra style="height:100%;width:0;border-radius:3px;transition:width .6s"></div></div>';
+        '<div data-barra style="height:100%;width:0;border-radius:3px;transition:width .6s"></div></div>' +
+        // Cancelar: derruba a conferência (testes, verificadores, bateria) sem precisar pedir por fora
+        // (pedido do usuário, 29/09); a rodada da noite vê o cancelamento e desfaz a cópia limpa
+        '<button data-cancelar type="button" title="Para a conferência agora: os testes, os verificadores e a bateria são encerrados; nada é publicado. A rodada recomeça do zero quando for pedida de novo." ' +
+        'style="position:absolute;right:7px;top:5px;pointer-events:auto;cursor:pointer;font:11px system-ui,Segoe UI,sans-serif;' +
+        'color:#e4eaf3;background:rgba(217,83,79,.85);border:0;border-radius:4px;padding:1px 7px">Cancelar</button>';
+      caixaConf.style.position = 'fixed';
+      caixaConf.querySelector('[data-cancelar]').onclick = function () {
+        var b = this;
+        b.disabled = true;
+        b.textContent = 'cancelando…';
+        fetch('/api/conferencia/cancelar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+          .then(function (r) { return r.json(); })
+          .then(function () { perguntar(); })
+          .catch(function () { b.disabled = false; b.textContent = 'Cancelar'; });
+      };
       document.body.appendChild(caixaConf);
     }
-    var cor = c.fim ? (c.ok ? '#3fae6a' : '#d9534f') : (c.parada ? '#8a94a6' : '#f0a050');
+    var botao = caixaConf.querySelector('[data-cancelar]');
+    botao.hidden = !!c.fim;
+    if (!c.fim && !botao.disabled) botao.textContent = 'Cancelar';
+    var cor = c.fim ? (c.cancelada ? '#8a94a6' : c.ok ? '#3fae6a' : '#d9534f') : (c.parada ? '#8a94a6' : '#f0a050');
     var l1, l2;
-    if (c.fim) {
+    if (c.fim && c.cancelada) {
+      l1 = 'Conferência cancelada';
+      l2 = 'nada publicado · parada em ' + c.etapa + ' após ' + minutos(c.decorrido_s).replace('~', '');
+    } else if (c.fim) {
       l1 = c.ok ? 'Conferência concluída: tudo ok' : 'Conferência terminou com falha';
       l2 = (c.falhas && c.falhas.length ? 'falhou: ' + c.falhas.join(', ') + ' · ' : '') + 'em ' + minutos(c.decorrido_s).replace('~', '');
     } else if (c.parada) {
