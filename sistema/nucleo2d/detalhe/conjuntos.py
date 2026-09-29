@@ -3032,10 +3032,31 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
     quantidade no meio — "CV.3 COMP=5150mm – 02X"; a rosca desenhada e cotada nas pontas da
     barra que têm porca. `membros` = [(rotulo do grupo, instância, nº de instâncias)]."""
     membros = sorted(membros, key=lambda m: _ordem_natural(nomes_conj.get(m[0], m[0])))
-    maior = max(membros, key=lambda m: _extensao_do_conjunto(m[1])[0])
+
+    def barra_de(inst_m):
+        return _tirante_principal(inst_m) or _barra_mais_longa(inst_m)
+
+    def comp_barra(inst_m):
+        b_ = barra_de(inst_m)
+        if b_ is None:
+            return _extensao_do_conjunto(inst_m)[0]
+        cx_ = _caixa(b_)
+        return max(cx_[i][1] - cx_[i][0] for i in range(3))
+    # o desenhado é o da barra mais comprida
+    maior = max(membros, key=lambda m: comp_barra(m[1]))
     rotulo, inst, _ = maior
     rotulo_celula = " / ".join(m[0] for m in membros)
     c, u, v, w = _eixos_do_conjunto(inst)
+    # a barra deitada no papel, como a das agulhas (o agulhamento lateral fica em pé no galpão): as cotas
+    # empilhadas são do tamanho dela
+    b0 = barra_de(inst)
+    eixo_b = _eixo_da_peca(b0) if b0 is not None else None
+    if eixo_b:
+        a_ = _norm(_sub(eixo_b[1], eixo_b[0]))
+        if abs(_dot(a_, u)) < 0.7:
+            a_ = _norm(_sub(a_, tuple(w[i] * _dot(a_, w) for i in range(3))))
+            if _dot(a_, a_) > 0.5:
+                u, v = a_, _norm(_cruz(a_, w))
     ws = [_dot(_sub(p, c), w) for e in inst for p in e.vertices]
     origem = tuple(c[i] + w[i] * (min(ws) - 10.0) for i in range(3))
     vista = _vistas.Vista(origem=origem, normal=w, acima=v, profundidade=None, cortar=False,
@@ -3142,8 +3163,9 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         p.cota_h(round(t0), round(t1), y_c, 0.0, texto=txt)
         for x_ in (round(t0), round(t1)):
             p.linha(x_, y_c - 1.5 * esc, x_, y_c + 1.5 * esc, "COTA")
-    # a dobra da barra (gancho na ponta): a altura da perna, cotada na própria ponta
-    if tirante is not None:
+    # a dobra da barra (gancho na ponta): a altura da perna, cotada na própria ponta — só na barra redonda (a
+    # aba da cantoneira do agulhamento lateral não é gancho)
+    if tirante is not None and _eh_redonda_perfil(str(_marcas(tirante).get("perfil") or tirante.nome or "")):
         corpo = [pv for pu_, pv in zip(pu_t, pv_t) if t0 + 0.3 * (t1 - t0) < pu_ < t1 - 0.3 * (t1 - t0)]
         diam = (max(corpo) - min(corpo)) if corpo else 0.0
         for lado_esq in (True, False):
@@ -3175,11 +3197,14 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
     # a barra de cada um (nome e perfil); o comprimento de corte está na cota empilhada
     barras_ = collections.OrderedDict()
     for rot, inst_m, n_inst in membros:
-        tir = _tirante_principal(inst_m)
+        tir = _tirante_principal(inst_m) or _barra_mais_longa(inst_m)
         if tir is None:
             continue
         marca_t = fundidas.get(str(_marcas(tir).get("posicao") or tir.nome), str(_marcas(tir).get("posicao") or tir.nome))
-        barras_.setdefault(str(_marcas(tir).get("perfil") or tir.nome or ""), []).append(nomes.get(marca_t) or marca_t)
+        nome_b = nomes.get(marca_t) or marca_t
+        lista_b = barras_.setdefault(str(_marcas(tir).get("perfil") or tir.nome or ""), [])
+        if nome_b not in lista_b:
+            lista_b.append(nome_b)
     for perfil_b, nomes_b in barras_.items():
         linhas.append("Barra %s: %s" % (perfil_b, ", ".join(nomes_b)))
     # o padrão da fábrica na ponta roscada: 1 porca e 2 arruelas (pedido do usuário, 28/09) — não
@@ -3188,10 +3213,20 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         bitola = (" Ø%s" % bitola_rosca) if bitola_rosca else ""
         linhas.append("Por ponta roscada: 1 porca sextavada%s + 2 arruelas lisas%s (%d ponta%s por unidade)"
                       % (bitola, bitola, n_roscas, "s" if n_roscas > 1 else ""))
-    pecas_ponta = collections.Counter(nome_de(_marcas(e).get("posicao") or e.nome) for e in inst if e is not tirante)
-    if pecas_ponta:
-        linhas.append("Pecas de ponta (por unidade): "
-                      + ", ".join("%s x%d" % (k, q) for k, q in sorted(pecas_ponta.items(), key=lambda kv: _ordem_natural(kv[0]))))
+    # as peças de ponta; quando mudam de um conjunto para outro (as chapas dos agulhamentos laterais),
+    # por conjunto: "A.L.1: CH18 x2; A.L.2, DP.1: CH8 x2"
+    por_ponta = collections.OrderedDict()
+    for rot, inst_m, _n in membros:
+        tir_m = _tirante_principal(inst_m) or _barra_mais_longa(inst_m)
+        cont = collections.Counter(nome_de(_marcas(e).get("posicao") or e.nome) for e in inst_m if e is not tir_m)
+        chave_p = tuple(sorted(cont.items(), key=lambda kv: _ordem_natural(kv[0])))
+        por_ponta.setdefault(chave_p, []).append(nomes_conj.get(rot, rot))
+    txt_p = lambda ch: ", ".join("%s x%d" % (k, q) for k, q in ch)    # noqa: E731
+    if len(por_ponta) == 1 and next(iter(por_ponta)):
+        linhas.append("Pecas de ponta (por unidade): " + txt_p(next(iter(por_ponta))))
+    elif len(por_ponta) > 1:
+        linhas.append("Pecas de ponta (por unidade): " + "; ".join(
+            "%s: %s" % (", ".join(nomes_m), txt_p(ch)) for ch, nomes_m in por_ponta.items() if ch))
     y = alt + (off + 4.0) * esc
     for i, txt in enumerate(reversed(linhas)):
         alt_t = 3.5 if i == len(linhas) - 1 else 2.5

@@ -494,3 +494,38 @@ def test_contraventos_e_conjuntos_lado_a_lado():
         n_diag = sum(x["qtd"] for x in itens_dp[marca_dp].get("composicao") or [] if str(x.get("perfil") or "").upper().startswith("U92"))
         if n_diag:
             assert len(linhas_d) >= 2 * n_diag, (marca_dp, len(linhas_d), n_diag)
+
+
+def test_agulhamentos_de_cantoneira_num_detalhe_tipico():
+    """Os agulhamentos de cantoneira (A.L., A.C. — e o conjunto que usa a barra deles, como o DP.1 da Sala)
+    num detalhe típico só, como as A.D., e as barras deles fora da prancha de barras (pedido do usuário, 28/09)."""
+    import os
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from test_detalhar2d import _modelo_real
+    from nucleo2d import detalhar as det
+    doc = _modelo_real()
+    r = det.detalhar(doc, grupos=["conjuntos", "agulhamentos", "extras"], converter=False)
+    itens_c = (r["desenhos"]["conjuntos"].metadados.get("detalhamento") or {}).get("itens") or {}
+    nomes_c = [str(it.get("nome") or "") for it in itens_c.values()]
+    grupos = [n for n in nomes_c if " / " in n and any(p.startswith(("A.L.", "A.C.")) for p in n.split(" / "))]
+    soltos = [n for n in nomes_c if " / " not in n and n.startswith(("A.L.", "A.C.")) and (itens_c and True)]
+    if not grupos and not soltos:
+        return                                         # o modelo de exemplo não tem agulhamento de cantoneira
+    assert grupos, nomes_c
+    # as barras que o detalhe típico lista ("Barra L1.1/4''X1/8'': A.C.1, A.L.3, A.L.2.1") não têm célula nas barras
+    from nucleo2d.desenho import Texto
+    barras_do_grupo = set()
+    for e in (e_ for d_ in r["desenhos"].values() for e_ in d_.entidades.values()):
+        if isinstance(e, Texto) and e.texto.startswith("Barra ") and any(n.startswith(("A.L.", "A.C.")) for n in e.texto.split(": ")[-1].split(", ")):
+            barras_do_grupo |= {n.strip() for n in e.texto.split(": ")[-1].split(",")}
+    assert barras_do_grupo
+    # nos desenhos por família (os das pranchas), nenhuma célula dessas barras
+    from nucleo2d.pranchas import celulas_de
+    nomes_cel = []
+    for k, d_ in r["desenhos"].items():
+        if k in ("barras", "completo"):
+            continue                                   # o desenho por classe, que as pranchas não usam
+        its = (d_.metadados.get("detalhamento") or {}).get("itens") or {}
+        nomes_cel += [str((its.get(c["chave"][1]) or {}).get("nome") or "") for c in celulas_de(d_, k) if c.get("chave")]
+    assert nomes_cel and not any(n in barras_do_grupo for n in nomes_cel), nomes_cel

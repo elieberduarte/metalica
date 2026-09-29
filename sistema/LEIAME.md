@@ -284,6 +284,9 @@ peças dela** (pedidos do usuário, 28/09):
 - A prancha dos conjuntos menores tem dois quadros lado a lado: "Contraventos e agulhamentos" (CV., A.C., A.L.,
   A.D.) e "Conjuntos menores" (DP.). Diagonais e montantes de cada DP saem com o perfil cheio (as duas bordas), não só a linha de eixo; o DP não leva as terças em corte nem as chamadas dos parafusos que prendem as terças nele (a ligação com a tesoura fica). Na legenda, um
   nome com muitas partes aparece resumido ("A.D.1 … A.D.10").
+- Os agulhamentos de cantoneira (A.C., A.L. e o conjunto que usa a barra deles, como o DP.1 da Sala) saem num
+  detalhe típico só, como as A.D.: a cantoneira mais comprida deitada, as cotas empilhadas "A.L.2 COMP=792mm –
+  04X" e as peças de ponta por conjunto quando mudam. As barras deles saem da prancha de barras.
 
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
 sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da

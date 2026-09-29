@@ -599,6 +599,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     conjuntos_info = []
     familias_completo: List[tuple] = []       # (família, tipo, célula): completo e desenhos por família
     tirantes_em_grupo: set = set()            # tirantes já cotados no detalhe do contraventamento
+    barras_al_em_grupo: set = set()           # as cantoneiras dos agulhamentos laterais, no detalhe típico deles
     tipo_de_conj: Dict[str, str] = {}         # marca de conjunto → tipo (tesoura, agulhamento…)
     if pecas:            # sempre levantados: os nomes de produção dependem dos conjuntos
         por_conj: Dict[str, List[Solido]] = collections.defaultdict(list)
@@ -819,6 +820,19 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             # contraventamentos e agulhas (a barra redonda com as mesmas peças de ponta, mudando só o
             # comprimento) saem num detalhe típico por grupo, no estilo do Posto (pedido do usuário, 28/09)
             tir = _tirante_principal(inst) if _tipico(tipos_conj.get(rotulo, "")) else None
+            # os agulhamentos laterais e de cobertura — a cantoneira A.L.*/A.C.* com as chapas das pontas, com o nome que o
+            # conjunto tiver (A.L.1, DP.1…) — também num detalhe típico só, como as A.D. (pedido do
+            # usuário, 28/09: "são o mesmo perfil"); as barras deles saem da prancha de barras
+            barras_i = [e for e in inst if not _tipo_ifc(e).startswith("IfcPlate")]
+            if tir is None and len(barras_i) == 1 and len(inst) >= 2:
+                mk_b = str(_marcas(barras_i[0]).get("posicao") or barras_i[0].nome)
+                # e os de cobertura (A.C.), que são a mesma cantoneira (pedido do usuário, 28/09): um detalhe por perfil
+                if str(nomes_pos.get(fundidas.get(mk_b, mk_b)) or "").startswith(("A.L.", "A.C.")):
+                    perfil_b = str(_marcas(barras_i[0]).get("perfil") or barras_i[0].nome or "")
+                    cv.setdefault(("agulhamento_cantoneira", perfil_b), []).append((rotulo, inst, n))
+                    tirantes_em_grupo.add(fundidas.get(mk_b, mk_b))
+                    barras_al_em_grupo.add(fundidas.get(mk_b, mk_b))
+                    continue
             if tir is not None:
                 marca_t = fundidas.get(str(_marcas(tir).get("posicao") or tir.nome), str(_marcas(tir).get("posicao") or tir.nome))
                 chave = tuple(sorted((fundidas.get(m, m), q) for m, q in collections.Counter(
@@ -834,6 +848,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         for membros in cv.values():
             membros.sort(key=lambda m: _ordem_natural(nomes_conj.get(m[0], m[0])))   # mesma ordem do rótulo da célula
             tipo_g = tipos_conj.get(membros[0][0], "") or "contraventamento"
+            if any(tipos_conj.get(m[0], "").startswith("agulhamento") for m in membros):
+                tipo_g = "agulhamento"
             fam_g = "agulhamento" if tipo_g.startswith("agulhamento") else "contraventamento"
             fns.append((fam_g, lambda dd, x, y, membros=membros: desenho_de_contraventamentos(
                 doc, membros, dd, x, y, nomes_pos, nomes_conj, fundidas, comprimentos, rotular)))
@@ -1014,7 +1030,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                                                       tipo_de_conj), t, f)
                                  for p, (t, f) in zip(lista, celulas_g[n_frente:n_frente + len(lista)])
                                  if not (p.marca in tirantes_em_grupo
-                                         and _tipico(nomeacao["tipos"].get(p.marca) or p.tipo_nome or ""))
+                                         and (_tipico(nomeacao["tipos"].get(p.marca) or p.tipo_nome or "")
+                                              or p.marca in barras_al_em_grupo))
                                  and not _so_da_tesoura(p, gabarito))
         familias_completo.extend((fam, t, f) for fam, (t, f) in zip(familias_mont, celulas_mont))
         base[chave] = d
