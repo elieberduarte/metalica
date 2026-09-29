@@ -33,6 +33,13 @@
 .props .botoes button { font-size: 12px; padding: 3px 8px; border: 1px solid var(--borda); border-radius: var(--raio-p);
   background: var(--painel2); color: var(--texto); cursor: pointer; }
 .props .botoes button:hover { border-color: var(--azul2); color: var(--azul); }
+/* os outros botões do painel (Peça…, A− / A+): o mesmo do tema — no escuro saíam brancos (28/09) */
+.props button { font-size: 12px; padding: 3px 8px; border: 1px solid var(--borda); border-radius: var(--raio-p);
+  background: var(--painel2); color: var(--texto); cursor: pointer; white-space: nowrap; }
+.props button:hover { border-color: var(--azul2); color: var(--azul); }
+.props .linha-peca { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.props .linha-peca span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.props input[type=color] { padding: 1px 2px; height: 24px; width: 42px; flex: 0 0 auto; cursor: pointer; }
 .nada { font-size: 12.5px; color: var(--texto3); }
 
 /* painel de snap */

@@ -1147,7 +1147,8 @@ def _so_bordas_externas(desenho: Desenho, entidades: Sequence, ids_barras: set, 
 
 
 def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0: float, v0: float,
-                       segs_bz: Sequence[tuple], dx: float, dy: float) -> Tuple[List[tuple], List[List[tuple]], List[tuple]]:
+                       segs_bz: Sequence[tuple], dx: float, dy: float,
+                       com_telha: bool = True) -> Tuple[List[tuple], List[List[tuple]], List[tuple]]:
     """O que o plano da tesoura (o do meio da instância) corta em volta dela, como no corte das
     tesouras do projetista: (segmentos das terças, polilinhas da telha), já na célula.
 
@@ -1203,6 +1204,8 @@ def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
         if ent.id in ids or getattr(ent, "tipo", "") not in ("barra", "solido"):
             continue
         eh_telha = "telha" in str(getattr(ent, "camada", "") or "").lower()
+        if eh_telha and not com_telha:
+            continue
         if eh_telha:
             m_onda = re.search(r"TP\s*(\d+)", str(_marcas(ent).get("perfil") or getattr(ent, "nome", "") or "").upper())
             if m_onda:
@@ -2207,23 +2210,16 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     if segs_bz:
         # as terças em corte, onde cruzam o plano da tesoura sobre o banzo de cima (como o corte das
         # tesouras do projetista): a posição e o lado das abas se leem no próprio desenho
-        tercas, telhas, extras = _cortes_das_tercas(doc, instancia, origem, u, v, w, u0, v0, segs_bz, dx, dy)
+        tercas, telhas, extras = _cortes_das_tercas(doc, instancia, origem, u, v, w, u0, v0, segs_bz, dx, dy, com_telha=False)
         for id_t, nome_t, segs_t in tercas:
             # cada seção é uma peça só no CAD (o clique pega ela inteira — pedido do usuário, 28/09):
             # "corte" é a terça de onde ela veio; não é "origem", que o Aplicar peças ao 3D lê
             for a_, b_ in segs_t:
                 desenho.add(Linha(camada="TERCAS", a=(round(a_[0], 2), round(a_[1], 2)), b=(round(b_[0], 2), round(b_[1], 2)),
                                   atributos=dict(atr, terca_em_corte=True, corte=id_t, nome_corte=nome_t)))
-        for poli in telhas:
-            # só o contorno de baixo da telha, para ver se ela pega na estrutura
-            desenho.add(Polilinha(camada="TELHAS", vertices=[(round(q[0], 2), round(q[1], 2)) for q in poli],
-                                  atributos=dict(atr, telha_em_corte=True)))
-        for x in extras:
-            # o parafuso que prende a telha na terça; o texto do raio da multidobra não vai (pedido do
-            # usuário, 28/09: fica só a linha da telha)
-            if x[0] == "linha":
-                desenho.add(Linha(camada="TELHAS", a=(round(x[1][0], 2), round(x[1][1], 2)), b=(round(x[2][0], 2), round(x[2][1], 2)),
-                                  atributos=dict(atr, **{x[3]: True})))
+        # a telha (a linha dela e o parafuso na terça) não entra na tesoura: fica só na prancha das
+        # telhas (pedido do usuário, 28/09)
+        del telhas, extras
     p = _Papel(desenho, atr, dx, dy)
     esc = desenho.escala
     off, off2, off3 = 10.0, 20.0, 30.0
@@ -2654,6 +2650,21 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         perfis_cam[(camada_de.get(e.id, "TEXTO"), str(m.get("perfil") or e.nome))] += 1
         peso_un += float(pesos.get(fundidas.get(marca_e, marca_e), 0.0) or 0.0)
     ordem_cam = {k: i for i, k in enumerate(CAMADAS_PECAS)}
+    # a função com mais de um perfil (os banzos U100X50 #11, #9 e #8 da tesoura): cada chapa (perfil) na
+    # cor dela, a mesma em banzo, diagonal ou montante (pedido do usuário, 28/09)
+    sub_camada = _camadas_por_perfil(desenho, marca, instancia, camada_de)
+    if sub_camada:
+        perfis_cam = collections.Counter()
+        for e in instancia:
+            m = _marcas(e)
+            cam_ = camada_de.get(e.id, "TEXTO")
+            perfil_e = str(m.get("perfil") or e.nome)
+            perfis_cam[(sub_camada.get((cam_, com_bitola(perfil_e)), cam_), perfil_e)] += 1
+        ordem_cam = {k: i for i, k in enumerate(CAMADAS_PECAS)}
+        for k_ in desenho.camadas:
+            base_ = k_.split(" ")[0]
+            if base_ in CAMADAS_PECAS and k_ != base_:
+                ordem_cam[k_] = ordem_cam[base_] + 0.1
     y = alt + (off * n_topo + 12.0) * esc           # por cima dos níveis de cota do banzo de cima
 
     def quebrar(prefixo, itens, largura=64):
@@ -2673,6 +2684,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     # uma linha por tipo de peça, na cor dela: "U100X50X4.18" (banzos, azul), "U88X40X2.25 /
     # U100X50X3.04" (diagonais, laranja)…; as chapas pela espessura ("PLATE 400x120x13" → #13)
     por_cam: Dict[str, List[str]] = collections.OrderedDict()
+    ja_listados = set()                             # com as cores por perfil: cada perfil uma linha só
     for (cam_, perfil_), _q in sorted(perfis_cam.items(), key=lambda kv: (ordem_cam.get(kv[0][0], 99), _ordem_natural(kv[0][1]))):
         if not perfil_:
             continue
@@ -2680,7 +2692,11 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             m_esp = re.search(r"x\s*([\d.,]+)\s*$", perfil_)
             perfil_ = "#" + m_esp.group(1).replace(".", ",") if m_esp else perfil_
         perfil_ = com_bitola(perfil_)               # U100X50X4.18 → U100X50X#8, como a fábrica escreve
-        lista_ = por_cam.setdefault(cam_ if cam_ in CAMADAS_PECAS else "TEXTO", [])
+        if sub_camada and cam_ != "CHAPAS":
+            if perfil_ in ja_listados:
+                continue
+            ja_listados.add(perfil_)
+        lista_ = por_cam.setdefault(cam_ if (cam_ in CAMADAS_PECAS or cam_ in desenho.camadas) else "TEXTO", [])
         if perfil_ not in lista_:
             lista_.append(perfil_)
     for cam_, lista_ in por_cam.items():
@@ -2728,6 +2744,63 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
 
 #: Entre as linhas de cota de baixo da tesoura montada (a cadeia, as metades, a total), mm de papel.
 PASSO_COTA_TESOURA = 7.0
+
+
+#: As cores dos perfis quando um conjunto tem mais de um na mesma função: cada perfil a sua, a mesma em
+#: todas as funções e em todo o desenho; a primeira livre da função (banzo azul-claro, diagonal laranja,
+#: montante roxo), depois as de reserva — nenhuma verde (é a cor das cotas) nem ouro (as chapas).
+CORES_POR_PERFIL = {
+    "BANZOS": ["#22a7c2", "#2563eb", "#dc2626", "#0e7490"],
+    "DIAGONAIS": ["#e67e22", "#9a3412", "#be185d"],
+    "MONTANTES": ["#a855f7", "#ec4899", "#6366f1", "#7e22ce"],
+}
+CORES_DE_RESERVA = ["#0891b2", "#be185d", "#4f46e5", "#b45309", "#7c3aed", "#475569"]
+
+
+def _camadas_por_perfil(desenho: Desenho, marca: str, instancia: Sequence[Solido], camada_de: Dict[str, str]) -> Dict[tuple, str]:
+    """Banzos, diagonais e montantes com mais de um perfil numa função: cada perfil numa camada
+    ("BANZOS U100X50X#9") com a cor dele — o mesmo perfil, a mesma cor, em qualquer função e em todos os
+    conjuntos do desenho —, e as linhas do conjunto passam para ela. Devolve {(função, perfil): camada};
+    vazio se toda função tem um perfil só (fica a cor da função)."""
+    from nucleo2d.desenho import Camada2D
+    por_funcao: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    perfil_de: Dict[str, str] = {}
+    for e in instancia:
+        cam_ = camada_de.get(e.id)
+        if cam_ not in CORES_POR_PERFIL:
+            continue
+        perfil_e = com_bitola(str(_marcas(e).get("perfil") or e.nome))
+        perfil_de[e.id] = perfil_e
+        por_funcao[cam_][perfil_e] += 1
+    if not any(len(perfis) > 1 for perfis in por_funcao.values()):
+        return {}
+    # as cores já dadas no desenho (outras tesouras): perfil → cor
+    cor_de: Dict[str, str] = {}
+    for nome_c, cam in desenho.camadas.items():
+        base_, _sp, perfil_c = nome_c.partition(" ")
+        if base_ in CORES_POR_PERFIL and perfil_c:
+            cor_de.setdefault(perfil_c, cam.cor)
+    mapa: Dict[tuple, str] = {}
+    for cam_ in CORES_POR_PERFIL:
+        perfis = por_funcao.get(cam_)
+        for perfil_e, _n in sorted((perfis or {}).items(), key=lambda kv: (-kv[1], _ordem_natural(kv[0]))):
+            if perfil_e not in cor_de:
+                usadas = set(cor_de.values())
+                livres = [c for c in CORES_POR_PERFIL[cam_] + CORES_DE_RESERVA if c not in usadas]
+                cor_de[perfil_e] = livres[0] if livres else CORES_DE_RESERVA[len(cor_de) % len(CORES_DE_RESERVA)]
+            nome_c = "%s %s" % (cam_, perfil_e)
+            if nome_c not in desenho.camadas:
+                base = desenho.camadas.get(cam_)
+                desenho.camadas[nome_c] = Camada2D(nome_c, cor_de[perfil_e], espessura=base.espessura if base else 0.35)
+            mapa[(cam_, perfil_e)] = nome_c
+    for e in desenho.entidades.values():
+        a = e.atributos or {}
+        if a.get("conjunto") != marca or e.camada not in CORES_POR_PERFIL:
+            continue
+        perfil_e = perfil_de.get(a.get("origem"))
+        if perfil_e and (e.camada, perfil_e) in mapa:
+            e.camada = mapa[(e.camada, perfil_e)]
+    return mapa
 
 
 # ============================================================ tesouras montadas

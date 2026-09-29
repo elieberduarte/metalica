@@ -875,6 +875,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         desenho.metadados["gerado_por"] = "detalhamento"
         desenho.metadados["versao"] = versao.VERSAO
         desenho.metadados["geracao"] = geracao       # o CAD recarrega o desenho aberto quando ela muda
+        _vivos().aplicar_cores(s, desenho)           # as cores escolhidas no CAD (um perfil, uma camada)
         salvo = g.salvar_desenho(s, nome, desenho.dict())
         geracoes[salvo["nome"]] = geracao
         desenhos.append({"grupo": chave, "nome": salvo["nome"], "titulo": nome,
@@ -2182,6 +2183,7 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
                 meta = (g.abrir_desenho(s, n) or {}).get("metadados") or {}
                 if meta.get("gerado_por") == "pranchas":
                     g.excluir_desenho(s, n)
+    _vivos().aplicar_cores(s, junto)                  # as cores escolhidas no CAD
     salvo = g.salvar_desenho(s, titulo, junto.dict())
     _vivos().registrar_desenho(s, salvo["nome"], junto.metadados["geracao"])
     saida = [{"titulo": f.nome, "numero": f.metadados["prancha"]["numero"], "entidades": f.tamanho,
@@ -2263,6 +2265,7 @@ def pranchas_das_folhas(s: str, nome: str, corpo: dict) -> dict:
     junto = juntar_pranchas(folhas, nome=titulo)
     junto.metadados["gerado_por"] = "folhas"
     junto.metadados["geracao"] = _vivos().nova_geracao()
+    _vivos().aplicar_cores(s, junto)                  # as cores escolhidas no CAD
     salvo = g.salvar_desenho(s, titulo, junto.dict())
     _vivos().registrar_desenho(s, salvo["nome"], junto.metadados["geracao"])
     g.tocar(s)
@@ -3315,6 +3318,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(reconhecer_no_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 3 and partes[1] == "desenhos":
                     return self._json(salvar_desenho_do_cad(partes[0], partes[2], corpo))
+                if len(partes) == 2 and partes[1] == "cores-camadas":
+                    return self._json(_vivos().gravar_cores(partes[0], corpo.get("camadas") or {}, str(corpo.get("aberto") or "")))
                 if len(partes) == 3 and partes[1] == "desenhos-vivos" and partes[2] == "atualizar":
                     _vivos().atualizar(partes[0], "pedido na tela")
                     return self._json(_vivos().estado(partes[0], conferir=False))

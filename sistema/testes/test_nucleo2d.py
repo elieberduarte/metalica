@@ -65,6 +65,21 @@ def test_desenho_para_dxf_aplica_escala_no_que_e_de_papel():
     assert "CIRCLE" not in d.para_dxf().dxf()
 
 
+
+def test_dxf_declara_as_camadas_do_desenho_com_a_cor():
+    """as camadas do desenho (banzos, um perfil por camada…) saem na tabela do DXF com a cor ACI mais perto,
+    e com nome que o R12 aceita; o DXF do PDF guarda o nome do CAD (é por ele que sai a cor)"""
+    from nucleo2d.desenho import Camada2D
+    d = Desenho(nome="T", escala=20)
+    d.camadas["BANZOS U100X50X#9"] = Camada2D("BANZOS U100X50X#9", "#2563eb")
+    d.add(Linha(a=(0, 0), b=(100, 0), camada="BANZOS U100X50X#9"))
+    dxf = d.para_dxf().dxf()
+    assert "\n8\nBANZOS_U100X50X_9\n" in dxf and "\n2\nBANZOS_U100X50X_9\n70\n0\n62\n" in dxf
+    i = dxf.index("\n2\nBANZOS_U100X50X_9\n")
+    assert dxf[i:].split("\n62\n")[1].split("\n")[0] not in ("7", "")
+    assert "\n8\nBANZOS U100X50X#9\n" in d.para_dxf(texto_unicode=True).dxf()
+
+
 def test_formatos():
     assert formatar_mm(1000.0) == "1000" and formatar_mm(12.34) == "12,3" and formatar_mm(99.97) == "100"
     assert escala_sugerida(3000, 2000) == 5 and escala_sugerida(20000, 8000) == 50

@@ -663,7 +663,22 @@ def test_nomes_de_producao_no_modelo_real():
     assert itens_t.get("T1") == "tesoura montada (metades T1 + T1)" and itens_t.get("T2") == "tesoura montada (metades T1 + T2)"
     # camadas por tipo de peça
     cams = {e.camada for e in r["desenhos"]["tesouras"].entidades.values()}
-    assert {"BANZOS", "DIAGONAIS", "CHAPAS"} <= cams
+    assert {"BANZOS", "DIAGONAIS", "CHAPAS"} <= {c.split(" ")[0] for c in cams}
+    # a função com mais de um perfil: um perfil por camada, cada uma com a cor dela (28/09) — os banzos da
+    # T1 são U100X50 #11, #9 e #8
+    bz = sorted(c for c in cams if c.startswith("BANZOS "))
+    assert len(bz) >= 2
+    camadas_d = r["desenhos"]["tesouras"].camadas
+    assert len({camadas_d[c].cor for c in bz}) == len(bz)
+    # o mesmo perfil, a mesma cor em qualquer função e em todo o desenho (cada tipo de chapa uma cor)
+    cor_perfil = {}
+    for c in cams:
+        base_, _sp, perfil_c = c.partition(" ")
+        if base_ in ("BANZOS", "DIAGONAIS", "MONTANTES") and perfil_c:
+            assert cor_perfil.setdefault(perfil_c, camadas_d[c].cor) == camadas_d[c].cor, c
+    assert len(set(cor_perfil.values())) == len(cor_perfil)
+    # a telha fica só na prancha das telhas: na tesoura, nem a linha dela nem o parafuso (28/09)
+    assert not any(c.startswith("TELHA") for c in cams)
     cams_b = {e.camada for e in r["desenhos"]["barras"].entidades.values()}
     assert {"TERCAS", "TIRANTES", "DIAGONAIS"} <= cams_b
     assert nm["camadas_2d"]["M13"] == "TERCAS" and nm["camadas_2d"]["P10"] == "MONTANTES"

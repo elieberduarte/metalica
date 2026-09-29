@@ -56,6 +56,9 @@ class Desenho:
         self.entidades: List[str] = []
         self.extremos = [1e20, 1e20, -1e20, -1e20]   # xmin, ymin, xmax, ymax
         self.unidade_mm = unidade_mm
+        #: camadas além das padrão (nome, cor ACI, tipo de linha): as do desenho 2D — banzos, diagonais,
+        #: um perfil por camada… — com a cor do CAD mais próxima na paleta do AutoCAD
+        self.camadas_extras: List[Tuple[str, int, str]] = []
 
     # ---------- controle ----------
     def _limites(self, *pontos):
@@ -323,8 +326,10 @@ class Desenho:
             for v in padrao[1:]:
                 s += _par(49, f"{v:.4f}")
         s += _par(0, "ENDTAB")
-        s += _par(0, "TABLE") + _par(2, "LAYER") + _par(70, len(CAMADAS))
-        for nome, cor, tipo in CAMADAS:
+        fixas = {n for n, _c, _t in CAMADAS}
+        todas = CAMADAS + [c for c in self.camadas_extras if c[0] not in fixas]
+        s += _par(0, "TABLE") + _par(2, "LAYER") + _par(70, len(todas))
+        for nome, cor, tipo in todas:
             s += (_par(0, "LAYER") + _par(2, nome) + _par(70, 0) +
                   _par(62, cor) + _par(6, tipo))
         s += _par(0, "ENDTAB")
@@ -346,6 +351,44 @@ class Desenho:
         with open(caminho, "w", encoding=codificacao, errors="replace", newline="\r\n") as f:
             f.write(self.dxf())
         return caminho
+
+
+def _paleta_aci():
+    """As cores da paleta do AutoCAD (ACI 1–9 e 10–249: 24 matizes × 5 brilhos × cheia/pálida), em RGB."""
+    import colorsys
+    pal = {1: (255, 0, 0), 2: (255, 255, 0), 3: (0, 255, 0), 4: (0, 255, 255), 5: (0, 0, 255),
+           6: (255, 0, 255), 7: (255, 255, 255), 8: (128, 128, 128), 9: (192, 192, 192)}
+    brilho = [1.0, 0.8, 0.6, 0.5, 0.3]
+    for i in range(10, 250):
+        h = ((i // 10) - 1) * 15.0 / 360.0
+        sub = i % 10
+        r, g, b = colorsys.hsv_to_rgb(h, 1.0 if sub % 2 == 0 else 0.5, brilho[sub // 2])
+        pal[i] = (int(r * 255), int(g * 255), int(b * 255))
+    return pal
+
+
+_PALETA_ACI = None
+
+
+def aci_mais_proxima(cor: str) -> int:
+    """"#rrggbb" → o índice ACI de cor mais perto (7 se não for uma cor)."""
+    global _PALETA_ACI
+    try:
+        c = cor.lstrip("#")
+        rgb = (int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16))
+    except (ValueError, AttributeError, IndexError):
+        return 7
+    if _PALETA_ACI is None:
+        _PALETA_ACI = _paleta_aci()
+    if max(rgb) < 40:
+        return 7                                     # preto no papel = branco na tela do AutoCAD
+    return min(_PALETA_ACI, key=lambda i: sum((a - b) ** 2 for a, b in zip(_PALETA_ACI[i], rgb)))
+
+
+def nome_de_camada_r12(nome: str) -> str:
+    """O nome da camada no que o DXF R12 aceita (letras, números, $, - e _): sem acento, o resto vira _."""
+    import re
+    return re.sub(r"[^A-Za-z0-9$_-]", "_", _ascii(nome or "0").replace("%%c", "D")) or "0"
 
 
 def _ascii(texto: str) -> str:

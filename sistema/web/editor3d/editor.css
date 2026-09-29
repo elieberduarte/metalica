@@ -4,6 +4,7 @@
    Todas as cores são variáveis; os temas só redefinem as variáveis.
    ========================================================================= */
 
+:root[data-tema="claro"] { color-scheme: light; }
 :root {
   /* identidade */
   --azul: #0b3d91;
@@ -62,6 +63,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-tema="claro"]) {
+    color-scheme: dark;
     --azul: #7aa7f0;
     --azul2: #6d9df0;
     --azul-tinta: #a8c6f7;
@@ -103,6 +105,7 @@
 }
 
 :root[data-tema="escuro"] {
+  color-scheme: dark;
   --azul: #7aa7f0;
   --azul2: #6d9df0;
   --azul-tinta: #a8c6f7;

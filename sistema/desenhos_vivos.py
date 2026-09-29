@@ -257,3 +257,96 @@ def desenho_gravado(s: str, nome: str, desenho: dict):
     except Exception:                                           # noqa: BLE001
         return
     _agendar((s, "pranchas"), ESPERA_FOLHAS, lambda: atualizar(s, "folhas mudaram", so_pranchas=True))
+
+
+# ------------------------------------------------------------------ cores escolhidas no CAD
+# A cor de uma camada mudada no CAD (a de um perfil: "BANZOS U100X50X#9", pedido do usuário, 28/09) é
+# do projeto: fica em `detalhamento/cores-camadas.json` e vale em todo desenho gerado depois (a atualização
+# automática refaz os desenhos com as cores de fábrica) e nos desenhos já gravados (as pranchas).
+FUNCOES_DE_PERFIL = ("BANZOS", "DIAGONAIS", "MONTANTES")
+
+
+def _arq_cores(s: str) -> str:
+    return os.path.join(_funcoes["gerente"]()._existente(s), "detalhamento", "cores-camadas.json")
+
+
+def cores_do_usuario(s: str) -> dict:
+    """{camada: "#rrggbb"} escolhidas no CAD para o projeto"""
+    try:
+        with open(_arq_cores(s), encoding="utf-8") as f:
+            d = json.load(f)
+        return {str(k): str(v) for k, v in d.items() if isinstance(v, str) and v.startswith("#")} if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _perfil_da_camada(nome: str) -> str:
+    base, _sp, perfil = str(nome).partition(" ")
+    return perfil if base in FUNCOES_DE_PERFIL and perfil else ""
+
+
+def cor_escolhida(cores: dict, nome: str):
+    """a cor da camada, ou a do mesmo perfil em outra função (o perfil tem uma cor só); None sem escolha"""
+    if nome in cores:
+        return cores[nome]
+    perfil = _perfil_da_camada(nome)
+    if perfil:
+        for k, v in cores.items():
+            if _perfil_da_camada(k) == perfil:
+                return v
+    return None
+
+
+def aplicar_cores(s: str, desenho, cores: dict = None) -> int:
+    """põe as cores escolhidas nas camadas do desenho (o objeto Desenho ou o dict gravado); devolve quantas mudaram"""
+    cores = cores_do_usuario(s) if cores is None else cores
+    if not cores:
+        return 0
+    camadas = desenho.get("camadas") if isinstance(desenho, dict) else desenho.camadas
+    n = 0
+    for nome, cam in (camadas or {}).items():
+        cor = cor_escolhida(cores, nome)
+        if not cor:
+            continue
+        if isinstance(cam, dict):
+            if cam.get("cor") != cor:
+                cam["cor"] = cor
+                n += 1
+        elif getattr(cam, "cor", None) != cor:
+            cam.cor = cor
+            n += 1
+    return n
+
+
+def gravar_cores(s: str, novas: dict, aberto: str = "") -> dict:
+    """POST .../cores-camadas {camadas: {nome: cor}, aberto}: guarda as cores e as põe nos desenhos já
+    gravados do projeto (em segundo plano), menos o aberto no CAD — que grava o dele"""
+    import re
+    cores = cores_do_usuario(s)
+    for k, v in (novas or {}).items():
+        if isinstance(v, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", v):
+            cores[str(k)] = v.lower()
+    arq = _arq_cores(s)
+    os.makedirs(os.path.dirname(arq), exist_ok=True)
+    tmp = arq + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cores, f, ensure_ascii=False, indent=1, sort_keys=True)
+    os.replace(tmp, arq)
+
+    def nos_desenhos():
+        g = _funcoes["gerente"]()
+        with trava(s):                                # nunca junto com a atualização dos desenhos
+            for item in g.listar_desenhos(s, contar=False):
+                if item["nome"] == aberto:
+                    continue
+                try:
+                    caminho = g._caminho_desenho(s, item["nome"])
+                    antes = _assinatura_arquivo(caminho)
+                    d = g.abrir_desenho(s, item["nome"])
+                    if aplicar_cores(s, d, cores) and _assinatura_arquivo(caminho) == antes:
+                        g.salvar_desenho(s, item["nome"], d)
+                except Exception:                     # noqa: BLE001 — um desenho que não abre não para os outros
+                    traceback.print_exc()
+    t = threading.Thread(target=nos_desenhos, daemon=True, name="cores-" + s)
+    t.start()
+    return {"ok": True, "cores": cores}

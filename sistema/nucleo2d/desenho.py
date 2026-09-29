@@ -300,11 +300,17 @@ class Desenho:
         from saida.dxf import Desenho as DXF
         k = float(escala or self.escala or 1.0)
         d = DXF(self.nome, texto_unicode=texto_unicode)
+        from saida.dxf import aci_mais_proxima, nome_de_camada_r12
+        # no DXF para o AutoCAD, o nome da camada no que o R12 aceita ("BANZOS U100X50X#9" →
+        # "BANZOS_U100X50X_9"); o do PDF (texto_unicode) fica como no CAD, que é por ele que sai a cor
+        nome_cam = (lambda n: _camada_dxf(n)) if texto_unicode else (lambda n: nome_de_camada_r12(_camada_dxf(n)))
+        d.camadas_extras = [(nome_cam(n), aci_mais_proxima(c.cor), "CONTINUOUS")
+                            for n, c in self.camadas.items() if _camada_dxf(n) == n and getattr(c, "cor", None)]
         for e in self.entidades.values():
             cam = self.camadas.get(e.camada)
             if cam is not None and not cam.visivel:
                 continue
-            camada = _camada_dxf(e.camada)
+            camada = nome_cam(e.camada)
             if isinstance(e, Linha):
                 d.linha(*e.a, *e.b, camada)
             elif isinstance(e, Polilinha):
@@ -319,7 +325,7 @@ class Desenho:
             elif isinstance(e, Cota):
                 # o número da cota na camada do texto (preto no papel), a linha na da cota (28/09)
                 _cota_dxf(d, e, k, camada, terminador=(e.terminador or (self.metadados.get("estilo") or {}).get("terminador") or TERMINADOR_PADRAO),
-                          camada_texto=_camada_dxf("TEXTO") if "TEXTO" in self.camadas else None)
+                          camada_texto=nome_cam("TEXTO") if "TEXTO" in self.camadas else None)
             elif isinstance(e, Hachura):
                 for contorno in e.contornos[:1]:      # o primeiro é o externo; os outros ficam vazios
                     if e.padrao == "solido" and len(contorno) >= 3:

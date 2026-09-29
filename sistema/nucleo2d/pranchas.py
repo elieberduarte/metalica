@@ -1097,6 +1097,11 @@ def pdf_dos_desenhos(desenhos: Sequence[Desenho], caminho_pdf: str, margem: floa
                 continue
             # as camadas por tipo de peça (banzos, diagonais…) saem na cor delas, como no CAD
             cores = {n: (d.camadas[n].cor if n in d.camadas else c) for n, (c, _e) in CAMADAS_PECAS.items()}
+            # e as camadas do desenho que não são as da tabela do DXF — um perfil por camada ("BANZOS
+            # U100X50X#9", 28/09), as telhas por tipo —, na cor do CAD
+            from saida.dxf import CAMADAS as _CAMADAS_DXF
+            fixas = {n for n, _c, _t in _CAMADAS_DXF}
+            cores.update({n: cam.cor for n, cam in d.camadas.items() if n not in fixas and n not in cores and getattr(cam, "cor", None)})
             # o desenho das pranchas lado a lado: uma página por folha, cada uma renderizando só o que
             # é dela (as 12 folhas da Sala inteiras, 12 vezes, levavam 5 min)
             partes = _por_folha(d) if d.metadados.get("pranchas") else [d]

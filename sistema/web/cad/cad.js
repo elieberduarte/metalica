@@ -1113,6 +1113,18 @@ class CAD {
     g.append(el('label', { texto: 'Camada' }), this._seletorCamada(camadas.size === 1 ? ents[0].camada : '', (v) => {
       const m = {}; for (const id of ids) m[id] = { camada: v }; this.executar(new ComandoAlterar(m, 'Trocar camada'));
     }, camadas.size !== 1));
+    // a cor: a da camada — muda o texto e as linhas dela; numa camada de perfil ("BANZOS U100X50X#9"),
+    // o perfil inteiro, em qualquer função (pedido do usuário, 28/09)
+    if (camadas.size === 1 && this.doc.camadas.get(ents[0].camada)) {
+      const nomeC = ents[0].camada;
+      const cor = el('input', { type: 'color', value: this.doc.camadas.get(nomeC).cor || '#888888',
+        title: 'Cor da camada: muda tudo o que está nela (o texto e as linhas); fica gravada no projeto' });
+      cor.addEventListener('change', () => this.mudarCorDaCamada(nomeC, cor.value));
+      const grupo = this._camadasDoPerfil(nomeC);
+      g.append(el('label', { texto: 'Cor' }), el('div', { style: 'display:flex;gap:6px;align-items:center;min-width:0' }, cor,
+        el('span', { class: 'nada', style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
+          texto: grupo.length > 1 ? `o perfil ${nomeC.split(' ').slice(1).join(' ')} (${grupo.length} camadas)` : `a camada ${nomeC}` })));
+    }
     this._carimboDaFolha(g, ents);
     this._tamanhoDoTexto(g, ents);
     if (ids.length === 1) {
@@ -1162,6 +1174,27 @@ class CAD {
     raiz.append(g);
   }
 
+  /** as camadas do mesmo perfil ("BANZOS U100X50X#11", "MONTANTES U100X50X#11"…): um perfil, uma cor */
+  _camadasDoPerfil(nome) {
+    const m = /^(BANZOS|DIAGONAIS|MONTANTES) (.+)$/.exec(nome || '');
+    if (!m) return [nome];
+    return [...this.doc.camadas.keys()].filter(n => { const k = /^(BANZOS|DIAGONAIS|MONTANTES) (.+)$/.exec(n); return k && k[2] === m[2]; });
+  }
+
+  /** muda a cor da camada (e das outras do mesmo perfil) e guarda no projeto: vale nos desenhos
+   *  refeitos pela atualização automática e nas pranchas */
+  mudarCorDaCamada(nome, cor) {
+    const nomes = this._camadasDoPerfil(nome).filter(n => this.doc.camadas.has(n));
+    if (!nomes.length) return;
+    const cmds = nomes.map(n => new ComandoAparencia(n, { cor }));
+    this.executar(cmds.length === 1 ? cmds[0] : new ComandoComposto(cmds, `Cor de ${nome}`));
+    if (!this.projeto) return;
+    const camadas = {}; for (const n of nomes) camadas[n] = cor;
+    postar(`/api/projetos/${encodeURIComponent(this.projeto)}/cores-camadas`, { camadas, aberto: this.nomeDesenho || '' })
+      .then(() => this.dica(nomes.length > 1 ? `Cor do perfil gravada no projeto (${nomes.length} camadas) — vale também nas pranchas.` : `Cor de ${nome} gravada no projeto.`))
+      .catch(e => this.aviso(`A cor mudou aqui, mas não foi gravada no projeto: ${e.message}`, 'erro'));
+  }
+
   _seletorCamada(atual, aoMudar, varios = false) {
     const s = el('select', {}, varios ? el('option', { value: '', texto: '— várias —' }) : null,
       ...[...this.doc.camadas.keys()].map(n => el('option', { value: n, texto: n, selected: n === atual ? 'selected' : undefined })));
@@ -1183,7 +1216,7 @@ class CAD {
       const vis = el('button', { type: 'button', class: 'alternador', html: olho(c.visivel !== false), title: c.visivel === false ? 'Mostrar' : 'Ocultar',
         onclick: () => this.executar(new ComandoAparencia(nome, { visivel: c.visivel === false })) });
       const cor = el('input', { type: 'color', value: c.cor, title: 'Cor da camada' });
-      cor.addEventListener('change', () => this.executar(new ComandoAparencia(nome, { cor: cor.value })));
+      cor.addEventListener('change', () => this.mudarCorDaCamada(nome, cor.value));
       linha.addEventListener('click', (ev) => { if (ev.target.closest('button, input')) return; this.camadaAtiva = nome; this._agendarPaineis('camadas', 'props'); this.dica(`Camada ativa: ${nome}`); });
       linha.addEventListener('dblclick', (ev) => { if (ev.target.closest('button, input')) return; this.selecionar([...this.doc.entidades.values()].filter(e => e.camada === nome).map(e => e.id)); });
       linha.append(vis, cor, el('span', { class: 'nome', texto: nome }), el('span', { class: 'contagem', texto: numero(cont.get(nome) || 0) }));

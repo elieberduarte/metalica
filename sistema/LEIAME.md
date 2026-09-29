@@ -251,6 +251,18 @@ esquerda, pela borda da tesoura; duas tesouras por prancha quando cabem, a de ba
 vazio da de cima; chamadas das chapas e dos chumbamentos ("CB1 + CH9", um em cada apoio), com a prancha do detalhe;
 o chumbamento primeiro nos DETALHES. No CAD, o número da cota na cor do texto (branco no escuro, preto no papel), o
 texto da chamada arrastado pela alça com a linha acompanhando, e o F5 na área de trabalho volta ao desenho aberto.
+**Uma cor por chapa** (pedido do usuário, 28/09): no conjunto com mais de um perfil numa função — os banzos da T1
+são U100X50 #11, #9 e #8 —, cada perfil vai para uma camada dele ("BANZOS U100X50X#9") com uma cor, a mesma em
+banzo, diagonal ou montante e em todas as tesouras do desenho (verde e ouro ficam de fora: são as cotas e as
+chapas); a legenda lista cada perfil uma vez, na cor dele, e o PDF das pranchas sai com essas cores. O DXF para o
+AutoCAD passa a declarar as camadas do desenho (banzos, diagonais, os perfis) com a cor ACI mais perto e nome que o
+R12 aceita ("BANZOS_U100X50X_9") — antes abriam todas brancas. **A cor pela seleção** (pedido do usuário, 28/09):
+nas Propriedades, a linha "Cor" muda a camada do que está selecionado — o texto da legenda e as linhas do perfil
+juntos; numa camada de perfil, o perfil em todas as funções. A cor escolhida (ali ou no painel Camadas) fica no
+projeto (`detalhamento/cores-camadas.json`): vale nos desenhos refeitos pela atualização automática, nas pranchas e
+nos desenhos já gravados. **A telha sai da tesoura**: a linha dela e o parafuso na terça ficam só na prancha das
+telhas (pedido do usuário, 28/09). No tema escuro, os botões do painel de Propriedades (Peça…, A−, A+) e as barras
+de rolagem saíam brancos: o tema diz ao navegador que é escuro (`color-scheme`).
 
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
 sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da

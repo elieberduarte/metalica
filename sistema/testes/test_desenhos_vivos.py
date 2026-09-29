@@ -49,3 +49,44 @@ def test_quando_o_detalhamento_fica_velho(tmp_path):
     dv.registrar_desenho("p", "pranchas", "g4")
     d = json.loads((tmp_path / "p" / "detalhamento" / "carimbo.json").read_text(encoding="utf-8"))["desenhos"]
     assert d == {"detalhamento-tesouras": "g2", "detalhamento-terças": "g3", "pranchas": "g4"}
+
+
+def test_cores_escolhidas_no_cad_valem_no_projeto(tmp_path):
+    """a cor mudada no CAD (um perfil, pedido do usuário, 28/09) fica no projeto: vale nos desenhos gerados
+    depois e nos já gravados, menos o aberto no CAD; o mesmo perfil em outra função pega a mesma cor"""
+    import time as _t
+    from nucleo2d.desenho import Camada2D, Desenho
+
+    class _G(_Gerente):
+        def __init__(self, raiz):
+            super().__init__(raiz)
+            self.gravados = {"pranchas": {"camadas": {"DIAGONAIS U92X30X#13": {"cor": "#e67e22"}, "TEXTO": {"cor": "#000000"}}},
+                             "tesouras": {"camadas": {"DIAGONAIS U92X30X#13": {"cor": "#e67e22"}}}}
+            self.desenhos = [{"nome": n} for n in self.gravados]
+
+        def _caminho_desenho(self, s, nome):
+            return os.path.join(self.raiz, s, nome + ".desenho.json")
+
+        def abrir_desenho(self, s, nome):
+            return json.loads(json.dumps(self.gravados[nome]))
+
+        def salvar_desenho(self, s, nome, d):
+            self.gravados[nome] = d
+
+    g = _G(str(tmp_path))
+    os.makedirs(tmp_path / "p")
+    dv.configurar(gerente=lambda: g)
+    assert dv.cores_do_usuario("p") == {}
+    r = dv.gravar_cores("p", {"DIAGONAIS U92X30X#13": "#123ABC", "X": "vermelho"}, aberto="tesouras")
+    assert r["cores"] == {"DIAGONAIS U92X30X#13": "#123abc"}
+    for _ in range(50):
+        if g.gravados["pranchas"]["camadas"]["DIAGONAIS U92X30X#13"]["cor"] == "#123abc":
+            break
+        _t.sleep(0.05)
+    assert g.gravados["pranchas"]["camadas"]["DIAGONAIS U92X30X#13"]["cor"] == "#123abc"
+    assert g.gravados["tesouras"]["camadas"]["DIAGONAIS U92X30X#13"]["cor"] == "#e67e22"     # o aberto: o CAD grava
+    d = Desenho(nome="novo")
+    d.camadas["MONTANTES U92X30X#13"] = Camada2D("MONTANTES U92X30X#13", "#a855f7")
+    d.camadas["BANZOS U100X50X#9"] = Camada2D("BANZOS U100X50X#9", "#2563eb")
+    assert dv.aplicar_cores("p", d) == 1
+    assert d.camadas["MONTANTES U92X30X#13"].cor == "#123abc" and d.camadas["BANZOS U100X50X#9"].cor == "#2563eb"

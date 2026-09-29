@@ -121,6 +121,23 @@ try:
     ok(aba.avaliar("window.cad.doc.vistas.length") == 2, "segunda vista inserida no desenho (%s objetos)" % aba.avaliar("window.cad.doc.tamanho"))
     aba.drenar(1.0); foto(aba, "cad_4_duas_vistas.png")
 
+    # tema escuro no painel de propriedades e a cor da camada pela seleção, gravada no projeto (28/09)
+    aba.avaliar("document.documentElement.dataset.tema = 'escuro'; 1")
+    alvo = aba.avaliar("(() => { const e = [...window.cad.doc.entidades.values()].find(e => e.tipo === 'texto') || [...window.cad.doc.entidades.values()][0]; window.cad.selecionar([e.id]); return e.camada; })()")
+    aba.drenar(0.6)
+    ok(aba.avaliar("!!document.querySelector('.props input[type=color]')"), f"propriedades com a cor da camada {alvo}")
+    fundo = aba.avaliar("(() => { const b = document.querySelector('.props .linha-peca button'); if (!b) return null; const m = getComputedStyle(b).backgroundColor.match(/\\d+/g).map(Number); return m[0] + m[1] + m[2]; })()")
+    ok(fundo is not None and fundo < 300, f"no escuro o botão Peça… é escuro (soma RGB {fundo})")
+    ok(aba.avaliar("getComputedStyle(document.documentElement).colorScheme") == "dark", "color-scheme escuro (barras de rolagem e campos nativos)")
+    foto(aba, "cad_5_props_escuro.png")
+    aba.avaliar("window.cad.mudarCorDaCamada(%s, '#123456'); 1" % json.dumps(alvo))
+    arq_cores = os.path.join(DADOS, "compressores", "detalhamento", "cores-camadas.json")
+    t0 = time.time()
+    while time.time() - t0 < 10 and not os.path.exists(arq_cores): aba.drenar(0.3)
+    cores_g = json.load(open(arq_cores, encoding="utf-8")) if os.path.exists(arq_cores) else {}
+    ok(cores_g.get(alvo) == "#123456" and aba.avaliar("window.cad.doc.camadas.get(%s).cor" % json.dumps(alvo)) == "#123456",
+       f"cor da camada mudada no CAD e gravada no projeto: {cores_g}")
+
     erros = [c for c in aba.console if c[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")
     for t, x in erros[:8]: print("     [%s] %s" % (t, x[:300]))
