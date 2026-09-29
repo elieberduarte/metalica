@@ -574,3 +574,25 @@ def test_prancha_dos_chumbadores():
     cels = [c["titulo"] for c in folhas[0].metadados["prancha"]["celulas"]]
     if any(t.startswith("CB") for f in folhas for t in (c["titulo"] for c in f.metadados["prancha"]["celulas"])):
         assert "CHUMBAMENTO – CHAPAS E BARRAS" in tit and any(t.startswith("CB") for t in cels), cels
+
+
+def test_telhas_numa_prancha_so():
+    """As telhas numa prancha só: sem as peças uma a uma (TL…), a face de cobertura repetida junta com a
+    igual ("FACES 2 E 3"), as vistas reduzidas até caberem (pedido do usuário, 28/09)."""
+    import os
+    import re
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from test_detalhar2d import _modelo_real
+    from nucleo2d import detalhar as det
+    from nucleo2d.pranchas import montar_pranchas
+    doc = _modelo_real()
+    r = det.detalhar(doc, grupos=["telhas"], converter=False)
+    if "telhas" not in r["desenhos"]:
+        return
+    folhas = montar_pranchas([{"nome": "detalhamento-telhas", "desenho": r["desenhos"]["telhas"]}], formato="A1")
+    tit = [c["titulo"] for f in folhas for c in f.metadados["prancha"]["celulas"]]
+    assert not any(re.match(r"TL\d", t) for t in tit), tit
+    faces = [t for t in tit if t.startswith("FACE")]
+    if faces:
+        assert len(folhas) == 1, [[c["titulo"] for c in f.metadados["prancha"]["celulas"]] for f in folhas]

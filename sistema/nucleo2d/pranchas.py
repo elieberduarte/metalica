@@ -281,7 +281,7 @@ def _conteudo_de(cels: Sequence[dict]) -> List[str]:
             continue                                  # o detalhe de furos é da tesoura, que já está na lista
         it = c.get("item") or {}
         cat = (c.get("categoria") or it.get("categoria") or "VISTAS").upper()
-        cat = {"CHUMBACAO": "PLANTA DE CHUMBAÇÃO"}.get(cat, cat)
+        cat = {"CHUMBACAO": "PLANTA DE CHUMBAÇÃO", "TELHAS_DET": "TELHAS"}.get(cat, cat)
         nome = (it.get("nome") or c.get("montagem") or c.get("marca") or c.get("desenho_titulo") or c["titulo"]).replace("Detalhamento – ", "")
         q = _quantidade_da_celula(c) if (it or c.get("montagem")) else 0
         if q:
@@ -405,6 +405,48 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         if c["categoria"] == "CONJUNTOS" and re.match(r"(A\.[CLD]\.|CV\.)", str((c.get("item") or {}).get("nome") or c.get("titulo") or "")):
             c["categoria"] = "CONTRAVENTOS"
     qx0, qx1 = ux0 + QUADRO_MARGEM, ux1 - QUADRO_MARGEM
+    # as telhas numa prancha só (pedido do usuário, 28/09): sem as peças uma a uma (TL7…) nem a face repetida
+    # (a FACE 3 = FACE 2), as vistas no quadro das telhas na escala que as faz caber, e os detalhes (a
+    # multidobra tipo, a cumeeira) na faixa de baixo
+    tel = [c for c in itens if "telha" in str(c.get("fonte") or "").lower()]
+    if tel:
+        fora_t, faces = [], {}
+        for c in tel:
+            t = str(c.get("titulo") or "")
+            if (c.get("item") or {}).get("tipo") == "telha" or re.match(r"TL\d", t):
+                fora_t.append(c)
+                continue
+            m_f = re.match(r"FACE (\d+) – (.*)", t)
+            if m_f and "COBERTURA" in m_f.group(2).upper():
+                igual = faces.get(m_f.group(2))
+                if igual is not None:
+                    fora_t.append(c)
+                    igual["faces_iguais"].append(m_f.group(1))
+                    continue
+                faces[m_f.group(2)] = c
+                c["faces_iguais"] = [m_f.group(1)]
+        for c in faces.values():
+            if len(c["faces_iguais"]) > 1:
+                _renomear_face(c, "FACES " + " E ".join(c["faces_iguais"]))
+        itens = [c for c in itens if not any(c is x for x in fora_t)]
+        tel = [c for c in tel if not any(c is x for x in fora_t)]
+        principais = [c for c in tel if re.match(r"(FACE|TIPOS DE TELHA)", str(c.get("titulo") or ""))]
+        detalhes_t = [c for c in tel if not any(c is x for x in principais)]
+        alt_band = (m["inferior"] + ac) - (m["inferior"] + 3.0) - QUADRO_CABECALHO - FOLGA - FAIXA
+        for c in detalhes_t:
+            (bx0, by0), (bx1, by1) = c["caixa"]
+            k_b = escala_normalizada(max(c["k"], (by1 - by0) / max(alt_band, 1.0)))
+            if k_b <= 100.0:
+                _reescalar(c, k_b)
+                c["categoria"] = "TELHAS_DET"
+            else:
+                principais.append(c)
+        for c in principais:
+            c["categoria"] = "TELHAS"
+        teto_t = {id(c): 2.0 for c in principais if not re.match(r"(FACE|TIPOS DE TELHA)", str(c.get("titulo") or ""))}
+        _caber_numa_prancha(principais, qx1 - qx0, (uy1 - QUADRO_CABECALHO - FOLGA) - (uy0 - FOLGA * 0.5 + 2.0), teto_t)
+        ordem["TELHAS_DET"] = 999
+        titulos_q["TELHAS_DET"] = "Telhas – detalhes"
     # a prancha dos chumbadores (pedido do usuário, 28/09): a planta de locação reduzida à esquerda e, à direita,
     # as chapas e as barras de chumbamento; a primeira da obra (a ordem da fábrica: chumbadores → … → telhas)
     planta_cb = [c for c in itens if "chumba" in str(c.get("fonte") or "").lower() and not c.get("chave")]
@@ -648,6 +690,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 candidatas.sort(key=lambda c: 0 if _eh_chumbamento(c.get("montagem")) else 1)
             else:
                 candidatas = [c for c in fila if c["categoria"] in cats_p and c.get("pai") is None]
+                if "TELHAS" in cats_p:
+                    candidatas = [c for c in fila if c["categoria"] == "TELHAS_DET"]
                 if "TERÇAS" in cats_p:
                     # a prancha das terças leva nos ACESSÓRIOS/DISPOSITIVOS os suportes de terça, não mais terças
                     # (pedido do usuário, 28/09)
@@ -1304,6 +1348,55 @@ def _layout_das_tesouras(emp: Sequence[dict], mq: dict, qx0: float, qx1: float):
                      "y_cotas": caixa_r[0][1] if caixa_r else mq["y0"], "marcas": marcas})
         todas += col
     return _ocupacao(todas), info
+
+
+def _reescalar(c: dict, k: float):
+    """a célula em outra escala (a caixa em mm do modelo fica; o tamanho no papel muda)"""
+    c["k"] = float(k)
+    # os textos ficam do tamanho de papel: a caixa em mm do modelo muda com a escala
+    c["caixa"] = _caixa_de(c["entidades"], c["k"]) or c["caixa"]
+    (bx0, by0), (bx1, by1) = c["caixa"]
+    c.pop("nota", None)
+    c["w"], c["h"] = (bx1 - bx0) / c["k"], (by1 - by0) / c["k"] + FAIXA
+
+
+def _caber_numa_prancha(cels: Sequence[dict], largura: float, altura: float, teto: Optional[Dict[int, float]] = None):
+    """Aumenta a escala das células (a mesma proporção em todas, na escala normalizada) até elas caberem
+    num quadro de largura × altura, em prateleiras como as da prancha — as mais altas primeiro. `teto`:
+    id da célula → o aumento máximo dela (o detalhe com notas: mais reduzido, as linhas se atropelam)."""
+    if not cels:
+        return
+    base = {id(c): float(c.get("escala") or c["k"]) for c in cels}
+    for f in (1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0):
+        for c in cels:
+            _reescalar(c, escala_normalizada(base[id(c)] * min(f, (teto or {}).get(id(c), f)) - 1e-6))
+        y, x, alt_l, cabe = 0.0, 0.0, 0.0, True
+        for c in sorted(cels, key=lambda c_: -c_["h"]):
+            if c["w"] > largura:
+                cabe = False
+                break
+            if x > 0 and x + c["w"] > largura:
+                y += alt_l + FOLGA * 0.6
+                x, alt_l = 0.0, 0.0
+            x += c["w"] + FOLGA
+            alt_l = max(alt_l, c["h"])
+        if cabe and y + alt_l <= altura:
+            break
+    # na ordem das prateleiras: as mais altas primeiro
+    for i, c in enumerate(sorted(cels, key=lambda c_: -c_["h"])):
+        c["_ordem"] = i
+
+
+def _renomear_face(c: dict, novo: str):
+    """o título da face que vale por outras iguais: FACE 2 → FACES 2 E 3"""
+    textos = [e for e in c["entidades"] if isinstance(e, Texto)]
+    if not textos:
+        return
+    tit = max(textos, key=lambda t: t.altura)
+    novo_t = copy.copy(tit)
+    novo_t.texto = re.sub(r"^FACE \d+", novo, tit.texto)
+    c["entidades"] = [novo_t if e is tit else e for e in c["entidades"]]
+    c["titulo"] = novo_t.texto
 
 
 def _empilhavel(c: dict, largura_util: float) -> bool:
