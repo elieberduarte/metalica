@@ -202,10 +202,10 @@ class _Papel:
         self.d.add(Arco(camada=self._cam(camada), centro=c, raio=round(raio, 3),
                         inicio=float(ang_ini), fim=float(ang_fim), atributos=dict(self.atr)))
 
-    def texto(self, x, y, texto, altura=2.5, camada="TEXTO", angulo=0.0, alinhamento="esquerda"):
+    def texto(self, x, y, texto, altura=2.5, camada="TEXTO", angulo=0.0, alinhamento="esquerda", atributos=None):
         self.d.add(Texto(camada=self._cam(camada), posicao=self._p(x, y), texto=str(texto),
                          altura=round(altura / self.d.escala, 2), angulo=float(angulo),
-                         alinhamento=alinhamento, atributos=dict(self.atr)))
+                         alinhamento=alinhamento, atributos=dict(self.atr, **(atributos or {}))))
         # largura estimada do texto entra nos extremos da célula, para o vizinho não
         # ser desenhado por cima do título
         larg = 0.75 * altura * len(str(texto))

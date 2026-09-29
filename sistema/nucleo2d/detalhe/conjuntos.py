@@ -2699,7 +2699,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         linhas.append((atual.rstrip(), "TEXTO"))
     for i, (txt, cam_) in enumerate(reversed(linhas)):
         alt_t = 3.5 if i == len(linhas) - 1 else 2.5
-        p.texto(0, y, txt, alt_t * esc, cam_)
+        # a ordem da linha no bloco (0 = o título): a prancha leva o bloco para baixo do conjunto
+        p.texto(0, y, txt, alt_t * esc, cam_, atributos={"legenda_conjunto": len(linhas) - 1 - i})
         y += (alt_t + 1.2) * esc
     ext = p.extremos
     return (min(ext[0], dx), min(ext[1], dy), max(ext[2], dx + larg), max(ext[3], dy + alt))
