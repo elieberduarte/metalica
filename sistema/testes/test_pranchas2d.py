@@ -360,7 +360,7 @@ def test_siglas_da_relacao():
     """A relação das pranchas explica as siglas que aparecem nelas (pedido do usuário, 28/09): a mais
     longa que começa o nome e vem antes do número — T.C.1 é terça de cobertura, T1 é tesoura."""
     from nucleo2d.pranchas import siglas_usadas
-    s = dict(siglas_usadas(["T1 + T1 – 03x", "A.D.1 / A.D.2", "T.C.1", "CH4 – 28x", "TMD.1", "PLANTA DE CHUMBAÇÃO"]))
+    s = dict(siglas_usadas(["T1 – 03x", "A.D.1 / A.D.2", "T.C.1", "CH4 – 28x", "TMD.1", "PLANTA DE CHUMBAÇÃO"]))
     assert set(s) == {"T", "A.D.", "T.C.", "CH", "TMD"}
     assert s["T.C."] == "Terça de cobertura" and s["A.D."] == "Agulhamento diagonal" and s["TMD"] == "Telha multi-dobra"
 

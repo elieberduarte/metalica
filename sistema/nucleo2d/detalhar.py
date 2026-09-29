@@ -798,15 +798,18 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                 y0 = min(y0, e2[1] + ddy)
             return (x0, y0, x1, y1)
         montadas.sort(key=lambda m: _ordem_natural(" + ".join(nomes_conj.get(r, r) for r in m["rotulos"])))
-        for m in montadas:
+        for i_m, m in enumerate(montadas, start=1):
             rot_m = " + ".join(m["rotulos"])
-            nome_m = " + ".join(nomes_conj.get(r, r) for r in m["rotulos"])
+            # cada tesoura montada com o nome dela, em sequência — T1 (03x), T2 (02x)…; "T1 + T1" (as metades)
+            # confundia os montadores (pedido do usuário, 28/09). As metades ficam no perfil do item.
+            metades_m = " + ".join(nomes_conj.get(r, r) for r in m["rotulos"])
+            nome_m = "T%d" % i_m
             fns.append(("tesoura", lambda dd, x, y, rot_m=rot_m, m=m, nome_m=nome_m: com_chapas_da_cumeeira(
                 dd, x, y, lambda dd_, x_, y_, rot_m=rot_m, m=m, nome_m=nome_m:
                 desenho_do_conjunto(doc, rot_m, m["pecas"], m["n"], dd_, x_, y_, rotular, fundidas=fundidas,
                                     nomes=nomes_pos, nome=nome_m, tipo="tesoura",
                                     conformadas=conformadas, pesos=pesos), m["pecas"])))
-            itens_montadas[rot_m] = {"quantidade": m["n"], "perfil": "tesoura montada (%s)" % nome_m, "material": "",
+            itens_montadas[rot_m] = {"quantidade": m["n"], "perfil": "tesoura montada (metades %s)" % metades_m, "material": "",
                                      "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
                                      "categoria": "TESOURAS", "nome": nome_m,
                                      "marcas": [mk for r in m["rotulos"] for mk in r.split(" / ")]}

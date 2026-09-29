@@ -356,6 +356,12 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
                          "altura": max(m["z_topo"] for m in membros) - z_apoio, "flecha": corrida * math.tan(math.radians(incl)),
                          "inclinacao": incl, "z_apoio": z_apoio, "apoio_por_chapa": all(ap["chapa"] for ap in apoios),
                          "pecas": [e for m in membros for e in m["pecas"]]})
+    # cada tesoura montada com o nome dela, em sequência na ordem das metades — T1, T2, T3… —, o mesmo das
+    # pranchas ("T1 + T2" confundia os montadores, pedido do usuário, 28/09); as metades ficam em "metades"
+    seq = {n: "T%d" % i for i, n in enumerate(sorted({t["tipo"] for t in unidades}, key=_ordem_natural), start=1)}
+    for t in unidades:
+        t["metades"] = t["tipo"]
+        t["tipo"] = seq[t["tipo"]]
     tes_inst = unidades
 
     def _trechos_de(unidades_ordenadas) -> List[dict]:

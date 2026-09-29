@@ -243,7 +243,14 @@ ela, e ela tem DETALHES — as chapas dos conjuntos desenhados na prancha (a com
 cumeeira separadas da célula dela), ou, sem conjunto, mais peças das mesmas categorias — e LEGENDA junto do carimbo —
 as peças da prancha (a composição da tesoura por unidade: nome, quantidade, perfil, comprimento e a prancha em que
 cada peça está detalhada), as siglas usadas nela e, na primeira, a relação das pranchas (sem folha de índice). A
-mesma posição desenhada em dois desenhos (a chapa na tesoura e nas chaparias) sai uma vez só.
+mesma posição desenhada em dois desenhos (a chapa na tesoura e nas chaparias) sai uma vez só. **Tesouras na prancha como o
+usuário ajustou a Sala (28/09)**: cada tesoura montada com o nome dela em sequência — T1 (03x), T2 (02x)… —, não
+"T1 + T1" (as metades ficam no perfil do item e no resumo); as cotas de baixo em três linhas coladas na base (a
+cadeia sem os pontos de dentro do joelho, as metades, a total, 7 mm uma da outra); o bloco do título embaixo, à
+esquerda, pela borda da tesoura; duas tesouras por prancha quando cabem, a de baixo encaixada pelo perfil no canto
+vazio da de cima; chamadas das chapas e dos chumbamentos ("CB1 + CH9", um em cada apoio), com a prancha do detalhe;
+o chumbamento primeiro nos DETALHES. No CAD, o número da cota na cor do texto (branco no escuro, preto no papel), o
+texto da chamada arrastado pela alça com a linha acompanhando, e o F5 na área de trabalho volta ao desenho aberto.
 
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
 sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da

@@ -713,7 +713,7 @@ def siglas_da_fabrica() -> List[Tuple[str, str]]:
         elif sigla == "DP.":
             txt = "Dispositivo (conjunto menor)"
         elif sigla == "T":
-            txt = "Tesoura (T1 + T1: as duas metades)"
+            txt = "Tesoura"
         else:
             txt = nomes[0]
         fora.append((sigla, txt))
