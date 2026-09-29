@@ -3695,17 +3695,24 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
         p.texto(cx + 1.5 * esc, cy + 3.0 * esc, rotulo, h_txt, "TEXTO")
     if ex:
         _desenhar_eixos(p, ex, u, v, u0, v0, esc, larg_v, alt_v)
-    # as totais medem as peças (chumbadores e chapas), com a linha da cota onde ficava, fora das bolinhas; antes
-    # iam até a ponta das linhas de eixo, que passam das peças — 37828 × 23520 no depósito, no vazio (29/09)
-    pu = [_dot(q, u) - u0 for e in itens for q in e.vertices]
-    pv = [_dot(q, v) - v0 for e in itens for q in e.vertices]
-    p.cota_h(min(pu), max(pu), min(pv), -10.0 - min(pv) / esc)
-    p.cota_v(min(pv), max(pv), max(pu), 10.0 + (larg_v - max(pu)) / esc)
-    p.texto(0, -(10.0 + 8.0) * esc, "PLANTA DE CHUMBAÇÃO", 3.5 * esc)
+    if not ex:
+        # sem eixos, as totais das peças; com eixos, a cadeia entre eixos já fecha com a total dela — a total das
+        # peças ia até a ponta das linhas de eixo (37828 no depósito, no vazio) e, medindo as peças, ficava fora
+        # da caixa na prancha reduzida (análise das pranchas, 29/09)
+        p.cota_h(0, larg_v, 0, -10.0)
+        p.cota_v(0, alt_v, larg_v, 10.0)
+    # o título e a linha de baixo são o cabeçalho da caixa (na prancha vão para o canto de cima, fora das bolinhas
+    # dos eixos, onde encostavam); a escala fica só no "ESC." da caixa — a do desenho de origem (1:75) não é a da
+    # prancha reduzida (1:125)
     n_chumb, n_chapas = (0, len(chumb) + len(chapas)) if so_chapas else (len(chumb), len(chapas))
-    p.texto(0, -(10.0 + 8.0 + 4.5) * esc, "escala 1:%s · %d chumbador(es) e %d chapa(s) de base, vistos de cima, nos eixos da obra"
-            % (int(esc) if float(esc).is_integer() else esc, n_chumb, n_chapas)
+    atr_t = p.atr
+    p.atr = dict(atr_t, cabecalho=0)
+    p.texto(0, -(10.0 + 8.0) * esc, "PLANTA DE CHUMBAÇÃO", 3.5 * esc)
+    p.atr = dict(atr_t, cabecalho=1)
+    p.texto(0, -(10.0 + 8.0 + 4.5) * esc, "%d chumbador(es) e %d chapa(s) de base, vistos de cima, nos eixos da obra"
+            % (n_chumb, n_chapas)
             + (" (sem chumbador no modelo: os furos das chapas marcam onde eles passam)" if so_chapas else ""), 2.0 * esc)
+    p.atr = atr_t
     ext_c = p.extremos
     d.metadados.setdefault("celulas", []).append([round(t, 1) for t in ext_c])
     d.vistas.append({"origem": [minimo[0], minimo[1], minimo[2]], "normal": list(w), "acima": list(v),

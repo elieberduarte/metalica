@@ -506,9 +506,9 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             c["categoria"] = "CHUMBACAO"
             (bx0, by0), (bx1, by1) = c["caixa"]
             if (bx1 - bx0) / c["k"] > meia:
-                c["k"] = escala_normalizada((bx1 - bx0) / meia)
-                c.pop("nota", None)
-                c["w"], c["h"] = (bx1 - bx0) / c["k"], (by1 - by0) / c["k"] + FAIXA
+                # pela _reescalar: a caixa refeita na escala nova (a das cotas, deslocadas em mm de papel, mudava e a
+                # total ficava fora da caixa) e as pilhas de texto reespaçadas
+                _reescalar(c, escala_normalizada((bx1 - bx0) / meia))
                 _aplicar_arranjo(c, ux1 - ux0 - 2 * QUADRO_MARGEM)
         ordem["CHUMBACAO"], ordem["CHUMBAMENTO"] = -2, -1
         titulos_q.update(CHUMBACAO="Planta de locação dos chumbadores", CHUMBAMENTO="Chumbamento – chapas e barras")
