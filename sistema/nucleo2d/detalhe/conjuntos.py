@@ -3429,10 +3429,13 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         linhas.append("Pecas de ponta (por unidade): " + "; ".join(
             "%s: %s" % (", ".join(nomes_m), txt_p(ch)) for ch, nomes_m in por_ponta.items() if ch))
     y = alt + (off + 4.0) * esc
+    atr0 = p.atr
     for i, txt in enumerate(reversed(linhas)):
         alt_t = 3.5 if i == len(linhas) - 1 else 2.5
+        p.atr = dict(atr0, cabecalho=len(linhas) - 1 - i)     # o bloco do título, para a caixa da prancha (29/09)
         p.texto(0, y, txt, alt_t * esc)
         y += (alt_t + 1.2) * esc
+    p.atr = atr0
     ext = p.extremos
     return (min(ext[0], dx), min(ext[1], dy), max(ext[2], dx + larg), max(ext[3], dy + alt))
 

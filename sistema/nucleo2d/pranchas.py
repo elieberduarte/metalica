@@ -388,6 +388,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             c["nota"] = "reduzida para %s para caber na folha" % texto_escala(k)
         c["k"] = k
         c["w"], c["h"] = w_mod / k, h_mod / k + FAIXA
+        _aplicar_arranjo(c, ux1 - ux0 - 2 * QUADRO_MARGEM)
         itens.append(c)
 
     # quadros por categoria: as células de cada categoria formam prateleiras dentro de
@@ -504,6 +505,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 c["k"] = escala_normalizada((bx1 - bx0) / meia)
                 c.pop("nota", None)
                 c["w"], c["h"] = (bx1 - bx0) / c["k"], (by1 - by0) / c["k"] + FAIXA
+                _aplicar_arranjo(c, ux1 - ux0 - 2 * QUADRO_MARGEM)
         ordem["CHUMBACAO"], ordem["CHUMBAMENTO"] = -2, -1
         titulos_q.update(CHUMBACAO="Planta de locação dos chumbadores", CHUMBAMENTO="Chumbamento – chapas e barras")
     # os detalhes de furos: os da tesoura vão para a faixa da prancha dela (na categoria dela, se não
@@ -1019,39 +1021,36 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             dx = c["px"] - bx0 / c["k"]
             dy = c["py"] + (0.0 if c.get("sem_escala") else FAIXA) - by0 / c["k"]
             desloc = {}                                    # (dx, dy) por entidade, quando não é o da célula
-            if not c.get("slot_caixa") and not c.get("_na_faixa") and c.get("pai") is None:
-                # cada detalhe na sua caixa, só com o elemento detalhado dentro (pedido do usuário, 29/09: "separar
-                # os detalhes em caixas menores"); na prancha de corte é a grade de retângulos iguais
-                m_ = MARGEM_CAIXA_DETALHE
+            arr = None if c.get("empilhada") or c.get("pai") is not None else _arranjo(c)
+            if c.get("slot_caixa") and not c.get("local"):
+                sx0, sy0, sx1, sy1 = c["slot_caixa"]           # a prancha de corte: o retângulo da grade
+            else:
+                sx0, sy0, sx1, sy1 = c["px"], c["py"], c["px"] + c["w"], c["py"] + c["h"]
+            cabe = arr is not None and sx1 - sx0 >= arr["w"] - 0.01 and sy1 - sy0 >= arr["h"] - 0.01
+            if c.get("pai") is None and not c.get("empilhada"):
+                # cada detalhe na sua caixa (pedido do usuário, 29/09); sem o arranjo (a célula reduzida na
+                # hora), a caixa passa 2 mm da célula
+                m_ = 0.0 if cabe or c.get("slot_caixa") else MARGEM_CAIXA_DETALHE
                 d.add(Polilinha(camada="PRANCHA", fechada=True,
-                                vertices=[(round(c["px"] - m_, 2), round(c["py"] - m_, 2)), (round(c["px"] + c["w"] + m_, 2), round(c["py"] - m_, 2)),
-                                          (round(c["px"] + c["w"] + m_, 2), round(c["py"] + c["h"] + m_, 2)), (round(c["px"] - m_, 2), round(c["py"] + c["h"] + m_, 2))],
+                                vertices=[(round(sx0 - m_, 2), round(sy0 - m_, 2)), (round(sx1 + m_, 2), round(sy0 - m_, 2)),
+                                          (round(sx1 + m_, 2), round(sy1 + m_, 2)), (round(sx0 - m_, 2), round(sy1 + m_, 2))],
                                 atributos={"prancha": "celula", "categoria": c["categoria"], "cel": ids_c[id(c)]}))
-            if c.get("slot_caixa") and not c.get("local") and c.get("pai") is None:
-                sx0, sy0, sx1, sy1 = c["slot_caixa"]
-                d.add(Polilinha(camada="PRANCHA", vertices=[(round(sx0, 2), round(sy0, 2)), (round(sx1, 2), round(sy0, 2)),
-                                                            (round(sx1, 2), round(sy1, 2)), (round(sx0, 2), round(sy1, 2))],
-                                fechada=True, atributos={"prancha": "celula", "categoria": c["categoria"], "cel": ids_c[id(c)]}))
-                # o padrão do retângulo (pedido do usuário, 29/09): o cabeçalho no canto de cima à esquerda, com
-                # margem; a escala no canto de baixo à esquerda; o desenho centrado no que sobra
-                cab = [e for e in c["entidades"] if isinstance(e, Texto) and (e.atributos or {}).get("cabecalho") is not None]
-                resto = [e for e in c["entidades"] if not any(e is x_ for x_ in cab)]
-                cx_c = _caixa_de(cab, c["k"]) if cab else None
-                cx_r = _caixa_de(resto, c["k"], letra=0.58) if resto else None
-                if cx_c and cx_r:
-                    k_ = c["k"]
-                    dx_c = sx0 + MARGEM_RETANGULO - cx_c[0][0] / k_
-                    dy_c = sy1 - MARGEM_RETANGULO - cx_c[1][1] / k_
-                    for e in cab:
-                        desloc[id(e)] = (dx_c, dy_c)
-                    topo_ = sy1 - MARGEM_RETANGULO - (cx_c[1][1] - cx_c[0][1]) / k_ - MARGEM_RETANGULO * 0.5
-                    base_ = sy0 + MARGEM_RETANGULO + 2.0 + MARGEM_RETANGULO * 0.5
-                    dx_r = (sx0 + sx1) / 2.0 - (cx_r[0][0] + cx_r[1][0]) / 2.0 / k_
-                    dy_r = (topo_ + base_) / 2.0 - (cx_r[0][1] + cx_r[1][1]) / 2.0 / k_
-                    for e in resto:
-                        desloc[id(e)] = (dx_r, dy_r)
-                    c["px"], c["py"], c["w"], c["h"] = sx0, sy0, sx1 - sx0, sy1 - sy0
-                    c["escala_em"] = (sx0 + MARGEM_RETANGULO, sy0 + MARGEM_RETANGULO)
+            if cabe and c.get("pai") is None and not c.get("empilhada"):
+                # o cabeçalho no canto de cima à esquerda com margem, a escala no canto de baixo à esquerda, o
+                # desenho centrado no que sobra
+                k_, cx_c, cx_v = c["k"], arr["cx_c"], arr["cx_v"]
+                dx_c = sx0 + MARGEM_RETANGULO - cx_c[0][0] / k_
+                dy_c = sy1 - MARGEM_RETANGULO - cx_c[1][1] / k_
+                for e in arr["cab"]:
+                    desloc[id(e)] = (dx_c, dy_c)
+                topo_ = sy1 - MARGEM_RETANGULO - arr["hc"] - VAO_ARRANJO
+                base_ = sy0 + MARGEM_RETANGULO + ALTURA_ESCALA + VAO_ARRANJO
+                dx_r = (sx0 + sx1) / 2.0 - (cx_v[0][0] + cx_v[1][0]) / 2.0 / k_
+                dy_r = (topo_ + base_) / 2.0 - (cx_v[0][1] + cx_v[1][1]) / 2.0 / k_
+                for e in arr["resto"]:
+                    desloc[id(e)] = (dx_r, dy_r)
+                c["px"], c["py"], c["w"], c["h"] = sx0, sy0, sx1 - sx0, sy1 - sy0
+                c["escala_em"] = (sx0 + MARGEM_RETANGULO, sy0 + MARGEM_RETANGULO)
             for e in c["entidades"]:
                 dx_e, dy_e = desloc.get(id(e), (dx, dy))
                 n_ = _para_papel(e, c["k"], dx_e, dy_e, c["fonte"])
@@ -1115,6 +1114,49 @@ OCUPACAO_MINIMA = 0.2
 MARGEM_RETANGULO = 4.0
 #: A caixa de cada detalhe nas outras pranchas: quanto passa da célula (mm de papel); as células ficam a FOLGA.
 MARGEM_CAIXA_DETALHE = 2.0
+#: Dentro da caixa: o vão do cabeçalho ao desenho e do desenho à escala, e a altura do texto da escala.
+VAO_ARRANJO = 3.0
+ALTURA_ESCALA = 2.0
+
+
+def _arranjo(c: dict):
+    """A célula com o bloco do título marcado (`cabecalho` na peça, na montagem e nos típicos; `legenda_conjunto`
+    no conjunto): o cabeçalho, o resto (o desenho com as cotas) e as caixas deles, e o tamanho da caixa do
+    detalhe — o cabeçalho no canto de cima à esquerda, o desenho centrado embaixo, a escala no pé, com as
+    margens (pedido do usuário, 29/09: "aplique essa regra para todas as caixas"). None sem cabeçalho ou sem
+    desenho."""
+    cab = [e for e in c["entidades"] if isinstance(e, Texto)
+           and ((e.atributos or {}).get("cabecalho") is not None or "legenda_conjunto" in (e.atributos or {}))]
+    if not cab:
+        return None
+    ids_cab = {id(e) for e in cab}
+    resto = [e for e in c["entidades"] if id(e) not in ids_cab]
+    if not resto:
+        return None
+    k = float(c["k"])
+    cx_c = _caixa_de(cab, k)
+    cx_r = _caixa_de(resto, k)                          # a reserva (0,75 por letra): o vizinho nunca encosta
+    cx_v = _caixa_de(resto, k, letra=0.58)              # o visível: é o que se centra
+    if not cx_c or not cx_r or not cx_v:
+        return None
+    wc, hc = (cx_c[1][0] - cx_c[0][0]) / k, (cx_c[1][1] - cx_c[0][1]) / k
+    wr, hr = (cx_r[1][0] - cx_r[0][0]) / k, (cx_r[1][1] - cx_r[0][1]) / k
+    return {"cab": cab, "resto": resto, "cx_c": cx_c, "cx_v": cx_v, "hc": hc,
+            "w": max(wc, wr) + 2 * MARGEM_RETANGULO,
+            "h": 2 * MARGEM_RETANGULO + hc + VAO_ARRANJO + hr + VAO_ARRANJO + ALTURA_ESCALA}
+
+
+def _aplicar_arranjo(c: dict, largura_util=None) -> None:
+    """A largura e a altura da célula pelo arranjo da caixa. A tesoura que enche o quadro (empilhada, centrada
+    na hora de desenhar) e a célula reduzida na hora (sem a largura útil para saber) ficam como estão."""
+    if c.get("sem_escala"):
+        return
+    if any(isinstance(e, Texto) and "legenda_conjunto" in (e.atributos or {}) for e in c["entidades"]):
+        if largura_util is None or c["w"] > 0.6 * largura_util:
+            return
+    arr = _arranjo(c)
+    if arr is not None:
+        c["w"], c["h"] = arr["w"], arr["h"]
 
 
 def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: float, qx1: float, uy0: float,
@@ -1675,6 +1717,7 @@ def _reescalar(c: dict, k: float):
     (bx0, by0), (bx1, by1) = c["caixa"]
     c.pop("nota", None)
     c["w"], c["h"] = (bx1 - bx0) / c["k"], (by1 - by0) / c["k"] + FAIXA
+    _aplicar_arranjo(c)
 
 
 def _espacar_textos(c: dict):

@@ -235,10 +235,13 @@ def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho:
               com_bitola(maior.perfil),
               "total %s kg" % _mm(peso, 1)]
     y = H + (off + 2.0) * esc
+    atr0 = p.atr
     for i, txt in enumerate(reversed(linhas)):
         alt = 3.5 if i == len(linhas) - 1 else 2.5
+        p.atr = dict(atr0, cabecalho=len(linhas) - 1 - i)     # o bloco do título, para a caixa da prancha (29/09)
         p.texto(0, y, txt, alt * esc)
         y += (alt + 1.2) * esc
+    p.atr = atr0
     return p.extremos
 
 
