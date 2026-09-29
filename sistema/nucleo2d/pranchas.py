@@ -495,6 +495,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             for cat_, x0_, x1_ in ((cat1, ux0, xs), (cat2, xs + FOLGA, ux1)):
                 y_ = uy1 - QUADRO_CABECALHO - FOLGA
                 grupo_ = [c_ for c_ in fila if c_["categoria"] == cat_]
+                antes_ = len(cels_p)
                 while grupo_:
                     linha_, x_ = [], x0_ + QUADRO_MARGEM
                     for c_ in grupo_:
@@ -513,6 +514,18 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                         fila.remove(c_)
                         grupo_.remove(c_)
                     y_ -= alt_ + FOLGA
+                # tudo o que coube: o bloco centrado no quadro (pedido do usuário, 28/09)
+                postas_ = cels_p[antes_:]
+                if postas_ and not grupo_:
+                    bx0_ = min(c_["px"] for c_ in postas_)
+                    bx1_ = max(c_["px"] + c_["w"] for c_ in postas_)
+                    by0_ = min(c_["py"] for c_ in postas_)
+                    by1_ = max(c_["py"] + c_["h"] for c_ in postas_)
+                    ddx_ = ((x0_ + QUADRO_MARGEM) + (x1_ - QUADRO_MARGEM) - bx0_ - bx1_) / 2.0
+                    ddy_ = ((uy1 - QUADRO_CABECALHO - FOLGA * 0.5) + uy0 - by0_ - by1_) / 2.0
+                    for c_ in postas_:
+                        c_["px"] += max(0.0, ddx_)
+                        c_["py"] += min(0.0, ddy_)
                 mold_p.append({"categoria": cat_, "titulo": titulos_q.get(cat_, cat_) + (" (continuação)" if cat_ in iniciadas else ""),
                                "y1": uy1, "y0": uy0 - FOLGA * 0.5, "x0": x0_, "x1": x1_})
                 iniciadas.add(cat_)
