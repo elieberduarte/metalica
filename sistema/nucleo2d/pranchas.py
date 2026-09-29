@@ -405,6 +405,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         if _empilhavel(pai, qx1 - qx0):
             c["categoria"] = pai["categoria"]
             c["_ordem"] = pai.get("_ordem", 0) + 0.5
+            c["sem_escala"] = True                    # a escala está no título ("(1:5)")
+            c["h"] -= FAIXA
             continue
         pai["entidades"] = list(pai["entidades"]) + list(c["entidades"])
         pai["caixa"] = _caixa_de(pai["entidades"], pai["escala"]) or pai["caixa"]
@@ -531,6 +533,19 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                         continue
                     vistas_ch.add(ch_)
                     candidatas.append(_copia_local(c, n_loc))
+                # as chapas de uma montagem da prancha: a do chumbamento vai junto das vistas dele; as de uma
+                # montagem de chapas ("CH1 + CH2") não se repetem soltas — a montagem já as cota (pedido do
+                # usuário, 28/09: "não faz sentido manter esse detalhamento se já tem ele montado ao lado")
+                nome_c = lambda c_: str((c_.get("item") or {}).get("nome") or "")    # noqa: E731
+                for m_ in [c_ for c_ in candidatas if c_.get("montagem")]:
+                    partes = [pt.strip() for pt in m_["montagem"].split(" + ")]
+                    soltas = [c_ for c_ in candidatas if not c_.get("montagem") and not c_.get("grupo") and nome_c(c_) in partes]
+                    if _eh_chumbamento(m_["montagem"]):
+                        if soltas:
+                            g_ = _grupo(m_, soltas[0], alt_faixa)
+                            candidatas = [g_ if c_ is m_ else c_ for c_ in candidatas if c_ is not soltas[0]]
+                    else:
+                        candidatas = [c_ for c_ in candidatas if not any(c_ is x_ for x_ in soltas)]
                 # o chumbamento primeiro (é o que a obra procura junto da tesoura), depois as chapas
                 candidatas.sort(key=lambda c: 0 if _eh_chumbamento(c.get("montagem")) else 1)
             else:
@@ -538,7 +553,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             furos_p = [c for c in fila if c.get("pai") is not None and any(c["pai"] is x for x in cels_p)]
             # a legenda: só o que está na prancha — nome e quantidade — e as siglas (pedido do usuário, 28/09:
             # "precisa reduzir bastante o tamanho"); a largura sai do conteúdo com todos os detalhes possíveis
-            leg = {"blocos": _blocos_da_legenda(cels_p, candidatas if alvo else ()), "relacao": False, "n_rel": n_rel}
+            leg = {"blocos": _blocos_da_legenda(cels_p, [m_ for c_ in candidatas for m_ in _membros(c_, False)] if alvo else ()),
+                   "relacao": False, "n_rel": n_rel}
             tem_legenda = bool(leg["blocos"])
             larg_leg = min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0)) if tem_legenda else 0.0
             leg["x0"] = fx1 - larg_leg
@@ -582,11 +598,13 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     postos = [(c_, x_, py_ - folga_b) for c_, x_, py_ in postos_alto]
                     fy1_p = alto - folga_b
             na_faixa = []
+            postos_ids = {id(c) for c, _x, _y in postos}
             for c, px_, py_ in postos:
                 c["px"], c["py"] = px_, py_
-                na_faixa.append(c)
-                if not c.get("local"):
-                    fila.remove(c)
+                for m_ in _membros(c):
+                    na_faixa.append(m_)
+                    if not m_.get("local"):
+                        fila.remove(m_)
             if fy1_p > fy1 and mold_p:
                 mold_p[-1]["y0"] = fy1_p + FOLGA * 0.5            # o quadro de cima sobe junto com a faixa
             leg["y1"] = fy1_p
@@ -594,7 +612,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             # direita do bloco do título, com a linha de chamada até a marca dos furos (pedido do usuário,
             # 28/09); depois, o que não coube na faixa, no canto livre embaixo da última tesoura
             emp_p = [c for c in cels_p if c.get("empilhada")]
-            sobras = [c for c in candidatas if not any(c is x_ for x_ in na_faixa)
+            sobras = [c for c in candidatas if id(c) not in postos_ids
                       and (c.get("local") or any(c is x_ for x_ in fila))]
             no_canto = []
             if emp_p and mold_p and (furos_p or sobras):
@@ -604,23 +622,28 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 for c in furos_p:
                     t_ = next(i_ for i_, x_ in enumerate(emp_p) if c["pai"] is x_)
                     it_ = info_t[t_]
-                    pos = (_encaixar(ocup, c["w"], c["h"], it_["x_bloco"] + FOLGA, it_["y_cotas"] - 2.0, qx1, y_min, descer=40.0)
-                           or _encaixar(ocup, c["w"], c["h"], qx0, it_["y_cotas"] - 2.0, qx1, y_min))
+                    marca_ = it_["marcas"].get(str(c.get("letra")))
+                    # perto da marca dos furos, logo abaixo da cota de baixo da tesoura
+                    pos = (_encaixar(ocup, c["w"], c["h"], qx0, it_["y_cotas"] - 1.0, qx1, y_min, descer=60.0,
+                                     alvo=marca_[0] if marca_ else None, margem=FOLGA)
+                           or _encaixar(ocup, c["w"], c["h"], qx0, it_["y_cotas"] - 2.0, qx1, y_min, margem=FOLGA))
                     if pos is None:
                         continue
                     c["px"], c["py"] = pos
-                    c["alvo_furos"] = it_["marcas"].get(str(c.get("letra")))
+                    c["alvo_furos"] = marca_
                     no_canto.append(c)
                     fila.remove(c)
                 it_ = info_t[-1]
                 for c in sobras:
-                    pos = _encaixar(ocup, c["w"], c["h"], it_["x_bloco"] + FOLGA, it_["y_cotas"] - FOLGA * 0.5, qx1, y_min)
+                    pos = _encaixar(ocup, c["w"], c["h"], it_["x_bloco"] + FOLGA, it_["y_cotas"] - FOLGA * 0.5, qx1, y_min,
+                                    margem=FOLGA)
                     if pos is None:
                         continue
                     c["px"], c["py"] = pos
-                    no_canto.append(c)
-                    if not c.get("local"):
-                        fila.remove(c)
+                    for m_ in _membros(c):
+                        no_canto.append(m_)
+                        if not m_.get("local"):
+                            fila.remove(m_)
             # a legenda com o que ficou de fato na prancha (os detalhes que couberam), e os DETALHES até ela
             leg["blocos"] = _blocos_da_legenda(cels_p, na_faixa + no_canto)
             if leg["blocos"]:
@@ -680,6 +703,12 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     onde_i[str(mk)] = i
             if c.get("montagem"):
                 onde_i["montagem:" + c["montagem"]] = i
+                # as chapas da montagem ("CH1 + CH2") estão cotadas nela: a chamada fica sem "– PR.xx"
+                partes = [pt.strip() for pt in c["montagem"].split(" + ")]
+                for t_ in cels:
+                    for x_ in ((t_.get("item") or {}).get("composicao") or []):
+                        if x_.get("nome") in partes:
+                            onde_i[str(x_["marca"])] = i
         empilhadas = [c for c in cels if c.get("empilhada")]
         if empilhadas:
             mq = molduras[i0 - 1][0]
@@ -690,7 +719,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 continue
             (bx0, by0), (bx1, by1) = c["caixa"]
             dx = c["px"] - bx0 / c["k"]
-            dy = c["py"] + FAIXA - by0 / c["k"]
+            dy = c["py"] + (0.0 if c.get("sem_escala") else FAIXA) - by0 / c["k"]
             for e in c["entidades"]:
                 d.add(_para_papel(e, c["k"], dx, dy, c["fonte"]))
             if c.get("alvo_furos"):
@@ -704,7 +733,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     d.add(Linha(camada="COTA", a=(round(ax_, 2), round(ay_, 2)), b=(round(bx_, 2), round(by_, 2)),
                                 atributos={"prancha": "chamada_furos", "fonte": c["fonte"], "letra": c.get("letra")}))
             rot = "ESC. " + texto_escala(c["k"]) + ("  (%s)" % c["nota"] if c.get("nota") else "")
-            d.add(Texto(camada="TEXTO", posicao=(round(c["px"], 2), round(c["py"] + 1.5, 2)), texto=rot, altura=2.0,
+            if not c.get("sem_escala"):
+                d.add(Texto(camada="TEXTO", posicao=(round(c["px"], 2), round(c["py"] + 1.5, 2)), texto=rot, altura=2.0,
                         atributos={"prancha": "escala", "fonte": c["fonte"], "celula": c["titulo"]}))
         d.metadados["prancha"] = {"formato": formato, "numero": i, "total": total, "fontes": fontes_da,
                                   "titulo": info.get("titulo", ""),
@@ -1007,7 +1037,7 @@ def _topos_empilhadas(emp: Sequence[dict], mq: dict, qx0: float, qx1: float) -> 
 
 
 #: A malha (mm de papel) com que se marca o que já está desenhado no quadro das tesouras.
-PASSO_OCUPACAO = 4.0
+PASSO_OCUPACAO = 3.0
 
 
 def _ocupacao(ents: Sequence, passo: float = PASSO_OCUPACAO) -> set:
@@ -1032,10 +1062,20 @@ def _ocupacao(ents: Sequence, passo: float = PASSO_OCUPACAO) -> set:
             pc = _pontos_da_cota(e, 1.0)
             if len(pc) >= 4:
                 seg(pc[0], pc[1])
-                seg(pc[2], pc[3])
-                seg(((pc[0][0] + pc[2][0]) / 2, (pc[0][1] + pc[2][1]) / 2), ((pc[1][0] + pc[3][0]) / 2, (pc[1][1] + pc[3][1]) / 2))
                 seg(e.p1, pc[0])
                 seg(e.p2, pc[1])
+                # o número fica do lado de "cima" da leitura (como `desenho._cota_dxf` o escreve), não do
+                # lado de fora: a faixa dele junto da linha
+                (a1x, a1y), (a2x, a2y) = pc[0], pc[1]
+                L_ = math.hypot(a2x - a1x, a2y - a1y)
+                if L_ > 1e-9:
+                    ux_, uy_ = (a2x - a1x) / L_, (a2y - a1y) / L_
+                    ang_ = math.degrees(math.atan2(uy_, ux_))
+                    lado_ = 1.0 if -90 < ang_ <= 90 else -1.0
+                    nx_, ny_ = -uy_ * lado_, ux_ * lado_
+                    for f_ in (0.35, 0.75, 1.1):
+                        o_ = f_ * e.altura
+                        seg((a1x + nx_ * o_, a1y + ny_ * o_), (a2x + nx_ * o_, a2y + ny_ * o_))
             if e.texto_pos:
                 ret(e.texto_pos[0] - 4.0, e.texto_pos[1] - 2.0, e.texto_pos[0] + 4.0, e.texto_pos[1] + 2.0)
         elif isinstance(e, Texto):
@@ -1061,24 +1101,79 @@ def _ocupacao(ents: Sequence, passo: float = PASSO_OCUPACAO) -> set:
 
 
 def _encaixar(occ: set, w: float, h: float, x_ini: float, y_top: float, x_max: float, y_min: float,
-              descer: float = 1e9, passo: float = PASSO_OCUPACAO) -> Optional[Tuple[float, float]]:
-    """O primeiro lugar livre para uma caixa w × h: o mais alto (a partir de y_top, descendo até `descer`
-    mm), e nele o mais à esquerda a partir de x_ini. Marca a caixa como ocupada e devolve (px, py)."""
+              descer: float = 1e9, passo: float = PASSO_OCUPACAO, alvo: Optional[Ponto2] = None,
+              margem: float = 0.0) -> Optional[Tuple[float, float]]:
+    """Um lugar livre para uma caixa w × h, de y_top para baixo (até `descer` mm) e de x_ini para a direita:
+    sem `alvo`, o mais alto e, nele, o mais à esquerda; com `alvo`, o de topo mais perto dele (o detalhe de
+    furos junto da marca na tesoura). Marca a caixa, com `margem` em volta (o espaço entre os detalhes —
+    pedido do usuário, 28/09), e devolve (px, py)."""
     def livre(x0, y0, x1, y1):
         return not any((i, j) in occ for i in range(int(math.floor(x0 / passo)), int(math.floor(x1 / passo)) + 1)
                        for j in range(int(math.floor(y0 / passo)), int(math.floor(y1 / passo)) + 1))
+    melhor, nota = None, None
     y = y_top
     while y - h >= y_min and y_top - y <= descer:
         x = x_ini
         while x + w <= x_max:
             if livre(x, y - h, x + w, y):
-                for i in range(int(math.floor(x / passo)), int(math.floor((x + w) / passo)) + 1):
-                    for j in range(int(math.floor((y - h) / passo)), int(math.floor(y / passo)) + 1):
-                        occ.add((i, j))
-                return x, y - h
+                if alvo is None:
+                    melhor = (x, y - h)
+                    break
+                n_ = math.hypot(x + w / 2.0 - alvo[0], y - alvo[1])
+                if nota is None or n_ < nota:
+                    melhor, nota = (x, y - h), n_
             x += passo
+        if melhor is not None and alvo is None:
+            break
         y -= passo
-    return None
+    if melhor is None:
+        return None
+    x, y0_ = melhor
+    for i in range(int(math.floor((x - margem) / passo)), int(math.floor((x + w + margem) / passo)) + 1):
+        for j in range(int(math.floor((y0_ - margem) / passo)), int(math.floor((y0_ + h + margem) / passo)) + 1):
+            occ.add((i, j))
+    return melhor
+
+
+def _compacta(c: dict) -> dict:
+    """A chapa do chumbamento para ir junto das vistas dele: só o título e a linha "PLATE …" (o resto está
+    no detalhe da prancha das chapas), sem a linha da escala (vale a do chumbamento)."""
+    textos = [e for e in c["entidades"] if isinstance(e, Texto)]
+    tit = max(textos, key=lambda t: t.altura) if textos else None
+    ents = [e for e in c["entidades"] if not isinstance(e, Texto) or e is tit or str(e.texto).startswith("PLATE")]
+    caixa = _caixa_de(ents, c["escala"]) or c["caixa"]
+    (bx0, by0), (bx1, by1) = caixa
+    return dict(c, entidades=ents, caixa=caixa, w=(bx1 - bx0) / c["k"], h=(by1 - by0) / c["k"], sem_escala=True)
+
+
+def _grupo(mont: dict, chapa: dict, alt_max: float) -> dict:
+    """O chumbamento com a chapa dele (pedido do usuário, 28/09: "trazer esse detalhe das chapas junto das
+    vistas"): a chapa embaixo das vistas se couber na altura, senão ao lado delas. Um candidato só, com a
+    posição de cada um relativa ao canto de baixo à esquerda."""
+    a = _compacta(chapa)
+    if a["k"] != mont["k"]:
+        a["sem_escala"] = False
+        a["h"] += FAIXA
+    vao = 2.0
+    if mont["h"] + vao + a["h"] <= alt_max:
+        w, h = max(mont["w"], a["w"]), mont["h"] + vao + a["h"]
+        membros = [(mont, 0.0, a["h"] + vao), (a, 0.0, 0.0)]
+    else:
+        w, h = mont["w"] + FOLGA * 0.6 + a["w"], max(mont["h"], a["h"])
+        membros = [(mont, 0.0, h - mont["h"]), (a, mont["w"] + FOLGA * 0.6, h - a["h"])]
+    return {"grupo": membros, "w": w, "h": h, "local": True, "montagem": mont.get("montagem"), "titulo": mont["titulo"]}
+
+
+def _membros(c: dict, posicionar: bool = True) -> List[dict]:
+    """as células de um candidato (o grupo chumbamento + chapa, ou ele mesmo), já na posição dele"""
+    if not c.get("grupo"):
+        return [c]
+    fora = []
+    for m, dx_, dy_ in c["grupo"]:
+        if posicionar:
+            m["px"], m["py"] = c["px"] + dx_, c["py"] + dy_
+        fora.append(m)
+    return fora
 
 
 def _layout_das_tesouras(emp: Sequence[dict], mq: dict, qx0: float, qx1: float):
@@ -1227,14 +1322,14 @@ def _copia_local(c: dict, n: int) -> dict:
 
 
 def _tabela(d, x0: float, y1: float, y0: float, titulo: str, linhas: Sequence[tuple], h: float = 2.0,
-            passo: float = 3.2, cabecalho: Optional[tuple] = None, max_larg: Optional[float] = None) -> float:
+            passo: float = 3.2, cabecalho: Optional[tuple] = None, max_larg: Optional[float] = None,
+            h_tit: float = 2.5) -> float:
     """Uma tabela de texto com título, as linhas correndo em colunas de cima para baixo e da esquerda
     para a direita entre y1 e y0. Com `d` None só mede. `max_larg`: o que não cabe nela é cortado, com
     "… +N" na última linha. Devolve a largura usada (mm)."""
     if not linhas:
         return 0.0
     linhas = list(linhas)
-    h_tit = 2.5
     n_campos = max(len(l) for l in linhas)
     todas = ([cabecalho] if cabecalho else []) + list(linhas)
     # as letras da tabela (maiúsculas e números, "C127X50X17X#14") são mais largas que a média do texto
@@ -1291,16 +1386,17 @@ def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tu
     folga = 4.0
     # os blocos um embaixo do outro quando cabem na altura (a legenda fica estreita e sobra largura para
     # os DETALHES — pedido do usuário, 28/09: "reduzir bastante o tamanho")
-    passo_t, gap_v = 3.2, 3.0
-    alturas = [2.5 + 2.5 + len(l) * passo_t + (passo_t if c else 0.0) for t, l, c in blocos]
-    if len(blocos) > 1 and sum(alturas) + gap_v * (len(blocos) - 1) <= topo - base:
-        x = x0 + QUADRO_MARGEM
-        y_ = topo
-        larg_max = 0.0
-        for (t, l, c), a_ in zip(blocos, alturas):
-            larg_max = max(larg_max, _tabela(d, x, y_, y_ - a_ - 0.5, t, l, cabecalho=c, passo=passo_t))
-            y_ -= a_ + gap_v
-        return larg_max + 2 * QUADRO_MARGEM
+    # a letra maior quando cabe (pedido do usuário, 28/09: "aumentar o tamanho do texto")
+    for h_l, passo_t, h_t, gap_v in ((3.0, 4.4, 3.5, 4.0), (2.0, 3.2, 2.5, 3.0)):
+        alturas = [h_t + 2.5 + len(l) * passo_t + (passo_t if c else 0.0) for t, l, c in blocos]
+        if len(blocos) > 1 and sum(alturas) + gap_v * (len(blocos) - 1) <= topo - base:
+            x = x0 + QUADRO_MARGEM
+            y_ = topo
+            larg_max = 0.0
+            for (t, l, c), a_ in zip(blocos, alturas):
+                larg_max = max(larg_max, _tabela(d, x, y_, y_ - a_ - 0.5, t, l, cabecalho=c, passo=passo_t, h=h_l, h_tit=h_t))
+                y_ -= a_ + gap_v
+            return larg_max + 2 * QUADRO_MARGEM
     naturais = [_tabela(None, 0.0, topo, base, t, l, cabecalho=c) for t, l, c in blocos]
     limites = [None] * len(blocos)
     if largura is not None:

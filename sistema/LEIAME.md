@@ -276,6 +276,11 @@ peças dela** (pedidos do usuário, 28/09):
   linha de furação só (24 e 26 mm davam "2" e "246" encavalados).
 - Nas cotas curtas das chapas, o número posto fora da linha voltava sem a conversão para a folha e sumia; agora
   aparece.
+- A chapa do chumbamento vai junto das vistas dele, embaixo ou ao lado, só com o título e a linha "PLATE…"; o
+  resto está na prancha das chapas. As chapas de uma montagem de chapas (CH1 + CH2) não saem soltas na prancha da
+  tesoura, porque a montagem já as cota, e a chamada delas fica sem "– PR.xx".
+- Os detalhes de furos ficam perto da marca deles, com espaço entre um e outro, e sem a linha "ESC." (a escala
+  está no título). A legenda tem letra maior quando cabe.
 
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
 sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da

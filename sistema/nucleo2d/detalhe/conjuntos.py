@@ -463,8 +463,8 @@ def _detalhes_de_furos(p, barras: Sequence[dict], nome_de, esc: float, y_topo: f
                     p.cota_v(y0 + ys[i_] * k, y0 + ys[i_ + 1] * k, x_fim, 8.0, texto="%d" % round(ys[i_ + 1] - ys[i_]))
             escondido = any(f["escondido"] for f in fs)
             h = 2.2 * esc
-            p.texto(x_cel, y_topo + 5.0 * esc + 1.2 * h, "DETALHE %s – FUROS DE %s  (1:%d)" % (letra, nome, round(esc / k)), h)
-            p.texto(x_cel, y_topo + 5.0 * esc, "da ponta %s%s" % (lado, " · face escondida na elevação" if escondido else ""), 1.8 * esc)
+            p.texto(x_cel, y_topo + 3.0 * esc + 1.2 * h, "DETALHE %s – FUROS DE %s  (1:%d)" % (letra, nome, round(esc / k)), h)
+            p.texto(x_cel, y_topo + 3.0 * esc, "da ponta %s%s" % (lado, " · face escondida na elevação" if escondido else ""), 1.8 * esc)
             p.atr = atr_conj
             # chamada na elevação: círculo em volta dos furos e a letra
             xs_e = [f["p2"][0] for f in fs]

@@ -447,5 +447,18 @@ def test_chapas_da_tesoura_na_prancha_dela_com_a_quantidade_dela():
     from nucleo2d.desenho import Linha
     for i, _t in furos:
         assert any(isinstance(e, Linha) and (e.atributos or {}).get("prancha") == "chamada_furos" for e in folhas[i].entidades.values())
+    # as chapas de uma montagem de chapas da prancha não saem soltas (a montagem já as cota); a do
+    # chumbamento vai junto das vistas dele, logo ao lado ou embaixo (28/09)
+    cels1 = folhas[0].metadados["prancha"]["celulas"]
+    for t in p1:
+        nome_m = t.split(" – ")[0]
+        if " + " in nome_m and not nome_m.startswith("CB"):
+            assert not any(x.split(" – ")[0] in nome_m.split(" + ") for x in p1), (nome_m, p1)
+        if nome_m.startswith("CB") and " + " in nome_m:
+            cb = next(c for c in cels1 if c["titulo"] == t)
+            ch = next((c for c in cels1 if c["titulo"].split(" – ")[0] == nome_m.split(" + ")[1]), None)
+            assert ch is not None, (nome_m, p1)
+            perto = abs(ch["caixa"][0] - cb["caixa"][2]) < 12.0 or abs(ch["caixa"][3] - cb["caixa"][1]) < 12.0
+            assert perto, (cb, ch)
     # a faixa de baixo: ACESSÓRIOS/DISPOSITIVOS
     assert any(isinstance(e, Texto) and e.texto == "ACESSÓRIOS/DISPOSITIVOS" for e in folhas[0].entidades.values())
