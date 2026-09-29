@@ -461,6 +461,20 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     # vertical só atrapalha; ficam a altura da peça e as cotas horizontais
     cadeia = bool(ys) and not terca and p.cadeia_v([0.0] + ys + [H], L, off, exigir_espaco=False)
     p.cota_v(0, H, x_alt, lado_alt * (off3 if cadeia == "dupla" else off2 if cadeia else off))
+    # a barra cortada em ângulo (a ponta inclinada na vista de frente): a face mais curta também cotada — só
+    # com o comprimento da maior e a altura, o corte não se fazia (DP.17.3 e B.13 do depósito, análise das
+    # pranchas, 29/09)
+    if pos.classe == "barra" and pos.local and not terca:
+        vs_ = [q[1] for q in pos.local]
+        v0_, v1_ = min(vs_), max(vs_)
+        topo_ = [q[0] for q in pos.local if q[1] >= v1_ - 0.5]
+        base_ = [q[0] for q in pos.local if q[1] <= v0_ + 0.5]
+        if topo_ and base_:
+            t0_, t1_, b0_, b1_ = min(topo_), max(topo_), min(base_), max(base_)
+            if (t1_ - t0_) < (b1_ - b0_) - 2.0:
+                p.cota_h(t0_, t1_, H, (off2 if em_cima else off))
+            elif (b1_ - b0_) < (t1_ - t0_) - 2.0:
+                p.cota_h(b0_, b1_, 0, -(off3 + off))
 
     x_dir = L + (off3 + off) * esc
     # a seção não vai na terça (o perfil está no título) nem na barra redonda (a bitola também) — prancha

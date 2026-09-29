@@ -1191,61 +1191,81 @@ def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: fl
         cels = pranchas[i]
         princ = [c for c in cels if not c.get("_na_faixa")]
         cats = {c["categoria"] for c in princ}
-        if (not princ or len(cats) != 1 or any(c.get("empilhada") or c.get("pai") is not None for c in princ)
-                or cats & {"LOCALIZACAO", "CHUMBACAO", "TELHAS", "TELHAS_TIPOS", "TELHAS_DET"}
+        if (not princ or any(c.get("empilhada") or c.get("pai") is not None for c in princ)
+                # a tesoura não vai para a prancha de outra categoria (a T4 do depósito, sozinha, caía no meio das
+                # barras — 29/09)
+                or cats & {"LOCALIZACAO", "CHUMBACAO", "TELHAS", "TELHAS_TIPOS", "TELHAS_DET", "TESOURAS"}
                 or any(c.get("_na_faixa") and not c.get("local") for c in cels)
                 or sum(c["w"] * c["h"] for c in princ) > OCUPACAO_MINIMA * area_util):
             i -= 1
             continue
-        bx0 = min(c["px"] for c in princ)
-        by0 = min(c["py"] for c in princ)
-        bx1 = max(c["px"] + c["w"] for c in princ)
-        by1 = max(c["py"] + c["h"] for c in princ)
-        W = bx1 - bx0 + 2 * QUADRO_MARGEM
-        H = by1 - by0 + QUADRO_CABECALHO + FOLGA
-        destino = None
-        # a mais perto primeiro (a anterior, depois as de antes, depois as de depois): perto das outras da categoria
-        for j in list(range(i - 1, -1, -1)) + list(range(i + 1, len(pranchas))):
-            if j == i or any(c["categoria"] == "LOCALIZACAO" or c.get("empilhada") for c in pranchas[j]):
-                continue
-            obst = [(c["px"] - FOLGA * 0.5, c["py"] - FOLGA * 0.5, c["px"] + c["w"] + FOLGA * 0.5, c["py"] + c["h"] + FOLGA * 0.5)
-                    for c in pranchas[j] if not c.get("_na_faixa")]
-            obst += [(qx0 - QUADRO_MARGEM, mq["y1"] - QUADRO_CABECALHO - FOLGA * 0.5, qx1 + QUADRO_MARGEM, mq["y1"])
-                     for mq in molduras[j] if mq["categoria"] not in ("DETALHES", "LEGENDA")]
-            y = uy1 - H
-            while destino is None and y >= uy0:
-                x = qx0 - QUADRO_MARGEM
-                while x + W <= qx1 + QUADRO_MARGEM:
-                    r = (x, y, x + W, y + H)
-                    if not any(r[0] < o[2] and o[0] < r[2] and r[1] < o[3] and o[1] < r[3] for o in obst):
-                        destino = (j, x, y)
-                        break
-                    x += 5.0
-                y -= 5.0
-            if destino:
+        # um bloco por categoria (a prancha com as últimas barras e os tirantes, 29/09), cada um no seu quadro com o
+        # título dela; a prancha só sai quando todos os blocos acharam lugar
+        grupos: Dict[str, list] = collections.OrderedDict()
+        for c in princ:
+            grupos.setdefault(c["categoria"], []).append(c)
+        postos_novos: Dict[int, list] = collections.defaultdict(list)     # prancha → retângulos já tomados agora
+        planos = []
+        for cat, g in grupos.items():
+            bx0 = min(c["px"] for c in g)
+            by0 = min(c["py"] for c in g)
+            bx1 = max(c["px"] + c["w"] for c in g)
+            by1 = max(c["py"] + c["h"] for c in g)
+            W = bx1 - bx0 + 2 * QUADRO_MARGEM
+            H = by1 - by0 + QUADRO_CABECALHO + FOLGA
+            destino = None
+            # a mais perto primeiro (a anterior, depois as de antes, depois as de depois): perto das outras da categoria
+            for j in list(range(i - 1, -1, -1)) + list(range(i + 1, len(pranchas))):
+                if j == i or any(c["categoria"] == "LOCALIZACAO" or c.get("empilhada") for c in pranchas[j]):
+                    continue
+                # a caixa como vai ser desenhada: na prancha de corte, o retângulo da grade (maior que a célula; o bloco
+                # dos tirantes caía em cima das chapas, 29/09)
+                obst = [((c["slot_caixa"][0], c["slot_caixa"][1], c["slot_caixa"][2], c["slot_caixa"][3]) if c.get("slot_caixa")
+                         else (c["px"], c["py"], c["px"] + c["w"], c["py"] + c["h"])) for c in pranchas[j] if not c.get("_na_faixa")]
+                obst = [(o_[0] - FOLGA * 0.5, o_[1] - FOLGA * 0.5, o_[2] + FOLGA * 0.5, o_[3] + FOLGA * 0.5) for o_ in obst]
+                obst += [(qx0 - QUADRO_MARGEM, mq["y1"] - QUADRO_CABECALHO - FOLGA * 0.5, qx1 + QUADRO_MARGEM, mq["y1"])
+                         for mq in molduras[j] if mq["categoria"] not in ("DETALHES", "LEGENDA")]
+                obst += [(r_[0] - FOLGA * 0.5, r_[1] - FOLGA * 0.5, r_[2] + FOLGA * 0.5, r_[3] + FOLGA * 0.5) for r_ in postos_novos[j]]
+                y = uy1 - H
+                while destino is None and y >= uy0:
+                    x = qx0 - QUADRO_MARGEM
+                    while x + W <= qx1 + QUADRO_MARGEM:
+                        r = (x, y, x + W, y + H)
+                        if not any(r[0] < o[2] and o[0] < r[2] and r[1] < o[3] and o[1] < r[3] for o in obst):
+                            destino = (j, x, y)
+                            break
+                        x += 5.0
+                    y -= 5.0
+                if destino:
+                    break
+            if destino is None:
+                planos = None
                 break
-        if destino is None:
+            j, x, y = destino
+            postos_novos[j].append((x, y, x + W, y + H))
+            planos.append((cat, g, j, x, y, W, H, bx0, by1))
+        if not planos:
             i -= 1
             continue
-        j, x, y = destino
-        dx = x + QUADRO_MARGEM - bx0
-        dy = (y + H - QUADRO_CABECALHO - FOLGA * 0.5) - by1
-        for c in princ:
-            c["px"] += dx
-            c["py"] += dy
-            if c.get("_fileira"):
-                # a fileira agora vai de borda a borda do quadro novo, que é da largura do bloco
-                c["_fileira"] = (c["_fileira"][0], x + QUADRO_MARGEM, x + W - QUADRO_MARGEM)
-            if c.get("slot_caixa"):
-                sc = c["slot_caixa"]
-                c["slot_caixa"] = (sc[0] + dx, sc[1] + dy, sc[2] + dx, sc[3] + dy)
-        pranchas[j] = pranchas[j] + princ
-        cat = next(iter(cats))
-        molduras[j].append({"categoria": cat, "titulo": titulos.get(cat, cat), "x0": x, "x1": x + W, "y1": y + H, "y0": y})
-        leg = legendas[j]
-        if leg.get("blocos"):
-            leg["blocos"] = _blocos_da_legenda([c for c in pranchas[j] if not c.get("_na_faixa")],
-                                               [c for c in pranchas[j] if c.get("_na_faixa")])
+        for cat, g, j, x, y, W, H, bx0, by1 in planos:
+            dx = x + QUADRO_MARGEM - bx0
+            dy = (y + H - QUADRO_CABECALHO - FOLGA * 0.5) - by1
+            for c in g:
+                c["px"] += dx
+                c["py"] += dy
+                if c.get("_fileira"):
+                    # a fileira agora vai de borda a borda do quadro novo, que é da largura do bloco
+                    c["_fileira"] = (c["_fileira"][0], x + QUADRO_MARGEM, x + W - QUADRO_MARGEM)
+                if c.get("slot_caixa"):
+                    sc = c["slot_caixa"]
+                    c["slot_caixa"] = (sc[0] + dx, sc[1] + dy, sc[2] + dx, sc[3] + dy)
+            pranchas[j] = pranchas[j] + g
+            molduras[j].append({"categoria": cat, "titulo": titulos.get(cat, cat), "x0": x, "x1": x + W, "y1": y + H, "y0": y})
+        for j in {pl[2] for pl in planos}:
+            leg = legendas[j]
+            if leg.get("blocos"):
+                leg["blocos"] = _blocos_da_legenda([c for c in pranchas[j] if not c.get("_na_faixa")],
+                                                   [c for c in pranchas[j] if c.get("_na_faixa")])
         del pranchas[i], molduras[i], legendas[i]
         saiu += 1
         i -= 1
@@ -1354,11 +1374,22 @@ def _justificar_fileiras(cels: Sequence[dict], molduras_p: Sequence[dict] = ()) 
             continue
         extra = sobra / len(linha) if sobra <= JUSTIFICAR_ATE * disp else 0.0
         x = x_ini if extra else linha[0]["px"]
+        ids_l = {id(c_) for c_ in linha}
+        # o que está embaixo de cada caixa (o bloco que a junção pôs no espaço livre, 29/09): a caixa só desce até a
+        # altura da fileira quando o caminho está livre
+        obst = [(o["px"], o["py"], o["px"] + o["w"], o["py"] + o["h"]) for o in cels
+                if id(o) not in ids_l and o.get("px") is not None and not o.get("empilhada")]
+        obst += [(mq["x0"], mq["y0"], mq["x1"], mq["y1"]) for mq in molduras_p
+                 if mq.get("x0") is not None and mq["categoria"] not in ("DETALHES", "LEGENDA") and mq["x0"] > x_ini + 1.0]
         for c in linha:
             c["px"] = x
             c["w"] = c["w"] + extra
-            c["py"] = topo - alt
-            c["h"] = alt
+            base_ = c["py"]
+            r_ = (c["px"], topo - alt, c["px"] + c["w"], base_)
+            livre = base_ - (topo - alt) < 0.5 or not any(
+                r_[0] < o_[2] - 0.5 and o_[0] < r_[2] - 0.5 and r_[1] < o_[3] - 0.5 and o_[1] < r_[3] - 0.5 for o_ in obst)
+            if livre:
+                c["py"], c["h"] = topo - alt, alt
             x += c["w"] + FOLGA
         mudou += 1
     return mudou
