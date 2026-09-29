@@ -545,6 +545,14 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         if 2 * larg_col + FOLGA <= qx1 - qx0:
             for c in ter:
                 c["slot_w"] = larg_col
+    # a prancha de corte em retângulos iguais (pedido do usuário, 29/09: "padronizar a organização das chaparias
+    # separadas em retângulos"): cada chapa no seu retângulo, do tamanho da maior, em fileiras alinhadas
+    chp = [c for c in itens if c["categoria"] == "CHAPAS" and c.get("pai") is None and not c.get("local")]
+    if len(chp) >= 2:
+        sw, sh = max(c["w"] for c in chp), max(c["h"] for c in chp)
+        if sw <= qx1 - qx0:
+            for c in chp:
+                c["slot_w"], c["slot_h"] = sw, sh
     # a faixa ao lado do carimbo, embaixo (pedido do usuário, 28/09): DETALHES à esquerda — as chapas dos
     # conjuntos desenhados na prancha (a composição deles), ou, sem conjunto, mais células das mesmas
     # categorias — e LEGENDA junto do carimbo — as peças da prancha, as siglas e, na primeira, a relação das
@@ -675,7 +683,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 if cels_p and cat == "CHAPAS" and not any(c_["categoria"] == "CHAPAS" for c_ in cels_p):
                     break                                       # a prancha de corte começa numa folha nova
                 linha = prateleira(cat, qx0, qx1)
-                alt = max(c["h"] for c in linha)
+                alt = max(c.get("slot_h", c["h"]) for c in linha)
                 if y_topo - (QUADRO_CABECALHO + FOLGA * 0.6 + alt) < uy0 - FOLGA * 0.5 + 0.5 and cels_p:
                     break
                 aberto = {"categoria": cat, "titulo": titulos_q.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
@@ -686,12 +694,12 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 limite = uy0 - FOLGA * 0.5 + 0.5                 # a última fileira vai até o fundo do quadro
                 while fila and fila[0]["categoria"] == cat:
                     linha = prateleira(cat, qx0, qx1)
-                    alt = max(c["h"] for c in linha)
+                    alt = max(c.get("slot_h", c["h"]) for c in linha)
                     if y_topo - alt < limite and cels_p:
                         # a fileira não cabe: as menores da mesma categoria que ainda cabem na altura que sobra
                         # vão antes de fechar a prancha (pedido do usuário, 29/09: "esses detalhes cabem")
                         while True:
-                            cabem = [c_ for c_ in fila if c_["categoria"] == cat and y_topo - c_["h"] >= limite]
+                            cabem = [c_ for c_ in fila if c_["categoria"] == cat and y_topo - c_.get("slot_h", c_["h"]) >= limite]
                             linha2, x2 = [], qx0
                             for c_ in cabem:
                                 w_ = c_.get("slot_w", c_["w"])
@@ -704,16 +712,20 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                             x2 = qx0
                             for c_ in linha2:
                                 c_["px"], c_["py"] = x2, y_topo - c_["h"]
+                                if "slot_h" in c_:
+                                    c_["slot_caixa"] = (x2, y_topo - c_["slot_h"], x2 + c_["slot_w"], y_topo)
                                 x2 += c_.get("slot_w", c_["w"]) + FOLGA
                                 cels_p.append(c_)
                                 fila.remove(c_)
-                            y_topo -= max(c_["h"] for c_ in linha2) + FOLGA * 0.6
+                            y_topo -= max(c_.get("slot_h", c_["h"]) for c_ in linha2) + FOLGA * 0.6
                         cheia = True
                         break
                     x = qx0
                     for c in linha:
                         # alinhadas pelo topo: os títulos numa linha só
                         c["px"], c["py"] = x, y_topo - c["h"]
+                        if "slot_h" in c:
+                            c["slot_caixa"] = (x, y_topo - c["slot_h"], x + c["slot_w"], y_topo)
                         x += c.get("slot_w", c["w"]) + FOLGA
                         cels_p.append(c)
                         fila.remove(c)
@@ -906,8 +918,13 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 if fora_f:
                     for c in fora_f:
                         na_faixa.remove(c)
+                        c.pop("_na_faixa", None)
                         if not c.get("local") and not any(c is x_ for x_ in fila):
-                            fila.append(c)
+                            # de volta no lugar da categoria dela (no fim da fila, virava uma prancha só para ela,
+                            # depois dos rufos — a S.T.2 do depósito, 29/09)
+                            k_ = next((i_ for i_, x_ in enumerate(fila)
+                                       if ordem.get(x_["categoria"], 99) > ordem.get(c["categoria"], 99)), len(fila))
+                            fila.insert(k_, c)
                     leg["blocos"] = _blocos_da_legenda(cels_p, na_faixa + no_canto)
                     if leg["blocos"]:
                         leg["x0"] = max(leg["x0"], fx1 - min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0)))
@@ -1001,6 +1018,11 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             (bx0, by0), (bx1, by1) = c["caixa"]
             dx = c["px"] - bx0 / c["k"]
             dy = c["py"] + (0.0 if c.get("sem_escala") else FAIXA) - by0 / c["k"]
+            if c.get("slot_caixa") and not c.get("local") and c.get("pai") is None:
+                sx0, sy0, sx1, sy1 = c["slot_caixa"]
+                d.add(Polilinha(camada="PRANCHA", vertices=[(round(sx0, 2), round(sy0, 2)), (round(sx1, 2), round(sy0, 2)),
+                                                            (round(sx1, 2), round(sy1, 2)), (round(sx0, 2), round(sy1, 2))],
+                                fechada=True, atributos={"prancha": "celula", "categoria": c["categoria"], "cel": ids_c[id(c)]}))
             for e in c["entidades"]:
                 n_ = _para_papel(e, c["k"], dx, dy, c["fonte"])
                 n_.atributos = dict(n_.atributos or {}, cel=ids_c[id(c)])
@@ -1115,6 +1137,9 @@ def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: fl
         for c in princ:
             c["px"] += dx
             c["py"] += dy
+            if c.get("slot_caixa"):
+                sc = c["slot_caixa"]
+                c["slot_caixa"] = (sc[0] + dx, sc[1] + dy, sc[2] + dx, sc[3] + dy)
         pranchas[j] = pranchas[j] + princ
         cat = next(iter(cats))
         molduras[j].append({"categoria": cat, "titulo": titulos.get(cat, cat), "x0": x, "x1": x + W, "y1": y + H, "y0": y})
