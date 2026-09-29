@@ -455,7 +455,9 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             coluna_t["categoria"] = "TELHAS_TIPOS"
             ordem["TELHAS_TIPOS"] = ordem.get("TELHAS", 0) - 0.5
             titulos_q["TELHAS_TIPOS"] = "Tipos de telha"
-            _caber_numa_prancha(direita_t, ux1 - ux0 - FOLGA, uy1 - QUADRO_CABECALHO - FOLGA - uy0, teto_t, coluna=coluna_t)
+            planta_t = [c for c in direita_t if re.match(r"FACE \d+ – COBERTURA \(0", str(c.get("titulo") or ""))]
+            _caber_numa_prancha(direita_t, ux1 - ux0 - FOLGA, uy1 - QUADRO_CABECALHO - FOLGA - uy0, teto_t, coluna=coluna_t,
+                                par=planta_t)
         else:
             for c in principais:
                 c["categoria"] = "TELHAS"
@@ -1469,21 +1471,25 @@ def _espacar_textos(c: dict):
 
 
 def _caber_numa_prancha(cels: Sequence[dict], largura: float, altura: float, teto: Optional[Dict[int, float]] = None,
-                        coluna: Optional[dict] = None):
+                        coluna: Optional[dict] = None, par: Sequence[dict] = ()):
     """Aumenta a escala das células (a mesma proporção em todas, na escala normalizada) até elas caberem
     num quadro de largura × altura, em prateleiras como as da prancha — as mais altas primeiro. `teto`:
     id da célula → o aumento máximo dela (o detalhe com notas: mais reduzido, as linhas se atropelam).
     `coluna`: a célula que vai sozinha num quadro à esquerda (as de `cels` no quadro da direita, como os
-    quadros lado a lado: `largura` é a dos dois, e cada um tem as margens dele)."""
+    quadros lado a lado: `largura` é a dos dois, e cada um tem as margens dele). `par`: as células que vão na
+    escala da coluna (a planta da cobertura ao lado da paginação dela — pedido do usuário, 28/09)."""
     if not cels:
         return
     todas = list(cels) + ([coluna] if coluna is not None else [])
     base = {id(c): float(c.get("escala") or c["k"]) for c in todas}
     fatores = (1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0)
 
+    ids_par = {id(c) for c in par}
+
     def cabe_com(f, g):
         for c in cels:
-            _reescalar(c, escala_normalizada(base[id(c)] * min(f, (teto or {}).get(id(c), f)) - 1e-6))
+            f_c = g if id(c) in ids_par else min(f, (teto or {}).get(id(c), f))
+            _reescalar(c, escala_normalizada(base[id(c)] * f_c - 1e-6))
         if coluna is not None:
             _reescalar(coluna, escala_normalizada(base[id(coluna)] * g - 1e-6))
             if coluna["h"] > altura:
@@ -1503,14 +1509,19 @@ def _caber_numa_prancha(cels: Sequence[dict], largura: float, altura: float, tet
             alt_l = max(alt_l, c["h"])
         return y + alt_l <= altura
     achou = False
-    for f in fatores:
-        # a coluna (a paginação) pode ir mais reduzida que as vistas da direita, até 2x
-        for g in ([f_ for f_ in fatores if f <= f_ <= 2.0 * f] if coluna is not None else [f]):
-            if cabe_com(f, g):
-                achou = True
+    if coluna is not None:
+        # a coluna (e o par dela) na maior escala que cabe; as outras vistas, na maior com ela
+        for g in fatores:
+            for f in fatores:
+                if cabe_com(f, g):
+                    achou = True
+                    break
+            if achou:
                 break
-        if achou:
-            break
+    else:
+        for f in fatores:
+            if cabe_com(f, f):
+                break
     # na ordem das prateleiras: as mais altas primeiro
     for i, c in enumerate(sorted(cels, key=lambda c_: -c_["h"])):
         c["_ordem"] = i
