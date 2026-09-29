@@ -174,6 +174,21 @@ async function iniciar() {
       aplicarLayout(); guardar(); avisarEstado();
       return;
     }
+    if (ev.data.metalica === 'desenho2d' && ev.source === $('#f2d').contentWindow && ev.data.desenho) {
+      // o CAD abriu outro desenho (pela lista dele, ou a prancha depois de montar): o endereço guarda, para
+      // o F5 voltar a ele (pedido do usuário, 28/09), e a lista de cima mostra o mesmo
+      const u = new URL(location.href);
+      u.searchParams.set('desenho', ev.data.desenho);
+      history.replaceState(history.state, '', u);
+      const sel = $('#desenho');
+      if (sel && ![...sel.options].some(o => o.value === ev.data.desenho)) {
+        const o = document.createElement('option');
+        o.value = ev.data.desenho; o.textContent = ev.data.titulo || ev.data.desenho;
+        sel.append(o);
+      }
+      if (sel) sel.value = ev.data.desenho;
+      return;
+    }
     if (vista !== 'ambos') return;
     if (ev.data.metalica === 'sel3d' && ev.source === $('#f3d').contentWindow) doTresD(ev.data);
     else if (ev.data.metalica === 'sel2d' && ev.source === $('#f2d').contentWindow) doDoisD(ev.data);

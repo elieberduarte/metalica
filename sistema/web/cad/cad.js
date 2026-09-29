@@ -187,6 +187,11 @@ class CAD {
       this._naoAbriu = null;
       this.carregar(r.desenho);
       const url = new URL(location.href); url.searchParams.set('desenho', nome); history.replaceState(null, '', url);
+      // a área de trabalho (/dividida) guarda o desenho aberto no endereço dela: o F5 volta a ele, não ao
+      // completo (pedido do usuário, 28/09)
+      if (window.parent !== window) {
+        try { window.parent.postMessage({ metalica: 'desenho2d', desenho: nome, titulo: this.doc.nome }, location.origin); } catch { /* sem a área */ }
+      }
       const link3d = $('#link-editor');
       if (link3d && this.projeto) link3d.href = this.urlDoEditor();       // o 3D sabe voltar a este desenho
       this.dica(`Desenho "${this.doc.nome}" aberto: ${numero(this.doc.tamanho)} objetos, escala 1:${this.doc.escala}.`);
