@@ -288,7 +288,7 @@ peças dela** (pedidos do usuário, 28/09):
   detalhe típico só, como as A.D.: a cantoneira mais comprida deitada, as cotas empilhadas "A.L.2 COMP=792mm –
   04X" e as peças de ponta por conjunto quando mudam. As barras deles saem da prancha de barras.
 - Terças em colunas alinhadas; na faixa de baixo da prancha delas, os suportes de terça (não mais terças). A
-  vista de cima da terça (o recorte da aba) ganhou o nome ("VISTA DE CIMA – T.C.4") e ficou colada na de frente.
+  vista de cima da terça (o recorte da aba) ganhou o nome ("VISTA DE CIMA – T.C.4") e ficou colada na de frente. As fileiras de células ficam mais juntas (6 mm) e a última vai até o fundo do quadro: na Sala, as terças cabem em duas pranchas (13 no total, eram 14).
 
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal
 sem a largura dos perfis, o vão livre do joelho por dentro e a largura dele por fora, medidos pelas faces da

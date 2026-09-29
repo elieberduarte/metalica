@@ -533,7 +533,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 cat = fila[0]["categoria"]
                 linha = prateleira(cat, qx0, qx1)
                 alt = max(c["h"] for c in linha)
-                if y_topo - (QUADRO_CABECALHO + FOLGA + alt + FOLGA) < uy0 and cels_p:
+                if y_topo - (QUADRO_CABECALHO + FOLGA + alt) < uy0 - FOLGA * 0.5 + 2.0 and cels_p:
                     break
                 aberto = {"categoria": cat, "titulo": titulos_q.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
                           "y1": y_topo, "y0": None}
@@ -543,7 +543,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 while fila and fila[0]["categoria"] == cat:
                     linha = prateleira(cat, qx0, qx1)
                     alt = max(c["h"] for c in linha)
-                    if y_topo - (alt + FOLGA) < uy0 and cels_p:
+                    if y_topo - alt < uy0 - FOLGA * 0.5 + 2.0 and cels_p:     # a última fileira vai até o fundo do quadro
                         cheia = True
                         break
                     x = qx0
@@ -553,7 +553,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                         x += c.get("slot_w", c["w"]) + FOLGA
                         cels_p.append(c)
                         fila.remove(c)
-                    y_topo -= alt + FOLGA
+                    y_topo -= alt + FOLGA * 0.6                # entre as fileiras (cada célula já tem a margem dela)
                 aberto["y0"] = y_topo
                 y_topo -= FOLGA
             if mold_p:
