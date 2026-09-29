@@ -60,6 +60,10 @@ def _cabecalho(pos: Posicao) -> List[str]:
                                                           _mm(pos.desenvolvimento[0]), _mm(pos.desenvolvimento[1]))]
     elif pos.classe in ("chapa", "chapa_dobrada"):
         linhas = [titulo, "%s  %s" % (pos.perfil, _rotulo_espessura(pos))]
+        if getattr(pos, "nome_suporte", ""):
+            # a chapa que é o suporte de terça sozinha: S.T.n no título, o nome da chapa ao lado do perfil
+            linhas = ["%s – %02dx" % (pos.nome_suporte, pos.quantidade),
+                      "%s  %s  %s" % (pos.nome or pos.marca, pos.perfil, _rotulo_espessura(pos))]
     elif pos.classe == "barra_conformada":
         linhas = [titulo + "   L desenv. %s mm" % _mm(pos.comprimento), com_bitola(pos.perfil)]
     elif pos.classe == "telha":
@@ -197,6 +201,31 @@ def chamadas_de_furos(p, furos, H: float, esc: float, L: Optional[float] = None)
     return feitas
 
 
+def _na_posicao_montada(pos: Posicao) -> Posicao:
+    """O suporte de terça em pé no modelo (o lado comprido na vertical) desenhado em pé, como fica
+    montado (pedido do usuário, 29/09: "girar para ficar na posição montada"): uma cópia girada 90°,
+    com o lado comprido subindo como no modelo; os oblongos giram junto. Outra peça volta como está."""
+    import copy
+    if pos.classe != "chapa" or pos.tipo_nome != "suporte_terca" or not pos.eixos or not pos.contorno:
+        return pos
+    e1 = pos.eixos[0]
+    if abs(e1[2]) < 0.7:
+        return pos
+    L, W = pos.L, max(q[1] for q in pos.contorno)
+    # para cima o sentido do lado comprido que sobe no modelo
+    gira = (lambda x, y: (W - y, x)) if e1[2] > 0 else (lambda x, y: (y, L - x))
+    g = copy.deepcopy(pos)
+    g.contorno = [gira(x, y) for x, y in pos.contorno]
+    for f in g.furos:
+        f.x, f.y = gira(f.x, f.y)
+        f.larg, f.alt = f.alt, f.larg
+        f.pontos = [gira(x, y) for x, y in f.pontos]
+    xs = [q[0] for q in g.contorno]
+    ys = [q[1] for q in g.contorno]
+    g.L, g.H = max(xs) - min(xs), max(ys) - min(ys)
+    return g
+
+
 def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
                        editavel: bool = False) -> Tuple[float, float, float, float]:
     """Célula da posição em `desenho`, com a vista de frente em (dx, dy). Devolve os
@@ -213,6 +242,8 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
         return p.extremos
     if pos.classe == "telha":
         return _desenho_da_telha(pos, p, esc, off, off2, off3)
+    if not editavel:
+        pos = _na_posicao_montada(pos)
     L, H = pos.L, pos.H
     furos_frente = [f for f in pos.furos if f.vista == "frente"]
     furos_topo = [f for f in pos.furos if f.vista == "topo"]
@@ -414,7 +445,7 @@ def detalhar_posicao(doc: Documento, marca: str, editavel: bool = True, ajustes:
     escala = {"chapa": 10.0, "chapa_dobrada": 10.0, "telha": 50.0}.get(pos.classe, 25.0)
     d = Desenho(nome="Detalhe – %s" % marca, escala=escala)
     parametrica = all(isinstance(getattr(e, "parametrica", None), Chapa) for e in lista)
-    edit = bool(editavel and ((parametrica and pos.classe == "chapa") or pos.classe == "barra"))
+    edit = bool(editavel and ((parametrica and pos.classe == "chapa" and _na_posicao_montada(pos) is pos) or pos.classe == "barra"))
     ext = desenho_da_posicao(pos, d, 0.0, 0.0, editavel=edit)
     d.metadados["celulas"] = [[round(v, 1) for v in ext]]
     d.metadados["detalhamento"] = {
@@ -1064,6 +1095,111 @@ def padronizar_furos_das_chapas(doc: Documento, posicoes: Sequence[Posicao]) -> 
             ch.furos = novos
             saida["chapas"] += 1
             saida["furos"] += len(novos)
+            m = str(_marcas(ch).get("posicao") or "")
+            if m not in saida["posicoes"]:
+                saida["posicoes"].append(m)
+    return saida
+
+
+def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> dict:
+    """O suporte de terça segue a furação padrão da terça, e não o contrário (pedido do usuário, 29/09:
+    "a furação é de 50 mm no eixo central da terça e a chaparia precisa ser adaptada para bater com a
+    furação da terça"). Em cada chapa paramétrica, os furos que caem numa terça (`tercas`: as marcas de
+    posição das terças) vão, coluna a coluna, para o passo da máquina — 50 mm até 200 mm de altura, 100
+    acima — centrados no eixo da terça; o furo sem parafuso numa coluna que tem dois parafusados sai (o
+    5º furo do suporte do depósito químico). Parafuso, porca e arruela andam junto. Vale para o suporte
+    com duas terças de alturas diferentes (C200 de um lado, C150 do outro), que a regra por assinatura
+    não pegava. Devolve {"chapas", "furos", "posicoes"}."""
+    from saida.detalhamento import _autovetores
+    from nucleo2d.detalhe.base import FURACAO_TERCA_BAIXA, FURACAO_TERCA_ALTA, LIMITE_TERCA
+    saida = {"chapas": 0, "furos": 0, "posicoes": []}
+    pecas_t = []
+    for e in doc.entidades.values():
+        if str(_marcas(e).get("posicao") or "") in tercas and isinstance(e, Solido) and len(e.vertices or []) >= 8:
+            xs, ys, zs = zip(*e.vertices)
+            pecas_t.append((e, ((min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs)))))
+    if not pecas_t:
+        return saida
+    fixadores = _fixadores(doc)
+    movidos: set = set()
+    for ch in doc.entidades.values():
+        # só o suporte de terça (`suportes`: as marcas dele); a chapinha da agulha e a castanha, que
+        # também prendem na terça, ficam com a furação delas
+        if not isinstance(ch, Chapa) or not ch.furos or str(_marcas(ch).get("posicao") or "") not in suportes:
+            continue
+        o, ex, ey, nz = _mundo_da_chapa(ch)
+        meia = float(ch.espessura) / 2.0
+        pts = [tuple(o[i] + ex[i] * float(f.get("x", 0) or 0) + ey[i] * float(f.get("y", 0) or 0) + nz[i] * meia
+                     for i in range(3)) for f in ch.furos]
+        por_terca: Dict[str, list] = collections.defaultdict(list)
+        terca_de = {}
+        for i, P in enumerate(pts):
+            for e, (lo, hi) in pecas_t:
+                if all(lo[k] - 20.0 <= P[k] <= hi[k] + 20.0 for k in range(3)):
+                    por_terca[e.id].append(i)
+                    terca_de[e.id] = e
+                    break
+        if not por_terca:
+            continue
+
+        def parafusado(P, f):
+            r = max(float(f.get("diametro", 0) or 0), float(f.get("largura", 0) or 0), 14.0) / 2.0 + 4.0
+            for fx in fixadores:
+                c = _centro_do_fixador(fx)
+                d = tuple(c[k] - P[k] for k in range(3))
+                t = sum(d[k] * nz[k] for k in range(3))
+                if abs(t) <= 120.0 and math.sqrt(max(sum(x * x for x in d) - t * t, 0.0)) <= r:
+                    return True
+            return False
+        novos = [dict(f) for f in ch.furos]
+        tirar: set = set()
+        mudou = False
+        for id_t, idx in por_terca.items():
+            e = terca_de[id_t]
+            c_t, pca = _autovetores(e.vertices)
+            L = _norm(tuple(pca[0]))
+            h = _norm(_cruz(nz, L))
+            ph = [sum(v[k] * h[k] for k in range(3)) for v in e.vertices]
+            H = max(ph) - min(ph)
+            eixo_t = (max(ph) + min(ph)) / 2.0
+            passo = FURACAO_TERCA_BAIXA[0] if H <= LIMITE_TERCA + 5.0 else FURACAO_TERCA_ALTA[0]
+            # colunas: furos na mesma abscissa ao longo da terça
+            cols: List[list] = []
+            for i in sorted(idx, key=lambda i: sum(pts[i][k] * L[k] for k in range(3))):
+                s_ = sum(pts[i][k] * L[k] for k in range(3))
+                if cols and s_ - cols[-1][-1][0] <= 3.0:
+                    cols[-1].append((s_, i))
+                else:
+                    cols.append([(s_, i)])
+            for col in cols:
+                ids_c = [i for _s, i in col]
+                com = [i for i in ids_c if parafusado(pts[i], ch.furos[i])]
+                usar = com if len(com) >= 2 else ids_c
+                if len(usar) < 2:
+                    continue
+                tirar |= set(ids_c) - set(usar)
+                usar.sort(key=lambda i: sum(pts[i][k] * h[k] for k in range(3)))
+                n = len(usar)
+                for k_, i in enumerate(usar):
+                    atual = sum(pts[i][k] * h[k] for k in range(3))
+                    alvo = eixo_t + (k_ - (n - 1) / 2.0) * passo
+                    dlt = alvo - atual
+                    if abs(dlt) < 0.5:
+                        continue
+                    dw = tuple(h[k] * dlt for k in range(3))
+                    dxl = sum(dw[k] * ex[k] for k in range(3))
+                    dyl = sum(dw[k] * ey[k] for k in range(3))
+                    x0, y0 = float(ch.furos[i].get("x", 0) or 0), float(ch.furos[i].get("y", 0) or 0)
+                    novos[i]["x"], novos[i]["y"] = round(x0 + dxl, 2), round(y0 + dyl, 2)
+                    raio = max(float(ch.furos[i].get("diametro", 0) or 0), float(ch.furos[i].get("largura", 0) or 0), 14.0) / 2.0 + 4.0
+                    _mover_fixadores(ch, (x0, y0), (dxl, dyl), raio, fixadores, movidos)
+                    mudou = True
+        if tirar:
+            mudou = True
+        if mudou:
+            ch.furos = [f for i, f in enumerate(novos) if i not in tirar]
+            saida["chapas"] += 1
+            saida["furos"] += len(ch.furos)
             m = str(_marcas(ch).get("posicao") or "")
             if m not in saida["posicoes"]:
                 saida["posicoes"].append(m)

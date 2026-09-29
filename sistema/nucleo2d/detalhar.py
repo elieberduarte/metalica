@@ -177,6 +177,7 @@ from nucleo2d.detalhe.celulas import (  # noqa: E402,F401
     contorno_do_desenho,
     converter_chapas,
     desenho_da_posicao,
+    _na_posicao_montada,
     detalhar_posicao,
     furos_da_chapa,
     furos_do_desenho,
@@ -931,6 +932,22 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             tipos_m = {fundidas.get(m, m): nomeacao["tipos"].get(fundidas.get(m, m)) for m in gm["marcas"]}
             if "chumbador" in tipos_m.values():
                 chapas_de_chumbador |= {m for m, t in tipos_m.items() if t != "chumbador"}
+        # o suporte de terça chama-se S.T.n (pedido do usuário, 29/09: "o nome que deve aparecer ali é
+        # S.T.1 … e a quantidade"); as chapinhas dele seguem CH4, CH5… Primeiro os montados (chapas
+        # soldadas com uma de suporte de terça), depois a chapa que é o suporte sozinha; mais usados antes
+        tipo_de = lambda m: nomeacao["tipos"].get(fundidas.get(m, m))    # noqa: E731
+        st_montados = [gm for gm in montagens_cache if gm["tipo"] == "soldadas"
+                       and any(tipo_de(m) == "suporte_terca" for m in gm["marcas"])]
+        n_st = 0
+        em_montagem = set()
+        for gm in sorted(st_montados, key=lambda g_: (-g_["instancias"], [_ordem_natural(n_) for n_ in g_["chave"]])):
+            n_st += 1
+            gm["nome_suporte"] = "S.T.%d" % n_st
+            em_montagem |= {fundidas.get(m, m) for m in gm["marcas"]}
+        for p in sorted((p for p in posicoes if tipo_de(p.marca) == "suporte_terca" and p.classe == "chapa"
+                         and p.marca not in em_montagem), key=lambda p: (-p.quantidade, _ordem_natural(p.nome or p.marca))):
+            n_st += 1
+            p.nome_suporte = "S.T.%d" % n_st
     gabarito = _conjuntos_de_gabarito(posicoes, tipo_de_conj)
     for chave in grupos:
         g = GRUPOS_BASE.get(chave)
@@ -956,7 +973,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                       for p in lista}}
         # terças do menor comprimento para o maior (o resto na ordem de sempre)
         lista.sort(key=lambda p: p.comprimento if (nomeacao["tipos"].get(p.marca) or p.tipo_nome) in UMA_POR_LINHA else 0.0)
-        editaveis = ([p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))]
+        editaveis = ([p.marca for p in lista if p.classe == "chapa" and all(parametricas.get(m, False) for m in marcas_de(p))
+                      and _na_posicao_montada(p) is p]   # o suporte desenhado em pé (girado) não volta ao 3D
                      + [p.marca for p in lista if p.classe == "barra" and any(f.vista == "frente" for f in p.furos)])
         # um quadro por tipo de peça (terças, suportes de terça, chapas…), como os conjuntos
         celulas_g = []

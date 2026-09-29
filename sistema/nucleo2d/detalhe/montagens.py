@@ -305,7 +305,8 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
     # legenda enxuta: as peças e a quantidade, e o que vai por unidade (o tipo está no
     # título do quadro e nos nomes das peças; `titulo` só vai aos metadados da célula)
     comp = ", ".join("%s x%d" % (k, q) for k, q in sorted(grupo["composicao"].items(), key=lambda kv: _ordem_natural(kv[0])))
-    linhas = ["%s – %02dx" % (" + ".join(dict.fromkeys(grupo["chave"])), grupo["instancias"]),
+    # o suporte de terça pelo nome dele (S.T.n, dado no detalhar), as chapinhas por unidade embaixo
+    linhas = ["%s – %02dx" % (grupo.get("nome_suporte") or " + ".join(dict.fromkeys(grupo["chave"])), grupo["instancias"]),
               "por unidade: " + comp]
     y = topo + 4.0 * esc
     for i, txt in enumerate(reversed(linhas)):

@@ -815,6 +815,14 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     automatico = bool(corpo.get("automatico"))
     _conferir_eixos_das_chapas(s, doc, gravar=not automatico)
     _alinhar_furos_das_barras(s, doc, gravar=not automatico)
+    # o suporte de terça segue a furação padrão da terça (50 mm no eixo dela), antes do desenho — e as
+    # terças parafusadas nele acompanham (pedido do usuário, 29/09)
+    from nucleo2d.detalhe.celulas import ajustar_suportes_as_tercas, alinhar_furos_das_barras_as_chapas as _alinhar_as_chapas
+    tipos_ = (_nomes_producao(s) or {}).get("tipos") or {}
+    marcas_ = lambda f: {m.strip() for k, t in tipos_.items() if f(str(t)) for m in str(k).split("/")}  # noqa: E731
+    suportes = ajustar_suportes_as_tercas(doc, marcas_(lambda t: t.startswith("terca")), marcas_(lambda t: t == "suporte_terca"))
+    if suportes["chapas"]:
+        _alinhar_as_chapas(doc)
     grupos = corpo.get("grupos") or list(GRUPOS.keys())
     r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
                  rotular=bool(corpo.get("rotular", False)),
@@ -831,7 +839,10 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         alinhar_furos_das_barras_as_chapas(doc)
         r.setdefault("avisos", []).append("furação padrão de fábrica aplicada no 3D a %d chapa(s): %s"
                                           % (padr["chapas"], ", ".join(padr["posicoes"][:12])))
-    if r.get("convertidas") or nomeadas or padr["chapas"]:
+    if suportes["chapas"]:
+        r.setdefault("avisos", []).append("suporte de terça na furação da terça (50 mm no eixo dela): %d chapa(s): %s"
+                                          % (suportes["chapas"], ", ".join(suportes["posicoes"][:12])))
+    if r.get("convertidas") or nomeadas or padr["chapas"] or (suportes["chapas"] and not automatico):
         _progresso(s, "gravando o modelo…")
         try:
             _regravar_modelo(s, doc)            # chapas planas viraram paramétricas / nomes nas peças
