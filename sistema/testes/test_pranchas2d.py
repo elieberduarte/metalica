@@ -423,7 +423,7 @@ def test_chapas_da_tesoura_na_prancha_dela_com_a_quantidade_dela():
     assert any(t.startswith("T1 ") for t in p1)
     # as chapas da prancha 01 com a quantidade dela (a das tesouras desenhadas ali); o total da obra, na
     # prancha das chapas — cada uma aparece de novo lá, com quantidade maior ou igual
-    q1 = {t.split(" – ")[0]: int(t.split(" – ")[1].rstrip("x")) for t in p1 if re.match(r"(CH|CB)\d", t) and " – " in t}
+    q1 = {t.split(" – ")[0]: int(t.split(" – ")[1].rstrip("x")) for t in p1 if re.match(r"(CH|CB|S\.T\.)\d", t) and " – " in t}   # S.T.n: o suporte de terça (29/09)
     assert len(q1) >= 3, p1
     total = {}
     for ts in tit[1:]:
@@ -434,7 +434,8 @@ def test_chapas_da_tesoura_na_prancha_dela_com_a_quantidade_dela():
     assert any(q1[n] < total[n] for n in total), (q1, total)
     # a chamada de uma chapa detalhada na prancha 01 não aponta outra prancha
     ch = [e.texto for e in folhas[0].entidades.values() if isinstance(e, Chamada)]
-    locais = [n for n in q1 if n.startswith("CH") and " + " not in n and n in ch]
+    # (a chapinha do suporte de terça é chamada pelo nome dela, CH3, e a célula leva o S.T.n — 29/09)
+    locais = [t for t in ch if re.fullmatch(r"CH\d+", t)]
     assert locais and not any(t.startswith(locais[0] + " – PR.") for t in ch), (locais, ch)
     # a legenda: nome e quantidade desta prancha e as siglas
     leg = [e.texto for e in folhas[0].entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("prancha") == "legenda"]
