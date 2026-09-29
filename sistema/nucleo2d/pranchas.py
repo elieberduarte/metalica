@@ -387,6 +387,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     alt_faixa = fy1 - fy0 - QUADRO_CABECALHO - FOLGA
 
     def distribuir(n_rel):
+        for c_ in itens:
+            c_.pop("empilhada", None)
         fila = list(itens)
         pranchas: List[List[dict]] = []
         molduras: List[List[dict]] = []        # por prancha: {categoria, titulo, y0, y1[, x0, x1]}
@@ -409,6 +411,25 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             cels_p, mold_p = [], []
             y_topo = uy1
             cheia = False
+            # as tesouras (conjunto largo com o bloco do título): uma ou duas por prancha, empilhadas pela
+            # altura real delas com o bloco embaixo (o usuário montou assim a Sala, 28/09)
+            if fila and _empilhavel(fila[0], qx1 - qx0):
+                util = (uy1 - QUADRO_CABECALHO - 3.0) - (uy0 - FOLGA * 0.5 + 3.0)
+                grupo = [fila[0]]
+                if len(fila) > 1 and _empilhavel(fila[1], qx1 - qx0) and fila[1]["categoria"] == fila[0]["categoria"]:
+                    mq_ = {"y1": uy1, "y0": uy0 - FOLGA * 0.5}
+                    if _separacao(fila[0], fila[1], mq_, qx0, qx1) + _altura_empilhada(fila[1]) <= util:
+                        grupo.append(fila[1])
+                cat = fila[0]["categoria"]
+                mold_p.append({"categoria": cat, "titulo": CATEGORIAS.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
+                               "y1": uy1, "y0": uy0 - FOLGA * 0.5})
+                iniciadas.add(cat)
+                for c in grupo:
+                    c["empilhada"] = True
+                    c["px"], c["py"] = qx0, uy0              # a posição real sai no desenho
+                    cels_p.append(c)
+                    fila.remove(c)
+                cheia = True
             while fila and not cheia:
                 cat = fila[0]["categoria"]
                 linha = prateleira(cat, qx0, qx1)
@@ -526,13 +547,21 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             _quadro(d, mq, mq.get("x0", ux0), mq.get("x1", ux1))
         # um conjunto sozinho na área de cima (a tesoura): centralizado no quadro, que desce até a faixa, e
         # o bloco do título dele (nome, perfis, parafusos, peso) embaixo, maior (pedido do usuário, 28/09)
-        de_cima = [c for c in cels if c["py"] >= uy0 - 1.0]
-        destaque = de_cima[0] if (len(de_cima) == 1 and molduras[i0 - 1] and any(
-            "legenda_conjunto" in (e.atributos or {}) for e in de_cima[0]["entidades"])) else None
-        if destaque is not None:
-            _conjunto_centralizado(d, destaque, molduras[i0 - 1][0], qx0, qx1, onde, i, montagem_de)
+        empilhadas = [c for c in cels if c.get("empilhada")]
+        if empilhadas:
+            mq = molduras[i0 - 1][0]
+            topo_a, base_a = mq["y1"] - QUADRO_CABECALHO - 3.0, mq["y0"] + 3.0
+            if len(empilhadas) == 2:
+                sep = _separacao(empilhadas[0], empilhadas[1], mq, qx0, qx1)
+                total_par = sep + _altura_empilhada(empilhadas[1])
+                y_ = topo_a - max(0.0, (topo_a - base_a - total_par) / 2.0)
+                _conjunto_centralizado(d, empilhadas[0], mq, qx0, qx1, onde, i, montagem_de, topo=y_)
+                _conjunto_centralizado(d, empilhadas[1], mq, qx0, qx1, onde, i, montagem_de, topo=y_ - sep)
+            else:
+                for c in empilhadas:
+                    _conjunto_centralizado(d, c, mq, qx0, qx1, onde, i, montagem_de)
         for c in cels:
-            if c is destaque:
+            if c.get("empilhada"):
                 continue
             (bx0, by0), (bx1, by1) = c["caixa"]
             dx = c["px"] - bx0 / c["k"]
@@ -707,43 +736,136 @@ def siglas_usadas(nomes: Sequence[str]) -> List[Tuple[str, str]]:
     return [x for x in tabela if x[0] in achadas]
 
 
+#: O bloco do título da tesoura na prancha: o nome, as linhas, o espaço entre elas e o vão da cota mais
+#: baixa até ele (mm de papel; 8 mm além da faixa do número da cota = os 13,5 mm que o usuário usou).
+BLOCO_TITULO, BLOCO_LINHA, BLOCO_ESPACO, BLOCO_VAO = 6.0, 4.2, 1.8, 8.0
+
+
+def _partes_do_conjunto(c: dict):
+    """(linhas do bloco do título em ordem, o resto das entidades, caixa do resto em mm do modelo)"""
+    leg = sorted((e for e in c["entidades"] if isinstance(e, Texto) and "legenda_conjunto" in (e.atributos or {})),
+                 key=lambda e: e.atributos["legenda_conjunto"])
+    ids_leg = {id(e) for e in leg}
+    resto = [e for e in c["entidades"] if id(e) not in ids_leg]
+    return leg, resto, (_caixa_de(resto, c["k"]) or c["caixa"])
+
+
+def _altura_empilhada(c: dict) -> float:
+    """A altura de papel do conjunto com o bloco embaixo (a tesoura como na prancha)."""
+    leg, _resto, ((_x0, y0), (_x1, y1)) = _partes_do_conjunto(c)
+    alt_leg = BLOCO_TITULO + max(0, len(leg) - 1) * (BLOCO_LINHA + BLOCO_ESPACO) + BLOCO_ESPACO
+    return (y1 - y0) / c["k"] + BLOCO_VAO + alt_leg + 6.0
+
+
 def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float, onde: Dict[str, int] = None,
-                           numero: int = 0, montagem_de: Dict[str, str] = None):
+                           numero: int = 0, montagem_de: Dict[str, str] = None, topo: Optional[float] = None,
+                           coletor=None):
     """O conjunto (a tesoura) no meio do quadro dele, com o bloco do título — as linhas marcadas com
     `legenda_conjunto` no detalhamento — embaixo, à esquerda, alinhado pela borda da tesoura (sem as
     cotas), em letra maior: 6 mm o nome, 4,2 mm o resto (pedido do usuário, 28/09; a posição como ele a
     ajustou na Sala). Uma chamada por tipo de chapa da composição aponta onde ela fica na tesoura, com o
     nome e, detalhada noutra prancha, qual. Atualiza a posição da célula (px, py, w, h) para os metadados."""
+    saida = coletor if coletor is not None else d
     k = c["k"]
-    leg = sorted((e for e in c["entidades"] if isinstance(e, Texto) and "legenda_conjunto" in (e.atributos or {})),
-                 key=lambda e: e.atributos["legenda_conjunto"])
-    ids_leg = {id(e) for e in leg}
-    resto = [e for e in c["entidades"] if id(e) not in ids_leg]
-    (bx0, by0), (bx1, by1) = _caixa_de(resto, k) or c["caixa"]
+    leg, resto, ((bx0, by0), (bx1, by1)) = _partes_do_conjunto(c)
     w, h = (bx1 - bx0) / k, (by1 - by0) / k
-    h_tit, h_lin, esp, vao = 6.0, 4.2, 1.8, 8.0
-    alt_leg = h_tit + max(0, len(leg) - 1) * (h_lin + esp) + esp
-    topo_area = mq["y1"] - QUADRO_CABECALHO - FOLGA
-    base_area = mq["y0"] + FOLGA
-    total = h + vao + alt_leg + 6.0
-    topo = topo_area - max(0.0, (topo_area - base_area - total) / 2.0)
+    h_tit, h_lin, esp, vao = BLOCO_TITULO, BLOCO_LINHA, BLOCO_ESPACO, BLOCO_VAO
+    if topo is None:
+        topo_area = mq["y1"] - QUADRO_CABECALHO - FOLGA
+        base_area = mq["y0"] + FOLGA
+        topo = topo_area - max(0.0, (topo_area - base_area - _altura_empilhada(c)) / 2.0)
     xc = (qx0 + qx1) / 2.0
     dx, dy = xc - w / 2.0 - bx0 / k, (topo - h) - by0 / k
     for e in resto:
-        d.add(_para_papel(e, k, dx, dy, c["fonte"]))
+        saida.add(_para_papel(e, k, dx, dy, c["fonte"]))
     y = topo - h - vao - h_tit
     geo = [e for e in resto if not isinstance(e, (Cota, Texto, Chamada))]
     g0 = (_caixa_de(geo, k) or ((bx0, by0), (bx1, by1)))[0][0]
     x_bloco = g0 / k + dx + 5.5                                # a borda da tesoura, sem as cotas da esquerda
-    _chamadas_das_chapas(d, c, geo, k, dx, dy, onde or {}, numero, montagem_de or {})
+    _chamadas_das_chapas(saida, c, geo, k, dx, dy, onde or {}, numero, montagem_de or {})
     for i, e in enumerate(leg):
         alt = h_tit if i == 0 else h_lin
-        d.add(Texto(camada=e.camada, posicao=(round(x_bloco, 2), round(y, 2)), texto=e.texto, altura=alt,
+        saida.add(Texto(camada=e.camada, posicao=(round(x_bloco, 2), round(y, 2)), texto=e.texto, altura=alt,
                     atributos=dict(e.atributos or {}, fonte=c["fonte"], escala=k)))
         y -= (h_lin + esp)
-    d.add(Texto(camada="TEXTO", posicao=(round(x_bloco, 2), round(y - 1.0, 2)), texto="ESC. " + texto_escala(k), altura=2.5,
+    saida.add(Texto(camada="TEXTO", posicao=(round(x_bloco, 2), round(y - 1.0, 2)), texto="ESC. " + texto_escala(k), altura=2.5,
                 atributos={"prancha": "escala", "fonte": c["fonte"], "celula": c["titulo"]}))
     c["px"], c["py"], c["w"], c["h"] = xc - w / 2.0, y - 2.0, w, topo - (y - 2.0)
+
+
+class _Coletor(list):
+    """as entidades de um conjunto antes de irem para a prancha"""
+    def add(self, e):
+        self.append(e)
+
+
+def _perfil(ents: Sequence, passo: float = 5.0):
+    """O perfil de cima e o de baixo das entidades (mm de papel), em faixas de `passo` na horizontal:
+    ({faixa: y mais alto}, {faixa: y mais baixo}). Linhas, cotas (a linha e as chamadas dela, o número),
+    textos e chamadas pelos pontos ao longo deles."""
+    cima, baixo = {}, {}
+
+    def ponto(x, y):
+        i = int(math.floor(x / passo))
+        if y > cima.get(i, -1e18):
+            cima[i] = y
+        if y < baixo.get(i, 1e18):
+            baixo[i] = y
+
+    def seg(a, b):
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        n = max(1, int(L / passo) + 1)
+        for j in range(n + 1):
+            t = j / n
+            ponto(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+    for e in ents:
+        if isinstance(e, Cota):
+            pc = _pontos_da_cota(e, 1.0)
+            if len(pc) >= 4:
+                seg(pc[0], pc[1])
+                seg(pc[2], pc[3])
+                seg(e.p1, pc[0])
+                seg(e.p2, pc[1])
+        elif isinstance(e, Texto):
+            larg = LARGURA_LETRA * e.altura * len(e.texto or "")
+            x0 = e.posicao[0] - (larg / 2 if e.alinhamento == "centro" else larg if e.alinhamento == "direita" else 0.0)
+            seg((x0, e.posicao[1]), (x0 + larg, e.posicao[1]))
+            seg((x0, e.posicao[1] + e.altura), (x0 + larg, e.posicao[1] + e.altura))
+        elif isinstance(e, Chamada):
+            seg(e.alvo, e.posicao)
+            larg = LARGURA_LETRA * e.altura * len(e.texto or "") + 10.0
+            sx = 1.0 if e.posicao[0] >= e.alvo[0] else -1.0
+            seg(e.posicao, (e.posicao[0] + sx * larg, e.posicao[1] + e.altura))
+        else:
+            pts = e.pontos()
+            for a, b in zip(pts, pts[1:]):
+                seg(a, b)
+            if len(pts) == 1:
+                ponto(*pts[0])
+    return cima, baixo
+
+
+def _separacao(c1: dict, c2: dict, mq: dict, qx0: float, qx1: float, folga: float = 5.0) -> float:
+    """Quanto o topo da segunda tesoura fica abaixo do da primeira, encaixada nela (pedido do usuário,
+    28/09: o bloco da de cima, embaixo à esquerda, entra no canto vazio de cima da de baixo): o menor
+    que deixa `folga` mm entre o perfil de baixo da primeira e o de cima da segunda."""
+    e1, e2 = _Coletor(), _Coletor()
+    _conjunto_centralizado(None, c1, mq, qx0, qx1, {}, 0, {}, topo=0.0, coletor=e1)
+    _conjunto_centralizado(None, c2, mq, qx0, qx1, {}, 0, {}, topo=0.0, coletor=e2)
+    _c1, baixo1 = _perfil(e1)
+    cima2, _b2 = _perfil(e2)
+    comuns = set(baixo1) & set(cima2)
+    if not comuns:
+        return max(cima2.values()) - min(baixo1.values()) + folga
+    return max(cima2[i] - baixo1[i] for i in comuns) + folga
+
+
+def _empilhavel(c: dict, largura_util: float) -> bool:
+    """a tesoura: conjunto com o bloco do título e largo (mais de 60% do quadro) — os conjuntos menores,
+    também com bloco, seguem nas prateleiras"""
+    return c["w"] > 0.6 * largura_util and any(
+        isinstance(e, Texto) and "legenda_conjunto" in (e.atributos or {}) for e in c["entidades"])
 
 
 def _eh_chumbamento(montagem) -> bool:

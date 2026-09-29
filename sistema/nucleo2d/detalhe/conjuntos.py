@@ -2406,6 +2406,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     trelica = any(de_cima[id(b)] for b in banzos) and any(not de_cima[id(b)] for b in banzos)
     pontas = _pontas_da_trelica(segs_bz, quinas_bz, nos_alma, dx, dy, larg, alt, trechos(True), trechos(False)) if trelica else []
     nivel_baixo = 1 if cadeia else 0
+    montada = trelica and len(trechos(True)) > 1
     # as medidas da treliça são as da estrutura: de face a face do contorno dos banzos (a chapa de apoio
     # que passa da face não entra — pedido do usuário, 28/09)
     xs_bz = [q[0] - dx for sg_ in segs_bz for q in sg_] if trelica else []
@@ -2437,12 +2438,24 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             # pedido do usuário, 28/09): de dois pontos a menos de 60 mm fica a face de fora da peça
             # (a ponta da treliça) ou o que está mais para o meio; o outro vira a medida de dentro
             xs_c, tirados = _sem_larguras(sorted(xs_h), fixos, (face_esq + face_dir) / 2.0)
-            if p.cadeia_h(xs_c, 0.0, -off * (nivel_baixo + 1), exigir_espaco=False):
+            if montada:
+                # tesoura montada, como o usuário ajustou a prancha (28/09): a cadeia de baixo numa linha só,
+                # colada na base — a ponta, a face de dentro da descida do banzo (a largura do joelho), o
+                # primeiro nó, a cumeeira —, sem os pontos de dentro do joelho; as metades e a total logo
+                # abaixo, 7 mm uma da outra. Fica mais baixa (cabem duas tesouras numa prancha).
+                for a_, b_, _y0, _y1 in pecas_em_pe:
+                    meio_p = (a_ + b_) / 2.0
+                    if meio_p - face_esq < 0.25 * (face_dir - face_esq):
+                        xs_c = [x for x in xs_c if not (face_esq + 1.0 < x < b_ - 1.0)]
+                    elif face_dir - meio_p < 0.25 * (face_dir - face_esq):
+                        xs_c = [x for x in xs_c if not (a_ + 1.0 < x < face_dir - 1.0)]
+                p.cadeia_h(xs_c, 0.0, -off, exigir_espaco=False)
+            elif p.cadeia_h(xs_c, 0.0, -off * (nivel_baixo + 1), exigir_espaco=False):
                 nivel_baixo += 1
             # o joelho: o vão livre por dentro (da face de dentro do pilar à da descida do banzo) e a
             # largura toda por fora (da face da ponta à face de dentro da descida)
             joelho = False
-            for lado_, face_ in ((1, face_esq), (-1, face_dir)):
+            for lado_, face_ in (() if montada else ((1, face_esq), (-1, face_dir))):
                 dentro_ = sorted((x for x in tirados if abs(x - face_) < 0.25 * (face_dir - face_esq)),
                                  key=lambda x: abs(x - face_))
                 if len(dentro_) < 2:
@@ -2455,7 +2468,14 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                 joelho = True
             if joelho:
                 nivel_baixo += 2
-    p.cota_h(face_esq, face_dir, 0, -off * (nivel_baixo + 1))
+    if montada and trelica:
+        ts_m = trechos(True)
+        meio_m = (ts_m[0][1] + ts_m[1][0]) / 2.0
+        p.cota_h(face_esq, meio_m, 0, -(off + PASSO_COTA_TESOURA))
+        p.cota_h(meio_m, face_dir, 0, -(off + PASSO_COTA_TESOURA))
+        p.cota_h(face_esq, face_dir, 0, -(off + 2 * PASSO_COTA_TESOURA))
+    else:
+        p.cota_h(face_esq, face_dir, 0, -off * (nivel_baixo + 1))
     cadeia_cima = len(nos_cima) > 2 and nos_cima != nos_baixo and cadeia_do_banzo(nos_cima, True)
     # suportes de terça (chapinhas/cantoneiras curtas encostadas no banzo de cima): a
     # cadeia do espaçamento deles, alinhada ao banzo, acima da cadeia dos nós
@@ -2531,7 +2551,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                         else p.cadeia_h([x0, x1], ytopo, off * (n_topo + 1), exigir_espaco=False)) or agua
         n_topo += 1 if agua else 0
         ts_meia = trechos(True)
-        if len(ts_meia) > 1 and ys_topo_ok(ts_meia):
+        if len(ts_meia) > 1 and ys_topo_ok(ts_meia) and not montada:
             # tesoura montada: cada metade na horizontal, da face da ponta ao meio da cumeeira (como o
             # 7200 do projeto), por cima das cotas das águas
             meio_c = (ts_meia[0][1] + ts_meia[1][0]) / 2.0
@@ -2555,7 +2575,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             maior = max(maior, pt["ys"][-1] - pt["ys"][0])
             if pt["chanfro"]:
                 a_, b_, lado_ = pt["chanfro"]
-                p.cadeia_alinhada((a_, b_), [a_[0], b_[0]], lado_ * off, exigir_espaco=False)
+                p.cadeia_alinhada((a_, b_), [a_[0], b_[0]], lado_ * off * 2.0, exigir_espaco=False)   # por fora (28/09)
         # a altura toda pelo contorno dos banzos (da base ao ápice) — a da caixa da célula ia da chapa de
         # apoio à ponta do suporte de terça
         ys_bz = [q[1] - dy for sg_ in segs_bz for q in sg_]
@@ -2704,6 +2724,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         y += (alt_t + 1.2) * esc
     ext = p.extremos
     return (min(ext[0], dx), min(ext[1], dy), max(ext[2], dx + larg), max(ext[3], dy + alt))
+
+
+#: Entre as linhas de cota de baixo da tesoura montada (a cadeia, as metades, a total), mm de papel.
+PASSO_COTA_TESOURA = 7.0
 
 
 # ============================================================ tesouras montadas
