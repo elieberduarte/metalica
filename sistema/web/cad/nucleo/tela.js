@@ -450,7 +450,12 @@ export class Tela {
     this._terminador(ctx, A1, fora ? ang : ang + Math.PI, seta * z, term);
     this._terminador(ctx, A2, fora ? ang + Math.PI : ang, seta * z, term);
     const t = Tela.textoCota(c, k);
-    this._texto(ctx, t.pos, t.txt, t.h, t.angG, 'centro', 'base', cor);
+    // o número na cor do texto (branco no tema escuro, preto no claro), como o texto da cota do AutoCAD
+    // — na cor da linha (verde) ele sumia no fundo (pedido do usuário, 28/09); selecionada/realce, na cor dela
+    const cs = this.cores();
+    const destacada = cor === cs.selecao || cor === cs.realce || cor === cs.previa;
+    const camTexto = this.doc.camadas.get('TEXTO');
+    this._texto(ctx, t.pos, t.txt, t.h, t.angG, 'centro', 'base', destacada ? cor : cs.textoInvertido((camTexto && camTexto.cor) || '#111827'));
   }
 
   _hachura(ctx, e, k, cor) {

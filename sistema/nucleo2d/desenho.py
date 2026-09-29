@@ -317,7 +317,9 @@ class Desenho:
                 d.texto(e.posicao[0], e.posicao[1], e.texto, e.altura * k, camada,
                         angulo=e.angulo, alinhamento=e.alinhamento, vertical=e.vertical)
             elif isinstance(e, Cota):
-                _cota_dxf(d, e, k, camada, terminador=(e.terminador or (self.metadados.get("estilo") or {}).get("terminador") or TERMINADOR_PADRAO))
+                # o número da cota na camada do texto (preto no papel), a linha na da cota (28/09)
+                _cota_dxf(d, e, k, camada, terminador=(e.terminador or (self.metadados.get("estilo") or {}).get("terminador") or TERMINADOR_PADRAO),
+                          camada_texto=_camada_dxf("TEXTO") if "TEXTO" in self.camadas else None)
             elif isinstance(e, Hachura):
                 for contorno in e.contornos[:1]:      # o primeiro é o externo; os outros ficam vazios
                     if e.padrao == "solido" and len(contorno) >= 3:
@@ -356,7 +358,7 @@ def _terminador_dxf(d, x: float, y: float, ang: float, tam: float, camada: str, 
 TERMINADOR_PADRAO = "traco"
 
 
-def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PADRAO):
+def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PADRAO, camada_texto: str = None):
     """Cota com setas (ou bolas, ou traços) e texto proporcionais à escala (o que
     `saida/desenhos._cota` faz para o galpão, aqui sobre o documento 2D)."""
     x1, y1 = c.p1
@@ -392,7 +394,7 @@ def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PA
         _terminador_dxf(d, a2[0], a2[1], ang, tam, camada, terminador)
     txt = c.texto if c.texto is not None else formatar_mm(c.valor(), c.casas)
     if c.texto_pos:
-        d.texto(c.texto_pos[0], c.texto_pos[1], txt, h, camada, angulo=(ang if -90 < ang <= 90 else ang + 180), alinhamento="centro")
+        d.texto(c.texto_pos[0], c.texto_pos[1], txt, h, camada_texto or camada, angulo=(ang if -90 < ang <= 90 else ang + 180), alinhamento="centro")
         return
     mx, my = (a1[0] + a2[0]) / 2, (a1[1] + a2[1]) / 2
     ang_txt = ang if -90 < ang <= 90 else ang + 180
@@ -401,7 +403,7 @@ def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PA
     if fora:
         mx += ux * (2.4 * tam + 0.4 * h * len(txt))
         my += uy * (2.4 * tam + 0.4 * h * len(txt))
-    d.texto(mx + nx * off, my + ny * off, txt, h, camada, angulo=ang_txt, alinhamento="centro")
+    d.texto(mx + nx * off, my + ny * off, txt, h, camada_texto or camada, angulo=ang_txt, alinhamento="centro")
 
 
 def _chamada_dxf(d, c: Chamada, k: float, camada: str):

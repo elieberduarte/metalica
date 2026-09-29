@@ -689,8 +689,9 @@ def siglas_usadas(nomes: Sequence[str]) -> List[Tuple[str, str]]:
 
 def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float):
     """O conjunto (a tesoura) no meio do quadro dele, com o bloco do título — as linhas marcadas com
-    `legenda_conjunto` no detalhamento — centralizado embaixo, em letra maior: 5 mm o nome, 3,5 mm o
-    resto. Atualiza a posição da célula (px, py, w, h) para os metadados."""
+    `legenda_conjunto` no detalhamento — embaixo, à esquerda, alinhado pela ponta esquerda do desenho,
+    em letra maior: 6 mm o nome, 4,2 mm o resto (pedido do usuário, 28/09). Atualiza a posição da
+    célula (px, py, w, h) para os metadados."""
     k = c["k"]
     leg = sorted((e for e in c["entidades"] if isinstance(e, Texto) and "legenda_conjunto" in (e.atributos or {})),
                  key=lambda e: e.atributos["legenda_conjunto"])
@@ -698,7 +699,7 @@ def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float
     resto = [e for e in c["entidades"] if id(e) not in ids_leg]
     (bx0, by0), (bx1, by1) = _caixa_de(resto, k) or c["caixa"]
     w, h = (bx1 - bx0) / k, (by1 - by0) / k
-    h_tit, h_lin, esp, vao = 5.0, 3.5, 1.6, 8.0
+    h_tit, h_lin, esp, vao = 6.0, 4.2, 1.8, 8.0
     alt_leg = h_tit + max(0, len(leg) - 1) * (h_lin + esp) + esp
     topo_area = mq["y1"] - QUADRO_CABECALHO - FOLGA
     base_area = mq["y0"] + FOLGA
@@ -709,16 +710,15 @@ def _conjunto_centralizado(d: Desenho, c: dict, mq: dict, qx0: float, qx1: float
     for e in resto:
         d.add(_para_papel(e, k, dx, dy, c["fonte"]))
     y = topo - h - vao - h_tit
-    larg = w
+    x_bloco = xc - w / 2.0 + 5.0                               # a ponta esquerda do desenho
     for i, e in enumerate(leg):
         alt = h_tit if i == 0 else h_lin
-        d.add(Texto(camada=e.camada, posicao=(round(xc, 2), round(y, 2)), texto=e.texto, altura=alt, alinhamento="centro",
+        d.add(Texto(camada=e.camada, posicao=(round(x_bloco, 2), round(y, 2)), texto=e.texto, altura=alt,
                     atributos=dict(e.atributos or {}, fonte=c["fonte"], escala=k)))
-        larg = max(larg, LARGURA_LETRA * alt * len(e.texto))
         y -= (h_lin + esp)
-    d.add(Texto(camada="TEXTO", posicao=(round(xc, 2), round(y - 1.0, 2)), texto="ESC. " + texto_escala(k), altura=2.5,
-                alinhamento="centro", atributos={"prancha": "escala", "fonte": c["fonte"], "celula": c["titulo"]}))
-    c["px"], c["py"], c["w"], c["h"] = xc - larg / 2.0, y - 2.0, larg, topo - (y - 2.0)
+    d.add(Texto(camada="TEXTO", posicao=(round(x_bloco, 2), round(y - 1.0, 2)), texto="ESC. " + texto_escala(k), altura=2.5,
+                atributos={"prancha": "escala", "fonte": c["fonte"], "celula": c["titulo"]}))
+    c["px"], c["py"], c["w"], c["h"] = xc - w / 2.0, y - 2.0, w, topo - (y - 2.0)
 
 
 def _blocos_da_legenda(cels: Sequence[dict]) -> List[tuple]:
