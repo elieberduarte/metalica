@@ -383,9 +383,10 @@ def _barra_inteira(p, pos, nome: str, n: int, letra: str, esc: float, x_cel: flo
     da célula da peça (`desenho_da_posicao`: a vista de frente com os furos, a cadeia de cotas de ponta
     a ponta, a seção e a vista de cima quando a mesa é furada). As entidades vão com o atributo
     `detalhe_furos` (na prancha, um detalhe da tesoura, como os de furos). Devolve o topo da próxima."""
-    from nucleo2d.detalhe.celulas import desenho_da_posicao, _cabecalho
+    from nucleo2d.detalhe.celulas import desenho_da_posicao, _cabecalho, COTA_FUROS_DE_CIMA
     pos.nome, pos.quantidade = nome, n
-    alto = pos.H + (10.0 + 2.0) * esc + sum((3.5 if i == 0 else 2.5) + 1.2 for i in range(len(_cabecalho(pos)))) * esc
+    pos.cotar_por_linha = True                  # a linha de furos de cima com a cadeia dela em cima
+    alto = pos.H + (10.0 + 2.0 + COTA_FUROS_DE_CIMA - 4.0) * esc + sum((3.5 if i == 0 else 2.5) + 1.2 for i in range(len(_cabecalho(pos)))) * esc
     antes = set(p.d.entidades)
     ext = desenho_da_posicao(pos, p.d, p.dx + x_cel, p.dy + y_topo - alto)
     for i in [i for i in p.d.entidades if i not in antes]:
@@ -1201,6 +1202,71 @@ def _so_bordas_externas(desenho: Desenho, entidades: Sequence, ids_barras: set, 
             cam = e.camada if e.camada != "VISTA-FINA" else camada_de.get(origem, "VISTA")
             atr = {k: v for k, v in (e.atributos or {}).items() if k not in ("nos_chanfro", "nos_quina", "chanfro")}
             desenho.add(Linha(camada=cam, a=(round(a_[0], 2), round(a_[1], 2)), b=(round(b_[0], 2), round(b_[1], 2)), atributos=atr))
+
+
+def _vizinhos_no_plano(doc: Documento, instancia: Sequence, origem, u, v, w, u0: float, v0: float,
+                       dx: float, dy: float, perto: float = 400.0) -> List[tuple]:
+    """As peças de fora da tesoura que ficam no plano dela (cabem em 400 mm atravessado, o meio a até
+    300 mm do plano) e encostadas no contorno (até `perto` mm): o montante lateral e as chapas dele na
+    ponta. Parafuso, telha, calha e barra redonda não. Devolve (id, marca, contorno projetado)."""
+    from nucleo3d.geometria import malha
+    ws = [_dot(_sub(q, origem), w) for e in instancia for q in e.vertices]
+    if not ws:
+        return []
+    w0 = (min(ws) + max(ws)) / 2.0
+    ids = {e.id for e in instancia}
+    pts_i = [(_dot(_sub(q, origem), u) - u0 + dx, _dot(_sub(q, origem), v) - v0 + dy) for e in instancia for q in e.vertices]
+    casco = _casco(pts_i)
+    if len(casco) < 3:
+        return []
+    bx0, bx1 = min(q[0] for q in casco) - perto, max(q[0] for q in casco) + perto
+    by0, by1 = min(q[1] for q in casco) - perto, max(q[1] for q in casco) + perto
+    saida = []
+    cand = []
+    for ent in doc.entidades.values():
+        if ent.id in ids or getattr(ent, "tipo", "") not in ("barra", "solido", "chapa"):
+            continue
+        perfil = str(_marcas(ent).get("perfil") or getattr(ent, "nome", "") or "")
+        if re.search(r"BOLT|TELHA|CALHA|RUFO", perfil, re.I) or _eh_redonda_perfil(perfil) \
+                or "telha" in str(getattr(ent, "camada", "") or "").lower():
+            continue
+        try:
+            vs = malha(ent)[0]
+        except Exception:                                     # noqa: BLE001 — peça sem malha
+            continue
+        if not vs:
+            continue
+        pw = [_dot(_sub(q, origem), w) - w0 for q in vs]
+        if max(pw) - min(pw) > 400.0 or abs((max(pw) + min(pw)) / 2.0) > 300.0:
+            continue
+        pts = [(_dot(_sub(q, origem), u) - u0 + dx, _dot(_sub(q, origem), v) - v0 + dy) for q in vs]
+        if max(q[0] for q in pts) < bx0 or min(q[0] for q in pts) > bx1 or max(q[1] for q in pts) < by0 or min(q[1] for q in pts) > by1:
+            continue
+        if max(math.dist(q0, q1) for q0 in pts[:1] for q1 in pts) < 150.0 and not _tipo_ifc(ent).startswith("IfcPlate"):
+            continue                                          # porca, arruela
+        c_ = _casco(pts)
+        if len(c_) < 3 or min(_dist_ponto_seg(q, casco[i], casco[(i + 1) % len(casco)])
+                               for q in c_ for i in range(len(casco))) > perto:
+            continue
+        if all(_trecho_dentro(q, q, casco, 0.0) is not None for q in c_):
+            continue                                          # dentro do contorno da tesoura: já aparece nela
+        cand.append((ent, c_))
+    # só a peça em pé na ponta da tesoura (o montante lateral) e as chapas do conjunto dela: as terças de
+    # parede no plano da tesoura do oitão, deitadas, não entram
+    u_min, u_max = min(q[0] for q in casco), max(q[0] for q in casco)
+    em_pe = []
+    for ent, c_ in cand:
+        us_, vs_ = [q[0] for q in c_], [q[1] for q in c_]
+        meio = (min(us_) + max(us_)) / 2.0
+        if not _tipo_ifc(ent).startswith("IfcPlate") and max(vs_) - min(vs_) > 2.0 * (max(us_) - min(us_)) \
+                and (meio < u_min + 150.0 or meio > u_max - 150.0):
+            em_pe.append(ent)
+    conj_ok = {str(_marcas(e).get("conjunto") or "") for e in em_pe} - {""}
+    ids_ok = {e.id for e in em_pe}
+    for ent, c_ in cand:
+        if ent.id in ids_ok or (_tipo_ifc(ent).startswith("IfcPlate") and str(_marcas(ent).get("conjunto") or "") in conj_ok):
+            saida.append((ent.id, str(_marcas(ent).get("posicao") or ""), c_))
+    return saida
 
 
 def _cortes_das_tercas(doc: Documento, instancia: Sequence, origem, u, v, w, u0: float, v0: float,
@@ -2258,6 +2324,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             # no conjunto (o DP), a diagonal e o montante com o perfil cheio — as duas bordas, como os outros perfis —, não
             # só a linha de eixo (pedido do usuário, 28/09)
             contorno |= {k for k in alma if camada_de.get(k) in ("DIAGONAIS", "MONTANTES")}
+        # o perfil laminado (W, I, H) da alma — o montante W200 da tesoura de alma cheia do depósito
+        # químico, 29/09: "esse perfil está sendo representado só por uma linha" — com o perfil cheio
+        por_id = {e.id: e for e in instancia}
+        contorno |= {k for k in alma if k in por_id and re.match(r"^\s*(W|HP|I|H)\s*\d", str(_marcas(por_id[k]).get("perfil") or ""), re.I)}
         for k in contorno:
             apoios_bz.append(alma.pop(k))                  # as outras barras ainda encaixam no eixo dela
         # o montante com contorno (o de fechamento da cumeeira, a descida do banzo no joelho) fica
@@ -2284,6 +2354,11 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # a telha (a linha dela e o parafuso na terça) não entra na tesoura: fica só na prancha das
         # telhas (pedido do usuário, 28/09)
         del telhas, extras
+        # as peças de fora no plano da tesoura, encostadas nela — o montante lateral na ponta (A.L.2.1 do
+        # depósito químico, 29/09: "pode trazer esse elemento para o corte das tesouras") —, vistas de lado
+        for id_v, marca_v, pts_v in _vizinhos_no_plano(doc, instancia, origem, u, v, w, u0, v0, dx, dy):
+            desenho.add(Polilinha(camada="VISTA-FINA", vertices=[(round(x_, 2), round(y_, 2)) for x_, y_ in pts_v], fechada=True,
+                                  atributos=dict(atr, vizinho=True, corte=id_v, nome_corte=nome_de(marca_v) if marca_v else "")))
     p = _Papel(desenho, atr, dx, dy)
     esc = desenho.escala
     off, off2, off3 = 10.0, 20.0, 30.0
@@ -2343,7 +2418,15 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             return (b[0][1] + b[1][1]) / 2 > v_medio
         return y_em(b, xm) > max(y_em(o, xm) for o in outros) or y_em(b, xm) > min(y_em(o, xm) for o in outros) and \
             y_em(b, xm) >= sum(y_em(o, xm) for o in outros) / len(outros)
-    de_cima = {id(b): _de_cima(b) for b in banzos}
+    def _sozinho(b):
+        xm = (b[0][0] + b[1][0]) / 2
+        return not any(o is not b and min(o[0][0], o[1][0]) - 1.0 <= xm <= max(o[0][0], o[1][0]) + 1.0
+                       and abs(y_em(o, xm) - y_em(b, xm)) > 20.0 for o in banzos)
+    # a tesoura de alma cheia (uma barra W por água — o depósito químico, 29/09): nenhum banzo tem outro
+    # por cima ou por baixo; as duas águas são o banzo de cima (pela altura média, a água mais baixa
+    # virava o de baixo e a cadeia da outra atravessava a tesoura inteira)
+    alma_cheia = bool(banzos) and all(_sozinho(b) for b in banzos)
+    de_cima = {id(b): True if alma_cheia else _de_cima(b) for b in banzos}
     for pa, pb, comp, ang in diagonais:
         for bz in banzos:
             qa, qb = bz[0], bz[1]
@@ -2534,6 +2617,14 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         p.cota_h(face_esq, meio_m, 0, -(off + PASSO_COTA_TESOURA))
         p.cota_h(meio_m, face_dir, 0, -(off + PASSO_COTA_TESOURA))
         p.cota_h(face_esq, face_dir, 0, -(off + 2 * PASSO_COTA_TESOURA))
+    elif alma_cheia and len(trechos(True)) > 1:
+        # alma cheia montada: na base, de ponta a ponta, os montantes (onde ela apoia) e a cumeeira numa
+        # cadeia só, e a total logo abaixo
+        ts_a = trechos(True)
+        meio_a = (ts_a[0][1] + ts_a[1][0]) / 2.0
+        xs_a = sorted({0.0, round(larg, 1), round(meio_a, 1)} | {x for x in de_montante if 1.0 < x < larg - 1.0})
+        p.cadeia_h(fundir(set(xs_a), tol=60.0, fixos=(0.0, round(larg, 1), round(meio_a, 1))), 0.0, -off, exigir_espaco=False)
+        p.cota_h(0.0, larg, 0, -(off + PASSO_COTA_TESOURA))
     else:
         p.cota_h(face_esq, face_dir, 0, -off * (nivel_baixo + 1))
     cadeia_cima = len(nos_cima) > 2 and nos_cima != nos_baixo and cadeia_do_banzo(nos_cima, True)
@@ -2602,6 +2693,13 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             cadeia_suportes = (p.cadeia_alinhada(reta_cima, sup, desl, exigir_espaco=False) if reta_cima is not None
                                else p.cadeia_h(sup, alt, desl, exigir_espaco=False))
     n_topo = (1 if cadeia_cima else 0) + (1 if cadeia_suportes else 0)
+    if alma_cheia and len(trechos_cima) > 1:
+        # o comprimento de cada água, na inclinação dela, por fora das cadeias
+        for x0, x1, reta, ytopo in trechos_cima:
+            if x1 - x0 > 300.0:
+                (p.cadeia_alinhada(reta, [x0, x1], off * (n_topo + 1), exigir_espaco=False) if reta is not None
+                 else p.cadeia_h([x0, x1], ytopo, off * (n_topo + 1), exigir_espaco=False))
+        n_topo += 1
     if trelica:
         # a água inteira ao longo do banzo de cima, por fora das cadeias de nós e de suportes
         agua = False

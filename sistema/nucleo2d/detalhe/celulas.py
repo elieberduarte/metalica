@@ -154,6 +154,9 @@ GRUPO_DE_FUROS = 150.0
 #: Alturas (mm de papel, acima da peça) das duas linhas de chamadas dos furos; o título
 #: começa a 12 mm.
 NIVEIS_DE_CHAMADA = (3.5, 7.5)
+#: A cadeia da linha de furos de cima (a barra inteira da tesoura), mm de papel acima da peça: por
+#: cima das chamadas dos furos.
+COTA_FUROS_DE_CIMA = 12.0
 ALTURA_CHAMADA = 2.0
 
 
@@ -234,6 +237,16 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     # curto — 35 mm da ponta numa terça em 1:25 — deixa os textos apertados
     # as terças de parede (T.L) e de oitão (T.O) também: a mesma máquina fura todas
     terca = pos.tipo_nome in ("terca_cobertura", "terca_marquise", "terca_lateral", "terca_oitao")
+    # a barra inteira da tesoura de alma cheia (conjuntos._barra_inteira): a linha de furos de cima,
+    # defasada da de baixo por uns milímetros, ganha a cadeia dela em cima da peça — numa cadeia só os
+    # números se atropelavam ("7" e "43", pedido do usuário, 29/09)
+    em_cima = []
+    if getattr(pos, "cotar_por_linha", False) and xs and not terca:
+        cima = sorted({round(f.x, 1) for f in furos_frente if f.y > H / 2.0})
+        baixo = sorted({round(f.x, 1) for f in furos_frente if f.y <= H / 2.0})
+        if cima and baixo and cima != baixo:
+            em_cima, xs = cima, baixo
+            p.cadeia_h([0.0] + cima + [L], H, COTA_FUROS_DE_CIMA, exigir_espaco=False)
     cadeia = bool(xs) and ((terca and _cotas_da_terca(p, furos_frente, L, off, off2))
                            or p.cadeia_h([0.0] + xs + [L], 0, -off, exigir_espaco=False))
     if isinstance(cadeia, tuple):                 # terça com a linha dos simples: a total colada na dos duplos
@@ -291,8 +304,9 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     if furos_frente:
         chamadas_de_furos(p, furos_frente, H, esc, L)
 
-    # título acima da peça (as observações ficam nos metadados e na lista de produção)
-    y = H + (off + 2.0) * esc
+    # título acima da peça (as observações ficam nos metadados e na lista de produção), e da cadeia dos
+    # furos de cima quando ela existe
+    y = H + (off + 2.0 + (COTA_FUROS_DE_CIMA - 4.0 if em_cima else 0.0)) * esc
     linhas = _cabecalho(pos)
     for i, txt in enumerate(reversed(linhas)):
         alt = 3.5 if i == len(linhas) - 1 else 2.5
