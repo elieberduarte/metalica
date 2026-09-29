@@ -121,7 +121,7 @@ def _pontos_da_cota(c: Cota, k: float) -> List[Ponto2]:
     return pts
 
 
-def _caixa_de(ents: Sequence[Entidade2D], escala: float = 1.0) -> Optional[Tuple[Ponto2, Ponto2]]:
+def _caixa_de(ents: Sequence[Entidade2D], escala: float = 1.0, letra: float = 0.75) -> Optional[Tuple[Ponto2, Ponto2]]:
     """Caixa das entidades; um texto ocupa a largura estimada (0,75 × altura × caracteres,
     em mm de modelo pela escala), senão o título "P12 – 112x" sai da célula na folha; a cota,
     a linha de cota e o número dela."""
@@ -130,14 +130,14 @@ def _caixa_de(ents: Sequence[Entidade2D], escala: float = 1.0) -> Optional[Tuple
         if isinstance(e, Cota):
             pts += e.pontos() + _pontos_da_cota(e, escala)
         elif isinstance(e, Texto) and e.angulo == 0.0:
-            larg = 0.75 * e.altura * escala * len(e.texto or "")
+            larg = letra * e.altura * escala * len(e.texto or "")
             x, y = e.posicao
             x0 = x - larg / 2 if e.alinhamento == "centro" else x - larg if e.alinhamento == "direita" else x
             pts += [(x0, y), (x0 + larg, y + e.altura * escala)]
         elif type(e).__name__ == "Chamada":
             # a chamada vai da seta até o fim do texto (o texto sai do lado de fora do alvo):
             # sem a largura dele, a célula vizinha era posta em cima das chamadas de parafuso
-            larg = 0.75 * e.altura * escala * len(e.texto or "") + 10.0 * escala
+            larg = letra * e.altura * escala * len(e.texto or "") + 10.0 * escala
             (xa, ya), (xt, yt) = e.alvo, e.posicao
             xf = xt + larg if xt >= xa else xt - larg
             pts += [e.alvo, e.posicao, (xf, yt + e.altura * escala)]
@@ -581,10 +581,12 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 # tudo o que coube: o bloco centrado no quadro (pedido do usuário, 28/09)
                 postas_ = cels_p[antes_:]
                 if postas_ and not grupo_:
-                    bx0_ = min(c_["px"] for c_ in postas_)
-                    bx1_ = max(c_["px"] + c_["w"] for c_ in postas_)
-                    by0_ = min(c_["py"] for c_ in postas_)
-                    by1_ = max(c_["py"] + c_["h"] for c_ in postas_)
+                    # pelo que se vê (o texto com a largura mais perto da real que a de reserva das células)
+                    vis = [_caixa_visivel(c_) for c_ in postas_]
+                    bx0_ = min(v_[0] for v_ in vis)
+                    bx1_ = max(v_[2] for v_ in vis)
+                    by0_ = min(v_[1] for v_ in vis)
+                    by1_ = max(v_[3] for v_ in vis)
                     ddx_ = ((x0_ + QUADRO_MARGEM) + (x1_ - QUADRO_MARGEM) - bx0_ - bx1_) / 2.0
                     ddy_ = ((uy1 - QUADRO_CABECALHO - FOLGA * 0.5) + uy0 - by0_ - by1_) / 2.0
                     for c_ in postas_:
@@ -1537,6 +1539,20 @@ def _renomear_face(c: dict, novo: str):
     novo_t.texto = re.sub(r"^FACE \d+", novo, tit.texto)
     c["entidades"] = [novo_t if e is tit else e for e in c["entidades"]]
     c["titulo"] = novo_t.texto
+
+
+def _caixa_visivel(c: dict) -> Tuple[float, float, float, float]:
+    """(x0, y0, x1, y1) no papel do que a célula desenha, com o texto na largura de verdade (0,58 da
+    altura por letra — a reserva das células usa 0,75, para o vizinho nunca encostar)"""
+    k = c["k"]
+    (bx0, by0), _b1 = c["caixa"]
+    vc = _caixa_de(c["entidades"], k, letra=0.58)
+    if vc is None:
+        return c["px"], c["py"], c["px"] + c["w"], c["py"] + c["h"]
+    (vx0, vy0), (vx1, vy1) = vc
+    dy = c["py"] + (0.0 if c.get("sem_escala") else FAIXA) - by0 / k
+    dx = c["px"] - bx0 / k
+    return vx0 / k + dx, min(c["py"], vy0 / k + dy), vx1 / k + dx, vy1 / k + dy
 
 
 def _empilhavel(c: dict, largura_util: float) -> bool:
