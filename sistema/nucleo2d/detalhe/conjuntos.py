@@ -3237,6 +3237,16 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
 
 
 # ============================================================ localização
+def _extensao_menor(e) -> float:
+    """A espessura da peça: a menor extensão dos vértices na direção de menor espalhamento (a chapa
+    em pé ou deitada, em qualquer orientação)."""
+    from saida.detalhamento import _autovetores
+    c, pca = _autovetores(e.vertices)
+    n = tuple(pca[2])
+    t = [sum(v[i] * n[i] for i in range(3)) for v in e.vertices]
+    return max(t) - min(t)
+
+
 def _casco(pts: Sequence[Tuple[float, float]]) -> List[Tuple[float, float]]:
     """Casco convexo 2D (cadeia monótona de Andrew)."""
     pts = sorted(set((round(x, 2), round(y, 2)) for x, y in pts))
@@ -3395,17 +3405,26 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
         vs = e.vertices
         centros.append((sum(v[0] for v in vs) / len(vs), sum(v[1] for v in vs) / len(vs), sum(v[2] for v in vs) / len(vs)))
     ids_ch = {e.id for e in chumb}
-    chapas = []
+    caixas_cb = [tuple((min(v[i] for v in e.vertices), max(v[i] for v in e.vertices)) for i in range(3)) for e in chumb]
+    perto, atravessadas = [], []
     for e in pecas:
         if e.id in ids_ch or tipos.get(str(_marcas(e).get("posicao") or "")) not in ("chapa", "castanha", "suporte_terca", None):
             continue
         zs = [v[2] for v in e.vertices]
-        if max(zs) - min(zs) > 25.0:
-            continue
         cx = sum(v[0] for v in e.vertices) / len(e.vertices)
         cy = sum(v[1] for v in e.vertices) / len(e.vertices)
-        if any(math.hypot(cx - c[0], cy - c[1]) <= 400.0 and abs(min(zs) - c[2]) <= 500.0 for c in centros):
-            chapas.append(e)
+        if not any(math.hypot(cx - c[0], cy - c[1]) <= 400.0 and abs(min(zs) - c[2]) <= 500.0 for c in centros):
+            continue
+        if not so_chapas and _extensao_menor(e) <= 25.0:
+            # a chapa que o chumbador atravessa, deitada ou em pé (a de parede)
+            cx_e = [(min(v[i] for v in e.vertices), max(v[i] for v in e.vertices)) for i in range(3)]
+            if any(all(cx_e[i][0] - 2.0 <= b[i][1] and b[i][0] - 2.0 <= cx_e[i][1] for i in range(3)) for b in caixas_cb):
+                atravessadas.append(e)
+        if max(zs) - min(zs) <= 25.0:
+            perto.append(e)
+    # a chapa de base é a que o chumbador atravessa; a chapa deitada logo acima (o suporte da agulha
+    # no depósito químico, 29/09) não é — a regra da vizinhança fica para o modelo em que nenhuma cruza
+    chapas = atravessadas or perto
     itens = chumb + chapas
     todos = [v for e in itens for v in e.vertices]
     if ex:

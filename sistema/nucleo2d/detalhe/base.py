@@ -1585,7 +1585,7 @@ def _categoria(pos: Posicao, camada: str) -> str:
 
 
 def _eh_redonda_perfil(perfil: str) -> bool:
-    return bool(re.search(r"FE\s*RED|BARRA\s*ROSC|REDOND|\bFR\b|Ø\s*\d|VERG", perfil or "", re.I))
+    return bool(re.search(r"FE\s*RED|BARRA\s*ROSC|REDOND|\bFR\b|\bBR\s*\d|Ø\s*\d|VERG", perfil or "", re.I))
 
 
 # ============================================================ pontas roscadas (padrão da fábrica)

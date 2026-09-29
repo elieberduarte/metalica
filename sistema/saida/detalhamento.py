@@ -178,7 +178,8 @@ def _polegadas_mm(texto: str) -> Optional[float]:
 
 
 def _eh_redonda(perfil: str) -> bool:
-    return bool(re.search(r"FE\s*RED|BARRA\s*ROSC|REDOND|\bFR\b|Ø\s*\d|VERG", perfil or "", re.I))
+    # "BR3/4''": barra redonda no IFC do depósito químico (29/09) — os chumbadores não eram achados
+    return bool(re.search(r"FE\s*RED|BARRA\s*ROSC|REDOND|\bFR\b|\bBR\s*\d|Ø\s*\d|VERG", perfil or "", re.I))
 
 
 def _eh_telha(perfil: str) -> bool:

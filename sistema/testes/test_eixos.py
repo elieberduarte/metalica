@@ -119,3 +119,27 @@ def test_plantas_com_eixos_e_referencia_2d():
     assert sum(1 for e in ch.entidades.values() if e.camada == "EIXO" and isinstance(e, Circulo)) == 10
     assert ch.vistas and ch.vistas[0]["tipo"] == "topo" and ch.vistas[0].get("ref2d")
     assert ch.metadados["detalhamento"]["grupo"] == "chumbacao"
+
+
+def test_br_com_bitola_e_barra_redonda():
+    """"BR3/4''" (o chumbador do depósito químico, 29/09) é barra redonda — sem isso o chumbador não
+    era achado e a chumbação tomava as chapas deitadas por chumbador; "BRACE"/"BRISE" não."""
+    from saida.detalhamento import _eh_redonda
+    from nucleo2d.detalhe.base import _eh_redonda_perfil
+    for f in (_eh_redonda, _eh_redonda_perfil):
+        assert f("BR3/4''") and f("BR 5/8''") and f("FE RED 1/2''")
+        assert not f("BRACE L2") and not f("BRISE 100") and not f("W250X32.70")
+
+
+def test_chumbador_de_parede_na_chapa_em_pe():
+    """A tesoura do eixo 1 do depósito químico (29/09) presa na parede: chapa em pé na face do concreto
+    com barras redondas curtas deitadas atravessando, quase todas do lado de dentro — é chumbamento; a
+    mesma barra centrada na chapa (passa dos dois lados por igual) não é."""
+    from nucleo2d.detalhe.montagens import grupos_montados
+    chapa = _caixa(160, 4900, 5250, 173, 5150, 5500, "PLATE 268x249x13", "P1", "M1")
+    chapa.atributos["tipo_ifc"] = "IfcPlate"
+    barras = [_caixa(0, y - 8, z - 8, 200, y + 8, z + 8, "BR5/8''", "P2", "M1") for y in (4925.0, 5075.0) for z in (5290.0, 5430.0)]
+    gs = grupos_montados([chapa] + barras, (), lambda m: m)
+    assert [g["tipo"] for g in gs] == ["chumbamento"] and len(gs[0]["pecas"]) == 5
+    centrada = [_caixa(66, y - 8, 5282, 266, y + 8, 5298, "BR5/8''", "P2", "M1") for y in (4925.0, 5075.0)]
+    assert not grupos_montados([chapa] + centrada, (), lambda m: m)

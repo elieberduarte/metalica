@@ -17,6 +17,7 @@ montagem.
 """
 import collections
 import math
+import re
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from nucleo3d.modelo import Documento, Solido
@@ -32,6 +33,8 @@ MAIOR_CHAPA_MONTAGEM = 600.0
 FOLGA_CONTATO = 1.0
 #: Mais peças que isto num grupo: não é peça miúda, é um pedaço do conjunto.
 MAIS_PECAS = 8
+#: O chumbador de parede (barra deitada numa chapa em pé) passa disto (mm): é tirante, não chumbador.
+CHUMBADOR_DE_PAREDE = 1500.0
 
 
 def _perfil(e) -> str:
@@ -102,6 +105,27 @@ def grupos_montados(pecas: Sequence[Solido], fixadores: Sequence[Solido], nome_d
         for c in base:
             if _tocam(cx[b.id], cx[c.id], -2.0):
                 unir(b.id, c.id)
+    # o chumbador de parede: barra curta deitada que atravessa a chapa em pé encostada no concreto, a
+    # maior parte dela do lado de dentro (o depósito químico, 29/09: a tesoura do eixo 1 presa na parede
+    # por 2 BR5/8" em cada chapa, que saíam como gancho)
+    em_pe = [e for e in chapas if _extensao(e) <= 2 * MAIOR_CHAPA_MONTAGEM
+             and abs(_norm(tuple(_autovetores(e.vertices)[1][2]))[2]) < 0.3]
+    for b in barras:
+        d = eixo_principal(b)
+        # a barra roscada do esticador atravessa as chapinhas do contravento: não é chumbador
+        if abs(d[2]) > 0.3 or _extensao(b) > CHUMBADOR_DE_PAREDE or re.search(r"BARRA\s*ROSC", _perfil(b), re.I):
+            continue
+        tb = [_dot(v, d) for v in b.vertices]
+        cruzadas = []
+        for c in em_pe:
+            n = _norm(tuple(_autovetores(c.vertices)[1][2]))
+            if abs(_dot(n, d)) < 0.9 or not _tocam(cx[b.id], cx[c.id], -2.0):
+                continue
+            tc = [_dot(v, d) for v in c.vertices]
+            meio = 0.5 * (min(tc) + max(tc))
+            cruzadas.append((c, min(meio - min(tb), max(tb) - meio) <= 0.35 * (max(tb) - min(tb))))
+        if len(cruzadas) == 1 and cruzadas[0][1]:          # uma chapa só, a barra do lado de dentro
+            unir(b.id, cruzadas[0][0].id)
     comps: Dict[str, list] = collections.defaultdict(list)
     por_id = {e.id: e for e in chapas + barras}
     for i in por_id:

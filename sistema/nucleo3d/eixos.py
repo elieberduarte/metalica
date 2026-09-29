@@ -113,6 +113,17 @@ def _eixo_em_planta(e):
     return d, max(q) - min(q)
 
 
+def _em_pe(e) -> bool:
+    """A peça mais alta que comprida em planta: o chumbador do pilar. O de parede (deitado, preso
+    na chapa em pé na face do concreto) não marca eixo — a posição dele ao longo da barra é a
+    parede, não o centro de um apoio."""
+    vs = _vertices(e)
+    if not vs:
+        return False
+    zs = [v[2] for v in vs]
+    return max(zs) - min(zs) >= _eixo_em_planta(e)[1]
+
+
 def _limpo(d: Tuple[float, float]) -> Tuple[float, float]:
     """A direção sem o resíduo numérico: a quase alinhada ao x ou ao y fica alinhada."""
     x, y = d
@@ -295,7 +306,7 @@ def identificar_eixos(doc: Documento, nomes: Optional[dict] = None) -> dict:
         gs_n = _agrupar([c[0] * g[0] + c[1] * g[1] for c in cs])
     p = (-g[1], g[0])
     # apoios: chumbadores; senão as chapas deitadas do nível mais baixo, junto do pé das tesouras
-    chumb = [e for e in pecas if tipos.get(str(_marcas(e).get("posicao") or "")) == "chumbador"]
+    chumb = [e for e in pecas if tipos.get(str(_marcas(e).get("posicao") or "")) == "chumbador" and _em_pe(e)]
     origem_letras = "chumbadores"
     if not chumb:
         z_tes = min(v[2] for e in tes for v in _vertices(e))

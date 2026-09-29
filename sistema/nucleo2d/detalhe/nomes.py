@@ -296,7 +296,9 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             tipo_conj[c["marca"]] = "pilar"                 # o pilar com a placa de base
         elif cont.get("viga"):
             tipo_conj[c["marca"]] = "viga"                  # a viga de alma cheia com mísulas e chapas de topo
-        elif cont.get("chumbador") and n == cont.get("chumbador"):
+        elif cont.get("chumbador") and (n == cont.get("chumbador") or 2 * cont["chumbador"] >= n):
+            # só chumbadores, ou chumbadores com a peça de ancoragem no pé (o depósito químico: 2
+            # barras e uma cantoneira por apoio, que saía como conjunto comum, "DP.1")
             tipo_conj[c["marca"]] = "chumbador"
         elif cont.get("contraventamento"):
             tipo_conj[c["marca"]] = "contraventamento"
@@ -337,9 +339,10 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     por_tipo: Dict[str, list] = collections.defaultdict(list)
     for c in conjuntos_info:
         por_tipo[tipo_conj[c["marca"]]].append(c)
+    pendentes_conj: list = []
     for t, lista in por_tipo.items():
         prefixo = PREFIXO_NOME[t]
-        usados, pendentes = usados_por_prefixo[prefixo], []
+        usados = usados_por_prefixo[prefixo]
         for c in sorted(lista, key=lambda c: (-c.get("instancias", 0), _ordem_natural(c["marca"]))):
             n = anterior(ant_conj, [c["marca"]] + list(c.get("marcas") or []), prefixo)
             num = _nome_numero(n, prefixo)[0] if n else None
@@ -347,13 +350,14 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
                 nomes_conj[c["marca"]] = "%s%d" % (prefixo, num)
                 usados.add(num)
             else:
-                pendentes.append(c)
+                pendentes_conj.append((prefixo, c))
+    for prefixo, c in pendentes_conj:          # os novos depois dos que já tinham nome (como nas posições)
+        usados = usados_por_prefixo[prefixo]
         k = 1
-        for c in pendentes:
-            while k in usados:
-                k += 1
-            nomes_conj[c["marca"]] = "%s%d" % (prefixo, k)
-            usados.add(k)
+        while k in usados:
+            k += 1
+        nomes_conj[c["marca"]] = "%s%d" % (prefixo, k)
+        usados.add(k)
 
     # ---- posições que só existem dentro de um conjunto (não tesoura): nome do conjunto + .k
     nomes_pos: Dict[str, str] = {}
@@ -373,13 +377,15 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             continue
         for i, p in enumerate(sorted(lista, key=lambda q: _ordem_natural(q.marca)), 1):
             nomes_pos[p.marca] = "%s.%d" % (nomes_conj[c], i)
-            tipo[p.marca] = "parte"
+            if not (tipo_conj.get(c) == "chumbador" and tipo[p.marca] == "chumbador"):
+                tipo[p.marca] = "parte"                     # a barra do conjunto chumbador segue chumbador
 
     # ---- as demais por tipo; terças em famílias (perfil + comprimento) com variantes
     por_tipo = collections.defaultdict(list)
     for p in posicoes:
         if p.marca not in nomes_pos:
             por_tipo[tipo[p.marca]].append(p)
+    pendentes_pos: list = []
     for t, lista in por_tipo.items():
         prefixo = PREFIXO_NOME.get(t) or "P."
         familias: Dict[object, List[Posicao]] = collections.OrderedDict()
@@ -390,7 +396,7 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
         for l in ordem:
             l.sort(key=lambda q: (-q.quantidade, _ordem_natural(q.marca)))
 
-        def atribuir(l, num):
+        def atribuir(l, num, prefixo=prefixo):
             letras = set()
             for q in l:
                 n = anterior(ant_pos, [q.marca] + marcas_de(q), prefixo)
@@ -408,7 +414,7 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
                         break
                 letras.add(letra)
                 nomes_pos[q.marca] = "%s%d%s" % (prefixo, num, "-" + letra if letra else "")
-        usados, pendentes = usados_por_prefixo[prefixo], []
+        usados = usados_por_prefixo[prefixo]
         for l in ordem:
             n = anterior(ant_pos, [l[0].marca] + marcas_de(l[0]), prefixo)
             num = _nome_numero(n, prefixo)[0] if n else None
@@ -416,13 +422,18 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
                 usados.add(num)
                 atribuir(l, num)
             else:
-                pendentes.append(l)
+                pendentes_pos.append((prefixo, l, atribuir))
+    # os nomes novos só depois que todos os tipos guardaram os que já tinham: tipos diferentes com o
+    # mesmo prefixo (a chapa, o suporte de agulha e o de contravento são todos CH) — a peça que mudou
+    # de tipo pegava o número de outra que ainda não tinha sido vista (depósito químico, 29/09: a
+    # cantoneira da agulha virou CH27 e a chapa CH27 foi para CH33)
+    for prefixo, l, atribuir in pendentes_pos:
+        usados = usados_por_prefixo[prefixo]
         k = 1
-        for l in pendentes:
-            while k in usados:
-                k += 1
-            usados.add(k)
-            atribuir(l, k)
+        while k in usados:
+            k += 1
+        usados.add(k)
+        atribuir(l, k)
     for p in posicoes:
         p.nome = nomes_pos.get(p.marca, "")
         p.tipo_nome = tipo.get(p.marca, "")
