@@ -254,10 +254,11 @@ def celulas_de(desenho: Desenho, nome: str) -> List[dict]:
     celulas = [c for c in celulas + extra if c["entidades"]]
     for c in celulas:                      # a caixa real do que caiu na célula
         c["caixa"] = _caixa_de(c["entidades"], float(desenho.escala or 1.0)) or c["caixa"]
-        # título da célula: o texto mais alto dentro dela (o "P12 – 112x")
+        # título da célula: o texto mais alto dentro dela (o "P12 – 112x") — as marcas dos eixos ("1", "A"),
+        # às vezes da mesma altura, não contam
         textos = [e for e in c["entidades"] if isinstance(e, Texto)]
         if textos:
-            c["titulo"] = max(textos, key=lambda t: t.altura).texto
+            c["titulo"] = max(textos, key=lambda t: (len(str(t.texto or "").strip()) >= 4, t.altura)).texto
     return celulas
 
 
@@ -430,7 +431,9 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 _renomear_face(c, "FACES " + " E ".join(c["faces_iguais"]))
         itens = [c for c in itens if not any(c is x for x in fora_t)]
         tel = [c for c in tel if not any(c is x for x in fora_t)]
-        principais = [c for c in tel if re.match(r"(FACE|TIPOS DE TELHA)", str(c.get("titulo") or ""))]
+        def e_paginacao(c_):
+            return any(isinstance(e, Texto) and str(e.texto or "").startswith("TIPOS DE TELHA") for e in c_["entidades"])
+        principais = [c for c in tel if re.match(r"FACE", str(c.get("titulo") or "")) or e_paginacao(c)]
         detalhes_t = [c for c in tel if not any(c is x for x in principais)]
         alt_band = (m["inferior"] + ac) - (m["inferior"] + 3.0) - QUADRO_CABECALHO - FOLGA - FAIXA
         for c in detalhes_t:
@@ -443,11 +446,11 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 principais.append(c)
         # a paginação por tipo (a vista alta) numa coluna à esquerda, as faces e o detalhe à direita (pedido do
         # usuário, 28/09: vistas maiores, sem o espaço vazio embaixo)
-        coluna_t = next((c for c in principais if str(c.get("titulo") or "").startswith("TIPOS DE TELHA")), None)
+        coluna_t = next((c for c in principais if e_paginacao(c)), None)
         direita_t = [c for c in principais if c is not coluna_t]
         for c in direita_t:
             c["categoria"] = "TELHAS"
-        teto_t = {id(c): 2.0 for c in direita_t if not re.match(r"(FACE|TIPOS DE TELHA)", str(c.get("titulo") or ""))}
+        teto_t = {id(c): 2.0 for c in direita_t if not re.match(r"FACE", str(c.get("titulo") or ""))}
         if coluna_t is not None and direita_t:
             coluna_t["categoria"] = "TELHAS_TIPOS"
             ordem["TELHAS_TIPOS"] = ordem.get("TELHAS", 0) - 0.5
