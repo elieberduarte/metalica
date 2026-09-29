@@ -275,7 +275,7 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
         w_max = max(q[2] for q in pos.local)
         # logo abaixo das cotas da vista de frente, com o nome: sem ele parecia outra peça, sem nome
         # (pedido do usuário, 28/09)
-        y_topo = -((off2 + off) * esc + (w_max - w_min) + (w_min if w_min > 0 else 0))
+        y_topo = -((off2 + 4.5) * esc + (w_max - w_min) + (w_min if w_min > 0 else 0))
         ignorar_t = _arestas_dos_furos(pos, 1, -1.0, (0, 2)) if furos_topo else set()
         _vista(p, pos, (0, 2), 1, -1.0, 0, y_topo, ignorar_t)
         p.texto(0, y_topo + w_max + 1.2 * esc, "VISTA DE CIMA – %s" % (pos.nome or pos.marca), 2.0 * esc)

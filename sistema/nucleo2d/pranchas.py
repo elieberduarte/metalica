@@ -668,17 +668,38 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     break                                       # a prancha de corte começa numa folha nova
                 linha = prateleira(cat, qx0, qx1)
                 alt = max(c["h"] for c in linha)
-                if y_topo - (QUADRO_CABECALHO + FOLGA + alt) < uy0 - FOLGA * 0.5 + 2.0 and cels_p:
+                if y_topo - (QUADRO_CABECALHO + FOLGA * 0.6 + alt) < uy0 - FOLGA * 0.5 + 0.5 and cels_p:
                     break
                 aberto = {"categoria": cat, "titulo": titulos_q.get(cat, cat) + (" (continuação)" if cat in iniciadas else ""),
                           "y1": y_topo, "y0": None}
                 mold_p.append(aberto)
                 iniciadas.add(cat)
-                y_topo -= QUADRO_CABECALHO + FOLGA
+                y_topo -= QUADRO_CABECALHO + FOLGA * 0.6
+                limite = uy0 - FOLGA * 0.5 + 0.5                 # a última fileira vai até o fundo do quadro
                 while fila and fila[0]["categoria"] == cat:
                     linha = prateleira(cat, qx0, qx1)
                     alt = max(c["h"] for c in linha)
-                    if y_topo - alt < uy0 - FOLGA * 0.5 + 2.0 and cels_p:     # a última fileira vai até o fundo do quadro
+                    if y_topo - alt < limite and cels_p:
+                        # a fileira não cabe: as menores da mesma categoria que ainda cabem na altura que sobra
+                        # vão antes de fechar a prancha (pedido do usuário, 29/09: "esses detalhes cabem")
+                        while True:
+                            cabem = [c_ for c_ in fila if c_["categoria"] == cat and y_topo - c_["h"] >= limite]
+                            linha2, x2 = [], qx0
+                            for c_ in cabem:
+                                w_ = c_.get("slot_w", c_["w"])
+                                if linha2 and x2 + w_ > qx1:
+                                    continue
+                                linha2.append(c_)
+                                x2 += w_ + FOLGA
+                            if not linha2:
+                                break
+                            x2 = qx0
+                            for c_ in linha2:
+                                c_["px"], c_["py"] = x2, y_topo - c_["h"]
+                                x2 += c_.get("slot_w", c_["w"]) + FOLGA
+                                cels_p.append(c_)
+                                fila.remove(c_)
+                            y_topo -= max(c_["h"] for c_ in linha2) + FOLGA * 0.6
                         cheia = True
                         break
                     x = qx0
@@ -690,7 +711,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                         fila.remove(c)
                     y_topo -= alt + FOLGA * 0.6                # entre as fileiras (cada célula já tem a margem dela)
                 aberto["y0"] = y_topo
-                y_topo -= FOLGA
+                y_topo -= FOLGA * 0.5
             if mold_p:
                 mold_p[-1]["y0"] = uy0 - FOLGA * 0.5            # o último quadro desce até a faixa
                 for mq_ in mold_p:
