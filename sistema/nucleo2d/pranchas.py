@@ -399,6 +399,9 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     for c in itens:
         c["categoria"] = (c.get("item") or {}).get("categoria") or (
             "CHAPAS" if c.get("montagem") else "VISTAS" if not c.get("marca") else "OUTROS")
+        # as peças com nome de chapa (CH15, CH16: cantoneiras de suporte) no quadro das chapas, todas juntas (28/09)
+        if c["categoria"] == "BARRAS" and re.match(r"CH\d", str((c.get("item") or {}).get("nome") or "")):
+            c["categoria"] = "CHAPAS"
         # a barra roscada e o gancho (as peças de ponta dos contraventos e das agulhas) vão com eles (28/09)
         if (c.get("item") or {}).get("tipo") in ("barra_roscada", "gancho"):
             c["categoria"] = "CONTRAVENTOS"
@@ -469,12 +472,22 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     planta_cb = [c for c in itens if "chumba" in str(c.get("fonte") or "").lower() and not c.get("chave")]
     if planta_cb:
         partes_cb = {pt.strip() for c in itens if _eh_chumbamento(c.get("montagem")) for pt in c["montagem"].split(" + ")}
+        copias_cb = []
         for c in itens:
             it = c.get("item") or {}
-            if _eh_chumbamento(c.get("montagem")) or it.get("tipo") == "chumbador" or (it.get("nome") in partes_cb):
+            if (it.get("nome") in partes_cb) and not c.get("montagem") and it.get("tipo") != "chumbador":
+                # a chapa de base: a cópia na prancha dos chumbadores, o original na das chapas (a prancha de
+                # corte tem todas — pedido do usuário, 28/09)
+                cc = _copia_local(c, _quantidade_da_celula(c))
+                cc["categoria"] = "CHUMBAMENTO"
+                cc["_ordem"] = c.get("_ordem", 0) - 1e6
+                copias_cb.append(cc)
+                continue
+            if _eh_chumbamento(c.get("montagem")) or it.get("tipo") == "chumbador":
                 c["categoria"] = "CHUMBAMENTO"
                 # os chumbamentos montados primeiro, depois os chumbadores e as chapas de base
                 c["_ordem"] = c.get("_ordem", 0) + (-3e6 if c.get("montagem") else -2e6 if it.get("tipo") == "chumbador" else -1e6)
+        itens = itens + copias_cb
         meia = 0.5 * (qx1 - qx0) - 2 * QUADRO_MARGEM
         for c in planta_cb:
             c["categoria"] = "CHUMBACAO"
@@ -502,6 +515,18 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         (bx0, by0), (bx1, by1) = pai["caixa"]
         pai["w"], pai["h"] = (bx1 - bx0) / pai["k"], (by1 - by0) / pai["k"] + FAIXA
         itens = [x for x in itens if x is not c]
+    # a prancha das chapas é a de corte (pedido do usuário, 28/09): todas numa prancha só, que ela abre, e as
+    # barras no quadro de baixo, no que couber; na ordem do nome (CH1, CH2 … CH20, as montagens depois)
+    ordem["CHAPAS"] = ordem.get("BARRAS", ordem.get("CHAPAS", 50)) - 0.5
+    ch_ = sorted((c for c in itens if c["categoria"] == "CHAPAS" and not c.get("local")),
+                 key=lambda c: (1 if c.get("montagem") else 0, [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", str(
+                     (c.get("item") or {}).get("nome") or c.get("montagem") or c.get("titulo") or ""))]))
+    for i_, c in enumerate(ch_):
+        c["_ordem"] = i_
+    # as barras da mais larga para a mais estreita: as fileiras se completam melhor (a prancha de corte cabe
+    # junto)
+    for i_, c in enumerate(sorted((c for c in itens if c["categoria"] == "BARRAS"), key=lambda c: -c.get("w", 0.0))):
+        c["_ordem"] = i_
     itens.sort(key=lambda c: (ordem.get(c["categoria"], 99), c.get("_ordem", 0)))
     tipo_por_nome = {str((c.get("item") or {}).get("nome")): (c.get("item") or {}).get("tipo") for c in itens if c.get("item")}
     # as terças em colunas alinhadas: cada uma no começo de uma coluna da largura da mais comprida (pedido do
@@ -519,6 +544,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     fx0, fx1 = ux0, larg - m["direita"] - lc - FOLGA
     fy0, fy1 = m["inferior"] + 3.0, m["inferior"] + ac
     alt_faixa = fy1 - fy0 - QUADRO_CABECALHO - FOLGA
+
+    suportes_postos: set = set()                    # os suportes de terça já numa prancha de terças
 
     def distribuir(n_rel):
         for c_ in itens:
@@ -633,6 +660,12 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 cheia = lado_a_lado(seq_[0], seq_[1], cels_p, mold_p)
             while fila and not cheia:
                 cat = fila[0]["categoria"]
+                # os quadros lado a lado abrem prancha nova
+                seq2 = list(dict.fromkeys(c_["categoria"] for c_ in fila))[:2]
+                if cels_p and tuple(seq2) in (("CONTRAVENTOS", "CONJUNTOS"), ("CHUMBACAO", "CHUMBAMENTO"), ("TELHAS_TIPOS", "TELHAS")):
+                    break
+                if cels_p and cat == "CHAPAS" and not any(c_["categoria"] == "CHAPAS" for c_ in cels_p):
+                    break                                       # a prancha de corte começa numa folha nova
                 linha = prateleira(cat, qx0, qx1)
                 alt = max(c["h"] for c in linha)
                 if y_topo - (QUADRO_CABECALHO + FOLGA + alt) < uy0 - FOLGA * 0.5 + 2.0 and cels_p:
@@ -722,7 +755,10 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                             return True
                         return bool(c_.get("montagem")) and all(
                             tipo_por_nome.get(pt.strip()) == "suporte_terca" for pt in c_["montagem"].split(" + "))
-                    candidatas = [c for c in fila if c.get("pai") is None and suporte(c)]
+                    # por cópia (o original fica na prancha de corte), cada suporte numa prancha de terças só
+                    candidatas = [_copia_local(c, _quantidade_da_celula(c)) for c in itens
+                                  if c.get("pai") is None and not c.get("local") and suporte(c) and id(c) not in suportes_postos
+                                  and c["categoria"] != "TERÇAS" and not any(c is x_ for x_ in cels_p)]
             furos_p = [c for c in fila if c.get("pai") is not None and any(c["pai"] is x for x in cels_p)]
             # a legenda: só o que está na prancha — nome e quantidade — e as siglas (pedido do usuário, 28/09:
             # "precisa reduzir bastante o tamanho"); a largura sai do conteúdo com todos os detalhes possíveis
@@ -826,9 +862,12 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             if na_faixa:
                 # "ACESSÓRIOS/DISPOSITIVOS": as chapas e os acessórios das peças da prancha (pedido do usuário, 28/09)
                 mold_p.append({"categoria": "DETALHES", "titulo": "ACESSÓRIOS/DISPOSITIVOS", "y1": fy1_p, "y0": fy0, "x0": fx0, "x1": dx1})
-                iniciadas.update(c["categoria"] for c in na_faixa)
+                iniciadas.update(c["categoria"] for c in na_faixa if not c.get("local"))   # a cópia não abre a categoria
             if tem_legenda:
                 mold_p.append({"categoria": "LEGENDA", "titulo": "LEGENDA", "y1": fy1_p, "y0": fy0, "x0": leg["x0"], "x1": fx1})
+            for c in na_faixa + no_canto:
+                if c.get("local") and c.get("original") is not None:
+                    suportes_postos.add(id(c["original"]))
             pranchas.append(cels_p + na_faixa + no_canto)
             molduras.append(mold_p)
             legendas.append(leg)
@@ -912,7 +951,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         d.metadados["prancha"] = {"formato": formato, "numero": i, "total": total, "fontes": fontes_da,
                                   "titulo": info.get("titulo", ""),
                                   "quadro": [round(v, 2) for v in quadro], "carimbo": [round(v, 2) for v in carimbo_caixa],
-                                  "celulas": [{"titulo": c["titulo"], "fonte": c["fonte"], "escala": c["k"],
+                                  "celulas": [{"titulo": c["titulo"], "fonte": c["fonte"], "escala": c["k"], "copia": bool(c.get("local")),
                                                "marca": c.get("marca"), "item": _item_resumido(c.get("item")),
                                                "caixa": [round(c["px"], 2), round(c["py"], 2), round(c["px"] + c["w"], 2), round(c["py"] + c["h"], 2)]}
                                               for c in cels]}
@@ -1672,7 +1711,7 @@ def _copia_local(c: dict, n: int) -> dict:
                 e = copy.copy(e)
                 e.texto = txt
         ents.append(e)
-    cc = dict(c, entidades=ents, local=True, qtd_local=n)
+    cc = dict(c, entidades=ents, local=True, qtd_local=n, original=c)
     if titulo is not None:
         cc["titulo"] = re.sub(r"\s*–\s*\d+x\s*$", "", titulo.texto) + " – %02dx" % n
     if c.get("item"):

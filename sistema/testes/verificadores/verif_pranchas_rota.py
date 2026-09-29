@@ -44,7 +44,7 @@ try:
        "rota montou %d pranchas A1 em %.1f s (células por prancha): %s" % (len(p["pranchas"]), time.time() - t0, [(x["titulo"], x["celulas"]) for x in p["pranchas"]]))
     # a mesma posição ou montagem de dois desenhos sai uma vez só (28/09)
     pr_ = json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos/" + p["desenho"]))["desenho"]["metadados"]["pranchas"]
-    titulos = [c["titulo"] for f in pr_ for c in f["celulas"]]
+    titulos = [c["titulo"] for f in pr_ for c in f["celulas"] if not c.get("copia")]      # a cópia junto da tesoura/terças não conta
     ok(len(titulos) == len(set(titulos)), "nenhuma célula repetida nas pranchas (%d células)" % len(titulos))
     lista = json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos"))
     n1 = len(lista)
@@ -84,7 +84,9 @@ try:
     for d in json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos")):
         if d.get("pranchas"):
             for meta in json.load(urllib.request.urlopen(base + "/api/projetos/compressores/desenhos/" + d["nome"]))["desenho"]["metadados"]["pranchas"]:
-                cel += [(c["titulo"], c.get("marca")) for c in meta["celulas"] if c["fonte"] == chaparias]
+                # as cópias (a chapa junto da tesoura ou das terças, com a quantidade de lá) não contam: o
+                # original é o da prancha de corte
+                cel += [(c["titulo"], c.get("marca")) for c in meta["celulas"] if c["fonte"] == chaparias and not c.get("copia")]
     marcas = sorted(m for _, mc in cel for m in str(mc or "").split(" / ") if m in ("P36", "P12"))
     ok(len(cel) == 2 and marcas == ["P12", "P36"], f"do desenho de chaparias entraram só as células selecionadas (P36 e P12): {cel}")
     aba.avaliar("window.cad.selecionar([]); 1")
