@@ -282,7 +282,7 @@ peças dela** (pedidos do usuário, 28/09):
 - Os detalhes de furos ficam perto da marca deles, com espaço entre um e outro, e sem a linha "ESC." (a escala
   está no título). A legenda tem letra maior quando cabe.
 - A prancha dos conjuntos menores tem dois quadros lado a lado: "Contraventos e agulhamentos" (CV., A.C., A.L.,
-  A.D.) e "Conjuntos menores" (DP.). A diagonal de cada DP sai com o perfil cheio (as duas bordas), não só a linha de eixo. Na legenda, um
+  A.D.) e "Conjuntos menores" (DP.). Diagonais e montantes de cada DP saem com o perfil cheio (as duas bordas), não só a linha de eixo; o DP não leva as terças em corte nem as chamadas dos parafusos que prendem as terças nele (a ligação com a tesoura fica). Na legenda, um
   nome com muitas partes aparece resumido ("A.D.1 … A.D.10").
 
 **0.8.49.** Pedidos do usuário de 28/09, no detalhamento e no CAD. **Tesoura montada**: a cadeia horizontal

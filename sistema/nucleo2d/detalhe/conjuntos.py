@@ -2042,14 +2042,17 @@ GRUPO_DE_PARAFUSOS = 150.0
 MAX_CHAMADAS_PARAFUSOS = 10
 
 
-def chamadas_de_parafusos(p, doc, instancia, origem, u, v, u0: float, v0: float, esc: float) -> int:
+def chamadas_de_parafusos(p, doc, instancia, origem, u, v, u0: float, v0: float, esc: float, fora=()) -> int:
     """Nas elevações dos conjuntos menores (dispositivos, vigas, pilares): uma chamada por
     ligação com os parafusos dela ("4x M12 x 30"). O texto vai para fora, no lado que tiver
     lugar; a que encostaria em outra chamada não sai (a lista no título continua). A
     tesoura fica sem: os parafusos dela são os dos suportes de terça, que estão no detalhe
-    das terças. Devolve quantas saíram."""
+    das terças. `fora`: caixas [(x0, x1), (y0, y1), (z0, z1)] das peças cujos parafusos não levam chamada
+    (as terças presas no DP). Devolve quantas saíram."""
     pts = []
     for c, nome in parafusos_posicionados(doc, instancia):
+        if any(all(cx_[k][0] - 15.0 <= c[k] <= cx_[k][1] + 15.0 for k in range(3)) for cx_ in fora):
+            continue
         rel = _sub(c, origem)
         pts.append(((_dot(rel, u) - u0, _dot(rel, v) - v0), nome))
     if not pts:
@@ -2215,9 +2218,9 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # meia-tesoura na cumeeira (as pontas dos dois banzos chegam nas pontas dele)
         contorno = set(_alma_com_contorno(instancia, alma, apoios_bz, camada_de))
         if tipo == "conjunto":
-            # no conjunto (o DP), a diagonal com o perfil cheio — as duas bordas, como os outros perfis —, não
+            # no conjunto (o DP), a diagonal e o montante com o perfil cheio — as duas bordas, como os outros perfis —, não
             # só a linha de eixo (pedido do usuário, 28/09)
-            contorno |= {k for k in alma if camada_de.get(k) == "DIAGONAIS"}
+            contorno |= {k for k in alma if camada_de.get(k) in ("DIAGONAIS", "MONTANTES")}
         for k in contorno:
             apoios_bz.append(alma.pop(k))                  # as outras barras ainda encaixam no eixo dela
         # o montante com contorno (o de fechamento da cumeeira, a descida do banzo no joelho) fica
@@ -2231,7 +2234,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     atr = {"conjunto": marca, "detalhe": "conjunto"}
     if nome:
         atr["nome"] = nome                      # o grupo do conjunto no DXF leva o nome de produção
-    if segs_bz:
+    if segs_bz and tipo != "conjunto":             # o DP sem as terças em corte (pedido do usuário, 28/09)
         # as terças em corte, onde cruzam o plano da tesoura sobre o banzo de cima (como o corte das
         # tesouras do projetista): a posição e o lado das abas se leem no próprio desenho
         tercas, telhas, extras = _cortes_das_tercas(doc, instancia, origem, u, v, w, u0, v0, segs_bz, dx, dy, com_telha=False)
@@ -2659,7 +2662,22 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         p.cota_v(0, alt, larg, off2 if cadeia else off)
     _rotular_barras(p, rotulos, esc)
     if tipo != "tesoura":
-        chamadas_de_parafusos(p, doc, instancia, origem, u, v, u0, v0, esc)
+        # no DP, os parafusos que prendem as terças nele não têm chamada (são da terça, na obra — pedido
+        # do usuário, 28/09); a ligação com a tesoura fica
+        fora_t = []
+        if tipo == "conjunto":
+            ids_i = {e.id for e in instancia}
+            cx_i = [_caixa(e) for e in instancia]
+            lim = [(min(c_[k][0] for c_ in cx_i) - 200.0, max(c_[k][1] for c_ in cx_i) + 200.0) for k in range(3)]
+            for e in doc.entidades.values():
+                if e.id in ids_i or not getattr(e, "vertices", None):
+                    continue
+                if not re.match(r"T\.[CLOM]\.\d", nome_de(_marcas(e).get("posicao") or "")):
+                    continue
+                cx_e = _caixa(e)
+                if all(cx_e[k][0] <= lim[k][1] and cx_e[k][1] >= lim[k][0] for k in range(3)):
+                    fora_t.append(cx_e)
+        chamadas_de_parafusos(p, doc, instancia, origem, u, v, u0, v0, esc, fora=fora_t)
     if barras_furadas:
         # os detalhes de furação abaixo de tudo o que a elevação já desenhou
         fundo = min([0.0] + [q[1] - dy for q in p.pontos])
