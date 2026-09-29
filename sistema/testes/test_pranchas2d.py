@@ -614,3 +614,26 @@ def test_manter_montagem_nao_empilha_as_vistas_geradas():
     novo.add(Linha(a=(0, 0), b=(100, 0), atributos={"detalhe": "vista"}))
     rel = manter_montagem(antigo, novo)
     assert rel["a_mao"] == 1 and novo.tamanho == 3, (rel, novo.tamanho)
+
+
+def test_fileiras_de_borda_a_borda_na_mesma_altura():
+    """O padrão das caixas (pedido do usuário, 29/09): a fileira quase cheia vai de borda a borda do quadro, com a
+    sobra repartida igual entre as caixas e todas na altura da mais alta; a fileira rala fica à esquerda, só
+    com a altura igualada."""
+    def cel(px, w, h, fil):
+        ents = [Texto(camada="TEXTO", posicao=(0.0, 50.0), texto="P1 – 01x", altura=3.5, atributos={"cabecalho": 0}),
+                Linha(camada="ACO", a=(0.0, 0.0), b=(w * 0.5, 0.0))]
+        return {"px": px, "py": 300.0 - h, "w": w, "h": h, "k": 1.0, "entidades": ents, "caixa": ((0.0, 0.0), (w, 60.0)),
+                "_fileira": fil}
+    F = pranchas.FOLGA
+    cheia = [cel(0.0, 100.0, 50.0, (1, 0.0, 400.0)), cel(100.0 + F, 120.0, 70.0, (1, 0.0, 400.0)),
+             cel(230.0 + 2 * F, 90.0, 40.0, (1, 0.0, 400.0))]
+    rala = [cel(0.0, 100.0, 30.0, (2, 0.0, 400.0)), cel(100.0 + F, 80.0, 45.0, (2, 0.0, 400.0))]
+    for c in rala:
+        c["py"] -= 200.0
+    assert pranchas._justificar_fileiras(cheia + rala) == 2
+    assert abs(cheia[-1]["px"] + cheia[-1]["w"] - 400.0) < 1e-6 and cheia[0]["px"] == 0.0
+    ganhos = [c["w"] - w0 for c, w0 in zip(cheia, (100.0, 120.0, 90.0))]
+    assert max(ganhos) - min(ganhos) < 1e-6 and ganhos[0] > 0
+    assert all(c["h"] == 70.0 and c["py"] + c["h"] == 300.0 for c in cheia)
+    assert [c["w"] for c in rala] == [100.0, 80.0] and all(c["h"] == 45.0 for c in rala)

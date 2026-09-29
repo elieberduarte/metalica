@@ -568,6 +568,12 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     alt_faixa = fy1 - fy0 - QUADRO_CABECALHO - FOLGA
 
     suportes_postos: set = set()                    # os suportes de terça já numa prancha de terças
+    n_fileira = [0]                                 # a fileira em que cada célula foi posta (_justificar_fileiras)
+
+    def fileira(cels_f, x_ini, x_fim):
+        n_fileira[0] += 1
+        for c_ in cels_f:
+            c_["_fileira"] = (n_fileira[0], x_ini, x_fim)
 
     def distribuir(n_rel):
         for c_ in itens:
@@ -620,6 +626,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     if y_ - alt_ < uy0 and any(x["categoria"] == cat_ for x in cels_p):
                         break
                     x_ = x0_ + QUADRO_MARGEM
+                    fileira(linha_, x0_ + QUADRO_MARGEM, x1_ - QUADRO_MARGEM)
                     for c_ in linha_:
                         c_["px"], c_["py"] = x_, y_ - c_["h"]
                         x_ += c_["w"] + FOLGA
@@ -716,6 +723,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                             if not linha2:
                                 break
                             x2 = qx0
+                            fileira(linha2, qx0, qx1)
                             for c_ in linha2:
                                 c_["px"], c_["py"] = x2, y_topo - c_["h"]
                                 if "slot_h" in c_:
@@ -727,6 +735,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                         cheia = True
                         break
                     x = qx0
+                    fileira(linha, qx0, qx1)
                     for c in linha:
                         # alinhadas pelo topo: os títulos numa linha só
                         c["px"], c["py"] = x, y_topo - c["h"]
@@ -959,6 +968,10 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     # a prancha de continuação quase vazia vai para o espaço livre de outra (pedido do usuário, 29/09: "tentar
     # juntar com a outra prancha" — o típico das terças sem furo sozinho numa prancha, 10 % dela)
     _juntar_quase_vazias(pranchas, molduras, legendas, qx0, qx1, uy0, uy1, titulos_q)
+    # as fileiras de caixas de ponta a ponta do quadro, na mesma altura (pedido do usuário, 29/09: "um padrão de
+    # organização … para não parecerem que só foram jogados ali dentro")
+    for cels_j, mold_j in zip(pranchas, molduras):
+        _justificar_fileiras(cels_j, mold_j)
     total = len(pranchas)
     # em que prancha cada posição está detalhada (a coluna PR. da legenda) e a relação das pranchas
     onde: Dict[str, int] = {}
@@ -1218,6 +1231,9 @@ def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: fl
         for c in princ:
             c["px"] += dx
             c["py"] += dy
+            if c.get("_fileira"):
+                # a fileira agora vai de borda a borda do quadro novo, que é da largura do bloco
+                c["_fileira"] = (c["_fileira"][0], x + QUADRO_MARGEM, x + W - QUADRO_MARGEM)
             if c.get("slot_caixa"):
                 sc = c["slot_caixa"]
                 c["slot_caixa"] = (sc[0] + dx, sc[1] + dy, sc[2] + dx, sc[3] + dy)
@@ -1232,6 +1248,118 @@ def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: fl
         saiu += 1
         i -= 1
     return saiu
+
+
+#: A fileira só se estica até a borda do quadro quando falta até esta fração da largura dele; a mais vazia
+#: (a última, com duas ou três caixas) fica à esquerda, com a mesma altura, como a última linha de um texto
+#: justificado.
+JUSTIFICAR_ATE = 0.35
+
+
+def _justificar_fileiras(cels: Sequence[dict], molduras_p: Sequence[dict] = ()) -> int:
+    """O padrão das caixas nos quadros (pedido do usuário, 29/09): cada fileira de ponta a ponta do quadro — a
+    sobra da largura repartida igualmente entre as caixas dela — e todas na altura da mais alta, com o topo
+    alinhado; dentro da caixa o desenho continua centrado e o cabeçalho no canto (o arranjo). Ficam como estão
+    as fileiras com caixa sem arranjo, a grade da prancha de corte, as colunas das terças, as tesouras, os
+    detalhes de furos e a faixa de acessórios (já têm padrão próprio). O alargamento para antes de outra
+    célula que esteja no caminho. Devolve quantas fileiras mudaram."""
+    por_f: Dict[int, list] = collections.defaultdict(list)
+    for c in cels:
+        f = c.get("_fileira")
+        if f and not c.get("_na_faixa") and not c.get("local"):
+            por_f[f[0]].append(c)
+    linhas = []
+    for linha in por_f.values():
+        if any(c.get("empilhada") or c.get("pai") is not None for c in linha):
+            continue
+        # a grade (as colunas das terças, os retângulos da prancha de corte) e as caixas com o arranjo
+        grade = all(c.get("slot_w") for c in linha)
+        if not grade and (any(c.get("slot_w") or c.get("slot_h") for c in linha) or any(_arranjo(c) is None for c in linha)):
+            continue
+        if grade and not all(c.get("slot_caixa") or _arranjo(c) is not None for c in linha):
+            continue
+        linha.sort(key=lambda c: c["px"])
+        linhas.append((linha, grade))
+
+    def x_livre(linha, x_fim, topo, alt):
+        """o que mais estiver na prancha na altura da fileira, à direita dela, limita o alargamento"""
+        ids = {id(c) for c in linha}
+        x_ult = max(c["px"] + c.get("slot_w", c["w"]) for c in linha)
+        for o in cels:
+            if id(o) in ids or o.get("px") is None or o.get("empilhada"):
+                continue
+            if o["py"] < topo and o["py"] + o["h"] > topo - alt and o["px"] + o["w"] > x_ult - 0.5 and o["px"] < x_fim:
+                x_fim = min(x_fim, o["px"] - FOLGA)
+        # o quadro encaixado dentro deste (o bloco que veio da prancha quase vazia), com a faixa do título dele
+        x_ini_f = linha[0]["_fileira"][1]
+        for mq in molduras_p:
+            if mq.get("x0") is None or mq["categoria"] in ("DETALHES", "LEGENDA") or mq["x0"] <= x_ini_f + 1.0:
+                continue
+            if mq["y0"] < topo and mq["y1"] > topo - alt and mq["x0"] > x_ult - 0.5 and mq["x0"] < x_fim:
+                x_fim = min(x_fim, mq["x0"] - FOLGA * 0.5)
+        return x_fim
+
+    # a grade: as colunas de todas as fileiras do quadro com a mesma largura, a borda a borda, e a última
+    # fileira (incompleta) nas mesmas colunas
+    extra_grade: Dict[tuple, float] = {}
+
+    def topo_alt(linha):
+        """o topo e a altura da fileira: na prancha de corte, os do retângulo da grade (a célula fica em pé no
+        topo dele, com a altura dela)"""
+        if all(c.get("slot_caixa") for c in linha):
+            return max(c["slot_caixa"][3] for c in linha), max(c["slot_caixa"][3] - c["slot_caixa"][1] for c in linha)
+        return max(c["py"] + c["h"] for c in linha), max(c["h"] for c in linha)
+
+    for linha, grade in linhas:
+        if not grade:
+            continue
+        chave = (linha[0]["_fileira"][1], linha[0]["_fileira"][2], round(linha[0]["slot_w"], 2))
+        topo, alt = topo_alt(linha)
+        x_fim = x_livre(linha, chave[1], topo, alt)
+        extra_grade.setdefault(chave, 1e9)
+        n_col = max(len(l_) for l_, g_ in linhas if g_ and (l_[0]["_fileira"][1], l_[0]["_fileira"][2],
+                                                              round(l_[0]["slot_w"], 2)) == chave)
+        sobra_ = x_fim - chave[0] - n_col * chave[2] - (n_col - 1) * FOLGA
+        # a grade rala (três chapas numa fileira só) fica como está: esticada, cada uma num retângulo enorme
+        e_ = sobra_ / n_col if sobra_ <= JUSTIFICAR_ATE * (x_fim - chave[0]) else 0.0
+        extra_grade[chave] = min(extra_grade[chave], max(0.0, e_))
+    mudou = 0
+    for linha, grade in linhas:
+        _n, x_ini, x_fim = linha[0]["_fileira"]
+        if grade:
+            chave = (x_ini, x_fim, round(linha[0]["slot_w"], 2))
+            extra = extra_grade.get(chave, 0.0)
+            topo, alt = topo_alt(linha)
+            x = x_ini
+            for c in linha:
+                larg_ = c["slot_w"] + extra
+                c["px"] = x
+                if c.get("slot_caixa"):
+                    c["slot_w"] = larg_
+                    c["slot_caixa"] = (x, topo - alt, x + larg_, topo)
+                else:
+                    c["w"], c["py"], c["h"] = larg_, topo - alt, alt
+                x += larg_ + FOLGA
+            mudou += 1
+            continue
+        topo = max(c["py"] + c["h"] for c in linha)
+        alt = max(c["h"] for c in linha)
+        x_fim = x_livre(linha, x_fim, topo, alt)
+        disp = x_fim - x_ini
+        usado = sum(c["w"] for c in linha) + FOLGA * (len(linha) - 1)
+        sobra = disp - usado
+        if sobra < -0.5 or disp <= 0:
+            continue
+        extra = sobra / len(linha) if sobra <= JUSTIFICAR_ATE * disp else 0.0
+        x = x_ini if extra else linha[0]["px"]
+        for c in linha:
+            c["px"] = x
+            c["w"] = c["w"] + extra
+            c["py"] = topo - alt
+            c["h"] = alt
+            x += c["w"] + FOLGA
+        mudou += 1
+    return mudou
 
 
 def _ids_das_celulas(cels: Sequence[dict]) -> Dict[int, str]:
