@@ -25,6 +25,34 @@ const tipoDe = (ent) => (ent && ent.atributos && ent.atributos.tipo) || '';
 /** Metros de cena por milímetro de documento. */
 export const ESCALA = 0.001;
 
+/** Cor cheia da peça em destaque (a escolhida no 2D, a achada na busca): o azul da seleção misturado à cor
+ *  dela sumia no cinza do resto, no tema claro (30/09). */
+export const COR_DESTAQUE = '#ff5a1f';
+export const COR_DESTAQUE_ARESTA = '#8a2400';
+/** Anéis em volta das peças em destaque: até tantas peças e tantos grupos; o diâmetro, em fração da altura
+ *  da tela. */
+const MAIS_PECAS_COM_ANEL = 400;
+const MAIS_ANEIS = 40;
+const FRACAO_ANEL = 0.075;
+
+let _texturaDoAnel = null;
+/** O anel: vermelho com borda branca por dentro e por fora, para ler no fundo claro e no escuro. */
+function texturaDoAnel() {
+  if (_texturaDoAnel) return _texturaDoAnel;
+  const n = 128;
+  const tela = document.createElement('canvas');
+  tela.width = tela.height = n;
+  const g = tela.getContext('2d');
+  const r = n / 2 - 8;
+  g.lineWidth = 14; g.strokeStyle = 'rgba(255,255,255,0.95)';
+  g.beginPath(); g.arc(n / 2, n / 2, r, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = 7; g.strokeStyle = '#e5322d';
+  g.beginPath(); g.arc(n / 2, n / 2, r, 0, Math.PI * 2); g.stroke();
+  _texturaDoAnel = new THREE.CanvasTexture(tela);
+  _texturaDoAnel.colorSpace = THREE.SRGBColorSpace;
+  return _texturaDoAnel;
+}
+
 /**
  * Operações pesadas medidas (as últimas 40), para Ver → Diagnóstico de desempenho dizer
  * o que travou a tela. Uma travada de segundos não aparece na média de quadros: aparece
@@ -1041,7 +1069,64 @@ export class Cena {
   destacar(ids) {
     this.destaque = ids && ids.length ? new Set(ids) : null;
     for (const id of this.objetos.keys()) this._pintar(id);
+    // a seleção por cima de novo: a peça em destaque ganha a cor dele (a seleção foi feita antes do destaque)
+    if (this.aoRepintar) this.aoRepintar();
+    this._marcarDestaque(ids);
     this.pedirQuadro();
+  }
+
+  /**
+   * Um anel vermelho de tamanho fixo na tela em volta de cada grupo de peças em destaque, por cima do
+   * modelo: a chapa escolhida no 2D, com o prédio inteiro enquadrado, era um ponto que não se achava,
+   * sobretudo no tema claro (pedido do usuário, 30/09). Peças perto umas das outras (as de um conjunto)
+   * ganham um anel só; destaque grande demais (a busca com centenas de peças) fica sem anel.
+   */
+  _marcarDestaque(ids) {
+    if (this._marcas) {
+      this.cena.remove(this._marcas);
+      this._marcas.traverse(o => { if (o.material) o.material.dispose(); });
+      this._marcas = null;
+    }
+    if (!ids || !ids.length || ids.length > MAIS_PECAS_COM_ANEL) return;
+    const centros = [];
+    for (const id of ids) {
+      const c = this.documento.caixa([id]);
+      if (c[0].every((v, i) => v === 0 && c[1][i] === 0)) continue;
+      centros.push({ p: [0, 1, 2].map(i => (c[0][i] + c[1][i]) / 2), n: 1 });
+    }
+    if (!centros.length) return;
+    // junta as vizinhas (a distância pelo tamanho do modelo), em cadeia
+    const cx = this.documento.caixa();
+    const perto = Math.max(1500, 0.08 * Math.hypot(cx[1][0] - cx[0][0], cx[1][1] - cx[0][1], cx[1][2] - cx[0][2]));
+    const grupos = [];
+    for (const c of centros) {
+      const junto = grupos.filter(g => g.some(o => Math.hypot(o.p[0] - c.p[0], o.p[1] - c.p[1], o.p[2] - c.p[2]) <= perto));
+      const novo = [c];
+      for (const g of junto) { novo.push(...g); grupos.splice(grupos.indexOf(g), 1); }
+      grupos.push(novo);
+    }
+    if (grupos.length > MAIS_ANEIS) return;
+    this._marcas = new THREE.Group();
+    this._marcas.name = 'marcas-destaque';
+    const textura = texturaDoAnel();
+    for (const g of grupos) {
+      const m = [0, 1, 2].map(i => g.reduce((s, o) => s + o.p[i], 0) / g.length * ESCALA);
+      const anel = new THREE.Sprite(new THREE.SpriteMaterial({ map: textura, depthTest: false, depthWrite: false,
+                                                                transparent: true }));
+      anel.position.set(m[0], m[1], m[2]);
+      anel.renderOrder = 999;
+      anel.raycast = () => {};                        // não pega o clique das peças
+      // o mesmo tamanho na tela em qualquer zoom e nas duas projeções: a altura do que se vê na distância dele
+      anel.onBeforeRender = (_r, _c, cam) => {
+        let alto;
+        if (cam.isOrthographicCamera) alto = (cam.top - cam.bottom) / (cam.zoom || 1);
+        else alto = 2 * cam.position.distanceTo(anel.position) * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+        anel.scale.setScalar(Math.max(alto * FRACAO_ANEL, 1e-6));
+        anel.updateMatrixWorld(true);
+      };
+      this._marcas.add(anel);
+    }
+    this.cena.add(this._marcas);
   }
 
   _materialFantasma() {

@@ -5,7 +5,7 @@
 // janela. A diferença é sutil e é exatamente a que o desenhista espera.
 
 import * as THREE from 'three';
-import { ESCALA, misturar } from './cena.js';
+import { ESCALA, misturar, COR_DESTAQUE } from './cena.js';
 import { pontosDe, arestasDe } from './documento.js';
 
 export const COR_SELECAO = '#1f7ae0';
@@ -283,7 +283,9 @@ export class Selecao {
     }
 
     obj.userData.realce = estado;
-    const cor = estado === 'selecionado' ? COR_SELECAO : COR_SOBRE;
+    // a peça em destaque (a escolhida no 2D, a achada na busca) na cor cheia do destaque (30/09)
+    const cor = estado === 'selecionado' && this.cena.destaque && this.cena.destaque.has(id) ? COR_DESTAQUE
+      : estado === 'selecionado' ? COR_SELECAO : COR_SOBRE;
     if (linhas) linhas.material = materialLinha(this.cena, cor, 1, true);
     if (malha) {
       malha.material = materialRealce(this.cena, ent, cor, estado);
@@ -295,7 +297,7 @@ export class Selecao {
     // Contorno que atravessa o modelo, para a seleção ser vista mesmo por trás.
     if (estado === 'selecionado' && arestas && arestas.geometry) {
       const contorno = new THREE.LineSegments(
-        arestas.geometry, materialLinha(this.cena, cor, 0.32, false));
+        arestas.geometry, materialLinha(this.cena, cor, cor === COR_DESTAQUE ? 0.9 : 0.32, false));
       contorno.name = 'contorno';
       contorno.renderOrder = 12;
       contorno.raycast = () => {};

@@ -16,7 +16,7 @@
 // na raiz da cena, como nos demais objetos.
 
 import * as THREE from 'three';
-import { misturar } from './cena.js';
+import { misturar, COR_DESTAQUE, COR_DESTAQUE_ARESTA } from './cena.js';
 
 /** Acima de tantas entidades os sólidos são desenhados em lote. */
 export const LIMITE_LOTE = 1500;
@@ -312,7 +312,11 @@ export class Lote {
     const estado = this.estado.get(id);
     let corMalha = base;
     let corAresta = misturar(base, cena.escuro ? '#f0f5ff' : '#101822', 0.55);
-    if (estado) {
+    if (cena.destaque && cena.destaque.has(id) && estado !== 'sobre') {
+      // a peça em destaque na cor cheia: misturada ao azul ela sumia no cinza do resto (30/09)
+      corMalha = COR_DESTAQUE;
+      corAresta = COR_DESTAQUE_ARESTA;
+    } else if (estado) {
       const cor = estado === 'selecionado' ? COR_SELECAO : COR_SOBRE;
       corMalha = misturar(base, cor, estado === 'selecionado' ? 0.55 : 0.3);
       corAresta = cor;
@@ -368,14 +372,21 @@ export class Lote {
   }
 
   _porContorno(id) {
-    if (this.contornos.has(id) || this.contornos.size >= MAX_CONTORNOS) return;
+    // a peça em destaque (a escolhida no 2D) com o contorno na cor dele e forte: o azul fraco por cima dela
+    // era o que se via, e ela parecia só mais uma selecionada (30/09)
+    const destacada = !!(this.cena.destaque && this.cena.destaque.has(id));
+    const cor = destacada ? COR_DESTAQUE : COR_SELECAO;
+    const opacidade = destacada ? 0.9 : 0.32;
+    const velho = this.contornos.get(id);
+    if (velho) { velho.material.color.set(cor); velho.material.opacity = opacidade; return; }
+    if (this.contornos.size >= MAX_CONTORNOS) return;
     const it = this.itens.get(id);
     if (!it || !it.na) return;
     const fonte = it.bloco.arestas.geometry.getAttribute('position').array;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(fonte.slice(it.a0 * 3, (it.a0 + it.na) * 3), 3));
-    const m = new THREE.LineBasicMaterial({ color: new THREE.Color(COR_SELECAO), transparent: true,
-                                            opacity: 0.32, depthTest: false, depthWrite: false });
+    const m = new THREE.LineBasicMaterial({ color: new THREE.Color(cor), transparent: true,
+                                            opacity: opacidade, depthTest: false, depthWrite: false });
     const l = new THREE.LineSegments(g, m);
     l.renderOrder = 12;
     l.raycast = () => {};
