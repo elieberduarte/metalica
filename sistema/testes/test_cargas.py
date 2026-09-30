@@ -43,14 +43,14 @@ def vento_exemplo_5_1():
     """Galpão do Exemplo 5.1: b = 20 m, a = 60 m, h = 7 m, θ = 10°, V0 = 40 m/s."""
     return cg.pressoes_galpao(b=20.0, a=60.0, h=7.0, theta_graus=10.0,
                               V0=40.0, categoria="II", classe="B", z=7.0,
-                              S1=1.0, grupo=2, aberturas="duas faces opostas")
+                              S1=1.0, grupo=3, aberturas="duas faces opostas")
 
 
 def vento_cap16():
     """Galpão do Capítulo 16: b = 20 m, a = 40 m, h = 6 m, θ = 5,71°, S2 a 10 m."""
     return cg.pressoes_galpao(b=20.0, a=40.0, h=6.0, theta_graus=5.71,
                               V0=40.0, categoria="II", classe="B", S2=0.98,
-                              S1=1.0, grupo=2, aberturas="duas faces opostas")
+                              S1=1.0, grupo=3, aberturas="duas faces opostas")
 
 
 # ===========================================================================
@@ -179,6 +179,33 @@ def test_fator_s2_tabela_5_5():
 
     # abaixo de 5 m a norma mantém o valor de 5 m (a favor da segurança)
     assert cg.fator_s2("II", "B", 3.0) == cg.fator_s2("II", "B", 5.0)
+    # NBR 6123:2023, Tabela 3, célula a célula (z ≤ 5, 10, 15, 20, 30 e 50 m, classes A/B/C)
+    tabela_3 = {
+        5: {"I": (1.06, 1.04, 1.01), "II": (0.94, 0.92, 0.89), "III": (0.88, 0.86, 0.82),
+            "IV": (0.79, 0.76, 0.73), "V": (0.74, 0.72, 0.67)},
+        10: {"I": (1.10, 1.09, 1.06), "II": (1.00, 0.98, 0.95), "III": (0.94, 0.92, 0.88),
+             "IV": (0.86, 0.83, 0.80), "V": (0.74, 0.72, 0.67)},
+        15: {"I": (1.13, 1.12, 1.09), "II": (1.04, 1.02, 0.99), "III": (0.98, 0.96, 0.93),
+             "IV": (0.90, 0.88, 0.84), "V": (0.79, 0.76, 0.72)},
+        20: {"I": (1.15, 1.14, 1.12), "II": (1.06, 1.04, 1.02), "III": (1.01, 0.99, 0.96),
+             "IV": (0.93, 0.91, 0.88), "V": (0.82, 0.80, 0.76)},
+        30: {"I": (1.17, 1.17, 1.15), "II": (1.10, 1.08, 1.06), "III": (1.05, 1.03, 1.00),
+             "IV": (0.98, 0.96, 0.93), "V": (0.87, 0.85, 0.82)},
+        50: {"I": (1.21, 1.21, 1.19), "II": (1.15, 1.13, 1.12), "III": (1.10, 1.09, 1.06),
+             "IV": (1.04, 1.02, 0.99), "V": (0.94, 0.93, 0.89)},
+    }
+    for z, linha in tabela_3.items():
+        for cat, valores in linha.items():
+            for cl, valor in zip("ABC", valores):
+                obtido = cg.fator_s2(cat, cl, z)
+                assert abs(obtido - valor) <= 0.0051, (
+                    f"S2 {cat}-{cl} z = {z} m: obtido {obtido:.4f}, Tabela 3 {valor}")
+    # categoria V: constante até 10 m (item 5.3.3), não só até 5 m (auditoria C10)
+    for cl in "ABC":
+        assert cg.fator_s2("V", cl, 3.0) == cg.fator_s2("V", cl, 10.0)
+        assert cg.fator_s2("V", cl, 7.0) == cg.fator_s2("V", cl, 10.0)
+        assert cg.fator_s2("IV", cl, 7.0) > cg.fator_s2("IV", cl, 5.0)
+    assert cg.PISO_S2["V"] == 10.0 and cg.PISO_S2["II"] == 5.0
     # categoria informada como número e classe pela maior dimensão
     perto(cg.fator_s2(2, "B", 10.0), 0.98, o_que="S2 com categoria numérica")
     assert cg.classe_por_dimensao(15.0) == "A"
@@ -194,12 +221,36 @@ def test_fator_s2_tabela_5_5():
 
 
 def test_fator_s3_e_pressao_dinamica():
-    """Tabela 5.6 do manual e q = 0,613·Vk² (NBR 6123, item 4.2)."""
-    assert cg.fator_s3(1) == 1.10
-    assert cg.fator_s3(2) == 1.00
-    assert cg.fator_s3(3) == 0.95
-    assert cg.fator_s3(4) == 0.88
-    assert cg.fator_s3(5) == 0.83
+    """NBR 6123:2023, Tabela 4 (célula a célula) e q = 0,613·Vk² (item 4.2).
+
+    A tabela de 1988 (1,10 / 1,00 / 0,95 / 0,88 / 0,83, com "vedações" como grupo 4)
+    foi substituída: o grupo 3 (residências, hotéis, comércio, indústrias) é o de
+    referência, T_p = 50 anos (auditoria C3).
+    """
+    esperado = {1: (1.11, 100), 2: (1.06, 75), 3: (1.00, 50), 4: (0.95, 37), 5: (0.83, 15)}
+    for g, (s3, tp) in esperado.items():
+        assert cg.fator_s3(g) == s3, (g, cg.fator_s3(g))
+        assert cg.RETORNO_S3[g] == tp
+    assert cg.fator_s3() == 1.00 and cg.GRUPO_S3_PADRAO == 3
+    assert cg.fator_s3("indústria") == 1.00
+    assert cg.fator_s3("depósito") == 0.95
+    assert cg.fator_s3("hospitais") == 1.11
+    assert cg.fator_s3("ginásio") == 1.06
+    assert cg.fator_s3("temporária") == 0.83
+    assert cg.grupo_do_s3(0.95) == 4 and cg.grupo_do_s3(1.0) == 3 and cg.grupo_do_s3(0.9) == 0
+    assert cg.REDUCAO_S3_VEDACOES == 0.92
+    for ruim in (0, 6, "vedações"):
+        try:
+            cg.fator_s3(ruim)
+        except ErroDeDados:
+            pass
+        else:
+            raise AssertionError(f"esperava ErroDeDados para o grupo {ruim!r}")
+    # o S3 informado diretamente entra no vento e o grupo é reconhecido pelo valor
+    v = cg.pressoes_galpao(b=20.0, a=60.0, h=7.0, theta_graus=10.0, V0=40.0, z=7.0, S3=0.95)
+    assert v.S3 == 0.95 and v.grupo == 4
+    v2 = cg.pressoes_galpao(b=20.0, a=60.0, h=7.0, theta_graus=10.0, V0=40.0, z=7.0)
+    perto(v.q, v2.q * 0.95 ** 2, o_que="q com S3 = 0,95")
     # regras de bolso do capítulo 5: 40 m/s ≈ 1 kN/m²; 30 ≈ 0,55; 45 ≈ 1,25
     perto(cg.pressao_dinamica(40.0), 0.981, o_que="q para Vk = 40 m/s")
     perto(cg.pressao_dinamica(30.0), 0.552, o_que="q para Vk = 30 m/s")
@@ -408,8 +459,8 @@ def test_cap16_cargas_por_portico():
 
 
 def test_limites_dos_coeficientes():
-    """Falha explícita nos casos que as Tabelas 4 e 5 não cobrem."""
-    for args in (dict(b=20, a=60, h=40, theta_graus=10),      # h/b = 2 > 3/2
+    """Falha explícita nos casos que as Tabelas 6 e 7 não cobrem."""
+    for args in (dict(b=20, a=60, h=130, theta_graus=10),     # h/b = 6,5 > 6
                  dict(b=20, a=60, h=7, theta_graus=75),       # θ > 60°
                  dict(b=60, a=20, h=7, theta_graus=10)):      # a < b
         try:
@@ -418,15 +469,126 @@ def test_limites_dos_coeficientes():
             pass
         else:
             raise AssertionError(f"esperava ErroDeDados para {args}")
-    # a faixa intermediária de h/b é aceita, mas avisa que não foi validada
-    c = cg.coeficientes_pressao_galpao(b=20, a=40, h=14, theta_graus=10)
-    assert any("h/b entre 1/2 e 3/2" in o for o in c.observacoes)
+    # as três faixas de h/b das tabelas são aceitas, sem aviso de "não validado"
+    for h, faixa in ((7, "<=1/2"), (14, "1/2..3/2"), (40, "3/2..6"), (120, "3/2..6")):
+        c = cg.coeficientes_pressao_galpao(b=20, a=40, h=h, theta_graus=10)
+        assert c.faixa_h_b == faixa, (h, c.faixa_h_b)
+        assert not any("a favor da segurança" in o for o in c.observacoes)
     # a/b > 4 usa a coluna 2–4, com aviso de extrapolação
     c = cg.coeficientes_pressao_galpao(b=20, a=120, h=7, theta_graus=10)
     assert any("extrapolação" in o for o in c.observacoes)
     # coeficientes locais existem, mas ficam fora da lista estrutural
     assert all(not x.local for x in c.estruturais())
-    assert any(x.local and x.Ce == -2.0 for x in c.coeficientes)
+    assert any(x.local and x.Ce <= -1.4 for x in c.coeficientes)
+
+
+# --- NBR 6123:2023, Tabelas 6 e 7, célula a célula (auditoria C2/C6) ---------------
+
+# Tabela 6: (faixa h/b, faixa a/b) → α = 0°: A1B1, A2B2, C, D | α = 90°: A, B, C1D1, C2D2 | cpe médio
+TABELA_6 = {
+    ("<=1/2", "1..3/2"):   ((-0.8, -0.5, +0.7, -0.4), (+0.7, -0.4, -0.8, -0.4), -0.9),
+    ("<=1/2", "2..4"):     ((-0.8, -0.4, +0.7, -0.3), (+0.7, -0.5, -0.9, -0.5), -1.0),
+    ("1/2..3/2", "1..3/2"): ((-0.9, -0.5, +0.7, -0.5), (+0.7, -0.5, -0.9, -0.5), -1.1),
+    ("1/2..3/2", "2..4"):   ((-0.9, -0.4, +0.7, -0.3), (+0.7, -0.6, -0.9, -0.5), -1.1),
+    ("3/2..6", "1..3/2"):  ((-1.0, -0.6, +0.8, -0.6), (+0.8, -0.6, -1.0, -0.6), -1.2),
+    ("3/2..6", "2..4"):    ((-1.0, -0.5, +0.8, -0.3), (+0.8, -0.6, -1.0, -0.6), -1.2),
+}
+# um (h, a) por célula, com b = 20 m
+GEOMETRIA_6 = {("<=1/2", "1..3/2"): (7, 24), ("<=1/2", "2..4"): (7, 60),
+               ("1/2..3/2", "1..3/2"): (20, 24), ("1/2..3/2", "2..4"): (20, 60),
+               ("3/2..6", "1..3/2"): (60, 24), ("3/2..6", "2..4"): (60, 60)}
+
+
+def test_tabela_6_paredes_celula_a_celula():
+    """Cada célula da Tabela 6 (paredes) nas duas direções de vento e o c_pe médio."""
+    for (fh, fa), (alfa0, alfa90, cpe) in TABELA_6.items():
+        h, a = GEOMETRIA_6[(fh, fa)]
+        c = cg.coeficientes_pressao_galpao(b=20.0, a=float(a), h=float(h), theta_graus=10.0)
+        assert c.faixa_h_b == fh and c.faixa_a_b == fa, (fh, fa, c.faixa_h_b, c.faixa_a_b)
+        L, T = "longitudinal", "transversal"
+        # α = 0° da norma = vento pelo oitão (longitudinal): A1B1, A2B2, C, D
+        assert c.busca("parede lateral zona 1", L).Ce == alfa0[0], (fh, fa, "A1B1")
+        assert c.busca("parede lateral zona 2", L).Ce == alfa0[1], (fh, fa, "A2B2")
+        assert c.busca("oitão barlavento", L).Ce == alfa0[2], (fh, fa, "C")
+        assert c.busca("oitão sotavento", L).Ce == alfa0[3], (fh, fa, "D")
+        # α = 90° = vento na parede maior (transversal): A, B, C1D1, C2D2
+        assert c.busca("parede lateral barlavento", T).Ce == alfa90[0], (fh, fa, "A")
+        assert c.busca("parede lateral sotavento", T).Ce == alfa90[1], (fh, fa, "B")
+        assert c.busca("oitão zona 1", T).Ce == alfa90[2], (fh, fa, "C1D1")
+        assert c.busca("oitão zona 2", T).Ce == alfa90[3], (fh, fa, "C2D2")
+        assert cg.cpe_medio_parede(h / 20.0, a / 20.0) == cpe
+        assert c.busca("canto de parede", T).Ce <= cpe
+    # a zona 1 das paredes tem as larguras da figura da Tabela 6
+    c = cg.coeficientes_pressao_galpao(b=20.0, a=60.0, h=7.0, theta_graus=10.0)
+    assert "10,00 m (2h ou b/2" in c.busca("oitão zona 1", "transversal").zona      # min(14, 10)
+    assert "14,00 m (b/3 ou a/4" in c.busca("parede lateral zona 1", "longitudinal").zona  # min(max(6.7, 15), 14)
+
+
+# Tabela 7: faixa → (θ, EFI, GHJ, EG, FH)
+TABELA_7 = {
+    "<=1/2": [
+        (0, -0.8, -0.4, -0.8, -0.4), (5, -0.9, -0.4, -0.8, -0.4), (10, -1.2, -0.4, -0.8, -0.6),
+        (15, -1.0, -0.4, -0.8, -0.6), (20, -0.4, -0.4, -0.7, -0.6), (30, 0.0, -0.4, -0.7, -0.6),
+        (45, +0.3, -0.5, -0.7, -0.6), (60, +0.7, -0.6, -0.7, -0.6)],
+    "1/2..3/2": [
+        (0, -0.8, -0.6, -1.0, -0.6), (5, -0.9, -0.6, -0.9, -0.6), (10, -1.1, -0.6, -0.8, -0.6),
+        (15, -1.0, -0.6, -0.8, -0.6), (20, -0.7, -0.5, -0.8, -0.6), (30, -0.2, -0.5, -0.8, -0.8),
+        (45, +0.2, -0.5, -0.8, -0.8), (60, +0.6, -0.5, -0.8, -0.8)],
+    "3/2..6": [
+        (0, -0.8, -0.6, -0.9, -0.7), (5, -0.8, -0.6, -0.8, -0.8), (10, -0.8, -0.6, -0.8, -0.8),
+        (15, -0.8, -0.6, -0.8, -0.8), (20, -0.8, -0.6, -0.8, -0.8), (30, -1.0, -0.5, -0.8, -0.7),
+        (40, -0.2, -0.5, -0.8, -0.7), (50, +0.2, -0.5, -0.8, -0.7), (60, +0.5, -0.5, -0.8, -0.7)],
+}
+ALTURA_7 = {"<=1/2": 7.0, "1/2..3/2": 20.0, "3/2..6": 60.0}
+
+
+def test_tabela_7_telhados_celula_a_celula():
+    """Cada célula da Tabela 7 (telhados de duas águas), nas três faixas de h/b.
+
+    A faixa 1/2 < h/b ≤ 3/2 era a da auditoria C2: o programa tinha EF = −0,9/−1,2 nos
+    dois primeiros ângulos, GH = −0,4 e FH = −0,5 em todos — valores que não são os da
+    norma (−0,8/−0,9; −0,6; −0,6/−0,8). A terceira faixa não existia.
+    """
+    for faixa, linhas in TABELA_7.items():
+        h = ALTURA_7[faixa]
+        for teta, efi, ghj, eg, fh in linhas:
+            c = cg.coeficientes_pressao_galpao(b=20.0, a=60.0, h=h, theta_graus=float(teta))
+            assert c.faixa_h_b == faixa
+            got = {z: c.busca(n, d).Ce for z, n, d in (
+                ("EFI", "telhado barlavento", "transversal"), ("GHJ", "telhado sotavento", "transversal"),
+                ("EG", "telhado zona 1", "longitudinal"), ("FH", "telhado zona 2", "longitudinal"))}
+            for z, esperado in (("EFI", efi), ("GHJ", ghj), ("EG", eg), ("FH", fh)):
+                assert abs(got[z] - esperado) < 1e-9, (faixa, teta, z, got[z], esperado)
+            assert not any("interpolado" in o for o in c.observacoes)
+    # I/J (NOTA 3): a/b = 1 → igual a F/H; a/b ≥ 2 → −0,2; entre os dois, interpola
+    ij = cg.coeficientes_pressao_galpao(b=20.0, a=20.0, h=7.0, theta_graus=10.0)
+    assert ij.busca("telhado zona 3", "longitudinal").Ce == ij.busca("telhado zona 2", "longitudinal").Ce
+    ij = cg.coeficientes_pressao_galpao(b=20.0, a=60.0, h=7.0, theta_graus=10.0)
+    assert ij.busca("telhado zona 3", "longitudinal").Ce == -0.2
+    ij = cg.coeficientes_pressao_galpao(b=20.0, a=30.0, h=7.0, theta_graus=10.0)
+    perto(ij.busca("telhado zona 3", "longitudinal").Ce, -0.4, abs_min=1e-9, o_que="I/J com a/b = 1,5")
+    # interpolação em θ dentro da faixa alta, que tem 40° e 50° em vez de 45°
+    c = cg.coeficientes_pressao_galpao(b=20.0, a=60.0, h=60.0, theta_graus=45.0)
+    perto(c.busca("telhado barlavento", "transversal").Ce, 0.0, abs_min=1e-9, o_que="EFI a 45° (3/2..6)")
+    assert any("interpolado" in o for o in c.observacoes)
+    # c_pe médio do telhado: a maior sucção da linha (−2,0 a 0°; −1,4 a 10° na faixa baixa)
+    assert cg.cpe_medio_telhado(0.35, 0.0) == -2.0
+    assert cg.cpe_medio_telhado(0.35, 10.0) == -1.4
+    assert cg.cpe_medio_telhado(1.0, 15.0) == -1.8
+    assert cg.cpe_medio_telhado(0.35, 60.0) == -1.1
+
+
+def test_sobrecarga_de_cobertura_nbr_6120():
+    """NBR 6120:2019, item 6.4: q = 0,50·α, entre 0,25 e 0,50 kN/m², pela inclinação em %
+    (auditoria C4)."""
+    assert cg.sobrecarga_cobertura(0.0) == 0.50
+    assert cg.sobrecarga_cobertura(2.0) == 0.50
+    perto(cg.sobrecarga_cobertura(2.5), 0.375, abs_min=1e-9, o_que="q para i = 2,5 %")
+    assert cg.sobrecarga_cobertura(3.0) == 0.25
+    assert cg.sobrecarga_cobertura(17.6) == 0.25
+    perto(cg.inclinacao_em_pct(10.0), 17.63, o_que="tg 10° em %")
+    assert cg.CARGA_CONCENTRADA_COBERTURA == 1.0
+    assert cg.sobrecarga("cobertura sem acesso").faixa == (0.25, 0.50)
 
 
 # ===========================================================================

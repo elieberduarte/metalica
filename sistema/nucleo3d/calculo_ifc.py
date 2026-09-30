@@ -72,7 +72,7 @@ PARAMETROS_PADRAO = {
     "categoria": "II",
     "classe": "B",
     "s1": 1.0,
-    "grupo": 2,
+    "grupo": 3,                      # NBR 6123:2023, Tabela 4 (3 = indústrias, comércio, residências)
     "aberturas": "duas faces opostas",
     "altura_beiral": None,           # m acima do solo; None = cota do apoio no modelo
     "sobrecarga": 0.25,              # kN/m² (projeção horizontal)
@@ -1980,11 +1980,41 @@ def geometria_do_modelo(doc: Documento, nomes: dict, parametros: Optional[dict] 
             "barras": len(pecas), "avisos": avisos}
 
 
+#: Grupo do S3 guardado pela tabela de 1988 → grupo equivalente na Tabela 4 da NBR
+#: 6123:2023 (o 2 de "indústria e comércio" virou 3; o 3 de "depósitos" virou 4; o 4 de
+#: "vedações" não existe mais como grupo — as vedações seguem o grupo da edificação).
+GRUPO_S3_1988_PARA_2023 = {1: 1, 2: 3, 3: 4, 4: 3, 5: 5}
+NORMA_S3 = "NBR 6123:2023"
+
+
+def _migrar_grupo_s3(par: dict, parametros: Optional[dict], avisos: List[str]) -> None:
+    """Os cálculos salvos antes desta versão guardam o grupo do S3 pela tabela de 1988;
+    sem a marca da norma, o número é traduzido para a Tabela 4 de 2023 (auditoria C3).
+
+    A tradução é escrita também em `parametros` — o dicionário de quem chamou, que o app
+    grava junto com o cálculo —, para ela acontecer uma vez só."""
+    parametros = parametros if parametros is not None else {}
+    if parametros.get("grupo") is not None and parametros.get("norma_s3") != NORMA_S3:
+        try:
+            antigo = int(parametros["grupo"])
+        except (TypeError, ValueError):
+            antigo = None
+        novo = GRUPO_S3_1988_PARA_2023.get(antigo)
+        if novo is not None and novo != antigo:
+            par["grupo"] = novo
+            parametros["grupo"] = novo
+            avisos.append("S3: o grupo %d guardado seguia a tabela de 1988; passou a ser o grupo %d da "
+                          "Tabela 4 da NBR 6123:2023 (S3 = %s)." % (antigo, novo, fmt(cargas.fator_s3(novo), 2)))
+    par["norma_s3"] = NORMA_S3
+    parametros["norma_s3"] = NORMA_S3
+
+
 def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avisar=None) -> dict:
     par = dict(PARAMETROS_PADRAO)
     par.update({k: v for k, v in (parametros or {}).items() if v is not None})
     avisar = avisar or (lambda *a: None)
     avisos: List[str] = []
+    _migrar_grupo_s3(par, parametros, avisos)
 
     avisar("lendo as peças…")
     pecas, telhas, castanhas, chapas_conj = _levantar_pecas(doc, nomes, par, avisos)
@@ -2013,6 +2043,14 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
     g_cob = g_telha + float(par["carga_extra"] or 0.0)
     sc = float(par["sobrecarga"] or 0.0)
     vento = _vento(tes, par, avisos)
+    # NBR 6120:2019, item 6.4: 0,25 kN/m² só vale a partir de 3 % de inclinação; em
+    # telhado mais plano a sobrecarga mínima sobe até 0,50 (auditoria C4)
+    sc_min = cargas.sobrecarga_cobertura(cargas.inclinacao_em_pct(vento.get("theta") or 0.0))
+    if sc < sc_min - 1e-9:
+        avisos.append("sobrecarga de cobertura elevada de %s para %s kN/m²: mínimo da NBR 6120:2019 "
+                      "(item 6.4) para a inclinação de %s %%"
+                      % (fmt(sc, 2), fmt(sc_min, 2), fmt(cargas.inclinacao_em_pct(vento.get("theta") or 0.0), 1)))
+        sc = sc_min
 
     avisar("analisando %d tesouras…" % len(tes))
     _, _, nomes_pos, nomes_conj = _mapas_de_nomes(nomes)
@@ -2149,16 +2187,11 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         q_ss = max(0.0, abs(min(p_min, 0.0)) * larg - g)
         tit = "%s%s · terça · %s" % (marca, (" " + nome) if nome else "", p.perfil.nome)
         n_corr = int(par["correntes"]) if par.get("correntes") is not None else int(correntes.get(marca, 0))
+        # NBR 6120:2019, item 6.4: 1 kN no meio do vão, só com a permanente (auditoria C4)
+        P_d, g_d = GAMA_CONCENTRADA * cargas.CARGA_CONCENTRADA_COBERTURA, 1.25 * g
         try:
-            if perfis_fabrica.tipo_de_verificacao(p.perfil) == "frio":
-                r = nbr14762.terca(perfis_fabrica.secao_frio(p.perfil), p.aco, vao, q_g, q_s,
-                                   n_corr, inclinacao=theta,
-                                   carga_servico_gravidade=q_gs, carga_servico_succao=q_ss,
-                                   limite_flecha_gravidade=float(par["flecha_terca"]), elemento=tit)
-            else:
-                r = nbr8800.verificar_viga(p.perfil, p.aco, L=vao * 100, q_Sd=max(q_g, q_s) / 100.0,
-                                           q_servico=max(q_gs, q_ss) / 100.0, limite="L/%d" % int(par["flecha_terca"]),
-                                           elemento=tit)
+            r = _verificar_terca_cobertura(p.perfil, p.aco, vao, q_g, q_s, n_corr, theta, q_gs, q_ss,
+                                           float(par["flecha_terca"]), P_d, g_d, tit)
         except ErroDeDados as exc:
             r = Resultado(tit, perfil=p.perfil.nome, material=p.aco)
             r.add(nao_verificada(exc))
@@ -2188,7 +2221,7 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
                                       else int(correntes.get(marca, 0))),
                         "flecha": int(par["flecha_terca"]), "g_cob": round(g_cob, 5),
                         "sc": round(sc, 5), "p_min": round(min(p_min, 0.0), 5),
-                        "p_max": round(max(p_max, 0.0), 5)},
+                        "p_max": round(max(p_max, 0.0), 5), "P_d": round(P_d, 4), "g_d": round(g_d, 5)},
             "comprimento_total_m": round(comprimento_total.get(marca, 0.0), 2),
             "peso_kg": round(p.perfil.massa * comprimento_total.get(marca, 0.0), 1),
             "diagrama": {"modelo": "viga biapoiada", "vao_m": round(vao, 3), "caso": caso, "q_kN_m": round(q, 3),
@@ -2425,23 +2458,47 @@ def alternativas(calculo: dict, marca: str, limite: int = 10, todas: bool = Fals
     }
 
 
+#: γ_q da carga concentrada de 1 kN da NBR 6120 (ação variável, combinação normal).
+GAMA_CONCENTRADA = 1.5
+
+
+def _verificar_terca_cobertura(perfil, aco, vao: float, q_g: float, q_s: float, n_corr: int,
+                               theta: float, q_gs: float, q_ss: float, flecha: float,
+                               P_d: float = 0.0, g_d: float = 0.0, titulo: str = ""):
+    """Terça de cobertura: as combinações distribuídas e a carga concentrada de 1 kN no meio
+    do vão só com a permanente (NBR 6120:2019, item 6.4). Formada a frio pela rotina da
+    terça (NBR 14762); laminada pela viga da NBR 8800 com o maior momento das duas."""
+    kw = {"elemento": titulo} if titulo else {}
+    if perfis_fabrica.tipo_de_verificacao(perfil) == "frio":
+        return nbr14762.terca(perfis_fabrica.secao_frio(perfil), aco, vao, q_g, q_s, n_corr,
+                              inclinacao=theta, carga_servico_gravidade=q_gs, carga_servico_succao=q_ss,
+                              limite_flecha_gravidade=flecha, carga_concentrada=P_d,
+                              carga_permanente=g_d, **kw)
+    L = vao * 100.0
+    q = max(q_g, q_s) / 100.0                              # kN/cm
+    M, V = q * L * L / 8.0, q * L / 2.0
+    M_P = g_d / 100.0 * L * L / 8.0 + P_d * L / 4.0
+    V_P = g_d / 100.0 * L / 2.0 + P_d / 2.0
+    r = nbr8800.verificar_viga(perfil, aco, L=L, M_Sd=max(M, M_P), V_Sd=max(V, V_P),
+                               q_servico=max(q_gs, q_ss) / 100.0, limite="L/%d" % int(flecha), **kw)
+    if P_d > 0:
+        r.hipotese("carga_concentrada",
+                   "Carga concentrada de 1 kN no meio do vão, isolada das demais variáveis e com a "
+                   "permanente (NBR 6120:2019, item 6.4): M = %s kN·m contra %s kN·m da distribuída; "
+                   "vale o maior." % (fmt(M_P / 100, 2), fmt(M / 100, 2)), "norma")
+    return r
+
+
 def _verificar_candidato(perfil, entrada: dict, el: dict):
     """(razão, verificação que governa, norma, passou) de um perfil nos esforços guardados."""
     try:
         if entrada.get("tipo") == "terca":
             vao = float(entrada["vao_m"])
-            if perfis_fabrica.tipo_de_verificacao(perfil) == "frio":
-                r = nbr14762.terca(perfis_fabrica.secao_frio(perfil), entrada["aco"], vao,
-                                   float(entrada["q_g"]), float(entrada["q_s"]),
-                                   int(entrada.get("correntes") or 0), inclinacao=float(entrada.get("theta") or 0.0),
-                                   carga_servico_gravidade=float(entrada["q_gs"]),
-                                   carga_servico_succao=float(entrada["q_ss"]),
-                                   limite_flecha_gravidade=float(entrada.get("flecha") or 180))
-            else:
-                q = max(float(entrada["q_g"]), float(entrada["q_s"]))
-                r = nbr8800.verificar_viga(perfil, entrada["aco"], L=vao * 100, q_Sd=q / 100.0,
-                                           q_servico=max(float(entrada["q_gs"]), float(entrada["q_ss"])) / 100.0,
-                                           limite="L/%d" % int(entrada.get("flecha") or 180))
+            r = _verificar_terca_cobertura(
+                perfil, entrada["aco"], vao, float(entrada["q_g"]), float(entrada["q_s"]),
+                int(entrada.get("correntes") or 0), float(entrada.get("theta") or 0.0),
+                float(entrada["q_gs"]), float(entrada["q_ss"]), float(entrada.get("flecha") or 180),
+                float(entrada.get("P_d") or 0.0), float(entrada.get("g_d") or 0.0), "")
         elif entrada.get("tipo") == "pilar":
             r = _verificar_pilar(perfil, entrada["aco"], float(entrada["Nc"]), float(entrada["Nt"]),
                                  float(entrada["M_kNcm"]), float(entrada["H_cm"]), float(entrada["K"]),
@@ -2514,6 +2571,8 @@ def dimensionar(doc: Documento, nomes: dict, parametros: Optional[dict] = None, 
     reprovadas_antes, peso_antes_kg, peso_depois_kg}."""
     from nucleo import catalogo
     avisar = avisar or (lambda *a: None)
+    if parametros is not None:
+        _migrar_grupo_s3({}, parametros, [])     # grava a tradução no dicionário do app
     par = dict(parametros or {})
     originais: Dict[str, str] = {}
     trocas: Dict[str, str] = {}

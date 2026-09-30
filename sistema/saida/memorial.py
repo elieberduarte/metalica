@@ -1140,7 +1140,8 @@ def _sec_vento(doc: _Doc, projeto: ProjetoGalpao):
           (f"categoria {_esc(v.categoria)}, classe {_esc(v.classe)}, "
            f"z = {fmt(v.z, 1, 'm')} — NBR 6123, item 5.3", "l")],
          [("Fator estatístico", "l"), ("S<sub>3</sub>", "c"), (fmt(v.S3, 2), "r"),
-          (f"grupo {v.grupo} — NBR 6123, Tabela 3", "l")],
+          ((f"grupo {v.grupo} — NBR 6123:2023, Tabela 4" if v.grupo
+            else "valor adotado no projeto — NBR 6123:2023, item 5.4"), "l")],
          [("Velocidade característica", "l"), ("V<sub>k</sub>", "c"),
           (fmt(v.Vk, 2, "m/s"), "r"),
           ("V<sub>0</sub>·S<sub>1</sub>·S<sub>2</sub>·S<sub>3</sub>", "l")],
@@ -1168,7 +1169,7 @@ def _sec_vento(doc: _Doc, projeto: ProjetoGalpao):
                   for c in coef.coeficientes]
         doc.tabela(["Direção", "Superfície", "Notação", "Zona", "C<sub>e</sub>",
                     "Tipo"], linhas,
-                   "Coeficientes de pressão externa por face (NBR 6123, Tabelas 4 e 5)",
+                   "Coeficientes de pressão externa por face (NBR 6123:2023, Tabelas 6 e 7)",
                    larguras=["16%", "27%", "11%", "24%", "11%", "11%"])
         obs = getattr(coef, "observacoes", None)
         if obs:

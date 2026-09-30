@@ -1094,7 +1094,24 @@ def dimensionar_base(pilar, N_Sd: float, M_Sd: float = 0.0, H_Sd: float = 0.0,
     g = _perfil(pilar)
     fck = fck_kN_cm2(fck)
     N_min = N_Sd_min if N_Sd_min is not None else N_Sd
+    if N_Sd <= 0:
+        raise ErroDeDados("N_Sd é a maior compressão de cálculo no pilar e tem de ser "
+                          "positiva; o arrancamento entra por N_Sd_min (negativo).")
+    # arrancamento: a combinação de sucção deixa o pilar tracionado (N mínimo negativo).
+    # A placa é conferida com uma compressão residual pequena, e a tração de
+    # arrancamento vai inteira para os chumbadores, somada à do binário do momento —
+    # hipótese a favor da segurança (auditoria N1)
+    T_arranc = max(0.0, -N_min)
+    N_placa_min = N_min if N_min > 0 else max(1.0, 0.02 * N_Sd)
     r = Resultado(elemento, perfil=g.get("nome", ""), material=aco_placa)
+    if T_arranc > 0:
+        r.hipotese("arrancamento",
+                   f"Na combinação de sucção o pilar fica tracionado em {fmt(T_arranc, 1)} kN "
+                   "(N mínimo negativo). Essa tração vai inteira para os chumbadores e se "
+                   "soma à tração do binário do momento, quando há; a placa é verificada "
+                   f"com a compressão residual de {fmt(N_placa_min, 1)} kN nessa combinação "
+                   "e com o N máximo na de gravidade. O atrito placa–grout é nulo nessa "
+                   "combinação: a força horizontal vai para a chave ou para os chumbadores.")
 
     if M_Sd > 0:
         if B is None or L is None:
@@ -1107,7 +1124,7 @@ def dimensionar_base(pilar, N_Sd: float, M_Sd: float = 0.0, H_Sd: float = 0.0,
             L = L or max(pre.dados["L"],
                          math.ceil((g["d"] / 10.0 + 4 * borda_chumbador) / 5.0) * 5.0)
         f_ch = f_chumbador if f_chumbador is not None else L / 2.0 - borda_chumbador
-        placa = placa_base_com_momento(pilar, N_min, M_Sd, B, L, f_ch, fck, pedestal,
+        placa = placa_base_com_momento(pilar, N_placa_min, M_Sd, B, L, f_ch, fck, pedestal,
                                        aco_placa,
                                        n_chumbadores_tracionados=n_chumbadores // 2,
                                        engastada=True)
@@ -1120,14 +1137,16 @@ def dimensionar_base(pilar, N_Sd: float, M_Sd: float = 0.0, H_Sd: float = 0.0,
         for v in placa_Nmax.verificacoes:
             v.titulo += " (N máximo)"
             r.add(v)
-        T = placa.dados.get("T", 0.0)
+        T = placa.dados.get("T", 0.0) + T_arranc
         t_placa = max(placa.dados["t"], placa_Nmax.dados["t"])
         r.dados["placa_N_maximo"] = placa_Nmax.dados
+        n_trac = max(1, n_chumbadores // 2)
     else:
         placa = placa_base_centrada(pilar, N_Sd, fck, pedestal, aco_placa, B, L,
                                     diametro_chumbador=diametro_chumbador,
                                     borda_chumbador=borda_chumbador)
-        T = 0.0
+        T = T_arranc                        # base rotulada: o arrancamento reparte por todos
+        n_trac = n_chumbadores if T_arranc > 0 else max(1, n_chumbadores // 2)
         t_placa = placa.dados["t"]
         f_ch = f_chumbador if f_chumbador is not None else \
             placa.dados.get("x_chumbador", placa.dados["B"] / 2.0 - borda_chumbador)
@@ -1137,14 +1156,17 @@ def dimensionar_base(pilar, N_Sd: float, M_Sd: float = 0.0, H_Sd: float = 0.0,
     r.dados.update(placa.dados)
     r.dados["t"] = t_placa
     r.dados["t_mm"] = t_placa * 10
+    r.dados["N_Sd_min"] = N_min
+    r.dados["T_arrancamento"] = T_arranc
+    r.dados["T_chumbadores"] = T
 
     B_f, L_f = r.dados["B"], r.dados["L"]
     nome_d, d_ch, _, _ = lig._diam(diametro_chumbador)
     h_ef_f = h_ef if h_ef is not None else max(math.ceil(15 * d_ch / 5.0) * 5.0, 30.0)
     espac = r.dados.get("espacamento_chumbadores", min(B_f, L_f) - 2 * borda_chumbador)
 
-    ch = chumbadores(T, 0.0, N_min, diametro_chumbador, aco_chumbador,
-                     n=n_chumbadores, n_tracionados=max(1, n_chumbadores // 2),
+    ch = chumbadores(T, 0.0, max(N_min, 0.0), diametro_chumbador, aco_chumbador,
+                     n=n_chumbadores, n_tracionados=n_trac,
                      fck=fck, h_ef=h_ef_f, espacamento=espac,
                      borda=(pedestal[1] - L_f) / 2.0 + (L_f / 2.0 - f_ch),
                      borda_oposta=None,

@@ -717,6 +717,54 @@ def test_unidades_e_conversoes():
     perto(r.dados["Mpl"], 899.0 * 34.5, tol=1e-9, o="Mpl em kN·cm")
 
 
+# ------------------------------------------------ auditoria 30/09, leva 1 (N2, N4)
+
+def test_cortante_do_tubo_circular_5_4_3_6():
+    """N4 — tubo circular: V_Rd = 0,5·τ_cr·A_g/γ_a1 (NBR 8800:2024, 5.4.3.6), nunca a alma plana."""
+    from nucleo.perfis import banco
+    tubos = [c for c in banco().candidatos("tubo") if c.dados.get("tipo") == "redondo"]
+    assert tubos
+    p = tubos[0]
+    aco = mat.aco("ASTM A36")
+    try:
+        n.cisalhamento(p, aco, V_Sd=10.0)
+    except ErroDeDados as e:
+        assert "L_v" in str(e)
+    else:
+        raise AssertionError("tubo circular sem L_v tem de ser recusado")
+    D, t = p.d / 10.0, p.tw / 10.0
+    Lv = 100.0
+    tau1 = 1.60 * n.E / (math.sqrt(Lv / D) * (D / t) ** 1.25)
+    tau2 = 0.78 * n.E / (D / t) ** 1.5
+    tau = min(max(tau1, tau2), 0.60 * aco.fy)
+    v = n.cisalhamento(p, aco, V_Sd=10.0, Lv=Lv)
+    assert "5.4.3.6" in v.norma
+    assert abs(v.Rd - 0.5 * tau * p.A / n.GAMA_A1) < 1e-6
+    # na viga biapoiada com carga distribuída o L_v é L/2 e a verificação entra sozinha
+    r = n.verificar_viga(p, aco, L=300.0, q_Sd=0.02)
+    assert any("tubular circular" in x.titulo for x in r.verificacoes)
+    # com esforços informados, L_v = 2·M/V (limitado ao vão)
+    r = n.verificar_viga(p, aco, L=300.0, M_Sd=200.0, V_Sd=4.0)
+    assert "Lv" in [h.chave for h in r.hipoteses]
+
+
+def test_viga_com_forca_axial_da_mesma_combinacao():
+    """N2 — `verificar_viga` com N_Sd faz a flexão composta do item 5.5.1.2."""
+    aco = mat.aco("ASTM A572 Gr.50")
+    p = perfil("W 310×23,8")
+    sem = n.verificar_viga(p, aco, L=800.0, M_Sd=5000.0, V_Sd=30.0, Lb=160.0)
+    com = n.verificar_viga(p, aco, L=800.0, M_Sd=5000.0, V_Sd=30.0, Lb=160.0, N_Sd=80.0)
+    assert not any("Interação" in v.titulo for v in sem.verificacoes)
+    inter = [v for v in com.verificacoes if "Interação" in v.titulo]
+    assert len(inter) == 1 and inter[0].razao > sem.razao
+    assert com.dados["N_Sd"] == 80.0
+    # tracionada: a esbeltez é com o trecho destravado (Lb), não com o vão inteiro
+    tr = n.verificar_viga(p, aco, L=1500.0, M_Sd=5000.0, V_Sd=30.0, Lb=300.0,
+                          N_Sd=80.0, tipo_axial="tracao")
+    esb = [v for v in tr.verificacoes if "Esbeltez" in v.titulo]
+    assert esb and esb[0].ok
+
+
 if __name__ == "__main__":
     falhas = 0
     for nome, func in sorted(list(globals().items())):

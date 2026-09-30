@@ -1262,6 +1262,8 @@ def terca(perfil_ue, aco="CF-26 (NBR 6650)", vao: float = 5.0,
           limite_flecha_gravidade: float = 180.0,
           limite_flecha_succao: float = 120.0,
           raio_dobra: Optional[float] = None,
+          carga_concentrada: float = 0.0,
+          carga_permanente: float = 0.0,
           elemento: str = "Terça") -> Resultado:
     """Verificação completa de uma terça (ou longarina) Ue — NBR 14762:2010.
 
@@ -1290,6 +1292,11 @@ def terca(perfil_ue, aco="CF-26 (NBR 6650)", vao: float = 5.0,
       trecho e o trecho governante é o que tem a maior razão M_Sd/M_Rd.
     * **Cortante**, **esmagamento da alma no apoio**, **interação M–V** e
       **flechas** (L/180 na gravidade e L/120 na sucção, ajustáveis).
+    * **Carga concentrada** (`carga_concentrada`, kN de cálculo no meio do vão,
+      acompanhada só da permanente `carga_permanente`, kN/m de cálculo): a NBR
+      6120:2019, item 6.4, manda verificar todo elemento isolado da cobertura com
+      1 kN na posição mais desfavorável, isolado das demais variáveis. O momento
+      dessa combinação substitui o da gravidade quando é maior (vãos curtos).
 
     Devolve um `Resultado` com todas as verificações e, em `.dados`, a geometria
     adotada, L_b, C_b, os momentos e as razões — é de lá que o memorial e os
@@ -1397,6 +1404,30 @@ def terca(perfil_ue, aco="CF-26 (NBR 6650)", vao: float = 5.0,
     r.carga("Reação no apoio (cortante máximo)", "V = q·L/2",
             f"{fmt(max(carga_gravidade, carga_succao), 3)} × {fmt(vao, 2)}/2",
             fmt(max(wg, ws) * L / 2.0, 2, "kN"))
+    # ---------- carga concentrada da NBR 6120 (item 6.4), só com a permanente ----------
+    Mx_P = V_P = 0.0
+    if carga_concentrada > 0:
+        if carga_concentrada < 0 or carga_permanente < 0:
+            raise ErroDeDados("carga_concentrada (kN) e carga_permanente (kN/m) não podem ser negativas")
+        wp = carga_permanente / 100.0
+        Mx_P = (wp * L ** 2 / 8.0 + carga_concentrada * L / 4.0) * math.cos(theta)
+        V_P = wp * L / 2.0 + carga_concentrada / 2.0
+        r.hipotese("carga_concentrada",
+                   f"Todo elemento isolado da cobertura deve resistir a uma carga concentrada "
+                   f"de 1 kN na posição mais desfavorável, isolada das demais ações variáveis e "
+                   f"somada só à permanente (NBR 6120:2019, item 6.4). Aqui: P<sub>d</sub> = "
+                   f"{fmt(carga_concentrada, 2)} kN no meio do vão com g<sub>d</sub> = "
+                   f"{fmt(carga_permanente, 3)} kN/m; M = g<sub>d</sub>·L²/8 + P<sub>d</sub>·L/4. "
+                   + ("Esta combinação governa o momento de gravidade." if Mx_P > Mx_g
+                      else "A combinação distribuída governa."),
+                   "norma")
+        r.carga("Momento com a carga concentrada de 1 kN (NBR 6120, 6.4)",
+                "M<sub>x</sub> = (g<sub>d</sub>·L²/8 + P<sub>d</sub>·L/4)·cos θ",
+                f"({fmt(carga_permanente, 3)} × {fmt(vao, 2)}²/8 + {fmt(carga_concentrada, 2)} × "
+                f"{fmt(vao, 2)}/4) × cos {fmt(inclinacao, 2)}°",
+                fmt(Mx_P / 100.0, 2, "kN·m") + f" = {fmt(Mx_P, 0)} kN·cm")
+    Mx_g_dist = Mx_g
+    Mx_g = max(Mx_g, Mx_P)
     r.carga("Comprimentos destravados na sucção", "L<sub>b</sub> = L/(n + 1); L<sub>t</sub>",
             f"{fmt(L, 0)}/({n_correntes} + 1); {'L<sub>b</sub>' if correntes_travam_torcao else 'L'}",
             f"L<sub>b</sub> = {fmt(Lb, 0)} cm; L<sub>t</sub> = {fmt(Lt, 0)} cm")
@@ -1439,7 +1470,7 @@ def terca(perfil_ue, aco="CF-26 (NBR 6650)", vao: float = 5.0,
 
     # ---------- cortante e apoio ----------
     w_max = max(wg, ws)
-    V_Sd = w_max * L / 2.0
+    V_Sd = max(w_max * L / 2.0, V_P)
     vc = cisalhamento(sec, aco, V_Sd)
     r.add(vc)
     ve = esmagamento_alma(sec, aco, V_Sd, comprimento_apoio, apoio,
@@ -1466,6 +1497,7 @@ def terca(perfil_ue, aco="CF-26 (NBR 6650)", vao: float = 5.0,
         "Lb_cm": Lb, "Lt_cm": Lt, "inclinacao_graus": inclinacao,
         "massa_kg_m": sec.massa, "aco": aco.nome, "fy": aco.fy,
         "Mx_gravidade_kNcm": Mx_g, "My_gravidade_kNcm": My_g,
+        "Mx_gravidade_distribuida_kNcm": Mx_g_dist, "Mx_concentrada_kNcm": Mx_P,
         "Mx_succao_kNcm": Mx_s_total, "V_Sd_kN": V_Sd,
         "Mx_Rd_gravidade_kNcm": vg.Rd,
         "Mx_Rd_succao_kNcm": v_suc.Rd if v_suc else None,

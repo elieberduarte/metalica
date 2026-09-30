@@ -99,7 +99,7 @@ def _vento(projeto: ProjetoGalpao) -> CG.VentoGalpao:
     return CG.pressoes_galpao(b=d.vao, a=d.comprimento, h=d.pe_direito,
                               theta_graus=d.angulo_telhado, V0=d.v0,
                               categoria=d.categoria_rugosidade, classe=d.classe,
-                              z=10.0, S1=d.fator_topografico, grupo=2,
+                              z=10.0, S1=d.fator_topografico, grupo=3,        # indústria (NBR 6123:2023, Tabela 4)
                               aberturas="duas faces opostas")
 
 

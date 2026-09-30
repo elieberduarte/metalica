@@ -569,6 +569,28 @@ def test_cb_trecho():
     assert abs(segs1[0][1] - 1.30) < 0.02
 
 
+# ------------------------------------------------ auditoria 30/09, leva 1 (C4)
+
+def test_terca_com_a_carga_concentrada_da_6120():
+    """C4 — 1 kN no meio do vão, só com a permanente (NBR 6120:2019, 6.4): governa no vão curto."""
+    sem = cf.terca(PERFIL_CAP16, CF26, vao=3.0, carga_gravidade=0.8, carga_succao=0.6, n_correntes=1)
+    com = cf.terca(PERFIL_CAP16, CF26, vao=3.0, carga_gravidade=0.8, carga_succao=0.6, n_correntes=1,
+                   carga_concentrada=1.5, carga_permanente=0.3)
+    L = 300.0
+    esperado = (0.3 / 100.0 * L ** 2 / 8.0 + 1.5 * L / 4.0)
+    assert abs(com.dados["Mx_concentrada_kNcm"] - esperado) < 1e-6
+    assert com.dados["Mx_concentrada_kNcm"] > com.dados["Mx_gravidade_distribuida_kNcm"]
+    assert com.dados["Mx_gravidade_kNcm"] == com.dados["Mx_concentrada_kNcm"]
+    assert com.dados["V_Sd_kN"] >= 0.3 / 100.0 * L / 2.0 + 0.75
+    assert "carga_concentrada" in [h.chave for h in com.hipoteses]
+    assert com.razao > sem.razao
+    assert sem.dados["Mx_concentrada_kNcm"] == 0.0
+    # vão longo: a distribuída governa e o resultado não muda
+    longo = cf.terca(PERFIL_CAP16, CF26, vao=7.0, carga_gravidade=0.8, carga_succao=0.6, n_correntes=1,
+                     carga_concentrada=1.5, carga_permanente=0.3)
+    assert longo.dados["Mx_gravidade_kNcm"] == longo.dados["Mx_gravidade_distribuida_kNcm"]
+
+
 if __name__ == "__main__":
     import traceback
     testes = [(n, o) for n, o in sorted(globals().items())

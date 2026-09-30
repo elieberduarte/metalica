@@ -34,7 +34,7 @@ Este módulo nomeia as duas direções pelo que elas fazem, e não por um ângul
     "transversal"   — vento perpendicular à cumeeira (entra pela parede maior);
     "longitudinal"  — vento paralelo à cumeeira (entra pelo oitão).
 
-O ângulo 0°/90° da NBR 6123 (Tabelas 4 e 5) é medido a partir da maior dimensão
+O ângulo 0°/90° da NBR 6123:2023 (Tabelas 6 e 7) é medido a partir da maior dimensão
 em planta: 0° = longitudinal, 90° = transversal — que é a convenção do Capítulo 16
 do manual. O Capítulo 5 do manual usa a convenção inversa (chama de 0° o vento
 perpendicular à cumeeira). Por isso os aliases "0°"/"90°" aceitos aqui seguem o
@@ -216,9 +216,50 @@ def _sc(nome, valor, psi, minimo=0.0, maximo=0.0, obs="", norma="NBR 6120:2019, 
     return Sobrecarga(nome, valor, minimo, maximo, psi, obs, norma)
 
 
+#: NBR 6120:2019, item 6.4: sobrecarga mínima de cobertura sem acesso, kN/m² em projeção
+#: horizontal, q = 0,50·α, com 0,25 ≤ q ≤ 0,50 e α pela inclinação i (%) do telhado.
+SOBRECARGA_COBERTURA_MIN = 0.25
+SOBRECARGA_COBERTURA_MAX = 0.50
+#: NBR 6120:2019, item 6.4: carga concentrada de 1 kN na posição mais desfavorável de
+#: todo elemento isolado da cobertura (ripa, terça, banzo superior de treliça), isolada
+#: das demais ações variáveis e somada só à permanente.
+CARGA_CONCENTRADA_COBERTURA = 1.0
+
+
+def sobrecarga_cobertura(inclinacao_pct: float) -> float:
+    """Sobrecarga mínima de cobertura sem acesso (kN/m², projeção horizontal) — NBR
+    6120:2019, item 6.4:
+
+        q = 0,50·α, 0,25 ≤ q ≤ 0,50
+        α = 1,0            para 1 % < i ≤ 2 %  (e telhados mais planos)
+        α = 2,0 − 0,5·i    para 2 % < i < 3 %
+        α = 0,5            para i ≥ 3 %
+
+    `inclinacao_pct` é a inclinação do telhado em % (tg θ · 100).
+    """
+    i = float(inclinacao_pct)
+    if i < 0:
+        raise ErroDeDados("a inclinação da cobertura não pode ser negativa")
+    if i <= 2.0:
+        alfa = 1.0
+    elif i < 3.0:
+        alfa = 2.0 - 0.5 * i
+    else:
+        alfa = 0.5
+    return min(SOBRECARGA_COBERTURA_MAX, max(SOBRECARGA_COBERTURA_MIN, 0.50 * alfa))
+
+
+def inclinacao_em_pct(theta_graus: float) -> float:
+    """tg θ em %, para a regra da sobrecarga de cobertura."""
+    return math.tan(math.radians(float(theta_graus))) * 100.0
+
+
 SOBRECARGAS: Dict[str, Sobrecarga] = {_chave(s.nome): s for s in [
-    _sc("cobertura sem acesso", 0.25, "cobertura", obs="só manutenção, em projeção horizontal",
-        norma="NBR 8800:2008, item B.5.1"),
+    _sc("cobertura sem acesso", 0.25, "cobertura", 0.25, 0.50,
+        obs="só manutenção, em projeção horizontal; 0,25 para i ≥ 3 %, subindo a 0,50 "
+            "em telhado com até 2 % (q = 0,50·α); mais 1 kN concentrado em cada elemento "
+            "isolado (terça, banzo)",
+        norma="NBR 6120:2019, item 6.4"),
     _sc("cobertura com acesso", 1.00, "cobertura", 0.50, 1.00, obs="acesso de pessoas"),
     _sc("forro sem acesso", 0.50, "cobertura", obs=""),
     _sc("forro com acesso", 1.00, "cobertura", obs="manutenção de instalações"),
@@ -561,10 +602,12 @@ def fator_s2(categoria="II", classe="B", z: float = 10.0) -> float:
 
         S₂ = b · F_r · (z/10)^p
 
-    z é a altura acima do terreno, em metros. Abaixo de 5 m a norma tabela um
-    valor constante: adota-se S₂(5 m), que é maior que o da expressão e portanto
-    está a favor da segurança. Acima da altura gradiente z_g a expressão não vale
-    e a função levanta ErroDeDados.
+    z é a altura acima do terreno, em metros. A Tabela 3 da NBR 6123:2023 tabela
+    um valor constante abaixo de 5 m (linha "z ≤ 5") e, na categoria V, constante
+    até 10 m (item 5.3.3: "o fator S₂ é considerado constante até 10 m de altura na
+    categoria V"). Abaixo desse piso adota-se o valor do piso, que é maior que o da
+    expressão. Acima da altura gradiente z_g a expressão não vale e a função levanta
+    ErroDeDados.
     """
     cat, cl = _categoria(categoria), _classe(classe)
     b, p = PARAMETROS_S2[(cat, cl)]
@@ -574,33 +617,70 @@ def fator_s2(categoria="II", classe="B", z: float = 10.0) -> float:
     if z > ZG_S2[cat]:
         raise ErroDeDados(f"z = {z} m acima da altura gradiente da categoria {cat} "
                           f"(z_g = {ZG_S2[cat]:.0f} m): fora do alcance da Tabela 1 da NBR 6123")
-    z_calc = max(float(z), 5.0)
+    z_calc = max(float(z), PISO_S2[cat])
     return b * fr * (z_calc / 10.0) ** p
 
 
-# NBR 6123, Tabela 3 — fator estatístico S₃.
+#: Altura (m) abaixo da qual S₂ é constante — NBR 6123:2023, Tabela 3 (linha z ≤ 5) e
+#: item 5.3.3 (categoria V: constante até 10 m).
+PISO_S2: Dict[str, float] = {"I": 5.0, "II": 5.0, "III": 5.0, "IV": 5.0, "V": 10.0}
+
+
+# NBR 6123:2023, Tabela 4 — valores mínimos do fator estatístico S₃ (S₃, descrição,
+# período de retorno T_p em anos). As vedações de cada grupo (telhas, vidros, painéis)
+# usam o S₃ do próprio grupo; a NOTA da tabela permite 0,92·S₃ só para o projeto delas.
 GRUPOS_S3: Dict[int, Tuple[float, str]] = {
-    1: (1.10, "edificações cuja ruína afeta a segurança ou o socorro após a tempestade "
-              "(hospitais, quartéis, centrais de comunicação e energia)"),
-    2: (1.00, "hotéis, residências, comércio e indústria com alto fator de ocupação"),
-    3: (0.95, "indústrias com baixo fator de ocupação (depósitos, silos, construções rurais)"),
-    4: (0.88, "vedações: telhas, vidros, painéis de vedação"),
-    5: (0.83, "edificações temporárias e estruturas durante a construção"),
+    1: (1.11, "estruturas cuja ruína pode afetar a segurança ou o socorro após uma "
+              "tempestade (hospitais, quartéis de bombeiros, centrais de controle), "
+              "pontes, e estruturas que abrigam substâncias inflamáveis, tóxicas ou "
+              "explosivas"),
+    2: (1.06, "estruturas cuja ruína representa risco substancial à vida: aglomeração de "
+              "mais de 300 pessoas (centros de convenções, ginásios, estádios), creches "
+              "com mais de 150 e escolas com mais de 250 pessoas"),
+    3: (1.00, "edificações para residências, hotéis, comércio e indústrias; estruturas "
+              "desmontáveis para reutilização"),
+    4: (0.95, "edificações não destinadas à ocupação humana (depósitos, silos) e sem "
+              "circulação de pessoas no entorno"),
+    5: (0.83, "edificações temporárias não reutilizáveis; estruturas dos grupos 1 a 4 "
+              "durante a construção (prazo máximo de 2 anos)"),
 }
+#: Período de retorno T_p (anos) de cada grupo — NBR 6123:2023, Tabela 4.
+RETORNO_S3: Dict[int, int] = {1: 100, 2: 75, 3: 50, 4: 37, 5: 15}
+#: Redução admitida exclusivamente para o projeto das vedações (NOTA da Tabela 4).
+REDUCAO_S3_VEDACOES = 0.92
+#: Grupo padrão de um galpão industrial (indústrias, comércio: S₃ = 1,00).
+GRUPO_S3_PADRAO = 3
 
 
-def fator_s3(grupo: Union[int, str] = 2) -> float:
-    """Fator estatístico S₃ (NBR 6123, item 5.4 e Tabela 3)."""
+def fator_s3(grupo: Union[int, str] = GRUPO_S3_PADRAO) -> float:
+    """Fator estatístico S₃ (NBR 6123:2023, item 5.4 e Tabela 4).
+
+    Aceita o número do grupo (1 a 5) ou um trecho da descrição ("indústria",
+    "depósito", "hospital"...). O grupo 3 (residências, hotéis, comércio e
+    indústrias) é o de referência, com T_p = 50 anos e S₃ = 1,00.
+    """
     if isinstance(grupo, str):
         k = _chave(grupo)
-        achado = [g for g, (_, d) in GRUPOS_S3.items() if k in _chave(d)]
-        if len(achado) != 1:
-            raise ErroDeDados(f"grupo de S₃ desconhecido: '{grupo}'. Use 1 a 5 "
-                              "(2 = indústria/comércio com alto fator de ocupação).")
-        grupo = achado[0]
+        if k.isdigit():
+            grupo = int(k)
+        else:
+            achado = [g for g, (_, d) in GRUPOS_S3.items() if k in _chave(d)]
+            if len(achado) != 1:
+                raise ErroDeDados(f"grupo de S₃ desconhecido: '{grupo}'. Use 1 a 5 da Tabela 4 "
+                                  "da NBR 6123:2023 (3 = residências, hotéis, comércio e "
+                                  "indústrias; 4 = depósitos e silos sem ocupação humana).")
+            grupo = achado[0]
     if grupo not in GRUPOS_S3:
         raise ErroDeDados(f"grupo de S₃ inválido: {grupo} (use 1 a 5)")
     return GRUPOS_S3[int(grupo)][0]
+
+
+def grupo_do_s3(S3: float) -> int:
+    """O grupo da Tabela 4 cujo S₃ é o valor dado; 0 quando não é um valor tabelado."""
+    for g, (v, _) in GRUPOS_S3.items():
+        if abs(v - float(S3)) < 0.005:
+            return g
+    return 0
 
 
 def velocidade_caracteristica(V0: float, S1: float = 1.0, S2: float = 1.0,
@@ -628,7 +708,7 @@ def pressao_efetiva(Ce: float, Cpi: float, q: float) -> float:
     return (float(Ce) - float(Cpi)) * float(q)
 
 
-# --- coeficientes de pressão externa (Tabelas 4 e 5 da NBR 6123) ------------
+# --- coeficientes de pressão externa (Tabelas 6 e 7 da NBR 6123:2023) --------
 
 TRANSVERSAL = "transversal"
 LONGITUDINAL = "longitudinal"
@@ -651,52 +731,151 @@ def _direcao(nome) -> str:
                       "Use 'transversal' (⊥ à cumeeira) ou 'longitudinal' (∥ à cumeeira).")
 
 
-# NBR 6123, Tabela 4 — paredes de edificação de planta retangular.
+# NBR 6123:2023, Tabela 6 — paredes de edificação de planta retangular a × b (b = menor
+# dimensão), transcrita célula a célula. Na norma α = 90° é o vento perpendicular à face
+# maior (aqui "transversal", ⊥ à cumeeira) e α = 0° o vento paralelo a ela (aqui
+# "longitudinal", entra pelo oitão).
 # Chave: (faixa de h/b, faixa de a/b) → por direção do vento:
-#   barlavento  parede que recebe o vento de frente
-#   sotavento   parede oposta
-#   lateral_1   paredes paralelas ao vento, trecho inicial (b/2 a partir da aresta de barlavento)
-#   lateral_2   paredes paralelas ao vento, trecho restante
-_TABELA_4 = {
+#   barlavento  parede que recebe o vento de frente          (A no α = 90°; C no α = 0°)
+#   sotavento   parede oposta                                (B;  D)
+#   lateral_1   paredes paralelas ao vento, trecho inicial   (C1/D1: 2h ou b/2, o menor;
+#                                                             A1/B1: b/3 ou a/4, o maior, ≤ 2h)
+#   lateral_2   paredes paralelas ao vento, trecho restante  (C2/D2; A2/B2)
+#   cpe_medio   coeficiente de pressão médio das faixas de canto (só vedações e fixações)
+FAIXAS_H_B = ("<=1/2", "1/2..3/2", "3/2..6")
+_TABELA_6 = {
     ("<=1/2", "1..3/2"): {
-        TRANSVERSAL:  {"barlavento": 0.7, "sotavento": -0.4, "lateral_1": -0.8, "lateral_2": -0.5},
+        TRANSVERSAL:  {"barlavento": 0.7, "sotavento": -0.4, "lateral_1": -0.8, "lateral_2": -0.4},
         LONGITUDINAL: {"barlavento": 0.7, "sotavento": -0.4, "lateral_1": -0.8, "lateral_2": -0.5},
+        "cpe_medio": -0.9,
     },
     ("<=1/2", "2..4"): {
         TRANSVERSAL:  {"barlavento": 0.7, "sotavento": -0.5, "lateral_1": -0.9, "lateral_2": -0.5},
         LONGITUDINAL: {"barlavento": 0.7, "sotavento": -0.3, "lateral_1": -0.8, "lateral_2": -0.4},
+        "cpe_medio": -1.0,
     },
     ("1/2..3/2", "1..3/2"): {
         TRANSVERSAL:  {"barlavento": 0.7, "sotavento": -0.5, "lateral_1": -0.9, "lateral_2": -0.5},
         LONGITUDINAL: {"barlavento": 0.7, "sotavento": -0.5, "lateral_1": -0.9, "lateral_2": -0.5},
+        "cpe_medio": -1.1,
     },
     ("1/2..3/2", "2..4"): {
         TRANSVERSAL:  {"barlavento": 0.7, "sotavento": -0.6, "lateral_1": -0.9, "lateral_2": -0.5},
-        LONGITUDINAL: {"barlavento": 0.7, "sotavento": -0.5, "lateral_1": -0.9, "lateral_2": -0.5},
+        LONGITUDINAL: {"barlavento": 0.7, "sotavento": -0.3, "lateral_1": -0.9, "lateral_2": -0.4},
+        "cpe_medio": -1.1,
+    },
+    ("3/2..6", "1..3/2"): {
+        TRANSVERSAL:  {"barlavento": 0.8, "sotavento": -0.6, "lateral_1": -1.0, "lateral_2": -0.6},
+        LONGITUDINAL: {"barlavento": 0.8, "sotavento": -0.6, "lateral_1": -1.0, "lateral_2": -0.6},
+        "cpe_medio": -1.2,
+    },
+    ("3/2..6", "2..4"): {
+        TRANSVERSAL:  {"barlavento": 0.8, "sotavento": -0.6, "lateral_1": -1.0, "lateral_2": -0.6},
+        LONGITUDINAL: {"barlavento": 0.8, "sotavento": -0.3, "lateral_1": -1.0, "lateral_2": -0.5},
+        "cpe_medio": -1.2,
     },
 }
 
-# NBR 6123, Tabela 5 — telhados de duas águas, planta retangular.
-# Para cada faixa de h/b: θ (graus) e os coeficientes das quatro zonas.
-#   EF = água de barlavento e GH = água de sotavento (vento transversal)
-#   EG = trecho inicial (b/2) e FH = restante                (vento longitudinal)
-_TETA_TABELA_5 = [0.0, 5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0]
-_TABELA_5 = {
+# NBR 6123:2023, Tabela 7 — telhados de duas águas simétricos, planta retangular,
+# transcrita célula a célula. Cada faixa de h/b tem a própria lista de θ (a terceira
+# faixa é tabelada a 40° e 50° em vez de 45°).
+#   EFI = água de barlavento e GHJ = água de sotavento     (α = 90°, vento transversal)
+#   EG  = trecho inicial (b/2 a partir do oitão de barlavento) e FH = o seguinte
+#                                                          (α = 0°, vento longitudinal)
+#   I/J = o restante do telhado no vento longitudinal (NOTA 3: igual a F/H quando
+#         a/b = 1, −0,2 quando a/b ≥ 2, interpolando entre os dois)
+#   cpe_medio = as quatro zonas de alta sucção da tabela, na ordem das colunas (canto
+#         do beiral, canto da cumeeira, beiral, cumeeira); None onde a norma não tabela.
+_TABELA_7 = {
     "<=1/2": {
+        "teta": [0.0, 5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0],
         "EF": [-0.8, -0.9, -1.2, -1.0, -0.4, 0.0, 0.3, 0.7],
         "GH": [-0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.5, -0.6],
         "EG": [-0.8, -0.8, -0.8, -0.8, -0.7, -0.7, -0.7, -0.7],
         "FH": [-0.4, -0.4, -0.6, -0.6, -0.6, -0.6, -0.6, -0.6],
+        "cpe_medio": [(-2.0, -2.0, -2.0, None), (-1.4, -1.2, -1.2, -1.0),
+                      (-1.4, -1.4, None, -1.2), (-1.4, -1.2, None, -1.2),
+                      (-1.0, None, None, -1.2), (-0.8, None, None, -1.1),
+                      (None, None, None, -1.1), (None, None, None, -1.1)],
     },
     "1/2..3/2": {
-        "EF": [-0.9, -1.2, -1.1, -1.0, -0.7, -0.2, 0.2, 0.6],
-        "GH": [-0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4],
-        "EG": [-0.8, -0.9, -0.8, -0.8, -0.8, -0.8, -0.8, -0.8],
-        "FH": [-0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5],
+        "teta": [0.0, 5.0, 10.0, 15.0, 20.0, 30.0, 45.0, 60.0],
+        "EF": [-0.8, -0.9, -1.1, -1.0, -0.7, -0.2, 0.2, 0.6],
+        "GH": [-0.6, -0.6, -0.6, -0.6, -0.5, -0.5, -0.5, -0.5],
+        "EG": [-1.0, -0.9, -0.8, -0.8, -0.8, -0.8, -0.8, -0.8],
+        "FH": [-0.6, -0.6, -0.6, -0.6, -0.6, -0.8, -0.8, -0.8],
+        "cpe_medio": [(-2.0, -2.0, -2.0, None), (-2.0, -2.0, -1.5, -1.0),
+                      (-2.0, -2.0, -1.5, -1.2), (-1.8, -1.5, -1.5, -1.2),
+                      (-1.5, -1.5, -1.5, -1.0), (-1.0, None, None, -1.0),
+                      (None, None, None, None), (None, None, None, None)],
+    },
+    "3/2..6": {
+        "teta": [0.0, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+        "EF": [-0.8, -0.8, -0.8, -0.8, -0.8, -1.0, -0.2, 0.2, 0.5],
+        "GH": [-0.6, -0.6, -0.6, -0.6, -0.6, -0.5, -0.5, -0.5, -0.5],
+        "EG": [-0.9, -0.8, -0.8, -0.8, -0.8, -0.8, -0.8, -0.8, -0.8],
+        "FH": [-0.7, -0.8, -0.8, -0.8, -0.8, -0.7, -0.7, -0.7, -0.7],
+        "cpe_medio": [(-2.0, -2.0, -2.0, None), (-2.0, -2.0, -1.5, -1.0),
+                      (-2.0, -2.0, -1.5, -1.2), (-1.8, -1.8, -1.5, -1.2),
+                      (-1.5, -1.5, -1.5, -1.2), (-1.5, None, None, None),
+                      (-1.0, None, None, None), (None, None, None, None),
+                      (None, None, None, None)],
     },
 }
+#: I/J no vento longitudinal (NOTA 3 da Tabela 7): −0,2 para a/b ≥ 2.
+CE_IJ_LONGITUDINAL = -0.2
+
+
+def faixa_h_b(h_b: float) -> str:
+    """A faixa de altura relativa das Tabelas 6 e 7 (degraus, sem interpolação)."""
+    if h_b <= 0.5:
+        return "<=1/2"
+    if h_b <= 1.5:
+        return "1/2..3/2"
+    if h_b <= 6.0:
+        return "3/2..6"
+    raise ErroDeDados(f"h/b = {fmt(h_b)} > 6: fora das Tabelas 6 e 7 da NBR 6123:2023 "
+                      "(edificação muito alta para a planta; consulte a norma).")
+
+
+def ce_parede(h_b: float, a_b: float, direcao, papel: str) -> float:
+    """C_e de uma parede pela Tabela 6 (interpolação linear em a/b entre 3/2 e 2)."""
+    fh = faixa_h_b(h_b)
+    d = _direcao(direcao)
+    c1, c2 = _TABELA_6[(fh, "1..3/2")][d], _TABELA_6[(fh, "2..4")][d]
+    return _interp(a_b, [1.5, 2.0], [c1[papel], c2[papel]])
+
+
+def ce_telhado(h_b: float, theta_graus: float, zona: str) -> float:
+    """C_e de uma zona do telhado (EF, GH, EG, FH) pela Tabela 7, interpolado em θ."""
+    t = _TABELA_7[faixa_h_b(h_b)]
+    th = float(theta_graus)
+    if th < 0 or th > t["teta"][-1]:
+        raise ErroDeDados(f"inclinação do telhado θ = {fmt(th)}° fora da Tabela 7 da "
+                          "NBR 6123:2023 (0° ≤ θ ≤ 60°)")
+    return _interp(th, t["teta"], t[zona])
+
+
+def cpe_medio_telhado(h_b: float, theta_graus: float) -> Optional[float]:
+    """A maior sucção média das zonas de borda do telhado (Tabela 7, c_pe médio), na
+    linha de θ tabelado mais próxima; None quando a norma não tabela nenhuma zona."""
+    t = _TABELA_7[faixa_h_b(h_b)]
+    th = float(theta_graus)
+    i = min(range(len(t["teta"])), key=lambda k: abs(t["teta"][k] - th))
+    vals = [v for v in t["cpe_medio"][i] if v is not None]
+    return min(vals) if vals else None
+
+
+def cpe_medio_parede(h_b: float, a_b: float) -> float:
+    """c_pe médio das faixas de canto das paredes (Tabela 6)."""
+    fh = faixa_h_b(h_b)
+    return _TABELA_6[(fh, "1..3/2" if a_b < 2 else "2..4")]["cpe_medio"]
+
 
 # Coeficientes locais de alta sucção, só para telhas, fixações e elementos de vedação.
+# Os valores vêm do c_pe médio das Tabelas 6 e 7 (ver `cpe_medio_parede` e
+# `cpe_medio_telhado`); estes são os pisos históricos do manual, usados quando a norma
+# não tabela a zona no θ pedido.
 CE_LOCAL_CANTO_PAREDE = -1.0      # faixa ≈ 0,2·b junto aos cantos (manual, Tabela 16.2)
 CE_LOCAL_BORDA_TELHADO = -1.4     # faixa ≈ 0,15·b nas bordas    (manual, Tabela 5.7)
 CE_LOCAL_CUMEEIRA = -2.0          # cantos e cumeeira            (manual, Tabela 5.7)
@@ -762,7 +941,7 @@ def coeficientes_pressao_galpao(b: float, a: float, h: float,
                                 theta_graus: float) -> CoeficientesGalpao:
     """Coeficientes de pressão externa C_e de um galpão de duas águas.
 
-    NBR 6123, Tabela 4 (paredes) e Tabela 5 (telhados de duas águas), em função
+    NBR 6123:2023, Tabela 6 (paredes) e Tabela 7 (telhados de duas águas), em função
     de h/b, a/b e da inclinação θ do telhado, para as duas direções de vento.
 
     Parâmetros (em metros)
@@ -772,16 +951,17 @@ def coeficientes_pressao_galpao(b: float, a: float, h: float,
     h  altura do beiral (pé-direito);
     theta_graus  inclinação do telhado.
 
-    Interpolação: linear em θ entre os valores tabelados da Tabela 5 (0°, 5°, 10°,
-    15°, 20°, 30°, 45° e 60°) e linear em a/b na lacuna entre as colunas
-    1 ≤ a/b ≤ 3/2 e 2 ≤ a/b ≤ 4 da Tabela 4. As faixas de h/b **não** são
-    interpoladas: a norma as trata como degraus.
+    Interpolação: linear em θ entre os ângulos tabelados da Tabela 7 (cada faixa de
+    h/b tem os seus: 0°, 5°, 10°, 15°, 20°, 30°, 45°/40°, 50°, 60°) e linear em a/b
+    na lacuna entre as colunas 1 ≤ a/b ≤ 3/2 e 2 ≤ a/b ≤ 4 da Tabela 6. As faixas de
+    h/b **não** são interpoladas: a norma as trata como degraus.
 
     Cobertura e limites (ver observações do resultado):
-      * h/b ≤ 3/2 — acima disso levanta ErroDeDados (não implementado);
+      * h/b ≤ 6 (as três faixas das tabelas) — acima disso levanta ErroDeDados;
       * 0° ≤ θ ≤ 60°;
       * a/b > 4 usa a coluna 2 ≤ a/b ≤ 4, com observação de extrapolação;
-      * a faixa 1/2 < h/b ≤ 3/2 não é validada por exemplo do manual.
+      * no vento longitudinal o telhado tem uma terceira zona (I/J, NOTA 3 da
+        Tabela 7) além das duas faixas de b/2.
     """
     for nome, v in (("b", b), ("a", a), ("h", h)):
         if v <= 0:
@@ -791,79 +971,81 @@ def coeficientes_pressao_galpao(b: float, a: float, h: float,
                           f"b = {fmt(b)} m a menor (vão). Inverta os dois.")
     th = float(theta_graus)
     if th < 0 or th > 60:
-        raise ErroDeDados(f"inclinação do telhado θ = {fmt(th)}° fora da Tabela 5 da "
-                          "NBR 6123 (0° ≤ θ ≤ 60°)")
+        raise ErroDeDados(f"inclinação do telhado θ = {fmt(th)}° fora da Tabela 7 da "
+                          "NBR 6123:2023 (0° ≤ θ ≤ 60°)")
     h_b, a_b = h / b, a / b
     obs: List[str] = []
-    if h_b <= 0.5:
-        faixa_h = "<=1/2"
-    elif h_b <= 1.5:
-        faixa_h = "1/2..3/2"
-        obs.append("h/b entre 1/2 e 3/2: valores das Tabelas 4 e 5 adotados a favor da "
-                   "segurança; os exemplos do manual só validam h/b ≤ 1/2 — confira na "
-                   "norma antes de usar em obra.")
-    else:
-        raise ErroDeDados(f"h/b = {fmt(h_b)} > 3/2: fora da faixa implementada das Tabelas 4 "
-                          "e 5 da NBR 6123 (galpões usuais têm h/b ≤ 1/2). Consulte a norma.")
+    faixa_h = faixa_h_b(h_b)
     if a_b > 4.0:
-        obs.append(f"a/b = {fmt(a_b)} > 4: adotada a coluna 2 ≤ a/b ≤ 4 da Tabela 4 "
+        obs.append(f"a/b = {fmt(a_b)} > 4: adotada a coluna 2 ≤ a/b ≤ 4 da Tabela 6 "
                    "(extrapolação; a norma não tabela a/b > 4).")
 
     def parede(papel: str) -> Dict[str, float]:
-        c1 = _TABELA_4[(faixa_h, "1..3/2")]
-        c2 = _TABELA_4[(faixa_h, "2..4")]
-        return {d: _interp(a_b, [1.5, 2.0], [c1[d][papel], c2[d][papel]])
-                for d in (TRANSVERSAL, LONGITUDINAL)}
+        return {d: ce_parede(h_b, a_b, d, papel) for d in (TRANSVERSAL, LONGITUDINAL)}
 
     if 1.5 < a_b < 2.0:
         obs.append(f"a/b = {fmt(a_b)} cai na lacuna entre as colunas 1 ≤ a/b ≤ 3/2 e "
-                   "2 ≤ a/b ≤ 4 da Tabela 4: coeficientes de parede interpolados linearmente.")
+                   "2 ≤ a/b ≤ 4 da Tabela 6: coeficientes de parede interpolados linearmente.")
 
     barl, sota = parede("barlavento"), parede("sotavento")
     lat1, lat2 = parede("lateral_1"), parede("lateral_2")
 
-    tel = _TABELA_5[faixa_h]
-    ce = {z: _interp(th, _TETA_TABELA_5, tel[z]) for z in ("EF", "GH", "EG", "FH")}
-    if th not in _TETA_TABELA_5:
+    tetas = _TABELA_7[faixa_h]["teta"]
+    ce = {z: ce_telhado(h_b, th, z) for z in ("EF", "GH", "EG", "FH")}
+    if th not in tetas:
         obs.append(f"θ = {fmt(th)}° interpolado linearmente entre os ângulos tabelados da "
-                   "Tabela 5 da NBR 6123.")
+                   "Tabela 7 da NBR 6123:2023.")
+    # I/J: o resto do telhado no vento longitudinal (NOTA 3 da Tabela 7)
+    ce_ij = _interp(a_b, [1.0, 2.0], [ce["FH"], CE_IJ_LONGITUDINAL])
 
-    n4 = "NBR 6123, Tabela 4"
-    n5 = "NBR 6123, Tabela 5"
-    z1p = f"trecho inicial de {fmt(b / 2)} m (b/2) a partir da aresta de barlavento"
+    n6 = "NBR 6123:2023, Tabela 6"
+    n7 = "NBR 6123:2023, Tabela 7"
+    z1_t = min(2.0 * h, b / 2.0)                      # C1/D1: 2h ou b/2, o menor
+    z1_l = min(max(b / 3.0, a / 4.0), 2.0 * h)        # A1/B1: b/3 ou a/4, o maior, ≤ 2h
+    z1p = f"trecho inicial de {fmt(z1_t)} m (2h ou b/2, o menor) a partir da aresta de barlavento"
+    z1l = (f"trecho inicial de {fmt(z1_l)} m (b/3 ou a/4, o maior, até 2h) a partir da "
+           "aresta de barlavento")
     z1t = f"trecho inicial de {fmt(b / 2)} m (b/2) a partir do oitão de barlavento"
+    z2t = f"trecho seguinte de {fmt(b / 2)} m (b/2)"
     cs = [
-        # vento transversal (perpendicular à cumeeira) — entra pela parede maior
-        Coeficiente(TRANSVERSAL, "parede lateral barlavento", "A", barl[TRANSVERSAL], "", False, n4),
-        Coeficiente(TRANSVERSAL, "parede lateral sotavento", "B", sota[TRANSVERSAL], "", False, n4),
-        Coeficiente(TRANSVERSAL, "oitão zona 1", "C1/D1", lat1[TRANSVERSAL], z1p, False, n4),
-        Coeficiente(TRANSVERSAL, "oitão zona 2", "C2/D2", lat2[TRANSVERSAL], "restante", False, n4),
+        # vento transversal (perpendicular à cumeeira; α = 90° na norma) — entra pela
+        # parede maior
+        Coeficiente(TRANSVERSAL, "parede lateral barlavento", "A", barl[TRANSVERSAL], "", False, n6),
+        Coeficiente(TRANSVERSAL, "parede lateral sotavento", "B", sota[TRANSVERSAL], "", False, n6),
+        Coeficiente(TRANSVERSAL, "oitão zona 1", "C1/D1", lat1[TRANSVERSAL], z1p, False, n6),
+        Coeficiente(TRANSVERSAL, "oitão zona 2", "C2/D2", lat2[TRANSVERSAL], "restante", False, n6),
         Coeficiente(TRANSVERSAL, "telhado barlavento", "EF", ce["EF"], "água de barlavento",
-                    False, n5),
+                    False, n7),
         Coeficiente(TRANSVERSAL, "telhado sotavento", "GH", ce["GH"], "água de sotavento",
-                    False, n5),
-        # vento longitudinal (paralelo à cumeeira) — entra pelo oitão
-        Coeficiente(LONGITUDINAL, "oitão barlavento", "C", barl[LONGITUDINAL], "", False, n4),
-        Coeficiente(LONGITUDINAL, "oitão sotavento", "D", sota[LONGITUDINAL], "", False, n4),
+                    False, n7),
+        # vento longitudinal (paralelo à cumeeira; α = 0° na norma) — entra pelo oitão
+        Coeficiente(LONGITUDINAL, "oitão barlavento", "C", barl[LONGITUDINAL], "", False, n6),
+        Coeficiente(LONGITUDINAL, "oitão sotavento", "D", sota[LONGITUDINAL], "", False, n6),
         Coeficiente(LONGITUDINAL, "parede lateral zona 1", "A1/B1", lat1[LONGITUDINAL],
-                    z1p, False, n4),
+                    z1l, False, n6),
         Coeficiente(LONGITUDINAL, "parede lateral zona 2", "A2/B2", lat2[LONGITUDINAL],
-                    "restante", False, n4),
-        Coeficiente(LONGITUDINAL, "telhado zona 1", "EG", ce["EG"], z1t, False, n5),
-        Coeficiente(LONGITUDINAL, "telhado zona 2", "FH", ce["FH"], "restante", False, n5),
+                    "restante", False, n6),
+        Coeficiente(LONGITUDINAL, "telhado zona 1", "EG", ce["EG"], z1t, False, n7),
+        Coeficiente(LONGITUDINAL, "telhado zona 2", "FH", ce["FH"], z2t, False, n7),
+        Coeficiente(LONGITUDINAL, "telhado zona 3", "IJ", ce_ij, "restante (NOTA 3)",
+                    False, n7),
     ]
-    # zonas locais de alta sucção — apenas telhas, fixações e elementos de vedação
+    # zonas locais de alta sucção — apenas telhas, fixações e elementos de vedação:
+    # o c_pe médio das Tabelas 6 e 7, com os pisos do manual onde a norma não tabela
+    cpe_par = min(cpe_medio_parede(h_b, a_b), CE_LOCAL_CANTO_PAREDE)
+    cpe_tel = cpe_medio_telhado(h_b, th)
+    borda = min(cpe_tel, CE_LOCAL_BORDA_TELHADO) if cpe_tel is not None else CE_LOCAL_BORDA_TELHADO
     for d in (TRANSVERSAL, LONGITUDINAL):
         cs += [
-            Coeficiente(d, "canto de parede (local)", "", CE_LOCAL_CANTO_PAREDE,
+            Coeficiente(d, "canto de parede (local)", "", cpe_par,
                         f"faixa ≈ 0,2·b = {fmt(0.2 * b)} m junto aos cantos", True,
-                        "NBR 6123, Tabela 4 (manual, Tabela 16.2)"),
-            Coeficiente(d, "borda de telhado (local)", "", CE_LOCAL_BORDA_TELHADO,
+                        "NBR 6123:2023, Tabela 6 (c_pe médio)"),
+            Coeficiente(d, "borda de telhado (local)", "", borda,
                         f"faixa ≈ 0,15·b = {fmt(0.15 * b)} m nas bordas", True,
-                        "NBR 6123, Tabela 5 (manual, Tabela 5.7)"),
-            Coeficiente(d, "cumeeira e cantos de telhado (local)", "", CE_LOCAL_CUMEEIRA,
+                        "NBR 6123:2023, Tabela 7 (c_pe médio)"),
+            Coeficiente(d, "cumeeira e cantos de telhado (local)", "", min(borda, CE_LOCAL_CUMEEIRA),
                         f"faixa ≈ 0,15·b = {fmt(0.15 * b)} m", True,
-                        "NBR 6123, Tabela 5 (manual, Tabela 5.7)"),
+                        "NBR 6123:2023, Tabela 7 (c_pe médio) e manual, Tabela 5.7"),
         ]
     obs.append("Os coeficientes marcados como locais valem só para telhas, fixações e "
                "elementos de vedação; não devem ser usados no dimensionamento da "
@@ -1056,16 +1238,18 @@ class VentoGalpao:
 
 def pressoes_galpao(b: float, a: float, h: float, theta_graus: float,
                     V0=None, cidade=None, categoria="II", classe="B",
-                    z: Optional[float] = None, S1: float = 1.0, grupo: int = 2,
+                    z: Optional[float] = None, S1: float = 1.0,
+                    grupo: Union[int, str] = GRUPO_S3_PADRAO,
                     aberturas="duas faces opostas",
                     razao_areas: Optional[float] = None,
                     ce_face_abertura: Optional[float] = None,
                     S2: Optional[float] = None,
-                    casos_cpi: Optional[Sequence[CasoCpi]] = None) -> VentoGalpao:
+                    casos_cpi: Optional[Sequence[CasoCpi]] = None,
+                    S3: Optional[float] = None) -> VentoGalpao:
     """Vento sobre um galpão de duas águas, do V₀ às pressões por superfície.
 
-    Junta as etapas da NBR 6123: V₀ → S₁·S₂·S₃ → V_k → q = 0,613·V_k² →
-    C_e (Tabelas 4 e 5) e C_pi (item 6.2) → p = (C_e − C_pi)·q, em kN/m², para
+    Junta as etapas da NBR 6123:2023: V₀ → S₁·S₂·S₃ → V_k → q = 0,613·V_k² →
+    C_e (Tabelas 6 e 7) e C_pi (item 6.2) → p = (C_e − C_pi)·q, em kN/m², para
     as duas direções de vento e para cada caso de C_pi.
 
     Parâmetros principais (m, graus, m/s)
@@ -1075,7 +1259,9 @@ def pressoes_galpao(b: float, a: float, h: float, theta_graus: float,
     categoria, classe     rugosidade do terreno e dimensão da edificação (S₂);
     z                     altura de referência de S₂; por omissão a altura da
                           cumeeira, h + (b/2)·tg θ, a favor da segurança;
-    S1, grupo             fator topográfico e grupo do fator estatístico S₃;
+    S1, grupo             fator topográfico e grupo do fator estatístico S₃
+                          (Tabela 4; 3 = indústrias, comércio, residências);
+    S3                    sobrepõe o S₃ do grupo (o valor que a tela guarda);
     aberturas             situação de permeabilidade (ver `coeficiente_pressao_interna`);
     S2                    sobrepõe o S₂ calculado (o Capítulo 16 do manual, por
                           exemplo, adota o valor a 10 m para toda a estrutura);
@@ -1093,9 +1279,15 @@ def pressoes_galpao(b: float, a: float, h: float, theta_graus: float,
     if z is None:
         z = h + (b / 2.0) * math.tan(math.radians(float(theta_graus)))
     s2 = fator_s2(cat, cl, z) if S2 is None else float(S2)
-    s3 = fator_s3(grupo)
-    if isinstance(grupo, str):                      # o rótulo do grupo vira o número
-        grupo = next(g for g, (v, _) in GRUPOS_S3.items() if abs(v - s3) < 1e-9)
+    if S3 is not None:
+        s3 = float(S3)
+        if s3 <= 0:
+            raise ErroDeDados(f"S₃ = {fmt(s3, 2)} deve ser positivo")
+        grupo = grupo_do_s3(s3)                     # 0 quando não é valor da Tabela 4
+    else:
+        s3 = fator_s3(grupo)
+        if isinstance(grupo, str):                  # o rótulo do grupo vira o número
+            grupo = grupo_do_s3(s3)
     vk = velocidade_caracteristica(v0, S1, s2, s3)
     q = pressao_dinamica(vk)
 
@@ -1118,9 +1310,11 @@ def pressoes_galpao(b: float, a: float, h: float, theta_graus: float,
               conta=(f"{fmt(b_s2, 2)} · {fmt(FR_S2[cl], 2)} · ({fmt(z, 1)}/10)"
                      f"<sup>{fmt(p_s2, 3)}</sup>" if S2 is None else "valor adotado"),
               valor=fmt(s2, 3), norma="NBR 6123, item 5.3 e Tabela 1"),
-        Passo(f"Fator estatístico (grupo {grupo})", formula="S<sub>3</sub>",
-              conta=GRUPOS_S3[int(grupo)][1], valor=fmt(s3, 2),
-              norma="NBR 6123, item 5.4 e Tabela 3"),
+        Passo(f"Fator estatístico (grupo {grupo})" if grupo else "Fator estatístico (valor informado)",
+              formula="S<sub>3</sub>",
+              conta=(GRUPOS_S3[int(grupo)][1] + f" (T<sub>p</sub> = {RETORNO_S3[int(grupo)]} anos)")
+              if grupo else "valor adotado no projeto (não é um dos grupos da Tabela 4)",
+              valor=fmt(s3, 2), norma="NBR 6123:2023, item 5.4 e Tabela 4"),
         Passo("Velocidade característica",
               formula="V<sub>k</sub> = V<sub>0</sub>·S<sub>1</sub>·S<sub>2</sub>·S<sub>3</sub>",
               conta=f"{fmt(v0, 1)} × {fmt(S1, 2)} × {fmt(s2, 3)} × {fmt(s3, 2)}",
@@ -1132,8 +1326,8 @@ def pressoes_galpao(b: float, a: float, h: float, theta_graus: float,
         Passo("Proporções da edificação",
               formula="h/b · a/b · θ",
               conta=f"{fmt(h, 1)}/{fmt(b, 1)} · {fmt(a, 1)}/{fmt(b, 1)} · {fmt(theta_graus, 1)}°",
-              valor=f"h/b = {fmt(coef.h_b, 2)}; a/b = {fmt(coef.a_b, 2)}",
-              norma="NBR 6123, Tabelas 4 e 5"),
+              valor=f"h/b = {fmt(coef.h_b, 2)} (faixa {coef.faixa_h_b}); a/b = {fmt(coef.a_b, 2)}",
+              norma="NBR 6123:2023, Tabelas 6 e 7"),
         Passo("Coeficientes de pressão interna considerados", formula="C<sub>pi</sub>",
               conta=" e ".join(c.descricao for c in casos),
               valor=" / ".join(fmt(c.valor, 2) for c in casos),

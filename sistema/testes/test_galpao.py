@@ -221,6 +221,127 @@ def test_entrada_invalida_tem_mensagem_clara():
             raise AssertionError(f"entrada {ajuste} deveria ter sido recusada")
 
 
+# ------------------------------------------------ auditoria 30/09, leva 1 (C1, C3, C4, N1–N3)
+
+def test_vento_entra_em_toda_situacao_de_abertura():
+    """C1 — cada situação de abertura da tela gera os seus casos de vento no pórtico.
+
+    Antes os casos eram fixos em C_pi = +0,2 e −0,3 (duas faces opostas); qualquer outra
+    escolha não encontrava a pressão, devolvia 0,0 e o pórtico saía sem vento.
+    """
+    import pytest
+    from nucleo import cargas, galpao
+    referencia = None
+    for aberturas in cargas.ABERTURAS:
+        p = dimensionar(_cap16(aberturas=aberturas))
+        assert p.erros == [], (aberturas, p.erros)
+        vg = p.vento["objeto"]
+        casos = [c for c in p.esforcos["casos_modelo"] if c.startswith("C2")]
+        assert len(casos) == len(vg.casos_cpi) >= 1, (aberturas, casos)
+        assert p.cargas["succao_telhado"] < -0.3, (aberturas, p.cargas["succao_telhado"])
+        assert p.esforcos["pilar"]["M"] > 0
+        if aberturas == "duas faces opostas":
+            referencia = p
+    # portão aberto a barlavento: C_pi = +0,8 (o caso mais severo), com aviso, e a sucção
+    # do telhado é maior que a da situação padrão
+    p = dimensionar(_cap16(aberturas="abertura dominante a barlavento"))
+    assert [c.valor for c in p.vento["objeto"].casos_cpi] == [0.8]
+    assert any("C_pi = +0,8" in a for a in p.avisos)
+    assert p.cargas["succao_telhado"] < referencia.cargas["succao_telhado"]
+    # a sotavento: C_pi = C_e da face B (transversal) e D (longitudinal), e o vento
+    # entrando pela mesma abertura quando sopra do lado dela (+0,8)
+    p = dimensionar(_cap16(aberturas="abertura dominante a sotavento"))
+    coef = p.vento["objeto"].coeficientes
+    esperados = {coef.busca("parede lateral sotavento", "transversal").Ce,
+                 coef.busca("oitão sotavento", "longitudinal").Ce, 0.8}
+    assert {c.valor for c in p.vento["objeto"].casos_cpi} == esperados
+    # a pressão que falta é erro, nunca zero
+    p = dimensionar(_cap16())
+    p.vento["objeto"].pressoes = [x for x in p.vento["objeto"].pressoes
+                                  if "sotavento" not in x.superficie]
+    with pytest.raises(ErroDeDados, match="não encontrada"):
+        galpao._pressoes_criticas(p)
+
+
+def test_s3_da_tela_entra_no_vento():
+    """C3 — o S3 escolhido na tela (grupo da Tabela 4 da NBR 6123:2023) entra em V_k."""
+    p1 = dimensionar(_cap16())
+    p2 = dimensionar(_cap16(fator_estatistico=0.95))
+    assert p1.vento["S3"] == 1.0 and p1.vento["grupo"] == 3
+    assert p2.vento["S3"] == 0.95 and p2.vento["grupo"] == 4
+    assert abs(p2.vento["q"] / p1.vento["q"] - 0.95 ** 2) < 1e-6
+    p3 = dimensionar(_cap16(fator_estatistico=1.11))
+    assert p3.vento["grupo"] == 1 and p3.esforcos["pilar"]["M"] > p1.esforcos["pilar"]["M"]
+
+
+def test_sobrecarga_minima_da_6120_no_telhado_plano():
+    """C4 — telhado com 2 % de inclinação: a sobrecarga mínima é 0,50 kN/m², não 0,25."""
+    p = dimensionar(_cap16(inclinacao=2.0, sobrecarga_cobertura=0.25))
+    assert p.erros == [], p.erros
+    assert p.cargas["sobrecarga"] == 0.50 and p.cargas["sobrecarga_minima_6120"] == 0.50
+    assert any("NBR 6120" in a for a in p.avisos)
+    p = dimensionar(_cap16())                      # 10 % → 0,25 vale
+    assert p.cargas["sobrecarga"] == 0.25
+    assert not any("NBR 6120" in a for a in p.avisos)
+
+
+def test_terca_e_banzo_verificados_com_1_kN():
+    """C4 — a carga concentrada de 1 kN (NBR 6120, 6.4) entra na terça e no banzo superior."""
+    p = dimensionar(_cap16())
+    t = p.elemento("Terça")
+    assert t.resultado.dados["Mx_concentrada_kNcm"] > 0
+    assert "carga_concentrada" in [h.chave for h in t.resultado.hipoteses]
+    # vão curto: o 1 kN governa o momento de gravidade da terça
+    p = dimensionar(_cap16(espacamento_porticos=3.0, comprimento=30.0))
+    t = p.elemento("Terça")
+    d = t.resultado.dados
+    assert d["Mx_concentrada_kNcm"] > d["Mx_gravidade_distribuida_kNcm"]
+    assert d["Mx_gravidade_kNcm"] == d["Mx_concentrada_kNcm"]
+    # na tesoura, a combinação C6 com o 1 kN no meio de cada painel do banzo
+    p = dimensionar(_cap16(tipo_portico="treliçado", base_rotulada=False))
+    assert p.erros == [], p.erros
+    assert "C6 carga concentrada" in p.esforcos["casos_modelo"]
+    assert "C6 carga concentrada" not in dimensionar(_cap16()).esforcos["casos_modelo"]
+
+
+def test_pilar_com_k_igual_a_1_e_cb_do_diagrama():
+    """N3 — K = 1,0 com os esforços amplificados por B2; C_b lido no diagrama."""
+    p = dimensionar(_cap16())
+    pil = p.elemento("Pilar")
+    assert pil.geometria["Kx"] == 1.0
+    assert 1.0 <= pil.geometria["Cb"] <= 3.0
+    viga = p.elemento("Viga do pórtico")
+    assert 1.0 <= viga.geometria["Cb"] <= 3.0
+    p = dimensionar(_cap16(base_rotulada=False))
+    assert p.elemento("Pilar").geometria["Kx"] == 1.0
+    p = dimensionar(_cap16(tipo_portico="treliçado", base_rotulada=False))
+    assert p.elemento("Pilar").geometria["Kx"] == 1.0
+    assert 1.0 <= p.elemento("Pilar").geometria["Cb"] <= 3.0
+
+
+def test_viga_com_a_normal_da_mesma_combinacao():
+    """N2 — a viga do pórtico é verificada à flexão composta com o N do caso que dá o M."""
+    p = dimensionar(_cap16())
+    viga = p.elemento("Viga do pórtico")
+    assert viga.esforcos["N_kN"] > 0 and viga.esforcos["tipo_N"] in ("compressao", "tracao")
+    assert any("Interação" in v.titulo for v in viga.resultado.verificacoes)
+    assert "flexao_composta" in [h.chave for h in viga.resultado.hipoteses]
+
+
+def test_base_recebe_o_arrancamento():
+    """N1 — a base é conferida com o N mínimo (arrancamento na sucção), não só a compressão."""
+    p = dimensionar(_cap16())
+    pil = p.elemento("Pilar")
+    assert pil.esforcos["N_min_kN"] < pil.esforcos["N_kN"]
+    assert pil.esforcos["caso_N_min"].startswith("C2")
+    assert p.base is not None
+    assert abs(p.base.dados["N_Sd_min"] - pil.esforcos["N_min_kN"]) < 0.05
+    if pil.esforcos["N_min_kN"] < 0:
+        assert p.base.dados["T_arrancamento"] > 0
+        assert p.base.dados["T_chumbadores"] >= p.base.dados["T_arrancamento"]
+        assert p.base.dados["transferencia_horizontal"]["mecanismo"] != "atrito placa–grout"
+
+
 if __name__ == "__main__":
     falhas = 0
     for nome, fn in sorted(globals().items()):

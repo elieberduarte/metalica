@@ -67,7 +67,10 @@ class TestValoresBatemComOCalculo(BaseMapa):
         self.assertAlmostEqual(viga["M"] * so["fator_viga"], esf["viga"]["M"] / 100.0, delta=0.5)
         self.assertAlmostEqual(viga["V"], esf["viga"]["V"], delta=0.5)
         self.assertAlmostEqual(pilar["M"] * so["fator_pilar"], esf["pilar"]["M"] / 100.0, delta=0.5)
-        self.assertAlmostEqual(pilar["N"] * so["B2"], esf["pilar"]["N"], delta=0.5)
+        # a normal do mapa é a maior em módulo; o dimensionamento separa a compressão (com B2)
+        # da tração — antes tomava o módulo, e a tração da sucção entrava como compressão
+        self.assertAlmostEqual(pilar["N"], max(esf["pilar"]["N_c"] / so["B2"], esf["pilar"]["N_t"]),
+                               delta=0.5)
 
     def test_viga_nao_conta_o_momento_da_misula(self):
         # a mísula tem seção maior e é verificada com a ligação de joelho; se entrasse

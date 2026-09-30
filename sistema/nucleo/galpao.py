@@ -78,10 +78,21 @@ def _cargas_permanentes(p: ProjetoGalpao):
         com_acessorios=True, instalacoes=d.carga_extra,
         valor_telha=valor_telha,
         valor_forro=d.carga_forro if d.carga_forro > 0 else None)
+    # NBR 6120:2019, item 6.4: a sobrecarga de cobertura sem acesso é 0,25 kN/m² só a
+    # partir de 3 % de inclinação; em telhado mais plano ela sobe até 0,50 (auditoria C4)
+    sc_min = cargas.sobrecarga_cobertura(cargas.inclinacao_em_pct(d.angulo_telhado))
+    sc = d.sobrecarga_cobertura
+    if sc < sc_min - 1e-9:
+        p.avisos.append(
+            "Sobrecarga de cobertura elevada de %s para %s kN/m²: mínimo da NBR 6120:2019 "
+            "(item 6.4) para a inclinação de %s %%."
+            % (fmt(sc, 2), fmt(sc_min, 2), fmt(cargas.inclinacao_em_pct(d.angulo_telhado), 1)))
+        sc = sc_min
     p.cargas = {
         "composicao": comp,
         "g_cobertura": comp.total,                       # kN/m²
-        "sobrecarga": d.sobrecarga_cobertura,
+        "sobrecarga": sc,
+        "sobrecarga_minima_6120": sc_min,
         "parcelas": [{"item": it.descricao, "valor": it.valor, "fonte": getattr(it, "fonte", "")}
                      for it in getattr(comp, "itens", [])],
         "passos": comp.passos() if hasattr(comp, "passos") else [],
@@ -94,15 +105,80 @@ def _vento(p: ProjetoGalpao):
     d = p.dados
     v0 = cargas.velocidade_basica(d.cidade) if d.cidade else d.v0
     altura_ref = d.altura_cumeeira
+    # o S3 da tela é o valor do grupo escolhido (NBR 6123:2023, Tabela 4); antes ele era
+    # lido e descartado, e o vento saía sempre com S3 = 1,00 (auditoria C3)
+    s3 = float(d.fator_estatistico or 1.0)
+    casos_cpi, razao = _casos_cpi_da_tela(p)
     vg = cargas.pressoes_galpao(
         b=d.vao, a=d.comprimento, h=d.altura_beiral, theta_graus=d.angulo_telhado,
         V0=v0, categoria=d.categoria_rugosidade, classe=d.classe, z=altura_ref,
-        S1=d.fator_topografico, aberturas=d.aberturas)
+        S1=d.fator_topografico, aberturas=d.aberturas, S3=s3,
+        casos_cpi=casos_cpi, razao_areas=razao)
     p.vento = {
-        "objeto": vg, "V0": v0, "S1": vg.S1, "S2": vg.S2, "S3": vg.S3,
+        "objeto": vg, "V0": v0, "S1": vg.S1, "S2": vg.S2, "S3": vg.S3, "grupo": vg.grupo,
         "Vk": vg.Vk, "q": vg.q, "tabela": vg.tabela(),
         "passos": getattr(vg, "passos", []),
     }
+
+
+def _casos_cpi_da_tela(p: ProjetoGalpao):
+    """Os casos de C_pi das situações de abertura que a tela oferece e que precisam de um
+    dado a mais (NBR 6123, item 6.2.5): devolve (casos_cpi, razao_areas).
+
+    * abertura dominante a barlavento — a tela não pede a razão de áreas; adota-se a
+      faixa mais severa (≥ 6 → C_pi = +0,8) e o projetista é avisado;
+    * abertura dominante a sotavento ou em face paralela — C_pi = C_e da face onde está
+      a abertura, lido dos próprios coeficientes do galpão (um caso por direção de vento).
+    As demais situações (duas faces opostas, quatro faces, estanque) ficam com os casos
+    padrão do módulo de cargas.
+    """
+    d = p.dados
+    k = cargas._chave(d.aberturas)
+    if "dominante" not in k and "portao" not in k:
+        return None, None
+    if "barlavento" in k:
+        p.avisos.append("Abertura dominante a barlavento sem a razão de áreas: adotado "
+                        "C_pi = +0,8 (razão ≥ 6, o caso mais severo da NBR 6123, item 6.2.5).")
+        return None, 6.0
+    coef = cargas.coeficientes_pressao_galpao(d.vao, d.comprimento, d.altura_beiral,
+                                              d.angulo_telhado)
+    if "sotavento" in k:
+        faces = [("parede lateral sotavento", "transversal", "B"),
+                 ("oitão sotavento", "longitudinal", "D")]
+        texto = "abertura dominante a sotavento"
+    else:
+        faces = [("parede lateral zona 1", "longitudinal", "A1/B1"),
+                 ("oitão zona 1", "transversal", "C1/D1")]
+        texto = "abertura dominante em face paralela ao vento"
+    casos = []
+    for sup, dire, letra in faces:
+        ce = coef.busca(sup, dire).Ce
+        casos.append(cargas.CasoCpi(ce, f"C_pi = {fmt(ce, 2)}",
+                                    f"{texto}: C_pi = C_e da face {letra} (vento {dire})",
+                                    "NBR 6123, item 6.2.5"))
+    # o vento sopra de qualquer direção (NBR 6123, 5.1): a mesma abertura fica a barlavento
+    # quando o vento vem pelo lado dela. Sem a razão de áreas, entra o caso mais severo
+    # (+0,8); sem ele, a cobertura saía quase sem sucção
+    casos += cargas.coeficiente_pressao_interna("abertura dominante a barlavento", razao_areas=6.0)
+    p.avisos.append("Abertura dominante: além de C_pi = C_e da face (%s), foi verificado o vento "
+                    "entrando pela abertura, C_pi = +0,8 (razão de áreas ≥ 6, NBR 6123, item "
+                    "6.2.5)." % texto)
+    # dois valores iguais viram um caso só
+    unicos = []
+    for c in casos:
+        if not any(abs(c.valor - u.valor) < 1e-9 for u in unicos):
+            unicos.append(c)
+    return unicos, None
+
+
+def _rotulos_cpi(casos) -> list:
+    """Um rótulo curto por caso de C_pi: "cpi+" e "cpi-" quando são dois (o maior e o
+    menor), senão o próprio valor ("cpi+0.5"). São os sufixos dos casos de vento do
+    modelo ("Vcpi+", "Vcpi-")."""
+    vals = [c.valor for c in casos]
+    if len(casos) == 2 and vals[0] != vals[1]:
+        return ["cpi+" if v == max(vals) else "cpi-" for v in vals]
+    return ["cpi%+.1f" % v for v in vals]
 
 
 def _pressao(p: ProjetoGalpao, superficie: str, direcao: str, cpi: float) -> float:
@@ -119,7 +195,14 @@ def _pressao(p: ProjetoGalpao, superficie: str, direcao: str, cpi: float) -> flo
 
 
 def _pressoes_criticas(p: ProjetoGalpao) -> dict:
-    """As pressões que governam o pórtico: sucção máxima no telhado e pressão lateral."""
+    """As pressões que governam o pórtico: sucção máxima no telhado e pressão lateral,
+    uma entrada por caso de C_pi da situação de aberturas escolhida.
+
+    Antes os casos eram fixos em +0,2 e −0,3 (as "duas faces opostas"), e qualquer outra
+    escolha da tela — estanque, quatro faces, portão aberto — não encontrava a pressão e
+    devolvia 0,0: o pórtico era calculado sem vento (auditoria C1). Agora a superfície
+    que faltar levanta erro em vez de zerar.
+    """
     vg = p.vento["objeto"]
     tab = vg.tabela()
 
@@ -133,13 +216,16 @@ def _pressoes_criticas(p: ProjetoGalpao) -> dict:
                      if l["direção"] == direcao and abs(l["Cpi"] - cpi) < 1e-6
                      and any(c in l["superfície"].lower() for c in chaves)]
         if not cands:
-            return 0.0
+            raise ErroDeDados(
+                "pressão de vento não encontrada para %s (vento %s, C_pi = %s): o pórtico "
+                "não pode ser calculado sem essa pressão." % (chaves[0], direcao, fmt(cpi, 2)))
         return min(cands) if escolher == "min" else max(cands)
 
     saida = {}
-    for cpi, rot in ((0.2, "cpi+"), (-0.3, "cpi-")):
+    for caso, rot in zip(vg.casos_cpi, _rotulos_cpi(vg.casos_cpi)):
+        cpi = caso.valor
         saida[rot] = {
-            "cpi": cpi,
+            "cpi": cpi, "descricao": caso.nome,
             "telhado_barlavento": pega(["barlavento (ef)", "água de barlavento", "telhado barlavento"],
                                        "transversal", cpi),
             "telhado_sotavento": pega(["sotavento (gh)", "água de sotavento", "telhado sotavento"],
@@ -149,6 +235,9 @@ def _pressoes_criticas(p: ProjetoGalpao) -> dict:
             "parede_sotavento": pega(["parede lateral sotavento", "sotavento (b)"],
                                      "transversal", cpi),
         }
+    if not saida:
+        raise ErroDeDados("nenhum caso de pressão interna para a situação de aberturas "
+                          "'%s'." % p.dados.aberturas)
     return saida
 
 
@@ -167,11 +256,10 @@ def _tercas(p: ProjetoGalpao):
     n_linhas = n_esp + 1
 
     g = p.cargas["g_cobertura"]              # kN/m²
-    sc = d.sobrecarga_cobertura
+    sc = p.cargas["sobrecarga"]
     crit = _pressoes_criticas(p)
-    # sucção mais severa entre os dois Cpi
-    succao = min(crit["cpi+"]["telhado_barlavento"], crit["cpi-"]["telhado_barlavento"],
-                 crit["cpi+"]["telhado_sotavento"], crit["cpi-"]["telhado_sotavento"])
+    # sucção mais severa entre todos os casos de C_pi
+    succao = min(min(c["telhado_barlavento"], c["telhado_sotavento"]) for c in crit.values())
 
     vao = d.espacamento_porticos
     # gravidade: 1,25·g + 1,5·sc  (permanente de pequena variabilidade, NBR 8800 Tab. 1)
@@ -181,44 +269,39 @@ def _tercas(p: ProjetoGalpao):
     q_suc = max(0.0, (1.4 * abs(succao) - 1.0 * g) * esp)
     q_serv_grav = (g + sc) * esp
     q_serv_suc = max(0.0, (abs(succao) - g) * esp)
+    # NBR 6120:2019, item 6.4: 1 kN concentrado no meio do vão, só com a permanente
+    # (auditoria C4) — governa nos vãos curtos
+    comuns = dict(inclinacao=d.angulo_telhado, carga_servico_gravidade=q_serv_grav,
+                  carga_servico_succao=q_serv_suc,
+                  carga_concentrada=1.5 * cargas.CARGA_CONCENTRADA_COBERTURA,
+                  carga_permanente=1.25 * g * esp)
+
+    def busca(correntes, apenas_aprovados, perfis=None):
+        return nbr14762.dimensionar_terca(
+            aco=d.aco_tercas, vao=vao, carga_gravidade=q_grav, carga_succao=q_suc,
+            correntes=correntes, apenas_aprovados=apenas_aprovados, perfis=perfis, **comuns)
 
     forcada = d.perfil_forcado("perfil_terca")
-    opcoes = nbr14762.dimensionar_terca(
-        aco=d.aco_tercas, vao=vao, carga_gravidade=q_grav, carga_succao=q_suc,
-        correntes=(d.linhas_correntes,) if d.linhas_correntes else (0, 1, 2),
-        inclinacao=d.angulo_telhado,
-        carga_servico_gravidade=q_serv_grav, carga_servico_succao=q_serv_suc,
-        apenas_aprovados=True)
+    correntes = (d.linhas_correntes,) if d.linhas_correntes else (0, 1, 2)
+    opcoes = busca(correntes, True)
     catalogo_tercas = list(opcoes)
     if forcada is not None:
         # o perfil escolhido é verificado com as mesmas cargas; reprovado, ele fica e o
         # projetista vê a razão — a lista dos que passam continua disponível ao lado
-        opcoes = nbr14762.dimensionar_terca(
-            aco=d.aco_tercas, vao=vao, carga_gravidade=q_grav, carga_succao=q_suc,
-            correntes=(d.linhas_correntes,) if d.linhas_correntes else (0, 1, 2),
-            inclinacao=d.angulo_telhado, carga_servico_gravidade=q_serv_grav,
-            carga_servico_succao=q_serv_suc, apenas_aprovados=False, perfis=[forcada])
+        opcoes = busca(correntes, False, perfis=[forcada])
         opcoes.sort(key=lambda r: (not r.ok, r.razao))
         if opcoes and not opcoes[0].ok:
             p.avisos.append("A terça escolhida (%s) não passa (aproveitamento %.2f): veja os perfis "
                             "que passam na lista do elemento." % (forcada.nome, opcoes[0].razao))
     if not opcoes:
         # tenta liberar o número de correntes antes de desistir
-        opcoes = nbr14762.dimensionar_terca(
-            aco=d.aco_tercas, vao=vao, carga_gravidade=q_grav, carga_succao=q_suc,
-            correntes=(1, 2, 3), inclinacao=d.angulo_telhado,
-            carga_servico_gravidade=q_serv_grav, carga_servico_succao=q_serv_suc,
-            apenas_aprovados=True)
+        opcoes = busca((1, 2, 3), True)
         if opcoes:
             p.avisos.append(
                 f"Com {d.linhas_correntes} linha(s) de correntes nenhuma terça do catálogo "
                 f"atende; foram adotadas {opcoes[0].dados.get('n_correntes')} linha(s).")
     if not opcoes:
-        opcoes = nbr14762.dimensionar_terca(
-            aco=d.aco_tercas, vao=vao, carga_gravidade=q_grav, carga_succao=q_suc,
-            correntes=(1, 2, 3), inclinacao=d.angulo_telhado,
-            carga_servico_gravidade=q_serv_grav, carga_servico_succao=q_serv_suc,
-            apenas_aprovados=False)
+        opcoes = busca((1, 2, 3), False)
         opcoes.sort(key=lambda r: r.razao)
         p.avisos.append("Nenhuma terça do catálogo atende; foi adotada a de menor razão de "
                         "aproveitamento, que NÃO passa. Reduza o espaçamento entre pórticos "
@@ -351,7 +434,7 @@ def _carregar_portico(modelo, p: ProjetoGalpao, pilar: Perfil, viga: Perfil, pp=
     d = p.dados
     s = d.espacamento_porticos                      # largura de influência, m
     g = p.cargas["g_cobertura"]
-    sc = d.sobrecarga_cobertura
+    sc = p.cargas["sobrecarga"]
     crit = _pressoes_criticas(p)
 
     # peso próprio do pórtico, estimado pelos perfis adotados (kN/m na barra)
@@ -376,6 +459,17 @@ def _carregar_portico(modelo, p: ProjetoGalpao, pilar: Perfil, viga: Perfil, pp=
     # --- sobrecarga (projetada na horizontal) ---
     for b in barras_viga:
         modelo.distribuida("SC", b, -sc * s * M, "projetada_y")
+    # --- 1 kN concentrado no meio de cada barra do banzo superior (NBR 6120:2019, item
+    # 6.4: todo elemento isolado da cobertura; isolado das outras variáveis) — só faz
+    # sentido na treliça, onde o banzo é um elemento entre nós; na viga de alma cheia a
+    # distribuída governa de longe
+    if pp:
+        for b in barras_viga:
+            try:
+                modelo.concentrada("P1", b, -cargas.CARGA_CONCENTRADA_COBERTURA,
+                                   modelo.comprimento(b) / 2.0, "global_y")
+            except ErroDeDados:
+                continue
     # --- vento, um caso por coeficiente interno ---
     for rot, c in crit.items():
         caso = f"V{rot}"
@@ -434,11 +528,15 @@ def _analise_alma_cheia(p: ProjetoGalpao):
     pilar0 = _perfil_proximo(h_alvo)
 
     H = d.pe_direito * 100
-    Kx = 2.0 if d.base_rotulada else 1.5
+    # K = 1,0 no plano: os esforços chegam amplificados por B1/B2 (Anexo D da NBR 8800,
+    # com rigidez reduzida e forças nocionais), e nesse método o comprimento de
+    # flambagem é o real — o K = 2,0 de antes somava a 2ª ordem duas vezes (auditoria N3)
+    Kx = KX_COM_B2
     Ly = min(H, 300.0)
     historico = []
     Lb_viga = esp_terca
     res_viga = res_pilar = None
+    cb_viga = cb_pilar = 1.0
 
     for _ in range(6):
         modelo, env, combos = _rodar_analise(p, pilar0, viga0)
@@ -448,19 +546,21 @@ def _analise_alma_cheia(p: ProjetoGalpao):
         # inferior fica comprimida e quem trava sao as maos-francesas
         inverte = esf["viga"]["M_max"] * esf["viga"]["M_min"] < 0
         Lb_viga = max(esp_terca, min(d.vao * 100 / 4, 300.0)) if inverte else esp_terca
-        verificar_viga = (lambda perf, esf=esf, Lb=Lb_viga: nbr8800.verificar_viga(
-            perf, a, L=d.comprimento_agua * 100, M_Sd=esf["viga"]["M"],
-            V_Sd=esf["viga"]["V"], Lb=Lb, Cb=1.14,
-            limite="L/%d" % d.flecha_viga, q_servico=_q_servico_viga(p),
-            elemento="Viga do pórtico"))
+        # Cb pelo diagrama do caso que governa, no trecho destravado que contém o pico
+        # (NBR 8800, 5.4.2.3) — antes eram os 1,14 e 1,67 fixos (auditoria N3)
+        cb_viga = _cb_do_trecho(env, esf["viga"], Lb_viga)
+        cb_viga_c = _cb_do_trecho(env, _caso_c(esf["viga"]), Lb_viga)
+        cb_pilar = _cb_do_trecho(env, esf["pilar"], Ly)
+        verificar_viga = (lambda perf, esf=esf, Lb=Lb_viga, Cb=cb_viga, Cc=cb_viga_c:
+                          _verificar_viga_portico(perf, a, p, esf["viga"], Lb, Cb, Cc))
         res_viga = _menor_perfil(verificar_viga, altura_min=200, forcado=d.perfil_forcado("perfil_viga"))
 
         # pilar: flexo-compressao, com altura minima proxima a da viga para nao ficar
         # tao flexivel a ponto de empurrar todo o momento para a cumeeira
         h_min_pilar = max(200.0, achar_perfil(res_viga.perfil).d * 0.8)
-        verificar_pilar = (lambda perf, esf=esf: nbr8800.flexao_composta(
+        verificar_pilar = (lambda perf, esf=esf, Cb=cb_pilar: nbr8800.flexao_composta(
             perf, a, N_Sd=esf["pilar"]["N"], Mx_Sd=esf["pilar"]["M"],
-            Lx=H, Ly=Ly, Kx=Kx, Ky=1.0, Lb=Ly, Cb=1.67, elemento="Pilar"))
+            Lx=H, Ly=Ly, Kx=Kx, Ky=1.0, Lb=Ly, Cb=Cb, elemento="Pilar"))
         res_pilar = _menor_perfil(verificar_pilar, altura_min=h_min_pilar, forcado=d.perfil_forcado("perfil_pilar"))
 
         nova_viga = achar_perfil(res_viga.perfil)
@@ -507,32 +607,48 @@ def _analise_alma_cheia(p: ProjetoGalpao):
 
     # os W em volta do adotado, verificados nos esforços finais: é a lista que a tela
     # oferece para trocar o perfil sem sair do que passa
-    verificar_viga_final = (lambda perf: nbr8800.verificar_viga(
-        perf, a, L=d.comprimento_agua * 100, M_Sd=esf["viga"]["M"], V_Sd=esf["viga"]["V"],
-        Lb=Lb_viga, Cb=1.14, limite="L/%d" % d.flecha_viga, q_servico=_q_servico_viga(p),
-        elemento="Viga do pórtico"))
+    cb_viga = _cb_do_trecho(env, esf["viga"], Lb_viga)
+    cb_viga_c = _cb_do_trecho(env, _caso_c(esf["viga"]), Lb_viga)
+    cb_pilar = _cb_do_trecho(env, esf["pilar"], Ly)
+    verificar_viga_final = (lambda perf: _verificar_viga_portico(
+        perf, a, p, esf["viga"], Lb_viga, cb_viga, cb_viga_c))
     verificar_pilar_final = (lambda perf: nbr8800.flexao_composta(
         perf, a, N_Sd=esf["pilar"]["N"], Mx_Sd=esf["pilar"]["M"], Lx=H, Ly=Ly, Kx=Kx, Ky=1.0,
-        Lb=Ly, Cb=1.67, elemento="Pilar"))
+        Lb=Ly, Cb=cb_pilar, elemento="Pilar"))
+    # os perfis adotados são conferidos nos esforços da análise final (o laço pode ter
+    # parado num ciclo entre dois pares); o que não fecha por pouco sobe um degrau
+    res_viga = verificar_viga_final(achar_perfil(res_viga.perfil))
+    if not res_viga.ok and d.perfil_forcado("perfil_viga") is None:
+        res_viga = _menor_perfil(verificar_viga_final, altura_min=200, forcado=None)
+    res_pilar = verificar_pilar_final(achar_perfil(res_pilar.perfil))
+    if not res_pilar.ok and d.perfil_forcado("perfil_pilar") is None:
+        res_pilar = _menor_perfil(verificar_pilar_final,
+                                  altura_min=max(200.0, achar_perfil(res_viga.perfil).d * 0.8),
+                                  forcado=None)
     p.elementos.append(ElementoDimensionado(
         nome="Viga do pórtico", perfil=res_viga.perfil, material=d.aco_perfis,
         resultado=res_viga, alternativas=_alternativas_W(verificar_viga_final, res_viga.perfil),
         esforcos={"M_kNcm": round(esf["viga"]["M"], 1),
                   "M_kNm": round(esf["viga"]["M"] / 100, 1),
                   "V_kN": round(esf["viga"]["V"], 1),
+                  "N_kN": round(esf["viga"]["N"], 1),
+                  "tipo_N": esf["viga"]["tipo_N"],
                   "caso": esf["viga"].get("caso_M", "")},
-        geometria={"Lb_cm": round(Lb_viga, 1),
+        geometria={"Lb_cm": round(Lb_viga, 1), "Cb": round(cb_viga, 2),
                    "comprimento_m": round(d.comprimento_agua, 2),
                    "misula_m": d.comprimento_misula if d.com_misula else 0.0}))
     p.elementos.append(ElementoDimensionado(
         nome="Pilar", perfil=res_pilar.perfil, material=d.aco_perfis,
         resultado=res_pilar, alternativas=_alternativas_W(verificar_pilar_final, res_pilar.perfil),
         esforcos={"N_kN": round(esf["pilar"]["N"], 1),
+                  "N_tracao_kN": round(esf["pilar"]["N_t"], 1),
+                  "N_min_kN": round(esf["pilar"]["N_min"], 1),
+                  "caso_N_min": esf["pilar"].get("caso_N_min", ""),
                   "M_kNcm": round(esf["pilar"]["M"], 1),
                   "M_kNm": round(esf["pilar"]["M"] / 100, 1),
                   "V_kN": round(esf["pilar"]["V"], 1),
                   "caso": esf["pilar"].get("caso_M", "")},
-        geometria={"altura_m": d.pe_direito, "Kx": Kx, "Ly_cm": Ly}))
+        geometria={"altura_m": d.pe_direito, "Kx": Kx, "Ly_cm": Ly, "Cb": round(cb_pilar, 2)}))
 
     if desloc and desloc.get("razao", 0) > 1.0:
         _diagnostico_deslocamento(p, viga0, pilar0, desloc)
@@ -564,7 +680,7 @@ def _pilar_por_deslocamento(p: ProjetoGalpao, viga: Perfil, pilar: Perfil,
             if cand.nome != pilar.nome:
                 resultado = nbr8800.flexao_composta(
                     cand, aco, N_Sd=esf["pilar"]["N"], Mx_Sd=esf["pilar"]["M"],
-                    Lx=H, Ly=Ly, Kx=Kx, Ky=1.0, Lb=Ly, Cb=1.67, elemento="Pilar")
+                    Lx=H, Ly=Ly, Kx=Kx, Ky=1.0, Lb=Ly, Cb=1.0, elemento="Pilar")
             escolhido = cand
             return escolhido, resultado
         if cand.massa > pilar.massa * 2.5:
@@ -609,7 +725,7 @@ def _combinacoes_documentadas(p: ProjetoGalpao) -> list:
     """
     d = p.dados
     g = p.cargas["g_cobertura"]
-    sc = d.sobrecarga_cobertura
+    sc = p.cargas["sobrecarga"]
     succao = abs(p.cargas.get("succao_telhado", 0.0))
     acoes = [
         cargas.Acao("Peso próprio da cobertura", "permanente", g, subtipo="metálica"),
@@ -655,10 +771,83 @@ def _rodar_analise(p: ProjetoGalpao, pilar: Perfil, viga: Perfil):
     return modelo, env, combos
 
 
+#: Comprimento de flambagem no plano quando os esforços vêm amplificados por B1/B2
+#: (NBR 8800, item 4.9.4.3 e Anexo D): K = 1,0.
+KX_COM_B2 = 1.0
+
+
+def _x(extremo) -> float:
+    return float(getattr(extremo, "x", 0.0) or 0.0)
+
+
+def _normal_no_caso(env, rotulo: str, caso: str):
+    """(N_c, N_t) da barra no caso dado: a maior compressão e a maior tração (kN, ≥ 0)."""
+    try:
+        dN = env.resultados[caso].barra(rotulo).diagrama.N
+    except Exception:
+        return 0.0, 0.0
+    if not dN:
+        return 0.0, 0.0
+    return max(0.0, -min(dN)), max(0.0, max(dN))
+
+
+def _cb_do_trecho(env, esf: dict, Lb: float) -> float:
+    """C_b (NBR 8800, item 5.4.2.3) do trecho destravado de comprimento Lb que contém a
+    seção do momento máximo, lido no diagrama do caso que governa a barra. Sem diagrama
+    (ou Lb nulo) devolve 1,0, o valor a favor da segurança."""
+    rot, caso, x_pico = esf.get("barra_M", ""), esf.get("caso_M", ""), esf.get("x_M", 0.0)
+    try:
+        rb = env.resultados[caso].barra(rot)
+    except Exception:
+        return 1.0
+    L = float(rb.L or 0.0)
+    if Lb <= 0 or L <= 0:
+        return 1.0
+    Lb = min(Lb, L)
+    x0 = min(max(x_pico - Lb / 2.0, 0.0), L - Lb)
+    ms = [rb.esforcos(x0 + Lb * k / 4.0)[2] for k in range(5)]
+    return nbr8800.calcular_cb(ms)
+
+
+def _caso_c(ev: dict) -> dict:
+    """O caso de maior compressão da viga no formato que `_cb_do_trecho` lê."""
+    return {"barra_M": ev.get("barra_c", ""), "caso_M": ev.get("caso_c", ""), "x_M": ev.get("x_c", 0.0)}
+
+
+def _verificar_viga_portico(perf, a, p: ProjetoGalpao, ev: dict, Lb: float, cb: float, cb_c: float):
+    """A viga do pórtico nos dois casos que podem governar a interação N–M: o de maior
+    momento, com a normal dele (tração ou compressão), e o de maior compressão, com o
+    momento dele. Devolve o pior dos dois (auditoria N2)."""
+    d = p.dados
+    comum = dict(L=d.comprimento_agua * 100, V_Sd=ev["V"], Lb=Lb, Kx=KX_COM_B2,
+                 limite="L/%d" % d.flecha_viga, q_servico=_q_servico_viga(p),
+                 elemento="Viga do pórtico")
+    r = nbr8800.verificar_viga(perf, a, M_Sd=ev["M"], Cb=cb, N_Sd=ev["N"],
+                               tipo_axial=ev["tipo_N"], **comum)
+    r.dados["caso_verificado"] = ev.get("caso_M", "")
+    if ev.get("N_c", 0.0) > 0 and ev.get("caso_c") and ev.get("caso_c") != ev.get("caso_M"):
+        r2 = nbr8800.verificar_viga(perf, a, M_Sd=ev["M_c"], Cb=cb_c, N_Sd=ev["N_c"],
+                                    tipo_axial="compressao", **comum)
+        r2.dados["caso_verificado"] = ev["caso_c"]
+        if r2.razao > r.razao:
+            r2.hipotese("caso_da_viga",
+                        f"Governa o caso de maior compressão na viga ({ev['caso_c']}: "
+                        f"N = {fmt(ev['N_c'], 1)} kN, M = {fmt(ev['M_c'] / 100, 1)} kN·m), e não o de "
+                        f"maior momento ({ev.get('caso_M', '')}).")
+            return r2
+    return r
+
+
 def _extrair_esforcos(env) -> dict:
-    """Momentos e cortantes de projeto, considerando tambem os trechos de misula."""
+    """Momentos, cortantes e normais de projeto, considerando também os trechos de mísula.
+
+    A viga sai com a normal **do mesmo caso** que dá o momento (a interação N–M da
+    NBR 8800 é de uma combinação, não da envoltória — auditoria N2); o pilar sai com a
+    maior compressão, a maior tração e a menor compressão entre os casos, que é o que a
+    base precisa para o arrancamento e para o atrito (auditoria N1).
+    """
     def maior(rotulos, grandeza):
-        val, caso = 0.0, ""
+        val, caso, rot_, x_ = 0.0, "", "", 0.0
         for r in rotulos:
             try:
                 b = env.barra(r)
@@ -666,20 +855,59 @@ def _extrair_esforcos(env) -> dict:
                 continue
             for ext in (getattr(b, grandeza + "_max"), getattr(b, grandeza + "_min")):
                 if abs(_v(ext)) > abs(val):
-                    val, caso = _v(ext), _caso(ext)
-        return val, caso
+                    val, caso, rot_, x_ = _v(ext), _caso(ext), r, _x(ext)
+        return val, caso, rot_, x_
 
     # A viga é dimensionada pelo momento e pelo cortante **fora** da mísula: ali a seção
     # é maior, e o esforço daquele trecho é o que dimensiona a ligação de joelho, não a
     # viga. Por isso saem dois cortantes — o da viga e o do joelho, que a ligação usa.
     barras_viga = ["viga_esq", "viga_dir"]
-    M_viga, caso_v = maior(barras_viga, "M")
-    V_viga, _ = maior(barras_viga, "V")
-    V_joelho_, _ = maior(barras_viga + ["misula_esq", "misula_dir"], "V")
-    N_viga, _ = maior(["viga_esq", "viga_dir"], "N")
-    M_pil, caso_p = maior(["pilar_esq", "pilar_dir"], "M")
-    V_pil, _ = maior(["pilar_esq", "pilar_dir"], "V")
-    N_pil, _ = maior(["pilar_esq", "pilar_dir"], "N")
+    M_viga, caso_v, rot_v, x_v = maior(barras_viga, "M")
+    V_viga, _, _, _ = maior(barras_viga, "V")
+    V_joelho_, _, _, _ = maior(barras_viga + ["misula_esq", "misula_dir"], "V")
+    M_pil, caso_p, rot_p, x_p = maior(["pilar_esq", "pilar_dir"], "M")
+    V_pil, _, _, _ = maior(["pilar_esq", "pilar_dir"], "V")
+
+    # viga: a normal no caso que governa o momento (compressão ou tração)
+    Nc_v, Nt_v = _normal_no_caso(env, rot_v or "viga_esq", caso_v)
+    tipo_N = "compressao" if Nc_v >= Nt_v else "tracao"
+    N_viga = Nc_v if tipo_N == "compressao" else Nt_v
+    # e o caso de maior compressão na viga (a gravidade, em geral), com o momento dele: a
+    # interação N–M tem de valer nos dois, e o de maior momento costuma ser a sucção, com a
+    # viga tracionada
+    N_c2, caso_c = 0.0, ""
+    for r in barras_viga:
+        try:
+            b = env.barra(r)
+        except Exception:
+            continue
+        if -_v(b.N_min) > N_c2:
+            N_c2, caso_c = -_v(b.N_min), _caso(b.N_min)
+    M_c2, rot_c, x_c = 0.0, rot_v, 0.0
+    if caso_c:
+        for r in barras_viga:
+            try:
+                ext = env.resultados[caso_c].barra(r).diagrama.absoluto("M")
+            except Exception:
+                continue
+            if abs(ext.valor) > M_c2:
+                M_c2, rot_c, x_c = abs(ext.valor), r, ext.x
+
+    # pilar: compressão máxima (com o caso), tração máxima e a menor compressão
+    N_c, N_t, N_min, caso_Nc, caso_Nmin = 0.0, 0.0, math.inf, "", ""
+    for r in ("pilar_esq", "pilar_dir"):
+        try:
+            b = env.barra(r)
+        except Exception:
+            continue
+        vmax, vmin = _v(b.N_max), _v(b.N_min)          # + tração, − compressão
+        if -vmin > N_c:
+            N_c, caso_Nc = -vmin, _caso(b.N_min)
+        N_t = max(N_t, vmax)
+        if -vmax < N_min:
+            N_min, caso_Nmin = -vmax, _caso(b.N_max)    # negativo = arrancamento
+    if N_min is math.inf:
+        N_min = 0.0
 
     def extremo(rotulo):
         try:
@@ -692,12 +920,14 @@ def _extrair_esforcos(env) -> dict:
     pe = env.barra("pilar_esq")
     return {
         "viga": {"M": abs(M_viga), "V": abs(V_viga), "V_joelho": abs(V_joelho_),
-                 "N": abs(N_viga),
+                 "N": N_viga, "tipo_N": tipo_N,
                  "M_max": _v(ve.M_max), "M_min": _v(ve.M_min),
-                 "caso_M": caso_v, "resumo": ve.resumo()},
-        "pilar": {"M": abs(M_pil), "V": abs(V_pil), "N": abs(N_pil),
+                 "caso_M": caso_v, "barra_M": rot_v, "x_M": x_v, "resumo": ve.resumo(),
+                 "N_c": N_c2, "M_c": M_c2, "caso_c": caso_c, "barra_c": rot_c, "x_c": x_c},
+        "pilar": {"M": abs(M_pil), "V": abs(V_pil), "N": N_c, "N_c": N_c, "N_t": N_t,
+                  "N_min": N_min, "caso_N": caso_Nc, "caso_N_min": caso_Nmin,
                   "M_max": _v(pe.M_max), "M_min": _v(pe.M_min),
-                  "caso_M": caso_p, "resumo": pe.resumo()},
+                  "caso_M": caso_p, "barra_M": rot_p, "x_M": x_p, "resumo": pe.resumo()},
         "joelho": extremo("misula_esq") or extremo("pilar_esq"),
         "cumeeira": extremo("viga_esq"),
     }
@@ -811,8 +1041,10 @@ def _combinar(modelo, p: ProjetoGalpao, acoes) -> dict:
     modelo.caso("C1 gravidade")
     _somar(modelo, "C1 gravidade", {"PP": 1.25, "SC": 1.5})
     combos["C1 gravidade"] = "1,25·PP + 1,5·SC"
-    # C2 e C3: sucção com permanente favorável
-    for rot in ("cpi+", "cpi-"):
+    # C2 e C3: sucção com permanente favorável, um jogo por caso de C_pi que o vento
+    # trouxe (os casos "Vcpi…" do modelo)
+    rots = [c[1:] for c in modelo.casos if c.startswith("Vcpi")]
+    for rot in rots:
         nome = f"C2 sucção ({rot})"
         modelo.caso(nome)
         _somar(modelo, nome, {"PP": 1.0, f"V{rot}": 1.4})
@@ -822,13 +1054,20 @@ def _combinar(modelo, p: ProjetoGalpao, acoes) -> dict:
             modelo.caso(nome_c)
             _somar(modelo, nome_c, parcelas)
             combos[nome_c] = f"{texto} ({rot})"
+    # C6: a carga concentrada de 1 kN da NBR 6120 (item 6.4), só com a permanente
+    if "P1" in modelo.casos:
+        modelo.caso("C6 carga concentrada")
+        _somar(modelo, "C6 carga concentrada", {"PP": 1.25, "P1": 1.5})
+        combos["C6 carga concentrada"] = "1,25·PP + 1,5·P (1 kN no meio do painel)"
     # serviço, para flecha e deslocamento
     modelo.caso("S rara gravidade")
     _somar(modelo, "S rara gravidade", {"PP": 1.0, "SC": 1.0})
     combos["S rara gravidade"] = "PP + SC (serviço)"
-    modelo.caso("S vento")
-    _somar(modelo, "S vento", {"PP": 1.0, "Vcpi-": 0.3})
-    combos["S vento"] = "PP + 0,3·Vento (frequente)"
+    if rots:
+        rot_s = "cpi-" if "cpi-" in rots else rots[0]
+        modelo.caso("S vento")
+        _somar(modelo, "S vento", {"PP": 1.0, f"V{rot_s}": 0.3})
+        combos["S vento"] = "PP + 0,3·Vento (frequente)"
     _forcas_nocionais(modelo, [c for c in combos if c.startswith("C")])
     return combos
 
@@ -942,11 +1181,13 @@ def _amplificar_esforcos(esf: dict, so: dict) -> dict:
         e = esf.get(chave)
         if not e:
             continue
-        for g in ("M", "M_max", "M_min"):
+        for g in ("M", "M_max", "M_min", "M_c"):
             if g in e:
                 e[g] = e[g] * f
-        if chave == "pilar" and "N" in e:
-            e["N"] = e["N"] * so["B2"]
+        if chave == "pilar":
+            for g in ("N", "N_c"):
+                if g in e:
+                    e[g] = e[g] * so["B2"]
     for chave in ("joelho",):
         if chave in esf and isinstance(esf[chave], (int, float)):
             esf[chave] = esf[chave] * fp
@@ -1027,7 +1268,7 @@ def _perfil_para_momento(M_Sd: float, aco_nome: str, minimo: Perfil = None,
 def _q_servico_viga(p: ProjetoGalpao) -> float:
     d = p.dados
     g = p.cargas["g_cobertura"]
-    return (g + d.sobrecarga_cobertura) * d.espacamento_porticos / 100.0   # kN/cm
+    return (g + p.cargas["sobrecarga"]) * d.espacamento_porticos / 100.0   # kN/cm
 
 
 # ------------------------------------------------ 6b. pórtico treliçado
@@ -1165,7 +1406,8 @@ def _esforcos_da_tesoura(env, modelo, t, d: DadosGalpao) -> dict:
                 e["V"] = max(e["V"], abs(_v(ext)))
         saida[papel] = e
 
-    ep = {"N_c": 0.0, "N_t": 0.0, "M": 0.0, "V": 0.0, "caso_M": "", "caso_N": ""}
+    ep = {"N_c": 0.0, "N_t": 0.0, "N_min": math.inf, "M": 0.0, "V": 0.0, "caso_M": "",
+          "caso_N": "", "caso_N_min": "", "barra_M": "", "x_M": 0.0}
     for rot in ((modelo.dados or {}).get("barras_pilar") or []):
         try:
             eb = env.barra(rot)
@@ -1177,11 +1419,17 @@ def _esforcos_da_tesoura(env, modelo, t, d: DadosGalpao) -> dict:
                 ep["N_c"], ep["caso_N"] = -v, _caso(ext)
             elif v > ep["N_t"]:
                 ep["N_t"] = v
+        # a menor compressão (ou o arrancamento, negativo) entre os casos: é o N mínimo
+        # que a base usa no atrito e no chumbador (auditoria N1)
+        if -_v(eb.N_max) < ep["N_min"]:
+            ep["N_min"], ep["caso_N_min"] = -_v(eb.N_max), _caso(eb.N_max)
         for ext in (eb.M_max, eb.M_min):
             if abs(_v(ext)) > ep["M"]:
-                ep["M"], ep["caso_M"] = abs(_v(ext)), _caso(ext)
+                ep["M"], ep["caso_M"], ep["barra_M"], ep["x_M"] = abs(_v(ext)), _caso(ext), rot, _x(ext)
         for ext in (eb.V_max, eb.V_min):
             ep["V"] = max(ep["V"], abs(_v(ext)))
+    if ep["N_min"] is math.inf:
+        ep["N_min"] = 0.0
     # 2ª ordem no pilar (a tesoura é triangulada: as barras dela não se amplificam)
     pilares = (modelo.dados or {}).get("barras_pilar") or []
     if pilares:
@@ -1238,8 +1486,9 @@ def _analise_tesoura(p: ProjetoGalpao):
     trava, n_travas = opcoes_trava[0]
     perfis = _perfis_semente(t, d)
     H = d.pe_direito * 100
-    Kx = 2.0 if d.base_rotulada else 1.5
+    Kx = KX_COM_B2                    # os esforços do pilar chegam amplificados por B2
     Ly_pilar = min(H, 300.0)
+    cb_pilar = 1.0
 
     def fora_do_plano(papel: str, e: dict) -> float:
         if papel == "banzo superior":
@@ -1296,10 +1545,11 @@ def _analise_tesoura(p: ProjetoGalpao):
                     % (papel, fmt(altura_max(papel, e), 0, "mm")))
             novos[papel] = perf
         ep = esf["pilar"]
+        cb_pilar = _cb_do_trecho(env, ep, Ly_pilar)
         r_pilar = _menor_perfil(
-            lambda perf: nbr8800.flexao_composta(
+            lambda perf, Cb=cb_pilar: nbr8800.flexao_composta(
                 perf, a, N_Sd=ep["N_c"], Mx_Sd=ep["M"], Lx=H, Ly=Ly_pilar,
-                Kx=Kx, Ky=1.0, Lb=Ly_pilar, Cb=1.67, elemento="Pilar"),
+                Kx=Kx, Ky=1.0, Lb=Ly_pilar, Cb=Cb, elemento="Pilar"),
             altura_min=200.0, forcado=d.perfil_forcado("perfil_pilar"))
         novos["pilar"] = achar_perfil(r_pilar.perfil)
 
@@ -1401,17 +1651,20 @@ def _analise_tesoura(p: ProjetoGalpao):
                        "Lx_cm": round(e["L"], 1), "Ly_cm": round(Ly, 1),
                        "comprimento_total_m": round(t.comprimento_total(papel) / 100, 2)}))
 
+    cb_pilar = _cb_do_trecho(env, ep, Ly_pilar)
     verificar_pilar_final = (lambda perf: nbr8800.flexao_composta(
         perf, a, N_Sd=ep["N_c"], Mx_Sd=ep["M"], Lx=H, Ly=Ly_pilar,
-        Kx=Kx, Ky=1.0, Lb=Ly_pilar, Cb=1.67, elemento="Pilar"))
+        Kx=Kx, Ky=1.0, Lb=Ly_pilar, Cb=cb_pilar, elemento="Pilar"))
     r_pilar = verificar_pilar_final(perfis["pilar"])
     p.elementos.append(ElementoDimensionado(
         nome="Pilar", perfil=perfis["pilar"].nome, material=d.aco_perfis, resultado=r_pilar,
         alternativas=_alternativas_W(verificar_pilar_final, perfis["pilar"].nome),
         esforcos={"N_kN": round(ep["N_c"], 1), "N_tracao_kN": round(ep["N_t"], 1),
+                  "N_min_kN": round(ep["N_min"], 1), "caso_N_min": ep.get("caso_N_min", ""),
                   "M_kNcm": round(ep["M"], 1), "M_kNm": round(ep["M"] / 100, 1),
                   "V_kN": round(ep["V"], 1), "caso": ep["caso_M"]},
-        geometria={"altura_m": d.pe_direito, "Kx": Kx, "Ly_cm": Ly_pilar}))
+        geometria={"altura_m": d.pe_direito, "Kx": Kx, "Ly_cm": Ly_pilar,
+                   "Cb": round(cb_pilar, 2)}))
 
     _travamento(p, t, esf, n_travas, trava)
     if n_travas > 6:
@@ -1530,8 +1783,7 @@ def _contraventamentos(p: ProjetoGalpao):
     # parcela do vento no oitão que vai à cobertura: metade da parede, até meia altura
     # do frontão
     area_oitao = d.vao * (d.altura_beiral + (d.altura_cumeeira - d.altura_beiral) / 2) / 2
-    q_oitao = max(abs(crit["cpi+"]["parede_barlavento"]),
-                  abs(crit["cpi-"]["parede_barlavento"]))
+    q_oitao = max(abs(c["parede_barlavento"]) for c in crit.values())
     F_total = 1.4 * q_oitao * area_oitao
     cortante = F_total / 2                      # reação em cada beiral
 
@@ -1779,6 +2031,13 @@ def _base(p: ProjetoGalpao):
     N = pilar.esforcos.get("N_kN", 0.0)
     V = pilar.esforcos.get("V_kN", 0.0)
     M = 0.0 if d.base_rotulada else pilar.esforcos.get("M_kNcm", 0.0)
+    # a menor compressão entre as combinações (negativa = arrancamento na sucção): é ela
+    # que vale no atrito da base e no chumbador, não a compressão de gravidade
+    # (auditoria N1). Sem o valor no elemento, fica a compressão máxima, como antes.
+    N_min = pilar.esforcos.get("N_min_kN")
+    if N_min is None:
+        N_t = pilar.esforcos.get("N_tracao_kN", 0.0) or 0.0
+        N_min = -N_t if N_t > 0 else N
 
     quantidades = (2, 4) if d.base_rotulada else (4, 6, 8)
     diametros = ('3/4"', '7/8"', '1"', '1.1/8"', '1.1/4"')
@@ -1803,7 +2062,7 @@ def _base(p: ProjetoGalpao):
                 for h_ef in (30.0, 40.0, 50.0, 60.0, 75.0):
                     try:
                         r = bases.dimensionar_base(
-                            perf, N_Sd=N, M_Sd=M, H_Sd=V,
+                            perf, N_Sd=N, M_Sd=M, H_Sd=V, N_Sd_min=N_min,
                             fck=mat.concreto(d.fck_MPa).fck,
                             pedestal=(B + sobra, L + sobra), aco_placa=d.aco_chapas,
                             n_chumbadores=n, diametro_chumbador=diam, h_ef=h_ef,

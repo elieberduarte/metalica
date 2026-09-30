@@ -576,5 +576,28 @@ def test_memoria_de_calculo_presente():
         assert v.norma, f"{v.titulo} sem norma"
 
 
+# ------------------------------------------------ auditoria 30/09, leva 1 (N1)
+
+def test_base_com_arrancamento():
+    """N1 — N_Sd_min negativo (sucção): a tração vai aos chumbadores e o atrito é zero."""
+    r = bases.dimensionar_base(W310x79, N_Sd=300.0, M_Sd=0.0, H_Sd=20.0, N_Sd_min=-50.0,
+                               fck=2.5, pedestal=(70.0, 90.0), diametro_chumbador='1"',
+                               n_chumbadores=4, B=35.0, L=55.0, h_ef=45.0)
+    assert r.dados["N_Sd_min"] == -50.0
+    assert r.dados["T_arrancamento"] == 50.0 and r.dados["T_chumbadores"] == 50.0
+    assert r.dados["transferencia_horizontal"]["mecanismo"] != "atrito placa–grout"
+    assert "arrancamento" in [h.chave for h in r.hipoteses]
+    tracao = [v for v in r.verificacoes if "tração" in v.titulo.lower() and v.Sd > 0]
+    assert tracao, [v.titulo for v in r.verificacoes]
+    # engastada: a tração do binário soma com o arrancamento
+    r = bases.dimensionar_base(W310x79, N_Sd=300.0, M_Sd=6000.0, H_Sd=20.0, N_Sd_min=-50.0,
+                               fck=2.5, pedestal=(70.0, 90.0), diametro_chumbador='1"',
+                               n_chumbadores=4, B=35.0, L=55.0, f_chumbador=23.5, h_ef=45.0)
+    assert r.dados["T_chumbadores"] >= r.dados["T"] + 50.0 - 1e-6
+    # a compressão máxima tem de ser positiva; o arrancamento entra pelo N mínimo
+    with pytest.raises(ErroDeDados):
+        bases.dimensionar_base(W310x79, N_Sd=-10.0, M_Sd=0.0)
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

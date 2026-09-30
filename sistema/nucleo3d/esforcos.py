@@ -29,6 +29,7 @@ from typing import Dict, List, Optional
 import numpy as np
 
 from nucleo3d.analitico import analitico
+from nucleo import cargas as _cargas
 
 E_ACO = 200e6          # kN/m²
 G_ACO = 77e6           # kN/m²
@@ -79,8 +80,9 @@ S2_2023 = {
     40: {"I": (1.20, 1.19, 1.17), "II": (1.13, 1.11, 1.09), "III": (1.08, 1.07, 1.04), "IV": (1.02, 0.99, 0.96), "V": (0.91, 0.89, 0.86)},
     50: {"I": (1.21, 1.21, 1.19), "II": (1.15, 1.13, 1.12), "III": (1.10, 1.09, 1.06), "IV": (1.04, 1.02, 0.99), "V": (0.94, 0.93, 0.89)},
 }
-#: Tabela 4 — fator estatístico S3 por grupo (1: abriga substâncias inflamáveis; 3: comércio)
-S3_2023 = {1: 1.11, 2: 1.06, 3: 1.00, 4: 0.95, 5: 0.83}
+#: Tabela 4 — fator estatístico S3 por grupo (1: abriga substâncias inflamáveis; 3: comércio),
+#: a mesma tabela do módulo de cargas (NBR 6123:2023)
+S3_2023 = {g: v for g, (v, _) in _cargas.GRUPOS_S3.items()}
 #: Tabela 10 — telhados múltiplos simétricos de tramos iguais (h ≤ a'), θ = 5°: vento
 #: perpendicular às cumeeiras (α = 0°), água a barlavento e a sotavento de cada tramo
 TAB10_ALFA0 = {"a": -0.9, "b": -0.6, "c": -0.4, "d": -0.3, "m": -0.3, "n": -0.3, "x": -0.3, "z": -0.3}

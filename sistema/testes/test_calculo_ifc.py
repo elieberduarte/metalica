@@ -227,3 +227,30 @@ def test_sem_detalhamento():
     doc = Documento(nome="vazio")
     with pytest.raises(Exception):
         calculo_ifc.calcular(doc, {}, {})
+
+
+# ------------------------------------------------ auditoria 30/09, leva 1 (C3, C4)
+
+def test_terca_do_ifc_com_1_kN_e_grupo_do_s3(modelo):
+    """C4 — a terça de cobertura do cálculo do IFC é verificada também com 1 kN no meio do
+    vão (NBR 6120, 6.4); C3 — o grupo 2 gravado pela tabela de 1988 vira o grupo 3."""
+    doc, nomes = modelo
+    par = {"v0": 35.0, "grupo": 2}
+    r = calculo_ifc.calcular(doc, nomes, par)
+    assert par["grupo"] == 3 and par["norma_s3"] == "NBR 6123:2023"   # gravado no dicionário do app
+    assert any("tabela de 1988" in a for a in r["avisos"])
+    ent = r["elementos"]["P10"]["entrada"]
+    assert ent["P_d"] == 1.5 and ent["g_d"] > 0
+    # vão curto: o 1 kN governa; a verificação é a mesma na triagem de perfis
+    from nucleo.perfis import banco
+    ue = banco().candidatos("Ue")[0]
+    w = banco().candidatos("I", "W")[0]
+    for perfil in (ue, w):
+        sem = calculo_ifc._verificar_terca_cobertura(perfil, "ASTM A36", 1.5, 0.3, 0.2, 0, 10.0,
+                                                     0.2, 0.1, 180)
+        com = calculo_ifc._verificar_terca_cobertura(perfil, "ASTM A36", 1.5, 0.3, 0.2, 0, 10.0,
+                                                     0.2, 0.1, 180, P_d=1.5, g_d=0.2)
+        assert com.razao > sem.razao, perfil.nome
+        assert "carga_concentrada" in [h.chave for h in com.hipoteses]
+    # a sobrecarga mínima da NBR 6120 no telhado plano (até 2 %: 0,50 kN/m²)
+    assert calculo_ifc.cargas.sobrecarga_cobertura(1.5) == 0.50

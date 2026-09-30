@@ -1267,15 +1267,72 @@ def coeficiente_kv(h: float, tw: float, a_enrij: float = None) -> Tuple[float, P
                      norma="NBR 8800, item 5.4.3.1")
 
 
+def cisalhamento_tubo_circular(perfil, aco, V_Sd: float = 0.0, Lv: float = None,
+                               elemento: str = "Viga") -> Verificacao:
+    """Força cortante resistente de seção tubular circular — NBR 8800:2024, item 5.4.3.6.
+
+        V_Rd = 0,5·τ_cr·A_g / γ_a1
+        τ_cr = máx[ 1,60·E / (√(L_v/D)·(D/t)^(5/4)) ; 0,78·E / (D/t)^(3/2) ] ≤ 0,60·f_y
+
+    `Lv` (cm) é a distância entre as seções de força cortante máxima e nula; `D` o
+    diâmetro externo e `t` a espessura da parede. Sem `Lv` a função levanta
+    ErroDeDados: a fórmula da alma plana não vale para o tubo (auditoria N4).
+    """
+    p = _perfil_obj(perfil)
+    ac = _aco(aco)
+    fy = ac.fy
+    if Lv is None or Lv <= 0:
+        raise ErroDeDados(f"cortante do tubo circular {p.nome}: informe L_v (cm), a distância "
+                          "entre a seção de cortante máximo e a de cortante nulo "
+                          "(NBR 8800:2024, item 5.4.3.6)")
+    D = p.d / 10.0
+    t = (p.tw or p.tf) / 10.0
+    if D <= 0 or t <= 0:
+        raise ErroDeDados(f"diâmetro ou espessura nulos no tubo {p.nome}")
+    Ag = p.A
+    v = Verificacao("Cortante — seção tubular circular",
+                    norma="NBR 8800:2024, item 5.4.3.6", Sd=V_Sd, unidade="kN")
+    tau1 = 1.60 * E / (math.sqrt(Lv / D) * (D / t) ** 1.25)
+    tau2 = 0.78 * E / (D / t) ** 1.5
+    tau_lim = 0.60 * fy
+    tau = min(max(tau1, tau2), tau_lim)
+    v.passo("Tensão crítica pela esbeltez e pelo comprimento L<sub>v</sub>",
+            formula="τ<sub>cr</sub> = 1,60·E / [√(L<sub>v</sub>/D)·(D/t)<sup>5/4</sup>]",
+            conta=f"1,60 × {fmt(E, 0)} / [√({fmt(Lv, 1)}/{fmt(D, 2)}) × ({fmt(D, 2)}/{fmt(t, 3)})<sup>5/4</sup>]",
+            valor=fmt(tau1, 2, "kN/cm²"), norma="item 5.4.3.6")
+    v.passo("Tensão crítica só pela esbeltez",
+            formula="τ<sub>cr</sub> = 0,78·E / (D/t)<sup>3/2</sup>",
+            conta=f"0,78 × {fmt(E, 0)} / ({fmt(D, 2)}/{fmt(t, 3)})<sup>3/2</sup>",
+            valor=fmt(tau2, 2, "kN/cm²"), norma="item 5.4.3.6")
+    v.passo("Tensão crítica adotada (a maior das duas, limitada a 0,60·f<sub>y</sub>)",
+            formula="τ<sub>cr</sub> = mín[máx(τ<sub>1</sub>, τ<sub>2</sub>); 0,60·f<sub>y</sub>]",
+            conta=f"mín[máx({fmt(tau1, 2)}, {fmt(tau2, 2)}); {fmt(tau_lim, 2)}]",
+            valor=fmt(tau, 2, "kN/cm²"), norma="item 5.4.3.6")
+    v.Rd = 0.5 * tau * Ag / GAMA_A1
+    v.passo("Força cortante resistente de cálculo",
+            formula="V<sub>Rd</sub> = 0,5·τ<sub>cr</sub>·A<sub>g</sub>/γ<sub>a1</sub>",
+            conta=f"0,5 × {fmt(tau, 2)} × {fmt(Ag, 2)} / {fmt(GAMA_A1)}",
+            valor=fmt(v.Rd, 1, "kN"), norma="item 5.4.3.6")
+    v.observacao = (f"D/t = {D / t:.1f}; L_v = {Lv:.0f} cm; "
+                    + ("τ_cr limitada pelo escoamento (0,60·f_y)" if tau >= tau_lim - 1e-9
+                       else "τ_cr pela flambagem da parede")).replace(".", ",")
+    return v
+
+
 def cisalhamento(perfil, aco, V_Sd: float = 0.0, a_enrij: float = None,
-                 Aw: float = None, elemento: str = "Viga") -> Verificacao:
+                 Aw: float = None, elemento: str = "Viga", Lv: float = None) -> Verificacao:
     """Força cortante resistente — NBR 8800, item 5.4.3.
 
     Vpl = 0,60·Aw·fy com Aw = d·tw; λ = h/tw, λp = 1,10√(kv·E/fy) e
     λr = 1,37√(kv·E/fy); três regimes (plástico, inelástico e elástico).
     `a_enrij` = espaçamento dos enrijecedores transversais, em cm.
+
+    Tubo circular vai para `cisalhamento_tubo_circular` (item 5.4.3.6), que precisa de
+    `Lv`; a fórmula da alma plana não se aplica a ele.
     """
     p = _perfil_obj(perfil)
+    if _circular(p):
+        return cisalhamento_tubo_circular(p, aco, V_Sd=V_Sd, Lv=Lv, elemento=elemento)
     ac = _aco(aco)
     fy = ac.fy
     Aw = p.Aw if Aw is None else Aw
@@ -1544,32 +1601,71 @@ def verificar_viga(perfil, aco, L: float, q_Sd: float = 0.0, P_Sd: float = 0.0,
                    Cb: float = 1.0, limite: Union[str, float] = "L/350",
                    caso: str = "biapoiada_distribuida", a_enrij: float = None,
                    contraflecha: float = 0.0, fabricacao: str = "laminado",
+                   N_Sd: float = 0.0, tipo_axial: str = "compressao",
+                   Lx: float = None, Kx: float = 1.0, Ly: float = None, Ky: float = 1.0,
+                   Lv: float = None,
                    elemento: str = "Viga") -> Resultado:
     """Verificação completa de uma viga: flexão, cortante e flecha.
 
     L em cm; q em kN/cm; P em kN; momentos em kN·cm. `Lb = None` adota
     Lb = L (nenhuma contenção lateral intermediária), a favor da segurança.
+
+    Com `N_Sd` (kN, da **mesma combinação** que o momento) a flexão é substituída pela
+    flexão composta do item 5.5.1.2, com `Lx` (por omissão L) e `Ly` (por omissão Lb)
+    como comprimentos de flambagem — é o caso da viga de pórtico, que trabalha
+    comprimida pelo empuxo dos pilares (auditoria N2).
+
+    `Lv` (cm) é a distância entre as seções de cortante máximo e nulo, exigida pelo
+    cortante do tubo circular (item 5.4.3.6); sem ele, no tubo, vem do caso de carga
+    (L/2 na biapoiada, L no balanço) ou da relação 2·M_Sd/V_Sd quando os esforços são
+    informados diretamente.
     """
     p = _perfil_obj(perfil)
     a = _aco(aco)
     if L <= 0:
         raise ErroDeDados("o vão L deve ser positivo (cm)")
     M_calc, V_calc = esforcos_viga(caso, L, q_Sd, P_Sd)
+    esforcos_dados = M_Sd is not None or V_Sd is not None
     M_Sd = M_calc if M_Sd is None else M_Sd
     V_Sd = V_calc if V_Sd is None else V_Sd
     Lb_ef = L if Lb is None else Lb
 
     r = Resultado(elemento, perfil=p.nome, material=a.nome)
-    res_flex = flexao(p, a, M_Sd=M_Sd, Lb=Lb_ef, Cb=Cb, fabricacao=fabricacao)
+    if N_Sd:
+        Lx_ef = L if Lx is None else Lx
+        Ly_ef = Lb_ef if Ly is None else Ly
+        if tipo_axial == "tracao":
+            # a esbeltez da barra tracionada (5.2.8) é com o raio de giração mínimo, e o
+            # comprimento que vale para ele é o destravado fora do plano (as terças)
+            Lx_ef = Ly_ef
+        res_flex = flexao_composta(p, a, N_Sd=abs(N_Sd), Mx_Sd=M_Sd, tipo_axial=tipo_axial,
+                                   Lx=Lx_ef, Ly=Ly_ef,
+                                   Kx=Kx, Ky=Ky, Lb=Lb_ef, Cb=Cb, fabricacao=fabricacao,
+                                   elemento=elemento)
+        r.hipotese("flexao_composta",
+                   f"A viga leva, na combinação que dá o momento, a força axial de "
+                   f"{tipo_axial} N<sub>Sd</sub> = {fmt(abs(N_Sd), 1)} kN: a flexão é verificada "
+                   "junto com ela pela interação do item 5.5.1.2 da NBR 8800, com "
+                   f"K<sub>x</sub>·L<sub>x</sub> = {fmt(Kx * (L if Lx is None else Lx), 0)} cm no "
+                   f"plano e L<sub>y</sub> = {fmt(Lb_ef if Ly is None else Ly, 0)} cm fora dele.")
+    else:
+        res_flex = flexao(p, a, M_Sd=M_Sd, Lb=Lb_ef, Cb=Cb, fabricacao=fabricacao)
     for v in res_flex.verificacoes:
         r.add(v)
-    r.add(cisalhamento(p, a, V_Sd=V_Sd, a_enrij=a_enrij))
+    if Lv is None and _circular(p):
+        if esforcos_dados:
+            Lv = min(L, 2.0 * abs(M_Sd) / abs(V_Sd)) if V_Sd else L
+            r.hipotese("Lv", f"L<sub>v</sub> = 2·M<sub>Sd</sub>/V<sub>Sd</sub> = {fmt(Lv, 0)} cm "
+                             "(diagrama de cortante linear entre o máximo e o zero).")
+        else:
+            Lv = L if caso.startswith("balanco") else L / 2.0
+    r.add(cisalhamento(p, a, V_Sd=V_Sd, a_enrij=a_enrij, Lv=Lv))
     if q_servico or P_servico:
         r.add(flecha(p, L, caso=caso, q=q_servico, P=P_servico, limite=limite,
                      contraflecha=contraflecha))
     r.dados.update(res_flex.dados)
-    r.dados.update({"M_Sd": M_Sd, "V_Sd": V_Sd, "L": L, "Lb": Lb_ef,
-                    "massa": p.massa, "caso": caso})
+    r.dados.update({"M_Sd": M_Sd, "V_Sd": V_Sd, "N_Sd": abs(N_Sd), "L": L, "Lb": Lb_ef,
+                    "Cb": Cb, "massa": p.massa, "caso": caso})
     if Lb is None:
         r.dados["aviso_Lb"] = ("Lb adotado igual ao vão (sem contenção lateral "
                                "intermediária); informe Lb se houver travamento")
