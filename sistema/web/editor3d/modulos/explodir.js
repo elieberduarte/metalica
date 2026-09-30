@@ -78,6 +78,7 @@ export class MetodosExplodir {
       delete c.id;
       c.inicio = j.inicio; c.fim = j.fim;
       c.recorte_inicio = 0; c.recorte_fim = 0;
+      c.cortes_inicio = []; c.cortes_fim = [];
       nova = criar(c);
     } else if (ents.every(e => e.tipo === 'solido')) {
       // na ordem dos trechos, quando vieram de um explodir

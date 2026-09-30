@@ -970,9 +970,207 @@ def malha_barra(barra: Barra) -> Tuple[List[Ponto], List[List[int]]]:
     if util <= TOL:
         raise ErroDeDados(f"barra {barra.nome or barra.id}: os recortes consomem "
                           f"todo o comprimento ({L:.0f} mm).")
+    if tem_corte_no_angulo(barra):
+        u, v, w = base_local(d, barra.rotacao)
+        f0, f1 = alturas_de_corte(barra, u, v, w)
+        externo, internos = _normalizar_contorno(secao_com_furos(barra.perfil))
+        r = _prisma_cortado(externo, internos, f0, f1)
+        if r is not None:
+            local, faces = r
+            return [somar(ini, somar(_mult(u, x), somar(_mult(v, y), _mult(w, z))))
+                    for x, y, z in local], faces
+        # o corte comeria a peça (a barra foi mexida depois do encaixe): fica a ponta reta
     s = extrudar(secao_com_furos(barra.perfil), d, util, barra.rotacao,
                  origem=somar(ini, _mult(d, r0)))
     return s.vertices, s.faces
+
+
+# ---- o corte no ângulo (o encaixe de fábrica) -----------------------------------------
+# Cada ponta é o maior (no início) ou o menor (no fim) de alguns planos; no triedro local da
+# barra (origem no início, z no eixo, x/y da seção) cada plano vira uma altura
+# z(x, y) = a·x + b·y + c. Um plano só é o corte em meia-esquadria (a ponta deitada na face
+# do banzo); dois são o bico (a face do banzo e a do montante vizinho). A tampa é a seção
+# repartida onde cada plano manda, e a lateral quebra onde a ponta vira de plano.
+
+def tem_corte_no_angulo(barra) -> bool:
+    return bool(getattr(barra, "cortes_inicio", None) or getattr(barra, "cortes_fim", None))
+
+
+def _z(f, x: float, y: float) -> float:
+    return f[0] * x + f[1] * y + f[2]
+
+
+def _distintas(fs):
+    res = []
+    for f in fs:
+        if not any(abs(f[0] - g[0]) < 1e-9 and abs(f[1] - g[1]) < 1e-9 and abs(f[2] - g[2]) < 1e-6
+                   for g in res):
+            res.append(f)
+    return res
+
+
+def alturas_de_corte(barra: Barra, u=None, v=None, w=None):
+    """As pontas da barra como alturas z(x, y) no triedro local: (as do início, as do fim).
+    Cada plano de `cortes_*` entra como uma inclinada; a ponta reta (recorte), como altura
+    constante — na ponta com corte no ângulo, só quando o recorte existe (o plano pode passar
+    do nó: a meia-esquadria na face do banzo sai metade para cada lado dele). A peça fica
+    acima da maior do início e abaixo da menor do fim."""
+    if u is None:
+        u, v, w = base_local(barra.direcao, barra.rotacao or 0.0)
+    L = barra.comprimento
+    r0 = max(0.0, float(barra.recorte_inicio or 0.0))
+    r1 = max(0.0, float(barra.recorte_fim or 0.0))
+    c0, c1 = getattr(barra, "cortes_inicio", None), getattr(barra, "cortes_fim", None)
+    f0 = [(0.0, 0.0, r0)] if (r0 > 0 or not c0) else []
+    f1 = [(0.0, 0.0, L - r1)] if (r1 > 0 or not c1) else []
+    for lista, destino, base in ((c0, f0, 0.0), (c1, f1, L)):
+        for c in lista or ():
+            try:
+                n = _v(c["normal"])
+                p = _v(c.get("ponto") or (0.0, 0.0, 0.0))
+            except (KeyError, TypeError, ValueError, AttributeError):
+                continue
+            nn = math.sqrt(produto_escalar(n, n))
+            if nn < TOL or not _finito(n, p):
+                continue
+            nx, ny, nz = (produto_escalar(n, u) / nn, produto_escalar(n, v) / nn,
+                          produto_escalar(n, w) / nn)
+            if abs(nz) < 0.1:                   # plano quase paralelo ao eixo: não corta a ponta
+                continue
+            px, py, pz = produto_escalar(p, u), produto_escalar(p, v), produto_escalar(p, w) + base
+            destino.append((-nx / nz, -ny / nz, (nx * px + ny * py + nz * pz) / nz))
+    return _distintas(f0 or [(0.0, 0.0, r0)]), _distintas(f1 or [(0.0, 0.0, L - r1)])
+
+
+def _recortar_convexo(poli, a: float, b: float, c: float):
+    """a parte do polígono convexo com a·x + b·y + c ≥ 0 (Sutherland–Hodgman)"""
+    out = []
+    n = len(poli)
+    for i in range(n):
+        P, Q = poli[i], poli[(i + 1) % n]
+        fp = a * P[0] + b * P[1] + c
+        fq = a * Q[0] + b * Q[1] + c
+        if fp >= 0:
+            out.append(P)
+        if (fp >= 0) != (fq >= 0):
+            t = fp / (fp - fq)
+            out.append((P[0] + t * (Q[0] - P[0]), P[1] + t * (Q[1] - P[1])))
+    return out
+
+
+def _pedacos(tri, fs, maior: bool):
+    """o triângulo repartido pela altura que manda em cada pedaço: [(polígono, altura)]"""
+    if len(fs) == 1:
+        return [(list(tri), fs[0])]
+    s = 1.0 if maior else -1.0
+    res = []
+    for k, fk in enumerate(fs):
+        poli = list(tri)
+        for j, fj in enumerate(fs):
+            if j != k:
+                poli = _recortar_convexo(poli, s * (fk[0] - fj[0]), s * (fk[1] - fj[1]),
+                                         s * (fk[2] - fj[2]))
+                if len(poli) < 3:
+                    break
+        if len(poli) >= 3 and abs(area_assinada(poli)) > 1e-9:
+            res.append((poli, fk))
+    return res
+
+
+def _tampas(externo, internos, f0, f1):
+    """os pedaços das duas tampas: ([(polígono, altura)] do início, os do fim)"""
+    plano = [p for anel in [externo] + list(internos) for p in anel]
+    ini, fim = [], []
+    for (a, b, c) in triangular_com_furos(externo, internos):
+        tri = [plano[a], plano[b], plano[c]]
+        if area_assinada(tri) < 0:
+            tri.reverse()
+        ini += _pedacos(tri, f0, True)
+        fim += _pedacos(tri, f1, False)
+    return ini, fim
+
+
+def _prisma_cortado(externo, internos, f0, f1):
+    """(vértices no triedro local, faces) da barra com as pontas cortadas; None quando o
+    corte come a peça em algum ponto (menos de 1 mm entre as pontas)"""
+    aneis = [externo] + list(internos)
+    verts: List[Ponto] = []
+    idx: Dict[tuple, int] = {}
+
+    def vid(x, y, z):
+        k = (round(x, 4), round(y, 4), round(z, 4))
+        i = idx.get(k)
+        if i is None:
+            i = idx[k] = len(verts)
+            verts.append((x, y, z))
+        return i
+
+    def F0(x, y):
+        return max(_z(f, x, y) for f in f0)
+
+    def F1(x, y):
+        return min(_z(f, x, y) for f in f1)
+
+    def quebras(fs, P, Q):
+        ss = {0.0, 1.0}
+        for k in range(len(fs)):
+            for j in range(k + 1, len(fs)):
+                g0 = _z(fs[k], *P) - _z(fs[j], *P)
+                g1 = _z(fs[k], *Q) - _z(fs[j], *Q)
+                if g0 * g1 < 0:
+                    ss.add(g0 / (g0 - g1))
+        return [(P[0] + s * (Q[0] - P[0]), P[1] + s * (Q[1] - P[1])) for s in sorted(ss)]
+
+    faces: List[List[int]] = []
+    for anel in aneis:                                   # as laterais, quebradas onde a ponta vira
+        m = len(anel)
+        for i in range(m):
+            P, Q = anel[i], anel[(i + 1) % m]
+            baixo, cima = quebras(f0, P, Q), quebras(f1, P, Q)
+            for x, y in baixo + cima:
+                if F1(x, y) - F0(x, y) < 1.0:
+                    return None
+            # a face lateral é plana (a aresta da seção × o eixo) e convexa: um polígono só,
+            # sem emenda em T com as tampas
+            faces.append([vid(x, y, F0(x, y)) for x, y in baixo] +
+                         [vid(x, y, F1(x, y)) for x, y in reversed(cima)])
+    ini, fim = _tampas(externo, internos, f0, f1)
+    for poli, f in fim:                                  # tampa do fim: normal para +z
+        ids = [vid(x, y, _z(f, x, y)) for x, y in poli]
+        faces += [[ids[0], ids[i], ids[i + 1]] for i in range(1, len(ids) - 1)]
+    for poli, f in ini:                                  # tampa do início: para −z
+        ids = [vid(x, y, _z(f, x, y)) for x, y in poli]
+        faces += [[ids[i + 1], ids[i], ids[0]] for i in range(1, len(ids) - 1)]
+    return verts, faces
+
+
+def comprimentos_da_barra(barra: Barra) -> Tuple[float, float]:
+    """(comprimento médio, comprimento de corte) da peça, em mm: o médio é o volume sobre a
+    seção (é o que pesa); o de corte, a maior distância entre as pontas (é o que se tira da
+    barra). Sem corte no ângulo, os dois são o eixo menos os recortes."""
+    reto = barra.comprimento - max(0.0, float(barra.recorte_inicio or 0.0)) \
+        - max(0.0, float(barra.recorte_fim or 0.0))
+    if not tem_corte_no_angulo(barra):
+        return reto, reto
+    try:
+        f0, f1 = alturas_de_corte(barra)
+        externo, internos = _normalizar_contorno(secao_com_furos(barra.perfil))
+        ini, fim = _tampas(externo, internos, f0, f1)
+    except Exception:                                    # noqa: BLE001 — perfil fora do banco
+        return reto, reto
+    area = sum(area_contorno(p) for p, _f in fim)
+    if area <= TOL or _prisma_cortado(externo, internos, f0, f1) is None:
+        return reto, reto
+
+    def integral(pedacos):
+        s = 0.0
+        for p, f in pedacos:
+            cx, cy = centroide_contorno(p)
+            s += area_contorno(p) * _z(f, cx, cy)
+        return s
+    medio = (integral(fim) - integral(ini)) / area
+    corte = max(_z(f, x, y) for p, f in fim for x, y in p) - min(_z(f, x, y) for p, f in ini for x, y in p)
+    return medio, corte
 
 
 def contorno_furo(x: float, y: float, diametro: float,
@@ -1089,8 +1287,7 @@ def volume_malha(vertices: Sequence[Ponto], faces: Sequence[Sequence[int]]) -> f
 def peso_barra(barra: Barra) -> float:
     """Peso da barra pelo perfil do catálogo, em kg (massa linear × comprimento)."""
     p = resolver_perfil(barra.perfil)
-    L = (barra.comprimento - max(0.0, barra.recorte_inicio)
-         - max(0.0, barra.recorte_fim)) / 1000.0
+    L = comprimentos_da_barra(barra)[0] / 1000.0
     massa = p.massa or (p.A * 0.785 if p.A else 0.0)
     return massa * L
 
@@ -1253,6 +1450,12 @@ def _transformar(entidade, f_ponto, f_vetor=None):
     if isinstance(novo, Barra):
         novo.inicio = f_ponto(_v(novo.inicio))
         novo.fim = f_ponto(_v(novo.fim))
+        for lista in (novo.cortes_inicio, novo.cortes_fim):     # o corte no ângulo gira junto
+            for c in lista or ():
+                if c.get("normal"):
+                    c["normal"] = list(normalizar(f_vetor(_v(c["normal"]))))
+                if c.get("ponto"):
+                    c["ponto"] = list(f_vetor(_v(c["ponto"])))
     elif isinstance(novo, Chapa):
         novo.origem = f_ponto(_v(novo.origem))
         novo.eixo_x = normalizar(f_vetor(_v(novo.eixo_x)))

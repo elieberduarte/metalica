@@ -75,6 +75,7 @@ from nucleo3d.modelo import (Barra, Chapa, Documento, Entidade, Grupo, Ponto,
 # a forma e a orientação das seções são do módulo de geometria; importadas,
 # nunca copiadas, para o IFC não divergir do que o editor desenha
 from nucleo3d.geometria import base_local
+from nucleo3d import geometria as _geo
 from nucleo3d.geometria import resolver_perfil as _resolver_geo
 from nucleo3d.geometria import secao as _secao_geo
 
@@ -815,8 +816,17 @@ class _Exportador:
         origem = tuple(barra.inicio[i] + z[i] * (barra.recorte_inicio or 0)
                        - deslocamento[i] for i in range(3))
         perfil_ref, p = _perfil_ifc(self.arq, barra.perfil)
-        solido = self._extrusao(perfil_ref, comp)
-        forma = self._forma([solido], "SweptSolid", barra)
+        cortada = self._barra_cortada(barra, perfil_ref) if _geo.tem_corte_no_angulo(barra) else None
+        if cortada:
+            # o corte no ângulo: a extrusão cobre as pontas e os planos tiram o que sobra
+            # (IfcBooleanClippingResult com IfcHalfSpaceSolid, como o Tekla e o TecnoMETAL gravam)
+            solido, comp_medio = cortada
+            origem = tuple(barra.inicio[i] - deslocamento[i] for i in range(3))
+            forma = self._forma([solido], "Clipping", barra)
+            comp = comp_medio
+        else:
+            solido = self._extrusao(perfil_ref, comp)
+            forma = self._forma([solido], "SweptSolid", barra)
         placement = self._placement(pai, origem, z, x)
         classe, predefinido = _classe_barra(barra)
         self.atual = self.raiz(classe, _texto(barra.nome or barra.perfil),
@@ -839,6 +849,32 @@ class _Exportador:
                 self._q("IFCQUANTITYWEIGHT", "GrossWeight", self.unidades["kg"], peso),
             ], self.atual)
         return self.atual
+
+    def _barra_cortada(self, barra: Barra, perfil_ref: str):
+        """(sólido recortado, comprimento médio) da barra com `cortes_*`, no triedro dela com a
+        origem no início; None quando o corte come a peça (fica a extrusão reta)"""
+        try:
+            f0, f1 = _geo.alturas_de_corte(barra)
+            externo, internos = _geo._normalizar_contorno(_geo.secao_com_furos(barra.perfil))
+        except Exception:                                   # noqa: BLE001 — perfil fora do banco
+            return None
+        if _geo._prisma_cortado(externo, internos, f0, f1) is None:
+            return None
+        z0 = min(_geo._z(f, x_, y_) for f in f0 for x_, y_ in externo)
+        z1 = max(_geo._z(f, x_, y_) for f in f1 for x_, y_ in externo)
+        solido = self._extrusao(perfil_ref, z1 - z0, origem=(0.0, 0.0, z0))
+        for f, do_fim in [(f, False) for f in f0] + [(f, True) for f in f1]:
+            a, b, c = f
+            if abs(a) < 1e-12 and abs(b) < 1e-12 and abs(c - (z1 if do_fim else z0)) < 1e-6:
+                continue                                    # a própria ponta da extrusão
+            n = (a, b, -1.0) if do_fim else (-a, -b, 1.0)   # para dentro da peça
+            k = math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
+            n = (n[0] / k, n[1] / k, n[2] / k)
+            plano = self.arq.add(f"IFCPLANE({self.arq.eixo3((0.0, 0.0, c), n)})")
+            # AgreementFlag .T.: a normal aponta para fora do meio-espaço — o que sai é o de fora
+            meio = self.arq.add(f"IFCHALFSPACESOLID({plano},.T.)")
+            solido = self.arq.add(f"IFCBOOLEANCLIPPINGRESULT(.DIFFERENCE.,{solido},{meio})")
+        return solido, _geo.comprimentos_da_barra(barra)[0]
 
     # ---- chapa ----
     def _chapa(self, chapa: Chapa, pai: str, deslocamento: Ponto):

@@ -669,6 +669,10 @@ export class Cena {
   // ---- geometria de cada tipo ----
 
   _geometriaBarra(b) {
+    if (temCorteNoAngulo(b)) {
+      const cortada = this._geometriaBarraCortada(b);
+      if (cortada) return cortada;
+    }
     const L = comprimentoDaBarra(b);
     const util = Math.max(1, L - (b.recorte_inicio || 0) - (b.recorte_fim || 0));
     const chave = `barra|${b.perfil}|${util.toFixed(2)}`;
@@ -685,6 +689,27 @@ export class Cena {
                b.inicio[2] + t[2] * (b.recorte_inicio || 0)];
     const m = new THREE.Matrix4().makeBasis(vet(u), vet(v), vet(t));
     m.setPosition(o[0], o[1], o[2]);
+    return { geom, matriz: m, chave };
+  }
+
+  /** A barra com corte no ângulo (`cortes_inicio`/`cortes_fim`, o encaixe de fábrica): a mesma
+   *  receita de `geometria._prisma_cortado` no Python, no triedro da barra com a origem no
+   *  início. A chave leva as alturas das pontas: peças com o mesmo corte dividem a malha. */
+  _geometriaBarraCortada(b) {
+    const base = baseDaBarra(b.inicio, b.fim, b.rotacao);
+    const [f0, f1] = alturasDeCorte(b, base);
+    const chave = `barra|${b.perfil}|corte|` + [f0, f1].map(fs => fs.map(f =>
+      `${f[0].toFixed(5)},${f[1].toFixed(5)},${f[2].toFixed(2)}`).join(';')).join('|');
+    let geom = this.cacheGeometria.get(chave);
+    if (!geom) {
+      geom = prismaCortado(this._secaoDoPerfil(b.perfil), f0, f1);
+      if (!geom) return null;               // o corte comeria a peça (barra mexida depois): ponta reta
+      geom.userData.emCache = true;
+      this.cacheGeometria.set(chave, geom);
+      this.origemGeometria.set(chave, 'local');
+    }
+    const m = new THREE.Matrix4().makeBasis(vet(base.u), vet(base.v), vet(base.t));
+    m.setPosition(b.inicio[0], b.inicio[1], b.inicio[2]);
     return { geom, matriz: m, chave };
   }
 
@@ -928,6 +953,10 @@ export class Cena {
   }
 
   _chaveDe(ent) {
+    if (ent.tipo === 'barra' && temCorteNoAngulo(ent)) {
+      const r = this._geometriaBarraCortada(ent);
+      if (r) return r.chave;
+    }
     if (ent.tipo === 'barra') {
       const L = comprimentoDaBarra(ent);
       const util = Math.max(1, L - (ent.recorte_inicio || 0) - (ent.recorte_fim || 0));
@@ -1244,6 +1273,133 @@ function extrudar(forma, profundidade) {
   const g = new THREE.ExtrudeGeometry(forma, {
     depth: profundidade, bevelEnabled: false, steps: 1, curveSegments: 16,
   });
+  g.computeVertexNormals();
+  return g;
+}
+
+// ---- o corte no ângulo (a mesma receita de nucleo3d/geometria.py) ----
+
+const _pz = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const _alt = (f, x, y) => f[0] * x + f[1] * y + f[2];
+
+export function temCorteNoAngulo(b) {
+  return !!((b.cortes_inicio && b.cortes_inicio.length) || (b.cortes_fim && b.cortes_fim.length));
+}
+
+/** As pontas como alturas z(x, y) = a·x + b·y + c no triedro local (origem no início): [início, fim]. */
+export function alturasDeCorte(b, base) {
+  const { t, u, v } = base;
+  const L = comprimentoDaBarra(b);
+  const r0 = Math.max(0, b.recorte_inicio || 0), r1 = Math.max(0, b.recorte_fim || 0);
+  const c0 = b.cortes_inicio || [], c1 = b.cortes_fim || [];
+  const f0 = (r0 > 0 || !c0.length) ? [[0, 0, r0]] : [];
+  const f1 = (r1 > 0 || !c1.length) ? [[0, 0, L - r1]] : [];
+  for (const [lista, destino, ext] of [[c0, f0, 0], [c1, f1, L]]) {
+    for (const c of lista) {
+      const n = c && c.normal, p = (c && c.ponto) || [0, 0, 0];
+      if (!n) continue;
+      const nn = Math.hypot(n[0], n[1], n[2]);
+      if (!(nn > 1e-9)) continue;
+      const nx = _pz(n, u) / nn, ny = _pz(n, v) / nn, nz = _pz(n, t) / nn;
+      if (Math.abs(nz) < 0.1) continue;                 // quase paralelo ao eixo: não corta a ponta
+      const px = _pz(p, u), py = _pz(p, v), pzz = _pz(p, t) + ext;
+      destino.push([-nx / nz, -ny / nz, (nx * px + ny * py + nz * pzz) / nz]);
+    }
+  }
+  const distintas = (fs) => fs.filter((f, i) => !fs.slice(0, i).some(g =>
+    Math.abs(f[0] - g[0]) < 1e-9 && Math.abs(f[1] - g[1]) < 1e-9 && Math.abs(f[2] - g[2]) < 1e-6));
+  return [distintas(f0.length ? f0 : [[0, 0, r0]]), distintas(f1.length ? f1 : [[0, 0, L - r1]])];
+}
+
+function _recortarConvexo(poli, a, b, c) {
+  const out = [];
+  for (let i = 0; i < poli.length; i++) {
+    const P = poli[i], Q = poli[(i + 1) % poli.length];
+    const fp = a * P[0] + b * P[1] + c, fq = a * Q[0] + b * Q[1] + c;
+    if (fp >= 0) out.push(P);
+    if ((fp >= 0) !== (fq >= 0)) {
+      const k = fp / (fp - fq);
+      out.push([P[0] + k * (Q[0] - P[0]), P[1] + k * (Q[1] - P[1])]);
+    }
+  }
+  return out;
+}
+
+const _area2 = (p) => {
+  let s = 0;
+  for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += a[0] * b[1] - b[0] * a[1]; }
+  return s / 2;
+};
+
+function _pedacos(tri, fs, maior) {
+  if (fs.length === 1) return [[tri, fs[0]]];
+  const s = maior ? 1 : -1, res = [];
+  fs.forEach((fk, k) => {
+    let poli = tri;
+    for (let j = 0; j < fs.length && poli.length >= 3; j++) {
+      if (j === k) continue;
+      const fj = fs[j];
+      poli = _recortarConvexo(poli, s * (fk[0] - fj[0]), s * (fk[1] - fj[1]), s * (fk[2] - fj[2]));
+    }
+    if (poli.length >= 3 && Math.abs(_area2(poli)) > 1e-9) res.push([poli, fk]);
+  });
+  return res;
+}
+
+/** Malha da barra cortada no triedro local; null quando o corte come a peça (< 1 mm entre as pontas). */
+export function prismaCortado(forma, f0, f1) {
+  const ext = forma.extractPoints(16);
+  const limpar = (pts) => {
+    const q = pts.map(p => [p.x, p.y]);
+    if (q.length > 1) {
+      const a = q[0], z = q[q.length - 1];
+      if (Math.abs(a[0] - z[0]) < 1e-9 && Math.abs(a[1] - z[1]) < 1e-9) q.pop();
+    }
+    return q;
+  };
+  const externo = limpar(ext.shape);
+  if (_area2(externo) < 0) externo.reverse();
+  const internos = ext.holes.map(h => { const q = limpar(h); if (_area2(q) > 0) q.reverse(); return q; });
+  const F0 = (x, y) => Math.max(...f0.map(f => _alt(f, x, y)));
+  const F1 = (x, y) => Math.min(...f1.map(f => _alt(f, x, y)));
+  const pos = [];
+  const tri3 = (a, b, c) => pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+  const quebras = (fs, P, Q) => {
+    const ss = [0, 1];
+    for (let k = 0; k < fs.length; k++) for (let j = k + 1; j < fs.length; j++) {
+      const g0 = _alt(fs[k], P[0], P[1]) - _alt(fs[j], P[0], P[1]);
+      const g1 = _alt(fs[k], Q[0], Q[1]) - _alt(fs[j], Q[0], Q[1]);
+      if (g0 * g1 < 0) ss.push(g0 / (g0 - g1));
+    }
+    return ss.sort((a, b) => a - b).map(s => [P[0] + s * (Q[0] - P[0]), P[1] + s * (Q[1] - P[1])]);
+  };
+  for (const anel of [externo, ...internos]) {           // laterais: um polígono plano e convexo por aresta
+    for (let i = 0; i < anel.length; i++) {
+      const P = anel[i], Q = anel[(i + 1) % anel.length];
+      const baixo = quebras(f0, P, Q), cima = quebras(f1, P, Q);
+      for (const [x, y] of baixo.concat(cima)) if (F1(x, y) - F0(x, y) < 1) return null;
+      const poli = baixo.map(([x, y]) => [x, y, F0(x, y)])
+        .concat(cima.reverse().map(([x, y]) => [x, y, F1(x, y)]));
+      for (let k = 1; k < poli.length - 1; k++) tri3(poli[0], poli[k], poli[k + 1]);
+    }
+  }
+  const plano = externo.concat(...internos);
+  const tris = THREE.ShapeUtils.triangulateShape(externo.map(p => new THREE.Vector2(p[0], p[1])),
+                                                 internos.map(h => h.map(p => new THREE.Vector2(p[0], p[1]))));
+  for (const [a, b, c] of tris) {
+    const tri = [plano[a], plano[b], plano[c]];
+    if (_area2(tri) < 0) tri.reverse();
+    for (const [poli, f] of _pedacos(tri, f1, false)) {          // tampa do fim: +z
+      const q = poli.map(([x, y]) => [x, y, _alt(f, x, y)]);
+      for (let k = 1; k < q.length - 1; k++) tri3(q[0], q[k], q[k + 1]);
+    }
+    for (const [poli, f] of _pedacos(tri, f0, true)) {           // tampa do início: −z
+      const q = poli.map(([x, y]) => [x, y, _alt(f, x, y)]);
+      for (let k = 1; k < q.length - 1; k++) tri3(q[k + 1], q[k], q[0]);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.computeVertexNormals();
   return g;
 }

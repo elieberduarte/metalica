@@ -155,6 +155,11 @@ class Barra(Entidade):
     aco: str = "ASTM A572 Gr.50"
     recorte_inicio: float = 0.0           # encurtamento na ponta, mm
     recorte_fim: float = 0.0
+    # corte no ângulo (o encaixe de fábrica): planos {"normal": [x, y, z], "ponto": [x, y, z]}, com o
+    # ponto relativo ao nó da ponta e tudo nos eixos do mundo (a barra movida leva o corte junto);
+    # a peça fica do lado de dentro de todos eles — dois planos numa ponta fazem o bico
+    cortes_inicio: List[dict] = field(default_factory=list)
+    cortes_fim: List[dict] = field(default_factory=list)
 
     @property
     def comprimento(self) -> float:
