@@ -57,7 +57,7 @@ def test_a_tabela_cobre_as_ferramentas_da_coluna():
     assert len(na_tabela2) >= 24 and len(col2) >= 24
     # a estrutura do 3D entra à parte (a lista ESTRUTURA_3D da faixa)
     estrutura3 = set(re.findall(r"'([a-z_]+)'", re.search(r"var ESTRUTURA_3D = \[([^\]]+)\]", _ler("faixa_ferramentas.js")).group(1)))
-    assert {"barra", "chapa", "furo", "parafuso", "encaixar"} <= estrutura3
+    assert {"barra", "chapa", "furo", "parafuso", "encaixar", "virar"} <= estrutura3
     fora3 = _ids_3d() - na_tabela3 - estrutura3 - {"ferramenta"}
     assert not fora3, fora3
 

@@ -115,6 +115,36 @@ try:
     aba.avaliar(CLIQUE % ("{ id: '%s', ponto: [1800, 0, 800], normal: [0.7071, 0, -0.7071] }" % banzo.id, "false"))
     ok("corre ao longo" in (aba.avaliar("document.querySelector('#dica') ? document.querySelector('#dica').textContent : editor.el.dica.textContent") or ""),
        "a face paralela à barra é recusada com o motivo")
+    # Virar perfil (V): o giro da seção no próprio eixo, como o Girar do SketchUp preso ao eixo da peça
+    aba.avaliar("editor.ativa.cancelar(); editor.selecao.limpar(); editor.ativarFerramenta('virar'); 1"); aba.drenar(0.3)
+    ok(aba.avaliar("editor.idAtiva") == "virar", "a ferramenta Virar perfil liga (atalho V)")
+    ROT = "editor.documento.get('%s').rotacao"
+    VIRA = """(() => { const f = editor.ativa; f.editor.selecao.sob = () => ({ id: '%s', ponto: [2000, 800, 0], normal: [0, 0, 1] });
+      f.onPonto({ tela: [1, 1] }, { shiftKey: %s, ctrlKey: %s }); return 1; })()"""
+    aba.avaliar("window._sob = editor.selecao.sob.bind(editor.selecao); 1")
+    aba.avaliar(VIRA % (tubo.id, "false", "false"))
+    r1 = aba.avaliar(ROT % tubo.id)
+    aba.avaliar(VIRA % (tubo.id, "true", "false"))
+    r2 = aba.avaliar(ROT % tubo.id)
+    aba.avaliar(VIRA % (tubo.id, "false", "true"))
+    r3 = aba.avaliar(ROT % tubo.id)
+    ok((r1, r2, r3) == (90, 0, 180), "clique gira 90°, Shift volta, Ctrl vira 180° (%s, %s, %s)" % (r1, r2, r3))
+    prev = aba.avaliar("""(() => { const f = editor.ativa; f.editor.selecao.sob = () => ({ id: '%s', ponto: [2000, 800, 0], normal: [0, 0, 1] });
+      let n = 0; const orig = editor.previa.bind(editor); editor.previa = (o) => { o.traverse(x => { if (x.isLine) n++; }); return orig(o); };
+      f.onMover({ tela: [1, 1] }, {}); editor.previa = orig; return n; })()""" % tubo.id)
+    ok(prev == 2, "passando o mouse, a prévia mostra a seção de agora e a virada (%s contornos)" % prev)
+    aba.avaliar("editor.ativa.onValor('45'); 1")
+    aba.avaliar(VIRA % (tubo.id, "false", "false"))
+    ok(aba.avaliar(ROT % tubo.id) == 225, "o ângulo digitado vira o passo (180 + 45 = %s)" % aba.avaliar(ROT % tubo.id))
+    aba.avaliar("editor.selecao.sob = window._sob; editor.selecao.definir(['%s', '%s']); editor.ativarFerramenta('virar'); editor.ativa.onValor('90'); 1" % (tubo.id, mont.id))
+    antes_m = aba.avaliar(ROT % mont.id)
+    aba.avaliar(VIRA % (tubo.id, "false", "false"))
+    ok(aba.avaliar(ROT % mont.id) == (antes_m + 90) % 360 and aba.avaliar(ROT % tubo.id) == 315,
+       "com duas barras selecionadas o clique vira as duas")
+    aba.avaliar("editor.desfazer(); 1"); aba.drenar(0.2)
+    ok(aba.avaliar(ROT % mont.id) == antes_m and aba.avaliar(ROT % tubo.id) == 225, "Ctrl+Z desfaz as duas de uma vez")
+    aba.avaliar("editor.selecao.sob = window._sob; editor.ativarFerramenta('selecionar'); 1")
+    aba.avaliar("editor.ativarFerramenta('encaixar'); 1")
     # grava e confere no disco
     aba.avaliar("editor.ativa.cancelar(); editor.ativarFerramenta('selecionar'); 1")
     aba.avaliar("(async () => { await editor.salvar(); return 1; })()"); aba.drenar(1.5)
@@ -131,6 +161,7 @@ try:
     while time.time() - t0 < 40 and not aba.avaliar("!!document.querySelector('#faixa-ferramentas .fx-bt[data-chave=\"encaixar\"]')"):
         aba.drenar(0.5)
     ok(aba.avaliar("!!document.querySelector('#faixa-ferramentas .fx-bt[data-chave=\"encaixar\"]')"), "o botão está na faixa da área de trabalho")
+    ok(aba.avaliar("!!document.querySelector('#faixa-ferramentas .fx-bt[data-chave=\"virar\"]')"), "o Virar perfil também está na faixa")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, "sem erro no console" + ("" if not erros else ": " + str(erros[:2])))
 finally:

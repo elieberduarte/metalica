@@ -30,6 +30,7 @@ const ARQUIVOS = [
   ['./parafuso.js', 'estrutura'],
   ['./furo.js', 'estrutura'],
   ['./encaixar.js', 'estrutura'],
+  ['./virar.js', 'estrutura'],
 ];
 
 /**

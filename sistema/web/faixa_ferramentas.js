@@ -31,7 +31,7 @@
   ];
   // a disciplina (a barra da direita do 2D, quando existe): o elemento de aço e o do 3D são o mesmo botão
   var DO_3D = { estr_chapa: 'chapa', estr_furo: 'furo', estr_parafuso: 'parafuso' };
-  var ESTRUTURA_3D = ['barra', 'chapa', 'furo', 'parafuso', 'encaixar'];
+  var ESTRUTURA_3D = ['barra', 'chapa', 'furo', 'parafuso', 'encaixar', 'virar'];
 
   var ativo = '3d';               // o lado em que a faixa age
   var escolhido = {};             // lado → a chave clicada por último (o pilar e a viga de aço usam a Barra do 3D)
