@@ -4,7 +4,9 @@
 //   · face solta (sem volume atrás) → extruda, virando um prisma;
 //   · face de um sólido fechado    → move a face, esticando o sólido;
 //   · com Ctrl                     → sempre inicia uma face nova, mesmo no sólido;
-//   · duplo clique                 → repete a última distância na face apontada.
+//   · duplo clique                 → repete a última distância na face apontada;
+//   · barra (perfil)               → a ponta apontada anda no eixo dela: estica ou encurta, a outra
+//                                    ponta parada (os cortes no ângulo da ponta vão junto).
 // A distância pode ser digitada a qualquer momento.
 
 import { Ferramenta, paraMilimetros, formatar } from './base.js';
@@ -158,14 +160,51 @@ export class FerramentaPushPull extends Ferramenta {
     return { espessura: Math.round(t * 100) / 100, origem };
   }
 
+  /** A barra sob o cursor, pelo raio de verdade (a inferência pode ter grudado o ponto num plano). */
+  barraApontada(p) {
+    let ent = p && p.entidade && this.documento && this.documento.get(p.entidade);
+    let ponto = p && p.ponto;
+    if ((!ent || ent.tipo !== 'barra') && p && p.tela && this.editor.selecao && this.editor.selecao.sob) {
+      const s = this.editor.selecao.sob(p.tela[0], p.tela[1]);
+      if (s) { ent = this.documento.get(s.id); ponto = s.ponto; }
+    }
+    return ent && ent.tipo === 'barra' ? { ent, ponto } : null;
+  }
+
+  /** Barra (usuário, 30/09: "a função puxar não está funcionando... clicar na face do perfil para estender"): a
+   *  ponta mais perto do clique anda no eixo da barra, para fora. */
+  iniciarBarra(b, ponto) {
+    const L = C.dist(b.inicio, b.fim);
+    if (L < 1) return false;
+    const d = C.normalizar(C.sub(b.fim, b.inicio));
+    const t = C.dot(C.sub(ponto, b.inicio), d);
+    const ponta = t > L / 2 ? 'fim' : 'inicio';
+    const normal = ponta === 'fim' ? d : C.mul(d, -1);
+    const no = ponta === 'fim' ? b.fim : b.inicio;
+    this.alvo = { id: b.id, barra: ponta, base: C.copiar(ponto), normal, original: { no: C.copiar(no), outro: C.copiar(ponta === 'fim' ? b.inicio : b.fim), L } };
+    this.novaFace = false;
+    this.distancia = 0;
+    C.ancorar(this.editor, ponto);
+    return true;
+  }
+
+  resultadoBarra(d) {
+    const A = this.alvo;
+    const L = Math.max(1, A.original.L + d);                 // não inverte a barra
+    const novo = C.add(A.original.outro, C.mul(A.normal, L));
+    return { [A.barra]: novo.map(x => Math.round(x * 100) / 100) };
+  }
+
   iniciar(p, ev) {
     const entAlvo = p && p.entidade && this.documento && this.documento.get(p.entidade);
     if (entAlvo && entAlvo.tipo === 'chapa') return this.iniciarChapa(p, entAlvo);
+    const barra = this.barraApontada(p);
+    if (barra) return this.iniciarBarra(barra.ent, barra.ponto);
     const achado = this.faceApontada(p);
     const ent = achado && achado.ent;
     const iFace = achado ? achado.iFace : -1;
     if (!ent) {
-      this.dica('Aponte uma face de sólido ou de chapa (as barras mudam de comprimento pelo painel).');
+      this.dica('Aponte uma face de sólido, de chapa ou a ponta de uma barra.');
       return false;
     }
     this.alvo = {
@@ -191,6 +230,13 @@ export class FerramentaPushPull extends Ferramenta {
 
   aplicar(d) {
     if (!this.alvo || !isFinite(d) || Math.abs(d) < 1e-6) { this.reiniciar(); return; }
+    if (this.alvo.barra) {
+      this.executar(C.cmdAlterar(this.alvo.id, this.resultadoBarra(d), d > 0 ? 'Esticar barra' : 'Encurtar barra'));
+      this.constructor.ultimaDistancia = d;
+      this.reiniciar();
+      this.dica(`Última distância: ${formatar(Math.abs(d))} (duplo clique repete)`);
+      return;
+    }
     if (this.alvo.chapa) {
       this.executar(C.cmdAlterar(this.alvo.id, this.resultadoChapa(d),
         this.alvo.chapa === 'lado' ? 'Esticar chapa' : 'Espessura da chapa'));
@@ -221,6 +267,15 @@ export class FerramentaPushPull extends Ferramenta {
     this.limparPrevia();
     const ch = p && p.entidade && this.documento && this.documento.get(p.entidade);
     if (ch && ch.tipo === 'chapa') { this.medida('chapa: lado ou espessura'); return; }
+    const barra = this.barraApontada(p);
+    if (barra) {
+      const b = barra.ent, L = C.dist(b.inicio, b.fim);
+      const d = C.normalizar(C.sub(b.fim, b.inicio));
+      const no = C.dot(C.sub(barra.ponto, b.inicio), d) > L / 2 ? b.fim : b.inicio;
+      this.previa(C.grupo(C.gPonto(no, '#ff5a1f')));
+      this.medida(`${b.perfil}: a ponta marcada estica no eixo (${formatar(L)})`);
+      return;
+    }
     const achado = this.faceApontada(p);
     if (!achado) { this.medida(''); return; }
     const { ent, iFace } = achado;
@@ -232,6 +287,14 @@ export class FerramentaPushPull extends Ferramenta {
 
   desenhar() {
     this.limparPrevia();
+    if (this.alvo && this.alvo.barra) {
+      const novo = this.resultadoBarra(this.distancia || 0)[this.alvo.barra];
+      const L = C.dist(novo, this.alvo.original.outro);
+      const texto = `${this.distancia >= 0 ? '+' : '−'}${formatar(Math.abs(this.distancia))}  ·  barra com ${formatar(L)}`;
+      this.medida(texto);
+      this.previa(C.grupo(C.gLinha([this.alvo.original.outro, novo], C.CORES.face), C.gPonto(novo, '#ff5a1f'), C.gRotulo(texto, novo)));
+      return;
+    }
     if (this.alvo && this.alvo.chapa) {
       // prévia: o contorno novo nas duas faces da chapa
       const ch = this.documento.get(this.alvo.id);

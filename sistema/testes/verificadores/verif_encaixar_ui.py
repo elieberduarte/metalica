@@ -144,6 +144,21 @@ try:
     aba.avaliar("editor.desfazer(); 1"); aba.drenar(0.2)
     ok(aba.avaliar(ROT % mont.id) == antes_m and aba.avaliar(ROT % tubo.id) == 225, "Ctrl+Z desfaz as duas de uma vez")
     aba.avaliar("editor.selecao.sob = window._sob; editor.ativarFerramenta('selecionar'); 1")
+    # Empurrar/Puxar na barra (pedido de 30/09: "a função puxar não está funcionando... clicar na face do perfil para
+    # estender"): a ponta apontada anda no eixo, a outra fica
+    aba.avaliar("editor.ativarFerramenta('pushpull'); 1")
+    antes_t = json.loads(aba.avaliar("JSON.stringify(editor.documento.get('%s'))" % tubo.id))
+    aba.avaliar("""(() => { const f = editor.ativa; f.iniciar({ entidade: '%s', ponto: [3990, 800, 0], tela: [1, 1] }, {}); f.aplicar(150); return 1; })()""" % tubo.id)
+    dep_t = json.loads(aba.avaliar("JSON.stringify(editor.documento.get('%s'))" % tubo.id))
+    ok(abs(dep_t["fim"][0] - (antes_t["fim"][0] + 150)) < 0.1 and dep_t["inicio"] == antes_t["inicio"],
+       "Puxar na ponta da barra estica 150 no eixo, a outra ponta parada (%s → %s)" % (antes_t["fim"][0], dep_t["fim"][0]))
+    aba.avaliar("""(() => { const f = editor.ativa; f.iniciar({ entidade: '%s', ponto: [300, 820, 5], tela: [1, 1] }, {}); f.aplicar(-100); return 1; })()""" % tubo.id)
+    dep2 = json.loads(aba.avaliar("JSON.stringify(editor.documento.get('%s'))" % tubo.id))
+    ok(abs(dep2["inicio"][0] - (antes_t["inicio"][0] + 100)) < 0.1, "o clique na lateral perto do início encurta pelo início (%s)" % dep2["inicio"][0])
+    aba.avaliar("editor.desfazer(); editor.desfazer(); 1"); aba.drenar(0.2)
+    dep3 = json.loads(aba.avaliar("JSON.stringify(editor.documento.get('%s'))" % tubo.id))
+    ok(dep3["inicio"] == antes_t["inicio"] and dep3["fim"] == antes_t["fim"], "Ctrl+Z volta a barra")
+    aba.avaliar("editor.ativarFerramenta('selecionar'); 1")
     aba.avaliar("editor.ativarFerramenta('encaixar'); 1")
     # grava e confere no disco
     aba.avaliar("editor.ativa.cancelar(); editor.ativarFerramenta('selecionar'); 1")
