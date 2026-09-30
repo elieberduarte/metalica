@@ -193,9 +193,11 @@ def _furos_na_vista(chapa, origem, u, v, u0, v0, w) -> List[Tuple[float, float]]
 #: lateral são mais estreitas: numa coluna só a célula ficava três vezes mais alta que larga.
 LARGURA_CHAPAS_DE_CORTE = 190.0
 
-#: Atributos da célula da chapa que não valem dentro da montagem (o bloco do título da célula, a posição que a
-#: prancha e o 3D procuram, os furos editáveis): ela é uma cópia para o corte.
-_ATRIBUTOS_DA_CELULA = ("cabecalho", "posicao", "perfil", "classe", "nome", "detalhe", "editavel", "furo", "giro")
+#: Atributos da célula da chapa que não valem dentro da montagem (o bloco do título da célula, os furos
+#: editáveis): ela é uma cópia para o corte. A `posicao` fica: é por ela que o CAD acha a chapa no 3D ao lado
+#: (sem ela, "essa seleção não é de uma peça do modelo" — 30/09); o `detalhe` passa a ser o da montagem, e a
+#: prancha não a toma pela célula da posição.
+_ATRIBUTOS_DA_CELULA = ("cabecalho", "perfil", "classe", "nome", "detalhe", "editavel", "furo", "giro")
 
 
 def _chapas_para_corte(desenho: Desenho, grupo: dict, chapas, posicoes_de: dict, atr: dict, x0: float,
