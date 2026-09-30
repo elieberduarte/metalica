@@ -475,11 +475,12 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             titulos_q["TELHAS_TIPOS"] = "Tipos de telha"
             planta_t = [c for c in direita_t if re.match(r"FACE \d+ – COBERTURA \(0", str(c.get("titulo") or ""))]
             _caber_numa_prancha(direita_t, ux1 - ux0 - FOLGA, uy1 - QUADRO_CABECALHO - FOLGA - uy0, teto_t, coluna=coluna_t,
-                                par=planta_t)
+                                par=planta_t, escala_max=ESCALA_MINIMA_TELHAS)
         else:
             for c in principais:
                 c["categoria"] = "TELHAS"
-            _caber_numa_prancha(principais, qx1 - qx0, (uy1 - QUADRO_CABECALHO - FOLGA) - (uy0 - FOLGA * 0.5 + 2.0), teto_t)
+            _caber_numa_prancha(principais, qx1 - qx0, (uy1 - QUADRO_CABECALHO - FOLGA) - (uy0 - FOLGA * 0.5 + 2.0), teto_t,
+                                escala_max=ESCALA_MINIMA_TELHAS)
         ordem["TELHAS_DET"] = 999
         titulos_q["TELHAS_DET"] = "Telhas – detalhes"
     # a prancha dos chumbadores (pedido do usuário, 28/09): a planta de locação reduzida à esquerda e, à direita,
@@ -748,7 +749,9 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                                 cels_p.append(c_)
                                 fila.remove(c_)
                             y_topo -= max(c_.get("slot_h", c_["h"]) for c_ in linha2) + FOLGA * 0.6
-                        cheia = True
+                        # a categoria acabou aqui? a próxima ainda pode começar no que sobrou (a Sala ficava com a
+                        # prancha das chapas pela metade e as barras numa prancha nova, 29/09)
+                        cheia = any(c_["categoria"] == cat for c_ in fila)
                         break
                     x = qx0
                     fileira(linha, qx0, qx1)
@@ -2033,14 +2036,21 @@ def _espacar_textos(c: dict):
     c["entidades"] = finais
 
 
+#: As faces de telha não se reduzem além disto para caber numa prancha só: em 1:200 as cotas das chapas não se liam
+#: (o depósito, análise das pranchas de 29/09); o que não cabe segue para a prancha seguinte.
+ESCALA_MINIMA_TELHAS = 125.0
+
+
 def _caber_numa_prancha(cels: Sequence[dict], largura: float, altura: float, teto: Optional[Dict[int, float]] = None,
-                        coluna: Optional[dict] = None, par: Sequence[dict] = ()):
+                        coluna: Optional[dict] = None, par: Sequence[dict] = (), escala_max: Optional[float] = None):
     """Aumenta a escala das células (a mesma proporção em todas, na escala normalizada) até elas caberem
     num quadro de largura × altura, em prateleiras como as da prancha — as mais altas primeiro. `teto`:
     id da célula → o aumento máximo dela (o detalhe com notas: mais reduzido, as linhas se atropelam).
     `coluna`: a célula que vai sozinha num quadro à esquerda (as de `cels` no quadro da direita, como os
     quadros lado a lado: `largura` é a dos dois, e cada um tem as margens dele). `par`: as células que vão na
-    escala da coluna (a planta da cobertura ao lado da paginação dela — pedido do usuário, 28/09)."""
+    escala da coluna (a planta da cobertura ao lado da paginação dela — pedido do usuário, 28/09).
+    `escala_max`: nenhuma célula (fora a coluna e o par dela) se reduz além desta escala, a não ser a que nem
+    assim cabe na largura; sem tudo caber, o que sobra segue para a prancha seguinte."""
     if not cels:
         return
     todas = list(cels) + ([coluna] if coluna is not None else [])
@@ -2049,18 +2059,27 @@ def _caber_numa_prancha(cels: Sequence[dict], largura: float, altura: float, tet
 
     ids_par = {id(c) for c in par}
 
+    def escala_de(c, f_c, larg):
+        k_ = escala_normalizada(base[id(c)] * f_c - 1e-6)
+        if escala_max is not None and id(c) not in ids_par and k_ > escala_max:
+            # só até a escala mínima; a face mais larga que o quadro nela vai até a escala em que cabe
+            (bx0, _b0), (bx1, _b1) = c["caixa"]
+            k_ = max(escala_max, escala_normalizada((bx1 - bx0) / max(larg - 2 * QUADRO_MARGEM, 1.0)))
+            k_ = min(k_, escala_normalizada(base[id(c)] * f_c - 1e-6))
+        return k_
+
     def cabe_com(f, g):
-        for c in cels:
-            f_c = g if id(c) in ids_par else min(f, (teto or {}).get(id(c), f))
-            _reescalar(c, escala_normalizada(base[id(c)] * f_c - 1e-6))
         if coluna is not None:
             _reescalar(coluna, escala_normalizada(base[id(coluna)] * g - 1e-6))
-            if coluna["h"] > altura:
-                return False
             larg = largura - (coluna["w"] + 2 * QUADRO_MARGEM) - 2 * QUADRO_MARGEM
             gap_v = FOLGA
         else:
             larg, gap_v = largura, FOLGA * 0.6
+        for c in cels:
+            f_c = g if id(c) in ids_par else min(f, (teto or {}).get(id(c), f))
+            _reescalar(c, escala_de(c, f_c, larg))
+        if coluna is not None and coluna["h"] > altura:
+            return False
         y, x, alt_l = 0.0, 0.0, 0.0
         for c in sorted(cels, key=lambda c_: -c_["h"]):
             if c["w"] > larg:

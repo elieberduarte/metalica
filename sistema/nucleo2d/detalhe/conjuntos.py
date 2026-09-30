@@ -3836,6 +3836,14 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
         for rotulo, lista in itens:
             if not rotulo:
                 continue
+            if tipo != "topo" and len(lista) == 1 and str(_marcas(lista[0]).get("conjunto") or "") in (
+                    "", str(_marcas(lista[0]).get("posicao") or "")):
+                # nas elevações só os conjuntos: com as peças soltas (terças, contraventos, uma marca por peça)
+                # as marcas se amontoavam e nada se lia (análise das pranchas, 29/09); a planta tem todas
+                continue
+            nome_r = (nomes or {}).get(rotulo) or rotulo
+            if tipo != "topo" and re.match(r"^(A\.[CDL]\.|C\.?V\.)\d", nome_r):
+                continue                              # os típicos (contraventos, agulhas) repetem em todo vão: na planta
             vv = [q for e in lista for q in e.vertices]
             pu = [_dot(q, u) - u0 for q in vv]
             pv = [_dot(q, v) - v0 for q in vv]
@@ -3877,7 +3885,10 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
         # além das peças, com a bolinha na ponta, e a bolinha do primeiro eixo caía no título
         y_tit = min(-(10.0 + 8.0) * esc, p.extremos[1] - p.dy - 6.0 * esc)      # extremos: absolutos; texto: da vista
         p.texto(0, y_tit, nome, 3.5 * esc)
-        p.texto(0, y_tit - 4.5 * esc, "escala 1:%s · marcas de conjunto no lugar de montagem; peça solta com a própria marca" % (int(esc) if float(esc).is_integer() else esc), 2.0 * esc)
+        p.texto(0, y_tit - 4.5 * esc, "escala 1:%s · %s" % (
+            int(esc) if float(esc).is_integer() else esc,
+            "marcas de conjunto no lugar de montagem; peça solta com a própria marca" if tipo == "topo"
+            else "tesouras, dispositivos e chumbamentos no lugar de montagem (terças, contraventos e agulhas na planta)"), 2.0 * esc)
         ext_c = p.extremos
         d.metadados.setdefault("celulas", []).append([round(t, 1) for t in ext_c])
         d.vistas.append({"origem": [minimo[0], minimo[1], minimo[2]], "normal": list(w), "acima": list(v),
