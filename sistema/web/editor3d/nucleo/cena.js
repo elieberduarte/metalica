@@ -860,6 +860,10 @@ export class Cena {
     // com a versão daqui, que é oca.
     const doServidor = formaDaSecao(p.secao);
     if (doServidor && !(p.tipo === 'tubo' && !doServidor.holes.length)) return doServidor;
+    // tubo quadrado ou retangular (TQ, TR) com só o contorno de fora: o furo pela espessura da parede — o redondo
+    // daqui o desenharia redondo no modo leve, que não pede a malha ao servidor (portaria, 30/09)
+    const oco = doServidor && p.tipo === 'tubo' ? tuboRetangularOco(p.secao, p.tw) : null;
+    if (oco) return oco;
     switch (p.tipo) {
       case 'I': return secaoI(p.bf, p.d, p.tw, p.tf);
       case 'U': return secaoU(p.bf, p.d, p.tw, p.tf);
@@ -1473,6 +1477,29 @@ export function secaoTubo(diametro, parede) {
 
 export function secaoRetangulo(b, h) {
   return caminho([[-b / 2, -h / 2], [b / 2, -h / 2], [b / 2, h / 2], [-b / 2, h / 2]]);
+}
+
+/** O tubo retangular oco a partir do contorno de fora (lista de [x,y]); null quando o contorno é redondo. */
+export function tuboRetangularOco(secao, parede) {
+  const pts = Array.isArray(secao) ? secao : (secao && (secao.contorno || secao.externo));
+  if (!Array.isArray(pts) || pts.length < 4) return null;
+  const xs = pts.map(q => (Array.isArray(q) ? q[0] : q.x)), ys = pts.map(q => (Array.isArray(q) ? q[1] : q.y));
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const b = x1 - x0, h = y1 - y0, t = parede || Math.max(1, Math.min(b, h) * 0.05);
+  // redondo: o contorno não encosta nos cantos da caixa (a área fica em ~78 % dela)
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], q = pts[(i + 1) % pts.length];
+    area += (Array.isArray(p) ? p[0] : p.x) * (Array.isArray(q) ? q[1] : q.y) - (Array.isArray(q) ? q[0] : q.x) * (Array.isArray(p) ? p[1] : p.y);
+  }
+  if (Math.abs(area) / 2 < 0.85 * b * h || b <= 2 * t || h <= 2 * t) return null;
+  const forma = formaDaSecao(pts.map(q => (Array.isArray(q) ? q : [q.x, q.y])));
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, bi = b / 2 - t, hi = h / 2 - t;
+  const furo = new THREE.Path();
+  furo.moveTo(cx - bi, cy - hi); furo.lineTo(cx - bi, cy + hi); furo.lineTo(cx + bi, cy + hi); furo.lineTo(cx + bi, cy - hi);
+  furo.closePath();
+  forma.holes.push(furo);
+  return forma;
 }
 
 /** Seção vinda do catálogo: lista de [x,y], ou {contorno, furos}. */

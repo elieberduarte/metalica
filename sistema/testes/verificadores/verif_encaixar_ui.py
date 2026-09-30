@@ -25,7 +25,9 @@ banzo = Barra(nome="banzo", inicio=(0.0, 0.0, 0.0), fim=(4000.0, 0.0, 0.0), perf
 mont = Barra(nome="montante", inicio=(1000.0, 0.0, 30.1), fim=(1000.0, 0.0, 1500.0), perfil=BZ, rotacao=90.0, papel="montante")
 # a diagonal que o desenho deixou curta: começa 200 mm acima do banzo
 diag = Barra(nome="diagonal", inicio=(1200.0, 0.0, 200.0), fim=(2500.0, 0.0, 1500.0), perfil=BZ, rotacao=90.0, papel="diagonal")
-for e in (banzo, mont, diag):
+# o tubo quadrado do catálogo completo: no modo leve o editor monta a seção sozinho (portaria, 30/09: voltou redondo)
+tubo = Barra(nome="forro", inicio=(0.0, 800.0, 0.0), fim=(4000.0, 800.0, 0.0), perfil="TQ 40×40×1,5", papel="barra")
+for e in (banzo, mont, diag, tubo):
     doc.add(e)
 json.dump(doc.dict(), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 
@@ -67,11 +69,16 @@ try:
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=900, deviceScaleFactor=1, mobile=False)
     aba.navegar(base + "/editor?projeto=encx", limite=60)
     t0 = time.time()
-    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 3 && editor.ferramentas && editor.ferramentas.get('encaixar'))"):
+    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 4 && editor.ferramentas && editor.ferramentas.get('encaixar'))"):
         aba.drenar(0.5)
     aba.drenar(1.0)
     ok(aba.avaliar("!!document.querySelector('#barra-ferramentas [data-id=\"encaixar\"]')"), "o botão Encaixar ponta está na coluna do editor")
 
+    tq = aba.avaliar("""(() => { const f = editor.cena._secaoDoPerfil('TQ 40×40×1,5'); const e = f.extractPoints(8);
+      const xs = e.shape.map(q => q.x), ys = e.shape.map(q => q.y);
+      return [e.holes.length, Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), e.shape.length]; })()""")
+    ok(tq and tq[0] == 1 and abs(tq[1] - 40) < 0.5 and abs(tq[2] - 40) < 0.5 and tq[3] > 8,
+       "o TQ 40×40 sai quadrado e oco na seção do próprio editor (modo leve): %s" % (tq,))
     aba.avaliar("editor.ativarFerramenta('encaixar'); 1"); aba.drenar(0.3)
     ok(aba.avaliar("editor.idAtiva") == "encaixar", "a ferramenta liga")
     antes = aba.avaliar(MALHA % diag.id)
