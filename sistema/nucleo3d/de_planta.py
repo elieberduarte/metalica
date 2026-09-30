@@ -3469,12 +3469,11 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                                            else "pelos espelhos iguais; o corte não confirmou"))
 
     # ---------------------------------------------------------------- a alma na face do banzo
-    # o encaixe de fábrica (usuário, 30/09): montantes e diagonais cortados no ângulo, deitados na face do banzo
-    # que passa na faixa deles, com o bico no montante do mesmo nó (o nó continua no eixo); o comprimento é o
-    # médio da peça cortada (volume ÷ seção), o que pesa
+    # montantes e diagonais param na face interna do banzo, com folga (o nó continua no eixo). O encaixe de fábrica
+    # (alma_na_face.encaixar: corte no ângulo, bico no montante) fica para a revisão do Posto — usuário, 30/09
     from nucleo3d import alma_na_face
     from nucleo3d.geometria import comprimentos_da_barra, tem_corte_no_angulo
-    na_face = alma_na_face.encaixar([p["ent"] for p in pecas])
+    na_face = alma_na_face.aparar([p["ent"] for p in pecas])
     for p in pecas:
         e = p["ent"]
         if e.tipo == "barra" and (e.recorte_inicio or e.recorte_fim or tem_corte_no_angulo(e)):
