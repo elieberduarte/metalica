@@ -189,10 +189,64 @@ def _furos_na_vista(chapa, origem, u, v, u0, v0, w) -> List[Tuple[float, float]]
     return fora
 
 
+#: Largura (mm de papel) da fileira das chapas para corte embaixo do chumbamento montado, quando a frente e a
+#: lateral são mais estreitas: numa coluna só a célula ficava três vezes mais alta que larga.
+LARGURA_CHAPAS_DE_CORTE = 190.0
+
+#: Atributos da célula da chapa que não valem dentro da montagem (o bloco do título da célula, a posição que a
+#: prancha e o 3D procuram, os furos editáveis): ela é uma cópia para o corte.
+_ATRIBUTOS_DA_CELULA = ("cabecalho", "posicao", "perfil", "classe", "nome", "detalhe", "editavel", "furo", "giro")
+
+
+def _chapas_para_corte(desenho: Desenho, grupo: dict, chapas, posicoes_de: dict, atr: dict, x0: float,
+                       caixas: list, largura: float) -> None:
+    """As chapas do chumbamento uma a uma, como na prancha de corte (contorno, furos e cotas, nome e
+    quantidade da obra), numa fileira abaixo da frente e da lateral — a montagem mostra como fica, estas vão
+    para o corte (pedido do usuário, 30/09: "pode manter no detalhe o elemento montado mas preciso das chapas
+    separadas para mandar para corte"). A fileira quebra em `largura`. Acrescenta as caixas em `caixas`."""
+    from nucleo2d.detalhe.celulas import desenho_da_posicao
+    from nucleo2d.detalhe.base import _mover
+    esc = desenho.escala
+    vistas_ja, lista = set(), []
+    for e in chapas:
+        marca = str(_marcas(e).get("posicao") or e.nome or "")
+        pos = posicoes_de.get(marca)
+        if pos is None or pos.classe != "chapa" or id(pos) in vistas_ja:
+            continue
+        vistas_ja.add(id(pos))
+        lista.append(pos)
+    if not lista:
+        return
+    lista.sort(key=lambda p: _ordem_natural(p.nome or p.marca))
+    p_t = _Papel(desenho, dict(atr, chapas_de_corte=1), 0.0, 0.0)
+    y_tit = min(c[1] for c in caixas) - 8.0 * esc
+    p_t.texto(x0, y_tit, "CHAPAS PARA CORTE", 2.5 * esc, "TEXTO")
+    caixas.append(p_t.extremos)
+    y_lin = y_tit - 4.0 * esc                  # o topo da fileira
+    x, alt_lin = x0, 0.0
+    for pos in lista:
+        antes = set(desenho.entidades)
+        ext = desenho_da_posicao(pos, desenho, 0.0, 0.0)
+        larg_c, alt_c = ext[2] - ext[0], ext[3] - ext[1]
+        if x > x0 and x + larg_c > x0 + largura:
+            x, y_lin, alt_lin = x0, y_lin - alt_lin - 8.0 * esc, 0.0
+        ddx, ddy = x - ext[0], y_lin - ext[3]
+        for k in [k for k in desenho.entidades if k not in antes]:
+            ent = desenho.entidades[k]
+            _mover(ent, ddx, ddy)
+            a = {c: v for c, v in (ent.atributos or {}).items() if c not in _ATRIBUTOS_DA_CELULA}
+            a.update(atr, chapa_de_corte=pos.nome or pos.marca)
+            ent.atributos = a
+        caixas.append((ext[0] + ddx, ext[1] + ddy, ext[2] + ddx, ext[3] + ddy))
+        x += larg_c + 10.0 * esc
+        alt_lin = max(alt_lin, alt_c)
+
+
 def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float, dy: float,
-                        titulo: str = "", pecas_por_id: Optional[dict] = None) -> Tuple[float, float, float, float]:
+                        titulo: str = "", pecas_por_id: Optional[dict] = None,
+                        posicoes_de: Optional[dict] = None) -> Tuple[float, float, float, float]:
     """Célula da peça montada: vista de frente e lateral com as cotas gerais e o nome de
-    cada peça."""
+    cada peça. `posicoes_de` (marca -> Posicao): no chumbamento, as chapas para o corte embaixo."""
     ids = [i for i in grupo["exemplo"] if i in doc.entidades]
     pecas_por_id = pecas_por_id or {}
     ents = [pecas_por_id.get(i) or doc.entidades[i] for i in ids]
@@ -301,6 +355,8 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
         caixas.append(p.extremos)
         caixas.append((x, dy, x + larg, dy + alt))
         x += larg + (22.0 if k < 2 else 10.0) * esc
+    if posicoes_de and grupo["tipo"] == "chumbamento":
+        _chapas_para_corte(desenho, grupo, chapas, posicoes_de, atr, dx, caixas, max(x - dx, LARGURA_CHAPAS_DE_CORTE * esc))
     topo = max(c[3] for c in caixas)
     # legenda enxuta: as peças e a quantidade, e o que vai por unidade (o tipo está no
     # título do quadro e nos nomes das peças; `titulo` só vai aos metadados da célula)

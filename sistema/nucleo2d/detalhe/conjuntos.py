@@ -2674,15 +2674,31 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     trechos_cima = trechos(True)
     reta_cima = reta_do_banzo(True)
     sup_por_trecho: Dict[int, list] = collections.defaultdict(list)
+    faces_cima: Dict[int, Optional[float]] = {}
+
+    def face_de_cima(i_t, reta):
+        """a distância da face de cima do banzo à reta dele (acima, positiva), pelos banzos da água"""
+        if i_t not in faces_cima:
+            (ax2, ay2), (bx2, by2) = reta
+            cl2 = math.hypot(bx2 - ax2, by2 - ay2) or 1.0
+            ux2, uy2 = (bx2 - ax2) / cl2, (by2 - ay2) / cl2
+            x_lo, x_hi = min(ax2, bx2), max(ax2, bx2)
+            ds = []
+            for b_ in instancia:
+                if camada_de.get(b_.id) != "BANZOS":
+                    continue
+                for q in b_.vertices:
+                    qx = _dot(_sub(q, origem), u) - u0
+                    qy = _dot(_sub(q, origem), v) - v0
+                    if x_lo - 1.0 <= qx <= x_hi + 1.0:
+                        ds.append(-(qx - ax2) * uy2 + (qy - ay2) * ux2)
+            faces_cima[i_t] = max(ds) if ds else None
+        return faces_cima[i_t]
     for e in instancia:
         if camada_de.get(e.id) != "CHAPAS":
             continue
         pu = [_dot(_sub(q, origem), u) - u0 for q in e.vertices]
         pv = [_dot(_sub(q, origem), v) - v0 for q in e.vertices]
-        # o suporte é a chapa em pé (alta e estreita na elevação); o gusset deitado
-        # e o enrijecedor ao lado dele não contam
-        if max(pu) - min(pu) > 40.0 or max(pv) - min(pv) < 100.0:
-            continue
         cx, cy = sum(pu) / len(pu), sum(pv) / len(pv)
         i_t = 0
         if len(trechos_cima) > 1:
@@ -2690,12 +2706,34 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             i_t = min(range(len(trechos_cima)), key=lambda i: 0.0 if trechos_cima[i][0] <= cx <= trechos_cima[i][1]
                       else min(abs(cx - trechos_cima[i][0]), abs(cx - trechos_cima[i][1])))
             reta_cima = trechos_cima[i_t][2]
+        # o suporte é a chapa em pé, perpendicular ao banzo (estreita ao longo dele e alta); o gusset deitado
+        # e o enrijecedor ao lado dele não contam. Medido na direção do banzo: pela horizontal, o suporte
+        # de 200 mm num banzo de 11° já passava dos 40 mm e nenhum era cotado (a água direita da T1 do
+        # depósito só com o 10612, pedido do usuário, 30/09)
+        if reta_cima is not None:
+            (ax_, ay_), (bx_, by_) = reta_cima
+            cl = math.hypot(bx_ - ax_, by_ - ay_) or 1.0
+            ux_, uy_ = (bx_ - ax_) / cl, (by_ - ay_) / cl
+            ao_longo = [a_ * ux_ + b_ * uy_ for a_, b_ in zip(pu, pv)]
+            de_pe = [-a_ * uy_ + b_ * ux_ for a_, b_ in zip(pu, pv)]
+        else:
+            ao_longo, de_pe = pu, pv
+        if max(ao_longo) - min(ao_longo) > 40.0 or max(de_pe) - min(de_pe) < 100.0:
+            continue
         if reta_cima is not None:
             (ax_, ay_), (bx_, by_) = reta_cima
             dist = abs((bx_ - ax_) * (ay_ - cy) - (ax_ - cx) * (by_ - ay_)) / max(math.hypot(bx_ - ax_, by_ - ay_), 1e-9)
         else:
             dist = abs(cy - alt)
-        if dist <= 150.0:
+        sobre_a_mesa = False
+        if dist > 150.0 and reta_cima is not None:
+            # o suporte em pé sobre a mesa de cima do banzo alto (o W250 da tesoura de alma cheia do depósito,
+            # 30/09): o centro dele fica a meia altura dele acima da face de cima, a 230–270 mm da reta do
+            # banzo — pela reta só, nenhum era cotado
+            topo_b = face_de_cima(i_t, reta_cima)
+            d_s = -(cx - ax_) * uy_ + (cy - ay_) * ux_
+            sobre_a_mesa = topo_b is not None and abs(d_s - topo_b - (max(de_pe) - min(de_pe)) / 2.0) <= 60.0
+        if dist <= 150.0 or sobre_a_mesa:
             if reta_cima is not None:
                 # o suporte fica em pé, perpendicular ao banzo: a referência dele é o pé da
                 # perpendicular no banzo (a projeção vertical erra em banzo inclinado), e a
@@ -3538,6 +3576,105 @@ def _itens_de_localizacao(pecas: Sequence[Solido]) -> List[Tuple[str, List[Solid
 #: Item menor que isto (chapinha solta, conjunto de chapas) não ganha marca na planta.
 MENOR_ITEM_LOCALIZACAO = 500.0
 
+#: Folga da fatia das elevações da localização, além da espessura das tesouras do plano do corte (os suportes
+#: de terça e as chapas coladas nelas entram; a tesoura do vão seguinte não).
+FOLGA_FATIA = 150.0
+#: Meia espessura da fatia que passa numa linha de eixo (a ponta da tesoura, o chumbamento e a chapa de apoio).
+FOLGA_FATIA_EIXO = 400.0
+
+
+def _plano_da_fatia(itens, w, ex: Optional[dict] = None, largura: float = 0.0, nomes: Optional[dict] = None):
+    """O corte de uma elevação da localização: (w_min, w_max, nome) da fatia em volta do plano dos conjuntos
+    planos que olham para a vista (as tesouras, na transversal). Vale o plano que mais se repete com os
+    mesmos conjuntos (o pórtico típico), depois o com mais conjuntos, depois o mais perto de quem olha. Sem
+    conjunto plano que cubra um terço da `largura` da vista (na longitudinal só há os dispositivos da
+    ponta), o corte passa na primeira linha de eixo (os apoios: a ponta de cada tesoura com o chumbamento).
+    Com todas as tesouras projetadas umas sobre as outras não se lia nada (pedido do usuário, 30/09: "uma
+    fatia sem ver elementos atrás dos perfis"). None: nem conjunto plano nem eixo."""
+    planos = []
+    for rotulo, lista in itens:
+        if not rotulo or len(lista) < 2:
+            continue
+        if re.match(r"^(A\.[CDL]\.|C\.?V\.)\d", (nomes or {}).get(rotulo) or rotulo):
+            continue                                  # agulhas e contraventos típicos: repetem em todo vão
+        vv = [q for e in lista for q in e.vertices]
+        ws = [_dot(q, w) for q in vv]
+        ext_w = max(ws) - min(ws)
+        ext3 = max(max(q[i] for q in vv) - min(q[i] for q in vv) for i in range(3))
+        if ext3 >= 4 * MENOR_ITEM_LOCALIZACAO and ext_w <= 0.2 * ext3 and ext3 >= largura / 3.0:
+            planos.append(((max(ws) + min(ws)) / 2.0, min(ws), max(ws), rotulo))
+    if not planos:
+        # a primeira linha de eixo; sem ela, o plano dos conjuntos menores; sem nenhum, a fachada da frente (a
+        # parede lateral da Sala, com os contraventos em X da parede de trás por cima dela) — antes que a vista de
+        # tudo sobreposto
+        if ex:
+            from nucleo3d.eixos import segmentos
+            linhas = sorted((_dot(s_["a"], w), s_["nome"]) for s_ in segmentos(ex)
+                            if abs(_dot(s_["a"], w) - _dot(s_["b"], w)) < 1.0)
+            if linhas:
+                c, nome = linhas[0]
+                return c - FOLGA_FATIA_EIXO, c + FOLGA_FATIA_EIXO, nome
+        if largura <= 0:
+            return None
+        menor = _plano_da_fatia(itens, w, None, 0.0, nomes)
+        if menor is not None:
+            return menor
+        ws_ = [_dot(q, w) for _r, lista in itens for e in lista for q in e.vertices]
+        return (min(ws_) - 1.0, min(ws_) + 2 * FOLGA_FATIA_EIXO, "") if ws_ else None
+    planos.sort()
+    grupos = [[planos[0]]]
+    for pl in planos[1:]:
+        if pl[0] - grupos[-1][-1][0] <= 2 * FOLGA_FATIA:
+            grupos[-1].append(pl)
+        else:
+            grupos.append([pl])
+    assinatura = [tuple(sorted(pl[3] for pl in gr)) for gr in grupos]
+    repete = collections.Counter(assinatura)
+    i = min(range(len(grupos)), key=lambda k: (-repete[assinatura[k]], -len(grupos[k]), grupos[k][0][0]))
+    gr = grupos[i]
+    a, b = min(pl[1] for pl in gr) - FOLGA_FATIA, max(pl[2] for pl in gr) + FOLGA_FATIA
+    c = sum(pl[0] for pl in gr) / len(gr)
+    nome = ""
+    if ex:
+        from nucleo3d.eixos import segmentos
+        perto = [(abs(_dot(s_["a"], w) - c), s_["nome"]) for s_ in segmentos(ex)
+                 if abs(_dot(s_["a"], w) - _dot(s_["b"], w)) < 1.0]
+        perto = [t for t in perto if t[0] <= (b - a) / 2.0 + FOLGA_FATIA]
+        if perto:
+            nome = min(perto)[1]
+    return a, b, nome
+
+
+def _cortar_na_fatia(e: Solido, w, a: float, b: float) -> List[Tuple[float, float, float]]:
+    """Os pontos da peça dentro da fatia a ≤ w·p ≤ b (as faces recortadas nos dois planos); [] se ela não
+    chega à fatia. A peça toda dentro devolve os próprios vértices."""
+    ws = [_dot(q, w) for q in e.vertices]
+    if not ws or max(ws) < a or min(ws) > b:
+        return []
+    if min(ws) >= a and max(ws) <= b:
+        return list(e.vertices)
+    pts = []
+
+    def recorta(poli, lim, sinal):
+        saida = []
+        n = len(poli)
+        for k in range(n):
+            p1, p2 = poli[k], poli[(k + 1) % n]
+            d1, d2 = sinal * (_dot(p1, w) - lim), sinal * (_dot(p2, w) - lim)
+            if d1 >= 0:
+                saida.append(p1)
+            if (d1 >= 0) != (d2 >= 0):
+                t = d1 / (d1 - d2)
+                saida.append(tuple(p1[j] + t * (p2[j] - p1[j]) for j in range(3)))
+        return saida
+    for f in e.faces:
+        poli = [e.vertices[k] for k in f]
+        poli = recorta(recorta(poli, a, 1.0), b, -1.0)
+        pts.extend(poli)
+    if not e.faces:
+        pts = [q for q, x in zip(e.vertices, ws) if a <= x <= b]
+    return pts
+
 
 def _eixos_do_modelo(doc: Documento, eixos: Optional[dict], nomes_producao: Optional[dict]) -> Optional[dict]:
     """Os eixos gravados no projeto, ou identificados do modelo agora (None se não der)."""
@@ -3788,14 +3925,31 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
     vistas = [("PLANTA DE LOCALIZAÇÃO", "topo", u_pl, v_pl, w_pl),
               ("ELEVAÇÃO LONGITUDINAL", "frente", u_lo, v_lo, w_lo),
               ("ELEVAÇÃO TRANSVERSAL", "lateral", u_tr, v_tr, w_tr)]
+    ex_modelo = _eixos_do_modelo(doc, eixos, nomes_producao)
+    # as elevações são cortes: só o que está na fatia do plano do pórtico típico, cada peça recortada nela
+    # (id -> pontos 3D); a planta vê tudo
+    fatias = {}
+    for nome, tipo, u, v, w in vistas:
+        us_ = [_dot(q, u) for q in todos]
+        pl = None if tipo == "topo" else _plano_da_fatia(itens, w, ex_modelo, max(us_) - min(us_), nomes)
+        if pl is None:
+            fatias[nome] = (None, {e.id: list(e.vertices) for e in pecas})
+            continue
+        cortes = {}
+        for e in pecas:
+            pts = _cortar_na_fatia(e, w, pl[0], pl[1])
+            if len(pts) >= 3:
+                cortes[e.id] = pts
+        fatias[nome] = (pl, cortes) if cortes else (None, {e.id: list(e.vertices) for e in pecas})
 
-    def extensao(u, v):
-        us = [_dot(p, u) for p in todos]
-        vs = [_dot(p, v) for p in todos]
+    def extensao(u, v, nome=None):
+        pts = [q for lst in fatias[nome][1].values() for q in lst] if nome else todos
+        us = [_dot(p, u) for p in pts]
+        vs = [_dot(p, v) for p in pts]
         return max(us) - min(us), max(vs) - min(vs)
     l_pl, a_pl = extensao(u_pl, v_pl)
-    l_lo, a_lo = extensao(u_lo, v_lo)
-    l_tr, a_tr = extensao(u_tr, v_tr)
+    l_lo, a_lo = extensao(u_lo, v_lo, "ELEVAÇÃO LONGITUDINAL")
+    l_tr, a_tr = extensao(u_tr, v_tr, "ELEVAÇÃO TRANSVERSAL")
     folga_papel = 45.0
     # papel útil de uma A1 deitada, descontados carimbo e margens
     esc = escala_normalizada(max((l_pl + folga_papel * 0 + max(l_tr, 0.0)) / 760.0,
@@ -3806,14 +3960,18 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
     h_txt = 2.5 * esc
     posicoes_vistas = [(0.0, a_lo + folga), (0.0, 0.0), (l_lo + folga, 0.0)]
     for (nome, tipo, u, v, w), (x0, y0) in zip(vistas, posicoes_vistas):
-        us = [_dot(p, u) for p in todos]
-        vs = [_dot(p, v) for p in todos]
+        plano, cortes = fatias[nome]
+        visiveis = [q for lst in cortes.values() for q in lst]
+        us = [_dot(p, u) for p in visiveis]
+        vs = [_dot(p, v) for p in visiveis]
         u0, v0 = min(us), min(vs)
         p = _Papel(d, dict(atr_base, vista=nome), x0, y0)
         n_pecas = 0
         # contornos
         for e in pecas:
-            pts = [(_dot(q, u) - u0, _dot(q, v) - v0) for q in e.vertices]
+            if e.id not in cortes:
+                continue
+            pts = [(_dot(q, u) - u0, _dot(q, v) - v0) for q in cortes[e.id]]
             casco = _casco(pts)
             if len(casco) >= 3:
                 m = _marcas(e)
@@ -3845,11 +4003,20 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
             if tipo != "topo" and re.match(r"^(A\.[CDL]\.|C\.?V\.)\d", nome_r):
                 continue                              # os típicos (contraventos, agulhas) repetem em todo vão: na planta
             vv = [q for e in lista for q in e.vertices]
-            pu = [_dot(q, u) - u0 for q in vv]
-            pv = [_dot(q, v) - v0 for q in vv]
+            no_corte = [q for e in lista for q in cortes.get(e.id, ())]
+            if not no_corte:
+                continue                              # atrás (ou à frente) do corte
             ext3 = max(max(q[i] for q in vv) - min(q[i] for q in vv) for i in range(3))
+            if ext3 < MENOR_ITEM_LOCALIZACAO:
+                continue
+            # de topo ou não, pelo que aparece no corte (a ponta da tesoura cortada na linha dos apoios tem a
+            # marca; a terça vista de ponta, não); a marca vai no meio do que aparece
+            vc = no_corte if plano else vv
+            pu = [_dot(q, u) - u0 for q in vc]
+            pv = [_dot(q, v) - v0 for q in vc]
+            ext3c = max(max(q[i] for q in vc) - min(q[i] for q in vc) for i in range(3))
             ext2 = max(max(pu) - min(pu), max(pv) - min(pv))
-            if ext3 < MENOR_ITEM_LOCALIZACAO or (ext3 > 0 and ext2 < 0.3 * ext3):
+            if ext3c > 0 and ext2 < 0.3 * ext3c:
                 continue
             rotulos.append(((nomes or {}).get(rotulo) or rotulo, (sum(pu) / len(pu), sum(pv) / len(pv))))
         rotulos.sort(key=lambda r: (r[1][1], r[1][0]))
@@ -3875,7 +4042,7 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
             p.texto(cx, caixa[1], rotulo, h_txt, "TEXTO", alinhamento="centro")
         larg_v, alt_v = max(us) - u0, max(vs) - v0
         if tipo == "topo":
-            ex = _eixos_do_modelo(doc, eixos, nomes_producao)
+            ex = ex_modelo
             if ex:
                 _desenhar_eixos(p, ex, u, v, u0, v0, esc, larg_v, alt_v)
                 d.metadados["eixos"] = ex
@@ -3884,11 +4051,13 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
         # o título vai abaixo de tudo o que já foi desenhado: as linhas de eixo passam 1,5 m
         # além das peças, com a bolinha na ponta, e a bolinha do primeiro eixo caía no título
         y_tit = min(-(10.0 + 8.0) * esc, p.extremos[1] - p.dy - 6.0 * esc)      # extremos: absolutos; texto: da vista
-        p.texto(0, y_tit, nome, 3.5 * esc)
+        p.texto(0, y_tit, nome + (" – CORTE NO EIXO %s" % plano[2] if plano and plano[2] else ""), 3.5 * esc)
         p.texto(0, y_tit - 4.5 * esc, "escala 1:%s · %s" % (
             int(esc) if float(esc).is_integer() else esc,
             "marcas de conjunto no lugar de montagem; peça solta com a própria marca" if tipo == "topo"
-            else "tesouras, dispositivos e chumbamentos no lugar de montagem (terças, contraventos e agulhas na planta)"), 2.0 * esc)
+            else ("só o que está no plano do corte, sem as peças de trás; " if plano else "")
+            + "tesouras, dispositivos e chumbamentos no lugar de montagem (terças, contraventos e agulhas na planta)"),
+            2.0 * esc)
         ext_c = p.extremos
         d.metadados.setdefault("celulas", []).append([round(t, 1) for t in ext_c])
         d.vistas.append({"origem": [minimo[0], minimo[1], minimo[2]], "normal": list(w), "acima": list(v),

@@ -495,10 +495,15 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     planta_cb = [c for c in itens if "chumba" in str(c.get("fonte") or "").lower() and not c.get("chave")]
     if planta_cb:
         partes_cb = {pt.strip() for c in itens if _eh_chumbamento(c.get("montagem")) for pt in c["montagem"].split(" + ")}
+        # as chapas que o chumbamento montado já traz embaixo, para o corte (30/09): a cópia solta repetia
+        na_montagem = {str((e.atributos or {}).get("chapa_de_corte")) for c in itens if _eh_chumbamento(c.get("montagem"))
+                       for e in c["entidades"] if (e.atributos or {}).get("chapa_de_corte")}
         copias_cb = []
         for c in itens:
             it = c.get("item") or {}
             if (it.get("nome") in partes_cb) and not c.get("montagem") and it.get("tipo") != "chumbador":
+                if it.get("nome") in na_montagem:
+                    continue
                 # a chapa de base: a cópia na prancha dos chumbadores, o original na das chapas (a prancha de
                 # corte tem todas — pedido do usuário, 28/09)
                 cc = _copia_local(c, _quantidade_da_celula(c))
@@ -1138,17 +1143,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                                                 if mq["categoria"] not in ("DETALHES", "LEGENDA")))
                 cont_i = "; ".join(l_.lstrip("- ") for l_ in _conteudo_de(cels_i))
                 txt_i = (tit_i + " — " + cont_i) if cont_i else tit_i
-                # a linha comprida quebra nas vírgulas (continua embaixo, sem o número), em vez de cortar
-                pedacos, atual = [], ""
-                for parte in re.split(r"(?<=[,;]) ", txt_i):
-                    if atual and len(atual) + len(parte) + 1 > 125:
-                        pedacos.append(atual)
-                        atual = "   " + parte
-                    else:
-                        atual = (atual + " " + parte) if atual else parte
-                pedacos.append(atual)
-                rel_i.append(("%02d/%02d" % (i_p, total), pedacos[0]))
-                rel_i += [("", p_) for p_ in pedacos[1:]]
+                # inteira: o índice quebra pela largura da coluna que couber (_indice)
+                rel_i.append(("%02d/%02d" % (i_p, total), txt_i))
             leg["larg_rel"] = 400
             _legenda(d, leg, leg["x0"], fy0, leg.get("y1", fy1), rel_i, onde, largura=fx1 - leg["x0"])
         d.metadados["prancha"]["relacao"] = leg["relacao"]
@@ -2334,6 +2330,17 @@ def _copia_local(c: dict, n: int) -> dict:
     """O detalhe de uma chapa (ou chumbamento) para a faixa da prancha da tesoura, com a quantidade
     desenhada nela: o título ("CH13 – 02x") e o peso total ("8,88 kg/pç  total 17,8 kg") pela
     quantidade local; o original segue para a prancha das chapas, com o total da obra."""
+    original = c
+    if any((e.atributos or {}).get("chapa_de_corte") for e in c["entidades"]):
+        # o chumbamento montado vai sem as chapas para corte (estão na prancha dos chumbadores): a faixa da
+        # tesoura só mostra como fica
+        ents0 = [e for e in c["entidades"] if not (e.atributos or {}).get("chapa_de_corte")]
+        c = dict(c, entidades=ents0)
+        c.pop("_ents_escala0", None)
+        c["caixa"] = _caixa_de(ents0, c["k"]) or c["caixa"]
+        (bx0, by0), (bx1, by1) = c["caixa"]
+        c["w"], c["h"] = (bx1 - bx0) / c["k"], (by1 - by0) / c["k"] + FAIXA
+        _aplicar_arranjo(c)
     textos = [e for e in c["entidades"] if isinstance(e, Texto)]
     titulo = max(textos, key=lambda t: t.altura) if textos else None
     ents = []
@@ -2351,7 +2358,7 @@ def _copia_local(c: dict, n: int) -> dict:
                 e = copy.copy(e)
                 e.texto = txt
         ents.append(e)
-    cc = dict(c, entidades=ents, local=True, qtd_local=n, original=c)
+    cc = dict(c, entidades=ents, local=True, qtd_local=n, original=original)
     if titulo is not None:
         cc["titulo"] = re.sub(r"\s*–\s*\d+x\s*$", "", titulo.texto) + " – %02dx" % n
     if c.get("item"):
@@ -2405,6 +2412,85 @@ def _tabela(d, x0: float, y1: float, y0: float, titulo: str, linhas: Sequence[tu
     return max(n_col * larg_col, LARGURA_LETRA * h_tit * len(titulo) + 4.0)
 
 
+def _quebrar(txt: str, n: int) -> List[str]:
+    """O texto em linhas de até `n` letras, quebrando depois das vírgulas e dos espaços (a palavra maior que
+    a linha fica inteira)."""
+    linhas, atual = [], ""
+    for parte in re.split(r"(?<=[,;]) |(?<=—) | (?=—)", txt):
+        for pal in ([parte] if len(parte) <= n else parte.split(" ")):
+            if atual and len(atual) + 1 + len(pal) > n:
+                linhas.append(atual)
+                atual = pal
+            else:
+                atual = (atual + " " + pal) if atual else pal
+    if atual:
+        linhas.append(atual)
+    return linhas or [""]
+
+
+def _indice(d, x0: float, y1: float, y0: float, largura: float, entradas: Sequence[tuple]) -> float:
+    """O índice das pranchas na faixa inteira: a maior letra (e o número de colunas) em que todas as entradas
+    cabem, cada uma quebrada pela largura da coluna, com o número na frente e as continuações alinhadas
+    no texto; a entrada não se parte entre colunas. Antes a linha quebrava em 125 letras e a coluna media
+    a mais comprida: letra 2,0 e metade da faixa vazia (pedido do usuário, 30/09: "tem bastante espaço
+    que pode ser melhor aproveitado"). Com `d` None só mede. Devolve a largura usada (mm)."""
+    titulo = "RELAÇÃO DAS PRANCHAS"
+    h_tit = 3.2
+    entradas = [e for e in entradas if e]
+    if not entradas:
+        return LARGURA_LETRA * h_tit * len(titulo) + 4.0
+    y_ini = y1 - h_tit - 2.5
+    altura = y_ini - y0
+    gap = 8.0
+    escolha = None
+    for h in (5.0, 4.5, 4.0, 3.5, 3.2, 2.8, 2.5, 2.2, 2.0, 1.8, 1.6):
+        passo = 1.45 * h
+        por_col = int(altura // passo)
+        if por_col < 1:
+            continue
+        larg_num = LARGURA_LETRA * h * max(len(str(e[0])) for e in entradas) + 1.5 * h
+        for n_col in range(1, 5):
+            larg_col = (largura - gap * (n_col - 1)) / n_col
+            n_letras = int((larg_col - larg_num) / (LARGURA_LETRA * h))
+            if n_letras < 30:
+                break
+            blocos = [_quebrar(str(e[1]), n_letras) for e in entradas]
+            # as entradas em ordem, coluna a coluna; a que não cabe no resto da coluna começa a seguinte
+            cols, usadas = [[]], 0
+            for i, b in enumerate(blocos):
+                if usadas and usadas + len(b) > por_col:
+                    cols.append([])
+                    usadas = 0
+                cols[-1].append(i)
+                usadas += len(b)
+            if len(cols) <= n_col and all(sum(len(blocos[i]) for i in c) <= por_col for c in cols):
+                escolha = (h, passo, larg_num, larg_col, blocos, cols)
+                break
+        if escolha:
+            break
+    if escolha is None:
+        # não cabe nem na menor letra: a tabela antiga, cortada com "… +N"
+        return _tabela(d, x0, y1, y0, titulo, entradas, h=1.6, passo=2.4, h_tit=h_tit, max_larg=largura)
+    h, passo, larg_num, larg_col, blocos, cols = escolha
+    if d is not None:
+        atr = {"prancha": "legenda"}
+        d.add(Texto(camada="TEXTO", posicao=(round(x0, 2), round(y1 - h_tit, 2)), texto=titulo, altura=h_tit,
+                    atributos=dict(atr, campo="titulo_bloco")))
+        for k, col in enumerate(cols):
+            xc = x0 + k * (larg_col + gap)
+            lin = 0
+            for i in col:
+                for j, txt in enumerate(blocos[i]):
+                    y = round(y_ini - (lin + 1) * passo + (passo - h), 2)
+                    if j == 0:
+                        d.add(Texto(camada="TEXTO", posicao=(round(xc, 2), y), texto=str(entradas[i][0]), altura=h,
+                                    atributos=dict(atr, campo="linha")))
+                    d.add(Texto(camada="TEXTO", posicao=(round(xc + larg_num, 2), y), texto=txt, altura=h,
+                                atributos=dict(atr, campo="linha")))
+                    lin += 1
+    return len(cols) * larg_col + gap * (len(cols) - 1)
+
+
 def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tuple], onde: Dict[str, int],
              largura: Optional[float] = None) -> float:
     """A legenda da prancha, da esquerda para a direita a partir de x0: a relação das pranchas (na
@@ -2415,14 +2501,9 @@ def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tu
     topo = y1 - QUADRO_CABECALHO - 1.5
     base = y0 + 2.0
     if leg.get("indice"):
-        # o índice da primeira prancha: a faixa inteira, letra maior, em colunas se precisar
+        # o índice da primeira prancha: a faixa inteira
         larg_i = (largura or 600.0) - 2 * QUADRO_MARGEM
-        for h_i, passo_i in ((2.8, 4.0), (2.4, 3.4), (2.0, 3.0)):
-            w_i = _tabela(None, 0.0, topo, base, "RELAÇÃO DAS PRANCHAS", relacao, h=h_i, passo=passo_i, h_tit=3.2)
-            if w_i <= larg_i:
-                break
-        return _tabela(d, x0 + QUADRO_MARGEM, topo, base, "RELAÇÃO DAS PRANCHAS", relacao, h=h_i, passo=passo_i, h_tit=3.2,
-                       max_larg=larg_i) + 2 * QUADRO_MARGEM
+        return _indice(d, x0 + QUADRO_MARGEM, topo, base, larg_i, relacao) + 2 * QUADRO_MARGEM
     blocos = []
     if leg.get("relacao"):
         rel = relacao or [("00/00", "X" * 40)] * max(1, int(leg.get("n_rel") or 1))

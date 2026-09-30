@@ -124,3 +124,25 @@ def test_sem_ajuste_nao_muda_nada():
     antes = {e.id: copy.deepcopy(e) for e in g2.entidades.values()}
     AP.aplicar(g2, aj)
     assert all(math.dist(AP._ref(e), AP._ref(antes[e.id])) < 1e-9 for e in g2.entidades.values())
+
+
+def test_repeticao_no_mesmo_lugar_nao_vira_desenho_a_mao():
+    """A mesma entidade gerada mais vezes do que a impressão conta, em cima da original, é o gerador repetindo
+    a peça (as tesouras projetadas umas sobre as outras na elevação): não vira desenho à mão — guardada, voltava
+    em toda geração por cima do desenho novo (9366 entidades no depósito, 30/09). A cópia fora do lugar,
+    feita pelo usuário, continua guardada."""
+    from nucleo2d.desenho import novo_id
+    g1 = _gerado("g1")
+    imp1 = AP.marcar(g1)
+    ed = Desenho.de_dict(copy.deepcopy(g1.dict()))
+    A = "tesouras|conjunto:M1"
+    linha = _por(ed, A, "linha")[0]
+    em_cima = copy.deepcopy(linha)
+    em_cima.id = novo_id()
+    ed.add(em_cima)
+    copia = transladar(copy.deepcopy(linha), 0.0, 50.0)
+    copia.id = novo_id()
+    ed.add(copia)
+    aj = AP.aprender(ed, {"impressoes": {"g1": imp1}})
+    guardadas = list(Desenho.de_dict(aj["a_mao"]).entidades.values())
+    assert len(guardadas) == 1 and abs(AP._ref(guardadas[0])[1] - (AP._ref(linha)[1] + 50.0)) < 1e-6

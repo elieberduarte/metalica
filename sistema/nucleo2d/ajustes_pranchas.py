@@ -37,6 +37,8 @@ TOLERANCIA = 0.3
 TOLERANCIA_ESCALA = 0.005
 #: Quantas entradas o diário guarda.
 DIARIO_MAX = 500
+#: A repetição de uma entidade gerada a menos disto (mm de papel) da original é do gerador, não cópia à mão.
+MESMO_LUGAR = 0.5
 #: Tantas entidades quanto isto (e esta fração das da célula) "movidas dentro dela" não é ajuste do usuário:
 #: a célula foi montada de outro jeito entre as gerações, e nada se aprende dela.
 FORA_DO_LUGAR_MIN = 3
@@ -212,6 +214,12 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
                 n_ = max(1, n_gerado.get(s_, 1))
                 originais += es[:n_]
                 for c_ in es[n_:]:
+                    r_c = _ref(c_)
+                    if r_c is not None and any(math.dist(r_c, _ref(o_) or g0) < MESMO_LUGAR for o_ in es[:n_]):
+                        # em cima da original: é o gerado repetindo a peça (as tesouras projetadas umas sobre as
+                        # outras), não uma cópia do usuário — guardada, voltava em toda geração por cima do
+                        # desenho novo (9366 entidades no depósito desde 29/09, 30/09)
+                        continue
                     a_mao.append(c_)
             G = [tuple(e.atributos["g"]["r"]) for e in originais]
             C = [_ref(e) for e in originais]

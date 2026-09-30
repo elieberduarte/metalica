@@ -205,8 +205,11 @@ def test_planta_de_localizacao():
     assert nm["M1"] == nm["M2"] == nm["M3"] and nm["M9"] != nm["M1"]
     assert planta.count(nm["M9"]) == 2 and planta.count(nm["M1"]) == 3 and planta.count(nm["M5"]) == 2
     assert "P1" not in planta and "M9" not in planta
-    # todas as peças desenhadas nas três vistas, em linha fina
-    assert all(v["pecas_projetadas"] == len(det._pecas(doc)[0]) for v in d.vistas)
+    # todas as peças na planta, em linha fina; as elevações são cortes, só o que está no plano do pórtico
+    # típico, sem as peças de trás (pedido do usuário, 30/09)
+    total = len(det._pecas(doc)[0])
+    assert d.vistas[0]["pecas_projetadas"] == total
+    assert all(0 < v["pecas_projetadas"] < total for v in d.vistas[1:])
     assert d.escala >= 1
 
 

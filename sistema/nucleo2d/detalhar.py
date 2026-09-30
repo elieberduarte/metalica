@@ -1040,11 +1040,12 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             from nucleo2d.detalhe.montagens import desenho_de_montagem
             montagens = montagens_cache or []
             por_id = {e.id: e for e in pecas}
+            pos_de_marca = {m: p for p in posicoes for m in marcas_de(p)}
             for gm in montagens:
                 tipos_g = {nomeacao["tipos"].get(fundidas.get(m, m)) for m in gm["marcas"]}
                 titulo = "SUPORTE DE TERÇA" if "suporte_terca" in tipos_g else ""
                 celulas_mont.append(("chumbador" if "chumbador" in tipos_g else "montagem", (lambda dd, x, y, gm=gm, titulo=titulo:
-                                                  desenho_de_montagem(doc, gm, dd, x, y, titulo, por_id))))
+                                                  desenho_de_montagem(doc, gm, dd, x, y, titulo, por_id, pos_de_marca))))
                 if "suporte_terca" in tipos_g:
                     familias_mont.append("terca")
                 elif "chumbador" in tipos_g:
