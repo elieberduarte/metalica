@@ -230,10 +230,17 @@ class Furo:
 
     def rotulo(self) -> str:
         if self.tipo == "redondo":
-            return "Ø%s" % _mm(self.d, 1)
+            return "Ø%s" % _mm(_medida_de_furo(self.d), 1)
         if self.tipo == "oblongo":
-            return "OBL %sx%s" % (_mm(self.larg, 1), _mm(self.alt, 1))
+            return "OBL %sx%s" % (_mm(_medida_de_furo(self.larg), 1), _mm(_medida_de_furo(self.alt), 1))
         return "recorte"
+
+
+def _medida_de_furo(v: float) -> float:
+    """O diâmetro medido na malha facetada (12,9 num furo de 13) no meio milímetro mais perto, quando está a
+    até 0,15 dele: "Ø12,9" saía ao lado de "Ø13" na mesma barra (análise das pranchas, 29/09)."""
+    m = round(v * 2.0) / 2.0
+    return m if abs(v - m) <= 0.15 else v
 
 
 @dataclass
@@ -977,8 +984,11 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
             _desenvolver_chapa(pos, nominal[2] if nominal else None)
         else:
             pos.classe = "chapa"
-            if nominal and (abs(nominal[0] - pos.L) > 3 and abs(nominal[0] - pos.H) > 3):
-                pos.observacoes.append("dimensões medidas diferem do nome do TecnoMETAL")
+            # qualquer lado fora do nome: a CH11 da Sala é "PLATE 148x148x6" com 148 x 240 na malha, e passava
+            # calada porque um dos lados batia (análise das pranchas, 29/09). O desenho segue a malha.
+            if nominal and any(abs(a_ - b_) > 3 for a_, b_ in zip(sorted(nominal[:2]), sorted((pos.L, pos.H)))):
+                pos.observacoes.append("dimensões medidas (%s x %s) diferem do nome do TecnoMETAL (%s x %s)"
+                                       % (_mm(pos.L), _mm(pos.H), _mm(nominal[0]), _mm(nominal[1])))
             elif nominal:
                 _ajustar_ao_nominal(pos, nominal)
         return pos

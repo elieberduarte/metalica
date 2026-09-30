@@ -73,8 +73,9 @@ def carimbo_tamanho(formato: str) -> Tuple[float, float]:
 
 
 def _largura_texto(texto: str, altura: float) -> float:
-    """Largura aproximada de uma linha em Arial (maiúsculas): 0,68 × altura por caractere."""
-    return 0.68 * altura * len(texto)
+    """Largura aproximada de uma linha em maiúsculas: 0,74 × altura por caractere (com 0,68 a linha do
+    CONTEÚDO passava da borda da caixa — "CB4 + CH14" da Sala, análise das pranchas de 29/09)."""
+    return 0.74 * altura * len(texto)
 
 
 def _quebrar(texto: str, largura: float, altura: float) -> List[str]:
@@ -164,7 +165,7 @@ def desenhar_folha(d: Desenho, formato: str, larg: float, alt: float, info: dict
         h = H_VALOR
         while h > 1.3 and _largura_texto(texto, h) > larg_util:
             h -= 0.1
-        n_max = int(larg_util / (0.68 * h))
+        n_max = int(larg_util / (0.74 * h))
         if len(texto) > n_max:
             texto = texto[:max(n_max - 1, 1)] + "…"
         T((vx, vy), texto, h, campo, vertical="meio")

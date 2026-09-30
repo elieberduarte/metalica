@@ -963,8 +963,16 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                         dx1 = leg["x0"] - FOLGA
             tem_legenda = bool(leg["blocos"])
             if na_faixa:
-                # "ACESSÓRIOS/DISPOSITIVOS": as chapas e os acessórios das peças da prancha (pedido do usuário, 28/09)
-                mold_p.append({"categoria": "DETALHES", "titulo": "ACESSÓRIOS/DISPOSITIVOS", "y1": fy1_p, "y0": fy0, "x0": fx0, "x1": dx1})
+                # "ACESSÓRIOS/DISPOSITIVOS": as chapas e os acessórios das peças da prancha (pedido do usuário, 28/09);
+                # a faixa que só recebeu as últimas peças da categoria da prancha (a barra B.14 do depósito) leva o
+                # título dela — a barra num quadro de acessórios (análise das pranchas, 29/09)
+                cats_f = {c["categoria"] for c in na_faixa}
+                tit_f = "ACESSÓRIOS/DISPOSITIVOS"
+                if (len(cats_f) == 1 and not any(c.get("local") for c in na_faixa)
+                        and next(iter(cats_f)) not in ("CHAPAS", "CHUMBAMENTO", "TELHAS_DET")):
+                    cat_f = next(iter(cats_f))
+                    tit_f = titulos_q.get(cat_f, cat_f) + (" (continuação)" if cat_f in iniciadas else "")
+                mold_p.append({"categoria": "DETALHES", "titulo": tit_f, "y1": fy1_p, "y0": fy0, "x0": fx0, "x1": dx1})
                 iniciadas.update(c["categoria"] for c in na_faixa if not c.get("local"))   # a cópia não abre a categoria
             if tem_legenda:
                 mold_p.append({"categoria": "LEGENDA", "titulo": "LEGENDA", "y1": fy1_p, "y0": fy0, "x0": leg["x0"], "x1": fx1})
@@ -1844,7 +1852,13 @@ def _compacta(c: dict) -> dict:
     ents = [e for e in c["entidades"] if not isinstance(e, Texto) or e is tit or str(e.texto).startswith("PLATE")]
     caixa = _caixa_de(ents, c["escala"]) or c["caixa"]
     (bx0, by0), (bx1, by1) = caixa
-    return dict(c, entidades=ents, caixa=caixa, w=(bx1 - bx0) / c["k"], h=(by1 - by0) / c["k"], sem_escala=True)
+    cc = dict(c, entidades=ents, caixa=caixa, w=(bx1 - bx0) / c["k"], h=(by1 - by0) / c["k"], sem_escala=True)
+    arr = _arranjo(cc)
+    if arr is not None:
+        # a caixa no padrão das outras (o título no canto, o desenho no meio, a escala embaixo): a CH9, a CH13 e a
+        # CH14 da Sala saíam sem "ESC." e com o título solto (análise das pranchas, 29/09)
+        cc.update(w=arr["w"], h=arr["h"], sem_escala=False, _arranjada=True)
+    return cc
 
 
 def _grupo(mont: dict, chapa: dict, alt_max: float) -> dict:
@@ -1852,7 +1866,7 @@ def _grupo(mont: dict, chapa: dict, alt_max: float) -> dict:
     vistas"): a chapa embaixo das vistas se couber na altura, senão ao lado delas. Um candidato só, com a
     posição de cada um relativa ao canto de baixo à esquerda."""
     a = _compacta(chapa)
-    if a["k"] != mont["k"]:
+    if a["k"] != mont["k"] and not a.get("_arranjada"):
         a["sem_escala"] = False
         a["h"] += FAIXA
     vao = 2.0
@@ -2265,6 +2279,15 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
                 if linha not in linhas:
                     linhas.append(linha)
                 nomes.append(m_t.group(1))
+            continue
+        m_f = re.match(r"^\s*DETALHE (\w+) – FUROS DE (\S+)", str(c.get("titulo") or "")) if not nome else None
+        if m_f:
+            # o detalhe de furos de uma barra da tesoura (a B.28 da Sala, sem caixa própria): a barra na legenda,
+            # com a letra do detalhe (análise das pranchas, 29/09)
+            linha = (m_f.group(2), "det. %s" % m_f.group(1))
+            if linha not in linhas:
+                linhas.append(linha)
+            nomes.append(m_f.group(2))
             continue
         if not nome:
             continue                                  # vistas e cortes: o título deles basta

@@ -354,7 +354,11 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
         for m, q in comp.items():
             cont[tipo.get(fundidas.get(m, m), "")] += q
         n = sum(comp.values())
-        barras_conj = [fundidas.get(m, m) for m, q in comp.items() if tipo.get(fundidas.get(m, m)) in ("barra", "agulhamento") for _ in range(q)]
+        # a barra que outro conjunto já fez agulhamento lateral continua valendo: sem isso, o segundo conjunto com a
+        # mesma barra caía em suporte de terça ("CH2" no depósito) ou em DP ("DP.1" no típico dos contraventos da
+        # Sala), conforme a ordem (análise das pranchas, 29/09)
+        barras_conj = [fundidas.get(m, m) for m, q in comp.items()
+                       if tipo.get(fundidas.get(m, m)) in ("barra", "agulhamento", "agulhamento_lateral") for _ in range(q)]
         if cont.get("pilar"):
             tipo_conj[c["marca"]] = "pilar"                 # o pilar com a placa de base
         elif cont.get("viga"):

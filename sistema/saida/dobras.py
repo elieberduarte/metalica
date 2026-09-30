@@ -153,7 +153,10 @@ def bitola_de(t: float) -> Optional[int]:
 def com_bitola(perfil: str) -> str:
     """O nome do perfil dobrado como a fábrica escreve: a espessura pelo número da bitola
     ("U100X50X4.18" → "U100X50X#8", "C150X50X17X2.25" → "C150X50X17X#13"). Perfil que não é
-    dobrado da chapa, ou espessura fora das bitolas, fica como está."""
+    dobrado da chapa, ou espessura fora das bitolas, fica como está. A polegada que o arquivo traz com as
+    duas aspas separadas ("1/4' '") sai junta ("1/4''")."""
+    if perfil:
+        perfil = re.sub(r"'\s+'", "''", perfil)
     if not perfil or geometria(perfil) is None:
         return perfil
     m = re.search(r"(?i)x\s*(\d+(?:[.,]\d+)?)\s*(\(FF\))?\s*$", perfil)

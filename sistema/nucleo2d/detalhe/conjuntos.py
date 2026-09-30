@@ -2767,7 +2767,14 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # da face da peça, não da chapa de apoio) e a altura da ponta por fora
         maior = 0.0
         ponta_dir = None                                  # (x da face, deslocamento da cota mais de fora)
+        cotadas_ys = []
         for pt in pontas:
+            if tipo == "conjunto" and any(len(ys_) == len(pt["ys"]) and all(abs(a_ - b_) <= 2.0 for a_, b_ in zip(ys_, pt["ys"]))
+                                          for ys_ in cotadas_ys):
+                # o DP estreito: as duas pontas são o mesmo trecho, e a mesma altura saía dos dois lados (423 |
+                # 423 nos DP.37 a DP.41 do depósito, análise das pranchas de 29/09)
+                continue
+            cotadas_ys.append(list(pt["ys"]))
             sg = 1.0 if pt["lado"] > 0 else -1.0
             desl0 = abs((larg if pt["lado"] > 0 else 0.0) - pt["face"]) / esc     # a chapa além da face
             nv = 1 if len(pt["ys"]) > 2 and p.cadeia_v(pt["ys"], pt["face"], sg * (off + desl0), exigir_espaco=False) else 0
@@ -2840,10 +2847,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         cadeia = len(alturas) > 2 and p.cadeia_v(alturas, larg, off)
         p.cota_v(0, alt, larg, off2 if cadeia else off)
     _rotular_barras(p, rotulos, esc)
+    fora_t = []
     if tipo != "tesoura":
         # no DP, os parafusos que prendem as terças nele não têm chamada (são da terça, na obra — pedido
         # do usuário, 28/09); a ligação com a tesoura fica
-        fora_t = []
         if tipo == "conjunto":
             ids_i = {e.id for e in instancia}
             cx_i = [_caixa(e) for e in instancia]
@@ -2926,7 +2933,9 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         if cam_ == "CHAPAS":
             lista_ = sorted(lista_, key=_ordem_natural, reverse=True)
         linhas.append(("%s%s" % ("Chapas " if cam_ == "CHAPAS" else "", " / ".join(lista_)), cam_))
-    paraf, porcas = parafusos_no_conjunto(doc, instancia)
+    # os da terça presa no DP também fora da lista: o desenho não mostra a terça nem a chamada deles (os M12 x 35
+    # dos DP.37 a DP.41 do depósito, análise das pranchas de 29/09)
+    paraf, porcas = parafusos_no_conjunto(doc, instancia, fora=fora_t)
     if paraf or porcas:
         itens_p = ["%dx %s" % (q, k) for k, q in sorted(paraf.items(), key=lambda kv: _ordem_natural(kv[0]))]
         # as soltas de ponta roscada no padrão da fábrica: 1 porca + 2 arruelas por ponta (28/09) — a ponta
@@ -2944,7 +2953,9 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             itens_p.append("%dx porca/arruela" % resto)
         linhas += [(t, "TEXTO") for t in quebrar("Parafusos: ", itens_p)]
     if peso_un > 0:
-        linhas.append(("%s kg/un  total %s kg" % (_mm(peso_un, 1), _mm(peso_un * n_instancias, 1)), "TEXTO"))
+        # o conjunto leve com duas casas: 2,9 × 25 não dava os 73,3 do CB1 (análise das pranchas, 29/09)
+        linhas.append(("%s kg/un  total %s kg" % (_mm(peso_un, 2 if peso_un < 10.0 else 1), _mm(peso_un * n_instancias, 1)),
+                       "TEXTO"))
     for txt in ([nota] if isinstance(nota, str) else list(nota or [])):
         if not txt:
             continue
@@ -3375,7 +3386,7 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         if comp_m > max(BARRAS_COMERCIAIS) + 0.5:
             longos.append(nome_m)
         y_c = y_base - passo_c * i * esc
-        txt = "%s COMP=%dmm – %02dX" % (nome_m, round(comp_m), n_inst)
+        txt = "%s COMP=%dmm – %02dx" % (nome_m, round(comp_m), n_inst)
         p.cota_h(round(t0), round(t1), y_c, 0.0, texto=txt)
         for x_ in (round(t0), round(t1)):
             p.linha(x_, y_c - 1.5 * esc, x_, y_c + 1.5 * esc, "COTA")
@@ -3442,9 +3453,9 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         por_ponta.setdefault(chave_p, []).append(nomes_conj.get(rot, rot))
     txt_p = lambda ch: ", ".join("%s x%d" % (k, q) for k, q in ch)    # noqa: E731
     if len(por_ponta) == 1 and next(iter(por_ponta)):
-        linhas.append("Pecas de ponta (por unidade): " + txt_p(next(iter(por_ponta))))
+        linhas.append("Peças de ponta (por unidade): " + txt_p(next(iter(por_ponta))))
     elif len(por_ponta) > 1:
-        linhas.append("Pecas de ponta (por unidade): " + "; ".join(
+        linhas.append("Peças de ponta (por unidade): " + "; ".join(
             "%s: %s" % (", ".join(nomes_m), txt_p(ch)) for ch, nomes_m in por_ponta.items() if ch))
     y = alt + (off + 4.0) * esc
     atr0 = p.atr
@@ -3495,8 +3506,13 @@ def _itens_de_localizacao(pecas: Sequence[Solido]) -> List[Tuple[str, List[Solid
     conjunto) vale por si."""
     por_conj: Dict[str, List[Solido]] = collections.OrderedDict()
     soltas: List[Solido] = []
+    from saida.detalhamento import _eh_telha
     for e in pecas:
         m = _marcas(e)
+        if _eh_telha(str(m.get("perfil") or e.nome or "")):
+            # a telha tem a paginação dela: na localização, "TL2" (telha) ao lado de "T.L.2" (terça lateral)
+            # confundia (análise das pranchas, 29/09)
+            continue
         conj = str(m.get("conjunto") or "")
         pos = str(m.get("posicao") or "")
         if conj and conj != pos:

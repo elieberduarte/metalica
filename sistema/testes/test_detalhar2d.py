@@ -917,3 +917,14 @@ def test_cadeia_sem_parcial_de_milimetros():
     assert _fundir_perto([0.0, 48.0, 50.0, 96.0, 98.0, 148.0]) == [0.0, 48.0, 96.0, 148.0]
     assert _fundir_perto([0.0, 146.0, 148.0]) == [0.0, 148.0]
     assert _fundir_perto([0.0, 5.0, 55.0, 110.0]) == [0.0, 5.0, 55.0, 110.0]      # 5 mm é medida
+
+
+def test_textos_do_furo_e_da_polegada():
+    """O furo medido na malha facetada vai para o meio milímetro (Ø12,9 ao lado de Ø13 na mesma barra) e a polegada
+    com as aspas separadas sai junta (análise das pranchas, 29/09)."""
+    from saida.detalhamento import Furo
+    from saida.dobras import com_bitola
+    assert Furo("redondo", 0, 0, d=12.9).rotulo() == "Ø13"
+    assert Furo("redondo", 0, 0, d=17.5).rotulo() == "Ø17,5"
+    assert Furo("redondo", 0, 0, d=13.25).rotulo() == "Ø13,2"         # longe do meio milímetro: fica a medida
+    assert com_bitola("L 2 1/2'' X 1/4' '") == "L 2 1/2'' X 1/4''"

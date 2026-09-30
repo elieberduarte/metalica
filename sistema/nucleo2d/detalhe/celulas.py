@@ -94,7 +94,8 @@ def _cabecalho(pos: Posicao) -> List[str]:
     if pos.parafusos or pos.porcas or getattr(pos, "passantes", None):
         linhas.append(("parafusos: " if pos.parafusos else "fixação: ") + pos.rotulo_parafusos())
     if pos.peso:
-        linhas.append("%s kg/pç  total %s kg" % (_mm(pos.peso, 2), _mm(pos.peso_total, 1)))
+        # a peça leve com uma casa a mais: 0,13 × 88 não dava os 11,1 do total da G.1 (análise das pranchas, 29/09)
+        linhas.append("%s kg/pç  total %s kg" % (_mm(pos.peso, 3 if pos.peso < 1.0 else 2), _mm(pos.peso_total, 1)))
     if acima_da_barra_comercial(pos):
         from saida.lista_producao import BARRAS_COMERCIAIS
         linhas.append("maior que a barra comercial de %s m: prever emenda" % _mm(max(BARRAS_COMERCIAIS) / 1000.0))
@@ -240,7 +241,7 @@ def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho:
     p.cota_v(0, H, L, off)                            # a altura; a seção não vai (o perfil está no título)
     ordem = sorted(posicoes, key=lambda q: _ordem_natural(q.nome or q.marca))
     for k, q in enumerate(ordem):
-        p.cota_h(0, L, 0, -(off + passo * k), texto="%s COMP=%dmm – %02dX" % (q.nome or q.marca, round(q.comprimento), q.quantidade))
+        p.cota_h(0, L, 0, -(off + passo * k), texto="%s COMP=%dmm – %02dx" % (q.nome or q.marca, round(q.comprimento), q.quantidade))
     total = sum(q.quantidade for q in ordem)
     peso = sum(float(q.peso_total or 0.0) for q in ordem)
     linhas = ["%s – %02dx   (sem furo)" % (", ".join(q.nome or q.marca for q in ordem), total),

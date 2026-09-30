@@ -1173,6 +1173,15 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         unicos = list(dict.fromkeys(sem_geo))
         avisos.append("%d peça(s) ficaram fora das vistas por falta de geometria: %s"
                       % (len(unicos), "; ".join(unicos[:10])))
+    divergentes = []
+    for p in _ordenar(posicoes):
+        for o_ in p.observacoes:
+            m_d = re.match(r"dimensões medidas \((.+?)\) diferem do nome do TecnoMETAL \((.+?)\)", o_)
+            if m_d:
+                divergentes.append("%s %s (nome: %s)" % (p.nome or p.marca, m_d.group(1), m_d.group(2)))
+    if divergentes:
+        avisos.append("%d chapa(s) com a medida do modelo diferente do nome do TecnoMETAL (o desenho segue o modelo; "
+                      "conferir com o projetista): %s" % (len(divergentes), "; ".join(divergentes)))
     longas = [p for p in _ordenar(posicoes) if acima_da_barra_comercial(p)]
     if longas:
         from saida.lista_producao import BARRAS_COMERCIAIS

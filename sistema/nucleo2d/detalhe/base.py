@@ -811,8 +811,9 @@ def parafusos_posicionados(doc: Documento, instancia: Sequence[Solido]) -> List[
     return saida
 
 
-def parafusos_no_conjunto(doc: Documento, instancia: Sequence[Solido]) -> Tuple[Dict[str, int], int]:
-    """Fixadores dentro da caixa da instância do conjunto: ({"M12 x 35": 32}, porcas)."""
+def parafusos_no_conjunto(doc: Documento, instancia: Sequence[Solido], fora=()) -> Tuple[Dict[str, int], int]:
+    """Fixadores dentro da caixa da instância do conjunto: ({"M12 x 35": 32}, porcas). `fora`: caixas
+    [(x0, x1), (y0, y1), (z0, z1)] das peças cujos parafusos não entram (as terças presas no DP)."""
     if not instancia:
         return {}, 0
     caixas = [_caixa(e) for e in instancia]
@@ -823,6 +824,8 @@ def parafusos_no_conjunto(doc: Documento, instancia: Sequence[Solido]) -> Tuple[
     for f in _so_parafusos(_fixadores(doc)):
         cc = tuple(sum(v[i] for v in f.vertices) / len(f.vertices) for i in range(3))
         if not all(minimo[i] <= cc[i] <= maximo[i] for i in range(3)):
+            continue
+        if any(all(cx_[k][0] - 15.0 <= cc[k] <= cx_[k][1] + 15.0 for k in range(3)) for cx_ in fora):
             continue
         ext = []
         _, pca = _autovetores(f.vertices)
@@ -1177,6 +1180,13 @@ def _posicao_de_chapa(pos: Posicao, ch: Chapa):
     ex, ey = _norm(tuple(float(k) for k in ch.eixo_x)), _norm(tuple(float(k) for k in ch.eixo_y))
     pos.eixos = (ex, ey, _norm(_cruz(ex, ey)))
     pos.origem_chapa = (u0, v0)
+    # a medida fora do nome do TecnoMETAL também na chapa paramétrica (a CH11 da Sala: "PLATE 148x148x6" com
+    # 148 x 240 — análise das pranchas, 29/09); o desenho segue a chapa
+    from saida.detalhamento import _chapa_nominal
+    nominal = _chapa_nominal(pos.perfil)
+    if nominal and any(abs(a_ - b_) > 3 for a_, b_ in zip(sorted(nominal[:2]), sorted((pos.L, pos.H)))):
+        pos.observacoes.append("dimensões medidas (%d x %d) diferem do nome do TecnoMETAL (%d x %d)"
+                               % (round(pos.L), round(pos.H), round(nominal[0]), round(nominal[1])))
 
 
 def marcas_de(pos: Posicao) -> List[str]:
