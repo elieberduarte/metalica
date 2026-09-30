@@ -134,6 +134,43 @@
   .onde-foi-parar th, .onde-foi-parar td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--borda); vertical-align: top; }
   .onde-foi-parar th { position: sticky; top: 0; background: var(--painel2, var(--painel)); }
   .onde-foi-parar td:last-child { color: var(--azul-tinta); font-weight: 600; }
+  /* a faixa de ferramentas (web/faixa_ferramentas.js): uma linha de ícones, sem títulos nem etiqueta 2D/3D;
+     o que não é do lado ativo fica apagado; o lado ativo ganha o contorno */
+  .faixa-ferramentas { display: flex; align-items: center; flex-shrink: 0; height: 40px; padding: 0 6px; gap: 0; overflow: hidden;
+    background: var(--painel); border-bottom: 1px solid var(--borda); }
+  .faixa-ferramentas .fx-grupo { display: flex; align-items: center; gap: 1px; padding: 0 7px; border-right: 1px solid var(--borda); height: 28px; flex-shrink: 0; }
+  .faixa-ferramentas .fx-bt { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 30px; padding: 0;
+    background: none; border: 1px solid transparent; border-radius: var(--raio-p, 4px); color: var(--texto); cursor: pointer; }
+  .faixa-ferramentas .fx-bt svg { width: 19px; height: 19px; pointer-events: none; }
+  .faixa-ferramentas .fx-bt:hover { background: var(--azul-fraco); border-color: var(--borda); }
+  .faixa-ferramentas .fx-bt.on { background: var(--azul); color: #fff; border-color: var(--azul); }
+  .faixa-ferramentas .fx-bt.fora { opacity: .32; }
+  .faixa-ferramentas .fx-bt.fora:hover { opacity: .6; }
+  .faixa-ferramentas .fx-mais { background: none; border: 0; color: var(--texto3); cursor: pointer; font-size: 10px; padding: 0 3px; height: 28px; }
+  .faixa-ferramentas .fx-mais:hover { color: var(--azul); }
+  .faixa-ferramentas .fx-disc { display: inline-flex; margin-right: 4px; }
+  .faixa-ferramentas .fx-disc button { font-size: 10.5px; font-weight: 700; padding: 3px 6px; background: none; color: var(--texto2);
+    border: 1px solid var(--borda); cursor: pointer; }
+  .faixa-ferramentas .fx-disc button + button { border-left: 0; }
+  .faixa-ferramentas .fx-disc button.on { background: var(--azul); color: #fff; border-color: var(--azul); }
+  .faixa-ferramentas .fx-ctx { border: 1px solid #9fd3b1; border-radius: 5px; background: rgba(47, 158, 95, .10); margin-left: 6px; gap: 4px; }
+  .faixa-ferramentas .fx-ctx-nome { font-size: 12px; font-weight: 700; color: #1f7a45; white-space: nowrap; margin-right: 4px; }
+  html[data-tema="escuro"] .faixa-ferramentas .fx-ctx-nome { color: #7fd6a0; }
+  .faixa-ferramentas .fx-txt { font-size: 11.5px; padding: 2px 8px; background: var(--painel); color: var(--texto); border: 1px solid var(--borda);
+    border-radius: 4px; cursor: pointer; white-space: nowrap; }
+  .faixa-ferramentas .fx-txt:hover { border-color: var(--azul); color: var(--azul-tinta); }
+  .faixa-balao { position: fixed; z-index: 300; max-width: 330px; padding: 6px 10px; border-radius: 6px; font-size: 12px; pointer-events: none;
+    background: #1c2533; color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+  .faixa-balao[hidden] { display: none; }
+  .faixa-balao .g, .faixa-balao .l { color: #a9b6ca; } .faixa-balao .l { margin-top: 2px; }
+  .faixa-lista { position: fixed; z-index: 250; padding: 4px; background: var(--painel); color: var(--texto); border: 1px solid var(--borda);
+    border-radius: 6px; box-shadow: var(--sombra-menu, 0 8px 22px rgba(0,0,0,.2)); display: flex; flex-direction: column; min-width: 200px; }
+  .faixa-lista .fx-li { display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 6px; background: none; border: 0; color: inherit;
+    font: inherit; font-size: 13px; text-align: left; cursor: pointer; border-radius: 4px; }
+  .faixa-lista .fx-li svg { width: 18px; height: 18px; flex-shrink: 0; }
+  .faixa-lista .fx-li:hover { background: var(--azul-fraco); color: var(--azul-tinta); }
+  .faixa-lista .fx-li.fora { opacity: .45; }
+  .lado.faixa-ativo::after { content: ''; position: absolute; inset: 0; border: 2px solid var(--azul); pointer-events: none; z-index: 3; }
 </style>
 </head>
 <body>
@@ -165,6 +202,7 @@
     <button type="button" id="btn-paineis" title="Mostra ou esconde os painéis da direita (Propriedades, Camadas…) do 2D e do 3D — F4 em cada lado">Painéis</button>
   </div>
 </header>
+<nav class="faixa-ferramentas" id="faixa-ferramentas" aria-label="Ferramentas do desenho 2D e do modelo 3D"></nav>
 
 <main class="quadro" id="quadro">
   <div class="lado" id="lado-2d"><iframe id="f2d" title="Desenho 2D"></iframe></div>
@@ -175,6 +213,7 @@
 
 <script src="/barra_unica.js"></script>
 <script src="/dividida.js"></script>
+<script src="/faixa_ferramentas.js"></script>
 <script src="/versao.js" defer></script>
 <script src="/vivo.js"></script>
 </body>

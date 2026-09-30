@@ -16,6 +16,14 @@
   try {
     if (embutida && ['/dividida', '/2d-3d'].indexOf(window.parent.location.pathname) >= 0) document.documentElement.classList.add('barra-unica');
   } catch (e) { /* outra origem */ }
+  // dentro da área, as ferramentas ficam na faixa de cima (web/faixa_ferramentas.js): as colunas desta tela
+  // saem da vista — continuam no documento, porque a faixa aciona os botões delas
+  if (document.documentElement.classList.contains('barra-unica')) {
+    var sem_colunas = document.createElement('style');
+    sem_colunas.textContent = ':root.barra-unica #barra-ferramentas, :root.barra-unica #barra-disciplina { display: none !important; }' +
+      ':root.barra-unica { --larg-ferramentas: 0px; }';
+    (document.head || document.documentElement).appendChild(sem_colunas);
+  }
   var TELAS = { '/editor': '3d', '/editor3d': '3d', '/3d': '3d', '/cad': '2d', '/desenho': '2d', '/dividida': null, '/2d-3d': null };
 
   function destino(url) {

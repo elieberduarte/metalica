@@ -62,6 +62,7 @@ function avisarEstado() {
 
 function mostrarVista(v, gravar = true) {
   if (window.barraUnica) window.barraUnica.vista(v);
+  if (window.faixaFerramentas) window.faixaFerramentas.vista(v);
   vista = v;
   document.body.classList.remove('v-2d', 'v-3d', 'v-ambos');
   document.body.classList.add('v-' + v);
