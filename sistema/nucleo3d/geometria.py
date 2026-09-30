@@ -549,6 +549,15 @@ def resolver_perfil(nome_ou_perfil) -> Perfil:
     p = banco().get(nome)
     if p is not None:
         return p
+    # o catálogo completo (fornecedores, dobrados "(FF)", tubos TQ/TR): sem isto a malha do servidor falha e o
+    # editor desenhava o tubo quadrado ou retangular como redondo (portaria, 30/09)
+    try:
+        from nucleo import catalogo
+        p = catalogo.perfil_de(nome)
+    except Exception:
+        p = None
+    if p is not None:
+        return registrar_perfil(p)
     baixo = nome.lower().replace("ø", " ").replace("ø", " ")
     if "barra" in baixo or "chapa" in baixo or "redond" in baixo:
         nums = []
@@ -585,7 +594,9 @@ def _dims(p: Perfil) -> dict:
         return dict(forma="Ue", h=p.d, b=p.bf, tw=p.tw, tf=p.tw, lab=lab)
     if p.tipo == "L":
         b = dd.get("b") or p.bf
-        return dict(forma="L", h=b, b=b, tw=dd.get("t", p.tw), tf=dd.get("t", p.tw))
+        # abas desiguais (L 100×50: "b2" é a menor): a maior em pé, a menor deitada; antes as duas saíam iguais
+        b2 = dd.get("b2") or b
+        return dict(forma="L", h=b, b=b2, tw=dd.get("t", p.tw), tf=dd.get("t", p.tw))
     if p.tipo == "tubo":
         if dd.get("tipo") == "redondo":
             D = dd.get("D", p.d)
