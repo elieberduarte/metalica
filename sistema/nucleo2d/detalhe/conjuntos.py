@@ -2716,8 +2716,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             sup = fundir(set(round(s, 1) for s in lista_s) | {round(x0, 1), round(x1, 1)}, tol=60.0,
                          fixos=(round(x0, 1), round(x1, 1)))
             if len(sup) > 2:
+                # o trecho reto na horizontal: a linha pelo topo do desenho, como a cadeia de cima (pelo topo do
+                # trecho, mais baixo, o degrau a mais caía na linha dela — o 906 sobre o 839 do DP.3 da Sala, 29/09)
                 cadeia_suportes = (p.cadeia_alinhada(reta_t, sup, desl, exigir_espaco=False) if reta_t is not None
-                                   else p.cadeia_h(sup, ytopo, desl, exigir_espaco=False)) or cadeia_suportes
+                                   else p.cadeia_h(sup, alt, desl, exigir_espaco=False, alturas=topo_em)) or cadeia_suportes
         suportes = []
     if len(suportes) >= 2:
         sup = fundir(set(round(s, 1) for s in suportes) | {0.0, larg}, tol=60.0, fixos=(0.0, larg))
@@ -2737,8 +2739,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # o comprimento de cada água, na inclinação dela, por fora das cadeias
         for x0, x1, reta, ytopo in trechos_cima:
             if x1 - x0 > 300.0:
+                # na horizontal, pelo topo do desenho como as cadeias de baixo dela (pelo topo do trecho, mais
+                # baixo, caía na linha delas — o 906 sobre o 839 do DP.3 da Sala, 29/09)
                 (p.cadeia_alinhada(reta, [x0, x1], off * (n_topo + 1), exigir_espaco=False) if reta is not None
-                 else p.cadeia_h([x0, x1], ytopo, off * (n_topo + 1), exigir_espaco=False))
+                 else p.cadeia_h([x0, x1], alt, off * (n_topo + 1), exigir_espaco=False, alturas=topo_em))
         n_topo += 1
     if trelica:
         # a água inteira ao longo do banzo de cima, por fora das cadeias de nós e de suportes
@@ -2746,7 +2750,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         for x0, x1, reta, ytopo in trechos(True):
             if x1 - x0 > 300.0:
                 agua = (p.cadeia_alinhada(reta, [x0, x1], off * (n_topo + 1), exigir_espaco=False) if reta is not None
-                        else p.cadeia_h([x0, x1], ytopo, off * (n_topo + 1), exigir_espaco=False)) or agua
+                        else p.cadeia_h([x0, x1], alt, off * (n_topo + 1), exigir_espaco=False, alturas=topo_em)) or agua
         n_topo += 1 if agua else 0
         ts_meia = trechos(True)
         if len(ts_meia) > 1 and ys_topo_ok(ts_meia) and not montada:

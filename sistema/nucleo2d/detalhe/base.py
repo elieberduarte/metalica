@@ -146,6 +146,27 @@ def _norm(a):
     return (a[0] / n, a[1] / n, a[2] / n) if n > 1e-12 else (0.0, 0.0, 0.0)
 
 
+#: Pontos de uma cadeia de cotas a até isto (mm) um do outro são o mesmo: os furos de duas colunas 1 ou 2 mm
+#: desalinhados no modelo davam parciais de 2 mm, com o número encavalado no vizinho (a CH11 da Sala, 29/09).
+FUNDIR_NA_CADEIA = 3.0
+
+
+def _fundir_perto(vals: Sequence[float], tol: float = FUNDIR_NA_CADEIA) -> List[float]:
+    """a lista ordenada sem os pontos colados no anterior; as pontas (a primeira e a última) ficam"""
+    if len(vals) < 3:
+        return list(vals)
+    fora = [vals[0]]
+    for i, v in enumerate(vals[1:], 1):
+        if v - fora[-1] > tol:
+            fora.append(v)
+        elif i == len(vals) - 1:
+            if len(fora) > 1:
+                fora[-1] = v                     # a ponta fica; o colado nela sai
+            else:
+                fora.append(v)
+    return fora
+
+
 # ============================================================ papel
 class _Papel:
     """Adapta a API de `saida.dxf.Desenho` (linha, polilinha, círculo, arco, texto, seta)
@@ -287,7 +308,7 @@ class _Papel:
         if comp < 1e-6:
             return self.cadeia_h(xs, ay, desl_papel)
         ux, uy = dx / comp, dy / comp
-        ts = sorted(set(float(round((x - ax) / ux)) for x in xs)) if abs(ux) > 1e-9 else []
+        ts = _fundir_perto(sorted(set(float(round((x - ax) / ux)) for x in xs))) if abs(ux) > 1e-9 else []
         if len(ts) < 2 or (exigir_espaco and not self._cabe(ts)):
             return False
         for i in range(len(ts) - 1):
@@ -307,7 +328,7 @@ class _Papel:
         mais baixa desce até a peça (uma linha na camada COTA), e a linha da cadeia fica no mesmo
         lugar; sem isso, a linha de chamada do suporte mais baixo do DP começava no ar, na altura da
         chapa mais alta (pedido do usuário, 29/09: "cotas pegando no vazio")."""
-        xs = sorted(set(float(round(x)) for x in xs))
+        xs = _fundir_perto(sorted(set(float(round(x)) for x in xs)))
         if exigir_espaco and not self._cabe(xs):
             return False
         esc = self.d.escala
@@ -343,7 +364,7 @@ class _Papel:
         return True
 
     def cadeia_v(self, ys, x, desl_papel, exigir_espaco=True):
-        ys = sorted(set(float(round(y)) for y in ys))
+        ys = _fundir_perto(sorted(set(float(round(y)) for y in ys)))
         if exigir_espaco and not self._cabe(ys):
             return False
         esc = self.d.escala

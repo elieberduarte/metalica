@@ -908,3 +908,12 @@ def test_aviso_de_peca_maior_que_a_barra_comercial():
     assert not acima_da_barra_comercial(p)
     p.classe, p.comprimento = "telha", 18056.0          # a telha sai da bobina no comprimento que for
     assert not acima_da_barra_comercial(p)
+
+
+def test_cadeia_sem_parcial_de_milimetros():
+    """Furos de duas colunas 1 ou 2 mm desalinhados no modelo não viram uma parcial de 2 mm com o número em cima
+    do vizinho (a CH11 da Sala, análise das pranchas de 29/09); as pontas da peça ficam."""
+    from nucleo2d.detalhe.base import _fundir_perto
+    assert _fundir_perto([0.0, 48.0, 50.0, 96.0, 98.0, 148.0]) == [0.0, 48.0, 96.0, 148.0]
+    assert _fundir_perto([0.0, 146.0, 148.0]) == [0.0, 148.0]
+    assert _fundir_perto([0.0, 5.0, 55.0, 110.0]) == [0.0, 5.0, 55.0, 110.0]      # 5 mm é medida

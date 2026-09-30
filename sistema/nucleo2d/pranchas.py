@@ -2162,8 +2162,71 @@ def _chamadas_das_chapas(d: Desenho, c: dict, geo: Sequence, k: float, dx: float
             ax, ay = alvo_m[0] / k + dx, alvo_m[1] / k + dy
             sx = -1.0 if alvo_m[0] < cx_m else 1.0
             sy = 1.0 if alvo_m[1] >= cy_m else -1.0
-            d.add(Chamada(camada="TEXTO", alvo=(round(ax, 2), round(ay, 2)), posicao=(round(ax + 10.0 * sx, 2), round(ay + 12.0 * sy, 2)),
+            # para fora e para o lado de fora da metade; quando o texto cai sobre um número de cota ou outro texto
+            # (o "CB1 + CH9" em cima do 463 da ponta da tesoura da Sala, 29/09), a próxima direção livre
+            perto = _textos_perto(d, ax, ay, 40.0)
+            for sx_, sy_ in ((sx, sy), (-sx, sy), (sx, -sy), (-sx, -sy)):
+                pos_ = (ax + 10.0 * sx_, ay + 12.0 * sy_)
+                if not any(_sobrepoe(_caixa_da_chamada(pos_, sx_ > 0, txt, 2.5), o_) for o_ in perto):
+                    break
+            else:
+                pos_ = (ax + 10.0 * sx, ay + 12.0 * sy)
+            d.add(Chamada(camada="TEXTO", alvo=(round(ax, 2), round(ay, 2)), posicao=(round(pos_[0], 2), round(pos_[1], 2)),
                           texto=txt, altura=2.5, atributos={"prancha": "chamada_chapa", "fonte": c["fonte"], "marca": x["marca"]}))
+
+
+def _caixa_da_chamada(pos, direita: bool, texto: str, h: float):
+    """o retângulo do texto da chamada no papel, como `desenho._chamada_dxf` o põe (depois do traço de 8 mm)"""
+    w = 0.6 * h * len(texto)
+    x0 = pos[0] + 9.5 if direita else pos[0] - 9.5 - w
+    return (x0, pos[1], x0 + w, pos[1] + 0.8 + h)
+
+
+def _caixa_do_numero(e) -> Optional[tuple]:
+    """o retângulo do número de uma cota horizontal ou vertical, ou de um texto reto, no papel"""
+    if isinstance(e, Cota):
+        (x1, y1), (x2, y2) = e.p1, e.p2
+        if e.modo == "h":
+            y2 = y1
+        elif e.modo == "v":
+            x2 = x1
+        else:
+            return None
+        comp = math.hypot(x2 - x1, y2 - y1) or 1.0
+        nx, ny = -(y2 - y1) / comp, (x2 - x1) / comp
+        h = e.altura or 1.8
+        txt = str(e.texto) if e.texto not in (None, "") else "%d" % round(comp)
+        w = 0.6 * h * len(txt)
+        cx, cy = e.texto_pos or ((x1 + x2) / 2 + nx * (e.deslocamento + 0.8 * h), (y1 + y2) / 2 + ny * (e.deslocamento + 0.8 * h))
+        return (cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2) if e.modo == "h" else (cx - h / 2, cy - w / 2, cx + h / 2, cy + w / 2)
+    if isinstance(e, Texto) and not (e.angulo or 0) % 90:
+        h = e.altura
+        w = 0.6 * h * len(e.texto or "")
+        x, y = e.posicao
+        if abs((e.angulo or 0) % 180 - 90) < 1:
+            return (x - h, y - w, x, y + w)
+        x0 = x - (w if e.alinhamento == "direita" else w / 2 if e.alinhamento == "centro" else 0.0)
+        return (x0, y, x0 + w, y + h)
+    return None
+
+
+def _textos_perto(d: Desenho, x: float, y: float, raio: float) -> List[tuple]:
+    """os retângulos dos números de cota e dos textos a menos de `raio` (mm de papel) de (x, y)"""
+    fora = []
+    for e in (d if isinstance(d, list) else d.entidades.values()):     # o coletor da tesoura é uma lista
+        if not isinstance(e, (Cota, Texto)):
+            continue
+        q = e.p1 if isinstance(e, Cota) else e.posicao
+        if abs(q[0] - x) > raio + 60.0 or abs(q[1] - y) > raio + 60.0:
+            continue
+        r = _caixa_do_numero(e)
+        if r and r[0] < x + raio and r[2] > x - raio and r[1] < y + raio and r[3] > y - raio:
+            fora.append(r)
+    return fora
+
+
+def _sobrepoe(a: tuple, b: tuple) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
 def _quantidade_da_celula(c: dict) -> int:
@@ -2206,9 +2269,12 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
         if not nome:
             continue                                  # vistas e cortes: o título deles basta
         nome = _nome_da_celula(c, nome)
-        partes_n = nome.split(" / ")
-        if len(partes_n) > 2:
-            nome = "%s … %s" % (partes_n[0], partes_n[-1])     # "A.D.1 … A.D.10": a coluna não alarga
+        for sep_ in (" / ", ", "):
+            # "A.D.1 … A.D.10": a coluna não alarga; a lista com vírgulas também (as terças sem furo "T.L.5, T.L.7,
+            # … T.L.22" empurravam as quantidades para fora da caixa da legenda, 29/09)
+            partes_n = nome.split(sep_)
+            if len(partes_n) > 2:
+                nome = "%s … %s" % (partes_n[0], partes_n[-1])
         q = _quantidade_da_celula(c)
         linha = (nome, "%02dx" % q if q else "")
         if linha not in linhas:
