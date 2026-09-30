@@ -1185,18 +1185,22 @@ def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: fl
     quadro com o título da categoria; a prancha vazia sai (a numeração é feita depois). Devolve quantas
     saíram."""
     area_util = (qx1 - qx0) * (uy1 - uy0)
+
+    def quase_vazia(cels) -> bool:
+        princ = [c for c in cels if not c.get("_na_faixa")]
+        cats = {c["categoria"] for c in princ}
+        return not (not princ or any(c.get("empilhada") or c.get("pai") is not None for c in princ)
+                    # a tesoura não vai para a prancha de outra categoria (a T4 do depósito, sozinha, caía no meio
+                    # das barras — 29/09)
+                    or cats & {"LOCALIZACAO", "CHUMBACAO", "TELHAS", "TELHAS_TIPOS", "TELHAS_DET", "TESOURAS"}
+                    or any(c.get("_na_faixa") and not c.get("local") for c in cels)
+                    or sum(c["w"] * c["h"] for c in princ) > OCUPACAO_MINIMA * area_util)
     saiu = 0
     i = len(pranchas) - 1
     while i > 0:
         cels = pranchas[i]
         princ = [c for c in cels if not c.get("_na_faixa")]
-        cats = {c["categoria"] for c in princ}
-        if (not princ or any(c.get("empilhada") or c.get("pai") is not None for c in princ)
-                # a tesoura não vai para a prancha de outra categoria (a T4 do depósito, sozinha, caía no meio das
-                # barras — 29/09)
-                or cats & {"LOCALIZACAO", "CHUMBACAO", "TELHAS", "TELHAS_TIPOS", "TELHAS_DET", "TESOURAS"}
-                or any(c.get("_na_faixa") and not c.get("local") for c in cels)
-                or sum(c["w"] * c["h"] for c in princ) > OCUPACAO_MINIMA * area_util):
+        if not quase_vazia(cels):
             i -= 1
             continue
         # um bloco por categoria (a prancha com as últimas barras e os tirantes, 29/09), cada um no seu quadro com o
@@ -1217,6 +1221,10 @@ def _juntar_quase_vazias(pranchas: list, molduras: list, legendas: list, qx0: fl
             # a mais perto primeiro (a anterior, depois as de antes, depois as de depois): perto das outras da categoria
             for j in list(range(i - 1, -1, -1)) + list(range(i + 1, len(pranchas))):
                 if j == i or any(c["categoria"] == "LOCALIZACAO" or c.get("empilhada") for c in pranchas[j]):
+                    continue
+                # a quase vazia de antes ainda vai sair: recebendo este bloco, ficava cheia demais para sair e
+                # sobrava uma prancha misturada e rala (as terças sem furo com as últimas barras, 29/09)
+                if j < i and quase_vazia(pranchas[j]):
                     continue
                 # a caixa como vai ser desenhada: na prancha de corte, o retângulo da grade (maior que a célula; o bloco
                 # dos tirantes caía em cima das chapas, 29/09)

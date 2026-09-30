@@ -879,3 +879,32 @@ def test_cadeia_com_a_altura_de_cada_ponto():
     assert all(abs(c.p1[1] + c.deslocamento * 10.0 - 150.0) < 1e-6 for c in cotas)
     descidas = [e for e in d.entidades.values() if isinstance(e, Linha)]
     assert len(descidas) == 1 and descidas[0].a == (100.0, 30.0) and descidas[0].b == (100.0, 50.0)
+
+
+def test_cota_da_dobra_em_planta():
+    """A barra dobrada em planta (F.T.1 e B.13 da Sala, análise das pranchas de 29/09) ganha na vista de cima a
+    cadeia trecho reto | resto: a abscissa onde o trecho reto acaba."""
+    from types import SimpleNamespace
+    from nucleo2d.detalhe.celulas import _ponto_da_dobra
+    # trecho reto de 0 a 750 com largura 50 (w de -25 a 25); depois sobe em diagonal até u = 1090, w = 300
+    reto = [(u, 0.0, w) for u in (0.0, 750.0) for w in (-25.0, 25.0)]
+    diag = [(1060.0, 0.0, 280.0), (1090.0, 0.0, 300.0), (1080.0, 0.0, 250.0)]
+    pos = SimpleNamespace(local=reto + diag)
+    assert _ponto_da_dobra(pos) == 750
+    # a barra reta não tem dobra
+    assert _ponto_da_dobra(SimpleNamespace(local=[(u, 0.0, w) for u in (0.0, 900.0) for w in (-25.0, 25.0)])) is None
+
+
+def test_aviso_de_peca_maior_que_a_barra_comercial():
+    """A barra mais comprida que a maior barra comercial (12 m, a do plano de corte) ganha a linha no cabeçalho
+    da caixa (a A.C.5 de 18 m e os rufos de 33 m do depósito, análise das pranchas de 29/09)."""
+    from saida.detalhamento import Posicao
+    from nucleo2d.detalhe.celulas import _cabecalho, acima_da_barra_comercial
+    p = Posicao(marca="P1", tipo_ifc="IfcMember", perfil="L3''X3/16''", vertices=[], faces=[], quantidade=2)
+    p.classe, p.comprimento, p.L = "barra", 18056.0, 18056.0
+    assert acima_da_barra_comercial(p)
+    assert any("barra comercial de 12 m" in l for l in _cabecalho(p))
+    p.comprimento = 11990.0
+    assert not acima_da_barra_comercial(p)
+    p.classe, p.comprimento = "telha", 18056.0          # a telha sai da bobina no comprimento que for
+    assert not acima_da_barra_comercial(p)

@@ -2349,7 +2349,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     atr = {"conjunto": marca, "detalhe": "conjunto"}
     if nome:
         atr["nome"] = nome                      # o grupo do conjunto no DXF leva o nome de produção
-    if segs_bz and tipo != "conjunto":             # o DP sem as terças em corte (pedido do usuário, 28/09)
+    # o DP sem as terças em corte (pedido do usuário, 28/09); o chumbador também: a cantoneira dele
+    # passa por banzo, e o poste em pé sobre ele saía como vizinho, alto e sem cota (o CB1 do
+    # depósito, análise das pranchas de 29/09)
+    if segs_bz and tipo not in ("conjunto", "chumbador"):
         # as terças em corte, onde cruzam o plano da tesoura sobre o banzo de cima (como o corte das
         # tesouras do projetista): a posição e o lado das abas se leem no próprio desenho
         tercas, telhas, extras = _cortes_das_tercas(doc, instancia, origem, u, v, w, u0, v0, segs_bz, dx, dy, com_telha=False)
@@ -3356,6 +3359,8 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
     # (o comprimento de cada uma vai no texto, no meio): "CV.1 COMP=4258mm – 08X", como o Posto
     y_base = -(3.0 + 3.0 * max(linhas_lado.values() or [0]) + 4.0) * esc - h_nome
     passo_c = 6.0
+    from saida.lista_producao import BARRAS_COMERCIAIS
+    longos = []                                       # os que passam da barra comercial (a A.C.5 de 18 m, 29/09)
     for i, (rot, inst_m, n_inst) in enumerate(membros):
         tir_m = _tirante_principal(inst_m) or _barra_mais_longa(inst_m)
         marca_m = (fundidas.get(str(_marcas(tir_m).get("posicao") or tir_m.nome), str(_marcas(tir_m).get("posicao") or tir_m.nome))
@@ -3363,6 +3368,8 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         comp_m = (comprimentos.get(marca_m) if marca_m else None) or (
             _comprimento_na_vista(tir_m, inst_m) if tir_m is not None else _extensao_do_conjunto(inst_m)[0])
         nome_m = nomes_conj.get(rot, rot)
+        if comp_m > max(BARRAS_COMERCIAIS) + 0.5:
+            longos.append(nome_m)
         y_c = y_base - passo_c * i * esc
         txt = "%s COMP=%dmm – %02dX" % (nome_m, round(comp_m), n_inst)
         p.cota_h(round(t0), round(t1), y_c, 0.0, texto=txt)
@@ -3412,6 +3419,9 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
             lista_b.append(nome_b)
     for perfil_b, nomes_b in barras_.items():
         linhas.append("Barra %s: %s" % (perfil_b, ", ".join(nomes_b)))
+    if longos:
+        linhas.append("%s maior que a barra comercial de %s m: prever emenda"
+                      % (", ".join(longos), _mm(max(BARRAS_COMERCIAIS) / 1000.0)))
     # o padrão da fábrica na ponta roscada: 1 porca e 2 arruelas (pedido do usuário, 28/09) — não
     # o que o modelo tem (o projetista põe porcas e arruelas soltas, lidas pela forma)
     if n_roscas:

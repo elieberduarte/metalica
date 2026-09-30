@@ -241,6 +241,45 @@ def test_ponta_a_ponta_com_ifc_pequeno():
         assert rel["peso_total_kg"] > 0
 
 
+def _secao_w(d=258.0, bf=146.0, tw=6.1, tf=9.1):
+    """Contorno (x, z) de um W: x na largura das mesas, z na altura."""
+    x0, x1 = -bf / 2, bf / 2
+    return [(x0, 0), (x1, 0), (x1, tf), (tw / 2, tf), (tw / 2, d - tf), (x1, d - tf), (x1, d),
+            (x0, d), (x0, d - tf), (-tw / 2, d - tf), (-tw / 2, tf), (x0, tf)]
+
+
+def test_toco_de_perfil_mais_curto_que_a_altura():
+    """Toco de W250 com 155 mm (o B.14 do depósito, análise das pranchas de 29/09): a maior aresta da alma é
+    a altura da seção, e o eixo saía nela — desenho com a seção no lugar do comprimento e "L desenv. 715"."""
+    v, f = _extrudar(_secao_w(), 155.0)
+    pos = det.Posicao(marca="P14", tipo_ifc="IfcColumn", perfil="W250X32.70", vertices=v, faces=f)
+    det.analisar(pos)
+    assert pos.classe == "barra", (pos.classe, pos.observacoes)
+    assert abs(pos.L - 155) < 0.5 and abs(pos.H - 258) < 0.5, (pos.L, pos.H)
+    # a telha, o parafuso e o concreto não entram na regra
+    pos = det.Posicao(marca="X", tipo_ifc="IfcColumn", perfil="CONCRETO", vertices=v, faces=f)
+    det.analisar(pos)
+    assert abs(pos.L - 155) > 50
+
+
+def test_malha_aberta_nao_vira_dobra():
+    """Furo ou rasgo sem todas as faces no arquivo (a DP.17.1 do depósito): o volume sai maior que a barra
+    inteira; a barra é reta pelas fatias, e o peso vai pela seção × comprimento."""
+    sec = _secao_w(153.0, 102.0, 5.8, 7.1)
+    v, f = _extrudar(sec, 1701.0)
+    n = len(sec)
+    # uma tampa solta a mais na ponta (vértices próprios, sem vizinhas): a malha fica aberta e o volume incha
+    v = v + [(x, 1701.0, z) for x, z in sec]
+    f = f + [[2 * n + i for i in range(n)]]
+    pos = det.Posicao(marca="P104", tipo_ifc="IfcColumn", perfil="W150X18.00", vertices=v, faces=f)
+    det.analisar(pos)
+    assert pos.classe == "barra", (pos.classe, pos.observacoes)
+    assert abs(pos.comprimento - 1701) < 0.5
+    area = abs(det._area_2d(sec))
+    assert abs(pos.volume - area * 1701) < 0.01 * area * 1701
+    assert any("malha aberta" in o for o in pos.observacoes)
+
+
 if __name__ == "__main__":
     falhas = 0
     for nome, fn in sorted(globals().items()):

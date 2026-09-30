@@ -50,6 +50,15 @@ from nucleo2d.detalhe.nomes import (  # noqa: E402
 from saida.dobras import com_bitola  # noqa: E402
 
 
+def acima_da_barra_comercial(pos: Posicao) -> bool:
+    """A barra (reta, redonda, dobrada; o rufo e a calha também) mais comprida que a maior barra comercial — a
+    mesma do plano de corte e da dobradeira, 12 m: a A.C.5 de 18 m, os rufos de 33 m (análise das pranchas,
+    29/09). A emenda é do projetista; aqui só se avisa."""
+    from saida.lista_producao import BARRAS_COMERCIAIS
+    return (pos.classe in ("barra", "barra_redonda", "barra_conformada")
+            and (pos.comprimento or 0.0) > max(BARRAS_COMERCIAIS) + 0.5)
+
+
 def _cabecalho(pos: Posicao) -> List[str]:
     """Legenda enxuta, só o principal: nome e quantidade com o comprimento no título, o
     perfil, os parafusos e o peso. O tipo da peça fica no título do quadro; a marca do
@@ -86,6 +95,9 @@ def _cabecalho(pos: Posicao) -> List[str]:
         linhas.append(("parafusos: " if pos.parafusos else "fixação: ") + pos.rotulo_parafusos())
     if pos.peso:
         linhas.append("%s kg/pç  total %s kg" % (_mm(pos.peso, 2), _mm(pos.peso_total, 1)))
+    if acima_da_barra_comercial(pos):
+        from saida.lista_producao import BARRAS_COMERCIAIS
+        linhas.append("maior que a barra comercial de %s m: prever emenda" % _mm(max(BARRAS_COMERCIAIS) / 1000.0))
     return linhas
 
 
@@ -326,6 +338,31 @@ def _na_posicao_montada(pos: Posicao) -> Posicao:
     return g
 
 
+def _ponto_da_dobra(pos: Posicao) -> Optional[float]:
+    """Na barra dobrada em planta (vista de cima: comprimento u × largura w), a abscissa onde o trecho reto acaba:
+    o trecho reto é a faixa de w da ponta que se estende mais ao longo de u; a dobra, onde ela termina. None
+    quando a barra não se desvia (a faixa vai de ponta a ponta) ou é curta demais para dizer."""
+    pts = [(q[0], q[2]) for q in pos.local or ()]
+    if len(pts) < 4:
+        return None
+    u0, u1 = min(q[0] for q in pts), max(q[0] for q in pts)
+    if u1 - u0 < 100.0:
+        return None
+    melhor = None
+    for fim in (u0, u1):
+        ws = [w for u, w in pts if abs(u - fim) <= 1.0]
+        if not ws:
+            continue
+        lo, hi = min(ws) - 2.0, max(ws) + 2.0
+        us = [u for u, w in pts if lo <= w <= hi]
+        ext = max(us) - min(us)
+        if melhor is None or ext > melhor[0]:
+            melhor = (ext, min(us) if fim == u1 else max(us))
+    if melhor is None or melhor[0] >= (u1 - u0) - 5.0 or melhor[0] < 0.2 * (u1 - u0):
+        return None
+    return round(melhor[1] - u0)
+
+
 #: Chapa com aresta inclinada maior que esta fração do lado maior não é retangular: cada lado ganha a cota dele.
 ARESTA_INCLINADA = 0.25
 #: Aresta menor que isto (mm) não se cota (o chanfro do canto; nas chapas pequenas os números encavalavam).
@@ -515,6 +552,12 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
         _desenhar_furos(p, est, furos_topo, 0, y_topo)
         if furos_topo:
             p.cadeia_h([0.0] + sorted({round(f.x, 1) for f in furos_topo}) + [L], y_topo + w_min, -off, exigir_espaco=False)
+        elif pos.classe == "barra_conformada":
+            # a barra dobrada em planta: onde a dobra começa — da ponta até a dobra e da dobra até a outra ponta;
+            # só com o desvio (534) a F.T.1 e a B.13 da Sala não se dobravam (análise das pranchas, 29/09)
+            u_k = _ponto_da_dobra(pos)
+            if u_k is not None:
+                p.cadeia_h([0.0, u_k, L], y_topo + w_min, -off, exigir_espaco=False)
         p.cota_v(y_topo + w_min, y_topo + w_max, L, off)
 
     if pos.tipo_nome == "gancho" and pos.local:

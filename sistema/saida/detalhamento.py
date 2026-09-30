@@ -437,7 +437,48 @@ def _eixos_da_peca(pos: Posicao):
         e1 = _norm(proj)
     e2 = _norm(_cruz(e3, e1))
     e1 = _norm(_cruz(e2, e3))
+    if not chapa and _eixo_trocado_com_a_secao(pos, e1, e2):
+        # toco mais curto que a altura do perfil (o B.14 de 155 mm num W250): a maior
+        # aresta da alma é a altura da seção, e o desenho saía com a seção no lugar do
+        # comprimento
+        # o eixo pela aresta da alma que corre no comprimento: a de antes podia ser a do
+        # corte inclinado da ponta, e a perpendicular a ela sairia torta
+        novo, maior = e2, 0.0
+        for f in pos.faces:
+            for i in range(len(f)):
+                d = _sub(verts[f[(i + 1) % len(f)]], verts[f[i]])
+                comp = math.sqrt(_dot(d, d))
+                if comp > maior and abs(_dot(d, e2)) > 0.95 * comp and abs(_dot(d, e3)) < 0.05 * comp:
+                    maior, novo = comp, _norm(d)
+        if _dot(novo, e2) < 0:
+            novo = tuple(-k for k in novo)
+        e1 = _norm(_sub(novo, tuple(_dot(novo, e3) * k for k in e3)))
+        e2 = _norm(_cruz(e3, e1))
+        pos.eixo_exato = True
     return c, e1, e2, e3
+
+
+def _eixo_trocado_com_a_secao(pos: Posicao, e1, e2) -> bool:
+    """Na barra, as faces de frente para o comprimento são só as pontas (a área da
+    seção); as mesas e a outra aba ficam de lado. Quando as faces de frente para `e1`
+    somam mais que as de frente para `e2`, `e1` corre na seção. Só no perfil laminado
+    (W, HP, I, U, C, L) curto: a telha de cumeeira, o parafuso e o bloco de concreto
+    não têm mesas para decidir."""
+    if not re.match(r"^\s*(W|HP|I|U|C|L)\s*\d", pos.perfil or "", re.I):
+        return False
+    verts = pos.vertices
+    if _extensao_ao_longo(verts, e1) > 2.0 * _extensao_ao_longo(verts, e2):
+        return False
+    a1 = a2 = 0.0
+    for f in pos.faces:
+        n, a = _normal_area([verts[i] for i in f])
+        if a <= 1e-9:
+            continue
+        if abs(_dot(n, e1)) > 0.985:
+            a1 += a
+        elif abs(_dot(n, e2)) > 0.985:
+            a2 += a
+    return a1 > 1.5 * a2 and a1 > 0
 
 
 def _extensao_ao_longo(verts, ax) -> float:
@@ -538,6 +579,15 @@ def _projetar(pos: Posicao, eixos=None):
     pos.L = max(p[0] for p in pos.local)
     pos.H = max(p[1] for p in pos.local)
     pos.T = max(p[2] for p in pos.local) - min(p[2] for p in pos.local)
+
+
+def _malha_aberta(pos: Posicao) -> bool:
+    """Alguma aresta sem a face vizinha (a mesma aresta no sentido contrário)."""
+    arestas = set()
+    for f in pos.faces:
+        for i in range(len(f)):
+            arestas.add((f[i], f[(i + 1) % len(f)]))
+    return any((b, a) not in arestas for a, b in arestas)
 
 
 def _volume(pos: Posicao) -> float:
@@ -980,6 +1030,12 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
             reta = False
             pos.observacoes.append("a peça sai %s mm do plano da seção: dobra, curva ou "
                                    "apêndice soldado" % _mm(excesso))
+    if reta and area and pos.volume > 1.03 * area * pos.L and _malha_aberta(pos):
+        # furo ou rasgo sem todas as faces no arquivo (a DP.17.1 do depósito): o volume
+        # não fecha e sairia maior que a barra inteira; as fatias é que valem
+        pos.volume = area * pos.L
+        pos.peso = pos.volume * RHO_ACO
+        pos.observacoes.append("malha aberta no arquivo: peso pela seção × comprimento")
     if reta and area and pos.volume > 1.03 * area * pos.L:
         reta = False
         pos.observacoes.append("volume maior que seção × comprimento: dobra fora das "

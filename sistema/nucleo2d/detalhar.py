@@ -149,6 +149,7 @@ from nucleo2d.detalhe.nomes import (  # noqa: E402,F401
 from nucleo2d.detalhe.celulas import (  # noqa: E402,F401
     CAMADAS_DE_CONTORNO,
     LIMITE_DESLOCAMENTO_FURO,
+    acima_da_barra_comercial,
     _cabecalho,
     _caixa_da_chapa,
     _chapa_de_posicao,
@@ -1170,6 +1171,12 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         unicos = list(dict.fromkeys(sem_geo))
         avisos.append("%d peça(s) ficaram fora das vistas por falta de geometria: %s"
                       % (len(unicos), "; ".join(unicos[:10])))
+    longas = [p for p in _ordenar(posicoes) if acima_da_barra_comercial(p)]
+    if longas:
+        from saida.lista_producao import BARRAS_COMERCIAIS
+        avisos.append("%d peça(s) maiores que a barra comercial de %d m, sem emenda no modelo: %s"
+                      % (len(longas), round(max(BARRAS_COMERCIAIS) / 1000.0),
+                         "; ".join("%s %d mm" % (p.nome or p.marca, round(p.comprimento)) for p in longas)))
     return {"desenhos": desenhos, "posicoes": resumo_pos, "conjuntos": conjuntos_info,
             "multidobras": [{k: v for k, v in t.items() if k not in ("ids", "p1", "p2", "d1", "d2", "I", "T", "sentido")}
                             for t in md["telhas"]],
