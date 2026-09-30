@@ -373,6 +373,10 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
     # medida real no texto
     amp = float(max(1, min(20, int(120.0 * esc / max(larg0, alt0, 1.0)))))
     larg, alt = larg0 * amp, alt0 * amp
+    if amp > 1:
+        # a prancha escreve a escala real (a da caixa ÷ amp): saía "ESC. 1:100" ao lado de "ampliado 3x"
+        # (análise das pranchas, 29/09)
+        p.atr = dict(p.atr, ampliacao=amp)
 
     def num(v, casas=2):
         """60,69 · 176,5 · 92 — até duas casas, sem zeros à direita (como a fábrica cota)."""
@@ -852,11 +856,13 @@ def _recortar_pelo_canto(contorno: List[Tuple[float, float]], perfis: List[List[
     return saida
 
 
-def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, saias: Optional[dict] = None) -> List[dict]:
+def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, saias: Optional[dict] = None,
+                    comprimentos: Optional[Dict[str, float]] = None) -> List[dict]:
     """As telhas do modelo agrupadas por face (água da cobertura, fachada), cada uma com as
     chapas na posição de montagem: [{"normal", "u", "v", "chapas": [{"contorno": [(x, y)],
     "comprimento", "nome", "centro"}]}]. A telha multi-dobra entra como uma chapa só, na face
-    do seu trecho reto mais longo, com o comprimento desenvolvido externo."""
+    do seu trecho reto mais longo, com o comprimento desenvolvido externo. `comprimentos`: nome →
+    comprimento de compra da posição (o que vale quando a medida pela face fica perto dele)."""
     nome_de = nome_de or (lambda marca: marca)
     md = md or {"telhas": []}
     em_md = {}
@@ -949,6 +955,7 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
                     ys = [min(ys), topo_novo]
                     comp = topo_novo - min(ys)              # a chapa é comprada até o topo do canto
                     corte_arco = True
+            bruto = comp
             if not ch["multidobra"]:
                 # a sobra da fábrica: a chapa sobe até o comprimento arredondado
                 comp_r = arredondar_telha(comp)
@@ -980,7 +987,7 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
             vol_ = _volume(ch["e"]) * RHO_ACO
             peso_ = (ch["multidobra"].get("peso") if ch["multidobra"] else
                      vol_ * comp / max(max(proj) - min(proj), 1.0))
-            lista.append({"contorno": contorno, "corte": corte, "comprimento": comp, "nome": ch["nome"], "saia": desce,
+            lista.append({"contorno": contorno, "corte": corte, "comprimento": comp, "_bruto": bruto, "nome": ch["nome"], "saia": desce,
                           "peso": peso_, "perfil": str(_marcas(ch["e"]).get("perfil") or ch["e"].nome or ""),
                           "corte_arco": corte_arco,
                           "x": (min(xs) + max(xs)) / 2, "y0": min(ys), "y1": max(ys), "cumeeira": ch["cumeeira"],
@@ -988,8 +995,37 @@ def faces_de_telhas(pecas: Sequence, md: Optional[dict] = None, nome_de=None, sa
         inclinacao = math.degrees(math.acos(max(-1.0, min(1.0, abs(n[2])))))
         saida.append({"normal": n, "u": u, "v": v, "plano": _dot(f["ponto"], n), "chapas": lista, "inclinacao": inclinacao,
                       "tipo": "cobertura" if inclinacao < 45 else "fachada"})
+    # a mesma telha com um comprimento só, o da posição (o do cabeçalho e da lista; o mesmo nome é a mesma peça, a
+    # 1 mm): a medida pela face de uma água saía 50 mm maior que a da outra — a direção da onda enviesada no
+    # caimento soma um pedaço da largura —, e metade da paginação dizia "TL2 10,32 m" contra 10,27 na legenda e
+    # na lista (análise das pranchas, 29/09). Diferença maior que 1 % não é disso e fica.
+    from nucleo2d.detalhe.base import PASSO_TELHA
+    brutos: Dict[str, List[float]] = collections.defaultdict(list)
+    for f in saida:
+        for ch in f["chapas"]:
+            if ch.get("_bruto") is not None and not ch.get("multidobra") and not ch.get("cumeeira") and not ch.get("corte_arco"):
+                brutos[ch["nome"]].append(ch["_bruto"])
+    for f in saida:
+        for ch in f["chapas"]:
+            b_ = brutos.get(ch["nome"]) if not ch.get("corte_arco") else None
+            novo = None
+            if b_ and ch.get("_bruto") is not None:
+                ref = (comprimentos or {}).get(ch["nome"])
+                if ref and abs(ch["_bruto"] - ref) <= max(1.5 * PASSO_TELHA, 0.01 * ref):
+                    novo = float(ref)
+                elif max(b_) - min(b_) <= MESMA_TELHA:
+                    novo = arredondar_telha(min(b_))
+            if novo is not None and abs(novo - ch["comprimento"]) > 1e-6:
+                if ch.get("peso") and ch["comprimento"] > 0:
+                    ch["peso"] = ch["peso"] * novo / ch["comprimento"]
+                ch["comprimento"] = novo
+            ch.pop("_bruto", None)
     saida.sort(key=lambda f: (f["tipo"] != "cobertura", -len(f["chapas"])))
     return saida
+
+
+#: Chapas com o mesmo nome cuja medida no modelo difere até isto (mm) são a mesma telha, com um comprimento só.
+MESMA_TELHA = 2.0
 
 
 _CACHE_ONDA: Dict[tuple, tuple] = {}
@@ -1202,12 +1238,20 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     if pernas:
         cont_cm = collections.Counter(ch["nome"] for ch in pernas)
         resumo += "   cumeeira: " + " · ".join("%s %dx" % (k, q) for k, q in sorted(cont_cm.items(), key=lambda kv: _ordem_natural(kv[0])))
+    md_ = sorted({(ch["nome"], round(ch["comprimento"])) for ch in ordenadas if ch.get("multidobra")})
+    if md_:
+        # na água só a reta da multi-dobra aparece (o resto desce em curva pela fachada): a cota dela é o
+        # desenvolvido, não o trecho desenhado — "2224" numa faixa de 560 parecia fora de escala (29/09)
+        resumo += "   " + " · ".join("%s: %d = desenvolvido (aqui só a reta; a curva desce pela fachada)" % (n_, c_)
+                                   for n_, c_ in md_)
     if any(ch.get("corte_arco") for ch in chapas):
         resumo += "   canto cortado pelo arco da multi-dobra (R%d int., tracejado; corte em obra)" % RAIO_INTERNO_COMERCIAL
-    titulo = "FACE %d – %s%s – %d chapas%s" % (indice, face["tipo"].upper(),
-                                              (" (%.0f°)" % face["inclinacao"]) if face["tipo"] == "cobertura" else "",
-                                              len(chapas) - len(pernas),
-                                              (" + %d pernas de cumeeira" % len(pernas)) if pernas else "")
+    n_ch = len(chapas) - len(pernas)
+    titulo = "FACE %d – %s%s – %d chapa%s%s" % (indice, face["tipo"].upper(),
+                                                (" (%.0f°)" % face["inclinacao"]) if face["tipo"] == "cobertura" else "",
+                                                n_ch, "" if n_ch == 1 else "s",
+                                                (" + %d perna%s de cumeeira" % (len(pernas), "" if len(pernas) == 1 else "s"))
+                                                if pernas else "")
     p.texto(0, alt + 6.0 * esc, titulo, 3.5 * esc)
     p.texto(0, alt + 2.0 * esc, resumo[:220], 2.0 * esc)
     return p.extremos

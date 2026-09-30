@@ -637,3 +637,19 @@ def test_fileiras_de_borda_a_borda_na_mesma_altura():
     assert max(ganhos) - min(ganhos) < 1e-6 and ganhos[0] > 0
     assert all(c["h"] == 70.0 and c["py"] + c["h"] == 300.0 for c in cheia)
     assert [c["w"] for c in rala] == [100.0, 80.0] and all(c["h"] == 45.0 for c in rala)
+
+
+def test_telhas_titulo_por_face_e_legenda():
+    """As telhas (análise das pranchas, 29/09): a face que vale por outras diz a contagem por face e o total
+    ("34 chapas" nas FACES 1 E 2 lia-se como o total, 68); a multi-dobra e a cumeeira, sem item de peça, entram
+    na legenda pelo título."""
+    tit = Texto(posicao=(0, 0), texto="FACE 1 – COBERTURA (4°) – 34 chapas", altura=3.5)
+    c = {"entidades": [tit, Texto(posicao=(0, -5), texto="TL2 34x", altura=2.0)], "faces_iguais": ["1", "2"]}
+    pranchas._renomear_face(c, "FACES 1 E 2")
+    assert c["titulo"] == "FACES 1 E 2 – COBERTURA (4°) – 34 chapas por face (68 no total)", c["titulo"]
+    cels = [{"fonte": "detalhamento-telhas", "titulo": "TMD.1 – 64x  MULTIDOBRA TP40 #0,65"},
+            {"fonte": "detalhamento-telhas", "titulo": "CM.1 – 32x"},
+            {"fonte": "detalhamento-telhas", "titulo": "FACE 4 – FACHADA – 18 chapas"}]
+    blocos = dict(pranchas._blocos_da_legenda(cels))
+    assert blocos["NESTA PRANCHA"] == [("TMD.1", "64x"), ("CM.1", "32x")], blocos
+    assert ("TMD", "Telha multi-dobra") in blocos["SIGLAS"] and ("CM", "Cumeeira") in blocos["SIGLAS"]

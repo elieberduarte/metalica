@@ -58,6 +58,7 @@ from nucleo2d.detalhe.base import (  # noqa: E402,F401
     TOLERANCIA_COMPRIMENTO,
     _PORCAS,
     _Papel,
+    compra_da_telha,
     _assinatura,
     _assinatura_posicao,
     _caixa,
@@ -996,7 +997,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             # paginação: cada face com as chapas lado a lado, marca e comprimento real
             try:
                 nome_tl = lambda m: nomes_pos.get(fundidas.get(m, m)) or fundidas.get(m, m)    # noqa: E731
-                faces = faces_de_telhas(pecas, md, nome_tl, saias=lev.get("saias") or {})
+                comp_tl = {(p.nome or p.marca): compra_da_telha(p)["comprimento"] for p in posicoes if p.classe == "telha"}
+                faces = faces_de_telhas(pecas, md, nome_tl, saias=lev.get("saias") or {}, comprimentos=comp_tl)
             except Exception as exc:              # noqa: BLE001
                 faces = []
                 avisos.append("paginação das telhas não gerada: %s" % exc)

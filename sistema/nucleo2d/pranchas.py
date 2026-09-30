@@ -421,12 +421,17 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     # (a FACE 3 = FACE 2), as vistas no quadro das telhas na escala que as faz caber, e os detalhes (a
     # multidobra tipo, a cumeeira) na faixa de baixo
     tel = [c for c in itens if "telha" in str(c.get("fonte") or "").lower()]
+    # as peças de telha (TL1, TMD.1…) saem da prancha, mas entram na legenda dela, com a quantidade da obra: as
+    # pranchas de telhas eram as únicas sem legenda (análise das pranchas, 29/09)
+    pecas_telha: List[dict] = []
     if tel:
         fora_t, faces = [], {}
         for c in tel:
             t = str(c.get("titulo") or "")
             if (c.get("item") or {}).get("tipo") == "telha" or re.match(r"TL\d", t) or t.strip() == "TIPO":
                 fora_t.append(c)
+                if (c.get("item") or {}).get("nome"):
+                    pecas_telha.append(c)
                 continue
             m_f = re.match(r"FACE (\d+) – (.*)", t)
             if m_f and "COBERTURA" in m_f.group(2).upper():
@@ -437,6 +442,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     continue
                 faces[m_f.group(2)] = c
                 c["faces_iguais"] = [m_f.group(1)]
+        from saida.detalhamento import _ordem_natural
+        pecas_telha.sort(key=lambda c: _ordem_natural(str((c.get("item") or {}).get("nome") or "")))
         for c in faces.values():
             if len(c["faces_iguais"]) > 1:
                 _renomear_face(c, "FACES " + " E ".join(c["faces_iguais"]))
@@ -577,6 +584,10 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         for c_ in cels_f:
             c_["_fileira"] = (n_fileira[0], x_ini, x_fim)
 
+    def de_telhas(cels_):
+        """as peças de telha para a legenda, na prancha que tem as telhas"""
+        return pecas_telha if any(c_["categoria"] in ("TELHAS", "TELHAS_TIPOS") for c_ in cels_) else []
+
     def distribuir(n_rel):
         for c_ in itens:
             c_.pop("empilhada", None)
@@ -646,6 +657,9 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     by0_ = min(v_[1] for v_ in vis)
                     by1_ = max(v_[3] for v_ in vis)
                     ddx_ = ((x0_ + QUADRO_MARGEM) + (x1_ - QUADRO_MARGEM) - bx0_ - bx1_) / 2.0
+                    # centrado pelo que se vê, mas a caixa (a reserva, maior) não passa da borda do quadro: a
+                    # FACE 5 da Sala saía 12 mm para fora (análise das pranchas, 29/09)
+                    ddx_ = min(ddx_, (x1_ - QUADRO_MARGEM) - max(c_["px"] + c_["w"] for c_ in postas_))
                     ddy_ = ((uy1 - QUADRO_CABECALHO - FOLGA * 0.5) + uy0 - by0_ - by1_) / 2.0
                     for c_ in postas_:
                         c_["px"] += max(0.0, ddx_)
@@ -831,7 +845,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 candidatas = []                                 # a faixa dela é o índice
             # a legenda: só o que está na prancha — nome e quantidade — e as siglas (pedido do usuário, 28/09:
             # "precisa reduzir bastante o tamanho"); a largura sai do conteúdo com todos os detalhes possíveis
-            leg = {"blocos": _blocos_da_legenda(cels_p, [m_ for c_ in candidatas for m_ in _membros(c_, False)] if alvo else ()),
+            leg = {"blocos": _blocos_da_legenda(cels_p, ([m_ for c_ in candidatas for m_ in _membros(c_, False)] if alvo else [])
+                                                + de_telhas(cels_p)),
                    "relacao": False, "n_rel": n_rel}
             tem_legenda = bool(leg["blocos"])
             larg_leg = min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0)) if tem_legenda else 0.0
@@ -924,7 +939,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                         if not m_.get("local"):
                             fila.remove(m_)
             # a legenda com o que ficou de fato na prancha (os detalhes que couberam), e os DETALHES até ela
-            leg["blocos"] = _blocos_da_legenda(cels_p, na_faixa + no_canto)
+            leg["blocos"] = _blocos_da_legenda(cels_p, na_faixa + no_canto + de_telhas(cels_p))
             if leg["blocos"]:
                 leg["x0"] = fx1 - min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0))
                 dx1 = leg["x0"] - FOLGA
@@ -942,7 +957,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                             k_ = next((i_ for i_, x_ in enumerate(fila)
                                        if ordem.get(x_["categoria"], 99) > ordem.get(c["categoria"], 99)), len(fila))
                             fila.insert(k_, c)
-                    leg["blocos"] = _blocos_da_legenda(cels_p, na_faixa + no_canto)
+                    leg["blocos"] = _blocos_da_legenda(cels_p, na_faixa + no_canto + de_telhas(cels_p))
                     if leg["blocos"]:
                         leg["x0"] = max(leg["x0"], fx1 - min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0)))
                         dx1 = leg["x0"] - FOLGA
@@ -1086,6 +1101,10 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     d.add(Linha(camada="COTA", a=(round(ax_, 2), round(ay_, 2)), b=(round(bx_, 2), round(by_, 2)),
                                 atributos={"prancha": "chamada_furos", "fonte": c["fonte"], "letra": c.get("letra")}))
             rot = "ESC. " + texto_escala(c["k"]) + ("  (%s)" % c["nota"] if c.get("nota") else "")
+            amp_ = max((float((e.atributos or {}).get("ampliacao") or 1.0) for e in c["entidades"]), default=1.0)
+            if amp_ > 1.0:
+                # o detalhe desenhado ampliado dentro da caixa (a multi-dobra): a escala real dele
+                rot = "ESC. 1:%d  (1:%g ampliada %dx)" % (round(c["k"] / amp_), c["k"], round(amp_))
             if not c.get("sem_escala"):
                 ex_, ey_ = c.get("escala_em") or (c["px"], c["py"] + 1.5)
                 d.add(Texto(camada="TEXTO", posicao=(round(ex_, 2), round(ey_, 2)), texto=rot, altura=2.0,
@@ -2065,6 +2084,12 @@ def _renomear_face(c: dict, novo: str):
     tit = max(textos, key=lambda t: t.altura)
     novo_t = copy.copy(tit)
     novo_t.texto = re.sub(r"^FACE \d+", novo, tit.texto)
+    # a contagem é de uma face: "34 chapas" nas FACES 1 E 2 lia-se como o total, que é 68 (análise das
+    # pranchas, 29/09)
+    n_faces = len(c.get("faces_iguais") or ())
+    if n_faces > 1:
+        novo_t.texto = re.sub(r"– (\d+) chapas?\b", lambda m_: "– %s chapas por face (%d no total)"
+                              % (m_.group(1), int(m_.group(1)) * n_faces), novo_t.texto, count=1)
     c["entidades"] = [novo_t if e is tit else e for e in c["entidades"]]
     c["titulo"] = novo_t.texto
 
@@ -2169,6 +2194,15 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
     for c in list(cels) + list(detalhes):
         it = c.get("item") or {}
         nome = str(it.get("nome") or c.get("montagem") or c.get("marca") or "")
+        if not nome and "telha" in str(c.get("fonte") or "").lower():
+            # a multi-dobra e a cumeeira (sem item de peça): o nome e a quantidade do título, "TMD.1 – 64x …"
+            m_t = re.match(r"^\s*([A-Z]{2,4}\.\d+)\s+–\s+(\d+)x", str(c.get("titulo") or ""))
+            if m_t:
+                linha = (m_t.group(1), "%02dx" % int(m_t.group(2)))
+                if linha not in linhas:
+                    linhas.append(linha)
+                nomes.append(m_t.group(1))
+            continue
         if not nome:
             continue                                  # vistas e cortes: o título deles basta
         nome = _nome_da_celula(c, nome)
