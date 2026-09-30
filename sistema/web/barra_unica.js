@@ -1,11 +1,10 @@
 /* A barra única da área de trabalho (/dividida): o menu geral do projeto, o mesmo em qualquer vista
  * (2D, 2D + 3D, 3D) e em qualquer projeto — a vista só muda o que aparece embaixo.
  *
- * Os menus não são mais os de cada tela juntados: são um mapa próprio, por assunto (MAPA, abaixo) —
- * Arquivo (salvar, importar, exportar; o IFC entrou aqui), Desenhos (o Desenho, os Detalhamentos e as
- * Vistas do modelo de antes), Estrutura (o Lançamento de antes: lançar pelo arquitetônico, o projeto
- * recebido, eixos e apoios), Cálculo e Ver. O Editar saiu: desfazer e refazer são as setas da barra
- * (no lado em que se mexeu por último; Ctrl+Z e Ctrl+Y continuam em cada lado).
+ * Os menus não são mais os de cada tela juntados: são um mapa próprio, na ordem da obra (MAPA, abaixo) —
+ * Arquivo, Modelo, Cálculo, Desenho, Produção, Ver e ?; submenus para as listas longas, roteiros numerados
+ * onde a ordem importa, nenhum 2D/3D à mostra (o item sabe o lado dele). O Editar saiu: desfazer e refazer
+ * são as setas da barra (no lado em que se mexeu por último; Ctrl+Z e Ctrl+Y continuam em cada lado).
  *
  * Cada item aciona o comando original da sua tela (o botão do menu dela, que continua lá, escondido).
  * Tela ainda não carregada ou escondida: a vista troca para mostrar aquele lado, espera a tela ficar
@@ -26,123 +25,171 @@
   function I(texto, lado, acao, extra) { var o = { texto: texto, lado: lado, acao: acao }; for (var k in extra || {}) o[k] = extra[k]; return o; }
   function V(texto, lado, vista, kbd) { return { texto: texto, lado: lado, vista: vista, kbd: kbd }; }
 
+  function S(texto, itens, extra) { var o = { texto: texto, sub: itens }; for (var k in extra || {}) o[k] = extra[k]; return o; }
+  function F(texto, fn, extra) { var o = { texto: texto, fn: fn }; for (var k in extra || {}) o[k] = extra[k]; return o; }
+
+  // Os menus na ordem da obra (UI1, 30/09/2026 — aprovado no protótipo Projeto/Prototipo-faixa-e-menus-v3.html):
+  // Arquivo · Modelo · Cálculo · Desenho · Produção · Ver · ?. Sem 2D/3D à mostra: o item sabe o lado dele e a
+  // vista troca sozinha. `antes` é onde o item ficava até a 0.8.53 (? › Onde foi parar…); `dica` sai miúda
+  // embaixo; `requer: 'sel'` apaga o item, com o motivo, sem peça selecionada no lado dele.
   var MAPA = [
     { nome: 'Arquivo', itens: [
-      I('Salvar o modelo 3D', '3d', 'salvar'),
-      I('Salvar o desenho 2D', '2d', 'salvar', { kbd: 'Ctrl+S' }),
-      I('Salvar o modelo como…', '3d', 'salvar-como'),
-      I('Restaurar modelo anterior…', '3d', 'restaurar-modelo'),
-      HR, T('Importar'),
-      I('IFC de outro programa…', '3d', 'importar-ifc'),
-      I('DXF ou PDF neste desenho…', '2d', 'importar-dxf'),
-      I('Arquitetônico do cliente (DXF/PDF)…', '2d', 'arquitetonico'),
-      I('Projeto recebido (DXF/PDF) → modelo 3D e IFC…', '2d', 'projeto-2d'),
-      I('Inspecionar um IFC…', '3d', 'inspecionar-ifc'),
-      I('Detalhar as peças de um IFC…', '3d', 'detalhar-ifc'),
-      HR, T('Exportar'),
-      I('IFC do modelo', '3d', 'exportar-ifc'),
-      I('DXF deste desenho…', '2d', 'exportar-dxf'),
-      I('PDF deste desenho', '2d', 'exportar-pdf'),
-      I('PDF de todas as pranchas…', '2d', 'pdf-pranchas'),
+      { texto: 'Salvar', kbd: 'Ctrl+S', varios: [['2d', 'salvar'], ['3d', 'salvar']], dica: 'o modelo e o desenho aberto',
+        antes: ['Arquivo › Salvar o modelo 3D', 'Arquivo › Salvar o desenho 2D'] },
+      I('Salvar o modelo como…', '3d', 'salvar-como', { antes: 'Arquivo › Salvar o modelo como…' }),
+      I('Versões anteriores do modelo…', '3d', 'restaurar-modelo', { antes: 'Arquivo › Restaurar modelo anterior…' }),
       HR,
-      I('Abrir a pasta dos desenhos', '2d', 'abrir-pasta'),
-      HR, T('Outros modelos'),
-      I('Gerar do galpão dimensionado…', '3d', 'do-galpao'),
-      I('Abrir modelo de um arquivo…', '3d', 'abrir'),
-      I('Modelo de exemplo', '3d', 'exemplo'),
-      I('Novo modelo em branco', '3d', 'novo'),
+      S('Novo modelo', [
+        I('Em branco', '3d', 'novo', { antes: 'Arquivo › Novo modelo em branco' }),
+        I('Do galpão dimensionado…', '3d', 'do-galpao', { antes: 'Arquivo › Gerar do galpão dimensionado…' }),
+        I('Modelo de exemplo', '3d', 'exemplo', { antes: 'Arquivo › Modelo de exemplo' }),
+      ]),
+      I('Abrir modelo de um arquivo…', '3d', 'abrir', { antes: 'Arquivo › Abrir modelo de um arquivo…' }),
+      HR,
+      S('Importar', [
+        I('IFC de outro programa…', '3d', 'importar-ifc', { antes: 'Arquivo › IFC de outro programa…' }),
+        I('Arquitetônico do cliente (DXF/PDF)…', '2d', 'arquitetonico', { dica: 'é o passo 1 de Modelo › Lançar pelo arquitetônico', antes: 'Arquivo › Arquitetônico do cliente (DXF/PDF)…' }),
+        I('Projeto do projetista (DXF/PDF)…', '2d', 'projeto-2d', { dica: 'é o passo 1 de Modelo › Montar pelo projeto recebido', antes: 'Arquivo › Projeto recebido (DXF/PDF) → modelo 3D e IFC…' }),
+        I('DXF ou PDF dentro do desenho aberto…', '2d', 'importar-dxf', { antes: 'Arquivo › DXF ou PDF neste desenho…' }),
+        HR,
+        I('Só inspecionar um IFC (sem importar)…', '3d', 'inspecionar-ifc', { antes: 'Arquivo › Inspecionar um IFC…' }),
+      ]),
+      S('Exportar', [
+        I('IFC do modelo', '3d', 'exportar-ifc', { antes: 'Arquivo › IFC do modelo' }),
+        I('DXF do desenho aberto…', '2d', 'exportar-dxf', { antes: 'Arquivo › DXF deste desenho…' }),
+        I('PDF do desenho aberto', '2d', 'exportar-pdf', { antes: 'Arquivo › PDF deste desenho' }),
+        I('PDF de todas as pranchas…', '2d', 'pdf-pranchas', { antes: 'Arquivo › PDF de todas as pranchas…' }),
+      ]),
+      HR,
+      I('Abrir a pasta do projeto', '2d', 'abrir-pasta', { antes: 'Arquivo › Abrir a pasta dos desenhos' }),
     ] },
-    { nome: 'Desenhos', itens: [
-      T('Desenho no 2D'),
-      { lista: 'desenhos' },
+    { nome: 'Modelo', itens: [
+      S('Lançar pelo arquitetônico', [
+        T('do arquitetônico do cliente ao modelo 3D'),
+        I('1. Importar o arquitetônico (DXF/PDF)…', '2d', 'arquitetonico', { antes: 'Arquivo › Arquitetônico do cliente (DXF/PDF)…' }),
+        I('2. Abrir a planta de lançamento', '2d', 'planta-lancamento', { antes: 'Estrutura › Abrir a planta de lançamento' }),
+        I('3. Calibrar a escala', '2d', 'calibrar', { antes: 'Estrutura › Calibrar escala do arquitetônico' }),
+        I('4. Malha de eixos…', '2d', 'malha', { antes: 'Estrutura › Malha de eixos…' }),
+        I('5. Gravar os eixos no projeto', '2d', 'gravar-eixos', { antes: 'Estrutura › Gravar eixos no projeto' }),
+        I('6. Lançar a estrutura nos eixos…', '3d', 'lancar-estrutura', { antes: 'Estrutura › Lançar estrutura nos eixos…' }),
+      ], { dica: 'passo a passo' }),
+      S('Montar pelo projeto recebido', [
+        T('do DXF do projetista ao modelo 3D'),
+        I('1. Importar o projeto (DXF/PDF)…', '2d', 'projeto-2d', { antes: 'Arquivo › Projeto recebido (DXF/PDF) → modelo 3D e IFC…' }),
+        I('2. Ler folhas e considerações de cálculo', '2d', 'folhas-recebidas', { antes: 'Estrutura › Ler folhas e considerações de cálculo' }),
+        I('3. Reconhecer peças pelos perfis escritos…', '2d', 'reconhecer', { antes: 'Estrutura › Reconhecer peças pelos perfis escritos…' }),
+        I('4. Montar o 3D pela planta…', '2d', 'montar-planta', { antes: 'Estrutura › Montar o 3D pela planta…' }),
+        I('5. Conferir as treliças lidas…', '3d', 'trelicas-lidas', { antes: 'Estrutura › Treliças lidas…' }),
+        HR,
+        I('Gerar o 3D do desenho aberto…', '2d', 'gerar-3d', { antes: 'Estrutura › Gerar modelo 3D do desenho…' }),
+        I('Peça do catálogo pelas linhas selecionadas…', '2d', 'peca-catalogo', { requer: 'sel', antes: 'Estrutura › Peça do catálogo das linhas selecionadas…' }),
+      ], { dica: 'passo a passo' }),
       HR,
-      I('Abrir desenho do projeto…', '2d', 'abrir'),
-      I('Novo desenho em branco…', '2d', 'novo'),
-      I('Excluir desenhos…', '2d', 'excluir-desenhos'),
-      HR, T('Gerar do modelo 3D'),
-      I('Detalhar peças e conjuntos…', '3d', 'detalhar-pecas'),
-      I('Desenho do corte atual (ferramenta Seção)', '3d', 'desenho-corte', { kbd: 'G' }),
-      I('Vistas da seleção…', '3d', 'desenho-selecao'),
-      I('Corte por plano…', '2d', 'corte'),
-      HR, T('Inserir vista do modelo no desenho'),
-      V('Frente', '2d', 'frente'), V('Trás', '2d', 'tras'), V('Lateral esquerda', '2d', 'esquerda'),
-      V('Lateral direita', '2d', 'direita'), V('Planta (topo)', '2d', 'topo'), V('Vista inferior', '2d', 'inferior'),
-      I('Estilos do desenho…', '2d', 'estilos'),
-      HR, T('Pranchas'),
-      I('Montar pranchas (automático)…', '2d', 'pranchas'),
-      I('Inserir folha (prancha)…', '2d', 'inserir-folha'),
-      I('Gerar pranchas das folhas', '2d', 'pranchas-das-folhas'),
-      I('Atualizar desenhos e pranchas agora', '2d', 'atualizar-desenhos'),
-      HR, T('Detalhamento ↔ modelo 3D'),
-      I('Ver no 3D a peça selecionada', '2d', 'ver-3d'),
-      I('Selecionar tudo da mesma peça', '2d', 'selecionar-peca'),
-      I('Ajustar tamanho da chapa…', '2d', 'ajustar-tamanho'),
-      I('Aplicar peças da célula ao modelo 3D', '2d', 'aplicar-pecas'),
-      I('Aplicar furos e tamanho ao modelo 3D', '2d', 'aplicar-furos'),
+      I('Eixos da obra…', '3d', 'eixos-obra', { antes: 'Estrutura › Eixos da obra…' }),
       HR,
-      I('Lista de materiais…', '3d', 'materiais'),
-    ] },
-    { nome: 'Estrutura', itens: [
-      T('Lançar pelo arquitetônico do cliente'),
-      I('Abrir a planta de lançamento', '2d', 'planta-lancamento'),
-      I('Calibrar escala do arquitetônico', '2d', 'calibrar'),
-      I('Malha de eixos…', '2d', 'malha'),
-      I('Gravar eixos no projeto', '2d', 'gravar-eixos'),
-      I('Lançar estrutura nos eixos…', '3d', 'lancar-estrutura'),
-      HR, T('Projeto recebido (DXF do projetista)'),
-      I('Montar o 3D pela planta…', '2d', 'montar-planta'),
-      I('Ler folhas e considerações de cálculo', '2d', 'folhas-recebidas'),
-      I('Reconhecer peças pelos perfis escritos…', '2d', 'reconhecer'),
-      I('Peça do catálogo das linhas selecionadas…', '2d', 'peca-catalogo'),
-      I('Gerar modelo 3D do desenho…', '2d', 'gerar-3d'),
-      I('Treliças lidas…', '3d', 'trelicas-lidas'),
-      HR, T('Modelo'),
-      I('Eixos da obra…', '3d', 'eixos-obra'),
-      I('Cantos redondos…', '3d', 'cantos-redondos'),
-      I('Explodir peça em trechos', '3d', 'explodir'),
-      I('Juntar peças', '3d', 'juntar'),
-      I('Verificar apoios…', '3d', 'verificar-apoios'),
-      HR,
-      { texto: 'Ligações e acessórios…', link: '/ligacoes' },
+      S('Peça selecionada', [
+        I('Cantos redondos…', '3d', 'cantos-redondos', { antes: 'Estrutura › Cantos redondos…' }),
+        I('Dividir a peça em trechos', '3d', 'explodir', { requer: 'sel', dica: 'antes "Explodir peça": o Explodir do 2D é outro', antes: 'Estrutura › Explodir peça em trechos' }),
+        I('Unir peças', '3d', 'juntar', { requer: 'sel', dica: 'antes "Juntar peças": o Juntar do 2D é outro', antes: 'Estrutura › Juntar peças' }),
+      ]),
+      I('Verificar apoios…', '3d', 'verificar-apoios', { antes: 'Estrutura › Verificar apoios…' }),
+      { texto: 'Ligações e acessórios…', link: '/ligacoes', dica: 'abre a tela das ligações', antes: 'Estrutura › Ligações e acessórios…' },
     ] },
     { nome: 'Cálculo', itens: [
-      I('Calcular estrutura', '3d', 'mapa-esforcos', { kbd: 'F9' }),
-      I('Resultado da análise…', '3d', 'resultado-analise'),
-      I('Esforços da estrutura…', '3d', 'esforcos'),
-      I('Dimensionar: o perfil mais leve que passa…', '3d', 'dimensionar'),
-      I('Memorial do dimensionamento (PDF)', '3d', 'memorial-lancamento'),
+      I('Calcular a estrutura', '3d', 'mapa-esforcos', { kbd: 'F9', antes: 'Cálculo › Calcular estrutura' }),
+      I('Dimensionar: o perfil mais leve que passa…', '3d', 'dimensionar', { antes: 'Cálculo › Dimensionar: o perfil mais leve que passa…' }),
+      HR, T('resultados'),
+      I('Resultado da análise…', '3d', 'resultado-analise', { antes: 'Cálculo › Resultado da análise…' }),
+      I('Esforços da estrutura…', '3d', 'esforcos', { antes: 'Cálculo › Esforços da estrutura…' }),
+      HR,
+      I('Memorial do dimensionamento (PDF)', '3d', 'memorial-lancamento', { antes: 'Cálculo › Memorial do dimensionamento (PDF)' }),
+    ] },
+    { nome: 'Desenho', itens: [
+      S('Trocar de desenho', [
+        { lista: 'desenhos' },
+        HR,
+        I('Outro desenho do projeto…', '2d', 'abrir', { antes: 'Desenhos › Abrir desenho do projeto…' }),
+      ]),
+      I('Novo desenho em branco…', '2d', 'novo', { antes: 'Desenhos › Novo desenho em branco…' }),
+      I('Excluir desenhos…', '2d', 'excluir-desenhos', { antes: 'Desenhos › Excluir desenhos…' }),
+      HR, T('trazer do modelo 3D'),
+      S('Inserir vista do modelo', [
+        V('Frente', '2d', 'frente'), V('Trás', '2d', 'tras'), V('Lateral esquerda', '2d', 'esquerda'),
+        V('Lateral direita', '2d', 'direita'), V('Planta (topo)', '2d', 'topo'), V('Vista inferior', '2d', 'inferior'),
+      ], { antes: 'Desenhos › Inserir vista do modelo no desenho' }),
+      I('Corte por plano…', '2d', 'corte', { antes: 'Desenhos › Corte por plano…' }),
+      I('Corte da ferramenta Seção', '3d', 'desenho-corte', { kbd: 'G', dica: 'o plano de corte ativo no 3D', antes: 'Desenhos › Desenho do corte atual (ferramenta Seção)' }),
+      I('Vistas das peças selecionadas…', '3d', 'desenho-selecao', { requer: 'sel', antes: 'Desenhos › Vistas da seleção…' }),
+      HR,
+      I('Estilos do desenho…', '2d', 'estilos', { antes: 'Desenhos › Estilos do desenho…' }),
+    ] },
+    { nome: 'Produção', itens: [
+      I('Detalhar peças e conjuntos…', '3d', 'detalhar-pecas', { antes: 'Desenhos › Detalhar peças e conjuntos…' }),
+      I('Detalhar as peças de um IFC…', '3d', 'detalhar-ifc', { dica: 'IFC do TecnoMETAL ou de outro programa', antes: 'Arquivo › Detalhar as peças de um IFC…' }),
+      HR,
+      S('Pranchas', [
+        I('Montar pranchas (automático)…', '2d', 'pranchas', { antes: 'Desenhos › Montar pranchas (automático)…' }),
+        I('Inserir folha…', '2d', 'inserir-folha', { antes: 'Desenhos › Inserir folha (prancha)…' }),
+        I('Gerar pranchas das folhas', '2d', 'pranchas-das-folhas', { antes: 'Desenhos › Gerar pranchas das folhas' }),
+        HR,
+        I('Atualizar desenhos e pranchas agora', '2d', 'atualizar-desenhos', { antes: 'Desenhos › Atualizar desenhos e pranchas agora' }),
+      ]),
+      I('Lista de materiais…', '3d', 'materiais', { antes: 'Desenhos › Lista de materiais…' }),
+      HR,
+      S('Peça do detalhamento selecionada', [
+        I('Ver no 3D', '2d', 'ver-3d', { requer: 'sel', antes: 'Desenhos › Ver no 3D a peça selecionada' }),
+        I('Selecionar tudo da mesma peça', '2d', 'selecionar-peca', { requer: 'sel', antes: 'Desenhos › Selecionar tudo da mesma peça' }),
+        HR, T('levar ao modelo 3D'),
+        I('Ajustar o tamanho da chapa…', '2d', 'ajustar-tamanho', { requer: 'sel', antes: 'Desenhos › Ajustar tamanho da chapa…' }),
+        I('Aplicar as peças da célula', '2d', 'aplicar-pecas', { antes: 'Desenhos › Aplicar peças da célula ao modelo 3D' }),
+        I('Aplicar furos e tamanho', '2d', 'aplicar-furos', { antes: 'Desenhos › Aplicar furos e tamanho ao modelo 3D' }),
+      ]),
     ] },
     { nome: 'Ver', itens: [
-      T('Modelo 3D'),
-      V('Topo', '3d', 'topo', '1'), V('Frente', '3d', 'frente', '2'), V('Trás', '3d', 'tras', '3'),
-      V('Esquerda', '3d', 'esquerda', '4'), V('Direita', '3d', 'direita', '5'), V('Inferior', '3d', 'inferior', '6'),
-      V('Isométrica', '3d', 'isometrica', '7'),
-      I('Perspectiva / ortográfica', '3d', 'alternar-projecao'),
-      { texto: 'Sombreado', lado: '3d', sel: '#modos-exibicao [data-modo="sombreado"]', marcado: 'aria-pressed' },
-      { texto: 'Sombreado com arestas', lado: '3d', sel: '#modos-exibicao [data-modo="sombreado_arestas"]', marcado: 'aria-pressed' },
-      { texto: 'Só arestas', lado: '3d', sel: '#modos-exibicao [data-modo="arestas"]', marcado: 'aria-pressed' },
-      { texto: 'Raio-X', lado: '3d', sel: '#modos-exibicao [data-modo="raiox"]', marcado: 'aria-pressed' },
-      { texto: 'Esqueleto (só linhas)', lado: '3d', sel: '#modos-exibicao [data-esqueleto]', marcado: 'aria-pressed' },
-      I('Sombras', '3d', 'sombras'),
-      I('Arquitetônico, eixos e níveis', '3d', 'referencia'),
-      I('Isolar seleção / voltar ao modelo', '3d', 'isolar'),
-      I('Inverter seleção', '3d', 'inverter-selecao'),
-      I('Zoom na extensão', '3d', 'zoom-extensao', { kbd: 'Z' }),
-      I('Zoom na seleção', '3d', 'zoom-selecao'),
-      I('Diagnóstico de desempenho…', '3d', 'desempenho'),
-      HR, T('Desenho 2D'),
-      I('Zoom na extensão', '2d', 'zoom-extensao', { kbd: 'Z' }),
-      I('Zoom na seleção', '2d', 'zoom-selecao'),
-      I('Grade ligada/desligada', '2d', 'grade'),
-      I('Orto ligado/desligado', '2d', 'orto', { kbd: 'F8' }),
-      HR, T('2D + 3D lado a lado'),
-      { texto: 'Seguir a seleção de um lado no outro', fn: 'seguir' },
-      { texto: 'Treliça escolhida no 3D: o 2D mostra a planta', fn: 'modo-planta' },
-      { texto: 'Treliça escolhida no 3D: o 2D mostra a elevação', fn: 'modo-elevacao' },
-      { texto: 'Trocar os lados', fn: 'trocar' },
+      S('Tela', [
+        F('Só o 2D', 'vista-2d'), F('2D + 3D lado a lado', 'vista-ambos'), F('Só o 3D', 'vista-3d'),
+        HR,
+        F('Trocar os lados', 'trocar', { antes: 'Ver › Trocar os lados' }),
+        F('Seguir a seleção de um lado no outro', 'seguir', { antes: 'Ver › Seguir a seleção de um lado no outro' }),
+        T('treliça escolhida no 3D: o 2D mostra'),
+        F('a planta', 'modo-planta', { antes: 'Ver › Treliça escolhida no 3D: o 2D mostra a planta' }),
+        F('a elevação', 'modo-elevacao', { antes: 'Ver › Treliça escolhida no 3D: o 2D mostra a elevação' }),
+      ]),
+      HR, T('no lado ativo'),
+      { texto: 'Zoom na extensão', kbd: 'Z', noAtivo: 'zoom-extensao', antes: ['Ver › Zoom na extensão (3D)', 'Ver › Zoom na extensão (2D)'] },
+      { texto: 'Zoom na seleção', noAtivo: 'zoom-selecao', requer: 'sel', antes: ['Ver › Zoom na seleção (3D)', 'Ver › Zoom na seleção (2D)'] },
+      I('Isolar a seleção / voltar ao modelo', '3d', 'isolar', { antes: 'Ver › Isolar seleção / voltar ao modelo' }),
+      I('Inverter a seleção', '3d', 'inverter-selecao', { antes: 'Ver › Inverter seleção' }),
+      HR, T('modelo 3D'),
+      S('Olhar de', [
+        V('Topo', '3d', 'topo', '1'), V('Frente', '3d', 'frente', '2'), V('Trás', '3d', 'tras', '3'),
+        V('Esquerda', '3d', 'esquerda', '4'), V('Direita', '3d', 'direita', '5'), V('Inferior', '3d', 'inferior', '6'),
+        V('Isométrica', '3d', 'isometrica', '7'),
+        HR,
+        I('Perspectiva / ortográfica', '3d', 'alternar-projecao', { antes: 'Ver › Perspectiva / ortográfica' }),
+      ], { antes: 'Ver › Topo, Frente, Trás, Esquerda, Direita, Inferior, Isométrica' }),
+      S('Estilo', [
+        { texto: 'Sombreado', lado: '3d', sel: '#modos-exibicao [data-modo="sombreado"]', marcado: 'aria-pressed', antes: 'Ver › Sombreado' },
+        { texto: 'Sombreado com arestas', lado: '3d', sel: '#modos-exibicao [data-modo="sombreado_arestas"]', marcado: 'aria-pressed', antes: 'Ver › Sombreado com arestas' },
+        { texto: 'Só arestas', lado: '3d', sel: '#modos-exibicao [data-modo="arestas"]', marcado: 'aria-pressed', antes: 'Ver › Só arestas' },
+        { texto: 'Raio-X', lado: '3d', sel: '#modos-exibicao [data-modo="raiox"]', marcado: 'aria-pressed', antes: 'Ver › Raio-X' },
+        { texto: 'Esqueleto (só linhas)', lado: '3d', sel: '#modos-exibicao [data-esqueleto]', marcado: 'aria-pressed', antes: 'Ver › Esqueleto (só linhas)' },
+        HR,
+        I('Sombras', '3d', 'sombras', { antes: 'Ver › Sombras' }),
+      ]),
+      I('Arquitetônico, eixos e níveis', '3d', 'referencia', { antes: 'Ver › Arquitetônico, eixos e níveis' }),
+      HR, T('desenho 2D'),
+      I('Grade', '2d', 'grade', { antes: 'Ver › Grade ligada/desligada' }),
+      I('Orto', '2d', 'orto', { kbd: 'F8', antes: 'Ver › Orto ligado/desligado' }),
+      HR, T('a tela do programa'),
+      F('Painéis da direita', 'paineis', { kbd: 'F4', dica: 'propriedades, camadas… dos dois lados' }),
+      F('Tema claro / escuro', 'tema', { antes: 'Ver › Tema claro / escuro' }),
+    ] },
+    { nome: '?', itens: [
+      { texto: 'Ajuda do programa…', link: '/ajuda', nova: true, antes: 'Ver › Ajuda do programa…' },
+      F('Onde foi parar cada item do menu antigo…', 'mapa', { dica: 'os menus mudaram na 0.8.54' }),
       HR,
-      { texto: 'Tema claro / escuro', fn: 'tema' },
-      { texto: 'Ajuda do programa…', link: '/ajuda', nova: true },
+      I('Diagnóstico de desempenho…', '3d', 'desempenho', { antes: 'Ver › Diagnóstico de desempenho…' }),
     ] },
   ];
 
@@ -211,6 +258,7 @@
   }
 
   function marcado(it) {
+    if (it.fn && it.fn.indexOf('vista-') === 0) return vista() === it.fn.slice(6);
     if (it.fn === 'seguir') { var s = $('#seguir'); return !!(s && s.checked); }
     if (it.fn === 'modo-planta' || it.fn === 'modo-elevacao') {
       var b = document.querySelector('.grupo-modo button[data-modo="' + it.fn.slice(5) + '"]');
@@ -220,11 +268,49 @@
     return null;
   }
 
-  function abrir(m, menu) {
-    fechar();
-    var lista = m.querySelector('.menu-lista');
-    lista.replaceChildren();
-    menu.itens.forEach(function (it) {
+  /** há peça selecionada no lado? (tela não carregada: não se sabe — o comando decide) */
+  function temSelecao(lado) {
+    var w = janela(lado);
+    try {
+      if (lado === '3d') return !!(w.editor.selecao && w.editor.selecao.tamanho);
+      return !!(w.cad.tela && w.cad.tela.selecao && w.cad.tela.selecao.size);
+    } catch (e) { return true; }
+  }
+  /** o motivo de o item estar apagado ('' = pode) */
+  function motivo(it) {
+    if (it.requer !== 'sel') return '';
+    var lado = it.lado || (it.noAtivo ? ladoDasSetas() : null);
+    if (!lado || !docPronto(lado)) return '';
+    return temSelecao(lado) ? '' : 'selecione uma peça antes';
+  }
+  function botaoDoItem(texto, miuda, ok) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    var rot = document.createElement('span');
+    rot.className = 'rot';
+    rot.appendChild(document.createTextNode((ok === null || ok === undefined ? '' : ok ? '✓ ' : '   ') + texto));
+    if (miuda) { var s = document.createElement('small'); s.textContent = miuda; rot.appendChild(s); }
+    b.appendChild(rot);
+    if (ok !== null && ok !== undefined) b.classList.add('marcavel');
+    return b;
+  }
+  /** sem linha no começo, no fim ou duas seguidas; título sem item embaixo some */
+  function arrumar(lista) {
+    var filhos = [].slice.call(lista.children);
+    filhos.forEach(function (c, i) {
+      var prox = filhos[i + 1];
+      if (c.classList.contains('menu-titulo') && (!prox || prox.tagName === 'HR' || prox.classList.contains('menu-titulo'))) c.remove();
+    });
+    var anterior = null;
+    [].slice.call(lista.children).forEach(function (c) {
+      if (c.tagName === 'HR' && (!anterior || anterior.tagName === 'HR')) { c.remove(); return; }
+      anterior = c;
+    });
+    var ult = lista.lastElementChild;
+    if (ult && ult.tagName === 'HR') ult.remove();
+  }
+  function preencher(lista, itens) {
+    itens.forEach(function (it) {
       if (it === HR) { lista.appendChild(document.createElement('hr')); return; }
       if (it.lista === 'desenhos') { listaDeDesenhos(lista); return; }
       if (it.titulo) {
@@ -234,23 +320,59 @@
         lista.appendChild(t);
         return;
       }
-      var d = it.lado ? docPronto(it.lado) : null;
-      var o = original(it, d);
-      if (d && it.lado && !o) return;                 // a tela não tem esse comando (versão, contexto)
-      if (o && (o.hidden || o.closest('[hidden]') && !o.closest('header.topo[hidden]'))) return;
-      var b = document.createElement('button');
-      b.type = 'button';
-      var ok = marcado(it);
-      b.textContent = (ok === null ? '' : ok ? '✓ ' : '   ') + it.texto;
-      if (ok !== null) b.classList.add('marcavel');
+      if (it.sub) {
+        var sub = document.createElement('div');
+        sub.className = 'menu-lista submenu';
+        preencher(sub, it.sub);
+        if (!sub.querySelector('button')) return;             // nada do submenu existe nesta versão
+        var caixa = document.createElement('div');
+        caixa.className = 'item-sub';
+        var bs = botaoDoItem(it.texto, it.dica, null);
+        bs.classList.add('abre-sub');
+        var seta = document.createElement('span');
+        seta.className = 'seta-sub';
+        seta.textContent = '▸';
+        bs.appendChild(seta);
+        bs.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          var abrir = !caixa.classList.contains('sub-aberto');
+          [].forEach.call(lista.querySelectorAll(':scope > .item-sub.sub-aberto'), function (x) { x.classList.remove('sub-aberto'); });
+          if (abrir) caixa.classList.add('sub-aberto');
+        });
+        caixa.append(bs, sub);
+        lista.appendChild(caixa);
+        return;
+      }
+      var o = null;
+      if (it.lado) {
+        var d = docPronto(it.lado);
+        o = original(it, d);
+        if (d && !o) return;                                    // a tela não tem esse comando (versão, contexto)
+        if (o && (o.hidden || o.closest('[hidden]') && !o.closest('header.topo[hidden]'))) return;
+      } else if (it.noAtivo) {
+        var dl = docPronto(ladoDasSetas());
+        if (dl && !original({ acao: it.noAtivo }, dl)) return;
+      }
+      var falta = motivo(it);
+      var b = botaoDoItem(it.texto, falta || it.dica, marcado(it));
       if (it.kbd) { var k = document.createElement('kbd'); k.textContent = it.kbd; b.appendChild(k); }
-      if (it.lado) b.title = LADOS[it.lado].titulo + (o && o.title ? ' — ' + o.title : '');
-      if (o && o.disabled) b.disabled = true;
+      if (o && o.title) b.title = o.title;
+      if ((o && o.disabled) || falta) b.disabled = true;
       b.addEventListener('click', function (ev) { ev.stopPropagation(); fechar(); executar(it); });
       lista.appendChild(b);
     });
+    arrumar(lista);
+  }
+
+  function abrir(m, menu) {
+    fechar();
+    var lista = m.querySelector('.menu-lista');
+    lista.replaceChildren();
+    preencher(lista, menu.itens);
     m.classList.add('aberto');
     aberto = m;
+    // perto da borda direita, os submenus abrem para a esquerda
+    lista.classList.toggle('esq', lista.getBoundingClientRect().right + 300 > window.innerWidth);
   }
 
   /** os desenhos do projeto (o seletor da área, que continua escondido na barra): escolher um abre no 2D */
@@ -283,6 +405,11 @@
   function executar(it) {
     if (it.link) { if (it.nova) window.open(it.link, '_blank', 'noopener'); else location.href = it.link; return; }
     if (it.fn) { funcao(it.fn); return; }
+    if (it.varios) {                       // o mesmo comando em cada lado carregado (Salvar)
+      it.varios.forEach(function (par) { var d = docPronto(par[0]); var o = original({ acao: par[1] }, d); if (o) o.click(); });
+      return;
+    }
+    if (it.noAtivo) { executar({ lado: ladoDasSetas(), acao: it.noAtivo }); return; }
     if (!visivel(it.lado) && window.mostrarVista) window.mostrarVista(it.lado);
     var inicio = Date.now();
     (function tentar() {
@@ -298,6 +425,9 @@
   }
 
   function funcao(fn) {
+    if (fn.indexOf('vista-') === 0) { if (window.mostrarVista) window.mostrarVista(fn.slice(6)); return; }
+    if (fn === 'paineis') { var p = $('#btn-paineis'); if (p) p.click(); return; }
+    if (fn === 'mapa') { ondeFoiParar(); return; }
     if (fn === 'seguir') { var s = $('#seguir'); if (s) s.click(); return; }
     if (fn === 'modo-planta' || fn === 'modo-elevacao') { var b = document.querySelector('.grupo-modo button[data-modo="' + fn.slice(5) + '"]'); if (b) b.click(); return; }
     if (fn === 'trocar') { var t = $('#btn-trocar'); if (t) t.click(); return; }
@@ -317,8 +447,67 @@
         var o = d.querySelector('[data-acao="alternar-tema"]');
         if (o) o.click();
       });
+      iconeDoTema();
     }
   }
+
+  /** o botão do tema mostra o que o clique faz: a lua no claro, o sol no escuro */
+  function iconeDoTema() {
+    var b = $('#btn-tema-area');
+    if (!b) return;
+    var t = document.documentElement.getAttribute('data-tema') ||
+      (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro');
+    b.innerHTML = t === 'escuro'
+      ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>';
+    b.title = t === 'escuro' ? 'Tema claro' : 'Tema escuro';
+    b.setAttribute('aria-label', b.title);
+  }
+
+  // ------------------------------------------------------------ ? › Onde foi parar cada item do menu antigo
+  function ondeFoiParar() {
+    var linhas = [];
+    (function andar(itens, caminho) {
+      itens.forEach(function (it) {
+        if (!it || it === HR || it.titulo || it.lista) return;
+        var aqui = caminho.concat([it.texto]);
+        if (it.antes) [].concat(it.antes).forEach(function (a) { linhas.push([a, aqui.join(' › ')]); });
+        if (it.sub) andar(it.sub, aqui);
+      });
+    })(MAPA.map(function (m) { return { texto: m.nome, sub: m.itens }; }), []);
+    linhas.sort(function (a, b) { return a[0].localeCompare(b[0], 'pt-BR'); });
+    var fundo = document.getElementById('onde-foi-parar');
+    if (!fundo) {
+      fundo = document.createElement('div');
+      fundo.id = 'onde-foi-parar';
+      fundo.className = 'onde-foi-parar';
+      fundo.innerHTML = '<div class="cx"><div class="cab"><b>Onde foi parar cada item do menu antigo</b><button type="button">Fechar (Esc)</button></div>' +
+        '<p>Os menus seguem a ordem da obra: Arquivo · Modelo · Cálculo · Desenho · Produção · Ver. Cada comando vai sozinho para o 2D ou para o 3D. ' +
+        'No 3D, "Explodir peça em trechos" virou <b>Dividir a peça em trechos</b> e "Juntar peças" virou <b>Unir peças</b>.</p>' +
+        '<input type="search" placeholder="filtrar (ex.: explodir, pranchas, zoom)"><div class="tab"><table><thead><tr><th>Antes</th><th>Agora</th></tr></thead><tbody></tbody></table></div></div>';
+      document.body.appendChild(fundo);
+      fundo.addEventListener('click', function (ev) { if (ev.target === fundo || ev.target.closest('.cab button')) fundo.hidden = true; });
+      fundo.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') fundo.hidden = true; });
+      fundo.querySelector('input').addEventListener('input', function () { preencherMapa(fundo, linhas); });
+    }
+    fundo.hidden = false;
+    fundo.querySelector('input').value = '';
+    preencherMapa(fundo, linhas);
+    fundo.querySelector('input').focus();
+  }
+  function preencherMapa(fundo, linhas) {
+    var norm = function (s) { return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); };
+    var q = norm(fundo.querySelector('input').value || '');
+    var tb = fundo.querySelector('tbody');
+    tb.replaceChildren();
+    linhas.forEach(function (l) {
+      if (q && norm(l[0] + ' ' + l[1]).indexOf(q) < 0) return;
+      var tr = document.createElement('tr');
+      l.forEach(function (x) { var td = document.createElement('td'); td.textContent = x; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+  }
+
 
   // ------------------------------------------------------------ Salvo e busca do 3D na barra
   var IDS_RAPIDOS = ['btn-salvar', 'busca-pecas'];
@@ -423,6 +612,8 @@
         else if (a && a.id === 'f3d') ultimoLado = '3d';
       }, 0);
     });
+    ['2d', '3d'].forEach(function (lado) { quadro(lado).addEventListener('mouseenter', function () { ultimoLado = lado; }); });
+    iconeDoTema();
     // voltar: a tela anterior; aberta direto (ou vinda dela mesma), a lista de projetos
     var voltar = $('#btn-voltar-area');
     if (voltar) voltar.addEventListener('click', function () {
@@ -442,6 +633,7 @@
     vista: function () { fechar(); requestAnimationFrame(compactar); },
     executar: executar,
     mapa: MAPA,
+    ondeFoiParar: ondeFoiParar,
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
   else iniciar();

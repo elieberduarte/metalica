@@ -110,8 +110,29 @@ try:
        and aba.avaliar(f"getComputedStyle({F2}.document.querySelector('header.topo')).display") == "none"
        and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('header.topo')).display") == "none"
        and aba.avaliar("document.querySelector('.vistas button.ativo').dataset.vista") == "ambos"
-       and menus_u == "Arquivo,Desenhos,Estrutura,Cálculo,Ver",
+       and menus_u == "Arquivo,Modelo,Cálculo,Desenho,Produção,Ver,?",
        f"uma barra só, a de fora: o menu geral do 2D e do 3D ({menus_u}); as barras das telas escondidas; abre no 2D + 3D")
+    # UI1 (30/09): o ⌂ da tela inicial no começo da barra, o tema em ícone logo depois do seletor de vista
+    ok(aba.avaliar("document.querySelector('header.area-topo .marca #btn-inicio') !== null")
+       and aba.avaliar("document.querySelector('.area-topo .vistas').nextElementSibling.id") == "btn-tema-area"
+       and aba.avaliar("document.querySelector('#btn-tema-area svg') !== null")
+       and not aba.avaliar("[...document.querySelectorAll('.area-topo .acoes button')].some(b => b.offsetParent !== null && /Tema|Painéis|⌂/.test(b.textContent))"),
+       "⌂ no começo da barra e o tema num ícone ao lado das vistas (sem os botões de texto Tema, Painéis e ⌂ à direita)")
+    tema0 = aba.avaliar("document.documentElement.getAttribute('data-tema') || ''")
+    aba.avaliar("document.getElementById('btn-tema-area').click(); 1"); aba.drenar(0.5)
+    tema1 = aba.avaliar("document.documentElement.getAttribute('data-tema') || ''")
+    aba.avaliar("document.getElementById('btn-tema-area').click(); 1"); aba.drenar(0.5)
+    ok(tema1 and tema1 != tema0, f"o ícone troca o tema na hora ({tema0 or 'sistema'} → {tema1})")
+    # os menus: submenu com o roteiro numerado, sem etiqueta 2D/3D, e o "Onde foi parar"
+    aba.avaliar("document.querySelector('.menu[data-nome=\"Modelo\"] .menu-botao').click(); 1"); aba.drenar(0.4)
+    aba.avaliar("document.querySelector('.menu.aberto .item-sub .abre-sub').click(); 1"); aba.drenar(0.3)
+    passos = aba.avaliar("[...document.querySelectorAll('.menu.aberto .item-sub.sub-aberto > .submenu > button')].filter(b => b.offsetParent !== null).map(b => b.textContent.trim().slice(0, 2)).join('')") or ""
+    ok(passos.startswith("1.2.3.4.5.6."), f"Modelo › Lançar pelo arquitetônico abre o roteiro numerado de 1 a 6 ({passos})")
+    aba.avaliar("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'})); 1"); aba.drenar(0.2)
+    aba.avaliar("barraUnica.ondeFoiParar(); 1"); aba.drenar(0.3)
+    n_mapa = aba.avaliar("document.querySelectorAll('#onde-foi-parar tbody tr').length") or 0
+    aba.avaliar("document.getElementById('onde-foi-parar').hidden = true; 1")
+    ok(n_mapa >= 85, f"? › Onde foi parar lista os itens do menu antigo ({n_mapa} linhas)")
     ok(aba.avaliar(f"getComputedStyle({F2}.document.querySelector('#btn-voltar')).display") == "none"
        and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('#link-projetos')).display") != "none",
        "a navegação de cada lado some dentro da tela dividida")

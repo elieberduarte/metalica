@@ -100,13 +100,47 @@
   .aviso-dividida { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 5; max-width: 70%;
                     padding: 7px 14px; border-radius: 6px; font-size: 13px; background: #d97706; color: #fff; box-shadow: var(--sombra); }
   .aviso-dividida[hidden] { display: none; }
+  /* UI1 (30/09): o ⌂ da tela inicial no lugar do logotipo e o tema num ícone ao lado das vistas; "Painéis" fica
+     em Ver › Painéis da direita (F4) — o botão continua aqui, escondido, para o menu e o dividida.js */
+  .area-topo .casa-inicio, .area-topo .tema-icone { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 30px; height: 27px; padding: 0; background: transparent; color: #e2e8f0; border: 1px solid rgba(255,255,255,.22);
+    border-radius: 5px; cursor: pointer; font-size: 15px; }
+  .area-topo .casa-inicio:hover, .area-topo .tema-icone:hover { background: rgba(255,255,255,.12); }
+  .area-topo .tema-icone { margin-left: 6px; }
+  .area-topo #btn-paineis { display: none; }
+  /* os menus: submenus (abrem ao passar o mouse; perto da borda direita, para a esquerda) e a dica miúda */
+  .menu-lista .rot { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
+  .menu-lista .rot small { font-size: 11px; font-weight: 400; color: var(--texto3); white-space: nowrap; }
+  .menu-lista button:hover:not(:disabled) .rot small { color: inherit; opacity: .75; }
+  .menu-lista .item-sub { position: relative; }
+  .menu-lista .item-sub > .abre-sub .seta-sub { margin-left: auto; padding-left: 18px; font-size: 11px; color: var(--texto3); }
+  .menu.aberto .menu-lista.submenu { display: none; top: -6px; left: 100%; }
+  .menu.aberto .menu-lista .item-sub:hover > .menu-lista.submenu,
+  .menu.aberto .menu-lista .item-sub.sub-aberto > .menu-lista.submenu { display: block; }
+  .menu.aberto .menu-lista.esq .menu-lista.submenu { left: auto; right: 100%; }
+  .area-topo .menu-lista .item-sub:hover > .abre-sub, .area-topo .menu-lista .item-sub.sub-aberto > .abre-sub { background: var(--azul-fraco); color: var(--azul-tinta); }
+  .menu-lista button { white-space: nowrap; }
+  /* ? › Onde foi parar cada item do menu antigo */
+  .onde-foi-parar { position: fixed; inset: 0; z-index: 200; background: rgba(15,23,42,.55); display: flex; align-items: center; justify-content: center; }
+  .onde-foi-parar[hidden] { display: none; }
+  .onde-foi-parar .cx { background: var(--painel); color: var(--texto); border-radius: 8px; width: min(980px, 94vw); max-height: 88vh; display: flex;
+    flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,.35); padding: 0 16px 12px; }
+  .onde-foi-parar .cab { display: flex; align-items: center; padding: 12px 0 6px; font-size: 15px; }
+  .onde-foi-parar .cab button { margin-left: auto; cursor: pointer; }
+  .onde-foi-parar p { margin: 0 0 8px; font-size: 12.5px; color: var(--texto2); }
+  .onde-foi-parar input { width: 320px; margin-bottom: 8px; font: inherit; padding: 4px 8px; }
+  .onde-foi-parar .tab { overflow: auto; }
+  .onde-foi-parar table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  .onde-foi-parar th, .onde-foi-parar td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--borda); vertical-align: top; }
+  .onde-foi-parar th { position: sticky; top: 0; background: var(--painel2, var(--painel)); }
+  .onde-foi-parar td:last-child { color: var(--azul-tinta); font-weight: 600; }
 </style>
 </head>
 <body>
 
 <header class="topo area-topo">
   <div class="marca">
-    <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="7" width="10" height="18" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 12 L23 9 L28 12 L28 22 L23 25 L18 22 Z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    <button type="button" id="btn-inicio" class="casa-inicio" onclick="location.href='/'" title="Tela inicial (lista de projetos)" aria-label="Tela inicial"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.8V20h5v-5.5h3V20h5V9.8"/></svg></button>
     <span class="nome" id="nome-projeto" title="Projeto">projeto</span>
   </div>
   <button type="button" id="btn-voltar-area" class="voltar-area" title="Volta para a tela anterior">&larr; Voltar</button>
@@ -115,6 +149,7 @@
     <button type="button" data-vista="3d" title="O modelo 3D do projeto (a troca não recarrega nada)">3D</button>
     <button type="button" data-vista="ambos" title="O desenho e o modelo lado a lado: escolher uma peça num mostra ela no outro">2D + 3D</button>
   </nav>
+  <button type="button" id="btn-tema-area" class="tema-icone" title="Tema claro / escuro (o desenho, o modelo e a barra juntos)" aria-label="Tema claro / escuro">☾</button>
   <div class="controles">
     <label class="so-ambos" title="Seguir a seleção: escolher uma peça num lado mostra ela no outro"><input type="checkbox" id="seguir" checked> 🔗</label>
     <span class="grupo-modo so-ambos" role="group" aria-label="O que o 2D mostra quando se escolhe uma treliça no 3D">
@@ -127,9 +162,7 @@
   <div class="menus" id="menus-unicos" aria-label="Menus do desenho 2D e do modelo 3D"></div>
   <div class="rapidos" id="rapidos-3d"></div>
   <div class="acoes">
-    <button type="button" id="btn-tema-area" title="Tema claro / escuro (o desenho, o modelo e a barra juntos)">Tema</button>
     <button type="button" id="btn-paineis" title="Mostra ou esconde os painéis da direita (Propriedades, Camadas…) do 2D e do 3D — F4 em cada lado">Painéis</button>
-    <button type="button" class="casa" onclick="location.href='/'" title="Voltar à lista de projetos">⌂</button>
   </div>
 </header>
 
