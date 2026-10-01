@@ -32,6 +32,7 @@ import { transformar, pontosDe, caixaDe, valorCota, novoId as idEntidade } from 
 import { Ferramenta } from './ferramentas.js';
 
 export const DESENHO_MONTAGEM = 'montagem';
+export const DESENHO_COMPLETO = 'detalhamento-completo';
 export const FOLGA = 25;                 // mm de papel entre os quadros
 export const MINIMO = [140, 100];        // o menor quadro (mm de papel)
 
@@ -246,6 +247,7 @@ class Montagem {
     this.abas = el('div', { class: 'abas-projeto', id: 'abas-projeto', hidden: true, role: 'tablist', 'aria-label': 'Etapas do projeto recebido' },
       el('button', { type: 'button', 'data-aba': 'original', 'data-dica': 'O DXF do cliente como chegou (a planta de lançamento): só leitura, a fonte dos quadros', title: 'O DXF do cliente como chegou (a planta de lançamento): só leitura, a fonte dos quadros', onclick: () => this.ir('original') }, 'Original'),
       el('button', { type: 'button', 'data-aba': 'montagem', 'data-dica': 'A folha com os quadros: locação, terças, tesouras, elevações, corte e ligações — é o que o programa lê', title: 'A folha com os quadros: locação, terças, tesouras, elevações, corte e ligações — é o que o programa lê', onclick: () => this.ir('montagem') }, 'Montagem'),
+      el('button', { type: 'button', 'data-aba': 'detalhamento', 'data-dica': 'O detalhamento completo do projeto (todas as peças e conjuntos num desenho só)', title: 'O detalhamento completo do projeto (todas as peças e conjuntos num desenho só)', onclick: () => this.ir('detalhamento') }, 'Detalhamento'),
       el('button', { type: 'button', 'data-aba': 'pranchas', title: 'As pranchas do projeto, geradas depois do 3D', onclick: () => this.ir('pranchas') }, 'Pranchas'),
       this.botaoEnviar = el('button', { type: 'button', class: 'enviar-quadro', hidden: true, id: 'btn-enviar-quadro',
         title: 'Marque uma área da planta do cliente e escolha o quadro da Montagem para onde ela vai (copiada, na escala do quadro)',
@@ -301,6 +303,10 @@ class Montagem {
     // a barra em todo projeto (pedido de 01/10: "padronizar isso para todos os projetos"); no que veio do IFC, sem a
     // planta do cliente, a Original e a Montagem ficam apagadas e as Pranchas funcionam
     this.abas.hidden = !this.cad.projeto;
+    // o detalhamento completo (pedido de 01/10: "traga uma nova aba pelo menos com o projeto completo")
+    const bd = this.abas.querySelector('[data-aba=detalhamento]');
+    bd.disabled = !nomes.has(DESENHO_COMPLETO);
+    bd.title = bd.disabled ? 'O projeto ainda não foi detalhado (Produção › Detalhar peças e conjuntos)' : bd.dataset.dica;
     for (const aba of ['original', 'montagem']) {
       const b = this.abas.querySelector(`[data-aba=${aba}]`);
       b.disabled = !temProjetoRecebido;
@@ -315,6 +321,7 @@ class Montagem {
     this.original = (mm && mm.original) || DESENHO_LANCAMENTO;
     const atual = this.cad.nomeDesenho === DESENHO_MONTAGEM ? 'montagem'
       : this.cad.nomeDesenho === this.original ? 'original'
+      : this.cad.nomeDesenho === DESENHO_COMPLETO ? 'detalhamento'
       : /^pranchas/.test(this.cad.nomeDesenho || '') ? 'pranchas' : '';
     for (const b of this.abas.querySelectorAll('button[data-aba]')) b.classList.toggle('on', b.dataset.aba === atual);
     this.naOriginal = atual === 'original';
@@ -344,6 +351,9 @@ class Montagem {
       const nome = (this.m && this.m.original) || this.original || DESENHO_LANCAMENTO;
       if (!nomes.has(nome)) { this.cad.aviso('Este projeto ainda não tem a planta do cliente. Comece por "Novo a partir do arquitetônico" na tela inicial.', 'atencao'); return; }
       await this.cad.abrirDesenho(nome);
+    } else if (aba === 'detalhamento') {
+      if (!nomes.has(DESENHO_COMPLETO)) { this.cad.aviso('O projeto ainda não foi detalhado (Produção › Detalhar peças e conjuntos).', 'info'); return; }
+      await this.cad.abrirDesenho(DESENHO_COMPLETO);
     } else if (aba === 'montagem') {
       if (!nomes.has(DESENHO_MONTAGEM)) {
         const m = montagemPadrao(nomes.has(DESENHO_LANCAMENTO) ? DESENHO_LANCAMENTO : '');

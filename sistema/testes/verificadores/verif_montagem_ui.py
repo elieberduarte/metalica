@@ -278,8 +278,10 @@ try:
     aba.navegar(base + "/cad?projeto=do-ifc&desenho=detalhamento-completo", limite=60)
     esperar(aba, "!!window.montagem && !document.querySelector('#abas-projeto').hidden", 20)
     estado = json.loads(aba.avaliar("JSON.stringify([...document.querySelectorAll('#abas-projeto button[data-aba]')].map(b => [b.dataset.aba, b.disabled]))"))
-    ok(estado == [["original", True], ["montagem", True], ["pranchas", False]],
-       "projeto do IFC: a barra aparece, com Original e Montagem apagadas e Pranchas ativa: %s" % estado)
+    ok(estado == [["original", True], ["montagem", True], ["detalhamento", False], ["pranchas", False]],
+       "projeto do IFC: a barra aparece, com Original e Montagem apagadas e Detalhamento e Pranchas ativos: %s" % estado)
+    ok(aba.avaliar("document.querySelector('#abas-projeto [data-aba=detalhamento]').classList.contains('on')"),
+       "aberto o detalhamento completo, a aba Detalhamento fica marcada")
     aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').click(); 1")
     esperar(aba, "cad.nomeDesenho === 'pranchas'", 20)
     ok(aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').classList.contains('on')"), "e a aba Pranchas abre as pranchas dele")
