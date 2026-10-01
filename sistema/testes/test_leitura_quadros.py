@@ -326,3 +326,27 @@ def test_conferencia_projeto_modelo():
     conf = {c["peca"]: c for c in r["resumo"]["conferencia"]}
     assert conf["T01"] == {"peca": "T01", "projeto": 2, "planta": 2, "modelo": 2, "confere": True}
     assert conf["TC01"]["projeto"] == 2 and conf["TC01"]["modelo"] == 2 and conf["TC01"]["confere"]
+
+
+# ------------------------------------------------------------------ viga treliçada
+
+def test_viga_trelicada_com_nota_depois_da_quantidade():
+    """a viga painel tem quadro próprio ("Viga treliçada", pedido de 01/10: "não tem a viga painel para importar"):
+    lida como a tesoura, com a quantidade no meio do título, e colocada pela marca VP1 da planta"""
+    M = _Montagem()
+    qp = M.quadro("tesouras_pos", escala=100)
+    qv = M.quadro("viga", "VP1", escala=25)
+    planta = [_linha(-50.0, 0.0, -50.0, 6000.0, "VIGA"), _linha(50.0, 0.0, 50.0, 6000.0, "VIGA"),
+              _texto(150.0, 3000.0, "VP1", 150.0)]
+    M.enviar(qp, planta)
+    elev = [e for e in _tesoura(-30000.0, 20000.0) if e["tipo"] != "texto" or not e["texto"].startswith("Tesoura")]
+    elev.append(_texto(-30000.0, 19700.0, "Viga painel VP1 - 01X - cuidar lado da cantoneira", 80.0, "FOLHA"))
+    M.enviar(qv, elev)
+    r = lq.ler(M.desenho(parametros={"topo": 3000.0}))
+    v = next(q for q in r["quadros"] if q["tipo"] == "viga")
+    assert v["rotulo"] == "Viga treliçada VP1"
+    assert v["leitura"]["nome"] == "VP01" and v["leitura"]["qtd"] == 1
+    assert next(q for q in r["quadros"] if q["tipo"] == "tesouras_pos")["leitura"]["contagem"] == {"VP01": 1}
+    g = de_quadros.gerar(M.desenho(parametros={"topo": 3000.0}))
+    assert g["resumo"]["tesouras"] == {"VP01": 1}
+    assert {c["peca"]: c["confere"] for c in g["resumo"]["conferencia"]} == {"VP01": True}

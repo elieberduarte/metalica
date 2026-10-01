@@ -521,7 +521,7 @@ def gerar(desenho: dict, parametros: Optional[dict] = None, pasta_dados: Optiona
     conf = []
     for q_ in L["quadros"]:
         lt_ = q_.get("leitura") or {}
-        if q_["tipo"] == "tesoura" and lt_.get("nome"):
+        if q_["tipo"] in lq.COM_NOME and lt_.get("nome"):
             nome = lt_["nome"]
             conf.append({"peca": nome, "projeto": lt_.get("qtd"), "planta": (pos.get("contagem") or {}).get(nome, 0),
                          "modelo": contagem.get(nome, 0)})

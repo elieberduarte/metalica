@@ -149,7 +149,12 @@ try:
     ok(aba.avaliar("cad.nomeDesenho") == "planta-de-lançamento" and aba.avaliar("document.querySelector('#montagem-quadros').hidden"),
        "a aba Original volta à planta do cliente, sem os quadros por cima")
     # etapa 2: mandar áreas da Original para quadros
-    ok(not aba.avaliar("document.querySelector('#btn-enviar-quadro').hidden"), "na Original aparece \"Enviar área para quadro…\"")
+    ok(not aba.avaliar("document.querySelector('#btn-enviar-quadro').hidden"), "na Original aparece \"Enviar para quadro\"")
+    # a barra de baixo: cada botão numa linha só, na altura da caixa das coordenadas e alinhado com ela
+    alt = json.loads(aba.avaliar("""JSON.stringify((() => { const c = document.querySelector('#carimbo').getBoundingClientRect();
+      return [c.height, c.bottom, ...[...document.querySelectorAll('#abas-projeto button')].filter(b => !b.hidden).map(b => { const r = b.getBoundingClientRect(); return [r.height, r.bottom]; })]; })())"""))
+    ok(all(abs(h - alt[0]) < 1.5 and abs(bt - alt[1]) < 1.5 for h, bt in alt[2:]),
+       "os botões de baixo têm a altura da caixa das coordenadas e ficam alinhados com ela: %s" % alt)
     MONT = "(async () => JSON.stringify((await (await fetch('/api/projetos/recebido/desenhos/montagem')).json()).desenho))()"
 
     def enviar(c1, c2, tipo, escala, nome_tesoura=None):
@@ -240,7 +245,7 @@ try:
     dxf = _dxf([(i * 5000.0, 0.0, i * 5000.0, 20000.0) for i in range(5)] + [(2500.0, 5000.0, 2500.0, 15000.0)])
     aba.avaliar("document.querySelector('#abas-projeto [data-aba=original]').click(); 1")
     esperar(aba, "!document.querySelector('#btn-nova-revisao').hidden", 15)
-    ok(True, "na Original aparece \"Nova revisão do DXF…\"")
+    ok(True, "na Original aparece \"Nova revisão do DXF\"")
     aba.avaliar("(() => { const f = new File([%s], 'cliente-r01.dxf', { type: 'application/dxf' }); window.montagem.novaRevisao(f); return 1; })()" % json.dumps(dxf))
     esperar(aba, "document.querySelector('#abas-projeto [data-aba=original]').textContent === 'Original R01'", 30)
     ok(aba.avaliar("cad.nomeDesenho") == "planta-de-lançamento-r01", "o DXF novo vira a revisão R01 e a aba Original passa a mostrá-la (%s)" % aba.avaliar("cad.nomeDesenho"))

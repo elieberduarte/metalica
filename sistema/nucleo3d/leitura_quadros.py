@@ -42,12 +42,16 @@ ELEVACOES = ("elev_frontal", "elev_lateral", "elev_fundos", "corte")
 
 ROTULO = {"locacao": "Locação", "tercas": "Posição das terças", "tesouras_pos": "Posição das tesouras",
           "elev_frontal": "Elevação frontal", "elev_lateral": "Elevação lateral", "elev_fundos": "Fundos",
-          "corte": "Corte transversal", "tesoura": "Tesoura", "ligacoes": "Detalhes de ligação"}
+          "corte": "Corte transversal", "tesoura": "Tesoura", "viga": "Viga treliçada",
+          "ligacoes": "Detalhes de ligação"}
+
+#: os quadros de peça treliçada com nome (a tesoura e a viga treliçada: viga painel, de transição, pergolado)
+COM_NOME = ("tesoura", "viga")
 
 
 def _rotulo(q: dict) -> str:
     r = ROTULO.get(q.get("tipo"), q.get("tipo") or "quadro")
-    return ("%s %s" % (r, q["nome"])).strip() if q.get("tipo") == "tesoura" and q.get("nome") else r
+    return ("%s %s" % (r, q["nome"])).strip() if q.get("tipo") in COM_NOME and q.get("nome") else r
 
 
 # =====================================================================================
@@ -216,6 +220,8 @@ def _num(s: str) -> Optional[float]:
 # =====================================================================================
 
 _RX_QTD = re.compile(r"(?i)[-–(\s]\s*(\d{1,3})\s*x\s*\)?\s*$")
+#: a quantidade no meio do título, seguida de uma nota ("VP1 - 01X - cuidar lado da cantoneira")
+_RX_QTD_MEIO = re.compile(r"(?i)[-–(]\s*(\d{1,3})\s*x\s*\)?\s*[-–]")
 _RX_NOME_T = re.compile(r"(?i)\b(T|TS|TR|TES|DP|VT|V\.?\s*T|V\.?\s*P)\s*[-.]?\s*(\d{1,3}[A-Z]?)\b")
 
 
@@ -312,7 +318,7 @@ def ler_tesoura(q: dict, ents: List[dict]) -> Tuple[dict, list, object]:
     titulo = None
     for t in sorted(textos, key=lambda t: -(t.get("altura") or 0)):
         s = t["texto"].strip()
-        mq = _RX_QTD.search(s)
+        mq = _RX_QTD.search(s) or _RX_QTD_MEIO.search(s)
         mn = _RX_NOME_T.search(dp._sem_acento(s).upper())
         if mq and (not nome or (mn and _norm_marca(mn.group(0)) == nome) or nome in _norm_marca(s)):
             qtd, titulo = int(mq.group(1)), t
@@ -986,7 +992,7 @@ def ler(desenho: dict, parametros: Optional[dict] = None, abrir=None) -> dict:
     aps: List[dict] = []
     elevacoes: Dict[str, object] = {}
     por_tipo: Dict[str, List[Tuple[dict, dict]]] = collections.defaultdict(list)
-    nomes_t = {_norm_marca(q["nome"]) for q in m.get("quadros") or [] if q.get("tipo") == "tesoura" and q.get("nome")}
+    nomes_t = {_norm_marca(q["nome"]) for q in m.get("quadros") or [] if q.get("tipo") in COM_NOME and q.get("nome")}
     for q in m.get("quadros") or []:
         ents = reais.get(q["id"], [])
         tipo = q.get("tipo")
@@ -997,7 +1003,7 @@ def ler(desenho: dict, parametros: Optional[dict] = None, abrir=None) -> dict:
             aps.append(_ap(q, "aviso", "escala do quadro: só %d de %d cotas batem com a medida%s" % (
                 c.get("batem", 0), c["cotas"], " (as cotas parecem estar ×%s)" % c["fator"] if c.get("fator") else ""),
                 codigo="escala_nao_confere"))
-        if tipo == "tesoura":
+        if tipo in COM_NOME:
             if not ents:
                 aps.append(_ap(q, "aviso", "quadro de tesoura vazio", codigo="vazio"))
                 item["resumo"] = "vazio"
@@ -1059,7 +1065,7 @@ def _cruzar(m: dict, por_tipo, elevacoes, par: dict, aps: List[dict]) -> dict:
     for it in pos:
         marcas.update(it["leitura"].get("contagem") or {})
     nomes_t = {}
-    for q, it in por_tipo.get("tesoura", []):
+    for q, it in por_tipo.get("tesoura", []) + por_tipo.get("viga", []):
         lt = it.get("leitura") or {}
         if lt.get("nome"):
             nomes_t[lt["nome"]] = (q, lt)

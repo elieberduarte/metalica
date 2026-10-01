@@ -372,10 +372,29 @@ def agendar() -> int:
 
 
 # ------------------------------------------------------------------ a rodada
+def _prioridade_baixa() -> None:
+    """A conferência ocupa a máquina inteira (pytest, ~50 verificadores com Chrome desenhando o 3D por software e
+    a bateria): em prioridade baixa ela cede a vez a quem está usando o computador — os processos que ela abre
+    herdam a prioridade (pedido do usuário, 01/10: "fica impossível de usar o sistema, fica muito lento")."""
+    if os.name != "nt":
+        try:
+            os.nice(10)
+        except (AttributeError, OSError):
+            pass
+        return
+    try:
+        import ctypes
+        BELOW_NORMAL = 0x00004000
+        ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), BELOW_NORMAL)
+    except Exception:                                   # noqa: BLE001 — sem prioridade baixa, roda como antes
+        pass
+
+
 def main(argv) -> int:
     global _log_arq
     if "--agendar" in argv:
         return agendar()
+    _prioridade_baixa()
     os.makedirs(PASTA_LOG, exist_ok=True)
     os.makedirs(os.path.dirname(TRAVA), exist_ok=True)
     _log_arq = os.path.join(PASTA_LOG, time.strftime("%Y-%m-%d") + ".txt")

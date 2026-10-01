@@ -45,9 +45,14 @@ export const TIPOS = {
   elev_fundos:   { rotulo: 'Fundos', escala: 50, w: 297, h: 210, linha: 1, cor: '#0e7490', diz: 'vista de fundos' },
   corte:         { rotulo: 'Corte transversal', escala: 50, w: 297, h: 210, linha: 1, cor: '#0e7490', diz: 'cotas transversais: base, topo, níveis, inclinação' },
   tesoura:       { rotulo: 'Tesoura', escala: 25, w: 297, h: 210, linha: 2, cor: '#16a34a', diz: 'o recorte de um tipo de tesoura, com a legenda de perfis', varios: true },
+  // a viga treliçada (viga painel, de transição, pergolado): lida como a tesoura — um elemento único, com nome, colocado
+  // pelas marcas da planta (pedido de 01/10: "não tem a viga painel para importar")
+  viga:          { rotulo: 'Viga treliçada', escala: 25, w: 297, h: 210, linha: 2, cor: '#0d9488', diz: 'viga painel, de transição ou de pergolado: uma por quadro, com nome (VP1, VT01…)', varios: true },
   ligacoes:      { rotulo: 'Detalhes de ligação', escala: 10, w: 420, h: 297, linha: 3, cor: '#2563eb', diz: 'os detalhes do projeto (referência); a escolha no banco vem depois' },
 };
 export const ESCALAS = [1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 500];
+/** Os quadros de peça treliçada com nome (um por tipo de peça). */
+const COM_NOME = new Set(['tesoura', 'viga']);
 const ORDEM = ['locacao', 'tercas', 'tesouras_pos', 'elev_frontal', 'elev_lateral', 'elev_fundos', 'corte', 'tesoura', 'ligacoes'];
 
 let _seq = 0;
@@ -244,10 +249,10 @@ class Montagem {
       el('button', { type: 'button', 'data-aba': 'pranchas', title: 'As pranchas do projeto, geradas depois do 3D', onclick: () => this.ir('pranchas') }, 'Pranchas'),
       this.botaoEnviar = el('button', { type: 'button', class: 'enviar-quadro', hidden: true, id: 'btn-enviar-quadro',
         title: 'Marque uma área da planta do cliente e escolha o quadro da Montagem para onde ela vai (copiada, na escala do quadro)',
-        onclick: () => this.cad.ativarFerramenta('enviar-quadro') }, 'Enviar área para quadro…'),
+        onclick: () => this.cad.ativarFerramenta('enviar-quadro') }, 'Enviar para quadro'),
       this.botaoRevisao = el('button', { type: 'button', class: 'enviar-quadro revisao', hidden: true, id: 'btn-nova-revisao',
         title: 'Chegou um DXF novo do cliente: ele vira a revisão seguinte da Original (R01, R02…); os quadros não mudam sozinhos — a pré-análise mostra o que mudou em cada um',
-        onclick: () => this.arquivoRevisao.click() }, 'Nova revisão do DXF…'),
+        onclick: () => this.arquivoRevisao.click() }, 'Nova revisão do DXF'),
       this.botaoLer = el('button', { type: 'button', class: 'enviar-quadro', hidden: true, id: 'btn-ler-quadros',
         title: 'O programa lê cada quadro (tesouras, pilares, terças, níveis) e aponta o que está errado ou faltando antes do 3D',
         onclick: () => this.lerQuadros() }, 'Ler quadros'));
@@ -368,16 +373,18 @@ class Montagem {
     if (!ents.length) { this.cad.aviso('Nada inteiro dentro dessa área. Marque a área envolvendo o desenho todo.', 'atencao'); this.cad.ativarFerramenta('selecionar'); return; }
     const mont = await this._montagemJSON();
     const m = mont.metadados.montagem;
-    const rotulo = (q) => (TIPOS[q.tipo] || TIPOS.tesoura).rotulo + (q.tipo === 'tesoura' ? ' ' + (q.nome || '(sem nome)') : '');
+    const rotulo = (q) => (TIPOS[q.tipo] || TIPOS.tesoura).rotulo + (COM_NOME.has(q.tipo) ? ' ' + (q.nome || '(sem nome)') : '');
     const selQ = el('select', { id: 'enviar-quadro-destino' },
       m.quadros.map(q => el('option', { value: q.id }, rotulo(q) + (q.fonte ? '  · já tem desenho' : ''))),
-      el('option', { value: '+tesoura' }, '+ nova tesoura…'));
+      el('option', { value: '+tesoura' }, '+ nova tesoura…'),
+      el('option', { value: '+viga' }, '+ nova viga treliçada (viga painel, transição, pergolado)…'));
     const nome = el('input', { id: 'enviar-quadro-nome', placeholder: 'T03', size: 8, spellcheck: 'false', hidden: true });
     const selE = el('select', { id: 'enviar-quadro-escala' }, ESCALAS.map(e => el('option', { value: e }, '1:' + e)));
     const subst = el('input', { type: 'checkbox', id: 'enviar-quadro-substituir', checked: true });
     const sincronizar = () => {
       const q = m.quadros.find(x => x.id === selQ.value);
-      nome.hidden = selQ.value !== '+tesoura';
+      nome.hidden = selQ.value !== '+tesoura' && selQ.value !== '+viga';
+      nome.placeholder = selQ.value === '+viga' ? 'VP1' : 'T03';
       selE.value = String(q ? q.escala : TIPOS.tesoura.escala);
     };
     selQ.addEventListener('change', sincronizar);
@@ -392,9 +399,10 @@ class Montagem {
       el('label', { class: 'linha' }, subst, ' substituir o que já está no quadro'));
     if (await this.cad.dialogo({ titulo: 'Enviar área para quadro', corpo, ok: 'Enviar' }) !== 'ok') { this.cad.ativarFerramenta('selecionar'); return; }
     let quadroId = selQ.value;
-    if (quadroId === '+tesoura') {
-      const ult = [...m.quadros].reverse().find(q => q.tipo === 'tesoura');
-      const q = { id: novoId(), tipo: 'tesoura', nome: (nome.value || '').trim().toUpperCase(), escala: Number(selE.value), w: TIPOS.tesoura.w, h: TIPOS.tesoura.h, x: 0, y: 0 };
+    if (quadroId === '+tesoura' || quadroId === '+viga') {
+      const tipo = quadroId === '+viga' ? 'viga' : 'tesoura';
+      const ult = [...m.quadros].reverse().find(q => COM_NOME.has(q.tipo));
+      const q = { id: novoId(), tipo, nome: (nome.value || '').trim().toUpperCase(), escala: Number(selE.value), w: TIPOS[tipo].w, h: TIPOS[tipo].h, x: 0, y: 0 };
       m.quadros.splice(ult ? m.quadros.indexOf(ult) + 1 : m.quadros.length, 0, q);
       quadroId = q.id;
     }
@@ -480,7 +488,7 @@ class Montagem {
       ctx.setLineDash([6, 4]); ctx.lineWidth = 1.4; ctx.strokeStyle = t.cor;
       ctx.strokeRect(a[0] - 3, a[1] - 3, b[0] - a[0] + 6, b[1] - a[1] + 6);
       ctx.fillStyle = t.cor;
-      ctx.fillText('→ ' + t.rotulo + (q.tipo === 'tesoura' && q.nome ? ' ' + q.nome : ''), a[0], a[1] - 7);
+      ctx.fillText('→ ' + t.rotulo + (COM_NOME.has(q.tipo) && q.nome ? ' ' + q.nome : ''), a[0], a[1] - 7);
     }
     ctx.restore();
   }
@@ -497,14 +505,14 @@ class Montagem {
         const escala = el('select', { class: 'quadro-escala', title: 'A escala do desenho dentro deste quadro: o programa lê em milímetros reais por ela',
           onchange: (ev) => { q.escala = Number(ev.target.value); this._gravar(); } },
           ESCALAS.map(e => el('option', { value: e }, '1:' + e)));
-        const nome = q.tipo === 'tesoura'
-          ? el('input', { class: 'quadro-nome', placeholder: 'T01', value: q.nome || '', spellcheck: 'false', size: 7,
-              title: 'O nome desta tesoura (o da marca na planta): vale mais que o título do desenho',
+        const nome = COM_NOME.has(q.tipo)
+          ? el('input', { class: 'quadro-nome', placeholder: q.tipo === 'viga' ? 'VP1' : 'T01', value: q.nome || '', spellcheck: 'false', size: 7,
+              title: 'O nome desta peça (o da marca na planta): vale mais que o título do desenho',
               onchange: (ev) => { q.nome = ev.target.value.trim().toUpperCase(); ev.target.value = q.nome; this._gravar(); this.cad.tela.pedirQuadro(); },
               onkeydown: (ev) => { ev.stopPropagation(); if (ev.key === 'Enter') ev.target.blur(); } })
           : null;
-        const tirar = q.tipo === 'tesoura'
-          ? el('button', { type: 'button', class: 'quadro-tirar', title: 'Tirar este quadro de tesoura', onclick: () => this.tirar(q.id) }, '×')
+        const tirar = COM_NOME.has(q.tipo)
+          ? el('button', { type: 'button', class: 'quadro-tirar', title: 'Tirar este quadro', onclick: () => this.tirar(q.id) }, '×')
           : null;
         c = el('div', { class: 'quadro-titulo', 'data-quadro': q.id, 'data-tipo': q.tipo, style: `--cor:${t.cor}`, title: t.diz },
           el('b', {}, t.rotulo), nome ? ' · ' : null, nome, ' · ', escala, tirar);
@@ -727,7 +735,7 @@ class Montagem {
       envioAntigo: env.id != null ? env : null, origem: { desenho: m.original, alterado: '' } });
     await pedir(this._urlMontagem(), { desenho: mont });
     await this.cad.abrirDesenho(DESENHO_MONTAGEM);
-    this.cad.aviso(`${q.tipo === 'tesoura' ? 'Tesoura ' + (q.nome || '') : (TIPOS[q.tipo] || {}).rotulo} atualizado pela revisão (${ents.length} objetos).`, 'info');
+    this.cad.aviso(`${(TIPOS[q.tipo] || {}).rotulo}${COM_NOME.has(q.tipo) ? ' ' + (q.nome || '') : ''} atualizado pela revisão (${ents.length} objetos).`, 'info');
     await this.lerQuadros();
   }
 

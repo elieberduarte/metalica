@@ -111,3 +111,12 @@ body.arrastando-quadro, body.arrastando-quadro * { cursor: nwse-resize !importan
 .leitura-conferencia th, .leitura-conferencia td { padding: 1px 8px 1px 0; text-align: right; }
 .leitura-conferencia th:first-child, .leitura-conferencia td:first-child { text-align: left; }
 .leitura-conferencia tr.difere td { color: #dc2626; font-weight: 600; }
+
+/* a barra de baixo numa linha só e na altura da caixa das coordenadas, alinhada com ela (pedido de 01/10: "ajustar a
+   altura das caixas para ficarem da mesma altura e padronizar isso para todos os projetos") */
+.palco > .carimbo { height: var(--altura-barra-baixo, 24px); box-sizing: border-box; display: flex; align-items: center; }
+.abas-projeto { bottom: 10px; height: var(--altura-barra-baixo, 24px); padding: 0; gap: 6px; align-items: stretch;
+  background: none; border: 0; }
+.abas-projeto button { height: var(--altura-barra-baixo, 24px); box-sizing: border-box; display: flex; align-items: center;
+  justify-content: center; padding: 0 12px; min-width: 96px; font-size: 12px; line-height: 1; white-space: nowrap; }
+.abas-projeto button:not(.on):not(.enviar-quadro) { background: color-mix(in srgb, var(--painel) 85%, transparent); }
