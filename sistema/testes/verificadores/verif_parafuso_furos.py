@@ -186,6 +186,16 @@ try:
     ok(r9["nAlto"] == 1 and r9["cima"] == 1 and r9["baixo"] == 1 and r9["alto"] == 0,
        "furar pelos já colocados: as duas peças da ligação furadas e o furo errado de cima fechado (%s)" % r9)
 
+    # 10) Esc com o cursor num campo do painel solta a ferramenta num toque só (01/10: "não solta clicando esc")
+    aba.avaliar("window.editor.ativarFerramenta('parafuso'); 1"); aba.drenar(0.5)
+    aba.avaliar("(() => { const i = [...document.querySelectorAll('input[type=number]')].find(x => x.offsetParent); if (i) i.focus(); return 1; })()")
+    foco = aba.avaliar("document.activeElement ? document.activeElement.tagName : ''")
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Escape", code="Escape", windowsVirtualKeyCode=27)
+    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Escape", code="Escape", windowsVirtualKeyCode=27)
+    aba.drenar(0.4)
+    ok(foco == "INPUT" and aba.avaliar("window.editor.idAtiva") == "selecionar",
+       "Esc com o cursor no campo do painel sai do campo e solta a ferramenta (%s)" % aba.avaliar("window.editor.idAtiva"))
+
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

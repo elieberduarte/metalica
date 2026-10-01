@@ -701,8 +701,11 @@ export class Editor {
     const tag = alvo && alvo.tagName;
     if (this.el.dialogo.open) return;
     if ((tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') && alvo !== this.el.medida) {
-      if (ev.key === 'Escape') alvo.blur();
-      return;
+      if (ev.key !== 'Escape') return;
+      // Esc num campo do painel: sai do campo E solta a ferramenta, num toque só — antes o primeiro Esc só tirava o
+      // foco do campo e a ferramenta continuava (pedido do usuário, 01/10: "não solta clicando esc"); na Seleção, só sai do campo
+      alvo.blur();
+      if (this.idAtiva === 'selecionar') return;
     }
     const ctrl = ev.ctrlKey || ev.metaKey;
     const k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
