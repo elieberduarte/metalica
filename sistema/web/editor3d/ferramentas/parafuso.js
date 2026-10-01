@@ -339,7 +339,7 @@ export class FerramentaParafuso extends Ferramenta {
     const colocados = this._colocados();
     if (colocados.length) {
       raiz.append(el('div', { class: 'acoes' }, el('button', { type: 'button', texto: `Furar pelos parafusos já colocados (${colocados.length})`,
-        title: 'Abre o furo em toda peça que cada parafuso atravessa e ainda não tem furo no eixo (malha e barra do catálogo) — para os colocados antes da furação completa; Ctrl+Z desfaz tudo',
+        title: 'Abre o furo em toda peça que cada parafuso atravessa e ainda não tem furo no eixo (malha e barra do catálogo), e fecha os furos sem parafuso: o que ficou fora do corpo dele e o de parafuso apagado — os da ferramenta Furo ficam; Ctrl+Z desfaz tudo',
         onclick: () => this.furarPelosColocados() })));
     }
     const usados = this._usadosNoModelo();
@@ -734,7 +734,10 @@ export class FerramentaParafuso extends Ferramenta {
     const alterados = new Map(), novos = [], furosDe = new Map();
     // o furo no eixo de um parafuso mas FORA do corpo dele (a ferramenta antiga furava a face clicada, ~150 mm acima
     // da cabeça, e não a ligação): sai — a peça é refeita sem ele, quando guardou a malha de antes do furo
-    const foraDoCorpo = (r) => lista.some(pf => {
+    // e o furo aberto por um parafuso que já foi apagado (o registro diz de qual parafuso ele é): sem parafuso, sai
+    // (pedido do usuário, 01/10: "apagar os furos que não têm parafuso"); o furo da ferramenta Furo não tem parafuso e fica
+    const semParafuso = (r) => r.parafuso && r.parafuso !== 'x' && !this.documento.get(r.parafuso);
+    const foraDoCorpo = (r) => semParafuso(r) || lista.some(pf => {
       const a = pf.atributos.parafuso, d = C.normalizar(a.eixo);
       const w = C.sub(r.ponto, a.ponto), s = C.dot(w, d);
       return C.comp(C.sub(w, C.mul(d, s))) < 1.5 && (s < -3 || s > a.L + 3);
@@ -753,6 +756,11 @@ export class FerramentaParafuso extends Ferramenta {
       alterados.set(e.id, campos);
       tirados += fora.length;
     }
+    // os marcadores de furo (barras) de parafuso apagado
+    const orfaos = [...mapa.values()].filter(m => m.camada === 'Furos' && m.atributos && m.atributos.furo && m.atributos.furo.parafuso
+      && !this.documento.get(m.atributos.furo.parafuso)).map(m => m.id);
+    for (const id of orfaos) mapa.delete(id);
+    tirados += orfaos.length;
     for (const pf of lista) {
       const a = pf.atributos.parafuso;
       const forma = { d: furoDoParafuso(a.d || 12) };
@@ -769,8 +777,9 @@ export class FerramentaParafuso extends Ferramenta {
       if (ids.length) furosDe.set(pf.id, ids);
     }
     const aviso = presos ? ` · ${presos} furo(s) antigo(s) fora do corpo do parafuso não puderam ser fechados (a peça não guardou a malha de antes do furo)` : '';
-    if (!alterados.size && !novos.length) { this.dica(`Os ${lista.length} parafusos já têm os furos em todas as peças que atravessam${aviso}.`); return; }
+    if (!alterados.size && !novos.length && !orfaos.length) { this.dica(`Os ${lista.length} parafusos já têm os furos em todas as peças que atravessam${aviso}.`); return; }
     const cmds = [];
+    if (orfaos.length) cmds.push(C.cmdRemover(orfaos, 'Furos sem parafuso'));
     if (novos.length) cmds.push(C.cmdAdicionar(novos, 'Furos nas barras'));
     for (const [id, campos] of alterados) cmds.push(C.cmdAlterar(id, campos, 'Furo do parafuso'));
     for (const [id, ids] of furosDe) {
@@ -780,7 +789,7 @@ export class FerramentaParafuso extends Ferramenta {
     }
     this.executar(C.cmdComposto(cmds, 'Furar pelos parafusos colocados'));
     this.dica(`Furos abertos: ${alterados.size} peça(s) de malha e ${novos.length} parede(s) de barra, por ${furosDe.size} dos ${lista.length} parafusos`
-      + (tirados ? ` · ${tirados} furo(s) errado(s), fora do corpo do parafuso, fechado(s)` : '') + aviso + ' (Ctrl+Z desfaz tudo).');
+      + (tirados ? ` · ${tirados} furo(s) sem parafuso (fora do corpo dele, ou de parafuso apagado) fechado(s)` : '') + aviso + ' (Ctrl+Z desfaz tudo).');
   }
 
   cancelar() { this.limparPrevia(); C.voltarParaSelecao(this.editor); }

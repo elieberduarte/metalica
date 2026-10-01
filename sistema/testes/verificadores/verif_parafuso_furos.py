@@ -186,6 +186,25 @@ try:
     ok(r9["nAlto"] == 1 and r9["cima"] == 1 and r9["baixo"] == 1 and r9["alto"] == 0,
        "furar pelos já colocados: as duas peças da ligação furadas e o furo errado de cima fechado (%s)" % r9)
 
+    # 9b) o parafuso apagado deixa os furos dele: o botão fecha os furos sem parafuso (os da ferramenta Furo ficam)
+    r9b = json.loads(aba.avaliar("""JSON.stringify((() => {
+      const ed = window.editor, doc = ed.documento; %s
+      const p1 = caixa(60000, 0, 100, 61000, 100, 106, 'P1');
+      const p2 = caixa(60000, -200, 90, 61000, 300, 100, 'P2');
+      ed.ativarFerramenta('furo'); ed.ativa.constructor.eixos = false;
+      ed.ativa.onPonto({ entidade: p1.id, ponto: [60800, 50, 106], normal: [0, 0, 1], face: 1 });   // furo de propósito, sem parafuso
+      ed.ativarFerramenta('parafuso'); ed.ativa._definir({ d: 12, L: 35, classe: 'A325' }); ed.ativa.constructor.eixos = false;
+      ed.ativa.onPonto({ entidade: p1.id, ponto: [60300, 50, 106], normal: [0, 0, 1], face: 1 });
+      const pf = [...doc.entidades.values()].find(e => e.atributos && e.atributos.parafuso && e.atributos.parafuso.ponto && e.atributos.parafuso.ponto[0] === 60300);
+      const antes = [(doc.get(p1.id).atributos.furos_editor || []).length, (doc.get(p2.id).atributos.furos_editor || []).length];
+      ed.selecao.limpar && ed.selecao.limpar();
+      doc.remover ? doc.remover(pf.id) : null;
+      ed.ativa.furarPelosColocados();
+      return { antes, depois: [(doc.get(p1.id).atributos.furos_editor || []).length, (doc.get(p2.id).atributos.furos_editor || []).length] };
+    })())""" % CAIXA))
+    ok(r9b["antes"] == [2, 1] and r9b["depois"] == [1, 0],
+       "parafuso apagado: o botão fecha os furos que ficaram sem ele e o furo da ferramenta Furo fica (%s)" % r9b)
+
     # 10) Esc com o cursor num campo do painel solta a ferramenta num toque só (01/10: "não solta clicando esc")
     aba.avaliar("window.editor.ativarFerramenta('parafuso'); 1"); aba.drenar(0.5)
     aba.avaliar("(() => { const i = [...document.querySelectorAll('input[type=number]')].find(x => x.offsetParent); if (i) i.focus(); return 1; })()")
