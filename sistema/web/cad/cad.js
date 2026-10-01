@@ -1663,11 +1663,26 @@ class CAD {
     if (!comTexto.length) return;
     const alts = [...new Set(comTexto.map(e => +(e.altura || 2.5)))];
     const inp = el('input', { type: 'number', step: '0.5', min: '0.5', value: alts.length === 1 ? String(alts[0]) : '', placeholder: 'vários', title: 'Altura do texto em mm no papel' });
+    // vários textos com a mesma mudança de tamanho (A−/A+, ou todos da mesma altura): o bloco cresce junto — as
+    // posições se afastam na mesma proporção a partir do canto de cima à esquerda, e as linhas e as colunas não se
+    // encavalam (pedido do usuário, 01/10: "quando aumento a fonte ele vai comendo os espaçamentos")
+    const textos = comTexto.filter(e => e.tipo === 'texto' && Array.isArray(e.posicao));
+    const ref = textos.length > 1 ? [Math.min(...textos.map(e => e.posicao[0])), Math.max(...textos.map(e => e.posicao[1]))] : null;
     const aplicar = (f) => {
       const m = {};
+      const fatores = new Set();
       for (const e of comTexto) {
-        const a = Math.round(f(+(e.altura || 2.5)) * 100) / 100;
-        if (a > 0 && a !== e.altura) m[e.id] = { altura: a };
+        const antes = +(e.altura || 2.5);
+        const a = Math.round(f(antes) * 100) / 100;
+        if (a > 0 && a !== e.altura) { m[e.id] = { altura: a }; fatores.add(Math.round(f(antes) / antes * 10000) / 10000); }   // a proporção exata (sem o arredondamento da letra)
+      }
+      if (ref && fatores.size === 1) {
+        const k = [...fatores][0];
+        for (const e of textos) {
+          if (!m[e.id]) continue;
+          const p = e.posicao;
+          m[e.id].posicao = [ref[0] + (p[0] - ref[0]) * k, ref[1] + (p[1] - ref[1]) * k, ...p.slice(2)];
+        }
       }
       if (Object.keys(m).length) this.executar(new ComandoAlterar(m, 'Tamanho do texto'));
     };

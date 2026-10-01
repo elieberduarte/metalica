@@ -108,6 +108,18 @@ try:
     pl = js("const p = [...c.doc.entidades.values()].filter(e => e.tipo === 'polilinha' && (e.atributos || {}).origem === 'D'); return p.length ? JSON.stringify(p[0].vertices) : '';")
     ok(pl == "[[0,9000],[600,9000],[600,9200]]", f"Juntar devolveu a polilinha da peça: {pl}")
     ok(js("return c.ferramenta.constructor.id;") == "selecionar", "voltou para Selecionar")
+    # E. A+ em vários textos: o bloco cresce junto, sem encavalar (01/10: "vai comendo os espaçamentos")
+    js("""for (const [i, s] of ['NESTA PRANCHA', 'T.O.1 02x', 'T.O.2 02x'].entries()) c.doc.add({ id: 'tx' + i, tipo: 'texto', camada: 'TEXTO', posicao: [20000, 20000 - i * 3.2 * c.doc.escala], texto: s, altura: 2.0 });
+          c.doc.add({ id: 'tx9', tipo: 'texto', camada: 'TEXTO', posicao: [20000 + 40 * c.doc.escala, 20000], texto: 'SIGLAS', altura: 2.0 });
+          c.selecionar(['tx0', 'tx1', 'tx2', 'tx9']); return 1;""")
+    aba.drenar(0.5)
+    for _ in range(2):
+        js("[...document.querySelectorAll('button')].find(b => b.textContent === 'A+').click(); return 1;"); aba.drenar(0.3)
+    r = json.loads(js("return JSON.stringify(['tx0','tx1','tx2','tx9'].map(i => [c.doc.get(i).altura, ...c.doc.get(i).posicao]));"))
+    passo = (r[0][2] - r[1][2]) / js("return c.doc.escala;")
+    ok(abs(r[0][0] - 3.13) < 0.02 and abs(passo - 3.2 * 1.5625) < 0.05 and r[0][1:] == [20000, 20000],
+       "A+ duas vezes em 4 textos: letra 2,0 → %.2f e as linhas se afastam junto (passo %.2f mm), o canto de cima fica" % (r[0][0], passo))
+    ok(abs((r[3][1] - r[0][1]) / js("return c.doc.escala;") - 40 * 1.5625) < 0.1, "e a coluna do lado se afasta na mesma proporção: %s" % r)
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")
     for t, x in erros[:6]: print("     [%s] %s" % (t, x[:300]))
