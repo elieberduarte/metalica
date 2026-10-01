@@ -52,6 +52,10 @@ Rotas da API:
     POST /api/modelo/analitico {documento}                     esqueleto de nós e barras e as pontas soltas
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
     POST /api/projetos/<slug>/projeto-recebido  folhas, carimbo e considerações de cálculo do DXF recebido
+    POST /api/projetos/<slug>/montagem/ler {parametros}   leitura por quadros: cada quadro da Montagem lido + pré-análise
+    POST /api/projetos/<slug>/montagem/gerar-3d {parametros, assim_mesmo}   o 3D pelos quadros (tesoura = bloco)
+    GET  /api/banco-detalhes · POST /api/banco-detalhes {variante} · POST /api/banco-detalhes/excluir {id}
+                                        banco de detalhes de ligação (ST1, SC1…: variantes da biblioteca)
     POST /api/projetos/<slug>/desenhos/<nome>/montar-pela-planta  projeto recebido sem 3D → modelo pela planta,
                                                               elevações nomeadas, locação e planta das terças
     GET  /api/projetos/<slug>/materiais[?recalcular=1]  lista de materiais (romaneio, perfis, chapas, conjuntos)
@@ -2802,6 +2806,77 @@ def ligacoes_exemplos(q: dict) -> dict:
     return {"exemplos": ex.get(tipo) or [] if tipo else ex}
 
 
+# ------------------------------------------------------------------ leitura por quadros (plano de 01/10)
+
+def _montagem_do_projeto(s: str) -> dict:
+    bruto = _gerente().abrir_desenho(s, "montagem")
+    if not bruto or not ((bruto.get("metadados") or {}).get("montagem")):
+        raise ErroDeDados("o projeto ainda não tem a folha Montagem (abra a aba Montagem no CAD)")
+    ents = bruto.get("entidades") or []
+    if isinstance(ents, dict):
+        bruto = dict(bruto, entidades=list(ents.values()))
+    return bruto
+
+
+def _leitura_para_json(r: dict) -> dict:
+    """a leitura sem os objetos de elevação (só o que a tela mostra)"""
+    return {k: v for k, v in r.items() if k != "elevacoes"}
+
+
+def ler_quadros(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/montagem/ler {parametros}: cada quadro da Montagem lido (tesoura, locação,
+    terças, posição das tesouras, corte, elevações) e a pré-análise (erros e avisos, com o ponto no papel)"""
+    from nucleo3d import leitura_quadros
+    des = _montagem_do_projeto(s)
+    r = leitura_quadros.ler(des, corpo.get("parametros") or None)
+    return _leitura_para_json(r)
+
+
+def gerar_3d_pelos_quadros(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/montagem/gerar-3d {parametros, assim_mesmo}: o 3D pelos quadros (cada
+    tesoura um bloco, colocado pelas marcas da planta; terças, suportes e contraventos pelas variantes do
+    banco de detalhes; pilares pela locação). Com erro na pré-análise só gera com `assim_mesmo`, e o
+    projeto guarda quem gerou assim e com quais apontamentos."""
+    from nucleo3d import de_quadros, leitura_quadros
+    g = _gerente()
+    des = _montagem_do_projeto(s)
+    _progresso(s, "lendo os quadros…")
+    try:
+        L = leitura_quadros.ler(des, corpo.get("parametros") or None)
+        if L["erros"] and not corpo.get("assim_mesmo"):
+            return {"bloqueado": True, "erros": L["erros"], "avisos": L["avisos"],
+                    "apontamentos": [a for a in L["apontamentos"] if a["nivel"] == "erro"]}
+        _progresso(s, "montando o 3D pelos quadros…")
+        r = de_quadros.gerar(des, corpo.get("parametros") or None, pasta_dados=PROJETOS, leitura=L)
+    finally:
+        _fim_progresso(s)
+    doc = r["doc"]
+    original = ((des.get("metadados") or {}).get("montagem") or {}).get("original") or ""
+    _regravar_modelo(s, doc)
+    registro = {"em": time.strftime("%Y-%m-%dT%H:%M"), "erros": L["erros"], "avisos": L["avisos"],
+                "assim_mesmo": bool(L["erros"]), "programa": versao.VERSAO,
+                "apontamentos": [{"nivel": a["nivel"], "quadro": a.get("rotulo"), "msg": a["msg"]} for a in L["apontamentos"]][:200]}
+    campos = {"niveis": r["niveis"], "gerado_por_quadros": registro}
+    if original:
+        campos["planta_modelo"] = {"desenho": original, "deslocamento": list(r["deslocamento"])}
+    g._atualizar(s, **campos)
+    g.tocar(s)
+    return {"resumo": r["resumo"], "avisos": r["avisos"], "registro": registro,
+            "modelo": {"entidades": len(doc.entidades), "barras": len(doc.barras)}}
+
+
+def banco_de_detalhes(corpo: dict = None, acao: str = "") -> dict:
+    """GET /api/banco-detalhes: as funções e as variantes (as da casa e as cadastradas);
+    POST /api/banco-detalhes {variante} cadastra; POST /api/banco-detalhes/excluir {id}"""
+    from nucleo import banco_detalhes
+    if acao == "salvar":
+        return {"variante": banco_detalhes.salvar(PROJETOS, dict((corpo or {}).get("variante") or {})),
+                **banco_detalhes.lista(PROJETOS)}
+    if acao == "excluir":
+        return {"excluida": banco_detalhes.excluir(PROJETOS, str((corpo or {}).get("id") or "")), **banco_detalhes.lista(PROJETOS)}
+    return banco_detalhes.lista(PROJETOS)
+
+
 def importar_dxf_no_desenho(s: str, corpo: dict) -> dict:
     """DXF (texto) → entidades do CAD, para o desenho aberto acrescentar como um comando.
 
@@ -3262,6 +3337,8 @@ class Handler(BaseHTTPRequestHandler):
                                    "perfis": fabrica.perfis(PROJETOS)})
             if rota == "/api/ligacoes":
                 return self._json(ligacoes_catalogo())
+            if rota == "/api/banco-detalhes":
+                return self._json(banco_de_detalhes())
             if rota == "/api/ligacoes/exemplos":
                 return self._json(ligacoes_exemplos(parse_qs(urlparse(self.path).query)))
             if rota == "/api/projetos":
@@ -3396,6 +3473,8 @@ class Handler(BaseHTTPRequestHandler):
             corpo = self._corpo()
             if rota == "/api/ligacoes/montar":
                 return self._json(ligacoes_montar(corpo))
+            if rota in ("/api/banco-detalhes", "/api/banco-detalhes/excluir"):
+                return self._json(banco_de_detalhes(corpo, "excluir" if rota.endswith("/excluir") else "salvar"))
             if rota == "/api/dimensionar":
                 return self._json(dimensionar(corpo))
             if rota == "/api/tesoura":
@@ -3445,6 +3524,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gerar_3d_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "montar-pela-planta":
                     return self._json(montar_pela_planta(partes[0], partes[2], corpo))
+                if len(partes) == 3 and partes[1] == "montagem" and partes[2] == "ler":
+                    return self._json(ler_quadros(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "montagem" and partes[2] == "gerar-3d":
+                    return self._json(gerar_3d_pelos_quadros(partes[0], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-furos":
                     return self._json(aplicar_furos_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-pecas":

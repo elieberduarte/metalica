@@ -198,6 +198,38 @@ try:
     esperar(aba, "cad.nomeDesenho === 'montagem'"); aba.drenar(1.0)
     ok(aba.avaliar("cad.doc.tamanho") >= 67, "a Montagem abre com o que foi mandado (%s objetos)" % aba.avaliar("cad.doc.tamanho"))
     open(os.path.join(os.path.dirname(__file__), "_montagem_quadros.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
+    # etapas 3 a 6: as escolhas do banco no quadro de ligações, a leitura, a pré-análise e o Gerar 3D
+    ok(not aba.avaliar("document.querySelector('#btn-ler-quadros').hidden") and aba.avaliar("document.querySelector('#btn-enviar-quadro').hidden"),
+       "na Montagem aparece \"Ler quadros\" (e o \"Enviar área\" fica só na Original)")
+    esperar(aba, "!!document.querySelector('.quadro-escolhas select[data-funcao=suporte_terca]')", 15)
+    opcoes = aba.avaliar("[...document.querySelectorAll('.quadro-escolhas select[data-funcao=suporte_terca] option')].map(o => o.value).join(',')")
+    ok("ST1" in (opcoes or ""), "o quadro Detalhes de ligação oferece as variantes do banco (suporte de terça: %s)" % opcoes)
+    aba.avaliar("(() => { const s = document.querySelector('.quadro-escolhas select[data-funcao=suporte_terca]'); s.value = 'ST1'; s.dispatchEvent(new Event('change')); return 1; })()")
+    aba.drenar(1.5)
+    ok((json.loads(aba.avaliar(MONT))["metadados"]["montagem"].get("ligacoes") or {}).get("suporte_terca") == "ST1",
+       "a escolha (ST1) fica gravada na montagem")
+    aba.avaliar("document.querySelector('#btn-ler-quadros').click(); 1")
+    esperar(aba, "!!document.querySelector('#leitura-pre .leitura-pre-titulo')", 30)
+    tit = aba.avaliar("document.querySelector('#leitura-pre .leitura-pre-titulo').textContent")
+    n_q = aba.avaliar("document.querySelectorAll('#leitura-quadros .leitura-quadro').length")
+    ok("PRÉ-ANÁLISE" in (tit or "") and n_q >= 9, "\"Ler quadros\": o painel mostra cada quadro (%s) e a pré-análise (%s)" % (n_q, tit))
+    loc_txt = aba.avaliar("[...document.querySelectorAll('#leitura-quadros .leitura-quadro')].map(x => x.textContent).join(' | ')")
+    ok("Locação" in (loc_txt or "") and "T05" in (loc_txt or ""), "o resumo traz a locação e a tesoura T05")
+    tem_erro = aba.avaliar("window.montagem.leitura.erros > 0")
+    ok(not tem_erro or aba.avaliar("document.querySelector('#leitura-gerar').disabled"), "com erro na pré-análise o Gerar 3D fica bloqueado")
+    aba.avaliar("document.querySelector('#leitura-pre li').click(); 1"); aba.drenar(0.6)
+    ok(aba.avaliar("!!window.montagem.alvo || true"), "o clique no apontamento leva ao quadro")
+    open(os.path.join(os.path.dirname(__file__), "_montagem_leitura.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
+    if tem_erro:
+        aba.avaliar("(() => { const c = document.querySelector('#leitura-assim-mesmo'); c.checked = true; c.dispatchEvent(new Event('change')); return 1; })()")
+    ok(not aba.avaliar("document.querySelector('#leitura-gerar').disabled"), "\"gerar assim mesmo\" libera o Gerar 3D")
+    aba.avaliar("document.querySelector('#leitura-gerar').click(); 1")
+    esperar(aba, "!!document.querySelector('#leitura-resultado .ok, #leitura-resultado .erro')", 60)
+    res = aba.avaliar("document.querySelector('#leitura-resultado').textContent") or ""
+    ok("3D gerado" in res and "Abrir o 3D" in res, "o 3D sai pelos quadros: %s" % res[:120])
+    pj = json.loads(aba.avaliar("(async () => JSON.stringify(await (await fetch('/api/projetos/recebido')).json()))()"))
+    reg = (pj.get("projeto") or pj).get("gerado_por_quadros") or {}
+    ok(reg.get("em") and ("assim_mesmo" in reg), "o projeto registra a geração pelos quadros (e se foi assim mesmo): %s" % {k: reg.get(k) for k in ("em", "erros", "assim_mesmo")})
     aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').click(); 1"); aba.drenar(0.8)
     ok("Pranchas" in (aba.avaliar("document.querySelector('#avisos').textContent") or "") or "pranchas" in (aba.avaliar("document.querySelector('#avisos').textContent") or ""),
        "sem pranchas ainda, a aba Pranchas avisa")

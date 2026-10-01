@@ -17,6 +17,13 @@
 // revisão vai comparar quando chegar um DXF novo — e confere a escala pelas cotas copiadas: o número escrito
 // × a medida no desenho do cliente.
 //
+// Etapas 3 a 6 (leitura, pré-análise, banco de detalhes, 3D): "Ler quadros" na Montagem manda o servidor ler
+// cada quadro (nucleo3d/leitura_quadros.py) e mostra, num painel ao lado, o que saiu de cada um e a pré-análise —
+// erros (impedem o 3D) e avisos, cada um levando ao ponto no quadro. "Gerar 3D" monta o modelo pelos quadros
+// (nucleo3d/de_quadros.py: cada tesoura um bloco); com erro, só marcando "gerar assim mesmo", que fica
+// registrado no projeto. No quadro Detalhes de ligação o operador escolhe, para cada função, a variante do banco
+// de detalhes da empresa (nucleo/banco_detalhes.py: ST1, SC1…) — o desenho do cliente fica ali só de referência.
+//
 // Módulo à parte, pendurado no CAD já aberto (window.cad): desenha os quadros pelo gancho
 // `tela.aoDesenhar` e põe os controles (título, escala, nome, alça, "+ corte tesoura") por cima do canvas.
 
@@ -111,9 +118,12 @@ export function copiarParaQuadro(mont, quadroId, ents, { escala, kOriginal = 1, 
   const s = Number(escala) || q.escala;
   const pts = ents.flatMap(e => pontosDe(e));
   const [[bx0, by0], [bx1, by1]] = caixaDe(pts);
-  if (substituir) mont.entidades = mont.entidades.filter(e => (e.atributos || {}).quadro !== q.id);
+  if (substituir) { mont.entidades = mont.entidades.filter(e => (e.atributos || {}).quadro !== q.id); q.envios = []; }
+  // sem substituir, o desenho novo entra à direita do que já está no quadro (a lista ao lado da planta)
+  const jaTem = mont.entidades.filter(e => (e.atributos || {}).quadro === q.id).flatMap(e => pontosDe(e));
+  const dxJa = jaTem.length ? Math.max(0, caixaDe(jaTem)[1][0] - q.x - MARGEM.lado + 10) : 0;
   // o quadro cresce se o desenho não cabe (na escala do quadro)
-  const wc = (bx1 - bx0) / s, hc = (by1 - by0) / s;
+  const wc = dxJa + (bx1 - bx0) / s, hc = (by1 - by0) / s;
   const w0 = q.w, h0 = q.h;
   // a escala em que o desenho caberia no tamanho de agora do quadro (para o aviso)
   const cabe = ESCALAS.find(e => (bx1 - bx0) / e <= q.w - 2 * MARGEM.lado && (by1 - by0) / e <= q.h - MARGEM.topo - MARGEM.baixo) || null;
@@ -126,7 +136,13 @@ export function copiarParaQuadro(mont, quadroId, ents, { escala, kOriginal = 1, 
     if (d) mont.entidades[i] = transformar(e, (p) => [p[0] + d[0], p[1] + d[1]]);
   }
   // o desenho no canto de cima à esquerda do quadro, abaixo do título
-  const f = (p) => [q.x + MARGEM.lado + (p[0] - bx0) / s, q.y - MARGEM.topo - (by1 - p[1]) / s];
+  const f = (p) => [q.x + MARGEM.lado + dxJa + (p[0] - bx0) / s, q.y - MARGEM.topo - (by1 - p[1]) / s];
+  // cada envio guarda a sua volta para o real (a leitura do quadro, etapa 3): o canto do desenho em relação
+  // ao canto do quadro (anda junto quando o quadro anda), a escala e a caixa na Original
+  const envio = { id: 'e' + Date.now().toString(36) + (_seq++).toString(36), desenho: origem.desenho || '', alterado: origem.alterado || '',
+    caixa: [[bx0, by0], [bx1, by1]], ox: MARGEM.lado + dxJa, oy: -MARGEM.topo, escala: s, entidades: ents.length,
+    em: new Date().toISOString().slice(0, 16) };
+  q.envios = [...(q.envios || []), envio];
   const fator = kOriginal / s;                // o que é mm de papel (texto, cota, hachura) fica proporcional
   const conf = { cotas: 0, batem: 0, fatores: [] };
   for (const e of ents) {
@@ -147,7 +163,7 @@ export function copiarParaQuadro(mont, quadroId, ents, { escala, kOriginal = 1, 
       n.atributos = { ...(n.atributos || {}), medida_real: Math.round(medida * 10) / 10 };
     }
     if (n.tipo === 'hachura' && n.espacamento) n.espacamento = n.espacamento * fator;
-    n.atributos = { ...(n.atributos || {}), quadro: q.id, da_original: e.id };
+    n.atributos = { ...(n.atributos || {}), quadro: q.id, da_original: e.id, envio: envio.id };
     mont.entidades.push(n);
   }
   mont.camadas = mont.camadas || {};
@@ -221,7 +237,10 @@ class Montagem {
       el('button', { type: 'button', 'data-aba': 'pranchas', title: 'As pranchas do projeto, geradas depois do 3D', onclick: () => this.ir('pranchas') }, 'Pranchas'),
       this.botaoEnviar = el('button', { type: 'button', class: 'enviar-quadro', hidden: true, id: 'btn-enviar-quadro',
         title: 'Marque uma área da planta do cliente e escolha o quadro da Montagem para onde ela vai (copiada, na escala do quadro)',
-        onclick: () => this.cad.ativarFerramenta('enviar-quadro') }, 'Enviar área para quadro…'));
+        onclick: () => this.cad.ativarFerramenta('enviar-quadro') }, 'Enviar área para quadro…'),
+      this.botaoLer = el('button', { type: 'button', class: 'enviar-quadro', hidden: true, id: 'btn-ler-quadros',
+        title: 'O programa lê cada quadro (tesouras, pilares, terças, níveis) e aponta o que está errado ou faltando antes do 3D',
+        onclick: () => this.lerQuadros() }, 'Ler quadros'));
     cad.ferramentas.set('enviar-quadro', new EnviarArea(cad));
     this.palco.append(this.camada, this.abas);
     this.desenhos = [];
@@ -268,6 +287,8 @@ class Montagem {
     for (const b of this.abas.querySelectorAll('button[data-aba]')) b.classList.toggle('on', b.dataset.aba === atual);
     this.naOriginal = atual === 'original';
     this.botaoEnviar.hidden = !this.naOriginal;
+    this.botaoLer.hidden = atual !== 'montagem';
+    if (atual !== 'montagem' && this.painel) this.painel.hidden = true;
     this.mOriginal = null;
     if (this.naOriginal && nomes.has(DESENHO_MONTAGEM)) {
       try { this.mOriginal = (await pedir(this._urlMontagem())).desenho.metadados.montagem || null; } catch { this.mOriginal = null; }
@@ -412,6 +433,13 @@ class Montagem {
       ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = '#94a3b8';
       ctx.strokeRect(x, y, w, h);
     }
+    // o ponto do apontamento clicado na pré-análise
+    if (this.alvo && Date.now() < this.alvo.ate) {
+      const [px, py] = tela.paraTela(this.alvo.p);
+      ctx.setLineDash([]); ctx.lineWidth = 2.5; ctx.strokeStyle = this.alvo.erro ? '#dc2626' : '#d97706';
+      ctx.beginPath(); ctx.arc(px, py, 16, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+    }
     ctx.restore();
     this._controles(ret);
   }
@@ -473,16 +501,188 @@ class Montagem {
       tam.textContent = `${Math.round(q.w)} × ${Math.round(q.h)}`;
       tam.style.left = (x + w - 4) + 'px'; tam.style.top = (y + h - 4) + 'px';
       tam.hidden = w < 120 || h < 50;
+      if (q.tipo === 'ligacoes') this._escolhas(q, x, y, w, h);
       vivos.add(q.id);
     }
-    for (const n of [...this.camada.querySelectorAll('[data-quadro],[data-alca],[data-tamanho]')]) {
-      const id = n.dataset.quadro || n.dataset.alca || n.dataset.tamanho;
+    for (const n of [...this.camada.querySelectorAll('[data-quadro],[data-alca],[data-tamanho],[data-escolhas]')]) {
+      const id = n.dataset.quadro || n.dataset.alca || n.dataset.tamanho || n.dataset.escolhas;
       if (!vivos.has(id)) n.remove();
     }
     let mais = this.camada.querySelector('.quadro-mais');
     if (!mais) mais = this.camada.appendChild(el('button', { type: 'button', class: 'quadro-mais', title: 'Mais um quadro de tesoura: um para cada tipo de tesoura do projeto', onclick: () => this.maisTesoura() }, '+ corte tesoura'));
     const [x, y, w, h] = ret(m.vaga);
     Object.assign(mais.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+  }
+
+  // ------------------------------------------------------------------ banco de detalhes (etapa 5)
+  async _banco(recarregar = false) {
+    if (recarregar || !this.banco) {
+      try { this.banco = await pedir('/api/banco-detalhes'); } catch { this.banco = { funcoes: [], variantes: [] }; }
+      this._montouEscolhas = false;
+    }
+    return this.banco;
+  }
+
+  /** No quadro Detalhes de ligação: para cada função, a variante do banco (o desenho do cliente fica de referência). */
+  _escolhas(q, x, y, w, h) {
+    let c = this.camada.querySelector(`[data-escolhas="${q.id}"]`);
+    if (!this.banco) { if (!this._pedindoBanco) { this._pedindoBanco = true; this._banco().then(() => { this._pedindoBanco = false; this.cad.tela.pedirQuadro(); }); } return; }
+    if (c && !this._montouEscolhas) { c.remove(); c = null; }
+    if (!c) {
+      const m = this.m;
+      m.ligacoes = m.ligacoes || {};
+      const linhas = this.banco.funcoes.map(f => {
+        const sel = el('select', { 'data-funcao': f.id, title: 'A variante do banco de detalhes da empresa para ' + f.nome.toLowerCase(),
+          onchange: (ev) => { m.ligacoes[f.id] = ev.target.value || null; this._gravar(); } },
+          el('option', { value: '' }, '— escolher —'),
+          this.banco.variantes.filter(v => v.funcao === f.id).map(v => el('option', { value: v.id, title: v.origem || '' }, v.nome)));
+        sel.value = m.ligacoes[f.id] || '';
+        return el('label', {}, el('span', {}, f.nome), sel);
+      });
+      c = el('div', { class: 'quadro-escolhas', 'data-escolhas': q.id },
+        el('div', { class: 'quadro-escolhas-titulo' }, 'Banco de detalhes da empresa'), ...linhas,
+        el('button', { type: 'button', class: 'quadro-escolhas-novo', title: 'Uma variante que o banco ainda não tem: cadastre uma vez e ela fica para as próximas obras',
+          onclick: () => this.cadastrarVariante() }, 'Cadastrar variante…'));
+      for (const s of c.querySelectorAll('select')) s.addEventListener('keydown', (ev) => ev.stopPropagation());
+      this.camada.append(c);
+      this._montouEscolhas = true;
+    }
+    c.style.left = (x + 10) + 'px'; c.style.top = (y + 34) + 'px';
+    c.hidden = w < 230 || h < 150;
+  }
+
+  async cadastrarVariante() {
+    const b = await this._banco();
+    const campo = (id, rot, attrs = {}) => el('label', {}, rot, el('input', { id, spellcheck: 'false', ...attrs }));
+    const fun = el('select', { id: 'variante-funcao' }, b.funcoes.map(f => el('option', { value: f.id }, f.nome)));
+    const corpo = el('div', { class: 'enviar-quadro-dialogo' },
+      el('div', { class: 'explica', texto: 'A variante é o detalhe padrão da empresa para uma função: a peça, a furação e onde ela vai no 3D. A regra de furação da fábrica continua valendo.' }),
+      campo('variante-id', 'Nome curto ', { placeholder: 'ST2', size: 8 }),
+      campo('variante-nome', 'Descrição ', { placeholder: 'cantoneira L 100×50×3,75 de 150 mm, 4 M12' }),
+      el('label', {}, 'Função ', fun),
+      campo('variante-peca', 'Peça (perfil) ', { placeholder: 'L 100x50x3,75' }),
+      campo('variante-comprimento', 'Comprimento / altura (mm) ', { placeholder: '120', size: 8 }),
+      campo('variante-furo', 'Furo Ø (mm) ', { placeholder: '13,5', size: 8 }),
+      campo('variante-furos', 'Furos (x,z do pé; separados por ;) ', { placeholder: '30,25; 90,25; 30,75; 90,75' }),
+      campo('variante-origem', 'De onde veio ', { placeholder: 'obra, detalhe do projeto' }));
+    for (const i of corpo.querySelectorAll('input')) i.addEventListener('keydown', (ev) => ev.stopPropagation());
+    if (await this.cad.dialogo({ titulo: 'Cadastrar variante no banco de detalhes', corpo, ok: 'Cadastrar' }) !== 'ok') return;
+    const v = (id) => (corpo.querySelector('#' + id).value || '').trim();
+    const num = (s) => { const n = parseFloat(String(s).replace(',', '.')); return isFinite(n) ? n : null; };
+    const furos = v('variante-furos').split(';').map(s => s.split(',').map(num)).filter(p => p.length === 2 && p.every(n => n !== null));
+    const comp = num(v('variante-comprimento'));
+    const variante = { id: v('variante-id'), nome: v('variante-nome') || v('variante-id'), funcao: fun.value, origem: v('variante-origem'),
+      colocacao: { peca: v('variante-peca'), ...(comp ? { comprimento: comp, altura: comp } : {}), ...(num(v('variante-furo')) ? { furo_d: num(v('variante-furo')) } : {}),
+        ...(furos.length ? { furos } : {}) } };
+    try {
+      await pedir('/api/banco-detalhes', { variante });
+    } catch (e) { this.cad.aviso('Não foi possível cadastrar: ' + e.message, 'erro', 0); return; }
+    await this._banco(true);
+    this.cad.aviso(`Variante ${variante.id} cadastrada no banco de detalhes.`, 'info');
+    this.cad.tela.pedirQuadro();
+  }
+
+  // ------------------------------------------------------------------ leitura e pré-análise (etapas 3 e 4)
+  _url(sufixo) { return `/api/projetos/${encodeURIComponent(this.cad.projeto)}/montagem/${sufixo}`; }
+
+  _montarPainel() {
+    if (this.painel) return this.painel;
+    const num = (id, rot, dica) => el('label', { title: dica }, rot,
+      el('input', { id, type: 'number', step: '10', placeholder: 'do corte', onkeydown: (ev) => ev.stopPropagation(),
+        onchange: () => { const m = this.m; m.parametros = m.parametros || {}; const v = parseFloat(this.painel.querySelector('#' + id).value);
+          m.parametros[id.replace('leitura-', '')] = isFinite(v) ? v : null; this._gravar(); } }));
+    this.painel = el('aside', { class: 'painel-leitura', id: 'painel-leitura', hidden: true },
+      el('div', { class: 'painel-leitura-topo' }, el('b', {}, 'Leitura dos quadros'),
+        el('button', { type: 'button', class: 'quadro-tirar', title: 'Fechar', onclick: () => { this.painel.hidden = true; } }, '×')),
+      el('div', { class: 'painel-leitura-param' },
+        num('leitura-base', 'Base dos pilares (mm) ', 'O nível da base; vazio = o do corte (ou ±0)'),
+        num('leitura-topo', 'Topo dos pilares (mm) ', 'O topo dos pilares; vazio = o do corte'),
+        el('button', { type: 'button', id: 'leitura-de-novo', onclick: () => this.lerQuadros() }, 'Ler de novo')),
+      el('div', { class: 'painel-leitura-quadros', id: 'leitura-quadros' }),
+      el('div', { class: 'painel-leitura-pre', id: 'leitura-pre' }),
+      el('div', { class: 'painel-leitura-pe' },
+        el('label', { class: 'linha', title: 'Às vezes é no 3D que se entende como resolver: gera com os erros e fica registrado no projeto' },
+          el('input', { type: 'checkbox', id: 'leitura-assim-mesmo', onchange: () => this._liberar() }), ' gerar assim mesmo'),
+        el('button', { type: 'button', id: 'leitura-gerar', class: 'primario', onclick: () => this.gerar3D() }, 'Gerar 3D')),
+      el('div', { class: 'painel-leitura-resultado', id: 'leitura-resultado' }));
+    this.palco.append(this.painel);
+    return this.painel;
+  }
+
+  _liberar() {
+    const p = this.painel, r = this.leitura;
+    const ass = p.querySelector('#leitura-assim-mesmo');
+    ass.disabled = !r || !r.erros;
+    if (!r || !r.erros) ass.checked = false;
+    p.querySelector('#leitura-gerar').disabled = !r || (r.erros > 0 && !ass.checked);
+  }
+
+  async lerQuadros() {
+    const p = this._montarPainel();
+    p.hidden = false;
+    const par = (this.m && this.m.parametros) || {};
+    p.querySelector('#leitura-base').value = par.base ?? '';
+    p.querySelector('#leitura-topo').value = par.topo ?? '';
+    p.querySelector('#leitura-quadros').replaceChildren(el('div', { class: 'explica' }, 'Lendo os quadros…'));
+    p.querySelector('#leitura-pre').replaceChildren();
+    p.querySelector('#leitura-resultado').replaceChildren();
+    if (this.cad._editado || this._timer) { clearTimeout(this._timer); this._timer = null; await this.cad.salvar({ avisar: false }); }
+    let r;
+    try { r = await pedir(this._url('ler'), { parametros: par }); } catch (e) {
+      p.querySelector('#leitura-quadros').replaceChildren(el('div', { class: 'erro' }, 'Não foi possível ler: ' + e.message)); return;
+    }
+    this.leitura = r;
+    const qs = p.querySelector('#leitura-quadros');
+    qs.replaceChildren(...r.quadros.map(q => el('div', { class: 'leitura-quadro' + (q.objetos ? '' : ' vazio'), 'data-quadro': q.id, title: 'Mostrar o quadro',
+      onclick: () => this._irAoQuadro(q.id) },
+      el('b', {}, q.rotulo), el('span', {}, q.objetos ? (q.resumo || `${q.objetos} objetos`) : 'vazio'))));
+    const pre = p.querySelector('#leitura-pre');
+    const titulo = el('div', { class: 'leitura-pre-titulo' + (r.erros ? ' com-erro' : '') },
+      `PRÉ-ANÁLISE · ${r.erros} erro${r.erros === 1 ? '' : 's'} · ${r.avisos} aviso${r.avisos === 1 ? '' : 's'}`);
+    const lista = el('ol', { class: 'leitura-apontamentos' }, r.apontamentos.map((a) => el('li', { class: a.nivel, title: a.sugestao ? 'Sugestão: ' + a.sugestao : 'Mostrar no quadro',
+      onclick: () => this._irAoApontamento(a) }, el('b', {}, a.rotulo), ' — ', a.msg, a.sugestao ? el('div', { class: 'sugestao' }, '→ ' + a.sugestao) : null)));
+    pre.replaceChildren(titulo, r.apontamentos.length ? lista : el('div', { class: 'explica' }, 'Nada a apontar: pode gerar o 3D.'));
+    this._liberar();
+  }
+
+  _irAoQuadro(id) {
+    const q = this.m && this.m.quadros.find(x => x.id === id);
+    if (!q) return;
+    this.cad.tela.enquadrar([[q.x, q.y - q.h], [q.x + q.w, q.y]]);
+  }
+
+  _irAoApontamento(a) {
+    const q = this.m && this.m.quadros.find(x => x.id === a.quadro);
+    if (a.papel && q) {
+      const r = Math.max(20, Math.min(q.w, q.h) / 4);
+      this.cad.tela.enquadrar([[a.papel[0] - r, a.papel[1] - r], [a.papel[0] + r, a.papel[1] + r]]);
+      this.alvo = { p: a.papel, erro: a.nivel === 'erro', ate: Date.now() + 6000 };
+      setTimeout(() => this.cad.tela.pedirQuadro(), 6100);
+    } else if (q) this._irAoQuadro(q.id);
+    this.cad.tela.pedirQuadro();
+  }
+
+  // ------------------------------------------------------------------ o 3D pelos quadros (etapa 6)
+  async gerar3D() {
+    const p = this._montarPainel();
+    const assim = p.querySelector('#leitura-assim-mesmo').checked;
+    const res = p.querySelector('#leitura-resultado');
+    res.replaceChildren(el('div', { class: 'explica' }, 'Montando o 3D pelos quadros…'));
+    p.querySelector('#leitura-gerar').disabled = true;
+    let r;
+    try { r = await pedir(this._url('gerar-3d'), { parametros: (this.m && this.m.parametros) || {}, assim_mesmo: assim }); } catch (e) {
+      res.replaceChildren(el('div', { class: 'erro' }, 'Não foi possível gerar: ' + e.message)); this._liberar(); return;
+    }
+    this._liberar();
+    if (r.bloqueado) { res.replaceChildren(el('div', { class: 'erro' }, `${r.erros} erro(s) na pré-análise: corrija nos quadros ou marque "gerar assim mesmo".`)); return; }
+    const s = r.resumo;
+    const tes = Object.entries(s.tesouras || {}).map(([k, v]) => `${k} ×${v}`).join(', ') || 'nenhuma';
+    res.replaceChildren(
+      el('div', { class: 'ok' }, `3D gerado${r.registro && r.registro.assim_mesmo ? ' (assim mesmo, com ' + r.registro.erros + ' erro(s) registrado(s))' : ''}: ${r.modelo.barras} barras.`),
+      el('div', {}, `Tesouras: ${tes}`),
+      el('div', {}, `Terças ${s.tercas} · suportes de terça ${s.suportes_terca} · contraventos ${s.contraventos} · suportes de contravento ${s.suportes_contravento} · pilares ${s.pilares}`),
+      ...(r.avisos || []).slice(0, 12).map(x => el('div', { class: 'aviso' }, x)),
+      el('a', { href: this.cad.urlDoEditor(), class: 'abrir-3d' }, 'Abrir o 3D →'));
   }
 
   // ------------------------------------------------------------------ edição

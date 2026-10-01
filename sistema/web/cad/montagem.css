@@ -61,3 +61,45 @@ body.arrastando-quadro, body.arrastando-quadro * { cursor: nwse-resize !importan
 .enviar-quadro-dialogo label { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .enviar-quadro-dialogo label.linha { justify-content: flex-start; }
 .enviar-quadro-dialogo select, .enviar-quadro-dialogo input:not([type]) { font: inherit; padding: 3px 6px; min-width: 190px; }
+
+/* etapas 3 a 6: o painel da leitura e da pré-análise, e as escolhas do banco no quadro de ligações */
+.painel-leitura {
+  position: absolute; right: 10px; top: 64px; bottom: 56px; width: 360px; z-index: 5; overflow: auto;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--texto);
+  background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio-p); box-shadow: 0 4px 16px rgb(0 0 0 / .18);
+}
+.painel-leitura[hidden] { display: none; }
+.painel-leitura-topo { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; }
+.painel-leitura-param { display: grid; gap: 4px; }
+.painel-leitura-param label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.painel-leitura-param input { width: 8em; font: inherit; padding: 2px 4px; }
+.painel-leitura-param button, .painel-leitura-pe button { font: inherit; padding: 4px 10px; cursor: pointer; }
+.leitura-quadro { display: grid; gap: 1px; padding: 4px 6px; border-left: 3px solid #16a34a; cursor: pointer; border-radius: 3px; }
+.leitura-quadro:hover { background: color-mix(in srgb, var(--destaque, #2563eb) 8%, transparent); }
+.leitura-quadro.vazio { border-left-color: #94a3b8; color: var(--texto3); }
+.leitura-quadro span { color: var(--texto2, var(--texto)); }
+.leitura-pre-titulo { font-weight: 600; padding: 4px 6px; border-radius: 3px; background: color-mix(in srgb, #16a34a 12%, transparent); }
+.leitura-pre-titulo.com-erro { background: color-mix(in srgb, #dc2626 14%, transparent); }
+.leitura-apontamentos { margin: 4px 0 0; padding-left: 0; list-style: none; display: grid; gap: 3px; }
+.leitura-apontamentos li { display: block; padding: 4px 6px 4px 8px; border-left: 3px solid #d97706; border-radius: 3px; cursor: pointer; }
+.leitura-apontamentos li.erro { border-left-color: #dc2626; }
+.leitura-apontamentos li:hover { background: color-mix(in srgb, var(--destaque, #2563eb) 8%, transparent); }
+.leitura-apontamentos .sugestao { color: var(--texto3); font-size: 11.5px; }
+.painel-leitura-pe { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-top: 6px; border-top: 1px solid var(--borda); }
+.painel-leitura-pe button.primario { color: #fff; background: #7c3aed; border: 1px solid #7c3aed; border-radius: 4px; }
+.painel-leitura-pe button.primario:disabled { opacity: .45; cursor: not-allowed; }
+.painel-leitura-resultado { display: grid; gap: 3px; }
+.painel-leitura-resultado .ok { font-weight: 600; color: #15803d; }
+.painel-leitura-resultado .aviso { color: #b45309; font-size: 11.5px; }
+.painel-leitura .erro { color: #dc2626; }
+.painel-leitura .explica { color: var(--texto3); }
+.abrir-3d { font-weight: 600; color: var(--destaque, #2563eb); }
+.quadro-escolhas {
+  position: absolute; pointer-events: auto; display: grid; gap: 4px; padding: 8px 10px; min-width: 300px; font-size: 12px;
+  background: color-mix(in srgb, var(--painel) 92%, transparent); border: 1px solid #2563eb; border-radius: var(--raio-p);
+}
+.quadro-escolhas[hidden] { display: none; }
+.quadro-escolhas-titulo { font-weight: 600; color: #2563eb; }
+.quadro-escolhas label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.quadro-escolhas select { font: inherit; max-width: 250px; }
+.quadro-escolhas-novo { justify-self: start; font: inherit; font-size: 11.5px; cursor: pointer; }
