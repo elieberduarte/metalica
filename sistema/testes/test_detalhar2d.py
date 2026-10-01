@@ -931,3 +931,29 @@ def test_textos_do_furo_e_da_polegada():
     assert Furo("redondo", 0, 0, d=17.5).rotulo() == "Ø17,5"
     assert Furo("redondo", 0, 0, d=13.25).rotulo() == "Ø13,2"         # longe do meio milímetro: fica a medida
     assert com_bitola("L 2 1/2'' X 1/4' '") == "L 2 1/2'' X 1/4''"
+
+
+def test_chapas_da_mesma_marca_com_furacao_diferente_sao_posicoes_diferentes():
+    """As 8 M83 da Sala (01/10): a regra da fábrica pôs o rasgo de cada furo no sentido da terça embaixo dele, e a
+    mesma marca ficou com duas furações; saíam numa posição só, com a furação da primeira. Cada forma ganha a marca
+    dela; a chapa virada (os mesmos furos espelhados) é a mesma peça."""
+    from nucleo3d.modelo import Documento, Chapa
+    from nucleo2d.detalhe.base import _pecas, _marcas
+    cont = [(0, 0), (125, 0), (125, 110), (0, 110)]
+    a = [{"x": 100, "y": 25, "largura": 13, "altura": 25}, {"x": 100, "y": 85, "largura": 13, "altura": 25},
+         {"x": 25, "y": 85, "largura": 25, "altura": 13}, {"x": 25, "y": 25, "largura": 25, "altura": 13}]
+    virada = [dict(f, x=125 - f["x"]) for f in a]
+    b = [{"x": 100, "y": 25, "largura": 25, "altura": 13}, {"x": 100, "y": 85, "largura": 25, "altura": 13},
+         {"x": 25, "y": 85, "diametro": 13.0}, {"x": 25, "y": 25, "diametro": 13.0}]
+    doc = Documento()
+    for i, furos in enumerate((a, b, virada, b)):
+        doc.add(Chapa(id="c%d" % i, nome="PLATE 125x110x3", contorno=cont, espessura=3.0, furos=furos,
+                            origem=(0.0, 1000.0 * i, 0.0), atributos={"marcas": {"posicao": "M83"}}))
+    # a mesma chapa medida com um vértice no meio de um lado (as P36 do teste) é a mesma
+    doc.add(Chapa(id="c4", nome="PLATE 125x110x3", contorno=[(0, 0), (60, 0), (125, 0), (125, 110), (0, 110)], espessura=3.0,
+                  furos=a, origem=(0.0, 5000.0, 0.0), atributos={"marcas": {"posicao": "M83"}}))
+    pecas, _ = _pecas(doc)
+    marca = {s.id: _marcas(s).get("posicao") for s in pecas}
+    assert marca == {"c0": "M83", "c1": "M83 (b)", "c2": "M83", "c3": "M83 (b)", "c4": "M83"}
+    # a chapa do modelo não muda
+    assert doc.entidades["c1"].atributos["marcas"]["posicao"] == "M83"

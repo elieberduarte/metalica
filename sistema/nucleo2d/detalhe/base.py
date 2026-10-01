@@ -469,7 +469,68 @@ def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional
                     proxies.append(ent)
                 continue
             acessorios[ent.nome or t] += 1
+    _separar_variantes(pecas)
     return pecas, dict(acessorios)
+
+
+def _forma_da_chapa(ch) -> Optional[tuple]:
+    """A chapa paramétrica (contorno, espessura, furos) no plano dela, igual para a chapa virada (espelhada num eixo
+    ou girada 180°): o que separa duas chapas de mesmo nome e furação diferente."""
+    cont = [(float(q[0]), float(q[1])) for q in (getattr(ch, "contorno", None) or [])]
+    # sem os vértices no meio de um lado (a mesma chapa medida da malha sai com eles ou sem eles: as P36 do teste)
+    mudou = True
+    while mudou and len(cont) > 3:
+        mudou = False
+        for i in range(len(cont)):
+            a, b, c = cont[i - 1], cont[i], cont[(i + 1) % len(cont)]
+            if abs((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])) <= 0.5 * max(1.0, math.dist(a, c)):
+                del cont[i]
+                mudou = True
+                break
+    if len(cont) < 3:
+        return None
+    xs, ys = [float(q[0]) for q in cont], [float(q[1]) for q in cont]
+    x0, y0, W, H = min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
+    furos = list(getattr(ch, "furos", None) or [])
+    formas = []
+    for sx in (False, True):
+        for sy in (False, True):
+            def px(x, sx=sx):
+                return round((W - (x - x0)) if sx else (x - x0))
+
+            def py(y, sy=sy):
+                return round((H - (y - y0)) if sy else (y - y0))
+            c_ = tuple(sorted((px(float(q[0])), py(float(q[1]))) for q in cont))
+            f_ = tuple(sorted((px(float(f.get("x", 0) or 0)), py(float(f.get("y", 0) or 0)), round(float(f.get("diametro") or 0), 1),
+                               round(float(f.get("largura") or 0), 1), round(float(f.get("altura") or 0), 1)) for f in furos))
+            formas.append((c_, f_))
+    return (round(float(getattr(ch, "espessura", 0) or 0), 1), min(formas))
+
+
+def _separar_variantes(pecas: Sequence[Solido]) -> None:
+    """Chapas da mesma posição com furação diferente viram posições diferentes. A regra da fábrica põe o oblongo da
+    chapa no sentido do rasgo da terça embaixo de cada furo (oblongar_furos_das_tercas): as 8 M83 da Sala (a CH12 do
+    S.T.3, iguais no IFC) ficaram com duas furações — rasgos em pé e deitados; rasgos e furos redondos onde não há
+    terça — e saíam como uma posição só, com a furação da primeira (pedido do usuário, 01/10: "esse suporte está
+    errado as furações"). Cada forma (contorno, espessura, furos; a chapa virada é a mesma) da posição ganha a marca
+    dela — a primeira fica com a marca, como antes; as outras, "marca (b)", "marca (c)"… —, gravada no sólido do
+    detalhamento (a chapa do modelo não muda)."""
+    formas: Dict[str, list] = {}
+    for s in pecas:
+        ch = getattr(s, "parametrica", None)
+        base = str(_marcas(s).get("posicao") or s.nome or "")
+        if ch is None or not base:
+            continue
+        forma = _forma_da_chapa(ch)
+        if forma is None:
+            continue
+        lista = formas.setdefault(base, [])
+        if forma not in lista:
+            lista.append(forma)
+        i_f = lista.index(forma)
+        if i_f > 0:
+            s.atributos = dict(s.atributos or {})
+            s.atributos["marcas"] = dict(_marcas(s), posicao="%s (%s)" % (base, chr(ord("a") + i_f)))
 
 
 #: Camadas do desenho por tipo de peça — a mesma paleta das camadas do modelo 3D (chapas
