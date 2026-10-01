@@ -182,6 +182,8 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
+**0.8.56.** (versão da noite, 01/10/2026) Leitura por quadros: quadro Viga treliçada (viga painel, de transição, pergolado; Pranchas: as três regras que o usuário aprovou (01/10: "sim" e "pode aplicar").
+
 **0.8.55.** (versão da noite, 01/10/2026) Montagem do projeto recebido, etapa 1 da leitura por quadros (plano de 01/10): abas Original | Montagem | Pranchas embaixo do CAD no projeto com a planta do cliente; Montagem, etapa 2 da leitura por quadros: da Original para o quadro; Montagem: fim de linha LF nos arquivos novos (montagem.js, montagem.css, verif_montagem_ui.py), como o resto da pasta; Leitura por quadros, etapas 3 a 6 (plano de 01/10): ler cada quadro, pré-análise, banco de detalhes e o 3D pelos quadros; Cumeeira com as pernas da fábrica: PERNAS_CUMEEIRA = (300, 500) em nucleo2d/detalhe/telhas.py — cada perna vai no menor padrão que cobre a modelada (o TecnoMETAL traz 260, sai 300; Leitura por quadros: revisões da Original (o DXF novo do cliente vira R01, R02… no mesmo referencial; Leitura por quadros: a conferência projeto × modelo depois do 3D (o título e a lista do projeto, as marcas da planta e o que entrou no modelo, por tesoura e por sigla de terça; Pranchas: as alterações feitas à mão na Sala de Compressores (30/09 e 01/10) viram regra do gerador.
 
 **0.7.19.** Eixo da barra sem enviesar: barra de perfil pelo comprimento da aresta reta mais longa da face
