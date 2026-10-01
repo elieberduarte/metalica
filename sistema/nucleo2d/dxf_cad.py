@@ -82,7 +82,7 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
                          # linhas e chamadas na cor da camada; o número na ACI 7 (branco no fundo preto),
                          # como os textos — com 0 (PorBloco) ele herdava a cor da camada da cota
                          "dimdsep": ord(","), "dimlunit": 2, "dimclrd": 0, "dimclre": 0, "dimclrt": 7,
-                         "dimtix": 0, "dimsah": 0, "dimtmove": 0}.items():
+                         "dimtix": 0, "dimsah": 0, "dimtmove": 2, "dimatfit": 3}.items():
         ds.dxf.set(chave, valor)
     ds.dxf.dimtxsty = ESTILO
 
@@ -107,6 +107,7 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
             lay.off()
 
     msp = doc.modelspace()
+    terminador = (desenho.metadados.get("estilo") or {}).get("terminador") or "traco"
     alinhar = {("esquerda", "base"): TextEntityAlignment.LEFT, ("centro", "base"): TextEntityAlignment.CENTER,
                ("direita", "base"): TextEntityAlignment.RIGHT, ("esquerda", "meio"): TextEntityAlignment.MIDDLE_LEFT,
                ("centro", "meio"): TextEntityAlignment.MIDDLE_CENTER, ("direita", "meio"): TextEntityAlignment.MIDDLE_RIGHT,
@@ -143,7 +144,7 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
                 t.set_placement(e.posicao, align=alinhar.get((e.alinhamento, e.vertical), TextEntityAlignment.LEFT))
                 feitas.append(t)
         elif isinstance(e, Cota):
-            d = _dimensao(msp, e, k, at)
+            d = _dimensao(msp, e, k, at, e.terminador or terminador)
             if d is not None:
                 feitas.append(d)
         elif isinstance(e, Hachura):
@@ -250,9 +251,21 @@ def exportar_pranchas(desenhos, pasta: str, base: str = "pranchas") -> dict:
     return {"completo": completo, "zip": zipado, "pasta": destino, "arquivos": arquivos}
 
 
-def _dimensao(msp, c: Cota, k: float, at: dict):
+#: o traço oblíquo do DXF (o bloco _OBLIQUE, de -0,5 a +0,5 nos dois eixos, na escala de 2 × DIMTSZ) com o
+#: comprimento do da tela, que é o da seta
+FATOR_TRACO = 1.0 / (2.0 * math.sqrt(2.0))
+
+
+def _dimensao(msp, c: Cota, k: float, at: dict, terminador: str = "traco"):
     """DIMENSION linear (h, v) ou rotacionada na direção p1→p2 (alinhada), com a linha de
-    cota onde o CAD a desenha: deslocamento de papel × escala, à esquerda de p1→p2."""
+    cota onde o CAD a desenha: deslocamento de papel × escala, à esquerda de p1→p2.
+
+    A ponta, o tamanho dela e o lugar do número são os da tela do CAD (`Tela._cota` e
+    `Tela.textoCota`, web/cad/nucleo/tela.js): o traço oblíquo da produção (ou a seta, a bola),
+    do tamanho que encolhe na cota curta (¼ do comprimento, entre 1 e 2,5 mm de papel); o
+    número no meio, acima da linha; na cota curta demais, ao lado, fora das chamadas; quando
+    só o número não cabe, um degrau para fora; e onde foi posto à mão. Antes a ponta era a
+    seta cheia de 2,5 mm, que o AutoCAD jogava para fora, e o número ia para outro lugar (01/10)."""
     x1, y1 = c.p1
     x2, y2 = c.p2
     if c.modo == "h":
@@ -270,23 +283,39 @@ def _dimensao(msp, c: Cota, k: float, at: dict):
     desl = float(c.deslocamento or 0.0) * k
     base = (x1 + nx * desl, y1 + ny * desl)
     ang = 0.0 if c.modo == "h" else 90.0 if c.modo == "v" else math.degrees(math.atan2(dy, dx))
-    override = {}
-    if c.altura and abs(float(c.altura) - 2.5) > 1e-6:
-        override["dimtxt"] = float(c.altura)
-    # o número: onde foi posto à mão; ou, quando não cabe entre as chamadas, um degrau para
-    # fora (a mesma regra da tela do CAD)
+    altura = float(c.altura or 2.5)
+    h = altura * k
+    seta = min(2.5 * k, max(1.0 * k, comp / 4))            # mm do desenho
+    override = {"dimtxt": altura, "dimasz": seta / k,
+                # o número a 0,55 da altura acima da linha, como na tela
+                "dimgap": 0.55 * altura}
+    if terminador == "traco":
+        override.update(dimtsz=FATOR_TRACO * seta / k, dimdle=0.0)
+    elif terminador == "bola":
+        override.update(dimblk="DOT", dimblk1="DOT", dimblk2="DOT")
     texto = str(c.texto) if c.texto not in (None, "") else "<>"
+    n_txt = len(str(c.texto)) if c.texto not in (None, "") else len("%g" % round(comp, 1))
+    # o lado de leitura do número (o "de cima" dele): a esquerda de p1→p2, ou a direita quando a cota
+    # aponta para trás (o texto gira 180° para não ficar de cabeça para baixo)
+    ang_g = math.degrees(math.atan2(uy, ux))
+    lado = 1.0 if -90.0 < ang_g <= 90.0 else -1.0
+    sobe = 1.05 * h * lado                                  # da linha ao meio do número (base a 0,55 h)
+    fora = comp < 3 * seta
     local = None
-    h = float(c.altura or 2.5) * k
-    seta = min(2.5 * k, max(1.0 * k, comp / 4))
-    n_txt = len(str(c.texto)) if c.texto not in (None, "") else len("%d" % round(comp))
     if c.texto_pos:
-        local = tuple(c.texto_pos)
-    elif comp >= 3 * seta and 0.62 * h * n_txt + 2 * seta > comp:
-        sg = 1.0 if desl >= 0 else -1.0
-        mx, my = (base[0] + base[0] + dx) / 2, (base[1] + base[1] + dy) / 2
-        local = (mx + nx * sg * 2.4 * h, my + ny * sg * 2.4 * h)
+        # a tela guarda a base do número; o DXF, o meio
+        local = (c.texto_pos[0] + nx * lado * 0.5 * h, c.texto_pos[1] + ny * lado * 0.5 * h)
+    else:
+        mx, my = base[0] + dx / 2, base[1] + dy / 2
+        if fora:
+            avanco = 2.4 * seta + 0.4 * h * n_txt
+            local = (mx + ux * avanco + nx * sobe, my + uy * avanco + ny * sobe)
+        elif 0.62 * h * n_txt + 2 * seta > comp:
+            sg = 1.0 if desl >= 0 else -1.0
+            local = (mx + nx * (sg * 1.9 * h + sobe), my + ny * (sg * 1.9 * h + sobe))
+    if local is not None:
+        override["dimtmove"] = 2                            # o número solto, sem puxar a linha nem chamada
     dim = msp.add_linear_dim(base=base, p1=c.p1, p2=c.p2, angle=ang, dimstyle=ESTILO, text=texto,
-                             location=local, override=override or None, dxfattribs=at)
+                             location=local, override=override, dxfattribs=at)
     dim.render()
     return dim.dimension

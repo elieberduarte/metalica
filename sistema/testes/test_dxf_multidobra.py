@@ -39,6 +39,26 @@ def test_dxf_com_cotas_funcionais_cores_e_grupo():
     assert len(doc.groups) == 1 and next(iter(doc.groups))[0] == "S_T_2"
 
 
+def test_cota_do_dxf_igual_a_da_tela():
+    """o traço oblíquo do tamanho da tela (encolhe na cota curta) e o número onde a tela põe (01/10)"""
+    from nucleo2d import dxf_cad
+    d = Desenho(nome="t", escala=1.0)
+    d.add(Cota(id="longa", modo="h", p1=(0, 0), p2=(100, 0), deslocamento=10.0, texto="2500"))
+    d.add(Cota(id="curta", modo="h", p1=(0, 50), p2=(2.56, 50), deslocamento=-10.0, texto="64"))
+    d.add(Cota(id="media", modo="h", p1=(0, 100), p2=(9, 100), deslocamento=10.0, texto="225"))
+    with tempfile.TemporaryDirectory() as tmp:
+        doc = ezdxf.readfile(dxf_cad.exportar(d, os.path.join(tmp, "t.dxf"), 1.0))
+    r = {}
+    for x in doc.modelspace().query("DIMENSION"):
+        b = doc.blocks.get(x.dxf.geometry)
+        traco = next(iter(b.query("INSERT")))
+        meio = next(iter(b.query("MTEXT"))).dxf.insert
+        r[x.dxf.text] = (traco.dxf.name, round(traco.dxf.xscale * math.sqrt(2), 2), round(meio.x, 2), round(meio.y, 2))
+    assert r["2500"] == ("_OBLIQUE", 2.5, 50.0, 12.62)        # no meio, acima da linha
+    assert r["64"] == ("_OBLIQUE", 1.0, 5.68, 42.62)          # curta: traço de 1 mm e o número ao lado
+    assert r["225"][1:] == (2.25, 4.5, 117.38)                # o número não cabe: um degrau para fora
+
+
 def test_dxf_de_todas_as_pranchas_um_arquivo_por_folha():
     import zipfile
     from nucleo2d import dxf_cad
