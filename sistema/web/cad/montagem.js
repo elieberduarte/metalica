@@ -244,8 +244,8 @@ class Montagem {
     this.palco = $('#palco');
     this.camada = el('div', { class: 'montagem-quadros', id: 'montagem-quadros' });
     this.abas = el('div', { class: 'abas-projeto', id: 'abas-projeto', hidden: true, role: 'tablist', 'aria-label': 'Etapas do projeto recebido' },
-      el('button', { type: 'button', 'data-aba': 'original', title: 'O DXF do cliente como chegou (a planta de lançamento): só leitura, a fonte dos quadros', onclick: () => this.ir('original') }, 'Original'),
-      el('button', { type: 'button', 'data-aba': 'montagem', title: 'A folha com os quadros: locação, terças, tesouras, elevações, corte e ligações — é o que o programa lê', onclick: () => this.ir('montagem') }, 'Montagem'),
+      el('button', { type: 'button', 'data-aba': 'original', 'data-dica': 'O DXF do cliente como chegou (a planta de lançamento): só leitura, a fonte dos quadros', title: 'O DXF do cliente como chegou (a planta de lançamento): só leitura, a fonte dos quadros', onclick: () => this.ir('original') }, 'Original'),
+      el('button', { type: 'button', 'data-aba': 'montagem', 'data-dica': 'A folha com os quadros: locação, terças, tesouras, elevações, corte e ligações — é o que o programa lê', title: 'A folha com os quadros: locação, terças, tesouras, elevações, corte e ligações — é o que o programa lê', onclick: () => this.ir('montagem') }, 'Montagem'),
       el('button', { type: 'button', 'data-aba': 'pranchas', title: 'As pranchas do projeto, geradas depois do 3D', onclick: () => this.ir('pranchas') }, 'Pranchas'),
       this.botaoEnviar = el('button', { type: 'button', class: 'enviar-quadro', hidden: true, id: 'btn-enviar-quadro',
         title: 'Marque uma área da planta do cliente e escolha o quadro da Montagem para onde ela vai (copiada, na escala do quadro)',
@@ -298,7 +298,15 @@ class Montagem {
     const lista = await this._lista(true);
     const nomes = new Set(lista.map(d => d.nome));
     const temProjetoRecebido = nomes.has(DESENHO_LANCAMENTO) || nomes.has(DESENHO_MONTAGEM);
-    this.abas.hidden = !this.cad.projeto || !temProjetoRecebido;
+    // a barra em todo projeto (pedido de 01/10: "padronizar isso para todos os projetos"); no que veio do IFC, sem a
+    // planta do cliente, a Original e a Montagem ficam apagadas e as Pranchas funcionam
+    this.abas.hidden = !this.cad.projeto;
+    for (const aba of ['original', 'montagem']) {
+      const b = this.abas.querySelector(`[data-aba=${aba}]`);
+      b.disabled = !temProjetoRecebido;
+      b.title = temProjetoRecebido ? b.dataset.dica || b.title
+        : 'Este projeto não veio de um DXF do cliente (veio do IFC ou foi lançado aqui): não tem a planta Original nem a Montagem';
+    }
     // a Original é a revisão para onde a montagem aponta (R00, R01…)
     let mm = this.m;
     if (!mm && nomes.has(DESENHO_MONTAGEM)) {

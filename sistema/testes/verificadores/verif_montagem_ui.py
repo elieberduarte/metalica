@@ -27,6 +27,17 @@ cam = {n: {"nome": n, "cor": "#888888", "visivel": True, "bloqueada": True} for 
 json.dump({"nome": "Planta de lançamento", "unidade": "mm", "escala": 100, "camadas": cam, "entidades": ents, "vistas": [], "metadados": {"arquitetonico": {"deslocamento": [0.0, 0.0]}}},
           open(os.path.join(PASTA, "desenhos-2d", "planta-de-lançamento.desenho.json"), "w", encoding="utf-8"), ensure_ascii=False)
 
+# um projeto do IFC (sem a planta do cliente): só um desenho de detalhe e as pranchas
+P2 = os.path.join(DADOS, "do-ifc")
+os.makedirs(os.path.join(P2, "desenhos-2d"))
+json.dump({"formato": 1, "nome": "Do IFC", "tipo": "ifc", "cliente": "", "local": "", "responsavel": "",
+           "criado": "2026-10-01T00:00:00", "alterado": "2026-10-01T00:00:00", "dados": None},
+          open(os.path.join(P2, "projeto.json"), "w", encoding="utf-8"))
+for nome_d in ("detalhamento-completo", "pranchas"):
+    json.dump({"nome": nome_d, "unidade": "mm", "escala": 25, "camadas": {}, "vistas": [], "metadados": {},
+               "entidades": [{"id": "l1", "tipo": "linha", "camada": "VISTA", "a": [0.0, 0.0], "b": [1000.0, 0.0]}]},
+              open(os.path.join(P2, "desenhos-2d", nome_d + ".desenho.json"), "w", encoding="utf-8"))
+
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 time.sleep(4)
@@ -263,6 +274,17 @@ try:
     n_loc = len([e for e in mont3["entidades"] if (e.get("atributos") or {}).get("quadro") == locq3["id"]])
     ok(n_loc == 6 and locq3["envios"][-1]["desenho"] == "planta-de-lançamento-r01",
        "atualizado pela revisão: o quadro da locação tem o que a R01 tem na área (%d objetos) e o envio aponta para ela" % n_loc)
+    # todo projeto tem a barra (01/10): no do IFC, Original e Montagem apagadas, Pranchas abre as pranchas
+    aba.navegar(base + "/cad?projeto=do-ifc&desenho=detalhamento-completo", limite=60)
+    esperar(aba, "!!window.montagem && !document.querySelector('#abas-projeto').hidden", 20)
+    estado = json.loads(aba.avaliar("JSON.stringify([...document.querySelectorAll('#abas-projeto button[data-aba]')].map(b => [b.dataset.aba, b.disabled]))"))
+    ok(estado == [["original", True], ["montagem", True], ["pranchas", False]],
+       "projeto do IFC: a barra aparece, com Original e Montagem apagadas e Pranchas ativa: %s" % estado)
+    aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').click(); 1")
+    esperar(aba, "cad.nomeDesenho === 'pranchas'", 20)
+    ok(aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').classList.contains('on')"), "e a aba Pranchas abre as pranchas dele")
+    aba.navegar(base + "/cad?projeto=recebido&desenho=montagem", limite=60)
+    esperar(aba, "cad.nomeDesenho === 'montagem'", 20)
     aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').click(); 1"); aba.drenar(0.8)
     ok("Pranchas" in (aba.avaliar("document.querySelector('#avisos').textContent") or "") or "pranchas" in (aba.avaliar("document.querySelector('#avisos').textContent") or ""),
        "sem pranchas ainda, a aba Pranchas avisa")
