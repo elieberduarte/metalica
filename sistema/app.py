@@ -54,6 +54,7 @@ Rotas da API:
     POST /api/projetos/<slug>/projeto-recebido  folhas, carimbo e considerações de cálculo do DXF recebido
     POST /api/projetos/<slug>/montagem/ler {parametros}   leitura por quadros: cada quadro da Montagem lido + pré-análise
     POST /api/projetos/<slug>/montagem/gerar-3d {parametros, assim_mesmo}   o 3D pelos quadros (tesoura = bloco)
+    POST /api/projetos/<slug>/montagem/revisao {arquivo, conteudo_b64, tipo}   DXF novo do cliente → revisão R01… da Original
     GET  /api/banco-detalhes · POST /api/banco-detalhes {variante} · POST /api/banco-detalhes/excluir {id}
                                         banco de detalhes de ligação (ST1, SC1…: variantes da biblioteca)
     POST /api/projetos/<slug>/desenhos/<nome>/montar-pela-planta  projeto recebido sem 3D → modelo pela planta,
@@ -2828,8 +2829,52 @@ def ler_quadros(s: str, corpo: dict) -> dict:
     terças, posição das tesouras, corte, elevações) e a pré-análise (erros e avisos, com o ponto no papel)"""
     from nucleo3d import leitura_quadros
     des = _montagem_do_projeto(s)
-    r = leitura_quadros.ler(des, corpo.get("parametros") or None)
+    r = leitura_quadros.ler(des, corpo.get("parametros") or None, abrir=lambda nome: _gerente().abrir_desenho(s, nome))
     return _leitura_para_json(r)
+
+
+def nova_revisao_da_original(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/montagem/revisao {arquivo, conteudo_b64, tipo, fator}: o DXF novo do cliente vira a
+    revisão seguinte da Original (R01, R02…), no mesmo referencial da anterior (o deslocamento para perto da
+    origem é o da primeira). A Montagem passa a apontar para ela; os quadros ficam como estavam e a pré-análise
+    mostra o que mudou na área de cada um."""
+    import base64
+    from nucleo3d import lancamento
+    g = _gerente()
+    mont = _montagem_do_projeto(s)
+    m = mont["metadados"]["montagem"]
+    atual = m.get("original") or "planta-de-lançamento"
+    if not corpo.get("conteudo_b64"):
+        raise ErroDeDados("mande o arquivo em base64.")
+    arquivo = str(corpo.get("arquivo") or "revisao.dxf")
+    tipo = str(corpo.get("tipo") or os.path.splitext(arquivo)[1].lstrip(".")).lower()
+    velho = g.abrir_desenho(s, atual)
+    _progresso(s, "lendo a revisão %s…" % arquivo)
+    try:
+        ref, resumo = lancamento.ler_arquitetonico(base64.b64decode(corpo["conteudo_b64"]), tipo,
+                                                   fator=float(corpo["fator"]) if corpo.get("fator") else None)
+        d_velho = ((velho.get("metadados") or {}).get("arquitetonico") or {}).get("deslocamento")
+        d_novo = (ref.metadados.get("arquitetonico") or {}).get("deslocamento")
+        if d_velho and d_novo:
+            dx, dy = float(d_velho[0]) - float(d_novo[0]), float(d_velho[1]) - float(d_novo[1])
+            if abs(dx) > 0.001 or abs(dy) > 0.001:
+                ref.entidades = {k: lancamento._escalar_entidade(e, 1.0, dx, dy) for k, e in ref.entidades.items()}
+                ref.metadados["arquitetonico"]["deslocamento"] = list(d_velho)
+        ref.metadados["arquitetonico"]["arquivo"] = arquivo
+        des = lancamento.desenho_de_lancamento(ref, velho)
+        revs = list(m.get("revisoes") or [])
+        n = len(revs) + 1
+        r00 = m.get("r00") or atual
+        rotulo = "R%02d" % n
+        des.nome = "%s %s" % (velho.get("nome") or "Planta de lançamento", rotulo)
+        r = g.salvar_desenho(s, "%s-r%02d" % (r00, n), des.dict())
+        revs.append({"nome": r["nome"], "rotulo": rotulo, "arquivo": arquivo, "anterior": atual,
+                     "em": time.strftime("%Y-%m-%dT%H:%M"), "entidades": r["entidades"]})
+        m.update({"r00": r00, "revisoes": revs, "original": r["nome"]})
+        g.salvar_desenho(s, "montagem", mont)
+        return {"revisao": revs[-1], "resumo": resumo}
+    finally:
+        _fim_progresso(s)
 
 
 def gerar_3d_pelos_quadros(s: str, corpo: dict) -> dict:
@@ -3528,6 +3573,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(ler_quadros(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "montagem" and partes[2] == "gerar-3d":
                     return self._json(gerar_3d_pelos_quadros(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "montagem" and partes[2] == "revisao":
+                    return self._json(nova_revisao_da_original(partes[0], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-furos":
                     return self._json(aplicar_furos_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "aplicar-pecas":

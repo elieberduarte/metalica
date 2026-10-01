@@ -901,8 +901,80 @@ def _alinhamento_locacao(loc: dict, ref_pilares: List[dict], ref_eixos: List[dic
     return None
 
 
-def ler(desenho: dict, parametros: Optional[dict] = None) -> dict:
-    """a leitura de todos os quadros da Montagem e a pré-análise.
+def _assinaturas(des: dict, caixa) -> collections.Counter:
+    """as entidades inteiras dentro da caixa, cada uma pela forma (tipo, camada, pontos ao mm, texto)"""
+    (x0, y0), (x1, y1) = caixa
+    out = collections.Counter()
+    for e in des.get("entidades") or []:
+        pts = []
+        t_ = e.get("tipo")
+        if t_ == "linha":
+            pts = [e["a"], e["b"]]
+        elif t_ == "polilinha":
+            pts = list(e.get("vertices") or [])
+        elif t_ in ("circulo", "arco"):
+            pts = [e["centro"]]
+        elif t_ == "texto":
+            pts = [e["posicao"]]
+        elif t_ == "cota":
+            pts = [e["p1"], e["p2"]]
+        if not pts or not all(x0 - 0.5 <= p[0] <= x1 + 0.5 and y0 - 0.5 <= p[1] <= y1 + 0.5 for p in pts):
+            continue
+        out[(t_, str(e.get("camada", "")), tuple((round(p[0]), round(p[1])) for p in pts),
+             str(e.get("texto") or ""), round(float(e.get("raio") or 0.0)))] += 1
+    return out
+
+
+def comparar_revisao(m: dict, abrir) -> List[dict]:
+    """cada área mandada para um quadro (o envio) comparada com a revisão atual da Original: o que entrou e
+    o que saiu ali. O quadro não muda sozinho (decisão de 01/10): vira apontamento, com o envio para o
+    "Atualizar pela revisão" da tela."""
+    atual = m.get("original")
+    if not atual or not abrir:
+        return []
+    cache: Dict[str, Optional[dict]] = {}
+
+    def des(nome):
+        if nome not in cache:
+            try:
+                d = abrir(nome)
+                ents = d.get("entidades") or []
+                if isinstance(ents, dict):
+                    d = dict(d, entidades=list(ents.values()))
+                cache[nome] = d
+            except Exception:                         # noqa: BLE001 — revisão apagada: não compara
+                cache[nome] = None
+        return cache[nome]
+    out = []
+    rev = next((r for r in m.get("revisoes") or [] if r.get("nome") == atual), {})
+    for q in m.get("quadros") or []:
+        envios = list(q.get("envios") or [])
+        if not envios and (q.get("fonte") or {}).get("caixa"):
+            envios = [dict(q["fonte"], id=None)]
+        for env in envios:
+            de = env.get("desenho")
+            if not de or de == atual or not env.get("caixa"):
+                continue
+            velho, novo = des(de), des(atual)
+            if velho is None or novo is None:
+                continue
+            a, b = _assinaturas(velho, env["caixa"]), _assinaturas(novo, env["caixa"])
+            entrou, saiu = sum((b - a).values()), sum((a - b).values())
+            if not entrou and not saiu:
+                continue
+            (x0, y0), (x1, y1) = env["caixa"]
+            ap = _ap(q, "aviso", "a revisão %s mudou a área deste quadro: %d objeto(s) novo(s), %d que saíram" % (
+                rev.get("rotulo") or atual, entrou, saiu), ((x0 + x1) / 2, (y0 + y1) / 2),
+                sugestao="Atualizar o quadro pela revisão (o que foi previsto não muda sozinho)", codigo="revisao_mudou")
+            ap["envio"] = env.get("id")
+            ap["revisao"] = atual
+            out.append(ap)
+    return out
+
+
+def ler(desenho: dict, parametros: Optional[dict] = None, abrir=None) -> dict:
+    """a leitura de todos os quadros da Montagem e a pré-análise. `abrir(nome)` dá um desenho do projeto
+    (para comparar as áreas dos quadros com a revisão nova da Original).
 
     Devolve {quadros: [{id, tipo, nome, escala, objetos, resumo, leitura}], apontamentos: [...],
     erros, avisos, referencia, elevacoes (as Elevacao das tesouras, para gerar o 3D)}."""
@@ -969,6 +1041,7 @@ def ler(desenho: dict, parametros: Optional[dict] = None) -> dict:
         por_tipo[tipo].append((q, item))
         quadros_out.append(item)
     ref = _cruzar(m, por_tipo, elevacoes, par, aps)
+    aps += comparar_revisao(m, abrir)
     erros = sum(1 for a in aps if a["nivel"] == "erro")
     return {"quadros": quadros_out, "apontamentos": aps, "erros": erros, "avisos": len(aps) - erros,
             "referencia": ref, "parametros": par, "elevacoes": elevacoes}

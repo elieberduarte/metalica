@@ -296,3 +296,26 @@ def test_suporte_de_terca_encostado_na_alma_da_terca():
 def test_gerar_sem_marca_avisa():
     r = de_quadros.gerar(_montagem(marca_extra=True, ligacoes={"suporte_terca": "ST1"}))
     assert any("T09" in a for a in r["avisos"])
+
+
+# ------------------------------------------------------------------ revisão da Original
+
+def test_revisao_mostra_o_que_mudou_na_area_do_quadro():
+    des = _montagem()
+    m = des["metadados"]["montagem"]
+    r00 = {"entidades": _planta() + _lista_tercas() + _locacao() + _corte() + _tesoura(-30000.0, 20000.0)}
+    r01 = {"entidades": [e for e in r00["entidades"] if not (e["tipo"] == "texto" and e["texto"] == "TC01" and e["posicao"][1] > 5000.0)]
+           + [_linha(1000.0, 5500.0, 4000.0, 5500.0, "TERÇA")]}         # fora da área do corte (desenhado no mesmo canto)
+    desenhos = {"planta-de-lançamento": r00, "planta-de-lançamento-r01": r01}
+    m["original"] = "planta-de-lançamento-r01"
+    m["revisoes"] = [{"nome": "planta-de-lançamento-r01", "rotulo": "R01"}]
+    aps = lq.comparar_revisao(m, desenhos.__getitem__)
+    por = {a["rotulo"]: a for a in aps}
+    # a planta foi mandada para a posição das tesouras e para as terças: as duas áreas mudaram (a marca TC01 de
+    # cima saiu, uma linha entrou — as duas longe do corte, desenhado no mesmo canto); a locação e a tesoura não
+    assert set(por) == {"Posição das tesouras", "Posição das terças"}
+    assert "1 objeto(s) novo(s), 1 que saíram" in por["Posição das terças"]["msg"]
+    assert por["Posição das terças"]["envio"] and por["Posição das terças"]["codigo"] == "revisao_mudou"
+    # sem revisão nova (a original de sempre), nada a apontar
+    m["original"] = "planta-de-lançamento"
+    assert lq.comparar_revisao(m, desenhos.__getitem__) == []

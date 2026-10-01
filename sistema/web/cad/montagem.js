@@ -110,7 +110,7 @@ const teto5 = (v) => Math.ceil(v / 5) * 5;
  * (o JSON do desenho "montagem"), na escala `escala` do quadro. `camadas` = {nome: camada} das usadas.
  * Mexe em `mont` e devolve o resumo {copiados, cresceu, conferencia, caixa}.
  */
-export function copiarParaQuadro(mont, quadroId, ents, { escala, kOriginal = 1, camadas = {}, substituir = true, origem = {} } = {}) {
+export function copiarParaQuadro(mont, quadroId, ents, { escala, kOriginal = 1, camadas = {}, substituir = true, origem = {}, envioAntigo = null } = {}) {
   const m = mont.metadados.montagem;
   const q = m.quadros.find(x => x.id === quadroId);
   if (!q) throw new Error('quadro não encontrado');
@@ -118,10 +118,17 @@ export function copiarParaQuadro(mont, quadroId, ents, { escala, kOriginal = 1, 
   const s = Number(escala) || q.escala;
   const pts = ents.flatMap(e => pontosDe(e));
   const [[bx0, by0], [bx1, by1]] = caixaDe(pts);
+  if (envioAntigo) {
+    // a área de um envio atualizada pela revisão nova: sai o que veio dele e o novo entra no mesmo lugar
+    mont.entidades = mont.entidades.filter(e => (e.atributos || {}).envio !== envioAntigo.id);
+    q.envios = (q.envios || []).filter(v => v.id !== envioAntigo.id);
+    substituir = false;
+  }
   if (substituir) { mont.entidades = mont.entidades.filter(e => (e.atributos || {}).quadro !== q.id); q.envios = []; }
   // sem substituir, o desenho novo entra à direita do que já está no quadro (a lista ao lado da planta)
   const jaTem = mont.entidades.filter(e => (e.atributos || {}).quadro === q.id).flatMap(e => pontosDe(e));
-  const dxJa = jaTem.length ? Math.max(0, caixaDe(jaTem)[1][0] - q.x - MARGEM.lado + 10) : 0;
+  const dxJa = envioAntigo ? Math.max(0, (envioAntigo.ox ?? MARGEM.lado) - MARGEM.lado)
+    : jaTem.length ? Math.max(0, caixaDe(jaTem)[1][0] - q.x - MARGEM.lado + 10) : 0;
   // o quadro cresce se o desenho não cabe (na escala do quadro)
   const wc = dxJa + (bx1 - bx0) / s, hc = (by1 - by0) / s;
   const w0 = q.w, h0 = q.h;
@@ -238,9 +245,15 @@ class Montagem {
       this.botaoEnviar = el('button', { type: 'button', class: 'enviar-quadro', hidden: true, id: 'btn-enviar-quadro',
         title: 'Marque uma área da planta do cliente e escolha o quadro da Montagem para onde ela vai (copiada, na escala do quadro)',
         onclick: () => this.cad.ativarFerramenta('enviar-quadro') }, 'Enviar área para quadro…'),
+      this.botaoRevisao = el('button', { type: 'button', class: 'enviar-quadro revisao', hidden: true, id: 'btn-nova-revisao',
+        title: 'Chegou um DXF novo do cliente: ele vira a revisão seguinte da Original (R01, R02…); os quadros não mudam sozinhos — a pré-análise mostra o que mudou em cada um',
+        onclick: () => this.arquivoRevisao.click() }, 'Nova revisão do DXF…'),
       this.botaoLer = el('button', { type: 'button', class: 'enviar-quadro', hidden: true, id: 'btn-ler-quadros',
         title: 'O programa lê cada quadro (tesouras, pilares, terças, níveis) e aponta o que está errado ou faltando antes do 3D',
         onclick: () => this.lerQuadros() }, 'Ler quadros'));
+    this.arquivoRevisao = el('input', { type: 'file', accept: '.dxf,.pdf', hidden: true, id: 'arquivo-revisao',
+      onchange: (ev) => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; if (f) this.novaRevisao(f); } });
+    this.abas.append(this.arquivoRevisao);
     cad.ferramentas.set('enviar-quadro', new EnviarArea(cad));
     this.palco.append(this.camada, this.abas);
     this.desenhos = [];
@@ -281,18 +294,26 @@ class Montagem {
     const nomes = new Set(lista.map(d => d.nome));
     const temProjetoRecebido = nomes.has(DESENHO_LANCAMENTO) || nomes.has(DESENHO_MONTAGEM);
     this.abas.hidden = !this.cad.projeto || !temProjetoRecebido;
+    // a Original é a revisão para onde a montagem aponta (R00, R01…)
+    let mm = this.m;
+    if (!mm && nomes.has(DESENHO_MONTAGEM)) {
+      try { mm = (await pedir(this._urlMontagem())).desenho.metadados.montagem || null; } catch { mm = null; }
+    }
+    this.original = (mm && mm.original) || DESENHO_LANCAMENTO;
     const atual = this.cad.nomeDesenho === DESENHO_MONTAGEM ? 'montagem'
-      : this.cad.nomeDesenho === ((this.m && this.m.original) || DESENHO_LANCAMENTO) ? 'original'
+      : this.cad.nomeDesenho === this.original ? 'original'
       : /^pranchas/.test(this.cad.nomeDesenho || '') ? 'pranchas' : '';
     for (const b of this.abas.querySelectorAll('button[data-aba]')) b.classList.toggle('on', b.dataset.aba === atual);
     this.naOriginal = atual === 'original';
     this.botaoEnviar.hidden = !this.naOriginal;
+    this.botaoRevisao.hidden = !this.naOriginal || !nomes.has(DESENHO_MONTAGEM);
+    const revs = (mm && mm.revisoes) || [];
+    const rev = revs.find(r => r.nome === this.original);
+    this.abas.querySelector('[data-aba=original]').textContent = rev ? `Original ${rev.rotulo}` : 'Original';
     this.botaoLer.hidden = atual !== 'montagem';
     if (atual !== 'montagem' && this.painel) this.painel.hidden = true;
     this.mOriginal = null;
-    if (this.naOriginal && nomes.has(DESENHO_MONTAGEM)) {
-      try { this.mOriginal = (await pedir(this._urlMontagem())).desenho.metadados.montagem || null; } catch { this.mOriginal = null; }
-    }
+    if (this.naOriginal && nomes.has(DESENHO_MONTAGEM)) this.mOriginal = mm;
     // a montagem antiga sem quadros (ou criada por outro caminho): ganha a padrão
     if (this.cad.nomeDesenho === DESENHO_MONTAGEM && !this.m) {
       this.cad.doc.metadados = { ...(this.cad.doc.metadados || {}), montagem: montagemPadrao() };
@@ -307,7 +328,7 @@ class Montagem {
     const lista = await this._lista(true);
     const nomes = new Set(lista.map(d => d.nome));
     if (aba === 'original') {
-      const nome = (this.m && this.m.original) || DESENHO_LANCAMENTO;
+      const nome = (this.m && this.m.original) || this.original || DESENHO_LANCAMENTO;
       if (!nomes.has(nome)) { this.cad.aviso('Este projeto ainda não tem a planta do cliente. Comece por "Novo a partir do arquitetônico" na tela inicial.', 'atencao'); return; }
       await this.cad.abrirDesenho(nome);
     } else if (aba === 'montagem') {
@@ -451,7 +472,8 @@ class Montagem {
     ctx.save();
     ctx.font = '600 11.5px "Segoe UI", sans-serif';
     for (const q of this.mOriginal.quadros) {
-      if (!q.fonte || !q.fonte.caixa || q.fonte.desenho !== this.cad.nomeDesenho) continue;
+      // as revisões ficam no mesmo referencial: a área marcada vale em qualquer uma
+      if (!q.fonte || !q.fonte.caixa) continue;
       const t = TIPOS[q.tipo] || TIPOS.tesoura;
       const [[x0, y0], [x1, y1]] = q.fonte.caixa;
       const a = tela.paraTela([x0, y1]), b = tela.paraTela([x1, y0]);
@@ -640,7 +662,9 @@ class Montagem {
     const titulo = el('div', { class: 'leitura-pre-titulo' + (r.erros ? ' com-erro' : '') },
       `PRÉ-ANÁLISE · ${r.erros} erro${r.erros === 1 ? '' : 's'} · ${r.avisos} aviso${r.avisos === 1 ? '' : 's'}`);
     const lista = el('ol', { class: 'leitura-apontamentos' }, r.apontamentos.map((a) => el('li', { class: a.nivel, title: a.sugestao ? 'Sugestão: ' + a.sugestao : 'Mostrar no quadro',
-      onclick: () => this._irAoApontamento(a) }, el('b', {}, a.rotulo), ' — ', a.msg, a.sugestao ? el('div', { class: 'sugestao' }, '→ ' + a.sugestao) : null)));
+      onclick: () => this._irAoApontamento(a) }, el('b', {}, a.rotulo), ' — ', a.msg, a.sugestao ? el('div', { class: 'sugestao' }, '→ ' + a.sugestao) : null,
+      a.codigo === 'revisao_mudou' ? el('button', { type: 'button', class: 'atualizar-revisao', title: 'Copia de novo a área deste quadro, da revisão atual, no mesmo lugar e escala',
+        onclick: (ev) => { ev.stopPropagation(); this.atualizarPelaRevisao(a); } }, 'Atualizar pela revisão') : null)));
     pre.replaceChildren(titulo, r.apontamentos.length ? lista : el('div', { class: 'explica' }, 'Nada a apontar: pode gerar o 3D.'));
     this._liberar();
   }
@@ -660,6 +684,51 @@ class Montagem {
       setTimeout(() => this.cad.tela.pedirQuadro(), 6100);
     } else if (q) this._irAoQuadro(q.id);
     this.cad.tela.pedirQuadro();
+  }
+
+  // ------------------------------------------------------------------ revisões da Original
+  /** O DXF novo do cliente: vira a revisão seguinte da Original; a Original passa a ser ela. */
+  async novaRevisao(arquivo) {
+    const b64 = await new Promise((ok, falha) => {
+      const r = new FileReader();
+      r.onload = () => ok(String(r.result).split(',')[1] || '');
+      r.onerror = () => falha(r.error);
+      r.readAsDataURL(arquivo);
+    });
+    this.cad.aviso(`Lendo ${arquivo.name}…`, 'info');
+    let r;
+    try {
+      r = await pedir(this._url('revisao'), { arquivo: arquivo.name, conteudo_b64: b64, tipo: arquivo.name.split('.').pop().toLowerCase() });
+    } catch (e) { this.cad.aviso('Não foi possível ler a revisão: ' + e.message, 'erro', 0); return; }
+    this.cad.aviso(`Revisão ${r.revisao.rotulo} gravada (${arquivo.name}, ${Number(r.revisao.entidades).toLocaleString('pt-BR')} objetos). ` +
+      'Os quadros ficaram como estavam: na Montagem, "Ler quadros" mostra o que mudou na área de cada um.', 'info', 15000);
+    await this.cad.abrirDesenho(r.revisao.nome);
+  }
+
+  /** "Atualizar o quadro pela revisão": a área do envio copiada de novo, da revisão atual, no mesmo lugar e escala. */
+  async atualizarPelaRevisao(a) {
+    if (this.cad._editado || this._timer) { clearTimeout(this._timer); this._timer = null; await this.cad.salvar({ avisar: false }); }
+    const mont = await this._montagemJSON();
+    const m = mont.metadados.montagem;
+    const q = m.quadros.find(x => x.id === a.quadro);
+    const env = q && ((q.envios || []).find(v => v.id === a.envio) || (a.envio == null && q.fonte ? { ...q.fonte, id: null, ox: MARGEM.lado, escala: q.escala } : null));
+    if (!env) { this.cad.aviso('Não achei a área desse quadro.', 'erro'); return; }
+    let rev;
+    try { rev = (await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/desenhos/${encodeURIComponent(m.original)}`)).desenho; } catch (e) {
+      this.cad.aviso('Não foi possível abrir a revisão: ' + e.message, 'erro', 0); return;
+    }
+    const [[x0, y0], [x1, y1]] = env.caixa;
+    const dentro = (p) => p[0] >= x0 - 0.5 && p[0] <= x1 + 0.5 && p[1] >= y0 - 0.5 && p[1] <= y1 + 0.5;
+    const ents = (Array.isArray(rev.entidades) ? rev.entidades : Object.values(rev.entidades || {})).filter(e => { const ps = pontosDe(e); return ps.length && ps.every(dentro); });
+    if (!ents.length) { this.cad.aviso('A área ficou vazia na revisão nova.', 'atencao'); return; }
+    if (env.id == null) mont.entidades = mont.entidades.filter(e => (e.atributos || {}).quadro !== q.id);
+    const camadas = rev.camadas || {};
+    copiarParaQuadro(mont, q.id, ents, { escala: env.escala || q.escala, kOriginal: rev.escala || 1, camadas, substituir: env.id == null,
+      envioAntigo: env.id != null ? env : null, origem: { desenho: m.original, alterado: '' } });
+    await pedir(this._urlMontagem(), { desenho: mont });
+    await this.cad.abrirDesenho(DESENHO_MONTAGEM);
+    this.cad.aviso(`${q.tipo === 'tesoura' ? 'Tesoura ' + (q.nome || '') : (TIPOS[q.tipo] || {}).rotulo} atualizado pela revisão (${ents.length} objetos).`, 'info');
+    await this.lerQuadros();
   }
 
   // ------------------------------------------------------------------ o 3D pelos quadros (etapa 6)

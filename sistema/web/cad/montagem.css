@@ -103,3 +103,7 @@ body.arrastando-quadro, body.arrastando-quadro * { cursor: nwse-resize !importan
 .quadro-escolhas label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .quadro-escolhas select { font: inherit; max-width: 250px; }
 .quadro-escolhas-novo { justify-self: start; font: inherit; font-size: 11.5px; cursor: pointer; }
+/* revisões da Original */
+.abas-projeto button.enviar-quadro.revisao { background: #0e7490; border-color: #0e7490; }
+.abas-projeto button.enviar-quadro.revisao:hover { background: #155e75; }
+.leitura-apontamentos .atualizar-revisao { display: block; margin-top: 4px; font: inherit; font-size: 11.5px; cursor: pointer; }

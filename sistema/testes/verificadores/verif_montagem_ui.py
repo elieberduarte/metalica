@@ -24,7 +24,7 @@ ents += [{"id": "c1", "tipo": "cota", "camada": "ARQ COTA", "modo": "alinhada", 
          {"id": "t1", "tipo": "texto", "camada": "ARQ COTA", "posicao": [100.0, 21000.0], "texto": "LOCAÇÃO", "altura": 3.5}]
 ents += [{"id": "g%d" % i, "tipo": "linha", "camada": "ARQ CORTE", "a": [100000.0 + i * 1000.0, 0.0], "b": [100000.0 + i * 1000.0 + 500, 3000.0]} for i in range(60)]
 cam = {n: {"nome": n, "cor": "#888888", "visivel": True, "bloqueada": True} for n in ("ARQ PLANTA", "ARQ COTA", "ARQ CORTE")}
-json.dump({"nome": "Planta de lançamento", "unidade": "mm", "escala": 100, "camadas": cam, "entidades": ents, "vistas": [], "metadados": {}},
+json.dump({"nome": "Planta de lançamento", "unidade": "mm", "escala": 100, "camadas": cam, "entidades": ents, "vistas": [], "metadados": {"arquitetonico": {"deslocamento": [0.0, 0.0]}}},
           open(os.path.join(PASTA, "desenhos-2d", "planta-de-lançamento.desenho.json"), "w", encoding="utf-8"), ensure_ascii=False)
 
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
@@ -230,6 +230,33 @@ try:
     pj = json.loads(aba.avaliar("(async () => JSON.stringify(await (await fetch('/api/projetos/recebido')).json()))()"))
     reg = (pj.get("projeto") or pj).get("gerado_por_quadros") or {}
     ok(reg.get("em") and ("assim_mesmo" in reg), "o projeto registra a geração pelos quadros (e se foi assim mesmo): %s" % {k: reg.get(k) for k in ("em", "erros", "assim_mesmo")})
+    # a revisão: o DXF novo do cliente (as mesmas 5 linhas e mais uma na área da locação) vira a R01
+    def _dxf(linhas):
+        s = ["0", "SECTION", "2", "ENTITIES"]
+        for (x0, y0, x1, y1) in linhas:
+            s += ["0", "LINE", "8", "PLANTA", "10", str(x0), "20", str(y0), "30", "0", "11", str(x1), "21", str(y1), "31", "0"]
+        return "\n".join(s + ["0", "ENDSEC", "0", "EOF", ""])
+    dxf = _dxf([(i * 5000.0, 0.0, i * 5000.0, 20000.0) for i in range(5)] + [(2500.0, 5000.0, 2500.0, 15000.0)])
+    aba.avaliar("document.querySelector('#abas-projeto [data-aba=original]').click(); 1")
+    esperar(aba, "!document.querySelector('#btn-nova-revisao').hidden", 15)
+    ok(True, "na Original aparece \"Nova revisão do DXF…\"")
+    aba.avaliar("(() => { const f = new File([%s], 'cliente-r01.dxf', { type: 'application/dxf' }); window.montagem.novaRevisao(f); return 1; })()" % json.dumps(dxf))
+    esperar(aba, "document.querySelector('#abas-projeto [data-aba=original]').textContent === 'Original R01'", 30)
+    ok(aba.avaliar("cad.nomeDesenho") == "planta-de-lançamento-r01", "o DXF novo vira a revisão R01 e a aba Original passa a mostrá-la (%s)" % aba.avaliar("cad.nomeDesenho"))
+    aba.avaliar("document.querySelector('#abas-projeto [data-aba=montagem]').click(); 1")
+    esperar(aba, "cad.nomeDesenho === 'montagem'"); aba.drenar(0.8)
+    aba.avaliar("document.querySelector('#btn-ler-quadros').click(); 1")
+    esperar(aba, "!!(window.montagem.leitura && window.montagem.leitura.apontamentos.some(a => a.codigo === 'revisao_mudou'))", 30)
+    rv = aba.avaliar("window.montagem.leitura.apontamentos.filter(a => a.codigo === 'revisao_mudou').map(a => a.rotulo + ': ' + a.msg).join(' | ')")
+    ok("Locação" in (rv or "") and "1 objeto(s) novo(s)" in (rv or ""), "a pré-análise mostra o que a revisão mudou na área do quadro: %s" % (rv or "")[:160])
+    ok(aba.avaliar("!!document.querySelector('#leitura-pre .atualizar-revisao')"), "o apontamento traz \"Atualizar pela revisão\"")
+    aba.avaliar("document.querySelector('#leitura-pre .atualizar-revisao').click(); 1")
+    esperar(aba, "!!(window.montagem.leitura && !window.montagem.leitura.apontamentos.some(a => a.codigo === 'revisao_mudou' && a.rotulo === 'Locação'))", 40)
+    mont3 = json.loads(aba.avaliar(MONT))
+    locq3 = next(q for q in mont3["metadados"]["montagem"]["quadros"] if q["tipo"] == "locacao")
+    n_loc = len([e for e in mont3["entidades"] if (e.get("atributos") or {}).get("quadro") == locq3["id"]])
+    ok(n_loc == 6 and locq3["envios"][-1]["desenho"] == "planta-de-lançamento-r01",
+       "atualizado pela revisão: o quadro da locação tem o que a R01 tem na área (%d objetos) e o envio aponta para ela" % n_loc)
     aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').click(); 1"); aba.drenar(0.8)
     ok("Pranchas" in (aba.avaliar("document.querySelector('#avisos').textContent") or "") or "pranchas" in (aba.avaliar("document.querySelector('#avisos').textContent") or ""),
        "sem pranchas ainda, a aba Pranchas avisa")
