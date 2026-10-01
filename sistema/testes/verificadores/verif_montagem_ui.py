@@ -129,8 +129,9 @@ try:
     d1 = json.loads(aba.avaliar("JSON.stringify(cad.doc.get('dentro1'))"))
     ok(abs(d1["a"][0] - (terc2["x"] + 20)) < 0.5, "o que está dentro do quadro das terças andou junto com ele")
 
-    # gravado: recarrega
+    # gravado: recarrega (depois de a gravação automática terminar — senão o "Desenho não gravado" segura a página)
     aba.drenar(1.5)
+    esperar(aba, "!cad._editado && !(window.montagem && window.montagem._timer)", 60)
     aba.navegar(base + "/cad?projeto=recebido&desenho=montagem", limite=60)
     esperar(aba, "!!(window.montagem && cad.nomeDesenho === 'montagem' && cad.doc.metadados.montagem)")
     aba.drenar(0.6)

@@ -254,10 +254,15 @@ def celulas_de(desenho: Desenho, nome: str) -> List[dict]:
     celulas = [c for c in celulas + extra if c["entidades"]]
     for c in celulas:                      # a caixa real do que caiu na célula
         c["caixa"] = _caixa_de(c["entidades"], float(desenho.escala or 1.0)) or c["caixa"]
-        # título da célula: o texto mais alto dentro dela (o "P12 – 112x") — as marcas dos eixos ("1", "A"),
-        # às vezes da mesma altura, não contam
-        textos = [e for e in c["entidades"] if isinstance(e, Texto)]
-        if textos:
+        # título da célula: a primeira linha do cabeçalho dela (`cabecalho` 0); sem ele, o texto mais alto (o "P12 –
+        # 112x") — as marcas dos eixos ("1", "A"), às vezes da mesma altura, não contam, nem os títulos das chapas para
+        # corte desenhadas dentro do chumbamento ("CH5 – 11x" empatava com "CB1 + CH5 – 11x" e a prancha parecia ter
+        # a CH5 duas vezes — a falha do verif_pranchas_rota desde 30/09)
+        textos = [e for e in c["entidades"] if isinstance(e, Texto) and not (e.atributos or {}).get("chapa_de_corte")]
+        cab0 = [e for e in textos if (e.atributos or {}).get("cabecalho") == 0]
+        if cab0:
+            c["titulo"] = cab0[0].texto
+        elif textos:
             c["titulo"] = max(textos, key=lambda t: (len(str(t.texto or "").strip()) >= 4, t.altura)).texto
     return celulas
 
