@@ -142,6 +142,28 @@ try:
       ed.ativa.onPonto({ entidade: mesa.id, ponto: [100995, 25, 102.3], normal: [0, 0, 1], face: 1, tipoSnap: 'sobre_face' });
       return JSON.stringify([doc.entidades.size - antes, doc.get(mesa.id).vertices.length - nv]); })()"""))
     ok(r7 == [0, 0], f"furo que não cabe na face (5 mm da ponta) não cria nada: {r7}")
+    # 8) parafuso atravessando BARRAS do catálogo (a terça Ue em cima do banzo U, 01/10: "não furou nem a terça nem o
+    #    banzo"): cada parede atravessada ganha o marcador de furo (camada Furos), com a peça e o parafuso
+    r8 = json.loads(aba.avaliar("""JSON.stringify((() => {
+      const ed = window.editor, doc = ed.documento;
+      const banzo = doc.add({ tipo: 'barra', nome: 'U 100×40×2,00 (FF)', perfil: 'U 100×40×2,00 (FF)', camada: 'Treliças', papel: 'banzo',
+                              inicio: [90000, 0, 5000], fim: [90000, 3000, 5000], rotacao: 270, atributos: {} });
+      const terca = doc.add({ tipo: 'barra', nome: 'Ue 100×50×17×2,65', perfil: 'Ue 100×50×17×2,65', camada: 'Terças', papel: 'terça',
+                              inicio: [89000, 1500, 5100], fim: [91000, 1500, 5100], rotacao: 0, atributos: {} });
+      ed.ativarFerramenta('parafuso');
+      ed.ativa._definir({ d: 12, L: 160, classe: 'A307' });
+      ed.ativa.constructor.eixos = false;
+      ed.ativa.onPonto({ entidade: terca.id, ponto: [90000, 1500, 5160], normal: [0, 0, 1], face: 0 });
+      const marc = [...doc.entidades.values()].filter(e => e.atributos && e.atributos.furo && [banzo.id, terca.id].includes(e.atributos.furo.peca));
+      return { n: marc.length, pecas: [...new Set(marc.map(m => m.atributos.furo.peca === banzo.id ? 'banzo' : 'terça'))].sort(),
+               d: marc.map(m => m.atributos.furo.d), camada: [...new Set(marc.map(m => m.camada))] };
+    })())"""))
+    ok(r8["n"] >= 2 and r8["pecas"] == ["banzo", "terça"] and all(abs(x - 13) < 0.01 for x in r8["d"]) and r8["camada"] == ["Furos"],
+       "parafuso pela terça e pelo banzo (barras): os dois ganham o furo Ø13 (%d paredes: %s)" % (r8["n"], r8["pecas"]))
+    aba.avaliar("window.editor.desfazer(); 1"); aba.drenar(0.3)
+    sobra = aba.avaliar("[...window.editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.furo && e.camada === 'Furos' && e.atributos.furo.parafuso).length")
+    ok(sobra == 0, "Ctrl+Z tira o parafuso e os furos das barras juntos")
+
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

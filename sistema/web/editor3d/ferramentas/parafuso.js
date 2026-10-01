@@ -16,7 +16,39 @@
 
 import { Ferramenta } from './base.js';
 import * as C from './_comum.js';
-import { furosDoParafuso, cruzamentosDoEixo } from './_furar.js';
+import { furosDoParafuso, cruzamentosDoEixo, lacoDaForma } from './_furar.js';
+import { baseDaBarra } from '../nucleo/documento.js';
+
+/** Interseções da reta (x + s·dx, y + s·dy) com um polígono fechado: os valores de s. */
+function cortesDaReta(x, y, dx, dy, pts) {
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length];
+    const ex = bx - ax, ey = by - ay;
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const s = ((ax - x) * ey - (ay - y) * ex) / den;
+    const r = ((ax - x) * dy - (ay - y) * dx) / den;
+    if (r >= -1e-9 && r < 1 - 1e-9) out.push(s);
+  }
+  return out;
+}
+
+/** O marcador de furo (o tubo escuro da camada Furos, que o detalhamento lê como furo): entra em `ponto` na
+ *  direção `d` e atravessa a parede de `prof` mm — o mesmo da ferramenta Furo na barra paramétrica. */
+function marcadorDeFuro(ponto, d, prof, forma) {
+  const nn = C.mul(C.normalizar(d), -1);
+  const u = C.normalizar(C.perpendicular(nn));
+  const v = C.normalizar(C.cross(nn, u));
+  const laco = lacoDaForma(forma);
+  const topo = C.add(ponto, C.mul(nn, 0.3)), h = prof + 0.6;
+  const base = laco.map(([x, y]) => C.add(topo, C.add(C.mul(u, x), C.mul(v, y))));
+  const fundo = base.map(q => C.add(q, C.mul(nn, -h)));
+  const m = laco.length;
+  const faces = [base.map((_, i) => i), fundo.map((_, i) => 2 * m - 1 - i)];
+  for (let i = 0; i < m; i++) { const j = (i + 1) % m; faces.push([i, m + i, m + j, j]); }
+  return { vertices: [...base, ...fundo], faces };
+}
 
 //: Medida entre faces da cabeça sextavada (ISO 4017/4032) por diâmetro nominal, mm.
 const ENTRE_FACES = { 8: 13, 10: 16, 12: 18, 14: 21, 16: 24, 18: 27, 20: 30, 22: 34, 24: 36 };
@@ -606,6 +638,7 @@ export class FerramentaParafuso extends Ferramenta {
     // os furos: cada parede que o corpo atravessa (a face clicada, a mesa de baixo, a
     // chapa do suporte) ganha o furo d + 1; onde a peça já tem furo no eixo, nada muda
     const furos = furosDoParafuso(this.documento, ponto, C.mul(n, -1), L, { d: furoDoParafuso(d) }, new Set(), id);
+    const furosBarra = this._furosNasBarras(ponto, C.normalizar(C.mul(n, -1)), L, { d: furoDoParafuso(d) }, id);
     const ent = {
       tipo: 'solido', id, nome, camada: 'Parafusos', material: 'Cor #ff0000',
       visivel: true, bloqueada: false, grupo: '',
@@ -614,14 +647,64 @@ export class FerramentaParafuso extends Ferramenta {
         tipo_ifc: 'IfcMechanicalFastener',
         marcas: { perfil: nome, ...(marcas.conjunto ? { conjunto: marcas.conjunto } : {}) },
         criado_no_editor: true,
-        parafuso: { d, L, classe: classe || '', ponto: C.copiar(ponto), eixo: C.mul(n, -1), furos: furos.map(f => f.id) },
+        parafuso: { d, L, classe: classe || '', ponto: C.copiar(ponto), eixo: C.mul(n, -1), furos: [...furos.map(f => f.id), ...furosBarra.map(f => f.id)] },
       },
     };
-    const cmds = [C.cmdAdicionar(ent, 'Parafuso'), ...furos.map(f => C.cmdAlterar(f.id, f.campos, 'Furo do parafuso'))];
+    const cmds = [C.cmdAdicionar([ent, ...furosBarra], 'Parafuso'), ...furos.map(f => C.cmdAlterar(f.id, f.campos, 'Furo do parafuso'))];
     this.executar(cmds.length > 1 ? C.cmdComposto(cmds, 'Parafuso com furos') : cmds[0]);
-    const paredes = furos.reduce((s, f) => s + f.paredes, 0);
-    this.dica(`${this.rotuloAtual} colocado` + (paredes ? ` · furo Ø${num(furoDoParafuso(d))} aberto em ${paredes} parede(s) de ${furos.length} peça(s)` : ' (as peças já tinham furo no eixo)')
+    const paredes = furos.reduce((s, f) => s + f.paredes, 0) + furosBarra.length;
+    this.dica(`${this.rotuloAtual} colocado` + (paredes ? ` · furo Ø${num(furoDoParafuso(d))} aberto em ${paredes} parede(s) de ${furos.length + new Set(furosBarra.map(f => f.atributos.furo.peca)).size} peça(s)` : ' (as peças já tinham furo no eixo)')
               + ' · clique no próximo, ou troque o parafuso no painel (Esc sai)');
+  }
+
+  /**
+   * Os furos nas barras do catálogo que o corpo do parafuso atravessa (a terça, o banzo): a barra não tem malha
+   * própria para furar, então cada parede atravessada ganha o marcador de furo, como a ferramenta Furo faz — antes
+   * só a peça de malha (a chapa, o sólido) era furada (pedido do usuário, 01/10: "não furou nem a terça nem o banzo
+   * onde está posicionado o parafuso"). A parede sai da seção do perfil (a mesma que o 3D desenha) cortada pelo eixo.
+   */
+  _furosNasBarras(ponto, d, L, forma, idParafuso) {
+    const cena = this.editor && this.editor.cena;
+    if (!cena || typeof cena._secaoDoPerfil !== 'function') return [];
+    const fim = C.add(ponto, C.mul(d, L));
+    const r = forma.d / 2;
+    const marcados = [...this.documento.entidades.values()].filter(m => m.atributos && m.atributos.furo && m.atributos.furo.peca);
+    const out = [];
+    for (const e of this.documento.entidades.values()) {
+      if (e.tipo !== 'barra' || e.visivel === false || !e.inicio || !e.fim) continue;
+      // longe do eixo do parafuso: nem calcula
+      const lo = [0, 1, 2].map(i => Math.min(e.inicio[i], e.fim[i]) - 400), hi = [0, 1, 2].map(i => Math.max(e.inicio[i], e.fim[i]) + 400);
+      if ([0, 1, 2].some(i => Math.max(ponto[i], fim[i]) < lo[i] || Math.min(ponto[i], fim[i]) > hi[i])) continue;
+      const forma2 = cena._secaoDoPerfil(e.perfil);
+      if (!forma2 || typeof forma2.getPoints !== 'function') continue;
+      const poligonos = [forma2.getPoints().map(q => [q.x, q.y]), ...(forma2.holes || []).map(h => h.getPoints().map(q => [q.x, q.y]))];
+      const { t, u, v } = baseDaBarra(e.inicio, e.fim, e.rotacao || 0);
+      const rel = C.sub(ponto, e.inicio);
+      const x = C.dot(rel, u), y = C.dot(rel, v), z = C.dot(rel, t);
+      const dx = C.dot(d, u), dy = C.dot(d, v), dz = C.dot(d, t);
+      if (Math.hypot(dx, dy) < 0.3) continue;                 // parafuso ao longo da barra
+      const comp = C.dist(e.inicio, e.fim);
+      const ss = poligonos.flatMap(pts => cortesDaReta(x, y, dx, dy, pts)).sort((a, b) => a - b);
+      for (let i = 0; i + 1 < ss.length; i += 2) {
+        const s0 = ss[i], s1 = ss[i + 1];
+        if (s1 < -2 || s0 > L + 2 || s1 - s0 < 0.2) continue;
+        const zq = z + dz * s0;
+        if (zq < (e.recorte_inicio || 0) - 1 || zq > comp - (e.recorte_fim || 0) + 1) continue;
+        const q = C.add(ponto, C.mul(d, s0));
+        if (marcados.some(m => m.atributos.furo.peca === e.id && C.dist(m.atributos.furo.ponto, q) < r + 1)) continue;
+        const prof = Math.min(s1 - s0, 60);
+        const g = marcadorDeFuro(q, d, prof, forma);
+        out.push({
+          tipo: 'solido', id: C.novoId('furo'), nome: `FURO Ø${num(forma.d)}`, camada: 'Furos', material: 'Cor #1f2430',
+          visivel: true, bloqueada: false, grupo: '', vertices: g.vertices, faces: g.faces, arestas_vivas: [],
+          atributos: {
+            tipo_ifc: 'IfcOpeningElement', exportar: false, criado_no_editor: true,
+            furo: { d: forma.d, ponto: C.copiar(q), eixo: C.copiar(d), profundidade: prof, peca: e.id, parafuso: idParafuso },
+          },
+        });
+      }
+    }
+    return out;
   }
 
   cancelar() { this.limparPrevia(); C.voltarParaSelecao(this.editor); }
