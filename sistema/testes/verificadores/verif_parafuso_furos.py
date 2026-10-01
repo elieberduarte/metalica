@@ -164,6 +164,28 @@ try:
     sobra = aba.avaliar("[...window.editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.furo && e.camada === 'Furos' && e.atributos.furo.parafuso).length")
     ok(sobra == 0, "Ctrl+Z tira o parafuso e os furos das barras juntos")
 
+    # 9) "Furar pelos parafusos já colocados": um parafuso que ficou sem furo (colocado numa versão antiga) fura as duas
+    #    peças que atravessa; o furo antigo no eixo dele mas fora do corpo (a face clicada, longe da cabeça) é fechado
+    r9 = json.loads(aba.avaliar("""JSON.stringify((() => {
+      const ed = window.editor, doc = ed.documento; %s
+      const cima = caixa(70000, 0, 100, 71000, 100, 106, 'CIMA9');
+      const baixo = caixa(70000, -200, 90, 71000, 300, 100, 'BAIXO9');
+      const alto = caixa(70000, 0, 250, 71000, 100, 256, 'ALTO9');
+      // o furo errado no ALTO (no eixo do parafuso, 150 mm acima da cabeça), feito pela ferramenta Furo
+      ed.ativarFerramenta('furo'); ed.ativa.constructor.eixos = false;
+      ed.ativa.onPonto({ entidade: alto.id, ponto: [70500, 50, 256], normal: [0, 0, 1], face: 1 });
+      const nAlto = (doc.get(alto.id).atributos.furos_editor || []).length;
+      doc.add({ tipo: 'solido', nome: 'BOLT (A325) 12x30', camada: 'Parafusos', vertices: [[70500,50,106],[70501,50,106],[70500,51,106]], faces: [[0,1,2]],
+                arestas_vivas: [], atributos: { parafuso: { d: 12, L: 30, classe: 'A325', ponto: [70500, 50, 106], eixo: [0, 0, -1] } } });
+      ed.ativarFerramenta('parafuso');
+      ed.ativa.furarPelosColocados();
+      const c = doc.get(cima.id), b = doc.get(baixo.id), al = doc.get(alto.id);
+      return { nAlto, cima: (c.atributos.furos_editor || []).length, baixo: (b.atributos.furos_editor || []).length,
+               alto: (al.atributos.furos_editor || []).length };
+    })())""" % CAIXA))
+    ok(r9["nAlto"] == 1 and r9["cima"] == 1 and r9["baixo"] == 1 and r9["alto"] == 0,
+       "furar pelos já colocados: as duas peças da ligação furadas e o furo errado de cima fechado (%s)" % r9)
+
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

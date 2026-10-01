@@ -16,7 +16,7 @@
 
 import { Ferramenta } from './base.js';
 import * as C from './_comum.js';
-import { furosDoParafuso, cruzamentosDoEixo, lacoDaForma } from './_furar.js';
+import { furosDoParafuso, cruzamentosDoEixo, lacoDaForma, refazerFurosEditor } from './_furar.js';
 import { baseDaBarra } from '../nucleo/documento.js';
 
 /** Interseções da reta (x + s·dx, y + s·dy) com um polígono fechado: os valores de s. */
@@ -336,6 +336,12 @@ export class FerramentaParafuso extends Ferramenta {
              el('label', { texto: 'Classe' }), selC,
              el('label', { texto: 'Eixos da face' }), el('span', {}, eixos, ' mostrar e prender'));
     raiz.append(g);
+    const colocados = this._colocados();
+    if (colocados.length) {
+      raiz.append(el('div', { class: 'acoes' }, el('button', { type: 'button', texto: `Furar pelos parafusos já colocados (${colocados.length})`,
+        title: 'Abre o furo em toda peça que cada parafuso atravessa e ainda não tem furo no eixo (malha e barra do catálogo) — para os colocados antes da furação completa; Ctrl+Z desfaz tudo',
+        onclick: () => this.furarPelosColocados() })));
+    }
     const usados = this._usadosNoModelo();
     if (usados.length) {
       const box = el('div', { class: 'acoes' });
@@ -663,14 +669,15 @@ export class FerramentaParafuso extends Ferramenta {
    * só a peça de malha (a chapa, o sólido) era furada (pedido do usuário, 01/10: "não furou nem a terça nem o banzo
    * onde está posicionado o parafuso"). A parede sai da seção do perfil (a mesma que o 3D desenha) cortada pelo eixo.
    */
-  _furosNasBarras(ponto, d, L, forma, idParafuso) {
+  _furosNasBarras(ponto, d, L, forma, idParafuso, documento = null) {
+    documento = documento || this.documento;
     const cena = this.editor && this.editor.cena;
     if (!cena || typeof cena._secaoDoPerfil !== 'function') return [];
     const fim = C.add(ponto, C.mul(d, L));
     const r = forma.d / 2;
-    const marcados = [...this.documento.entidades.values()].filter(m => m.atributos && m.atributos.furo && m.atributos.furo.peca);
+    const marcados = [...documento.entidades.values()].filter(m => m.atributos && m.atributos.furo && m.atributos.furo.peca);
     const out = [];
-    for (const e of this.documento.entidades.values()) {
+    for (const e of documento.entidades.values()) {
       if (e.tipo !== 'barra' || e.visivel === false || !e.inicio || !e.fim) continue;
       // longe do eixo do parafuso: nem calcula
       const lo = [0, 1, 2].map(i => Math.min(e.inicio[i], e.fim[i]) - 400), hi = [0, 1, 2].map(i => Math.max(e.inicio[i], e.fim[i]) + 400);
@@ -705,6 +712,75 @@ export class FerramentaParafuso extends Ferramenta {
       }
     }
     return out;
+  }
+
+  /** Os parafusos que já estão no modelo (colocados no editor): os que pedem furo. */
+  _colocados() {
+    return [...this.documento.entidades.values()].filter(e => e.visivel !== false && e.atributos && e.atributos.parafuso
+      && Array.isArray(e.atributos.parafuso.ponto) && Array.isArray(e.atributos.parafuso.eixo) && e.atributos.parafuso.L > 0);
+  }
+
+  /**
+   * Fura de novo pelos parafusos já colocados: cada um abre o furo d+1 em toda parede que o corpo dele atravessa e
+   * ainda não tem furo no eixo (a peça de malha e a barra do catálogo) — os colocados numa versão que furava menos
+   * (os da Sala, de 28/09, furaram só o U150 de cima; pedido do usuário, 01/10). Um comando só: Ctrl+Z desfaz tudo.
+   */
+  furarPelosColocados() {
+    const lista = this._colocados();
+    if (!lista.length) { this.dica('Nenhum parafuso colocado no editor neste modelo.'); return; }
+    // o documento como vai ficando: cada parafuso fura em cima do que os anteriores já furaram
+    const mapa = new Map(this.documento.entidades);
+    const doc = { entidades: mapa, get: (id) => mapa.get(id) };
+    const alterados = new Map(), novos = [], furosDe = new Map();
+    // o furo no eixo de um parafuso mas FORA do corpo dele (a ferramenta antiga furava a face clicada, ~150 mm acima
+    // da cabeça, e não a ligação): sai — a peça é refeita sem ele, quando guardou a malha de antes do furo
+    const foraDoCorpo = (r) => lista.some(pf => {
+      const a = pf.atributos.parafuso, d = C.normalizar(a.eixo);
+      const w = C.sub(r.ponto, a.ponto), s = C.dot(w, d);
+      return C.comp(C.sub(w, C.mul(d, s))) < 1.5 && (s < -3 || s > a.L + 3);
+    });
+    let tirados = 0, presos = 0;
+    for (const e of [...mapa.values()]) {
+      const regs = e.atributos && e.atributos.furos_editor;
+      if (!regs || !regs.length) continue;
+      const fora = regs.filter(foraDoCorpo);
+      if (!fora.length) continue;
+      const fica = regs.filter(r => !fora.includes(r));
+      const refeito = refazerFurosEditor(e, fica);
+      if (!refeito) { presos += fora.length; continue; }
+      const campos = { vertices: refeito.vertices, faces: refeito.faces, atributos: { ...e.atributos, furos_editor: refeito.registros } };
+      mapa.set(e.id, { ...e, ...campos });
+      alterados.set(e.id, campos);
+      tirados += fora.length;
+    }
+    for (const pf of lista) {
+      const a = pf.atributos.parafuso;
+      const forma = { d: furoDoParafuso(a.d || 12) };
+      const d = C.normalizar(a.eixo);
+      const fs = furosDoParafuso(doc, a.ponto, d, a.L, forma, new Set([pf.id]), pf.id);
+      for (const f of fs) {
+        const e = { ...mapa.get(f.id), ...f.campos };
+        mapa.set(f.id, e);
+        alterados.set(f.id, { ...(alterados.get(f.id) || {}), ...f.campos });
+      }
+      const fb = this._furosNasBarras(a.ponto, d, a.L, forma, pf.id, doc);
+      for (const m of fb) { mapa.set(m.id, m); novos.push(m); }
+      const ids = [...fs.map(f => f.id), ...fb.map(f => f.id)];
+      if (ids.length) furosDe.set(pf.id, ids);
+    }
+    const aviso = presos ? ` · ${presos} furo(s) antigo(s) fora do corpo do parafuso não puderam ser fechados (a peça não guardou a malha de antes do furo)` : '';
+    if (!alterados.size && !novos.length) { this.dica(`Os ${lista.length} parafusos já têm os furos em todas as peças que atravessam${aviso}.`); return; }
+    const cmds = [];
+    if (novos.length) cmds.push(C.cmdAdicionar(novos, 'Furos nas barras'));
+    for (const [id, campos] of alterados) cmds.push(C.cmdAlterar(id, campos, 'Furo do parafuso'));
+    for (const [id, ids] of furosDe) {
+      const pf = this.documento.get(id);
+      const ant = (pf.atributos.parafuso.furos || []);
+      cmds.push(C.cmdAlterar(id, { atributos: { ...pf.atributos, parafuso: { ...pf.atributos.parafuso, furos: [...new Set([...ant, ...ids])] } } }, 'Furos do parafuso'));
+    }
+    this.executar(C.cmdComposto(cmds, 'Furar pelos parafusos colocados'));
+    this.dica(`Furos abertos: ${alterados.size} peça(s) de malha e ${novos.length} parede(s) de barra, por ${furosDe.size} dos ${lista.length} parafusos`
+      + (tirados ? ` · ${tirados} furo(s) errado(s), fora do corpo do parafuso, fechado(s)` : '') + aviso + ' (Ctrl+Z desfaz tudo).');
   }
 
   cancelar() { this.limparPrevia(); C.voltarParaSelecao(this.editor); }
