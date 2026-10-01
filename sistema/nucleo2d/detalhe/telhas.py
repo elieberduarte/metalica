@@ -33,6 +33,13 @@ COBRIMENTO_TERCA = 150.0
 #: dobra: o raio do detalhe é este, e o do modelo fica anotado.
 RAIO_INTERNO_COMERCIAL = 450.0
 
+
+def altura_nominal_da_onda(perfil: str, medida: float) -> float:
+    """A altura da onda pelo nome da telha ("TELHA TP40 0.65MM" → 40); sem o número no nome, a medida no modelo
+    arredondada ao milímetro."""
+    m = re.search(r"(?<![A-Z])TP\s*(\d{2,3})(?!\d)", str(perfil or ""), re.I)
+    return float(m.group(1)) if m else float(round(medida))
+
 #: Saia (regra da fábrica): a telha de fachada e a reta da parede da multi-dobra descem 150 mm
 #: abaixo da última longarina.
 SAIA_TELHA = 150.0
@@ -233,15 +240,19 @@ def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
         cobrimento["resto"] = arredondar_telha(cobrimento["resto"])
     apoios = _apoios_no_perfil(barras, med, w, a, b, p1, t1_, t2_, p2, R, 1 if theta > 0 else -1, d1) if barras else []
     h = sorted(altura_onda)[len(altura_onda) // 2]
-    R_int, R_ext = R - h / 2, R + h / 2
+    e_longa = reta2["e"] if reta2["L"] >= reta1["L"] else reta1["e"]
+    m0 = _marcas(e_longa)
+    # o raio externo é o interno comercial mais a altura nominal da onda (TP40: 450 + 40 = R490), inteiro, como a
+    # fábrica dobra — o modelo dava 40,7 de onda e a prancha escrevia "R490,7" e "ext. 491" (o usuário corrigiu
+    # à mão para R490, 01/10); o arco e o desenvolvido externos seguem esse raio
+    R_int = R - h / 2
+    R_ext = R_int + altura_nominal_da_onda(str(m0.get("perfil") or e_longa.nome or ""), h)
     peso = sum(_volume(e) for e in inst) * RHO_ACO
     arco_mid = R * abs(theta)
     peso_mm = peso / max(desenv_modelo + arco_mid, 1.0)      # kg por mm de telha desenvolvida
     peso = peso_mm * (L1 + L2 + arco_mid)
     if cobrimento:
         cobrimento["peso"] = round(peso_mm * cobrimento["resto"], 3)
-    e_longa = reta2["e"] if reta2["L"] >= reta1["L"] else reta1["e"]
-    m0 = _marcas(e_longa)
     from nucleo2d.detalhe.base import _material
     return {"reta1": round(L1, 1), "reta2": round(L2, 1), "raio": round(R, 1), "raio_int": round(R_int, 1),
             "raio_ext": round(R_ext, 1), "angulo": round(math.degrees(abs(theta)), 2), "altura_onda": round(h, 1),
@@ -456,7 +467,7 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
         rot_r = math.degrees(math.atan2(my - cy, mx - cx))
         rot_r = (rot_r + 90.0) % 180.0 - 90.0
         p.texto((cx + mx) / 2 - 1.2 * esc * math.sin(math.radians(rot_r)), (cy + my) / 2 + 1.2 * esc * math.cos(math.radians(rot_r)),
-                "R%s" % num(raio_v, 1), 2.2 * esc, angulo=rot_r, alinhamento="centro")
+                "R%d" % round(raio_v), 2.2 * esc, angulo=rot_r, alinhamento="centro")
         # o quadro e o título dele (duas linhas centradas, o desenvolvido em metros)
         p.retangulo(ox - margem, -margem, larg + 2 * margem, topo_q + margem, "AUXILIAR")
         cxq = ox + larg / 2

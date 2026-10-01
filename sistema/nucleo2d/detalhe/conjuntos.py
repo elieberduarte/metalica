@@ -2012,6 +2012,21 @@ def _alma_em_eixo(desenho: Desenho, entidades: Sequence, alma: Dict[str, Tuple[t
     return [q for ab in feitas for q in ab]
 
 
+def _alturas_da_cadeia(ys: Sequence[float], extra: Sequence[float], minimo: float = 60.0) -> List[float]:
+    """As alturas da cadeia de uma ponta com as dos nós (`extra`): a base e o topo ficam; as do meio a mais de
+    `minimo` de cada vizinha (degrau menor não é medida de marcar)."""
+    if len(ys) < 2:
+        return list(ys)
+    base, topo = ys[0], ys[-1]
+    meio = sorted(set(round(y, 1) for y in list(ys[1:-1]) + list(extra) if base < y < topo))
+    saida = [base]
+    for y in meio:
+        if y - saida[-1] >= minimo and topo - y >= minimo:
+            saida.append(y)
+    saida.append(topo)
+    return saida
+
+
 def _pontas_da_trelica(segs: Sequence[tuple], quinas: Sequence[tuple], nos: Sequence[tuple], dx: float, dy: float,
                        larg: float, alt: float, trechos_cima: Sequence[tuple], trechos_baixo: Sequence[tuple]) -> List[dict]:
     """As duas pontas da treliça para as cotas de produção (em coordenadas da célula). A zona da ponta
@@ -2105,7 +2120,10 @@ def _pontas_da_trelica(segs: Sequence[tuple], quinas: Sequence[tuple], nos: Sequ
                 ux, uy = (b2[0] - a2[0]) / L, (b2[1] - a2[1]) / L
                 sinal = 1.0 if (-uy) * (mx - cx) + ux * (my - cy) > 0 else -1.0
                 chanfro, melhor = (a2, b2, sinal), dist_c
-        fora.append({"lado": lado, "face": face, "xs": xs, "ys": ys, "base": base, "topo": topo, "chanfro": chanfro})
+        # as alturas dos nós junto da face (onde as travessas chegam na coluna da ponta): o DP as cota em cadeia
+        ys_nos = sorted({round(q[1], 1) for q in nz if abs(q[0] - face) <= 600.0 and base + 1.0 < q[1] < topo - 1.0})
+        fora.append({"lado": lado, "face": face, "xs": xs, "ys": ys, "base": base, "topo": topo, "chanfro": chanfro,
+                     "ys_nos": ys_nos})
     return fora
 
 
@@ -2806,17 +2824,39 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         maior = 0.0
         ponta_dir = None                                  # (x da face, deslocamento da cota mais de fora)
         cotadas_ys = []
+        if tipo == "conjunto":
+            # no DP, a cadeia de cada ponta passa também pelas travessas que chegam na coluna dela (base → travessa →
+            # topo): na face da coluna principal do DP.3 da Sala só saía a total 1361, e o usuário cotou à mão 498 +
+            # 800 (01/10); a mais de 60 mm uma da outra, como as quinas
+            # a coluna (montante) da ponta que desce abaixo da treliça entra na cadeia: do pé dela à base da
+            # treliça e daí ao topo (no DP.3 da Sala, o W150 a 500 mm abaixo do banzo de baixo — 498 à mão)
+            monts = [e for e in desenho.entidades.values() if isinstance(e, Linha)
+                     and str(e.camada or "").startswith("MONTANTES") and (e.atributos or {}).get("conjunto") == marca]
+            for pt in pontas:
+                ys_m = [q[1] - dy for e in monts for q in (e.a, e.b)
+                        if abs((e.a[0] + e.b[0]) / 2.0 - dx - pt["face"]) <= 300.0]
+                extra = list(pt.get("ys_nos") or [])
+                ys_pt = list(pt["ys"])
+                pt["ys_trelica"] = _alturas_da_cadeia(list(ys_pt), extra)       # o trecho da treliça, para comparar
+                if ys_m and ys_pt and min(ys_m) < ys_pt[0] - 60.0:
+                    ys_pt = [round(min(ys_m), 1)] + ys_pt
+                    # a total dessa ponta é a altura da coluna, que já sai cotada com ela (o montante, mais abaixo)
+                    pt["com_coluna"] = True
+                pt["ys"] = _alturas_da_cadeia(ys_pt, extra)
         for pt in pontas:
-            if tipo == "conjunto" and any(len(ys_) == len(pt["ys"]) and all(abs(a_ - b_) <= 2.0 for a_, b_ in zip(ys_, pt["ys"]))
-                                          for ys_ in cotadas_ys):
+            ys_cmp = pt.get("ys_trelica") or pt["ys"]
+            if tipo == "conjunto" and not pt.get("com_coluna") and any(
+                    len(ys_) == len(ys_cmp) and all(abs(a_ - b_) <= 2.0 for a_, b_ in zip(ys_, ys_cmp)) for ys_ in cotadas_ys):
                 # o DP estreito: as duas pontas são o mesmo trecho, e a mesma altura saía dos dois lados (423 |
-                # 423 nos DP.37 a DP.41 do depósito, análise das pranchas de 29/09)
+                # 423 nos DP.37 a DP.41 do depósito, análise das pranchas de 29/09); a ponta com a coluna sai sempre
+                # (a cadeia dela começa no pé da coluna)
                 continue
-            cotadas_ys.append(list(pt["ys"]))
+            cotadas_ys.append(list(ys_cmp))
             sg = 1.0 if pt["lado"] > 0 else -1.0
             desl0 = abs((larg if pt["lado"] > 0 else 0.0) - pt["face"]) / esc     # a chapa além da face
             nv = 1 if len(pt["ys"]) > 2 and p.cadeia_v(pt["ys"], pt["face"], sg * (off + desl0), exigir_espaco=False) else 0
-            p.cota_v(pt["ys"][0], pt["ys"][-1], pt["face"], sg * (off * (nv + 1) + desl0))
+            if not pt.get("com_coluna"):
+                p.cota_v(pt["ys"][0], pt["ys"][-1], pt["face"], sg * (off * (nv + 1) + desl0))
             if pt["lado"] > 0:
                 ponta_dir = (pt["face"], off * (nv + 1) + desl0)
             maior = max(maior, pt["ys"][-1] - pt["ys"][0])

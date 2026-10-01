@@ -639,13 +639,22 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 y_ = uy1 - QUADRO_CABECALHO - FOLGA
                 grupo_ = [c_ for c_ in fila if c_["categoria"] == cat_]
                 antes_ = len(cels_p)
-                while grupo_:
+                # as fileiras de antes (na ordem, cada uma até encher a largura) e a célula sozinha numa fileira
+                # descendo para o vão de outra em que caiba (_realocar_sozinhas)
+                linhas_, resto_ = [], list(grupo_)
+                while resto_:
                     linha_, x_ = [], x0_ + QUADRO_MARGEM
-                    for c_ in grupo_:
+                    for c_ in resto_:
                         if linha_ and x_ + c_["w"] > x1_ - QUADRO_MARGEM:
                             break
                         linha_.append(c_)
                         x_ += c_["w"] + FOLGA
+                    linhas_.append(linha_)
+                    resto_ = resto_[len(linha_):]
+                if sum(max(c_["h"] for c_ in l_) + FOLGA for l_ in linhas_) <= y_ - uy0 + FOLGA:
+                    # só quando tudo cabe no quadro: a célula que desce não pode cair para a prancha seguinte
+                    linhas_ = _realocar_sozinhas(linhas_, (x1_ - QUADRO_MARGEM) - (x0_ + QUADRO_MARGEM), FOLGA)
+                for linha_ in linhas_:
                     alt_ = max(c_["h"] for c_ in linha_)
                     if y_ - alt_ < uy0 and any(x["categoria"] == cat_ for x in cels_p):
                         break
@@ -926,6 +935,26 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                             break
                     else:
                         candidatas = antes_c
+            if tem_legenda and not indice_p:
+                # a letra da legenda: a maior de LETRAS_LEGENDA cuja caixa (mais larga, tirando dos DETALHES — o
+                # usuário aceitou, 01/10) não deixa de fora da faixa nenhum detalhe que coube com a letra de antes e
+                # não passa de 0,6 da faixa; nenhuma serve, fica a de antes
+                for h_ in LETRAS_LEGENDA:
+                    leg_h = dict(leg, h=h_)
+                    larg_h = _legenda(None, leg_h, 0.0, fy0, fy1, [], {})
+                    if larg_h > 0.6 * (fx1 - fx0):
+                        continue
+                    dx1_antes = dx1
+                    dx1 = fx1 - larg_h - FOLGA
+                    postos_h, fy1_h = por_na_faixa() if larg_h > larg_leg + 0.01 else (postos, fy1_p)
+                    # os mesmos detalhes (não só a mesma quantidade): a cópia que saía trocada por outra sumia da
+                    # prancha (a P31 do depósito, 01/10)
+                    if {id(c_) for c_, _x, _y in postos_h} >= {id(c_) for c_, _x, _y in postos}:
+                        leg["h"] = h_
+                        leg["x0"], larg_leg = fx1 - larg_h, larg_h
+                        postos, fy1_p = postos_h, fy1_h
+                        break
+                    dx1 = dx1_antes
             na_faixa = []
             postos_ids = {id(c) for c, _x, _y in postos}
             for c, px_, py_ in postos:
@@ -992,6 +1021,12 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 # ACESSÓRIOS sai da faixa — o original volta para a fila, a cópia local só sai (o S.TI.2 do depósito
                 # invadia a legenda, 29/09) — e a legenda é refeita sem ele
                 fora_f = [c for c in na_faixa if c.get("px") is not None and c["px"] + c["w"] > dx1 - QUADRO_MARGEM + 0.5]
+                if fora_f and leg.get("h"):
+                    # antes de tirar um detalhe da faixa, a letra da legenda volta à de antes
+                    leg.pop("h")
+                    leg["x0"] = fx1 - min(_legenda(None, leg, 0.0, fy0, fy1, [], {}), 0.6 * (fx1 - fx0))
+                    dx1 = leg["x0"] - FOLGA
+                    fora_f = [c for c in na_faixa if c.get("px") is not None and c["px"] + c["w"] > dx1 - QUADRO_MARGEM + 0.5]
                 if fora_f:
                     for c in fora_f:
                         na_faixa.remove(c)
@@ -1177,6 +1212,14 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         d.metadados["prancha"]["conteudo"] = _conteudo_de(cels)
         leg = legendas[i0 - 1]
         if leg["blocos"]:
+            # a legenda refeita depois (outra prancha juntou-se a esta) pode não caber mais na caixa na letra escolhida:
+            # a letra desce até caber, ou volta à de antes
+            while leg.get("h") and _legenda(None, leg, 0.0, fy0, leg.get("y1", fy1), [], {}) > fx1 - leg["x0"] + 0.01:
+                menores = [h_ for h_ in LETRAS_LEGENDA if h_ < leg["h"]]
+                if menores:
+                    leg["h"] = menores[0]
+                else:
+                    leg.pop("h")
             _legenda(d, leg, leg["x0"], fy0, leg.get("y1", fy1), [], onde, largura=fx1 - leg["x0"])
         elif leg.get("indice"):
             rel_i = []
@@ -1204,11 +1247,46 @@ MARGEM_CAIXA_DETALHE = 2.0
 #: Na paginação das telhas, a chapa mais estreita que isto no papel (mm) faz a face densa: das chapas iguais em
 #: sequência, só a primeira leva o nome e a cota (o usuário apagou as outras à mão nas FACES 2 E 3 da Sala, 01/10).
 LARGURA_CHAPA_DENSA = 12.0
+#: As letras da legenda da prancha (mm), da maior para a menor: a prancha usa a maior em que a legenda cabe sem tirar
+#: detalhe da faixa — o usuário a deixou com 3,9 mm (título 4,9) à mão na Sala, 01/10; o piso é a de antes.
+LETRAS_LEGENDA = (3.9, 3.5, 3.0, 2.5)
 #: A largura útil da telha (mm) — a mesma de `nucleo2d.detalhe.base.LARGURA_COMPRA_TELHA`, sem importar o detalhamento.
 LARGURA_TELHA_UTIL = 980.0
 #: Dentro da caixa: o vão do cabeçalho ao desenho e do desenho à escala, e a altura do texto da escala.
 VAO_ARRANJO = 3.0
 ALTURA_ESCALA = 2.0
+
+
+def _realocar_sozinhas(linhas: List[List[dict]], largura: float, vao: float) -> List[List[dict]]:
+    """A célula sozinha numa fileira vai para o vão de outra fileira do quadro em que caiba na largura, quando isso
+    economiza altura (a fileira dela some; a outra cresce no máximo até a altura dela): o usuário levou à mão a
+    A.C.1 / A.L.* da fileira de cima para o lado de BR1 e G.1 na prancha 5 da Sala (30/09). Vai para o fim da
+    fileira de destino; entre várias, a que mais economiza."""
+    linhas = [list(l_) for l_ in linhas if l_]
+    mudou = True
+    while mudou and len(linhas) > 1:
+        mudou = False
+        for i, l_ in enumerate(linhas):
+            if len(l_) != 1:
+                continue
+            c = l_[0]
+            melhor = None
+            for j, t in enumerate(linhas):
+                if j == i:
+                    continue
+                larg_t = sum(x["w"] for x in t) + vao * (len(t) - 1)
+                if larg_t + vao + c["w"] > largura + 0.01:
+                    continue
+                h_t = max(x["h"] for x in t)
+                ganho = (c["h"] + vao) - max(0.0, c["h"] - h_t)
+                if ganho > 0.5 and (melhor is None or ganho > melhor[0]):
+                    melhor = (ganho, j)
+            if melhor is not None:
+                linhas[melhor[1]].append(c)
+                del linhas[i]
+                mudou = True
+                break
+    return linhas
 
 
 def _arranjo(c: dict):
@@ -2597,23 +2675,18 @@ def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tu
     folga = 4.0
     # os blocos um embaixo do outro quando cabem na altura (a legenda fica estreita e sobra largura para
     # os DETALHES — pedido do usuário, 28/09: "reduzir bastante o tamanho")
-    # a letra maior quando cabe (pedido do usuário, 28/09: "aumentar o tamanho do texto")
-    # ao desenhar numa caixa já medida (`largura`), a maior letra que cabe nela, de 4,0 a 2,0 mm, com as linhas a
-    # 1,45 × a letra (o usuário aumentou a letra da legenda à mão de novo, 01/10: 2,0 → 3,9 mm); a medida (sem `d`)
-    # segue as duas de antes, para a caixa da legenda não crescer e roubar o lugar dos detalhes
-    opcoes = [(3.0, 4.4, 3.5, 4.0), (2.0, 3.2, 2.5, 3.0)]
-    if d is not None and largura is not None:
-        opcoes = [(h_, round(1.45 * h_, 2), h_ + 0.5, h_ + 1.0) for h_ in (4.0, 3.75, 3.5, 3.25, 3.0, 2.75, 2.5, 2.25)] \
-            + [(2.0, 3.2, 2.5, 3.0)]
+    # a letra maior quando cabe (pedido do usuário, 28/09: "aumentar o tamanho do texto").
+    # `leg["h"]`: a letra escolhida pela prancha (LETRAS_LEGENDA — o usuário a quer de ~3,9 mm, 01/10, mesmo tirando
+    # largura dos detalhes), com as linhas a 1,45 × a letra e o título a 1,25 × — a mesma ao medir e ao desenhar;
+    # sem ela, as duas de antes
+    h_leg = leg.get("h")
+    if h_leg:
+        opcoes = [(h_leg, round(1.45 * h_leg, 2), round(1.25 * h_leg, 2), h_leg + 1.0)]
+    else:
+        opcoes = [(3.0, 4.4, 3.5, 4.0), (2.0, 3.2, 2.5, 3.0)]
     for h_l, passo_t, h_t, gap_v in opcoes:
         alturas = [h_t + 2.5 + len(l) * passo_t + (passo_t if c else 0.0) for t, l, c in blocos]
         if len(blocos) > 1 and sum(alturas) + gap_v * (len(blocos) - 1) <= topo - base:
-            if d is not None and largura is not None and h_l > 2.0:
-                # a letra maior só se a coluna mais larga couber na caixa
-                larg_m = max(_tabela(None, 0.0, a_ + 0.5, 0.0, t, l, cabecalho=c, passo=passo_t, h=h_l, h_tit=h_t)
-                             for (t, l, c), a_ in zip(blocos, alturas))
-                if larg_m + 2 * QUADRO_MARGEM > largura + 0.01:
-                    continue
             x = x0 + QUADRO_MARGEM
             y_ = topo
             larg_max = 0.0
@@ -2621,7 +2694,9 @@ def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tu
                 larg_max = max(larg_max, _tabela(d, x, y_, y_ - a_ - 0.5, t, l, cabecalho=c, passo=passo_t, h=h_l, h_tit=h_t))
                 y_ -= a_ + gap_v
             return larg_max + 2 * QUADRO_MARGEM
-    naturais = [_tabela(None, 0.0, topo, base, t, l, cabecalho=c) for t, l, c in blocos]
+    # lado a lado (os blocos não cabem um embaixo do outro): na letra escolhida, em colunas pela altura
+    tab = ({"h": h_leg, "passo": round(1.45 * h_leg, 2), "h_tit": round(1.25 * h_leg, 2)} if h_leg else {})
+    naturais = [_tabela(None, 0.0, topo, base, t, l, cabecalho=c, **tab) for t, l, c in blocos]
     limites = [None] * len(blocos)
     if largura is not None:
         disponivel = largura - 2 * QUADRO_MARGEM - folga * max(0, len(blocos) - 1)
@@ -2633,10 +2708,10 @@ def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tu
             if usadas[i] > sobra:
                 limites[i] = max(sobra, 1.0)
                 usadas[i] = _tabela(None, 0.0, topo, base, blocos[i][0], blocos[i][1], cabecalho=blocos[i][2],
-                                    max_larg=limites[i])
+                                    max_larg=limites[i], **tab)
     x = x0 + QUADRO_MARGEM
     for (t, l, c), lim in zip(blocos, limites):
-        x += _tabela(d, x, topo, base, t, l, cabecalho=c, max_larg=lim) + folga
+        x += _tabela(d, x, topo, base, t, l, cabecalho=c, max_larg=lim, **tab) + folga
     return x - x0 + QUADRO_MARGEM - folga
 
 
