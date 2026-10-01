@@ -128,6 +128,24 @@ try:
     ok(abs(r[0][0] - 3.13) < 0.02 and abs(passo - 3.2 * 1.5625) < 0.05 and r[0][1:] == [20000, 20000],
        "A+ duas vezes em 4 textos: letra 2,0 → %.2f e as linhas se afastam junto (passo %.2f mm), o canto de cima fica" % (r[0][0], passo))
     ok(abs((r[3][1] - r[0][1]) / js("return c.doc.escala;") - 40 * 1.5625) < 0.1, "e a coluna do lado se afasta na mesma proporção: %s" % r)
+    # G. duplo clique num texto edita ali mesmo (01/10)
+    js("""c.doc.add({ id: 'tdc', tipo: 'texto', camada: 'TEXTO', posicao: [50000, 50000], texto: 'CB1 + CH9', altura: 3.5 });
+          c.tela.enquadrar([[49500, 49500], [52000, 51500]]); c.ativarFerramenta('selecionar'); return 1;""")
+    aba.drenar(0.4)
+    js("""const cv = c.tela.canvas || document.querySelector('#canvas2d'); const r = cv.getBoundingClientRect();
+          const q = c.tela.paraTela([50000 + 300, 50000 + 30]);
+          cv.dispatchEvent(new MouseEvent('dblclick', { clientX: r.left + q[0], clientY: r.top + q[1], button: 0, bubbles: true })); return 1;""")
+    aba.drenar(0.3)
+    ok(js("return !!document.querySelector('.editar-texto-no-lugar') && document.querySelector('.editar-texto-no-lugar').value;") == "CB1 + CH9",
+       "duplo clique no texto abre a edição no lugar, com o texto dele")
+    js("""const i = document.querySelector('.editar-texto-no-lugar'); i.value = 'CB1 + CH9 (2x)';
+          i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return 1;""")
+    aba.drenar(0.3)
+    ok(js("return c.doc.get('tdc').texto;") == "CB1 + CH9 (2x)" and not js("return !!document.querySelector('.editar-texto-no-lugar');"),
+       "Enter grava o texto novo e fecha a caixa")
+    js("c.desfazer(); return 1;")
+    ok(js("return c.doc.get('tdc').texto;") == "CB1 + CH9", "Ctrl+Z volta o texto")
+
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")
     for t, x in erros[:6]: print("     [%s] %s" % (t, x[:300]))

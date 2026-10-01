@@ -743,7 +743,14 @@ class CAD {
       // a janela de seleção em curso acompanha o zoom: o primeiro canto fica no ponto do desenho clicado
       if (pressao && this.tela.retangulo) { this.tela.retangulo = [this.tela.paraTela(pressao.mundo), px(ev)]; this.tela.pedirQuadro(); }
     }, { passive: false });
-    c.addEventListener('dblclick', (ev) => { if (ev.button === 1) this.tela.enquadrar(); });
+    c.addEventListener('dblclick', (ev) => {
+      if (ev.button === 1) { this.tela.enquadrar(); return; }
+      // duplo clique num texto, chamada ou cota: edita o texto ali mesmo (pedido do usuário, 01/10)
+      if (ev.button === 0 && this.ferramenta && this.ferramenta.constructor.id === 'selecionar') {
+        const e = this.tela.sob(px(ev));
+        if (e && (e.tipo === 'texto' || e.tipo === 'chamada' || e.tipo === 'cota')) { ev.preventDefault(); this.editarTextoNoLugar(e); }
+      }
+    });
     c.addEventListener('pointerleave', () => { this.tela.cursor = null; this.tela.snap = null; this.tela.pedirQuadro(); });
   }
 
@@ -1697,6 +1704,46 @@ class CAD {
         title: 'Seleciona todos iguais a este na mesma camada, para mudar o tamanho de todos de uma vez',
         onclick: () => this.selecionar([...this.doc.entidades.values()].filter(o => o.tipo === e.tipo && o.camada === e.camada && this.doc.visivel(o)).map(o => o.id)) })));
     }
+  }
+
+  /** O texto da entidade editado no lugar dela: uma caixa por cima do desenho, na posição e no tamanho do texto;
+   *  Enter (ou sair da caixa) grava, Esc cancela — um comando só, Ctrl+Z desfaz. Na cota, vazio volta à medida. */
+  editarTextoNoLugar(e) {
+    const tela = this.tela;
+    const onde = e.tipo === 'cota' ? (e.texto_pos || [(e.p1[0] + e.p2[0]) / 2, (e.p1[1] + e.p2[1]) / 2]) : e.posicao;
+    if (!onde) return;
+    const [x, y] = tela.paraTela(onde);
+    const alturaPx = Math.max(12, Math.min(48, (+e.altura || 2.5) * this.doc.escala * tela.vp.z));
+    const antes = e.texto == null ? '' : String(e.texto);
+    const caixa = document.createElement('input');
+    caixa.className = 'editar-texto-no-lugar';
+    caixa.value = antes;
+    caixa.spellcheck = false;
+    Object.assign(caixa.style, { position: 'absolute', left: Math.round(x - 4) + 'px', top: Math.round(y - alturaPx * 1.15) + 'px',
+      fontSize: Math.round(alturaPx) + 'px', minWidth: Math.max(80, antes.length * alturaPx * 0.62 + 24) + 'px', zIndex: 6,
+      padding: '1px 4px', border: '1.5px solid var(--destaque, #2563eb)', borderRadius: '3px',
+      background: 'var(--painel, #111)', color: 'var(--texto, #eee)', font: 'inherit', fontSize: Math.round(alturaPx) + 'px' });
+    const palco = document.querySelector('#palco') || document.body;
+    palco.append(caixa);
+    caixa.focus(); caixa.select();
+    let feito = false;
+    const fechar = (gravar) => {
+      if (feito) return;
+      feito = true;
+      const novo = caixa.value;
+      caixa.remove();
+      if (gravar && novo !== antes) {
+        const valor = e.tipo === 'cota' && !novo.trim() ? null : novo;
+        this.executar(new ComandoAlterar({ [e.id]: { texto: valor } }, 'Editar texto'));
+      }
+      this.tela.pedirQuadro();
+    };
+    caixa.addEventListener('keydown', (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') { ev.preventDefault(); fechar(true); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); fechar(false); }
+    });
+    caixa.addEventListener('blur', () => fechar(true));
   }
 
   aplicarEstilos(opcoes, ids = null) {
