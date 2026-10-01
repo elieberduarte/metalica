@@ -603,6 +603,19 @@ def multidobras(pecas: Sequence) -> Dict[str, object]:
 #: Perna de cumeeira mais comprida que isto (mm) não é cumeeira: é telha que se apoia.
 PERNA_MAX_CUMEEIRA = 600.0
 
+#: As pernas de cumeeira da fábrica (mm): a perna vai no menor padrão que cobre a modelada — o
+#: TecnoMETAL modela 260, a peça sai com 300 (usuário, 01/10: "por padrão a empresa usa pernas de
+#: 300 mm e 500 mm"). Acima do maior, o comprimento de compra da telha.
+PERNAS_CUMEEIRA = (300.0, 500.0)
+
+
+def perna_padrao(mm: float) -> float:
+    """a perna de cumeeira da fábrica para uma perna modelada de `mm`"""
+    for p in PERNAS_CUMEEIRA:
+        if mm <= p + 0.5:
+            return p
+    return arredondar_telha(mm)
+
 
 def _perna(e, w):
     """Perna (peça curta de telha) no plano perpendicular à largura `w`: centro, direção,
@@ -691,10 +704,11 @@ def cumeeiras(pecas: Sequence) -> Dict[str, object]:
         if not pares or len(pares) * 2 < 0.8 * len(pernas):
             continue
         A, B, topo, da, db, ang = pares[0]
-        L1, L2 = arredondar_telha(A["L"]), arredondar_telha(B["L"])
+        L1, L2 = perna_padrao(A["L"]), perna_padrao(B["L"])
+        M1, M2 = arredondar_telha(A["L"]), arredondar_telha(B["L"])          # como o modelo traz
         # a perna 1 é a da esquerda no desenho
         if da[0] > db[0]:
-            L1, L2, da, db = L2, L1, db, da
+            L1, L2, da, db, M1, M2 = L2, L1, db, da, M2, M1
         peso_m = sum(_volume(p["e"]) for p in (A, B)) * RHO_ACO
         peso = peso_m * (L1 + L2) / max(A["L"] + B["L"], 1.0)
         from nucleo2d.detalhe.base import _material
@@ -707,6 +721,7 @@ def cumeeiras(pecas: Sequence) -> Dict[str, object]:
                       "composicao": {k: q // len(pares) if q % len(pares) == 0 else q for k, q in comp.items()},
                       "ids": [p["e"].id for par in pares for p in par[:2]],
                       "perna1": L1, "perna2": L2, "angulo": round(ang, 1), "desenv": L1 + L2,
+                      "pernas_modelo": [M1, M2],
                       "desenv_ext": L1 + L2, "altura_onda": round(sorted((A["alt"], B["alt"]))[0], 1),
                       "perfil": str(m0.get("perfil") or A["e"].nome or "TELHA"), "material": _material(A["e"]),
                       "peso": round(peso, 3), "topo": (0.0, 0.0), "d1": da, "d2": db})
@@ -1206,7 +1221,7 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         xb_f = max(q[0] for ch in chapas for q in ch["contorno"]) - x0
         p.linha(xa_f, y_cm, xb_f, y_cm, "EIXO")
         cont_cm = collections.Counter(ch["nome"] for ch in pernas)
-        comp_cm = sorted({round(ch["comprimento"]) for ch in pernas})
+        comp_cm = sorted({round(perna_padrao(ch["comprimento"])) for ch in pernas})        # a perna da fábrica
         # o rótulo à direita da face, na altura da faixa (acima dela fica o subtítulo da face)
         p.texto(xb_f + 3.0 * esc, y_cm - 3.0 * esc, "CUMEEIRA %s – perna %s mm (faixa hachurada)" % (
             " · ".join(sorted(cont_cm, key=_ordem_natural)), " / ".join(str(c) for c in comp_cm)), 3.0 * esc)
