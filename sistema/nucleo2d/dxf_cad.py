@@ -345,12 +345,14 @@ def _dimensao(msp, c: Cota, k: float, at: dict, terminador: str = "traco"):
     override = {"dimtxt": altura, "dimasz": seta / k,
                 # o número a 0,55 da altura acima da linha, como na tela
                 "dimgap": 0.55 * altura}
+    if c.escala and float(c.escala) != 1.0:
+        override["dimlfac"] = float(c.escala)               # a escala da cota: o número é a medida da peça
     if terminador == "traco":
         override.update(dimtsz=FATOR_TRACO * seta / k, dimdle=0.0)
     elif terminador == "bola":
         override.update(dimblk="DOT", dimblk1="DOT", dimblk2="DOT")
     texto = str(c.texto) if c.texto not in (None, "") else "<>"
-    n_txt = len(str(c.texto)) if c.texto not in (None, "") else len("%g" % round(comp, 1))
+    n_txt = len(str(c.texto)) if c.texto not in (None, "") else len("%g" % round(comp * float(c.escala or 1.0), 1))
     # o lado de leitura do número (o "de cima" dele): a esquerda de p1→p2, ou a direita quando a cota
     # aponta para trás (o texto gira 180° para não ficar de cabeça para baixo)
     ang_g = math.degrees(math.atan2(uy, ux))

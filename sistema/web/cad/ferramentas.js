@@ -32,6 +32,7 @@ const ESCALAS_COTA = [1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 125, 150, 20
  *  padrão mais perto — a cota da prancha editada continua em mm da peça (pedido do usuário, 01/10: "quando faço um
  *  ajuste de cota na prancha ele muda todo o valor"). */
 function fatorDaCota(c) {
+  if (c.escala > 0) return c.escala;                 // a escala escolhida na cota
   const escrito = parseFloat(String(c.texto ?? '').replace(',', '.'));
   const medido = valorDaCota(c);
   if (!(escrito > 0) || !(medido > 1e-6)) return 1;
@@ -448,7 +449,10 @@ export class Cota extends Ferramenta {
       if (Math.abs(desl) < 2) desl = desl < 0 ? -2 : 2;
     }
     const casas = ((this.doc.metadados || {}).estilo || {}).casas;            // as casas padrão do desenho (Estilos)
-    return criar({ tipo: 'cota', camada: 'COTA', modo, p1, p2, deslocamento: desl, altura: this.editor.alturaTexto, casas: casas ?? null });
+    // na prancha, a escala da célula em que a cota é feita: o número sai em mm da peça (pedido do usuário, 01/10)
+    const escala = this.editor.escalaNoPonto ? this.editor.escalaNoPonto(p1) : null;
+    return criar({ tipo: 'cota', camada: 'COTA', modo, p1, p2, deslocamento: desl, altura: this.editor.alturaTexto, casas: casas ?? null,
+                   ...(escala ? { escala } : {}) });
   }
   onPonto(p) {
     if (!this.p1) { this.p1 = p; this.editor.snap.ultimo = p; this.dica('Segundo ponto'); return; }

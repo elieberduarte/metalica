@@ -586,6 +586,15 @@ class CAD {
     this._sairPara(this.urlDoEditor(`&destacar=${encodeURIComponent(alvo)}`));
   }
 
+  /** Na prancha, a escala da célula em que o ponto cai (ESC. 1:25 → 25), pelas caixas que a montagem gravou; fora
+   *  de uma célula, ou num desenho comum, null. A cota feita ali mostra a medida da peça (01/10). */
+  escalaNoPonto(p) {
+    const m = this.doc.metadados || {};
+    const cels = [...((m.prancha || {}).celulas || []), ...(m.pranchas || []).flatMap(f => f.celulas || [])];
+    const c = cels.find(c => Array.isArray(c.caixa) && p[0] >= c.caixa[0] && p[0] <= c.caixa[2] && p[1] >= c.caixa[1] && p[1] <= c.caixa[3]);
+    return c && c.escala > 1 ? c.escala : null;
+  }
+
   /** As linhas da mesma peça desta (contorno, abas, linha oculta de uma barra no
    *  detalhe): mesma origem no 3D, mesma célula e mesmo grupo de cópia, e **ligadas** —
    *  cada uma com uma ponta sobre outra da peça. Pela proximidade só, duas barras da mesma
@@ -1226,7 +1235,14 @@ class CAD {
       if (e.tipo === 'texto' || e.tipo === 'chamada') campo('Texto', 'texto');     // a altura: "Tamanho do texto", acima
       if (e.tipo === 'texto') campo('Ângulo', 'angulo', 'number', { step: '15' });
       if (e.tipo === 'cota') {
-        g.append(el('label', { texto: 'Valor' }), el('div', { texto: formatarMm(valorCota(e), 2) + ' mm' }));
+        const esc_ = e.escala || 1;
+        g.append(el('label', { texto: 'Valor' }), el('div', { texto: formatarMm(valorCota(e) * esc_, 2) + ' mm' + (esc_ !== 1 ? ` (${formatarMm(valorCota(e), 2)} desenhados × ${esc_})` : '') }));
+        // a escala da cota (pedido do usuário, 01/10: "criar alguma opção para escolher a escala da cota"): o número é o
+        // desenhado × a escala — na prancha, a da célula (ESC. 1:25 → 25)
+        const escala = el('select', {}, ...[['', 'automático (1:1)'], ...[1, 2, 5, 10, 15, 20, 25, 50, 75, 100, 125, 200].map(s => [String(s), `1:${s}`])].map(([v, t]) =>
+          el('option', { value: v, texto: t, selected: String(e.escala ?? '') === v ? 'selected' : undefined })));
+        escala.addEventListener('change', () => this.executar(new ComandoAlterar({ [e.id]: { escala: escala.value === '' ? null : +escala.value } }, 'Escala da cota')));
+        g.append(el('label', { texto: 'Escala da cota' }), escala);
         campo('Texto (vazio = medida)', 'texto');
         // o deslocamento guardado com a sobra da conta (-10,000000005): mostra com 2 casas
         campo('Deslocamento', 'deslocamento', 'number', { step: '1', value: String(Math.round((e.deslocamento || 0) * 100) / 100) });

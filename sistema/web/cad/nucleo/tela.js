@@ -424,7 +424,8 @@ export class Tela {
     const g = Tela.geometriaCota(c, k);
     if (!g) return null;
     const sg = g.desl >= 0 ? 1 : -1, seta = Math.min(2.5 * k, Math.max(1 * k, g.comp / 4));
-    const txt = c.texto != null && c.texto !== '' ? String(c.texto) : formatarMm(valorCota(c), c.casas);
+    // sem texto escrito, a medida × a escala da cota (a cota feita na célula em 1:25 da prancha mostra a da peça)
+    const txt = c.texto != null && c.texto !== '' ? String(c.texto) : formatarMm(valorCota(c) * (c.escala || 1), c.casas);
     const ang = Math.atan2(g.uy, g.ux);
     let angG = ang * 180 / Math.PI;
     const lado = (angG > -90 && angG <= 90) ? 1 : -1;

@@ -167,6 +167,34 @@ try:
     s = janela("[70900, 69900]", "[71200, 70100]", 0)
     ok(s == ["wb"], f"e sem tecla a janela troca a seleção, como antes: {s}")
 
+    # I. a escala da cota (01/10: "criar alguma opção para escolher a escala da cota"): na prancha, a cota feita numa
+    # célula em 1:25 mostra a medida da peça; o painel deixa trocar
+    r_i = json.loads(aba.avaliar("""(async () => {
+      const c = window.cad, { Tela } = await import('/cad/nucleo/tela.js');
+      c.doc.metadados = { ...(c.doc.metadados || {}), prancha: { celulas: [{ titulo: 'CH16', escala: 25, caixa: [90000, 90000, 90200, 90200] }] } };
+      c.ativarFerramenta('cota');
+      const nova = c.ferramenta._cota([90010, 90010], [90010.56, 90010], null);
+      const fora = c.ferramenta._cota([10, 10], [10.56, 10], null);
+      c.ativarFerramenta('selecionar');
+      c.doc.add({ ...nova, id: 'cesc' });
+      c.selecionar(['cesc']);
+      await new Promise(r => setTimeout(r, 300));
+      const sel = [...document.querySelectorAll('select')].find(s => [...s.options].some(o => o.textContent === '1:25') && s.closest('#painel-props, .props, aside, body'));
+      return JSON.stringify({ escala: nova.escala || null, fora: fora.escala || null, txt: Tela.textoCota(nova, c.doc.escala).txt,
+                              painel: sel ? sel.value : null });
+    })()"""))
+    ok(r_i["escala"] == 25 and r_i["fora"] is None and r_i["txt"] == "14" and r_i["painel"] == "25",
+       f"cota nova na célula 1:25 da prancha: escala 25, mostra 14 (0,56 × 25), o painel tem a escala; fora da célula, sem escala ({r_i})")
+    # J. a cota horizontal girada não vira "0,6" (01/10: "quando rotaciono … elas desconfiguram inteiras")
+    r_j = json.loads(aba.avaliar("""(async () => {
+      const { transformar, valorCota } = await import('/cad/nucleo/desenho2d.js');
+      const h = { id: 'h1', tipo: 'cota', camada: 'COTA', modo: 'h', p1: [0, 0], p2: [122, 50], deslocamento: -10, texto: null, altura: 2.5, atributos: {} };
+      const gira = (g) => { const t = g * Math.PI / 180, cs = Math.cos(t), sn = Math.sin(t); return (p) => [p[0] * cs - p[1] * sn, p[0] * sn + p[1] * cs]; };
+      const r30 = transformar(h, gira(30)), r90 = transformar(h, gira(90)), esp = transformar(h, (p) => [p[1], p[0]], (a) => a, 1, true);
+      return JSON.stringify([[r30.modo, Math.round(valorCota(r30))], [r90.modo, Math.round(valorCota(r90))], [esp.modo, Math.round(valorCota(esp))]]);
+    })()"""))
+    ok(r_j == [["alinhada", 122], ["v", 122], ["v", 122]], f"cota de 122 girada 30° e 90° e espelhada na diagonal continua 122 ({r_j})")
+
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")
     for t, x in erros[:6]: print("     [%s] %s" % (t, x[:300]))

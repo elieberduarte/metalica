@@ -153,9 +153,16 @@ class Cota(Entidade2D):
     texto_pos: Optional[Ponto2] = None   # onde o número foi posto à mão (None = no meio da linha)
     terminador: Optional[str] = None     # traco (padrão: o traço oblíquo da produção), seta ou bola; None = o do desenho (metadados.estilo)
     casas: Optional[int] = None          # casas depois da vírgula no número (None = automático: inteiro, ou uma casa)
+    # quanto vale cada mm desenhado: a cota feita na prancha, numa célula em 1:25, mostra a medida da peça (25 × o
+    # desenhado) — pedido do usuário, 01/10: "criar alguma opção para escolher a escala da cota"; None = 1
+    escala: Optional[float] = None
 
     def pontos(self):
         return [self.p1, self.p2]
+
+    def medida(self) -> float:
+        """o número que a cota mostra sem texto escrito: o desenhado × a escala da cota"""
+        return self.valor() * float(self.escala or 1.0)
 
     def valor(self) -> float:
         if self.modo == "h":
@@ -398,7 +405,7 @@ def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PA
     else:
         _terminador_dxf(d, a1[0], a1[1], ang + 180, tam, camada, terminador)
         _terminador_dxf(d, a2[0], a2[1], ang, tam, camada, terminador)
-    txt = c.texto if c.texto is not None else formatar_mm(c.valor(), c.casas)
+    txt = c.texto if c.texto is not None else formatar_mm(c.medida(), c.casas)
     if c.texto_pos:
         d.texto(c.texto_pos[0], c.texto_pos[1], txt, h, camada_texto or camada, angulo=(ang if -90 < ang <= 90 else ang + 180), alinhamento="centro")
         return

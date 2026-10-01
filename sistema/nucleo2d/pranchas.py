@@ -96,7 +96,7 @@ def _para_papel(e: Entidade2D, k: float, dx: float, dy: float, fonte: str) -> En
         n.posicao = mv(n.posicao)
     elif isinstance(n, Cota):
         if n.texto is None or n.texto == "":
-            n.texto = formatar_mm(n.valor(), n.casas)
+            n.texto = formatar_mm(n.medida(), n.casas)
         n.p1, n.p2 = mv(n.p1), mv(n.p2)
         if n.texto_pos:                               # o número posto fora (cadeia curta): junto
             n.texto_pos = mv(n.texto_pos)             # (sem isto ia parar longe da folha, 28/09)

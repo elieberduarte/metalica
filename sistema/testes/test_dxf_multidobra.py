@@ -59,6 +59,23 @@ def test_cota_do_dxf_igual_a_da_tela():
     assert r["225"][1:] == (2.25, 4.5, 117.38)                # o número não cabe: um degrau para fora
 
 
+def test_escala_da_cota():
+    """a cota com escala (feita na célula 1:25 da prancha) mostra o desenhado × a escala: no DXF (DIMLFAC) e no
+    desenho do PDF; volta do JSON com a escala (01/10)"""
+    from nucleo2d import dxf_cad
+    from nucleo2d.desenho import Desenho as D
+    d = Desenho(nome="t", escala=1.0)
+    d.add(Cota(id="e", modo="h", p1=(0, 0), p2=(0.56, 0), deslocamento=10.0, escala=25.0))
+    d2 = D.de_dict(d.dict())
+    assert d2.entidades["e"].escala == 25.0 and abs(d2.entidades["e"].medida() - 14.0) < 1e-9
+    with tempfile.TemporaryDirectory() as tmp:
+        doc = ezdxf.readfile(dxf_cad.exportar(d, os.path.join(tmp, "t.dxf"), 1.0))
+    x = next(iter(doc.modelspace().query("DIMENSION")))
+    assert next(iter(doc.blocks.get(x.dxf.geometry).query("MTEXT"))).text == "14"
+    # o desenho do PDF (o DXF R12 do próprio programa): o número também
+    assert any("\n1\n14\n" in e for e in d.para_dxf(1.0).entidades)
+
+
 def test_dxf_de_todas_as_pranchas_um_arquivo_por_folha():
     import zipfile
     from nucleo2d import dxf_cad

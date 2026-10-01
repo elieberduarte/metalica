@@ -38,7 +38,7 @@ export function criar(reg) {
       altura: reg.altura ?? 2.5, angulo: reg.angulo || 0, alinhamento: reg.alinhamento || 'esquerda', vertical: reg.vertical || 'base' };
     case 'cota': return { ...base, camada: base.camada || 'COTA', modo: reg.modo || 'alinhada', p1: reg.p1, p2: reg.p2,
       deslocamento: reg.deslocamento ?? 10, texto: reg.texto ?? null, altura: reg.altura ?? 2.5, texto_pos: reg.texto_pos ?? null,
-      terminador: reg.terminador ?? null, casas: reg.casas ?? null };
+      terminador: reg.terminador ?? null, casas: reg.casas ?? null, escala: reg.escala ?? null };
     case 'hachura': return { ...base, camada: base.camada || 'HACHURA', contornos: reg.contornos || [], padrao: reg.padrao || 'aco',
       angulo: reg.angulo ?? 45, espacamento: reg.espacamento ?? 2.5 };
     case 'chamada': return { ...base, camada: base.camada || 'TEXTO', alvo: reg.alvo, posicao: reg.posicao, texto: reg.texto || '', altura: reg.altura ?? 2.5 };
@@ -266,7 +266,23 @@ export function transformar(e, f, fAng = (a) => a, k = 1, espelha = false) {
       break;
     }
     case 'texto': n.posicao = f(e.posicao); n.angulo = espelha ? e.angulo : fAng(e.angulo); break;
-    case 'cota': n.p1 = f(e.p1); n.p2 = f(e.p2); if (e.texto_pos) n.texto_pos = f(e.texto_pos); if (espelha) n.deslocamento = -e.deslocamento; break;
+    case 'cota': {
+      n.p1 = f(e.p1); n.p2 = f(e.p2);
+      if (e.modo === 'h' || e.modo === 'v') {
+        // a cota horizontal/vertical girada (ou espelhada num eixo inclinado) continuava medindo na horizontal do
+        // desenho — a de 122 virava "0,6" (pedido do usuário, 01/10: "quando rotaciono … elas desconfiguram"): o ponto
+        // medido na direção dela, transformado; ainda no eixo, h ou v (90° troca uma pela outra); inclinada, alinhada
+        // entre os pontos medidos (o mesmo valor, a mesma linha de cota)
+        const q2 = f(e.modo === 'h' ? [e.p2[0], e.p1[1]] : [e.p1[0], e.p2[1]]);
+        const dx = q2[0] - n.p1[0], dy = q2[1] - n.p1[1], tol = 1e-6 * (Math.abs(dx) + Math.abs(dy) + 1);
+        if (Math.abs(dy) <= tol) n.modo = 'h';
+        else if (Math.abs(dx) <= tol) n.modo = 'v';
+        else { n.modo = 'alinhada'; n.p2 = q2; }
+      }
+      if (e.texto_pos) n.texto_pos = f(e.texto_pos);
+      if (espelha) n.deslocamento = -e.deslocamento;
+      break;
+    }
     case 'hachura': n.contornos = e.contornos.map(c => c.map(f)); break;
     case 'chamada': n.alvo = f(e.alvo); n.posicao = f(e.posicao); break;
   }
