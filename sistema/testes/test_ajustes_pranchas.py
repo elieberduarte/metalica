@@ -146,3 +146,65 @@ def test_repeticao_no_mesmo_lugar_nao_vira_desenho_a_mao():
     aj = AP.aprender(ed, {"impressoes": {"g1": imp1}})
     guardadas = list(Desenho.de_dict(aj["a_mao"]).entidades.values())
     assert len(guardadas) == 1 and abs(AP._ref(guardadas[0])[1] - (AP._ref(linha)[1] + 50.0)) < 1e-6
+
+
+def test_ajuste_descartado_quando_o_gerador_muda_a_celula():
+    """A regra do gerador mudou a célula depois que o ajuste foi aprendido (o desenho dela foi arrumado de outro
+    jeito): o ajuste não volta — reaplicado, deslocava de novo o que a regra já tinha posto no lugar (as telhas e os
+    S.T. da Sala, 01/10) — e vai para o diário. As células que o gerador não mudou continuam com o ajuste; a célula
+    igual mas posta noutro lugar da folha perde só o movimento (de lá ela cairia em cima de outra)."""
+    g1 = _gerado("g1")
+    imp1 = AP.marcar(g1)
+    ed = Desenho.de_dict(copy.deepcopy(g1.dict()))
+    A, B, C = "tesouras|conjunto:M1", "chaparias|posicao:P5", "terças|posicao:M18"
+    for cel in (A, B):                                      # A e B movidas inteiras
+        for e in _por(ed, cel):
+            ed.entidades[e.id] = transladar(e, 40.0, -15.0)
+    for e in _por(ed, C):                                   # C movida e com o título arrastado
+        ed.entidades[e.id] = transladar(e, 25.0, 0.0)
+    t = _por(ed, C, "texto")[0]
+    ed.entidades[t.id] = transladar(t, 12.0, 0.0)
+    aj = AP.aprender(ed, {"impressoes": {"g1": imp1}})
+    assert set(aj["celulas"]) == {A, B, C} and all(v.get("base") for v in aj["celulas"].values())
+    # a geração nova: a regra nova arrumou a A por dentro; a C saiu igual, mas 200 mm à direita na folha
+    g2 = _gerado("g2")
+    for e in _por(g2, A, "linha"):
+        g2.entidades[e.id] = transladar(e, 10.0, 5.0)
+    for e in _por(g2, C):
+        g2.entidades[e.id] = transladar(e, 200.0, 0.0)
+    for c in g2.metadados["pranchas"][0]["celulas"]:
+        if c["id"] == C:
+            c["caixa"] = [c["caixa"][0] + 200.0, c["caixa"][1], c["caixa"][2] + 200.0, c["caixa"][3]]
+    AP.marcar(g2)
+    antes = {e.id: AP._ref(e) for e in g2.entidades.values()}
+    rel = AP.aplicar(g2, aj)
+    assert rel["descartadas"] == 2, rel
+    assert all(math.dist(AP._ref(e), antes[e.id]) < 1e-9 for e in _por(g2, A))          # A: como o gerador fez
+    assert A not in aj["celulas"]
+    assert any(x["celula"] == A and x["ajuste"] == "descartado: o gerador mudou a célula" for x in aj["diario"])
+    assert all(abs(AP._ref(e)[0] - antes[e.id][0] - 40.0) < 1e-6 for e in _por(g2, B))  # B: o ajuste continua
+    tc = _por(g2, C, "texto")[0]                             # C: sem o movimento, com o título arrastado
+    assert abs(tc.posicao[0] - antes[tc.id][0] - 12.0) < 1e-6
+    assert all(math.dist(AP._ref(e), antes[e.id]) < 1e-9 for e in _por(g2, C, "linha"))
+    assert any(x["celula"] == C and "outro lugar" in x["ajuste"] for x in aj["diario"])
+
+
+def test_sem_assinaturas_a_caixa_da_celula_decide():
+    """O ajuste sem as assinaturas da geração em que foi aprendido (o arquivo de antes): a célula mudou se a caixa
+    gerada dela mudou de tamanho; sem nem isso, o ajuste vale como antes."""
+    g1 = _gerado("g1")
+    imp1 = AP.marcar(g1)
+    A, B = "tesouras|conjunto:M1", "chaparias|posicao:P5"
+    aj = {"celulas": {A: {"d": [40.0, -15.0], "s": 1.0, "base": {"cx": [150.0, 80.0]}},
+                      B: {"d": [40.0, -15.0], "s": 1.0}}}
+    g2 = _gerado("g2")
+    for c in g2.metadados["pranchas"][0]["celulas"]:
+        if c["id"] == A:
+            c["caixa"] = [c["caixa"][0], c["caixa"][1], c["caixa"][2] + 30.0, c["caixa"][3]]   # a caixa da A cresceu
+    AP.marcar(g2)
+    antes = {e.id: AP._ref(e) for e in g2.entidades.values()}
+    rel = AP.aplicar(g2, aj)
+    assert rel["descartadas"] == 1 and A not in aj["celulas"] and B in aj["celulas"], rel
+    assert all(math.dist(AP._ref(e), antes[e.id]) < 1e-9 for e in _por(g2, A))
+    assert all(abs(AP._ref(e)[0] - antes[e.id][0] - 40.0) < 1e-6 for e in _por(g2, B))
+    assert imp1                                              # (a geração 1 só deu as caixas de base)

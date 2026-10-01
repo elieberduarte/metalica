@@ -43,6 +43,12 @@ MESMO_LUGAR = 0.5
 #: a célula foi montada de outro jeito entre as gerações, e nada se aprende dela.
 FORA_DO_LUGAR_MIN = 3
 FORA_DO_LUGAR_FRACAO = 0.5
+#: A célula gerada agora com menos disto das entidades da geração em que o ajuste foi aprendido (as mesmas
+#: assinaturas): o gerador mudou a célula (uma regra nova arrumou o desenho dela), e o ajuste não vale mais —
+#: reaplicado, deslocava de novo o que a regra já tinha posto no lugar (as telhas e os S.T. da Sala, 01/10).
+SEMELHANCA_MINIMA = 0.9
+#: Sem as assinaturas da geração antiga, a célula mudou se a caixa dela mudou mais que isto (mm de papel).
+TOLERANCIA_CAIXA = 1.0
 ARQUIVO = "ajustes-pranchas.json"
 
 
@@ -137,6 +143,17 @@ def _origens(junto: Desenho) -> Dict[str, Tuple[float, float]]:
     return o
 
 
+def _tamanhos(junto: Desenho) -> Dict[str, List[float]]:
+    """largura e altura da caixa de cada célula (mm de papel)"""
+    t = {}
+    for info in junto.metadados.get("pranchas") or []:
+        for c in info.get("celulas") or []:
+            cx = c.get("caixa")
+            if c.get("id") and cx and len(cx) == 4:
+                t.setdefault(c["id"], [round(float(cx[2]) - float(cx[0]), 2), round(float(cx[3]) - float(cx[1]), 2)])
+    return t
+
+
 def marcar(junto: Desenho) -> dict:
     """A impressão do gerado em cada entidade das células (`g`). Nos metadados do desenho fica só a origem de
     cada célula (`ajustaveis`); a lista de assinaturas por célula — grande (560 KB no depósito), e no desenho
@@ -160,8 +177,11 @@ def marcar(junto: Desenho) -> dict:
         e.atributos = dict(a, g=g)
         lista[cel].append(s)
         n += 1
-    junto.metadados["ajustaveis"] = {c: {"o": [round(origens[c][0], 3), round(origens[c][1], 3)]} for c in lista}
-    return {c: {"o": [round(origens[c][0], 3), round(origens[c][1], 3)], "s": ss} for c, ss in lista.items()}
+    tam = _tamanhos(junto)
+    junto.metadados["ajustaveis"] = {c: {"o": [round(origens[c][0], 3), round(origens[c][1], 3)], "cx": tam.get(c)}
+                                     for c in lista}
+    return {c: {"o": [round(origens[c][0], 3), round(origens[c][1], 3)], "cx": tam.get(c), "s": ss}
+            for c, ss in lista.items()}
 
 
 # ------------------------------------------------------------------ aprender
@@ -184,6 +204,7 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
     quando = time.strftime("%Y-%m-%d %H:%M")
     if not ajv:
         return ajustes
+    cx_antigo = _tamanhos(antigo)
     por_cel: Dict[str, list] = collections.defaultdict(list)
     a_mao = []
     for e in antigo.entidades.values():
@@ -285,6 +306,10 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
                 novo["apagadas"] = sorted(set(apagadas))
                 diario.append({"quando": quando, "celula": cel, "ajuste": "%d entidade(s) apagada(s)" % len(set(apagadas))})
         if novo:
+            # a geração e a caixa da célula gerada de que o ajuste foi tirado: se o gerador mudar a célula, ele não
+            # volta (aplicar)
+            novo["base"] = {"g": str(antigo.metadados.get("geracao") or ""), "cx": info.get("cx") or cx_antigo.get(cel),
+                            "o": [round(o[0], 3), round(o[1], 3)]}
             celulas[cel] = novo
         else:
             celulas.pop(cel, None)
@@ -308,7 +333,7 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
 def aplicar(junto: Desenho, ajustes: dict) -> dict:
     """Os ajustes nas pranchas novas (já marcadas): cada célula e cada entidade pela assinatura; o
     desenhado à mão entra como estava. Devolve a contagem."""
-    rel = {"celulas": 0, "entidades": 0, "apagadas": 0, "a_mao": 0, "sem_alvo": 0}
+    rel = {"celulas": 0, "entidades": 0, "apagadas": 0, "a_mao": 0, "sem_alvo": 0, "descartadas": 0}
     celulas = (ajustes or {}).get("celulas") or {}
     origens = {c: tuple(v["o"]) for c, v in (junto.metadados.get("ajustaveis") or {}).items()}
     por_cel: Dict[str, list] = collections.defaultdict(list)
@@ -316,6 +341,40 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
         cel = (e.atributos or {}).get("cel")
         if cel:
             por_cel[cel].append(e)
+    # o gerador mudou a célula desde que o ajuste foi aprendido: ele sai (e vai para o diário), em vez de deslocar
+    # de novo o que a regra nova já arrumou
+    tam = _tamanhos(junto)
+    descartar = [cel for cel in celulas if por_cel.get(cel) and cel in origens
+                 and _gerador_mudou(cel, celulas[cel], ajustes, por_cel[cel], tam.get(cel))]
+    if descartar:
+        quando = time.strftime("%Y-%m-%d %H:%M")
+        diario = list(ajustes.get("diario") or [])
+        for cel in descartar:
+            celulas.pop(cel, None)
+            diario.append({"quando": quando, "celula": cel, "ajuste": "descartado: o gerador mudou a célula"})
+        ajustes["diario"] = diario[-DIARIO_MAX:]
+        rel["descartadas"] = len(descartar)
+    # a célula igual, mas posta em outro lugar da folha (outra prancha, outro canto): o movimento dela, medido do lugar
+    # antigo, a jogaria em cima de outra; ficam a escala e o que foi mexido dentro dela
+    for cel in list(celulas):
+        aj = celulas[cel]
+        o_velho = _origem_base(cel, aj, ajustes)
+        if not aj.get("d") or cel not in origens or o_velho is None:
+            continue
+        if math.dist(o_velho, origens[cel]) <= TOLERANCIA_CAIXA:
+            continue
+        aj = {k: v for k, v in aj.items() if k != "d"}
+        if float(aj.get("s") or 1.0) == 1.0:
+            aj.pop("s", None)
+        if any(k in aj for k in ("s", "ents", "apagadas", "apagada")):
+            celulas[cel] = aj
+        else:
+            celulas.pop(cel)
+        diario = list(ajustes.get("diario") or [])
+        diario.append({"quando": time.strftime("%Y-%m-%d %H:%M"), "celula": cel,
+                       "ajuste": "movimento descartado: o gerador pôs a célula em outro lugar"})
+        ajustes["diario"] = diario[-DIARIO_MAX:]
+        rel["descartadas"] += 1
     tirar = []
     for cel, aj in celulas.items():
         ents = por_cel.get(cel)
@@ -368,6 +427,39 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
             junto.add(e)
             rel["a_mao"] += 1
     return rel
+
+
+def _origem_base(cel: str, aj: dict, ajustes: dict) -> Optional[Tuple[float, float]]:
+    """a origem da célula gerada de que o ajuste foi tirado (a base dele, ou a impressão guardada)"""
+    base = aj.get("base") or {}
+    if base.get("o"):
+        return tuple(base["o"])
+    imps = ajustes.get("impressoes") or {}
+    v = (imps.get(base.get("g")) or {}).get(cel) if base.get("g") else None
+    v = v or next((x.get(cel) for x in imps.values() if (x.get(cel) or {}).get("o")), None)
+    return tuple(v["o"]) if v and v.get("o") else None
+
+
+def _gerador_mudou(cel: str, aj: dict, ajustes: dict, ents_novas: Sequence, cx_novo: Optional[List[float]]) -> bool:
+    """A célula gerada agora é outra que a do ajuste? Pelas assinaturas da geração em que ele foi aprendido (a
+    fração das entidades iguais, SEMELHANCA_MINIMA); sem elas, pelo tamanho da caixa gerada (TOLERANCIA_CAIXA);
+    sem nenhum dos dois (o ajuste do formato antigo), ele vale como antes."""
+    base = aj.get("base") or {}
+    imps = ajustes.get("impressoes") or {}
+    velhas = None
+    if base.get("g") and base["g"] in imps:
+        velhas = (imps[base["g"]].get(cel) or {}).get("s")
+    elif not base:
+        velhas = next(((v.get(cel) or {}).get("s") for v in imps.values() if (v.get(cel) or {}).get("s")), None)
+    if velhas:
+        a = collections.Counter(velhas)
+        b = collections.Counter(((e.atributos or {}).get("g") or {}).get("s") for e in ents_novas)
+        iguais = sum((a & b).values())
+        return iguais < SEMELHANCA_MINIMA * max(sum(a.values()), sum(b.values()), 1)
+    cx_velho = base.get("cx") or next(((v.get(cel) or {}).get("cx") for v in imps.values() if (v.get(cel) or {}).get("cx")), None)
+    if cx_velho and cx_novo:
+        return abs(cx_velho[0] - cx_novo[0]) > TOLERANCIA_CAIXA or abs(cx_velho[1] - cx_novo[1]) > TOLERANCIA_CAIXA
+    return False
 
 
 # ------------------------------------------------------------------ arquivo

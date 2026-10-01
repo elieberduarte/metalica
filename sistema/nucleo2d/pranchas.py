@@ -887,17 +887,40 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                         colunas.append({"x": x_prox, "w": c["w"], "y": topo_cel - c["h"]})
                         x_prox += c["w"] + vao
                 return postos
-            fy1_p = fy1
-            postos = empacotar(fy1)
-            if len(postos) < len(candidatas) and sobra_v > 5.0:
-                alto = fy1 + min(sobra_v, alt_faixa + FOLGA)
-                postos_alto = empacotar(alto)
-                if len(postos_alto) > len(postos):
-                    # a faixa só tão alta quanto os detalhes pedem: o que sobra embaixo sai
-                    folga_b = min(py_ for _c, _x, py_ in postos_alto) - (fy0 + FOLGA * 0.5)
-                    folga_b = max(0.0, min(folga_b, alto - fy1))
-                    postos = [(c_, x_, py_ - folga_b) for c_, x_, py_ in postos_alto]
-                    fy1_p = alto - folga_b
+            def por_na_faixa():
+                fy1_ = fy1
+                postos_ = empacotar(fy1)
+                if len(postos_) < len(candidatas) and sobra_v > 5.0:
+                    alto = fy1 + min(sobra_v, alt_faixa + FOLGA)
+                    postos_alto = empacotar(alto)
+                    if len(postos_alto) > len(postos_):
+                        # a faixa só tão alta quanto os detalhes pedem: o que sobra embaixo sai
+                        folga_b = min(py_ for _c, _x, py_ in postos_alto) - (fy0 + FOLGA * 0.5)
+                        folga_b = max(0.0, min(folga_b, alto - fy1))
+                        postos_ = [(c_, x_, py_ - folga_b) for c_, x_, py_ in postos_alto]
+                        fy1_ = alto - folga_b
+                return postos_, fy1_
+            postos, fy1_p = por_na_faixa()
+            if len(postos) < len(candidatas):
+                # a cópia que não coube com o vão novo entre as vistas da montagem (P5, 01/10) vai com o vão antigo —
+                # primeiro só ela, depois as cópias todas da faixa: peça não some da prancha por falta de espaço (a
+                # cópia do S.T.1 na faixa da tesoura da Sala)
+                ids_p = {id(c_) for c_, _x, _y in postos}
+                for so_as_de_fora in (True, False):
+                    troca_c = {id(c_): _sem_recuo_lateral(c_) for c_ in candidatas
+                               if c_.get("local") and not (so_as_de_fora and id(c_) in ids_p)}
+                    troca_c = {k_: v_ for k_, v_ in troca_c.items() if v_ is not None}
+                    if not troca_c:
+                        continue
+                    antes_c = candidatas
+                    candidatas = [troca_c.get(id(c_), c_) for c_ in candidatas]
+                    postos2, fy1_2 = por_na_faixa()
+                    if len(postos2) > len(postos):
+                        postos, fy1_p = postos2, fy1_2
+                        if len(postos) == len(candidatas):
+                            break
+                    else:
+                        candidatas = antes_c
             na_faixa = []
             postos_ids = {id(c) for c, _x, _y in postos}
             for c, px_, py_ in postos:
@@ -939,6 +962,15 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 for c in sobras:
                     pos = _encaixar(ocup, c["w"], c["h"], it_["x_bloco"] + FOLGA, it_["y_cotas"] - FOLGA * 0.5, qx1, y_min,
                                     margem=FOLGA)
+                    if pos is None and c.get("local"):
+                        # a cópia com o vão antigo entre as vistas da montagem (P5, 01/10): no canto, o S.T.1 da Sala
+                        # cabia entre os detalhes de furos só assim — peça não some da prancha por falta de espaço
+                        c2 = _sem_recuo_lateral(c)
+                        if c2 is not None:
+                            pos = _encaixar(ocup, c2["w"], c2["h"], it_["x_bloco"] + FOLGA, it_["y_cotas"] - FOLGA * 0.5,
+                                            qx1, y_min, margem=FOLGA)
+                            if pos is not None:
+                                c = c2
                     if pos is None:
                         continue
                     c["px"], c["py"] = pos
@@ -1093,7 +1125,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 dy_c = sy1 - MARGEM_RETANGULO - cx_c[1][1] / k_
                 for e in arr["cab"]:
                     desloc[id(e)] = (dx_c, dy_c)
-                topo_ = sy1 - MARGEM_RETANGULO - arr["hc"] - VAO_ARRANJO
+                topo_ = sy1 - MARGEM_RETANGULO - (arr["hc"] + VAO_ARRANJO if arr["cab"] else 0.0)
                 base_ = sy0 + MARGEM_RETANGULO + ALTURA_ESCALA + VAO_ARRANJO
                 dx_r = (sx0 + sx1) / 2.0 - (cx_v[0][0] + cx_v[1][0]) / 2.0 / k_
                 dy_r = (topo_ + base_) / 2.0 - (cx_v[0][1] + cx_v[1][1]) / 2.0 / k_
@@ -1101,7 +1133,12 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     desloc[id(e)] = (dx_r, dy_r)
                 c["px"], c["py"], c["w"], c["h"] = sx0, sy0, sx1 - sx0, sy1 - sy0
                 c["escala_em"] = (sx0 + MARGEM_RETANGULO, sy0 + MARGEM_RETANGULO)
+            # a face de telhas densa (a chapa com menos de LARGURA_CHAPA_DENSA no papel): o nome e a cota só na
+            # primeira de cada sequência de chapas iguais (o usuário apagou as repetições à mão, 01/10)
+            densa = LARGURA_TELHA_UTIL / float(c["k"]) < LARGURA_CHAPA_DENSA
             for e in c["entidades"]:
+                if densa and (e.atributos or {}).get("repete_tipica"):
+                    continue
                 dx_e, dy_e = desloc.get(id(e), (dx, dy))
                 n_ = _para_papel(e, c["k"], dx_e, dy_e, c["fonte"])
                 n_.atributos = dict(n_.atributos or {}, cel=ids_c[id(c)])
@@ -1159,6 +1196,11 @@ OCUPACAO_MINIMA = 0.2
 MARGEM_RETANGULO = 4.0
 #: A caixa de cada detalhe nas outras pranchas: quanto passa da célula (mm de papel); as células ficam a FOLGA.
 MARGEM_CAIXA_DETALHE = 2.0
+#: Na paginação das telhas, a chapa mais estreita que isto no papel (mm) faz a face densa: das chapas iguais em
+#: sequência, só a primeira leva o nome e a cota (o usuário apagou as outras à mão nas FACES 2 E 3 da Sala, 01/10).
+LARGURA_CHAPA_DENSA = 12.0
+#: A largura útil da telha (mm) — a mesma de `nucleo2d.detalhe.base.LARGURA_COMPRA_TELHA`, sem importar o detalhamento.
+LARGURA_TELHA_UTIL = 980.0
 #: Dentro da caixa: o vão do cabeçalho ao desenho e do desenho à escala, e a altura do texto da escala.
 VAO_ARRANJO = 3.0
 ALTURA_ESCALA = 2.0
@@ -1172,19 +1214,25 @@ def _arranjo(c: dict):
     desenho."""
     cab = [e for e in c["entidades"] if isinstance(e, Texto)
            and ((e.atributos or {}).get("cabecalho") is not None or "legenda_conjunto" in (e.atributos or {}))]
-    if not cab:
+    # sem bloco de título, a célula marcada `centrar_na_caixa` (a planta das telhas) também se centra na caixa
+    so_centrar = not cab and any((e.atributos or {}).get("centrar_na_caixa") for e in c["entidades"])
+    if not cab and not so_centrar:
         return None
     ids_cab = {id(e) for e in cab}
     resto = [e for e in c["entidades"] if id(e) not in ids_cab]
     if not resto:
         return None
     k = float(c["k"])
-    cx_c = _caixa_de(cab, k)
+    cx_c = _caixa_de(cab, k) if cab else ((0.0, 0.0), (0.0, 0.0))
     cx_r = _caixa_de(resto, k)                          # a reserva (0,75 por letra): o vizinho nunca encosta
     cx_v = _caixa_de(resto, k, letra=0.58)              # o visível: é o que se centra
     if not cx_c or not cx_r or not cx_v:
         return None
     wc, hc = (cx_c[1][0] - cx_c[0][0]) / k, (cx_c[1][1] - cx_c[0][1]) / k
+    if so_centrar:
+        return {"cab": [], "resto": resto, "cx_c": cx_c, "cx_v": cx_v, "hc": 0.0,
+                "w": (cx_r[1][0] - cx_r[0][0]) / k + 2 * MARGEM_RETANGULO,
+                "h": 2 * MARGEM_RETANGULO + (cx_r[1][1] - cx_r[0][1]) / k + VAO_ARRANJO + ALTURA_ESCALA}
     wr, hr = (cx_r[1][0] - cx_r[0][0]) / k, (cx_r[1][1] - cx_r[0][1]) / k
     return {"cab": cab, "resto": resto, "cx_c": cx_c, "cx_v": cx_v, "hc": hc,
             "w": max(wc, wr) + 2 * MARGEM_RETANGULO,
@@ -2088,13 +2136,13 @@ def _caber_numa_prancha(cels: Sequence[dict], largura: float, altura: float, tet
         return y + alt_l <= altura
     achou = False
     if coluna is not None:
-        # a coluna (e o par dela) na maior escala que cabe; as outras vistas, na maior com ela
-        for g in fatores:
-            for f in fatores:
-                if cabe_com(f, g):
-                    achou = True
-                    break
-            if achou:
+        # o par (coluna, vistas) que cabe com a menor redução das duas; no empate, as vistas maiores (as faces levam
+        # as cotas das chapas): com a legenda das cores embaixo, a planta estreitou e a coluna ia para 1:100 empurrando
+        # as faces para 1:125 — o usuário as quer em 1:100 e a planta em 1:125 (prancha arrumada à mão, 01/10)
+        pares = sorted(((g, f) for g in fatores for f in fatores), key=lambda gf: (max(gf), gf[1], gf[0]))
+        for g, f in pares:
+            if cabe_com(f, g):
+                achou = True
                 break
     else:
         for f in fatores:
@@ -2326,6 +2374,35 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
     return blocos
 
 
+def _sem_recuo_lateral(c: dict) -> Optional[dict]:
+    """A célula da montagem com a LATERAL de volta ao vão antigo (o `recuo_lateral` que ela leva do detalhamento),
+    para a cópia que não cabe na faixa com o vão novo; None se a célula não tem recuo."""
+    if c.get("grupo"):
+        # o chumbamento com a chapa dele: a montagem volta ao vão antigo e o grupo se refaz no mesmo arranjo
+        (mont, _dxm, dym), (a, dxa, dya) = c["grupo"]
+        m2 = _sem_recuo_lateral(mont)
+        if m2 is None:
+            return None
+        if dxa == 0.0:
+            return dict(c, grupo=[(m2, 0.0, dym), (a, 0.0, dya)], w=max(m2["w"], a["w"]))
+        return dict(c, grupo=[(m2, 0.0, dym), (a, m2["w"] + FOLGA * 0.6, dya)], w=m2["w"] + FOLGA * 0.6 + a["w"])
+    if not c.get("entidades"):
+        return None
+    if not any((e.atributos or {}).get("recuo_lateral") for e in c["entidades"]):
+        return None
+    ents = []
+    for e in c["entidades"]:
+        r = float((e.atributos or {}).get("recuo_lateral") or 0.0)
+        ents.append(transladar(e, -r, 0.0) if r else e)
+    cc = dict(c, entidades=ents)
+    cc.pop("_ents_escala0", None)
+    cc["caixa"] = _caixa_de(ents, cc["k"]) or cc["caixa"]
+    (bx0, by0), (bx1, by1) = cc["caixa"]
+    cc["w"], cc["h"] = (bx1 - bx0) / cc["k"], (by1 - by0) / cc["k"] + FAIXA
+    _aplicar_arranjo(cc)
+    return cc
+
+
 def _copia_local(c: dict, n: int) -> dict:
     """O detalhe de uma chapa (ou chumbamento) para a faixa da prancha da tesoura, com a quantidade
     desenhada nela: o título ("CH13 – 02x") e o peso total ("8,88 kg/pç  total 17,8 kg") pela
@@ -2516,9 +2593,22 @@ def _legenda(d, leg: dict, x0: float, y0: float, y1: float, relacao: Sequence[tu
     # os blocos um embaixo do outro quando cabem na altura (a legenda fica estreita e sobra largura para
     # os DETALHES — pedido do usuário, 28/09: "reduzir bastante o tamanho")
     # a letra maior quando cabe (pedido do usuário, 28/09: "aumentar o tamanho do texto")
-    for h_l, passo_t, h_t, gap_v in ((3.0, 4.4, 3.5, 4.0), (2.0, 3.2, 2.5, 3.0)):
+    # ao desenhar numa caixa já medida (`largura`), a maior letra que cabe nela, de 4,0 a 2,0 mm, com as linhas a
+    # 1,45 × a letra (o usuário aumentou a letra da legenda à mão de novo, 01/10: 2,0 → 3,9 mm); a medida (sem `d`)
+    # segue as duas de antes, para a caixa da legenda não crescer e roubar o lugar dos detalhes
+    opcoes = [(3.0, 4.4, 3.5, 4.0), (2.0, 3.2, 2.5, 3.0)]
+    if d is not None and largura is not None:
+        opcoes = [(h_, round(1.45 * h_, 2), h_ + 0.5, h_ + 1.0) for h_ in (4.0, 3.75, 3.5, 3.25, 3.0, 2.75, 2.5, 2.25)] \
+            + [(2.0, 3.2, 2.5, 3.0)]
+    for h_l, passo_t, h_t, gap_v in opcoes:
         alturas = [h_t + 2.5 + len(l) * passo_t + (passo_t if c else 0.0) for t, l, c in blocos]
         if len(blocos) > 1 and sum(alturas) + gap_v * (len(blocos) - 1) <= topo - base:
+            if d is not None and largura is not None and h_l > 2.0:
+                # a letra maior só se a coluna mais larga couber na caixa
+                larg_m = max(_tabela(None, 0.0, a_ + 0.5, 0.0, t, l, cabecalho=c, passo=passo_t, h=h_l, h_tit=h_t)
+                             for (t, l, c), a_ in zip(blocos, alturas))
+                if larg_m + 2 * QUADRO_MARGEM > largura + 0.01:
+                    continue
             x = x0 + QUADRO_MARGEM
             y_ = topo
             larg_max = 0.0

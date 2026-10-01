@@ -462,9 +462,11 @@ def desenho_da_multidobra(md: dict, desenho, dx: float, dy: float, nome: str = "
         cxq = ox + larg / 2
         p.texto(cxq, alt + margem + 6.5 * esc, titulo, 3.5 * esc, alinhamento="centro")
         p.texto(cxq, alt + margem + 1.0 * esc, ("%.3f" % (desenv / 1000.0)).replace(".", ",") + " m", 3.5 * esc, alinhamento="centro")
-    # o título geral acima dos quadros: quantidade e a telha
+    # o título geral acima dos quadros: quantidade e a telha. `cabecalho`: a prancha o põe no canto de cima da
+    # caixa e centra o desenho no que sobra, como nas peças (o usuário arrumou assim as células das telhas, 01/10)
     p.texto(passo - 6.0 * esc, topo_q + 4.0 * esc, "%s – %02dx  MULTIDOBRA %s" % (nome or md["conjunto"], md["instancias"],
-                                                                                    _rotulo_telha(md["perfil"])), 4.0 * esc, alinhamento="centro")
+                                                                                    _rotulo_telha(md["perfil"])), 4.0 * esc,
+            alinhamento="centro", atributos={"cabecalho": 0})
     # abaixo dos quadros: o que se compra e se dobra (o desenho já mostra as medidas)
     fmt = lambda v: "%d" % round(v)          # noqa: E731
     linhas = ["%s  largura 1050 mm (útil 980)%s" % (md["perfil"], ("   detalhe ampliado %dx" % amp) if amp > 1 else ""),
@@ -767,7 +769,8 @@ def desenho_da_cumeeira(cm: dict, desenho, dx: float, dy: float, nome: str = "")
     y = alt + 18.0 * esc
     for i, txt in enumerate(reversed(linhas)):
         altura = 3.5 if i == len(linhas) - 1 else 2.5
-        p.texto(0, y, txt, altura * esc)
+        # o bloco do título (0 = o nome): a prancha o põe no canto da caixa e centra o perfil no que sobra
+        p.texto(0, y, txt, altura * esc, atributos={"cabecalho": len(linhas) - 1 - i})
         y += (altura + 1.2) * esc
     return p.extremos
 
@@ -1132,6 +1135,7 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     from nucleo2d.detalhe.base import LARGURA_TOTAL_TELHA, LARGURA_COMPRA_TELHA
     pernas = [ch for ch in chapas if ch.get("cumeeira")]
     ordenadas = sorted((ch for ch in chapas if not ch.get("cumeeira")), key=lambda c: c["x"])
+    repetidas = _repetidas_na_fileira(ordenadas)
     cotada = False
     for n, ch in enumerate(ordenadas):
         # a chapa com a largura total de catálogo (1050, com os transpasses) em volta do
@@ -1178,8 +1182,11 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         desl = 7.0 * camada
         a, b = (xm, ch["y0"] - y0), (xm, ch["y1"] - y0)
         texto = "%d" % round(ch["comprimento"])
+        # a chapa igual à vizinha da mesma fileira leva a marca: na face densa a prancha só deixa o nome e a cota da
+        # primeira da sequência (pranchas.LARGURA_CHAPA_DENSA)
+        rep = {"repete_tipica": True} if id(ch) in repetidas else {}
         desenho.add(Cota(modo="v", p1=p._p(*a), p2=p._p(*b), deslocamento=-desl, texto=texto, altura=1.8,
-                         atributos=dict(atr, chapa=ch["nome"])))
+                         atributos=dict(atr, chapa=ch["nome"], **rep)))
         # o nome vai abaixo da chapa; na face com telhas emendadas no comprimento, abaixo dela
         # já começa a chapa de baixo (com a cota dela no mesmo alinhamento) — aí o nome fica
         # dentro da própria chapa, junto da ponta de baixo e do outro lado da linha de cota
@@ -1188,14 +1195,14 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         cabe = (ch["y1"] - ch["y0"]) / esc >= len(str(ch["nome"])) * 1.8 * 0.8 + 8.0
         if emendada and cabe:
             p.texto(xm + (desl + 3.0) * esc, ch["y0"] - y0 + 3.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0,
-                    alinhamento="esquerda")
+                    alinhamento="esquerda", atributos=rep)
         elif emendada:
             # chapa curta demais para o nome: abaixo dela, mas do outro lado da linha de cota
             p.texto(xm + (desl + 3.0) * esc, ch["y0"] - y0 - 4.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0,
-                    alinhamento="direita")
+                    alinhamento="direita", atributos=rep)
         else:
             p.texto(xm + desl * esc, ch["y0"] - y0 - 4.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0,
-                    alinhamento="direita")
+                    alinhamento="direita", atributos=rep)
     if pernas:
         # a cumeeira por cima das telhas: cada perna hachurada (é a peça que cobre o topo
         # das chapas), a linha da cumeeira e um rótulo só — nome e comprimento da perna
@@ -1222,9 +1229,11 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         p.linha(xa_f, y_cm, xb_f, y_cm, "EIXO")
         cont_cm = collections.Counter(ch["nome"] for ch in pernas)
         comp_cm = sorted({round(perna_padrao(ch["comprimento"])) for ch in pernas})        # a perna da fábrica
-        # o rótulo à direita da face, na altura da faixa (acima dela fica o subtítulo da face)
-        p.texto(xb_f + 3.0 * esc, y_cm - 3.0 * esc, "CUMEEIRA %s – perna %s mm (faixa hachurada)" % (
-            " · ".join(sorted(cont_cm, key=_ordem_natural)), " / ".join(str(c) for c in comp_cm)), 3.0 * esc)
+        # o rótulo logo acima da faixa, terminando na ponta dela: à direita da face ele alargava a célula (o usuário o
+        # pôs aí à mão, 01/10); o título e o resumo sobem para dar lugar a ele
+        p.texto(xb_f, y_cm + 1.5 * esc, "CUMEEIRA %s – perna %s mm (faixa hachurada)" % (
+            " · ".join(sorted(cont_cm, key=_ordem_natural)), " / ".join(str(c) for c in comp_cm)), 3.0 * esc,
+            alinhamento="direita")
     # a linha da estrutura (a última longarina, de onde a saia é medida) atravessando a
     # face, com a cota da saia até a ponta de baixo das telhas: para conferir os 150 mm
     com_saia = [ch for ch in ordenadas if ch.get("saia")]
@@ -1235,7 +1244,10 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         xa_f = min(q[0] for ch in ordenadas for q in ch["contorno"]) - x0 - 0.1 * _LT
         xb_f = max(q[0] for ch in ordenadas for q in ch["contorno"]) - x0 + 0.3 * _LT
         p.linha(xa_f, y_ref, xb_f, y_ref, "EIXO")
-        p.texto(xb_f, y_ref + 1.0 * esc, "ÚLTIMA LONGARINA — saia %d abaixo" % SAIA_TELHA, 1.8 * esc, alinhamento="direita")
+        # o rótulo termina na última chapa (a linha segue até a cota): na ponta da linha ele passava da face e
+        # alargava a célula — o usuário o puxou para dentro à mão (01/10)
+        x_ult = max(q[0] for ch in ordenadas for q in ch["contorno"]) - x0
+        p.texto(x_ult, y_ref + 1.0 * esc, "ÚLTIMA LONGARINA — saia %d abaixo" % SAIA_TELHA, 1.8 * esc, alinhamento="direita")
         desenho.add(Cota(modo="v", p1=p._p(xb_f, y_fundo), p2=p._p(xb_f, y_ref), deslocamento=-4.0,
                          texto="%d" % SAIA_TELHA, altura=1.8, atributos=dict(atr)))
         p._p(xb_f + 14.0 * esc, y_fundo)
@@ -1248,6 +1260,9 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         ponta = (2.4 * tam + 0.8 * h * n_txt) if comp < 3.0 * tam else 0.4 * h * n_txt
         alt = max(alt, (ch["y0"] + ch["y1"]) / 2.0 - y0 + ponta + 1.0 * esc)
     pernas = [ch for ch in chapas if ch.get("cumeeira")]
+    if pernas:
+        # o rótulo da cumeeira fica acima da faixa
+        alt = max(alt, max(ch["y1"] for ch in pernas) - y0 + 5.0 * esc)
     cont = collections.Counter(ch["nome"] for ch in chapas if not ch.get("cumeeira"))
     resumo = " · ".join("%s %dx" % (k, q) for k, q in sorted(cont.items(), key=lambda kv: _ordem_natural(kv[0])))
     if pernas:
@@ -1267,9 +1282,39 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
                                                 n_ch, "" if n_ch == 1 else "s",
                                                 (" + %d perna%s de cumeeira" % (len(pernas), "" if len(pernas) == 1 else "s"))
                                                 if pernas else "")
-    p.texto(0, alt + 6.0 * esc, titulo, 3.5 * esc)
-    p.texto(0, alt + 2.0 * esc, resumo[:220], 2.0 * esc)
+    # o bloco do título (0 = o título, 1 = o resumo): a prancha o põe no canto de cima da caixa e centra a face no
+    # que sobra, como nas peças (o usuário arrumou assim as faces à mão, 01/10)
+    p.texto(0, alt + 6.0 * esc, titulo, 3.5 * esc, atributos={"cabecalho": 0})
+    p.texto(0, alt + 2.0 * esc, resumo[:220], 2.0 * esc, atributos={"cabecalho": 1})
     return p.extremos
+
+
+def _repetidas_na_fileira(ordenadas: Sequence[dict]) -> set:
+    """ids das chapas iguais (mesmo nome e mesmo comprimento) à vizinha de antes na mesma fileira (as mesmas pontas
+    de baixo e de cima, uma ao lado da outra): na face densa só a primeira da sequência leva o nome e a cota — o
+    usuário apagou à mão as 31 repetições de cada uma nas FACES 2 E 3 da Sala (01/10)."""
+    from nucleo2d.detalhe.base import LARGURA_COMPRA_TELHA
+    fileiras: Dict[tuple, list] = collections.defaultdict(list)
+    for ch in ordenadas:
+        fileiras[(round(ch["y0"] / 5.0), round(ch["y1"] / 5.0))].append(ch)
+    saida = set()
+    for chs in fileiras.values():
+        chs = sorted(chs, key=lambda c: c["x"])
+        seq: list = []
+        for ch in chs + [None]:
+            if (ch is not None and seq and abs(ch["x"] - seq[-1]["x"]) <= 1.5 * LARGURA_COMPRA_TELHA
+                    and str(ch["nome"]) == str(seq[-1]["nome"]) and round(ch["comprimento"]) == round(seq[-1]["comprimento"])):
+                seq.append(ch)
+                continue
+            # sequência de 3 ou mais: um par igual (as duas do meio da fachada, espelhadas) fica com os dois nomes
+            if len(seq) >= SEQUENCIA_TIPICA:
+                saida.update(id(c) for c in seq[1:])
+            seq = [ch] if ch is not None else []
+    return saida
+
+
+#: Quantas chapas iguais lado a lado fazem a sequência que leva o nome e a cota só na primeira (face densa).
+SEQUENCIA_TIPICA = 3
 
 def saias_de_fachada(pecas, ignorar=frozenset()) -> Dict[str, float]:
     """{id da telha: quanto a ponta de baixo desce (mm; negativo sobe)} das telhas de
@@ -1434,7 +1479,9 @@ def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: floa
     from nucleo2d.detalhe.base import _Papel
     esc = desenho.escala
     chapas = chapas_da_cobertura(faces)
-    p = _Papel(desenho, {"detalhe": "planta_telhas"}, dx, dy)
+    # `centrar_na_caixa`: sem bloco de título, a prancha centra a planta (com a legenda) na caixa dela — o usuário a
+    # centrou à mão (01/10)
+    p = _Papel(desenho, {"detalhe": "planta_telhas", "centrar_na_caixa": True}, dx, dy)
     if not chapas:
         p.texto(0, 0, "sem telhas de cobertura no modelo", 2.5 * esc)
         return p.extremos
@@ -1485,15 +1532,20 @@ def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: floa
         # sem os eixos gravados no projeto: as medidas totais da cobertura
         p.cota_h(0.0, largura, altura, 12.0)
         p.cota_v(0.0, altura, 0.0, -12.0)
-    # a legenda das cores, à direita da planta
-    xl = largura + 40.0 * esc
-    p.texto(xl, altura, "TIPOS DE TELHA (CORES)", 2.5 * esc)
+    # a legenda das cores: embaixo da planta quando ela é mais alta que larga (o usuário a levou para lá à mão, 01/10:
+    # à direita, a célula ficava larga e sobrava altura); senão à direita, como antes
+    if altura >= largura:
+        y_min = min(q[1] for q in p.pontos) - p.dy          # o pé da planta, com os eixos e as cotas
+        xl, y_leg = 0.0, y_min - 8.0 * esc
+    else:
+        xl, y_leg = largura + 40.0 * esc, altura
+    p.texto(xl, y_leg, "TIPOS DE TELHA (CORES)", 2.5 * esc)
     qtd = collections.Counter(c["nome"] for c in chapas)
     comp = {}
     for c in chapas:
         comp.setdefault(c["nome"], c["comprimento"])
     for i, nm in enumerate(sorted(cores, key=_ordem_natural)):
-        yy = altura - (i + 1) * 5.0 * esc
+        yy = y_leg - (i + 1) * 5.0 * esc
         cam = _camada_da_telha(desenho, nm, cores[nm])
         p.retangulo(xl, yy, 8.0 * esc, 3.0 * esc, camada=cam)
         if nm in comp:

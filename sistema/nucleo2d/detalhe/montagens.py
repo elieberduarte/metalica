@@ -299,6 +299,7 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
         if e.id in grupo["pecas"]:
             nome_peca[e.id] = e
     x = dx
+    recuo, antes_lateral = 0.0, set()
     caixas = []
     p_txt = _Papel(desenho, atr, 0.0, 0.0)
     for k, (w, acima, rot) in enumerate(((w1, acima1, "FRENTE"), (w2, acima2, rot2))):
@@ -356,7 +357,21 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
         p.texto(larg / 2, -(24.0 if k < 2 else 4.0) * esc, rot, 2.2 * esc, "TEXTO", alinhamento="centro")
         caixas.append(p.extremos)
         caixas.append((x, dy, x + larg, dy + alt))
-        x += larg + (22.0 if k < 2 else 10.0) * esc
+        if k == 0:
+            # a LATERAL depois das cotas da FRENTE (a linha da cota mais de fora, o número dela e 14 mm): a 22 mm da
+            # peça os números da cadeia e da total encostavam nela — o usuário afastou as duas vistas à mão nos S.T.1
+            # e S.T.2 da Sala (+15 e +18 mm, 01/10)
+            x_antigo = x + larg + 22.0 * esc
+            x = max(x_antigo, p.extremos[2] + (2.5 + 14.0) * esc)
+            recuo = x - x_antigo
+            antes_lateral = set(desenho.entidades)
+        else:
+            x += larg + (22.0 if k < 2 else 10.0) * esc
+    if recuo > 0.01:
+        # a LATERAL leva o quanto andou além do vão antigo: a prancha pode trazê-la de volta numa cópia que não cabe
+        # com o vão novo (a cópia do S.T.1 na faixa da tesoura — pranchas._sem_recuo_lateral)
+        for i in set(desenho.entidades) - antes_lateral:
+            desenho.entidades[i].atributos = dict(desenho.entidades[i].atributos or {}, recuo_lateral=round(recuo, 3))
     if posicoes_de and grupo["tipo"] == "chumbamento":
         _chapas_para_corte(desenho, grupo, chapas, posicoes_de, atr, dx, caixas, max(x - dx, LARGURA_CHAPAS_DE_CORTE * esc))
     topo = max(c[3] for c in caixas)

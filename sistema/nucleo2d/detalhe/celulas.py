@@ -498,7 +498,8 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     # na terça a altura dos furos é o padrão da máquina de corte (50 ou 100 mm): a cadeia
     # vertical só atrapalha; ficam a altura da peça e as cotas horizontais
     cadeia = bool(ys) and not terca and p.cadeia_v([0.0] + ys + [H], L, off, exigir_espaco=False)
-    p.cota_v(0, H, x_alt, lado_alt * (off3 if cadeia == "dupla" else off2 if cadeia else off))
+    desl_alt = off3 if cadeia == "dupla" else off2 if cadeia else off
+    p.cota_v(0, H, x_alt, lado_alt * desl_alt)
     # a barra cortada em ângulo (a ponta inclinada na vista de frente): a face mais curta também cotada — só
     # com o comprimento da maior e a altura, o corte não se fazia (DP.17.3 e B.13 do depósito, análise das
     # pranchas, 29/09)
@@ -514,7 +515,9 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
             elif (b1_ - b0_) < (t1_ - t0_) - 2.0:
                 p.cota_h(b0_, b1_, 0, -(off3 + off))
 
-    x_dir = L + (off3 + off) * esc
+    # a seção logo depois da cota da altura (6 mm além dela, nunca a menos de 26 mm da peça): a 40 mm ficava solta da
+    # vista — o usuário aproximou à mão a vista da seção na CH16 e na CH17 da Sala (−15 e −13 mm, 01/10)
+    x_dir = L + (max(desl_alt if lado_alt > 0 else off, off2) + 6.0) * esc
     # a seção não vai na terça (o perfil está no título) nem na barra redonda (a bitola também) — prancha
     # mais limpa (pedido do usuário, 29/09)
     redonda = pos.classe == "barra_redonda" or (pos.classe == "barra_conformada" and _eh_redonda_perfil(pos.perfil))
@@ -544,12 +547,12 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     if (furos_topo or ((pos.vista_topo or pos.classe == "barra_conformada") and not redonda)) and pos.local:
         w_min = min(q[2] for q in pos.local)
         w_max = max(q[2] for q in pos.local)
-        # logo abaixo das cotas da vista de frente, com o nome: sem ele parecia outra peça, sem nome
-        # (pedido do usuário, 28/09)
-        y_topo = -((off2 + 4.5) * esc + (w_max - w_min) + (w_min if w_min > 0 else 0))
+        # logo abaixo das cotas da vista de frente (o nome dela vai embaixo dela — 01/10 —, não mais entre as duas
+        # vistas: o vão encolhe 1,5 mm)
+        y_topo = -((off2 + 3.0) * esc + (w_max - w_min) + (w_min if w_min > 0 else 0))
         ignorar_t = _arestas_dos_furos(pos, 1, -1.0, (0, 2)) if furos_topo else set()
+        n_pts = len(p.pontos)
         _vista(p, pos, (0, 2), 1, -1.0, 0, y_topo, ignorar_t)
-        p.texto(0, y_topo + w_max + 1.2 * esc, "VISTA DE CIMA – %s" % (pos.nome or pos.marca), 2.0 * esc)
         _desenhar_furos(p, est, furos_topo, 0, y_topo)
         if furos_topo:
             p.cadeia_h([0.0] + sorted({round(f.x, 1) for f in furos_topo}) + [L], y_topo + w_min, -off, exigir_espaco=False)
@@ -560,6 +563,10 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
             if u_k is not None:
                 p.cadeia_h([0.0, u_k, L], y_topo + w_min, -off, exigir_espaco=False)
         p.cota_v(y_topo + w_min, y_topo + w_max, L, off)
+        # o nome embaixo da vista e das cotas dela, como título da vista (o usuário o desceu à mão na CH15 e na CH16
+        # da Sala, 01/10); em cima ele ficava entre as duas vistas e parecia da de frente
+        y_pe = min([q[1] - p.dy for q in p.pontos[n_pts:]] + [y_topo + w_min])
+        p.texto(0, y_pe - 4.5 * esc, "VISTA DE CIMA – %s" % (pos.nome or pos.marca), 2.0 * esc)
 
     if pos.tipo_nome == "gancho" and pos.local:
         _rosca_do_gancho(p, pos, esc, off)
