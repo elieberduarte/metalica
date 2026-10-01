@@ -108,6 +108,14 @@ try:
     pl = js("const p = [...c.doc.entidades.values()].filter(e => e.tipo === 'polilinha' && (e.atributos || {}).origem === 'D'); return p.length ? JSON.stringify(p[0].vertices) : '';")
     ok(pl == "[[0,9000],[600,9000],[600,9200]]", f"Juntar devolveu a polilinha da peça: {pl}")
     ok(js("return c.ferramenta.constructor.id;") == "selecionar", "voltou para Selecionar")
+    # F. cota da prancha (célula em 1:25, o número escrito é a medida da peça): mexer na ponta mantém a escala
+    js("""c.doc.add({ id: 'cp', tipo: 'cota', camada: 'COTA', modo: 'h', p1: [30000, 30000], p2: [30034.32, 30000], deslocamento: -4, texto: '858', altura: 2.5 });
+          c.ativarFerramenta('selecionar'); c.selecionar(['cp']); return 1;""")
+    js("const f = c.ferramenta; const a = c.tela.alcas().find(x => x.id === 'cp' && x.parte === 'p2'); f._pegarAlca(a); f.onMover([30038.32, 30000]); f._recemPega = false; f.onPonto([30038.32, 30000], {}); return 1;")
+    ok(js("return c.doc.get('cp').texto;") == "958",
+       "cota da prancha em 1:25 (858): puxada 4 mm no papel vira %s (era 34 antes da correção)" % js("return c.doc.get('cp').texto;"))
+    js("c.desfazer(); c.selecionar([]); return 1;")
+
     # E. A+ em vários textos: o bloco cresce junto, sem encavalar (01/10: "vai comendo os espaçamentos")
     js("""for (const [i, s] of ['NESTA PRANCHA', 'T.O.1 02x', 'T.O.2 02x'].entries()) c.doc.add({ id: 'tx' + i, tipo: 'texto', camada: 'TEXTO', posicao: [20000, 20000 - i * 3.2 * c.doc.escala], texto: s, altura: 2.0 });
           c.doc.add({ id: 'tx9', tipo: 'texto', camada: 'TEXTO', posicao: [20000 + 40 * c.doc.escala, 20000], texto: 'SIGLAS', altura: 2.0 });

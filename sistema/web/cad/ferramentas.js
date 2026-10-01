@@ -26,6 +26,23 @@ const ang = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]);
 const polar = (a, angulo, d) => [a[0] + d * Math.cos(angulo), a[1] + d * Math.sin(angulo)];
 const fmt = (v) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1).replace('.', ','));
 const valorDaCota = (c) => (c.modo === 'h' ? Math.abs(c.p2[0] - c.p1[0]) : c.modo === 'v' ? Math.abs(c.p2[1] - c.p1[1]) : dist(c.p1, c.p2));
+const ESCALAS_COTA = [1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250, 500];
+/** Quanto o número escrito da cota vale por mm desenhado: 1 no desenho comum; na prancha, a escala da célula (a
+ *  cota "858" de uma tesoura em 1:25 mede 34,3 mm no papel). Pela proporção escrito ÷ medido, encostada na escala
+ *  padrão mais perto — a cota da prancha editada continua em mm da peça (pedido do usuário, 01/10: "quando faço um
+ *  ajuste de cota na prancha ele muda todo o valor"). */
+function fatorDaCota(c) {
+  const escrito = parseFloat(String(c.texto ?? '').replace(',', '.'));
+  const medido = valorDaCota(c);
+  if (!(escrito > 0) || !(medido > 1e-6)) return 1;
+  const r = escrito / medido;
+  const perto = ESCALAS_COTA.reduce((m, s) => (Math.abs(s / r - 1) < Math.abs(m / r - 1) ? s : m), 1);
+  return Math.abs(perto / r - 1) < 0.04 ? perto : r;
+}
+/** O número da cota escrita depois de mexer nela (`antes` é a cota como estava): na mesma proporção. */
+function textoNovoDaCota(antes, nova) {
+  return String(Math.round(valorDaCota(nova) * fatorDaCota(antes)));
+}
 
 export class Ferramenta {
   static id = 'base'; static nome = 'Ferramenta'; static atalho = ''; static grupo = 'desenho'; static dica = '';
@@ -156,7 +173,7 @@ export class Selecionar extends Ferramenta {
     if (dist(nova.p1, nova.p2) < 1e-6) return null;
     if (naLinha) nova.deslocamento = deslocamentoPara(nova, naLinha, k);
     // cota com o valor escrito (as do detalhamento, arredondadas ao mm): o texto acompanha a medida nova
-    if (nova.texto != null && /^\s*\d+(?:[.,]\d+)?\s*$/.test(String(nova.texto))) nova.texto = String(Math.round(valorDaCota(nova)));
+    if (nova.texto != null && /^\s*\d+(?:[.,]\d+)?\s*$/.test(String(nova.texto))) nova.texto = textoNovoDaCota(c, nova);
     return criar(nova);
   }
   onMover(p) {
@@ -164,7 +181,7 @@ export class Selecionar extends Ferramenta {
     const c = this._editada(p);
     this.editor.previa(c ? [c] : []);
     if (!c) return;
-    if (c.tipo === 'cota') this.editor.medida(`${fmt(valorDaCota(c))} mm`);
+    if (c.tipo === 'cota') this.editor.medida(`${fmt(valorDaCota(c) * fatorDaCota(this.doc.get(this.alca.id) || c))} mm`);
     else {
       const fixo = this._vizinhoFixo(this.doc.get(this.alca.id), this.alca.parte);
       if (fixo) this.editor.medida(`${fmt(dist(fixo, p))} mm`);
@@ -608,10 +625,7 @@ export class Esticar extends Ferramenta {
       else if (e.tipo === 'hachura') { c.contornos = c.contornos.map(ct => ct.map(q => { const v = mv(q); if (v !== q) mudou = true; return v; })); }
       if (mudou) {
         // cota com o valor escrito (as do detalhamento): o número acompanha a medida nova
-        if (c.tipo === 'cota' && c.texto != null && /^\s*\d+(?:[.,]\d+)?\s*$/.test(String(c.texto))) {
-          const v = c.modo === 'h' ? Math.abs(c.p2[0] - c.p1[0]) : c.modo === 'v' ? Math.abs(c.p2[1] - c.p1[1]) : dist(c.p1, c.p2);
-          c.texto = String(Math.round(v));
-        }
+        if (c.tipo === 'cota' && c.texto != null && /^\s*\d+(?:[.,]\d+)?\s*$/.test(String(c.texto))) c.texto = textoNovoDaCota(e, c);
         fora.push(criar(c));
       }
     }
