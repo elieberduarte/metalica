@@ -59,6 +59,7 @@
         I('DXF do desenho aberto…', '2d', 'exportar-dxf', { antes: 'Arquivo › DXF deste desenho…' }),
         I('PDF do desenho aberto', '2d', 'exportar-pdf', { antes: 'Arquivo › PDF deste desenho' }),
         I('PDF de todas as pranchas…', '2d', 'pdf-pranchas', { antes: 'Arquivo › PDF de todas as pranchas…' }),
+        I('DXF de todas as pranchas…', '2d', 'dxf-pranchas', { dica: 'todas juntas num arquivo, e uma por arquivo num ZIP', antes: 'Arquivo › DXF de todas as pranchas…' }),
       ]),
       HR,
       I('Abrir a pasta do projeto', '2d', 'abrir-pasta', { antes: 'Arquivo › Abrir a pasta dos desenhos' }),

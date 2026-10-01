@@ -2965,8 +2965,22 @@ def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
 
 
 def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:
+    """DXF do desenho aberto; com `desenhos: [...]` (todas as pranchas), o DXF completo com as
+    pranchas lado a lado num arquivo só e um DXF por prancha (papel 1:1, a folha na origem)
+    num ZIP, na pasta pranchas/ do projeto."""
     from nucleo2d.desenho import Desenho
     g = _gerente()
+    if corpo.get("desenhos"):
+        from nucleo2d import dxf_cad
+        desenhos = [Desenho.de_dict(corpo["desenho"]) if n == nome and isinstance(corpo.get("desenho"), dict)
+                    else Desenho.de_dict(g.abrir_desenho(s, n)) for n in corpo["desenhos"]]
+        pasta = os.path.join(g._existente(s), "pranchas")
+        # o nome vem da tela: sem pasta nem caracteres de caminho
+        base = _slug(re.sub(r"\.(dxf|zip)$", "", os.path.basename(str(corpo.get("titulo") or "pranchas").replace("\\", "/")), flags=re.I)) or "pranchas"
+        r = dxf_cad.exportar_pranchas(desenhos, pasta, base)
+        g.tocar(s)
+        return {"arquivo": _descrever_arquivo(r["completo"], pasta), "zip": _descrever_arquivo(r["zip"], pasta), "pranchas": len(r["arquivos"]),
+                "arquivos": [os.path.basename(a) for a in r["arquivos"]]}
     fonte = corpo.get("desenho") if isinstance(corpo.get("desenho"), dict) else g.abrir_desenho(s, nome)
     desenho = Desenho.de_dict(fonte)
     pasta = os.path.join(g._existente(s), "desenhos-2d")

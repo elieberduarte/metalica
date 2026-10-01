@@ -116,6 +116,24 @@ try:
     if u:
         dados = urllib.request.urlopen(base + u).read()
         ok(dados[:5] == b"%PDF-" and len(dados) > 50000, "PDF servido pela rota /saida (%d kB)" % (len(dados) // 1024))
+    # DXF de todas as pranchas: um arquivo por folha, num ZIP
+    aba.avaliar("window.cad.dxfDasPranchas(); 1")
+    t0 = time.time()
+    while time.time() - t0 < 180 and not aba.avaliar("[...document.querySelectorAll('a[href$=\".zip\"]')].length"): aba.drenar(1.0)
+    u = aba.avaliar("(document.querySelector('a[href$=\".zip\"]') || {}).getAttribute ? document.querySelector('a[href$=\".zip\"]').getAttribute('href') : ''")
+    ok(bool(u), f"DXF das pranchas gerado (link do ZIP no aviso): {u}")
+    if u:
+        import io, zipfile
+        nomes = zipfile.ZipFile(io.BytesIO(urllib.request.urlopen(base + u).read())).namelist()
+        ok(len(nomes) == n_f and all(n.endswith(".dxf") for n in nomes) and nomes[0].startswith("01"),
+           f"um DXF por folha no ZIP ({len(nomes)} de {n_f}): {nomes[:4]}")
+    u = aba.avaliar("(document.querySelector('a[href$=\"pranchas.dxf\"]') || { getAttribute: () => '' }).getAttribute('href')")
+    if u:
+        dados = urllib.request.urlopen(base + u).read()
+        ok(b"DIMENSION" in dados and dados.count(b"\nTEXT\r\n") + dados.count(b"\nTEXT\n") > 20,
+           "DXF completo, todas as pranchas num arquivo só (%d kB)" % (len(dados) // 1024))
+    else:
+        ok(False, "DXF completo das pranchas no aviso")
     aba.drenar(1.0); foto(aba, "prancha_cad.png")
     erros = [c for c in aba.console if c[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")

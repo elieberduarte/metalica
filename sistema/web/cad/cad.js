@@ -433,6 +433,25 @@ class CAD {
     } catch (e) { this.aviso(`Não foi possível gerar o PDF: ${e.message}`, 'erro', 0); }
   }
 
+  /** DXF de todas as pranchas: o completo (todas lado a lado num arquivo só) e um ZIP com uma prancha por arquivo (papel 1:1). */
+  async dxfDasPranchas() {
+    if (!this.projeto) { this.aviso('Precisa de um projeto aberto.', 'atencao'); return; }
+    const lista = (await this._listaDesenhos()).filter(d => d.pranchas || /^prancha-\d+$/i.test(d.nome))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
+    if (!lista.length) { this.aviso('O projeto não tem pranchas ainda: Desenho → Montar pranchas (automático)… ou Gerar pranchas das folhas.', 'atencao'); return; }
+    if (this.nomeDesenho && lista.some(d => d.nome === this.nomeDesenho)) await this.salvar({ avisar: false });
+    this.dica(`Gerando o DXF de ${lista.length === 1 ? 'cada prancha' : `${lista.length} desenhos de pranchas`}…`);
+    try {
+      const r = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(lista[0].nome)}/dxf`, { desenhos: lista.map(d => d.nome), titulo: 'pranchas' });
+      const a = r.arquivo || {}, z = r.zip || {};
+      this.aviso(el('span', {}, `DXF completo, com as ${r.pranchas} pranchas juntas (papel 1:1): `,
+        el('a', { href: a.url, download: a.nome || true, texto: a.nome || 'baixar' }), a.tamanho_kb ? ` · ${numero(a.tamanho_kb, 0)} kB` : '',
+        ' — e uma prancha por arquivo: ', el('a', { href: z.url, download: z.nome || true, texto: z.nome || 'ZIP' }),
+        z.tamanho_kb ? ` · ${numero(z.tamanho_kb, 0)} kB` : ''), 'info', 0);
+      this.dica('DXF das pranchas exportado.');
+    } catch (e) { this.aviso(`Não foi possível exportar o DXF das pranchas: ${e.message}`, 'erro', 0); }
+  }
+
   async inserirVista(definicao, titulo) {
     if (!this.projeto) { this.aviso('Inserir vista precisa de um projeto com modelo 3D.', 'atencao'); return; }
     if (!this.nomeDesenho) this.nomeDesenho = slug(this.el.nome.value || titulo || 'desenho');
@@ -816,6 +835,7 @@ class CAD {
       'exportar-dxf': () => this.exportarDXF(),
       'exportar-pdf': () => this.exportarPDF(),
       'pdf-pranchas': () => this.pdfDasPranchas(),
+      'dxf-pranchas': () => this.dxfDasPranchas(),
       'abrir-pasta': () => this.projeto && postar(`/api/projetos/${encodeURIComponent(this.projeto)}/abrir-pasta`, { sub: 'desenhos-2d' }).catch(e => this.aviso(e.message, 'erro')),
       corte: () => this.dialogoCorte(),
       estilos: () => this.dialogoEstilos(),

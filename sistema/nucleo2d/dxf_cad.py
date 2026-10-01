@@ -164,8 +164,9 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
             t.set_placement((e.posicao[0], e.posicao[1] + 0.8 * k), align=TextEntityAlignment.LEFT)
             feitas += [ld, t]
         a = e.atributos or {}
-        chave = (("posicao", a["posicao"]) if a.get("posicao") and a.get("detalhe") == "posicao"
-                 else ("conjunto", a["conjunto"]) if a.get("conjunto") else None)
+        # a mesma peça em duas pranchas (o desenho das pranchas lado a lado) são dois grupos
+        chave = (("posicao", a["posicao"], a.get("prancha_numero")) if a.get("posicao") and a.get("detalhe") == "posicao"
+                 else ("conjunto", a["conjunto"], a.get("prancha_numero")) if a.get("conjunto") else None)
         if chave and feitas:
             grupos.setdefault(chave, []).extend(feitas)
             if a.get("nome"):
@@ -181,6 +182,72 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
     os.makedirs(os.path.dirname(os.path.abspath(caminho)), exist_ok=True)
     doc.saveas(caminho)
     return caminho
+
+
+def _nome_arquivo(texto: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(texto or "")).encode("ascii", "ignore").decode()
+    return re.sub(r"[\s_-]+", "-", re.sub(r"[^\w\s-]", "", s).strip().lower())[:50]
+
+
+def exportar_pranchas(desenhos, pasta: str, base: str = "pranchas") -> dict:
+    """O DXF completo com todas as pranchas lado a lado num arquivo só (`pasta/<base>.dxf`) e um
+    DXF por prancha, em papel 1:1 com a folha na origem, num ZIP.
+
+    O desenho das pranchas lado a lado é repartido por folha (o mesmo corte do PDF de todas
+    as pranchas); a prancha solta antiga ("Prancha NN") sai inteira. Os arquivos ficam em
+    `pasta/<base>-dxf/` com o número e o título (01-tesouras.dxf) e o ZIP em `pasta/<base>-dxf.zip`."""
+    import os
+    import shutil
+    import zipfile
+    from nucleo2d.desenho import transladar
+    from nucleo2d.pranchas import _por_folha, FOLHAS
+    folhas = []                                   # (numero, titulo, Desenho na origem, largura da folha)
+    for d in desenhos:
+        if d.metadados.get("pranchas"):
+            infos = [f for f in d.metadados["pranchas"] if f.get("formato") in FOLHAS]
+            for info, parte in zip(infos, _por_folha(d)):
+                ox, oy = (info.get("origem") or [0.0, 0.0])[:2]
+                p = Desenho(nome=parte.nome, escala=1.0)
+                p.camadas.update(parte.camadas)
+                for e in parte.entidades.values():
+                    p.add(transladar(e, -float(ox), -float(oy)))
+                folhas.append((int(info.get("numero") or len(folhas) + 1), str(info.get("titulo") or ""), p,
+                               FOLHAS[info["formato"]][0]))
+        else:
+            info = d.metadados.get("prancha") or {}
+            caixa = d.caixa()
+            larg = FOLHAS[info["formato"]][0] if info.get("formato") in FOLHAS else (caixa[1][0] if caixa else 0.0)
+            folhas.append((int(info.get("numero") or len(folhas) + 1), str(info.get("titulo") or d.nome or ""), d, larg))
+    destino = os.path.join(pasta, base + "-dxf")
+    shutil.rmtree(destino, ignore_errors=True)    # sem as pranchas de uma montagem anterior
+    os.makedirs(destino, exist_ok=True)
+    arquivos, usados = [], set()
+    for numero, titulo, p, _larg in folhas:
+        nome = "%02d" % numero + ("-" + _nome_arquivo(titulo) if _nome_arquivo(titulo) else "")
+        while nome in usados:
+            nome += "-b"
+        usados.add(nome)
+        arquivos.append(exportar(p, os.path.join(destino, nome + ".dxf"), 1.0))     # prancha: papel 1:1
+    zipado = os.path.join(pasta, base + "-dxf.zip")
+    with zipfile.ZipFile(zipado, "w", zipfile.ZIP_DEFLATED) as z:
+        for a in arquivos:
+            z.write(a, os.path.basename(a))
+    # o completo: as folhas lado a lado, na ordem, com 50 mm entre elas
+    junto, x, n = Desenho(nome=base, escala=1.0), 0.0, 0
+    for numero, _titulo, p, larg in folhas:
+        for k, cam in p.camadas.items():
+            junto.camadas.setdefault(k, cam)
+        for e in p.entidades.values():
+            q = transladar(e, x, 0.0)
+            q.atributos = dict(q.atributos or {}, prancha_numero=numero)
+            if q.id in junto.entidades:
+                n += 1
+                q.id = "%s-%d" % (q.id, n)
+            junto.add(q)
+        x += larg + 50.0
+    completo = exportar(junto, os.path.join(pasta, base + ".dxf"), 1.0)
+    return {"completo": completo, "zip": zipado, "pasta": destino, "arquivos": arquivos}
 
 
 def _dimensao(msp, c: Cota, k: float, at: dict):

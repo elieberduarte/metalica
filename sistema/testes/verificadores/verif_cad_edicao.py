@@ -145,6 +145,27 @@ try:
        "Enter grava o texto novo e fecha a caixa")
     js("c.desfazer(); return 1;")
     ok(js("return c.doc.get('tdc').texto;") == "CB1 + CH9", "Ctrl+Z volta o texto")
+    # H. janela de seleção com Ctrl soma ao que já estava selecionado (01/10: com o Ctrl ela trocava a seleção)
+    js("""c.doc.add({ id: 'wa', tipo: 'linha', camada: 'VISTA', atributos: {}, a: [70000, 70000], b: [70100, 70000] });
+          c.doc.add({ id: 'wb', tipo: 'linha', camada: 'VISTA', atributos: {}, a: [71000, 70000], b: [71100, 70000] });
+          c.tela.enquadrar([[69500, 69000], [71600, 71000]]); c.ativarFerramenta('selecionar'); c.selecionar(['wa']); return 1;""")
+    aba.drenar(0.4)
+
+    def janela(de, para, mod):
+        q = json.loads(js("""const cv = c.tela.canvas || document.querySelector('#canvas2d'); const r = cv.getBoundingClientRect();
+                             return JSON.stringify([%s, %s].map(p => { const t = c.tela.paraTela(p); return [r.left + t[0], r.top + t[1]]; }));""" % (de, para)))
+        (x0, y0), (x1, y1) = q
+        aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=x0, y=y0, button="left", buttons=1, clickCount=1, modifiers=mod)
+        for t in (0.3, 0.6, 1.0):
+            aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=x0 + (x1 - x0) * t, y=y0 + (y1 - y0) * t, button="left", buttons=1, modifiers=mod)
+        aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=x1, y=y1, button="left", buttons=0, clickCount=1, modifiers=mod)
+        aba.drenar(0.3)
+        return sorted(json.loads(js("return JSON.stringify([...c.tela.selecao]);")))
+    s = janela("[70900, 69900]", "[71200, 70100]", 2)
+    ok(s == ["wa", "wb"], f"janela com Ctrl soma à seleção: {s}")
+    js("c.selecionar(['wa']); return 1;")
+    s = janela("[70900, 69900]", "[71200, 70100]", 0)
+    ok(s == ["wb"], f"e sem tecla a janela troca a seleção, como antes: {s}")
 
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")

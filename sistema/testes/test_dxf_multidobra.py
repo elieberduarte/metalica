@@ -39,6 +39,34 @@ def test_dxf_com_cotas_funcionais_cores_e_grupo():
     assert len(doc.groups) == 1 and next(iter(doc.groups))[0] == "S_T_2"
 
 
+def test_dxf_de_todas_as_pranchas_um_arquivo_por_folha():
+    import zipfile
+    from nucleo2d import dxf_cad
+    from nucleo2d.pranchas import FOLHAS
+    larg, alt = FOLHAS["A1"]
+    d = Desenho(nome="pranchas", escala=1.0)
+    d.metadados["pranchas"] = [{"formato": "A1", "numero": 1, "titulo": "TESOURAS", "origem": [0.0, 0.0]},
+                               {"formato": "A1", "numero": 2, "titulo": "Terças de cobertura", "origem": [larg + 50, 0.0]}]
+    for n, ox in ((1, 0.0), (2, larg + 50)):
+        d.add(Linha(camada="VISTA", a=(ox + 100, 100), b=(ox + 300, 100), atributos={"prancha_numero": n}))
+        d.add(Cota(modo="h", p1=(ox + 100, 100), p2=(ox + 300, 100), deslocamento=10.0, atributos={"prancha_numero": n}))
+    d.add(Texto(posicao=(larg + 50 + 200, 200), texto="nota à mão"))          # sem número: pela folha onde cai
+    with tempfile.TemporaryDirectory() as tmp:
+        r = dxf_cad.exportar_pranchas([d], tmp)
+        assert zipfile.ZipFile(r["zip"]).namelist() == ["01-tesouras.dxf", "02-tercas-de-cobertura.dxf"]
+        for a, textos in zip(r["arquivos"], (0, 1)):
+            msp = ezdxf.readfile(a).modelspace()
+            ln = next(e for e in msp if e.dxftype() == "LINE")
+            assert (round(ln.dxf.start.x), round(ln.dxf.end.x)) == (100, 300)     # a folha na origem
+            assert sum(1 for e in msp if e.dxftype() == "DIMENSION") == 1
+            assert sum(1 for e in msp if e.dxftype() == "TEXT") == textos
+        # o completo: as 2 folhas juntas num arquivo, lado a lado
+        msp = ezdxf.readfile(r["completo"]).modelspace()
+        xs = sorted(round(e.dxf.start.x) for e in msp if e.dxftype() == "LINE")
+        assert xs == [100, round(larg + 50 + 100)]
+        assert sum(1 for e in msp if e.dxftype() == "DIMENSION") == 2 and sum(1 for e in msp if e.dxftype() == "TEXT") == 1
+
+
 def _caixa(centro, eixos, ext, marcas):
     """Sólido-caixa com os eixos (u, w, n) e extensões dadas."""
     vs = []
