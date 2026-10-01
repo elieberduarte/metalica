@@ -37,6 +37,8 @@ def test_dxf_com_cotas_funcionais_cores_e_grupo():
     txt = next(e for e in msp if e.dxftype() == "TEXT")
     assert txt.dxf.style == "METALICA" and abs(txt.dxf.height - 35.0) < 1e-6
     assert len(doc.groups) == 1 and next(iter(doc.groups))[0] == "S_T_2"
+    # o grupo não pega no clique: o duplo clique no AutoCAD edita o texto (01/10)
+    assert next(iter(doc.groups))[1].dxf.selectable == 0
 
 
 def test_cota_do_dxf_igual_a_da_tela():

@@ -15,8 +15,8 @@ O que o `Desenho.para_dxf` antigo (R12, saida/dxf.py) não fazia e a fábrica pe
   estilo METALICA com a fonte da tela do CAD (Segoe UI), altura = altura de
   papel × escala, alinhamento e rotação iguais.
 * **Grupos**: tudo o que é de uma peça ou de um conjunto (contorno, furos, cotas, título)
-  vira um GROUP com o nome de produção (S_T_2, T1…): um clique no AutoCAD pega a peça
-  inteira. Os quadros (TESOURAS, TERÇAS DE COBERTURA…) já agrupam as peças do mesmo tipo.
+  vira um GROUP com o nome de produção (S_T_2, T1…), não selecionável no clique (o duplo
+  clique edita o texto; a peça inteira, por G + o nome no "Select objects"). Os quadros (TESOURAS, TERÇAS DE COBERTURA…) já agrupam as peças do mesmo tipo.
 
 Unidades: milímetro 1:1 (o "de papel" multiplicado pela escala), como o DXF antigo.
 """
@@ -176,8 +176,10 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
     for chave, ents in grupos.items():
         if len(ents) < 2:
             continue
+        # o grupo não pega no clique (01/10: "não consigo editar o texto … clico duas vezes e não vai" — o duplo
+        # clique pegava o grupo da peça): a peça inteira, pelo nome dele (G no "Select objects")
         g = doc.groups.new(_nome_grupo(nomes.get(chave) or chave[1], usados),
-                           description="%s %s" % (chave[0], chave[1]))
+                           description="%s %s" % (chave[0], chave[1]), selectable=False)
         g.extend(ents)
     import os
     os.makedirs(os.path.dirname(os.path.abspath(caminho)), exist_ok=True)
