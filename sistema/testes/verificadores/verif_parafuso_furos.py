@@ -214,6 +214,15 @@ try:
     aba.drenar(0.4)
     ok(foco == "INPUT" and aba.avaliar("window.editor.idAtiva") == "selecionar",
        "Esc com o cursor no campo do painel sai do campo e solta a ferramenta (%s)" % aba.avaliar("window.editor.idAtiva"))
+    # 11) e com o cursor na caixa MEDIDAS (a de baixo): antes o Esc só desfazia o texto e a ferramenta ficava
+    aba.avaliar("window.editor.ativarFerramenta('furo'); 1"); aba.drenar(0.5)
+    aba.avaliar("window.editor.el.medida.focus(); 1")
+    foco = aba.avaliar("document.activeElement === window.editor.el.medida")
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Escape", code="Escape", windowsVirtualKeyCode=27)
+    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Escape", code="Escape", windowsVirtualKeyCode=27)
+    aba.drenar(0.4)
+    ok(foco and aba.avaliar("window.editor.idAtiva") == "selecionar",
+       "Esc com o cursor na caixa MEDIDAS solta a ferramenta Furo (%s)" % aba.avaliar("window.editor.idAtiva"))
 
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")

@@ -603,7 +603,21 @@
       var r = document.getElementById('busca-resultados');
       if (r && !r.hidden && !ev.target.closest('#busca-pecas')) r.hidden = true;
     });
-    document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') fechar(); });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Escape') return;
+      var tinhaMenu = !!aberto;
+      fechar();
+      if (tinhaMenu) return;
+      var tag = ev.target && ev.target.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      // o foco ficou aqui em cima (um clique num menu, nas vistas, nas setas): o Esc não chegava ao lado aberto
+      // e a ferramenta não soltava, "às vezes sim, às vezes não" (01/10) — vai para o lado em uso, que fica com o foco
+      try {
+        var w = quadro(ladoDasSetas()).contentWindow;
+        w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+        w.focus();
+      } catch (e) { /* lado recarregando */ }
+    });
     // o clique dentro de um dos lados: fecha o menu e marca o lado das setas de desfazer
     window.addEventListener('blur', function () {
       fechar();

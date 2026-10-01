@@ -133,6 +133,15 @@ try:
     n_mapa = aba.avaliar("document.querySelectorAll('#onde-foi-parar tbody tr').length") or 0
     aba.avaliar("document.getElementById('onde-foi-parar').hidden = true; 1")
     ok(n_mapa >= 85, f"? › Onde foi parar lista os itens do menu antigo ({n_mapa} linhas)")
+    # Esc com o foco na barra de cima (01/10: a ferramenta do 3D "às vezes solta, às vezes não"): vai para o lado em uso
+    aba.avaliar(f"{F3}.editor.ativarFerramenta('furo'); document.getElementById('f3d').dispatchEvent(new MouseEvent('mouseenter')); document.getElementById('btn-tema-area').focus(); 1")
+    aba.drenar(0.4)
+    fora = aba.avaliar("document.activeElement && document.activeElement.id")
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Escape", code="Escape", windowsVirtualKeyCode=27)
+    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Escape", code="Escape", windowsVirtualKeyCode=27)
+    aba.drenar(0.4)
+    ok(fora == "btn-tema-area" and aba.avaliar(f"{F3}.editor.idAtiva") == "selecionar",
+       f"Esc com o foco na barra de cima solta a ferramenta do 3D (foco em {fora}, ficou {aba.avaliar(f'{F3}.editor.idAtiva')})")
     ok(aba.avaliar(f"getComputedStyle({F2}.document.querySelector('#btn-voltar')).display") == "none"
        and aba.avaliar(f"getComputedStyle({F3}.document.querySelector('#link-projetos')).display") != "none",
        "a navegação de cada lado some dentro da tela dividida")

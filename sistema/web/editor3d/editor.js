@@ -689,6 +689,9 @@ export class Editor {
         ev.preventDefault();
         m.value = this._textoMedida;
         m.blur();
+        // e solta a ferramenta, como no campo do painel: com o cursor aqui (o clique na caixa, um número digitado)
+        // o Esc só desfazia o texto e a ferramenta continuava (01/10: "às vezes solta, às vezes não")
+        if (this.idAtiva !== 'selecionar') { this._fecharMenus(); this._chamar('cancelar'); this.inferencia.limparAncora(); this._atualizarTrava(); }
       }
       ev.stopPropagation();          // o que se digita aqui não é atalho
     });
