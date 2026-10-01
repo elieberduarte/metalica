@@ -11,7 +11,8 @@ O que o `Desenho.para_dxf` antigo (R12, saida/dxf.py) não fazia e a fábrica pe
 * **Cores**: cada camada sai com a cor dela (cor verdadeira RGB e a ACI mais próxima);
   as quase pretas vão para a ACI 7, que o AutoCAD mostra preta no fundo branco e branca
   no fundo preto. Tipo de linha e espessura também.
-* **Texto**: estilo METALICA com a fonte da tela do CAD (Segoe UI), altura = altura de
+* **Texto**: o número das cotas sai na ACI 7 (branco no fundo preto), não na cor da cota;
+  estilo METALICA com a fonte da tela do CAD (Segoe UI), altura = altura de
   papel × escala, alinhamento e rotação iguais.
 * **Grupos**: tudo o que é de uma peça ou de um conjunto (contorno, furos, cotas, título)
   vira um GROUP com o nome de produção (S_T_2, T1…): um clique no AutoCAD pega a peça
@@ -78,7 +79,9 @@ def exportar(desenho: Desenho, caminho: str, escala: Optional[float] = None) -> 
     ds = doc.dimstyles.new(ESTILO)
     for chave, valor in {"dimscale": k, "dimtxt": 2.5, "dimasz": 2.5, "dimexe": 2.0, "dimexo": 1.5,
                          "dimgap": 1.0, "dimtad": 1, "dimtih": 0, "dimtoh": 0, "dimdec": 1, "dimzin": 8,
-                         "dimdsep": ord(","), "dimlunit": 2, "dimclrd": 0, "dimclre": 0, "dimclrt": 0,
+                         # linhas e chamadas na cor da camada; o número na ACI 7 (branco no fundo preto),
+                         # como os textos — com 0 (PorBloco) ele herdava a cor da camada da cota
+                         "dimdsep": ord(","), "dimlunit": 2, "dimclrd": 0, "dimclre": 0, "dimclrt": 7,
                          "dimtix": 0, "dimsah": 0, "dimtmove": 0}.items():
         ds.dxf.set(chave, valor)
     ds.dxf.dimtxsty = ESTILO

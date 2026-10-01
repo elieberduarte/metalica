@@ -28,6 +28,12 @@ def test_dxf_com_cotas_funcionais_cores_e_grupo():
     assert len(dims) == 2
     assert sorted(round(x.get_measurement()) for x in dims) == [270, 500]
     assert doc.layers.get("COTA").rgb is not None                 # a cor do CAD, em RGB
+    # o número da cota em branco (ACI 7), não na cor da camada; as linhas seguem a camada
+    assert doc.dimstyles.get("METALICA").dxf.dimclrt == 7
+    for x in dims:
+        blk = doc.blocks.get(x.dxf.geometry)
+        assert all(t.dxf.color == 7 for t in blk if t.dxftype() in ("MTEXT", "TEXT"))
+        assert all(l.dxf.color in (0, 256) for l in blk if l.dxftype() == "LINE")
     txt = next(e for e in msp if e.dxftype() == "TEXT")
     assert txt.dxf.style == "METALICA" and abs(txt.dxf.height - 35.0) < 1e-6
     assert len(doc.groups) == 1 and next(iter(doc.groups))[0] == "S_T_2"
