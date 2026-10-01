@@ -530,7 +530,13 @@ def _separar_variantes(pecas: Sequence[Solido]) -> None:
         i_f = lista.index(forma)
         if i_f > 0:
             s.atributos = dict(s.atributos or {})
-            s.atributos["marcas"] = dict(_marcas(s), posicao="%s (%s)" % (base, chr(ord("a") + i_f)))
+            nova = "%s (%s)" % (base, chr(ord("a") + i_f))
+            m = dict(_marcas(s), posicao=nova)
+            if str(m.get("conjunto") or "") == base:
+                # a montagem de uma peça só (o conjunto com a marca da própria chapa, a M83 da Sala): o conjunto vai
+                # junto — com a marca velha, virava um "dispositivo" DP.1 com a peça nova dentro
+                m["conjunto"] = nova
+            s.atributos["marcas"] = m
 
 
 #: Camadas do desenho por tipo de peça — a mesma paleta das camadas do modelo 3D (chapas

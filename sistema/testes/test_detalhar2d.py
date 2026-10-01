@@ -955,5 +955,12 @@ def test_chapas_da_mesma_marca_com_furacao_diferente_sao_posicoes_diferentes():
     pecas, _ = _pecas(doc)
     marca = {s.id: _marcas(s).get("posicao") for s in pecas}
     assert marca == {"c0": "M83", "c1": "M83 (b)", "c2": "M83", "c3": "M83 (b)", "c4": "M83"}
+    # a montagem de uma peça só (conjunto com a marca da chapa): o conjunto vai junto — senão virava um dispositivo DP
+    doc2 = Documento()
+    for i, furos in enumerate((a, b)):
+        doc2.add(Chapa(id="d%d" % i, nome="PLATE 125x110x3", contorno=cont, espessura=3.0, furos=furos, origem=(0.0, 1000.0 * i, 0.0),
+                       atributos={"marcas": {"posicao": "M83", "conjunto": "M83"}}))
+    pecas2, _ = _pecas(doc2)
+    assert {s.id: (_marcas(s)["posicao"], _marcas(s)["conjunto"]) for s in pecas2} == {"d0": ("M83", "M83"), "d1": ("M83 (b)", "M83 (b)")}
     # a chapa do modelo não muda
     assert doc.entidades["c1"].atributos["marcas"]["posicao"] == "M83"

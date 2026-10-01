@@ -623,31 +623,27 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     # a prancha de corte em retângulos iguais (pedido do usuário, 29/09: "padronizar a organização das chaparias
     # separadas em retângulos"): cada chapa no seu retângulo, do tamanho da maior, em fileiras alinhadas
     chp = [c for c in itens if c["categoria"] == "CHAPAS" and c.get("pai") is None and not c.get("local")]
-    # a prancha das chapas na escala de corte (pedido do usuário, 01/10: "a escala correta seria a 1:10"; "se
-    # precisar, aumentar o tamanho da prancha"): a folha é a menor, a partir da pedida, em que a maior chapa cabe; a
-    # que nem na A0 cabe fica na escala que cabe, com a nota
+    # a prancha das chapas na escala de corte (pedido do usuário, 01/10: "a escala correta seria a 1:10"), na folha
+    # pedida (as medidas por prancha deixam a de corte ter outra folha, se um dia precisar)
     formato_corte = formato
     if chp and escala_corte:
-        for c in chp:
-            c["_k_copia"] = c["k"]               # a cópia na faixa de outra prancha fica na escala de antes
-            _reescalar(c, float(escala_corte))
-        area_ = lambda f_: FOLHAS[f_][0] * FOLHAS[f_][1]    # noqa: E731
-        for f_ in sorted((f_ for f_ in FOLHAS if area_(f_) >= area_(formato)), key=area_):
-            formato_corte = f_
-            usar(f_)
-            if all(c["w"] <= util_l - 2 * QUADRO_MARGEM and c["h"] <= util_a - QUADRO_CABECALHO - 2 * FOLGA for c in chp):
-                break
+        # na escala de corte o que cabe na folha; a montagem grande que não cabe (a DP.1 da Sala, 01/10: em 1:10 ela
+        # levava a prancha de corte para a A0, reduzida a 1:50, e o retângulo igual de todas as chapas saía do tamanho
+        # dela — uma chapinha por folha) fica na escala que tinha
         larg_int, alt_int = util_l - 2 * QUADRO_MARGEM, util_a - QUADRO_CABECALHO - 2 * FOLGA
         for c in chp:
+            k0 = c["k"]
+            c["_k_copia"] = k0                   # a cópia na faixa de outra prancha fica na escala de antes
+            _reescalar(c, float(escala_corte))
             if c["w"] > larg_int or c["h"] > alt_int:
-                (bx0, by0), (bx1, by1) = c["caixa"]
-                _reescalar(c, escala_normalizada(max((bx1 - bx0) / larg_int, (by1 - by0) / (alt_int - FAIXA))))
-                c["nota"] = "não coube em %s na folha %s" % (texto_escala(float(escala_corte)), formato_corte)
+                _reescalar(c, k0)
             _aplicar_arranjo(c, ux1 - ux0 - 2 * QUADRO_MARGEM)
-    if len(chp) >= 2:
-        sw, sh = max(c["w"] for c in chp), max(c["h"] for c in chp)
+    # os retângulos iguais: só as da escala de corte (a reduzida fica do tamanho dela)
+    iguais = [c for c in chp if not escala_corte or abs(float(c["k"]) - float(escala_corte)) < 1e-9]
+    if len(iguais) >= 2:
+        sw, sh = max(c["w"] for c in iguais), max(c["h"] for c in iguais)
         if sw <= qx1 - qx0:
-            for c in chp:
+            for c in iguais:
                 c["slot_w"], c["slot_h"] = sw, sh
     usar(formato)
     # a faixa ao lado do carimbo, embaixo (pedido do usuário, 28/09): DETALHES à esquerda — as chapas dos
