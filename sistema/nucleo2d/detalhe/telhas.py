@@ -1148,7 +1148,36 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     ordenadas = sorted((ch for ch in chapas if not ch.get("cumeeira")), key=lambda c: c["x"])
     repetidas = _repetidas_na_fileira(ordenadas)
     cotada = False
+    # a cota da largura (980 útil / 1050 total) na chapa de baixo, para fora do desenho: na primeira da esquerda, a
+    # face em anel (a cobertura plana da Sala, 01/10) a punha dentro, em cima das chapas da lateral
+    alinhadas = [c for c in ordenadas if c.get("alinhada", True)
+                 and 600.0 < max(q[0] for q in c["contorno"]) - min(q[0] for q in c["contorno"]) < 1200.0]
+    da_largura = min(alinhadas, key=lambda c: (round(c["y0"]), c["x"])) if alinhadas else None
     for n, ch in enumerate(ordenadas):
+        if not ch.get("alinhada", True) and not ch.get("multidobra"):
+            # a chapa com a onda atravessada na face (as laterais do anel da cobertura plana da Sala, 01/10): deitada,
+            # o comprimento em x e a largura de catálogo em y; a cota ao longo dela e o nome na ponta, fora — como as
+            # em pé (o desenho as tratava como em pé: o comprimento virava largura e a cota caía de lado)
+            xs_ = [q[0] for q in ch["contorno"]]
+            ys_ = [q[1] for q in ch["contorno"]]
+            xa_, xb_ = min(xs_), max(xs_)
+            if ch["comprimento"] > xb_ - xa_ + 1.0:
+                xb_ = xa_ + ch["comprimento"]           # a chapa comprada (arredondada) passa do corte
+            larg_y = max(ys_) - min(ys_)
+            ky = LARGURA_TOTAL_TELHA / larg_y if 600.0 < larg_y < 1200.0 else 1.0
+            yc_ = (max(ys_) + min(ys_)) / 2.0
+            ya_, yb_ = yc_ - larg_y * ky / 2.0, yc_ + larg_y * ky / 2.0
+            p.polilinha([T(q) for q in ((xa_, ya_), (xb_, ya_), (xb_, yb_), (xa_, yb_))], fechada=True, camada="ACO")
+            corte_ = ch.get("corte") or ch["contorno"]
+            area_ = abs(sum(corte_[i][0] * corte_[(i + 1) % len(corte_)][1] - corte_[(i + 1) % len(corte_)][0] * corte_[i][1]
+                            for i in range(len(corte_)))) / 2.0 if len(corte_) >= 3 else 0.0
+            if area_ and area_ < 0.99 * (max(q[0] for q in corte_) - min(q[0] for q in corte_)) * larg_y:
+                p.polilinha([T(q) for q in corte_], fechada=True, camada="OCULTA")
+            rep = {"repete_tipica": True} if id(ch) in repetidas else {}
+            desenho.add(Cota(modo="h", p1=p._p(*T((xa_, yc_))), p2=p._p(*T((xb_, yc_))), deslocamento=0.0,
+                             texto="%d" % round(ch["comprimento"]), altura=1.8, atributos=dict(atr, chapa=ch["nome"], **rep)))
+            p.texto(xa_ - x0 - 4.0 * esc, yc_ - y0 - 0.9 * esc, ch["nome"], 1.8 * esc, alinhamento="direita", atributos=rep)
+            continue
         # a chapa com a largura total de catálogo (1050, com os transpasses) em volta do
         # centro dela; o passo entre chapas é o do modelo (a largura útil)
         xs = [q[0] for q in ch["contorno"]]
@@ -1169,7 +1198,7 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
                          for i in range(len(corte)))) / 2.0 if len(corte) >= 3 else 0.0
         if area_c and area_c < 0.99 * (cxb - cxa) * (yb - ya):
             p.polilinha([T(q) for q in corte], fechada=True, camada="OCULTA")
-        if k != 1.0 and not cotada:
+        if k != 1.0 and not cotada and (da_largura is None or ch is da_largura):
             cotada = True
             xa = min(q[0] for q in contorno) - x0
             yb = ch["y0"] - y0
@@ -1423,20 +1452,6 @@ def aplicar_saias(posicoes, pecas, md: Optional[dict] = None) -> Dict[str, float
 
 #: Cores das telhas na planta, uma por tipo, como o modelo de paginação que o usuário mandou (28/09):
 #: as retas em laranja, preto, cinza…; a multi-dobra magenta; a cumeeira azul.
-CORES_TELHA = ["#e67e22", "#1f2937", "#6b7280", "#16a34a", "#0891b2", "#7c3aed", "#b45309", "#be123c",
-               "#0f766e", "#4d7c0f", "#9333ea", "#c2410c"]
-COR_MULTIDOBRA = "#d946ef"
-COR_CUMEEIRA = "#2563eb"
-
-
-def _camada_da_telha(desenho, nome: str, cor: str) -> str:
-    from nucleo2d.desenho import Camada2D
-    cam = "TELHA " + nome
-    if cam not in desenho.camadas:
-        desenho.camadas[cam] = Camada2D(cam, cor, espessura=0.35)
-    return cam
-
-
 def _na_planta(f: dict):
     """Leva o ponto (x, y) da face (x ao longo de v, y ao longo da onda) à planta (x, y do mundo)."""
     u, v, n, d0 = f["u"], f["v"], f["normal"], f["plano"]
@@ -1469,24 +1484,18 @@ def chapas_da_cobertura(faces: Sequence[dict]) -> List[dict]:
     return fora
 
 
-def _cores_por_tipo(chapas: Sequence[dict]) -> Dict[str, str]:
-    nomes = sorted({c["nome"] for c in chapas if not c["multidobra"]}, key=_ordem_natural)
-    cores = {nm: CORES_TELHA[i % len(CORES_TELHA)] for i, nm in enumerate(nomes)}
-    for c in chapas:
-        if c["multidobra"]:
-            cores[c["nome"]] = COR_MULTIDOBRA
-    return cores
-
-
 def _m(mm: float) -> str:
     return ("%.2f" % (mm / 1000.0)).replace(".", ",")
 
 
 def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: float, dy: float):
-    """A paginação da cobertura em planta, como o modelo do usuário (28/09): cada chapa no lugar dela,
-    na cor do tipo, com o tipo e o comprimento escritos ao longo dela ("TL1  6,80 m"); os eixos com
-    as cotas entre eixos e a total; a legenda das cores. É a vista que a obra usa para distribuir as
-    telhas — as faixas de "comprimentos reais" ficam para a conferência."""
+    """A paginação da cobertura em planta, como o modelo do usuário (28/09): cada chapa no lugar dela, com o tipo e o
+    comprimento escritos ao longo dela ("TL1  6,80 m"); as medidas totais da cobertura; a lista dos tipos. É a vista
+    que a obra usa para distribuir as telhas — as faixas de "comprimentos reais" ficam para a conferência.
+
+    Sem cores e sem eixos (pedido do usuário, 01/10: "retire essa necessidade de cores, deixar só os valores mesmo, é
+    mais simples"; "não vejo a necessidade desses eixos e cotas dos eixos nesse projeto de telhas"): as cores por tipo
+    eram só desta planta e destoavam dos outros detalhes. `eixos` fica pela compatibilidade."""
     from nucleo2d.detalhe.base import _Papel
     esc = desenho.escala
     chapas = chapas_da_cobertura(faces)
@@ -1499,12 +1508,10 @@ def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: floa
     xs = [q[0] for c in chapas for q in c["contorno"]]
     ys = [q[1] for c in chapas for q in c["contorno"]]
     x0, y0 = min(xs), min(ys)
-    cores = _cores_por_tipo(chapas)
     h = 2.2 * esc
     for c in chapas:
-        cam = _camada_da_telha(desenho, c["nome"], cores[c["nome"]])
         pts = [(q[0] - x0, q[1] - y0) for q in c["contorno"]]
-        p.polilinha(pts, fechada=True, camada=cam)
+        p.polilinha(pts, fechada=True, camada="ACO")
         if c["comprimento"] < 500.0:
             continue                      # a faceta da curva (11 cm): o nome não cabe, fica na legenda e no quadro
         cx = sum(q[0] for q in pts) / 4.0
@@ -1519,30 +1526,22 @@ def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: floa
         a_ = math.radians(ang)
         larg = 0.62 * h * len(txt)
         p.texto(cx - math.cos(a_) * larg / 2 + math.sin(a_) * h / 2,
-                cy - math.sin(a_) * larg / 2 - math.cos(a_) * h / 2, txt, h, camada=cam, angulo=ang)
-    # a cumeeira: as pernas, na cor dela
+                cy - math.sin(a_) * larg / 2 - math.cos(a_) * h / 2, txt, h, angulo=ang)
+    # a cumeeira: as pernas
+    cumeeiras = []
     for f in faces:
         if f.get("tipo") != "cobertura" or "u" not in f or f.get("inclinacao", 0.0) < 3.0:
             continue
         P = _na_planta(f)
         for ch in f["chapas"]:
             if ch.get("cumeeira"):
-                cam = _camada_da_telha(desenho, ch["nome"], COR_CUMEEIRA)
-                cores.setdefault(ch["nome"], COR_CUMEEIRA)
-                p.polilinha([(q[0] - x0, q[1] - y0) for q in (P(r) for r in _retangulo_da_chapa(ch))], fechada=True, camada=cam)
+                if ch["nome"] not in cumeeiras:
+                    cumeeiras.append(ch["nome"])
+                p.polilinha([(q[0] - x0, q[1] - y0) for q in (P(r) for r in _retangulo_da_chapa(ch))], fechada=True, camada="ACO")
     largura, altura = max(xs) - x0, max(ys) - y0
-    feito = False
-    if eixos:
-        try:
-            from nucleo2d.detalhe.conjuntos import _desenhar_eixos
-            _desenhar_eixos(p, eixos, (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), x0, y0, esc, largura, altura)
-            feito = True
-        except Exception:                                   # noqa: BLE001 — a planta sai sem os eixos
-            pass
-    if not feito:
-        # sem os eixos gravados no projeto: as medidas totais da cobertura
-        p.cota_h(0.0, largura, altura, 12.0)
-        p.cota_v(0.0, altura, 0.0, -12.0)
+    # as medidas totais da cobertura
+    p.cota_h(0.0, largura, altura, 12.0)
+    p.cota_v(0.0, altura, 0.0, -12.0)
     # a legenda das cores: embaixo da planta quando ela é mais alta que larga (o usuário a levou para lá à mão, 01/10:
     # à direita, a célula ficava larga e sobrava altura); senão à direita, como antes
     if altura >= largura:
@@ -1550,20 +1549,20 @@ def desenho_da_planta_das_telhas(faces: Sequence[dict], eixos, desenho, dx: floa
         xl, y_leg = 0.0, y_min - 8.0 * esc
     else:
         xl, y_leg = largura + 40.0 * esc, altura
-    p.texto(xl, y_leg, "TIPOS DE TELHA (CORES)", 2.5 * esc)
+    p.texto(xl, y_leg, "TIPOS DE TELHA", 2.5 * esc)
     qtd = collections.Counter(c["nome"] for c in chapas)
-    comp = {}
+    comp, multi = {}, set()
     for c in chapas:
         comp.setdefault(c["nome"], c["comprimento"])
-    for i, nm in enumerate(sorted(cores, key=_ordem_natural)):
+        if c["multidobra"]:
+            multi.add(c["nome"])
+    for i, nm in enumerate(sorted(set(comp) | set(cumeeiras), key=_ordem_natural)):
         yy = y_leg - (i + 1) * 5.0 * esc
-        cam = _camada_da_telha(desenho, nm, cores[nm])
-        p.retangulo(xl, yy, 8.0 * esc, 3.0 * esc, camada=cam)
         if nm in comp:
-            txt = "%s - %dx - %s m%s" % (nm, qtd[nm], _m(comp[nm]), "  (multi-dobra)" if cores[nm] == COR_MULTIDOBRA else "")
+            txt = "%s - %dx - %s m%s" % (nm, qtd[nm], _m(comp[nm]), "  (multi-dobra)" if nm in multi else "")
         else:
             txt = "%s - cumeeira" % nm
-        p.texto(xl + 11.0 * esc, yy + 0.4 * esc, txt, 2.2 * esc)
+        p.texto(xl, yy + 0.4 * esc, txt, 2.2 * esc)
     return p.extremos
 
 
