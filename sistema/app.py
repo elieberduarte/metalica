@@ -2977,9 +2977,22 @@ def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:
         pasta = os.path.join(g._existente(s), "pranchas")
         # o nome vem da tela: sem pasta nem caracteres de caminho
         base = _slug(re.sub(r"\.(dxf|zip)$", "", os.path.basename(str(corpo.get("titulo") or "pranchas").replace("\\", "/")), flags=re.I)) or "pranchas"
-        r = dxf_cad.exportar_pranchas(desenhos, pasta, base)
+        # as peças para o corte em tamanho real: o desenho das chaparias e as cantoneiras com nome de chapa dos outros
+        # desenhos do detalhamento (os grandes — o completo, a localização — ficam de fora sem abrir)
+        fontes_corte = []
+        for item in g.listar_desenhos(s, contar=False):
+            n = str(item.get("nome") or "")
+            if n.startswith("detalhamento-") and not re.search(r"complet|localiza|chumba|telha", n):
+                try:
+                    fontes_corte.append((n, Desenho.de_dict(g.abrir_desenho(s, n))))
+                except Exception:                    # noqa: BLE001 — sem o desenho, o corte sai sem ele
+                    pass
+        corte = dxf_cad.desenho_de_corte(fontes_corte)
+        r = dxf_cad.exportar_pranchas(desenhos, pasta, base, corte=corte)
         g.tocar(s)
-        return {"arquivo": _descrever_arquivo(r["completo"], pasta), "zip": _descrever_arquivo(r["zip"], pasta), "pranchas": len(r["arquivos"]),
+        return {"arquivo": _descrever_arquivo(r["completo"], pasta), "zip": _descrever_arquivo(r["zip"], pasta),
+                "corte": _descrever_arquivo(r["corte"], pasta) if r.get("corte") else None,
+                "pranchas": len(r["arquivos"]) - (1 if r.get("corte") else 0),
                 "arquivos": [os.path.basename(a) for a in r["arquivos"]]}
     fonte = corpo.get("desenho") if isinstance(corpo.get("desenho"), dict) else g.abrir_desenho(s, nome)
     desenho = Desenho.de_dict(fonte)

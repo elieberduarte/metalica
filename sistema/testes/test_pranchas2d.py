@@ -463,6 +463,26 @@ def test_chapas_da_tesoura_na_prancha_dela_com_a_quantidade_dela():
             assert perto, (cb, ch)
     # a faixa de baixo: ACESSÓRIOS/DISPOSITIVOS
     assert any(isinstance(e, Texto) and e.texto == "ACESSÓRIOS/DISPOSITIVOS" for e in folhas[0].entidades.values())
+    # a prancha das chapas é a de corte, em 1:10 (pedido do usuário, 01/10), com a célula da chaparia (desenhada em
+    # 1:10)
+    corte = [f for f in folhas if f.metadados["prancha"]["titulo"].startswith("Chapas")]
+    assert corte
+    cels_c = [c for f in corte for c in f.metadados["prancha"]["celulas"] if not c["copia"] and re.match(r"(CH|S\.T\.)\d", c["titulo"])]
+    assert cels_c and all(c["escala"] == 10.0 and "chaparia" in c["fonte"] for c in cels_c), cels_c
+    # o DXF de corte: as chaparias em mm do modelo (o número escrito na cota é a medida do DXF — numa prancha em 1:10,
+    # 64 mm mediam 6,4)
+    import tempfile
+    import ezdxf
+    from nucleo2d import dxf_cad
+    corte_d = dxf_cad.desenho_de_corte([("detalhamento-" + k, d) for k, d in r["desenhos"].items()])
+    assert corte_d is not None
+    with tempfile.TemporaryDirectory() as tmp:
+        dims = list(ezdxf.readfile(dxf_cad.exportar(corte_d, os.path.join(tmp, "c.dxf"))).modelspace().query("DIMENSION"))
+    escritas = [(x.dxf.text, x.get_measurement()) for x in dims if re.fullmatch(r"\d+", x.dxf.text or "")]
+    assert escritas and all(abs(int(t) - m) <= 1 for t, m in escritas), escritas[:5]
+    # o que estava antes (escala de cada desenho) com escala_corte=0
+    antes = montar_pranchas(fontes, formato="A1", escala_corte=0)
+    assert not any(c["escala"] == 10.0 and "chaparia" not in c["fonte"] for f in antes for c in f.metadados["prancha"]["celulas"])
 
 
 def test_contraventos_e_conjuntos_lado_a_lado():

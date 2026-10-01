@@ -447,7 +447,10 @@ class CAD {
       this.aviso(el('span', {}, `DXF completo, com as ${r.pranchas} pranchas juntas (papel 1:1): `,
         el('a', { href: a.url, download: a.nome || true, texto: a.nome || 'baixar' }), a.tamanho_kb ? ` · ${numero(a.tamanho_kb, 0)} kB` : '',
         ' — e uma prancha por arquivo: ', el('a', { href: z.url, download: z.nome || true, texto: z.nome || 'ZIP' }),
-        z.tamanho_kb ? ` · ${numero(z.tamanho_kb, 0)} kB` : ''), 'info', 0);
+        z.tamanho_kb ? ` · ${numero(z.tamanho_kb, 0)} kB` : '',
+        // as peças para o corte em tamanho real (a prancha é de papel: em 1:25, 64 mm medem 2,56)
+        ...(r.corte ? ['. Para o corte, em tamanho real: ', el('a', { href: r.corte.url, download: r.corte.nome || true, texto: r.corte.nome })] : [])),
+        'info', 0);
       this.dica('DXF das pranchas exportado.');
     } catch (e) { this.aviso(`Não foi possível exportar o DXF das pranchas: ${e.message}`, 'erro', 0); }
   }

@@ -125,8 +125,9 @@ try:
     if u:
         import io, zipfile
         nomes = zipfile.ZipFile(io.BytesIO(urllib.request.urlopen(base + u).read())).namelist()
-        ok(len(nomes) == n_f and all(n.endswith(".dxf") for n in nomes) and nomes[0].startswith("01"),
-           f"um DXF por folha no ZIP ({len(nomes)} de {n_f}): {nomes[:4]}")
+        folhas_z = [n for n in nomes if not n.startswith("00-corte")]
+        ok(len(folhas_z) == n_f and all(n.endswith(".dxf") for n in nomes) and folhas_z[0].startswith("01") and "00-corte-tamanho-real.dxf" in nomes,
+           f"um DXF por folha no ZIP ({len(folhas_z)} de {n_f}) e o de corte: {nomes[:4]}")
     u = aba.avaliar("(document.querySelector('a[href$=\"pranchas.dxf\"]') || { getAttribute: () => '' }).getAttribute('href')")
     if u:
         dados = urllib.request.urlopen(base + u).read()
@@ -134,6 +135,21 @@ try:
            "DXF completo, todas as pranchas num arquivo só (%d kB)" % (len(dados) // 1024))
     else:
         ok(False, "DXF completo das pranchas no aviso")
+    # as peças para o corte em tamanho real (01/10): o número escrito nas cotas é a medida do DXF
+    u = aba.avaliar("(document.querySelector('a[href$=\"00-corte-tamanho-real.dxf\"]') || { getAttribute: () => '' }).getAttribute('href')")
+    ok(bool(u), f"DXF de corte em tamanho real no aviso: {u}")
+    if u:
+        import ezdxf, re as _re
+        arq_c = os.path.join(tempfile.mkdtemp(prefix="corte_"), "c.dxf")
+        with open(arq_c, "wb") as f_:
+            f_.write(urllib.request.urlopen(base + u).read())
+        doc_c = ezdxf.readfile(arq_c)
+        dims_c = list(doc_c.modelspace().query("DIMENSION"))
+        esc_ = [(x.dxf.text, x.get_measurement()) for x in dims_c if _re.fullmatch(r"\d+", x.dxf.text or "")]
+        # em mm do modelo: a maior cota de chapa passa de 100 (numa prancha em 1:10 não passaria de uns 50)
+        ok(dims_c and max(x.get_measurement() for x in dims_c) > 100 and all(abs(int(t) - m) <= 1 for t, m in esc_),
+           "no DXF de corte, %d cotas em mm reais (a maior %.0f) e as escritas medem o que dizem (%d)"
+           % (len(dims_c), max((x.get_measurement() for x in dims_c), default=0), len(esc_)))
     aba.drenar(1.0); foto(aba, "prancha_cad.png")
     erros = [c for c in aba.console if c[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")

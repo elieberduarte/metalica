@@ -191,9 +191,60 @@ def _nome_arquivo(texto: str) -> str:
     return re.sub(r"[\s_-]+", "-", re.sub(r"[^\w\s-]", "", s).strip().lower())[:50]
 
 
-def exportar_pranchas(desenhos, pasta: str, base: str = "pranchas") -> dict:
+#: grupos do detalhamento que não têm peça para o corte
+_SEM_CORTE = ("completo", "localizacao", "chumbacao", "telhas")
+
+
+def desenho_de_corte(fontes) -> Optional[Desenho]:
+    """As peças para o corte em tamanho real (mm do modelo: 64 mede 64 no AutoCAD — pedido do usuário, 01/10: "isso
+    vai para a empresa cortar e estando em uma escala diferente pode causar erro"): o desenho das chaparias inteiro e,
+    embaixo, as barras com nome de chapa (CH15, CH16: as cantoneiras dos suportes), que estão nos desenhos das
+    famílias. `fontes`: [(nome, Desenho)] do detalhamento. Sem o das chaparias, None."""
+    from nucleo2d.desenho import transladar
+    from nucleo2d.pranchas import celulas_de
+    grupo = lambda d: str((d.metadados.get("detalhamento") or {}).get("grupo") or "")    # noqa: E731
+    chap = next((d for _n, d in fontes if grupo(d) == "chaparias"), None)
+    if chap is None:
+        return None
+    k = float(chap.escala or 1.0)
+    out = Desenho(nome="Corte – tamanho real", escala=k)
+    out.camadas.update(chap.camadas)
+    for e in chap.entidades.values():
+        out.add(e)
+    ja = {str(it.get("nome") or "") for it in ((chap.metadados.get("detalhamento") or {}).get("itens") or {}).values()}
+    caixa = out.caixa()
+    if caixa is None:
+        return None
+    (x0, y0), _ = caixa
+    x, topo = x0, y0 - 30.0 * k
+    for nome, d in fontes:
+        if d is chap or grupo(d) in _SEM_CORTE:
+            continue
+        itens = (d.metadados.get("detalhamento") or {}).get("itens") or {}
+        for c in celulas_de(d, nome):
+            it = itens.get(c["chave"][1]) if c.get("chave") else None
+            nome_p = str((it or {}).get("nome") or "")
+            if not re.match(r"CH\d", nome_p) or nome_p in ja:
+                continue
+            ja.add(nome_p)
+            # a letra e os afastamentos de papel ficam os mesmos: no desenho das chaparias, na escala dele (a letra
+            # do resto do desenho)
+            (bx0, by0), (bx1, by1) = c["caixa"]
+            for k_, cam in d.camadas.items():
+                out.camadas.setdefault(k_, cam)
+            for e in c["entidades"]:
+                n = transladar(e, x - bx0, topo - by1)
+                while n.id in out.entidades:
+                    n.id = n.id + "c"
+                out.add(n)
+            x += (bx1 - bx0) + 20.0 * k
+    return out
+
+
+def exportar_pranchas(desenhos, pasta: str, base: str = "pranchas", corte: Optional[Desenho] = None) -> dict:
     """O DXF completo com todas as pranchas lado a lado num arquivo só (`pasta/<base>.dxf`) e um
-    DXF por prancha, em papel 1:1 com a folha na origem, num ZIP.
+    DXF por prancha, em papel 1:1 com a folha na origem, num ZIP — com `corte` (`desenho_de_corte`), também o das
+    peças para o corte em tamanho real (00-corte-tamanho-real.dxf).
 
     O desenho das pranchas lado a lado é repartido por folha (o mesmo corte do PDF de todas
     as pranchas); a prancha solta antiga ("Prancha NN") sai inteira. Os arquivos ficam em
@@ -230,6 +281,11 @@ def exportar_pranchas(desenhos, pasta: str, base: str = "pranchas") -> dict:
             nome += "-b"
         usados.add(nome)
         arquivos.append(exportar(p, os.path.join(destino, nome + ".dxf"), 1.0))     # prancha: papel 1:1
+    # as peças para o corte em tamanho real (as pranchas são de papel: em 1:25, 64 mm medem 2,56)
+    arq_corte = None
+    if corte is not None and corte.tamanho:
+        arq_corte = exportar(corte, os.path.join(destino, "00-corte-tamanho-real.dxf"))
+        arquivos = [arq_corte] + arquivos
     zipado = os.path.join(pasta, base + "-dxf.zip")
     with zipfile.ZipFile(zipado, "w", zipfile.ZIP_DEFLATED) as z:
         for a in arquivos:
@@ -248,7 +304,7 @@ def exportar_pranchas(desenhos, pasta: str, base: str = "pranchas") -> dict:
             junto.add(q)
         x += larg + 50.0
     completo = exportar(junto, os.path.join(pasta, base + ".dxf"), 1.0)
-    return {"completo": completo, "zip": zipado, "pasta": destino, "arquivos": arquivos}
+    return {"completo": completo, "zip": zipado, "pasta": destino, "arquivos": arquivos, "corte": arq_corte}
 
 
 #: o traço oblíquo do DXF (o bloco _OBLIQUE, de -0,5 a +0,5 nos dois eixos, na escala de 2 × DIMTSZ) com o

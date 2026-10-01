@@ -260,6 +260,8 @@ QUADROS_POSICOES = [("planta_telhas", "PAGINAÇÃO DAS TELHAS DA COBERTURA (PLAN
 
 #: Quadros com uma célula por linha (a terça é comprida e as iguais em tamanho se comparam).
 UMA_POR_LINHA = {"terca_cobertura", "terca_marquise"}
+#: A barra com nome de chapa (as cantoneiras dos suportes, CH15, CH16): detalhada com as chapas, para o corte.
+_CH_BARRA = re.compile(r"CH\d")
 
 
 #: Quadros do desenho completo por família: o conjunto e as peças que fazem parte dele
@@ -960,6 +962,12 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             continue
         lista = [p for p in _ordenar(posicoes) if p.classe in g["classes"]
                  and not (p.classe == "telha" and all(m in md["posicoes"] for m in marcas_de(p)))]
+        # a barra com nome de chapa (CH15, CH16: as cantoneiras dos suportes) vai com as chapas: o desenho delas é o
+        # de corte (pedido do usuário, 01/10: "isso vai para a empresa cortar"), na escala dele
+        if "chapas" in grupos and chave in ("chapas", "barras"):
+            ch_barra = lambda p: p.classe in ("barra", "barra_conformada") and _CH_BARRA.match(str(p.nome or ""))    # noqa: E731
+            lista = ([p for p in lista if not ch_barra(p)] if chave == "barras"
+                     else lista + [p for p in _ordenar(posicoes) if ch_barra(p)])
         extra_md = md["telhas"] if chave == "telhas" else []
         extra_cm = md["cumeeiras"] if chave == "telhas" else []
         if not lista and not extra_md and not extra_cm:

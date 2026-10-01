@@ -42,6 +42,10 @@ from nucleo2d import modelo_hermes as _modelo    # noqa: E402
 MARGENS = MARGENS_A3 = _modelo.MARGENS
 CARIMBO = {f: _modelo.carimbo_tamanho(f) for f in FOLHAS}
 ESCALAS = (1, 2, 2.5, 5, 10, 15, 20, 25, 50, 75, 100, 125, 150, 200, 250, 500)
+#: A escala das chapas na prancha de corte (pedido do usuário, 01/10: "a escala correta seria a 1:10" — saíam em
+#: 1:25, a do desenho da família); 0 = a escala de cada desenho, como antes. O corte em tamanho real vai no DXF
+#: (`dxf_cad.desenho_de_corte`).
+ESCALA_CORTE = 10.0
 #: Folga entre células e faixa do rótulo de escala sob cada uma (mm de papel).
 FOLGA = 10.0
 FAIXA = 7.0
@@ -56,6 +60,15 @@ def texto_escala(escala: float) -> str:
     if escala < 1.0:
         return "%g:1" % (1.0 / escala)
     return "1:%g" % escala
+
+
+def _de_corte(c: dict) -> bool:
+    """a célula vai para a prancha de corte (a das chapas): chapa, barra com nome de chapa (CH15, CH16) ou a
+    montagem de chapas (o suporte de terça S.T.1); o chumbamento montado fica na prancha dos chumbadores"""
+    it = c.get("item") or {}
+    if c.get("montagem") and not it:
+        return not _eh_chumbamento(c["montagem"])
+    return it.get("categoria") == "CHAPAS" or bool(re.match(r"CH\d", str(it.get("nome") or "")))
 
 
 def escala_normalizada(minima: float) -> float:
@@ -313,13 +326,15 @@ def _quadro(d: Desenho, mq: dict, x0: float, x1: float):
 
 
 def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Optional[dict] = None,
-                    titulo: str = "Prancha", indice: bool = False) -> List[Desenho]:
+                    titulo: str = "Prancha", indice: bool = False, escala_corte: Optional[float] = None) -> List[Desenho]:
     """Monta as pranchas. `fontes`: [{nome, desenho (Desenho), escala (opcional)}].
     Devolve a lista de desenhos-prancha, já numerados. `indice` fica pela compatibilidade: a relação das
     pranchas saiu da legenda (pedido do usuário, 28/09: "as legendas devem ser só dos elementos que estão
     nessa prancha"); ela está no CONTEÚDO do carimbo de cada uma."""
     if formato not in FOLHAS:
         raise ErroDeDados("formato de folha desconhecido: %s" % formato)
+    if escala_corte is None:
+        escala_corte = ESCALA_CORTE
     carimbo = dict(carimbo or {})
     celulas = []
     for f in fontes:
@@ -340,6 +355,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         celulas.extend(cs)
     if not celulas:
         raise ErroDeDados("nenhum desenho com conteúdo para montar a prancha.")
+    todas_celulas = list(celulas)
     # as células de montagem (o chumbamento "CB1 + CH9": o chumbador com a chapa de apoio) pelo nome dela
     for c in celulas:
         if c.get("chave"):
@@ -371,20 +387,53 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             vistas[ch] = len(unicas)
         unicas.append(c)
     celulas = unicas
+    # a chapa na prancha de corte: a célula da chaparia, desenhada na escala de corte (a da família, em 1:25, tem os
+    # afastamentos de 1:25 — noutra escala a célula ficava com os textos longe da peça, 01/10); a da família fica
+    # para a cópia nos DETALHES da prancha da tesoura
+    if escala_corte:
+        da_chaparia = {}
+        for c in todas_celulas:
+            if c.get("chave") and c["chave"][0] in ("posicao", "montagem") and "chaparia" in str(c["fonte"]):
+                da_chaparia.setdefault(c["chave"], c)
+        for i_c, c in enumerate(celulas):
+            ch_c = da_chaparia.get(c.get("chave"))
+            if ch_c is None or ch_c is c or c.get("selecionada") or not _de_corte(c):
+                continue
+            ch_c.setdefault("item", c.get("item"))
+            if not ch_c.get("item"):
+                ch_c["item"] = c.get("item")
+            ch_c.setdefault("marca", c.get("marca"))
+            ch_c["_para_copia"] = c
+            celulas[i_c] = ch_c
     for i_c, c in enumerate(celulas):
         c["_ordem"] = i_c
-    larg, alt = FOLHAS[formato]
     m = MARGENS
-    lc, ac = CARIMBO[formato]
-    # área útil: o quadro menos a faixa do carimbo (a faixa inteira, para a prateleira
-    # de baixo não invadir o carimbo)
-    ux0, ux1 = m["esquerda"] + FOLGA, larg - m["direita"] - FOLGA
-    uy0, uy1 = m["inferior"] + ac + FOLGA, alt - m["superior"] - FOLGA
-    util_l, util_a = ux1 - ux0, uy1 - uy0
+    larg = alt = lc = ac = ux0 = ux1 = uy0 = uy1 = util_l = util_a = qx0 = qx1 = fx0 = fx1 = fy0 = fy1 = alt_faixa = 0.0
+    fmt_atual = formato
+
+    def usar(fmt):
+        """as medidas da folha `fmt`: a prancha de corte pode ter uma folha maior que as outras (01/10)"""
+        nonlocal larg, alt, lc, ac, ux0, ux1, uy0, uy1, util_l, util_a, qx0, qx1, fx0, fx1, fy0, fy1, alt_faixa, fmt_atual
+        fmt_atual = fmt
+        larg, alt = FOLHAS[fmt]
+        lc, ac = CARIMBO[fmt]
+        # área útil: o quadro menos a faixa do carimbo (a faixa inteira, para a prateleira
+        # de baixo não invadir o carimbo)
+        ux0, ux1 = m["esquerda"] + FOLGA, larg - m["direita"] - FOLGA
+        uy0, uy1 = m["inferior"] + ac + FOLGA, alt - m["superior"] - FOLGA
+        util_l, util_a = ux1 - ux0, uy1 - uy0
+        qx0, qx1 = ux0 + QUADRO_MARGEM, ux1 - QUADRO_MARGEM
+        fx0, fx1 = ux0, larg - m["direita"] - lc - FOLGA
+        fy0, fy1 = m["inferior"] + 3.0, m["inferior"] + ac
+        alt_faixa = fy1 - fy0 - QUADRO_CABECALHO - FOLGA
+
+    usar(formato)
 
     # cada célula na sua escala; a que não cabe desce de escala
     itens = []
-    for c in celulas:
+    # (e a célula da família guardada para a cópia nos DETALHES: na escala dela, fora da fila)
+    so_copia = [c["_para_copia"] for c in celulas if c.get("_para_copia") is not None]
+    for c in celulas + so_copia:
         (bx0, by0), (bx1, by1) = c["caixa"]
         w_mod, h_mod = bx1 - bx0, by1 - by0
         k = c["escala"]
@@ -400,7 +449,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             c["k"] = k
             c["w"], c["h"] = w_mod / k, h_mod / k + FAIXA
         _aplicar_arranjo(c, ux1 - ux0 - 2 * QUADRO_MARGEM)
-        itens.append(c)
+        if not any(c is x for x in so_copia):
+            itens.append(c)
 
     # quadros por categoria: as células de cada categoria formam prateleiras dentro de
     # um quadro com título; os quadros se empilham na folha e o que não cabe continua
@@ -421,7 +471,6 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         # os contraventos e os agulhamentos num quadro próprio, ao lado dos conjuntos (pedido do usuário, 28/09)
         if c["categoria"] == "CONJUNTOS" and re.match(r"(A\.[CLD]\.|CV\.)", str((c.get("item") or {}).get("nome") or c.get("titulo") or "")):
             c["categoria"] = "CONTRAVENTOS"
-    qx0, qx1 = ux0 + QUADRO_MARGEM, ux1 - QUADRO_MARGEM
     # as telhas numa prancha só (pedido do usuário, 28/09): sem as peças uma a uma (TL7…) nem a face repetida
     # (a FACE 3 = FACE 2), as vistas no quadro das telhas na escala que as faz caber, e os detalhes (a
     # multidobra tipo, a cumeeira) na faixa de baixo
@@ -574,18 +623,37 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     # a prancha de corte em retângulos iguais (pedido do usuário, 29/09: "padronizar a organização das chaparias
     # separadas em retângulos"): cada chapa no seu retângulo, do tamanho da maior, em fileiras alinhadas
     chp = [c for c in itens if c["categoria"] == "CHAPAS" and c.get("pai") is None and not c.get("local")]
+    # a prancha das chapas na escala de corte (pedido do usuário, 01/10: "a escala correta seria a 1:10"; "se
+    # precisar, aumentar o tamanho da prancha"): a folha é a menor, a partir da pedida, em que a maior chapa cabe; a
+    # que nem na A0 cabe fica na escala que cabe, com a nota
+    formato_corte = formato
+    if chp and escala_corte:
+        for c in chp:
+            c["_k_copia"] = c["k"]               # a cópia na faixa de outra prancha fica na escala de antes
+            _reescalar(c, float(escala_corte))
+        area_ = lambda f_: FOLHAS[f_][0] * FOLHAS[f_][1]    # noqa: E731
+        for f_ in sorted((f_ for f_ in FOLHAS if area_(f_) >= area_(formato)), key=area_):
+            formato_corte = f_
+            usar(f_)
+            if all(c["w"] <= util_l - 2 * QUADRO_MARGEM and c["h"] <= util_a - QUADRO_CABECALHO - 2 * FOLGA for c in chp):
+                break
+        larg_int, alt_int = util_l - 2 * QUADRO_MARGEM, util_a - QUADRO_CABECALHO - 2 * FOLGA
+        for c in chp:
+            if c["w"] > larg_int or c["h"] > alt_int:
+                (bx0, by0), (bx1, by1) = c["caixa"]
+                _reescalar(c, escala_normalizada(max((bx1 - bx0) / larg_int, (by1 - by0) / (alt_int - FAIXA))))
+                c["nota"] = "não coube em %s na folha %s" % (texto_escala(float(escala_corte)), formato_corte)
+            _aplicar_arranjo(c, ux1 - ux0 - 2 * QUADRO_MARGEM)
     if len(chp) >= 2:
         sw, sh = max(c["w"] for c in chp), max(c["h"] for c in chp)
         if sw <= qx1 - qx0:
             for c in chp:
                 c["slot_w"], c["slot_h"] = sw, sh
+    usar(formato)
     # a faixa ao lado do carimbo, embaixo (pedido do usuário, 28/09): DETALHES à esquerda — as chapas dos
     # conjuntos desenhados na prancha (a composição deles), ou, sem conjunto, mais células das mesmas
     # categorias — e LEGENDA junto do carimbo — as peças da prancha, as siglas e, na primeira, a relação das
     # pranchas. O último quadro de cima desce até a faixa.
-    fx0, fx1 = ux0, larg - m["direita"] - lc - FOLGA
-    fy0, fy1 = m["inferior"] + 3.0, m["inferior"] + ac
-    alt_faixa = fy1 - fy0 - QUADRO_CABECALHO - FOLGA
 
     suportes_postos: set = set()                    # os suportes de terça já numa prancha de terças
     n_fileira = [0]                                 # a fileira em que cada célula foi posta (_justificar_fileiras)
@@ -604,6 +672,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             c_.pop("empilhada", None)
         fila = list(itens)
         pranchas: List[List[dict]] = []
+        formatos.clear()                        # a folha de cada prancha (a de corte pode ser maior)
         molduras: List[List[dict]] = []        # por prancha: {categoria, titulo, y0, y1[, x0, x1]}
         legendas: List[dict] = []
         iniciadas = set()
@@ -690,6 +759,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             return True
 
         while fila:
+            usar(formato_corte if fila[0]["categoria"] == "CHAPAS" else formato)
             cels_p, mold_p = [], []
             y_topo = uy1
             cheia = False
@@ -1065,14 +1135,30 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 if c.get("local") and c.get("original") is not None:
                     suportes_postos.add(id(c["original"]))
             pranchas.append(cels_p + na_faixa + no_canto)
+            formatos.append(fmt_atual)
             molduras.append(mold_p)
             legendas.append(leg)
+        usar(formato)
         return pranchas, molduras, legendas
 
+    formatos: List[str] = []
     pranchas, molduras, legendas = distribuir(1)
     # a prancha de continuação quase vazia vai para o espaço livre de outra (pedido do usuário, 29/09: "tentar
     # juntar com a outra prancha" — o típico das terças sem furo sozinho numa prancha, 10 % dela)
-    _juntar_quase_vazias(pranchas, molduras, legendas, qx0, qx1, uy0, uy1, titulos_q)
+    if formato_corte == formato:
+        _juntar_quase_vazias(pranchas, molduras, legendas, qx0, qx1, uy0, uy1, titulos_q)
+        formatos = [formato] * len(pranchas)
+    else:
+        base_i = [i_ for i_, f_ in enumerate(formatos) if f_ == formato]
+        sub_p, sub_m, sub_l = [pranchas[i_] for i_ in base_i], [molduras[i_] for i_ in base_i], [legendas[i_] for i_ in base_i]
+        _juntar_quase_vazias(sub_p, sub_m, sub_l, qx0, qx1, uy0, uy1, titulos_q)
+        # pela moldura (a lista das células da prancha que recebeu outra é trocada; a da moldura, não)
+        cels_de = {id(m_): p_ for m_, p_ in zip(sub_m, sub_p)}
+        for i_ in reversed(base_i):
+            if id(molduras[i_]) in cels_de:
+                pranchas[i_] = cels_de[id(molduras[i_])]
+            else:
+                del pranchas[i_], molduras[i_], legendas[i_], formatos[i_]
     # as fileiras de caixas de ponta a ponta do quadro, na mesma altura (pedido do usuário, 29/09: "um padrão de
     # organização … para não parecerem que só foram jogados ali dentro")
     for cels_j, mold_j in zip(pranchas, molduras):
@@ -1105,7 +1191,8 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         info = dict(carimbo)
         info.setdefault("titulo", ", ".join(dict.fromkeys(mq["titulo"].replace(" (continuação)", "") for mq in molduras[i0 - 1]
                                                           if mq["categoria"] not in ("DETALHES", "LEGENDA")))[:48] or fontes_titulo(cels))
-        quadro, carimbo_caixa = _moldura(d, formato, info, i, total, [c["k"] for c in cels], _conteudo_de(cels))
+        usar(formatos[i0 - 1])
+        quadro, carimbo_caixa = _moldura(d, fmt_atual, info, i, total, [c["k"] for c in cels], _conteudo_de(cels))
         for mq in molduras[i0 - 1]:
             _quadro(d, mq, mq.get("x0", ux0), mq.get("x1", ux1))
         # um conjunto sozinho na área de cima (a tesoura): centralizado no quadro, que desce até a faixa, e
@@ -1202,7 +1289,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                 ex_, ey_ = c.get("escala_em") or (c["px"], c["py"] + 1.5)
                 d.add(Texto(camada="TEXTO", posicao=(round(ex_, 2), round(ey_, 2)), texto=rot, altura=2.0,
                         atributos={"prancha": "escala", "fonte": c["fonte"], "celula": c["titulo"], "cel": ids_c[id(c)]}))
-        d.metadados["prancha"] = {"formato": formato, "numero": i, "total": total, "fontes": fontes_da,
+        d.metadados["prancha"] = {"formato": fmt_atual, "numero": i, "total": total, "fontes": fontes_da,
                                   "titulo": info.get("titulo", ""),
                                   "quadro": [round(v, 2) for v in quadro], "carimbo": [round(v, 2) for v in carimbo_caixa],
                                   "celulas": [{"titulo": c["titulo"], "id": ids_c[id(c)], "fonte": c["fonte"], "escala": c["k"], "copia": bool(c.get("local")),
@@ -2491,6 +2578,8 @@ def _copia_local(c: dict, n: int) -> dict:
     desenhada nela: o título ("CH13 – 02x") e o peso total ("8,88 kg/pç  total 17,8 kg") pela
     quantidade local; o original segue para a prancha das chapas, com o total da obra."""
     original = c
+    if c.get("_para_copia") is not None:
+        c = c["_para_copia"]                     # a célula da família (a da chaparia está na prancha de corte)
     if any((e.atributos or {}).get("chapa_de_corte") for e in c["entidades"]):
         # o chumbamento montado vai sem as chapas para corte (estão na prancha dos chumbadores): a faixa da
         # tesoura só mostra como fica
@@ -2519,10 +2608,20 @@ def _copia_local(c: dict, n: int) -> dict:
                 e.texto = txt
         ents.append(e)
     cc = dict(c, entidades=ents, local=True, qtd_local=n, original=original)
+    if c is not original and original.get("_para_copia") is c:
+        # a célula da família: o lugar na montagem (categoria, ordem, item) é o da original
+        for k_ in ("categoria", "_ordem", "item", "marca", "montagem", "chave", "titulo"):
+            if k_ in original:
+                cc[k_] = original[k_]
     if titulo is not None:
         cc["titulo"] = re.sub(r"\s*–\s*\d+x\s*$", "", titulo.texto) + " – %02dx" % n
     if c.get("item"):
         cc["item"] = dict(c["item"], quantidade=n)
+    if original.get("_para_copia") is None and original.get("_k_copia") and abs(float(original["_k_copia"]) - float(cc["k"])) > 1e-9:
+        # o original está na escala de corte; a cópia, nos DETALHES da tesoura, na escala de antes
+        for k_ in ("_ents_escala0", "slot_w", "slot_h", "slot_caixa"):
+            cc.pop(k_, None)
+        _reescalar(cc, float(original["_k_copia"]))
     return cc
 
 
