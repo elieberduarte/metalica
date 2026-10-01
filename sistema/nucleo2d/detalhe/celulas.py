@@ -594,6 +594,20 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
 ROSCA_GANCHO = 100.0
 
 
+def desenhar_rosca(p, u1: float, u2: float, vc: float, d: float, esc: float) -> None:
+    """A rosca no trecho u1–u2 da barra de diâmetro d (eixo em vc): as duas linhas finas do fundo da rosca, a linha
+    do fim da rosca e os filetes — traços inclinados atravessando a barra, no passo visual (pedido do usuário, 01/10:
+    "melhorar a representação das roscas")."""
+    for s in (-1.0, 1.0):
+        p.linha(u1, vc + s * d * 0.32, u2, vc + s * d * 0.32, "ACO-FINO")
+    a, b = min(u1, u2), max(u1, u2)
+    passo = max(d * 0.7, 0.35 * esc)                # ~9 mm na barra de 1/2" em 1:25, como o esboço dele
+    x = a + passo / 2
+    while x + d * 0.2 < b:
+        p.linha(x - d * 0.2, vc - d / 2, x + d * 0.2, vc + d / 2, "ACO-FINO")
+        x += passo
+
+
 def _rosca_do_gancho(p, pos: Posicao, esc: float, off: float):
     """A rosca do gancho na ponta reta (a oposta à dobra): as duas linhas finas do fundo
     da rosca ao longo de ROSCA_GANCHO e a cota "ROSCA 100"."""
@@ -611,9 +625,8 @@ def _rosca_do_gancho(p, pos: Posicao, esc: float, off: float):
     vc = (v0 + v1) / 2.0
     comp = min(ROSCA_GANCHO, 0.9 * L)
     u1, u2 = (L - comp, L) if reta_no_fim else (0.0, comp)
-    for s in (-1.0, 1.0):
-        p.linha(u1, vc + s * d * 0.32, u2, vc + s * d * 0.32, "ACO-FINO")
-    p.linha(u1, v0, u1, v1, "ACO-FINO")
+    desenhar_rosca(p, u1, u2, vc, d, esc)
+    p.linha(u1 if reta_no_fim else u2, v0, u1 if reta_no_fim else u2, v1, "ACO-FINO")     # o fim da rosca
     p.cota_h(u1, u2, v1, 4.0, texto="ROSCA %d" % round(comp))   # rente à barra: o título vem logo acima
 
 

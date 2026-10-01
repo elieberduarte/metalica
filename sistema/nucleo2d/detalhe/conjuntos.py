@@ -3435,13 +3435,8 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
         if x_a is None:
             n_roscas += 1                             # outra ponta da mesma barra roscada
             continue
-        for s_ in (-1.0, 1.0):
-            p.linha(x_a, v_c + s_ * d_b * 0.32, x_b, v_c + s_ * d_b * 0.32, "ACO-FINO")
-        passo_f = max(d_b * 0.6, 1.2 * esc)
-        x_f = x_a + passo_f / 2
-        while x_f < x_b:
-            p.linha(x_f - d_b * 0.25, v_c - d_b / 2, x_f + d_b * 0.25, v_c + d_b / 2, "ACO-FINO")
-            x_f += passo_f
+        from nucleo2d.detalhe.celulas import desenhar_rosca
+        desenhar_rosca(p, x_a, x_b, v_c, d_b, esc)
         p.cota_h(x_a, x_b, v_c + d_b / 2, 4.0)
         n_roscas += 1
         lado_ = (x_a + x_b) / 2 > meio
@@ -3496,6 +3491,11 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
             pu = [_dot(_sub(q, origem), u) - u0 for q in tirante.vertices]
             p.texto((min(pu) + max(pu)) / 2, alt + 2.0 * esc, str(_marcas(tirante).get("perfil") or tirante.nome or ""), h, "TEXTO", alinhamento="centro")
         pass
+    # as chapas de ponta desenhadas de frente, à direita da ponta da barra, na escala dela, com o nome embaixo — uma
+    # por chapa diferente do típico, e a quais conjuntos serve quando muda de um para outro (pedido do usuário, 01/10:
+    # "nome e representação da chapa", desenhado à mão ao lado da A.C.1)
+    _chapas_de_ponta(p, membros, nome_de, nomes_conj, esc, larg, alt,
+                     ((min(pv_t) + max(pv_t)) / 2.0) if tirante is not None else alt / 2.0)
     # título: tipo, nomes e, por contraventamento, o tirante com o comprimento de corte
     total = sum(m[2] for m in membros)
     linhas = ["%s – %02dx" % (" / ".join(nomes_conj.get(m[0], m[0]) for m in membros), total)]
@@ -3545,6 +3545,56 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
     p.atr = atr0
     ext = p.extremos
     return (min(ext[0], dx), min(ext[1], dy), max(ext[2], dx + larg), max(ext[3], dy + alt))
+
+
+#: Entre a ponta da barra (e o que está desenhado nela) e a primeira chapa de ponta, e entre uma chapa e a outra (mm de
+#: papel).
+VAO_CHAPA_DE_PONTA = 8.0
+
+
+def _chapas_de_ponta(p, membros, nome_de, nomes_conj, esc: float, larg: float, alt: float, v_eixo: float) -> int:
+    """No detalhe típico (contraventos, agulhas, cantoneiras A.C./A.L.), cada chapa de ponta desenhada de frente — o
+    contorno pela face maior dela, em pé, na escala da barra (a pequena sai do tamanho real, que é o que ela tem) —
+    à direita da ponta da barra, centrada no eixo dela, com o nome embaixo; uma por chapa diferente, lado a lado.
+    Quando a chapa muda de um conjunto para outro, o nome diz a quais serve: "CH18 (A.C.1, A.L.1)". Chapa é a peça
+    de ponta de chapa (PLATE) ou com o nome de chapa (CH…, a castanha). Devolve quantas desenhou."""
+    from nucleo2d.detalhe.montagens import _eh_chapa, _eixos_da_chapa
+    chapas = collections.OrderedDict()                 # nome → (peça, [conjuntos])
+    for rot, inst_m, _n in membros:
+        tir_m = _tirante_principal(inst_m) or _barra_mais_longa(inst_m)
+        for e in inst_m:
+            if e is tir_m:
+                continue
+            nome = str(nome_de(_marcas(e).get("posicao") or e.nome) or "")
+            if not (_eh_chapa(e) or re.match(r"CH\s*\d", nome, re.I)):
+                continue
+            ent = chapas.setdefault(nome, [e, []])
+            n_c = nomes_conj.get(rot, rot)
+            if n_c not in ent[1]:
+                ent[1].append(n_c)
+    if not chapas:
+        return 0
+    todos = [nomes_conj.get(m[0], m[0]) for m in membros]
+    ext = p.extremos
+    x = max(larg, ext[2] - p.dx) + VAO_CHAPA_DE_PONTA * esc
+    h_nome = 1.8 * esc
+    for nome, (e, conj) in sorted(chapas.items(), key=lambda kv: _ordem_natural(kv[0])):
+        c, eixos = _eixos_da_chapa(e)
+        a1, a0 = eixos[0], eixos[1]                    # o maior em pé, o do meio deitado
+        pts = [(_dot(_sub(q, c), a0), _dot(_sub(q, c), a1)) for q in e.vertices]
+        casco = _casco(pts)
+        if len(casco) < 3:
+            continue
+        xs_, ys_ = [q[0] for q in casco], [q[1] for q in casco]
+        w_ = max(xs_) - min(xs_)
+        txt = nome if set(conj) == set(todos) else "%s (%s)" % (nome, ", ".join(conj))
+        vaga = max(w_, 0.6 * h_nome * len(txt))        # a chapa no meio da vaga dela, o nome embaixo
+        x0_, y0_ = min(xs_) - (vaga - w_) / 2.0, (min(ys_) + max(ys_)) / 2.0
+        p.polilinha([(x + q[0] - x0_, v_eixo + q[1] - y0_) for q in casco], fechada=True, camada="CHAPAS")
+        p.texto(x + vaga / 2.0, v_eixo - (max(ys_) - min(ys_)) / 2.0 - 3.0 * esc - h_nome, txt, h_nome, "TEXTO",
+                alinhamento="centro")
+        x += vaga + VAO_CHAPA_DE_PONTA * esc
+    return len(chapas)
 
 
 # ============================================================ localização
