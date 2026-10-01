@@ -750,6 +750,10 @@ class Montagem {
       el('div', { class: 'ok' }, `3D gerado${r.registro && r.registro.assim_mesmo ? ' (assim mesmo, com ' + r.registro.erros + ' erro(s) registrado(s))' : ''}: ${r.modelo.barras} barras.`),
       el('div', {}, `Tesouras: ${tes}`),
       el('div', {}, `Terças ${s.tercas} · suportes de terça ${s.suportes_terca} · contraventos ${s.contraventos} · suportes de contravento ${s.suportes_contravento} · pilares ${s.pilares}`),
+      (s.conferencia || []).length ? el('table', { class: 'leitura-conferencia', title: 'Projeto (título e lista) × marcas da planta × modelo' },
+        el('tr', {}, el('th', {}, 'peça'), el('th', {}, 'projeto'), el('th', {}, 'planta'), el('th', {}, 'modelo')),
+        s.conferencia.map(c => el('tr', { class: c.confere ? '' : 'difere' }, el('td', {}, c.peca), el('td', {}, c.projeto ?? '—'),
+          el('td', {}, c.planta), el('td', {}, c.modelo)))) : null,
       ...(r.avisos || []).slice(0, 12).map(x => el('div', { class: 'aviso' }, x)),
       el('a', { href: this.cad.urlDoEditor(), class: 'abrir-3d' }, 'Abrir o 3D →'));
   }

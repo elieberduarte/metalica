@@ -319,3 +319,10 @@ def test_revisao_mostra_o_que_mudou_na_area_do_quadro():
     # sem revisão nova (a original de sempre), nada a apontar
     m["original"] = "planta-de-lançamento"
     assert lq.comparar_revisao(m, desenhos.__getitem__) == []
+
+
+def test_conferencia_projeto_modelo():
+    r = de_quadros.gerar(_montagem(ligacoes={"suporte_terca": "ST1"}))
+    conf = {c["peca"]: c for c in r["resumo"]["conferencia"]}
+    assert conf["T01"] == {"peca": "T01", "projeto": 2, "planta": 2, "modelo": 2, "confere": True}
+    assert conf["TC01"]["projeto"] == 2 and conf["TC01"]["modelo"] == 2 and conf["TC01"]["confere"]

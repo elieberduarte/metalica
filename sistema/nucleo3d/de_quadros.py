@@ -517,6 +517,20 @@ def gerar(desenho: dict, parametros: Optional[dict] = None, pasta_dados: Optiona
         "variantes": {k: v for k, v in escolhas.items() if v}, "base": base, "topo": topo,
         "deslocamento_mm": list(desl),
     }
+    # a conferência projeto × modelo (como na portaria): o título e a lista do projeto, as marcas da planta e o modelo
+    conf = []
+    for q_ in L["quadros"]:
+        lt_ = q_.get("leitura") or {}
+        if q_["tipo"] == "tesoura" and lt_.get("nome"):
+            nome = lt_["nome"]
+            conf.append({"peca": nome, "projeto": lt_.get("qtd"), "planta": (pos.get("contagem") or {}).get(nome, 0),
+                         "modelo": contagem.get(nome, 0)})
+    for sig, it in sorted((ter.get("tabela") or {}).items()):
+        conf.append({"peca": sig, "projeto": it.get("qtd"), "planta": (ter.get("contagem") or {}).get(sig, 0),
+                     "modelo": contagem.get("TERÇA " + sig, 0)})
+    for c_ in conf:
+        c_["confere"] = c_["modelo"] == (c_["projeto"] if c_["projeto"] is not None else c_["planta"])
+    resumo["conferencia"] = conf
     niveis = [{"nome": "BASE DOS PILARES", "z": base}, {"nome": "TOPO DOS PILARES", "z": topo}]
     return {"doc": doc, "resumo": resumo, "avisos": avisos, "leitura": L, "deslocamento": desl, "niveis": niveis}
 
