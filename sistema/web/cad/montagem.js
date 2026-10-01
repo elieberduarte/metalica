@@ -10,11 +10,19 @@
 //
 // Embaixo do palco, as abas Original | Montagem | Pranchas trocam o desenho aberto.
 //
+// Etapa 2 (Original → quadro): na Original, "Enviar área para quadro…" marca um retângulo (pega tudo o que
+// está dentro, inclusive as camadas travadas do cliente) e copia para o quadro escolhido, reduzido à escala
+// dele (textos e cotas proporcionais; a cota guarda o valor real escrito). O quadro cresce se o desenho não
+// couber (os outros se acomodam). A cópia guarda de onde veio (o desenho, a área, quando) — é o que a
+// revisão vai comparar quando chegar um DXF novo — e confere a escala pelas cotas copiadas: o número escrito
+// × a medida no desenho do cliente.
+//
 // Módulo à parte, pendurado no CAD já aberto (window.cad): desenha os quadros pelo gancho
 // `tela.aoDesenhar` e põe os controles (título, escala, nome, alça, "+ corte tesoura") por cima do canvas.
 
 import { DESENHO_LANCAMENTO } from './lancamento.js';
-import { transformar } from './nucleo/desenho2d.js';
+import { transformar, pontosDe, caixaDe, valorCota, novoId as idEntidade } from './nucleo/desenho2d.js';
+import { Ferramenta } from './ferramentas.js';
 
 export const DESENHO_MONTAGEM = 'montagem';
 export const FOLGA = 25;                 // mm de papel entre os quadros
@@ -76,14 +84,85 @@ export function arrumar(m) {
       alt = Math.max(alt, q.h);
     }
     if (l === tesTam.linha) {
-      const ult = qs[qs.length - 1];
-      const w = ult ? ult.w : tesTam.w, h = ult ? ult.h : tesTam.h;
+      // o "+ corte tesoura" sempre no tamanho padrão (não no da última, que pode ter crescido muito)
+      const w = tesTam.w, h = tesTam.h;
       m.vaga = { x, y: topo, w, h };
       alt = Math.max(alt, h);
     }
     topo -= alt + FOLGA;
   }
   return andou;
+}
+
+/** Margens dentro do quadro (mm de papel): a faixa do título em cima. */
+export const MARGEM = { lado: 8, topo: 20, baixo: 10 };
+const teto5 = (v) => Math.ceil(v / 5) * 5;
+
+/**
+ * Copia `ents` (do desenho do cliente, escala `kOriginal`) para o quadro `quadroId` da montagem `mont`
+ * (o JSON do desenho "montagem"), na escala `escala` do quadro. `camadas` = {nome: camada} das usadas.
+ * Mexe em `mont` e devolve o resumo {copiados, cresceu, conferencia, caixa}.
+ */
+export function copiarParaQuadro(mont, quadroId, ents, { escala, kOriginal = 1, camadas = {}, substituir = true, origem = {} } = {}) {
+  const m = mont.metadados.montagem;
+  const q = m.quadros.find(x => x.id === quadroId);
+  if (!q) throw new Error('quadro não encontrado');
+  if (!ents.length) throw new Error('nenhum objeto dentro da área');
+  const s = Number(escala) || q.escala;
+  const pts = ents.flatMap(e => pontosDe(e));
+  const [[bx0, by0], [bx1, by1]] = caixaDe(pts);
+  if (substituir) mont.entidades = mont.entidades.filter(e => (e.atributos || {}).quadro !== q.id);
+  // o quadro cresce se o desenho não cabe (na escala do quadro)
+  const wc = (bx1 - bx0) / s, hc = (by1 - by0) / s;
+  const w0 = q.w, h0 = q.h;
+  // a escala em que o desenho caberia no tamanho de agora do quadro (para o aviso)
+  const cabe = ESCALAS.find(e => (bx1 - bx0) / e <= q.w - 2 * MARGEM.lado && (by1 - by0) / e <= q.h - MARGEM.topo - MARGEM.baixo) || null;
+  q.escala = s;
+  if (wc > q.w - 2 * MARGEM.lado) q.w = teto5(wc + 2 * MARGEM.lado);
+  if (hc > q.h - MARGEM.topo - MARGEM.baixo) q.h = teto5(hc + MARGEM.topo + MARGEM.baixo);
+  const andou = arrumar(m);
+  for (const [i, e] of mont.entidades.entries()) {
+    const d = andou[(e.atributos || {}).quadro];
+    if (d) mont.entidades[i] = transformar(e, (p) => [p[0] + d[0], p[1] + d[1]]);
+  }
+  // o desenho no canto de cima à esquerda do quadro, abaixo do título
+  const f = (p) => [q.x + MARGEM.lado + (p[0] - bx0) / s, q.y - MARGEM.topo - (by1 - p[1]) / s];
+  const fator = kOriginal / s;                // o que é mm de papel (texto, cota, hachura) fica proporcional
+  const conf = { cotas: 0, batem: 0, fatores: [] };
+  for (const e of ents) {
+    const n = transformar(e, f, (a) => a, 1 / s);
+    n.id = idEntidade();
+    if (n.altura != null && (n.tipo === 'texto' || n.tipo === 'cota' || n.tipo === 'chamada')) n.altura = n.altura * fator;
+    if (n.tipo === 'cota') {
+      n.deslocamento = (n.deslocamento || 0) * fator;
+      const medida = valorCota(e);
+      const escrito = parseFloat(String(e.texto ?? '').replace(/\./g, '').replace(',', '.'));
+      if (e.texto == null || e.texto === '') n.texto = String(Math.round(medida));
+      if (isFinite(escrito) && escrito > 0 && medida > 1e-6) {
+        conf.cotas++;
+        const r = escrito / medida;
+        conf.fatores.push(r);
+        if (Math.abs(r - 1) <= 0.02 || Math.abs(escrito - medida) <= 1.5) conf.batem++;
+      }
+      n.atributos = { ...(n.atributos || {}), medida_real: Math.round(medida * 10) / 10 };
+    }
+    if (n.tipo === 'hachura' && n.espacamento) n.espacamento = n.espacamento * fator;
+    n.atributos = { ...(n.atributos || {}), quadro: q.id, da_original: e.id };
+    mont.entidades.push(n);
+  }
+  mont.camadas = mont.camadas || {};
+  for (const [nome, c] of Object.entries(camadas)) {
+    if (!mont.camadas[nome]) mont.camadas[nome] = { ...c, bloqueada: false, visivel: true };
+  }
+  // a escala pelas cotas: a maioria bate, ou um fator comum (o DXF em cm, em m) para avisar
+  let sugestao = null;
+  if (conf.cotas && conf.batem < conf.cotas / 2) {
+    const ord = [...conf.fatores].sort((a, b) => a - b), med = ord[Math.floor(ord.length / 2)];
+    for (const k of [10, 100, 1000, 0.1, 0.01, 0.001, 2, 0.5, 5, 0.2]) if (Math.abs(med / k - 1) < 0.03) { sugestao = k; break; }
+  }
+  q.conferencia = { cotas: conf.cotas, batem: conf.batem, fator: sugestao };
+  q.fonte = { ...origem, caixa: [[bx0, by0], [bx1, by1]], entidades: ents.length, em: new Date().toISOString().slice(0, 16) };
+  return { copiados: ents.length, cresceu: q.w !== w0 || q.h !== h0, cabe, conferencia: q.conferencia, quadro: q };
 }
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -107,6 +186,30 @@ async function pedir(rota, corpo) {
   return d;
 }
 
+/** Na Original: o retângulo da área a mandar para um quadro (dois cliques, ou arrastando). */
+class EnviarArea extends Ferramenta {
+  static id = 'enviar-quadro'; static nome = 'Enviar área para quadro'; static grupo = 'montagem';
+  static dica = 'Marque a área a levar para um quadro da Montagem: o primeiro canto (ou arraste) · Esc cancela';
+  reiniciar() { super.reiniciar(); this.a = null; this.editor.tela.regiao = null; }
+  desativar() { super.desativar(); this.editor.tela.regiao = null; this.editor.tela.pedirQuadro(); }
+  onPonto(p) {
+    if (!this.a) { this.a = p; this.dica('Agora o canto oposto da área · Esc cancela'); return; }
+    this._fim(p);
+  }
+  onMover(p) { if (this.a) { this.editor.tela.regiao = [this.a, p]; } }
+  onSoltar(p, ev) {
+    const de = ev && ev.arrasto ? this.editor.tela.paraMundo(ev.arrasto.de) : null;
+    if (de) { this.a = de; this._fim(p); }
+  }
+  _fim(p) {
+    const a = this.a;
+    this.a = null;
+    this.editor.tela.regiao = [a, p];
+    const caixa = [[Math.min(a[0], p[0]), Math.min(a[1], p[1])], [Math.max(a[0], p[0]), Math.max(a[1], p[1])]];
+    window.montagem.enviarArea(caixa).finally(() => { this.editor.tela.regiao = null; this.editor.tela.pedirQuadro(); });
+  }
+}
+
 class Montagem {
   constructor(cad) {
     this.cad = cad;
@@ -115,7 +218,11 @@ class Montagem {
     this.abas = el('div', { class: 'abas-projeto', id: 'abas-projeto', hidden: true, role: 'tablist', 'aria-label': 'Etapas do projeto recebido' },
       el('button', { type: 'button', 'data-aba': 'original', title: 'O DXF do cliente como chegou (a planta de lançamento): só leitura, a fonte dos quadros', onclick: () => this.ir('original') }, 'Original'),
       el('button', { type: 'button', 'data-aba': 'montagem', title: 'A folha com os quadros: locação, terças, tesouras, elevações, corte e ligações — é o que o programa lê', onclick: () => this.ir('montagem') }, 'Montagem'),
-      el('button', { type: 'button', 'data-aba': 'pranchas', title: 'As pranchas do projeto, geradas depois do 3D', onclick: () => this.ir('pranchas') }, 'Pranchas'));
+      el('button', { type: 'button', 'data-aba': 'pranchas', title: 'As pranchas do projeto, geradas depois do 3D', onclick: () => this.ir('pranchas') }, 'Pranchas'),
+      this.botaoEnviar = el('button', { type: 'button', class: 'enviar-quadro', hidden: true, id: 'btn-enviar-quadro',
+        title: 'Marque uma área da planta do cliente e escolha o quadro da Montagem para onde ela vai (copiada, na escala do quadro)',
+        onclick: () => this.cad.ativarFerramenta('enviar-quadro') }, 'Enviar área para quadro…'));
+    cad.ferramentas.set('enviar-quadro', new EnviarArea(cad));
     this.palco.append(this.camada, this.abas);
     this.desenhos = [];
     this.arrasto = null;
@@ -158,7 +265,13 @@ class Montagem {
     const atual = this.cad.nomeDesenho === DESENHO_MONTAGEM ? 'montagem'
       : this.cad.nomeDesenho === ((this.m && this.m.original) || DESENHO_LANCAMENTO) ? 'original'
       : /^pranchas/.test(this.cad.nomeDesenho || '') ? 'pranchas' : '';
-    for (const b of this.abas.querySelectorAll('button')) b.classList.toggle('on', b.dataset.aba === atual);
+    for (const b of this.abas.querySelectorAll('button[data-aba]')) b.classList.toggle('on', b.dataset.aba === atual);
+    this.naOriginal = atual === 'original';
+    this.botaoEnviar.hidden = !this.naOriginal;
+    this.mOriginal = null;
+    if (this.naOriginal && nomes.has(DESENHO_MONTAGEM)) {
+      try { this.mOriginal = (await pedir(this._urlMontagem())).desenho.metadados.montagem || null; } catch { this.mOriginal = null; }
+    }
     // a montagem antiga sem quadros (ou criada por outro caminho): ganha a padrão
     if (this.cad.nomeDesenho === DESENHO_MONTAGEM && !this.m) {
       this.cad.doc.metadados = { ...(this.cad.doc.metadados || {}), montagem: montagemPadrao() };
@@ -191,6 +304,80 @@ class Montagem {
     }
   }
 
+  _urlMontagem() { return `/api/projetos/${encodeURIComponent(this.cad.projeto)}/desenhos/${encodeURIComponent(DESENHO_MONTAGEM)}`; }
+
+  /** A montagem do projeto (o JSON do desenho), criada com os quadros padrão se ainda não existe. */
+  async _montagemJSON() {
+    try { return (await pedir(this._urlMontagem())).desenho; } catch {
+      return { nome: 'Montagem', unidade: 'mm', escala: 1, camadas: {}, entidades: [], vistas: [], metadados: { montagem: montagemPadrao(this.cad.nomeDesenho) } };
+    }
+  }
+
+  /** Os objetos da Original dentro da caixa (inteiros dentro), inclusive os das camadas travadas do cliente. */
+  _naArea(caixa) {
+    const [[x0, y0], [x1, y1]] = caixa;
+    const dentro = (p) => p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1;
+    return this.cad.doc.naRegiao(caixa).filter(e => this.cad.doc.visivel(e) && pontosDe(e).every(dentro));
+  }
+
+  /** Marcou a área na Original: escolhe o quadro e copia. */
+  async enviarArea(caixa) {
+    const ents = this._naArea(caixa);
+    if (!ents.length) { this.cad.aviso('Nada inteiro dentro dessa área. Marque a área envolvendo o desenho todo.', 'atencao'); this.cad.ativarFerramenta('selecionar'); return; }
+    const mont = await this._montagemJSON();
+    const m = mont.metadados.montagem;
+    const rotulo = (q) => (TIPOS[q.tipo] || TIPOS.tesoura).rotulo + (q.tipo === 'tesoura' ? ' ' + (q.nome || '(sem nome)') : '');
+    const selQ = el('select', { id: 'enviar-quadro-destino' },
+      m.quadros.map(q => el('option', { value: q.id }, rotulo(q) + (q.fonte ? '  · já tem desenho' : ''))),
+      el('option', { value: '+tesoura' }, '+ nova tesoura…'));
+    const nome = el('input', { id: 'enviar-quadro-nome', placeholder: 'T03', size: 8, spellcheck: 'false', hidden: true });
+    const selE = el('select', { id: 'enviar-quadro-escala' }, ESCALAS.map(e => el('option', { value: e }, '1:' + e)));
+    const subst = el('input', { type: 'checkbox', id: 'enviar-quadro-substituir', checked: true });
+    const sincronizar = () => {
+      const q = m.quadros.find(x => x.id === selQ.value);
+      nome.hidden = selQ.value !== '+tesoura';
+      selE.value = String(q ? q.escala : TIPOS.tesoura.escala);
+    };
+    selQ.addEventListener('change', sincronizar);
+    // o primeiro quadro ainda vazio é a sugestão
+    const vazio = m.quadros.find(q => !q.fonte);
+    if (vazio) selQ.value = vazio.id;
+    sincronizar();
+    const corpo = el('div', { class: 'enviar-quadro-dialogo' },
+      el('div', { class: 'explica', texto: `${ents.length.toLocaleString('pt-BR')} objetos nesta área. Eles vão copiados para o quadro, na escala dele; a planta do cliente não muda.` }),
+      el('label', {}, 'Quadro ', selQ), nome,
+      el('label', {}, 'Escala do desenho no quadro ', selE),
+      el('label', { class: 'linha' }, subst, ' substituir o que já está no quadro'));
+    if (await this.cad.dialogo({ titulo: 'Enviar área para quadro', corpo, ok: 'Enviar' }) !== 'ok') { this.cad.ativarFerramenta('selecionar'); return; }
+    let quadroId = selQ.value;
+    if (quadroId === '+tesoura') {
+      const ult = [...m.quadros].reverse().find(q => q.tipo === 'tesoura');
+      const q = { id: novoId(), tipo: 'tesoura', nome: (nome.value || '').trim().toUpperCase(), escala: Number(selE.value), w: TIPOS.tesoura.w, h: TIPOS.tesoura.h, x: 0, y: 0 };
+      m.quadros.splice(ult ? m.quadros.indexOf(ult) + 1 : m.quadros.length, 0, q);
+      quadroId = q.id;
+    }
+    const camadas = {};
+    for (const e of ents) { const c = this.cad.doc.camadas.get(e.camada); if (c) camadas[e.camada] = { ...c }; }
+    const lista = await this._lista(true);
+    const orig = lista.find(d => d.nome === this.cad.nomeDesenho) || {};
+    let r;
+    try {
+      r = copiarParaQuadro(mont, quadroId, ents, { escala: Number(selE.value), kOriginal: this.cad.doc.escala, camadas, substituir: subst.checked,
+        origem: { desenho: this.cad.nomeDesenho, alterado: orig.alterado || '' } });
+      await pedir(this._urlMontagem(), { desenho: mont });
+    } catch (e) { this.cad.aviso('Não foi possível enviar para o quadro: ' + e.message, 'erro', 0); this.cad.ativarFerramenta('selecionar'); return; }
+    this.mOriginal = mont.metadados.montagem;
+    const c = r.conferencia;
+    const confTxt = !c.cotas ? 'sem cota com número para conferir a escala'
+      : c.batem >= c.cotas / 2 ? `escala conferida: ${c.batem} de ${c.cotas} cotas batem`
+      : c.fator ? `ATENÇÃO: as cotas escritas são ${c.fator}× a medida do desenho — o DXF parece estar noutra unidade`
+      : `ATENÇÃO: só ${c.batem} de ${c.cotas} cotas batem com a medida do desenho`;
+    this.cad.aviso(`${r.copiados.toLocaleString('pt-BR')} objetos no quadro ${rotulo(r.quadro)} (1:${r.quadro.escala})${r.cresceu ? `, que cresceu para caber${r.cabe ? ` (em 1:${r.cabe} caberia no tamanho que tinha)` : ''}` : ''} · ${confTxt}.`,
+      c.cotas && c.batem < c.cotas / 2 ? 'atencao' : 'info', 12000);
+    this.cad.ativarFerramenta('selecionar');
+    this.cad.tela.pedirQuadro();
+  }
+
   /** Enquadra a folha inteira dos quadros. */
   enquadrar() {
     const m = this.m;
@@ -205,7 +392,7 @@ class Montagem {
   // ------------------------------------------------------------------ desenho
   desenhar() {
     this.camada.hidden = !this.ativa;
-    if (!this.ativa) { this.camada.replaceChildren(); return; }
+    if (!this.ativa) { this.camada.replaceChildren(); this._areasNaOriginal(); return; }
     const tela = this.cad.tela, ctx = tela.ctx, m = this.m;
     const ret = (q) => {
       const a = tela.paraTela([q.x, q.y]), b = tela.paraTela([q.x + q.w, q.y - q.h]);
@@ -227,6 +414,25 @@ class Montagem {
     }
     ctx.restore();
     this._controles(ret);
+  }
+
+  /** Na Original: o contorno de cada área já mandada para um quadro, com o nome dele. */
+  _areasNaOriginal() {
+    if (!this.naOriginal || !this.mOriginal) return;
+    const tela = this.cad.tela, ctx = tela.ctx;
+    ctx.save();
+    ctx.font = '600 11.5px "Segoe UI", sans-serif';
+    for (const q of this.mOriginal.quadros) {
+      if (!q.fonte || !q.fonte.caixa || q.fonte.desenho !== this.cad.nomeDesenho) continue;
+      const t = TIPOS[q.tipo] || TIPOS.tesoura;
+      const [[x0, y0], [x1, y1]] = q.fonte.caixa;
+      const a = tela.paraTela([x0, y1]), b = tela.paraTela([x1, y0]);
+      ctx.setLineDash([6, 4]); ctx.lineWidth = 1.4; ctx.strokeStyle = t.cor;
+      ctx.strokeRect(a[0] - 3, a[1] - 3, b[0] - a[0] + 6, b[1] - a[1] + 6);
+      ctx.fillStyle = t.cor;
+      ctx.fillText('→ ' + t.rotulo + (q.tipo === 'tesoura' && q.nome ? ' ' + q.nome : ''), a[0], a[1] - 7);
+    }
+    ctx.restore();
   }
 
   /** Título (tipo, escala, nome), alça de tamanho e o "+ corte tesoura", por cima do canvas. */
