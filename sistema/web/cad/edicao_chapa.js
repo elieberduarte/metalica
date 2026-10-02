@@ -102,6 +102,7 @@ export class MetodosEdicaoChapaCAD {
         (r.parafusos ? `, ${r.parafusos} parafuso(s) movidos junto` : '') +
         (r.parafusos_copiados ? `, ${r.parafusos_copiados} peça(s) de parafuso copiadas nos furos novos` : '') +
         (r.espelhadas ? `; ${r.espelhadas} chapa(s) do outro lado do prédio receberam a edição espelhada` : '') +
+        (r.padrao_maquina ? `; furos na terça levados ao padrão da máquina em ${r.padrao_maquina} chapa(s)` : '') +
         '. O detalhamento se refaz sozinho em seguida.';
       await this._sairDaEdicao(r.nome);
       this.aviso(msg, 'info', 12000);

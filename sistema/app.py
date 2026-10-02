@@ -1476,6 +1476,14 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
             ed = d.metadados.get("edicao") or {}
             r = det.aplicar_furos(doc, marca, furos, meta.get("furos") or [], contorno, referencia=ed.get("referencia") or None,
                                   copiar_parafusos=bool(corpo.get("copiar_parafusos")))
+            # o suporte de terça editado volta ao furo que a máquina faz (50 mm na altura da terça, 100 acima de
+            # 200), com os parafusos — o desenho já saía assim e o 3D ficava com o da edição (02/10: "sempre o
+            # padrão, porque esse é o furo que a máquina faz")
+            from nucleo2d.detalhe.celulas import ajustar_suportes_as_tercas
+            tipos_ = (_nomes_producao(s) or {}).get("tipos") or {}
+            de_tipo = lambda f: {m.strip() for k, t in tipos_.items() if f(str(t)) for m in str(k).split("/")}  # noqa: E731
+            if marca in de_tipo(lambda t: t == "suporte_terca"):
+                r["padrao_maquina"] = ajustar_suportes_as_tercas(doc, de_tipo(lambda t: t.startswith("terca")), {marca})["chapas"]
             _regravar_modelo(s, doc)
             vinculadas = vincular(marca, meta.get("furos") or [], furos)
         novo, pos = det.detalhar_posicao(doc, marca, ajustes=ajustes, nomes=_nomes_producao(s))
