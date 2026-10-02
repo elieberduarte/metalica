@@ -1486,13 +1486,18 @@ def _eixos_da_assinatura(ass) -> Tuple[Tuple[int, float], ...]:
     return tuple(sorted(((nc, dx), (nl, dy))))
 
 
-def _grupos_de_furos(furos: Sequence[Furo], raio: float = 160.0) -> List[List[Furo]]:
-    """Furos redondos da vista de frente agrupados por proximidade (uma ligação cada)."""
-    # redondos, e os oblongos que têm par na mesma coluna (furos de ligação já oblongados
-    # pelo padrão da fábrica); o oblongo isolado é o do tirante e não entra
+def _grupos_de_furos(furos: Sequence[Furo], raio: float = 160.0, em_linha: bool = False) -> List[List[Furo]]:
+    """Furos redondos da vista de frente agrupados por proximidade (uma ligação cada). `em_linha` (a chapa de ligação):
+    o par de oblongos na mesma linha também entra."""
+    # redondos, e os oblongos que têm par na mesma coluna (furos de ligação já oblongados pelo padrão da fábrica); o
+    # oblongo isolado é o do tirante e não entra. Na chapa de ligação, também o par na mesma linha — deitada no sistema
+    # dela, a chapinha tem o par assim: o suporte de agulhamento CH8 da Sala, 2 oblongos a 60 mm, ficava fora da regra e
+    # não ia aos 50 (02/10). Na terça não: lá o par na linha são furos ao longo da barra, de outra ligação
     frente = [f for f in furos if f.vista == "frente"]
     lista = [f for f in frente if f.tipo == "redondo"
-             or (f.tipo == "oblongo" and any(g is not f and abs(g.x - f.x) <= 2.0 for g in frente))]
+             or (f.tipo == "oblongo" and any(g is not f and (abs(g.x - f.x) <= 2.0
+                                                             or (em_linha and g.tipo == "oblongo" and abs(g.y - f.y) <= 2.0))
+                                             for g in frente))]
     grupos: List[List[Furo]] = []
     for f in sorted(lista, key=lambda f: (f.x, f.y)):
         for g in grupos:
@@ -1622,7 +1627,7 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
         if pos.marca in mudadas or pos.classe == "indefinida":
             continue
         alterou = []
-        for g in _grupos_de_furos(pos.furos):
+        for g in _grupos_de_furos(pos.furos, em_linha=pos.classe in ("chapa", "chapa_dobrada")):
             ass = _assinatura(g)
             if ass is None:
                 continue

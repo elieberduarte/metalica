@@ -408,6 +408,18 @@ def test_furo_da_chapa_pelo_parafuso_ate_a_terca():
     torto = ((503.5, -10.0, 100.0), (0.0, 1.0, 0.0), 20.0)                       # passa a 3,5 mm do centro do furo
     assert _terca_pelo_parafuso(centro_furo, normal, 5.0, [terca], [torto]) is None
 
+
+def test_par_de_oblongos_em_linha_so_na_chapa():
+    """A chapinha de ligação deitada no sistema dela (o CH8 da Sala, 2 oblongos a 60 mm na mesma linha) entra na regra
+    da furação; na terça o par na linha é de furos ao longo da barra e fica de fora, como antes (02/10)."""
+    from saida.detalhamento import Furo
+    from nucleo2d.detalhe.base import _grupos_de_furos, _assinatura
+    par = [Furo("oblongo", 25.0, 25.0, 0.0, larg=13.0, alt=25.0), Furo("oblongo", 85.0, 25.0, 0.0, larg=13.0, alt=25.0)]
+    assert [_assinatura(g) for g in _grupos_de_furos(par, em_linha=True)] == [(2, 1, 60, 0)]
+    assert _grupos_de_furos(par) == []
+    coluna = [Furo("oblongo", 25.0, 25.0, 0.0, larg=25.0, alt=13.0), Furo("oblongo", 25.0, 85.0, 0.0, larg=25.0, alt=13.0)]
+    assert [_assinatura(g) for g in _grupos_de_furos(coluna)] == [(1, 2, 0, 60)]
+
 def test_vinculo_chapa_tercas_e_ajustes():
     """A chapinha do suporte muda de 80 para 60 mm entre furos: a terça com a mesma furação
     original (na outra orientação) acompanha; o ajuste guardado volta a ser aplicado."""
