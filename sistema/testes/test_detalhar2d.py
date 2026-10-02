@@ -394,6 +394,20 @@ def test_porca_sem_eixo_ou_longe_nao_fura_a_chapa():
     pos = det.levantar(doc, regra_tercas=False)["posicoes"][0]
     assert [(f_.x, f_.y) for f_ in pos.furos] == [(178.0, 50.0)], [(f_.x, f_.y, f_.d) for f_ in pos.furos]
 
+
+def test_furo_da_chapa_pelo_parafuso_ate_a_terca():
+    """O furo da chapa parafusada numa terça cujo furo não coincide com o dela (o S.T.8 do depósito, 02/10): o parafuso
+    que passa no furo da chapa e chega à terça dá o sentido do oblongo; o parafuso que não chega a terça nenhuma, não."""
+    from nucleo2d.detalhe.celulas import _terca_pelo_parafuso
+    terca = (((0.0, 1000.0), (-100.0, 0.0), (0.0, 200.0)), (1.0, 0.0, 0.0))      # caixa atrás da chapa (y < 0), ao longo de x
+    parafuso = ((500.0, -10.0, 100.0), (0.0, 1.0, 0.0), 20.0)                    # eixo em y, do y=-30 ao y=+10
+    centro_furo, normal = (500.0, 2.5, 100.0), (0.0, 1.0, 0.0)                   # chapa de 5 mm de y=0 a y=5
+    assert _terca_pelo_parafuso(centro_furo, normal, 5.0, [terca], [parafuso]) == (1.0, 0.0, 0.0)
+    longe = ((500.0, 40.0, 100.0), (0.0, 1.0, 0.0), 20.0)                        # do lado de fora: não chega à terça
+    assert _terca_pelo_parafuso(centro_furo, normal, 5.0, [terca], [longe]) is None
+    torto = ((503.5, -10.0, 100.0), (0.0, 1.0, 0.0), 20.0)                       # passa a 3,5 mm do centro do furo
+    assert _terca_pelo_parafuso(centro_furo, normal, 5.0, [terca], [torto]) is None
+
 def test_vinculo_chapa_tercas_e_ajustes():
     """A chapinha do suporte muda de 80 para 60 mm entre furos: a terça com a mesma furação
     original (na outra orientação) acompanha; o ajuste guardado volta a ser aplicado."""

@@ -1832,6 +1832,7 @@ def oblongar_furos_das_tercas(doc: Documento) -> dict:
     comp, larg = OBLONGO_TERCA
     saida = {"tercas": 0, "furos": 0, "chapas": 0}
     oblongos = []                                     # (centro, eixo do furo, sentido do rasgo)
+    tercas = []                                       # (caixa, sentido da barra)
     for ent in list(doc.entidades.values()):
         if not isinstance(ent, Solido) or _tipo_ifc(ent) not in TIPOS_PECA or len(ent.vertices or []) < 8:
             continue
@@ -1848,6 +1849,7 @@ def oblongar_furos_das_tercas(doc: Documento) -> dict:
         if pos.classe != "barra" or not pos.eixos or not _eh_terca(pos, ent.camada or ""):
             continue
         e1, e2, e3 = pos.eixos
+        tercas.append((_caixa(ent), e1))
         mexeu = 0
         for f, laco, vista in _furos_da_malha(pos):
             if vista != "frente":
@@ -1884,8 +1886,11 @@ def oblongar_furos_das_tercas(doc: Documento) -> dict:
         if mexeu:
             saida["tercas"] += 1
             saida["furos"] += mexeu
-    # a chapa parafusada no furo da terça acompanha
-    if oblongos:
+    # a chapa parafusada no furo da terça acompanha; e a parafusada numa terça cujo furo não coincide com o dela (o
+    # S.T.8 do depósito: os furos de ponta das T.L.12/T.L.14 a 130–340 mm dos da chapa, no projeto), pelo parafuso que
+    # atravessa as duas — a mesma chapa saía redonda numa quina e oblonga na outra, e virava outra peça (02/10)
+    parafusos = _eixos_dos_parafusos(doc) if tercas else []
+    if oblongos or tercas:
         grade: Dict[tuple, list] = collections.defaultdict(list)
         for k, (c, _, _) in enumerate(oblongos):
             grade[tuple(int(math.floor(v / 200.0)) for v in c)].append(k)
@@ -1919,6 +1924,8 @@ def oblongar_furos_das_tercas(doc: Documento) -> dict:
                                 if plano <= 3.0 and abs(nrm) <= float(ch.espessura or 0) / 2.0 + 15.0:
                                     achou = sentido
                 if achou is None:
+                    achou = _terca_pelo_parafuso(c, n, float(ch.espessura or 0), tercas, parafusos)
+                if achou is None:
                     novos.append(f)
                     continue
                 ao_longo_x = abs(_dot(achou, ex)) >= abs(_dot(achou, ey))
@@ -1933,6 +1940,42 @@ def oblongar_furos_das_tercas(doc: Documento) -> dict:
             if mexeu:
                 ch.furos = novos
     return saida
+
+
+def _eixos_dos_parafusos(doc: Documento) -> List[tuple]:
+    """(centro, eixo, meio comprimento) dos parafusos com eixo pela forma (compridos) do modelo."""
+    from nucleo2d.detalhe.base import _fixadores
+    saida = []
+    for f in _fixadores(doc):
+        if len(f.vertices or []) < 4:
+            continue
+        cc, pca = _autovetores(f.vertices)
+        ext = [max(_dot(_sub(v, cc), a) for v in f.vertices) - min(_dot(_sub(v, cc), a) for v in f.vertices) for a in pca]
+        if ext[0] > 1.5 * ext[1]:
+            saida.append((tuple(cc), _norm(tuple(pca[0])), ext[0] / 2.0))
+    return saida
+
+
+def _terca_pelo_parafuso(c, n, esp: float, tercas: Sequence[tuple], parafusos: Sequence[tuple]):
+    """O sentido da terça que o parafuso do furo da chapa (centro `c`, normal `n`) atravessa, ou None: o eixo do
+    parafuso perpendicular à chapa, passando a até 3 mm do centro do furo e chegando a ela; ao longo dele, a caixa de
+    uma terça."""
+    for cc, eixo, meio in parafusos:
+        if abs(_dot(eixo, n)) < 0.95 or math.dist(cc, c) > meio + esp + 50.0:
+            continue
+        dv = _sub(c, cc)
+        t0 = _dot(dv, eixo)
+        if abs(t0) > meio + esp / 2.0 + 2.0 or math.sqrt(max(0.0, _dot(dv, dv) - t0 * t0)) > 3.0:
+            continue
+        for k in range(11):
+            t = -meio + 2.0 * meio * k / 10.0
+            if abs(t - t0) <= esp / 2.0 + 0.5:
+                continue                              # dentro da própria chapa
+            q = tuple(cc[i] + eixo[i] * t for i in range(3))
+            for cx, sentido in tercas:
+                if all(cx[i][0] - 0.5 <= q[i] <= cx[i][1] + 0.5 for i in range(3)):
+                    return sentido
+    return None
 
 
 def retirar_furos_sem_uso(doc: Documento, so_tercas: bool = True) -> dict:
