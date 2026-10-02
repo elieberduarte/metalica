@@ -1596,6 +1596,10 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
     # (nc, nl, dx, dy, novo_h, novo_v); terças de alturas diferentes com a mesma furação
     # original pedem passos diferentes, e o suporte segue a maioria, com aviso
     assinaturas: Dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
+    # e a furação das terças que já está no padrão (quantas peças): a chapinha já padronizada no 3D tem
+    # o mesmo grupo e não pode ir para a troca de uma terça avulsa (CH8 da Sala, 02/10: o par a 50 na
+    # altura da terça voltava a 60 pela M72, a única com o par a 50 ao longo da barra)
+    no_padrao: Dict[tuple, int] = collections.Counter()
     tercas = [p for p in posicoes if _eh_terca(p, camadas.get(p.marca, ""))]
     for pos in tercas:
         # até 200 mm (inclusive) é 50 mm na vertical; só acima de 200 vai a 100
@@ -1614,6 +1618,8 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
                 _guardar_passos(pos, nc, dx, novo_h, nl, dy, novo_v)
                 _reposicionar(g, novo_h, novo_v)
                 alterou.append("%dx%d %s x %s -> %s x %s" % (nc, nl, _mm(dx), _mm(dy), _mm(novo_h), _mm(novo_v)))
+            else:
+                no_padrao[_eixos_da_assinatura(ass)] += pos.quantidade
         if alterou or oblongados:
             txt = "furacao no padrao de fabrica (%s x %s mm%s)%s" % (
                 _mm(passo_h), _mm(passo_v), ", furos oblongos" if oblongados else "",
@@ -1632,8 +1638,8 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
             if ass is None:
                 continue
             opcoes = assinaturas.get(_eixos_da_assinatura(ass))
-            if not opcoes:
-                continue
+            if not opcoes or no_padrao.get(_eixos_da_assinatura(ass), 0) > sum(opcoes.values()):
+                continue                                  # a maioria das terças com esse grupo já está no padrão
             nc_t, nl_t, dx_t, dy_t, novo_h_t, novo_v_t = opcoes.most_common(1)[0][0]
             nc, nl, dx, dy = ass
             mapa = {(nc_t, dx_t): novo_h_t, (nl_t, dy_t): novo_v_t}

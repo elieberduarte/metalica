@@ -421,6 +421,28 @@ def test_par_de_oblongos_em_linha_so_na_chapa():
     assert [_assinatura(g) for g in _grupos_de_furos(coluna)] == [(1, 2, 0, 60)]
 
 
+def test_regra_nao_desfaz_o_que_ja_esta_no_padrao():
+    """O modelo já padronizado (terças com o par a 50 na altura, a chapinha CH8 com o par a 50): uma terça avulsa com
+    o par a 50 ao longo da barra (a M72 da Sala) vai a 60, mas a chapinha e as outras terças ficam — o desenho saía com
+    60 e o 3D com 50 (02/10: "esse detalhe não foi atualizado na prancha")."""
+    def terca(marca, furos, qtd):
+        p = det.Posicao(marca=marca, tipo_ifc="IfcBeam", perfil="U150X50X2.28", conjuntos=[marca])
+        p.classe, p.L, p.H, p.quantidade = "barra", 5000.0, 150.0, qtd
+        p.furos = [det.Furo("oblongo", x, y, 0.0, larg=25.0, alt=13.0) for x, y in furos]
+        return p
+    no_padrao = terca("M11", [(100.0, 50.0), (100.0, 100.0)], 28)          # 1x2, 50 na vertical: já no padrão
+    avulsa = terca("M72", [(100.0, 75.0), (150.0, 75.0), (160.0, 120.0)], 1)
+    avulsa.furos = [det.Furo("redondo", 100.0, 75.0, 13.0), det.Furo("redondo", 150.0, 75.0, 13.0)]   # 2x1, 50 ao longo
+    ch8 = det.Posicao(marca="P85", tipo_ifc="IfcPlate", perfil="PLATE 110x50x3")
+    ch8.classe, ch8.L, ch8.H, ch8.quantidade = "chapa", 110.0, 50.0, 32
+    ch8.furos = [det.Furo("oblongo", 30.0, 25.0, 0.0, larg=13.0, alt=25.0), det.Furo("oblongo", 80.0, 25.0, 0.0, larg=13.0, alt=25.0)]
+    mud = det.regra_furacao_terca([no_padrao, avulsa, ch8], {})
+    assert set(mud) == {"M72"}
+    assert sorted(round(f.x) for f in avulsa.furos) == [95, 155]
+    assert sorted(round(f.x) for f in ch8.furos) == [30, 80]
+    assert sorted(round(f.y) for f in no_padrao.furos) == [50, 100]
+
+
 def test_edicao_da_chapa_espelhada_do_outro_lado_e_parafusos_copiados():
     """Duas chapas da mesma posição em lados opostos do prédio, com o mesmo sistema local (a simétrica do IFC): a
     edição feita numa (a chapa cresce para um lado e ganha um furo) vai espelhada na outra, e o furo novo ganha a
