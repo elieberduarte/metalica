@@ -37,6 +37,21 @@ _timers = {}           # (projeto, tipo) → threading.Timer
 _impressao = None
 _funcoes = {}          # "detalhar": fn(s) → dict; "pranchas": fn(s) → geração ou None; "gerente": fn() → Projetos
 _travas = {}           # projeto → Lock: o botão Detalhar e a atualização automática nunca juntos
+_editores = {}         # projeto → hora do último sinal de um editor 3D aberto nele
+#: sem sinal do editor há mais que isso (s), ele não está aberto
+EDITOR_AUSENTE = 30.0
+
+
+def editor_sinal(s: str):
+    """o editor 3D aberto no projeto avisa que está lá (a cada poucos segundos): enquanto estiver, a
+    atualização automática não grava o modelo por cima dele — só aponta o que falta (`pendente_3d`)"""
+    with _trava:
+        _editores[s] = time.time()
+
+
+def editor_aberto(s: str) -> bool:
+    with _trava:
+        return time.time() - _editores.get(s, 0.0) < EDITOR_AUSENTE
 
 
 def trava(s: str) -> threading.Lock:
@@ -185,6 +200,8 @@ def estado(s: str, conferir: bool = True) -> dict:
         e = dict(_estado.get(s) or {})
     c = ler_carimbo(s)
     e["desenhos"] = c.get("desenhos") or {}
+    # o padrão de fábrica que falta gravar no 3D (o editor estava aberto): o editor mostra "Aplicar"
+    e["pendente_3d"] = c.get("pendente_3d") or {}
     if c.get("erro") and not e.get("erro"):
         e["erro"] = c["erro"]
     return e

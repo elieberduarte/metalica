@@ -421,6 +421,24 @@ def test_par_de_oblongos_em_linha_so_na_chapa():
     assert [_assinatura(g) for g in _grupos_de_furos(coluna)] == [(1, 2, 0, 60)]
 
 
+def test_regra_so_maquina_a_ligacao_manda():
+    """No modo que vai ao 3D (decisão do usuário, 02/10): o passo na altura da terça vai ao da máquina (80 → 50); o
+    passo ao longo dela fica o da ligação (80 continua 80 — o costume de 60 não vale onde há chapa), e a chapinha
+    com a mesma furação só muda no eixo da máquina."""
+    terca = det.Posicao(marca="M5", tipo_ifc="IfcBeam", perfil="U150X50X2.25", conjuntos=["M5"])
+    terca.classe, terca.L, terca.H = "barra", 5000.0, 150.0
+    terca.furos = [det.Furo("redondo", x, y, 13.0) for x in (100.0, 180.0) for y in (35.0, 115.0)]
+    chapa = det.Posicao(marca="P1", tipo_ifc="IfcPlate", perfil="PLATE 130x130x6")
+    chapa.classe, chapa.L, chapa.H = "chapa", 130.0, 130.0
+    chapa.furos = [det.Furo("redondo", x, y, 13.0) for x in (25.0, 105.0) for y in (25.0, 105.0)]
+    det.regra_furacao_terca([terca, chapa], {}, so_maquina=True)
+    assert sorted({round(f.x) for f in terca.furos}) == [100, 180]
+    assert sorted({round(f.y) for f in terca.furos}) == [50, 100]
+    # a chapa 80 × 80 (quadrada: ambígua) vai com a orientação da terça: 80 na horizontal, 50 na vertical
+    assert sorted({round(f.x) for f in chapa.furos}) == [25, 105]
+    assert sorted({round(f.y) for f in chapa.furos}) == [40, 90]
+
+
 def test_regra_nao_desfaz_o_que_ja_esta_no_padrao():
     """O modelo já padronizado (terças com o par a 50 na altura, a chapinha CH8 com o par a 50): uma terça avulsa com
     o par a 50 ao longo da barra (a M72 da Sala) vai a 60, mas a chapinha e as outras terças ficam — o desenho saía com

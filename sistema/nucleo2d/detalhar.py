@@ -105,6 +105,7 @@ from nucleo2d.detalhe.base import (  # noqa: E402,F401
     parafusos_da_posicao,
     parafusos_no_conjunto,
     regra_furacao_terca,
+    fora_do_limite_da_maquina,
     vincular_furos_de_ligacao)
 from nucleo2d.detalhe.conjuntos import (  # noqa: E402,F401
     FRACAO_COMUM_CONJUNTO,
@@ -492,7 +493,7 @@ def _unidade_pela_maioria(total: collections.Counter, fracao: float = 0.8):
 
 
 def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Optional[dict] = None,
-             nomes: Optional[dict] = None) -> dict:
+             nomes: Optional[dict] = None, regra_so_maquina: bool = False) -> dict:
     """Só o levantamento: as peças de produção do modelo agrupadas em posições, com a
     geometria analisada e a regra das terças aplicada — sem desenhar nada. É o que a
     lista de materiais usa. Devolve {"pecas", "acessorios", "posicoes", "camadas",
@@ -535,7 +536,7 @@ def levantar(doc: Documento, regra_tercas: bool = True, avisar=None, ajustes: Op
                           "por ponta roscada não foi aplicado: %s)" % exc)
     posicoes = fundir_posicoes_iguais(posicoes, camadas)
     avisar("%d peças em %d posições" % (len(pecas), len(posicoes)))
-    mudadas = regra_furacao_terca(posicoes, camadas) if regra_tercas else {}
+    mudadas = regra_furacao_terca(posicoes, camadas, so_maquina=regra_so_maquina) if regra_tercas else {}
     ajustadas = aplicar_ajustes_de_furos(posicoes, ajustes)
     if regra_tercas:
         oblongar_tercas(posicoes, camadas)

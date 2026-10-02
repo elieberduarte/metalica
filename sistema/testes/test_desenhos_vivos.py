@@ -90,3 +90,15 @@ def test_cores_escolhidas_no_cad_valem_no_projeto(tmp_path):
     d.camadas["BANZOS U100X50X#9"] = Camada2D("BANZOS U100X50X#9", "#2563eb")
     assert dv.aplicar_cores("p", d) == 1
     assert d.camadas["MONTANTES U92X30X#13"].cor == "#123abc" and d.camadas["BANZOS U100X50X#9"].cor == "#2563eb"
+
+
+def test_editor_aberto_pelo_sinal(monkeypatch):
+    """o editor 3D aberto avisa (a cada poucos segundos): enquanto o sinal é recente, a atualização automática não
+    grava o modelo por cima dele (02/10)"""
+    import time as _t
+    assert not dv.editor_aberto("q")
+    dv.editor_sinal("q")
+    assert dv.editor_aberto("q")
+    agora = _t.time()
+    monkeypatch.setattr(dv.time, "time", lambda: agora + dv.EDITOR_AUSENTE + 1)
+    assert not dv.editor_aberto("q")

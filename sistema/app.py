@@ -838,52 +838,98 @@ def _vivos():
     return _VIVOS
 
 
+def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> dict:
+    """As regras de fábrica aplicadas no modelo 3D, na ordem da prioridade combinada com o usuário (02/10): 1) o limite
+    da máquina — o passo na altura da terça, 50 mm até 200 de altura, 100 acima —, 2) a ligação manda — o furo da terça
+    é o furo da chapa encostada nela, e o passo ao longo dela fica o da ligação (o costume de 60 só onde nada encosta).
+    Na ordem: chapas planas viram paramétricas (`converter`), eixos das chapas pelo IFC, furos das terças nas chapas e
+    nos parafusos, furo sem uso fora, oblongos, suporte de terça no passo da máquina, e as chapas de ligação com a
+    furação da terça no passo da máquina (`regra`). Só muda `doc` (quem chama grava). Devolve {"mudou", "posicoes",
+    "avisos", "convertidas"}."""
+    from nucleo2d import detalhar as det
+    from nucleo2d.detalhe.celulas import ajustar_suportes_as_tercas
+    out = {"mudou": False, "posicoes": set(), "avisos": [], "convertidas": 0}
+
+    def marcou(n, posicoes=()):
+        if n:
+            out["mudou"] = True
+            out["posicoes"].update(str(p) for p in (posicoes or ()))
+    if converter:
+        _progresso(s, "convertendo as chapas planas em chapas paramétricas…")
+        lev0 = det.levantar(doc, regra_tercas=False, ajustes=_ajustes_furos(s))
+        out["convertidas"] = det.converter_chapas_planas(doc, lev0["posicoes"], lev0["pecas"])
+        marcou(out["convertidas"])
+    re_ = _conferir_eixos_das_chapas(s, doc, gravar=False) or {}
+    marcou(re_.get("chapas"))
+    if re_.get("aviso"):
+        out["avisos"].append(re_["aviso"])
+    ra = _alinhar_furos_das_barras(s, doc, gravar=False)
+    rr, ro = ra.get("retirados") or {}, ra.get("oblongados") or {}
+    marcou(ra.get("barras") or rr.get("furos") or rr.get("limpas") or ro.get("furos") or ro.get("chapas"), ra.get("posicoes"))
+    tipos_ = (_nomes_producao(s) or {}).get("tipos") or {}
+    marcas_ = lambda f: {m.strip() for k, t in tipos_.items() if f(str(t)) for m in str(k).split("/")}  # noqa: E731
+    _progresso(s, "suporte de terça no passo da máquina…")
+    sup = ajustar_suportes_as_tercas(doc, marcas_(lambda t: t.startswith("terca")), marcas_(lambda t: t == "suporte_terca"))
+    if sup["chapas"]:
+        det.alinhar_furos_das_barras_as_chapas(doc)
+        out["avisos"].append("suporte de terça na furação da máquina (50 mm no eixo da terça): %d chapa(s): %s"
+                             % (sup["chapas"], ", ".join(sup["posicoes"][:12])))
+    marcou(sup["chapas"], sup["posicoes"])
+    if regra:
+        _progresso(s, "furação da máquina nas chapas de ligação…")
+        lev = det.levantar(doc, regra_tercas=True, regra_so_maquina=True, ajustes=_ajustes_furos(s))
+        padr = det.padronizar_furos_das_chapas(doc, lev["posicoes"])
+        if padr["chapas"]:
+            det.alinhar_furos_das_barras_as_chapas(doc)
+            out["avisos"].append("furação da máquina aplicada no 3D a %d chapa(s): %s"
+                                 % (padr["chapas"], ", ".join(padr["posicoes"][:12])))
+        marcou(padr["chapas"], padr["posicoes"])
+    out["posicoes"] = sorted(out["posicoes"])
+    return out
+
+
 def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, lista_producao) -> dict:
     _progresso(s, "abrindo o modelo…")
     doc = _documento3d_do_projeto(s)
-    # a atualização automática (desenhos_vivos) só refaz os desenhos: não regrava o modelo 3D (eixos das
-    # chapas, furos alinhados, nomes nas peças, chapas paramétricas, furação padrão), que o editor pode
-    # estar editando — as correções valem na memória, para o desenho sair igual; gravar é do botão
+    # O 3D é a peça (regra combinada com o usuário, 02/10): as regras de fábrica vão para o modelo e são gravadas
+    # nele (_padronizar_3d); o desenho só mostra o que o 3D tem, sem regra própria. A atualização automática também
+    # grava — menos com o editor 3D aberto no projeto, que perderia a edição dele: aí o desenho sai do 3D como está
+    # e o que falta fica apontado para o editor aplicar (pendente_3d, botão "Aplicar no 3D").
     automatico = bool(corpo.get("automatico"))
-    _conferir_eixos_das_chapas(s, doc, gravar=not automatico)
-    _alinhar_furos_das_barras(s, doc, gravar=not automatico)
-    # o suporte de terça segue a furação padrão da terça (50 mm no eixo dela), antes do desenho — e as
-    # terças parafusadas nele acompanham (pedido do usuário, 29/09)
-    from nucleo2d.detalhe.celulas import ajustar_suportes_as_tercas, alinhar_furos_das_barras_as_chapas as _alinhar_as_chapas
-    tipos_ = (_nomes_producao(s) or {}).get("tipos") or {}
-    marcas_ = lambda f: {m.strip() for k, t in tipos_.items() if f(str(t)) for m in str(k).split("/")}  # noqa: E731
-    suportes = ajustar_suportes_as_tercas(doc, marcas_(lambda t: t.startswith("terca")), marcas_(lambda t: t == "suporte_terca"))
-    if suportes["chapas"]:
-        _alinhar_as_chapas(doc)
+    gravar = not automatico or not _vivos().editor_aberto(s)
+    import copy as _copy
+    alvo = doc if gravar else _copy.deepcopy(doc)
+    padr3d = _padronizar_3d(s, alvo, regra=corpo.get("regra_tercas", True) is not False,
+                            converter=gravar and corpo.get("converter", True) is not False)
     grupos = corpo.get("grupos") or list(GRUPOS.keys())
-    r = detalhar(doc, grupos=grupos, regra_tercas=corpo.get("regra_tercas", True) is not False,
+    r = detalhar(doc, grupos=grupos, regra_tercas=False,
                  rotular=bool(corpo.get("rotular", False)),
-                 converter=corpo.get("converter", True) is not False and not automatico, ajustes=_ajustes_furos(s),
+                 converter=False, ajustes=_ajustes_furos(s),
                  nomes=_nomes_producao(s), eixos=g.ler(s).get("eixos"),
                  avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+    r["convertidas"] = padr3d["convertidas"]
     _gravar_nomes_producao(s, r.get("nomes") or {})
-    nomeadas = 0 if automatico else _nomes_no_modelo(doc, r.get("nomes") or {})
-    # a furação padrão de fábrica (regra das terças) também nas chapas do 3D, e as terças
-    # parafusadas nelas acompanham
-    from nucleo2d.detalhar import padronizar_furos_das_chapas, alinhar_furos_das_barras_as_chapas
-    padr = {"chapas": 0, "posicoes": []} if automatico else padronizar_furos_das_chapas(doc, r.get("objetos_posicoes") or [])
-    if padr["chapas"]:
-        alinhar_furos_das_barras_as_chapas(doc)
-        r.setdefault("avisos", []).append("furação padrão de fábrica aplicada no 3D a %d chapa(s): %s"
-                                          % (padr["chapas"], ", ".join(padr["posicoes"][:12])))
-    if suportes["chapas"]:
-        r.setdefault("avisos", []).append("suporte de terça na furação da terça (50 mm no eixo dela): %d chapa(s): %s"
-                                          % (suportes["chapas"], ", ".join(suportes["posicoes"][:12])))
-    if r.get("convertidas") or nomeadas or padr["chapas"] or (suportes["chapas"] and not automatico):
+    nomeadas = _nomes_no_modelo(doc, r.get("nomes") or {}) if gravar else 0
+    r.setdefault("avisos", []).extend(padr3d["avisos"] if gravar else [])
+    pendente = {}
+    if not gravar and padr3d["mudou"]:
+        pendente = {"posicoes": padr3d["posicoes"], "quando": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "avisos": padr3d["avisos"]}
+    elif padr3d["mudou"] or nomeadas:
         _progresso(s, "gravando o modelo…")
         try:
-            _regravar_modelo(s, doc)            # chapas planas viraram paramétricas / nomes nas peças
+            _regravar_modelo(s, doc)
         except ModeloMudouNoMeio:
-            # o detalhamento em si vale (sai dos desenhos); só os nomes e as chapas
-            # paramétricas não foram para o modelo, que o editor gravou no meio
-            r.setdefault("avisos", []).append(
-                "o modelo 3D foi gravado pelo editor durante o detalhamento: os nomes de produção e as chapas "
-                "paramétricas não foram gravados nele (detalhe de novo para levá-los)")
+            # o desenho vale (saiu do 3D corrigido na memória), mas o 3D não recebeu: fica pendente
+            pendente = {"posicoes": padr3d["posicoes"], "quando": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "avisos": padr3d["avisos"]}
+            r["avisos"].append("o modelo 3D foi gravado pelo editor durante o detalhamento: o padrão de fábrica não foi "
+                               "gravado nele (fica pendente; detalhe de novo ou use \"Aplicar no 3D\")")
+    r["pendente_3d"] = pendente
+    # o que o padrão no 3D não conseguiu (a terça ligada a outra barra sem chapa, com o par fora do passo da máquina):
+    # as pranchas não são emitidas sem isso resolvido (R6)
+    from nucleo2d.detalhar import fora_do_limite_da_maquina
+    r["fora_da_maquina"] = fora_do_limite_da_maquina(r.get("objetos_posicoes") or [], r.get("camadas") or {})
     _progresso(s, "gravando os desenhos…")
     substituir = corpo.get("substituir", True) is not False
     if substituir:
@@ -943,7 +989,8 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     relatorio["desenhos"] = desenhos
     _gravar_ajuste(os.path.join(pasta, "relatorio.json"), relatorio)
     # o carimbo do que foi usado (modelo, código, furação, eixos): mudou, os desenhos se refazem sozinhos
-    _vivos().gravar_carimbo(s, geracoes, completo=set(grupos) >= set(GRUPOS.keys()))
+    _vivos().gravar_carimbo(s, geracoes, completo=set(grupos) >= set(GRUPOS.keys()), extra={"pendente_3d": r.get("pendente_3d") or {},
+                                                                                    "fora_da_maquina": r.get("fora_da_maquina") or []})
     g.tocar(s)
     return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
             "pecas": sum(p["quantidade"] for p in r["posicoes"]), "peso_total": r["peso_total"],
@@ -1305,7 +1352,7 @@ def atualizar_pecas_projeto(s: str, corpo: dict) -> dict:
         if r1["barras"] or r2["barras"]:
             _regravar_modelo(s, doc)
         _progresso(s, "levantando as peças…")
-        lev = det.levantar(doc, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
+        lev = det.levantar(doc, regra_tercas=False, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
         pedidas = []
         for p in lev["posicoes"]:
             ms = det.marcas_de(p)
@@ -1397,7 +1444,7 @@ def aplicar_pecas_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         # o mesmo modelo detalhado agora, pelo mesmo código: só a edição feita à mão sobra
         _progresso(s, "detalhando de novo o modelo para comparar…")
         r0 = detalhar(doc, grupos=["tesouras", "conjuntos", "contraventamentos", "agulhamentos", "extras"],
-                      nomes=_nomes_producao(s), converter=False, ajustes=_ajustes_furos(s),
+                      nomes=_nomes_producao(s), converter=False, ajustes=_ajustes_furos(s), regra_tercas=False,
                       avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
         _progresso(s, "comparando e aplicando no modelo…")
         r = aplicar_desenho_ao_modelo(doc, d, list(r0["desenhos"].values()), todas_instancias=corpo.get("todas", True) is not False)
@@ -2441,6 +2488,23 @@ def refazer_pranchas(s: str):
     return None
 
 
+def aplicar_padrao_no_3d(s: str) -> dict:
+    """POST /api/projetos/<s>/desenhos-vivos/aplicar-3d: o botão "Aplicar no 3D" do editor — o padrão de fábrica que a
+    atualização automática deixou pendente (o editor estava aberto) vai para o modelo agora; o editor grava a edição
+    dele antes e recarrega o modelo depois. Os desenhos se refazem em seguida."""
+    with _vivos().trava(s):
+        doc = _documento3d_do_projeto(s)
+        try:
+            r = _padronizar_3d(s, doc)
+            if r["mudou"]:
+                _regravar_modelo(s, doc)
+        finally:
+            _fim_progresso(s)
+    _vivos().gravar_carimbo(s, completo=False, extra={"pendente_3d": {}})
+    _vivos().atualizar(s, "padrão de fábrica aplicado no 3D")
+    return {"mudou": r["mudou"], "posicoes": r["posicoes"], "avisos": r["avisos"], "alterado": _alterado_modelo(s)}
+
+
 #: a conferência da geração e a gravação do desenho juntas, sem o detalhamento gravar no meio
 _TRAVA_GRAVAR_DESENHO = threading.RLock()
 
@@ -2982,6 +3046,33 @@ def importar_dxf_no_desenho(s: str, corpo: dict) -> dict:
             "resumo": {k: v for k, v in resumo.items() if k != "ids"}}
 
 
+def _conferir_para_emitir(s: str, desenhos) -> None:
+    """Regra R6 (combinada com o usuário, 02/10): as pranchas só saem (PDF, DXF) com o desenho igual ao 3D e o 3D no
+    padrão da máquina — senão a peça sai errada na fábrica. Recusa com a lista do que falta. Só para pranchas: o
+    desenho de trabalho exporta sempre."""
+    if not any(d.metadados.get("prancha") or d.metadados.get("pranchas") is not None for d in desenhos):
+        return
+    vivos = _vivos()
+    falta = []
+    try:
+        motivo = vivos.por_que_velho(s)
+    except Exception:                                    # noqa: BLE001
+        motivo = ""
+    if motivo or (vivos.estado(s, conferir=False) or {}).get("atualizando"):
+        falta.append("os desenhos estão sendo atualizados com o 3D (%s): espere terminar" % (motivo or "atualização em andamento"))
+    c = vivos.ler_carimbo(s)
+    pend = (c.get("pendente_3d") or {}).get("posicoes") or []
+    if pend:
+        falta.append("o padrão de fábrica ainda não foi gravado no 3D em %d posição(ões) (%s): use \"Aplicar no 3D\" no "
+                     "editor ou o Detalhar" % (len(pend), ", ".join(pend[:10])))
+    fora = c.get("fora_da_maquina") or []
+    if fora:
+        falta.append("terça(s) com furos fora do passo da máquina, ligadas sem chapa (o 3D não pôde corrigir sozinho): "
+                     + "; ".join(fora[:10]) + " — acerte a ligação no 3D")
+    if falta:
+        raise ErroDeDados("As pranchas não podem ser emitidas: " + " · ".join(falta) + ".")
+
+
 def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
     """PDF de um desenho (ou, com `desenhos: [...]`, de vários numa só saída): prancha no
     tamanho da folha, desenho comum no tamanho do desenho na sua escala."""
@@ -2995,6 +3086,7 @@ def exportar_desenho_pdf(s: str, nome: str, corpo: dict) -> dict:
             desenhos.append(Desenho.de_dict(corpo["desenho"]))
         else:
             desenhos.append(Desenho.de_dict(g.abrir_desenho(s, n)))
+    _conferir_para_emitir(s, desenhos)
     pasta = os.path.join(g._existente(s), "pranchas" if any(d.metadados.get("prancha") or d.metadados.get("pranchas") for d in desenhos) else "desenhos-2d")
     base = corpo.get("arquivo") or (_slug(nome) if len(nomes) == 1 else _slug(corpo.get("titulo") or "pranchas"))
     # o nome vem da tela: sem pasta nem caracteres de caminho, e com a extensão só uma vez
@@ -3014,6 +3106,7 @@ def exportar_desenho_dxf(s: str, nome: str, corpo: dict) -> dict:
         from nucleo2d import dxf_cad
         desenhos = [Desenho.de_dict(corpo["desenho"]) if n == nome and isinstance(corpo.get("desenho"), dict)
                     else Desenho.de_dict(g.abrir_desenho(s, n)) for n in corpo["desenhos"]]
+        _conferir_para_emitir(s, desenhos)
         pasta = os.path.join(g._existente(s), "pranchas")
         # o nome vem da tela: sem pasta nem caracteres de caminho
         base = _slug(re.sub(r"\.(dxf|zip)$", "", os.path.basename(str(corpo.get("titulo") or "pranchas").replace("\\", "/")), flags=re.I)) or "pranchas"
@@ -3490,6 +3583,8 @@ class Handler(BaseHTTPRequestHandler):
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
                 if len(partes) == 2 and partes[1] == "desenhos-vivos":
+                    if parse_qs(urlparse(self.path).query).get("editor"):
+                        _vivos().editor_sinal(partes[0])        # o editor 3D aberto: não gravar o modelo por cima dele
                     return self._json(_vivos().estado(partes[0]))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(dados_dos_resumos(partes[0]))
@@ -3674,6 +3769,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(salvar_desenho_do_cad(partes[0], partes[2], corpo))
                 if len(partes) == 2 and partes[1] == "cores-camadas":
                     return self._json(_vivos().gravar_cores(partes[0], corpo.get("camadas") or {}, str(corpo.get("aberto") or "")))
+                if len(partes) == 3 and partes[1] == "desenhos-vivos" and partes[2] == "aplicar-3d":
+                    return self._json(aplicar_padrao_no_3d(partes[0]))
                 if len(partes) == 3 and partes[1] == "desenhos-vivos" and partes[2] == "atualizar":
                     _vivos().atualizar(partes[0], "pedido na tela")
                     return self._json(_vivos().estado(partes[0], conferir=False))

@@ -41,6 +41,7 @@ import { MetodosBloco } from './modulos/bloco.js';
 import { MetodosDivisao } from './modulos/divisao.js';
 import { MetodosExplodir } from './modulos/explodir.js';
 import { MetodosEdicaoChapa } from './modulos/edicao_chapa.js';
+import { MetodosPadrao3D } from './modulos/padrao_3d.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -1205,6 +1206,7 @@ export class Editor {
       return;
     }
     this._modeloAlterado = modelo && modelo.alterado ? modelo.alterado : null;
+    this._iniciarSinalDoEditor();                    // editor aberto: o padrão de fábrica não é gravado por cima (padrao_3d.js)
     if (modelo && modelo.aberto_por && modelo.aberto_por.maquina) {
       const a = modelo.aberto_por;
       const ha = a.ha_s >= 60 ? `${Math.round(a.ha_s / 60)} min` : `${a.ha_s} s`;
@@ -2332,7 +2334,7 @@ export class Editor {
 
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
-  MetodosApoios, MetodosBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa);
+  MetodosApoios, MetodosBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D);
 
 // ================================================================= apoio
 

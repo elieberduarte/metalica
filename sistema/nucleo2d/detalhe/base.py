@@ -1587,8 +1587,29 @@ def _guardar_passos(pos: Posicao, nc, dx, novo_h, nl, dy, novo_v):
         passos[(nl, int(round(dy)))] = float(novo_v)
 
 
-def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> dict:
+def fora_do_limite_da_maquina(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> List[str]:
+    """As terças com um par de furos na altura dela fora do passo da máquina (50 mm até 200 de altura, 100 acima — ela
+    fura os dois de uma vez): o que o padrão no 3D não conseguiu levar (a ligação com outra barra, sem chapa). Sem
+    isso resolvido as pranchas não são emitidas (regra R6, 02/10). Devolve ["M10: 2 furos a 80 mm na altura (máquina:
+    50)", ...]."""
+    fora = []
+    for p in posicoes:
+        if not _eh_terca(p, camadas.get(p.marca, "")):
+            continue
+        pv = (FURACAO_TERCA_BAIXA if p.H <= LIMITE_TERCA else FURACAO_TERCA_ALTA)[0]
+        ruins = sorted({round(a[3]) for a in (_assinatura(g) for g in _grupos_de_furos(p.furos))
+                        if a and a[1] > 1 and abs(a[3] - pv) > 0.5})
+        if ruins:
+            fora.append("%s: furos a %s mm na altura (máquina: %g)" % (p.nome or p.marca, "/".join(map(str, ruins)), pv))
+    return fora
+
+
+def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str], so_maquina: bool = False) -> dict:
     """Aplica a furação padrão de fábrica às terças e ao que compõe a ligação delas.
+
+    `so_maquina`: só o limite da máquina — o passo na altura da terça (50 mm até 200 de altura, 100 acima), que ela
+    fura de uma vez; o passo ao longo da terça (o costume de 60 da fábrica) fica como a ligação está: "a ligação
+    manda" (decisão do usuário, 02/10). É o modo com que a regra vai ao 3D.
 
     Devolve {marca: descrição} do que mudou."""
     mudadas: Dict[str, str] = {}
@@ -1611,7 +1632,7 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str]) ->
             if ass is None:
                 continue
             nc, nl, dx, dy = ass
-            novo_h = passo_h if nc > 1 else 0.0
+            novo_h = (dx if so_maquina else passo_h) if nc > 1 else 0.0
             novo_v = passo_v if nl > 1 else 0.0
             if (nc > 1 and abs(dx - novo_h) > 0.5) or (nl > 1 and abs(dy - novo_v) > 0.5):
                 assinaturas[_eixos_da_assinatura(ass)][(nc, nl, dx, dy, novo_h, novo_v)] += pos.quantidade
