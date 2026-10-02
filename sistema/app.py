@@ -838,6 +838,23 @@ def _vivos():
     return _VIVOS
 
 
+def _impressao_das_pecas(doc) -> dict:
+    """{id: impressão} das chapas (furos, contorno, sistema) e dos sólidos com marca (vértices): o que mudou no 3D, peça
+    a peça — os contadores das etapas não bastam (o furo sem uso retirado e o oblongo da chapa não dizem a posição)"""
+    from nucleo2d.detalhe.base import _marcas
+    out = {}
+    for e in doc.entidades.values():
+        if e.tipo == "chapa":
+            out[e.id] = hash((repr(sorted((round(float(f.get("x", 0) or 0), 2), round(float(f.get("y", 0) or 0), 2),
+                                           round(float(f.get("diametro", 0) or 0), 2), round(float(f.get("largura", 0) or 0), 2),
+                                           round(float(f.get("altura", 0) or 0), 2)) for f in (e.furos or []))),
+                              repr([tuple(round(float(v), 2) for v in p) for p in (e.contorno or [])]),
+                              repr([round(float(v), 3) for v in tuple(e.origem) + tuple(e.eixo_x) + tuple(e.eixo_y)])))
+        elif e.tipo == "solido" and _marcas(e).get("posicao"):
+            out[e.id] = hash(tuple(tuple(round(float(c), 2) for c in v) for v in (e.vertices or [])))
+    return out
+
+
 def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> dict:
     """As regras de fábrica aplicadas no modelo 3D, na ordem da prioridade combinada com o usuário (02/10): 1) o limite
     da máquina — o passo na altura da terça, 50 mm até 200 de altura, 100 acima —, 2) a ligação manda — o furo da terça
@@ -847,8 +864,10 @@ def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> 
     furação da terça no passo da máquina (`regra`). Só muda `doc` (quem chama grava). Devolve {"mudou", "posicoes",
     "avisos", "convertidas"}."""
     from nucleo2d import detalhar as det
+    from nucleo2d.detalhe.base import _marcas
     from nucleo2d.detalhe.celulas import ajustar_suportes_as_tercas
     out = {"mudou": False, "posicoes": set(), "avisos": [], "convertidas": 0}
+    antes = _impressao_das_pecas(doc)
 
     def marcou(n, posicoes=()):
         if n:
@@ -884,7 +903,11 @@ def _padronizar_3d(s: str, doc, regra: bool = True, converter: bool = False) -> 
             out["avisos"].append("furação da máquina aplicada no 3D a %d chapa(s): %s"
                                  % (padr["chapas"], ", ".join(padr["posicoes"][:12])))
         marcou(padr["chapas"], padr["posicoes"])
-    out["posicoes"] = sorted(out["posicoes"])
+    depois = _impressao_das_pecas(doc)
+    mudadas = {i for i in set(antes) | set(depois) if antes.get(i) != depois.get(i)}
+    out["mudou"] = bool(mudadas)
+    out["posicoes"] = sorted({str(_marcas(doc.entidades[i]).get("posicao") or doc.entidades[i].nome or i)
+                              for i in mudadas if i in doc.entidades})
     return out
 
 
