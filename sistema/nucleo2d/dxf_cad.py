@@ -197,6 +197,9 @@ def _nome_arquivo(texto: str) -> str:
 _SEM_CORTE = ("completo", "localizacao", "chumbacao", "telhas")
 
 
+_BARRAS = ("barra", "barra_conformada", "barra_redonda")
+
+
 def desenho_de_corte(fontes) -> Optional[Desenho]:
     """As peças para o corte em tamanho real (mm do modelo: 64 mede 64 no AutoCAD — pedido do usuário, 01/10: "isso
     vai para a empresa cortar e estando em uma escala diferente pode causar erro"): o desenho das chaparias inteiro e,
@@ -211,7 +214,13 @@ def desenho_de_corte(fontes) -> Optional[Desenho]:
     k = float(chap.escala or 1.0)
     out = Desenho(nome="Corte – tamanho real", escala=k)
     out.camadas.update(chap.camadas)
+    from nucleo2d.detalhar import TITULO_CANTONEIRAS
     for e in chap.entidades.values():
+        a = e.atributos or {}
+        # só chapa vai para o corte: a cantoneira (barra com nome de chapa) é furada na fábrica (02/10), e o quadro
+        # dela sai junto
+        if a.get("classe") in _BARRAS or TITULO_CANTONEIRAS in (a.get("faixa"), a.get("quadro")):
+            continue
         out.add(e)
     ja = {str(it.get("nome") or "") for it in ((chap.metadados.get("detalhamento") or {}).get("itens") or {}).values()}
     caixa = out.caixa()
@@ -226,7 +235,7 @@ def desenho_de_corte(fontes) -> Optional[Desenho]:
         for c in celulas_de(d, nome):
             it = itens.get(c["chave"][1]) if c.get("chave") else None
             nome_p = str((it or {}).get("nome") or "")
-            if not re.match(r"CH\d", nome_p) or nome_p in ja:
+            if not re.match(r"CH\d", nome_p) or nome_p in ja or str((it or {}).get("classe") or "").startswith("Barra"):
                 continue
             ja.add(nome_p)
             # a letra e os afastamentos de papel ficam os mesmos: no desenho das chaparias, na escala dele (a letra

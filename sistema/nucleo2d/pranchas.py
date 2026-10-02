@@ -458,13 +458,16 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     from nucleo2d.detalhar import CATEGORIAS
     ordem = {k: i for i, k in enumerate(CATEGORIAS)}
     ordem["CONTRAVENTOS"] = ordem.get("CONJUNTOS", 1) - 0.5
-    titulos_q = dict(CATEGORIAS, CONTRAVENTOS="Contraventos e agulhamentos")
+    titulos_q = dict(CATEGORIAS, CONTRAVENTOS="Contraventos e agulhamentos",
+                     CANTONEIRAS="Cantoneiras – furadas na fábrica")
     for c in itens:
         c["categoria"] = (c.get("item") or {}).get("categoria") or (
             "CHAPAS" if c.get("montagem") else "VISTAS" if not c.get("marca") else "OUTROS")
-        # as peças com nome de chapa (CH15, CH16: cantoneiras de suporte) no quadro das chapas, todas juntas (28/09)
+        # as peças com nome de chapa (CH15, CH16: cantoneiras de suporte) num quadro delas, logo depois das chapas: a
+        # cantoneira é furada na fábrica e a chapa fora — juntas confundiam o envio para o corte (pedido do usuário,
+        # 02/10; antes, 28/09, iam no quadro das chapas)
         if c["categoria"] == "BARRAS" and re.match(r"CH\d", str((c.get("item") or {}).get("nome") or "")):
-            c["categoria"] = "CHAPAS"
+            c["categoria"] = "CANTONEIRAS"
         # a barra roscada e o gancho (as peças de ponta dos contraventos e das agulhas) vão com eles (28/09)
         if (c.get("item") or {}).get("tipo") in ("barra_roscada", "gancho"):
             c["categoria"] = "CONTRAVENTOS"
@@ -601,6 +604,7 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
     # a prancha das chapas é a de corte (pedido do usuário, 28/09): todas numa prancha só, que ela abre, e as
     # barras no quadro de baixo, no que couber; na ordem do nome (CH1, CH2 … CH20, as montagens depois)
     ordem["CHAPAS"] = ordem.get("BARRAS", ordem.get("CHAPAS", 50)) - 0.5
+    ordem["CANTONEIRAS"] = ordem["CHAPAS"] + 0.25
     ch_ = sorted((c for c in itens if c["categoria"] == "CHAPAS" and not c.get("local")),
                  key=lambda c: (1 if c.get("montagem") else 0, [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", str(
                      (c.get("item") or {}).get("nome") or c.get("montagem") or c.get("titulo") or ""))]))

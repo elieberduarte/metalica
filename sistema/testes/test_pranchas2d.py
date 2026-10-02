@@ -476,6 +476,15 @@ def test_chapas_da_tesoura_na_prancha_dela_com_a_quantidade_dela():
     from nucleo2d import dxf_cad
     corte_d = dxf_cad.desenho_de_corte([("detalhamento-" + k, d) for k, d in r["desenhos"].items()])
     assert corte_d is not None
+    # as cantoneiras com nome de chapa (CH13–CH15): no quadro delas nas chaparias e fora do corte — são furadas na
+    # fábrica, as chapas fora (pedido do usuário, 02/10)
+    no_quadro = {(e.atributos or {}).get("nome") for e in r["desenhos"]["chaparias"].entidades.values()
+                 if (e.atributos or {}).get("faixa") == det.TITULO_CANTONEIRAS and (e.atributos or {}).get("nome")}
+    assert no_quadro and all(n.startswith("CH") for n in no_quadro), no_quadro
+    assert not any((e.atributos or {}).get("classe") in ("barra", "barra_conformada") or det.TITULO_CANTONEIRAS in str(getattr(e, "texto", ""))
+                   for e in corte_d.entidades.values())
+    # e na prancha, num quadro delas (antes iam no quadro das chapas)
+    assert any(f.metadados["prancha"]["titulo"].find("Cantoneiras") >= 0 for f in folhas)
     with tempfile.TemporaryDirectory() as tmp:
         dims = list(ezdxf.readfile(dxf_cad.exportar(corte_d, os.path.join(tmp, "c.dxf"))).modelspace().query("DIMENSION"))
     escritas = [(x.dxf.text, x.get_measurement()) for x in dims if re.fullmatch(r"\d+", x.dxf.text or "")]

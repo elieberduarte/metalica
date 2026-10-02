@@ -185,8 +185,18 @@ def marcar(junto: Desenho) -> dict:
 
 
 # ------------------------------------------------------------------ aprender
+def _peca_solta(a: dict) -> bool:
+    """geometria de peça gerada (furo, contorno, vista de uma posição) que perdeu a célula: não é desenho à mão — a
+    peça é do 3D e só o gerador a desenha. Guardada como à mão, voltava em toda geração no lugar de antes, por cima
+    de outra peça (os 2 furos da M117 (b) em cima da P27 (b) do depósito, 02/10)"""
+    return bool(a.get("detalhe") and (a.get("posicao") or a.get("conjunto")))
+
+
 def _a_mao(a: dict) -> bool:
-    """desenhado à mão: o que o gerador não marcou (nem célula, nem quadro, nem folha), ou já guardado assim"""
+    """desenhado à mão: o que o gerador não marcou (nem célula, nem quadro, nem folha), ou já guardado assim; nunca
+    a peça gerada solta (_peca_solta)"""
+    if _peca_solta(a):
+        return False
     return bool(a.get("a_mao")) or not any(k in a for k in ("prancha", "cel", "fonte", "folha", "g", "prancha_numero"))
 
 
@@ -424,6 +434,9 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
         for nome_c, cam in tmp.camadas.items():
             junto.camadas.setdefault(nome_c, cam)
         for e in tmp.entidades.values():
+            if _peca_solta(e.atributos or {}):
+                rel["pecas_soltas"] = rel.get("pecas_soltas", 0) + 1     # guardada antes da regra: não volta
+                continue
             junto.add(e)
             rel["a_mao"] += 1
     return rel

@@ -148,6 +148,30 @@ def test_repeticao_no_mesmo_lugar_nao_vira_desenho_a_mao():
     assert len(guardadas) == 1 and abs(AP._ref(guardadas[0])[1] - (AP._ref(linha)[1] + 50.0)) < 1e-6
 
 
+def test_peca_gerada_solta_nao_vira_desenho_a_mao():
+    """Furo (ou contorno) de uma posição que perdeu a célula não é desenho à mão: guardado assim, voltava em toda
+    geração no lugar antigo, por cima de outra peça (os 2 furos da M117 (b) sobre a P27 (b) do depósito, 02/10); o
+    já guardado antes da regra também não volta."""
+    from nucleo2d.desenho import Polilinha
+    g1 = _gerado("g1")
+    imp1 = AP.marcar(g1)
+    ed = Desenho.de_dict(copy.deepcopy(g1.dict()))
+    solto = Polilinha(camada="FURO", vertices=[(10.0, 10.0), (12.0, 10.0), (12.0, 15.0), (10.0, 15.0)], fechada=True,
+                      atributos={"posicao": "M117 (b)", "detalhe": "posicao", "furo": 1})
+    ed.add(solto)
+    ed.add(Texto(camada="TEXTO", posicao=(500.0, 500.0), texto="NOTA À MÃO", altura=2.5))
+    aj = AP.aprender(ed, {"impressoes": {"g1": imp1}})
+    guardadas = list(Desenho.de_dict(aj["a_mao"]).entidades.values())
+    assert [e.tipo for e in guardadas] == ["texto"]
+    velho = Desenho(nome="a_mao")
+    velho.add(copy.deepcopy(solto))
+    g2 = _gerado("g2")
+    AP.marcar(g2)
+    rel = AP.aplicar(g2, {"a_mao": velho.dict()})
+    assert rel["a_mao"] == 0 and rel["pecas_soltas"] == 1
+    assert not [e for e in g2.entidades.values() if (e.atributos or {}).get("posicao") == "M117 (b)"]
+
+
 def test_ajuste_descartado_quando_o_gerador_muda_a_celula():
     """A regra do gerador mudou a célula depois que o ajuste foi aprendido (o desenho dela foi arrumado de outro
     jeito): o ajuste não volta — reaplicado, deslocava de novo o que a regra já tinha posto no lugar (as telhas e os

@@ -241,6 +241,10 @@ def _anexar_faixa(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_
     return fundo + dy
 
 
+#: O quadro das cantoneiras com nome de chapa no desenho das chaparias (não vão para o arquivo de corte).
+TITULO_CANTONEIRAS = "CANTONEIRAS – FURADAS NA FÁBRICA"
+
+
 #: Título do quadro de cada tipo de conjunto, na ordem em que os quadros saem.
 QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("conjunto", "CONJUNTOS"),
            ("agulhamento", "AGULHAMENTOS"), ("contraventamento", "CONTRAVENTAMENTOS"), ("chumbador", "CHUMBADORES")]
@@ -255,13 +259,19 @@ QUADROS_POSICOES = [("planta_telhas", "PAGINAÇÃO DAS TELHAS DA COBERTURA (PLAN
                     ("barra_roscada", "BARRAS ROSCADAS"), ("gancho", "GANCHOS"), ("chumbador", "CHUMBADORES"), ("cantoneira_forro", "CANTONEIRAS DE FORRO"),
                     ("perfil_fechamento", "PERFIS DE FECHAMENTO"), ("parte", "PEÇAS DE CONJUNTOS"),
                     ("rufo", "RUFOS"), ("calha", "CALHAS"),
-                    ("barra", "BARRAS"), ("chapa", "CHAPAS"), ("telha", "TELHAS")]
+                    ("barra", "BARRAS"), ("chapa", "CHAPAS"), ("cantoneira_ch", TITULO_CANTONEIRAS), ("telha", "TELHAS")]
 
 
 #: Quadros com uma célula por linha (a terça é comprida e as iguais em tamanho se comparam).
 UMA_POR_LINHA = {"terca_cobertura", "terca_marquise"}
-#: A barra com nome de chapa (as cantoneiras dos suportes, CH15, CH16): detalhada com as chapas, para o corte.
+#: A barra com nome de chapa (as cantoneiras dos suportes, CH15, CH16): detalhada junto das chapas, mas no quadro dela
+#: e fora do arquivo de corte — a cantoneira é furada na fábrica, a chapa fora (pedido do usuário, 02/10: "separar as
+#: cantoneiras L das chapas PLATES ... pode confundir na hora de enviar o arquivo para a empresa cortar as chapas")
 _CH_BARRA = re.compile(r"CH\d")
+
+
+def _cantoneira_ch(p) -> bool:
+    return p.classe in ("barra", "barra_conformada") and bool(_CH_BARRA.match(str(p.nome or "")))
 
 
 #: Quadros do desenho completo por família: o conjunto e as peças que fazem parte dele
@@ -977,7 +987,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         # a barra com nome de chapa (CH15, CH16: as cantoneiras dos suportes) vai com as chapas: o desenho delas é o
         # de corte (pedido do usuário, 01/10: "isso vai para a empresa cortar"), na escala dele
         if "chapas" in grupos and chave in ("chapas", "barras"):
-            ch_barra = lambda p: p.classe in ("barra", "barra_conformada") and _CH_BARRA.match(str(p.nome or ""))    # noqa: E731
+            ch_barra = _cantoneira_ch
             lista = ([p for p in lista if not ch_barra(p)] if chave == "barras"
                      else lista + [p for p in _ordenar(posicoes) if ch_barra(p)])
         extra_md = md["telhas"] if chave == "telhas" else []
@@ -1039,6 +1049,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         celulas_g += [("cumeeira", (lambda dd, x, y, t=t: desenho_da_cumeeira(t, dd, x, y, t["nome"]))) for t in extra_cm]
         n_frente = len(celulas_g)
         celulas_g += [("chumbador" if (p.classe == "chapa" and p.marca in chapas_de_chumbador)
+                       else "cantoneira_ch" if (chave == "chapas" and _cantoneira_ch(p))
                        else (nomeacao["tipos"].get(p.marca) or p.tipo_nome or p.classe),
                        (lambda dd, x, y, p=p: desenho_da_posicao(p, dd, x, y, editavel=p.marca in editaveis))) for p in lista]
         celulas_sf = []
