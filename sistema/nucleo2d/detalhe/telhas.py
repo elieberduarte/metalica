@@ -1130,6 +1130,139 @@ def _casco2d(pts):
     return baixo[:-1] + cima[:-1]
 
 
+#: A aresta de corte do canto em meia-esquadria: inclinada entre estes ângulos (graus) e com pelo menos este
+#: comprimento (mm).
+ESQUADRIA_ANGULOS = (35.0, 55.0)
+ESQUADRIA_MINIMA = 250.0
+
+
+def _diagonal_de_canto(ch: dict):
+    """O trecho mais comprido do corte da chapa inclinado a ~45° (o corte em meia-esquadria), ou None: (a, b, L).
+    Os lados seguidos na mesma direção somam — o casco da malha picava a diagonal do TL2 cortado em lados de 30 a
+    150 mm, e nenhum sozinho chegava ao mínimo."""
+    corte = ch.get("corte") or ch["contorno"]
+    n = len(corte)
+    if n < 3:
+        return None
+
+    def direcao(i):
+        a, b = corte[i], corte[(i + 1) % n]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L < 1e-6:
+            return None
+        ang = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180.0
+        return ang if ESQUADRIA_ANGULOS[0] <= ang % 90.0 <= ESQUADRIA_ANGULOS[1] else None
+    melhor = None
+    i0 = 0
+    while i0 < n:
+        d0 = direcao(i0)
+        if d0 is None:
+            i0 += 1
+            continue
+        j = i0
+        while j + 1 < n + i0 and direcao((j + 1) % n) is not None and abs(direcao((j + 1) % n) - d0) < 5.0:
+            j += 1
+        a, b = corte[i0], corte[(j + 1) % n]
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L >= ESQUADRIA_MINIMA and (melhor is None or L > melhor[2]):
+            melhor = (a, b, L)
+        i0 = j + 1
+    return melhor
+
+
+def _cantos_em_esquadria(ordenadas, x0: float, y0: float, fx1: float, fy1: float) -> Dict[str, dict]:
+    """Os cantos em meia-esquadria da face em anel (a cobertura plana da Sala: as fileiras com a onda num sentido e
+    as laterais no outro, cortadas a 45° na quina): {canto: {"chapas", "diag": [(a, b)], "sx", "sy"}} por quina da
+    face (nas coordenadas do papel, com a origem em x0, y0). Só na face com chapas nas duas direções — o espigão de
+    um telhado de quatro águas também corta as chapas na diagonal, e ali não é canto de anel."""
+    normais = [c for c in ordenadas if not c.get("multidobra")]
+    if not (any(c.get("alinhada", True) for c in normais) and any(not c.get("alinhada", True) for c in normais)):
+        return {}
+    cantos: Dict[str, dict] = {}
+    for c in normais:
+        d = _diagonal_de_canto(c)
+        if d is None:
+            continue
+        mx, my = (d[0][0] + d[1][0]) / 2.0 - x0, (d[0][1] + d[1][1]) / 2.0 - y0
+        sx = -1 if mx < fx1 / 2.0 else 1
+        sy = -1 if my < fy1 / 2.0 else 1
+        g = cantos.setdefault("%+d%+d" % (sx, sy), {"chapas": [], "diag": [], "sx": sx, "sy": sy})
+        g["chapas"].append(c)
+        g["diag"].append(((d[0][0] - x0, d[0][1] - y0), (d[1][0] - x0, d[1][1] - y0)))
+    return cantos
+
+
+def _chapa_do_canto(p, ch: dict, T, fx0: float, fx1: float, fy0: float, fy1: float) -> None:
+    """A chapa comprada do canto (largura de catálogo atravessada, comprimento da compra ao longo da onda) em volta
+    do pedaço dela no modelo e empurrada para dentro do anel: centrada, a de 670 passava uns 190 mm da borda de fora
+    e entrava na vizinha."""
+    from nucleo2d.detalhe.base import LARGURA_TOTAL_TELHA
+    xs = [q[0] for q in ch["contorno"]]
+    ys = [q[1] for q in ch["contorno"]]
+    (xa, ya), (xb, yb) = T((min(xs), min(ys))), T((max(xs), max(ys)))
+    if ch.get("alinhada", True):
+        larg = xb - xa
+        if 300.0 < larg < 1200.0:
+            xc = (xa + xb) / 2.0
+            xa, xb = xc - LARGURA_TOTAL_TELHA / 2.0, xc + LARGURA_TOTAL_TELHA / 2.0
+        if ch["comprimento"] > yb - ya + 1.0:
+            yb = ya + ch["comprimento"]
+    else:
+        larg = yb - ya
+        if 300.0 < larg < 1200.0:
+            yc = (ya + yb) / 2.0
+            ya, yb = yc - LARGURA_TOTAL_TELHA / 2.0, yc + LARGURA_TOTAL_TELHA / 2.0
+        if ch["comprimento"] > xb - xa + 1.0:
+            xb = xa + ch["comprimento"]
+    # para dentro do anel, sem mudar o tamanho
+    dx_ = (fx0 - xa) if xa < fx0 else (fx1 - xb) if xb > fx1 else 0.0
+    dy_ = (fy0 - ya) if ya < fy0 else (fy1 - yb) if yb > fy1 else 0.0
+    xa, xb, ya, yb = xa + dx_, xb + dx_, ya + dy_, yb + dy_
+    p.polilinha([(xa, ya), (xb, ya), (xb, yb), (xa, yb)], fechada=True, camada="ACO")
+
+
+def _desenhar_canto(p, g: dict, T, fx0: float, fx1: float, fy0: float, fy1: float, esc: float) -> None:
+    """O canto em meia-esquadria uma vez só: o corte a 45° tracejado (as três chapas o desenhavam, uma sobre a outra,
+    com os retângulos formando um "X") e uma chamada para o vazio do meio do anel com as peças do canto — o nome e o
+    comprimento de compra de cada uma (pedido do usuário, 02/10; antes os nomes e as cotas se encavalavam na quina)."""
+    # a linha do corte: das pontas das diagonais das peças, as duas mais afastadas
+    pts = [q for a_b in g["diag"] for q in a_b]
+    a0 = max(pts, key=lambda q: math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]))
+    b0 = max(pts, key=lambda q: math.hypot(q[0] - a0[0], q[1] - a0[1]))
+    p.linha(a0[0], a0[1], b0[0], b0[1], "OCULTA")
+    # a ponta de dentro do corte (a mais longe da quina) e a chamada dela para o meio do anel
+    qx = fx0 if g["sx"] < 0 else fx1
+    qy = fy0 if g["sy"] < 0 else fy1
+    dentro = max((a0, b0), key=lambda q: math.hypot(q[0] - qx, q[1] - qy))
+    ix, iy = -g["sx"], -g["sy"]                              # para o meio do anel
+    L = 20.0 * esc                                     # além dos nomes das chapas da borda de dentro
+    c1 = (dentro[0] + ix * L * 0.7071, dentro[1] + iy * L * 0.7071)
+    c2 = (c1[0] + ix * 6.0 * esc, c1[1])
+    p.linha(dentro[0], dentro[1], c1[0], c1[1], "COTA")
+    p.linha(c1[0], c1[1], c2[0], c2[1], "COTA")
+    linhas = ["CANTO 45° – corte na obra"]
+    vistas = []
+    for ch in sorted(g["chapas"], key=lambda c: (_ordem_natural(c["nome"]), c["comprimento"])):
+        corte = ch.get("corte") or ch["contorno"]
+        xs = [q[0] for q in corte]
+        ys = [q[1] for q in corte]
+        area = abs(sum(corte[i][0] * corte[(i + 1) % len(corte)][1] - corte[(i + 1) % len(corte)][0] * corte[i][1]
+                       for i in range(len(corte)))) / 2.0
+        caixa = (max(xs) - min(xs)) * (max(ys) - min(ys)) or 1.0
+        txt = "%s – %d%s" % (ch["nome"], round(ch["comprimento"]), "" if area < 0.65 * caixa else " (ponta cortada)")
+        if txt not in vistas:
+            vistas.append(txt)
+    linhas += vistas
+    h = 1.8 * esc
+    passo = 1.6 * h
+    alinh = "esquerda" if ix > 0 else "direita"
+    xt = c2[0] + ix * 1.0 * esc
+    # as linhas descem a partir da chamada na quina de cima e sobem na de baixo (sempre para o meio do anel)
+    for i, txt in enumerate(linhas if iy < 0 else list(reversed(linhas))):
+        yt = c2[1] - h / 2.0 + (-i * passo if iy < 0 else i * passo)
+        p.texto(xt, yt, txt, h, alinhamento=alinh)
+
+
 def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int = 1):
     """Uma face paginada: as chapas lado a lado como são montadas, cada uma com a marca e a
     cota do comprimento real (na chapa, ao longo da onda) — o "comprimentos reais" que a
@@ -1150,10 +1283,19 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
     cotada = False
     # a cota da largura (980 útil / 1050 total) na chapa de baixo, para fora do desenho: na primeira da esquerda, a
     # face em anel (a cobertura plana da Sala, 01/10) a punha dentro, em cima das chapas da lateral
-    alinhadas = [c for c in ordenadas if c.get("alinhada", True)
+    fx0, fx1 = 0.0, max(q[0] for ch in chapas for q in ch["contorno"]) - x0
+    fy0, fy1 = 0.0, max(q[1] for ch in chapas for q in ch["contorno"]) - y0
+    cantos = _cantos_em_esquadria(ordenadas, x0, y0, fx1, fy1)
+    no_canto = {id(c): k for k, g in cantos.items() for c in g["chapas"]}
+    alinhadas = [c for c in ordenadas if c.get("alinhada", True) and id(c) not in no_canto
                  and 600.0 < max(q[0] for q in c["contorno"]) - min(q[0] for q in c["contorno"]) < 1200.0]
     da_largura = min(alinhadas, key=lambda c: (round(c["y0"]), c["x"])) if alinhadas else None
     for n, ch in enumerate(ordenadas):
+        if id(ch) in no_canto:
+            # a chapa do canto em meia-esquadria do anel (a cobertura plana da Sala, 02/10): a comprada presa às bordas
+            # do anel, sem passar delas; o corte a 45°, o nome e a cota vão uma vez por canto (_desenhar_canto)
+            _chapa_do_canto(p, ch, T, fx0, fx1, fy0, fy1)
+            continue
         if not ch.get("alinhada", True) and not ch.get("multidobra"):
             # a chapa com a onda atravessada na face (as laterais do anel da cobertura plana da Sala, 01/10): deitada,
             # o comprimento em x e a largura de catálogo em y; a cota ao longo dela e o nome na ponta, fora — como as
@@ -1215,8 +1357,11 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         # telha em camada: outra chapa já desenhada no mesmo alinhamento, cobrindo o mesmo
         # trecho (telha dupla ou sobreposta no modelo) — a cota e o nome dela vão para o lado,
         # senão os números das duas caem um em cima do outro
+        # (só entre chapas na mesma direção: a lateral do anel, atravessada, não é uma telha por cima desta — a TL16 do
+        # canto da Sala tinha o nome empurrado para a vizinha, 02/10)
         camada = sum(1 for o in ordenadas[:n]
-                     if abs(o["x"] - ch["x"]) < 0.25 * LARGURA_COMPRA_TELHA
+                     if o.get("alinhada", True) == ch.get("alinhada", True)
+                     and abs(o["x"] - ch["x"]) < 0.25 * LARGURA_COMPRA_TELHA
                      and min(o["y1"], ch["y1"]) - max(o["y0"], ch["y0"])
                      > 0.2 * min(o["y1"] - o["y0"], ch["y1"] - ch["y0"]))
         desl = 7.0 * camada
@@ -1230,7 +1375,8 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         # o nome vai abaixo da chapa; na face com telhas emendadas no comprimento, abaixo dela
         # já começa a chapa de baixo (com a cota dela no mesmo alinhamento) — aí o nome fica
         # dentro da própria chapa, junto da ponta de baixo e do outro lado da linha de cota
-        emendada = any(o is not ch and abs(o["x"] - ch["x"]) < 0.25 * LARGURA_COMPRA_TELHA
+        emendada = any(o is not ch and o.get("alinhada", True) == ch.get("alinhada", True) and id(o) not in no_canto
+                       and abs(o["x"] - ch["x"]) < 0.25 * LARGURA_COMPRA_TELHA
                        and o["y0"] < ch["y0"] - 1.0 and o["y1"] > ch["y0"] - 20.0 * esc for o in ordenadas)
         cabe = (ch["y1"] - ch["y0"]) / esc >= len(str(ch["nome"])) * 1.8 * 0.8 + 8.0
         if emendada and cabe:
@@ -1243,6 +1389,8 @@ def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int 
         else:
             p.texto(xm + desl * esc, ch["y0"] - y0 - 4.0 * esc, ch["nome"], 1.8 * esc, angulo=90.0,
                     alinhamento="direita", atributos=rep)
+    for g in cantos.values():
+        _desenhar_canto(p, g, T, fx0, fx1, fy0, fy1, esc)
     if pernas:
         # a cumeeira por cima das telhas: cada perna hachurada (é a peça que cobre o topo
         # das chapas), a linha da cumeeira e um rótulo só — nome e comprimento da perna
