@@ -919,7 +919,12 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         desenho.metadados["versao"] = versao.VERSAO
         desenho.metadados["geracao"] = geracao       # o CAD recarrega o desenho aberto quando ela muda
         _vivos().aplicar_cores(s, desenho)           # as cores escolhidas no CAD (um perfil, uma camada)
-        salvo = g.salvar_desenho(s, nome, desenho.dict())
+        # a geração nova vale no carimbo antes do arquivo: uma gravação do CAD com a de antes, chegando
+        # enquanto o detalhamento ainda monta os outros desenhos e a lista, era aceita e punha o desenho
+        # velho por cima do refeito (e daí em diante a tela recarregava sem parar)
+        with _TRAVA_GRAVAR_DESENHO:
+            _vivos().registrar_desenho(s, _slug(nome), geracao)
+            salvo = g.salvar_desenho(s, nome, desenho.dict())
         geracoes[salvo["nome"]] = geracao
         desenhos.append({"grupo": chave, "nome": salvo["nome"], "titulo": nome,
                          "entidades": desenho.tamanho, "escala": desenho.escala})
@@ -1407,6 +1412,11 @@ def aplicar_pecas_do_desenho(s: str, nome: str, corpo: dict) -> dict:
                 # desenho editado volta a ser gravado como o usuário o deixou
                 _progresso(s, "gerando os desenhos de detalhamento de novo…")
                 res = _detalhar_projeto(s, {"grupos": list(GRUPOS.keys())}, g, detalhar, GRUPOS, _categoria, lista_producao)
+                # com a geração que o detalhamento acabou de registrar: com a de antes, o CAD recarregava
+                # este desenho a cada 5 s e recusava toda gravação
+                atual = (_vivos().ler_carimbo(s).get("desenhos") or {}).get(_slug(nome))
+                if atual:
+                    d.metadados["geracao"] = atual
                 g.salvar_desenho(s, nome, d.dict())
                 r["regenerados"] = [x["nome"] for x in res.get("desenhos", [])]
                 r["avisos"].extend(res.get("avisos") or [])
@@ -2431,6 +2441,10 @@ def refazer_pranchas(s: str):
     return None
 
 
+#: a conferência da geração e a gravação do desenho juntas, sem o detalhamento gravar no meio
+_TRAVA_GRAVAR_DESENHO = threading.RLock()
+
+
 def salvar_desenho_do_cad(s: str, nome: str, corpo: dict) -> dict:
     """POST /api/projetos/<s>/desenhos/<nome> (o CAD grava): se o desenho foi refeito pela atualização
     automática depois que o CAD o abriu (a geração mudou), não grava por cima — o CAD recarrega. Com
@@ -2438,12 +2452,13 @@ def salvar_desenho_do_cad(s: str, nome: str, corpo: dict) -> dict:
     d = corpo.get("desenho", corpo)
     vivos = _vivos()
     geracao = ((d or {}).get("metadados") or {}).get("geracao") if isinstance(d, dict) else None
-    if geracao:
-        atual = (vivos.ler_carimbo(s).get("desenhos") or {}).get(_slug(nome))
-        if atual and atual != geracao:
-            raise ErroDeDados("DESENHO_ATUALIZADO: este desenho foi refeito (modelo ou versão nova) enquanto estava "
-                              "aberto; a tela recarrega com ele — a última edição não foi gravada.")
-    r = _gerente().salvar_desenho(s, nome, d)
+    with _TRAVA_GRAVAR_DESENHO:
+        if geracao:
+            atual = (vivos.ler_carimbo(s).get("desenhos") or {}).get(_slug(nome))
+            if atual and atual != geracao:
+                raise ErroDeDados("DESENHO_ATUALIZADO: este desenho foi refeito (modelo ou versão nova) enquanto estava "
+                                  "aberto; a tela recarrega com ele — a última edição não foi gravada.")
+        r = _gerente().salvar_desenho(s, nome, d)
     vivos.desenho_gravado(s, _slug(nome), d)
     return r
 
