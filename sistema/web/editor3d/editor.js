@@ -2207,8 +2207,12 @@ export class Editor {
       (s ? ` · ${numero(s)} selecionado${s === 1 ? '' : 's'}` : '');
     if (!n) { this.el.extensao.textContent = '—'; return; }
     const [a, b] = this.documento.caixa();
+    // e o aço do modelo (pedido do usuário, 02/10: "acrescentar o peso total da estrutura"): o da lista de materiais
+    // (paineis.js, textoDoPeso)
+    const peso = this.textoDoPeso ? this.textoDoPeso() : null;
     this.el.extensao.textContent =
-      `${metros(b[0] - a[0])} × ${metros(b[1] - a[1])} × ${metros(b[2] - a[2])} m`;
+      `${metros(b[0] - a[0])} × ${metros(b[1] - a[1])} × ${metros(b[2] - a[2])} m` + (peso ? ` · ${peso.texto}` : '');
+    this.el.extensao.title = peso ? peso.dica : '';
   }
 
   async _novaCamada() {

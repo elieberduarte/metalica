@@ -270,8 +270,9 @@ def _perfil_I(cat, d, bf) -> Optional[str]:
     return melhor[1] if melhor else None
 
 
-def _secao_da_barra(vs) -> Tuple[float, float, float]:
-    """(comprimento, altura, largura) da barra: o comprimento na direção mais comprida (a diagonal da planta também)."""
+def _secao_da_barra(vs):
+    """(comprimento, altura, largura, direção da altura, direção da largura) da barra: o comprimento na direção mais
+    comprida (a diagonal da planta também)."""
     xs, ys, zs = zip(*vs)
     d = (max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs))
     if d[0] > 1000 and d[1] > 1000 and d[2] < min(d[0], d[1]):
@@ -284,10 +285,28 @@ def _secao_da_barra(vs) -> Tuple[float, float, float]:
             larg = max(pr) - min(pr)
             pu = [v[0] * u[0] + v[1] * u[1] for v in vs]
             if melhor is None or larg < melhor[2]:
-                melhor = (max(pu) - min(pu), d[2], larg)
+                melhor = (max(pu) - min(pu), d[2], larg, (0.0, 0.0, 1.0), (n[0], n[1], 0.0))
         return melhor
-    s = sorted(d)
-    return s[2], s[1], s[0]
+    ordem = sorted(range(3), key=lambda i: d[i])
+    eixo = lambda i: tuple(1.0 if k == i else 0.0 for k in range(3))    # noqa: E731
+    return d[ordem[2]], d[ordem[1]], d[ordem[0]], eixo(ordem[1]), eixo(ordem[0])
+
+
+def _dividir_ao_meio(vs, faces, direcao):
+    """A malha cortada no meio da medida em `direcao` (as duas vigas iguais lado a lado que o modelo trouxe num
+    sólido só): cada face vai para o lado do centro dela; devolve [(vértices, faces), (vértices, faces)]."""
+    pr = [sum(v[k] * direcao[k] for k in range(3)) for v in vs]
+    meio = (max(pr) + min(pr)) / 2.0
+    lados = ([], [])
+    for f in faces:
+        c = sum(pr[i] for i in f) / len(f)
+        lados[0 if c < meio else 1].append(f)
+    out = []
+    for fs in lados:
+        usados = sorted({i for f in fs for i in f})
+        novo = {i: k for k, i in enumerate(usados)}
+        out.append(([vs[i] for i in usados], [[novo[i] for i in f] for f in fs]))
+    return out
 
 
 def _eixo_e_faixa(vs) -> Tuple[int, float, float, Tuple[float, ...], Tuple[float, ...]]:
@@ -371,7 +390,10 @@ def importar(caminho: str, avisar=None) -> Documento:
     cont = collections.Counter()
     resumo = collections.Counter()
     sem_etiqueta = collections.Counter()
-    for p in pecas:
+    k_peca = 0
+    while k_peca < len(pecas):
+        p = pecas[k_peca]
+        k_peca += 1
         camada, tipo, oque = ETIQUETAS.get(p["etiqueta"], ("Sem etiqueta", "IfcBuildingElementProxy", p["etiqueta"] or "sem etiqueta"))
         if camada == "Sem etiqueta":
             sem_etiqueta[p["etiqueta"] or "(nenhuma)"] += 1
@@ -379,8 +401,24 @@ def importar(caminho: str, avisar=None) -> Documento:
         xs, ys, zs = zip(*vs)
         dims = sorted((max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs)))
         if camada in ("Vigas", "Pilares"):
-            comp, alt, larg = _secao_da_barra(vs)
-            perfil = _perfil_I(cat, alt, larg) or _perfil_I(cat, larg, alt) or "I %dx%d (a confirmar)" % (round(alt), round(larg))
+            comp, alt, larg, dir_alt, dir_larg = _secao_da_barra(vs)
+            perfil = _perfil_I(cat, alt, larg) or _perfil_I(cat, larg, alt)
+            if not perfil:
+                # duas vigas iguais lado a lado num sólido só (a diagonal dupla W610X217 do heliponto): a peça vira duas
+                for d_, b_, dir_ in ((alt, larg / 2.0, dir_larg), (larg, alt / 2.0, dir_alt)):
+                    duplo = _perfil_I(cat, d_, b_)
+                    if duplo:
+                        metades = _dividir_ao_meio(vs, p["faces"], dir_)
+                        if all(len(m[0]) >= 8 for m in metades):
+                            for vs_m, fs_m in metades[1:]:
+                                pecas.append({"etiqueta": p["etiqueta"], "vertices": vs_m, "faces": fs_m, "partes": p.get("partes", 1),
+                                              "dividida": True})
+                            vs, p = metades[0][0], dict(p, vertices=metades[0][0], faces=metades[0][1], dividida=True)
+                            xs, ys, zs = zip(*vs)
+                            dims = sorted((max(xs) - min(xs), max(ys) - min(ys), max(zs) - min(zs)))
+                            perfil = duplo
+                            break
+            perfil = perfil or "I %dx%d (a confirmar)" % (round(alt), round(larg))
         elif camada == "Chapas":
             perfil = "PLATE %dx%dx%d" % (round(dims[2]), round(dims[1]), round(dims[0]))
         elif camada in ("Parafusos", "Chumbadores"):

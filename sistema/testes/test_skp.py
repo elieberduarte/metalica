@@ -24,6 +24,23 @@ def test_partes_da_barra_viram_uma_peca():
     partes = sorted(p.get("partes", 1) for p in juntas)
     assert partes == [1, 3], partes
     viga = next(p for p in juntas if p.get("partes") == 3)
-    comp, alt, larg = skp._secao_da_barra(viga["vertices"])
+    comp, alt, larg, _da, _dl = skp._secao_da_barra(viga["vertices"])
     assert round(comp) == 10000 and round(alt) == 617 and round(larg) == 230
     assert skp._perfil_I(skp._catalogo_I(), alt, larg) == "W610X140"
+
+
+def test_viga_dupla_lado_a_lado_vira_duas():
+    """Duas W610X217 encostadas pela mesa num sólido só (a diagonal do heliponto, 02/10): 656 de largura não é perfil;
+    a metade (328) é — a peça se divide no meio, cada metade com a malha dela."""
+    vs = [(x, y, z) for x in (0.0, 328.0, 656.0) for y in (0.0, 10000.0) for z in (0.0, 628.0)]
+    idx = {v: i for i, v in enumerate(vs)}
+    faces = []
+    for x0, x1 in ((0.0, 328.0), (328.0, 656.0)):
+        for y in (0.0, 10000.0):
+            faces.append([idx[(x0, y, 0.0)], idx[(x1, y, 0.0)], idx[(x1, y, 628.0)], idx[(x0, y, 628.0)]])
+        faces.append([idx[(x0, 0.0, 0.0)], idx[(x1, 0.0, 0.0)], idx[(x1, 10000.0, 0.0)], idx[(x0, 10000.0, 0.0)]])
+    comp, alt, larg, dir_alt, dir_larg = skp._secao_da_barra(vs)
+    assert round(larg) == 628 or round(alt) == 656
+    metades = skp._dividir_ao_meio(vs, faces, (1.0, 0.0, 0.0))
+    assert [round(max(v[0] for v in m[0]) - min(v[0] for v in m[0])) for m in metades] == [328, 328]
+    assert skp._perfil_I(skp._catalogo_I(), 628, 328) == "W610X217"

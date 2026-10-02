@@ -1718,6 +1718,32 @@ def _gravar_ajustes_furos(s: str, ajustes: dict):
     _gravar_ajuste(os.path.join(_gerente()._existente(s), "detalhamento", "ajustes-furos.json"), ajustes)
 
 
+_PESOS: Dict[str, tuple] = {}          # projeto → (mtime do modelo, resultado)
+
+
+def peso_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/peso: o aço do modelo pelo mesmo levantamento da lista de materiais (peso teórico do
+    catálogo; da malha, o que não está nele), por categoria — a barra de baixo do 3D mostra (pedido do usuário, 02/10:
+    "acrescentar o peso total da estrutura"). Guardado até o modelo mudar."""
+    mt = _mtime_do_modelo(s)
+    guardado = _PESOS.get(s)
+    if guardado and guardado[0] == mt:
+        return guardado[1]
+    from nucleo2d import detalhar as det
+    try:
+        lev = det.levantar(_documento3d_do_projeto(s), regra_tercas=False, ajustes=_ajustes_furos(s))
+    except ErroDeDados:
+        r = {"aco_kg": None, "por_categoria": {}}
+    else:
+        import collections
+        por = collections.Counter()
+        for p in lev["posicoes"]:
+            por[lev["categorias"].get(p.marca, "OUTROS")] += float(p.peso_total or 0.0)
+        r = {"aco_kg": round(sum(por.values()), 1), "por_categoria": {k: round(v, 1) for k, v in por.most_common()}}
+    _PESOS[s] = (mt, r)
+    return r
+
+
 def eixos_do_projeto(s: str) -> dict:
     """GET /api/projetos/<s>/eixos: os eixos gravados no projeto, ou identificados do modelo
     (com o nomes.json do detalhamento, quando há)."""
@@ -3647,6 +3673,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(referencia_do_lancamento(partes[0]))
                 if len(partes) == 2 and partes[1] == "desenhos":
                     return self._json(_gerente().listar_desenhos(partes[0]))
+                if len(partes) == 2 and partes[1] == "peso":
+                    return self._json(peso_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "desenhos-vivos":
                     if parse_qs(urlparse(self.path).query).get("editor"):
                         _vivos().editor_sinal(partes[0])        # o editor 3D aberto: não gravar o modelo por cima dele

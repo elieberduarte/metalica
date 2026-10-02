@@ -256,16 +256,79 @@ export class MetodosPaineis {
     raiz.append(g);
 
     const est = this.documento.estatisticas();
-    const massa = this.documento.barras.reduce((s, e) => s + this._massaBarra(e), 0) +
-      this.documento.chapas.reduce((s, e) => s + areaDaChapa(e) * (e.espessura || 0) * 7.85e-6, 0) +
-      (this.documento.solidos || []).reduce((s, e) => s + (Number((e.atributos || {}).peso_kg) || 0), 0);
     const gm = this._grupo(raiz, 'Modelo');
     const linha = (r, v) => gm.append(el('label', { texto: r }), el('span', { class: 'valor', texto: v }));
     linha('Objetos', numero(est.entidades));
     linha('Barras', numero(est.barras));
     linha('Chapas', numero(est.chapas));
     linha('Sólidos', numero(est.solidos));
-    linha('Aço estimado', massa ? `${numero(massa / 1000, 2)} t` : '—');
+    const peso = this.textoDoPeso();
+    linha('Aço', peso ? peso.texto : '—');
+  }
+
+  /** O aço do modelo, em kg (pedido do usuário, 02/10: "acrescentar o peso total da estrutura"): barras pelo perfil,
+   *  chapas pela área, sólidos pelo peso gravado na peça ou, os de aço (viga, pilar, barra, chapa, parafuso), pelo
+   *  volume da malha × 7.850 kg/m³ — o modelo importado de IFC ou SKP só tem sólidos. Concreto e solda ficam fora.
+   *  Guardado até o modelo mudar. */
+  massaDoModelo() {
+    if (this._massaDoc !== this.documento) {           // outro modelo carregado: outra conta
+      if (this._massaOuvinte) this._massaOuvinte();
+      this._massaDoc = this.documento;
+      this._massaCache = null;
+      // o carimbo de baixo pode ter lido a conta velha antes deste aviso: refaz com a nova
+      this._massaOuvinte = this.documento.aoMudar(() => { this._massaCache = null; if (this._atualizarCarimbo) this._atualizarCarimbo(); });
+    }
+    if (this._massaCache != null) return this._massaCache;
+    const doAco = new Set(['IfcBeam', 'IfcColumn', 'IfcMember', 'IfcPlate', 'IfcMechanicalFastener', 'IfcFastener']);
+    const volume = (e) => {
+      const v = e.vertices || [];
+      let t = 0;
+      for (const f of e.faces || []) {
+        const a = v[f[0]];
+        if (!a) continue;
+        for (let i = 1; i < f.length - 1; i++) {
+          const b = v[f[i]], c = v[f[i + 1]];
+          if (!b || !c) continue;
+          t += a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+        }
+      }
+      return Math.abs(t) / 6;
+    };
+    let m = this.documento.barras.reduce((s, e) => s + this._massaBarra(e), 0) +
+      this.documento.chapas.reduce((s, e) => s + areaDaChapa(e) * (e.espessura || 0) * 7.85e-6, 0);
+    for (const e of this.documento.solidos || []) {
+      const a = e.atributos || {};
+      if (Number(a.peso_kg)) { m += Number(a.peso_kg); continue; }
+      if (!doAco.has(a.tipo_ifc) || /concret/i.test(e.material || '')) continue;
+      m += volume(e) * 7.85e-6;
+    }
+    this._massaCache = m;
+    return m;
+  }
+
+  /** O texto do aço para a barra de baixo: no projeto, o do levantamento da lista de materiais (servidor, peso
+   *  teórico; refeito quando o modelo gravado muda), com a estrutura separada das telhas; sem projeto, a conta local.
+   *  Devolve {texto, dica} ou null. */
+  textoDoPeso() {
+    const t = (kg) => `${numero(kg / 1000, 1)} t`;
+    if (!this.projeto) {
+      const kg = this.massaDoModelo();
+      return kg ? { texto: `aço ≈ ${t(kg)}`, dica: 'Aço estimado: barras pelo perfil, chapas pela área, sólidos de aço pelo volume' } : null;
+    }
+    const chave = String(this._modeloAlterado || '');
+    if (this._pesoChave !== chave && !this._pesoBuscando) {
+      this._pesoBuscando = true;
+      fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/peso`).then(r => r.json()).then(r => {
+        this._peso = r; this._pesoChave = chave;
+      }).catch(() => { this._pesoChave = chave; }).finally(() => { this._pesoBuscando = false; this._atualizarCarimbo(); });
+    }
+    const p = this._peso;
+    if (!p || !p.aco_kg) return null;
+    const cat = p.por_categoria || {};
+    const telhas = cat.TELHAS || 0;
+    const dica = 'Peso teórico da lista de materiais (catálogo): ' +
+      Object.entries(cat).map(([k, v]) => `${k.toLowerCase()} ${t(v)}`).join(' · ');
+    return telhas ? { texto: `estrutura ${t(p.aco_kg - telhas)} · telhas ${t(telhas)}`, dica } : { texto: `aço ${t(p.aco_kg)}`, dica };
   }
 
   _massaBarra(b) {
