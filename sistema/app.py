@@ -513,7 +513,10 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
     if not dados:
         raise ErroDeDados("nenhum arquivo IFC recebido.")
     nome = os.path.basename(corpo.get("nome") or "modelo.ifc")
-    if not nome.lower().endswith(".ifc"):
+    # o .skp do SketchUp entra direto, pela biblioteca do SketchUp instalado (ifc/skp.py, pedido de 02/10): as
+    # etiquetas dele viram as camadas e as partes de cada barra viram a barra
+    eh_skp = nome.lower().endswith(".skp")
+    if not eh_skp and not nome.lower().endswith(".ifc"):
         nome += ".ifc"
     destino = os.path.join(pasta, "origem", nome)
     os.makedirs(os.path.dirname(destino), exist_ok=True)
@@ -521,8 +524,12 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
         _progresso(s, "gravando o IFC na pasta do projeto…")
         with open(destino, "wb") as f:
             f.write(base64.b64decode(dados))
-        _progresso(s, "lendo o IFC (%.0f MB; leva uns 20 s)…" % (os.path.getsize(destino) / 1048576))
-        doc = imp.importar(destino)
+        _progresso(s, "lendo o %s (%.0f MB; leva uns 20 s)…" % ("SKP" if eh_skp else "IFC", os.path.getsize(destino) / 1048576))
+        if eh_skp:
+            from ifc import skp as _skp
+            doc = _skp.importar(destino, avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+        else:
+            doc = imp.importar(destino)
         _progresso(s, "gravando o modelo 3D…")
         _regravar_modelo(s, doc)
         g.tocar(s, tipo="ifc", origem_ifc=nome)
@@ -1297,7 +1304,7 @@ def _conferir_eixos_das_chapas(s: str, doc, gravar: bool = True) -> dict:
     g = _gerente()
     nome = _identificacao_do_projeto(s).get("origem_ifc") or ""
     caminho = os.path.join(g._existente(s), "origem", nome) if nome else ""
-    if not nome or not os.path.exists(caminho):
+    if not nome or not os.path.exists(caminho) or not nome.lower().endswith(".ifc"):     # a origem .skp não se relê como IFC
         return {"aviso": "%d chapa(s) convertidas por versão anterior sem o IFC de origem no projeto: eixos não conferidos" % len(pendentes)}
     from ifc import importar as imp
     from nucleo2d import detalhar as det
