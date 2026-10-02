@@ -1235,11 +1235,9 @@ def _desenhar_canto(p, g: dict, T, fx0: float, fx1: float, fy0: float, fy1: floa
     qy = fy0 if g["sy"] < 0 else fy1
     dentro = max((a0, b0), key=lambda q: math.hypot(q[0] - qx, q[1] - qy))
     ix, iy = -g["sx"], -g["sy"]                              # para o meio do anel
-    L = 20.0 * esc                                     # além dos nomes das chapas da borda de dentro
-    c1 = (dentro[0] + ix * L * 0.7071, dentro[1] + iy * L * 0.7071)
-    c2 = (c1[0] + ix * 6.0 * esc, c1[1])
-    p.linha(dentro[0], dentro[1], c1[0], c1[1], "COTA")
-    p.linha(c1[0], c1[1], c2[0], c2[1], "COTA")
+    # além dos nomes das chapas da borda de dentro, também na prancha reduzida (a face de 1:50 vai a 1:125 e a
+    # chamada de 20 mm encolhia para 8, em cima dos "TL2" da fileira — 02/10): uma fração do vão do anel
+    L = max(20.0 * esc, 0.2 * min(fx1 - fx0, fy1 - fy0))
     linhas = ["CANTO 45° – corte na obra"]
     vistas = []
     for ch in sorted(g["chapas"], key=lambda c: (_ordem_natural(c["nome"]), c["comprimento"])):
@@ -1255,12 +1253,20 @@ def _desenhar_canto(p, g: dict, T, fx0: float, fx1: float, fy0: float, fy1: floa
     linhas += vistas
     h = 1.8 * esc
     passo = 1.6 * h
+    # o bloco sobe a partir da chamada nas quatro quinas, presa à linha de baixo: na prancha reduzida as linhas se
+    # reespaçam a partir dela, e o traço da chamada ao lado da linha de cima subia junto com ela, solto da diagonal
+    # (02/10). Na quina de cima a chamada desce o bastante para o bloco inteiro ficar abaixo dos nomes da fileira,
+    # com folga para a prancha que reduz até 2,5 vezes
+    if iy < 0:
+        L += len(linhas) * passo * 2.5 / 0.7071
+    c1 = (dentro[0] + ix * L * 0.7071, dentro[1] + iy * L * 0.7071)
+    c2 = (c1[0] + ix * 6.0 * esc, c1[1])
+    p.linha(dentro[0], dentro[1], c1[0], c1[1], "COTA")
+    p.linha(c1[0], c1[1], c2[0], c2[1], "COTA")
     alinh = "esquerda" if ix > 0 else "direita"
     xt = c2[0] + ix * 1.0 * esc
-    # as linhas descem a partir da chamada na quina de cima e sobem na de baixo (sempre para o meio do anel)
-    for i, txt in enumerate(linhas if iy < 0 else list(reversed(linhas))):
-        yt = c2[1] - h / 2.0 + (-i * passo if iy < 0 else i * passo)
-        p.texto(xt, yt, txt, h, alinhamento=alinh)
+    for i, txt in enumerate(reversed(linhas)):
+        p.texto(xt, c2[1] - h / 2.0 + i * passo, txt, h, alinhamento=alinh)
 
 
 def desenho_da_paginacao(face: dict, desenho, dx: float, dy: float, indice: int = 1):
