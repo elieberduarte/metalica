@@ -123,3 +123,4 @@ html.embutida #btn-voltar, html.embutida #link-editor, html.embutida #link-divid
 .faixa-edicao button.primario { background: #fff; color: #92400e; font-weight: 600; }
 .botoes.editar-chapa { margin-top: 6px; }
 .botoes.editar-chapa button { background: #b45309; color: #fff; border-color: #b45309; }
+.faixa-edicao-opcao { order: 2; display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; }

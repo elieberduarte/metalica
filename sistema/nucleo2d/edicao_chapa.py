@@ -166,7 +166,18 @@ def acrescentar_referencias(d: Desenho, refs: List[dict], chapa=None) -> int:
     return n
 
 
-def marcar_edicao(d: Desenho, marca: str, nome: str, quantidade: int, modo: str) -> None:
-    """Os metadados do modo de edição que o CAD lê para a faixa e para o Concluir."""
+def instancia_da_posicao(doc, pos) -> Optional[str]:
+    """O id da peça do modelo que a posição desenhada representa (a de onde vieram os vértices dela)."""
+    from nucleo2d.detalhe.base import _pecas
+    if not pos.vertices:
+        return None
+    v0 = tuple(round(q, 1) for q in pos.vertices[0])
+    pecas, _ = _pecas(doc)
+    return next((e.id for e in pecas if e.vertices and tuple(round(q, 1) for q in e.vertices[0]) == v0), None)
+
+
+def marcar_edicao(d: Desenho, marca: str, nome: str, quantidade: int, modo: str, referencia: Optional[str] = None) -> None:
+    """Os metadados do modo de edição que o CAD lê para a faixa e para o Concluir; `referencia`: a peça em que a
+    edição é feita (a clicada no 3D, ou a que o desenho representa) — nas do outro lado do prédio o Concluir espelha."""
     d.metadados["edicao"] = {"marca": marca, "nome": nome or marca, "quantidade": int(quantidade or 0),
-                             "modo": "local" if modo == "local" else "isolada"}
+                             "modo": "local" if modo == "local" else "isolada", "referencia": referencia or ""}

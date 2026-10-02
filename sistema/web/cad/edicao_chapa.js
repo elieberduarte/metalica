@@ -76,6 +76,8 @@ export class MetodosEdicaoChapaCAD {
         el('span', { texto: ` (${ed.marca}) · ${ed.quantidade} peça${ed.quantidade === 1 ? '' : 's'} no modelo · ${local ? 'no local' : 'isolada'}` })),
       el('div', { class: 'faixa-edicao-dica', texto: 'Furos: camada FURO (mover, apagar, desenhar círculo) · tamanho: Esticar · contorno: os vértices' +
         (local ? ' · em cinza, as peças em volta (só referência, travadas)' : '') }),
+      el('label', { class: 'faixa-edicao-opcao', title: 'Cada furo novo sem parafuso recebe a cópia do parafuso (com porca e arruela) de um furo da mesma chapa, em todas as chapas da posição' },
+        this._copiarParafusos = el('input', { type: 'checkbox', checked: true }), ' copiar parafusos nos furos novos'),
       el('div', { class: 'faixa-edicao-botoes' },
         el('button', { type: 'button', class: 'primario', texto: 'Concluir', title: `Leva furos e contorno a todas as ${ed.quantidade} chapas ${ed.marca} do 3D e refaz o detalhamento`,
           onclick: () => this.concluirEdicaoChapa() }),
@@ -90,13 +92,17 @@ export class MetodosEdicaoChapaCAD {
     try {
       const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}/aplicar-furos`, {
         method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({ desenho: this.doc.paraJSON(), marca: ed.marca }),
+        body: JSON.stringify({ desenho: this.doc.paraJSON(), marca: ed.marca,
+                               copiar_parafusos: !!(this._copiarParafusos && this._copiarParafusos.checked) }),
       }).then(async x => { const j = await x.json(); if (!x.ok || j.erro) throw new Error(j.erro || x.statusText); return j; });
       this._autosavePendente = false;
       if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
       this._editado = false;
       const msg = `${ed.nome}: ${r.furos || 0} furo(s)${r.contornos ? ' e o contorno' : ''} em ${r.chapas || 0} chapa(s) do 3D` +
-        (r.parafusos ? `, ${r.parafusos} parafuso(s) movidos junto` : '') + '. O detalhamento se refaz sozinho em seguida.';
+        (r.parafusos ? `, ${r.parafusos} parafuso(s) movidos junto` : '') +
+        (r.parafusos_copiados ? `, ${r.parafusos_copiados} peça(s) de parafuso copiadas nos furos novos` : '') +
+        (r.espelhadas ? `; ${r.espelhadas} chapa(s) do outro lado do prédio receberam a edição espelhada` : '') +
+        '. O detalhamento se refaz sozinho em seguida.';
       await this._sairDaEdicao(r.nome);
       this.aviso(msg, 'info', 12000);
     } catch (e) { this.aviso(`Não foi possível concluir: ${e.message}`, 'erro', 0); this.dica(''); }

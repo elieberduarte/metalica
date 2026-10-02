@@ -290,7 +290,7 @@ def test_desenho_geral_editavel_e_tamanho():
     assert len(furos) == 2 and abs(furos[-1]["x"] - 100.0) < 1e-6
     novo = [(x * 140 / 130, y) for x, y in cont]
     res = det.aplicar_furos(doc, "P1", furos, meta["furos_originais"]["P1"], novo)
-    assert res == {"chapas": 3, "furos": 2, "contornos": 3, "parafusos": 0}
+    assert res == {"chapas": 3, "furos": 2, "contornos": 3, "parafusos": 0, "parafusos_copiados": 0, "espelhadas": 0}
     for ch in (e for e in doc.entidades.values() if isinstance(e, Chapa)):
         xs = [p[0] for p in ch.contorno]
         assert abs((max(xs) - min(xs)) - 140) < 1e-6 and len(ch.furos) == 2
@@ -419,6 +419,40 @@ def test_par_de_oblongos_em_linha_so_na_chapa():
     assert _grupos_de_furos(par) == []
     coluna = [Furo("oblongo", 25.0, 25.0, 0.0, larg=25.0, alt=13.0), Furo("oblongo", 25.0, 85.0, 0.0, larg=25.0, alt=13.0)]
     assert [_assinatura(g) for g in _grupos_de_furos(coluna)] == [(1, 2, 0, 60)]
+
+
+def test_edicao_da_chapa_espelhada_do_outro_lado_e_parafusos_copiados():
+    """Duas chapas da mesma posição em lados opostos do prédio, com o mesmo sistema local (a simétrica do IFC): a
+    edição feita numa (a chapa cresce para um lado e ganha um furo) vai espelhada na outra, e o furo novo ganha a
+    cópia do parafuso de um furo que já tem (pedidos de 02/10: "um lado ficou certo e o outro espelhado"; "copiar na
+    edição também os parafusos")."""
+    from nucleo3d.modelo import Chapa
+    doc = Documento(nome="teste")
+    chapas = []
+    for ox in (0.0, 10000.0):
+        ch = Chapa(origem=(ox, 0.0, 0.0), contorno=[(0, 0), (100, 0), (100, 50), (0, 50)], espessura=5.0,
+                   furos=[{"x": 25.0, "y": 25.0, "diametro": 13.0}, {"x": 75.0, "y": 25.0, "diametro": 13.0}])
+        ch.atributos["marcas"] = {"posicao": "P9", "conjunto": "P9", "perfil": "PLATE 100x50x5"}
+        ch.atributos["eixos_conferidos"] = True
+        doc.add(ch)
+        chapas.append(ch)
+        for fx in (25.0, 75.0):
+            vb, fb = _caixa_solida(12, 12, 45, dx=ox + fx - 6, dy=19, dz=-20)
+            b = Solido(nome="BOLT (A) 12x35", vertices=vb, faces=fb)
+            b.atributos["tipo_ifc"] = "IfcMechanicalFastener"
+            doc.add(b)
+    # a edição na chapa da esquerda: cresce 60 mm para +x e ganha um furo em x=130
+    furos = [{"tipo": "redondo", "x": 25.0, "y": 25.0, "d": 13.0, "furo": 0}, {"tipo": "redondo", "x": 75.0, "y": 25.0, "d": 13.0, "furo": 1},
+             {"tipo": "redondo", "x": 130.0, "y": 25.0, "d": 13.0}]
+    r = det.aplicar_furos(doc, "P9", furos, [{"x": 25.0, "y": 25.0}, {"x": 75.0, "y": 25.0}],
+                          contorno=[(0, 0), (160, 0), (160, 50), (0, 50)], referencia=chapas[0].id, copiar_parafusos=True)
+    assert r["espelhadas"] == 1 and r["parafusos_copiados"] == 2, r
+    esq, dir_ = chapas
+    assert max(x for x, _ in esq.contorno) == 160 and min(x for x, _ in dir_.contorno) == -60     # a da direita cresce para −x
+    assert sorted(round(f["x"]) for f in dir_.furos) == [-30, 25, 75]
+    parafusos = [e for e in doc.entidades.values() if isinstance(e, Solido)]
+    xs = sorted(round(sum(v[0] for v in b.vertices) / len(b.vertices)) for b in parafusos)
+    assert xs == [25, 75, 130, 9970, 10025, 10075], xs
 
 def test_vinculo_chapa_tercas_e_ajustes():
     """A chapinha do suporte muda de 80 para 60 mm entre furos: a terça com a mesma furação

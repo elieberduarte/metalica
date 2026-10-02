@@ -1064,11 +1064,127 @@ def furos_da_chapa(ch: Chapa) -> List[dict]:
     return fora
 
 
+#: Perto do centro do prédio (esta fração do tamanho dele), a chapa não é tomada como do outro lado.
+MEIO_DO_PREDIO = 0.1
+
+
+def _centro_do_modelo(doc: Documento):
+    """(centro, tamanho) do modelo pelo centro de cada peça (sólidos e chapas)."""
+    pts = []
+    for e in doc.entidades.values():
+        if isinstance(e, Chapa):
+            pts.append(tuple(e.origem))
+        elif isinstance(e, Solido) and e.vertices:
+            pts.append(_centro_do_fixador(e))
+    if not pts:
+        return (0.0, 0.0, 0.0), (1.0, 1.0, 1.0)
+    lo = [min(p[i] for p in pts) for i in range(3)]
+    hi = [max(p[i] for p in pts) for i in range(3)]
+    return tuple((lo[i] + hi[i]) / 2.0 for i in range(3)), tuple(max(hi[i] - lo[i], 1.0) for i in range(3))
+
+
+def _espelhos_pela_simetria(doc: Documento, chapas, referencia: Optional[str]) -> Dict[str, Tuple[bool, bool]]:
+    """Para cada chapa da posição, se a edição feita na `referencia` vai espelhada no eixo x e/ou y dela: a peça do
+    outro lado do prédio (ao longo da direção desse eixo) é montada espelhada — a edição assimétrica (a chapa da quina
+    que cresceu para um lado, com um par de furos novo) saía para o mesmo lado em todas as quinas, e nas da outra
+    metade ficava espelhada em relação aos parafusos (pedido do usuário, 02/10). Se o sistema da chapa já vem
+    invertido (a peça modelada espelhada), não espelha de novo. Perto do meio do prédio, nada."""
+    ref = next((c for c in chapas if c.id == referencia), None)
+    if ref is None:
+        return {}
+    centro, tam = _centro_do_modelo(doc)
+
+    def meio(ch):
+        cont = ch.contorno or [(0.0, 0.0)]
+        cx = sum(q[0] for q in cont) / len(cont)
+        cy = sum(q[1] for q in cont) / len(cont)
+        o, ex, ey, _n = _mundo_da_chapa(ch)
+        return tuple(o[i] + ex[i] * cx + ey[i] * cy for i in range(3)), ex, ey
+    p_ref, ex_r, ey_r = meio(ref)
+    fora = {}
+    for ch in chapas:
+        p_ch, ex_c, ey_c = meio(ch)
+        esp = []
+        for a_r, a_c in ((ex_r, ex_c), (ey_r, ey_c)):
+            g = max(range(3), key=lambda i: abs(a_r[i]))
+            if abs(a_r[g]) < 0.9 or abs(a_c[g]) < 0.9:
+                esp.append(False)
+                continue
+            lado_r, lado_c = p_ref[g] - centro[g], p_ch[g] - centro[g]
+            if min(abs(lado_r), abs(lado_c)) < MEIO_DO_PREDIO * tam[g]:
+                esp.append(False)
+                continue
+            outro_lado = lado_r * lado_c < 0
+            invertido = a_r[g] * a_c[g] < 0
+            esp.append(outro_lado != invertido)
+        fora[ch.id] = (esp[0], esp[1])
+    return fora
+
+
+def _pilha_no_furo(ch: Chapa, furo_local, raio: float, fixadores: Sequence[Solido], alcance: float = 120.0) -> List[Solido]:
+    """Os fixadores (parafuso, porca, arruela) cujo eixo passa no furo da chapa."""
+    o, ex, ey, nz = _mundo_da_chapa(ch)
+    centro = tuple(o[i] + ex[i] * furo_local[0] + ey[i] * furo_local[1] + nz[i] * float(ch.espessura) / 2.0 for i in range(3))
+    fora = []
+    for f in fixadores:
+        d = _sub(_centro_do_fixador(f), centro)
+        t = _dot(d, nz)
+        if math.sqrt(max(0.0, _dot(d, d) - t * t)) <= raio and abs(t) <= alcance:
+            fora.append(f)
+    return fora
+
+
+def _copiar_parafusos(doc: Documento, ch: Chapa, novos_idx: Sequence[int], fixadores: List[Solido]) -> int:
+    """Os furos novos da chapa sem parafuso ganham a cópia do conjunto (parafuso, porca, arruela) de um furo que já tem,
+    do mesmo tamanho — o mais perto (pedido do usuário, 02/10: "poderia ter a opção de copiar na edição também os
+    parafusos"). Devolve quantas peças foram criadas."""
+    import copy
+    from nucleo3d.modelo import novo_id
+    furos = list(ch.furos or [])
+
+    def tam(f):
+        return (round(float(f.get("diametro", 0) or 0)), round(float(f.get("largura", 0) or 0)), round(float(f.get("altura", 0) or 0)))
+
+    def raio_de(f):
+        return max(float(f.get("diametro", 0) or 0), float(f.get("largura", 0) or 0), 13.0) / 2 + 6.0
+    _o, ex, ey, _nz = _mundo_da_chapa(ch)
+    n = 0
+    for i in novos_idx:
+        f = furos[i]
+        pf = (float(f["x"]), float(f["y"]))
+        if _pilha_no_furo(ch, pf, raio_de(f), fixadores):
+            continue                                  # já tem parafuso (o usuário pôs no 3D)
+        modelos = [(math.hypot(float(g["x"]) - pf[0], float(g["y"]) - pf[1]) + (0.0 if tam(g) == tam(f) else 1e9), j)
+                   for j, g in enumerate(furos) if j not in novos_idx]
+        for _d, j in sorted(modelos):
+            g = furos[j]
+            pilha = _pilha_no_furo(ch, (float(g["x"]), float(g["y"])), raio_de(g), fixadores)
+            if not pilha:
+                continue
+            dl = (pf[0] - float(g["x"]), pf[1] - float(g["y"]))
+            delta = tuple(ex[k] * dl[0] + ey[k] * dl[1] for k in range(3))
+            for p in pilha:
+                c = copy.deepcopy(p)
+                c.id = novo_id()
+                c.vertices = [tuple(v[k] + delta[k] for k in range(3)) for v in p.vertices]
+                c.atributos = dict(p.atributos or {})
+                c.atributos.pop("furo", None)
+                c.__dict__.pop("_centro_guardado", None)
+                doc.add(c)
+                fixadores.append(c)
+                n += 1
+            break
+    return n
+
+
 def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: Sequence[dict],
-                  contorno: Optional[Sequence[Tuple[float, float]]] = None) -> dict:
+                  contorno: Optional[Sequence[Tuple[float, float]]] = None, referencia: Optional[str] = None,
+                  copiar_parafusos: bool = False) -> dict:
     """Escreve nas chapas paramétricas da posição os furos vindos do desenho (coordenadas
     do desenho: canto inferior esquerdo do contorno = 0,0) e, se `contorno` veio
-    diferente do da chapa (tamanho ajustado no desenho), o contorno também."""
+    diferente do da chapa (tamanho ajustado no desenho), o contorno também. `referencia`: a chapa em que a edição foi
+    feita — nas do outro lado do prédio ela vai espelhada (_espelhos_pela_simetria). `copiar_parafusos`: os furos novos
+    ganham a cópia dos parafusos de um furo que já tem (_copiar_parafusos)."""
     nomes = [m.strip() for m in str(marca).split(" / ") if m.strip()]
     chapas = [e for e in doc.entidades.values() if isinstance(e, Chapa)
               and str(_marcas(e).get("posicao") or e.nome or e.id) in nomes]
@@ -1079,14 +1195,22 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
     fixadores = _fixadores(doc)
     movidos: set = set()
     parafusos = 0
+    copiados = 0
+    espelhos = _espelhos_pela_simetria(doc, chapas, referencia)
     for ch in chapas:
         cont = [(float(x), float(y)) for x, y in (ch.contorno or [])]
         u0, v0 = min(x for x, _ in cont), min(y for _, y in cont)
         L, H = max(x for x, _ in cont) - u0, max(y for _, y in cont) - v0
         atuais = [(float(f.get("x", 0) or 0) - u0, float(f.get("y", 0) or 0) - v0) for f in (ch.furos or [])]
-        # instâncias no mesmo sistema (conversão com correspondência de vértices): o furo
-        # do desenho vai direto; só a chapa medida sozinha ainda adivinha o espelhamento
-        mapa = (lambda x, y: (x, y)) if (ch.atributos or {}).get("eixos_conferidos") else _simetria(orig, atuais, L, H)
+        # instâncias no mesmo sistema (conversão com correspondência de vértices): o furo do desenho vai direto —
+        # espelhado na chapa do outro lado do prédio; só a chapa medida sozinha ainda adivinha o espelhamento
+        if (ch.atributos or {}).get("eixos_conferidos"):
+            mx_, my_ = espelhos.get(ch.id, (False, False))
+
+            def mapa(x, y, mx_=mx_, my_=my_, L=L, H=H):
+                return ((L - x) if mx_ else x, (H - y) if my_ else y)
+        else:
+            mapa = _simetria(orig, atuais, L, H)
         if contorno:
             atual_norm = [(x - u0, y - v0) for x, y in cont]
             novo = [(float(x), float(y)) for x, y in contorno]
@@ -1113,9 +1237,15 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
             else:
                 reg["diametro"] = round(float(f.get("d", 0) or 0), 3)
             if reg.get("diametro", 0) > 0 or reg.get("largura", 0) > 0:
+                if not (isinstance(i, int) and 0 <= i < len(antigos)):
+                    reg["_novo"] = True
                 novos.append(reg)
+        sem_par = [k for k, r in enumerate(novos) if r.pop("_novo", False)]
         ch.furos = novos
-    return {"chapas": len(chapas), "furos": len(furos), "contornos": contornos, "parafusos": parafusos}
+        if copiar_parafusos and sem_par:
+            copiados += _copiar_parafusos(doc, ch, sem_par, fixadores)
+    return {"chapas": len(chapas), "furos": len(furos), "contornos": contornos, "parafusos": parafusos,
+            "parafusos_copiados": copiados, "espelhadas": sum(1 for v in espelhos.values() if any(v))}
 
 
 def _mover_fixadores(ch: Chapa, furo_local, delta_local, raio: float, fixadores: Sequence[Solido], movidos: set) -> int:

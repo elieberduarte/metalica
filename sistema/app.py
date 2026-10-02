@@ -1237,7 +1237,8 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
         # cortadas no plano da chapa, como referência travada
         from nucleo2d import edicao_chapa
         modo = str(corpo.get("modo") or "isolada")
-        edicao_chapa.marcar_edicao(desenho, marca, pos.nome or "", pos.quantidade, modo)
+        ref_ed = str(corpo.get("referencia") or "") or edicao_chapa.instancia_da_posicao(doc, pos)
+        edicao_chapa.marcar_edicao(desenho, marca, pos.nome or "", pos.quantidade, modo, ref_ed)
         if modo == "local":
             refs = edicao_chapa.referencias_no_plano(doc, pos, nomes=(_nomes_producao(s) or {}).get("ifc"))
             cont = (desenho.metadados.get("celulas") or [[0, 0, 0, 0]])[0]
@@ -1470,7 +1471,11 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
             r = aplicar_em_barra(marca, furos)
             vinculadas = []
         else:
-            r = det.aplicar_furos(doc, marca, furos, meta.get("furos") or [], contorno)
+            # a edição feita numa chapa (Editar chapa): nas do outro lado do prédio vai espelhada, e os furos novos podem
+            # ganhar a cópia dos parafusos (02/10)
+            ed = d.metadados.get("edicao") or {}
+            r = det.aplicar_furos(doc, marca, furos, meta.get("furos") or [], contorno, referencia=ed.get("referencia") or None,
+                                  copiar_parafusos=bool(corpo.get("copiar_parafusos")))
             _regravar_modelo(s, doc)
             vinculadas = vincular(marca, meta.get("furos") or [], furos)
         novo, pos = det.detalhar_posicao(doc, marca, ajustes=ajustes, nomes=_nomes_producao(s))
