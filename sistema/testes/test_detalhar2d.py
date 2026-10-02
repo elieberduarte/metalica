@@ -494,6 +494,36 @@ def test_edicao_da_chapa_espelhada_do_outro_lado_e_parafusos_copiados():
     xs = sorted(round(sum(v[0] for v in b.vertices) / len(b.vertices)) for b in parafusos)
     assert xs == [25, 75, 130, 9970, 10025, 10075], xs
 
+def test_edicao_furo_copiado_e_ordem_diferente_na_outra_chapa():
+    """CH10 do depósito (02/10): na chapa do outro lado a ordem dos furos é outra — o furo i da editada é, nela, o do
+    lugar correspondente (pela geometria); e o furo copiado no desenho (leva o número do original) é furo novo: ganha
+    a cópia do parafuso. No fim todo furo tem parafuso, nas duas chapas."""
+    from nucleo3d.modelo import Chapa
+    doc = Documento(nome="teste")
+    chapas = []
+    for ox, ordem in ((0.0, (25.0, 75.0)), (10000.0, (75.0, 25.0))):
+        ch = Chapa(origem=(ox, 0.0, 0.0), contorno=[(0, 0), (100, 0), (100, 50), (0, 50)], espessura=5.0,
+                   furos=[{"x": x, "y": 25.0, "diametro": 13.0} for x in ordem])
+        ch.atributos["marcas"] = {"posicao": "P9", "conjunto": "P9", "perfil": "PLATE 100x50x5"}
+        ch.atributos["eixos_conferidos"] = True
+        doc.add(ch)
+        chapas.append(ch)
+        for fx in (25.0, 75.0):
+            vb, fb = _caixa_solida(12, 12, 45, dx=ox + fx - 6, dy=19, dz=-20)
+            b = Solido(nome="BOLT (A) 12x35", vertices=vb, faces=fb)
+            b.atributos["tipo_ifc"] = "IfcMechanicalFastener"
+            doc.add(b)
+    # o furo 1 (x=75) anda para 85 e é copiado para 140 (a cópia leva furo=1); a chapa cresce até 160
+    furos = [{"tipo": "redondo", "x": 25.0, "y": 25.0, "d": 13.0, "furo": 0}, {"tipo": "redondo", "x": 140.0, "y": 25.0, "d": 13.0, "furo": 1},
+             {"tipo": "redondo", "x": 85.0, "y": 25.0, "d": 13.0, "furo": 1}]
+    r = det.aplicar_furos(doc, "P9", furos, [{"x": 25.0, "y": 25.0}, {"x": 75.0, "y": 25.0}],
+                          contorno=[(0, 0), (160, 0), (160, 50), (0, 50)], referencia=chapas[0].id, copiar_parafusos=True)
+    assert r["parafusos_copiados"] == 2, r
+    xs = sorted(round(sum(v[0] for v in b.vertices) / len(b.vertices)) for b in doc.entidades.values() if isinstance(b, Solido))
+    # esquerda: 25, 85 (andou), 140 (cópia); direita, espelhada: 75, 15 (andou), −40 (cópia) em volta de 10000
+    assert xs == [25, 85, 140, 9960, 10015, 10075], xs
+
+
 def test_vinculo_chapa_tercas_e_ajustes():
     """A chapinha do suporte muda de 80 para 60 mm entre furos: a terça com a mesma furação
     original (na outra orientação) acompanha; o ajuste guardado volta a ser aplicado."""

@@ -20,6 +20,9 @@ function el(tag, attrs = {}, ...filhos) {
   return e;
 }
 
+/** sessionStorage: o último desenho aberto fora do ambiente de edição, por projeto. */
+const CHAVE_ULTIMO = 'metalica.ultimoDesenho.';
+
 export class MetodosEdicaoChapaCAD {
   /** A chapa da seleção (célula de detalhamento ou detalhe de posição): {marca, nome} ou null. */
   _chapaDaSelecao() {
@@ -67,6 +70,8 @@ export class MetodosEdicaoChapaCAD {
     const ed = (this.doc && this.doc.metadados || {}).edicao;
     if (this._faixaEdicao) { this._faixaEdicao.remove(); this._faixaEdicao = null; }
     document.documentElement.classList.toggle('editando-chapa', !!ed);
+    // o último desenho fora da edição: ao sair dela pelo 3D (2D + 3D na mesma tela), o 2D volta para ele
+    if (!ed && this.projeto && this.nomeDesenho) { try { sessionStorage.setItem(CHAVE_ULTIMO + this.projeto, this.nomeDesenho); } catch { /* sem armazenamento */ } }
     if (!ed) return;
     if (this._voltarEdicao === undefined) this._voltarEdicao = this.parametros.get('voltar') || null;
     const local = ed.modo === 'local';
@@ -126,7 +131,16 @@ export class MetodosEdicaoChapaCAD {
   async _sairDaEdicao(regenerado) {
     const voltar = this._voltarEdicao;
     this._voltarEdicao = undefined;
-    if (voltar === '__3d__') { (window.metalicaNavegar || ((u) => { location.href = u; }))(this.urlDoEditor()); return; }
+    if (voltar === '__3d__') {
+      // dentro da área (2D + 3D): o 3D já está ao lado — o 2D volta ao desenho em que estava antes da edição (antes
+      // ficava na tela da edição, pedido do usuário, 02/10); fora dela, a tela vira o 3D
+      let anterior = null;
+      try { anterior = sessionStorage.getItem(CHAVE_ULTIMO + this.projeto); } catch { anterior = null; }
+      (window.metalicaNavegar || ((u) => { location.href = u; }))(this.urlDoEditor());
+      if (window.parent !== window && anterior && anterior !== this.nomeDesenho) await this.abrirDesenho(anterior);
+      else if (window.parent !== window && regenerado) await this.abrirDesenho(regenerado);
+      return;
+    }
     if (voltar && voltar !== this.nomeDesenho) { await this.abrirDesenho(voltar); return; }
     if (regenerado) { await this.abrirDesenho(regenerado); return; }
     if (this.doc.metadados) delete this.doc.metadados.edicao;

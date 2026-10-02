@@ -1191,6 +1191,23 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
     if not chapas:
         raise ErroDeDados("a posição %s não tem chapa paramétrica no modelo (abra o detalhe pela peça no 3D primeiro)." % marca)
     orig = [(float(f["x"]), float(f["y"])) for f in originais]
+    # o mesmo índice em mais de um furo do desenho (o furo copiado leva o número do original): fica com o índice o
+    # mais perto de onde o original estava; os outros são furos novos (ganham a cópia do parafuso) — antes os dois
+    # "eram" o original, o parafuso ia para um só e o outro ficava vazio (CH10 do depósito, 02/10)
+    furos = [dict(f) for f in furos]
+    por_indice: Dict[int, list] = collections.defaultdict(list)
+    for k, f in enumerate(furos):
+        i = f.get("furo")
+        if isinstance(i, int) and 0 <= i < len(orig):
+            por_indice[i].append(k)
+        else:
+            f.pop("furo", None)
+    for i, ks in por_indice.items():
+        if len(ks) > 1:
+            fica = min(ks, key=lambda k: math.hypot(float(furos[k]["x"]) - orig[i][0], float(furos[k]["y"]) - orig[i][1]))
+            for k in ks:
+                if k != fica:
+                    furos[k].pop("furo", None)
     contornos = 0
     fixadores = _fixadores(doc)
     movidos: set = set()
@@ -1221,11 +1238,25 @@ def aplicar_furos(doc: Documento, marca: str, furos: Sequence[dict], originais: 
                 contornos += 1
         novos = []
         antigos = list(ch.furos or [])
+        # o furo original i da chapa editada é, nesta chapa, o furo dela no lugar correspondente (pela geometria, não
+        # pela ordem da lista: na chapa do outro lado do prédio, ou depois de uma regra, a ordem é outra e o parafuso
+        # andava a partir do furo errado — CH10 do depósito, 02/10)
+        corresp: Dict[int, int] = {}
+        livres = set(range(len(antigos)))
+        for i, (ox, oy) in sorted(enumerate(orig), key=lambda t: t[0]):
+            mx0, my0 = mapa(ox, oy)
+            cands = sorted(livres, key=lambda j: math.hypot(float(antigos[j].get("x", 0) or 0) - u0 - mx0,
+                                                           float(antigos[j].get("y", 0) or 0) - v0 - my0))
+            if cands and math.hypot(float(antigos[cands[0]].get("x", 0) or 0) - u0 - mx0,
+                                    float(antigos[cands[0]].get("y", 0) or 0) - v0 - my0) <= 5.0:
+                corresp[i] = cands[0]
+                livres.discard(cands[0])
         for f in furos:
             x, y = mapa(float(f["x"]), float(f["y"]))
             reg = {"x": round(x + u0, 3), "y": round(y + v0, 3)}
             # o furo que já existia e andou leva o parafuso junto
             i = f.get("furo")
+            i = corresp.get(i) if isinstance(i, int) else None
             if isinstance(i, int) and 0 <= i < len(antigos):
                 velho = antigos[i]
                 ddx, ddy = reg["x"] - float(velho.get("x", 0) or 0), reg["y"] - float(velho.get("y", 0) or 0)
