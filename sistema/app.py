@@ -569,10 +569,33 @@ class ModeloMudouNoMeio(ErroDeDados):
     pass
 
 
+def _guardar_travas(doc):
+    """Marca no documento as peças travadas no 3D (a peça ou a camada dela) e como estão: `_regravar_modelo` recusa
+    gravar se alguma mudou — a edição feita no 2D (Aplicar furos, Concluir, Aplicar peças) não passa por cima da trava
+    do editor 3D (regra combinada com o usuário, 02/10)."""
+    doc._travas = {e.id: _impressao_da_entidade(e) for e in doc.entidades.values()
+                   if getattr(e, "bloqueada", False) or getattr(doc.camadas.get(e.camada), "bloqueada", False)}
+    return doc
+
+
+def _impressao_da_entidade(e) -> str:
+    return json.dumps(e.dict(), sort_keys=True, default=str)
+
+
 def _regravar_modelo(s: str, doc, marco: bool = True) -> dict:
     """Grava o modelo que uma operação leu, mudou e devolve (detalhar, aplicar furos,
     dimensionar…). Se o editor 3D gravou o modelo enquanto a operação rodava, não grava
-    por cima: aquela edição se perderia calada."""
+    por cima: aquela edição se perderia calada. Com as travas guardadas (`_guardar_travas`),
+    peça travada no 3D que mudou impede a gravação."""
+    travas = getattr(doc, "_travas", None)
+    if travas:
+        from nucleo2d.detalhe.base import _marcas
+        mexidas = [i for i, v in travas.items() if i not in doc.entidades or _impressao_da_entidade(doc.entidades[i]) != v]
+        if mexidas:
+            nomes = sorted({str(_marcas(doc.entidades[i]).get("nome") or _marcas(doc.entidades[i]).get("posicao") or doc.entidades[i].nome or i)
+                            for i in mexidas if i in doc.entidades})
+            raise ErroDeDados("peça travada no 3D: %s — destrave a peça (ou a camada dela) no editor 3D para aplicar. "
+                              "Nada foi gravado." % ", ".join(nomes[:10] or ["(apagada)"]))
     lido = getattr(doc, "_mtime_lido", None)
     if lido is not None:
         agora = _mtime_do_modelo(s)
@@ -931,6 +954,9 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
                  nomes=_nomes_producao(s), eixos=g.ler(s).get("eixos"),
                  avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
     r["convertidas"] = padr3d["convertidas"]
+    # o que a regra de fábrica fez: agora no 3D (o desenho não tem regra própria) — a tela e o relatório mostram
+    r["regra_tercas"] = {m: ("padrão de fábrica gravado no 3D" if gravar else "padrão de fábrica pendente no 3D")
+                         for m in padr3d["posicoes"]}
     _gravar_nomes_producao(s, r.get("nomes") or {})
     nomeadas = _nomes_no_modelo(doc, r.get("nomes") or {}) if gravar else 0
     r.setdefault("avisos", []).extend(padr3d["avisos"] if gravar else [])
@@ -1463,7 +1489,7 @@ def aplicar_pecas_do_desenho(s: str, nome: str, corpo: dict) -> dict:
             raise ErroDeDados("este desenho foi gerado antes da 0.8.17, sem a versão gravada: gere o detalhamento de "
                               "novo, faça a correção nele e aplique — senão as diferenças de geração iriam para o 3D "
                               "como se fossem edição sua.")
-        doc = _documento3d_do_projeto(s)
+        doc = _guardar_travas(_documento3d_do_projeto(s))      # peça travada no 3D não muda pelo 2D
         # o mesmo modelo detalhado agora, pelo mesmo código: só a edição feita à mão sobra
         _progresso(s, "detalhando de novo o modelo para comparar…")
         r0 = detalhar(doc, grupos=["tesouras", "conjuntos", "contraventamentos", "agulhamentos", "extras"],
@@ -1507,6 +1533,7 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
     meta = d.metadados.get("detalhe_posicao") or {}
     doc = _documento3d_do_projeto(s)
     _conferir_eixos_das_chapas(s, doc)
+    _guardar_travas(doc)                     # peça travada no 3D não muda pelo 2D
     ajustes = _ajustes_furos(s)
 
     barras3d = {"barras": 0, "furos": 0, "posicoes": []}
@@ -1533,8 +1560,13 @@ def aplicar_furos_do_desenho(s: str, nome: str, corpo: dict) -> dict:
         return sorted(vinc)
     def aplicar_em_barra(marca_, furos_):
         # barra (terça, diagonal…): a furação nova fica como ajuste do projeto e os furos
-        # da malha 3D são movidos, furo a furo; furo novo ou apagado só vale no desenho
+        # da malha 3D são movidos, furo a furo. Furo novo ou apagado a malha não recebe: era guardado "só no desenho"
+        # e o desenho ficava diferente do 3D para sempre — agora é recusado (regra R1, 02/10)
         r_ = det.aplicar_furos_de_barra(doc, marca_, furos_, ajustes)
+        if r_["barras3d"].get("ignoradas"):
+            raise ErroDeDados("furo novo ou apagado numa barra (%s) não vai para a malha 3D: ponha ou tire o furo no "
+                              "editor 3D (ou o parafuso, que o detalhamento fura); no desenho só se move furo que já existe. "
+                              "Nada foi gravado." % ", ".join(r_["barras3d"]["ignoradas"][:6]))
         _gravar_ajustes_furos(s, ajustes)
         if r_["barras3d"].get("barras"):
             _regravar_modelo(s, doc)
@@ -2402,6 +2434,9 @@ def montar_pranchas_projeto(s: str, corpo: dict) -> dict:
     _vivos().aplicar_cores(s, junto)                  # as cores escolhidas no CAD
     salvo = g.salvar_desenho(s, titulo, junto.dict())
     _vivos().registrar_desenho(s, salvo["nome"], junto.metadados["geracao"])
+    # as células cuja arrumação à mão foi descartada (o detalhe mudou): o CAD avisa quais (antes só no diário)
+    _vivos().gravar_carimbo(s, completo=False, extra={"pranchas_descartadas": [
+        str(c).split("|")[-1] for c in ((junto.metadados.get("ajustes") or {}).get("descartadas_celulas") or [])]})
     saida = [{"titulo": f.nome, "numero": f.metadados["prancha"]["numero"], "entidades": f.tamanho,
               "celulas": len(f.metadados["prancha"]["celulas"])} for f in folhas]
     g.tocar(s)

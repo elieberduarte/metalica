@@ -12,6 +12,7 @@ import { FERRAMENTAS, GRUPOS, Ferramenta } from './ferramentas.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
 import { MetodosMontarPlantaCAD } from './montar_planta.js';
 import { MetodosEdicaoChapaCAD } from './edicao_chapa.js';
+import { MetodosTravaPecasCAD } from './trava_pecas.js';
 
 const CHAVE_TEMA = 'galpao.tema';
 const ATRASO_AUTOSAVE = 3000;
@@ -226,6 +227,7 @@ class CAD {
         this.aviso(`Atualizando os desenhos de detalhamento${e.motivo ? ` (${e.motivo})` : ''}… a tela recarrega sozinha quando terminar.`, 'info', 12000);
       }
       if (!e.atualizando) avisouAtualizando = false;
+      this._avisarPendencias(e);                    // 3D fora do padrão, terça fora da máquina, arrumação descartada
       if (e.erro && e.erro !== avisouErro) { avisouErro = e.erro; this.aviso(`A atualização automática dos desenhos não terminou: ${e.erro}`, 'atencao', 0); }
       const nova = (e.desenhos || {})[this.nomeDesenho];
       const minha = (this.doc.metadados || {}).geracao;
@@ -480,7 +482,13 @@ class CAD {
     this._agendarAutosave();
   }
 
-  executar(cmd) { this.pilha.executar(cmd); }
+  executar(cmd) {
+    // a peça gerada do 3D e a camada travada não se editam no desenho (trava_pecas.js, regra R5 de 02/10); o comando
+    // do próprio programa (cmd.semTrava: a calibração do arquitetônico) passa
+    const recusa = cmd && !cmd.semTrava ? this._recusaDaTrava(cmd) : null;
+    if (recusa) { this.aviso(recusa, 'atencao', 10000); return null; }
+    return this.pilha.executar(cmd);
+  }
   desfazer() { const c = this.pilha.desfazer(); if (c) this.dica(`Desfeito: ${c.rotulo}`); }
   refazer() { const c = this.pilha.refazer(); if (c) this.dica(`Refeito: ${c.rotulo}`); }
 
@@ -1580,8 +1588,8 @@ class CAD {
         // barra: furação guardada no projeto e furos movidos na malha 3D
         this.aviso(`${r.furos} furo(s) da alma de ${r.marca} guardados como furação da posição` +
                    (b3.barras ? ` e movidos em ${b3.barras} barra(s) no modelo 3D` : '') +
-                   (ign ? `; ${ign} barra(s) ficaram como estavam no 3D (furo novo, apagado ou deslocado demais)` : '') +
-                   '; desenho regenerado. Furo novo ou apagado vale só no desenho e na lista.', 'info', 14000);
+                   (ign ? `; ${ign} barra(s) ficaram como estavam no 3D (furo deslocado demais)` : '') +
+                   '; desenho regenerado.', 'info', 14000);
         return;
       }
       this.aviso(`${r.furos} furo(s)${r.contornos ? ' e o contorno' : ''} aplicados em ${r.chapas} chapa(s) ${r.marca} do modelo 3D${r.parafusos ? `, ${r.parafusos} parafuso(s) movidos junto` : ''}; desenho regenerado.` +
@@ -2270,7 +2278,7 @@ function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { re
 
 // os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js; os do
 // projeto recebido montado pela planta, em montar_planta.js
-for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEdicaoChapaCAD]) {
+for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);

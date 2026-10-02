@@ -154,6 +154,10 @@ def _tamanhos(junto: Desenho) -> Dict[str, List[float]]:
     return t
 
 
+#: Folga em volta da célula (mm de papel) para o desenho à mão contar como dela.
+ANCORA_FOLGA = 15.0
+
+
 def marcar(junto: Desenho) -> dict:
     """A impressão do gerado em cada entidade das células (`g`). Nos metadados do desenho fica só a origem de
     cada célula (`ajustaveis`); a lista de assinaturas por célula — grande (560 KB no depósito), e no desenho
@@ -174,6 +178,8 @@ def marcar(junto: Desenho) -> dict:
             g["t"] = [round(e.texto_pos[0], 3), round(e.texto_pos[1], 3)]
         if isinstance(e, Chamada):
             g["p"] = [round(e.posicao[0], 3), round(e.posicao[1], 3)]
+        if isinstance(e, (Texto, Cota)):
+            g["x"] = e.texto or ""          # o texto gerado: o trocado à mão é aprendido (B7, 02/10)
         e.atributos = dict(a, g=g)
         lista[cel].append(s)
         n += 1
@@ -185,17 +191,20 @@ def marcar(junto: Desenho) -> dict:
 
 
 # ------------------------------------------------------------------ aprender
-def _peca_solta(a: dict) -> bool:
+def _peca_solta(a: dict, e=None) -> bool:
     """geometria de peça gerada (furo, contorno, vista de uma posição) que perdeu a célula: não é desenho à mão — a
     peça é do 3D e só o gerador a desenha. Guardada como à mão, voltava em toda geração no lugar de antes, por cima
-    de outra peça (os 2 furos da M117 (b) em cima da P27 (b) do depósito, 02/10)"""
+    de outra peça (os 2 furos da M117 (b) em cima da P27 (b) do depósito, 02/10). A anotação (cota, texto, chamada)
+    copiada continua sendo do usuário."""
+    if e is not None and (isinstance(e, (Texto, Cota, Chamada)) or str(getattr(e, "camada", "")).upper() in ("COTA", "TEXTO")):
+        return False
     return bool(a.get("detalhe") and (a.get("posicao") or a.get("conjunto")))
 
 
-def _a_mao(a: dict) -> bool:
+def _a_mao(a: dict, e=None) -> bool:
     """desenhado à mão: o que o gerador não marcou (nem célula, nem quadro, nem folha), ou já guardado assim; nunca
     a peça gerada solta (_peca_solta)"""
-    if _peca_solta(a):
+    if _peca_solta(a, e):
         return False
     return bool(a.get("a_mao")) or not any(k in a for k in ("prancha", "cel", "fonte", "folha", "g", "prancha_numero"))
 
@@ -221,7 +230,7 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
         a = e.atributos or {}
         if a.get("cel") and a.get("g"):
             por_cel[a["cel"]].append(e)
-        elif _a_mao(a):
+        elif _a_mao(a, e):
             a_mao.append(e)
     for cel, info in ajv.items():
         o = tuple(info.get("o") or (0.0, 0.0))
@@ -291,6 +300,8 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
                         aj["t"] = [round(e.texto_pos[0] - esp_t[0], 3), round(e.texto_pos[1] - esp_t[1], 3)]
                 if isinstance(e, Cota) and e.texto_pos and not g.get("t"):
                     aj["t_abs"] = [round(e.texto_pos[0] - r[0], 3), round(e.texto_pos[1] - r[1], 3)]
+                if isinstance(e, (Texto, Cota)) and "x" in g and (e.texto or "") != (g["x"] or ""):
+                    aj["x"] = e.texto or ""      # o texto (o título, a nota, o número da cota) trocado à mão
                 if isinstance(e, Chamada) and g.get("p"):
                     esp_p = leva(g["p"])
                     esp_p = (esp_p[0] + aj.get("d", [0, 0])[0], esp_p[1] + aj.get("d", [0, 0])[1])
@@ -324,12 +335,41 @@ def aprender(antigo: Desenho, ajustes: dict) -> dict:
         else:
             celulas.pop(cel, None)
     ajustes["celulas"] = celulas
+    # a caixa de cada célula como está no desenho gravado (a gerada, levada pelo ajuste aprendido agora): o desenho à
+    # mão dentro de uma célula fica preso a ela e anda com ela na próxima geração (B7, 02/10) — antes ficava no lugar
+    # da folha e a célula, refeita noutro canto, o deixava para trás
+    caixas = {}
+    for cel, info in ajv.items():
+        o_, cx_ = info.get("o"), info.get("cx") or cx_antigo.get(cel)
+        if not o_ or not cx_:
+            continue
+        aj_ = celulas.get(cel) or {}
+        d_, s_ = aj_.get("d") or [0.0, 0.0], float(aj_.get("s") or 1.0)
+        x0, y0 = float(o_[0]) + d_[0], float(o_[1]) + d_[1]
+        caixas[cel] = (x0, y0, x0 + float(cx_[0]) * s_, y0 + float(cx_[1]) * s_)
+
+    def ancora(e):
+        r = _ref(e)
+        if r is None:
+            return None
+        dentro = [(c[2] - c[0]) * (c[3] - c[1]) for c in caixas.values()]
+        melhor = None
+        for (cel, c), area in zip(caixas.items(), dentro):
+            if c[0] - ANCORA_FOLGA <= r[0] <= c[2] + ANCORA_FOLGA and c[1] - ANCORA_FOLGA <= r[1] <= c[3] + ANCORA_FOLGA:
+                if melhor is None or area < melhor[1]:
+                    melhor = (cel, area)
+        return {"cel": melhor[0], "o": [round(caixas[melhor[0]][0], 3), round(caixas[melhor[0]][1], 3)]} if melhor else None
     guardado = Desenho(nome="a_mao", escala=1.0)
     for e in a_mao:
         n = copy.deepcopy(e)
         # a cópia de uma peça gerada vira desenho à mão: sem as marcas do gerado, que a apagariam depois
         a = {k: v for k, v in (n.atributos or {}).items() if k not in ("cel", "g", "fonte", "prancha_numero")}
         a["a_mao"] = True
+        anc = ancora(e)
+        if anc:
+            a["ancora"] = anc
+        else:
+            a.pop("ancora", None)
         n.atributos = a
         guardado.add(n)
     ajustes["a_mao"] = guardado.dict() if a_mao else None
@@ -364,6 +404,7 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
             diario.append({"quando": quando, "celula": cel, "ajuste": "descartado: o gerador mudou a célula"})
         ajustes["diario"] = diario[-DIARIO_MAX:]
         rel["descartadas"] = len(descartar)
+        rel["descartadas_celulas"] = list(descartar)      # o CAD avisa quais (antes só no diário)
     # a célula igual, mas posta em outro lugar da folha (outra prancha, outro canto): o movimento dela, medido do lugar
     # antigo, a jogaria em cima de outra; ficam a escala e o que foi mexido dentro dela
     for cel in list(celulas):
@@ -385,7 +426,9 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
                        "ajuste": "movimento descartado: o gerador pôs a célula em outro lugar"})
         ajustes["diario"] = diario[-DIARIO_MAX:]
         rel["descartadas"] += 1
+        rel.setdefault("descartadas_celulas", []).append(cel)
     tirar = []
+    lugar = {cel: tuple(o) for cel, o in origens.items()}       # onde cada célula ficou (o desenho à mão a segue)
     for cel, aj in celulas.items():
         ents = por_cel.get(cel)
         if not ents or cel not in origens:
@@ -424,6 +467,9 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
                         e.texto_pos = (round(e.p1[0] + ex["t_abs"][0], 3), round(e.p1[1] + ex["t_abs"][1], 3))
                 if isinstance(e, Chamada) and ex.get("p"):
                     e.posicao = (round(e.posicao[0] + ex["p"][0], 3), round(e.posicao[1] + ex["p"][1], 3))
+                if "x" in ex and isinstance(e, (Texto, Cota)):
+                    e.texto = ex["x"] or (None if isinstance(e, Cota) else "")
+        lugar[cel] = (o[0] + dx, o[1] + dy)
         rel["entidades"] += len(achadas)
         rel["sem_alvo"] += len(set(ents_aj) - achadas)
     for i in tirar:
@@ -434,9 +480,16 @@ def aplicar(junto: Desenho, ajustes: dict) -> dict:
         for nome_c, cam in tmp.camadas.items():
             junto.camadas.setdefault(nome_c, cam)
         for e in tmp.entidades.values():
-            if _peca_solta(e.atributos or {}):
+            if _peca_solta(e.atributos or {}, e):
                 rel["pecas_soltas"] = rel.get("pecas_soltas", 0) + 1     # guardada antes da regra: não volta
                 continue
+            anc = (e.atributos or {}).get("ancora")
+            if anc and anc.get("cel") in lugar and anc.get("o"):
+                nx, ny = lugar[anc["cel"]]
+                ddx, ddy = nx - float(anc["o"][0]), ny - float(anc["o"][1])
+                if abs(ddx) > TOLERANCIA or abs(ddy) > TOLERANCIA:
+                    _transformar(e, lambda p, ddx=ddx, ddy=ddy: (round(p[0] + ddx, 3), round(p[1] + ddy, 3)), 1.0)
+                    rel["a_mao_movidas"] = rel.get("a_mao_movidas", 0) + 1
             junto.add(e)
             rel["a_mao"] += 1
     return rel

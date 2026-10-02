@@ -1197,7 +1197,10 @@ def vincular_furos_de_ligacao(posicoes: Sequence[Posicao], camadas: Dict[str, st
     era a mesma (em qualquer orientação) recebem os passos novos, como na regra de
     fábrica. Devolve {marca da terça: {"furos": [...], "origem": ...}} para guardar."""
     def grade(furos):
-        g = [Furo("redondo", float(f["x"]), float(f["y"]), float(f.get("d", 0) or 0)) for f in furos if f.get("tipo", "redondo") == "redondo"]
+        # o oblongo conta pelo centro: os furos de ligação da chapinha já saem oblongos do padrão no 3D (02/10), e só
+        # com os redondos o vínculo nunca achava a furação
+        g = [Furo("redondo", float(f["x"]), float(f["y"]), float(f.get("d", 0) or f.get("larg", 0) or 0)) for f in furos
+             if f.get("tipo", "redondo") in ("redondo", "oblongo")]
         return _assinatura(g) if len(g) >= 2 else None
     ass_o, ass_n = grade(originais), grade(novos)
     if not ass_o or not ass_n or ass_o[:2] != ass_n[:2] or ass_o == ass_n:

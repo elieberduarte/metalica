@@ -54,16 +54,28 @@ try:
     while time.time() - t0 < 60 and not aba.avaliar("document.body.dataset.pronto === '1' && window.cad && window.cad.doc.tamanho > 50"): aba.drenar(0.5)
     edit = aba.avaliar("(window.cad.doc.metadados.detalhamento.editaveis || []).length")
     ok(edit > 5, "desenho geral com %s posições de chapa editáveis" % edit)
-    aba.avaliar("(() => { const c = window.cad._contornoDe('P77'); window.cad.selecionar([c.id]); return 1; })()")
-    aba.avaliar("window.cad.ajustarTamanho(); 1"); aba.drenar(1.5)
-    ok(aba.avaliar("!!document.querySelector('dialog[open]')"), "diálogo Ajustar tamanho abriu")
-    aba.avaliar("(() => { const i = [...document.querySelectorAll('dialog[open] input[type=number]')]; i[0].value = '160'; i[1].value = '130'; document.querySelector('dialog[open] .botao-ok').click(); return 1; })()")
-    aba.drenar(1.0)
-    dims = aba.avaliar("(() => { const c = window.cad._contornoDe('P77'); const xs = c.vertices.map(p => p[0]), ys = c.vertices.map(p => p[1]); return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)]; })()")
+    medir = "(() => { const c = window.cad._contornoDe('P77'); const xs = c.vertices.map(p => p[0]), ys = c.vertices.map(p => p[1]); return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)]; })()"
+    def ajustar_160x130():
+        aba.avaliar("(() => { const c = window.cad._contornoDe('P77'); window.cad.selecionar([c.id]); return 1; })()")
+        aba.avaliar("window.cad.ajustarTamanho(); 1"); aba.drenar(1.5)
+        abriu = aba.avaliar("!!document.querySelector('dialog[open]')")
+        aba.avaliar("(() => { const i = [...document.querySelectorAll('dialog[open] input[type=number]')]; i[0].value = '160'; i[1].value = '130'; document.querySelector('dialog[open] .botao-ok').click(); return 1; })()")
+        aba.drenar(1.0)
+        return abriu
+    # no desenho geral a peça é do 3D (regra R5, 02/10): o ajuste de tamanho é recusado, com o caminho
+    antes = aba.avaliar(medir)
+    ajustar_160x130()
+    ok(aba.avaliar(medir) == antes and "Editar" in aba.avaliar("[...document.querySelectorAll('.aviso')].map(a => a.textContent).join(' ')"),
+       "no desenho geral o tamanho da peça não muda (trava, com o caminho Editar) (%s)" % antes)
+    # no ambiente de edição da P77: o tamanho muda e o Concluir leva às 18 chapas
+    e = post("/api/projetos/compressores/detalhar-posicao", {"marca": "P77", "edicao": True, "modo": "isolada"})
+    aba.navegar(base + "/cad?projeto=compressores&desenho=" + e["nome"], limite=60)
+    t0 = time.time()
+    while time.time() - t0 < 60 and not aba.avaliar("document.body.dataset.pronto === '1' && window.cad && window.cad.doc.tamanho > 5"): aba.drenar(0.5)
+    ok(ajustar_160x130(), "diálogo Ajustar tamanho abriu na edição da P77")
+    dims = aba.avaliar(medir)
     ok(abs(dims[0] - 160) < 0.01 and abs(dims[1] - 130) < 0.01, "contorno no desenho virou 160 × 130 (%s)" % dims)
-    aba.avaliar("(() => { const c = window.cad._contornoDe('P77'); window.cad.selecionar([c.id]); window.cad.aplicarFuros(); return 1; })()"); aba.drenar(1.5)
-    ok(aba.avaliar("!!document.querySelector('dialog[open]')"), "diálogo Aplicar abriu no desenho geral")
-    aba.avaliar("document.querySelector('dialog[open] .botao-ok').click(); 1")
+    aba.avaliar("window.cad.concluirEdicaoChapa(); 1")
     def dims_modelo():
         chs = chapas("P77")
         if not chs: return None
@@ -72,10 +84,21 @@ try:
     t0 = time.time()
     while time.time() - t0 < 60 and (dims_modelo() or (0,))[0] != 160: aba.drenar(0.5)
     ok(dims_modelo() == (160, 130, 18), "as 18 chapas P77 do modelo ficaram 160 × 130 (%s)" % (dims_modelo(),))
-    aba.drenar(2.0)
-    ok(aba.avaliar("window.cad.nomeDesenho") == nome, "o mesmo desenho geral foi reaberto (%s)" % aba.avaliar("window.cad.nomeDesenho"))
-    dims2 = aba.avaliar("(() => { const c = window.cad._contornoDe('P77'); const xs = c.vertices.map(p => p[0]), ys = c.vertices.map(p => p[1]); return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)]; })()")
-    ok(abs(dims2[0] - 160) < 0.01, "célula regenerada mantém 160 × 130 (%s)" % dims2)
+    # o desenho geral, refeito do 3D (o Detalhar: este grupo antigo, "chapas", a atualização automática não refaz), mostra
+    # a peça nova
+    aba.drenar(3.0)
+    post("/api/projetos/compressores/detalhar", {"grupos": ["chapas"]})
+    aba.navegar(base + "/cad?projeto=compressores&desenho=" + nome, limite=60)
+    t0 = time.time()
+    dims2 = None
+    while time.time() - t0 < 120:
+        if aba.avaliar("document.body.dataset.pronto === '1' && window.cad && window.cad.doc.tamanho > 50"):
+            dims2 = aba.avaliar(medir)
+            if dims2 and abs(dims2[0] - 160) < 0.01:
+                break
+        aba.drenar(2.0)
+    ok(aba.avaliar("window.cad.nomeDesenho") == nome, "o desenho geral reaberto (%s)" % aba.avaliar("window.cad.nomeDesenho"))
+    ok(dims2 and abs(dims2[0] - 160) < 0.01, "célula do desenho geral, refeita do 3D, com 160 × 130 (%s)" % dims2)
     foto(aba, "_geral_p77.png")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, "sem erros no console do CAD: %s" % erros[:3])

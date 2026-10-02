@@ -1063,9 +1063,15 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                     no_canto.append(c)
                     fila.remove(c)
                 it_ = info_t[-1]
+                topo_q = mq_t["y1"] - QUADRO_CABECALHO - FOLGA * 0.5
                 for c in sobras:
-                    pos = _encaixar(ocup, c["w"], c["h"], it_["x_bloco"] + FOLGA, it_["y_cotas"] - FOLGA * 0.5, qx1, y_min,
-                                    margem=FOLGA)
+                    # primeiro no espaço livre do quadro das tesouras, de cima — o lado delas, quando são mais
+                    # estreitas que a folha (pedido do usuário, 02/10: "tem espaço para colocar do lado quais as
+                    # chapas que vão nesses elementos"; as da T2/T3/T4 do depósito ficavam fora da prancha) —; senão
+                    # embaixo da última tesoura
+                    pos = (_encaixar(ocup, c["w"], c["h"], qx0, topo_q, qx1, y_min, margem=FOLGA)
+                           or _encaixar(ocup, c["w"], c["h"], it_["x_bloco"] + FOLGA, it_["y_cotas"] - FOLGA * 0.5, qx1, y_min,
+                                        margem=FOLGA))
                     if pos is None and c.get("local"):
                         # a cópia com o vão antigo entre as vistas da montagem (P5, 01/10): no canto, o S.T.1 da Sala
                         # cabia entre os detalhes de furos só assim — peça não some da prancha por falta de espaço
@@ -1082,6 +1088,37 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
                         no_canto.append(m_)
                         if not m_.get("local"):
                             fila.remove(m_)
+            elif sobras and mold_p and comp_p:
+                # as tesouras montadas lado a lado (não empilhadas): o que não coube na faixa vai para o espaço livre
+                # do quadro delas, em volta das células já postas — antes ficava fora da prancha (as chapas das
+                # T2/T3/T4 do depósito, 02/10: "tem espaço para colocar do lado quais as chapas que vão nesses
+                # elementos")
+                cats_c = {c_["categoria"] for c_ in cels_p if (c_.get("item") or {}).get("composicao")}
+                mq_t = next((m_ for m_ in mold_p if m_["categoria"] in cats_c), None)
+                if mq_t is not None:
+                    passo_o = PASSO_OCUPACAO
+                    ocup = set()
+                    for c_ in cels_p:
+                        if c_.get("px") is None:
+                            continue
+                        x0_, y0_ = c_["px"] - FOLGA, c_["py"] - FOLGA
+                        x1_, y1_ = c_["px"] + c_.get("slot_w", c_["w"]) + FOLGA, c_["py"] + c_["h"] + FOLGA
+                        for i_ in range(int(math.floor(x0_ / passo_o)), int(math.floor(x1_ / passo_o)) + 1):
+                            for j_ in range(int(math.floor(y0_ / passo_o)), int(math.floor(y1_ / passo_o)) + 1):
+                                ocup.add((i_, j_))
+                    xq0 = (mq_t["x0"] + QUADRO_MARGEM) if mq_t.get("x0") is not None else qx0
+                    xq1 = (mq_t["x1"] - QUADRO_MARGEM) if mq_t.get("x1") is not None else qx1
+                    topo_q = mq_t["y1"] - QUADRO_CABECALHO - FOLGA * 0.5
+                    base_q = mq_t["y0"] + FOLGA * 0.5
+                    for c in sobras:
+                        pos = _encaixar(ocup, c["w"], c["h"], xq0, topo_q, xq1, base_q, margem=FOLGA * 0.6)
+                        if pos is None:
+                            continue
+                        c["px"], c["py"] = pos
+                        for m_ in _membros(c):
+                            no_canto.append(m_)
+                            if not m_.get("local") and any(m_ is x_ for x_ in fila):
+                                fila.remove(m_)
             # a legenda com o que ficou de fato na prancha (os detalhes que couberam), e os DETALHES até ela
             leg["blocos"] = _blocos_da_legenda(cels_p, na_faixa + no_canto + de_telhas(cels_p))
             if leg["blocos"]:

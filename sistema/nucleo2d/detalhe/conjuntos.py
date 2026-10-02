@@ -2201,6 +2201,74 @@ def chamadas_de_parafusos(p, doc, instancia, origem, u, v, u0: float, v0: float,
     return feitas
 
 
+#: Chapas a menos disto (mm, na elevação) são o mesmo lugar: uma chamada só ("CH15 + CH17") — com 60 as da cumeeira
+#: da T2 do depósito (CH17, CH20, CH21) saíam em três chamadas encavaladas; o mesmo raio do grupo de parafusos
+MESMO_LUGAR_CHAPAS = 150.0
+
+
+def chamadas_das_chapas(p, instancia, origem, u, v, u0: float, v0: float, esc: float, nome_de) -> int:
+    """Na elevação da tesoura: uma chamada com o nome de produção de cada chapa (a da cumeeira, a do apoio, a
+    chapinha do suporte), para a fábrica achar o detalhe dela (pedido do usuário, 02/10: "nos detalhes das tesouras
+    não tem nenhuma chamada indicando o nome das chapas"). Cada chapa uma vez — na ocorrência mais perto do meio da
+    tesoura; as do mesmo lugar numa chamada só. O texto vai para fora, no lado com lugar; devolve quantas saíram."""
+    pts = []
+    for e in instancia:
+        if not (_tipo_ifc(e).startswith("IfcPlate") or isinstance(e, Chapa)) or not getattr(e, "vertices", None):
+            continue
+        m = _marcas(e)
+        if not m.get("posicao"):
+            continue
+        n_ = len(e.vertices)
+        c = tuple(sum(q[k] for q in e.vertices) / n_ for k in range(3))
+        rel = _sub(c, origem)
+        pts.append(((_dot(rel, u) - u0, _dot(rel, v) - v0), str(nome_de(m["posicao"]) or m["posicao"])))
+    if not pts:
+        return 0
+    lugares: List[list] = []
+    for q, nome in pts:
+        for g in lugares:
+            if math.hypot(q[0] - g[0][0], q[1] - g[0][1]) <= MESMO_LUGAR_CHAPAS:
+                g[1].add(nome)
+                break
+        else:
+            lugares.append([q, {nome}])
+    xs = [x for x, _ in p.pontos] or [0.0]
+    ys = [y for _, y in p.pontos] or [0.0]
+    cx = (min(xs) + max(xs)) / 2 - p.dx
+    cy = (min(ys) + max(ys)) / 2 - p.dy
+    # cada combinação de chapas uma vez, no lugar mais perto do meio
+    escolhidos: Dict[tuple, tuple] = {}
+    for q, nomes in lugares:
+        k = tuple(sorted(nomes, key=_ordem_natural))
+        if k not in escolhidos or abs(q[0] - cx) < abs(escolhidos[k][0] - cx):
+            escolhidos[k] = q
+    ja = set()
+    ocupado: List[Tuple[float, float, float, float]] = []
+    feitas = 0
+    alt = 2.0
+    for k, (gx, gy) in sorted(escolhidos.items(), key=lambda kv: abs(kv[1][0] - cx)):
+        nomes = [n for n in k if n not in ja] or list(k)
+        txt = " + ".join(nomes)
+        larg = largura_da_chamada(txt, alt, esc)
+        sx = 1.0 if gx >= cx else -1.0
+        sy = -1.0 if gy <= cy else 1.0
+        for passo in (1.0, 1.8, 2.6, 3.4):
+            for fx, fy in ((sx, sy), (-sx, sy), (sx, -sy)):
+                xt, yt = gx + fx * 8.0 * esc * passo, gy + fy * 8.0 * esc * passo
+                caixa = (min(xt, xt + fx * larg), yt - 1.0 * esc, max(xt, xt + fx * larg), yt + (alt + 1.0) * esc)
+                if any(_sobrepoe(caixa, o, 1.0 * esc) for o in ocupado):
+                    continue
+                p.chamada(gx, gy, xt, yt, txt, alt)
+                ocupado.append(caixa)
+                ja.update(k)
+                feitas += 1
+                break
+            else:
+                continue
+            break
+    return feitas
+
+
 def _rotular_barras(p: "_Papel", rotulos, esc: float, altura_papel: float = 1.8):
     """Rótulo de posição ao lado do meio de cada barra, deslocado na perpendicular da
     barra; quando cai em cima de outro rótulo, afasta-se mais um passo (até quatro)."""
@@ -2925,6 +2993,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         cadeia = len(alturas) > 2 and p.cadeia_v(alturas, larg, off)
         p.cota_v(0, alt, larg, off2 if cadeia else off)
     _rotular_barras(p, rotulos, esc)
+    if tipo == "tesoura":
+        chamadas_das_chapas(p, instancia, origem, u, v, u0, v0, esc, nome_de)
     fora_t = []
     if tipo != "tesoura":
         # no DP, os parafusos que prendem as terças nele não têm chamada (são da terça, na obra — pedido

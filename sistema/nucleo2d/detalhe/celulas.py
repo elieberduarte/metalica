@@ -1522,6 +1522,27 @@ def padronizar_furos_das_chapas(doc: Documento, posicoes: Sequence[Posicao]) -> 
     return saida
 
 
+#: Até quanto da ponta (mm, ao longo da terça) os vértices contam como a seção da ponta (a ponta cortada em ângulo).
+PONTA_DA_TERCA = 40.0
+
+
+def _eixo_da_terca_no_ponto(vertices, L, h, s_ponto):
+    """O centro da seção da terça (na direção `h`) no ponto `s_ponto` ao longo dela: o centro em cada ponta (os
+    vértices até PONTA_DA_TERCA da ponta), interpolado. None sem as duas pontas."""
+    comp = [sum(v[k] * L[k] for k in range(3)) for v in vertices]
+    s0, s1 = min(comp), max(comp)
+    if s1 - s0 < 1.0:
+        return None
+    pontas = []
+    for alvo in (s0, s1):
+        ph_ = [sum(v[k] * h[k] for k in range(3)) for v, c in zip(vertices, comp) if abs(c - alvo) <= PONTA_DA_TERCA]
+        if len(ph_) < 4:
+            return None
+        pontas.append((max(ph_) + min(ph_)) / 2.0)
+    t = min(1.0, max(0.0, (s_ponto - s0) / (s1 - s0)))
+    return pontas[0] + (pontas[1] - pontas[0]) * t
+
+
 def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> dict:
     """O suporte de terça segue a furação padrão da terça, e não o contrário (pedido do usuário, 29/09:
     "a furação é de 50 mm no eixo central da terça e a chaparia precisa ser adaptada para bater com a
@@ -1592,14 +1613,18 @@ def ajustar_suportes_as_tercas(doc: Documento, tercas: set, suportes: set) -> di
             e = terca_de[id_t]
             L = eixo_da_terca(e)
             h = _norm(_cruz(nz, L))
+            # o eixo da terça no lugar da chapa: o centro da seção em cada ponta, interpolado — pela terça inteira (9 m),
+            # um erro mínimo na direção dela vira milímetros na altura (a C200 da T4 do depósito media 215,6 e o eixo
+            # saía 7,8 mm torto: o suporte dali virou outra peça, CH36 em vez de CH7, pedido do usuário, 02/10)
             ph = [sum(v[k] * h[k] for k in range(3)) for v in e.vertices]
+            eixo_local = _eixo_da_terca_no_ponto(e.vertices, L, h, sum(sum(pts[i][k] for i in idx) / len(idx) * L[k] for k in range(3)))
             H = max(ph) - min(ph)
             # a altura pelo nome do perfil (C200X75… → 200): medida na terça inclinada do telhado, as abas somavam
             # uns 5 mm e a C200 caía no passo de 100 (a CH36 do depósito, 29/09)
             m_h = re.match(r"^\s*[A-Za-z]+\s*(\d+(?:[.,]\d+)?)", str(_marcas(e).get("perfil") or ""))
             if m_h:
                 H = float(m_h.group(1).replace(",", "."))
-            eixo_t = (max(ph) + min(ph)) / 2.0
+            eixo_t = eixo_local if eixo_local is not None else (max(ph) + min(ph)) / 2.0
             passo = FURACAO_TERCA_BAIXA[0] if H <= LIMITE_TERCA + 0.5 else FURACAO_TERCA_ALTA[0]
             # colunas: furos na mesma abscissa ao longo da terça
             cols: List[list] = []

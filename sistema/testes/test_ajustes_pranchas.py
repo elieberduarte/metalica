@@ -172,6 +172,32 @@ def test_peca_gerada_solta_nao_vira_desenho_a_mao():
     assert not [e for e in g2.entidades.values() if (e.atributos or {}).get("posicao") == "M117 (b)"]
 
 
+def test_texto_trocado_e_desenho_a_mao_preso_a_celula():
+    """B7 (02/10): o título trocado à mão volta na geração seguinte (pela assinatura do gerado: se o gerador mudar o
+    texto, o dele vale); a nota desenhada à mão dentro de uma célula anda com ela quando a célula vai para outro lugar
+    da folha; a nota solta na folha fica onde estava."""
+    g1 = _gerado("g1")
+    imp1 = AP.marcar(g1)
+    ed = Desenho.de_dict(copy.deepcopy(g1.dict()))
+    A, B = "tesouras|conjunto:M1", "chaparias|posicao:P5"
+    t = _por(ed, A, "texto")[0]
+    t.texto = "T1 – TESOURA DA FACHADA"
+    ed.add(Texto(camada="TEXTO", posicao=(320.0, 160.0), texto="SOLDAR NA OBRA", altura=2.5))     # dentro da B
+    ed.add(Texto(camada="TEXTO", posicao=(700.0, 700.0), texto="NOTA GERAL", altura=2.5))         # fora de tudo
+    aj = AP.aprender(ed, {"impressoes": {"g1": imp1}})
+    g2 = _gerado("g2")
+    for e in _por(g2, B):                                   # a célula B, refeita 100 mm à direita
+        g2.entidades[e.id] = transladar(e, 100.0, 0.0)
+    for c in g2.metadados["pranchas"][0]["celulas"]:
+        if c["id"] == B:
+            c["caixa"] = [c["caixa"][0] + 100.0, c["caixa"][1], c["caixa"][2] + 100.0, c["caixa"][3]]
+    AP.marcar(g2)
+    rel = AP.aplicar(g2, aj)
+    assert [e.texto for e in _por(g2, A, "texto")] == ["T1 – TESOURA DA FACHADA"], rel
+    notas = {e.texto: e.posicao for e in g2.entidades.values() if isinstance(e, Texto) and (e.atributos or {}).get("a_mao")}
+    assert notas["SOLDAR NA OBRA"] == (420.0, 160.0) and notas["NOTA GERAL"] == (700.0, 700.0), notas
+
+
 def test_ajuste_descartado_quando_o_gerador_muda_a_celula():
     """A regra do gerador mudou a célula depois que o ajuste foi aprendido (o desenho dela foi arrumado de outro
     jeito): o ajuste não volta — reaplicado, deslocava de novo o que a regra já tinha posto no lugar (as telhas e os

@@ -39,7 +39,7 @@ nav = subprocess.Popen([chrome, "--headless=new", "--disable-gpu", "--use-gl=swi
 try:
     # 1) rota do detalhe por peça
     t0 = time.time()
-    r = post("/api/projetos/compressores/detalhar-posicao", {"marca": "P77"})
+    r = post("/api/projetos/compressores/detalhar-posicao", {"marca": "P77", "edicao": True, "modo": "isolada"})  # a peça só se edita no ambiente de edição (R5, 02/10)
     ok(r["convertidas"] == 18 and r["editavel"] and r["furos"] == 4, "detalhar-posicao P77 em %.1f s: %s" % (time.time() - t0, {k: r[k] for k in ("nome", "convertidas", "editavel", "furos")}))
     ok(len(chapas_p77()) == 18, "modelo tem 18 chapas paramétricas P77")
     for _ in range(60):

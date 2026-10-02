@@ -71,7 +71,10 @@ try:
         e, dt = esperar()
         g2 = (e.get("desenhos") or {}).get("detalhamento-tesouras")
         ok(g2 and g2 != g1, "refeito em %.0f s: geração nova %s" % (dt, g2))
-        ok(abs(os.path.getmtime(mod) - (time_mod)) < 0.01, "a atualização automática não regravou o modelo 3D")
+        # com o editor fechado a atualização leva o padrão de fábrica ao 3D (regra R2, 02/10) — uma vez: a pergunta
+        # seguinte não começa outra (antes ela não gravava o modelo nunca)
+        e3 = get("/api/projetos/sala/desenhos-vivos")
+        ok(not e3.get("atualizando"), "a atualização automática fica estável depois de gravar o padrão no 3D (%s)" % e3.get("motivo"))
         t = time.time()
         while time.time() - t < 20 and aba.avaliar("window.cad.doc.metadados.geracao") != g2: aba.drenar(0.5)
         ok(aba.avaliar("window.cad.doc.metadados.geracao") == g2 and aba.avaliar("window.__marca") == "mesma-pagina",

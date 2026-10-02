@@ -160,7 +160,9 @@ export class MetodosLancamentoCAD {
     const k = alvo / d;
     const f = (p) => [a[0] + (p[0] - a[0]) * k, a[1] + (p[1] - a[1]) * k];
     const novas = ents.map(e => transformar(e, f, (x) => x, k));
-    this.executar(new ComandoSubstituir(novas, `Calibrar arquitetônico (×${fmt(k * 1000) / 1000})`));
+    const cmd = new ComandoSubstituir(novas, `Calibrar arquitetônico (×${fmt(k * 1000) / 1000})`);
+    cmd.semTrava = true;                          // o arquitetônico fica na camada travada: a calibração é do programa
+    this.executar(cmd);
     this.tela.enquadrar();
     this.aviso(`Arquitetônico escalado ${k.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}×: a medida agora é ${fmt(alvo)} mm. Ctrl+Z desfaz.`, 'info', 9000);
   }

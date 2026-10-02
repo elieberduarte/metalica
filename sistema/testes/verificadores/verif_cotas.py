@@ -41,12 +41,14 @@ try:
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=950, deviceScaleFactor=1, mobile=False)
     aba.navegar(base + "/"); aba.avaliar("localStorage.setItem('galpao.tema','claro'); 1"); aba.console.clear()
-    aba.navegar(base + "/cad?projeto=compressores&desenho=" + nome, limite=60)
+    # P1: chapa 400x120x13 com 2 furos a 150 (a cadeia de cotas cabe em 1:10). Move o primeiro furo 10 mm em x — no
+    # ambiente de edição dela: no desenho gerado a peça é do 3D e não se edita (regra R5, 02/10)
+    e_ = post("/api/projetos/compressores/detalhar-posicao", {"marca": "P1", "edicao": True, "modo": "isolada"})
+    aba.navegar(base + "/cad?projeto=compressores&desenho=" + e_["nome"], limite=60)
     t0 = time.time()
-    while time.time() - t0 < 60 and not aba.avaliar("document.body.dataset.pronto === '1' && window.cad && window.cad.doc.tamanho > 50"): aba.drenar(0.5)
-    # P1: chapa 400x120x13 com 2 furos a 150 (a cadeia de cotas cabe em 1:10). Move o primeiro furo 10 mm em x.
-    rotulo = aba.avaliar("(window.cad.doc.metadados.detalhamento.editaveis || []).find(m => m.split(' / ').includes('P1')) || null")
-    ok(rotulo is not None, "célula editável da P1 existe (%s)" % rotulo)
+    while time.time() - t0 < 60 and not aba.avaliar("document.body.dataset.pronto === '1' && window.cad && window.cad.doc.tamanho > 5"): aba.drenar(0.5)
+    rotulo = aba.avaliar("(window.cad.doc.metadados.detalhe_posicao || {}).marca || null")
+    ok(rotulo is not None and aba.avaliar("!!(window.cad.doc.metadados || {}).edicao"), "a P1 abriu no ambiente de edição (%s)" % rotulo)
     res = aba.avaliar("""(() => { const rot = %s; const cad = window.cad;
         const furos = [...cad.doc.entidades.values()].filter(e => e.camada === 'FURO' && (e.atributos || {}).posicao === rot);
         const f = furos[0]; const cx = f.centro ? f.centro[0] : (Math.min(...f.vertices.map(p => p[0])) + Math.max(...f.vertices.map(p => p[0]))) / 2;
@@ -59,9 +61,13 @@ try:
     res = json.loads(res)
     ok(res["cotas"] >= 1 and res["seguiram"] == res["cotas"] and abs(res["cx2"] - res["cx"] - 10) < 0.01, "cota da coluna do furo acompanhou o furo (%s)" % res)
     # P36 (chapinha do suporte): move um furo 10 mm em x e aplica: as terças ligadas recebem o ajuste (vínculo)
-    aba.avaliar("window.cad.desfazer(); 1"); aba.drenar(0.5)
-    rotulo = aba.avaliar("(window.cad.doc.metadados.detalhamento.editaveis || []).find(m => m.split(' / ').includes('P36')) || null")
-    ok(rotulo is not None, "célula editável da P36 existe (%s)" % rotulo)
+    aba.avaliar("window.cad.desfazer(); window.cad._editado = false; window.cad._autosavePendente = false; 1"); aba.drenar(0.5)
+    e_ = post("/api/projetos/compressores/detalhar-posicao", {"marca": "P36", "edicao": True, "modo": "isolada"})
+    aba.navegar(base + "/cad?projeto=compressores&desenho=" + e_["nome"], limite=60)
+    t0 = time.time()
+    while time.time() - t0 < 60 and not aba.avaliar("document.body.dataset.pronto === '1' && window.cad && window.cad.doc.tamanho > 5"): aba.drenar(0.5)
+    rotulo = aba.avaliar("(window.cad.doc.metadados.detalhe_posicao || {}).marca || null")
+    ok(rotulo is not None, "a P36 abriu no ambiente de edição (%s)" % rotulo)
     aba.avaliar("""(() => { const rot = %s; const cad = window.cad; const f = [...cad.doc.entidades.values()].filter(e => e.camada === 'FURO' && (e.atributos || {}).posicao === rot)[0];
         cad.selecionar([f.id]); cad.ativarFerramenta('mover'); const m = cad.ferramenta; m.onPonto([0, 0], {}); m.onPonto([10, 0], {}); return 1; })()""" % json.dumps(rotulo))
     aba.avaliar("(() => { const rot = %s; const c = window.cad._contornoDe(rot); window.cad.selecionar([c.id]); window.cad.aplicarFuros(); return 1; })()" % json.dumps(rotulo)); aba.drenar(1.5)

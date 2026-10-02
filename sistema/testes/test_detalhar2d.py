@@ -524,6 +524,26 @@ def test_edicao_furo_copiado_e_ordem_diferente_na_outra_chapa():
     assert xs == [25, 85, 140, 9960, 10015, 10075], xs
 
 
+def test_eixo_da_terca_pelas_pontas():
+    """A terça de 9 m levemente torta em relação à direção estimada: pela terça inteira a altura mede 215,6 e o eixo sai
+    7,8 mm fora; pelas pontas, interpolado no ponto da chapa, sai certo (a CH36 do depósito, 02/10)."""
+    import math
+    from nucleo2d.detalhe.celulas import _eixo_da_terca_no_ponto
+    inc = 15.6 / 9000.0                      # a terça sobe 15,6 mm em 9 m na direção "h"
+    verts = []
+    for x in (0.0, 9000.0):
+        for y in (0.0, 200.0):
+            verts.append((x, y + x * inc, 0.0))
+            verts.append((x, y + x * inc, 75.0))
+    L, h = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
+    ph = [v[1] for v in verts]
+    assert abs((max(ph) - min(ph)) - 215.6) < 0.01
+    ponto = 1000.0                           # a chapa perto de uma ponta
+    certo = 100.0 + ponto * inc
+    assert abs(_eixo_da_terca_no_ponto(verts, L, h, ponto) - certo) < 0.01
+    assert abs((max(ph) + min(ph)) / 2 - certo) > 5.0          # a medida antiga errava
+
+
 def test_vinculo_chapa_tercas_e_ajustes():
     """A chapinha do suporte muda de 80 para 60 mm entre furos: a terça com a mesma furação
     original (na outra orientação) acompanha; o ajuste guardado volta a ser aplicado."""

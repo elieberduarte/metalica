@@ -125,7 +125,16 @@ def _gravar(s: str, c: dict):
     tmp = arq + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(c, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, arq)
+    # no Windows a troca falha ("acesso negado") enquanto outro leitor (a tela perguntando o estado, o OneDrive
+    # sincronizando) está com o arquivo aberto: tenta de novo por um instante antes de desistir (02/10)
+    for tentativa in range(20):
+        try:
+            os.replace(tmp, arq)
+            return
+        except PermissionError:
+            if tentativa == 19:
+                raise
+            time.sleep(0.1)
 
 
 def gravar_carimbo(s: str, geracoes: dict = None, completo: bool = True, extra: dict = None) -> dict:
@@ -202,6 +211,8 @@ def estado(s: str, conferir: bool = True) -> dict:
     e["desenhos"] = c.get("desenhos") or {}
     # o padrão de fábrica que falta gravar no 3D (o editor estava aberto): o editor mostra "Aplicar"
     e["pendente_3d"] = c.get("pendente_3d") or {}
+    e["fora_da_maquina"] = c.get("fora_da_maquina") or []
+    e["pranchas_descartadas"] = c.get("pranchas_descartadas") or []
     if c.get("erro") and not e.get("erro"):
         e["erro"] = c["erro"]
     return e
