@@ -419,6 +419,9 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     """Célula da posição em `desenho`, com a vista de frente em (dx, dy). Devolve os
     extremos. `editavel`: furos da chapa como entidades marcadas (ver _furos_editaveis)."""
     atr = {"posicao": pos.marca, "perfil": pos.perfil, "classe": pos.classe, "detalhe": "posicao"}
+    if getattr(pos, "ids3d", None):
+        # a variante de furação ("M83 (b)") não existe com esse nome no modelo: as peças dela pelo id (02/10)
+        atr["ids3d"] = ",".join(pos.ids3d[:200])
     if pos.nome:
         atr["nome"] = pos.nome                  # o grupo da peça no DXF leva o nome de produção
     p = _Papel(desenho, atr, dx, dy, camada_peca=pos.camada_2d or "")

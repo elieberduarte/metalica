@@ -600,6 +600,18 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     for e in pecas:
         m_ = str(_marcas(e).get("posicao") or e.nome or e.id)
         parametricas[m_] = parametricas.get(m_, True) and getattr(e, "parametrica", None) is not None
+    # a variante de furação ("M83 (b)", _separar_variantes) só existe no detalhamento: o modelo continua com "M83" nas
+    # oito chapas. A célula leva os ids das peças dela, para o clique no 2D achar no 3D exatamente as cinco (o S.T.3
+    # da Sala não achava nada — 02/10)
+    ids_variante: Dict[str, List[str]] = collections.defaultdict(list)
+    for e in pecas:
+        m_ = str(_marcas(e).get("posicao") or "")
+        if re.search(r" \([b-z]\)$", m_):
+            ids_variante[m_].append(e.id)
+    for p_ in posicoes:
+        ids_p = [i for mk in marcas_de(p_) for i in ids_variante.get(mk, [])]
+        if ids_p:
+            p_.ids3d = ids_p
     desenhos: Dict[str, Desenho] = collections.OrderedDict()
     base: Dict[str, Desenho] = {}             # os desenhos por classe (GRUPOS_BASE)
     avisos: List[str] = list(lev.get("avisos") or [])

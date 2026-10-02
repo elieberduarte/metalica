@@ -925,6 +925,10 @@ def soltas_no_conjunto(doc: Documento, instancia: Sequence[Solido]) -> List[str]
     return fora
 
 
+#: Folga (mm) entre a ponta do fixador e a face da chapa para ele contar como atravessando-a (furo inferido).
+FOLGA_FURO_INFERIDO = 5.0
+
+
 def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[Solido], centros=None) -> int:
     """Chapa que veio do IFC sem o furo modelado: cada parafuso (ou chumbador) que
     atravessa a chapa vira um furo redondo de d + 1 mm no ponto em que o eixo cruza o
@@ -960,8 +964,16 @@ def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[So
                 ts = [_dot(_sub(v, cc), ax) for v in f.vertices]
                 ext.append(max(ts) - min(ts))
             # parafuso comprido: eixo é o maior; só a porca (achatada): eixo é o menor
-            eixo = pca[0] if ext[0] > 1.5 * ext[1] else pca[2]
-            alcance = (ext[0] if ext[0] > 1.5 * ext[1] else ext[2]) / 2 + pos.T + folga
+            comprido, achatado = ext[0] > 1.5 * ext[1], ext[2] < 0.85 * ext[1]
+            if not comprido and not achatado:
+                # sem eixo pela forma (a porca solta "BOLT () 0x0" do chumbador do depósito, 29 x 30 x 31): o eixo
+                # tirado ao acaso caía perpendicular à nervura CH19 ao lado e dava 2 furos Ø21 que a chapa não tem
+                # (02/10) — a arruela do mesmo chumbador, achatada, diz o eixo dele
+                continue
+            eixo = pca[0] if comprido else pca[2]
+            # o fixador chega à chapa: a ponta dele até a face, com uns milímetros de folga (com 40 mm, a porca a
+            # 20 mm da nervura, sem encostar, contava como atravessando)
+            alcance = (ext[0] if comprido else ext[2]) / 2 + pos.T / 2.0 + FOLGA_FURO_INFERIDO
         den = _dot(eixo, e3)
         if abs(den) < 0.7:
             continue

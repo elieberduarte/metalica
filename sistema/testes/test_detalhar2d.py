@@ -373,6 +373,27 @@ def test_furos_pelos_parafusos():
     assert abs(sum(v[0] for v in fora.vertices) / len(fora.vertices) - 306.0) < 1e-6    # o de fora não mexe
 
 
+
+def test_porca_sem_eixo_ou_longe_nao_fura_a_chapa():
+    """A porca solta quase cúbica (29 x 30 x 31, "BOLT () 0x0") não tem eixo pela forma, e a que está a 20 mm da chapa
+    sem encostar não a atravessa: nenhuma fura a chapa (a nervura CH19 do depósito ganhava 2 furos Ø21, 02/10). A
+    porca achatada encostada continua furando."""
+    doc = Documento(nome="teste")
+    v, f = _caixa_solida(200, 100, 10)
+    doc.add(_solido("PLATE 200x100x10", "IfcPlate", v, f, "P9", "M1", "PLATE 200x100x10"))
+    for dx, dz, lados in ((40, 10, (30, 30, 30)),        # cubo encostado: sem eixo
+                          (120, 30, (16, 16, 8))):       # achatada, mas 20 mm acima da chapa
+        vn, fn = _caixa_solida(*lados, dx=dx, dy=35, dz=dz)
+        n = Solido(nome="BOLT () 0x0", vertices=vn, faces=fn)
+        n.atributos["tipo_ifc"] = "IfcBuildingElementProxy"
+        doc.add(n)
+    vn, fn = _caixa_solida(16, 16, 8, dx=170, dy=42, dz=10)    # achatada encostada: fura
+    n = Solido(nome="BOLT () 0x0", vertices=vn, faces=fn)
+    n.atributos["tipo_ifc"] = "IfcBuildingElementProxy"
+    doc.add(n)
+    pos = det.levantar(doc, regra_tercas=False)["posicoes"][0]
+    assert [(f_.x, f_.y) for f_ in pos.furos] == [(178.0, 50.0)], [(f_.x, f_.y, f_.d) for f_ in pos.furos]
+
 def test_vinculo_chapa_tercas_e_ajustes():
     """A chapinha do suporte muda de 80 para 60 mm entre furos: a terça com a mesma furação
     original (na outra orientação) acompanha; o ajuste guardado volta a ser aplicado."""
