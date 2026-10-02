@@ -916,3 +916,6 @@ html.topo-c4 .menu-botao { padding: 0 4px; font-size: 12px; }
    tela aparecem nela; a barra própria some e a altura dela volta para o desenho/modelo */
 html.barra-unica { --alt-topo: 0px; }
 html.barra-unica header.topo { display: none !important; }
+
+/* Editar chapa (modulos/edicao_chapa.js, 02/10) */
+.acoes-painel.editar-chapa button { background: #b45309; color: #fff; border-color: #b45309; }

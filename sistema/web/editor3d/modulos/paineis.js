@@ -5,6 +5,7 @@
 
 import { PAPEIS, areaDaChapa, comprimentoDaBarra, direcaoDaBarra, escalar, somar } from '../nucleo/documento.js';
 import { lerPerfil } from '../nucleo/trocar_perfil.js';
+import { chapaEditavel } from './edicao_chapa.js';
 import { $, ComandoAparencia, contarPor, corDeGrupo, corHex, dimensoesPrincipais, el, metros, normalizarBusca, numero, ponto3, uniao, volumeDe } from '../editor.js';
 
 export class MetodosPaineis {
@@ -226,6 +227,16 @@ export class MetodosPaineis {
     }
     botao('Apagar', () => this.apagarSelecao(), 'Del');
     raiz.append(acoes);
+    // Editar chapa (02/10): a chapa selecionada no ambiente de edição do 2D, sozinha ou com as peças em volta
+    const chEd = um && this.projeto ? chapaEditavel(um) : null;
+    if (chEd) {
+      const ed = el('div', { class: 'acoes-painel editar-chapa' });
+      ed.append(el('button', { type: 'button', texto: 'Editar isolada', title: `Abre ${chEd.nome} sozinha no 2D para mudar furos, tamanho e contorno; Concluir leva a todas as chapas ${chEd.marca}`,
+                                onclick: () => this.editarChapa(um, 'isolada') }),
+                el('button', { type: 'button', texto: 'Editar no local', title: `Abre ${chEd.nome} no 2D com as peças em volta cortadas no plano dela (referência) para medir e encaixar`,
+                                onclick: () => this.editarChapa(um, 'local') }));
+      raiz.append(ed);
+    }
   }
 
   /** Sem seleção: os padrões que as ferramentas de desenho usam, e o resumo do modelo. */

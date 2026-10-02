@@ -1231,6 +1231,17 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
     if convertidas:
         _regravar_modelo(s, doc)
     desenho, pos = det.detalhar_posicao(doc, marca, ajustes=_ajustes_furos(s), nomes=_nomes_producao(s))
+    referencias = 0
+    if corpo.get("edicao"):
+        # o modo "Editar chapa" (02/10): a faixa EDITANDO … · Concluir · Cancelar no CAD; "no local", as peças em volta
+        # cortadas no plano da chapa, como referência travada
+        from nucleo2d import edicao_chapa
+        modo = str(corpo.get("modo") or "isolada")
+        edicao_chapa.marcar_edicao(desenho, marca, pos.nome or "", pos.quantidade, modo)
+        if modo == "local":
+            refs = edicao_chapa.referencias_no_plano(doc, pos, nomes=(_nomes_producao(s) or {}).get("ifc"))
+            cont = (desenho.metadados.get("celulas") or [[0, 0, 0, 0]])[0]
+            referencias = edicao_chapa.acrescentar_referencias(desenho, refs, chapa=((cont[0] + cont[2]) / 2.0, (cont[1] + cont[3]) / 2.0))
     nome = desenho.nome
     if corpo.get("substituir", True) is not False and os.path.exists(g._caminho_desenho(s, nome)):
         g.excluir_desenho(s, nome)
@@ -1240,7 +1251,8 @@ def detalhar_posicao_projeto(s: str, corpo: dict) -> dict:
     return {"nome": salvo["nome"], "titulo": nome, "marca": marca, "classe": pos.classe,
             "convertidas": convertidas, "reorientadas": reorientadas.get("chapas", 0),
             "editavel": desenho.metadados["detalhe_posicao"]["editavel"],
-            "furos": len(desenho.metadados["detalhe_posicao"]["furos"]), "quantidade": pos.quantidade}
+            "furos": len(desenho.metadados["detalhe_posicao"]["furos"]), "quantidade": pos.quantidade,
+            "referencias": referencias}
 
 
 def _rota_fabrica(rota: str, corpo: dict) -> dict:

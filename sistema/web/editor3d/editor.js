@@ -40,6 +40,7 @@ import { MetodosApoios } from './modulos/apoios.js';
 import { MetodosBloco } from './modulos/bloco.js';
 import { MetodosDivisao } from './modulos/divisao.js';
 import { MetodosExplodir } from './modulos/explodir.js';
+import { MetodosEdicaoChapa } from './modulos/edicao_chapa.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -2331,7 +2332,7 @@ export class Editor {
 
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
-  MetodosApoios, MetodosBloco, MetodosDivisao, MetodosExplodir);
+  MetodosApoios, MetodosBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa);
 
 // ================================================================= apoio
 

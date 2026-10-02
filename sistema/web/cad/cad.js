@@ -11,6 +11,7 @@ import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta } from './ferramentas.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
 import { MetodosMontarPlantaCAD } from './montar_planta.js';
+import { MetodosEdicaoChapaCAD } from './edicao_chapa.js';
 
 const CHAVE_TEMA = 'galpao.tema';
 const ATRASO_AUTOSAVE = 3000;
@@ -174,6 +175,7 @@ class CAD {
     if (this._autosaveTimer) { clearTimeout(this._autosaveTimer); this._autosaveTimer = null; }
     this._agendarPaineis('props', 'camadas', 'vistas');
     document.title = `${this.doc.nome} — Desenho 2D`;
+    this._atualizarFaixaEdicao();                 // a faixa EDITANDO do ambiente de edição da chapa (edicao_chapa.js)
   }
 
   async abrirDesenho(nome) {
@@ -512,6 +514,10 @@ class CAD {
     const separar = (v) => String(v).split(/\s*\/\s*/).filter(Boolean);
     const noLugar = ents.filter(e => ['localizacao', 'chumbacao'].includes((e.atributos || {}).detalhe) && (e.atributos || {}).origem);
     if (noLugar.length) return 'ids:' + [...new Set(noLugar.map(e => e.atributos.origem))].slice(0, 200).join(',');
+    // a variante de furação ("M83 (b)", só no detalhamento): as peças dela pelo id — pela marca o 3D não acha nada,
+    // lá as oito continuam "M83" (o S.T.3 da Sala, 02/10)
+    const variante = [...new Set(ents.flatMap(e => (e.atributos || {}).ids3d ? String(e.atributos.ids3d).split(',') : []))];
+    if (variante.length) return 'ids:' + variante.slice(0, 200).join(',');
     // célula de peças fundidas ou conjuntos iguais: "M5 / M7 / M8" são três marcas do modelo
     const posicoes = [...new Set(ents.flatMap(e => (e.atributos || {}).posicao ? separar(e.atributos.posicao) : []))];
     const conjuntos = [...new Set(ents.flatMap(e => (e.atributos || {}).conjunto ? separar(e.atributos.conjunto).flatMap(c => c.split(/\s*\+\s*/)) : []))];
@@ -547,15 +553,32 @@ class CAD {
     const separar = (v) => String(v || '').split(/\s*(?:\/|\+)\s*/).filter(Boolean);
     const pos = new Set(m.posicoes || []), conj = new Set(m.conjuntos || []), ids = new Set(m.ids || []);
     const achar = (teste) => [...this.doc.entidades.values()].filter(e => teste(e.atributos || {}));
-    let ents = achar(a => a.posicao && separar(a.posicao).some(x => pos.has(x)) && a.detalhe !== 'localizacao');
+    // a peça de uma variante de furação ("M83 (b)"): a célula dela pelo id, não a da marca do modelo ("M83", a outra)
+    let ents = ids.size ? achar(a => a.ids3d && a.detalhe !== 'localizacao' && String(a.ids3d).split(',').some(x => ids.has(x))) : [];
+    if (!ents.length) ents = achar(a => a.posicao && separar(a.posicao).some(x => pos.has(x)) && a.detalhe !== 'localizacao');
+    // o detalhe da própria peça antes dela desenhada dentro dos conjuntos (a chapa em cada tesoura): tudo junto,
+    // a caixa pegava o desenho inteiro e nada se via (905 traços no depósito — pedido do usuário, 30/09)
+    const proprias = ents.filter(e => (e.atributos || {}).detalhe === 'posicao');
+    if (proprias.length) ents = proprias;
     if (!ents.length) ents = achar(a => a.conjunto && separar(a.conjunto).some(x => conj.has(x)) && a.detalhe !== 'localizacao');
     if (!ents.length) ents = achar(a => a.origem && ids.has(a.origem));
     if (!ents.length) { this.dica('Essa peça do 3D não está neste desenho: escolha outro na lista de desenhos.'); return; }
-    // agrupa por célula (pranchas) ou pelo que a marca diz; fica o grupo original maior
+    // agrupa por célula: a da prancha (cel), senão a caixa do detalhamento (metadados.celulas) em que a
+    // entidade cai — a mesma marca em dois detalhes são dois lugares —, senão pelo que a marca diz; fica o
+    // grupo original maior
+    const celulas = (this.doc.metadados || {}).celulas || [];
+    const celulaDe = (e) => {
+      if (!celulas.length) return -1;
+      const c = this.doc.caixa(new Set([e.id]));
+      if (!c) return -1;
+      const x = (c[0][0] + c[1][0]) / 2, y = (c[0][1] + c[1][1]) / 2;
+      return celulas.findIndex(k => x >= k[0] && x <= k[2] && y >= k[1] && y <= k[3]);
+    };
     const grupos = new Map();
     for (const e of ents) {
       const a = e.atributos || {};
-      const k = a.cel || a.posicao || a.conjunto || a.origem || '';
+      const i = a.cel ? -1 : celulaDe(e);
+      const k = a.cel || (i >= 0 ? `celula ${i}` : '') || a.posicao || a.conjunto || a.origem || '';
       if (!grupos.has(k)) grupos.set(k, []);
       grupos.get(k).push(e);
     }
@@ -1276,6 +1299,8 @@ class CAD {
       el('button', { type: 'button', texto: 'Ver no 3D', title: 'Abre o modelo 3D com as peças desta posição (ou conjunto) selecionadas e enquadradas', onclick: () => this.verNo3D() }),
       el('button', { type: 'button', texto: 'Apagar', onclick: () => this.apagarSelecao() }));
     g.append(botoes);
+    const editar = this._botoesEditarChapa();                // Editar isolada / no local (edicao_chapa.js)
+    if (editar.length) g.append(el('div', { class: 'botoes editar-chapa' }, ...editar));
     raiz.append(g);
   }
 
@@ -2245,7 +2270,7 @@ function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { re
 
 // os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js; os do
 // projeto recebido montado pela planta, em montar_planta.js
-for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD]) {
+for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEdicaoChapaCAD]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);

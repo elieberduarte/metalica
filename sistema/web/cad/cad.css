@@ -111,3 +111,15 @@ html.embutida #btn-voltar, html.embutida #link-editor, html.embutida #link-divid
 .dialogo-corpo .tabela-simples th { text-align: left; font-weight: 600; color: var(--texto2); padding: 2px 12px 2px 0; white-space: nowrap; }
 .dialogo-corpo .tabela-simples td { padding: 2px 12px 2px 0; }
 .dialogo-corpo h4 { margin: 10px 0 2px; font-size: 13px; }
+
+/* Editar chapa (edicao_chapa.js, 02/10): a faixa do ambiente de edição e os botões do painel */
+.faixa-edicao { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 30; max-width: calc(100% - 24px);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 8px 12px; border-radius: 8px;
+  background: #b45309; color: #fff; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); font-size: 13px; }
+.faixa-edicao-titulo strong { letter-spacing: .02em; }
+.faixa-edicao-dica { flex-basis: 100%; order: 3; font-size: 11.5px; opacity: .9; }
+.faixa-edicao-botoes { display: flex; gap: 6px; margin-left: auto; }
+.faixa-edicao button { border: 0; border-radius: 6px; padding: 5px 12px; cursor: pointer; background: rgba(255, 255, 255, .18); color: #fff; }
+.faixa-edicao button.primario { background: #fff; color: #92400e; font-weight: 600; }
+.botoes.editar-chapa { margin-top: 6px; }
+.botoes.editar-chapa button { background: #b45309; color: #fff; border-color: #b45309; }
