@@ -32,6 +32,7 @@ if _RAIZ not in sys.path:
 
 from nucleo.base import fmt                                        # noqa: E402
 from nucleo.modelo_galpao import DadosGalpao, Peca, ProjetoGalpao  # noqa: E402
+from nucleo.modelo_galpao import REPARTICAO_CUSTO as _REPARTICAO  # noqa: E402
 from nucleo.perfis import Perfil, perfil as _busca_perfil          # noqa: E402
 
 # =====================================================================================
@@ -54,19 +55,9 @@ PERC_CHAPAS = 0.05
 #: Parafusos, chumbadores, esticadores, porcas e arruelas, em % do peso dos perfis.
 PERC_PARAFUSOS = 0.03
 
-#: Repartição do custo por kg instalado (manual, Tabela 16.6 — valores indicativos do
-#: mercado brasileiro, ordem de grandeza 2025–2026, sem impostos específicos, telhas,
-#: fundações e piso). As frações somam 1,00 e são aplicadas sobre `dados.custo_kg`.
-REPARTICAO_CUSTO = [
-    ("Material (perfis, chapas, parafusos)", 7.50 / 17.00,
-     "Perfis W ≈ 6,5–8; Ue galvanizado ≈ 8–9; parafusos e chumbadores ≈ 20–30 R$/kg"),
-    ("Fabricação (corte, furação, solda, montagem em oficina)", 4.50 / 17.00,
-     "3–6 R$/kg; peças repetitivas e parafusadas baixam o valor"),
-    ("Pintura / galvanização", 2.00 / 17.00,
-     "1,5–3 R$/kg conforme o sistema (C2: 1,5; C3 epóxi/PU: 2,5–3)"),
-    ("Transporte e montagem", 3.00 / 17.00,
-     "2,5–4 R$/kg; distância e altura influem"),
-]
+#: Repartição do custo por kg instalado: (parcela, fração, observação), da fonte única em
+#: `nucleo.modelo_galpao.REPARTICAO_CUSTO` (a mesma do resumo do projeto que a tela mostra).
+REPARTICAO_CUSTO = [(nome, fracao, obs) for _chave, nome, fracao, obs in _REPARTICAO]
 
 #: Esquema de pintura adotado na estimativa de tinta (manual, item 16.13; ISO 12944 C3).
 #: (demão, espessura seca µm, sólidos em volume, perda de aplicação)

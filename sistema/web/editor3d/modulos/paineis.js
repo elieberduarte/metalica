@@ -325,10 +325,12 @@ export class MetodosPaineis {
     const p = this._peso;
     if (!p || !p.aco_kg) return null;
     const cat = p.por_categoria || {};
-    const telhas = cat.TELHAS || 0;
+    // telhas e funilaria (rufos, calhas) ficam fora do peso da estrutura, como no resumo de materiais da fábrica
+    // (saida/resumos.py, FORA_DO_ACO) — os rufos do Depósito Químico entravam na "estrutura"
+    const telhas = (cat.TELHAS || 0) + (cat.RUFOS || 0);
     const dica = 'Peso teórico da lista de materiais (catálogo): ' +
       Object.entries(cat).map(([k, v]) => `${k.toLowerCase()} ${t(v)}`).join(' · ');
-    return telhas ? { texto: `estrutura ${t(p.aco_kg - telhas)} · telhas ${t(telhas)}`, dica } : { texto: `aço ${t(p.aco_kg)}`, dica };
+    return telhas ? { texto: `estrutura ${t(p.aco_kg - telhas)} · telhas e rufos ${t(telhas)}`, dica } : { texto: `aço ${t(p.aco_kg)}`, dica };
   }
 
   _massaBarra(b) {

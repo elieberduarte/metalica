@@ -15,6 +15,24 @@ from typing import Dict, List, Optional
 from .base import Resultado, ErroDeDados
 
 
+#: Repartição do custo por kg instalado (manual, Tabela 16.6 — valores indicativos do
+#: mercado brasileiro, ordem de grandeza 2025–2026, sem impostos específicos, telhas,
+#: fundações e piso): (chave, parcela, fração, observação). As frações somam 1,00 e são
+#: aplicadas sobre `DadosGalpao.custo_kg`. Fonte única: o resumo do projeto (`ProjetoGalpao.custo`,
+#: que a tela lê) e a lista de material/memorial (`saida/lista_material.py`) saem daqui — antes o
+#: primeiro usava 55/22/8/15 % e o segundo 44/26/12/18 %, e o mesmo galpão tinha dois "material".
+REPARTICAO_CUSTO = [
+    ("material", "Material (perfis, chapas, parafusos)", 7.50 / 17.00,
+     "Perfis W ≈ 6,5–8; Ue galvanizado ≈ 8–9; parafusos e chumbadores ≈ 20–30 R$/kg"),
+    ("fabricacao", "Fabricação (corte, furação, solda, montagem em oficina)", 4.50 / 17.00,
+     "3–6 R$/kg; peças repetitivas e parafusadas baixam o valor"),
+    ("pintura", "Pintura / galvanização", 2.00 / 17.00,
+     "1,5–3 R$/kg conforme o sistema (C2: 1,5; C3 epóxi/PU: 2,5–3)"),
+    ("montagem", "Transporte e montagem", 3.00 / 17.00,
+     "2,5–4 R$/kg; distância e altura influem"),
+]
+
+
 # ---------------------------------------------------------------- entrada
 
 #: Campo de perfil forçado → famílias de perfil que o elemento aceita (vazio = qualquer barra).

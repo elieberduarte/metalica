@@ -1662,8 +1662,8 @@ function renderEntrega() {
     el('div', {}, el('dt', {}, 'Custo estimado'),
       el('dd', {}, custo.total !== undefined ? 'R$ ' + nf(custo.total, 0) : '—')),
     el('div', {}, el('dt', {}, 'Por m² coberto'),
-      el('dd', {}, custo.por_m2_coberto !== undefined
-        ? 'R$ ' + nf(custo.por_m2_coberto, 0) : '—')));
+      el('dd', {}, custo.por_m2 !== undefined
+        ? 'R$ ' + nf(custo.por_m2, 0) : '—')));
   const painelResumo = el('div', { class: 'painel' }, el('h3', {}, 'Resumo do projeto'),
     el('div', { class: 'conteudo-painel' }, resumo));
   area.append(painelResumo);

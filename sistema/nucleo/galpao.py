@@ -25,7 +25,7 @@ from . import (analise, bases, cargas, catalogo, ligacoes, materiais as mat,
 from .base import ErroDeDados, Resultado, Verificacao, fmt
 from . import verificar
 from dataclasses import replace
-from .modelo_galpao import DadosGalpao, ElementoDimensionado, Peca, ProjetoGalpao
+from .modelo_galpao import DadosGalpao, ElementoDimensionado, Peca, ProjetoGalpao, REPARTICAO_CUSTO
 from .perfis import Perfil, banco, perfil as achar_perfil
 
 # posição das terças extremas ao longo da água, em m (a mesma da planta de cobertura)
@@ -2118,7 +2118,7 @@ def _lista_de_material(p: ProjetoGalpao):
     n_port = d.n_porticos
     pecas: List[Peca] = []
 
-    def add(marca, descricao, perfil_nome, qtd, comp_m, material=None, obs=""):
+    def add(marca, descricao, perfil_nome, qtd, comp_m, material=None, obs="", pintada=True):
         try:
             perf = achar_perfil(perfil_nome)
         except Exception:
@@ -2134,7 +2134,7 @@ def _lista_de_material(p: ProjetoGalpao):
                           comprimento_m=round(comp_m, 2),
                           peso_unit_kg=round(peso_u, 1),
                           peso_total_kg=round(peso_u * qtd, 1),
-                          area_pintura_m2=round(perimetro * comp_m * qtd, 1),
+                          area_pintura_m2=round(perimetro * comp_m * qtd, 1) if pintada else 0.0,
                           observacao=obs))
 
     pilar = p.elemento("Pilar")
@@ -2152,8 +2152,10 @@ def _lista_de_material(p: ProjetoGalpao):
     if terca:
         linhas = terca.geometria.get("linhas", 0) * 2          # duas águas
         vaos = n_port - 1
+        # terças e longarinas vêm galvanizadas (fora da área a pintar, como a lista de
+        # material e o memorial dizem): antes entravam e quase dobravam a área e a tinta
         add("T1", "Terça", terca.perfil, linhas * vaos, d.espacamento_porticos,
-            material=d.aco_tercas)
+            material=d.aco_tercas, pintada=False)
         n_corr = terca.geometria.get("n_correntes", 0)
         if n_corr:
             pecas.append(Peca(marca="TC", descricao="Corrente/tirante de terça ø 16 mm",
@@ -2171,7 +2173,7 @@ def _lista_de_material(p: ProjetoGalpao):
     perfil_long = longarina.perfil if longarina else (terca.perfil if terca else "")
     if perfil_long:
         add("L1", "Longarina de fechamento", perfil_long, n_long * 2 * (n_port - 1),
-            d.espacamento_porticos, material=d.aco_tercas)
+            d.espacamento_porticos, material=d.aco_tercas, pintada=False)
     if cob:
         add("CC", "Diagonal de contraventamento de cobertura", cob.perfil,
             int(cob.geometria.get("quantidade", 8)),
@@ -2206,16 +2208,14 @@ def _lista_de_material(p: ProjetoGalpao):
         "area_pintura_m2": round(sum(x.area_pintura_m2 for x in pecas), 1),
     }
     custo_total = total * d.custo_kg
-    p.custo = {
-        "custo_kg": d.custo_kg,
-        "material": round(custo_total * 0.55, 2),
-        "fabricacao": round(custo_total * 0.22, 2),
-        "pintura": round(custo_total * 0.08, 2),
-        "montagem": round(custo_total * 0.15, 2),
+    p.custo = {"custo_kg": d.custo_kg}
+    for chave, _nome, fracao, _obs in REPARTICAO_CUSTO:
+        p.custo[chave] = round(custo_total * fracao, 2)
+    p.custo.update({
         "total": round(custo_total, 2),
         "por_m2": round(custo_total / d.area_coberta, 2) if d.area_coberta else 0.0,
         "observacao": "percentuais indicativos; confirme com orçamento de fornecedor.",
-    }
+    })
     if p.resumo_pesos["kg_por_m2"] > 45:
         p.avisos.append(f"Consumo de {p.resumo_pesos['kg_por_m2']} kg/m² está acima da faixa "
                         f"usual de galpões (18 a 35 kg/m²). Reveja vão, espaçamento e cargas.")

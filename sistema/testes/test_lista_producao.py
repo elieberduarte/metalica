@@ -143,3 +143,20 @@ def test_plano_de_corte_diz_o_que_sai_de_cada_barra():
     assert any(b["barras"] == 2 and b["cortes"] == [{"nome": "A", "comprimento": 5000, "qtd": 1}] for b in r["plano"])
     assert any("C (emenda)" in c["nome"] for b in r["plano"] for c in b["cortes"])
     assert "2× B 1.200" in lp.texto_dos_cortes([{"nome": "B", "comprimento": 1200, "qtd": 2}])
+
+
+def test_barras_sem_marca_de_mesmo_perfil_nao_viram_uma_posicao():
+    """Barras lançadas no 3D (sem marca de posição) caem no nome, que é o do perfil: as de comprimento diferente
+    viravam uma posição só, com o comprimento da primeira (Portaria Hermes, 03/10: 148,8 t em vez de 8,0 t)."""
+    from nucleo3d.modelo import Barra, Documento
+    doc = Documento(nome="sem marcas")
+    for i in range(3):                                   # 3 banzos de 6 m
+        doc.add(Barra(nome="U150X50X2.25", perfil="U150X50X2.25", inicio=(0, i * 1000, 3000), fim=(6000, i * 1000, 3000)))
+    for i in range(5):                                   # 5 montantes de 0,6 m, mesmo nome
+        doc.add(Barra(nome="U150X50X2.25", perfil="U150X50X2.25", inicio=(i * 1000, 5000, 0), fim=(i * 1000, 5000, 600)))
+    lev = det.levantar(doc, regra_tercas=False)
+    lista = lp.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"])
+    comps = sorted((li["comprimento"], li["quantidade"]) for li in lista["posicoes"])
+    assert comps == [(600, 5), (6000, 3)]
+    kg_m = lista["perfis"][0]["kg_m"]
+    assert abs(lista["totais"]["peso"] - kg_m * (3 * 6.0 + 5 * 0.6)) < 0.5

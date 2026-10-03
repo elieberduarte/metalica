@@ -469,8 +469,41 @@ def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional
                     proxies.append(ent)
                 continue
             acessorios[ent.nome or t] += 1
+    _separar_barras_sem_marca(pecas)
     _separar_variantes(pecas)
     return pecas, dict(acessorios)
+
+
+def _separar_barras_sem_marca(pecas: Sequence[Solido]) -> None:
+    """Barra paramétrica sem marca de posição (lançada no 3D, montada pela planta) cai no nome, que é o do perfil:
+    todas as barras do mesmo perfil viravam UMA posição, com a geometria da primeira e a quantidade de todas — os 480
+    U 150×50×4,76 da Portaria (banzos de 0,65 a 0,91 m e quatro de 34,2 m) saíam como 480 peças de 34,2 m, 143,7 t em
+    vez de ~4,4 t, na lista de materiais, no peso da barra do 3D e em qualquer orçamento feito em cima deles. Mesmo
+    nome com comprimento diferente ganha a marca "nome · comprimento" (" #2", " #3"… quando o comprimento repete com
+    corte diferente; o "(b)" é das variantes de furação das chapas), gravada no sólido do detalhamento (a barra do modelo não muda); as iguais continuam juntas, e
+    `fundir_posicoes_iguais` reúne o que for a mesma peça com nomes diferentes."""
+    grupos: Dict[str, Dict[tuple, List[Solido]]] = collections.OrderedDict()
+    for s in pecas:
+        b = getattr(s, "parametrica", None)
+        if not isinstance(b, Barra) or _marcas(s).get("posicao") or not s.nome:
+            continue
+        try:
+            medio, corte = _geo.comprimentos_da_barra(b)
+        except Exception:                                   # noqa: BLE001 — sem o comprimento, fica como estava
+            continue
+        grupos.setdefault(str(s.nome), collections.OrderedDict()).setdefault((round(corte), round(medio)), []).append(s)
+    for nome, por_geo in grupos.items():
+        if len(por_geo) < 2:
+            continue
+        usadas: Dict[str, int] = collections.Counter()
+        for (corte, _medio), ss in sorted(por_geo.items()):
+            marca = "%s · %d" % (nome, corte)
+            usadas[marca] += 1
+            if usadas[marca] > 1:
+                marca = "%s #%d" % (marca, usadas[marca])
+            for s in ss:
+                s.atributos = dict(s.atributos or {})
+                s.atributos["marcas"] = dict(_marcas(s), posicao=marca)
 
 
 def _forma_da_chapa(ch) -> Optional[tuple]:
