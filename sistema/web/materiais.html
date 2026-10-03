@@ -18,6 +18,10 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230b3d91'/><path d='M8 9h16M8 16h16M8 23h10' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round'/></svg>">
 <style>
   .materiais { max-width: 1320px; margin: 0 auto; padding: 18px 24px 60px; }
+  /* só o orçamento, dentro da aba Orçamento da tela Comercial (materiais.js, ?so=orcamento) */
+  html.so-orcamento header.topo, html.so-orcamento .materiais > section.obra, html.so-orcamento #cartoes,
+  html.so-orcamento #abas, html.so-orcamento #controle-barra { display: none !important; }
+  html.so-orcamento .materiais { max-width: none; padding: 0 2px 30px; }
   /* ---- cabeçalho da obra */
   .obra { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; margin: 4px 0 14px; }
   .obra .titulo { flex: 1; min-width: 260px; }

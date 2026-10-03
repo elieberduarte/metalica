@@ -8,6 +8,11 @@
 
 const $ = (s, raiz = document) => raiz.querySelector(s);
 const PROJETO = new URLSearchParams(location.search).get('projeto') || '';
+// o orçamento mora na tela Comercial (03/10/2026): lá ele é este quadro, aberto com ?so=orcamento dentro da aba
+// Orçamento; quem chega aqui por um link antigo (#orcamento) vai para lá
+const SO_ORCAMENTO = new URLSearchParams(location.search).get('so') === 'orcamento';
+if (SO_ORCAMENTO) document.documentElement.classList.add('so-orcamento');
+else if (location.hash === '#orcamento') location.replace(`/comercial?projeto=${encodeURIComponent(PROJETO)}#orcamento`);
 
 function el(tag, attrs = {}, ...filhos) {
   const e = document.createElement(tag);
@@ -131,6 +136,8 @@ const ABAS = [
 const COM_FILTRO = new Set(['perfis', 'corte', 'chapas', 'telhas', 'conjuntos', 'romaneio', 'acessorios']);
 let ABA = 'geral';
 try { ABA = (location.hash || '').slice(1) || localStorage.getItem('materiais.aba') || 'geral'; } catch (e) { /* sem armazenamento */ }
+if (SO_ORCAMENTO) ABA = 'orcamento';
+else if (ABA === 'orcamento') ABA = 'geral';
 if (!ABAS.some(([k]) => k === ABA)) ABA = 'geral';
 
 function montarAbas(contagem) {
@@ -139,14 +146,21 @@ function montarAbas(contagem) {
   busca.addEventListener('input', filtrar);
   const anterior = $('#filtro');
   if (anterior) busca.value = anterior.value;
-  nav.replaceChildren(...ABAS.map(([k, t]) => el('button', { type: 'button', class: k === ABA ? 'ativa' : '', 'data-aba': k, onclick: () => irPara(k) },
+  nav.replaceChildren(...ABAS.filter(([k]) => k !== 'orcamento').map(([k, t]) => el('button', { type: 'button', class: k === ABA ? 'ativa' : '', 'data-aba': k, onclick: () => irPara(k) },
     t, contagem[k] ? el('span', { class: 'qtd', texto: n(contagem[k]) }) : null)), el('span', { class: 'sep' }), busca);
   busca.hidden = !COM_FILTRO.has(ABA);
 }
 
+// os atalhos da busca (Plano de corte, Romaneio…) trocam só o # desta tela
+window.addEventListener('hashchange', () => {
+  const k = location.hash.slice(1);
+  if (k === 'orcamento' && !SO_ORCAMENTO) { location.replace(`/comercial?projeto=${encodeURIComponent(PROJETO)}#orcamento`); return; }
+  if (k !== ABA && ABAS.some(([a]) => a === k)) irPara(k);
+});
+
 function irPara(k) {
   ABA = k;
-  try { localStorage.setItem('materiais.aba', k); } catch (e) { /* sem armazenamento */ }
+  if (!SO_ORCAMENTO) try { localStorage.setItem('materiais.aba', k); } catch (e) { /* sem armazenamento */ }
   history.replaceState(null, '', location.pathname + location.search + '#' + k);
   for (const b of document.querySelectorAll('#abas button[data-aba]')) b.classList.toggle('ativa', b.dataset.aba === k);
   for (const p of document.querySelectorAll('.painel-aba')) p.hidden = p.dataset.aba !== k;
@@ -664,8 +678,10 @@ function desenharOrcamento() {
     el('button', { type: 'button', class: 'botao-m principal', texto: 'Gerar o resumo (PDF)', onclick: () => gravarOrcamento('pdf') }),
     arq.pdf ? el('a', { class: 'botao-m', href: arq.pdf.url, target: '_blank', rel: 'noopener', texto: 'Abrir o PDF' }) : null,
     arq.csv ? el('a', { class: 'botao-m', href: arq.csv.url, texto: 'CSV (Excel)' }) : null,
-    el('a', { class: 'botao-m', href: `/comercial?projeto=${encodeURIComponent(PROJETO)}#proposta`, texto: 'Proposta comercial →',
-      title: 'Abre a área comercial: a proposta usa o total de fechamento deste orçamento' }));
+    el('a', { class: 'botao-m', href: `/comercial?projeto=${encodeURIComponent(PROJETO)}#proposta`, texto: 'Proposta comercial →', target: '_top',
+      title: 'Abre a proposta: ela usa o total de fechamento deste orçamento',
+      // dentro da tela Comercial (aba Orçamento): só troca de aba lá
+      onclick: (ev) => { if (SO_ORCAMENTO && window.parent && typeof window.parent.irPara === 'function') { ev.preventDefault(); window.parent.irPara('proposta'); } } }));
 
   // ---- cabeçalho
   ORC_CAB = {};

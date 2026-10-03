@@ -57,7 +57,7 @@ let S = null;             // o estado que veio do servidor (proposta, contrato, 
 let ABA = 'proposta';
 let SUJO = false;
 try { ABA = (location.hash || '').slice(1) || localStorage.getItem('comercial.aba') || 'proposta'; } catch { /* */ }
-const ABAS = [['proposta', 'Proposta'], ['contrato', 'Contrato'], ['obra', 'Obra e pagamentos'], ['documentos', 'Documentos'], ['empresa', 'Empresa']];
+const ABAS = [['orcamento', 'Orçamento'], ['proposta', 'Proposta'], ['contrato', 'Contrato'], ['obra', 'Obra e pagamentos'], ['documentos', 'Documentos'], ['empresa', 'Empresa']];
 const marcar = () => { SUJO = true; const e = document.querySelector('.estado-sujo'); if (e) e.textContent = 'alterações não gravadas'; };
 
 /* ------------------------------------------------------------ campos ligados ao estado */
@@ -111,6 +111,16 @@ function tabelaLinhas(lista, colunas, classe, nova) {
   desenhar();
   return cx;
 }
+/* ------------------------------------------------------------ orçamento: o quadro da tela de materiais, inteiro aqui
+   (a lista de materiais × a tabela de preços da empresa e o fechamento; ver saida/orcamento.py) */
+let QUADRO_ORC = null;
+function abaOrcamento() {
+  if (!QUADRO_ORC) {
+    QUADRO_ORC = el('iframe', { class: 'quadro-orc', title: 'Orçamento da obra',
+      src: `/materiais?projeto=${encodeURIComponent(PROJETO)}&so=orcamento#orcamento` });
+  }
+  return QUADRO_ORC;
+}
 const caixa = (titulo, sub, ...filhos) => el('div', { class: 'caixa' }, el('h3', {}, titulo, sub ? el('small', { texto: sub }) : null), ...filhos);
 const vazio = (t) => el('div', { class: 'vazio', texto: t });
 
@@ -127,6 +137,14 @@ function montarAbas() {
     el('i', { class: 'ponto ' + (estado[k] || '') }), t)));
 }
 function irPara(k) {
+  // saindo do orçamento: o fechamento pode ter mudado (a proposta usa); sem nada por gravar, relê
+  if (ABA === 'orcamento' && k !== 'orcamento' && !SUJO) {
+    ABA = k;
+    try { localStorage.setItem('comercial.aba', k); } catch { /* */ }
+    history.replaceState(null, '', location.pathname + location.search + '#' + k);
+    carregar();
+    return;
+  }
   ABA = k;
   try { localStorage.setItem('comercial.aba', k); } catch { /* */ }
   history.replaceState(null, '', location.pathname + location.search + '#' + k);
@@ -144,7 +162,8 @@ function desenhar() {
   $('#quando').textContent = (S.historico || [])[0] ? `última ação: ${dataBR(S.historico[0].quando)}` : '';
   montarAbas();
   const c = $('#conteudo');
-  const f = { proposta: abaProposta, contrato: abaContrato, obra: abaObra, documentos: abaDocumentos, empresa: abaEmpresa }[ABA] || abaProposta;
+  if (ABA === 'orcamento' && c.firstChild && c.firstChild === QUADRO_ORC) return;   // o quadro já aberto não recarrega
+  const f = { orcamento: abaOrcamento, proposta: abaProposta, contrato: abaContrato, obra: abaObra, documentos: abaDocumentos, empresa: abaEmpresa }[ABA] || abaProposta;
   c.replaceChildren(f());
 }
 
@@ -495,13 +514,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const novo = (r.getAttribute('data-tema') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro')) === 'escuro' ? 'claro' : 'escuro';
     r.setAttribute('data-tema', novo);
     try { localStorage.setItem('galpao.tema', novo); } catch { /* */ }
+    try { if (QUADRO_ORC) QUADRO_ORC.contentDocument.documentElement.setAttribute('data-tema', novo); } catch { /* */ }
   });
-  $('#btn-materiais').addEventListener('click', () => { location.href = `/materiais?projeto=${encodeURIComponent(PROJETO)}#orcamento`; });
+  $('#btn-materiais').addEventListener('click', () => irPara('orcamento'));
   $('#btn-3d').addEventListener('click', () => { location.href = `/editor?projeto=${encodeURIComponent(PROJETO)}`; });
   $('#btn-voltar').addEventListener('click', () => {
     if (document.referrer && new URL(document.referrer).origin === location.origin && history.length > 1) history.back();
     else location.href = '/';
   });
   window.addEventListener('beforeunload', (ev) => { if (SUJO) { ev.preventDefault(); ev.returnValue = ''; } });
+  // as telas do cabeçalho (Comercial / Obra) e os atalhos da busca trocam só o # desta tela
+  window.addEventListener('hashchange', () => { const k = location.hash.slice(1); if (k !== ABA && ABAS.some(([a]) => a === k)) irPara(k); });
   carregar();
 });

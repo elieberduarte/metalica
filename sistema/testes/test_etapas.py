@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""A barra do projeto (web/etapas.js + saida/etapas_projeto.py): as seis etapas da obra (decisão de 03/10/2026),
-a situação de cada uma tirada dos arquivos, os atalhos apontando para itens que existem na barra única, e a barra
-presente em todas as telas de projeto."""
+"""O cabeçalho do projeto (web/etapas.js + saida/etapas_projeto.py): as quatro telas do projeto (03/10/2026: a
+primeira versão, com seis etapas numa faixa própria, deixou o topo com três linhas e o "Modelo 3D" duas vezes), a
+situação de cada uma tirada dos arquivos, os atalhos apontando para itens que existem na barra única, o cabeçalho
+entrando no da tela (uma linha só) e o orçamento como aba da tela Comercial."""
 import json
 import os
 import re
@@ -20,12 +21,12 @@ def _ler(*p):
         return f.read()
 
 
-def test_seis_etapas_na_ordem_e_situacao_pelos_arquivos():
+def test_quatro_telas_na_ordem_e_situacao_pelos_arquivos():
     with tempfile.TemporaryDirectory() as pasta:
         et = E.etapas("obra x", pasta, {"tipo": "ifc"})
-        assert [e["nome"] for e in et] == ["Entrada", "Modelo 3D", "Comercial", "Detalhamento", "Produção", "Obra"]
+        assert [e["nome"] for e in et] == ["Engenharia", "Comercial", "Produção", "Obra"]
         assert all(e["situacao"] == "" for e in et)
-        assert et[1]["url"] == "/dividida?projeto=obra%20x&vista=3d" and et[2]["url"].startswith("/comercial?projeto=obra%20x")
+        assert et[0]["url"] == "/dividida?projeto=obra%20x&vista=3d" and et[1]["url"].startswith("/comercial?projeto=obra%20x")
         open(os.path.join(pasta, "modelo.json"), "w").write("{}")
         os.makedirs(os.path.join(pasta, "detalhamento"))
         open(os.path.join(pasta, "detalhamento", "lista-de-materiais.json"), "w").write("{}")
@@ -33,14 +34,17 @@ def test_seis_etapas_na_ordem_e_situacao_pelos_arquivos():
         json.dump({"proposta": {"numero": "2026-001"}, "contrato": {"situacao": "minuta"},
                    "etapas": {"montagem": {"situacao": "andamento"}}}, open(os.path.join(pasta, "comercial", "comercial.json"), "w"))
         s = {e["chave"]: e["situacao"] for e in E.etapas("obra x", pasta, {"tipo": "ifc"})}
-        assert s == {"entrada": "feita", "modelo": "feita", "comercial": "andamento", "detalhamento": "",
-                     "producao": "andamento", "obra": "andamento"}
+        assert s == {"engenharia": "andamento", "comercial": "andamento", "producao": "andamento", "obra": "andamento"}
         json.dump({"proposta": {"numero": "2026-001"}, "contrato": {"situacao": "assinado"},
-                   "etapas": {"entrega": {"situacao": "concluida"}}}, open(os.path.join(pasta, "comercial", "comercial.json"), "w"))
+                   "etapas": {"entrega": {"situacao": "concluida"}, "projeto": {"situacao": "concluida"}}},
+                  open(os.path.join(pasta, "comercial", "comercial.json"), "w"))
         s = {e["chave"]: e["situacao"] for e in E.etapas("obra x", pasta, {"tipo": "ifc"})}
-        assert s["comercial"] == "feita" and s["obra"] == "feita"
+        assert s["engenharia"] == "feita" and s["comercial"] == "feita" and s["obra"] == "feita"
         galpao = E.etapas("g", pasta, {"tipo": "galpao"})
-        assert galpao[1]["url"] == "/dimensionar?projeto=g"
+        assert galpao[0]["url"] == "/dimensionar?projeto=g"
+        # o orçamento é da tela Comercial (aba Orçamento), também na Biblioteca (a tabela de preços)
+        assert E.etapas("g", pasta, {})[1]["itens"][0]["link"] == "/comercial?projeto=g#orcamento"
+        assert any(b["link"] == "/comercial?projeto=g#orcamento" for b in E.biblioteca("g"))
 
 
 def test_atalhos_apontam_para_itens_da_barra_unica():
@@ -65,6 +69,13 @@ def test_barra_em_todas_as_telas_de_projeto():
     assert "/etapas.js" not in _ler("cad", "cad.html") and "/etapas.js" not in _ler("editor3d", "editor.html")
     js = _ler("etapas.js")
     assert "window.top !== window" in js and "'/api/projetos/' + encodeURIComponent(PROJETO) + '/etapas'" in js
+    # uma linha só: as telas entram no cabeçalho que a tela já tem (na área de trabalho, o header.area-topo), e o
+    # que ele substitui some (a casa e o nome, o voltar, o tema, os painéis e a caixa de peça do 3D)
+    assert "document.querySelector('header.area-topo')" in js and "topo.insertBefore(p.abas, p.sep)" in js
+    for some in ("#btn-voltar-area", "#btn-tema-area", ".area-topo .acoes", '[data-parado="busca-pecas"]'):
+        assert some in js, some
+    # a busca única acha as peças do modelo aberto (a mesma pesquisa do 3D)
+    assert "e.pesquisarPecas(q.trim())" in js
     # a barra única carregada fora da área de trabalho (só pelo mapa) não monta nada
     assert "if (!document.getElementById('menus-unicos')) return;" in _ler("barra_unica.js")
 
@@ -76,5 +87,16 @@ def test_cartao_do_projeto_traz_as_etapas():
         p = g.criar("Obra teste", tipo="ifc")
         slug = p.get("slug") or os.listdir(raiz)[0]
         r = g.resumo(slug)
-        assert [e["chave"] for e in r["etapas"]] == ["entrada", "modelo", "comercial", "detalhamento", "producao", "obra"]
+        assert [e["chave"] for e in r["etapas"]] == ["engenharia", "comercial", "producao", "obra"]
         assert set(r["etapas"][0]) == {"chave", "nome", "situacao", "url"}
+
+
+def test_orcamento_como_aba_do_comercial():
+    com = _ler("comercial.js")
+    assert "['orcamento', 'Orçamento'], ['proposta', 'Proposta']" in com
+    assert "/materiais?projeto=${encodeURIComponent(PROJETO)}&so=orcamento#orcamento" in com
+    mat = _ler("materiais.js")
+    # dentro do Comercial, a tela de materiais mostra só o orçamento; aberta direto com #orcamento, vai para o Comercial
+    assert "get('so') === 'orcamento'" in mat and "location.replace(`/comercial?projeto=${encodeURIComponent(PROJETO)}#orcamento`)" in mat
+    assert "ABAS.filter(([k]) => k !== 'orcamento')" in mat
+    assert "html.so-orcamento header.topo" in _ler("materiais.html")

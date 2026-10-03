@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
-"""As etapas da obra para a barra do projeto (web/etapas.js), a mesma em todas as telas de um projeto.
+"""As telas do projeto para o cabeçalho (web/etapas.js), o mesmo em todas as telas de um projeto.
 
-Decisão do usuário (03/10/2026): seis etapas, na ordem em que a obra acontece — Entrada, Modelo 3D (com o cálculo
-dentro), Comercial (orçamento, proposta e contrato juntos), Detalhamento, Produção, Obra. Cada etapa diz onde se vai
-ao clicar, os atalhos dela (o menu que abre) e uma situação tirada dos arquivos do projeto: "feita", "andamento"
-ou "" (não começou). A situação é uma leitura, não um controle: o usuário marca as etapas da obra na tela Comercial.
+03/10/2026, primeira versão: seis etapas (Entrada, Modelo 3D, Comercial, Detalhamento, Produção, Obra). No mesmo dia
+o usuário achou o topo bagunçado ("3 linhas de informações, modelo 3D aparece 2 vezes"): Entrada, Modelo 3D e
+Detalhamento abriam a mesma área de trabalho, só com outra vista. Ficaram quatro telas, uma por setor da empresa:
+Engenharia (entrada do projeto, modelo 3D, cálculo e detalhamento: a área de trabalho, com a vista 2D/3D dentro),
+Comercial (orçamento, proposta, contrato), Produção (lista de materiais, corte, romaneio) e Obra (etapas e pagamentos).
+Cada tela diz onde se vai ao clicar, os atalhos dela (achados pela busca Ctrl+K) e uma situação tirada dos arquivos
+do projeto: "feita", "andamento" ou "" (não começou). A situação é uma leitura, não um controle: o usuário marca as
+etapas da obra na tela Comercial.
 """
 import json
 import os
@@ -46,11 +50,11 @@ def etapas(slug: str, pasta: str, projeto: dict) -> List[Dict]:
     def marcada(k: str) -> str:
         return str((marcadas.get(k) or {}).get("situacao") or "")
 
-    entrada = sit(bool(projeto.get("origem_ifc") or projeto.get("projeto_recebido") or tem_modelo or desenhos), False)
-    modelo = sit(tem_modelo and (_tem(pasta, "esforcos.json") or bool(proposta) or "lista-de-materiais.json" in detalh), tem_modelo)
-    com = sit(contrato.get("situacao") == "assinado", bool(proposta) or _tem(pasta, "orcamento", "orcamento.json"))
+    entrada = bool(projeto.get("origem_ifc") or projeto.get("projeto_recebido") or tem_modelo or desenhos)
+    modelo_feito = tem_modelo and (_tem(pasta, "esforcos.json") or bool(proposta) or "lista-de-materiais.json" in detalh)
     pranchas = any("prancha" in n.lower() for n in desenhos + detalh)
-    detalhamento = sit(pranchas or marcada("projeto") == "concluida", bool(desenhos) or "nomes.json" in detalh)
+    engenharia = sit(pranchas or marcada("projeto") == "concluida", entrada or modelo_feito or "nomes.json" in detalh)
+    com = sit(contrato.get("situacao") == "assinado", bool(proposta) or _tem(pasta, "orcamento", "orcamento.json"))
     producao = sit(marcada("pintura") == "concluida" or marcada("fabricacao") == "concluida",
                    "lista-de-materiais.json" in detalh or marcada("fabricacao") == "andamento")
     obra = sit(marcada("entrega") == "concluida", marcada("montagem") in ("andamento", "concluida"))
@@ -59,35 +63,31 @@ def etapas(slug: str, pasta: str, projeto: dict) -> List[Dict]:
     menu = lambda *caminho: {"menu": list(caminho)}                    # noqa: E731 — um item da barra única
     link = lambda url: {"link": url}                                   # noqa: E731
     return [
-        {"chave": "entrada", "nome": "Entrada", "situacao": entrada, "url": area + "&vista=2d",
-         "dica": "o que o cliente e o projetista mandaram: IFC, arquitetônico, projeto, considerações de cálculo",
-         "itens": [dict(texto="Importar IFC de outro programa…", **menu("Arquivo", "Importar", "IFC de outro programa…")),
+        {"chave": "engenharia", "nome": "Engenharia", "situacao": engenharia,
+         "url": ("/dimensionar?projeto=%s" % s) if galpao else area + "&vista=3d",
+         "dica": "projeto recebido, modelo 3D, cálculo e detalhamento",
+         "itens": [dict(texto="Abrir o modelo 3D", **link(area + "&vista=3d")),
+                   dict(texto="Abrir os desenhos 2D", **link(area + "&vista=2d")),
+                   dict(texto="Importar IFC de outro programa…", **menu("Arquivo", "Importar", "IFC de outro programa…")),
                    dict(texto="Importar o arquitetônico do cliente…", **menu("Arquivo", "Importar", "Arquitetônico do cliente (DXF/PDF)…")),
                    dict(texto="Importar o projeto do projetista…", **menu("Arquivo", "Importar", "Projeto do projetista (DXF/PDF)…")),
                    dict(texto="Ler folhas e considerações de cálculo", **menu("Modelo", "Montar pelo projeto recebido", "2. Ler folhas e considerações de cálculo")),
-                   dict(texto="Abrir a pasta do projeto", **menu("Arquivo", "Abrir a pasta do projeto"))]},
-        {"chave": "modelo", "nome": "Modelo 3D", "situacao": modelo,
-         "url": ("/dimensionar?projeto=%s" % s) if galpao else area + "&vista=3d",
-         "dica": "lançar, montar e calcular a estrutura",
-         "itens": [dict(texto="Abrir o modelo 3D", **link(area + "&vista=3d")),
                    dict(texto="Calcular a estrutura", **menu("Modelo", "Calcular a estrutura")),
                    dict(texto="Dimensionar: o perfil mais leve que passa…", **menu("Modelo", "Dimensionar: o perfil mais leve que passa…")),
                    dict(texto="Resultado da análise…", **menu("Modelo", "Resultado da análise…")),
                    dict(texto="Esforços da estrutura…", **menu("Modelo", "Esforços da estrutura…")),
                    dict(texto="Memorial do dimensionamento (PDF)", **menu("Modelo", "Memorial do dimensionamento (PDF)")),
-                   dict(texto="Eixos da obra…", **menu("Modelo", "Eixos da obra…"))]},
+                   dict(texto="Eixos da obra…", **menu("Modelo", "Eixos da obra…")),
+                   dict(texto="Detalhar peças e conjuntos…", **menu("Detalhamento", "Detalhar peças e conjuntos…")),
+                   dict(texto="Montar pranchas (automático)…", **menu("Detalhamento", "Pranchas", "Montar pranchas (automático)…")),
+                   dict(texto="PDF de todas as pranchas…", **menu("Arquivo", "Exportar", "PDF de todas as pranchas…")),
+                   dict(texto="Abrir a pasta do projeto", **menu("Arquivo", "Abrir a pasta do projeto"))]},
         {"chave": "comercial", "nome": "Comercial", "situacao": com, "url": "/comercial?projeto=%s#proposta" % s,
          "dica": "orçamento, proposta com as imagens do 3D e contrato",
-         "itens": [dict(texto="Orçamento da obra", **link("/materiais?projeto=%s#orcamento" % s)),
+         "itens": [dict(texto="Orçamento da obra", **link("/comercial?projeto=%s#orcamento" % s)),
                    dict(texto="Proposta comercial", **link("/comercial?projeto=%s#proposta" % s)),
                    dict(texto="Contrato", **link("/comercial?projeto=%s#contrato" % s)),
                    dict(texto="Documentos da obra", **link("/comercial?projeto=%s#documentos" % s))]},
-        {"chave": "detalhamento", "nome": "Detalhamento", "situacao": detalhamento, "url": area + "&vista=2d",
-         "dica": "desenhos de fabricação, conjuntos e pranchas",
-         "itens": [dict(texto="Abrir os desenhos", **link(area + "&vista=2d")),
-                   dict(texto="Detalhar peças e conjuntos…", **menu("Detalhamento", "Detalhar peças e conjuntos…")),
-                   dict(texto="Montar pranchas (automático)…", **menu("Detalhamento", "Pranchas", "Montar pranchas (automático)…")),
-                   dict(texto="PDF de todas as pranchas…", **menu("Arquivo", "Exportar", "PDF de todas as pranchas…"))]},
         {"chave": "producao", "nome": "Produção", "situacao": producao, "url": "/materiais?projeto=%s#geral" % s,
          "dica": "lista de materiais, plano de corte e os resumos da fábrica",
          "itens": [dict(texto="Lista de materiais", **link("/materiais?projeto=%s#geral" % s)),
@@ -96,16 +96,15 @@ def etapas(slug: str, pasta: str, projeto: dict) -> List[Dict]:
                    dict(texto="Resumo da obra e de materiais", **link("/materiais?projeto=%s#resumos" % s))]},
         {"chave": "obra", "nome": "Obra", "situacao": obra, "url": "/comercial?projeto=%s#obra" % s,
          "dica": "etapas, parcelas, aditivos e entrega",
-         "itens": [dict(texto="Etapas e pagamentos", **link("/comercial?projeto=%s#obra" % s)),
-                   dict(texto="Contrato", **link("/comercial?projeto=%s#contrato" % s))]},
+         "itens": [dict(texto="Etapas e pagamentos", **link("/comercial?projeto=%s#obra" % s))]},
     ]
 
 
 def biblioteca(slug: str) -> List[Dict]:
-    """O que vale para todas as obras (o botão Biblioteca da barra)."""
+    """O que vale para todas as obras (no menu do projeto, à esquerda do cabeçalho)."""
     s = quote(slug)
     return [{"texto": "Catálogo de peças e perfis", "link": "/catalogo"},
             {"texto": "Ligações e acessórios", "link": "/ligacoes"},
-            {"texto": "Tabela de preços", "link": "/materiais?projeto=%s#orcamento" % s, "dica": "botão \"Trocar a tabela…\" no orçamento"},
+            {"texto": "Tabela de preços", "link": "/comercial?projeto=%s#orcamento" % s, "dica": "botão \"Trocar a tabela…\" no orçamento"},
             {"texto": "Dados da empresa e logo", "link": "/comercial?projeto=%s#empresa" % s},
             {"texto": "Ajuda do programa", "link": "/ajuda", "nova": True}]
