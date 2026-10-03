@@ -113,6 +113,43 @@ const OPACIDADE_SEM_VALOR = 0.3;
 // finas fecham além de PX_GRADE_MIN e sobe quando passam de PX_GRADE_MAX — a folga
 // entre os dois é o que impede a grade de trocar de escala a cada clique da roda.
 // Entre MIN e CHEIA as linhas finas vão aparecendo aos poucos, para a troca não pular.
+// O piso (03/10/2026: "essa malha do piso dos modelos 3D confunde um pouco a visualização"): no lugar de linhas
+// de ponta a ponta, um plano só, desenhado pela placa de vídeo — tom neutro e discreto que some em degradê em volta
+// do ponto para onde se olha (sem borda nem "rede" no horizonte), e a grade com as linhas suavizadas pelo próprio
+// pixel (fwidth): de longe ou de lado elas se apagam sozinhas, sem o efeito de malha. Ver › Estilo › Piso escolhe
+// grade suave, piso liso ou nenhum (guardado no navegador).
+const PISO_VERTEX = `
+varying vec2 vMundo;
+void main() {
+  vec4 m = modelMatrix * vec4(position, 1.0);
+  vMundo = m.xy;
+  gl_Position = projectionMatrix * viewMatrix * m;
+}`;
+const PISO_FRAGMENT = `
+uniform float uPasso; uniform float uOpFina; uniform vec2 uCentro; uniform float uRaio;
+uniform vec3 uCorPiso; uniform float uAlfaPiso; uniform vec3 uCorLinha; uniform float uAlfaLinhas;
+varying vec2 vMundo;
+float linha(vec2 p, float passo, float largura) {
+  vec2 c = p / passo;
+  vec2 w = fwidth(c);
+  vec2 g = abs(fract(c - 0.5) - 0.5) / max(w, 1e-5);
+  float l = 1.0 - min(min(g.x, g.y) / largura, 1.0);
+  // densa demais na tela (longe ou de lado): some, em vez de virar moiré
+  return l * (1.0 - smoothstep(0.18, 0.45, max(w.x, w.y)));
+}
+void main() {
+  float d = length(vMundo - uCentro);
+  float fade = 1.0 - smoothstep(uRaio * 0.2, uRaio, d);
+  float fina = linha(vMundo, uPasso, 1.0) * uOpFina * 0.55;
+  float forte = linha(vMundo, uPasso * 10.0, 1.3);
+  float l = max(fina, forte) * uAlfaLinhas;
+  vec3 cor = mix(uCorPiso, uCorLinha, clamp(l * 1.6, 0.0, 1.0));
+  float a = fade * clamp(uAlfaPiso + l * 0.7, 0.0, 1.0);
+  if (a < 0.003) discard;
+  gl_FragColor = vec4(cor, a);
+}`;
+const MODOS_PISO = ['grade', 'liso', 'nenhum'];
+
 const PX_GRADE_MIN = 8;
 const PX_GRADE_ALVO = 14;
 const PX_GRADE_CHEIA = 26;
@@ -233,6 +270,21 @@ export class Cena {
     this.grade = new THREE.Group();
     this.grade.name = 'grade';
     this.cena.add(this.grade);
+    let modo = 'grade';
+    try { modo = localStorage.getItem('metalica.piso3d') || 'grade'; } catch { /* sem armazenamento */ }
+    this.modoPiso = MODOS_PISO.includes(modo) ? modo : 'grade';
+    this.piso = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+      vertexShader: PISO_VERTEX, fragmentShader: PISO_FRAGMENT, transparent: true, depthWrite: false,
+      uniforms: {
+        uPasso: { value: 1 }, uOpFina: { value: 0.75 }, uCentro: { value: new THREE.Vector2(0, 0) }, uRaio: { value: 30 },
+        uCorPiso: { value: new THREE.Color() }, uAlfaPiso: { value: 0.5 }, uCorLinha: { value: new THREE.Color() }, uAlfaLinhas: { value: 1 },
+      },
+    }));
+    this.piso.name = 'piso';
+    this.piso.renderOrder = -10;
+    this.piso.position.z = -0.001;
+    this.grade.add(this.piso);
+    this._dirCamera = new THREE.Vector3();
 
     this.eixos = new THREE.Group();
     this.eixos.name = 'eixos';
@@ -333,17 +385,33 @@ export class Cena {
       return;
     }
     this._construirGrade(extensao, passo, opacidade);
-    this._construirEixos(Math.max(6, extensao * 0.45));
+    // os eixos: referência da origem, curtos e apagados (não uma régua até o horizonte)
+    this._construirEixos(Math.min(Math.max(3, extensao * 0.12), 30));
   }
 
   /** Só a transparência das linhas finas, sem refazer a grade. */
   _opacidadeGradeFina(opacidade) {
     this._gradeOpacidadeFina = opacidade;
-    const m = this._matGradeFina;
-    if (!m || Math.abs(m.opacity - opacidade) < 0.005) return;
-    m.opacity = opacidade;
-    m.visible = opacidade > 0.02;
+    const u = this.piso.material.uniforms.uOpFina;
+    if (Math.abs(u.value - opacidade) < 0.005) return;
+    u.value = opacidade;
     this.pedirQuadro();
+  }
+
+  /** Ver › Estilo › Piso: 'grade' (suave), 'liso' (só o tom do piso) ou 'nenhum'. */
+  definirPiso(modo) {
+    if (!MODOS_PISO.includes(modo)) return this.modoPiso;
+    this.modoPiso = modo;
+    try { localStorage.setItem('metalica.piso3d', modo); } catch { /* sem armazenamento */ }
+    this._aplicarModoPiso();
+    this.pedirQuadro();
+    return modo;
+  }
+
+  _aplicarModoPiso() {
+    if (!this.piso) return;
+    this.piso.visible = this.modoPiso !== 'nenhum';
+    this.piso.material.uniforms.uAlfaLinhas.value = this.modoPiso === 'grade' ? 1 : 0;
   }
 
   _construirGrade(extensao, passo, opacidadeFina = null) {
@@ -353,32 +421,16 @@ export class Cena {
     if (opacidadeFina === null || opacidadeFina === undefined) opacidadeFina = 0.75;
     this._gradeOpacidadeFina = opacidadeFina;
     this._matGradeFina = null;
-    for (const f of this.grade.children.slice()) {
-      this.grade.remove(f);
-      f.geometry.dispose(); f.material.dispose();
-    }
-    const finas = [], grossas = [];
-    const n = Math.round(extensao / passo);
-    for (let i = -n; i <= n; i++) {
-      const v = i * passo;
-      const forte = Math.abs(i % 10) < 1e-9;
-      const alvo = forte ? grossas : finas;
-      alvo.push(-extensao, v, 0, extensao, v, 0);
-      alvo.push(v, -extensao, 0, v, extensao, 0);
-    }
-    const corFina = this.escuro ? 0x232e3d : 0xd3dbe7;
-    const corForte = this.escuro ? 0x35455c : 0xb6c2d4;
-    for (const [pts, cor, op] of [[finas, corFina, opacidadeFina], [grossas, corForte, 1]]) {
-      if (!pts.length) continue;
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-      const m = new THREE.LineBasicMaterial({ color: cor, transparent: true, opacity: op,
-                                              depthWrite: false });
-      if (pts === finas) { this._matGradeFina = m; m.visible = op > 0.02; }
-      const linhas = new THREE.LineSegments(g, m);
-      linhas.renderOrder = -10;
-      this.grade.add(linhas);
-    }
+    const u = this.piso.material.uniforms;
+    u.uPasso.value = passo;
+    u.uOpFina.value = opacidadeFina;
+    u.uRaio.value = Math.max(12, extensao * 0.62);
+    // tons neutros (sem o azul da estrutura): o piso um pouco mais claro que o fundo no escuro, e o contrário no claro
+    u.uCorPiso.value.set(this.escuro ? 0x222c3a : 0xdde3ea);
+    u.uCorLinha.value.set(this.escuro ? 0x4a5668 : 0xbcc5d0);
+    u.uAlfaPiso.value = this.escuro ? 0.62 : 0.65;
+    this._aplicarModoPiso();
+    this.piso.scale.set(extensao * 2, extensao * 2, 1);
     this.chao.scale.set(extensao * 2.4, extensao * 2.4, 1);
     const sombra = Math.max(40, extensao * 0.9);
     const sc = this.luzSol.shadow.camera;
@@ -399,9 +451,9 @@ export class Cena {
       const m = tracejado
         ? new THREE.LineDashedMaterial({ color: cor, dashSize: tamanho / 40,
                                          gapSize: tamanho / 40, transparent: true,
-                                         opacity: 0.25, depthWrite: false })
+                                         opacity: 0.15, depthWrite: false })
         // só de referência: apagado, para não disputar com a estrutura
-        : new THREE.LineBasicMaterial({ color: cor, transparent: true, opacity: 0.45,
+        : new THREE.LineBasicMaterial({ color: cor, transparent: true, opacity: 0.35,
                                         depthWrite: false });
       const l = new THREE.Line(g, m);
       if (tracejado) l.computeLineDistances();
@@ -1257,6 +1309,13 @@ export class Cena {
 
   desenhar(camera) {
     if (!camera) return;
+    if (this.piso && this.piso.visible) {
+      // o centro do degradê do piso: onde o olhar da câmera encontra o chão (ou embaixo dela, olhando para o horizonte)
+      const d = camera.getWorldDirection(this._dirCamera);
+      const c = camera.position;
+      const t = d.z < -0.08 ? Math.min(-c.z / d.z, this._gradeExtensao || 1e4) : 0;
+      this.piso.material.uniforms.uCentro.value.set(c.x + d.x * t, c.y + d.y * t);
+    }
     this.renderizador.render(this.cena, camera);
   }
 

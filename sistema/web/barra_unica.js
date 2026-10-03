@@ -177,6 +177,10 @@
         { texto: 'Esqueleto (só linhas)', lado: '3d', sel: '#modos-exibicao [data-esqueleto]', marcado: 'aria-pressed', antes: 'Ver › Esqueleto (só linhas)' },
         HR,
         I('Sombras', '3d', 'sombras', { antes: 'Ver › Sombras' }),
+        HR, T('piso'),
+        F('Grade suave', 'piso-grade', { dica: 'o tom do piso e a grade, que somem com a distância' }),
+        F('Piso liso', 'piso-liso', { dica: 'só o tom do piso, sem linhas' }),
+        F('Sem piso', 'piso-nenhum'),
       ]),
       I('Arquitetônico, eixos e níveis', '3d', 'referencia', { antes: 'Ver › Arquitetônico, eixos e níveis' }),
       HR, T('desenho 2D'),
@@ -437,6 +441,11 @@
     if (fn === 'seguir') { var s = $('#seguir'); if (s) s.click(); return; }
     if (fn === 'modo-planta' || fn === 'modo-elevacao') { var b = document.querySelector('.grupo-modo button[data-modo="' + fn.slice(5) + '"]'); if (b) b.click(); return; }
     if (fn === 'trocar') { var t = $('#btn-trocar'); if (t) t.click(); return; }
+    if (fn.indexOf('piso-') === 0) {                   // Ver › Estilo › Piso (o 3D guarda a escolha)
+      var w3 = janela('3d');
+      try { w3.editor.cena.definirPiso(fn.slice(5)); } catch (e) { /* 3D ainda carregando */ }
+      return;
+    }
     if (fn === 'tema') {
       // o tema efetivo: o escolhido ou, sem escolha, o do sistema (como as telas decidem)
       var efetivo = function (d, w) {
