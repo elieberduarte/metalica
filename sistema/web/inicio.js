@@ -125,6 +125,10 @@ function cartao(p) {
     conteudo.push(['≡ Lista de materiais', 'desenho', null, `/materiais?projeto=${encodeURIComponent(p.slug)}`,
                    'Romaneio por posição, perfis com barras comerciais, chapas, conjuntos e acessórios; CSV e PDF']);
   }
+  if (p.tem_materiais || p.tem_comercial) {
+    conteudo.push(['◆ Comercial', 'desenho', null, `/comercial?projeto=${encodeURIComponent(p.slug)}`,
+                   'Proposta técnica comercial (com imagens do 3D), contrato, etapas da obra, parcelas e aditivos']);
+  }
   // desenhos 2D gravados: cada um abre direto no CAD, sem gerar nada de novo; além de 6,
   // uma pílula "+N" mostra o resto
   const desenhos = p.desenhos || [];

@@ -153,6 +153,117 @@ export class MetodosDiagnostico {
     if (p.get('teste') === '1') {
       setTimeout(() => this._congelarParaCaptura(), Number(p.get('captura')) || 7000);
     }
+    if (p.get('render') === '1') this._modoApresentacao();
+  }
+
+  /**
+   * ?render=1 — as imagens do modelo para a proposta comercial (saida/proposta.py abre esta
+   * página num Chrome sem janela e chama window.__render). Só o desenho do WebGL: a área 3D
+   * ocupa a janela, sem grade, eixos nem seleção, num fundo claro de estúdio. Nada é gravado.
+   */
+  _modoApresentacao() {
+    const cena = this.cena;
+    this.el.palco.style.cssText += ';position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483000;';
+    cena.grade.visible = false;
+    cena.eixos.visible = false;
+    try { this.selecao.limpar(); } catch { /* nada selecionado */ }
+    const c = document.createElement('canvas');
+    c.width = 4; c.height = 256;
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, '#f7f9fc'); grad.addColorStop(0.6, '#ffffff'); grad.addColorStop(1, '#eef2f7');
+    g.fillStyle = grad; g.fillRect(0, 0, 4, 256);
+    const fundo = new cena.cena.background.constructor(c);
+    fundo.colorSpace = cena.cena.background.colorSpace;
+    if (cena.cena.background.dispose) cena.cena.background.dispose();
+    cena.cena.background = fundo;
+    // os ângulos da apresentação: direção da câmera vista do centro do modelo (z para cima)
+    const ANGULOS = {
+      aerea_frente: { dir: [0.95, -1.25, 0.8] }, aerea_tras: { dir: [-0.95, 1.25, 0.8] },
+      perspectiva: { dir: [1.35, -0.7, 0.3] }, lateral: { dir: [0.18, -1, 0.22] },
+      topo: { dir: [0.0001, -0.0001, 1], cima: [0, 1, 0] }, interna: { dir: [0.35, -1, 0.12] },
+    };
+    const quadros = (n) => new Promise((ok) => { let i = 0; const f = () => (++i >= n ? ok() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+    const doc = this.documento;
+    const aparecia = doc.aparece.bind(doc);
+    let comTelhas = false;
+    // "com cobertura": as telhas aparecem na cena sem mexer na camada do modelo (nada vai para o disco);
+    // a referência (eixos, níveis, arquitetônico) e a camada Referência não entram nas imagens
+    doc.aparece = (ent) => {
+      const cam = String((ent && ent.camada) || '');
+      if (/^refer/i.test(cam)) return false;
+      if (comTelhas && /^(telhas?|rufos?|calhas?|cumeeiras?)$/i.test(cam) && ent && ent.visivel !== false) return true;
+      return aparecia(ent);
+    };
+    const esconderReferencia = () => {
+      for (const nome of ['referencia-lancamento']) {
+        const g = cena.cena.getObjectByName(nome);
+        if (g) g.visible = false;
+      }
+    };
+    // enquadra os 8 cantos do modelo no quadro (o zoom da extensão usa a esfera e deixa o galpão pequeno)
+    const enquadrarJusto = (dir, cima) => {
+      const cam = this.camera.perspectiva || this.camera.ativa;
+      const V = cam.position.constructor;
+      const caixa = doc.caixa([...doc.entidades.values()].filter((e) => doc.aparece(e)).map((e) => e.id));
+      const esc = cena.raiz.scale.x;
+      const cantos = [];
+      for (const x of [caixa[0][0], caixa[1][0]]) for (const y of [caixa[0][1], caixa[1][1]]) for (const z of [caixa[0][2], caixa[1][2]]) cantos.push(new V(x * esc, y * esc, z * esc));
+      const centro = new V((caixa[0][0] + caixa[1][0]) / 2 * esc, (caixa[0][1] + caixa[1][1]) / 2 * esc, (caixa[0][2] + caixa[1][2]) / 2 * esc);
+      const d = new V(...dir).normalize();
+      cam.up.set(...(cima || [0, 0, 1]));
+      if (cam.clearViewOffset) cam.clearViewOffset();
+      const medir = (dist) => {
+        cam.position.copy(centro).addScaledVector(d, dist);
+        cam.lookAt(centro);
+        cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+        let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, atras = false;
+        for (const c of cantos) {
+          const q = c.clone().project(cam);
+          if (q.z > 1 || q.z < -1) atras = true;
+          x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
+        }
+        return { x0, x1, y0, y1, ext: atras ? 99 : Math.max((x1 - x0) / 2, (y1 - y0) / 2) };
+      };
+      // bisseção na distância: o retângulo projetado (já recentrado) ocupa 88 % do quadro
+      const raio = cantos.reduce((m, c) => Math.max(m, c.distanceTo(centro)), 1);
+      let lo = raio * 0.3, hi = raio * 12;
+      for (let k = 0; k < 40; k++) {
+        const mid = (lo + hi) / 2;
+        if (medir(mid).ext > 0.88) lo = mid; else hi = mid;
+      }
+      const m = medir(hi);
+      // recentra deslocando o "filme" da câmera, sem mudar a perspectiva
+      const tam = cena.renderizador.getSize(new V());
+      const W = Math.max(1, Math.round(tam.x)), H = Math.max(1, Math.round(tam.y));
+      const cx = (m.x0 + m.x1) / 2, cy = (m.y0 + m.y1) / 2;
+      if (cam.setViewOffset) cam.setViewOffset(W, H, cx * W / 2, -cy * H / 2, W, H);
+      if (this.camera.controles) { this.camera.controles.target.copy(centro); }
+      cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+    };
+    window.__render = async (nomes, formato = 'image/jpeg', qualidade = 0.92) => {
+      const saida = [];
+      for (const pedido of nomes) {
+        // "aerea_frente+telhas": o mesmo ângulo com a cobertura
+        const [nome, extra] = String(pedido).split('+');
+        const querTelhas = extra === 'telhas';
+        if (querTelhas !== comTelhas) { comTelhas = querTelhas; cena.repintarTudo(); await quadros(4); }
+        esconderReferencia();
+        const a = ANGULOS[nome] || ANGULOS.aerea_frente;
+        this.camera.concluirAnimacao();
+        enquadrarJusto(a.dir, a.cima);
+        cena._ajustarSombras && cena._ajustarSombras();
+        await quadros(3);
+        cena.desenhar(this.camera.ativa);
+        saida.push({ nome: String(pedido).replace('+', '_'), imagem: this.el.canvas.toDataURL(formato, qualidade) });
+      }
+      if (comTelhas) { comTelhas = false; cena.repintarTudo(); }
+      const cam = this.camera.perspectiva || this.camera.ativa;
+      if (cam.clearViewOffset) cam.clearViewOffset();
+      return saida;
+    };
+    window.__temTelhas = () => [...doc.entidades.values()].some((e) => /^(telhas?)$/i.test(String(e.camada || '')));
+    quadros(8).then(() => { window.__renderPronto = true; });
   }
 
   /**

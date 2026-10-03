@@ -663,7 +663,9 @@ function desenharOrcamento() {
     el('button', { type: 'button', class: 'botao-m', texto: 'Gravar', onclick: () => gravarOrcamento('') }),
     el('button', { type: 'button', class: 'botao-m principal', texto: 'Gerar o resumo (PDF)', onclick: () => gravarOrcamento('pdf') }),
     arq.pdf ? el('a', { class: 'botao-m', href: arq.pdf.url, target: '_blank', rel: 'noopener', texto: 'Abrir o PDF' }) : null,
-    arq.csv ? el('a', { class: 'botao-m', href: arq.csv.url, texto: 'CSV (Excel)' }) : null);
+    arq.csv ? el('a', { class: 'botao-m', href: arq.csv.url, texto: 'CSV (Excel)' }) : null,
+    el('a', { class: 'botao-m', href: `/comercial?projeto=${encodeURIComponent(PROJETO)}#proposta`, texto: 'Proposta comercial →',
+      title: 'Abre a área comercial: a proposta usa o total de fechamento deste orçamento' }));
 
   // ---- cabeçalho
   ORC_CAB = {};

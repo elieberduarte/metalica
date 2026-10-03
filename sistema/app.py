@@ -2159,6 +2159,23 @@ def rota_orcamento(s: str, acao: str = "", corpo: Optional[dict] = None) -> dict
     return R
 
 
+def rota_comercial(s: str, acao: str = "", corpo: Optional[dict] = None, porta: int = 0) -> dict:
+    """GET/POST /api/projetos/<s>/comercial[/<ação>]: proposta técnica comercial, contrato, etapas da obra,
+    parcelas, aditivos e termo de aceite (saida/comercial_servico.py). Tela: /comercial?projeto=<s>."""
+    from saida import comercial_servico as CS
+    g = _gerente()
+    pasta = g._existente(s)
+    ctx = CS.Contexto(s, pasta, PROJETOS, g.ler(s), lambda: lista_de_materiais(s), lambda: _orcamento_montado(s),
+                      lambda cam: _descrever_arquivo(cam, pasta), porta)
+    try:
+        return CS.tratar(ctx, acao, corpo, avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+    except ValueError as exc:
+        raise ErroDeDados(str(exc))
+    finally:
+        if acao == "imagens":
+            _fim_progresso(s)
+
+
 REPOSITORIO = "elieberduarte/metalica"
 
 
@@ -3746,6 +3763,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(dados_dos_resumos(partes[0]))
                 if len(partes) == 2 and partes[1] == "orcamento":
                     return self._json(rota_orcamento(partes[0]))
+                if len(partes) == 2 and partes[1] == "comercial":
+                    return self._json(rota_comercial(partes[0]))
                 if len(partes) == 2 and partes[1] == "cantos":
                     return self._json(cantos_do_projeto(partes[0]))
                 if len(partes) == 3 and partes[1] == "cantos" and partes[2] == "previa":
@@ -3773,6 +3792,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "cad", "cad.html"), WEB)
             if rota in ("/materiais", "/lista-de-materiais"):
                 return self._arquivo(os.path.join(WEB, "materiais.html"), WEB)
+            if rota in ("/comercial", "/proposta", "/contrato"):
+                return self._arquivo(os.path.join(WEB, "comercial.html"), WEB)
             if rota in ("/analise", "/resultado-da-analise"):
                 return self._arquivo(os.path.join(WEB, "analise.html"), WEB)
             if rota in ("/memorial", "/memorial-de-calculo"):
@@ -3873,6 +3894,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(gerar_resumos_projeto(partes[0], corpo))
+                if len(partes) in (2, 3) and partes[1] == "comercial":
+                    return self._json(rota_comercial(partes[0], partes[2] if len(partes) == 3 else "",
+                                                     corpo if isinstance(corpo, dict) else {}, self.server.server_address[1]))
                 if len(partes) in (2, 3) and partes[1] == "orcamento":
                     return self._json(rota_orcamento(partes[0], partes[2] if len(partes) == 3 else "",
                                                      corpo if isinstance(corpo, dict) else {}))
