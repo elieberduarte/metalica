@@ -51,6 +51,19 @@ def test_quando_o_detalhamento_fica_velho(tmp_path):
     assert d == {"detalhamento-tesouras": "g2", "detalhamento-terças": "g3", "pranchas": "g4"}
 
 
+def test_primeiro_detalhamento_parcial_fica_carimbado(tmp_path):
+    """o detalhar grava a geração de cada desenho antes do carimbo: o primeiro parcial (só chaparias e terças) não
+    pode ficar sem o código — senão o CAD acha o detalhamento velho e refaz tudo na hora (conferência de 03/10)"""
+    g = _Gerente(str(tmp_path))
+    os.makedirs(tmp_path / "p" / "detalhamento")
+    (tmp_path / "p" / "modelo.json").write_text("{}", encoding="utf-8")
+    dv.configurar(gerente=lambda: g)
+    g.desenhos = [{"nome": "detalhamento-chaparias"}]
+    dv.registrar_desenho("p", "detalhamento-chaparias", "g1")
+    dv.gravar_carimbo("p", {"detalhamento-chaparias": "g1"}, completo=False, extra={"pendente_3d": {}})
+    assert dv.por_que_velho("p") == ""
+
+
 def test_cores_escolhidas_no_cad_valem_no_projeto(tmp_path):
     """a cor mudada no CAD (um perfil, pedido do usuário, 28/09) fica no projeto: vale nos desenhos gerados
     depois e nos já gravados, menos o aberto no CAD; o mesmo perfil em outra função pega a mesma cor"""

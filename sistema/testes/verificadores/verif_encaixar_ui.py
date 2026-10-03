@@ -69,7 +69,10 @@ try:
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=900, deviceScaleFactor=1, mobile=False)
     aba.navegar(base + "/editor?projeto=encx", limite=60)
     t0 = time.time()
-    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 4 && editor.ferramentas && editor.ferramentas.get('encaixar'))"):
+    # os perfis dobrados (o U FF, o TQ) chegam depois do banco básico (acrescentarPerfis): antes disso a barra tem a
+    # seção provisória 100×200 e a malha medida não é a da peça (a falha intermitente da conferência de 03/10)
+    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 4 && editor.ferramentas && editor.ferramentas.get('encaixar')"
+                                                    " && editor.cena.perfil(%s) && editor.cena.perfil('TQ 40×40×1,5'))" % json.dumps(BZ)):
         aba.drenar(0.5)
     aba.drenar(1.0)
     ok(aba.avaliar("!!document.querySelector('#barra-ferramentas [data-id=\"encaixar\"]')"), "o botão Encaixar ponta está na coluna do editor")

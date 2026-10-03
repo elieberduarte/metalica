@@ -107,8 +107,19 @@ try:
     # o clique na borda de uma folha pega a folha inteira (moldura e carimbo levam `folha`)
     ok(aba.avaliar("(() => { const e = [...window.cad.doc.entidades.values()].find(o => (o.atributos || {}).folha && (o.atributos || {}).prancha_numero === 2); return e ? window.cad.pecaDe(e.id).length > 20 : false; })()"),
        "a moldura da folha 2 é um grupo (o clique pega a folha inteira)")
-    # PDF de todas as pranchas pelo CAD
+    # R6 (02/10): as terças T.O.3/5/6 deste modelo têm o par a 60 mm na altura, ligadas sem chapa — o 3D não corrige
+    # sozinho e as pranchas não saem; acertada a ligação (aqui: o carimbo sem a pendência), saem
     aba.avaliar("window.__aberto = null; window.open = (u) => { window.__aberto = u; return null; }; window.cad.pdfDasPranchas(); 1")
+    t0 = time.time()
+    while time.time() - t0 < 60 and "não podem ser emitidas" not in (aba.avaliar("document.body.innerText") or ""): aba.drenar(1.0)
+    ok("passo da máquina" in (aba.avaliar("document.body.innerText") or "") and not aba.avaliar("window.__aberto"),
+       "PDF recusado com a terça fora do passo da máquina (R6)")
+    arq_car = os.path.join(DADOS, "compressores", "detalhamento", "carimbo.json")
+    car = json.load(open(arq_car, encoding="utf-8")); car["fora_da_maquina"] = []
+    json.dump(car, open(arq_car, "w", encoding="utf-8"))
+    aba.console.clear()
+    # PDF de todas as pranchas pelo CAD
+    aba.avaliar("window.__aberto = null; window.cad.pdfDasPranchas(); 1")
     t0 = time.time()
     while time.time() - t0 < 180 and not aba.avaliar("window.__aberto"): aba.drenar(1.0)
     u = aba.avaliar("window.__aberto")

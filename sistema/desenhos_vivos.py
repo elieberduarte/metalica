@@ -143,7 +143,9 @@ def gravar_carimbo(s: str, geracoes: dict = None, completo: bool = True, extra: 
     carimbo inteiro passa a valer; parcial, só as gerações dos desenhos refeitos."""
     with _trava:
         c = ler_carimbo(s)
-        if completo or not c:
+        # sem o código, o carimbo nunca foi feito: o detalhamento grava a geração de cada desenho antes
+        # (registrar_desenho), e o primeiro parcial ficava sem carimbo — e se refazia sozinho na hora
+        if completo or not c.get("codigo"):
             c.update(carimbo(s))
             c["quando"] = time.strftime("%Y-%m-%d %H:%M:%S")
             c.pop("erro", None)

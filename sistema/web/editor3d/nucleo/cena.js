@@ -907,10 +907,13 @@ export class Cena {
     // Uma rodada só: antes eram 80 chaves por vez, e cada rodada refazia o modelo
     // inteiro na tela — num IFC com centenas de chapas isso eram várias travadas de
     // segundos em sequência, que é o que o usuário sentia como "calculando o tempo todo".
-    const amostras = [...porChave.values()];
+    // A peça como foi pedida (e a chave dela): se ela mudar enquanto o servidor responde — o segundo plano do
+    // Encaixar ponta, o bico —, a malha que volta é a de antes e fica na chave de antes, não na de agora.
+    const pedidas = [...porChave].map(([chave, e]) => [chave, JSON.parse(JSON.stringify(e))]);
+    const amostras = pedidas.map(([, e]) => e);
     const docJSON = {
       nome: this.documento.nome, unidade: 'mm',
-      entidades: amostras.map(e => JSON.parse(JSON.stringify(e))),
+      entidades: amostras,
       camadas: {}, materiais: {},
     };
     let resposta;
@@ -926,9 +929,8 @@ export class Cena {
     const malhas = (resposta && resposta.malhas) || {};
     const chavesTrocadas = new Set();
     let trocadas = 0;
-    for (const ent of amostras) {
+    for (const [chave, ent] of pedidas) {
       const reg = malhas[ent.id];
-      const chave = this._chaveDe(ent);
       // Uma malha recusada fica com a seção local e não é pedida de novo — senão cada
       // reconstrução repetiria o mesmo pedido fadado a falhar.
       if (!reg || reg.erro || !reg.vertices || !reg.faces) {
