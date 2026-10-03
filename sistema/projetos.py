@@ -337,9 +337,19 @@ class Projetos:
                 "origem_ifc": p.get("origem_ifc"), "entregas": entregas, "pasta": pasta,
                 "tem_materiais": os.path.exists(os.path.join(pasta, "detalhamento", "lista-de-materiais.json")),
                 "tem_comercial": os.path.exists(os.path.join(pasta, "comercial", "comercial.json")),
+                "etapas": self._etapas(s, pasta, p),
                 "aberto_por": self.aberto_por(s), "arquivado": bool(p.get("arquivado")),
                 "desenhos": [{"nome": d["nome"], "titulo": d.get("titulo") or d["nome"], "vistas": d.get("vistas") or []}
                              for d in self.listar_desenhos(s, contar=False)]}
+
+    @staticmethod
+    def _etapas(s: str, pasta: str, p: dict) -> list:
+        """As etapas da obra no cartão do projeto (as mesmas da barra do projeto, saida/etapas_projeto.py), sem os atalhos."""
+        try:
+            from saida.etapas_projeto import etapas
+            return [{k: e[k] for k in ("chave", "nome", "situacao", "url")} for e in etapas(s, pasta, p)]
+        except Exception:                                    # noqa: BLE001 — o cartão sai sem as etapas
+            return []
 
     def listar(self) -> List[dict]:
         if not os.path.isdir(self.raiz):

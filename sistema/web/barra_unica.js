@@ -28,8 +28,8 @@
   function S(texto, itens, extra) { var o = { texto: texto, sub: itens }; for (var k in extra || {}) o[k] = extra[k]; return o; }
   function F(texto, fn, extra) { var o = { texto: texto, fn: fn }; for (var k in extra || {}) o[k] = extra[k]; return o; }
 
-  // Os menus na ordem da obra (UI1, 30/09/2026 — aprovado no protótipo Projeto/Prototipo-faixa-e-menus-v3.html):
-  // Arquivo · Modelo · Cálculo · Desenho · Produção · Ver · ?. Sem 2D/3D à mostra: o item sabe o lado dele e a
+  // Os menus da área de trabalho (UI1, 30/09/2026; enxutos em 03/10/2026 — Projeto/Navegacao-analise-e-proposta-2026-10-03.pdf):
+  // Arquivo · Modelo (com o cálculo) · Detalhamento · Ver · ?. Ir para outra tela é pela barra de etapas (etapas.js). Sem 2D/3D à mostra: o item sabe o lado dele e a
   // vista troca sozinha. `antes` é onde o item ficava até a 0.8.53 (? › Onde foi parar…); `dica` sai miúda
   // embaixo; `requer: 'sel'` apaga o item, com o motivo, sem peça selecionada no lado dele.
   var MAPA = [
@@ -95,17 +95,28 @@
       ]),
       I('Verificar apoios…', '3d', 'verificar-apoios', { antes: 'Estrutura › Verificar apoios…' }),
       { texto: 'Ligações e acessórios…', link: '/ligacoes', dica: 'abre a tela das ligações', antes: 'Estrutura › Ligações e acessórios…' },
-    ] },
-    { nome: 'Cálculo', itens: [
+      HR, T('cálculo'),
       I('Calcular a estrutura', '3d', 'mapa-esforcos', { kbd: 'F9', antes: 'Cálculo › Calcular estrutura' }),
       I('Dimensionar: o perfil mais leve que passa…', '3d', 'dimensionar', { antes: 'Cálculo › Dimensionar: o perfil mais leve que passa…' }),
-      HR, T('resultados'),
       I('Resultado da análise…', '3d', 'resultado-analise', { antes: 'Cálculo › Resultado da análise…' }),
       I('Esforços da estrutura…', '3d', 'esforcos', { antes: 'Cálculo › Esforços da estrutura…' }),
       HR,
       I('Memorial do dimensionamento (PDF)', '3d', 'memorial-lancamento', { antes: 'Cálculo › Memorial do dimensionamento (PDF)' }),
     ] },
-    { nome: 'Desenho', itens: [
+    // Detalhamento (03/10/2026): o Desenho e o detalhar/pranchas da Produção num menu só; Cálculo foi para o Modelo;
+    // Produção e Comercial viraram etapas da barra do projeto (web/etapas.js)
+    { nome: 'Detalhamento', itens: [
+      I('Detalhar peças e conjuntos…', '3d', 'detalhar-pecas', { antes: 'Desenhos › Detalhar peças e conjuntos…' }),
+      I('Detalhar as peças de um IFC…', '3d', 'detalhar-ifc', { dica: 'IFC do TecnoMETAL ou de outro programa', antes: 'Arquivo › Detalhar as peças de um IFC…' }),
+      HR,
+      S('Pranchas', [
+        I('Montar pranchas (automático)…', '2d', 'pranchas', { antes: 'Desenhos › Montar pranchas (automático)…' }),
+        I('Inserir folha…', '2d', 'inserir-folha', { antes: 'Desenhos › Inserir folha (prancha)…' }),
+        I('Gerar pranchas das folhas', '2d', 'pranchas-das-folhas', { antes: 'Desenhos › Gerar pranchas das folhas' }),
+        HR,
+        I('Atualizar desenhos e pranchas agora', '2d', 'atualizar-desenhos', { antes: 'Desenhos › Atualizar desenhos e pranchas agora' }),
+      ]),
+      HR, T('desenhos'),
       S('Trocar de desenho', [
         { lista: 'desenhos' },
         HR,
@@ -123,19 +134,6 @@
       I('Vistas das peças selecionadas…', '3d', 'desenho-selecao', { requer: 'sel', antes: 'Desenhos › Vistas da seleção…' }),
       HR,
       I('Estilos do desenho…', '2d', 'estilos', { antes: 'Desenhos › Estilos do desenho…' }),
-    ] },
-    { nome: 'Produção', itens: [
-      I('Detalhar peças e conjuntos…', '3d', 'detalhar-pecas', { antes: 'Desenhos › Detalhar peças e conjuntos…' }),
-      I('Detalhar as peças de um IFC…', '3d', 'detalhar-ifc', { dica: 'IFC do TecnoMETAL ou de outro programa', antes: 'Arquivo › Detalhar as peças de um IFC…' }),
-      HR,
-      S('Pranchas', [
-        I('Montar pranchas (automático)…', '2d', 'pranchas', { antes: 'Desenhos › Montar pranchas (automático)…' }),
-        I('Inserir folha…', '2d', 'inserir-folha', { antes: 'Desenhos › Inserir folha (prancha)…' }),
-        I('Gerar pranchas das folhas', '2d', 'pranchas-das-folhas', { antes: 'Desenhos › Gerar pranchas das folhas' }),
-        HR,
-        I('Atualizar desenhos e pranchas agora', '2d', 'atualizar-desenhos', { antes: 'Desenhos › Atualizar desenhos e pranchas agora' }),
-      ]),
-      I('Lista de materiais…', '3d', 'materiais', { antes: 'Desenhos › Lista de materiais…' }),
       HR,
       S('Peça do detalhamento selecionada', [
         I('Ver no 3D', '2d', 'ver-3d', { requer: 'sel', antes: 'Desenhos › Ver no 3D a peça selecionada' }),
@@ -145,17 +143,8 @@
         I('Aplicar as peças da célula', '2d', 'aplicar-pecas', { antes: 'Desenhos › Aplicar peças da célula ao modelo 3D' }),
         I('Aplicar furos e tamanho', '2d', 'aplicar-furos', { antes: 'Desenhos › Aplicar furos e tamanho ao modelo 3D' }),
       ]),
-    ] },
-    // Comercial (03/10/2026): o orçamento e a área comercial não tinham caminho a partir da área de trabalho
-    // ("olhei todos os menus e não achei essa tela da proposta"); {projeto} vira o projeto aberto
-    { nome: 'Comercial', itens: [
-      { texto: 'Orçamento da obra', link: '/materiais?projeto={projeto}#orcamento', dica: 'quantidades da lista × tabela de preços; o fechamento do dono' },
-      { texto: 'Proposta comercial', link: '/comercial?projeto={projeto}#proposta', dica: 'PDF com as imagens do modelo 3D' },
-      { texto: 'Contrato', link: '/comercial?projeto={projeto}#contrato', dica: 'empreitada global em Word e PDF' },
-      { texto: 'Obra e pagamentos', link: '/comercial?projeto={projeto}#obra', dica: 'etapas, parcelas, aditivos, termo de aceite' },
       HR,
-      { texto: 'Documentos da obra', link: '/comercial?projeto={projeto}#documentos' },
-      { texto: 'Dados da empresa e logo', link: '/comercial?projeto={projeto}#empresa' },
+      I('Lista de materiais…', '3d', 'materiais', { dica: 'a etapa Produção, na barra de cima', antes: 'Desenhos › Lista de materiais…' }),
     ] },
     { nome: 'Ver', itens: [
       S('Tela', [
@@ -604,6 +593,8 @@
 
   // ------------------------------------------------------------ ligar
   function iniciar() {
+    // fora da área de trabalho (a busca Ctrl+K das outras telas carrega este arquivo só pelo mapa dos menus)
+    if (!document.getElementById('menus-unicos')) return;
     montarBarra();
     copiasParadas();
     quadro('3d').addEventListener('load', function () {

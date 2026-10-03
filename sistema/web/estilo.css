@@ -871,6 +871,18 @@ details.arquivados > .lista-projetos { margin-top: 10px; opacity: .8; }
 .cartao-sub { margin-top: 3px; font-size: 12.5px; color: var(--texto2); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .cartao-conteudo { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+/* as etapas da obra no cartão (web/inicio.js, etapasDoCartao): as mesmas da barra do projeto */
+.cartao-etapas { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; margin-top: 9px; }
+.cartao-etapas .ce-etapa { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 11.5px; padding: 2px 8px 2px 3px; border-radius: 99px;
+  border: 1px solid var(--borda); background: var(--painel2); color: var(--texto2); cursor: pointer; }
+.cartao-etapas .ce-etapa:hover { border-color: var(--azul2); color: var(--texto); }
+.cartao-etapas .ce-etapa i { width: 15px; height: 15px; border-radius: 50%; display: inline-grid; place-items: center; font-style: normal; font-size: 9px; font-weight: 700;
+  border: 1.4px solid var(--texto3); color: var(--texto3); }
+.cartao-etapas .ce-etapa.feita i { background: var(--verde); border-color: var(--verde); color: #fff; }
+.cartao-etapas .ce-etapa.andamento i { border-color: var(--amarelo); color: var(--amarelo); }
+.cartao-etapas .ce-continuar { font: inherit; font-size: 11.5px; font-weight: 600; margin-left: 4px; padding: 2px 10px; border-radius: 99px; border: 1px solid var(--azul);
+  background: var(--azul); color: #fff; cursor: pointer; }
+.cartao-etapas .ce-continuar:hover { background: var(--azul2); }
 .pilula { font: inherit; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; line-height: 1.5;
   border: 1px solid var(--borda); background: var(--painel2); color: var(--texto2); }
 .pilula.fraco { color: var(--texto3); border-style: dashed; }

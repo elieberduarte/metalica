@@ -2176,6 +2176,16 @@ def rota_comercial(s: str, acao: str = "", corpo: Optional[dict] = None, porta: 
             _fim_progresso(s)
 
 
+def etapas_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/etapas: a barra do projeto (web/etapas.js) — as seis etapas da obra com a situação,
+    o destino e os atalhos de cada uma, e a Biblioteca (saida/etapas_projeto.py)."""
+    from saida import etapas_projeto as E
+    g = _gerente()
+    p = g.ler(s)
+    return {"projeto": {"slug": s, "nome": p.get("nome") or s, "cliente": p.get("cliente") or "", "tipo": p.get("tipo") or ""},
+            "etapas": E.etapas(s, g._existente(s), p), "biblioteca": E.biblioteca(s)}
+
+
 REPOSITORIO = "elieberduarte/metalica"
 
 
@@ -3765,6 +3775,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(rota_orcamento(partes[0]))
                 if len(partes) == 2 and partes[1] == "comercial":
                     return self._json(rota_comercial(partes[0]))
+                if len(partes) == 2 and partes[1] == "etapas":
+                    return self._json(etapas_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "cantos":
                     return self._json(cantos_do_projeto(partes[0]))
                 if len(partes) == 3 and partes[1] == "cantos" and partes[2] == "previa":

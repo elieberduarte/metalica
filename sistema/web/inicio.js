@@ -104,6 +104,18 @@ function urlDoProjeto(p, destino) {
 
 const expandidos = new Set();   // projetos com todos os desenhos à mostra
 
+/** As seis etapas da obra (as da barra do projeto, web/etapas.js) em bolinhas: clicar vai para a etapa; "Continuar"
+ * abre a primeira em andamento (ou a primeira que falta). */
+function etapasDoCartao(p) {
+  const et = p.etapas || [];
+  if (!et.length || p.tipo === 'galpao' && !p.tem_modelo) return null;
+  const alvo = et.find(e => e.situacao === 'andamento') || et.find(e => !e.situacao) || et[et.length - 1];
+  return el('div', { class: 'cartao-etapas', onclick: (ev) => ev.stopPropagation() },
+    et.map((e, i) => el('button', { type: 'button', class: 'ce-etapa ' + (e.situacao || ''), title: `${e.nome}${e.situacao === 'feita' ? ' — feita' : e.situacao === 'andamento' ? ' — em andamento' : ''}`,
+      onclick: () => { location.href = e.url; } }, el('i', { texto: e.situacao === 'feita' ? '✓' : String(i + 1) }), e.nome)),
+    el('button', { type: 'button', class: 'ce-continuar', title: `Abre ${alvo.nome}`, onclick: () => { location.href = alvo.url; } }, `Continuar: ${alvo.nome} →`));
+}
+
 function cartao(p) {
   const onde = [p.cliente, p.local].filter(Boolean).join(' · ');
   const medidas = (p.vao && p.comprimento)
@@ -124,10 +136,6 @@ function cartao(p) {
   if (p.tem_materiais) {
     conteudo.push(['≡ Lista de materiais', 'desenho', null, `/materiais?projeto=${encodeURIComponent(p.slug)}`,
                    'Romaneio por posição, perfis com barras comerciais, chapas, conjuntos e acessórios; CSV e PDF']);
-  }
-  if (p.tem_materiais || p.tem_comercial) {
-    conteudo.push(['◆ Comercial', 'desenho', null, `/comercial?projeto=${encodeURIComponent(p.slug)}`,
-                   'Proposta técnica comercial (com imagens do 3D), contrato, etapas da obra, parcelas e aditivos']);
   }
   // desenhos 2D gravados: cada um abre direto no CAD, sem gerar nada de novo; além de 6,
   // uma pílula "+N" mostra o resto
@@ -168,6 +176,7 @@ function cartao(p) {
         el('span', { class: 'etiqueta ' + p.tipo, texto: p.tipo_rotulo })),
       el('div', { class: 'cartao-sub' },
         [onde, medidas, p.origem_ifc].filter(Boolean).join('  ·  ') || 'sem cliente nem local informados'),
+      etapasDoCartao(p),
       el('div', { class: 'cartao-conteudo' }, conteudo.map(([rot, cls, pasta, url, dica]) =>
         el(pasta || url ? 'button' : 'span', {
           class: 'pilula ' + cls, type: pasta || url ? 'button' : undefined,
