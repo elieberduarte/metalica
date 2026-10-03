@@ -2096,6 +2096,69 @@ def pdf_da_lista_de_materiais(s: str) -> dict:
     return {"pdf": _descrever_arquivo(pdf, pasta)}
 
 
+def _orcamento_montado(s: str, edicoes: Optional[dict] = None) -> dict:
+    """O resumo de orçamento do projeto (saida/orcamento.py): a lista de materiais gravada com a
+    tabela de preços vigente (<dados>/fabrica/precos/) e as edições do dono."""
+    from saida import lista_producao, orcamento as O
+    pasta = _gerente()._existente(s)
+    lista = lista_de_materiais(s)
+    avisos_ = []
+    cam = os.path.join(pasta, "detalhamento", lista_producao.ARQUIVO_JSON)
+    mt = _mtime_do_modelo(s)
+    if mt and os.path.exists(cam) and os.stat(cam).st_mtime_ns < mt:
+        avisos_.append({"nivel": "alto", "texto": "A lista de materiais é de %s e o modelo 3D mudou depois: clique em "
+                        "\"Atualizar pelo modelo 3D\" antes de fechar o orçamento." % (lista.get("gerado") or "antes")})
+    tabela = None
+    caminho_tab = O.tabela_vigente(PROJETOS)
+    if caminho_tab:
+        try:
+            tabela = O.ler_tabela(caminho_tab)
+        except Exception as exc:                     # noqa: BLE001 — planilha que não se lê vira aviso
+            avisos_.append({"nivel": "alto", "texto": "A tabela de preços %s não se leu: %s" % (os.path.basename(caminho_tab), exc)})
+    numeros = None
+    try:
+        from saida.resumos import ARQ_NUMEROS
+        with open(os.path.join(pasta, "detalhamento", ARQ_NUMEROS), encoding="utf-8") as f:
+            numeros = json.load(f)
+    except (OSError, ValueError, ImportError):
+        pass
+    R = O.montar(lista, tabela, O.ler_edicoes(pasta) if edicoes is None else edicoes,
+                 projeto=_identificacao_do_projeto(s), numeros_resumo=numeros)
+    R["avisos"] = avisos_ + R["avisos"]
+    R["lista_gerada"] = lista.get("gerado")
+    pasta_orc = os.path.join(pasta, O.PASTA_ORCAMENTO)
+    R["arquivos"] = {k: _descrever_arquivo(os.path.join(pasta_orc, n), pasta)
+                     for k, n in (("pdf", O.ARQ_PDF), ("html", O.ARQ_HTML), ("csv", O.ARQ_CSV))
+                     if os.path.exists(os.path.join(pasta_orc, n))}
+    return R
+
+
+def rota_orcamento(s: str, acao: str = "", corpo: Optional[dict] = None) -> dict:
+    """GET /api/projetos/<s>/orcamento: o resumo de orçamento; POST {cabecalho, linhas, extras, notas}
+    grava as edições; POST .../orcamento/pdf (com as edições, se vierem) grava HTML, PDF e CSV;
+    POST .../orcamento/tabela {nome, base64} carrega uma planilha de preços nova."""
+    from saida import orcamento as O
+    pasta = _gerente()._existente(s)
+    if acao == "tabela":
+        import base64
+        try:
+            conteudo = base64.b64decode(str((corpo or {}).get("base64") or ""), validate=True)
+            O.guardar_tabela(PROJETOS, str((corpo or {}).get("nome") or ""), conteudo)
+        except Exception as exc:                     # noqa: BLE001
+            raise ErroDeDados("não foi possível carregar a tabela de preços: %s" % exc)
+        return _orcamento_montado(s)
+    if corpo is not None and any(k in corpo for k in ("cabecalho", "linhas", "extras", "notas")):
+        O.gravar_edicoes(pasta, corpo)
+    R = _orcamento_montado(s)
+    if acao == "pdf":
+        arq = O.gravar_documentos(pasta, R)
+        if arq.get("erro_pdf"):
+            R["erro_pdf"] = arq["erro_pdf"]
+        R["arquivos"] = {k: _descrever_arquivo(v, pasta) for k, v in arq.items() if k in ("pdf", "html", "csv")}
+        _gerente().tocar(s)
+    return R
+
+
 REPOSITORIO = "elieberduarte/metalica"
 
 
@@ -3681,6 +3744,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(_vivos().estado(partes[0]))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(dados_dos_resumos(partes[0]))
+                if len(partes) == 2 and partes[1] == "orcamento":
+                    return self._json(rota_orcamento(partes[0]))
                 if len(partes) == 2 and partes[1] == "cantos":
                     return self._json(cantos_do_projeto(partes[0]))
                 if len(partes) == 3 and partes[1] == "cantos" and partes[2] == "previa":
@@ -3808,6 +3873,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(gerar_resumos_projeto(partes[0], corpo))
+                if len(partes) in (2, 3) and partes[1] == "orcamento":
+                    return self._json(rota_orcamento(partes[0], partes[2] if len(partes) == 3 else "",
+                                                     corpo if isinstance(corpo, dict) else {}))
                 if len(partes) == 2 and partes[1] == "cantos":
                     return self._json(quebrar_cantos_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "eixos":

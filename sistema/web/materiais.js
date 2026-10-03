@@ -126,7 +126,7 @@ const dataBR = (iso) => {
 const ABAS = [
   ['geral', 'Visão geral'], ['perfis', 'Perfis'], ['corte', 'Plano de corte'], ['chapas', 'Chapas'], ['telhas', 'Telhas e rufos'],
   ['conjuntos', 'Conjuntos'], ['romaneio', 'Romaneio'], ['acessorios', 'Acessórios'],
-  ['resumos', 'Resumos da obra'], ['arquivos', 'Arquivos'],
+  ['orcamento', 'Orçamento'], ['resumos', 'Resumos da obra'], ['arquivos', 'Arquivos'],
 ];
 const COM_FILTRO = new Set(['perfis', 'corte', 'chapas', 'telhas', 'conjuntos', 'romaneio', 'acessorios']);
 let ABA = 'geral';
@@ -153,6 +153,7 @@ function irPara(k) {
   const busca = $('#filtro');
   if (busca) busca.hidden = !COM_FILTRO.has(k);
   if (k === 'resumos') abrirResumos();
+  if (k === 'orcamento') abrirOrcamento();
   filtrar();
 }
 
@@ -363,6 +364,10 @@ function desenhar(L) {
     ], L.acessorios, ['TOTAL', n(L.acessorios.reduce((s, a) => s + a.quantidade, 0))], (a) => a.nome))
     : vazio('Sem acessórios nesta lista.')));
 
+  // ---- orçamento (montado ao abrir a aba; refeito a cada lista nova)
+  c.append(painel('orcamento', el('div', { id: 'orcamento-corpo' }, vazio('Carregando o orçamento…'))));
+  ORC_MONTADO = false;
+
   // ---- resumos da obra (montado ao abrir a aba)
   c.append(painel('resumos', el('div', { id: 'resumos-corpo' }, vazio('Carregando os resumos…'))));
   RESUMOS_MONTADO = false;
@@ -373,6 +378,7 @@ function desenhar(L) {
 
   montarAbas(contagem);
   if (ABA === 'resumos') abrirResumos();
+  if (ABA === 'orcamento') abrirOrcamento();
   filtrar();
 }
 
@@ -588,6 +594,287 @@ async function gerarResumos(valores, botao, estado) {
     botao.disabled = false; botao.textContent = rot;
   }
 }
+
+/* ------------------------------------------------------------ orçamento */
+// O resumo de orçamento (saida/orcamento.py): as quantidades da lista com os preços da tabela da
+// fábrica (<dados>/fabrica/precos/), e as colunas de fechamento que o dono preenche. Tudo o que é
+// digitado aqui fica em <projeto>/orcamento/orcamento.json; "Gerar o resumo" grava o PDF e o CSV.
+const CAMPOS_ORC = [
+  ['data', 'Data', 'dd/mm/aaaa', false], ['obra', 'Obra', 'ex.: Barracão BYD', false],
+  ['local', 'Cidade', 'ex.: São Paulo – SP', false], ['distancia_km', 'Distância (km)', 'ex.: 925', false],
+  ['opcao', 'Opção', 'ex.: OPÇÃO 01 – (Pilares e tesouras treliçados)', false], ['area_m2', 'Área total (m²)', 'ex.: 1101,78', false],
+  ['descricao', 'Descrição (uma linha por barracão)', 'ex.: Barracão 01 – Oficina 20,00x40,00m – 800,00m² (17.500,00kg)', true],
+];
+let ORC = null, ORC_MONTADO = false, ORC_SUJO = false, ORC_LINHAS = [], ORC_CAB = {}, ORC_NOTAS = null;
+
+const numBR = (s) => {
+  let t = String(s ?? '').trim().replace(/\s/g, '').replace(/^R\$/i, '');
+  if (!t) return null;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  const v = Number(t);
+  return Number.isFinite(v) ? v : null;
+};
+const paraCampo = (v, casas = 4) => (v === null || v === undefined || v === '') ? ''
+  : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas, useGrouping: false });
+const reais = (v) => (v === null || v === undefined || v === '') ? '' : 'R$ ' + n(v, 2);
+
+async function abrirOrcamento(forcar = false) {
+  if (ORC_MONTADO && !forcar) return;
+  ORC_MONTADO = true;
+  const corpo = $('#orcamento-corpo');
+  if (!corpo) return;
+  try { ORC = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/orcamento`); }
+  catch (e) { corpo.replaceChildren(vazio(`Não foi possível montar o orçamento: ${e.message}`)); ORC_MONTADO = false; return; }
+  desenharOrcamento();
+}
+
+function marcarSujo() {
+  ORC_SUJO = true;
+  const e = $('#orc-estado');
+  if (e) e.textContent = 'alterações não gravadas';
+  recalcularOrcamento();
+}
+
+function campoNum(valor, auto, dica) {
+  const i = el('input', { type: 'text', inputmode: 'decimal', class: 'orc-num', placeholder: paraCampo(auto), title: dica || '' });
+  i.value = (valor !== null && valor !== undefined && valor !== auto) ? paraCampo(valor) : '';
+  // o digitado em destaque; o vazio mostra o automático (da lista ou da tabela) em cinza
+  const marca = () => i.classList.toggle('editado', !!i.value.trim());
+  marca();
+  i.addEventListener('input', () => { marca(); marcarSujo(); });
+  return i;
+}
+
+function desenharOrcamento() {
+  const corpo = $('#orcamento-corpo');
+  if (!corpo || !ORC) return;
+  ORC_SUJO = false;
+  const tab = ORC.tabela || {};
+  const arq = ORC.arquivos || {};
+  const entradaArq = el('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: (ev) => carregarTabela(ev.target.files[0]) });
+  const barra = el('div', { class: 'doc-barra' },
+    el('span', { class: 'orc-tabela', title: tab.titulo || 'A planilha de preços da empresa (Documentos\\Metálica\\fabrica\\precos)' },
+      'Tabela de preços: ', el('b', { texto: tab.arquivo || 'nenhuma carregada' })),
+    el('button', { type: 'button', class: 'botao-m', texto: tab.arquivo ? 'Trocar a tabela…' : 'Carregar a tabela…', onclick: () => entradaArq.click(),
+      title: 'Escolha a planilha .xlsx de preços (a coluna CHAVE e as especificações são lidas dela); vale para todos os projetos' }), entradaArq,
+    el('span', { class: 'sep' }), el('span', { class: 'quando', id: 'orc-estado' }),
+    el('button', { type: 'button', class: 'botao-m', texto: 'Tabela → fechamento', onclick: copiarTabelaParaFechamento,
+      title: 'Copia o valor da tabela para a coluna de fechamento nas linhas em que ela está vazia (depois é só trocar o que mudar)' }),
+    el('button', { type: 'button', class: 'botao-m', texto: 'Gravar', onclick: () => gravarOrcamento('') }),
+    el('button', { type: 'button', class: 'botao-m principal', texto: 'Gerar o resumo (PDF)', onclick: () => gravarOrcamento('pdf') }),
+    arq.pdf ? el('a', { class: 'botao-m', href: arq.pdf.url, target: '_blank', rel: 'noopener', texto: 'Abrir o PDF' }) : null,
+    arq.csv ? el('a', { class: 'botao-m', href: arq.csv.url, texto: 'CSV (Excel)' }) : null);
+
+  // ---- cabeçalho
+  ORC_CAB = {};
+  const form = el('div', { class: 'form-resumo orc-cab' });
+  for (const [id, rot, dica, longa] of CAMPOS_ORC) {
+    const i = el(longa ? 'textarea' : 'input', { placeholder: dica, title: dica, spellcheck: 'false' });
+    const v = (ORC.cabecalho || {})[id];
+    i.value = v === null || v === undefined ? '' : (id === 'area_m2' ? paraCampo(v, 2) : String(v));
+    i.addEventListener('input', marcarSujo);
+    ORC_CAB[id] = i;
+    form.append(el('label', { class: longa ? 'largo' : '' }, rot, i));
+  }
+
+  // ---- avisos
+  const av = (ORC.avisos || []).length ? el('div', { class: 'caixa orc-avisos' },
+    el('h3', {}, 'A conferir antes de fechar', el('small', { texto: `${ORC.avisos.length} ponto(s)` })),
+    el('ul', {}, ORC.avisos.map(a => el('li', { class: a.nivel, texto: a.texto })))) : null;
+
+  // ---- linhas
+  ORC_LINHAS = [];
+  const tbody = el('tbody');
+  const grupos = ORC.grupos || [];
+  for (const [gk, gt] of grupos) {
+    const linhas = ORC.linhas.filter(li => li.grupo === gk);
+    if (!linhas.length && gk !== 'extras') continue;
+    tbody.append(el('tr', { class: 'grupo' }, el('td', { colspan: 8, texto: gt })));
+    for (const li of linhas) tbody.append(linhaOrcamento(li));
+    if (gk === 'extras' || (gk === 'dono' && !grupos.some(([k]) => k === 'extras'))) { /* o botão vai no fim */ }
+  }
+  const tabelaOrc = el('table', { class: 'orc-tabela-linhas' },
+    el('thead', {}, el('tr', {}, ['Descrição', 'Quantidade', 'Un', 'Valor (tabela)', 'Valor total', 'Valor (fechamento)', 'Valor total (fechamento)', '']
+      .map((t, i) => el('th', { class: i >= 1 && i !== 2 && i < 7 ? 'r' : '', texto: t })))),
+    tbody, el('tfoot', {}, el('tr', {}, el('td', { colspan: 4, texto: 'TOTAL' }), el('td', { class: 'r', id: 'orc-tot-tab' }),
+      el('td', {}), el('td', { class: 'r', id: 'orc-tot-fech' }), el('td', {}))));
+  const novo = el('button', { type: 'button', class: 'botao-m', texto: '+ Acrescentar linha', onclick: () => {
+    const li = { id: 'novo:' + Date.now(), grupo: 'extras', descricao: '', qtd: null, un: '', preco: null, extra: true, origem: 'manual' };
+    let marco = [...tbody.querySelectorAll('tr.grupo')].find(tr => tr.textContent === 'Itens acrescentados');
+    if (!marco) { marco = el('tr', { class: 'grupo' }, el('td', { colspan: 8, texto: 'Itens acrescentados' })); tbody.append(marco); }
+    tbody.append(linhaOrcamento(li));
+    marcarSujo();
+  } });
+  ORC_NOTAS = el('textarea', { placeholder: 'Observações da proposta, uma por linha (ex.: Estrutura 100% parafusada; Estrutura auxiliar do ACM por conta do cliente)', spellcheck: 'false' });
+  ORC_NOTAS.value = ORC.notas || '';
+  ORC_NOTAS.addEventListener('input', marcarSujo);
+
+  corpo.replaceChildren(barra, el('div', { class: 'cartoes', id: 'orc-cartoes' }),
+    el('div', { class: 'grade-orc' }, el('div', { class: 'caixa' }, el('h3', {}, 'Cabeçalho do resumo', el('small', { texto: 'fica gravado no projeto' })), form), av),
+    secao('Itens do orçamento', 'quantidades da lista de materiais · preços da tabela · fechamento à direita',
+      el('div', { class: 'rolagem orc-rolagem' }, tabelaOrc)),
+    el('div', { class: 'passos' }, novo),
+    secao('Observações', 'saem no pé do resumo', el('div', { class: 'form-resumo' }, ORC_NOTAS)),
+    el('ul', { class: 'nota orc-regras' }, (ORC.regras || []).map(r => el('li', { texto: r }))));
+  recalcularOrcamento();
+  const e = $('#orc-estado');
+  if (e) e.textContent = ORC.lista_gerada ? `lista de ${dataBR(ORC.lista_gerada)}` : '';
+}
+
+function linhaOrcamento(li) {
+  const reg = { li };
+  const tr = el('tr', { class: li.oculta ? 'orc-oculta' : '' });
+  const extra = !!li.extra;
+  let celDesc;
+  if (extra) {
+    reg.desc = el('input', { type: 'text', class: 'orc-desc', placeholder: 'Descrição do item', value: li.descricao || '' });
+    reg.desc.addEventListener('input', marcarSujo);
+    reg.forn = el('input', { type: 'text', class: 'orc-forn', placeholder: 'fornecedor', value: li.fornecedor || '' });
+    reg.forn.addEventListener('input', marcarSujo);
+    celDesc = el('td', { class: 'quebra' }, reg.desc, reg.forn);
+  } else {
+    const dica = [li.item_tabela && `Tabela: ${li.item_tabela}${li.linha_tabela ? ` (linha ${li.linha_tabela})` : ''}`,
+      li.data && `cotação de ${li.data}`, li.situacao && `situação: ${li.situacao}`, li.confira].filter(Boolean).join(' · ');
+    celDesc = el('td', { class: 'quebra', title: dica },
+      el('span', { class: li.origem === 'dono' || li.origem === 'equipe' ? 'orc-dono' : '', texto: li.descricao }),
+      li.detalhe ? el('div', { class: 'orc-det', texto: li.detalhe }) : null,
+      li.fornecedor ? el('div', { class: 'orc-det', texto: li.fornecedor + (li.data ? ` · ${li.data}` : '') }) : null,
+      li.confira || String(li.situacao || '').toUpperCase().startsWith('VER') ? el('div', { class: 'orc-confira', texto: li.confira || 'preço a confirmar com o fornecedor' }) : null);
+  }
+  reg.qtd = campoNum(li.qtd, extra ? null : li.qtd_auto, 'Quantidade; vazio = a da lista');
+  reg.un = extra ? el('input', { type: 'text', class: 'orc-un', value: li.un || '' }) : null;
+  if (reg.un) reg.un.addEventListener('input', marcarSujo);
+  reg.preco = campoNum(li.preco, extra ? null : li.preco_auto, 'Valor unitário; vazio = o da tabela');
+  reg.total = el('td', { class: 'r' });
+  reg.pf = campoNum(li.preco_fech, null, 'Valor unitário de fechamento');
+  reg.tf = campoNum(li.total_fech_ed, null, 'Valor total de fechamento (digite direto, ou deixe vazio para quantidade × valor)');
+  reg.ocultar = el('button', { type: 'button', class: 'orc-x', title: extra ? 'Remover a linha' : (li.oculta ? 'Mostrar a linha no resumo' : 'Tirar a linha do resumo'),
+    texto: extra ? '×' : (li.oculta ? '↺' : '×'), onclick: () => {
+      if (extra) { tr.remove(); ORC_LINHAS = ORC_LINHAS.filter(r => r !== reg); }
+      else { li.oculta = !li.oculta; tr.classList.toggle('orc-oculta', li.oculta); reg.ocultar.textContent = li.oculta ? '↺' : '×'; }
+      marcarSujo();
+    } });
+  tr.append(celDesc, el('td', { class: 'r' }, reg.qtd), el('td', { class: 'c' }, reg.un || (li.un || '')), el('td', { class: 'r' }, reg.preco),
+    reg.total, el('td', { class: 'r' }, reg.pf), el('td', { class: 'r' }, reg.tf), el('td', { class: 'c' }, reg.ocultar));
+  ORC_LINHAS.push(reg);
+  return tr;
+}
+
+function valoresDaLinha(reg) {
+  const li = reg.li;
+  const extra = !!li.extra;
+  const qtd = numBR(reg.qtd.value) ?? (extra ? null : li.qtd_auto);
+  const preco = numBR(reg.preco.value) ?? (extra ? null : li.preco_auto);
+  const pf = numBR(reg.pf.value);
+  let tf = numBR(reg.tf.value);
+  const total = qtd !== null && preco !== null && qtd !== undefined && preco !== undefined ? qtd * preco : null;
+  const tfAuto = pf !== null && qtd !== null && qtd !== undefined ? qtd * pf : null;
+  return { qtd, preco, pf, tf, total, tfFinal: tf ?? tfAuto, tfAuto };
+}
+
+function recalcularOrcamento() {
+  let tot = 0, totF = 0;
+  for (const reg of ORC_LINHAS) {
+    const v = valoresDaLinha(reg);
+    reg.total.textContent = reais(v.total);
+    reg.tf.placeholder = v.tfAuto !== null ? paraCampo(v.tfAuto, 2) : '';
+    if (reg.li.oculta) continue;
+    tot += v.total || 0;
+    totF += v.tfFinal || 0;
+  }
+  const a = $('#orc-tot-tab'), b = $('#orc-tot-fech');
+  if (a) a.textContent = reais(tot);
+  if (b) b.textContent = totF ? reais(totF) : '';
+  const t = (ORC && ORC.totais) || {};
+  const area = numBR(ORC_CAB.area_m2 ? ORC_CAB.area_m2.value : '') || t.area_m2;
+  const c = $('#orc-cartoes');
+  if (c) c.replaceChildren(
+    cartao(reais(tot), 'total pela tabela', t.aco_kg ? `${n(tot / t.aco_kg, 2)} R$/kg de aço` : null, !totF),
+    cartao(totF ? reais(totF) : '—', 'fechamento', totF && t.aco_kg ? `${n(totF / t.aco_kg, 2)} R$/kg${area ? ` · ${n(totF / area, 2)} R$/m²` : ''}` : 'preencha as colunas da direita', !!totF),
+    cartao(n(t.aco_kg, 1) + ' kg', 'aço (estrutura)', 'peso teórico da lista'),
+    cartao(n(t.telhas_ml, 1) + ' m', 'telhas', t.funilaria_kg ? `+ ${n(t.funilaria_kg, 1)} kg de rufos e calhas` : null));
+}
+
+function copiarTabelaParaFechamento() {
+  let n_ = 0;
+  for (const reg of ORC_LINHAS) {
+    if (reg.li.oculta || reg.pf.value.trim() || reg.tf.value.trim()) continue;
+    const v = valoresDaLinha(reg);
+    if (v.preco === null || v.preco === undefined) continue;
+    reg.pf.value = paraCampo(v.preco);
+    reg.pf.classList.add('editado');
+    n_++;
+  }
+  if (n_) marcarSujo();
+  const e = $('#orc-estado');
+  if (e) e.textContent = n_ ? `${n_} linha(s) copiadas — não gravado` : 'nada a copiar';
+}
+
+function edicoesDoOrcamento() {
+  const cab = {};
+  for (const [id, i] of Object.entries(ORC_CAB)) cab[id] = i.value.trim();
+  const linhas = {}, extras = [];
+  for (const reg of ORC_LINHAS) {
+    const li = reg.li;
+    const v = valoresDaLinha(reg);
+    if (li.extra) {
+      if (!reg.desc.value.trim()) continue;
+      extras.push({ descricao: reg.desc.value.trim(), fornecedor: reg.forn.value.trim(), un: reg.un.value.trim(), qtd: v.qtd, preco: v.preco,
+                    preco_fech: v.pf, total_fech: v.tf });
+      continue;
+    }
+    const e = {};
+    if (numBR(reg.qtd.value) !== null && numBR(reg.qtd.value) !== li.qtd_auto) e.qtd = numBR(reg.qtd.value);
+    if (numBR(reg.preco.value) !== null && numBR(reg.preco.value) !== li.preco_auto) e.preco = numBR(reg.preco.value);
+    if (v.pf !== null) e.preco_fech = v.pf;
+    if (v.tf !== null) e.total_fech = v.tf;
+    if (li.oculta) e.oculta = true;
+    if (Object.keys(e).length) linhas[li.id] = e;
+  }
+  return { cabecalho: cab, linhas, extras, notas: ORC_NOTAS ? ORC_NOTAS.value : '' };
+}
+
+async function gravarOrcamento(acao) {
+  const e = $('#orc-estado');
+  if (e) e.replaceChildren(el('span', { class: 'giro' }), acao === 'pdf' ? ' gerando o resumo…' : ' gravando…');
+  try {
+    const r = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/orcamento${acao ? '/' + acao : ''}`, edicoesDoOrcamento());
+    ORC = r;
+    desenharOrcamento();
+    if (acao === 'pdf') {
+      if (r.erro_pdf) aviso(`Resumo gravado em HTML e CSV, mas o PDF falhou: ${r.erro_pdf}`, true);
+      else if (r.arquivos && r.arquivos.pdf) avisoComLinks(`Resumo de orçamento gravado em orcamento/${r.arquivos.pdf.nome}.`,
+        [[r.arquivos.pdf.url, 'Abrir o PDF']].concat(r.arquivos.csv ? [[r.arquivos.csv.url, 'CSV (Excel)']] : []));
+    } else {
+      const est = $('#orc-estado');
+      if (est) est.textContent = 'gravado';
+    }
+  } catch (err) {
+    if (e) e.textContent = '';
+    aviso(`Não foi possível gravar o orçamento: ${err.message}`, true);
+  }
+}
+
+async function carregarTabela(arquivo) {
+  if (!arquivo) return;
+  if (ORC_SUJO && !confirm('Há alterações não gravadas no orçamento. Gravar antes de trocar a tabela?')) return;
+  try {
+    if (ORC_SUJO) await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/orcamento`, edicoesDoOrcamento());
+    const b64 = await new Promise((ok, falha) => {
+      const fr = new FileReader();
+      fr.onload = () => ok(String(fr.result).split(',', 2)[1] || '');
+      fr.onerror = () => falha(fr.error);
+      fr.readAsDataURL(arquivo);
+    });
+    ORC = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/orcamento/tabela`, { nome: arquivo.name, base64: b64 });
+    desenharOrcamento();
+    aviso(`Tabela de preços ${arquivo.name} carregada: vale para todos os projetos.`);
+  } catch (err) {
+    aviso(`Não foi possível carregar a tabela: ${err.message}`, true);
+  }
+}
+
+window.addEventListener('beforeunload', (ev) => { if (ORC_SUJO) { ev.preventDefault(); ev.returnValue = ''; } });
 
 document.addEventListener('DOMContentLoaded', () => {
   $('#btn-resumos').addEventListener('click', () => irPara('resumos'));

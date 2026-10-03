@@ -43,3 +43,7 @@ sistema/testes/verificadores/*.png
 
 # documentos do usuário (resumos da obra, PDFs de cliente)
 Documentos/
+
+# precos da empresa (repositorio publico): a tabela fica em Documentos/Metalica/fabrica/precos
+Tabela de pre*os/
+*.xlsx

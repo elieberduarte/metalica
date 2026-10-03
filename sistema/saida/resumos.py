@@ -1046,11 +1046,22 @@ def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=Non
 
 
 # ============================================================ gravação
+#: Os números do último resumo gerado, lidos pelo resumo de orçamento.
+ARQ_NUMEROS = "resumo-numeros.json"
+
+
 def gerar_resumos(pasta: str, R: dict, imprimir_pdf: bool = True) -> dict:
     """Grava resumo-da-obra.html/.pdf e resumo-de-materiais.html/.pdf em `pasta`."""
     from projetos import trocar_arquivo
     os.makedirs(pasta, exist_ok=True)
     saida = {}
+    # os números principais (área, dimensões, pesos) para o resumo de orçamento (saida/orcamento.py)
+    try:
+        import json
+        with open(os.path.join(pasta, ARQ_NUMEROS), "w", encoding="utf-8") as f:
+            json.dump({"numeros": R.get("numeros"), "dimensoes": R.get("dimensoes")}, f, ensure_ascii=False, default=str)
+    except (OSError, TypeError, ValueError):
+        pass
     for chave, titulo, fn in (("obra", "resumo-da-obra", html_resumo_obra), ("materiais", "resumo-de-materiais", html_resumo_materiais)):
         h = fn(R)
         caminho = os.path.join(pasta, titulo + ".html")

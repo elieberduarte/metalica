@@ -123,10 +123,37 @@
   .numeros-resumo { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 4px; }
   .numeros-resumo div { padding: 8px 10px; border: 1px solid var(--borda); border-radius: var(--raio-p); background: var(--painel2); font-size: 12px; color: var(--texto2); }
   .numeros-resumo b { display: block; font-size: 16px; color: var(--texto); font-variant-numeric: tabular-nums; }
+  /* ---- orçamento */
+  .orc-tabela { font-size: 13px; color: var(--texto2); }
+  .grade-orc { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 6px; }
+  @media (max-width: 980px) { .grade-orc { grid-template-columns: 1fr; } }
+  .orc-cab { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .orc-cab label.largo { grid-column: 1 / -1; }
+  .orc-avisos ul { margin: 0; padding-left: 18px; font-size: 12.5px; max-height: 260px; overflow: auto; }
+  .orc-avisos li { margin: 3px 0; color: var(--texto2); }
+  .orc-avisos li.alto { color: var(--verm); font-weight: 600; }
+  .orc-avisos li.medio { color: var(--amarelo); }
+  .materiais table.orc-tabela-linhas td { vertical-align: middle; }
+  .materiais table.orc-tabela-linhas tr.grupo td { background: var(--painel2); font-weight: 650; color: var(--azul); }
+  .materiais table.orc-tabela-linhas th { cursor: default; }
+  .orc-rolagem { max-height: none !important; }
+  .orc-num { font: inherit; font-size: 13px; width: 108px; padding: 3px 6px; text-align: right; border: 1px solid var(--campo-borda); border-radius: var(--raio-p);
+             background: var(--campo-fundo); color: var(--texto); font-variant-numeric: tabular-nums; }
+  .orc-num::placeholder { color: var(--texto2); opacity: .9; }
+  .orc-num.editado { border-color: var(--azul2); font-weight: 600; color: var(--azul-tinta); }
+  .orc-desc, .orc-forn, .orc-un { font: inherit; font-size: 13px; padding: 3px 6px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); }
+  .orc-desc { width: 100%; box-sizing: border-box; } .orc-forn { width: 60%; margin-top: 3px; font-size: 12px; } .orc-un { width: 48px; }
+  .orc-det { font-size: 11.5px; color: var(--texto3); white-space: normal; }
+  .orc-confira { font-size: 11.5px; color: var(--amarelo); white-space: normal; }
+  .orc-dono { color: var(--texto2); }
+  .orc-x { font: inherit; border: 0; background: none; color: var(--texto3); cursor: pointer; font-size: 15px; }
+  .orc-x:hover { color: var(--verm); }
+  tr.orc-oculta td { opacity: .4; text-decoration: line-through; }
+  .orc-regras { padding-left: 18px; }
   @media print {
     .topo, .obra .acoes-obra, .abas, .controle-barra, #aviso { display: none !important; }
     .painel-aba[hidden] { display: block !important; }
-    #aba-resumos, #aba-arquivos { display: none !important; }
+    #aba-resumos, #aba-arquivos, #aba-orcamento { display: none !important; }
     .materiais { max-width: none; padding: 0; }
     .materiais .rolagem { max-height: none; overflow: visible; border: 0; }
     .materiais th { position: static; }
