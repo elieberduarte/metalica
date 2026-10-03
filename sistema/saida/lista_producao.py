@@ -166,13 +166,19 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao], nomes: Optional[Dict[str, s
     """Montagens do modelo: instâncias pelo mdc das quantidades por posição (como o
     detalhamento), composição unitária e peso de uma montagem."""
     from nucleo2d.detalhar import _marcas
+    from nucleo2d.detalhe.conjuntos import posicao_base
     por_conj: Dict[str, collections.Counter] = collections.OrderedDict()
+    # as instâncias pela posição de base: a variante de furação ("P48 (b)", a chapa de furo redondo onde não há
+    # terça) é a mesma peça no lugar — senão as 120 M19 do ÁGUA GELADA, 8 delas com uma P48 (b), viravam 8
+    # montagens de 15 barras (e "tesoura"); o peso conta cada variante pela posição dela
+    por_conj_var: Dict[str, collections.Counter] = collections.OrderedDict()
     for e in pecas:
         m = _marcas(e)
         conj = str(m.get("conjunto") or "")
         if not conj:
             continue
-        por_conj.setdefault(conj, collections.Counter())[str(m.get("posicao") or e.nome)] += 1
+        por_conj.setdefault(conj, collections.Counter())[posicao_base(e)] += 1
+        por_conj_var.setdefault(conj, collections.Counter())[str(m.get("posicao") or e.nome)] += 1
     from nucleo2d.detalhar import _unidade_pela_maioria
     saida = []
     for conj, total in por_conj.items():
@@ -197,7 +203,7 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao], nomes: Optional[Dict[str, s
         if all(por_marca.get(k) is not None and por_marca[k].classe == "telha" for k in unidade):
             continue
         # o peso total é o das peças que existem (29 P13, não 8 × 4); o unitário, a média
-        peso_tot = sum(q * (por_marca[k].peso if k in por_marca else 0.0) for k, q in total.items())
+        peso_tot = sum(q * (por_marca[k].peso if k in por_marca else 0.0) for k, q in por_conj_var[conj].items())
         barras = sum(q for k, q in unidade.items() if k in por_marca and por_marca[k].classe.startswith("barra"))
         comp = sorted(unidade.items(), key=lambda kv: _ordem_natural(kv[0]))
         saida.append({"marca": conj, "nome": (nomes or {}).get(conj, ""), "instancias": n, "pecas_unidade": sum(unidade.values()),

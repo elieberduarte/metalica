@@ -108,6 +108,7 @@ from nucleo2d.detalhe.base import (  # noqa: E402,F401
     fora_do_limite_da_maquina,
     vincular_furos_de_ligacao)
 from nucleo2d.detalhe.conjuntos import (  # noqa: E402,F401
+    posicao_base,
     FRACAO_COMUM_CONJUNTO,
     MENOR_ITEM_LOCALIZACAO,
     MENOR_TIRANTE,
@@ -641,7 +642,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         classe_de = {p.marca: p.classe for p in posicoes}
         candidatos = []
         for conj, lista in por_conj.items():
-            total = collections.Counter(str(_marcas(e).get("posicao") or e.nome) for e in lista)
+            total = collections.Counter(posicao_base(e) for e in lista)
             # instâncias iguais: o máximo divisor comum das quantidades por posição
             # (8 pórticos M2 = 80 P10, 64 P11, 64 P12, 56 P4 → mdc 8)
             n = 0
@@ -657,7 +658,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             # unitária; sem um, o conjunto inteiro quando n = 1, senão o maior agrupamento
             insts = _instancias_do_conjunto(lista, unidade)
             inst = next((i for i in insts if collections.Counter(
-                str(_marcas(e).get("posicao") or e.nome) for e in i) == unidade), None)
+                posicao_base(e) for e in i) == unidade), None)
             aviso = ""
             if inst is None or n == 1:
                 # uma peça a mais ou a menos numa das instâncias (29 P13 em 8 tesouras de
@@ -668,7 +669,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                 if robusta:
                     n2, unidade2 = robusta
                     iguais = [i for i in _instancias_do_conjunto(lista, unidade2)
-                              if collections.Counter(str(_marcas(e).get("posicao") or e.nome) for e in i) == unidade2]
+                              if collections.Counter(posicao_base(e) for e in i) == unidade2]
                     if iguais:
                         difere = ["%s (%d em vez de %d)" % (k, total.get(k, 0), n2 * unidade2.get(k, 0))
                                   for k in sorted(set(total) | set(unidade2), key=_ordem_natural)

@@ -199,7 +199,10 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         if r["categoria"] != "TESOURAS":
             continue
         lista_p = [e for e in pecas if str(_marcas(e).get("conjunto") or "") in r["marcas"] and e.vertices]
-        unidade = collections.Counter({m: q for m, q in r["composicao"].items()})
+        # a variante de furação ("P3 (b)") é a mesma peça no lugar: as instâncias se reconhecem pela posição de base
+        unidade = collections.Counter()
+        for m, q in r["composicao"].items():
+            unidade[re.sub(r" \([b-z]\)$", "", m)] += q
         if not lista_p or not unidade:
             continue
         try:

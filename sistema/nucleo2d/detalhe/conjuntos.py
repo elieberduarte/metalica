@@ -108,9 +108,16 @@ def _instancias(pecas: Sequence[Solido], folga: float = 8.0) -> List[List[Solido
     return sorted(grupos.values(), key=lambda g: (min(_caixa(e)[0][0] for e in g), min(_caixa(e)[0][1] for e in g)))
 
 
+def posicao_base(e) -> str:
+    """A posição da peça para reconhecer as instâncias de um conjunto: a variante de furação de uma chapa ("P48 (b)",
+    _separar_variantes, 01/10) é a mesma peça no lugar — senão o conjunto com uma chapa de furo redondo onde não há
+    terça deixava de ser instância dele (o M19 do ÁGUA GELADA, as meias-tesouras que não se juntavam no resumo)."""
+    return re.sub(r" \([b-z]\)$", "", str(_marcas(e).get("posicao") or e.nome))
+
+
 def _multiplo(grupo: Sequence[Solido], unidade: collections.Counter) -> int:
     """k quando a composição do grupo é exatamente k × unidade; senão 0."""
-    cont = collections.Counter(str(_marcas(e).get("posicao") or e.nome) for e in grupo)
+    cont = collections.Counter(posicao_base(e) for e in grupo)
     if set(cont) != set(unidade) or not unidade:
         return 0
     ks = {cont[m] / unidade[m] for m in unidade}
@@ -136,7 +143,7 @@ def _dividir(grupo: Sequence[Solido], k: int, unidade: collections.Counter) -> L
     ordenado = sorted(grupo, key=t_de)
     tam = len(grupo) // k
     partes = [ordenado[i * tam:(i + 1) * tam] for i in range(k)]
-    if all(collections.Counter(str(_marcas(e).get("posicao") or e.nome) for e in p) == unidade for p in partes):
+    if all(collections.Counter(posicao_base(e) for e in p) == unidade for p in partes):
         return partes
     return []
 
@@ -152,7 +159,7 @@ def _instancias_do_conjunto(lista: Sequence[Solido], unidade: collections.Counte
     a chapinha que não encosta em nada) juntam-se ao fragmento mais próximo enquanto a
     soma couber na composição unitária."""
     def comp(g):
-        return collections.Counter(str(_marcas(e).get("posicao") or e.nome) for e in g)
+        return collections.Counter(posicao_base(e) for e in g)
 
     def cabe(c):
         return all(unidade.get(k, 0) >= q for k, q in c.items())
@@ -3792,7 +3799,7 @@ def _itens_de_localizacao(pecas: Sequence[Solido]) -> List[Tuple[str, List[Solid
             soltas.append(e)
     itens: List[Tuple[str, List[Solido]]] = []
     for conj, lista in por_conj.items():
-        total = collections.Counter(str(_marcas(e).get("posicao") or e.nome) for e in lista)
+        total = collections.Counter(posicao_base(e) for e in lista)
         n = 0
         for q in total.values():
             n = math.gcd(n, q)
