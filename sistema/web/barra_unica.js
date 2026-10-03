@@ -146,6 +146,17 @@
         I('Aplicar furos e tamanho', '2d', 'aplicar-furos', { antes: 'Desenhos › Aplicar furos e tamanho ao modelo 3D' }),
       ]),
     ] },
+    // Comercial (03/10/2026): o orçamento e a área comercial não tinham caminho a partir da área de trabalho
+    // ("olhei todos os menus e não achei essa tela da proposta"); {projeto} vira o projeto aberto
+    { nome: 'Comercial', itens: [
+      { texto: 'Orçamento da obra', link: '/materiais?projeto={projeto}#orcamento', dica: 'quantidades da lista × tabela de preços; o fechamento do dono' },
+      { texto: 'Proposta comercial', link: '/comercial?projeto={projeto}#proposta', dica: 'PDF com as imagens do modelo 3D' },
+      { texto: 'Contrato', link: '/comercial?projeto={projeto}#contrato', dica: 'empreitada global em Word e PDF' },
+      { texto: 'Obra e pagamentos', link: '/comercial?projeto={projeto}#obra', dica: 'etapas, parcelas, aditivos, termo de aceite' },
+      HR,
+      { texto: 'Documentos da obra', link: '/comercial?projeto={projeto}#documentos' },
+      { texto: 'Dados da empresa e logo', link: '/comercial?projeto={projeto}#empresa' },
+    ] },
     { nome: 'Ver', itens: [
       S('Tela', [
         F('Só o 2D', 'vista-2d'), F('2D + 3D lado a lado', 'vista-ambos'), F('Só o 3D', 'vista-3d'),
@@ -404,7 +415,12 @@
 
   // ------------------------------------------------------------ executar
   function executar(it) {
-    if (it.link) { if (it.nova) window.open(it.link, '_blank', 'noopener'); else location.href = it.link; return; }
+    if (it.link) {
+      var proj = new URLSearchParams(location.search).get('projeto') || '';
+      var url = it.link.replace('{projeto}', encodeURIComponent(proj));
+      if (it.nova) window.open(url, '_blank', 'noopener'); else location.href = url;
+      return;
+    }
     if (it.fn) { funcao(it.fn); return; }
     if (it.varios) {                       // o mesmo comando em cada lado carregado (Salvar)
       it.varios.forEach(function (par) { var d = docPronto(par[0]); var o = original({ acao: par[1] }, d); if (o) o.click(); });

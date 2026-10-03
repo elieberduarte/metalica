@@ -87,7 +87,7 @@ def test_nenhum_comando_do_menu_antigo_sumiu():
 def test_menus_na_ordem_da_obra():
     js = _ler("barra_unica.js")
     nomes = re.findall(r"^    \{ nome: '([^']+)', itens: \[", js, re.M)
-    assert nomes == ["Arquivo", "Modelo", "Cálculo", "Desenho", "Produção", "Ver", "?"], nomes
+    assert nomes == ["Arquivo", "Modelo", "Cálculo", "Desenho", "Produção", "Comercial", "Ver", "?"], nomes
     # no 3D, os nomes que batiam com o Explodir e o Juntar do 2D
     assert "I('Dividir a peça em trechos', '3d', 'explodir'" in js and "I('Unir peças', '3d', 'juntar'" in js
     # cada item movido diz de onde veio (? › Onde foi parar)
