@@ -506,6 +506,7 @@ const CAMPOS_RESUMO = [
   ['telha', 'Telha (descrição comercial)', 'ex.: Telha TP40 #0,50 Aluzinc RAL 1015 (bege)', false],
   ['eixos', 'Eixos das tesouras', 'letras na ordem ao longo do galpão, separadas por vírgula (ex.: A, C, E, G); vazio = A, B, C…', false],
   ['notas_tesouras', 'Notas das tesouras', 'ex.: canto quinado; 2 meias-tesouras emendadas na cumeeira; T3 e T5 são as dos oitões', true],
+  ['perda_chapas', 'Perda no corte das chapas (%)', 'para contar as chapas de 1,20 x 3,00 na compra; vazio = 15', false],
 ];
 let RESUMOS = null, RESUMOS_MONTADO = false, DOC_ATUAL = 'obra', ULTIMOS_NUMEROS = null;
 

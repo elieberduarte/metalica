@@ -97,3 +97,30 @@ def test_html_dos_resumos_com_levantamento_minimo():
     # a versão paginada leva o Paged.js e o sinal de fim de paginação da impressão
     paginado = resumos.html_resumo_obra(R, paginado=True)
     assert "paged.polyfill.js" in paginado and "data-paged" in paginado
+
+
+def test_descricao_da_telha_pelo_perfil_dela():
+    """a multi-dobra de 0,65 saía com a descrição da obra (0,50); o "Telha TELHA" repetido sai (05/10)"""
+    assert resumos.descricao_telha("TELHA TP40 0.65MM", "Telha TELHA TP40 0.50MM") == "Telha TP40 0,65 mm"
+    assert resumos.descricao_telha("TELHA TP40 0.50MM", "Telha TELHA TP40 0.50MM") == "Telha TP40 0,50 mm"
+    assert resumos.descricao_telha("TELHA TP40 0.50MM", "") == "Telha TP40 0,50 mm"
+
+
+def test_compra_chapas_comerciais_porcas_e_arruelas():
+    """chapa de 1,20 x 3,00 pela área com a perda; cada parafuso com 1 porca e 1 arruela, as soltas somadas (05/10)"""
+    lista = {"perfis": [], "chapas": [{"espessura": 3.0, "pecas": 10, "area_m2": 10.0, "peso": 235.5}]}
+    pf = [{"nome": "Parafuso M12x35", "descricao": "Parafuso sextavado Ø1/2\" + porca e arruela", "qtd": 10, "parafuso": True, "d": 12},
+          {"nome": "Porca 1/2\"", "descricao": "", "qtd": 4, "parafuso": False, "d": 12.7},
+          {"nome": "Arruela 5/8\"", "descricao": "", "qtd": 6, "parafuso": False, "d": 15.9}]
+    C = resumos._compra(lista, pf, {"itens": []}, {})
+    assert C["chapas"][0]["chapas"] == 4                       # 10 m² × 1,15 / 3,6 m² = 3,2 → 4
+    assert dict(C["porcas"]) == {'1/2"': 14} and dict(C["arruelas"]) == {'1/2"': 10, '5/8"': 6}
+    assert resumos._compra(lista, pf, {"itens": []}, {"perda_chapas": "0"})["chapas"][0]["chapas"] == 3
+
+
+def test_barra_comercial_pelo_perfil():
+    """W em 12 m; os outros em 6 m, ou 12 m quando a peça passa de 6 m (05/10)"""
+    from saida.lista_producao import _barra_para
+    assert _barra_para([3640.0], 0, "W150X13.00") == 12000.0
+    assert _barra_para([5000.0], 0, "U100X50X#11") == 6000.0
+    assert _barra_para([6290.0], 0, "U150X50X#13") == 12000.0

@@ -19,6 +19,7 @@ import collections
 import csv
 import math
 import os
+import re
 from datetime import datetime
 from typing import Dict, List, Optional, Sequence
 
@@ -114,10 +115,14 @@ def texto_dos_cortes(cortes: Sequence[dict]) -> str:
     return " + ".join("%d× %s %s" % (c["qtd"], c["nome"] or "peça", _n(c["comprimento"])) for c in cortes)
 
 
-def _barra_para(comprimentos: Sequence[float], barra: float) -> float:
-    """0 = automático: 6 m quando tudo cabe, senão 12 m."""
+def _barra_para(comprimentos: Sequence[float], barra: float, perfil: str = "") -> float:
+    """0 = automático, pela regra da fábrica (05/10: "depende do perfil, W 12 m, o restante 6 m"): o laminado W em
+    barra de 12 m; os outros em 6 m — a peça mais comprida que 6 m (a terça de 6,3 m) leva o perfil para 12 m, senão
+    cada uma seria uma emenda."""
     if barra and barra > 0:
         return float(barra)
+    if re.match(r"\s*(W|HP)\s*\d", str(perfil or ""), re.I):
+        return BARRAS_COMERCIAIS[1]
     maior = max(comprimentos) if comprimentos else 0.0
     return BARRAS_COMERCIAIS[0] if maior <= BARRAS_COMERCIAIS[0] + 1e-6 else BARRAS_COMERCIAIS[1]
 
@@ -267,7 +272,8 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     lista = [p for p in lista if not consumida(p)]
     linhas = [_linha_posicao(p, categorias.get(p.marca, "OUTROS")) for p in lista]
     for i, t in enumerate(md["telhas"], 1):
-        linhas.append({"marca": t["conjunto"], "nome": "MD%d" % i, "categoria": "TELHAS", "classe": "Telha multi-dobra",
+        # o nome é o das pranchas (detalhar: TMD.n, CM.n — a lista dizia MD1 e CU1, 05/10)
+        linhas.append({"marca": t["conjunto"], "nome": "TMD.%d" % i, "categoria": "TELHAS", "classe": "Telha multi-dobra",
                        "perfil": t["perfil"], "material": t["material"], "quantidade": t["instancias"],
                        "comprimento": round(t["desenv_ext"]), "largura": 980, "espessura": 0,
                        "area_m2": round(t["desenv_ext"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
@@ -276,7 +282,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            t["reta1"], t["reta2"], t["raio_int"], t["angulo"], t["desenv_int"])]})
         cb = t.get("cobrimento")
         if cb:
-            linhas.append({"marca": t["conjunto"] + "-C", "nome": "MD%d-C" % i, "categoria": "TELHAS",
+            linhas.append({"marca": t["conjunto"] + "-C", "nome": "TMD.%d-C" % i, "categoria": "TELHAS",
                            "classe": "Telha (complemento da multi-dobra)", "perfil": t["perfil"], "material": t["material"],
                            "quantidade": t["instancias"], "comprimento": round(cb["resto"]), "largura": 980, "espessura": 0,
                            "area_m2": round(cb["resto"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
@@ -285,7 +291,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            "observacoes": ["começa %d mm antes da terça %s (transpasse %.0f mm)" % (150, cb["terca"], cb["transpasse"])]})
 
     for i, t in enumerate(md["cumeeiras"], 1):
-        linhas.append({"marca": t["conjunto"], "nome": "CU%d" % i, "categoria": "TELHAS", "classe": "Cumeeira",
+        linhas.append({"marca": t["conjunto"], "nome": "CM.%d" % i, "categoria": "TELHAS", "classe": "Cumeeira",
                        "perfil": t["perfil"], "material": t["material"], "quantidade": t["instancias"],
                        "comprimento": round(t["desenv"]), "largura": 980, "espessura": 0,
                        "area_m2": round(t["desenv"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
@@ -313,7 +319,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     for g in perfis.values():
         comps = g.pop("_comps")
         rotulos = g.pop("_rotulos")
-        b = _barra_para(comps, barra)
+        b = _barra_para(comps, barra, g["perfil"])
         g["barras"] = encaixar(comps, b, rotulos=rotulos)
         g["kg_m"] = round(g["peso"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0
         g["kg_m_malha"] = round(g["peso_malha"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0

@@ -863,7 +863,7 @@ def _vivos():
     if _VIVOS is None:
         import desenhos_vivos
         desenhos_vivos.configurar(detalhar=lambda s: detalhar_projeto(s, {"automatico": True}), pranchas=refazer_pranchas,
-                                  gerente=_gerente)
+                                  resumos=_resumos_vivos, gerente=_gerente)
         _VIVOS = desenhos_vivos
     return _VIVOS
 
@@ -1964,7 +1964,7 @@ def quebrar_cantos_projeto(s: str, corpo: dict) -> dict:
         _fim_progresso(s)
 
 
-CAMPOS_RESUMO = ("revisao", "descricao", "telha", "eixos", "notas_tesouras", "data")
+CAMPOS_RESUMO = ("revisao", "descricao", "telha", "eixos", "notas_tesouras", "data", "perda_chapas")
 
 
 def dados_dos_resumos(s: str) -> dict:
@@ -2042,6 +2042,14 @@ def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
         return saida
     finally:
         _fim_progresso(s)
+
+
+def _resumos_vivos(s: str):
+    """A atualização automática (desenhos_vivos) refaz os resumos da obra e de materiais que o projeto já tem, com os
+    dados gravados — eles paravam no dia do botão "Gerar de novo" (a Sala, 10 dias atrás das pranchas, 05/10)."""
+    pasta = os.path.join(_gerente()._existente(s), "detalhamento")
+    if any(os.path.exists(os.path.join(pasta, n + ".html")) for n in ("resumo-da-obra", "resumo-de-materiais")):
+        gerar_resumos_projeto(s, {})
 
 
 def _identificacao_do_projeto(s: str) -> dict:

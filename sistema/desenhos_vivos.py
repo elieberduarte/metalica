@@ -13,6 +13,9 @@ As **pranchas** vêm junto: depois de cada atualização, e quando um desenho de
 gravado, o desenho "Pranchas" é refeito — das folhas (`pranchas_das_folhas`) ou pela montagem automática
 com os mesmos parâmetros da última vez.
 
+Os **resumos** (da obra e de materiais) também, quando o projeto já os tem: sem isso eles paravam no dia
+em que o botão "Gerar de novo" foi apertado (05/10).
+
 O app entrega as funções que fazem o trabalho (`configurar`): este módulo só decide quando.
 """
 import hashlib
@@ -241,6 +244,16 @@ def _rodar(s: str, motivo: str, so_pranchas: bool):
             _funcoes["detalhar"](s)          # grava o carimbo, com a geração dos desenhos
         if _funcoes.get("pranchas"):
             _funcoes["pranchas"](s)          # refaz o desenho das pranchas, se houver, e registra a geração
+        if not so_pranchas and _funcoes.get("resumos"):
+            # os resumos da obra e de materiais, quando já existem: paravam no dia em que o botão foi apertado (a Sala
+            # ficou 10 dias atrás das pranchas, 05/10); o erro deles não é do detalhamento
+            with _trava:
+                if s in _estado:
+                    _estado[s]["etapa"] = "resumos da obra e de materiais…"
+            try:
+                _funcoes["resumos"](s)
+            except Exception:                                   # noqa: BLE001
+                traceback.print_exc()
     except Exception as exc:                                    # noqa: BLE001 — fica no estado para a tela
         erro = str(exc) or exc.__class__.__name__
         traceback.print_exc()
