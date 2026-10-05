@@ -96,9 +96,11 @@ def test_menus_na_ordem_da_obra():
     assert js.count("antes: ") >= 80
 
 
-def test_exportar_json_do_modelo():
-    """Arquivo › Exportar › JSON do modelo (05/10/2026): o modelo aberto no 3D, no formato do programa, baixado."""
+def test_exportar_pacote_do_projeto():
+    """Arquivo › Exportar › Pacote do projeto (05/10/2026: o JSON do modelo sozinho não volta para o programa): o
+    mesmo pacote .metalica.zip do cartão do projeto, que "Importar pacote…" lê; grava antes de baixar."""
     js = _ler("barra_unica.js")
-    assert "F('JSON do modelo', 'exportar-json'" in js
-    assert "if (fn === 'exportar-json') { exportarJSON(); return; }" in js
-    assert "ed.documento.paraJSON()" in js and "a.download = arquivo" in js
+    assert "F('Pacote do projeto (.metalica.zip)', 'exportar-pacote'" in js
+    assert "if (fn === 'exportar-pacote') { exportarPacote(); return; }" in js
+    assert "'/api/projetos/' + encodeURIComponent(proj) + '/exportar'" in js and "if (salvar) executar(salvar);" in js
+    assert "exportar-json" not in js
