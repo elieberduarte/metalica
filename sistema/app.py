@@ -425,6 +425,25 @@ def projeto_completo(s: str) -> dict:
     return {"projeto": g.ler(s), "resumo": g.resumo(s)}
 
 
+def _conferir_base_do_modelo(s: str, base):
+    """O editor manda a data do modelo que carregou: se o arquivo mudou depois disso (o CAD
+    aplicou furos, outra janela ou outra máquina gravou), não sobrescreve."""
+    if base is not None and _alterado_modelo(s) - float(base) > 0.5:
+        raise ErroDeDados("o modelo deste projeto foi gravado por outra tela, janela ou máquina depois de "
+                          "você abri-lo; recarregue o modelo (F5) antes de continuar. Nada foi gravado.")
+
+
+def salvar_modelo_cru(s: str, bruto: bytes, base_alterado=None, entidades=None) -> dict:
+    """POST /api/projetos/<s>/modelo com o cabeçalho X-Modelo-Cru: o editor manda o documento já
+    em texto JSON, e ele vai para o disco como veio. No Bella Casa (05/10) cada gravação automática
+    passava os 200 MB por json.loads e json.dumps. Mesmas regras da ação "modelo"."""
+    _conferir_base_do_modelo(s, base_alterado)
+    r = _gerente().salvar_modelo_bruto(s, bruto, entidades)
+    r["alterado"] = _alterado_modelo(s)
+    _vivos().modelo_gravado(s)
+    return r
+
+
 def acao_de_projeto(s: str, acao: str, corpo: dict) -> dict:
     g = _gerente()
     if acao == "dados":
@@ -445,14 +464,7 @@ def acao_de_projeto(s: str, acao: str, corpo: dict) -> dict:
         _abrir_no_explorador(pasta)
         return {"aberta": pasta}
     if acao == "modelo":
-        # o editor manda a data do modelo que carregou: se o arquivo mudou depois disso
-        # (o CAD aplicou furos, outra janela ou outra máquina gravou), não sobrescreve
-        base = corpo.get("base_alterado")
-        if base is not None:
-            atual = _alterado_modelo(s)
-            if atual - float(base) > 0.5:
-                raise ErroDeDados("o modelo deste projeto foi gravado por outra tela, janela ou máquina depois de "
-                                  "você abri-lo; recarregue o modelo (F5) antes de continuar. Nada foi gravado.")
+        _conferir_base_do_modelo(s, corpo.get("base_alterado"))
         r = g.salvar_modelo(s, corpo.get("documento", corpo))
         r["alterado"] = _alterado_modelo(s)
         _vivos().modelo_gravado(s)
@@ -3948,6 +3960,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _do_post(self, rota):
         try:
+            if self.headers.get("X-Modelo-Cru") == "1":
+                # o modelo do editor em texto JSON pronto, gravado como veio (Bella Casa, 05/10)
+                partes = rota.split("/api/projetos/", 1)[-1].strip("/").split("/")
+                if not rota.startswith("/api/projetos/") or len(partes) != 2 or partes[1] != "modelo":
+                    raise ErroDeDados("a gravação direta só vale para o modelo do projeto.")
+                n = int(self.headers.get("Content-Length") or 0)
+                if not n or n > 4 * 1024 ** 3:
+                    raise ErroDeDados("modelo vazio ou grande demais (limite de 4 GB).")
+                base, ent = self.headers.get("X-Base-Alterado"), self.headers.get("X-Entidades")
+                return self._json(salvar_modelo_cru(partes[0], self.rfile.read(n), float(base) if base else None,
+                                                    int(ent) if ent else None))
             # o arquivo grande vem como ele é, sem base64 nem JSON (o IFC de 321 MB, 05/10)
             binario = (self.headers.get("Content-Type") or "").startswith("application/octet-stream")
             corpo = self._corpo_binario() if binario else self._corpo()

@@ -236,6 +236,23 @@ class TestUnidadesEColocacao(Asserts):
         self.assertAlmostEqual(doc.metadados["importacao"]["escala_para_mm"], 25.4)
         self.assertRelativo(doc.solidos[0].volume, 6 * 25.4 ** 3, 1e-9)
 
+    def test_vertices_gravados_com_3_casas(self):
+        """1 µm, a tolerância com que a malha junta os pontos: as 17 casas do float eram uns 40%
+        do modelo de 183 MB do Bella Casa (05/10). Girado 36,87° e em polegada, sobram dízimas."""
+        texto = texto_de("caixa_metro.ifc").replace(
+            "#1=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);",
+            "#1=IFCCONVERSIONBASEDUNIT(#200,.LENGTHUNIT.,'INCH',#201);\n"
+            "#200=IFCDIMENSIONALEXPONENTS(1,0,0,0,0,0,0);\n"
+            "#201=IFCMEASUREWITHUNIT(IFCLENGTHMEASURE(0.0254),#202);\n"
+            "#202=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);").replace(
+            "#18=IFCAXIS2PLACEMENT3D(#17,$,$);",
+            "#18=IFCAXIS2PLACEMENT3D(#17,#6,#300);\n#300=IFCDIRECTION((0.8,0.6,0.));")
+        s = importar_texto(texto).solidos[0]
+        for v in s.vertices:
+            for x in v:
+                self.assertEqual(x, round(x, 3))
+        self.assertRelativo(s.volume, 6 * 25.4 ** 3, 1e-5)
+
     def test_placement_encadeado_chega_na_posicao_global(self):
         minimo, maximo = caixa(self.caixa.vertices)
         self.assertPonto(minimo, (11000.0, 21000.0, 3000.0), 1e-6)

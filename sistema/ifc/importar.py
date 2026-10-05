@@ -264,8 +264,23 @@ class Malha:
     def somar(self, outra: "Malha"):
         if outra is None:
             return
+        # cada vértice da outra é deduzido uma vez (e não uma por face que o usa): o mesmo
+        # resultado, na mesma ordem, de passar face por face por `face` — no Bella Casa
+        # (05/10) juntar as partes era um quinto da importação
+        mapa: Dict[int, int] = {}
+        ponto, verts, faces = self.ponto, outra.vertices, self.faces
         for f in outra.faces:
-            self.face([outra.vertices[i] for i in f])
+            idx = []
+            for i in f:
+                j = mapa.get(i)
+                if j is None:
+                    j = mapa[i] = ponto(verts[i])
+                if not idx or idx[-1] != j:
+                    idx.append(j)
+            if len(idx) > 2 and idx[0] == idx[-1]:
+                idx.pop()
+            if len(idx) >= 3:
+                faces.append(idx)
 
     # ---- consultas ----
     @property
@@ -1047,6 +1062,30 @@ class Importador:
     def _face_brep(self, face: Entidade, m: Malha):
         if not face.e_tipo("IFCFACE", "IFCFACESURFACE", "IFCADVANCEDFACE"):
             return
+        # caminho direto da face mais comum (um IfcPolyLoop só): o ponto só é lido do arquivo
+        # na primeira face que o usa — as vizinhas o acham pelo id. Mesmo resultado do caminho
+        # geral abaixo; no Bella Casa (05/10) cada ponto era lido 3 a 4 vezes
+        limites = face.arg(0) or []
+        if len(limites) == 1:
+            bound = self.res(limites[0])
+            laco = self.res(bound.arg(0)) if bound is not None else None
+            if laco is not None and (laco.tipo == "IFCPOLYLOOP" or laco.e_tipo("IFCPOLYLOOP")):
+                refs = laco.arg(0) or []
+                if len(refs) < 3:
+                    return
+                if bound.arg(1) is False:
+                    refs = list(reversed(refs))
+                idx = []
+                por_chave = m._por_chave
+                for ref in refs:
+                    chave = int(ref)
+                    i = por_chave.get(chave)
+                    if i is None:
+                        i = m.ponto_com_chave(chave, self.ponto(ref))
+                    if not idx or idx[-1] != i:
+                        idx.append(i)
+                m.face_indices(idx)
+                return
         externo: List[Tuple[float, float, float]] = []
         externo_refs: list = []
         refs: list = []
@@ -2068,6 +2107,13 @@ class Importador:
         self.avisar("modelo trazido para a origem: no arquivo ele estava em x = %.1f m, "
                     "y = %.1f m; o exportador devolve essa posição" % (x0 / 1000, y0 / 1000))
 
+    def _arredondar_vertices(self):
+        """Vértices dos sólidos com 3 casas, 1 µm — a tolerância com que `Malha.ponto` já junta
+        os pontos coincidentes. No Bella Casa (05/10) as 17 casas do float eram uns 40% do
+        modelo de 183 MB que o editor baixa, lê e grava de volta."""
+        for e in self.doc.solidos:
+            e.vertices = [(round(v[0], 3), round(v[1], 3), round(v[2], 3)) for v in e.vertices]
+
     def processar(self) -> Documento:
         inicio = time.time()
         self.ler_unidades()
@@ -2116,6 +2162,7 @@ class Importador:
             for nome in [n for n in self.doc.camadas if n not in usadas]:
                 del self.doc.camadas[nome]
         self._trazer_para_origem()
+        self._arredondar_vertices()
 
         self.doc.metadados["importacao"] = {
             "arquivo": os.path.basename(self.arq.caminho),

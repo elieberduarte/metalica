@@ -230,6 +230,45 @@ def test_modelo_vai_como_esta_no_disco_quando_ja_migrado():
             importlib.reload(app)
 
 
+def test_modelo_gravado_como_veio_do_editor():
+    """A gravação automática do Bella Casa (05/10) passava 200 MB por json.loads e json.dumps: o
+    editor manda o texto pronto e ele vai para o disco como veio, com as mesmas regras (data base,
+    texto que não é um objeto JSON recusado)."""
+    import importlib
+    with tempfile.TemporaryDirectory() as raiz:
+        os.environ["METALICA_DADOS"] = raiz
+        try:
+            import app
+            importlib.reload(app)
+            s = app.criar_projeto({"nome": "Cru", "tipo": "galpao", "dados": {"nome": "Cru", "vao": 18}})["slug"]
+            texto = json.dumps({"nome": "Viga ç", "entidades": [{"id": "e1", "tipo": "barra"}],
+                                "metadados": {"camadas_funilaria": True}}, ensure_ascii=False).encode("utf-8")
+            r = app.salvar_modelo_cru(s, texto, None, 1)
+            assert r["entidades"] == 1 and r["alterado"]
+            with open(app._gerente().caminho_modelo(s), "rb") as f:
+                assert f.read() == texto
+            assert app.modelo_do_projeto(s)["documento"]["nome"] == "Viga ç"
+            # outra tela gravou depois que o editor abriu: recusa sem gravar
+            try:
+                app.salvar_modelo_cru(s, texto, r["alterado"] - 60, 1)
+            except ErroDeDados as e:
+                assert "outra tela" in str(e)
+            else:
+                raise AssertionError("gravação com data velha devia ser recusada")
+            for ruim in (b"", b"[1, 2]", b'{"nome": "cortado'):
+                try:
+                    app.salvar_modelo_cru(s, ruim, None, None)
+                except ErroDeDados:
+                    pass
+                else:
+                    raise AssertionError("texto que não é objeto JSON devia ser recusado: %r" % ruim)
+            with open(app._gerente().caminho_modelo(s), "rb") as f:
+                assert f.read() == texto
+        finally:
+            del os.environ["METALICA_DADOS"]
+            importlib.reload(app)
+
+
 def test_gravacao_simultanea_nao_emenda_arquivo():
     """Autosave do CAD e vista nova gravando o mesmo desenho ao mesmo tempo: o arquivo
     final é um dos dois, inteiro — nunca metade de um e o fim do outro."""

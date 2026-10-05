@@ -166,6 +166,9 @@ class Entidade:
         return self.args if self.tipo == alvo else None
 
     def e_tipo(self, *tipos: str) -> bool:
+        if not self.partes:                 # o caso comum, sem montar a lista de tipos
+            meu = self.tipo
+            return any(t == meu or t.upper() == meu for t in tipos)
         meus = self.tipos
         return any(t.upper() in meus for t in tipos)
 

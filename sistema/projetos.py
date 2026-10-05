@@ -143,15 +143,21 @@ def _gravar_json(caminho: str, dados, indent=None):
     O temporário tem nome único e a gravação de cada caminho é serializada por uma
     trava: dois pedidos simultâneos (a gravação automática do CAD e uma vista nova, ou
     dois cliques) não escrevem no mesmo temporário nem deixam um arquivo emendado."""
+    # dumps + write, e não dump: o dump vai pelo codificador em Python puro (o
+    # modelo de 80 MB levava ~20 s); o dumps sem recuo usa o de C. Sem recuo, sem os espaços
+    # depois de "," e ":" também — como o JSON.stringify do editor (~10% do modelo grande)
+    sep = (",", ":") if indent is None else None
+    _gravar_bytes(caminho, json.dumps(dados, ensure_ascii=False, indent=indent, separators=sep).encode("utf-8"))
+
+
+def _gravar_bytes(caminho: str, bruto: bytes):
+    """O conteúdo já pronto, com o mesmo temporário + troca e a mesma trava de `_gravar_json`."""
     os.makedirs(os.path.dirname(caminho), exist_ok=True)
     parcial = "%s.%d-%d.parcial" % (caminho, os.getpid(), next(_CONTADOR))
     with _trava(caminho):
         try:
-            # dumps + write, e não dump: o dump vai pelo codificador em Python puro (o
-            # modelo de 80 MB levava ~20 s); o dumps sem recuo usa o de C
-            texto = json.dumps(dados, ensure_ascii=False, indent=indent)
-            with open(parcial, "w", encoding="utf-8") as f:
-                f.write(texto)
+            with open(parcial, "wb") as f:
+                f.write(bruto)
             trocar_arquivo(parcial, caminho)
         finally:
             if os.path.exists(parcial):
@@ -674,6 +680,20 @@ class Projetos:
         self.tocar(s)
         return {"salvo": MODELO, "projeto": s,
                 "entidades": len(documento.get("entidades") or [])}
+
+    def salvar_modelo_bruto(self, s: str, bruto: bytes, entidades: Optional[int] = None) -> dict:
+        """`salvar_modelo` com o documento já em texto JSON (o editor manda o que gerou): vai
+        para o disco como veio, sem ler e reescrever — no Bella Casa (05/10) eram 200 MB por
+        json.loads e json.dumps a cada gravação automática."""
+        if not bruto[:64].lstrip().startswith(b"{") or not bruto[-64:].rstrip().endswith(b"}"):
+            raise ErroDeDados("documento 3D ausente ou inválido.")
+        try:
+            self._guardar_historico(s, False)
+        except OSError:
+            pass
+        _gravar_bytes(self.caminho_modelo(s), bruto)
+        self.tocar(s)
+        return {"salvo": MODELO, "projeto": s, "entidades": entidades}
 
     # ---- histórico do modelo: cópias comprimidas das gravações anteriores
     def _pasta_historico(self, s: str) -> str:
