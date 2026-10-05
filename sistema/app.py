@@ -127,6 +127,12 @@ def _documentos() -> str:
 DEV = "--dev" in sys.argv
 PORTA_DEV = 8766
 
+#: A parte comercial — orçamento, proposta, contrato, obra e pagamentos (tela /comercial) — fica só no
+#: desenvolvimento, rodando do código (pedido de 05/10): no programa instalado as rotas e a tela não existem, e o
+#: pacote nem leva o código dela (empacotar/construir.py). METALICA_COMERCIAL=0/1 força um ou outro (testes).
+COMERCIAL = os.environ.get("METALICA_COMERCIAL", "0" if versao.CONGELADO else "1") == "1"
+SO_NO_DEV = "a parte comercial (orçamento, proposta, contrato e obra) fica só na versão de desenvolvimento."
+
 
 def _pasta_de_dados() -> str:
     """Onde ficam projetos, modelos e arquivos gerados.
@@ -2208,7 +2214,7 @@ def etapas_do_projeto(s: str) -> dict:
     g = _gerente()
     p = g.ler(s)
     return {"projeto": {"slug": s, "nome": p.get("nome") or s, "cliente": p.get("cliente") or "", "tipo": p.get("tipo") or ""},
-            "etapas": E.etapas(s, g._existente(s), p), "biblioteca": E.biblioteca(s)}
+            "etapas": E.etapas(s, g._existente(s), p, COMERCIAL), "biblioteca": E.biblioteca(s, COMERCIAL)}
 
 
 REPOSITORIO = "elieberduarte/metalica"
@@ -3863,6 +3869,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(_vivos().estado(partes[0]))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(dados_dos_resumos(partes[0]))
+                if len(partes) == 2 and partes[1] in ("orcamento", "comercial") and not COMERCIAL:
+                    return self._erro(SO_NO_DEV, 404)
                 if len(partes) == 2 and partes[1] == "orcamento":
                     return self._json(rota_orcamento(partes[0]))
                 if len(partes) == 2 and partes[1] == "comercial":
@@ -3896,7 +3904,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "cad", "cad.html"), WEB)
             if rota in ("/materiais", "/lista-de-materiais"):
                 return self._arquivo(os.path.join(WEB, "materiais.html"), WEB)
-            if rota in ("/comercial", "/proposta", "/contrato"):
+            if COMERCIAL and rota in ("/comercial", "/proposta", "/contrato"):
                 return self._arquivo(os.path.join(WEB, "comercial.html"), WEB)
             if rota in ("/analise", "/resultado-da-analise"):
                 return self._arquivo(os.path.join(WEB, "analise.html"), WEB)
@@ -4011,6 +4019,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(gerar_resumos_projeto(partes[0], corpo))
+                if len(partes) in (2, 3) and partes[1] in ("comercial", "orcamento") and not COMERCIAL:
+                    return self._erro(SO_NO_DEV, 404)
                 if len(partes) in (2, 3) and partes[1] == "comercial":
                     return self._json(rota_comercial(partes[0], partes[2] if len(partes) == 3 else "",
                                                      corpo if isinstance(corpo, dict) else {}, self.server.server_address[1]))

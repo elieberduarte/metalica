@@ -102,3 +102,57 @@ def test_orcamento_como_aba_do_comercial():
     assert "get('so') === 'orcamento'" in mat and "location.replace(`/comercial?projeto=${encodeURIComponent(PROJETO)}#orcamento`)" in mat
     assert "ABAS.filter(([k]) => k !== 'orcamento')" in mat
     assert "html.so-orcamento header.topo" in _ler("materiais.html")
+
+
+def test_comercial_so_no_desenvolvimento():
+    """Pedido de 05/10: a parte comercial (orçamento, proposta, contrato, obra e pagamentos) fica só no
+    desenvolvimento. Sem ela, as telas Comercial e Obra e a tabela de preços/empresa da Biblioteca somem; o
+    servidor não tem as rotas nem a tela; o pacote não leva o código nem as telas."""
+    with tempfile.TemporaryDirectory() as pasta:
+        assert [e["chave"] for e in E.etapas("g", pasta, {}, False)] == ["engenharia", "producao"]
+        assert not any("/comercial" in b["link"] for b in E.biblioteca("g", False))
+        assert any("/comercial" in b["link"] for b in E.biblioteca("g", True))
+    import subprocess
+    import time
+    import urllib.request
+    import urllib.error
+    from verificar_editor import _porta_livre
+    base = os.path.dirname(WEB)
+    with tempfile.TemporaryDirectory() as dados:
+        porta = _porta_livre()
+        amb = dict(os.environ, METALICA_COMERCIAL="0")
+        srv = subprocess.Popen([sys.executable, os.path.join(base, "app.py"), "--sem-navegador", "--porta", str(porta),
+                                "--dados", dados], env=amb, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            url = "http://localhost:%d" % porta
+            for _ in range(100):
+                try:
+                    urllib.request.urlopen(url + "/api/versao", timeout=2).read()
+                    break
+                except Exception:                                        # noqa: BLE001
+                    time.sleep(0.2)
+            req = urllib.request.Request(url + "/api/projetos", data=json.dumps({"nome": "Cru", "tipo": "ifc"}).encode(),
+                                         method="POST", headers={"Content-Type": "application/json"})
+            s = json.loads(urllib.request.urlopen(req, timeout=30).read())["slug"]
+
+            def status(rota, corpo=None):
+                r = urllib.request.Request(url + rota, data=corpo, method="POST" if corpo else "GET",
+                                           headers={"Content-Type": "application/json"})
+                try:
+                    return urllib.request.urlopen(r, timeout=30).status
+                except urllib.error.HTTPError as e:
+                    return e.code
+            assert status("/comercial?projeto=" + s) == 404
+            assert status("/api/projetos/%s/orcamento" % s) == 404
+            assert status("/api/projetos/%s/comercial" % s) == 404
+            assert status("/api/projetos/%s/orcamento/pdf" % s, b"{}") == 404
+            et = json.loads(urllib.request.urlopen(url + "/api/projetos/%s/etapas" % s, timeout=30).read())
+            assert [e["chave"] for e in et["etapas"]] == ["engenharia", "producao"]
+        finally:
+            srv.kill()
+    with open(os.path.join(os.path.dirname(base), "empacotar", "construir.py"), encoding="utf-8") as f:
+        construir = f.read()
+    for m in ("saida.orcamento", "saida.comercial", "saida.comercial_servico", "saida.contrato_docs",
+              "saida.proposta_html", "saida.imagens3d", "saida.docx_simples"):
+        assert '"%s"' % m in construir
+    assert '"comercial.html", "comercial.js"' in construir

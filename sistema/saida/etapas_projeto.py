@@ -35,7 +35,9 @@ def _arquivos(pasta: str) -> List[str]:
         return []
 
 
-def etapas(slug: str, pasta: str, projeto: dict) -> List[Dict]:
+def etapas(slug: str, pasta: str, projeto: dict, comercial_ligado: bool = True) -> List[Dict]:
+    """As telas do projeto. Sem `comercial_ligado` (o programa instalado: a parte comercial fica só no
+    desenvolvimento, pedido de 05/10) saem Comercial e Obra, que moram na tela /comercial."""
     s = quote(slug)
     comercial = _ler_json(os.path.join(pasta, "comercial", "comercial.json"))
     proposta, contrato, marcadas = comercial.get("proposta") or {}, comercial.get("contrato") or {}, comercial.get("etapas") or {}
@@ -62,7 +64,7 @@ def etapas(slug: str, pasta: str, projeto: dict) -> List[Dict]:
     area = "/dividida?projeto=%s" % s
     menu = lambda *caminho: {"menu": list(caminho)}                    # noqa: E731 — um item da barra única
     link = lambda url: {"link": url}                                   # noqa: E731
-    return [
+    telas = [
         {"chave": "engenharia", "nome": "Engenharia", "situacao": engenharia,
          "url": ("/dimensionar?projeto=%s" % s) if galpao else area + "&vista=3d",
          "dica": "projeto recebido, modelo 3D, cálculo e detalhamento",
@@ -98,13 +100,16 @@ def etapas(slug: str, pasta: str, projeto: dict) -> List[Dict]:
          "dica": "etapas, parcelas, aditivos e entrega",
          "itens": [dict(texto="Etapas e pagamentos", **link("/comercial?projeto=%s#obra" % s))]},
     ]
+    return telas if comercial_ligado else [t for t in telas if t["chave"] not in ("comercial", "obra")]
 
 
-def biblioteca(slug: str) -> List[Dict]:
-    """O que vale para todas as obras (no menu do projeto, à esquerda do cabeçalho)."""
+def biblioteca(slug: str, comercial_ligado: bool = True) -> List[Dict]:
+    """O que vale para todas as obras (no menu do projeto, à esquerda do cabeçalho). A tabela de preços e os dados
+    da empresa são da tela Comercial: sem ela, ficam de fora."""
     s = quote(slug)
-    return [{"texto": "Catálogo de peças e perfis", "link": "/catalogo"},
+    itens = [{"texto": "Catálogo de peças e perfis", "link": "/catalogo"},
             {"texto": "Ligações e acessórios", "link": "/ligacoes"},
             {"texto": "Tabela de preços", "link": "/comercial?projeto=%s#orcamento" % s, "dica": "botão \"Trocar a tabela…\" no orçamento"},
             {"texto": "Dados da empresa e logo", "link": "/comercial?projeto=%s#empresa" % s},
             {"texto": "Ajuda do programa", "link": "/ajuda", "nova": True}]
+    return itens if comercial_ligado else [i for i in itens if "/comercial" not in i["link"]]

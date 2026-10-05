@@ -48,6 +48,12 @@ DIST = os.path.join(CONSTRUCAO, "dist")          # o executável em pasta també
 SAIDA = os.path.join(AQUI, "saida")          # onde o Inno Setup grava, antes de mover
 INSTALADOR = os.path.join(RAIZ, "Metalica-instalador.exe")
 
+#: A parte comercial (orçamento, proposta, contrato, obra e pagamentos) fica só no desenvolvimento (pedido de
+#: 05/10): o programa instalado não leva o código nem as telas dela, e o app.py desliga as rotas (COMERCIAL).
+MODULOS_SO_DEV = ["saida.orcamento", "saida.comercial", "saida.comercial_servico", "saida.contrato_docs",
+                  "saida.proposta_html", "saida.imagens3d", "saida.docx_simples"]
+TELAS_SO_DEV = ["comercial.html", "comercial.js"]
+
 ISCC = [os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
         r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
         r"C:\Program Files\Inno Setup 6\ISCC.exe"]
@@ -61,9 +67,17 @@ def impressao() -> str:
     return valor
 
 
+def web_do_pacote() -> str:
+    """Cópia de `web/` sem as telas que ficam só no desenvolvimento."""
+    destino = os.path.join(CONSTRUCAO, "web")
+    shutil.rmtree(destino, ignore_errors=True)
+    shutil.copytree(os.path.join(SISTEMA, "web"), destino, ignore=shutil.ignore_patterns(*TELAS_SO_DEV))
+    return destino
+
+
 def executavel():
     dados = [
-        (os.path.join(SISTEMA, "web"), "web"),
+        (web_do_pacote(), "web"),
         (os.path.join(SISTEMA, "dados", "perfis.json"), "dados"),
         # catálogo de peças (séries calculadas e fornecedores): sem ele o programa
         # instalado só via o perfis.json, e as tesouras escolhiam em menos perfis
@@ -94,6 +108,8 @@ def executavel():
            "--exclude-module", "tkinter", "--exclude-module", "pytest",
            "--exclude-module", "IPython", "--exclude-module", "PyQt5",
            "--exclude-module", "PyQt6", "--exclude-module", "PySide6"]
+    for m in MODULOS_SO_DEV:
+        cmd += ["--exclude-module", m]
     icone = os.path.join(AQUI, "metalica.ico")
     if os.path.exists(icone):
         cmd += ["--icon", icone]
