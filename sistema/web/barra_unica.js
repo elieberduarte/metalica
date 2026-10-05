@@ -56,6 +56,7 @@
       ]),
       S('Exportar', [
         I('IFC do modelo', '3d', 'exportar-ifc', { antes: 'Arquivo › IFC do modelo' }),
+        F('JSON do modelo', 'exportar-json', { dica: 'o modelo 3D inteiro no formato do programa (peças, camadas, materiais)' }),
         I('DXF do desenho aberto…', '2d', 'exportar-dxf', { antes: 'Arquivo › DXF deste desenho…' }),
         I('PDF do desenho aberto', '2d', 'exportar-pdf', { antes: 'Arquivo › PDF deste desenho' }),
         I('PDF de todas as pranchas…', '2d', 'pdf-pranchas', { antes: 'Arquivo › PDF de todas as pranchas…' }),
@@ -446,6 +447,7 @@
       try { w3.editor.cena.definirPiso(fn.slice(5)); } catch (e) { /* 3D ainda carregando */ }
       return;
     }
+    if (fn === 'exportar-json') { exportarJSON(); return; }
     if (fn === 'tema') {
       // o tema efetivo: o escolhido ou, sem escolha, o do sistema (como as telas decidem)
       var efetivo = function (d, w) {
@@ -464,6 +466,31 @@
       });
       iconeDoTema();
     }
+  }
+
+  /** Arquivo › Exportar › JSON do modelo (05/10/2026): o modelo aberto no 3D como está na tela, no mesmo formato
+   *  do modelo.json do projeto (Documento.paraJSON), baixado como arquivo — vai para a pasta de downloads. */
+  function exportarJSON() {
+    if (window.mostrarVista && vista() === '2d') window.mostrarVista('3d');
+    var t0 = Date.now();
+    (function tentar() {
+      var w3 = janela('3d'), ed = null;
+      try { ed = w3 && w3.editor && w3.editor.documento ? w3.editor : null; } catch (e) { ed = null; }
+      if (!ed) { if (Date.now() - t0 < 60000) setTimeout(tentar, 250); return; }
+      if (!ed.documento.tamanho) { if (ed.dica) ed.dica('O modelo está vazio: nada para exportar.'); return; }
+      var dados = ed.documento.paraJSON();
+      var nome = String((ed.el && ed.el.nome && ed.el.nome.value) || dados.nome || 'modelo').trim() || 'modelo';
+      var arquivo = nome.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ') + '.json';
+      var blob = new Blob([JSON.stringify(dados, null, 1)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = arquivo;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+      var kb = blob.size / 1024;
+      var tam = kb > 1024 ? (kb / 1024).toFixed(1).replace('.', ',') + ' MB' : Math.round(kb) + ' kB';
+      if (ed.dica) ed.dica('JSON exportado: ' + arquivo + ' (' + dados.entidades.length + ' objetos, ' + tam + ') — na pasta de downloads.');
+    })();
   }
 
   /** o botão do tema mostra o que o clique faz: a lua no claro, o sol no escuro */

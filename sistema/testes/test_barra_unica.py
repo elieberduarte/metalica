@@ -94,3 +94,11 @@ def test_menus_na_ordem_da_obra():
     assert "I('Dividir a peça em trechos', '3d', 'explodir'" in js and "I('Unir peças', '3d', 'juntar'" in js
     # cada item movido diz de onde veio (? › Onde foi parar)
     assert js.count("antes: ") >= 80
+
+
+def test_exportar_json_do_modelo():
+    """Arquivo › Exportar › JSON do modelo (05/10/2026): o modelo aberto no 3D, no formato do programa, baixado."""
+    js = _ler("barra_unica.js")
+    assert "F('JSON do modelo', 'exportar-json'" in js
+    assert "if (fn === 'exportar-json') { exportarJSON(); return; }" in js
+    assert "ed.documento.paraJSON()" in js and "a.download = arquivo" in js
