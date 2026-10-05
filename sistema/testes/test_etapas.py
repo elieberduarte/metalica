@@ -74,6 +74,8 @@ def test_barra_em_todas_as_telas_de_projeto():
     assert "document.querySelector('header.area-topo')" in js and "topo.insertBefore(p.abas, p.sep)" in js
     for some in ("#btn-voltar-area", "#btn-tema-area", ".area-topo .acoes", '[data-parado="busca-pecas"]'):
         assert some in js, some
+    # o tema continua à vista no cabeçalho (05/10/2026: o usuário sentiu falta quando foi para o menu do projeto)
+    assert "class: 'be-tema'" in js and "area.append(p.tema, p.busca)" in js
     # a busca única acha as peças do modelo aberto (a mesma pesquisa do 3D)
     assert "e.pesquisarPecas(q.trim())" in js
     # a barra única carregada fora da área de trabalho (só pelo mapa) não monta nada

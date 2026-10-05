@@ -1,13 +1,13 @@
 /* O cabeçalho do projeto: o mesmo em todas as telas de um projeto (área de trabalho, comercial, materiais, análise,
  * memorial, esforços, treliças), numa linha só — entra no cabeçalho que a tela já tem, em vez de somar uma faixa.
  *
- *   [⌂ Projeto ▾]  Engenharia · Comercial · Produção · Obra  │  (o que é da tela: menus, vista 2D/3D…)  [⌕ Buscar Ctrl K]
+ *   [⌂ Projeto ▾]  Engenharia · Comercial · Produção · Obra  │  (o que é da tela: menus, vista 2D/3D…)  [☾] [⌕ Buscar Ctrl K]
  *
  * 03/10/2026: a primeira versão (seis etapas numa faixa própria) deixou a área de trabalho com três linhas e o
  * "Modelo 3D" duas vezes (etapa e vista); o usuário achou bagunçado. Ficaram quatro telas, uma por setor:
  * Engenharia é a área de trabalho (entrada, modelo 3D, cálculo e detalhamento — o 2D/3D é só a vista dela),
  * Comercial (orçamento, proposta, contrato), Produção (lista de materiais) e Obra (etapas e pagamentos).
- * O menu do projeto (⌂ ▾) leva à lista de projetos, à Biblioteca e ao tema. A busca única (Ctrl+K) acha comandos de
+ * O menu do projeto (⌂ ▾) leva à lista de projetos e à Biblioteca; o ☾/☀ troca o tema. A busca única (Ctrl+K) acha comandos de
  * todos os menus, as telas e seus atalhos, os botões da tela aberta, a Biblioteca e as peças do modelo 3D.
  * Dados: GET /api/projetos/<slug>/etapas (saida/etapas_projeto.py). Um comando de menu pedido de outra tela abre a
  * área de trabalho com ?menu=Arquivo›Importar›… e é executado lá (barra_unica.js). */
@@ -39,10 +39,13 @@
     '.be-busca{display:inline-flex;align-items:center;gap:8px;height:28px;width:150px;padding:0 8px!important;flex-shrink:0;white-space:nowrap;',
     'background:rgba(255,255,255,.06)!important;border:1px solid rgba(255,255,255,.16)!important;border-radius:6px;color:inherit!important;opacity:.85;font:12.5px "Segoe UI",Arial,sans-serif;cursor:text}',
     '.be-busca:hover{opacity:1;border-color:rgba(255,255,255,.32)!important}',
+    '.be-tema{display:inline-grid;place-items:center;width:30px;height:28px;padding:0!important;flex-shrink:0;background:none!important;',
+    'border:1px solid rgba(255,255,255,.2)!important;border-radius:6px;color:inherit!important;cursor:pointer}',
+    '.be-tema:hover{background:rgba(255,255,255,.1)!important}',
+    '.barra-etapas .be-tema{margin-left:auto}.barra-etapas .be-tema+.be-busca{margin-left:6px}',
     '.be-busca kbd{margin-left:auto;font:10.5px Consolas,monospace;border:1px solid rgba(255,255,255,.2);border-radius:3px;padding:1px 4px;opacity:.8}',
     // sem cabeçalho na tela: a faixa própria
     '.barra-etapas{display:flex;align-items:center;gap:6px;height:40px;padding:0 10px;flex-shrink:0;background:#0b1a33;color:#e2e8f0;position:relative;z-index:60}',
-    '.barra-etapas .be-busca{margin-left:auto}',
     // o cabeçalho de cada tela, com as peças dentro
     'body.com-etapas header.topo:not(.area-topo){height:44px;gap:10px;padding:0 10px}',
     'body.com-etapas header.topo:not(.area-topo) .marca svg,body.com-etapas header.topo .marca.be-igual{display:none}',
@@ -55,7 +58,7 @@
     'body.com-etapas .area-topo .be-proj{order:0}body.com-etapas .area-topo .be-abas{order:1}body.com-etapas .area-topo .be-sep{order:2}',
     'body.com-etapas .area-topo #menus-unicos{order:3}body.com-etapas .area-topo .controles{order:4}',
     'body.com-etapas .area-topo .vistas{order:5;margin-left:auto}body.com-etapas .area-topo #rapidos-3d{order:6;margin-left:6px}',
-    'body.com-etapas .area-topo .be-busca{order:7;margin-left:6px}',
+    'body.com-etapas .area-topo .be-tema{order:7;margin-left:6px}body.com-etapas .area-topo .be-busca{order:8;margin-left:6px}',
     'body.com-etapas .area-topo .vistas button{padding:3px 11px;font-size:12.5px}',
     // o que o cabeçalho substitui: a casa e o nome, o voltar e o tema da área (ficam no menu do projeto), os painéis
     // (Ver › Painéis, F4), a caixa de peça do 3D (a busca única acha as peças) e os botões de ir para outra tela
@@ -66,6 +69,7 @@
     "body.com-etapas header.topo button[onclick*=\"location.href='/'\"]{display:none!important}",
     // a linha que não cabe (barra_unica.js põe topo-c1…c4 no <html>): primeiro o nome do projeto, depois a busca vira ícone
     'html.topo-c1 .be-proj{max-width:170px}',
+    'html.topo-c1 .be-tema{width:28px}',
     'html.topo-c2 .be-busca{width:32px;padding:0!important;justify-content:center}html.topo-c2 .be-busca .be-txt,html.topo-c2 .be-busca kbd{display:none}',
     'html.topo-c3 .be-proj .be-nome{display:none}html.topo-c3 .be-aba{padding:0 8px!important}',
     'html.topo-c4 .be-aba:not(.ativa) .be-txt{display:none}',
@@ -154,6 +158,23 @@
   function trocarTema() {
     var b = document.getElementById('btn-tema-area') || document.getElementById('btn-tema');
     if (b) b.click();
+    setTimeout(iconeDoTema, 30);
+  }
+  // o botão de tema do cabeçalho (05/10/2026: tinha ido para dentro do menu do projeto e o usuário sentiu falta):
+  // o sol no tema escuro (vai para o claro), a lua no claro
+  function temaAtual() {
+    return document.documentElement.getAttribute('data-tema') ||
+      (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro');
+  }
+  function iconeDoTema() {
+    var b = document.querySelector('.be-tema');
+    if (!b) return;
+    var escuro = temaAtual() === 'escuro';
+    b.innerHTML = escuro
+      ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>';
+    b.title = escuro ? 'Tema claro' : 'Tema escuro';
+    b.setAttribute('aria-label', b.title);
   }
   function irPara(url) {
     // a mesma tela com outra aba (#): só troca o hash e avisa a tela
@@ -208,10 +229,11 @@
     var sep = el('span', { class: 'be-sep', 'data-be': '1' });
     var busca = el('button', { type: 'button', class: 'be-busca', 'data-be': '1', title: 'Buscar comando, tela ou peça do modelo (Ctrl+K)', onclick: abrirPaleta },
       '⌕', el('span', { class: 'be-txt', texto: 'Buscar…' }), el('kbd', { texto: 'Ctrl K' }));
-    return { proj: proj, abas: abas, sep: sep, busca: busca };
+    var tema = el('button', { type: 'button', class: 'be-tema', 'data-be': '1', onclick: trocarTema });
+    return { proj: proj, abas: abas, sep: sep, tema: tema, busca: busca };
   }
   function menuProjeto() {
-    return [{ titulo: DADOS.projeto.nome }, { texto: 'Todos os projetos', link: '/' }, { texto: 'Tema claro / escuro', acao: 'tema' },
+    return [{ titulo: DADOS.projeto.nome }, { texto: 'Todos os projetos', link: '/' },
       { titulo: 'Biblioteca — vale para todas as obras' }].concat(DADOS.biblioteca || []);
   }
   function desenhar() {
@@ -225,8 +247,8 @@
       topo.insertBefore(p.sep, topo.firstChild);
       topo.insertBefore(p.abas, p.sep);
       topo.insertBefore(p.proj, p.abas);
-      if (area) area.append(p.busca);
-      else { var acoes = topo.querySelector('.acoes'); if (acoes) acoes.append(p.busca); else topo.append(p.busca); }
+      if (area) area.append(p.tema, p.busca);
+      else { var acoes = topo.querySelector('.acoes'); if (acoes) acoes.append(p.tema, p.busca); else topo.append(p.tema, p.busca); }
       // o título da tela igual ao nome da aba (Comercial): sai
       var marca = topo.querySelector('.marca'), h1 = marca && marca.querySelector('h1');
       if (h1 && !area) {
@@ -234,10 +256,11 @@
         marca.classList.toggle('be-igual', !!nomeAtiva && (h1.firstChild && h1.firstChild.textContent || '').trim() === nomeAtiva);
       }
     } else {
-      var barra = el('nav', { class: 'barra-etapas', id: 'barra-etapas', 'data-be': '1', 'aria-label': 'Telas do projeto' }, p.proj, p.abas, p.busca);
-      p.proj.removeAttribute('data-be'); p.abas.removeAttribute('data-be'); p.busca.removeAttribute('data-be');
+      var barra = el('nav', { class: 'barra-etapas', id: 'barra-etapas', 'data-be': '1', 'aria-label': 'Telas do projeto' }, p.proj, p.abas, p.tema, p.busca);
+      [p.proj, p.abas, p.tema, p.busca].forEach(function (x) { x.removeAttribute('data-be'); });
       document.body.insertBefore(barra, document.body.firstChild);
     }
+    iconeDoTema();
     if (window.barraUnica && window.barraUnica.vista) window.barraUnica.vista();   // recalcula o que cabe na linha
   }
   function conferirAtiva() { if (DADOS && etapaAtiva() !== ULTIMA) desenhar(); }
@@ -271,7 +294,7 @@
       });
     });
     lista.push({ tipo: 'projeto', texto: 'Todos os projetos', cam: 'tela inicial', link: '/' });
-    lista.push({ tipo: 'projeto', texto: 'Tema claro / escuro', cam: 'menu do projeto', acao: 'tema' });
+    lista.push({ tipo: 'projeto', texto: 'Tema claro / escuro', cam: 'botão ☾/☀ do cabeçalho', acao: 'tema' });
     (DADOS ? DADOS.biblioteca : []).forEach(function (x) { lista.push(Object.assign({ tipo: 'biblioteca', cam: 'Biblioteca' }, x)); });
     var mapa = (window.barraUnica && window.barraUnica.mapa) || [];
     function percorrer(itens, caminho) {
