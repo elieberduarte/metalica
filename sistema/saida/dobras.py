@@ -166,3 +166,19 @@ def com_bitola(perfil: str) -> str:
     if b is None:
         return perfil
     return perfil[:m.start(1)] + "#%d" % b + (perfil[m.end(1):] if m.group(2) else "")
+
+
+def com_bitola_e_mm(perfil: str) -> str:
+    """O nome do perfil dobrado para quem lê, com a bitola e a espessura em mm juntas (pedido do usuário, 05/10:
+    "sempre coloque #chapa/mm — C127X50X17X#13/2.25mm"): "U150X50X2.28" → "U150X50X#13/2.28mm", "C127X50X17X#14" →
+    "C127X50X17X#14/1.90mm" (a espessura da bitola na tabela da fábrica). O que não é dobrado da chapa (W, L em
+    polegada, barra redonda) e a espessura fora das bitolas ficam como em `com_bitola`. Só para mostrar: o nome
+    gravado (o que o catálogo e o orçamento leem) não muda; nome de camada não leva "/" (AutoCAD)."""
+    p = com_bitola(perfil)
+    if not p or re.search(r"#\d+/", p):
+        return p
+    g = geometria(perfil)
+    m = re.search(r"#(\d+)", p)
+    if g is None or not m:
+        return p
+    return p[:m.end()] + "/%.2fmm" % g["t"] + p[m.end():]

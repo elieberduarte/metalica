@@ -23,7 +23,7 @@ from typing import Dict, List, Optional, Tuple
 from nucleo3d.modelo import Documento, Solido
 from nucleo2d.detalhe.base import (_marcas, marcas_de, _autovetores, _eixos_dos_fixadores, _fixadores, _parede_da_peca, _so_parafusos,
                                    _eixo_da_peca)
-from saida.dobras import com_bitola
+from saida.dobras import com_bitola_e_mm as com_bitola
 
 #: Família de produção de cada tipo de peça/conjunto: (chave, título do resumo de materiais).
 FAMILIAS = collections.OrderedDict([

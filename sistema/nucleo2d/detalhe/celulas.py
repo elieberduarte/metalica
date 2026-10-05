@@ -47,7 +47,7 @@ from nucleo2d.detalhe.base import (
 from nucleo2d.detalhe.nomes import (  # noqa: E402
     aplicar_nomes)
 
-from saida.dobras import com_bitola  # noqa: E402
+from saida.dobras import com_bitola_e_mm  # noqa: E402
 
 
 def acima_da_barra_comercial(pos: Posicao) -> bool:
@@ -75,7 +75,7 @@ def _cabecalho(pos: Posicao) -> List[str]:
             linhas = ["%s – %02dx" % (pos.nome_suporte, pos.quantidade),
                       "%s  %s  %s" % (pos.nome or pos.marca, pos.perfil, _rotulo_espessura(pos))]
     elif pos.classe == "barra_conformada":
-        linhas = [titulo + "   L desenv. %s mm" % _mm(pos.comprimento), com_bitola(pos.perfil)]
+        linhas = [titulo + "   L desenv. %s mm" % _mm(pos.comprimento), com_bitola_e_mm(pos.perfil)]
     elif pos.classe == "telha":
         c = compra_da_telha(pos)
         return [titulo + "   L = %s mm" % _mm(c["comprimento"]),
@@ -86,7 +86,7 @@ def _cabecalho(pos: Posicao) -> List[str]:
     elif pos.classe == "indefinida":
         linhas = [titulo, pos.perfil]
     else:
-        linhas = [titulo + "   L = %s mm" % _mm(pos.comprimento), com_bitola(pos.perfil)]
+        linhas = [titulo + "   L = %s mm" % _mm(pos.comprimento), com_bitola_e_mm(pos.perfil)]
     furos = pos.rotulo_furos() if pos.classe not in ("telha", "indefinida") else ""
     if furos:
         # um furo só: "furo Ø17"; vários: "furos: 4x Ø14, 2x OBL 14x26"
@@ -245,7 +245,7 @@ def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho:
     total = sum(q.quantidade for q in ordem)
     peso = sum(float(q.peso_total or 0.0) for q in ordem)
     linhas = ["%s – %02dx   (sem furo)" % (", ".join(q.nome or q.marca for q in ordem), total),
-              com_bitola(maior.perfil),
+              com_bitola_e_mm(maior.perfil),
               "total %s kg" % _mm(peso, 1)]
     y = H + (off + 2.0) * esc
     atr0 = p.atr

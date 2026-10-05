@@ -36,3 +36,13 @@ def test_bitola_e_familias():
 def test_laminados_e_barras_ficam_fora():
     for nome in ("L1.1/4''X1/8''", "W150X13.00", "FE RED 1/2''", "BARRA ROSCADA Ø 5/8''", "PLATE 400x120x13"):
         assert dobras.geometria(nome) is None, nome
+
+
+def test_nome_com_bitola_e_mm():
+    """o nome para leitura: a bitola e a espessura em mm juntas (pedido do usuário, 05/10)"""
+    from saida.dobras import com_bitola_e_mm
+    assert com_bitola_e_mm("C127X50X17X#14") == "C127X50X17X#14/2.00mm"
+    assert com_bitola_e_mm("C150X50X17X2.25") == "C150X50X17X#13/2.25mm"
+    assert com_bitola_e_mm("U150X50X2.28") == "U150X50X#13/2.28mm"
+    assert com_bitola_e_mm("W150X13.00") == "W150X13.00" and com_bitola_e_mm("FE RED 1/2''") == "FE RED 1/2''"
+    assert com_bitola_e_mm("C150X50X17X#13/2.25mm") == "C150X50X17X#13/2.25mm"     # já no formato

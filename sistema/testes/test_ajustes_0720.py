@@ -44,7 +44,7 @@ def test_legenda_enxuta():
     pos.observacoes.append("furacao no padrao de fabrica")
     linhas = _cabecalho(pos)
     # espessura pela bitola, como a fábrica escreve (2,28 = #13 MSG)
-    assert linhas[0] == "T.C.1 – 28x   L = 4925 mm" and linhas[1] == "U150X50X#13"
+    assert linhas[0] == "T.C.1 – 28x   L = 4925 mm" and linhas[1] == "U150X50X#13/2.28mm"          # bitola e mm (05/10)
     # 0.8.4: o tamanho do furo voltou (a fábrica precisa dele), numa linha só
     assert linhas[2] == "furo OBL 25x13"
     assert linhas[3] == "parafusos: 2x M12 x 30" and linhas[4].startswith("21,6 kg/pç")

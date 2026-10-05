@@ -434,6 +434,13 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
 
     conjuntos = _conjuntos(pecas or [], por_marca, nomes_conjuntos)
     ressalvas = [{"marca": p.marca, "perfil": p.perfil, "observacoes": list(p.observacoes)} for p in lista if p.observacoes]
+    from saida.dobras import com_bitola_e_mm
+    # o nome do perfil para quem lê, com a bitola e a espessura em mm (pedido do usuário, 05/10: "sempre coloque
+    # #chapa/mm"); `perfil` fica o gravado (o catálogo e o orçamento o leem)
+    for grupo in (linhas, lista_perfis, (dobrados or {}).get("linhas") or [], ressalvas):
+        for d in grupo:
+            if d.get("perfil"):
+                d["perfil_nome"] = com_bitola_e_mm(d["perfil"])
     return {
         "gerado": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "projeto": dict(projeto or {}),
@@ -496,14 +503,14 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
     arquivos["perfis"] = _csv(os.path.join(pasta, "resumo-perfis.csv"),
                               ["Perfil", "Material", "Categoria", "Posicoes", "Pecas", "Comprimento total (m)", "kg/m",
                                "Peso (kg)", "Barra comercial (m)", "Barras", "Aproveitamento (%)", "Sobra (m)", "Pecas com emenda"],
-                              [[g["perfil"], g["material"], g["categoria"], " ".join(g["posicoes"]), g["pecas"],
+                              [[g.get("perfil_nome") or g["perfil"], g["material"], g["categoria"], " ".join(g["posicoes"]), g["pecas"],
                                 _num_csv(g["comprimento_m"]), _num_csv(g["kg_m"], 3), _num_csv(g["peso"], 1),
                                 _num_csv(g["barras"]["comprimento"] / 1000.0, 0), g["barras"]["quantidade"],
                                 _num_csv(g["barras"]["aproveitamento"], 1), _num_csv(g["barras"]["sobra_m"]), g["barras"]["emendas"]]
                                for g in lista["perfis"]])
     arquivos["plano_corte"] = _csv(os.path.join(pasta, "plano-de-corte.csv"),
                                    ["Perfil", "Material", "Barra (m)", "Barras iguais", "Cortes", "Sobra por barra (mm)"],
-                                   [[g["perfil"], g["material"], _num_csv(g["barras"]["comprimento"] / 1000.0, 0), b["barras"],
+                                   [[g.get("perfil_nome") or g["perfil"], g["material"], _num_csv(g["barras"]["comprimento"] / 1000.0, 0), b["barras"],
                                      texto_dos_cortes(b["cortes"]), _num_csv(b["sobra"], 0)]
                                     for g in lista["perfis"] for b in (g["barras"].get("plano") or [])])
     dob = (lista.get("dobrados") or {}).get("linhas") or []
@@ -512,7 +519,7 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
                                   ["Perfil", "Material", "Pecas", "Comprimento total (m)", "Espessura (mm)", "Dobras",
                                    "Soma externa (mm)", "Desenvolvido (mm)", "kg/m teorico", "kg/m com desconto", "kg/m NBR 6355",
                                    "Peso do modelo (kg)", "Peso teorico (kg)", "Peso com desconto (kg)", "Diferenca (kg)", "Diferenca (%)"],
-                                  [[d["perfil"], d["material"], d["pecas"], _num_csv(d["comprimento_m"]), _num_csv(d["t"]), d["dobras"],
+                                  [[d.get("perfil_nome") or d["perfil"], d["material"], d["pecas"], _num_csv(d["comprimento_m"]), _num_csv(d["t"]), d["dobras"],
                                     _num_csv(d["soma_externa"], 1), _num_csv(d["desenvolvido"], 1), _num_csv(d["kg_m_teorico"], 3),
                                     _num_csv(d["kg_m_desconto"], 3), _num_csv(d["kg_m_norma"], 3) if d["kg_m_norma"] else "",
                                     _num_csv(d["peso_modelo"], 1), _num_csv(d["peso_teorico"], 1), _num_csv(d["peso_desconto"], 1),
@@ -604,7 +611,7 @@ def corpo_html(lista: dict) -> str:
         partes.append(_tabela("Quadro 2 — Perfis: comprimento, peso e barras comerciais (encaixe estimado, perda de corte %s mm)" % _n(PERDA_CORTE),
                               [("Perfil", "l"), ("Material", "l"), ("Posições", "l"), ("Peças", "c"), ("Compr. (m)", "r"), ("kg/m", "r"),
                                ("Peso (kg)", "r"), ("Barra", "c"), ("Barras", "c"), ("Aprov. (%)", "c"), ("Emendas", "c")],
-                              [[(g["perfil"], "l b"), (g["material"], "l"), (" ".join(g["posicoes"]), "l"), (g["pecas"], "c"),
+                              [[(g.get("perfil_nome") or g["perfil"], "l b"), (g["material"], "l"), (" ".join(g["posicoes"]), "l"), (g["pecas"], "c"),
                                 (_n(g["comprimento_m"], 2), "r"), (_n(g["kg_m"], 2), "r"), (_n(g["peso"], 1), "r b"),
                                 ("%s m" % _n(g["barras"]["comprimento"] / 1000.0), "c"), (g["barras"]["quantidade"], "c b"),
                                 (_n(g["barras"]["aproveitamento"], 1), "c"), (g["barras"]["emendas"] or "—", "c")] for g in lista["perfis"]],
@@ -617,7 +624,7 @@ def corpo_html(lista: dict) -> str:
     if plano:
         partes.append(_tabela("Quadro 2A — Plano de corte por barra (o que sai de cada barra; barras de corte igual juntas; perda de corte %s mm)" % _n(PERDA_CORTE),
                               [("Perfil", "l"), ("Barra", "c"), ("Barras", "c"), ("Cortes (qtd × nome comprimento mm)", "l"), ("Sobra (mm)", "r")],
-                              [[(g["perfil"], "l b"), ("%s m" % _n(g["barras"]["comprimento"] / 1000.0), "c"), (b["barras"], "c b"),
+                              [[(g.get("perfil_nome") or g["perfil"], "l b"), ("%s m" % _n(g["barras"]["comprimento"] / 1000.0), "c"), (b["barras"], "c b"),
                                 (texto_dos_cortes(b["cortes"]), "l"), (_n(b["sobra"]), "r")] for g, b in plano],
                               larguras=["16%", "7%", "7%", "58%", "12%"]))
     dob = lista.get("dobrados") or {}
@@ -627,7 +634,7 @@ def corpo_html(lista: dict) -> str:
                               [("Perfil", "l"), ("Peças", "c"), ("Compr. (m)", "r"), ("Dobras", "c"), ("Soma ext. (mm)", "r"),
                                ("Desenv. (mm)", "r"), ("kg/m teórico", "r"), ("kg/m c/ desc.", "r"), ("kg/m NBR", "r"),
                                ("Peso modelo (kg)", "r"), ("Peso teórico (kg)", "r"), ("Peso c/ desc. (kg)", "r"), ("Dif. (kg)", "r"), ("Dif. (%)", "c")],
-                              [[(d["perfil"], "l b"), (d["pecas"], "c"), (_n(d["comprimento_m"], 2), "r"), (d["dobras"], "c"),
+                              [[(d.get("perfil_nome") or d["perfil"], "l b"), (d["pecas"], "c"), (_n(d["comprimento_m"], 2), "r"), (d["dobras"], "c"),
                                 (_n(d["soma_externa"], 1), "r"), (_n(d["desenvolvido"], 1), "r b"), (_n(d["kg_m_teorico"], 3), "r"),
                                 (_n(d["kg_m_desconto"], 3), "r"), (_n(d["kg_m_norma"], 2) if d["kg_m_norma"] else "—", "r"),
                                 (_n(d["peso_modelo"], 1), "r"), (_n(d["peso_teorico"], 1), "r"), (_n(d["peso_desconto"], 1), "r b"),
@@ -660,7 +667,7 @@ def corpo_html(lista: dict) -> str:
     partes.append(_tabela("Quadro 6 — Romaneio por posição",
                           [("Nome", "l"), ("Posição", "l"), ("Tipo", "l"), ("Perfil / chapa", "l"), ("Material", "l"), ("Qtd", "c"), ("Compr. (mm)", "r"),
                            ("Larg. (mm)", "r"), ("Esp. (mm)", "r"), ("Furos", "l"), ("Parafusos", "l"), ("Peso un. (kg)", "r"), ("Peso tot. (kg)", "r"), ("Conjuntos", "l")],
-                          [[(p.get("nome") or "—", "l b"), (p["marca"], "l"), (p["classe"], "l"), (p["perfil"], "l"), (p["material"], "l"), (p["quantidade"], "c"),
+                          [[(p.get("nome") or "—", "l b"), (p["marca"], "l"), (p["classe"], "l"), (p.get("perfil_nome") or p["perfil"], "l"), (p["material"], "l"), (p["quantidade"], "c"),
                             (_n(p["comprimento"]) if p["comprimento"] else "—", "r"), (_n(p["largura"]) if p["largura"] else "—", "r"),
                             (_n(p["espessura"], 1) if p["espessura"] else "—", "r"), (p["furos"] or "—", "l"), (p.get("parafusos") or "—", "l"),
                             (_n(p["peso"], 2), "r"), (_n(p["peso_total"], 1), "r b"), (" ".join(p["conjuntos"][:12]) + (" …" if len(p["conjuntos"]) > 12 else ""), "l")]
@@ -695,7 +702,8 @@ def corpo_html(lista: dict) -> str:
                                       (_n(sum(g["peso_kg"] or 0.0 for g in ec), 1), "r b")],
                               larguras=["30%", "16%", "12%", "14%", "12%", "16%"]))
     if lista["ressalvas"]:
-        itens = "".join("<li><b>%s</b> %s — %s</li>" % (_esc(r["marca"]), _esc(r["perfil"]), _esc("; ".join(r["observacoes"]))) for r in lista["ressalvas"])
+        itens = "".join("<li><b>%s</b> %s — %s</li>" % (_esc(r["marca"]), _esc(r.get("perfil_nome") or r["perfil"]), _esc("; ".join(r["observacoes"])))
+                        for r in lista["ressalvas"])
         partes.append("<p class=\"pequeno\"><b>Observações do detalhamento</b> (conferir antes de mandar cortar)</p><ul class=\"pequeno\">%s</ul>" % itens)
     return "\n".join(partes)
 

@@ -218,7 +218,7 @@ function desenhar(L) {
   const perfisTop = (L.perfis || []).slice().sort((a, b) => b.peso - a.peso).slice(0, 8);
   const maxP = Math.max(1, ...perfisTop.map(g => g.peso));
   const barrasPerfil = el('div', { class: 'barras-peso' }, perfisTop.map(g => [
-    el('span', { class: 'nome mono', texto: g.perfil, title: g.posicoes.join(' ') }),
+    el('span', { class: 'nome mono', texto: g.perfil_nome || g.perfil, title: g.posicoes.join(' ') }),
     el('span', { class: 'trilho' }, el('i', { style: `width:${(100 * g.peso / maxP).toFixed(1)}%` })),
     el('span', { class: 'kg' }, el('b', { texto: n(g.peso, 1) + ' kg' }), ` · ${n(g.barras?.quantidade || 0)} barras`),
   ]).flat());
@@ -235,7 +235,7 @@ function desenhar(L) {
         el('button', { type: 'button', class: 'botao-m principal', onclick: () => irPara('resumos'), texto: 'Gerar os resumos da obra' }))),
     ressalvas.length ? el('div', { class: 'caixa', style: 'grid-column: 1 / -1' },
       el('h3', {}, 'Observações do detalhamento', el('small', { texto: 'conferir antes de mandar cortar' })),
-      el('ul', { class: 'lista-simples' }, ressalvas.slice(0, 40).map(r => el('li', {}, el('b', { texto: r.marca + ' ' }), r.perfil + ' — ' + r.observacoes.join('; '))))) : null)));
+      el('ul', { class: 'lista-simples' }, ressalvas.slice(0, 40).map(r => el('li', {}, el('b', { texto: r.marca + ' ' }), (r.perfil_nome || r.perfil) + ' — ' + r.observacoes.join('; '))))) : null)));
 
   // ---- perfis (e os dobrados)
   const pPerfis = painel('perfis');
@@ -244,7 +244,7 @@ function desenhar(L) {
     controleBarra().hidden = false;
     pPerfis.append(secao('Perfis', `comprimento, peso e barras de compra por encaixe (do maior para o menor, 3 mm de corte); ${n(totB)} barras no total`,
       el('div', {}, controleBarra(), el('div', { class: 'rolagem' }, tabela([
-        { titulo: 'Perfil', chave: 'perfil', classe: 'b' }, { titulo: 'Material', chave: 'material' },
+        { titulo: 'Perfil', valor: (g) => g.perfil_nome || g.perfil, classe: 'b' }, { titulo: 'Material', chave: 'material' },
         { titulo: 'Categoria', valor: (g) => rotuloCategoria(g.categoria) },
         { titulo: 'Posições', valor: (g) => marcas(g.posicoes), classe: 'quebra' },
         { titulo: 'Peças', chave: 'pecas', classe: 'c', num: true },
@@ -258,7 +258,7 @@ function desenhar(L) {
         { titulo: 'Emendas', valor: (g) => g.barras.emendas, classe: 'c', num: true, dica: 'Peças mais compridas que a barra comercial' },
       ], L.perfis, ['TOTAL', '', '', '', n(L.perfis.reduce((s, g) => s + g.pecas, 0)), n(L.perfis.reduce((s, g) => s + g.comprimento_m, 0), 2), '',
                     n(L.perfis.reduce((s, g) => s + g.peso, 0), 1), '', n(totB), '', '', ''],
-      (g) => [g.perfil, g.material, g.posicoes.join(' ')].join(' '))))));
+      (g) => [g.perfil, g.perfil_nome, g.material, g.posicoes.join(' ')].join(' '))))));
   } else pPerfis.append(vazio('Sem perfis nesta lista.'));
   const dob = L.dobrados || {};
   if ((dob.linhas || []).length) {
@@ -266,7 +266,7 @@ function desenhar(L) {
     pPerfis.append(secao('Perfis dobrados: peso teórico × com desconto das dobras',
       'teórico = soma das medidas externas × espessura; com desconto = tira desenvolvida (' + (dob.regra || '') + '). O peso do modelo é o da malha 3D (cantos vivos, furos descontados).',
       el('div', { class: 'rolagem' }, tabela([
-        { titulo: 'Perfil', chave: 'perfil', classe: 'b' },
+        { titulo: 'Perfil', valor: (d) => d.perfil_nome || d.perfil, classe: 'b' },
         { titulo: 'Peças', chave: 'pecas', classe: 'c', num: true },
         { titulo: 'Compr. (m)', chave: 'comprimento_m', classe: 'r', num: true, casas: 2 },
         { titulo: 'Dobras', chave: 'dobras', classe: 'c', num: true },
@@ -281,7 +281,7 @@ function desenhar(L) {
         { titulo: 'Dif. (kg)', chave: 'diferenca', classe: 'r', num: true, casas: 1 },
         { titulo: 'Dif. (%)', chave: 'diferenca_pct', classe: 'c', num: true, casas: 1 },
       ], dob.linhas, ['TOTAL', '', '', '', '', '', '', '', '', n(td.peso_modelo, 1), n(td.peso_teorico, 1), n(td.peso_desconto, 1), n(td.diferenca, 1), n(td.diferenca_pct, 1)],
-      (d) => d.perfil))));
+      (d) => [d.perfil, d.perfil_nome].join(' ')))));
   }
   c.append(pPerfis);
 
@@ -293,7 +293,7 @@ function desenhar(L) {
     for (const g of comPlano) {
       const b = g.barras;
       const linhas = b.plano.map(pl => ({ ...pl, _g: g }));
-      pCorte.append(secao(g.perfil, `barras de ${n(b.comprimento / 1000)} m · ${n(b.quantidade)} barras · aproveitamento ${n(b.aproveitamento, 1)}% · sobra ${n(b.sobra_m, 2)} m${b.emendas ? ` · ${b.emendas} peça(s) com emenda` : ''}`,
+      pCorte.append(secao(g.perfil_nome || g.perfil, `barras de ${n(b.comprimento / 1000)} m · ${n(b.quantidade)} barras · aproveitamento ${n(b.aproveitamento, 1)}% · sobra ${n(b.sobra_m, 2)} m${b.emendas ? ` · ${b.emendas} peça(s) com emenda` : ''}`,
         tabela([
           { titulo: 'Barras', chave: 'barras', classe: 'c b', num: true },
           { titulo: 'Cortes', valor: (pl) => barraDesenhada(pl, b.comprimento), classe: 'quebra corte-celula' },
@@ -357,7 +357,7 @@ function desenhar(L) {
   c.append(painel('romaneio', secao('Romaneio por posição', `${n(t.posicoes)} posições · ${n(t.pecas)} peças`,
     el('div', { class: 'rolagem' }, tabela([
       { titulo: 'Nome', chave: 'nome', classe: 'b' }, { titulo: 'Posição', chave: 'marca' }, { titulo: 'Categoria', valor: (p_) => rotuloCategoria(p_.categoria) },
-      { titulo: 'Tipo', chave: 'classe' }, { titulo: 'Perfil / chapa', chave: 'perfil' }, { titulo: 'Material', chave: 'material' },
+      { titulo: 'Tipo', chave: 'classe' }, { titulo: 'Perfil / chapa', valor: (p_) => p_.perfil_nome || p_.perfil }, { titulo: 'Material', chave: 'material' },
       { titulo: 'Qtd', chave: 'quantidade', classe: 'c b', num: true },
       { titulo: 'Compr. (mm)', chave: 'comprimento', classe: 'r', num: true },
       { titulo: 'Larg. (mm)', valor: (p_) => p_.largura || null, classe: 'r', num: true },
@@ -369,7 +369,7 @@ function desenhar(L) {
       { titulo: 'Conjuntos', valor: (p_) => marcas(p_.conjuntos, 10), classe: 'quebra' },
       { titulo: 'Obs.', valor: (p_) => (p_.observacoes || []).join('; ') || '', classe: 'quebra' },
     ], L.posicoes || [], ['TOTAL', '', '', '', '', '', n(t.pecas), '', '', '', '', '', '', n(t.peso, 1), '', ''],
-    (p_) => [p_.nome, p_.marca, p_.perfil, p_.material, p_.classe, (p_.conjuntos || []).join(' ')].join(' '))))));
+    (p_) => [p_.nome, p_.marca, p_.perfil, p_.perfil_nome, p_.material, p_.classe, (p_.conjuntos || []).join(' ')].join(' '))))));
 
   // ---- acessórios
   c.append(painel('acessorios', (L.acessorios || []).length

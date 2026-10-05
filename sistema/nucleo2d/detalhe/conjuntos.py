@@ -13,7 +13,7 @@ from nucleo2d import vistas as _vistas
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
                                 _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d)
 from saida.desenhos import Estilo, _mm
-from saida.dobras import com_bitola
+from saida.dobras import com_bitola, com_bitola_e_mm
 
 from nucleo2d.detalhe.base import (
     parafusos_posicionados, largura_da_chamada,  # noqa: E402
@@ -3076,7 +3076,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         if cam_ == "CHAPAS":
             m_esp = re.search(r"x\s*([\d.,]+)\s*$", perfil_)
             perfil_ = "#" + m_esp.group(1).replace(".", ",") if m_esp else perfil_
-        perfil_ = com_bitola(perfil_)               # U100X50X4.18 → U100X50X#8, como a fábrica escreve
+        perfil_ = com_bitola_e_mm(perfil_)          # U100X50X4.18 → U100X50X#8/4.18mm: bitola e mm (05/10)
         if cam_ != "CHAPAS":
             if perfil_ in ja_listados:
                 continue

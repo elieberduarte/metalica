@@ -81,7 +81,8 @@ def test_gravar_arquivos_e_html():
         assert lido["totais"]["pecas"] == 17
         linhas = open(arq["perfis"], encoding="utf-8-sig").read().splitlines()
         assert linhas[0].startswith("Perfil;Material;Categoria") and len(linhas) == 3
-        assert "U150X50X2.25;CIVIL 300;TERÇAS;M5;2;10,00" in linhas[1] + linhas[2]
+        # o nome para leitura: bitola e espessura em mm (05/10)
+        assert "U150X50X#13/2.25mm;CIVIL 300;TERÇAS;M5;2;10,00" in linhas[1] + linhas[2]
         html = open(arq["html"], encoding="utf-8").read()
         assert "Obra &lt;X&gt;" in html and "Romaneio por posição" in html and "2× P3, 1× P4" in html
         assert html.count("<table") >= 5
