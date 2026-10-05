@@ -2542,8 +2542,8 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
         it = c.get("item") or {}
         nome = str(it.get("nome") or c.get("montagem") or c.get("marca") or "")
         if not nome and "telha" in str(c.get("fonte") or "").lower():
-            # a multi-dobra e a cumeeira (sem item de peça): o nome e a quantidade do título, "TMD.1 – 64x …"
-            m_t = re.match(r"^\s*([A-Z]{2,4}\.\d+)\s+–\s+(\d+)x", str(c.get("titulo") or ""))
+            # a multi-dobra e a cumeeira (sem item de peça): o nome e a quantidade do título, "MD1 – 64x …" (antes "TMD.1")
+            m_t = re.match(r"^\s*([A-Z]{2,4}\.?\d+)\s+–\s+(\d+)x", str(c.get("titulo") or ""))
             if m_t:
                 linha = (m_t.group(1), "%02dx" % int(m_t.group(2)))
                 if linha not in linhas:

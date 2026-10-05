@@ -942,11 +942,13 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     except Exception as exc:                      # noqa: BLE001 — o resto do detalhamento sai
         md = {"telhas": [], "posicoes": set()}
         avisos.append("telhas multi-dobra não analisadas: %s" % exc)
+    # os nomes da fábrica: MD (multi-dobra) e CU (cumeeira), como TL (resposta do usuário, 25/09: "TL/MD/CU é o padrão
+    # da fábrica, vale para os desenhos também") — as pranchas diziam TMD.1 e CM.1, a lista MD1 e CU1 (05/10)
     for i, t in enumerate(md["telhas"], 1):
-        t["nome"] = "TMD.%d" % i
+        t["nome"] = "MD%d" % i
     md.setdefault("cumeeiras", [])
     for i, cm in enumerate(md["cumeeiras"], 1):
-        cm["nome"] = "CM.%d" % i
+        cm["nome"] = "CU%d" % i
     # peças montadas (levantadas uma vez): a chapa soldada no chumbador vai para o quadro
     # dos chumbadores, junto das barras dele (a fábrica prepara o chumbador inteiro)
     montagens_cache = None

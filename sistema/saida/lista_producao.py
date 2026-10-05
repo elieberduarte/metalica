@@ -272,8 +272,8 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     lista = [p for p in lista if not consumida(p)]
     linhas = [_linha_posicao(p, categorias.get(p.marca, "OUTROS")) for p in lista]
     for i, t in enumerate(md["telhas"], 1):
-        # o nome é o das pranchas (detalhar: TMD.n, CM.n — a lista dizia MD1 e CU1, 05/10)
-        linhas.append({"marca": t["conjunto"], "nome": "TMD.%d" % i, "categoria": "TELHAS", "classe": "Telha multi-dobra",
+        # MD/CU: o padrão da fábrica, o mesmo das pranchas (detalhar)
+        linhas.append({"marca": t["conjunto"], "nome": "MD%d" % i, "categoria": "TELHAS", "classe": "Telha multi-dobra",
                        "perfil": t["perfil"], "material": t["material"], "quantidade": t["instancias"],
                        "comprimento": round(t["desenv_ext"]), "largura": 980, "espessura": 0,
                        "area_m2": round(t["desenv_ext"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
@@ -282,7 +282,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            t["reta1"], t["reta2"], t["raio_int"], t["angulo"], t["desenv_int"])]})
         cb = t.get("cobrimento")
         if cb:
-            linhas.append({"marca": t["conjunto"] + "-C", "nome": "TMD.%d-C" % i, "categoria": "TELHAS",
+            linhas.append({"marca": t["conjunto"] + "-C", "nome": "MD%d-C" % i, "categoria": "TELHAS",
                            "classe": "Telha (complemento da multi-dobra)", "perfil": t["perfil"], "material": t["material"],
                            "quantidade": t["instancias"], "comprimento": round(cb["resto"]), "largura": 980, "espessura": 0,
                            "area_m2": round(cb["resto"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
@@ -291,7 +291,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            "observacoes": ["começa %d mm antes da terça %s (transpasse %.0f mm)" % (150, cb["terca"], cb["transpasse"])]})
 
     for i, t in enumerate(md["cumeeiras"], 1):
-        linhas.append({"marca": t["conjunto"], "nome": "CM.%d" % i, "categoria": "TELHAS", "classe": "Cumeeira",
+        linhas.append({"marca": t["conjunto"], "nome": "CU%d" % i, "categoria": "TELHAS", "classe": "Cumeeira",
                        "perfil": t["perfil"], "material": t["material"], "quantidade": t["instancias"],
                        "comprimento": round(t["desenv"]), "largura": 980, "espessura": 0,
                        "area_m2": round(t["desenv"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",

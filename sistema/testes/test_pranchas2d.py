@@ -682,3 +682,6 @@ def test_telhas_titulo_por_face_e_legenda():
     blocos = dict(pranchas._blocos_da_legenda(cels))
     assert blocos["NESTA PRANCHA"] == [("TMD.1", "64x"), ("CM.1", "32x")], blocos
     assert ("TMD", "Telha multi-dobra") in blocos["SIGLAS"] and ("CM", "Cumeeira") in blocos["SIGLAS"]
+    # os nomes da fábrica (MD1, CU1 — 05/10), sem o ponto
+    cels2 = [{"fonte": "detalhamento-telhas", "titulo": "MD1 – 64x  MULTIDOBRA TP40 #0,65"}, {"fonte": "detalhamento-telhas", "titulo": "CU1 – 32x"}]
+    assert dict(pranchas._blocos_da_legenda(cels2))["NESTA PRANCHA"] == [("MD1", "64x"), ("CU1", "32x")]
