@@ -141,14 +141,18 @@ export class Lote {
   _montarBloco(pecas) {
     let nv = 0, na = 0;
     for (const p of pecas) { nv += p.nv; na += p.na; }
-    const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), cor = new Float32Array(nv * 3);
-    const apos = new Float32Array(na * 3), acor = new Float32Array(na * 3);
+    // normal em 16 bits e cor em 8 (normalizados): 18 bytes por vértice a menos que em Float32 —
+    // ~270 dos 745 MB dos blocos do Bella Casa (05/10), na memória e na placa de vídeo. A cor é
+    // lisa por peça e a normal erra 1/32767: a imagem é a mesma
+    const pos = new Float32Array(nv * 3), nor = new Int16Array(nv * 3), cor = new Uint8Array(nv * 3);
+    const apos = new Float32Array(na * 3), acor = new Uint8Array(na * 3);
     const bloco = { itens: [], malha: null, arestas: null, nv, na, sujo: false };
     let v0 = 0, a0 = 0;
     const caixaBloco = new THREE.Box3();
     for (const p of pecas) {
       pos.set(p.geom.getAttribute('position').array, v0 * 3);
-      nor.set(p.geom.getAttribute('normal').array, v0 * 3);
+      const n = p.geom.getAttribute('normal').array;
+      for (let i = 0, k = v0 * 3; i < n.length; i++, k++) nor[k] = Math.round(Math.max(-1, Math.min(1, n[i])) * 32767);
       apos.set(p.arestas.getAttribute('position').array, a0 * 3);
       // Caixa envolvente da peça: é o que faz a escolha pelo cursor ser barata (sem ela,
       // o raio testaria os ~16 mil triângulos de cada bloco a cada movimento do mouse).
@@ -163,8 +167,8 @@ export class Lote {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(cor, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3, true));
+    g.setAttribute('color', new THREE.BufferAttribute(cor, 3, true));
     g.setIndex(new THREE.BufferAttribute(this._indice(bloco, false), 1));
     bloco.caixa = caixaBloco;
     const malha = new THREE.Mesh(g, this.materialMalha);
@@ -176,7 +180,7 @@ export class Lote {
     malha.raycast = (raycaster, intersects) => this._raycast(bloco, raycaster, intersects);
     const ga = new THREE.BufferGeometry();
     ga.setAttribute('position', new THREE.BufferAttribute(apos, 3));
-    ga.setAttribute('color', new THREE.BufferAttribute(acor, 3));
+    ga.setAttribute('color', new THREE.BufferAttribute(acor, 3, true));
     ga.setIndex(new THREE.BufferAttribute(this._indice(bloco, true), 1));
     const arestas = new THREE.LineSegments(ga, this.materialArestas);
     arestas.name = 'lote-arestas';
@@ -337,13 +341,15 @@ export class Lote {
     const b = it.bloco;
     const cor = b.malha.geometry.getAttribute('color');
     _cor.set(corMalha);
+    let r = Math.round(_cor.r * 255), g = Math.round(_cor.g * 255), bb = Math.round(_cor.b * 255);      // cor em 8 bits
     const arr = cor.array;
-    for (let i = it.v0 * 3, fim = (it.v0 + it.nv) * 3; i < fim; i += 3) { arr[i] = _cor.r; arr[i + 1] = _cor.g; arr[i + 2] = _cor.b; }
+    for (let i = it.v0 * 3, fim = (it.v0 + it.nv) * 3; i < fim; i += 3) { arr[i] = r; arr[i + 1] = g; arr[i + 2] = bb; }
     this._marcar(cor, it.v0 * 3, it.nv * 3);
     const acor = b.arestas.geometry.getAttribute('color');
     _cor.set(corAresta);
+    r = Math.round(_cor.r * 255); g = Math.round(_cor.g * 255); bb = Math.round(_cor.b * 255);
     const a = acor.array;
-    for (let i = it.a0 * 3, fim = (it.a0 + it.na) * 3; i < fim; i += 3) { a[i] = _cor.r; a[i + 1] = _cor.g; a[i + 2] = _cor.b; }
+    for (let i = it.a0 * 3, fim = (it.a0 + it.na) * 3; i < fim; i += 3) { a[i] = r; a[i + 1] = g; a[i + 2] = bb; }
     this._marcar(acor, it.a0 * 3, it.na * 3);
   }
 

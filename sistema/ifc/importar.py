@@ -2647,6 +2647,7 @@ def _varrer_disco(eixo, raio, n) -> Malha:
     """Tubo aproximado: anel de `n` lados acompanhando a poligonal."""
     m = Malha()
     aneis = []
+    giro = [(math.cos(2 * math.pi * k / n), math.sin(2 * math.pi * k / n)) for k in range(n)]
     for i, p in enumerate(eixo):
         antes = eixo[i - 1] if i > 0 else None
         depois = eixo[i + 1] if i < len(eixo) - 1 else None
@@ -2660,20 +2661,28 @@ def _varrer_disco(eixo, raio, n) -> Malha:
             t = _norm((t1[0] + t2[0], t1[1] + t2[1], t1[2] + t2[2]))
         u = _norm(_cruz(t, (0.0, 0.0, 1.0) if abs(t[2]) < 0.9 else (1.0, 0.0, 0.0)))
         v = _cruz(t, u)
-        aneis.append([(p[0] + raio * (math.cos(2 * math.pi * k / n) * u[0] +
-                                      math.sin(2 * math.pi * k / n) * v[0]),
-                       p[1] + raio * (math.cos(2 * math.pi * k / n) * u[1] +
-                                      math.sin(2 * math.pi * k / n) * v[1]),
-                       p[2] + raio * (math.cos(2 * math.pi * k / n) * u[2] +
-                                      math.sin(2 * math.pi * k / n) * v[2]))
-                      for k in range(n)])
+        anel = []
+        for c, s in giro:
+            anel.append((p[0] + raio * (c * u[0] + s * v[0]),
+                         p[1] + raio * (c * u[1] + s * v[1]),
+                         p[2] + raio * (c * u[2] + s * v[2])))
+        aneis.append(anel)
+    # cada ponto do anel entra na malha uma vez (cada um está em 4 faces): o mesmo resultado de
+    # passar as faces por `face`, que o arredondava e procurava de novo a cada uma — os
+    # vergalhões eram um oitavo da importação do Bella Casa (05/10)
+    idx = [[-1] * n for _ in aneis]
+
+    def ind(i, k):
+        r = idx[i][k]
+        if r < 0:
+            r = idx[i][k] = m.ponto(aneis[i][k])
+        return r
     for i in range(len(aneis) - 1):
-        a, b = aneis[i], aneis[i + 1]
         for k in range(n):
             j = (k + 1) % n
-            m.face([a[k], a[j], b[j], b[k]])
-    m.face(list(reversed(aneis[0])))
-    m.face(aneis[-1])
+            m.face_indices([ind(i, k), ind(i, j), ind(i + 1, j), ind(i + 1, k)])
+    m.face_indices([ind(0, k) for k in reversed(range(n))])
+    m.face_indices([ind(len(aneis) - 1, k) for k in range(n)])
     m.orientar()
     return m
 
