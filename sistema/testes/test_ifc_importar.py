@@ -198,6 +198,24 @@ class TestLeitorStep(Asserts):
         self.assertEqual(arq.entidades[n].args, [[float(n), n + 0.5, 0.0]])
         self.assertLess(tempo, 20.0)
 
+    def test_importar_devolve_o_coletor_como_estava(self):
+        """A importação pausa o coletor de ciclos (Bella Casa 84 → 68 s, 05/10) e o devolve como
+        estava, também quando o arquivo não abre."""
+        import gc
+        from ifc.importar import importar as importar_ifc
+        self.assertTrue(gc.isenabled())
+        importar_ifc(dado("caixa_metro.ifc"))
+        self.assertTrue(gc.isenabled())
+        with self.assertRaises(ErroStep):
+            importar_ifc(dado("nao_existe.ifc"))
+        self.assertTrue(gc.isenabled())
+        gc.disable()
+        try:
+            importar_ifc(dado("caixa_metro.ifc"))
+            self.assertFalse(gc.isenabled())
+        finally:
+            gc.enable()
+
     def test_atalho_da_malha_le_igual_ao_caminho_completo(self):
         """As quatro instruções da malha facetada numa passada (Bella Casa, 05/10: leitura 105 → 63 s):
         o resultado é o mesmo do caminho completo, e qualquer variação de escrita vai por ele."""

@@ -44,6 +44,7 @@ Limitações conhecidas (todas registram aviso no relatório):
 * `IfcOpeningElement` (vãos de porta e janela) é lido mas não subtraído do elemento
   hospedeiro; passe `incluir_aberturas=True` para vê-los como sólidos separados.
 """
+import gc
 import math
 import os
 import re
@@ -2898,8 +2899,17 @@ def importar(caminho: str, **opcoes) -> Documento:
     tipo IFC, o que virou `Barra`, o que virou `Solido`, o que não foi suportado e os
     avisos — é o que a interface mostra ao usuário depois de abrir o arquivo.
     """
-    arquivo = ler(caminho)
-    return Importador(arquivo, **opcoes).processar()
+    # O coletor de ciclos do Python varre de tempos em tempos os milhões de objetos que a leitura
+    # cria: pausado, o Bella Casa (05/10) importa em 68 s em vez de 84. O que a importação cria
+    # se solta pela contagem de referências; o coletor volta ao estado de antes no fim.
+    ligado = gc.isenabled()
+    gc.disable()
+    try:
+        arquivo = ler(caminho)
+        return Importador(arquivo, **opcoes).processar()
+    finally:
+        if ligado:
+            gc.enable()
 
 
 def importar_texto(texto: str, **opcoes) -> Documento:
