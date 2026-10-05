@@ -2414,7 +2414,16 @@ def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
             if m:
                 achado[campo] = m.group(1)
     if "perfil" not in achado and nome and nome.strip():
-        achado["perfil"] = re.sub(r"\s+", " ", nome).strip()
+        nome = re.sub(r"\s+", " ", nome).strip()
+        # Revit: "Família:Tipo:Id" — o número é de cada peça, não do perfil; o perfil é
+        # o tipo, que o Revit repete em Pset_*Common.Reference ("W200X22.5")
+        m = re.match(r"^(.+):([^:]+):\d+$", nome)
+        if m:
+            ref = next((p["Reference"] for k, p in (propriedades or {}).items()
+                        if isinstance(p, dict) and k.endswith("Common")
+                        and isinstance(p.get("Reference"), str) and p["Reference"].strip()), None)
+            nome = re.sub(r"\s+", " ", ref).strip() if ref else m.group(2).strip()
+        achado["perfil"] = nome
     return achado
 
 

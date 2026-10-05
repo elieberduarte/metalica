@@ -8,6 +8,22 @@ import { lerPerfil } from '../nucleo/trocar_perfil.js';
 import { chapaEditavel } from './edicao_chapa.js';
 import { $, ComandoAparencia, contarPor, corDeGrupo, corHex, dimensoesPrincipais, el, metros, normalizarBusca, numero, ponto3, uniao, volumeDe } from '../editor.js';
 
+/**
+ * Perfil da peça para agrupar e mostrar. No IFC do Revit o nome é "Família:Tipo:Id" e o
+ * número é de cada peça, não do perfil: o perfil é o tipo, que o Revit repete em
+ * Pset_*Common.Reference. Vale também para os modelos importados antes dessa leitura.
+ */
+export function perfilDaPeca(ent) {
+  const a = (ent && ent.atributos) || {}, marcas = a.marcas || {};
+  const p = ent.perfil || marcas.perfil || ent.nome || null;
+  const m = p && /^(.+):([^:]+):\d+$/.exec(p);
+  if (!m) return p;
+  for (const [k, ps] of Object.entries(a.propriedades || {})) {
+    if (k.endsWith('Common') && ps && typeof ps.Reference === 'string' && ps.Reference.trim()) return ps.Reference.trim();
+  }
+  return m[2].trim();
+}
+
 export class MetodosPaineis {
   // ---------------------------------------------------------- propriedades
 
@@ -159,7 +175,7 @@ export class MetodosPaineis {
         }
         if (marcas.nome_conjunto && marcas.nome_conjunto !== marcas.nome) linha('Nome do conjunto', marcas.nome_conjunto);
         if (marcas.perfil) {
-          linha('Perfil', marcas.perfil);
+          linha('Perfil', perfilDaPeca(um));
           // perfil do projeto (o do IFC) e cada troca, com a data
           const trocas = (um.atributos && um.atributos.trocas_de_perfil) || [];
           const original = marcas.perfil_original || marcas.perfil_anterior;
@@ -631,7 +647,7 @@ export class MetodosPaineis {
     switch (modo) {
       case 'conjunto': return marcas.conjunto || null;
       case 'posicao': return marcas.posicao || null;
-      case 'perfil': return ent.perfil || marcas.perfil || ent.nome || null;
+      case 'perfil': return perfilDaPeca(ent);
       case 'tipo': return (ent.atributos && ent.atributos.tipo_ifc) || ent.papel || ent.tipo || null;
       default: return null;
     }

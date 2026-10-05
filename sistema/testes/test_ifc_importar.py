@@ -1115,6 +1115,19 @@ def test_marcas_de_pset_e_descricao():
     assert marcas_de("", "", {}) == {}
 
 
+def test_marcas_de_revit_perfil_sem_o_numero_da_peca():
+    """Revit grava "Família:Tipo:Id": o número é de cada peça, e as 5 vigas iguais de um
+    canto do Bella Casa saíam com 5 perfis (05/10). O perfil é o tipo."""
+    from ifc.importar import marcas_de
+    pset = {"Pset_BeamCommon": {"Reference": "W200X22.5", "Span": 196.5}}
+    assert marcas_de("Vigas W Gerdau:W200X22.5:6474338", "", pset)["perfil"] == "W200X22.5"
+    assert marcas_de("Vigas W Gerdau:W200X22.5:6474332", "", pset)["perfil"] == "W200X22.5"
+    # sem a referência, o tipo do nome
+    assert marcas_de("Guarda-corpo:Gradil 190:6799894", "", {})["perfil"] == "Gradil 190"
+    # nome sem o número no fim continua inteiro
+    assert marcas_de("Vigas W Gerdau:W200X22.5", "", {})["perfil"] == "Vigas W Gerdau:W200X22.5"
+
+
 # ------------------------------------------------- coordenadas de obra → origem
 
 def test_modelo_longe_da_origem_vem_para_a_origem_e_a_exportacao_devolve():
