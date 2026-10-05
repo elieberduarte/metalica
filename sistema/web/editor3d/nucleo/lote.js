@@ -17,6 +17,7 @@
 
 import * as THREE from 'three';
 import { misturar, COR_DESTAQUE, COR_DESTAQUE_ARESTA } from './cena.js';
+import { arestasDoSolido } from './arestas.js';
 
 /** Acima de tantas entidades os sólidos são desenhados em lote. */
 export const LIMITE_LOTE = 1500;
@@ -124,7 +125,11 @@ export class Lote {
     }
     if (!g.getAttribute('normal')) g.computeVertexNormals();
     const pos = g.getAttribute('position');
-    const arestas = new THREE.EdgesGeometry(g, 24);
+    let arestas = null;
+    if (ent.tipo === 'solido') {
+      arestas = new THREE.BufferGeometry();
+      arestas.setAttribute('position', new THREE.BufferAttribute(arestasDoSolido(ent.vertices, ent.faces), 3));
+    } else arestas = new THREE.EdgesGeometry(g, 24);
     const centro = [0, 0, 0];
     const arr = pos.array;
     for (let i = 0; i < arr.length; i += 3) { centro[0] += arr[i]; centro[1] += arr[i + 1]; centro[2] += arr[i + 2]; }

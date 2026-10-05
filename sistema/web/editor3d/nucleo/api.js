@@ -82,8 +82,12 @@ export class Api {
   // ---- projeto: o modelo mora em <projeto>/modelo.json (ver sistema/projetos.py)
   projeto(slug) { return pedir(this._r('/api/projetos/' + encodeURIComponent(slug))); }
 
-  modeloDoProjeto(slug) {
-    return pedir(this._r('/api/projetos/' + encodeURIComponent(slug) + '/modelo'));
+  /** O servidor manda o modelo como está no disco; se não vier um JSON inteiro (arquivo emendado
+   *  por gravações antigas), pede de novo pelo caminho completo, que conserta o arquivo. */
+  async modeloDoProjeto(slug) {
+    const rota = this._r('/api/projetos/' + encodeURIComponent(slug) + '/modelo');
+    const r = await pedir(rota);
+    return r === null ? pedir(rota + '?completo=1') : r;
   }
 
   salvarModeloDoProjeto(slug, documentoJSON, baseAlterado = null) {

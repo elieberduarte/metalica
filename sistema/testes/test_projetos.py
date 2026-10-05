@@ -199,6 +199,37 @@ def test_rotas_do_servidor():
             importlib.reload(app)
 
 
+def test_modelo_vai_como_esta_no_disco_quando_ja_migrado():
+    """Bella Casa (05/10): o modelo de 200 MB era lido e reescrito a cada abertura do editor (21
+    dos 40 s). Já migrado, vai como está no disco e diz o mesmo que o caminho completo; sem a
+    marca da migração, ou com lixo depois do JSON, fica o caminho completo."""
+    import importlib
+    with tempfile.TemporaryDirectory() as raiz:
+        os.environ["METALICA_DADOS"] = raiz
+        try:
+            import app
+            importlib.reload(app)
+            s = app.criar_projeto({"nome": "Cru", "tipo": "galpao", "dados": {"nome": "Cru", "vao": 18}})["slug"]
+            doc = {"nome": "Viga ç", "entidades": [{"id": "e1", "tipo": "solido", "nome": "Vigas W Gerdau:W200X22.5:6474338",
+                                                    "vertices": [[0, 0, 0], [1, 0, 0], [0, 1, 0]], "faces": [[0, 1, 2]]}]}
+            app.acao_de_projeto(s, "modelo", {"documento": doc})
+            assert app.modelo_do_projeto_cru(s) is None             # ainda sem a marca: migra pelo caminho completo
+            completo = app.modelo_do_projeto(s)
+            assert completo["documento"]["metadados"]["camadas_funilaria"]
+            app.acao_de_projeto(s, "modelo", {"documento": completo["documento"]})     # o editor grava o que recebeu
+            cru = app.modelo_do_projeto_cru(s)
+            assert cru is not None
+            r, c = json.loads(cru.decode("utf-8")), app.modelo_do_projeto(s)
+            assert r["documento"] == c["documento"] and r["existe"] and r["alterado"] == c["alterado"]
+            assert r["documento"]["nome"] == "Viga ç"
+            with open(app._gerente().caminho_modelo(s), "a", encoding="utf-8") as f:
+                f.write('{"lixo": 1')                                  # emendado: o caminho completo conserta
+            assert app.modelo_do_projeto_cru(s) is None
+        finally:
+            del os.environ["METALICA_DADOS"]
+            importlib.reload(app)
+
+
 def test_gravacao_simultanea_nao_emenda_arquivo():
     """Autosave do CAD e vista nova gravando o mesmo desenho ao mesmo tempo: o arquivo
     final é um dos dois, inteiro — nunca metade de um e o fim do outro."""

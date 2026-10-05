@@ -3360,6 +3360,31 @@ def modelo_do_projeto(s: str) -> dict:
     return {"documento": doc, "existe": doc is not None, "alterado": _alterado_modelo(s), "aberto_por": outro}
 
 
+def modelo_do_projeto_cru(s: str):
+    """A mesma resposta de `modelo_do_projeto`, com o modelo do jeito que está no disco, sem passar
+    pelo Python: no Bella Casa (200 MB) ler e reescrever o JSON levava 21 dos 40 s de abrir o editor
+    (05/10). Só quando a migração já rodou (`camadas_funilaria` gravado); senão, ou se o arquivo não
+    parece um JSON inteiro, devolve None e fica o caminho completo, que migra e conserta."""
+    g = _gerente()
+    caminho = g.caminho_modelo(s)
+    try:
+        alterado = round(os.path.getmtime(caminho), 3)
+        with open(caminho, "rb") as f:
+            bruto = f.read()
+    except OSError:
+        return None
+    i = bruto.rfind(b'"camadas_funilaria"')
+    if i < 0 or not re.match(rb'"camadas_funilaria"\s*:\s*true', bruto[i:i + 40]) \
+            or not bruto[:64].lstrip().startswith(b"{") or not bruto[-64:].rstrip().endswith(b"}"):
+        return None
+    outro = g.aberto_por(s)
+    if outro and outro.get("maquina") == MAQUINA:
+        outro = None
+    g.marcar_aberto(s, MAQUINA, USUARIO)
+    cab = json.dumps({"existe": True, "alterado": alterado, "aberto_por": outro}, ensure_ascii=False).encode("utf-8")
+    return cab[:-1] + b', "documento": ' + bruto + b"}"
+
+
 
 # ----------------------------------------------------------- modelo 3D e IFC
 
@@ -3635,7 +3660,10 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- utilidades --
     def _json(self, obj, status=200):
-        corpo = json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8")
+        self._json_pronto(json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8"), status)
+
+    def _json_pronto(self, corpo: bytes, status=200):
+        """JSON já em bytes (o modelo lido do disco vai como está, sem reescrever)."""
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(corpo)))
@@ -3780,6 +3808,10 @@ class Handler(BaseHTTPRequestHandler):
             if rota.startswith("/api/projetos/"):
                 partes = rota.split("/api/projetos/", 1)[1].strip("/").split("/")
                 if len(partes) == 2 and partes[1] == "modelo":
+                    completo = (parse_qs(urlparse(self.path).query).get("completo") or [""])[0]
+                    cru = None if completo else modelo_do_projeto_cru(partes[0])
+                    if cru is not None:
+                        return self._json_pronto(cru)
                     return self._json(modelo_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "historico":
                     return self._json({"historico": _gerente().listar_historico(partes[0])})
