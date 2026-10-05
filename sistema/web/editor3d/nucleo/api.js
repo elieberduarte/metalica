@@ -45,6 +45,14 @@ const postar = (rota, corpo) => pedir(rota, {
   body: JSON.stringify(corpo),
 });
 
+/** O arquivo como ele é, sem base64 nem JSON: o IFC de 321 MB do Bella Casa, em base64, passava do limite do servidor
+ *  e o editor dizia "não foi possível falar com o servidor" (05/10). */
+const enviarArquivo = (rota, arquivo, cabecalhos = {}) => pedir(rota, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/octet-stream', 'X-Nome-Arquivo': encodeURIComponent(arquivo.name), ...cabecalhos },
+  body: arquivo,
+});
+
 export class Api {
   constructor(base = '') { this.base = base.replace(/\/$/, ''); }
   _r(caminho) { return this.base + caminho; }
@@ -83,10 +91,8 @@ export class Api {
                   { documento: documentoJSON, base_alterado: baseAlterado });
   }
 
-  async importarIFCNoProjeto(slug, arquivo) {
-    const conteudo_b64 = await paraBase64(arquivo);
-    return postar(this._r('/api/projetos/' + encodeURIComponent(slug) + '/importar-ifc'),
-                  { nome: arquivo.name, conteudo_b64 });
+  importarIFCNoProjeto(slug, arquivo) {
+    return enviarArquivo(this._r('/api/projetos/' + encodeURIComponent(slug) + '/importar-ifc'), arquivo);
   }
 
   lista() { return pedir(this._r('/api/modelo/lista')); }
@@ -96,25 +102,19 @@ export class Api {
                   { documento: documentoJSON, nome, ...extras });
   }
 
-  /** Lê o arquivo escolhido pelo usuário e manda em base64, como o servidor espera. */
-  async importarIFC(arquivo) {
-    const conteudo_b64 = await paraBase64(arquivo);
-    return postar(this._r('/api/modelo/ifc/importar'),
-                  { nome: arquivo.name, conteudo_b64 });
+  /** Manda o arquivo escolhido pelo usuário como ele é. */
+  importarIFC(arquivo) {
+    return enviarArquivo(this._r('/api/modelo/ifc/importar'), arquivo);
   }
 
-  async inspecionarIFC(arquivo) {
-    const conteudo_b64 = await paraBase64(arquivo);
-    return postar(this._r('/api/modelo/ifc/inspecionar'),
-                  { nome: arquivo.name, conteudo_b64 });
+  inspecionarIFC(arquivo) {
+    return enviarArquivo(this._r('/api/modelo/ifc/inspecionar'), arquivo);
   }
 
   /** Detalhamento de peças para produção: o servidor devolve os links do DXF único,
    *  do romaneio e do relatório. Não mexe no documento aberto. */
-  async detalharIFC(arquivo, projeto = null) {
-    const conteudo_b64 = await paraBase64(arquivo);
-    return postar(this._r('/api/modelo/ifc/detalhar'),
-                  { nome: arquivo.name, conteudo_b64, projeto: projeto || undefined });
+  detalharIFC(arquivo, projeto = null) {
+    return enviarArquivo(this._r('/api/modelo/ifc/detalhar'), arquivo, projeto ? { 'X-Projeto': encodeURIComponent(projeto) } : {});
   }
 
   /** Dimensiona o galpão e devolve o modelo 3D correspondente. */

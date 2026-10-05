@@ -3510,16 +3510,22 @@ def exportar_ifc(corpo: dict) -> dict:
 
 
 def _gravar_ifc_recebido(corpo: dict, nome_padrao: str) -> str:
-    """Grava o IFC que veio em base64 e devolve o caminho."""
+    """Grava o IFC recebido — em base64 no JSON, ou o arquivo como ele é, já no disco (_corpo_binario) — e devolve o
+    caminho."""
     import base64
     dados = corpo.get("conteudo_b64")
-    if not dados:
+    local = corpo.get("arquivo_local")
+    if not dados and not local:
         raise ErroDeDados("nenhum arquivo IFC recebido.")
     nome = os.path.basename(corpo.get("nome") or nome_padrao)
     os.makedirs(MODELOS, exist_ok=True)
     destino = os.path.join(MODELOS, _slug(os.path.splitext(nome)[0]) + ".ifc")
-    with open(destino, "wb") as f:
-        f.write(base64.b64decode(dados))
+    if local:
+        import shutil
+        shutil.move(local, destino)
+    else:
+        with open(destino, "wb") as f:
+            f.write(base64.b64decode(dados))
     return destino
 
 
@@ -3675,7 +3681,10 @@ class Handler(BaseHTTPRequestHandler):
         if falta:
             os.remove(destino)
             raise ErroDeDados("o envio do arquivo parou no meio (%d de %d bytes)." % (n - falta, n))
-        return {"arquivo_local": destino, "nome": nome}
+        saida = {"arquivo_local": destino, "nome": nome}
+        if self.headers.get("X-Projeto"):
+            saida["projeto"] = unquote(self.headers.get("X-Projeto"))
+        return saida
 
     def _baixar(self, caminho):
         """Um arquivo gerado na hora (o pacote do projeto) como download, com o nome dele."""
