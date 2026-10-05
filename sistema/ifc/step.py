@@ -645,6 +645,31 @@ _RE_SO_REFS = re.compile(r"^\(\s*((?:#[0-9]+\s*,?\s*)+)\)$")
 _RE_ARGS_PLANOS = re.compile(r"^[-+0-9.eE#$*.,\s]*$")     # sem aspas, sem parêntese interno
 
 
+# As quatro instruções da malha facetada como os programas as escrevem (sem espaços), numa
+# passada só: no Bella Casa (05/10, 5,5 mi de instruções) são 98% do arquivo, e a
+# IFCFACEOUTERBOUND, por causa do `.T.`, ia pelo tokenizador. Com espaço, minúscula ou
+# qualquer outra variação a instrução segue pelo caminho de antes; o resultado é o mesmo.
+_RE_MALHA = re.compile(r"#([0-9]+)=(?:IFCCARTESIANPOINT\(\(([-+0-9.eE\s,]+)\)\)"
+                       r"|(IFCPOLYLOOP|IFCFACE)\(\(((?:#[0-9]+\s*,?\s*)+)\)\)"
+                       r"|(IFCFACEOUTERBOUND|IFCFACEBOUND)\(#([0-9]+),\.([TF])\.\))")
+
+
+def _entidade_da_malha(texto: str):
+    """(id, tipo, args) das instruções de `_RE_MALHA`, ou None."""
+    m = _RE_MALHA.fullmatch(texto)
+    if m is None:
+        return None
+    ident, numeros, tipo_refs, refs, tipo_limite = m.group(1, 2, 3, 4, 5)
+    if numeros is not None:
+        try:
+            return int(ident), "IFCCARTESIANPOINT", [[_numero(x) for x in numeros.replace(" ", "").split(",") if x]]
+        except ValueError:
+            return None                      # número malformado: o caminho de antes avisa
+    if refs is not None:
+        return int(ident), tipo_refs, [[Ref(int(x)) for x in refs.replace("#", " ").replace(",", " ").split()]]
+    return int(ident), tipo_limite, [Ref(int(m.group(6))), m.group(7) == "T"]
+
+
 def _numero(s: str):
     return int(s) if s.lstrip("-+").isdigit() else float(s)
 
@@ -713,6 +738,14 @@ def _analisar_fluxo(linhas: Iterable[str], arq: Arquivo, so_cabecalho=False) -> 
                     break
                 secao = marca
             continue
+        if secao != "cabecalho" and not so_cabecalho:
+            rapida = _entidade_da_malha(texto)
+            if rapida is not None:
+                ident = rapida[0]
+                if ident in arq.entidades:
+                    arq.avisar("id repetido #%d: a última definição prevalece" % ident)
+                arq.entidades[ident] = Entidade(ident, rapida[1], rapida[2], None)
+                continue
         m = _RE_ATRIB.match(texto)
         try:
             if m:

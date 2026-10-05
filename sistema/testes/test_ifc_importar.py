@@ -198,6 +198,34 @@ class TestLeitorStep(Asserts):
         self.assertEqual(arq.entidades[n].args, [[float(n), n + 0.5, 0.0]])
         self.assertLess(tempo, 20.0)
 
+    def test_atalho_da_malha_le_igual_ao_caminho_completo(self):
+        """As quatro instruções da malha facetada numa passada (Bella Casa, 05/10: leitura 105 → 63 s):
+        o resultado é o mesmo do caminho completo, e qualquer variação de escrita vai por ele."""
+        from ifc import step
+        casos = ["#1=IFCCARTESIANPOINT((1.,-2.5,3.E-2))", "#2=IFCCARTESIANPOINT((10,20))",
+                 "#3=IFCPOLYLOOP((#1,#2,#7))", "#4=IFCFACE((#5))", "#5=IFCFACEOUTERBOUND(#3,.T.)",
+                 "#6=IFCFACEBOUND(#3,.F.)"]
+        variacoes = ["#7 = IFCCARTESIANPOINT((1.,2.,3.))", "#8=ifcpolyloop((#1,#2,#3))",
+                     "#9=IFCFACEOUTERBOUND(#3, .T.)", "#10=IFCPOLYLOOP((1,2,3))", "#11=IFCCARTESIANPOINT((1..2,3.))"]
+        for t in casos:
+            rapida = step._entidade_da_malha(t)
+            self.assertIsNotNone(rapida, t)
+            ident, tipo, args, _ = (lambda m: (int(m.group(1)),) + step._Analisador(step._tokens(m.group(2))).corpo())(step._RE_ATRIB.match(t))
+            self.assertEqual(rapida, (ident, tipo, args), t)
+            self.assertEqual([type(x) for x in rapida[2]], [type(x) for x in args], t)
+        for t in variacoes:
+            self.assertIsNone(step._entidade_da_malha(t), t)
+        # dentro do arquivo: as variações ainda são lidas pelo caminho de antes
+        texto = ("ISO-10303-21;\nHEADER;\nFILE_SCHEMA(('IFC4'));\nENDSEC;\nDATA;\n" +
+                 "".join(t + ";\n" for t in casos + variacoes[:3]) + "ENDSEC;\nEND-ISO-10303-21;\n")
+        arq = ler_texto(texto)
+        self.assertEqual(arq.entidades[5].args, [Ref(3), True])
+        self.assertEqual(arq.entidades[6].args, [Ref(3), False])
+        self.assertEqual(arq.entidades[8].tipo, "IFCPOLYLOOP")
+        self.assertEqual(arq.entidades[9].args, [Ref(3), True])
+        self.assertEqual(arq.entidades[3].args, [[Ref(1), Ref(2), Ref(7)]])
+        self.assertIsInstance(arq.entidades[3].args[0][0], Ref)
+
 
 # =================================================================== unidades e colocação
 
