@@ -40,6 +40,10 @@ async function api(url, opcoes = {}) {
 }
 
 const postar = (url, dados) => api(url, { method: 'POST', body: JSON.stringify(dados || {}) });
+/** O arquivo como ele é, sem base64 nem JSON: o IFC de 321 MB, em base64, passava do limite do servidor e o navegador
+ *  só dizia "Failed to fetch" (05/10). */
+const enviarArquivo = (url, arquivo) => api(url, { method: 'POST', body: arquivo,
+  headers: { 'Content-Type': 'application/octet-stream', 'X-Nome-Arquivo': encodeURIComponent(arquivo.name) } });
 
 /* ------------------------------------------------------------------ avisos */
 
@@ -376,11 +380,10 @@ function novoDeIFC() {
     try {
       carregando(true, 'Criando o projeto…');
       criado = await postar('/api/projetos', { ...v, tipo: 'ifc' });
-      carregando(true, `Lendo ${arquivo.name}… arquivo grande leva um minuto ou dois.`);
-      const conteudo_b64 = await lerComoBase64(arquivo);
-      carregando(true, `Importando ${arquivo.name}… arquivo grande leva um minuto ou dois.`);
-      await postar(`/api/projetos/${encodeURIComponent(criado.slug)}/importar-ifc`,
-                   { nome: arquivo.name, conteudo_b64 });
+      const mb = arquivo.size / 1048576;
+      carregando(true, `Importando ${arquivo.name} (${mb.toFixed(0)} MB)… ` +
+                       (mb > 150 ? 'arquivo muito grande: pode levar 10 minutos ou mais.' : 'arquivo grande leva um minuto ou dois.'));
+      await enviarArquivo(`/api/projetos/${encodeURIComponent(criado.slug)}/importar-ifc`, arquivo);
       location.href = urlDoProjeto(criado, 'editor');
     } catch (e) {
       carregando(false);

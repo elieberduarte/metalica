@@ -510,7 +510,8 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
     g = _gerente()
     pasta = g._existente(s)
     dados = corpo.get("conteudo_b64")
-    if not dados:
+    local = corpo.get("arquivo_local")             # enviado como ele é (_corpo_binario), já no disco
+    if not dados and not local:
         raise ErroDeDados("nenhum arquivo IFC recebido.")
     nome = os.path.basename(corpo.get("nome") or "modelo.ifc")
     # o .skp do SketchUp entra direto, pela biblioteca do SketchUp instalado (ifc/skp.py, pedido de 02/10): as
@@ -522,8 +523,12 @@ def importar_ifc_no_projeto(s: str, corpo: dict) -> dict:
     os.makedirs(os.path.dirname(destino), exist_ok=True)
     try:
         _progresso(s, "gravando o IFC na pasta do projeto…")
-        with open(destino, "wb") as f:
-            f.write(base64.b64decode(dados))
+        if local:
+            import shutil
+            shutil.move(local, destino)
+        else:
+            with open(destino, "wb") as f:
+                f.write(base64.b64decode(dados))
         _progresso(s, "lendo o %s (%.0f MB; leva uns 20 s)…" % ("SKP" if eh_skp else "IFC", os.path.getsize(destino) / 1048576))
         if eh_skp:
             from ifc import skp as _skp
@@ -3646,6 +3651,32 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError as e:
             raise ErroDeDados(f"JSON inválido: {e}")
 
+    def _corpo_binario(self) -> dict:
+        """O arquivo enviado como ele é (Content-Type application/octet-stream, o nome em X-Nome-Arquivo), gravado em
+        pedaços numa pasta de envios: o IFC de 321 MB do Bella Casa, em base64 dentro do JSON, passava do limite de
+        400 MB e o navegador só dizia "Failed to fetch" (05/10). Devolve {"arquivo_local", "nome"}."""
+        n = int(self.headers.get("Content-Length") or 0)
+        if not n:
+            raise ErroDeDados("nenhum arquivo recebido.")
+        if n > 4 * 1024 ** 3:
+            raise ErroDeDados("arquivo grande demais (limite de 4 GB).")
+        nome = os.path.basename(unquote(self.headers.get("X-Nome-Arquivo") or "arquivo"))
+        pasta = os.path.join(PROJETOS, ".envios")
+        os.makedirs(pasta, exist_ok=True)
+        destino = os.path.join(pasta, "%d-%s" % (int(time.time() * 1000), re.sub(r"[^\w.\-]+", "_", nome)))
+        falta = n
+        with open(destino, "wb") as f:
+            while falta > 0:
+                bloco = self.rfile.read(min(falta, 8 << 20))
+                if not bloco:
+                    break
+                f.write(bloco)
+                falta -= len(bloco)
+        if falta:
+            os.remove(destino)
+            raise ErroDeDados("o envio do arquivo parou no meio (%d de %d bytes)." % (n - falta, n))
+        return {"arquivo_local": destino, "nome": nome}
+
     def _baixar(self, caminho):
         """Um arquivo gerado na hora (o pacote do projeto) como download, com o nome dele."""
         dados = open(caminho, "rb").read()
@@ -3876,7 +3907,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _do_post(self, rota):
         try:
-            corpo = self._corpo()
+            # o arquivo grande vem como ele é, sem base64 nem JSON (o IFC de 321 MB, 05/10)
+            binario = (self.headers.get("Content-Type") or "").startswith("application/octet-stream")
+            corpo = self._corpo_binario() if binario else self._corpo()
             if rota == "/api/ligacoes/montar":
                 return self._json(ligacoes_montar(corpo))
             if rota in ("/api/banco-detalhes", "/api/banco-detalhes/excluir"):
