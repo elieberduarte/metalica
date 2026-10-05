@@ -110,7 +110,7 @@ try:
     aba.avaliar("window.__abertos = []; window.open = (u) => { window.__abertos.push(u); return null; }; document.querySelector('#btn-resumos').click(); 1")
     t0 = time.time()
     while time.time() - t0 < 30 and not aba.avaliar("!!document.querySelector('#aba-resumos form.form-resumo')"): aba.drenar(0.5)
-    ok(aba.avaliar("!document.querySelector('#aba-resumos').hidden && document.querySelectorAll('.form-resumo input, .form-resumo textarea').length === 6"), "aba Resumos com o formulário")
+    ok(aba.avaliar("!document.querySelector('#aba-resumos').hidden && document.querySelectorAll('.form-resumo input, .form-resumo textarea').length === 7"), "aba Resumos com o formulário (7 campos: a perda das chapas entrou em 05/10)")
     aba.avaliar("document.querySelector('.form-resumo input').value = 'R11'; document.querySelector('.form-resumo button[type=submit]').click(); 1")
     t0 = time.time()
     while time.time() - t0 < 400 and not aba.avaliar("!!document.querySelector('#doc-previa iframe')"): aba.drenar(1.0)
