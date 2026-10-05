@@ -14,6 +14,12 @@
 //
 // Unidades: as posições entram em milímetros (as do documento) e a escala mm → m fica
 // na raiz da cena, como nos demais objetos.
+//
+// Cópias: sólidos que são a mesma malha só movida ou girada (os parafusos de um IFC, um
+// quarto dos triângulos do Bella Casa) vão para um InstancedMesh por forma — a malha sobe
+// uma vez para a placa e cada cópia é uma matriz e uma cor. As arestas delas continuam no
+// bloco, como as das outras peças; a escolha pelo cursor, a cor, esconder e o corte valem
+// igual. Espelhada ou que não bate vértice a vértice, a peça fica no bloco.
 
 import * as THREE from 'three';
 import { misturar, COR_DESTAQUE, COR_DESTAQUE_ARESTA } from './cena.js';
@@ -29,6 +35,12 @@ const VERTS_POR_BLOCO = 50000;
 /** Contornos "através do modelo" da seleção: além disto, só a cor marca a peça. */
 const MAX_CONTORNOS = 400;
 
+/** Forma repetida só vira cópias acima de tantos triângulos economizados: grupo pequeno
+ *  fica no bloco, para não trocar memória por chamadas de desenho. */
+const MIN_TRI_COPIAS = 2000;
+/** Distância máxima (mm) entre um vértice da cópia e o da referência levada até ela. */
+const TOL_COPIA = 0.05;
+
 const COR_SELECAO = '#1f7ae0';
 const COR_SOBRE = '#5fa8f5';
 
@@ -39,6 +51,56 @@ const _raio = new THREE.Ray();
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
 const _p = new THREE.Vector3();
 const _tri = new THREE.Triangle();
+const _raioLote = new THREE.Ray();
+const _zero = new THREE.Matrix4().makeScale(0, 0, 0);
+
+// ---- cópias: três vértices fixos (pelo índice: as cópias de uma forma do IFC saem com os
+// vértices na mesma ordem) dão o sistema de eixos de cada peça
+
+function _ancoras(vs) {
+  const p0 = vs[0];
+  let i1 = -1, d1 = 0;
+  for (let i = 1; i < vs.length; i++) {
+    const v = vs[i], d = (v[0] - p0[0]) ** 2 + (v[1] - p0[1]) ** 2 + (v[2] - p0[2]) ** 2;
+    if (d > d1) { d1 = d; i1 = i; }
+  }
+  if (i1 < 0 || d1 < 1e-6) return null;
+  const ux = vs[i1][0] - p0[0], uy = vs[i1][1] - p0[1], uz = vs[i1][2] - p0[2];
+  let i2 = -1, c2 = 0;
+  for (let i = 1; i < vs.length; i++) {
+    const wx = vs[i][0] - p0[0], wy = vs[i][1] - p0[1], wz = vs[i][2] - p0[2];
+    const c = (uy * wz - uz * wy) ** 2 + (uz * wx - ux * wz) ** 2 + (ux * wy - uy * wx) ** 2;
+    if (c > c2) { c2 = c; i2 = i; }
+  }
+  if (i2 < 0 || c2 < 1e-6 * d1) return null;
+  return [i1, i2];
+}
+
+function _quadro(vs, ancoras) {
+  const p0 = vs[0], a = vs[ancoras[0]], b = vs[ancoras[1]];
+  const x = new THREE.Vector3(a[0] - p0[0], a[1] - p0[1], a[2] - p0[2]);
+  const w = new THREE.Vector3(b[0] - p0[0], b[1] - p0[1], b[2] - p0[2]);
+  if (x.lengthSq() < 1e-12) return null;
+  x.normalize();
+  const z = new THREE.Vector3().crossVectors(x, w);
+  if (z.lengthSq() < 1e-12) return null;
+  z.normalize();
+  const y = new THREE.Vector3().crossVectors(z, x);
+  return new THREE.Matrix4().makeBasis(x, y, z).setPosition(p0[0], p0[1], p0[2]);
+}
+
+/** Todos os vértices da referência, levados por `m`, caem nos da peça? */
+function _bate(vsRef, vs, m) {
+  const e = m.elements, tol = TOL_COPIA * TOL_COPIA;
+  for (let i = 0; i < vs.length; i++) {
+    const p = vsRef[i], q = vs[i];
+    const x = e[0] * p[0] + e[4] * p[1] + e[8] * p[2] + e[12] - q[0];
+    const y = e[1] * p[0] + e[5] * p[1] + e[9] * p[2] + e[13] - q[1];
+    const z = e[2] * p[0] + e[6] * p[1] + e[10] * p[2] + e[14] - q[2];
+    if (x * x + y * y + z * z > tol) return false;
+  }
+  return true;
+}
 
 export class Lote {
   constructor(cena) {
@@ -51,12 +113,17 @@ export class Lote {
     this.estado = new Map();         // id -> 'selecionado' | 'sobre'
     this.escondidos = new Set();     // ids fora do índice
     this.contornos = new Map();      // id -> LineSegments da seleção
+    this.copias = [];                // formas repetidas: {ref, itens:[{ent, quadro}], malha, vivos, inversas}
     this.modo = cena.modo;
     this.materialMalha = new THREE.MeshStandardMaterial({
       vertexColors: true, metalness: 0.35, roughness: 0.6, side: THREE.DoubleSide,
     });
     this.materialArestas = new THREE.LineBasicMaterial({
       vertexColors: true, transparent: true, opacity: 0.55, depthWrite: false,
+    });
+    // a cor das cópias vem de cada cópia (instanceColor), não dos vértices
+    this.materialCopias = new THREE.MeshStandardMaterial({
+      metalness: 0.35, roughness: 0.6, side: THREE.DoubleSide,
     });
     this.aplicarCorte(cena.planosCorte || []);
   }
@@ -86,8 +153,9 @@ export class Lote {
     const velhas = ents.filter(e => this.itens.has(e.id));
     for (const e of velhas) this.remover(e.id, true);
     if (velhas.length) this.concluir();
+    const copias = this._agruparCopias(ents);
     for (const ent of ents) {
-      const g = this._geometria(ent);
+      const g = this._geometria(ent, copias.get(ent.id));
       if (!g) continue;
       pecas.push(g);
     }
@@ -102,13 +170,98 @@ export class Lote {
     }
     if (atual.length) lotes.push(atual);
     for (const l of lotes) this._montarBloco(l);
-    for (const p of pecas) { if (p.proprio) p.geom.dispose(); p.arestas.dispose(); }
+    for (const p of pecas) { if (p.proprio && p.geom) p.geom.dispose(); p.arestas.dispose(); }
     for (const p of pecas) this.pintar(p.id);
     this.aplicarModo(this.modo);
     this.definirSombras(this.cena.sombrasAtivas);
   }
 
-  _geometria(ent) {
+  /**
+   * Sólidos que são a mesma malha só movida ou girada: id -> {grupo, i}. Candidatas pela
+   * contagem de vértices e pelas faces (os mesmos índices); cópia é a que bate com a referência
+   * vértice a vértice. Cada grupo aceito já sai com o InstancedMesh montado.
+   */
+  _agruparCopias(ents) {
+    const mapa = new Map();
+    const porChave = new Map();
+    for (const ent of ents) {
+      if (ent.tipo !== 'solido' || !ent.vertices || ent.vertices.length < 3 || !ent.faces) continue;
+      let h = 2166136261 ^ ent.vertices.length;
+      for (const f of ent.faces) { h = Math.imul(h ^ f.length, 16777619); for (const i of f) h = Math.imul(h ^ i, 16777619); }
+      const chave = ent.vertices.length + '|' + ent.faces.length + '|' + (h >>> 0);
+      let l = porChave.get(chave);
+      if (!l) porChave.set(chave, (l = []));
+      l.push(ent);
+    }
+    for (const lista of porChave.values()) {
+      if (lista.length < 2) continue;
+      const tri = lista[0].faces.reduce((s, f) => s + Math.max(f.length - 2, 0), 0);
+      let resto = lista;
+      while (resto.length >= 2 && tri * (resto.length - 1) >= MIN_TRI_COPIAS) {
+        const ref = resto[0];
+        const ancoras = _ancoras(ref.vertices);
+        const qRef = ancoras && _quadro(ref.vertices, ancoras);
+        if (!qRef) break;
+        const inv = qRef.clone().invert();
+        const iguais = [{ ent: ref, quadro: qRef }], outros = [];
+        for (const e of resto.slice(1)) {
+          const q = _quadro(e.vertices, ancoras);
+          if (q && _bate(ref.vertices, e.vertices, q.clone().multiply(inv))) iguais.push({ ent: e, quadro: q });
+          else outros.push(e);
+        }
+        if (iguais.length >= 2 && tri * (iguais.length - 1) >= MIN_TRI_COPIAS) {
+          const grupo = { ref, inv, itens: iguais, malha: null, vivos: iguais.length, inversas: [] };
+          if (this._montarCopias(grupo)) iguais.forEach((x, i) => mapa.set(x.ent.id, { grupo, i }));
+        }
+        resto = outros;
+      }
+    }
+    return mapa;
+  }
+
+  /** A malha da forma, uma vez, perto da origem (a Float32 da placa guarda a forma sem perder
+   *  precisão longe dela), e uma matriz por cópia. */
+  _montarCopias(grupo) {
+    let geom = null;
+    try { ({ geom } = this.cena._geometriaSolido(grupo.ref)); } catch (e) { geom = null; }
+    if (!geom) return false;
+    const g = geom.index ? geom.toNonIndexed() : geom;
+    g.applyMatrix4(grupo.inv);
+    if (!g.getAttribute('normal')) g.computeVertexNormals();
+    const malha = new THREE.InstancedMesh(g, this.materialCopias, grupo.itens.length);
+    grupo.itens.forEach((x, i) => {
+      malha.setMatrixAt(i, this.escondidos.has(x.ent.id) ? _zero : x.quadro);
+      malha.setColorAt(i, _cor.set('#7d8a9e'));
+    });
+    malha.instanceMatrix.needsUpdate = true;
+    malha.frustumCulled = false;
+    malha.name = 'lote-copias';
+    malha.userData.lote = true;
+    malha.raycast = (raycaster, intersects) => this._raycastCopias(grupo, raycaster, intersects);
+    grupo.malha = malha;
+    this.copias.push(grupo);
+    this.grupo.add(malha);
+    return true;
+  }
+
+  _descartarCopias(grupo) {
+    const i = this.copias.indexOf(grupo);
+    if (i >= 0) this.copias.splice(i, 1);
+    this.grupo.remove(grupo.malha);
+    grupo.malha.geometry.dispose();
+    grupo.malha.dispose();
+  }
+
+  _geometria(ent, copia = null) {
+    if (copia) {
+      // a malha está no grupo de cópias; aqui só as arestas, no mundo, e a caixa
+      const arestas = new THREE.BufferGeometry();
+      arestas.setAttribute('position', new THREE.BufferAttribute(arestasDoSolido(ent.vertices, ent.faces), 3));
+      const caixa = new THREE.Box3();
+      for (const v of ent.vertices) caixa.expandByPoint(_p.set(v[0], v[1], v[2]));
+      return { id: ent.id, geom: null, arestas, nv: 0, na: arestas.getAttribute('position').count,
+               centro: caixa.getCenter(new THREE.Vector3()).toArray(), chave: null, proprio: false, caixa, copia };
+    }
     let geom = null, matriz = null, chave = null;
     try {
       if (ent.tipo === 'barra') ({ geom, matriz, chave } = this.cena._geometriaBarra(ent));
@@ -150,16 +303,18 @@ export class Lote {
     let v0 = 0, a0 = 0;
     const caixaBloco = new THREE.Box3();
     for (const p of pecas) {
-      pos.set(p.geom.getAttribute('position').array, v0 * 3);
-      const n = p.geom.getAttribute('normal').array;
-      for (let i = 0, k = v0 * 3; i < n.length; i++, k++) nor[k] = Math.round(Math.max(-1, Math.min(1, n[i])) * 32767);
+      if (p.geom) {
+        pos.set(p.geom.getAttribute('position').array, v0 * 3);
+        const n = p.geom.getAttribute('normal').array;
+        for (let i = 0, k = v0 * 3; i < n.length; i++, k++) nor[k] = Math.round(Math.max(-1, Math.min(1, n[i])) * 32767);
+      }
       apos.set(p.arestas.getAttribute('position').array, a0 * 3);
       // Caixa envolvente da peça: é o que faz a escolha pelo cursor ser barata (sem ela,
       // o raio testaria os ~16 mil triângulos de cada bloco a cada movimento do mouse).
-      const caixa = new THREE.Box3().setFromArray(p.geom.getAttribute('position').array);
+      const caixa = p.caixa || new THREE.Box3().setFromArray(p.geom.getAttribute('position').array);
       caixaBloco.union(caixa);
       const item = { id: p.id, bloco, v0, nv: p.nv, a0, na: p.na, chave: p.chave,
-                     corMalha: null, corAresta: null, caixa };
+                     corMalha: null, corAresta: null, caixa, copia: p.copia || null };
       bloco.itens.push(item);
       this.itens.set(p.id, item);
       v0 += p.nv;
@@ -245,6 +400,52 @@ export class Lote {
     });
   }
 
+  /** Raycast de um grupo de cópias: caixa de cada cópia no lote, depois os triângulos da forma
+   *  no espaço dela (a matriz é rígida, então as distâncias se comparam direto). */
+  _raycastCopias(grupo, raycaster, intersects) {
+    const malha = grupo.malha;
+    if (!malha.visible) return;
+    _inv.copy(malha.matrixWorld).invert();
+    _raioLote.copy(raycaster.ray).applyMatrix4(_inv);
+    const pos = malha.geometry.getAttribute('position');
+    let melhor = Infinity, achado = -1, tri = -1;
+    for (let i = 0; i < grupo.itens.length; i++) {
+      const id = grupo.itens[i].ent.id;
+      const it = this.itens.get(id);
+      if (!it || !it.copia || it.copia.grupo !== grupo || this.escondidos.has(id)) continue;
+      if (!_raioLote.intersectsBox(it.caixa)) continue;
+      const inv = grupo.inversas[i] || (grupo.inversas[i] = grupo.itens[i].quadro.clone().invert());
+      _raio.copy(_raioLote).applyMatrix4(inv);
+      for (let k = 0; k < pos.count; k += 3) {
+        _a.fromBufferAttribute(pos, k);
+        _b.fromBufferAttribute(pos, k + 1);
+        _c.fromBufferAttribute(pos, k + 2);
+        if (!_raio.intersectTriangle(_a, _b, _c, false, _p)) continue;
+        const d = _p.distanceToSquared(_raio.origin);
+        if (d < melhor) { melhor = d; achado = i; tri = k; }
+      }
+    }
+    if (achado < 0) return;
+    const quadro = grupo.itens[achado].quadro;
+    _raio.copy(_raioLote).applyMatrix4(grupo.inversas[achado]);
+    _a.fromBufferAttribute(pos, tri);
+    _b.fromBufferAttribute(pos, tri + 1);
+    _c.fromBufferAttribute(pos, tri + 2);
+    _raio.intersectTriangle(_a, _b, _c, false, _p);
+    const ponto = _p.clone().applyMatrix4(quadro).applyMatrix4(malha.matrixWorld);
+    const distancia = raycaster.ray.origin.distanceTo(ponto);
+    if (distancia < raycaster.near || distancia > raycaster.far) return;
+    _tri.set(_a, _b, _c);
+    const normal = new THREE.Vector3();
+    _tri.getNormal(normal);
+    normal.applyMatrix3(new THREE.Matrix3().setFromMatrix4(quadro)).normalize();   // para o espaço do lote
+    intersects.push({
+      distance: distancia, point: ponto, object: malha, entidadeId: grupo.itens[achado].ent.id,
+      face: { a: tri, b: tri + 1, c: tri + 2, normal, materialIndex: 0 },
+      faceIndex: tri / 3, uv: null, instanceId: achado,
+    });
+  }
+
   _entidadeDaFace(bloco, faceIndex) {
     const idx = bloco.malha.geometry.index;
     if (!idx || faceIndex == null) return null;
@@ -268,6 +469,12 @@ export class Lote {
     this.itens.delete(id);
     this.estado.delete(id);
     this._tirarContorno(id);
+    if (it.copia) {
+      const g = it.copia.grupo;
+      g.malha.setMatrixAt(it.copia.i, _zero);
+      g.malha.instanceMatrix.needsUpdate = true;
+      if (--g.vivos <= 0) this._descartarCopias(g);
+    }
     const b = it.bloco;
     b.itens.splice(b.itens.indexOf(it), 1);
     b.sujo = true;                    // a geometria fica no bloco; só sai do índice
@@ -293,6 +500,11 @@ export class Lote {
     if (visivel === !escondida) return;
     if (visivel) this.escondidos.delete(id); else this.escondidos.add(id);
     it.bloco.sujo = true;
+    if (it.copia) {
+      const { grupo, i } = it.copia;
+      grupo.malha.setMatrixAt(i, visivel ? grupo.itens[i].quadro : _zero);
+      grupo.malha.instanceMatrix.needsUpdate = true;
+    }
     if (!visivel) this._tirarContorno(id);
   }
 
@@ -338,6 +550,11 @@ export class Lote {
   }
 
   _escrever(it, corMalha, corAresta) {
+    if (it.copia) {
+      const m = it.copia.grupo.malha;
+      m.setColorAt(it.copia.i, _cor.set(corMalha));
+      m.instanceColor.needsUpdate = true;
+    }
     const b = it.bloco;
     const cor = b.malha.geometry.getAttribute('color');
     _cor.set(corMalha);
@@ -421,10 +638,18 @@ export class Lote {
     this.materialMalha.opacity = raiox ? 0.18 : 1;
     this.materialMalha.depthWrite = !raiox;
     this.materialMalha.needsUpdate = true;
+    this.materialCopias.transparent = raiox;
+    this.materialCopias.opacity = raiox ? 0.18 : 1;
+    this.materialCopias.depthWrite = !raiox;
+    this.materialCopias.needsUpdate = true;
     for (const b of this.blocos) {
       b.malha.visible = modo !== 'arestas';
       b.arestas.visible = modo !== 'sombreado';
       b.malha.renderOrder = raiox ? 1 : 0;
+    }
+    for (const g of this.copias) {
+      g.malha.visible = modo !== 'arestas';
+      g.malha.renderOrder = raiox ? 1 : 0;
     }
   }
 
@@ -432,6 +657,8 @@ export class Lote {
     const p = planos && planos.length ? planos : null;
     this.materialMalha.clippingPlanes = p;
     this.materialArestas.clippingPlanes = p;
+    this.materialCopias.clippingPlanes = p;
+    this.materialCopias.needsUpdate = true;
     this.materialMalha.needsUpdate = true;
     this.materialArestas.needsUpdate = true;
     for (const l of this.contornos.values()) { l.material.clippingPlanes = p; l.material.needsUpdate = true; }
@@ -439,15 +666,18 @@ export class Lote {
 
   definirSombras(ligadas) {
     for (const b of this.blocos) { b.malha.castShadow = !!ligadas; b.malha.receiveShadow = !!ligadas; }
+    for (const g of this.copias) { g.malha.castShadow = !!ligadas; g.malha.receiveShadow = !!ligadas; }
   }
 
-  /** Malhas dos blocos, para o raycast (as arestas não entram). */
+  /** Malhas dos blocos e das cópias, para o raycast (as arestas não entram). */
   alvos() {
-    return this.blocos.filter(b => b.malha.visible).map(b => b.malha);
+    return [...this.blocos.filter(b => b.malha.visible).map(b => b.malha),
+            ...this.copias.filter(g => g.malha.visible).map(g => g.malha)];
   }
 
   descartar() {
     for (const b of this.blocos.slice()) this._descartarBloco(b);
+    for (const g of this.copias.slice()) this._descartarCopias(g);
     for (const id of [...this.contornos.keys()]) this._tirarContorno(id);
     this.itens.clear();
     this.estado.clear();
@@ -455,5 +685,6 @@ export class Lote {
     this.cena.raiz.remove(this.grupo);
     this.materialMalha.dispose();
     this.materialArestas.dispose();
+    this.materialCopias.dispose();
   }
 }
