@@ -255,7 +255,7 @@ QUADROS = [("tesoura", "TESOURAS"), ("viga", "VIGAS"), ("pilar", "PILARES"), ("c
 #: Título do quadro de cada tipo de posição (peça avulsa), na ordem em que saem.
 QUADROS_POSICOES = [("planta_telhas", "PAGINAÇÃO DAS TELHAS DA COBERTURA (PLANTA)"), ("quadro_telhas", "QUADRO DAS TELHAS DA COBERTURA"),
                     ("paginacao", "PAGINAÇÃO DAS TELHAS – COMPRIMENTOS REAIS"), ("multidobra", "TELHAS MULTI-DOBRA"), ("cumeeira", "CUMEEIRAS"), ("terca_cobertura", "TERÇAS DE COBERTURA"), ("terca_marquise", "TERÇAS DE MARQUISE"),
-                    ("suporte_terca", "SUPORTES DE TERÇA"), ("montagem", "PEÇAS MONTADAS – FRENTE E LATERAL"), ("agulhamento", "AGULHAMENTOS"),
+                    ("suporte_terca", "SUPORTES DE TERÇA"), ("suporte_tirante", "SUPORTES DE TIRANTE"), ("montagem", "PEÇAS MONTADAS – FRENTE E LATERAL"), ("agulhamento", "AGULHAMENTOS"),
                     ("suporte_agulhamento", "SUPORTES DE AGULHAMENTO"), ("contraventamento", "CONTRAVENTAMENTOS"),
                     ("suporte_contraventamento", "SUPORTES DE CONTRAVENTAMENTO"), ("castanha", "CASTANHAS"),
                     ("barra_roscada", "BARRAS ROSCADAS"), ("gancho", "GANCHOS"), ("chumbador", "CHUMBADORES"), ("cantoneira_forro", "CANTONEIRAS DE FORRO"),
@@ -403,16 +403,56 @@ def _quadros_por_tipo(d: Desenho, fns: Sequence[tuple], largura_max_papel: float
     for chave in ordem:
         banda = Desenho(nome=chave, escala=d.escala)
         banda.camadas = {k: v for k, v in d.camadas.items()}
-        # terças: uma embaixo da outra (já vêm do menor comprimento para o maior) — as do
-        # mesmo tamanho com furação diferente ficam lado a lado para conferir
-        fs = [(lambda x, y_, f=f: _desenhar_celula(f, banda, x, y_)) for f in grupos[chave]]
-        if chave in UMA_POR_LINHA:
-            _em_colunas(banda, fs)
-        else:
-            _empilhar(banda, fs, largura_max_papel=largura_max_papel)
-        titulo = titulos.get(chave) or (chave.upper() + "S")
+        titulo = titulos.get(chave) or (chave.replace("_", " ").upper() + "S")
+        _celulas_em_caixinhas(banda, grupos[chave], chave, largura_max_papel, titulo)
         y = _anexar_quadro(d, banda, titulo, y, meta)
     return y
+
+
+#: A camada das molduras dos quadros e das caixinhas das peças: linha contínua e clara (06/10, pedido do usuário:
+#: "trazer os conceitos usados nas pranchas para cá, separar em caixinhas e agrupar por quadros"). Fica fora das
+#: pranchas, que têm os quadros delas (as entidades levam `quadro`, ver pranchas._eh_moldura_de_origem).
+CAMADA_QUADRO = "QUADRO"
+#: Recuo da caixinha em volta da peça (mm de papel); entre as células há 12 mm (`_empilhar`).
+FOLGA_CAIXINHA = 4.0
+
+
+def _camada_quadro(d: Desenho):
+    if CAMADA_QUADRO not in d.camadas:
+        from nucleo2d.desenho import Camada2D
+        d.camadas[CAMADA_QUADRO] = Camada2D(CAMADA_QUADRO, "#8a96aa", espessura=0.13)
+
+
+def _celulas_em_caixinhas(banda: Desenho, celulas: Sequence, chave: str, largura_max_papel: float, titulo: str):
+    """Desenha as células de um quadro (`_empilhar`; as terças, `_em_colunas`) e põe cada uma na sua caixinha, como
+    as vistas das pranchas; as da mesma linha ficam com a mesma altura, para a linha se ler como uma prateleira."""
+    n0 = len(banda.metadados.get("celulas") or [])
+    # terças: uma embaixo da outra (já vêm do menor comprimento para o maior) — as do
+    # mesmo tamanho com furação diferente ficam lado a lado para conferir
+    fs = [(lambda x, y_, f=f: _desenhar_celula(f, banda, x, y_)) for f in celulas]
+    if chave in UMA_POR_LINHA:
+        _em_colunas(banda, fs)
+    else:
+        _empilhar(banda, fs, largura_max_papel=largura_max_papel)
+    cels = (banda.metadados.get("celulas") or [])[n0:]
+    if len(cels) < 2:
+        return                                  # uma peça só: o quadro já é a caixinha dela
+    _camada_quadro(banda)
+    folga = FOLGA_CAIXINHA * banda.escala
+    linhas: List[list] = []                     # [base, topo, células]: as que se sobrepõem na altura
+    for c in cels:
+        for li in linhas:
+            if min(c[3], li[1]) - max(c[1], li[0]) > 0.5 * min(c[3] - c[1], li[1] - li[0]):
+                li[0], li[1] = min(li[0], c[1]), max(li[1], c[3])
+                li[2].append(c)
+                break
+        else:
+            linhas.append([c[1], c[3], [c]])
+    for y0, y1, cs in linhas:
+        for c in cs:
+            banda.add(Polilinha(camada=CAMADA_QUADRO, fechada=True, atributos={"quadro": titulo, "caixinha": True},
+                                vertices=[(c[0] - folga, y0 - folga), (c[2] + folga, y0 - folga),
+                                          (c[2] + folga, y1 + folga), (c[0] - folga, y1 + folga)]))
 
 
 def _anexar_quadro(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta_faixa: Optional[dict] = None) -> float:
@@ -432,9 +472,40 @@ def _anexar_quadro(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta
     x0, x1 = min(q[0] for q in pontos) - 6.0 * esc, max(q[0] for q in pontos) + 6.0 * esc
     y1 = max(q[1] for q in pontos) + 4.0 * esc          # o título já está nos pontos (texto com altura)
     y0 = min(q[1] for q in pontos) - 6.0 * esc
-    dc.add(Polilinha(camada="AUXILIAR", vertices=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], fechada=True,
+    # como o quadro da prancha: moldura contínua e a faixa do título fechada por uma linha de lado a lado (06/10)
+    _camada_quadro(dc)
+    for e in novas:
+        a = e.atributos or {}
+        if isinstance(e, Linha) and e.camada == "AUXILIAR" and a.get("faixa") == titulo and not a.get("detalhe"):
+            e.camada = CAMADA_QUADRO
+            e.a, e.b = (x0, e.a[1]), (x1, e.b[1])
+            e.atributos = dict(a, quadro=titulo)
+            break
+    dc.add(Polilinha(camada=CAMADA_QUADRO, vertices=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], fechada=True,
                      atributos={"quadro": titulo}))
     return y0 - 12.0 * esc
+
+
+def _quadros_por_familia(dc: Desenho, celulas: Sequence[tuple], largura: float, y: float, meta: Optional[dict]) -> float:
+    """O completo: um quadro por família (TESOURAS, TERÇAS E SUPORTES…) e, dentro dele, um quadro por tipo de peça
+    (os conjuntos, as chapas, os chumbadores), cada peça na sua caixinha — antes as peças da família saíam todas
+    misturadas num quadro só (pedido do usuário, 06/10: "agrupar por quadros", como nas pranchas)."""
+    titulos_tipo = list(QUADROS) + [q for q in QUADROS_POSICOES if q[0] not in dict(QUADROS)]
+    por_familia: Dict[str, list] = collections.OrderedDict()
+    for fam, tipo, f in celulas:
+        por_familia.setdefault(fam, []).append((tipo, f))
+    familias = dict(FAMILIAS)
+    for fam in [k for k, _ in FAMILIAS if k in por_familia] + [k for k in por_familia if k not in familias]:
+        titulo = familias.get(fam) or fam.upper()
+        banda = Desenho(nome=fam, escala=dc.escala)
+        banda.camadas = {k: v for k, v in dc.camadas.items()}
+        cels = por_familia[fam]
+        if len({str(t or "conjunto") for t, _ in cels}) > 1:
+            _quadros_por_tipo(banda, cels, largura_max_papel=largura, titulos=titulos_tipo)
+        else:
+            _celulas_em_caixinhas(banda, [f for _t, f in cels], str(cels[0][0] or "conjunto"), largura, titulo)
+        y = _anexar_quadro(dc, banda, titulo, y, meta)
+    return y
 
 
 def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho], chumbacao: Optional[Desenho] = None) -> Desenho:
@@ -462,8 +533,7 @@ def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho], c
             # quadros por família: cada conjunto junto das peças dele (a planta vem depois)
             if chave == "conjuntos":
                 celulas, largura, meta = faixas["familias"][:3]
-                y = _quadros_por_tipo(dc, [(fam, f) for fam, _t, f in celulas], largura_max_papel=largura, y=y,
-                                      meta=meta, titulos=FAMILIAS)
+                y = _quadros_por_familia(dc, celulas, largura, y, meta)
             continue
         if chave not in faixas:
             continue

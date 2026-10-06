@@ -893,9 +893,16 @@ def test_desenho_completo():
     # cada grupo sai em quadros por tipo de peça (chapas, barras…), os conjuntos por tipo
     # de conjunto e a planta no fim — todos com moldura
     assert "PLANTA DE LOCALIZAÇÃO" in faixas and len(faixas) >= 3
-    quadros = [e.atributos["quadro"] for e in dc.entidades.values() if (e.atributos or {}).get("quadro")]
+    from nucleo2d.desenho import Polilinha
+    # as molduras de fora (uma por faixa, sem `faixa` própria); dentro de cada família, um quadro por tipo de peça, e
+    # cada peça na sua caixinha (06/10: "separar em caixinhas e agrupar por quadros", como nas pranchas)
+    molduras = [e for e in dc.entidades.values() if isinstance(e, Polilinha) and (e.atributos or {}).get("quadro")]
+    quadros = [e.atributos["quadro"] for e in molduras if not e.atributos.get("faixa") and not e.atributos.get("caixinha")]
+    internos = [e for e in molduras if e.atributos.get("faixa") and not e.atributos.get("caixinha")]
+    caixinhas = [e for e in molduras if e.atributos.get("caixinha")]
+    assert caixinhas and internos and all(e.camada == "QUADRO" for e in molduras)
     # a planta de localização e, depois dela, a de chumbação (quando o modelo tem chumbadores)
-    assert quadros[-1] in ("PLANTA DE LOCALIZAÇÃO", "PLANTA DE CHUMBAÇÃO") and len(quadros) == len(faixas)
+    assert quadros[-1] in ("PLANTA DE LOCALIZAÇÃO", "PLANTA DE CHUMBAÇÃO") and len(quadros) == len(faixas) == len(set(quadros))
     if quadros[-1] == "PLANTA DE CHUMBAÇÃO":
         assert quadros[-2] == "PLANTA DE LOCALIZAÇÃO"
     meta = dc.metadados["detalhamento"]
