@@ -7,7 +7,7 @@
 
 import { criar, dist, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto } from './nucleo/comandos.js';
-import { acompanharMalha } from './nucleo/malha.js';
+import { acompanharMalha, eixosCopiados } from './nucleo/malha.js';
 
 export function paraMilimetros(texto) {
   let t = String(texto || '').trim().toLowerCase().replace(/\s+(?=(mm|cm|m)$)/, '');
@@ -802,7 +802,22 @@ const novoGrupoCopia = () => 'c' + Date.now().toString(36) + Math.random().toStr
  *  ordem de `novas`. */
 function criarCopias(editor, novas, grupo, originais) {
   const copias = novas.map(e => criar(copiaDe(e, grupo)));
-  if (typeof editor._proximaMarca !== 'function') return copias;
+  // a cópia de um eixo da malha é um eixo novo (nome seguinte, bolinha, cotas): nucleo/malha.js
+  const malha = eixosCopiados(editor.doc, copias, originais);
+  copias.trocas = malha.trocas;
+  if (typeof editor._proximaMarca === 'function') renumerarElementos(editor, copias, originais);
+  const extra = malha.novas;
+  if (extra.length) { const trocas = copias.trocas; copias.push(...extra); copias.trocas = trocas; }
+  return copias;
+}
+
+/** O comando das cópias: acrescenta; com os eixos novos, troca também o que eles esticam (cotas, eixos que cruzam). */
+function comandoDasCopias(copias, rotulo) {
+  const add = new ComandoAdicionar(copias, rotulo);
+  return copias.trocas && copias.trocas.length ? new ComandoComposto([add, new ComandoSubstituir(copias.trocas)], rotulo) : add;
+}
+
+function renumerarElementos(editor, copias, originais) {
   const usadas = new Set([...editor.doc.entidades.values()].map(e => (e.atributos || {}).marca).filter(Boolean));
   copias.forEach((c, i) => {
     const a = c.atributos || {};
@@ -822,7 +837,6 @@ function criarCopias(editor, novas, grupo, originais) {
       if (r.tipo === 'texto' && r.texto === antiga) r.texto = marca;
     }
   });
-  return copias;
 }
 
 export class Mover extends Transformadora {
@@ -838,7 +852,7 @@ export class Mover extends Transformadora {
       // Mover com Ctrl: a cópia vai para o destino, o original fica; a cópia fica selecionada
       const grupo = novoGrupoCopia();
       const copias = criarCopias(this.editor, novas, grupo, this.selecionadas());
-      this.editor.executar(new ComandoAdicionar(copias, 'Copiar'));
+      this.editor.executar(comandoDasCopias(copias, 'Copiar'));
       this.editor.selecionar(copias.map(c => c.id));
       this.reiniciar();
       return;
@@ -846,7 +860,7 @@ export class Mover extends Transformadora {
     if (this.copiar) {
       const grupo = novoGrupoCopia();
       const copias = criarCopias(this.editor, novas, grupo, this.selecionadas());
-      const cmd = new ComandoAdicionar(copias, 'Copiar');
+      const cmd = comandoDasCopias(copias, 'Copiar');
       this.editor.executar(cmd);
       // o ponto base continua o mesmo: cada novo destino é medido da referência
       // original (como no AutoCAD), e a seleção copiada é sempre a original
@@ -922,7 +936,7 @@ export class Girar extends Transformadora {
     if (this.copiaAgora(ev)) {
       const grupo = novoGrupoCopia();
       const copias = criarCopias(this.editor, giradas, grupo, this.selecionadas());
-      this.editor.executar(new ComandoAdicionar(copias, 'Girar cópia'));
+      this.editor.executar(comandoDasCopias(copias, 'Girar cópia'));
       this.editor.selecionar(copias.map(c => c.id));
     } else {
       this.editor.executar(new ComandoSubstituir(giradas, 'Girar'));
@@ -1069,7 +1083,7 @@ export class Espelhar extends Transformadora {
     if (dist(p, this.base) < 1e-6) return;
     const novas = this._espelhar(this.base, p);
     const grupo = novoGrupoCopia();
-    this.editor.executar(new ComandoAdicionar(criarCopias(this.editor, novas, grupo, this.selecionadas()), 'Espelhar'));
+    this.editor.executar(comandoDasCopias(criarCopias(this.editor, novas, grupo, this.selecionadas()), 'Espelhar'));
     this.reiniciar();
   }
   onMover(p) { if (this.base) this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.base, b: p }), ...this._espelhar(this.base, p)]); }

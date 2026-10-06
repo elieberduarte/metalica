@@ -259,7 +259,20 @@ try:
       const r4 = [Math.round(bA.centro[0] - X), Math.round(bA.centro[1]), Math.round(tA.posicao[0] - X), val('cAB'), Math.round(c.doc.get('c23').p2[0] - X), val('c23')];
       c.desfazer(); c.desfazer();
       const r5 = [Math.round(c.doc.get('bA').centro[0] - X), val('cAB')];
-      return JSON.stringify([r1, r0, r2, r3, r4, r5]);
+      // M. copiar o último eixo (3) 6000 para cima e 12000: eixos 4 e 5 com bolinha e nome, a cadeia cresce, a total vai
+      // até o último, A e B esticam; copiar o 1 para o meio do vão 1–2 divide a cota daquele vão (06/10: "acabaram os eixos")
+      const nomes = () => [...c.doc.entidades.values()].filter(e => e.tipo === 'texto' && (e.atributos || {}).nome_eixo && e.posicao[0] < X - 1000).map(e => e.texto).sort().join('');
+      const cotasY = () => [...c.doc.entidades.values()].filter(e => e.tipo === 'cota' && (e.atributos || {}).malha && Math.abs(e.p1[0] - e.p2[0]) < 1).map(e => Math.round(Math.abs(e.p2[1] - e.p1[1]))).sort((a, b) => a - b).join(',');
+      c.ativarFerramenta('selecionar'); c.selecionar(['e3']); c.ativarFerramenta('copiar');
+      c.ferramenta.onPonto([X, 32000], {}); c.ferramenta.onPonto([X, 38000], {}); c.ferramenta.onPonto([X, 44000], {}); c.ferramenta.cancelar();
+      const r6 = [nomes(), cotasY(), c.doc.get('eA').a[1], c.doc.get('bB').centro[1]];
+      c.desfazer(); c.desfazer();
+      const r7 = [nomes(), cotasY(), c.doc.get('eA').a[1]];
+      c.ativarFerramenta('selecionar'); c.selecionar(['e1']); c.ativarFerramenta('copiar');
+      c.ferramenta.onPonto([X, 20000], {}); c.ferramenta.onPonto([X, 22500], {}); c.ferramenta.cancelar();
+      const r8 = [nomes(), cotasY(), c.doc.get('eA').a[1]];
+      c.desfazer();
+      return JSON.stringify([r1, r0, r2, r3, r4, r5, r6, r7, r8]);
     """))
     ok(r_l[0] == [27000, -1500, 27000, 27000, 7000, 5000, 12000, 33500], f"eixo 2 movido 1000 atravessado: bolinha e nome junto, cotas 7000/5000, a total e o eixo A ficam ({r_l[0]})")
     ok(r_l[1] == [26000, 26000, 6000], f"Ctrl+Z volta o eixo, a bolinha e a cota ({r_l[1]})")
@@ -268,6 +281,9 @@ try:
 
     ok(r_l[4] == [1000, 34000, 1000, 11000, 1000, 6000], f"eixo A esticado pelas pontas até 1000 adiante: a bolinha, o nome e as cotas vêm junto ({r_l[4]})")
     ok(r_l[5] == [0, 12000], f"Ctrl+Z duas vezes volta ({r_l[5]})")
+    ok(r_l[6] == ["12345", "6000,6000,6000,6000,24000", 45500, 46000], f"eixo 3 copiado 2× para cima: eixos 4 e 5, cadeia de 4 vãos e total 24000, A e B esticam ({r_l[6]})")
+    ok(r_l[7] == ["123", "6000,6000,12000", 33500], f"Ctrl+Z duas vezes volta a malha ({r_l[7]})")
+    ok(r_l[8] == ["1234", "2500,3500,6000,12000", 33500], f"eixo 1 copiado para o meio do vão 1–2: eixo 4, a cota do vão se divide em 2500 + 3500 ({r_l[8]})")
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")
     for t, x in erros[:6]: print("     [%s] %s" % (t, x[:300]))

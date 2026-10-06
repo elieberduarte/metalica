@@ -123,3 +123,118 @@ export function acompanharMalha(doc, novas) {
   }
   return [...extra.values()];
 }
+
+const LETRAS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+/** o nome seguinte da família do eixo `nome` (7 depois do 6; C depois de B; AA depois de Z) que ainda não está em `usados` */
+function proximoNome(nome, usados) {
+  if (/^\d+'?$/.test(nome)) {
+    let n = Math.max(0, ...[...usados].filter(u => /^\d+$/.test(u)).map(Number)) + 1;
+    while (usados.has(String(n))) n++;
+    return String(n);
+  }
+  const indice = (s) => [...s].reduce((t, ch) => t * 26 + LETRAS.indexOf(ch) + 1, 0) - 1;
+  const letra = (i) => (i < 26 ? LETRAS[i] : letra(Math.floor(i / 26) - 1) + LETRAS[i % 26]);
+  let i = Math.max(-1, ...[...usados].filter(u => /^[A-Z]+$/.test(u)).map(indice)) + 1;
+  while (usados.has(letra(i))) i++;
+  return letra(i);
+}
+
+/**
+ * A cópia de um eixo da malha (Copiar, Mover com Ctrl) vira um eixo novo (06/10: "acabaram os eixos, como faço para
+ * lançar novos?"): o nome seguinte da família (7, 8… ou C, D…), a bolinha e o nome dele, a cota até o eixo vizinho
+ * (além do último eixo, a cadeia cresce e a total vai até ele; entre dois eixos, a cota daquele vão se divide) e, além
+ * do último, as pontas dos eixos que o cruzam (as bolinhas vêm pelo acompanhamento). `copias` e `originais` na mesma
+ * ordem; muda as cópias no lugar e devolve {novas: as entidades a acrescentar, trocas: as existentes trocadas}.
+ */
+export function eixosCopiados(doc, copias, originais) {
+  const novas = [], trocas = new Map();
+  const todas = [...doc.entidades.values()];
+  const eixos = todas.filter(ehEixo);
+  const usados = new Set(eixos.map(e => String(e.atributos.eixo)));
+  const atual = (e) => trocas.get(e.id) || e;
+  copias.forEach((c, i) => {
+    const o = originais && originais[i];
+    if (!ehEixo(c) || !ehEixo(o)) return;
+    const s = lado(o, c.a);
+    const velho = String(o.atributos.eixo);
+    const nome = proximoNome(velho, usados);
+    usados.add(nome);
+    c.atributos = { ...c.atributos, eixo: nome };
+    delete c.atributos.grupo_copia;
+    // a bolinha e o nome copiados junto (selecionados com o eixo) ganham o nome novo; senão, são criados
+    const juntas = copias.filter(x => x !== c && (x.atributos || {}).eixo === velho && ((x.atributos || {}).bolinha || (x.atributos || {}).nome_eixo) && noEixo(c, x.centro || x.posicao || [Infinity, Infinity]));
+    if (juntas.length) {
+      for (const x of juntas) { x.atributos = { ...x.atributos, eixo: nome }; if (x.tipo === 'texto') x.texto = nome; }
+    } else {
+      const uO = dir(o), uC = dir(c);
+      for (const b of todas) {
+        const ba = b.atributos || {};
+        if (b.tipo !== 'circulo' || !ba.bolinha || ba.eixo !== velho || !noEixo(o, b.centro)) continue;
+        const ponta = dist(b.centro, o.a) <= dist(b.centro, o.b) ? 'a' : 'b';
+        const t = (b.centro[0] - o[ponta][0]) * uO[0] + (b.centro[1] - o[ponta][1]) * uO[1];
+        const centro = [c[ponta][0] + uC[0] * t, c[ponta][1] + uC[1] * t];
+        const d = [centro[0] - b.centro[0], centro[1] - b.centro[1]];
+        novas.push(criar({ ...transladar(b, d), id: undefined, atributos: { ...ba, eixo: nome } }));
+        for (const tx of todas) {
+          const ta = tx.atributos || {};
+          if (tx.tipo === 'texto' && ta.nome_eixo && ta.eixo === velho && dist(tx.posicao, b.centro) < TOL) novas.push(criar({ ...transladar(tx, d), id: undefined, texto: nome, atributos: { ...ta, eixo: nome } }));
+        }
+      }
+    }
+    if (Math.abs(s) < TOL || !paralelos(o, c)) return;
+    // a família: os eixos paralelos (lado medido a partir do original) e as cotas da malha entre eles
+    const n = normal(o);
+    const lados = eixos.filter(e => paralelos(e, o)).map(e => lado(o, e.a));
+    const emEixo = (q) => lados.find(l => Math.abs(lado(o, q) - l) < TOL);
+    const cotas = todas.filter(k => k.tipo === 'cota' && (k.atributos || {}).malha && emEixo(k.p1) !== undefined && emEixo(k.p2) !== undefined && Math.abs(lado(o, k.p1) - lado(o, k.p2)) > TOL);
+    const entre = (lo, hi) => lados.some(l => l > lo + TOL && l < hi - TOL);
+    const mn = Math.min(...lados), mx = Math.max(...lados);
+    const alem = s > mx + TOL ? mx : s < mn - TOL ? mn : null;    // o eixo do lado de onde a cópia passou
+    const levarA = (q, alvo) => { const t = alvo - lado(o, q); return [q[0] + n[0] * t, q[1] + n[1] * t]; };
+    for (const k of cotas) {
+      const cur = atual(k);
+      const t1 = lado(o, k.p1), t2 = lado(o, k.p2), lo = Math.min(t1, t2), hi = Math.max(t1, t2);
+      const cadeia = !entre(lo, hi);
+      if (alem === null) {
+        // entre dois eixos: a cota daquele vão se divide em duas
+        if (cadeia && s > lo + TOL && s < hi - TOL) {
+          trocas.set(k.id, criar({ ...cur, p2: levarA(k.p2, s), texto_pos: null }));
+          novas.push(criar({ ...cur, id: undefined, p1: levarA(k.p1, s), texto_pos: null }));
+        }
+        continue;
+      }
+      const naPonta = Math.abs(t1 - alem) < TOL ? 'p1' : Math.abs(t2 - alem) < TOL ? 'p2' : null;
+      if (!naPonta) continue;
+      if (cadeia) {
+        // a cadeia cresce: a cota do último vão, repetida do último eixo até o novo (do mesmo lado)
+        if (novas.some(x => x.tipo === 'cota' && x.atributos && x.atributos.de_eixo === c.id)) continue;
+        const outra = naPonta === 'p1' ? 'p2' : 'p1';
+        const nova = { ...cur, id: undefined, texto_pos: null, atributos: { ...(cur.atributos || {}), de_eixo: c.id } };
+        nova[outra] = k[naPonta];
+        nova[naPonta] = levarA(k[naPonta], s);
+        novas.push(criar(nova));
+      } else if ((alem === mx && hi === mx && lo === mn) || (alem === mn && lo === mn && hi === mx)) {
+        trocas.set(k.id, criar({ ...cur, [naPonta]: levarA(k[naPonta], s), texto_pos: null }));     // a total vai até o novo
+      }
+    }
+    for (const x of novas) if (x.atributos && x.atributos.de_eixo) { x.atributos = { ...x.atributos }; delete x.atributos.de_eixo; }
+    if (alem === null) return;
+    // além do último: as pontas dos eixos que cruzam vão junto (a mesma folga além do eixo novo)
+    for (const x of eixos) {
+      if (paralelos(x, o)) continue;
+      const cur = atual(x), ux = dir(x);
+      const k = ux[0] * n[0] + ux[1] * n[1];
+      if (Math.abs(k) < 0.2) continue;
+      const nova = { ...cur };
+      for (const ponta of ['a', 'b']) {
+        const sp = lado(o, x[ponta]);
+        if (Math.abs(sp - alem) < TOL || (s - alem) * (sp - alem) <= 0) continue;     // só a ponta além do último
+        if ((sp - s) * (s - alem) > TOL) continue;                                  // e que ainda não passa do novo
+        const t = (s - alem) / k;
+        nova[ponta] = [cur[ponta][0] + ux[0] * t, cur[ponta][1] + ux[1] * t];
+      }
+      if (nova.a !== cur.a || nova.b !== cur.b) trocas.set(x.id, criar(nova));
+    }
+  });
+  return { novas, trocas: [...trocas.values()] };
+}

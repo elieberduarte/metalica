@@ -185,8 +185,10 @@ async function abrir() {
   window.visor = visor;
   visor.leveAoGirar = false;                                           // no PC sobra placa: a imagem fica inteira ao girar
   await visor.carregar(buf);
-  const fichas = await (await fetch(`${API}/pecas?v=${encodeURIComponent(versao)}`)).json();
-  visor.definirFichas(fichas);
+  const rf = await fetch(`${API}/pecas?v=${encodeURIComponent(versao)}`);
+  // o modelo mudou entre as duas leituras (a planta tirou a última peça, 06/10): abre de novo, já na versão nova
+  if (!rf.ok) { setTimeout(() => location.reload(), 400); return; }
+  visor.definirFichas(await rf.json());
   const ms = Math.round(performance.now() - t0);
   $('#carregando').remove();
   $('#ferramentas').hidden = false;
