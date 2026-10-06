@@ -178,6 +178,16 @@ function doDoisD(m) {
   para3d({ metalica: 'selecionar3d', caixa: [[m.caixa[0][0] + desl[0], m.caixa[0][1] + desl[1]], [m.caixa[1][0] + desl[0], m.caixa[1][1] + desl[1]]] });
 }
 
+function referencia3d() {
+  let w = null;
+  try { w = $('#f3d').contentWindow; } catch (e) { w = null; }
+  if (!w) return;
+  try {
+    if (w.editor && typeof w.editor._carregarReferencia === 'function') { w.editor._carregarReferencia(); return; }
+    w.postMessage({ metalica: 'referencia-mudou' }, location.origin);
+  } catch (e) { /* outra tela */ }
+}
+
 function recarregar3d() {
   const f = $('#f3d');
   let w = null;
@@ -201,6 +211,8 @@ async function iniciar() {
     // o 2D mudou o modelo (a planta da Estrutura sincronizou o 3D): o modo ver recarrega já; o editor, sem edição
     // pendente, também (com, avisa) — 06/10
     if (ev.data.metalica === 'modelo-mudou' && ev.source === $('#f2d').contentWindow) { recarregar3d(); return; }
+    // os níveis, a malha de eixos ou o arquitetônico mudaram no 2D: o 3D ao lado refaz a planta no chão
+    if (ev.data.metalica === 'referencia-mudou' && ev.source === $('#f2d').contentWindow) { referencia3d(); return; }
     // o seletor e os controles da ligação estão na barra de cada tela
     if (ev.data.metalica === 'vista' && deUmLado) { mostrarVista(ev.data.vista); return; }
     if (ev.data.metalica === 'pedir-estado' && deUmLado) { avisarEstado(); return; }

@@ -129,7 +129,10 @@ function selecionarDaDivisao(pedido) {
   }
 }
 window.addEventListener('message', ev => {
-  if (ev.origin !== location.origin || !ev.data || ev.data.metalica !== 'selecionar3d') return;
+  if (ev.origin !== location.origin || !ev.data) return;
+  // o 2D ao lado mudou os níveis, a malha de eixos ou o arquitetônico: a planta no chão é refeita (06/10)
+  if (ev.data.metalica === 'referencia-mudou') { if (visor && visor.cabecalho) carregarReferencia(); return; }
+  if (ev.data.metalica !== 'selecionar3d') return;
   selecionarDaDivisao(ev.data);
 });
 
@@ -222,8 +225,9 @@ async function carregarReferencia() {
   visor.ligarReferencia(ligada);
   try {
     const r = await (await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}/lancamento/referencia`, { cache: 'no-store' })).json();
-    if (r && !r.erro && ((r.segmentos || []).length || (r.eixos || []).length || (r.niveis || []).length)) visor.definirReferencia(r);
-    else if (b) b.hidden = true;
+    const tem = r && !r.erro && ((r.segmentos || []).length || (r.eixos || []).length || (r.niveis || []).length);
+    visor.definirReferencia(tem ? r : null);
+    if (b) b.hidden = !tem;
   } catch (e) { if (b) b.hidden = true; }
 }
 
