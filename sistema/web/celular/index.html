@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b3d91">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Metálica</title>
+<link rel="stylesheet" href="celular.css">
+<script type="importmap">
+{ "imports": { "three": "../lib/three.module.js", "three/addons/": "../lib/" } }
+</script>
+</head>
+<body>
+<!-- Metálica no celular: só consulta. As telas leem o pacote do projeto (manifesto.json e os
+     arquivos que ele lista), o mesmo na rede do PC e na cópia guardada para a obra. -->
+<header id="topo">
+  <button id="voltar" class="icone" aria-label="Voltar" hidden>
+    <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
+  </button>
+  <div class="titulos">
+    <div id="titulo">Metálica</div>
+    <div id="subtitulo"></div>
+  </div>
+  <button id="conexao" class="chip" type="button"></button>
+</header>
+<nav id="abas" hidden>
+  <button data-aba="modelo"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z M12 12l8-4.5 M12 12v9 M12 12L4 7.5" /></svg><span>Modelo 3D</span></button>
+  <button data-aba="quantitativos"><svg viewBox="0 0 24 24"><path d="M5 5h14 M5 10h14 M5 15h9 M5 20h6" /></svg><span>Quantitativos</span></button>
+  <button data-aba="resumos"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z M15 3v4h4 M9 12h7 M9 16h5" /></svg><span>Resumos</span></button>
+  <button data-aba="pranchas"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3z M15 13h6 M15 13v6" /></svg><span>Pranchas</span></button>
+</nav>
+<main id="tela"></main>
+<div id="folha" hidden><div class="alca"></div><div id="folha-corpo"></div></div>
+<script type="module" src="celular.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Metálica — 3D leve</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #e9edf2; font: 14px system-ui, sans-serif; overscroll-behavior: none; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  #situacao { position: fixed; left: 12px; top: 12px; right: 12px; color: #1f2a3a; pointer-events: none; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "../lib/three.module.js", "three/addons/": "../lib/" } }
+</script>
+</head>
+<body>
+<canvas id="tela"></canvas>
+<div id="situacao">abrindo…</div>
+<script type="module">
+// Página mínima da prova do 3D leve (rodada 1 do celular): abre um .mcel e as fichas, e deixa
+// os números em window.prova para a medição pelo CDP.
+import { Visor3D } from './visor3d.js';
+const q = new URLSearchParams(location.search);
+const sit = document.getElementById('situacao');
+window.prova = { pronto: false };
+try {
+  const visor = new Visor3D(document.getElementById('tela'), { arestas: q.get('arestas') !== '0' });
+  window.visor = visor;
+  const t0 = performance.now();
+  const tempos = await visor.carregar(q.get('mcel'), (f, txt) => { sit.textContent = 'baixando ' + txt; });
+  const fichas = await (await fetch(q.get('pecas'))).json();
+  visor.definirFichas(fichas);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  window.prova = { pronto: true, ms_total: Math.round(performance.now() - t0), ...tempos, ...visor.numeros() };
+  sit.textContent = `${visor.nPecas} peças · ${window.prova.ms_total} ms`;
+} catch (e) {
+  window.prova = { pronto: true, erro: String(e && e.stack || e) };
+  sit.textContent = 'erro: ' + e;
+}
+</script>
+</body>
+</html>

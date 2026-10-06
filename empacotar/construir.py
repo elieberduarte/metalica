@@ -51,8 +51,9 @@ INSTALADOR = os.path.join(RAIZ, "Metalica-instalador.exe")
 #: A parte comercial (orçamento, proposta, contrato, obra e pagamentos) fica só no desenvolvimento (pedido de
 #: 05/10): o programa instalado não leva o código nem as telas dela, e o app.py desliga as rotas (COMERCIAL).
 MODULOS_SO_DEV = ["saida.orcamento", "saida.comercial", "saida.comercial_servico", "saida.contrato_docs",
-                  "saida.proposta_html", "saida.imagens3d", "saida.docx_simples"]
-TELAS_SO_DEV = ["comercial.html", "comercial.js"]
+                  "saida.proposta_html", "saida.imagens3d", "saida.docx_simples",
+                  "saida.pacote_celular"]          # o celular fica no desenvolvimento até a Fase 1 fechar (05/10)
+TELAS_SO_DEV = ["comercial.html", "comercial.js", "celular"]
 
 ISCC = [os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
         r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
