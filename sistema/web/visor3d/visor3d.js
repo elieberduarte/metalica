@@ -606,6 +606,26 @@ export class Visor3D {
     this.corFantasma = escuro ? [46, 54, 66] : [215, 220, 230];
     this.posicionarPiso();
     this._repintar();
+    if (this._dadosReferencia) this.definirReferencia(this._dadosReferencia);
+  }
+
+  /** A planta no chão (arquitetônico, eixos com balões) e os níveis — web/visor3d/referencia.js, carregado só aqui
+   *  (o celular serve este arquivo sozinho); nas cores do tema. */
+  async definirReferencia(r) {
+    this._dadosReferencia = r;
+    const { montarReferencia } = await import('./referencia.js');
+    if (this.referencia) {
+      this.cena.remove(this.referencia);
+      this.referencia.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+    }
+    this.referencia = r ? montarReferencia(r, { escuro: this.escuro, caixa: this._caixaModelo, zChao: -2 }) : null;
+    if (this.referencia) { this.referencia.visible = this._referenciaLigada !== false; this.cena.add(this.referencia); }
+    this.pedirQuadro();
+  }
+  ligarReferencia(sim) {
+    this._referenciaLigada = !!sim;
+    if (this.referencia) this.referencia.visible = !!sim;
+    this.pedirQuadro();
   }
 
   /** O piso: um plano grande até o horizonte, na cor do fundo (a borda não aparece), com as linhas de 10 m de 1 pixel

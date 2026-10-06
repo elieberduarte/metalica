@@ -207,8 +207,24 @@ async function abrir() {
   }
   window.ver3dPronto = { ms, pecas: visor.nPecas };
   aplicarTema(null);
+  carregarReferencia();
   ligar();
   if (NA_DIVIDIDA) { try { window.parent.postMessage({ metalica: 'pronto3d' }, location.origin); } catch (e) { /* sem a tela de fora */ } }
+}
+
+/** A planta no chão e os níveis (os mesmos do editor): o arquitetônico da Planta de lançamento, os eixos e os níveis do
+ *  projeto — antes só no editor (pedido do usuário, 06/10). O botão Planta liga e desliga (lembrado neste navegador). */
+async function carregarReferencia() {
+  let ligada = true;
+  try { ligada = localStorage.getItem('ver3d.planta') !== '0'; } catch (e) { /* sem armazenamento */ }
+  const b = $('#btn-planta');
+  if (b) b.classList.toggle('ligado', ligada);
+  visor.ligarReferencia(ligada);
+  try {
+    const r = await (await fetch(`/api/projetos/${encodeURIComponent(PROJETO)}/lancamento/referencia`, { cache: 'no-store' })).json();
+    if (r && !r.erro && ((r.segmentos || []).length || (r.eixos || []).length || (r.niveis || []).length)) visor.definirReferencia(r);
+    else if (b) b.hidden = true;
+  } catch (e) { if (b) b.hidden = true; }
 }
 
 let situacaoBase = '';
@@ -435,6 +451,12 @@ function ligar() {
   document.querySelector('[data-painel="camadas"]').onclick = () => (painelAtual === 'camadas' ? fecharPainel() : painelCamadas());
   $('#btn-medir').onclick = () => (medindo ? (pararMedida(), fecharPainel()) : iniciarMedida());
   $('#btn-enquadrar').onclick = () => visor.enquadrar('iso');
+  $('#btn-planta').onclick = () => {
+    const b = $('#btn-planta'); b.classList.toggle('ligado');
+    const sim = b.classList.contains('ligado');
+    visor.ligarReferencia(sim);
+    try { localStorage.setItem('ver3d.planta', sim ? '1' : '0'); } catch (e) { /* sem armazenamento */ }
+  };
   $('#btn-arestas').onclick = () => { const b = $('#btn-arestas'); b.classList.toggle('ligado'); visor.ligarArestas(b.classList.contains('ligado')); };
   document.querySelectorAll('[data-vista]').forEach(b => b.onclick = () => visor.enquadrar(b.dataset.vista));
   $('#pintar').onchange = () => {
