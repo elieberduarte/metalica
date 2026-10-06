@@ -678,44 +678,52 @@ class Importador:
             pts.pop()
         return pts
 
-    def _curva_aparada(self, e: Entidade) -> List[Tuple[float, float]]:
+    def _curva_aparada(self, e: Entidade, tres_d: bool = False) -> list:
+        """O trecho da curva entre os dois Trim, em poligonal. `tres_d`: os pontos no espaço, pela colocação 3D do
+        círculo ou da elipse — a dobra do vergalhão e a curva do corrimão (diretriz do IfcSweptDiskSolid) caíam no
+        plano XY, na cota zero, e a barra de 1,75 m virava uma malha de 5 m e 29 litros (Passarela Mirante, 06/10)."""
         base = self.res(e.arg(0))
         if base is None:
             return []
         sentido = e.arg(3)
         sentido = True if sentido is None else bool(sentido)
-        if base.e_tipo("IFCCIRCLE"):
+        corte = (lambda q: q) if tres_d else (lambda q: q[:2])
+        if base.e_tipo("IFCCIRCLE") or base.e_tipo("IFCELLIPSE"):
             m = self.matriz(base.arg(0))
-            r = float(base.arg(1) or 0.0) * self.escala
-            a1 = self._parametro_trim(e.arg(1), m, r)
-            a2 = self._parametro_trim(e.arg(2), m, r)
+            if base.e_tipo("IFCCIRCLE"):
+                ra = rb = float(base.arg(1) or 0.0) * self.escala
+            else:
+                # a elipse (o corrimão curvo): o parâmetro do Trim é o ângulo da forma paramétrica
+                ra, rb = float(base.arg(1) or 0.0) * self.escala, float(base.arg(2) or 0.0) * self.escala
+            a1 = self._parametro_trim(e.arg(1), m, ra, rb)
+            a2 = self._parametro_trim(e.arg(2), m, ra, rb)
+            nc = self.op["segmentos_circulo"]
             if a1 is None or a2 is None:
-                return [m_ponto(m, (p[0], p[1], 0.0))[:2]
-                        for p in poligono_circulo(r, self.op["segmentos_circulo"])]
+                return [corte(m_ponto(m, (ra * math.cos(2 * math.pi * k / nc), rb * math.sin(2 * math.pi * k / nc), 0.0)))
+                        for k in range(nc)]
             if sentido:
                 while a2 < a1:
                     a2 += 2 * math.pi
             else:
                 while a2 > a1:
                     a2 -= 2 * math.pi
-            n = max(2, int(abs(a2 - a1) / (2 * math.pi) *
-                           self.op["segmentos_circulo"]) + 1)
-            return [m_ponto(m, (r * math.cos(a1 + (a2 - a1) * k / n),
-                                r * math.sin(a1 + (a2 - a1) * k / n), 0.0))[:2]
+            n = max(2, int(abs(a2 - a1) / (2 * math.pi) * nc) + 1)
+            return [corte(m_ponto(m, (ra * math.cos(a1 + (a2 - a1) * k / n),
+                                      rb * math.sin(a1 + (a2 - a1) * k / n), 0.0)))
                     for k in range(n + 1)]
         if base.e_tipo("IFCLINE"):
             p1 = self._ponto_trim(e.arg(1))
             p2 = self._ponto_trim(e.arg(2))
             if p1 and p2:
-                return [p1[:2], p2[:2]]
+                return [corte(p1), corte(p2)]
             return []
         if base.e_tipo("IFCPOLYLINE"):
             return self.pontos_curva_2d(base.id)
         self.avisar("curva aparada sobre %s não é suportada" % nome_ifc(base.tipo))
         return []
 
-    def _parametro_trim(self, trim, m: Matriz, raio: float) -> Optional[float]:
-        """Ângulo (rad) de um Trim, seja parâmetro ou ponto cartesiano."""
+    def _parametro_trim(self, trim, m: Matriz, raio: float, raio_b: Optional[float] = None) -> Optional[float]:
+        """Ângulo (rad) de um Trim, seja parâmetro ou ponto cartesiano (na elipse, o ângulo paramétrico)."""
         if not trim:
             return None
         itens = trim if isinstance(trim, list) else [trim]
@@ -731,6 +739,8 @@ class Importador:
                 p = self.ponto(e.id)
                 inv = _inversa_rigida(m)
                 lx, ly, _ = m_ponto(inv, p)
+                if raio_b:
+                    return math.atan2(ly / raio_b, lx / max(raio, 1e-9))
                 return math.atan2(ly, lx)
         return None
 
@@ -767,6 +777,8 @@ class Importador:
                 p1, p2 = self._ponto_trim(e.arg(1)), self._ponto_trim(e.arg(2))
                 if p1 and p2:
                     return [p1, p2]
+            if base is not None and (base.e_tipo("IFCCIRCLE") or base.e_tipo("IFCELLIPSE")):
+                return self._curva_aparada(e, tres_d=True)
             plana = self.pontos_curva_2d(ref)
             return [(p[0], p[1], 0.0) for p in plana]
         if "IFCINDEXEDPOLYCURVE" in t:

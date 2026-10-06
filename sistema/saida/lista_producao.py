@@ -633,11 +633,13 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
                                    _num_csv(c["peso_unitario"]), _num_csv(c["peso_total"])] for c in lista["conjuntos"]])
     if lista.get("pre_moldados"):
         arquivos["pre_moldados"] = _csv(os.path.join(pasta, "pre-moldados.csv"),
-                                        ["Nome", "Material", "Categoria", "Tipo IFC", "Pecas", "Volume (m3)",
-                                         "Massa especifica (kg/m3)", "Peso (kg)"],
+                                        ["Nome", "Material", "Categoria", "Tipo IFC", "Pecas", "Comprimento (m)", "Volume (m3)",
+                                         "Area (m2)", "Massa especifica (kg/m3)", "Peso (kg)", "Observacao"],
                                         [[g["nome"], g["material"], g["categoria"], g.get("tipo_ifc", ""), g["quantidade"],
-                                          _num_csv(g["volume_m3"], 3), _num_csv(g["massa_especifica"], 0),
-                                          _num_csv(g["peso_kg"], 1)] for g in lista["pre_moldados"]])
+                                          _num_csv(g.get("comprimento_m") or 0, 1),
+                                          _num_csv(g["volume_m3"], 3), _num_csv(g.get("area_m2") or 0, 1),
+                                          _num_csv(g["massa_especifica"], 0), _num_csv(g["peso_kg"], 1),
+                                          g.get("observacao", "")] for g in lista["pre_moldados"]])
     if lista.get("estrutura_a_conferir"):
         arquivos["estrutura_a_conferir"] = _csv(os.path.join(pasta, "estrutura-a-conferir.csv"),
                                                 ["Tipo", "Secao medida (mm)", "kg/m medido", "Comprimento (mm)", "Pecas",
@@ -781,14 +783,21 @@ def corpo_html(lista: dict) -> str:
                               larguras=["70%", "30%"]))
     pm = lista.get("pre_moldados") or []
     if pm:
-        partes.append(_tabela("Quadro 8 — Fora do aço: pré-moldado e outros materiais (volume da malha do IFC)",
-                              [("Nome", "l"), ("Material", "l"), ("Peças", "c"), ("Volume (m³)", "r"), ("kg/m³", "r"), ("Peso (kg)", "r")],
-                              [[(g["nome"], "l b"), (g["material"], "l"), (g["quantidade"], "c"), (_n(g["volume_m3"], 3), "r"),
-                                (_n(g["massa_especifica"]), "r"), (_n(g["peso_kg"], 1), "r b")] for g in pm],
-                              rodape=[("TOTAL", "l b"), ("", "l"), (_n(sum(g["quantidade"] for g in pm)), "c b"),
-                                      (_n(sum(g["volume_m3"] for g in pm), 3), "r b"), ("", "r"),
+        # além do pré-moldado: a armadura (vergalhão), a argamassa e o que é de aço sem ser peça de produção (o gradil, o
+        # piso de chapa perfurada), pela malha — fora dos totais de aço acima (06/10)
+        partes.append(_tabela("Quadro 8 — Fora do aço detalhado: pré-moldado, armadura, argamassa e outros itens (volume da malha do IFC)",
+                              [("Nome", "l"), ("Material", "l"), ("Categoria", "l"), ("Peças", "c"), ("Compr. (m)", "r"),
+                               ("Volume (m³)", "r"), ("Área (m²)", "r"), ("kg/m³", "r"), ("Peso (kg)", "r")],
+                              [[(g["nome"] + (" — " + g["observacao"] if g.get("observacao") else ""), "l b"),
+                                (g["material"], "l"), (g["categoria"], "l"), (g["quantidade"], "c"),
+                                (_n(g["comprimento_m"], 1) if g.get("comprimento_m") else "—", "r"), (_n(g["volume_m3"], 3), "r"),
+                                (_n(g["area_m2"], 1) if g.get("area_m2") else "—", "r"),
+                                (_n(g["massa_especifica"]) if g["massa_especifica"] else "—", "r"),
+                                (_n(g["peso_kg"], 1) if g["massa_especifica"] else "—", "r b")] for g in pm],
+                              rodape=[("TOTAL", "l b"), ("", "l"), ("", "l"), (_n(sum(g["quantidade"] for g in pm)), "c b"), ("", "r"),
+                                      (_n(sum(g["volume_m3"] for g in pm), 3), "r b"), ("", "r"), ("", "r"),
                                       (_n(sum(g["peso_kg"] for g in pm), 1), "r b")],
-                              larguras=["26%", "26%", "10%", "13%", "10%", "15%"]))
+                              larguras=["24%", "14%", "10%", "6%", "9%", "9%", "9%", "7%", "12%"]))
     ec = lista.get("estrutura_a_conferir") or []
     if ec:
         partes.append(_tabela("Quadro 9 — Estrutura de aço a conferir (malhas sem peças separadas: seção e comprimento medidos, "

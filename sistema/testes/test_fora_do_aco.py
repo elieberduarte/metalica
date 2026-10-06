@@ -120,3 +120,43 @@ def test_barra_continua_de_30_m_ganha_kg_m_e_aglomerado_nao():
     f2 = [list(f) for f in fu] + [[k + len(vu) for k in f] for f in fu]
     linhas = fa.estrutura_a_conferir([_solido("CPLAN_X", "IfcBuildingElementProxy", v2, f2, "")])
     assert linhas[0]["tipo"].startswith("aglomerado"), linhas
+
+
+def test_itens_do_revit_pilar_de_tubo_armadura_gradil_e_malha_aberta():
+    """O IFC do Revit (Passarela Mirante, 06/10): o pilar de tubo "250x250x10SHS" com o material de concreto da família
+    fica no aço; o vergalhão vai para a lista como armadura; o guarda-corpo (IfcRailing), a argamassa e o piso de chapa
+    perfurada, que sumiam calados, entram na lista; o número do elemento sai do nome (uma linha por tipo); a peça de
+    malha aberta fica contada, sem peso; o "<Unnamed>" do Revit não é material."""
+    from nucleo2d.detalhe.base import _material
+    doc = _modelo()
+    v, f = _caixa(250.0, 250.0, 900.0)
+    pilar = _solido("CVQ-Corte vazado quadrado-Coluna:250x250x10SHS:6568656", "IfcColumn", v, f, ".PROGER CONCRETO - C25")
+    pilar.atributos["marcas"] = {"perfil": "250x250x10SHS"}
+    doc.add(pilar)
+    assert fa.material_nao_aco(pilar) is None and _material(pilar) == ""
+    for i in range(2):
+        v, f = _caixa(1500.0, 16.0, 16.0, dy=i * 100.0)
+        doc.add(_solido("Barra do vergalhão:16 CA-50 : Forma 16:67800%d" % (79 + i), "IfcReinforcingBar", v, f, ""))
+    for i in range(3):
+        v, f = _caixa(3000.0, 20.0, 1200.0, dy=i * 3000.0)
+        doc.add(_solido("Guarda-corpo:Gradil 190:677798%d" % i, "IfcRailing", v, f, "Aço ASTM A36"))
+    v, f = _caixa(3000.0, 20.0, 1200.0, dy=9000.0)
+    doc.add(_solido("Guarda-corpo:Gradil 190:6495774", "IfcRailing", v, f[:-1], "Aço ASTM A36"))      # sem uma face
+    v, f = _caixa(4000.0, 1500.0, 6.35)
+    doc.add(_solido("Piso:Tela Perfurada e=6.35mm:6759533", "IfcSlab", v, f, "Tela Perfurada 6.35mm"))
+    v, f = _caixa(1000.0, 1000.0, 50.0)
+    doc.add(_solido("Laje de fundação:NE_ARGAMASSA_REGULARIZACAO_50mm:6780076", "IfcSlab", v, f, "Argamassa"))
+    lev = det.levantar(doc)
+    assert any(p.perfil == "250x250x10SHS" for p in lev["posicoes"])
+    fora = {g["nome"]: g for g in lev["fora_do_aco"]}
+    arm = fora["Barra do vergalhão:16 CA-50 : Forma 16"]
+    assert arm["categoria"] == "armadura" and arm["quantidade"] == 2 and abs(arm["peso_kg"] - 2 * 1.5 * 0.016 * 0.016 * 7850) < 0.1
+    gc = fora["Guarda-corpo:Gradil 190"]
+    assert gc["categoria"] == "aço fora das peças" and gc["quantidade"] == 4 and gc["abertas"] == 1
+    assert abs(gc["peso_kg"] - 3 * 3.0 * 0.02 * 1.2 * 7850) < 1 and abs(gc["comprimento_m"] - 12.0) < 0.1
+    assert "malha aberta" in gc["observacao"] and "fornecedor" in gc["observacao"]
+    piso = fora["Piso:Tela Perfurada e=6.35mm"]
+    assert piso["categoria"] == "aço fora das peças" and abs(piso["area_m2"] - 6.0) < 0.05
+    assert fora["Laje de fundação:NE_ARGAMASSA_REGULARIZACAO_50mm"]["categoria"] == "argamassa"
+    s = _solido("Vigas W Gerdau:W360X64:6518739", "IfcBeam", *_caixa(10.0, 10.0, 10.0), "<Unnamed>")
+    assert _material(s) == ""

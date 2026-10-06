@@ -417,7 +417,18 @@ def _material(ent) -> str:
                 v = pset.get(k)
                 if isinstance(v, str) and v.strip():
                     return v.strip()
-    return str(getattr(ent, "material", "") or "")
+    m = str(getattr(ent, "material", "") or "")
+    # o estilo sem nome do Revit ("<Unnamed>") e a cor sem nome ("Cor #8a94a6") são aparência, não material: o mesmo
+    # W360X64 saía em duas linhas na lista (06/10)
+    if re.match(r"^(<unnamed>|cor #[0-9a-f]{6})$", m.strip(), re.I):
+        return ""
+    # o perfil de aço com o material de concreto da família do Revit (o tubo 250x250x10SHS ".PROGER CONCRETO - C25"):
+    # a peça é de aço (fora_do_aco.PERFIL_DE_ACO), o material não vai para a lista
+    from nucleo2d.detalhe.fora_do_aco import PERFIL_DE_ACO, MATERIAIS_NAO_ACO, _sem_acento
+    perfil = _sem_acento(str(_marcas(ent).get("perfil") or ""))
+    if perfil and re.search(PERFIL_DE_ACO, perfil.strip()) and any(re.search(p, _sem_acento(m)) for p, _c, _r in MATERIAIS_NAO_ACO):
+        return ""
+    return m
 
 
 def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional[list] = None,
@@ -469,6 +480,11 @@ def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional
                     proxies.append(ent)
                 continue
             acessorios[ent.nome or t] += 1
+        elif t and fora_do_aco is not None:
+            # o guarda-corpo, o piso, a laje: não é peça de produção, mas não some (ia calado — o gradil e o piso de
+            # chapa perfurada da Passarela Mirante não estavam em lista nenhuma, 06/10)
+            from nucleo2d.detalhe.fora_do_aco import item_fora_das_pecas
+            fora_do_aco.append((ent,) + tuple(item_fora_das_pecas(ent)))
     _separar_barras_sem_marca(pecas)
     _separar_variantes(pecas)
     return pecas, dict(acessorios)

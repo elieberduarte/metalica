@@ -29,7 +29,20 @@ MATERIAIS_NAO_ACO: Sequence[Tuple[str, str, float]] = (
     (r"madeira|wood|timber", "madeira", 600.0),
     (r"vidro|glass", "vidro", 2500.0),
     (r"alvenaria|masonry|tijolo|bloco ceram", "alvenaria", 1800.0),
+    (r"argamassa|mortar|graute|grout", "argamassa", 2100.0),
 )
+
+#: Perfil que é de aço pelo nome (W360X64, L 3" x 3/8", U 150x50, o tubo "250x250x10SHS"): fica no aço mesmo com o
+#: material de concreto que a família do Revit trouxe — os 28 pilares de tubo da Passarela Mirante (".PROGER CONCRETO
+#: - C25") iam para a lista de pré-moldados (06/10).
+PERFIL_DE_ACO = (r"^(w|hp|ipe|ipn|upn|u|c|l|t|tq|tr|cs|cvs|vs|ue)\s*[\d.,\"/ ]+\s*[x×]"
+                 r"|\d+(?:[.,]\d+)?\s*[x×]\s*\d+(?:[.,]\d+)?\s*[x×]\s*\d+(?:[.,]\d+)?\s*(?:shs|rhs|chs)"
+                 r"|\b(?:shs|rhs|chs|tubo)\b")
+
+#: O que não é peça de produção nem acessório e é de aço (o gradil do guarda-corpo, o piso de chapa perfurada):
+#: entra na lista pela malha, com a observação — o Revit costuma modelar o gradil cheio (06/10).
+NOME_DE_ACO = r"aco\b|steel|a36|a572|astm|chapa|tela|perfurad|gradil|grade|guarda.?corpo|corrimao|metal"
+OBS_PELA_MALHA = "peso pela malha do IFC: conferir com o fornecedor (o Revit modela gradil e tela cheios)"
 
 #: Malha solta de aço maior que isto (diagonal da caixa, mm) é estrutura, não parafuso.
 DIAGONAL_MIN_PROXY = 1500.0
@@ -49,9 +62,16 @@ NOME_TERRENO = r"^(solo|terreno|terrain|ground|topografia)\b"
 
 def material_nao_aco(ent) -> Optional[Tuple[str, float]]:
     """(categoria, massa específica) do material que não é aço; None para aço ou sem
-    material (na dúvida, fica no aço, como antes). O terreno sai como ("terreno", 0)."""
+    material (na dúvida, fica no aço, como antes). O terreno sai como ("terreno", 0); o vergalhão
+    (IfcReinforcingBar) é a armadura do concreto, fora das peças de aço."""
     if re.search(NOME_TERRENO, _sem_acento(str(getattr(ent, "nome", "") or "")).strip()):
         return "terreno", 0.0
+    atr = getattr(ent, "atributos", None) or {}
+    if atr.get("tipo_ifc") == "IfcReinforcingBar":
+        return "armadura", 7850.0
+    perfil = _sem_acento(str((atr.get("marcas") or {}).get("perfil") or ""))
+    if perfil and re.search(PERFIL_DE_ACO, perfil.strip()):
+        return None
     m = _sem_acento(str(getattr(ent, "material", "") or ""))
     if not m or re.search(r"steel|aco\b|a36|a572|a500|astm|civil|usi|zar", m):
         return None
@@ -80,26 +100,86 @@ def volume_da_malha(vertices, faces) -> float:
     return float(abs(np.einsum("ij,ij->i", A, np.cross(B, C)).sum()) / 6.0)
 
 
+def item_fora_das_pecas(ent) -> Tuple[str, float]:
+    """(categoria, massa específica) do sólido que não é peça de produção nem acessório (o guarda-corpo, o piso, a
+    laje): antes ele sumia calado do levantamento — o gradil, o piso de chapa perfurada e a argamassa da Passarela
+    Mirante não estavam em lista nenhuma (06/10). De aço pelo material ou pelo nome: 7850; senão, sem peso."""
+    nao_aco = material_nao_aco(ent)
+    if nao_aco is not None:
+        return nao_aco
+    texto = _sem_acento("%s %s" % (getattr(ent, "material", "") or "", getattr(ent, "nome", "") or ""))
+    if re.search(NOME_DE_ACO, texto):
+        return "aço fora das peças", 7850.0
+    return "sem material", 0.0
+
+
+def _extensoes(vertices) -> Tuple[float, float]:
+    """(maior, menor) extensão da peça pelos eixos principais (mm): o comprimento e a espessura da chapa ou do
+    painel."""
+    import numpy as np
+    P = np.asarray(vertices, dtype=float)
+    if len(P) < 4:
+        return 0.0, 0.0
+    X = P - P.mean(axis=0)
+    _w, U = np.linalg.eigh(np.cov(X.T))
+    ext = (X @ U).max(axis=0) - (X @ U).min(axis=0)
+    return float(max(ext)), float(min(ext))
+
+
+def malha_aberta(faces) -> bool:
+    """Alguma aresta só numa face: o volume pela soma dos tetraedros não vale (um guarda-corpo da Passarela Mirante
+    com 540 arestas soltas dava 9,4 m³, 73 t)."""
+    arestas = collections.Counter()
+    for f in faces or []:
+        for i in range(len(f)):
+            a, b = f[i], f[(i + 1) % len(f)]
+            arestas[(a, b) if a < b else (b, a)] += 1
+    return any(n == 1 for n in arestas.values())
+
+
+#: O número do elemento que o Revit põe no fim do nome ("Guarda-corpo:Gradil 190:6777988"): fora da linha da lista,
+#: senão cada peça sai numa linha.
+_ID_REVIT = re.compile(r":\d{5,}$")
+
+
 def resumo_fora_do_aco(itens: Sequence[tuple]) -> List[dict]:
-    """[(entidade, categoria, rho)] → linhas por nome e material: quantidade, volume (m³)
-    e peso (kg)."""
+    """[(entidade, categoria, rho)] → linhas por nome (sem o número do elemento do Revit) e material: quantidade,
+    comprimento (a maior extensão de cada peça, somada, m), área (m², do que é placa: espessura até 30 mm — o piso de
+    chapa perfurada), volume (m³) e peso (kg); a observação do que é de aço pela malha. Peça de malha aberta fica
+    contada, sem volume nem peso (sai na observação)."""
     grupos: Dict[tuple, dict] = collections.OrderedDict()
     for ent, categoria, rho in itens:
         if categoria == "terreno":
             continue
-        nome = str(getattr(ent, "nome", "") or "?")
+        nome = _ID_REVIT.sub("", str(getattr(ent, "nome", "") or "?").strip()) or "?"
         mat = str(getattr(ent, "material", "") or "")
         g = grupos.setdefault((nome, mat), {"nome": nome, "material": mat, "categoria": categoria,
                                             "massa_especifica": rho, "quantidade": 0, "volume_m3": 0.0,
-                                            "peso_kg": 0.0, "tipo_ifc": str((ent.atributos or {}).get("tipo_ifc") or "")})
-        v = volume_da_malha(getattr(ent, "vertices", None) or [], getattr(ent, "faces", None) or []) * 1e-9
+                                            "peso_kg": 0.0, "area_m2": 0.0, "comprimento_m": 0.0, "abertas": 0,
+                                            "tipo_ifc": str((ent.atributos or {}).get("tipo_ifc") or ""),
+                                            "observacao": OBS_PELA_MALHA if categoria == "aço fora das peças" else ""})
+        vs = getattr(ent, "vertices", None) or []
+        fs = getattr(ent, "faces", None) or []
         g["quantidade"] += 1
+        maior, esp = _extensoes(vs) if categoria == "aço fora das peças" else (0.0, 0.0)
+        g["comprimento_m"] += maior * 1e-3              # o do guarda-corpo, do piso; não o do conjunto de vergalhões
+        if malha_aberta(fs):
+            g["abertas"] += 1
+            continue
+        v = volume_da_malha(vs, fs) * 1e-9
         g["volume_m3"] += v
         g["peso_kg"] += v * rho
+        if 0.5 < esp <= 30.0:
+            g["area_m2"] += v / (esp * 1e-3)
     linhas = sorted(grupos.values(), key=lambda g: (g["categoria"], -g["volume_m3"]))
     for g in linhas:
         g["volume_m3"] = round(g["volume_m3"], 3)
         g["peso_kg"] = round(g["peso_kg"], 1)
+        g["area_m2"] = round(g["area_m2"], 1)
+        g["comprimento_m"] = round(g["comprimento_m"], 1)
+        if g["abertas"]:
+            nota = "%d peça(s) com a malha aberta, sem volume nem peso" % g["abertas"]
+            g["observacao"] = "; ".join(x for x in (g["observacao"], nota) if x)
     return linhas
 
 

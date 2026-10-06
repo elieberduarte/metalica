@@ -1331,3 +1331,59 @@ def test_migracao_das_camadas_de_funilaria_roda_uma_vez():
     from nucleo3d.modelo import Documento
     doc = Documento.de_dict(dict(d, entidades=[]))
     assert doc.camadas["Rufos"].cor == "#17b8c9"
+
+
+IFC_VERGALHAO = r"""ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');
+FILE_NAME('vergalhao.ifc','2026-01-01T00:00:00',('teste'),('sistema'),'sistema','sistema','');
+FILE_SCHEMA(('IFC4'));
+ENDSEC;
+DATA;
+#1=IFCSIUNIT(*,.LENGTHUNIT.,.MILLI.,.METRE.);
+#2=IFCUNITASSIGNMENT((#1));
+#5=IFCCARTESIANPOINT((0.,0.,0.));
+#6=IFCDIRECTION((0.,0.,1.));
+#7=IFCDIRECTION((1.,0.,0.));
+#8=IFCAXIS2PLACEMENT3D(#5,#6,#7);
+#9=IFCGEOMETRICREPRESENTATIONCONTEXT($,'Model',3,1.E-05,#8,$);
+#10=IFCPROJECT('3Ehr0Mmq95GgL6yKXVEC01',$,'Vergalhao',$,$,$,$,(#9),#2);
+#11=IFCLOCALPLACEMENT($,#8);
+#20=IFCCARTESIANPOINT((0.,0.,5500.));
+#21=IFCCARTESIANPOINT((0.,0.,5100.));
+#22=IFCPOLYLINE((#20,#21));
+#23=IFCCOMPOSITECURVESEGMENT(.CONTINUOUS.,.T.,#22);
+#24=IFCCARTESIANPOINT((100.,0.,5100.));
+#25=IFCDIRECTION((0.,-1.,0.));
+#26=IFCDIRECTION((-1.,0.,0.));
+#27=IFCAXIS2PLACEMENT3D(#24,#25,#26);
+#28=IFCCIRCLE(#27,100.);
+#29=IFCTRIMMEDCURVE(#28,(IFCPARAMETERVALUE(0.)),(IFCPARAMETERVALUE(1.5707963267948966)),.T.,.PARAMETER.);
+#30=IFCCOMPOSITECURVESEGMENT(.CONTINUOUS.,.T.,#29);
+#31=IFCCARTESIANPOINT((100.,0.,5000.));
+#32=IFCCARTESIANPOINT((1000.,0.,5000.));
+#33=IFCPOLYLINE((#31,#32));
+#34=IFCCOMPOSITECURVESEGMENT(.CONTINUOUS.,.T.,#33);
+#35=IFCCOMPOSITECURVE((#23,#30,#34),.F.);
+#36=IFCSWEPTDISKSOLID(#35,8.,$,$,$);
+#37=IFCSHAPEREPRESENTATION(#9,'Body','AdvancedSweptSolid',(#36));
+#38=IFCPRODUCTDEFINITIONSHAPE($,$,(#37));
+#39=IFCREINFORCINGBAR('3Ehr0Mmq95GgL6yKXVEC02',$,'Barra do vergalh\X2\00E3\X0\o:16 CA-50 : Forma 21:6780079',$,$,#11,#38,$,$,16.,201.06,1457.,.NOTDEFINED.,$);
+ENDSEC;
+END-ISO-10303-21;
+"""
+
+
+def test_dobra_do_vergalhao_fica_no_lugar_em_3d():
+    """A diretriz do IfcSweptDiskSolid com a dobra em arco (o vergalhão do Revit, Passarela Mirante, 06/10): o arco
+    é lido no espaço, pela colocação 3D do círculo — antes ele caía no plano XY, na cota zero, e a barra de 1,45 m na
+    cota 5 m virava uma malha de 5 m de altura (os 140 conjuntos de vergalhões pesavam 60 t; são 9,5 t)."""
+    from nucleo2d.detalhe.fora_do_aco import volume_da_malha
+    s = importar_texto(IFC_VERGALHAO).solidos[0]
+    zs = [p[2] for p in s.vertices]
+    xs = [p[0] for p in s.vertices]
+    assert min(zs) > 4980 and max(zs) < 5520, (min(zs), max(zs))
+    assert -20 < min(xs) and max(xs) < 1010
+    comprimento = 400 + math.pi / 2 * 100 + 900
+    vol = volume_da_malha(s.vertices, s.faces)
+    assert abs(vol - comprimento * math.pi * 8 ** 2) / (comprimento * math.pi * 8 ** 2) < 0.12, vol
