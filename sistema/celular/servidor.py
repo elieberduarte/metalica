@@ -129,6 +129,8 @@ class Celular:
         self._operario = None
         self._vigia = None
         self._parar = threading.Event()
+        self._geracao = 0
+        self._https_situacao: dict = {}
         os.makedirs(self.pacotes, exist_ok=True)
 
     # ------------------------------------------------------------------ configuração e aparelhos
@@ -178,7 +180,7 @@ class Celular:
         return {"ligado": self.ligado, "porta": self.porta, "enderecos": ips, "https": self.https,
                 "nome": self.nome_na_rede(), "url": self._endereco_base(ips[0]) + "/celular/",
                 "aparelhos": [{k: a.get(k) for k in ("id", "nome", "criado", "visto", "ip")} for a in self.aparelhos()],
-                "pacotes": {s: dict(v) for s, v in self._situacao.items()}}
+                "pacotes": {s: dict(v) for s, v in self._situacao.items()}, "conexao_segura": self.estado_https()}
 
     def novo_codigo(self) -> dict:
         """Código de uso único para o QR (5 minutos). Gerar outro não invalida o anterior antes do prazo."""
@@ -396,13 +398,111 @@ class Celular:
     def _vigiar(self):
         """Com o acesso ligado, refaz em segundo plano os pacotes que algum celular já abriu e
         ficaram velhos (o projeto foi gravado no PC): quando o celular pedir, já está pronto."""
-        while not self._parar.wait(60.0):
+        geracao, voltas = self._geracao, 0
+        self._manter_https()
+        while self._geracao == geracao and not self._parar.wait(60.0):
+            voltas += 1
+            if voltas % 360 == 0:                       # a cada 6 h: IP do PC e validade do certificado
+                self._manter_https()
             try:
                 for slug in os.listdir(self.pacotes):
                     if self._pasta_projeto(slug) and self.velho(slug) and slug not in self._situacao:
                         self.pedir_pacote(slug)
             except OSError:
                 pass
+
+    # ------------------------------------------------------------------ HTTPS (a cópia para a obra)
+    # O nome do domínio do usuário aponta (no Cloudflare) para o IP do PC na rede, e o certificado é do
+    # Let's Encrypt por desafio de DNS (celular/certificado.py). Configurado uma vez na tela do PC; depois
+    # o programa renova sozinho e reaponta o nome quando o IP do PC muda.
+
+    def _config_https(self) -> dict:
+        try:
+            with open(os.path.join(self.tls, "cloudflare.json"), encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}
+
+    def estado_https(self) -> dict:
+        from celular import certificado as C
+        v = C.validade(os.path.join(self.tls, "certificado.pem")) if self._tem_certificado() else None
+        cfg = self._config_https()
+        return {"configurado": bool(cfg.get("token")), "nome": cfg.get("nome") or self.nome_na_rede(), "ativo": self.https,
+                "valido_ate": v.isoformat() if v else None, "ip": cfg.get("ip"), **self._https_situacao}
+
+    def configurar_https(self, nome: str, token: str, em_fundo: bool = True) -> dict:
+        """Guarda o nome e o token do Cloudflare e tira o certificado (em segundo plano)."""
+        nome = (nome or "").strip().lower().rstrip(".")
+        token = (token or "").strip() or self._config_https().get("token", "")
+        if not nome or not token:
+            raise ValueError("informe o nome (ex.: metalica.seudominio.com.br) e o token do Cloudflare")
+        os.makedirs(self.tls, exist_ok=True)
+        with open(os.path.join(self.tls, "cloudflare.json"), "w", encoding="utf-8") as f:
+            json.dump({"nome": nome, "token": token}, f)
+        if em_fundo:
+            threading.Thread(target=self._obter_certificado, name="celular-certificado", daemon=True).start()
+        else:
+            self._obter_certificado()
+        return self.estado_https()
+
+    def _obter_certificado(self):
+        from celular import certificado as C
+        cfg = self._config_https()
+        if self._https_situacao.get("situacao") == "trabalhando":
+            return
+        self._https_situacao = {"situacao": "trabalhando", "mensagem": "começando"}
+
+        def avisar(t):
+            self._https_situacao = {"situacao": "trabalhando", "mensagem": t}
+        try:
+            ip = enderecos_da_rede()[0]
+            dns = C.Cloudflare(cfg["token"])
+            r = C.obter(self.tls, cfg["nome"], ip, dns, diretorio=os.environ.get("METALICA_ACME_DIR") or C.LETS_ENCRYPT,
+                        avisar=avisar)
+            cfg["ip"] = ip
+            with open(os.path.join(self.tls, "cloudflare.json"), "w", encoding="utf-8") as f:
+                json.dump(cfg, f)
+            self._https_situacao = {"situacao": "pronto", "mensagem": "certificado válido até %s" % (r.get("valido_ate") or "")[:10]}
+            self._trocar_protocolo(True)
+        except Exception as e:                          # noqa: BLE001 — a mensagem vai para a tela do PC
+            self._https_situacao = {"situacao": "erro", "mensagem": str(e)[:300]}
+
+    def _manter_https(self):
+        """Reaponta o nome se o IP do PC mudou e renova o certificado perto do vencimento."""
+        cfg = self._config_https()
+        if not cfg.get("token") or self._https_situacao.get("situacao") == "trabalhando":
+            return
+        try:
+            from celular import certificado as C
+            ip = enderecos_da_rede()[0]
+            if C.precisa_renovar(self.tls):
+                threading.Thread(target=self._obter_certificado, name="celular-certificado", daemon=True).start()
+            elif ip != cfg.get("ip"):
+                C.Cloudflare(cfg["token"]).apontar(cfg["nome"], ip)
+                cfg["ip"] = ip
+                with open(os.path.join(self.tls, "cloudflare.json"), "w", encoding="utf-8") as f:
+                    json.dump(cfg, f)
+        except Exception as e:                          # noqa: BLE001 — sem internet agora: tenta na próxima volta
+            self._https_situacao = {"situacao": "aviso", "mensagem": "não foi possível conferir o DNS: %s" % str(e)[:200]}
+
+    def remover_https(self) -> dict:
+        for n in ("certificado.pem", "chave.pem", "nome.txt", "cloudflare.json"):
+            try:
+                os.remove(os.path.join(self.tls, n))
+            except OSError:
+                pass
+        self._https_situacao = {}
+        self._trocar_protocolo(False)
+        return self.estado()
+
+    def _trocar_protocolo(self, https: bool):
+        """Religa o servidor (se ligado) no protocolo novo; os aparelhos pareados continuam (a chave é a mesma,
+        mas o endereço muda: o cookie de http não vale no nome do HTTPS, então pareia-se de novo uma vez)."""
+        with self._trava:
+            self.https = https and self._tem_certificado()
+            if self.ligado:
+                self.desligar(lembrar=False)
+                self.ligar()
 
     # ------------------------------------------------------------------ servidor
 
@@ -420,6 +520,7 @@ class Celular:
                 srv.celular = self
                 self._servidor = srv
                 self._parar.clear()
+                self._geracao += 1
                 self._fio = threading.Thread(target=srv.serve_forever, name="celular-servidor", daemon=True)
                 self._fio.start()
                 self._vigia = threading.Thread(target=self._vigiar, name="celular-vigia", daemon=True)

@@ -79,6 +79,22 @@
     </ul>
     <h2 style="margin-top:14px">Aparelhos pareados</h2>
     <div id="aparelhos"><p>Carregando…</p></div>
+
+    <h2 style="margin-top:18px">Conexão segura (HTTPS) — para a cópia da obra</h2>
+    <p>Para o celular guardar os projetos e abrir na obra <b>sem rede</b>, a conexão precisa ser segura. Um nome do seu
+      domínio no Cloudflare (ex.: <i>metalica.seudominio.com.br</i>) passa a apontar para este computador <b>dentro da rede</b>,
+      e o certificado sai do Let's Encrypt e é renovado sozinho. Nada fica aberto na internet.</p>
+    <div id="https-estado"></div>
+    <div class="https-campos" style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-top:6px">
+      <label style="font-size:12.5px;color:var(--texto2)">Nome<br><input id="https-nome" placeholder="metalica.seudominio.com.br"
+        style="width:100%;font:inherit;padding:6px 8px;border:1px solid var(--borda-forte);border-radius:var(--raio-p);background:var(--painel);color:var(--texto)"></label>
+      <label style="font-size:12.5px;color:var(--texto2)">Token da API do Cloudflare<br><input id="https-token" type="password" autocomplete="off"
+        placeholder="(guardado neste computador)"
+        style="width:100%;font:inherit;padding:6px 8px;border:1px solid var(--borda-forte);border-radius:var(--raio-p);background:var(--painel);color:var(--texto)"></label>
+      <button type="button" class="botao" id="btn-https">Configurar</button>
+    </div>
+    <p style="font-size:12px;margin-top:6px">O token: Cloudflare → Meu perfil → Tokens de API → Criar token → modelo <i>Editar DNS da zona</i>,
+      só para o seu domínio. Ele fica guardado só neste computador.</p>
   </section>
 
   <section class="caixa">
@@ -96,7 +112,7 @@
 (function () {
   'use strict';
   var $ = function (s) { return document.querySelector(s); };
-  var estado = null, venceEm = 0, relogio = null;
+  var estado = null, venceEm = 0, relogio = null, ultimoEndereco = null;
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function quando(iso) { if (!iso) return '—'; var d = new Date(iso); return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
@@ -124,10 +140,28 @@
           quando(a.visto) + (a.ip ? ' <span style="color:var(--texto3)">' + esc(a.ip) + '</span>' : '') +
           '</td><td><button class="botao" data-remover="' + esc(a.id) + '">Remover</button></td></tr>';
       }).join('') + '</table>' : '<p>Nenhum aparelho pareado ainda.</p>';
+    desenharHttps(e.conexao_segura);
+    // o protocolo ou o nome mudou (HTTPS configurado): o QR antigo leva ao endereço velho
+    if (e.ligado && ultimoEndereco && e.url !== ultimoEndereco) novoCodigo();
+    ultimoEndereco = e.ligado ? e.url : null;
     var pac = e.pacotes || {}, nomes = Object.keys(pac);
     $('#pacotes').innerHTML = nomes.length ? '<p style="font-size:12.5px"><b>Preparando para o celular:</b> ' + nomes.map(function (s) {
       var p = pac[s]; return esc(s) + ' (' + (p.situacao === 'erro' ? 'erro: ' + esc(p.erro) : Math.round((p.progresso || 0) * 100) + '%') + ')';
     }).join(', ') + '</p>' : '';
+  }
+
+  function desenharHttps(s) {
+    var el = $('#https-estado');
+    if (!s) { el.innerHTML = ''; return; }
+    var txt = s.ativo ? '<b>HTTPS ativo</b> em ' + esc(s.nome) + (s.valido_ate ? ' · certificado até ' + quando(s.valido_ate).slice(0, 10) : '')
+            : s.configurado ? 'Configurado para ' + esc(s.nome) + ', ainda sem certificado.' : 'Não configurado: o celular consulta pela rede, mas não guarda cópia para a obra.';
+    if (s.situacao === 'trabalhando') txt += '<br>⏳ ' + esc(s.mensagem || '');
+    else if (s.situacao === 'erro') txt = '<span style="color:var(--verm)">Não deu certo: ' + esc(s.mensagem) + '</span><br>' + txt;
+    else if (s.situacao === 'aviso') txt += '<br><span style="color:var(--amarelo)">' + esc(s.mensagem) + '</span>';
+    el.innerHTML = '<p style="font-size:13px;margin:0 0 6px">' + txt + (s.ativo ? ' <a href="#" id="https-remover">voltar ao http</a>' : '') + '</p>';
+    if (s.nome && !$('#https-nome').value) $('#https-nome').value = s.nome;
+    var r = $('#https-remover');
+    if (r) r.onclick = function (ev) { ev.preventDefault(); if (confirm('Voltar ao http? A cópia para a obra deixa de funcionar.')) api('/api/celular/https/remover', {}).then(desenhar); };
   }
 
   function qr(dados) {
@@ -155,6 +189,12 @@
     }).catch(function (e) { mensagem(e.message, 'erro'); });
   };
   $('#btn-codigo').onclick = novoCodigo;
+  $('#btn-https').onclick = function () {
+    mensagem('');
+    api('/api/celular/https', { nome: $('#https-nome').value, token: $('#https-token').value })
+      .then(function (s) { $('#https-token').value = ''; desenharHttps(s); })
+      .catch(function (e) { mensagem(e.message, 'erro'); });
+  };
   $('#aparelhos').onclick = function (ev) {
     var t = ev.target;
     if (t.dataset.remover) {

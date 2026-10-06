@@ -11,6 +11,8 @@ Rotas, todas no servidor do programa (só o próprio computador, com a proteçã
 * POST /api/celular/codigo        um código novo para o QR (5 minutos, uso único)
 * POST /api/celular/remover       {"id": ...}  o aparelho deixa de entrar na hora
 * POST /api/celular/renomear      {"id": ..., "nome": ...}
+* POST /api/celular/https         {"nome": "metalica.dominio.com.br", "token": "..."}  HTTPS (cópia para a obra)
+* POST /api/celular/https/remover volta ao http
 * GET  /api/dev/extensoes.js      o script da tela inicial: o do pré-moldado (se houver) e o botão do celular
 """
 import os
@@ -100,6 +102,15 @@ def rota_post(h, rota: str, corpo: dict) -> bool:
         return True
     if acao == "remover":
         h._json(c.remover(str(corpo.get("id") or "")))
+        return True
+    if acao == "https":
+        try:
+            h._json(c.configurar_https(str(corpo.get("nome") or ""), str(corpo.get("token") or "")))
+        except ValueError as e:
+            raise _erro_de_dados(str(e))
+        return True
+    if acao == "https/remover":
+        h._json(c.remover_https())
         return True
     if acao == "renomear":
         h._json(c.renomear(str(corpo.get("id") or ""), str(corpo.get("nome") or "")))

@@ -52,7 +52,7 @@ INSTALADOR = os.path.join(RAIZ, "Metalica-instalador.exe")
 #: 05/10): o programa instalado não leva o código nem as telas dela, e o app.py desliga as rotas (COMERCIAL).
 MODULOS_SO_DEV = ["saida.orcamento", "saida.comercial", "saida.comercial_servico", "saida.contrato_docs",
                   "saida.proposta_html", "saida.imagens3d", "saida.docx_simples",
-                  "saida.pacote_celular", "celular", "celular.servidor", "celular.web"]  # celular: só no dev até a Fase 1 fechar
+                  "saida.pacote_celular", "celular", "celular.servidor", "celular.web", "celular.certificado"]  # celular: só no dev até a Fase 1 fechar
 TELAS_SO_DEV = ["comercial.html", "comercial.js", "celular", "acesso-celular*", "qrcode.js"]
 
 ISCC = [os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
