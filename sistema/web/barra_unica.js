@@ -104,6 +104,8 @@
         I('Parafuso', '2d', 'estr-parafuso', { antes: 'Estrutura › Parafuso' }),
         HR,
         I('Níveis do projeto…', '2d', 'estr-niveis', { antes: 'Estrutura › Níveis…' }),
+        I('Arrumar os nomes dos elementos', '2d', 'estr-rotulos', { dica: 'um rótulo por elemento, com a marca dele', antes: 'Estrutura › Arrumar os nomes' }),
+        I('Renumerar os elementos em ordem', '2d', 'estr-renumerar', { dica: 'P1, P2… de cima para baixo, da esquerda para a direita', antes: 'Estrutura › Renumerar' }),
         HR,
         I('Gerar 3D da planta…', '2d', 'estr-gerar-3d', { dica: 'os elementos lançados viram o modelo 3D', antes: 'Estrutura › Gerar 3D da planta…' }),
         I('Atualizar a planta pelo 3D', '2d', 'estr-do-3d', { antes: 'Estrutura › Atualizar a planta pelo 3D' }),
