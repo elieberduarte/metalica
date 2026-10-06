@@ -882,10 +882,29 @@ export class Escalar extends Transformadora {
     const f = (p) => [c[0] + (p[0] - c[0]) * k, c[1] + (p[1] - c[1]) * k];
     return this.selecionadas().map(e => transformar(e, f, (a) => a, k));
   }
-  _aplicar(k) {
+  async _aplicar(k) {
     if (!(k > 0) || !isFinite(k)) { this.dica('Fator inválido: tem de ser maior que zero'); return; }
-    this.editor.executar(new ComandoSubstituir(this._escalar(k), `Escala ×${String(Math.round(k * 10000) / 10000).replace('.', ',')}`));
-    this.editor.aviso(`Escala ×${k.toLocaleString('pt-BR', { maximumFractionDigits: 4 })} aplicada em ${this.ids.length} objeto(s). Ctrl+Z desfaz.`, 'info', 6000);
+    if (Math.abs(k - 1) < 1e-4) {
+      // a medida digitada é a que o desenho já tem (06/10: a cota "1800" da quadra é em cm, e 1800 deu ×1)
+      this.editor.aviso('Fator 1: nada muda — a medida digitada é a mesma do desenho. Se as cotas do projeto estão em centímetros, digite com a unidade: 1800cm ou 18m.', 'atencao', 12000);
+      this.reiniciar();
+      return;
+    }
+    const sel = this.selecionadas();
+    const cmd = new ComandoSubstituir(this._escalar(k), `Escala ×${String(Math.round(k * 10000) / 10000).replace('.', ',')}`);
+    const travadas = sel.filter(e => this.doc.bloqueada && this.doc.bloqueada(e)).length;
+    if (travadas) {
+      // escalar o desenho do cliente (camadas travadas) é calibrar: pergunta, e com o sim a trava não barra (como o
+      // Calibrar escala) — antes a escala parava em "Camada travada" (06/10)
+      const corpo = document.createElement('div');
+      corpo.className = 'explica';
+      corpo.textContent = `${travadas} dos ${sel.length} objeto(s) selecionados estão em camadas travadas (o desenho do cliente). ` +
+        'Escalar tudo, também os travados? Eles continuam travados depois.';
+      if (await this.editor.dialogo({ titulo: 'Escala em camadas travadas', corpo, ok: 'Escalar tudo' }) !== 'ok') { this.reiniciar(); return; }
+      cmd.semTrava = true;
+    }
+    if (this.editor.executar(cmd) === null) { this.reiniciar(); return; }
+    this.editor.aviso(`Escala ×${k.toLocaleString('pt-BR', { maximumFractionDigits: 4 })} aplicada em ${cmd.novas.length} objeto(s). Ctrl+Z desfaz.`, 'info', 6000);
     this.reiniciar();
   }
   _referencia() {

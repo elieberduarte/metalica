@@ -109,7 +109,20 @@ def arquivos(pasta_projeto: str) -> Optional[dict]:
     return {"mcel": mcel, "pecas": pecas, "versao": ass[:12]}
 
 
+def _vazio(pasta_projeto: str) -> bool:
+    """O modelo atual não tem peça com geometria (a planta da Estrutura apagada, o modelo novo em branco): o 3D leve
+    fica marcado vazio — antes a geração dava erro e o modo ver ficava mostrando a versão anterior (06/10)."""
+    ass = _assinatura(pasta_projeto)
+    try:
+        with open(os.path.join(_cache(pasta_projeto), "vazio.txt"), encoding="utf-8") as f:
+            return bool(ass) and f.read().strip() == ass
+    except OSError:
+        return False
+
+
 def situacao(pasta_projeto: str) -> dict:
+    if _vazio(pasta_projeto):
+        return {"situacao": "sem modelo", "vazio": True}
     a = arquivos(pasta_projeto)
     if a:
         return {"situacao": "pronto", "versao": a["versao"]}
@@ -147,8 +160,25 @@ def gerar(pasta_projeto: str) -> dict:
         try:
             with open(os.path.join(pasta_projeto, "modelo.json"), encoding="utf-8") as f:
                 modelo = json.load(f)
-            binario, fichas, _num = gerar_3d(modelo, progresso)
+            try:
+                binario, fichas, _num = gerar_3d(modelo, progresso)
+            except ValueError as e:
+                if "não tem peças" not in str(e):
+                    raise
+                for nome in ("modelo3d.mcel", "pecas.json"):
+                    try:
+                        os.remove(os.path.join(c, nome))
+                    except OSError:
+                        pass
+                with open(os.path.join(c, "vazio.txt"), "w", encoding="utf-8") as f:
+                    f.write(ass)
+                _situacao.pop(c, None)
+                return {}
             del modelo
+            try:
+                os.remove(os.path.join(c, "vazio.txt"))
+            except OSError:
+                pass
             for nome, dados in (("modelo3d.mcel", binario),
                                 ("pecas.json", json.dumps(fichas, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))):
                 with open(os.path.join(c, nome + ".novo"), "wb") as f:
@@ -169,6 +199,8 @@ def pedir(pasta_projeto: str) -> dict:
     """Pronto → os arquivos. Velho (o modelo mudou) → os arquivos de antes, na hora, com a situação
     "atualizando", e o novo é feito em segundo plano (o modo ver troca quando ficar pronto). Nunca feito →
     começa e devolve a situação ("na fila"/"preparando": o modo ver espera)."""
+    if _vazio(pasta_projeto):
+        return {"situacao": "sem modelo", "vazio": True}
     a = arquivos(pasta_projeto)
     if a:
         return {"situacao": "pronto", **a}

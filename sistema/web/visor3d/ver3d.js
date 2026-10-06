@@ -175,7 +175,7 @@ async function abrir() {
   }
   if (r.status === 404) {
     const j = await r.json().catch(() => ({}));
-    if (j.situacao === 'sem modelo') { $('#carregando').innerHTML = '<div><b>Este projeto ainda não tem modelo 3D.</b></div>'; return; }
+    if (j.situacao === 'sem modelo') { $('#carregando').innerHTML = j.vazio ? '<div><b>O modelo 3D deste projeto está vazio.</b><br>Lance a estrutura (na planta ou no editor) e ela aparece aqui.</div>' : '<div><b>Este projeto ainda não tem modelo 3D.</b></div>'; return; }
   }
   if (!r.ok) { irParaEditor(); return; }                                // algo falhou: o editor abre como sempre
   const versao = r.headers.get('X-Versao-3D') || '';
@@ -234,7 +234,7 @@ function esperarVersaoNova(versao) {
   const t = setInterval(async () => {
     try {
       const s = await (await fetch(`${API}/estado`, { cache: 'no-store' })).json();
-      if (s.situacao === 'pronto' && s.versao !== versao) { clearInterval(t); guardarVista(); location.reload(); }
+      if ((s.situacao === 'pronto' && s.versao !== versao) || s.situacao === 'sem modelo') { clearInterval(t); guardarVista(); location.reload(); }
       else if (s.situacao === 'erro') { clearInterval(t); situacao('Não foi possível atualizar o 3D leve: ' + (s.erro || '')); }
     } catch (e) { /* tenta de novo */ }
   }, 2000);

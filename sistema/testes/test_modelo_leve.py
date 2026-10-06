@@ -106,3 +106,23 @@ def test_gravar_sem_mudar_nao_refaz_e_o_velho_abre_na_hora(tmp_path):
         assert r["situacao"] == "atualizando" and f.read(4) == b"MCEL"
     s = _esperar_pronto(pasta)
     assert s["versao"] != r["versao"]
+
+
+def test_modelo_vazio_nao_mostra_o_anterior(tmp_path):
+    """O modelo ficou sem peças (a planta da Estrutura apagada, 06/10): o 3D leve fica "sem modelo" (vazio) em vez de dar
+    erro e o modo ver continuar com a versão anterior; com peça de novo, volta a ficar pronto."""
+    pasta = _projeto(tmp_path)
+    L.gerar(pasta)
+    m = _modelo()
+    vazio = dict(m, entidades=[])
+    time.sleep(0.01)
+    with open(os.path.join(pasta, "modelo.json"), "w", encoding="utf-8") as f:
+        json.dump(vazio, f)
+    assert L.gerar(pasta) == {}
+    assert L.situacao(pasta) == {"situacao": "sem modelo", "vazio": True}
+    assert L.pedir(pasta) == {"situacao": "sem modelo", "vazio": True}         # nada da versão anterior
+    time.sleep(0.01)
+    with open(os.path.join(pasta, "modelo.json"), "w", encoding="utf-8") as f:
+        json.dump(m, f)
+    assert L.pedir(pasta)["situacao"] in ("na fila", "preparando", "atualizando")
+    _esperar_pronto(pasta)
