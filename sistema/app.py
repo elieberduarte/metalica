@@ -885,8 +885,9 @@ def _vivos():
     global _VIVOS
     if _VIVOS is None:
         import desenhos_vivos
+        # a lista de materiais e os resumos não entram: só pelo botão (06/10); a tela avisa quando o 3D mudou depois
         desenhos_vivos.configurar(detalhar=lambda s: detalhar_projeto(s, {"automatico": True}), pranchas=refazer_pranchas,
-                                  resumos=_resumos_vivos, gerente=_gerente)
+                                  gerente=_gerente)
         _VIVOS = desenhos_vivos
     return _VIVOS
 
@@ -1055,15 +1056,19 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
                          "entidades": desenho.tamanho, "escala": desenho.escala})
     pasta = os.path.join(g._existente(s), "detalhamento")
     os.makedirs(pasta, exist_ok=True)
-    # a lista de materiais sai do mesmo levantamento dos desenhos (romaneio, perfis, chapas…)
-    _progresso(s, "lista de materiais…")
-    categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
-    lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
-                                  barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
-                                  nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"))
-    lista["pre_moldados"] = r.get("fora_do_aco") or []
-    lista["estrutura_a_conferir"] = r.get("estrutura_a_conferir") or []
-    arquivos = lista_producao.gravar(pasta, lista, r["objetos_posicoes"], r["acessorios"])
+    # a lista de materiais sai do mesmo levantamento dos desenhos (romaneio, perfis, chapas…); feita uma vez, a
+    # atualização automática não a refaz — só o botão "Atualizar pelo modelo 3D" (06/10: a Bella Casa, 3.006 peças,
+    # ficava minutos recalculando a cada gravação do 3D, e a tela da lista esperando)
+    arquivos = {}
+    if not (corpo.get("automatico") and os.path.exists(os.path.join(pasta, lista_producao.ARQUIVO_JSON))):
+        _progresso(s, "lista de materiais…")
+        categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
+        lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
+                                      barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
+                                      nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"))
+        lista["pre_moldados"] = r.get("fora_do_aco") or []
+        lista["estrutura_a_conferir"] = r.get("estrutura_a_conferir") or []
+        arquivos = lista_producao.gravar(pasta, lista, r["objetos_posicoes"], r["acessorios"])
     relatorio = {k: v for k, v in r.items() if k not in ("desenhos", "objetos_posicoes", "objetos_pecas", "camadas")}
     relatorio["desenhos"] = desenhos
     _gravar_ajuste(os.path.join(pasta, "relatorio.json"), relatorio)
@@ -1074,7 +1079,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
     return {"desenhos": desenhos, "posicoes": len(r["posicoes"]), "conjuntos": len(r["conjuntos"]),
             "pecas": sum(p["quantidade"] for p in r["posicoes"]), "peso_total": r["peso_total"],
             "regra_tercas": r["regra_tercas"], "avisos": r["avisos"], "convertidas": r.get("convertidas", 0),
-            "romaneio": _descrever_arquivo(arquivos["romaneio"], pasta),
+            "romaneio": _descrever_arquivo(arquivos["romaneio"], pasta) if arquivos.get("romaneio") else None,
             "materiais": {k: _descrever_arquivo(v, pasta) for k, v in arquivos.items()}}
 
 
@@ -2067,14 +2072,6 @@ def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
         _fim_progresso(s)
 
 
-def _resumos_vivos(s: str):
-    """A atualização automática (desenhos_vivos) refaz os resumos da obra e de materiais que o projeto já tem, com os
-    dados gravados — eles paravam no dia do botão "Gerar de novo" (a Sala, 10 dias atrás das pranchas, 05/10)."""
-    pasta = os.path.join(_gerente()._existente(s), "detalhamento")
-    if any(os.path.exists(os.path.join(pasta, n + ".html")) for n in ("resumo-da-obra", "resumo-de-materiais")):
-        gerar_resumos_projeto(s, {})
-
-
 def _identificacao_do_projeto(s: str) -> dict:
     p = _gerente().ler(s)
     return {k: p.get(k, "") for k in ("nome", "cliente", "local", "responsavel", "origem_ifc")}
@@ -2115,6 +2112,14 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
             arquivos[chave] = _descrever_arquivo(cam, pasta)
     lista["arquivos"] = arquivos
     lista["projeto"] = dict(lista.get("projeto") or {}, slug=s, **_identificacao_do_projeto(s))
+    # a lista só se refaz pelo botão: a tela avisa quando o modelo 3D foi gravado depois dela
+    try:
+        modelo = g.caminho_modelo(s)
+        if os.path.exists(modelo) and os.path.getmtime(modelo) > os.path.getmtime(caminho) + 1:
+            lista["desatualizada"] = "o modelo 3D foi alterado em %s, depois desta lista" % time.strftime(
+                "%d/%m %H:%M", time.localtime(os.path.getmtime(modelo)))
+    except OSError:
+        pass
     return lista
 
 

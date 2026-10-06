@@ -99,7 +99,7 @@
       HR, T('cálculo'),
       I('Calcular a estrutura', '3d', 'mapa-esforcos', { kbd: 'F9', antes: 'Cálculo › Calcular estrutura' }),
       I('Dimensionar: o perfil mais leve que passa…', '3d', 'dimensionar', { antes: 'Cálculo › Dimensionar: o perfil mais leve que passa…' }),
-      I('Resultado da análise…', '3d', 'resultado-analise', { antes: 'Cálculo › Resultado da análise…' }),
+      { texto: 'Resultado da análise…', link: '/analise?projeto={projeto}', antes: 'Cálculo › Resultado da análise…' },
       I('Esforços da estrutura…', '3d', 'esforcos', { antes: 'Cálculo › Esforços da estrutura…' }),
       HR,
       I('Memorial do dimensionamento (PDF)', '3d', 'memorial-lancamento', { antes: 'Cálculo › Memorial do dimensionamento (PDF)' }),
@@ -145,7 +145,8 @@
         I('Aplicar furos e tamanho', '2d', 'aplicar-furos', { antes: 'Desenhos › Aplicar furos e tamanho ao modelo 3D' }),
       ]),
       HR,
-      I('Lista de materiais…', '3d', 'materiais', { dica: 'a etapa Produção, na barra de cima', antes: 'Desenhos › Lista de materiais…' }),
+      // direto pela página (06/10): passar pelo editor 3D carregava o modelo inteiro só para trocar de tela
+      { texto: 'Lista de materiais…', link: '/materiais?projeto={projeto}', dica: 'a etapa Produção, na barra de cima', antes: 'Desenhos › Lista de materiais…' },
     ] },
     { nome: 'Ver', itens: [
       S('Tela', [

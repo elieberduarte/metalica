@@ -548,10 +548,83 @@ def do_ifc(nome) -> Optional[dict]:
         area = _area_pelas_medidas(*med)
         if area > 0:
             r = {"ifc": tipo, "item": None, "catalogo": "", "kg_m": area * 7.85e-3, "area_mm2": area, "fonte": "calculado"}
+            # o tubo fora do catálogo vai para o similar dele (06/10): a geometria e o comprimento continuam os do
+            # projeto (`area_mm2`, `secao`); o nome de compra e o kg/m passam a ser os do similar
+            sim = similar(med)
+            if sim is not None:
+                r.update(item=sim, catalogo=sim.nome, kg_m=float(sim.massa), fonte="similar")
     if r is not None:
         r["secao"] = _contorno_nominal(it, med)
     _DO_IFC[chave] = r
     return r
+
+
+def _propriedades_tubo(forma: str, med) -> Optional[tuple]:
+    """(A cm², Ix cm⁴, Iy cm⁴) do tubo pelas medidas; o retangular com os cantos da EN 10219 (raio externo 2t,
+    interno t), pelo contorno arredondado — confere com a tabela da Marcegaglia e a 1 % da Vallourec."""
+    if forma == "redondo":
+        D, t = med
+        A = math.pi * t * (D - t) / 100.0
+        I = math.pi / 64.0 * (D ** 4 - (D - 2 * t) ** 4) / 1e4
+        return A, I, I
+    if forma != "retangular":
+        return None
+    h, b, t = med
+
+    def contorno(hh, bb, r, n=12):
+        pts = []
+        for cx, cy, a0 in ((bb / 2 - r, hh / 2 - r, 0), (-bb / 2 + r, hh / 2 - r, 90), (-bb / 2 + r, -hh / 2 + r, 180),
+                           (bb / 2 - r, -hh / 2 + r, 270)):
+            for k in range(n + 1):
+                a = math.radians(a0 + 90.0 * k / n)
+                pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+        return pts
+
+    def props(pts):
+        A = Ix = Iy = 0.0
+        for i in range(len(pts)):
+            (x1, y1), (x2, y2) = pts[i], pts[(i + 1) % len(pts)]
+            c = x1 * y2 - x2 * y1
+            A += c / 2
+            Ix += (y1 * y1 + y1 * y2 + y2 * y2) * c / 12
+            Iy += (x1 * x1 + x1 * x2 + x2 * x2) * c / 12
+        return A, Ix, Iy
+    if h <= 2 * t or b <= 2 * t:
+        return None
+    fora, dentro = props(contorno(h, b, 2 * t)), props(contorno(h - 2 * t, b - 2 * t, t))
+    return (fora[0] - dentro[0]) / 100.0, (fora[1] - dentro[1]) / 1e4, (fora[2] - dentro[2]) / 1e4
+
+
+#: Quanto cada lado do similar pode diferir do tubo do projeto: primeiro até 5 %; sem nenhum, até 12 %.
+FAIXAS_SIMILAR = (0.05, 0.12)
+
+
+def similar(med) -> Optional[Item]:
+    """O tubo do catálogo que faz as vezes do tubo do projeto fora dele (06/10, Bella Casa: SHS 225x225x6.4 →
+    TQ 220×220×7,1; SHS 110x110x3.2 → TQ 110×110×3,35; RHS 127x63.5x3.2 → TR 130×70×3,0): a mesma forma, os lados
+    até 5 % diferentes (senão até 12 %), área e inércias pelo menos as do projeto (1 % de folga: as tabelas
+    arredondam) e, desses, o mais leve. None quando nada serve (o CHS 406,4: o maior redondo é o Ø355,6)."""
+    if not med or med[0] not in ("redondo", "retangular"):
+        return None
+    forma, m = med
+    alvo = _propriedades_tubo(forma, m)
+    if alvo is None:
+        return None
+    lados = m[:-1]
+    for faixa in FAIXAS_SIMILAR:
+        bons = []
+        for c in itens("tubo"):
+            mc = _medidas_do_item(c)
+            if mc is None or mc[0] != forma or not c.massa:
+                continue
+            if any(abs(x - y) > faixa * y for x, y in zip(mc[1][:-1], lados)):
+                continue
+            p = _propriedades_tubo(forma, mc[1])
+            if p and all(a >= 0.99 * b for a, b in zip(p, alvo)):
+                bons.append((float(c.massa), sum(abs(x - y) for x, y in zip(mc[1], m)), c.nome, c))
+        if bons:
+            return min(bons, key=lambda x: x[:3])[3]
+    return None
 
 
 def _contorno_nominal(it: Optional[Item], med) -> Optional[tuple]:

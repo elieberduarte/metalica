@@ -473,9 +473,9 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
 def _catalogo_texto(g: dict) -> str:
     """O cruzamento do perfil com o catálogo, para a tabela: o item equivalente, ou de onde veio o kg/m."""
     if g.get("catalogo"):
-        return g["catalogo"]
+        return ("similar: %s" % g["catalogo"]) if g.get("fonte_kg_m") == "similar" else g["catalogo"]
     if g.get("fonte_kg_m") == "calculado":
-        return "fora do catálogo (kg/m pelas medidas)"
+        return "fora do catálogo e sem similar (kg/m pelas medidas)"
     return "—"
 
 

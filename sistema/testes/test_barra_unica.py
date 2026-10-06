@@ -38,6 +38,8 @@ def test_cada_comando_do_mapa_existe_na_tela_do_lado():
 ANTIGOS = [
     ('', 'fn:modo-elevacao'), ('', 'fn:modo-planta'), ('', 'fn:seguir'), ('', 'fn:tema'), ('', 'fn:trocar'),
     ('', 'link:/ajuda'), ('', 'link:/ligacoes'), ('2d', 'acao:abrir'), ('2d', 'acao:abrir-pasta'),
+    # a lista de materiais e o resultado da análise abrem a página direto (06/10: pelo 3D carregava o modelo inteiro)
+    ('', 'link:/materiais?projeto={projeto}'), ('', 'link:/analise?projeto={projeto}'),
     ('2d', 'acao:ajustar-tamanho'), ('2d', 'acao:aplicar-furos'), ('2d', 'acao:aplicar-pecas'),
     ('2d', 'acao:arquitetonico'), ('2d', 'acao:atualizar-desenhos'), ('2d', 'acao:calibrar'), ('2d', 'acao:corte'),
     ('2d', 'acao:estilos'), ('2d', 'acao:excluir-desenhos'), ('2d', 'acao:exportar-dxf'), ('2d', 'acao:exportar-pdf'),
@@ -54,8 +56,8 @@ ANTIGOS = [
     ('3d', 'acao:eixos-obra'), ('3d', 'acao:esforcos'), ('3d', 'acao:exemplo'), ('3d', 'acao:explodir'),
     ('3d', 'acao:exportar-ifc'), ('3d', 'acao:importar-ifc'), ('3d', 'acao:inspecionar-ifc'),
     ('3d', 'acao:inverter-selecao'), ('3d', 'acao:isolar'), ('3d', 'acao:juntar'), ('3d', 'acao:lancar-estrutura'),
-    ('3d', 'acao:mapa-esforcos'), ('3d', 'acao:materiais'), ('3d', 'acao:memorial-lancamento'), ('3d', 'acao:novo'),
-    ('3d', 'acao:referencia'), ('3d', 'acao:restaurar-modelo'), ('3d', 'acao:resultado-analise'),
+    ('3d', 'acao:mapa-esforcos'), ('3d', 'acao:memorial-lancamento'), ('3d', 'acao:novo'),
+    ('3d', 'acao:referencia'), ('3d', 'acao:restaurar-modelo'),
     ('3d', 'acao:salvar'), ('3d', 'acao:salvar-como'), ('3d', 'acao:sombras'), ('3d', 'acao:trelicas-lidas'),
     ('3d', 'acao:verificar-apoios'), ('3d', 'acao:zoom-extensao'), ('3d', 'acao:zoom-selecao'),
     ('3d', 'sel:#modos-exibicao [data-esqueleto]'), ('3d', 'sel:#modos-exibicao [data-modo="arestas"]'),

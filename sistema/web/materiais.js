@@ -245,8 +245,9 @@ function desenhar(L) {
     pPerfis.append(secao('Perfis', `comprimento, peso e barras de compra por encaixe (do maior para o menor, 3 mm de corte); ${n(totB)} barras no total`,
       el('div', {}, controleBarra(), el('div', { class: 'rolagem' }, tabela([
         { titulo: 'Perfil', valor: (g) => g.perfil_nome || g.perfil, classe: 'b' },
-        { titulo: 'No catálogo', valor: (g) => g.catalogo || (g.fonte_kg_m === 'calculado' ? 'fora (kg/m pelas medidas)' : '—'),
-          dica: 'O item do catálogo que corresponde ao perfil do modelo; fora dele, o kg/m sai das medidas do nome' },
+        { titulo: 'No catálogo', valor: (g) => g.catalogo ? (g.fonte_kg_m === 'similar' ? 'similar: ' + g.catalogo : g.catalogo)
+            : (g.fonte_kg_m === 'calculado' ? 'fora, sem similar (kg/m pelas medidas)' : '—'),
+          dica: 'O item do catálogo que corresponde ao perfil do modelo; o tubo fora dele vai para o similar (mesma forma, lados até 12 % diferentes, área e inércias pelo menos as do projeto, o mais leve)' },
         { titulo: 'Material', chave: 'material' },
         { titulo: 'Categoria', valor: (g) => rotuloCategoria(g.categoria) },
         { titulo: 'Posições', valor: (g) => marcas(g.nomes_posicoes || g.posicoes), classe: 'quebra' },
@@ -471,6 +472,8 @@ async function carregar(recalcular = false) {
       : await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais`);
     aviso('');
     desenhar(L);
+    // a lista só se refaz pelo botão (06/10): o modelo 3D gravado depois dela fica avisado aqui
+    if (L.desatualizada) aviso(`Lista de ${L.gerado || '—'}: ${L.desatualizada}. Para refazer, clique em "Atualizar pelo modelo 3D".`);
   } catch (e) {
     aviso(`Não foi possível montar a lista: ${e.message}`, true);
   }

@@ -935,7 +935,7 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         b = g.get("barras") or {}
         perfis.append({"perfil": com_bitola(g.get("perfil") or ""), "material": g.get("material") or "", "kg": float(g.get("peso") or 0.0),
                        "pecas": int(g.get("pecas") or 0), "kg_m": float(g.get("kg_m") or 0.0), "catalogo": g.get("catalogo") or "",
-                       "fora_do_catalogo": g.get("fonte_kg_m") == "calculado",
+                       "fora_do_catalogo": g.get("fonte_kg_m") == "calculado", "similar": g.get("fonte_kg_m") == "similar",
                        "m": float(g.get("comprimento_m") or 0.0), "barra_m": float(b.get("comprimento") or 0.0) / 1000.0,
                        "barras": int(b.get("quantidade") or 0), "aproveitamento": b.get("aproveitamento"), "emendas": int(b.get("emendas") or 0)})
     try:
@@ -1299,10 +1299,12 @@ def _html_compra(R: dict) -> str:
         def nome_perfil(p):
             # o nome do catálogo em cima, o do IFC embaixo (06/10); fora do catálogo, o do IFC e de onde veio o kg/m
             cat = p.get("catalogo") or ""
-            if cat:
+            if cat and p.get("similar"):
+                cima, baixo = cat, "similar ao IFC: %s" % p["perfil"]
+            elif cat:
                 cima, baixo = cat, ("IFC: %s" % p["perfil"]) if cat.replace(" ", "") != p["perfil"].replace(" ", "") else ""
             else:
-                cima, baixo = p["perfil"], ("fora do catálogo (kg/m pelas medidas)" if p.get("fora_do_catalogo") else "")
+                cima, baixo = p["perfil"], ("fora do catálogo e sem similar (kg/m pelas medidas)" if p.get("fora_do_catalogo") else "")
             return "<b>%s</b>%s" % (_esc(cima), ("<br><span class=\"cinza\">%s</span>" % _esc(baixo)) if baixo else "")
         h.append(_tabela(["Perfil", "Material", ("Peças", "r"), ("m", "r"), ("kg/m", "r"), ("kg", "r"), ("Barra", "r"), ("Barras", "r"),
                           ("Aprov.", "r"), "Pedido"],
