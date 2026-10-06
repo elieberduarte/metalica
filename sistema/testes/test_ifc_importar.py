@@ -1387,3 +1387,19 @@ def test_dobra_do_vergalhao_fica_no_lugar_em_3d():
     comprimento = 400 + math.pi / 2 * 100 + 900
     vol = volume_da_malha(s.vertices, s.faces)
     assert abs(vol - comprimento * math.pi * 8 ** 2) / (comprimento * math.pi * 8 ** 2) < 0.12, vol
+
+
+def test_eixo_em_arco_da_viga_do_revit():
+    """A viga curva do Revit traz o eixo (representação 'Axis') em arco: o importador grava o desenvolvido, o raio e o
+    ângulo em atributos["eixo_ifc"]; a reta, só o comprimento (Passarela Mirante, 06/10)."""
+    eixo = IFC_VERGALHAO.replace(
+        "#36=IFCSWEPTDISKSOLID(#35,8.,$,$,$);",
+        "#36=IFCSWEPTDISKSOLID(#35,8.,$,$,$);\n#40=IFCTRIMMEDCURVE(#28,(IFCPARAMETERVALUE(0.)),(IFCPARAMETERVALUE(1.5707963267948966)),.T.,.PARAMETER.);"
+        "\n#41=IFCSHAPEREPRESENTATION(#9,'Axis','Curve3D',(#40));").replace(
+        "#38=IFCPRODUCTDEFINITIONSHAPE($,$,(#37));", "#38=IFCPRODUCTDEFINITIONSHAPE($,$,(#41,#37));").replace(
+        "#39=IFCREINFORCINGBAR('3Ehr0Mmq95GgL6yKXVEC02',$,'Barra do vergalh\\X2\\00E3\\X0\\o:16 CA-50 : Forma 21:6780079',$,$,#11,#38,$,$,16.,201.06,1457.,.NOTDEFINED.,$);",
+        "#39=IFCBEAM('3Ehr0Mmq95GgL6yKXVEC02',$,'Viga curva',$,$,#11,#38,$,.BEAM.);")
+    assert "IFCBEAM(" in eixo and "'Axis'" in eixo
+    s = importar_texto(eixo).solidos[0]
+    e = s.atributos.get("eixo_ifc")
+    assert e and abs(e["raio"] - 100.0) < 0.01 and abs(e["comprimento"] - math.pi / 2 * 100) < 0.5 and abs(e["angulo"] - 90) < 0.01, e

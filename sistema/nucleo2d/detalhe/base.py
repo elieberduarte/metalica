@@ -1440,7 +1440,8 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
             pos = Posicao(marca=marca, tipo_ifc="IfcPlate" if t.startswith("IfcPlate") else t,
                           perfil=re.sub(r"\s+", " ", str(m.get("perfil") or ent.nome or "")),
                           material=_material(ent),
-                          vertices=[tuple(v) for v in ent.vertices], faces=[list(f) for f in ent.faces])
+                          vertices=[tuple(v) for v in ent.vertices], faces=[list(f) for f in ent.faces],
+                          eixo_ifc=(ent.atributos or {}).get("eixo_ifc"))
             por_marca[marca] = pos
             camadas[marca] = ent.camada or ""
             # perfil trocado no 3D: o original do projeto e a data vão para a lista

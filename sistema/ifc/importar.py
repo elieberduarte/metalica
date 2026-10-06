@@ -1413,6 +1413,51 @@ class Importador:
             self.camadas_ifc.append({"nome": nome, "itens": len(itens), "cor": camada.cor,
                                      "visivel": visivel, "bloqueada": bloqueada})
 
+    def eixo_da_barra(self, reps: List[Entidade]) -> Optional[dict]:
+        """O eixo que o Revit exporta (a representação 'Axis'): {comprimento (mm; na curva, o desenvolvido), raio (mm,
+        None no eixo reto), ângulo (graus)}; None sem eixo. A malha da viga curva vem recortada e aberta, e o
+        comprimento de corte pelo volume ÷ seção não saía — 42 pendências na Passarela Mirante (06/10); a peça curva
+        é calandrada, e o que a fábrica precisa é o raio e o desenvolvido."""
+        for rep in reps or []:
+            if str(rep.arg(1) or "").lower() != "axis":
+                continue
+            total, raios, angulo = 0.0, [], 0.0
+            for ref in (rep.arg(3) or []):
+                comp, rs, ang = self._medir_curva(ref)
+                total += comp
+                raios += rs
+                angulo += ang
+            if total > 0:
+                return {"comprimento": round(total, 1), "raio": round(max(raios), 1) if raios else None,
+                        "angulo": round(angulo, 2)}
+        return None
+
+    def _medir_curva(self, ref, profundidade: int = 0):
+        """(comprimento em mm, raios dos arcos, ângulo dos arcos em graus) de uma curva do eixo."""
+        e = self.res(ref)
+        if e is None or profundidade > 6:
+            return 0.0, [], 0.0
+        t = e.tipos
+        if "IFCCOMPOSITECURVE" in t:
+            total, raios, ang = 0.0, [], 0.0
+            for seg in self.lista(e.arg(0)):
+                c, r, a = self._medir_curva(seg.arg(2), profundidade + 1)
+                total, raios, ang = total + c, raios + r, ang + a
+            return total, raios, ang
+        if "IFCTRIMMEDCURVE" in t:
+            base = self.res(e.arg(0))
+            if base is not None and base.e_tipo("IFCCIRCLE"):
+                m = self.matriz(base.arg(0))
+                r = float(base.arg(1) or 0.0) * self.escala
+                a1, a2 = self._parametro_trim(e.arg(1), m, r), self._parametro_trim(e.arg(2), m, r)
+                if a1 is not None and a2 is not None and r > 0:
+                    sentido = e.arg(3)
+                    d = (a2 - a1) if (sentido is None or bool(sentido)) else (a1 - a2)
+                    d %= 2 * math.pi
+                    return r * d, [r], math.degrees(d)
+        pts = self.pontos_curva_3d(ref)
+        return sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1)), [], 0.0
+
     def camada_apresentacao(self, reps: List[Entidade]) -> str:
         """Camada de apresentação da primeira representação (ou item) atribuída."""
         if not self._camada_de:
@@ -2343,6 +2388,12 @@ class Importador:
                         vertices=mundial.vertices, faces=mundial.faces,
                         origem_ifc=global_id)
         solido.atributos["tipo_ifc"] = nome_ifc(tipo)
+        try:
+            eixo = self.eixo_da_barra(todas) if tipo in ("IFCBEAM", "IFCCOLUMN", "IFCMEMBER") else None
+        except (TypeError, ValueError, IndexError, AttributeError, ZeroDivisionError):
+            eixo = None
+        if eixo:
+            solido.atributos["eixo_ifc"] = eixo
         predefinido = prod.arg(8)
         if isinstance(predefinido, str):
             solido.atributos["predefinido_ifc"] = str(predefinido)

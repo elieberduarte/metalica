@@ -349,3 +349,39 @@ def test_barra_curva_comprimento_de_corte():
     # a seção fica do lado de dentro do arco (centroide a ~30 mm do raio de 5 m): 1 % menos
     assert abs(pos.comprimento - R * theta) < 0.02 * R * theta, (pos.comprimento, pos.observacoes)
     assert any("comprimento de corte" in o for o in pos.observacoes)
+
+
+def test_barra_curva_pelo_eixo_do_ifc_e_calandrada():
+    """Com o eixo em arco que o Revit exporta (a representação Axis, lida no importador: pos.eixo_ifc), o raio e o
+    desenvolvido vêm dele — a malha da viga curva vem recortada e aberta, e volume ÷ seção não fechava (42 pendências
+    na Passarela Mirante, 06/10). A peça curva é calandrada: a observação não é pendência. Com o eixo reto e a malha
+    torta (recorte ou apêndice), o comprimento é o do eixo, sem "peça curva"."""
+    from saida.resumos import _PEDE_CONFERENCIA
+    h, b, t = 88.0, 40.0, 2.25
+    sec = [(0, 0), (h, 0), (h, b), (h - t, b), (h - t, t), (t, t), (t, b), (0, b)]
+    R, theta, N = 5000.0, 0.3, 24
+    v, f = [], []
+    n = len(sec)
+    for i in range(N + 1):
+        phi = -theta / 2 + theta * i / N
+        c = (R * math.sin(phi), 0.0, R * (1 - math.cos(phi)))
+        nr = (-math.sin(phi), 0.0, math.cos(phi))
+        for (yy, zz) in sec:
+            v.append((c[0] + nr[0] * yy, zz, c[2] + nr[2] * yy))
+    f.append(list(range(n))[::-1])
+    f.append([N * n + i for i in range(n)])
+    for s_ in range(N):
+        for i in range(n):
+            j = (i + 1) % n
+            f.append([s_ * n + i, s_ * n + j, (s_ + 1) * n + j, (s_ + 1) * n + i])
+    pos = det.Posicao(marca="P9", tipo_ifc="IfcBeam", perfil="U88X40X2.25", vertices=v, faces=f,
+                      eixo_ifc={"comprimento": 1500.0, "raio": 5000.0, "angulo": 17.19})
+    det.analisar(pos)
+    assert pos.classe == "barra_conformada" and pos.comprimento == 1500.0, (pos.classe, pos.comprimento)
+    calandra = [o for o in pos.observacoes if o.startswith("calandrar")]
+    assert calandra and "R=5" in calandra[0] and "1" in calandra[0] and not any(_PEDE_CONFERENCIA.search(o) for o in calandra)
+    # o eixo reto com a malha curva: o comprimento do eixo, e não se chama "peça curva"
+    reto = det.Posicao(marca="P10", tipo_ifc="IfcBeam", perfil="U88X40X2.25", vertices=v, faces=f,
+                       eixo_ifc={"comprimento": 1495.0, "raio": None, "angulo": 0.0})
+    det.analisar(reto)
+    assert reto.comprimento == 1495.0 and not any("peça curva" in o for o in reto.observacoes), reto.observacoes

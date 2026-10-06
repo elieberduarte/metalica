@@ -280,6 +280,7 @@ class Posicao:
     parafusos: Dict[str, int] = field(default_factory=dict)   # {"M12x35": 4}: os que atravessam a peça
     porcas: int = 0           # porcas/arruelas junto dos furos (fixadores sem tamanho no nome)
     passantes: Dict[str, int] = field(default_factory=dict)   # {'barra roscada Ø5/8"': 1}: barra que atravessa o furo
+    eixo_ifc: Optional[dict] = None     # o eixo do IFC (Revit): {comprimento, raio (None: reto), angulo}; em arco, calandrada
 
     @property
     def peso_total(self) -> float:
@@ -1053,7 +1054,7 @@ def _chave_analise(pos: Posicao, eixos):
     try:
         e = tuple(tuple(float(k) for k in x) for x in eixos) if eixos is not None else None
         return (pos.tipo_ifc, pos.perfil, e, tuple(tuple(v) for v in pos.vertices),
-                tuple(tuple(f) for f in pos.faces))
+                tuple(tuple(f) for f in pos.faces), tuple(sorted((pos.eixo_ifc or {}).items())))
     except (TypeError, ValueError):
         return None
 
@@ -1203,6 +1204,10 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
         reta = False
         pos.observacoes.append("volume maior que seção × comprimento: curva ou apêndice fora "
                                "das estações de medida")
+    eixo_ifc = pos.eixo_ifc or {}
+    curvo = eixo_ifc if eixo_ifc.get("raio") and eixo_ifc.get("comprimento") else {}
+    if curvo:
+        reta = False                  # o eixo do IFC é um arco: calandrada, mesmo com a flecha pequena (R 18 m em 2,2 m)
     if reta:
         pos.classe = "barra"
         pos.comprimento = pos.L
@@ -1223,6 +1228,14 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
         # trechos retos, e o comprimento de corte é o desenvolvido, pelo volume ÷ área da
         # seção — a menor fatia de cada perna é a menos oblíqua; quando ela pega só um
         # pedaço (a ponta cortada) e foge mais de 15 % do catálogo, vale a do catálogo
+        if curvo.get("comprimento"):
+            # o eixo que o Revit exporta (a representação Axis, com o arco): o raio e o desenvolvido saem dele — a malha
+            # da viga curva vem recortada e aberta, e volume ÷ seção não fechava (42 pendências na Passarela Mirante,
+            # 06/10). A peça curva é sempre calandrada (o usuário, 06/10)
+            pos.comprimento = float(curvo["comprimento"])
+            pos.observacoes.append("calandrar: R=%s mm, %s°, comprimento desenvolvido %s mm (eixo do IFC)"
+                                   % (_mm(curvo.get("raio") or 0), _mm(curvo.get("angulo") or 0, 1), _mm(pos.comprimento)))
+            return pos
         area_secao = area_unitaria * _externos(secao) if area_unitaria else 0.0
         fonte = "seção"
 
@@ -1232,10 +1245,22 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
         cat = do_ifc(perfil)
         if cat and abs(area_secao / cat["area_mm2"] - 1) > 0.15:
             area_secao, fonte = cat["area_mm2"], "seção do catálogo"
-        if fecha(area_secao):
+        if fecha(area_secao) and eixo_ifc.get("comprimento"):
+            # o eixo do IFC é reto: a peça não é curva, a malha é que tem recorte ou apêndice (as vigas caixão da
+            # Passarela) — o comprimento de corte é o do eixo
+            pos.comprimento = float(eixo_ifc["comprimento"])
+            pos.observacoes.append("comprimento de corte %s mm pelo eixo do IFC, que é reto (a malha tem recorte ou "
+                                   "apêndice; volume ÷ seção dá %s mm)" % (_mm(pos.comprimento), _mm(pos.volume / area_secao)))
+        elif fecha(area_secao):
             pos.comprimento = pos.volume / area_secao
             pos.observacoes.append("peça curva (calandrar ou cortar em trechos retos): comprimento de corte "
                                    "%s mm pelo volume ÷ %s (%s mm²)" % (_mm(pos.comprimento), fonte, _mm(area_secao)))
+        elif eixo_ifc.get("comprimento"):
+            # o volume não fecha e o eixo do IFC é reto (recorte ou apêndice soldado: as vigas caixão de 1 m da
+            # Passarela): o comprimento pelo eixo, e a peça fica para conferir no 3D
+            pos.comprimento = float(eixo_ifc["comprimento"])
+            pos.observacoes.append("a malha não é reta (recorte ou apêndice), mas o eixo do IFC é: comprimento de corte "
+                                   "%s mm pelo eixo; conferir no 3D" % _mm(pos.comprimento))
         else:
             pos.observacoes.append("peça curva (calandrar ou cortar em trechos retos): comprimento de corte "
                                    "não calculado")
