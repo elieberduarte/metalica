@@ -69,7 +69,9 @@ def test_chapa_vai_para_a_comercial():
     assert chapa_comercial(10.3) == 12.7 and chapa_comercial(5.6) == 6.3      # nunca mais fina que o projeto
     g = _chapas_por_rotulo([{"espessura": 10.0, "material": "A36", "peso": 78.5, "pecas": 2, "area_m2": 1.0},
                             {"espessura": 11.2, "material": "A36", "peso": 87.9, "pecas": 1, "area_m2": 1.0}])
-    assert len(g) == 1 and g[0]["polegada"] == '1/2"' and g[0]["modelo"] == "10,00mm, 11,20mm"
+    assert len(g) == 1 and g[0]["polegada"] == '1/2"' and g[0]["modelo"] == '10,00mm, 11,20mm (≈7/16")'
+    from saida.resumos import fracao_polegada
+    assert fracao_polegada(5.6) == '7/32"' and fracao_polegada(8.9) == "" and fracao_polegada(25.4) == '1"'
     assert abs(g[0]["kg_compra"] - 2.0 * 12.7 * 7.85) < 0.01 and abs(g[0]["kg"] - 166.4) < 0.01
 
 

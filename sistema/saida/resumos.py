@@ -160,6 +160,20 @@ def _espessuras_comerciais() -> List[float]:
     return sorted(t for t in ts if t >= 1.5)
 
 
+def fracao_polegada(t: float) -> str:
+    """A polegada (em 1/32") a até 0,1 mm da espessura, ou "": 5,60 → 7/32", 11,20 → 7/16", 8,90 → "" (06/10)."""
+    n = int(round(t / 25.4 * 32))
+    if n <= 0 or abs(t - n * 25.4 / 32) > 0.1:
+        return ""
+    inteiro, resto = divmod(n, 32)
+    den = 32
+    while resto and resto % 2 == 0:
+        resto, den = resto // 2, den // 2
+    if not resto:
+        return '%d"' % inteiro
+    return ('%d.%d/%d"' % (inteiro, resto, den)) if inteiro else '%d/%d"' % (resto, den)
+
+
 def chapa_comercial(t: float) -> float:
     """A chapa que se compra para a espessura do modelo: a mesma, ou a próxima acima (06/10: 4,30 → #7 4,50;
     10,30 → 1/2"; a peça não sai mais fina que o projeto). Acima da maior, fica a do modelo."""
@@ -192,7 +206,9 @@ def _chapas_por_rotulo(chapas) -> List[dict]:
         j["polegada"] = _polegada_da_chapa(j["t"]) or ""
         j["rotulo"] = " - ".join(x for x in (j["bitola"], j["mm"], j["polegada"]) if x)
         outras = sorted(x for x in j.pop("modelo") if abs(x - j["t"]) >= 0.06)
-        j["modelo"] = ", ".join("%smm" % _n(x, 2) for x in outras)
+        # a espessura do modelo com a polegada dela quando bate (5,60mm ≈ 7/32", que não está no catálogo)
+        j["modelo"] = ", ".join("%smm%s" % (_n(x, 2), (" (≈%s)" % fracao_polegada(x)) if fracao_polegada(x) else "")
+                                for x in outras)
         j["kg_compra"] = j["m2"] * j["t"] * 7.85
     return sorted(juntas.values(), key=lambda j: (j["t"], j["material"]))
 
