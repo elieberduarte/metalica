@@ -767,16 +767,17 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             local = (" x ".join(dict.fromkeys(rotulos.get(t, t) for t in tipos_f)), tuple(nomes_f))
         r = contagem.setdefault(chave, {"parafuso": eh_parafuso, "qtd": 0, "locais": collections.OrderedDict(), "d": d})
         r["qtd"] += 1
-        lr = r["locais"].setdefault(local[0], {"qtd": 0, "pecas": set()})
+        lr = r["locais"].setdefault(local[0], {"qtd": 0, "pecas": set(), "ids": []})
         lr["qtd"] += 1
         lr["pecas"].update(local[1])
+        lr["ids"].append(f.id)                              # para "ver no 3D" a pendência (06/10)
     for pt in pontas:
         fam = familia_peca(pt["peca"])
         local = rotulos.get(fam[0], fam[0])
         for chave, q in (("Porca %s" % (pt["bitola"] or "?"), PORCAS_POR_PONTA), ("Arruela %s" % (pt["bitola"] or "?"), ARRUELAS_POR_PONTA)):
             r = contagem.setdefault(chave, {"parafuso": False, "qtd": 0, "locais": collections.OrderedDict(), "d": pt["d"]})
             r["qtd"] += q
-            lr = r["locais"].setdefault(local, {"qtd": 0, "pecas": set()})
+            lr = r["locais"].setdefault(local, {"qtd": 0, "pecas": set(), "ids": []})
             lr["qtd"] += q
             lr["pecas"].add(fam[1])
     saida = []
@@ -788,7 +789,8 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             desc = ("Arruela lisa Ø%s" if chave.startswith("Arruela") else "Porca sextavada Ø%s UNC") % chave.split(" ", 1)[1]
         locais = sorted(r["locais"].items(), key=lambda kv: -kv[1]["qtd"])
         saida.append({"nome": nome, "descricao": desc, "qtd": r["qtd"], "parafuso": r["parafuso"], "d": r["d"],
-                      "locais": [{"local": k, "qtd": v["qtd"], "pecas": sorted(v["pecas"], key=_ordem_natural)} for k, v in locais]})
+                      "locais": [{"local": k, "qtd": v["qtd"], "pecas": sorted(v["pecas"], key=_ordem_natural), "ids": v.get("ids") or []}
+                                 for k, v in locais]})
     saida.sort(key=lambda x: (not x["parafuso"], x["d"] or 0, _ordem_natural(x["nome"])))
     return saida
 
@@ -928,18 +930,22 @@ _PEDE_CONFERENCIA = re.compile(r"difere|conferir|não calculad|do plano da seç�
 def _pendencias(lista: dict, parafusos: List[dict], lev: dict, nomes_pos: dict) -> List[dict]:
     """O que conferir antes de fabricar: as ressalvas da lista que pedem conferência (a medida diferente do nome do
     TecnoMETAL, o comprimento de corte não calculado ou estimado pelo volume, a peça que sai do plano), os parafusos sem
-    peça reconhecida em volta e os avisos do levantamento que não repetem as ressalvas."""
+    peça reconhecida em volta e os avisos do levantamento que não repetem as ressalvas. Cada uma leva os `ids` das peças
+    do modelo, para a tela abrir o 3D com elas em destaque (06/10)."""
+    ids_da_marca = {p.marca: list(getattr(p, "global_ids", None) or []) for p in lev.get("posicoes") or []}
     saida = []
     for r in lista.get("ressalvas") or []:
         nome = " / ".join(dict.fromkeys(nomes_pos.get(m.strip()) or m.strip() for m in str(r.get("marca") or "").split(" / ")))
         for o in r.get("observacoes") or []:
             if _PEDE_CONFERENCIA.search(str(o)):
-                saida.append({"peca": nome, "perfil": r.get("perfil_nome") or r.get("perfil") or "", "o_que": str(o)})
+                saida.append({"peca": nome, "perfil": r.get("perfil_nome") or r.get("perfil") or "", "o_que": str(o),
+                              "ids": ids_da_marca.get(r.get("marca") or "", [])})
     ja_medidas = any("difere" in x["o_que"] for x in saida)
     for it in parafusos:
         for loc in it.get("locais") or []:
             if loc["local"].startswith("sem peça"):
-                saida.append({"peca": it["nome"], "perfil": "", "o_que": "%d sem peça reconhecida em volta (parafuso solto no modelo?)" % loc["qtd"]})
+                saida.append({"peca": it["nome"], "perfil": "", "o_que": "%d sem peça reconhecida em volta (parafuso solto no modelo?)" % loc["qtd"],
+                              "ids": list(loc.get("ids") or [])})
     for a in _avisos_que_contam(lev.get("avisos") or []):
         if not (ja_medidas and "nome do TecnoMETAL" in str(a)):
             saida.append({"peca": "", "perfil": "", "o_que": str(a)})
@@ -1276,8 +1282,9 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
         pend = [{"peca": "", "perfil": "", "o_que": a} for a in _avisos_que_contam(R.get("avisos") or [])]
     partes.append("<h2>7. Pendências de conferência - %s</h2>" % ("%d" % len(pend) if pend else "nenhuma"))
     if pend:
+        # a tela da lista liga o clique na linha: abre o 3D com as peças em destaque (os ids na linha, 06/10)
         partes.append(_tabela(["Peça", "Perfil", "O que conferir"], [[x["peca"], x["perfil"], x["o_que"]] for x in pend],
-                              larguras=["18%", "22%", "60%"]))
+                              larguras=["18%", "22%", "60%"], ids_linhas=[",".join(x.get("ids") or []) for x in pend]))
     return _doc("Resumo da obra", "".join(partes), paginado)
 
 
@@ -1451,7 +1458,7 @@ def _html_compra(R: dict) -> str:
     return "".join(h)
 
 
-def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=None, classes_linhas=None) -> str:
+def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=None, classes_linhas=None, ids_linhas=None) -> str:
     def cel(c, tag="td"):
         cls = ""
         if isinstance(c, tuple):
@@ -1462,8 +1469,10 @@ def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=Non
         return "<%s%s>%s</%s>" % (tag, (" class=\"%s\"" % cls) if cls else "", v, tag)
     cols = ("<colgroup>%s</colgroup>" % "".join("<col style=\"width:%s\">" % w for w in larguras)) if larguras else ""
     th = "".join(cel(c, "th") for c in colunas)
-    cl = list(classes_linhas or [])
-    corpo = "".join("<tr%s>%s</tr>" % ((" class=\"%s\"" % cl[i]) if i < len(cl) and cl[i] else "", "".join(cel(c) for c in l))
+    cl, il = list(classes_linhas or []), list(ids_linhas or [])
+    corpo = "".join("<tr%s%s>%s</tr>" % ((" class=\"%s\"" % cl[i]) if i < len(cl) and cl[i] else "",
+                                         (" data-ids=\"%s\"" % html.escape(il[i])) if i < len(il) and il[i] else "",
+                                         "".join(cel(c) for c in l))
                     for i, l in enumerate(linhas))
     pe = ("<tr class=\"total\">%s</tr>" % "".join(cel(c) for c in rodape)) if rodape else ""
     return "<table%s>%s<thead><tr>%s</tr></thead><tbody>%s%s</tbody></table>" % (

@@ -1588,6 +1588,8 @@ export class Editor {
    * seleciona as peças com essa marca e enquadra a câmera nelas.
    */
   _destacar(spec, silencioso = false) {
+    // sessao: a lista longa de ids veio pela memória da aba (as pendências do resumo da obra, 2.415 parafusos, 06/10)
+    if (spec === 'sessao') { try { spec = sessionStorage.getItem('metalica.destacar') || ''; } catch (e) { spec = ''; } }
     const m = /^(posicao|conjunto|peca|ids):(.+)$/.exec(String(spec || ''));
     if (!m) return 0;
     const chave = m[1];

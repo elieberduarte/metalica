@@ -573,6 +573,7 @@ function desenharPrevia() {
   const quando = (a.pdf || a.html || {}).alterado;
   const frame = a.html ? el('iframe', { src: `${a.html.url}?t=${encodeURIComponent(quando || '')}`, title: 'Prévia do resumo' }) : vazio('Sem a versão HTML deste resumo.');
   if (a.html && DOC_ATUAL === 'materiais') frame.addEventListener('load', () => ligarTrocas(frame));
+  if (a.html && DOC_ATUAL === 'obra') frame.addEventListener('load', () => ligarPendencias(frame));
   alvo.replaceChildren(
     el('div', { class: 'doc-barra' }, alternar, el('span', { class: 'quando', texto: quando ? `gerado em ${dataBR(quando)}` : '' }), el('span', { class: 'sep' }),
       a.pdf ? el('a', { class: 'botao-m principal', href: a.pdf.url, target: '_blank', rel: 'noopener', texto: 'Abrir o PDF', title: `detalhamento/${a.pdf.nome}` }) : null,
@@ -598,6 +599,32 @@ function ligarTrocas(frame) {
     b.title = 'Ver os parecidos do catálogo e trocar o perfil de compra';
     b.addEventListener('click', () => abrirTroca(b.dataset.perfil));
   });
+}
+
+/* As pendências do resumo da obra levam os ids das peças do modelo (06/10): o clique abre o 3D com elas em destaque.
+ * Lista curta vai na URL (destacar=ids:…, como o "Ver no 3D" dos esforços); a longa (os 2.415 parafusos soltos da
+ * Bella Casa) vai pela memória da aba, que o editor lê com destacar=sessao. */
+function ligarPendencias(frame) {
+  let doc;
+  try { doc = frame.contentDocument; } catch (e) { return; }
+  if (!doc || !doc.head) return;
+  const st = doc.createElement('style');
+  st.textContent = '@media screen{tr[data-ids]{cursor:pointer}tr[data-ids]:hover td{background:#eef4ff}'
+    + 'tr[data-ids] td:last-child::after{content:"  ver no 3D ↗";color:#0b3d91;font-weight:600;white-space:nowrap}}';
+  doc.head.append(st);
+  doc.querySelectorAll('tr[data-ids]').forEach((tr) => {
+    tr.title = 'Abrir o modelo 3D com estas peças em destaque';
+    tr.addEventListener('click', () => verNo3D(tr.dataset.ids));
+  });
+}
+
+function verNo3D(ids) {
+  const spec = 'ids:' + ids;
+  let destacar = spec;
+  if (spec.length > 3000) {
+    try { sessionStorage.setItem('metalica.destacar', spec); destacar = 'sessao'; } catch (e) { /* sem a memória da aba: vai na URL */ }
+  }
+  location.href = `/editor?projeto=${encodeURIComponent(PROJETO)}&destacar=${encodeURIComponent(destacar)}`;
 }
 
 async function abrirTroca(perfil) {
