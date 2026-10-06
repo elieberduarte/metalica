@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101b2e">
+<script src="/tema-janela.js"></script>
+<title>Acesso pelo celular — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230b3d91'/><rect x='11' y='5' width='10' height='22' rx='2' fill='none' stroke='%23fff' stroke-width='2'/></svg>">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<style>
+  .topo .acoes { margin-left: auto; }
+  .acesso { max-width: 980px; margin: 0 auto; padding: 16px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .acesso { grid-template-columns: 1fr; } }
+  .acesso .caixa { background: var(--painel); border: 1px solid var(--borda); border-radius: var(--raio); padding: 14px 16px; }
+  .acesso h2 { font-size: 14px; margin: 0 0 8px; color: var(--azul); }
+  .acesso p { margin: 0 0 8px; font-size: 13.5px; color: var(--texto2); }
+  .chave-linha { display: flex; align-items: center; gap: 12px; margin: 6px 0 10px; }
+  .chave-linha b { font-size: 15px; }
+  .interruptor { width: 48px; height: 28px; border-radius: 14px; border: 0; background: var(--borda-forte); position: relative; cursor: pointer; flex: none; }
+  .interruptor::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .interruptor.ligado { background: var(--verde-barra); }
+  .interruptor.ligado::after { left: 23px; }
+  #qr { display: grid; place-items: center; min-height: 260px; background: #fff; border-radius: var(--raio); border: 1px solid var(--borda); }
+  #qr svg { width: 240px; height: 240px; }
+  #qr .vazio { color: #56637a; font-size: 13px; text-align: center; padding: 20px; }
+  .endereco { font-family: var(--mono); font-size: 12.5px; word-break: break-all; color: var(--texto2); margin-top: 8px; }
+  .validade { font-size: 12.5px; color: var(--texto3); margin-top: 6px; }
+  table.aparelhos { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.aparelhos td, table.aparelhos th { border-bottom: 1px solid var(--borda); padding: 7px 6px; text-align: left; }
+  table.aparelhos th { color: var(--texto2); font-weight: 600; }
+  .aviso { background: var(--amarelo-fundo); color: var(--amarelo); border-radius: var(--raio-p); padding: 8px 10px; font-size: 13px; margin: 8px 0; }
+  .erro { background: var(--verm-fundo); color: var(--verm); border-radius: var(--raio-p); padding: 8px 10px; font-size: 13px; margin: 8px 0; }
+  ul.passos { margin: 4px 0 8px 18px; padding: 0; font-size: 13.5px; color: var(--texto2); }
+  ul.passos li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="10" y="4" width="12" height="24" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.2"/>
+      <path d="M14 24h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <h1>Acesso pelo celular<span>Consulta dos projetos pela rede Wi-Fi · desenvolvimento</span></h1>
+  </div>
+  <div class="acoes">
+    <button type="button" id="btn-tema" title="Alternar tema claro/escuro">Tema</button>
+    <button type="button" onclick="location.href='/'" title="Voltar à tela de projetos">← Projetos</button>
+  </div>
+</header>
+
+<main class="acesso">
+  <section class="caixa">
+    <h2>Ligar</h2>
+    <div class="chave-linha">
+      <button type="button" class="interruptor" id="interruptor" aria-label="Acesso pelo celular"></button>
+      <b id="estado-texto">…</b>
+    </div>
+    <p>Ligado, os celulares e tablets pareados consultam os projetos deste computador pela rede Wi-Fi: o modelo 3D,
+      os quantitativos, os resumos e as pranchas. <b>Só consulta</b>: nada do que se faz no celular altera um projeto.
+      Desligado, nada fica aberto na rede.</p>
+    <div id="mensagem"></div>
+    <h2 style="margin-top:14px">Como parear um aparelho</h2>
+    <ul class="passos">
+      <li>O celular tem de estar na <b>mesma rede Wi-Fi</b> deste computador (a rede de visitantes costuma separar os aparelhos).</li>
+      <li><b>VPN ligada</b> neste computador (NordVPN e parecidas) pode esconder o computador da rede: ligue nela a opção
+        de permitir a rede local (no NordVPN, <i>Descoberta na rede local</i>) ou desligue a VPN para parear.</li>
+      <li>Na primeira vez, o Windows pergunta se o programa pode usar a rede: escolha <b>Redes privadas</b> e permita.</li>
+      <li>Abra a câmera do celular e aponte para o QR code ao lado. Cada código vale uma vez, por 5 minutos.</li>
+      <li>No iPhone, depois de abrir, use <i>Compartilhar → Adicionar à Tela de Início</i>; no Android, o menu ⋮ → <i>Adicionar à tela inicial</i>.</li>
+    </ul>
+    <h2 style="margin-top:14px">Aparelhos pareados</h2>
+    <div id="aparelhos"><p>Carregando…</p></div>
+  </section>
+
+  <section class="caixa">
+    <h2>QR code para parear</h2>
+    <div id="qr"><div class="vazio">Ligue o acesso para ver o QR code.</div></div>
+    <div class="endereco" id="endereco"></div>
+    <div class="validade" id="validade"></div>
+    <button type="button" class="botao" id="btn-codigo" style="margin-top:10px;width:100%" disabled>Gerar outro QR code</button>
+    <div id="pacotes" style="margin-top:12px"></div>
+  </section>
+</main>
+
+<script src="/lib/qrcode.js"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var estado = null, venceEm = 0, relogio = null;
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function quando(iso) { if (!iso) return '—'; var d = new Date(iso); return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
+
+  function api(rota, corpo) {
+    return fetch(rota, corpo === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.erro || r.status); return j; }); });
+  }
+
+  function mensagem(texto, tipo) { $('#mensagem').innerHTML = texto ? '<div class="' + (tipo || 'aviso') + '">' + esc(texto) + '</div>' : ''; }
+
+  function desenhar(e) {
+    estado = e;
+    $('#interruptor').classList.toggle('ligado', !!e.ligado);
+    $('#estado-texto').textContent = e.ligado ? 'Ligado · porta ' + e.porta : 'Desligado';
+    $('#btn-codigo').disabled = !e.ligado;
+    if (!e.ligado) {
+      $('#qr').innerHTML = '<div class="vazio">Ligue o acesso para ver o QR code.</div>';
+      $('#endereco').textContent = ''; $('#validade').textContent = '';
+    }
+    var ap = e.aparelhos || [];
+    $('#aparelhos').innerHTML = ap.length ? '<table class="aparelhos"><tr><th>Aparelho</th><th>Pareado</th><th>Último acesso</th><th></th></tr>' +
+      ap.map(function (a) {
+        return '<tr><td>' + esc(a.nome) + ' <a href="#" data-renomear="' + esc(a.id) + '" title="Dar outro nome">✎</a></td><td>' + quando(a.criado) + '</td><td>' +
+          quando(a.visto) + (a.ip ? ' <span style="color:var(--texto3)">' + esc(a.ip) + '</span>' : '') +
+          '</td><td><button class="botao" data-remover="' + esc(a.id) + '">Remover</button></td></tr>';
+      }).join('') + '</table>' : '<p>Nenhum aparelho pareado ainda.</p>';
+    var pac = e.pacotes || {}, nomes = Object.keys(pac);
+    $('#pacotes').innerHTML = nomes.length ? '<p style="font-size:12.5px"><b>Preparando para o celular:</b> ' + nomes.map(function (s) {
+      var p = pac[s]; return esc(s) + ' (' + (p.situacao === 'erro' ? 'erro: ' + esc(p.erro) : Math.round((p.progresso || 0) * 100) + '%') + ')';
+    }).join(', ') + '</p>' : '';
+  }
+
+  function qr(dados) {
+    var q = qrcode(0, 'M');
+    q.addData(dados.url);
+    q.make();
+    $('#qr').innerHTML = q.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+    $('#endereco').innerHTML = (dados.urls || [dados.url]).map(esc).join('<br>');
+    venceEm = Date.now() + dados.validade_s * 1000;
+    clearInterval(relogio);
+    relogio = setInterval(function () {
+      var s = Math.max(0, Math.round((venceEm - Date.now()) / 1000));
+      $('#validade').textContent = s ? 'Este código vale por mais ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + '.' : 'Código vencido: gere outro.';
+      if (!s) clearInterval(relogio);
+    }, 1000);
+  }
+
+  function novoCodigo() { return api('/api/celular/codigo', {}).then(qr).catch(function (e) { mensagem(e.message, 'erro'); }); }
+
+  $('#interruptor').onclick = function () {
+    mensagem('');
+    api('/api/celular/ligar', { ligado: !(estado && estado.ligado) }).then(function (e) {
+      desenhar(e);
+      if (e.ligado) novoCodigo();
+    }).catch(function (e) { mensagem(e.message, 'erro'); });
+  };
+  $('#btn-codigo').onclick = novoCodigo;
+  $('#aparelhos').onclick = function (ev) {
+    var t = ev.target;
+    if (t.dataset.remover) {
+      if (!confirm('Remover este aparelho? Ele deixa de ver os projetos na hora e terá de ler um QR code novo.')) return;
+      api('/api/celular/remover', { id: t.dataset.remover }).then(desenhar);
+    } else if (t.dataset.renomear) {
+      ev.preventDefault();
+      var nome = prompt('Nome do aparelho (ex.: iPhone do Elieber):');
+      if (nome) api('/api/celular/renomear', { id: t.dataset.renomear, nome: nome }).then(desenhar);
+    }
+  };
+  var tema = $('#btn-tema');
+  if (tema) tema.onclick = function () {
+    var atual = document.documentElement.getAttribute('data-tema') === 'escuro' ? 'claro' : 'escuro';
+    document.documentElement.setAttribute('data-tema', atual);
+    try { localStorage.setItem('galpao.tema', atual); } catch (e) { /* sem armazenamento */ }
+  };
+
+  api('/api/celular/estado').then(function (e) { desenhar(e); if (e.ligado) novoCodigo(); }).catch(function (e) { mensagem(e.message, 'erro'); });
+  setInterval(function () { api('/api/celular/estado').then(desenhar).catch(function () {}); }, 5000);
+})();
+</script>
+<script src="/vivo.js"></script>
+</body>
+</html>

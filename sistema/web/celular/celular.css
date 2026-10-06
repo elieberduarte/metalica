@@ -37,6 +37,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 #subtitulo { font-size: 12px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .icone { border: 0; background: none; padding: 8px; margin-left: -6px; border-radius: 50%; display: grid; place-items: center; }
 .icone:active { background: rgba(255, 255, 255, .15); }
+.icone[hidden] { display: none; }
 .chip {
   border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .1); color: inherit;
   border-radius: 999px; padding: 4px 10px; font-size: 12px; display: flex; align-items: center; gap: 6px; white-space: nowrap;
@@ -137,6 +138,16 @@ details > summary::-webkit-details-marker { display: none; }
 .documento { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; }
 .documento .icone-doc { width: 40px; height: 48px; border-radius: 6px; background: #b3261e; color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; flex: none; }
 
+/* ---------------------------------------------------------------- leitor de PDF */
+.leitor { position: fixed; inset: calc(var(--topo-h) + env(safe-area-inset-top, 0px)) 0 0 0; display: flex; flex-direction: column; background: #525a66; }
+.folha-pdf { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
+#pagina-pdf { display: inline-block; transform-origin: 0 0; }
+#pagina-pdf canvas { display: block; background: #fff; }
+.leitor-barra { display: flex; align-items: center; gap: 8px; padding: 8px 12px calc(8px + var(--seg-b)); background: var(--painel); border-top: 1px solid var(--borda); }
+.leitor-barra .botao { min-width: 44px; font-size: 18px; padding: 6px 12px; }
+.carregando-pdf { position: absolute; inset: 0 0 60px 0; display: grid; place-items: center; color: #fff; pointer-events: none; }
+.carregando-pdf[hidden] { display: none; }
+
 /* ---------------------------------------------------------------- tablet */
 @media (min-width: 700px) {
   :root { --abas-h: 52px; }
@@ -153,6 +164,7 @@ details > summary::-webkit-details-marker { display: none; }
   .grade-num { grid-template-columns: repeat(4, 1fr); }
   .folhas { grid-template-columns: repeat(3, 1fr); }
   .palco { inset: calc(var(--topo-h) + env(safe-area-inset-top, 0px) + var(--abas-h)) 0 0 0; }
+  body.sem-abas .leitor { inset: calc(var(--topo-h) + env(safe-area-inset-top, 0px)) 0 0 0; }
   #folha { left: auto; right: 16px; bottom: 16px; width: 380px; border-radius: 16px; max-height: calc(100vh - 160px); }
   .segmentos { margin: 0 0 12px; padding: 0; }
 }
