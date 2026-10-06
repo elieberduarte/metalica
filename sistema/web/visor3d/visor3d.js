@@ -529,22 +529,23 @@ export class Visor3D {
       this._pisoLiso = new THREE.MeshBasicMaterial({ color: '#aebbcd', opacity: 0.45, transparent: true, depthWrite: false,
                                                      side: THREE.FrontSide, alphaMap: new THREE.CanvasTexture(cv) });
     }
-    // escuro: a cor do fundo do Desenho 2D (web/cad/nucleo/tela.js) e a grade dele (branco a 6% a cada 1 m, 13% a cada
-    // 10 m), em linhas de 1 pixel; quando ficam mais juntas que os pixels (longe), somem em vez de virar moiré.
+    // escuro: a cor do fundo do Desenho 2D (web/cad/nucleo/tela.js) e só as linhas principais da grade dele (branco a
+    // 13% a cada 10 m; a de 1 m enchia o chão de linhas, 06/10), de 1 pixel, e só em volta do modelo (somem um pouco
+    // além dele; o chão continua liso até o horizonte); longe, quando se juntam, somem cedo.
     // A saída do renderizador é linear: as cores vão como estão na tela.
     const f = new THREE.Color(FUNDO_ESCURO);
     this._pisoGrade = new THREE.ShaderMaterial({
-      uniforms: { uFundo: { value: new THREE.Vector3(f.r, f.g, f.b) } },
+      uniforms: { uFundo: { value: new THREE.Vector3(f.r, f.g, f.b) }, uCentro: { value: new THREE.Vector2() }, uRaio: { value: 1e9 } },
       vertexShader: `varying vec2 vXY;
         void main() { vec4 w = modelMatrix * vec4(position, 1.0); vXY = w.xy; gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `uniform vec3 uFundo; varying vec2 vXY;
+      fragmentShader: `uniform vec3 uFundo; uniform vec2 uCentro; uniform float uRaio; varying vec2 vXY;
         float grade(float passo) {
           vec2 q = vXY / passo, w = fwidth(q);
           vec2 d = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-6));
-          return (1.0 - min(min(d.x, d.y), 1.0)) * (1.0 - smoothstep(0.12, 0.4, max(w.x, w.y)));
+          return (1.0 - min(min(d.x, d.y), 1.0)) * (1.0 - smoothstep(0.04, 0.15, max(w.x, w.y)));
         }
         void main() {
-          float a = max(grade(1000.0) * 0.06, grade(10000.0) * 0.13);
+          float a = grade(10000.0) * 0.13 * (1.0 - smoothstep(uRaio * 0.55, uRaio, distance(vXY, uCentro)));
           gl_FragColor = vec4(mix(uFundo, vec3(1.0), a), 1.0);
         }`,
       depthWrite: false, side: THREE.FrontSide });
@@ -565,6 +566,10 @@ export class Visor3D {
     const lado = Math.max(s.x, s.y, 10000) * 40;          // até o horizonte (a borda some no degradê ou na grade)
     this.piso.scale.set(lado, lado, 1);
     this.piso.position.set(c.x, c.y, cx.min.z - 10);
+    if (this._pisoGrade) {
+      this._pisoGrade.uniforms.uCentro.value.set(c.x, c.y);
+      this._pisoGrade.uniforms.uRaio.value = Math.max(s.x, s.y) * 0.85 + 15000;
+    }
     this.pedirQuadro();
   }
 
