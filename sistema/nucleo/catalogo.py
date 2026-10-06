@@ -627,6 +627,67 @@ def similar(med) -> Optional[Item]:
     return None
 
 
+def _propriedades(forma: str, med, it: Optional[Item] = None) -> Optional[tuple]:
+    """(A cm², Ix cm⁴, Iy cm⁴): do tubo pelas medidas; do laminado pela tabela do item."""
+    if forma in ("redondo", "retangular"):
+        return _propriedades_tubo(forma, med)
+    if it is not None and it.A and it.Ix:
+        return it.A, it.Ix, float(it.dados.get("Iy") or 0.0)
+    return None
+
+
+def parecidos(nome, limite: int = 40) -> Optional[dict]:
+    """Os itens do catálogo parecidos com o perfil do projeto, para a troca na compra (06/10): a mesma forma, os lados
+    até 25 % diferentes, cada um com o kg/m, a área, as inércias e se atende (área e inércias pelo menos as do perfil
+    do projeto, 1 % de folga); os que atendem primeiro, do mais leve ao mais pesado. None se o perfil não tem forma
+    reconhecida (o nome não diz as medidas)."""
+    tipo = nome_do_ifc(nome)
+    med = _medidas(tipo)
+    base = item(tipo)
+    if med is None and base is not None:
+        med = _medidas_do_item(base)
+    if med is None:
+        return None
+    forma, m = med
+    cat = do_ifc(nome) or {}
+    if base is None and forma == "I":
+        base = cat.get("item")
+    alvo = _propriedades(forma, m, base)
+    if forma == "I":
+        if base is None:
+            return None
+        d = base.dados
+        lados = (float(d.get("d") or 0.0), float(d.get("bf") or 0.0))
+    else:
+        lados = tuple(m[:-1])
+    fam = {"I": "I", "redondo": "tubo", "retangular": "tubo", "L": "L"}[forma]
+    itens_ = []
+    for c in itens(fam):
+        mc = _medidas_do_item(c)
+        if mc is None or mc[0] != forma or not c.massa:
+            continue
+        if forma == "I":
+            lc = (float(c.dados.get("d") or 0.0), float(c.dados.get("bf") or 0.0))
+            if not all(lc):
+                continue
+        else:
+            lc = tuple(mc[1][:-1])
+        if any(abs(x - y) > 0.25 * y for x, y in zip(lc, lados)):
+            continue
+        p = _propriedades(forma, mc[1], c)
+        atende = bool(p and alvo and all(a >= 0.99 * b for a, b in zip(p, alvo) if b))
+        itens_.append({"nome": c.nome, "kg_m": round(float(c.massa), 3),
+                       "A": round(p[0], 2) if p else None, "Ix": round(p[1], 1) if p else None, "Iy": round(p[2], 1) if p else None,
+                       "atende": atende, "fabricante": ", ".join((c.dados.get("fabricantes") or [])[:2]),
+                       "_ordem": (not atende, float(c.massa), sum(abs(x - y) for x, y in zip(lc, lados)))})
+    itens_.sort(key=lambda x: x["_ordem"])
+    for x in itens_:
+        x.pop("_ordem")
+    return {"ifc": tipo, "automatico": cat.get("catalogo") or "", "fonte": cat.get("fonte") or "",
+            "projeto": {"A": round(alvo[0], 2), "Ix": round(alvo[1], 1), "Iy": round(alvo[2], 1)} if alvo else None,
+            "itens": itens_[:limite]}
+
+
 def _contorno_nominal(it: Optional[Item], med) -> Optional[tuple]:
     """(maior, menor) lado da caixa da seção em mm: altura × largura das mesas do W, os
     lados do tubo e da cantoneira, o diâmetro do tubo redondo duas vezes."""

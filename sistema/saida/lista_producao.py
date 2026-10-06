@@ -249,11 +249,19 @@ def comparar_dobras(perfis: Sequence[dict]) -> dict:
 
 def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: Dict[str, int],
            pecas=None, barra: float = 0.0, projeto: Optional[dict] = None,
-           nomes_conjuntos: Optional[Dict[str, str]] = None) -> dict:
+           nomes_conjuntos: Optional[Dict[str, str]] = None, escolhas: Optional[Dict[str, str]] = None) -> dict:
     """A lista inteira, pronta para gravar em JSON. `barra` em mm (0 = automático);
-    `nomes_conjuntos`: marca do conjunto → nome de produção."""
+    `nomes_conjuntos`: marca do conjunto → nome de produção; `escolhas`: tipo do perfil no IFC → item do catálogo
+    escolhido para a compra (a troca do resumo de materiais, 06/10), que dá o nome e o kg/m."""
     from nucleo2d.detalhar import CATEGORIAS
     lista = _ordenar(posicoes)
+    escolhidos = _itens_escolhidos(escolhas)
+    if escolhidos:
+        from nucleo.catalogo import nome_do_ifc as _tipo
+        for p in lista:
+            it = escolhidos.get(_tipo(p.perfil))
+            if it is not None and p.classe.startswith("barra") and p.comprimento:
+                p.peso = float(it.massa) * float(p.comprimento) / 1000.0
     por_marca = {}
     for p in lista:
         por_marca[p.marca] = p
@@ -338,6 +346,9 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         g["catalogo"] = cat["catalogo"] if cat else ""
         g["kg_m_catalogo"] = round(cat["kg_m"], 3) if cat else None
         g["fonte_kg_m"] = cat["fonte"] if cat else ""
+        if g["perfil"] in escolhidos:
+            it = escolhidos[g["perfil"]]
+            g["catalogo"], g["kg_m_catalogo"], g["fonte_kg_m"] = it.nome, round(float(it.massa), 3), "escolhido"
         lista_perfis.append(g)
     lista_perfis.sort(key=lambda g: (-g["peso"], g["perfil"]))
     dobrados = comparar_dobras(lista_perfis)
@@ -470,9 +481,66 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
 
 # ============================================================ arquivos
 
+def _itens_escolhidos(escolhas) -> dict:
+    """{tipo do perfil no IFC: Item do catálogo} das escolhas que existem no catálogo e têm kg/m."""
+    from nucleo.catalogo import item
+    saida = {}
+    for tipo, nome in (escolhas or {}).items():
+        it = item(nome) if nome else None
+        if it is not None and it.massa:
+            saida[tipo] = it
+    return saida
+
+
+def trocar_na_lista(lista: dict, escolhas: Optional[Dict[str, str]]) -> dict:
+    """Aplica as escolhas de compra na lista já gravada, sem levantar o modelo de novo: o nome do catálogo e o kg/m
+    do perfil, o peso das posições dele e os totais. O perfil sem escolha volta ao automático (o catálogo ou o
+    similar). Devolve a própria lista."""
+    from nucleo.catalogo import nome_do_ifc, do_ifc
+    escolhidos = _itens_escolhidos(escolhas)
+    kg_m: Dict[str, float] = {}
+    for g in lista.get("perfis") or []:
+        tipo = g["perfil"]
+        cat = do_ifc(tipo)
+        if tipo in escolhidos:
+            it = escolhidos[tipo]
+            g["catalogo"], g["kg_m_catalogo"], g["fonte_kg_m"] = it.nome, round(float(it.massa), 3), "escolhido"
+        else:
+            g["catalogo"] = cat["catalogo"] if cat else ""
+            g["kg_m_catalogo"] = round(cat["kg_m"], 3) if cat else None
+            g["fonte_kg_m"] = cat["fonte"] if cat else ""
+        if g["kg_m_catalogo"]:
+            kg_m[tipo] = float(g["kg_m_catalogo"])
+    peso_perfil: Dict[str, float] = collections.Counter()
+    for li in lista.get("posicoes") or []:
+        tipo = nome_do_ifc(li.get("perfil") or "")
+        if tipo in kg_m and li.get("comprimento") and str(li.get("classe") or "").startswith("Barra"):
+            li["peso"] = round(kg_m[tipo] * float(li["comprimento"]) / 1000.0, 3)
+            li["peso_total"] = round(li["peso"] * int(li.get("quantidade") or 0), 2)
+        if tipo in kg_m:
+            peso_perfil[(tipo, li.get("material"))] += float(li.get("peso_total") or 0.0)
+    for g in lista.get("perfis") or []:
+        chave = (g["perfil"], g.get("material"))
+        if chave in peso_perfil:
+            g["peso"] = round(peso_perfil[chave], 1)
+            g["kg_m"] = round(g["peso"] / g["comprimento_m"], 3) if g.get("comprimento_m") else 0.0
+    t = lista.get("totais") or {}
+    por_cat = collections.Counter()
+    for li in lista.get("posicoes") or []:
+        por_cat[li.get("categoria") or "OUTROS"] += float(li.get("peso_total") or 0.0)
+    peso = sum(por_cat.values())
+    t["peso"] = round(peso, 1)
+    for c in t.get("categorias") or []:
+        c["peso"] = round(por_cat.get(c["categoria"], 0.0), 1)
+        c["pct"] = round(100.0 * c["peso"] / peso, 1) if peso else 0.0
+    return lista
+
+
 def _catalogo_texto(g: dict) -> str:
     """O cruzamento do perfil com o catálogo, para a tabela: o item equivalente, ou de onde veio o kg/m."""
     if g.get("catalogo"):
+        if g.get("fonte_kg_m") == "escolhido":
+            return "escolhido: %s" % g["catalogo"]
         return ("similar: %s" % g["catalogo"]) if g.get("fonte_kg_m") == "similar" else g["catalogo"]
     if g.get("fonte_kg_m") == "calculado":
         return "fora do catálogo e sem similar (kg/m pelas medidas)"

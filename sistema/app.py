@@ -1065,7 +1065,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
-                                      nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"))
+                                      nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"), escolhas=_perfis_compra(s))
         lista["pre_moldados"] = r.get("fora_do_aco") or []
         lista["estrutura_a_conferir"] = r.get("estrutura_a_conferir") or []
         arquivos = lista_producao.gravar(pasta, lista, r["objetos_posicoes"], r["acessorios"])
@@ -2054,7 +2054,8 @@ def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
         _progresso(s, "lista de materiais…")
         categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
-                                      projeto=_identificacao_do_projeto(s), nomes_conjuntos=nomes.get("ifc_conjuntos"))
+                                      projeto=_identificacao_do_projeto(s), nomes_conjuntos=nomes.get("ifc_conjuntos"),
+                                      escolhas=_perfis_compra(s))
         lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
         _progresso(s, "montando os resumos…")
         R = resumos.levantar_resumos(doc, lev, lista, nomes, dados)
@@ -2077,6 +2078,52 @@ def _identificacao_do_projeto(s: str) -> dict:
     return {k: p.get(k, "") for k in ("nome", "cliente", "local", "responsavel", "origem_ifc")}
 
 
+def _perfis_compra(s: str) -> dict:
+    """{tipo do perfil no IFC: item do catálogo} escolhidos para a compra no resumo de materiais (06/10)."""
+    return dict(_gerente().ler(s).get("perfis_compra") or {})
+
+
+def parecidos_do_perfil(s: str, perfil: str) -> dict:
+    """GET /api/projetos/<s>/materiais/parecidos?perfil=…: os itens do catálogo parecidos com o perfil do projeto
+    (a mesma forma, os lados até 25 % diferentes, se atendem: área e inércias pelo menos as do projeto) e o escolhido."""
+    from nucleo import catalogo
+    r = catalogo.parecidos(perfil)
+    if r is None:
+        raise ErroDeDados("o perfil %s não diz as medidas no nome: não há como procurar um parecido no catálogo." % perfil)
+    r["escolhido"] = _perfis_compra(s).get(r["ifc"]) or ""
+    return r
+
+
+def gravar_perfil_compra(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/materiais/perfil-compra {perfil, catalogo}: grava a troca no projeto (catalogo vazio volta
+    ao automático) e aplica na lista gravada na hora — nome e kg/m do perfil, peso das posições e totais —, sem levantar
+    o modelo de novo. Os resumos se refazem pelo botão deles."""
+    from nucleo import catalogo
+    from saida import lista_producao
+    tipo = catalogo.nome_do_ifc(str(corpo.get("perfil") or ""))
+    nome = str(corpo.get("catalogo") or "").strip()
+    if not tipo:
+        raise ErroDeDados("falta o perfil.")
+    it = catalogo.item(nome) if nome else None
+    if nome and (it is None or not it.massa):
+        raise ErroDeDados("%s não está no catálogo com kg/m." % nome)
+    g = _gerente()
+    escolhas = _perfis_compra(s)
+    if it is not None:
+        escolhas[tipo] = it.nome
+    else:
+        escolhas.pop(tipo, None)
+    g._atualizar(s, perfis_compra=escolhas)
+    pasta = os.path.join(g._existente(s), "detalhamento")
+    caminho = os.path.join(pasta, lista_producao.ARQUIVO_JSON)
+    if os.path.exists(caminho):
+        with open(caminho, encoding="utf-8") as f:
+            lista = json.load(f)
+        lista_producao.trocar_na_lista(lista, escolhas)
+        lista_producao.gravar(pasta, lista, [], {})
+    return {"perfil": tipo, "catalogo": it.nome if it is not None else "", "escolhas": escolhas}
+
+
 def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] = None) -> dict:
     """A lista de materiais do projeto (GET /api/projetos/<s>/materiais). Lê a gravada pelo
     último detalhamento; sem ela, ou com `recalcular`, levanta de novo do modelo e grava.
@@ -2097,7 +2144,7 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
         lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False, ajustes=_ajustes_furos(s), nomes=nomes)
         lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
-                                      nomes_conjuntos=nomes.get("ifc_conjuntos"))
+                                      nomes_conjuntos=nomes.get("ifc_conjuntos"), escolhas=_perfis_compra(s))
         lista["pre_moldados"] = lev.get("fora_do_aco") or []
         lista["estrutura_a_conferir"] = lev.get("estrutura_a_conferir") or []
         lista_producao.gravar(pasta, lista, lev["posicoes"], lev["acessorios"])
@@ -3928,6 +3975,9 @@ class Handler(BaseHTTPRequestHandler):
                 if len(partes) == 2 and partes[1] == "materiais":
                     q = parse_qs(urlparse(self.path).query)
                     return self._json(lista_de_materiais(partes[0], recalcular=q.get("recalcular", ["0"])[0] in ("1", "true")))
+                if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "parecidos":
+                    q = parse_qs(urlparse(self.path).query)
+                    return self._json(parecidos_do_perfil(partes[0], (q.get("perfil") or [""])[0]))
                 if len(partes) == 3 and partes[1] == "desenhos":
                     return self._json({"desenho": _gerente().abrir_desenho(partes[0], partes[2])})
                 return self._json(projeto_completo(partes[0]))
@@ -4054,6 +4104,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(dimensionar_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "materiais":
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
+                if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "perfil-compra":
+                    return self._json(gravar_perfil_compra(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(gerar_resumos_projeto(partes[0], corpo))
                 if len(partes) in (2, 3) and partes[1] in ("comercial", "orcamento") and not COMERCIAL:

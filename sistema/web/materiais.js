@@ -572,12 +572,72 @@ function desenharPrevia() {
       onclick: () => { DOC_ATUAL = k; desenharPrevia(); } })));
   const quando = (a.pdf || a.html || {}).alterado;
   const frame = a.html ? el('iframe', { src: `${a.html.url}?t=${encodeURIComponent(quando || '')}`, title: 'Prévia do resumo' }) : vazio('Sem a versão HTML deste resumo.');
+  if (a.html && DOC_ATUAL === 'materiais') frame.addEventListener('load', () => ligarTrocas(frame));
   alvo.replaceChildren(
     el('div', { class: 'doc-barra' }, alternar, el('span', { class: 'quando', texto: quando ? `gerado em ${dataBR(quando)}` : '' }), el('span', { class: 'sep' }),
       a.pdf ? el('a', { class: 'botao-m principal', href: a.pdf.url, target: '_blank', rel: 'noopener', texto: 'Abrir o PDF', title: `detalhamento/${a.pdf.nome}` }) : null,
       a.html ? el('button', { type: 'button', class: 'botao-m', texto: 'Imprimir', onclick: () => { try { frame.contentWindow.print(); } catch (e) { window.open(a.html.url, '_blank'); } } }) : null,
       el('button', { type: 'button', class: 'botao-m', texto: 'Abrir pasta', onclick: abrirPasta })),
     frame);
+}
+
+/* ------------------------------------------------------------------- troca do perfil de compra (06/10)
+ * No resumo de materiais, o nome de cada perfil abre os parecidos do catálogo: a mesma forma, os lados até 25 %
+ * diferentes, se atendem (área e inércias pelo menos as do projeto), o kg/m. A escolha fica gravada no projeto,
+ * a lista se atualiza na hora e os resumos se refazem. */
+function ligarTrocas(frame) {
+  let doc;
+  try { doc = frame.contentDocument; } catch (e) { return; }
+  if (!doc || !doc.head) return;
+  const st = doc.createElement('style');
+  st.textContent = '.trocar-perfil[data-perfil]{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}'
+    + '.trocar-perfil[data-perfil]:hover{color:#0b3d91}.trocar-perfil[data-perfil]::after{content:" ⇄";font-weight:400;color:#0b3d91}'
+    + '@media print{.trocar-perfil[data-perfil]::after{content:none}.trocar-perfil[data-perfil]{text-decoration:none}}';
+  doc.head.append(st);
+  doc.querySelectorAll('.trocar-perfil[data-perfil]').forEach((b) => {
+    b.title = 'Ver os parecidos do catálogo e trocar o perfil de compra';
+    b.addEventListener('click', () => abrirTroca(b.dataset.perfil));
+  });
+}
+
+async function abrirTroca(perfil) {
+  let r;
+  try { r = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais/parecidos?perfil=${encodeURIComponent(perfil)}`); }
+  catch (e) { aviso(e.message, true); return; }
+  const atual = r.escolhido || r.automatico;
+  const dlg = el('dialog', { class: 'troca' });
+  const fechar = () => { dlg.close(); dlg.remove(); };
+  const usar = async (nome) => {
+    fechar();
+    aviso(nome ? `${r.ifc} → ${nome}: lista atualizada; refazendo os resumos…` : `${r.ifc}: de volta ao automático; refazendo os resumos…`);
+    try {
+      await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais/perfil-compra`, { perfil: r.ifc, catalogo: nome });
+      const form = document.querySelector('.form-resumo');
+      if (form) form.requestSubmit(); else carregar(false);
+    } catch (e) { aviso(e.message, true); }
+  };
+  const pj = r.projeto;
+  const linhas = r.itens.map((x) => el('tr', { class: (x.nome === atual ? 'atual ' : '') + (x.atende ? '' : 'nao') },
+    el('td', { texto: x.nome + (x.nome === atual ? (r.escolhido ? '  (escolhido)' : '  (automático)') : '') }),
+    el('td', { texto: n(x.kg_m, 2) }), el('td', { texto: x.A == null ? '—' : n(x.A, 2) }),
+    el('td', { texto: x.Ix == null ? '—' : n(x.Ix, 0) }), el('td', { texto: x.Iy == null ? '—' : n(x.Iy, 0) }),
+    el('td', { class: 'esq', texto: x.atende ? 'atende' : 'menor que o projeto' }),
+    el('td', { class: 'esq', texto: x.fabricante || '' }),
+    el('td', {}, x.nome === atual ? '' : el('button', { type: 'button', class: 'botao-m', texto: 'Usar', onclick: () => usar(x.nome) }))));
+  dlg.append(
+    el('h3', { texto: `Trocar ${r.ifc} por um parecido do catálogo` }),
+    el('p', { class: 'sub', texto: (pj ? `No projeto (IFC): A ${n(pj.A, 2)} cm² · Ix ${n(pj.Ix, 0)} cm⁴ · Iy ${n(pj.Iy, 0)} cm⁴. ` : '')
+      + `Hoje na compra: ${atual || 'o próprio perfil do IFC (fora do catálogo)'}${r.escolhido ? ' (escolhido)' : ''}. `
+      + 'Os que atendem (área e inércias pelo menos as do projeto) vêm primeiro, do mais leve ao mais pesado. A troca muda o nome e o kg/m da compra; a geometria e o comprimento continuam os do modelo.' }),
+    el('div', { class: 'rol' }, el('table', {},
+      el('thead', {}, el('tr', {}, ...['Item do catálogo', 'kg/m', 'A (cm²)', 'Ix (cm⁴)', 'Iy (cm⁴)', 'Projeto', 'Fabricante', ''].map((t) => el('th', { texto: t })))),
+      el('tbody', {}, ...(linhas.length ? linhas : [el('tr', {}, el('td', { colspan: '8', texto: 'Nada parecido no catálogo.' }))])))),
+    el('div', { class: 'rodape' },
+      r.escolhido ? el('button', { type: 'button', class: 'botao-m', texto: `Voltar ao automático${r.automatico ? ' (' + r.automatico + ')' : ''}`, onclick: () => usar('') }) : null,
+      el('button', { type: 'button', class: 'botao-m principal', texto: 'Fechar', onclick: fechar })));
+  dlg.addEventListener('cancel', () => dlg.remove());
+  document.body.append(dlg);
+  dlg.showModal();
 }
 
 async function gerarResumos(valores, botao, estado) {

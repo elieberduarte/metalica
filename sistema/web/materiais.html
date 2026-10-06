@@ -124,6 +124,19 @@
   .doc-barra .sep { flex: 1; }
   .doc-barra .quando { font-size: 12px; color: var(--texto3); }
   .doc-previa iframe { flex: 1; width: 100%; min-height: 68vh; border: 1px solid var(--borda); border-radius: var(--raio); background: #fff; }
+  /* trocar o perfil de compra pelo parecido do catálogo (06/10) */
+  dialog.troca { border: 1px solid var(--borda-forte); border-radius: var(--raio); background: var(--painel); color: var(--texto); padding: 16px 18px; width: min(900px, 94vw); max-height: 88vh; }
+  dialog.troca::backdrop { background: rgba(0, 0, 0, .45); }
+  dialog.troca h3 { margin: 0 0 4px; font-size: 16px; }
+  dialog.troca .sub { margin: 0 0 10px; font-size: 12.5px; color: var(--texto2); }
+  dialog.troca .rol { overflow: auto; max-height: 58vh; border: 1px solid var(--borda); border-radius: var(--raio-p); }
+  dialog.troca table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  dialog.troca th { position: sticky; top: 0; background: var(--painel2); font-weight: 600; }
+  dialog.troca th, dialog.troca td { padding: 5px 8px; border-bottom: 1px solid var(--borda); text-align: right; white-space: nowrap; }
+  dialog.troca th:first-child, dialog.troca td:first-child, dialog.troca td.esq { text-align: left; }
+  dialog.troca tr.nao td { color: var(--texto3); }
+  dialog.troca tr.atual td { font-weight: 600; background: var(--painel2); }
+  dialog.troca .rodape { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
   .numeros-resumo { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 4px; }
   .numeros-resumo div { padding: 8px 10px; border: 1px solid var(--borda); border-radius: var(--raio-p); background: var(--painel2); font-size: 12px; color: var(--texto2); }
   .numeros-resumo b { display: block; font-size: 16px; color: var(--texto); font-variant-numeric: tabular-nums; }

@@ -61,3 +61,30 @@ def test_trecho_reto_com_meia_esquadria_nao_e_curva():
     det.analisar(pos)
     assert pos.classe == "barra", (pos.classe, pos.observacoes)
     assert abs(pos.comprimento - (L + d)) < 2, pos.comprimento
+
+
+def test_chapa_vai_para_a_comercial():
+    from saida.resumos import chapa_comercial, _chapas_por_rotulo
+    assert chapa_comercial(3.0) == 3.0 and chapa_comercial(19.1) == 19.05
+    assert chapa_comercial(10.3) == 12.7 and chapa_comercial(5.6) == 6.3      # nunca mais fina que o projeto
+    g = _chapas_por_rotulo([{"espessura": 10.0, "material": "A36", "peso": 78.5, "pecas": 2, "area_m2": 1.0},
+                            {"espessura": 11.2, "material": "A36", "peso": 87.9, "pecas": 1, "area_m2": 1.0}])
+    assert len(g) == 1 and g[0]["polegada"] == '1/2"' and g[0]["modelo"] == "10,00mm, 11,20mm"
+    assert abs(g[0]["kg_compra"] - 2.0 * 12.7 * 7.85) < 0.01 and abs(g[0]["kg"] - 166.4) < 0.01
+
+
+def test_parecidos_e_troca_na_lista():
+    r = cat.parecidos("X:SHS 225x225x6.4:1")
+    assert r["automatico"] == "TQ 220×220×7,1" and r["itens"][0]["atende"]
+    assert all(not x["atende"] for x in r["itens"] if x["nome"].startswith("TQ 220×220×6,4"))
+    from saida.lista_producao import trocar_na_lista
+    lista = {"perfis": [{"perfil": "SHS 225x225x6.4", "material": "A36", "comprimento_m": 2.0, "peso": 86.2, "kg_m": 43.1}],
+             "posicoes": [{"perfil": "X:SHS 225x225x6.4:1", "material": "A36", "classe": "Barra", "categoria": "BARRAS",
+                           "comprimento": 1000, "quantidade": 2, "peso": 43.1, "peso_total": 86.2}],
+             "totais": {"peso": 86.2, "categorias": [{"categoria": "BARRAS", "peso": 86.2, "pct": 100.0}]}}
+    trocar_na_lista(lista, {"SHS 225x225x6.4": "TQ 240×240×6,4"})
+    g = lista["perfis"][0]
+    assert g["catalogo"] == "TQ 240×240×6,4" and g["fonte_kg_m"] == "escolhido" and abs(g["peso"] - 92.2) < 0.01
+    assert abs(lista["totais"]["peso"] - 92.2) < 0.01
+    trocar_na_lista(lista, {})                                                   # volta ao automático (o similar)
+    assert lista["perfis"][0]["catalogo"] == "TQ 220×220×7,1" and abs(lista["perfis"][0]["peso"] - 93.2) < 0.01
