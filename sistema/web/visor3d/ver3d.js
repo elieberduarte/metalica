@@ -78,6 +78,15 @@ function avisarDivisao() {
 function selecionarDaDivisao(pedido) {
   if (!visor || !visor.fichas) return;
   const F = visor.fichas, o = visor.cabecalho.origem;
+  // clicou fora no 2D (a seleção dele ficou vazia): a do 3D sai também (06/10)
+  if (pedido.limpar) {
+    if (visor.selecaoVarias.size) {
+      visor.selecionarVarias([], false);
+      if (painelAtual === 'ficha') fecharPainel();
+      situacao(situacaoBase);
+    }
+    return;
+  }
   let ids = [];
   if (pedido.destacar) {
     const m = /^(posicao|conjunto|peca|ids|origem2d|pm):(.+)$/.exec(String(pedido.destacar));
@@ -181,7 +190,8 @@ async function abrir() {
   const ms = Math.round(performance.now() - t0);
   $('#carregando').remove();
   $('#ferramentas').hidden = false;
-  situacao(`Modo ver · ${nf(visor.nPecas)} peças · aberto em ${nf(ms / 1000, 1)} s · Editar carrega o editor completo`);
+  situacaoBase = `Modo ver · ${nf(visor.nPecas)} peças · aberto em ${nf(ms / 1000, 1)} s · Editar carrega o editor completo`;
+  situacao(situacaoBase);
   const vista = vistaGuardada();
   if (vista) {
     visor.definirCamera(vista);
@@ -199,6 +209,7 @@ async function abrir() {
   if (NA_DIVIDIDA) { try { window.parent.postMessage({ metalica: 'pronto3d' }, location.origin); } catch (e) { /* sem a tela de fora */ } }
 }
 
+let situacaoBase = '';
 function situacao(t) { $('#situacao').textContent = t; }
 
 const CHAVE_VISTA = 'metalica.vistaVer3d';

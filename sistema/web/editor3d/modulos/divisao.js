@@ -56,6 +56,12 @@ export class MetodosDivisao {
 
   /** {nome}: as peças do bloco (todas as cópias); {caixa}: as que têm o meio dentro dela, em planta */
   _selecionarDaDivisao(pedido) {
+    // clicou fora no 2D (a seleção dele ficou vazia): a daqui sai também, e o destaque com ela (06/10)
+    if (pedido.limpar) {
+      this._daDivisao = true;
+      try { if (this.selecao.ids.size) this.selecao.definir([]); } finally { this._daDivisao = false; }
+      return;
+    }
     let ids = [];
     if (pedido.destacar) {
       // a peça do detalhamento (posicao:, conjunto: ou ids:), como o Ver no 3D, sem o aviso comprido

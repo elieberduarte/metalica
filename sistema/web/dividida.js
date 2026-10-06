@@ -159,7 +159,10 @@ function doTresD(m) {
 }
 
 function doDoisD(m) {
-  if (!pref.seguir || !m.n || !m.caixa) return;
+  if (!pref.seguir) return;
+  // clicou fora no 2D (nada selecionado): o 3D larga a seleção também (06/10)
+  if (!m.n) { para3d({ metalica: 'selecionar3d', limpar: true }); return; }
+  if (!m.caixa) return;
   const meio = [(m.caixa[0][0] + m.caixa[1][0]) / 2, (m.caixa[0][1] + m.caixa[1][1]) / 2];
   const t = trelicas.find(x => x.caixa_desenho && dentro(x.caixa_desenho, meio));
   if (t) { para3d({ metalica: 'selecionar3d', nome: t.nome }); return; }

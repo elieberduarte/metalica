@@ -126,12 +126,21 @@ try:
     aba.avaliar(F3 + ".postMessage({ metalica: 'selecionar3d', caixa: [[-100, 2900], [3000, 3100]], folga: 50 }, location.origin); 1")
     ok(esperar(aba, F3 + ".visor.selecaoVarias.size >= 10", 5), f"uma região escolhida no 2D destaca as peças dela ({aba.avaliar(F3 + '.visor.selecaoVarias.size')})")
     foto(aba, "ver3d_4_do2d.png")
+    ok(aba.avaliar(F3 + ".visor._marcas && " + F3 + ".visor._marcas.children.length >= 1"), "as peças em destaque ganham o anel vermelho, como no editor")
+    # clicar fora no 2D (seleção vazia): o 3D larga a seleção e o anel (a ligação vale com os dois lados à vista)
+    aba.avaliar("mostrarVista('ambos', false); 1"); aba.drenar(0.5)
+    aba.avaliar("document.getElementById('f2d').contentWindow.eval(\"parent.postMessage({ metalica: 'sel2d', n: 0, caixa: null }, location.origin)\"); 1")
+    ok(esperar(aba, F3 + ".visor.selecaoVarias.size === 0 && !" + F3 + ".visor.emDestaque && !" + F3 + ".visor._marcas", 5), "clicar fora no 2D limpa a seleção do 3D")
+    aba.avaliar("mostrarVista('3d', false); 1"); aba.drenar(1.5)
+    r = aba.avaliar("(() => { const r = document.getElementById('f3d').getBoundingClientRect(); return [r.left, r.top]; })()")
     # o tema da barra troca o fundo do 3D na hora
     escuro0 = aba.avaliar(F3 + ".visor.escuro")
     aba.avaliar("window.barraUnica.executar({ fn: 'tema' }); 1")
     ok(esperar(aba, F3 + ".visor.escuro === " + ("false" if escuro0 else "true") + " && " + F3 + ".document.documentElement.getAttribute('data-tema') === document.documentElement.getAttribute('data-tema')", 5),
        "trocar o tema na barra troca o fundo e o piso do 3D na hora")
     ok(aba.avaliar(F3 + ".visor.piso && " + F3 + ".visor.piso.visible && " + F3 + ".visor.piso.position.z < -100"), "o piso fica sob o modelo")
+    ok(aba.avaliar("(() => { const v = %s.visor; if (v.escuro) return true; const i = [...Array(v.nPecas).keys()].find(i => !v.selecaoVarias.has(i)); return v.dadosTex[i * 4] >= v.corBase[i * 3] && (v.corBase[i * 3] === 255 || v.dadosTex[i * 4] > v.corBase[i * 3]); })()" % F3),
+       "no claro as cores das camadas vão mais claras")
     foto(aba, "ver3d_4b_outro_tema.png")
     aba.avaliar("window.barraUnica.executar({ fn: 'tema' }); 1")
 

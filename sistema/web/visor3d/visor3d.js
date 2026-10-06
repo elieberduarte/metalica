@@ -22,6 +22,24 @@ const LARG_TEX = 1024;
 /** O fundo e a linha principal da grade do Desenho 2D (web/cad/nucleo/tela.js, `grade10`): o 3D usa os mesmos. */
 const TEMA_ESCURO = { fundo: '#0e131a', linha: '#ffffff', alfa: 0.13 };
 const TEMA_CLARO = { fundo: '#f4f6fa', linha: '#10203c', alfa: 0.12 };
+/** No claro, as cores das camadas puxadas para o branco: o azul-marinho das vigas pesava no fundo claro (06/10). */
+const CLAREAR_NO_CLARO = 0.45;
+/** O anel em volta das peças em destaque (como o editor, web/editor3d/nucleo/cena.js): altura na tela, limites. */
+const FRACAO_ANEL = 0.075, MAIS_PECAS_COM_ANEL = 400, MAIS_ANEIS = 40;
+let _texturaDoAnel = null;
+/** Vermelho com borda branca por dentro e por fora, para ler no fundo claro e no escuro. */
+function texturaDoAnel() {
+  if (_texturaDoAnel) return _texturaDoAnel;
+  const n = 128, tela = document.createElement('canvas');
+  tela.width = tela.height = n;
+  const g = tela.getContext('2d'), r = n / 2 - 8;
+  g.lineWidth = 14; g.strokeStyle = 'rgba(255,255,255,0.95)';
+  g.beginPath(); g.arc(n / 2, n / 2, r, 0, Math.PI * 2); g.stroke();
+  g.lineWidth = 7; g.strokeStyle = '#e5322d';
+  g.beginPath(); g.arc(n / 2, n / 2, r, 0, Math.PI * 2); g.stroke();
+  _texturaDoAnel = new THREE.CanvasTexture(tela);      // sem conversão: a saída é linear, a cor vai como está
+  return _texturaDoAnel;
+}
 
 const VERT = /* glsl */`
 uniform sampler2D tPecas;
@@ -90,7 +108,7 @@ void main() {
   if (uAresta > 0.5) {
     float a = mix(0.5, 0.1, clamp((-vVista.z - 0.6 * uLonge) / uLonge, 0.0, 1.0));
     // como o editor: no escuro a aresta é a cor da peça puxada para o claro; no claro, para o escuro
-    vec3 ca = uEscuro > 0.5 ? mix(vCor, vec3(0.94, 0.96, 1.0), 0.55) : vCor * 0.45;
+    vec3 ca = uEscuro > 0.5 ? mix(vCor, vec3(0.94, 0.96, 1.0), 0.55) : vCor * 0.62;   // claro: a paleta mais clara (06/10)
     gl_FragColor = vec4(ca, uEscuro > 0.5 ? a + 0.15 : a); return;
   }
   vec3 n = normalize(cross(dFdx(vVista), dFdy(vVista)));
@@ -425,6 +443,7 @@ export class Visor3D {
     this.selecaoVarias = new Set(i >= 0 ? [i] : []);
     this.emDestaque = false;
     this._repintar();
+    this._marcarDestaque();
   }
 
   /** Várias peças escolhidas (as que o 2D pediu); `destacar` esmaece o resto, como o editor. */
@@ -433,6 +452,50 @@ export class Visor3D {
     this.selecionada = lista.length === 1 ? lista[0] : -1;
     this.emDestaque = !!destacar && lista.length > 0;
     this._repintar();
+    this._marcarDestaque();
+  }
+
+  /** Um anel vermelho de tamanho fixo na tela em volta de cada grupo de peças em destaque (as que o 2D pediu), por
+   *  cima do modelo, como no editor: a chapa escolhida no 2D, com o prédio inteiro à vista, não se achava (06/10).
+   *  Peças perto umas das outras ganham um anel só; destaque grande demais fica sem anel. */
+  _marcarDestaque() {
+    if (this._marcas) {
+      this.cena.remove(this._marcas);
+      this._marcas.traverse(o => { if (o.material) o.material.dispose(); });
+      this._marcas = null;
+    }
+    const ids = this.emDestaque ? [...this.selecaoVarias] : [];
+    if (!ids.length || ids.length > MAIS_PECAS_COM_ANEL || !this.fichas) { this.pedirQuadro(); return; }
+    const centros = ids.map(i => {
+      const f = this.fichas[i], b = f.b;
+      return b ? [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2] : [f.x[0], f.x[1], f.x[2]];
+    });
+    // junta as vizinhas (a distância pelo tamanho do modelo), em cadeia
+    const s = this.caixaVisivel().getSize(new THREE.Vector3());
+    const perto = Math.max(1500, 0.08 * Math.hypot(s.x, s.y, s.z));
+    let grupos = [];
+    for (const p of centros) {
+      const junto = grupos.filter(g => g.some(o => Math.hypot(o[0] - p[0], o[1] - p[1], o[2] - p[2]) <= perto));
+      grupos = grupos.filter(g => !junto.includes(g));
+      grupos.push([p, ...junto.flat()]);
+    }
+    if (grupos.length > MAIS_ANEIS) { this.pedirQuadro(); return; }
+    this._marcas = new THREE.Group();
+    for (const g of grupos) {
+      const anel = new THREE.Sprite(new THREE.SpriteMaterial({ map: texturaDoAnel(), depthTest: false, depthWrite: false, transparent: true }));
+      anel.position.set(...[0, 1, 2].map(k => g.reduce((t, o) => t + o[k], 0) / g.length));
+      anel.renderOrder = 999;
+      anel.raycast = () => {};
+      // o mesmo tamanho na tela em qualquer zoom: a altura do que se vê na distância dele
+      anel.onBeforeRender = (_r, _c, cam) => {
+        const alto = 2 * cam.position.distanceTo(anel.position) * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+        anel.scale.setScalar(Math.max(alto * FRACAO_ANEL, 1e-6));
+        anel.updateMatrixWorld(true);
+      };
+      this._marcas.add(anel);
+    }
+    this.cena.add(this._marcas);
+    this.pedirQuadro();
   }
 
   /** Aproxima a câmera das peças, mantendo a direção de onde se olha. */
@@ -460,12 +523,13 @@ export class Visor3D {
 
   _repintar() {
     const d = this.dadosTex, sel = this.selecaoVarias, fant = this.emDestaque ? this.corFantasma : null;
+    const k0 = this.escuro ? 0 : CLAREAR_NO_CLARO, cb = this.corBase;
     for (let i = 0; i < this.nPecas; i++) {
       const k = i * 4;
       const vis = this.visivelCamada[this.camadaDe[i]] !== false && !this.ocultas.has(i);
       if (sel.has(i)) { d[k] = 31; d[k + 1] = 122; d[k + 2] = 224; }
       else if (fant) { d[k] = fant[0]; d[k + 1] = fant[1]; d[k + 2] = fant[2]; }
-      else { d[k] = this.corBase[i * 3]; d[k + 1] = this.corBase[i * 3 + 1]; d[k + 2] = this.corBase[i * 3 + 2]; }
+      else for (let j = 0; j < 3; j++) d[k + j] = cb[i * 3 + j] + (255 - cb[i * 3 + j]) * k0;
       d[k + 3] = vis ? 255 : 0;
     }
     this.textura.needsUpdate = true;
