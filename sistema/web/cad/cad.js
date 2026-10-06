@@ -854,11 +854,15 @@ class CAD {
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); this.salvar(); return; }
       if (ev.key === 'Escape') { if (this.ferramenta) { this.ferramenta.cancelar(); } this.selecionar([]); if (this.ferramenta.constructor.id !== 'selecionar') this.ativarFerramenta('selecionar'); return; }
       if (ev.key === 'F8') { ev.preventDefault(); this.definirOrto(!this.snap.orto); return; }
-      // MA (o MATCHPROP do AutoCAD): M e logo depois A abre Copiar propriedades — o M sozinho continua
-      // sendo Mover e o A sozinho, Arco
+      // os atalhos de duas letras, como no AutoCAD: MA (o MATCHPROP) abre Copiar propriedades e TR (o TRIM) o Aparar
+      // — pedido do usuário, 06/10; a primeira letra sozinha continua sendo a dela (M Mover, T Texto) e a segunda
+      // logo depois troca a ferramenta. Os de duas letras vêm do `atalho` das ferramentas.
       const k_ = ev.key.toLowerCase(), agora_ = Date.now();
-      if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && k_ === 'a' && this._teclaAnterior && this._teclaAnterior.k === 'm' && agora_ - this._teclaAnterior.t < 1000) {
-        ev.preventDefault(); this._teclaAnterior = null; this.ativarFerramenta('copiar_propriedades'); return;
+      if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && this._teclaAnterior && agora_ - this._teclaAnterior.t < 1000) {
+        const duplas = { ma: 'copiar_propriedades' };
+        for (const F of FERRAMENTAS) if (F.atalho && F.atalho.length === 2) duplas[F.atalho] = F.id;
+        const alvo = duplas[this._teclaAnterior.k + k_];
+        if (alvo) { ev.preventDefault(); this._teclaAnterior = null; this.ativarFerramenta(alvo); return; }
       }
       this._teclaAnterior = { k: k_, t: agora_ };
       if (this.ferramenta && this.ferramenta.onTecla(ev)) { ev.preventDefault(); return; }

@@ -1295,15 +1295,14 @@ export class Juntar extends SobreSelecao {
 }
 
 export class Aparar extends Ferramenta {
-  static id = 'aparar'; static nome = 'Aparar (trim)'; static atalho = 'x'; static grupo = 'edicao'; static dica = 'Clique no trecho da linha a remover (corta nas interseções com outras linhas)';
+  static id = 'aparar'; static nome = 'Aparar (trim)'; static atalho = 'tr'; static grupo = 'edicao'; static dica = 'Clique no trecho da linha a remover (corta nas interseções com outras linhas)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h16M4 18h16M12 3v18" stroke-dasharray="4 2"/><path d="M9 9l6 6"/></svg>';
   onPonto(p, ev) {
     const e = this.editor.tela.sob(ev.px);
     if (!e || e.tipo !== 'linha') { this.dica('Aparar funciona em linhas: clique no trecho a remover'); return; }
     const outros = [...this.doc.entidades.values()].filter(o => o.id !== e.id && this.doc.visivel(o));
     const cortes = [];
-    for (const o of outros) for (const [s, t] of segmentosDe(o)) { const x = intersecaoSeg(e.a, e.b, s, t); if (x) cortes.push(x); }
-    for (const o of outros) if (o.tipo === 'circulo') cortes.push(...intersecaoLinhaCirculo(e.a, e.b, o.centro, o.raio));
+    for (const o of outros) cortes.push(...cortesComEntidade(e.a, e.b, o));
     if (!cortes.length) { this.dica('A linha não cruza nenhuma outra'); return; }
     const L = dist(e.a, e.b), ts = cortes.map(c => dist(e.a, c) / L).filter(t => t > 1e-6 && t < 1 - 1e-6).sort((a, b) => a - b);
     const tp = dist(e.a, maisProximoSeg(p, e.a, e.b)) / L;
@@ -1316,6 +1315,25 @@ export class Aparar extends Ferramenta {
     if (limites[i + 1] < 1 - 1e-6) restantes.push(criar({ ...e, id: undefined, a: at(limites[i + 1]), b: e.b }));
     this.editor.executar(new ComandoComposto([new ComandoRemover([e.id]), new ComandoAdicionar(restantes)], 'Aparar'));
   }
+}
+
+/** Os pontos onde o segmento a–b cruza a entidade `o`: no arco e no círculo, pela curva (os trechos de 10° do
+ *  desenho do arco ficavam até 20 cm abaixo do banzo curvo, e o Aparar cortava ali — 06/10); no resto, pelos
+ *  segmentos. */
+function cortesComEntidade(a, b, o) {
+  if (o.tipo === 'circulo') return intersecaoLinhaCirculo(a, b, o.centro, o.raio);
+  if (o.tipo === 'arco') return intersecaoLinhaCirculo(a, b, o.centro, o.raio).filter(q => noTrechoDoArco(o, q));
+  if (o.tipo === 'texto' || o.tipo === 'hachura') return [];
+  const out = [];
+  for (const [s, t] of segmentosDe(o)) { const x = intersecaoSeg(a, b, s, t); if (x) out.push(x); }
+  return out;
+}
+
+/** o ponto `q` do círculo do arco está no trecho dele (de `inicio` a `fim`, anti-horário) */
+function noTrechoDoArco(o, q) {
+  const n = (x) => ((x % 360) + 360) % 360;
+  const ang = n(Math.atan2(q[1] - o.centro[1], q[0] - o.centro[0]) * 180 / Math.PI), a0 = n(o.inicio), a1 = n(o.fim), tol = 1e-6;
+  return a1 >= a0 ? ang >= a0 - tol && ang <= a1 + tol : ang >= a0 - tol || ang <= a1 + tol;
 }
 
 function intersecaoLinhaCirculo(a, b, c, r) {
@@ -1360,9 +1378,7 @@ export class Estender extends Ferramenta {
     let melhor = null;
     for (const o of this.doc.entidades.values()) {
       if (o.id === e.id || !this.doc.visivel(o) || o.tipo === 'texto' || o.tipo === 'hachura') continue;
-      const cand = [];
-      for (const [s, t] of segmentosDe(o)) { const x = intersecaoSeg(ponta, longe, s, t); if (x) cand.push(x); }
-      if (o.tipo === 'circulo') cand.push(...intersecaoLinhaCirculo(ponta, longe, o.centro, o.raio));
+      const cand = cortesComEntidade(ponta, longe, o);
       for (const x of cand) {
         const dx = dist(ponta, x);
         if (dx > 0.05 && (!melhor || dx < melhor.d)) melhor = { x, d: dx };

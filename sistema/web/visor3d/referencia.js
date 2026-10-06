@@ -147,7 +147,8 @@ export function montarReferencia(r, { escuro = false, caixa = null, zChao = 0 } 
         const outro = i > 0 && z - cotas[i - 1] < 600 && i % 2 === 1;
         const s = cabecaDoNivel(nome, z, cores);
         const x = outro ? x0 : x1, y = outro ? y1 : y0;
-        naTela(s, 34, 1400, alt => { s.scale.set(alt * s.userData.proporcao, alt, 1); s.position.set(x, y, z); });
+        // a placa do nível menor que a do editor (pedido do usuário, 06/10): 22 px na tela, até 0,9 m no modelo
+        naTela(s, 22, 900, alt => { s.scale.set(alt * s.userData.proporcao, alt, 1); s.position.set(x, y, z); });
         grupo.add(s);
       });
     }

@@ -87,6 +87,18 @@ export function pontosCota(c, escala = 1) {
   return [c.p1, c.p2, [x1 + nx * desl, y1 + ny * desl], [x2 + nx * desl, y2 + ny * desl]];
 }
 
+/** Os pontos que dão a caixa do arco: os do desenho e os extremos da curva (0°, 90°, 180°, 270°) dentro do trecho —
+ *  pelos trechos de 10° só, o topo de um arco grande ficava fora da caixa (no banzo curvo, 10 cm) e o snap nem o
+ *  achava com o cursor um pouco acima (06/10) */
+export function pontosDaCaixaDoArco(e) {
+  const pts = pontosArco(e);
+  const n = (a) => ((a % 360) + 360) % 360, a0 = n(e.inicio), a1 = n(e.fim);
+  for (const g of [0, 90, 180, 270]) {
+    if (a1 >= a0 ? g >= a0 && g <= a1 : g >= a0 || g <= a1) pts.push([e.centro[0] + e.raio * Math.cos(grausRad(g)), e.centro[1] + e.raio * Math.sin(grausRad(g))]);
+  }
+  return pts;
+}
+
 export function pontosDe(e) {
   switch (e.tipo) {
     case 'linha': return [e.a, e.b];
@@ -361,7 +373,7 @@ export class Desenho2D {
     for (const e of this.entidades.values()) {
       if (ids && !ids.has(e.id)) continue;
       if (!ids && !this.visivel(e)) continue;
-      for (const p of pontosDe(e)) pts.push(p);
+      for (const p of (e.tipo === 'arco' ? pontosDaCaixaDoArco(e) : pontosDe(e))) pts.push(p);
     }
     return caixaDe(pts);
   }
@@ -395,6 +407,7 @@ export class Desenho2D {
     if (e.tipo === 'cota') return caixaDe(pontosCota(e, this.escala));
     if (e.tipo === 'texto') return caixaDe(cantosDoTexto(e, this.escala));
     if (e.tipo === 'chamada') return caixaDe([e.alvo, e.posicao, ...cantosDoTextoDaChamada(e, this.escala)]);
+    if (e.tipo === 'arco') return caixaDe(pontosDaCaixaDoArco(e));
     return caixaDe(pontosDe(e));
   }
 

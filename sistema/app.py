@@ -3083,8 +3083,9 @@ def referencia_do_lancamento(s: str) -> dict:
     # "trazer os eixos para o modelo 3D para ver de que lado está cada coisa")
     ex = _eixos.de_dict(p.get("eixos")) or _eixos_automaticos(s)
     if malha:
-        # a malha desenhada na planta manda: os eixos como estão no 2D agora, com os mesmos nomes (06/10)
-        z0 = float((ex or {}).get("z_base") or 0.0)
+        # a malha desenhada na planta manda: os eixos como estão no 2D agora, com os mesmos nomes (06/10); no piso — a
+        # altura dos eixos deduzidos do modelo é a do topo dele, e as bolinhas ficavam no ar
+        z0 = float((p.get("eixos") or {}).get("z_base") or 0.0)
         saida["eixos"] = [dict(e, a=[e["a"][0], e["a"][1], z0], b=[e["b"][0], e["b"][1], z0]) for e in malha]
         saida["da_planta"] = True
     elif ex:
