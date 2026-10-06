@@ -1,9 +1,10 @@
 name: testes
 
+# Só à mão (Actions → testes → Run workflow), desde 06/10: a cada push ela falhava (o ambiente do GitHub não tem o
+# Python 3.14 nem as bibliotecas e os dados que os testes usam) e o GitHub mandava um e-mail por falha. A garantia é a
+# conferência da noite no PC (testes/antes_de_publicar.py). Para voltar a rodar sozinha, acertar o ambiente antes.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   pytest:
