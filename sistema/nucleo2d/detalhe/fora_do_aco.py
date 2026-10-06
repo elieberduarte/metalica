@@ -40,9 +40,10 @@ PERFIL_DE_ACO = (r"^(w|hp|ipe|ipn|upn|u|c|l|t|tq|tr|cs|cvs|vs|ue)\s*[\d.,\"/ ]+\
                  r"|\b(?:shs|rhs|chs|tubo)\b")
 
 #: O que não é peça de produção nem acessório e é de aço (o gradil do guarda-corpo, o piso de chapa perfurada):
-#: entra na lista pela malha, com a observação — o Revit costuma modelar o gradil cheio (06/10).
+#: entra na lista pela malha, com a observação — o peso depende das seções do modelo (06/10).
 NOME_DE_ACO = r"aco\b|steel|a36|a572|astm|chapa|tela|perfurad|gradil|grade|guarda.?corpo|corrimao|metal"
-OBS_PELA_MALHA = "peso pela malha do IFC: conferir com o fornecedor (o Revit modela gradil e tela cheios)"
+OBS_PELA_MALHA = ("peso pela malha do IFC: conferir as seções com o projeto ou o fornecedor (a chapa perfurada vem sem os furos; "
+                  "barra maciça no lugar de tubo pesa várias vezes mais — o corrimão do gradil da Passarela, 06/10)")
 
 #: Malha solta de aço maior que isto (diagonal da caixa, mm) é estrutura, não parafuso.
 DIAGONAL_MIN_PROXY = 1500.0
