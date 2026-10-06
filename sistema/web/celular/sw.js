@@ -13,7 +13,7 @@
 
 const TELAS = 'metalica-telas-1';
 const DADOS = 'metalica-dados-1';
-const BASE_TELAS = ['./', 'index.html', 'celular.css', 'celular.js', 'visor3d.js', 'lib/pdf.min.mjs', 'lib/pdf.worker.min.mjs',
+const BASE_TELAS = ['./', 'index.html', 'celular.css', 'celular.js', '../visor3d/visor3d.js', 'lib/pdf.min.mjs', 'lib/pdf.worker.min.mjs',
                     'manifest.webmanifest', 'lib/icone-180.png', 'lib/icone-192.png', 'lib/icone-512.png',
                     '../lib/three.module.js', '../lib/OrbitControls.js'];
 const ESPERA_REDE = 4000;
@@ -82,7 +82,8 @@ self.addEventListener('fetch', ev => {
     else ev.respondWith(redePrimeiro(pedido, DADOS, ESPERA_REDE));
     return;
   }
-  if (url.pathname.startsWith('/celular/') || url.pathname === '/lib/three.module.js' || url.pathname === '/lib/OrbitControls.js') {
+  if (url.pathname.startsWith('/celular/') || url.pathname === '/lib/three.module.js' || url.pathname === '/lib/OrbitControls.js'
+      || url.pathname === '/visor3d/visor3d.js') {
     ev.respondWith(redePrimeiro(pedido, TELAS, ESPERA_REDE));
   }
 });

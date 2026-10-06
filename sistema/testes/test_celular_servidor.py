@@ -65,7 +65,7 @@ def _parear(c):
     return cookie.split(";")[0].split("=", 1)[1]
 
 
-ROTAS = ["/celular/", "/celular/index.html", "/celular/celular.js", "/celular/visor3d.js", "/lib/three.module.js",
+ROTAS = ["/celular/", "/celular/index.html", "/celular/celular.js", "/visor3d/visor3d.js", "/lib/three.module.js",
          "/celular/dados/projetos.json", "/celular/dados/obra/manifesto.json", "/celular/api/estado", "/"]
 
 

@@ -94,7 +94,7 @@ try:
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=900, deviceScaleFactor=1, mobile=False)
     aba.navegar(base + "/"); aba.console.clear()
-    aba.navegar(base + "/dividida?projeto=posto", limite=60)
+    aba.navegar(base + "/dividida?projeto=posto&editar=1", limite=60)      # o editor (sem &editar=1 o 3D abre no modo ver)
     t0 = time.time()
     while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.documento && {F3}.editor.documento.entidades.size === 4)"):
         aba.drenar(0.5)

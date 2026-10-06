@@ -678,6 +678,7 @@ class Projetos:
             pass
         _gravar_json(self.caminho_modelo(s), documento)
         self.tocar(s)
+        self._modelo_gravado(s)
         return {"salvo": MODELO, "projeto": s,
                 "entidades": len(documento.get("entidades") or [])}
 
@@ -693,7 +694,16 @@ class Projetos:
             pass
         _gravar_bytes(self.caminho_modelo(s), bruto)
         self.tocar(s)
+        self._modelo_gravado(s)
         return {"salvo": MODELO, "projeto": s, "entidades": entidades}
+
+    def _modelo_gravado(self, s: str):
+        """O 3D leve do modo "ver" (saida/modelo_leve.py) é refeito em segundo plano, se o projeto já foi visto."""
+        try:
+            from saida import modelo_leve
+            modelo_leve.gravado(self._existente(s))
+        except Exception:                                   # noqa: BLE001 — o modo ver refaz quando pedido
+            pass
 
     # ---- histórico do modelo: cópias comprimidas das gravações anteriores
     def _pasta_historico(self, s: str) -> str:

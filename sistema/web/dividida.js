@@ -82,7 +82,7 @@ function navegar(url) {
     if (v) mostrarVista(v);
     return;
   }
-  const tres = ['/editor', '/editor3d', '/3d'].includes(u.pathname);
+  const tres = ['/editor', '/editor3d', '/3d', '/visor3d/ver3d.html'].includes(u.pathname);
   const id = tres ? 'f3d' : 'f2d';
   if (!u.searchParams.get('projeto')) u.searchParams.set('projeto', PROJETO);
   fontes[id] = u.pathname + u.search;
@@ -259,7 +259,12 @@ async function iniciar() {
   sel.addEventListener('change', () => carregar2d(sel.value));
   // o 3D leva junto o que veio na URL para ele (destacar=…, lancar=1)
   const extra3d = ['destacar', 'lancar'].filter(k => PARAMS.get(k)).map(k => `&${k}=${encodeURIComponent(PARAMS.get(k))}`).join('');
-  fontes.f3d = `/editor?projeto=${encodeURIComponent(PROJETO)}` + extra3d;
+  // abrir o projeto é quase sempre para ver: sem pedido especial, o 3D abre no modo "ver" (web/visor3d),
+  // que chega pronto para a placa de vídeo e abre em menos de um segundo; Editar — ou um comando de edição
+  // da barra — carrega o editor no mesmo quadro, com a mesma vista. &editar=1 abre direto no editor.
+  const editar = !!extra3d || PARAMS.get('editar') === '1';
+  fontes.f3d = editar ? `/editor?projeto=${encodeURIComponent(PROJETO)}` + extra3d
+                      : `/visor3d/ver3d.html?projeto=${encodeURIComponent(PROJETO)}`;
   carregar2d(inicial);
   mostrarVista(vista, false);
   try { trelicas = ((await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/trelicas`)).trelicas || []).filter(t => t.caixa_desenho); }

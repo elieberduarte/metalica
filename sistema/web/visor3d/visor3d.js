@@ -1,4 +1,4 @@
-// Visualizador do 3D leve (.mcel) — o modelo 3D do celular. Só consulta.
+// Visualizador do 3D leve (.mcel) — o modelo 3D do celular e o modo "ver" do computador. Só consulta.
 //
 // O arquivo vem pronto do PC (saida/pacote_celular.py): blocos de peças com os vértices em
 // 16 bits e as formas repetidas com uma matriz por cópia. Aqui nada é refeito: os trechos do
@@ -35,6 +35,9 @@ varying vec3 vCor;
 #ifdef ESCOLHA
 flat varying float vId;
 #endif
+#ifdef PONTO
+varying vec3 vMundo;
+#endif
 void main() {
 #ifdef INSTANCIA
   vec4 p = vec4(position, 1.0);
@@ -50,6 +53,9 @@ void main() {
 #ifdef ESCOLHA
   vId = id + 1.0;
 #endif
+#ifdef PONTO
+  vMundo = mundo;
+#endif
   vec4 vista = viewMatrix * vec4(mundo, 1.0);
   vVista = vista.xyz;
   gl_Position = projectionMatrix * vista;
@@ -62,10 +68,15 @@ varying vec3 vCor;
 #ifdef ESCOLHA
 flat varying float vId;
 #endif
+#ifdef PONTO
+varying vec3 vMundo;
+#endif
 uniform float uAresta;
 uniform float uLonge;
 void main() {
-#ifdef ESCOLHA
+#if defined(PONTO)
+  gl_FragColor = vec4(vMundo, 1.0);
+#elif defined(ESCOLHA)
   float r = mod(vId, 256.0), g = mod(floor(vId / 256.0), 256.0), b = floor(vId / 65536.0);
   gl_FragColor = vec4(r / 255.0, g / 255.0, b / 255.0, 1.0);
 #else
@@ -110,6 +121,10 @@ export class Visor3D {
     this.controles = new OrbitControls(this.camera, tela);
     this.controles.enableDamping = false;
     this.controles.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+    if (opcoes.mouse) {
+      this.controles.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
+      this.controles.zoomToCursor = true;
+    }
     this.controles.addEventListener('change', () => this.pedirQuadro());
     this.controles.addEventListener('start', () => this._movendo(true));
     this.controles.addEventListener('end', () => this._movendo(false));
@@ -230,8 +245,10 @@ export class Visor3D {
     const matriz = new THREE.Matrix4().makeScale(b.esc[0], b.esc[1], b.esc[2]).setPosition(b.min[0], b.min[1], b.min[2]);
     const malha = new THREE.Mesh(g, this._mat({}, false));
     const escolha = this._mat({ ESCOLHA: '' }, false);
+    const ponto = this._mat({ PONTO: '' }, false);
     malha.material.uniforms.uIdBase.value = b.id0;
     escolha.uniforms.uIdBase.value = b.id0;
+    ponto.uniforms.uIdBase.value = b.id0;
     malha.matrixAutoUpdate = false;
     malha.matrix.copy(matriz);
     let arestas = null;
@@ -249,7 +266,7 @@ export class Visor3D {
       this.raiz.add(arestas);
     }
     this.raiz.add(malha);
-    this.malhas.push({ malha, arestas, escolha, id0: b.id0, n: b.n });
+    this.malhas.push({ malha, arestas, escolha, ponto, id0: b.id0, n: b.n });
   }
 
   _forma(buf, f) {
@@ -276,6 +293,7 @@ export class Visor3D {
     const malha = new THREE.Mesh(geo(this._indice(buf, f.indices)), this._mat({ INSTANCIA: '' }, false));
     malha.frustumCulled = false;
     const escolha = this._mat({ INSTANCIA: '', ESCOLHA: '' }, false);
+    const ponto = this._mat({ INSTANCIA: '', PONTO: '' }, false);
     let arestas = null;
     if (f.arestas.n) {
       arestas = new THREE.LineSegments(geo(this._indice(buf, f.arestas)), this._mat({ INSTANCIA: '' }, true));
@@ -284,7 +302,7 @@ export class Visor3D {
       this.raiz.add(arestas);
     }
     this.raiz.add(malha);
-    this.malhas.push({ malha, arestas, escolha, ids });
+    this.malhas.push({ malha, arestas, escolha, ponto, ids });
   }
 
   // ---------------------------------------------------------------- fichas, camadas, cor
@@ -307,7 +325,42 @@ export class Visor3D {
       this.corBase[i * 3 + 1] = Math.round(c.g * 255);
       this.corBase[i * 3 + 2] = Math.round(c.b * 255);
     }
+    this.corMaterial = this.corBase.slice();
+    this.modoPintura = 'material';
     this._repintar();
+  }
+
+  /**
+   * Pinta as peças por 'camada' ou 'perfil' (uma cor por grupo, as mais distintas possível — as
+   * camadas de um IFC costumam ter todas o mesmo cinza) ou volta ao 'material'. Devolve a legenda
+   * [{nome, cor, n, ids}], do grupo com mais peças para o com menos.
+   */
+  pintarPor(modo) {
+    this.modoPintura = modo;
+    if (modo === 'material' || !this.fichas) {
+      this.corBase.set(this.corMaterial);
+      this._repintar();
+      return [];
+    }
+    const grupos = new Map();
+    for (let i = 0; i < this.fichas.length && i < this.nPecas; i++) {
+      const f = this.fichas[i];
+      const nome = modo === 'camada' ? ((this.cabecalho.camadas[f.c] || {}).nome || '—') : (f.p || '(sem perfil)');
+      let g = grupos.get(nome);
+      if (!g) grupos.set(nome, (g = { nome, n: 0, ids: [] }));
+      g.n++;
+      g.ids.push(i);
+    }
+    const lista = [...grupos.values()].sort((a, b) => b.n - a.n || a.nome.localeCompare(b.nome));
+    const c = new THREE.Color();
+    lista.forEach((g, k) => {
+      c.setHSL((k * 0.618034) % 1, k % 2 ? 0.5 : 0.62, k % 3 === 2 ? 0.42 : 0.52);
+      g.cor = '#' + c.getHexString();
+      const r = Math.round(c.r * 255), gg = Math.round(c.g * 255), b = Math.round(c.b * 255);
+      for (const i of g.ids) { this.corBase[i * 3] = r; this.corBase[i * 3 + 1] = gg; this.corBase[i * 3 + 2] = b; }
+    });
+    this._repintar();
+    return lista;
   }
 
   /** Liga ou desliga a camada `i` (índice das camadas do cabeçalho). */
@@ -410,6 +463,26 @@ export class Visor3D {
     this.pedirQuadro();
   }
 
+  /** A câmera em mm do projeto (para o editor abrir com a mesma vista). */
+  lerCamera() {
+    const o = this.cabecalho.origem;
+    const p = this.camera.position, t = this.controles.target;
+    return { posicao: [p.x + o[0], p.y + o[1], p.z + o[2]], alvo: [t.x + o[0], t.y + o[1], t.z + o[2]], fov: this.camera.fov };
+  }
+
+  definirCamera(c) {
+    if (!c || !c.posicao || !c.alvo) return;
+    const o = this.cabecalho.origem;
+    this.camera.position.set(c.posicao[0] - o[0], c.posicao[1] - o[1], c.posicao[2] - o[2]);
+    this.controles.target.set(c.alvo[0] - o[0], c.alvo[1] - o[1], c.alvo[2] - o[2]);
+    const dist = this.camera.position.distanceTo(this.controles.target);
+    this.camera.near = Math.max(dist / 2000, 1);
+    this.camera.far = Math.max(dist * 20, this.camera.far);
+    this.camera.updateProjectionMatrix();
+    this.controles.update();
+    this.pedirQuadro();
+  }
+
   /** Gira em volta da peça (o centro dela da ficha). */
   centrarEm(i) {
     const f = this.fichas && this.fichas[i];
@@ -442,31 +515,55 @@ export class Visor3D {
 
   // ---------------------------------------------------------------- escolha pelo toque
 
-  /** Número da peça no ponto (x, y) da tela, em pixels CSS; -1 se nenhuma. */
-  escolher(x, y) {
+  /** Desenha só o pixel (x, y) com a variante `qual` das malhas ('escolha' ou 'ponto') e o lê. */
+  _pixel(x, y, qual, alvo, saida) {
     const w = this.tela.clientWidth, h = this.tela.clientHeight;
-    if (!this._alvo) this._alvo = new THREE.WebGLRenderTarget(1, 1);
-    const px = new Uint8Array(4);
     const fundo = this.cena.background;
-    this.cena.background = new THREE.Color(0, 0, 0);
+    this.cena.background = null;
+    const corLimpa = this.renderer.getClearColor(new THREE.Color()), alfaLimpo = this.renderer.getClearAlpha();
+    this.renderer.setClearColor(0x000000, 0);
     const trocas = [];
     for (const m of this.malhas) {
       trocas.push([m.malha, m.malha.material]);
-      m.malha.material = m.escolha;
+      m.malha.material = m[qual];
       if (m.arestas) { trocas.push([m.arestas, m.arestas.visible, true]); m.arestas.visible = false; }
     }
     const dpr = this.renderer.getPixelRatio();
     this.camera.setViewOffset(w * dpr, h * dpr, Math.round(x * dpr), Math.round(y * dpr), 1, 1);
-    this.renderer.setRenderTarget(this._alvo);
+    this.renderer.setRenderTarget(alvo);
+    this.renderer.clear();
     this.renderer.render(this.cena, this.camera);
-    this.renderer.readRenderTargetPixels(this._alvo, 0, 0, 1, 1, px);
+    this.renderer.readRenderTargetPixels(alvo, 0, 0, 1, 1, saida);
     this.renderer.setRenderTarget(null);
     this.camera.clearViewOffset();
     for (const t of trocas) { if (t[2]) t[0].visible = t[1]; else t[0].material = t[1]; }
+    this.renderer.setClearColor(corLimpa, alfaLimpo);
     this.cena.background = fundo;
     this.pedirQuadro();
+    return saida;
+  }
+
+  /** Número da peça no ponto (x, y) da tela, em pixels CSS; -1 se nenhuma. */
+  escolher(x, y) {
+    if (!this._alvo) this._alvo = new THREE.WebGLRenderTarget(1, 1);
+    const px = this._pixel(x, y, 'escolha', this._alvo, new Uint8Array(4));
     const id = px[0] + px[1] * 256 + px[2] * 65536 - 1;
     return id >= 0 && id < this.nPecas ? id : -1;
+  }
+
+  /** O ponto da superfície sob (x, y), em mm do projeto, e a peça; null se não há peça ali. A posição
+   *  vem da placa (uma imagem de 1 pixel em ponto flutuante): exata na face, sem guardar triângulos. */
+  pontoEm(x, y) {
+    const id = this.escolher(x, y);
+    if (id < 0) return null;
+    if (!this._alvoPonto) {
+      if (!this.renderer.extensions.has('EXT_color_buffer_float')) return null;
+      this._alvoPonto = new THREE.WebGLRenderTarget(1, 1, { type: THREE.FloatType });
+    }
+    const v = this._pixel(x, y, 'ponto', this._alvoPonto, new Float32Array(4));
+    if (!(v[3] > 0.5)) return null;
+    const o = this.cabecalho.origem;
+    return { id, ponto: [v[0] + o[0], v[1] + o[1], v[2] + o[2]], local: [v[0], v[1], v[2]] };
   }
 
   /** Centro da peça na tela (pixels CSS), para os testes do toque. */
@@ -488,11 +585,12 @@ export class Visor3D {
     window.removeEventListener('resize', this._redimensionar);
     this.controles.dispose();
     for (const m of this.malhas) {
-      m.malha.geometry.dispose(); m.malha.material.dispose(); m.escolha.dispose();
+      m.malha.geometry.dispose(); m.malha.material.dispose(); m.escolha.dispose(); m.ponto.dispose();
       if (m.arestas) { m.arestas.geometry.dispose(); m.arestas.material.dispose(); }
     }
     this.textura.dispose();
     if (this._alvo) this._alvo.dispose();
+    if (this._alvoPonto) this._alvoPonto.dispose();
     this.renderer.dispose();
   }
 }

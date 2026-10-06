@@ -3692,6 +3692,31 @@ class Handler(BaseHTTPRequestHandler):
     def _erro(self, mensagem, status=400, detalhe=""):
         self._json({"erro": str(mensagem), "detalhe": detalhe}, status)
 
+    def _modelo_leve(self, s: str, resto: list):
+        """GET /api/projetos/<s>/3d-leve[/pecas]: o 3D leve do modo "ver" (saida/modelo_leve.py). Pronto, vai
+        o arquivo; senão 202 com o progresso (o modo ver espera) ou 404 sem modelo."""
+        from saida import modelo_leve
+        r = modelo_leve.pedir(_gerente()._existente(s))
+        if r.get("situacao") != "pronto":
+            return self._json(r, 404 if r.get("situacao") == "sem modelo" else 500 if r.get("situacao") == "erro" else 202)
+        caminho = r["pecas"] if resto[:1] == ["pecas"] else r["mcel"]
+        etag = '"%s"' % r["versao"]
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.end_headers()
+            return
+        with open(caminho, "rb") as f:
+            dados = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8" if caminho.endswith(".json") else "application/octet-stream")
+        self.send_header("Content-Length", str(len(dados)))
+        self.send_header("ETag", etag)
+        self.send_header("X-Versao-3D", r["versao"])
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(dados)
+
     def _corpo(self) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
         if not n:
@@ -3831,6 +3856,8 @@ class Handler(BaseHTTPRequestHandler):
                     if cru is not None:
                         return self._json_pronto(cru)
                     return self._json(modelo_do_projeto(partes[0]))
+                if len(partes) >= 2 and partes[1] == "3d-leve":
+                    return self._modelo_leve(partes[0], partes[2:])
                 if len(partes) == 2 and partes[1] == "historico":
                     return self._json({"historico": _gerente().listar_historico(partes[0])})
                 if len(partes) == 2 and partes[1] == "exportar":

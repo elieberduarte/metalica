@@ -422,6 +422,10 @@
     }
     if (it.noAtivo) { executar({ lado: ladoDasSetas(), acao: it.noAtivo }); return; }
     if (!visivel(it.lado) && window.mostrarVista) window.mostrarVista(it.lado);
+    // o 3D no modo "ver" (web/visor3d) não edita: o comando carrega o editor no quadro, com a mesma vista, e roda nele
+    if (it.lado === '3d' && !docPronto('3d')) {
+      try { var w3 = janela('3d'); if (w3 && w3.visorLeve) w3.visorLeve.editar(); } catch (e) { /* ainda carregando */ }
+    }
     var inicio = Date.now();
     (function tentar() {
       var d = docPronto(it.lado);
@@ -577,6 +581,10 @@
   /** a busca procura peças do modelo: sem o 3D à vista, abre o 2D + 3D (a peça escolhida aparece nos dois) */
   function buscarNo3D() {
     if (vista() === '2d' && window.mostrarVista) window.mostrarVista('ambos');
+    try {                                   // no modo "ver", a busca é a do próprio visor
+      var w3 = janela('3d');
+      if (w3 && w3.visorLeve) { w3.visorLeve.focarBusca(); return; }
+    } catch (e) { /* segue esperando o editor */ }
     var t0 = Date.now();
     (function focar() {
       var real = document.getElementById('busca-campo');

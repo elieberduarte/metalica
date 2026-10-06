@@ -294,6 +294,7 @@ export class Editor {
     else if (this.parametros.get('exemplo')) this.carregarExemplo();
     else if (this.parametros.get('abrir')) await this.abrirModelo(this.parametros.get('abrir'));
     if (this.projeto) this._carregarReferencia();
+    if (this.projeto && !this.parametros.get('destacar')) this._vistaDoVisor();
     if (this.projeto && this.parametros.get('lancar') === '1') {
       const url = new URL(location.href); url.searchParams.delete('lancar'); history.replaceState(null, '', url);
       setTimeout(() => this.dialogoLancar(), 300);
@@ -1530,6 +1531,19 @@ export class Editor {
       (window.metalicaNavegar || ((u) => { location.href = u; }))(`/cad?projeto=${encodeURIComponent(this.projeto)}&desenho=${encodeURIComponent(j.nome)}`);
     } catch (e) { this.aviso(`Não foi possível abrir o detalhe de ${marca}: ${e.message}`, 'erro', 0); this.dica(''); }
     finally { pararDet(); }
+  }
+
+  /** Chegando do modo "ver" (web/visor3d/ver3d.js, botão Editar): a mesma vista e a mesma peça
+   *  escolhida. O visor guarda em mm do projeto; o editor trabalha em metros. */
+  _vistaDoVisor() {
+    let v = null;
+    try { v = JSON.parse(sessionStorage.getItem('metalica.vistaDoVisor') || 'null'); sessionStorage.removeItem('metalica.vistaDoVisor'); }
+    catch (e) { return; }
+    if (!v || v.projeto !== this.projeto || Date.now() - (v.quando || 0) > 120000 || !v.posicao || !v.alvo) return;
+    const V = this.camera.ativa.position.constructor;
+    this.camera.irPara(new V(...v.posicao.map(x => x / 1000)), new V(...v.alvo.map(x => x / 1000)), null, 1);
+    const ids = (v.selecao || []).filter(id => this.documento.entidades.has(id));
+    if (ids.length) this.selecao.definir(ids);
   }
 
   /**

@@ -705,6 +705,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return self._enviar(401, b"", "text/plain", {"Cache-Control": "no-store"}, cabeca)
         if rota in ("/", "/celular"):
             return self._enviar(302, b"", "text/plain", {"Location": "/celular/"}, cabeca)
+        if rota == "/visor3d/visor3d.js":                # o visor do 3D leve (o mesmo do modo "ver" do PC)
+            return self._arquivo(os.path.join(WEB, "visor3d", "visor3d.js"), cabeca)
         if rota.startswith("/lib/"):
             nome = rota[len("/lib/"):]
             if nome in LIB_LIBERADA:

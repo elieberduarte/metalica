@@ -193,6 +193,11 @@
     var f = document.getElementById('f3d');
     try { var e = f && f.contentWindow && f.contentWindow.editor; return e && e.pesquisarPecas ? e : null; } catch (x) { return null; }
   }
+  // o 3D no modo "ver" (web/visor3d): procura e mostra a peça, sem o editor
+  function visorLeve() {
+    var f = document.getElementById('f3d');
+    try { var w = f && f.contentWindow; return w && w.visorLeve ? w.visorLeve : null; } catch (x) { return null; }
+  }
   function verO3D() {
     if (window.mostrarVista && window.vistaAtual && window.vistaAtual() === '2d') window.mostrarVista('ambos');
   }
@@ -205,7 +210,11 @@
   function procurarPeca(q) {
     if (!NA_AREA()) { location.href = '/dividida?projeto=' + encodeURIComponent(PROJETO) + '&vista=3d&peca=' + encodeURIComponent(q); return; }
     var e = editor3d();
-    if (!e) return;
+    if (!e) {
+      var v = visorLeve();
+      if (v) { verO3D(); v.procurar(q); }
+      return;
+    }
     var r = e.pesquisarPecas(q);
     if (r.total) destacarNo3D(r.ids);
     else if (e.dica) { verO3D(); e.dica('Nenhuma peça com "' + q + '". Tente parte do nome, a posição (P12), o conjunto (M2) ou o perfil.'); }
@@ -411,7 +420,9 @@
     var t0 = Date.now();
     (function esperar() {
       var e = editor3d();
-      var pronto = peca ? (e && e.documento && e.documento.entidades && e.documento.entidades.size) : (window.barraUnica && window.barraUnica.executar);
+      var v = visorLeve();
+      var pronto = peca ? ((e && e.documento && e.documento.entidades && e.documento.entidades.size) || (v && v.pronto && v.pronto()))
+                        : (window.barraUnica && window.barraUnica.executar);
       if (pronto) { if (menu) executarMenu(menu.split(' › ')); else procurarPeca(peca); return; }
       if (Date.now() - t0 < 60000) setTimeout(esperar, 300);
     })();

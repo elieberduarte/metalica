@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>if (window.parent !== window) document.documentElement.classList.add('embutida');</script>
+<script src="/area.js"></script>
+<script src="/tema-janela.js"></script>
+<script>
+(function () {
+  var t = new URLSearchParams(location.search).get('tema');
+  if (t !== 'claro' && t !== 'escuro') { try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; } }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<title>Modelo 3D — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<link rel="stylesheet" href="/visor3d/ver3d.css">
+<script type="importmap">
+{ "imports": { "three": "/lib/three.module.js", "three/addons/": "/lib/" } }
+</script>
+</head>
+<body class="ver3d">
+<!-- O modo "ver" do modelo 3D: o modelo já pronto para a placa de vídeo (saida/modelo_leve.py), aberto em
+     menos de um segundo. Editar carrega o editor completo no mesmo lugar, com a mesma vista. -->
+<div id="palco"><canvas id="tela"></canvas>
+  <div id="carregando"><div><b id="carregando-titulo">Abrindo o modelo 3D…</b><div class="barra-prog"><i></i></div><div id="carregando-texto"></div></div></div>
+  <div id="rotulo-medida" hidden></div>
+</div>
+
+<div id="ferramentas" hidden>
+  <button type="button" id="btn-editar" class="forte" title="Carregar o editor completo para mudar o modelo (mantém a vista e a peça escolhida)">✎ Editar</button>
+  <span class="sep"></span>
+  <button type="button" data-painel="camadas" title="Ligar e desligar camadas">Camadas</button>
+  <label class="pintar" title="Pintar as peças">Pintar
+    <select id="pintar"><option value="material">pelo material</option><option value="camada">por camada</option><option value="perfil">por perfil</option></select>
+  </label>
+  <button type="button" id="btn-medir" title="Medir a distância entre dois pontos das peças (M)">Medir</button>
+  <span class="sep"></span>
+  <input id="busca" type="search" placeholder="Buscar peça (nome, perfil, marca)" autocomplete="off">
+  <span class="sep"></span>
+  <button type="button" data-vista="iso" title="Perspectiva">Iso</button>
+  <button type="button" data-vista="topo" title="Planta">Topo</button>
+  <button type="button" data-vista="frente" title="Frente">Frente</button>
+  <button type="button" data-vista="lado" title="Lateral">Lado</button>
+  <button type="button" id="btn-arestas" class="ligado" title="Arestas das peças">Arestas</button>
+  <button type="button" id="btn-enquadrar" title="Ver o modelo inteiro (F)">Enquadrar</button>
+</div>
+
+<aside id="painel" hidden>
+  <div class="painel-topo"><b id="painel-titulo"></b><button type="button" id="painel-fechar" title="Fechar">×</button></div>
+  <div id="painel-corpo"></div>
+</aside>
+
+<div id="situacao"></div>
+
+<script src="/vivo.js"></script>
+<script type="module" src="/visor3d/ver3d.js"></script>
+</body>
+</html>
