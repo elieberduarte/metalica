@@ -7,9 +7,10 @@
 import * as THREE from 'three';
 
 const COR_ARQ = { claro: '#9aa3ae', escuro: '#5b6573' };
+// os eixos em roxo: o vermelho é o da malha no 2D ao lado, e o 3D com a mesma cor se confundia com ele (06/10)
 const TEMA = {
-  claro: { linha: '#c0392b', fundo: '#ffffff', traco: '#c0392b', nivel: '#1f5fbf' },
-  escuro: { linha: '#e0786e', fundo: '#1b2130', traco: '#e0786e', nivel: '#7fb0ff' },
+  claro: { linha: '#7c3aed', fundo: '#ffffff', traco: '#6d28d9', nivel: '#1f5fbf' },
+  escuro: { linha: '#b197fc', fundo: '#1b2130', traco: '#c4b5fd', nivel: '#7fb0ff' },
 };
 const cor = (hex) => new THREE.Color().setStyle(hex, THREE.LinearSRGBColorSpace);   // a saída do visor é linear
 const semToque = (o) => { o.raycast = () => {}; return o; };
@@ -106,7 +107,7 @@ export function montarReferencia(r, { escuro = false, caixa = null, zChao = 0 } 
   if (eixos.length) {
     const pos = [];
     for (const e of eixos) pos.push(e.a[0], e.a[1], e.a[2] || 0, e.b[0], e.b[1], e.b[2] || 0);
-    const l = tracejado(pos, cores.linha, escuro ? 0.45 : 0.55, 900, 600);
+    const l = tracejado(pos, cores.linha, escuro ? 0.6 : 0.7, 900, 600);
     l.name = 'eixos';
     grupo.add(l);
     const L = Math.max(...eixos.map(e => Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1])));

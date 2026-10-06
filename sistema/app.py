@@ -3069,17 +3069,25 @@ def referencia_do_lancamento(s: str) -> dict:
     if caminho and os.path.exists(caminho):
         chave = (os.path.getmtime(caminho), os.path.getsize(caminho))
         guardado = _CACHE_REFERENCIA.get(s)
-        if guardado and guardado[0] == chave:
-            saida["segmentos"] = guardado[1]
+        if guardado and guardado[0] == chave and len(guardado) > 2:
+            saida["segmentos"], malha = guardado[1], guardado[2]
         else:
-            segs = lancamento.segmentos_da_referencia(Desenho.de_dict(g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO)))
-            _CACHE_REFERENCIA[s] = (chave, segs)
+            des = Desenho.de_dict(g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO))
+            segs, malha = lancamento.segmentos_da_referencia(des), lancamento.eixos_da_malha(des)
+            _CACHE_REFERENCIA[s] = (chave, segs, malha)
             saida["segmentos"] = segs
+    else:
+        malha = []
     p = g.ler(s)
     # sem eixos gravados, os identificados do modelo — os mesmos das plantas (pedido do usuário, 29/09:
     # "trazer os eixos para o modelo 3D para ver de que lado está cada coisa")
     ex = _eixos.de_dict(p.get("eixos")) or _eixos_automaticos(s)
-    if ex:
+    if malha:
+        # a malha desenhada na planta manda: os eixos como estão no 2D agora, com os mesmos nomes (06/10)
+        z0 = float((ex or {}).get("z_base") or 0.0)
+        saida["eixos"] = [dict(e, a=[e["a"][0], e["a"][1], z0], b=[e["b"][0], e["b"][1], z0]) for e in malha]
+        saida["da_planta"] = True
+    elif ex:
         saida["automaticos"] = not p.get("eixos")
         saida["eixos"] = [{"nome": e["nome"], "tipo": e["tipo"], "a": [round(c, 1) for c in e["a"]],
                            "b": [round(c, 1) for c in e["b"]]} for e in _eixos.segmentos(ex)]

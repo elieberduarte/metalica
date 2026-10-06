@@ -306,6 +306,22 @@ def segmentos_da_referencia(des: Desenho, limite: int = 120_000) -> List[List[in
     return [s for _L, s in segs]
 
 
+def eixos_da_malha(des: Desenho, z: float = 0.0) -> List[dict]:
+    """Os eixos da malha desenhada na planta (camada EIXO, linhas com o nome do eixo) como o 3D os mostra:
+    {"nome", "tipo": "numero"|"letra", "a", "b"} em mm, na altura `z`. Com eles o 3D mostra os eixos como estão no 2D
+    agora — os gravados no projeto ou os deduzidos dos pilares tinham outros nomes e posições (pedido do usuário, 06/10:
+    "estou achando que alguns pontos não batem")."""
+    saida = []
+    for e in des.entidades.values():
+        a = e.atributos or {}
+        if not isinstance(e, Linha) or str(e.camada).upper() != "EIXO" or not a.get("eixo"):
+            continue
+        nome = str(a["eixo"])
+        saida.append({"nome": nome[:6], "tipo": "numero" if nome[:1].isdigit() else "letra",
+                      "a": [round(e.a[0], 1), round(e.a[1], 1), z], "b": [round(e.b[0], 1), round(e.b[1], 1), z]})
+    return saida
+
+
 # =====================================================================================
 # 2. Eixos: malha gerada e leitura das linhas da camada EIXO
 # =====================================================================================
