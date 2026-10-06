@@ -270,7 +270,10 @@ try:
       const r7 = [nomes(), cotasY(), c.doc.get('eA').a[1]];
       c.ativarFerramenta('selecionar'); c.selecionar(['e1']); c.ativarFerramenta('copiar');
       c.ferramenta.onPonto([X, 20000], {}); c.ferramenta.onPonto([X, 22500], {}); c.ferramenta.cancelar();
-      const r8 = [nomes(), cotasY(), c.doc.get('eA').a[1]];
+      // os nomes em ordem de posição (de baixo para cima), a linha e a bolinha de cada um
+      const ordem = () => [...c.doc.entidades.values()].filter(e => e.tipo === 'linha' && (e.atributos || {}).malha && Math.abs(e.a[1] - e.b[1]) < 1)
+        .sort((a, b) => a.a[1] - b.a[1]).map(e => e.atributos.eixo + ([...c.doc.entidades.values()].find(t => t.tipo === 'texto' && (t.atributos || {}).nome_eixo && Math.abs(t.posicao[1] - e.a[1]) < 1) || {}).texto).join(' ');
+      const r8 = [ordem(), cotasY(), c.doc.get('eA').a[1]];
       c.desfazer();
       return JSON.stringify([r1, r0, r2, r3, r4, r5, r6, r7, r8]);
     """))
@@ -283,7 +286,7 @@ try:
     ok(r_l[5] == [0, 12000], f"Ctrl+Z duas vezes volta ({r_l[5]})")
     ok(r_l[6] == ["12345", "6000,6000,6000,6000,24000", 45500, 46000], f"eixo 3 copiado 2× para cima: eixos 4 e 5, cadeia de 4 vãos e total 24000, A e B esticam ({r_l[6]})")
     ok(r_l[7] == ["123", "6000,6000,12000", 33500], f"Ctrl+Z duas vezes volta a malha ({r_l[7]})")
-    ok(r_l[8] == ["1234", "2500,3500,6000,12000", 33500], f"eixo 1 copiado para o meio do vão 1–2: eixo 4, a cota do vão se divide em 2500 + 3500 ({r_l[8]})")
+    ok(r_l[8] == ["11 22 33 44", "2500,3500,6000,12000", 33500], f"eixo 1 copiado para o meio do vão 1–2: a cópia é o 2 e os seguintes andam um (2→3, 3→4), na linha e na bolinha; a cota do vão se divide em 2500 + 3500 ({r_l[8]})")
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")
     for t, x in erros[:6]: print("     [%s] %s" % (t, x[:300]))

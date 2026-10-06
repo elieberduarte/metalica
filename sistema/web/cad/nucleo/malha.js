@@ -125,6 +125,33 @@ export function acompanharMalha(doc, novas) {
 }
 
 const LETRAS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const indiceLetra = (s) => [...s].reduce((t, ch) => t * 26 + LETRAS.indexOf(ch) + 1, 0) - 1;
+const letraDe = (i) => (i < 26 ? LETRAS[i] : letraDe(Math.floor(i / 26) - 1) + LETRAS[i % 26]);
+
+/**
+ * O nome do eixo copiado para a posição `s` (lado medido do original `o`) pela ordem da família (06/10: "se copio um
+ * eixo central ele não faz a sequência do eixo e sim da quantidade total"): entre o 4 e o 5 ele é o 5, e os seguintes
+ * andam um (5→6, 6→7…); além do último, o seguinte; antes do primeiro, o primeiro. O mesmo com letras. Devolve
+ * {nome, renomear: Map nome antigo → novo} (vazio quando não cabe na sequência: nomes como 5', família misturada).
+ */
+function nomeNaSequencia(o, s, eixos, usados) {
+  const velho = String(o.atributos.eixo);
+  const numero = /^\d+$/.test(velho), letra = /^[A-Z]+$/.test(velho);
+  if (!numero && !letra) return { nome: proximoNome(velho, usados), renomear: new Map() };
+  const valor = (n) => (numero ? (/^\d+$/.test(n) ? Number(n) : null) : (/^[A-Z]+$/.test(n) ? indiceLetra(n) : null));
+  const nomeDe = (v) => (numero ? String(v) : letraDe(v));
+  const fam = eixos.filter(e => paralelos(e, o)).map(e => ({ t: lado(o, e.a), v: valor(String(e.atributos.eixo)) })).filter(x => x.v !== null);
+  if (!fam.length) return { nome: proximoNome(velho, usados), renomear: new Map() };
+  const mn = fam.reduce((a, b) => (b.v < a.v ? b : a)), mx = fam.reduce((a, b) => (b.v > a.v ? b : a));
+  // para que lado os nomes crescem (com um eixo só, para o lado da cópia)
+  const sentido = Math.sign(mx.t - mn.t) || Math.sign(s) || 1;
+  const depois = fam.filter(x => (x.t - s) * sentido > TOL);
+  if (!depois.length) return { nome: proximoNome(velho, usados), renomear: new Map() };
+  const v0 = Math.min(...depois.map(x => x.v));
+  const renomear = new Map();
+  for (const x of fam) if (x.v >= v0) renomear.set(nomeDe(x.v), nomeDe(x.v + 1));
+  return { nome: nomeDe(v0), renomear };
+}
 /** o nome seguinte da família do eixo `nome` (7 depois do 6; C depois de B; AA depois de Z) que ainda não está em `usados` */
 function proximoNome(nome, usados) {
   if (/^\d+'?$/.test(nome)) {
@@ -157,7 +184,20 @@ export function eixosCopiados(doc, copias, originais) {
     if (!ehEixo(c) || !ehEixo(o)) return;
     const s = lado(o, c.a);
     const velho = String(o.atributos.eixo);
-    const nome = proximoNome(velho, usados);
+    const { nome, renomear } = nomeNaSequencia(o, s, eixos, usados);
+    // os eixos seguintes andam um nome (a linha, a bolinha e o texto dela), do mesmo lado da família
+    if (renomear.size) {
+      const daFamilia = new Set(eixos.filter(e => paralelos(e, o)).map(e => String(e.atributos.eixo)));
+      for (const x of todas) {
+        const xa = x.atributos || {};
+        if (!renomear.has(String(xa.eixo)) || !daFamilia.has(String(xa.eixo)) || !(ehEixo(x) ? paralelos(x, o) : (xa.bolinha || xa.nome_eixo))) continue;
+        const cur = atual(x), novo = renomear.get(String(xa.eixo));
+        const n = { ...cur, atributos: { ...(cur.atributos || {}), eixo: novo } };
+        if (x.tipo === 'texto' && xa.nome_eixo) n.texto = novo;
+        trocas.set(x.id, criar(n));
+      }
+      for (const [a, b] of renomear) { usados.delete(a); usados.add(b); }
+    }
     usados.add(nome);
     c.atributos = { ...c.atributos, eixo: nome };
     delete c.atributos.grupo_copia;
