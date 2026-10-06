@@ -168,6 +168,63 @@ def test_desligado_nada_escuta(tmp_path):
     assert S.Celular(str(tmp_path), str(tmp_path / "t"), porta=porta).configuracao()["ligado"] is False
 
 
+def test_desligar_fecha_as_conexoes_abertas(tmp_path):
+    """O navegador reaproveita a conexão (keep-alive): desligado, nem por ela algo responde."""
+    c = S.Celular(str(tmp_path), str(tmp_path / "t"), porta=_porta(), host="127.0.0.1")
+    c.ligar()
+    con = http.client.HTTPConnection("127.0.0.1", c.porta, timeout=5)
+    con.request("GET", "/celular/")
+    r = con.getresponse()
+    r.read()
+    assert r.status == 401
+    c.desligar()
+    try:
+        con.request("GET", "/celular/")
+        st = con.getresponse().status
+    except (OSError, http.client.HTTPException):
+        st = None                                       # a conexão foi fechada
+    con.close()
+    assert st in (None, 503), st
+
+
+def test_https_com_o_certificado_na_pasta(tmp_path):
+    """Com tls/certificado.pem + chave.pem + nome.txt na pasta de trabalho, o servidor fala HTTPS e o QR
+    leva ao nome do certificado (não ao IP). Certificado de teste gerado na hora pelo openssl."""
+    import shutil, ssl, subprocess
+    openssl = shutil.which("openssl")
+    if not openssl:
+        pytest.skip("openssl não instalado")
+    tls = tmp_path / "t" / "tls"
+    tls.mkdir(parents=True)
+    r = subprocess.run([openssl, "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-days", "2",
+                        "-subj", "/CN=localhost", "-keyout", str(tls / "chave.pem"), "-out", str(tls / "certificado.pem")],
+                       capture_output=True)
+    if r.returncode:
+        pytest.skip("openssl não gerou o certificado: %s" % r.stderr[:200])
+    (tls / "nome.txt").write_text("metalica.exemplo.com.br", encoding="utf-8")
+    c = S.Celular(str(tmp_path), str(tmp_path / "t"), porta=_porta(), host="127.0.0.1")
+    assert c.https
+    assert c.novo_codigo()["url"].startswith("https://metalica.exemplo.com.br:%d/celular/parear?c=" % c.porta)
+    c.ligar()
+    try:
+        ctx = ssl.create_default_context(cafile=str(tls / "certificado.pem"))
+        con = http.client.HTTPSConnection("localhost", c.porta, timeout=5, context=ctx)
+        con.request("GET", "/celular/")
+        resp = con.getresponse()
+        assert resp.status == 401                         # HTTPS, e sem a chave nada responde
+        con.close()
+        cod = c.novo_codigo()["codigo"]
+        con = http.client.HTTPSConnection("localhost", c.porta, timeout=5, context=ctx)
+        con.request("GET", "/celular/parear?c=" + cod)
+        resp = con.getresponse()
+        assert resp.status == 302 and "; Secure" in resp.getheader("Set-Cookie")   # em HTTPS o cookie é só seguro
+        con.close()
+        with pytest.raises(Exception):                    # HTTP puro na porta HTTPS não passa
+            _pedir(c, "/celular/")
+    finally:
+        c.desligar()
+
+
 def test_extensao_so_no_desenvolvimento():
     """O programa instalado (sem --dev) não carrega o celular; o empacotador o deixa de fora."""
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

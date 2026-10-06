@@ -166,6 +166,31 @@ try:
     # métodos que gravam: recusados também para o aparelho pareado
     st = ap.avaliar("fetch('/celular/dados/projetos.json', {method: 'POST', body: '{}'}).then(r => r.status)")
     ok(st == 405, f"POST pelo celular pareado: {st}")
+    # ------------------------------------------------------------------ obra: a cópia guardada, sem o computador
+    ok(esperar(ap, "(() => { try { const g = JSON.parse(localStorage.getItem('guardados') || '{}'); return g['obra-celular'] && g['obra-celular'].completo; } catch (e) { return false; } })()", 60),
+       "o projeto aberto fica guardado no aparelho (pacote inteiro)")
+    pc.avaliar("document.getElementById('interruptor').click()")                # o celular "sai para a obra"
+    ok(esperar(pc, "document.getElementById('estado-texto').textContent === 'Desligado'", 10), "obra: o computador some da rede")
+    ap.navegar(cel + "/celular/", limite=30)
+    r = esperar(ap, "document.querySelectorAll('.projeto').length === 1 && document.getElementById('conexao').textContent.indexOf('Sem rede') === 0", 30)
+    ok(r, "sem rede: a lista abre da cópia e o selo diz de quando ela é")
+    if not r:
+        print("        na tela:", (ap.avaliar("document.getElementById('conexao').textContent + ' | ' + document.body.innerText.slice(0, 300)") or "").replace("\n", " "))
+        print("        cópia:", ap.avaliar("Promise.all(['dados/projetos.json', 'api/estado'].map(u => fetch(u).then(r => r.status + ' ' + r.headers.get('X-Metalica-Copia')).catch(e => 'erro ' + e))).then(x => x.join(' | '))"),
+              "| controlada:", ap.avaliar("!!navigator.serviceWorker.controller"))
+    ok(esperar(ap, "document.body.innerText.indexOf('no aparelho') >= 0", 5), "o projeto aparece como guardado no aparelho")
+    ap.avaliar("document.querySelector('.projeto').click()")
+    ok(esperar(ap, "window.visor && window.visor.fichas && !document.querySelector('.carregando') && window.visor.nPecas === 67", 60),
+       "sem rede: o 3D abre da cópia")
+    ap.avaliar("location.hash = '#/leitor/obra-celular/resumo-da-obra.pdf/1'")
+    ok(esperar(ap, "(() => { const c = document.querySelector('#pagina-pdf canvas'); return c && c.width > 300; })()", 40),
+       "sem rede: o PDF abre da cópia")
+    foto(ap, "celular_6_sem_rede.png")
+    pc.avaliar("document.getElementById('interruptor').click()")                # de volta ao escritório
+    ok(esperar(pc, "document.getElementById('estado-texto').textContent.indexOf('Ligado') === 0", 10), "de volta: o computador na rede")
+    ap.navegar(cel + "/celular/", limite=30)
+    ok(esperar(ap, "document.querySelectorAll('.projeto').length === 1 && document.getElementById('conexao').textContent.indexOf('No PC') === 0", 30),
+       "de volta à rede: o selo diz que está no PC de novo, sem parear outra vez")
     # ------------------------------------------------------------------ computador: aparelhos
     ok(esperar(pc, "document.querySelectorAll('[data-remover]').length === 1", 15), "o aparelho aparece na lista do computador")
     nome = pc.avaliar("document.querySelector('.aparelhos td').textContent") or ""

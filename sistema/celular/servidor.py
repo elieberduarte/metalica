@@ -46,7 +46,8 @@ JANELA_FALHAS = 600.0
 LIB_LIBERADA = {"three.module.js", "OrbitControls.js"}
 TIPOS = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
          ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".png": "image/png",
-         ".pdf": "application/pdf", ".mcel": "application/octet-stream", ".svg": "image/svg+xml", ".txt": "text/plain; charset=utf-8"}
+         ".pdf": "application/pdf", ".mcel": "application/octet-stream", ".svg": "image/svg+xml", ".txt": "text/plain; charset=utf-8",
+         ".webmanifest": "application/manifest+json; charset=utf-8"}
 
 
 def pasta_de_trabalho(pasta_projetos: str, teste: bool = False) -> str:
@@ -108,13 +109,16 @@ class Celular:
     """O acesso pelo celular de um programa: estado, aparelhos, códigos, pacotes e o servidor."""
 
     def __init__(self, pasta_projetos: str, pasta_trabalho: str, porta: int = PORTA_PADRAO,
-                 host: Optional[str] = None, https: bool = False):
+                 host: Optional[str] = None, https: Optional[bool] = None):
         self.pasta_projetos = pasta_projetos
         self.trabalho = pasta_trabalho
         self.pacotes = os.path.join(pasta_trabalho, "pacotes")
         self.host = host or os.environ.get("METALICA_CELULAR_HOST") or "0.0.0.0"
         self.porta = int(os.environ.get("METALICA_CELULAR_PORTA") or porta)
-        self.https = https
+        # HTTPS (a cópia para a obra pede conexão segura): o certificado do nome da rede interna em
+        # tls/certificado.pem + tls/chave.pem, e o nome em tls/nome.txt (ex.: metalica.dominio.com.br)
+        self.tls = os.path.join(pasta_trabalho, "tls")
+        self.https = self._tem_certificado() if https is None else https
         self._trava = threading.RLock()
         self._codigos: Dict[str, float] = {}
         self._falhas: Dict[str, List[float]] = {}
@@ -143,6 +147,22 @@ class Celular:
             json.dump(dados, f, ensure_ascii=False, indent=1)
         os.replace(c + ".tmp", c)
 
+    def _tem_certificado(self) -> bool:
+        return all(os.path.isfile(os.path.join(self.tls, n)) for n in ("certificado.pem", "chave.pem"))
+
+    def nome_na_rede(self) -> Optional[str]:
+        """O nome do certificado (o QR leva a ele, e não ao IP: o certificado é do nome)."""
+        try:
+            with open(os.path.join(self.tls, "nome.txt"), encoding="utf-8") as f:
+                return f.read().strip() or None
+        except OSError:
+            return None
+
+    def _endereco_base(self, ip: str) -> str:
+        if self.https and self.nome_na_rede():
+            return "https://%s:%d" % (self.nome_na_rede(), self.porta)
+        return "%s://%s:%d" % ("https" if self.https else "http", ip, self.porta)
+
     def aparelhos(self) -> List[dict]:
         return self._ler("aparelhos.json", [])
 
@@ -155,9 +175,8 @@ class Celular:
 
     def estado(self) -> dict:
         ips = enderecos_da_rede()
-        esquema = "https" if self.https else "http"
-        return {"ligado": self.ligado, "porta": self.porta, "enderecos": ips,
-                "url": "%s://%s:%d/celular/" % (esquema, ips[0], self.porta),
+        return {"ligado": self.ligado, "porta": self.porta, "enderecos": ips, "https": self.https,
+                "nome": self.nome_na_rede(), "url": self._endereco_base(ips[0]) + "/celular/",
                 "aparelhos": [{k: a.get(k) for k in ("id", "nome", "criado", "visto", "ip")} for a in self.aparelhos()],
                 "pacotes": {s: dict(v) for s, v in self._situacao.items()}}
 
@@ -169,10 +188,8 @@ class Celular:
             self._codigos = {c: t for c, t in self._codigos.items() if t > agora}
             self._codigos[codigo] = agora + VALIDADE_CODIGO
         ips = enderecos_da_rede()
-        esquema = "https" if self.https else "http"
-        return {"codigo": codigo, "validade_s": int(VALIDADE_CODIGO),
-                "url": "%s://%s:%d/celular/parear?c=%s" % (esquema, ips[0], self.porta, codigo),
-                "urls": ["%s://%s:%d/celular/parear?c=%s" % (esquema, ip, self.porta, codigo) for ip in ips]}
+        urls = [self._endereco_base(ip) + "/celular/parear?c=" + codigo for ip in ips]
+        return {"codigo": codigo, "validade_s": int(VALIDADE_CODIGO), "url": urls[0], "urls": list(dict.fromkeys(urls))}
 
     def parear(self, codigo: str, agente: str, ip: str) -> Optional[str]:
         """Troca o código pela chave do aparelho (o valor do cookie) — ou None se o código não vale."""
@@ -393,6 +410,13 @@ class Celular:
         with self._trava:
             if self._servidor is None:
                 srv = _Servidor((self.host, self.porta), _Handler)
+                if self.https:
+                    import ssl
+                    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+                    ctx.load_cert_chain(os.path.join(self.tls, "certificado.pem"), os.path.join(self.tls, "chave.pem"))
+                    # o aperto de mão fica no fio de cada conexão (não no que aceita): um aparelho lento não trava os outros
+                    srv.socket = ctx.wrap_socket(srv.socket, server_side=True, do_handshake_on_connect=False)
                 srv.celular = self
                 self._servidor = srv
                 self._parar.clear()
@@ -411,6 +435,7 @@ class Celular:
             self._parar.set()
             if srv is not None:
                 srv.shutdown()
+                srv.fechar_conexoes()          # as já abertas (keep-alive) também: desligado, nada responde
                 srv.server_close()
             if lembrar:
                 cfg = self.configuracao()
@@ -423,6 +448,35 @@ class _Servidor(http.server.ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
     celular: Celular = None
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self._conexoes = set()
+        self._trava_conexoes = threading.Lock()
+
+    def process_request(self, request, client_address):
+        with self._trava_conexoes:
+            self._conexoes.add(request)
+        super().process_request(request, client_address)
+
+    def shutdown_request(self, request):
+        with self._trava_conexoes:
+            self._conexoes.discard(request)
+        super().shutdown_request(request)
+
+    def fechar_conexoes(self):
+        """O navegador mantém a conexão aberta entre um pedido e outro: ao desligar, ela fecha também."""
+        with self._trava_conexoes:
+            abertas, self._conexoes = list(self._conexoes), set()
+        for s in abertas:
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                s.close()
+            except OSError:
+                pass
 
     def handle_error(self, request, client_address):
         # o celular que troca de tela no meio de um download fecha a conexão: não é erro
@@ -524,6 +578,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         url = urlparse(self.path)
         rota = unquote(url.path)
         cel = self.celular
+        if cel._servidor is not self.server:            # desligado no meio de uma conexão aberta
+            self.close_connection = True
+            return self._enviar(503, b"", "text/plain", {"Connection": "close"}, cabeca)
         if cel.freado(ip):
             return self._enviar(429, b"", "text/plain", {"Retry-After": "600"}, cabeca)
         if rota == "/celular/parear":

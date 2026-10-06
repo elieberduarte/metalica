@@ -7,7 +7,10 @@
 
 const DADOS = 'dados/';
 const q = new URLSearchParams(location.search);
-const OFFLINE = q.get('offline') === '1';       // só para mostrar no protótipo como fica sem rede
+let OFFLINE = q.get('offline') === '1';         // sem rede: a resposta veio da cópia guardada (ou ?offline=1 no protótipo)
+let copiaDe = null;                               // de quando é a cópia mostrada
+const COPIA_OK = 'serviceWorker' in navigator && window.isSecureContext;     // a cópia para a obra pede HTTPS (ou localhost)
+if (COPIA_OK) navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {});
 
 const $ = (s, el = document) => el.querySelector(s);
 const tela = $('#tela');
@@ -25,6 +28,9 @@ async function buscar(url) {
   try { r = await fetch(url, { credentials: 'same-origin' }); }
   catch (e) { throw new Error('sem conexão com o computador'); }
   if (r.status === 401) throw new SemPar('aparelho não pareado');
+  const copia = r.headers.get('X-Metalica-Copia');
+  if (copia) { OFFLINE = true; if (copia !== '1') copiaDe = copia; }
+  else if (!url.includes('?v=')) { OFFLINE = q.get('offline') === '1'; copiaDe = null; }
   if (r.status === 202) throw new Preparando(await r.json().catch(() => ({})));
   if (!r.ok) { const j = await r.json().catch(() => null); throw new Error((j && j.erro) || ('erro ' + r.status)); }
   return r;
@@ -73,7 +79,7 @@ function conexao(manifestoGerado) {
   const pc = estadoPC && estadoPC.computador;
   if (OFFLINE) {
     c.className = 'chip offline';
-    c.textContent = 'Sem rede · cópia ' + (manifestoGerado ? dataHora(manifestoGerado).slice(0, 5) : '');
+    c.textContent = 'Sem rede · cópia ' + (copiaDe ? dataHora(copiaDe).slice(0, 5) : manifestoGerado ? dataHora(manifestoGerado).slice(0, 5) : '');
   } else {
     c.className = 'chip';
     c.textContent = pc ? 'No PC · ' + pc : 'No PC · Wi-Fi';
@@ -164,6 +170,8 @@ async function telaLista() {
   const idx = await json('projetos.json');
   conexao(idx.projetos[0] && idx.projetos[0].gerado);
   diag('projetos', idx.projetos.length);
+  const guardados = lerGuardados();
+  if (!OFFLINE) sincronizar(idx.projetos.filter(p => guardados[p.slug]).map(p => p.slug));
   const projetos = idx.projetos.slice().sort((a, b) => String(b.alterado).localeCompare(String(a.alterado)));
   tela.innerHTML = `<div class="busca"><input type="search" placeholder="Buscar projeto" aria-label="Buscar projeto"></div>
     ${OFFLINE ? '<div class="aviso-topo">Sem rede: estes são os projetos guardados no aparelho.</div>' : ''}
@@ -178,7 +186,8 @@ async function telaLista() {
         <div class="mais-fraco">alterado ${dataHora(p.alterado)}</div>
         ${p.numeros ? `<div class="numeros"><span><b>${n.peso_kg ? kg(n.peso_kg) : '—'}</b> aço</span><span><b>${nf(n.pecas)}</b> peças</span>
           <span><b>${nf(n.pranchas)}</b> pranchas</span></div>` : ''}
-        <div class="etiquetas">${OFFLINE ? '<span class="etiqueta ok">no aparelho</span>'
+        <div class="etiquetas" data-slug="${esc(p.slug)}">${OFFLINE ? (guardados[p.slug] ? `<span class="etiqueta ok">no aparelho · ${dataHora(guardados[p.slug].gerado).slice(0, 5)}</span>` : '<span class="etiqueta">não guardado no aparelho</span>')
+          : guardados[p.slug] && COPIA_OK ? `<span class="etiqueta ok">guardado para a obra</span>${p.atual === false ? '<span class="etiqueta aviso">mudou no PC</span>' : ''}`
           : p.bytes ? `<span class="etiqueta">${nf(p.bytes / 1048576, 1)} MB para a obra</span>${p.atual === false ? '<span class="etiqueta aviso">mudou no PC</span>' : ''}`
           : '<span class="etiqueta">prepara ao abrir</span>'}</div>
       </a>`;
@@ -196,6 +205,7 @@ async function telaProjeto(slug, aba, extra) {
   topo(p.nome || slug, m.atualizando ? 'atualizando no computador…'
     : [p.revisao, 'pacote de ' + dataHora(m.gerado)].filter(Boolean).join(' · '), () => { location.hash = '#/'; });
   if (m.atualizando) vigiarAtualizacao(slug, m.gerado);
+  if (!OFFLINE && !m.atualizando) guardarProjeto(slug, m);
   conexao(m.gerado);
   abas(slug, aba);
   if (aba !== 'modelo') liberar3D();
@@ -505,6 +515,79 @@ async function telaPranchas(slug, m) {
       <div><b>${String(f.numero).padStart(2, '0')}</b>${esc(f.titulo)} <span class="mais-fraco">${esc(f.formato)}</span></div></a>`).join('')}</div>`;
 }
 
+// ------------------------------------------------------------------ cópia para a obra
+// Cada projeto aberto na rede fica guardado no aparelho (o pacote inteiro: 3D, quantitativos, resumos e
+// pranchas). Na volta à rede, a lista confere o manifesto de cada guardado e baixa só os arquivos que
+// mudaram (pela versão SHA-1 no endereço); as versões velhas saem da cópia. Quem guarda as respostas é
+// o trabalhador de fundo (sw.js); aqui só se pede o que falta.
+
+function lerGuardados() { try { return JSON.parse(localStorage.getItem('guardados') || '{}'); } catch (e) { return {}; } }
+function gravarGuardados(g) { try { localStorage.setItem('guardados', JSON.stringify(g)); } catch (e) { /* sem armazenamento */ } }
+
+/** Na primeira visita, a lista e o estado foram pedidos antes de o trabalhador de fundo assumir a
+ *  página (e não ficaram guardados): assumida, pede de novo para a cópia ter os dois. */
+let aquecida = null;
+function aquecerCopia() {
+  if (!COPIA_OK) return Promise.resolve();
+  if (!aquecida) aquecida = (async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) {
+      await new Promise(r => { navigator.serviceWorker.addEventListener('controllerchange', r, { once: true }); setTimeout(r, 5000); });
+    }
+    if (!navigator.serviceWorker.controller) { aquecida = null; return; }
+    await Promise.all(['dados/projetos.json', 'api/estado'].map(u => fetch(u, { credentials: 'same-origin' }).then(r => r.arrayBuffer()).catch(() => {})));
+  })();
+  return aquecida;
+}
+
+const emSincronia = new Set();
+async function guardarProjeto(slug, m) {
+  if (!COPIA_OK || emSincronia.has(slug)) return;
+  await aquecerCopia();
+  const g = lerGuardados();
+  if (g[slug] && g[slug].gerado === m.gerado && g[slug].completo) return;
+  emSincronia.add(slug);
+  try {
+    await navigator.serviceWorker.ready;
+    const cache = await caches.open('metalica-dados-1');
+    const urls = (m.arquivos || []).map(a => new URL(arquivo(m, a.nome), location.href).href);
+    let feitos = 0;
+    for (const u of urls) {
+      if (!(await cache.match(u))) {
+        const r = await fetch(u, { credentials: 'same-origin' });       // o trabalhador de fundo guarda
+        if (!r.ok) throw new Error('erro ' + r.status);
+        await r.arrayBuffer();
+      }
+      feitos++;
+      const el = document.querySelector(`.etiquetas[data-slug="${CSS.escape(slug)}"]`);
+      if (el) el.innerHTML = `<span class="etiqueta">guardando ${feitos} de ${urls.length}</span>`;
+    }
+    // as versões velhas do projeto saem da cópia
+    const prefixo = new URL(`${DADOS}${encodeURIComponent(slug)}/`, location.href).href;
+    const atuais = new Set(urls);
+    for (const pedido of await cache.keys()) {
+      if (pedido.url.startsWith(prefixo) && pedido.url.includes('?v=') && !atuais.has(pedido.url)) await cache.delete(pedido);
+    }
+    const g2 = lerGuardados();
+    g2[slug] = { gerado: m.gerado, completo: true, nome: m.projeto.nome, bytes: m.bytes };
+    gravarGuardados(g2);
+    const el = document.querySelector(`.etiquetas[data-slug="${CSS.escape(slug)}"]`);
+    if (el) el.innerHTML = '<span class="etiqueta ok">guardado para a obra</span>';
+  } catch (e) {
+    /* sem rede no meio: fica para a próxima */
+  } finally {
+    emSincronia.delete(slug);
+  }
+}
+
+async function sincronizar(slugs) {
+  await aquecerCopia();
+  for (const s of slugs) {
+    try { const m = await json(`${s}/manifesto.json`); if (!m.atualizando && !OFFLINE) await guardarProjeto(s, m); }
+    catch (e) { /* preparando no computador ou fora da rede: fica para a próxima */ }
+  }
+}
+
 // ------------------------------------------------------------------ leitor de PDF (pranchas e resumos)
 // O Chrome do Android não mostra PDF dentro da página (o iPhone mostra): o leitor é o pdf.js, que
 // vai junto com as telas (lib/), funciona sem internet e é igual nos dois. A folha é desenhada na
@@ -652,6 +735,7 @@ async function telaDiagnostico() {
     ['Placa de vídeo', gl], ['Textura máxima', texMax],
     ['Memória do aparelho', navigator.deviceMemory ? navigator.deviceMemory + ' GB (aprox.)' : 'o navegador não informa'],
     ['Armazenamento', armaz],
+    ['Cópia para a obra', COPIA_OK ? `${Object.keys(lerGuardados()).length} projeto(s) guardado(s)` + (OFFLINE ? ' · sem rede agora' : '') : 'indisponível: precisa de conexão segura (HTTPS)'],
     ['Instalado na tela inicial', (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) ? 'sim' : 'não'],
     ['Computador', estadoPC ? `${estadoPC.computador} · programa ${estadoPC.programa}` : (OFFLINE ? 'sem rede' : '—')],
     ['Último 3D', u ? `${u.nome}: ${nf(u.pecas)} peças, ${nf(u.mb, 1)} MB · aberto em ${nf(u.ms / 1000, 1)} s (baixar ${nf(u.baixar / 1000, 1)} s, montar ${nf(u.montar / 1000, 1)} s) · ${nf(u.triangulos)} triângulos` : 'nenhum aberto nesta sessão'],

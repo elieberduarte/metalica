@@ -53,7 +53,7 @@ INSTALADOR = os.path.join(RAIZ, "Metalica-instalador.exe")
 MODULOS_SO_DEV = ["saida.orcamento", "saida.comercial", "saida.comercial_servico", "saida.contrato_docs",
                   "saida.proposta_html", "saida.imagens3d", "saida.docx_simples",
                   "saida.pacote_celular", "celular", "celular.servidor", "celular.web"]  # celular: só no dev até a Fase 1 fechar
-TELAS_SO_DEV = ["comercial.html", "comercial.js", "celular", "acesso-celular*"]
+TELAS_SO_DEV = ["comercial.html", "comercial.js", "celular", "acesso-celular*", "qrcode.js"]
 
 ISCC = [os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
         r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
