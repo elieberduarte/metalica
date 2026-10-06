@@ -77,7 +77,7 @@ function deslocamentoPara(c, p, escala) {
 
 export class Selecionar extends Ferramenta {
   static id = 'selecionar'; static nome = 'Selecionar'; static atalho = ' '; static grupo = 'navegacao';
-  static dica = 'Clique seleciona (a peça inteira; Alt+clique, só a linha) · Shift soma · Ctrl alterna · arraste uma janela (com Shift ou Ctrl, soma) · Del apaga · arraste as alças (pontas das linhas, vértices, cotas)';
+  static dica = 'Clique seleciona (a peça inteira; Alt+clique, só a linha) · Shift soma · Ctrl alterna · arraste uma janela (com Shift ou Ctrl, soma) · Del apaga · arraste as alças (pontas das linhas, vértices, cotas; o meio da linha a move — no eixo da malha, com a bolinha e as cotas)';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 3l14 8-6 2-3 6z"/></svg>';
   reiniciar() { this._soltarAlca(); super.reiniciar(); }
 
@@ -99,6 +99,16 @@ export class Selecionar extends Ferramenta {
     if (e && e.tipo === 'chamada') {
       this.dica(a.parte === 'texto' ? 'Leve o texto da chamada para onde ele fica legível — a linha acompanha, a seta fica · Esc cancela'
         : 'Leve a ponta da seta até o ponto apontado (extremidade, interseção…) · Esc cancela');
+      return;
+    }
+    if (a.parte === 'meio') {
+      const eixo = this._eixoDaMalha(e);
+      this.editor.snap.ultimo = a.ponto;
+      if (eixo) {
+        const n = this._normalDoEixo(eixo);
+        this.editor.snap.direcoes = [n];
+        this.dica(`Leve o eixo ${eixo.atributos.eixo} para a nova posição (anda atravessado; a bolinha e as cotas da malha acompanham) · digite a distância a mover · Esc cancela`);
+      } else this.dica('Leve a linha para a nova posição · digite a distância a mover · Esc cancela');
       return;
     }
     if (e && e.tipo !== 'cota') {
@@ -136,10 +146,116 @@ export class Selecionar extends Ferramenta {
     }
     return null;
   }
+  /** A linha do eixo da malha (Lançamento → Malha de eixos: camada EIXO, com o nome do eixo), ou null. */
+  _eixoDaMalha(e) {
+    const a = (e && e.atributos) || {};
+    return e && e.tipo === 'linha' && a.malha && a.eixo && dist(e.a, e.b) > 1e-6 ? e : null;
+  }
+  _normalDoEixo(e) {
+    const L = dist(e.a, e.b);
+    return [-(e.b[1] - e.a[1]) / L, (e.b[0] - e.a[0]) / L];
+  }
+  /**
+   * A alça do meio levada a `p`: a linha anda inteira. No eixo da malha (pedido do usuário, 06/10: "mover só
+   * selecionando o meio da malha e ela ajuste as cotas"), só atravessado, e vão junto a bolinha e o nome dele, as
+   * pontas das cotas da malha que estão no eixo (a medida muda; a que corre ao longo dele vai inteira) e, se ele é o
+   * último daquele lado, as pontas dos eixos que o cruzam (com as bolinhas), para a folga além dele continuar a mesma.
+   */
+  _movidas(p) {
+    const e = this.doc.get(this.alca.id);
+    if (!e || e.tipo !== 'linha') return [];
+    const m = this.alca.ponto;
+    const eixo = this._eixoDaMalha(e);
+    if (!eixo) {
+      const d = [p[0] - m[0], p[1] - m[1]];
+      return Math.hypot(d[0], d[1]) < 1e-6 ? [] : [transladar(e, d)];
+    }
+    const n = this._normalDoEixo(eixo);
+    const s = (p[0] - m[0]) * n[0] + (p[1] - m[1]) * n[1];
+    if (Math.abs(s) < 1e-6) return [];
+    const d = [n[0] * s, n[1] * s];
+    const mv = (q) => [q[0] + d[0], q[1] + d[1]];
+    const lado = (q) => (q[0] - eixo.a[0]) * n[0] + (q[1] - eixo.a[1]) * n[1];      // distância atravessada ao eixo
+    const noEixo = (q) => Math.abs(lado(q)) < 1;
+    const todas = [...this.doc.entidades.values()];
+    const malha = todas.filter(x => x.id !== eixo.id && this._eixoDaMalha(x));
+    const u = [n[1], -n[0]];
+    const paralelo = (x) => { const L = dist(x.a, x.b); return Math.abs(((x.b[0] - x.a[0]) * u[1] - (x.b[1] - x.a[1]) * u[0]) / L) < 0.02; };
+    const ladosParalelos = malha.filter(paralelo).map(x => lado(x.a));
+    const out = [criar({ ...eixo, a: mv(eixo.a), b: mv(eixo.b) })];
+    const movidos = new Set([eixo.id]);
+    const levar = (x, f) => { if (!movidos.has(x.id)) { movidos.add(x.id); out.push(f(x)); } };
+    // a bolinha e o nome do próprio eixo (no prolongamento da linha)
+    for (const x of todas) {
+      const a = x.atributos || {};
+      if (a.eixo !== eixo.atributos.eixo) continue;
+      if ((a.bolinha && x.tipo === 'circulo' && noEixo(x.centro)) || (a.nome_eixo && x.tipo === 'texto' && noEixo(x.posicao))) levar(x, y => transladar(y, d));
+    }
+    // os eixos que o cruzam: a ponta além dele, se nenhum outro eixo paralelo fica entre ele e a ponta
+    for (const x of malha) {
+      if (paralelo(x)) continue;
+      const L = dist(x.a, x.b), ux = [(x.b[0] - x.a[0]) / L, (x.b[1] - x.a[1]) / L];
+      const k = ux[0] * n[0] + ux[1] * n[1];
+      if (Math.abs(k) < 0.2) continue;
+      const nova = { ...x };
+      const bolinhas = [];
+      for (const ponta of ['a', 'b']) {
+        const sp = lado(x[ponta]);
+        if (Math.abs(sp) < 1 || ladosParalelos.some(t => t * sp > 0 && Math.abs(t) <= Math.abs(sp) + 1)) continue;
+        const t = s / k;
+        nova[ponta] = [x[ponta][0] + ux[0] * t, x[ponta][1] + ux[1] * t];
+        for (const c of todas) {
+          const ca = c.atributos || {};
+          if (c.tipo === 'circulo' && ca.bolinha && ca.eixo === x.atributos.eixo && dist(c.centro, x[ponta]) <= 1.6 * c.raio) bolinhas.push([c, [ux[0] * t, ux[1] * t]]);
+        }
+      }
+      if (nova.a === x.a && nova.b === x.b) continue;
+      levar(x, () => criar(nova));
+      for (const [c, dd] of bolinhas) {
+        levar(c, y => transladar(y, dd));
+        for (const tx of todas) {
+          const ta = tx.atributos || {};
+          if (tx.tipo === 'texto' && ta.nome_eixo && ta.eixo === x.atributos.eixo && dist(tx.posicao, c.centro) < 1) levar(tx, y => transladar(y, dd));
+        }
+      }
+    }
+    // as cotas da malha com ponta no eixo
+    for (const x of todas) {
+      if (x.tipo !== 'cota' || !(x.atributos || {}).malha) continue;
+      const q1 = noEixo(x.p1), q2 = noEixo(x.p2);
+      if (!q1 && !q2) continue;
+      const nova = { ...x, p1: q1 ? mv(x.p1) : x.p1, p2: q2 ? mv(x.p2) : x.p2, texto_pos: q1 && q2 && x.texto_pos ? mv(x.texto_pos) : null };
+      if (dist(nova.p1, nova.p2) < 1e-6) continue;
+      levar(x, () => criar(nova));
+    }
+    return out;
+  }
+  /** A medida durante o arrasto do eixo: quanto andou e a distância aos vizinhos de cada lado. */
+  _medidaDoEixo(p) {
+    const e = this.doc.get(this.alca.id), eixo = this._eixoDaMalha(e);
+    const m = this.alca.ponto;
+    if (!eixo) { this.editor.medida(`${fmt(dist(m, p))} mm`); return; }
+    const n = this._normalDoEixo(eixo);
+    const s = (p[0] - m[0]) * n[0] + (p[1] - m[1]) * n[1];
+    const u = [n[1], -n[0]];
+    const viz = [];
+    for (const x of this.doc.entidades.values()) {
+      if (x.id === eixo.id || !this._eixoDaMalha(x)) continue;
+      const L = dist(x.a, x.b);
+      if (Math.abs(((x.b[0] - x.a[0]) * u[1] - (x.b[1] - x.a[1]) * u[0]) / L) >= 0.02) continue;
+      viz.push([(x.a[0] - eixo.a[0]) * n[0] + (x.a[1] - eixo.a[1]) * n[1] - s, x.atributos.eixo]);
+    }
+    const ant = viz.filter(v => v[0] < 0).sort((a, b) => b[0] - a[0])[0], dep = viz.filter(v => v[0] > 0).sort((a, b) => a[0] - b[0])[0];
+    const partes = [`moveu ${fmt(Math.abs(s))} mm`];
+    if (ant) partes.push(`${ant[1]}: ${fmt(-ant[0])}`);
+    if (dep) partes.push(`${dep[1]}: ${fmt(dep[0])}`);
+    this.editor.medida(partes.join(' · '));
+  }
   /** A entidade da alça com a ponta levada a `p` (linha, polilinha ou cota). */
   _editada(p) {
     const e = this.doc.get(this.alca.id);
     if (!e) return null;
+    if (this.alca.parte === 'meio') return this._movidas(p)[0] || null;
     if (e.tipo === 'linha') {
       const nova = { ...e, [this.alca.parte]: [p[0], p[1]] };
       return dist(nova.a, nova.b) < 1e-6 ? null : criar(nova);
@@ -179,6 +295,7 @@ export class Selecionar extends Ferramenta {
   }
   onMover(p) {
     if (!this.alca) return;
+    if (this.alca.parte === 'meio') { this.editor.previa(this._movidas(p)); this._medidaDoEixo(p); return; }
     const c = this._editada(p);
     this.editor.previa(c ? [c] : []);
     if (!c) return;
@@ -193,6 +310,20 @@ export class Selecionar extends Ferramenta {
   onValor(t) {
     if (!this.alca) return;
     const e = this.doc.get(this.alca.id);
+    if (this.alca.parte === 'meio') {
+      // a distância a mover, para o lado do cursor (no eixo da malha, atravessado)
+      const v = paraMilimetros(t), m = this.alca.ponto;
+      if (!e || v == null || v <= 0) return;
+      const alvo = this.editor.tela.cursor || m;
+      let dir = [alvo[0] - m[0], alvo[1] - m[1]];
+      const eixo = this._eixoDaMalha(e);
+      if (eixo) { const n = this._normalDoEixo(eixo); const s = dir[0] * n[0] + dir[1] * n[1]; dir = s < 0 ? [-n[0], -n[1]] : n; }
+      const L = Math.hypot(dir[0], dir[1]);
+      if (L < 1e-6) return;
+      this._recemPega = false;
+      this.onPonto([m[0] + dir[0] / L * v, m[1] + dir[1] / L * v], {});
+      return;
+    }
     const fixo = e && e.tipo !== 'cota' ? this._vizinhoFixo(e, this.alca.parte) : null;
     const v = paraMilimetros(t);
     if (!fixo || v == null || v <= 0) return;
@@ -209,6 +340,17 @@ export class Selecionar extends Ferramenta {
     if (this.alca) {
       if (ev.semMover && this._recemPega) { this._recemPega = false; return; }   // clicou na alça: agora ela segue o cursor
       this._recemPega = false;
+      if (this.alca.parte === 'meio') {
+        const novas = this._movidas(p);
+        const eixo = this._eixoDaMalha(this.doc.get(this.alca.id));
+        const selecao = [...this.editor.tela.selecao];
+        this._soltarAlca();
+        this.editor.previa([]);
+        if (novas.length) this.editor.executar(new ComandoSubstituir(novas, eixo ? `Mover o eixo ${eixo.atributos.eixo}` : 'Mover a linha'));
+        this.editor.selecionar(selecao);
+        this.dica(this.constructor.dica);
+        return;
+      }
       const c = this._editada(p);
       const id = this.alca.id;
       const selecao = [...this.editor.tela.selecao];

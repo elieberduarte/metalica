@@ -67,7 +67,7 @@ export class Tela {
 
   /**
    * Alças da seleção: nas cotas, os dois pontos de referência (p1, p2), o meio da linha de
-   * cota e o número; nas linhas, as duas pontas; nas polilinhas, cada vértice. É por elas
+   * cota e o número; nas linhas, as duas pontas e o meio; nas polilinhas, cada vértice. É por elas
    * que se ajusta com o mouse, como nos CADs (a ponta da linha vai até outro ponto).
    */
   alcas() {
@@ -76,7 +76,12 @@ export class Tela {
     for (const id of this.selecao) {
       const e = this.doc.get(id);
       if (!e || !this.doc.visivel(e)) continue;
-      if (e.tipo === 'linha') { pontas.push({ id, parte: 'a', ponto: e.a }, { id, parte: 'b', ponto: e.b }); continue; }
+      if (e.tipo === 'linha') {
+        // a do meio move a linha inteira (no eixo da malha, só atravessado, com a bolinha e as cotas — 06/10)
+        pontas.push({ id, parte: 'a', ponto: e.a }, { id, parte: 'b', ponto: e.b },
+                    { id, parte: 'meio', ponto: [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2] });
+        continue;
+      }
       if (e.tipo === 'polilinha') { e.vertices.forEach((v, i) => pontas.push({ id, parte: 'v' + i, ponto: v })); continue; }
       if (e.tipo === 'chamada') {
         // a ponta da seta e o texto (arrastar o texto leva a linha junto, a seta fica — 28/09)

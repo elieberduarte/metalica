@@ -78,7 +78,7 @@ try:
 
     # A. alça na ponta da linha
     js("c.tela.enquadrar(); c.ativarFerramenta('selecionar'); c.selecionar(['la']); return 1;")
-    ok(js("return c.tela.alcas().filter(a => a.id === 'la').length;") == 2, "a linha selecionada tem as duas alças")
+    ok(js("return c.tela.alcas().filter(a => a.id === 'la').length;") == 3, "a linha selecionada tem as alças das pontas e a do meio")
     js("const f = c.ferramenta; const a = c.tela.alcas().find(x => x.id === 'la' && x.parte === 'b'); f._pegarAlca(a); f.onMover([1500, 0]); f._recemPega = false; f.onPonto([1500, 0], {}); return 1;")
     ok(js("return JSON.stringify(c.doc.get('la').b);") == "[1500,0]", "a alça levou a ponta até a outra linha")
     js("c.desfazer(); return 1;")
@@ -219,6 +219,44 @@ try:
                              Math.round(L3 * 10) / 10, Math.round(meio3 * 10) / 10]);
     """))
     ok(r_k == [101.0, 5050, 50.5, 151.5, 90025.3], f"Escala: fator 2 dobra; por referência 50,5 → 505 cm vira 5050 mm; Ctrl+Z volta; o fator digitado sem ponto base escala em volta do centro ({r_k})")
+
+    # L. a alça do meio do eixo da malha (06/10: "mover só selecionando o meio da malha e ela ajuste as cotas"): o eixo
+    # anda atravessado, com a bolinha e o nome; as cotas da malha com ponta nele mudam; o último eixo leva as pontas dos
+    # que o cruzam (e as bolinhas deles); digitar a distância move para o lado do cursor; Ctrl+Z volta tudo
+    r_l = json.loads(js("""
+      const X = 200000, E = (id, tipo, o) => c.doc.add({ id, tipo, camada: tipo === 'cota' ? 'COTA' : 'EIXO', ...o });
+      const eixoH = (n, y) => { E('e' + n, 'linha', { atributos: { eixo: n, malha: true }, a: [X - 1500, y], b: [X + 13500, y] });
+        E('b' + n, 'circulo', { atributos: { eixo: n, bolinha: true }, centro: [X - 2000, y], raio: 500 });
+        E('t' + n, 'texto', { atributos: { eixo: n, nome_eixo: true }, posicao: [X - 2000, y], texto: n, altura: 4, angulo: 0, alinhamento: 'centro', vertical: 'meio' }); };
+      const eixoV = (n, x) => { E('e' + n, 'linha', { atributos: { eixo: n, malha: true }, a: [X + x, 33500], b: [X + x, 18500] });
+        E('b' + n, 'circulo', { atributos: { eixo: n, bolinha: true }, centro: [X + x, 34000], raio: 500 });
+        E('t' + n, 'texto', { atributos: { eixo: n, nome_eixo: true }, posicao: [X + x, 34000], texto: n, altura: 4, angulo: 0, alinhamento: 'centro', vertical: 'meio' }); };
+      eixoH('1', 20000); eixoH('2', 26000); eixoH('3', 32000); eixoV('A', 0); eixoV('B', 12000);
+      const cota = (id, p1, p2, d) => E(id, 'cota', { atributos: { malha: true }, modo: 'alinhada', p1, p2, deslocamento: d, texto: null, altura: 2.5 });
+      cota('c12', [X, 20000], [X, 26000], -6); cota('c23', [X, 26000], [X, 32000], -6); cota('c13', [X, 20000], [X, 32000], -11);
+      cota('cAB', [X, 20000], [X + 12000, 20000], 6);
+      const val = (id) => { const k = c.doc.get(id); return Math.round(Math.hypot(k.p2[0] - k.p1[0], k.p2[1] - k.p1[1])); };
+      const pegar = (id) => { c.ativarFerramenta('selecionar'); c.selecionar([id]); const f = c.ferramenta;
+        const a = c.tela.alcas().find(x => x.id === id && x.parte === 'meio'); f._pegarAlca(a); f._recemPega = false; return [f, a]; };
+      // o eixo 2 para cima 1000 (o cursor fora do eixo: só a parte atravessada conta)
+      let [f, a] = pegar('e2'); f.onMover([a.ponto[0] + 700, a.ponto[1] + 1000]); f.onPonto([a.ponto[0] + 700, a.ponto[1] + 1000], {});
+      const r1 = [c.doc.get('e2').a[1], c.doc.get('e2').a[0] - X, c.doc.get('b2').centro[1], c.doc.get('t2').posicao[1], val('c12'), val('c23'), val('c13'), c.doc.get('eA').a[1]];
+      c.desfazer();
+      const r0 = [c.doc.get('e2').a[1], c.doc.get('b2').centro[1], val('c12')];
+      // o eixo 3 (o último) 500 para cima, digitado com o cursor acima: as pontas de A e B e as bolinhas deles sobem junto
+      [f, a] = pegar('e3'); c.tela.cursor = [a.ponto[0], a.ponto[1] + 50]; f.onValor('500');
+      const r2 = [c.doc.get('e3').a[1], val('c23'), val('c13'), c.doc.get('eA').a[1], c.doc.get('eA').b[1], c.doc.get('bB').centro[1], c.doc.get('tA').posicao[1], c.doc.get('e1').a[1]];
+      c.desfazer();
+      // o eixo A 1000 para a direita: a cota A–B encolhe e a cadeia vai junto (as pontas estão no eixo A)
+      [f, a] = pegar('eA'); f.onPonto([a.ponto[0] + 1000, a.ponto[1]], {});
+      const r3 = [val('cAB'), val('c12'), c.doc.get('c12').p1[0] - X, c.doc.get('e1').a[0] - X];
+      c.desfazer();
+      return JSON.stringify([r1, r0, r2, r3]);
+    """))
+    ok(r_l[0] == [27000, -1500, 27000, 27000, 7000, 5000, 12000, 33500], f"eixo 2 movido 1000 atravessado: bolinha e nome junto, cotas 7000/5000, a total e o eixo A ficam ({r_l[0]})")
+    ok(r_l[1] == [26000, 26000, 6000], f"Ctrl+Z volta o eixo, a bolinha e a cota ({r_l[1]})")
+    ok(r_l[2] == [32500, 6500, 12500, 34000, 18500, 34500, 34500, 20000], f"o último eixo (3) movido 500 digitado: A e B esticam em cima e as bolinhas sobem; o eixo 1 fica ({r_l[2]})")
+    ok(r_l[3] == [11000, 6000, 1000, -500], f"eixo A (o último à esquerda) movido 1000: a cota A–B dá 11000, a cadeia dos números vai junto e as pontas dos eixos 1–3 também ({r_l[3]})")
 
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")
