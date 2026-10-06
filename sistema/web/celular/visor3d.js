@@ -96,7 +96,11 @@ export class Visor3D {
     this.tela = tela;
     this.renderer = new THREE.WebGLRenderer({ canvas: tela, antialias: opcoes.antialias !== false,
                                               powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, opcoes.maxPixelRatio || 2));
+    this.dprParado = Math.min(window.devicePixelRatio || 1, opcoes.maxPixelRatio || 2);
+    // girando, a imagem sai em resolução menor e sem arestas (o que pesa no celular é encher a tela de
+    // alta densidade); ao soltar, volta inteira
+    this.dprMovendo = Math.min(this.dprParado, opcoes.dprMovendo || 1);
+    this.renderer.setPixelRatio(this.dprParado);
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.sortObjects = false;          // tudo opaco: a ordem não muda a imagem
     this.cena = new THREE.Scene();
@@ -107,6 +111,8 @@ export class Visor3D {
     this.controles.enableDamping = false;
     this.controles.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
     this.controles.addEventListener('change', () => this.pedirQuadro());
+    this.controles.addEventListener('start', () => this._movendo(true));
+    this.controles.addEventListener('end', () => this._movendo(false));
     this.raiz = new THREE.Group();
     this.cena.add(this.raiz);
     this.malhas = [];        // {malha, arestas, escolha, forma?, ids?}
@@ -308,6 +314,29 @@ export class Visor3D {
   mostrarCamada(i, visivel) {
     this.visivelCamada[i] = !!visivel;
     this._repintar();
+  }
+
+  _movendo(sim) {
+    if (this.leveAoGirar === false) return;
+    clearTimeout(this._fimMovimento);
+    if (sim) {
+      if (this._emMovimento) return;
+      this._emMovimento = true;
+      if (this.dprMovendo !== this.dprParado) { this.renderer.setPixelRatio(this.dprMovendo); this._ajustarTamanho(); }
+      for (const m of this.malhas) if (m.arestas) m.arestas.visible = false;
+    } else {
+      // um instante depois de soltar (o dedo pode voltar logo)
+      this._fimMovimento = setTimeout(() => {
+        this._emMovimento = false;
+        if (this.dprMovendo !== this.dprParado) { this.renderer.setPixelRatio(this.dprParado); this._ajustarTamanho(); }
+        for (const m of this.malhas) if (m.arestas) m.arestas.visible = this.arestasLigadas && m.malha.visible;
+        this.pedirQuadro();
+      }, 120);
+    }
+  }
+
+  _ajustarTamanho() {
+    this.renderer.setSize(this.tela.clientWidth || 1, this.tela.clientHeight || 1, false);
   }
 
   ligarArestas(sim) {

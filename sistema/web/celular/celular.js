@@ -314,6 +314,7 @@ async function telaModelo(slug, m, medir) {
 function medirFluidez(v) {
   abrirFolha('<div class="ficha"><div class="nome">Medindo a fluidez…</div><p class="fraco">Não toque na tela por 4 segundos.</p></div>');
   const alvo = v.controles.target.clone(), pos = v.camera.position.clone().sub(alvo);
+  v._movendo(true);                              // como o dedo girando: resolução de movimento, sem arestas
   const t0 = performance.now();
   let quadros = 0, pior = 0, ult = t0;
   const passo = agora => {
@@ -327,6 +328,7 @@ function medirFluidez(v) {
     ult = agora;
     if (t < 1) requestAnimationFrame(passo);
     else {
+      v._movendo(false);
       const qps = Math.round(quadros / ((agora - t0) / 1000));
       diag('fluidez', { qps, pior_ms: Math.round(pior), quando: new Date().toISOString() });
       abrirFolha(`<div class="ficha"><div class="nome">${qps} quadros por segundo</div>
