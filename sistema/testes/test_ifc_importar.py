@@ -662,6 +662,18 @@ class TestCamadasEMateriaisDeAparencia(Asserts):
         cls.e = por_nome(cls.doc)
         cls.rel = cls.doc.metadados["importacao"]
 
+    def test_deck_vai_para_camada_propria(self):
+        """O Revit do Bella Casa pôs as 2.415 tábuas do deck na camada das vigas (05/10): a tábua vai para
+        a camada Deck mesmo com camada de apresentação, para se esconder sem esconder a estrutura."""
+        v1 = self.e["V1"]
+        self.assertNotEqual(v1.camada, "Deck")
+        texto = IFC_CAMADAS.replace("$,'V1',$,'viga',", "$,'Deck 90x25 - L=1411 mm:6771577',$,'viga',")
+        doc = importar_texto(texto)
+        deck = por_nome(doc)["Deck 90x25 - L=1411 mm:6771577"]
+        self.assertEqual(deck.camada, "Deck")
+        self.assertIn("Deck", doc.camadas)
+        self.assertEqual(doc.camadas["Deck"].cor, "#a8743f")
+
     def test_atributos_de_cada_camada(self):
         c = self.doc.camadas
         self.assertEqual((c["Estrutura"].cor, c["Estrutura"].visivel,

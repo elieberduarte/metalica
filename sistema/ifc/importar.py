@@ -1438,6 +1438,13 @@ class Importador:
         camada nenhuma, e um galpão inteiro cairia no nome do pavimento. Nesse caso a
         camada vem do que a peça é — telha, chapa, parafuso, tirante, pilar, viga — que
         é a divisão que o usuário precisa para ocultar as telhas e ver a estrutura."""
+        if _RE_DECK.search(nome_elemento or ""):
+            # o deck de madeira tem camada própria: o Revit do Bella Casa (05/10) o pôs na camada das
+            # vigas (S-BEAM), e as 2.415 tábuas não se escondiam sem esconder a estrutura junto
+            if CAMADA_DECK not in self.doc.camadas:
+                self.doc.camadas[CAMADA_DECK] = Camada(nome=CAMADA_DECK, cor=CAMADAS_SEMANTICAS[CAMADA_DECK])
+            self.origem_camada["deck"] = self.origem_camada.get("deck", 0) + 1
+            return CAMADA_DECK
         reps = ([corpo] if corpo is not None else []) + [r for r in todas if r is not corpo]
         nome = self.camada_apresentacao(reps)
         origem = "apresentacao"
@@ -2338,7 +2345,11 @@ class Importador:
 CAMADAS_SEMANTICAS = {
     "Telhas": "#9aa4b2", "Rufos": "#17b8c9", "Calhas": "#3a7bd5", "Chapas": "#b8860b", "Parafusos": "#7a5c3a",
     "Tirantes": "#2e8b57", "Pilares": "#4b5563", "Vigas": "#0b3d91", "Barras": "#6a7f99",
+    "Deck": "#a8743f",
 }
+CAMADA_DECK = "Deck"
+#: Tábua do deck (piso de madeira): "Deck 90x25 - L=1411 mm:6771577" no Revit
+_RE_DECK = re.compile(r"^\s*DECK\b", re.I)
 
 _RE_TELHA = re.compile(r"TELHA|TP\s*\d{2}|TRAPEZ|ONDUL", re.I)
 _RE_PARAFUSO = re.compile(r"\bBOLT\b|PARAF|\bNUT\b|PORCA|ARRUELA|WASHER", re.I)
