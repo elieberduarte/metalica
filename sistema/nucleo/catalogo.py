@@ -459,7 +459,12 @@ def _medidas(nome: str):
     m = re.match(r"^(?:CHS|TC|TUBO REDONDO) ?" + _NUM + _X + _NUM + r"$", s)
     if m:
         return "redondo", (f(m.group(1)), f(m.group(2)))
-    m = re.match(r"^(?:SHS|RHS|TQ|TR) ?" + _NUM + _X + _NUM + _X + _NUM + r"$", s)
+    # a forma também vem no fim: "250x250x10SHS", "406.4x12.5CHS" (a Passarela Mirante do Revit, 06/10)
+    m = re.match(r"^" + _NUM + _X + _NUM + r" ?(?:CHS|TC)$", s)
+    if m:
+        return "redondo", (f(m.group(1)), f(m.group(2)))
+    m = (re.match(r"^(?:SHS|RHS|TQ|TR) ?" + _NUM + _X + _NUM + _X + _NUM + r"$", s)
+         or re.match(r"^" + _NUM + _X + _NUM + _X + _NUM + r" ?(?:SHS|RHS|TQ|TR)$", s))
     if m:
         h, b = sorted((f(m.group(1)), f(m.group(2))), reverse=True)
         return "retangular", (h, b, f(m.group(3)))

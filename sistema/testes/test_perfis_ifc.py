@@ -90,3 +90,10 @@ def test_parecidos_e_troca_na_lista():
     assert abs(lista["totais"]["peso"] - 92.2) < 0.01
     trocar_na_lista(lista, {})                                                   # volta ao automático (o similar)
     assert lista["perfis"][0]["catalogo"] == "TQ 220×220×7,1" and abs(lista["perfis"][0]["peso"] - 93.2) < 0.01
+
+
+def test_forma_no_fim_do_nome():
+    """"250x250x10SHS" (a Passarela Mirante do Revit): a forma vem depois das medidas."""
+    r = cat.do_ifc("Pilar:250x250x10SHS:1")
+    assert r and r["catalogo"].startswith("TQ 250×250×10") and r["secao"] == (250.0, 250.0)
+    assert cat.do_ifc("X:406.4x12.5CHS:1")["fonte"] == "calculado"
