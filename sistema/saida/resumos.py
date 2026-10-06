@@ -127,11 +127,43 @@ def _por_marca(d: Optional[dict]) -> dict:
     return fora
 
 
+#: Espessura comercial da chapa (mm) → polegada; 3,00 é a #11, vendida como 1/8".
+_CHAPA_COMERCIAL = [(3.0, '1/8"'), (3.18, '1/8"'), (4.75, '3/16"'), (4.76, '3/16"'), (4.8, '3/16"'), (6.3, '1/4"'),
+                    (6.35, '1/4"'), (6.4, '1/4"'), (7.94, '5/16"'), (8.0, '5/16"'), (9.5, '3/8"'), (9.53, '3/8"'),
+                    (12.5, '1/2"'), (12.7, '1/2"'), (13.0, '1/2"'), (15.88, '5/8"'), (16.0, '5/8"'), (19.0, '3/4"'),
+                    (19.05, '3/4"'), (19.1, '3/4"'), (22.2, '7/8"'), (22.23, '7/8"'), (25.0, '1"'), (25.4, '1"'),
+                    (31.75, '1.1/4"'), (38.1, '1.1/2"'), (50.8, '2"')]
+def _polegada_da_chapa(t: float) -> Optional[str]:
+    return next((p for esp, p in _CHAPA_COMERCIAL if abs(t - esp) < 0.06), None)
+
+
 def rotulo_chapa(t: float) -> str:
-    for esp, pol in _CHAPA_POL:
-        if abs(t - esp) < 0.06:
-            return "#%s (%s mm)" % (pol, _n(esp, 2))
-    return "#%s mm" % _n(t, 2)
+    """A chapa como a fábrica pede (06/10): bitola, mm e polegada — "#11 - 3,00mm - 1/8"", "6,30mm - 1/4"";
+    espessura sem bitola nem polegada fica só em mm ("5,60mm")."""
+    from saida.dobras import bitola_de
+    pol = _polegada_da_chapa(t)
+    b = bitola_de(t)
+    partes = (["#%d" % b] if b else []) + ["%smm" % _n(t, 2)] + ([pol] if pol else [])
+    return " - ".join(partes)
+
+
+def _chapas_por_rotulo(chapas) -> List[dict]:
+    """As chapas da lista (uma linha por espessura medida e material) juntas pelo rótulo comercial e pelo material:
+    19,0 e 19,1 mm do modelo são a mesma 3/4"; aço diferente fica em linha própria, com o material."""
+    juntas: Dict[tuple, dict] = collections.OrderedDict()
+    for g in chapas or []:
+        t = float(g.get("espessura") or 0.0)
+        mat = str(g.get("material") or "")
+        j = juntas.setdefault((_polegada_da_chapa(t) or round(t, 2), mat),
+                              {"material": mat, "kg": 0.0, "pecas": 0, "m2": 0.0, "_t": collections.Counter()})
+        j["kg"] += float(g.get("peso") or 0.0)
+        j["pecas"] += int(g.get("pecas") or 0)
+        j["m2"] += float(g.get("area_m2") or 0.0)
+        j["_t"][t] += float(g.get("peso") or 0.0) or 1e-9
+    for j in juntas.values():
+        j["t"] = j.pop("_t").most_common(1)[0][0]           # o rótulo pela espessura que mais pesa no grupo
+        j["rotulo"] = rotulo_chapa(j["t"])
+    return sorted(juntas.values(), key=lambda j: (j["t"], j["material"]))
 
 
 def descricao_parafuso(nome: str) -> Tuple[str, str, Optional[float]]:
@@ -533,9 +565,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         familias.append(bloco)
 
     # ---- chaparia
-    chaparia = []
-    for g in lista.get("chapas") or []:
-        chaparia.append({"rotulo": rotulo_chapa(float(g["espessura"])), "kg": g["peso"], "pecas": g["pecas"], "m2": g["area_m2"]})
+    chaparia = _chapas_por_rotulo(lista.get("chapas"))
     chaparia_total = {"kg": sum(c["kg"] for c in chaparia), "pecas": sum(c["pecas"] for c in chaparia)}
 
     # ---- parafusos e fixadores, com o local de uso
@@ -914,10 +944,10 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         perda = PERDA_CHAPAS
     area_chapa = CHAPA_COMERCIAL[0] * CHAPA_COMERCIAL[1] / 1e6
     chapas = []
-    for c in lista.get("chapas") or []:
-        m2 = float(c.get("area_m2") or 0.0)
-        chapas.append({"rotulo": rotulo_chapa(float(c.get("espessura") or 0.0)), "m2": m2, "kg": float(c.get("peso") or 0.0),
-                       "pecas": int(c.get("pecas") or 0), "chapas": int(math.ceil(m2 * (1.0 + perda / 100.0) / area_chapa - 1e-9)) if m2 > 0 else 0})
+    for c in _chapas_por_rotulo(lista.get("chapas")):
+        m2 = c["m2"]
+        chapas.append({"rotulo": c["rotulo"], "material": c["material"], "m2": m2, "kg": c["kg"], "pecas": c["pecas"],
+                       "chapas": int(math.ceil(m2 * (1.0 + perda / 100.0) / area_chapa - 1e-9)) if m2 > 0 else 0})
     # cada parafuso vem com 1 porca e 1 arruela ("+ porca e arruela"); as porcas e arruelas soltas (pontas roscadas,
     # chumbadores) somam na bitola delas
     pf, porcas, arruelas = [], collections.Counter(), collections.Counter()
@@ -1218,7 +1248,8 @@ def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
     ch = R["chaparia"]
     h = "<div class=\"fam\"><h3>*Chaparia (todas as chapas):</h3><table>"
     for c in ch:
-        h += "<tr><td>%s</td><td class=\"kg\">= %s kg</td><td class=\"m\">%d pç / %s m²</td><td class=\"q\"></td></tr>" % (_esc(c["rotulo"]), _n(c["kg"], 2), c["pecas"], _n(c["m2"], 2))
+        mat = (" (%s)" % c["material"]) if c.get("material") and len({x.get("material") for x in ch}) > 1 else ""
+        h += "<tr><td>%s</td><td class=\"kg\">= %s kg</td><td class=\"m\">%d pç / %s m²</td><td class=\"q\"></td></tr>" % (_esc(c["rotulo"] + mat), _n(c["kg"], 2), c["pecas"], _n(c["m2"], 2))
     h += "<tr><td class=\"item\">Total chaparia</td><td class=\"kg item\">= %s kg</td><td class=\"m item\">%d pç</td><td class=\"q\"></td></tr></table></div>" % (_n(R["chaparia_total"]["kg"], 2), R["chaparia_total"]["pecas"])
     blocos.append(h)
     # parafusos
@@ -1266,9 +1297,13 @@ def _html_compra(R: dict) -> str:
                  "de corte da lista; W em 12 m, os outros em 6 m, ou 12 m quando a peça passa de 6 m)</p>")
 
         def nome_perfil(p):
+            # o nome do catálogo em cima, o do IFC embaixo (06/10); fora do catálogo, o do IFC e de onde veio o kg/m
             cat = p.get("catalogo") or ""
-            nota = ("catálogo: %s" % cat) if cat and cat.replace(" ", "") != p["perfil"].replace(" ", "") else                    ("fora do catálogo: kg/m pelas medidas" if p.get("fora_do_catalogo") else "")
-            return "<b>%s</b>%s" % (_esc(p["perfil"]), ("<br><span class=\"cinza\">%s</span>" % _esc(nota)) if nota else "")
+            if cat:
+                cima, baixo = cat, ("IFC: %s" % p["perfil"]) if cat.replace(" ", "") != p["perfil"].replace(" ", "") else ""
+            else:
+                cima, baixo = p["perfil"], ("fora do catálogo (kg/m pelas medidas)" if p.get("fora_do_catalogo") else "")
+            return "<b>%s</b>%s" % (_esc(cima), ("<br><span class=\"cinza\">%s</span>" % _esc(baixo)) if baixo else "")
         h.append(_tabela(["Perfil", "Material", ("Peças", "r"), ("m", "r"), ("kg/m", "r"), ("kg", "r"), ("Barra", "r"), ("Barras", "r"),
                           ("Aprov.", "r"), "Pedido"],
                          [[nome_perfil(p), p["material"], (p.get("pecas") or "", "r"), (_n(p["m"], 2), "r"),
@@ -1283,11 +1318,12 @@ def _html_compra(R: dict) -> str:
         cl, ca = C["chapa_comercial"]
         h.append("<p class=\"sub\"><b>Chapas</b> (chapa de %s x %s m; a quantidade pela área com %s%% de perda no corte)</p>"
                  % (_n(cl / 1000.0, 2), _n(ca / 1000.0, 2), _n(C["perda_chapas"], 0)))
-        h.append(_tabela(["Espessura", ("Peças", "r"), ("m²", "r"), ("kg", "r"), ("Chapas", "r"), "Pedido"],
-                         [[c["rotulo"], (c["pecas"], "r"), (_n(c["m2"], 2), "r"), (_n(c["kg"], 1), "r"), (c["chapas"], "r"), ""] for c in C["chapas"]],
-                         rodape=[("TOTAL", "b"), (sum(c["pecas"] for c in C["chapas"]), "r"), (_n(sum(c["m2"] for c in C["chapas"]), 2), "r"),
+        h.append(_tabela(["Espessura", "Material", ("Peças", "r"), ("m²", "r"), ("kg", "r"), ("Chapas", "r"), "Pedido"],
+                         [[(c["rotulo"], "b"), c.get("material") or "", (c["pecas"], "r"), (_n(c["m2"], 2), "r"), (_n(c["kg"], 1), "r"),
+                           (c["chapas"], "r"), ""] for c in C["chapas"]],
+                         rodape=[("TOTAL", "b"), "", (sum(c["pecas"] for c in C["chapas"]), "r"), (_n(sum(c["m2"] for c in C["chapas"]), 2), "r"),
                                  (_n(sum(c["kg"] for c in C["chapas"]), 1), "r"), (sum(c["chapas"] for c in C["chapas"]), "r"), ""],
-                         larguras=["30%", "12%", "14%", "14%", "14%", "16%"]))
+                         larguras=["26%", "16%", "10%", "12%", "12%", "10%", "14%"]))
     if C.get("parafusos") or C.get("porcas") or C.get("arruelas"):
         h.append("<p class=\"sub\"><b>Parafusos, porcas e arruelas</b> (cada parafuso com 1 porca e 1 arruela; as soltas — pontas roscadas, "
                  "chumbadores — somadas na bitola)</p>")
