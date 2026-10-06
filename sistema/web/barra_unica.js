@@ -103,6 +103,7 @@
         I('Furo', '2d', 'estr-furo', { antes: 'Estrutura › Furo' }),
         I('Parafuso', '2d', 'estr-parafuso', { antes: 'Estrutura › Parafuso' }),
         HR,
+        I('Tesoura de aço pelo desenho…', '2d', 'estr-trelica', { dica: 'selecione a tesoura em linhas e lance de eixo a eixo', antes: 'Estrutura › Tesoura de aço pelo desenho' }),
         I('Níveis do projeto…', '2d', 'estr-niveis', { antes: 'Estrutura › Níveis…' }),
         I('Arrumar os nomes dos elementos', '2d', 'estr-rotulos', { dica: 'um rótulo por elemento, com a marca dele', antes: 'Estrutura › Arrumar os nomes' }),
         I('Renumerar os elementos em ordem', '2d', 'estr-renumerar', { dica: 'P1, P2… de cima para baixo, da esquerda para a direita', antes: 'Estrutura › Renumerar' }),
