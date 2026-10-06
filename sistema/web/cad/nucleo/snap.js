@@ -32,6 +32,10 @@ export class Snap {
     this.direcoes = [];                  // direções a seguir a partir de `ultimo` (continuação da linha anterior)
     this.orto = false;
     this.ignorar = new Set();            // ids que o snap não enxerga (a cota que está sendo arrastada)
+    // segmentos que só existem na tela (a faixa da viga, que é uma linha de eixo no desenho — 06/10): uma função
+    // (p, raioMm) → [{id, segs: [[a, b], …]}]; o snap os trata como linhas (pontas, meio, interseção, perpendicular,
+    // sobre)
+    this.virtuais = null;
   }
 
   /** Candidatos das entidades perto do cursor (em mm), pelo índice espacial do documento. */
@@ -53,6 +57,12 @@ export class Snap {
     };
     const ents = this._candidatas(p, raio);
     const a = this.ativos;
+    let virt = [];
+    try { virt = this.virtuais ? (this.virtuais(p, raio * 3) || []).filter(v => !this.ignorar.has(v.id)) : []; } catch (e) { virt = []; }
+    for (const v of virt) for (const [s, t] of v.segs) {
+      if (a.extremidade) { considerar(s, 'extremidade', 0); considerar(t, 'extremidade', 0); }
+      if (a.meio) considerar([(s[0] + t[0]) / 2, (s[1] + t[1]) / 2], 'meio', 1);
+    }
     for (const e of ents) {
       if (a.extremidade) {
         if (e.tipo === 'linha') { considerar(e.a, 'extremidade', 0); considerar(e.b, 'extremidade', 0); }
@@ -80,7 +90,7 @@ export class Snap {
         for (const q of [[e.centro[0] + e.raio, e.centro[1]], [e.centro[0] - e.raio, e.centro[1]], [e.centro[0], e.centro[1] + e.raio], [e.centro[0], e.centro[1] - e.raio]]) considerar(q, 'extremidade', 1, 'quadrante');
       }
     }
-    if (a.interseccao && ents.length > 1) {
+    if (a.interseccao && ents.length + virt.length > 1) {
       // só segmentos que passam a menos de um raio do cursor: a interseção que vale
       // está dentro do raio, logo os dois segmentos passam por ali. Com a vista muito
       // afastada num desenho denso ainda podem ser milhares; os pares ficam limitados
@@ -89,6 +99,10 @@ export class Snap {
       for (const e of ents) for (const s of segmentosSnap(e, tela.doc.escala)) {
         const d = distSegmento(p, s[0], s[1]);
         if (d < raio) perto.push([e.id, s, d]);
+      }
+      for (const v of virt) for (const s of v.segs) {
+        const d = distSegmento(p, s[0], s[1]);
+        if (d < raio) perto.push(['v:' + v.id, s, d]);
       }
       if (perto.length > 200) { perto.sort((x, y) => x[2] - y[2]); perto.length = 200; }
       for (let i = 0; i < perto.length; i++) for (let j = i + 1; j < perto.length; j++) {
@@ -99,6 +113,10 @@ export class Snap {
     }
     if (a.perpendicular && this.ultimo) {
       for (const e of ents) for (const [s, t] of segmentosSnap(e, tela.doc.escala)) {
+        const q = maisProximoSeg(this.ultimo, s, t);
+        if (dist(q, s) > 1e-6 && dist(q, t) > 1e-6) considerar(q, 'perpendicular', 2);
+      }
+      for (const v of virt) for (const [s, t] of v.segs) {
         const q = maisProximoSeg(this.ultimo, s, t);
         if (dist(q, s) > 1e-6 && dist(q, t) > 1e-6) considerar(q, 'perpendicular', 2);
       }
@@ -120,6 +138,7 @@ export class Snap {
           considerar([e.centro[0] + e.raio * Math.cos(ang), e.centro[1] + e.raio * Math.sin(ang)], 'sobre', 3);
         } else for (const [s, t] of segmentosSnap(e, tela.doc.escala)) considerar(maisProximoSeg(p, s, t), 'sobre', 3, e.tipo === 'cota' ? 'linha de cota' : '');
       }
+      for (const v of virt) for (const [s, t] of v.segs) considerar(maisProximoSeg(p, s, t), 'sobre', 3);
     }
     let ponto = melhor ? melhor.ponto : p;
     let tipo = melhor ? melhor.tipo : null;
