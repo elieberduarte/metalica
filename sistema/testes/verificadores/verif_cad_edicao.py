@@ -211,9 +211,14 @@ try:
       const Lr = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
       c.desfazer();
       const e0 = c.doc.get(ln.id);
-      return JSON.stringify([Math.round(L2 * 10) / 10, Math.round(Lr), Math.round(Math.hypot(e0.b[0] - e0.a[0], e0.b[1] - e0.a[1]) * 10) / 10]);
+      // sem clicar o ponto base: o fator direto, em volta do centro da seleção
+      c.selecionar([ln.id]); c.ativarFerramenta('escalar'); c.ferramenta.onValor('3');
+      const e3 = c.doc.get(ln.id), meio3 = (e3.a[0] + e3.b[0]) / 2, L3 = Math.hypot(e3.b[0] - e3.a[0], e3.b[1] - e3.a[1]);   // antes do Ctrl+Z (ele volta o objeto)
+      c.desfazer();
+      return JSON.stringify([Math.round(L2 * 10) / 10, Math.round(Lr), Math.round(Math.hypot(e0.b[0] - e0.a[0], e0.b[1] - e0.a[1]) * 10) / 10,
+                             Math.round(L3 * 10) / 10, Math.round(meio3 * 10) / 10]);
     """))
-    ok(r_k == [101.0, 5050, 50.5], f"Escala: fator 2 dobra; por referência 50,5 → 505 cm vira 5050 mm; Ctrl+Z volta ({r_k})")
+    ok(r_k == [101.0, 5050, 50.5, 151.5, 90025.3], f"Escala: fator 2 dobra; por referência 50,5 → 505 cm vira 5050 mm; Ctrl+Z volta; o fator digitado sem ponto base escala em volta do centro ({r_k})")
 
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")

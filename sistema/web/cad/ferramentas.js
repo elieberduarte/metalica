@@ -874,7 +874,7 @@ export class Girar extends Transformadora {
  */
 export class Escalar extends Transformadora {
   static id = 'escalar'; static nome = 'Escala (fator ou referência)'; static atalho = '';
-  static dica = 'Ponto base da escala';
+  static dica = 'Ponto base da escala (ou já digite o fator e Enter: a base é o centro da seleção) · R: por referência';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="10" height="10"/><path d="M9 11V5h10v10h-6"/><path d="M13 11l6-6M15 5h4v4"/></svg>';
   reiniciar() { super.reiniciar(); this.modo = 'fator'; this.r1 = null; this.r2 = null; }
   _escalar(k) {
@@ -919,8 +919,17 @@ export class Escalar extends Transformadora {
     }
     this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.base, b: p })]);
   }
+  /** Sem o ponto base clicado, o centro do que está selecionado (digitar o fator direto, sem clicar — 06/10). */
+  _baseNoCentro() {
+    if (this.base || !this.ids.length) return !!this.base;
+    const ps = this.selecionadas().flatMap(e => pontosDe(e));
+    if (!ps.length) return false;
+    const xs = ps.map(p => p[0]), ys = ps.map(p => p[1]);
+    this.base = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+    return true;
+  }
   onValor(t) {
-    if (!this.base) return;
+    if (!this._baseNoCentro()) return;
     const txt = String(t).trim();
     if (/^r(ef(er[eê]ncia)?)?$/i.test(txt)) { this._referencia(); return; }
     if (this.modo === 'referencia') {
@@ -934,7 +943,10 @@ export class Escalar extends Transformadora {
     this._aplicar(k);
   }
   onTecla(ev) {
-    if (this.base && this.modo === 'fator' && !ev.ctrlKey && !ev.metaKey && !ev.altKey && (ev.key === 'r' || ev.key === 'R')) { this._referencia(); return true; }
+    if (this.ids.length && this.modo === 'fator' && !ev.ctrlKey && !ev.metaKey && !ev.altKey && (ev.key === 'r' || ev.key === 'R')) {
+      if (!this.base && !this._baseNoCentro()) return false;
+      this._referencia(); return true;
+    }
     return false;
   }
 }
