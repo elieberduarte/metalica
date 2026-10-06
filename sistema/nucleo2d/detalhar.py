@@ -478,9 +478,8 @@ def _anexar_quadro(dc: Desenho, banda: Desenho, titulo: str, y_topo: float, meta
         a = e.atributos or {}
         if isinstance(e, Linha) and e.camada == "AUXILIAR" and a.get("faixa") == titulo and not a.get("detalhe"):
             e.camada = CAMADA_QUADRO
-            e.a, e.b = (x0, e.a[1]), (x1, e.b[1])
-            e.atributos = dict(a, quadro=titulo)
-            break
+            e.a, e.b = (x0, e.a[1]), (x1, e.b[1])        # fica só com `faixa` (as pranchas a deixam de fora): o
+            break                                          # `quadro` é da moldura (test_quadros a procura por ele)
     dc.add(Polilinha(camada=CAMADA_QUADRO, vertices=[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], fechada=True,
                      atributos={"quadro": titulo}))
     return y0 - 12.0 * esc
