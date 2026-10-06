@@ -173,10 +173,8 @@ export class MetodosDiagnostico {
     const grad = g.createLinearGradient(0, 0, 0, 256);
     grad.addColorStop(0, '#f7f9fc'); grad.addColorStop(0.6, '#ffffff'); grad.addColorStop(1, '#eef2f7');
     g.fillStyle = grad; g.fillRect(0, 0, 4, 256);
-    const fundo = new cena.cena.background.constructor(c);
-    fundo.colorSpace = cena.cena.background.colorSpace;
     if (cena.cena.background.dispose) cena.cena.background.dispose();
-    cena.cena.background = fundo;
+    cena.cena.background = cena.fundoDeCanvas(c);
     // os ângulos da apresentação: direção da câmera vista do centro do modelo (z para cima)
     const ANGULOS = {
       aerea_frente: { dir: [0.95, -1.25, 0.8] }, aerea_tras: { dir: [-0.95, 1.25, 0.8] },

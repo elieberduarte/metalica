@@ -149,6 +149,8 @@ void main() {
   gl_FragColor = vec4(cor, a);
 }`;
 const MODOS_PISO = ['grade', 'liso', 'nenhum'];
+/** O fundo do Desenho 2D (web/cad/nucleo/tela.js): o 3D usa o mesmo, liso. */
+const FUNDO_2D = { escuro: '#0e131a', claro: '#f4f6fa' };
 
 const PX_GRADE_MIN = 8;
 const PX_GRADE_ALVO = 14;
@@ -312,22 +314,13 @@ export class Cena {
     this._construirGrade(30, 1);
   }
 
+  /** O fundo liso na cor do Desenho 2D (web/cad/nucleo/tela.js), como no modo ver: sem degradê (06/10). */
   _fundoGradiente() {
-    const c = document.createElement('canvas');
-    c.width = 4; c.height = 256;
-    const g = c.getContext('2d');
-    const grad = g.createLinearGradient(0, 0, 0, 256);
-    if (this.escuro) {
-      grad.addColorStop(0, '#111a27');
-      grad.addColorStop(0.55, '#0e131a');
-      grad.addColorStop(1, '#161d27');
-    } else {
-      grad.addColorStop(0, '#cfdcf0');
-      grad.addColorStop(0.52, '#eaf0f8');
-      grad.addColorStop(1, '#dde4ee');
-    }
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 4, 256);
+    return new THREE.Color(this.escuro ? FUNDO_2D.escuro : FUNDO_2D.claro);
+  }
+
+  /** Um fundo desenhado num <canvas> (o degradê de estúdio das imagens da proposta, ?render=1). */
+  fundoDeCanvas(c) {
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
@@ -425,9 +418,12 @@ export class Cena {
     u.uPasso.value = passo;
     u.uOpFina.value = opacidadeFina;
     u.uRaio.value = Math.max(12, extensao * 0.62);
-    // tons neutros (sem o azul da estrutura): o piso um pouco mais claro que o fundo no escuro, e o contrário no claro
-    u.uCorPiso.value.set(this.escuro ? 0x222c3a : 0xdde3ea);
-    u.uCorLinha.value.set(this.escuro ? 0x4a5668 : 0xbcc5d0);
+    // o piso na cor do fundo (some no horizonte sem borda nem esfumado) e as linhas na da grade do 2D: a principal é a
+    // grade10 dele (branco a 13% no escuro, azul-marinho a 12% no claro) já misturada ao fundo (06/10). O shader do
+    // piso escreve a cor crua (sem a conversão de saída): as cores vão como estão na tela, senão o piso sai mais
+    // escuro que o fundo
+    u.uCorPiso.value.setStyle(this.escuro ? FUNDO_2D.escuro : FUNDO_2D.claro, THREE.LinearSRGBColorSpace);
+    u.uCorLinha.value.setStyle(this.escuro ? '#2d3238' : '#d9dce3', THREE.LinearSRGBColorSpace);
     u.uAlfaPiso.value = this.escuro ? 0.62 : 0.65;
     this._aplicarModoPiso();
     this.piso.scale.set(extensao * 2, extensao * 2, 1);
