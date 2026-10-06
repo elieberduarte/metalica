@@ -83,6 +83,13 @@ export class Tela {
         continue;
       }
       if (e.tipo === 'polilinha') { e.vertices.forEach((v, i) => pontas.push({ id, parte: 'v' + i, ponto: v })); continue; }
+      if (e.tipo === 'arco') {
+        // as pontas (deslizam na mesma curva) e o meio da curva (muda a flecha, as pontas ficam) — 06/10
+        let a1 = e.fim; if (a1 < e.inicio) a1 += 360;
+        const pt = (g) => [e.centro[0] + e.raio * Math.cos(g * Math.PI / 180), e.centro[1] + e.raio * Math.sin(g * Math.PI / 180)];
+        pontas.push({ id, parte: 'a0', ponto: pt(e.inicio) }, { id, parte: 'a1', ponto: pt(e.fim) }, { id, parte: 'curva', ponto: pt((e.inicio + a1) / 2) });
+        continue;
+      }
       if (e.tipo === 'chamada') {
         // a ponta da seta e o texto (arrastar o texto leva a linha junto, a seta fica — 28/09)
         const c = cantosDoTextoDaChamada(e, k);

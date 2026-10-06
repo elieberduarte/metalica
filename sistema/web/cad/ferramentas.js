@@ -97,6 +97,11 @@ export class Selecionar extends Ferramenta {
     this.editor.tela.alcaQuente = a;
     this.editor.snap.ignorar = new Set([a.id]);
     const e = this.doc.get(a.id);
+    if (e && e.tipo === 'arco') {
+      this.dica(a.parte === 'curva' ? 'Leve o meio do arco: a flecha muda e as pontas ficam (o snap pega o ponto por onde ele deve passar) · Esc cancela'
+        : 'Leve a ponta do arco: ela anda na mesma curva, encurtando ou alongando (o snap pega a interseção) · Esc cancela');
+      return;
+    }
     if (e && e.tipo === 'chamada') {
       this.dica(a.parte === 'texto' ? 'Leve o texto da chamada para onde ele fica legível — a linha acompanha, a seta fica · Esc cancela'
         : 'Leve a ponta da seta até o ponto apontado (extremidade, interseção…) · Esc cancela');
@@ -208,6 +213,7 @@ export class Selecionar extends Ferramenta {
       const vertices = e.vertices.map((v, k) => (k === i ? [p[0], p[1]] : v));
       return criar({ ...e, vertices });
     }
+    if (e.tipo === 'arco') return arcoPelaAlca(e, this.alca.parte, p);
     if (e.tipo === 'chamada') {
       if (this.alca.parte === 'alvo') return criar({ ...e, alvo: [p[0], p[1]] });
       // o meio do texto vai para o cursor: a posição (o joelho da linha) sai dele, do lado em que o
@@ -243,6 +249,7 @@ export class Selecionar extends Ferramenta {
     this.editor.previa(c ? [c] : []);
     if (!c) return;
     if (c.tipo === 'cota') this.editor.medida(`${fmt(valorDaCota(c) * fatorDaCota(this.doc.get(this.alca.id) || c))} mm`);
+    else if (c.tipo === 'arco') { const g = geometriaDoArco(c); this.editor.medida(`R ${fmt(c.raio)} · corda ${fmt(g.corda)} · flecha ${fmt(g.flecha)} mm`); }
     else {
       const fixo = this._vizinhoFixo(this.doc.get(this.alca.id), this.alca.parte);
       if (fixo) this.editor.medida(`${fmt(dist(fixo, p))} mm`);
@@ -299,7 +306,7 @@ export class Selecionar extends Ferramenta {
       const selecao = [...this.editor.tela.selecao];
       this._soltarAlca();
       this.editor.previa([]);
-      if (c) this.editor.executar(new ComandoSubstituir([c], c.tipo === 'cota' ? 'Ajustar cota' : 'Esticar a ponta'));
+      if (c) this.editor.executar(new ComandoSubstituir([c], c.tipo === 'cota' ? 'Ajustar cota' : c.tipo === 'arco' ? 'Ajustar o arco' : 'Esticar a ponta'));
       this.editor.selecionar(c && c.tipo !== 'cota' ? selecao : [id]);
       this.dica(this.constructor.dica);
       return;
@@ -1299,7 +1306,8 @@ export class Aparar extends Ferramenta {
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h16M4 18h16M12 3v18" stroke-dasharray="4 2"/><path d="M9 9l6 6"/></svg>';
   onPonto(p, ev) {
     const e = this.editor.tela.sob(ev.px);
-    if (!e || e.tipo !== 'linha') { this.dica('Aparar funciona em linhas: clique no trecho a remover'); return; }
+    if (e && e.tipo === 'arco') { this._apararArco(e, p); return; }
+    if (!e || e.tipo !== 'linha') { this.dica('Aparar funciona em linhas e arcos: clique no trecho a remover'); return; }
     const outros = [...this.doc.entidades.values()].filter(o => o.id !== e.id && this.doc.visivel(o));
     const cortes = [];
     for (const o of outros) cortes.push(...cortesComEntidade(e.a, e.b, o));
@@ -1315,6 +1323,78 @@ export class Aparar extends Ferramenta {
     if (limites[i + 1] < 1 - 1e-6) restantes.push(criar({ ...e, id: undefined, a: at(limites[i + 1]), b: e.b }));
     this.editor.executar(new ComandoComposto([new ComandoRemover([e.id]), new ComandoAdicionar(restantes)], 'Aparar'));
   }
+  /** O trecho do arco entre os dois cortes em volta do clique sai; os cortes são as interseções da curva com o resto. */
+  _apararArco(e, p) {
+    const span = vaoDoArco(e);
+    const rel = (q) => (((Math.atan2(q[1] - e.centro[1], q[0] - e.centro[0]) * 180 / Math.PI - e.inicio) % 360) + 360) % 360;
+    const outros = [...this.doc.entidades.values()].filter(o => o.id !== e.id && this.doc.visivel(o));
+    const ts = [];
+    for (const o of outros) for (const q of cortesNoCirculo(e.centro, e.raio, o)) { const t = rel(q); if (t > 1e-6 && t < span - 1e-6) ts.push(t); }
+    if (!ts.length) { this.dica('O arco não cruza nenhuma outra linha'); return; }
+    ts.sort((a, b) => a - b);
+    const tp = Math.min(span, rel(p));
+    const lim = [0, ...ts, span];
+    let i = 0;
+    while (i < lim.length - 1 && !(tp >= lim[i] && tp <= lim[i + 1])) i++;
+    const restantes = [];
+    if (lim[i] > 1e-6) restantes.push(criar({ ...e, id: undefined, inicio: e.inicio, fim: e.inicio + lim[i] }));
+    if (lim[i + 1] < span - 1e-6) restantes.push(criar({ ...e, id: undefined, inicio: e.inicio + lim[i + 1], fim: e.inicio + span }));
+    for (const r of restantes) { r.inicio = ((r.inicio % 360) + 360) % 360; r.fim = ((r.fim % 360) + 360) % 360; }
+    this.editor.executar(new ComandoComposto([new ComandoRemover([e.id]), new ComandoAdicionar(restantes)], 'Aparar'));
+  }
+}
+
+/** o ângulo do arco (graus, de `inicio` a `fim` no sentido anti-horário) */
+function vaoDoArco(e) { let s = e.fim - e.inicio; while (s <= 0) s += 360; while (s > 360) s -= 360; return s; }
+
+/** a corda e a flecha do arco (mm) */
+function geometriaDoArco(e) {
+  const s = vaoDoArco(e) * Math.PI / 180;
+  return { corda: 2 * e.raio * Math.sin(s / 2), flecha: e.raio * (1 - Math.cos(s / 2)) };
+}
+
+/** O arco com a alça `parte` levada a `p`: a ponta (a0 / a1) anda na mesma curva; o meio ('curva') faz o arco pelos
+ *  três pontos (as pontas ficam). null quando não dá arco (três pontos alinhados, ponta sobre a outra). */
+function arcoPelaAlca(e, parte, p) {
+  const ang = (q, c) => ((Math.atan2(q[1] - c[1], q[0] - c[0]) * 180 / Math.PI) % 360 + 360) % 360;
+  const pt = (g) => [e.centro[0] + e.raio * Math.cos(g * Math.PI / 180), e.centro[1] + e.raio * Math.sin(g * Math.PI / 180)];
+  if (parte === 'a0' || parte === 'a1') {
+    if (dist(p, e.centro) < 1e-6) return null;
+    const g = ang(p, e.centro);
+    const nova = { ...e, [parte === 'a0' ? 'inicio' : 'fim']: g };
+    if (vaoDoArco(nova) < 1e-4 || vaoDoArco(nova) > 359.9) return null;
+    return criar(nova);
+  }
+  const P0 = pt(e.inicio), P2 = pt(e.fim);
+  const c = centroPorTresPontos(P0, p, P2);
+  if (!c) return null;
+  const r = dist(c, P0), a0 = ang(P0, c), a1 = ang(p, c), a2 = ang(P2, c);
+  const dentro = (x, de, ate) => { const s = ((ate - de) % 360 + 360) % 360, t = ((x - de) % 360 + 360) % 360; return t <= s; };
+  return criar(dentro(a1, a0, a2) ? { ...e, centro: c, raio: r, inicio: a0, fim: a2 } : { ...e, centro: c, raio: r, inicio: a2, fim: a0 });
+}
+
+function centroPorTresPontos(a, b, c) {
+  const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+  if (Math.abs(d) < 1e-9) return null;
+  const a2 = a[0] * a[0] + a[1] * a[1], b2 = b[0] * b[0] + b[1] * b[1], c2 = c[0] * c[0] + c[1] * c[1];
+  return [(a2 * (b[1] - c[1]) + b2 * (c[1] - a[1]) + c2 * (a[1] - b[1])) / d, (a2 * (c[0] - b[0]) + b2 * (a[0] - c[0]) + c2 * (b[0] - a[0])) / d];
+}
+
+/** Os pontos onde o círculo (centro `c`, raio `r`) cruza a entidade `o` (linhas e polilinhas pelos segmentos; arcos e
+ *  círculos pela curva). */
+function cortesNoCirculo(c, r, o) {
+  if (o.tipo === 'texto' || o.tipo === 'hachura') return [];
+  if (o.tipo === 'circulo' || o.tipo === 'arco') {
+    const d = dist(c, o.centro);
+    if (d < 1e-9 || d > r + o.raio || d < Math.abs(r - o.raio)) return [];
+    const a = (r * r - o.raio * o.raio + d * d) / (2 * d), h = Math.sqrt(Math.max(0, r * r - a * a));
+    const ux = (o.centro[0] - c[0]) / d, uy = (o.centro[1] - c[1]) / d, m = [c[0] + ux * a, c[1] + uy * a];
+    const qs = [[m[0] - uy * h, m[1] + ux * h], [m[0] + uy * h, m[1] - ux * h]];
+    return o.tipo === 'arco' ? qs.filter(q => noTrechoDoArco(o, q)) : qs;
+  }
+  const out = [];
+  for (const [s, t] of segmentosDe(o)) out.push(...intersecaoLinhaCirculo(s, t, c, r));
+  return out;
 }
 
 /** Os pontos onde o segmento a–b cruza a entidade `o`: no arco e no círculo, pela curva (os trechos de 10° do
@@ -1369,7 +1449,8 @@ export class Estender extends Ferramenta {
       }
       return;
     }
-    if (!e || e.tipo !== 'linha') { this.dica('Estender funciona em linhas: clique perto da ponta a estender'); return; }
+    if (e && e.tipo === 'arco') { this._estenderArco(e, p); return; }
+    if (!e || e.tipo !== 'linha') { this.dica('Estender funciona em linhas e arcos: clique perto da ponta a estender'); return; }
     // a ponta mais perto do clique é a que anda; a direção é a da própria linha
     const inverte = dist(p, e.a) < dist(p, e.b);
     const fixo = inverte ? e.b : e.a, ponta = inverte ? e.a : e.b;
@@ -1388,6 +1469,27 @@ export class Estender extends Ferramenta {
     const nova = criar({ ...e, a: inverte ? melhor.x : e.a, b: inverte ? e.b : melhor.x });
     this.editor.executar(new ComandoSubstituir([nova], 'Estender'));
     this.dica(`Estendida ${fmt(melhor.d)} mm · próxima linha (Esc sai)`);
+  }
+  /** A ponta do arco mais perto do clique segue pela mesma curva até a primeira linha, arco ou círculo. */
+  _estenderArco(e, p) {
+    const pt = (g) => [e.centro[0] + e.raio * Math.cos(g * Math.PI / 180), e.centro[1] + e.raio * Math.sin(g * Math.PI / 180)];
+    const peloFim = dist(p, pt(e.fim)) <= dist(p, pt(e.inicio));
+    const span = vaoDoArco(e), livre = 360 - span;
+    const ang = (q) => (Math.atan2(q[1] - e.centro[1], q[0] - e.centro[0]) * 180 / Math.PI);
+    let melhor = null;
+    for (const o of this.doc.entidades.values()) {
+      if (o.id === e.id || !this.doc.visivel(o)) continue;
+      for (const q of cortesNoCirculo(e.centro, e.raio, o)) {
+        // quanto a ponta anda (graus) até lá, no sentido de fora do arco
+        const d = peloFim ? (((ang(q) - e.fim) % 360) + 360) % 360 : (((e.inicio - ang(q)) % 360) + 360) % 360;
+        if (d > 1e-6 && d < livre - 1e-6 && (!melhor || d < melhor)) melhor = d;
+      }
+    }
+    if (!melhor) { this.dica('Nada nessa direção para o arco chegar'); return; }
+    const n = (g) => ((g % 360) + 360) % 360;
+    const nova = criar(peloFim ? { ...e, fim: n(e.fim + melhor) } : { ...e, inicio: n(e.inicio - melhor) });
+    this.editor.executar(new ComandoSubstituir([nova], 'Estender'));
+    this.dica(`Arco estendido ${fmt(e.raio * melhor * Math.PI / 180)} mm na curva · próxima (Esc sai)`);
   }
 }
 
