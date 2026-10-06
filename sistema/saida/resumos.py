@@ -1033,9 +1033,28 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         r["m2"] += it["m2"]
         r["kg"] += it["kg"]
         r["pecas"] += it["qtd"]
-    return {"perfis": perfis, "chapas": chapas, "perda_chapas": perda, "chapa_comercial": CHAPA_COMERCIAL,
+    return {"perfis": perfis, "chapas": chapas, "outros_aco": _outros_aco(lista), "perda_chapas": perda, "chapa_comercial": CHAPA_COMERCIAL,
             "parafusos": pf, "porcas": sorted(porcas.items(), key=lambda kv: ordem_b(kv[0])),
             "arruelas": sorted(arruelas.items(), key=lambda kv: ordem_b(kv[0])), "telhas": list(telhas_p.values())}
+
+
+def _outros_aco(lista: dict) -> List[dict]:
+    """O aço que o IFC traz fora das peças de perfil e chapa — o guarda-corpo (gradil), o piso de chapa perfurada —, por
+    tipo (o do Revit sem a família): peças, metros lineares e m². Sem o peso: a malha do gradil traz barra maciça no
+    lugar de tubo e pesaria várias vezes mais (36 t na Passarela Mirante, 06/10)."""
+    from nucleo.catalogo import nome_do_ifc
+    g: Dict[str, dict] = collections.OrderedDict()
+    for it in lista.get("pre_moldados") or []:
+        if it.get("categoria") != "aço fora das peças":
+            continue
+        nome = str(it.get("nome") or "?")
+        familia = nome.split(":", 1)[0].strip() if ":" in nome else ""
+        r = g.setdefault(nome, {"item": nome_do_ifc(nome), "familia": familia, "pecas": 0, "ml": 0.0, "m2": 0.0, "abertas": 0})
+        r["pecas"] += int(it.get("quantidade") or 0)
+        r["ml"] += float(it.get("comprimento_m") or 0.0)
+        r["m2"] += float(it.get("area_m2") or 0.0)
+        r["abertas"] += int(it.get("abertas") or 0)
+    return sorted(g.values(), key=lambda r: (r["familia"], r["item"]))
 
 
 def _maior_e_mais_pesada(lista: dict, tipos_tes: List[dict]):
@@ -1420,6 +1439,16 @@ def _html_compra(R: dict) -> str:
                          classes_linhas=[_classe_compra(p) for p in C["perfis"]]))
         if any(_classe_compra(p) for p in C["perfis"]):
             h.append(_LEGENDA_COMPRA)
+    if C.get("outros_aco"):
+        h.append("<p class=\"sub\"><b>Gradis, pisos e outras peças de aço</b> (o que o IFC traz fora das peças de perfil e chapa; "
+                 "o comprimento é a maior extensão de cada peça, somada)</p>")
+        h.append(_tabela(["Item", "Família", ("Peças", "r"), ("ml", "r"), ("m²", "r"), "Pedido"],
+                         [[(x["item"], "b"), x["familia"], (x["pecas"], "r"), (_n(x["ml"], 2), "r"),
+                           (_n(x["m2"], 2) if x["m2"] else "", "r"), ""] for x in C["outros_aco"]],
+                         larguras=["30%", "20%", "10%", "12%", "12%", "16%"]))
+        h.append("<p class=\"legenda-compra\">Sem o peso: a malha do IFC não serve para pesar o gradil (barra maciça no lugar de tubo, "
+                 "chapa perfurada sem os furos) — conferir as seções com o projeto ou o fornecedor.%s</p>"
+                 % ("".join(" %s: %d peça(s) com a malha aberta." % (x["item"], x["abertas"]) for x in C["outros_aco"] if x["abertas"])))
     if C.get("chapas"):
         cl, ca = C["chapa_comercial"]
         h.append("<p class=\"sub\"><b>Chapas</b> (pela espessura comercial: a do modelo ou a próxima acima, e o peso nela; chapa de %s x %s m; "

@@ -2056,6 +2056,8 @@ def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                       projeto=_identificacao_do_projeto(s), nomes_conjuntos=nomes.get("ifc_conjuntos"),
                                       escolhas=_perfis_compra(s))
+        # o aço fora das peças (gradil, piso de chapa perfurada) entra na compra do resumo de materiais (06/10)
+        lista["pre_moldados"] = r.get("fora_do_aco") or []
         lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
         _progresso(s, "montando os resumos…")
         R = resumos.levantar_resumos(doc, lev, lista, nomes, dados)
