@@ -503,6 +503,34 @@ class TestReconhecimentoEstrutural(Asserts):
             x = tuple(u[i] * math.cos(ang) + v0[i] * math.sin(ang) for i in range(3))
             self.assertPonto(x, x_ifc, 1e-9, b.nome)
 
+    def test_posicao_propria_do_perfil_gira_e_desloca_a_barra(self):
+        """O Revit grava o I com o x do perfil em (0, 1) (IfcAxis2Placement2D do perfil): a barra ignorava isso e
+        6 vigas retas do Bella Casa saíam deitadas (05/10). A barra tem de coincidir com a mesma peça como sólido."""
+        base = texto_de("estrutura_mm.ifc")
+        linha = "#22=IFCISHAPEPROFILEDEF(.AREA.,'W 310x38,7',#21,165.,310.,5.8,9.7,11.,$,$);"
+        girado = base.replace(linha, "#22=IFCISHAPEPROFILEDEF(.AREA.,'W 310x38,7',#400,165.,310.,5.8,9.7,11.,$,$);\n"
+                                     "#400=IFCAXIS2PLACEMENT2D(#401,#402);\n#401=IFCCARTESIANPOINT((10.,20.));\n"
+                                     "#402=IFCDIRECTION((0.,1.));")
+        b = por_nome(importar_texto(girado))["V1"]
+        s = por_nome(importar_texto(girado, estrutural=False))["V1"]
+        self.assertIsInstance(b, Barra)
+        u, v, t = base_secao(b.direcao)
+        r = math.radians(b.rotacao)
+        uu = tuple(u[i] * math.cos(r) + v[i] * math.sin(r) for i in range(3))     # largura (bf)
+        vv = tuple(v[i] * math.cos(r) - u[i] * math.sin(r) for i in range(3))     # altura (d)
+
+        def extensao(d):
+            proj = [sum(p[i] * d[i] for i in range(3)) for p in s.vertices]
+            return max(proj) - min(proj)
+        self.assertAlmostEqual(extensao(vv), 310.0, delta=0.5)
+        self.assertAlmostEqual(extensao(uu), 165.0, delta=0.5)
+        # o eixo da barra passa pelo meio da peça (o deslocamento do perfil entra)
+        c = [sum(p[i] for p in s.vertices) / len(s.vertices) for i in range(3)]
+        w = [c[i] - b.inicio[i] for i in range(3)]
+        ao_longo = sum(w[i] * t[i] for i in range(3))
+        fora = math.sqrt(sum((w[i] - ao_longo * t[i]) ** 2 for i in range(3)))
+        self.assertLess(fora, 0.5)
+
     @unittest.skipIf(base_local is None, "nucleo3d.geometria indisponível")
     def test_convencao_igual_a_da_geometria(self):
         for d in ((1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0.3), (0.1, 0, 1), (-1, 2, -3)):

@@ -895,6 +895,7 @@ class Importador:
             if m != m_identidade():
                 ext = [m_ponto(m, (p[0], p[1], 0.0))[:2] for p in ext]
                 furos = [[m_ponto(m, (p[0], p[1], 0.0))[:2] for p in f] for f in furos]
+                info["posicao"] = m           # a barra paramétrica gira e desloca a seção por ela também
         return _fechar(ext), [_fechar(f) for f in furos], info
 
     # ------------------------------------------------------------ itens de geometria
@@ -1825,13 +1826,20 @@ class Importador:
         prof = float(item.arg(3) or 0.0) * self.escala
         if abs(prof) < 1e-6:
             return None, "extrusão de comprimento nulo"
-        inicio = m_ponto(total, (0.0, 0.0, 0.0))
-        fim = m_ponto(total, (direcao[0] * prof, direcao[1] * prof, direcao[2] * prof))
+        # A posição própria do perfil (IfcAxis2Placement2D) gira e desloca a seção no plano dela: o Revit
+        # grava o I com o x do perfil em (0, 1), e sem isto as vigas retas do Bella Casa saíam deitadas
+        # (05/10) — o contorno da malha já a usava; a barra paramétrica, não. A direção da extrusão é a
+        # da posição da extrusão, sem a do perfil.
+        posicao_perfil = info.pop("posicao", None)                  # matriz: não vai para os atributos
+        secao = m_multiplicar(total, posicao_perfil) if posicao_perfil else total
+        inicio = m_ponto(secao, (0.0, 0.0, 0.0))
+        passo = m_direcao(total, (direcao[0] * prof, direcao[1] * prof, direcao[2] * prof))
+        fim = (inicio[0] + passo[0], inicio[1] + passo[1], inicio[2] + passo[2])
         if prof < 0:
             inicio, fim = fim, inicio
 
-        eixo_x = _norm(m_direcao(total, (1.0, 0.0, 0.0)))
-        eixo_y = _norm(m_direcao(total, (0.0, 1.0, 0.0)))
+        eixo_x = _norm(m_direcao(secao, (1.0, 0.0, 0.0)))
+        eixo_y = _norm(m_direcao(secao, (0.0, 1.0, 0.0)))
         d = _norm((fim[0] - inicio[0], fim[1] - inicio[1], fim[2] - inicio[2]))
         if familia == "circulo":
             rotacao = 0.0                         # seção cheia redonda: sem orientação
