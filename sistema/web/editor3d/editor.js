@@ -295,6 +295,7 @@ export class Editor {
     else if (this.parametros.get('abrir')) await this.abrirModelo(this.parametros.get('abrir'));
     if (this.projeto) this._carregarReferencia();
     if (this.projeto && !this.parametros.get('destacar')) this._vistaDoVisor();
+    if (this.projeto) this._botaoVer();
     if (this.projeto && this.parametros.get('lancar') === '1') {
       const url = new URL(location.href); url.searchParams.delete('lancar'); history.replaceState(null, '', url);
       setTimeout(() => this.dialogoLancar(), 300);
@@ -1531,6 +1532,42 @@ export class Editor {
       (window.metalicaNavegar || ((u) => { location.href = u; }))(`/cad?projeto=${encodeURIComponent(this.projeto)}&desenho=${encodeURIComponent(j.nome)}`);
     } catch (e) { this.aviso(`Não foi possível abrir o detalhe de ${marca}: ${e.message}`, 'erro', 0); this.dica(''); }
     finally { pararDet(); }
+  }
+
+  /** O botão "Ver" no canto do 3D: volta ao modo ver (leve, web/visor3d) do projeto. */
+  _botaoVer() {
+    const palco = this.el.vistas && this.el.vistas.parentElement;
+    if (!palco || document.getElementById('btn-voltar-ver')) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'btn-voltar-ver';
+    b.textContent = '👁 Ver';
+    b.title = 'Voltar ao modo ver: o modelo leve, só para olhar, medir e pintar (o que foi editado fica gravado)';
+    b.style.cssText = 'position:absolute;top:10px;left:10px;z-index:5;padding:5px 12px;border-radius:var(--raio-p);' +
+      'border:1px solid var(--azul2);background:var(--azul2);color:#fff;font:600 13px var(--sans);cursor:pointer;box-shadow:var(--sombra)';
+    b.onclick = () => this.voltarParaVer();
+    palco.append(b);
+  }
+
+  /** Volta ao modo ver com a mesma vista e as peças selecionadas; antes grava o que estiver pendente (se a
+   *  gravação falhar, fica no editor). O visor lê a vista em `metalica.vistaVer3d` (ver3d.js). */
+  async voltarParaVer() {
+    if (!this.projeto) return;
+    if (this._autosavePendente || this._autosalvando || this._autosaveTimer) {
+      await this.salvar();
+      if (this._autosavePendente) return;
+    }
+    const p = this.camera.ativa.position, t = this.camera.controles.target;
+    try {
+      sessionStorage.setItem('metalica.vistaVer3d', JSON.stringify({ projeto: this.projeto, quando: Date.now(),
+        posicao: [p.x * 1000, p.y * 1000, p.z * 1000], alvo: [t.x * 1000, t.y * 1000, t.z * 1000],
+        selecao: [...this.selecao.ids].slice(0, 5000) }));
+    } catch (e) { /* sem armazenamento: o visor abre enquadrado */ }
+    const url = `/visor3d/ver3d.html?projeto=${encodeURIComponent(this.projeto)}`;
+    if (window.parent !== window) {
+      try { window.parent.postMessage({ metalica: 'navegar', url }, location.origin); return; } catch (e) { /* abre aqui */ }
+    }
+    location.href = url;
   }
 
   /** Chegando do modo "ver" (web/visor3d/ver3d.js, botão Editar): a mesma vista e a mesma peça

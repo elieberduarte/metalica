@@ -145,6 +145,18 @@ try:
     ok(ed.get("sel") == ["b1"], f"e com a peça escolhida no visor selecionada ({ed.get('sel')})")
     foto(aba, "ver3d_5_editor.png")
 
+    # do editor de volta ao modo ver: o botão Ver, com a mesma vista e a mesma seleção
+    ok(aba.avaliar("!!" + F3 + ".document.getElementById('btn-voltar-ver')"), "o editor tem o botão Ver")
+    aba.avaliar(f"(() => {{ const e = {F3}.editor; e.camera.irPara(e.camera.ativa.position.clone().multiplyScalar(1.1), e.camera.controles.target.clone(), null, 1); return 1; }})()")
+    aba.drenar(0.3)
+    camEd = aba.avaliar(f"(() => {{ const e = {F3}.editor; const p = e.camera.ativa.position, t = e.camera.controles.target; return [p.x, p.y, p.z, t.x, t.y, t.z].map(x => x * 1000); }})()")
+    aba.avaliar(F3 + ".document.getElementById('btn-voltar-ver').click()")
+    ok(esperar(aba, F3 + ".ver3dPronto && " + F3 + ".visor && " + F3 + ".visor.selecaoVarias.size === 1", 60), "Ver volta ao modo ver no mesmo quadro, com a peça selecionada")
+    cv = aba.avaliar(F3 + ".visor.lerCamera()") or {}
+    dif = max(abs(a - b) for a, b in zip(cv.get("posicao", [1e9] * 3) + cv.get("alvo", [1e9] * 3), camEd))
+    ok(dif < 1.0, f"e com a mesma vista do editor (diferença {dif:.2f} mm)")
+    ok("/visor3d/ver3d.html" in (aba.avaliar("document.getElementById('f3d').getAttribute('src')") or ""), "o quadro voltou a ser o visor")
+
     # um comando de edição da barra, com o 3D no modo ver, também leva ao editor
     aba.navegar(base + "/dividida?projeto=obra&vista=3d", limite=60)
     ok(esperar(aba, F3 + ".ver3dPronto", 60), "de volta ao modo ver")
