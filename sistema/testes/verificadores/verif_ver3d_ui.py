@@ -132,6 +132,7 @@ try:
     ok(esperar(aba, F3 + ".visor.escuro === " + ("false" if escuro0 else "true") + " && " + F3 + ".document.documentElement.getAttribute('data-tema') === document.documentElement.getAttribute('data-tema')", 5),
        "trocar o tema na barra troca o fundo e o piso do 3D na hora")
     ok(aba.avaliar(F3 + ".visor.piso && " + F3 + ".visor.piso.visible && " + F3 + ".visor.piso.position.z < -100"), "o piso fica sob o modelo")
+    foto(aba, "ver3d_4b_outro_tema.png")
     aba.avaliar("window.barraUnica.executar({ fn: 'tema' }); 1")
 
     # Editar: o editor no mesmo quadro, com a mesma vista e a mesma peça

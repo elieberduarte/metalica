@@ -517,13 +517,16 @@ export class Visor3D {
       this.tapete.raycast = () => {};
       this.cena.add(this.tapete);
     }
-    // no escuro, o piso na cor do fundo do Desenho 2D (web/cad/nucleo/tela.js); no claro, o azul-acinzentado
-    // (escolha do usuário, 06/10)
-    this.piso.material.color.set(escuro ? '#0e131a' : '#aebbcd');
+    // no escuro, um azul-ardósia um pouco mais claro que o fundo do Desenho 2D (na cor dele, #0e131a, o chão
+    // sumia — pedido do usuário, 06/10); no claro, o azul-acinzentado (escolha do usuário, 06/10)
+    // (no escuro a cor vai como está na tela: a saída do renderizador é linear e o .set() a escurecia quase até o
+    // preto; o claro fica como foi aprovado)
+    if (escuro) this.piso.material.color.setStyle('#222c3a', THREE.LinearSRGBColorSpace);
+    else this.piso.material.color.set('#aebbcd');
     this.piso.material.opacity = escuro ? 0.92 : 0.45;
     this.tapete.visible = !!escuro;                          // no claro o chão já contrasta com o céu
-    this.tapete.material.color.set('#3b4a62');
-    this.tapete.material.opacity = 0.75;
+    this.tapete.material.color.setStyle('#3a4860', THREE.LinearSRGBColorSpace);
+    this.tapete.material.opacity = 0.7;
     this.corFantasma = escuro ? [46, 54, 66] : [215, 220, 230];
     this.posicionarPiso();
     this._repintar();
