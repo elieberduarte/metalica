@@ -251,13 +251,23 @@ try:
       [f, a] = pegar('eA'); f.onPonto([a.ponto[0] + 1000, a.ponto[1]], {});
       const r3 = [val('cAB'), val('c12'), c.doc.get('c12').p1[0] - X, c.doc.get('e1').a[0] - X];
       c.desfazer();
-      return JSON.stringify([r1, r0, r2, r3]);
+      // as alças das pontas, uma de cada vez (como o usuário fez, 06/10): a bolinha e as cotas vêm junto
+      const ponta = (id, parte, q) => { c.ativarFerramenta('selecionar'); c.selecionar([id]); const f = c.ferramenta;
+        const a = c.tela.alcas().find(x => x.id === id && x.parte === parte); f._pegarAlca(a); f._recemPega = false; f.onPonto(q, {}); };
+      ponta('eA', 'b', [X + 1000, 15000]); ponta('eA', 'a', [X + 1000, 33500]);
+      const bA = c.doc.get('bA'), tA = c.doc.get('tA');
+      const r4 = [Math.round(bA.centro[0] - X), Math.round(bA.centro[1]), Math.round(tA.posicao[0] - X), val('cAB'), Math.round(c.doc.get('c23').p2[0] - X), val('c23')];
+      c.desfazer(); c.desfazer();
+      const r5 = [Math.round(c.doc.get('bA').centro[0] - X), val('cAB')];
+      return JSON.stringify([r1, r0, r2, r3, r4, r5]);
     """))
     ok(r_l[0] == [27000, -1500, 27000, 27000, 7000, 5000, 12000, 33500], f"eixo 2 movido 1000 atravessado: bolinha e nome junto, cotas 7000/5000, a total e o eixo A ficam ({r_l[0]})")
     ok(r_l[1] == [26000, 26000, 6000], f"Ctrl+Z volta o eixo, a bolinha e a cota ({r_l[1]})")
     ok(r_l[2] == [32500, 6500, 12500, 34000, 18500, 34500, 34500, 20000], f"o último eixo (3) movido 500 digitado: A e B esticam em cima e as bolinhas sobem; o eixo 1 fica ({r_l[2]})")
     ok(r_l[3] == [11000, 6000, 1000, -500], f"eixo A (o último à esquerda) movido 1000: a cota A–B dá 11000, a cadeia dos números vai junto e as pontas dos eixos 1–3 também ({r_l[3]})")
 
+    ok(r_l[4] == [1000, 34000, 1000, 11000, 1000, 6000], f"eixo A esticado pelas pontas até 1000 adiante: a bolinha, o nome e as cotas vêm junto ({r_l[4]})")
+    ok(r_l[5] == [0, 12000], f"Ctrl+Z duas vezes volta ({r_l[5]})")
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")
     for t, x in erros[:6]: print("     [%s] %s" % (t, x[:300]))

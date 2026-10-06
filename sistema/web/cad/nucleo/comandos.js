@@ -4,6 +4,7 @@
 // 2D. Toda alteração passa por aqui.
 
 import { clonar } from './desenho2d.js';
+import { acompanharMalha } from './malha.js';
 
 export class Comando {
   constructor(rotulo = 'Alteração') { this.rotulo = rotulo; }
@@ -69,7 +70,12 @@ export class ComandoSubstituir extends Comando {
   }
   aplicar(doc) {
     doc.lote(() => {
-      if (!this.antigas) this.antigas = this.novas.map(n => clonar(doc.get(n.id))).filter(Boolean);
+      if (!this.antigas) {
+        // o eixo da malha trocado leva a bolinha, o nome e as cotas da malha (nucleo/malha.js); entram no comando,
+        // e o Ctrl+Z volta tudo junto
+        this.novas.push(...acompanharMalha(doc, this.novas).map(clonar));
+        this.antigas = this.novas.map(n => clonar(doc.get(n.id))).filter(Boolean);
+      }
       for (const n of this.novas) { const { id, ...campos } = n; doc.alterar(id, campos); }
     });
   }

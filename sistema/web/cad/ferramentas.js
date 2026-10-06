@@ -7,6 +7,7 @@
 
 import { criar, dist, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto } from './nucleo/comandos.js';
+import { acompanharMalha } from './nucleo/malha.js';
 
 export function paraMilimetros(texto) {
   let t = String(texto || '').trim().toLowerCase().replace(/\s+(?=(mm|cm|m)$)/, '');
@@ -166,69 +167,11 @@ export class Selecionar extends Ferramenta {
     if (!e || e.tipo !== 'linha') return [];
     const m = this.alca.ponto;
     const eixo = this._eixoDaMalha(e);
-    if (!eixo) {
-      const d = [p[0] - m[0], p[1] - m[1]];
-      return Math.hypot(d[0], d[1]) < 1e-6 ? [] : [transladar(e, d)];
-    }
-    const n = this._normalDoEixo(eixo);
-    const s = (p[0] - m[0]) * n[0] + (p[1] - m[1]) * n[1];
-    if (Math.abs(s) < 1e-6) return [];
-    const d = [n[0] * s, n[1] * s];
-    const mv = (q) => [q[0] + d[0], q[1] + d[1]];
-    const lado = (q) => (q[0] - eixo.a[0]) * n[0] + (q[1] - eixo.a[1]) * n[1];      // distância atravessada ao eixo
-    const noEixo = (q) => Math.abs(lado(q)) < 1;
-    const todas = [...this.doc.entidades.values()];
-    const malha = todas.filter(x => x.id !== eixo.id && this._eixoDaMalha(x));
-    const u = [n[1], -n[0]];
-    const paralelo = (x) => { const L = dist(x.a, x.b); return Math.abs(((x.b[0] - x.a[0]) * u[1] - (x.b[1] - x.a[1]) * u[0]) / L) < 0.02; };
-    const ladosParalelos = malha.filter(paralelo).map(x => lado(x.a));
-    const out = [criar({ ...eixo, a: mv(eixo.a), b: mv(eixo.b) })];
-    const movidos = new Set([eixo.id]);
-    const levar = (x, f) => { if (!movidos.has(x.id)) { movidos.add(x.id); out.push(f(x)); } };
-    // a bolinha e o nome do próprio eixo (no prolongamento da linha)
-    for (const x of todas) {
-      const a = x.atributos || {};
-      if (a.eixo !== eixo.atributos.eixo) continue;
-      if ((a.bolinha && x.tipo === 'circulo' && noEixo(x.centro)) || (a.nome_eixo && x.tipo === 'texto' && noEixo(x.posicao))) levar(x, y => transladar(y, d));
-    }
-    // os eixos que o cruzam: a ponta além dele, se nenhum outro eixo paralelo fica entre ele e a ponta
-    for (const x of malha) {
-      if (paralelo(x)) continue;
-      const L = dist(x.a, x.b), ux = [(x.b[0] - x.a[0]) / L, (x.b[1] - x.a[1]) / L];
-      const k = ux[0] * n[0] + ux[1] * n[1];
-      if (Math.abs(k) < 0.2) continue;
-      const nova = { ...x };
-      const bolinhas = [];
-      for (const ponta of ['a', 'b']) {
-        const sp = lado(x[ponta]);
-        if (Math.abs(sp) < 1 || ladosParalelos.some(t => t * sp > 0 && Math.abs(t) <= Math.abs(sp) + 1)) continue;
-        const t = s / k;
-        nova[ponta] = [x[ponta][0] + ux[0] * t, x[ponta][1] + ux[1] * t];
-        for (const c of todas) {
-          const ca = c.atributos || {};
-          if (c.tipo === 'circulo' && ca.bolinha && ca.eixo === x.atributos.eixo && dist(c.centro, x[ponta]) <= 1.6 * c.raio) bolinhas.push([c, [ux[0] * t, ux[1] * t]]);
-        }
-      }
-      if (nova.a === x.a && nova.b === x.b) continue;
-      levar(x, () => criar(nova));
-      for (const [c, dd] of bolinhas) {
-        levar(c, y => transladar(y, dd));
-        for (const tx of todas) {
-          const ta = tx.atributos || {};
-          if (tx.tipo === 'texto' && ta.nome_eixo && ta.eixo === x.atributos.eixo && dist(tx.posicao, c.centro) < 1) levar(tx, y => transladar(y, dd));
-        }
-      }
-    }
-    // as cotas da malha com ponta no eixo
-    for (const x of todas) {
-      if (x.tipo !== 'cota' || !(x.atributos || {}).malha) continue;
-      const q1 = noEixo(x.p1), q2 = noEixo(x.p2);
-      if (!q1 && !q2) continue;
-      const nova = { ...x, p1: q1 ? mv(x.p1) : x.p1, p2: q2 ? mv(x.p2) : x.p2, texto_pos: q1 && q2 && x.texto_pos ? mv(x.texto_pos) : null };
-      if (dist(nova.p1, nova.p2) < 1e-6) continue;
-      levar(x, () => criar(nova));
-    }
-    return out;
+    let d = [p[0] - m[0], p[1] - m[1]];
+    if (eixo) { const n = this._normalDoEixo(eixo), s = d[0] * n[0] + d[1] * n[1]; d = [n[0] * s, n[1] * s]; }
+    if (Math.hypot(d[0], d[1]) < 1e-6) return [];
+    const nova = transladar(e, d);
+    return eixo ? [nova, ...acompanharMalha(this.doc, [nova])] : [nova];
   }
   /** A medida durante o arrasto do eixo: quanto andou e a distância aos vizinhos de cada lado. */
   _medidaDoEixo(p) {
