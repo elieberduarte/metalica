@@ -271,6 +271,8 @@
       blocos.push(bl);
     });
     desenharContexto(caixa);
+    // nada a mostrar (o 3D no modo ver, sozinho na tela): a faixa sai; volta quando o editor ou o 2D aparecem
+    caixa.style.display = caixa.children.length ? '' : 'none';
     // não cabe: recolhe os grupos (Planta, Anotar, Modificar, Desenhar) num botão com a última usada + ▾
     var ordem = blocos.filter(function (b) { return b._recolhe; }).sort(function (a, b) { return a._recolhe - b._recolhe; });
     for (var i = 0; i < ordem.length && caixa.scrollWidth > caixa.clientWidth + 1; i++) recolher(ordem[i]);
@@ -372,6 +374,7 @@
       f.addEventListener('mouseenter', function () { mudarLado(lado); });
       f.addEventListener('load', function () {
         observados[lado] = null;
+        pedirDesenho();                      // a tela trocou (o editor virou o modo ver): os botões da anterior saem
         var t0 = Date.now();
         (function esperar() {
           var d = docDe(lado);

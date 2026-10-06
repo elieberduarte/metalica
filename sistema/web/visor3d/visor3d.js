@@ -497,15 +497,25 @@ export class Visor3D {
       gc.fillStyle = rad;
       gc.fillRect(0, 0, 256, 256);
       this.piso = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-        new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, alphaMap: new THREE.CanvasTexture(cv) }));
+        new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.FrontSide, alphaMap: new THREE.CanvasTexture(cv) }));
+      // só a face de cima: olhando de baixo da linha do piso ele some e não cobre o modelo
       this.piso.renderOrder = -1;
       this.piso.raycast = () => {};
       this.cena.add(this.piso);
+      // o tapete: um pouco maior que o modelo, mais claro no centro e sumindo no chão
+      this.tapete = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.FrontSide, alphaMap: this.piso.material.alphaMap }));
+      this.tapete.renderOrder = -1;
+      this.tapete.raycast = () => {};
+      this.cena.add(this.tapete);
     }
     // no escuro, o piso na cor do fundo do Desenho 2D (web/cad/nucleo/tela.js); no claro, o azul-acinzentado
     // (escolha do usuário, 06/10)
     this.piso.material.color.set(escuro ? '#0e131a' : '#aebbcd');
     this.piso.material.opacity = escuro ? 0.92 : 0.45;
+    this.tapete.visible = !!escuro;                          // no claro o chão já contrasta com o céu
+    this.tapete.material.color.set('#3b4a62');
+    this.tapete.material.opacity = 0.75;
     this.corFantasma = escuro ? [46, 54, 66] : [215, 220, 230];
     this.posicionarPiso();
     this._repintar();
@@ -519,6 +529,9 @@ export class Visor3D {
     const lado = Math.max(s.x, s.y, 10000) * 40;          // até o horizonte (a borda some no degradê)
     this.piso.scale.set(lado, lado, 1);
     this.piso.position.set(c.x, c.y, cx.min.z - 10);
+    const t = Math.max(s.x, s.y) * 2.6 + 6000;
+    this.tapete.scale.set(t, t, 1);
+    this.tapete.position.set(c.x, c.y, cx.min.z - 8);
     this.pedirQuadro();
   }
 

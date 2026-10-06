@@ -19,6 +19,9 @@ html, body.ver3d { height: 100%; margin: 0; overflow: hidden; background: var(--
 #ferramentas button.forte { background: var(--azul2); border-color: var(--azul2); color: #fff; font-weight: 600; }
 #ferramentas .pintar { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
 #ferramentas select { font: inherit; border: 0; background: transparent; color: inherit; cursor: pointer; }
+#ferramentas select option { background: var(--painel); color: var(--texto); }
+:root[data-tema="escuro"] { color-scheme: dark; }
+:root[data-tema="claro"] { color-scheme: light; }
 #ferramentas .sep { width: 6px; }
 #busca { font: 13px var(--sans); width: 240px; padding: 5px 10px; border: 1px solid var(--borda); border-radius: var(--raio-p);
   background: var(--painel); color: var(--texto); box-shadow: var(--sombra); }

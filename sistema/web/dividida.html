@@ -31,6 +31,10 @@
   .area-topo { align-items: center; gap: 6px; padding: 0 8px; }
   .area-topo .marca { padding: 0 4px 0 2px; flex-shrink: 1; }
   .area-topo .menus { align-self: stretch; }
+  /* os menus como texto da faixa (sem a caixa clara de todo botão do topo, que os destacava do resto, 06/10);
+     o realce só ao passar o mouse ou com o menu aberto */
+  .area-topo .menu-botao { background: transparent; border: 0; border-radius: 5px; margin: 5px 0; padding: 0 10px; }
+  .area-topo .menu-botao:hover, .area-topo .menu.aberto .menu-botao { background: rgba(255,255,255,.12); }
   .area-topo .rapidos { display: flex; align-items: center; gap: 6px; flex-shrink: 1; min-width: 0; }
   /* a barra é a mesma nas três vistas: a ligação 2D + 3D fica no menu Ver (os controles, escondidos, continuam
      aqui para o dividida.js) */

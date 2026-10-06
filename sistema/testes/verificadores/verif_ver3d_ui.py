@@ -71,6 +71,9 @@ try:
     ok(esperar(aba, F3 + ".ver3dPronto && " + F3 + ".ver3dPronto.pecas === 67", 90), "o cartão do projeto abre o 3D no modo ver (67 peças)")
     ok("/visor3d/ver3d.html" in (aba.avaliar("document.getElementById('f3d').getAttribute('src')") or ""), "o quadro 3D da área é o visor")
     ok(not aba.avaliar("!!" + F3 + ".editor"), "sem o editor carregado")
+    ok(esperar(aba, "getComputedStyle(document.getElementById('faixa-ferramentas')).display === 'none'", 10),
+       "no modo ver (só o 3D) a faixa de ferramentas sai")
+    ok(aba.avaliar(F3 + ".visor.piso.material.side === 0"), "o piso só aparece visto de cima (de baixo não cobre o modelo)")
     foto(aba, "ver3d_1_aberto.png")
     r = aba.avaliar("(() => { const r = document.getElementById('f3d').getBoundingClientRect(); return [r.left, r.top]; })()")
 
@@ -138,6 +141,8 @@ try:
     cam = aba.avaliar(F3 + ".visor.lerCamera()")
     aba.avaliar(F3 + ".document.getElementById('btn-editar').click()")
     ok(esperar(aba, F3 + ".editor && " + F3 + ".editor.documento && " + F3 + ".editor.documento.entidades.size > 60", 90), "Editar carrega o editor no quadro")
+    ok(esperar(aba, "getComputedStyle(document.getElementById('faixa-ferramentas')).display !== 'none' && document.querySelectorAll('#faixa-ferramentas .fx-grupo').length > 0", 30),
+       "com o editor, a faixa de ferramentas volta")
     aba.drenar(1.5)
     ed = aba.avaliar(f"(() => {{ const e = {F3}.editor; const p = e.camera.ativa.position, t = e.camera.controles.target; return {{ v: [p.x, p.y, p.z, t.x, t.y, t.z].map(x => x * 1000), sel: [...e.selecao.ids] }}; }})()") or {}
     dif = max(abs(a - b) for a, b in zip(ed.get("v", [1e9] * 6), cam["posicao"] + cam["alvo"]))
