@@ -840,8 +840,10 @@ class CAD {
       if (emCampo && alvo !== this.el.medida) return;
       if (alvo === this.el.medida) {
         if (ev.key === 'Enter') { ev.preventDefault(); const v = this.el.medida.value.trim(); this.el.medida.value = ''; if (v && this.ferramenta) this.ferramenta.onValor(v); this.el.canvas.focus(); }
-        if (ev.key === 'Escape') { this.el.medida.value = ''; this.el.canvas.focus(); }
-        return;
+        // o Esc no campo das medidas também encerra o comando (a cópia em série, a linha…) — antes só limpava o campo,
+        // e com o foco ali a ferramenta não soltava (06/10)
+        if (ev.key !== 'Escape') return;
+        this.el.medida.value = ''; this.el.canvas.focus();
       }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? this.refazer() : this.desfazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') { ev.preventDefault(); this.refazer(); return; }
