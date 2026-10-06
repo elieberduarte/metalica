@@ -625,6 +625,20 @@ export class Esticar extends Ferramenta {
   _pegarAresta(p, ev) {
     const tela = this.editor.tela, e = tela.sob(ev.px);
     if (!e) { this.dica('Clique numa aresta, ou arraste uma janela'); return false; }
+    // o elemento que se estica pela ponta (a viga da Estrutura, que é a linha do eixo com a largura só na tela): o
+    // clique perto da ponta leva aquela ponta, ao longo do eixo — antes a linha inteira era a "aresta" e andava de
+    // lado (06/10, "estou tentando estender a viga até o fim")
+    const ponta = typeof this.editor._pontaParaEsticar === 'function' ? this.editor._pontaParaEsticar(e, p) : null;
+    if (ponta) {
+      const tol = Math.max(0.5, 2 * tela.mmPorPixel), q = ponta.ponto;
+      this.dentro = (x) => dist(x, q) <= tol;
+      this.regiao = [[q[0] - tol, q[1] - tol], [q[0] + tol, q[1] + tol]];
+      this.normal = ponta.direcao;
+      this.base = q; this.editor.snap.ultimo = q;
+      this.editor.previa(ponta.aresta ? [criar({ tipo: 'linha', camada: this.camada, a: ponta.aresta[0], b: ponta.aresta[1] })] : []);
+      this.dica('Leve a ponta até a nova posição (anda no eixo dela), ou digite quanto esticar · Esc cancela');
+      return true;
+    }
     let melhor = null, dm = Infinity;
     for (const [s, t] of segmentosDe(e)) {
       const q = maisProximoSeg(p, s, t), d = dist(q, p);
