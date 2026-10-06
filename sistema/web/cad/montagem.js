@@ -251,7 +251,7 @@ class Montagem {
       el('button', { type: 'button', 'data-aba': 'pranchas', title: 'As pranchas do projeto, geradas depois do 3D', onclick: () => this.ir('pranchas') }, 'Pranchas'),
       this.botaoEnviar = el('button', { type: 'button', class: 'enviar-quadro', hidden: true, id: 'btn-enviar-quadro',
         title: 'Marque uma área da planta do cliente e escolha o quadro da Montagem para onde ela vai (copiada, na escala do quadro)',
-        onclick: () => this.cad.ativarFerramenta('enviar-quadro') }, 'Enviar para quadro'),
+        onclick: () => this.enviarSelecaoOuMarcar() }, 'Enviar para quadro'),
       this.botaoRevisao = el('button', { type: 'button', class: 'enviar-quadro revisao', hidden: true, id: 'btn-nova-revisao',
         title: 'Chegou um DXF novo do cliente: ele vira a revisão seguinte da Original (R01, R02…); os quadros não mudam sozinhos — a pré-análise mostra o que mudou em cada um',
         onclick: () => this.arquivoRevisao.click() }, 'Nova revisão do DXF'),
@@ -385,9 +385,28 @@ class Montagem {
     return this.cad.doc.naRegiao(caixa).filter(e => this.cad.doc.visivel(e) && pontosDe(e).every(dentro));
   }
 
-  /** Marcou a área na Original: escolhe o quadro e copia. */
-  async enviarArea(caixa) {
-    const ents = this._naArea(caixa);
+  /**
+   * O botão "Enviar para quadro": com algo selecionado, manda a seleção (o que o operador escolheu, sem o resto do
+   * desenho do cliente que estiver em volta); sem seleção, pede a área — com aviso na tela, não só na barra de baixo
+   * (06/10: "cliquei em enviar para o quadro mas nada aconteceu").
+   */
+  enviarSelecaoOuMarcar() {
+    const ids = [...this.cad.tela.selecao];
+    const ents = ids.map(id => this.cad.doc.get(id)).filter(e => e && this.cad.doc.visivel(e));
+    if (ents.length) {
+      const caixa = caixaDe(ents.flatMap(e => pontosDe(e)));
+      this.cad.tela.regiao = caixa;
+      this.cad.tela.pedirQuadro();
+      this.enviarArea(caixa, ents).finally(() => { this.cad.tela.regiao = null; this.cad.tela.pedirQuadro(); });
+      return;
+    }
+    this.cad.ativarFerramenta('enviar-quadro');
+    this.cad.aviso('Marque a área a enviar: clique nos dois cantos (ou arraste uma janela) em volta do desenho — ou selecione o desenho antes e clique de novo em "Enviar para quadro".', 'info', 9000);
+  }
+
+  /** Marcou a área na Original (ou mandou a seleção, `escolhidos`): escolhe o quadro e copia. */
+  async enviarArea(caixa, escolhidos = null) {
+    const ents = escolhidos && escolhidos.length ? escolhidos : this._naArea(caixa);
     if (!ents.length) { this.cad.aviso('Nada inteiro dentro dessa área. Marque a área envolvendo o desenho todo.', 'atencao'); this.cad.ativarFerramenta('selecionar'); return; }
     const mont = await this._montagemJSON();
     const m = mont.metadados.montagem;
@@ -758,17 +777,25 @@ class Montagem {
   }
 
   // ------------------------------------------------------------------ o 3D pelos quadros (etapa 6)
-  async gerar3D() {
+  async gerar3D(substituir = false) {
     const p = this._montarPainel();
     const assim = p.querySelector('#leitura-assim-mesmo').checked;
     const res = p.querySelector('#leitura-resultado');
     res.replaceChildren(el('div', { class: 'explica' }, 'Montando o 3D pelos quadros…'));
     p.querySelector('#leitura-gerar').disabled = true;
     let r;
-    try { r = await pedir(this._url('gerar-3d'), { parametros: (this.m && this.m.parametros) || {}, assim_mesmo: assim }); } catch (e) {
+    try { r = await pedir(this._url('gerar-3d'), { parametros: (this.m && this.m.parametros) || {}, assim_mesmo: assim, substituir_modelo: substituir }); } catch (e) {
       res.replaceChildren(el('div', { class: 'erro' }, 'Não foi possível gerar: ' + e.message)); this._liberar(); return;
     }
     this._liberar();
+    if (r.bloqueado && r.modelo_existente) {
+      // o modelo do projeto tem peças lançadas pela planta ou no editor: o 3D pelos quadros apagaria todas
+      res.replaceChildren();
+      const corpo = el('div', { class: 'explica', texto: `O 3D pelos quadros monta o modelo inteiro de novo e SUBSTITUI o atual (${r.modelo_existente} peças, com os pilares e as vigas lançados pela planta). O atual vai para o histórico.` });
+      if (await this.cad.dialogo({ titulo: 'Substituir o modelo 3D?', corpo, ok: 'Substituir' }) === 'ok') return this.gerar3D(true);
+      res.replaceChildren(el('div', { class: 'explica' }, 'Nada mudou: o modelo 3D continua o mesmo.'));
+      return;
+    }
     if (r.bloqueado) { res.replaceChildren(el('div', { class: 'erro' }, `${r.erros} erro(s) na pré-análise: corrija nos quadros ou marque "gerar assim mesmo".`)); return; }
     const s = r.resumo;
     const tes = Object.entries(s.tesouras || {}).map(([k, v]) => `${k} ×${v}`).join(', ') || 'nenhuma';

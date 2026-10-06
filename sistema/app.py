@@ -3263,6 +3263,18 @@ def gerar_3d_pelos_quadros(s: str, corpo: dict) -> dict:
     projeto guarda quem gerou assim e com quais apontamentos."""
     from nucleo3d import de_quadros, leitura_quadros
     g = _gerente()
+    # o 3D pelos quadros troca o modelo inteiro: com peças lançadas pela planta (menu Estrutura) ou feitas no editor,
+    # só com a confirmação — sem ela, a tesoura mandada para um quadro apagava os pilares e as vigas (06/10)
+    if not corpo.get("substituir_modelo"):
+        try:
+            m = g.abrir_modelo(s) or {}
+        except (OSError, ValueError, ErroDeDados):
+            m = {}
+        ents = m.get("entidades") or []
+        ents = list(ents.values()) if isinstance(ents, dict) else ents
+        proprias = [e for e in ents if not (e.get("atributos") or {}).get("bloco") and not (e.get("atributos") or {}).get("de_quadros")]
+        if proprias and not (g.ler(s) or {}).get("gerado_por_quadros"):
+            return {"bloqueado": True, "modelo_existente": len(ents), "erros": 0, "avisos": 0, "apontamentos": []}
     des = _montagem_do_projeto(s)
     _progresso(s, "lendo os quadros…")
     try:
