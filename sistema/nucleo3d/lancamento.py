@@ -42,6 +42,65 @@ PREFIXO_ARQ = "ARQ "
 COR_ARQ = "#9aa3ae"
 #: Camadas lidas como eixos.
 CAMADAS_EIXO = ("EIXO", "EIXOS")
+#: E as de nome parecido que o AutoCAD e o Revit usam (Eixos, EIXO-ESTRUTURA, AXIS, GRID, S-GRID…).
+_RE_CAMADA_EIXO = re.compile(r"(^|[^A-Z])(EIXOS?|AXIS|AXES|GRIDS?)([^A-Z]|$)")
+
+
+def _camada_de_eixo(nome: str) -> bool:
+    import unicodedata
+    n = "".join(c for c in unicodedata.normalize("NFD", str(nome or "")) if unicodedata.category(c) != "Mn").upper()
+    return n in CAMADAS_EIXO or bool(_RE_CAMADA_EIXO.search(n))
+
+
+def _juntar_tracejados(segs: List[dict]) -> List[dict]:
+    """Os pedaços alinhados de uma mesma linha viram uma linha só: o eixo tracejado que vem do PDF (ou do DXF
+    explodido) chega em centenas de traços de 1 mm — os 1.799 da quadra Kaefer, 06/10 — e cada um era descartado por
+    curto. Agrupa pela direção e pela distância à origem e une os trechos com folga até 3 % da extensão do desenho."""
+    if not segs:
+        return []
+    xs = [q[0] for l in segs for q in (l["a"], l["b"])]
+    ys = [q[1] for l in segs for q in (l["a"], l["b"])]
+    ext = max(max(xs) - min(xs), max(ys) - min(ys), 1.0)
+    tol_off, folga = max(ext * 0.0005, 0.5), ext * 0.03
+    grupos: Dict[tuple, List[dict]] = collections.defaultdict(list)
+    for l in segs:
+        an = l["ang"]
+        d = (math.cos(an), math.sin(an))
+        off = -l["a"][0] * d[1] + l["a"][1] * d[0]
+        grupos[(round(math.degrees(an) * 2) % 360, round(off / tol_off))].append(l)
+    saida = []
+    for (_k, _o), ls in grupos.items():
+        an = ls[0]["ang"]
+        d = (math.cos(an), math.sin(an))
+        iv = sorted((min(t0, t1), max(t0, t1), l) for l in ls
+                    for t0, t1 in [(l["a"][0] * d[0] + l["a"][1] * d[1], l["b"][0] * d[0] + l["b"][1] * d[1])])
+        atual = [iv[0][0], iv[0][1], iv[0][2]]
+        trechos = []
+        for t0, t1, l in iv[1:]:
+            if t0 <= atual[1] + folga:
+                atual[1] = max(atual[1], t1)
+                atual[2] = atual[2] if atual[2]["nome"] else l
+            else:
+                trechos.append(atual)
+                atual = [t0, t1, l]
+        trechos.append(atual)
+        off = -ls[0]["a"][0] * d[1] + ls[0]["a"][1] * d[0]
+        n = (-d[1], d[0])
+        for t0, t1, l in trechos:
+            a = (d[0] * t0 + n[0] * off, d[1] * t0 + n[1] * off)
+            b = (d[0] * t1 + n[0] * off, d[1] * t1 + n[1] * off)
+            saida.append({"a": a, "b": b, "L": t1 - t0, "ang": an, "nome": l["nome"]})
+    return saida
+
+
+def _cruzam(l1: dict, l2: dict) -> bool:
+    (ax, ay), (bx, by), (cx, cy), (dx, dy) = l1["a"], l1["b"], l2["a"], l2["b"]
+    den = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx)
+    if abs(den) < 1e-12:
+        return False
+    t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / den
+    u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / den
+    return -0.02 <= t <= 1.02 and -0.02 <= u <= 1.02
 #: Quanto a linha do eixo passa do último eixo atravessado (mm).
 FOLGA = 1500.0
 #: Raio da bolinha do eixo e altura do nome, em mm de papel.
@@ -343,9 +402,9 @@ def eixos_do_desenho(des: Desenho) -> dict:
     eixo é o texto curto (1, 2… ou A, B…) na bolinha junto de uma das pontas. A família
     de números é a dos pórticos; sem nomes, é a família com mais linhas (empate: a de
     linhas mais curtas, que atravessam o vão)."""
-    linhas = []
+    pedacos = []
     for e in des.entidades.values():
-        if str(e.camada).upper() not in CAMADAS_EIXO:
+        if not _camada_de_eixo(e.camada):
             continue
         if isinstance(e, Linha):
             a, b = e.a, e.b
@@ -354,10 +413,24 @@ def eixos_do_desenho(des: Desenho) -> dict:
         else:
             continue
         L = math.hypot(b[0] - a[0], b[1] - a[1])
-        if L < 500.0:
+        if L <= 1e-9:
             continue
-        linhas.append({"a": tuple(a), "b": tuple(b), "L": L, "ang": math.atan2(b[1] - a[1], b[0] - a[0]) % math.pi,
-                       "nome": str((e.atributos or {}).get("eixo") or "")})
+        pedacos.append({"a": tuple(a), "b": tuple(b), "L": L, "ang": math.atan2(b[1] - a[1], b[0] - a[0]) % math.pi,
+                        "nome": str((e.atributos or {}).get("eixo") or "")})
+    juntas = _juntar_tracejados(pedacos)
+    if juntas and max(l["L"] for l in juntas) < 500.0:
+        raise ErroDeDados("os eixos medem no máximo %.0f unidades: o desenho parece estar na medida do papel (o PDF "
+                          "importado sem calibrar). Use Lançamento → Calibrar escala do arquitetônico e grave os eixos de "
+                          "novo." % max(l["L"] for l in juntas))
+    linhas = [l for l in juntas if l["L"] >= 500.0]
+    # só os da planta: o eixo que cruza algum da outra direção (os das vistas lateral e frontal, na mesma camada, não
+    # cruzam ninguém e ficam de fora)
+    def _outra(l1, l2):
+        d = abs(l1["ang"] - l2["ang"]) % math.pi
+        return min(d, math.pi - d) > math.radians(45)
+    na_planta = [l for l in linhas if any(_outra(l, m) and _cruzam(l, m) for m in linhas)]
+    if len(na_planta) >= 4:
+        linhas = na_planta
     if len(linhas) < 4:
         raise ErroDeDados("a camada EIXO tem %d linha(s) de eixo: são precisas ao menos duas em cada direção "
                           "(use Malha de eixos… ou desenhe as linhas na camada EIXO)." % len(linhas))

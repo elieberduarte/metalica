@@ -148,11 +148,15 @@ export class MetodosLancamentoCAD {
 
   /** Depois dos dois pontos da ferramenta Calibrar: pergunta a medida real e escala a referência. */
   async calibrarArquitetonico(a, d) {
-    const ents = [...this.doc.entidades.values()].filter(e => String(e.camada).startsWith(PREFIXO_ARQ));
-    if (!ents.length) { this.aviso('O desenho não tem arquitetônico (camadas "ARQ …"): importe primeiro.', 'atencao'); return; }
+    // o arquitetônico importado (camadas "ARQ …"); sem ele, o desenho inteiro — o PDF aberto como desenho comum vem na
+    // medida do papel, com os eixos junto, e não havia como calibrar (quadra Kaefer, 06/10)
+    const arq = [...this.doc.entidades.values()].filter(e => String(e.camada).startsWith(PREFIXO_ARQ));
+    const tudo = !arq.length;
+    const ents = tudo ? [...this.doc.entidades.values()] : arq;
+    if (!ents.length) { this.aviso('O desenho está vazio: nada para calibrar.', 'atencao'); return; }
     const real = el('input', { type: 'text', value: '', placeholder: 'ex.: 6000, 6m, 600cm' });
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: `A distância clicada mede ${fmt(d)} mm no desenho. Quanto ela mede na obra? Todo o arquitetônico (${numero(ents.length)} objetos) é escalado em volta do primeiro ponto; os eixos e o resto do desenho ficam como estão.` }),
+      el('div', { class: 'explica', texto: `A distância clicada mede ${fmt(d)} mm no desenho. Quanto ela mede na obra? ${tudo ? `O desenho inteiro (${numero(ents.length)} objetos, eixos e cotas junto) é escalado em volta do primeiro ponto — ele não tem arquitetônico importado.` : `Todo o arquitetônico (${numero(ents.length)} objetos) é escalado em volta do primeiro ponto; os eixos e o resto do desenho ficam como estão.`}` }),
       el('label', {}, 'Medida real', real));
     if (await this.dialogo({ titulo: 'Calibrar escala do arquitetônico', corpo, ok: 'Escalar' }) !== 'ok') return;
     const alvo = paraMilimetros(real.value);
@@ -164,7 +168,7 @@ export class MetodosLancamentoCAD {
     cmd.semTrava = true;                          // o arquitetônico fica na camada travada: a calibração é do programa
     this.executar(cmd);
     this.tela.enquadrar();
-    this.aviso(`Arquitetônico escalado ${k.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}×: a medida agora é ${fmt(alvo)} mm. Ctrl+Z desfaz.`, 'info', 9000);
+    this.aviso(`${tudo ? 'Desenho' : 'Arquitetônico'} escalado ${k.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}×: a medida agora é ${fmt(alvo)} mm. Ctrl+Z desfaz.`, 'info', 9000);
   }
 
   /** Malha de eixos: vãos entre os eixos numerados (pórticos) e entre os com letra (filas de pilares). */

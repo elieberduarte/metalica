@@ -73,6 +73,43 @@ def test_eixos_desenhados_a_mao_com_nomes_nas_bolinhas():
     assert any("intermediários" in a for a in g["avisos"])
 
 
+def _tracejada(d, camada, a, b, traco=100.0, vazio=60.0):
+    """A linha em traços curtos, como o eixo tracejado chega do PDF (ou do DXF explodido)."""
+    L_ = math.hypot(b[0] - a[0], b[1] - a[1])
+    u = ((b[0] - a[0]) / L_, (b[1] - a[1]) / L_)
+    t = 0.0
+    while t < L_:
+        t1 = min(t + traco, L_)
+        d.add(Linha(camada=camada, a=(a[0] + u[0] * t, a[1] + u[1] * t), b=(a[0] + u[0] * t1, a[1] + u[1] * t1)))
+        t = t1 + vazio
+
+
+def test_eixos_tracejados_da_camada_eixos_so_os_da_planta():
+    """O eixo do AutoCAD/PDF chega em traços curtos e na camada "Eixos" (a quadra Kaefer, 06/10: 1.799 traços): os
+    traços alinhados viram uma linha; os eixos das vistas, na mesma camada, não cruzam os da outra direção e ficam de
+    fora; o desenho na medida do papel (sem calibrar) dá o aviso de calibrar, não "nenhuma linha"."""
+    d = Desenho(nome="t", escala=100)
+    for i, x in enumerate((0.0, 6000.0, 12000.0, 18000.0)):
+        _tracejada(d, "Eixos", (x, -1500.0), (x, 16500.0))
+        d.add(Texto(camada="PDF TEXTO", posicao=(x, -2000.0), texto=str(i + 1)))
+    for j, y in enumerate((0.0, 15000.0)):
+        _tracejada(d, "Eixos", (-1500.0, y), (19500.0, y))
+        d.add(Texto(camada="PDF TEXTO", posicao=(-2000.0, y), texto="AB"[j]))
+    for x in (40000.0, 46000.0, 52000.0):                      # a vista lateral, ao lado: só verticais
+        _tracejada(d, "Eixos", (x, 0.0), (x, 8000.0))
+    ex = L.eixos_do_desenho(d)
+    assert [n["nome"] for n in ex["numeros"]] == ["1", "2", "3", "4"]
+    assert [n["nome"] for n in ex["letras"]] == ["A", "B"]
+    assert L.geometria_dos_eixos(ex)["comprimento"] == pytest.approx(18000.0, abs=1.0)
+    papel = Desenho(nome="papel", escala=100)
+    for x in (0.0, 60.0, 120.0):
+        _tracejada(papel, "EIXOS", (x, -15.0), (x, 165.0), traco=1.0, vazio=0.6)
+    for y in (0.0, 150.0):
+        _tracejada(papel, "EIXOS", (-15.0, y), (135.0, y), traco=1.0, vazio=0.6)
+    with pytest.raises(ErroDeDados, match="Calibrar"):
+        L.eixos_do_desenho(papel)
+
+
 def test_eixos_sem_nomes_e_nao_perpendiculares():
     d = Desenho(nome="t", escala=100)
     for x in (0.0, 6000.0, 12000.0):
