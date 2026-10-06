@@ -839,11 +839,15 @@ class CAD {
       const emCampo = alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'SELECT' || alvo.tagName === 'TEXTAREA');
       if (emCampo && alvo !== this.el.medida) return;
       if (alvo === this.el.medida) {
-        if (ev.key === 'Enter') { ev.preventDefault(); const v = this.el.medida.value.trim(); this.el.medida.value = ''; if (v && this.ferramenta) this.ferramenta.onValor(v); this.el.canvas.focus(); }
+        // o canvas não recebe foco: o canvas.focus() deixava o foco no campo, e dali em diante o Ctrl+Z, o Del e os
+        // atalhos ficavam presos nele (06/10, "Ctrl+Z não está desfazendo as linhas copiadas") — o campo solta o foco
+        if (ev.key === 'Enter') { ev.preventDefault(); const v = this.el.medida.value.trim(); this.el.medida.value = ''; this.el.medida.blur(); if (v && this.ferramenta) this.ferramenta.onValor(v); return; }
+        // Ctrl+Z / Ctrl+Y com o campo vazio são do desenho; com texto, do campo
+        const desfazer = (ev.ctrlKey || ev.metaKey) && /^[zy]$/i.test(ev.key) && !this.el.medida.value;
         // o Esc no campo das medidas também encerra o comando (a cópia em série, a linha…) — antes só limpava o campo,
         // e com o foco ali a ferramenta não soltava (06/10)
-        if (ev.key !== 'Escape') return;
-        this.el.medida.value = ''; this.el.canvas.focus();
+        if (ev.key !== 'Escape' && !desfazer) return;
+        this.el.medida.value = ''; this.el.medida.blur();
       }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? this.refazer() : this.desfazer(); return; }
       if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'y') { ev.preventDefault(); this.refazer(); return; }
