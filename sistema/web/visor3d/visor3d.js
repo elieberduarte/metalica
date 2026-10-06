@@ -19,6 +19,8 @@ import * as THREE from 'three';
 import { OrbitControls } from '../lib/OrbitControls.js';
 
 const LARG_TEX = 1024;
+/** O fundo do Desenho 2D no tema escuro (web/cad/nucleo/tela.js): o 3D usa o mesmo. */
+const FUNDO_ESCURO = '#0e131a';
 
 const VERT = /* glsl */`
 uniform sampler2D tPecas;
@@ -479,24 +481,43 @@ export class Visor3D {
 
   // ---------------------------------------------------------------- ambiente (fundo e piso)
 
-  /** O fundo em degradê (as cores do editor) e um piso liso e meio transparente sob o modelo, sem a grade do
-   *  editor: o modelo não fica solto no vazio. Chamado de novo quando o tema muda. */
+  /** O fundo e um piso sob o modelo (ele não fica solto no vazio). No escuro, como o Desenho 2D: fundo liso na cor
+   *  dele e o piso com a grade fina de 1 m e 10 m; no claro, o degradê e o piso meio transparente aprovados.
+   *  Chamado de novo quando o tema muda. */
   definirTema(escuro) {
     this.escuro = !!escuro;
     if (this._uEscuro) this._uEscuro.value = escuro ? 1 : 0;
+    if (this.cena.background && this.cena.background.isTexture) this.cena.background.dispose();
+    if (!this.piso) this._criarPiso();
+    if (escuro) {
+      // liso, sem degradê nem esfumado nas bordas (pedido do usuário, 06/10): o piso na mesma cor do fundo, a grade
+      // é que mostra o chão, e longe ela some sozinha, sem a borda do plano aparecer
+      this.cena.background = new THREE.Color().setStyle(FUNDO_ESCURO, THREE.LinearSRGBColorSpace);
+      this.piso.material = this._pisoGrade;
+    } else {
+      this.cena.background = this._degrade();
+      this.piso.material = this._pisoLiso;
+    }
+    this.corFantasma = escuro ? [46, 54, 66] : [215, 220, 230];
+    this.posicionarPiso();
+    this._repintar();
+  }
+
+  _degrade() {
     const c = document.createElement('canvas');
     c.width = 4; c.height = 256;
     const g = c.getContext('2d');
     const grad = g.createLinearGradient(0, 0, 0, 256);
-    // o céu um pouco mais claro (no escuro) ou mais azulado (no claro) que o piso, para o piso ler como chão
-    const cores = escuro ? [['#243145', 0], ['#1a2433', 0.6], ['#151d29', 1]] : [['#cfdcf0', 0], ['#eaf0f8', 0.52], ['#dde4ee', 1]];
-    for (const [cor, k] of cores) grad.addColorStop(k, cor);
+    // o céu mais azulado que o piso, para o piso ler como chão
+    for (const [cor, k] of [['#cfdcf0', 0], ['#eaf0f8', 0.52], ['#dde4ee', 1]]) grad.addColorStop(k, cor);
     g.fillStyle = grad;
     g.fillRect(0, 0, 4, 256);
-    if (this.cena.background && this.cena.background.isTexture) this.cena.background.dispose();
-    this.cena.background = new THREE.CanvasTexture(c);
-    if (!this.piso) {
-      // um chão que vai até o horizonte: o plano é grande e some aos poucos para as bordas (sem a "mesa")
+    return new THREE.CanvasTexture(c);
+  }
+
+  _criarPiso() {
+    {
+      // claro: um chão que vai até o horizonte, grande e sumindo aos poucos para as bordas (sem a "mesa")
       const cv = document.createElement('canvas');
       cv.width = cv.height = 256;
       const gc = cv.getContext('2d');
@@ -504,32 +525,36 @@ export class Visor3D {
       rad.addColorStop(0, '#fff'); rad.addColorStop(0.35, '#fff'); rad.addColorStop(1, '#000');
       gc.fillStyle = rad;
       gc.fillRect(0, 0, 256, 256);
-      this.piso = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-        new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.FrontSide, alphaMap: new THREE.CanvasTexture(cv) }));
-      // só a face de cima: olhando de baixo da linha do piso ele some e não cobre o modelo
-      this.piso.renderOrder = -1;
-      this.piso.raycast = () => {};
-      this.cena.add(this.piso);
-      // o tapete: um pouco maior que o modelo, mais claro no centro e sumindo no chão
-      this.tapete = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-        new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.FrontSide, alphaMap: this.piso.material.alphaMap }));
-      this.tapete.renderOrder = -1;
-      this.tapete.raycast = () => {};
-      this.cena.add(this.tapete);
+      // no claro, o azul-acinzentado (escolha do usuário, 06/10)
+      this._pisoLiso = new THREE.MeshBasicMaterial({ color: '#aebbcd', opacity: 0.45, transparent: true, depthWrite: false,
+                                                     side: THREE.FrontSide, alphaMap: new THREE.CanvasTexture(cv) });
     }
-    // no escuro, um azul-ardósia um pouco mais claro que o fundo do Desenho 2D (na cor dele, #0e131a, o chão
-    // sumia — pedido do usuário, 06/10); no claro, o azul-acinzentado (escolha do usuário, 06/10)
-    // (no escuro a cor vai como está na tela: a saída do renderizador é linear e o .set() a escurecia quase até o
-    // preto; o claro fica como foi aprovado)
-    if (escuro) this.piso.material.color.setStyle('#222c3a', THREE.LinearSRGBColorSpace);
-    else this.piso.material.color.set('#aebbcd');
-    this.piso.material.opacity = escuro ? 0.92 : 0.45;
-    this.tapete.visible = !!escuro;                          // no claro o chão já contrasta com o céu
-    this.tapete.material.color.setStyle('#3a4860', THREE.LinearSRGBColorSpace);
-    this.tapete.material.opacity = 0.7;
-    this.corFantasma = escuro ? [46, 54, 66] : [215, 220, 230];
-    this.posicionarPiso();
-    this._repintar();
+    // escuro: a cor do fundo do Desenho 2D (web/cad/nucleo/tela.js) e a grade dele (branco a 6% a cada 1 m, 13% a cada
+    // 10 m), em linhas de 1 pixel; quando ficam mais juntas que os pixels (longe), somem em vez de virar moiré.
+    // A saída do renderizador é linear: as cores vão como estão na tela.
+    const f = new THREE.Color(FUNDO_ESCURO);
+    this._pisoGrade = new THREE.ShaderMaterial({
+      uniforms: { uFundo: { value: new THREE.Vector3(f.r, f.g, f.b) } },
+      vertexShader: `varying vec2 vXY;
+        void main() { vec4 w = modelMatrix * vec4(position, 1.0); vXY = w.xy; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `uniform vec3 uFundo; varying vec2 vXY;
+        float grade(float passo) {
+          vec2 q = vXY / passo, w = fwidth(q);
+          vec2 d = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-6));
+          return (1.0 - min(min(d.x, d.y), 1.0)) * (1.0 - smoothstep(0.12, 0.4, max(w.x, w.y)));
+        }
+        void main() {
+          float a = max(grade(1000.0) * 0.06, grade(10000.0) * 0.13);
+          gl_FragColor = vec4(mix(uFundo, vec3(1.0), a), 1.0);
+        }`,
+      depthWrite: false, side: THREE.FrontSide });
+    f.convertLinearToSRGB();                              // THREE.Color guarda em linear: volta aos números do hex
+    this._pisoGrade.uniforms.uFundo.value.set(f.r, f.g, f.b);
+    // só a face de cima: olhando de baixo da linha do piso ele some e não cobre o modelo
+    this.piso = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this._pisoLiso);
+    this.piso.renderOrder = -1;
+    this.piso.raycast = () => {};
+    this.cena.add(this.piso);
   }
 
   /** O piso logo abaixo das peças à vista, maior que elas. */
@@ -537,12 +562,9 @@ export class Visor3D {
     if (!this.piso || !this.cabecalho) return;
     const cx = this.caixaVisivel();
     const s = cx.getSize(new THREE.Vector3()), c = cx.getCenter(new THREE.Vector3());
-    const lado = Math.max(s.x, s.y, 10000) * 40;          // até o horizonte (a borda some no degradê)
+    const lado = Math.max(s.x, s.y, 10000) * 40;          // até o horizonte (a borda some no degradê ou na grade)
     this.piso.scale.set(lado, lado, 1);
     this.piso.position.set(c.x, c.y, cx.min.z - 10);
-    const t = Math.max(s.x, s.y) * 2.6 + 6000;
-    this.tapete.scale.set(t, t, 1);
-    this.tapete.position.set(c.x, c.y, cx.min.z - 8);
     this.pedirQuadro();
   }
 
