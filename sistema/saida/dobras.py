@@ -154,7 +154,10 @@ def com_bitola(perfil: str) -> str:
     """O nome do perfil dobrado como a fábrica escreve: a espessura pelo número da bitola
     ("U100X50X4.18" → "U100X50X#8", "C150X50X17X2.25" → "C150X50X17X#13"). Perfil que não é
     dobrado da chapa, ou espessura fora das bitolas, fica como está. A polegada que o arquivo traz com as
-    duas aspas separadas ("1/4' '") sai junta ("1/4''")."""
+    duas aspas separadas ("1/4' '") sai junta ("1/4''"). O nome do Revit ("Família:Tipo:ID") sai só o tipo."""
+    if perfil and ":" in perfil:
+        from nucleo.catalogo import nome_do_ifc
+        perfil = nome_do_ifc(perfil)
     if perfil:
         perfil = re.sub(r"'\s+'", "''", perfil)
     if not perfil or geometria(perfil) is None:
@@ -177,6 +180,9 @@ def com_bitola_e_mm(perfil: str) -> str:
     p = com_bitola(perfil)
     if not p or re.search(r"#\d+/", p):
         return p
+    if perfil and ":" in perfil:
+        from nucleo.catalogo import nome_do_ifc
+        perfil = nome_do_ifc(perfil)
     g = geometria(perfil)
     m = re.search(r"#(\d+)", p)
     if g is None or not m:

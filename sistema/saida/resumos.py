@@ -831,8 +831,10 @@ def _tercas(posicoes, tipos, pecas_por_marca, trechos, limites, eixo_g, perp_g, 
 
 
 #: As observações da lista que pedem conferência (as outras — a saia da telha, o perfil original, o furo pelo
-#: parafuso — são informação e ficam na lista de materiais).
-_PEDE_CONFERENCIA = re.compile(r"difere|conferir|não calculad|pelo volume|do plano da seção|sem peça", re.I)
+#: parafuso — são informação e ficam na lista de materiais). O comprimento da peça curva pelo volume ÷ seção é
+#: informação (06/10: a fábrica não dobra, calandra ou corta em trechos retos; a conta fecha com o catálogo); fica
+#: pendência quando não sai.
+_PEDE_CONFERENCIA = re.compile(r"difere|conferir|não calculad|do plano da seção|sem peça", re.I)
 
 
 def _pendencias(lista: dict, parafusos: List[dict], lev: dict, nomes_pos: dict) -> List[dict]:
@@ -844,7 +846,7 @@ def _pendencias(lista: dict, parafusos: List[dict], lev: dict, nomes_pos: dict) 
         nome = " / ".join(dict.fromkeys(nomes_pos.get(m.strip()) or m.strip() for m in str(r.get("marca") or "").split(" / ")))
         for o in r.get("observacoes") or []:
             if _PEDE_CONFERENCIA.search(str(o)):
-                saida.append({"peca": nome, "perfil": r.get("perfil") or "", "o_que": str(o)})
+                saida.append({"peca": nome, "perfil": r.get("perfil_nome") or r.get("perfil") or "", "o_que": str(o)})
     ja_medidas = any("difere" in x["o_que"] for x in saida)
     for it in parafusos:
         for loc in it.get("locais") or []:
@@ -902,6 +904,8 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
     for g in lista.get("perfis") or []:
         b = g.get("barras") or {}
         perfis.append({"perfil": com_bitola(g.get("perfil") or ""), "material": g.get("material") or "", "kg": float(g.get("peso") or 0.0),
+                       "pecas": int(g.get("pecas") or 0), "kg_m": float(g.get("kg_m") or 0.0), "catalogo": g.get("catalogo") or "",
+                       "fora_do_catalogo": g.get("fonte_kg_m") == "calculado",
                        "m": float(g.get("comprimento_m") or 0.0), "barra_m": float(b.get("comprimento") or 0.0) / 1000.0,
                        "barras": int(b.get("quantidade") or 0), "aproveitamento": b.get("aproveitamento"), "emendas": int(b.get("emendas") or 0)})
     try:
@@ -1258,15 +1262,23 @@ def _html_compra(R: dict) -> str:
         return ""
     h = ["<h2 class=\"parte\">A. Compra</h2>"]
     if C.get("perfis"):
-        h.append("<p class=\"sub\"><b>Perfis e barras</b> (barras comerciais pelo plano de corte da lista; W em 12 m, os outros em 6 m, "
-                 "ou 12 m quando a peça passa de 6 m)</p>")
-        h.append(_tabela(["Perfil", "Material", ("kg", "r"), ("m", "r"), ("Barra", "r"), ("Barras", "r"), ("Aprov.", "r"), "Pedido"],
-                         [[p["perfil"], p["material"], (_n(p["kg"], 1), "r"), (_n(p["m"], 2), "r"), ("%s m" % _n(p["barra_m"], 0), "r"),
+        h.append("<p class=\"sub\"><b>Perfis e barras</b> (um por tipo de perfil, cruzado com o catálogo; barras comerciais pelo plano "
+                 "de corte da lista; W em 12 m, os outros em 6 m, ou 12 m quando a peça passa de 6 m)</p>")
+
+        def nome_perfil(p):
+            cat = p.get("catalogo") or ""
+            nota = ("catálogo: %s" % cat) if cat and cat.replace(" ", "") != p["perfil"].replace(" ", "") else                    ("fora do catálogo: kg/m pelas medidas" if p.get("fora_do_catalogo") else "")
+            return "<b>%s</b>%s" % (_esc(p["perfil"]), ("<br><span class=\"cinza\">%s</span>" % _esc(nota)) if nota else "")
+        h.append(_tabela(["Perfil", "Material", ("Peças", "r"), ("m", "r"), ("kg/m", "r"), ("kg", "r"), ("Barra", "r"), ("Barras", "r"),
+                          ("Aprov.", "r"), "Pedido"],
+                         [[nome_perfil(p), p["material"], (p.get("pecas") or "", "r"), (_n(p["m"], 2), "r"),
+                           (_n(p.get("kg_m") or 0.0, 2), "r"), (_n(p["kg"], 1), "r"), ("%s m" % _n(p["barra_m"], 0), "r"),
                            ("%d%s" % (p["barras"], (" (%d emenda%s)" % (p["emendas"], "s" if p["emendas"] > 1 else "")) if p["emendas"] else ""), "r"),
                            ("%s%%" % _n(p["aproveitamento"], 0) if p["aproveitamento"] is not None else "", "r"), ""] for p in C["perfis"]],
-                         rodape=[("TOTAL", "b"), "", (_n(sum(p["kg"] for p in C["perfis"]), 1), "r"), (_n(sum(p["m"] for p in C["perfis"]), 2), "r"),
+                         rodape=[("TOTAL", "b"), "", (sum(p.get("pecas") or 0 for p in C["perfis"]), "r"),
+                                 (_n(sum(p["m"] for p in C["perfis"]), 2), "r"), "", (_n(sum(p["kg"] for p in C["perfis"]), 1), "r"),
                                  "", (sum(p["barras"] for p in C["perfis"]), "r"), "", ""],
-                         larguras=["24%", "13%", "11%", "11%", "9%", "14%", "8%", "10%"]))
+                         larguras=["24%", "11%", "7%", "10%", "7%", "10%", "7%", "10%", "6%", "8%"], bruto=True))
     if C.get("chapas"):
         cl, ca = C["chapa_comercial"]
         h.append("<p class=\"sub\"><b>Chapas</b> (chapa de %s x %s m; a quantidade pela área com %s%% de perda no corte)</p>"

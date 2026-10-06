@@ -1999,17 +1999,26 @@ def peso_teorico(pos: Posicao) -> Optional[float]:
     if comp_m <= 0:
         return None
     from saida import dobras
-    r = dobras.pesos(pos.perfil or "")
+    from nucleo import catalogo
+    # o nome do Revit ("Vigas W Gerdau:W200X22.5:6474310", Bella Casa 06/10): o tipo é o do meio
+    nome = catalogo.nome_do_ifc(pos.perfil or "")
+    r = dobras.pesos(nome)
     if r is not None and r.get("kg_m_desconto"):
         return r["kg_m_desconto"] * comp_m
     try:
-        from nucleo import catalogo
-        it = catalogo.perfil_de(pos.perfil or "")
+        it = catalogo.perfil_de(nome)
     except Exception:                                   # noqa: BLE001 — catálogo indisponível
         it = None
     massa = getattr(it, "massa", None) if it is not None else None
     if massa:
         return float(massa) * comp_m
+    # "W200X15" é o "W 200×15,0" do catálogo; o tubo e a cantoneira fora dele, pelas medidas do nome
+    try:
+        cat = catalogo.do_ifc(pos.perfil or "")
+    except Exception:                                   # noqa: BLE001
+        cat = None
+    if cat and cat.get("kg_m"):
+        return float(cat["kg_m"]) * comp_m
     return None
 
 

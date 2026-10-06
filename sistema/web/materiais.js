@@ -244,9 +244,12 @@ function desenhar(L) {
     controleBarra().hidden = false;
     pPerfis.append(secao('Perfis', `comprimento, peso e barras de compra por encaixe (do maior para o menor, 3 mm de corte); ${n(totB)} barras no total`,
       el('div', {}, controleBarra(), el('div', { class: 'rolagem' }, tabela([
-        { titulo: 'Perfil', valor: (g) => g.perfil_nome || g.perfil, classe: 'b' }, { titulo: 'Material', chave: 'material' },
+        { titulo: 'Perfil', valor: (g) => g.perfil_nome || g.perfil, classe: 'b' },
+        { titulo: 'No catálogo', valor: (g) => g.catalogo || (g.fonte_kg_m === 'calculado' ? 'fora (kg/m pelas medidas)' : '—'),
+          dica: 'O item do catálogo que corresponde ao perfil do modelo; fora dele, o kg/m sai das medidas do nome' },
+        { titulo: 'Material', chave: 'material' },
         { titulo: 'Categoria', valor: (g) => rotuloCategoria(g.categoria) },
-        { titulo: 'Posições', valor: (g) => marcas(g.posicoes), classe: 'quebra' },
+        { titulo: 'Posições', valor: (g) => marcas(g.nomes_posicoes || g.posicoes), classe: 'quebra' },
         { titulo: 'Peças', chave: 'pecas', classe: 'c', num: true },
         { titulo: 'Compr. (m)', chave: 'comprimento_m', classe: 'r', num: true, casas: 2 },
         { titulo: 'kg/m', chave: 'kg_m', classe: 'r', num: true, casas: 2 },
@@ -256,9 +259,9 @@ function desenhar(L) {
         { titulo: 'Aprov. (%)', valor: (g) => g.barras.aproveitamento, classe: 'c', num: true, casas: 1 },
         { titulo: 'Sobra (m)', valor: (g) => g.barras.sobra_m, classe: 'r', num: true, casas: 2 },
         { titulo: 'Emendas', valor: (g) => g.barras.emendas, classe: 'c', num: true, dica: 'Peças mais compridas que a barra comercial' },
-      ], L.perfis, ['TOTAL', '', '', '', n(L.perfis.reduce((s, g) => s + g.pecas, 0)), n(L.perfis.reduce((s, g) => s + g.comprimento_m, 0), 2), '',
+      ], L.perfis, ['TOTAL', '', '', '', '', n(L.perfis.reduce((s, g) => s + g.pecas, 0)), n(L.perfis.reduce((s, g) => s + g.comprimento_m, 0), 2), '',
                     n(L.perfis.reduce((s, g) => s + g.peso, 0), 1), '', n(totB), '', '', ''],
-      (g) => [g.perfil, g.perfil_nome, g.material, g.posicoes.join(' ')].join(' '))))));
+      (g) => [g.perfil, g.perfil_nome, g.catalogo || '', g.material, g.posicoes.join(' '), (g.nomes_posicoes || []).join(' ')].join(' '))))));
   } else pPerfis.append(vazio('Sem perfis nesta lista.'));
   const dob = L.dobrados || {};
   if ((dob.linhas || []).length) {

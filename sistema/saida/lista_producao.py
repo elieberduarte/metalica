@@ -298,13 +298,16 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                        "peso": round(t["peso"], 3), "peso_total": round(t["peso"] * t["instancias"], 2), "conjuntos": [t["conjunto"]],
                        "observacoes": ["cumeeira: pernas %d + %d, dobra %.1f°, uma peça só" % (t["perna1"], t["perna2"], t["angulo"])]})
 
-    # perfis (tudo o que é barra, tirante incluído): peças, comprimento total, kg/m, barras
+    # perfis (tudo o que é barra, tirante incluído): peças, comprimento total, kg/m, barras — pelo tipo do perfil:
+    # o IFC do Revit traz "Família:Tipo:ID" em cada peça, e cada barra saía como um perfil (Bella Casa, 06/10)
+    from nucleo.catalogo import nome_do_ifc, do_ifc
     perfis: Dict[tuple, dict] = collections.OrderedDict()
     for p in lista:
         if _e_chapa(p) or p.classe in ("telha", "indefinida"):
             continue
-        g = perfis.setdefault((p.perfil, p.material), {
-            "perfil": p.perfil, "material": p.material, "categoria": categorias.get(p.marca, "BARRAS"),
+        tipo = nome_do_ifc(p.perfil)
+        g = perfis.setdefault((tipo, p.material), {
+            "perfil": tipo, "material": p.material, "categoria": categorias.get(p.marca, "BARRAS"),
             "posicoes": [], "pecas": 0, "comprimento_m": 0.0, "peso": 0.0, "peso_malha": 0.0, "_comps": [], "_rotulos": []})
         g["posicoes"].append(p.marca)
         g["pecas"] += p.quantidade
@@ -319,6 +322,8 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     for g in perfis.values():
         comps = g.pop("_comps")
         rotulos = g.pop("_rotulos")
+        # os nomes de produção (A.C.82) no lugar das marcas quando há: a marca do Revit é o nome inteiro da peça
+        g["nomes_posicoes"] = sorted(dict.fromkeys(rotulos), key=_ordem_natural)
         b = _barra_para(comps, barra, g["perfil"])
         g["barras"] = encaixar(comps, b, rotulos=rotulos)
         g["kg_m"] = round(g["peso"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0
@@ -327,6 +332,12 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         g["peso"] = round(g["peso"], 1)
         g["peso_malha"] = round(g["peso_malha"], 1)
         g["posicoes"] = sorted(g["posicoes"], key=_ordem_natural)
+        # o cruzamento com o catálogo: o item equivalente (RHS 127x76.2x6.35 → TR 127×76×6,3) e o kg/m dele, ou
+        # o kg/m pelas medidas do nome quando o perfil não está no banco
+        cat = do_ifc(g["perfil"])
+        g["catalogo"] = cat["catalogo"] if cat else ""
+        g["kg_m_catalogo"] = round(cat["kg_m"], 3) if cat else None
+        g["fonte_kg_m"] = cat["fonte"] if cat else ""
         lista_perfis.append(g)
     lista_perfis.sort(key=lambda g: (-g["peso"], g["perfil"]))
     dobrados = comparar_dobras(lista_perfis)
@@ -459,6 +470,23 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
 
 # ============================================================ arquivos
 
+def _catalogo_texto(g: dict) -> str:
+    """O cruzamento do perfil com o catálogo, para a tabela: o item equivalente, ou de onde veio o kg/m."""
+    if g.get("catalogo"):
+        return g["catalogo"]
+    if g.get("fonte_kg_m") == "calculado":
+        return "fora do catálogo (kg/m pelas medidas)"
+    return "—"
+
+
+def _posicoes_texto(g: dict, limite: int = 40) -> str:
+    """As posições do perfil pelo nome de produção; lista longa (477 RHS da Bella Casa) fica nas primeiras."""
+    nomes = g.get("nomes_posicoes") or g["posicoes"]
+    if len(nomes) > limite:
+        return " ".join(nomes[:limite]) + " … (+%d)" % (len(nomes) - limite)
+    return " ".join(nomes)
+
+
 def _csv(caminho: str, colunas: Sequence[str], linhas: Sequence[Sequence]) -> str:
     with open(caminho, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=";", lineterminator="\r\n")
@@ -502,11 +530,13 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
     arquivos["romaneio"] = gravar_romaneio_da_lista(os.path.join(pasta, "romaneio.csv"), lista)
     arquivos["perfis"] = _csv(os.path.join(pasta, "resumo-perfis.csv"),
                               ["Perfil", "Material", "Categoria", "Posicoes", "Pecas", "Comprimento total (m)", "kg/m",
-                               "Peso (kg)", "Barra comercial (m)", "Barras", "Aproveitamento (%)", "Sobra (m)", "Pecas com emenda"],
-                              [[g.get("perfil_nome") or g["perfil"], g["material"], g["categoria"], " ".join(g["posicoes"]), g["pecas"],
+                               "Peso (kg)", "Barra comercial (m)", "Barras", "Aproveitamento (%)", "Sobra (m)", "Pecas com emenda", "Catalogo"],
+                              [[g.get("perfil_nome") or g["perfil"], g["material"], g["categoria"],
+                                " ".join(g.get("nomes_posicoes") or g["posicoes"]), g["pecas"],
                                 _num_csv(g["comprimento_m"]), _num_csv(g["kg_m"], 3), _num_csv(g["peso"], 1),
                                 _num_csv(g["barras"]["comprimento"] / 1000.0, 0), g["barras"]["quantidade"],
-                                _num_csv(g["barras"]["aproveitamento"], 1), _num_csv(g["barras"]["sobra_m"]), g["barras"]["emendas"]]
+                                _num_csv(g["barras"]["aproveitamento"], 1), _num_csv(g["barras"]["sobra_m"]), g["barras"]["emendas"],
+                                _catalogo_texto(g)]
                                for g in lista["perfis"]])
     arquivos["plano_corte"] = _csv(os.path.join(pasta, "plano-de-corte.csv"),
                                    ["Perfil", "Material", "Barra (m)", "Barras iguais", "Cortes", "Sobra por barra (mm)"],
@@ -609,17 +639,18 @@ def corpo_html(lista: dict) -> str:
                           larguras=["44%", "14%", "14%", "14%", "14%"]))
     if lista["perfis"]:
         partes.append(_tabela("Quadro 2 — Perfis: comprimento, peso e barras comerciais (encaixe estimado, perda de corte %s mm)" % _n(PERDA_CORTE),
-                              [("Perfil", "l"), ("Material", "l"), ("Posições", "l"), ("Peças", "c"), ("Compr. (m)", "r"), ("kg/m", "r"),
+                              [("Perfil", "l"), ("No catálogo", "l"), ("Material", "l"), ("Posições", "l"), ("Peças", "c"), ("Compr. (m)", "r"), ("kg/m", "r"),
                                ("Peso (kg)", "r"), ("Barra", "c"), ("Barras", "c"), ("Aprov. (%)", "c"), ("Emendas", "c")],
-                              [[(g.get("perfil_nome") or g["perfil"], "l b"), (g["material"], "l"), (" ".join(g["posicoes"]), "l"), (g["pecas"], "c"),
+                              [[(g.get("perfil_nome") or g["perfil"], "l b"), (_catalogo_texto(g), "l"), (g["material"], "l"),
+                                (_posicoes_texto(g), "l"), (g["pecas"], "c"),
                                 (_n(g["comprimento_m"], 2), "r"), (_n(g["kg_m"], 2), "r"), (_n(g["peso"], 1), "r b"),
                                 ("%s m" % _n(g["barras"]["comprimento"] / 1000.0), "c"), (g["barras"]["quantidade"], "c b"),
                                 (_n(g["barras"]["aproveitamento"], 1), "c"), (g["barras"]["emendas"] or "—", "c")] for g in lista["perfis"]],
-                              rodape=[("TOTAL", "l b"), ("", "l"), ("", "l"), (_n(sum(g["pecas"] for g in lista["perfis"])), "c b"),
+                              rodape=[("TOTAL", "l b"), ("", "l"), ("", "l"), ("", "l"), (_n(sum(g["pecas"] for g in lista["perfis"])), "c b"),
                                       (_n(sum(g["comprimento_m"] for g in lista["perfis"]), 2), "r b"), ("", "r"),
                                       (_n(sum(g["peso"] for g in lista["perfis"]), 1), "r b"), ("", "c"),
                                       (_n(sum(g["barras"]["quantidade"] for g in lista["perfis"])), "c b"), ("", "c"), ("", "c")],
-                              larguras=["15%", "10%", "23%", "6%", "8%", "6%", "8%", "6%", "6%", "6%", "6%"]))
+                              larguras=["13%", "11%", "8%", "20%", "6%", "8%", "6%", "8%", "5%", "5%", "5%", "5%"]))
     plano = [(g, b) for g in lista["perfis"] for b in (g["barras"].get("plano") or [])]
     if plano:
         partes.append(_tabela("Quadro 2A — Plano de corte por barra (o que sai de cada barra; barras de corte igual juntas; perda de corte %s mm)" % _n(PERDA_CORTE),

@@ -297,6 +297,7 @@ def recarregar():
     global _itens, _por_chave
     _itens = None
     _por_chave = {}
+    _DO_IFC.clear()
 
 
 # =====================================================================================
@@ -422,6 +423,149 @@ def perfil_de(nome) -> Optional[Perfil]:
         if it.familia in ("I", "U", "tubo") and d.get("A") and d.get("Ix") and d.get("Iy"):
             return Perfil(nome=it.nome, tipo=it.familia, dados=dict(d))
     except Exception:
+        return None
+    return None
+
+
+# =====================================================================================
+# Nome que vem do IFC
+# =====================================================================================
+
+def nome_do_ifc(nome) -> str:
+    """O tipo do perfil no nome que o IFC traz, sem a família e sem o ID da peça.
+
+    O Revit grava "Família:Tipo:ID" em cada peça ("CRV - Cortes retangulares vazados (sem
+    emenda):RHS 127x76.2x6.35:6474177"): o ID é da peça, então cada barra saía como um
+    perfil diferente no resumo (Bella Casa, 06/10). Nome sem ":" fica como está."""
+    s = re.sub(r"\s+", " ", str(nome or "")).strip()
+    if ":" not in s:
+        return s
+    s = re.sub(r":\s*\d+\s*$", "", s)
+    return s.rsplit(":", 1)[-1].strip() or s
+
+
+_NUM = r"(\d+(?:[.,]\d+)?)"
+_X = r"\s*[X×]\s*"
+
+
+def _medidas(nome: str):
+    """(forma, medidas) pelo nome: ("I", (W|HP, d, kg/m)), ("redondo", (D, t)),
+    ("retangular", (h, b, t)) com h ≥ b, ("L", (b1, b2, t)). None se não for um desses."""
+    s = re.sub(r"\s+", " ", str(nome or "")).strip().upper().replace("Ø", "").replace(",", ".")
+    f = float
+    m = re.match(r"^(W|HP) ?" + _NUM + _X + _NUM + r"$", s)
+    if m:
+        return "I", (m.group(1), f(m.group(2)), f(m.group(3)))
+    m = re.match(r"^(?:CHS|TC|TUBO REDONDO) ?" + _NUM + _X + _NUM + r"$", s)
+    if m:
+        return "redondo", (f(m.group(1)), f(m.group(2)))
+    m = re.match(r"^(?:SHS|RHS|TQ|TR) ?" + _NUM + _X + _NUM + _X + _NUM + r"$", s)
+    if m:
+        h, b = sorted((f(m.group(1)), f(m.group(2))), reverse=True)
+        return "retangular", (h, b, f(m.group(3)))
+    m = re.match(r"^L ?" + _NUM + _X + _NUM + r"(?:" + _X + _NUM + r")?$", s)
+    if m:
+        if m.group(3):
+            b1, b2 = sorted((f(m.group(1)), f(m.group(2))), reverse=True)
+            return "L", (b1, b2, f(m.group(3)))
+        return "L", (f(m.group(1)), f(m.group(1)), f(m.group(2)))
+    return None
+
+
+def _medidas_do_item(it: Item):
+    d = it.dados
+    try:
+        if it.familia == "I":
+            return _medidas(it.nome)
+        if it.familia == "tubo" and d.get("tipo") == "redondo":
+            return "redondo", (float(d["D"]), float(d["t"]))
+        if it.familia == "tubo" and d.get("b") and d.get("h"):
+            h, b = sorted((float(d["h"]), float(d["b"])), reverse=True)
+            return "retangular", (h, b, float(d["t"]))
+        if it.familia == "L" and d.get("b") and d.get("t"):
+            b1, b2 = sorted((float(d["b"]), float(d.get("b2") or d["b"])), reverse=True)
+            return "L", (b1, b2, float(d["t"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    return None
+
+
+def _area_pelas_medidas(forma: str, med) -> float:
+    """Área da seção (mm²) pelas medidas nominais: tubo retangular com os cantos da
+    EN 10219 (raio externo 2t, interno t), cantoneira de cantos vivos."""
+    if forma == "redondo":
+        D, t = med
+        return math.pi * t * (D - t)
+    if forma == "retangular":
+        h, b, t = med
+        return 2 * t * (h + b - 2 * t) - (4 - math.pi) * 3 * t * t
+    if forma == "L":
+        b1, b2, t = med
+        return t * (b1 + b2 - t)
+    return 0.0
+
+
+def _mesma_medida(forma: str, a, b) -> bool:
+    if forma == "I":
+        return a[0] == b[0] and abs(a[1] - b[1]) <= 0.5 and abs(a[2] - b[2]) <= 0.11
+    *lados_a, ta = a
+    *lados_b, tb = b
+    # 76,2 (3") do IFC é o 76 do catálogo; 6,35 (1/4") é o 6,3
+    return abs(ta - tb) <= 0.1 and all(abs(x - y) <= max(1.0, 0.01 * x) for x, y in zip(lados_a, lados_b))
+
+
+_DO_IFC: Dict[str, Optional[dict]] = {}
+
+
+def do_ifc(nome) -> Optional[dict]:
+    """O perfil do IFC cruzado com o catálogo (06/10, Bella Casa).
+
+    {"ifc": o tipo no IFC ("RHS 127x76.2x6.35"), "item": o Item do catálogo ou None,
+    "catalogo": o nome no catálogo ("TR 127×76×6,3") ou "", "kg_m", "area_mm2",
+    "fonte": "catálogo" | "calculado"}. Fora do catálogo, o kg/m sai da área pelas
+    medidas do nome (tubos e cantoneiras); None quando não há como."""
+    chave = str(nome or "")
+    if chave in _DO_IFC:
+        return _DO_IFC[chave]
+    tipo = nome_do_ifc(nome)
+    it = item(tipo)
+    med = _medidas(tipo)
+    if it is None and med is not None:
+        fam = {"I": "I", "redondo": "tubo", "retangular": "tubo", "L": "L"}[med[0]]
+        candidatos = []
+        for c in itens(fam):
+            mc = _medidas_do_item(c)
+            if mc is not None and mc[0] == med[0] and _mesma_medida(med[0], med[1], mc[1]) and c.massa:
+                dif = 0.0 if med[0] == "I" else sum(abs(x - y) for x, y in zip(med[1], mc[1]))
+                candidatos.append((dif, 0 if c.origem == "tabela" else 1, c.nome, c))
+        if candidatos:
+            it = min(candidatos, key=lambda x: x[:3])[3]
+    r = None
+    if it is not None and it.massa and it.eh_barra:
+        area = it.A * 100.0 if it.A else (_area_pelas_medidas(*med) if med else it.massa / 7.85e-3)
+        r = {"ifc": tipo, "item": it, "catalogo": it.nome, "kg_m": float(it.massa), "area_mm2": area, "fonte": "catálogo"}
+    elif med is not None and med[0] != "I":
+        area = _area_pelas_medidas(*med)
+        if area > 0:
+            r = {"ifc": tipo, "item": None, "catalogo": "", "kg_m": area * 7.85e-3, "area_mm2": area, "fonte": "calculado"}
+    if r is not None:
+        r["secao"] = _contorno_nominal(it, med)
+    _DO_IFC[chave] = r
+    return r
+
+
+def _contorno_nominal(it: Optional[Item], med) -> Optional[tuple]:
+    """(maior, menor) lado da caixa da seção em mm: altura × largura das mesas do W, os
+    lados do tubo e da cantoneira, o diâmetro do tubo redondo duas vezes."""
+    if med is not None and med[0] == "redondo":
+        return (med[1][0], med[1][0])
+    if med is not None and med[0] in ("retangular", "L"):
+        return (med[1][0], med[1][1])
+    d = (it.dados if it is not None else {}) or {}
+    try:
+        if d.get("d") and d.get("bf"):
+            return tuple(sorted((float(d["d"]), float(d["bf"])), reverse=True))
+    except (TypeError, ValueError):
         return None
     return None
 

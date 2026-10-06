@@ -32,8 +32,10 @@ Como cada posição é lida (tudo em milímetro, no sistema local da peça):
    polilinha. Espessura acima da nominal do nome marca a chapa como dobrada.
 3. **Barra**: a seção é o corte da malha por um plano ao longo do eixo, em cinco
    estações; se a área e o centro batem em pelo menos três, a barra é reta e o
-   comprimento é a extensão no eixo. Se não batem, é dobrada ou curva, e o desenho sai
-   em duas vistas. Barra redonda dobrada (gancho, chumbador) recebe o comprimento
+   comprimento é a extensão no eixo. Se não batem, tenta-se o eixo pelas arestas
+   paralelas (o trecho reto com pontas em meia-esquadria); não batendo ainda, é curva
+   (a fábrica calandra ou corta em trechos retos, não dobra), e o desenho sai em duas
+   vistas. Barra redonda dobrada (gancho, chumbador) recebe o comprimento
    desenvolvido pelo volume dividido pela área nominal.
 4. **Telha**: retângulo de corte (comprimento na direção da onda × largura) e a
    seção da onda.
@@ -80,7 +82,7 @@ PSET_MARCAS = "Steel & Graphics Common"        # TecnoMETAL; outros exportadores
 CLASSES = collections.OrderedDict([
     ("chapa", "Chapa"), ("chapa_dobrada", "Chapa dobrada"),
     ("barra", "Barra"), ("barra_redonda", "Barra redonda"),
-    ("barra_conformada", "Barra dobrada/curva"), ("telha", "Telha"),
+    ("barra_conformada", "Barra curva"), ("telha", "Telha"),
     ("indefinida", "Não reconhecida"),
 ])
 
@@ -471,21 +473,28 @@ def _eixo_trocado_com_a_secao(pos: Posicao, e1, e2) -> bool:
     somam mais que as de frente para `e2`, `e1` corre na seção. Só no perfil laminado
     (W, HP, I, U, C, L) curto: a telha de cumeeira, o parafuso e o bloco de concreto
     não têm mesas para decidir."""
-    if not re.match(r"^\s*(W|HP|I|U|C|L)\s*\d", pos.perfil or "", re.I):
+    from nucleo.catalogo import nome_do_ifc
+    # o nome do Revit vem "Vigas W Gerdau:W200X22.5:6474310": o tipo é o do meio
+    if not re.match(r"^\s*(W|HP|I|U|C|L)\s*\d", nome_do_ifc(pos.perfil), re.I):
         return False
     verts = pos.vertices
-    if _extensao_ao_longo(verts, e1) > 2.0 * _extensao_ao_longo(verts, e2):
+    # até o toco de 20 mm de um W200 (os de 65 mm da Bella Casa, 06/10, ficavam de fora com
+    # o limite antigo de 2×): numa barra deitada certa as pontas nunca somam mais que as mesas
+    if _extensao_ao_longo(verts, e1) > 12.0 * _extensao_ao_longo(verts, e2):
         return False
-    a1 = a2 = 0.0
+    a1 = a2 = total = 0.0
     for f in pos.faces:
         n, a = _normal_area([verts[i] for i in f])
         if a <= 1e-9:
             continue
+        total += a
         if abs(_dot(n, e1)) > 0.985:
             a1 += a
         elif abs(_dot(n, e2)) > 0.985:
             a2 += a
-    return a1 > 1.5 * a2 and a1 > 0
+    # e as faces que decidem têm de ser boa parte da peça: com os eixos oblíquos às faces
+    # (a W530 de 2,5 m da Bella Casa) sobram retalhos de 500 mm², e o retalho não decide
+    return a1 > 1.5 * a2 and a1 > 0 and a1 + a2 > 0.3 * total
 
 
 def _extensao_ao_longo(verts, ax) -> float:
@@ -793,13 +802,57 @@ def _fatiar(pos: Posicao, u0: float) -> List[Tuple[List[Tuple[float, float]], bo
     return lacos
 
 
+def _dentro_2d(p, poligono) -> bool:
+    x, y = p
+    dentro = False
+    n = len(poligono)
+    for i in range(n):
+        (x1, y1), (x2, y2) = poligono[i], poligono[(i + 1) % n]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            dentro = not dentro
+    return dentro
+
+
+def _area_e_centro(lacos):
+    """Área líquida e centro de área dos laços de uma fatia. O laço dentro de outro é o
+    vazio do tubo e desconta: somados, o CHS 406 da Bella Casa saía com "recortes 93,7 %"
+    e o comprimento da peça curva pelo volume ÷ seção não fechava (06/10). O centro é o
+    de área, não a média dos vértices: na malha triangulada a média anda de estação para
+    estação com a barra reta, e a peça virava "dobrada"."""
+    infos = []
+    for l in lacos:
+        a = cx = cy = 0.0
+        n = len(l)
+        for i in range(n):
+            (x1, y1), (x2, y2) = l[i], l[(i + 1) % n]
+            c = x1 * y2 - x2 * y1
+            a += c
+            cx += (x1 + x2) * c
+            cy += (y1 + y2) * c
+        if abs(a) < 1e-9:
+            continue
+        infos.append((abs(a) / 2.0, cx / (3.0 * a), cy / (3.0 * a), l))
+    tot = sx = sy = 0.0
+    for k, (a, cx, cy, l) in enumerate(infos):
+        fora = sum(1 for j, (_, _, _, m) in enumerate(infos) if j != k and _dentro_2d(l[0], m))
+        s = -1.0 if fora % 2 else 1.0
+        tot += s * a
+        sx += s * a * cx
+        sy += s * a * cy
+    if tot <= 1e-9:
+        pts = [p for l in lacos for p in l]
+        return sum(abs(_area_2d(l)) for l in lacos), sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+    return tot, sx / tot, sy / tot
+
+
 def _secao_ao_longo(pos: Posicao):
-    """Seções em nove estações: (seção escolhida, é reta?, área total, área de um laço).
+    """Seções em nove estações: (seção escolhida, é reta?, área líquida, área de um laço).
 
     Nove estações porque numa peça curta o furo ocupa boa parte do comprimento e as
     fatias que o atravessam saem diferentes; bastam três iguais para a barra ser reta.
     A área de um laço é a da seção de uma perna só: num chumbador em U a fatia corta
-    as duas pernas, e o comprimento desenvolvido pelo volume precisa da área de uma."""
+    as duas pernas, e o comprimento desenvolvido pelo volume precisa da área de uma.
+    Na seção com vazio (tubo) não há pernas: vale a menor área líquida."""
     L = pos.L
     estacoes = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     amostras = []
@@ -809,10 +862,7 @@ def _secao_ao_longo(pos: Posicao):
         if not fechados:
             amostras.append(None)
             continue
-        area = sum(abs(_area_2d(l)) for l in fechados)
-        pts = [p for l in fechados for p in l]
-        cx = sum(p[0] for p in pts) / len(pts)
-        cy = sum(p[1] for p in pts) / len(pts)
+        area, cx, cy = _area_e_centro(fechados)
         amostras.append((fechados, area, cx, cy, len(fechados)))
     validas = [a for a in amostras if a]
     if not validas:
@@ -829,7 +879,11 @@ def _secao_ao_longo(pos: Posicao):
     reta = len(iguais) >= 3 and (max(iguais) - min(iguais)) >= 0.4
     # a área de uma perna vem da menor fatia de todas as estações: a fatia que pega a
     # dobra de uma barra redonda sai oblíqua, maior que a seção
-    unitaria = min(abs(_area_2d(l)) for a in validas for l in a[0])
+    com_vazio = any(sum(abs(_area_2d(l)) for l in a[0]) > 1.01 * a[1] for a in validas)
+    if com_vazio:
+        unitaria = min(a[1] for a in validas)
+    else:
+        unitaria = min(abs(_area_2d(l)) for a in validas for l in a[0])
     return ref[0], reta, ref[1], unitaria
 
 
@@ -857,6 +911,101 @@ def _alinhar_eixo(pos: Posicao, medida):
     _projetar(pos, (novo_e1, novo_e2, novo_e3))
     pos.volume = _volume(pos)
     return _secao_ao_longo(pos)
+
+
+def _eixo_pelas_arestas_paralelas(pos: Posicao):
+    """Direção em que corre o maior comprimento de arestas paralelas, somado.
+
+    Num trecho reto de tubo com as pontas em meia-esquadria (a curva da Bella Casa feita
+    em segmentos, 06/10) as faces compridas vêm divididas em pedaços e a maior aresta
+    sozinha não chega a 60 % da peça; o eixo principal dos vértices inclina com o corte
+    e a peça saía "dobrada". Somadas, as arestas do comprimento ganham de longe."""
+    import numpy as np
+    V = np.asarray(pos.vertices, dtype=float)
+    pares = set()
+    for f in pos.faces:
+        for i in range(len(f)):
+            a, b = f[i], f[(i + 1) % len(f)]
+            pares.add((a, b) if a < b else (b, a))
+    if not pares:
+        return None
+    P = np.asarray(sorted(pares))
+    D = V[P[:, 1]] - V[P[:, 0]]
+    L = np.linalg.norm(D, axis=1)
+    ok = L > 1e-6
+    D, L = D[ok] / L[ok, None], L[ok]
+    if not len(L):
+        return None
+    # sentido único: a maior componente positiva
+    sinal = np.sign(D[np.arange(len(D)), np.argmax(np.abs(D), axis=1)])
+    D = D * sinal[:, None]
+    chaves = np.round(D * 200).astype(int)          # caixas de ~0,3°
+    soma: Dict[tuple, float] = collections.defaultdict(float)
+    for k, w in zip(map(tuple, chaves), L):
+        soma[k] += w
+    melhor = np.asarray(max(soma, key=soma.get), dtype=float) / 200.0
+    melhor /= np.linalg.norm(melhor)
+    perto = np.abs(D @ melhor) > math.cos(math.radians(0.5))
+    if not perto.any():
+        return None
+    v = (D[perto] * (L[perto] * np.sign(D[perto] @ melhor))[:, None]).sum(axis=0)
+    return _norm(tuple(float(x) for x in v))
+
+
+def _cabe_na_secao(pos: Posicao):
+    """A medida, dada como reta, quando a peça inteira cabe na seção cheia (a maior
+    fatia): nada sai para os lados, então não há curva — vale para o trecho com as
+    pontas em meia-esquadria longa, em que poucas estações pegam a seção inteira.
+    Com o perfil no catálogo, a fatia tem de ter as medidas dele (W200X22.5: 206 × 102),
+    e aí vale também o toco mais curto que a seção; sem catálogo, a peça tem de ser mais
+    comprida que a seção. None se não for assim ou se a peça sai da seção."""
+    from nucleo.catalogo import do_ifc
+    cat = do_ifc(pos.perfil)
+    nominal = cat.get("secao") if cat else None
+    if not nominal and pos.L <= max(pos.H, pos.T):
+        return None
+    secao, _, area, unitaria = _secao_ao_longo(pos)
+    if not secao:
+        return None
+    vs = [p[0] for l in secao for p in l]
+    ws = [p[1] for l in secao for p in l]
+    caixa = sorted((max(vs) - min(vs), max(ws) - min(ws)), reverse=True)
+    if nominal and any(abs(a - b) > 3 + 0.02 * b for a, b in zip(caixa, nominal)):
+        return None
+    if _excesso_da_secao(pos, secao)[0] > 3 + 0.002 * pos.L:
+        return None
+    return secao, True, area, unitaria
+
+
+def _reta_por_outro_eixo(pos: Posicao):
+    """A barra que não saiu reta nas estações: reta se cabe na seção pelo eixo
+    escolhido ou pelo eixo das arestas paralelas; senão volta tudo como estava e
+    devolve None. Devolve a medida."""
+    medida = _cabe_na_secao(pos)
+    if medida is not None:
+        return medida
+    d = _eixo_pelas_arestas_paralelas(pos)
+    if d is None or not pos.eixos or abs(_dot(d, pos.eixos[0])) > math.cos(math.radians(0.05)):
+        return None
+    _, _, e3_antes = pos.eixos
+    e3 = _sub(e3_antes, tuple(_dot(e3_antes, d) * k for k in d))
+    if math.sqrt(_dot(e3, e3)) < 0.3:
+        return None
+    e3 = _norm(e3)
+    e2 = _norm(_cruz(e3, d))
+    if _dot(d, pos.eixos[0]) < 0:
+        d = tuple(-k for k in d)
+        e2 = tuple(-k for k in e2)
+    antes = {k: getattr(pos, k) for k in ("eixos", "local", "normais", "L", "H", "T", "volume")}
+    _projetar(pos, (d, e2, e3))
+    pos.volume = _volume(pos)
+    medida = _cabe_na_secao(pos)
+    if medida is None:
+        for k, v in antes.items():
+            setattr(pos, k, v)
+        return None
+    pos.eixo_exato = True
+    return medida
 
 
 def _cortes_de_ponta(pos: Posicao, area_secao: float):
@@ -1029,17 +1178,21 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
         pos.furos = []
         return pos
 
+    sai = None
     if reta and secao:
         # a peça inteira tem de caber na seção: um U calandrado só na ponta passa no
         # teste das estações (o trecho reto é longo), mas sai 500 mm do plano da seção
-        vs = [p[0] for l in secao for p in l]
-        ws = [p[1] for l in secao for p in l]
-        alt_secao, prof_secao = max(vs) - min(vs), max(ws) - min(ws)
-        excesso = max(pos.H - alt_secao, pos.T - prof_secao)
-        if excesso > 0.5 * max(alt_secao, prof_secao) + 3:
-            reta = False
-            pos.observacoes.append("a peça sai %s mm do plano da seção: dobra, curva ou "
-                                   "apêndice soldado" % _mm(excesso))
+        excesso, limite = _excesso_da_secao(pos, secao)
+        if excesso > limite:
+            reta, sai = False, excesso
+    if not reta and eixos is None:
+        # o trecho reto com as pontas em meia-esquadria: reta pelo eixo das arestas
+        outra = _reta_por_outro_eixo(pos)
+        if outra is not None:
+            secao, reta, area, area_unitaria = outra
+            pos.secao, sai = secao, None
+    if sai is not None:
+        pos.observacoes.append("a peça sai %s mm do plano da seção: curva ou apêndice soldado" % _mm(sai))
     if reta and area and pos.volume > 1.03 * area * pos.L and _malha_aberta(pos):
         # furo ou rasgo sem todas as faces no arquivo (a DP.17.1 do depósito): o volume
         # não fecha e sairia maior que a barra inteira; as fatias é que valem
@@ -1048,8 +1201,8 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
         pos.observacoes.append("malha aberta no arquivo: peso pela seção × comprimento")
     if reta and area and pos.volume > 1.03 * area * pos.L:
         reta = False
-        pos.observacoes.append("volume maior que seção × comprimento: dobra fora das "
-                               "estações de medida")
+        pos.observacoes.append("volume maior que seção × comprimento: curva ou apêndice fora "
+                               "das estações de medida")
     if reta:
         pos.classe = "barra"
         pos.comprimento = pos.L
@@ -1066,16 +1219,42 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
     else:
         pos.classe = "barra_conformada"
         pos.comprimento = pos.L
-        # comprimento de corte pelo volume ÷ área da seção: a menor fatia de todas as
-        # estações é a menos oblíqua (a que atravessa a dobra sai maior que a seção)
-        area_secao = area_unitaria * max(1, len(secao)) if area_unitaria else 0.0
-        if area_secao > 0 and 0.9 * pos.L <= pos.volume / area_secao <= 3.0 * pos.L:
+        # a fábrica não dobra barra (06/10): a peça curva é calandrada ou cortada em
+        # trechos retos, e o comprimento de corte é o desenvolvido, pelo volume ÷ área da
+        # seção — a menor fatia de cada perna é a menos oblíqua; quando ela pega só um
+        # pedaço (a ponta cortada) e foge mais de 15 % do catálogo, vale a do catálogo
+        area_secao = area_unitaria * _externos(secao) if area_unitaria else 0.0
+        fonte = "seção"
+
+        def fecha(a):
+            return a > 0 and 0.9 * pos.L <= pos.volume / a <= 3.0 * pos.L
+        from nucleo.catalogo import do_ifc
+        cat = do_ifc(perfil)
+        if cat and abs(area_secao / cat["area_mm2"] - 1) > 0.15:
+            area_secao, fonte = cat["area_mm2"], "seção do catálogo"
+        if fecha(area_secao):
             pos.comprimento = pos.volume / area_secao
-            pos.observacoes.append("barra dobrada ou curva: comprimento de corte %s mm pelo volume "
-                                   "÷ seção (%s mm²)" % (_mm(pos.comprimento), _mm(area_secao)))
+            pos.observacoes.append("peça curva (calandrar ou cortar em trechos retos): comprimento de corte "
+                                   "%s mm pelo volume ÷ %s (%s mm²)" % (_mm(pos.comprimento), fonte, _mm(area_secao)))
         else:
-            pos.observacoes.append("barra dobrada ou curva: comprimento de corte não calculado")
+            pos.observacoes.append("peça curva (calandrar ou cortar em trechos retos): comprimento de corte "
+                                   "não calculado")
     return pos
+
+
+def _excesso_da_secao(pos: Posicao, secao):
+    """(quanto a peça sai da seção, até quanto passa): o U calandrado só na ponta sai
+    500 mm; a barra reta, nada."""
+    vs = [p[0] for l in secao for p in l]
+    ws = [p[1] for l in secao for p in l]
+    alt_secao, prof_secao = max(vs) - min(vs), max(ws) - min(ws)
+    return max(pos.H - alt_secao, pos.T - prof_secao), 0.5 * max(alt_secao, prof_secao) + 3
+
+
+def _externos(lacos) -> int:
+    """Quantos laços da fatia não estão dentro de outro (as pernas; o vazio do tubo não conta)."""
+    return max(1, sum(1 for k, l in enumerate(lacos)
+                      if not any(j != k and _dentro_2d(l[0], m) for j, m in enumerate(lacos))))
 
 
 def _fatiar_eixo(pos: Posicao, eixo: int, valor: float):
