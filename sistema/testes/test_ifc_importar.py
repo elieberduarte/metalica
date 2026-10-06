@@ -673,6 +673,12 @@ class TestCamadasEMateriaisDeAparencia(Asserts):
         self.assertEqual(deck.camada, "Deck")
         self.assertIn("Deck", doc.camadas)
         self.assertEqual(doc.camadas["Deck"].cor, "#a8743f")
+        # a laje do piso do deck ("Piso:Deck Madeira:…") também (06/10: ficava na camada do piso e não sumia)
+        texto = IFC_CAMADAS.replace("$,'V1',$,'viga',", "$,'Piso:Deck Madeira:6745687',$,'viga',")
+        self.assertEqual(por_nome(importar_texto(texto))["Piso:Deck Madeira:6745687"].camada, "Deck")
+        # "deck" no meio de outro nome não é o piso de madeira
+        texto = IFC_CAMADAS.replace("$,'V1',$,'viga',", "$,'Steel Deck MF-75',$,'viga',")
+        self.assertNotEqual(por_nome(importar_texto(texto))["Steel Deck MF-75"].camada, "Deck")
 
     def test_atributos_de_cada_camada(self):
         c = self.doc.camadas

@@ -2348,8 +2348,9 @@ CAMADAS_SEMANTICAS = {
     "Deck": "#a8743f",
 }
 CAMADA_DECK = "Deck"
-#: Tábua do deck (piso de madeira): "Deck 90x25 - L=1411 mm:6771577" no Revit
-_RE_DECK = re.compile(r"^\s*DECK\b", re.I)
+#: O deck (piso de madeira) no Revit: as tábuas ("Deck 90x25 - L=1411 mm:6771577") e a laje do piso
+#: ("Piso:Deck Madeira:6745687", 06/10 — ficava na camada do piso, A-FLOR, e não sumia com a camada Deck)
+_RE_DECK = re.compile(r"(?:^|:)\s*DECK\b", re.I)
 
 _RE_TELHA = re.compile(r"TELHA|TP\s*\d{2}|TRAPEZ|ONDUL", re.I)
 _RE_PARAFUSO = re.compile(r"\bBOLT\b|PARAF|\bNUT\b|PORCA|ARRUELA|WASHER", re.I)

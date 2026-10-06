@@ -5,6 +5,7 @@
 
 import { PAPEIS, areaDaChapa, comprimentoDaBarra, direcaoDaBarra, escalar, somar } from '../nucleo/documento.js';
 import { lerPerfil } from '../nucleo/trocar_perfil.js';
+import { Comando } from '../nucleo/comandos.js';
 import { chapaEditavel } from './edicao_chapa.js';
 import { $, ComandoAparencia, contarPor, corDeGrupo, corHex, dimensoesPrincipais, el, metros, normalizarBusca, numero, ponto3, uniao, volumeDe } from '../editor.js';
 
@@ -450,6 +451,35 @@ export class MetodosPaineis {
 
   // --------------------------------------------------------------- camadas
 
+  _excluirCamada(nome, n) {
+    if (n) {
+      this.aviso(`A camada ${nome} tem ${numero(n)} peça(s): mova-as para outra camada antes de excluí-la (duplo clique na ` +
+                 'camada seleciona as peças; a camada se troca nas Propriedades).', 'atencao');
+      return;
+    }
+    if (this.documento.camadas.size <= 1) { this.aviso('O modelo precisa de ao menos uma camada.', 'atencao'); return; }
+    this.executar(new ComandoExcluirCamada(nome));
+    if (this.camadaAtiva === nome) this.camadaAtiva = this.documento.camadas.keys().next().value;
+    this._agendarPaineis('camadas', 'props');
+    this.dica(`Camada ${nome} excluída (Ctrl+Z desfaz).`);
+  }
+
+  /** Esconde na vista as peças dos grupos da legenda do "Colorir por" (`chaves`); não muda o modelo gravado. */
+  _ocultarGrupos(chaves) {
+    const modo = this.corPor || 'padrao';
+    this._gruposOcultos = chaves;
+    const ids = new Set();
+    if (chaves.size && modo !== 'padrao') {
+      for (const ent of this.documento.entidades.values()) {
+        const k = this._chaveDeGrupo(ent, modo);
+        if (k != null && chaves.has(k)) ids.add(ent.id);
+      }
+    }
+    this.documento.ocultosNaVista = ids.size ? ids : null;
+    this.documento.notificarAparencia();
+    this._agendarPaineis('camadas');
+  }
+
   _painelCamadas() {
     const raiz = this.el.camadas;
     raiz.replaceChildren();
@@ -490,7 +520,15 @@ export class MetodosPaineis {
         onclick: () => this.executar(new ComandoAparencia('camadas', nome, { bloqueada: !c.bloqueada },
                                      `${c.bloqueada ? 'Desbloquear' : 'Bloquear'} camada ${nome}`)) });
       trava.innerHTML = cadeado(!!c.bloqueada);
-      linha.append(vis, cor, rotulo, el('span', { class: 'contagem', texto: numero(cont.get(nome) || 0) }), trava);
+      const n = cont.get(nome) || 0;
+      // excluir: só a camada vazia (com peças, primeiro elas vão para outra: duplo clique seleciona, e a camada
+      // se troca nas Propriedades); a última camada fica
+      const excluir = el('button', { type: 'button', class: 'alternador excluir-camada',
+        title: n ? `Excluir a camada: ela tem ${numero(n)} peça(s) — mova-as para outra camada antes` : 'Excluir a camada (vazia)',
+        onclick: () => this._excluirCamada(nome, n) });
+      excluir.textContent = '×';
+      if (n || this.documento.camadas.size <= 1) excluir.style.opacity = '.35';
+      linha.append(vis, cor, rotulo, el('span', { class: 'contagem', texto: numero(n) }), trava, excluir);
       lista.append(linha);
     }
     raiz.append(lista);
@@ -500,6 +538,7 @@ export class MetodosPaineis {
       for (const [nome, c] of this.documento.camadas) {
         if (c.visivel === false) this.executar(new ComandoAparencia('camadas', nome, { visivel: true }, 'Mostrar todas'));
       }
+      if (this._gruposOcultos && this._gruposOcultos.size) this._ocultarGrupos(new Set());
     } }));
     raiz.append(acoes);
   }
@@ -693,6 +732,7 @@ export class MetodosPaineis {
     sel.value = modo;
     sel.addEventListener('change', () => {
       this.corPor = sel.value;
+      if (this._gruposOcultos && this._gruposOcultos.size) this._ocultarGrupos(new Set());
       this._aplicarCorPor();
       this._agendarPaineis('camadas');
       this.dica(sel.value === 'padrao' ? 'Cores de camada e material.'
@@ -717,12 +757,28 @@ export class MetodosPaineis {
     for (const chave of chaves.slice(0, LIMITE)) {
       if (!cores.has(chave)) cores.set(chave, corDeGrupo(cores.size));
       const ids = grupos.get(chave);
-      const linha = el('div', { class: 'linha', title: 'Clique: selecionar o grupo · Shift: somar · duplo clique: enquadrar' },
+      const oculto = !!(this._gruposOcultos && this._gruposOcultos.has(chave));
+      const olhoGrupo = el('button', { type: 'button', class: 'alternador', 'aria-pressed': String(!oculto),
+        title: oculto ? 'Mostrar este grupo' : 'Ocultar este grupo (só na vista; o modelo não muda)',
+        onclick: () => {
+          const novo = new Set(this._gruposOcultos || []);
+          if (novo.has(chave)) novo.delete(chave); else novo.add(chave);
+          this._ocultarGrupos(novo);
+        } });
+      olhoGrupo.innerHTML = oculto
+        ? '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".45"/><path d="M3 13L13 3" stroke="currentColor" stroke-width="1.3"/></svg>'
+        : '<svg width="14" height="14" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>';
+      const linha = el('div', { class: 'linha', title: 'Clique: selecionar o grupo · Shift: somar · duplo clique: enquadrar · olho: ocultar' },
+        olhoGrupo,
         el('span', { class: 'amostra', style: `background:${cores.get(chave)}` }),
         el('span', { class: 'nome', texto: String(chave) }),
         el('span', { class: 'contagem', texto: numero(ids.length) }));
-      linha.addEventListener('click', (ev) => (ev.shiftKey ? this.selecao.somar(ids) : this.selecao.definir(ids)));
-      linha.addEventListener('dblclick', () => { this.selecao.definir(ids); this.camera.zoomSelecao(ids); });
+      if (oculto) linha.dataset.oculta = '';
+      linha.addEventListener('click', (ev) => {
+        if (ev.target.closest('button')) return;
+        if (ev.shiftKey) this.selecao.somar(ids); else this.selecao.definir(ids);
+      });
+      linha.addEventListener('dblclick', (ev) => { if (ev.target.closest('button')) return; this.selecao.definir(ids); this.camera.zoomSelecao(ids); });
       lista.append(linha);
     }
     const semGrupo = this.documento.entidades.size - [...grupos.values()].reduce((s, v) => s + v.length, 0);
@@ -730,5 +786,27 @@ export class MetodosPaineis {
       `${numero(grupos.size)} grupo(s)` + (semGrupo ? ` · ${numero(semGrupo)} peça(s) sem ${modo} ficam em cinza` : '') +
       (chaves.length > LIMITE ? ` · legenda mostra os ${LIMITE} primeiros` : '') }), lista);
     return caixa;
+  }
+}
+
+/** Exclui uma camada (vazia), com desfazer: ela volta no mesmo lugar da lista. */
+class ComandoExcluirCamada extends Comando {
+  constructor(nome) { super(`Excluir camada ${nome}`); this.nome = nome; this.antes = null; this.ordem = null; }
+  aplicar(doc) {
+    this.ordem = [...doc.camadas.keys()];
+    this.antes = doc.camadas.get(this.nome) || null;
+    doc.camadas.delete(this.nome);
+    doc.notificarAparencia();
+  }
+  desfazer(doc) {
+    if (!this.antes) return;
+    const atuais = new Map(doc.camadas);
+    doc.camadas.clear();
+    for (const n of this.ordem) {
+      if (n === this.nome) doc.camadas.set(n, this.antes);
+      else if (atuais.has(n)) { doc.camadas.set(n, atuais.get(n)); atuais.delete(n); }
+    }
+    for (const [n, c] of atuais) doc.camadas.set(n, c);
+    doc.notificarAparencia();
   }
 }

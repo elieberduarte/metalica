@@ -271,10 +271,16 @@ function painelCamadas() {
 function painelLegenda(modo) {
   const titulo = modo === 'camada' ? 'Pintado por camada' : 'Pintado por perfil';
   abrirPainel('legenda', titulo, legenda.slice(0, 200).map((g, k) => `<div class="linha-lista" data-k="${k}">
+      <input type="checkbox" data-olho="${k}" title="Mostrar / ocultar este grupo" ${g.ids.some(i => visor.ocultas.has(i)) ? '' : 'checked'}>
       <i style="background:${g.cor}"></i><span title="${esc(g.nome)}">${esc(g.nome)}</span><em>${nf(g.n)}</em></div>`).join('')
     + (legenda.length > 200 ? `<p class="dica">e mais ${legenda.length - 200} grupos</p>` : '')
-    + '<p class="dica">Clique num grupo para ir à primeira peça dele.</p>');
-  $('#painel-corpo').querySelectorAll('[data-k]').forEach(el => el.onclick = () => {
+    + '<p class="dica">Clique num grupo para ir à primeira peça dele; a caixinha mostra ou oculta o grupo.</p>');
+  $('#painel-corpo').querySelectorAll('[data-olho]').forEach(cb => {
+    cb.onclick = ev => ev.stopPropagation();
+    cb.onchange = () => { const g = legenda[+cb.dataset.olho]; visor.ocultarPecas(g.ids, !cb.checked); };
+  });
+  $('#painel-corpo').querySelectorAll('[data-k]').forEach(el => el.onclick = (ev) => {
+    if (ev.target.closest('input')) return;
     const g = legenda[+el.dataset.k];
     if (g && g.ids.length) { visor.selecionar(g.ids[0]); visor.centrarEm(g.ids[0]); avisarDivisao(); }
   });

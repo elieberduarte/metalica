@@ -351,6 +351,8 @@ export class Documento {
     // modo isolado (editar uma peça sozinha): o resto do modelo some — e some também para
     // a seleção, o snap e o "selecionar tudo"; o que for criado durante a edição aparece
     if (this.foraDoIsolamento && this.foraDoIsolamento.has(ent.id)) return false;
+    // os grupos ocultos na legenda do "Colorir por" (perfil, posição…): só na vista, não vão para o modelo gravado
+    if (this.ocultosNaVista && this.ocultosNaVista.has(ent.id)) return false;
     const c = this.camadas.get(ent.camada);
     return !c || c.visivel !== false;
   }

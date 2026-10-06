@@ -140,6 +140,7 @@ export class Visor3D {
     this.cabecalho = null;
     this.selecionada = -1;
     this.selecaoVarias = new Set();       // as peças escolhidas (uma do clique, várias do 2D ao lado)
+    this.ocultas = new Set();             // peças escondidas pela legenda do Pintar (grupo de perfil ou camada)
     this.emDestaque = false;              // com várias vindas do 2D, o resto do modelo fica esmaecido
     this.corFantasma = [215, 220, 230];
     this.arestasLigadas = opcoes.arestas !== false;
@@ -347,6 +348,7 @@ export class Visor3D {
    */
   pintarPor(modo) {
     this.modoPintura = modo;
+    this.ocultas = new Set();
     if (modo === 'material' || !this.fichas) {
       this.corBase.set(this.corMaterial);
       this._repintar();
@@ -371,6 +373,12 @@ export class Visor3D {
     });
     this._repintar();
     return lista;
+  }
+
+  /** Esconde (ou mostra) as peças `ids` (um grupo da legenda do Pintar). */
+  ocultarPecas(ids, ocultar) {
+    for (const i of ids) { if (ocultar) this.ocultas.add(i); else this.ocultas.delete(i); }
+    this._repintar();
   }
 
   /** Liga ou desliga a camada `i` (índice das camadas do cabeçalho). */
@@ -451,7 +459,7 @@ export class Visor3D {
     const d = this.dadosTex, sel = this.selecaoVarias, fant = this.emDestaque ? this.corFantasma : null;
     for (let i = 0; i < this.nPecas; i++) {
       const k = i * 4;
-      const vis = this.visivelCamada[this.camadaDe[i]] !== false;
+      const vis = this.visivelCamada[this.camadaDe[i]] !== false && !this.ocultas.has(i);
       if (sel.has(i)) { d[k] = 31; d[k + 1] = 122; d[k + 2] = 224; }
       else if (fant) { d[k] = fant[0]; d[k + 1] = fant[1]; d[k + 2] = fant[2]; }
       else { d[k] = this.corBase[i * 3]; d[k + 1] = this.corBase[i * 3 + 1]; d[k + 2] = this.corBase[i * 3 + 2]; }
