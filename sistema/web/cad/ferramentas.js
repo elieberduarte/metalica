@@ -711,6 +711,35 @@ function copiaDe(e, grupo) {
 }
 const novoGrupoCopia = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
+/** As cópias criadas (com identidade nova). A cópia de um elemento da estrutura (pilar, viga… do menu Estrutura) ganha
+ *  a marca seguinte (P2, P3…) e o rótulo dele, copiado junto, passa a ser o dela — as cópias saíam todas "P1", com o
+ *  centro do original, e o Gerar 3D empilhava os pilares num ponto só (06/10). `originais`: as entidades de origem, na
+ *  ordem de `novas`. */
+function criarCopias(editor, novas, grupo, originais) {
+  const copias = novas.map(e => criar(copiaDe(e, grupo)));
+  if (typeof editor._proximaMarca !== 'function') return copias;
+  const usadas = new Set([...editor.doc.entidades.values()].map(e => (e.atributos || {}).marca).filter(Boolean));
+  copias.forEach((c, i) => {
+    const a = c.atributos || {};
+    if (!a.elemento || !a.marca) return;
+    const pref = String(editor._proximaMarca(a.elemento)).replace(/\d+$/, '');
+    let n = 1;
+    while (usadas.has(pref + n)) n++;
+    const marca = pref + n, antiga = a.marca;
+    usadas.add(marca);
+    c.atributos = { ...a, marca };
+    delete c.atributos.centro;                     // a posição é a do desenho (o 3D a tira do contorno)
+    const orig = originais && originais[i];
+    for (const r of copias) {
+      const ra = r.atributos || {};
+      if (!orig || ra.rotulo_de !== orig.id) continue;
+      r.atributos = { ...ra, rotulo_de: c.id };
+      if (r.tipo === 'texto' && r.texto === antiga) r.texto = marca;
+    }
+  });
+  return copias;
+}
+
 export class Mover extends Transformadora {
   static id = 'mover'; static nome = 'Mover'; static atalho = 'm'; static dica = 'Ponto base do deslocamento';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg>';
@@ -723,7 +752,7 @@ export class Mover extends Transformadora {
     if (!this.copiar && this.copiaAgora(ev)) {
       // Mover com Ctrl: a cópia vai para o destino, o original fica; a cópia fica selecionada
       const grupo = novoGrupoCopia();
-      const copias = novas.map(e => criar(copiaDe(e, grupo)));
+      const copias = criarCopias(this.editor, novas, grupo, this.selecionadas());
       this.editor.executar(new ComandoAdicionar(copias, 'Copiar'));
       this.editor.selecionar(copias.map(c => c.id));
       this.reiniciar();
@@ -731,8 +760,8 @@ export class Mover extends Transformadora {
     }
     if (this.copiar) {
       const grupo = novoGrupoCopia();
-      const copias = novas.map(e => copiaDe(e, grupo));
-      const cmd = new ComandoAdicionar(copias.map(c => criar(c)), 'Copiar');
+      const copias = criarCopias(this.editor, novas, grupo, this.selecionadas());
+      const cmd = new ComandoAdicionar(copias, 'Copiar');
       this.editor.executar(cmd);
       // o ponto base continua o mesmo: cada novo destino é medido da referência
       // original (como no AutoCAD), e a seleção copiada é sempre a original
@@ -807,7 +836,7 @@ export class Girar extends Transformadora {
     const giradas = this._girar(theta);
     if (this.copiaAgora(ev)) {
       const grupo = novoGrupoCopia();
-      const copias = giradas.map(e => criar(copiaDe(e, grupo)));
+      const copias = criarCopias(this.editor, giradas, grupo, this.selecionadas());
       this.editor.executar(new ComandoAdicionar(copias, 'Girar cópia'));
       this.editor.selecionar(copias.map(c => c.id));
     } else {
@@ -924,7 +953,7 @@ export class Espelhar extends Transformadora {
     if (dist(p, this.base) < 1e-6) return;
     const novas = this._espelhar(this.base, p);
     const grupo = novoGrupoCopia();
-    this.editor.executar(new ComandoAdicionar(novas.map(e => criar(copiaDe(e, grupo))), 'Espelhar'));
+    this.editor.executar(new ComandoAdicionar(criarCopias(this.editor, novas, grupo, this.selecionadas()), 'Espelhar'));
     this.reiniciar();
   }
   onMover(p) { if (this.base) this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.base, b: p }), ...this._espelhar(this.base, p)]); }

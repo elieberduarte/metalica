@@ -434,8 +434,15 @@ def eixos_do_desenho(des: Desenho) -> dict:
     if len(linhas) < 4:
         raise ErroDeDados("a camada EIXO tem %d linha(s) de eixo: são precisas ao menos duas em cada direção "
                           "(use Malha de eixos… ou desenhe as linhas na camada EIXO)." % len(linhas))
+    # o nome do eixo: o texto curto da bolinha. O número de três algarismos só dentro de um círculo — as cotas em cm do
+    # PDF ("505", "300") viravam nome de eixo (quadra Kaefer, 06/10)
+    bolinhas = [e for e in des.entidades.values() if isinstance(e, Circulo)]
+
+    def na_bolinha(t):
+        return any(math.hypot(t.posicao[0] - c.centro[0], t.posicao[1] - c.centro[1]) <= 1.5 * c.raio for c in bolinhas)
     textos = [e for e in des.entidades.values() if isinstance(e, Texto)
-              and (_NOME_NUM.match(e.texto.strip().upper()) or _NOME_LETRA.match(e.texto.strip().upper()))]
+              and ((_NOME_NUM.match(e.texto.strip().upper()) and (len(e.texto.strip().rstrip("'")) < 3 or na_bolinha(e)))
+                   or _NOME_LETRA.match(e.texto.strip().upper()))]
     # nomes que não vieram gravados na linha: o texto curto junto de uma ponta
     raio = max(RAIO_BOLINHA * float(des.escala or 100.0) * 2.5, 600.0)
     for ln in linhas:
@@ -503,9 +510,13 @@ def eixos_do_desenho(des: Desenho) -> dict:
                 continue
             unicos.append(it)
         usados = {it["nome"] for it in unicos if it["nome"]}
+        tem_nomes = bool(usados)
         for i, it in enumerate(unicos):
             if not it["nome"]:
-                cand = auto(i)
+                # entre eixos com nome, o do anterior com apóstrofo (o eixo sem bolinha entre o 5 e o 4 é o 5'); sem
+                # nome nenhum, a numeração automática
+                ant = next((u["nome"] for u in reversed(unicos[:i]) if u["nome"]), "") if tem_nomes else ""
+                cand = (ant.rstrip("'") + "'") if ant else auto(i)
                 while cand in usados:
                     cand += "'"
                 it["nome"] = cand
