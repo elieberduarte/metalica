@@ -23,6 +23,49 @@ function segmentosSnap(e, escala) {
   return [[a1, a2], [e.p1, e.p2], [e.p1, alem(e.p1, a1)], [e.p2, alem(e.p2, a2)]];
 }
 
+// ---- arcos e círculos pela curva, não pelas cordas: o arco é desenhado em trechos de 10°, e num arco grande (o banzo
+// curvo da cobertura, R ≈ 60 m) a corda passa 20 cm abaixo dele — o perpendicular, o "sobre" e a interseção caíam
+// abaixo do banzo (06/10, "ele está pegando a referência bem abaixo do topo do banzo")
+const RAD = Math.PI / 180;
+const ehCurva = (e) => e.tipo === 'arco' || e.tipo === 'circulo';
+/** o ponto `q` (sobre o círculo do arco) está dentro do trecho do arco (de `inicio` a `fim`, anti-horário) */
+function naCurva(e, q) {
+  if (e.tipo === 'circulo') return true;
+  const n = (a) => ((a % 360) + 360) % 360;
+  const a = n(Math.atan2(q[1] - e.centro[1], q[0] - e.centro[0]) / RAD), a0 = n(e.inicio), a1 = n(e.fim), tol = 1e-6;
+  return a1 >= a0 ? a >= a0 - tol && a <= a1 + tol : a >= a0 - tol || a <= a1 + tol;
+}
+/** a reta p + t·d (d unitário) com o círculo da curva: os pontos [x, y, t] */
+function retaXCurva(p, d, e) {
+  const fx = p[0] - e.centro[0], fy = p[1] - e.centro[1];
+  const b = fx * d[0] + fy * d[1], c = fx * fx + fy * fy - e.raio * e.raio, disc = b * b - c;
+  if (disc < 0) return [];
+  const r = Math.sqrt(disc);
+  return [-b - r, -b + r].map(t => [p[0] + d[0] * t, p[1] + d[1] * t, t]).filter(q => naCurva(e, q));
+}
+/** o segmento s–t com a curva */
+function segXCurva(s, t, e) {
+  const L = dist(s, t);
+  if (L < 1e-9) return [];
+  return retaXCurva(s, [(t[0] - s[0]) / L, (t[1] - s[1]) / L], e).filter(q => q[2] >= -1e-6 && q[2] <= L + 1e-6).map(q => [q[0], q[1]]);
+}
+/** duas curvas */
+function curvaXCurva(e, f) {
+  const d = dist(e.centro, f.centro);
+  if (d < 1e-9 || d > e.raio + f.raio || d < Math.abs(e.raio - f.raio)) return [];
+  const a = (e.raio * e.raio - f.raio * f.raio + d * d) / (2 * d), h = Math.sqrt(Math.max(0, e.raio * e.raio - a * a));
+  const ux = (f.centro[0] - e.centro[0]) / d, uy = (f.centro[1] - e.centro[1]) / d;
+  const m = [e.centro[0] + ux * a, e.centro[1] + uy * a];
+  return [[m[0] - uy * h, m[1] + ux * h], [m[0] + uy * h, m[1] - ux * h]].filter(q => naCurva(e, q) && naCurva(f, q));
+}
+/** o ponto da curva mais perto de `p` (null fora do trecho do arco) */
+function maisProximoCurva(p, e) {
+  const d = dist(p, e.centro);
+  if (d < 1e-9) return null;
+  const q = [e.centro[0] + (p[0] - e.centro[0]) / d * e.raio, e.centro[1] + (p[1] - e.centro[1]) / d * e.raio];
+  return naCurva(e, q) ? q : null;
+}
+
 export class Snap {
   constructor(tela) {
     this.tela = tela;
@@ -96,9 +139,16 @@ export class Snap {
       // afastada num desenho denso ainda podem ser milhares; os pares ficam limitados
       // aos mais próximos, senão cada movimento do mouse custa segundos.
       const perto = [];
-      for (const e of ents) for (const s of segmentosSnap(e, tela.doc.escala)) {
-        const d = distSegmento(p, s[0], s[1]);
-        if (d < raio) perto.push([e.id, s, d]);
+      for (const e of ents) {
+        if (ehCurva(e)) {
+          const q = maisProximoCurva(p, e);
+          if (q && dist(q, p) < raio) perto.push([e.id, null, dist(q, p), e]);
+          continue;
+        }
+        for (const s of segmentosSnap(e, tela.doc.escala)) {
+          const d = distSegmento(p, s[0], s[1]);
+          if (d < raio) perto.push([e.id, s, d]);
+        }
       }
       for (const v of virt) for (const s of v.segs) {
         const d = distSegmento(p, s[0], s[1]);
@@ -107,18 +157,49 @@ export class Snap {
       if (perto.length > 200) { perto.sort((x, y) => x[2] - y[2]); perto.length = 200; }
       for (let i = 0; i < perto.length; i++) for (let j = i + 1; j < perto.length; j++) {
         if (perto[i][0] === perto[j][0]) continue;
+        const [ci, cj] = [perto[i][3], perto[j][3]];
+        if (ci || cj) {
+          const xs = ci && cj ? curvaXCurva(ci, cj) : ci ? segXCurva(perto[j][1][0], perto[j][1][1], ci) : segXCurva(perto[i][1][0], perto[i][1][1], cj);
+          for (const x of xs) considerar(x, 'interseccao', 0);
+          continue;
+        }
         const x = intersecaoSeg(perto[i][1][0], perto[i][1][1], perto[j][1][0], perto[j][1][1]);
         if (x) considerar(x, 'interseccao', 0);
       }
     }
     if (a.perpendicular && this.ultimo) {
-      for (const e of ents) for (const [s, t] of segmentosSnap(e, tela.doc.escala)) {
+      for (const e of ents) {
+        if (!ehCurva(e)) continue;
+        const d = dist(this.ultimo, e.centro);
+        if (d < 1e-9) continue;
+        for (const k of [1, -1]) {
+          const q = [e.centro[0] + k * (this.ultimo[0] - e.centro[0]) / d * e.raio, e.centro[1] + k * (this.ultimo[1] - e.centro[1]) / d * e.raio];
+          if (naCurva(e, q)) considerar(q, 'perpendicular', 2);
+        }
+      }
+      for (const e of ents) for (const [s, t] of (ehCurva(e) ? [] : segmentosSnap(e, tela.doc.escala))) {
         const q = maisProximoSeg(this.ultimo, s, t);
         if (dist(q, s) > 1e-6 && dist(q, t) > 1e-6) considerar(q, 'perpendicular', 2);
       }
       for (const v of virt) for (const [s, t] of v.segs) {
         const q = maisProximoSeg(this.ultimo, s, t);
         if (dist(q, s) > 1e-6 && dist(q, t) > 1e-6) considerar(q, 'perpendicular', 2);
+      }
+    }
+    // onde a linha-guia (a continuação ou a perpendicular a partir do último ponto) cruza uma linha ou uma curva perto
+    // do cursor: o ponto exato (subir do banzo de baixo até o arco de cima — 06/10)
+    if (a.interseccao && this.ultimo && this.direcoes.length) {
+      for (const d of this.direcoes) for (const u of [[d[0], d[1]], [-d[1], d[0]]]) {
+        const t0 = (p[0] - this.ultimo[0]) * u[0] + (p[1] - this.ultimo[1]) * u[1];
+        const pe = [this.ultimo[0] + u[0] * t0, this.ultimo[1] + u[1] * t0];
+        if (dist(pe, p) > raio) continue;                       // o cursor longe da guia
+        for (const e of ents) {
+          if (ehCurva(e)) { for (const q of retaXCurva(this.ultimo, u, e)) considerar([q[0], q[1]], 'interseccao', 0, 'alinhamento'); continue; }
+          for (const [s, t] of segmentosSnap(e, tela.doc.escala)) {
+            const x = intersecaoSeg(s, t, [this.ultimo[0] - u[0] * 1e7, this.ultimo[1] - u[1] * 1e7], [this.ultimo[0] + u[0] * 1e7, this.ultimo[1] + u[1] * 1e7]);
+            if (x) considerar(x, 'interseccao', 0, 'alinhamento');
+          }
+        }
       }
     }
     // alinhamento: continuação (e perpendicular) da linha anterior a partir do último
@@ -133,9 +214,9 @@ export class Snap {
     }
     if (a.sobre && !melhor) {
       for (const e of ents) {
-        if (e.tipo === 'circulo') {
-          const ang = Math.atan2(p[1] - e.centro[1], p[0] - e.centro[0]);
-          considerar([e.centro[0] + e.raio * Math.cos(ang), e.centro[1] + e.raio * Math.sin(ang)], 'sobre', 3);
+        if (ehCurva(e)) {
+          const q = maisProximoCurva(p, e);
+          if (q) considerar(q, 'sobre', 3);
         } else for (const [s, t] of segmentosSnap(e, tela.doc.escala)) considerar(maisProximoSeg(p, s, t), 'sobre', 3, e.tipo === 'cota' ? 'linha de cota' : '');
       }
       for (const v of virt) for (const [s, t] of v.segs) considerar(maisProximoSeg(p, s, t), 'sobre', 3);

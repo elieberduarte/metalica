@@ -344,6 +344,9 @@ function direcoesEm(editor, p, anterior) {
       if (!editor.doc.visivel(e)) continue;
       for (const [s, t] of segmentosDe(e)) {
         if (dist(p, s) < 0.5) add(t, s); else if (dist(p, t) < 0.5) add(s, t);
+        // o ponto no meio de uma linha também dá a guia: ao longo dela e, com a perpendicular, o "subir reto" dela até
+        // outra linha ou um arco (06/10: do banzo de baixo ao arco de cima)
+        else if (e.tipo === 'linha' && dist(p, maisProximoSeg(p, s, t)) < 0.5) add(s, t);
       }
     }
   }
