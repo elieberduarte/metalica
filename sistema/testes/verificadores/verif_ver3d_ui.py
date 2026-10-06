@@ -5,7 +5,7 @@ ficha da peça, Medir mede entre dois pontos das peças, Pintar por perfil e por
 camadas ligam e desligam, a busca acha a peça; Editar carrega o editor no mesmo quadro com a mesma vista e a
 peça escolhida; um comando de edição da barra também leva ao editor; /editor direto continua o editor.
 Porta livre, nunca a 8765/8766."""
-import base64, json, os, shutil, subprocess, sys, tempfile, time
+import base64, math, json, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
@@ -143,6 +143,32 @@ try:
        "no claro as cores das camadas vão mais claras")
     foto(aba, "ver3d_4b_outro_tema.png")
     aba.avaliar("window.barraUnica.executar({ fn: 'tema' }); 1")
+
+    # o clique numa peça marca as iguais (a mesma posição); arrastar sobre ela gira em volta do ponto dela (06/10)
+    xy = aba.avaliar(f"""(() => {{ const v = {F3}.visor; v.enquadrar('iso'); const n = {{}};
+      v.fichas.forEach(f => {{ if (f.pos) n[f.pos] = (n[f.pos] || 0) + 1; }});
+      for (let i = 0; i < v.fichas.length; i++) {{ const f = v.fichas[i]; if (!f.pos || n[f.pos] < 2) continue;
+        const [x, y, z] = v.paraTela(i); if (x > 40 && y > 90 && x < v.tela.clientWidth - 40 && y < v.tela.clientHeight - 40 && z < 1 && v.escolher(x, y) === i) return [x, y, i, n[f.pos]]; }}
+      return null; }})()""")
+    ok(bool(xy), "achou uma peça com iguais à vista")
+    if xy:
+        aba.drenar(0.3)
+        clicar(aba, r[0] + xy[0], r[1] + xy[1])
+        ok(esperar(aba, F3 + ".visor.selecaoVarias.size === %d && " % xy[3] + F3 + ".visor.selecionada === %d" % xy[2], 5),
+           f"o clique numa peça marca ela e as iguais ({xy[3]})")
+        ok(aba.avaliar(F3 + ".visor._marcas && " + F3 + ".visor._marcas.children.length >= 1"), "e elas ganham a marca vermelha")
+        alvo0 = aba.avaliar(F3 + ".visor.lerCamera()")
+        x0, y0 = r[0] + xy[0], r[1] + xy[1]
+        aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=x0, y=y0, button="left", buttons=1, clickCount=1)
+        for k in range(1, 11):
+            aba.cmd("Input.dispatchMouseEvent", type="mouseMoved", x=x0 + 8 * k, y=y0 + 3 * k, button="left", buttons=1)
+        aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=x0 + 80, y=y0 + 30, button="left", buttons=0, clickCount=1)
+        aba.drenar(0.5)
+        depois = aba.avaliar(f"{F3}.visor.paraTela({xy[2]})")
+        cam1 = aba.avaliar(F3 + ".visor.lerCamera()")
+        girou = max(abs(a_ - b_) for a_, b_ in zip(alvo0["posicao"], cam1["posicao"])) > 1
+        ok(girou and depois and math.hypot(depois[0] - xy[0], depois[1] - xy[1]) < 25,
+           f"arrastar sobre a peça gira em volta dela: ela fica no lugar da tela ({depois[:2] if depois else None} × {xy[:2]})")
 
     # Editar: o editor no mesmo quadro, com a mesma vista e a mesma peça
     xy = aba.avaliar(f"(() => {{ const v = {F3}.visor; v.enquadrar('iso'); const i = v.fichas.findIndex(f => f.id === 'b1'); const [x, y] = v.paraTela(i); return [x, y, i]; }})()")

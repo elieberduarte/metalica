@@ -3537,9 +3537,13 @@ def desenho_de_contraventamentos(doc: Documento, membros: Sequence[tuple], desen
             longos.append(nome_m)
         y_c = y_base - passo_c * i * esc
         txt = "%s COMP=%dmm – %02dx" % (nome_m, round(comp_m), n_inst)
+        # a cota de cada um leva o conjunto dele (não o da célula inteira): escolhida no 2D, o 3D destaca só os
+        # daquele comprimento — antes vinham os 198 do detalhe típico (pedido do usuário, 06/10)
+        p.atr = dict(atr, conjunto=rot)
         p.cota_h(round(t0), round(t1), y_c, 0.0, texto=txt)
         for x_ in (round(t0), round(t1)):
             p.linha(x_, y_c - 1.5 * esc, x_, y_c + 1.5 * esc, "COTA")
+        p.atr = atr
     # a dobra da barra (gancho na ponta): a altura da perna, cotada na própria ponta — só na barra redonda (a
     # aba da cantoneira do agulhamento lateral não é gancho)
     if tirante is not None and _eh_redonda_perfil(str(_marcas(tirante).get("perfil") or tirante.nome or "")):

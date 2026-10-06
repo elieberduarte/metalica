@@ -43,10 +43,11 @@ function texturaDoAnel() {
   const tela = document.createElement('canvas');
   tela.width = tela.height = n;
   const g = tela.getContext('2d');
-  const r = n / 2 - 8;
-  g.lineWidth = 14; g.strokeStyle = 'rgba(255,255,255,0.95)';
+  const r = n / 2 - 6;
+  // linha fina (06/10: "pode ser um círculo com a linha fina")
+  g.lineWidth = 7; g.strokeStyle = 'rgba(255,255,255,0.9)';
   g.beginPath(); g.arc(n / 2, n / 2, r, 0, Math.PI * 2); g.stroke();
-  g.lineWidth = 7; g.strokeStyle = '#e5322d';
+  g.lineWidth = 3.5; g.strokeStyle = '#e5322d';
   g.beginPath(); g.arc(n / 2, n / 2, r, 0, Math.PI * 2); g.stroke();
   _texturaDoAnel = new THREE.CanvasTexture(tela);
   _texturaDoAnel.colorSpace = THREE.SRGBColorSpace;

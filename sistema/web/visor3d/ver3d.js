@@ -258,13 +258,20 @@ function ficha(i) {
   const f = visor.fichas[i];
   const cam = visor.cabecalho.camadas[f.c] || {};
   const linhas = [['Perfil', f.p], ['Camada', cam.nome], ['Material', f.m], ['Peso', f.kg ? nf(f.kg, f.kg < 10 ? 2 : 1) + ' kg' : null],
-                  ['Posição', f.pos], ['Conjunto', f.cj], ['Marca', f.mc]].filter(x => x[1]);
+                  ['Posição', f.pos], ['Conjunto', f.cj], ['Marca', f.mc],
+                  ['Iguais', visor.selecaoVarias.size > 1 ? `${nf(visor.selecaoVarias.size)} peças da posição (marcadas)` : null]].filter(x => x[1]);
   abrirPainel('ficha', f.n || 'Peça', `<dl>${linhas.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
-    <p class="dica">Dois cliques giram em volta da peça. Para mudá-la, use <b>Editar</b>.</p>`);
+    <p class="dica">Arrastar sobre uma peça gira em volta dela; dois cliques a trazem para o meio. Para mudá-la, use <b>Editar</b>.</p>`);
 }
 
 function escolher(i, centrar) {
-  visor.selecionar(i);
+  if (i < 0) visor.selecionar(-1);
+  else {
+    // a clicada e as iguais a ela (a mesma posição), marcadas — pedido do usuário, 06/10
+    const pos = visor.fichas[i].pos;
+    const iguais = pos ? visor.fichas.reduce((l, f, k) => { if (f.pos === pos) l.push(k); return l; }, []) : [i];
+    visor.selecionarComIguais(i, iguais);
+  }
   avisarDivisao();
   if (i < 0) { if (painelAtual === 'ficha') fecharPainel(); return; }
   if (centrar) visor.centrarEm(i);

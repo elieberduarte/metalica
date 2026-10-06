@@ -24,21 +24,42 @@ const TEMA_ESCURO = { fundo: '#0e131a', linha: '#ffffff', alfa: 0.13 };
 const TEMA_CLARO = { fundo: '#f4f6fa', linha: '#10203c', alfa: 0.12 };
 /** No claro, as cores das camadas puxadas para o branco: o azul-marinho das vigas pesava no fundo claro (06/10). */
 const CLAREAR_NO_CLARO = 0.45;
-/** O anel em volta das peças em destaque (como o editor, web/editor3d/nucleo/cena.js): altura na tela, limites. */
-const FRACAO_ANEL = 0.075, MAIS_PECAS_COM_ANEL = 400, MAIS_ANEIS = 40;
-let _texturaDoAnel = null;
-/** Vermelho com borda branca por dentro e por fora, para ler no fundo claro e no escuro. */
+/** A marca das peças escolhidas (como o editor, web/editor3d/nucleo/cena.js): altura na tela, limites. */
+const FRACAO_ANEL = 0.07, FRACAO_SETA = 0.06, MAIS_PECAS_COM_ANEL = 400, MAIS_ANEIS = 40;
+/** Peças a menos disto (mm) dividem o anel; a barra comprida e fina (tirante, contravento) ganha uma seta. */
+const JUNTAR_ANEIS = 600, BARRA_FINA = 8;
+let _texturaDoAnel = null, _texturaDaSeta = null;
+/** Vermelho de linha fina com borda branca, para ler no fundo claro e no escuro (06/10: "um círculo com a linha
+ *  fina"). Sem conversão: a saída é linear, a cor vai como está. */
 function texturaDoAnel() {
   if (_texturaDoAnel) return _texturaDoAnel;
   const n = 128, tela = document.createElement('canvas');
   tela.width = tela.height = n;
-  const g = tela.getContext('2d'), r = n / 2 - 8;
-  g.lineWidth = 14; g.strokeStyle = 'rgba(255,255,255,0.95)';
+  const g = tela.getContext('2d'), r = n / 2 - 6;
+  g.lineWidth = 7; g.strokeStyle = 'rgba(255,255,255,0.9)';
   g.beginPath(); g.arc(n / 2, n / 2, r, 0, Math.PI * 2); g.stroke();
-  g.lineWidth = 7; g.strokeStyle = '#e5322d';
+  g.lineWidth = 3.5; g.strokeStyle = '#e5322d';
   g.beginPath(); g.arc(n / 2, n / 2, r, 0, Math.PI * 2); g.stroke();
-  _texturaDoAnel = new THREE.CanvasTexture(tela);      // sem conversão: a saída é linear, a cor vai como está
+  _texturaDoAnel = new THREE.CanvasTexture(tela);
   return _texturaDoAnel;
+}
+/** A seta para baixo, com a ponta no pé do desenho (o ponto marcado): na barra fina o anel no meio dela cercava o
+ *  vazio (pedido do usuário, 06/10). */
+function texturaDaSeta() {
+  if (_texturaDaSeta) return _texturaDaSeta;
+  const n = 128, tela = document.createElement('canvas');
+  tela.width = tela.height = n;
+  const g = tela.getContext('2d');
+  const seta = () => {
+    g.beginPath();
+    g.moveTo(64, 6); g.lineTo(64, 96);                       // a haste
+    g.moveTo(42, 74); g.lineTo(64, 122); g.lineTo(86, 74);   // a ponta
+  };
+  g.lineJoin = g.lineCap = 'round';
+  seta(); g.lineWidth = 10; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.stroke();
+  seta(); g.lineWidth = 4.5; g.strokeStyle = '#e5322d'; g.stroke();
+  _texturaDaSeta = new THREE.CanvasTexture(tela);
+  return _texturaDaSeta;
 }
 
 const VERT = /* glsl */`
@@ -150,6 +171,7 @@ export class Visor3D {
     if (opcoes.mouse) {
       this.controles.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
       this.controles.zoomToCursor = true;
+      tela.addEventListener('pointerdown', (ev) => this._orbitarNoCursor(ev), { capture: true });
     }
     this.controles.addEventListener('change', () => this.pedirQuadro());
     this.controles.addEventListener('start', () => this._movendo(true));
@@ -446,6 +468,16 @@ export class Visor3D {
     this._marcarDestaque();
   }
 
+  /** A peça clicada e as iguais a ela (a mesma posição), todas marcadas, sem esmaecer o resto (06/10: "mostrar
+   *  também o círculo e as outras peças iguais"). */
+  selecionarComIguais(i, iguais) {
+    this.selecaoVarias = new Set(iguais && iguais.length ? iguais : [i]);
+    this.selecionada = i;
+    this.emDestaque = false;
+    this._repintar();
+    this._marcarDestaque();
+  }
+
   /** Várias peças escolhidas (as que o 2D pediu); `destacar` esmaece o resto, como o editor. */
   selecionarVarias(lista, destacar = true) {
     this.selecaoVarias = new Set(lista);
@@ -455,45 +487,56 @@ export class Visor3D {
     this._marcarDestaque();
   }
 
-  /** Um anel vermelho de tamanho fixo na tela em volta de cada grupo de peças em destaque (as que o 2D pediu), por
-   *  cima do modelo, como no editor: a chapa escolhida no 2D, com o prédio inteiro à vista, não se achava (06/10).
-   *  Peças perto umas das outras ganham um anel só; destaque grande demais fica sem anel. */
+  /** Marca as peças escolhidas (as do 2D ou a clicada com as iguais), por cima do modelo e do mesmo tamanho na tela,
+   *  como no editor — a chapa escolhida no 2D, com o prédio inteiro à vista, não se achava (06/10). Peça compacta: um
+   *  anel; barra comprida e fina: uma seta no meio dela. Peças coladas (a menos de JUNTAR_ANEIS) dividem o anel, e ele
+   *  fica numa delas — antes ia para a média do grupo, às vezes no vazio entre a chapa de cima e a da base, e parecia
+   *  não seguir a peça. Escolha grande demais fica sem marca. */
   _marcarDestaque() {
     if (this._marcas) {
       this.cena.remove(this._marcas);
       this._marcas.traverse(o => { if (o.material) o.material.dispose(); });
       this._marcas = null;
     }
-    const ids = this.emDestaque ? [...this.selecaoVarias] : [];
+    const ids = [...this.selecaoVarias];
     if (!ids.length || ids.length > MAIS_PECAS_COM_ANEL || !this.fichas) { this.pedirQuadro(); return; }
-    const centros = ids.map(i => {
+    const aneis = [], setas = [];
+    for (const i of ids) {
       const f = this.fichas[i], b = f.b;
-      return b ? [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2] : [f.x[0], f.x[1], f.x[2]];
-    });
-    // junta as vizinhas (a distância pelo tamanho do modelo), em cadeia
-    const s = this.caixaVisivel().getSize(new THREE.Vector3());
-    const perto = Math.max(1500, 0.08 * Math.hypot(s.x, s.y, s.z));
+      const p = b ? [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2] : [f.x[0], f.x[1], f.x[2]];
+      const d = b ? [b[3] - b[0], b[4] - b[1], b[5] - b[2]].sort((x, y) => y - x) : [0, 0, 0];
+      if (d[0] > 1500 && d[0] > BARRA_FINA * Math.max(d[1], 1)) setas.push(p);
+      else aneis.push(p);
+    }
+    // junta as coladas, em cadeia; o anel fica na peça do grupo mais perto do meio dele
     let grupos = [];
-    for (const p of centros) {
-      const junto = grupos.filter(g => g.some(o => Math.hypot(o[0] - p[0], o[1] - p[1], o[2] - p[2]) <= perto));
+    for (const p of aneis) {
+      const junto = grupos.filter(g => g.some(o => Math.hypot(o[0] - p[0], o[1] - p[1], o[2] - p[2]) <= JUNTAR_ANEIS));
       grupos = grupos.filter(g => !junto.includes(g));
       grupos.push([p, ...junto.flat()]);
     }
-    if (grupos.length > MAIS_ANEIS) { this.pedirQuadro(); return; }
+    if (grupos.length + setas.length > MAIS_ANEIS) { this.pedirQuadro(); return; }
+    const naPeca = (g) => {
+      const m = [0, 1, 2].map(k => g.reduce((t, o) => t + o[k], 0) / g.length);
+      return g.reduce((a, o) => (Math.hypot(o[0] - m[0], o[1] - m[1], o[2] - m[2]) < Math.hypot(a[0] - m[0], a[1] - m[1], a[2] - m[2]) ? o : a));
+    };
     this._marcas = new THREE.Group();
-    for (const g of grupos) {
-      const anel = new THREE.Sprite(new THREE.SpriteMaterial({ map: texturaDoAnel(), depthTest: false, depthWrite: false, transparent: true }));
-      anel.position.set(...[0, 1, 2].map(k => g.reduce((t, o) => t + o[k], 0) / g.length));
-      anel.renderOrder = 999;
-      anel.raycast = () => {};
-      // o mesmo tamanho na tela em qualquer zoom: a altura do que se vê na distância dele
-      anel.onBeforeRender = (_r, _c, cam) => {
-        const alto = 2 * cam.position.distanceTo(anel.position) * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
-        anel.scale.setScalar(Math.max(alto * FRACAO_ANEL, 1e-6));
-        anel.updateMatrixWorld(true);
+    const marca = (p, textura, fracao, ponta) => {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: textura, depthTest: false, depthWrite: false, transparent: true }));
+      s.position.set(p[0], p[1], p[2]);
+      if (ponta) s.center.set(0.5, 0.0);           // a ponta da seta (o pé do desenho) no ponto
+      s.renderOrder = 999;
+      s.raycast = () => {};
+      // o mesmo tamanho na tela em qualquer zoom: a altura do que se vê na distância dela
+      s.onBeforeRender = (_r, _c, cam) => {
+        const alto = 2 * cam.position.distanceTo(s.position) * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+        s.scale.setScalar(Math.max(alto * fracao, 1e-6));
+        s.updateMatrixWorld(true);
       };
-      this._marcas.add(anel);
-    }
+      this._marcas.add(s);
+    };
+    for (const g of grupos) marca(naPeca(g), texturaDoAnel(), FRACAO_ANEL, false);
+    for (const p of setas) marca(p, texturaDaSeta(), FRACAO_SETA, true);
     this.cena.add(this._marcas);
     this.pedirQuadro();
   }
@@ -664,10 +707,66 @@ export class Visor3D {
   }
 
   /** Gira em volta da peça (o centro dela da ficha). */
+  /** Arrastar sobre uma peça gira em volta do ponto dela sob o cursor, como no editor (camera.js, "como no
+   *  SketchUp"): o ponto fica parado na tela e nada pula. O giro do OrbitControls era em volta do alvo, que o zoom no
+   *  cursor leva para longe — com a peça selecionada no meio da tela, ela saía de vista (pedido do usuário, 06/10).
+   *  No vazio, o giro de sempre. */
+  _orbitarNoCursor(ev) {
+    if (ev.pointerType === 'touch' || (ev.button !== 0 && ev.button !== 1) || !this.fichas) return;
+    const r = this.tela.getBoundingClientRect();
+    const achado = this.pontoEm(ev.clientX - r.left, ev.clientY - r.top);
+    if (!achado) return;
+    const pivo = new THREE.Vector3(achado.local[0], achado.local[1], achado.local[2]);
+    this.controles.enableRotate = false;
+    let ultimo = { x: ev.clientX, y: ev.clientY }, mexeu = false;
+    const mover = (e) => {
+      const dx = e.clientX - ultimo.x, dy = e.clientY - ultimo.y;
+      ultimo = { x: e.clientX, y: e.clientY };
+      if (!dx && !dy) return;
+      if (!mexeu) { mexeu = true; this._movendo(true); }
+      this._girarEmVolta(pivo, dx, dy);
+    };
+    const soltar = () => {
+      window.removeEventListener('pointermove', mover, true);
+      window.removeEventListener('pointerup', soltar, true);
+      window.removeEventListener('pointercancel', soltar, true);
+      this.controles.enableRotate = true;
+      if (mexeu) this._movendo(false);
+    };
+    window.addEventListener('pointermove', mover, true);
+    window.addEventListener('pointerup', soltar, true);
+    window.addEventListener('pointercancel', soltar, true);
+  }
+
+  /** Gira câmera e alvo juntos em volta de `pivo` (em volta do Z e do eixo horizontal da tela), na velocidade do
+   *  OrbitControls; não passa do zênite. */
+  _girarEmVolta(pivo, dx, dy) {
+    const k = (2 * Math.PI / Math.max(this.tela.clientHeight || 1, 1)) * this.controles.rotateSpeed;
+    const cam = this.camera, alvo = this.controles.target;
+    const cima = new THREE.Vector3(0, 0, 1);
+    const dir = alvo.clone().sub(cam.position).normalize();
+    const direita = new THREE.Vector3().crossVectors(dir, cima);
+    const q = new THREE.Quaternion().setFromAxisAngle(cima, -dx * k);
+    if (direita.lengthSq() > 1e-10) {
+      const qx = new THREE.Quaternion().setFromAxisAngle(direita.normalize(), -dy * k);
+      const junto = q.clone().multiply(qx);
+      const nova = dir.clone().applyQuaternion(junto);
+      const polar = Math.acos(Math.max(-1, Math.min(1, nova.dot(cima))));
+      if (polar > 0.02 && polar < Math.PI - 0.02) q.copy(junto);
+    }
+    for (const v of [cam.position, alvo]) v.sub(pivo).applyQuaternion(q).add(pivo);
+    cam.lookAt(alvo);
+    cam.updateMatrixWorld();
+    this.controles.update();
+    this.controles.dispatchEvent({ type: 'change' });
+  }
+
   centrarEm(i) {
     const f = this.fichas && this.fichas[i];
     if (!f) return;
-    const alvo = new THREE.Vector3(f.x[0], f.x[1], f.x[2]);       // o centro já vem relativo à origem
+    // o meio da caixa da peça (o x da ficha é a origem dela: na barra comprida, uma ponta)
+    const b = f.b;
+    const alvo = b ? new THREE.Vector3((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2) : new THREE.Vector3(f.x[0], f.x[1], f.x[2]);
     const delta = alvo.clone().sub(this.controles.target);
     this.controles.target.add(delta);
     this.camera.position.add(delta);
@@ -748,9 +847,12 @@ export class Visor3D {
   }
 
   /** Centro da peça na tela (pixels CSS), para os testes do toque. */
+  /** O meio da peça na tela (o meio da caixa dela; o x da ficha é a origem, na barra uma ponta). */
   paraTela(i) {
-    const f = this.fichas[i];
-    const p = new THREE.Vector3(f.x[0], f.x[1], f.x[2]).project(this.camera);
+    const f = this.fichas[i], b = f.b;
+    this.camera.updateMatrixWorld();                  // a câmera pode ter mudado depois do último quadro
+    const p = (b ? new THREE.Vector3((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2)
+                 : new THREE.Vector3(f.x[0], f.x[1], f.x[2])).project(this.camera);
     return [(p.x + 1) / 2 * this.tela.clientWidth, (1 - p.y) / 2 * this.tela.clientHeight, p.z];
   }
 

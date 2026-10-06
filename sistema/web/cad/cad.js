@@ -594,7 +594,10 @@ class CAD {
     const originais = lista.filter(([k]) => !String(k).includes('@'));
     if (originais.length) lista = originais;
     const [, escolhidas] = lista.sort((a, b) => b[1].length - a[1].length)[0];
-    const c = this.doc.caixa(new Set(escolhidas.map(e => e.id)));
+    // a caixa marca a peça: os traços dela, sem o título, as cotas e as chamadas (o texto do título puxava a caixa
+    // até ele, e ela não marcava nada — pedido do usuário, 06/10)
+    const tracos = escolhidas.filter(e => !['texto', 'cota', 'chamada'].includes(e.tipo));
+    const c = this.doc.caixa(new Set((tracos.length ? tracos : escolhidas).map(e => e.id)));
     if (!c) return;
     this.tela.regiao = c;
     this.tela.enquadrar(c, 0.35);
