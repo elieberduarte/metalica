@@ -1082,6 +1082,13 @@ tr.total td { font-weight: bold; background: #f0f3f8; }
 .fam .comp { font-size: 7.6pt; color: #555; font-style: italic; margin: 0 0 0.6mm; }
 .fam td.pecas-perfil { font-size: 7pt; color: #555; padding: 0 0 1.2mm 3mm; border: 0; line-height: 1.35; }
 @media screen { .trocar-perfil[data-perfil] { cursor: pointer; } }
+/* a compra diferente do projeto, para a conferência (06/10): similar âmbar, fora do catálogo vermelho, escolhido azul */
+tr.compra-similar td { background: #fff4d6; } tr.compra-similar td b, tr.compra-similar .cinza { color: #7a4f00; }
+tr.compra-fora td { background: #fde4e1; } tr.compra-fora td b, tr.compra-fora .cinza { color: #9b1c1c; }
+tr.compra-escolhido td { background: #e3edff; } tr.compra-escolhido td b, tr.compra-escolhido .cinza { color: #0b3d91; }
+.legenda-compra { font-size: 7.6pt; color: #555; margin: 0.8mm 0 2.5mm; }
+.legenda-compra span { display: inline-block; padding: 0 1.6mm; margin-right: 2.5mm; border-radius: 0.6mm; }
+* { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .fam .sub { font-size: 8.8pt; font-weight: bold; margin: 0.8mm 0 0.2mm; }
 .fam table { margin: 0; font-size: 8.4pt; }
 .fam td { border: 0; border-bottom: 1px dotted #ccc; padding: 0.4mm 1mm; }
@@ -1351,6 +1358,22 @@ def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
     return _doc("Resumo de materiais", "".join(partes), paginado)
 
 
+_LEGENDA_COMPRA = ("<p class=\"legenda-compra\"><span style=\"background:#fff4d6\">&nbsp;</span>similar do catálogo no lugar do "
+                   "perfil do projeto <span style=\"background:#fde4e1\">&nbsp;</span>fora do catálogo e sem similar "
+                   "<span style=\"background:#e3edff\">&nbsp;</span>trocado à mão</p>")
+
+
+def _classe_compra(p: dict) -> str:
+    """A cor da linha do perfil na compra: o que não é o perfil do projeto direto do catálogo (06/10)."""
+    if p.get("escolhido"):
+        return "compra-escolhido"
+    if p.get("similar"):
+        return "compra-similar"
+    if p.get("fora_do_catalogo"):
+        return "compra-fora"
+    return ""
+
+
 def _html_compra(R: dict) -> str:
     """A. Compra (05/10): perfis em barras comerciais (W em 12 m, o resto em 6 m — a peça maior que 6 m leva o perfil
     para 12 m), chapas de 1,20 × 3,00 com a perda, parafusos, porcas e arruelas por bitola, telhas e a área de pintura.
@@ -1386,7 +1409,10 @@ def _html_compra(R: dict) -> str:
                          rodape=[("TOTAL", "b"), "", (sum(p.get("pecas") or 0 for p in C["perfis"]), "r"),
                                  (_n(sum(p["m"] for p in C["perfis"]), 2), "r"), "", (_n(sum(p["kg"] for p in C["perfis"]), 1), "r"),
                                  "", (sum(p["barras"] for p in C["perfis"]), "r"), "", ""],
-                         larguras=["24%", "11%", "7%", "10%", "7%", "10%", "7%", "10%", "6%", "8%"], bruto=True))
+                         larguras=["24%", "11%", "7%", "10%", "7%", "10%", "7%", "10%", "6%", "8%"], bruto=True,
+                         classes_linhas=[_classe_compra(p) for p in C["perfis"]]))
+        if any(_classe_compra(p) for p in C["perfis"]):
+            h.append(_LEGENDA_COMPRA)
     if C.get("chapas"):
         cl, ca = C["chapa_comercial"]
         h.append("<p class=\"sub\"><b>Chapas</b> (pela espessura comercial: a do modelo ou a próxima acima, e o peso nela; chapa de %s x %s m; "
@@ -1400,7 +1426,11 @@ def _html_compra(R: dict) -> str:
                          rodape=[("TOTAL", "b"), "", "", "", "", (sum(c["pecas"] for c in C["chapas"]), "r"),
                                  (_n(sum(c["m2"] for c in C["chapas"]), 2), "r"), (_n(sum(c["kg"] for c in C["chapas"]), 1), "r"),
                                  (sum(c["chapas"] for c in C["chapas"]), "r"), ""],
-                         larguras=["7%", "10%", "8%", "17%", "14%", "7%", "9%", "10%", "8%", "10%"]))
+                         larguras=["7%", "10%", "8%", "17%", "14%", "7%", "9%", "10%", "8%", "10%"],
+                         classes_linhas=["compra-similar" if c.get("modelo") else "" for c in C["chapas"]]))
+        if any(c.get("modelo") for c in C["chapas"]):
+            h.append("<p class=\"legenda-compra\"><span style=\"background:#fff4d6\">&nbsp;</span>a chapa do modelo não é "
+                     "comercial: compra na espessura padrão acima</p>")
     if C.get("parafusos") or C.get("porcas") or C.get("arruelas"):
         h.append("<p class=\"sub\"><b>Parafusos, porcas e arruelas</b> (cada parafuso com 1 porca e 1 arruela; as soltas — pontas roscadas, "
                  "chumbadores — somadas na bitola)</p>")
@@ -1421,7 +1451,7 @@ def _html_compra(R: dict) -> str:
     return "".join(h)
 
 
-def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=None) -> str:
+def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=None, classes_linhas=None) -> str:
     def cel(c, tag="td"):
         cls = ""
         if isinstance(c, tuple):
@@ -1432,7 +1462,9 @@ def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=Non
         return "<%s%s>%s</%s>" % (tag, (" class=\"%s\"" % cls) if cls else "", v, tag)
     cols = ("<colgroup>%s</colgroup>" % "".join("<col style=\"width:%s\">" % w for w in larguras)) if larguras else ""
     th = "".join(cel(c, "th") for c in colunas)
-    corpo = "".join("<tr>%s</tr>" % "".join(cel(c) for c in l) for l in linhas)
+    cl = list(classes_linhas or [])
+    corpo = "".join("<tr%s>%s</tr>" % ((" class=\"%s\"" % cl[i]) if i < len(cl) and cl[i] else "", "".join(cel(c) for c in l))
+                    for i, l in enumerate(linhas))
     pe = ("<tr class=\"total\">%s</tr>" % "".join(cel(c) for c in rodape)) if rodape else ""
     return "<table%s>%s<thead><tr>%s</tr></thead><tbody>%s%s</tbody></table>" % (
         (" class=\"%s\"" % classe) if classe else "", cols, th, corpo, pe)
