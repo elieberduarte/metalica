@@ -48,12 +48,47 @@ def _cache(pasta_projeto: str) -> str:
     return os.path.join(pasta_de_trabalho(raiz), os.path.basename(os.path.abspath(pasta_projeto)))
 
 
+_resumos: Dict[str, tuple] = {}          # caminho do modelo -> ((data, tamanho), SHA-1 do conteúdo)
+
+
+def _resumo_do_modelo(caminho: str) -> str:
+    """SHA-1 do conteúdo do modelo, guardado pela data e tamanho (lido de novo só quando eles mudam). Pelo
+    conteúdo, e não pela data: o editor grava o modelo sem mudança nenhuma, e isso não pode refazer o 3D leve."""
+    st = os.stat(caminho)
+    chave = (st.st_mtime_ns, st.st_size)
+    m = _resumos.get(caminho)
+    if m and m[0] == chave:
+        return m[1]
+    h = hashlib.sha1()
+    with open(caminho, "rb") as f:
+        for bloco in iter(lambda: f.read(1 << 22), b""):
+            h.update(bloco)
+    _resumos[caminho] = (chave, h.hexdigest())
+    return _resumos[caminho][1]
+
+
 def _assinatura(pasta_projeto: str) -> str:
+    """O conteúdo do modelo e as versões do formato: mudou um, o 3D leve guardado está velho."""
+    from saida.pacote_celular import VERSAO_3D, VERSAO_FICHAS
     try:
-        st = os.stat(os.path.join(pasta_projeto, "modelo.json"))
+        resumo = _resumo_do_modelo(os.path.join(pasta_projeto, "modelo.json"))
     except OSError:
         return ""
-    return hashlib.sha1(("%d:%d" % (int(st.st_mtime * 1000), st.st_size)).encode()).hexdigest()
+    return hashlib.sha1(("%s:%d:%d" % (resumo, VERSAO_3D, VERSAO_FICHAS)).encode()).hexdigest()
+
+
+def _guardados(pasta_projeto: str) -> Optional[dict]:
+    """Os arquivos que estão na pasta de trabalho, atuais ou não."""
+    c = _cache(pasta_projeto)
+    mcel, pecas = os.path.join(c, "modelo3d.mcel"), os.path.join(c, "pecas.json")
+    if not (os.path.isfile(mcel) and os.path.isfile(pecas)):
+        return None
+    try:
+        with open(os.path.join(c, "fonte.txt"), encoding="utf-8") as f:
+            versao = f.read().strip()[:12] or "velho"
+    except OSError:
+        versao = "velho"
+    return {"mcel": mcel, "pecas": pecas, "versao": versao}
 
 
 def arquivos(pasta_projeto: str) -> Optional[dict]:
@@ -83,6 +118,19 @@ def situacao(pasta_projeto: str) -> dict:
     return dict(_situacao.get(_cache(pasta_projeto)) or {"situacao": "velho"})
 
 
+def _trocar(novo: str, destino: str):
+    """No Windows, o arquivo aberto por quem o está lendo (o modo ver baixando) não pode ser trocado: tenta
+    de novo por alguns segundos."""
+    for k in range(40):
+        try:
+            os.replace(novo, destino)
+            return
+        except PermissionError:
+            if k == 39:
+                raise
+            time.sleep(0.1 + 0.02 * k)
+
+
 def gerar(pasta_projeto: str) -> dict:
     """Gera agora (neste fio). Grava em arquivos novos e troca no fim: quem lê nunca vê um pela metade."""
     from saida.pacote_celular import gerar_3d
@@ -105,7 +153,7 @@ def gerar(pasta_projeto: str) -> dict:
                                 ("pecas.json", json.dumps(fichas, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))):
                 with open(os.path.join(c, nome + ".novo"), "wb") as f:
                     f.write(dados)
-                os.replace(os.path.join(c, nome + ".novo"), os.path.join(c, nome))
+                _trocar(os.path.join(c, nome + ".novo"), os.path.join(c, nome))
             with open(os.path.join(c, "fonte.txt"), "w", encoding="utf-8") as f:
                 f.write(ass)
             _situacao.pop(c, None)
@@ -118,20 +166,24 @@ def gerar(pasta_projeto: str) -> dict:
 
 
 def pedir(pasta_projeto: str) -> dict:
-    """Pronto → os arquivos; senão começa (em segundo plano) e devolve a situação."""
+    """Pronto → os arquivos. Velho (o modelo mudou) → os arquivos de antes, na hora, com a situação
+    "atualizando", e o novo é feito em segundo plano (o modo ver troca quando ficar pronto). Nunca feito →
+    começa e devolve a situação ("na fila"/"preparando": o modo ver espera)."""
     a = arquivos(pasta_projeto)
     if a:
         return {"situacao": "pronto", **a}
     c = _cache(pasta_projeto)
     with _trava:
-        s = _situacao.get(c)
-        if s and s.get("situacao") in ("na fila", "preparando"):
-            return dict(s)
         if not os.path.isfile(os.path.join(pasta_projeto, "modelo.json")):
             return {"situacao": "sem modelo"}
-        _situacao[c] = {"situacao": "na fila", "progresso": 0.0}
-    threading.Thread(target=_gerar_calado, args=(pasta_projeto,), name="3d-leve", daemon=True).start()
-    return dict(_situacao[c])
+        s = _situacao.get(c)
+        if not (s and s.get("situacao") in ("na fila", "preparando")):
+            s = _situacao[c] = {"situacao": "na fila", "progresso": 0.0}
+            threading.Thread(target=_gerar_calado, args=(pasta_projeto,), name="3d-leve", daemon=True).start()
+    velhos = _guardados(pasta_projeto)
+    if velhos:
+        return {"situacao": "atualizando", **velhos}
+    return dict(s)
 
 
 def _gerar_calado(pasta_projeto: str):

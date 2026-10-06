@@ -6,7 +6,10 @@
 // (o editor lê a vista em `metalica.vistaDoVisor`, editor.js `_vistaDoVisor`).
 //
 // Dentro da área de trabalho (/dividida), a barra única e a busca do Ctrl+K falam com esta página por
-// `window.visorLeve` (procurar uma peça, passar para o editor antes de um comando de edição).
+// `window.visorLeve` (procurar uma peça, passar para o editor antes de um comando de edição), e o vínculo com
+// o Desenho 2D ao lado é o mesmo do editor (editor3d/modulos/divisao.js): a peça escolhida aqui vai para o
+// 2D ('sel3d'), e a escolhida no 2D chega como 'selecionar3d' e fica em destaque aqui.
+// O tema acompanha o da tela de fora na hora (a barra troca o do editor pelo botão dele, que aqui não há).
 
 import { Visor3D } from './visor3d.js';
 
@@ -24,13 +27,109 @@ let painelAtual = null;
 let medindo = false, medida = [];                // pontos da medida em curso: {local, ponto}
 let objMedida = null;
 let legenda = [];
+const NA_DIVIDIDA = window.parent !== window;
+let daDivisao = false;
+
+// ------------------------------------------------------------------ tema
+
+function aplicarTema(t) {
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+  if (visor) visor.definirTema(escuro());
+}
+window.addEventListener('storage', e => { if (e.key === 'galpao.tema') aplicarTema(e.newValue); });
+try {
+  const raizDeFora = NA_DIVIDIDA && window.parent.document.documentElement;
+  if (raizDeFora) new MutationObserver(() => aplicarTema(raizDeFora.getAttribute('data-tema')))
+    .observe(raizDeFora, { attributes: true, attributeFilter: ['data-tema'] });
+} catch (e) { /* outra origem */ }
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => aplicarTema(null));
+
+// ------------------------------------------------------------------ o vínculo com o Desenho 2D (tela dividida)
+
+/** A seleção daqui para o 2D: as marcas (posição, conjunto, id), a peça/planta da montagem pela planta, o
+ *  elemento lançado na planta, a peça do pré-moldado e a caixa em planta (mm do projeto). */
+function avisarDivisao() {
+  if (!NA_DIVIDIDA || daDivisao || !visor || !visor.fichas) return;
+  const lista = [...visor.selecaoVarias].slice(0, 5000);
+  const o = visor.cabecalho.origem;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const nomes = new Set(), pecas = new Set(), posicoes = new Set(), conjuntos = new Set(), origem2d = new Set(), pm = new Set(), ids = [];
+  for (const i of lista) {
+    const f = visor.fichas[i];
+    if (!f) continue;
+    if (f.pos) posicoes.add(f.pos);
+    if (f.cj) conjuntos.add(f.cj);
+    if (f.o2) origem2d.add(f.o2);
+    if (f.pm) pm.add(f.pm);
+    if (ids.length < 200) ids.push(f.id);
+    if (f.pc) { pecas.add(f.pc); nomes.add(f.pl || f.pc.split('#')[0]); }
+    const b = f.b || [f.x[0], f.x[1], f.x[2], f.x[0], f.x[1], f.x[2]];
+    x0 = Math.min(x0, b[0] + o[0]); y0 = Math.min(y0, b[1] + o[1]); x1 = Math.max(x1, b[3] + o[0]); y1 = Math.max(y1, b[4] + o[1]);
+  }
+  try {
+    window.parent.postMessage({ metalica: 'sel3d', n: lista.length, caixa: isFinite(x0) ? [[x0, y0], [x1, y1]] : null,
+      nomes: [...nomes], pecas: [...pecas], marcas: { posicoes: [...posicoes].slice(0, 50), conjuntos: [...conjuntos].slice(0, 50), ids,
+      origem2d: [...origem2d].slice(0, 200), pm: [...pm].slice(0, 200) } }, location.origin);
+  } catch (e) { /* sem a tela de fora */ }
+}
+
+/** O que se escolheu no 2D: {destacar: 'posicao:…'|'conjunto:…'|'peca:…'|'ids:…'|'origem2d:…'|'pm:…'},
+ *  {nome} (as peças de uma elevação da planta) ou {caixa} (as que têm o meio nela, em planta). */
+function selecionarDaDivisao(pedido) {
+  if (!visor || !visor.fichas) return;
+  const F = visor.fichas, o = visor.cabecalho.origem;
+  let ids = [];
+  if (pedido.destacar) {
+    const m = /^(posicao|conjunto|peca|ids|origem2d|pm):(.+)$/.exec(String(pedido.destacar));
+    if (m) {
+      const alvo = new Set(m[2].split(',').map(s => s.trim()).filter(Boolean));
+      const chave = { posicao: 'pos', conjunto: 'cj', ids: 'id', origem2d: 'o2', pm: 'pm' }[m[1]];
+      F.forEach((f, i) => {
+        if (m[1] === 'peca' ? (f.pc && (alvo.has(f.pc) || alvo.has(f.pl))) : alvo.has(f[chave])) ids.push(i);
+      });
+    }
+  } else if (pedido.nome) {
+    F.forEach((f, i) => { if (f.pc && f.pl === String(pedido.nome)) ids.push(i); });
+  } else if (pedido.caixa) {
+    const [[x0, y0], [x1, y1]] = pedido.caixa;
+    const folga = pedido.folga ?? 300;
+    F.forEach((f, i) => {
+      const mx = f.x[0] + o[0], my = f.x[1] + o[1];
+      if (mx >= x0 - folga && mx <= x1 + folga && my >= y0 - folga && my <= y1 + folga) ids.push(i);
+    });
+    // o que pega uma barra de treliça pega o bloco dela
+    const blocos = new Set(ids.map(i => F[i].pc).filter(Boolean));
+    if (blocos.size) F.forEach((f, i) => { if (f.pc && blocos.has(f.pc)) ids.push(i); });
+    ids = [...new Set(ids)];
+  }
+  daDivisao = true;
+  try {
+    if (!ids.length) {
+      visor.selecionarVarias([], false);
+      if (painelAtual === 'ficha') fecharPainel();
+      situacao(pedido.nome ? `Nenhuma peça de ${pedido.nome} no modelo.` : 'Essa seleção do 2D não tem peça no modelo.');
+      return;
+    }
+    visor.selecionarVarias(ids, true);
+    visor.enquadrarPecas(ids);
+    if (ids.length === 1) ficha(ids[0]);
+    else if (painelAtual === 'ficha') fecharPainel();
+    situacao(`${nf(ids.length)} peça(s) do 2D em destaque no 3D · Esc limpa`);
+  } finally {
+    daDivisao = false;
+  }
+}
+window.addEventListener('message', ev => {
+  if (ev.origin !== location.origin || !ev.data || ev.data.metalica !== 'selecionar3d') return;
+  selecionarDaDivisao(ev.data);
+});
 
 // ------------------------------------------------------------------ editar (o editor completo)
 
 function irParaEditor() {
   if (visor && visor.cabecalho) {
     const cam = visor.lerCamera();
-    const sel = visor.selecionada >= 0 && visor.fichas ? [visor.fichas[visor.selecionada].id] : [];
+    const sel = visor.fichas ? [...visor.selecaoVarias].slice(0, 5000).map(i => visor.fichas[i].id) : [];
     try {
       sessionStorage.setItem('metalica.vistaDoVisor', JSON.stringify({ projeto: PROJETO, quando: Date.now(), ...cam, selecao: sel }));
     } catch (e) { /* sem armazenamento: abre no enquadramento do editor */ }
@@ -83,11 +182,52 @@ async function abrir() {
   $('#carregando').remove();
   $('#ferramentas').hidden = false;
   situacao(`Modo ver · ${nf(visor.nPecas)} peças · aberto em ${nf(ms / 1000, 1)} s · Editar carrega o editor completo`);
+  const vista = vistaGuardada();
+  if (vista) {
+    visor.definirCamera(vista);
+    const pos = new Map(visor.fichas.map((f, i) => [f.id, i]));
+    const sel = (vista.selecao || []).map(id => pos.get(id)).filter(i => i !== undefined);
+    if (sel.length) visor.selecionarVarias(sel, false);
+  }
+  if (r.headers.get('X-Atualizando')) {
+    situacao(`Modo ver · ${nf(visor.nPecas)} peças · o modelo mudou: atualizando o 3D, troca sozinho em instantes…`);
+    esperarVersaoNova(versao);
+  }
   window.ver3dPronto = { ms, pecas: visor.nPecas };
+  aplicarTema(null);
   ligar();
+  if (NA_DIVIDIDA) { try { window.parent.postMessage({ metalica: 'pronto3d' }, location.origin); } catch (e) { /* sem a tela de fora */ } }
 }
 
 function situacao(t) { $('#situacao').textContent = t; }
+
+const CHAVE_VISTA = 'metalica.vistaVer3d';
+function guardarVista() {
+  if (!visor || !visor.cabecalho) return;
+  try {
+    sessionStorage.setItem(CHAVE_VISTA, JSON.stringify({ projeto: PROJETO, quando: Date.now(), ...visor.lerCamera(),
+      selecao: [...visor.selecaoVarias].map(i => visor.fichas[i].id) }));
+  } catch (e) { /* sem armazenamento */ }
+}
+function vistaGuardada() {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(CHAVE_VISTA) || 'null');
+    sessionStorage.removeItem(CHAVE_VISTA);
+    return v && v.projeto === PROJETO && Date.now() - v.quando < 30 * 60000 ? v : null;
+  } catch (e) { return null; }
+}
+window.addEventListener('pagehide', guardarVista);
+
+/** O modelo mudou: abriu o 3D de antes e o novo está sendo feito; pronto, troca (a vista fica). */
+function esperarVersaoNova(versao) {
+  const t = setInterval(async () => {
+    try {
+      const s = await (await fetch(`${API}/estado`, { cache: 'no-store' })).json();
+      if (s.situacao === 'pronto' && s.versao !== versao) { clearInterval(t); guardarVista(); location.reload(); }
+      else if (s.situacao === 'erro') { clearInterval(t); situacao('Não foi possível atualizar o 3D leve: ' + (s.erro || '')); }
+    } catch (e) { /* tenta de novo */ }
+  }, 2000);
+}
 
 // ------------------------------------------------------------------ painel lateral
 
@@ -114,6 +254,7 @@ function ficha(i) {
 
 function escolher(i, centrar) {
   visor.selecionar(i);
+  avisarDivisao();
   if (i < 0) { if (painelAtual === 'ficha') fecharPainel(); return; }
   if (centrar) visor.centrarEm(i);
   ficha(i);
@@ -135,7 +276,7 @@ function painelLegenda(modo) {
     + '<p class="dica">Clique num grupo para ir à primeira peça dele.</p>');
   $('#painel-corpo').querySelectorAll('[data-k]').forEach(el => el.onclick = () => {
     const g = legenda[+el.dataset.k];
-    if (g && g.ids.length) { visor.selecionar(g.ids[0]); visor.centrarEm(g.ids[0]); }
+    if (g && g.ids.length) { visor.selecionar(g.ids[0]); visor.centrarEm(g.ids[0]); avisarDivisao(); }
   });
 }
 
@@ -238,7 +379,7 @@ function painelBusca(texto) {
   abrirPainel('busca', `${nf(r.length)} peça(s)`, r.slice(0, 80).map(i => `<div class="linha-lista" data-i="${i}">
       <span title="${esc(visor.fichas[i].n)}">${esc(visor.fichas[i].n)}</span><em>${esc(visor.fichas[i].p || '')}</em></div>`).join('')
     + (r.length > 80 ? `<p class="dica">e mais ${nf(r.length - 80)}</p>` : ''));
-  $('#painel-corpo').querySelectorAll('[data-i]').forEach(el => el.onclick = () => { visor.selecionar(+el.dataset.i); visor.centrarEm(+el.dataset.i); });
+  $('#painel-corpo').querySelectorAll('[data-i]').forEach(el => el.onclick = () => { visor.selecionar(+el.dataset.i); visor.centrarEm(+el.dataset.i); avisarDivisao(); });
 }
 
 // ------------------------------------------------------------------ eventos

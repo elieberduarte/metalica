@@ -110,7 +110,30 @@ try:
     aba.avaliar(f"(() => {{ const b = {F3}.document.getElementById('busca'); b.value = 'chapa de base'; b.dispatchEvent(new Event('input')); return 1; }})()")
     ok(esperar(aba, F3 + ".document.querySelectorAll('#painel-corpo .linha-lista').length === 1", 5), "a busca acha a chapa")
 
+    # o vínculo com o 2D ao lado: a peça escolhida aqui vai para a tela de fora ('sel3d') ...
+    aba.avaliar("window.__sel3d = []; window.addEventListener('message', e => { if (e.data && e.data.metalica === 'sel3d') window.__sel3d.push(e.data); }); 1")
+    clicar(aba, r[0] + xy[0], r[1] + xy[1])
+    ok(esperar(aba, "window.__sel3d.length && window.__sel3d[window.__sel3d.length - 1].marcas.ids[0] === 'b1'", 5), "escolher no 3D avisa o 2D (sel3d com a peça)")
+    s3 = aba.avaliar("window.__sel3d[window.__sel3d.length - 1]") or {}
+    cx = s3.get("caixa") or [[0, 0], [0, 0]]
+    ok(abs(cx[0][0] - 0) < 2 and abs(cx[1][0] - 6000) < 120, f"com a caixa da viga em planta ({cx})")
+    # ... e a escolhida no 2D chega como 'selecionar3d' e fica em destaque aqui
+    aba.avaliar(F3 + ".postMessage({ metalica: 'selecionar3d', destacar: 'ids:h1,c0' }, location.origin); 1")
+    ok(esperar(aba, F3 + ".visor.selecaoVarias.size === 2 && " + F3 + ".visor.emDestaque", 5), "escolher no 2D destaca as peças no 3D (o resto esmaecido)")
+    aba.avaliar(F3 + ".postMessage({ metalica: 'selecionar3d', caixa: [[-100, 2900], [3000, 3100]], folga: 50 }, location.origin); 1")
+    ok(esperar(aba, F3 + ".visor.selecaoVarias.size >= 10", 5), f"uma região escolhida no 2D destaca as peças dela ({aba.avaliar(F3 + '.visor.selecaoVarias.size')})")
+    foto(aba, "ver3d_4_do2d.png")
+    # o tema da barra troca o fundo do 3D na hora
+    escuro0 = aba.avaliar(F3 + ".visor.escuro")
+    aba.avaliar("window.barraUnica.executar({ fn: 'tema' }); 1")
+    ok(esperar(aba, F3 + ".visor.escuro === " + ("false" if escuro0 else "true") + " && " + F3 + ".document.documentElement.getAttribute('data-tema') === document.documentElement.getAttribute('data-tema')", 5),
+       "trocar o tema na barra troca o fundo e o piso do 3D na hora")
+    ok(aba.avaliar(F3 + ".visor.piso && " + F3 + ".visor.piso.visible && " + F3 + ".visor.piso.position.z < -100"), "o piso fica sob o modelo")
+    aba.avaliar("window.barraUnica.executar({ fn: 'tema' }); 1")
+
     # Editar: o editor no mesmo quadro, com a mesma vista e a mesma peça
+    xy = aba.avaliar(f"(() => {{ const v = {F3}.visor; v.enquadrar('iso'); const i = v.fichas.findIndex(f => f.id === 'b1'); const [x, y] = v.paraTela(i); return [x, y, i]; }})()")
+    aba.drenar(0.3)
     clicar(aba, r[0] + xy[0], r[1] + xy[1])
     cam = aba.avaliar(F3 + ".visor.lerCamera()")
     aba.avaliar(F3 + ".document.getElementById('btn-editar').click()")
@@ -120,7 +143,7 @@ try:
     dif = max(abs(a - b) for a, b in zip(ed.get("v", [1e9] * 6), cam["posicao"] + cam["alvo"]))
     ok(dif < 1.0, f"o editor abre com a mesma vista (diferença {dif:.2f} mm)")
     ok(ed.get("sel") == ["b1"], f"e com a peça escolhida no visor selecionada ({ed.get('sel')})")
-    foto(aba, "ver3d_4_editor.png")
+    foto(aba, "ver3d_5_editor.png")
 
     # um comando de edição da barra, com o 3D no modo ver, também leva ao editor
     aba.navegar(base + "/dividida?projeto=obra&vista=3d", limite=60)

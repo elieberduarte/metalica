@@ -35,6 +35,9 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 VERSAO_3D = 1
+#: Versão das fichas (pecas.json): mudou o que elas levam, os 3D leves guardados são refeitos.
+#: 2 (06/10): o vínculo com o 2D — peça e planta de origem, elemento da planta, marca do pré-moldado e caixa.
+VERSAO_FICHAS = 2
 MAGICA = b"MCEL"
 
 #: Vértices por bloco (índice de 16 bits).
@@ -327,12 +330,27 @@ def _texto_perfil(reg: dict) -> str:
     return str(m.get("perfil") or "")
 
 
-def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float) -> dict:
-    marcas = (reg.get("atributos") or {}).get("marcas") or {}
+def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs=None) -> dict:
+    atrib = reg.get("atributos") or {}
+    marcas = atrib.get("marcas") or {}
     material = str(reg.get("material") or "")
     f = {"id": reg.get("id"), "n": reg.get("nome") or "", "c": camadas_idx.get(reg.get("camada") or "", 0),
          "m": material, "p": _texto_perfil(reg),
          "x": [round(centro[0]), round(centro[1]), round(centro[2])]}
+    # o vínculo com o Desenho 2D (a tela dividida), o mesmo do editor (modulos/divisao.js): a caixa da
+    # peça (relativa à origem, como o centro), a peça e a planta da montagem pela planta, o elemento
+    # lançado na planta e a peça do pré-moldado
+    if vs:
+        a, b = _caixa(vs)
+        f["b"] = [round(a[0]), round(a[1]), round(a[2]), round(b[0]), round(b[1]), round(b[2])]
+    origem = atrib.get("origem") or {}
+    if isinstance(origem, dict) and origem.get("peca"):
+        f["pc"] = str(origem["peca"])
+        f["pl"] = str(origem.get("planta") or str(origem["peca"]).split("#")[0]).replace(" (tesoura de cima)", "")
+    if atrib.get("origem_2d"):
+        f["o2"] = str(atrib["origem_2d"])
+    if atrib.get("pre_moldado") and atrib.get("peca") and atrib.get("eixo"):
+        f["pm"] = "%s@%s" % (atrib["peca"], atrib["eixo"])
     if volume_mm3 > 0 and ("aço" in material.lower() or "aco" in material.lower() or reg.get("tipo") in ("barra", "chapa")):
         f["kg"] = round(volume_mm3 * _RHO_ACO / 1e9, 2)
     for k_ori, k in (("posicao", "pos"), ("conjunto", "cj"), ("marca", "mc")):
@@ -438,7 +456,7 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
             for a, b in _arestas(vs, p["fs"], cos_lim):
                 ar.append(a + base)
                 ar.append(b + base)
-            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], _volume(vs, tris)))
+            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], _volume(vs, tris), vs))
             base += len(vs)
             n_tri += len(tris)
         n_vert += nv
@@ -486,7 +504,7 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
                          x[1] * esc[0], y[1] * esc[1], z[1] * esc[2], ty,
                          x[2] * esc[0], y[2] * esc[1], z[2] * esc[2], tz,
                          float(len(fichas))))
-            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], vol))
+            fichas.append(_ficha(p["reg"], camadas_idx, p["centro"], vol, p["vs"]))
         n_copias += len(g["itens"])
         n_tri += len(tris) * len(g["itens"])
         formas_cab.append({
@@ -552,7 +570,7 @@ def gerar_3d(modelo: dict, progresso=None) -> Tuple[bytes, dict, dict]:
         texto = json.dumps(cab, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         texto += b" " * ((-len(texto)) % 4)
     binario = MAGICA + struct.pack("<II", VERSAO_3D, len(texto)) + texto + b"".join(saida.partes)
-    return binario, {"versao": VERSAO_3D, "camadas": cab_camadas, "pecas": fichas}, numeros
+    return binario, {"versao": VERSAO_3D, "versao_fichas": VERSAO_FICHAS, "camadas": cab_camadas, "pecas": fichas}, numeros
 
 
 def ler_cabecalho(binario: bytes) -> dict:
@@ -686,7 +704,12 @@ def gerar_pacote(pasta_projeto: str, destino: str, slug: str = "", progresso=Non
     modelo = os.path.join(pasta_projeto, "modelo.json")
     mcel = os.path.join(destino, "modelo3d.mcel")
     if os.path.exists(modelo):
-        if not os.path.exists(mcel) or os.path.getmtime(mcel) < os.path.getmtime(modelo):
+        try:
+            with open(os.path.join(destino, "pecas.json"), encoding="utf-8") as f:
+                fichas_atuais = json.load(f).get("versao_fichas") == VERSAO_FICHAS
+        except (OSError, ValueError):
+            fichas_atuais = False
+        if not os.path.exists(mcel) or os.path.getmtime(mcel) < os.path.getmtime(modelo) or not fichas_atuais:
             with open(modelo, encoding="utf-8") as f:
                 m = json.load(f)
             binario, fichas, _num = gerar_3d(m, progresso)

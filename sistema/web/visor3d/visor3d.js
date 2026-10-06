@@ -73,6 +73,7 @@ varying vec3 vMundo;
 #endif
 uniform float uAresta;
 uniform float uLonge;
+uniform float uEscuro;
 void main() {
 #if defined(PONTO)
   gl_FragColor = vec4(vMundo, 1.0);
@@ -85,14 +86,18 @@ void main() {
   // e somem aos poucos com a distância: de perto marcam cada peça, de longe só o contorno geral
   if (uAresta > 0.5) {
     float a = mix(0.5, 0.1, clamp((-vVista.z - 0.6 * uLonge) / uLonge, 0.0, 1.0));
-    gl_FragColor = vec4(vCor * 0.45, a); return;
+    // como o editor: no escuro a aresta é a cor da peça puxada para o claro; no claro, para o escuro
+    vec3 ca = uEscuro > 0.5 ? mix(vCor, vec3(0.94, 0.96, 1.0), 0.55) : vCor * 0.45;
+    gl_FragColor = vec4(ca, uEscuro > 0.5 ? a + 0.15 : a); return;
   }
   vec3 n = normalize(cross(dFdx(vVista), dFdy(vVista)));
   if (n.z < 0.0) n = -n;
   vec3 luz = normalize(vec3(0.35, 0.55, 0.75));
   float d = max(dot(n, luz), 0.0);
   float ceu = 0.5 + 0.5 * n.y;
-  gl_FragColor = vec4(min(vCor * (0.5 + 0.18 * ceu + 0.5 * d), 1.0), 1.0);
+  // no escuro a peça sobe um pouco para o claro (o azul-marinho das vigas sumia no fundo)
+  vec3 base = uEscuro > 0.5 ? mix(vCor, vec3(1.0), 0.18) : vCor;
+  gl_FragColor = vec4(min(base * (0.5 + 0.18 * ceu + 0.5 * d), 1.0), 1.0);
 #endif
 }`;
 
@@ -134,6 +139,9 @@ export class Visor3D {
     this.fichas = null;
     this.cabecalho = null;
     this.selecionada = -1;
+    this.selecaoVarias = new Set();       // as peças escolhidas (uma do clique, várias do 2D ao lado)
+    this.emDestaque = false;              // com várias vindas do 2D, o resto do modelo fica esmaecido
+    this.corFantasma = [215, 220, 230];
     this.arestasLigadas = opcoes.arestas !== false;
     this._pedido = false;
     this.quadros = 0;
@@ -209,7 +217,9 @@ export class Visor3D {
   _materiais() {
     const comum = { vertexShader: VERT, fragmentShader: FRAG };
     this._uLonge = { value: 10000 };
-    const un = () => ({ tPecas: { value: this.textura }, uIdBase: { value: 0 }, uAresta: { value: 0 }, uLonge: this._uLonge });
+    this._uEscuro = { value: 0 };
+    const un = () => ({ tPecas: { value: this.textura }, uIdBase: { value: 0 }, uAresta: { value: 0 }, uLonge: this._uLonge,
+                        uEscuro: this._uEscuro });
     this._mat = (defs, aresta) => {
       const m = new THREE.ShaderMaterial({ ...comum, uniforms: un(), defines: defs,
         side: THREE.DoubleSide, polygonOffset: !aresta, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
@@ -367,6 +377,7 @@ export class Visor3D {
   mostrarCamada(i, visivel) {
     this.visivelCamada[i] = !!visivel;
     this._repintar();
+    this.posicionarPiso();
   }
 
   _movendo(sim) {
@@ -400,15 +411,49 @@ export class Visor3D {
 
   selecionar(i) {
     this.selecionada = i;
+    this.selecaoVarias = new Set(i >= 0 ? [i] : []);
+    this.emDestaque = false;
     this._repintar();
   }
 
+  /** Várias peças escolhidas (as que o 2D pediu); `destacar` esmaece o resto, como o editor. */
+  selecionarVarias(lista, destacar = true) {
+    this.selecaoVarias = new Set(lista);
+    this.selecionada = lista.length === 1 ? lista[0] : -1;
+    this.emDestaque = !!destacar && lista.length > 0;
+    this._repintar();
+  }
+
+  /** Aproxima a câmera das peças, mantendo a direção de onde se olha. */
+  enquadrarPecas(lista) {
+    if (!lista.length || !this.fichas) return;
+    const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (const i of lista) {
+      const f = this.fichas[i];
+      const b = f.b || [f.x[0] - 300, f.x[1] - 300, f.x[2] - 300, f.x[0] + 300, f.x[1] + 300, f.x[2] + 300];
+      for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], b[k]); mx[k] = Math.max(mx[k], b[k + 3]); }
+    }
+    const c = new THREE.Vector3((mn[0] + mx[0]) / 2, (mn[1] + mx[1]) / 2, (mn[2] + mx[2]) / 2);
+    const raio = Math.max(Math.hypot(mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]) / 2, 400);
+    const dir = this.camera.position.clone().sub(this.controles.target).normalize();
+    const vfov = THREE.MathUtils.degToRad(this.camera.fov / 2), hfov = Math.atan(Math.tan(vfov) * this.camera.aspect);
+    const dist = raio / Math.sin(Math.min(vfov, hfov)) * 1.15;
+    this.controles.target.copy(c);
+    this.camera.position.copy(c).addScaledVector(dir, dist);
+    this.camera.near = Math.max(dist / 2000, 1);
+    this.camera.far = Math.max(this.camera.far, dist * 20);
+    this.camera.updateProjectionMatrix();
+    this.controles.update();
+    this.pedirQuadro();
+  }
+
   _repintar() {
-    const d = this.dadosTex, sel = this.selecionada;
+    const d = this.dadosTex, sel = this.selecaoVarias, fant = this.emDestaque ? this.corFantasma : null;
     for (let i = 0; i < this.nPecas; i++) {
       const k = i * 4;
       const vis = this.visivelCamada[this.camadaDe[i]] !== false;
-      if (i === sel) { d[k] = 31; d[k + 1] = 122; d[k + 2] = 224; }
+      if (sel.has(i)) { d[k] = 31; d[k + 1] = 122; d[k + 2] = 224; }
+      else if (fant) { d[k] = fant[0]; d[k + 1] = fant[1]; d[k + 2] = fant[2]; }
       else { d[k] = this.corBase[i * 3]; d[k + 1] = this.corBase[i * 3 + 1]; d[k + 2] = this.corBase[i * 3 + 2]; }
       d[k + 3] = vis ? 255 : 0;
     }
@@ -421,6 +466,59 @@ export class Visor3D {
       m.malha.visible = algum;
       if (m.arestas) m.arestas.visible = algum && this.arestasLigadas;
     }
+    this.pedirQuadro();
+  }
+
+  // ---------------------------------------------------------------- ambiente (fundo e piso)
+
+  /** O fundo em degradê (as cores do editor) e um piso liso e meio transparente sob o modelo, sem a grade do
+   *  editor: o modelo não fica solto no vazio. Chamado de novo quando o tema muda. */
+  definirTema(escuro) {
+    this.escuro = !!escuro;
+    if (this._uEscuro) this._uEscuro.value = escuro ? 1 : 0;
+    const c = document.createElement('canvas');
+    c.width = 4; c.height = 256;
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, 256);
+    // o céu um pouco mais claro (no escuro) ou mais azulado (no claro) que o piso, para o piso ler como chão
+    const cores = escuro ? [['#243145', 0], ['#1a2433', 0.6], ['#151d29', 1]] : [['#cfdcf0', 0], ['#eaf0f8', 0.52], ['#dde4ee', 1]];
+    for (const [cor, k] of cores) grad.addColorStop(k, cor);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 4, 256);
+    if (this.cena.background && this.cena.background.isTexture) this.cena.background.dispose();
+    this.cena.background = new THREE.CanvasTexture(c);
+    if (!this.piso) {
+      // um chão que vai até o horizonte: o plano é grande e some aos poucos para as bordas (sem a "mesa")
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 256;
+      const gc = cv.getContext('2d');
+      const rad = gc.createRadialGradient(128, 128, 0, 128, 128, 128);
+      rad.addColorStop(0, '#fff'); rad.addColorStop(0.35, '#fff'); rad.addColorStop(1, '#000');
+      gc.fillStyle = rad;
+      gc.fillRect(0, 0, 256, 256);
+      this.piso = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, alphaMap: new THREE.CanvasTexture(cv) }));
+      this.piso.renderOrder = -1;
+      this.piso.raycast = () => {};
+      this.cena.add(this.piso);
+    }
+    // no escuro, o piso na cor do fundo do Desenho 2D (web/cad/nucleo/tela.js); no claro, o azul-acinzentado
+    // (escolha do usuário, 06/10)
+    this.piso.material.color.set(escuro ? '#0e131a' : '#aebbcd');
+    this.piso.material.opacity = escuro ? 0.92 : 0.45;
+    this.corFantasma = escuro ? [46, 54, 66] : [215, 220, 230];
+    this.posicionarPiso();
+    this._repintar();
+  }
+
+  /** O piso logo abaixo das peças à vista, maior que elas. */
+  posicionarPiso() {
+    if (!this.piso || !this.cabecalho) return;
+    const cx = this.caixaVisivel();
+    const s = cx.getSize(new THREE.Vector3()), c = cx.getCenter(new THREE.Vector3());
+    const lado = Math.max(s.x, s.y, 10000) * 40;          // até o horizonte (a borda some no degradê)
+    this.piso.scale.set(lado, lado, 1);
+    this.piso.position.set(c.x, c.y, cx.min.z - 10);
     this.pedirQuadro();
   }
 
@@ -456,7 +554,7 @@ export class Visor3D {
     this._uLonge.value = cx.getSize(new THREE.Vector3()).length() / 2;    // o "longe" das arestas: o raio do que se vê
     this.camera.position.copy(c).addScaledVector(v, dist);
     this.camera.near = Math.max(dist / 2000, 1);
-    this.camera.far = dist * 20;
+    this.camera.far = dist * 60;                            // alcança o chão até o horizonte
     this.camera.updateProjectionMatrix();
     this.controles.target.copy(c);
     this.controles.update();
@@ -523,6 +621,7 @@ export class Visor3D {
     const corLimpa = this.renderer.getClearColor(new THREE.Color()), alfaLimpo = this.renderer.getClearAlpha();
     this.renderer.setClearColor(0x000000, 0);
     const trocas = [];
+    for (const o of this.cena.children) if (o !== this.raiz && o.visible) { trocas.push([o, true, true]); o.visible = false; }
     for (const m of this.malhas) {
       trocas.push([m.malha, m.malha.material]);
       m.malha.material = m[qual];

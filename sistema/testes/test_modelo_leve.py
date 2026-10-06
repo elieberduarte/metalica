@@ -86,3 +86,23 @@ def test_sem_modelo(tmp_path):
     p.mkdir()
     (p / "projeto.json").write_text("{}", encoding="utf-8")
     assert L.pedir(str(p))["situacao"] == "sem modelo"
+
+
+def test_gravar_sem_mudar_nao_refaz_e_o_velho_abre_na_hora(tmp_path):
+    """O editor grava o modelo igual (só a data muda): continua pronto. Mudou de verdade: o anterior sai na
+    hora ("atualizando") e o novo é feito em segundo plano."""
+    pasta = _projeto(tmp_path)
+    L.gerar(pasta)
+    caminho = os.path.join(pasta, "modelo.json")
+    texto = open(caminho, encoding="utf-8").read()
+    time.sleep(0.02)
+    open(caminho, "w", encoding="utf-8").write(texto)            # mesma coisa, data nova
+    assert L.arquivos(pasta) is not None
+    m = _modelo()
+    m["entidades"] = m["entidades"][:5]
+    open(caminho, "w", encoding="utf-8").write(json.dumps(m))
+    r = L.pedir(pasta)
+    with open(r["mcel"], "rb") as f:
+        assert r["situacao"] == "atualizando" and f.read(4) == b"MCEL"
+    s = _esperar_pronto(pasta)
+    assert s["versao"] != r["versao"]

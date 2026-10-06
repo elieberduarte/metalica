@@ -3696,8 +3696,11 @@ class Handler(BaseHTTPRequestHandler):
         """GET /api/projetos/<s>/3d-leve[/pecas]: o 3D leve do modo "ver" (saida/modelo_leve.py). Pronto, vai
         o arquivo; senão 202 com o progresso (o modo ver espera) ou 404 sem modelo."""
         from saida import modelo_leve
-        r = modelo_leve.pedir(_gerente()._existente(s))
-        if r.get("situacao") != "pronto":
+        pasta = _gerente()._existente(s)
+        if resto[:1] == ["estado"]:                       # o modo ver pergunta se a versão nova ficou pronta
+            return self._json(modelo_leve.situacao(pasta))
+        r = modelo_leve.pedir(pasta)
+        if "mcel" not in r:
             return self._json(r, 404 if r.get("situacao") == "sem modelo" else 500 if r.get("situacao") == "erro" else 202)
         caminho = r["pecas"] if resto[:1] == ["pecas"] else r["mcel"]
         etag = '"%s"' % r["versao"]
@@ -3713,6 +3716,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(dados)))
         self.send_header("ETag", etag)
         self.send_header("X-Versao-3D", r["versao"])
+        if r.get("situacao") == "atualizando":             # o anterior, enquanto o novo é feito
+            self.send_header("X-Atualizando", "1")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(dados)

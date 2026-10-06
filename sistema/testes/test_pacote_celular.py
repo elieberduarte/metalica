@@ -44,6 +44,7 @@ def _cilindro(id_, x, y, lados=40, r=8.0, h=30.0):
 
 def _modelo():
     ents = [_caixa_solido("c%d" % i, 1000.0 * i, 0.0, 0.0, a=100 + i) for i in range(5)]       # todas diferentes
+    ents[1]["atributos"]["origem"] = {"peca": "TESOURA 1#2", "planta": "TESOURA 1 (tesoura de cima)"}     # montagem pela planta
     # 60 parafusos iguais, girados de vários jeitos: viram cópias (78 triângulos × 59 > 2000)
     for i in range(60):
         e = _cilindro("p%d" % i, 200.0 * i, 3000.0)
@@ -134,6 +135,10 @@ def test_fichas_camadas_e_peso():
     chapa = next(f for f in fichas["pecas"] if f["id"] == "h1")
     assert 8.0 < chapa["kg"] < 9.0                    # 300×300×12,5 com furo de 22 ≈ 8,8 kg
     assert next(f for f in fichas["pecas"] if f["id"] == "c0")["pos"] == "P1"
+    # o vínculo com o 2D (tela dividida): caixa da peça, peça e planta de origem
+    c1 = next(f for f in fichas["pecas"] if f["id"] == "c1")
+    assert c1["pc"] == "TESOURA 1#2" and c1["pl"] == "TESOURA 1" and len(c1["b"]) == 6
+    assert c1["b"][3] - c1["b"][0] == 101 and fichas["versao_fichas"] >= 2
     for c in cab["camadas"]:
         if c["pecas"]:
             assert len(c["caixa"]) == 2
