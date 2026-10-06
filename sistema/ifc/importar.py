@@ -2470,17 +2470,24 @@ def marcas_de(nome: str, descricao: str, propriedades: dict) -> dict:
             if m:
                 achado[campo] = m.group(1)
     if "perfil" not in achado and nome and nome.strip():
-        nome = re.sub(r"\s+", " ", nome).strip()
-        # Revit: "Família:Tipo:Id" — o número é de cada peça, não do perfil; o perfil é
-        # o tipo, que o Revit repete em Pset_*Common.Reference ("W200X22.5")
-        m = re.match(r"^(.+):([^:]+):\d+$", nome)
-        if m:
-            ref = next((p["Reference"] for k, p in (propriedades or {}).items()
-                        if isinstance(p, dict) and k.endswith("Common")
-                        and isinstance(p.get("Reference"), str) and p["Reference"].strip()), None)
-            nome = re.sub(r"\s+", " ", ref).strip() if ref else m.group(2).strip()
-        achado["perfil"] = nome
+        achado["perfil"] = perfil_do_nome(nome, propriedades)
     return achado
+
+
+def perfil_do_nome(nome: str, propriedades: Optional[dict] = None) -> str:
+    """O perfil tirado do nome da peça quando o arquivo não traz um (o Revit). O Revit grava
+    "Família:Tipo:Id" ou "Tipo:Id" — o número é de cada peça, não do perfil; o perfil é o tipo,
+    que ele repete em Pset_*Common.Reference ("W200X22.5"). E o comprimento escrito no fim do
+    tipo ("Deck 90x25 - L=1411 mm") é de cada peça: sai também, senão cada tábua do deck do
+    Bella Casa virava um perfil (05/10). O mesmo critério de `perfilDaPeca` no editor."""
+    nome = re.sub(r"\s+", " ", nome or "").strip()
+    m = re.match(r"^(.+):([^:]+):\d+$", nome) or re.match(r"^()([^:]+):\d{4,}$", nome)
+    if m:
+        ref = next((p["Reference"] for k, p in (propriedades or {}).items()
+                    if isinstance(p, dict) and k.endswith("Common")
+                    and isinstance(p.get("Reference"), str) and p["Reference"].strip()), None)
+        nome = re.sub(r"\s+", " ", ref).strip() if ref else m.group(2).strip()
+    return re.sub(r"\s*-\s*L\s*=\s*\d+(?:[.,]\d+)?\s*mm$", "", nome, flags=re.I).strip() or nome
 
 
 #: Tipos de produto varridos na busca por elementos órfãos.

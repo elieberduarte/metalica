@@ -1217,6 +1217,13 @@ def test_marcas_de_revit_perfil_sem_o_numero_da_peca():
     assert marcas_de("Guarda-corpo:Gradil 190:6799894", "", {})["perfil"] == "Gradil 190"
     # nome sem o número no fim continua inteiro
     assert marcas_de("Vigas W Gerdau:W200X22.5", "", {})["perfil"] == "Vigas W Gerdau:W200X22.5"
+    # o deck do Bella Casa: "Tipo:Id", cada tábua com o comprimento no tipo — todas são o mesmo perfil
+    deck = {"Pset_BuildingElementProxyCommon": {"Reference": "Deck 90x25 - L=1411 mm"}}
+    assert marcas_de("Deck 90x25 - L=1411 mm:6771577", "", deck)["perfil"] == "Deck 90x25"
+    assert marcas_de("Deck 90x25 - L=2 mm:6772183", "", {})["perfil"] == "Deck 90x25"
+    assert marcas_de("Deck 90x25 - L=14,5 MM:6772581", "", {})["perfil"] == "Deck 90x25"
+    # número curto depois de ":" não é id de peça do Revit
+    assert marcas_de("Suporte:12", "", {})["perfil"] == "Suporte:12"
 
 
 # ------------------------------------------------- coordenadas de obra → origem

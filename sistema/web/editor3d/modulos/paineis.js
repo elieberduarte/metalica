@@ -15,13 +15,19 @@ import { $, ComandoAparencia, contarPor, corDeGrupo, corHex, dimensoesPrincipais
  */
 export function perfilDaPeca(ent) {
   const a = (ent && ent.atributos) || {}, marcas = a.marcas || {};
-  const p = ent.perfil || marcas.perfil || ent.nome || null;
-  const m = p && /^(.+):([^:]+):\d+$/.exec(p);
-  if (!m) return p;
-  for (const [k, ps] of Object.entries(a.propriedades || {})) {
-    if (k.endsWith('Common') && ps && typeof ps.Reference === 'string' && ps.Reference.trim()) return ps.Reference.trim();
+  let p = ent.perfil || marcas.perfil || ent.nome || null;
+  if (!p) return p;
+  // "Família:Tipo:Id" ou "Tipo:Id" (o deck do Bella Casa: "Deck 90x25 - L=2 mm:6772183")
+  const m = /^(.+):([^:]+):\d+$/.exec(p) || /^()([^:]+):\d{4,}$/.exec(p);
+  if (m) {
+    let ref = null;
+    for (const [k, ps] of Object.entries(a.propriedades || {})) {
+      if (k.endsWith('Common') && ps && typeof ps.Reference === 'string' && ps.Reference.trim()) { ref = ps.Reference.trim(); break; }
+    }
+    p = ref || m[2].trim();
   }
-  return m[2].trim();
+  // o comprimento no fim do tipo é de cada peça (cada tábua do deck virava um perfil, 05/10)
+  return p.replace(/\s*-\s*L\s*=\s*\d+(?:[.,]\d+)?\s*mm$/i, '').trim() || p;
 }
 
 export class MetodosPaineis {
