@@ -178,12 +178,29 @@ function doDoisD(m) {
   para3d({ metalica: 'selecionar3d', caixa: [[m.caixa[0][0] + desl[0], m.caixa[0][1] + desl[1]], [m.caixa[1][0] + desl[0], m.caixa[1][1] + desl[1]]] });
 }
 
+function recarregar3d() {
+  const f = $('#f3d');
+  let w = null;
+  try { w = f.contentWindow; } catch (e) { w = null; }
+  if (!w) return;
+  try {
+    if (w.visorLeve || /\/visor3d\//.test(w.location.pathname)) { w.location.reload(); return; }
+    const ed = w.editor;
+    const pendente = !!(ed && (ed._autosavePendente || ed._salvando));            // edição do 3D ainda não gravada
+    if (!pendente) { w.location.reload(); return; }
+  } catch (e) { /* outra tela */ }
+  avisar('A planta mudou o modelo 3D: grave o que está aberto no 3D e recarregue (F5) para ver.', 6000);
+}
+
 async function iniciar() {
   // ouvido antes de carregar os quadros: o primeiro pedido de estado chega logo
   window.addEventListener('message', (ev) => {
     if (ev.origin !== location.origin || !ev.data || !ev.data.metalica) return;
     const deUmLado = ev.source === $('#f2d').contentWindow || ev.source === $('#f3d').contentWindow;
     if (ev.data.metalica === 'navegar' && deUmLado) { navegar(ev.data.url); return; }
+    // o 2D mudou o modelo (a planta da Estrutura sincronizou o 3D): o modo ver recarrega já; o editor, sem edição
+    // pendente, também (com, avisa) — 06/10
+    if (ev.data.metalica === 'modelo-mudou' && ev.source === $('#f2d').contentWindow) { recarregar3d(); return; }
     // o seletor e os controles da ligação estão na barra de cada tela
     if (ev.data.metalica === 'vista' && deUmLado) { mostrarVista(ev.data.vista); return; }
     if (ev.data.metalica === 'pedir-estado' && deUmLado) { avisarEstado(); return; }
