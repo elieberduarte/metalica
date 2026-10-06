@@ -837,6 +837,79 @@ export class Girar extends Transformadora {
   }
 }
 
+/**
+ * Escala — o SCALE do AutoCAD (pedido do usuário, 06/10: "alterar a escala com referência"): selecione, clique no ponto
+ * base e digite o fator (2, 0,5) e Enter; ou R (referência): dois cliques numa medida conhecida do desenho e a medida
+ * que ela deve ter (digitada — 5050, 5,05m, 505cm — ou clicada a partir do primeiro ponto). O que é de papel (altura do
+ * texto, da cota, espaçamento da hachura) fica como está, como no Calibrar.
+ */
+export class Escalar extends Transformadora {
+  static id = 'escalar'; static nome = 'Escala (fator ou referência)'; static atalho = '';
+  static dica = 'Ponto base da escala';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="11" width="10" height="10"/><path d="M9 11V5h10v10h-6"/><path d="M13 11l6-6M15 5h4v4"/></svg>';
+  reiniciar() { super.reiniciar(); this.modo = 'fator'; this.r1 = null; this.r2 = null; }
+  _escalar(k) {
+    const c = this.base;
+    const f = (p) => [c[0] + (p[0] - c[0]) * k, c[1] + (p[1] - c[1]) * k];
+    return this.selecionadas().map(e => transformar(e, f, (a) => a, k));
+  }
+  _aplicar(k) {
+    if (!(k > 0) || !isFinite(k)) { this.dica('Fator inválido: tem de ser maior que zero'); return; }
+    this.editor.executar(new ComandoSubstituir(this._escalar(k), `Escala ×${String(Math.round(k * 10000) / 10000).replace('.', ',')}`));
+    this.editor.aviso(`Escala ×${k.toLocaleString('pt-BR', { maximumFractionDigits: 4 })} aplicada em ${this.ids.length} objeto(s). Ctrl+Z desfaz.`, 'info', 6000);
+    this.reiniciar();
+  }
+  _referencia() {
+    this.modo = 'referencia'; this.r1 = null; this.r2 = null;
+    this.dica('Referência: clique no primeiro ponto de uma medida conhecida');
+  }
+  passo(p) {
+    if (!this.base) { this.base = p; this.editor.snap.ultimo = p; this.dica('Digite o fator e Enter · R: por referência (uma medida conhecida)'); return; }
+    if (this.modo !== 'referencia') return;
+    if (!this.r1) { this.r1 = p; this.editor.snap.ultimo = p; this.dica('Referência: clique no segundo ponto da medida conhecida'); return; }
+    if (!this.r2) {
+      if (dist(this.r1, p) < 1e-6) return;
+      this.r2 = p; this.editor.snap.ultimo = this.r1;
+      this.dica(`A referência mede ${fmt(dist(this.r1, p))} no desenho: digite a medida nova (5050, 5,05m, 505cm) e Enter, ou clique o ponto a partir do primeiro`);
+      return;
+    }
+    const nova = dist(this.r1, p);
+    if (nova > 1e-6) this._aplicar(nova / dist(this.r1, this.r2));
+  }
+  onMover(p) {
+    if (!this.base) return;
+    if (this.modo === 'referencia') {
+      if (this.r1 && !this.r2) {
+        this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.r1, b: p })]);
+        this.editor.medida(`referência ${fmt(dist(this.r1, p))}`);
+      } else if (this.r2) {
+        const k = dist(this.r1, p) / dist(this.r1, this.r2);
+        if (k > 1e-6) { this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.r1, b: p }), ...this._escalar(k)]); this.editor.medida(`${fmt(dist(this.r1, p))} · ×${String(Math.round(k * 1000) / 1000).replace('.', ',')}`); }
+      }
+      return;
+    }
+    this.editor.previa([criar({ tipo: 'linha', camada: 'AUXILIAR', a: this.base, b: p })]);
+  }
+  onValor(t) {
+    if (!this.base) return;
+    const txt = String(t).trim();
+    if (/^r(ef(er[eê]ncia)?)?$/i.test(txt)) { this._referencia(); return; }
+    if (this.modo === 'referencia') {
+      if (!this.r2) return;
+      const nova = paraMilimetros(txt);
+      if (nova > 0) this._aplicar(nova / dist(this.r1, this.r2));
+      else this.dica('Medida não entendida: use 5050, 5,05m ou 505cm');
+      return;
+    }
+    const k = parseFloat(txt.replace(',', '.'));
+    this._aplicar(k);
+  }
+  onTecla(ev) {
+    if (this.base && this.modo === 'fator' && !ev.ctrlKey && !ev.metaKey && !ev.altKey && (ev.key === 'r' || ev.key === 'R')) { this._referencia(); return true; }
+    return false;
+  }
+}
+
 export class Espelhar extends Transformadora {
   static id = 'espelhar'; static nome = 'Espelhar'; static atalho = 'i'; static dica = 'Primeiro ponto do eixo de espelho';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v18" stroke-dasharray="3 2"/><path d="M4 8l5 4-5 4zM20 8l-5 4 5 4z"/></svg>';
@@ -1348,5 +1421,5 @@ export class Corte extends Ferramenta {
 }
 
 export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, Chamada, Corte, Hachura,
-  Mover, Copiar, Girar, Espelhar, Esticar, Offset, Aparar, Estender, Concordar, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
+  Mover, Copiar, Girar, Espelhar, Escalar, Esticar, Offset, Aparar, Estender, Concordar, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];

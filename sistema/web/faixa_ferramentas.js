@@ -23,7 +23,7 @@
       F('circulo', ['circulo'], ['circulo']), F('arco', ['arco'], ['arco']), F('poligono', null, ['poligono'])] },
     { nome: 'Modificar', recolhe: 3, itens: [F('mover', ['mover'], ['mover']), F('copiar', ['copiar'], ['copiar']), F('girar', ['girar'], ['girar']),
       F('espelhar', ['espelhar']), F('offset', ['offset'], ['offset']), F('empurrar', ['esticar'], ['pushpull']), F('apagar', ['apagar'])],
-      mais: [F('escalar', null, ['escalar']), F('aparar', ['aparar']), F('estender', ['estender']), F('concordar', ['concordar']),
+      mais: [F('escalar', ['escalar'], ['escalar']), F('aparar', ['aparar']), F('estender', ['estender']), F('concordar', ['concordar']),
         F('juntar', ['juntar']), F('explodir', ['explodir']), F('copiar_propriedades', ['copiar_propriedades'])] },
     { nome: 'Anotar', recolhe: 2, itens: [F('texto', ['texto']), F('cota', ['cota'], ['cotar']), F('chamada', ['chamada']), F('hachura', ['hachura']),
       F('corte', ['corte'])], mais: [F('mover_cota', ['mover_cota'])] },

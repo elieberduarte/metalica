@@ -195,6 +195,26 @@ try:
     })()"""))
     ok(r_j == [["alinhada", 122], ["v", 122], ["v", 122]], f"cota de 122 girada 30° e 90° e espelhada na diagonal continua 122 ({r_j})")
 
+    # K. Escala (o SCALE do AutoCAD, 06/10): por fator e por referência (dois pontos de uma medida conhecida e a medida
+    # nova digitada); Ctrl+Z desfaz
+    r_k = json.loads(js("""
+      c.ativarFerramenta('linha'); c.ferramenta.onPonto([90000, 0]); c.ferramenta.onPonto([90050.5, 0]); c.ferramenta.cancelar();
+      const ln = [...c.doc.entidades.values()].filter(e => e.tipo === 'linha' && e.a[0] === 90000)[0];
+      c.selecionar([ln.id]);
+      c.ativarFerramenta('escalar'); c.ferramenta.onPonto([90000, 0], {}); c.ferramenta.onValor('2');
+      const L2 = Math.hypot(c.doc.get(ln.id).b[0] - c.doc.get(ln.id).a[0], c.doc.get(ln.id).b[1] - c.doc.get(ln.id).a[1]);
+      c.desfazer();
+      c.selecionar([ln.id]);
+      c.ativarFerramenta('escalar'); c.ferramenta.onPonto([90000, 0], {}); c.ferramenta.onValor('R');
+      c.ferramenta.onPonto([90000, 0], {}); c.ferramenta.onPonto([90050.5, 0], {}); c.ferramenta.onValor('505cm');
+      const e = c.doc.get(ln.id);
+      const Lr = Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]);
+      c.desfazer();
+      const e0 = c.doc.get(ln.id);
+      return JSON.stringify([Math.round(L2 * 10) / 10, Math.round(Lr), Math.round(Math.hypot(e0.b[0] - e0.a[0], e0.b[1] - e0.a[1]) * 10) / 10]);
+    """))
+    ok(r_k == [101.0, 5050, 50.5], f"Escala: fator 2 dobra; por referência 50,5 → 505 cm vira 5050 mm; Ctrl+Z volta ({r_k})")
+
     erros = [x for x in aba.console if x[0] in ("error", "excecao")]
     ok(not erros, f"erros de JavaScript: {len(erros)}")
     for t, x in erros[:6]: print("     [%s] %s" % (t, x[:300]))
