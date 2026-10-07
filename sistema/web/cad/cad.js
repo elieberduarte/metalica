@@ -743,7 +743,8 @@ class CAD {
         const Fa = this.ferramentas.get(this.ferramentaAnterior);
         if (Fa) itens.unshift({ texto: `Repetir: ${Fa.constructor.nome}`, tecla: 'Espaço', acao: F(this.ferramentaAnterior), destaque: true }, '---');
       }
-      itens.push('---', { texto: 'Enquadrar o desenho', tecla: 'Z', acao: () => this.tela.enquadrar() }, { texto: 'Selecionar tudo', acao: A('selecionar-tudo') });
+      itens.push('---', { texto: 'Enquadrar o desenho', tecla: 'Z', acao: () => this.tela.enquadrar() }, { texto: 'Selecionar tudo', acao: A('selecionar-tudo') },
+        { texto: `Ajustar cotas e eixos à escala 1:${String(this.doc.escala).replace('.', ',')}`, dica: 'cotas, balões e nomes dos eixos feitos aqui no tamanho da escala; o importado não muda', acao: () => this.ajustarAEscala() });
       if (typeof this.tesouraPeloDesenho === 'function') itens.push('---', { texto: 'Gerar tesoura pelo desenho…', dica: 'selecione antes as linhas da tesoura', acao: A('estr-trelica') });
     }
     itens.push('---', { texto: 'Desfazer', tecla: 'Ctrl+Z', acao: () => this.desfazer(), off: !this.pilha.podeDesfazer },
@@ -1106,6 +1107,59 @@ class CAD {
     const ditos = { importado: ': o desenho importado ficou como veio; as cotas, os textos e os balões feitos aqui acompanharam a escala',
                     tudo: ': textos, cotas, balões e hachuras redimensionados', nada: ': o que já estava desenhado manteve o tamanho; o novo sai na escala nova' };
     this.dica(`Escala 1:${this.doc.escala}${ditos[modo || 'tudo']} (Ctrl+Z desfaz).`);
+    // o que ficou fora do tamanho da escala nova (cotas com fator, balões de outra escala): oferece acertar de uma vez
+    const fora = Object.keys(this._mudancasAjusteAEscala()).length;
+    if (fora) {
+      const bt = el('button', { type: 'button', class: 'sec', texto: `Ajustar cotas e eixos à 1:${String(this.doc.escala).replace('.', ',')}` });
+      bt.addEventListener('click', () => { const cx = bt.closest('.aviso'); if (cx) cx.remove(); this.ajustarAEscala(); });
+      this.aviso(el('span', {}, `${fora} cota(s), balão(ões) ou nome(s) de eixo feitos aqui não estão no tamanho da escala 1:${String(this.doc.escala).replace('.', ',')}. `, bt), 'info', 15000);
+    }
+  }
+
+  /** As mudanças que põem as anotações feitas no CAD no tamanho padrão da escala atual (07/10, pedido do usuário:
+   *  "ajustei a escala, poderia ter um botão para ajustar automaticamente as cotas, eixos…"): a cota com o texto de
+   *  2,5 mm de papel e sem fator; o balão do eixo com o raio de 5 mm de papel, encostado na mesma ponta do eixo; o nome
+   *  do eixo com 4 mm, no centro do balão. O que veio de arquivo importado (atributos.origem) não muda. `ids`: só esses. */
+  _mudancasAjusteAEscala(ids = null) {
+    const E = this.doc.escala || 100, RAIO = 5, NOME = 4, COTA = 2.5;
+    const todas = [...this.doc.entidades.values()];
+    const alvo = ids ? ids.map(id => this.doc.get(id)).filter(Boolean) : todas;
+    const nativo = (e) => !(e.atributos && e.atributos.origem);
+    const m = {}, perto = (a, b) => Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b));
+    for (const e of alvo) {
+      if (!nativo(e) || e.tipo !== 'cota') continue;
+      if (!perto(e.altura || COTA, COTA) || (e.fator && !perto(e.fator, 1))) m[e.id] = { altura: COTA, fator: null };
+    }
+    const eixos = todas.filter(e => e.tipo === 'linha' && e.atributos && e.atributos.malha && e.atributos.eixo != null);
+    for (const c of alvo) {
+      if (c.tipo !== 'circulo' || !c.atributos || !c.atributos.bolinha || !nativo(c)) continue;
+      const rN = RAIO * E;
+      const ln = eixos.find(l => String(l.atributos.eixo) === String(c.atributos.eixo));
+      let centro = c.centro;
+      if (ln) {
+        const pa = Math.hypot(c.centro[0] - ln.a[0], c.centro[1] - ln.a[1]), pb = Math.hypot(c.centro[0] - ln.b[0], c.centro[1] - ln.b[1]);
+        const p = pa <= pb ? ln.a : ln.b, f = rN / (c.raio || rN);
+        centro = [p[0] + (c.centro[0] - p[0]) * f, p[1] + (c.centro[1] - p[1]) * f];
+      }
+      const mudouC = !perto(c.raio, rN);
+      if (mudouC) m[c.id] = { raio: rN, centro };
+      for (const n of todas) {
+        if (n.tipo !== 'texto' || !n.atributos || !n.atributos.nome_eixo || String(n.atributos.eixo) !== String(c.atributos.eixo)) continue;
+        if (Math.hypot(n.posicao[0] - c.centro[0], n.posicao[1] - c.centro[1]) > c.raio) continue;
+        if (mudouC || !perto(n.altura, NOME)) m[n.id] = { altura: NOME, posicao: centro };
+      }
+    }
+    return m;
+  }
+
+  /** Põe as cotas, os balões e os nomes dos eixos feitos aqui no tamanho da escala atual (com seleção, só nela). */
+  ajustarAEscala() {
+    const sel = this.tela.selecao.size ? [...this.tela.selecao] : null;
+    const m = this._mudancasAjusteAEscala(sel);
+    const n = Object.keys(m).length, k = String(this.doc.escala).replace('.', ',');
+    if (!n) { this.dica(`As cotas e os eixos ${sel ? 'selecionados ' : ''}já estão no tamanho da escala 1:${k}.`); return; }
+    this.executar(new ComandoAlterar(m, `Ajustar à escala 1:${k}`));
+    this.dica(`${n} objeto(s) no tamanho da escala 1:${k}: cotas com texto de 2,5 mm, balões de 5 mm e nomes de 4 mm de papel; o importado não mudou (Ctrl+Z desfaz).`);
   }
 
   /** Depois de importar: se os textos do arquivo indicam outra escala, oferece ajustar a deste desenho a ela. */
