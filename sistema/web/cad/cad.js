@@ -697,6 +697,104 @@ class CAD {
     return [...na];
   }
 
+  /**
+   * O menu do botão direito (pedido do usuário, 07/10: "selecionar o desenho da tesoura e clicar com o botão direito e
+   * gerar a tesoura", junto com as funções mais usadas). Clique curto com o botão direito abre o menu no cursor (arrastar
+   * continua sendo o pan). Sem nada selecionado, o objeto sob o cursor é selecionado antes. O que aparece depende da
+   * seleção: com linhas (o desenho de uma tesoura), "Gerar tesoura pelo desenho selecionado" vem primeiro; depois as
+   * edições da seleção; sem seleção, as ferramentas de desenho e de vista.
+   */
+  menuDeContexto(px, ev) {
+    this._fecharMenuDeContexto();
+    if (!this.tela.selecao.size) {
+      const sob = this.tela.sob(px);
+      if (sob) this.selecionar([sob.id]);
+    }
+    const sel = [...this.tela.selecao].map(id => this.doc.get(id)).filter(Boolean);
+    const linhas = sel.filter(e => e.tipo === 'linha' || e.tipo === 'polilinha').length;
+    const A = (nome) => () => { const f = this._acoes && this._acoes[nome]; if (f) f(); };
+    const F = (id) => () => this.ativarFerramenta(id);
+    const itens = [];
+    if (sel.length) {
+      if (linhas >= 3 && typeof this.tesouraPeloDesenho === 'function') {
+        itens.push({ texto: 'Gerar tesoura pelo desenho selecionado…', dica: `${linhas} linhas: banzos, diagonais e montantes — lançar de eixo a eixo`, acao: A('estr-trelica'), destaque: true }, '---');
+      }
+      itens.push({ texto: 'Mover', tecla: 'M', acao: F('mover') }, { texto: 'Copiar', tecla: 'O', acao: F('copiar') },
+        { texto: 'Girar', tecla: 'Q', acao: F('girar') }, { texto: 'Espelhar', tecla: 'I', acao: F('espelhar') },
+        { texto: 'Escala (fator ou referência)', acao: F('escalar') }, { texto: 'Offset (paralela)', tecla: 'F', acao: F('offset') });
+      if (sel.some(e => e.tipo === 'polilinha' || e.tipo === 'retangulo')) itens.push({ texto: 'Explodir em linhas', tecla: 'B', acao: F('explodir') });
+      if (linhas >= 2) itens.push({ texto: 'Juntar', tecla: 'W', acao: F('juntar') });
+      if (sel.some(e => e.tipo === 'cota')) itens.push({ texto: 'Ajustar cotas ao desenho', acao: F('ajustar_cota') }, { texto: 'Mover linha de cota', tecla: 'J', acao: F('mover_cota') });
+      itens.push('---');
+      const camadas = [...new Set(sel.map(e => e.camada))];
+      itens.push({ texto: camadas.length === 1 ? `Selecionar tudo da camada ${camadas[0]}` : 'Selecionar tudo das mesmas camadas',
+        acao: () => this.selecionar([...this.doc.entidades.values()].filter(e => camadas.includes(e.camada) && this.doc.visivel(e)).map(e => e.id)) });
+      if (sel.some(e => (e.atributos || {}).origem && !ORIGENS_DE_IMPORTACAO.has(e.atributos.origem))) {
+        itens.push({ texto: 'Selecionar a peça inteira', acao: () => this.selecionarMesmaPeca() }, { texto: 'Ver no 3D', acao: () => this.verNo3D() });
+      }
+      itens.push({ texto: 'Copiar propriedades para outros (MA)', acao: F('copiar_propriedades') }, '---',
+        { texto: `Apagar ${sel.length > 1 ? `(${sel.length})` : ''}`.trim(), tecla: 'Del', acao: () => this.apagarSelecao(), perigo: true },
+        { texto: 'Limpar a seleção', tecla: 'Esc', acao: () => this.selecionar([]) });
+    } else {
+      itens.push({ texto: 'Linha', tecla: 'L', acao: F('linha') }, { texto: 'Polilinha', tecla: 'P', acao: F('polilinha') },
+        { texto: 'Cota', tecla: 'D', acao: F('cota') }, { texto: 'Texto', tecla: 'T', acao: F('texto') }, { texto: 'Medir', tecla: 'U', acao: F('medir') });
+      if (this.ferramentaAnterior) {
+        const Fa = this.ferramentas.get(this.ferramentaAnterior);
+        if (Fa) itens.unshift({ texto: `Repetir: ${Fa.constructor.nome}`, tecla: 'Espaço', acao: F(this.ferramentaAnterior), destaque: true }, '---');
+      }
+      itens.push('---', { texto: 'Enquadrar o desenho', tecla: 'Z', acao: () => this.tela.enquadrar() }, { texto: 'Selecionar tudo', acao: A('selecionar-tudo') });
+      if (typeof this.tesouraPeloDesenho === 'function') itens.push('---', { texto: 'Gerar tesoura pelo desenho…', dica: 'selecione antes as linhas da tesoura', acao: A('estr-trelica') });
+    }
+    itens.push('---', { texto: 'Desfazer', tecla: 'Ctrl+Z', acao: () => this.desfazer(), off: !this.pilha.podeDesfazer },
+      { texto: 'Refazer', tecla: 'Ctrl+Y', acao: () => this.refazer && this.refazer(), off: !this.pilha.podeRefazer });
+    this._estiloMenuDeContexto();
+    const caixa = el('div', { class: 'menu-contexto', role: 'menu' });
+    for (const it of itens) {
+      if (it === '---') { if (caixa.lastChild && !caixa.lastChild.classList.contains('sep')) caixa.append(el('div', { class: 'sep' })); continue; }
+      const b = el('button', { type: 'button', role: 'menuitem', class: (it.destaque ? 'destaque ' : '') + (it.perigo ? 'perigo' : ''), title: it.dica || '' },
+        el('span', { texto: it.texto }), it.tecla ? el('kbd', { texto: it.tecla }) : '');
+      if (it.off) b.disabled = true;
+      b.addEventListener('click', (e) => { e.stopPropagation(); this._fecharMenuDeContexto(); it.acao(); });
+      caixa.append(b);
+    }
+    if (caixa.lastChild && caixa.lastChild.classList.contains('sep')) caixa.lastChild.remove();
+    const r = this.el.canvas.getBoundingClientRect();
+    caixa.style.left = `${r.left + px[0]}px`; caixa.style.top = `${r.top + px[1]}px`;
+    document.body.append(caixa);
+    // dentro da janela: o menu que passaria da borda abre para o outro lado
+    const m = caixa.getBoundingClientRect();
+    if (m.right > innerWidth - 4) caixa.style.left = `${Math.max(4, r.left + px[0] - m.width)}px`;
+    if (m.bottom > innerHeight - 4) caixa.style.top = `${Math.max(4, r.top + px[1] - m.height)}px`;
+    this._menuContexto = caixa;
+    const fechar = (e) => { if (!caixa.contains(e.target)) this._fecharMenuDeContexto(); };
+    const tecla = (e) => { if (e.key === 'Escape') this._fecharMenuDeContexto(); };
+    setTimeout(() => { document.addEventListener('pointerdown', fechar, true); document.addEventListener('keydown', tecla, true); }, 0);
+    this._fecharMenuContextoOuvintes = () => { document.removeEventListener('pointerdown', fechar, true); document.removeEventListener('keydown', tecla, true); };
+    this.tela.pedirQuadro();
+  }
+
+  _fecharMenuDeContexto() {
+    if (this._menuContexto) { this._menuContexto.remove(); this._menuContexto = null; }
+    if (this._fecharMenuContextoOuvintes) { this._fecharMenuContextoOuvintes(); this._fecharMenuContextoOuvintes = null; }
+  }
+
+  _estiloMenuDeContexto() {
+    if (document.getElementById('estilo-menu-contexto')) return;
+    const s = document.createElement('style');
+    s.id = 'estilo-menu-contexto';
+    s.textContent = `.menu-contexto{position:fixed;z-index:9999;min-width:230px;max-width:340px;background:var(--painel,#fff);color:var(--texto,#1c2430);
+      border:1px solid var(--borda,#d9e0ea);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:4px;font:13px "Segoe UI",system-ui,sans-serif}
+      .menu-contexto button{display:flex;justify-content:space-between;gap:16px;width:100%;background:none;border:0;color:inherit;text-align:left;
+      padding:6px 10px;border-radius:5px;cursor:pointer;font:inherit}
+      .menu-contexto button:hover:not(:disabled){background:color-mix(in srgb,var(--azul,#1f5fbf) 14%,transparent)}
+      .menu-contexto button:disabled{opacity:.45;cursor:default}
+      .menu-contexto button.destaque{font-weight:600;color:var(--azul,#1f5fbf)}
+      .menu-contexto button.perigo{color:#c0392b}
+      .menu-contexto kbd{font:11px ui-monospace,Consolas,monospace;opacity:.6;align-self:center}
+      .menu-contexto .sep{height:1px;margin:4px 6px;background:var(--borda,#d9e0ea)}`;
+    document.head.append(s);
+  }
+
   selecionarMesmaPeca() {
     const origens = new Set([...this.tela.selecao].map(id => (this.doc.get(id).atributos || {}).origem)
       .filter(o => o && !ORIGENS_DE_IMPORTACAO.has(o)));
@@ -757,12 +855,16 @@ class CAD {
   // ------------------------------------------------------------- mouse
   _ligarMouse() {
     const c = this.el.canvas;
-    let arrastoVista = null, pressao = null;
+    let arrastoVista = null, pressao = null, direito = null;
     const px = (ev) => { const r = c.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
     c.addEventListener('contextmenu', (ev) => ev.preventDefault());
     c.addEventListener('pointerdown', (ev) => {
       try { c.setPointerCapture(ev.pointerId); } catch (e) { /* ponteiro sintético (verificador) */ }
-      if (ev.button === 1 || ev.button === 2) { arrastoVista = px(ev); this.el.palco.dataset.arrastando = '1'; return; }
+      if (ev.button === 1 || ev.button === 2) {
+        arrastoVista = px(ev); this.el.palco.dataset.arrastando = '1';
+        direito = ev.button === 2 ? { px: px(ev), movido: false } : null;
+        return;
+      }
       if (ev.button === 0) {
         // o ponto do desenho onde a janela começou: o zoom e o pan no meio do arrasto não o tiram do lugar
         // (antes ficava o pixel da tela, que depois do zoom apontava para outro ponto — pedido do usuário, 29/09)
@@ -777,6 +879,7 @@ class CAD {
     c.addEventListener('pointermove', (ev) => {
       const p = px(ev);
       if (arrastoVista) {
+        if (direito && !direito.movido && Math.hypot(p[0] - direito.px[0], p[1] - direito.px[1]) > ARRASTO_MIN) direito.movido = true;
         this.tela.arrastar([p[0] - arrastoVista[0], p[1] - arrastoVista[1]]); arrastoVista = p;
         if (pressao && this.tela.retangulo) this.tela.retangulo = [this.tela.paraTela(pressao.mundo), this.tela.retangulo[1]];
         return;
@@ -801,7 +904,13 @@ class CAD {
     });
     c.addEventListener('pointerup', (ev) => {
       const p = px(ev);
-      if (arrastoVista) { arrastoVista = null; delete this.el.palco.dataset.arrastando; return; }
+      if (arrastoVista) {
+        arrastoVista = null; delete this.el.palco.dataset.arrastando;
+        // o botão direito sem arrastar: o menu de contexto ali (pedido do usuário, 07/10)
+        if (direito && !direito.movido && ev.button === 2) this.menuDeContexto(p, ev);
+        direito = null;
+        return;
+      }
       if (!pressao) return;
       const s = this.snap.resolver(p, { orto: ev.shiftKey });
       if (pressao.capturado) {
@@ -942,6 +1051,7 @@ class CAD {
       grade: () => { this.tela.grade = !this.tela.grade; this.tela.pedirQuadro(); },
       orto: () => this.definirOrto(!this.snap.orto),
     };
+    this._acoes = acoes;
     document.addEventListener('click', (ev) => {
       const botaoMenu = ev.target.closest('.menu-botao');
       if (botaoMenu) { const m = botaoMenu.parentElement; const aberto = m.classList.contains('aberto'); this._fecharMenus(); if (!aberto) { m.classList.add('aberto'); if (m.dataset.menu === 'desenho') this._listarDesenhosNoMenu(); } return; }
