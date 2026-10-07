@@ -176,7 +176,7 @@ function desenhar() {
   const nos = D.nos, B = D.barras;
   const modo = estado.modo;
   const pos = [], cor = [], posH = [], corH = [];
-  const cinza = escuro() ? [95, 108, 125] : [175, 183, 195];
+  const cinza = escuro() ? [95, 108, 125] : [48, 55, 66];      // no claro, mais escuro: a estrutura sumia no fundo (07/10)
   const fat = (modo === 'esforcos' || modo === 'deformada' || modo === 'reacoes') ? fatoresDe(estado.comb === 'env' ? primeiraELU() : estado.comb) : null;
   // a cor de cada barra
   let maxN = 1e-9;
