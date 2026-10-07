@@ -47,10 +47,10 @@ def test_aberta_retraida_e_de_novo_aberta():
     assert r["tesouras"] == 5 and r["sanfona"] == 16             # 4 pares de vizinhas × 2 lados × X
     c = _contar(doc)
     assert c["trelica"] == 45 and c["sanfona"] == 16 and c["pilar"] == 4 and c["viga"] == 2
-    assert _ys_das_tesouras(doc) == [1000, 3000, 5000, 7000, 9000]  # a cada 2 m, meio passo da ponta
+    assert _ys_das_tesouras(doc) == [0, 2500, 5000, 7500, 10000]   # as das pontas rentes aos pilares
     CM.aplicar(doc, PAR, "retraida")
     ys = _ys_das_tesouras(doc)
-    assert len(ys) == 5 and min(ys) == 200 and max(ys) == 1800      # empilhadas nos 2 m da ponta de Y menor
+    assert len(ys) == 5 and min(ys) == 0 and max(ys) == 2000        # empilhadas nos 2 m da ponta de Y menor
     assert _contar(doc)["trelica"] == 45 and _contar(doc)["sanfona"] == 16
     CM.aplicar(doc, PAR, "aberta")
     assert _contar(doc) == c                                         # nada sobra da situação anterior

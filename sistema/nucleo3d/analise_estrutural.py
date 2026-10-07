@@ -221,7 +221,10 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         avisos.append("%d barra(s) com o perfil \"%s\" fora do catálogo ficaram fora da análise" % (n, nome))
     movel = None
     if P.get("cobertura_movel"):
-        nos, barras, movel = _cobertura_movel(nos, barras, P, cache, avisos)
+        # os pilares como estão no 3D (o esqueleto leva o topo deles à ponta da viga, uns centímetros além do eixo)
+        pil3d = [np.array(getattr(e, "fim", (0, 0, 0)), float) / 1000.0 for e in ents.values()
+                 if getattr(e, "papel", "") == "pilar" and hasattr(e, "inicio")]
+        nos, barras, movel = _cobertura_movel(nos, barras, P, cache, avisos, pil3d)
     if movel is None:
         hip = _travamento_hipotese(nos, barras, P, cache, avisos)
         barras += hip
@@ -327,7 +330,7 @@ def _sem_copias_da_cobertura(doc):
                      projeto=doc.projeto, metadados=doc.metadados)
 
 
-def _cobertura_movel(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, avisos: List[str]):
+def _cobertura_movel(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, avisos: List[str], pilares_3d=()):
     """as tesouras da cobertura retrátil na situação `P["configuracao"]`: a primeira tesoura lançada é o molde, copiada
     em n posições ao longo das vigas-trilho; as lançadas saem da análise. Devolve (nos, barras, info)"""
     trel = [i for i, br in enumerate(barras) if br.get("elemento") == "trelica"]
@@ -361,6 +364,12 @@ def _cobertura_movel(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, 
         avisos.append("cobertura retrátil: não achei as vigas-trilho ao longo do comprimento — calculado sem ela")
         return nos, barras, None
     tmin, tmax = min(tv), max(tv)
+    # de pilar a pilar: as tesouras das pontas no eixo dos últimos pilares, como estão no 3D (a viga passa uns
+    # centímetros do pilar e o esqueleto leva o topo do pilar à ponta dela)
+    tp = [float(p[:2] @ n) for p in pilares_3d]
+    tp = [t for t in tp if tmin - 0.5 <= t <= tmax + 0.5]
+    if len(tp) >= 2 and max(tp) - min(tp) > 0.5 * (tmax - tmin):
+        tmin, tmax = min(tp), max(tp)
     N = max(2, int(P.get("movel_n") or 38))
     La = min(float(P.get("movel_comprimento_aberta") or (tmax - tmin)), tmax - tmin)
     Lr = min(float(P.get("movel_comprimento_retraida") or 6.0), La)
@@ -373,7 +382,9 @@ def _cobertura_movel(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, 
     para_dentro = 1.0 if t_ponta == tmin else -1.0
     conf = P.get("configuracao") or "aberta"
     Lc = La if conf == "aberta" else Lr
-    posicoes = [t_ponta + para_dentro * (k + 0.5) * Lc / N for k in range(N)]
+    # a primeira e a última rentes aos pilares das pontas (pedido de 06/10): n tesouras, n − 1 vãos no comprimento
+    passo = Lc / (N - 1)
+    posicoes = [t_ponta + para_dentro * k * passo for k in range(N)]
     # fora as tesouras lançadas
     fora = set(trel)
     novas_barras = [br for i, br in enumerate(barras) if i not in fora]
@@ -434,7 +445,8 @@ def _cobertura_movel(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, 
             topo = max(cima, key=lambda no: nos[no][2]) if cima else None
             if topo is not None:
                 lados.append((mapa[topo], mapa[ap]))
-        tesouras.append({"grupo": g, "t": t, "lados": lados})
+        # a faixa de lona de cada tesoura (meio vão de cada lado; as das pontas, só o de dentro)
+        tesouras.append({"grupo": g, "t": t, "lados": lados, "faixa": passo / 2.0 if k in (0, N - 1) else passo})
     # a sanfona: o X entre tesouras vizinhas em cada plano lateral
     sec_s = _secao(P.get("perfil_sanfona") or "TQ 50×50×2,0", False, cache)
     nos_arr = np.array(lista_nos)
@@ -452,7 +464,7 @@ def _cobertura_movel(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, 
                                          "ids": [], "sec": sec_s, "R": _eixos(A, B, 0.0), "soltos": [4, 5, 10, 11]})
                     ns += 1
     altura_aba = float(np.mean([nos_arr[top][2] - nos_arr[bot][2] for t_ in tesouras for top, bot in t_["lados"]])) if tesouras else 0.0
-    info = {"configuracao": conf, "n": N, "comprimento_m": round(Lc, 3), "passo_m": round(Lc / N, 4), "peso_tesoura_kg": round(kg_alvo, 1),
+    info = {"configuracao": conf, "n": N, "comprimento_m": round(Lc, 3), "passo_m": round(passo, 4), "peso_tesoura_kg": round(kg_alvo, 1),
             "peso_perfis_molde_kg": round(kg_molde, 1), "fator_peso": round(fator, 4), "sanfona_barras": ns,
             "altura_aba_m": round(altura_aba, 3), "tesouras": tesouras, "u": u.tolist(), "n_dir": n.tolist(),
             "lancadas_fora": len(grupos), "t0": t0, "molde_grupo": g0,
@@ -460,7 +472,7 @@ def _cobertura_movel(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, 
     avisos.append(("cobertura retrátil, situação %s: %d tesouras (molde %s) a cada %.3f m em %.2f m; peso de cada %.1f kg "
                    "(%.0f kg ÷ %d; os perfis do molde pesam %.1f kg); sanfona com %d braços %s; as %d tesouras lançadas no "
                    "modelo ficaram fora (a cobertura é do fabricante)")
-                  % (conf, N, barras[molde[0]].get("marca") or "", Lc / N, Lc, kg_alvo, float(P.get("movel_peso_total_kg") or 0), N,
+                  % (conf, N, barras[molde[0]].get("marca") or "", passo, Lc, kg_alvo, float(P.get("movel_peso_total_kg") or 0), N,
                      kg_molde, ns, P.get("perfil_sanfona"), len(grupos)))
     return nos_arr, novas_barras, info
 
@@ -662,12 +674,11 @@ def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict
                 # as abas de lona nas bordas (NBR 6123, 7.2.5.1): 1,3·q·Ae a barlavento e 0,6·q·Ae a sotavento, as duas no
                 # sentido do vento; cada tesoura recebe a faixa dela (meio passo de cada lado), metade no topo e metade no apoio
                 dirv = np.array([u[0] * sentido, u[1] * sentido, 0.0])
-                passo = mv["comprimento_m"] / max(1, mv["n"])
                 for t_ in mv["tesouras"]:
                     for top, bot in t_["lados"]:
                         pa = nos[bot]
                         barl = (float(pa[:2] @ u) - smid) * sentido < 0
-                        Ae = (nos[top][2] - nos[bot][2]) * passo
+                        Ae = (nos[top][2] - nos[bot][2]) * t_["faixa"]
                         Fa = (1.3 if barl else 0.6) * q * Ae * dirv
                         for no_ in (top, bot):
                             fn[no_] = fn.get(no_, np.zeros(3)) + Fa / 2.0
