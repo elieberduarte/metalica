@@ -377,7 +377,15 @@ export class MetodosLancamentoCAD {
    *  bolinha e o nome do eixo na ponta dele e o rótulo com o elemento. Um comando só (Ctrl+Z). */
   _escalarPlanta(a, k, ents, porCima = []) {
     const f = (p) => [a[0] + (p[0] - a[0]) * k, a[1] + (p[1] - a[1]) * k];
-    const novas = ents.map(e => transformar(e, f, (x) => x, k));
+    // a planta inteira cresce, os textos e as cotas dela também: o `transformar` só move o texto (a altura é de papel),
+    // e no Docas ×10 os textos do arquivo ficaram 10× menores que o desenho, uns tracinhos (07/10)
+    const comTexto = (e, n) => {
+      if ((e.tipo === 'texto' || e.tipo === 'chamada') && e.altura) n.altura = e.altura * k;
+      else if (e.tipo === 'cota') { n.altura = (e.altura || 2.5) * k; n.deslocamento = (e.deslocamento || 0) * k; }
+      else if (e.tipo === 'hachura' && e.espacamento) n.espacamento = e.espacamento * k;
+      return n;
+    };
+    const novas = ents.map(e => comTexto(e, transformar(e, f, (x) => x, k)));
     if (porCima.length) {
       const soLugar = (e) => { const at = e.atributos || {}; return ['pilar', 'fundacao', 'consolo'].includes(at.elemento) || at.bolinha; };
       const centro = (e) => {
