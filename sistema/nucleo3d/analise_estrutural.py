@@ -1531,6 +1531,7 @@ def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
         from nucleo3d import verificacao_pecas as VP
         ver = VP.verificar(M, sol, combs, so2)
         ver["grupos"] = VP.por_grupo(ver, barras)
+        avisos.extend(ver.get("avisos") or [])
         nao = [pc for pc in ver["pecas"] if (pc.get("uso") or 0) > 1.0 and not pc.get("hipotese")]
         if nao:
             pior = max(nao, key=lambda p: p["uso"])

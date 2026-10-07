@@ -460,7 +460,7 @@ function blocoDaVerificacao(pc, V) {
     <span class="sub">governa: <b>${pc.verif}</b>${pc.comb ? ` em ${pc.comb}` : ''}${pc.x !== undefined ? `, a ${nf(pc.x * 100, 0)}% da barra` : ''}${V.primeira_ordem ? ' · esforços de 1ª ordem' : ' · esforços de 2ª ordem'}</span></div></div>`);
   const tab = [];
   tab.push(`<tr><td>Peça</td><td>L = ${nf(pc.L, 2)} m (${pc.nb} trecho${pc.nb > 1 ? 's' : ''})</td></tr>`);
-  tab.push(`<tr><td>Flambagem</td><td>Lx = <b>${nf(pc.Lx, 2)} m</b> (eixo forte) · Ly = <b>${nf(pc.Ly, 2)} m</b> (eixo fraco; Lb da FLT) · K = 1</td></tr>`);
+  tab.push(`<tr><td>Flambagem</td><td>${pc.K ? 'K·' : ''}Lx = <b>${nf(pc.Lx, 2)} m</b> (eixo forte) · ${pc.K ? 'K·' : ''}Ly = <b>${nf(pc.Ly, 2)} m</b> (eixo fraco; Lb da FLT) · K = ${pc.K ? nf(pc.K, 2) + ' (NBR 16239, 4.8)' : '1'}</td></tr>`);
   tab.push(`<tr><td>Travamentos</td><td>${pc.travamentos[0]} na altura · ${pc.travamentos[1]} na largura, ao longo da peça</td></tr>`);
   if (pc.lam_lim) tab.push(`<tr><td>Esbeltez</td><td>λ = ${nf(pc.lam, 0)} (limite ${nf(pc.lam_lim, 0)}${pc.lam_lim === 200 ? ', comprimida' : ', só tracionada'}) ${pc.lam > pc.lam_lim ? ' — <span class="g-ruim">acima do limite</span>' : ' — ok'}</td></tr>`);
   const rd = [];

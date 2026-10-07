@@ -128,6 +128,61 @@ def _peca(chave, bs, seq, nos, barras, no_barras, apoiados) -> dict:
             "marca": br0.get("marca"), "duplo": bool(br0.get("duplo")), "hipotese": bool(br0.get("hipotese")), "aco_modelo": br0.get("aco") or ""}
 
 
+T_MIN_16239 = 2.5          # mm: a parede mínima dos procedimentos de ligação da ABNT NBR 16239:2013 (6.1.2-h)
+
+
+def _k_trelicas_tubulares(M: dict, pecas: List[dict]) -> List[str]:
+    """o comprimento de flambagem nas treliças só de tubos pela ABNT NBR 16239:2013, 4.8 — banzos 0,9·L; diagonais e
+    montantes soldados no perímetro 0,90·L (β > 0,60) ou 0,75·L (β ≤ 0,60), β = largura da alma / largura do banzo.
+    A 4.8 vale para treliças com os nós projetados pela Seção 6 (4.1, 4.2): se alguma parede tem menos de 2,5 mm
+    (6.1.2-h) os nós ficam fora da norma — K = 1 e o apontamento. Muda pc["Lx"], pc["Ly"] no lugar (guarda K)."""
+    from nucleo3d.calculo_ifc import _perfil_de
+    barras = M["barras"]
+    dims: Dict[str, Optional[tuple]] = {}
+
+    def dim(nome):
+        if nome not in dims:
+            p = _perfil_de(nome or "", "", {}, {})
+            dims[nome] = (p.tipo, float(p.d or 0), float(p.bf or p.d or 0), float(p.tw or p.tf or 0)) if p is not None else None
+        return dims[nome]
+    por_trel: Dict[str, List[dict]] = collections.defaultdict(list)
+    for pc in pecas:
+        br = barras[pc["barras"][0]]
+        if br.get("elemento") == "trelica":
+            por_trel[br.get("grupo") or ""].append(pc)
+    avisos, finas = [], set()
+    no_banzo: Dict[int, float] = {}
+    for g, pcs in por_trel.items():
+        ds = [dim(pc["perfil"]) for pc in pcs]
+        if not ds or any(d is None or d[0] != "tubo" for d in ds):
+            continue
+        tmin = min(d[3] for d in ds)
+        if tmin < T_MIN_16239 - 1e-9:
+            finas.add(min((pc["perfil"] for pc in pcs), key=lambda nm: dim(nm)[3]))
+            continue
+        for pc in pcs:
+            if pc["papel"] in ("banzo_sup", "banzo_inf", "banzo"):
+                for i in pc["barras"]:
+                    for no in (barras[i]["a"], barras[i]["b"]):
+                        no_banzo[no] = max(no_banzo.get(no, 0.0), dim(pc["perfil"])[1])
+        for pc in pcs:
+            d = dim(pc["perfil"])
+            if pc["papel"] in ("banzo_sup", "banzo_inf", "banzo"):
+                K, ref = 0.9, "banzo"
+            else:
+                b0 = max([no_banzo.get(no, 0.0) for no in (pc["nos"][0], pc["nos"][-1])] + [1e-9])
+                beta = max(d[1], d[2]) / b0 if b0 > 1e-6 else 1.0
+                K, ref = (0.90 if beta > 0.60 else 0.75), "β = %.2f" % beta
+            pc.update(K=K, Lx=pc["Lx"] * K, Ly=pc["Ly"] * K)
+            pc.setdefault("obs", []).append("K = %.2f (NBR 16239, 4.8: treliça de tubos, %s)" % (K, ref))
+    if finas:
+        avisos.append(("treliça de tubos com parede abaixo de 2,5 mm (%s): os nós soldados ficam fora dos procedimentos da "
+                       "ABNT NBR 16239:2013 (6.1.2-h) — as ligações entre os tubos não têm verificação pela norma e os "
+                       "comprimentos de flambagem ficaram com K = 1 (a 4.8 vale para nós projetados pela Seção 6). "
+                       "Apontamento para o fabricante e o engenheiro") % ", ".join(sorted(finas)))
+    return avisos
+
+
 # ------------------------------------------------------------------ as resistências (com cache)
 
 def aco_da_peca(pc: dict, P: dict, tipo: str) -> str:
@@ -225,6 +280,7 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
     instaveis = [c for c in elu_todas if (so2.get(c) or {}).get("instavel")]
     elu = [c for c in elu_todas if c not in instaveis]
     pecas = pecas_do_modelo(M)
+    avisos_k = _k_trelicas_tubulares(M, pecas)
     cache = CACHE
     lista_res: List[dict] = []
     idx_res: Dict[tuple, int] = {}
@@ -317,6 +373,8 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
         res = lista_res[pc["res"]]
         obs = list(pc.pop("obs", []))
         item = {k: pc[k] for k in ("chave", "perfil", "aco", "papel", "marca", "res", "travamentos")}
+        if pc.get("K"):
+            item["K"] = pc["K"]
         item.update(b0=int(bs[0]), nb=len(bs), L=round(pc["L"], 3), Lx=round(pc["Lx"], 3), Ly=round(pc["Ly"], 3))
         if pc["hipotese"]:
             item["hipotese"] = True
@@ -382,7 +440,7 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
     return {"pecas": saida_pecas, "resistencias": lista_res,
             "uso_barras": {c: np.round(np.minimum(uso_bc[e], 99.0), 3).tolist() for e, c in enumerate(elu)},
             "uso_env": np.round(np.minimum(uso_env, 99.0), 3).tolist(), "comb_env": comb_env,
-            "peca_da_barra": pk.tolist(), "combinacoes": elu, "instaveis": instaveis,
+            "peca_da_barra": pk.tolist(), "combinacoes": elu, "instaveis": instaveis, "avisos": avisos_k,
             "primeira_ordem": not any((so2.get(c) or {}).get("pontas") is not None for c in elu)}
 
 

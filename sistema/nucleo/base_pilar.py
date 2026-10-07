@@ -43,6 +43,44 @@ TABELA_18 = {
 }
 DIAMETROS = list(TABELA_18)
 
+# Tabela 23 da ABNT NBR 16239:2013 (bases de pilares tubulares): as mesmas dimensões da Tabela 18; mudam o f_ck,mín e a
+# armadura mínima do bloco
+TABELA_23 = {k: dict(v, **o) for (k, v), o in zip(TABELA_18.items(), (
+    dict(fck_min=20, S=100, phi=10.0), dict(fck_min=20, S=100, phi=10.0), dict(fck_min=20, S=125, phi=12.5),
+    dict(fck_min=20, S=125, phi=12.5), dict(fck_min=25, S=150, phi=16.0), dict(fck_min=25, S=150, phi=16.0),
+    dict(fck_min=30, S=150, phi=16.0)))}
+
+
+def geometria_tubo(perfil: dict, tipo: int, nb: int, diametro: str) -> dict:
+    """a base de pilar tubular pela ABNT NBR 16239:2013, 8.2.1 e Figura 14: tipo 1 (tubo retangular, placa retangular),
+    tipo 2 (tubo circular, placa retangular), tipo 3 (tubo circular, placa circular, n_b >= 8): mm"""
+    T = TABELA_23[diametro]
+    d, b = float(perfil["d"]), float(perfil.get("bf") or 0.0)
+    circular = not b
+    a1, a2 = float(T["a1"]), float(T["a2"])
+    db = float(T["db"])
+    if tipo == 3:
+        ld = d + 4 * a1
+        lx = ly = 0.90 * ld
+        m = n = (0.90 * ld - 0.80 * d) / 2
+        meq = (ld - 0.80 * d) / 2
+        ly_eq = min(nb * (db + meq - a1), 0.90 * ld)
+        nb_eq = min(2.0 / 3.0 * nb, 8.0)
+        a = d / 2 + a1
+    else:
+        h, bb = (d, d) if circular else (d, b)
+        lx = h + 4 * a1
+        ly = max((0.5 * nb - 1) * a2 + 2 * a1, bb + 25.0)
+        k = 0.80 if circular else 0.95
+        m, n = (lx - k * h) / 2, (ly - k * bb) / 2
+        meq, nb_eq = m, float(nb)
+        ly_eq = min(nb * (db + m - a1), ly)
+        a = h / 2 + a1
+        ld = None
+    return {"tipo": tipo, "nb": nb, "diametro": diametro, "db": db, "lx": lx, "ly": ly, "ld": ld, "a": a, "a1": a1, "a2": a2,
+            "l0": None, "m": m, "n": n, "n0": 0.0, "m_eq": meq, "ly_eq": ly_eq, "nb_eq": nb_eq, "d": d, "bf": b or d, "tw": 0.0,
+            "tab": T, "norma": "NBR 16239:2013, 8", "circular": circular}
+
 # chapas grossas comerciais (mm) para a placa de base e a placa de cisalhamento
 CHAPAS_MM = [12.5, 16.0, 19.0, 22.4, 25.0, 31.5, 37.5, 44.5, 50.0, 57.0, 63.0, 76.0]
 
@@ -105,6 +143,8 @@ def caso(g: dict, N_kN: float, M_kNm: float, V_kN: float, fck: float, fy_placa: 
     fyd = fy_placa / GAMA_A1
     fubd = FU_CHUMBADOR / GAMA_A2
     r = {"N": N_kN, "M": abs(M_kNm), "V": abs(V_kN), "sigma_c_Rd": sRd, "Ft": 0.0, "Ft_lados": 0, "db_min": 0.0, "erro": None}
+    if g.get("norma", "").startswith("NBR 16239"):
+        return _caso_tubo(g, r, N, M, sRd, tau, fyd, fubd)
     lam_n0 = None
     if N > 0:
         X = 4 * d * bf / (d + bf) ** 2 * N / (A1 * sRd)
@@ -192,6 +232,71 @@ def caso(g: dict, N_kN: float, M_kNm: float, V_kN: float, fck: float, fy_placa: 
     return r
 
 
+def _caso_tubo(g: dict, r: dict, N: float, M: float, sRd: float, tau: float, fyd: float, fubd: float) -> dict:
+    """os casos da ABNT NBR 16239:2013, 8.2.2 (pilar tubular) — as diferenças para a 6.7 da NBR 8800: l_max = max(m, n);
+    V_Rd = mu*sigma*l*l_y (sem gama_a2); a condição de C3/T3 com 2,25*N(e + a) (tipos 1 e 2) ou 3,125 (tipo 3); F_t com
+    n_b,eq; t_p,min2 com m_eq e l_y,eq. No T3 a norma imprime d_b,min sem o 0,75 do C3 — usado o 0,75 (a favor da
+    segurança)"""
+    lx, ly, a, m, n, nb = g["lx"], g["ly"], g["a"], g["m"], g["n"], g["nb"]
+    meq, lyeq, nbeq, a1 = g["m_eq"], g["ly_eq"], g["nb_eq"], g["a1"]
+    A1 = lx * ly
+    kc = 3.125 if g["tipo"] == 3 else 2.25
+
+    def p_de(lc):
+        return math.sqrt(max(lc * (2 * m - lc), 0.0))
+
+    def lmax(lc):
+        return max(m, n) if (lc is None or lc >= m) else max(p_de(lc), n)
+
+    def tp2(Ft):
+        return math.sqrt(2 * nbeq * Ft * (meq - a1) / (lyeq * fyd)) if meq > a1 else 0.0
+
+    def db_de(Ft):
+        return math.sqrt(4 * Ft / (0.75 * math.pi * fubd))
+    if N > 0:
+        e = M / N
+        r["e"] = e
+        if M <= 1e-9:
+            r["caso"] = "C1"
+            s = N / A1
+            r.update(sigma_c_Sd=s, tp_min=max(m, n) * math.sqrt(2 * s / fyd), V_Rd=min(MU * N, tau * A1) / 1e3)
+        elif e <= 0.5 * (lx - N / (sRd * ly)):
+            r["caso"] = "C2"
+            lc = lx - 2 * e
+            s = N / (lc * ly)
+            r.update(lc=lc, sigma_c_Sd=s, tp_min=lmax(lc) * math.sqrt(2 * s / fyd), V_Rd=min(MU * s * lc * ly, tau * A1) / 1e3)
+        else:
+            r["caso"] = "C3"
+            k = lx / 2 + a
+            if k * k < kc * N * (e + a) / (sRd * ly):
+                r["erro"] = "(lx/2 + a)² < %.3g·N(e + a)/(σc,Rd·ℓy): alterar a ligação (NBR 16239, 8.2.2-c)" % kc
+                return r
+            lc = k - math.sqrt(k * k - 2 * N * (e + a) / (sRd * ly))
+            Ft = 2 * (sRd * lc * ly - N) / nbeq
+            r.update(lc=lc, sigma_c_Sd=sRd, Ft=Ft / 1e3, Ft_lados=1, tp1=lmax(lc) * math.sqrt(2 * sRd / fyd), tp2=tp2(Ft))
+            r.update(tp_min=max(r["tp1"], r["tp2"]), db_min=db_de(Ft), V_Rd=min(MU * sRd * lc * ly, tau * A1) / 1e3)
+    else:
+        T_ = -N
+        e = M / T_ if T_ > 1e-9 else math.inf
+        r["e"] = e if math.isfinite(e) else None
+        if M <= 1e-9 or e <= a:
+            r["caso"] = "T1" if M <= 1e-9 else "T2"
+            Ft = T_ / nb + (M / (a * nbeq) if M > 1e-9 else 0.0)
+            r.update(Ft=Ft / 1e3, Ft_lados=2 if M <= 1e-9 else 1, db_min=db_de(Ft), V_Rd=0.0)
+            r["tp_min"] = math.sqrt(2 * nb * Ft * (meq - a1) / (lyeq * fyd)) if meq > a1 else 0.0
+        else:
+            r["caso"] = "T3"
+            k = lx / 2 + a
+            if k * k < kc * T_ * (e + a) / (sRd * ly):
+                r["erro"] = "(lx/2 + a)² < %.3g·N(e + a)/(σc,Rd·ℓy): alterar a ligação (NBR 16239, 8.2.2-f)" % kc
+                return r
+            lc = k - math.sqrt(k * k - 2 * T_ * (e - a) / (sRd * ly))
+            Ft = 2 * (sRd * lc * ly + T_) / nbeq
+            r.update(lc=lc, sigma_c_Sd=sRd, Ft=Ft / 1e3, Ft_lados=1, tp1=lmax(lc) * math.sqrt(2 * sRd / fyd), tp2=tp2(Ft))
+            r.update(tp_min=max(r["tp1"], r["tp2"]), db_min=db_de(Ft), V_Rd=min(MU * sRd * lc * ly, tau * A1) / 1e3)
+    return r
+
+
 def v_rd_arruelas(g: dict, tp: float, Ft_kN: float, lados: int, sRd: float, fy_placa: float) -> float:
     """6.7.2.5: as arruelas especiais soldadas à placa — a soma dos V_Rd,i (kN); F_t,Sd,i nos chumbadores tracionados
     (um lado ou os dois), zero nos outros. F_v,Rd,i = 0,4·A_b·f_ub/γ_a2 (rosca no plano de corte, 6.3.3.2)"""
@@ -208,8 +313,9 @@ def v_rd_arruelas(g: dict, tp: float, Ft_kN: float, lados: int, sRd: float, fy_p
         if rad <= 0:
             return 0.0
         return min((math.sqrt(rad) - alfa * q) / (1 + alfa ** 2), teto)
-    tracionados = nb if lados == 2 else (nb // 2 if lados == 1 else 0)
-    return (tracionados * um(Ft_kN * 1e3) + (nb - tracionados) * um(0.0)) / 1e3
+    total = int(round(g.get("nb_eq") or nb))                         # NBR 16239, 8.2.5: a soma vai até n_b,eq
+    tracionados = total if lados == 2 else (total // 2 if lados == 1 else 0)
+    return (tracionados * um(Ft_kN * 1e3) + (total - tracionados) * um(0.0)) / 1e3
 
 
 def placa_de_cisalhamento(V_kN: float, fck: float, fy_placa: float, en: float, bh: float, tp: float) -> dict:
@@ -229,7 +335,8 @@ def verificar(perfil: dict, combs: Sequence[dict], tipo: int, nb: int, diametro:
     """a base com uma geometria nas combinações (cada uma com N, M, V concomitantes): a espessura (a maior t_p,min,
     arredondada para a chapa comercial), os chumbadores (d_b ≥ d_b,mín) e a força cortante (atrito, senão arruelas
     soldadas, senão placa de cisalhamento)"""
-    g = geometria(perfil, tipo, nb, diametro)
+    tubo = (perfil.get("tipo") == "tubo")
+    g = geometria_tubo(perfil, tipo, nb, diametro) if tubo else geometria(perfil, tipo, nb, diametro)
     T = g["tab"]
     linhas, falhas = [], []
     if fck < T["fck_min"]:
@@ -261,19 +368,21 @@ def verificar(perfil: dict, combs: Sequence[dict], tipo: int, nb: int, diametro:
             if any(r["V"] > r["V_Rd_arruelas"] + 1e-9 for r in precisa):
                 disp = "placa de cisalhamento"
                 Vmax = max(r["V"] for r in precisa)
-                pc = placa_de_cisalhamento(Vmax, fck, fy_placa, T["en"], min(g["bf"], g["ly"] - 2 * T["a1"]), tp)
+                largura = g["bf"] * (0.5 if tubo and g.get("circular") else 1.0)
+                pc = placa_de_cisalhamento(Vmax, fck, fy_placa, T["en"], min(largura, g["ly"] - 2 * T["a1"]), tp)
                 if not pc["ok"]:
                     falhas.append("placa de cisalhamento: t_pv,mín %.1f mm maior que a placa de base (%.1f mm)" % (pc["tpv_min"], tp))
     uso_tp = (tp_min / tp) if tp else None
     gov_tp = max((r for r in linhas if not r["erro"]), key=lambda r: r["tp_min"], default=None)
     gov_ft = max((r for r in linhas if not r["erro"]), key=lambda r: r["Ft"], default=None)
     return {"ok": not falhas and tp is not None, "falhas": falhas, "geometria": {k: v for k, v in g.items() if k != "tab"},
+            "norma": g.get("norma") or "NBR 8800:2024, 6.7",
             "tabela": dict(T), "bloco": bloco(g), "tp": tp, "tp_min": tp_min, "uso_tp": uso_tp, "dispositivo": disp,
             "placa_cisalhamento": pc, "combinacoes": linhas,
             "governa_tp": gov_tp and {"comb": gov_tp.get("comb"), "sit": gov_tp.get("sit"), "caso": gov_tp["caso"]},
             "governa_ft": gov_ft and gov_ft["Ft"] > 0 and {"comb": gov_ft.get("comb"), "sit": gov_ft.get("sit"), "caso": gov_ft["caso"],
                                                          "Ft": gov_ft["Ft"], "db_min": gov_ft["db_min"]},
-            "peso_placa_kg": (g["lx"] * g["ly"] * tp * 7.85e-6) if tp else None}
+            "peso_placa_kg": ((g["ld"] ** 2 * math.pi / 4 if g.get("ld") else g["lx"] * g["ly"]) * tp * 7.85e-6) if tp else None}
 
 
 def dimensionar(perfil: dict, combs: Sequence[dict], fck: float = 25.0, fy_placa: float = 250.0,
@@ -282,9 +391,10 @@ def dimensionar(perfil: dict, combs: Sequence[dict], fck: float = 25.0, fy_placa
     com a de menor peso (placa + chumbadores) entre as que passam; sem nenhuma, devolve a de menor espessura necessária
     (com as falhas) — para dizer o que falta"""
     melhor, menos_ruim = None, None
+    tubo = perfil.get("tipo") == "tubo"
     for tipo in tipos:
         for diam in DIAMETROS:
-            for nb in ((4, 6, 8) if tipo == 1 else (4,)):
+            for nb in ((4, 6, 8) if (tipo == 1 or (tubo and tipo == 2)) else ((8,) if tubo else (4,))):
                 r = verificar(perfil, combs, tipo, nb, diam, fck, fy_placa)
                 g = r["geometria"]
                 peso = (r["peso_placa_kg"] or 0.0) + nb * math.pi * g["db"] ** 2 / 4 * (r["tabela"]["h1"] + 300) * 7.85e-6

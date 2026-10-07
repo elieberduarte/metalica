@@ -92,3 +92,24 @@ def test_reacao_nos_eixos_do_pilar():
     assert len(e["combinacoes"]) == 1
     c = e["combinacoes"][0]
     assert c["N"] == 50.0 and c["V"] == pytest.approx(5.0) and c["M"] == pytest.approx(80.0) and c["M_fraco"] == pytest.approx(10.0)
+
+
+TC141 = {"nome": "TC 141,3×4,5", "tipo": "tubo", "d": 141.3, "bf": 0.0}
+
+
+def test_base_de_pilar_tubular_pela_nbr_16239():
+    """C1 à mão pela 8.2.2-a (ℓ_máx = máx(m, n), V_Rd sem γ_a2) e a placa circular tipo 3 (n_b,eq = 2/3·n_b)"""
+    g = B.geometria_tubo(TC141, 2, 4, '7/8"')
+    assert g["lx"] == pytest.approx(141.3 + 4 * 45) and g["m"] == pytest.approx((g["lx"] - 0.8 * 141.3) / 2)
+    assert g["ly"] == pytest.approx(max(90 + 90, 141.3 + 25)) and g["a"] == pytest.approx(141.3 / 2 + 45)
+    r = B.caso(g, 120.0, 0.0, 5.0, 25.0, 250.0)
+    s = 120e3 / (g["lx"] * g["ly"])
+    assert r["caso"] == "C1" and r["tp_min"] == pytest.approx(max(g["m"], g["n"]) * math.sqrt(2 * s / (250 / 1.1)), rel=1e-9)
+    assert r["V_Rd"] == pytest.approx(min(0.45 * 120.0, min(0.2 * 25 / 1.4, 4.0) * g["lx"] * g["ly"] / 1e3), rel=1e-9)
+    g3 = B.geometria_tubo(TC141, 3, 8, '7/8"')
+    assert g3["nb_eq"] == pytest.approx(16 / 3) and g3["lx"] == pytest.approx(0.9 * (141.3 + 180))
+    # tração com momento pequeno: T2 com F_t = N/n_b + M/(a·n_b,eq)
+    r2 = B.caso(g, -60.0, 3.0, 5.0, 25.0, 250.0)
+    assert r2["caso"] == "T2" and r2["Ft"] == pytest.approx(60 / 4 + 3e3 / (g["a"] * 4), rel=1e-9)
+    v = B.dimensionar(TC141, [{"comb": "a", "N": 97.3, "M": 0.5, "V": 5}, {"comb": "b", "N": -80.6, "M": 3.0, "V": 4}], tipos=(2, 3))
+    assert v["ok"] and v["norma"].startswith("NBR 16239")

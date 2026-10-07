@@ -71,31 +71,38 @@ def dimensionar_bases(sits: Dict[str, dict], par: dict) -> List[dict]:
             item.update(ok=False, metodo=None, avisos=["perfil do pilar fora do catálogo"])
             saida.append(item)
             continue
-        if p["tipo"] not in ("I", "H", "W") or not p["bf"]:
+        tubo = p["tipo"] == "tubo"
+        if not tubo and (p["tipo"] not in ("I", "H", "W") or not p["bf"]):
             item.update(ok=None, metodo=None)
-            item["avisos"].append("pilar %s: a base de pilar tubular não é da NBR 8800:2024, 6.7 — é da ABNT NBR 16239 "
-                                  "(não está na pasta de normas): ficam as reações para o detalhamento" % e["perfil"])
+            item["avisos"].append("pilar %s: perfil sem método de base no sistema (a NBR 8800:2024, 6.7, é para I/H; a NBR "
+                                  "16239, 8, para tubos)" % e["perfil"])
             saida.append(item)
             continue
+        if tubo and max(p["d"], p["bf"]) > 510:
+            item["avisos"].append("pilar %s com mais de 510 mm: fora da NBR 16239, 8.1.1" % e["perfil"])
         if e["apoio"] != "engastada":
             combs = [dict(c, M=0.0) for c in combs]
         chave = (e["perfil"], tuple((c["N"], c["M"], c["V"]) for c in combs), fck, fy)
         if chave not in cache:
-            # tipo 2 (chumbadores internos) só sem momento; com momento, tipo 1
-            tipos = (2, 1) if all(c["M"] < 1e-6 for c in combs) else (1,)
+            # I/H: tipo 2 (chumbadores internos) só sem momento; com momento, tipo 1. Tubo: retangular tipo 1;
+            # circular tipo 2 (placa retangular) ou 3 (placa circular)
+            if tubo:
+                tipos = (2, 3) if not p["bf"] else (1,)
+            else:
+                tipos = (2, 1) if all(c["M"] < 1e-6 for c in combs) else (1,)
             cache[chave] = BP.dimensionar(p, combs, fck, fy, tipos=tipos)
         b = cache[chave]
-        item.update(ok=bool(b.get("ok")), metodo="NBR 8800:2024, 6.7", base=_resumo(b))
+        item.update(ok=bool(b.get("ok")), metodo=b.get("norma") or "NBR 8800:2024, 6.7", base=_resumo(b))
         mf = max((c["M_fraco"] for c in combs), default=0.0)
         mF = max((c["M"] for c in combs), default=0.0)
-        if e["apoio"] == "engastada" and mf > max(1.0, 0.10 * mF):
+        if e["apoio"] == "engastada" and mf > max(1.0, 0.10 * mF) and not (tubo and not p["bf"]):
             cf = max(combs, key=lambda c: c["M_fraco"])
             item["avisos"].append(("momento no eixo fraco do pilar até %.1f kN·m (%s · %s) — a 6.7 só prevê o momento em "
                                    "torno do eixo de maior inércia (6.7.1.3): a base precisa de outro método (enrijecedores, "
                                    "verificação em flexão oblíqua) ou de contraventamento nessa direção") % (mf, cf["sit"], cf["comb"]))
         if not b.get("ok"):
-            item["avisos"].append("a base não fecha pela 6.7 com chumbadores até ø 2\" e chapa até %.0f mm: %s" %
-                                  (BP.CHAPAS_MM[-1], "; ".join((b.get("falhas") or [])[:3])))
+            item["avisos"].append("a base não fecha pela %s com chumbadores até ø 2\" e chapa até %.0f mm: %s" %
+                                  (item["metodo"], BP.CHAPAS_MM[-1], "; ".join((b.get("falhas") or [])[:3])))
         saida.append(item)
     return saida
 
@@ -111,7 +118,8 @@ def _resumo(b: dict) -> dict:
         if k not in vistos:
             vistos.add(k)
             crit.append({kk: (round(v, 3) if isinstance(v, float) else v) for kk, v in r.items()})
-    return {"ok": b.get("ok"), "falhas": b.get("falhas"), "tipo": g.get("tipo"), "nb": g.get("nb"), "diametro": g.get("diametro"),
+    return {"ok": b.get("ok"), "falhas": b.get("falhas"), "norma": b.get("norma"), "ld": g.get("ld"),
+            "tipo": g.get("tipo"), "nb": g.get("nb"), "diametro": g.get("diametro"),
             "db": g.get("db"), "lx": g.get("lx"), "ly": g.get("ly"), "a": g.get("a"), "a1": g.get("a1"), "a2": g.get("a2"),
             "tp": b.get("tp"), "tp_min": round(b.get("tp_min") or 0, 2), "dispositivo": b.get("dispositivo"),
             "placa_cisalhamento": b.get("placa_cisalhamento"), "bloco": b.get("bloco"), "tabela": b.get("tabela"),
