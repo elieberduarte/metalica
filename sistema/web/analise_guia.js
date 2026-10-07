@@ -7,7 +7,7 @@ const nf = (v, d = 1) => (v === null || v === undefined || !isFinite(v)) ? '—'
 // ------------------------------------------------------------------ as combinações, pelo nome
 export function explicarCombinacao(nome, cb) {
   if (!nome || nome === 'env') {
-    return 'Envoltória: para cada barra, a pior das combinações últimas (ELU). Serve para achar onde a estrutura trabalha mais; para entender o porquê, escolha a combinação que aparece na coluna "comb." do ranking.';
+    return 'Envoltória: para cada barra, a pior das combinações últimas (ELU, com a 2ª ordem). Serve para achar onde a estrutura trabalha mais; para entender o porquê, escolha a combinação que aparece na coluna "comb." do ranking.';
   }
   const sentido = nome.includes('→') ? 'vento num sentido (→)' : nome.includes('←') ? 'vento no sentido oposto (←)' : nome.includes('↑') || nome.includes('↓') ? 'vento ao longo do comprimento' : '';
   if (nome.startsWith('ELS')) {
@@ -64,6 +64,9 @@ function conferirDeslocamentos(D) {
   return { hMax, hComb, hLim, vMax, vComb, vLim: vao ? vao / 250 : null, vao };
 }
 
+const NOME = { banzo_sup: 'banzo superior', banzo_inf: 'banzo inferior', contraventamento: 'contraventamento' };
+const nome = (p) => NOME[p] || p;
+
 function chip(ok) { return ok ? '<span class="g-ok">ok</span>' : '<span class="g-ruim">passa do limite</span>'; }
 
 // ------------------------------------------------------------------ o texto de cada modo
@@ -104,7 +107,7 @@ const MODOS = {
   },
   esforcos: {
     titulo: 'Esforços — os diagramas',
-    oque: 'Os esforços internos de cada barra na combinação escolhida: N (normal, + tração / − compressão), Vy e Vz (cortantes), T (torção), Mz (momento no eixo forte) e My (no eixo fraco). O desenho fica perpendicular à barra; os rótulos marcam os maiores valores.',
+    oque: 'Os esforços internos de cada barra na combinação escolhida: N (normal, + tração / − compressão), Vy e Vz (cortantes), T (torção), Mz (momento no eixo forte) e My (no eixo fraco). O desenho fica perpendicular à barra; os rótulos marcam os maiores valores. Nas combinações últimas (ELU) os esforços já são os de 2ª ordem (P-Δ com as imperfeições da NBR 8800, 4.9.7); nas de serviço (ELS), de 1ª ordem.',
     preocupe: [
       'Banzos das tesouras: o N. Compressão é o que manda (flambagem); na sucção o sinal inverte.',
       'Pilares: N junto com M — a flexo-compressão. O pé do pilar engastado concentra o momento.',
@@ -118,6 +121,7 @@ const MODOS = {
     dicas: [
       'Compare sempre a mesma combinação com o engenheiro (ele pode ter nomeado diferente: veja os coeficientes de cada uma).',
       'Clique numa barra para ver os diagramas dela ao longo do comprimento e os valores de ponta.',
+      'Para comparar com um programa que faz só 1ª ordem, desligue a 2ª ordem nas premissas e calcule de novo: a diferença é o efeito P-Δ (veja o quadro "2ª ordem").',
     ],
   },
   tensoes: {
@@ -132,7 +136,27 @@ const MODOS = {
       'Diferenças de 5–10% de tensão entre programas: o refinamento do modelo (onde ficam os nós, como entram as cargas) muda um pouco os picos.',
     ],
     dicas: [
-      'A verificação completa pela NBR 8800 (compressão com χ e Q, flexão FLA/FLM/FLT, flexo-compressão) é a próxima etapa do sistema — este mapa é o caminho até ela.',
+      'A verificação pela norma (compressão com χ e Q, flexão FLA/FLM/FLT, flexo-compressão, esbeltez) está no modo Verificação: é ela que diz se a peça passa. Este mapa é a triagem.',
+    ],
+  },
+  verificacao: {
+    titulo: 'Verificação — cada peça pela norma',
+    oque: 'O uso de cada peça = a solicitação dividida pela resistência de cálculo da norma (100% = o limite). A peça é o membro inteiro (o banzo todo, não cada trecho entre nós). Os esforços são os das combinações últimas com a 2ª ordem; a resistência sai da NBR 8800 (laminados e tubos) ou da NBR 14762 (U e Ue formados a frio): compressão com χ (a flambagem global) e Q (a flambagem local das chapas), tração na seção bruta, flexão nos dois eixos com FLA, FLM e FLT (a flambagem lateral com torção), cortante e a interação N + M (5.5.1.2).',
+    preocupe: [
+      '<b>Os comprimentos de flambagem</b> (no detalhe da peça): Lx no eixo forte e Ly no eixo fraco, medidos entre os pontos travados — um nó trava a peça numa direção quando chega nele uma barra de outra peça com componente nessa direção. Peça comprida sem nada chegando de lado (o banzo inferior de uma tesoura, a viga-trilho entre pilares) flamba no comprimento todo: a solução é travar, não engrossar.',
+      '<b>FLT</b> em vigas e pilares de perfil I: com Lb grande, o momento resistente cai muito abaixo de W·fy. É o que derruba o pilar W de cobertura alta sem travamento lateral.',
+      '<b>A inversão na sucção</b>: a peça tracionada na gravidade pode comprimir no vento — a verificação pega a pior combinação de cada peça, veja qual em "governa".',
+      '<b>Instável (N ≥ Ne)</b>: a compressão passou da carga de flambagem elástica da peça — o B1 do P-δ vai ao infinito. Não é questão de perfil um pouco maior: falta travamento.',
+      '<b>Esbeltez</b>: KL/r ≤ 200 na peça que comprime, ≤ 300 na só tracionada (barra redonda não entra).',
+    ],
+    ignore: [
+      'Diferenças de poucos por cento com outro programa: o comprimento de flambagem adotado (K, pontos travados) e o Cb da FLT mudam o resultado — compare essas premissas, não só o número final.',
+      'Barras de hipótese (tracejadas): verificadas, mas o perfil delas é provisório.',
+    ],
+    dicas: [
+      'Clique numa peça: aparece a conta inteira — Lx, Ly, λ, as resistências (com χ, Q e o estado-limite da flexão), os esforços no ponto que governa, o B1 e a interação com os números.',
+      'A tabela por grupo é a da troca de perfil: a estimativa usa as mesmas resistências desta verificação; depois de trocar, o recalcular confirma (os esforços se redistribuem).',
+      'Premissas adotadas a favor da segurança: K = 1 entre pontos travados (permitido com a 2ª ordem global), Cb = 1 na FLT, Lt = o maior comprimento de flambagem, tração sem furos (a seção líquida fica para as ligações), perfil duplo como 2 × um perfil. O aço de cada peça vem do modelo (o dos tubos pode ser trocado nas premissas).',
     ],
   },
   deformada: {
@@ -140,11 +164,11 @@ const MODOS = {
     oque: 'A estrutura deformada, exagerada para ver a forma (a escala não é real). O número é o maior deslocamento da combinação.',
     preocupe: [
       'Os limites de serviço (NBR 8800, Anexo C, Tabela C.1) se conferem nas combinações ELS (sem coeficientes): topo dos pilares em galpões H/300; vigas e treliças de cobertura L/250.',
-      'Balanço grande nas combinações de vento = estrutura flexível: os efeitos de 2ª ordem (P-Δ) aumentam os momentos dos pilares. Acima de ~10% de amplificação a norma exige considerá-los (deslocabilidade média/grande, NBR 8800 4.9.4).',
+      'Balanço grande nas combinações de vento = estrutura flexível: os efeitos de 2ª ordem (P-Δ) aumentam os momentos dos pilares. O programa já faz a 2ª ordem nas ELU — o quadro "2ª ordem" mostra Δ2/Δ1 (NBR 8800, 4.9.4: até 1,1 pequena, até 1,4 média, acima grande). Grande deslocabilidade pede mais rigidez lateral.',
       'A forma: se a cobertura "anda" toda para um lado, falta contraventamento naquela direção.',
     ],
     ignore: [
-      'O deslocamento nas combinações ELU: tem os coeficientes (×1,25…1,5), não se compara com limite nenhum — serve só para ver a forma.',
+      'O deslocamento nas combinações ELU: tem os coeficientes (×1,25…1,5), a rigidez reduzida (0,8) e a 2ª ordem — não se compara com limite nenhum; serve para ver a forma e o P-Δ.',
     ],
     dicas: [
       'Troque a combinação para uma ELS de vento e olhe o topo dos pilares. É a conferência mais simples e mais reveladora de um galpão.',
@@ -187,6 +211,24 @@ function noProjeto(D, RAIZ, estado) {
     if (up.Fz_min[0] < 0) itens.push(`Maior arrancamento: <b>${nf(-up.Fz_min[0], 1)} kN</b> (${up.Fz_min[1]}) — os chumbadores à tração e o peso da fundação.`);
     if (mm.M_max[0] > 0.5) itens.push(`Maior momento na base: <b>${nf(mm.M_max[0], 1)} kN·m</b> (${mm.M_max[1]}).`);
   }
+  const so = D.segunda_ordem && D.segunda_ordem.resumo;
+  if (so && so.razao_max) {
+    itens.push(`2ª ordem: Δ2/Δ1 até <b>${nf(so.razao_max, 2)}</b> (${so.comb_razao_max}) — deslocabilidade <b>${so.classe}</b>.`
+      + (so.classe === 'grande' ? ' <span class="g-ruim">Acima de 1,4 a NBR 8800 pede análise rigorosa e a estrutura precisa de mais rigidez lateral.</span>' : '')
+      + ((so.instaveis || []).length ? ` <span class="g-ruim">Instável em ${so.instaveis.join(', ')}.</span>` : ''));
+  }
+  const V = D.verificacao;
+  if (V) {
+    const pc = V.pecas.filter(p => !p.hipotese && p.uso !== null && p.uso !== undefined);
+    const nao = pc.filter(p => p.uso > 1);
+    const pior = pc.reduce((m, p) => (!m || p.uso > m.uso ? p : m), null);
+    itens.push(`Verificação: <b>${nao.length}</b> de ${pc.length} peças acima de 100%${pior ? ` — a pior: ${nome(pior.papel)} ${pior.perfil}, ${pior.uso >= 9.99 ? 'instável' : nf(pior.uso * 100, 0) + '%'} (${pior.verif})` : ''}.`);
+    const semTrava = pc.filter(p => (p.obs || []).some(o => o.startsWith('nenhuma barra trava')));
+    if (semTrava.length) {
+      const fs = [...new Set(semTrava.map(p => nome(p.papel)))].join(', ');
+      itens.push(`Peças comprimidas sem travamento lateral no comprimento todo: <b>${fs}</b> (${semTrava.length} peças). Trocar o perfil não resolve bem — trave (mão-francesa, linha de corrente, contraventamento) ou confirme com o engenheiro a restrição que ele considerou.`);
+    }
+  }
   if ((D.avisos || []).some(a => a.includes('hipótese de travamento'))) itens.push('Há barras de <b>hipótese</b> (tracejadas): o travamento real da cobertura ainda não está no modelo.');
   itens.push('Ao comparar com o engenheiro, siga a ordem: (1) premissas e cargas totais por caso; (2) reações; (3) esforços nos pilares e vigas; (4) peças. Diferença na etapa 1 explica todas as outras.');
   return itens;
@@ -198,8 +240,8 @@ export function guia(D, RAIZ, estado) {
   const m = MODOS[estado.modo] || MODOS.modelo;
   const lista = (xs) => '<ul>' + xs.map(x => `<li>${x}</li>`).join('') + '</ul>';
   let comb = '';
-  if (['esforcos', 'tensoes', 'deformada', 'reacoes'].includes(estado.modo)) {
-    const c = estado.comb === 'env' && estado.modo !== 'tensoes' ? null : estado.comb;
+  if (['esforcos', 'tensoes', 'verificacao', 'deformada', 'reacoes'].includes(estado.modo)) {
+    const c = estado.comb === 'env' && !['tensoes', 'verificacao'].includes(estado.modo) ? null : estado.comb;
     comb = `<div class="g-comb"><b>${c && c !== 'env' ? c : 'Envoltória'}</b> — ${explicarCombinacao(c || 'env', c && D.combinacoes[c])}</div>`;
   }
   if (estado.modo === 'cargas' && estado.caso && D.casos[estado.caso]) {

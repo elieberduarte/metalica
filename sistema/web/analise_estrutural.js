@@ -94,10 +94,13 @@ function fatoresDe(comb) {
   if (comb && D.combinacoes[comb]) for (const [c, v] of Object.entries(D.combinacoes[comb].fatores)) { const k = casos.indexOf(c); if (k >= 0) f[k] = v; }
   return f;
 }
-function esforcosEm(i, fat, x) {
+// nas combinações últimas com a 2ª ordem (D.pontas2[comb]) as forças da ponta vêm prontas — o P-Δ não se superpõe;
+// a carga distribuída continua a soma dos casos
+function esforcosEm(i, fat, x, comb) {
+  const P2 = comb && D.pontas2 && D.pontas2[comb] ? D.pontas2[comb][i] : null;
   const P = D.pontas[i], W = D.w_local[i];
-  const f = [0, 0, 0, 0, 0, 0], w = [0, 0, 0];
-  fat.forEach((a, c) => { if (!a) return; for (let k = 0; k < 6; k++) f[k] += a * P[c][k]; for (let k = 0; k < 3; k++) w[k] += a * W[c][k]; });
+  const f = P2 ? P2.slice(0, 6) : [0, 0, 0, 0, 0, 0], w = [0, 0, 0];
+  fat.forEach((a, c) => { if (!a) return; if (!P2) for (let k = 0; k < 6; k++) f[k] += a * P[c][k]; for (let k = 0; k < 3; k++) w[k] += a * W[c][k]; });
   const [Fx, Fy, Fz, Mx, My, Mz] = f, [wx, wy, wz] = w;
   return [-(Fx + wx * x), -(Fy + wy * x), -(Fz + wz * x), -Mx, -(My + x * Fz + wz * x * x / 2), -(Mz - x * Fy - wy * x * x / 2)];
 }
@@ -154,10 +157,19 @@ function valorDaBarra(i) {
   if (estado.modo === 'tensoes') {
     const fy = D.parametros.fy_mpa || 345;
     if (estado.comb === 'env') return D.envoltoria[i].sigma / fy;
-    return (D.por_comb[estado.comb] ? D.por_comb[estado.comb].barras[i][4] : 0) / fy;
+    const pc = D.por_comb[estado.comb];
+    return (pc ? (pc.sigma ? pc.sigma[i] : pc.barras[i][4]) : 0) / fy;
+  }
+  if (estado.modo === 'verificacao') {
+    const V = D.verificacao;
+    if (!V) return 0;
+    if (estado.comb === 'env' || !V.uso_barras[estado.comb]) return V.uso_env[i];
+    return V.uso_barras[estado.comb][i];
   }
   return null;
 }
+// a combinação dos desenhos: a escolhida, ou na envoltória a primeira ELU
+function combDoDesenho() { return estado.comb === 'env' ? primeiraELU() : estado.comb; }
 
 // o quadro "Como ler" (web/analise_guia.js): acompanha o modo, a combinação e o caso
 function painelGuia() {
@@ -177,16 +189,17 @@ function desenhar() {
   const modo = estado.modo;
   const pos = [], cor = [], posH = [], corH = [];
   const cinza = escuro() ? [95, 108, 125] : [48, 55, 66];      // no claro, mais escuro: a estrutura sumia no fundo (07/10)
-  const fat = (modo === 'esforcos' || modo === 'deformada' || modo === 'reacoes') ? fatoresDe(estado.comb === 'env' ? primeiraELU() : estado.comb) : null;
+  const cd = combDoDesenho();
+  const fat = (modo === 'esforcos' || modo === 'deformada' || modo === 'reacoes') ? fatoresDe(cd) : null;
   // a cor de cada barra
   let maxN = 1e-9;
-  if (modo === 'esforcos' && estado.esforco === 'N') B.forEach((b, i) => { const e0 = esforcosEm(i, fat, 0)[0]; maxN = Math.max(maxN, Math.abs(e0)); });
+  if (modo === 'esforcos' && estado.esforco === 'N') B.forEach((b, i) => { const e0 = esforcosEm(i, fat, 0, cd)[0]; maxN = Math.max(maxN, Math.abs(e0)); });
   B.forEach((b, i) => {
     const a = nos[b.a], c = nos[b.b];
     let rgb;
     const v = valorDaBarra(i);
     if (v !== null) rgb = rampa(v);
-    else if (modo === 'esforcos' && estado.esforco === 'N') rgb = rampaSinal(esforcosEm(i, fat, 0)[0] / maxN);
+    else if (modo === 'esforcos' && estado.esforco === 'N') rgb = rampaSinal(esforcosEm(i, fat, 0, cd)[0] / maxN);
     else if (modo === 'modelo') rgb = hexParaRgb(PAPEL_COR[b.papel] || '#888');
     else rgb = cinza;
     if (estado.escolhida === i) rgb = [255, 0, 200];
@@ -194,12 +207,12 @@ function desenhar() {
     alvo[0].push(...a, ...c);
     alvo[1].push(...rgb.map(x => x / 255), ...rgb.map(x => x / 255));
   });
-  grupo.add(linhas(pos, cor, modo === 'modelo' || modo === 'tensoes' ? 3 : 2));
+  grupo.add(linhas(pos, cor, modo === 'modelo' || modo === 'tensoes' || modo === 'verificacao' ? 3 : 2));
   if (posH.length) grupo.add(linhas(posH, corH.map(x => x * 0.85), 1.5, true));
   apoios();
   secoesDosPilares();
   if (modo === 'cargas') setasCargas();
-  if (modo === 'esforcos') diagramas(fat);
+  if (modo === 'esforcos') diagramas(fat, cd);
   if (modo === 'deformada') deformada();
   if (modo === 'reacoes') setasReacoes();
   legenda(maxN);
@@ -282,13 +295,13 @@ function setasCargas() {
   }
 }
 
-function diagramas(fat) {
+function diagramas(fat, comb) {
   const idx = ESFORCOS[estado.esforco][1], eixo = ESFORCOS[estado.esforco][2];
   // a escala: o maior valor vira 6% do tamanho do modelo
   let max = 1e-9;
   const vals = D.barras.map((b, i) => {
     if (b.hipotese) return null;
-    const v = []; for (let k = 0; k < ESTACOES; k++) v.push(esforcosEm(i, fat, b.L * k / (ESTACOES - 1))[idx]);
+    const v = []; for (let k = 0; k < ESTACOES; k++) v.push(esforcosEm(i, fat, b.L * k / (ESTACOES - 1), comb)[idx]);
     for (const x of v) max = Math.max(max, Math.abs(x));
     return v;
   });
@@ -361,6 +374,12 @@ function legenda(maxN) {
     L.innerHTML = `<b>Tensão / fy</b> (fy = ${nf(fy, 0)} MPa)<div class="rampa" style="background:linear-gradient(90deg,${grad})"></div><div class="ext"><span>0</span><span>50%</span><span>100%</span><span>130%</span></div>
       <div class="sub">σ = |N|/A + |Mz|/Wz + |My|/Wy, ${estado.comb === 'env' ? 'envoltória ELU' : estado.comb}</div>`;
     L.hidden = false;
+  } else if (m === 'verificacao') {
+    const grad = Array.from({ length: 14 }, (_, k) => hex(rampa(k / 10))).join(',');
+    const V = D.verificacao;
+    L.innerHTML = `<b>Uso da resistência de cálculo</b><div class="rampa" style="background:linear-gradient(90deg,${grad})"></div><div class="ext"><span>0</span><span>50%</span><span>100%</span><span>130%</span></div>
+      <div class="sub">${V ? `NBR 8800 / NBR 14762, ${estado.comb === 'env' ? 'envoltória ELU' : estado.comb}${V.primeira_ordem ? ' — esforços de 1ª ordem' : ' — esforços de 2ª ordem'}` : 'calcule de novo para verificar as peças'}</div>`;
+    L.hidden = false;
   } else if (m === 'esforcos' && estado.esforco === 'N') {
     L.innerHTML = `<b>Normal</b><div class="rampa" style="background:linear-gradient(90deg,rgb(35,95,210),rgb(150,158,170),rgb(210,45,45))"></div><div class="ext"><span>compressão</span><span>tração</span></div><div class="sub">até ${nf(maxN, 1)} kN</div>`;
     L.hidden = false;
@@ -397,10 +416,12 @@ function painelPeca() {
   if (i === null || i === undefined) { det.hidden = true; return; }
   det.hidden = false;
   const b = D.barras[i], e = D.envoltoria[i];
-  const comb = estado.comb === 'env' ? (e.comb || primeiraELU()) : estado.comb;
+  const V = D.verificacao, pc = V ? V.pecas[V.peca_da_barra[i]] : null;
+  const combEnv = estado.modo === 'verificacao' && pc && pc.comb ? pc.comb : e.comb;
+  const comb = estado.comb === 'env' ? (combEnv || primeiraELU()) : estado.comb;
   const fat = fatoresDe(comb);
   const xs = Array.from({ length: 21 }, (_, k) => b.L * k / 20);
-  const val = xs.map(x => esforcosEm(i, fat, x));
+  const val = xs.map(x => esforcosEm(i, fat, x, comb));
   const fy = D.parametros.fy_mpa || 345;
   const svg = (k, nome, un) => {
     const v = val.map(r => r[k]); const m = Math.max(1e-9, ...v.map(Math.abs));
@@ -414,9 +435,59 @@ function painelPeca() {
   P.innerHTML = `<div class="peca"><b>${ROTULO_PAPEL[b.papel_trelica || b.papel] || b.papel}</b> ${b.marca ? `· ${b.marca}` : ''} · ${b.perfil}${b.hipotese ? ' · <i>barra de hipótese</i>' : ''}<br>
     L = ${nf(b.L, 3)} m · rótulas: ${b.rotulas.length ? b.rotulas.join(', ') : 'nenhuma'}<br>
     Envoltória ELU: σ = <b>${nf(e.sigma, 0)} MPa</b> (${nf(e.taxa * 100, 0)}% de fy ${nf(fy, 0)}) em ${e.comb || '—'} · N ${nf(e.N[0], 1)} / ${nf(e.N[1], 1)} kN · M ${nf(e.M, 2)} kN·m</div>
-    <div class="sub" style="margin-top:4px">Diagramas na combinação <b>${comb}</b>:</div>
+    <div class="sub" style="margin-top:4px">Diagramas na combinação <b>${comb}</b>${D.pontas2 && D.pontas2[comb] ? ' (2ª ordem)' : ''}:</div>
     ${svg(0, 'N', 'kN')}${svg(5, 'Mz', 'kN·m')}${svg(4, 'My', 'kN·m')}${svg(1, 'Vy', 'kN')}`;
+  if (pc) P.prepend(blocoDaVerificacao(pc, V));
   if (b.papel === 'pilar' && b.pilar) P.prepend(blocoDoPilar(b));
+}
+
+// a verificação da peça pela norma (nucleo3d/verificacao_pecas.py): o uso, o que governa, os comprimentos de flambagem,
+// as resistências de cálculo, os esforços no ponto que governa com o B1 e a conta da interação
+const VERIF_CURTO = { 'flambagem (N ≥ Ne)': 'flambagem', 'tração (barra redonda)': 'tração', 'não verificada': '—' };
+const pctUso = (u) => (u === null || u === undefined) ? '—' : u >= 9.99 ? 'instável' : `${nf(u * 100, 0)}%`;
+const corUso = (u) => (u === null || u === undefined) ? 'inherit' : hex(rampa(Math.min(u, 1.3)));
+function blocoDaVerificacao(pc, V) {
+  const R = V.resistencias[pc.res] || {};
+  const box = el('div', { class: 'verif' });
+  const titulo = `${ROTULO_PAPEL[pc.papel] || pc.papel}${pc.marca ? ' · ' + pc.marca : ''} · ${pc.perfil} · ${pc.aco}${R.fy ? ` (fy ${nf(R.fy, 0)} MPa)` : ''}`;
+  if (pc.uso === null || pc.uso === undefined) {
+    box.innerHTML = `<b>Verificação da peça</b> — ${titulo}<div class="erro">${(pc.obs || []).join(' · ') || 'não verificada'}</div>`;
+    return box;
+  }
+  const u = pc.uso, ok = u <= 1;
+  const linhas = [];
+  linhas.push(`<div class="vcab"><div class="uso-grande${u >= 9.99 ? ' menor' : ''}" style="color:${corUso(u)}">${pctUso(u)}</div><div><b>Verificação da peça</b> (${R.norma || 'NBR 8800'})<br>${titulo}<br>
+    <span class="sub">governa: <b>${pc.verif}</b>${pc.comb ? ` em ${pc.comb}` : ''}${pc.x !== undefined ? `, a ${nf(pc.x * 100, 0)}% da barra` : ''}${V.primeira_ordem ? ' · esforços de 1ª ordem' : ' · esforços de 2ª ordem'}</span></div></div>`);
+  const tab = [];
+  tab.push(`<tr><td>Peça</td><td>L = ${nf(pc.L, 2)} m (${pc.nb} trecho${pc.nb > 1 ? 's' : ''})</td></tr>`);
+  tab.push(`<tr><td>Flambagem</td><td>Lx = <b>${nf(pc.Lx, 2)} m</b> (eixo forte) · Ly = <b>${nf(pc.Ly, 2)} m</b> (eixo fraco; Lb da FLT) · K = 1</td></tr>`);
+  tab.push(`<tr><td>Travamentos</td><td>${pc.travamentos[0]} na altura · ${pc.travamentos[1]} na largura, ao longo da peça</td></tr>`);
+  if (pc.lam_lim) tab.push(`<tr><td>Esbeltez</td><td>λ = ${nf(pc.lam, 0)} (limite ${nf(pc.lam_lim, 0)}${pc.lam_lim === 200 ? ', comprimida' : ', só tracionada'}) ${pc.lam > pc.lam_lim ? ' — <span class="g-ruim">acima do limite</span>' : ' — ok'}</td></tr>`);
+  const rd = [];
+  if (R.Nc) rd.push(`N<sub>c,Rd</sub> = <b>${nf(R.Nc, 1)} kN</b>${R.chi !== undefined && R.chi !== null ? ` (χ ${nf(R.chi, 3)}, Q ${nf(R.Q, 3)}, λ₀ ${nf(R.lambda0, 2)})` : ''}`);
+  if (R.Nt) rd.push(`N<sub>t,Rd</sub> = <b>${nf(R.Nt, 1)} kN</b>`);
+  if (R.Mz) rd.push(`M<sub>z,Rd</sub> = <b>${nf(R.Mz, 2)} kN·m</b>${R.gov_Mz ? ` (${R.gov_Mz.replace('Flexão — ', '')})` : ''}`);
+  if (R.My) rd.push(`M<sub>y,Rd</sub> = <b>${nf(R.My, 2)} kN·m</b>${R.gov_My ? ` (${R.gov_My.replace('Flexão — ', '')})` : ''}`);
+  if (R.Vy) rd.push(`V<sub>y,Rd</sub> = ${nf(R.Vy, 1)} · V<sub>z,Rd</sub> = ${nf(R.Vz, 1)} kN`);
+  tab.push(`<tr><td>Resistências</td><td>${rd.join('<br>')}</td></tr>`);
+  if (pc.esf) {
+    const s = pc.esf;
+    tab.push(`<tr><td>Solicitantes</td><td>N = ${nf(s.N, 1)} kN · M<sub>z</sub> = ${nf(s.Mz, 2)} · M<sub>y</sub> = ${nf(s.My, 2)} kN·m · V = ${nf(Math.hypot(s.Vy, s.Vz), 1)} kN</td></tr>`);
+    const b1 = (v) => v >= 99 ? '∞ (N ≥ Ne)' : nf(v, 3);
+    if (pc.B1) tab.push(`<tr><td>P-δ (B1)</td><td>B1 = ${b1(pc.B1[0])} (z) · ${b1(pc.B1[1])} (y); C<sub>m</sub> ${nf(pc.Cm[0], 2)} · ${nf(pc.Cm[1], 2)}; N<sub>e</sub> ${nf(pc.Ne[0], 0)} · ${nf(pc.Ne[1], 0)} kN</td></tr>`);
+    const p = pc.partes || {};
+    let conta = '';
+    if (R.redonda) conta = `N/N<sub>t,Rd</sub> = ${nf(p.N, 3)}`;
+    else if (R.linear) conta = `N/N<sub>Rd</sub> + B1·M<sub>z</sub>/M<sub>z,Rd</sub> + B1·M<sub>y</sub>/M<sub>y,Rd</sub> = ${nf(p.N, 3)} + ${nf(p.Mz, 3)} + ${nf(p.My, 3)} (NBR 14762, 9.8.2.4)`;
+    else if (p.N >= 0.2) conta = `N/N<sub>Rd</sub> + 8/9·(B1·M<sub>z</sub>/M<sub>z,Rd</sub> + B1·M<sub>y</sub>/M<sub>y,Rd</sub>) = ${nf(p.N, 3)} + 8/9·(${nf(p.Mz, 3)} + ${nf(p.My, 3)}) (5.5.1.2, eq. a)`;
+    else conta = `N/(2·N<sub>Rd</sub>) + B1·M<sub>z</sub>/M<sub>z,Rd</sub> + B1·M<sub>y</sub>/M<sub>y,Rd</sub> = ${nf(p.N, 3)}/2 + ${nf(p.Mz, 3)} + ${nf(p.My, 3)} (5.5.1.2, eq. b)`;
+    tab.push(`<tr><td>Interação</td><td>${conta}${p.V ? `<br>cortante: ${nf(p.V, 3)}` : ''}</td></tr>`);
+  }
+  linhas.push(`<table class="vt">${tab.join('')}</table>`);
+  if ((pc.obs || []).length) linhas.push(`<div class="${ok ? 'sub' : 'aviso'}" style="margin-top:4px">${pc.obs.join('<br>')}</div>`);
+  if ((R.obs || []).length) linhas.push(`<div class="sub" style="margin-top:3px">${R.obs.join(' · ')}</div>`);
+  box.innerHTML = linhas.join('');
+  return box;
 }
 
 // o pilar escolhido: para que lado está a inércia forte e o giro de teste (só na análise)
@@ -459,6 +530,10 @@ const PREMISSAS = [
   ['movel_peso_total_kg', '  peso total do fabricante (kg)', 'num'],
   ['perfil_sanfona', '  braço da sanfona (perfil)', 'txt'],
   ['fy_mpa', 'fy para o mapa (MPa)', 'num'],
+  ['segunda_ordem', '2ª ordem nas ELU', 'sel', [['true', 'sim (P-Δ, NBR 8800 4.9.7)'], ['false', 'não (só 1ª ordem)']]],
+  ['aco_tubos', 'Aço dos tubos (verificação)', 'sel', [['', 'o de cada peça no modelo'], ['ASTM A572 Gr.50', 'ASTM A572 Gr.50 (fy 345)'],
+    ['ASTM A500 Gr.B', 'ASTM A500 Gr.B (fy 315)'], ['ASTM A500 Gr.C', 'ASTM A500 Gr.C (fy 345)'], ['VMB 250', 'VMB 250 (fy 250)'],
+    ['VMB 300', 'VMB 300 (fy 300)'], ['VMB 350', 'VMB 350 (fy 350)'], ['ASTM A36', 'ASTM A36 (fy 250)']]],
 ];
 function montarPremissas(par) {
   const box = $('#premissas'); box.replaceChildren();
@@ -488,10 +563,14 @@ function montarControles() {
   const C = $('#controles'); C.replaceChildren();
   for (const b of document.querySelectorAll('#modos button')) b.classList.toggle('on', b.dataset.modo === estado.modo);
   if (!D || D.vazio) return;
-  const combs = Object.keys(D.combinacoes);
-  const selComb = (incluiEnv) => {
+  const todas = Object.keys(D.combinacoes);
+  const selComb = (incluiEnv, soELU = false) => {
+    const combs = soELU ? todas.filter(c => D.combinacoes[c].tipo === 'ELU') : todas;
+    if (soELU && estado.comb !== 'env' && !combs.includes(estado.comb)) estado.comb = 'env';
+    const s2 = (c) => (D.segunda_ordem && D.segunda_ordem.combinacoes[c]) || null;
+    const marca = (c) => { const r = s2(c); return r ? (r.instavel ? ' ⚠ instável na 2ª ordem' : r.razao ? ` · Δ2/Δ1 ${nf(r.razao, 2)}` : '') : ''; };
     const s = el('select', {}, ...(incluiEnv ? [el('option', { value: 'env', texto: 'Envoltória ELU', selected: estado.comb === 'env' ? 'selected' : undefined })] : []),
-      ...combs.map(c => el('option', { value: c, texto: `${c} — ${D.combinacoes[c].descricao}`, selected: estado.comb === c ? 'selected' : undefined })));
+      ...combs.map(c => el('option', { value: c, texto: `${c} — ${D.combinacoes[c].descricao}${marca(c)}`, selected: estado.comb === c ? 'selected' : undefined })));
     s.onchange = () => { estado.comb = s.value; guardar(); desenhar(); painelReacoes(); painelPeca(); };
     return s;
   };
@@ -518,6 +597,7 @@ function montarControles() {
     linha('Esforço', s);
   }
   if (m === 'tensoes') linha('Combinação', selComb(true));
+  if (m === 'verificacao') linha('Combinação', selComb(true, true));
   if (m === 'deformada' || m === 'reacoes') linha('Combinação', selComb(false));
   if (['cargas', 'esforcos', 'deformada', 'reacoes'].includes(m)) {
     const r = el('input', { type: 'range', min: '0.2', max: '4', step: '0.1', value: String(estado.escala) });
@@ -538,7 +618,7 @@ function editarTroca(chave, linha, g) {
   const alts = info.alternativas || [];
   const leve = info.mais_leve_que_passa;
   const inp = el('input', { type: 'text', value: leve || g.atual, placeholder: 'ou digite outro perfil do catálogo', style: 'width:100%;box-sizing:border-box;margin-top:4px' });
-  const pct = (u) => (u === null || u === undefined) ? '—' : `${nf(u * 100, 0)}%`;
+  const pct = (u) => (u === null || u === undefined) ? '—' : u >= 9.99 ? 'instável' : `${nf(u * 100, 0)}%`;
   const cor = (u, s) => (u !== null && u !== undefined) ? (u <= 1 ? '#1e8e4e' : '#c0392b') : (s <= (D.parametros.fy_mpa || 345) ? '#9a6b06' : '#c0392b');
   const tab = el('table', { class: 'alts' }, el('tr', {}, el('th', { texto: 'perfil' }), el('th', { texto: 'kg/m' }), el('th', { texto: 'σ est.' }), el('th', { texto: 'uso est.' }), el('th', { texto: '' })));
   const linhas = [];
@@ -561,9 +641,12 @@ function editarTroca(chave, linha, g) {
   const voltar = () => { const t2 = trocasAtuais(); delete t2[chave]; calcular({ trocas_perfil: t2 }); };
   const ea = info.estimativa_atual;
   const explica = `Novo perfil para ${ROTULO_PAPEL[g.funcao] || g.funcao} · ${g.original} (${info.barras || ''} barras)${ea ? ` — hoje: σ ${nf(ea[0], 0)} MPa, uso estimado ${pct(ea[1])}` : ''}.`;
-  const nota = 'Estimativa com os esforços atuais de cada barra do grupo (nas duas situações): σ = |N|/A + |M|/W e o uso pela interação da NBR 8800, com a compressão pela norma (χ e Q, flambagem com o comprimento da barra, K = 1). Ao trocar, os esforços se redistribuem — o recalcular confirma; FLT e o comprimento de flambagem real entram na verificação completa. Só tubos com parede ≥ 1,5 mm na lista (digitar aceita qualquer um).';
+  const nota = 'Estimativa com os esforços atuais do grupo (nas duas situações) e as MESMAS resistências da verificação: os comprimentos de flambagem de cada peça pelos travamentos, compressão com χ e Q, flexão com FLA, FLM e FLT, formados a frio pela NBR 14762. Ao trocar, os esforços se redistribuem e o B1 muda — o recalcular confirma. Só tubos com parede ≥ 1,5 mm na lista (digitar aceita qualquer um).';
+  const gv = D.verificacao ? gruposDaVerificacao().find(x => x.chave === chave) : null;
+  const travar = gv && gv.pc ? (gv.pc.obs || []).filter(o => o.startsWith('nenhuma barra trava')) : [];
   const linhaT = el('tr', { class: 'troca' }, el('td', { colspan: '4' },
     el('div', { class: 'sub', texto: explica }),
+    travar.length ? el('div', { class: 'aviso', texto: travar[0] + ' — trocar o perfil não resolve bem: o mais leve que passa precisa vencer esse comprimento sozinho.' }) : '',
     alts.length ? el('div', { class: 'lista-alts' }, tab) : el('div', { class: 'sub', texto: 'Sem alternativas calculadas: clique em Calcular uma vez e abra de novo (ou digite o perfil).' }),
     inp,
     el('div', { style: 'display:flex;gap:6px;margin-top:4px;flex-wrap:wrap' },
@@ -576,8 +659,25 @@ function editarTroca(chave, linha, g) {
   const sel = linhaT.querySelector('tr.sel'); if (sel) sel.scrollIntoView({ block: 'nearest' });
 }
 
+// o grupo (função + perfil original) na pior das situações (a cobertura retrátil calcula aberta e retraída)
+function gruposDaVerificacao() {
+  const sits = [['aberta', RAIZ], ...Object.entries((RAIZ && RAIZ.outras_situacoes) || {})];
+  const m = new Map();
+  for (const [sit, R] of sits) {
+    const V = R && R.verificacao; if (!V) continue;
+    for (const g of V.grupos || []) {
+      const at = m.get(g.chave);
+      const pc = g.peca !== null && g.peca !== undefined ? V.pecas[g.peca] : null;
+      if (!at || g.uso > at.uso) m.set(g.chave, { ...g, sit, pc, nao: Math.max(g.nao_passam, at ? at.nao : 0), total: g.pecas });
+      else at.nao = Math.max(at.nao, g.nao_passam);
+    }
+  }
+  return [...m.values()].sort((a, b) => b.uso - a.uso);
+}
+
 function painelRanking() {
   const R = $('#ranking');
+  if (D.verificacao) return painelRankingVerificacao(R);
   const fy = D.parametros.fy_mpa || 345;
   const ord = D.envoltoria.map((e, i) => [e.sigma, i]).filter(([s, i]) => !D.barras[i].hipotese).sort((a, b) => b[0] - a[0]).slice(0, 15);
   const t = el('table', {}, el('tr', {}, el('th', { texto: 'barra' }), el('th', { texto: 'perfil' }), el('th', { texto: 'σ MPa' }), el('th', { texto: '% fy' }), el('th', { texto: 'comb.' })));
@@ -605,16 +705,57 @@ function painelRanking() {
       el('td', {}, el('button', { type: 'button', class: 'sec mini', title: 'Trocar o perfil deste grupo e recalcular (só na análise: o 3D não muda)', texto: 'trocar', onclick: () => editarTroca(k, tr, g) })));
     tg.append(tr);
   }
+  R.replaceChildren(t, el('div', { class: 'sub', style: 'margin-top:6px', texto: 'Por grupo (função · perfil) — "trocar" muda o perfil do grupo e recalcula:' }), tg, caixaDasTrocas(),
+    el('div', { class: 'sub', style: 'margin-top:4px', texto: 'Tensão elástica combinada (mapa). Calcule de novo para ter a verificação de cada peça pela norma.' }));
+}
+
+function caixaDasTrocas() {
   const trocas = Object.entries(trocasAtuais());
-  const caixa = trocas.length ? el('div', { class: 'aviso', style: 'margin-top:6px' },
+  return trocas.length ? el('div', { class: 'aviso', style: 'margin-top:6px' },
     el('b', { texto: 'Perfis trocados só na análise' }), el('span', { texto: ' (o modelo 3D não muda):' }),
     ...trocas.map(([k, novo]) => {
       const [f, p0] = k.split('|');
       return el('div', {}, `${ROTULO_PAPEL[f] || f}: ${p0} → ${novo} `,
         el('button', { type: 'button', class: 'sec mini', texto: 'desfazer', onclick: () => { const t2 = trocasAtuais(); delete t2[k]; calcular({ trocas_perfil: t2 }); } }));
     })) : '';
-  R.replaceChildren(t, el('div', { class: 'sub', style: 'margin-top:6px', texto: 'Por grupo (função · perfil) — "trocar" muda o perfil do grupo e recalcula:' }), tg, caixa,
-    el('div', { class: 'sub', style: 'margin-top:4px', texto: 'Tensão elástica combinada (mapa). A verificação da NBR 8800 — flambagem, flexo-compressão — vem na etapa do dimensionamento.' }));
+}
+
+// o ranking pela verificação da norma: as peças de maior uso e o pior de cada grupo (a troca de perfil é por grupo)
+function painelRankingVerificacao(R) {
+  const V = D.verificacao;
+  const escolher = (pc) => { const i = pc.barra !== undefined ? pc.barra : pc.b0; estado.escolhida = i; painelPeca(); desenhar(); focar(i); };
+  const porGrupo = new Map();
+  const ord = V.pecas.filter(p => !p.hipotese && p.uso !== null && p.uso !== undefined).sort((a, b) => b.uso - a.uso).filter(p => {
+    const k = chaveDoGrupo(D.barras[p.b0]); const n = (porGrupo.get(k) || 0) + 1; porGrupo.set(k, n); return n <= 3;
+  }).slice(0, 15);
+  const t = el('table', {}, el('tr', {}, el('th', { texto: 'peça' }), el('th', { texto: 'perfil' }), el('th', { texto: 'uso' }), el('th', { texto: 'governa' })));
+  for (const pc of ord) {
+    t.append(el('tr', { class: 'clic', title: `${pc.verif} em ${pc.comb || '—'}${(pc.obs || []).length ? '\n' + pc.obs.join('\n') : ''}`, onclick: () => escolher(pc) },
+      el('td', { texto: `${ROTULO_PAPEL[pc.papel] || pc.papel}${pc.marca ? ' ' + pc.marca : ''}` }), el('td', { texto: pc.perfil }),
+      el('td', { html: `<span style="color:${corUso(pc.uso)};font-weight:700">${pctUso(pc.uso)}</span>` }),
+      el('td', { texto: VERIF_CURTO[pc.verif] || pc.verif })));
+  }
+  const nv = V.pecas.filter(p => p.uso === null || p.uso === undefined).length;
+  const sits = RAIZ.outras_situacoes ? ' (a pior das duas situações)' : '';
+  const tg = el('table', { style: 'margin-top:8px' }, el('tr', {}, el('th', { texto: 'grupo' }), el('th', { texto: 'pior uso' }), el('th', { texto: 'acima de 100%' }), el('th', { texto: '' })));
+  for (const g of gruposDaVerificacao()) {
+    const [funcao, original] = g.chave.split('|');
+    const atual = (g.pc && g.pc.perfil) || original;
+    const perfil = atual !== original ? `<s style="opacity:.6">${original}</s> → <b>${atual}</b>` : original;
+    const gg = { atual, original, funcao };
+    const tr = el('tr', { title: g.pc ? `pior peça: ${g.pc.verif} em ${g.pc.comb || '—'}${g.sit !== 'aberta' ? ' (retraída)' : ''}\n${(g.pc.obs || []).join('\n')}` : '' },
+      el('td', { html: `${ROTULO_PAPEL[funcao] || funcao} · ${perfil}` }),
+      el('td', { html: `<span style="color:${corUso(g.uso)};font-weight:700">${pctUso(g.uso)}</span>${RAIZ.outras_situacoes && g.sit !== 'aberta' ? ' <span class="sub">ret.</span>' : ''}` }),
+      el('td', { html: g.nao ? `<span class="g-ruim">${g.nao}</span> de ${g.total}` : `0 de ${g.total}` }),
+      el('td', {}, el('button', { type: 'button', class: 'sec mini', title: 'Trocar o perfil deste grupo e recalcular (só na análise: o 3D não muda)', texto: 'trocar', onclick: () => editarTroca(g.chave, tr, gg) })));
+    tg.append(tr);
+  }
+  R.replaceChildren(
+    el('div', { class: 'sub', texto: `As peças de maior uso da resistência de cálculo (100% = o limite da norma)${V.primeira_ordem ? ' — esforços de 1ª ordem' : ', com os esforços de 2ª ordem'}; até 3 por grupo — passe o mouse para ver a combinação:` }), t,
+    el('div', { class: 'sub', style: 'margin-top:6px', texto: `Por grupo (função · perfil)${sits} — "trocar" muda o perfil do grupo e recalcula:` }), tg, caixaDasTrocas(),
+    V.instaveis && V.instaveis.length ? el('div', { class: 'erro', texto: `Fora da verificação (instáveis na 2ª ordem): ${V.instaveis.join(', ')}` }) : '',
+    nv ? el('div', { class: 'aviso', texto: `${nv} peça(s) não verificada(s): perfil fora do que a norma cobre aqui (veja o detalhe da peça).` }) : '',
+    el('div', { class: 'sub', style: 'margin-top:4px', texto: 'Uso = a pior verificação de cada peça: a interação N + M (NBR 8800 5.5.1.2; linear nos formados a frio, NBR 14762), o cortante e a esbeltez. Compressão com χ e Q; flexão com FLA, FLM e FLT; comprimentos de flambagem pelos travamentos que chegam na peça (K = 1, com a 2ª ordem global); B1 para o P-δ. Clique numa peça para ver a conta.' }));
 }
 
 function focar(i) {
@@ -674,6 +815,28 @@ function painelVento() {
   V.innerHTML = linhas.map(l => `<div style="margin:4px 0">${l}</div>`).join('');
 }
 
+// a 2ª ordem de cada combinação última (nucleo3d/segunda_ordem.py): Δ1 e Δ2 no topo dos pilares, a razão e a classe
+function painelSegunda() {
+  const S = $('#segunda'), so = D.segunda_ordem;
+  if (!so) {
+    S.replaceChildren(el('div', { class: 'sub', texto: D.parametros && D.parametros.segunda_ordem === false ? 'Desligada nas premissas: os esforços são de 1ª ordem.' : 'Sem 2ª ordem neste resultado (calcule de novo).' }));
+    return;
+  }
+  const r = so.resumo || {};
+  const cls = { pequena: 'pequena (≤ 1,1)', 'média': 'média (1,1 a 1,4)', grande: 'GRANDE (> 1,4)' };
+  const t = el('table', {}, el('tr', {}, el('th', { texto: 'combinação' }), el('th', { texto: 'Δ1 mm' }), el('th', { texto: 'Δ2 mm' }), el('th', { texto: 'Δ2/Δ1' }), el('th', { texto: 'it.' })));
+  for (const [c, x] of Object.entries(so.combinacoes)) {
+    t.append(el('tr', { title: x.instavel || `forças nocionais: ${nf(x.nocional.H_kN, 2)} kN na direção (${x.nocional.dir.map(v => nf(v, 2)).join('; ')})` },
+      el('td', { texto: c }), el('td', { texto: nf(x.delta1_mm, 1) }), el('td', { texto: x.delta2_mm !== undefined ? nf(x.delta2_mm, 1) : '—' }),
+      el('td', { html: x.instavel ? '<b class="g-ruim">instável</b>' : `<span class="${x.razao > 1.4 ? 'g-ruim' : ''}">${nf(x.razao, 3)}</span>` }),
+      el('td', { texto: String(x.iteracoes) })));
+  }
+  S.replaceChildren(
+    el('div', { html: `Deslocabilidade <b>${cls[r.classe] || '—'}</b> — Δ2/Δ1 até <b>${nf(r.razao_max, 3)}</b>${r.comb_razao_max ? ` (${r.comb_razao_max})` : ''}.${(r.instaveis || []).length ? ` <b class="g-ruim">Instável em ${r.instaveis.length} combinação(ões).</b>` : ''}` }),
+    el('div', { class: 'sub', style: 'margin:4px 0', texto: `Cada combinação última com P-Δ (rigidez geométrica, iterando a normal), EA e EI × ${nf(r.fator_rigidez || 0.8, 1)} e forças nocionais de ${nf((r.nocional || 0.003) * 100, 1)}% da carga gravitacional de cálculo de cada nó (no sentido do vento; nas só gravitacionais, na direção mais flexível). Δ = o maior deslocamento horizontal no topo dos pilares; Δ1 = 1ª ordem com as mesmas cargas e rigidez. Os esforços, as reações e a verificação das ELU já são os de 2ª ordem.` }),
+    t);
+}
+
 function painelEquilibrio() {
   const E = $('#equilibrio');
   const t = el('table', {}, el('tr', {}, el('th', { texto: 'caso' }), el('th', { texto: 'ΣFz cargas' }), el('th', { texto: 'ΣFz reações' }), el('th', { texto: 'ΣFx/ΣFy' })));
@@ -690,7 +853,10 @@ function painelAvisos() {
 
 function cabecalho() {
   $('#cab').textContent = D ? `${D.projeto || PROJETO}${D.local ? ' · ' + D.local : ''}` : PROJETO;
-  $('#estado').textContent = D && !D.vazio ? `Calculado em ${D.calculado_em} (${nf(D.segundos, 1)} s) · ${D.barras.length} barras, ${D.nos.length} nós, ${D.apoios.length} apoios · ${Object.keys(D.casos).length} casos, ${Object.keys(D.combinacoes).length} combinações` : (D && D.vazio) || '';
+  const r2 = D && D.segunda_ordem && D.segunda_ordem.resumo;
+  const nv = D && D.verificacao ? D.verificacao.pecas.filter(p => !p.hipotese && p.uso > 1).length : null;
+  $('#estado').textContent = D && !D.vazio ? `Calculado em ${(RAIZ || D).calculado_em} (${nf((RAIZ || D).segundos, 1)} s) · ${D.barras.length} barras, ${D.nos.length} nós, ${D.apoios.length} apoios · ${Object.keys(D.casos).length} casos, ${Object.keys(D.combinacoes).length} combinações`
+    + (r2 ? ` · 2ª ordem: Δ2/Δ1 até ${nf(r2.razao_max, 2)} (${r2.classe})` : '') + (nv !== null ? ` · ${nv} peça(s) acima de 100%` : '') : (D && D.vazio) || '';
   $('#btn-modelo3d').href = `/editor?projeto=${encodeURIComponent(PROJETO)}`;
 }
 
@@ -706,7 +872,8 @@ function trocarSituacao() {
   D = (estado.situacao !== 'aberta' && RAIZ.outras_situacoes && RAIZ.outras_situacoes[estado.situacao]) || RAIZ;
   if (!D.combinacoes[estado.comb] && estado.comb !== 'env') estado.comb = 'env';
   estado.escolhida = null;
-  montarControles(); painelRanking(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
+  cabecalho();
+  montarControles(); painelRanking(); painelSegunda(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
   desenhar();
 }
 
@@ -725,7 +892,7 @@ function aplicar(dados) {
   // o centro e o tamanho do modelo
   const bb = new THREE.Box3(); for (const p of D.nos) bb.expandByPoint(new THREE.Vector3(...p));
   bb.getCenter(centro); raio = Math.max(1000, bb.getSize(new THREE.Vector3()).length() / 2);
-  montarControles(); painelRanking(); painelReacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
+  montarControles(); painelRanking(); painelSegunda(); painelReacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
   if (!aplicar._vista) { vista('iso'); aplicar._vista = true; }
   desenhar();
 }
