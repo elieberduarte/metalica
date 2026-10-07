@@ -66,6 +66,7 @@ PARAMETROS_PADRAO = {
     "classe": None,                     # None: pela maior dimensão (A ≤ 20 m, B ≤ 50 m, C)
     "s3": 1.0,
     "modelo_vento": "isolada",          # isolada (7.2, Tabela 25)
+    "vento_nas_barras": True,           # o arrasto nos pilares, vigas e X entre pilares (8.1, Tabelas 26 a 28)
     # cobertura retrátil (06/10, Kaefer: produto do fabricante, lona, as tesouras correm sobre as vigas-trilho): a tesoura
     # lançada é o molde; a análise monta as duas situações — aberta (n tesouras ao longo de `comprimento_aberta`) e
     # retraída (as n empilhadas em `comprimento_retraida`, na ponta `lado_retraida`) — com o peso total do fabricante, a
@@ -831,6 +832,95 @@ def _tesouras_e_cobertura(M: dict) -> dict:
     return {"trechos": out, "planos": planos, "larguras": larg}
 
 
+# NBR 6123:2023, 8.1 — o vento nas barras expostas abaixo da cobertura (pilares, vigas, contraventamento entre pilares).
+# A Tabela 25 só cobre a cobertura; sem isto o pilar recebia o vento só pelo que a cobertura passava a ele (07/10, conversa
+# com o engenheiro: o pilar circular da Kaefer saía quase sem momento)
+K_ELL = (2, 5, 10, 20, 40, 50, 100)                          # Tabela 28: ℓ/c (ou ℓ/d); acima de 100, K = 1,0 (∞)
+K_TABELA = {"subcritico": (0.58, 0.62, 0.68, 0.74, 0.82, 0.87, 0.98),
+            "acima": (0.80, 0.80, 0.82, 0.90, 0.98, 0.99, 1.0),
+            "planas": (0.62, 0.66, 0.69, 0.81, 0.87, 0.90, 0.95)}
+CF_FACES_PLANAS = 2.0      # Tabela 26: perfis I/H, U, cantoneiras e tubos retangulares ficam entre 1,6 e 2,1 (pela dimensão c);
+                           # 2,0 sobre a largura projetada cobre o perfil I nos dois sentidos (1,6 e 1,9) e o tubo quadrado
+
+
+def _fator_k(ell_c: float, linha: str) -> float:
+    """o fator de redução K da Tabela 28 (interpolado; abaixo de 2, o de 2; acima de 100, 1,0)"""
+    if ell_c > K_ELL[-1]:
+        return 1.0
+    return float(np.interp(ell_c, K_ELL, K_TABELA[linha]))
+
+
+def _ca_cilindro(Vk: float, d: float, ell_d: float) -> Tuple[float, float, str]:
+    """(Ca, K, regime) da barra circular (Tabelas 27 e 28). Acima do crítico a norma (8.1.3) lembra que a força com
+    vento menor, ainda no regime subcrítico, pode ser maior: fica o maior dos dois, já referido ao q de Vk"""
+    Re = 70000.0 * Vk * d
+    if Re < 4.2e5:
+        return 1.2, _fator_k(ell_d, "subcritico"), "subcrítico"
+    Ca = 0.6 if Re < 8.4e5 else 0.7 if Re < 2.3e6 else 0.8
+    K = _fator_k(ell_d, "acima")
+    Vc = 4.2e5 / (70000.0 * d)                                # o vento no limite do subcrítico
+    sub = 1.2 * _fator_k(ell_d, "subcritico") * (Vc / Vk) ** 2
+    if sub > Ca * K:
+        return sub, 1.0, "acima do crítico (governa o subcrítico, V = %.1f m/s)" % Vc
+    return Ca, K, "acima do crítico"
+
+
+def _barra_exposta(br: dict) -> bool:
+    if br.get("hipotese") or br.get("elemento") in ("trelica", "sanfona"):
+        return False
+    if br["papel"] in ("pilar", "viga"):
+        return True
+    return br["papel"] == "contraventamento" and abs(float(br["R"][0][2])) > 0.3    # o X vertical entre pilares
+
+
+def _vento_nas_barras(M: dict, Vk: float, q: float, sentido) -> Tuple[Dict[int, np.ndarray], List[dict]]:
+    """a força de arrasto nas barras expostas (NBR 6123:2023, 8.1.1 e 8.1.2), para o vento horizontal no `sentido` (x, y):
+    {barra: w global (kN/m)} e o resumo por papel e perfil. F = C·q·K·c por metro, na componente do vento perpendicular à
+    barra (sen² do ângulo, como em 8.2); c = a largura da seção projetada perpendicular ao vento (Tabela 26, Nota 2)"""
+    nos, barras = M["nos"], M["barras"]
+    wv = _unit(np.array([float(sentido[0]), float(sentido[1]), 0.0]))
+    contornos = M.setdefault("_contornos", {})
+    # o comprimento da peça inteira (o esqueleto parte a peça nos nós): é o ℓ da Tabela 28
+    ell: Dict[str, float] = collections.Counter()
+    for br in barras:
+        if br["ids"] and _barra_exposta(br):
+            ell[br["ids"][0]] += br["L"]
+    dist: Dict[int, np.ndarray] = {}
+    resumo: Dict[Tuple[str, str], dict] = {}
+    for i, br in enumerate(barras):
+        if not _barra_exposta(br):
+            continue
+        ex, ey, ez = br["R"]
+        wp = wv - float(wv @ ex) * ex
+        s2 = float(wp @ wp)                                   # sen² do ângulo entre o vento e a barra
+        if s2 < 1e-4:
+            continue
+        cont = _secao_desenho(br["perfil"], contornos)
+        if not cont:
+            continue
+        xy = np.array(cont, float) / 1000.0                   # x = a largura da mesa (ez), y = a altura (ey)
+        perp = _unit(np.cross(ex, wp))
+        proj = xy[:, 0] * float(ez @ perp) + xy[:, 1] * float(ey @ perp)
+        c = float(proj.max() - proj.min())
+        if c <= 1e-4:
+            continue
+        L = ell.get(br["ids"][0], br["L"]) if br["ids"] else br["L"]
+        dobra = 2.0 if br["papel"] == "pilar" else 1.0         # 8.1.3: o pé no chão impede o escoamento naquela ponta
+        if br["perfil"].upper().startswith(("TC", "Ø", "TUBO CIRC")):        # tubo circular e barra redonda
+            C, K, regime = _ca_cilindro(Vk, c, dobra * L / c)
+        else:
+            C, K, regime = CF_FACES_PLANAS, _fator_k(dobra * L / c, "planas"), "faces planas"
+        w = C * K * q * c * s2
+        dist[i] = w * _unit(wp)
+        chave = (br["papel"], br["perfil"])
+        r = resumo.get(chave)
+        if r is None or w > r["w_kN_m"]:
+            resumo[chave] = {"papel": br["papel"], "perfil": br["perfil"], "C": round(C, 3), "K": round(K, 3), "c_mm": round(c * 1000),
+                             "regime": regime, "w_kN_m": round(w, 4), "barras": (r or {}).get("barras", 0)}
+        resumo[chave]["barras"] += 1
+    return dist, sorted(resumo.values(), key=lambda r: (r["papel"], r["perfil"]))
+
+
 def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict]:
     """os casos de vento da cobertura isolada (NBR 6123:2023, 7.2): {caso: {barra: força nodal por ponta (kN, 3)}}"""
     from nucleo import cargas as C
@@ -896,7 +986,7 @@ def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict
             mv = M.get("movel")
             fn: Dict[int, np.ndarray] = {}
             if mv and mv.get("altura_aba_m", 0) > 0:
-                # as abas de lona nas bordas (NBR 6123, 7.2.5.1): 1,3·q·Ae a barlavento e 0,6·q·Ae a sotavento, as duas no
+                # as abas de lona nas bordas (NBR 6123, 7.2.5.1): 1,3·q·Ae a barlavento e 0,8·q·Ae a sotavento, as duas no
                 # sentido do vento; cada tesoura recebe a faixa dela (meio passo de cada lado), metade no topo e metade no apoio
                 dirv = np.array([u[0] * sentido, u[1] * sentido, 0.0])
                 for t_ in mv["tesouras"]:
@@ -904,11 +994,16 @@ def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict
                         pa = nos[bot]
                         barl = (float(pa[:2] @ u) - smid) * sentido < 0
                         Ae = (nos[top][2] - nos[bot][2]) * t_["faixa"]
-                        Fa = (1.3 if barl else 0.6) * q * Ae * dirv
+                        Fa = (1.3 if barl else 0.8) * q * Ae * dirv
                         for no_ in (top, bot):
                             fn[no_] = fn.get(no_, np.zeros(3)) + Fa / 2.0
-            casos["V%s%s" % (nome_c, rot)] = {"dist": {}, "nos": fn, "nodal": f, "descricao": "vento perpendicular à geratriz, carregamento %s, %s"
-                                              % (nome_c, "de um lado" if sentido > 0 else "do outro lado"),
+            db = {}
+            if P.get("vento_nas_barras", True):
+                db, res = _vento_nas_barras(M, Vk, q, u * sentido)
+                info.setdefault("barras_transversal", res)
+            casos["V%s%s" % (nome_c, rot)] = {"dist": db, "nos": fn, "nodal": f, "descricao": "vento perpendicular à geratriz, carregamento %s, %s%s"
+                                              % (nome_c, "de um lado" if sentido > 0 else "do outro lado",
+                                                 "; arrasto nos pilares e vigas (8.1)" if db else ""),
                                               "cpb": cpb, "cps": cps, "sentido": [float(v) for v in u * sentido]}
     # atrito no sentido da geratriz (7.2.2): F = 0,05 q a b, distribuída pelas áreas
     area_tot = sum(Lh * w for (Ls, Lh, w) in trechos.values()) or 1.0
@@ -919,7 +1014,13 @@ def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict
             F = np.zeros(3)
             F[:2] = n * sentido * Ft * (Lh * w) / area_tot
             f[i] = F / 2.0
-        casos["Vat%s" % rot] = {"dist": {}, "nodal": f, "descricao": "vento ao longo da geratriz: atrito na cobertura (7.2.2)", "Ft": Ft}
+        db = {}
+        if P.get("vento_nas_barras", True):
+            db, res = _vento_nas_barras(M, Vk, q, n * sentido)
+            info.setdefault("barras_longitudinal", res)
+        casos["Vat%s" % rot] = {"dist": db, "nodal": f, "Ft": Ft,
+                                "descricao": "vento ao longo da geratriz: atrito na cobertura (7.2.2)%s"
+                                % ("; arrasto nos pilares e vigas (8.1)" if db else "")}
     info["atrito_kN"] = round(Ft, 2)
     return casos, info
 

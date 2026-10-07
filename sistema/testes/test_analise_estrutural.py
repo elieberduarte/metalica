@@ -91,3 +91,35 @@ def test_equilibrio_e_combinacao_no_modelo_de_porticos():
     Rx = sum(r[0, 1] for r in sol["reacoes"].values())
     assert Rz == pytest.approx(5.0 * 6, rel=1e-6)
     assert Rx == pytest.approx(-3.0, rel=1e-6)
+
+
+def test_vento_nas_barras_pilar_circular_e_perfil_i():
+    """NBR 6123:2023, 8.1: o arrasto no pilar (C·q·K·c por metro) e o momento na base do pilar em balanço (w·L²/2).
+    TC 141,3 com Vk 41,45 m/s: Re = 4,1·10⁵ < 4,2·10⁵ → subcrítico, Ca 1,2; ℓ/d dobrado (o pé no chão) > 100 → K 1,0.
+    W 360 com a alma em X e o vento em X: c = a mesa (171 mm), C 2,0, K da Tabela 28 (faces planas) por 2ℓ/c."""
+    L, q, Vk = 7.926, 1.053, 41.45
+    M = _modelo([[0, 0, 0], [0, 0, L], [5, 0, 0], [5, 0, L]], [(0, 1), (2, 3)], [(0, "engastada"), (2, "engastada")])
+    for br, perfil in zip(M["barras"], ("TC 141,3×4,5", "W 360×44,6")):
+        br.update(papel="pilar", perfil=perfil, ids=[perfil])
+    dist, res = AE._vento_nas_barras(M, Vk, q, (1.0, 0.0))
+    d = 0.1413
+    assert dist[0][0] == pytest.approx(1.2 * 1.0 * q * d, rel=0.01) and abs(dist[0][1]) < 1e-9
+    K = float(np.interp(2 * L / 0.171, AE.K_ELL, AE.K_TABELA["planas"]))
+    assert dist[1][0] == pytest.approx(2.0 * K * q * 0.171, rel=0.01)
+    assert {r["regime"] for r in res} == {"subcrítico", "faces planas"}
+    sol = AE.resolver(M, {"V": _caso(dist=dist)})
+    for i in (0, 1):
+        assert abs(sol["reacoes"][2 * i][4, 0]) == pytest.approx(dist[i][0] * L * L / 2, rel=1e-6)
+    # vento ao longo da barra (viga paralela ao vento): nada
+    M2 = _modelo([[0, 0, 3], [6, 0, 3]], [(0, 1)], [(0, "engastada"), (1, "engastada")])
+    M2["barras"][0].update(perfil="W 200×41,7", ids=["v"])
+    assert AE._vento_nas_barras(M2, Vk, q, (1.0, 0.0))[0] == {}
+    assert AE._vento_nas_barras(M2, Vk, q, (0.0, 1.0))[0][0][1] > 0
+
+
+def test_ca_do_cilindro_acima_do_critico_confere_o_subcritico():
+    """8.1.3: acima do crítico, a força com o vento no limite do subcrítico pode ser maior — fica a maior"""
+    Ca, K, regime = AE._ca_cilindro(45.0, 0.3239, 50)          # Re ≈ 1,0·10⁶ → 0,7
+    Vc = 4.2e5 / (70000 * 0.3239)
+    assert Ca * K == pytest.approx(max(0.7 * 0.99, 1.2 * 0.87 * (Vc / 45.0) ** 2), rel=1e-6)
+    assert "acima do crítico" in regime

@@ -15,7 +15,7 @@ export function explicarCombinacao(nome, cb) {
   }
   if (nome.includes('SC+')) return 'Sobrecarga como ação principal (×1,5) com o vento reduzido (ψ₀). Gravidade máxima com um pouco de vento.';
   if (nome.includes('SC')) return 'Gravidade máxima: permanentes majorados + sobrecarga como ação principal (×1,5). Costuma governar o banzo superior comprimido, a compressão nos pilares e a fundação à compressão.';
-  if (nome.includes('Vat')) return `Vento ao longo da geratriz (atrito na cobertura, NBR 6123 7.2.2) — ${sentido}. Governa o contraventamento longitudinal, as vigas-trilho e os pilares na direção do comprimento.`;
+  if (nome.includes('Vat')) return `Vento ao longo da geratriz (atrito na cobertura, NBR 6123 7.2.2, e arrasto nos pilares e vigas, 8.1) — ${sentido}. Governa o contraventamento longitudinal, as vigas-trilho e os pilares na direção do comprimento.`;
   if (nome.includes('suc') || nome.includes('V2')) {
     return `Sucção (${sentido}): permanentes favoráveis (×1,0, o peso ajuda) + vento ×1,4 levantando a cobertura. É a combinação do ARRANCAMENTO nos chumbadores e da INVERSÃO de esforços: o banzo inferior, tracionado na gravidade, passa a ser comprimido — e só resiste se estiver travado lateralmente.`;
   }
@@ -91,10 +91,11 @@ const MODOS = {
   },
   cargas: {
     titulo: 'Cargas — os casos',
-    oque: 'Cada caso é uma ação isolada, sem coeficientes: PP (peso próprio pelos perfis), CP (permanentes da cobertura), SC (sobrecarga de cobertura, NBR 8800 B.5.1), V1/V2 (vento perpendicular à cumeeira, carregamentos 1 e 2 da Tabela 25 da NBR 6123 para cobertura isolada), Vat (atrito ao longo do comprimento). As setas são as forças nos nós (área de influência de cada nó do banzo superior).',
+    oque: 'Cada caso é uma ação isolada, sem coeficientes: PP (peso próprio pelos perfis), CP (permanentes da cobertura), SC (sobrecarga de cobertura, NBR 8800 B.5.1), V1/V2 (vento perpendicular à cumeeira, carregamentos 1 e 2 da Tabela 25 da NBR 6123 para cobertura isolada), Vat (atrito ao longo do comprimento). As setas são as forças nos nós (área de influência de cada nó do banzo superior). Nos casos de vento entra também o arrasto direto nos pilares, nas vigas e no X entre pilares (NBR 6123, 8.1: C·q·K·c por metro, c = a largura que o vento enxerga) — a Tabela 25 só cobre a cobertura.',
     preocupe: [
       'O vento é a maior incerteza: V0 (mapa de isopletas), categoria de rugosidade, S2 (altura e dimensões) e os coeficientes da tabela. Uma diferença de 10% no V0 dá 21% na pressão.',
       'A interpretação da Tabela 25 (sinal dos coeficientes no carregamento 2) e o vento nas abas de lona (7.2.5.1) — confirme com o engenheiro.',
+      'O arrasto nos pilares e vigas (8.1) usa C = 2,0 nos perfis de faces planas (Tabela 26, conservador para I/H e tubo quadrado) e o Ca do cilindro pelo número de Reynolds nos tubos circulares (Tabela 27); sem anteparo de uma fila de pilares sobre a outra.',
       'Numa lona, a sobrecarga de 0,25 kN/m² pode não ser realista (a lona não acumula gente nem equipamento) — é premissa a combinar.',
     ],
     ignore: [

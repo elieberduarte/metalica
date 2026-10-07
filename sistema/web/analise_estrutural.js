@@ -803,13 +803,15 @@ function painelVento() {
   const v = i.vento, c = i.cobertura;
   const linhas = [];
   const mv = D.movel;
-  if (mv) linhas.push(`<b>Cobertura retrátil — ${mv.configuracao === 'aberta' ? 'aberta' : 'retraída'}</b>: ${mv.n} tesouras a cada ${nf(mv.passo_m, 3)} m em ${nf(mv.comprimento_m, 2)} m; ${nf(mv.peso_tesoura_kg, 1)} kg cada (peso do fabricante ÷ ${mv.n}); sanfona com ${mv.sanfona_barras} braços; abas laterais de ${nf(mv.altura_aba_m, 2)} m (NBR 6123, 7.2.5.1: 1,3·q·A a barlavento, 0,6·q·A a sotavento).`);
+  if (mv) linhas.push(`<b>Cobertura retrátil — ${mv.configuracao === 'aberta' ? 'aberta' : 'retraída'}</b>: ${mv.n} tesouras a cada ${nf(mv.passo_m, 3)} m em ${nf(mv.comprimento_m, 2)} m; ${nf(mv.peso_tesoura_kg, 1)} kg cada (peso do fabricante ÷ ${mv.n}); sanfona com ${mv.sanfona_barras} braços; abas laterais de ${nf(mv.altura_aba_m, 2)} m (NBR 6123, 7.2.5.1: 1,3·q·A a barlavento, 0,8·q·A a sotavento).`);
   if (c) linhas.push(`Cobertura: ${nf(c.area_m2, 1)} m² em ${c.trelicas} tesouras; larguras de influência ${c.larguras_m.map(x => nf(x, 2)).join(' · ')} m.`);
   if (v) {
     linhas.push(`Vk = ${nf(v.Vk, 1)} m/s (S2 = ${nf(v.S2, 3)}, classe ${v.classe}, z = ${nf(v.z, 1)} m) · q = <b>${nf(v.q_kN_m2, 3)} kN/m²</b>`);
     linhas.push(`Cobertura isolada a duas águas (NBR 6123:2023, 7.2, Tabela 25): vão ${nf(v.vao, 1)} m, flecha ${nf(v.flecha, 2)} m → tg θ = ${nf(v.tg, 3)}; altura livre ${nf(v.h_livre, 2)} m.`);
     linhas.push(`Carregamento 1: cpb = ${nf(v.carregamento_1.cpb, 3)}, cps = ${nf(v.carregamento_1.cps, 3)} · Carregamento 2: cpb = ${nf(v.carregamento_2.cpb, 3)}, cps = ${nf(v.carregamento_2.cps, 3)} (positivo empurra para baixo).`);
     linhas.push(`Atrito ao longo da geratriz (7.2.2): ${nf(v.atrito_kN, 1)} kN.`);
+    const arr = (lista, rot) => (lista || []).length ? `Arrasto ${rot} (8.1): ` + lista.map(r => `${r.papel} ${r.perfil}: ${nf(r.w_kN_m, 3)} kN/m (C ${nf(r.C, 2)} · K ${nf(r.K, 2)} · c ${r.c_mm} mm, ${r.regime})`).join('; ') + '.' : '';
+    for (const l of [arr(v.barras_transversal, 'com o vento perpendicular à geratriz'), arr(v.barras_longitudinal, 'com o vento ao longo da geratriz')]) if (l) linhas.push(l);
   }
   linhas.push('Casos: ' + Object.entries(D.casos).map(([k, c]) => `<span class="chip">${k}</span>${c.descricao}`).join('<br>'));
   V.innerHTML = linhas.map(l => `<div style="margin:4px 0">${l}</div>`).join('');
