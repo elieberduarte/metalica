@@ -83,3 +83,22 @@ def test_sem_tesoura_apoiada_e_erro_de_dados():
     doc.add(Barra(inicio=(0, 0, 0), fim=(0, 0, 5000), perfil="W 250×32,7", papel="pilar", atributos={"elemento": "pilar"}))
     with pytest.raises(ErroDeDados):
         CM.aplicar(doc, PAR, "aberta")
+
+
+def test_a_planta_acompanha_a_situacao():
+    """as linhas das tesouras na planta, na posição de cada situação; a lançada vai para a camada do molde (escondida)"""
+    from nucleo2d.desenho import Desenho, Linha
+    doc = _modelo()
+    des = Desenho(nome="planta")
+    des.add(Linha(id="t1", camada="ESTRUTURA", a=(0.0, 2000.0), b=(10000.0, 2000.0), atributos={"elemento": "trelica", "marca": "T1"}))
+    CM.aplicar(doc, PAR, "aberta")
+    assert CM.na_planta(des, doc) is True
+    ys = sorted(e.a[1] for e in des.entidades.values() if (e.atributos or {}).get("cobertura_movel") and e.tipo == "linha")
+    assert ys == [0.0, 2500.0, 5000.0, 7500.0, 10000.0]
+    assert des.entidades["t1"].camada == CM.CAMADA_MOLDE and not des.camadas[CM.CAMADA_MOLDE].visivel
+    assert CM.na_planta(des, doc) is False                          # sem mudança, nada muda (ids fixos)
+    CM.aplicar(doc, PAR, "retraida")
+    assert CM.na_planta(des, doc) is True
+    ys = sorted(e.a[1] for e in des.entidades.values() if (e.atributos or {}).get("cobertura_movel") and e.tipo == "linha")
+    assert ys == [0.0, 500.0, 1000.0, 1500.0, 2000.0]
+    assert "RETRAÍDA" in des.entidades["cobertura-movel-texto"].texto

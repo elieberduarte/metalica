@@ -1899,6 +1899,16 @@ def cobertura_movel_do_projeto(s: str, corpo: Optional[dict] = None) -> dict:
     doc = _documento3d_do_projeto(s)
     r = CM.aplicar(doc, par, situacao)
     _regravar_modelo(s, doc, marco=True)
+    # a planta de lançamento acompanha: as linhas das tesouras na posição da situação
+    if r.get("planta"):
+        from nucleo2d.desenho import Desenho
+        try:
+            des = Desenho.de_dict(g.abrir_desenho(s, r["planta"]))
+            if CM.na_planta(des, doc):
+                g.salvar_desenho(s, r["planta"], des.dict())
+                r["planta_mudou"] = r["planta"]
+        except (OSError, ErroDeDados, KeyError):
+            pass
     if not par.get("cobertura_movel"):
         par["cobertura_movel"] = True                # o 3D e a análise falam da mesma cobertura
         g._atualizar(s, analise_parametros=par, cobertura_movel_vista=situacao)

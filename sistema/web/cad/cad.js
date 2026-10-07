@@ -179,6 +179,17 @@ class CAD {
     this._atualizarFaixaEdicao();                 // a faixa EDITANDO do ambiente de edição da chapa (edicao_chapa.js)
   }
 
+  /** O servidor mudou o desenho aberto (a cobertura retrátil na planta, 06/10): recarrega sem mexer na vista; com
+   * edição por gravar, não troca — avisa. */
+  async _recarregarPeloServidor(nome) {
+    if (!this.projeto || !this.nomeDesenho || (nome && nome !== this.nomeDesenho)) return;
+    if (this._temPendente()) { this.aviso('A planta mudou no servidor (cobertura retrátil): grave e reabra o desenho para ver.', 'atencao', 10000); return; }
+    try {
+      const r = await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}/desenhos/${encodeURIComponent(this.nomeDesenho)}`);
+      this.carregar(r.desenho, { enquadrar: false });
+    } catch (e) { this.aviso(`Não foi possível recarregar a planta: ${e.message}`, 'atencao', 8000); }
+  }
+
   async abrirDesenho(nome) {
     // trocar de desenho grava antes o que ainda não foi (eram 3 s, ou 15 s em desenho grande, perdidos)
     if (this.nomeDesenho && this.nomeDesenho !== nome && this._temPendente()) {
@@ -542,6 +553,7 @@ class CAD {
     window.addEventListener('message', (ev) => {
       if (ev.origin !== location.origin || !ev.data) return;
       if (ev.data.metalica === 'localizar2d') { this._localizarPelaMarca(ev.data); return; }
+      if (ev.data.metalica === 'recarregar2d') { this._recarregarPeloServidor(ev.data.desenho); return; }
       if (ev.data.metalica !== 'enquadrar2d') return;
       const c = ev.data.caixa;
       this.tela.regiao = c || null;

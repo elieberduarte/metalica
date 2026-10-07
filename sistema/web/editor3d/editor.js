@@ -1696,6 +1696,10 @@ export class Editor {
       });
       const j = await r.json();
       if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      // a planta ao lado (2D + 3D) recarrega: as linhas das tesouras mudaram de lugar
+      if (j.planta_mudou && window.parent !== window) {
+        try { window.parent.postMessage({ metalica: 'planta-mudou', desenho: j.planta_mudou }, location.origin); } catch { /* sem a área */ }
+      }
       this._autosavePendente = false;
       window.location.reload();
     } catch (e) { this.aviso(`Cobertura retrátil: ${e.message}`, 'erro', 0); this.dica(''); }

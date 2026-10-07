@@ -213,6 +213,8 @@ async function iniciar() {
     if (ev.data.metalica === 'modelo-mudou' && ev.source === $('#f2d').contentWindow) { recarregar3d(); return; }
     // os níveis, a malha de eixos ou o arquitetônico mudaram no 2D: o 3D ao lado refaz a planta no chão
     if (ev.data.metalica === 'referencia-mudou' && ev.source === $('#f2d').contentWindow) { referencia3d(); return; }
+    // o 3D mudou a planta (a cobertura retrátil aberta/retraída): o 2D ao lado recarrega o desenho
+    if (ev.data.metalica === 'planta-mudou' && ev.source === $('#f3d').contentWindow) { para2d({ metalica: 'recarregar2d', desenho: ev.data.desenho }); return; }
     // o seletor e os controles da ligação estão na barra de cada tela
     if (ev.data.metalica === 'vista' && deUmLado) { mostrarVista(ev.data.vista); return; }
     if (ev.data.metalica === 'pedir-estado' && deUmLado) { avisarEstado(); return; }
