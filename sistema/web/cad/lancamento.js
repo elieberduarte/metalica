@@ -187,8 +187,8 @@ export class MetodosLancamentoCAD {
       el('label', {}, 'Origem X (mm)', x), el('label', {}, 'Origem Y (mm)', y), botaoPegar,
       el('label', {}, 'Vãos entre os eixos numerados', numeros),
       el('label', {}, 'Vãos entre os eixos com letra', letras),
-      el('label', {}, 'Ângulo da malha (graus)', angulo),
-      el('label', {}, 'Primeiro número', primeiro), el('label', {}, 'Primeira letra', letra));
+      el('label', {}, 'Primeiro número', primeiro), el('label', {}, 'Primeira letra', letra),
+      el('label', {}, 'Ângulo da malha (graus)', angulo));
     const r = await this.dialogo({ titulo: 'Malha de eixos', corpo, ok: 'Desenhar a malha' });
     const lidos = { x: x.value, y: y.value, numeros: numeros.value, letras: letras.value, angulo: angulo.value, primeiro: primeiro.value, letra: letra.value };
     if (pegar) {

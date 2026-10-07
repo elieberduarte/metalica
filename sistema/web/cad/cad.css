@@ -89,7 +89,10 @@ dialog.dialogo h3 { font-size: 16px; color: var(--azul); margin: 0 0 10px; }
 .dialogo-botoes .botao-ok { background: var(--azul); border-color: var(--azul); color: #fff; }
 
 /* diálogo Malha de eixos: campos em duas colunas, o botão de pegar a origem ao lado */
-.grade-malha { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; align-items: end; min-width: 520px; }
+/* a malha de eixos (07/10): a caixa alarga para os campos caberem — a de 440 px cortava os rótulos e rolava de lado */
+dialog.dialogo:has(.grade-malha) { width: min(600px, calc(100vw - 32px)); }
+.grade-malha { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; align-items: end; min-width: 0; }
+.grade-malha > button { grid-column: 1 / -1; justify-self: start; }
 .grade-malha .explica { grid-column: 1 / -1; }
 .grade-malha label { display: grid; gap: 4px; }
 
