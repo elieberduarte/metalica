@@ -274,12 +274,12 @@ try:
     n_loc = len([e for e in mont3["entidades"] if (e.get("atributos") or {}).get("quadro") == locq3["id"]])
     ok(n_loc == 6 and locq3["envios"][-1]["desenho"] == "planta-de-lançamento-r01",
        "atualizado pela revisão: o quadro da locação tem o que a R01 tem na área (%d objetos) e o envio aponta para ela" % n_loc)
-    # todo projeto tem a barra (01/10): no do IFC, Original e Montagem apagadas, Pranchas abre as pranchas
+    # todo projeto tem a barra (01/10); só aparece o botão que faz alguma coisa (07/10): no do IFC, sem Original e Montagem
     aba.navegar(base + "/cad?projeto=do-ifc&desenho=detalhamento-completo", limite=60)
     esperar(aba, "!!window.montagem && !document.querySelector('#abas-projeto').hidden", 20)
-    estado = json.loads(aba.avaliar("JSON.stringify([...document.querySelectorAll('#abas-projeto button[data-aba]')].map(b => [b.dataset.aba, b.disabled]))"))
+    estado = json.loads(aba.avaliar("JSON.stringify([...document.querySelectorAll('#abas-projeto button[data-aba]')].map(b => [b.dataset.aba, b.hidden]))"))
     ok(estado == [["original", True], ["montagem", True], ["detalhamento", False], ["pranchas", False]],
-       "projeto do IFC: a barra aparece, com Original e Montagem apagadas e Detalhamento e Pranchas ativos: %s" % estado)
+       "projeto do IFC: a barra aparece só com Detalhamento e Pranchas (Original e Montagem escondidas): %s" % estado)
     ok(aba.avaliar("document.querySelector('#abas-projeto [data-aba=detalhamento]').classList.contains('on')"),
        "aberto o detalhamento completo, a aba Detalhamento fica marcada")
     aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').click(); 1")
@@ -287,9 +287,7 @@ try:
     ok(aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').classList.contains('on')"), "e a aba Pranchas abre as pranchas dele")
     aba.navegar(base + "/cad?projeto=recebido&desenho=montagem", limite=60)
     esperar(aba, "cad.nomeDesenho === 'montagem'", 20)
-    aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').click(); 1"); aba.drenar(0.8)
-    ok("Pranchas" in (aba.avaliar("document.querySelector('#avisos').textContent") or "") or "pranchas" in (aba.avaliar("document.querySelector('#avisos').textContent") or ""),
-       "sem pranchas ainda, a aba Pranchas avisa")
+    ok(aba.avaliar("document.querySelector('#abas-projeto [data-aba=pranchas]').hidden"), "sem pranchas ainda, a aba Pranchas não aparece")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, "sem erro no console" + ("" if not erros else ": " + str(erros[:2])))
 finally:

@@ -67,7 +67,8 @@ export function instalarRodapeEscala(cad) {
   const ferramenta = (id) => () => { if (cad.ferramentas && cad.ferramentas.has(id)) cad.ativarFerramenta(id); };
   lista.append(info,
     item('Calibrar a escala da planta…', 'Dois cliques numa medida conhecida (uma cota, um vão) e a medida real: a planta importada é escalada (os eixos e os elementos podem ir junto)', ferramenta('calibrar')),
-    item('Ajustar cotas ao desenho', 'Clique numa cota (ou selecione várias antes): o texto e as pontas tomam o tamanho do desenho em volta', ferramenta('ajustar_cota')),
+    item('Ajustar cotas e eixos à escala', 'Todas as cotas, os balões e os nomes dos eixos feitos aqui no tamanho da escala atual (com seleção, só nela); o importado não muda', () => cad.ajustarAEscala && cad.ajustarAEscala()),
+    item('Ajustar cotas ao desenho em volta', 'Clique numa cota (ou selecione várias antes): o texto e as pontas tomam o tamanho do desenho em volta', ferramenta('ajustar_cota')),
     item('Enquadrar tudo', 'Zoom para ver o desenho inteiro', () => cad.tela.enquadrar()));
   const mais = document.createElement('button');
   mais.type = 'button'; mais.className = 'mais'; mais.textContent = '⋯'; mais.title = 'Escala: informações e ajustes';
@@ -92,11 +93,14 @@ export function instalarRodapeEscala(cad) {
       'Para trocar a escala de impressão, use o seletor "Escala 1:"; para a planta que veio com a medida errada, Calibrar.';
     // os botões do rodapé do desenho (Original, Montagem… Nova revisão do DXF) passam por baixo quando a tela é estreita:
     // o quadrinho sobe uma linha
+    // pelos botões que aparecem, não pela faixa inteira (ela ocupa a largura toda e o quadrinho subia sempre)
     const abas = document.getElementById('abas-projeto');
     caixa.style.bottom = '10px';
     if (abas && !abas.hidden) {
-      const a = abas.getBoundingClientRect(), c = caixa.getBoundingClientRect();
-      if (a.width && a.right > c.left - 8 && a.left < c.right) caixa.style.bottom = `${Math.round(a.height + 18)}px`;
+      const c = caixa.getBoundingClientRect();
+      const bs = [...abas.querySelectorAll('button')].filter(b => !b.hidden).map(b => b.getBoundingClientRect()).filter(r => r.width);
+      const direita = bs.length ? Math.max(...bs.map(r => r.right)) : -Infinity;
+      if (direita > c.left - 8) caixa.style.bottom = `${Math.round(Math.max(...bs.map(r => r.height)) + 18)}px`;
     }
   };
   const antes = cad.tela.aoDesenhar;

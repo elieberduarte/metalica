@@ -300,19 +300,16 @@ class Montagem {
     const lista = await this._lista(true);
     const nomes = new Set(lista.map(d => d.nome));
     const temProjetoRecebido = nomes.has(DESENHO_LANCAMENTO) || nomes.has(DESENHO_MONTAGEM);
-    // a barra em todo projeto (pedido de 01/10: "padronizar isso para todos os projetos"); no que veio do IFC, sem a
-    // planta do cliente, a Original e a Montagem ficam apagadas e as Pranchas funcionam
+    // a barra em todo projeto (pedido de 01/10: "padronizar isso para todos os projetos")
     this.abas.hidden = !this.cad.projeto;
-    // o detalhamento completo (pedido de 01/10: "traga uma nova aba pelo menos com o projeto completo")
+    // só o botão que faz alguma coisa no projeto aparece (07/10: "verifique se algum desses botões está sem função para
+    // otimizarmos esse menu") — antes ficavam apagados: o Detalhamento antes de detalhar, as Pranchas antes de haver
+    // pranchas (só avisava), Original e Montagem no projeto sem a planta do cliente (o do IFC)
     const bd = this.abas.querySelector('[data-aba=detalhamento]');
-    bd.disabled = !nomes.has(DESENHO_COMPLETO);
-    bd.title = bd.disabled ? 'O projeto ainda não foi detalhado (Produção › Detalhar peças e conjuntos)' : bd.dataset.dica;
-    for (const aba of ['original', 'montagem']) {
-      const b = this.abas.querySelector(`[data-aba=${aba}]`);
-      b.disabled = !temProjetoRecebido;
-      b.title = temProjetoRecebido ? b.dataset.dica || b.title
-        : 'Este projeto não veio de um DXF do cliente (veio do IFC ou foi lançado aqui): não tem a planta Original nem a Montagem';
-    }
+    bd.hidden = !nomes.has(DESENHO_COMPLETO);
+    bd.title = bd.dataset.dica;
+    this.abas.querySelector('[data-aba=pranchas]').hidden = !lista.some(d => /^pranchas/.test(d.nome));
+    for (const aba of ['original', 'montagem']) this.abas.querySelector(`[data-aba=${aba}]`).hidden = !temProjetoRecebido;
     // a Original é a revisão para onde a montagem aponta (R00, R01…)
     let mm = this.m;
     if (!mm && nomes.has(DESENHO_MONTAGEM)) {
@@ -325,12 +322,13 @@ class Montagem {
       : /^pranchas/.test(this.cad.nomeDesenho || '') ? 'pranchas' : '';
     for (const b of this.abas.querySelectorAll('button[data-aba]')) b.classList.toggle('on', b.dataset.aba === atual);
     this.naOriginal = atual === 'original';
-    this.botaoEnviar.hidden = !this.naOriginal;
+    this.botaoEnviar.hidden = !this.naOriginal || !nomes.has(DESENHO_MONTAGEM);   // só com a Montagem para onde enviar
     this.botaoRevisao.hidden = !this.naOriginal || !nomes.has(DESENHO_MONTAGEM);
     const revs = (mm && mm.revisoes) || [];
     const rev = revs.find(r => r.nome === this.original);
     this.abas.querySelector('[data-aba=original]').textContent = rev ? `Original ${rev.rotulo}` : 'Original';
     this.botaoLer.hidden = atual !== 'montagem';
+    if (![...this.abas.querySelectorAll('button')].some(b => !b.hidden)) this.abas.hidden = true;   // nenhum: sem a barra
     if (atual !== 'montagem' && this.painel) this.painel.hidden = true;
     this.mOriginal = null;
     if (this.naOriginal && nomes.has(DESENHO_MONTAGEM)) this.mOriginal = mm;
