@@ -921,6 +921,16 @@ dialog.dlg h3 { font-size: 17px; color: var(--azul); }
 dialog.dlg .nota { margin-top: 6px; font-size: 12.5px; color: var(--texto2); line-height: 1.5; }
 .dlg-campos { display: flex; flex-direction: column; gap: 11px; margin-top: 16px; }
 .dlg-erro { margin-top: 10px; font-size: 12.5px; color: var(--verm); }
+/* escolha no diálogo (Novo pelo CAD 2D: com a planta do cliente ou desenhando) */
+.dlg-campos .escolha { display: flex; flex-direction: column; gap: 6px; }
+.dlg-campos .rotulo-escolha { font-size: 12.5px; font-weight: 600; color: var(--texto2); }
+.dlg-campos .opcao { display: flex; gap: 9px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--borda);
+  border-radius: var(--raio-p); cursor: pointer; }
+.dlg-campos .opcao:has(input:checked) { border-color: var(--azul); background: var(--azul-fraco); }
+.dlg-campos .opcao input { margin-top: 3px; }
+.dlg-campos .opcao span { display: flex; flex-direction: column; gap: 2px; }
+.dlg-campos .opcao b { font-size: 13px; }
+.dlg-campos .opcao small { font-size: 12px; color: var(--texto2); line-height: 1.4; }
 .dlg-botoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 
 /* volta ao gerenciador, na barra lateral do dimensionamento */

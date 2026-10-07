@@ -254,6 +254,17 @@ function perguntar({ titulo, texto = '', campos, ok = 'OK' }) {
     $('#dlg-erro').hidden = true;
     const entradas = {};
     $('#dlg-campos').replaceChildren(...campos.map(c => {
+      if (c.opcoes) {
+        // escolha entre opções (botões de rádio): o valor é o da marcada
+        const grupo = el('div', { class: 'campo escolha', role: 'radiogroup', 'aria-label': c.rotulo }, el('span', { class: 'rotulo-escolha', texto: c.rotulo }));
+        const radios = c.opcoes.map(o => {
+          const r = el('input', { type: 'radio', name: 'dlg-' + c.id, value: o.valor, checked: o.valor === c.valor || undefined });
+          grupo.append(el('label', { class: 'opcao' }, r, el('span', {}, el('b', { texto: o.titulo }), o.texto ? el('small', { texto: o.texto }) : null)));
+          return r;
+        });
+        entradas[c.id] = { get value() { const m = radios.find(x => x.checked); return m ? m.value : ''; } };
+        return grupo;
+      }
       entradas[c.id] = el('input', { type: 'text', id: 'dlg-' + c.id, value: c.valor || '',
                                      placeholder: c.dica || '', spellcheck: 'false', autocomplete: 'off',
                                      required: c.obrigatorio || undefined });
@@ -274,7 +285,7 @@ function perguntar({ titulo, texto = '', campos, ok = 'OK' }) {
       if (falta) {
         $('#dlg-erro').textContent = `Preencha: ${falta.rotulo}.`;
         $('#dlg-erro').hidden = false;
-        entradas[falta.id].focus();
+        if (entradas[falta.id].focus) entradas[falta.id].focus();
         return;
       }
       fechar(v);
@@ -283,49 +294,34 @@ function perguntar({ titulo, texto = '', campos, ok = 'OK' }) {
     dlg.oncancel = (ev) => { ev.preventDefault(); fechar(null); };
     dlg.showModal();
     const primeiro = entradas[campos[0].id];
-    primeiro.focus();
-    primeiro.select();
+    if (primeiro.focus) { primeiro.focus(); primeiro.select(); }
   });
 }
 
 /**
- * Projeto que nasce de um desenho: abre o CAD vazio. O caminho é desenhar a estrutura
- * em 2D, dizer que peça do catálogo cada linha é e gerar o modelo 3D a partir dela.
+ * Projeto que nasce no CAD 2D (07/10: os dois começos num botão só): com a planta do cliente, o CAD abre na Planta
+ * de lançamento e pede o DXF/PDF — dali a malha de eixos e o lançamento no 3D; sem ela, o CAD vazio para desenhar a
+ * estrutura linha por linha, dizer o perfil de cada linha e gerar o modelo 3D do desenho.
  */
-async function novoProjetoDesenhado() {
+async function novoProjetoPeloCad() {
   const v = await perguntar({
-    titulo: 'Novo projeto desenhando em 2D',
-    texto: 'Abre o CAD 2D vazio. Desenhe a estrutura (uma tesoura, por exemplo), diga em ' +
-           '"Peça do catálogo…" qual perfil cada linha é e use "Gerar modelo 3D do desenho…". ' +
-           'O modelo sai com perfil, aço e marcas de posição e conjunto em cada peça.',
-    campos: CAMPOS_PROJETO, ok: 'Criar e desenhar' });
+    titulo: 'Novo projeto pelo CAD 2D',
+    texto: 'O projeto abre no CAD 2D. Depois de criado, as ferramentas são as mesmas nos dois começos.',
+    campos: [...CAMPOS_PROJETO, {
+      id: 'comeco', rotulo: 'Como começar', valor: 'arquitetonico', opcoes: [
+        { valor: 'arquitetonico', titulo: 'Tenho a planta do cliente (DXF ou PDF)',
+          texto: 'Lança a malha de eixos por cima dela; o Modelo 3D monta e dimensiona o galpão nos eixos (pilares, tesouras ou vigas, terças, contraventos, bases).' },
+        { valor: 'desenho', titulo: 'Desenhar a estrutura eu mesmo',
+          texto: 'CAD vazio: desenhe linha por linha (uma tesoura, um pórtico, uma peça), diga o perfil de cada linha e gere o modelo 3D do desenho.' },
+      ] }],
+    ok: 'Criar e abrir o CAD' });
   if (!v) return;
+  const arq = v.comeco !== 'desenho';
+  const { comeco, ...dados } = v;
   try {
     carregando(true, 'Criando o projeto…');
-    const criado = await postar('/api/projetos', { ...v, tipo: 'desenho' });
-    location.href = `/cad?projeto=${encodeURIComponent(criado.slug)}`;
-  } catch (e) {
-    carregando(false);
-    recado('Não foi possível criar o projeto', e.message, 'erro');
-  }
-}
-
-/**
- * Projeto que nasce da planta do cliente: abre o CAD na Planta de lançamento, que pede o
- * DXF/PDF do arquitetônico. Dali: malha de eixos, gravar os eixos e lançar a estrutura no 3D.
- */
-async function novoProjetoDoArquitetonico() {
-  const v = await perguntar({
-    titulo: 'Novo projeto a partir do arquitetônico',
-    texto: 'Abre o CAD na Planta de lançamento e pede a planta do cliente (DXF ou PDF vetorial). Por cima dela ' +
-           'você lança os eixos (Malha de eixos…), grava, e o Modelo 3D monta e dimensiona o galpão nos eixos: ' +
-           'pilares, tesouras ou vigas, terças, correntes, longarinas, contraventos e bases.',
-    campos: CAMPOS_PROJETO, ok: 'Criar e abrir a planta' });
-  if (!v) return;
-  try {
-    carregando(true, 'Criando o projeto…');
-    const criado = await postar('/api/projetos', { ...v, tipo: 'lancamento' });
-    location.href = `/cad?projeto=${encodeURIComponent(criado.slug)}&arquitetonico=1`;
+    const criado = await postar('/api/projetos', { ...dados, tipo: arq ? 'lancamento' : 'desenho' });
+    location.href = `/cad?projeto=${encodeURIComponent(criado.slug)}` + (arq ? '&arquitetonico=1' : '');
   } catch (e) {
     carregando(false);
     recado('Não foi possível criar o projeto', e.message, 'erro');
@@ -510,14 +506,12 @@ async function iniciar() {
   $('#btn-novo').addEventListener('click', novoProjeto);
   $('#btn-novo-ifc').addEventListener('click', novoDeIFC);
   $('#btn-importar-pacote').addEventListener('click', importarPacote);
-  $('#btn-novo-desenho').addEventListener('click', novoProjetoDesenhado);
-  $('#btn-novo-arquitetonico').addEventListener('click', novoProjetoDoArquitetonico);
+  $('#btn-novo-cad').addEventListener('click', novoProjetoPeloCad);
   $('#btn-pasta').addEventListener('click', () => abrirPasta(null));
   $('#busca').addEventListener('input', desenhar);
   for (const b of document.querySelectorAll('[data-acao="novo"]')) b.addEventListener('click', novoProjeto);
   for (const b of document.querySelectorAll('[data-acao="novo-ifc"]')) b.addEventListener('click', novoDeIFC);
-  for (const b of document.querySelectorAll('[data-acao="novo-desenho"]')) b.addEventListener('click', novoProjetoDesenhado);
-  for (const b of document.querySelectorAll('[data-acao="novo-arquitetonico"]')) b.addEventListener('click', novoProjetoDoArquitetonico);
+  for (const b of document.querySelectorAll('[data-acao="novo-cad"]')) b.addEventListener('click', novoProjetoPeloCad);
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'n' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); novoProjeto(); }
     if (ev.key === '/' && document.activeElement === document.body) { ev.preventDefault(); $('#busca').focus(); }

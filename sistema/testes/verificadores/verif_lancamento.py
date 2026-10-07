@@ -103,7 +103,7 @@ try:
     # 1) tela inicial: a porta nova
     aba.navegar(base + "/"); aba.avaliar("localStorage.setItem('galpao.tema','claro'); 1")
     aba.navegar(base + "/")
-    ok(esperar(aba, "!!document.querySelector('#btn-novo-arquitetonico')", 15), "tela inicial tem 'Novo a partir do arquitetônico…'")
+    ok(esperar(aba, "!!document.querySelector('#btn-novo-cad')", 15), "tela inicial tem 'Novo pelo CAD 2D…' (a planta do cliente é uma das escolhas)")
     criado = post("/api/projetos", {"nome": "Depósito lançado", "tipo": "lancamento"})
     s = criado["slug"]
     ok(criado.get("tipo") == "lancamento" or get("/api/projetos/" + urllib.parse.quote(s))["projeto"]["tipo"] == "lancamento",
