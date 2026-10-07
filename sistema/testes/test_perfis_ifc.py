@@ -97,3 +97,21 @@ def test_forma_no_fim_do_nome():
     r = cat.do_ifc("Pilar:250x250x10SHS:1")
     assert r and r["catalogo"].startswith("TQ 250×250×10") and r["secao"] == (250.0, 250.0)
     assert cat.do_ifc("X:406.4x12.5CHS:1")["fonte"] == "calculado"
+
+
+def test_encaixe_com_emenda():
+    """Peças de 7 m em barra de 12 m: sem emenda, uma barra cada; com emenda (trecho ≥ 1 m, uma por peça), as
+    sobras de 5 m completam as outras e sobra menos barra."""
+    from saida.lista_producao import encaixar
+    comps = [7000.0] * 6
+    sem = encaixar(comps, 12000.0, rotulos=["P%d" % i for i in range(6)])
+    com = encaixar(comps, 12000.0, rotulos=["P%d" % i for i in range(6)], emenda_minima=1000.0)
+    assert sem["quantidade"] == 6 and com["quantidade"] == 4, (sem["quantidade"], com["quantidade"])
+    assert com["emendadas"] and all(min(e["trechos"]) >= 1000 and sum(e["trechos"]) == e["comprimento"] for e in com["emendadas"])
+    # quando a emenda não poupa barra, ela não entra
+    assert not encaixar([5000.0, 5000.0], 12000.0, emenda_minima=1000.0)["emendadas"]
+
+
+def test_peca_sem_material_entra_na_linha_do_perfil():
+    from saida.lista_producao import _material_do_tipo
+    assert _material_do_tipo([("SHS", "", 6), ("SHS", "A36", 28)]) == {"SHS": "A36"}

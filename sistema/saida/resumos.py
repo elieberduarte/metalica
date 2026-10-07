@@ -1008,6 +1008,10 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         kg_m_compra = float(g.get("kg_m_catalogo") or 0.0) or pf["kg_m"]
         pf["kg_barra"] = kg_m_compra * pf["barra_m"]
         pf["kg_compra"] = pf["kg_barra"] * pf["barras"]
+        # a emenda ligada no plano de corte (07/10): as peças que saem em dois pedaços, e as barras que ela poupa
+        pf["emendadas"] = len(b.get("emendadas") or []) if g.get("emenda") else 0
+        sem = (g.get("barras_sem_emenda") or {}).get("quantidade")
+        pf["barras_sem_emenda"] = int(sem) if g.get("emenda") and sem else 0
     try:
         perda = float(str(dados.get("perda_chapas") or "").replace(",", ".").replace("%", "")) if dados.get("perda_chapas") else PERDA_CHAPAS
     except ValueError:
@@ -1436,7 +1440,9 @@ def _html_compra(R: dict) -> str:
                           ("kg/barra", "r"), ("kg compra", "r"), ("Aprov.", "r"), "Pedido"],
                          [[nome_perfil(p), p["material"], (p.get("pecas") or "", "r"), (_n(p["m"], 2), "r"),
                            (_n(p.get("kg_m") or 0.0, 2), "r"), (_n(p["kg"], 1), "r"), ("%s m" % _n(p["barra_m"], 0), "r"),
-                           ("%d%s" % (p["barras"], (" (%d emenda%s)" % (p["emendas"], "s" if p["emendas"] > 1 else "")) if p["emendas"] else ""), "r"),
+                           ("%d%s%s" % (p["barras"], (" (%d emenda%s)" % (p["emendas"], "s" if p["emendas"] > 1 else "")) if p["emendas"] else "",
+                                         ("<br><span class=\"cinza\">com emenda: %d peça(s); sem: %d barras</span>" % (p["emendadas"], p["barras_sem_emenda"]))
+                                         if p.get("emendadas") else ""), "r"),
                            (_n(p.get("kg_barra") or 0.0, 1), "r"), ("<b>%s</b>" % _n(p.get("kg_compra") or 0.0, 1), "r"),
                            ("%s%%" % _n(p["aproveitamento"], 0) if p["aproveitamento"] is not None else "", "r"), ""] for p in C["perfis"]],
                          rodape=[("TOTAL", "b"), "", (sum(p.get("pecas") or 0 for p in C["perfis"]), "r"),

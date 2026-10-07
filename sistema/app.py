@@ -1069,7 +1069,7 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
-                                      nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"), escolhas=_perfis_compra(s))
+                                      nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s))
         lista["pre_moldados"] = r.get("fora_do_aco") or []
         lista["estrutura_a_conferir"] = r.get("estrutura_a_conferir") or []
         arquivos = lista_producao.gravar(pasta, lista, r["objetos_posicoes"], r["acessorios"])
@@ -2124,7 +2124,7 @@ def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
         categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                       projeto=_identificacao_do_projeto(s), nomes_conjuntos=nomes.get("ifc_conjuntos"),
-                                      escolhas=_perfis_compra(s))
+                                      escolhas=_perfis_compra(s), emendas=_perfis_emenda(s))
         # o aço fora das peças (gradil, piso de chapa perfurada) entra na compra do resumo de materiais (06/10)
         lista["pre_moldados"] = r.get("fora_do_aco") or []
         lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
@@ -2152,6 +2152,35 @@ def _identificacao_do_projeto(s: str) -> dict:
 def _perfis_compra(s: str) -> dict:
     """{tipo do perfil no IFC: item do catálogo} escolhidos para a compra no resumo de materiais (06/10)."""
     return dict(_gerente().ler(s).get("perfis_compra") or {})
+
+
+def _perfis_emenda(s: str) -> list:
+    """Os perfis (tipo no IFC) em que o usuário liga a emenda na compra, no plano de corte (07/10)."""
+    return list(_gerente().ler(s).get("perfis_emenda") or [])
+
+
+def gravar_emenda_perfil(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/materiais/emenda {perfil, usar}: liga ou desliga a emenda do perfil na compra (o encaixe
+    com emenda: trecho mínimo de 1,0 m, uma emenda por peça) e refaz os encaixes da lista gravada na hora. Os resumos
+    se refazem pelo botão deles."""
+    from nucleo import catalogo
+    from saida import lista_producao
+    tipo = catalogo.nome_do_ifc(str(corpo.get("perfil") or ""))
+    if not tipo:
+        raise ErroDeDados("falta o perfil.")
+    g = _gerente()
+    emendas = [x for x in _perfis_emenda(s) if x != tipo]
+    if corpo.get("usar"):
+        emendas.append(tipo)
+    g._atualizar(s, perfis_emenda=emendas)
+    pasta = os.path.join(g._existente(s), "detalhamento")
+    caminho = os.path.join(pasta, lista_producao.ARQUIVO_JSON)
+    if os.path.exists(caminho):
+        with open(caminho, encoding="utf-8") as f:
+            lista = json.load(f)
+        lista_producao.refazer_encaixes(lista, emendas)
+        lista_producao.gravar(pasta, lista, [], {})
+    return {"perfil": tipo, "usar": tipo in emendas, "emendas": emendas}
 
 
 def parecidos_do_perfil(s: str, perfil: str) -> dict:
@@ -2215,7 +2244,7 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
         lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False, ajustes=_ajustes_furos(s), nomes=nomes)
         lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
-                                      nomes_conjuntos=nomes.get("ifc_conjuntos"), escolhas=_perfis_compra(s))
+                                      nomes_conjuntos=nomes.get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s))
         lista["pre_moldados"] = lev.get("fora_do_aco") or []
         lista["estrutura_a_conferir"] = lev.get("estrutura_a_conferir") or []
         lista_producao.gravar(pasta, lista, lev["posicoes"], lev["acessorios"])
@@ -4202,6 +4231,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(lista_de_materiais(partes[0], recalcular=True, corpo=corpo))
                 if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "perfil-compra":
                     return self._json(gravar_perfil_compra(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "emenda":
+                    return self._json(gravar_emenda_perfil(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(gerar_resumos_projeto(partes[0], corpo))
                 if len(partes) in (2, 3) and partes[1] in ("comercial", "orcamento") and not COMERCIAL:

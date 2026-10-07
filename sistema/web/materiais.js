@@ -299,34 +299,63 @@ function desenhar(L) {
     const abrirPlano = (g) => { const d = blocos.get(g); if (!d) return; d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     const nomeDe = (g) => g.perfil_nome || g.perfil;
     const catDe = (g) => g.catalogo ? (g.fonte_kg_m === 'similar' ? 'similar: ' + g.catalogo : g.fonte_kg_m === 'escolhido' ? 'escolhido: ' + g.catalogo : g.catalogo) : '';
-    pCorte.append(secao('Perfis', `${n(comPlano.length)} perfis · ${n(comPlano.reduce((s_, g) => s_ + g.barras.quantidade, 0))} barras de compra`,
+    // os dois encaixes, sem e com emenda, para a comparação (07/10): a chave "Na compra" escolhe o que vai para a compra
+    const semDe = (g) => g.barras_sem_emenda || g.barras;
+    const comDe = (g) => g.barras_com_emenda || null;
+    const kgBarra = (g) => (g.kg_m_catalogo || g.kg_m || 0) * (g.barras.comprimento / 1000);
+    const economia = (g) => comDe(g) ? (semDe(g).quantidade - comDe(g).quantidade) * kgBarra(g) : 0;
+    const usarEmenda = async (g, usar) => {
+      aviso(`${nomeDe(g)}: ${usar ? 'com emenda' : 'sem emenda'} na compra…`);
+      try {
+        await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/materiais/emenda`, { perfil: g.perfil, usar });
+        await carregar(false);
+        aviso(`${nomeDe(g)}: ${usar ? 'com emenda' : 'sem emenda'} na compra. Para levar aos resumos, use "Gerar de novo" na aba Resumos da obra.`);
+      } catch (e) { aviso(e.message, true); }
+    };
+    pCorte.append(secao('Perfis', `${n(comPlano.length)} perfis · ${n(comPlano.reduce((s_, g) => s_ + g.barras.quantidade, 0))} barras na compra · `
+      + `emenda: trecho mínimo de 1,0 m, uma por peça`,
       tabela([
         { titulo: 'Perfil', valor: (g) => el('a', { href: '#corte', class: 'b', texto: nomeDe(g), onclick: (ev) => { ev.preventDefault(); abrirPlano(g); } }) },
         { titulo: 'No catálogo', valor: catDe },
         { titulo: 'Peças', chave: 'pecas', classe: 'c', num: true },
         { titulo: 'Compr. (m)', chave: 'comprimento_m', classe: 'r', num: true, casas: 2 },
         { titulo: 'Barra', valor: (g) => `${n(g.barras.comprimento / 1000)} m`, classe: 'c' },
-        { titulo: 'Barras', valor: (g) => g.barras.quantidade, classe: 'c b', num: true },
-        { titulo: 'Aprov. (%)', valor: (g) => g.barras.aproveitamento, classe: 'c', num: true, casas: 1 },
-        { titulo: 'Sobra (m)', valor: (g) => g.barras.sobra_m, classe: 'r', num: true, casas: 2 },
-        { titulo: 'Emendas', valor: (g) => g.barras.emendas || '', classe: 'c' },
+        { titulo: 'Sem emenda', valor: (g) => `${n(semDe(g).quantidade)} · ${n(semDe(g).aproveitamento, 1)}%`, classe: 'c', dica: 'barras e aproveitamento sem emendar peça' },
+        { titulo: 'Com emenda', valor: (g) => comDe(g) ? `${n(comDe(g).quantidade)} · ${n(comDe(g).aproveitamento, 1)}%` : '—', classe: 'c',
+          dica: 'barras e aproveitamento emendando nas sobras ("—": a emenda não poupa barra)' },
+        { titulo: 'Peças emendadas', valor: (g) => comDe(g) ? (comDe(g).emendadas || []).length : '', classe: 'c' },
+        { titulo: 'Economia (kg)', valor: (g) => economia(g) || '', classe: 'r', num: true, casas: 1 },
+        { titulo: 'Na compra', valor: (g) => comDe(g)
+            ? el('select', { class: 'na-compra', onchange: (ev) => usarEmenda(g, ev.target.value === 'com') },
+                el('option', { value: 'sem', texto: 'sem emenda', selected: !g.emenda }), el('option', { value: 'com', texto: 'com emenda', selected: !!g.emenda }))
+            : 'sem emenda', classe: 'c' },
       ], comPlano, ['TOTAL', '', n(comPlano.reduce((s_, g) => s_ + g.pecas, 0)), n(comPlano.reduce((s_, g) => s_ + g.comprimento_m, 0), 2), '',
-                    n(comPlano.reduce((s_, g) => s_ + g.barras.quantidade, 0)), '', n(comPlano.reduce((s_, g) => s_ + g.barras.sobra_m, 0), 2), ''],
+                    n(comPlano.reduce((s_, g) => s_ + semDe(g).quantidade, 0)), n(comPlano.reduce((s_, g) => s_ + (comDe(g) || semDe(g)).quantidade, 0)),
+                    n(comPlano.reduce((s_, g) => s_ + ((comDe(g) || {}).emendadas || []).length, 0)), n(comPlano.reduce((s_, g) => s_ + economia(g), 0), 1), ''],
       (g) => [g.perfil, nomeDe(g), g.catalogo || ''].join(' '))));
     pCorte.append(el('div', { class: 'passos planos-botoes' },
       el('button', { type: 'button', class: 'botao-m', texto: 'Abrir todos', onclick: () => blocos.forEach(d => { d.open = true; }) }),
       el('button', { type: 'button', class: 'botao-m', texto: 'Recolher todos', onclick: () => blocos.forEach(d => { d.open = false; }) })));
+    const tabelaPlano = (g, b) => tabela([
+      { titulo: 'Barras', chave: 'barras', classe: 'c b', num: true },
+      { titulo: 'Cortes', valor: (pl) => barraDesenhada(pl, b.comprimento), classe: 'quebra corte-celula' },
+      { titulo: 'Sobra (mm)', chave: 'sobra', classe: 'r', num: true },
+    ], b.plano.map(pl => ({ ...pl, _g: g })), null, (pl) => [g.perfil, nomeDe(g), ...pl.cortes.map(c => c.nome)].join(' '));
+    const resumoDe = (b) => `${n(b.quantidade)} barras de ${n(b.comprimento / 1000)} m · aproveitamento ${n(b.aproveitamento, 1)}% · sobra ${n(b.sobra_m, 2)} m`
+      + (b.emendas ? ` · ${b.emendas} peça(s) maior(es) que a barra` : '');
     for (const g of comPlano) {
-      const b = g.barras;
-      const linhas = b.plano.map(pl => ({ ...pl, _g: g }));
+      const sem = semDe(g), com = comDe(g);
+      const naCompra = g.emenda ? 'com emenda' : 'sem emenda';
       const d = el('details', { class: 'plano-perfil' },
         el('summary', {}, el('b', { texto: nomeDe(g) }), catDe(g) ? el('span', { class: 'cat', texto: catDe(g) }) : null,
-          el('small', { texto: `barras de ${n(b.comprimento / 1000)} m · ${n(b.quantidade)} barras · aproveitamento ${n(b.aproveitamento, 1)}% · sobra ${n(b.sobra_m, 2)} m${b.emendas ? ` · ${b.emendas} peça(s) com emenda` : ''}` })),
-        tabela([
-          { titulo: 'Barras', chave: 'barras', classe: 'c b', num: true },
-          { titulo: 'Cortes', valor: (pl) => barraDesenhada(pl, b.comprimento), classe: 'quebra corte-celula' },
-          { titulo: 'Sobra (mm)', chave: 'sobra', classe: 'r', num: true },
-        ], linhas, null, (pl) => [g.perfil, nomeDe(g), ...pl.cortes.map(c => c.nome)].join(' ')));
+          el('small', { texto: `sem emenda: ${n(sem.quantidade)} barras` + (com ? ` · com emenda: ${n(com.quantidade)} barras (${(com.emendadas || []).length} peça(s) emendada(s), −${n(economia(g), 1)} kg)` : ' · a emenda não poupa barra')
+            + ` · na compra: ${naCompra}` })));
+      d.append(el('h4', { class: 'opcao-plano' + (g.emenda ? '' : ' na-compra'), texto: `Sem emenda — ${resumoDe(sem)}${g.emenda ? '' : ' · na compra'}` }), tabelaPlano(g, sem));
+      if (com) {
+        const lista = (com.emendadas || []).map(e => `${e.nome} ${n(e.comprimento)} = ${n(e.trechos[0])} + ${n(e.trechos[1])}`).join(' · ');
+        d.append(el('h4', { class: 'opcao-plano' + (g.emenda ? ' na-compra' : ''), texto: `Com emenda — ${resumoDe(com)}${g.emenda ? ' · na compra' : ''}` }),
+          el('p', { class: 'nota emendadas', texto: `Peças emendadas (mm): ${lista}` }), tabelaPlano(g, com));
+      }
       blocos.set(g, d);
       pCorte.append(d);
     }

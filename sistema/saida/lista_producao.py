@@ -55,15 +55,23 @@ def _ordem_natural(texto):
 
 # ============================================================ encaixe em barras
 
+#: A emenda nas sobras (07/10, o usuário): o menor pedaço que completa a peça, e uma emenda só por peça.
+EMENDA_TRECHO_MINIMO = 1000.0
+
+
 def encaixar(comprimentos: Sequence[float], barra: float, perda: float = PERDA_CORTE,
-             rotulos: Optional[Sequence[str]] = None) -> dict:
+             rotulos: Optional[Sequence[str]] = None, emenda_minima: float = 0.0) -> dict:
     """Quantas barras de `barra` mm saem as peças, por "primeiro que cabe" do maior para o
     menor. Peça maior que a barra conta como emenda (uma barra inteira por trecho, o resto
     volta para o encaixe).
 
     `plano`: o que sai de cada barra — as barras de corte igual juntas, da mais repetida
     para a menos: [{"barras": n, "cortes": [{"nome", "comprimento", "qtd"}], "sobra": mm}].
-    `rotulos` (um por comprimento) é o nome de cada peça no plano."""
+    `rotulos` (um por comprimento) é o nome de cada peça no plano.
+
+    `emenda_minima` > 0 (o perfil em que o usuário permite emenda, 07/10): depois do encaixe, as barras menos
+    cheias são desfeitas quando as peças delas cabem nas sobras das outras — inteiras, ou em dois pedaços de pelo
+    menos `emenda_minima` mm (uma emenda por peça). `emendadas` lista as peças que saíram em dois pedaços."""
     rot = list(rotulos) if rotulos is not None else [""] * len(comprimentos)
     sobras: List[float] = []
     cortes: List[List[tuple]] = []                 # por barra: [(nome, comprimento)]
@@ -83,6 +91,7 @@ def encaixar(comprimentos: Sequence[float], barra: float, perda: float = PERDA_C
                 fila.append((resto, "%s (resto da emenda)" % nome if nome else "resto da emenda"))
         else:
             fila.append((L, nome))
+    ini_s, ini_c = list(sobras), [list(c) for c in cortes]   # as barras inteiras das peças maiores que a barra
     for L, nome in sorted(fila, key=lambda t: -t[0]):
         for i, s in enumerate(sobras):
             if s >= L + perda or abs(s - L) < 1e-6:
@@ -93,6 +102,18 @@ def encaixar(comprimentos: Sequence[float], barra: float, perda: float = PERDA_C
             sobras.append(max(0.0, barra - L - perda))
             cortes.append([(nome, L)])
         colocado += L
+    emendadas: List[dict] = []
+    if emenda_minima > 0:
+        # vários jeitos de emendar; vale o de menos barras e, empatado, o de menos emendas. Sem economizar barra
+        # nenhuma, a emenda não entra (solda à toa)
+        opcoes = [_desfazer_barras_com_emenda(sobras, cortes, barra, perda, emenda_minima)]
+        for frac in FRACOES_EMENDA:
+            s1, c1, e1 = _encaixe_continuo(fila, ini_s, ini_c, barra, perda, emenda_minima, frac)
+            s2, c2, e2 = _desfazer_barras_com_emenda(s1, c1, barra, perda, emenda_minima)
+            opcoes.append((s2, c2, e1 + e2))
+        melhor = min(opcoes, key=lambda o: (len(o[0]), len(o[2])))
+        if len(melhor[0]) < len(sobras):
+            sobras, cortes, emendadas = melhor
     n = len(sobras)
     total = n * barra
     # barras de corte igual juntas
@@ -105,9 +126,111 @@ def encaixar(comprimentos: Sequence[float], barra: float, perda: float = PERDA_C
               "cortes": [{"nome": nm, "comprimento": L, "qtd": k} for (nm, L), k in itens]}
              for (itens, sobra), q in iguais.items()]
     plano.sort(key=lambda b: (-b["barras"], b["sobra"]))
-    return {"comprimento": barra, "quantidade": n, "emendas": emendas,
-            "aproveitamento": round(100.0 * colocado / total, 1) if total else 0.0,
-            "sobra_m": round(sum(sobras) / 1000.0, 2), "plano": plano}
+    r = {"comprimento": barra, "quantidade": n, "emendas": emendas,
+         "aproveitamento": round(100.0 * colocado / total, 1) if total else 0.0,
+         "sobra_m": round(sum(sobras) / 1000.0, 2), "plano": plano}
+    if emenda_minima > 0:
+        r["emenda_minima"] = emenda_minima
+        r["emendadas"] = emendadas
+    return r
+
+
+#: As variantes do encaixe contínuo: só emenda quando o pedaço que vai na sobra é pelo menos esta fração da peça
+#: (a sobra grande vale a solda). No W360X64 da Passarela: 0,0 → 48 barras e 39 emendas; 0,6 → 48 e 8 (07/10).
+FRACOES_EMENDA = (0.0, 0.3, 0.5, 0.6, 0.7, 0.8)
+
+
+def _encaixe_continuo(fila, sobras0, cortes0, barra, perda, minimo, frac):
+    """Do maior para o menor: inteira na sobra mais justa que cabe; não cabendo, um pedaço (≥ `minimo` e ≥ `frac`
+    da peça) na maior sobra e o resto (≥ `minimo`) na sobra mais justa que o leva ou numa barra nova."""
+    sobras, cortes, ems = list(sobras0), [list(c) for c in cortes0], []
+    for L, nome in sorted(fila, key=lambda t: -t[0]):
+        cabe = [i for i, s in enumerate(sobras) if s >= L + perda or abs(s - L) < 1e-6]
+        if cabe:
+            i = min(cabe, key=lambda k: sobras[k])
+            sobras[i] = max(0.0, sobras[i] - L - perda)
+            cortes[i].append((nome, L))
+            continue
+        if L >= 2 * minimo and sobras and "(resto da emenda" not in nome:
+            i = max(range(len(sobras)), key=lambda k: sobras[k])
+            a = min(sobras[i] - perda, L - minimo)
+            if a >= minimo and a >= frac * L:
+                b = L - a
+                sobras[i] -= a + perda
+                cortes[i].append(("%s (emenda 1/2)" % (nome or "peça"), a))
+                cabe_b = [k for k, s in enumerate(sobras) if k != i and s >= b + perda]
+                if cabe_b:
+                    k = min(cabe_b, key=lambda x: sobras[x])
+                    sobras[k] -= b + perda
+                    cortes[k].append(("%s (emenda 2/2)" % (nome or "peça"), b))
+                else:
+                    sobras.append(max(0.0, barra - b - perda))
+                    cortes.append([("%s (emenda 2/2)" % (nome or "peça"), b)])
+                ems.append({"nome": nome, "comprimento": L, "trechos": [round(a), round(b)]})
+                continue
+        sobras.append(max(0.0, barra - L - perda))
+        cortes.append([(nome, L)])
+    return sobras, cortes, ems
+
+
+def _desfazer_barras_com_emenda(sobras, cortes, barra, perda, minimo):
+    """Tira barras do encaixe pondo as peças delas nas sobras das outras: inteira na sobra que cabe (a mais justa)
+    ou em dois pedaços (cada um ≥ `minimo`, um em cada sobra). Peça já emendada não se emenda de novo. Tenta da
+    barra menos cheia para a mais cheia, até nenhuma sair."""
+    sobras, cortes = list(sobras), [list(c) for c in cortes]
+    emendadas: List[dict] = []
+    mudou = True
+    while mudou and len(sobras) > 1:
+        mudou = False
+        ordem = sorted(range(len(sobras)), key=lambda i: (-sobras[i], i))
+        for alvo in ordem:
+            pecas = sorted(cortes[alvo], key=lambda t: -t[1])
+            s_ = {i: sobras[i] for i in range(len(sobras)) if i != alvo}
+            novos = {i: [] for i in s_}
+            ems = []
+            ok = True
+            for nome, L in pecas:
+                ja_emendada = "(emenda" in nome or "(resto da emenda" in nome
+                cabe = [i for i, s in s_.items() if s >= L + perda or abs(s - L) < 1e-6]
+                if cabe:
+                    i = min(cabe, key=lambda k: s_[k])
+                    s_[i] = max(0.0, s_[i] - L - perda)
+                    novos[i].append((nome, L))
+                    continue
+                if ja_emendada or L < 2 * minimo:
+                    ok = False
+                    break
+                # dois pedaços: o maior na maior sobra, o resto (≥ mínimo) na sobra mais justa que o leva
+                livres = sorted(s_, key=lambda k: -s_[k])
+                feito = False
+                for i in livres:
+                    a = min(s_[i] - perda, L - minimo)
+                    if a < minimo:
+                        break
+                    b = L - a
+                    cabe_b = [k for k in s_ if k != i and s_[k] >= b + perda]
+                    if not cabe_b:
+                        continue
+                    k = min(cabe_b, key=lambda x: s_[x])
+                    s_[i] -= a + perda
+                    s_[k] -= b + perda
+                    novos[i].append(("%s (emenda 1/2)" % (nome or "peça"), a))
+                    novos[k].append(("%s (emenda 2/2)" % (nome or "peça"), b))
+                    ems.append({"nome": nome, "comprimento": L, "trechos": [round(a), round(b)]})
+                    feito = True
+                    break
+                if not feito:
+                    ok = False
+                    break
+            if ok:
+                for i, extra in novos.items():
+                    cortes[i].extend(extra)
+                    sobras[i] = s_[i]
+                emendadas.extend(ems)
+                del sobras[alvo], cortes[alvo]
+                mudou = True
+                break
+    return sobras, cortes, emendadas
 
 
 def texto_dos_cortes(cortes: Sequence[dict]) -> str:
@@ -249,7 +372,8 @@ def comparar_dobras(perfis: Sequence[dict]) -> dict:
 
 def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: Dict[str, int],
            pecas=None, barra: float = 0.0, projeto: Optional[dict] = None,
-           nomes_conjuntos: Optional[Dict[str, str]] = None, escolhas: Optional[Dict[str, str]] = None) -> dict:
+           nomes_conjuntos: Optional[Dict[str, str]] = None, escolhas: Optional[Dict[str, str]] = None,
+           emendas: Optional[Sequence[str]] = None) -> dict:
     """A lista inteira, pronta para gravar em JSON. `barra` em mm (0 = automático);
     `nomes_conjuntos`: marca do conjunto → nome de produção; `escolhas`: tipo do perfil no IFC → item do catálogo
     escolhido para a compra (a troca do resumo de materiais, 06/10), que dá o nome e o kg/m."""
@@ -310,12 +434,13 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     # o IFC do Revit traz "Família:Tipo:ID" em cada peça, e cada barra saía como um perfil (Bella Casa, 06/10)
     from nucleo.catalogo import nome_do_ifc, do_ifc
     perfis: Dict[tuple, dict] = collections.OrderedDict()
-    for p in lista:
-        if _e_chapa(p) or p.classe in ("telha", "indefinida"):
-            continue
+    barras_ = [p for p in lista if not (_e_chapa(p) or p.classe in ("telha", "indefinida"))]
+    mat_de = _material_do_tipo([(nome_do_ifc(p.perfil), p.material, p.quantidade) for p in barras_])
+    for p in barras_:
         tipo = nome_do_ifc(p.perfil)
-        g = perfis.setdefault((tipo, p.material), {
-            "perfil": tipo, "material": p.material, "categoria": categorias.get(p.marca, "BARRAS"),
+        mat = p.material or mat_de.get(tipo, "")
+        g = perfis.setdefault((tipo, mat), {
+            "perfil": tipo, "material": mat, "categoria": categorias.get(p.marca, "BARRAS"),
             "posicoes": [], "pecas": 0, "comprimento_m": 0.0, "peso": 0.0, "peso_malha": 0.0, "_comps": [], "_rotulos": []})
         g["posicoes"].append(p.marca)
         g["pecas"] += p.quantidade
@@ -333,7 +458,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         # os nomes de produção (A.C.82) no lugar das marcas quando há: a marca do Revit é o nome inteiro da peça
         g["nomes_posicoes"] = sorted(dict.fromkeys(rotulos), key=_ordem_natural)
         b = _barra_para(comps, barra, g["perfil"])
-        g["barras"] = encaixar(comps, b, rotulos=rotulos)
+        _os_dois_encaixes(g, comps, b, rotulos, set(emendas or ()))
         g["kg_m"] = round(g["peso"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0
         g["kg_m_malha"] = round(g["peso_malha"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0
         g["comprimento_m"] = round(g["comprimento_m"], 2)
@@ -481,6 +606,50 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
 
 # ============================================================ arquivos
 
+def _os_dois_encaixes(g: dict, comps, barra: float, rotulos, emendas: set):
+    """O encaixe sem emenda e o com emenda (quando economiza barra), para a comparação na tela (07/10); `barras` é o
+    que vai para a compra: o com emenda só no perfil em que o usuário ligou a emenda."""
+    sem = encaixar(comps, barra, rotulos=rotulos)
+    com = encaixar(comps, barra, rotulos=rotulos, emenda_minima=EMENDA_TRECHO_MINIMO)
+    g["barras_sem_emenda"] = sem
+    g.pop("barras_com_emenda", None)
+    if com["quantidade"] < sem["quantidade"]:
+        g["barras_com_emenda"] = com
+    g["emenda"] = g["perfil"] in emendas and "barras_com_emenda" in g
+    g["barras"] = g["barras_com_emenda"] if g["emenda"] else sem
+
+
+def _material_do_tipo(itens) -> Dict[str, str]:
+    """{tipo: o material mais comum entre as peças dele que têm material}: a peça do mesmo perfil que o Revit deixou
+    sem material entra na linha das outras (o 250x250x10SHS da Passarela saía em duas linhas, 07/10)."""
+    cont: Dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    for tipo, mat, q in itens:
+        if mat:
+            cont[tipo][mat] += int(q or 0) or 1
+    return {t: c.most_common(1)[0][0] for t, c in cont.items()}
+
+
+def refazer_encaixes(lista: dict, emendas: Optional[Sequence[str]]) -> dict:
+    """Os dois encaixes de cada perfil da lista já gravada, pelas posições dela (o mesmo que o montar faz com as
+    peças), e a escolha de emenda aplicada — sem levantar o modelo de novo. Devolve a própria lista."""
+    from nucleo.catalogo import nome_do_ifc
+    pecas: Dict[tuple, tuple] = collections.defaultdict(lambda: ([], []))
+    barras_ = [li for li in lista.get("posicoes") or [] if str(li.get("classe") or "").startswith("Barra") and li.get("comprimento")]
+    mat_de = _material_do_tipo([(nome_do_ifc(li.get("perfil") or ""), li.get("material"), li.get("quantidade")) for li in barras_])
+    for li in barras_:
+        tipo = nome_do_ifc(li.get("perfil") or "")
+        comps, rots = pecas[(tipo, li.get("material") or mat_de.get(tipo, ""))]
+        q = int(li.get("quantidade") or 0)
+        comps.extend([float(li["comprimento"])] * q)
+        rots.extend([li.get("nome") or li.get("marca") or ""] * q)
+    conj = set(emendas or ())
+    for g in lista.get("perfis") or []:
+        comps, rots = pecas.get((g["perfil"], g.get("material")), ([], []))
+        if comps:
+            _os_dois_encaixes(g, comps, float((g.get("barras") or {}).get("comprimento") or 6000.0), rots, conj)
+    return lista
+
+
 def _itens_escolhidos(escolhas) -> dict:
     """{tipo do perfil no IFC: Item do catálogo} das escolhas que existem no catálogo e têm kg/m."""
     from nucleo.catalogo import item
@@ -512,13 +681,15 @@ def trocar_na_lista(lista: dict, escolhas: Optional[Dict[str, str]]) -> dict:
         if g["kg_m_catalogo"]:
             kg_m[tipo] = float(g["kg_m_catalogo"])
     peso_perfil: Dict[str, float] = collections.Counter()
+    mat_de = _material_do_tipo([(nome_do_ifc(li.get("perfil") or ""), li.get("material"), li.get("quantidade"))
+                                for li in lista.get("posicoes") or [] if str(li.get("classe") or "").startswith("Barra")])
     for li in lista.get("posicoes") or []:
         tipo = nome_do_ifc(li.get("perfil") or "")
         if tipo in kg_m and li.get("comprimento") and str(li.get("classe") or "").startswith("Barra"):
             li["peso"] = round(kg_m[tipo] * float(li["comprimento"]) / 1000.0, 3)
             li["peso_total"] = round(li["peso"] * int(li.get("quantidade") or 0), 2)
         if tipo in kg_m:
-            peso_perfil[(tipo, li.get("material"))] += float(li.get("peso_total") or 0.0)
+            peso_perfil[(tipo, li.get("material") or mat_de.get(tipo, ""))] += float(li.get("peso_total") or 0.0)
     for g in lista.get("perfis") or []:
         chave = (g["perfil"], g.get("material"))
         if chave in peso_perfil:
