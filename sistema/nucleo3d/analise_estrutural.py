@@ -330,23 +330,125 @@ def _trocar_perfis(barras: List[dict], P: dict, cache: dict, avisos: List[str]) 
         avisos.append("troca de perfil ignorada: \"%s\" não está no catálogo" % nome)
 
 
-def grupos_de_perfis(r: dict, limite: int = 24) -> List[dict]:
-    """os grupos (função + perfil original) do resultado, com o peso e as alternativas do catálogo (mesma família, do
-    mais leve ao mais pesado) — a lista da troca de perfil na tela"""
-    from nucleo import catalogo
+ESPESSURA_MIN_SUGESTAO = 1.5          # mm: a sugestão não oferece tubo de parede mais fina (a solda da treliça); digitar pode
+
+
+def grupos_de_perfis(r: dict, outras: Sequence[dict] = (), limite: int = 20) -> List[dict]:
+    """os grupos (função + perfil original) do resultado, com as alternativas do catálogo (mesma família) e, em cada uma,
+    o uso ESTIMADO com os esforços da combinação que governa cada barra do grupo (N, Mz, My, nas situações todas):
+
+    * σ elástica = |N|/A + |Mz|/Wz + |My|/Wy (o mesmo mapa da tela), em MPa;
+    * uso = a interação da NBR 8800 (5.5.1.2) com N_Rd da compressão pela norma (χ e Q, flambagem com o comprimento da
+      barra entre nós, K = 1) ou da tração (A·fy/1,10) e M_Rd = W·fy/1,10 — tira da lista o tubo de parede fina que passa
+      na tensão e flamba muito antes.
+
+    É estimativa: com o perfil novo os esforços se redistribuem (o recalcular confirma), o comprimento de flambagem é o
+    da barra (fora do plano o banzo pode ter mais) e a flexão não tem FLT/FLM — a verificação completa é a etapa 4.
+    Cada alternativa: [nome, kg/m, σ estimada MPa, uso estimado (1 = 100%)]; a lista: as mais pesadas das que não passam
+    logo abaixo da mais leve que passa (a referência) e as que passam, da mais leve para cima."""
+    from nucleo import catalogo, materiais as mat, nbr8800
+    from nucleo3d.calculo_ifc import _perfil_de
+    fy = float((r.get("parametros") or {}).get("fy_mpa") or 345.0)
+    try:
+        aco = next(a for a in mat.ACOS.values() if abs(a.fy * 10.0 - fy) < 0.5)
+    except StopIteration:
+        aco = mat.aco(mat.ACO_PADRAO)
+    fyk = fy * 1000.0                                            # kN/m²
     grupos: Dict[str, dict] = {}
-    for b in r["barras"]:
-        if b.get("hipotese"):
-            continue
-        k = chave_do_grupo(b)
-        g = grupos.setdefault(k, {"chave": k, "funcao": k.split("|", 1)[0], "perfil": k.split("|", 1)[1], "atual": b["perfil"], "barras": 0})
-        g["barras"] += 1
+    for res in (r, *outras):
+        for i, b in enumerate(res["barras"]):
+            if b.get("hipotese"):
+                continue
+            k = chave_do_grupo(b)
+            g = grupos.setdefault(k, {"chave": k, "funcao": k.split("|", 1)[0], "perfil": k.split("|", 1)[1], "atual": b["perfil"],
+                                      "barras": 0, "duplo": bool(b.get("duplo")), "_esf": []})
+            if res is r:
+                g["barras"] += 1
+            N, Mz, My = res["envoltoria"][i].get("esf") or [0.0, 0.0, 0.0]
+            g["_esf"].append((float(N), abs(float(Mz)), abs(float(My)), float(b["L"])))
+    secoes: Dict[str, Optional[dict]] = {}
+    perfis: Dict[str, object] = {}
+    ncrd: Dict[tuple, float] = {}
+
+    def secao(nome, duplo):
+        return _secao(nome, duplo, secoes)
+
+    def nc_rd(nome, L, n):
+        """N_c,Rd (kN) pela NBR 8800 com Lx = Ly = L (m); 0 se a norma não cobre (barra redonda)"""
+        chave = (nome, round(L * 20) / 20)
+        if chave not in ncrd:
+            if nome not in perfis:
+                perfis[nome] = _perfil_de(nome, "", {}, {})
+            p = perfis[nome]
+            try:
+                v = float(nbr8800.compressao(p, aco, Lx=chave[1] * 100.0, Ly=chave[1] * 100.0, N_Sd=1.0).dados["N_Rd"])
+            except Exception:                                    # noqa: BLE001 — a norma não cobre: não resiste à compressão
+                v = 0.0
+            ncrd[chave] = v
+        return ncrd[chave] * n
+
+    def criticas(g):
+        """as barras que podem governar: maior σ, maior compressão e maior compressão × L² (a flambagem)"""
+        s0 = secao(g["atual"], g["duplo"])
+        E = g["_esf"]
+        if s0 is None:
+            return E[:12]
+        sig = lambda e: abs(e[0]) / s0["A"] + e[1] / s0["Wz"] + e[2] / s0["Wy"]
+        esc = set()
+        for f in (sig, lambda e: max(0.0, -e[0]), lambda e: max(0.0, -e[0]) * e[3] ** 2):
+            esc.update(sorted(range(len(E)), key=lambda j: -f(E[j]))[:4])
+        return [E[j] for j in esc]
+
+    def estimar(nome, g, crit, com_uso=True):
+        sec = secao(nome, g["duplo"])
+        if sec is None:
+            return None
+        n = 2 if g["duplo"] else 1
+        sig = max(abs(N) / sec["A"] + Mz / sec["Wz"] + My / sec["Wy"] for N, Mz, My, L in g["_esf"]) / 1000.0
+        if not com_uso:
+            return sig, None
+        uso = 0.0
+        mz_rd, my_rd = sec["Wz"] * fyk / 1.10, sec["Wy"] * fyk / 1.10
+        for N, Mz, My, L in crit:
+            n_rd = nc_rd(nome, L, n) if N < 0 else sec["A"] * fyk / 1.10
+            rn = abs(N) / n_rd if n_rd > 0 else (0.0 if abs(N) < 1e-6 else 99.0)
+            rm = Mz / mz_rd + My / my_rd
+            uso = max(uso, rn + 8.0 / 9.0 * rm if rn >= 0.2 else rn / 2.0 + rm)
+        return sig, uso
     for g in grupos.values():
+        crit = criticas(g)
         try:
-            alts = catalogo.alternativas(g["perfil"], limite=limite)
+            alts = catalogo.alternativas(g["perfil"], modo="todos", limite=5000)
         except Exception:                                       # noqa: BLE001 — fora do catálogo: só o campo livre
             alts = []
-        g["alternativas"] = [[a["nome"], round(float(a.get("massa") or 0.0), 2)] for a in alts]
+        cand = []
+        for a in alts:
+            if 0 < float(a.get("espessura") or 99.0) < ESPESSURA_MIN_SUGESTAO:
+                continue                                         # parede fina demais para solda de treliça (prática)
+            e = estimar(a["nome"], g, crit, com_uso=False)
+            if e is not None:
+                cand.append([a["nome"], round(float(a.get("massa") or 0.0), 2), e[0]])
+        cand.sort(key=lambda a: (a[1], a[2]))
+        passam, nao = [], []
+        for a in cand:
+            if a[2] > fy:                                        # nem a tensão passa: não precisa da flambagem
+                nao.append(a + [None])
+                continue
+            _s, uso = estimar(a[0], g, crit)
+            (passam if uso <= 1.0 else nao).append(a + [uso])
+            if len(passam) >= limite:
+                break
+        if passam:
+            leve = passam[0][1]
+            lista = [a for a in nao if a[1] <= leve][-4:] + passam
+        else:
+            lista = sorted(nao, key=lambda a: (a[3] if a[3] is not None else 9e9, a[2]))[:limite]
+            lista.sort(key=lambda a: a[1])
+        g["alternativas"] = [[a[0], a[1], round(a[2], 1), None if a[3] is None else round(a[3], 3)] for a in lista]
+        atual = estimar(g["atual"], g, crit)
+        g["estimativa_atual"] = [round(atual[0], 1), round(atual[1], 3)] if atual else None
+        g["mais_leve_que_passa"] = passam[0][0] if passam else None
+        del g["_esf"]
     return sorted(grupos.values(), key=lambda g: g["chave"])
 
 
@@ -963,6 +1065,7 @@ def resultados(M: dict, casos: Dict[str, dict], sol: dict, combs: Dict[str, dict
                 "V": round(float(np.max(np.hypot(e[:, 1], e[:, 2]))), 2),
                 "M": round(float(np.max(np.hypot(e[:, 4], e[:, 5]))), 3),
                 "sigma": round(float(sig[k]), 1), "x": round(float(xs[i][k] / br["L"]), 2),
+                "esf": [round(float(e[k, 0]), 2), round(float(e[k, 5]), 3), round(float(e[k, 4]), 3)],
             })
         por_comb[cn] = {"desl_mm": np.round(desl * 1000, 2), "reacoes": reac, "barras": bar}
     # envoltória e ranking (ELU)
@@ -975,6 +1078,7 @@ def resultados(M: dict, casos: Dict[str, dict], sol: dict, combs: Dict[str, dict
         Nmax = max(por_comb[c]["barras"][i]["N"][1] for c in elu) if elu else 0
         Mmax = max(por_comb[c]["barras"][i]["M"] for c in elu) if elu else 0
         env.append({"sigma": b["sigma"], "taxa": round(b["sigma"] / fy, 3), "comb": melhor, "N": [Nmin, Nmax], "M": Mmax,
+                    "esf": b.get("esf", [0.0, 0.0, 0.0]),
                     "V": max(por_comb[c]["barras"][i]["V"] for c in elu) if elu else 0})
     return {"por_comb": por_comb, "envoltoria": env}
 
@@ -995,7 +1099,7 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
     r_r["situacao"] = "retraida"
     r_a["outras_situacoes"] = {"retraida": r_r}
     r_a["reacoes_envoltoria"] = envoltoria_das_reacoes({"aberta": r_a, "retraida": r_r})
-    r_a["grupos_perfis"] = grupos_de_perfis(r_a)
+    r_a["grupos_perfis"] = grupos_de_perfis(r_a, [r_r])
     return r_a
 
 
@@ -1068,6 +1172,7 @@ def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
                     "L": round(br["L"], 4), "ey": np.round(br["R"][1], 4).tolist(), "ez": np.round(br["R"][2], 4).tolist(),
                     "rotulas": [p for p in ("a", "b") if (4 if p == "a" else 10) in br["soltos"]],
                     "A": br["sec"]["A"], "Wz": br["sec"]["Wz"], "Wy": br["sec"]["Wy"], "hipotese": bool(br.get("hipotese")),
+                    **({"duplo": True} if br.get("duplo") else {}),
                     **({"perfil_original": br["perfil_original"]} if br.get("perfil_original") else {})}
                    for br in barras],
         "casos": {nome: {"descricao": casos[nome].get("descricao", nome),

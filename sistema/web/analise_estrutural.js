@@ -491,9 +491,24 @@ function editarTroca(chave, linha, g) {
   const ja = linha.nextSibling && linha.nextSibling.classList && linha.nextSibling.classList.contains('troca');
   document.querySelectorAll('#ranking tr.troca').forEach(x => x.remove());
   if (ja) return;
-  const info = ((RAIZ && RAIZ.grupos_perfis) || []).find(x => x.chave === chave);
-  const lista = el('datalist', { id: 'alts-troca' }, ...((info && info.alternativas) || []).map(([n, m]) => el('option', { value: n, texto: `${nf(m, 1)} kg/m` })));
-  const inp = el('input', { type: 'text', list: 'alts-troca', value: g.atual, placeholder: 'perfil do catálogo', style: 'width:100%;box-sizing:border-box' });
+  const info = ((RAIZ && RAIZ.grupos_perfis) || []).find(x => x.chave === chave) || {};
+  const alts = info.alternativas || [];
+  const leve = info.mais_leve_que_passa;
+  const inp = el('input', { type: 'text', value: leve || g.atual, placeholder: 'ou digite outro perfil do catálogo', style: 'width:100%;box-sizing:border-box;margin-top:4px' });
+  const pct = (u) => (u === null || u === undefined) ? '—' : `${nf(u * 100, 0)}%`;
+  const cor = (u, s) => (u !== null && u !== undefined) ? (u <= 1 ? '#1e8e4e' : '#c0392b') : (s <= (D.parametros.fy_mpa || 345) ? '#9a6b06' : '#c0392b');
+  const tab = el('table', { class: 'alts' }, el('tr', {}, el('th', { texto: 'perfil' }), el('th', { texto: 'kg/m' }), el('th', { texto: 'σ est.' }), el('th', { texto: 'uso est.' }), el('th', { texto: '' })));
+  const linhas = [];
+  for (const [nome, kg, sg, uso] of alts) {
+    const passa = uso !== null && uso !== undefined && uso <= 1;
+    const tr = el('tr', { class: 'clic' + (nome === leve ? ' leve' : ''), title: nome === leve ? 'o mais leve que passa na estimativa' : '' },
+      el('td', { html: nome === leve ? `<b>${nome}</b> <span class="g-ok">← mais leve que passa</span>` : nome }), el('td', { texto: nf(kg, 1) }),
+      el('td', { texto: nf(sg, 0) }), el('td', { html: `<span style="color:${cor(uso, sg)};font-weight:700">${pct(uso)}</span>` }),
+      el('td', { html: passa ? '<span class="g-ok">✓</span>' : '<span class="g-ruim">✗</span>' }));
+    tr.onclick = () => { inp.value = nome; linhas.forEach(x => x.classList.remove('sel')); tr.classList.add('sel'); };
+    if (nome === (leve || g.atual)) tr.classList.add('sel');
+    linhas.push(tr); tab.append(tr);
+  }
   const ir = () => {
     const v = inp.value.trim(); if (!v) return;
     const t2 = trocasAtuais();
@@ -501,16 +516,21 @@ function editarTroca(chave, linha, g) {
     calcular({ trocas_perfil: t2 });
   };
   const voltar = () => { const t2 = trocasAtuais(); delete t2[chave]; calcular({ trocas_perfil: t2 }); };
+  const ea = info.estimativa_atual;
+  const explica = `Novo perfil para ${ROTULO_PAPEL[g.funcao] || g.funcao} · ${g.original} (${info.barras || ''} barras)${ea ? ` — hoje: σ ${nf(ea[0], 0)} MPa, uso estimado ${pct(ea[1])}` : ''}.`;
+  const nota = 'Estimativa com os esforços atuais de cada barra do grupo (nas duas situações): σ = |N|/A + |M|/W e o uso pela interação da NBR 8800, com a compressão pela norma (χ e Q, flambagem com o comprimento da barra, K = 1). Ao trocar, os esforços se redistribuem — o recalcular confirma; FLT e o comprimento de flambagem real entram na verificação completa. Só tubos com parede ≥ 1,5 mm na lista (digitar aceita qualquer um).';
   const linhaT = el('tr', { class: 'troca' }, el('td', { colspan: '4' },
-    el('div', { class: 'sub', texto: `Novo perfil para ${ROTULO_PAPEL[g.funcao] || g.funcao} · ${g.original} (${(info && info.barras) || ''} barras) — a lista traz os da mesma família, do mais leve ao mais pesado; dá para digitar outro:` }),
-    lista, inp,
+    el('div', { class: 'sub', texto: explica }),
+    alts.length ? el('div', { class: 'lista-alts' }, tab) : el('div', { class: 'sub', texto: 'Sem alternativas calculadas: clique em Calcular uma vez e abra de novo (ou digite o perfil).' }),
+    inp,
     el('div', { style: 'display:flex;gap:6px;margin-top:4px;flex-wrap:wrap' },
       el('button', { type: 'button', class: 'prim', texto: 'Trocar e recalcular', onclick: ir }),
       g.atual !== g.original ? el('button', { type: 'button', class: 'sec', texto: `Voltar ao ${g.original}`, onclick: voltar }) : '',
-      el('button', { type: 'button', class: 'sec', texto: 'Cancelar', onclick: () => linhaT.remove() }))));
+      el('button', { type: 'button', class: 'sec', texto: 'Cancelar', onclick: () => linhaT.remove() })),
+    el('div', { class: 'sub', style: 'margin-top:4px', texto: nota })));
   inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') ir(); if (ev.key === 'Escape') linhaT.remove(); });
   linha.after(linhaT);
-  inp.focus(); inp.select();
+  const sel = linhaT.querySelector('tr.sel'); if (sel) sel.scrollIntoView({ block: 'nearest' });
 }
 
 function painelRanking() {
