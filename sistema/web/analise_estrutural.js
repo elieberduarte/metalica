@@ -327,13 +327,14 @@ function deformada() {
   let max = 1e-9; for (const u of U) max = Math.max(max, Math.hypot(...u));
   const esc = raio * 0.05 * estado.escala / max;
   const pos = [], cor = [];
+  const cd = escuro() ? [0.96, 0.45, 0.71] : [0.62, 0.04, 0.38];   // no claro, magenta escuro (o rosa sumia no fundo, 07/10)
   for (const b of D.barras) {
     const a = D.nos[b.a].map((v, k) => v + U[b.a][k] * esc), c = D.nos[b.b].map((v, k) => v + U[b.b][k] * esc);
-    pos.push(...a, ...c); cor.push(0.85, 0.2, 0.55, 0.85, 0.2, 0.55);
+    pos.push(...a, ...c); cor.push(...cd, ...cd);
   }
-  grupo.add(linhas(pos, cor, 2));
+  grupo.add(linhas(pos, cor, escuro() ? 2.2 : 2.8));
   let k = 0, km = 0; U.forEach((u, i) => { const m = Math.hypot(...u); if (m > km) { km = m; k = i; } });
-  const s = texto(`máx. ${nf(km, 1)} mm (${comb})`, '#b0336f'); s.position.set(...D.nos[k].map((v, j) => v + U[k][j] * esc)); grupo.add(s);
+  const s = texto(`máx. ${nf(km, 1)} mm (${comb})`, escuro() ? '#f472b6' : '#9d1260'); s.position.set(...D.nos[k].map((v, j) => v + U[k][j] * esc)); grupo.add(s);
 }
 
 function setasReacoes() {
