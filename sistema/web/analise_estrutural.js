@@ -197,6 +197,7 @@ function desenhar() {
   grupo.add(linhas(pos, cor, modo === 'modelo' || modo === 'tensoes' ? 3 : 2));
   if (posH.length) grupo.add(linhas(posH, corH.map(x => x * 0.85), 1.5, true));
   apoios();
+  secoesDosPilares();
   if (modo === 'cargas') setasCargas();
   if (modo === 'esforcos') diagramas(fat);
   if (modo === 'deformada') deformada();
@@ -204,6 +205,29 @@ function desenhar() {
   legenda(maxN);
   pedirQuadro();
 }
+// a seção de cada pilar desenhada na base, na orientação que o cálculo usa (o giro da peça no 3D): mostra para que lado
+// está a alma — a inércia forte resiste às forças na direção da alma. Amarelo; laranja = girado só na análise
+function secoesDosPilares() {
+  const baixo = new Map();
+  D.barras.forEach(b => {
+    if (b.papel !== 'pilar' || !b.secao || !b.pilar) return;
+    const n = D.nos[b.a][2] <= D.nos[b.b][2] ? b.a : b.b;
+    const at = baixo.get(b.pilar);
+    if (!at || D.nos[n][2] < D.nos[at.n][2]) baixo.set(b.pilar, { b, n });
+  });
+  const pos = [], cor = [];
+  for (const { b, n } of baixo.values()) {
+    const o = D.nos[n], u = b.ez.map(v => -v), v = b.ey;
+    const P = b.secao.map(([x, y]) => [o[0] + x * u[0] + y * v[0], o[1] + x * u[1] + y * v[1], o[2] + x * u[2] + y * v[2] + 30]);
+    const c = b.giro ? [240, 140, 20] : [245, 197, 24];
+    for (let k = 0; k < P.length; k++) {
+      const p = P[k], q = P[(k + 1) % P.length];
+      pos.push(...p, ...q); cor.push(...c.map(x => x / 255), ...c.map(x => x / 255));
+    }
+  }
+  if (pos.length) { const l = linhas(pos, cor, 2.5); l.renderOrder = 18; l.material.depthTest = false; grupo.add(l); }
+}
+
 function hexParaRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
 function primeiraELU() { return Object.keys(D.combinacoes).find(c => D.combinacoes[c].tipo === 'ELU'); }
 
@@ -391,6 +415,24 @@ function painelPeca() {
     Envoltória ELU: σ = <b>${nf(e.sigma, 0)} MPa</b> (${nf(e.taxa * 100, 0)}% de fy ${nf(fy, 0)}) em ${e.comb || '—'} · N ${nf(e.N[0], 1)} / ${nf(e.N[1], 1)} kN · M ${nf(e.M, 2)} kN·m</div>
     <div class="sub" style="margin-top:4px">Diagramas na combinação <b>${comb}</b>:</div>
     ${svg(0, 'N', 'kN')}${svg(5, 'Mz', 'kN·m')}${svg(4, 'My', 'kN·m')}${svg(1, 'Vy', 'kN')}`;
+  if (b.papel === 'pilar' && b.pilar) P.prepend(blocoDoPilar(b));
+}
+
+// o pilar escolhido: para que lado está a inércia forte e o giro de teste (só na análise)
+function blocoDoPilar(b) {
+  const dir = Math.abs(b.ey[0]) >= Math.abs(b.ey[1]) ? 'X' : 'Y';
+  const outra = dir === 'X' ? 'Y' : 'X';
+  const giros = () => ({ ...((RAIZ && RAIZ.parametros && RAIZ.parametros.giro_pilares) || {}) });
+  const atual = Number(giros()[b.pilar] || 0);
+  const novo = (atual + 90) % 180;
+  const girar = (chaves) => { const g = giros(); for (const k of chaves) { if (novo) g[k] = novo; else delete g[k]; } calcular({ giro_pilares: g }); };
+  const mesmos = [...new Set(D.barras.filter(x => x.papel === 'pilar' && x.pilar && (x.perfil_original || x.perfil) === (b.perfil_original || b.perfil)).map(x => x.pilar))];
+  return el('div', { class: 'aviso', style: 'margin-bottom:6px' },
+    el('div', { html: `<b>Inércia forte (a alma) na direção ${dir}</b>: o pilar resiste melhor às forças em ${dir} (o pórtico nessa direção); em ${outra} trabalha pelo eixo fraco. A seção está desenhada em amarelo na base.${atual ? ` <b>Girado ${atual}° só na análise.</b>` : ''}` }),
+    el('div', { style: 'display:flex;gap:6px;margin-top:5px;flex-wrap:wrap' },
+      el('button', { type: 'button', class: 'sec mini', texto: atual ? 'Voltar ao giro do modelo' : 'Girar 90° (só na análise)', onclick: () => girar([b.pilar]) }),
+      mesmos.length > 1 ? el('button', { type: 'button', class: 'sec mini', texto: `${atual ? 'Voltar' : 'Girar'} os ${mesmos.length} pilares ${b.perfil_original || b.perfil}`, onclick: () => girar(mesmos) }) : ''),
+    el('div', { class: 'sub', style: 'margin-top:4px', texto: 'O giro aqui é um teste: o definitivo é girar o pilar na planta (o 3D e a análise acompanham).' }));
 }
 
 // ------------------------------------------------------------------ painéis
@@ -706,4 +748,4 @@ $('#btn-calcular').addEventListener('click', () => calcular());
 
 redimensionar();
 carregar().catch(e => { $('#vazio').hidden = false; $('#vazio').textContent = 'Não foi possível abrir: ' + e.message; });
-window.ae = { get D() { return D; }, estado, desenhar, camera };
+window.ae = { get D() { return D; }, estado, desenhar, camera, painelPeca };

@@ -81,6 +81,9 @@ PARAMETROS_PADRAO = {
     # troca de perfil só na análise (o "e se", pedido de 06/10): {"função|perfil": "perfil novo"} — a função é o papel na
     # treliça (banzo_sup, banzo_inf, montante, diagonal) ou o papel da peça (pilar, viga…); o 3D não muda
     "trocas_perfil": {},
+    # giro do pilar só na análise (graus somados ao giro da peça), pela base em planta: {"x,y" (mm): 90} — para testar a
+    # inércia no outro sentido; o definitivo é girar o pilar na planta
+    "giro_pilares": {},
     # aço
     "fy_mpa": 345.0,                    # para o mapa de tensões (ASTM A572 Gr.50; o tubo leve pode ser outro)
 }
@@ -217,7 +220,8 @@ def montar(doc, par: Optional[dict] = None) -> dict:
             "a": int(br["a"]), "b": int(br["b"]), "L": L, "papel": br.get("papel") or "barra",
             "papel_trelica": at.get("papel_trelica"), "elemento": at.get("elemento"), "grupo": at.get("origem_2d") or br.get("grupo"),
             "marca": at.get("marca") or at.get("peca"), "perfil": br.get("perfil") or "", "ids": list(br.get("ids") or []),
-            "sec": sec, "duplo": bool(br.get("duplo")), "R": _eixos(a, b, float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0),
+            "sec": sec, "duplo": bool(br.get("duplo")), "rot": float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0,
+            "R": _eixos(a, b, float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0),
             "soltos": [],
         })
     for nome, n in sem_secao.items():
@@ -232,6 +236,7 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         hip = _travamento_hipotese(nos, barras, P, cache, avisos)
         barras += hip
     _trocar_perfis(barras, P, cache, avisos)
+    _girar_pilares(nos, barras, P, avisos)
     # quem chega em cada nó
     no_barras: Dict[int, List[int]] = collections.defaultdict(list)
     for i, br in enumerate(barras):
@@ -331,6 +336,45 @@ def _trocar_perfis(barras: List[dict], P: dict, cache: dict, avisos: List[str]) 
 
 
 ESPESSURA_MIN_SUGESTAO = 1.5          # mm: a sugestão não oferece tubo de parede mais fina (a solda da treliça); digitar pode
+
+
+def chave_do_pilar(nos: np.ndarray, br: dict) -> str:
+    """o pilar pela base em planta (mm): a mesma chave de todos os trechos dele e das bases da análise"""
+    n = br["a"] if nos[br["a"]][2] <= nos[br["b"]][2] else br["b"]
+    return "%d,%d" % (round(nos[n][0] * 1000), round(nos[n][1] * 1000))
+
+
+def _girar_pilares(nos: np.ndarray, barras: List[dict], P: dict, avisos: List[str]) -> None:
+    """o giro de teste dos pilares (só na análise): a seção gira em torno do eixo do pilar"""
+    giros = P.get("giro_pilares") or {}
+    if not giros:
+        return
+    feitos = collections.Counter()
+    for br in barras:
+        if br["papel"] != "pilar":
+            continue
+        k = chave_do_pilar(nos, br)
+        g = float(giros.get(k) or 0.0)
+        if g:
+            br["giro"] = g
+            br["R"] = _eixos(nos[br["a"]], nos[br["b"]], br.get("rot", 0.0) + g)
+            feitos[k] += 1
+    if feitos:
+        avisos.append("pilar girado só na análise (o modelo 3D não muda): %s" % ", ".join(
+            "%s (%+.0f°)" % (k, float(giros[k])) for k in sorted(feitos)))
+
+
+def _secao_desenho(nome: str, cache: dict) -> Optional[list]:
+    """o contorno da seção (mm, x = largura da mesa, y = altura), para desenhar o pilar na base"""
+    if nome not in cache:
+        try:
+            from nucleo3d import geometria
+            from nucleo3d.calculo_ifc import _perfil_de
+            p = _perfil_de(nome, "", {}, {})
+            cache[nome] = [[round(x, 1), round(y, 1)] for x, y in geometria.secao(p)] if p is not None else None
+        except Exception:                                    # noqa: BLE001 — sem contorno: o desenho só não aparece
+            cache[nome] = None
+    return cache[nome]
 
 
 def grupos_de_perfis(r: dict, outras: Sequence[dict] = (), limite: int = 20) -> List[dict]:
@@ -1161,6 +1205,7 @@ def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
         Rx = sum(float(r[0, c]) for r in (np.array(sol["reacoes"][n]) for n in sol["reacoes"]))
         Ry = sum(float(r[1, c]) for r in (np.array(sol["reacoes"][n]) for n in sol["reacoes"]))
         equil[nome] = {"cargas_kN": [round(Fx, 2), round(Fy, 2), round(Fz, 2)], "reacoes_kN": [round(Rx, 2), round(Ry, 2), round(Rz, 2)]}
+    contornos: Dict[str, Optional[list]] = {}
     saida = {
         "versao": 1,
         "parametros": {k: v for k, v in M["par"].items()},
@@ -1173,6 +1218,8 @@ def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
                     "rotulas": [p for p in ("a", "b") if (4 if p == "a" else 10) in br["soltos"]],
                     "A": br["sec"]["A"], "Wz": br["sec"]["Wz"], "Wy": br["sec"]["Wy"], "hipotese": bool(br.get("hipotese")),
                     **({"duplo": True} if br.get("duplo") else {}),
+                    **({"pilar": chave_do_pilar(nos, br), "secao": _secao_desenho(br["perfil"], contornos), "giro": br.get("giro", 0.0)}
+                       if br["papel"] == "pilar" else {}),
                     **({"perfil_original": br["perfil_original"]} if br.get("perfil_original") else {})}
                    for br in barras],
         "casos": {nome: {"descricao": casos[nome].get("descricao", nome),

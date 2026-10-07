@@ -117,3 +117,17 @@ def test_troca_de_perfil_so_na_analise():
     sem = AE.calcular(_modelo(), {"vento": False, "telha": 0.0})
     pior = lambda rr: max(rr["envoltoria"][i]["sigma"] for i, b in enumerate(rr["barras"]) if b["papel"] == "pilar")
     assert pior(r) < pior(sem)                                      # o pilar mais pesado trabalha menos
+
+
+def test_giro_do_pilar_so_na_analise_e_a_secao_para_desenhar():
+    """o pilar girado pela chave da base troca o eixo forte (ey) só nele; os pilares levam o contorno da seção"""
+    base = AE.calcular(_modelo(), {"vento": False, "telha": 0.0})
+    pil = {b["pilar"]: b for b in base["barras"] if b["papel"] == "pilar"}
+    assert set(pil) == {"0,0", "0,10000", "10000,0", "10000,10000"}
+    assert all(b["secao"] and len(b["secao"]) > 4 for b in pil.values())
+    r = AE.calcular(_modelo(), {"vento": False, "telha": 0.0, "giro_pilares": {"0,0": 90}})
+    girado = {b["pilar"]: b for b in r["barras"] if b["papel"] == "pilar"}
+    a, b = pil["0,0"]["ey"], girado["0,0"]["ey"]
+    assert abs(sum(x * y for x, y in zip(a, b))) < 1e-6 and girado["0,0"]["giro"] == 90.0   # 90° no plano horizontal
+    assert girado["10000,0"]["ey"] == pil["10000,0"]["ey"]
+    assert any("girado só na análise" in x for x in r["avisos"])

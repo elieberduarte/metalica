@@ -82,6 +82,7 @@ const MODOS = {
     ],
     dicas: [
       'Antes de olhar qualquer número, gire o modelo e confira se ele é a estrutura que vai ser montada.',
+      'A seção amarela na base de cada pilar é a orientação que o cálculo usa: a alma aponta a direção da inércia forte. No galpão, a alma fica no plano do pórtico (o vão da tesoura). Clique no pilar para testar o giro de 90° (só na análise); o definitivo é girar na planta.',
       'Barras de hipótese (tracejadas) são um aviso: o projeto ainda não tem aquele travamento modelado. O cálculo final deve tê-lo de verdade.',
     ],
   },
