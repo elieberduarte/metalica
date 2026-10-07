@@ -293,16 +293,42 @@ function desenhar(L) {
   const pCorte = painel('corte');
   const comPlano = (L.perfis || []).filter(g => (g.barras?.plano || []).length);
   if (comPlano.length) {
-    pCorte.append(el('p', { class: 'nota', texto: 'Encaixe do maior para o menor, com 3 mm de perda por corte. Cada linha é um jeito de cortar a barra; o número à esquerda diz quantas barras são cortadas assim. A parte hachurada é a sobra.' }));
+    pCorte.append(el('p', { class: 'nota', texto: 'Encaixe do maior para o menor, com 3 mm de perda por corte. Cada linha é um jeito de cortar a barra; o número à esquerda diz quantas barras são cortadas assim. A parte hachurada é a sobra. Os planos vêm recolhidos: clique no perfil (no quadro ou no título) para abrir.' }));
+    // o quadro de todos os perfis para a consulta rápida; os planos, recolhidos, embaixo (07/10)
+    const blocos = new Map();
+    const abrirPlano = (g) => { const d = blocos.get(g); if (!d) return; d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    const nomeDe = (g) => g.perfil_nome || g.perfil;
+    const catDe = (g) => g.catalogo ? (g.fonte_kg_m === 'similar' ? 'similar: ' + g.catalogo : g.fonte_kg_m === 'escolhido' ? 'escolhido: ' + g.catalogo : g.catalogo) : '';
+    pCorte.append(secao('Perfis', `${n(comPlano.length)} perfis · ${n(comPlano.reduce((s_, g) => s_ + g.barras.quantidade, 0))} barras de compra`,
+      tabela([
+        { titulo: 'Perfil', valor: (g) => el('a', { href: '#corte', class: 'b', texto: nomeDe(g), onclick: (ev) => { ev.preventDefault(); abrirPlano(g); } }) },
+        { titulo: 'No catálogo', valor: catDe },
+        { titulo: 'Peças', chave: 'pecas', classe: 'c', num: true },
+        { titulo: 'Compr. (m)', chave: 'comprimento_m', classe: 'r', num: true, casas: 2 },
+        { titulo: 'Barra', valor: (g) => `${n(g.barras.comprimento / 1000)} m`, classe: 'c' },
+        { titulo: 'Barras', valor: (g) => g.barras.quantidade, classe: 'c b', num: true },
+        { titulo: 'Aprov. (%)', valor: (g) => g.barras.aproveitamento, classe: 'c', num: true, casas: 1 },
+        { titulo: 'Sobra (m)', valor: (g) => g.barras.sobra_m, classe: 'r', num: true, casas: 2 },
+        { titulo: 'Emendas', valor: (g) => g.barras.emendas || '', classe: 'c' },
+      ], comPlano, ['TOTAL', '', n(comPlano.reduce((s_, g) => s_ + g.pecas, 0)), n(comPlano.reduce((s_, g) => s_ + g.comprimento_m, 0), 2), '',
+                    n(comPlano.reduce((s_, g) => s_ + g.barras.quantidade, 0)), '', n(comPlano.reduce((s_, g) => s_ + g.barras.sobra_m, 0), 2), ''],
+      (g) => [g.perfil, nomeDe(g), g.catalogo || ''].join(' '))));
+    pCorte.append(el('div', { class: 'passos planos-botoes' },
+      el('button', { type: 'button', class: 'botao-m', texto: 'Abrir todos', onclick: () => blocos.forEach(d => { d.open = true; }) }),
+      el('button', { type: 'button', class: 'botao-m', texto: 'Recolher todos', onclick: () => blocos.forEach(d => { d.open = false; }) })));
     for (const g of comPlano) {
       const b = g.barras;
       const linhas = b.plano.map(pl => ({ ...pl, _g: g }));
-      pCorte.append(secao(g.perfil_nome || g.perfil, `barras de ${n(b.comprimento / 1000)} m · ${n(b.quantidade)} barras · aproveitamento ${n(b.aproveitamento, 1)}% · sobra ${n(b.sobra_m, 2)} m${b.emendas ? ` · ${b.emendas} peça(s) com emenda` : ''}`,
+      const d = el('details', { class: 'plano-perfil' },
+        el('summary', {}, el('b', { texto: nomeDe(g) }), catDe(g) ? el('span', { class: 'cat', texto: catDe(g) }) : null,
+          el('small', { texto: `barras de ${n(b.comprimento / 1000)} m · ${n(b.quantidade)} barras · aproveitamento ${n(b.aproveitamento, 1)}% · sobra ${n(b.sobra_m, 2)} m${b.emendas ? ` · ${b.emendas} peça(s) com emenda` : ''}` })),
         tabela([
           { titulo: 'Barras', chave: 'barras', classe: 'c b', num: true },
           { titulo: 'Cortes', valor: (pl) => barraDesenhada(pl, b.comprimento), classe: 'quebra corte-celula' },
           { titulo: 'Sobra (mm)', chave: 'sobra', classe: 'r', num: true },
-        ], linhas, null, (pl) => [g.perfil, ...pl.cortes.map(c => c.nome)].join(' '))));
+        ], linhas, null, (pl) => [g.perfil, nomeDe(g), ...pl.cortes.map(c => c.nome)].join(' ')));
+      blocos.set(g, d);
+      pCorte.append(d);
     }
   } else pCorte.append(vazio('Sem perfis para cortar nesta lista. Use "Atualizar pelo modelo 3D" para levantar o plano de corte.'));
   c.append(pCorte);
@@ -429,6 +455,18 @@ function filtrar() {
   const termo = ((campo && !campo.hidden && campo.value) || '').trim().toLowerCase();
   for (const tr of document.querySelectorAll('.materiais tbody tr[data-filtro]')) {
     tr.classList.toggle('oculta', !!termo && !tr.dataset.filtro.includes(termo));
+  }
+  // os planos de corte recolhidos: com o filtro, abre os que acham alguma coisa e esconde os outros; sem, volta como estava
+  for (const d of document.querySelectorAll('details.plano-perfil')) {
+    if (termo) {
+      if (d.dataset.antes === undefined) d.dataset.antes = d.open ? '1' : '0';
+      const acha = !!d.querySelector('tbody tr[data-filtro]:not(.oculta)');
+      d.hidden = !acha;
+      d.open = acha;
+    } else {
+      d.hidden = false;
+      if (d.dataset.antes !== undefined) { d.open = d.dataset.antes === '1'; delete d.dataset.antes; }
+    }
   }
 }
 

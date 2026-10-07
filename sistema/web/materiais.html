@@ -95,6 +95,18 @@
   .passos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   /* ---- plano de corte */
   .corte-celula { width: 100%; }
+  /* planos de corte recolhidos por perfil (07/10) */
+  details.plano-perfil { border: 1px solid var(--borda); border-radius: var(--raio); background: var(--painel); margin: 0 0 8px; }
+  details.plano-perfil > summary { cursor: pointer; padding: 10px 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; list-style: none; }
+  details.plano-perfil > summary::-webkit-details-marker { display: none; }
+  details.plano-perfil > summary::before { content: '▸'; color: var(--azul); width: 12px; }
+  details.plano-perfil[open] > summary::before { content: '▾'; }
+  details.plano-perfil > summary b { font-size: 15px; }
+  details.plano-perfil > summary .cat { font-size: 12.5px; color: var(--texto2); }
+  details.plano-perfil > summary small { font-size: 12.5px; color: var(--texto3); }
+  details.plano-perfil[open] > summary { border-bottom: 1px solid var(--borda); }
+  details.plano-perfil > .rolagem, details.plano-perfil > table, details.plano-perfil > div { margin: 8px 10px 10px; }
+  .planos-botoes { margin: 10px 0 8px; display: flex; gap: 8px; }
   .barra-corte { display: flex; width: 100%; min-width: 420px; height: 30px; border: 1px solid var(--borda-forte); border-radius: 3px; overflow: hidden; background: var(--painel2); }
   .barra-corte .seg { display: flex; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; white-space: nowrap;
                       background: var(--azul-fraco); border-right: 2px solid var(--painel); color: var(--azul-tinta); font-size: 11px; line-height: 1.1; }
