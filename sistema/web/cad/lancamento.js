@@ -364,9 +364,17 @@ export class MetodosLancamentoCAD {
     if (!alvo || alvo <= 0) { this.aviso('Medida real não entendida: use 6000, 6m ou 600cm.', 'atencao'); return; }
     const k = alvo / d;
     const f = (p) => [a[0] + (p[0] - a[0]) * k, a[1] + (p[1] - a[1]) * k];
+    this._escalarPlanta(a, k, ents, porCima.length && junto.checked ? porCima : []);
+    this.aviso(`${tudo ? 'Desenho' : 'Arquitetônico'} escalado ${k.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}×: a medida agora é ${fmt(alvo)} mm. Ctrl+Z desfaz.`, 'info', 9000);
+  }
+
+  /** Escala `ents` (a planta) em volta de `a` por `k` e, com elas, `porCima` (o que foi desenhado por cima): os eixos e as
+   *  cotas da malha crescem junto; pilar, fundação, consolo e bolinhas mudam só de lugar (o tamanho real fica), a
+   *  bolinha e o nome do eixo na ponta dele e o rótulo com o elemento. Um comando só (Ctrl+Z). */
+  _escalarPlanta(a, k, ents, porCima = []) {
+    const f = (p) => [a[0] + (p[0] - a[0]) * k, a[1] + (p[1] - a[1]) * k];
     const novas = ents.map(e => transformar(e, f, (x) => x, k));
-    if (porCima.length && junto.checked) {
-      // o tamanho real (o pilar 35 × 70, a bolinha de 5 mm de papel) fica; muda o lugar
+    if (porCima.length) {
       const soLugar = (e) => { const at = e.atributos || {}; return ['pilar', 'fundacao', 'consolo'].includes(at.elemento) || at.bolinha; };
       const centro = (e) => {
         const at = e.atributos || {};
@@ -375,19 +383,17 @@ export class MetodosLancamentoCAD {
         const pts = e.vertices || (e.a ? [e.a, e.b] : e.posicao ? [e.posicao] : []);
         return pts.length ? [pts.reduce((s_, q) => s_ + q[0], 0) / pts.length, pts.reduce((s_, q) => s_ + q[1], 0) / pts.length] : null;
       };
-      // a bolinha e o nome do eixo vão com a ponta do eixo deles (a mesma folga de papel além dela); o rótulo do elemento
-      // (P1) vai com o elemento
       const eixoDe = new Map(porCima.filter(ehEixo).map(e => [String(e.atributos.eixo), e]));
       const desloc = new Map();
-      const mover = (_e, de) => { const para = f(de); return [para[0] - de[0], para[1] - de[1]]; };
+      const mover = (de) => { const para = f(de); return [para[0] - de[0], para[1] - de[1]]; };
       for (const e of porCima) {
         const at = e.atributos || {};
         if ((at.bolinha || at.nome_eixo) && eixoDe.has(String(at.eixo))) {
           const x = eixoDe.get(String(at.eixo)), q = e.centro || e.posicao;
-          desloc.set(e.id, mover(e, dist(q, x.a) <= dist(q, x.b) ? x.a : x.b));
+          desloc.set(e.id, mover(dist(q, x.a) <= dist(q, x.b) ? x.a : x.b));
         } else if (soLugar(e)) {
           const c = centro(e);
-          if (c) desloc.set(e.id, mover(e, c));
+          if (c) desloc.set(e.id, mover(c));
         }
       }
       for (const e of porCima) {
@@ -404,7 +410,46 @@ export class MetodosLancamentoCAD {
     cmd.semTrava = true;                          // o arquitetônico fica na camada travada: a calibração é do programa
     this.executar(cmd);
     this.tela.enquadrar();
-    this.aviso(`${tudo ? 'Desenho' : 'Arquitetônico'} escalado ${k.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}×: a medida agora é ${fmt(alvo)} mm. Ctrl+Z desfaz.`, 'info', 9000);
+  }
+
+  /** Ao abrir a Planta de lançamento: a planta do cliente com tamanho que não é de obra (o Docas, 8,2 m: o DXF em
+   *  centímetro com o cabeçalho em milímetro, 07/10) — o aviso fica com o botão que escala ×10 (ou ×1000) a planta e o
+   *  que foi desenhado por cima, e o que diz que está certa (não pergunta mais). */
+  _conferirEscalaDaPlanta() {
+    if (this.nomeDesenho !== DESENHO_LANCAMENTO || !this.doc) return;
+    const meta = this.doc.metadados || (this.doc.metadados = {});
+    if (meta.escala_planta_conferida) return;
+    const todas = [...this.doc.entidades.values()];
+    const arq = todas.filter(e => String(e.camada).startsWith(PREFIXO_ARQ));
+    if (arq.length < 5) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const e of arq) {
+      for (const q of (e.vertices || (e.a ? [e.a, e.b] : e.centro ? [e.centro] : e.posicao ? [e.posicao] : e.p1 ? [e.p1, e.p2] : []))) {
+        if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1];
+      }
+    }
+    const maior = Math.max(x1 - x0, y1 - y0);
+    if (!(maior > 0) || (maior >= 15000 && maior <= 2e6)) return;
+    const k = maior < 15000 ? (maior * 10 >= 15000 ? 10 : 1000) : (maior / 10 <= 2e6 ? 0.1 : 0.001);
+    const porCima = todas.filter(e => !String(e.camada).startsWith(PREFIXO_ARQ));
+    const caixa = el('span', {},
+      `A planta do cliente tem ${numero(maior / 1000, 2)} m no lado maior — ${maior < 15000 ? 'pequena demais para uma obra: o arquivo deve estar em ' + (k === 10 ? 'centímetro' : 'metro') : 'grande demais para uma obra'}. ` +
+      `Escalando ×${numero(k, k < 1 ? 3 : 0)}, ela fica com ${numero(maior * k / 1000, 2)} m${porCima.length ? '; os eixos e as cotas vão junto, e pilares e fundações mudam só de lugar (o tamanho real fica)' : ''}. `);
+    const fechar = () => { const av = caixa.closest('.aviso'); if (av) av.remove(); };
+    caixa.append(
+      el('button', { type: 'button', class: 'botao-aviso', style: 'margin: 6px 6px 0 0; padding: 3px 10px; border: 1px solid currentColor; border-radius: 4px; font-size: 12.5px; opacity: 1', texto: `Escalar ×${numero(k, k < 1 ? 3 : 0)}`, onclick: () => {
+        fechar();
+        this._escalarPlanta([x0, y0], k, arq, porCima);
+        meta.escala_planta_conferida = true;
+        this.aviso(`Planta escalada ×${numero(k, k < 1 ? 3 : 0)}: ${numero(maior * k / 1000, 2)} m no lado maior. Confira uma cota com Medir (U); Ctrl+Z desfaz.`, 'info', 12000);
+      } }), ' ',
+      el('button', { type: 'button', class: 'botao-aviso', style: 'margin: 6px 6px 0 0; padding: 3px 10px; border: 1px solid currentColor; border-radius: 4px; font-size: 12.5px; opacity: 1', texto: 'A planta está certa', onclick: () => {
+        fechar();
+        meta.escala_planta_conferida = true;
+        this._editado = true;                        // grava a resposta com o desenho
+        if (typeof this._agendarAutosave === 'function') this._agendarAutosave();
+      } }));
+    this.aviso(caixa, 'atencao', 0);
   }
 
   /** Malha de eixos: vãos entre os eixos numerados (pórticos) e entre os com letra (filas de pilares). */

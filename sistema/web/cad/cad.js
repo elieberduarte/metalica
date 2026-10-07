@@ -210,6 +210,7 @@ class CAD {
       if (link3d && this.projeto) link3d.href = this.urlDoEditor();       // o 3D sabe voltar a este desenho
       this.dica(`Desenho "${this.doc.nome}" aberto: ${numero(this.doc.tamanho)} objetos, escala 1:${this.doc.escala}.`);
       this._sugerirEscalaDoImportado(null);       // o DXF importado antes, em outra escala (07/10)
+      this._conferirEscalaDaPlanta();             // a planta do cliente com tamanho que não é de obra (lancamento.js)
     } catch (e) {
       // o desenho não veio: nada é gravado com o nome dele, senão a tela vazia (ou o que se
       // desenhasse nela) ia por cima do arquivo que existe
