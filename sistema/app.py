@@ -51,6 +51,8 @@ Rotas da API:
     POST /api/modelo/apoios {documento}                        regras de apoio: peça voando, terça em balanço…
     POST /api/modelo/analitico {documento}                     esqueleto de nós e barras e as pontas soltas
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
+    GET  /api/projetos/<slug>/analise-estrutural   a análise do modelo (o último cálculo); POST {parametros} calcula
+         (nucleo3d/analise_estrutural.py; tela /analise-estrutural — o unifilar, as cargas, os esforços e as reações)
     POST /api/projetos/<slug>/projeto-recebido  folhas, carimbo e considerações de cálculo do DXF recebido
     POST /api/projetos/<slug>/montagem/ler {parametros}   leitura por quadros: cada quadro da Montagem lido + pré-análise
     POST /api/projetos/<slug>/montagem/gerar-3d {parametros, assim_mesmo}   o 3D pelos quadros (tesoura = bloco)
@@ -1844,6 +1846,41 @@ def esforcos_do_projeto(s: str, corpo: Optional[dict] = None, recalcular: bool =
         g._atualizar(s, esforcos_parametros=par)
     if novas_c:
         g._atualizar(s, esforcos_cargas=extras)
+    _gravar_json(arq, saida)
+    return saida
+
+
+ARQ_ANALISE = "analise_estrutural.json"
+
+
+def analise_estrutural_do_projeto(s: str, corpo: Optional[dict] = None, recalcular: bool = False) -> dict:
+    """GET /api/projetos/<s>/analise-estrutural: a última análise do modelo gravada (vazio se nunca rodou); POST calcula de
+    novo — {parametros: {...}} muda as premissas (bases, cargas, vento) e fica gravado no projeto (`analise_parametros`).
+    O motor é nucleo3d/analise_estrutural.py (o unifilar com as cargas, as combinações, os esforços e as reações)."""
+    g = _gerente()
+    arq = os.path.join(g._existente(s), ARQ_ANALISE)
+    if not recalcular:
+        try:
+            with open(arq, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            proj = g.ler(s)
+            from nucleo3d import analise_estrutural as AE
+            return {"vazio": "A estrutura deste projeto ainda não foi analisada.",
+                    "parametros": dict(AE.PARAMETROS_PADRAO, **(proj.get("analise_parametros") or {}))}
+    from nucleo3d import analise_estrutural as AE
+    from projetos import _gravar_json
+    proj = g.ler(s)
+    par = dict(proj.get("analise_parametros") or {})
+    novos = {k: v for k, v in ((corpo or {}).get("parametros") or {}).items() if k in AE.PARAMETROS_PADRAO}
+    par.update(novos)
+    doc = _documento3d_do_projeto(s)
+    t0 = time.time()
+    saida = AE.calcular(doc, par)
+    saida.update({"calculado_em": time.strftime("%d/%m/%Y %H:%M"), "segundos": round(time.time() - t0, 1),
+                  "programa": versao.VERSAO, "projeto": proj.get("nome") or s, "local": proj.get("local") or ""})
+    if novos:
+        g._atualizar(s, analise_parametros=par)
     _gravar_json(arq, saida)
     return saida
 
@@ -3995,6 +4032,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(trelicas_lidas(partes[0]))
                 if len(partes) == 2 and partes[1] == "esforcos":
                     return self._json(esforcos_do_projeto(partes[0]))
+                if len(partes) == 2 and partes[1] == "analise-estrutural":
+                    return self._json(analise_estrutural_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":
                     q = parse_qs(urlparse(self.path).query)
                     return self._json(lista_de_materiais(partes[0], recalcular=q.get("recalcular", ["0"])[0] in ("1", "true")))
@@ -4028,6 +4067,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "trelicas.html"), WEB)
             if rota == "/esforcos":
                 return self._arquivo(os.path.join(WEB, "esforcos.html"), WEB)
+            if rota in ("/analise-estrutural", "/unifilar"):
+                return self._arquivo(os.path.join(WEB, "analise_estrutural.html"), WEB)
             if rota in ("/catalogo", "/pecas"):
                 return self._arquivo(os.path.join(WEB, "catalogo.html"), WEB)
             if rota in ("/editor", "/editor3d", "/3d"):
@@ -4147,6 +4188,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(ler_projeto_recebido(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "esforcos":
                     return self._json(esforcos_do_projeto(partes[0], corpo, recalcular=True))
+                if len(partes) == 2 and partes[1] == "analise-estrutural":
+                    return self._json(analise_estrutural_do_projeto(partes[0], corpo, recalcular=True))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
                     return self._json(detalhar_posicao_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "atualizar-pecas":

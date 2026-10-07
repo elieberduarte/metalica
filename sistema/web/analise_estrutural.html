@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>if (window.parent !== window) document.documentElement.classList.add('embutida');</script>
+<script src="/area.js"></script>
+<script src="/tema-janela.js"></script>
+<script>
+(function () {
+  var t = new URLSearchParams(location.search).get('tema');
+  if (t !== 'claro' && t !== 'escuro') { try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; } }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<title>Análise estrutural — Metálica</title>
+<link rel="stylesheet" href="/estilo.css">
+<script type="importmap">
+{ "imports": { "three": "/lib/three.module.js", "three/addons/": "/lib/" } }
+</script>
+<style>
+  :root { --ae-fundo: #f4f6fa; --ae-painel: #ffffff; --ae-borda: #d9e0ea; --ae-texto: #1c2430; --ae-sub: #5b6b82; --ae-azul: #1f5fbf; --ae-chip: #eef3fb; }
+  :root[data-tema="escuro"] { --ae-fundo: #0e131a; --ae-painel: #151c26; --ae-borda: #2a3646; --ae-texto: #e3e9f2; --ae-sub: #93a3b8; --ae-azul: #7fb0ff; --ae-chip: #1d2735; }
+  @media (prefers-color-scheme: dark) { :root:not([data-tema="claro"]) { --ae-fundo: #0e131a; --ae-painel: #151c26; --ae-borda: #2a3646; --ae-texto: #e3e9f2; --ae-sub: #93a3b8; --ae-azul: #7fb0ff; --ae-chip: #1d2735; } }
+  html, body { margin: 0; height: 100%; background: var(--ae-fundo); color: var(--ae-texto); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+  #ae { display: grid; grid-template-columns: 360px 1fr; height: 100vh; }
+  #painel { overflow: auto; border-right: 1px solid var(--ae-borda); background: var(--ae-painel); padding: 10px 12px 40px; }
+  #palco { position: relative; overflow: hidden; }
+  #tela { width: 100%; height: 100%; display: block; }
+  h1 { font-size: 15px; margin: 2px 0 2px; }
+  .sub { color: var(--ae-sub); font-size: 12px; }
+  details { border: 1px solid var(--ae-borda); border-radius: 7px; margin: 8px 0; background: var(--ae-painel); }
+  summary { cursor: pointer; padding: 6px 9px; font-weight: 600; user-select: none; }
+  details > div { padding: 2px 10px 9px; }
+  .linha { display: grid; grid-template-columns: 1fr 120px; gap: 6px; align-items: center; margin: 4px 0; }
+  .linha input, .linha select { width: 100%; box-sizing: border-box; padding: 3px 5px; background: var(--ae-fundo); color: var(--ae-texto); border: 1px solid var(--ae-borda); border-radius: 5px; }
+  button.prim { background: var(--ae-azul); color: #fff; border: 0; border-radius: 6px; padding: 7px 12px; font-weight: 600; cursor: pointer; }
+  button.sec { background: var(--ae-chip); color: var(--ae-texto); border: 1px solid var(--ae-borda); border-radius: 6px; padding: 5px 9px; cursor: pointer; }
+  .modos { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+  .modos button { background: var(--ae-chip); color: var(--ae-texto); border: 1px solid var(--ae-borda); border-radius: 14px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+  .modos button.on { background: var(--ae-azul); color: #fff; border-color: var(--ae-azul); }
+  table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+  th, td { border-bottom: 1px solid var(--ae-borda); padding: 3px 4px; text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  tr.clic { cursor: pointer; } tr.clic:hover { background: var(--ae-chip); }
+  .aviso { background: #fff4e5; color: #7a4b00; border: 1px solid #f2cf97; border-radius: 6px; padding: 5px 7px; margin: 5px 0; font-size: 12px; }
+  :root[data-tema="escuro"] .aviso { background: #2d2412; color: #f0cf8f; border-color: #5c4a20; }
+  .erro { background: #fdecea; color: #8a1f12; border: 1px solid #f1b8ae; border-radius: 6px; padding: 6px 8px; margin: 6px 0; font-weight: 600; }
+  :root[data-tema="escuro"] .erro { background: #3a1915; color: #ffb4a6; border-color: #6e2d24; }
+  #legenda { position: absolute; right: 12px; bottom: 12px; background: var(--ae-painel); border: 1px solid var(--ae-borda); border-radius: 7px; padding: 6px 9px; font-size: 11.5px; min-width: 170px; }
+  #legenda .rampa { height: 10px; border-radius: 3px; margin: 4px 0 2px; }
+  #legenda .ext { display: flex; justify-content: space-between; color: var(--ae-sub); }
+  #dica { position: absolute; left: 12px; top: 10px; background: var(--ae-painel); border: 1px solid var(--ae-borda); border-radius: 7px; padding: 5px 9px; font-size: 12px; color: var(--ae-sub); max-width: 60%; }
+  #vazio { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--ae-sub); }
+  #carregando { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: color-mix(in srgb, var(--ae-fundo) 70%, transparent); font-weight: 600; }
+  .peca { font-size: 12px; } .peca b { font-size: 13px; }
+  svg.diag { width: 100%; height: 96px; background: var(--ae-fundo); border: 1px solid var(--ae-borda); border-radius: 5px; margin-top: 4px; }
+  .chip { display: inline-block; padding: 0 6px; border-radius: 9px; background: var(--ae-chip); font-size: 11px; margin-right: 3px; }
+  .vistas { position: absolute; right: 12px; top: 10px; display: flex; gap: 4px; }
+</style>
+</head>
+<body>
+<div id="ae">
+  <aside id="painel">
+    <h1>Análise estrutural</h1>
+    <div class="sub" id="cab">—</div>
+    <div style="display:flex;gap:6px;margin:8px 0">
+      <button type="button" class="prim" id="btn-calcular">Calcular</button>
+      <a class="sec" id="btn-voltar" style="text-decoration:none;display:inline-block" href="#">← Modelo 3D</a>
+    </div>
+    <div id="estado" class="sub"></div>
+    <div id="instavel"></div>
+
+    <details id="det-premissas">
+      <summary>Premissas</summary>
+      <div id="premissas"></div>
+    </details>
+
+    <div class="modos" id="modos">
+      <button type="button" data-modo="modelo">Modelo</button>
+      <button type="button" data-modo="cargas">Cargas</button>
+      <button type="button" data-modo="esforcos">Esforços</button>
+      <button type="button" data-modo="tensoes" class="on">Tensões</button>
+      <button type="button" data-modo="deformada">Deformada</button>
+      <button type="button" data-modo="reacoes">Reações</button>
+    </div>
+    <div id="controles"></div>
+
+    <details id="det-peca" open hidden><summary>Barra escolhida</summary><div id="peca"></div></details>
+    <details open><summary>Mais solicitadas</summary><div id="ranking"></div></details>
+    <details><summary>Reações nas bases</summary><div id="reacoes"></div></details>
+    <details><summary>Vento e cargas</summary><div id="vento"></div></details>
+    <details><summary>Equilíbrio dos casos</summary><div id="equilibrio"></div></details>
+    <details open><summary>Avisos e hipóteses</summary><div id="avisos"></div></details>
+  </aside>
+  <main id="palco">
+    <canvas id="tela"></canvas>
+    <div id="dica">Arraste para girar · roda para aproximar · botão direito para mover · clique numa barra para ver os esforços</div>
+    <div class="vistas">
+      <button type="button" class="sec" data-vista="iso">Iso</button>
+      <button type="button" class="sec" data-vista="frente">Frente</button>
+      <button type="button" class="sec" data-vista="lado">Lado</button>
+      <button type="button" class="sec" data-vista="topo">Topo</button>
+    </div>
+    <div id="legenda" hidden></div>
+    <div id="vazio" hidden></div>
+    <div id="carregando">Calculando…</div>
+  </main>
+</div>
+<script type="module" src="/analise_estrutural.js"></script>
+<script src="/vivo.js"></script>
+</body>
+</html>
