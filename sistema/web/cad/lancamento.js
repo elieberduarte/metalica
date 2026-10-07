@@ -416,14 +416,16 @@ export class MetodosLancamentoCAD {
 
   /** Ao abrir a Planta de lançamento: a planta do cliente com tamanho que não é de obra (o Docas, 8,2 m: o DXF em
    *  centímetro com o cabeçalho em milímetro, 07/10) — o aviso fica com o botão que escala ×10 (ou ×1000) a planta e o
-   *  que foi desenhado por cima, e o que diz que está certa (não pergunta mais). */
+   *  que foi desenhado por cima, e o que diz que está certa (não pergunta mais). Verdadeiro quando avisou: aí a sugestão
+   *  da escala pelos textos espera — na planta em centímetro os textos são 10× menores e ela oferecia 1:12,5, que
+   *  acertava os textos e deixava a planta 10× pequena (o pilar de 35 cm lançado saía 10× maior que o do desenho). */
   _conferirEscalaDaPlanta() {
-    if (this.nomeDesenho !== DESENHO_LANCAMENTO || !this.doc) return;
+    if (this.nomeDesenho !== DESENHO_LANCAMENTO || !this.doc) return false;
     const meta = this.doc.metadados || (this.doc.metadados = {});
-    if (meta.escala_planta_conferida) return;
+    if (meta.escala_planta_conferida) return false;
     const todas = [...this.doc.entidades.values()];
     const arq = todas.filter(e => String(e.camada).startsWith(PREFIXO_ARQ));
-    if (arq.length < 5) return;
+    if (arq.length < 5) return false;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const e of arq) {
       for (const q of (e.vertices || (e.a ? [e.a, e.b] : e.centro ? [e.centro] : e.posicao ? [e.posicao] : e.p1 ? [e.p1, e.p2] : []))) {
@@ -431,7 +433,7 @@ export class MetodosLancamentoCAD {
       }
     }
     const maior = Math.max(x1 - x0, y1 - y0);
-    if (!(maior > 0) || (maior >= 15000 && maior <= 2e6)) return;
+    if (!(maior > 0) || (maior >= 15000 && maior <= 2e6)) return false;
     const k = maior < 15000 ? (maior * 10 >= 15000 ? 10 : 1000) : (maior / 10 <= 2e6 ? 0.1 : 0.001);
     const porCima = todas.filter(e => !String(e.camada).startsWith(PREFIXO_ARQ));
     const caixa = el('span', {},
@@ -441,17 +443,19 @@ export class MetodosLancamentoCAD {
     caixa.append(
       el('button', { type: 'button', class: 'botao-aviso', style: 'margin: 6px 6px 0 0; padding: 3px 10px; border: 1px solid currentColor; border-radius: 4px; font-size: 12.5px; opacity: 1', texto: `Escalar ×${numero(k, k < 1 ? 3 : 0)}`, onclick: () => {
         fechar();
-        this._escalarPlanta([x0, y0], k, arq, porCima);
-        meta.escala_planta_conferida = true;
+        this._escalarPlanta([x0, y0], k, arq, porCima);    // sem a marca: com Ctrl+Z, a pergunta volta na próxima vez
         this.aviso(`Planta escalada ×${numero(k, k < 1 ? 3 : 0)}: ${numero(maior * k / 1000, 2)} m no lado maior. Confira uma cota com Medir (U); Ctrl+Z desfaz.`, 'info', 12000);
+        this._sugerirEscalaDoImportado(null);              // agora os textos dizem a escala certa
       } }), ' ',
       el('button', { type: 'button', class: 'botao-aviso', style: 'margin: 6px 6px 0 0; padding: 3px 10px; border: 1px solid currentColor; border-radius: 4px; font-size: 12.5px; opacity: 1', texto: 'A planta está certa', onclick: () => {
         fechar();
         meta.escala_planta_conferida = true;
         this._editado = true;                        // grava a resposta com o desenho
         if (typeof this._agendarAutosave === 'function') this._agendarAutosave();
+        this._sugerirEscalaDoImportado(null);
       } }));
     this.aviso(caixa, 'atencao', 0);
+    return true;
   }
 
   /** Malha de eixos: vãos entre os eixos numerados (pórticos) e entre os com letra (filas de pilares). */
