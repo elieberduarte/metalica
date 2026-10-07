@@ -3,6 +3,9 @@
 // seletor ligado ao de cima (trocar aqui é trocar lá: a mesma pergunta do que fazer com o já desenhado), e a régua
 // gráfica, que acompanha o zoom: uma barra de comprimento redondo (1 m, 5 m, 10 m…) na medida da tela.
 
+import { UNIDADES, definirUnidade, unidadeAtual } from './ferramentas.js';
+import { ComandoAlterar } from './nucleo/comandos.js';
+
 const COMPRIMENTOS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000];
 const rotulo = (mm) => (mm >= 1000 ? `${String(mm / 1000).replace('.', ',')} m` : mm >= 10 ? `${String(mm / 10).replace('.', ',')} cm` : `${mm} mm`);
 
@@ -43,6 +46,14 @@ export function instalarRodapeEscala(cad) {
   sel.addEventListener('change', () => { original.value = sel.value; original.dispatchEvent(new Event('change')); });
   const rotuloEscala = document.createElement('label');
   rotuloEscala.append('Escala 1:', sel);
+  // a unidade das medidas (07/10): separada da escala — o desenho é sempre em mm; muda o número digitado sem unidade,
+  // as medidas mostradas e o número das cotas novas
+  const selUn = document.createElement('select');
+  selUn.title = 'Unidade das medidas: o número digitado sem unidade (475 = 4,75 m em cm), as medidas que as ferramentas mostram e o número das cotas novas. Não muda o desenho nem a escala de impressão';
+  for (const u of Object.keys(UNIDADES)) { const o = document.createElement('option'); o.value = u; o.textContent = u; selUn.append(o); }
+  selUn.addEventListener('change', () => trocarUnidade(selUn.value));
+  const rotuloUn = document.createElement('label');
+  rotuloUn.append('Medidas em', selUn);
   const barra = document.createElement('i');
   const texto = document.createElement('span');
   const regua = document.createElement('span');
@@ -74,7 +85,37 @@ export function instalarRodapeEscala(cad) {
   mais.type = 'button'; mais.className = 'mais'; mais.textContent = '⋯'; mais.title = 'Escala: informações e ajustes';
   mais.addEventListener('click', (ev) => { ev.stopPropagation(); lista.hidden = !lista.hidden; atualizar(); });
   document.addEventListener('click', (ev) => { if (!caixa.contains(ev.target)) lista.hidden = true; });
-  caixa.append(rotuloEscala, regua, mais, lista);
+  caixa.append(rotuloEscala, rotuloUn, regua, mais, lista);
+
+  const da = () => ((cad.doc && cad.doc.metadados) || {}).unidade_medidas || 'mm';
+  // as cotas feitas aqui sem texto escrito e sem a escala de prancha: o número delas na unidade
+  const cotasParaUnidade = (u) => {
+    const m = {}, k = 1 / UNIDADES[u];
+    for (const e of cad.doc.entidades.values()) {
+      if (e.tipo !== 'cota' || (e.atributos && e.atributos.origem) || (e.texto != null && e.texto !== '')) continue;
+      const esc = e.escala || 1;
+      if (Math.abs(esc - k) > 1e-9 && Object.values(UNIDADES).some(f => Math.abs(esc * f - 1) < 1e-9)) m[e.id] = { escala: k === 1 ? null : k };
+    }
+    return m;
+  };
+  function trocarUnidade(u) {
+    if (!cad.doc) return;
+    const meta = cad.doc.metadados || (cad.doc.metadados = {});
+    meta.unidade_medidas = u;
+    definirUnidade(u);
+    if (typeof cad._agendarAutosave === 'function') cad._agendarAutosave();
+    cad.dica(`Medidas em ${u}: o número digitado sem unidade vale ${u}, as ferramentas mostram em ${u} e as cotas novas saem em ${u}. O desenho e a escala de impressão não mudam.`);
+    const m = cotasParaUnidade(u), n = Object.keys(m).length;
+    if (n) {
+      const bt = document.createElement('button');
+      bt.type = 'button'; bt.className = 'sec'; bt.textContent = `Passar as ${n} cota(s) para ${u}`;
+      bt.addEventListener('click', () => { const av = bt.closest('.aviso'); if (av) av.remove(); cad.executar(new ComandoAlterar(m, `Cotas em ${u}`)); });
+      const sp = document.createElement('span');
+      sp.append(`${n} cota(s) já desenhada(s) mostram outra unidade. `, bt);
+      cad.aviso(sp, 'info', 15000);
+    }
+    atualizar();
+  }
   palco.append(caixa);
 
   let opcoes = '';
@@ -82,6 +123,8 @@ export function instalarRodapeEscala(cad) {
     // as opções do seletor de cima (a escala do DXF importado entra como opção nova)
     if (original.innerHTML !== opcoes) { opcoes = original.innerHTML; sel.innerHTML = opcoes; }
     if (sel.value !== original.value) sel.value = original.value;
+    if (unidadeAtual() !== da()) definirUnidade(da());            // o desenho aberto manda (cada um grava a sua)
+    if (selUn.value !== unidadeAtual()) selUn.value = unidadeAtual();
     const mmpp = cad.tela.mmPorPixel;
     if (!(mmpp > 0)) return;
     const L = COMPRIMENTOS.find(c => c / mmpp >= 50) || COMPRIMENTOS[COMPRIMENTOS.length - 1];
@@ -90,7 +133,8 @@ export function instalarRodapeEscala(cad) {
     const E = parseFloat(original.value) || cad.doc.escala || 1;
     info.textContent = `Escala do desenho 1:${String(E).replace('.', ',')} — 1 mm na folha impressa = ${String(E).replace('.', ',')} mm na obra; ` +
       `textos, cotas e bolinhas saem nesse tamanho. Na tela agora: 1 pixel = ${mmpp >= 10 ? Math.round(mmpp) : mmpp.toFixed(1).replace('.', ',')} mm. ` +
-      'Para trocar a escala de impressão, use o seletor "Escala 1:"; para a planta que veio com a medida errada, Calibrar.';
+      'Para trocar a escala de impressão, use o seletor "Escala 1:"; para a planta que veio com a medida errada, Calibrar. ' +
+      `Medidas em ${unidadeAtual()}: é a unidade do número digitado sem unidade, das medidas mostradas e das cotas novas (o desenho é sempre em mm; 475cm, 4,75m e 4750mm valem em qualquer unidade).`;
     // os botões do rodapé do desenho (Original, Montagem… Nova revisão do DXF) passam por baixo quando a tela é estreita:
     // o quadrinho sobe uma linha
     // pelos botões que aparecem, não pela faixa inteira (ela ocupa a largura toda e o quadrinho subia sempre)

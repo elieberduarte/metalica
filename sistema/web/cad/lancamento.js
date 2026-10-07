@@ -12,7 +12,7 @@ import { criar, dist, transformar, transladar } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoSubstituir, ComandoComposto } from './nucleo/comandos.js';
 import { eixosCopiados } from './nucleo/malha.js';
 import { instalarRodapeEscala } from './rodape_escala.js';
-import { Ferramenta, paraMilimetros } from './ferramentas.js';
+import { Ferramenta, paraMilimetros, naUnidade, unidadeAtual, fatorDaUnidade } from './ferramentas.js';
 
 export const DESENHO_LANCAMENTO = 'planta-de-lançamento';
 const PREFIXO_ARQ = 'ARQ ';
@@ -136,7 +136,8 @@ export class Eixo extends Ferramenta {
   }
 
   _dicaRef() {
-    this.dica(`Eixo ${this.ref.atributos.eixo} de referência: clique onde vai o próximo (paralelo) ou digite o vão — 6000, 3x6000, 6000 6000 7500 — ` +
+    const v = naUnidade(6000), w = naUnidade(7500);
+    this.dica(`Eixo ${this.ref.atributos.eixo} de referência: clique onde vai o próximo (paralelo) ou digite o vão em ${unidadeAtual()} — ${v}, 3x${v}, ${v} ${v} ${w} — ` +
               'do lado do cursor · Enter/Esc termina');
   }
 
@@ -236,7 +237,8 @@ export class Eixo extends Ferramenta {
     const d = [p2[0] - p1[0], p2[1] - p1[1]], L = Math.hypot(d[0], d[1]) || 1;
     const esq = [-d[1] / L, d[0] / L];                                  // a esquerda do sentido p1 → p2
     const deslocamento = ((u[0] * esq[0] + u[1] * esq[1]) * 3 * r) / E;  // 3 raios para dentro, em mm de papel
-    return criar({ tipo: 'cota', camada: 'COTA', modo: 'alinhada', p1, p2, deslocamento, atributos: { malha: true } });
+    return criar({ tipo: 'cota', camada: 'COTA', modo: 'alinhada', p1, p2, deslocamento, ...(fatorDaUnidade() !== 1 ? { escala: 1 / fatorDaUnidade() } : {}),
+                   atributos: { malha: true } });
   }
 
   /** já há cota da malha entre eixos desta família (paralelos a `o`)? Então a cadeia cresce pelo eixosCopiados */
@@ -461,17 +463,19 @@ export class MetodosLancamentoCAD {
   /** Malha de eixos: vãos entre os eixos numerados (pórticos) e entre os com letra (filas de pilares). */
   async dialogoMalha(valores = {}) {
     if (!this.projeto) { this.aviso('A malha de eixos precisa de um projeto aberto.', 'atencao'); return; }
-    const v = { x: '0', y: '0', numeros: '5x6000', letras: '15000', angulo: '0', primeiro: '1', letra: 'A', ...valores };
+    // as medidas na unidade do desenho (mm, cm ou m — o quadrinho da escala, 07/10); o servidor recebe em mm
+    const un = unidadeAtual(), U = (mm) => naUnidade(mm);
+    const v = { x: '0', y: '0', numeros: `5x${U(6000)}`, letras: U(15000), angulo: '0', primeiro: '1', letra: 'A', ...valores };
     const x = el('input', { type: 'text', value: v.x }), y = el('input', { type: 'text', value: v.y });
-    const numeros = el('input', { type: 'text', value: v.numeros, placeholder: '5x6000 ou 6000 6000 7500' });
-    const letras = el('input', { type: 'text', value: v.letras, placeholder: '15000 ou 2x10m' });
+    const numeros = el('input', { type: 'text', value: v.numeros, placeholder: `5x${U(6000)} ou ${U(6000)} ${U(6000)} ${U(7500)}` });
+    const letras = el('input', { type: 'text', value: v.letras, placeholder: `${U(15000)} ou 2x10m` });
     const angulo = el('input', { type: 'text', value: v.angulo });
     const primeiro = el('input', { type: 'text', value: v.primeiro }), letra = el('input', { type: 'text', value: v.letra });
     let pegar = false;
     const botaoPegar = el('button', { type: 'button', texto: 'Pegar no desenho', onclick: () => { pegar = true; $('#dialogo-cancelar').click(); } });
     const corpo = el('div', { class: 'grade-malha' },
       el('div', { class: 'explica', texto: 'Os eixos numerados são as linhas dos pórticos (1, 2, 3… ao longo do galpão); os com letra, as filas de pilares (A, B… atravessadas). Vãos como 5x6000, 6000 6000 7500 ou 3x6m. A origem é o cruzamento do primeiro número com a primeira letra.' }),
-      el('label', {}, 'Origem X (mm)', x), el('label', {}, 'Origem Y (mm)', y), botaoPegar,
+      el('label', {}, `Origem X (${un})`, x), el('label', {}, `Origem Y (${un})`, y), botaoPegar,
       el('label', {}, 'Vãos entre os eixos numerados', numeros),
       el('label', {}, 'Vãos entre os eixos com letra', letras),
       el('label', {}, 'Primeiro número', primeiro), el('label', {}, 'Primeira letra', letra),
@@ -480,20 +484,23 @@ export class MetodosLancamentoCAD {
     const lidos = { x: x.value, y: y.value, numeros: numeros.value, letras: letras.value, angulo: angulo.value, primeiro: primeiro.value, letra: letra.value };
     if (pegar) {
       const p = await this._pegarPonto('Clique na origem da malha: o cruzamento do primeiro eixo numerado com o primeiro com letra (o centro do pilar do canto) · Esc cancela');
-      if (p) { lidos.x = fmt(p[0]); lidos.y = fmt(p[1]); }
+      if (p) { lidos.x = U(p[0]); lidos.y = U(p[1]); }
       return this.dialogoMalha(lidos);
     }
     if (r !== 'ok') return;
     const num = (s) => parseFloat(String(s).replace(',', '.')) || 0;
+    const mm = (s) => paraMilimetros(s) || 0;
+    const vaosMm = (s) => { const l = lerVaos(s); return l ? l.join(' ') : s; };   // "5x600" em cm → "6000 6000 …" em mm
     let m;
     try {
       m = await postar(`/api/projetos/${encodeURIComponent(this.projeto)}/lancamento/malha`, {
-        origem: [num(lidos.x), num(lidos.y)], vaos_numeros: lidos.numeros, vaos_letras: lidos.letras,
+        origem: [mm(lidos.x), mm(lidos.y)], vaos_numeros: vaosMm(lidos.numeros), vaos_letras: vaosMm(lidos.letras),
         angulo: num(lidos.angulo), escala: this.doc.escala, primeiro_numero: parseInt(lidos.primeiro, 10) || 1,
         primeira_letra: String(lidos.letra || 'A').trim().toUpperCase() || 'A' });
     } catch (e) { this.aviso(`Não foi possível montar a malha: ${e.message}`, 'erro', 0); return; }
     for (const [nome, c] of Object.entries(m.camadas || {})) if (!this.doc.camadas.has(nome)) this.doc.camadas.set(nome, { nome, cor: c.cor, visivel: true, bloqueada: false, tipo_linha: c.tipo_linha || 'CONTINUOUS', espessura: c.espessura || 0.18 });
-    const novas = (m.entidades || []).map(e => criar({ ...e, id: undefined }));
+    const emUn = fatorDaUnidade() !== 1 ? { escala: 1 / fatorDaUnidade() } : {};       // as cotas da malha na unidade
+    const novas = (m.entidades || []).map(e => criar({ ...e, id: undefined, ...(e.tipo === 'cota' ? emUn : {}) }));
     this.executar(new ComandoAdicionar(novas, `Malha de eixos (${novas.length})`));
     this.tela.enquadrar();
     this.aviso('Malha desenhada na camada EIXO (Ctrl+Z desfaz). Ajuste o que precisar — mova, apague ou desenhe linhas na camada EIXO — e use Lançamento → Gravar eixos no projeto.', 'info', 12000);

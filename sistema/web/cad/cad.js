@@ -8,7 +8,7 @@ import { Desenho2D, clonar, valorCota, pontosDe, criar, segmentosDe, dist, maisP
 import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar, ComandoComposto, ComandoEscala } from './nucleo/comandos.js';
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { Snap } from './nucleo/snap.js';
-import { FERRAMENTAS, GRUPOS, Ferramenta } from './ferramentas.js';
+import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade } from './ferramentas.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
 import { MetodosMontarPlantaCAD } from './montar_planta.js';
 import { MetodosEdicaoChapaCAD } from './edicao_chapa.js';
@@ -852,7 +852,7 @@ class CAD {
     return () => clearInterval(timer);
   }
 
-  medida(t) { if (document.activeElement !== this.el.medida) this.el.medida.placeholder = t || 'digite e Enter'; }
+  medida(t) { if (document.activeElement !== this.el.medida) this.el.medida.placeholder = textoNaUnidade(t) || 'digite e Enter'; }   // na unidade das medidas
 
   // ------------------------------------------------------------- mouse
   _ligarMouse() {

@@ -9,6 +9,30 @@ import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentos
 import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto, ComandoAlterar } from './nucleo/comandos.js';
 import { acompanharMalha, eixosCopiados } from './nucleo/malha.js';
 
+// A unidade das medidas (07/10, o usuário: "ajustei a escala do desenho para cm para trabalhar com todas as medidas em
+// cm"). O desenho é sempre em milímetro e a "Escala 1:" é a de impressão; a unidade muda só o número digitado sem
+// unidade, as medidas que as ferramentas mostram e o número das cotas novas. Gravada no desenho (metadados.unidade_medidas).
+export const UNIDADES = { mm: 1, cm: 10, m: 1000 };
+let unidadeMedidas = 'mm';
+export function definirUnidade(nome) { unidadeMedidas = UNIDADES[nome] ? nome : 'mm'; }
+export const unidadeAtual = () => unidadeMedidas;
+export const fatorDaUnidade = () => UNIDADES[unidadeMedidas];
+/** mm → o número na unidade das medidas, com vírgula: 4750 → "475" (cm), "4,75" (m) */
+export function naUnidade(mm) {
+  const casas = unidadeMedidas === 'm' ? 3 : 1, k = 10 ** casas;
+  return String(Math.round(mm / UNIDADES[unidadeMedidas] * k) / k).replace('.', ',');
+}
+/** O texto da caixa MEDIDAS na unidade das medidas: os números até o último "mm" ("4.750 mm", "35 × 70 mm", "R 120 · corda 300 mm")
+ *  convertidos; ângulo (30°), nome de eixo ("A:", "do eixo 1", depois do mm) e fator (×2) ficam. */
+export function textoNaUnidade(t) {
+  const s = String(t || '');
+  const fim = s.lastIndexOf(' mm');
+  if (unidadeMedidas === 'mm' || fim < 0) return s;
+  const ate = s.slice(0, fim).replace(/(^|[\s(])(-?\d{1,3}(?:\.\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?)(?![\d,.]|\s*[°:])/g,
+    (m0, pre, num) => pre + naUnidade(parseFloat(num.replace(/\.(?=\d{3})/g, '').replace(',', '.'))));
+  return ate.replace(/ mm(?![a-z])/g, ' ' + unidadeMedidas) + ' ' + unidadeMedidas + s.slice(fim + 3);
+}
+
 export function paraMilimetros(texto) {
   let t = String(texto || '').trim().toLowerCase().replace(/\s+(?=(mm|cm|m)$)/, '');
   // ponto de milhar ("1.500", "12.000 mm", "1.500,5"): no Brasil a vírgula é a decimal
@@ -20,7 +44,7 @@ export function paraMilimetros(texto) {
   const m = t.match(/^(-?\d+(?:\.\d+)?)\s*(mm|cm|m)?$/);
   if (!m) return null;
   const v = parseFloat(m[1]);
-  return m[2] === 'm' ? v * 1000 : m[2] === 'cm' ? v * 10 : v;
+  return m[2] === 'm' ? v * 1000 : m[2] === 'cm' ? v * 10 : m[2] === 'mm' ? v : v * UNIDADES[unidadeMedidas];   // sem unidade: a das medidas
 }
 
 const ang = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]);
@@ -195,8 +219,8 @@ export class Selecionar extends Ferramenta {
     }
     const ant = viz.filter(v => v[0] < 0).sort((a, b) => b[0] - a[0])[0], dep = viz.filter(v => v[0] > 0).sort((a, b) => a[0] - b[0])[0];
     const partes = [`moveu ${fmt(Math.abs(s))} mm`];
-    if (ant) partes.push(`${ant[1]}: ${fmt(-ant[0])}`);
-    if (dep) partes.push(`${dep[1]}: ${fmt(dep[0])}`);
+    if (ant) partes.push(`${ant[1]}: ${fmt(-ant[0])} mm`);
+    if (dep) partes.push(`${dep[1]}: ${fmt(dep[0])} mm`);
     this.editor.medida(partes.join(' · '));
   }
   /** A entidade da alça com a ponta levada a `p` (linha, polilinha ou cota). */
@@ -248,7 +272,11 @@ export class Selecionar extends Ferramenta {
     const c = this._editada(p);
     this.editor.previa(c ? [c] : []);
     if (!c) return;
-    if (c.tipo === 'cota') this.editor.medida(`${fmt(valorDaCota(c) * fatorDaCota(this.doc.get(this.alca.id) || c))} mm`);
+    if (c.tipo === 'cota') {
+      // a cota na unidade das medidas (escala 1/10 em cm): a medida real, que a caixa mostra na unidade
+      const fc = fatorDaCota(this.doc.get(this.alca.id) || c);
+      this.editor.medida(`${fmt(valorDaCota(c) * (Math.abs(fc * UNIDADES[unidadeMedidas] - 1) < 1e-9 ? 1 : fc))} mm`);
+    }
     else if (c.tipo === 'arco') { const g = geometriaDoArco(c); this.editor.medida(`R ${fmt(c.raio)} · corda ${fmt(g.corda)} · flecha ${fmt(g.flecha)} mm`); }
     else {
       const fixo = this._vizinhoFixo(this.doc.get(this.alca.id), this.alca.parte);
@@ -564,7 +592,8 @@ export class Cota extends Ferramenta {
     }
     const casas = ((this.doc.metadados || {}).estilo || {}).casas;            // as casas padrão do desenho (Estilos)
     // na prancha, a escala da célula em que a cota é feita: o número sai em mm da peça (pedido do usuário, 01/10)
-    const escala = this.editor.escalaNoPonto ? this.editor.escalaNoPonto(p1) : null;
+    // fora dela, a unidade das medidas: em cm, o número é a medida ÷ 10 (07/10)
+    const escala = (this.editor.escalaNoPonto ? this.editor.escalaNoPonto(p1) : null) || (unidadeMedidas !== 'mm' ? 1 / UNIDADES[unidadeMedidas] : null);
     if (this._f === undefined) this._f = this.padrao ? null : Cota.fatorLocal(this.doc, p1, p2, this.editor.alturaTexto || 2.5);
     const fator = this._f;
     if (fator && Math.abs(desl) < 2 * fator) desl = desl < 0 ? -2 * fator : 2 * fator;
