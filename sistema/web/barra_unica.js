@@ -123,6 +123,8 @@
       { texto: 'Ligações e acessórios…', link: '/ligacoes', dica: 'abre a tela das ligações', antes: 'Estrutura › Ligações e acessórios…' },
       HR, T('cálculo'),
       { texto: 'Análise estrutural…', link: '/analise-estrutural?projeto={projeto}', dica: 'o unifilar com as cargas, os diagramas de esforços, o mapa de tensões e as reações nas bases (o modelo inteiro em 3D)' },
+      I('Cobertura retrátil: ver aberta', '3d', 'cobertura-aberta', { dica: 'as tesouras e a sanfona da análise no 3D, abertas ao longo do comprimento todo' }),
+      I('Cobertura retrátil: ver retraída', '3d', 'cobertura-retraida', { dica: 'as mesmas tesouras empilhadas na ponta' }),
       I('Calcular a estrutura', '3d', 'mapa-esforcos', { kbd: 'F9', antes: 'Cálculo › Calcular estrutura' }),
       I('Dimensionar: o perfil mais leve que passa…', '3d', 'dimensionar', { antes: 'Cálculo › Dimensionar: o perfil mais leve que passa…' }),
       { texto: 'Resultado da análise…', link: '/analise?projeto={projeto}', antes: 'Cálculo › Resultado da análise…' },

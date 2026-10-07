@@ -190,6 +190,8 @@ def montar(doc, par: Optional[dict] = None) -> dict:
     """o modelo analítico pronto para resolver: nós (m), barras (seção, eixos, rótulas), apoios, origem das peças"""
     from nucleo3d import analitico as AN
     P = dict(PARAMETROS_PADRAO, **(par or {}))
+    if P.get("cobertura_movel"):
+        doc = _sem_copias_da_cobertura(doc)
     an = AN.analitico(doc)
     nos = np.array(an["nos"], float) / 1000.0
     ents = doc.entidades
@@ -290,6 +292,39 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         apoios.append({"no": int(n), "tipo": tipo, "chave": chave})
     return {"nos": nos, "barras": barras, "apoios": apoios, "avisos": avisos, "par": P, "resumo_esqueleto": an["resumo"],
             "movel": movel}
+
+
+def _sem_copias_da_cobertura(doc):
+    """o modelo sem a cobertura retrátil gerada no 3D (nucleo3d/cobertura_movel.py): a análise monta a dela — fica só a
+    primeira tesoura gerada, levada de volta à posição da planta (o deslocamento `d` que a cópia guardou), que serve de
+    molde, e a sanfona do 3D sai. Na posição da planta a tesoura está apoiada como foi lançada; empilhada (retraída) a
+    primeira fica a centímetros da ponta da viga e o esqueleto não a apoia"""
+    import copy
+    from nucleo3d.cobertura_movel import _mover
+
+    def cm(e):
+        return (getattr(e, "atributos", None) or {}).get("cobertura_movel")
+
+    def fica(e):
+        c = cm(e)
+        if not c:
+            return True
+        return (e.atributos or {}).get("elemento") == "trelica" and int(c.get("k", 0)) == 0
+    if not any(cm(e) for e in doc.entidades.values()):
+        return doc
+    ents = {}
+    for k, e in doc.entidades.items():
+        if not fica(e):
+            continue
+        c = cm(e)
+        if c and any(c.get("d") or ()):
+            e = copy.deepcopy(e)
+            _mover(e, [-v for v in c["d"]])
+            e.atributos = dict(e.atributos, cobertura_movel=dict(c, d=[0.0, 0.0, 0.0]))
+        ents[k] = e
+    from nucleo3d.modelo import Documento
+    return Documento(nome=doc.nome, unidade=doc.unidade, entidades=ents, camadas=doc.camadas, materiais=doc.materiais,
+                     projeto=doc.projeto, metadados=doc.metadados)
 
 
 def _cobertura_movel(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, avisos: List[str]):
@@ -420,7 +455,8 @@ def _cobertura_movel(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, 
     info = {"configuracao": conf, "n": N, "comprimento_m": round(Lc, 3), "passo_m": round(Lc / N, 4), "peso_tesoura_kg": round(kg_alvo, 1),
             "peso_perfis_molde_kg": round(kg_molde, 1), "fator_peso": round(fator, 4), "sanfona_barras": ns,
             "altura_aba_m": round(altura_aba, 3), "tesouras": tesouras, "u": u.tolist(), "n_dir": n.tolist(),
-            "lancadas_fora": len(grupos)}
+            "lancadas_fora": len(grupos), "t0": t0, "molde_grupo": g0,
+            "molde_ids": sorted({i_ for i in molde for i_ in barras[i]["ids"]})}
     avisos.append(("cobertura retrátil, situação %s: %d tesouras (molde %s) a cada %.3f m em %.2f m; peso de cada %.1f kg "
                    "(%.0f kg ÷ %d; os perfis do molde pesam %.1f kg); sanfona com %d braços %s; as %d tesouras lançadas no "
                    "modelo ficaram fora (a cobertura é do fabricante)")

@@ -53,6 +53,8 @@ Rotas da API:
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
     GET  /api/projetos/<slug>/analise-estrutural   a análise do modelo (o último cálculo); POST {parametros} calcula
          (nucleo3d/analise_estrutural.py; tela /analise-estrutural — o unifilar, as cargas, os esforços e as reações)
+    POST /api/projetos/<slug>/cobertura-movel {situacao}   a cobertura retrátil no 3D (as tesouras e a sanfona da análise),
+         aberta ou retraida (nucleo3d/cobertura_movel.py)
     POST /api/projetos/<slug>/projeto-recebido  folhas, carimbo e considerações de cálculo do DXF recebido
     POST /api/projetos/<slug>/montagem/ler {parametros}   leitura por quadros: cada quadro da Montagem lido + pré-análise
     POST /api/projetos/<slug>/montagem/gerar-3d {parametros, assim_mesmo}   o 3D pelos quadros (tesoura = bloco)
@@ -1883,6 +1885,26 @@ def analise_estrutural_do_projeto(s: str, corpo: Optional[dict] = None, recalcul
         g._atualizar(s, analise_parametros=par)
     _gravar_json(arq, saida)
     return saida
+
+
+def cobertura_movel_do_projeto(s: str, corpo: Optional[dict] = None) -> dict:
+    """POST /api/projetos/<s>/cobertura-movel {situacao: aberta | retraida}: a cobertura retrátil no modelo 3D — as mesmas
+    tesouras e a mesma sanfona da análise (nucleo3d/cobertura_movel.py), na situação pedida. A escolha fica no projeto
+    (`cobertura_movel_vista`): a sincronização da planta gera de novo nela"""
+    from nucleo3d import cobertura_movel as CM
+    g = _gerente()
+    proj = g.ler(s)
+    situacao = (corpo or {}).get("situacao") or proj.get("cobertura_movel_vista") or "aberta"
+    par = dict(proj.get("analise_parametros") or {})
+    doc = _documento3d_do_projeto(s)
+    r = CM.aplicar(doc, par, situacao)
+    _regravar_modelo(s, doc, marco=True)
+    if not par.get("cobertura_movel"):
+        par["cobertura_movel"] = True                # o 3D e a análise falam da mesma cobertura
+        g._atualizar(s, analise_parametros=par, cobertura_movel_vista=situacao)
+    else:
+        g._atualizar(s, cobertura_movel_vista=situacao)
+    return dict(r, ok=True)
 
 
 def ler_projeto_recebido(s: str, corpo: dict) -> dict:
@@ -4190,6 +4212,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(esforcos_do_projeto(partes[0], corpo, recalcular=True))
                 if len(partes) == 2 and partes[1] == "analise-estrutural":
                     return self._json(analise_estrutural_do_projeto(partes[0], corpo, recalcular=True))
+                if len(partes) == 2 and partes[1] == "cobertura-movel":
+                    return self._json(cobertura_movel_do_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
                     return self._json(detalhar_posicao_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "atualizar-pecas":

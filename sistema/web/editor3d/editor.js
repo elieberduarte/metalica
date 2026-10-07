@@ -1682,6 +1682,25 @@ export class Editor {
     return j;
   }
 
+  /**
+   * A cobertura retrátil no 3D (06/10, Kaefer): o servidor troca as tesouras pelas da análise estrutural — as n tesouras
+   * e a sanfona, abertas ou empilhadas na ponta (nucleo3d/cobertura_movel.py) — e o modelo é recarregado.
+   */
+  async coberturaRetratil(situacao) {
+    if (!this.projeto) { this.aviso('Abra um projeto: a cobertura retrátil é gerada no modelo dele.', 'atencao'); return; }
+    this.dica(situacao === 'aberta' ? 'Abrindo a cobertura…' : 'Retraindo a cobertura…');
+    try {
+      await this._gravarAntesDeGerar();
+      const r = await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}/cobertura-movel`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ situacao }),
+      });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      this._autosavePendente = false;
+      window.location.reload();
+    } catch (e) { this.aviso(`Cobertura retrátil: ${e.message}`, 'erro', 0); this.dica(''); }
+  }
+
   async _gravarAntesDeGerar() {
     // a vista é feita do modelo.json do projeto: o que está por gravar vai antes
     await this.gravarConfirmado();
@@ -1917,6 +1936,8 @@ export class Editor {
       'alternar-tema': () => this.alternarTema(),
       desempenho: () => this.dialogoDesempenho(),
       'verificar-apoios': () => this.verificarApoios(),
+      'cobertura-aberta': () => this.coberturaRetratil('aberta'),
+      'cobertura-retraida': () => this.coberturaRetratil('retraida'),
       esqueleto: () => this.alternarEsqueleto(),
       'trelicas-lidas': () => this.abrirTrelicasLidas(),
       'esforcos': () => {
