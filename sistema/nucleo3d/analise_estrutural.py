@@ -1343,6 +1343,7 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
         r["reacoes_envoltoria"] = envoltoria_das_reacoes({"": r})
         r["grupos_perfis"] = grupos_de_perfis(r)
         r["bases"] = _bases({"": r}, P)
+        r["ligacoes_topo"] = _ligacoes_topo({"": r}, P)
         return r
     r_a = _calcular_situacao(doc, dict(P, configuracao="aberta"))
     r_r = _calcular_situacao(doc, dict(P, configuracao="retraida"))
@@ -1352,7 +1353,16 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
     r_a["reacoes_envoltoria"] = envoltoria_das_reacoes({"aberta": r_a, "retraida": r_r})
     r_a["grupos_perfis"] = grupos_de_perfis(r_a, [r_r])
     r_a["bases"] = _bases({"aberta": r_a, "retraida": r_r}, P)
+    r_a["ligacoes_topo"] = _ligacoes_topo({"aberta": r_a, "retraida": r_r}, P)
     return r_a
+
+
+def _ligacoes_topo(sits: Dict[str, dict], P: dict) -> Optional[List[dict]]:
+    """a viga apoiada no topo do pilar por duas chapas parafusadas (nucleo/ligacao_topo_pilar.py)"""
+    if any(r.get("instavel") for r in sits.values()):
+        return None
+    from nucleo3d import bases_analise as BA
+    return BA.ligacoes_no_topo(sits, P)
 
 
 def _bases(sits: Dict[str, dict], P: dict) -> Optional[List[dict]]:
@@ -1490,6 +1500,69 @@ def ligacoes_viga_pilar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optiona
     return sorted(lig.values(), key=lambda r: -r["max"].get("Mz", [0.0])[0])
 
 
+def topos_dos_pilares(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = None) -> List[dict]:
+    """os topos de pilar onde chega viga: por combinação última, o que o pilar entrega à ligação (os esforços internos no
+    topo, concomitantes: N > 0 compressão, Mz no eixo forte, My no fraco, V, T), a viga que apoia, se ela é contínua
+    sobre o pilar e em que direção da seção do pilar ela corre (x = a altura da seção, y = a largura)"""
+    nos, barras = M["nos"], M["barras"]
+    no_bar: Dict[int, List[int]] = collections.defaultdict(list)
+    for i, br in enumerate(barras):
+        no_bar[br["a"]].append(i)
+        no_bar[br["b"]].append(i)
+    elu = [c for c, cb in combs.items() if cb["tipo"] == "ELU"]
+    pares = []
+    for no, bs in no_bar.items():
+        vigas = [i for i in bs if barras[i]["papel"] == "viga"]
+        pil = [i for i in bs if barras[i]["papel"] == "pilar" and max(nos[barras[i]["a"]][2], nos[barras[i]["b"]][2]) <= nos[no][2] + 1e-6]
+        if vigas and pil:
+            pares.append((no, pil[0], vigas))
+    if not pares:
+        return []
+    forcas = {c: esforcos_da_combinacao(M, sol, c, combs[c], so2) for c in elu}
+    saida = []
+    for no, ip, vigas in pares:
+        bp = barras[ip]
+        x = bp["L"] if bp["b"] == no else 0.0
+        ey = bp["R"][1]
+        v0 = barras[vigas[0]]
+        dv = nos[v0["b"]] - nos[v0["a"]]
+        ids = [barras[i]["ids"][0] if barras[i].get("ids") else None for i in vigas]
+        continua = len(vigas) >= 2 and ids[0] is not None and ids.count(ids[0]) >= 2
+        reg = {"no": int(no), "xyz": [round(float(v), 3) for v in nos[no]], "pilar": bp["perfil"], "viga": v0["perfil"],
+               "viga_continua": bool(continua), "viga_ao_longo": "x" if abs(float(_unit(dv) @ ey)) >= 0.7 else "y",
+               "pilar_chave": chave_do_pilar(nos, bp), "combinacoes": []}
+        for c in elu:
+            f, w = forcas[c]
+            e = esforcos_lote(f[ip:ip + 1], w[ip:ip + 1], np.array([[x]]))[0, 0]
+            reg["combinacoes"].append({"comb": c, "N": round(-float(e[0]), 2), "V": round(float(math.hypot(e[1], e[2])), 2),
+                                       "T": round(float(e[3]), 3), "My": round(float(e[4]), 3), "Mz": round(float(e[5]), 3)})
+        # as pontas de viga que terminam no nó (a viga emendada sobre o pilar): o que cada uma entrega à ligação, nos eixos
+        # dela — N > 0 comprimindo os parafusos (a reação vertical), M_forte (o vetor de través: binário ao longo da viga),
+        # M_tor (o vetor ao longo: binário de través), T (vertical: torção do grupo) e V (horizontal)
+        if not continua:
+            reg["pontas_viga"] = []
+            z = np.array([0.0, 0.0, 1.0])
+            for iv in vigas:
+                bv = barras[iv]
+                lado = slice(0, 6) if bv["a"] == no else slice(6, 12)
+                outro = bv["b"] if bv["a"] == no else bv["a"]
+                el = _unit((nos[outro] - nos[no]) * np.array([1.0, 1.0, 0.0]))
+                et = np.cross(z, el)
+                pv = {"viga": bv["perfil"], "combinacoes": []}
+                for c in elu:
+                    s2 = (so2 or {}).get(c) or {}
+                    P = s2["pontas_nos"] if s2.get("pontas_nos") is not None else np.einsum("c,ncj->nj", fatores_da(combs[c], sol["casos"]), sol["pontas"])
+                    fl = P[iv][lado]
+                    F = -(bv["R"].T @ fl[:3])          # a força da viga sobre o nó (global)
+                    Mv = -(bv["R"].T @ fl[3:6])
+                    pv["combinacoes"].append({"comb": c, "N": round(-float(F @ z), 2), "Mz": round(float(Mv @ et), 3),
+                                              "My": round(float(Mv @ el), 3), "T": round(float(Mv @ z), 3),
+                                              "V": round(float(math.hypot(F @ el, F @ et)), 2)})
+                reg["pontas_viga"].append(pv)
+        saida.append(reg)
+    return saida
+
+
 def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
     """modelo → cargas → combinações → resolver → resultados, no formato que a tela de análise lê (JSON)"""
     M = montar(doc, par)
@@ -1584,6 +1657,7 @@ def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
         "verificacao": ver,
         "apoios_tesouras": apoios_das_tesouras(M, sol, combs, so2) if not sol["instavel"] else None,
         "ligacoes": ligacoes_viga_pilar(M, sol, combs, so2) if not sol["instavel"] else None,
+        "topos_pilares": topos_dos_pilares(M, sol, combs, so2) if not sol["instavel"] else None,
         "combinacoes": combinacoes_json(combs),
         # por combinação: os deslocamentos, as reações e a tensão máxima de cada barra (o mapa)
         "por_comb": {c: {"desl_mm": np.round(v["desl_mm"], 1).tolist(),

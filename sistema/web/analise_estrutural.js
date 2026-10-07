@@ -852,7 +852,8 @@ function detalheDaBase(b, xy) {
   if (bb) {
     const T = bb.tabela || {}, K = bb.bloco || {};
     const tab = [];
-    tab.push(`<tr><td>Solução</td><td>base tipo ${bb.tipo} (${bb.tipo === 1 ? 'chumbadores externos' : 'internos'}) · <b>${bb.nb} chumbadores ø ${bb.diametro}</b> ASTM A36 · placa <b>${nf(bb.lx, 0)} × ${nf(bb.ly, 0)} × ${nf(bb.tp, 1)} mm</b> (t<sub>p,mín</sub> ${nf(bb.tp_min, 1)} mm)${bb.peso_kg ? ` · ~${nf(bb.peso_kg, 0)} kg` : ''}</td></tr>`);
+    tab.push(`<tr><td>Método</td><td>${bb.norma || 'NBR 8800:2024, 6.7'}</td></tr>`);
+    tab.push(`<tr><td>Solução</td><td>base tipo ${bb.tipo} (${bb.tipo === 1 ? (bb.ld ? 'placa circular' : 'chumbadores externos') : bb.tipo === 3 ? 'placa circular' : 'internos'}) · <b>${bb.nb} chumbadores ø ${bb.diametro}</b> ASTM A36 · placa <b>${nf(bb.lx, 0)} × ${nf(bb.ly, 0)} × ${nf(bb.tp, 1)} mm</b> (t<sub>p,mín</sub> ${nf(bb.tp_min, 1)} mm)${bb.peso_kg ? ` · ~${nf(bb.peso_kg, 0)} kg` : ''}</td></tr>`);
     tab.push(`<tr><td>Casos</td><td>${(bb.casos || []).join(', ')} (Figuras 22 e 23); a espessura governa em ${bb.governa_tp ? `${bb.governa_tp.sit ? bb.governa_tp.sit + ' · ' : ''}${bb.governa_tp.comb} (${bb.governa_tp.caso})` : '—'}</td></tr>`);
     if (bb.governa_ft) tab.push(`<tr><td>Chumbador</td><td>F<sub>t,Sd</sub> = ${nf(bb.governa_ft.Ft, 1)} kN por chumbador → d<sub>b,mín</sub> ${nf(bb.governa_ft.db_min, 1)} mm (ø ${nf(bb.db, 0)} mm) em ${bb.governa_ft.comb} (${bb.governa_ft.caso})</td></tr>`);
     const pc = bb.placa_cisalhamento;
@@ -865,6 +866,16 @@ function detalheDaBase(b, xy) {
         `<tr><td>${r.caso || '—'}</td><td>${r.sit ? r.sit + ' · ' : ''}${r.comb}: N ${nf(r.N, 1)} · M ${nf(r.M, 1)} · V ${nf(r.V, 1)} → t<sub>p,mín</sub> ${nf(r.tp_min, 1)} mm${r.Ft ? ` · F<sub>t</sub> ${nf(r.Ft, 1)} kN` : ''}${r.erro ? ` · <span class="g-ruim">${r.erro}</span>` : ''}</td></tr>`).join('') + '</table>');
     }
     if ((bb.falhas || []).length) linhas.push(`<div class="erro">${bb.falhas.join('<br>')}</div>`);
+    const J = b.chumbador_j;
+    if (J) linhas.push(`<div class="sub" style="margin-top:6px"><b>Chumbador em J</b> (barra roscada A36 dobrada, concretada com a armadura do bloco — NBR 6118:2023, 9.4.2):</div>
+      <table class="vt"><tr><td>Ancoragem</td><td>F<sub>t</sub> ${nf(J.Ft_kN, 1)} kN por chumbador · f<sub>bd</sub> = ${nf(J.fbd, 2)} MPa (barra lisa, η₁ = 1,0) · ℓ<sub>b</sub> = ${nf(J.lb, 0)} mm · <b>ℓ<sub>b,nec</sub> = ${nf(J.lb_nec, 0)} mm</b> (com gancho, α = 0,7) contra o embutimento da Tabela (${nf(J.h_disponivel, 0)} mm) — ${J.ok ? '<span class="g-ok">ok</span>' : '<span class="g-ruim">precisa de embutimento maior</span>'}</td></tr>
+      <tr><td>Gancho</td><td>semicircular (obrigatório na barra lisa, 9.4.2.3) · ponta reta ≥ ${nf(J.ponta_reta_min, 0)} mm · pino de dobramento ≥ ${nf(J.pino_dobramento_min, 0)} mm · cobrimento ≥ 3φ no plano do gancho</td></tr></table>
+      <div class="sub">A dispensa do arrancamento da 6.7.1.5 vale só para o chumbador reto com porca e arruela da Tabela 18; o J é ancorado por aderência e passa a força para a armadura do bloco (suspensão e a transversal de 9.4.2.6 — projeto de fundações).</div>`);
+    const AB = b.com_abas;
+    if (AB) linhas.push(`<div class="sub" style="margin-top:6px"><b>Com abas de reforço</b> (uma de cada lado, no plano da alma — ${AB.metodo}):</div>
+      <table class="vt"><tr><td>Placa</td><td><b>${AB.tp ? nf(AB.tp, 1) : '—'} mm</b> (sem abas ${nf(bb.tp, 1)} mm) · t<sub>mín</sub> ${nf(AB.tp_min, 1)} mm · ~${nf(AB.peso_kg, 0)} kg (sem abas ~${nf(bb.peso_kg, 0)} kg)</td></tr>
+      <tr><td>Aba</td><td>${nf(AB.hg, 0)} × ${nf(AB.Lg, 0)} × ${nf(AB.tg, 1)} mm · força ${nf(AB.F_aba_kN, 0)} kN · usos: flexão ${nf(AB.u_flexao * 100, 0)}%, cortante ${nf(AB.u_cortante * 100, 0)}%, borda livre ${nf(AB.u_borda * 100, 0)}% · filete ${AB.perna_solda ? nf(AB.perna_solda, 0) + ' mm' : '<span class="g-ruim">acima de 12 mm</span>'}</td></tr></table>
+      ${(AB.falhas || []).length ? `<div class="aviso">${AB.falhas.join('<br>')}</div>` : ''}`);
   }
   if ((b.avisos || []).length) linhas.push(`<div class="aviso">${b.avisos.join('<br>')}</div>`);
   box.innerHTML = linhas.join('');
@@ -893,6 +904,7 @@ function painelCarrinho() {
 function painelLigacoes() {
   const P = $('#ligacoes'), L = D.ligacoes;
   if (!L || !L.length) { P.replaceChildren(el('div', { class: 'sub', texto: 'Nenhuma viga chegando em pilar neste modelo (ou calcule de novo).' })); return; }
+  const topo = ligacoesNoTopo();
   // as ligações parecidas (mesmos perfis, mesmos esforços arredondados) numa linha
   const g = new Map();
   for (const l of L) {
@@ -910,7 +922,57 @@ V máx em ${m.V[1].comb}; tração máx em ${m.Nt[1].comb}; compressão máx em 
       el('td', { html: `<b>${nf(m.Mz[0], 1)}</b> <span class="sub">${c.comb}</span>` }),
       el('td', { texto: nf(m.V[0], 1) }), el('td', { texto: `+${nf(m.Nt[0], 1)} / −${nf(m.Nc[0], 1)}` })));
   }
-  P.replaceChildren(el('div', { class: 'sub', texto: 'O que cada ligação viga–pilar transmite nas combinações últimas (2ª ordem): o maior momento no eixo forte e, passando o mouse, a normal, o cortante e o momento fraco da MESMA combinação — os valores concomitantes para o detalhe. O tipo de ligação (soldada, chapa de topo, cantoneiras) vem do projeto: defina-o para o sistema dimensionar parafusos, soldas e chapas.' }), t);
+  P.replaceChildren(...topo, el('div', { class: 'sub', style: 'margin-top:8px', texto: 'Os esforços nas pontas das vigas que chegam em pilares (2ª ordem): o maior momento no eixo forte e, passando o mouse, a normal, o cortante e o momento fraco da MESMA combinação.' }), t);
+}
+
+// a viga apoiada no topo do pilar por duas chapas parafusadas (nucleo/ligacao_topo_pilar.py — a solução de partida)
+function ligacoesNoTopo() {
+  const L = (RAIZ && RAIZ.ligacoes_topo) || null;
+  if (!L || !L.length) return [];
+  const det = el('div', {});
+  const g = new Map();
+  for (const l of L) {
+    const x = l.ligacao || {};
+    const k = `${l.pilar}|${l.viga}|${x.n}|${x.diametro}|${x.t_pilar}|${x.t_viga}|${l.ok}|${(l.pontas_viga || []).map(p => p.ligacao && p.ligacao.Lp).join(',')}`;
+    const it = g.get(k) || { l, chaves: [] }; it.chaves.push(l.chave); g.set(k, it);
+  }
+  const t = el('table', {}, el('tr', {}, el('th', { texto: 'pilar · viga' }), el('th', { texto: 'parafusos · chapas (mm)' }), el('th', { texto: '' })));
+  for (const { l, chaves } of g.values()) {
+    const x = l.ligacao || {};
+    const tr = el('tr', { class: 'clic', title: l.aviso || '' },
+      el('td', { texto: `${l.pilar} · ${l.viga}${chaves.length > 1 ? ` (${chaves.length})` : ''}` }),
+      el('td', { texto: x.n ? `${x.n}×ø${x.diametro} A325 · ${nf(x.Bx, 0)}×${nf(x.By, 0)} · ${nf(x.t_pilar, 1)}/${nf(x.t_viga, 1)}` : '—' }),
+      el('td', { html: (l.ok ? '<span class="g-ok">ok</span>' : '<span class="g-ruim">não fecha</span>') + (l.aviso ? ' ⚠' : '') }));
+    tr.onclick = () => det.replaceChildren(detalheDaLigacao(l, chaves));
+    t.append(tr);
+  }
+  return [el('div', { class: 'sub', texto: 'Viga apoiada no topo do pilar: chapa soldada no topo do pilar + chapa soldada sob a mesa da viga, parafusos verticais (a solução de partida, a avaliar). NBR 8800:2024 — parafusos 6.3.3, alavanca 6.3.5, solda 6.2.5, alma da viga 5.7.3/5.7.4. Clique para ver a conta.' }), t, det];
+}
+
+function detalheDaLigacao(l, chaves) {
+  const x = l.ligacao || {}, env = l.envoltoria || {};
+  const pc = (v) => `${nf((v || 0) * 100, 0)}%`;
+  const box = el('div', { class: 'verif', style: 'margin-top:6px' });
+  const cr = (c) => c ? `N ${nf(c.N, 1)} kN · M ${nf(Math.hypot(c.Mz, c.My), 1)} kN·m · V ${nf(c.V, 1)} kN (${c.sit ? c.sit + ' · ' : ''}${c.comb})` : '—';
+  const L = [`<b>Topo do pilar ${l.pilar} — viga ${l.viga}</b> ${l.viga_continua ? '(viga contínua sobre o pilar)' : '(a viga termina no pilar)'}<br><span class="sub">${chaves.map(c => c.split(',').map(v => (+v / 1000).toFixed(1)).join('; ')).join(' · ')}</span>`];
+  L.push(`<table class="vt"><tr><td>N máx</td><td>${cr(env.N_max)}</td></tr><tr><td>N mín</td><td>${cr(env.N_min)}</td></tr><tr><td>M máx</td><td>${cr(env.M_max)}</td></tr><tr><td>V máx</td><td>${cr(env.V_max)}</td></tr></table>`);
+  if (x.n) {
+    const pr = x.pior || {};
+    L.push(`<table class="vt"><tr><td>Solução</td><td><b>${x.n} parafusos ø ${x.diametro} ASTM A325</b> (F<sub>t,Rd</sub> ${nf(x.Ft_Rd, 1)} · F<sub>v,Rd</sub> ${nf(x.Fv_Rd, 1)} kN) a ${nf(x.gx, 0)} × ${nf(x.gy, 0)} mm · chapas ${nf(x.Bx, 0)} × ${nf(x.By, 0)} mm: <b>${nf(x.t_pilar, 1)} mm no pilar</b> e <b>${nf(x.t_viga, 1)} mm na viga</b> · filete pilar–chapa ${x.perna_solda ? nf(x.perna_solda, 0) + ' mm' : '—'} (E70XX)</td></tr>
+      <tr><td>Usos</td><td>tração no parafuso ${pc(pr.ft)} · cisalhamento ${pc(pr.fv)} · tração + cisalhamento ${pc(pr.int)} · contato no furo ${pc(pr.contato)} · alma da viga ${pc(pr.alma)}</td></tr>
+      <tr><td>Chapas</td><td>t<sub>mín</sub> pela alavanca (placa flexível, 6.3.5.4): pilar ${nf(pr.tp, 1)} mm · viga ${nf(pr.tv, 1)} mm${x.parafusos_fora_da_mesa ? ' (parafusos fora da mesa da viga: a chapa da viga em balanço da borda da mesa)' : ''}</td></tr>
+      ${x.alma ? `<tr><td>Alma da viga</td><td>C = ${nf(x.alma.C, 1)} kN contra ${nf(Math.min(x.alma.F_esc, x.alma.F_enr), 1)} kN (${x.alma.governa})${x.enrijecedor_na_viga ? ' — <span class="g-ruim">enrijecedores na alma</span>' : ''}</td></tr>` : ''}</table>`);
+    if ((x.falhas || []).length) L.push(`<div class="erro">${x.falhas.join('<br>')}</div>`);
+  }
+  for (const p of l.pontas_viga || []) {
+    const y = p.ligacao || {}, pr = y.pior || {};
+    L.push(`<div class="sub" style="margin-top:4px"><b>Ponta da viga ${p.viga}</b> — M até ${nf(p.M_max, 1)} kN·m: ${y.n ? `${y.n}×ø${y.diametro} · chapa ${nf(y.Lp, 0)} mm ao longo × ${nf(y.t_chapa, 1)} mm · usos tração ${pc(pr.ft)}, interação ${pc(pr.int)}, alma ${pc(pr.alma)}` : '—'} ${p.ok ? '<span class="g-ok">ok</span>' : '<span class="g-ruim">não fecha</span>'}</div>`);
+  }
+  if (l.chapa_topo_ao_longo_mm) L.push(`<div class="sub">A chapa do topo do pilar precisa ter ${nf(l.chapa_topo_ao_longo_mm, 0)} mm ao longo da viga para receber as duas pontas.</div>`);
+  if (l.aviso) L.push(`<div class="aviso">${l.aviso}</div>`);
+  L.push(`<div class="sub">A análise considera a ligação viga–pilar rígida; chapas parafusadas no topo são semirrígidas (a rigidez cresce com a espessura das chapas e a protensão dos parafusos) — se a ligação girar, parte do momento migra para a base do pilar.</div>`);
+  box.innerHTML = L.join('');
+  return box;
 }
 
 // a 2ª ordem de cada combinação última (nucleo3d/segunda_ordem.py): Δ1 e Δ2 no topo dos pilares, a razão e a classe

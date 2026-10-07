@@ -26,6 +26,7 @@ import math
 from typing import Dict, List, Optional, Sequence
 
 GAMA_A1, GAMA_A2, GAMA_C = 1.10, 1.35, 1.40
+E_ACO = 200000.0
 MU = 0.45                                 # atrito placa–argamassa expansiva (6.7.2.2-a)
 FY_CHUMBADOR, FU_CHUMBADOR = 250.0, 400.0  # ASTM A36 (6.7.1.5-c)
 FY_ARRUELA = 345.0                         # arruelas especiais (Tabela 18, nota a)
@@ -409,4 +410,106 @@ def dimensionar(perfil: dict, combs: Sequence[dict], fck: float = 25.0, fy_placa
     return melhor or (menos_ruim[1] if menos_ruim else {"ok": False, "falhas": ["sem geometria"]})
 
 
-__all__ = ["TABELA_18", "geometria", "caso", "verificar", "dimensionar", "sigma_c_rd", "bloco"]
+# ------------------------------------------------------------------ o chumbador em J (barra roscada dobrada)
+
+def chumbador_j(Ft_kN: float, db: float, fck: float, h_disponivel: float, fy: float = FY_CHUMBADOR) -> dict:
+    """a ancoragem por aderência do chumbador em J — barra redonda roscada de aço ASTM A36 dobrada na ponta,
+    concretada junto com a armadura do bloco — pela ABNT NBR 6118:2023 (a Emenda 1:2026 não muda estes itens):
+
+    * f_bd = η1·η2·η3·f_ctd (9.3.2.1), f_ctd = f_ctk,inf/γ_c, f_ctk,inf = 0,7·0,3·f_ck^(2/3) (8.2.5); η1 = 1,0 (barra
+      lisa, Tabela 8.2 — a barra roscada não tem nervuras), η2 = 1,0 (vertical, boa aderência, 9.3.1-a), η3 = 1,0
+      (φ < 32 mm) ou (132 − φ)/100;
+    * ℓ_b = (φ/4)·(f_yd/f_bd) ≥ 25φ (9.4.2.4), f_yd = f_y/1,15;
+    * ℓ_b,nec = α·ℓ_b·A_s,calc/A_s,ef ≥ ℓ_b,mín = máx(0,3ℓ_b; 10φ; 100 mm) (9.4.2.5), α = 0,7 com gancho e cobrimento
+      ≥ 3φ no plano normal ao gancho; A_s,calc/A_s,ef = F_t,Sd/(A_s·f_yd);
+    * barra lisa: gancho obrigatório (9.4.2.1-a) e semicircular (9.4.2.3) — o J — com ponta reta ≥ 2φ e pino de
+      dobramento ≥ 4φ (φ < 20) ou 5φ (Tabela 9.1, CA-25).
+
+    Isto substitui a dispensa da 6.7.1.5 da NBR 8800 (que vale só para o chumbador reto com porca e arruela de
+    ancoragem da Tabela 18). A força chega ao bloco pela aderência: a armadura do bloco (suspensão e a transversal de
+    9.4.2.6, 25% da força) é do projeto de fundações. mm, kN, MPa."""
+    fctd = 0.7 * 0.3 * fck ** (2.0 / 3.0) / GAMA_C
+    eta3 = 1.0 if db < 32 else (132 - db) / 100
+    fbd = 1.0 * 1.0 * eta3 * fctd
+    fyd = fy / 1.15
+    lb = max(db / 4 * fyd / fbd, 25 * db)
+    As = math.pi * db * db / 4
+    razao = min(Ft_kN * 1e3 / (As * fyd), 1.0) if Ft_kN > 0 else 0.0
+    lb_min = max(0.3 * lb, 10 * db, 100.0)
+    lb_nec = max(0.7 * lb * razao, lb_min)
+    return {"fctd": fctd, "fbd": fbd, "fyd": fyd, "lb": lb, "razao_As": razao, "lb_min": lb_min, "lb_nec": lb_nec,
+            "h_disponivel": h_disponivel, "ok": lb_nec <= h_disponivel + 1e-6, "ponta_reta_min": 2 * db,
+            "pino_dobramento_min": (4 if db < 20 else 5) * db, "F_aco_ok": Ft_kN * 1e3 <= 0.75 * As * FU_CHUMBADOR / GAMA_A2 + 1e-6}
+
+
+# ------------------------------------------------------------------ a base com abas de reforço (enrijecedores)
+
+def com_abas(perfil: dict, combs: Sequence[dict], geo: dict, fck: float = 25.0, fy_placa: float = 250.0) -> dict:
+    """a base de pilar I com chumbadores externos (tipo 1) e duas abas de reforço triangulares, uma de cada lado, no
+    plano da alma, da face da mesa até a borda da placa na direção do momento — MÉTODO RACIONAL: a NBR 8800:2024, 6.7,
+    é para placa sem enrijecedor; aqui os próprios casos da 6.7 (C1–C3, T1–T3, com ℓ_c, σ e F_t de cada combinação)
+    são refeitos com o braço reduzido pelo apoio novo que a aba dá à placa:
+
+    * lado comprimido: o balanço m vira m_c = mín(m; (ℓ_y − t_aba)/2) — a faixa entre a mesa e a aba vence o menor vão;
+    * lado tracionado: o braço do chumbador (m − a₁) vira mín(m − a₁; y_b − t_aba/2), y_b a distância de través do
+      chumbador à alma (a aba);
+    * aba: a parte da força do lado que vai para ela — a tração dos chumbadores do lado (toda, a favor da segurança) ou
+      metade da pressão na faixa além da face da mesa — em balanço da mesa: flexão (Z = t·h²/4), cortante
+      (0,6·f_y·t·h/γ_a1) e a borda livre λ = L_livre/t ≤ 0,56·√(E/f_y) (o limite de chapa comprimida em balanço da
+      Tabela F.1, a favor da segurança);
+    * solda da aba no pilar: dois filetes de altura h sob V e M (0,6·f_w·0,707a/γ_w2).
+    Usa a geometria e os chumbadores da base sem aba (`geo`); mm, kN, MPa."""
+    g0 = geometria(perfil, 1, geo["nb"], geo["diametro"])
+    nb, a1, lx, ly, m, n, d = g0["nb"], g0["a1"], g0["lx"], g0["ly"], g0["m"], g0["n"], g0["d"]
+    y_b = ((0.5 * nb - 1) * g0["a2"]) / 2
+    fyd = fy_placa / GAMA_A1
+    lam_lim = 0.56 * math.sqrt(E_ACO / fy_placa)
+    melhor = None
+    for tg in (9.5, 12.5, 16.0, 19.0, 22.4, 25.0, 31.5):
+        m_c = min(m, (ly - tg) / 2)
+        b_t = min(m - a1, y_b - tg / 2) if y_b > tg / 2 else (m - a1)
+        g_c = dict(g0, m=m_c)
+        g_t = dict(g0, m=a1 + max(b_t, 1.0))
+        tp_min, F, gov = 0.0, 0.0, None
+        for c in combs:
+            rc = caso(g_c, c["N"], c["M"], c["V"], fck, fy_placa)
+            rt = caso(g_t, c["N"], c["M"], c["V"], fck, fy_placa)
+            if rc["erro"] or rt["erro"]:
+                continue
+            if rc["caso"] in ("C1", "C2"):
+                t_ = rc["tp_min"]
+            elif rc["caso"] in ("T1", "T2"):
+                t_ = rt["tp_min"]
+            else:                                          # C3, T3: a parte comprimida com m_c e a tracionada com b_t
+                t_ = max(rc.get("tp1", 0.0), rt.get("tp2", 0.0))
+            if t_ > tp_min:
+                tp_min, gov = t_, (c.get("comb"), c.get("sit"), rc["caso"])
+            T_lado = rc["Ft"] * 1e3 * nb / 2
+            s = rc.get("sigma_c_Sd") or 0.0
+            lc = rc.get("lc") or (lx if rc["caso"] == "C1" else 0.0)
+            C_aba = 0.5 * s * ly * min(lc, (lx - d) / 2)
+            F = max(F, T_lado, C_aba)
+        tp = chapa_comercial(max(tp_min, 12.5))
+        hg = max(150.0, math.ceil(1.2 * m / 10) * 10)
+        L_livre = math.hypot(hg, m)
+        M = F * max(a1, m / 2)
+        u_flex = M / (tg * hg * hg / 4 * fyd)
+        u_cort = F / (0.6 * fy_placa * tg * hg / GAMA_A1)
+        u_borda = (L_livre / tg) / lam_lim
+        fw = math.hypot(F / (2 * hg), M / (2 * hg * hg / 6))
+        perna = next((a for a in (5.0, 6.0, 8.0, 10.0, 12.0) if 0.6 * 485.0 * 0.707 * a / 1.35 >= fw), None)
+        ok = tp is not None and max(u_flex, u_cort, u_borda) <= 1.0 and perna is not None
+        r = {"tg": tg, "hg": hg, "Lg": m, "tp": tp, "tp_min": tp_min, "governa": gov, "u_flexao": u_flex, "u_cortante": u_cort,
+             "u_borda": u_borda, "perna_solda": perna, "F_aba_kN": F / 1e3, "ok": ok}
+        if ok:
+            melhor = r
+            break
+        if melhor is None or max(u_flex, u_cort, u_borda) < max(melhor["u_flexao"], melhor["u_cortante"], melhor["u_borda"]):
+            melhor = r
+    peso = (lx * ly * (melhor["tp"] or 0.0) + 2 * 0.5 * melhor["hg"] * melhor["Lg"] * melhor["tg"] * 2) * 7.85e-6
+    return dict(melhor, peso_kg=peso, metodo="racional (fora da 6.7: placa com enrijecedores)", nb=nb, diametro=geo["diametro"],
+                lx=lx, ly=ly, falhas=[] if melhor["ok"] else ["a aba não fecha até 31,5 mm com altura %.0f mm: força de %.0f kN — "
+                                                              "duas abas por lado ou aba mais alta" % (melhor["hg"], melhor["F_aba_kN"])])
+
+
+__all__ = ["TABELA_18", "geometria", "caso", "verificar", "dimensionar", "sigma_c_rd", "bloco", "chumbador_j", "com_abas"]
