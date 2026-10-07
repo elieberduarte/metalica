@@ -73,7 +73,7 @@ def test_momento_de_2a_ordem_ao_longo_do_pilar():
     P, H = 0.5 * Pcr, 1.0
     _sol, _c, r = _segunda(M, P, H)
     d = r["U"].reshape(-1, 6)[:, 0]
-    Ht = H + r["nocional"]["H_kN"]
+    Ht = H + r["nocional"]["H_kN"]                    # combinação com vento: sem nocional (4.10.7.1.1)
     e = AE.esforcos_lote(r["pontas"], np.zeros((8, 3)), AE.estacoes(M))
     for k in range(8):
         z = 6.0 * (k + 1) / 8
@@ -134,18 +134,69 @@ def test_uso_do_pilar_comprimido_e_N_sobre_Nc_Rd():
     assert v["resistencias"][pc["res"]]["Nc"] == pytest.approx(Nrd, rel=1e-3)
     # em balanço (topo livre), essa carga passa da crítica do eixo fraco (π²·0,8EI/(2L)² ≈ 117 kN): a 2ª ordem acusa e
     # a combinação sai da verificação
+    # a combinação só gravitacional vira duas na 2ª ordem: a imperfeição em X e em Y (NBR 8800:2024, 4.10.7.1.1)
     so2 = SO.analisar(M, sol, combs)
-    assert so2["ELU"]["instavel"]
-    assert VP.verificar(M, sol, combs, so2)["instaveis"] == ["ELU"]
+    assert sorted(so2) == ["ELU ·X", "ELU ·Y"] and so2["ELU ·Y"]["nocional"]["dir"] in ([0.0, 1.0], [0.0, -1.0])
+    c2 = SO.combinacoes_da_analise(combs, so2)
+    assert list(c2) == ["ELU ·X", "ELU ·Y"]
+    # o eixo fraco (Y, a imperfeição em Y) passa da crítica; o forte (X) não
+    assert so2["ELU ·Y"]["instavel"] and not so2["ELU ·X"]["instavel"]
+    assert VP.verificar(M, sol, c2, so2)["instaveis"] == ["ELU ·Y"]
     # abaixo da crítica: as nocionais dão um pouco de flexão, amplificada; o uso sobe um pouco acima de N/(2·Nc,Rd)
     sol = AE.resolver(M, {"G": {"dist": {}, "nodal": {}, "nos": {2: np.array([0, 0, -0.1 * Nrd])}}})
     so2 = SO.analisar(M, sol, combs)
-    assert so2["ELU"]["instavel"] is None and so2["ELU"]["razao"] > 1.2
-    v2 = VP.verificar(M, sol, combs, so2)
+    c2 = SO.combinacoes_da_analise(combs, so2)
+    assert so2["ELU ·Y"]["instavel"] is None and so2["ELU ·Y"]["razao"] > 1.2
+    v2 = VP.verificar(M, sol, c2, so2)
     assert not v2["primeira_ordem"] and 0.05 < v2["pecas"][0]["uso"] < 0.15
+
+
+def test_vento_sem_nocional_e_com_ela_na_grande_deslocabilidade():
+    """nas combinações com vento a norma dispensa as nocionais (4.10.7.1.1); com nocionais_no_vento (4.10.7.2) elas entram"""
+    M = _pilar()
+    _sol, _c, r = _segunda(M, 1.0, 1.0)
+    assert r["nocional"]["H_kN"] == 0.0 and r["imperfeicao"] == "vento"
+    sol, combs, _r = _segunda(M, 10.0, 1.0)
+    r2 = SO.analisar(M, sol, combs, nocionais_no_vento=True)["ELU V1"]
+    assert r2["nocional"]["H_kN"] == pytest.approx(0.03, abs=1e-3) and r2["nocional"]["dir"] == [1.0, 0.0]
 
 
 def test_barra_redonda_so_a_tracao():
     from nucleo3d.calculo_ifc import _perfil_de  # noqa: F401 — o catálogo carregado
     r = VP.resistencias("Barra redonda 12,5", "ASTM A36", 5.0, 5.0, 5.0, {})
     assert r["redonda"] and r["Nc"] == 0.0 and r["Nt"] > 0 and r["erro"] is None
+
+
+def test_ligacao_viga_pilar_fecha_com_o_topo_do_pilar():
+    """pórtico de um vão com H no topo: o momento que a ligação transmite (a ponta da viga) é o do topo do pilar"""
+    nos = np.array([[0, 0, 0], [0, 0, 4], [6, 0, 4], [6, 0, 0]], float)
+    bs = [_barra(nos, 0, 1, ids=("P1",)), _barra(nos, 1, 2, ids=("V",), papel="viga"), _barra(nos, 3, 2, ids=("P2",))]
+    M = {"nos": nos, "barras": bs, "apoios": [{"no": 0, "tipo": "engastada", "chave": "0,0"}, {"no": 3, "tipo": "engastada", "chave": "6000,0"}],
+         "par": dict(AE.PARAMETROS_PADRAO)}
+    sol = AE.resolver(M, {"V1": {"dist": {}, "nodal": {}, "nos": {1: np.array([10.0, 0, 0])}}})
+    combs = {"ELU V1": {"tipo": "ELU", "fatores": {"V1": 1.0}, "descricao": ""}}
+    lig = AE.ligacoes_viga_pilar(M, sol, combs)
+    assert len(lig) == 2
+    e = AE.esforcos_lote(sol["pontas"][:, 0, :], sol["w"][:, 0, :], AE.estacoes(M))
+    topo_p1 = abs(e[0, -1, 5])
+    l1 = next(l for l in lig if l["no"] == 1)
+    assert l1["max"]["Mz"][0] == pytest.approx(topo_p1, abs=1e-3)              # a saída vem com 3 casas
+    assert l1["max"]["Mz"][1]["comb"] == "ELU V1"
+
+
+def test_apoio_da_tesoura_soma_a_carga():
+    """treliça triangular apoiada no topo de dois pilares: a soma vertical que ela entrega nos apoios é a carga"""
+    nos = np.array([[0, 0, 0], [0, 0, 3], [6, 0, 3], [6, 0, 0], [3, 0, 4.5]], float)
+    bs = [_barra(nos, 0, 1, ids=("P1",)), _barra(nos, 3, 2, ids=("P2",))]
+    for a, b, papel in ((1, 4, "banzo_sup"), (4, 2, "banzo_sup"), (1, 2, "banzo_inf")):
+        br = _barra(nos, a, b, ids=("T",) if papel == "banzo_inf" else ("T%d" % a,), papel="banzo")
+        br.update(elemento="trelica", papel_trelica=papel, grupo="T1", soltos=[4, 5, 10, 11])
+        bs.append(br)
+    M = {"nos": nos, "barras": bs, "apoios": [{"no": 0, "tipo": "engastada", "chave": "0,0"}, {"no": 3, "tipo": "engastada", "chave": "6000,0"}],
+         "par": dict(AE.PARAMETROS_PADRAO)}
+    sol = AE.resolver(M, {"G": {"dist": {}, "nodal": {}, "nos": {4: np.array([0, 0, -12.0])}}})
+    combs = {"ELU G": {"tipo": "ELU", "fatores": {"G": 1.0}, "descricao": ""}}
+    r = AE.apoios_das_tesouras(M, sol, combs)
+    assert r["n"] == 2
+    assert sum(a["Fv_max"][0] for a in r["apoios"]) == pytest.approx(12.0, rel=1e-6)
+    assert all(a["Fv_max"][0] == pytest.approx(6.0, rel=1e-6) for a in r["apoios"])

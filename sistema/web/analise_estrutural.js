@@ -530,7 +530,7 @@ const PREMISSAS = [
   ['movel_peso_total_kg', '  peso total do fabricante (kg)', 'num'],
   ['perfil_sanfona', '  braço da sanfona (perfil)', 'txt'],
   ['fy_mpa', 'fy para o mapa (MPa)', 'num'],
-  ['segunda_ordem', '2ª ordem nas ELU', 'sel', [['true', 'sim (P-Δ, NBR 8800 4.9.7)'], ['false', 'não (só 1ª ordem)']]],
+  ['segunda_ordem', '2ª ordem nas ELU', 'sel', [['true', 'sim (P-Δ, NBR 8800:2024 4.10.7)'], ['false', 'não (só 1ª ordem)']]],
   ['aco_tubos', 'Aço dos tubos (verificação)', 'sel', [['', 'o de cada peça no modelo'], ['ASTM A572 Gr.50', 'ASTM A572 Gr.50 (fy 345)'],
     ['ASTM A500 Gr.B', 'ASTM A500 Gr.B (fy 315)'], ['ASTM A500 Gr.C', 'ASTM A500 Gr.C (fy 345)'], ['VMB 250', 'VMB 250 (fy 250)'],
     ['VMB 300', 'VMB 300 (fy 300)'], ['VMB 350', 'VMB 350 (fy 350)'], ['ASTM A36', 'ASTM A36 (fy 250)']]],
@@ -815,6 +815,104 @@ function painelVento() {
   V.innerHTML = linhas.map(l => `<div style="margin:4px 0">${l}</div>`).join('');
 }
 
+// as bases dos pilares pela NBR 8800:2024, 6.7 (nucleo/base_pilar.py), com as reações concomitantes de cada combinação
+function painelBases() {
+  const B = $('#bases'), L = (RAIZ && RAIZ.bases) || null;
+  if (!L) { B.replaceChildren(el('div', { class: 'sub', texto: 'Calcule de novo para dimensionar as bases.' })); return; }
+  const mm = (v) => nf(v, 0);
+  const t = el('table', {}, el('tr', {}, el('th', { texto: 'base (x, y m)' }), el('th', { texto: 'pilar' }), el('th', { texto: 'chumbadores · placa (mm)' }), el('th', { texto: '' })));
+  const det = el('div', {});
+  // as bases iguais (mesmo pilar e mesma solução) numa linha só
+  const grupos = new Map();
+  for (const b of L) {
+    const bb = b.base;
+    const k = bb ? `${b.perfil}|${bb.tipo}|${bb.nb}|${bb.diametro}|${bb.tp}|${bb.lx}|${bb.ly}|${b.ok}` : `${b.perfil}|${b.chave}`;
+    const g = grupos.get(k) || { b, chaves: [] }; g.chaves.push(b.chave); grupos.set(k, g);
+  }
+  for (const { b, chaves } of grupos.values()) {
+    const bb = b.base;
+    const xy = chaves.map(c => c.split(',').map(v => (+v / 1000).toFixed(1)).join('; ')).join(' · ');
+    const st = b.ok === null || b.ok === undefined ? '<span class="sub">—</span>' : b.ok ? '<span class="g-ok">ok</span>' : '<span class="g-ruim">não fecha</span>';
+    const tr = el('tr', { class: 'clic', title: (b.avisos || []).join('\n') },
+      el('td', { texto: chaves.length > 1 ? `${chaves.length} bases` : xy, title: xy }), el('td', { texto: b.perfil }),
+      el('td', { texto: bb && bb.tp ? `${bb.nb}×ø${bb.diametro} · ${mm(bb.lx)}×${mm(bb.ly)}×${nf(bb.tp, 1)}` : bb ? `${bb.nb}×ø${bb.diametro}` : '—' }),
+      el('td', { html: st + ((b.avisos || []).length ? ' ⚠' : '') }));
+    tr.onclick = () => { det.replaceChildren(detalheDaBase(b, xy)); };
+    t.append(tr);
+  }
+  B.replaceChildren(el('div', { class: 'sub', texto: `Cada base verificada em todas as combinações últimas${RAIZ.outras_situacoes ? ' das duas situações' : ''}, cada uma com o N, o M e o V dela (concomitantes, de 2ª ordem). Método da NBR 8800:2024, 6.7 (com a Errata 1:2025): placa e chumbadores pela Tabela 18, chumbadores ASTM A36, bloco f_ck ${nf(L[0] ? L[0].fck : 25, 0)} MPa, placa ${L[0] ? L[0].aco_placa : ''}. Clique numa linha para ver a conta.` }), t, det);
+}
+
+function detalheDaBase(b, xy) {
+  const bb = b.base, env = b.envoltoria || {};
+  const box = el('div', { class: 'verif', style: 'margin-top:6px' });
+  const linhas = [`<b>Base ${xy}</b> — pilar ${b.perfil}, apoio ${b.apoio}`];
+  const cr = (c) => c ? `${nf(c.N, 1)} kN · M ${nf(c.M, 1)} · V ${nf(c.V, 1)} (${c.sit ? c.sit + ' · ' : ''}${c.comb})` : '—';
+  linhas.push(`<table class="vt"><tr><td>N máx</td><td>${cr(env.N_max)}</td></tr><tr><td>N mín</td><td>${cr(env.N_min)}</td></tr><tr><td>M máx</td><td>${cr(env.M_max)}</td></tr><tr><td>V máx</td><td>${cr(env.V_max)}</td></tr></table>`);
+  if (bb) {
+    const T = bb.tabela || {}, K = bb.bloco || {};
+    const tab = [];
+    tab.push(`<tr><td>Solução</td><td>base tipo ${bb.tipo} (${bb.tipo === 1 ? 'chumbadores externos' : 'internos'}) · <b>${bb.nb} chumbadores ø ${bb.diametro}</b> ASTM A36 · placa <b>${nf(bb.lx, 0)} × ${nf(bb.ly, 0)} × ${nf(bb.tp, 1)} mm</b> (t<sub>p,mín</sub> ${nf(bb.tp_min, 1)} mm)${bb.peso_kg ? ` · ~${nf(bb.peso_kg, 0)} kg` : ''}</td></tr>`);
+    tab.push(`<tr><td>Casos</td><td>${(bb.casos || []).join(', ')} (Figuras 22 e 23); a espessura governa em ${bb.governa_tp ? `${bb.governa_tp.sit ? bb.governa_tp.sit + ' · ' : ''}${bb.governa_tp.comb} (${bb.governa_tp.caso})` : '—'}</td></tr>`);
+    if (bb.governa_ft) tab.push(`<tr><td>Chumbador</td><td>F<sub>t,Sd</sub> = ${nf(bb.governa_ft.Ft, 1)} kN por chumbador → d<sub>b,mín</sub> ${nf(bb.governa_ft.db_min, 1)} mm (ø ${nf(bb.db, 0)} mm) em ${bb.governa_ft.comb} (${bb.governa_ft.caso})</td></tr>`);
+    const pc = bb.placa_cisalhamento;
+    tab.push(`<tr><td>Cortante</td><td>${bb.dispositivo === 'atrito' ? 'atrito placa–argamassa (μ = 0,45)' : bb.dispositivo === 'arruelas soldadas' ? 'arruelas especiais soldadas à placa (6.7.2.5)' : `placa de cisalhamento ${nf(pc.bh, 0)} × ${nf(pc.bv, 0)} × ${nf(pc.tpv, 1)} mm (6.7.2.4)`}</td></tr>`);
+    tab.push(`<tr><td>Tabela 18</td><td>a₁ ${T.a1} · a₂ ${T.a2} · embutimento h₁ ${T.h1} · h₂ ${T.h2} · r₁ ${T.r1} · r₂ ${T.r2} · furo ${T.df} · arruela ${T.arruela}×${T.arruela}×${nf(T.ta, 1)} · argamassa e<sub>n</sub> ${T.en} mm</td></tr>`);
+    tab.push(`<tr><td>Bloco</td><td>mínimo ${nf(K.Nb, 0)} × ${nf(K.Bb, 0)} mm, altura ${nf(K.Ab, 0)} mm; f<sub>ck</sub> ≥ ${T.fck_min} MPa; armadura mínima ø${nf(K.phi, 1)} c/ ${K.S} mm (NBR 6118); argamassa com o dobro do f<sub>ck</sub> do bloco</td></tr>`);
+    linhas.push(`<table class="vt">${tab.join('')}</table>`);
+    if ((bb.criticas || []).length) {
+      linhas.push('<div class="sub" style="margin-top:4px">Combinações que governam:</div><table class="vt">' + bb.criticas.map(r =>
+        `<tr><td>${r.caso || '—'}</td><td>${r.sit ? r.sit + ' · ' : ''}${r.comb}: N ${nf(r.N, 1)} · M ${nf(r.M, 1)} · V ${nf(r.V, 1)} → t<sub>p,mín</sub> ${nf(r.tp_min, 1)} mm${r.Ft ? ` · F<sub>t</sub> ${nf(r.Ft, 1)} kN` : ''}${r.erro ? ` · <span class="g-ruim">${r.erro}</span>` : ''}</td></tr>`).join('') + '</table>');
+    }
+    if ((bb.falhas || []).length) linhas.push(`<div class="erro">${bb.falhas.join('<br>')}</div>`);
+  }
+  if ((b.avisos || []).length) linhas.push(`<div class="aviso">${b.avisos.join('<br>')}</div>`);
+  box.innerHTML = linhas.join('');
+  return box;
+}
+
+// o que cada tesoura entrega onde apoia (o carrinho da cobertura retrátil): o pior de cada direção
+function painelCarrinho() {
+  const C = $('#carrinho'), A = D.apoios_tesouras;
+  if (!A) { C.replaceChildren(el('div', { class: 'sub', texto: 'Sem tesouras apoiadas em viga ou pilar neste resultado (ou calcule de novo).' })); return; }
+  const p = A.pior, xy = (v) => v.xy.map(x => nf(x, 2)).join('; ');
+  const t = el('table', {}, el('tr', {}, el('th', { texto: 'o pior' }), el('th', { texto: 'kN' }), el('th', { texto: 'onde' })));
+  const lin = (rot, v, cor) => t.append(el('tr', { title: v.comb }, el('td', { texto: rot }), el('td', { html: cor ? `<b style="color:${cor}">${nf(v.valor, 1)}</b>` : nf(v.valor, 1) }), el('td', { texto: `${v.grupo} (${xy(v)}) · ${v.comb}` })));
+  lin('compressão no apoio', p.Fv_max);
+  lin('arrancamento', p.Fv_min, p.Fv_min.valor < 0 ? '#c0392b' : null);
+  lin('horizontal no vão', p.Ht_max);
+  lin('ao longo do trilho', p.Hl_max);
+  const media = A.apoios.length ? A.apoios.reduce((s, a) => s + Math.max(0, a.Fv_max[0]), 0) / A.apoios.length : 0;
+  C.replaceChildren(el('div', { class: 'sub', texto: `${A.n} apoios — a soma das forças que a tesoura e o que vai com ela (a sanfona) entregam no apoio, nas combinações últimas (2ª ordem). Compressão positiva; negativa = arrancamento.` }), t,
+    el('div', { class: 'aviso', texto: D.movel
+      ? `Para o fabricante do carrinho: ele precisa segurar o arrancamento e as duas forças horizontais acima. A média por apoio é ${nf(media, 1)} kN: os picos ficam nos apoios sobre os pilares porque a sanfona, modelada como X rígido, trabalha como treliça ao longo do trilho e leva a carga para os pontos mais rígidos — se a sanfona real for articulada (pantógrafo), essa redistribuição não existe. Confirmar com o fabricante.`
+      : `É o que a ligação da tesoura no apoio precisa transmitir (média por apoio ${nf(media, 1)} kN).` }));
+}
+
+// os esforços nas ligações viga–pilar (as pontas das vigas que chegam em pilares), concomitantes, de 2ª ordem
+function painelLigacoes() {
+  const P = $('#ligacoes'), L = D.ligacoes;
+  if (!L || !L.length) { P.replaceChildren(el('div', { class: 'sub', texto: 'Nenhuma viga chegando em pilar neste modelo (ou calcule de novo).' })); return; }
+  // as ligações parecidas (mesmos perfis, mesmos esforços arredondados) numa linha
+  const g = new Map();
+  for (const l of L) {
+    const m = l.max;
+    const k = `${l.perfil_viga}|${l.perfil_pilar}|${Math.round(m.Mz[0])}|${Math.round(m.V[0])}`;
+    const it = g.get(k) || { l, n: 0 }; it.n++; g.set(k, it);
+  }
+  const t = el('table', {}, el('tr', {}, el('th', { texto: 'viga → pilar' }), el('th', { texto: 'M (kN·m)' }), el('th', { texto: 'V' }), el('th', { texto: 'N±' })));
+  for (const { l, n } of [...g.values()].slice(0, 14)) {
+    const m = l.max, c = m.Mz[1];
+    t.append(el('tr', { title: `${n} ligação(ões); a de (${l.xyz.map(v => nf(v, 2)).join('; ')})
+M máx em ${c.comb}: N ${nf(c.N, 1)} kN, V ${nf(c.V, 1)} kN, M fraco ${nf(c.My, 2)} kN·m
+V máx em ${m.V[1].comb}; tração máx em ${m.Nt[1].comb}; compressão máx em ${m.Nc[1].comb}` },
+      el('td', { texto: `${l.perfil_viga} → ${l.perfil_pilar}${n > 1 ? ` (${n})` : ''}` }),
+      el('td', { html: `<b>${nf(m.Mz[0], 1)}</b> <span class="sub">${c.comb}</span>` }),
+      el('td', { texto: nf(m.V[0], 1) }), el('td', { texto: `+${nf(m.Nt[0], 1)} / −${nf(m.Nc[0], 1)}` })));
+  }
+  P.replaceChildren(el('div', { class: 'sub', texto: 'O que cada ligação viga–pilar transmite nas combinações últimas (2ª ordem): o maior momento no eixo forte e, passando o mouse, a normal, o cortante e o momento fraco da MESMA combinação — os valores concomitantes para o detalhe. O tipo de ligação (soldada, chapa de topo, cantoneiras) vem do projeto: defina-o para o sistema dimensionar parafusos, soldas e chapas.' }), t);
+}
+
 // a 2ª ordem de cada combinação última (nucleo3d/segunda_ordem.py): Δ1 e Δ2 no topo dos pilares, a razão e a classe
 function painelSegunda() {
   const S = $('#segunda'), so = D.segunda_ordem;
@@ -833,7 +931,7 @@ function painelSegunda() {
   }
   S.replaceChildren(
     el('div', { html: `Deslocabilidade <b>${cls[r.classe] || '—'}</b> — Δ2/Δ1 até <b>${nf(r.razao_max, 3)}</b>${r.comb_razao_max ? ` (${r.comb_razao_max})` : ''}.${(r.instaveis || []).length ? ` <b class="g-ruim">Instável em ${r.instaveis.length} combinação(ões).</b>` : ''}` }),
-    el('div', { class: 'sub', style: 'margin:4px 0', texto: `Cada combinação última com P-Δ (rigidez geométrica, iterando a normal), EA e EI × ${nf(r.fator_rigidez || 0.8, 1)} e forças nocionais de ${nf((r.nocional || 0.003) * 100, 1)}% da carga gravitacional de cálculo de cada nó (no sentido do vento; nas só gravitacionais, na direção mais flexível). Δ = o maior deslocamento horizontal no topo dos pilares; Δ1 = 1ª ordem com as mesmas cargas e rigidez. Os esforços, as reações e a verificação das ELU já são os de 2ª ordem.` }),
+    el('div', { class: 'sub', style: 'margin:4px 0', texto: `Cada combinação última com P-Δ (rigidez geométrica, iterando a normal), EA e EI × ${nf(r.fator_rigidez || 0.8, 1)} e forças nocionais de ${nf((r.nocional || 0.003) * 100, 1)}% da carga gravitacional de cálculo de cada nó nas combinações só gravitacionais, nas duas direções em planta (cada uma vira ·X e ·Y; NBR 8800:2024, 4.10.7.1.1) — nas de vento a norma as dispensa (carregamento lateral mínimo), salvo na grande deslocabilidade (4.10.7.2). Δ = o maior deslocamento horizontal no topo dos pilares; Δ1 = 1ª ordem com as mesmas cargas e rigidez. Os esforços, as reações e a verificação das ELU já são os de 2ª ordem.` }),
     t);
 }
 
@@ -873,7 +971,7 @@ function trocarSituacao() {
   if (!D.combinacoes[estado.comb] && estado.comb !== 'env') estado.comb = 'env';
   estado.escolhida = null;
   cabecalho();
-  montarControles(); painelRanking(); painelSegunda(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
+  montarControles(); painelRanking(); painelSegunda(); painelCarrinho(); painelLigacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
   desenhar();
 }
 
@@ -892,7 +990,7 @@ function aplicar(dados) {
   // o centro e o tamanho do modelo
   const bb = new THREE.Box3(); for (const p of D.nos) bb.expandByPoint(new THREE.Vector3(...p));
   bb.getCenter(centro); raio = Math.max(1000, bb.getSize(new THREE.Vector3()).length() / 2);
-  montarControles(); painelRanking(); painelSegunda(); painelReacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
+  montarControles(); painelRanking(); painelSegunda(); painelReacoes(); painelBases(); painelCarrinho(); painelLigacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
   if (!aplicar._vista) { vista('iso'); aplicar._vista = true; }
   desenhar();
 }

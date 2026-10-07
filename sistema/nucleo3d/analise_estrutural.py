@@ -87,8 +87,11 @@ PARAMETROS_PADRAO = {
     # aço
     "fy_mpa": 345.0,                    # para o mapa de tensões (ASTM A572 Gr.50; o tubo leve pode ser outro)
     "aco_tubos": "",                    # o aço dos tubos (TQ, TR, TC) na verificação; vazio = o aço de cada peça no modelo
-    # etapa 4 (07/10): a 2ª ordem da NBR 8800 (4.9.7) nas ELU e a verificação de cada peça pela norma
+    # etapa 4 (07/10): a 2ª ordem da NBR 8800:2024 (4.10.7) nas ELU e a verificação de cada peça pela norma
     "segunda_ordem": True,
+    # etapa 5 (07/10): as bases pela NBR 8800:2024, 6.7, com as reações concomitantes
+    "base_fck_mpa": 25.0,               # o concreto do bloco de fundação
+    "base_aco_placa": "ASTM A36",       # a placa de base (os chumbadores da 6.7 são ASTM A36)
 }
 
 ALMA = ("montante", "diagonal")
@@ -1013,7 +1016,7 @@ def _lote(M: dict) -> dict:
 
 def _k_local_lote(lt: dict, fator: float = 1.0) -> np.ndarray:
     """(n, 12, 12): a rigidez elástica local de cada barra (a mesma de _rigidez_local); `fator` multiplica E e G (0,8 na
-    2ª ordem da NBR 8800, 4.9.7.1.2)"""
+    2ª ordem da NBR 8800:2024, 4.10.7.1.2)"""
     L, n = lt["L"], lt["n"]
     k = np.zeros((n, 12, 12))
     EA, GJ = fator * E_ACO * lt["A"] / L, fator * G_ACO * lt["J"] / L
@@ -1339,6 +1342,7 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
         r = _calcular_situacao(doc, P)
         r["reacoes_envoltoria"] = envoltoria_das_reacoes({"": r})
         r["grupos_perfis"] = grupos_de_perfis(r)
+        r["bases"] = _bases({"": r}, P)
         return r
     r_a = _calcular_situacao(doc, dict(P, configuracao="aberta"))
     r_r = _calcular_situacao(doc, dict(P, configuracao="retraida"))
@@ -1347,7 +1351,16 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
     r_a["outras_situacoes"] = {"retraida": r_r}
     r_a["reacoes_envoltoria"] = envoltoria_das_reacoes({"aberta": r_a, "retraida": r_r})
     r_a["grupos_perfis"] = grupos_de_perfis(r_a, [r_r])
+    r_a["bases"] = _bases({"aberta": r_a, "retraida": r_r}, P)
     return r_a
+
+
+def _bases(sits: Dict[str, dict], P: dict) -> Optional[List[dict]]:
+    """as bases dos pilares pela NBR 8800:2024, 6.7, com as reações concomitantes (nucleo3d/bases_analise.py)"""
+    if any(r.get("instavel") for r in sits.values()):
+        return None
+    from nucleo3d import bases_analise as BA
+    return BA.dimensionar_bases(sits, P)
 
 
 def envoltoria_das_reacoes(sits: Dict[str, dict]) -> List[dict]:
@@ -1379,6 +1392,104 @@ def envoltoria_das_reacoes(sits: Dict[str, dict]) -> List[dict]:
     return sorted(por.values(), key=lambda e: tuple(int(v) for v in e["chave"].split(",")))
 
 
+def apoios_das_tesouras(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = None) -> Optional[dict]:
+    """o que cada tesoura entrega onde apoia (na viga-trilho, pelo carrinho, ou no pilar): a soma das forças das barras da
+    tesoura no nó de apoio, no eixo global, por combinação última — vertical (compressão no apoio positiva, arrancamento
+    negativa), horizontal transversal (no vão da tesoura) e longitudinal (ao longo do trilho). É o que se pede ao
+    fabricante do carrinho: ele segura o arrancamento e as forças horizontais? (etapa 5, 07/10)"""
+    nos, barras = M["nos"], M["barras"]
+    no_bar: Dict[int, List[int]] = collections.defaultdict(list)
+    for i, br in enumerate(barras):
+        no_bar[br["a"]].append(i)
+        no_bar[br["b"]].append(i)
+    apoios = []
+    for no, bs in no_bar.items():
+        # o conjunto que apoia: a tesoura e o que vai junto com ela (a sanfona da cobertura retrátil) — tudo o que chega no
+        # nó e não é a viga ou o pilar
+        trel = [i for i in bs if barras[i].get("elemento") == "trelica"]
+        if trel and any(barras[i]["papel"] in ("viga", "pilar") for i in bs):
+            junto = [i for i in bs if barras[i]["papel"] not in ("viga", "pilar")]
+            apoios.append((no, barras[trel[0]].get("grupo") or "", junto))
+    if not apoios:
+        return None
+    mv = M.get("movel")
+    if mv:
+        u = np.array(list(mv["u"]) + [0.0])
+        nd = np.array(list(mv["n_dir"]) + [0.0])
+    else:
+        dirs = [_unit((nos[barras[i]["b"]] - nos[barras[i]["a"]]) * np.array([1, 1, 0])) for i, br in enumerate(barras)
+                if br.get("papel_trelica") in ("banzo_inf", "banzo_sup")]
+        u = _unit(np.mean([d if d[0] + 1e-3 * d[1] >= 0 else -d for d in dirs], axis=0)) if dirs else np.array([1.0, 0, 0])
+        nd = np.array([-u[1], u[0], 0.0])
+    elu = [c for c, cb in combs.items() if cb["tipo"] == "ELU"]
+    R = np.array([br["R"] for br in barras])
+    lista = []
+    for no, g, tr_ in apoios:
+        reg = {"grupo": g, "no": int(no), "xy": [round(float(nos[no][0]), 3), round(float(nos[no][1]), 3)],
+               "Fv_max": [-1e18, ""], "Fv_min": [1e18, ""], "Ht_max": [0.0, ""], "Hl_max": [0.0, ""]}
+        for c in elu:
+            s2 = (so2 or {}).get(c) or {}
+            if s2.get("pontas_nos") is not None:
+                P = s2["pontas_nos"]
+            else:
+                P = np.einsum("c,ncj->nj", fatores_da(combs[c], sol["casos"]), sol["pontas"])
+            F = np.zeros(3)
+            for i in tr_:
+                f = P[i][0:3] if barras[i]["a"] == no else P[i][6:9]
+                F -= R[i].T @ f                        # a força da barra sobre o nó (global)
+            Fv, Ht, Hl = -float(F[2]), float(F @ u), float(F @ nd)
+            if Fv > reg["Fv_max"][0]:
+                reg["Fv_max"] = [Fv, c]
+            if Fv < reg["Fv_min"][0]:
+                reg["Fv_min"] = [Fv, c]
+            if abs(Ht) > abs(reg["Ht_max"][0]):
+                reg["Ht_max"] = [Ht, c]
+            if abs(Hl) > abs(reg["Hl_max"][0]):
+                reg["Hl_max"] = [Hl, c]
+        for k in ("Fv_max", "Fv_min", "Ht_max", "Hl_max"):
+            reg[k][0] = round(reg[k][0], 2)
+        lista.append(reg)
+    env = {k: max(lista, key=(lambda r, k=k: r[k][0] if k != "Fv_min" else -r[k][0]) if k in ("Fv_max", "Fv_min")
+                  else (lambda r, k=k: abs(r[k][0])))
+           for k in ("Fv_max", "Fv_min", "Ht_max", "Hl_max")}
+    return {"apoios": lista, "pior": {k: {"valor": v[k][0], "comb": v[k][1], "grupo": v["grupo"], "xy": v["xy"]} for k, v in env.items()},
+            "n": len(lista)}
+
+
+def ligacoes_viga_pilar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = None) -> Optional[List[dict]]:
+    """os esforços de cálculo nas pontas das vigas que chegam em pilares — o que a ligação viga–pilar transmite, nas
+    combinações últimas (2ª ordem): por ligação, o maior momento (eixo forte e fraco), o maior cortante e a maior normal
+    de tração e de compressão, cada um com os outros esforços da MESMA combinação (concomitantes). O detalhe da ligação
+    (soldada, chapa de topo, cantoneiras) depende do projeto; com ele, a conta é a de nucleo/ligacoes.py (etapa 5, 07/10)"""
+    nos, barras = M["nos"], M["barras"]
+    pil = collections.defaultdict(list)
+    for i, br in enumerate(barras):
+        if br["papel"] == "pilar":
+            pil[br["a"]].append(i)
+            pil[br["b"]].append(i)
+    pontas = [(i, k, no) for i, br in enumerate(barras) if br["papel"] == "viga" for k, no in ((0, br["a"]), (1, br["b"])) if no in pil]
+    if not pontas:
+        return None
+    elu = [c for c, cb in combs.items() if cb["tipo"] == "ELU"]
+    idx = np.array([i for i, _k, _n in pontas], int)
+    L = np.array([barras[i]["L"] for i in idx])
+    lig: Dict[tuple, dict] = {}
+    for c in elu:
+        f, w = esforcos_da_combinacao(M, sol, c, combs[c], so2)
+        X = np.stack([np.zeros(len(idx)), L], axis=1)
+        e = esforcos_lote(f[idx], w[idx], X)                     # (n, 2, 6)
+        for j, (i, k, no) in enumerate(pontas):
+            N, Vy, Vz, T, My, Mz = (float(v) for v in e[j, k])
+            reg = lig.setdefault((i, no), {"viga": i, "no": int(no), "perfil_viga": barras[i]["perfil"], "marca": barras[i].get("marca"),
+                                           "perfil_pilar": barras[pil[no][0]]["perfil"],
+                                           "xyz": [round(float(v), 3) for v in nos[no]], "max": {}})
+            conc = {"comb": c, "N": round(N, 2), "V": round(math.hypot(Vy, Vz), 2), "Mz": round(Mz, 3), "My": round(My, 3), "T": round(T, 3)}
+            for chave, val in (("Mz", abs(Mz)), ("My", abs(My)), ("V", math.hypot(Vy, Vz)), ("Nt", max(N, 0.0)), ("Nc", max(-N, 0.0))):
+                if val > reg["max"].get(chave, [-1.0])[0]:
+                    reg["max"][chave] = [round(val, 3), conc]
+    return sorted(lig.values(), key=lambda r: -r["max"].get("Mz", [0.0])[0])
+
+
 def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
     """modelo → cargas → combinações → resolver → resultados, no formato que a tela de análise lê (JSON)"""
     M = montar(doc, par)
@@ -1395,6 +1506,13 @@ def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
     if M["par"].get("segunda_ordem", True) and not sol["instavel"]:
         from nucleo3d import segunda_ordem as SO
         so2 = SO.analisar(M, sol, combs)
+        rs = SO.resumo(so2)
+        if rs and rs["classe"] == "grande":
+            # grande deslocabilidade pelo procedimento simplificado: as imperfeições também nas de vento (4.10.7.2)
+            so2 = SO.analisar(M, sol, combs, nocionais_no_vento=True)
+            avisos.insert(0, "2ª ordem: grande deslocabilidade — as forças nocionais entraram também nas combinações com vento "
+                             "(NBR 8800:2024, 4.10.7.2, procedimento simplificado)")
+        combs = SO.combinacoes_da_analise(combs, so2)
         inst = [c for c, r in so2.items() if r.get("instavel")]
         if inst:
             avisos.insert(0, ("2ª ordem: instabilidade global em %d combinação(ões) — %s (%s). Nelas valem só os esforços de "
@@ -1402,9 +1520,10 @@ def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
                           % (len(inst), ", ".join(inst), so2[inst[0]]["instavel"]))
         rs = SO.resumo(so2)
         if rs and rs["classe"] == "grande":
-            avisos.insert(0, ("2ª ordem: deslocabilidade GRANDE (Δ2/Δ1 até %.2f em %s; NBR 8800, 4.9.4: acima de 1,4) — a norma "
-                              "pede análise rigorosa com as não linearidades; a P-Δ daqui é indicativa. A estrutura precisa "
-                              "de mais rigidez lateral") % (rs["razao_max"], rs["comb_razao_max"]))
+            avisos.insert(0, ("2ª ordem: deslocabilidade GRANDE (Δ2/Δ1 até %.2f em %s; NBR 8800:2024, 4.10.4: acima de 1,40) — a "
+                              "norma pede análise rigorosa com as não linearidades ou, a critério do responsável, o "
+                              "procedimento simplificado com as imperfeições somadas ao vento (4.10.7.2, feito aqui). A "
+                              "estrutura precisa de mais rigidez lateral") % (rs["razao_max"], rs["comb_razao_max"]))
     res = resultados(M, casos, sol, combs, so2)
     nos, barras = M["nos"], M["barras"]
     ver = None
@@ -1462,7 +1581,9 @@ def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
         "pontas2": {c: np.round(r["pontas"][:, :6], 3).tolist() for c, r in so2.items() if r.get("pontas") is not None},
         "segunda_ordem": ({"combinacoes": SO.para_json(so2), "resumo": SO.resumo(so2)} if so2 else None),
         "verificacao": ver,
-        "combinacoes": combinacoes_json(combinacoes(nomes)),
+        "apoios_tesouras": apoios_das_tesouras(M, sol, combs, so2) if not sol["instavel"] else None,
+        "ligacoes": ligacoes_viga_pilar(M, sol, combs, so2) if not sol["instavel"] else None,
+        "combinacoes": combinacoes_json(combs),
         # por combinação: os deslocamentos, as reações e a tensão máxima de cada barra (o mapa)
         "por_comb": {c: {"desl_mm": np.round(v["desl_mm"], 1).tolist(),
                          "reacoes": {str(n): np.round(r, 2).tolist() for n, r in v["reacoes"].items()},

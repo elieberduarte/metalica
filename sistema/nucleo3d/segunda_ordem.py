@@ -1,23 +1,27 @@
-"""A análise de 2ª ordem da NBR 8800:2008 (4.9.7) nas combinações últimas — etapa 4 do plano da análise estrutural (07/10).
+"""A análise de 2ª ordem da ABNT NBR 8800:2024 (4.10.7; na edição de 2008, 4.9.7) nas combinações últimas — etapa 4 do
+plano da análise estrutural, alinhada ao texto da norma na etapa 5 (07/10/2026).
 
 Para cada combinação ELU:
 
-* **imperfeições de material** (4.9.7.1.2): EA e EI × 0,8 em todas as barras;
-* **imperfeições geométricas** (4.9.7.1.1) por forças nocionais: 0,3% da carga gravitacional de cálculo de cada nó, na
-  horizontal. Nas combinações com vento, no sentido da resultante horizontal da combinação; nas só gravitacionais, na
-  direção (X ou Y) em que a estrutura é mais flexível — o teste é a própria força nocional aplicada nas duas — e no
-  sentido em que a combinação já desloca a estrutura;
+* **imperfeições de material** (4.10.7.1.2): EA e EI × 0,8 em todas as barras (a norma pede na média
+  deslocabilidade; na pequena é dispensável — aqui sempre, a favor da segurança);
+* **imperfeições geométricas** (4.10.7.1.1) por forças nocionais: 0,3% da carga gravitacional de cálculo de cada nó, na
+  horizontal, consideradas independentemente nas duas direções ortogonais em planta — cada combinação só gravitacional
+  vira duas (·X e ·Y), no sentido em que ela já desloca a estrutura. Nas combinações com vento elas não entram (a norma:
+  são um carregamento lateral mínimo e "não precisam ser considerados em combinações últimas de ações em que atuem
+  outras forças horizontais"), salvo na grande deslocabilidade pelo procedimento simplificado (4.10.7.2), quando o
+  cálculo refaz as de vento com elas;
 * **P-Δ** pela rigidez geométrica consistente de cada barra (12×12, com a normal do passo anterior), iterando até a
   normal e os deslocamentos pararem de mudar. A rótula é condensada já com a rigidez geométrica (a barra rotulada
   nas duas pontas fica com a rigidez de pêndulo N/L).
 
 Sai, por combinação, o que a 1ª ordem dava — deslocamentos, reações e as forças nas pontas das barras (`pontas`, as
-que o diagrama, as reações e a verificação usam) — e a relação Δ2/Δ1 no topo dos pilares, que classifica a
-estrutura (4.9.4: pequena ≤ 1,1, média ≤ 1,4, grande acima). Divergir, inverter o deslocamento ou amplificar mais de
-10 vezes quer dizer instabilidade global naquela combinação (a carga passou da crítica).
+que o diagrama e a verificação usam; `pontas_nos`, as que equilibram os nós) — e a relação Δ2/Δ1 no topo dos pilares,
+que classifica a estrutura (4.10.4: pequena ≤ 1,10, média ≤ 1,40, grande acima). Divergir, inverter o deslocamento ou
+amplificar mais de 10 vezes quer dizer instabilidade global naquela combinação (a carga passou da crítica).
 
-Δ1 é a 1ª ordem com as mesmas cargas (com as nocionais) e a mesma rigidez reduzida: a razão mede só o efeito geométrico.
-O P-δ (a curvatura entre as pontas de cada barra) não entra aqui: é o B1 da verificação (nucleo3d/verificacao_pecas.py).
+Δ1 é a 1ª ordem com as mesmas cargas e a mesma rigidez reduzida: a razão mede só o efeito geométrico. O P-δ (a curvatura
+entre as pontas de cada barra) não entra aqui: é o B1 da verificação (Anexo C; nucleo3d/verificacao_pecas.py).
 """
 from __future__ import annotations
 
@@ -25,8 +29,8 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-FATOR_RIGIDEZ = 0.8           # NBR 8800, 4.9.7.1.2
-NOCIONAL = 0.003              # NBR 8800, 4.9.7.1.1: 0,3% das cargas gravitacionais de cálculo
+FATOR_RIGIDEZ = 0.8           # NBR 8800:2024, 4.10.7.1.2
+NOCIONAL = 0.003              # NBR 8800:2024, 4.10.7.1.1: 0,3% das cargas gravitacionais de cálculo
 MAX_ITERACOES = 30
 TOLERANCIA = 1e-3             # da normal (× a maior) e do deslocamento (× o maior): 0,1%
 AMPLIFICACAO_LIMITE = 10.0    # Δ2/Δ1 acima disto: tratada como instabilidade global
@@ -65,19 +69,38 @@ def _horizontal(U: np.ndarray, nos_idx) -> np.ndarray:
     return u[nos_idx, :2]
 
 
-def analisar(M: dict, sol: dict, combs: Dict[str, dict]) -> Dict[str, dict]:
-    """a 2ª ordem de cada combinação ELU: {comb: {pontas (n, 12), U (ndof), reacoes {nó: (6,)}, iteracoes, convergiu,
-    instavel, delta1_mm, delta2_mm, razao, classe, nocional {dir, H_kN}}}; vazio se a 1ª ordem já é instável"""
+def _tem_vento(cb: dict) -> bool:
+    return any(k.startswith("V") and v for k, v in cb["fatores"].items())
+
+
+def analisar(M: dict, sol: dict, combs: Dict[str, dict], nocionais_no_vento: bool = False) -> Dict[str, dict]:
+    """a 2ª ordem de cada combinação ELU: {nome: {base, imperfeicao, pontas (n, 12), pontas_nos, U (ndof), reacoes {nó: (6,)},
+    iteracoes, convergiu, instavel, delta1_mm, delta2_mm, razao, classe, nocional {dir, H_kN}}}; vazio se a 1ª ordem já
+    é instável.
+
+    As imperfeições geométricas pela NBR 8800:2024, 4.10.7.1.1: nas combinações só gravitacionais, consideradas
+    independentemente nas duas direções ortogonais em planta — a combinação vira duas, "<nome> ·X" e "<nome> ·Y" (no
+    sentido em que a combinação já desloca a estrutura); nas combinações com vento elas "não precisam ser consideradas"
+    (são um carregamento lateral mínimo) — a menos que `nocionais_no_vento` (a grande deslocabilidade pelo procedimento
+    simplificado, 4.10.7.2), quando entram no sentido da resultante horizontal da combinação"""
     from nucleo3d import analise_estrutural as AE
     ctx = sol.get("_ctx")
-    elu = [c for c, cb in combs.items() if cb["tipo"] == "ELU"]
-    if ctx is None or sol.get("instavel") or not elu:
+    elu0 = [c for c, cb in combs.items() if cb["tipo"] == "ELU"]
+    if ctx is None or sol.get("instavel") or not elu0:
         return {}
     lt, mont, livres, ndof = ctx["lote"], ctx["montador"], ctx["livres"], ctx["ndof"]
     n, nn = lt["n"], ndof // 6
     nomes = sol["casos"]
     ke = ctx["k"] * FATOR_RIGIDEZ
-    FAT = np.stack([AE.fatores_da(combs[c], nomes) for c in elu], axis=1)          # (casos, ne)
+    # as análises: as gravitacionais em duas (X e Y), as de vento uma
+    analises = []                                                                    # (nome, base, modo)
+    for c in elu0:
+        if _tem_vento(combs[c]):
+            analises.append((c, c, "vento"))
+        else:
+            analises += [("%s ·X" % c, c, "X"), ("%s ·Y" % c, c, "Y")]
+    elu = [a[0] for a in analises]
+    FAT = np.stack([AE.fatores_da(combs[b], nomes) for _n, b, _m in analises], axis=1)   # (casos, ne)
     ne = len(elu)
     Fn = ctx["Fn"] @ FAT                                                             # (ndof, ne)
     f0 = np.einsum("ncj,ce->nej", ctx["f0"], FAT)                                    # (n, ne, 12)
@@ -89,34 +112,24 @@ def analisar(M: dict, sol: dict, combs: Dict[str, dict]) -> Dict[str, dict]:
     try:
         lu0 = _fatorar(mont.matriz(AE._para_global(lt, kc0)))
     except RuntimeError as e:
-        return {c: {"instavel": "matriz singular com a rigidez reduzida (%s)" % e} for c in elu}
+        return {c: {"instavel": "matriz singular com a rigidez reduzida (%s)" % e, "base": b} for c, b, _m in analises}
     U_sem = np.zeros((ndof, ne))
     U_sem[livres] = lu0.solve(F0[livres])
     # a carga gravitacional de cálculo de cada nó (a componente para baixo, nos nós livres)
     grav = np.clip(-F0[2::6], 0.0, None)                                             # (nn, ne)
     grav[apoiados] = 0.0
     Hres = np.stack([F0[0::6].sum(0), F0[1::6].sum(0)], axis=1)                      # (ne, 2)
-    # o teste das gravitacionais: a força nocional da combinação em X e em Y
-    teste = np.zeros((ndof, 2 * ne))
-    for e in range(ne):
-        teste[0::6, 2 * e] = NOCIONAL * grav[:, e]
-        teste[1::6, 2 * e + 1] = NOCIONAL * grav[:, e]
-    U_teste = np.zeros((ndof, 2 * ne))
-    U_teste[livres] = lu0.solve(teste[livres])
     topos = _topos_dos_pilares(M) or list(range(nn))
     peso = lambda e: grav[:, e] / max(float(grav[:, e].sum()), 1e-12)               # noqa: E731
     dirs = np.zeros((ne, 2))
-    for e, c in enumerate(elu):
-        ventos = any(k.startswith("V") and v for k, v in combs[c]["fatores"].items())
-        h = Hres[e]
-        if ventos and float(np.hypot(*h)) > 1e-6:
-            dirs[e] = h / float(np.hypot(*h))
+    for e, (c, b, modo) in enumerate(analises):
+        if modo == "vento":
+            h = Hres[e]
+            if nocionais_no_vento and float(np.hypot(*h)) > 1e-6:
+                dirs[e] = h / float(np.hypot(*h))
             continue
-        # a mais flexível: o deslocamento médio (pesado pela carga) que a nocional dá em cada direção
-        ux = float(peso(e) @ U_teste[0::6, 2 * e])
-        uy = float(peso(e) @ U_teste[1::6, 2 * e + 1])
-        k = 0 if abs(ux) >= abs(uy) else 1
-        lado = float(peso(e) @ U_sem[k::6, e])
+        k = 0 if modo == "X" else 1
+        lado = float(peso(e) @ U_sem[k::6, e])                                       # o sentido em que já desloca
         dirs[e, k] = -1.0 if lado < -1e-9 else 1.0
     Fnoc = np.zeros((ndof, ne))
     Fnoc[0::6] = NOCIONAL * grav * dirs[:, 0]
@@ -160,8 +173,9 @@ def analisar(M: dict, sol: dict, combs: Dict[str, dict]) -> Dict[str, dict]:
             if dN <= TOLERANCIA * max(1.0, float(np.abs(Nn).max(initial=0.0))) and dU <= TOLERANCIA * max(float(np.abs(Un).max(initial=0.0)), 1e-6):
                 convergiu = True
                 break
-        r: dict = {"iteracoes": it, "convergiu": convergiu, "instavel": instavel,
-                   "nocional": {"dir": [round(float(v), 4) for v in dirs[e]], "H_kN": round(float(NOCIONAL * grav[:, e].sum()), 3)}}
+        r: dict = {"iteracoes": it, "convergiu": convergiu, "instavel": instavel, "base": analises[e][1], "imperfeicao": analises[e][2],
+                   "nocional": {"dir": [round(float(v), 4) for v in dirs[e]],
+                                "H_kN": round(float(NOCIONAL * grav[:, e].sum()) if dirs[e].any() else 0.0, 3)}}
         d1 = np.hypot(*_horizontal(U1[:, e], topos).T)
         d1max = float(d1.max(initial=0.0))
         r["delta1_mm"] = round(d1max * 1000, 2)
@@ -185,7 +199,8 @@ def analisar(M: dict, sol: dict, combs: Dict[str, dict]) -> Dict[str, dict]:
         if instavel is None and pontas is not None:
             R_all = AE._somar_nos_graus(lt, ndof, AE._forcas_para_global(lt, pontas[:, None, :]))[:, 0] - rhs_n
             wl = np.einsum("nc,c->n", ctx["w_loc"][:, :, 1], FAT[:, e]), np.einsum("nc,c->n", ctx["w_loc"][:, :, 2], FAT[:, e])
-            r.update({"pontas": cortantes_na_corda(pontas, lt["L"], *wl), "U": U,
+            # "pontas" para os diagramas e a verificação; "pontas_nos" (sem a correção) equilibram os nós no eixo global
+            r.update({"pontas": cortantes_na_corda(pontas, lt["L"], *wl), "pontas_nos": pontas, "U": U,
                       "reacoes": {int(ap["no"]): R_all[6 * ap["no"]:6 * ap["no"] + 6] for ap in M["apoios"]}})
         saida[c] = r
     return saida
@@ -205,6 +220,23 @@ def cortantes_na_corda(pontas: np.ndarray, L: np.ndarray, wy: np.ndarray, wz: np
     return p
 
 
+def combinacoes_da_analise(combs: Dict[str, dict], so2: Dict[str, dict]) -> Dict[str, dict]:
+    """as combinações como a 2ª ordem as calculou: cada gravitacional no lugar dela, desdobrada em ·X e ·Y (as
+    imperfeições nas duas direções, 4.10.7.1.1); as de vento e as de serviço iguais"""
+    if not so2:
+        return combs
+    out: Dict[str, dict] = {}
+    for c, cb in combs.items():
+        filhas = [k for k, r in so2.items() if r.get("base") == c and k != c]
+        if cb["tipo"] != "ELU" or not filhas:
+            out[c] = cb
+            continue
+        for k in filhas:
+            eixo = so2[k].get("imperfeicao")
+            out[k] = dict(cb, descricao="%s — imperfeição geométrica em %s (NBR 8800:2024, 4.10.7.1.1)" % (cb["descricao"], eixo))
+    return out
+
+
 def resumo(so2: Dict[str, dict]) -> Optional[dict]:
     """o quadro geral: a maior Δ2/Δ1, a classe da estrutura e as combinações instáveis"""
     if not so2:
@@ -219,7 +251,7 @@ def resumo(so2: Dict[str, dict]) -> Optional[dict]:
 
 def para_json(so2: Dict[str, dict]) -> Dict[str, dict]:
     """o que vai para a tela por combinação (sem as matrizes)"""
-    return {c: {k: v for k, v in r.items() if k not in ("pontas", "U", "reacoes")} for c, r in so2.items()}
+    return {c: {k: v for k, v in r.items() if k not in ("pontas", "pontas_nos", "U", "reacoes")} for c, r in so2.items()}
 
 
 __all__ = ["analisar", "resumo", "para_json", "classe_de_deslocabilidade", "FATOR_RIGIDEZ", "NOCIONAL"]

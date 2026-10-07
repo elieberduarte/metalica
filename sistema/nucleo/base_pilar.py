@@ -1,0 +1,302 @@
+# -*- coding: utf-8 -*-
+"""Base de pilar I ou H pela ABNT NBR 8800:2024, Subseção 6.7 (com a Errata 1:2025).
+
+O método da norma (6.7.2) — transcrito das páginas 100 a 109 da norma:
+
+* a geometria sai da Tabela 18 pelo diâmetro do chumbador: ℓx = d + 4·a₁, ℓy = (0,5·n_b − 1)·a₂ + 2·a₁ ≥ b_f + 25 mm;
+  base tipo 1 (chumbadores externos às mesas, 4 ≤ n_b ≤ 8) ou tipo 2 (internos, n_b = 4, só os casos C1, C2, T1, T2);
+* com a excentricidade e = M_Sd/N_Sd, os casos da Figura 22 (compressão: C1 sem momento, C2 pequena excentricidade
+  sem tração nos chumbadores, C3 grande excentricidade com tração) e da Figura 23 (tração: T1, T2 sem pressão de
+  contato, T3 com pressão de contato);
+* a espessura mínima da placa t_p,min, o diâmetro mínimo do chumbador d_b,min (casos com tração) e a força cortante
+  resistente V_Rd por atrito (μ = 0,45); quando V_Sd > V_Rd (e sempre em T1 e T2), um dispositivo: arruelas especiais
+  soldadas à placa (6.7.2.5) ou placa de cisalhamento (6.7.2.4);
+* σ_c,Rd pela 6.6.5: 0,85·f_ck/γ_c·√(A₂/A₁) ≤ 1,7·f_ck/γ_c, com A₂ a maior área do bloco homotética à placa.
+
+O que a norma garante pelas disposições construtivas da Tabela 18 (chumbadores ASTM A36 com porca hexagonal pesada,
+embutimento h₁ com arruela e porca na ponta, armadura mínima do bloco, f_ck ≥ f_ck,mín, argamassa de assentamento com o
+dobro do f_ck do bloco): o arrancamento do chumbador e o esmagamento na porca de ancoragem não se verificam à parte
+(6.7.1.5). Momento só em torno do eixo de maior inércia do perfil (6.7.1.3); base de pilar tubular é da ABNT NBR 16239.
+
+Unidades internas: N e mm (MPa = N/mm²); a interface recebe kN e kN·m.
+"""
+from __future__ import annotations
+
+import math
+from typing import Dict, List, Optional, Sequence
+
+GAMA_A1, GAMA_A2, GAMA_C = 1.10, 1.35, 1.40
+MU = 0.45                                 # atrito placa–argamassa expansiva (6.7.2.2-a)
+FY_CHUMBADOR, FU_CHUMBADOR = 250.0, 400.0  # ASTM A36 (6.7.1.5-c)
+FY_ARRUELA = 345.0                         # arruelas especiais (Tabela 18, nota a)
+
+# Tabela 18 (com a Errata 1:2025): d_b pol → mm, a1, a2, a3, h1, h2, r1, r2, d_f, arruela (t, lado), e_n,
+# f_ck,mín (MPa), N_b,mín, armadura mínima do bloco (S, φ) — mm
+TABELA_18 = {
+    '3/4"':   dict(db=19, a1=40, a2=80, a3=120, h1=450, h2=150, r1=175, r2=50, df=33, ta=6.3, arruela=50, en=40, fck_min=20, Nb_min=900, S=125, phi=10.0),
+    '7/8"':   dict(db=22, a1=45, a2=90, a3=140, h1=465, h2=200, r1=225, r2=50, df=40, ta=6.3, arruela=65, en=50, fck_min=20, Nb_min=900, S=100, phi=10.0),
+    '1"':     dict(db=25, a1=50, a2=100, a3=160, h1=465, h2=200, r1=225, r2=50, df=45, ta=8.0, arruela=75, en=60, fck_min=25, Nb_min=900, S=125, phi=12.5),
+    '1.1/4"': dict(db=32, a1=65, a2=130, a3=190, h1=525, h2=225, r1=250, r2=60, df=50, ta=9.5, arruela=75, en=60, fck_min=25, Nb_min=1100, S=100, phi=12.5),
+    '1.1/2"': dict(db=38, a1=80, a2=160, a3=230, h1=610, h2=250, r1=275, r2=70, df=60, ta=9.5, arruela=90, en=70, fck_min=25, Nb_min=1300, S=150, phi=16.0),
+    '1.3/4"': dict(db=44, a1=90, a2=180, a3=270, h1=700, h2=300, r1=325, r2=70, df=70, ta=12.5, arruela=100, en=80, fck_min=25, Nb_min=1600, S=125, phi=16.0),
+    '2"':     dict(db=50, a1=100, a2=200, a3=300, h1=850, h2=350, r1=375, r2=100, df=80, ta=16.0, arruela=125, en=90, fck_min=30, Nb_min=1800, S=100, phi=16.0),
+}
+DIAMETROS = list(TABELA_18)
+
+# chapas grossas comerciais (mm) para a placa de base e a placa de cisalhamento
+CHAPAS_MM = [12.5, 16.0, 19.0, 22.4, 25.0, 31.5, 37.5, 44.5, 50.0, 57.0, 63.0, 76.0]
+
+
+def chapa_comercial(t_min: float) -> Optional[float]:
+    for t in CHAPAS_MM:
+        if t >= t_min - 1e-6:
+            return t
+    return None
+
+
+def geometria(perfil: dict, tipo: int, nb: int, diametro: str, a1_tipo2: Optional[float] = None) -> dict:
+    """a placa e os chumbadores pela Tabela 18 e pela Figura 21 (com a errata): mm"""
+    T = TABELA_18[diametro]
+    d, bf, tw = float(perfil["d"]), float(perfil["bf"]), float(perfil.get("tw") or 0.0)
+    a1, a2 = float(T["a1"]), float(T["a2"])
+    if tipo == 1:
+        lx = d + 4 * a1
+        ly = max((0.5 * nb - 1) * a2 + 2 * a1, bf + 25.0)
+        a = d / 2 + a1                                   # a linha de chumbadores mais externa ao eixo da placa
+        l0 = None
+    else:
+        nb = 4
+        a1x = a1_tipo2 if a1_tipo2 is not None else a1   # na direção ℓx: entre 10 mm e o da tabela (nota f)
+        lx = d + 4 * a1x
+        ly = max(a2 + 2 * a1, bf + 25.0)
+        a = a2 / 2
+        l0 = min((0.5 * nb - 1) * a2 + 1.75 * (a2 - tw), d)
+    return {"tipo": tipo, "nb": nb, "diametro": diametro, "db": float(T["db"]), "lx": lx, "ly": ly, "a": a, "a1": a1, "a2": a2,
+            "l0": l0, "m": (lx - 0.95 * d) / 2, "n": (ly - 0.80 * bf) / 2, "n0": math.sqrt(d * bf) / 4, "d": d, "bf": bf, "tw": tw,
+            "tab": T}
+
+
+def sigma_c_rd(fck: float, A1: float, A2: float) -> float:
+    """6.6.5: MPa"""
+    return min(0.85 * fck / GAMA_C * math.sqrt(max(A2 / A1, 1.0)), 1.7 * fck / GAMA_C)
+
+
+def bloco(g: dict) -> dict:
+    """as dimensões mínimas do bloco (Tabela 18, nota e, com a errata): mm"""
+    T = g["tab"]
+    Nb = max(T["Nb_min"], g["lx"] + 2 * T["en"], g["lx"] + 2 * (T["a3"] - T["a1"]))
+    Bb = max(g["ly"] + 2 * T["en"], g["ly"] + 2 * (T["a3"] - T["a1"]))
+    return {"Nb": Nb, "Bb": Bb, "Ab": max(T["h1"] + 100.0, Nb), "S": T["S"], "phi": T["phi"]}
+
+
+def caso(g: dict, N_kN: float, M_kNm: float, V_kN: float, fck: float, fy_placa: float, Bb: Optional[float] = None,
+         Nb: Optional[float] = None) -> dict:
+    """uma combinação (N > 0 compressão, kN; M em torno do eixo de maior inércia, kN·m; V, kN): o caso da norma, t_p,min,
+    a força de tração por chumbador, d_b,min e V_Rd por atrito"""
+    N, M, V = N_kN * 1e3, abs(M_kNm) * 1e6, abs(V_kN) * 1e3
+    lx, ly, a, m, n, n0, nb = g["lx"], g["ly"], g["a"], g["m"], g["n"], g["n0"], g["nb"]
+    d, bf, a1 = g["d"], g["bf"], g["a1"]
+    blk = bloco(g)
+    A1 = lx * ly
+    Nbk, Bbk = (Nb or blk["Nb"]), (Bb or blk["Bb"])
+    A2 = A1 * min(Nbk / lx, Bbk / ly) ** 2
+    sRd = sigma_c_rd(fck, A1, A2)
+    tau = min(0.2 * fck / GAMA_C, 4.0)
+    fyd = fy_placa / GAMA_A1
+    fubd = FU_CHUMBADOR / GAMA_A2
+    r = {"N": N_kN, "M": abs(M_kNm), "V": abs(V_kN), "sigma_c_Rd": sRd, "Ft": 0.0, "Ft_lados": 0, "db_min": 0.0, "erro": None}
+    lam_n0 = None
+    if N > 0:
+        X = 4 * d * bf / (d + bf) ** 2 * N / (A1 * sRd)
+        r["X"] = X
+        if X > 1.0:
+            r["erro"] = "X = %.2f > 1,0: a placa não resiste à compressão (refazer a ligação, 6.7.2.1)" % X
+            return r
+        lam = min(2 * math.sqrt(X) / (1 + math.sqrt(1 - X)), 1.0)
+        lam_n0 = lam * n0
+    e = M / N if abs(N) > 1e-9 else (math.inf if M > 0 else 0.0)
+    r["e"] = e if math.isfinite(e) else None
+    p_de = lambda lc: math.sqrt(max(lc * (2 * m - lc), 0.0))             # noqa: E731
+
+    def lmax(lc, com_lambda=True):
+        if lc is None or lc >= m:
+            return max(m, n, lam_n0 or 0.0) if com_lambda else max(m, n)
+        return max(p_de(lc), n)
+    if N > 0:
+        lim = 0.5 * (lx - N / (sRd * ly))
+        if M <= 1e-9:
+            r["caso"] = "C1"
+            sSd = N / A1
+            r["sigma_c_Sd"] = sSd
+            r["tp_min"] = max(m, n, lam_n0) * math.sqrt(2 * sSd / fyd)
+            r["V_Rd"] = min(MU * sSd * A1 / GAMA_A2, tau * A1) / 1e3
+        elif e <= lim:
+            r["caso"] = "C2"
+            lc = lx - 2 * e
+            sSd = N / (lc * ly)
+            r.update(lc=lc, sigma_c_Sd=sSd)
+            r["tp_min"] = lmax(lc) * math.sqrt(2 * sSd / fyd)
+            r["V_Rd"] = min(MU * sSd * lc * ly / GAMA_A2, tau * A1) / 1e3
+        else:
+            if g["tipo"] == 2:
+                r["caso"] = "C3"
+                r["erro"] = "grande excentricidade (C3): a base tipo 2 não cobre — use chumbadores externos (tipo 1)"
+                return r
+            r["caso"] = "C3"
+            k = lx / 2 + a
+            rad = k * k - 2 * N * (e + a) / (sRd * ly)
+            if rad < 0:
+                r["erro"] = "(ℓx/2 + a)² < 2N(e + a)/(σc,Rd·ℓy): alterar a ligação (6.7.2.2-c)"
+                return r
+            lc = k - math.sqrt(rad)
+            Ft = 2 * (sRd * lc * ly - N) / nb
+            r.update(lc=lc, sigma_c_Sd=sRd, Ft=Ft / 1e3, Ft_lados=1)
+            tp1 = lmax(lc) * math.sqrt(2 * sRd / fyd)
+            tp2 = math.sqrt(2 * nb * Ft * (m - a1) / (ly * fyd)) if m > a1 else 0.0
+            r.update(tp_min=max(tp1, tp2), tp1=tp1, tp2=tp2)
+            r["db_min"] = math.sqrt(4 * Ft / (0.75 * math.pi * fubd))
+            r["V_Rd"] = min(MU * sRd * lc * ly / GAMA_A2, tau * A1) / 1e3
+    else:
+        T_ = -N                                                           # a tração (positiva)
+        e = M / T_ if T_ > 1e-9 else math.inf
+        r["e"] = e if math.isfinite(e) else None
+        if M <= 1e-9 or e <= a:
+            r["caso"] = "T1" if M <= 1e-9 else "T2"
+            Ft = T_ / nb + (M / (a * nb) if M > 1e-9 else 0.0)
+            r.update(Ft=Ft / 1e3, Ft_lados=2 if M <= 1e-9 else 1)
+            if g["tipo"] == 1:
+                r["tp_min"] = math.sqrt(2 * nb * Ft * (m - a1) / (ly * fyd)) if m > a1 else 0.0
+            else:
+                r["tp_min"] = math.sqrt(nb * Ft * (g["a2"] - g["tw"]) / (g["l0"] * fyd))
+            r["db_min"] = math.sqrt(4 * Ft / (0.75 * math.pi * fubd))
+            r["V_Rd"] = 0.0                                               # 6.7.2.3: só o dispositivo
+        else:
+            if g["tipo"] == 2:
+                r["caso"] = "T3"
+                r["erro"] = "grande excentricidade (T3): a base tipo 2 não cobre — use chumbadores externos (tipo 1)"
+                return r
+            r["caso"] = "T3"
+            k = lx / 2 + a
+            rad = k * k - 2 * T_ * (e - a) / (sRd * ly)
+            if rad < 0:
+                r["erro"] = "(ℓx/2 + a)² < 2N(e − a)/(σc,Rd·ℓy): alterar a ligação (6.7.2.2-f)"
+                return r
+            lc = k - math.sqrt(rad)
+            Ft = 2 * (sRd * lc * ly + T_) / nb
+            r.update(lc=lc, sigma_c_Sd=sRd, Ft=Ft / 1e3, Ft_lados=1)
+            tp1 = lmax(lc, com_lambda=False) * math.sqrt(2 * sRd / fyd)
+            tp2 = math.sqrt(2 * nb * Ft * (m - a1) / (ly * fyd)) if m > a1 else 0.0
+            r.update(tp_min=max(tp1, tp2), tp1=tp1, tp2=tp2)
+            r["db_min"] = math.sqrt(4 * Ft / (0.75 * math.pi * fubd))
+            r["V_Rd"] = min(MU * sRd * lc * ly / GAMA_A2, tau * A1) / 1e3
+    return r
+
+
+def v_rd_arruelas(g: dict, tp: float, Ft_kN: float, lados: int, sRd: float, fy_placa: float) -> float:
+    """6.7.2.5: as arruelas especiais soldadas à placa — a soma dos V_Rd,i (kN); F_t,Sd,i nos chumbadores tracionados
+    (um lado ou os dois), zero nos outros. F_v,Rd,i = 0,4·A_b·f_ub/γ_a2 (rosca no plano de corte, 6.3.3.2)"""
+    T = g["tab"]
+    db, ta, nb = g["db"], T["ta"], g["nb"]
+    Ab = math.pi * db * db / 4
+    Fv = 0.4 * Ab * FU_CHUMBADOR / GAMA_A2
+    alfa = 1.45 * (tp + 0.5 * ta) / db * FU_CHUMBADOR / fy_placa * GAMA_A1 / GAMA_A2
+    teto = 5 * db * db * sRd
+
+    def um(Ft):
+        q = 0.533 * Ft
+        rad = (1 + alfa ** 2) * Fv ** 2 - q * q
+        if rad <= 0:
+            return 0.0
+        return min((math.sqrt(rad) - alfa * q) / (1 + alfa ** 2), teto)
+    tracionados = nb if lados == 2 else (nb // 2 if lados == 1 else 0)
+    return (tracionados * um(Ft_kN * 1e3) + (nb - tracionados) * um(0.0)) / 1e3
+
+
+def placa_de_cisalhamento(V_kN: float, fck: float, fy_placa: float, en: float, bh: float, tp: float) -> dict:
+    """6.7.2.4: a altura b_v para a força cortante (σ_c,Rd com A₂/A₁ = 4), a espessura t_pv,min e o momento na solda"""
+    s = sigma_c_rd(fck, 1.0, 4.0)
+    V = abs(V_kN) * 1e3
+    bv = en + max(V / (s * bh), 50.0)
+    bv = math.ceil(bv / 10.0) * 10.0
+    tpv = math.sqrt(2 * V * (bv + en) / (bh * fy_placa / GAMA_A1))
+    t = chapa_comercial(tpv)
+    return {"bh": bh, "bv": bv, "tpv_min": tpv, "tpv": t, "V_Rd": s * (bv - en) * bh / 1e3,
+            "M_solda_kNm": 0.5 * s * bh * (bv * bv - en * en) / 1e6, "ok": t is not None and t <= tp + 1e-6}
+
+
+def verificar(perfil: dict, combs: Sequence[dict], tipo: int, nb: int, diametro: str, fck: float = 25.0,
+              fy_placa: float = 250.0) -> dict:
+    """a base com uma geometria nas combinações (cada uma com N, M, V concomitantes): a espessura (a maior t_p,min,
+    arredondada para a chapa comercial), os chumbadores (d_b ≥ d_b,mín) e a força cortante (atrito, senão arruelas
+    soldadas, senão placa de cisalhamento)"""
+    g = geometria(perfil, tipo, nb, diametro)
+    T = g["tab"]
+    linhas, falhas = [], []
+    if fck < T["fck_min"]:
+        falhas.append("f_ck do bloco %.0f MPa < f_ck,mín %d MPa da Tabela 18 para ø %s" % (fck, T["fck_min"], diametro))
+    tp_min = 0.0
+    for c in combs:
+        r = caso(g, c["N"], c["M"], c["V"], fck, fy_placa)
+        r.update({k: c[k] for k in ("comb", "sit") if k in c})
+        linhas.append(r)
+        if r["erro"]:
+            falhas.append("%s (%s): %s" % (c.get("comb", ""), r.get("caso", ""), r["erro"]))
+            continue
+        tp_min = max(tp_min, r["tp_min"])
+        if r["db_min"] > g["db"] + 1e-9:
+            falhas.append("%s (%s): d_b,mín %.1f mm > %.0f mm" % (c.get("comb", ""), r["caso"], r["db_min"], g["db"]))
+    fatais = [f for f in falhas if "alterar" in f or "não resiste" in f or "não cobre" in f]
+    tp = chapa_comercial(max(tp_min, 12.5)) if not fatais else None
+    if tp is None and not fatais:
+        falhas.append("t_p,mín %.1f mm acima da maior chapa comercial (%.0f mm)" % (tp_min, CHAPAS_MM[-1]))
+    # a força cortante: atrito; senão arruelas soldadas; senão placa de cisalhamento
+    disp = "atrito"
+    pc = None
+    if tp is not None:
+        precisa = [r for r in linhas if not r["erro"] and r["V"] > r["V_Rd"] + 1e-9]
+        if precisa:
+            disp = "arruelas soldadas"
+            for r in precisa:
+                r["V_Rd_arruelas"] = v_rd_arruelas(g, tp, r["Ft"], r["Ft_lados"], r["sigma_c_Rd"], fy_placa)
+            if any(r["V"] > r["V_Rd_arruelas"] + 1e-9 for r in precisa):
+                disp = "placa de cisalhamento"
+                Vmax = max(r["V"] for r in precisa)
+                pc = placa_de_cisalhamento(Vmax, fck, fy_placa, T["en"], min(g["bf"], g["ly"] - 2 * T["a1"]), tp)
+                if not pc["ok"]:
+                    falhas.append("placa de cisalhamento: t_pv,mín %.1f mm maior que a placa de base (%.1f mm)" % (pc["tpv_min"], tp))
+    uso_tp = (tp_min / tp) if tp else None
+    gov_tp = max((r for r in linhas if not r["erro"]), key=lambda r: r["tp_min"], default=None)
+    gov_ft = max((r for r in linhas if not r["erro"]), key=lambda r: r["Ft"], default=None)
+    return {"ok": not falhas and tp is not None, "falhas": falhas, "geometria": {k: v for k, v in g.items() if k != "tab"},
+            "tabela": dict(T), "bloco": bloco(g), "tp": tp, "tp_min": tp_min, "uso_tp": uso_tp, "dispositivo": disp,
+            "placa_cisalhamento": pc, "combinacoes": linhas,
+            "governa_tp": gov_tp and {"comb": gov_tp.get("comb"), "sit": gov_tp.get("sit"), "caso": gov_tp["caso"]},
+            "governa_ft": gov_ft and gov_ft["Ft"] > 0 and {"comb": gov_ft.get("comb"), "sit": gov_ft.get("sit"), "caso": gov_ft["caso"],
+                                                         "Ft": gov_ft["Ft"], "db_min": gov_ft["db_min"]},
+            "peso_placa_kg": (g["lx"] * g["ly"] * tp * 7.85e-6) if tp else None}
+
+
+def dimensionar(perfil: dict, combs: Sequence[dict], fck: float = 25.0, fy_placa: float = 250.0,
+                tipos: Sequence[int] = (1,)) -> dict:
+    """a base mais leve que passa: percorre os tipos, os diâmetros (do menor) e o número de chumbadores (4, 6, 8) e fica
+    com a de menor peso (placa + chumbadores) entre as que passam; sem nenhuma, devolve a de menor espessura necessária
+    (com as falhas) — para dizer o que falta"""
+    melhor, menos_ruim = None, None
+    for tipo in tipos:
+        for diam in DIAMETROS:
+            for nb in ((4, 6, 8) if tipo == 1 else (4,)):
+                r = verificar(perfil, combs, tipo, nb, diam, fck, fy_placa)
+                g = r["geometria"]
+                peso = (r["peso_placa_kg"] or 0.0) + nb * math.pi * g["db"] ** 2 / 4 * (r["tabela"]["h1"] + 300) * 7.85e-6
+                r["peso_kg"] = round(peso, 1)
+                if r["ok"]:
+                    if melhor is None or peso < melhor["peso_kg"]:
+                        melhor = r
+                else:
+                    crit = (len([f for f in r["falhas"] if "alterar" in f or "não resiste" in f]), r["tp_min"] or 1e9)
+                    if menos_ruim is None or crit < menos_ruim[0]:
+                        menos_ruim = (crit, r)
+    return melhor or (menos_ruim[1] if menos_ruim else {"ok": False, "falhas": ["sem geometria"]})
+
+
+__all__ = ["TABELA_18", "geometria", "caso", "verificar", "dimensionar", "sigma_c_rd", "bloco"]

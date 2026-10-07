@@ -107,7 +107,7 @@ const MODOS = {
   },
   esforcos: {
     titulo: 'Esforços — os diagramas',
-    oque: 'Os esforços internos de cada barra na combinação escolhida: N (normal, + tração / − compressão), Vy e Vz (cortantes), T (torção), Mz (momento no eixo forte) e My (no eixo fraco). O desenho fica perpendicular à barra; os rótulos marcam os maiores valores. Nas combinações últimas (ELU) os esforços já são os de 2ª ordem (P-Δ com as imperfeições da NBR 8800, 4.9.7); nas de serviço (ELS), de 1ª ordem.',
+    oque: 'Os esforços internos de cada barra na combinação escolhida: N (normal, + tração / − compressão), Vy e Vz (cortantes), T (torção), Mz (momento no eixo forte) e My (no eixo fraco). O desenho fica perpendicular à barra; os rótulos marcam os maiores valores. Nas combinações últimas (ELU) os esforços já são os de 2ª ordem (P-Δ com as imperfeições da NBR 8800:2024, 4.10.7; as combinações só gravitacionais aparecem duas vezes, ·X e ·Y — a imperfeição em cada direção); nas de serviço (ELS), de 1ª ordem.',
     preocupe: [
       'Banzos das tesouras: o N. Compressão é o que manda (flambagem); na sucção o sinal inverte.',
       'Pilares: N junto com M — a flexo-compressão. O pé do pilar engastado concentra o momento.',
@@ -164,7 +164,7 @@ const MODOS = {
     oque: 'A estrutura deformada, exagerada para ver a forma (a escala não é real). O número é o maior deslocamento da combinação.',
     preocupe: [
       'Os limites de serviço (NBR 8800, Anexo C, Tabela C.1) se conferem nas combinações ELS (sem coeficientes): topo dos pilares em galpões H/300; vigas e treliças de cobertura L/250.',
-      'Balanço grande nas combinações de vento = estrutura flexível: os efeitos de 2ª ordem (P-Δ) aumentam os momentos dos pilares. O programa já faz a 2ª ordem nas ELU — o quadro "2ª ordem" mostra Δ2/Δ1 (NBR 8800, 4.9.4: até 1,1 pequena, até 1,4 média, acima grande). Grande deslocabilidade pede mais rigidez lateral.',
+      'Balanço grande nas combinações de vento = estrutura flexível: os efeitos de 2ª ordem (P-Δ) aumentam os momentos dos pilares. O programa já faz a 2ª ordem nas ELU — o quadro "2ª ordem" mostra Δ2/Δ1 (NBR 8800:2024, 4.10.4: até 1,10 pequena, até 1,40 média, acima grande). Grande deslocabilidade pede mais rigidez lateral.',
       'A forma: se a cobertura "anda" toda para um lado, falta contraventamento naquela direção.',
     ],
     ignore: [
@@ -188,6 +188,9 @@ const MODOS = {
     dicas: [
       'Para a fundação, o projetista costuma pedir as reações por caso (sem coeficientes) para fazer as combinações dele — estão no resultado (reacoes_casos).',
       'Na tabela "Reações nas bases", passe o mouse: aparece a combinação de cada máximo. Dimensione a base com os valores concomitantes (Fz, H e M da mesma combinação), não com o máximo de cada um.',
+      'O painel "Bases dos pilares" já faz isso: cada base pela NBR 8800:2024, 6.7, em todas as combinações, cada uma com o N, o M e o V dela — a placa e os chumbadores saem da Tabela 18 (com a Errata 1:2025), o arrancamento fica coberto pelas disposições da tabela (embutimento e armadura do bloco) e o cortante vai por atrito, arruelas soldadas ou placa de cisalhamento. Clique numa base para ver a conta e o bloco mínimo para o projetista de fundações.',
+      'A 6.7 só cobre pilar I/H com momento no eixo forte. Pilar tubular é da NBR 16239; momento grande no eixo fraco pede outro método (base com enrijecedores) — os dois aparecem como apontamento.',
+      'O painel "Apoio das tesouras" mostra o que cada tesoura entrega onde apoia: numa cobertura retrátil é o que o carrinho precisa segurar — inclusive o arrancamento e a força ao longo do trilho.',
     ],
   },
 };
@@ -228,6 +231,16 @@ function noProjeto(D, RAIZ, estado) {
       const fs = [...new Set(semTrava.map(p => nome(p.papel)))].join(', ');
       itens.push(`Peças comprimidas sem travamento lateral no comprimento todo: <b>${fs}</b> (${semTrava.length} peças). Trocar o perfil não resolve bem — trave (mão-francesa, linha de corrente, contraventamento) ou confirme com o engenheiro a restrição que ele considerou.`);
     }
+  }
+  const BS = RAIZ.bases;
+  if (BS && BS.length) {
+    const ok = BS.filter(b => b.ok === true).length, nao = BS.filter(b => b.ok === false).length, sem = BS.filter(b => b.ok === null || b.ok === undefined).length;
+    const tps = BS.filter(b => b.base && b.base.tp).map(b => b.base.tp);
+    itens.push(`Bases (NBR 8800:2024, 6.7): <b>${ok}</b> fecham${nao ? `, <span class="g-ruim">${nao} não fecham</span>` : ''}${sem ? `, ${sem} fora do método (pilar tubular — NBR 16239)` : ''}${tps.length ? `; placas de ${nf(Math.min(...tps), 1)} a ${nf(Math.max(...tps), 1)} mm` : ''}. Placa acima de ~38 mm sem enrijecedor é sinal de momento grande na base — de novo, rigidez lateral.`);
+  }
+  const AT = D.apoios_tesouras;
+  if (AT && AT.pior && AT.pior.Fv_min.valor < 0) {
+    itens.push(`Apoio das tesouras: arrancamento até <b>${nf(-AT.pior.Fv_min.valor, 1)} kN</b> e ${nf(Math.abs(AT.pior.Hl_max.valor), 1)} kN ao longo do trilho num só apoio — pergunte ao fabricante se o carrinho segura${D.movel ? ' (e se a sanfona é rígida como no modelo: ela concentra a carga nos apoios sobre os pilares)' : ''}.`);
   }
   if ((D.avisos || []).some(a => a.includes('hipótese de travamento'))) itens.push('Há barras de <b>hipótese</b> (tracejadas): o travamento real da cobertura ainda não está no modelo.');
   itens.push('Ao comparar com o engenheiro, siga a ordem: (1) premissas e cargas totais por caso; (2) reações; (3) esforços nos pilares e vigas; (4) peças. Diferença na etapa 1 explica todas as outras.');

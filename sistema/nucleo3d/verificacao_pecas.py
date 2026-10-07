@@ -8,12 +8,12 @@ barra.
    quando chega nele uma barra de outra peça com componente nessa direção (≥ 25%); o mesmo para a direção da largura
    (ez). As pontas e os apoios contam como travados. Lx (flambagem em torno do eixo forte, o deslocamento em ey) é o
    maior trecho entre travamentos em ey; Ly (eixo fraco) o maior entre travamentos em ez; Lb da flexão = Ly. K = 1 —
-   a análise já tem a 2ª ordem global com as imperfeições (NBR 8800, 4.9.7).
+   a análise já tem a 2ª ordem global com as imperfeições (NBR 8800:2024, 4.10.7).
 2. **Resistências** pelas rotinas do sistema, com cache por (perfil, aço, Lx, Ly): laminado e tubo pela NBR 8800
    (`nucleo/nbr8800.py`: compressão com χ e Q, tração na seção bruta, flexão nos dois eixos com FLA, FLM e FLT,
    cortante); U e Ue formados a frio pela NBR 14762 (MRD, `nucleo/nbr14762.py`); barra redonda só à tração.
 3. **Esforços** das combinações últimas — os da 2ª ordem quando ela foi feita — em 9 seções de cada barra, com o B1 do
-   P-δ (NBR 8800, Anexo D: B1 = Cm / (1 − N/Ne) ≥ 1, Ne = π²EI/L² da peça no plano da flexão; Cm = 0,6 − 0,4·M1/M2
+   P-δ (NBR 8800:2024, Anexo C: B1 = Cm / (1 − N/Ne) ≥ 1, Ne = π²EI/L² da peça no plano da flexão; Cm = 0,6 − 0,4·M1/M2
    na peça de uma barra sem carga transversal, 1,0 nas outras).
 4. **Uso** = a pior das verificações em cada seção: a interação N + M (NBR 8800, 5.5.1.2; linear na NBR 14762) e o
    cortante nos dois planos; e a esbeltez da peça quando passa do limite (KL/r ≤ 200 se comprime de fato, ≤ 300 só
@@ -267,7 +267,7 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
         E[e] = AE.esforcos_lote(f, w, X)
         W[e] = w
     N = E[..., 0]
-    # B1 por peça e combinação (Anexo D)
+    # B1 por peça e combinação (NBR 8800:2024, Anexo C; 1,0 na tração)
     Lx = np.array([pc["Lx"] for pc in pecas])
     Ly = np.array([pc["Ly"] for pc in pecas])
     b0 = np.array([pc["barras"][0] for pc in pecas], int)
