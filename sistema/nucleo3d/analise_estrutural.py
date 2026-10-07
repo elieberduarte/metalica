@@ -66,6 +66,18 @@ PARAMETROS_PADRAO = {
     "classe": None,                     # None: pela maior dimensão (A ≤ 20 m, B ≤ 50 m, C)
     "s3": 1.0,
     "modelo_vento": "isolada",          # isolada (7.2, Tabela 25)
+    # cobertura retrátil (06/10, Kaefer: produto do fabricante, lona, as tesouras correm sobre as vigas-trilho): a tesoura
+    # lançada é o molde; a análise monta as duas situações — aberta (n tesouras ao longo de `comprimento_aberta`) e
+    # retraída (as n empilhadas em `comprimento_retraida`, na ponta `lado_retraida`) — com o peso total do fabricante, a
+    # sanfona (o X entre tesouras vizinhas nos dois planos laterais) e o vento nas abas laterais de lona
+    "cobertura_movel": False,
+    "movel_n": 38,
+    "movel_comprimento_aberta": 38.0,
+    "movel_comprimento_retraida": 6.0,
+    "movel_lado_retraida": "y_menor",   # y_menor | y_maior (a ponta da pilha, na planta)
+    "movel_peso_total_kg": 7800.0,      # o peso total informado pelo fabricante (tesouras + lona)
+    "perfil_sanfona": "TQ 50×50×2,0",   # o braço da sanfona (o X entre tesouras vizinhas)
+    "configuracao": "aberta",           # a situação calculada (o calcular faz as duas)
     # aço
     "fy_mpa": 345.0,                    # para o mapa de tensões (ASTM A572 Gr.50; o tubo leve pode ser outro)
 }
@@ -205,8 +217,12 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         })
     for nome, n in sem_secao.items():
         avisos.append("%d barra(s) com o perfil \"%s\" fora do catálogo ficaram fora da análise" % (n, nome))
-    hip = _travamento_hipotese(nos, barras, P, cache, avisos)
-    barras += hip
+    movel = None
+    if P.get("cobertura_movel"):
+        nos, barras, movel = _cobertura_movel(nos, barras, P, cache, avisos)
+    if movel is None:
+        hip = _travamento_hipotese(nos, barras, P, cache, avisos)
+        barras += hip
     # quem chega em cada nó
     no_barras: Dict[int, List[int]] = collections.defaultdict(list)
     for i, br in enumerate(barras):
@@ -272,7 +288,145 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         chave = "%d,%d" % (round(nos[n][0] * 1000), round(nos[n][1] * 1000))
         tipo = (P.get("bases") or {}).get(chave) or P["base"]
         apoios.append({"no": int(n), "tipo": tipo, "chave": chave})
-    return {"nos": nos, "barras": barras, "apoios": apoios, "avisos": avisos, "par": P, "resumo_esqueleto": an["resumo"]}
+    return {"nos": nos, "barras": barras, "apoios": apoios, "avisos": avisos, "par": P, "resumo_esqueleto": an["resumo"],
+            "movel": movel}
+
+
+def _cobertura_movel(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, avisos: List[str]):
+    """as tesouras da cobertura retrátil na situação `P["configuracao"]`: a primeira tesoura lançada é o molde, copiada
+    em n posições ao longo das vigas-trilho; as lançadas saem da análise. Devolve (nos, barras, info)"""
+    trel = [i for i, br in enumerate(barras) if br.get("elemento") == "trelica"]
+    if not trel:
+        avisos.append("cobertura retrátil: o modelo não tem tesoura lançada para servir de molde — calculado sem ela")
+        return nos, barras, None
+    grupos = collections.OrderedDict()
+    for i in trel:
+        grupos.setdefault(barras[i]["grupo"], []).append(i)
+    g0, molde = next(iter(grupos.items()))
+    usados_fora = collections.Counter()
+    for i, br in enumerate(barras):
+        if br.get("elemento") != "trelica":
+            usados_fora[br["a"]] += 1
+            usados_fora[br["b"]] += 1
+    nos_molde = sorted({barras[i][k] for i in molde for k in ("a", "b")})
+    apoio = [n for n in nos_molde if usados_fora[n]]                 # os nós da tesoura que são da viga/pilar
+    if len(apoio) < 2:
+        avisos.append("cobertura retrátil: a tesoura molde não está apoiada nas vigas — calculado sem ela")
+        return nos, barras, None
+    pts = nos[nos_molde]
+    d = pts[:, :2].max(0) - pts[:, :2].min(0)
+    u = _unit(np.array([d[0], d[1]]))
+    n = np.array([-u[1], u[0]])
+    t0 = float(nos[apoio[0]][:2] @ n)
+    # o trilho: as vigas paralelas a n (a extensão delas ao longo de n)
+    vigas = [i for i, br in enumerate(barras) if br["papel"] == "viga"]
+    tv = [float(nos[barras[i][k]][:2] @ n) for i in vigas for k in ("a", "b")
+          if abs(((nos[barras[i]["b"]] - nos[barras[i]["a"]])[:2] @ u)) < 0.05 * barras[i]["L"]]
+    if not tv:
+        avisos.append("cobertura retrátil: não achei as vigas-trilho ao longo do comprimento — calculado sem ela")
+        return nos, barras, None
+    tmin, tmax = min(tv), max(tv)
+    N = max(2, int(P.get("movel_n") or 38))
+    La = min(float(P.get("movel_comprimento_aberta") or (tmax - tmin)), tmax - tmin)
+    Lr = min(float(P.get("movel_comprimento_retraida") or 6.0), La)
+    ponta_menor = (P.get("movel_lado_retraida") or "y_menor") == "y_menor"
+    # o eixo n aponta para o Y maior ou menor? a ponta da pilha em coordenada t
+    sinal_y = 1.0 if n[1] >= 0 else -1.0
+    if abs(n[1]) < 1e-6:
+        sinal_y = 1.0 if n[0] >= 0 else -1.0
+    t_ponta = (tmin if sinal_y > 0 else tmax) if ponta_menor else (tmax if sinal_y > 0 else tmin)
+    para_dentro = 1.0 if t_ponta == tmin else -1.0
+    conf = P.get("configuracao") or "aberta"
+    Lc = La if conf == "aberta" else Lr
+    posicoes = [t_ponta + para_dentro * (k + 0.5) * Lc / N for k in range(N)]
+    # fora as tesouras lançadas
+    fora = set(trel)
+    novas_barras = [br for i, br in enumerate(barras) if i not in fora]
+    lista_nos = [np.array(p) for p in nos]
+
+    def no_na_viga(p):
+        """o nó da viga no ponto p (cria e parte a viga se preciso)"""
+        for k, q in enumerate(lista_nos):
+            if float(np.linalg.norm(q - p)) < 0.02:
+                return k
+        for j, br in enumerate(novas_barras):
+            if br["papel"] != "viga":
+                continue
+            a, b = lista_nos[br["a"]], lista_nos[br["b"]]
+            ab = b - a
+            L2 = float(ab @ ab)
+            if L2 < 1e-9:
+                continue
+            tt = float((p - a) @ ab) / L2
+            if not (0.0 < tt < 1.0):
+                continue
+            if float(np.linalg.norm(a + ab * tt - p)) > 0.05:
+                continue
+            k = len(lista_nos)
+            lista_nos.append(a + ab * tt)
+            b2 = dict(br, a=k, L=float(np.linalg.norm(lista_nos[br["b"]] - lista_nos[k])), soltos=[s_ for s_ in br["soltos"] if s_ >= 6])
+            br.update(b=k, L=float(np.linalg.norm(lista_nos[k] - lista_nos[br["a"]])), soltos=[s_ for s_ in br["soltos"] if s_ < 6])
+            novas_barras.append(b2)
+            return k
+        k = len(lista_nos)
+        lista_nos.append(np.array(p))
+        avisos.append("cobertura retrátil: um apoio da tesoura ficou fora das vigas (%.2f; %.2f)" % (p[0], p[1]))
+        return k
+    # o peso: o total do fabricante dividido pelas tesouras, sobre o peso dos perfis do molde
+    kg_molde = sum(barras[i]["sec"]["kg_m"] * barras[i]["L"] for i in molde)
+    kg_alvo = float(P.get("movel_peso_total_kg") or 0.0) / N if P.get("movel_peso_total_kg") else kg_molde
+    fator = kg_alvo / kg_molde if kg_molde > 0 else 1.0
+    tesouras = []
+    for k, t in enumerate(posicoes):
+        dt = (t - t0) * np.array([n[0], n[1], 0.0])
+        mapa = {}
+        for no in nos_molde:
+            if no in apoio:
+                mapa[no] = no_na_viga(nos[no] + dt)
+            else:
+                mapa[no] = len(lista_nos)
+                lista_nos.append(nos[no] + dt)
+        g = "movel%02d" % (k + 1)
+        for i in molde:
+            br = barras[i]
+            novas_barras.append(dict(br, a=mapa[br["a"]], b=mapa[br["b"]], grupo=g, soltos=[], pp_fator=fator,
+                                     ids=["%s#%d" % (br["ids"][0] if br["ids"] else "t", k)], marca=br.get("marca")))
+        # os dois lados: o apoio e o topo do montante externo (o nó mais alto em cima do apoio)
+        lados = []
+        for ap in apoio:
+            pa = nos[ap]
+            cima = [no for no in nos_molde if no != ap and float(np.linalg.norm((nos[no] - pa)[:2])) < 0.35]
+            topo = max(cima, key=lambda no: nos[no][2]) if cima else None
+            if topo is not None:
+                lados.append((mapa[topo], mapa[ap]))
+        tesouras.append({"grupo": g, "t": t, "lados": lados})
+    # a sanfona: o X entre tesouras vizinhas em cada plano lateral
+    sec_s = _secao(P.get("perfil_sanfona") or "TQ 50×50×2,0", False, cache)
+    nos_arr = np.array(lista_nos)
+    ns = 0
+    if sec_s is not None:
+        for t1, t2 in zip(tesouras, tesouras[1:]):
+            for (top1, bot1), (top2, bot2) in zip(t1["lados"], t2["lados"]):
+                for a, b in ((top1, bot2), (bot1, top2)):
+                    A, B = nos_arr[a], nos_arr[b]
+                    L = float(np.linalg.norm(B - A))
+                    if L < 1e-3:
+                        continue
+                    novas_barras.append({"a": int(a), "b": int(b), "L": L, "papel": "contraventamento", "papel_trelica": None,
+                                         "elemento": "sanfona", "grupo": "sanfona", "marca": None, "perfil": P.get("perfil_sanfona"),
+                                         "ids": [], "sec": sec_s, "R": _eixos(A, B, 0.0), "soltos": [4, 5, 10, 11]})
+                    ns += 1
+    altura_aba = float(np.mean([nos_arr[top][2] - nos_arr[bot][2] for t_ in tesouras for top, bot in t_["lados"]])) if tesouras else 0.0
+    info = {"configuracao": conf, "n": N, "comprimento_m": round(Lc, 3), "passo_m": round(Lc / N, 4), "peso_tesoura_kg": round(kg_alvo, 1),
+            "peso_perfis_molde_kg": round(kg_molde, 1), "fator_peso": round(fator, 4), "sanfona_barras": ns,
+            "altura_aba_m": round(altura_aba, 3), "tesouras": tesouras, "u": u.tolist(), "n_dir": n.tolist(),
+            "lancadas_fora": len(grupos)}
+    avisos.append(("cobertura retrátil, situação %s: %d tesouras (molde %s) a cada %.3f m em %.2f m; peso de cada %.1f kg "
+                   "(%.0f kg ÷ %d; os perfis do molde pesam %.1f kg); sanfona com %d braços %s; as %d tesouras lançadas no "
+                   "modelo ficaram fora (a cobertura é do fabricante)")
+                  % (conf, N, barras[molde[0]].get("marca") or "", Lc / N, Lc, kg_alvo, float(P.get("movel_peso_total_kg") or 0), N,
+                     kg_molde, ns, P.get("perfil_sanfona"), len(grupos)))
+    return nos_arr, novas_barras, info
 
 
 def _travamento_hipotese(nos: np.ndarray, barras: List[dict], P: dict, cache: dict, avisos: List[str]) -> List[dict]:
@@ -466,7 +620,22 @@ def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict
                 nn = _unit(up - (up @ d) * d)                 # normal ao trecho, para cima
                 F = -cp * q * Ls * w * nn                    # cp positivo empurra para baixo
                 f[i] = F / 2.0
-            casos["V%s%s" % (nome_c, rot)] = {"dist": {}, "nodal": f, "descricao": "vento perpendicular à geratriz, carregamento %s, %s"
+            mv = M.get("movel")
+            fn: Dict[int, np.ndarray] = {}
+            if mv and mv.get("altura_aba_m", 0) > 0:
+                # as abas de lona nas bordas (NBR 6123, 7.2.5.1): 1,3·q·Ae a barlavento e 0,6·q·Ae a sotavento, as duas no
+                # sentido do vento; cada tesoura recebe a faixa dela (meio passo de cada lado), metade no topo e metade no apoio
+                dirv = np.array([u[0] * sentido, u[1] * sentido, 0.0])
+                passo = mv["comprimento_m"] / max(1, mv["n"])
+                for t_ in mv["tesouras"]:
+                    for top, bot in t_["lados"]:
+                        pa = nos[bot]
+                        barl = (float(pa[:2] @ u) - smid) * sentido < 0
+                        Ae = (nos[top][2] - nos[bot][2]) * passo
+                        Fa = (1.3 if barl else 0.6) * q * Ae * dirv
+                        for no_ in (top, bot):
+                            fn[no_] = fn.get(no_, np.zeros(3)) + Fa / 2.0
+            casos["V%s%s" % (nome_c, rot)] = {"dist": {}, "nos": fn, "nodal": f, "descricao": "vento perpendicular à geratriz, carregamento %s, %s"
                                               % (nome_c, "de um lado" if sentido > 0 else "do outro lado"),
                                               "cpb": cpb, "cps": cps, "sentido": [float(v) for v in u * sentido]}
     # atrito no sentido da geratriz (7.2.2): F = 0,05 q a b, distribuída pelas áreas
@@ -489,7 +658,7 @@ def cargas(M: dict) -> Tuple[Dict[str, dict], dict, List[str]]:
     avisos: List[str] = []
     casos: Dict[str, dict] = {}
     # peso próprio: distribuído na barra
-    pp = {i: np.array([0.0, 0.0, -br["sec"]["kg_m"] * G_GRAV]) for i, br in enumerate(barras)}
+    pp = {i: np.array([0.0, 0.0, -br["sec"]["kg_m"] * float(br.get("pp_fator", 1.0)) * G_GRAV]) for i, br in enumerate(barras)}
     casos["PP"] = {"dist": pp, "nodal": {}, "descricao": "peso próprio da estrutura (pelo perfil)"}
     cob = _tesouras_e_cobertura(M)
     info: dict = {}
@@ -502,7 +671,8 @@ def cargas(M: dict) -> Tuple[Dict[str, dict], dict, List[str]]:
             cp[i] = np.array([0.0, 0.0, -g_cob * Ls * w / 2.0])
             sc[i] = np.array([0.0, 0.0, -float(P["sobrecarga"]) * Lh * w / 2.0])
         casos["CP"] = {"dist": {}, "nodal": cp, "descricao": "telha e permanentes da cobertura (%.2f kN/m²)" % g_cob}
-        casos["SC"] = {"dist": {}, "nodal": sc, "descricao": "sobrecarga de cobertura (%.2f kN/m², projeção horizontal)" % float(P["sobrecarga"])}
+        if not (M.get("movel") and M["movel"]["configuracao"] != "aberta"):
+            casos["SC"] = {"dist": {}, "nodal": sc, "descricao": "sobrecarga de cobertura (%.2f kN/m², projeção horizontal)" % float(P["sobrecarga"])}
         area = sum(Lh * w for (Ls, Lh, w) in cob["trechos"].values())
         info["cobertura"] = {"area_m2": round(area, 1), "larguras_m": sorted({round(v, 3) for v in cob["larguras"].values()}),
                              "trelicas": len(cob["planos"])}
@@ -592,12 +762,14 @@ def resolver(M: dict, casos: Dict[str, dict]) -> dict:
             if np.any(f0c[c]):
                 F[dofs, c] -= T.T @ f0c[c]
         elem.append((k, kc, T, dofs, f0, f0c, w_loc, rec))
-    # cargas nodais (por barra: a força em cada ponta)
+    # cargas nodais (por barra: a força em cada ponta) e as diretas em nós
     for c, nome in enumerate(nomes):
         for i, Fp in casos[nome]["nodal"].items():
             br = barras[i]
             for no in (br["a"], br["b"]):
                 F[6 * no:6 * no + 3, c] += Fp
+        for no, Fp in (casos[nome].get("nos") or {}).items():
+            F[6 * no:6 * no + 3, c] += Fp
     K = coo_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))), shape=(ndof, ndof)).tocsr()
     # apoios
     fixos = set()
@@ -607,7 +779,9 @@ def resolver(M: dict, casos: Dict[str, dict]) -> dict:
     # graus sem rigidez (nó só de barras rotuladas): presos, com aviso
     diag = K.diagonal()
     escala = float(np.max(np.abs(diag))) if len(diag) else 1.0
+    com_barra = {br["a"] for br in barras} | {br["b"] for br in barras}
     soltos = [d for d in range(ndof) if abs(diag[d]) < 1e-9 * escala and d not in fixos]
+    soltos_reais = [d for d in soltos if d // 6 in com_barra]
     fixos.update(soltos)
     livres = np.array([d for d in range(ndof) if d not in fixos], int)
     Kff = K[livres][:, livres].tocsc()
@@ -638,7 +812,7 @@ def resolver(M: dict, casos: Dict[str, dict]) -> dict:
             pontas[i] = (k @ ul.T).T + f0
         wloc[i] = w_loc
     return {"casos": nomes, "U": U, "reacoes": reac, "pontas": pontas, "w": wloc, "instavel": instavel,
-            "graus_presos": len(soltos)}
+            "graus_presos": len(soltos_reais)}
 
 
 # ------------------------------------------------------------------ esforços ao longo da barra e tensões
@@ -708,6 +882,51 @@ def resultados(M: dict, casos: Dict[str, dict], sol: dict, combs: Dict[str, dict
 # ------------------------------------------------------------------ o cálculo inteiro
 
 def calcular(doc, par: Optional[dict] = None) -> dict:
+    """a análise; com a cobertura retrátil, as duas situações (aberta e retraída) e a envoltória das reações das duas"""
+    P = dict(PARAMETROS_PADRAO, **(par or {}))
+    if not P.get("cobertura_movel"):
+        r = _calcular_situacao(doc, P)
+        r["reacoes_envoltoria"] = envoltoria_das_reacoes({"": r})
+        return r
+    r_a = _calcular_situacao(doc, dict(P, configuracao="aberta"))
+    r_r = _calcular_situacao(doc, dict(P, configuracao="retraida"))
+    r_a["situacao"] = "aberta"
+    r_r["situacao"] = "retraida"
+    r_a["outras_situacoes"] = {"retraida": r_r}
+    r_a["reacoes_envoltoria"] = envoltoria_das_reacoes({"aberta": r_a, "retraida": r_r})
+    return r_a
+
+
+def envoltoria_das_reacoes(sits: Dict[str, dict]) -> List[dict]:
+    """por base (a chave x,y): Fz máx e mín, H e M máx nas combinações últimas das situações, com onde cada um acontece"""
+    por: Dict[str, dict] = {}
+    for nome, r in sits.items():
+        elu = [c for c, cb in r["combinacoes"].items() if cb["tipo"] == "ELU"]
+        for ap in r["apoios"]:
+            k = ap["chave"]
+            e = por.setdefault(k, {"chave": k, "tipo": ap["tipo"], "Fz_max": [-1e18, ""], "Fz_min": [1e18, ""], "H_max": [0.0, ""],
+                                    "M_max": [0.0, ""], "concomitantes": {}})
+            for c in elu:
+                rr = r["por_comb"][c]["reacoes"].get(str(ap["no"]))
+                if rr is None:
+                    continue
+                onde = "%s · %s" % (nome, c)
+                H, Mm = math.hypot(rr[0], rr[1]), math.hypot(rr[3], rr[4])
+                if rr[2] > e["Fz_max"][0]:
+                    e["Fz_max"] = [rr[2], onde]; e["concomitantes"]["Fz_max"] = [round(v, 2) for v in rr]
+                if rr[2] < e["Fz_min"][0]:
+                    e["Fz_min"] = [rr[2], onde]; e["concomitantes"]["Fz_min"] = [round(v, 2) for v in rr]
+                if H > e["H_max"][0]:
+                    e["H_max"] = [H, onde]; e["concomitantes"]["H_max"] = [round(v, 2) for v in rr]
+                if Mm > e["M_max"][0]:
+                    e["M_max"] = [Mm, onde]; e["concomitantes"]["M_max"] = [round(v, 2) for v in rr]
+    for e in por.values():
+        for k in ("Fz_max", "Fz_min", "H_max", "M_max"):
+            e[k][0] = round(e[k][0], 2)
+    return sorted(por.values(), key=lambda e: tuple(int(v) for v in e["chave"].split(",")))
+
+
+def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
     """modelo → cargas → combinações → resolver → resultados, no formato que a tela de análise lê (JSON)"""
     M = montar(doc, par)
     casos, info, av_c = cargas(M)
@@ -725,11 +944,12 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
     # equilíbrio de cada caso: soma das cargas + soma das reações
     equil = {}
     for c, nome in enumerate(nomes):
-        Fz = sum(float(v[2]) * 2 for v in casos[nome]["nodal"].values()) + \
+        diretas = list((casos[nome].get("nos") or {}).values())
+        Fz = sum(float(v[2]) for v in diretas) + sum(float(v[2]) * 2 for v in casos[nome]["nodal"].values()) + \
             sum(float(w[2]) * barras[i]["L"] for i, w in casos[nome]["dist"].items())
-        Fx = sum(float(v[0]) * 2 for v in casos[nome]["nodal"].values()) + \
+        Fx = sum(float(v[0]) for v in diretas) + sum(float(v[0]) * 2 for v in casos[nome]["nodal"].values()) + \
             sum(float(w[0]) * barras[i]["L"] for i, w in casos[nome]["dist"].items())
-        Fy = sum(float(v[1]) * 2 for v in casos[nome]["nodal"].values()) + \
+        Fy = sum(float(v[1]) for v in diretas) + sum(float(v[1]) * 2 for v in casos[nome]["nodal"].values()) + \
             sum(float(w[1]) * barras[i]["L"] for i, w in casos[nome]["dist"].items())
         Rz = sum(float(r[2, c]) for r in (np.array(sol["reacoes"][n]) for n in sol["reacoes"]))
         Rx = sum(float(r[0, c]) for r in (np.array(sol["reacoes"][n]) for n in sol["reacoes"]))
@@ -749,21 +969,25 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
                    for br in barras],
         "casos": {nome: {"descricao": casos[nome].get("descricao", nome),
                          "nodal": {str(i): np.round(v, 4).tolist() for i, v in casos[nome]["nodal"].items()},
+                         "nos": {str(i): np.round(v, 4).tolist() for i, v in (casos[nome].get("nos") or {}).items()},
                          "dist": {str(i): np.round(v, 4).tolist() for i, v in casos[nome]["dist"].items()}}
                   for nome in nomes},
         # por barra e caso: as forças da ponta a (local) e a carga distribuída local — o diagrama de qualquer combinação
-        "pontas": np.round(sol["pontas"][:, :, :6], 4).tolist(),
-        "w_local": np.round(sol["w"], 5).tolist(),
+        "pontas": np.round(sol["pontas"][:, :, :6], 3).tolist(),
+        "w_local": np.round(sol["w"], 4).tolist(),
         "combinacoes": combinacoes_json(combinacoes(nomes)),
-        "por_comb": {c: {"desl_mm": v["desl_mm"].tolist(),
-                         "reacoes": {str(n): np.round(r, 3).tolist() for n, r in v["reacoes"].items()},
-                         "barras": v["barras"]} for c, v in res["por_comb"].items()},
+        # por barra, compacto: [N mín, N máx, V, M, σ, posição do σ máx (0–1)]
+        "por_comb": {c: {"desl_mm": np.round(v["desl_mm"], 1).tolist(),
+                         "reacoes": {str(n): np.round(r, 2).tolist() for n, r in v["reacoes"].items()},
+                         "barras": [[b["N"][0], b["N"][1], b["V"], b["M"], b["sigma"], b["x"]] for b in v["barras"]]}
+                     for c, v in res["por_comb"].items()},
         "envoltoria": res["envoltoria"],
         "reacoes_casos": {str(n): np.round(np.array(r).T, 3).tolist() for n, r in sol["reacoes"].items()},
         "equilibrio": equil,
         "info": info,
         "avisos": avisos,
         "instavel": sol["instavel"],
+        "movel": ({k: v for k, v in M["movel"].items() if k != "tesouras"} if M.get("movel") else None),
     }
     return saida
 

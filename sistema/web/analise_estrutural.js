@@ -34,8 +34,9 @@ function el(tag, attrs = {}, ...filhos) {
 }
 
 // ------------------------------------------------------------------ estado
-let D = null;                  // o resultado do servidor
-let estado = { modo: 'tensoes', caso: null, comb: 'env', esforco: 'Mz', escala: 1, escolhida: null };
+let D = null;                  // o resultado da situação à vista
+let RAIZ = null;               // o resultado do servidor (com a cobertura retrátil, a aberta + outras_situacoes)
+let estado = { modo: 'tensoes', caso: null, comb: 'env', esforco: 'Mz', escala: 1, escolhida: null, situacao: 'aberta' };
 try { Object.assign(estado, JSON.parse(localStorage.getItem('ae.estado') || '{}'), { escolhida: null }); } catch (e) { /* */ }
 const guardar = () => { try { localStorage.setItem('ae.estado', JSON.stringify({ ...estado, escolhida: null })); } catch (e) { /* */ } };
 
@@ -152,7 +153,7 @@ function valorDaBarra(i) {
   if (estado.modo === 'tensoes') {
     const fy = D.parametros.fy_mpa || 345;
     if (estado.comb === 'env') return D.envoltoria[i].sigma / fy;
-    return (D.por_comb[estado.comb] ? D.por_comb[estado.comb].barras[i].sigma : 0) / fy;
+    return (D.por_comb[estado.comb] ? D.por_comb[estado.comb].barras[i][4] : 0) / fy;
   }
   return null;
 }
@@ -227,6 +228,7 @@ function setasCargas() {
     const b = D.barras[+i];
     for (const n of [b.a, b.b]) { const v = porNo.get(n) || [0, 0, 0]; porNo.set(n, [v[0] + F[0], v[1] + F[1], v[2] + F[2]]); }
   }
+  for (const [n, F] of Object.entries(caso.nos || {})) { const v = porNo.get(+n) || [0, 0, 0]; porNo.set(+n, [v[0] + F[0], v[1] + F[1], v[2] + F[2]]); }
   let max = 1e-9;
   for (const v of porNo.values()) max = Math.max(max, Math.hypot(...v));
   const L = raio * 0.08 * estado.escala;
@@ -395,6 +397,13 @@ const PREMISSAS = [
   ['s1', 'S1 (topográfico)', 'num'],
   ['s3', 'S3 (estatístico)', 'num'],
   ['travamento_hipotese', 'Terças e contravento de hipótese', 'sel', [['auto', 'só sem terças no modelo'], ['sim', 'sempre'], ['nao', 'não']]],
+  ['cobertura_movel', 'Cobertura retrátil', 'sel', [['false', 'não'], ['true', 'sim (aberta e retraída)']]],
+  ['movel_n', '  nº de tesouras', 'num'],
+  ['movel_comprimento_aberta', '  comprimento aberta (m)', 'num'],
+  ['movel_comprimento_retraida', '  comprimento retraída (m)', 'num'],
+  ['movel_lado_retraida', '  pilha na ponta', 'sel', [['y_menor', 'de baixo na planta (Y menor)'], ['y_maior', 'de cima na planta (Y maior)']]],
+  ['movel_peso_total_kg', '  peso total do fabricante (kg)', 'num'],
+  ['perfil_sanfona', '  braço da sanfona (perfil)', 'txt'],
   ['fy_mpa', 'fy para o mapa (MPa)', 'num'],
 ];
 function montarPremissas(par) {
@@ -403,6 +412,7 @@ function montarPremissas(par) {
     let inp;
     const v = par[k];
     if (tipo === 'sel') inp = el('select', { 'data-k': k }, ...ops.map(([val, t]) => el('option', { value: val, texto: t, selected: String(v) === val ? 'selected' : undefined })));
+    else if (tipo === 'txt') inp = el('input', { 'data-k': k, 'data-txt': '1', type: 'text', value: v || '' });
     else inp = el('input', { 'data-k': k, type: 'text', value: v === null || v === undefined ? '' : String(v).replace('.', ',') });
     box.append(el('label', { class: 'linha' }, rot, inp));
   }
@@ -413,6 +423,7 @@ function lerPremissas() {
   for (const inp of document.querySelectorAll('#premissas [data-k]')) {
     const k = inp.dataset.k, v = inp.value;
     if (v === 'true' || v === 'false') p[k] = v === 'true';
+    else if (inp.tagName === 'INPUT' && inp.dataset.txt) p[k] = v.trim();
     else if (inp.tagName === 'INPUT') { const n = parseFloat(v.replace(',', '.')); if (isFinite(n)) p[k] = n; }
     else p[k] = v;
   }
@@ -432,6 +443,12 @@ function montarControles() {
   };
   const linha = (rot, inp) => C.append(el('label', { class: 'linha', style: 'grid-template-columns:110px 1fr' }, rot, inp));
   const m = estado.modo;
+  if (RAIZ && RAIZ.outras_situacoes) {
+    const sits = ['aberta', ...Object.keys(RAIZ.outras_situacoes)];
+    const ss = el('select', {}, ...sits.map(x => el('option', { value: x, texto: x === 'aberta' ? 'cobertura aberta' : x === 'retraida' ? 'cobertura retraída' : x, selected: estado.situacao === x ? 'selected' : undefined })));
+    ss.onchange = () => { estado.situacao = ss.value; guardar(); trocarSituacao(); };
+    linha('Situação', ss);
+  }
   if (m === 'cargas') {
     const casos = Object.keys(D.casos);
     if (!casos.includes(estado.caso)) estado.caso = casos[0];
@@ -487,6 +504,18 @@ function focar(i) {
 
 function painelReacoes() {
   const R = $('#reacoes');
+  if (RAIZ && RAIZ.reacoes_envoltoria) {
+    const t = el('table', {}, el('tr', {}, el('th', { texto: 'base (x, y m)' }), el('th', { texto: 'Fz máx' }), el('th', { texto: 'Fz mín' }), el('th', { texto: 'H máx' }), el('th', { texto: 'M máx' })));
+    for (const e of RAIZ.reacoes_envoltoria) {
+      const [x, y] = e.chave.split(',').map(v => (+v / 1000).toFixed(2));
+      t.append(el('tr', { title: `Fz máx: ${e.Fz_max[1]}\nFz mín: ${e.Fz_min[1]}\nH máx: ${e.H_max[1]}\nM máx: ${e.M_max[1]}` },
+        el('td', { texto: `${x}, ${y} ${e.tipo === 'engastada' ? '▪' : '▲'}` }), el('td', { texto: nf(e.Fz_max[0], 1) }),
+        el('td', { html: e.Fz_min[0] < 0 ? `<b style="color:#c0392b">${nf(e.Fz_min[0], 1)}</b>` : nf(e.Fz_min[0], 1) }),
+        el('td', { texto: nf(e.H_max[0], 1) }), el('td', { texto: nf(e.M_max[0], 1) })));
+    }
+    R.replaceChildren(el('div', { class: 'sub', texto: `Envoltória das combinações últimas${RAIZ.outras_situacoes ? ' nas duas situações (aberta e retraída)' : ''} — kN e kN·m. Fz positivo comprime a base; negativo (vermelho) arranca: é o que o chumbador recebe. Passe o mouse para ver a combinação de cada máximo.` }), t);
+    return;
+  }
   const comb = estado.comb === 'env' ? primeiraELU() : estado.comb;
   const elus = Object.keys(D.combinacoes).filter(c => D.combinacoes[c].tipo === 'ELU');
   const t = el('table', {}, el('tr', {}, el('th', { texto: 'apoio (x,y m)' }), el('th', { texto: 'Fz máx' }), el('th', { texto: 'Fz mín' }), el('th', { texto: 'H máx' }), el('th', { texto: 'M máx' })));
@@ -509,6 +538,8 @@ function painelVento() {
   const V = $('#vento'), i = D.info || {};
   const v = i.vento, c = i.cobertura;
   const linhas = [];
+  const mv = D.movel;
+  if (mv) linhas.push(`<b>Cobertura retrátil — ${mv.configuracao === 'aberta' ? 'aberta' : 'retraída'}</b>: ${mv.n} tesouras a cada ${nf(mv.passo_m, 3)} m em ${nf(mv.comprimento_m, 2)} m; ${nf(mv.peso_tesoura_kg, 1)} kg cada (peso do fabricante ÷ ${mv.n}); sanfona com ${mv.sanfona_barras} braços; abas laterais de ${nf(mv.altura_aba_m, 2)} m (NBR 6123, 7.2.5.1: 1,3·q·A a barlavento, 0,6·q·A a sotavento).`);
   if (c) linhas.push(`Cobertura: ${nf(c.area_m2, 1)} m² em ${c.trelicas} tesouras; larguras de influência ${c.larguras_m.map(x => nf(x, 2)).join(' · ')} m.`);
   if (v) {
     linhas.push(`Vk = ${nf(v.Vk, 1)} m/s (S2 = ${nf(v.S2, 3)}, classe ${v.classe}, z = ${nf(v.z, 1)} m) · q = <b>${nf(v.q_kN_m2, 3)} kN/m²</b>`);
@@ -540,10 +571,20 @@ function cabecalho() {
   $('#btn-voltar').href = `/editor?projeto=${encodeURIComponent(PROJETO)}`;
 }
 
+function trocarSituacao() {
+  D = (estado.situacao !== 'aberta' && RAIZ.outras_situacoes && RAIZ.outras_situacoes[estado.situacao]) || RAIZ;
+  if (!D.combinacoes[estado.comb] && estado.comb !== 'env') estado.comb = 'env';
+  estado.escolhida = null;
+  montarControles(); painelRanking(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
+  desenhar();
+}
+
 function aplicar(dados) {
-  D = dados;
+  RAIZ = dados;
+  if (!dados.outras_situacoes) estado.situacao = 'aberta';
+  D = (estado.situacao !== 'aberta' && dados.outras_situacoes && dados.outras_situacoes[estado.situacao]) || dados;
   cabecalho();
-  montarPremissas(D.parametros || {});
+  montarPremissas(RAIZ.parametros || {});
   if (D.vazio) {
     $('#vazio').hidden = false; $('#vazio').innerHTML = `<div><b>${D.vazio}</b><br>Confira as premissas e clique em <b>Calcular</b>.</div>`;
     $('#det-premissas').open = true;
