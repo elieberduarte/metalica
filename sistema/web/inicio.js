@@ -73,6 +73,7 @@ function alternarTema() {
 /* ------------------------------------------------------------------ lista */
 
 let projetos = [];
+let listaChegou = false;          // o "Nenhum projeto ainda" só depois da lista chegar do servidor
 let janelaPropria = false;
 let maquinaLocal = '';
 
@@ -221,7 +222,7 @@ function desenhar() {
     det.append(el('div', { class: 'lista-projetos' }, ...guardados.map(cartao)));
     lista.append(det);
   }
-  $('#vazio').hidden = projetos.length > 0;
+  $('#vazio').hidden = !listaChegou || projetos.length > 0;
   $('.gerenciador-cabeca').hidden = projetos.length === 0;
   const nAtivos = projetos.filter(p => !p.arquivado).length;
   const nArq = projetos.length - nAtivos;
@@ -232,11 +233,19 @@ function desenhar() {
 }
 
 async function carregar() {
-  try {
-    projetos = await api('/api/projetos');
-  } catch (e) {
-    projetos = [];
-    recado('Não foi possível listar os projetos', e.message, 'erro');
+  // o servidor pode estar reiniciando (no desenvolvimento, a cada .py alterado): espera ele voltar em vez de mostrar
+  // "Nenhum projeto ainda" — a lista vazia parecia que os projetos tinham sumido (07/10)
+  for (let i = 0; ; i++) {
+    try { projetos = await api('/api/projetos'); listaChegou = true; break; } catch (e) {
+      $('#vazio').hidden = true;
+      if (i >= 40) {
+        $('#lista').replaceChildren(el('p', { class: 'nota' }, `Não foi possível listar os projetos (${e.message}). Os projetos continuam na pasta. `,
+          el('button', { type: 'button', onclick: () => carregar() }, 'Tentar de novo')));
+        return;
+      }
+      $('#lista').replaceChildren(el('p', { class: 'nota', texto: 'Esperando o programa responder (ele pode estar reiniciando)…' }));
+      await new Promise(r => setTimeout(r, 1500));
+    }
   }
   desenhar();
 }
@@ -519,15 +528,16 @@ async function iniciar() {
   // voltar de outra tela (botão Voltar do navegador) traz a página do cache: recarrega a lista
   window.addEventListener('pageshow', (ev) => { if (ev.persisted) { carregando(false); carregar(); } });
 
+  await carregar();                  // primeiro a lista: ela espera o servidor, se ele estiver reiniciando
   try {
     const v = await api('/api/versao');
     janelaPropria = !!v.janela;
     maquinaLocal = v.maquina || '';
+    if (maquinaLocal) desenhar();    // os cartões "aberto em outra máquina" dependem dela
     $('#pasta-dados').textContent = v.dados || '—';
     $('#pe').textContent = `${v.programa} ${v.versao} · núcleo ${String(v.nucleo || '').slice(0, 12)} · ` +
       'cada projeto é uma pasta com arquivos comuns (JSON, PDF, DXF, CSV, IFC): copie a pasta para fazer backup.';
   } catch (e) { /* sem versão: a tela funciona igual */ }
-  await carregar();
   verificarAtualizacao();
 }
 
