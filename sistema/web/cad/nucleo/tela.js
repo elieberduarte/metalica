@@ -435,14 +435,17 @@ export class Tela {
   static textoCota(c, k) {
     const g = Tela.geometriaCota(c, k);
     if (!g) return null;
-    const sg = g.desl >= 0 ? 1 : -1, seta = Math.min(2.5 * k, Math.max(1 * k, g.comp / 4));
+    // o fator de tamanho da cota (texto, ponta e afastamentos juntos): a cota feita sobre um desenho importado acompanha
+    // o tamanho das cotas dele (07/10); vazio = 1
+    const f = c.fator || 1;
+    const sg = g.desl >= 0 ? 1 : -1, seta = Math.min(2.5 * k * f, Math.max(1 * k * f, g.comp / 4));
     // sem texto escrito, a medida × a escala da cota (a cota feita na célula em 1:25 da prancha mostra a da peça)
     const txt = c.texto != null && c.texto !== '' ? String(c.texto) : formatarMm(valorCota(c) * (c.escala || 1), c.casas);
     const ang = Math.atan2(g.uy, g.ux);
     let angG = ang * 180 / Math.PI;
     const lado = (angG > -90 && angG <= 90) ? 1 : -1;
     if (lado < 0) angG += 180;
-    const h = c.altura * k, off = h * 0.55 * lado;
+    const h = c.altura * k * f, off = h * 0.55 * lado;
     const fora = g.comp < 3 * seta;
     if (c.texto_pos) return { pos: c.texto_pos, txt, h, angG, g, seta, fora, ang };
     let mx = (g.a1[0] + g.a2[0]) / 2, my = (g.a1[1] + g.a2[1]) / 2;
@@ -455,7 +458,8 @@ export class Tela {
     const g = Tela.geometriaCota(c, k);
     if (!g) return;
     const z = this.vp.z, T = (p) => this.paraTela(p);
-    const sg = g.desl >= 0 ? 1 : -1, ext = 2 * k, fol = 1.5 * k, seta = Math.min(2.5 * k, Math.max(1 * k, g.comp / 4));
+    const f = c.fator || 1;
+    const sg = g.desl >= 0 ? 1 : -1, ext = 2 * k * f, fol = 1.5 * k * f, seta = Math.min(2.5 * k * f, Math.max(1 * k * f, g.comp / 4));
     ctx.setLineDash([]);
     ctx.beginPath();
     for (const [p, a] of [[c.p1, g.a1], [c.p2, g.a2]]) {

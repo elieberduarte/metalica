@@ -82,6 +82,77 @@ export class ComandoSubstituir extends Comando {
   desfazer(doc) { doc.lote(() => { for (const a of this.antigas || []) { const { id, ...campos } = a; doc.alterar(id, campos); } }); }
 }
 
+/**
+ * Troca a escala do desenho (07/10). `modo`:
+ *  * 'importado' — o que veio de arquivo importado (atributos.origem) fica do mesmo tamanho no modelo: os campos "de
+ *    papel" dele (altura de texto, de cota e de chamada, afastamento da cota, espaçamento de hachura) são convertidos
+ *    pela razão das escalas; o que foi feito no CAD acompanha a escala nova. É o que acerta um desenho importado de
+ *    outra escala: a cota, o texto e o balão do eixo passam a ter o tamanho dos dele;
+ *  * 'tudo' — tudo o que é de papel acompanha a escala (como antes);
+ *  * 'nada' — tudo fica do tamanho que está; só o que se desenhar depois sai na escala nova.
+ * Nos modos em que o feito no CAD acompanha a escala, o balão do eixo (o círculo da malha, em mm do modelo) muda o raio
+ * e continua encostado na ponta do eixo, com o nome no centro.
+ */
+export class ComandoEscala extends Comando {
+  constructor(nova, modo = 'importado', rotulo) {
+    super(rotulo || `Escala 1:${nova}`);
+    this.nova = nova; this.modo = modo === true ? 'importado' : modo === false ? 'tudo' : modo; this.velha = null; this.antes = null;
+  }
+  aplicar(doc) {
+    doc.lote(() => {
+      if (this.velha === null) this.velha = doc.escala;
+      const r = this.velha / this.nova;
+      const guardar = !this.antes;
+      if (guardar) this.antes = {};
+      const mudar = (e, m) => {
+        if (!Object.keys(m).length) return;
+        if (guardar) { const g = this.antes[e.id] || {}; for (const k of Object.keys(m)) if (!(k in g)) g[k] = clonar(e[k]); this.antes[e.id] = g; }
+        doc.alterar(e.id, m);
+      };
+      const ents = [...doc.entidades.values()];
+      if (Math.abs(r - 1) > 1e-9) {
+        for (const e of ents) {
+          const importado = !!(e.atributos && e.atributos.origem);
+          const manter = this.modo === 'nada' || (this.modo === 'importado' && importado);
+          if (!manter) continue;
+          const m = {};
+          if ((e.tipo === 'texto' || e.tipo === 'chamada') && e.altura) m.altura = e.altura * r;
+          else if (e.tipo === 'cota') { m.altura = (e.altura || 2.5) * r; m.deslocamento = (e.deslocamento || 0) * r; }
+          else if (e.tipo === 'hachura' && e.espacamento) m.espacamento = e.espacamento * r;
+          mudar(e, m);
+        }
+        if (this.modo !== 'nada') {
+          // o balão do eixo: o raio na escala nova, encostado na mesma ponta do eixo; o nome vai junto
+          const eixos = ents.filter(e => e.tipo === 'linha' && e.atributos && e.atributos.malha && e.atributos.eixo != null);
+          const f = 1 / r;
+          for (const c of ents) {
+            if (c.tipo !== 'circulo' || !c.atributos || !c.atributos.bolinha) continue;
+            const ln = eixos.find(l => String(l.atributos.eixo) === String(c.atributos.eixo));
+            let novo = c.centro;
+            if (ln) {
+              const pa = Math.hypot(c.centro[0] - ln.a[0], c.centro[1] - ln.a[1]), pb = Math.hypot(c.centro[0] - ln.b[0], c.centro[1] - ln.b[1]);
+              const p = pa <= pb ? ln.a : ln.b;
+              novo = [p[0] + (c.centro[0] - p[0]) * f, p[1] + (c.centro[1] - p[1]) * f];
+            }
+            for (const t of ents) {
+              if (t.tipo === 'texto' && t.atributos && t.atributos.nome_eixo && String(t.atributos.eixo) === String(c.atributos.eixo)
+                  && Math.hypot(t.posicao[0] - c.centro[0], t.posicao[1] - c.centro[1]) <= c.raio) mudar(t, { posicao: novo });
+            }
+            mudar(c, { raio: c.raio * f, centro: novo });
+          }
+        }
+      }
+      doc.mudarEscala(this.nova);
+    });
+  }
+  desfazer(doc) {
+    doc.lote(() => {
+      for (const [id, g] of Object.entries(this.antes || {})) doc.alterar(id, g);
+      doc.mudarEscala(this.velha);
+    });
+  }
+}
+
 export class ComandoAparencia extends Comando {
   constructor(camada, depois, rotulo) {
     super(rotulo || `Camada ${camada}`);

@@ -5,7 +5,7 @@
 // zoom no cursor. Shift trava orto. Esc cancela; Enter e espaço confirmam/repetem.
 
 import { Desenho2D, clonar, valorCota, pontosDe, criar, segmentosDe, dist, maisProximoSeg } from './nucleo/desenho2d.js';
-import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar, ComandoComposto } from './nucleo/comandos.js';
+import { Pilha, ComandoRemover, ComandoAlterar, ComandoAparencia, ComandoAdicionar, ComandoComposto, ComandoEscala } from './nucleo/comandos.js';
 import { Tela, formatarMm } from './nucleo/tela.js';
 import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta } from './ferramentas.js';
@@ -209,6 +209,7 @@ class CAD {
       const link3d = $('#link-editor');
       if (link3d && this.projeto) link3d.href = this.urlDoEditor();       // o 3D sabe voltar a este desenho
       this.dica(`Desenho "${this.doc.nome}" aberto: ${numero(this.doc.tamanho)} objetos, escala 1:${this.doc.escala}.`);
+      this._sugerirEscalaDoImportado(null);       // o DXF importado antes, em outra escala (07/10)
     } catch (e) {
       // o desenho não veio: nada é gravado com o nome dele, senão a tela vazia (ou o que se
       // desenhasse nela) ia por cima do arquivo que existe
@@ -486,6 +487,7 @@ class CAD {
   }
 
   _aposMudanca({ acao }) {
+    if (this.el.escala && parseFloat(this.el.escala.value) !== this.doc.escala) this._refletirEscala();   // o Ctrl+Z da escala
     this.tela.pedirQuadro();
     this._podarSelecao();
     this._agendarPaineis('props', acao === 'aparencia' || acao === 'tudo' ? 'camadas' : null, acao === 'tudo' ? 'vistas' : null);
@@ -969,8 +971,42 @@ class CAD {
     $('#arquivo-projeto-2d').addEventListener('change', () => { const f = $('#arquivo-projeto-2d').files && $('#arquivo-projeto-2d').files[0]; $('#arquivo-projeto-2d').value = ''; this.projetoRecebido(f); });
     $('#btn-tema').addEventListener('click', () => this._alternarTema());
     this.el.nome.addEventListener('change', () => { this.doc.nome = this.el.nome.value.trim() || 'Desenho'; document.title = `${this.doc.nome} — Desenho 2D`; this._agendarAutosave(); });
-    this.el.escala.addEventListener('change', () => { this.doc.mudarEscala(parseFloat(this.el.escala.value) || 20); this.dica(`Escala 1:${this.doc.escala}: textos, cotas e hachuras redimensionados.`); });
+    this.el.escala.addEventListener('change', () => this._trocarEscala(parseFloat(this.el.escala.value) || 20));
   }
+  /** A troca de escala pergunta o que fazer com o que já está desenhado (07/10): manter o tamanho (o desenho importado
+   *  de outra escala fica como veio, e o que se desenhar depois sai na escala nova) ou redimensionar tudo, como antes. */
+  async _trocarEscala(nova, modo = null) {
+    const velha = this.doc.escala;
+    if (!nova || nova === velha) return;
+    const ents = [...this.doc.entidades.values()];
+    const temImportado = ents.some(e => e.atributos && e.atributos.origem);
+    if (modo === null && ents.length) {
+      const op = el('select', {},
+        ...(temImportado ? [el('option', { value: 'importado', texto: 'o importado fica como veio; o feito aqui acompanha a escala nova' })] : []),
+        el('option', { value: 'tudo', texto: 'textos, cotas, balões e hachuras acompanham a escala nova' }),
+        el('option', { value: 'nada', texto: 'tudo fica do tamanho que está; só o novo sai na escala nova' }));
+      const corpo = el('div', {}, el('div', { class: 'explica', texto: `De 1:${velha} para 1:${nova}. Num desenho importado de outra escala, a primeira opção deixa os textos e as cotas do arquivo como estão e faz as cotas, os textos e os balões dos eixos ficarem do tamanho deles.` }),
+        el('label', {}, 'O que já está desenhado', op));
+      if (await this.dialogo({ titulo: 'Trocar a escala', corpo, ok: 'Trocar' }) !== 'ok') { this._refletirEscala(); return; }
+      modo = op.value;
+    }
+    this.executar(new ComandoEscala(nova, modo || 'tudo'));
+    this._refletirEscala();
+    const ditos = { importado: ': o desenho importado ficou como veio; as cotas, os textos e os balões feitos aqui acompanharam a escala',
+                    tudo: ': textos, cotas, balões e hachuras redimensionados', nada: ': o que já estava desenhado manteve o tamanho; o novo sai na escala nova' };
+    this.dica(`Escala 1:${this.doc.escala}${ditos[modo || 'tudo']} (Ctrl+Z desfaz).`);
+  }
+
+  /** Depois de importar: se os textos do arquivo indicam outra escala, oferece ajustar a deste desenho a ela. */
+  _sugerirEscalaDoImportado(ids) {
+    const s = this.doc.escalaDosTextos(ids);
+    if (!s || Math.abs(Math.log(s.escala / this.doc.escala)) < Math.log(1.25)) return;
+    const n = String(s.escala).replace('.', ',');
+    const bt = el('button', { type: 'button', class: 'sec', texto: `Ajustar a escala para 1:${n}` });
+    bt.addEventListener('click', () => { const cx = bt.closest('.aviso'); if (cx) cx.remove(); this._trocarEscala(s.escala, 'importado'); });
+    this.aviso(el('span', {}, `Os textos do arquivo importado são de um desenho em ~1:${n} (texto de ${numero(s.altura_modelo, 0)} mm no modelo), e este desenho está em 1:${this.doc.escala}: as cotas, os textos e os balões novos sairiam ${numero(this.doc.escala / s.escala, 1)} vezes maiores que os dele. `, bt), 'atencao', 0);
+  }
+
   _fecharMenus() { for (const m of document.querySelectorAll('.menu.aberto')) m.classList.remove('aberto'); }
   _atualizarMenuEditar() {
     const m = $('#menu-editar');
@@ -1015,6 +1051,7 @@ class CAD {
       this.tela.enquadrar();
       const ig = Object.entries(r.resumo.por_tipo || {}).filter(([k]) => k.startsWith('ignorado')).map(([k, v]) => `${k.slice(9)} ×${v}`);
       this.aviso(`DXF importado: ${numero(r.resumo.entidades)} objetos, ${(r.resumo.camadas_novas || []).length} camada(s) nova(s), fator ${r.resumo.fator} mm/unidade.` + (ig.length ? ` Fora: ${ig.join(', ')}.` : ''), 'info', 12000);
+      this._sugerirEscalaDoImportado(novas.map(e => e.id));
       this.dica('DXF importado; Ctrl+Z desfaz.');
     } catch (e) { this.aviso(`Não foi possível importar: ${e.message}`, 'erro', 0); this.dica(''); }
   }

@@ -126,7 +126,7 @@ def _pontos_da_cota(c: Cota, k: float) -> List[Ponto2]:
     nx, ny = -dy / comp, dx / comp
     desl = c.deslocamento * k
     sg = 1.0 if desl >= 0 else -1.0
-    alem = desl + sg * (2.0 + c.altura + 1.0) * k          # a linha passa 2 mm; o número fica em cima
+    alem = desl + sg * (2.0 + c.altura + 1.0) * k * float(getattr(c, "fator", None) or 1.0)   # a linha passa 2 mm; o número em cima
     pts = [(x1 + nx * desl, y1 + ny * desl), (x2 + nx * desl, y2 + ny * desl),
            (x1 + nx * alem, y1 + ny * alem), (x2 + nx * alem, y2 + ny * alem)]
     if c.texto_pos:

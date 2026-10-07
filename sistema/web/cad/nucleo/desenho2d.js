@@ -26,6 +26,9 @@ export function novoId() {
 
 export const clonar = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
+/** As escalas usuais de desenho (1:n) — a sugestão pela altura dos textos importados vai para a mais próxima. */
+export const ESCALAS_USUAIS = [1, 2, 2.5, 5, 7.5, 10, 12.5, 15, 20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 1000];
+
 /** Cria uma entidade com os padrões do tipo. */
 export function criar(reg) {
   const base = { id: reg.id || novoId(), tipo: reg.tipo, camada: reg.camada, atributos: reg.atributos || {} };
@@ -38,7 +41,7 @@ export function criar(reg) {
       altura: reg.altura ?? 2.5, angulo: reg.angulo || 0, alinhamento: reg.alinhamento || 'esquerda', vertical: reg.vertical || 'base' };
     case 'cota': return { ...base, camada: base.camada || 'COTA', modo: reg.modo || 'alinhada', p1: reg.p1, p2: reg.p2,
       deslocamento: reg.deslocamento ?? 10, texto: reg.texto ?? null, altura: reg.altura ?? 2.5, texto_pos: reg.texto_pos ?? null,
-      terminador: reg.terminador ?? null, casas: reg.casas ?? null, escala: reg.escala ?? null };
+      terminador: reg.terminador ?? null, casas: reg.casas ?? null, escala: reg.escala ?? null, fator: reg.fator ?? null };
     case 'hachura': return { ...base, camada: base.camada || 'HACHURA', contornos: reg.contornos || [], padrao: reg.padrao || 'aco',
       angulo: reg.angulo ?? 45, espacamento: reg.espacamento ?? 2.5 };
     case 'chamada': return { ...base, camada: base.camada || 'TEXTO', alvo: reg.alvo, posicao: reg.posicao, texto: reg.texto || '', altura: reg.altura ?? 2.5 };
@@ -349,6 +352,24 @@ export class Desenho2D {
     this.escala = escala;
     this._grade = null;
     this.notificar([], 'aparencia');
+  }
+
+  /**
+   * A escala em que os textos do desenho foram feitos: a altura típica (a mediana) deles no modelo dividida pela altura
+   * padrão de texto (2,5 mm de papel), arredondada para uma escala usual. É o que diz em que escala veio um DXF
+   * importado — o texto de 31 mm no modelo é o de 2,5 mm de um desenho em 1:12,5 (07/10). `ids`: só essas entidades;
+   * null se há menos de três textos.
+   */
+  escalaDosTextos(ids = null, padrao = 2.5) {
+    const k = this.escala || 1, hs = [];
+    const lista = ids ? ids.map(id => this.entidades.get(id)).filter(Boolean) : this.entidades.values();
+    for (const e of lista) if (e.tipo === 'texto' && (e.texto || '').trim() && e.altura > 0) hs.push(e.altura * k);
+    if (hs.length < 3) return null;
+    hs.sort((a, b) => a - b);
+    const modelo = hs[Math.floor(hs.length / 2)];
+    const bruta = modelo / padrao;
+    const usual = ESCALAS_USUAIS.reduce((m, s) => (Math.abs(Math.log(s / bruta)) < Math.abs(Math.log(m / bruta)) ? s : m), ESCALAS_USUAIS[0]);
+    return { escala: usual, bruta, altura_modelo: modelo, textos: hs.length };
   }
 
   alterarCamada(nome, campos) {

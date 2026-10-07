@@ -350,12 +350,15 @@ def _dimensao(msp, c: Cota, k: float, at: dict, terminador: str = "traco"):
     desl = float(c.deslocamento or 0.0) * k
     base = (x1 + nx * desl, y1 + ny * desl)
     ang = 0.0 if c.modo == "h" else 90.0 if c.modo == "v" else math.degrees(math.atan2(dy, dx))
-    altura = float(c.altura or 2.5)
+    f = float(getattr(c, "fator", None) or 1.0)            # o fator de tamanho da cota (texto, ponta, afastamentos)
+    altura = float(c.altura or 2.5) * f
     h = altura * k
-    seta = min(2.5 * k, max(1.0 * k, comp / 4))            # mm do desenho
+    seta = min(2.5 * k * f, max(1.0 * k * f, comp / 4))    # mm do desenho
     override = {"dimtxt": altura, "dimasz": seta / k,
                 # o número a 0,55 da altura acima da linha, como na tela
                 "dimgap": 0.55 * altura}
+    if f != 1.0:
+        override.update(dimexe=2.0 * f, dimexo=1.5 * f)
     if c.escala and float(c.escala) != 1.0:
         override["dimlfac"] = float(c.escala)               # a escala da cota: o número é a medida da peça
     if terminador == "traco":

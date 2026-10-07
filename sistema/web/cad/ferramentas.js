@@ -5,8 +5,8 @@
 // Medida digitada (`onValor`): "1500", "1,5m", "150cm", "@30" (ângulo), e para
 // retângulo "2000;1000". Esc cancela, Enter/espaço confirma ou repete.
 
-import { criar, dist, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota } from './nucleo/desenho2d.js';
-import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto } from './nucleo/comandos.js';
+import { criar, dist, meio, transladar, transformar, clonar, pontosDe, segmentosDe, intersecaoSeg, maisProximoSeg, dentroDe, pontosCota } from './nucleo/desenho2d.js';
+import { ComandoAdicionar, ComandoRemover, ComandoSubstituir, ComandoComposto, ComandoAlterar } from './nucleo/comandos.js';
 import { acompanharMalha, eixosCopiados } from './nucleo/malha.js';
 
 export function paraMilimetros(texto) {
@@ -516,8 +516,27 @@ export class Chamada extends Ferramenta {
 export class Cota extends Ferramenta {
   static id = 'cota'; static nome = 'Cota'; static atalho = 'd'; static dica = 'Primeiro ponto da cota · o mouse escolhe: acima/abaixo horizontal, ao lado vertical, entre os pontos alinhada · H/V/A fixa · L volta ao automático';
   static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16V8M20 16V8M4 12h16"/><path d="M7 10l-3 2 3 2M17 10l3 2-3 2"/></svg>';
-  reiniciar() { super.reiniciar(); this.p1 = null; this.p2 = null; this.modo = this.modo || 'linear'; this.dica(`Primeiro ponto da cota · modo: ${Cota.NOMES[this.modo]} (L/H/V/A troca)`); }
+  reiniciar() { super.reiniciar(); this.p1 = null; this.p2 = null; this._f = undefined; this.modo = this.modo || 'linear'; this.dica(`Primeiro ponto da cota · modo: ${Cota.NOMES[this.modo]} (L/H/V/A troca) · tamanho: ${this.padrao ? 'padrão (P volta ao automático)' : 'pelo desenho em volta (P fixa o padrão)'}`); }
   static NOMES = { linear: 'linear', h: 'horizontal', v: 'vertical', alinhada: 'alinhada' };
+  /** O tamanho que a cota toma do desenho em volta (pedido do usuário, 07/10: "as cotas não se adaptam ao modelo
+   *  importado"): a altura típica (a mediana) dos textos e das cotas que estão perto, em mm de papel, dividida pela
+   *  altura padrão — o fator que vai na cota e multiplica o texto, a ponta e os afastamentos juntos. Sem pelo menos
+   *  três vizinhos, ou com a tecla P (padrão), 1. */
+  static fatorLocal(doc, p1, p2, padrao = 2.5) {
+    const k = doc.escala || 1, comp = dist(p1, p2);
+    const R = Math.max(1.5 * comp, 60 * k), m = meio(p1, p2);
+    const hs = [];
+    for (const e of doc.naRegiao([[m[0] - R, m[1] - R], [m[0] + R, m[1] + R]])) {
+      if (!e) continue;
+      if (e.tipo === 'texto' && (e.texto || '').trim() && e.altura > 0) hs.push(e.altura);
+      else if (e.tipo === 'cota' && e.altura > 0) hs.push(e.altura * (e.fator || 1));
+    }
+    if (hs.length < 3) return null;
+    hs.sort((a, b) => a - b);
+    const med = hs[Math.floor(hs.length / 2)];
+    const f = Math.round(Math.min(4, Math.max(0.1, med / padrao)) * 100) / 100;
+    return Math.abs(f - 1) < 0.05 ? null : f;
+  }
   /** No linear, a medida que a posição do mouse pede: fora da faixa dos pontos em y (acima ou
    *  abaixo) é a horizontal; fora da faixa em x (ao lado) é a vertical; nos dois, a mais afastada.
    *  Com o mouse entre os dois pontos (dentro da caixa deles) e os pontos fora de prumo e de nível,
@@ -546,12 +565,21 @@ export class Cota extends Ferramenta {
     const casas = ((this.doc.metadados || {}).estilo || {}).casas;            // as casas padrão do desenho (Estilos)
     // na prancha, a escala da célula em que a cota é feita: o número sai em mm da peça (pedido do usuário, 01/10)
     const escala = this.editor.escalaNoPonto ? this.editor.escalaNoPonto(p1) : null;
+    if (this._f === undefined) this._f = this.padrao ? null : Cota.fatorLocal(this.doc, p1, p2, this.editor.alturaTexto || 2.5);
+    const fator = this._f;
+    if (fator && Math.abs(desl) < 2 * fator) desl = desl < 0 ? -2 * fator : 2 * fator;
     return criar({ tipo: 'cota', camada: 'COTA', modo, p1, p2, deslocamento: desl, altura: this.editor.alturaTexto, casas: casas ?? null,
-                   ...(escala ? { escala } : {}) });
+                   ...(escala ? { escala } : {}), ...(fator ? { fator } : {}) });
   }
   onPonto(p) {
     if (!this.p1) { this.p1 = p; this.editor.snap.ultimo = p; this.dica('Segundo ponto'); return; }
-    if (!this.p2) { if (dist(p, this.p1) < 1e-6) return; this.p2 = p; this.editor.snap.ultimo = null; this.dica('Posição da linha de cota · entre os pontos: alinhada · acima ou abaixo: horizontal · ao lado: vertical (A/H/V fixa)'); return; }
+    if (!this.p2) {
+      if (dist(p, this.p1) < 1e-6) return;
+      this.p2 = p; this.editor.snap.ultimo = null; this._f = undefined;
+      this._cota(this.p1, this.p2, null);
+      this.dica(`Posição da linha de cota · entre os pontos: alinhada · acima ou abaixo: horizontal · ao lado: vertical (A/H/V fixa) · tamanho ${this._f ? `× ${String(this._f).replace('.', ',')} (pelo desenho em volta; P fixa o padrão)` : 'padrão'}`);
+      return;
+    }
     this.editor.executar(new ComandoAdicionar([this._cota(this.p1, this.p2, p)], 'Cota'));
     this.reiniciar();
   }
@@ -567,7 +595,48 @@ export class Cota extends Ferramenta {
       if (this.p2) this.onMover(this.editor.tela.cursor || this.p2);
       return true;
     }
+    if (k === 'p') {
+      this.padrao = !this.padrao; this._f = undefined;
+      this.dica(this.padrao ? 'Tamanho da cota: padrão (P volta a acompanhar o desenho em volta)' : 'Tamanho da cota: pelo desenho em volta (P fixa o padrão)');
+      if (this.p2) this.onMover(this.editor.tela.cursor || this.p2);
+      return true;
+    }
     return false;
+  }
+}
+
+/**
+ * Ajusta o tamanho das cotas que já existem ao desenho em volta delas (o mesmo critério da ferramenta Cota: a altura
+ * típica dos textos e cotas vizinhos): selecione as cotas antes ou clique em cada uma. Útil depois de importar um
+ * desenho feito em outra escala — as cotas novas já nascem no tamanho dele (07/10).
+ */
+export class AjustarCota extends Ferramenta {
+  static id = 'ajustar_cota'; static nome = 'Ajustar cotas ao desenho'; static grupo = 'edicao';
+  static dica = 'Clique numa cota (ou selecione várias antes): o texto, as pontas e os afastamentos tomam o tamanho do desenho em volta';
+  static icone = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 14V8M13 14V8M3 11h10"/><path d="M15 6l6 6M21 6v6h-6"/><path d="M16 18h5M18.5 15.5v5"/></svg>';
+  reiniciar() {
+    super.reiniciar();
+    const ids = [...this.editor.tela.selecao].filter(id => (this.doc.get(id) || {}).tipo === 'cota');
+    if (ids.length) this._aplicar(ids);
+    this.dica(this.constructor.dica);
+  }
+  _aplicar(ids) {
+    const mud = {};
+    for (const id of ids) {
+      const c = this.doc.get(id);
+      if (!c || c.tipo !== 'cota') continue;
+      const outros = { ...this.doc, naRegiao: (r) => this.doc.naRegiao(r).filter(e => e && e.id !== id), escala: this.doc.escala };
+      const f = Cota.fatorLocal(outros, c.p1, c.p2, c.altura || 2.5);
+      if ((f || null) !== (c.fator || null)) mud[id] = { fator: f };
+    }
+    const n = Object.keys(mud).length;
+    if (n) this.editor.executar(new ComandoAlterar(mud, `Ajustar ${n} cota(s) ao desenho`));
+    this.dica(n ? `${n} cota(s) ajustada(s) ao desenho em volta` : 'As cotas já estão no tamanho do desenho em volta');
+  }
+  onPonto(p, ev) {
+    const e = ev && ev.px ? this.editor.tela.sob(ev.px) : null;
+    if (e && e.tipo === 'cota') this._aplicar([e.id]);
+    else this.dica('Clique numa cota');
   }
 }
 
@@ -1714,6 +1783,6 @@ export class Corte extends Ferramenta {
   }
 }
 
-export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, Chamada, Corte, Hachura,
+export const FERRAMENTAS = [Selecionar, Linha, Polilinha, Retangulo, Circulo, ArcoTresPontos, Texto, Cota, AjustarCota, Chamada, Corte, Hachura,
   Mover, Copiar, Girar, Espelhar, Escalar, Esticar, Offset, Aparar, Estender, Concordar, Explodir, Juntar, MoverCota, CopiarPropriedades, Apagar, Medir];
 export const GRUPOS = [['navegacao', 'Nav'], ['desenho', 'Des'], ['edicao', 'Edi'], ['medicao', 'Med']];

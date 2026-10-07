@@ -156,6 +156,9 @@ class Cota(Entidade2D):
     # quanto vale cada mm desenhado: a cota feita na prancha, numa célula em 1:25, mostra a medida da peça (25 × o
     # desenhado) — pedido do usuário, 01/10: "criar alguma opção para escolher a escala da cota"; None = 1
     escala: Optional[float] = None
+    # o fator de tamanho: texto, ponta e afastamentos juntos × fator — a cota feita sobre um desenho importado acompanha o
+    # tamanho das cotas dele (07/10, web/cad/ferramentas.js Cota.fatorLocal); None = 1
+    fator: Optional[float] = None
 
     def pontos(self):
         return [self.p1, self.p2]
@@ -388,8 +391,9 @@ def _cota_dxf(d, c: Cota, k: float, camada: str, terminador: str = TERMINADOR_PA
     nx, ny = -uy, ux
     desl = c.deslocamento * k
     sg = 1.0 if desl >= 0 else -1.0
-    h = c.altura * k
-    ext, fol, seta = 2.0 * k, 1.5 * k, 2.5 * k
+    f = float(c.fator or 1.0)
+    h = c.altura * k * f
+    ext, fol, seta = 2.0 * k * f, 1.5 * k * f, 2.5 * k * f
     a1 = (x1 + nx * desl, y1 + ny * desl)
     a2 = (x2 + nx * desl, y2 + ny * desl)
     # linhas de chamada saem dos pontos originais (em cota h/v, dos pontos projetados)
