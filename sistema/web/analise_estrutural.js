@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
+import { guia } from '/analise_guia.js';
 import { LineSegments2 } from 'three/addons/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/LineMaterial.js';
@@ -36,7 +37,7 @@ function el(tag, attrs = {}, ...filhos) {
 // ------------------------------------------------------------------ estado
 let D = null;                  // o resultado da situação à vista
 let RAIZ = null;               // o resultado do servidor (com a cobertura retrátil, a aberta + outras_situacoes)
-let estado = { modo: 'tensoes', caso: null, comb: 'env', esforco: 'Mz', escala: 1, escolhida: null, situacao: 'aberta' };
+let estado = { modo: 'tensoes', caso: null, comb: 'env', esforco: 'Mz', escala: 1, escolhida: null, situacao: 'aberta', guia: true };
 try { Object.assign(estado, JSON.parse(localStorage.getItem('ae.estado') || '{}'), { escolhida: null }); } catch (e) { /* */ }
 const guardar = () => { try { localStorage.setItem('ae.estado', JSON.stringify({ ...estado, escolhida: null })); } catch (e) { /* */ } };
 
@@ -158,7 +159,17 @@ function valorDaBarra(i) {
   return null;
 }
 
+// o quadro "Como ler" (web/analise_guia.js): acompanha o modo, a combinação e o caso
+function painelGuia() {
+  const g = $('#guia');
+  g.hidden = !estado.guia;
+  $('#btn-guia').classList.toggle('on', !!estado.guia);
+  if (estado.guia) g.innerHTML = guia(D, RAIZ, estado);
+}
+$('#btn-guia').addEventListener('click', () => { estado.guia = !estado.guia; guardar(); painelGuia(); });
+
 function desenhar() {
+  painelGuia();
   limpar();
   if (!D || D.vazio) { pedirQuadro(); return; }
   cena.background = new THREE.Color(corFundo());
