@@ -1003,6 +1003,11 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
                        "escolhido": g.get("fonte_kg_m") == "escolhido", "ifc": g.get("perfil") or "",
                        "m": float(g.get("comprimento_m") or 0.0), "barra_m": float(b.get("comprimento") or 0.0) / 1000.0,
                        "barras": int(b.get("quantidade") or 0), "aproveitamento": b.get("aproveitamento"), "emendas": int(b.get("emendas") or 0)})
+        # o peso de compra (07/10): cada barra comercial pelo kg/m do catálogo (o do similar ou o escolhido), e as barras todas
+        pf = perfis[-1]
+        kg_m_compra = float(g.get("kg_m_catalogo") or 0.0) or pf["kg_m"]
+        pf["kg_barra"] = kg_m_compra * pf["barra_m"]
+        pf["kg_compra"] = pf["kg_barra"] * pf["barras"]
     try:
         perda = float(str(dados.get("perda_chapas") or "").replace(",", ".").replace("%", "")) if dados.get("perda_chapas") else PERDA_CHAPAS
     except ValueError:
@@ -1426,16 +1431,19 @@ def _html_compra(R: dict) -> str:
             # a tela da lista põe o clique no nome (trocar pelo parecido do catálogo); no PDF é só o texto
             return "<b class=\"trocar-perfil\" data-perfil=\"%s\">%s</b>%s" % (
                 _esc(p.get("ifc") or p["perfil"]), _esc(cima), ("<br><span class=\"cinza\">%s</span>" % _esc(baixo)) if baixo else "")
-        h.append(_tabela(["Perfil", "Material", ("Peças", "r"), ("m", "r"), ("kg/m", "r"), ("kg", "r"), ("Barra", "r"), ("Barras", "r"),
-                          ("Aprov.", "r"), "Pedido"],
+        # o kg das peças (o que vai na obra) e o de compra: as barras comerciais inteiras, com a sobra (07/10)
+        h.append(_tabela(["Perfil", "Material", ("Peças", "r"), ("m", "r"), ("kg/m", "r"), ("kg peças", "r"), ("Barra", "r"), ("Barras", "r"),
+                          ("kg/barra", "r"), ("kg compra", "r"), ("Aprov.", "r"), "Pedido"],
                          [[nome_perfil(p), p["material"], (p.get("pecas") or "", "r"), (_n(p["m"], 2), "r"),
                            (_n(p.get("kg_m") or 0.0, 2), "r"), (_n(p["kg"], 1), "r"), ("%s m" % _n(p["barra_m"], 0), "r"),
                            ("%d%s" % (p["barras"], (" (%d emenda%s)" % (p["emendas"], "s" if p["emendas"] > 1 else "")) if p["emendas"] else ""), "r"),
+                           (_n(p.get("kg_barra") or 0.0, 1), "r"), ("<b>%s</b>" % _n(p.get("kg_compra") or 0.0, 1), "r"),
                            ("%s%%" % _n(p["aproveitamento"], 0) if p["aproveitamento"] is not None else "", "r"), ""] for p in C["perfis"]],
                          rodape=[("TOTAL", "b"), "", (sum(p.get("pecas") or 0 for p in C["perfis"]), "r"),
                                  (_n(sum(p["m"] for p in C["perfis"]), 2), "r"), "", (_n(sum(p["kg"] for p in C["perfis"]), 1), "r"),
-                                 "", (sum(p["barras"] for p in C["perfis"]), "r"), "", ""],
-                         larguras=["24%", "11%", "7%", "10%", "7%", "10%", "7%", "10%", "6%", "8%"], bruto=True,
+                                 "", (sum(p["barras"] for p in C["perfis"]), "r"), "",
+                                 (_n(sum(p.get("kg_compra") or 0.0 for p in C["perfis"]), 1), "r"), "", ""],
+                         larguras=["21%", "9%", "6%", "8%", "6%", "8%", "6%", "8%", "7%", "9%", "5%", "7%"], bruto=True,
                          classes_linhas=[_classe_compra(p) for p in C["perfis"]]))
         if any(_classe_compra(p) for p in C["perfis"]):
             h.append(_LEGENDA_COMPRA)
