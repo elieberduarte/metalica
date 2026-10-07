@@ -876,6 +876,25 @@ function detalheDaBase(b, xy) {
       <table class="vt"><tr><td>Placa</td><td><b>${AB.tp ? nf(AB.tp, 1) : '—'} mm</b> (sem abas ${nf(bb.tp, 1)} mm) · t<sub>mín</sub> ${nf(AB.tp_min, 1)} mm · ~${nf(AB.peso_kg, 0)} kg (sem abas ~${nf(bb.peso_kg, 0)} kg)</td></tr>
       <tr><td>Aba</td><td>${nf(AB.hg, 0)} × ${nf(AB.Lg, 0)} × ${nf(AB.tg, 1)} mm · força ${nf(AB.F_aba_kN, 0)} kN · usos: flexão ${nf(AB.u_flexao * 100, 0)}%, cortante ${nf(AB.u_cortante * 100, 0)}%, borda livre ${nf(AB.u_borda * 100, 0)}% · filete ${AB.perna_solda ? nf(AB.perna_solda, 0) + ' mm' : '<span class="g-ruim">acima de 12 mm</span>'}</td></tr></table>
       ${(AB.falhas || []).length ? `<div class="aviso">${AB.falhas.join('<br>')}</div>` : ''}`);
+    const A4 = b.com_abas_pontas;
+    if (A4) linhas.push(`<div class="sub" style="margin-top:6px"><b>Com duas abas por lado</b> (nas pontas das mesas, chumbadores por fora delas — ${A4.metodo}):</div>
+      <table class="vt"><tr><td>Placa</td><td><b>${A4.tp ? nf(A4.tp, 1) : '—'} mm</b> × ℓ<sub>y</sub> ${nf(A4.ly, 0)} mm (a placa alarga para os chumbadores passarem por fora das abas) · ~${nf(A4.peso_kg, 0)} kg</td></tr>
+      <tr><td>Abas (4)</td><td>${nf(A4.hg, 0)} × ${nf(A4.Lg, 0)} × ${nf(A4.tg, 1)} mm · ${nf(A4.F_aba_kN, 0)} kN por aba · usos: flexão ${nf(A4.u_flexao * 100, 0)}%, cortante ${nf(A4.u_cortante * 100, 0)}%, borda livre ${nf(A4.u_borda * 100, 0)}% · filete ${A4.perna_solda ? nf(A4.perna_solda, 0) + ' mm' : '—'}</td></tr></table>
+      ${A4.tp && bb.tp && A4.tp > bb.tp ? '<div class="sub">Aqui a placa sai mais grossa que sem abas: o balanço da placa além das abas (onde ficam os chumbadores) passa a governar.</div>' : ''}
+      ${(A4.falhas || []).length ? `<div class="aviso">${A4.falhas.join('<br>')}</div>` : ''}`);
+    const JO = b.chumbador_j_opcoes;
+    if (JO && JO.recomendada) {
+      const r = JO.recomendada;
+      linhas.push(`<div class="sub" style="margin-top:6px"><b>Chumbador em J que fecha</b> (o da Tabela não cabe no embutimento) — a especificação:</div>
+        <table class="vt"><tr><td>Barra</td><td><b>${r.nb} × ø ${r.diametro}</b> ASTM A36 redonda · comprimento total <b>${nf(r.comprimento, 0)} mm</b> = projeção ${nf(r.projecao, 0)} + ancoragem reta ${nf(r.lb_nec, 0)} + gancho ${nf(r.gancho, 0)} · rosca UNC nos ${nf(r.rosca, 0)} mm de cima</td></tr>
+        <tr><td>Gancho</td><td>semicircular (J), pino de dobramento ≥ ${nf(r.pino, 0)} mm, ponta reta ≥ ${nf(r.ponta_reta, 0)} mm, dobrado a frio antes de rosquear</td></tr>
+        <tr><td>Porcas</td><td>2 por chumbador (nivelamento embaixo da placa e fixação em cima): ${r.porca}</td></tr>
+        <tr><td>Arruelas</td><td>2 por chumbador (embaixo e em cima da placa): ${r.arruela}${r.dispositivo === 'arruelas soldadas' ? ' — a de cima soldada à placa (cortante, 6.7.2.5)' : ''}</td></tr>
+        <tr><td>Placa</td><td>${nf(r.lx, 0)} × ${nf(r.ly, 0)} × ${nf(r.tp, 1)} mm, furos ${nf(r.furo_placa, 0)} mm · F<sub>t</sub> ${nf(r.Ft_kN, 1)} kN por chumbador</td></tr>
+        <tr><td>Bloco</td><td>f<sub>ck</sub> ${nf(r.fck, 0)} MPa · altura ≥ ${nf(r.bloco_altura_min, 0)} mm (a ancoragem reta a partir do topo do concreto + o gancho + 50 mm de cobrimento) · a barra amarrada à armadura do bloco, que recebe a força (projeto de fundações)</td></tr></table>`);
+      linhas.push('<div class="sub">Outras opções (as mais leves):</div><table class="vt">' + JO.opcoes.slice(0, 5).map(o =>
+        `<tr><td>${o.nb}×ø${o.diametro}</td><td>f<sub>ck</sub> ${nf(o.fck, 0)} · F<sub>t</sub> ${nf(o.Ft_kN, 1)} kN · barra ${nf(o.comprimento, 0)} mm · bloco ≥ ${nf(o.bloco_altura_min, 0)} mm · placa ${nf(o.tp, 1)} mm · ${nf(o.peso_kg, 0)} kg${o.ok_bloco ? '' : ' (bloco acima de 1,5 m)'}</td></tr>`).join('') + '</table>');
+    }
   }
   if ((b.avisos || []).length) linhas.push(`<div class="aviso">${b.avisos.join('<br>')}</div>`);
   box.innerHTML = linhas.join('');

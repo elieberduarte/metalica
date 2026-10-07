@@ -509,7 +509,137 @@ def com_abas(perfil: dict, combs: Sequence[dict], geo: dict, fck: float = 25.0, 
     peso = (lx * ly * (melhor["tp"] or 0.0) + 2 * 0.5 * melhor["hg"] * melhor["Lg"] * melhor["tg"] * 2) * 7.85e-6
     return dict(melhor, peso_kg=peso, metodo="racional (fora da 6.7: placa com enrijecedores)", nb=nb, diametro=geo["diametro"],
                 lx=lx, ly=ly, falhas=[] if melhor["ok"] else ["a aba não fecha até 31,5 mm com altura %.0f mm: força de %.0f kN — "
-                                                              "duas abas por lado ou aba mais alta" % (melhor["hg"], melhor["F_aba_kN"])])
+                                                              "aba mais alta ou duas por lado" % (melhor["hg"], melhor["F_aba_kN"])])
 
 
-__all__ = ["TABELA_18", "geometria", "caso", "verificar", "dimensionar", "sigma_c_rd", "bloco", "chumbador_j", "com_abas"]
+def com_abas_nas_pontas(perfil: dict, combs: Sequence[dict], geo: dict, fck: float = 25.0, fy_placa: float = 250.0) -> dict:
+    """a base de pilar I com DUAS abas por lado (quatro no total), alinhadas com as pontas das mesas, da face da mesa até
+    a borda da placa na direção do momento — MÉTODO RACIONAL (a 6.7 é para placa sem enrijecedor), como `com_abas`:
+
+    * os chumbadores ficam por fora das abas (de través, a y_b = b_f/2 + t_aba/2 + folga da arruela e do filete); com
+      6 chumbadores, o do meio fica entre as abas, na linha da alma; a placa alarga o que for preciso (ℓ_y);
+    * lado comprimido: entre as abas a placa vence o vão b_f − t_aba apoiada na mesa e nas duas abas (balanço
+      equivalente mín(m; (b_f − t_aba)/2)); por fora delas, balanço até a borda (n' = ℓ_y/2 − b_f/2 − t_aba/2);
+    * lado tracionado: o braço do chumbador é o menor entre (m − a₁) e a distância de través até a face da aba;
+    * cada aba recebe metade da força do lado (a tração dos chumbadores do lado ou metade da pressão na faixa além da
+      mesa) — flexão, cortante, borda livre e solda, como em `com_abas`. mm, kN, MPa"""
+    g0 = geometria(perfil, 1, geo["nb"], geo["diametro"])
+    nb, a1, lx, m, d, bf = g0["nb"], g0["a1"], g0["lx"], g0["m"], g0["d"], g0["bf"]
+    T18 = g0["tab"]
+    fyd = fy_placa / GAMA_A1
+    lam_lim = 0.56 * math.sqrt(E_ACO / fy_placa)
+    melhor = None
+    for tg in (9.5, 12.5, 16.0, 19.0, 22.4, 25.0):
+        folga = max(T18["arruela"] / 2 + 8.0 + 10.0, 1.5 * g0["db"])     # meia arruela + filete da aba + jogo de chave
+        y_b = bf / 2 + tg / 2 + folga
+        ly = max(g0["ly"], 2 * (y_b + a1))
+        n_ext = ly / 2 - bf / 2 - tg / 2
+        m_c = max(min(m, (bf - tg) / 2), 1.0)
+        b_t = max(min(m - a1, folga), 1.0)
+        g_c = dict(g0, ly=ly, m=m_c, n=n_ext)
+        g_t = dict(g0, ly=ly, m=a1 + b_t, n=n_ext)
+        tp_min, F, gov, falhas = 0.0, 0.0, None, []
+        for c in combs:
+            rc = caso(g_c, c["N"], c["M"], c["V"], fck, fy_placa)
+            rt = caso(g_t, c["N"], c["M"], c["V"], fck, fy_placa)
+            if rc["erro"] or rt["erro"]:
+                falhas.append(rc["erro"] or rt["erro"])
+                continue
+            if rc["caso"] in ("C1", "C2"):
+                t_ = rc["tp_min"]
+            elif rc["caso"] in ("T1", "T2"):
+                t_ = rt["tp_min"]
+            else:
+                t_ = max(rc.get("tp1", 0.0), rt.get("tp2", 0.0))
+            if t_ > tp_min:
+                tp_min, gov = t_, (c.get("comb"), c.get("sit"), rc["caso"])
+            T_lado = rc["Ft"] * 1e3 * nb / 2
+            s = rc.get("sigma_c_Sd") or 0.0
+            lc = rc.get("lc") or (lx if rc["caso"] == "C1" else 0.0)
+            C_faixa = s * ly * min(lc, (lx - d) / 2)
+            F = max(F, T_lado / 2, C_faixa / 4)                 # duas abas por lado; metade da faixa vai para as abas
+        tp = chapa_comercial(max(tp_min, 12.5))
+        hg = max(150.0, math.ceil(1.2 * m / 10) * 10)
+        M = F * max(a1, m / 2)
+        u_flex = M / (tg * hg * hg / 4 * fyd)
+        u_cort = F / (0.6 * fy_placa * tg * hg / GAMA_A1)
+        u_borda = (math.hypot(hg, m) / tg) / lam_lim
+        fw = math.hypot(F / (2 * hg), M / (2 * hg * hg / 6))
+        perna = next((x for x in (5.0, 6.0, 8.0, 10.0, 12.0) if 0.6 * 485.0 * 0.707 * x / 1.35 >= fw), None)
+        ok = tp is not None and max(u_flex, u_cort, u_borda) <= 1.0 and perna is not None and not falhas
+        r = {"tg": tg, "hg": hg, "Lg": m, "tp": tp, "tp_min": tp_min, "governa": gov, "ly": ly, "y_b": y_b,
+             "u_flexao": u_flex, "u_cortante": u_cort, "u_borda": u_borda, "perna_solda": perna, "F_aba_kN": F / 1e3,
+             "ok": ok, "falhas": sorted(set(falhas))[:2]}
+        if ok:
+            melhor = r
+            break
+        if melhor is None or max(u_flex, u_cort, u_borda) < max(melhor["u_flexao"], melhor["u_cortante"], melhor["u_borda"]):
+            melhor = r
+    peso = (lx * melhor["ly"] * (melhor["tp"] or 0.0) + 4 * 0.5 * melhor["hg"] * melhor["Lg"] * melhor["tg"]) * 7.85e-6
+    if not melhor["ok"] and not melhor["falhas"]:
+        melhor["falhas"] = ["as abas não fecham até 25 mm com altura %.0f mm (força de %.0f kN por aba)" % (melhor["hg"], melhor["F_aba_kN"])]
+    return dict(melhor, peso_kg=peso, metodo="racional (fora da 6.7: placa com quatro enrijecedores nas pontas das mesas)",
+                nb=nb, diametro=geo["diametro"], lx=lx)
+
+
+# ------------------------------------------------------------------ a especificação do chumbador em J
+
+# porca hexagonal pesada (ASME B18.2.6, rosca UNC): altura ≈ diâmetro nominal; chave (distância entre faces), mm
+PORCA_PESADA = {'3/4"': (19.1, 31.8), '7/8"': (22.2, 36.5), '1"': (25.4, 41.3), '1.1/4"': (31.8, 50.8), '1.1/2"': (38.1, 60.3),
+                '1.3/4"': (44.5, 69.9), '2"': (50.8, 79.4)}
+FIOS_UNC = {'3/4"': 10, '7/8"': 9, '1"': 8, '1.1/4"': 7, '1.1/2"': 6, '1.3/4"': 5, '2"': 4.5}
+
+
+def especificar_chumbador_j(perfil: dict, combs: Sequence[dict], fck_opcoes: Sequence[float] = (25.0, 30.0, 35.0),
+                            fy_placa: float = 250.0, t_grout: Optional[float] = None) -> dict:
+    """as opções de chumbador em J para a base — barra redonda de aço ASTM A36 rosqueada na ponta de cima e dobrada
+    em gancho semicircular na de baixo, concretada junto com a armadura do bloco. Para cada diâmetro e número de
+    chumbadores (a geometria e a placa da 6.7, Tabela 18) e cada f_ck do bloco: a força por chumbador (a pior das
+    combinações), o comprimento de ancoragem pela NBR 6118:2023 (9.4.2, com gancho), o comprimento total da barra, a
+    rosca, as porcas e as arruelas — e o bloco que isso pede. A recomendada é a de menor peso de aço (barras + placa)
+    com o bloco até 1,5 m de altura. mm, kN"""
+    opcoes = []
+    for diam in DIAMETROS:
+        for nb in (4, 6, 8):
+            for fck in fck_opcoes:
+                r = verificar(perfil, combs, 1, nb, diam, fck, fy_placa)
+                if r["tp"] is None or any("alterar" in f or "não resiste" in f for f in r["falhas"]):
+                    continue
+                if any("d_b,mín" in f for f in r["falhas"]):
+                    continue
+                g, T18 = r["geometria"], r["tabela"]
+                db = g["db"]
+                Ft = max((x.get("Ft") or 0.0) for x in r["combinacoes"])
+                j = chumbador_j(Ft, db, fck, 1e9)
+                D = j["pino_dobramento_min"]
+                gancho = math.pi * (D + db) / 2 + j["ponta_reta_min"]          # o arco do J e a ponta reta
+                porca_h, chave = PORCA_PESADA[diam]
+                en = t_grout if t_grout is not None else float(T18["en"])
+                acima = en + r["tp"] + T18["ta"] + porca_h + 3 * 25.4 / FIOS_UNC[diam] + 10.0     # 3 fios além da porca
+                rosca = acima + porca_h + T18["ta"] + 30.0                                     # inclui a porca de nivelamento
+                embut = j["lb_nec"]
+                total = acima + embut + gancho
+                bloco_h = embut + D / 2 + db + 50.0                                            # cobrimento de 50 mm sob o gancho
+                peso = nb * math.pi * db * db / 4 * total * 7.85e-6 + (r["peso_placa_kg"] or 0.0)
+                opcoes.append({"diametro": diam, "db": db, "nb": nb, "fck": fck, "Ft_kN": round(Ft, 1), "tp": r["tp"],
+                               "lx": g["lx"], "ly": g["ly"], "fbd": round(j["fbd"], 3), "lb_nec": round(embut, 0),
+                               "pino": D, "ponta_reta": j["ponta_reta_min"], "gancho": round(gancho, 0),
+                               "projecao": round(acima, 0), "rosca": round(rosca, 0), "comprimento": round(total, 0),
+                               "bloco_altura_min": round(max(bloco_h, B_ALTURA_MIN(r)), 0), "peso_kg": round(peso, 1),
+                               "porca": "hexagonal pesada ASME B18.2.6 UNC %s, aço ASTM A36 (o mesmo da barra), chave %.0f mm, altura %.0f mm" % (diam, chave, porca_h),
+                               "arruela": ("especial %s × %s × %s mm, fy 345 MPa, furo %.1f mm (d_b + 1,5)"
+                                           % (T18["arruela"], T18["arruela"], T18["ta"], db + 1.5)).replace(".", ","),
+                               "furo_placa": T18["df"], "dispositivo": r["dispositivo"], "ok_bloco": bloco_h <= 1500.0})
+    validas = [o for o in opcoes if o["ok_bloco"]]
+    rec = min(validas, key=lambda o: (o["peso_kg"], o["bloco_altura_min"])) if validas else None
+    curto = min(opcoes, key=lambda o: o["comprimento"]) if opcoes else None
+    return {"recomendada": rec, "mais_curta": curto, "opcoes": sorted(opcoes, key=lambda o: o["peso_kg"])[:12]}
+
+
+def B_ALTURA_MIN(r: dict) -> float:
+    """a altura mínima do bloco pela nota e da Tabela 18 (A_b), para comparar com a que a ancoragem pede"""
+    return float((r.get("bloco") or {}).get("Ab") or 0.0)
+
+
+__all__ = ["TABELA_18", "geometria", "caso", "verificar", "dimensionar", "sigma_c_rd", "bloco", "chumbador_j", "com_abas",
+           "com_abas_nas_pontas", "especificar_chumbador_j"]

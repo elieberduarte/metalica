@@ -78,3 +78,18 @@ def test_abas_nao_engrossam_a_placa():
     sem = B.dimensionar(W360, combs)
     com = B.com_abas(W360, combs, sem["geometria"])
     assert com["tp_min"] <= sem["tp_min"] + 1e-6
+
+
+def test_abas_nas_pontas_e_especificacao_do_j():
+    combs = [{"comb": "v", "N": 60.0, "M": 150.0, "V": 25.0}, {"comb": "s", "N": -40.0, "M": 90.0, "V": 15.0}]
+    sem = B.dimensionar(W360, combs)
+    a4 = B.com_abas_nas_pontas(W360, combs, sem["geometria"])
+    # os chumbadores ficam por fora das abas: y_b além da ponta da mesa + meia aba + folga, e a placa cabe
+    assert a4["y_b"] > W360["bf"] / 2 + a4["tg"] / 2 and a4["ly"] >= 2 * (a4["y_b"] + sem["geometria"]["a1"]) - 1e-6
+    esp = B.especificar_chumbador_j(W360, combs)
+    r = esp["recomendada"]
+    assert r is not None and r["ok_bloco"]
+    j = B.chumbador_j(r["Ft_kN"], r["db"], r["fck"], 1e9)
+    assert r["lb_nec"] == pytest.approx(round(j["lb_nec"], 0))
+    assert r["comprimento"] == pytest.approx(r["projecao"] + r["lb_nec"] + r["gancho"], abs=1.5)
+    assert all(o["peso_kg"] >= r["peso_kg"] - 1e-9 for o in esp["opcoes"] if o["ok_bloco"])

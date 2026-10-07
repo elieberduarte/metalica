@@ -165,6 +165,12 @@ def dimensionar_bases(sits: Dict[str, dict], par: dict) -> List[dict]:
         if not tubo and g_.get("tipo") == 1 and any(c["M"] > 1e-6 for c in combs):
             ab = BP.com_abas(p, combs, g_, fck, fy)
             item["com_abas"] = {kk: (round(v, 3) if isinstance(v, float) else v) for kk, v in ab.items()}
+            ab4 = BP.com_abas_nas_pontas(p, combs, g_, fck, fy)
+            item["com_abas_pontas"] = {kk: (round(v, 3) if isinstance(v, float) else v) for kk, v in ab4.items()}
+        if not tubo and item.get("chumbador_j") and not item["chumbador_j"].get("ok"):
+            # o J da Tabela não cabe no embutimento: as opções que fecham (diâmetro, número, f_ck, comprimentos)
+            item["chumbador_j_opcoes"] = BP.especificar_chumbador_j(p, combs, (fck, 30.0, 35.0) if fck < 30 else (fck, fck + 5),
+                                                                    fy)
         mf = max((c["M_fraco"] for c in combs), default=0.0)
         mF = max((c["M"] for c in combs), default=0.0)
         if e["apoio"] == "engastada" and mf > max(1.0, 0.10 * mF) and not (tubo and not p["bf"]):
