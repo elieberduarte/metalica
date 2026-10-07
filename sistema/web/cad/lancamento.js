@@ -8,7 +8,7 @@
 // Os métodos são copiados para a classe do CAD (cad.js); as duas ferramentas daqui não têm
 // botão na barra: o menu as chama.
 
-import { criar, dist, transformar } from './nucleo/desenho2d.js';
+import { criar, dist, transformar, transladar } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoSubstituir, ComandoComposto } from './nucleo/comandos.js';
 import { eixosCopiados } from './nucleo/malha.js';
 import { Ferramenta, paraMilimetros } from './ferramentas.js';
@@ -330,26 +330,76 @@ export class MetodosLancamentoCAD {
       `${numero(s.largura_m, 2)} × ${numero(s.altura_m, 2)} m (${s.escala}, ${s.fonte_escala}). Confira uma medida com Medir (U); ` +
       'se não bater, Lançamento → Calibrar escala.', 'info', 16000);
     for (const a of s.avisos || []) this.aviso(a, 'atencao', 0);
+    // o tamanho que não parece de obra: o DXF do Docas veio em centímetro com o cabeçalho dizendo milímetro e a planta
+    // entrou com 8,2 m — os eixos foram lançados nela e o pilar de 35 × 70 cm ficou enorme (07/10)
+    const maior = Math.max(Number(s.largura_m) || 0, Number(s.altura_m) || 0);
+    if (maior > 0 && (maior < 15 || maior > 2000)) {
+      this.aviso(`A planta entrou com ${numero(maior, 2)} m no lado maior — ${maior < 15 ? 'pequena demais para uma obra: o arquivo deve estar em centímetro (×10) ou metro (×1000)' : 'grande demais: o arquivo deve estar em outra unidade'}. ` +
+        'Antes de lançar os eixos, confira uma cota com Medir e use Lançamento → Calibrar escala (ou importe de novo escolhendo a unidade).', 'atencao', 0);
+    }
   }
 
   /** Depois dos dois pontos da ferramenta Calibrar: pergunta a medida real e escala a referência. */
   async calibrarArquitetonico(a, d) {
     // o arquitetônico importado (camadas "ARQ …"); sem ele, o desenho inteiro — o PDF aberto como desenho comum vem na
     // medida do papel, com os eixos junto, e não havia como calibrar (quadra Kaefer, 06/10)
-    const arq = [...this.doc.entidades.values()].filter(e => String(e.camada).startsWith(PREFIXO_ARQ));
+    const todas = [...this.doc.entidades.values()];
+    const arq = todas.filter(e => String(e.camada).startsWith(PREFIXO_ARQ));
     const tudo = !arq.length;
-    const ents = tudo ? [...this.doc.entidades.values()] : arq;
+    // o que foi desenhado por cima do arquitetônico (os eixos, as cotas da malha, os elementos lançados) vai junto por
+    // padrão: o DXF do Docas veio em centímetro com o cabeçalho dizendo milímetro, a planta entrou 10× menor e os eixos
+    // foram lançados nela (07/10) — escalar só a planta deixava os eixos para trás
+    const porCima = tudo ? [] : todas.filter(e => !String(e.camada).startsWith(PREFIXO_ARQ));
+    const ents = tudo ? todas : arq;
     if (!ents.length) { this.aviso('O desenho está vazio: nada para calibrar.', 'atencao'); return; }
     const real = el('input', { type: 'text', value: '', placeholder: 'ex.: 6000, 6m, 600cm' });
+    const junto = el('input', { type: 'checkbox', checked: porCima.length ? true : undefined });
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: `A distância clicada mede ${fmt(d)} mm no desenho. Quanto ela mede na obra? ${tudo ? `O desenho inteiro (${numero(ents.length)} objetos, eixos e cotas junto) é escalado em volta do primeiro ponto — ele não tem arquitetônico importado.` : `Todo o arquitetônico (${numero(ents.length)} objetos) é escalado em volta do primeiro ponto; os eixos e o resto do desenho ficam como estão.`}` }),
-      el('label', {}, 'Medida real', real));
+      el('div', { class: 'explica', texto: `A distância clicada mede ${fmt(d)} mm no desenho. Quanto ela mede na obra? ${tudo ? `O desenho inteiro (${numero(ents.length)} objetos, eixos e cotas junto) é escalado em volta do primeiro ponto — ele não tem arquitetônico importado.` : `Todo o arquitetônico (${numero(ents.length)} objetos) é escalado em volta do primeiro ponto.`}` }),
+      el('label', {}, 'Medida real', real),
+      porCima.length ? el('label', { class: 'opcao-linha', style: 'flex-direction: row; align-items: flex-start; gap: 6px; line-height: 1.4' }, junto,
+        ` Escalar junto o que foi desenhado por cima (${numero(porCima.length)} objetos: eixos, cotas da malha, elementos lançados) — pilares, fundações e bolinhas mudam só de lugar, sem mudar de tamanho`) : null);
     if (await this.dialogo({ titulo: 'Calibrar escala do arquitetônico', corpo, ok: 'Escalar' }) !== 'ok') return;
     const alvo = paraMilimetros(real.value);
     if (!alvo || alvo <= 0) { this.aviso('Medida real não entendida: use 6000, 6m ou 600cm.', 'atencao'); return; }
     const k = alvo / d;
     const f = (p) => [a[0] + (p[0] - a[0]) * k, a[1] + (p[1] - a[1]) * k];
     const novas = ents.map(e => transformar(e, f, (x) => x, k));
+    if (porCima.length && junto.checked) {
+      // o tamanho real (o pilar 35 × 70, a bolinha de 5 mm de papel) fica; muda o lugar
+      const soLugar = (e) => { const at = e.atributos || {}; return ['pilar', 'fundacao', 'consolo'].includes(at.elemento) || at.bolinha; };
+      const centro = (e) => {
+        const at = e.atributos || {};
+        if (Array.isArray(at.centro)) return at.centro;
+        if (e.centro) return e.centro;
+        const pts = e.vertices || (e.a ? [e.a, e.b] : e.posicao ? [e.posicao] : []);
+        return pts.length ? [pts.reduce((s_, q) => s_ + q[0], 0) / pts.length, pts.reduce((s_, q) => s_ + q[1], 0) / pts.length] : null;
+      };
+      // a bolinha e o nome do eixo vão com a ponta do eixo deles (a mesma folga de papel além dela); o rótulo do elemento
+      // (P1) vai com o elemento
+      const eixoDe = new Map(porCima.filter(ehEixo).map(e => [String(e.atributos.eixo), e]));
+      const desloc = new Map();
+      const mover = (_e, de) => { const para = f(de); return [para[0] - de[0], para[1] - de[1]]; };
+      for (const e of porCima) {
+        const at = e.atributos || {};
+        if ((at.bolinha || at.nome_eixo) && eixoDe.has(String(at.eixo))) {
+          const x = eixoDe.get(String(at.eixo)), q = e.centro || e.posicao;
+          desloc.set(e.id, mover(e, dist(q, x.a) <= dist(q, x.b) ? x.a : x.b));
+        } else if (soLugar(e)) {
+          const c = centro(e);
+          if (c) desloc.set(e.id, mover(e, c));
+        }
+      }
+      for (const e of porCima) {
+        const at = e.atributos || {};
+        const d = desloc.get(e.id) || (at.rotulo_de && desloc.get(at.rotulo_de));
+        if (d) {
+          const n = transladar(e, d);
+          if (Array.isArray(at.centro)) n.atributos = { ...n.atributos, centro: [at.centro[0] + d[0], at.centro[1] + d[1]] };
+          novas.push(n);
+        } else novas.push(transformar(e, f, (x) => x, k));
+      }
+    }
     const cmd = new ComandoSubstituir(novas, `Calibrar arquitetônico (×${fmt(k * 1000) / 1000})`);
     cmd.semTrava = true;                          // o arquitetônico fica na camada travada: a calibração é do programa
     this.executar(cmd);
