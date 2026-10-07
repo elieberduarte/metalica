@@ -368,6 +368,10 @@
   function iniciar() {
     var caixa = $('#faixa-ferramentas');
     if (!caixa) return;
+    // o padrão são as colunas ao lado de cada tela (07/10); a faixa só com Ver › Tela › Ferramentas na faixa de cima
+    var naFaixa = false;
+    try { naFaixa = localStorage.getItem('metalica.ferramentas') === 'faixa'; } catch (e) { /* sem armazenamento */ }
+    if (!naFaixa) { caixa.hidden = true; caixa.style.display = 'none'; return; }
     ['2d', '3d'].forEach(function (lado) {
       var f = document.getElementById(QUADRO[lado]);
       if (!f) return;

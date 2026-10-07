@@ -69,3 +69,7 @@ def test_a_faixa_na_area_de_trabalho():
     assert '<script src="/barra_unica.js"></script>' in html
     area = _ler("area.js")
     assert ":root.barra-unica #barra-ferramentas" in area and "#barra-disciplina" in area
+    # 07/10: o padrão são as colunas ao lado (como nas telas sozinhas); a faixa só com a escolha em Ver › Tela
+    assert "naFaixa && document.documentElement.classList.contains('barra-unica')" in area
+    assert "if (!naFaixa) { caixa.hidden = true;" in _ler("faixa_ferramentas.js")
+    assert "'ferramentas-faixa'" in _ler("barra_unica.js")

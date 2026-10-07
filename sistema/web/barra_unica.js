@@ -181,6 +181,8 @@
         F('Só o 2D', 'vista-2d'), F('2D + 3D lado a lado', 'vista-ambos'), F('Só o 3D', 'vista-3d'),
         HR,
         F('Trocar os lados', 'trocar', { antes: 'Ver › Trocar os lados' }),
+        HR,
+        F('Ferramentas: colunas ao lado ou faixa de cima', 'ferramentas-faixa', { dica: 'o padrão são as colunas ao lado, como nas telas sozinhas' }),
         F('Seguir a seleção de um lado no outro', 'seguir', { antes: 'Ver › Seguir a seleção de um lado no outro' }),
         T('treliça escolhida no 3D: o 2D mostra'),
         F('a planta', 'modo-planta', { antes: 'Ver › Treliça escolhida no 3D: o 2D mostra a planta' }),
@@ -481,6 +483,14 @@
       return;
     }
     if (fn === 'exportar-pacote') { exportarPacote(); return; }
+    if (fn === 'ferramentas-faixa') {                  // Ver › Tela: colunas ao lado (padrão) ou a faixa de cima
+      try {
+        var naFaixa = localStorage.getItem('metalica.ferramentas') === 'faixa';
+        localStorage.setItem('metalica.ferramentas', naFaixa ? 'colunas' : 'faixa');
+      } catch (e) { /* sem armazenamento */ }
+      location.reload();
+      return;
+    }
     if (fn === 'tema') {
       // o tema efetivo: o escolhido ou, sem escolha, o do sistema (como as telas decidem)
       var efetivo = function (d, w) {
