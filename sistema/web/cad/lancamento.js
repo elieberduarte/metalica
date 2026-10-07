@@ -11,6 +11,7 @@
 import { criar, dist, transformar, transladar } from './nucleo/desenho2d.js';
 import { ComandoAdicionar, ComandoSubstituir, ComandoComposto } from './nucleo/comandos.js';
 import { eixosCopiados } from './nucleo/malha.js';
+import { instalarRodapeEscala } from './rodape_escala.js';
 import { Ferramenta, paraMilimetros } from './ferramentas.js';
 
 export const DESENHO_LANCAMENTO = 'planta-de-lançamento';
@@ -269,6 +270,7 @@ export class Eixo extends Ferramenta {
 export class MetodosLancamentoCAD {
   _registrarFerramentasDoLancamento() {
     for (const F of [Calibrar, PegarPonto, Eixo]) this.ferramentas.set(F.id, new F(this));
+    instalarRodapeEscala(this);                  // a escala e a régua gráfica no canto do desenho (rodape_escala.js)
   }
 
   /** A ferramenta Eixo (um por vez): o botão rápido da barra PLANTA e o menu Lançamento. */
