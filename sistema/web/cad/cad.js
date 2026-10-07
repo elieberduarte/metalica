@@ -920,6 +920,7 @@ class CAD {
       'planta-lancamento': () => this.abrirPlantaDeLancamento(),
       calibrar: () => this.ativarFerramenta('calibrar'),
       malha: () => this.dialogoMalha(),
+      eixo: () => this.ativarEixoUnico(),
       'gravar-eixos': () => this.gravarEixos(),
       'lancar-3d': () => this.lancarNo3D(),
       'projeto-2d': () => $('#arquivo-projeto-2d').click(),

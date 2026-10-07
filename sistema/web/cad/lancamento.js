@@ -9,7 +9,8 @@
 // botão na barra: o menu as chama.
 
 import { criar, dist, transformar } from './nucleo/desenho2d.js';
-import { ComandoAdicionar, ComandoSubstituir } from './nucleo/comandos.js';
+import { ComandoAdicionar, ComandoSubstituir, ComandoComposto } from './nucleo/comandos.js';
+import { eixosCopiados } from './nucleo/malha.js';
 import { Ferramenta, paraMilimetros } from './ferramentas.js';
 
 export const DESENHO_LANCAMENTO = 'planta-de-lançamento';
@@ -86,11 +87,196 @@ export class PegarPonto extends Ferramenta {
   }
 }
 
+// ------------------------------------------------------------ eixo, um por vez
+
+// o eixo da malha (Malha de eixos…): a linha na camada EIXO com `atributos.malha` e o nome; a bolinha e o nome além da
+// ponta `a` (nucleo3d/lancamento.py: o raio da bolinha é 5 mm de papel, o nome tem 4 mm)
+const ehEixo = (e) => !!(e && e.tipo === 'linha' && e.atributos && e.atributos.malha && e.atributos.eixo && dist(e.a, e.b) > 1e-6);
+const dirEixo = (e) => { const L = dist(e.a, e.b); return [(e.b[0] - e.a[0]) / L, (e.b[1] - e.a[1]) / L]; };
+const normalEixo = (e) => { const u = dirEixo(e); return [-u[1], u[0]]; };
+const ladoDoEixo = (e, q) => { const n = normalEixo(e); return (q[0] - e.a[0]) * n[0] + (q[1] - e.a[1]) * n[1]; };
+const paralelosEixos = (x, y) => { const u = dirEixo(x), v = dirEixo(y); return Math.abs(u[0] * v[1] - u[1] * v[0]) < 0.02; };
+const RAIO_BOLINHA = 5, ALTURA_NOME = 4;
+
+/** "6000", "3x6000", "6000 6000 7500", "3x6m" → [6000, 6000, …] (mm), ou null */
+export function lerVaos(texto) {
+  const saida = [];
+  for (const parte of String(texto || '').trim().split(/[\s;]+/).filter(Boolean)) {
+    const m = parte.match(/^(\d+)\s*[x×*]\s*(.+)$/i);
+    const n = m ? parseInt(m[1], 10) : 1;
+    const v = paraMilimetros(m ? m[2] : parte);
+    if (!(v > 0) || !(n > 0) || n > 200) return null;
+    for (let i = 0; i < n; i++) saida.push(v);
+  }
+  return saida.length ? saida : null;
+}
+
+/**
+ * Eixo: lança os eixos um por vez (07/10, o usuário: "não tem como lançar um único eixo e ir posicionando enquanto a
+ * ferramenta estiver ativa"). Clique num eixo da malha: o seguinte, paralelo, vai com o cursor — clique para pôr, ou
+ * digite o vão (6000, 3x6000, 6000 6000 7500) para pôr do lado do cursor; cada eixo novo é a referência do próximo.
+ * Clique no vazio: dois pontos fazem um eixo solto (o primeiro da família: 1 ou A). O eixo novo é uma "cópia" do de
+ * referência pelo `eixosCopiados` (nucleo/malha.js): o nome na sequência, a bolinha, o nome e a cota até o vizinho;
+ * além do último, a cadeia de cotas cresce e os eixos que cruzam esticam. Enter ou Esc termina.
+ */
+export class Eixo extends Ferramenta {
+  static id = 'eixo'; static nome = 'Eixo (um por vez)'; static grupo = 'lancamento';
+  static dica = 'Eixo: clique num eixo da malha para lançar o seguinte paralelo a ele, ou dois pontos no vazio para um eixo novo · Esc sai';
+  reiniciar() { super.reiniciar(); this.ref = null; this.a = null; }
+
+  _eixoSob(ev) {
+    if (!ev || !ev.px || !this.editor.tela.sob) return null;
+    const e = this.editor.tela.sob(ev.px);
+    const ent = !e ? null : (typeof e === 'object' ? (e.tipo ? e : this.doc.entidades.get(e.id)) : this.doc.entidades.get(e));
+    if (ehEixo(ent)) return ent;
+    // a bolinha ou o nome do eixo: o eixo deles
+    const nome = ent && ent.atributos && (ent.atributos.bolinha || ent.atributos.nome_eixo) ? String(ent.atributos.eixo) : '';
+    return nome ? [...this.doc.entidades.values()].find(x => ehEixo(x) && String(x.atributos.eixo) === nome) || null : null;
+  }
+
+  _dicaRef() {
+    this.dica(`Eixo ${this.ref.atributos.eixo} de referência: clique onde vai o próximo (paralelo) ou digite o vão — 6000, 3x6000, 6000 6000 7500 — ` +
+              'do lado do cursor · Enter/Esc termina');
+  }
+
+  onPonto(p, ev) {
+    if (this.ref) { this._paralelo(ladoDoEixo(this.ref, p)); return; }
+    if (!this.a) {
+      const e = this._eixoSob(ev);
+      if (e) { this.ref = e; this._dicaRef(); return; }
+      this.a = p; this.editor.snap.ultimo = p;
+      this.dica('Eixo novo: clique no outro ponto (ou digite o comprimento) · Esc cancela');
+      return;
+    }
+    if (dist(this.a, p) < 1) return;
+    this._solto(this.a, p);
+  }
+
+  onMover(p) {
+    if (this.ref) {
+      const s = ladoDoEixo(this.ref, p), n = normalEixo(this.ref);
+      const linha = criar({ tipo: 'linha', camada: this.ref.camada, a: [this.ref.a[0] + n[0] * s, this.ref.a[1] + n[1] * s],
+                            b: [this.ref.b[0] + n[0] * s, this.ref.b[1] + n[1] * s] });
+      this.editor.previa([linha]);
+      this.editor.medida(`${fmt(Math.abs(s))} mm do eixo ${this.ref.atributos.eixo}`);
+      return;
+    }
+    if (this.a) {
+      this.editor.previa([criar({ tipo: 'linha', camada: 'EIXO', a: this.a, b: p })]);
+      this.editor.medida(`${fmt(dist(this.a, p))} mm`);
+    }
+  }
+
+  onValor(t) {
+    if (this.ref) {
+      const vaos = lerVaos(t);
+      if (!vaos) { this.dica('Vão não entendido: use 6000, 3x6000 ou 6000 6000 7500'); return; }
+      const cursor = this.editor.tela.cursor;
+      const sinal = cursor && ladoDoEixo(this.ref, cursor) < 0 ? -1 : 1;
+      for (const v of vaos) if (!this._paralelo(sinal * v)) break;
+      return;
+    }
+    if (this.a) {
+      const c = paraMilimetros(t), cursor = this.editor.tela.cursor || [this.a[0] + 1, this.a[1]];
+      if (!(c > 0)) return;
+      const an = Math.atan2(cursor[1] - this.a[1], cursor[0] - this.a[0]);
+      this._solto(this.a, [this.a[0] + c * Math.cos(an), this.a[1] + c * Math.sin(an)]);
+    }
+  }
+
+  onTecla(ev) { if (ev.key === 'Enter') { this.reiniciar(); return true; } return false; }
+
+  /** o eixo paralelo ao de referência a `s` mm (lado medido); vira a referência do próximo */
+  _paralelo(s) {
+    if (Math.abs(s) < 1) return false;
+    const o = this.ref, n = normalEixo(o);
+    const copia = criar({ ...o, id: undefined, a: [o.a[0] + n[0] * s, o.a[1] + n[1] * s], b: [o.b[0] + n[0] * s, o.b[1] + n[1] * s],
+                          atributos: { ...(o.atributos || {}) } });
+    this._lancar(copia, o);
+    return true;
+  }
+
+  /** o eixo de `a` a `b`: com eixos paralelos no desenho, entra na família deles (o nome na sequência); sem, começa
+   *  uma (1, ou A quando os eixos que ele cruza são numerados) com a bolinha e o nome além de `a` */
+  _solto(a, b) {
+    const linha = criar({ tipo: 'linha', camada: 'EIXO', a, b, atributos: { malha: true, eixo: '?' } });
+    const eixos = [...this.doc.entidades.values()].filter(ehEixo);
+    const familia = eixos.filter(e => paralelosEixos(e, linha));
+    if (familia.length) {
+      const o = familia.reduce((m, e) => (Math.abs(ladoDoEixo(e, a)) < Math.abs(ladoDoEixo(m, a)) ? e : m));
+      this._lancar(criar({ ...linha, id: undefined, atributos: { ...(o.atributos || {}) } }), o);
+      return;
+    }
+    const usados = new Set(eixos.map(e => String(e.atributos.eixo)));
+    const letras = eixos.length > 0 && eixos.every(e => /^\d+$/.test(String(e.atributos.eixo)));
+    let nome;
+    if (letras) { let k = 0; do { nome = String.fromCharCode(65 + k++); } while (usados.has(nome) && k < 26); }
+    else { let k = 1; while (usados.has(String(k))) k++; nome = String(k); }
+    const u = dirEixo(linha), r = RAIO_BOLINHA * (this.doc.escala || 100);
+    const centro = [a[0] - u[0] * r, a[1] - u[1] * r];
+    const novas = [
+      criar({ tipo: 'linha', camada: 'EIXO', a, b, atributos: { malha: true, eixo: nome } }),
+      criar({ tipo: 'circulo', camada: 'EIXO', centro, raio: r, atributos: { eixo: nome, bolinha: true } }),
+      criar({ tipo: 'texto', camada: 'EIXO', posicao: centro, texto: nome, altura: ALTURA_NOME, alinhamento: 'centro', vertical: 'meio', angulo: 0,
+              atributos: { eixo: nome, nome_eixo: true } }),
+    ];
+    this.editor.executar(new ComandoAdicionar(novas, `Eixo ${nome}`));
+    this.a = null;
+    this.ref = this.doc.entidades.get(novas[0].id) || novas[0];
+    this.editor.previa([]);
+    this._dicaRef();
+  }
+
+  /** a cota da malha entre o eixo `o` e o paralelo `c`: das pontas `a` (as das bolinhas), um pouco para dentro */
+  _cotaEntre(o, c) {
+    const E = this.doc.escala || 100, u = dirEixo(o), r = RAIO_BOLINHA * E;
+    const s = ladoDoEixo(o, c.a), n = normalEixo(o);
+    const p1 = o.a, p2 = [o.a[0] + n[0] * s, o.a[1] + n[1] * s];      // o pé do eixo novo, na altura da ponta do original
+    const d = [p2[0] - p1[0], p2[1] - p1[1]], L = Math.hypot(d[0], d[1]) || 1;
+    const esq = [-d[1] / L, d[0] / L];                                  // a esquerda do sentido p1 → p2
+    const deslocamento = ((u[0] * esq[0] + u[1] * esq[1]) * 3 * r) / E;  // 3 raios para dentro, em mm de papel
+    return criar({ tipo: 'cota', camada: 'COTA', modo: 'alinhada', p1, p2, deslocamento, atributos: { malha: true } });
+  }
+
+  /** já há cota da malha entre eixos desta família (paralelos a `o`)? Então a cadeia cresce pelo eixosCopiados */
+  _temCadeia(o) {
+    const lados = [...this.doc.entidades.values()].filter(e => ehEixo(e) && paralelosEixos(e, o)).map(e => ladoDoEixo(o, e.a));
+    const noEixo = (q) => lados.some(l => Math.abs(ladoDoEixo(o, q) - l) < 1);
+    return [...this.doc.entidades.values()].some(k => k.tipo === 'cota' && k.atributos && k.atributos.malha
+      && noEixo(k.p1) && noEixo(k.p2) && Math.abs(ladoDoEixo(o, k.p1) - ladoDoEixo(o, k.p2)) > 1);
+  }
+
+  /** acrescenta o eixo `copia` (com o que o eixosCopiados cria e troca) e o deixa como referência */
+  _lancar(copia, original) {
+    const r = eixosCopiados(this.doc, [copia], [original]);
+    const rot = `Eixo ${copia.atributos.eixo}`;
+    // a família começou por um eixo solto (sem a cadeia de cotas da malha para crescer): a primeira cota, entre o eixo
+    // de referência e o novo, perto da ponta da bolinha; dali em diante a cadeia cresce pelo eixosCopiados
+    if (!r.novas.some(x => x.tipo === 'cota') && !r.trocas.some(x => x.tipo === 'cota') && !this._temCadeia(original)) {
+      r.novas.push(this._cotaEntre(original, copia));
+    }
+    const add = new ComandoAdicionar([copia, ...r.novas], rot);
+    this.editor.executar(r.trocas.length ? new ComandoComposto([add, new ComandoSubstituir(r.trocas)], rot) : add);
+    this.a = null;
+    this.ref = this.doc.entidades.get(copia.id) || copia;
+    this.editor.previa([]);
+    this._dicaRef();
+  }
+}
+
 // ------------------------------------------------------------ métodos do CAD
 
 export class MetodosLancamentoCAD {
   _registrarFerramentasDoLancamento() {
-    for (const F of [Calibrar, PegarPonto]) this.ferramentas.set(F.id, new F(this));
+    for (const F of [Calibrar, PegarPonto, Eixo]) this.ferramentas.set(F.id, new F(this));
+  }
+
+  /** A ferramenta Eixo (um por vez): o botão rápido da barra PLANTA e o menu Lançamento. */
+  ativarEixoUnico() {
+    if (this.doc.camadas && !this.doc.camadas.has('EIXO')) {
+      this.doc.camadas.set('EIXO', { nome: 'EIXO', cor: '#d33a3a', visivel: true, bloqueada: false, tipo_linha: 'DASHDOT', espessura: 0.18 });
+    }
+    this.ativarFerramenta('eixo');
   }
 
   /** Um ponto clicado no desenho (null se Esc). */
