@@ -102,3 +102,18 @@ def test_a_planta_acompanha_a_situacao():
     ys = sorted(e.a[1] for e in des.entidades.values() if (e.atributos or {}).get("cobertura_movel") and e.tipo == "linha")
     assert ys == [0.0, 500.0, 1000.0, 1500.0, 2000.0]
     assert "RETRAÍDA" in des.entidades["cobertura-movel-texto"].texto
+
+
+def test_troca_de_perfil_so_na_analise():
+    """o grupo (função|perfil original) ganha o perfil novo nas barras todas; o nome fora do catálogo vira aviso"""
+    par = {"vento": False, "telha": 0.0, "trocas_perfil": {"pilar|W 250×32,7": "W 360×51,0", "viga|W 150×22,5": "Perfil Que Não Existe"}}
+    r = AE.calcular(_modelo(), par)
+    pil = [b for b in r["barras"] if b["papel"] == "pilar"]
+    assert pil and all(b["perfil"] == "W 360×51,0" and b["perfil_original"] == "W 250×32,7" for b in pil)
+    assert all(b["perfil"] == "W 150×22,5" and "perfil_original" not in b for b in r["barras"] if b["papel"] == "viga")
+    assert any("ignorada" in a and "Perfil Que Não Existe" in a for a in r["avisos"])
+    g = {x["chave"]: x for x in r["grupos_perfis"]}
+    assert g["pilar|W 250×32,7"]["atual"] == "W 360×51,0" and g["pilar|W 250×32,7"]["alternativas"]
+    sem = AE.calcular(_modelo(), {"vento": False, "telha": 0.0})
+    pior = lambda rr: max(rr["envoltoria"][i]["sigma"] for i, b in enumerate(rr["barras"]) if b["papel"] == "pilar")
+    assert pior(r) < pior(sem)                                      # o pilar mais pesado trabalha menos

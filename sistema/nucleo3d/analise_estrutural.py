@@ -78,6 +78,9 @@ PARAMETROS_PADRAO = {
     "movel_peso_total_kg": 7800.0,      # o peso total informado pelo fabricante (tesouras + lona)
     "perfil_sanfona": "TQ 50×50×2,0",   # o braço da sanfona (o X entre tesouras vizinhas)
     "configuracao": "aberta",           # a situação calculada (o calcular faz as duas)
+    # troca de perfil só na análise (o "e se", pedido de 06/10): {"função|perfil": "perfil novo"} — a função é o papel na
+    # treliça (banzo_sup, banzo_inf, montante, diagonal) ou o papel da peça (pilar, viga…); o 3D não muda
+    "trocas_perfil": {},
     # aço
     "fy_mpa": 345.0,                    # para o mapa de tensões (ASTM A572 Gr.50; o tubo leve pode ser outro)
 }
@@ -214,7 +217,7 @@ def montar(doc, par: Optional[dict] = None) -> dict:
             "a": int(br["a"]), "b": int(br["b"]), "L": L, "papel": br.get("papel") or "barra",
             "papel_trelica": at.get("papel_trelica"), "elemento": at.get("elemento"), "grupo": at.get("origem_2d") or br.get("grupo"),
             "marca": at.get("marca") or at.get("peca"), "perfil": br.get("perfil") or "", "ids": list(br.get("ids") or []),
-            "sec": sec, "R": _eixos(a, b, float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0),
+            "sec": sec, "duplo": bool(br.get("duplo")), "R": _eixos(a, b, float(getattr(ent, "rotacao", 0.0) or 0.0) if ent is not None else 0.0),
             "soltos": [],
         })
     for nome, n in sem_secao.items():
@@ -228,6 +231,7 @@ def montar(doc, par: Optional[dict] = None) -> dict:
     if movel is None:
         hip = _travamento_hipotese(nos, barras, P, cache, avisos)
         barras += hip
+    _trocar_perfis(barras, P, cache, avisos)
     # quem chega em cada nó
     no_barras: Dict[int, List[int]] = collections.defaultdict(list)
     for i, br in enumerate(barras):
@@ -295,6 +299,55 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         apoios.append({"no": int(n), "tipo": tipo, "chave": chave})
     return {"nos": nos, "barras": barras, "apoios": apoios, "avisos": avisos, "par": P, "resumo_esqueleto": an["resumo"],
             "movel": movel}
+
+
+def chave_do_grupo(br: dict, perfil: Optional[str] = None) -> str:
+    """o grupo de uma barra para a troca de perfil: a função (o papel na treliça ou o da peça) e o perfil original"""
+    return "%s|%s" % (br.get("papel_trelica") or br.get("papel") or "barra", perfil if perfil is not None else br.get("perfil_original") or br.get("perfil") or "")
+
+
+def _trocar_perfis(barras: List[dict], P: dict, cache: dict, avisos: List[str]) -> None:
+    """a troca de perfil da análise: cada barra do grupo ganha a seção do perfil novo (e guarda o original)"""
+    trocas = P.get("trocas_perfil") or {}
+    if not trocas:
+        return
+    fora, feitas = set(), collections.Counter()
+    for br in barras:
+        novo = trocas.get(chave_do_grupo(br))
+        if not novo or novo == br["perfil"]:
+            continue
+        sec = _secao(novo, bool(br.get("duplo")), cache)
+        if sec is None:
+            fora.add(novo)
+            continue
+        br["perfil_original"] = br["perfil"]
+        br["perfil"], br["sec"] = novo, sec
+        feitas[chave_do_grupo(br)] += 1
+    for k, n in feitas.items():
+        f, p0 = k.split("|", 1)
+        avisos.append("perfil trocado só na análise: %s %s → %s (%d barras; o modelo 3D não muda)" % (f, p0, trocas[k], n))
+    for nome in sorted(fora):
+        avisos.append("troca de perfil ignorada: \"%s\" não está no catálogo" % nome)
+
+
+def grupos_de_perfis(r: dict, limite: int = 24) -> List[dict]:
+    """os grupos (função + perfil original) do resultado, com o peso e as alternativas do catálogo (mesma família, do
+    mais leve ao mais pesado) — a lista da troca de perfil na tela"""
+    from nucleo import catalogo
+    grupos: Dict[str, dict] = {}
+    for b in r["barras"]:
+        if b.get("hipotese"):
+            continue
+        k = chave_do_grupo(b)
+        g = grupos.setdefault(k, {"chave": k, "funcao": k.split("|", 1)[0], "perfil": k.split("|", 1)[1], "atual": b["perfil"], "barras": 0})
+        g["barras"] += 1
+    for g in grupos.values():
+        try:
+            alts = catalogo.alternativas(g["perfil"], limite=limite)
+        except Exception:                                       # noqa: BLE001 — fora do catálogo: só o campo livre
+            alts = []
+        g["alternativas"] = [[a["nome"], round(float(a.get("massa") or 0.0), 2)] for a in alts]
+    return sorted(grupos.values(), key=lambda g: g["chave"])
 
 
 def _sem_copias_da_cobertura(doc):
@@ -934,6 +987,7 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
     if not P.get("cobertura_movel"):
         r = _calcular_situacao(doc, P)
         r["reacoes_envoltoria"] = envoltoria_das_reacoes({"": r})
+        r["grupos_perfis"] = grupos_de_perfis(r)
         return r
     r_a = _calcular_situacao(doc, dict(P, configuracao="aberta"))
     r_r = _calcular_situacao(doc, dict(P, configuracao="retraida"))
@@ -941,6 +995,7 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
     r_r["situacao"] = "retraida"
     r_a["outras_situacoes"] = {"retraida": r_r}
     r_a["reacoes_envoltoria"] = envoltoria_das_reacoes({"aberta": r_a, "retraida": r_r})
+    r_a["grupos_perfis"] = grupos_de_perfis(r_a)
     return r_a
 
 
@@ -1012,7 +1067,8 @@ def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
                     "elemento": br["elemento"], "marca": br["marca"], "perfil": br["perfil"], "ids": br["ids"],
                     "L": round(br["L"], 4), "ey": np.round(br["R"][1], 4).tolist(), "ez": np.round(br["R"][2], 4).tolist(),
                     "rotulas": [p for p in ("a", "b") if (4 if p == "a" else 10) in br["soltos"]],
-                    "A": br["sec"]["A"], "Wz": br["sec"]["Wz"], "Wy": br["sec"]["Wy"], "hipotese": bool(br.get("hipotese"))}
+                    "A": br["sec"]["A"], "Wz": br["sec"]["Wz"], "Wy": br["sec"]["Wy"], "hipotese": bool(br.get("hipotese")),
+                    **({"perfil_original": br["perfil_original"]} if br.get("perfil_original") else {})}
                    for br in barras],
         "casos": {nome: {"descricao": casos[nome].get("descricao", nome),
                          "nodal": {str(i): np.round(v, 4).tolist() for i, v in casos[nome]["nodal"].items()},

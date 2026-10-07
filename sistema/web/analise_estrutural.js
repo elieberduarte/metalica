@@ -484,6 +484,35 @@ function montarControles() {
 }
 document.querySelectorAll('#modos button').forEach(b => b.addEventListener('click', () => { estado.modo = b.dataset.modo; guardar(); montarControles(); desenhar(); }));
 
+// ------------------------------------------------------------------ troca de perfil (só na análise)
+function chaveDoGrupo(b) { return `${b.papel_trelica || b.papel}|${b.perfil_original || b.perfil}`; }
+function trocasAtuais() { return { ...((RAIZ && RAIZ.parametros && RAIZ.parametros.trocas_perfil) || {}) }; }
+function editarTroca(chave, linha, g) {
+  const ja = linha.nextSibling && linha.nextSibling.classList && linha.nextSibling.classList.contains('troca');
+  document.querySelectorAll('#ranking tr.troca').forEach(x => x.remove());
+  if (ja) return;
+  const info = ((RAIZ && RAIZ.grupos_perfis) || []).find(x => x.chave === chave);
+  const lista = el('datalist', { id: 'alts-troca' }, ...((info && info.alternativas) || []).map(([n, m]) => el('option', { value: n, texto: `${nf(m, 1)} kg/m` })));
+  const inp = el('input', { type: 'text', list: 'alts-troca', value: g.atual, placeholder: 'perfil do catálogo', style: 'width:100%;box-sizing:border-box' });
+  const ir = () => {
+    const v = inp.value.trim(); if (!v) return;
+    const t2 = trocasAtuais();
+    if (v === g.original) delete t2[chave]; else t2[chave] = v;
+    calcular({ trocas_perfil: t2 });
+  };
+  const voltar = () => { const t2 = trocasAtuais(); delete t2[chave]; calcular({ trocas_perfil: t2 }); };
+  const linhaT = el('tr', { class: 'troca' }, el('td', { colspan: '4' },
+    el('div', { class: 'sub', texto: `Novo perfil para ${ROTULO_PAPEL[g.funcao] || g.funcao} · ${g.original} (${(info && info.barras) || ''} barras) — a lista traz os da mesma família, do mais leve ao mais pesado; dá para digitar outro:` }),
+    lista, inp,
+    el('div', { style: 'display:flex;gap:6px;margin-top:4px;flex-wrap:wrap' },
+      el('button', { type: 'button', class: 'prim', texto: 'Trocar e recalcular', onclick: ir }),
+      g.atual !== g.original ? el('button', { type: 'button', class: 'sec', texto: `Voltar ao ${g.original}`, onclick: voltar }) : '',
+      el('button', { type: 'button', class: 'sec', texto: 'Cancelar', onclick: () => linhaT.remove() }))));
+  inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') ir(); if (ev.key === 'Escape') linhaT.remove(); });
+  linha.after(linhaT);
+  inp.focus(); inp.select();
+}
+
 function painelRanking() {
   const R = $('#ranking');
   const fy = D.parametros.fy_mpa || 345;
@@ -496,12 +525,32 @@ function painelRanking() {
       el('td', { html: `<span style="color:${hex(rampa(s / fy))};font-weight:700">${nf(s / fy * 100, 0)}%</span>` }), el('td', { texto: D.envoltoria[i].comb || '' }));
     t.append(tr);
   }
-  // o pior por grupo (função + perfil)
+  // o pior por grupo (função + perfil original): a troca de perfil é por grupo
   const grupos = new Map();
-  D.barras.forEach((b, i) => { if (b.hipotese) return; const k = `${ROTULO_PAPEL[b.papel_trelica || b.papel] || b.papel} · ${b.perfil}`; grupos.set(k, Math.max(grupos.get(k) || 0, D.envoltoria[i].sigma)); });
-  const tg = el('table', { style: 'margin-top:8px' }, el('tr', {}, el('th', { texto: 'grupo' }), el('th', { texto: 'pior σ' }), el('th', { texto: '% fy' })));
-  for (const [k, s] of [...grupos].sort((a, b) => b[1] - a[1])) tg.append(el('tr', {}, el('td', { texto: k }), el('td', { texto: nf(s, 0) }), el('td', { html: `<span style="color:${hex(rampa(s / fy))};font-weight:700">${nf(s / fy * 100, 0)}%</span>` })));
-  R.replaceChildren(t, el('div', { class: 'sub', style: 'margin-top:6px', texto: 'Por grupo (função · perfil):' }), tg,
+  D.barras.forEach((b, i) => {
+    if (b.hipotese) return;
+    const k = chaveDoGrupo(b);
+    const g = grupos.get(k) || { s: 0, atual: b.perfil, original: b.perfil_original || b.perfil, funcao: b.papel_trelica || b.papel };
+    g.s = Math.max(g.s, D.envoltoria[i].sigma); grupos.set(k, g);
+  });
+  const tg = el('table', { style: 'margin-top:8px' }, el('tr', {}, el('th', { texto: 'grupo' }), el('th', { texto: 'pior σ' }), el('th', { texto: '% fy' }), el('th', { texto: '' })));
+  for (const [k, g] of [...grupos].sort((a, b) => b[1].s - a[1].s)) {
+    const nome = ROTULO_PAPEL[g.funcao] || g.funcao;
+    const perfil = g.atual !== g.original ? `<s style="opacity:.6">${g.original}</s> → <b>${g.atual}</b>` : g.original;
+    const tr = el('tr', {}, el('td', { html: `${nome} · ${perfil}` }), el('td', { texto: nf(g.s, 0) }),
+      el('td', { html: `<span style="color:${hex(rampa(g.s / fy))};font-weight:700">${nf(g.s / fy * 100, 0)}%</span>` }),
+      el('td', {}, el('button', { type: 'button', class: 'sec mini', title: 'Trocar o perfil deste grupo e recalcular (só na análise: o 3D não muda)', texto: 'trocar', onclick: () => editarTroca(k, tr, g) })));
+    tg.append(tr);
+  }
+  const trocas = Object.entries(trocasAtuais());
+  const caixa = trocas.length ? el('div', { class: 'aviso', style: 'margin-top:6px' },
+    el('b', { texto: 'Perfis trocados só na análise' }), el('span', { texto: ' (o modelo 3D não muda):' }),
+    ...trocas.map(([k, novo]) => {
+      const [f, p0] = k.split('|');
+      return el('div', {}, `${ROTULO_PAPEL[f] || f}: ${p0} → ${novo} `,
+        el('button', { type: 'button', class: 'sec mini', texto: 'desfazer', onclick: () => { const t2 = trocasAtuais(); delete t2[k]; calcular({ trocas_perfil: t2 }); } }));
+    })) : '';
+  R.replaceChildren(t, el('div', { class: 'sub', style: 'margin-top:6px', texto: 'Por grupo (função · perfil) — "trocar" muda o perfil do grupo e recalcula:' }), tg, caixa,
     el('div', { class: 'sub', style: 'margin-top:4px', texto: 'Tensão elástica combinada (mapa). A verificação da NBR 8800 — flambagem, flexo-compressão — vem na etapa do dimensionamento.' }));
 }
 
@@ -623,16 +672,17 @@ async function carregar() {
   aplicar(await r.json());
 }
 
-$('#btn-calcular').addEventListener('click', async () => {
+async function calcular(extra = {}) {
   $('#carregando').style.display = 'flex';
   try {
-    const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ parametros: lerPremissas() }) });
+    const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ parametros: { ...lerPremissas(), ...extra } }) });
     const j = await r.json();
     if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
     aplicar(j);
   } catch (e) { alert('Não foi possível calcular: ' + e.message); }
   $('#carregando').style.display = 'none';
-});
+}
+$('#btn-calcular').addEventListener('click', () => calcular());
 
 redimensionar();
 carregar().catch(e => { $('#vazio').hidden = false; $('#vazio').textContent = 'Não foi possível abrir: ' + e.message; });
