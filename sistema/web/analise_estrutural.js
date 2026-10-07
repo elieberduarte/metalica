@@ -617,4 +617,4 @@ $('#btn-calcular').addEventListener('click', async () => {
 
 redimensionar();
 carregar().catch(e => { $('#vazio').hidden = false; $('#vazio').textContent = 'Não foi possível abrir: ' + e.message; });
-window.ae = { get D() { return D; }, estado, desenhar };
+window.ae = { get D() { return D; }, estado, desenhar, camera };
