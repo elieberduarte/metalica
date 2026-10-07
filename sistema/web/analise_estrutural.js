@@ -579,8 +579,16 @@ function painelAvisos() {
 function cabecalho() {
   $('#cab').textContent = D ? `${D.projeto || PROJETO}${D.local ? ' · ' + D.local : ''}` : PROJETO;
   $('#estado').textContent = D && !D.vazio ? `Calculado em ${D.calculado_em} (${nf(D.segundos, 1)} s) · ${D.barras.length} barras, ${D.nos.length} nós, ${D.apoios.length} apoios · ${Object.keys(D.casos).length} casos, ${Object.keys(D.combinacoes).length} combinações` : (D && D.vazio) || '';
-  $('#btn-voltar').href = `/editor?projeto=${encodeURIComponent(PROJETO)}`;
+  $('#btn-modelo3d').href = `/editor?projeto=${encodeURIComponent(PROJETO)}`;
 }
+
+// Voltar: a tela de onde veio (a área 2D + 3D, pelo menu Modelo); aberta direto, a área de trabalho do projeto
+$('#btn-voltar').addEventListener('click', () => {
+  let daqui = false;
+  try { daqui = !!document.referrer && new URL(document.referrer).origin === location.origin; } catch (e) { /* */ }
+  if (daqui && history.length > 1) history.back();
+  else location.href = `/dividida?projeto=${encodeURIComponent(PROJETO)}`;
+});
 
 function trocarSituacao() {
   D = (estado.situacao !== 'aberta' && RAIZ.outras_situacoes && RAIZ.outras_situacoes[estado.situacao]) || RAIZ;
