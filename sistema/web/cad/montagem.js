@@ -1,5 +1,5 @@
 // A Montagem do projeto recebido — etapa 1 da leitura por quadros (plano de 01/10/2026,
-// Projeto/Leitura-por-quadros-plano-2026-10-01.pdf).
+// Projeto/ANALISES/Desenho-e-pranchas/Leitura-por-quadros-plano-2026-10-01.pdf).
 //
 // O DXF do cliente fica na Original (a planta de lançamento, intocada). A Montagem é outro desenho do
 // projeto ("montagem", em mm de papel, escala 1) com os QUADROS tipados onde o operador põe cada parte do

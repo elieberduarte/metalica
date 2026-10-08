@@ -1,6 +1,6 @@
 /* A faixa de ferramentas da área de trabalho (/dividida): uma linha só de ícones embaixo da barra única, a
  * mesma nas três vistas (2D, 2D + 3D, 3D) — no lugar das colunas de cada tela, que ficam escondidas dentro da
- * área (html.barra-unica, web/area.js). Aprovada no protótipo Projeto/Prototipo-faixa-e-menus-v3.html (UI1,
+ * área (html.barra-unica, web/area.js). Aprovada no protótipo Projeto/ANALISES/Interface/Prototipo-faixa-e-menus-v3.html (UI1,
  * 30/09/2026): sem títulos de grupo e sem etiqueta 2D/3D; o ícone que não é do lado ativo fica apagado.
  *
  * A faixa é um controle das colunas originais: cada botão dela aciona (click) o botão da coluna de uma das

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Logo HERMES do carimbo: contornos das hachuras solidas (mm no carimbo em escala 1),
-extraidos do bloco "logo" de `Projeto/Modelos de Pranchas - Hermes.dwg`. A hachura do "R"
+extraidos do bloco "logo" de `Projeto/MODELOS-HERMES/Modelos de Pranchas - Hermes.dwg`. A hachura do "R"
 leva o furo como segundo contorno."""
 
 LOGO_HACHURAS = [

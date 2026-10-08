@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Modelo de prancha da Hermes (`Projeto/Modelos de Pranchas - Hermes.dwg`).
+"""Modelo de prancha da Hermes (`Projeto/MODELOS-HERMES/Modelos de Pranchas - Hermes.dwg`).
 
 Medidas tiradas do DWG, em mm de papel, para as folhas A0 a A3 do modelo (A4 segue a
 A3): quadro com 25 mm à esquerda (furação para arquivo) e 7 mm nos outros lados, marcas
