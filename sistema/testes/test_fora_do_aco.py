@@ -160,3 +160,15 @@ def test_itens_do_revit_pilar_de_tubo_armadura_gradil_e_malha_aberta():
     assert fora["Laje de fundação:NE_ARGAMASSA_REGULARIZACAO_50mm"]["categoria"] == "argamassa"
     s = _solido("Vigas W Gerdau:W360X64:6518739", "IfcBeam", *_caixa(10.0, 10.0, 10.0), "<Unnamed>")
     assert _material(s) == ""
+
+
+def test_material_do_tqs_pela_propriedade():
+    # o TQS dá como material o grupo ("Vigas") e o material de verdade na propriedade (Vicente Residence, 08/10)
+    v, f = _caixa(5000.0, 140.0, 600.0)
+    viga = _solido("V12", "IfcBeam", v, f, "Vigas")
+    viga.atributos["propriedades"] = {"TQS_Padrao": {"Titulo": "V12", "Material": "Concreto C43"}}
+    assert fa.material_nao_aco(viga) == ("concreto", 2500.0)
+    aco = _solido("V1", "IfcBeam", v, f, "Vigas")
+    aco.atributos["propriedades"] = {"Pset": {"Material": "ASTM A572"}}
+    assert fa.material_nao_aco(aco) is None
+    assert fa.material_nao_aco(_solido("V2", "IfcBeam", v, f, "Vigas")) is None     # sem propriedade: fica no aço

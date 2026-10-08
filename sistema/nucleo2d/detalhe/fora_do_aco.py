@@ -74,11 +74,26 @@ def material_nao_aco(ent) -> Optional[Tuple[str, float]]:
     if perfil and re.search(PERFIL_DE_ACO, perfil.strip()):
         return None
     m = _sem_acento(str(getattr(ent, "material", "") or ""))
-    if not m or re.search(r"steel|aco\b|a36|a572|a500|astm|civil|usi|zar", m):
+    if m and re.search(r"steel|aco\b|a36|a572|a500|astm|civil|usi|zar", m):
         return None
     for padrao, categoria, rho in MATERIAIS_NAO_ACO:
-        if re.search(padrao, m):
+        if m and re.search(padrao, m):
             return categoria, rho
+    # o TQS dá como material o nome do grupo ("Vigas", "Pilares") e o material de verdade na propriedade
+    # ("TQS_Padrao" → "Material": "Concreto C43"): as vigas e os pilares de concreto do Vicente Residence entravam
+    # como aço, 13.500 t (08/10)
+    for pset in (atr.get("propriedades") or {}).values():
+        if not isinstance(pset, dict):
+            continue
+        for k, v in pset.items():
+            if _sem_acento(str(k)).strip() != "material":
+                continue
+            mp = _sem_acento(str(v or ""))
+            if re.search(r"steel|aco\b|a36|a572|a500|astm|civil|usi|zar", mp):
+                return None
+            for padrao, categoria, rho in MATERIAIS_NAO_ACO:
+                if re.search(padrao, mp):
+                    return categoria, rho
     return None
 
 
