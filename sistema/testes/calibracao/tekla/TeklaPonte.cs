@@ -59,6 +59,7 @@ public static class TeklaPonte
             case "ler": return Ler(m, args[1]);
             case "limpar": Console.WriteLine("apagadas: " + Limpar(m)); return 0;
             case "analise": return Analise(m, args[1], args.Length > 2 ? args[2] : "NEUTRAL_AXIS");
+            case "enquadrar": return Enquadrar(m);
         }
         Console.WriteLine("comando desconhecido: " + args[0]);
         return 1;
@@ -246,6 +247,42 @@ public static class TeklaPonte
         File.WriteAllText(Path.ChangeExtension(arquivo, ".criadas.json"), js.Serialize(relatorio), new UTF8Encoding(false));
         Console.WriteLine(string.Format("criadas {0}, recusadas {1}; o centro de gravidade do Tekla a até {2:F2} mm da nossa linha", ok, falhou, piorCg));
         return falhou == 0 ? 0 : 4;
+    }
+
+    // ---------------------------------------------------------------- a vista: as peças de calibração enchendo a tela
+    static int Enquadrar(Model m)
+    {
+        double[] mn = { double.MaxValue, double.MaxValue, double.MaxValue }, mx = { double.MinValue, double.MinValue, double.MinValue };
+        ModelObjectEnumerator en = m.GetModelObjectSelector().GetAllObjectsWithType(ModelObject.ModelObjectEnum.BEAM);
+        int n = 0;
+        while (en.MoveNext())
+        {
+            Beam b = en.Current as Beam;
+            if (b == null) continue;
+            string c = "";
+            b.GetUserProperty("comment", ref c);
+            if (c != MARCA) continue;
+            Solid so = b.GetSolid();
+            mn[0] = Math.Min(mn[0], so.MinimumPoint.X); mn[1] = Math.Min(mn[1], so.MinimumPoint.Y); mn[2] = Math.Min(mn[2], so.MinimumPoint.Z);
+            mx[0] = Math.Max(mx[0], so.MaximumPoint.X); mx[1] = Math.Max(mx[1], so.MaximumPoint.Y); mx[2] = Math.Max(mx[2], so.MaximumPoint.Z);
+            n++;
+        }
+        if (n == 0) { Console.WriteLine("nenhuma peça de calibração"); return 1; }
+        var vistas = Tekla.Structures.Model.UI.ViewHandler.GetVisibleViews();
+        int k = 0;
+        double f = 1000.0;                                   // uma folga de 1 m em volta
+        var caixa = new AABB(new Point(mn[0] - f, mn[1] - f, mn[2] - f), new Point(mx[0] + f, mx[1] + f, mx[2] + f));
+        while (vistas.MoveNext())
+        {
+            var v = vistas.Current;
+            v.WorkArea = caixa;
+            v.Modify();
+            Tekla.Structures.Model.UI.ViewHandler.ZoomToBoundingBox(v, caixa);
+            Tekla.Structures.Model.UI.ViewHandler.RedrawView(v);
+            k++;
+        }
+        Console.WriteLine(string.Format("{0} peças enquadradas em {1} vista(s)", n, k));
+        return 0;
     }
 
     // ---------------------------------------------------------------- o modelo de cálculo do Tekla
