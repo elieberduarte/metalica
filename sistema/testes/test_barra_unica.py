@@ -21,6 +21,11 @@ def test_cada_comando_do_mapa_existe_na_tela_do_lado():
     for texto, lado, acao in re.findall(r"I\('([^']+)', '(2d|3d)', '([^']+)'", js):
         if acao in ("desfazer", "refazer"):
             continue
+        # Modelo › Lançar na planta (Estrutura): os botões estr-* são do menu Estrutura do CAD, que só
+        # existe no desenvolvimento (web/cad/estrutura.js fora do git, 06/10); no instalado os itens se
+        # escondem sozinhos (2e1aaea). A cópia limpa da conferência não tem esses botões.
+        if acao.startswith("estr-"):
+            continue
         if 'data-acao="%s"' % acao not in topo[lado]:
             faltam.append((texto, lado, acao))
     for texto, lado, vista in re.findall(r"V\('([^']+)', '(2d|3d)', '([^']+)'", js):
