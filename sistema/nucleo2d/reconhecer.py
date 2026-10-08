@@ -463,6 +463,10 @@ def _segmentos(des: Desenho) -> List[_Seg]:
         elif isinstance(e, Polilinha):
             vs = [tuple(v) for v in e.vertices or []]
             pares = list(zip(vs, vs[1:])) + ([(vs[-1], vs[0])] if e.fechada and len(vs) > 2 else [])
+        elif e.tipo == "hachura" and (e.atributos or {}).get("dxf") == "SOLID" and e.contornos:
+            # o SOLID do DXF entra como hachura sólida; o contorno dele é a ponta de seta da cota (antes vinha polilinha)
+            vs = [tuple(v) for v in e.contornos[0]]
+            pares = list(zip(vs, vs[1:])) + ([(vs[-1], vs[0])] if len(vs) > 2 else [])
         else:
             continue
         for k, (a, b) in enumerate(pares):

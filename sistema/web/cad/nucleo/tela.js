@@ -492,13 +492,16 @@ export class Tela {
     for (const c of e.contornos) { c.forEach((p, i) => { const q = T(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); }
     ctx.clip('evenodd');
     const esp = (e.padrao === 'solido' ? 0.6 : e.espacamento) * k * this.vp.z;
+    // a caixa de todos os contornos: a hachura do DXF pode ter várias ilhas (as letras de um logotipo, os triângulos
+    // de um perfil) e, com a caixa só do primeiro, só ele saía pintado (Vicente, 08/10)
+    const todos = e.contornos.length > 1 ? e.contornos.flat() : ext;
     if (esp < 2.5 || e.padrao === 'solido') {           // longe (ou sólida): preenchimento no lugar das linhas
       ctx.globalAlpha = e.padrao === 'solido' ? 0.9 : 0.18; ctx.fillStyle = cor;
-      const pts = ext.map(T); const cx = caixaDe(pts);
+      const pts = todos.map(T); const cx = caixaDe(pts);
       ctx.fillRect(cx[0][0], cx[0][1], cx[1][0] - cx[0][0], cx[1][1] - cx[0][1]);
       ctx.restore(); return;
     }
-    const pts = ext.map(T); const [[x0, y0], [x1, y1]] = caixaDe(pts);
+    const pts = todos.map(T); const [[x0, y0], [x1, y1]] = caixaDe(pts);
     const a = -(e.angulo || 45) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
     const diag = Math.hypot(x1 - x0, y1 - y0), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     ctx.lineWidth = 1; ctx.strokeStyle = cor; ctx.setLineDash([]);
