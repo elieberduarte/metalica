@@ -1028,7 +1028,7 @@ class CAD {
       'alternar-tema': () => this._alternarTema(),
       'pranchas-das-folhas': () => this.pranchasDasFolhas(),
       'atualizar-desenhos': () => this.atualizarDesenhosAgora(),
-      'importar-dxf': () => $('#arquivo-dxf').click(),
+      'importar-dxf': () => this.escolherImportacao(),
       arquitetonico: () => $('#arquivo-arquitetonico').click(),
       'planta-lancamento': () => this.abrirPlantaDeLancamento(),
       calibrar: () => this.ativarFerramenta('calibrar'),
@@ -1186,6 +1186,37 @@ class CAD {
 
   // ----------------------------------------------------------- painéis
   /** DXF escolhido no seletor: pergunta unidade e posição, manda ao servidor, insere como comando. */
+  /**
+   * Arquivo › Importar › DXF ou PDF: um item só, que pergunta o que é o arquivo (o usuário, 08/10: eram três entradas
+   * parecidas, e a do arquitetônico trocava o fundo da planta de lançamento sem o nome dizer). A planta do cliente vira o
+   * fundo da Planta de lançamento (avisa quando já há um); o projeto estrutural pronto vai para Original → Montagem; o
+   * resto entra no desenho aberto.
+   */
+  async escolherImportacao() {
+    if (!this.projeto) { $('#arquivo-dxf').click(); return; }
+    let fundo = null;
+    try { fundo = ((await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}`)).projeto || {}).arquitetonico || null; } catch { fundo = null; }
+    const opcoes = [
+      ['planta', 'Planta do cliente (arquitetônico)', 'vira o fundo da Planta de lançamento, em cinza e travado, para lançar a estrutura por cima'],
+      ['projeto', 'Projeto estrutural pronto (do projetista)', 'vai para Original → Montagem: ler os quadros e montar o 3D por eles'],
+      ['aqui', 'Só acrescentar a este desenho', `as linhas e os textos entram no desenho aberto ("${this.nomeDesenho || 'sem nome'}"), como inserir; Ctrl+Z desfaz`],
+    ];
+    const escolha = { valor: 'aqui' };
+    const lista = el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:6px' }, ...opcoes.map(([v, t, d]) => {
+      const r = el('input', { type: 'radio', name: 'tipo-importacao', value: v });
+      if (v === escolha.valor) r.checked = true;
+      r.addEventListener('change', () => { escolha.valor = v; aviso.style.display = v === 'planta' && fundo ? 'block' : 'none'; });
+      return el('label', { style: 'display:flex;flex-direction:row;gap:8px;align-items:flex-start;color:var(--texto);font-size:13px' }, r,
+        el('span', {}, el('b', { texto: t }), el('br'), el('span', { style: 'color:var(--texto2);font-size:12px', texto: d })));
+    }));
+    const aviso = el('div', { class: 'explica', style: 'display:none;color:var(--atencao, #b45309)',
+      texto: fundo ? `Este projeto já tem a planta do cliente "${fundo.arquivo || ''}" de fundo: ela será trocada pela nova. Os eixos e os elementos lançados ficam.` : '' });
+    const corpo = el('div', {}, el('div', { class: 'explica', texto: 'O que é este arquivo?' }), lista, aviso);
+    if (await this.dialogo({ titulo: 'Importar DXF ou PDF', corpo, ok: 'Escolher o arquivo…' }) !== 'ok') return;
+    const entrada = { planta: '#arquivo-arquitetonico', projeto: '#arquivo-projeto-2d', aqui: '#arquivo-dxf' }[escolha.valor];
+    $(entrada).click();
+  }
+
   async importarDXF(arquivo) {
     if (!arquivo) return;
     if (!this.projeto) { this.aviso('Importar DXF precisa de um projeto aberto.', 'atencao'); return; }

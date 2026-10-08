@@ -36,6 +36,23 @@ try:
     t0 = time.time()
     while time.time() - t0 < 30 and not aba.avaliar("document.body.dataset.pronto === '1' && !!window.cad"): aba.drenar(0.5)
     ok(aba.avaliar("!!document.querySelector('[data-acao=\"importar-dxf\"]') && !!document.getElementById('arquivo-dxf')"), "menu e seletor de arquivo presentes")
+    # um item só (08/10): "Importar DXF ou PDF…" pergunta o que é o arquivo e abre o seletor do caminho escolhido
+    aba.avaliar("window.__abertos = []; HTMLInputElement.prototype.click = function () { window.__abertos.push(this.id); }; "
+                "document.querySelector('[data-acao=\"importar-dxf\"]').click(); 1")
+    t0 = time.time()
+    while time.time() - t0 < 10 and aba.avaliar("document.querySelectorAll('dialog[open] input[name=tipo-importacao]').length") != 3:
+        aba.drenar(0.3)
+    ok(aba.avaliar("document.querySelectorAll('dialog[open] input[name=tipo-importacao]').length") == 3,
+       "a pergunta \"O que é este arquivo?\" com as 3 opções")
+    aba.avaliar("(() => { const r = document.querySelector('dialog[open] input[value=planta]'); r.checked = true; "
+                "r.dispatchEvent(new Event('change')); document.querySelector('#dialogo-ok').click(); return 1; })()")
+    t0 = time.time()
+    while time.time() - t0 < 10 and not aba.avaliar("window.__abertos.length"):
+        aba.drenar(0.3)
+    ok(aba.avaliar("window.__abertos.join()") == "arquivo-arquitetonico", "planta do cliente abre o seletor do arquitetônico (%s)" % aba.avaliar("window.__abertos.join()"))
+    aba.navegar(base + "/cad?projeto=compressores", limite=30)
+    t0 = time.time()
+    while time.time() - t0 < 30 and not aba.avaliar("document.body.dataset.pronto === '1' && !!window.cad"): aba.drenar(0.5)
     # o galpão de exemplo (planta e pórtico, com cotas e textos acentuados)
     import projeto_2d_exemplo as ex
     texto = open(ex.dxf(os.path.join(tempfile.mkdtemp(prefix="idxf_"), "galpao.dxf")), encoding="utf-8").read()

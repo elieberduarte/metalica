@@ -48,9 +48,8 @@
       HR,
       S('Importar', [
         I('IFC de outro programa…', '3d', 'importar-ifc', { antes: 'Arquivo › IFC de outro programa…' }),
-        I('Arquitetônico do cliente (DXF/PDF)…', '2d', 'arquitetonico', { dica: 'é o passo 1 de Modelo › Lançar pelo arquitetônico', antes: 'Arquivo › Arquitetônico do cliente (DXF/PDF)…' }),
-        I('Projeto do projetista (DXF/PDF)…', '2d', 'projeto-2d', { dica: 'é o passo 1 de Modelo › Montar pelo projeto recebido', antes: 'Arquivo › Projeto recebido (DXF/PDF) → modelo 3D e IFC…' }),
-        I('DXF ou PDF dentro do desenho aberto…', '2d', 'importar-dxf', { antes: 'Arquivo › DXF ou PDF neste desenho…' }),
+        // um item só (08/10): pergunta o que é o arquivo — planta do cliente, projeto estrutural pronto ou só acrescentar
+        I('DXF ou PDF…', '2d', 'importar-dxf', { dica: 'pergunta o que é: a planta do cliente, o projeto estrutural pronto ou só acrescentar ao desenho aberto', antes: 'Arquivo › Importar › Arquitetônico do cliente / Projeto do projetista / DXF ou PDF dentro do desenho aberto' }),
         HR,
         I('Só inspecionar um IFC (sem importar)…', '3d', 'inspecionar-ifc', { antes: 'Arquivo › Inspecionar um IFC…' }),
       ]),
