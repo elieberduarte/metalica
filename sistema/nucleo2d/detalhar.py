@@ -549,6 +549,49 @@ def desenho_completo(faixas: Dict[str, tuple], localizacao: Optional[Desenho], c
     return dc
 
 
+def _instancias_pelo_grupo(lista):
+    """(instância, n, unidade, aviso) quando toda peça do conjunto diz a sua instância (`marcas.instancia`, como a
+    peça de um IfcElementAssembly) e há mais de uma; a unidade é a composição da maioria. Senão None (a instância
+    sai da conta das quantidades e do espaço, como sempre)."""
+    if not lista or not all(_marcas(e).get("instancia") for e in lista):
+        return None
+    por_grupo: Dict[str, list] = collections.OrderedDict()
+    for e in lista:
+        por_grupo.setdefault(str(_marcas(e)["instancia"]), []).append(e)
+    if len(por_grupo) < 2:
+        return None
+    grupos = list(por_grupo.values())
+    comps = [collections.Counter(posicao_base(e) for e in g) for g in grupos]
+    comum, m = collections.Counter(frozenset(c.items()) for c in comps).most_common(1)[0]
+    unidade = collections.Counter(dict(comum))
+    inst = next(g for g, c in zip(grupos, comps) if c == unidade)
+    aviso = ""
+    if m < len(grupos):
+        aviso = ("conjunto %s: %d instâncias no modelo, %d com a composição desenhada; as outras %d diferem"
+                 % (_marcas(lista[0]).get("conjunto") or "?", len(grupos), m, len(grupos) - m))
+    return inst, m, unidade, aviso
+
+
+def _unidade_pelos_agrupamentos(lista, fracao: float = 0.8, folga: float = 60.0):
+    """(instância, n, unidade, aviso) quando pelo menos `fracao` dos grupos de peças encostadas (folga mm) do conjunto
+    têm a mesma composição; senão None. O aviso diz quantos grupos fogem dela."""
+    grupos = _instancias(lista, folga=folga)
+    if len(grupos) < 2:
+        return None
+    comps = [collections.Counter(posicao_base(e) for e in g) for g in grupos]
+    chave = collections.Counter(frozenset(c.items()) for c in comps)
+    comum, m = chave.most_common(1)[0]
+    if m < 2 or m < fracao * len(grupos):
+        return None
+    unidade = collections.Counter(dict(comum))
+    inst = next(g for g, c in zip(grupos, comps) if c == unidade)
+    aviso = ""
+    if m < len(grupos):
+        aviso = ("conjunto %s: %d grupos de peças, %d com a composição desenhada; os outros %d diferem"
+                 % (_marcas(lista[0]).get("conjunto") or "?", len(grupos), m, len(grupos) - m))
+    return inst, m, unidade, aviso
+
+
 def _unidade_pela_maioria(total: collections.Counter, fracao: float = 0.8):
     """(n, unidade) quando pelo menos `fracao` das posições do conjunto têm quantidade
     múltipla de um mesmo n > 1 (o maior deles); unidade = quantidade / n arredondada. None
@@ -723,6 +766,12 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             # posições; telhas também não
             if sum(unidade.values()) < 2 or all(classe_de.get(k) == "telha" for k in unidade):
                 continue
+            # as instâncias que o modelo já diz (marcas.instancia em cada peça, como o conjunto do IFC): sem
+            # adivinhar pela conta
+            pelo_grupo = _instancias_pelo_grupo(lista)
+            if pelo_grupo:
+                candidatos.append((conj, lista) + pelo_grupo)
+                continue
             # a instância desenhada: um agrupamento espacial com exatamente a composição
             # unitária; sem um, o conjunto inteiro quando n = 1, senão o maior agrupamento
             insts = _instancias_do_conjunto(lista, unidade)
@@ -746,6 +795,14 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                         aviso = ("conjunto %s: %d instâncias, %d com a composição desenhada; no total diferem %s"
                                  % (conj, n2, len(iguais), ", ".join(difere)))
                         inst, n, unidade = iguais[0], n2, unidade2
+            if inst is None:
+                # a unidade pelos agrupamentos no espaço: o mdc das quantidades erra quando a composição da instância
+                # tem um divisor comum (a viga-caixa do Vicente, 08/10: 4 tubos, 42 travessas e 6 montantes por viga →
+                # mdc 2, "meia viga" como unidade e 48 instâncias em vez de 24); quando quase todos os grupos de peças
+                # encostadas têm a mesma composição, ela é a unidade e o número de grupos é a quantidade
+                pelos_grupos = _unidade_pelos_agrupamentos(lista)
+                if pelos_grupos:
+                    inst, n, unidade, aviso = pelos_grupos
             if inst is None:
                 # nunca o conjunto inteiro quando ele está espalhado em vários grupos
                 inst = max(insts, key=len) if len(insts) > 1 else lista

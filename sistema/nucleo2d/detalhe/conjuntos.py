@@ -1959,6 +1959,10 @@ def _alma_em_eixo(desenho: Desenho, entidades: Sequence, alma: Dict[str, Tuple[t
         if camada_de.get(k) == "MONTANTES":
             continue
         originais = list(ab)
+        if math.dist(originais[0], originais[1]) < 1e-6:
+            # a peça perpendicular ao plano da vista (a travessa de uma viga-caixa, vista de topo: Vicente, 08/10) é um
+            # ponto no desenho — não tem direção para andar no eixo; fica onde está (dava divisão por zero)
+            continue
         # a barra deitada ou em pé (a horizontal do joelho) é como o montante: fica no eixo dela e só
         # vai até o cruzamento — a ponta anda na reta dela, não sai torta para um nó ao lado (regra do
         # usuário, 28/09: "não mexer nos montantes")
@@ -2537,7 +2541,10 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             if r is None:
                 continue
             (x, y), t = r
-            if -0.15 <= t <= 1.15 and min(qa[0], qb[0]) - 50 <= x <= max(qa[0], qb[0]) + 50:
+            # até 15% além da ponta, e nunca menos de 60 mm: o montante curto (146 mm entre os tubos da viga-caixa
+            # do Vicente, 08/10) para na face do banzo, 27 mm antes do eixo dele — 18%, e nenhum nó saía
+            margem = max(0.15, 60.0 / max(comp, 1.0))
+            if -margem <= t <= 1.0 + margem and min(qa[0], qb[0]) - 50 <= x <= max(qa[0], qb[0]) + 50:
                 em_cima = de_cima[id(bz)]
                 (nos_cima if em_cima else nos_baixo).add(round(x, 1))
                 if abs(ang - 90.0) < 10.0:
@@ -2556,7 +2563,11 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         vals = sorted(vals)
         grupos = [[vals[0]]]
         for x in vals[1:]:
-            if x - grupos[-1][-1] > tol:
+            # o montante a mais de 60 mm da ponta é um nó dele, não a ponta (a última travessa da viga-caixa, a 100 mm
+            # da emenda — Vicente, 08/10: a cadeia fechava com "500" no lugar de "400 · 100")
+            ponta_e_montante = x - grupos[-1][-1] > 60.0 and (
+                (x in fixos and grupos[-1][-1] in de_montante) or (x in de_montante and any(g in fixos for g in grupos[-1])))
+            if x - grupos[-1][-1] > tol or ponta_e_montante:
                 grupos.append([x])
             else:
                 grupos[-1].append(x)
@@ -3194,6 +3205,45 @@ def _camadas_por_perfil(desenho: Desenho, marca: str, instancia: Sequence[Solido
 # ============================================================ tesouras montadas
 #: Duas meias-tesouras são da mesma tesoura quando estão no mesmo plano (a esta distância, mm).
 TOLERANCIA_PLANO_TESOURA = 150.0
+#: Folga (mm) entre as caixas de duas meias para serem a mesma tesoura montada: no mesmo plano e encostadas (com
+#: folga para a emenda e a chapa da cumeeira). Só o plano juntava as vigas-caixa dos 12 andares do Vicente — mesmo
+#: plano vertical, alturas diferentes — numa "tesoura" só (08/10).
+FOLGA_MEIAS_MONTADAS = 300.0
+
+
+def _faixa_reta(pecas: Sequence[Solido], normal, tol: float = 30.0, faixas: int = 24) -> bool:
+    """As peças, vistas no plano de normal `normal`, formam uma faixa reta — o contorno de cima e o de baixo
+    constantes ao longo do comprimento (até `tol` mm) —, como uma linha de vigas emendadas; a tesoura tem caída."""
+    verts = [v for e in pecas for v in (e.vertices or [])]
+    if len(verts) < 4:
+        return False
+    n = _norm(normal)
+    c = tuple(sum(v[i] for v in verts) / len(verts) for i in range(3))
+    planos = [_sub(v, c) for v in verts]
+    planos = [_sub(q, tuple(n[i] * _dot(q, n) for i in range(3))) for q in planos]
+    # o eixo maior no plano
+    _c, pca = _autovetores(planos)
+    a1 = pca[0]
+    a2 = _norm(_cruz(n, a1))
+    us = [_dot(q, a1) for q in planos]
+    vs = [_dot(q, a2) for q in planos]
+    u0, u1 = min(us), max(us)
+    if u1 - u0 < 1e-6:
+        return False
+    cima: Dict[int, float] = {}
+    baixo: Dict[int, float] = {}
+    for u_, v_ in zip(us, vs):
+        k = min(faixas - 1, int((u_ - u0) / (u1 - u0) * faixas))
+        cima[k] = max(cima.get(k, -1e18), v_)
+        baixo[k] = min(baixo.get(k, 1e18), v_)
+    if len(cima) < faixas // 2:
+        return False
+    return (max(cima.values()) - min(cima.values()) <= tol) and (max(baixo.values()) - min(baixo.values()) <= tol)
+
+
+def _caixa_de_pecas(pecas: Sequence[Solido]):
+    cs = [_caixa(e) for e in pecas]
+    return [(min(c[k][0] for c in cs), max(c[k][1] for c in cs)) for k in range(3)]
 
 
 def tesouras_montadas(meias: Sequence[tuple]) -> Tuple[List[dict], set]:
@@ -3222,12 +3272,35 @@ def tesouras_montadas(meias: Sequence[tuple]) -> Tuple[List[dict], set]:
             planos.append([t])
         else:
             alvo.append(t)
+    # no mesmo plano e encostadas: o plano dividido nos grupos de meias que se tocam
+    juntos: List[list] = []
+    for pl in planos:
+        caixas = [_caixa_de_pecas(t[1]) for t in pl]
+        pai = list(range(len(pl)))
+
+        def raiz(i):
+            while pai[i] != i:
+                pai[i] = pai[pai[i]]
+                i = pai[i]
+            return i
+        for i in range(len(pl)):
+            for j in range(i + 1, len(pl)):
+                if all(caixas[i][k][0] - FOLGA_MEIAS_MONTADAS <= caixas[j][k][1] and
+                       caixas[j][k][0] - FOLGA_MEIAS_MONTADAS <= caixas[i][k][1] for k in range(3)):
+                    pai[raiz(i)] = raiz(j)
+        por_raiz: Dict[int, list] = collections.OrderedDict()
+        for i, t in enumerate(pl):
+            por_raiz.setdefault(raiz(i), []).append(t)
+        juntos.extend(por_raiz.values())
     montadas: Dict[tuple, dict] = collections.OrderedDict()
     fora = collections.Counter()                     # instâncias que não formaram par
     total = collections.Counter(t[0] for t in insts)
-    for pl in planos:
-        if len(pl) < 2:
-            fora[pl[0][0]] += 1
+    for pl in juntos:
+        if len(pl) < 2 or _faixa_reta([e for t in pl for e in t[1]], pl[0][2]):
+            # sem par, ou as "meias" são trechos de uma faixa reta (as vigas-caixa emendadas em linha do Vicente,
+            # 08/10): cada uma é a peça de fábrica e sai na célula dela; a montada só junta as águas de uma tesoura
+            for t in pl:
+                fora[t[0]] += 1
             continue
         # da esquerda para a direita no desenho (ao longo do vão)
         pl.sort(key=lambda t: t[4][0] + t[4][1])
