@@ -1063,13 +1063,39 @@ def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -
     flecha = zt - zb
     tg = flecha / (vao / 2.0) if vao > 0 else 0.0
     h_livre = zb
+    # uma água (Tabela 24) ou duas (Tabela 25): na de uma água o ponto mais alto do banzo de cima está numa das bordas (a
+    # marquise do Docas, 08/10; antes toda cobertura ia pela Tabela 25, com a "flecha" sobre meio vão e a ponta inclinada do
+    # beiral junto: tg θ 0,443 numa água de 0,159). A inclinação é a do banzo de cima, a mediana pelo comprimento em planta
+    # (a ponta inclinada, curta, não manda)
+    s_alto = float(s[int(np.argmax(pts[:, 2]))])
+    uma_agua = vao > 0 and min(abs(s_alto - s.min()), abs(s_alto - s.max())) < 0.15 * vao
+    s_baixo = float(s.min() if abs(s_alto - s.max()) < abs(s_alto - s.min()) else s.max())
+    if uma_agua:
+        incl = []
+        for i, (Ls, Lh, w) in trechos.items():
+            a_, b_ = nos[barras[i]["a"]], nos[barras[i]["b"]]
+            if Lh > 1e-3:
+                incl.append((abs(float(b_[2] - a_[2])) / Lh, Lh))
+        incl.sort()
+        meio, acum = sum(L_ for _, L_ in incl) / 2.0, 0.0
+        for tg_i, L_ in incl:
+            acum += L_
+            if acum >= meio:
+                tg = tg_i
+                break
     info = {"Vk": round(Vk, 2), "S2": round(S2, 3), "q_kN_m2": round(q, 3), "classe": classe, "z": round(zt, 2),
             "vao": round(vao, 2), "profundidade": round(prof, 2), "flecha": round(flecha, 3), "tg": round(tg, 3),
-            "h_livre": round(h_livre, 2)}
-    if tg < 0.07:
+            "h_livre": round(h_livre, 2), "aguas": 1 if uma_agua else 2,
+            "tabela": "Tabela 24 (uma água)" if uma_agua else "Tabela 25 (duas águas)"}
+    if uma_agua and tg > 0.7:
+        avisos.append("tg θ = %.2f acima de 0,7: fora da Tabela 24 da NBR 6123 — usado 0,7" % tg)
+        tg = 0.7
+    if uma_agua:
+        pass
+    elif tg < 0.07:
         avisos.append("cobertura quase plana (tg θ = %.3f < 0,07): a Tabela 25 da NBR 6123 começa em 0,07 — usado 0,07" % tg)
         tg = 0.07
-    if tg > 0.6:
+    if tg > 0.6 and not uma_agua:
         avisos.append("tg θ = %.2f acima de 0,6: fora da Tabela 25 da NBR 6123 — usado 0,6" % tg)
         tg = 0.6
     if tg <= 0.4:
@@ -1080,20 +1106,44 @@ def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -
         c2 = (6.5 * tg - 3.1, 5.0 * tg - 3.0)
     info["carregamento_1"] = {"cpb": round(c1[0], 3), "cps": round(c1[1], 3)}
     info["carregamento_2"] = {"cpb": round(c2[0], 3), "cps": round(c2[1], 3)}
+
+    def cp_uma_agua(carregamento: str, do_alto: bool, s_m: float) -> Optional[float]:
+        """Tabela 24 (cobertura isolada a uma água plana): o cp no ponto s_m, positivo para baixo. t = 0 na borda alta e 1 na
+        baixa. Carregamento 1 (tg θ ≤ 0,7): com o vento vindo do lado alto, para cima de 2,0 (borda alta) a tg θ (baixa);
+        do lado baixo, para baixo de 2,0 (borda baixa) a tg θ (alta). Carregamento 2 (só até tg θ = 0,3), ao contrário — de
+        0,2 a 0,3 as pontas são 6 − 20 tg θ (a de barlavento) e 0,6 − 2 tg θ."""
+        tt = min(1.0, max(0.0, (s_m - s_alto) / (s_baixo - s_alto))) if s_baixo != s_alto else 0.5
+        if carregamento == "1":
+            return -(2.0 + (tg - 2.0) * tt) if do_alto else (tg + (2.0 - tg) * tt)
+        if tg > 0.3:
+            return None
+        bar, sot = (2.0, tg) if tg <= 0.2 else (6.0 - 20.0 * tg, 0.6 - 2.0 * tg)
+        return (bar + (sot - bar) * tt) if do_alto else -(sot + (bar - sot) * tt)
+    if uma_agua:
+        info["carregamento_1"] = {"tabela_24": "vento do lado alto: −2,0 → −%s (para cima); do lado baixo: +2,0 → +%s (para baixo)" % ((("%.3f" % tg).replace(".", ","),) * 2)}
+        info["carregamento_2"] = ({"tabela_24": "só até tg θ = 0,3"} if tg > 0.3 else
+                                  {"tabela_24": "vento do lado alto: para baixo; do lado baixo: para cima (%s)" % ("2,0 → tg θ" if tg <= 0.2 else "6 − 20 tg θ → 0,6 − 2 tg θ")})
     if h_livre < 0.5 * vao:
         avisos.append(("vento: a altura livre (%.2f m) é menor que 0,5 × a profundidade da cobertura (%.2f m) — a NBR 6123 "
                        "(7.2.1) pede, nesse caso, calcular como edificação fechada com cpi +0,8/−0,3 na zona de obstrução. "
-                       "Usada a Tabela 25 (cobertura isolada): conferir com o engenheiro") % (h_livre, 0.5 * vao))
+                       "Usada a %s (cobertura isolada): conferir com o engenheiro") % (h_livre, 0.5 * vao, info["tabela"]))
     smid = float((s.max() + s.min()) / 2)
     casos: Dict[str, dict] = {}
     for nome_c, (cpb, cps) in (("1", c1), ("2", c2)):
+        if uma_agua and tg > 0.3 and nome_c == "2":
+            continue                                          # a Tabela 24 só tem o carregamento 2 até tg θ = 0,3
         for sentido, rot in ((+1, "→"), (-1, "←")):
             f: Dict[int, np.ndarray] = {}
+            # o vento no sentido +u vem do lado de s menor: do lado alto se a borda alta tem s menor
+            do_alto = (s_alto < s_baixo) if sentido > 0 else (s_alto > s_baixo)
             for i, (Ls, Lh, w) in trechos.items():
                 a, b = nos[barras[i]["a"]], nos[barras[i]["b"]]
                 m = (a + b) / 2
-                barlavento = (float(m[:2] @ u) - smid) * sentido < 0
-                cp = cpb if barlavento else cps
+                if uma_agua:
+                    cp = cp_uma_agua(nome_c, do_alto, float(m[:2] @ u))
+                else:
+                    barlavento = (float(m[:2] @ u) - smid) * sentido < 0
+                    cp = cpb if barlavento else cps
                 d = _unit(b - a)
                 up = np.array([0.0, 0.0, 1.0])
                 nn = _unit(up - (up @ d) * d)                 # normal ao trecho, para cima
@@ -1121,6 +1171,11 @@ def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -
                                               % (nome_c, "de um lado" if sentido > 0 else "do outro lado",
                                                  "; arrasto nos pilares e vigas (8.1)" if db else ""),
                                               "cpb": cpb, "cps": cps, "sentido": [float(v) for v in u * sentido]}
+            if uma_agua:                                  # Tabela 24: o cp na borda de barlavento e na de sotavento
+                s_b, s_s = (s_alto, s_baixo) if do_alto else (s_baixo, s_alto)
+                casos["V%s%s" % (nome_c, rot)].update(cpb=round(cp_uma_agua(nome_c, do_alto, s_b), 3),
+                                                       cps=round(cp_uma_agua(nome_c, do_alto, s_s), 3),
+                                                       vem_do="lado alto" if do_alto else "lado baixo")
     # atrito no sentido da geratriz (7.2.2): F = 0,05 q a b, distribuída pelas áreas
     area_tot = sum(Lh * w for (Ls, Lh, w) in trechos.values()) or 1.0
     Ft = 0.05 * q * vao * prof

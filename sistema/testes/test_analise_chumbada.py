@@ -110,3 +110,55 @@ def test_ancoragem_no_pilar_de_concreto():
     # o binário: o arrancamento de cima e a compressão de baixo se equilibram na horizontal
     assert abs(cima["T_max"][0] - baixo["C_max"][0]) < 0.15 * cima["T_max"][0]
     assert cima["V_max"][0] > 0.2 and all(k in cima["concomitantes"] for k in ("T_max", "V_max"))
+
+
+def test_vento_cobertura_a_uma_agua():
+    """a marquise de uma água pela Tabela 24 da NBR 6123:2023 (Docas, 08/10; antes ia pela Tabela 25, de duas águas, com a
+    "flecha" sobre meio vão): o cp vai linear de 2,0 numa borda a tg θ na outra — com o vento do lado alto para cima no
+    carregamento 1 e para baixo no 2 (até tg θ = 0,3); a soma é (2,0 + tg θ)/2 · q · área em planta"""
+    doc = Documento(nome="uma agua")
+    _pilar(doc)
+    y = [25.0, 1000.0, 2000.0, 3000.0]
+    zs = [6000.0, 5833.0, 5666.0, 5500.0]                   # o banzo de cima cai 500 mm em ~3 m: tg θ ≈ 0,168
+    for x in (0.0, 3000.0):
+        for i in range(3):
+            _barra(doc, (x, y[i], 5000), (x, y[i + 1], 5000), U, "banzo", "banzo_inf")
+            _barra(doc, (x, y[i], zs[i]), (x, y[i + 1], zs[i + 1]), U, "banzo", "banzo_sup")
+        for yy, zz in zip(y, zs):
+            _barra(doc, (x, yy, 5000), (x, yy, zz), L, "montante", "montante")
+    for b in doc.barras:
+        b.atributos = dict(b.atributos, origem_2d="t%d" % round(b.inicio[0]))
+    M = AE.montar(doc, {"travamento_hipotese": "nao", "vento_nas_barras": False})
+    cob = AE._tesouras_e_cobertura(M)
+    casos, info, _ = AE.cargas(M)
+    v = info["vento"]
+    assert v["aguas"] == 1 and "Tabela 24" in v["tabela"]
+    assert abs(v["tg"] - 0.5 / 2.975) < 0.01
+    area = sum(Lh * w for (Ls, Lh, w) in cob["trechos"].values())
+    esperado = (2.0 + v["tg"]) / 2.0 * v["q_kN_m2"] * area
+    Fz = {c: sum(2 * F[2] for F in casos[c]["nodal"].values()) for c in ("V1→", "V1←", "V2→", "V2←")}
+    for c, f in Fz.items():
+        assert abs(abs(f) - esperado) < 0.02 * esperado, (c, f, esperado)
+    # vento do lado alto: para cima no carregamento 1, para baixo no 2; do lado baixo, ao contrário
+    alto = "V1→" if casos["V1→"]["vem_do"] == "lado alto" else "V1←"
+    assert Fz[alto] > 0 and casos[alto]["cpb"] == -2.0
+    assert Fz[alto.replace("1", "2")] < 0
+    # o cp é maior na borda de barlavento: a força por metro no primeiro trecho a barlavento é maior que no último
+    assert abs(casos[alto]["cpb"]) > abs(casos[alto]["cps"])
+
+
+def test_marquise_de_duas_aguas_segue_na_tabela_25():
+    """a cumeeira no meio: continua a Tabela 25"""
+    doc = Documento(nome="duas aguas")
+    for x in (0.0, 3000.0):
+        ys, zs = [0.0, 2000.0, 4000.0], [5000.0, 5500.0, 5000.0]
+        for i in range(2):
+            _barra(doc, (x, ys[i], 4500), (x, ys[i + 1], 4500), U, "banzo", "banzo_inf")
+            _barra(doc, (x, ys[i], zs[i]), (x, ys[i + 1], zs[i + 1]), U, "banzo", "banzo_sup")
+        for yy, zz in zip(ys, zs):
+            _barra(doc, (x, yy, 4500), (x, yy, zz), L, "montante", "montante")
+    for b in doc.barras:
+        b.atributos = dict(b.atributos, origem_2d="t%d" % round(b.inicio[0]))
+    M = AE.montar(doc, {"travamento_hipotese": "nao", "vento_nas_barras": False})
+    casos, info, _ = AE.cargas(M)
+    assert info["vento"]["aguas"] == 2 and "cpb" in info["vento"]["carregamento_1"]

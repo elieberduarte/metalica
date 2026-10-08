@@ -837,8 +837,17 @@ function painelVento() {
   if (c) linhas.push(`Cobertura: ${nf(c.area_m2, 1)} m² em ${c.trelicas} tesouras; larguras de influência ${c.larguras_m.map(x => nf(x, 2)).join(' · ')} m.`);
   if (v) {
     linhas.push(`Vk = ${nf(v.Vk, 1)} m/s (S2 = ${nf(v.S2, 3)}, classe ${v.classe}, z = ${nf(v.z, 1)} m) · q = <b>${nf(v.q_kN_m2, 3)} kN/m²</b>`);
-    linhas.push(`Cobertura isolada a duas águas (NBR 6123:2023, 7.2, Tabela 25): vão ${nf(v.vao, 1)} m, flecha ${nf(v.flecha, 2)} m → tg θ = ${nf(v.tg, 3)}; altura livre ${nf(v.h_livre, 2)} m.`);
-    linhas.push(`Carregamento 1: cpb = ${nf(v.carregamento_1.cpb, 3)}, cps = ${nf(v.carregamento_1.cps, 3)} · Carregamento 2: cpb = ${nf(v.carregamento_2.cpb, 3)}, cps = ${nf(v.carregamento_2.cps, 3)} (positivo empurra para baixo).`);
+    for (const [k, vc] of (v.coberturas || [v]).entries()) {
+      const qual = v.coberturas ? `Cobertura ${k + 1} (z = ${nf(vc.z, 2)} m, q = ${nf(vc.q_kN_m2, 3)} kN/m²) — ` : '';
+      if (vc.aguas === 1) {
+        // Tabela 24: o cp varia linear entre as bordas (alta e baixa)
+        linhas.push(`${qual}Cobertura isolada a uma água (NBR 6123:2023, 7.2, Tabela 24): vão ${nf(vc.vao, 1)} m, inclinação do banzo de cima tg θ = ${nf(vc.tg, 3)}; altura livre ${nf(vc.h_livre, 2)} m.`);
+        linhas.push(`Carregamento 1: ${vc.carregamento_1.tabela_24} · Carregamento 2: ${vc.carregamento_2.tabela_24} (positivo empurra para baixo; linear entre as bordas).`);
+      } else {
+        linhas.push(`${qual}Cobertura isolada a duas águas (NBR 6123:2023, 7.2, Tabela 25): vão ${nf(vc.vao, 1)} m, flecha ${nf(vc.flecha, 2)} m → tg θ = ${nf(vc.tg, 3)}; altura livre ${nf(vc.h_livre, 2)} m.`);
+        linhas.push(`Carregamento 1: cpb = ${nf(vc.carregamento_1.cpb, 3)}, cps = ${nf(vc.carregamento_1.cps, 3)} · Carregamento 2: cpb = ${nf(vc.carregamento_2.cpb, 3)}, cps = ${nf(vc.carregamento_2.cps, 3)} (positivo empurra para baixo).`);
+      }
+    }
     linhas.push(`Atrito ao longo da geratriz (7.2.2): ${nf(v.atrito_kN, 1)} kN.`);
     const arr = (lista, rot) => (lista || []).length ? `Arrasto ${rot} (8.1): ` + lista.map(r => `${r.papel} ${r.perfil}: ${nf(r.w_kN_m, 3)} kN/m (C ${nf(r.C, 2)} · K ${nf(r.K, 2)} · c ${r.c_mm} mm, ${r.regime})`).join('; ') + '.' : '';
     for (const l of [arr(v.barras_transversal, 'com o vento perpendicular à geratriz'), arr(v.barras_longitudinal, 'com o vento ao longo da geratriz')]) if (l) linhas.push(l);
