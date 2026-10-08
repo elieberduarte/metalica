@@ -48,6 +48,10 @@ PARAMETROS_PADRAO = {
     "rotula_alma": "no_plano",          # …só no plano da treliça (no_plano) ou nas duas direções (total) — rotulada nas
                                         # duas, a alma não segura o banzo inferior fora do plano e ele desliza (mecanismo)
     "tesoura_rotulada_no_apoio": True,  # a treliça rotulada onde apoia na viga ou no pilar
+    # a tesoura chumbada no pilar de concreto (pré-moldado, fora da análise): os nós dela encostados na face do pilar são
+    # os apoios — engastada (as chapas chumbadas) ou articulada. Docas, 08/10: a marquise em balanço, os dois banzos
+    # chumbados no pilar e nenhum outro apoio
+    "chumbada_no_pilar": "engastada",
     # o travamento da cobertura que o modelo ainda não tem (hipótese declarada): com tesouras e sem terças, terças ligando
     # os nós do banzo superior de tesouras vizinhas e um X de contraventamento nos vãos das pontas — sem eles cada
     # tesoura gira em torno da linha dos apoios (mecanismo). Ficam marcadas como "hipótese" na análise
@@ -185,6 +189,49 @@ def _engaste_perfeito(L: float, w: np.ndarray) -> np.ndarray:
 
 # ------------------------------------------------------------------ o modelo
 
+#: A face do pilar de concreto a até esta distância (m) do nó da tesoura: o nó está chumbado nele (o eixo da ponta em U
+#: fica a meia aba da face; a chapa e o chumbador, mais uns centímetros).
+CHUMBADA_ATE = 0.10
+
+
+def _pilares_de_concreto(ents) -> Dict[str, dict]:
+    """{id: {marca, caixa (m: x0, x1, y0, y1, z0, z1)}} dos pilares de concreto do modelo (os da planta de lançamento,
+    pré-moldados): sólidos, fora da análise de aço — só a caixa deles, para achar as tesouras chumbadas"""
+    out: Dict[str, dict] = {}
+    for e in ents.values():
+        at = getattr(e, "atributos", None) or {}
+        if at.get("elemento") != "pilar" or not (at.get("pre_moldado") or str(getattr(e, "material", "")).lower().startswith("concreto")):
+            continue
+        vs = getattr(e, "vertices", None) or []
+        if len(vs) < 4:
+            continue
+        xs, ys, zs = [v[0] / 1000.0 for v in vs], [v[1] / 1000.0 for v in vs], [v[2] / 1000.0 for v in vs]
+        out[e.id] = {"marca": at.get("marca") or at.get("peca") or e.id,
+                     "caixa": (min(xs), max(xs), min(ys), max(ys), min(zs), max(zs))}
+    return out
+
+
+def _chumbadas_no_concreto(nos: np.ndarray, barras: List[dict], concreto: Dict[str, dict]) -> Dict[int, str]:
+    """{nó: marca do pilar}: os nós das tesouras encostados na face de um pilar de concreto (a marquise chumbada no
+    pilar, Docas 08/10) — dentro da altura dele e a até CHUMBADA_ATE da face, por fora"""
+    if not concreto:
+        return {}
+    nos_trel = sorted({n for br in barras if br["elemento"] == "trelica" for n in (br["a"], br["b"])})
+    out: Dict[int, str] = {}
+    for n in nos_trel:
+        x, y, z = (float(c) for c in nos[n])
+        for pc in concreto.values():
+            x0, x1, y0, y1, z0, z1 = pc["caixa"]
+            if not (z0 - 0.05 <= z <= z1 + 0.05):
+                continue
+            dx = max(x0 - x, 0.0, x - x1)
+            dy = max(y0 - y, 0.0, y - y1)
+            if math.hypot(dx, dy) <= CHUMBADA_ATE:
+                out[n] = pc["marca"]
+                break
+    return out
+
+
 def montar(doc, par: Optional[dict] = None) -> dict:
     """o modelo analítico pronto para resolver: nós (m), barras (seção, eixos, rótulas), apoios, origem das peças"""
     from nucleo3d import analitico as AN
@@ -198,8 +245,11 @@ def montar(doc, par: Optional[dict] = None) -> dict:
     barras: List[dict] = []
     avisos: List[str] = []
     sem_secao = collections.Counter()
+    concreto = _pilares_de_concreto(ents)
     for br in an["barras"]:
         ent = ents.get(br["ids"][0]) if br.get("ids") else None
+        if ent is not None and getattr(ent, "id", None) in concreto:
+            continue                                   # o pilar de concreto não é barra de aço: entra como apoio da tesoura
         a, b = nos[br["a"]], nos[br["b"]]
         L = float(np.linalg.norm(b - a))
         if L < 1e-4:
@@ -256,11 +306,17 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         if br["ids"]:
             trechos_no[(br["ids"][0], br["a"])] += 1
             trechos_no[(br["ids"][0], br["b"])] += 1
+    # o nó só de duas barras de alma (nem banzo, nem outra barra): a dobra de uma peça quebrada no meio da tesoura — a
+    # cantoneira soldada contínua. Rotulada nas duas, o joelho girava solto (mecanismo; Docas, 08/10: a barra que
+    # atravessa a T1 em três trechos, com duas dobras fora dos banzos)
+    dobra = {n for n, bs in no_barras.items() if len(bs) == 2 and all(barras[i]["papel"] in ALMA for i in bs)}
     # rótulas
     for br in barras:
         for ponta, no in (("a", br["a"]), ("b", br["b"])):
             if br["ids"] and trechos_no[(br["ids"][0], no)] >= 2:
                 continue                                      # meio da peça: contínua
+            if no in dobra:
+                continue                                      # a dobra da alma quebrada: contínua
             soltar = False
             if P["alma_rotulada"] and br["papel"] in ALMA:
                 nrm = normal_trel.get(br["grupo"])
@@ -287,7 +343,8 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         n = br["a"] if nos[br["a"]][2] <= nos[br["b"]][2] else br["b"]
         if abs(nos[n][2] - z0) <= 0.05 and n not in pes:
             pes.append(n)
-    if not pes:
+    chumbadas = _chumbadas_no_concreto(nos, barras, concreto)
+    if not pes and not chumbadas:
         # sem pilar: os nós mais baixos
         pes = [int(i) for i in np.where(np.abs(nos[:, 2] - nos[:, 2].min()) < 0.05)[0]]
         avisos.append("o modelo não tem pilares: os apoios foram os nós mais baixos")
@@ -296,6 +353,14 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         chave = "%d,%d" % (round(nos[n][0] * 1000), round(nos[n][1] * 1000))
         tipo = (P.get("bases") or {}).get(chave) or P["base"]
         apoios.append({"no": int(n), "tipo": tipo, "chave": chave})
+    for n, marca in chumbadas.items():
+        if n in pes:
+            continue
+        chave = "%d,%d,%d" % (round(nos[n][0] * 1000), round(nos[n][1] * 1000), round(nos[n][2] * 1000))
+        apoios.append({"no": int(n), "tipo": P.get("chumbada_no_pilar") or "engastada", "chave": chave, "chumbada": marca})
+    if chumbadas:
+        avisos.append("%d nó(s) de tesoura chumbados em %d pilar(es) de concreto (%s): são os apoios dela" % (
+            len(chumbadas), len(set(chumbadas.values())), P.get("chumbada_no_pilar") or "engastada"))
     return {"nos": nos, "barras": barras, "apoios": apoios, "avisos": avisos, "par": P, "resumo_esqueleto": an["resumo"],
             "movel": movel}
 
