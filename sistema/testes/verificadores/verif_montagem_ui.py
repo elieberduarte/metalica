@@ -222,9 +222,13 @@ try:
     opcoes = aba.avaliar("[...document.querySelectorAll('.quadro-escolhas select[data-funcao=suporte_terca] option')].map(o => o.value).join(',')")
     ok("ST1" in (opcoes or ""), "o quadro Detalhes de ligação oferece as variantes do banco (suporte de terça: %s)" % opcoes)
     aba.avaliar("(() => { const s = document.querySelector('.quadro-escolhas select[data-funcao=suporte_terca]'); s.value = 'ST1'; s.dispatchEvent(new Event('change')); return 1; })()")
-    aba.drenar(1.5)
-    ok((json.loads(aba.avaliar(MONT))["metadados"]["montagem"].get("ligacoes") or {}).get("suporte_terca") == "ST1",
-       "a escolha (ST1) fica gravada na montagem")
+    # a gravação vai pelo salvar do CAD: com a máquina cheia (a conferência) passa de 1,5 s — espera por ela
+    def _st1():
+        return (json.loads(aba.avaliar(MONT))["metadados"]["montagem"].get("ligacoes") or {}).get("suporte_terca") == "ST1"
+    t0 = time.time()
+    while time.time() - t0 < 20 and not _st1():
+        aba.drenar(0.5)
+    ok(_st1(), "a escolha (ST1) fica gravada na montagem")
     aba.avaliar("document.querySelector('#btn-ler-quadros').click(); 1")
     esperar(aba, "!!document.querySelector('#leitura-pre .leitura-pre-titulo')", 30)
     tit = aba.avaliar("document.querySelector('#leitura-pre .leitura-pre-titulo').textContent")
