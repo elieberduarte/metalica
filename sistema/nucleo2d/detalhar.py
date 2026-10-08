@@ -559,7 +559,9 @@ def _instancias_pelo_grupo(lista):
     for e in lista:
         por_grupo.setdefault(str(_marcas(e)["instancia"]), []).append(e)
     if len(por_grupo) < 2:
-        return None
+        # uma instância só, dita pelo modelo: o conjunto inteiro (a conta das quantidades — 4 tubos, 8 e 4 travessas,
+        # mdc 4 — inventava 4 instâncias de um quarto de caixa)
+        return lista, 1, collections.Counter(posicao_base(e) for e in lista), ""
     grupos = list(por_grupo.values())
     comps = [collections.Counter(posicao_base(e) for e in g) for g in grupos]
     comum, m = collections.Counter(frozenset(c.items()) for c in comps).most_common(1)[0]

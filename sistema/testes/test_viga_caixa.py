@@ -74,3 +74,12 @@ def test_cadeia_das_travessas_curtas():
     for v in (462, 438, 400, 224, 100):
         assert v in medidas, (v, medidas)
     assert L in medidas
+
+
+def test_uma_instancia_so_marcada():
+    # uma viga só, com a marca da instância: é uma instância (a conta das quantidades dava 4 de um quarto de viga)
+    doc = Documento(nome="uma")
+    _viga(doc, 0.0, "V1#0")
+    r = D.detalhar(doc, grupos=["tesouras"], regra_tercas=False, converter=False)
+    (c,) = [c for c in r["conjuntos"] if c["marca"] == "V1"]
+    assert c["instancias"] == 1 and c["composicao"] == {"TQ-L": 4, "TQ2": 28}

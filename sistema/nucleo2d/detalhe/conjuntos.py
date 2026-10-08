@@ -1231,6 +1231,11 @@ def _vizinhos_no_plano(doc: Documento, instancia: Sequence, origem, u, v, w, u0:
             continue
         if max(math.dist(q0, q1) for q0 in pts[:1] for q1 in pts) < 150.0 and not _tipo_ifc(ent).startswith("IfcPlate"):
             continue                                          # porca, arruela
+        # a peça muito mais alta que o conjunto (o tirante de 3,7 m na ponta da viga-caixa de 250 mm do Vicente,
+        # 08/10) não é o montante da ponta: desenhada inteira, esticava a célula e a reduzia de escala
+        alt_c = (by1 - by0) - 2 * perto
+        if max(q[1] for q in pts) - min(q[1] for q in pts) > max(2.0 * alt_c, alt_c + 1000.0):
+            continue
         c_ = _casco(pts)
         if len(c_) < 3 or min(_dist_ponto_seg(q, casco[i], casco[(i + 1) % len(casco)])
                                for q in c_ for i in range(len(casco))) > perto:
