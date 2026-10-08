@@ -52,6 +52,13 @@ PARAMETROS_PADRAO = {
     # os apoios — engastada (as chapas chumbadas) ou articulada. Docas, 08/10: a marquise em balanço, os dois banzos
     # chumbados no pilar e nenhum outro apoio
     "chumbada_no_pilar": "engastada",
+    # as terças (calibração com o Tekla, 08/10): a peça rotulada onde termina sobre a tesoura (o clip aparafusado; a terça
+    # contínua sobre várias tesouras continua contínua por dentro) — antes ficava engastada, com wL²/24 no meio do vão em
+    # vez de wL²/8 e momento passando para o banzo
+    "terca_rotulada": True,
+    # telha, sobrecarga e vento chegam às terças (carga distribuída na faixa de influência de cada uma) e às tesouras pelas
+    # reações delas — antes iam direto aos nós do banzo e a terça só via o peso próprio. Sem terças, como antes
+    "cargas_pelas_tercas": True,
     # o travamento da cobertura que o modelo ainda não tem (hipótese declarada): com tesouras e sem terças, terças ligando
     # os nós do banzo superior de tesouras vizinhas e um X de contraventamento nos vãos das pontas — sem eles cada
     # tesoura gira em torno da linha dos apoios (mecanismo). Ficam marcadas como "hipótese" na análise
@@ -349,6 +356,8 @@ def montar(doc, par: Optional[dict] = None) -> dict:
                     continue
                 soltar = True
             elif P["tesoura_rotulada_no_apoio"] and br["elemento"] == "trelica" and papeis_no[no] & {"viga", "pilar"}:
+                soltar = True
+            elif P.get("terca_rotulada", True) and br["papel"] == "terça" and not br.get("hipotese"):
                 soltar = True
             elif P["viga_pilar"] == "rotulada" and br["papel"] == "viga" and "pilar" in papeis_no[no]:
                 soltar = True
@@ -919,6 +928,102 @@ def _tesouras_e_cobertura(M: dict) -> dict:
     return {"trechos": out, "planos": planos, "larguras": larg, "coberturas": cobertura}
 
 
+AMOSTRAS_FAIXA = 24        # pontos de integração da faixa de cada terça (inclinação e cp ao longo do telhado)
+
+
+def _tercas_da_cobertura(M: dict, cob: dict, avisos: List[str]) -> dict:
+    """as terças que recebem a cobertura (calibração com o Tekla, 08/10): por cobertura independente, cada terça com a
+    faixa de influência — meia distância às terças vizinhas (as que se sobrepõem ao longo da geratriz), até a borda do
+    banzo de cima nas da ponta —, a inclinação e a normal do telhado ali. {"por_cobertura": {c: [terça]}, "trechos": set
+    dos trechos de banzo que deixam de receber a carga direta}. A cobertura cuja área pelas terças não bate (10 %) com a
+    das faixas das tesouras fica como antes, com aviso"""
+    nos, barras = M["nos"], M["barras"]
+    if not cob:
+        return {}
+    no_cob: Dict[int, int] = {}
+    for br in barras:
+        if br.get("elemento") == "trelica" and br["grupo"] in cob["coberturas"]:
+            no_cob[br["a"]] = no_cob[br["b"]] = cob["coberturas"][br["grupo"]]
+    pecas: Dict[str, List[int]] = collections.defaultdict(list)
+    for i, br in enumerate(barras):
+        if br["papel"] == "terça" and not br.get("hipotese"):
+            pecas[br["ids"][0] if br["ids"] else "b%d" % i].append(i)
+    if not pecas:
+        return {}
+    por: Dict[int, List[dict]] = collections.defaultdict(list)
+    for pid, bs in pecas.items():
+        ns = {barras[i][k] for i in bs for k in ("a", "b")}
+        cs = [no_cob[n] for n in ns if n in no_cob]
+        if not cs:
+            continue
+        c = collections.Counter(cs).most_common(1)[0][0]
+        por[c].append({"barras": bs, "nos": ns})
+    saida: Dict[int, List[dict]] = {}
+    trechos = set()
+    for c, ts in por.items():
+        P_ = [p for g, p in cob["planos"].items() if cob["coberturas"][g] == c]
+        u = _unit(np.mean([p["u"] for p in P_], axis=0))
+        n = np.array([-u[1], u[0]])
+        s0, s1 = min(p["s0"] for p in P_), max(p["s1"] for p in P_)
+        # a inclinação do telhado sob cada terça é a do trecho de banzo de cima ali (o mesmo do cálculo pelos trechos): pela
+        # vizinha, a terça do beiral no pé da ponta inclinada (Docas: 761 mm abaixo, a 0,5 m) dava 57° e o vento virava
+        # quase horizontal
+        incl_c = []
+        for i, (Ls, Lh, w) in cob["trechos"].items():
+            if cob["coberturas"].get(barras[i]["grupo"]) != c or Lh < 1e-3:
+                continue
+            pa, pb = nos[barras[i]["a"]], nos[barras[i]["b"]]
+            sa, sb = float(pa[:2] @ u), float(pb[:2] @ u)
+            if abs(sb - sa) > 1e-6:
+                incl_c.append((min(sa, sb), max(sa, sb), (float(pb[2]) - float(pa[2])) / (sb - sa)))
+
+        def tg_em(s_):
+            dentro = [g_ for a_, b_, g_ in incl_c if a_ - 1e-3 <= s_ <= b_ + 1e-3]
+            if dentro:
+                return float(np.mean(dentro))
+            return min(incl_c, key=lambda x: min(abs(s_ - x[0]), abs(s_ - x[1])))[2] if incl_c else 0.0
+        for tc in ts:
+            pts = np.array([nos[k] for k in tc["nos"]])
+            tc.update(s=float(np.mean(pts[:, :2] @ u)), z=float(np.mean(pts[:, 2])), t0=float((pts[:, :2] @ n).min()),
+                      t1=float((pts[:, :2] @ n).max()), L=sum(barras[i]["L"] for i in tc["barras"]))
+        for tc in ts:
+            viz = [o for o in ts if o is not tc and min(o["t1"], tc["t1"]) - max(o["t0"], tc["t0"]) > 0.3]
+            mais = [o for o in viz if o["s"] - tc["s"] > 0.05]
+            menos = [o for o in viz if tc["s"] - o["s"] > 0.05]
+            prox = min(mais, key=lambda o: o["s"]) if mais else None
+            ant = max(menos, key=lambda o: o["s"]) if menos else None
+            # a faixa da terça, de meio caminho até a vizinha de baixo a meio caminho até a de cima (ou até a borda), integrada
+            # ao longo do telhado com a inclinação do banzo de cima em cada ponto — a mesma geometria do cálculo pelos trechos:
+            # a terça na quina da ponta inclinada do beiral (Docas) tem parte da faixa a 44° e parte quase plana. As amostras
+            # (s, ds × √(1 + tg²) × normal) servem ao vento, que integra o cp ponto a ponto
+            s_lo = (tc["s"] + ant["s"]) / 2.0 if ant else min(s0, tc["s"])
+            s_hi = (tc["s"] + prox["s"]) / 2.0 if prox else max(s1, tc["s"])
+            up = np.array([0.0, 0.0, 1.0])
+            amostras = []
+            ns_ = AMOSTRAS_FAIXA
+            ds = (s_hi - s_lo) / ns_
+            for k in range(ns_):
+                s_k = s_lo + (k + 0.5) * ds
+                tg_ = tg_em(s_k)
+                d = _unit(np.array([u[0], u[1], tg_]))
+                amostras.append((s_k, ds * math.sqrt(1.0 + tg_ * tg_) * _unit(up - (up @ d) * d), ds * math.sqrt(1.0 + tg_ * tg_)))
+            tc["w"] = max(s_hi - s_lo, 0.0)
+            tc["w_inclinada"] = sum(a_[2] for a_ in amostras)
+            tc["normal_area"] = sum((a_[1] for a_ in amostras), np.zeros(3))
+            tc["amostras"] = amostras
+            tc["tg"] = tg_em(tc["s"])
+        area_t = sum(tc["w"] * tc["L"] for tc in ts)
+        tr_c = [i for i, br in enumerate(barras) if i in cob["trechos"] and cob["coberturas"].get(br["grupo"]) == c]
+        area_b = sum(cob["trechos"][i][1] * cob["trechos"][i][2] for i in tr_c)
+        if area_b <= 0 or abs(area_t - area_b) > 0.10 * area_b:
+            avisos.append("cobertura %d: a área pelas terças (%.1f m²) não bate com a das faixas das tesouras (%.1f m²) — a carga "
+                          "do telhado ficou nos nós do banzo, como antes" % (c + 1, area_t, area_b))
+            continue
+        saida[c] = ts
+        trechos.update(tr_c)
+    return {"por_cobertura": saida, "trechos": trechos}
+
+
 # NBR 6123:2023, 8.1 — o vento nas barras expostas abaixo da cobertura (pilares, vigas, contraventamento entre pilares).
 # A Tabela 25 só cobre a cobertura; sem isto o pilar recebia o vento só pelo que a cobertura passava a ele (07/10, conversa
 # com o engenheiro: o pilar circular da Kaefer saía quase sem momento)
@@ -1026,9 +1131,10 @@ def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict
         infos.append(i_k)
         for nome, caso in c_k.items():
             if nome not in casos:
-                casos[nome] = dict(caso, nodal=dict(caso["nodal"]), nos=dict(caso.get("nos") or {}))
+                casos[nome] = dict(caso, nodal=dict(caso["nodal"]), nos=dict(caso.get("nos") or {}), dist=dict(caso.get("dist") or {}))
                 continue
             casos[nome]["nodal"].update(caso["nodal"])
+            casos[nome]["dist"].update(caso.get("dist") or {})          # as terças da outra cobertura
             for no_, F in (caso.get("nos") or {}).items():
                 casos[nome]["nos"][no_] = casos[nome]["nos"].get(no_, np.zeros(3)) + F
             if "Ft" in caso:
@@ -1130,6 +1236,11 @@ def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -
                        "(7.2.1) pede, nesse caso, calcular como edificação fechada com cpi +0,8/−0,3 na zona de obstrução. "
                        "Usada a %s (cobertura isolada): conferir com o engenheiro") % (h_livre, 0.5 * vao, info["tabela"]))
     smid = float((s.max() + s.min()) / 2)
+    # as terças desta cobertura (as que recebem o telhado no lugar dos trechos do banzo)
+    ter = cob.get("tercas") or {}
+    minhas = {cob["coberturas"][g] for g in planos}
+    tercas = [tc for c_, ts in (ter.get("por_cobertura") or {}).items() if c_ in minhas for tc in ts]
+    fora = (ter.get("trechos") or set()) & set(trechos)
     casos: Dict[str, dict] = {}
     for nome_c, (cpb, cps) in (("1", c1), ("2", c2)):
         if uma_agua and tg > 0.3 and nome_c == "2":
@@ -1138,7 +1249,21 @@ def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -
             f: Dict[int, np.ndarray] = {}
             # o vento no sentido +u vem do lado de s menor: do lado alto se a borda alta tem s menor
             do_alto = (s_alto < s_baixo) if sentido > 0 else (s_alto > s_baixo)
+            dt: Dict[int, np.ndarray] = {}
+            for tc in tercas:
+                # o cp ponto a ponto na faixa da terça (na Tabela 24 ele varia de uma borda à outra)
+                w_t = np.zeros(3)
+                for s_k, an_k, _ in tc["amostras"]:
+                    if uma_agua:
+                        cp_k = cp_uma_agua(nome_c, do_alto, s_k)
+                    else:
+                        cp_k = cpb if (s_k - smid) * sentido < 0 else cps
+                    w_t += -cp_k * q * an_k                                # cp positivo empurra para baixo
+                for i in tc["barras"]:
+                    dt[i] = w_t
             for i, (Ls, Lh, w) in trechos.items():
+                if i in fora:
+                    continue
                 a, b = nos[barras[i]["a"]], nos[barras[i]["b"]]
                 m = (a + b) / 2
                 if uma_agua:
@@ -1169,7 +1294,7 @@ def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -
             if com_barras and P.get("vento_nas_barras", True):
                 db, res = _vento_nas_barras(M, Vk, q, u * sentido)
                 info.setdefault("barras_transversal", res)
-            casos["V%s%s" % (nome_c, rot)] = {"dist": db, "nos": fn, "nodal": f, "descricao": "vento perpendicular à geratriz, carregamento %s, %s%s"
+            casos["V%s%s" % (nome_c, rot)] = {"dist": {**db, **dt}, "nos": fn, "nodal": f, "descricao": "vento perpendicular à geratriz, carregamento %s, %s%s"
                                               % (nome_c, "de um lado" if sentido > 0 else "do outro lado",
                                                  "; arrasto nos pilares e vigas (8.1)" if db else ""),
                                               "cpb": cpb, "cps": cps, "sentido": [float(v) for v in u * sentido]}
@@ -1184,14 +1309,20 @@ def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -
     for sentido, rot in ((+1, "↑"), (-1, "↓")):
         f = {}
         for i, (Ls, Lh, w) in trechos.items():
+            if i in fora:
+                continue
             F = np.zeros(3)
             F[:2] = n * sentido * Ft * (Lh * w) / area_tot
             f[i] = F / 2.0
+        dt = {}
+        for tc in tercas:                                         # ao longo da terça (a geratriz), pela área dela
+            for i in tc["barras"]:
+                dt[i] = np.array([n[0], n[1], 0.0]) * sentido * Ft * tc["w"] / area_tot
         db = {}
         if com_barras and P.get("vento_nas_barras", True):
             db, res = _vento_nas_barras(M, Vk, q, n * sentido)
             info.setdefault("barras_longitudinal", res)
-        casos["Vat%s" % rot] = {"dist": db, "nodal": f, "Ft": Ft,
+        casos["Vat%s" % rot] = {"dist": {**db, **dt}, "nodal": f, "Ft": Ft,
                                 "descricao": "vento ao longo da geratriz: atrito na cobertura (7.2.2)%s"
                                 % ("; arrasto nos pilares e vigas (8.1)" if db else "")}
     info["atrito_kN"] = round(Ft, 2)
@@ -1212,16 +1343,30 @@ def cargas(M: dict) -> Tuple[Dict[str, dict], dict, List[str]]:
         avisos.append("o modelo não tem banzo superior de treliça: telha, sobrecarga e vento não foram aplicados")
     else:
         g_cob = float(P["telha"]) + float(P.get("carga_extra") or 0.0)
-        cp, sc = {}, {}
+        ter = _tercas_da_cobertura(M, cob, avisos) if P.get("cargas_pelas_tercas", True) else {}
+        cob["tercas"] = ter
+        fora = (ter or {}).get("trechos") or set()
+        cp, sc, cp_d, sc_d = {}, {}, {}, {}
         for i, (Ls, Lh, w) in cob["trechos"].items():
+            if i in fora:
+                continue
             cp[i] = np.array([0.0, 0.0, -g_cob * Ls * w / 2.0])
             sc[i] = np.array([0.0, 0.0, -float(P["sobrecarga"]) * Lh * w / 2.0])
-        casos["CP"] = {"dist": {}, "nodal": cp, "descricao": "telha e permanentes da cobertura (%.2f kN/m²)" % g_cob}
+        # pelas terças: a faixa na inclinação para a telha (por área de telhado) e na projeção para a sobrecarga
+        for ts in ((ter or {}).get("por_cobertura") or {}).values():
+            for tc in ts:
+                for i in tc["barras"]:
+                    cp_d[i] = np.array([0.0, 0.0, -g_cob * tc["w_inclinada"]])
+                    sc_d[i] = np.array([0.0, 0.0, -float(P["sobrecarga"]) * tc["w"]])
+        casos["CP"] = {"dist": cp_d, "nodal": cp, "descricao": "telha e permanentes da cobertura (%.2f kN/m²)%s"
+                       % (g_cob, "; pelas terças" if cp_d else "")}
         if not (M.get("movel") and M["movel"]["configuracao"] != "aberta"):
-            casos["SC"] = {"dist": {}, "nodal": sc, "descricao": "sobrecarga de cobertura (%.2f kN/m², projeção horizontal)" % float(P["sobrecarga"])}
+            casos["SC"] = {"dist": sc_d, "nodal": sc, "descricao": "sobrecarga de cobertura (%.2f kN/m², projeção horizontal)%s"
+                           % (float(P["sobrecarga"]), "; pelas terças" if sc_d else "")}
         area = sum(Lh * w for (Ls, Lh, w) in cob["trechos"].values())
         info["cobertura"] = {"area_m2": round(area, 1), "larguras_m": sorted({round(v, 3) for v in cob["larguras"].values()}),
-                             "trelicas": len(cob["planos"])}
+                             "trelicas": len(cob["planos"]),
+                             "tercas": sum(len(ts) for ts in ((ter or {}).get("por_cobertura") or {}).values())}
         vc, vi = _vento(M, cob, avisos)
         casos.update(vc)
         if vi:
