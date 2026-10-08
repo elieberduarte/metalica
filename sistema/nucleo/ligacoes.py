@@ -761,47 +761,6 @@ def penetracao_total(t_chapa: float, comprimento: float, fy_base: float,
     return v
 
 
-def penetracao_parcial(garganta_efetiva: float, comprimento: float,
-                       eletrodo: str = "E70XX", fy_base: float = 25.0,
-                       solicitacao: str = "tração", F_Sd: float = 0.0,
-                       nome: str = "") -> Verificacao:
-    """Solda de penetração parcial (NBR 8800, Tabela 8).
-
-        tração/compressão normal à solda : 0,6·f_w·E·L/γ_w2  (solda)
-                                           f_y·E·L/γ_a1      (metal base)
-        cisalhamento                     : 0,6·f_w·E·L/γ_w2  (solda)
-                                           0,6·f_y·E·L/γ_a1  (metal base)
-
-    `garganta_efetiva` (E, em cm) é a profundidade do chanfro, descontados 3 mm em
-    chanfros em V ou ½V de 45° soldados por SMAW em posição vertical ou sobre-cabeça.
-    """
-    el = eletrodo if isinstance(eletrodo, mat.Eletrodo) else mat.eletrodo(eletrodo)
-    A = garganta_efetiva * comprimento
-    R_solda = 0.6 * el.fw * A / GAMA_W2
-    if solicitacao.startswith("cis"):
-        R_base = 0.6 * fy_base * A / GAMA_A1
-    else:
-        R_base = fy_base * A / GAMA_A1
-    Rd = min(R_solda, R_base)
-
-    titulo = "Solda de penetração parcial" + (f" — {nome}" if nome else "")
-    v = Verificacao(titulo, norma="NBR 8800:2008, Tabela 8", Sd=F_Sd, Rd=Rd, unidade="kN")
-    v.passo("Área efetiva", formula="A<sub>w</sub> = E·L",
-            conta=f"{fmt(garganta_efetiva,2)}·{fmt(comprimento,1)}",
-            valor=fmt(A, 2, "cm²"))
-    v.passo("Metal da solda", formula="0,6·f<sub>w</sub>·A<sub>w</sub>/γ<sub>w2</sub>",
-            conta=f"0,6·{fmt(el.fw,1)}·{fmt(A,2)}/{fmt(GAMA_W2,2)}",
-            valor=fmt(R_solda, 1, "kN"))
-    v.passo("Metal base", formula="f<sub>y</sub>·A<sub>w</sub>/γ<sub>a1</sub>",
-            conta=f"{fmt(fy_base,1)}·{fmt(A,2)}/{fmt(GAMA_A1,2)}",
-            valor=fmt(R_base, 1, "kN"))
-    v.passo("Governa o menor", formula="R<sub>d</sub> = mín",
-            conta=f"mín({fmt(R_solda,1)} ; {fmt(R_base,1)})", valor=fmt(Rd, 1, "kN"))
-    v.observacao = ("A NBR 8800 não permite penetração parcial em junta de topo sob "
-                    "tração cíclica.")
-    return v
-
-
 def grupo_solda_excentrico(cordoes: Sequence[Tuple[float, float, float, float]],
                            P_x: float = 0.0, P_y: float = 0.0,
                            ponto_aplicacao: Tuple[float, float] = (0.0, 0.0),

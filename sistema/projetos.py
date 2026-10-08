@@ -100,7 +100,8 @@ DIAS_NA_LIXEIRA = 30
 
 #: Cópias de um mesmo desenho que ficam na lixeira. Cada Detalhar ou prancha regenerada manda o
 #: desenho anterior para lá: em duas semanas eram 270 a 370 cópias de cada um e 18 GB no OneDrive
-#: (07/10). A poda está pronta e ainda não é chamada sozinha: espera o usuário decidir a retenção.
+#: (07/10). As mais antigas que estas saem ao abrir o programa e a cada desenho substituído (o usuário
+#: aprovou as 3 cópias em 07/10).
 COPIAS_NA_LIXEIRA = 3
 
 _COPIA_NA_LIXEIRA = re.compile(r"^(.*\.desenho\.json)-(\d{8}-\d{6})$")
@@ -133,13 +134,14 @@ def podar_copias_da_lixeira(raiz: str, manter: int = COPIAS_NA_LIXEIRA, so_de: s
 
 
 def esvaziar_lixeira_antiga(raiz: str, dias: float = DIAS_NA_LIXEIRA) -> int:
-    """Apaga da lixeira os DESENHOS apagados há mais de `dias` (os projetos excluídos
-    ficam: saem só pela mão do usuário). Devolve quantos saíram."""
+    """Apaga da lixeira os DESENHOS apagados há mais de `dias` e as cópias além das
+    `COPIAS_NA_LIXEIRA` mais novas de cada um (os projetos excluídos ficam: saem só pela
+    mão do usuário). Devolve quantos saíram."""
     lixo = os.path.join(raiz, LIXEIRA)
     if not os.path.isdir(lixo):
         return 0
     limite = time.time() - dias * 86400.0
-    n = 0
+    n = podar_copias_da_lixeira(raiz)
     for nome in os.listdir(lixo):
         caminho = os.path.join(lixo, nome)
         if not os.path.isfile(caminho) or not nome.endswith(".desenho.json") and ".desenho.json-" not in nome:
@@ -712,6 +714,10 @@ class Projetos:
                 raise
             except OSError:
                 shutil.move(caminho, destino)
+            try:                                 # só as últimas cópias deste desenho ficam
+                podar_copias_da_lixeira(self.raiz, so_de="%s-%s" % (s, os.path.basename(caminho)))
+            except OSError:
+                pass
         return {"excluido": slug(nome)}
 
     # ------------------------------------------------------------ modelo 3D

@@ -67,6 +67,8 @@ try:
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1600, height=900, deviceScaleFactor=1, mobile=False)
     aba.navegar(base + "/"); aba.console.clear()
+    # a faixa de cima é opção desde 07/10 (f932757; o padrão são as colunas ao lado): ligada para conferir a faixa
+    aba.avaliar("localStorage.setItem('metalica.ferramentas', 'faixa'); 1")
     aba.navegar(base + "/dividida?projeto=faixa&vista=ambos&editar=1", limite=60)      # o editor, não o modo ver
     t0 = time.time()
     while time.time() - t0 < 90 and not aba.avaliar(f"!!({F2}.cad && {F3}.editor && {F3}.editor.ferramentas.size > 5 && {FX}.querySelectorAll('.fx-bt').length > 15)"):

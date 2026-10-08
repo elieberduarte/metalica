@@ -142,6 +142,20 @@ def test_ligacoes_geradas_no_lancamento(lancado):
     assert max(pil.inicio[2], pil.fim[2]) == pytest.approx(ch5.origem[2], abs=0.5)
 
 
+def test_chumbador_com_a_projecao_do_padrao(lancado):
+    """O chumbador sai do topo do concreto (a face de baixo da placa) com a parte acima do concreto do
+    padrão — a mesma do cálculo do arrancamento (h_ef = comprimento − projeção). Antes: placa + 60 mm."""
+    from nucleo import acessorios as A
+    q = {x.chave: x.padrao for x in A.REGISTRO["chumbador_gancho"].parametros}
+    proj = float(q["projecao"])
+    doc = lancado["doc"]
+    cb = next(b for b in doc.barras if b.papel == "chumbador")
+    ch3 = min((c for c in doc.chapas if c.atributos.get("marca") == "CH3"), key=lambda c: math.dist(c.origem[:2], cb.inicio[:2]))
+    topo = max(cb.inicio[2], cb.fim[2])
+    assert topo - ch3.origem[2] == pytest.approx(max(proj, ch3.espessura + 1.5 * 19.05), abs=1.0)
+    assert cb.atributos["projecao_mm"] == pytest.approx(topo - ch3.origem[2], abs=0.2)
+
+
 def test_parafusos_e_chumbadores_no_detalhamento(lancado):
     """O detalhamento conta os parafusos que atravessam cada chapa e reconhece o chumbador
     (a barra paramétrica não é mais tomada por chapa)."""

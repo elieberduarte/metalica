@@ -183,25 +183,6 @@ def _engaste_perfeito(L: float, w: np.ndarray) -> np.ndarray:
     return f
 
 
-def _condensar(k: np.ndarray, f0: np.ndarray, soltos: Sequence[int]):
-    """a rigidez e o engaste perfeito com os graus `soltos` liberados (rótula): (k_c, f0_c, recuperar)"""
-    if not soltos:
-        return k, f0, None
-    r = list(soltos)
-    m = [i for i in range(12) if i not in r]
-    krr = k[np.ix_(r, r)]
-    try:
-        inv = np.linalg.inv(krr)
-    except np.linalg.LinAlgError:
-        inv = np.linalg.pinv(krr)
-    kmr = k[np.ix_(m, r)]
-    kc = np.zeros((12, 12))
-    kc[np.ix_(m, m)] = k[np.ix_(m, m)] - kmr @ inv @ k[np.ix_(r, m)]
-    fc = np.zeros(12)
-    fc[m] = f0[m] - kmr @ inv @ f0[r]
-    return kc, fc, (r, m, inv, k[np.ix_(r, m)])
-
-
 # ------------------------------------------------------------------ o modelo
 
 def montar(doc, par: Optional[dict] = None) -> dict:

@@ -927,12 +927,16 @@ def _gerar_ligacoes(c, doc, par: dict) -> dict:
                 perfil = geo.registrar_perfil(geo.barra_redonda(d, "FE RED %s" % nome.replace('"', "''")))
                 x = ch.origem[0] + ch.eixo_x[0] * f["x"] + ch.eixo_y[0] * f["y"]
                 y = ch.origem[1] + ch.eixo_x[1] * f["x"] + ch.eixo_y[1] * f["y"]
-                z0 = ch.origem[2]
-                bar = Barra(nome="CB", inicio=(x, y, z0 + ch.espessura + 60.0), fim=(x, y, z0 + ch.espessura + 60.0 - Lc),
+                z0 = ch.origem[2]                    # a face de baixo da placa: o topo do concreto
+                # a parte acima do concreto é a do padrão (a mesma do cálculo do arrancamento, h_ef =
+                # comprimento − projeção); antes era sempre a placa + 60 mm e o 3D mostrava o chumbador
+                # mais enterrado do que o calculado (07/10). No mínimo a placa, a arruela e a porca.
+                acima = max(proj, ch.espessura + 1.5 * d)
+                bar = Barra(nome="CB", inicio=(x, y, z0 + acima), fim=(x, y, z0 + acima - Lc),
                             perfil=perfil.nome, papel="chumbador", camada="Referência", material="Aço", aco="ASTM A36")
                 bar.atributos = {"marca": "CB", "elemento": "Chumbador", "portico": (ch.atributos or {}).get("portico"),
                                  "lado": (ch.atributos or {}).get("lado"), "tipo_ligacao": "chumbador_gancho",
-                                 "peso_kg": round(math.pi * d * d / 4.0 * Lc * 7.85e-6, 2)}
+                                 "peso_kg": round(math.pi * d * d / 4.0 * Lc * 7.85e-6, 2), "projecao_mm": round(acima, 1)}
                 doc.add(bar)
                 cont["chumbadores"] += 1
     return cont

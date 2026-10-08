@@ -174,6 +174,8 @@ try:
         base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
 
     # a faixa da área de trabalho
+    # a faixa de cima é opção desde 07/10 (f932757; o padrão são as colunas ao lado): ligada para conferir a faixa
+    aba.avaliar("localStorage.setItem('metalica.ferramentas', 'faixa'); 1")
     aba.navegar(base + "/dividida?projeto=encx&vista=3d&editar=1", limite=60)      # o editor, não o modo ver
     t0 = time.time()
     while time.time() - t0 < 40 and not aba.avaliar("!!document.querySelector('#faixa-ferramentas .fx-bt[data-chave=\"encaixar\"]')"):

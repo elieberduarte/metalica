@@ -67,6 +67,9 @@ try:
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=860, deviceScaleFactor=1, mobile=False)
 
+    aba.navegar(base + "/", limite=60)
+    # a faixa de cima é opção desde 07/10 (f932757; o padrão são as colunas ao lado): ligada para conferir a faixa
+    aba.avaliar("localStorage.setItem('metalica.ferramentas', 'faixa'); 1")
     aba.navegar(base + "/dividida?projeto=obra&vista=3d", limite=60)
     ok(esperar(aba, F3 + ".ver3dPronto && " + F3 + ".ver3dPronto.pecas === 67", 90), "o cartão do projeto abre o 3D no modo ver (67 peças)")
     ok("/visor3d/ver3d.html" in (aba.avaliar("document.getElementById('f3d').getAttribute('src')") or ""), "o quadro 3D da área é o visor")

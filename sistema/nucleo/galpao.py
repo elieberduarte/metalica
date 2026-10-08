@@ -643,20 +643,23 @@ def _analise_alma_cheia(p: ProjetoGalpao):
 
 def _pilar_por_deslocamento(p: ProjetoGalpao, viga: Perfil, pilar: Perfil,
                             res_pilar, esf, H, Kx, Ly, aco):
-    """Sobe o perfil do pilar enquanto isso reduzir o deslocamento de forma relevante.
+    """Sobe o perfil do pilar (W, do mais leve ao mais pesado) até o deslocamento do topo atender.
 
     Em galpão de base rotulada o deslocamento horizontal do topo costuma governar o
     pilar. Mas a partir de certo ponto o que limita é a rigidez do pórtico inteiro, e
-    engrossar só o pilar deixa de compensar: cada degrau de perfil reduz menos de 2 %
-    do deslocamento e só encarece. Nesse caso o laço para e o projetista é avisado das
-    saídas reais — engastar a base, aproximar os pórticos ou afrouxar o critério.
+    engrossar só o pilar deixa de compensar: a busca para quando o candidato passa de
+    2,5× a massa do pilar da resistência (ou depois de 20 candidatos) e o pilar da
+    resistência fica. As saídas reais — engastar a base, aproximar os pórticos ou
+    afrouxar o critério — vêm do `_diagnostico_deslocamento`.
+
+    Não há parada por "degrau que reduz pouco" (07/10): um degrau de ganho pequeno ainda
+    pode fechar o limite um ou dois perfis adiante, e parar ali perderia a solução.
     """
     d = p.dados
     limite = d.pe_direito * 100 / d.desloc_horizontal
     candidatos = [x for x in banco().candidatos("I", "W", altura_min=pilar.d * 0.95)
                   if x.massa >= pilar.massa]
     escolhido, resultado = pilar, res_pilar
-    anterior = None
     for cand in candidatos[:20]:
         modelo, _, _ = _rodar_analise(p, cand, viga)
         desl = _deslocamento_horizontal(p, modelo)
@@ -672,7 +675,6 @@ def _pilar_por_deslocamento(p: ProjetoGalpao, viga: Perfil, pilar: Perfil,
             return escolhido, resultado
         if cand.massa > pilar.massa * 2.5:
             break            # engrossar mais só o pilar deixou de compensar
-        anterior = u
     # nenhum candidato atendeu: mantém o mais leve que satisfaz a resistência e avisa
     return escolhido, resultado
 
