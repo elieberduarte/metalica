@@ -222,7 +222,8 @@ export class Tela {
     for (const e of ordem) {
       if (!this.doc.visivel(e)) continue;
       const cam = this.doc.camadas.get(e.camada);
-      const cor = this.selecao.has(e.id) ? cores.selecao : cores.textoInvertido((cam && cam.cor) || '#4b5563');
+      // a cor própria do objeto (o DXF importado com as cores do CAD de origem), senão a da camada
+      const cor = this.selecao.has(e.id) ? cores.selecao : cores.textoInvertido((e.atributos && e.atributos.cor) || (cam && cam.cor) || '#4b5563');
       const c = this.doc.caixaDa(e);
       if (c && e.tipo !== 'texto' && !this.selecao.has(e.id) && c[1][0] - c[0][0] < minimo && c[1][1] - c[0][1] < minimo) {
         const [x, y] = this.paraTela(c[0]);

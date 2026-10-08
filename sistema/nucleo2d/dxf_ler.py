@@ -36,10 +36,54 @@ TIPOS = {"LINE", "ARC", "CIRCLE", "LWPOLYLINE", "POLYLINE", "VERTEX", "SEQEND", 
 #: $INSUNITS → mm por unidade.
 FATOR_UNIDADE = {0: None, 1: 25.4, 2: 304.8, 4: 1.0, 5: 10.0, 6: 1000.0, 8: 0.0254, 9: 0.0254e3 / 1000.0}
 
-#: Cores ACI mais usadas → hex (7 é preto/branco conforme o fundo: fica o tom do CAD).
+#: Cores ACI mais usadas → hex (7 é preto/branco conforme o fundo: fica o tom do CAD). As de 1 a 6 em tons que se
+#: leem no fundo claro; as outras pela paleta do AutoCAD (cor_aci).
 CORES_ACI = {1: "#c0392b", 2: "#b7950b", 3: "#1c7a43", 4: "#17a2b8", 5: "#1f5fbf", 6: "#8e44ad",
              7: "#16202e", 8: "#7d8a9e", 9: "#aab7cc", 30: "#e08a1e", 40: "#c99526", 250: "#333b47",
              251: "#4b5563", 252: "#6b7280", 253: "#8a94a6", 254: "#aab7cc"}
+
+_PALETA = None
+
+
+def cor_aci(indice) -> Optional[str]:
+    """"#rrggbb" do índice ACI (1–255); None para BYBLOCK (0), BYLAYER (256) ou inválido. Antes só os da tabela acima
+    tinham cor e o resto ficava cinza (usuário, 08/10: o DXF importado vinha sem as cores)."""
+    global _PALETA
+    try:
+        i = abs(int(indice))
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= i <= 255:
+        return None
+    if i in CORES_ACI:
+        return CORES_ACI[i]
+    if _PALETA is None:
+        from saida.dxf import _paleta_aci                 # a mesma paleta da exportação: o DXF vai e volta igual
+        _PALETA = _paleta_aci()
+        _PALETA.update({250: (51, 51, 51), 251: (80, 80, 80), 252: (105, 105, 105), 253: (130, 130, 130),
+                        254: (190, 190, 190), 255: (255, 255, 255)})
+    r, g, b = _PALETA.get(i, (75, 85, 99))
+    return "#%02x%02x%02x" % (r, g, b)
+
+
+def _cor_do_objeto(e) -> Optional[tuple]:
+    """a cor própria do objeto: ("rgb", "#rrggbb") pela cor verdadeira (420), ("aci", n) pelo índice (62; 0 = BYBLOCK),
+    None se é a da camada (BYLAYER, 256, ou sem código)"""
+    g = e.get("_g") or {}
+    if g.get(420):
+        try:
+            return ("rgb", "#%06x" % (int(g[420][0]) & 0xFFFFFF))
+        except ValueError:
+            pass
+    if g.get(62):
+        try:
+            n = int(g[62][0])
+        except ValueError:
+            return None
+        if n == 256:
+            return None
+        return ("aci", abs(n))
+    return None
 
 
 def _pares(texto: str):
@@ -171,6 +215,7 @@ def _preparar(lista):
     for e in lista:
         g = e["_g"]
         e["camada"] = g.get(8, ["0"])[0]
+        e["cor"] = _cor_do_objeto(e)
         e["papel"] = int(_num(e, 67, 0)) == 1
         t = e["tipo"]
         if t == "LINE":
@@ -332,7 +377,7 @@ class _T:
 def _achatar(dxf: dict, so_modelo: bool = True):
     blocos = dxf["blocos"]
 
-    def rec(ents, T, prof, camada_pai=None):
+    def rec(ents, T, prof, camada_pai=None, cor_pai=None):
         for e in ents:
             if so_modelo and prof == 0 and e.get("papel"):
                 continue
@@ -340,18 +385,21 @@ def _achatar(dxf: dict, so_modelo: bool = True):
             # AutoCAD): a linha da cota vai para a camada da cota, não para a 0
             if camada_pai and (e.get("camada") or "0") == "0":
                 e = dict(e, camada=camada_pai)
+            # a cor BYBLOCK (0) é a de quem insere o bloco: a própria dele, se tem (senão fica a da camada)
+            if e.get("cor") == ("aci", 0):
+                e = dict(e, cor=cor_pai)
             t = e["tipo"]
             if t == "INSERT":
                 b = blocos.get(e["nome"])
                 if b and prof < 10:
                     T2 = T.compor(e["p"], e["sx"], e["sy"], e["rot"], b["base"])
-                    yield from rec(b["ents"], T2, prof + 1, e.get("camada") or camada_pai)
+                    yield from rec(b["ents"], T2, prof + 1, e.get("camada") or camada_pai, e.get("cor") or cor_pai)
                 for a in e.get("attribs", []):
                     yield a, T
             elif t == "DIMENSION":
                 b = blocos.get(e.get("bloco") or "")
                 if b:
-                    yield from rec(b["ents"], T, prof + 1, e.get("camada") or camada_pai)
+                    yield from rec(b["ents"], T, prof + 1, e.get("camada") or camada_pai, e.get("cor") or cor_pai)
             else:
                 yield e, T
     yield from rec(dxf["entidades"], _T(), 0)
@@ -383,7 +431,7 @@ def para_desenho(texto: str, escala: float = 1.0, fator: Optional[float] = None,
         nome = (prefixo_camada + (e.get("camada") or "0")).strip() or "0"
         if nome not in des.camadas:
             info = cam_info.get(e.get("camada") or "0") or {}
-            cor = CORES_ACI.get(int(info.get("cor", 7) or 7), "#4b5563")
+            cor = cor_aci(info.get("cor", 7) or 7) or "#4b5563"
             tl = str(info.get("tipo_linha") or "CONTINUOUS").upper()
             des.camadas[nome] = Camada2D(nome, cor, tipo_linha="HIDDEN" if "HIDDEN" in tl or "DASH" in tl else ("CENTER" if "CENTER" in tl else "CONTINUOUS"))
             camadas_novas.add(nome)
@@ -398,10 +446,14 @@ def para_desenho(texto: str, escala: float = 1.0, fator: Optional[float] = None,
         ids.append(ent.id)
         contagem[ent.tipo] += 1
 
-    atr = {"origem": "dxf"}
+    base_atr = {"origem": "dxf"}
     for e, T in _achatar(dxf):
         t = e["tipo"]
         cam = camada(e)
+        # a cor própria do objeto (por cima da da camada), como no CAD de origem
+        c = e.get("cor")
+        hexa = c[1] if c and c[0] == "rgb" else (cor_aci(c[1]) if c else None)
+        atr = dict(base_atr, cor=hexa) if hexa else base_atr
         if t == "LINE":
             add(Linha(camada=cam, a=P(T, e["a"]), b=P(T, e["b"]), atributos=dict(atr)))
         elif t == "CIRCLE":

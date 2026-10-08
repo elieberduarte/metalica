@@ -37,9 +37,8 @@ from nucleo2d.desenho import (Arco, Camada2D, Chamada, Circulo, Cota, Desenho, H
 
 #: Nome do desenho do CAD que guarda a referência e os eixos.
 DESENHO_LANCAMENTO = "Planta de lançamento"
-#: Prefixo das camadas do arquitetônico (travadas, cinza).
+#: Prefixo das camadas do arquitetônico (travadas, com as cores do arquivo).
 PREFIXO_ARQ = "ARQ "
-COR_ARQ = "#9aa3ae"
 #: Camadas lidas como eixos.
 CAMADAS_EIXO = ("EIXO", "EIXOS")
 #: E as de nome parecido que o AutoCAD e o Revit usam (Eixos, EIXO-ESTRUTURA, AXIS, GRID, S-GRID…).
@@ -195,7 +194,7 @@ def ler_arquitetonico(dados: bytes, tipo: str, *, fator: Optional[float] = None,
     linhas vêm em mm de papel e `escala_pdf` é o N de 1:N (None = pelas cotas; sem cota
     legível, 1:100 com aviso). O desenho é trazido para perto da origem (o canto de
     baixo à esquerda vai a 0,0: DWG de topografia chega com coordenadas UTM) e todas as
-    camadas ganham o prefixo "ARQ ", cor cinza e trava: aparecem e dão snap, mas não se
+    camadas ganham o prefixo "ARQ " e trava (com as cores do arquivo): aparecem e dão snap, mas não se
     selecionam nem se apagam por engano."""
     tipo = (tipo or "").lower().lstrip(".")
     avisos: List[str] = []
@@ -233,10 +232,10 @@ def ler_arquitetonico(dados: bytes, tipo: str, *, fator: Optional[float] = None,
     if abs(x0) > 1.0 or abs(y0) > 1.0:
         movidas = {k: _escalar_entidade(e, 1.0, -x0, -y0) for k, e in des.entidades.items()}
         des.entidades = movidas
-    # camadas do arquivo: cinza e travadas
+    # camadas do arquivo: travadas e finas, com as cores do arquivo (antes cinza; o usuário pediu as cores, 08/10)
     for k, c in list(des.camadas.items()):
         if k.startswith(PREFIXO_ARQ):
-            c.cor, c.bloqueada, c.espessura = COR_ARQ, True, 0.13
+            c.bloqueada, c.espessura = True, 0.13
     largura, altura = x1 - x0, y1 - y0
     if max(largura, altura) > 2_000_000.0:
         avisos.append("O desenho tem %s m de extensão: confira a unidade (Calibrar escala)." % _fmt_m(max(largura, altura)))

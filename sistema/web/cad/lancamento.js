@@ -306,7 +306,7 @@ export class MetodosLancamentoCAD {
       .map(([v, t]) => el('option', { value: v, texto: t })));
     const escala = el('input', { type: 'text', value: '', placeholder: 'pelas cotas (ex.: 100)' });
     const corpo = el('div', {},
-      el('div', { class: 'explica', texto: `"${arquivo.name}" (${numero(arquivo.size / 1024, 0)} kB) vira a referência da Planta de lançamento, em milímetro real: camadas "ARQ …" em cinza e travadas (aparecem e dão snap, mas não se selecionam). O desenho é trazido para perto da origem. Depois: Malha de eixos… (ou desenhe as linhas na camada EIXO), Gravar eixos no projeto e Lançar estrutura no 3D.` }),
+      el('div', { class: 'explica', texto: `"${arquivo.name}" (${numero(arquivo.size / 1024, 0)} kB) vira a referência da Planta de lançamento, em milímetro real: camadas "ARQ …" com as cores do arquivo e travadas (aparecem e dão snap, mas não se selecionam). O desenho é trazido para perto da origem. Depois: Malha de eixos… (ou desenhe as linhas na camada EIXO), Gravar eixos no projeto e Lançar estrutura no 3D.` }),
       pdf ? el('label', {}, 'Escala do PDF, 1:', escala) : el('label', {}, 'Unidade do arquivo', unidade),
       el('div', { class: 'explica', texto: pdf ? 'PDF exportado do CAD (vetorial). Sem escala informada, ela sai das cotas escritas; confira depois com Calibrar escala.'
         : 'Arquitetônico costuma vir em centímetro ou metro com a unidade errada no arquivo: confira a largura na resposta e, se precisar, Calibrar escala.' }));

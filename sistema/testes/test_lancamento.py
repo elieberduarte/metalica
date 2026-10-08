@@ -149,7 +149,8 @@ def test_arquitetonico_dxf_em_mm_na_origem_e_travado(tmp_path):
     assert (x1, y1) == pytest.approx((30000.0, 15000.0), abs=1.0)          # centímetro → milímetro
     assert r["largura_m"] == pytest.approx(30.0, abs=0.01)
     arq = {k: c for k, c in des.camadas.items() if k.startswith(L.PREFIXO_ARQ)}
-    assert arq and all(c.bloqueada and c.cor == L.COR_ARQ for c in arq.values())
+    # travadas e finas, com as cores do arquivo (antes cinza; o usuário pediu as cores, 08/10)
+    assert arq and all(c.bloqueada and c.espessura == 0.13 for c in arq.values())
     segs = L.segmentos_da_referencia(des)
     assert len(segs) == 4                                                   # o retângulo; o texto fica de fora
     # a planta nova guarda os eixos da anterior

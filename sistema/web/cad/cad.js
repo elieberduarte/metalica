@@ -1197,7 +1197,7 @@ class CAD {
     let fundo = null;
     try { fundo = ((await pedir(`/api/projetos/${encodeURIComponent(this.projeto)}`)).projeto || {}).arquitetonico || null; } catch { fundo = null; }
     const opcoes = [
-      ['planta', 'Planta do cliente (arquitetônico)', 'vira o fundo da Planta de lançamento, em cinza e travado, para lançar a estrutura por cima'],
+      ['planta', 'Planta do cliente (arquitetônico)', 'vira o fundo da Planta de lançamento, com as cores do arquivo e travado, para lançar a estrutura por cima'],
       ['projeto', 'Projeto estrutural pronto (do projetista)', 'vai para Original → Montagem: ler os quadros e montar o 3D por eles'],
       ['aqui', 'Só acrescentar a este desenho', `as linhas e os textos entram no desenho aberto ("${this.nomeDesenho || 'sem nome'}"), como inserir; Ctrl+Z desfaz`],
     ];

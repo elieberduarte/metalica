@@ -345,6 +345,10 @@ class Desenho:
                         d.hachura(contorno, espacamento=e.espacamento * k, angulo=e.angulo, camada=camada, furos=e.contornos[1:])
             elif isinstance(e, Chamada):
                 _chamada_dxf(d, e, k, camada)
+            # a cor própria do objeto (o DXF importado com as cores, 08/10) volta no DXF
+            cor = (e.atributos or {}).get("cor") if isinstance(e, (Linha, Polilinha, Circulo, Arco, Texto)) else None
+            if cor:
+                d.cor_da_ultima(aci_mais_proxima(cor))
         return d
 
 

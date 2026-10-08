@@ -75,6 +75,18 @@ class Desenho:
     def altura(self):
         return max(0.0, self.extremos[3] - self.extremos[1])
 
+    def cor_da_ultima(self, aci: int):
+        """a cor própria (ACI) da última entidade acrescentada, por cima da camada — a cor do objeto no CAD"""
+        if not self.entidades or not aci:
+            return self
+        linhas = self.entidades[-1].split("\n")
+        for i in range(0, len(linhas) - 1, 2):
+            if linhas[i].strip() == "8":
+                linhas[i + 2:i + 2] = ["62", str(int(aci))]
+                self.entidades[-1] = "\n".join(linhas)
+                break
+        return self
+
     # ---------- entidades ----------
     def linha(self, x1, y1, x2, y2, camada="ACO"):
         self._limites((x1, y1), (x2, y2))
@@ -379,6 +391,12 @@ def aci_mais_proxima(cor: str) -> int:
         return 7
     if _PALETA_ACI is None:
         _PALETA_ACI = _paleta_aci()
+    # os tons do CAD para as ACI de 1 a 9 (nucleo2d/dxf_ler.CORES_ACI): voltam ao índice de onde vieram (o vermelho
+    # #c0392b do DXF importado com a cor 1 saía como a ACI mais perto dele, um laranja)
+    from nucleo2d.dxf_ler import CORES_ACI
+    for i, h in CORES_ACI.items():
+        if h.lower() == ("#" + c[:6]).lower():
+            return i
     if max(rgb) < 40:
         return 7                                     # preto no papel = branco na tela do AutoCAD
     return min(_PALETA_ACI, key=lambda i: sum((a - b) ** 2 for a, b in zip(_PALETA_ACI[i], rgb)))
