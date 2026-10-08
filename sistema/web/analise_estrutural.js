@@ -946,23 +946,50 @@ function detalheDaBase(b, xy) {
 // o que a estrutura aplica em cada ponto chumbado num pilar de concreto (usuário, 08/10: "preciso saber quais as cargas que
 // a estrutura gera nos pilares de concreto para ver se a ancoragem prevista está suportando")
 const ANC = (() => { try { return JSON.parse(localStorage.getItem('ae.ancoragem') || '{}'); } catch (e) { return {}; } })();
+// o chumbador do catálogo (08/10): o Hardbolt pela carga permissível do fabricante (já com o C.S. 4,0), sem converter para
+// resistência de cálculo — o critério conservador do usuário ("por enquanto vamos adotar a mais conservadora")
+let OPC_CHUMB = null, HB = null, HB_CHAVE = '';
+function guardarAncoragem() { try { localStorage.setItem('ae.ancoragem', JSON.stringify(ANC)); } catch (e) { /* */ } }
+async function lerHardbolt() {
+  const q = new URLSearchParams({ d: ANC.hb_d || '', hv: ANC.hb_hv || '', fck: ANC.hb_fck || '', S: ANC.hb_S || '', C: ANC.hb_C || '' });
+  HB_CHAVE = q.toString();
+  try { HB = await (await fetch('/api/catalogo/chumbadores?' + q, { cache: 'no-store' })).json(); }
+  catch (e) { HB = { erro: e.message }; }
+  painelAncoragem();
+}
 function painelAncoragem() {
   const det = $('#det-ancoragem'), P = $('#ancoragem');
   const A = (RAIZ && RAIZ.ancoragens) || (D && D.ancoragens) || [];
   det.hidden = !A.length;
   if (!A.length) { P.replaceChildren(); return; }
+  const doCatalogo = ANC.modo === 'hardbolt';
+  if (doCatalogo && !OPC_CHUMB) {
+    fetch('/api/catalogo/chumbadores', { cache: 'no-store' }).then(r => r.json()).then(o => { OPC_CHUMB = o; painelAncoragem(); }).catch(() => { OPC_CHUMB = { diametros: [] }; });
+  }
+  if (doCatalogo && ANC.hb_d && ANC.hb_hv) {
+    const chave = new URLSearchParams({ d: ANC.hb_d || '', hv: ANC.hb_hv || '', fck: ANC.hb_fck || '', S: ANC.hb_S || '', C: ANC.hb_C || '' }).toString();
+    if (chave !== HB_CHAVE) { lerHardbolt(); }
+  }
   const num = (v) => { const x = parseFloat(String(v || '').replace(',', '.')); return isFinite(x) && x > 0 ? x : null; };
-  const n = num(ANC.n) || 4, Td = num(ANC.Td), Vd = num(ANC.Vd);
-  const campo = (k, rot, ph) => {
+  const hbOk = doCatalogo && HB && !HB.erro && HB.T_kN;
+  const n = num(ANC.n) || 4;
+  const Td = doCatalogo ? (hbOk ? HB.T_kN : null) : num(ANC.Td), Vd = doCatalogo ? (hbOk ? HB.V_kN : null) : num(ANC.Vd);
+  const campo = (k, rot, ph, aoMudar) => {
     const i = el('input', { type: 'text', value: ANC[k] || '', placeholder: ph, style: 'width:70px' });
-    i.onchange = () => { ANC[k] = i.value; try { localStorage.setItem('ae.ancoragem', JSON.stringify(ANC)); } catch (e) { /* */ } painelAncoragem(); };
+    i.onchange = () => { ANC[k] = i.value; guardarAncoragem(); if (aoMudar) aoMudar(); painelAncoragem(); };
     return el('label', { style: 'display:flex;gap:6px;align-items:center;margin:2px 0' }, el('span', { style: 'flex:1', texto: rot }), i);
   };
-  // o uso de um ponto: tração e cisalhamento por parabolt, com os concomitantes de cada extremo, interação linear
+  const escolha = (k, rot, opcoes, aoMudar) => {
+    const s = el('select', {}, ...opcoes.map(([v, t]) => el('option', { value: v, texto: t })));
+    s.value = ANC[k] || opcoes[0][0];
+    s.onchange = () => { ANC[k] = s.value; guardarAncoragem(); if (aoMudar) aoMudar(); painelAncoragem(); };
+    return el('label', { style: 'display:flex;gap:6px;align-items:center;margin:2px 0' }, el('span', { style: 'flex:1', texto: rot }), s);
+  };
+  // o uso de um ponto: tração e cisalhamento por chumbador, com os concomitantes de cada extremo, interação linear
   const usoDe = (c) => (Td && Vd && c ? Math.max(0, c[0]) / n / Td + Math.hypot(c[1], c[2]) / n / Vd : null);
   const t = el('table', { style: 'font-size:11px' }, el('tr', {}, el('th', { texto: 'pilar · cota' }), el('th', { texto: 'arranca' }), el('th', { texto: 'compr.' }),
-    el('th', { texto: 'cisalha' }), el('th', { texto: 'M' }), el('th', { texto: 'T/pb', title: `tração por parabolt (÷${n})` }),
-    el('th', { texto: 'V/pb', title: `cisalhamento por parabolt (÷${n})` }), ...(Td && Vd ? [el('th', { texto: 'uso' })] : [])));
+    el('th', { texto: 'cisalha' }), el('th', { texto: 'M' }), el('th', { texto: 'T/ch', title: `tração por chumbador (÷${n})` }),
+    el('th', { texto: 'V/ch', title: `cisalhamento por chumbador (÷${n})` }), ...(Td && Vd ? [el('th', { texto: 'uso' })] : [])));
   let pior = null;
   for (const a of A) {
     const cT = a.concomitantes.T_max, cV = a.concomitantes.V_max;
@@ -975,12 +1002,36 @@ function painelAncoragem() {
       el('td', { texto: nf(Math.max(0, a.T_max[0]) / n, 1) }), el('td', { texto: nf(a.V_max[0] / n, 1) }),
       ...(Td && Vd ? [el('td', { html: `<b style="color:${corUso(u)}">${pctUso(u)}</b>` })] : [])));
   }
+  const controles = [escolha('modo', 'Resistência do chumbador', [['manual', 'digitada (do fabricante)'], ['hardbolt', 'Hardbolt (Hard) — do catálogo']], () => { HB_CHAVE = ''; }),
+    campo('n', 'Chumbadores por ponto', '4')];
+  if (doCatalogo) {
+    const ds = (OPC_CHUMB && OPC_CHUMB.diametros) || [];
+    const dSel = ds.find(x => x.diametro === ANC.hb_d) || null;
+    if (ds.length) {
+      controles.push(escolha('hb_d', 'Diâmetro', [['', 'escolha…'], ...ds.map(x => [x.diametro, x.diametro])], () => { ANC.hb_hv = ''; guardarAncoragem(); }));
+      if (dSel) {
+        controles.push(escolha('hb_hv', 'Embutimento (mm)', [['', 'escolha…'], ...dSel.embutimentos.map(e => [String(e), `${e} mm`])]),
+          campo('hb_fck', 'f_ck do pilar (MPa)', '20 a 40'),
+          campo('hb_S', `Espaçamento entre chumbadores S (mm; mín. ${dSel.Smin}, crítico ${dSel.Scr})`, `≥ ${dSel.Scr}`),
+          campo('hb_C', `Distância à borda C (mm; mín. ${dSel.Cmin}, crítica tração ${dSel.Ccr} / corte ${dSel.Ccr_corte})`, `≥ ${dSel.Ccr_corte}`));
+      }
+    } else controles.push(el('div', { class: 'sub', texto: 'Lendo o catálogo dos chumbadores…' }));
+    if (HB && HB.erro) controles.push(el('div', { class: 'aviso', texto: HB.erro }));
+    else if (hbOk) {
+      controles.push(el('div', { class: 'sub', style: 'margin-top:4px', html: `Resistência por chumbador: <b>${nf(HB.T_kN, 2)} kN</b> à tração e <b>${nf(HB.V_kN, 2)} kN</b> ao corte.<br>${HB.detalhe.join('<br>')}` }));
+      if ((HB.avisos || []).length) controles.push(el('div', { class: 'aviso', html: HB.avisos.join('<br>') }));
+    }
+  } else {
+    controles.push(campo('Td', 'Tração de cálculo por chumbador (kN)', 'fabricante'), campo('Vd', 'Cisalhamento de cálculo por chumbador (kN)', 'fabricante'));
+  }
   P.replaceChildren(
     el('div', { class: 'sub', texto: `O que a estrutura aplica no pilar em cada ponto chumbado, na face dele (kN, kN·m; combinações últimas${RAIZ && RAIZ.outras_situacoes ? ', as duas situações' : ''}): arranca puxa a ancoragem para fora da face (vermelho), comprime empurra contra ela, cisalha é a resultante vertical + horizontal na face, M o momento no nó engastado. Passe o mouse para ver a combinação de cada máximo e os concomitantes.` }),
     pior ? el('div', { class: 'aviso', html: `O maior arrancamento: <b>${nf(pior.T_max[0], 1)} kN</b> no ${pior.pilar} a ${nf(pior.z, 2)} m (${pior.T_max[1]}) — com ${nf(Math.hypot(pior.concomitantes.T_max[1], pior.concomitantes.T_max[2]), 1)} kN de cisalhamento junto.` }) : '',
     el('div', { style: 'overflow-x:auto' }, t),
-    el('div', { class: 'sub', style: 'margin-top:6px', texto: 'Cota em m (o nó do banzo). Para conferir a ancoragem: os parabolts por ponto e a resistência de cálculo de cada um (do fabricante, já com o coeficiente; no concreto do pilar). O uso é a tração e o cisalhamento por parabolt sobre as resistências, somados (interação linear, a favor da segurança), com os concomitantes de cada extremo. O momento do nó não entra na divisão.' }),
-    campo('n', 'Parabolts por ponto', '4'), campo('Td', 'Tração de cálculo por parabolt (kN)', 'fabricante'), campo('Vd', 'Cisalhamento de cálculo por parabolt (kN)', 'fabricante'));
+    el('div', { class: 'sub', style: 'margin-top:6px', texto: doCatalogo
+      ? 'Cota em m (o nó do banzo). Hardbolt pelo critério conservador: a carga permissível do fabricante (já dividida por 4,0) contra os esforços das combinações últimas, sem converter para resistência de cálculo; f_ck, espaçamento e borda pela linha de baixo da tabela, sem interpolar. O uso é a tração e o cisalhamento por chumbador sobre as resistências, somados (interação linear ≤ 1,0; o catálogo aceitaria até 1,2). O momento do nó não entra na divisão.'
+      : 'Cota em m (o nó do banzo). Para conferir a ancoragem: os chumbadores por ponto e a resistência de cálculo de cada um (do fabricante, já com o coeficiente; no concreto do pilar). O uso é a tração e o cisalhamento por chumbador sobre as resistências, somados (interação linear, a favor da segurança), com os concomitantes de cada extremo. O momento do nó não entra na divisão.' }),
+    ...controles);
 }
 
 function painelCarrinho() {

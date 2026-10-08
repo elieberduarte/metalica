@@ -94,6 +94,8 @@ def executavel():
         # catálogo de peças (séries calculadas e fornecedores): sem ele o programa
         # instalado só via o perfis.json, e as tesouras escolhiam em menos perfis
         (os.path.join(SISTEMA, "dados", "catalogo.json"), "dados"),
+        # chumbadores pós-instalados do catálogo (Hardbolt): a ancoragem da análise estrutural (nucleo/chumbadores.py)
+        (os.path.join(SISTEMA, "dados", "fornecedores", "chumbadores.json"), os.path.join("dados", "fornecedores")),
         (os.path.join(SISTEMA, "saida", "memorial.css"), "saida"),
         # a paginação do memorial e da lista em PDF: no desenvolvimento o sistema a
         # acha na pasta do manual, que não vai no pacote; aqui entra em saida/lib,

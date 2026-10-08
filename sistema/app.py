@@ -11,6 +11,7 @@ a interface de `web/` mais uma API JSON.
 Rotas da API:
     GET  /api/catalogo              perfis, aços, parafusos, eletrodos, cidades
     GET  /api/catalogo/pecas        catálogo de peças (famílias, itens, busca, alternativas)
+    GET  /api/catalogo/chumbadores  chumbador pós-instalado (Hardbolt): as opções, ou a resistência com d, hv, fck, S, C
     GET  /api/atualizacao           última versão publicada no GitHub e se é mais nova
     POST /api/atualizacao/instalar  baixa o instalador da release e o executa (programa instalado)
     POST /api/dimensionar           recebe DadosGalpao, devolve ProjetoGalpao em JSON
@@ -3617,6 +3618,20 @@ def catalogo_de_pecas(q: dict) -> dict:
     return {"familias": catalogo.familias(), "resumo": catalogo.resumo()}
 
 
+def chumbadores_pos(q: dict) -> dict:
+    """GET /api/catalogo/chumbadores: sem `d`, as opções do Hardbolt; com d, hv e fck (S e C opcionais, em mm), a tração e o
+    corte por chumbador pelo critério conservador do usuário (08/10): a carga permissível do fabricante, sem converter."""
+    from nucleo import chumbadores
+    um = lambda k: ((q.get(k) or [""])[0] or "").strip().replace(",", ".")          # noqa: E731
+    if not um("d"):
+        return chumbadores.opcoes()
+    num = lambda k: float(um(k)) if um(k) else None                               # noqa: E731
+    try:
+        return chumbadores.resistencia(um("d"), num("hv") or 0, num("fck"), num("S"), num("C"))
+    except ValueError:
+        return {"erro": "número inválido"}
+
+
 def catalogo_3d() -> dict:
     """Perfis com a seção já pronta para o editor desenhar."""
     from nucleo.perfis import banco
@@ -4016,6 +4031,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(catalogo())
             if rota == "/api/catalogo/pecas":
                 return self._json(catalogo_de_pecas(parse_qs(urlparse(self.path).query)))
+            if rota == "/api/catalogo/chumbadores":
+                return self._json(chumbadores_pos(parse_qs(urlparse(self.path).query)))
             if rota == "/api/fabrica":
                 import fabrica
                 return self._json({"regras": fabrica.regras(PROJETOS), "padrao": fabrica.REGRAS_PADRAO,
