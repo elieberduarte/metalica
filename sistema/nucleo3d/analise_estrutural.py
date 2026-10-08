@@ -213,7 +213,8 @@ def _pilares_de_concreto(ents) -> Dict[str, dict]:
 
 def _chumbadas_no_concreto(nos: np.ndarray, barras: List[dict], concreto: Dict[str, dict]) -> Dict[int, str]:
     """{nó: marca do pilar}: os nós das tesouras encostados na face de um pilar de concreto (a marquise chumbada no
-    pilar, Docas 08/10) — dentro da altura dele e a até CHUMBADA_ATE da face, por fora"""
+    pilar, Docas 08/10) — dentro da altura dele e a até CHUMBADA_ATE da face, por fora. A normal da face (para fora do
+    pilar, para o lado da tesoura) fica em _NORMAL_CHUMBADA[nó], para a ancoragem"""
     if not concreto:
         return {}
     nos_trel = sorted({n for br in barras if br["elemento"] == "trelica" for n in (br["a"], br["b"])})
@@ -228,8 +229,29 @@ def _chumbadas_no_concreto(nos: np.ndarray, barras: List[dict], concreto: Dict[s
             dy = max(y0 - y, 0.0, y - y1)
             if math.hypot(dx, dy) <= CHUMBADA_ATE:
                 out[n] = pc["marca"]
+                # a direção da ancoragem: a da tesoura saindo do pilar (o banzo que chega no nó, na horizontal) — a face pela
+                # posição do nó errava quando a tesoura passa um pouco da largura do pilar lançado (a da junta do Docas)
+                dirs = []
+                for br in barras:
+                    if br["elemento"] == "trelica" and br["papel"] == "banzo" and n in (br["a"], br["b"]):
+                        o = nos[br["b"] if br["a"] == n else br["a"]] - nos[n]
+                        dirs.append(o[:2])           # pelo comprimento em planta: a ponta em pé (quase vertical) não conta
+                if dirs:
+                    d_ = np.mean(dirs, axis=0)
+                    sx, sy = (float(d_[0]), float(d_[1])) if np.linalg.norm(d_) > 1e-6 else (0.0, 0.0)
+                    nn = math.hypot(sx, sy) or 1.0
+                    sx, sy = sx / nn, sy / nn
+                else:
+                    cx_, cy_ = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+                    sx, sy = x - cx_, y - cy_
+                    nn = math.hypot(sx, sy) or 1.0
+                    sx, sy = sx / nn, sy / nn
+                _NORMAL_CHUMBADA[n] = (sx, sy, 0.0)
                 break
     return out
+
+
+_NORMAL_CHUMBADA: Dict[int, Tuple[float, float, float]] = {}
 
 
 def montar(doc, par: Optional[dict] = None) -> dict:
@@ -357,7 +379,8 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         if n in pes:
             continue
         chave = "%d,%d,%d" % (round(nos[n][0] * 1000), round(nos[n][1] * 1000), round(nos[n][2] * 1000))
-        apoios.append({"no": int(n), "tipo": P.get("chumbada_no_pilar") or "engastada", "chave": chave, "chumbada": marca})
+        apoios.append({"no": int(n), "tipo": P.get("chumbada_no_pilar") or "engastada", "chave": chave, "chumbada": marca,
+                       "normal": list(_NORMAL_CHUMBADA.get(n, (0.0, 0.0, 0.0))), "z": round(float(nos[n][2]), 3)})
     if chumbadas:
         avisos.append("%d nó(s) de tesoura chumbados em %d pilar(es) de concreto (%s): são os apoios dela" % (
             len(chumbadas), len(set(chumbadas.values())), P.get("chumbada_no_pilar") or "engastada"))
@@ -1535,6 +1558,7 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
     if not P.get("cobertura_movel"):
         r = _calcular_situacao(doc, P)
         r["reacoes_envoltoria"] = envoltoria_das_reacoes({"": r})
+        r["ancoragens"] = ancoragens({"": r})
         r["grupos_perfis"] = grupos_de_perfis(r)
         r["bases"] = _bases({"": r}, P)
         r["ligacoes_topo"] = _ligacoes_topo({"": r}, P)
@@ -1545,6 +1569,7 @@ def calcular(doc, par: Optional[dict] = None) -> dict:
     r_r["situacao"] = "retraida"
     r_a["outras_situacoes"] = {"retraida": r_r}
     r_a["reacoes_envoltoria"] = envoltoria_das_reacoes({"aberta": r_a, "retraida": r_r})
+    r_a["ancoragens"] = ancoragens({"aberta": r_a, "retraida": r_r})
     r_a["grupos_perfis"] = grupos_de_perfis(r_a, [r_r])
     r_a["bases"] = _bases({"aberta": r_a, "retraida": r_r}, P)
     r_a["ligacoes_topo"] = _ligacoes_topo({"aberta": r_a, "retraida": r_r}, P)
@@ -1594,6 +1619,45 @@ def envoltoria_das_reacoes(sits: Dict[str, dict]) -> List[dict]:
         for k in ("Fz_max", "Fz_min", "H_max", "M_max"):
             e[k][0] = round(e[k][0], 2)
     return sorted(por.values(), key=lambda e: tuple(int(v) for v in e["chave"].split(",")))
+
+
+def ancoragens(sits: Dict[str, dict]) -> List[dict]:
+    """O que a estrutura aplica em cada ponto chumbado num pilar de concreto (Docas, 08/10), nas combinações últimas: a
+    força sobre o pilar (o contrário da reação) na face dele — T, o arrancamento (puxa a ancoragem para fora da face;
+    negativo empurra contra ela), Vz o cisalhamento vertical (para baixo positivo), Vh o horizontal ao longo da face, V a
+    resultante dos dois e M o momento (o nó engastado). Cada extremo com a combinação e os concomitantes [T, Vz, Vh, M]."""
+    por: Dict[str, dict] = {}
+    for nome, r in sits.items():
+        elu = [c for c, cb in r["combinacoes"].items() if cb["tipo"] == "ELU"]
+        for ap in r["apoios"]:
+            if not ap.get("chumbada"):
+                continue
+            n = np.array(ap.get("normal") or (0.0, 0.0, 0.0), float)
+            if np.linalg.norm(n) < 0.5:
+                continue
+            th = np.array([-n[1], n[0], 0.0])
+            k = ap["chave"]
+            e = por.setdefault(k, {"chave": k, "pilar": ap["chumbada"], "z": ap.get("z"), "no": ap["no"], "tipo": ap["tipo"],
+                                    "T_max": [-1e18, ""], "C_max": [0.0, ""], "V_max": [0.0, ""], "M_max": [0.0, ""],
+                                    "concomitantes": {}})
+            for c in elu:
+                rr = r["por_comb"][c]["reacoes"].get(str(ap["no"]))
+                if rr is None:
+                    continue
+                F = -np.array(rr[:3], float)                 # o que a estrutura faz no pilar
+                Mm = float(np.linalg.norm(np.array(rr[3:6], float)))
+                T, Vz, Vh = float(F @ n), float(-F[2]), float(F @ th)
+                V = math.hypot(Vz, Vh)
+                onde = ("%s · %s" % (nome, c)) if nome else c
+                conc = [round(T, 2), round(Vz, 2), round(Vh, 2), round(Mm, 2)]
+                for chave, val in (("T_max", T), ("C_max", -T), ("V_max", V), ("M_max", Mm)):
+                    if val > e[chave][0]:
+                        e[chave] = [val, onde]
+                        e["concomitantes"][chave] = conc
+    for e in por.values():
+        for k in ("T_max", "C_max", "V_max", "M_max"):
+            e[k][0] = round(e[k][0], 2)
+    return sorted(por.values(), key=lambda e: (e["pilar"], -(e["z"] or 0.0)))
 
 
 def apoios_das_tesouras(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = None) -> Optional[dict]:

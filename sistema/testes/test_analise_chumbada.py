@@ -97,3 +97,16 @@ def test_coberturas_em_niveis_diferentes_sao_independentes():
     assert sorted(round(v, 2) for v in cob["larguras"].values()) == [1.5, 1.5, 1.5, 1.5]
     casos, info, _ = AE.cargas(M)
     assert len(info["vento"]["coberturas"]) == 2 and all(c["tg"] < 0.5 for c in info["vento"]["coberturas"])
+
+
+def test_ancoragem_no_pilar_de_concreto():
+    """o que a estrutura aplica em cada ponto chumbado (Docas, 08/10): no balanço sob a gravidade o banzo de cima arranca
+    (puxa a ancoragem para fora da face) e o de baixo comprime contra o pilar; a direção é a da tesoura saindo do pilar"""
+    r = AE.calcular(_marquise(), {"travamento_hipotese": "nao", "segunda_ordem": False, "vento": False})
+    A = r["ancoragens"]
+    assert len(A) == 2 and {a["pilar"] for a in A} == {"P1"}
+    cima, baixo = sorted(A, key=lambda a: -a["z"])
+    assert cima["T_max"][0] > 0.3 and baixo["C_max"][0] > 0.3
+    # o binário: o arrancamento de cima e a compressão de baixo se equilibram na horizontal
+    assert abs(cima["T_max"][0] - baixo["C_max"][0]) < 0.15 * cima["T_max"][0]
+    assert cima["V_max"][0] > 0.2 and all(k in cima["concomitantes"] for k in ("T_max", "V_max"))

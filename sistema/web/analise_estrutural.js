@@ -559,6 +559,22 @@ function lerPremissas() {
   return p;
 }
 
+/** o uso máximo de cada combinação última (as barras de hipótese fora) e quantas barras ela governa acima de 100% — a pior
+ * à vista no seletor (usuário, 08/10: "para encontrar de forma fácil qual a pior situação") */
+function usoPorCombinacao() {
+  const V = D && D.verificacao;
+  if (!V || !V.uso_barras) return null;
+  const out = {};
+  for (const [c, usos] of Object.entries(V.uso_barras)) {
+    let m = 0;
+    usos.forEach((u, i) => { if (!(D.barras[i] && D.barras[i].hipotese) && u > m) m = u; });
+    out[c] = { max: m, governa: 0 };
+  }
+  (V.comb_env || []).forEach((c, i) => { if (c && out[c] && V.uso_env[i] > 1 && !(D.barras[i] && D.barras[i].hipotese)) out[c].governa++; });
+  const pior = Object.keys(out).sort((a, b) => (out[b].max - out[a].max) || (out[b].governa - out[a].governa))[0];
+  return { por: out, pior };
+}
+
 function montarControles() {
   const C = $('#controles'); C.replaceChildren();
   for (const b of document.querySelectorAll('#modos button')) b.classList.toggle('on', b.dataset.modo === estado.modo);
@@ -568,13 +584,26 @@ function montarControles() {
     const combs = soELU ? todas.filter(c => D.combinacoes[c].tipo === 'ELU') : todas;
     if (soELU && estado.comb !== 'env' && !combs.includes(estado.comb)) estado.comb = 'env';
     const s2 = (c) => (D.segunda_ordem && D.segunda_ordem.combinacoes[c]) || null;
+    const usos = usoPorCombinacao();
     const marca = (c) => { const r = s2(c); return r ? (r.instavel ? ' ⚠ instável na 2ª ordem' : r.razao ? ` · Δ2/Δ1 ${nf(r.razao, 2)}` : '') : ''; };
+    const pctSel = (u) => (u >= 9.99 ? '> 999% (flambagem)' : pctUso(u));
+    const uso = (c) => (usos && usos.por[c] ? ` · uso máx ${pctSel(usos.por[c].max)}${c === usos.pior ? ' ★ a pior' : ''}` : '');
     const s = el('select', {}, ...(incluiEnv ? [el('option', { value: 'env', texto: 'Envoltória ELU', selected: estado.comb === 'env' ? 'selected' : undefined })] : []),
-      ...combs.map(c => el('option', { value: c, texto: `${c} — ${D.combinacoes[c].descricao}${marca(c)}`, selected: estado.comb === c ? 'selected' : undefined })));
+      ...combs.map(c => el('option', { value: c, texto: `${c} — ${D.combinacoes[c].descricao}${marca(c)}${uso(c)}`, selected: estado.comb === c ? 'selected' : undefined })));
     s.onchange = () => { estado.comb = s.value; guardar(); desenhar(); painelReacoes(); painelPeca(); };
     return s;
   };
   const linha = (rot, inp) => C.append(el('label', { class: 'linha', style: 'grid-template-columns:110px 1fr' }, rot, inp));
+  // a pior combinação, com um botão para ir a ela
+  const linhaPior = () => {
+    const u = usoPorCombinacao();
+    if (!u || !u.pior) return;
+    const p = u.por[u.pior];
+    const b = el('button', { type: 'button', texto: estado.comb === u.pior ? 'é a mostrada' : 'ver esta', disabled: estado.comb === u.pior ? true : undefined });
+    b.onclick = () => { estado.comb = u.pior; guardar(); montarControles(); desenhar(); painelReacoes(); painelPeca(); };
+    C.append(el('div', { class: 'sub', style: 'margin:2px 0 6px' },
+      el('span', { html: `A pior: <b>${u.pior}</b> — uso máx <b style="color:${corUso(p.max)}">${p.max >= 9.99 ? '> 999% (flambagem)' : pctUso(p.max)}</b>${p.governa ? `, governa ${p.governa} barra(s) acima de 100%` : ''} ` }), b));
+  };
   const m = estado.modo;
   if (RAIZ && RAIZ.outras_situacoes) {
     const sits = ['aberta', ...Object.keys(RAIZ.outras_situacoes)];
@@ -599,6 +628,7 @@ function montarControles() {
   if (m === 'tensoes') linha('Combinação', selComb(true));
   if (m === 'verificacao') linha('Combinação', selComb(true, true));
   if (m === 'deformada' || m === 'reacoes') linha('Combinação', selComb(false));
+  if (['esforcos', 'tensoes', 'verificacao', 'deformada', 'reacoes'].includes(m)) linhaPior();
   if (['cargas', 'esforcos', 'deformada', 'reacoes'].includes(m)) {
     const r = el('input', { type: 'range', min: '0.2', max: '4', step: '0.1', value: String(estado.escala) });
     r.oninput = () => { estado.escala = +r.value; guardar(); desenhar(); };
@@ -904,6 +934,46 @@ function detalheDaBase(b, xy) {
 }
 
 // o que cada tesoura entrega onde apoia (o carrinho da cobertura retrátil): o pior de cada direção
+// o que a estrutura aplica em cada ponto chumbado num pilar de concreto (usuário, 08/10: "preciso saber quais as cargas que
+// a estrutura gera nos pilares de concreto para ver se a ancoragem prevista está suportando")
+const ANC = (() => { try { return JSON.parse(localStorage.getItem('ae.ancoragem') || '{}'); } catch (e) { return {}; } })();
+function painelAncoragem() {
+  const det = $('#det-ancoragem'), P = $('#ancoragem');
+  const A = (RAIZ && RAIZ.ancoragens) || (D && D.ancoragens) || [];
+  det.hidden = !A.length;
+  if (!A.length) { P.replaceChildren(); return; }
+  const num = (v) => { const x = parseFloat(String(v || '').replace(',', '.')); return isFinite(x) && x > 0 ? x : null; };
+  const n = num(ANC.n) || 4, Td = num(ANC.Td), Vd = num(ANC.Vd);
+  const campo = (k, rot, ph) => {
+    const i = el('input', { type: 'text', value: ANC[k] || '', placeholder: ph, style: 'width:70px' });
+    i.onchange = () => { ANC[k] = i.value; try { localStorage.setItem('ae.ancoragem', JSON.stringify(ANC)); } catch (e) { /* */ } painelAncoragem(); };
+    return el('label', { style: 'display:flex;gap:6px;align-items:center;margin:2px 0' }, el('span', { style: 'flex:1', texto: rot }), i);
+  };
+  // o uso de um ponto: tração e cisalhamento por parabolt, com os concomitantes de cada extremo, interação linear
+  const usoDe = (c) => (Td && Vd && c ? Math.max(0, c[0]) / n / Td + Math.hypot(c[1], c[2]) / n / Vd : null);
+  const t = el('table', { style: 'font-size:11px' }, el('tr', {}, el('th', { texto: 'pilar · cota' }), el('th', { texto: 'arranca' }), el('th', { texto: 'compr.' }),
+    el('th', { texto: 'cisalha' }), el('th', { texto: 'M' }), el('th', { texto: 'T/pb', title: `tração por parabolt (÷${n})` }),
+    el('th', { texto: 'V/pb', title: `cisalhamento por parabolt (÷${n})` }), ...(Td && Vd ? [el('th', { texto: 'uso' })] : [])));
+  let pior = null;
+  for (const a of A) {
+    const cT = a.concomitantes.T_max, cV = a.concomitantes.V_max;
+    const u = Math.max(usoDe(cT) || 0, usoDe(cV) || 0);
+    if (!pior || a.T_max[0] > pior.T_max[0]) pior = a;
+    t.append(el('tr', { title: `arrancamento: ${a.T_max[1]} (concomitantes T, Vz, Vh, M: ${(cT || []).join('; ')})\ncompressão: ${a.C_max[1]}\ncisalhamento: ${a.V_max[1]} (concomitantes: ${(cV || []).join('; ')})\nmomento: ${a.M_max[1]}` },
+      el('td', { texto: `${a.pilar} · ${nf(a.z, 2)}` }),
+      el('td', { html: a.T_max[0] > 0 ? `<b style="color:#c0392b">${nf(a.T_max[0], 1)}</b>` : nf(0, 1) }),
+      el('td', { texto: nf(Math.max(0, a.C_max[0]), 1) }), el('td', { texto: nf(a.V_max[0], 1) }), el('td', { texto: nf(a.M_max[0], 1) }),
+      el('td', { texto: nf(Math.max(0, a.T_max[0]) / n, 1) }), el('td', { texto: nf(a.V_max[0] / n, 1) }),
+      ...(Td && Vd ? [el('td', { html: `<b style="color:${corUso(u)}">${pctUso(u)}</b>` })] : [])));
+  }
+  P.replaceChildren(
+    el('div', { class: 'sub', texto: `O que a estrutura aplica no pilar em cada ponto chumbado, na face dele (kN, kN·m; combinações últimas${RAIZ && RAIZ.outras_situacoes ? ', as duas situações' : ''}): arranca puxa a ancoragem para fora da face (vermelho), comprime empurra contra ela, cisalha é a resultante vertical + horizontal na face, M o momento no nó engastado. Passe o mouse para ver a combinação de cada máximo e os concomitantes.` }),
+    pior ? el('div', { class: 'aviso', html: `O maior arrancamento: <b>${nf(pior.T_max[0], 1)} kN</b> no ${pior.pilar} a ${nf(pior.z, 2)} m (${pior.T_max[1]}) — com ${nf(Math.hypot(pior.concomitantes.T_max[1], pior.concomitantes.T_max[2]), 1)} kN de cisalhamento junto.` }) : '',
+    el('div', { style: 'overflow-x:auto' }, t),
+    el('div', { class: 'sub', style: 'margin-top:6px', texto: 'Cota em m (o nó do banzo). Para conferir a ancoragem: os parabolts por ponto e a resistência de cálculo de cada um (do fabricante, já com o coeficiente; no concreto do pilar). O uso é a tração e o cisalhamento por parabolt sobre as resistências, somados (interação linear, a favor da segurança), com os concomitantes de cada extremo. O momento do nó não entra na divisão.' }),
+    campo('n', 'Parabolts por ponto', '4'), campo('Td', 'Tração de cálculo por parabolt (kN)', 'fabricante'), campo('Vd', 'Cisalhamento de cálculo por parabolt (kN)', 'fabricante'));
+}
+
 function painelCarrinho() {
   const C = $('#carrinho'), A = D.apoios_tesouras;
   if (!A) { C.replaceChildren(el('div', { class: 'sub', texto: 'Sem tesouras apoiadas em viga ou pilar neste resultado (ou calcule de novo).' })); return; }
@@ -1073,7 +1143,7 @@ function aplicar(dados) {
   // o centro e o tamanho do modelo
   const bb = new THREE.Box3(); for (const p of D.nos) bb.expandByPoint(new THREE.Vector3(...p));
   bb.getCenter(centro); raio = Math.max(1000, bb.getSize(new THREE.Vector3()).length() / 2);
-  montarControles(); painelRanking(); painelSegunda(); painelReacoes(); painelBases(); painelCarrinho(); painelLigacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
+  montarControles(); painelRanking(); painelSegunda(); painelReacoes(); painelAncoragem(); painelBases(); painelCarrinho(); painelLigacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
   if (!aplicar._vista) { vista('iso'); aplicar._vista = true; }
   desenhar();
 }
