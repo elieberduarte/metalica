@@ -8,37 +8,44 @@
   {
    "serie": "Perfinasa – Catálogo técnico 2016 (UET = Ue, UST = U, UDI = U diagonal, CDR = L)",
    "url": "https://loja.perfinasa.com.br/uploads/catalog/CATALOGO_DE_PRODUTOS_PERFINASA_2016.pdf",
-   "observacao": "A, m, Ix, Wx, rx, Xg, Iy, Wy, ry, It, Cw. Valores iguais aos da NBR 6355 em quase tudo (inclusive o \"127x50x17\", que repete a NBR 125x50x17). Erros de impressão anotados por perfil. Conferência rx=√(Ix/A) acusa incoerências impressas em: Ue 100x40x17x2,25 (rx), Ue 150x50x17x2,25 (A), Ue 200x75x25x3,75 (Wx=54,75), U 200x75x4,75 (Iy=51,59), U 93x30x2,65 (Ix), L 30 e 35 (coluna rx/ry e massas não batem) – mantidos como impressos."
+   "observacao": "A, m, Ix, Wx, rx, Xg, Iy, Wy, ry, It, Cw. Valores iguais aos da NBR 6355 em quase tudo (inclusive o \"127x50x17\", que repete a NBR 125x50x17). Erros de impressão anotados por perfil. Conferência rx=√(Ix/A) acusa incoerências impressas em: Ue 100x40x17x2,25 (rx), Ue 150x50x17x2,25 (A), Ue 200x75x25x3,75 (Wx=54,75), U 200x75x4,75 (Iy=51,59), U 93x30x2,65 (Ix), L 30 e 35 (coluna rx/ry e massas não batem) – mantidos como impressos.",
+   "arquivo": "Normas/CATÁLOGOS/02-PERFIS-FORMADOS-A-FRIO/Perfinasa - Catalogo tecnico (2016).pdf"
   },
   {
    "serie": "ArcelorMittal Perfilor – Profil du Futur (Z, C, U)",
    "url": "https://api.aecweb.com.br/cls/catalogos/perfilor/catalogo_perfilor_opt.pdf",
-   "observacao": "Designação \"Xbw ttt\" (ex.: C100 190 = alma 100 mm, t = 1,90 mm). Espessuras 1,20/1,50/1,70/1,90/2,00/2,25/2,65/3,00 SEM revestimento; nota do catálogo: nominal revestido = +0,05 mm. Massa revestida e não revestida. PDF escaneado – transcrito da imagem. C175 265 impresso com A=8,59 e m=6,89 (incoerente: 0,785·A=6,74) – mantido."
+   "observacao": "Designação \"Xbw ttt\" (ex.: C100 190 = alma 100 mm, t = 1,90 mm). Espessuras 1,20/1,50/1,70/1,90/2,00/2,25/2,65/3,00 SEM revestimento; nota do catálogo: nominal revestido = +0,05 mm. Massa revestida e não revestida. PDF escaneado – transcrito da imagem. C175 265 impresso com A=8,59 e m=6,89 (incoerente: 0,785·A=6,74) – mantido.",
+   "arquivo": "Normas/CATÁLOGOS/02-PERFIS-FORMADOS-A-FRIO/ArcelorMittal Perfilor - Perfis Z C U.pdf"
   },
   {
    "serie": "Gerdau – Catálogo de Produtos Comercial Gerdau: UDC simples/enrijecido (p. 66–67) e chapas (p. 50–52)",
    "url": "http://acomanaus.com.br/wp-content/downloads/aco-manaus-catalogo-gerdau.pdf",
-   "observacao": "S, P, Jx, Wx, ix, ey, Jy, Wy, iy. Ue 200x60x20 listado sem valores. Mesma tabela reaparece, com linhas deslocadas, no site da Tenax (não usada)."
+   "observacao": "S, P, Jx, Wx, ix, ey, Jy, Wy, iy. Ue 200x60x20 listado sem valores. Mesma tabela reaparece, com linhas deslocadas, no site da Tenax (não usada).",
+   "arquivo": "Normas/CATÁLOGOS/02-PERFIS-FORMADOS-A-FRIO/Gerdau - Catalogo de produtos comercial (UDC e chapas).pdf"
   },
   {
    "serie": "Isoeste Metálica – Catálogo Perfis Estruturais (US, UE, Z45, Z90; CIVIL 300 e ZAR345 galvanizado)",
    "url": "https://api.aecweb.com.br/cls/catalogos/115/25404/perfis_estruturais.pdf",
-   "observacao": "Só massa, área (e área de pintura no CIVIL 300). CIVIL 300: 1,80/2,00/2,25/2,65/3,00; ZAR345: 1,55/1,70/1,95/2,30/2,70. Inclui US127x40 e UE127x50x18."
+   "observacao": "Só massa, área (e área de pintura no CIVIL 300). CIVIL 300: 1,80/2,00/2,25/2,65/3,00; ZAR345: 1,55/1,70/1,95/2,30/2,70. Inclui US127x40 e UE127x50x18.",
+   "arquivo": "Normas/CATÁLOGOS/02-PERFIS-FORMADOS-A-FRIO/Isoeste Metalica - Perfis estruturais.pdf"
   },
   {
    "serie": "Tetraferro – Catálogo de produtos (perfil U simples e enrijecido dobrado de chapa; chapas)",
    "url": "https://tetraferro.com.br/wp-content/uploads/2021/08/PDF1.pdf",
-   "observacao": "Só massa kg/m, com bitola na coluna: 2,00=#14, 2,25=#13, 2,65=#12, 3,00=1/8\"-#11, 3,35=#10, 3,75=#9, 4,25=#8, 4,75=3/16\". Inclui U 127x50, U 127x60 e Ue 127x50x15."
+   "observacao": "Só massa kg/m, com bitola na coluna: 2,00=#14, 2,25=#13, 2,65=#12, 3,00=1/8\"-#11, 3,35=#10, 3,75=#9, 4,25=#8, 4,75=3/16\". Inclui U 127x50, U 127x60 e Ue 127x50x15.",
+   "arquivo": "Normas/CATÁLOGOS/02-PERFIS-FORMADOS-A-FRIO/Tetraferro - Catalogo de produtos (2021).pdf"
   },
   {
    "serie": "Sigma Aço – Chapas e perfis dobrados 2021",
    "url": "https://sigmaaco.com.br/_file/catalogo/tabela-perfis-estruturais_-_sigma_aco.pdf",
-   "observacao": "Usado só para a tabela de bitolas; perfis dados em kg/barra 6 m com colunas desalinhadas no PDF – não transcritos. Oferece U 127x50 e Ue 127x50x20 (2,00–3,00)."
+   "observacao": "Usado só para a tabela de bitolas; perfis dados em kg/barra 6 m com colunas desalinhadas no PDF – não transcritos. Oferece U 127x50 e Ue 127x50x20 (2,00–3,00).",
+   "arquivo": "Normas/CATÁLOGOS/02-PERFIS-FORMADOS-A-FRIO/Sigma Aco - Chapas e perfis dobrados (2021).pdf"
   },
   {
    "serie": "Armco – Tabela de equivalência de espessura de chapas finas (ABNT × USG × MSG)",
    "url": "https://www.armco.com.br/wp-content/uploads/2024/02/Tabela-de-equivalencia-de-Chapas-Finas-e-de-conversao-de-revestimentos.pdf",
-   "observacao": "Correspondência número de bitola × mm ABNT/USG/MSG."
+   "observacao": "Correspondência número de bitola × mm ABNT/USG/MSG.",
+   "arquivo": "Normas/CATÁLOGOS/03-CHAPAS-E-BITOLAS/Armco - Equivalencia de espessura de chapas finas (2024).pdf"
   },
   {
    "serie": "Aço Mix – produto \"Perfil U Enrijecido 127x50x17 #14 (2,0mm)\"",

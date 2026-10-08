@@ -3,32 +3,38 @@
   {
    "serie": "U (Gerdau)",
    "url": "https://gsn.gerdau.com/sites/gsn_gerdau/files/downloadable_files/Barras-e-Perfis-Tabela-de-bolso.pdf",
-   "observacao": "Gerdau \"Barras e Perfis – Tabela de bolso\" (rev. 03/19), pág. Perfil U Gerdau. Só U 3\", 4\", 6\", 8\", 10\", 12\" com 2 massas cada; U 15\" não consta. Mesmos valores publicados em mais.gerdau.com.br/produtos/perfil-u-viga-u."
+   "observacao": "Gerdau \"Barras e Perfis – Tabela de bolso\" (rev. 03/19), pág. Perfil U Gerdau. Só U 3\", 4\", 6\", 8\", 10\", 12\" com 2 massas cada; U 15\" não consta. Mesmos valores publicados em mais.gerdau.com.br/produtos/perfil-u-viga-u.",
+   "arquivo": "Normas/CATÁLOGOS/01-PERFIS-LAMINADOS/Gerdau - Barras e perfis - tabela de bolso (2019).pdf"
   },
   {
    "serie": "I (Gerdau)",
    "url": "https://gsn.gerdau.com/sites/gsn_gerdau/files/downloadable_files/Barras-e-Perfis-Tabela-de-bolso.pdf",
-   "observacao": "Tabela de bolso Gerdau 03/19, pág. Perfil I Gerdau. Só I 3\" a 6\" (2 massas cada); I 8\", 10\", 12\" não constam. Campo extra rt (cm) do catálogo. Confirmado em mais.gerdau.com.br/produtos/perfil-i-viga-i."
+   "observacao": "Tabela de bolso Gerdau 03/19, pág. Perfil I Gerdau. Só I 3\" a 6\" (2 massas cada); I 8\", 10\", 12\" não constam. Campo extra rt (cm) do catálogo. Confirmado em mais.gerdau.com.br/produtos/perfil-i-viga-i.",
+   "arquivo": "Normas/CATÁLOGOS/01-PERFIS-LAMINADOS/Gerdau - Barras e perfis - tabela de bolso (2019).pdf"
   },
   {
    "serie": "L abas iguais (Gerdau)",
    "url": "https://gsn.gerdau.com/sites/gsn_gerdau/files/downloadable_files/Barras-e-Perfis-Tabela-de-bolso.pdf",
-   "observacao": "Tabela de bolso Gerdau 03/19, \"Cantoneira em Polegadas\". Maior bitola: 8\"×3/4\" (só 8\"×5/8\" e 8\"×3/4\"); 8\"×7/8\" e 8\"×1\" não constam; 6\" só 3/8\" a 3/4\". Mesmos valores em http://www.skylightestruturas.com.br/downloads/barras-e-perfis-lamina-cantoneira.pdf (folheto Gerdau). Gerdau não lista abas desiguais. A tabela métrica (40–100 mm) do folheto não foi transcrita (pedido era em polegadas). Ix=Iy, Wx=Wy, rx=ry (abas iguais); b2=b."
+   "observacao": "Tabela de bolso Gerdau 03/19, \"Cantoneira em Polegadas\". Maior bitola: 8\"×3/4\" (só 8\"×5/8\" e 8\"×3/4\"); 8\"×7/8\" e 8\"×1\" não constam; 6\" só 3/8\" a 3/4\". Mesmos valores em http://www.skylightestruturas.com.br/downloads/barras-e-perfis-lamina-cantoneira.pdf (folheto Gerdau). Gerdau não lista abas desiguais. A tabela métrica (40–100 mm) do folheto não foi transcrita (pedido era em polegadas). Ix=Iy, Wx=Wy, rx=ry (abas iguais); b2=b.",
+   "arquivo": "Normas/CATÁLOGOS/01-PERFIS-LAMINADOS/Gerdau - Barras e perfis - tabela de bolso (2019).pdf"
   },
   {
    "serie": "Barras redondas (Gerdau)",
    "url": "https://gsn.gerdau.com/sites/gsn_gerdau/files/downloadable_files/Barras-e-Perfis-Tabela-de-bolso.pdf",
-   "observacao": "Tabela de bolso Gerdau 03/19, \"Barra Redonda Gerdau\" (laminada), 1/4\" a 4.1/16\", 48 bitolas. Barras trefiladas não incluídas."
+   "observacao": "Tabela de bolso Gerdau 03/19, \"Barra Redonda Gerdau\" (laminada), 1/4\" a 4.1/16\", 48 bitolas. Barras trefiladas não incluídas.",
+   "arquivo": "Normas/CATÁLOGOS/01-PERFIS-LAMINADOS/Gerdau - Barras e perfis - tabela de bolso (2019).pdf"
   },
   {
    "serie": "Barras chatas (Gerdau)",
    "url": "https://gsn.gerdau.com/sites/gsn_gerdau/files/downloadable_files/Barras-e-Perfis-Tabela-de-bolso.pdf",
-   "observacao": "Tabela de bolso Gerdau 03/19, \"Barra Chata Gerdau\", matriz espessura × largura; colunas atribuídas pela posição no PDF e conferidas por largura×espessura×7,85. Omitida 1 célula inconsistente: espessura 1.1/2\" na coluna 3\" com 15,19 kg/m (15,19 corresponde a 2\"×1.1/2\"; 3\"×1.1/2\" daria 22,79)."
+   "observacao": "Tabela de bolso Gerdau 03/19, \"Barra Chata Gerdau\", matriz espessura × largura; colunas atribuídas pela posição no PDF e conferidas por largura×espessura×7,85. Omitida 1 célula inconsistente: espessura 1.1/2\" na coluna 3\" com 15,19 kg/m (15,19 corresponde a 2\"×1.1/2\"; 3\"×1.1/2\" daria 22,79).",
+   "arquivo": "Normas/CATÁLOGOS/01-PERFIS-LAMINADOS/Gerdau - Barras e perfis - tabela de bolso (2019).pdf"
   },
   {
    "serie": "U, I, L (ArcelorMittal)",
    "url": "https://espetaculaco.com.br/wp-content/uploads/2023/11/Catalogo-Tecnico-ArcelorMittal.pdf",
-   "observacao": "ArcelorMittal Aços Longos \"Catálogo Técnico\" (out/2009), págs. 23–25 do catálogo. Só massa e dimensões (U/I: d, bf, tw; sem tf nem propriedades) → campos ausentes = null. U 3\", 4\", 6\"; I 4\", 6\"; cantoneiras em polegadas 1/2\" a 5\" (inclui espessuras em mm 2,50/3,00/4,50/6,00). Não é o catálogo atual; site brasil.arcelormittal.com não trouxe tabela (404). Série métrica NBR 6109 e barras AM não transcritas."
+   "observacao": "ArcelorMittal Aços Longos \"Catálogo Técnico\" (out/2009), págs. 23–25 do catálogo. Só massa e dimensões (U/I: d, bf, tw; sem tf nem propriedades) → campos ausentes = null. U 3\", 4\", 6\"; I 4\", 6\"; cantoneiras em polegadas 1/2\" a 5\" (inclui espessuras em mm 2,50/3,00/4,50/6,00). Não é o catálogo atual; site brasil.arcelormittal.com não trouxe tabela (404). Série métrica NBR 6109 e barras AM não transcritas.",
+   "arquivo": "Normas/CATÁLOGOS/01-PERFIS-LAMINADOS/ArcelorMittal - Catalogo tecnico acos longos (2009).pdf"
   }
  ],
  "U": [

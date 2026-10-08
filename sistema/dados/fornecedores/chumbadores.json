@@ -1,0 +1,1005 @@
+{
+ "fontes": [
+  {
+   "serie": "Hard – Chumbador Hardbolt (aço carbono), boletim técnico BT-10-45015 rev. 05 (13/09/2024)",
+   "fabricante": "Hard Comércio de Fixadores e Resinas Ltda. (Joinville/SC)",
+   "url": "",
+   "arquivo": "Normas/CATÁLOGOS/06-PARAFUSOS-E-CHUMBADORES/Hard - Chumbador Hardbolt aco carbono - BT-10-45015 rev05 (2024).pdf",
+   "observacao": "PDF entregue pelo usuário (08/10/2026). Transcrito pelo texto e conferido contra a imagem das págs. 3, 6, 7 e 8. Chumbador tipo parafuso (concrete screw), ancoragem pós-instalada em concreto, rocha e tijolo maciço; não usar com fck acima de 40 MPa, em concreto de baixa resistência, sujeito a infiltração ou a agentes corrosivos."
+  }
+ ],
+ "hardbolt": {
+  "tipo": "chumbador tipo parafuso (pós-instalado)",
+  "fabricante": "Hard",
+  "material": "aço carbono com tratamento térmico",
+  "itens": [
+   {
+    "nome": "Hardbolt M6x50",
+    "diametro": "M6",
+    "d": 6,
+    "comprimento": 50,
+    "dw_arruela": 14.5,
+    "altura_cabeca": 4.7,
+    "furo_na_chapa": 10,
+    "embutimento_max": 45,
+    "espessura_fixada": 5,
+    "broca": 6,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 450,
+    "chave": "7/16",
+    "por_embalagem": 100,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M8x55",
+    "diametro": "M8",
+    "d": 8,
+    "comprimento": 55,
+    "dw_arruela": 16.8,
+    "altura_cabeca": 6.0,
+    "furo_na_chapa": 12,
+    "embutimento_max": 50,
+    "espessura_fixada": 5,
+    "broca": 8,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 550,
+    "chave": "1/2",
+    "por_embalagem": 50,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M8x75",
+    "diametro": "M8",
+    "d": 8,
+    "comprimento": 75,
+    "dw_arruela": 16.8,
+    "altura_cabeca": 6.0,
+    "furo_na_chapa": 12,
+    "embutimento_max": 70,
+    "espessura_fixada": 5,
+    "broca": 8,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 550,
+    "chave": "1/2",
+    "por_embalagem": 50,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M10x65",
+    "diametro": "M10",
+    "d": 10,
+    "comprimento": 65,
+    "dw_arruela": 18.65,
+    "altura_cabeca": 7.2,
+    "furo_na_chapa": 14,
+    "embutimento_max": 60,
+    "espessura_fixada": 5,
+    "broca": 10,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 600,
+    "chave": "9/16",
+    "por_embalagem": 50,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M10x75",
+    "diametro": "M10",
+    "d": 10,
+    "comprimento": 75,
+    "dw_arruela": 18.65,
+    "altura_cabeca": 7.2,
+    "furo_na_chapa": 14,
+    "embutimento_max": 70,
+    "espessura_fixada": 5,
+    "broca": 10,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 600,
+    "chave": "9/16",
+    "por_embalagem": 50,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M10x100",
+    "diametro": "M10",
+    "d": 10,
+    "comprimento": 100,
+    "dw_arruela": 18.65,
+    "altura_cabeca": 7.2,
+    "furo_na_chapa": 14,
+    "embutimento_max": 70,
+    "espessura_fixada": 30,
+    "broca": 10,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 600,
+    "chave": "9/16",
+    "por_embalagem": 50,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M10x150",
+    "diametro": "M10",
+    "d": 10,
+    "comprimento": 150,
+    "dw_arruela": 18.65,
+    "altura_cabeca": 7.2,
+    "furo_na_chapa": 14,
+    "embutimento_max": 100,
+    "espessura_fixada": 50,
+    "broca": 10,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 600,
+    "chave": "9/16",
+    "por_embalagem": 30,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M12x75",
+    "diametro": "M12",
+    "d": 12,
+    "comprimento": 75,
+    "dw_arruela": 25.5,
+    "altura_cabeca": 8.1,
+    "furo_na_chapa": 16,
+    "embutimento_max": 70,
+    "espessura_fixada": 5,
+    "broca": 12,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 850,
+    "chave": "3/4",
+    "por_embalagem": 40,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M12x100",
+    "diametro": "M12",
+    "d": 12,
+    "comprimento": 100,
+    "dw_arruela": 25.5,
+    "altura_cabeca": 8.1,
+    "furo_na_chapa": 16,
+    "embutimento_max": 70,
+    "espessura_fixada": 30,
+    "broca": 12,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 850,
+    "chave": "3/4",
+    "por_embalagem": 25,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M12x150",
+    "diametro": "M12",
+    "d": 12,
+    "comprimento": 150,
+    "dw_arruela": 25.5,
+    "altura_cabeca": 8.1,
+    "furo_na_chapa": 16,
+    "embutimento_max": 125,
+    "espessura_fixada": 25,
+    "broca": 12,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 850,
+    "chave": "3/4",
+    "por_embalagem": 20,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M16x100",
+    "diametro": "M16",
+    "d": 16,
+    "comprimento": 100,
+    "dw_arruela": 30.5,
+    "altura_cabeca": 10.5,
+    "furo_na_chapa": 20,
+    "embutimento_max": 95,
+    "espessura_fixada": 5,
+    "broca": 16,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 1350,
+    "chave": "15/16",
+    "por_embalagem": 20,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   },
+   {
+    "nome": "Hardbolt M16x150",
+    "diametro": "M16",
+    "d": 16,
+    "comprimento": 150,
+    "dw_arruela": 30.5,
+    "altura_cabeca": 10.5,
+    "furo_na_chapa": 20,
+    "embutimento_max": 125,
+    "espessura_fixada": 25,
+    "broca": 16,
+    "comprimento_furo": "hv + 25,4",
+    "torque_max_kgf_cm": 1350,
+    "chave": "15/16",
+    "por_embalagem": 10,
+    "revestimentos": [
+     "Galvanizado (48 h salt spray)",
+     "Ecoseal 10K (240 h salt spray; Kesternich 10 ciclos)"
+    ]
+   }
+  ],
+  "cargas": {
+   "unidade": "kgf",
+   "coeficiente_seguranca": 4.0,
+   "condicoes": "um chumbador só, nas distâncias mínimas de borda, concreto não fissurado",
+   "observacao": "cargas PERMISSÍVEIS (já divididas por 4,0), não de cálculo; × 4 = a resistência média do ensaio. Para a análise do sistema (resistência de cálculo), a conversão ainda está por decidir.",
+   "valores": [
+    {
+     "diametro": "M6",
+     "embutimento": 45,
+     "Scr_tracao": 75,
+     "Ccr_tracao": 50,
+     "Scr_corte": 75,
+     "Ccr_corte": 75,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 180,
+       "corte": 230
+      },
+      "30": {
+       "tracao": 205,
+       "corte": 245
+      },
+      "40": {
+       "tracao": 260,
+       "corte": 280
+      }
+     }
+    },
+    {
+     "diametro": "M8",
+     "embutimento": 50,
+     "Scr_tracao": 95,
+     "Ccr_tracao": 65,
+     "Scr_corte": 95,
+     "Ccr_corte": 95,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 360,
+       "corte": 270
+      },
+      "30": {
+       "tracao": 415,
+       "corte": 320
+      },
+      "40": {
+       "tracao": 525,
+       "corte": 350
+      }
+     }
+    },
+    {
+     "diametro": "M8",
+     "embutimento": 70,
+     "Scr_tracao": 95,
+     "Ccr_tracao": 65,
+     "Scr_corte": 95,
+     "Ccr_corte": 95,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 645,
+       "corte": 370
+      },
+      "30": {
+       "tracao": 740,
+       "corte": 380
+      },
+      "40": {
+       "tracao": 940,
+       "corte": 490
+      }
+     }
+    },
+    {
+     "diametro": "M10",
+     "embutimento": 60,
+     "Scr_tracao": 110,
+     "Ccr_tracao": 75,
+     "Scr_corte": 110,
+     "Ccr_corte": 110,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 535,
+       "corte": 385
+      },
+      "30": {
+       "tracao": 615,
+       "corte": 435
+      },
+      "40": {
+       "tracao": 785,
+       "corte": 610
+      }
+     }
+    },
+    {
+     "diametro": "M10",
+     "embutimento": 70,
+     "Scr_tracao": 110,
+     "Ccr_tracao": 75,
+     "Scr_corte": 110,
+     "Ccr_corte": 110,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 690,
+       "corte": 435
+      },
+      "30": {
+       "tracao": 795,
+       "corte": 475
+      },
+      "40": {
+       "tracao": 1005,
+       "corte": 615
+      }
+     }
+    },
+    {
+     "diametro": "M10",
+     "embutimento": 100,
+     "Scr_tracao": 110,
+     "Ccr_tracao": 75,
+     "Scr_corte": 110,
+     "Ccr_corte": 110,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 1090,
+       "corte": 630
+      },
+      "30": {
+       "tracao": 1255,
+       "corte": 665
+      },
+      "40": {
+       "tracao": 1595,
+       "corte": 700
+      }
+     }
+    },
+    {
+     "diametro": "M12",
+     "embutimento": 70,
+     "Scr_tracao": 150,
+     "Ccr_tracao": 100,
+     "Scr_corte": 150,
+     "Ccr_corte": 150,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 800,
+       "corte": 725
+      },
+      "30": {
+       "tracao": 920,
+       "corte": 800
+      },
+      "40": {
+       "tracao": 1165,
+       "corte": 890
+      }
+     }
+    },
+    {
+     "diametro": "M12",
+     "embutimento": 100,
+     "Scr_tracao": 150,
+     "Ccr_tracao": 100,
+     "Scr_corte": 150,
+     "Ccr_corte": 150,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 1105,
+       "corte": 1015
+      },
+      "30": {
+       "tracao": 1275,
+       "corte": 1055
+      },
+      "40": {
+       "tracao": 1615,
+       "corte": 1095
+      }
+     }
+    },
+    {
+     "diametro": "M12",
+     "embutimento": 125,
+     "Scr_tracao": 150,
+     "Ccr_tracao": 100,
+     "Scr_corte": 150,
+     "Ccr_corte": 150,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 1660,
+       "corte": 1270
+      },
+      "30": {
+       "tracao": 1910,
+       "corte": 1315
+      },
+      "40": {
+       "tracao": 2425,
+       "corte": 1370
+      }
+     }
+    },
+    {
+     "diametro": "M16",
+     "embutimento": 95,
+     "Scr_tracao": 185,
+     "Ccr_tracao": 150,
+     "Scr_corte": 185,
+     "Ccr_corte": 185,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 1155,
+       "corte": 1110
+      },
+      "30": {
+       "tracao": 1330,
+       "corte": 1230
+      },
+      "40": {
+       "tracao": 1690,
+       "corte": 1330
+      }
+     }
+    },
+    {
+     "diametro": "M16",
+     "embutimento": 125,
+     "Scr_tracao": 185,
+     "Ccr_tracao": 150,
+     "Scr_corte": 185,
+     "Ccr_corte": 185,
+     "permissivel_kgf": {
+      "20": {
+       "tracao": 1745,
+       "corte": 1370
+      },
+      "30": {
+       "tracao": 2005,
+       "corte": 1480
+      },
+      "40": {
+       "tracao": 2550,
+       "corte": 1525
+      }
+     }
+    }
+   ]
+  },
+  "interacao": {
+   "formula": "NSd/NR + VSd/VR <= 1,2",
+   "referencia": "EOTA TR 029"
+  },
+  "fatores": {
+   "espacamento_tracao_Fn": {
+    "Scr": {
+     "M6": 75,
+     "M8": 95,
+     "M10": 110,
+     "M12": 150,
+     "M16": 185
+    },
+    "Smin": {
+     "M6": 25,
+     "M8": 35,
+     "M10": 40,
+     "M12": 50,
+     "M16": 60
+    },
+    "linhas": [
+     {
+      "distancia_mm": 25,
+      "fatores": {
+       "M6": 0.5
+      }
+     },
+     {
+      "distancia_mm": 35,
+      "fatores": {
+       "M6": 0.58,
+       "M8": 0.5
+      }
+     },
+     {
+      "distancia_mm": 40,
+      "fatores": {
+       "M6": 0.63,
+       "M8": 0.54,
+       "M10": 0.5
+      }
+     },
+     {
+      "distancia_mm": 50,
+      "fatores": {
+       "M6": 0.75,
+       "M8": 0.62,
+       "M10": 0.58,
+       "M12": 0.5
+      }
+     },
+     {
+      "distancia_mm": 60,
+      "fatores": {
+       "M6": 0.88,
+       "M8": 0.75,
+       "M10": 0.67,
+       "M12": 0.56,
+       "M16": 0.5
+      }
+     },
+     {
+      "distancia_mm": 75,
+      "fatores": {
+       "M6": 1.0,
+       "M8": 0.83,
+       "M10": 0.75,
+       "M12": 0.63,
+       "M16": 0.55
+      }
+     },
+     {
+      "distancia_mm": 95,
+      "fatores": {
+       "M8": 1.0,
+       "M10": 0.87,
+       "M12": 0.73,
+       "M16": 0.64
+      }
+     },
+     {
+      "distancia_mm": 110,
+      "fatores": {
+       "M10": 1.0,
+       "M12": 0.81,
+       "M16": 0.7
+      }
+     },
+     {
+      "distancia_mm": 125,
+      "fatores": {
+       "M12": 0.88,
+       "M16": 0.76
+      }
+     },
+     {
+      "distancia_mm": 150,
+      "fatores": {
+       "M12": 1.0,
+       "M16": 0.85
+      }
+     },
+     {
+      "distancia_mm": 185,
+      "fatores": {
+       "M16": 1.0
+      }
+     }
+    ]
+   },
+   "espacamento_corte_Fv": {
+    "Scr": {
+     "M6": 75,
+     "M8": 95,
+     "M10": 110,
+     "M12": 150,
+     "M16": 185
+    },
+    "Smin": {
+     "M6": 25,
+     "M8": 35,
+     "M10": 40,
+     "M12": 50,
+     "M16": 60
+    },
+    "observacao": "o título da 5.3 diz 'distância de borda', mas a tabela é a da distância entre chumbadores (corte)",
+    "linhas": [
+     {
+      "distancia_mm": 25,
+      "fatores": {
+       "M6": 0.75
+      }
+     },
+     {
+      "distancia_mm": 35,
+      "fatores": {
+       "M6": 0.79,
+       "M8": 0.75
+      }
+     },
+     {
+      "distancia_mm": 40,
+      "fatores": {
+       "M6": 0.81,
+       "M8": 0.77,
+       "M10": 0.75
+      }
+     },
+     {
+      "distancia_mm": 50,
+      "fatores": {
+       "M6": 0.88,
+       "M8": 0.81,
+       "M10": 0.79,
+       "M12": 0.75
+      }
+     },
+     {
+      "distancia_mm": 60,
+      "fatores": {
+       "M6": 0.94,
+       "M8": 0.88,
+       "M10": 0.83,
+       "M12": 0.78,
+       "M16": 0.75
+      }
+     },
+     {
+      "distancia_mm": 75,
+      "fatores": {
+       "M6": 1.0,
+       "M8": 0.92,
+       "M10": 0.88,
+       "M12": 0.81,
+       "M16": 0.78
+      }
+     },
+     {
+      "distancia_mm": 95,
+      "fatores": {
+       "M8": 1.0,
+       "M10": 0.94,
+       "M12": 0.87,
+       "M16": 0.82
+      }
+     },
+     {
+      "distancia_mm": 110,
+      "fatores": {
+       "M10": 1.0,
+       "M12": 0.91,
+       "M16": 0.85
+      }
+     },
+     {
+      "distancia_mm": 125,
+      "fatores": {
+       "M12": 0.94,
+       "M16": 0.88
+      }
+     },
+     {
+      "distancia_mm": 150,
+      "fatores": {
+       "M12": 1.0,
+       "M16": 0.93
+      }
+     },
+     {
+      "distancia_mm": 185,
+      "fatores": {
+       "M16": 1.0
+      }
+     }
+    ]
+   },
+   "borda_tracao_Fn": {
+    "Ccr": {
+     "M6": 50,
+     "M8": 65,
+     "M10": 75,
+     "M12": 100,
+     "M16": 150
+    },
+    "Cmin": {
+     "M6": 20,
+     "M8": 25,
+     "M10": 30,
+     "M12": 45,
+     "M16": 55
+    },
+    "observacao": "como impresso: o M8 chega a 1,00 em 55 mm (Ccr 65), o M12 tem fator em 40 mm (Cmin 45) e o M16 em 45 mm (Cmin 55)",
+    "linhas": [
+     {
+      "distancia_mm": 20,
+      "fatores": {
+       "M6": 0.7
+      }
+     },
+     {
+      "distancia_mm": 25,
+      "fatores": {
+       "M6": 0.75,
+       "M8": 0.7
+      }
+     },
+     {
+      "distancia_mm": 30,
+      "fatores": {
+       "M6": 0.79,
+       "M8": 0.74,
+       "M10": 0.7
+      }
+     },
+     {
+      "distancia_mm": 40,
+      "fatores": {
+       "M6": 0.88,
+       "M8": 0.81,
+       "M10": 0.76,
+       "M12": 0.7
+      }
+     },
+     {
+      "distancia_mm": 45,
+      "fatores": {
+       "M6": 0.97,
+       "M8": 0.85,
+       "M10": 0.82,
+       "M12": 0.75,
+       "M16": 0.7
+      }
+     },
+     {
+      "distancia_mm": 50,
+      "fatores": {
+       "M6": 1.0,
+       "M8": 0.89,
+       "M10": 0.84,
+       "M12": 0.76,
+       "M16": 0.71
+      }
+     },
+     {
+      "distancia_mm": 55,
+      "fatores": {
+       "M8": 1.0,
+       "M10": 0.88,
+       "M12": 0.79,
+       "M16": 0.74
+      }
+     },
+     {
+      "distancia_mm": 65,
+      "fatores": {
+       "M10": 0.94,
+       "M12": 0.84,
+       "M16": 0.78
+      }
+     },
+     {
+      "distancia_mm": 75,
+      "fatores": {
+       "M10": 1.0,
+       "M12": 0.88,
+       "M16": 0.81
+      }
+     },
+     {
+      "distancia_mm": 95,
+      "fatores": {
+       "M12": 0.95,
+       "M16": 0.88
+      }
+     },
+     {
+      "distancia_mm": 100,
+      "fatores": {
+       "M12": 1.0,
+       "M16": 0.9
+      }
+     },
+     {
+      "distancia_mm": 150,
+      "fatores": {
+       "M16": 1.0
+      }
+     }
+    ]
+   },
+   "borda_corte_Fv": {
+    "Ccr": {
+     "M6": 75,
+     "M8": 95,
+     "M10": 110,
+     "M12": 150,
+     "M16": 185
+    },
+    "Cmin": {
+     "M6": 25,
+     "M8": 25,
+     "M10": 30,
+     "M12": 40,
+     "M16": 45
+    },
+    "observacao": "o cabeçalho da tabela diz (Fn), mas é o fator de corte (Fv); como impresso, há fator abaixo do Cmin (M6 em 20 mm, M16 em 45)",
+    "linhas": [
+     {
+      "distancia_mm": 20,
+      "fatores": {
+       "M6": 0.15
+      }
+     },
+     {
+      "distancia_mm": 25,
+      "fatores": {
+       "M6": 0.22,
+       "M8": 0.15
+      }
+     },
+     {
+      "distancia_mm": 30,
+      "fatores": {
+       "M6": 0.29,
+       "M8": 0.21,
+       "M10": 0.15
+      }
+     },
+     {
+      "distancia_mm": 40,
+      "fatores": {
+       "M6": 0.43,
+       "M8": 0.33,
+       "M10": 0.24,
+       "M12": 0.15
+      }
+     },
+     {
+      "distancia_mm": 45,
+      "fatores": {
+       "M6": 0.58,
+       "M8": 0.39,
+       "M10": 0.34,
+       "M12": 0.22,
+       "M16": 0.15
+      }
+     },
+     {
+      "distancia_mm": 55,
+      "fatores": {
+       "M6": 0.72,
+       "M8": 0.52,
+       "M10": 0.43,
+       "M12": 0.29,
+       "M16": 0.21
+      }
+     },
+     {
+      "distancia_mm": 60,
+      "fatores": {
+       "M6": 0.79,
+       "M8": 0.58,
+       "M10": 0.48,
+       "M12": 0.33,
+       "M16": 0.24
+      }
+     },
+     {
+      "distancia_mm": 75,
+      "fatores": {
+       "M6": 1.0,
+       "M8": 0.76,
+       "M10": 0.62,
+       "M12": 0.43,
+       "M16": 0.32
+      }
+     },
+     {
+      "distancia_mm": 95,
+      "fatores": {
+       "M8": 1.0,
+       "M10": 0.81,
+       "M12": 0.6,
+       "M16": 0.45
+      }
+     },
+     {
+      "distancia_mm": 110,
+      "fatores": {
+       "M10": 1.0,
+       "M12": 0.72,
+       "M16": 0.55
+      }
+     },
+     {
+      "distancia_mm": 150,
+      "fatores": {
+       "M12": 1.0,
+       "M16": 0.77
+      }
+     },
+     {
+      "distancia_mm": 185,
+      "fatores": {
+       "M16": 1.0
+      }
+     }
+    ]
+   }
+  },
+  "acessorios": [
+   {
+    "codigo": "5595",
+    "descricao": "BROCA HARD V-PRO SDS PLUS 6X50X110MM"
+   },
+   {
+    "codigo": "7941",
+    "descricao": "BROCA HARD V-PRO SDS PLUS 8X100X160MM"
+   },
+   {
+    "codigo": "5596",
+    "descricao": "BROCA HARD V-PRO SDS PLUS 10X100X160MM"
+   },
+   {
+    "codigo": "5484",
+    "descricao": "BROCA HARD V-PRO SDS PLUS 10X150X210MM"
+   },
+   {
+    "codigo": "5598",
+    "descricao": "BROCA HARD V-PRO SDS PLUS 12X100X160MM"
+   },
+   {
+    "codigo": "5483",
+    "descricao": "BROCA HARD V-PRO SDS PLUS 12X150X210MM"
+   },
+   {
+    "codigo": "5480",
+    "descricao": "BROCA HARD V-PRO SDS PLUS 16X150X210MM"
+   },
+   {
+    "codigo": "4176",
+    "descricao": "SOQUETE DE IMPACTO CR-MO SEXTAVADO 1/2\" – ENCAIXE 1/2\""
+   },
+   {
+    "codigo": "4177",
+    "descricao": "SOQUETE DE IMPACTO CR-MO SEXTAVADO 15/16\" – ENCAIXE 1/2\""
+   },
+   {
+    "codigo": "4174",
+    "descricao": "SOQUETE DE IMPACTO CR-MO SEXTAVADO 3/4\" – ENCAIXE 1/2\""
+   },
+   {
+    "codigo": "4175",
+    "descricao": "SOQUETE DE IMPACTO CR-MO SEXTAVADO 9/16\" – ENCAIXE 1/2\""
+   }
+  ],
+  "aplicacao": "furo com a broca do diâmetro nominal, 1\" mais fundo que o embutimento; pressão na cabeça para laminar os primeiros fios; apertar até assentar sem passar do torque máximo; removível e reutilizável até 2 vezes; furo perpendicular; sem chave de impacto pneumática"
+ }
+}

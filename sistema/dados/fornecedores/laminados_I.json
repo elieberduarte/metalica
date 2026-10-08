@@ -3,7 +3,8 @@
   {
    "serie": "Gerdau Perfis Estruturais W e HP (tabela de bitolas, revisão 11/2018)",
    "url": "https://gsn.gerdau.com/sites/gsn_gerdau/files/downloadable_files/Tabela%20de%20Bitolas_1.pdf",
-   "observacao": "PDF oficial da Gerdau baixado e extraído pelas coordenadas do texto (pymupdf) e conferido contra a imagem renderizada. Colunas da fonte: massa, d, bf, tw, tf, h, d', A, Ix, Wx, rx, Zx, Iy, Wy, ry, Zy, rt, It, bf/2tf, d'/tw, Cw, u. A fonte NÃO traz o raio de concordância R (null). J = It. Campos extras: d_linha (altura plana da alma d'), rt, lambda_f, lambda_w, u (m²/m), perfil_H (marca (H)), sob_encomenda (marca *), equivalente_polegadas. Aço ASTM A572 Gr.50; propriedades conforme ABNT NBR 15980:2011 e ASTM A6/A6M."
+   "observacao": "PDF oficial da Gerdau baixado e extraído pelas coordenadas do texto (pymupdf) e conferido contra a imagem renderizada. Colunas da fonte: massa, d, bf, tw, tf, h, d', A, Ix, Wx, rx, Zx, Iy, Wy, ry, Zy, rt, It, bf/2tf, d'/tw, Cw, u. A fonte NÃO traz o raio de concordância R (null). J = It. Campos extras: d_linha (altura plana da alma d'), rt, lambda_f, lambda_w, u (m²/m), perfil_H (marca (H)), sob_encomenda (marca *), equivalente_polegadas. Aço ASTM A572 Gr.50; propriedades conforme ABNT NBR 15980:2011 e ASTM A6/A6M.",
+   "arquivo": "Normas/CATÁLOGOS/01-PERFIS-LAMINADOS/Gerdau - Perfis estruturais W e HP - tabela de bitolas (2018).pdf"
   },
   {
    "serie": "Gerdau (cópias idênticas usadas só como referência)",

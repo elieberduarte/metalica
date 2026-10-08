@@ -3,47 +3,56 @@
   {
    "serie": "Vallourec: tubos estruturais sem costura TC/TQ/TR (circular, quadrada, retangular)",
    "url": "https://api.aecweb.com.br/cls/catalogos/20437/24986/126catalogo-tubos-estruturais.pdf",
-   "observacao": "Catálogo Vallourec (PDF hospedado no AECweb), pp.35-54. Extraído por coordenadas do PDF; 694 bitolas com m, A, I, r, W, Z, J, Wt. '*' = fornecido sob consulta (campo sob_consulta)."
+   "observacao": "Catálogo Vallourec (PDF hospedado no AECweb), pp.35-54. Extraído por coordenadas do PDF; 694 bitolas com m, A, I, r, W, Z, J, Wt. '*' = fornecido sob consulta (campo sob_consulta).",
+   "arquivo": "Normas/CATÁLOGOS/04-TUBOS/Vallourec - Tubos estruturais sem costura.pdf"
   },
   {
    "serie": "Vallourec: graus de aço VMB",
    "url": "https://www.vallourec.com/app/uploads/sites/2/2023/10/BR-Catalogo-de-Acos-Estruturais.pdf",
-   "observacao": "Só graus e propriedades mecânicas; sem tabelas de bitolas."
+   "observacao": "Só graus e propriedades mecânicas; sem tabelas de bitolas.",
+   "arquivo": "Normas/CATÁLOGOS/04-TUBOS/Vallourec - Acos estruturais VMB (2023).pdf"
   },
   {
    "serie": "Marcegaglia do Brasil: tubos com costura redondos/quadrados/retangulares (NBR 6591 / NBR 8261 / EN 10305-3 / ASTM A500 / A513)",
    "url": "https://marcegagliadobrasil.com/wp-content/uploads/2024/10/Marcegaglia-do-Brasil-Carbon-Steel-Welded-Tubes.pdf",
-   "observacao": "Só massa teórica kg/m por espessura (pp.3-7). Linha TR 17,20 descartada (colunas desalinhadas no PDF)."
+   "observacao": "Só massa teórica kg/m por espessura (pp.3-7). Linha TR 17,20 descartada (colunas desalinhadas no PDF).",
+   "arquivo": "Normas/CATÁLOGOS/04-TUBOS/Marcegaglia do Brasil - Tubos com costura (2024).pdf"
   },
   {
    "serie": "Tuper: Tabela Técnica de Produtos 2022/2024",
    "url": "https://tuper-prd.s3.sa-east-1.amazonaws.com/uploads/2021/08/Tabela-Tecnica-de-Produtos-Tuper-2024.pdf",
-   "observacao": "Consultada; só faixas de espessura, fardos e tubo-mãe, sem propriedades geométricas. Não transcrita."
+   "observacao": "Consultada; só faixas de espessura, fardos e tubo-mãe, sem propriedades geométricas. Não transcrita.",
+   "arquivo": "Normas/CATÁLOGOS/04-TUBOS/Tuper - Tabela tecnica de produtos (2024).pdf"
   },
   {
    "serie": "Tubos Ipiranga: tubos quadrados e retangulares 2024",
    "url": "https://www.tubosipiranga.com.br/docs-and-files/Act_Tubos_Catalogo2024_Digital_Tubos_Quadrados_Retangulares.pdf",
-   "observacao": "Consultada; só peso por barra de 6 m. Não transcrita."
+   "observacao": "Consultada; só peso por barra de 6 m. Não transcrita.",
+   "arquivo": "Normas/CATÁLOGOS/04-TUBOS/Tubos Ipiranga - Tubos quadrados e retangulares (2024).pdf"
   },
   {
    "serie": "Apolo Tubos: catálogo",
    "url": "https://api.aecweb.com.br/cls/catalogos/apolo_tubos/apolo_tubos_equipamentos.pdf",
-   "observacao": "Consultado; NBR 8261 só com peso por peça. Não transcrito."
+   "observacao": "Consultado; NBR 8261 só com peso por peça. Não transcrito.",
+   "arquivo": "Normas/CATÁLOGOS/04-TUBOS/Apolo Tubos - Catalogo.pdf"
   },
   {
    "serie": "Isoeste Metálica: TP40",
    "url": "https://www.isoestemetalica.com.br/wp-content/uploads/2021/01/Tabela-Tecnica-Telha-TP40-1.pdf",
-   "observacao": "Ficha técnica oficial."
+   "observacao": "Ficha técnica oficial.",
+   "arquivo": "Normas/CATÁLOGOS/05-TELHAS/Isoeste Metalica - Telha TP40 - tabela tecnica.pdf"
   },
   {
    "serie": "Isoeste Metálica: TP25",
    "url": "https://www.isoestemetalica.com.br/wp-content/uploads/2021/01/Tabela-Tecnica-Telha-TP25-1.pdf",
-   "observacao": "Ficha técnica oficial."
+   "observacao": "Ficha técnica oficial.",
+   "arquivo": "Normas/CATÁLOGOS/05-TELHAS/Isoeste Metalica - Telha TP25 - tabela tecnica.pdf"
   },
   {
    "serie": "Kingspan Isoeste: catálogo de produtos (TP-40, TP-100, OND-17)",
    "url": "https://downloads.kingspan-isoeste.com.br/catalogos/Kingspan-Isoeste-Cat%C3%A1logo-de-Produtos-PT-BR.pdf",
-   "observacao": "Pesos por espessura das tabelas 'Detalhes técnicos'; larguras dos desenhos."
+   "observacao": "Pesos por espessura das tabelas 'Detalhes técnicos'; larguras dos desenhos.",
+   "arquivo": "Normas/CATÁLOGOS/05-TELHAS/Kingspan Isoeste - Catalogo de produtos.pdf"
   },
   {
    "serie": "Kingspan Isoeste: página TP-40",
@@ -53,17 +62,20 @@
   {
    "serie": "Ananda Metais: Telhas Metálicas 2022",
    "url": "https://anandametais.com.br/assets/uploads/pdf/TELHAS/material_D.pdf",
-   "observacao": "Perfis e espessuras (tabelas de sobrecarga). Sem pesos."
+   "observacao": "Perfis e espessuras (tabelas de sobrecarga). Sem pesos.",
+   "arquivo": "Normas/CATÁLOGOS/05-TELHAS/Ananda Metais - Telhas metalicas (2022).pdf"
   },
   {
    "serie": "Ananda Metais: catálogo de telhas antigo (AECweb)",
    "url": "https://api.aecweb.com.br/cls/catalogos/ananda/catalogo_telhas.pdf",
-   "observacao": "Larguras útil/total dos desenhos; inclui AT 35/1050."
+   "observacao": "Larguras útil/total dos desenhos; inclui AT 35/1050.",
+   "arquivo": "Normas/CATÁLOGOS/05-TELHAS/Ananda Metais - Catalogo de telhas (antigo).pdf"
   },
   {
    "serie": "Eternit: telhas metálicas",
    "url": "https://api.aecweb.com.br/cls/catalogos/eternit/catalogo_telhas_metalicas.pdf",
-   "observacao": "TMTO-17, TMTP-25/40/120; larguras dos desenhos; sem pesos."
+   "observacao": "TMTO-17, TMTP-25/40/120; larguras dos desenhos; sem pesos.",
+   "arquivo": "Normas/CATÁLOGOS/05-TELHAS/Eternit - Telhas metalicas.pdf"
   },
   {
    "serie": "Regional Telhas: RT 40/980, RT 40/1020, RT 100/952 (AECweb)",
@@ -73,7 +85,8 @@
   {
    "serie": "Sandre: telha trapezoidal 40",
    "url": "https://www.sandre.com.br/pdfs/telha-trapezoidal-40.pdf",
-   "observacao": "Folheto: espessuras e largura útil."
+   "observacao": "Folheto: espessuras e largura útil.",
+   "arquivo": "Normas/CATÁLOGOS/05-TELHAS/Sandre - Telha trapezoidal 40.pdf"
   },
   {
    "serie": "ArcelorMittal Perfilor: LR 17/25/33/40/100",
