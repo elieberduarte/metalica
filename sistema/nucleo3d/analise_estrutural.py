@@ -1067,7 +1067,9 @@ def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -
     # marquise do Docas, 08/10; antes toda cobertura ia pela Tabela 25, com a "flecha" sobre meio vão e a ponta inclinada do
     # beiral junto: tg θ 0,443 numa água de 0,159). A inclinação é a do banzo de cima, a mediana pelo comprimento em planta
     # (a ponta inclinada, curta, não manda)
-    s_alto = float(s[int(np.argmax(pts[:, 2]))])
+    # entre os pontos no topo (até 1 cm; na plana, todos) vale o mais perto de uma borda: a plana é uma água de tg θ 0
+    no_topo = s[pts[:, 2] >= zt - 0.01]
+    s_alto = float(min(no_topo, key=lambda v: min(v - s.min(), s.max() - v)))
     uma_agua = vao > 0 and min(abs(s_alto - s.min()), abs(s_alto - s.max())) < 0.15 * vao
     s_baixo = float(s.min() if abs(s_alto - s.max()) < abs(s_alto - s.min()) else s.max())
     if uma_agua:

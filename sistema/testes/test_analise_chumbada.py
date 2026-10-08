@@ -162,3 +162,20 @@ def test_marquise_de_duas_aguas_segue_na_tabela_25():
     M = AE.montar(doc, {"travamento_hipotese": "nao", "vento_nas_barras": False})
     casos, info, _ = AE.cargas(M)
     assert info["vento"]["aguas"] == 2 and "cpb" in info["vento"]["carregamento_1"]
+
+
+def test_cobertura_plana_vai_pela_tabela_24():
+    """a plana é uma água de tg θ 0 (a Tabela 25 começa em 0,07): a escolha não depende de qual nó do topo vem primeiro"""
+    doc = Documento(nome="plana")
+    for x in (0.0, 3000.0):
+        ys = [0.0, 1500.0, 3000.0, 4500.0]
+        for i in (1, 2, 0):                                 # o primeiro trecho começa no meio do vão
+            _barra(doc, (x, ys[i], 4500), (x, ys[i + 1], 4500), U, "banzo", "banzo_inf")
+            _barra(doc, (x, ys[i], 5000), (x, ys[i + 1], 5000), U, "banzo", "banzo_sup")
+        for yy in ys:
+            _barra(doc, (x, yy, 4500), (x, yy, 5000), L, "montante", "montante")
+    for b in doc.barras:
+        b.atributos = dict(b.atributos, origem_2d="t%d" % round(b.inicio[0]))
+    M = AE.montar(doc, {"travamento_hipotese": "nao", "vento_nas_barras": False})
+    casos, info, _ = AE.cargas(M)
+    assert info["vento"]["aguas"] == 1 and info["vento"]["tg"] == 0.0
