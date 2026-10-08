@@ -135,6 +135,14 @@ def perfil_ue_frio(h: float, bf: float, d: float, t: float, nome: str = "") -> P
     nome_cat = ("Ue %g×%g×%g×%.2f" % (h, bf, d, t)).replace(".", ",")
     p = banco().get(nome_cat)
     if p is not None:
+        # a tabela do manual não traz as constantes de torção de alguns Ue (o 200×75×20×2,65 vinha com J = 0, e a análise
+        # caía na reserva de 1 % da menor inércia: 3,4 vezes a do Tekla, 0,226 cm⁴ — calibração de 08/10): completa pela
+        # NBR 14762 (método linear), sem mexer na área e nas inércias da tabela
+        if not float(p.dados.get("J") or 0.0) > 0.0:
+            sec = nbr14762.propriedades_ue(h, bf, d, t, nome=nome_cat)
+            for k, v in (("J", round(sec.J, 5)), ("Cw", round(sec.Cw, 4)), ("x0", round(sec.x0, 4)), ("r0", round(sec.r0, 4))):
+                if not float(p.dados.get(k) or 0.0):
+                    p.dados[k] = v
         return p
     sec = nbr14762.propriedades_ue(h, bf, d, t, nome=nome or nome_cat)
     return _registrar(_de_secao_frio(sec, "Ue"))
@@ -144,9 +152,12 @@ def _props_cantoneira(b1: float, b2: float, t: float, r: float) -> dict:
     """Propriedades (cm) de uma cantoneira pela linha média: aba `b1` vertical, aba
     `b2` horizontal, canto de raio interno `r`. Devolve também os eixos principais."""
     rm = r + t / 2.0
-    pts = [(b2 - t / 2.0, t / 2.0), (t / 2.0 + rm, t / 2.0)]
+    # a linha média vai até a ponta da aba (b), não até b − t/2: a ponta é a face cortada da chapa, não uma dobra. Com
+    # b − t/2 cada aba perdia meia espessura e as cantoneiras saíam 4 a 8 % leves (L 30×3: 1,56 cm² × 1,65 da Perfinasa;
+    # calibração com o Tekla, 08/10)
+    pts = [(b2, t / 2.0), (t / 2.0 + rm, t / 2.0)]
     pts += nbr14762._arco(t / 2.0 + rm, t / 2.0 + rm, rm, -math.pi / 2, -math.pi)
-    pts.append((t / 2.0, b1 - t / 2.0))
+    pts.append((t / 2.0, b1))
     P = nbr14762._limpa(pts)
     p = nbr14762._props_pecas([P], t)
     Ix, Iy, Ixy = p["Ix"], p["Iy"], p["Ixy"]
@@ -163,10 +174,12 @@ def perfil_cantoneira(b1: float, b2: float, t: float, nome: str = "",
     pela linha média — com canto de raio t quando formada a frio."""
     if formada_a_frio is None:
         formada_a_frio = t <= ESPESSURA_MAX_FRIO
+    # a tabela (laminadas em polegada e algumas métricas) com a espessura a 2 %: a 6 %, a "L 38×3,00 (FF)" caía na
+    # L 1½"×1/8" (3,18 mm) e as 272 diagonais do Docas pesavam 9 % a mais (calibração com o Tekla, 08/10)
     if abs(b1 - b2) < 0.5:
         for p in banco().lista("L"):
             pb, pt = float(p.dados.get("b") or 0), float(p.dados.get("t") or 0)
-            if pb and pt and abs(pb - b1) / pb <= 0.03 and abs(pt - t) / pt <= 0.06:
+            if pb and pt and abs(pb - b1) / pb <= 0.03 and abs(pt - t) / pt <= 0.02:
                 return p
     b1c, b2c, tc = b1 / 10.0, b2 / 10.0, t / 10.0
     rc = tc if formada_a_frio else 0.0

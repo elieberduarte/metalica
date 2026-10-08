@@ -192,7 +192,9 @@ def test_leitura_dos_quadros():
     t = por["tesoura"]["leitura"]
     assert t["nome"] == "T01" and t["qtd"] == 2
     assert t["banzo"]["perfil"].startswith("U 100×40×2")
-    assert t["alma"]["perfil"] == 'L 1"×1/8"'
+    # "L25x25#11": #11 é bitola de chapa, a cantoneira dobrada de 3,00 mm — não a laminada 1"×1/8" (3,18 mm), que a
+    # tolerância de 6 % na espessura aceitava (calibração com o Tekla, 08/10)
+    assert t["alma"]["perfil"] == "L 25×3 (FF)"
     assert t["contagem"] == {"banzo": 2, "montante": 3, "diagonal": 4}
     assert t["comprimento"] == pytest.approx(6000.0, abs=1.0)
     pos = por["tesouras_pos"]["leitura"]

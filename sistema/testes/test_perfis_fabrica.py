@@ -70,3 +70,26 @@ def test_redondas_e_nao_barras():
 def test_aco_civil_300():
     a = materiais.aco("CIVIL 300")
     assert a.fy == 30.0 and a.fu == 40.0
+
+
+def test_cantoneira_dobrada_bate_com_a_tabela_do_fabricante():
+    """a linha média vai até a ponta da aba: as cantoneiras dobradas saíam 4 a 8 % leves (calibração com o Tekla, 08/10);
+    a L 30×3 e a L 30×2,25 batem com a tabela da Perfinasa que o catálogo guarda ao lado"""
+    for nome, A, kg, Ix, J in (("L 30×3 (FF)", 1.65, 1.30, 1.41, 0.050), ("L 30×2,25 (FF)", 1.27, 0.99, 1.11, 0.021)):
+        p = perfil_de_fabrica(nome)
+        assert p.A == pytest.approx(A, rel=0.01) and p.massa == pytest.approx(kg, rel=0.01)
+        assert p.Ix == pytest.approx(Ix, rel=0.01) and p.dados["J"] == pytest.approx(J, rel=0.05)
+
+
+def test_ff_no_nome_nao_vira_laminada_em_polegada():
+    """a "L 38×3,00 (FF)" caía na L 1½"×1/8" (3,18 mm) da tabela de laminadas; o 3 mm do IFC também não é 1/8" """
+    p = perfil_de_fabrica("L 38×3,00 (FF)")
+    assert '"' not in p.nome and p.dados["t"] == 3.0 and p.A == pytest.approx(2.132, rel=0.01)
+    assert '"' not in perfil_de_fabrica("L50X50X3").nome
+    assert perfil_de_fabrica('L 1.1/2"X1/8"').nome == 'L 1½"×1/8"'          # a polegada continua laminada
+
+
+def test_ue_da_tabela_ganha_o_j_que_falta():
+    """o Ue 200×75×20×2,65 da tabela do manual vinha com J = 0 e a análise usava 1 % da menor inércia (3,4 × o do Tekla)"""
+    p = perfil_de_fabrica("Ue 200×75×20×2,65")
+    assert p.A == pytest.approx(10.1) and p.dados["J"] == pytest.approx(0.2311, rel=0.02)
