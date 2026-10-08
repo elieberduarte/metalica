@@ -6,7 +6,7 @@ import os
 import pytest
 
 from nucleo2d import detalhar as det
-from nucleo2d.detalhe.base import _pecas, _fixadores, _marcas
+from nucleo2d.detalhe.base import _pecas, _fixadores
 from nucleo2d.detalhe.montagens import grupos_montados, desenho_de_montagem
 from nucleo2d.desenho import Desenho
 from nucleo3d.modelo import Documento

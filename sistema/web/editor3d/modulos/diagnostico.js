@@ -387,19 +387,28 @@ export class MetodosDiagnostico {
 
   _publicarErros() {
     let mostrados = 0;
+    let marca = null;
     const publicar = () => {
       const erros = window.__errosEditor || [];
       // Com ?teste=1 os erros aparecem na tela, para ficarem na própria captura.
       if (this.parametros.get('teste') === '1') {
         for (; mostrados < erros.length; mostrados++) this.aviso(erros[mostrados], 'erro', 0);
       }
-      document.body.dataset.erros = JSON.stringify(erros);
-      try { document.body.dataset.diag = JSON.stringify(this.diagnostico()); }
-      catch (e) { document.body.dataset.diag = 'falhou: ' + e.message; }
+      // O diagnóstico percorre todas as peças; sem quadro novo desenhado (a cena só desenha
+      // quando algo mudou), nem peça nem erro novos, o anterior continua valendo — no uso
+      // normal, com o modelo parado, isto não custa nada.
+      let quadro = -1;
+      try { quadro = this.cena.renderizador.info.render.frame; } catch (e) { /* sem renderizador */ }
+      const agora = quadro + '|' + erros.length + '|' + this.documento.tamanho + '|' + this.cena.objetos.size;
       document.body.dataset.objetos = String(this.documento.tamanho);
       document.body.dataset.malhas = String(this.cena.objetos.size);
       document.body.dataset.ferramentas = [...this.ferramentas.keys()].join(',');
       document.body.dataset.servidor = this.cena.usarServidor ? 'sim' : 'nao';
+      if (agora === marca) return;
+      marca = agora;
+      document.body.dataset.erros = JSON.stringify(erros);
+      try { document.body.dataset.diag = JSON.stringify(this.diagnostico()); }
+      catch (e) { document.body.dataset.diag = 'falhou: ' + e.message; }
     };
     publicar();
     // Em modelo grande esta publicação (para os verificadores de tela) percorre todas as

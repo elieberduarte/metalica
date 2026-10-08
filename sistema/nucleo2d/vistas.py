@@ -26,7 +26,7 @@ Cada entidade 2D gerada guarda em `atributos` de que peça 3D veio (`origem`, `n
 """
 import collections
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados

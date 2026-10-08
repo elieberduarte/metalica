@@ -188,7 +188,6 @@ export class Selecao {
   porCamada(camada, somar = false) { this._porFiltro(e => e.camada === camada, somar); }
   porPerfil(perfil, somar = false) { this._porFiltro(e => e.perfil === perfil, somar); }
   porPapel(papel, somar = false) { this._porFiltro(e => e.papel === papel, somar); }
-  porMaterial(mat, somar = false) { this._porFiltro(e => e.material === mat, somar); }
 
   /** Tudo que se parece com a entidade dada (mesmo tipo e mesmo perfil/espessura). */
   semelhantes(id, somar = false) {

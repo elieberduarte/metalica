@@ -204,11 +204,18 @@ class Banco:
     def __getitem__(self, nome: str) -> Perfil:
         if nome in self.perfis:
             return self.perfis[nome]
-        # tolera variação de grafia: "W 360x51" -> "W 360×51,0"
-        alvo = _chave(nome)
-        for k, p in self.perfis.items():
-            if _chave(k) == alvo:
-                return p
+        # tolera variação de grafia: "W 360x51" -> "W 360×51,0". O índice pelas chaves sai
+        # uma vez (antes, cada nome fora da grafia exata varria o catálogo inteiro: 4 s numa
+        # análise estrutural); em empate, vale o primeiro do catálogo, como na varredura.
+        indice = getattr(self, "_por_chave", None)
+        if indice is None or self._por_chave_n != len(self.perfis):
+            indice = {}
+            for k, p in self.perfis.items():
+                indice.setdefault(_chave(k), p)
+            self._por_chave, self._por_chave_n = indice, len(self.perfis)
+        p = indice.get(_chave(nome))
+        if p is not None:
+            return p
         raise ErroDeDados(f"perfil não encontrado no catálogo: {nome}")
 
     def get(self, nome: str) -> Optional[Perfil]:

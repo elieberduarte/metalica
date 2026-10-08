@@ -6,7 +6,6 @@ celular passa a falar HTTPS com ele.
 
 Precisa dos executáveis do Pebble (variável PEBBLE_DIR, ou %TEMP%\\mob\\pebble); sem eles, pula.
 Tudo só no 127.0.0.1."""
-import http.client
 import json
 import os
 import shutil

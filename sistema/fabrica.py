@@ -16,7 +16,7 @@ import json
 import os
 import threading
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import List
 
 #: Valores de partida, típicos de dobradeira de perfis leves — A CONFERIR com a fábrica
 #: (a tela do catálogo mostra e deixa editar).

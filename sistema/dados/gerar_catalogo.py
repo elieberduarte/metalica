@@ -28,7 +28,6 @@ desenhar em 2D escolhendo a peça pelo catálogo.
 import json
 import math
 import os
-import re
 import sys
 
 BASE = os.path.dirname(os.path.abspath(__file__))

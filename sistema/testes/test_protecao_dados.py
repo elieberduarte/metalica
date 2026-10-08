@@ -112,6 +112,22 @@ class TestLixeiraEEncerramento(unittest.TestCase):
         self.assertTrue(os.path.exists(novo))
         self.assertTrue(os.path.isdir(os.path.join(lixo, "projeto-excluido")))   # projeto excluído fica
 
+    def test_lixeira_guarda_so_as_ultimas_copias_de_cada_desenho(self):
+        raiz = tempfile.mkdtemp(prefix="lixeira_")
+        lixo = os.path.join(raiz, projetos.LIXEIRA)
+        os.makedirs(lixo)
+        danificado = os.path.join(lixo, "danificado-20260921-231635-vistas.desenho.json")
+        open(danificado, "w").write("{}")
+        for i in range(6):
+            open(os.path.join(lixo, "p-pranchas.desenho.json-20261001-00000%d" % i), "w").write("{}")
+        open(os.path.join(lixo, "p-outro.desenho.json-20261001-000000"), "w").write("{}")
+        self.assertEqual(projetos.podar_copias_da_lixeira(raiz, manter=3), 3)
+        ficaram = sorted(os.listdir(lixo))
+        self.assertEqual([n for n in ficaram if "pranchas" in n],
+                         ["p-pranchas.desenho.json-20261001-00000%d" % i for i in (3, 4, 5)])
+        self.assertIn("p-outro.desenho.json-20261001-000000", ficaram)
+        self.assertTrue(os.path.exists(danificado))
+
     def test_encerramento_espera_operacao(self):
         self.assertFalse(app._trabalho_em_curso())
         app._em_curso(+1)

@@ -2140,24 +2140,25 @@ teste, com tolerância de 1 %. É a validação independente do código de cálc
 testes do IFC ficam pulados quando o `ifcopenshell` não está instalado; os demais
 conferem a sintaxe STEP, a integridade das referências e a ida e volta pelo importador.
 
-O editor 3D roda no navegador, então não entra no `pytest`. Ele tem três verificadores
-que abrem o Chrome sem janela e trabalham no editor de verdade. Com o servidor no ar:
+O editor 3D roda no navegador, então não entra no `pytest`. Os verificadores das telas abrem o
+Chrome sem janela e trabalham nas telas de verdade; o jeito de rodar é pelo executor, que sobe um
+servidor de teste numa porta livre com uma pasta de dados temporária:
 
 ```bash
-python testes/verificar_editor.py --porta 8765           # abre o galpão no editor
-python testes/verificar_editor_arquivos.py --porta 8765  # salvar, abrir, exportar e importar IFC
-python testes/verificar_zoom.py --porta 8765             # zoom da roda e grade do plano
+python testes/rodar_verificadores.py            # todos, 3 em paralelo, os mais demorados primeiro
+python testes/antes_de_publicar.py [--completa] # pytest + verificadores + bateria das obras
 ```
 
-Cada um grava um galpão no navegador como a interface faz, executa a sua sequência,
-salva uma captura de tela em `projetos/` e lista os erros de JavaScript. Saem com
-código 1 quando alguma conferência falha.
+Os três roteiros antigos (`testes/verificar_editor.py`, `verificar_editor_arquivos.py`, `verificar_zoom.py`)
+pedem `--porta` de um servidor de teste (`app.py --sem-navegador --porta N --dados <pasta temporária>`) e
+recusam a 8765 (o programa instalado) e a 8766 (o desenvolvimento): gravam modelos na pasta de dados.
 
 ### Verificadores headless e CI
 
 `testes/verificadores/verif_*.py` sobem o servidor numa pasta temporária e exercitam a interface pelo Chrome
-sem janela (CDP); a maioria usa o modelo de exemplo do cliente, que não está no repositório — ver o LEIAME
-da pasta. `.github/workflows/testes.yml` roda o `pytest` no GitHub a cada push (Windows, Python 3.12).
+sem janela (CDP); a maioria usa o modelo de exemplo do cliente (`projetos/modelos/`), que não está no
+repositório. `.github/workflows/testes.yml` roda o `pytest` no GitHub só à mão (desde 06/10: falhava em todo
+push por causa do ambiente); a garantia é a conferência antes de publicar.
 
 ## Montar o 3D pela planta (projeto recebido sem 3D)
 

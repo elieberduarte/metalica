@@ -13,7 +13,6 @@ Tolerância padrão de 0,5 % contra fórmula fechada e de 2 % contra o Capítulo
 Rodar com:  PYTHONIOENCODING=utf-8 python -m pytest testes/test_analise.py -q
         ou  PYTHONIOENCODING=utf-8 python testes/test_analise.py
 """
-import math
 import os
 import random
 import sys

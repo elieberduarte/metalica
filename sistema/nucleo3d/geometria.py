@@ -48,7 +48,7 @@ import copy
 import math
 import os
 import sys
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _RAIZ not in sys.path:                      # permite rodar o módulo isoladamente

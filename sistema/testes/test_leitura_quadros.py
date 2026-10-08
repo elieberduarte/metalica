@@ -9,7 +9,6 @@ quatro pilares de concreto numa locação desenhada noutro canto do DXF e um cor
 portaria do Projeto Hermes (o caso real) foi conferida à parte: as cinco tesouras lidas pelos quadros
 são as mesmas barras da leitura usada no modelo montado, e o 3D bate peça a peça nas tesouras, terças
 e suportes de terça."""
-import math
 
 import pytest
 

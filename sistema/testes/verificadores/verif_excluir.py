@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Excluir desenhos: diálogo do CAD (marcar detalhamentos → excluir) e × do menu do editor 3D."""
-import base64, json, os, shutil, subprocess, sys, tempfile, time, urllib.request
+import json, os, shutil, subprocess, sys, tempfile, time, urllib.request
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))

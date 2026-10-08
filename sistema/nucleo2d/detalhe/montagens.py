@@ -16,7 +16,6 @@ aparece no modelo. As peças continuam detalhadas uma a uma nas células delas; 
 montagem.
 """
 import collections
-import math
 import re
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -95,10 +94,18 @@ def grupos_montados(pecas: Sequence[Solido], fixadores: Sequence[Solido], nome_d
                     unir(a.id, b.id)
     # chumbador: barra redonda em pé que atravessa a chapa deitada (de base) — as caixas se
     # cruzam de verdade (2 mm), não só encostam; tirante inclinado passando numa castanha não conta
+    eixos: Dict[str, tuple] = {}
+
+    def pca(e):
+        """Os eixos principais da peça, calculados uma vez (antes saíam a cada par barra × chapa)."""
+        if e.id not in eixos:
+            eixos[e.id] = _autovetores(e.vertices)[1]
+        return eixos[e.id]
+
     def eixo_principal(e):
-        return _norm(tuple(_autovetores(e.vertices)[1][0]))
+        return _norm(tuple(pca(e)[0]))
     base = [e for e in chapas if _extensao(e) <= 2 * MAIOR_CHAPA_MONTAGEM
-            and abs(_norm(tuple(_autovetores(e.vertices)[1][2]))[2]) > 0.8]
+            and abs(_norm(tuple(pca(e)[2]))[2]) > 0.8]
     for b in barras:
         if abs(eixo_principal(b)[2]) < 0.8:
             continue
@@ -109,7 +116,7 @@ def grupos_montados(pecas: Sequence[Solido], fixadores: Sequence[Solido], nome_d
     # maior parte dela do lado de dentro (o depósito químico, 29/09: a tesoura do eixo 1 presa na parede
     # por 2 BR5/8" em cada chapa, que saíam como gancho)
     em_pe = [e for e in chapas if _extensao(e) <= 2 * MAIOR_CHAPA_MONTAGEM
-             and abs(_norm(tuple(_autovetores(e.vertices)[1][2]))[2]) < 0.3]
+             and abs(_norm(tuple(pca(e)[2]))[2]) < 0.3]
     for b in barras:
         d = eixo_principal(b)
         # a barra roscada do esticador atravessa as chapinhas do contravento: não é chumbador
@@ -118,7 +125,7 @@ def grupos_montados(pecas: Sequence[Solido], fixadores: Sequence[Solido], nome_d
         tb = [_dot(v, d) for v in b.vertices]
         cruzadas = []
         for c in em_pe:
-            n = _norm(tuple(_autovetores(c.vertices)[1][2]))
+            n = _norm(tuple(pca(c)[2]))
             if abs(_dot(n, d)) < 0.9 or not _tocam(cx[b.id], cx[c.id], -2.0):
                 continue
             tc = [_dot(v, d) for v in c.vertices]

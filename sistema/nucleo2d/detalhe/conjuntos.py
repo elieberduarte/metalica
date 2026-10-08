@@ -7,12 +7,11 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
 from nucleo3d.modelo import Documento, Solido, Chapa
-from nucleo3d import geometria as _geo
-from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota
+from nucleo2d.desenho import Desenho, Linha, Polilinha
 from nucleo2d import vistas as _vistas
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
                                 _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d)
-from saida.desenhos import Estilo, _mm
+from saida.desenhos import _mm
 from saida.dobras import com_bitola, com_bitola_e_mm
 
 from nucleo2d.detalhe.base import (

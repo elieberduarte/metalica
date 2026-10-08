@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Tesouras treliçadas: malha, modelo de análise e o galpão inteiro dimensionado."""
-import math
 import os
 import sys
 

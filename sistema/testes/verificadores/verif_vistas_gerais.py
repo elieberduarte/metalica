@@ -1,6 +1,6 @@
 ﻿# -*- coding: utf-8 -*-
 """Vistas gerais do modelo inteiro num pedido só + gravações simultâneas no mesmo desenho."""
-import json, os, shutil, sys, tempfile, threading, time, urllib.request
+import json, os, shutil, sys, tempfile, threading, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE)
 import app, projetos

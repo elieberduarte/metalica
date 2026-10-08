@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Catálogos dos fornecedores no catálogo de peças e as seções Z e cartola."""
-import math
 
 import pytest
 

@@ -29,7 +29,10 @@ MAX_SEM_COMPLETA = 4
 
 #: Mexer aqui é mexer no núcleo: cálculo, saídas, IFC, geometria das peças.
 NUCLEO = ("nucleo/", "saida/", "ifc/", "nucleo3d/geometria.py", "nucleo3d/modelo.py",
-          "nucleo3d/eixos.py", "empacotar/", "dados/")
+          "nucleo3d/eixos.py", "dados/", "../empacotar/")
+#: Do núcleo, mas só do desenvolvimento (a parte comercial, 05/10): não pede a completa.
+SO_DEV = ("saida/comercial", "saida/orcamento", "saida/contrato_docs", "saida/proposta_html",
+          "saida/imagens3d", "saida/docx_simples")
 #: O detalhamento e o CAD 2D (28/09): só o 2D depende dele — as telas do CAD, os verificadores do
 #: detalhamento sem tela e a bateria das obras (que compara os desenhos). O 3D fica de fora.
 DETALHAMENTO = ("nucleo2d/",)
@@ -44,7 +47,10 @@ TELAS = [("web/cad/", {"cad"}), ("web/editor3d/", {"editor"}), ("web/dividida", 
          ("web/index.html", {"inicio"}), ("web/app.js", {"dimensionar"}), ("web/dimensionar", {"dimensionar"})]
 #: Comuns a todas as telas.
 COMUNS = ("web/estilo.css", "web/versao.js", "web/vivo.js", "web/atualizacao.js", "web/tema-janela.js",
-          "web/lentidao.js", "web/lib/")
+          "web/lentidao.js", "web/lib/", "web/etapas.js")
+#: Arquivos de tela com verificador próprio fora do mapa de telas.
+PROPRIOS = [("web/faixa_ferramentas", ["verif_faixa_ui"]), ("web/visor3d/", ["verif_ver3d_ui"]),
+            ("web/celular/", ["verif_celular_ui"]), ("web/acesso-celular", ["verif_celular_ui"])]
 #: A montagem 3D mudou: as telas que mostram o que ela monta (além da bateria do Posto CB).
 DA_MONTAGEM = ["verif_apoios_ui", "verif_esqueleto_ui", "verif_trelicas_ui", "verif_dividida_ui"]
 #: O servidor mudou: o mínimo que abre as telas principais.
@@ -67,12 +73,32 @@ def ultima_etiqueta() -> str:
 
 def mudados(base: str) -> list:
     """os arquivos de sistema/ mudados desde `base` (commitados ou não), relativos a sistema/"""
-    nomes = set(_git("diff", "--name-only", base, "--", "sistema").split())
-    for linha in _git("status", "--porcelain", "--", "sistema").splitlines():
-        caminho = linha[3:].strip().strip('"')
-        if caminho:
-            nomes.add(caminho)
-    return sorted(n[len("sistema/"):] for n in nomes if n.startswith("sistema/"))
+    _BASE[0] = base
+    # o empacotamento (o que vai no instalador) fica fora de sistema/: entra como "../empacotar/…"
+    return (sorted(n[len("sistema/"):] for n in _mudados_em("sistema"))
+            + sorted("../" + n for n in _mudados_em("empacotar")))
+
+
+def _mudados_em(pasta: str) -> set:
+    """os caminhos (a partir da raiz do repositório) mudados em `pasta`: os commitados desde a etiqueta
+    e os da pasta de trabalho, um a um (pasta nova também), o novo nome do renomeado e sem as aspas
+    e os escapes que o git põe nos nomes com acento (-z)"""
+    nomes = {n for n in _git("diff", "--name-only", "-z", _BASE[0], "--", pasta).split(NUL) if n}
+    partes = _git("status", "--porcelain", "-z", "-uall", "--", pasta).split(NUL)
+    i = 0
+    while i < len(partes):
+        item = partes[i]
+        i += 1
+        if len(item) < 4:
+            continue
+        nomes.add(item[3:])
+        if item[0] in "RC":                              # renomeado/copiado: o nome antigo vem depois
+            i += 1
+    return {n for n in nomes if n.startswith(pasta + "/")}
+
+
+_BASE = [""]
+NUL = chr(0)
 
 
 def _verificadores():
@@ -121,7 +147,7 @@ def escolher(forcar_completa: bool = False, base: str = None) -> dict:
     arqs = mudados(base) if base else []
     verifs = _verificadores()
     todos = sorted(verifs)
-    nucleo = [a for a in arqs if a.startswith(NUCLEO)]
+    nucleo = [a for a in arqs if a.startswith(NUCLEO) and not a.startswith(SO_DEV)]
     faltam = versoes_desde_completa()
     if forcar_completa or not base or nucleo or faltam >= MAX_SEM_COMPLETA:
         motivo = ("pedida" if forcar_completa else "sem a última versão no Git" if not base
@@ -151,9 +177,20 @@ def escolher(forcar_completa: bool = False, base: str = None) -> dict:
                 if (passa if por_onde else tv) & telas:
                     pega(n, a)
             continue
+        proprios = [ns for prefixo, ns in PROPRIOS if a.startswith(prefixo)]
+        if proprios:
+            for ns in proprios:
+                for n in ns:
+                    pega(n, a)
+            continue
         base_nome = os.path.splitext(os.path.basename(a))[0]
-        if a.startswith("testes/verificadores/") or a.startswith("testes/verif"):
+        if a.startswith("testes/") and a.endswith(".py"):
             pega(base_nome, a)                                  # o próprio verificador mudou
+            # e quem o usa como biblioteca (52 verificadores importam o verificar_editor)
+            importa = re.compile(r"^\s*(?:from|import)\s+%s" % re.escape(base_nome), re.M)
+            for n, (_tv, texto, _p) in verifs.items():
+                if importa.search(texto):
+                    pega(n, a)
             continue
         if a == "app.py":
             for n in FUMACA:

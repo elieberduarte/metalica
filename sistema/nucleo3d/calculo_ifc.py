@@ -2068,8 +2068,10 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
                 if c not in t.resultados:
                     try:
                         t.resultados[c] = analise.resolver(t.modelo, c, ESTACOES)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # a combinação de serviço que não resolve não some calada: a flecha dela
+                        # deixaria de ser verificada sem ninguém saber
+                        avisos.append("%s: combinação %s não resolvida (%s)" % (t.chave, c, exc))
         except Exception as exc:
             falhas.append(t)
             avisos.append("%s: análise falhou (%s)" % (t.chave, exc))

@@ -20,7 +20,7 @@ não calcula nada, como o memorial do galpão. As quatro camadas:
 import html as _html_mod
 import os
 import sys
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _RAIZ not in sys.path:

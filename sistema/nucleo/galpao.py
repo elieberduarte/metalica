@@ -181,19 +181,6 @@ def _rotulos_cpi(casos) -> list:
     return ["cpi%+.1f" % v for v in vals]
 
 
-def _pressao(p: ProjetoGalpao, superficie: str, direcao: str, cpi: float) -> float:
-    """Pressão em kN/m² numa superfície, tolerando nomes parciais."""
-    vg = p.vento["objeto"]
-    try:
-        return vg.pressao(superficie, direcao, cpi)
-    except Exception:
-        for linha in vg.tabela():
-            if (superficie.lower() in linha["superfície"].lower()
-                    and linha["direção"] == direcao and abs(linha["Cpi"] - cpi) < 1e-6):
-                return linha["p (kN/m²)"]
-    raise ErroDeDados(f"pressão de vento não encontrada para {superficie} ({direcao}).")
-
-
 def _pressoes_criticas(p: ProjetoGalpao) -> dict:
     """As pressões que governam o pórtico: sucção máxima no telhado e pressão lateral,
     uma entrada por caso de C_pi da situação de aberturas escolhida.
@@ -1220,20 +1207,6 @@ def _escalar(carga, fator):
     return nova
 
 
-def _rotulo_viga(modelo):
-    for r in ("viga_esq", 1):
-        if _tem_barra(modelo, r):
-            return r
-    return 1
-
-
-def _rotulo_pilar(modelo):
-    for r in ("pilar_esq", 0):
-        if _tem_barra(modelo, r):
-            return r
-    return 0
-
-
 def _v(extremo) -> float:
     """Valor numérico de um extremo da envoltória."""
     return getattr(extremo, "valor", extremo)
@@ -1248,19 +1221,6 @@ def _perfil_proximo(altura_mm: float, familia="W") -> Perfil:
     if not cands:
         raise ErroDeDados("catálogo de perfis W vazio.")
     return min(cands, key=lambda p: (abs(p.d - altura_mm), p.massa))
-
-
-def _perfil_para_momento(M_Sd: float, aco_nome: str, minimo: Perfil = None,
-                         N_Sd: float = 0.0, L: float = 0.0) -> Perfil:
-    """Menor W que resiste ao momento com Lb = 0, usado só no laço de pré-dimensionamento."""
-    a = mat.aco(aco_nome)
-    for perf in banco().candidatos("I", "W"):
-        if minimo and perf.massa < minimo.massa * 0.55:
-            continue
-        M_Rd = perf.Zx * a.fy / 1.10
-        if M_Rd >= 1.25 * abs(M_Sd):
-            return perf
-    return banco().candidatos("I", "W")[-1]
 
 
 # ------------------------------------------------------- 6. viga e pilar
@@ -2008,10 +1968,6 @@ def _buscar_chapa_topo(p: ProjetoGalpao, secao: Perfil, M: float, V: float,
                 if r.ok:
                     return r
     return ultimo
-
-
-def d_padrao(d: DadosGalpao) -> str:
-    return '3/4"'
 
 
 # --------------------------------------------------------------- 9. base

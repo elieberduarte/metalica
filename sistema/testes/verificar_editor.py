@@ -8,8 +8,8 @@ aparecer, salva uma captura de tela e lista os erros de JavaScript.
 Não é um teste do pytest (o nome não começa com `test_`), porque depende do servidor no
 ar e de um Chrome instalado. Uso, com o servidor rodando:
 
-    python testes/verificar_editor.py --porta 8765
-    python testes/verificar_editor.py --porta 8765 --saida projetos/_editor.png --vao 30
+    python testes/verificar_editor.py --porta 8790
+    python testes/verificar_editor.py --porta 8790 --saida projetos/_editor.png --vao 30
 
 Sai com código 1 se houver erro de JavaScript ou se o modelo não carregar.
 """
@@ -149,8 +149,11 @@ CONTAR_OBJETOS = r"""
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--porta", type=int, default=8765)
-    ap.add_argument("--saida", default=os.path.join(BASE, "projetos", "_editor.png"))
+    # sem padrão (07/10): a 8765 é o programa instalado do usuário e a 8766 o desenvolvimento — rodado
+    # à mão, o roteiro gravava modelos e imagens na pasta de projetos dele
+    ap.add_argument("--porta", type=int, required=True,
+                    help="porta de um servidor de teste (app.py --sem-navegador --porta N --dados <temp>)")
+    ap.add_argument("--saida", default=os.path.join(BASE, "testes", "verificadores", "_editor.png"))
     ap.add_argument("--largura", type=int, default=1600)
     ap.add_argument("--altura", type=int, default=1000)
     ap.add_argument("--espera", type=float, default=60.0,
@@ -161,6 +164,8 @@ def main():
     ap.add_argument("--pe-direito", type=float, default=6.0)
     ap.add_argument("--tema", default="claro", choices=("claro", "escuro"))
     args = ap.parse_args()
+    if args.porta in (8765, 8766):
+        ap.error("a %d é do programa do usuário: suba um servidor de teste" % args.porta)
 
     from nucleo.modelo_galpao import DadosGalpao
     dados = DadosGalpao(nome="Verificação do editor", vao=args.vao,

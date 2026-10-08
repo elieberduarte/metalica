@@ -17,7 +17,7 @@ tem `camada` e `atributos` (dicionário livre: de qual peça 3D veio, marca, vis
 import math
 import uuid
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from nucleo.base import ErroDeDados
 

@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Caminho inverso: desenho 2D com peças do catálogo vira modelo 3D (e IFC)."""
-import math
 import os
 import sys
 

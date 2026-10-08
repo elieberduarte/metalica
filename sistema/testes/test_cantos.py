@@ -251,7 +251,7 @@ def test_emendas_nao_mexem_na_peca_quebrada_no_3d():
     estão (era o que torcia a aba do banzo até a cumeeira) e só entra a linha de emenda
     entre o nó de fora e o de dentro."""
     from nucleo2d.desenho import Desenho, Polilinha, Linha
-    from nucleo2d.detalhe.conjuntos import _emendas_do_chanfro, _nos_das_quebras
+    from nucleo2d.detalhe.conjuntos import _emendas_do_chanfro
     desenho = Desenho(nome="t", escala=25.0)
     fora = Polilinha(vertices=[(0.0, 0.0), (1000.0, 0.0), (1200.0, 0.0)], camada="BANZOS", atributos={"origem": "j"})
     dentro = Polilinha(vertices=[(0.0, 100.0), (1030.0, 100.0), (1200.0, 100.0)], camada="BANZOS", atributos={"origem": "j"})

@@ -18,8 +18,7 @@ import pytest
 
 from nucleo import bases
 from nucleo import ligacoes as lig
-from nucleo import materiais as mat
-from nucleo.base import ErroDeDados, GAMA_A1, GAMA_A2, GAMA_C
+from nucleo.base import ErroDeDados, GAMA_A1, GAMA_C
 
 
 def perto(obtido, esperado, tol=0.01, msg=""):

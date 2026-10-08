@@ -289,8 +289,6 @@ export class Documento {
     }
   }
 
-  /** Alias usado por comandos que alteram a entidade no lugar. */
-  marcarMudanca(id) { this.notificar(id ? [id] : [], 'alterar'); }
 
   /** Camadas ou materiais mudaram: a cena só precisa repintar, não refazer malhas. */
   notificarAparencia() { this.notificar([], 'aparencia'); }

@@ -11,8 +11,7 @@ aplicada na prancha.
 """
 import math
 import os
-from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 # --- camadas padrão do detalhamento (nome, cor ACI, tipo de linha) ---
 CAMADAS = [

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from nucleo3d import de_planta, esforcos
-from nucleo3d.modelo import Barra, Documento
+from nucleo3d.modelo import Documento
 
 from test_analitico import barra, modelo
 

@@ -88,7 +88,7 @@ def test_com_chave_le_mas_nao_grava(cel):
         for rota in ("/celular/dados/projetos.json", "/api/projetos", "/celular/", "/api/projetos/obra/modelo"):
             assert _pedir(cel, rota, metodo, cookie=k, corpo=b"{}")[0] == 405, (metodo, rota)
             assert _pedir(cel, rota, metodo, corpo=b"{}")[0] == 405, (metodo, rota)
-    for rota in ("/api/projetos", "/api/versao", "/editor", "/lib/BufferGeometryUtils.js", "/web/estilo.css"):
+    for rota in ("/api/projetos", "/api/versao", "/editor", "/lib/LineMaterial.js", "/web/estilo.css"):
         assert _pedir(cel, rota, cookie=k)[0] == 404, rota
     assert _pedir(cel, "/celular/", cookie=k)[0] == 200
     assert _pedir(cel, "/lib/three.module.js", cookie=k)[0] == 200

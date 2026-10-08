@@ -23,7 +23,7 @@ Unidades: mm, N, MPa internamente; a interface recebe kN e kN·m.
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Optional, Sequence
+from typing import List, Sequence
 
 GAMA_A1, GAMA_A2, GAMA_W2 = 1.10, 1.35, 1.35
 E_ACO = 200000.0

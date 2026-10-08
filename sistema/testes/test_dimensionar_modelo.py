@@ -4,7 +4,6 @@ longarinas, contraventamentos e correntes verificados, apoios nos pilares, o per
 leve que passa em cada posição e a troca no modelo."""
 import base64
 import collections
-import json
 import os
 import sys
 import tempfile

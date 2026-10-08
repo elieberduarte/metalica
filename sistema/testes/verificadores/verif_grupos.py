@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Verificação headless: modelo importado do TecnoMETAL no editor, camadas por tipo,
 ocultar Telhas, colorir por conjunto com legenda."""
-import base64, json, os, subprocess, sys, tempfile, time
+import base64, os, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))

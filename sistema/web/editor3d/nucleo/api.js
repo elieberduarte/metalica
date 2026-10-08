@@ -152,8 +152,6 @@ export class Api {
     return pedir(this._r(`/api/projetos/${encodeURIComponent(s)}/calculo/geometria`), { cache: 'no-store' });
   }
 
-  /** Catálogo do sistema de cálculo — usado pelo diálogo "gerar do galpão". */
-  catalogoCalculo() { return pedir(this._r('/api/catalogo')); }
   /** Eixos da obra: gravados no projeto ou identificados do modelo. */
   eixosDoProjeto(s) { return pedir(this._r('/api/projetos/' + encodeURIComponent(s) + '/eixos')); }
   gravarEixos(s, corpo) { return postar(this._r('/api/projetos/' + encodeURIComponent(s) + '/eixos'), corpo); }
@@ -162,19 +160,6 @@ export class Api {
   quebrarCantos(s, escolhas) { return postar(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos'), { escolhas }); }
   previaCanto(s, marca, n) { return pedir(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos/previa?marca=' + encodeURIComponent(marca) + '&n=' + (n || 0))); }
   desfazerCantos(s, marcas = null) { return postar(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos'), { desfazer: true, marcas }); }
-}
-
-/** Lê um File e devolve só a parte base64 (sem o prefixo data:). */
-export function paraBase64(arquivo) {
-  return new Promise((ok, falhou) => {
-    const leitor = new FileReader();
-    leitor.onerror = () => falhou(new ErroServidor('não foi possível ler o arquivo.'));
-    leitor.onload = () => {
-      const s = String(leitor.result || '');
-      ok(s.slice(s.indexOf(',') + 1));
-    };
-    leitor.readAsDataURL(arquivo);
-  });
 }
 
 export const api = new Api();

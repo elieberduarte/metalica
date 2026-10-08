@@ -424,18 +424,6 @@ function aplicarDependencias() {
   }
 }
 
-/** Espelha estado.dados nos controles já montados (ao carregar um projeto salvo). */
-function refletirNosCampos() {
-  for (const grupo of estado.campos) {
-    for (const item of grupo.campos) {
-      const ctrl = document.getElementById('c-' + item.campo);
-      if (!ctrl) continue;
-      if (ctrl.type === 'checkbox') ctrl.checked = Boolean(estado.dados[item.campo]);
-      else ctrl.value = estado.dados[item.campo] ?? '';
-    }
-  }
-}
-
 /* ------------------------------------------------------------ 4. validação */
 
 /** Mesmas faixas de DadosGalpao.validar(); devolve {campo: mensagem}. */

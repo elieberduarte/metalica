@@ -21,7 +21,6 @@ import collections
 import copy
 import math
 import re
-from datetime import date
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados

@@ -26,7 +26,7 @@ Unidades: dimensões em mm nos nomes e em `Perfil.dados` (d, bf, t); propriedade
 """
 import math
 import re
-from typing import Optional, Tuple
+from typing import Optional
 
 from . import nbr14762
 from .base import RHO

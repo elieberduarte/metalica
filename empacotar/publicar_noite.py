@@ -222,9 +222,22 @@ def bateria_igual(desde: float) -> tuple:
 ARQ_CONFERENCIA = os.path.join(SISTEMA, "testes", "_conferencia.json")
 
 
+#: As durações de cada verificador (a ordem "mais demorados primeiro" do runner). Ficam fora do git e a
+#: cópia limpa é apagada a cada rodada: sem levar e trazer, o runner ordenava pelas de 28/09 e os
+#: verificadores novos entravam com 60 s (31 min de relógio contra ~17 na ordem certa).
+DURACOES = ("sistema", "testes", "verificadores", "_duracoes.json")
+
+
 def conferir(copia: str) -> bool:
     env = dict(os.environ, PYTHONIOENCODING="utf-8", METALICA_CONFERENCIA_ARQ=ARQ_CONFERENCIA)
-    return rodar([PY, "testes/antes_de_publicar.py", "--completa"], os.path.join(copia, "sistema"), env) == 0
+    daqui, de_la = os.path.join(REPO, *DURACOES), os.path.join(copia, *DURACOES)
+    if os.path.exists(daqui):
+        shutil.copy2(daqui, de_la)
+    try:
+        return rodar([PY, "testes/antes_de_publicar.py", "--completa"], os.path.join(copia, "sistema"), env) == 0
+    finally:
+        if os.path.exists(de_la):
+            shutil.copy2(de_la, daqui)
 
 
 def cancelada() -> bool:

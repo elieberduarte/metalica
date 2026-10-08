@@ -32,7 +32,6 @@ Regras de classificação adotadas (A CONFERIR com o usuário; ficam escritas no
 import csv
 import html
 import json
-import math
 import os
 import re
 import zipfile

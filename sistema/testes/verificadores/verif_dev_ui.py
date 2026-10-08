@@ -2,7 +2,7 @@
 """Modo de desenvolvimento (app.py --dev): /api/versao diz dev e o carimbo do código, a atualização
 não é oferecida, a tela mostra a faixa laranja e "[DEV]" no título, o rótulo diz "dev", e quando um
 arquivo de tela muda no disco o rótulo pede para recarregar. Porta livre, nunca a 8765/8766."""
-import base64, json, os, shutil, subprocess, sys, tempfile, time
+import base64, os, shutil, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))

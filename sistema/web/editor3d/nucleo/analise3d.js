@@ -81,9 +81,6 @@ const EXAGERO_PADRAO = 40;
 const somar = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const subtrair = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const escalarVet = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
-const cruzar = (a, b) => [a[1] * b[2] - a[2] * b[1],
-                          a[2] * b[0] - a[0] * b[2],
-                          a[0] * b[1] - a[1] * b[0]];
 const comprimento = (a) => Math.hypot(a[0], a[1], a[2]);
 
 function normalizado(a, padrao = [0, 0, 1]) {

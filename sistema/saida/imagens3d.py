@@ -10,7 +10,7 @@ import base64
 import os
 import subprocess
 import time
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, Optional, Sequence
 from urllib.parse import quote
 
 from saida.printpdf import CDP, http_json, navegador, porta_livre

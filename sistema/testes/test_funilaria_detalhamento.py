@@ -2,7 +2,6 @@
 """Rufos e calhas no detalhamento: a barra comprida solta de funilaria não é mais
 agulhamento — sai com o nome RF/CL, na camada 2D RUFOS/CALHAS, no quadro dela do desenho
 de extras, na categoria "Rufos e calhas" e fora do peso de aço do resumo."""
-import math
 import os
 import sys
 

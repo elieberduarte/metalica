@@ -20,7 +20,7 @@ altura é de papel, então ela é dividida pela escala do desenho de destino.
 import collections
 import math
 import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from nucleo.base import ErroDeDados
 from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Camada2D
@@ -284,14 +284,6 @@ def codigos_de_texto(t: str) -> str:
     for a, b in (("%%c", "Ø"), ("%%C", "Ø"), ("%%d", "°"), ("%%D", "°"), ("%%p", "±"), ("%%P", "±"), ("%%%", "%")):
         t = t.replace(a, b)
     return t
-
-
-def _arco_pts(c, r, a0, a1, passo_graus=6.0):
-    if a1 < a0:
-        a1 += 360
-    n = max(4, int((a1 - a0) / passo_graus))
-    return [(c[0] + r * math.cos(math.radians(a0 + (a1 - a0) * i / n)),
-             c[1] + r * math.sin(math.radians(a0 + (a1 - a0) * i / n))) for i in range(n + 1)]
 
 
 def _bulge_pts(p, q, b):

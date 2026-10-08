@@ -6,7 +6,7 @@ import json
 import os
 import re
 from datetime import date, datetime
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 from saida import comercial as C
 

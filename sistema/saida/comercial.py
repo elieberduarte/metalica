@@ -23,7 +23,7 @@ import math
 import os
 import re
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional, Sequence
+from typing import List, Optional
 
 PASTA = "comercial"
 ARQ = "comercial.json"

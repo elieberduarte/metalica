@@ -3,7 +3,6 @@
 sai, barra espelhada gira, barra esticada tem a ponta movida, cópia vira peça nova — em
 todas as instâncias do conjunto — e a cópia posta na célula de outra tesoura nasce lá."""
 import copy
-import math
 import os
 import sys
 

@@ -5,7 +5,7 @@ import html
 import os
 import re
 from datetime import date
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from saida import comercial as C
 from saida.docx_simples import Documento

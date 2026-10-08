@@ -129,6 +129,8 @@ def excluir(pasta: str, vid: str) -> bool:
     fica = [x for x in vs if x.get("id") != vid]
     if len(fica) == len(vs):
         return False
-    with open(_arquivo(pasta), "w", encoding="utf-8") as f:
+    tmp = _arquivo(pasta) + ".parcial"           # como o salvar: o banco não fica pela metade
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"formato": 1, "variantes": fica}, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, _arquivo(pasta))
     return True

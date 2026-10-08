@@ -52,9 +52,19 @@ INSTALADOR = os.path.join(RAIZ, "Metalica-instalador.exe")
 #: 05/10): o programa instalado não leva o código nem as telas dela, e o app.py desliga as rotas (COMERCIAL).
 MODULOS_SO_DEV = ["saida.orcamento", "saida.comercial", "saida.comercial_servico", "saida.contrato_docs",
                   "saida.proposta_html", "saida.imagens3d", "saida.docx_simples",
-                  "celular", "celular.servidor", "celular.web", "celular.certificado"]  # celular: só no dev até a Fase 1 fechar
+                  "celular", "celular.servidor", "celular.web", "celular.certificado",  # celular: só no dev até a Fase 1 fechar
+                  # o pré-moldado vive fora do git (.git/info/exclude) e entra pelo _extensoes_dev: a conferência
+                  # da noite constrói da cópia limpa, mas o construir.py rodado da pasta de trabalho o levaria junto
+                  "premoldado"]
 # (saida.pacote_celular vai no instalado: é ele que monta o 3D leve do modo "ver" do modelo 3D, saida/modelo_leve.py)
-TELAS_SO_DEV = ["comercial.html", "comercial.js", "celular", "acesso-celular*", "qrcode.js"]
+TELAS_SO_DEV = ["comercial.html", "comercial.js", "celular", "acesso-celular*", "qrcode.js", "premoldado"]
+
+#: Partes de bibliotecas que o programa não usa (07/10): do scipy só entram as matrizes esparsas
+#: (scipy.sparse, .linalg, .csgraph na análise estrutural; os testes da análise passam com estas
+#: bloqueadas), e do Pillow (trazido pelo matplotlib) os leitores de AVIF e WebP. ~30 MB a menos.
+FORA_DO_PACOTE = ["scipy.optimize", "scipy.stats", "scipy.spatial", "scipy.fft", "scipy.interpolate",
+                  "scipy.ndimage", "scipy.integrate", "scipy.signal", "scipy.io", "scipy.odr",
+                  "scipy.cluster", "scipy.differentiate", "PIL._avif", "PIL._webp"]
 
 ISCC = [os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
         r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
@@ -110,7 +120,7 @@ def executavel():
            "--exclude-module", "tkinter", "--exclude-module", "pytest",
            "--exclude-module", "IPython", "--exclude-module", "PyQt5",
            "--exclude-module", "PyQt6", "--exclude-module", "PySide6"]
-    for m in MODULOS_SO_DEV:
+    for m in MODULOS_SO_DEV + FORA_DO_PACOTE:
         cmd += ["--exclude-module", m]
     icone = os.path.join(AQUI, "metalica.ico")
     if os.path.exists(icone):

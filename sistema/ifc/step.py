@@ -43,7 +43,7 @@ entrega tudo que veio antes.
 """
 import os
 import re
-from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Union
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 __all__ = ["ler", "ler_texto", "ler_cabecalho", "Arquivo", "Entidade", "Ref",
            "Enumeracao", "Tipado", "DERIVADO", "ErroStep"]

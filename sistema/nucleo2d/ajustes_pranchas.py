@@ -27,7 +27,7 @@ import json
 import math
 import os
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo2d.desenho import Arco, Chamada, Circulo, Cota, Desenho, Hachura, Linha, Polilinha, Texto
 

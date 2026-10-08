@@ -288,20 +288,6 @@ button.discreto:hover:not(:disabled) { background: var(--azul-fraco); }
 .sinal.nok { color: var(--verm); }
 .sinal.pend { color: var(--texto3); }
 
-/* projetos salvos */
-.projetos-lista { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
-.projetos-lista li { margin-bottom: 1px; }
-.projetos-lista button {
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  background: transparent;
-  padding: 5px 8px;
-  border-radius: var(--raio-p);
-  line-height: 1.3;
-}
-.projetos-lista button:hover { background: var(--azul-fraco); border-color: var(--azul-linha); }
-.projetos-lista small { display: block; color: var(--texto3); font-size: 11px; }
 .vazio { color: var(--texto3); font-size: 12px; padding: 4px 8px; }
 
 /* ------------------------------------------------------------ conteúdo --- */
@@ -409,7 +395,6 @@ button.discreto:hover:not(:disabled) { background: var(--azul-fraco); }
 .d-eixo { stroke: var(--verm); stroke-width: .8; stroke-dasharray: 9 3 2 3; fill: none; }
 .d-texto { fill: var(--texto2); font-size: 11px; font-family: var(--sans); }
 .d-texto.forte { fill: var(--texto); font-weight: 600; }
-.d-telha { fill: none; stroke: var(--texto3); stroke-width: 1; }
 .d-terca { fill: var(--azul2); }
 
 /* --------------------------------------------------------- vento/painel --- */

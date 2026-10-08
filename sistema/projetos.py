@@ -98,6 +98,39 @@ def _trava_do_projeto(pasta: str) -> threading.RLock:
 #: Desenho apagado fica na lixeira este tempo; depois sai (cada um tem dezenas de MB, dentro do OneDrive).
 DIAS_NA_LIXEIRA = 30
 
+#: Cópias de um mesmo desenho que ficam na lixeira. Cada Detalhar ou prancha regenerada manda o
+#: desenho anterior para lá: em duas semanas eram 270 a 370 cópias de cada um e 18 GB no OneDrive
+#: (07/10). A poda está pronta e ainda não é chamada sozinha: espera o usuário decidir a retenção.
+COPIAS_NA_LIXEIRA = 3
+
+_COPIA_NA_LIXEIRA = re.compile(r"^(.*\.desenho\.json)-(\d{8}-\d{6})$")
+
+
+def podar_copias_da_lixeira(raiz: str, manter: int = COPIAS_NA_LIXEIRA, so_de: str = None) -> int:
+    """Deixa na lixeira só as `manter` cópias mais novas de cada desenho (o nome gravado por
+    `excluir_desenho`: "<projeto>-<desenho>.desenho.json-AAAAMMDD-HHMMSS"); `so_de` limita a um
+    desenho. Os projetos excluídos e os "danificado-*" não entram. Devolve quantas saíram."""
+    lixo = os.path.join(raiz, LIXEIRA)
+    if not os.path.isdir(lixo):
+        return 0
+    grupos: Dict[str, list] = {}
+    for nome in os.listdir(lixo):
+        m = _COPIA_NA_LIXEIRA.match(nome)
+        if m and (so_de is None or m.group(1) == so_de):
+            grupos.setdefault(m.group(1), []).append((m.group(2), nome))
+    n = 0
+    for copias in grupos.values():
+        copias.sort()
+        for _, nome in copias[:-manter] if manter > 0 else copias:
+            caminho = os.path.join(lixo, nome)
+            try:
+                if os.path.isfile(caminho):
+                    os.remove(caminho)
+                    n += 1
+            except OSError:
+                continue
+    return n
+
 
 def esvaziar_lixeira_antiga(raiz: str, dias: float = DIAS_NA_LIXEIRA) -> int:
     """Apaga da lixeira os DESENHOS apagados há mais de `dias` (os projetos excluídos
@@ -209,7 +242,26 @@ def _ler_json(caminho: str, lixeira: Optional[str] = None):
 DESENHO_GRANDE = 4 * 1048576
 
 
+#: Cabeçalhos já lidos, pela (caminho, contar) com a data e o tamanho do arquivo: o CAD pergunta
+#: pelos desenhos a cada 5 s e cada pergunta decodificava todos os desenhos de novo (0,3 s na Sala
+#: dos Compressores; 1,3 s da tela inicial com 19 projetos).
+_CABECALHOS: Dict[tuple, tuple] = {}
+
+
 def _cabecalho_do_desenho(caminho: str, contar: bool = True) -> dict:
+    st = os.stat(caminho)
+    marca = (st.st_mtime_ns, st.st_size)
+    guardado = _CABECALHOS.get((caminho, contar))
+    if guardado and guardado[0] == marca:
+        return dict(guardado[1])
+    lido = _ler_cabecalho_do_desenho(caminho, contar)
+    if len(_CABECALHOS) > 4000:
+        _CABECALHOS.clear()
+    _CABECALHOS[(caminho, contar)] = (marca, lido)
+    return dict(lido)
+
+
+def _ler_cabecalho_do_desenho(caminho: str, contar: bool = True) -> dict:
     """Título, escala, nº de entidades e vistas de um desenho 2D, para listagens.
 
     Um desenho do modelo inteiro passa de 100 MB; ler e decodificar tudo para mostrar

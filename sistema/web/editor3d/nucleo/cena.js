@@ -528,12 +528,6 @@ export class Cena {
     this._repintarPorValor();
   }
 
-  /** Mesma coisa, com um `Map<id, '#rrggbb'>` pronto no lugar da função. */
-  definirMapaCores(mapa) {
-    this.mapaCores = mapa instanceof Map && mapa.size ? mapa : null;
-    this._repintarPorValor();
-  }
-
   /** Está pintando por valor? (a cena continua normal enquanto ninguém pediu) */
   get pintandoPorValor() { return !!(this.mapaCores || this.corPorValor); }
 
@@ -1005,21 +999,6 @@ export class Cena {
       this._refinando = true;         // a reconstrução não pede refino de novo (laço)
       try { this.atualizar(ids); } finally { this._refinando = false; }
     }
-  }
-
-  _chaveDe(ent) {
-    if (ent.tipo === 'barra' && temCorteNoAngulo(ent)) {
-      const r = this._geometriaBarraCortada(ent);
-      if (r) return r.chave;
-    }
-    if (ent.tipo === 'barra') {
-      const L = comprimentoDaBarra(ent);
-      const util = Math.max(1, L - (ent.recorte_inicio || 0) - (ent.recorte_fim || 0));
-      return `barra|${ent.perfil}|${util.toFixed(2)}`;
-    }
-    const c = ent.contorno || [];
-    return `chapa|${ent.espessura}|${c.map(p => p.join()).join(';')}|` +
-           (ent.furos || []).map(f => `${f.x},${f.y},${f.diametro}`).join(';');
   }
 
   /** O servidor devolve a malha em coordenadas do mundo; o cache guarda a local. */

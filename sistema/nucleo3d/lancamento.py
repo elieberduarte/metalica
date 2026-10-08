@@ -28,7 +28,7 @@ import copy
 import math
 import re
 import string
-from dataclasses import asdict, fields
+from dataclasses import fields
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados

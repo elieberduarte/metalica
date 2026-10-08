@@ -4,7 +4,7 @@
 Tensões em kN/cm² (1 kN/cm² = 10 MPa).
 """
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict
 
 from .base import ErroDeDados
 

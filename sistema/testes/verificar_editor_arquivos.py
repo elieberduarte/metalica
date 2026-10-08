@@ -12,7 +12,7 @@ passa pelos mesmos métodos que os menus chamam, e não direto pelas rotas:
        o mesmo tratador do seletor de arquivo do menu IFC → Importar
 
 Uso, com o servidor no ar:
-    python testes/verificar_editor_arquivos.py --porta 8765
+    python testes/verificar_editor_arquivos.py --porta 8790
 
 Sai com código 1 se algum passo falhar ou houver erro de JavaScript.
 """
@@ -86,10 +86,15 @@ SEQUENCIA = r"""
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--porta", type=int, default=8765)
-    ap.add_argument("--saida", default=os.path.join(BASE, "projetos", "_editor_arquivos.png"))
+    # sem padrão (07/10): a 8765 é o programa instalado do usuário e a 8766 o desenvolvimento — rodado
+    # à mão, o roteiro gravava modelos e imagens na pasta de projetos dele
+    ap.add_argument("--porta", type=int, required=True,
+                    help="porta de um servidor de teste (app.py --sem-navegador --porta N --dados <temp>)")
+    ap.add_argument("--saida", default=os.path.join(BASE, "testes", "verificadores", "_editor_arquivos.png"))
     ap.add_argument("--espera", type=float, default=60.0)
     args = ap.parse_args()
+    if args.porta in (8765, 8766):
+        ap.error("a %d é do programa do usuário: suba um servidor de teste" % args.porta)
 
     from nucleo.modelo_galpao import DadosGalpao
     dados = DadosGalpao(nome="Verificação de arquivos", vao=20, comprimento=40,

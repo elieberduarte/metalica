@@ -56,7 +56,7 @@ try:
     aba.drenar(3.0)
     slug = aba.avaliar("new URLSearchParams(location.search).get('projeto')")
     ok(slug == "galpão-da-fazenda", f"slug do projeto = {slug}")
-    ok(aba.avaliar("document.querySelector('[data-campo=nome], #campo-nome, input[name=nome]') ? true : true"), "formulário montado")
+    ok(aba.avaliar("!!document.querySelector('[data-campo=nome] input')"), "formulário montado")
     nome_campo = aba.avaliar("document.querySelector('[data-campo=nome] input').value")
     ok(nome_campo == "Galpão da Fazenda" and aba.avaliar("document.querySelector('[data-campo=cliente] input').value") == "João",
        f"identificação veio do projeto: {nome_campo}")

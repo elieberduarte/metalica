@@ -7,7 +7,7 @@ conteúdo que o arquivo de CAD entregue.
 """
 import math
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import matplotlib
 matplotlib.use("Agg")

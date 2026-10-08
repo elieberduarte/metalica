@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Verificação do mapa de esforços no editor 3D (script temporário de sessão)."""
-import base64, json, os, subprocess, sys, tempfile, time, urllib.request
+import base64, json, os, subprocess, sys, tempfile, time
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
 from verificar_editor import Aba, CHROMES, CHAVE_ESTADO, CONTAR_OBJETOS, _json, _porta_livre

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Ajustes da 0.7.12: telha arredondada para cima, #14 = 2,00, furos das terças seguindo
 os da chapa de suporte (posição e formato)."""
-import math
 import os
 
 import pytest

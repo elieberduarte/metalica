@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 """Testes do núcleo 2D: documento de desenho e motor de vistas (corte e projeção)."""
 import json
-import math
 import os
 import sys
-import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

@@ -26,7 +26,7 @@ import json
 import math
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados, Resultado, Verificacao, fmt, nao_verificada
