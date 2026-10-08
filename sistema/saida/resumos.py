@@ -23,6 +23,7 @@ from typing import Dict, List, Optional, Tuple
 from nucleo3d.modelo import Documento, Solido
 from nucleo2d.detalhe.base import (_marcas, marcas_de, _autovetores, _eixos_dos_fixadores, _fixadores, _parede_da_peca, _so_parafusos,
                                    _eixo_da_peca)
+from saida import identidade
 from saida.dobras import com_bitola_e_mm as com_bitola
 
 #: Família de produção de cada tipo de peça/conjunto: (chave, título do resumo de materiais).
@@ -1087,99 +1088,209 @@ def _maior_e_mais_pesada(lista: dict, tipos_tes: List[dict]):
 
 
 # ============================================================ HTML
+# a mesma identidade da proposta comercial (08/10): grafite, verde-limão, Segoe UI, os traços inclinados,
+# cartões de números e tabelas abertas; as cores da compra (âmbar, vermelho, azul) seguem as mesmas
 _CSS = """
-@page { size: A4; margin: 14mm 12mm 14mm 12mm; }
-body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #1b1b1b; line-height: 1.32; margin: 0; }
-h1 { font-size: 15pt; color: #0b3d91; margin: 0 0 1mm; }
-.sub { font-size: 9pt; margin: 0; }
-.sub b { font-size: 9.5pt; }
-.cinza { color: #555; font-size: 8pt; }
-.numeros { border: 1.5px solid #0b3d91; padding: 2mm 3mm; margin: 3mm 0; background: #f4f7fc; font-size: 9.5pt; }
-h2 { font-size: 11pt; color: #0b3d91; margin: 4.5mm 0 1.5mm; border-bottom: 1px solid #9fb3d6; padding-bottom: 0.6mm; break-after: avoid; }
-table { border-collapse: collapse; width: 100%; font-size: 8.4pt; margin: 1mm 0 1.5mm; }
+@page { size: A4; margin: 19mm 12mm 15mm 12mm;
+  @top-left { content: element(cabecalho); vertical-align: bottom; padding-bottom: 3mm; }
+  @top-right { content: element(cabref); vertical-align: bottom; padding-bottom: 3mm; }
+  @bottom-left { content: element(rodape); vertical-align: top; padding-top: 2.5mm; }
+  @bottom-right { content: counter(page) " / " counter(pages); font: 600 7.6pt 'Segoe UI', Arial, sans-serif; color: #6b7780;
+                  vertical-align: top; padding-top: 2.5mm; }
+}
+@page :first { margin-top: 12mm; @top-left { content: none; } @top-right { content: none; } }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font: 8.6pt/1.42 'Segoe UI', 'Segoe UI Variable', Arial, Helvetica, sans-serif; color: var(--texto); }
+b { font-weight: 600; }
+.cabecalho { position: running(cabecalho); }
+.cabecalho .logo { height: 6.5mm; display: block; }
+.cabecalho .logo-texto, .rodape b { color: var(--pri); font-weight: 600; }
+.cabref { position: running(cabref); font: 600 7.2pt 'Segoe UI', Arial; color: var(--mudo); letter-spacing: .06em; text-transform: uppercase; text-align: right; }
+.cabref b { color: var(--pri); }
+.rodape { position: running(rodape); font: 7.2pt 'Segoe UI', Arial; color: var(--mudo); }
+.cinza { color: var(--mudo); font-size: 7.6pt; }
+.mono { font-family: Consolas, monospace; font-size: 8pt; }
+.pecas { color: var(--mudo); font-size: 7.4pt; }
+
+/* ---------------- faixa do topo (a capa da proposta, em uma faixa) */
+.faixa-topo { background: var(--pri2); color: #fff; border-radius: 3mm; padding: 6mm 8mm 5mm; position: relative; overflow: hidden; break-inside: avoid; }
+.faixa-topo::after { content: ""; position: absolute; right: -10mm; top: -5mm; width: 46mm; height: 10mm; background: var(--dest); opacity: .9; transform: skewX(-38deg); }
+.faixa-topo .topo { display: flex; justify-content: space-between; align-items: center; gap: 6mm; position: relative; z-index: 1; padding-right: 30mm; }
+.faixa-topo .logo { height: 8mm; display: block; }
+.faixa-topo .logo-texto { font: 600 11pt 'Segoe UI', Arial; color: #fff; }
+.faixa-topo .rev { font: 600 7.4pt 'Segoe UI', Arial; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.85);
+                   border: 1px solid rgba(255,255,255,.45); padding: 1.2mm 3mm; border-radius: 99px; white-space: nowrap; }
+.marca { display: flex; gap: 2mm; margin: 6mm 0 3mm; }
+.marca i { width: 8mm; height: 2.6mm; background: var(--dest); transform: skewX(-38deg); display: block; }
+.marca i + i { opacity: .55; }
+.faixa-topo .rotulo { font: 600 7.8pt 'Segoe UI', Arial; letter-spacing: .26em; text-transform: uppercase; color: var(--dest); }
+.faixa-topo h1 { font: 300 21pt/1.1 'Segoe UI Light', 'Segoe UI', Arial; margin: 1.5mm 0 0; letter-spacing: -.01em; color: #fff; }
+.faixa-topo .desc { margin-top: 1.5mm; font-size: 9pt; color: rgba(255,255,255,.8); }
+.faixa-topo .pe { margin-top: 5mm; padding-top: 3mm; border-top: 1px solid rgba(255,255,255,.18); display: flex; flex-wrap: wrap; gap: 1mm 7mm;
+                  font-size: 7.6pt; color: rgba(255,255,255,.66); }
+.faixa-topo .pe b { color: #fff; font-weight: 600; }
+
+/* ---------------- quadro de números (os cartões da ficha técnica) */
+.ficha { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.6mm; margin: 4.5mm 0 1mm; break-inside: avoid; }
+.ficha div { background: var(--fundo); border-radius: 2.2mm; padding: 2.6mm 3.2mm 2.4mm; border-top: 2.4px solid var(--dest); }
+.ficha span { display: block; font: 600 6.6pt 'Segoe UI', Arial; color: var(--mudo); letter-spacing: .13em; text-transform: uppercase; }
+.ficha b { display: block; font: 300 15pt/1.15 'Segoe UI Light', 'Segoe UI', Arial; color: var(--pri); margin-top: .6mm; white-space: nowrap; }
+.ficha b small { font-size: 8pt; font-weight: 600; color: var(--mudo); margin-left: .8mm; }
+.ficha em { display: block; font-style: normal; font-size: 7pt; color: var(--mudo); line-height: 1.3; margin-top: .6mm; }
+
+/* ---------------- títulos */
+h2 { display: flex; align-items: flex-end; gap: 3.5mm; margin: 6.5mm 0 2.5mm; padding-bottom: 2mm; border-bottom: 1.2px solid var(--linha);
+     font: 700 11.5pt/1.1 'Segoe UI', Arial; color: var(--pri); break-after: avoid; }
+h2 .n { font: 300 19pt/0.85 'Segoe UI Light', 'Segoe UI', Arial; color: var(--dest); min-width: 8mm; }
+h2 .tag { margin-left: auto; font: 600 7pt 'Segoe UI', Arial; letter-spacing: .14em; text-transform: uppercase; color: var(--mudo); white-space: nowrap; }
+h2.parte { font-size: 14pt; border-bottom-color: var(--pri); }
+h2.parte .n { font-size: 26pt; }
+h2 .tag.ok { color: #4f5f12; background: #eef4d5; padding: .8mm 2.6mm; border-radius: 99px; letter-spacing: .08em; }
+h2 .tag.atencao { color: #7a4f00; background: #fff4d6; padding: .8mm 2.6mm; border-radius: 99px; letter-spacing: .08em; }
+h3 { display: flex; align-items: center; gap: 2.2mm; font: 700 9.4pt 'Segoe UI', Arial; color: var(--pri); margin: 4.5mm 0 1mm; break-after: avoid; }
+h3::before { content: ""; width: 3.6mm; height: 1.5mm; background: var(--dest); transform: skewX(-38deg); flex: none; }
+.nota { font-size: 7.6pt; color: var(--mudo); margin: .6mm 0 2mm; }
+.explica { font-size: 7.6pt; color: var(--mudo); margin: 0 0 1.2mm; }
+.sub { font-size: 8.6pt; margin: 0; }
+
+/* ---------------- tabelas (as da proposta: abertas, cabeçalho em versalete) */
+table { border-collapse: collapse; width: 100%; font-size: 8pt; margin: .8mm 0 1.6mm; }
 tr { break-inside: avoid; }
-th, td { border: 1px solid #b9c2d0; padding: 1mm 1.6mm; vertical-align: top; text-align: left; }
-th { background: #e8eef8; font-weight: bold; }
+th { text-align: left; font: 600 6.6pt 'Segoe UI', Arial; letter-spacing: .09em; text-transform: uppercase; color: var(--mudo);
+     border-bottom: 1.2px solid var(--pri); padding: 1.4mm 1.5mm; vertical-align: bottom; }
+td { padding: 1.05mm 1.5mm; border-bottom: 1px solid var(--linha); vertical-align: top; }
+table.inteira { break-inside: avoid; }
 td.r, th.r { text-align: right; }
 td.r { white-space: nowrap; }
-table.tes { font-size: 7.8pt; }
-table.tes td, table.tes th { padding: 0.8mm 1.2mm; }
 td.c, th.c { text-align: center; }
-tr.total td { font-weight: bold; background: #f0f3f8; }
-.nota { font-size: 8pt; color: #333; margin: 0.5mm 0 1.5mm; }
-.mono { font-family: Consolas, monospace; font-size: 8pt; }
-.pecas { color: #555; font-size: 7.8pt; }
-/* resumo de materiais: duas colunas */
-.colunas { column-count: 2; column-gap: 7mm; }
-.fam { break-inside: avoid; margin: 0 0 2.4mm; }
-.fam h3 { font-size: 9.6pt; margin: 0 0 0.4mm; border-bottom: 1px solid #333; padding-bottom: 0.2mm; }
-.fam .comp { font-size: 7.6pt; color: #555; font-style: italic; margin: 0 0 0.6mm; }
-.fam td.pecas-perfil { font-size: 7pt; color: #555; padding: 0 0 1.2mm 3mm; border: 0; line-height: 1.35; }
-@media screen { .trocar-perfil[data-perfil] { cursor: pointer; } }
+tr.total td { font-weight: 700; color: var(--pri); background: var(--fundo); border-top: 1.2px solid var(--pri); border-bottom: 0; }
+table.tes { font-size: 7.5pt; }
+table.tes td, table.tes th { padding: 1.1mm 1.1mm; }
 /* a compra diferente do projeto, para a conferência (06/10): similar âmbar, fora do catálogo vermelho, escolhido azul */
 tr.compra-similar td { background: #fff4d6; } tr.compra-similar td b, tr.compra-similar .cinza { color: #7a4f00; }
 tr.compra-fora td { background: #fde4e1; } tr.compra-fora td b, tr.compra-fora .cinza { color: #9b1c1c; }
 tr.compra-escolhido td { background: #e3edff; } tr.compra-escolhido td b, tr.compra-escolhido .cinza { color: #0b3d91; }
-.legenda-compra { font-size: 7.6pt; color: #555; margin: 0.8mm 0 2.5mm; }
-.legenda-compra span { display: inline-block; padding: 0 1.6mm; margin-right: 2.5mm; border-radius: 0.6mm; }
-* { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-.fam .sub { font-size: 8.8pt; font-weight: bold; margin: 0.8mm 0 0.2mm; }
-.fam table { margin: 0; font-size: 8.4pt; }
-.fam td { border: 0; border-bottom: 1px dotted #ccc; padding: 0.4mm 1mm; }
-.fam td.q { width: 4mm; border: 1px solid #333; padding: 0; }
+.legenda-compra { font-size: 7.2pt; color: var(--mudo); margin: .6mm 0 2.4mm; }
+.legenda-compra span { display: inline-block; width: 3.4mm; height: 2.6mm; vertical-align: -.3mm; margin: 0 1.2mm 0 2.6mm; border-radius: .6mm; }
+.legenda-compra span:first-child { margin-left: 0; }
+@media screen { .trocar-perfil[data-perfil] { cursor: pointer; } }
+
+/* ---------------- destaque de um número (área de pintura, área da obra) */
+.cartao { background: var(--fundo); border-radius: 2.5mm; padding: 3mm 4mm; margin: 2.5mm 0; border-left: 3px solid var(--dest); break-inside: avoid; }
+.cartao b.v { font: 300 13pt 'Segoe UI Light', 'Segoe UI', Arial; color: var(--pri); margin-right: 2mm; }
+.cartao span { color: var(--mudo); font-size: 7.8pt; }
+.cartao .rot { display: block; font: 600 6.6pt 'Segoe UI', Arial; letter-spacing: .13em; text-transform: uppercase; color: var(--mudo); margin-bottom: .4mm; }
+
+/* ---------------- resumo de materiais: B. por grupo, em duas colunas com o quadrinho */
+.colunas { column-count: 2; column-gap: 7mm; }
+.fam { break-inside: avoid; margin: 0 0 3mm; }
+.fam.longa { break-inside: auto; }                 /* a família comprida segue na outra coluna: não deixa a coluna vazia */
+.fam .sub, .fam .comp { break-after: avoid; }
+.fam h3 { margin: 0 0 .6mm; padding-bottom: .8mm; border-bottom: 1.2px solid var(--pri); }
+.fam h3 small { margin-left: auto; font: 600 7pt 'Segoe UI', Arial; color: var(--mudo); letter-spacing: .06em; }
+.fam .comp { font-size: 7.2pt; color: var(--mudo); margin: 0 0 .6mm; }
+.fam .sub { font-size: 8pt; font-weight: 700; color: var(--pri); margin: 1.2mm 0 .2mm; }
+.fam table { margin: 0; font-size: 8pt; }
+.fam td { border: 0; border-bottom: 1px dotted #c9d1d6; padding: .5mm 1mm; }
+.fam td.pecas-perfil { font-size: 6.8pt; color: var(--mudo); padding: 0 0 1.2mm 3mm; border: 0; line-height: 1.35; }
+.fam td.q { width: 3.6mm; padding: 0; border: 0; }
+.fam td.q::after { content: ""; display: block; width: 3.2mm; height: 3.2mm; margin: .5mm 0 0 .4mm; border: 1px solid var(--pri); border-radius: .6mm; }
 .fam td.kg { text-align: right; white-space: nowrap; }
-.fam td.m { text-align: right; white-space: nowrap; width: 16mm; }
-.fam .item { font-weight: bold; }
-.fam .desc { font-size: 7.6pt; color: #444; font-style: italic; }
-.fam .loc { font-size: 7.6pt; color: #333; padding-left: 3mm; }
-.total-box { border: 1.5px solid #333; padding: 2mm; margin-top: 3mm; break-inside: avoid; }
-table.quadro { border: 1.5px solid #0b3d91; background: #f4f7fc; margin: 3mm 0; }
-table.quadro td { border: 0; border-bottom: 1px solid #d5deec; padding: 1mm 2mm; }
-table.quadro td.v { font-weight: bold; text-align: right; white-space: nowrap; }
-table.quadro td.d { color: #555; font-size: 7.8pt; }
-h2.parte { font-size: 12pt; border-bottom: 2px solid #0b3d91; }
+.fam td.m { text-align: right; white-space: nowrap; width: 16mm; color: var(--mudo); }
+.fam .item { font-weight: 700; color: var(--pri); }
+.fam .desc { font-size: 7.2pt; color: var(--mudo); font-weight: 400; }
+.fam .loc { font-size: 7.2pt; color: var(--mudo); padding-left: 3mm; }
+.fam .total-fam { font-weight: 700; color: var(--pri); font-size: 8pt; margin: .8mm 0 0; }
+
+/* ---------------- o total (o bloco de investimento da proposta) */
+.total-box { background: var(--pri); color: #fff; border-radius: 3mm; padding: 5mm 7mm 4.5mm; margin-top: 4mm; position: relative; overflow: hidden; break-inside: avoid; }
+.total-box::before { content: ""; position: absolute; right: 7mm; top: 6mm; width: 11mm; height: 3.6mm; background: var(--dest); transform: skewX(-38deg); }
+.total-box::after { content: ""; position: absolute; right: 20mm; top: 6mm; width: 11mm; height: 3.6mm; background: var(--dest); opacity: .5; transform: skewX(-38deg); }
+.total-box small { font: 600 7.2pt 'Segoe UI', Arial; letter-spacing: .2em; text-transform: uppercase; color: var(--dest); }
+.total-box .v { font: 300 24pt/1.1 'Segoe UI Light', 'Segoe UI', Arial; margin: 1.5mm 0 0; }
+.total-box .ind { display: flex; flex-wrap: wrap; gap: 2mm 8mm; margin-top: 3.5mm; padding-top: 3mm; border-top: 1px solid rgba(255,255,255,.18);
+                  font-size: 7.4pt; color: rgba(255,255,255,.7); }
+.total-box .ind b { display: block; color: #fff; font-size: 10pt; font-weight: 600; }
+
+/* ---------------- na tela (a prévia da página de materiais): a folha sobre o fundo */
+@media screen {
+  html { background: #e8ecef; }
+  body { max-width: 210mm; margin: 6mm auto; background: #fff; padding: 10mm 11mm 12mm; border-radius: 2mm; box-shadow: 0 1px 4px rgba(20,28,33,.14); }
+}
 """
 
 
-def _doc(titulo: str, corpo: str, paginado: bool = False) -> str:
-    """O documento HTML; `paginado` traz o Paged.js e o sinal de fim de paginação que a
-    impressão em PDF (`saida.printpdf`) espera."""
+def _doc(R: dict, titulo: str, corpo: str, paginado: bool = False) -> str:
+    """O documento HTML; `paginado` traz o Paged.js, o cabeçalho e o rodapé correntes e o sinal de fim de
+    paginação que a impressão em PDF (`saida.printpdf`) espera."""
+    css = identidade.variaveis_css(R.get("marca")) + _CSS
     if paginado:
         from saida import printpdf
-        return printpdf.envelope(corpo, _CSS, titulo)
+        return printpdf.envelope(_correntes(R, titulo) + corpo, css, titulo)
     return ("<!DOCTYPE html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>%s</title><style>%s</style></head>"
-            "<body>%s</body></html>" % (_esc(titulo), _CSS, corpo))
+            "<body>%s</body></html>" % (_esc(titulo), css, corpo))
+
+
+def _correntes(R: dict, titulo: str) -> str:
+    """O logo no alto à esquerda, a referência à direita e o rodapé com a marca (o mesmo da proposta)."""
+    marca = R.get("marca") or {}
+    rev = (R.get("dados") or {}).get("revisao") or ""
+    rod = " · ".join(_esc(x) for x in (marca.get("slogan") or marca.get("nome"), marca.get("site")) if x)
+    return ("<div class=\"cabecalho\">%s</div><div class=\"cabref\">%s · <b>%s</b>%s</div><div class=\"rodape\">%s%s</div>"
+            % (identidade.logo_ou_nome(marca), _esc(titulo), _esc(R["projeto"].get("nome") or ""), (" · " + _esc(rev)) if rev else "",
+               ("<b>%s</b> · " % rod) if rod else "", "documento interno"))
 
 
 def _cabecalho(R: dict, titulo: str) -> str:
     p, d = R["projeto"], R["dados"]
+    marca = R.get("marca") or {}
     rev = d.get("revisao") or ""
     quando = d.get("data") or ""
+    chip = " · ".join(x for x in (("Rev. %s" % rev) if rev else "", quando) if x)
     # a base é o modelo 3D do projeto (ajustado no programa depois do IFC: furação, suportes, chapas), não o IFC
-    base = "base: modelo 3D do projeto" + ((" (IFC de origem %s)" % p.get("origem_ifc")) if p.get("origem_ifc") else "")
-    linha2 = " - ".join(x for x in (d.get("descricao") or "", ("revisão %s" % rev) if rev else "", quando, base,
-                                   ("gerado em %s" % R["gerado"]) if R.get("gerado") else "") if x)
-    return ("<h1>%s</h1><p class=\"sub\"><b>%s</b></p><p class=\"cinza\">%s</p>"
-            % (_esc(titulo), _esc(p.get("nome") or ""), _esc(linha2)))
+    pe = ["base: <b>modelo 3D do projeto</b>" + ((" (IFC de origem %s)" % _esc(p["origem_ifc"])) if p.get("origem_ifc") else "")]
+    if R.get("gerado"):
+        pe.append("gerado em <b>%s</b>" % _esc(R["gerado"]))
+    pe.append("documento interno")
+    return ("<header class=\"faixa-topo\"><div class=\"topo\">%s%s</div><div class=\"marca\"><i></i><i></i></div>"
+            "<div class=\"rotulo\">%s</div><h1>%s</h1>%s<div class=\"pe\">%s</div></header>"
+            % (identidade.logo_ou_nome(marca, claro=True) or "<span></span>", ("<span class=\"rev\">%s</span>" % _esc(chip)) if chip else "",
+               _esc(titulo), _esc(p.get("nome") or ""), ("<div class=\"desc\">%s</div>" % _esc(d["descricao"])) if d.get("descricao") else "",
+               "".join("<span>%s</span>" % x for x in pe)))
+
+
+def _h2(n, titulo: str, tag: str = "", classe_tag: str = "", parte: bool = False) -> str:
+    """O título de seção da proposta: o número grande em verde-limão, o título e, à direita, a contagem."""
+    return "<h2%s><span class=\"n\">%s</span>%s%s</h2>" % (
+        " class=\"parte\"" if parte else "", ("%02d" % n) if isinstance(n, int) else _esc(n), _esc(titulo),
+        ("<span class=\"tag%s\">%s</span>" % ((" " + classe_tag) if classe_tag else "", _esc(tag))) if tag else "")
+
+
+def _ficha(itens) -> str:
+    """Os cartões de números: (rótulo, valor, unidade, detalhe)."""
+    cols = 3 if len(itens) in (3, 6, 9) else 4
+    return "<div class=\"ficha\"%s>%s</div>" % ("" if cols == 4 else " style=\"grid-template-columns:repeat(%d,1fr)\"" % cols, "".join(
+        "<div><span>%s</span><b>%s%s</b>%s</div>" % (_esc(r), _esc(v), ("<small>%s</small>" % _esc(u)) if u else "",
+                                                    ("<em>%s</em>" % _esc(d)) if d else "")
+        for r, v, u, d in itens))
 
 
 def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     n, dim = R["numeros"], R["dimensoes"]
     partes = [_cabecalho(R, "RESUMO DA OBRA")]
-    # o quadro de números (05/10): o que a gerência pergunta primeiro, numa olhada
-    q = [("Tesouras", "%d" % n["tesouras"], ("inclinação %s%% (%s°)" % (_n(100 * math.tan(math.radians(n["inclinacao"])), 0), _n(n["inclinacao"], 1)))
+    # o quadro de números (05/10): o que a gerência pergunta primeiro, numa olhada — nos cartões da proposta (08/10)
+    q = [("Tesouras", "%d" % n["tesouras"], "", ("inclinação %s%% (%s°)" % (_n(100 * math.tan(math.radians(n["inclinacao"])), 0), _n(n["inclinacao"], 1)))
           if n.get("inclinacao") else ""),
-         ("Estrutura metálica", "%s kg" % _n(n["peso_aco"], 1), ("%s kg/m² de projeção" % _n(n["kg_m2"], 1)) if n.get("kg_m2") else ""),
-         ("Telhas", "%s m²" % _n(n.get("m2_telhas") or 0.0, 2), "%s ml · %s kg" % (_n(n["ml_telhas"], 2), _n(n["peso_telhas"], 1))),
-         ("Total geral (aço + telhas%s)" % (" + rufos" if n.get("peso_funilaria") else ""), "%s kg" % _n(n["total"], 1), ""),
-         ("Parafusos", "%d" % n["parafusos"], "e as porcas e arruelas soltas: ver a seção 6"),
-         ("Área de pintura", "%s m²" % _n(n.get("m2_pintura") or 0.0, 1), "perfis pelo perímetro da seção, chapas nas duas faces")]
+         ("Estrutura metálica", _n(n["peso_aco"], 1), "kg", ("%s kg/m² de projeção" % _n(n["kg_m2"], 1)) if n.get("kg_m2") else ""),
+         ("Telhas", _n(n.get("m2_telhas") or 0.0, 2), "m²", "%s ml · %s kg" % (_n(n["ml_telhas"], 2), _n(n["peso_telhas"], 1))),
+         ("Total geral", _n(n["total"], 1), "kg", "aço + telhas%s" % (" + rufos" if n.get("peso_funilaria") else "")),
+         ("Parafusos", "%d" % n["parafusos"], "", "e as porcas e arruelas soltas: ver a seção 6"),
+         ("Área de pintura", _n(n.get("m2_pintura") or 0.0, 1), "m²", "perfis pelo perímetro da seção, chapas nas duas faces")]
     if R.get("maior") and R["maior"].get("nome"):
-        q.append(("Maior peça (transporte)", "%s m" % _n(R["maior"]["comprimento"] / 1000.0, 2), "%s · %s" % (R["maior"]["nome"], R["maior"]["perfil"])))
+        q.append(("Maior peça · transporte", _n(R["maior"]["comprimento"] / 1000.0, 2), "m", "%s · %s" % (R["maior"]["nome"], R["maior"]["perfil"])))
     if R.get("mais_pesada") and R["mais_pesada"].get("nome"):
-        q.append(("Mais pesada (içamento)", "%s kg" % _n(R["mais_pesada"]["kg"], 1), "%s (%s)" % (R["mais_pesada"]["nome"], R["mais_pesada"]["tipo"])))
-    partes.append("<table class=\"quadro\"><colgroup><col style=\"width:34%%\"><col style=\"width:20%%\"><col style=\"width:46%%\"></colgroup>%s</table>"
-                  % "".join("<tr><td>%s</td><td class=\"v\">%s</td><td class=\"d\">%s</td></tr>" % (_esc(a), _esc(b), _esc(c)) for a, b, c in q))
+        q.append(("Mais pesada · içamento", _n(R["mais_pesada"]["kg"], 1), "kg", "%s (%s)" % (R["mais_pesada"]["nome"], R["mais_pesada"]["tipo"])))
+    partes.append(_ficha(q))
     # 1. dimensões
     linhas = []
     if dim["n_tesouras"] > 1:
@@ -1201,10 +1312,10 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     if dim.get("nivel_apoio") is not None:
         linhas.append(["Nível de apoio das tesouras", "%s%s m" % ("+" if dim["nivel_apoio"] >= 0 else "", _n(dim["nivel_apoio"] / 1000.0, 3)),
                        "cota do modelo" + (" (face de cima da chapa de apoio)" if dim.get("apoio_por_chapa") else " (ponto mais baixo das tesouras)")])
-    partes.append("<h2>1. Dimensões da obra</h2>" + _tabela(["Trecho", ("Dimensão", "r"), "Observação"], [[a, (b, "r"), c] for a, b, c in linhas], larguras=["34%", "20%", "46%"]))
+    partes.append(_h2(1, "Dimensões da obra") + _tabela(["Trecho", ("Dimensão", "r"), "Observação"], [[a, (b, "r"), c] for a, b, c in linhas], larguras=["34%", "20%", "46%"]))
     # 2. tesouras
     tes = R["tesouras"]
-    partes.append("<h2>2. Tesouras - %d unidades</h2>" % n["tesouras"])
+    partes.append(_h2(2, "Tesouras", "%d unidades" % n["tesouras"]))
     partes.append(_tabela(["Tipo", ("Qtd", "c"), "Eixos", ("Vão entre apoios", "r"), ("Comprimento", "r"), ("Flecha (subida do banzo)", "r"),
                            ("Altura na cumeeira*", "r"), "Banzos / treliçamento", ("kg/un", "r"), ("kg total", "r")],
                           [[t["tipo"], (t["qtd"], "c"), t["eixos"], ("%s m" % _n(t["vao"] / 1000.0, 2), "r"), ("%s m" % _n(t["comprimento"] / 1000.0, 2), "r"),
@@ -1222,7 +1333,7 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     partes.append("<p class=\"nota\">* do nível de apoio ao topo do banzo superior na cumeeira.%s</p>" % ((" " + _esc(notas)) if notas else ""))
     # 3. terças
     tc = R["tercas"]
-    partes.append("<h2>3. Terças e longarinas</h2>")
+    partes.append(_h2(3, "Terças e longarinas"))
     if tc["linhas"]:
         partes.append(_tabela(["Trecho", ("Linhas na cobertura", "r"), ("Linhas nas saias", "r"), ("Total de linhas", "r")],
                               [[l["trecho"] + " (%s)" % l["eixos"], ("%d (%s por água)" % (l["cobertura"], "/".join(str(v) for v in sorted(l["por_agua"].values(), reverse=True)) or "0"), "r"),
@@ -1256,13 +1367,13 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     if n.get("peso_funilaria"):
         linhas.append(["Rufos e calhas", (_n(n["peso_funilaria"], 1), "r"), ""])
     linhas.append([("TOTAL GERAL (AÇO + TELHAS%s)" % (" + RUFOS" if n.get("peso_funilaria") else ""), "b"), (_n(n["total"], 1), "r"), ""])
-    partes.append("<h2>4. Pesos</h2>" + _tabela(["Grupo", ("Peso (kg)", "r"), ("%", "r")], linhas, larguras=["70%", "18%", "12%"]))
+    partes.append(_h2(4, "Pesos", "%s kg de aço" % _n(n["peso_aco"], 1)) + _tabela(["Grupo", ("Peso (kg)", "r"), ("%", "r")], linhas, larguras=["70%", "18%", "12%"]))
     partes.append("<p class=\"nota\">Pesos teóricos: perfis formados a frio pela NBR 6355 (tira desenvolvida com o desconto das dobras), "
                   "laminados, tubos e barras pelas tabelas do catálogo, chapas pelo retângulo envolvente. Não inclui solda, pintura, "
                   "parafusos das telhas, rufos e calhas.</p>")
     # 5. telhas
     T = R["telhas"]
-    partes.append("<h2>5. Telhas - %s ml</h2>" % _n(T["ml_total"], 2))
+    partes.append(_h2(5, "Telhas", "%s ml" % _n(T["ml_total"], 2)))
     desc = T["descricao"]
     rot_trecho = {"cobertura": "cobertura", "fechamento": "fechamentos (oitões e paredes)", "forro": "forro do beiral"}
     linhas = []
@@ -1292,7 +1403,7 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     partes.append("<p class=\"nota\">m² pela largura útil (%s m).</p>" % _n(T["largura_util"] / 1000.0, 2))
     # 6. parafusos
     P = R["parafusos"]
-    partes.append("<h2>6. Parafusos e fixadores - %d parafusos</h2>" % n["parafusos"])
+    partes.append(_h2(6, "Parafusos e fixadores", "%d parafusos" % n["parafusos"]))
     linhas = []
     for it in P:
         primeiro = True
@@ -1308,28 +1419,45 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     pend = R.get("pendencias")
     if pend is None:                                       # resumo sem as pendências montadas: os avisos que contam
         pend = [{"peca": "", "perfil": "", "o_que": a} for a in _avisos_que_contam(R.get("avisos") or [])]
-    partes.append("<h2>7. Pendências de conferência - %s</h2>" % ("%d" % len(pend) if pend else "nenhuma"))
+    partes.append(_h2(7, "Pendências de conferência", ("%d a conferir" % len(pend)) if pend else "nenhuma pendência", "atencao" if pend else "ok"))
     if pend:
         # a tela da lista liga o clique na linha: abre o 3D com as peças em destaque (os ids na linha, 06/10)
         partes.append(_tabela(["Peça", "Perfil", "O que conferir"], [[x["peca"], x["perfil"], x["o_que"]] for x in pend],
                               larguras=["18%", "22%", "60%"], ids_linhas=[",".join(x.get("ids") or []) for x in pend]))
-    return _doc("Resumo da obra", "".join(partes), paginado)
+    return _doc(R, "Resumo da obra", "".join(partes), paginado)
 
 
 def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
     n, dim = R["numeros"], R["dimensoes"]
     partes = [_cabecalho(R, "RESUMO DE MATERIAIS")]
+    area_txt = ""
     if len(dim["trechos"]) > 1:
-        area = " + ".join("%s %s x %s = %s" % (tr["nome"].lower(), _n(tr["projecao"][0] / 1000.0, 2), _n(tr["projecao"][1] / 1000.0, 2),
-                                              _n(tr["projecao"][0] * tr["projecao"][1] / 1e6, 2)) for tr in dim["trechos"])
-        partes.append("<p class=\"sub\"><b>*Área (projeção c/ beirais):</b> %s → <b>%s m²</b></p>" % (_esc(area), _n(dim["area_m2"], 2)))
+        area_txt = " + ".join("%s %s x %s = %s" % (tr["nome"].lower(), _n(tr["projecao"][0] / 1000.0, 2), _n(tr["projecao"][1] / 1000.0, 2),
+                                                  _n(tr["projecao"][0] * tr["projecao"][1] / 1e6, 2)) for tr in dim["trechos"])
     elif dim["trechos"]:
         tr = dim["trechos"][0]
-        partes.append("<p class=\"sub\"><b>*Área (projeção c/ beirais):</b> %s x %s = <b>%s m²</b></p>"
-                      % (_n(tr["projecao"][0] / 1000.0, 2), _n(tr["projecao"][1] / 1000.0, 2), _n(dim["area_m2"], 2)))
+        area_txt = "%s x %s m" % (_n(tr["projecao"][0] / 1000.0, 2), _n(tr["projecao"][1] / 1000.0, 2))
+    # os números da compra e da obra numa olhada, nos cartões da proposta (08/10)
+    C = R.get("compra") or {}
+    q = [("Estrutura metálica", _n(n["peso_aco"], 1), "kg", "perfis %s + chaparia %s kg" % (_n(R["perfis_kg"], 1), _n(R["chaparia_total"]["kg"], 1)))]
+    if dim["trechos"]:
+        q.append(("Área de projeção", _n(dim["area_m2"], 2), "m²", "c/ beirais: " + area_txt))
+    if C.get("perfis"):
+        q.append(("Compra de perfis", _n(sum(p.get("kg_compra") or 0.0 for p in C["perfis"]), 1), "kg",
+                  "%d barras comerciais" % sum(p["barras"] for p in C["perfis"])))
+    if C.get("chapas"):
+        cl, ca = C["chapa_comercial"]
+        q.append(("Chapas comerciais", "%d" % sum(c["chapas"] for c in C["chapas"]), "",
+                  "%s x %s m · %s%% de perda" % (_n(cl / 1000.0, 2), _n(ca / 1000.0, 2), _n(C["perda_chapas"], 0))))
+    q.append(("Telhas", _n(n["ml_telhas"], 2), "ml", "%s m² · %s kg" % (_n(n.get("m2_telhas") or 0.0, 2), _n(n["peso_telhas"], 1))))
+    q.append(("Parafusos", "%d" % n["parafusos"], "", ""))
+    q.append(("Área de pintura", _n(n.get("m2_pintura") or 0.0, 1), "m²", ""))
+    if n.get("kg_m2"):
+        q.append(("Consumo de aço", _n(n["kg_m2"], 1), "kg/m²", "de projeção"))
+    partes.append(_ficha(q))
     partes.append(_html_compra(R))
-    partes.append("<h2 class=\"parte\">B. Por grupo (conferência da fábrica)</h2>")
-    partes.append("<p class=\"cinza\">Pesos teóricos (kg) e comprimento total (m) por perfil - mesmos números da lista de materiais. "
+    partes.append(_h2("B", "Por grupo", "conferência da fábrica", parte=True))
+    partes.append("<p class=\"explica\">Pesos teóricos (kg) e comprimento total (m) por perfil - mesmos números da lista de materiais. "
                   "Chapas somadas por espessura na chaparia. Quadrinho à direita para conferência.</p>")
     blocos = []
 
@@ -1338,10 +1466,10 @@ def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
         def pecas(pf):
             itens = " · ".join("%s %dx %s" % (x["nome"], x["qtd"], _n(x["comprimento"])) for x in pf.get("lista") or [])
             return ("<tr><td colspan=\"4\" class=\"pecas-perfil\">%s <span class=\"cinza\">(mm)</span></td></tr>" % _esc(itens)) if itens else ""
-        return "".join("<tr><td>%s</td><td class=\"kg\">= %s kg</td><td class=\"m\">%s m</td><td class=\"q\"></td></tr>%s"
+        return "".join("<tr><td>%s</td><td class=\"kg\">%s kg</td><td class=\"m\">%s m</td><td class=\"q\"></td></tr>%s"
                        % (_esc(pf["perfil"]), _n(pf["kg"], 2), _n(pf["m"], 2), pecas(pf)) for pf in perfis)
     for f in R["familias"]:
-        h = "<div class=\"fam\"><h3>*%s (%02dx):</h3>" % (_esc(f["titulo"]), f["n"])
+        h = "<div class=\"fam\"><h3>%s<small>%02dx</small></h3>" % (_esc(f["titulo"]), f["n"])
         if f.get("composicao"):
             h += "<p class=\"comp\">%s</p>" % _esc(f["composicao"])
         if f.get("nota"):
@@ -1351,46 +1479,52 @@ def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
         if f["perfis"]:
             h += "<table>%s</table>" % linhas_perfis(f["perfis"])
         h += "</div>"
+        if h.count("<tr>") > 14:
+            h = h.replace("<div class=\"fam\">", "<div class=\"fam longa\">", 1)
         blocos.append(h)
     # chaparia
     ch = R["chaparia"]
-    h = "<div class=\"fam\"><h3>*Chaparia (todas as chapas):</h3><table>"
+    h = "<div class=\"fam\"><h3>Chaparia<small>todas as chapas</small></h3><table>"
     for c in ch:
         mat = (" (%s)" % c["material"]) if c.get("material") and len({x.get("material") for x in ch}) > 1 else ""
         mat += (" — modelo %s" % c["modelo"]) if c.get("modelo") else ""
-        h += "<tr><td>%s</td><td class=\"kg\">= %s kg</td><td class=\"m\">%d pç / %s m²</td><td class=\"q\"></td></tr>" % (_esc(c["rotulo"] + mat), _n(c["kg"], 2), c["pecas"], _n(c["m2"], 2))
-    h += "<tr><td class=\"item\">Total chaparia</td><td class=\"kg item\">= %s kg</td><td class=\"m item\">%d pç</td><td class=\"q\"></td></tr></table></div>" % (_n(R["chaparia_total"]["kg"], 2), R["chaparia_total"]["pecas"])
+        h += "<tr><td>%s</td><td class=\"kg\">%s kg</td><td class=\"m\">%d pç / %s m²</td><td class=\"q\"></td></tr>" % (_esc(c["rotulo"] + mat), _n(c["kg"], 2), c["pecas"], _n(c["m2"], 2))
+    h += "<tr><td class=\"item\">Total chaparia</td><td class=\"kg item\">%s kg</td><td class=\"m item\">%d pç</td><td class=\"q\"></td></tr></table></div>" % (_n(R["chaparia_total"]["kg"], 2), R["chaparia_total"]["pecas"])
     blocos.append(h)
     # parafusos
-    h = "<div class=\"fam\"><h3>*Parafusos e fixadores:</h3><table>"
+    h = "<div class=\"fam\"><h3>Parafusos e fixadores<small>%d</small></h3><table>" % n["parafusos"]
     for it in R["parafusos"]:
-        h += "<tr><td class=\"item\">%s<br><span class=\"desc\">%s</span></td><td class=\"kg\">= %dx</td><td class=\"q\"></td></tr>" % (_esc(it["nome"]), _esc(it["descricao"]), it["qtd"])
+        h += "<tr><td class=\"item\">%s<br><span class=\"desc\">%s</span></td><td class=\"kg\">%dx</td><td class=\"q\"></td></tr>" % (_esc(it["nome"]), _esc(it["descricao"]), it["qtd"])
         for loc in it["locais"]:
-            h += "<tr><td class=\"loc\">%s</td><td class=\"kg\">%dx</td><td></td></tr>" % (_esc(loc["local"]), loc["qtd"])
+            h += "<tr><td class=\"loc\">%s</td><td class=\"kg cinza\">%dx</td><td></td></tr>" % (_esc(loc["local"]), loc["qtd"])
     h += "</table></div>"
+    if h.count("<tr>") > 14:
+        h = h.replace("<div class=\"fam\">", "<div class=\"fam longa\">", 1)
     blocos.append(h)
     # telhas
     T = R["telhas"]
-    h = "<div class=\"fam\"><h3>*Telhas:</h3>"
+    h = "<div class=\"fam\"><h3>Telhas<small>%s ml</small></h3>" % _n(T["ml_total"], 2)
     rot_trecho = {"cobertura": "Cobertura", "fechamento": "Fechamento dos oitões e paredes", "forro": "Forro do beiral"}
     for trecho, itens in T["trechos"].items():
         descs = " / ".join(dict.fromkeys(it.get("descricao") or "Telha" for it in itens))
-        h += "<p class=\"sub\">%s:</p><p class=\"comp\">%s (largura útil %s m)</p><table>" % (_esc(rot_trecho[trecho]), _esc(descs), _n(T["largura_util"] / 1000.0, 2))
+        h += "<p class=\"sub\">%s</p><p class=\"comp\">%s (largura útil %s m)</p><table>" % (_esc(rot_trecho[trecho]), _esc(descs), _n(T["largura_util"] / 1000.0, 2))
         for it in itens:
             h += "<tr><td>%02d pçs c/. %s m</td><td class=\"m\">%s%s</td><td class=\"q\"></td></tr>" % (
                 it["qtd"], _n(it["comprimento"] / 1000.0, 2), _esc(it["codigo_n"]), " (cortada na largura)" if it["cortada"] else "")
-        h += "</table><p class=\"sub\">Total: %s ml</p>" % _n(T["ml_por_trecho"][trecho], 2)
-    h += "<p class=\"sub\"><u>Total telhas = %s ml (%s kg)</u></p></div>" % (_n(T["ml_total"], 2), _n(T["kg_total"], 1))
+        h += "</table><p class=\"total-fam\">Total: %s ml</p>" % _n(T["ml_por_trecho"][trecho], 2)
+    h += "<p class=\"total-fam\">Total telhas = %s ml (%s kg)</p></div>" % (_n(T["ml_total"], 2), _n(T["kg_total"], 1))
     blocos.append(h)
-    # total
-    blocos.append("<div class=\"total-box\"><b>*Total estrutura metálica: %s kg</b><br><span class=\"cinza\">perfis e barras %s kg + chaparia %s kg · "
-                  "telhas %s ml / %s m² (%s kg)%s · total geral c/ telhas %s kg · %s kg/m² de aço · pintura %s m²</span></div>"
-                  % (_n(n["peso_aco"], 2), _n(R["perfis_kg"], 2), _n(R["chaparia_total"]["kg"], 2), _n(n["ml_telhas"], 2),
-                     _n(n.get("m2_telhas") or 0.0, 2), _n(n["peso_telhas"], 1),
-                     (" · rufos e calhas %s kg" % _n(n["peso_funilaria"], 1)) if n.get("peso_funilaria") else "",
-                     _n(n["total"], 2), _n(n["kg_m2"], 1) if n.get("kg_m2") else "—", _n(n.get("m2_pintura") or 0.0, 1)))
     partes.append("<div class=\"colunas\">%s</div>" % "".join(blocos))
-    return _doc("Resumo de materiais", "".join(partes), paginado)
+    # o total, no bloco do investimento da proposta (largura toda, depois das colunas)
+    ind = [("perfis e barras", "%s kg" % _n(R["perfis_kg"], 2)), ("chaparia", "%s kg" % _n(R["chaparia_total"]["kg"], 2)),
+           ("telhas", "%s ml / %s m² (%s kg)" % (_n(n["ml_telhas"], 2), _n(n.get("m2_telhas") or 0.0, 2), _n(n["peso_telhas"], 1)))]
+    if n.get("peso_funilaria"):
+        ind.append(("rufos e calhas", "%s kg" % _n(n["peso_funilaria"], 1)))
+    ind += [("total geral c/ telhas", "%s kg" % _n(n["total"], 2)), ("aço por m²", "%s kg/m²" % (_n(n["kg_m2"], 1) if n.get("kg_m2") else "—")),
+            ("pintura", "%s m²" % _n(n.get("m2_pintura") or 0.0, 1))]
+    partes.append("<div class=\"total-box\"><small>Total estrutura metálica</small><div class=\"v\">%s kg</div><div class=\"ind\">%s</div></div>"
+                  % (_n(n["peso_aco"], 2), "".join("<span><b>%s</b>%s</span>" % (_esc(v), _esc(r)) for r, v in ind)))
+    return _doc(R, "Resumo de materiais", "".join(partes), paginado)
 
 
 _LEGENDA_COMPRA = ("<p class=\"legenda-compra\"><span style=\"background:#fff4d6\">&nbsp;</span>similar do catálogo no lugar do "
@@ -1416,10 +1550,10 @@ def _html_compra(R: dict) -> str:
     C = R.get("compra") or {}
     if not C:
         return ""
-    h = ["<h2 class=\"parte\">A. Compra</h2>"]
+    h = [_h2("A", "Compra", "coluna Pedido para o comprador", parte=True)]
     if C.get("perfis"):
-        h.append("<p class=\"sub\"><b>Perfis e barras</b> (um por tipo de perfil, cruzado com o catálogo; barras comerciais pelo plano "
-                 "de corte da lista; W em 12 m, os outros em 6 m, ou 12 m quando a peça passa de 6 m)</p>")
+        h.append("<h3>Perfis e barras</h3><p class=\"explica\">Um por tipo de perfil, cruzado com o catálogo; barras comerciais pelo plano "
+                 "de corte da lista; W em 12 m, os outros em 6 m, ou 12 m quando a peça passa de 6 m.</p>")
 
         def nome_perfil(p):
             # o nome do catálogo em cima, o do IFC embaixo (06/10); fora do catálogo, o do IFC e de onde veio o kg/m
@@ -1454,8 +1588,8 @@ def _html_compra(R: dict) -> str:
         if any(_classe_compra(p) for p in C["perfis"]):
             h.append(_LEGENDA_COMPRA)
     if C.get("outros_aco"):
-        h.append("<p class=\"sub\"><b>Gradis, pisos e outras peças de aço</b> (o que o IFC traz fora das peças de perfil e chapa; "
-                 "o comprimento é a maior extensão de cada peça, somada)</p>")
+        h.append("<h3>Gradis, pisos e outras peças de aço</h3><p class=\"explica\">O que o IFC traz fora das peças de perfil e chapa; "
+                 "o comprimento é a maior extensão de cada peça, somada.</p>")
         h.append(_tabela(["Item", "Família", ("Peças", "r"), ("ml", "r"), ("m²", "r"), "Pedido"],
                          [[(x["item"], "b"), x["familia"], (x["pecas"], "r"), (_n(x["ml"], 2), "r"),
                            (_n(x["m2"], 2) if x["m2"] else "", "r"), ""] for x in C["outros_aco"]],
@@ -1465,8 +1599,8 @@ def _html_compra(R: dict) -> str:
                  % ("".join(" %s: %d peça(s) com a malha aberta." % (x["item"], x["abertas"]) for x in C["outros_aco"] if x["abertas"])))
     if C.get("chapas"):
         cl, ca = C["chapa_comercial"]
-        h.append("<p class=\"sub\"><b>Chapas</b> (pela espessura comercial: a do modelo ou a próxima acima, e o peso nela; chapa de %s x %s m; "
-                 "a quantidade pela área com %s%% de perda no corte)</p>"
+        h.append("<h3>Chapas</h3><p class=\"explica\">Pela espessura comercial: a do modelo ou a próxima acima, e o peso nela; chapa de %s x %s m; "
+                 "a quantidade pela área com %s%% de perda no corte.</p>"
                  % (_n(cl / 1000.0, 2), _n(ca / 1000.0, 2), _n(C["perda_chapas"], 0)))
         h.append(_tabela(["Bitola", "Espessura", "Polegada", "No modelo", "Material", ("Peças", "r"), ("m²", "r"), ("kg", "r"),
                           ("Chapas", "r"), "Pedido"],
@@ -1482,21 +1616,21 @@ def _html_compra(R: dict) -> str:
             h.append("<p class=\"legenda-compra\"><span style=\"background:#fff4d6\">&nbsp;</span>a chapa do modelo não é "
                      "comercial: compra na espessura padrão acima</p>")
     if C.get("parafusos") or C.get("porcas") or C.get("arruelas"):
-        h.append("<p class=\"sub\"><b>Parafusos, porcas e arruelas</b> (cada parafuso com 1 porca e 1 arruela; as soltas — pontas roscadas, "
-                 "chumbadores — somadas na bitola)</p>")
+        h.append("<h3>Parafusos, porcas e arruelas</h3><p class=\"explica\">Cada parafuso com 1 porca e 1 arruela; as soltas — pontas roscadas, "
+                 "chumbadores — somadas na bitola.</p>")
         linhas = [[pf["nome"], pf["descricao"].split(" + ")[0], (pf["qtd"], "r"), ""] for pf in C.get("parafusos") or []]
         linhas += [["Porca %s" % b, "Porca sextavada Ø%s" % b, (q, "r"), ""] for b, q in C.get("porcas") or []]
         linhas += [["Arruela %s" % b, "Arruela lisa Ø%s" % b, (q, "r"), ""] for b, q in C.get("arruelas") or []]
         h.append(_tabela(["Item", "Descrição", ("Qtd", "r"), "Pedido"], linhas, larguras=["20%", "52%", "12%", "16%"]))
     if C.get("telhas"):
-        h.append("<p class=\"sub\"><b>Telhas</b> (m² pela largura útil)</p>")
+        h.append("<h3>Telhas</h3><p class=\"explica\">m² pela largura útil.</p>")
         h.append(_tabela(["Telha", ("Peças", "r"), ("ml", "r"), ("m²", "r"), ("kg", "r"), "Pedido"],
                          [[x["descricao"], (x["pecas"], "r"), (_n(x["ml"], 2), "r"), (_n(x["m2"], 2), "r"), (_n(x["kg"], 1), "r"), ""] for x in C["telhas"]],
                          larguras=["36%", "10%", "13%", "13%", "13%", "15%"]))
     pt = R.get("pintura") or {}
     if pt:
-        h.append("<p class=\"sub\"><b>Área de pintura: %s m²</b> — perfis e barras %s m² (perímetro da seção × comprimento) + chapas %s m² "
-                 "(as duas faces)%s</p>" % (_n(pt["total_m2"], 1), _n(pt["total_m2"] - pt["chapas_m2"], 1), _n(pt["chapas_m2"], 1),
+        h.append("<div class=\"cartao\"><span class=\"rot\">Área de pintura</span><b class=\"v\">%s m²</b><span>perfis e barras %s m² (perímetro da seção × comprimento) + chapas %s m² "
+                 "(as duas faces)%s</span></div>" % (_n(pt["total_m2"], 1), _n(pt["total_m2"] - pt["chapas_m2"], 1), _n(pt["chapas_m2"], 1),
                                              ("; sem a seção no catálogo: %s" % ", ".join(pt["sem_secao"])) if pt.get("sem_secao") else ""))
     return "".join(h)
 
@@ -1518,6 +1652,8 @@ def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=Non
                                          "".join(cel(c) for c in l))
                     for i, l in enumerate(linhas))
     pe = ("<tr class=\"total\">%s</tr>" % "".join(cel(c) for c in rodape)) if rodape else ""
+    # a tabela curta não se parte entre páginas (o cabeçalho ficava sozinho no pé da página, 08/10)
+    classe = " ".join(x for x in (classe, "inteira" if len(linhas) <= 8 else "") if x)
     return "<table%s>%s<thead><tr>%s</tr></thead><tbody>%s%s</tbody></table>" % (
         (" class=\"%s\"" % classe) if classe else "", cols, th, corpo, pe)
 

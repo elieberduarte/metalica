@@ -97,6 +97,26 @@ def test_html_dos_resumos_com_levantamento_minimo():
     # a versão paginada leva o Paged.js e o sinal de fim de paginação da impressão
     paginado = resumos.html_resumo_obra(R, paginado=True)
     assert "paged.polyfill.js" in paginado and "data-paged" in paginado
+    # a identidade da proposta comercial (08/10): a faixa escura, os cartões de números; com a marca, o logo e as cores dela
+    assert "faixa-topo" in obra and 'class="ficha"' in obra and "--dest: #C3D773" in obra
+    R["marca"] = {"cores": {"primaria": "#112233", "escura": "#000000", "destaque": "#abcdef"}, "logo": "data:image/png;base64,AAAA",
+                  "logo_claro": "", "nome": "Fábrica", "slogan": "juntos", "site": "x.com"}
+    com = resumos.html_resumo_materiais(R, paginado=True)
+    assert "--pri: #112233" in com and "data:image/png;base64,AAAA" in com and "juntos" in com and "documento interno" in com
+
+
+def test_marca_da_empresa_sem_o_modulo_comercial(tmp_path):
+    """os resumos vão no instalado e o comercial não: a marca é lida direto de fabrica/ (08/10)"""
+    import json
+    from saida import identidade
+    assert identidade.ler_marca(str(tmp_path))["cores"] == identidade.CORES_PADRAO       # sem empresa: o padrão, sem logo
+    assert identidade.ler_marca(str(tmp_path))["logo"] == ""
+    (tmp_path / "fabrica" / "marca").mkdir(parents=True)
+    (tmp_path / "fabrica" / "empresa.json").write_text(json.dumps({"nome_comercial": "Hermes", "cores": {"destaque": "#00ff00"}}), encoding="utf-8")
+    (tmp_path / "fabrica" / "marca" / "logo.png").write_bytes(b"PNG-de-teste")
+    m = identidade.ler_marca(str(tmp_path))
+    assert m["nome"] == "Hermes" and m["cores"]["destaque"] == "#00ff00" and m["cores"]["primaria"] == "#35434C"
+    assert m["logo"].startswith("data:image/png;base64,") and m["logo_claro"] == m["logo"]     # sem o claro, o normal
 
 
 def test_descricao_da_telha_pelo_perfil_dela():

@@ -659,7 +659,7 @@ function ligarTrocas(frame) {
   if (!doc || !doc.head) return;
   const st = doc.createElement('style');
   st.textContent = '.trocar-perfil[data-perfil]{cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}'
-    + '.trocar-perfil[data-perfil]:hover{color:#0b3d91}.trocar-perfil[data-perfil]::after{content:" ⇄";font-weight:400;color:#0b3d91}'
+    + '.trocar-perfil[data-perfil]:hover{color:#1f2a31}.trocar-perfil[data-perfil]::after{content:" ⇄";font-weight:400;color:#7c9a1f}'
     + '@media print{.trocar-perfil[data-perfil]::after{content:none}.trocar-perfil[data-perfil]{text-decoration:none}}';
   doc.head.append(st);
   doc.querySelectorAll('.trocar-perfil[data-perfil]').forEach((b) => {
@@ -676,8 +676,8 @@ function ligarPendencias(frame) {
   try { doc = frame.contentDocument; } catch (e) { return; }
   if (!doc || !doc.head) return;
   const st = doc.createElement('style');
-  st.textContent = '@media screen{tr[data-ids]{cursor:pointer}tr[data-ids]:hover td{background:#eef4ff}'
-    + 'tr[data-ids] td:last-child::after{content:"  ver no 3D ↗";color:#0b3d91;font-weight:600;white-space:nowrap}}';
+  st.textContent = '@media screen{tr[data-ids]{cursor:pointer}tr[data-ids]:hover td{background:#f2f7dc}'
+    + 'tr[data-ids] td:last-child::after{content:"  ver no 3D ↗";color:#35434C;font-weight:600;white-space:nowrap}}';
   doc.head.append(st);
   doc.querySelectorAll('tr[data-ids]').forEach((tr) => {
     tr.title = 'Abrir o modelo 3D com estas peças em destaque';

@@ -2106,7 +2106,7 @@ def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
     atualizados e gravados; peso teórico), em detalhamento/."""
     from nucleo2d.detalhar import detalhar
     from nucleo2d.detalhe.base import _categoria
-    from saida import lista_producao, resumos
+    from saida import identidade, lista_producao, resumos
     g = _gerente()
     dados = {k: str((corpo.get("dados") or {}).get(k) or "") for k in CAMPOS_RESUMO}
     if any(dados.values()):
@@ -2130,6 +2130,8 @@ def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
         lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
         _progresso(s, "montando os resumos…")
         R = resumos.levantar_resumos(doc, lev, lista, nomes, dados)
+        # o logo e as cores da empresa, os mesmos da proposta comercial (08/10)
+        R["marca"] = identidade.ler_marca(PROJETOS)
         _progresso(s, "imprimindo os PDFs…")
         pasta = os.path.join(g._existente(s), "detalhamento")
         arquivos = resumos.gerar_resumos(pasta, R)
