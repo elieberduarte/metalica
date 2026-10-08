@@ -848,15 +848,33 @@ def _tesouras_e_cobertura(M: dict) -> dict:
         u = _unit(np.mean(dirs, axis=0)) if dirs else np.array([1.0, 0.0])
         n = np.array([-u[1], u[0]])
         c = pts[:, :2].mean(0)
-        planos[g] = {"u": u, "n": n, "off": float(c @ n), "c": c, "s0": float((pts[:, :2] @ u).min()), "s1": float((pts[:, :2] @ u).max())}
-    # largura: meia distância às treliças vizinhas paralelas (que se sobrepõem no vão)
+        planos[g] = {"u": u, "n": n, "off": float(c @ n), "c": c, "s0": float((pts[:, :2] @ u).min()), "s1": float((pts[:, :2] @ u).max()),
+                     "z0": float(pts[:, 2].min()), "z1": float(pts[:, 2].max())}
+    # as coberturas independentes: as treliças cujos banzos de cima se sobrepõem em altura são da mesma cobertura (o Docas,
+    # 08/10: duas marquises em níveis diferentes, 2 m uma da outra, que se cruzam na junta)
     gs = list(planos)
+    grupo = {g: i for i, g in enumerate(gs)}
+
+    def raiz(g):
+        while grupo[g] != grupo[gs[grupo[g]]]:
+            grupo[g] = grupo[gs[grupo[g]]]
+        return grupo[g]
+    for i, g in enumerate(gs):
+        for h in gs[i + 1:]:
+            if min(planos[g]["z1"], planos[h]["z1"]) - max(planos[g]["z0"], planos[h]["z0"]) > -0.05:
+                ra, rb = raiz(g), raiz(h)
+                for k in gs:
+                    if grupo[k] == rb:
+                        grupo[k] = ra
+    rotulos = {r: k for k, r in enumerate(sorted({raiz(g) for g in gs}))}
+    cobertura = {g: rotulos[raiz(g)] for g in gs}
+    # largura: meia distância às treliças vizinhas paralelas (que se sobrepõem no vão), da mesma cobertura
     larg = {}
     for g in gs:
         p = planos[g]
         viz = []
         for h in gs:
-            if h == g:
+            if h == g or cobertura[h] != cobertura[g]:
                 continue
             q = planos[h]
             if abs(p["u"][0] * q["u"][1] - p["u"][1] * q["u"][0]) > 0.1:
@@ -875,7 +893,7 @@ def _tesouras_e_cobertura(M: dict) -> dict:
             Ls = float(np.linalg.norm(b - a))
             Lh = float(np.linalg.norm((b - a)[:2]))
             out[i] = (Ls, Lh, larg[g])
-    return {"trechos": out, "planos": planos, "larguras": larg}
+    return {"trechos": out, "planos": planos, "larguras": larg, "coberturas": cobertura}
 
 
 # NBR 6123:2023, 8.1 — o vento nas barras expostas abaixo da cobertura (pilares, vigas, contraventamento entre pilares).
@@ -968,7 +986,36 @@ def _vento_nas_barras(M: dict, Vk: float, q: float, sentido) -> Tuple[Dict[int, 
 
 
 def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict]:
-    """os casos de vento da cobertura isolada (NBR 6123:2023, 7.2): {caso: {barra: força nodal por ponta (kN, 3)}}"""
+    """os casos de vento da cobertura isolada (NBR 6123:2023, 7.2), em cada cobertura independente — as que estão em níveis
+    diferentes (o Docas, 08/10) eram uma só: a "flecha" ia do banzo de uma ao da outra (tg θ 1,29 numa marquise de 9°).
+    O vento nas barras (pilares, vigas) entra uma vez, com a primeira"""
+    grupos = sorted(set((cob.get("coberturas") or {}).values()))
+    if len(grupos) <= 1:
+        return _vento_uma(M, cob, avisos)
+    barras = M["barras"]
+    casos: Dict[str, dict] = {}
+    infos = []
+    for k in grupos:
+        planos = {g: p_ for g, p_ in cob["planos"].items() if cob["coberturas"][g] == k}
+        trechos = {i: v for i, v in cob["trechos"].items() if barras[i]["grupo"] in planos}
+        sub = dict(cob, planos=planos, trechos=trechos)
+        c_k, i_k = _vento_uma(M, sub, avisos, com_barras=not infos)
+        infos.append(i_k)
+        for nome, caso in c_k.items():
+            if nome not in casos:
+                casos[nome] = dict(caso, nodal=dict(caso["nodal"]), nos=dict(caso.get("nos") or {}))
+                continue
+            casos[nome]["nodal"].update(caso["nodal"])
+            for no_, F in (caso.get("nos") or {}).items():
+                casos[nome]["nos"][no_] = casos[nome]["nos"].get(no_, np.zeros(3)) + F
+            if "Ft" in caso:
+                casos[nome]["Ft"] = casos[nome].get("Ft", 0.0) + caso["Ft"]
+    info = dict(infos[0], coberturas=infos)
+    return casos, info
+
+
+def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -> Tuple[Dict[str, dict], dict]:
+    """o vento de uma cobertura isolada (NBR 6123:2023, 7.2): {caso: {barra: força nodal por ponta (kN, 3)}}"""
     from nucleo import cargas as C
     P, nos, barras = M["par"], M["nos"], M["barras"]
     if not P.get("vento") or not cob:
@@ -1044,7 +1091,7 @@ def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict
                         for no_ in (top, bot):
                             fn[no_] = fn.get(no_, np.zeros(3)) + Fa / 2.0
             db = {}
-            if P.get("vento_nas_barras", True):
+            if com_barras and P.get("vento_nas_barras", True):
                 db, res = _vento_nas_barras(M, Vk, q, u * sentido)
                 info.setdefault("barras_transversal", res)
             casos["V%s%s" % (nome_c, rot)] = {"dist": db, "nos": fn, "nodal": f, "descricao": "vento perpendicular à geratriz, carregamento %s, %s%s"
@@ -1061,7 +1108,7 @@ def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict
             F[:2] = n * sentido * Ft * (Lh * w) / area_tot
             f[i] = F / 2.0
         db = {}
-        if P.get("vento_nas_barras", True):
+        if com_barras and P.get("vento_nas_barras", True):
             db, res = _vento_nas_barras(M, Vk, q, n * sentido)
             info.setdefault("barras_longitudinal", res)
         casos["Vat%s" % rot] = {"dist": db, "nodal": f, "Ft": Ft,

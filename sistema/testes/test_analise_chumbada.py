@@ -74,3 +74,26 @@ def test_dobra_da_alma_e_continua():
             assert not any(base <= s < base + 6 for s in br["soltos"])
     r = AE.calcular(_marquise(com_dobra=True), {"travamento_hipotese": "nao", "segunda_ordem": False})
     assert not any("instável" in a for a in r["avisos"])
+
+
+def test_coberturas_em_niveis_diferentes_sao_independentes():
+    """duas marquises 2 m uma acima da outra, que se cruzam na junta (Docas, 08/10): cada uma é uma cobertura — a largura
+    de influência só conta as vizinhas da mesma (antes a da junta, a 25 cm da outra, ficava com 12,5 cm) e o vento de
+    cobertura isolada sai de cada uma (antes a "flecha" ia de uma à outra: tg θ 1,29 numa marquise de 9°)"""
+    doc = Documento(nome="duas")
+    _pilar(doc)
+    for x, z in ((0.0, 5000.0), (3000.0, 5000.0), (250.0, 7000.0), (3250.0, 7000.0)):
+        for i in range(3):
+            y0, y1 = (25.0, 1000.0, 2000.0, 3000.0)[i], (25.0, 1000.0, 2000.0, 3000.0)[i + 1]
+            _barra(doc, (x, y0, z), (x, y1, z), U, "banzo", "banzo_inf")
+            _barra(doc, (x, y0, z + 1000), (x, y1, z + 1000), U, "banzo", "banzo_sup")
+        for yy in (25.0, 1000.0, 2000.0, 3000.0):
+            _barra(doc, (x, yy, z), (x, yy, z + 1000), L, "montante", "montante")
+    for b in doc.barras:
+        b.atributos = dict(b.atributos, origem_2d="t%d" % round(b.inicio[0]))
+    M = AE.montar(doc, {"travamento_hipotese": "nao"})
+    cob = AE._tesouras_e_cobertura(M)
+    assert len(set(cob["coberturas"].values())) == 2
+    assert sorted(round(v, 2) for v in cob["larguras"].values()) == [1.5, 1.5, 1.5, 1.5]
+    casos, info, _ = AE.cargas(M)
+    assert len(info["vento"]["coberturas"]) == 2 and all(c["tg"] < 0.5 for c in info["vento"]["coberturas"])
