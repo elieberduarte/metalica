@@ -668,6 +668,32 @@ def test_fileiras_de_borda_a_borda_na_mesma_altura():
     assert [c["w"] for c in rala] == [100.0, 80.0] and all(c["h"] == 45.0 for c in rala)
 
 
+def test_fileira_espalhada_nao_cobre_o_que_esta_no_vao():
+    """A cópia de chapa que o encaixe pôs no vão embaixo de uma caixa baixa, ao lado de uma alta: espalhar a fileira
+    passava a alta por cima dela (o PL4 sobre o "CB1 + CH3 + CH4" do Vicente Residence, 08/10). Nenhuma caixa da
+    prancha fica sobre outra."""
+    def cel(px, py, w, h, fil=None, local=False):
+        ents = [Texto(camada="TEXTO", posicao=(0.0, 50.0), texto="P1 – 01x", altura=3.5, atributos={"cabecalho": 0}),
+                Linha(camada="ACO", a=(0.0, 0.0), b=(w * 0.5, 0.0))]
+        c = {"px": px, "py": py, "w": w, "h": h, "k": 1.0, "entidades": ents, "caixa": ((0.0, 0.0), (w, 60.0))}
+        if fil:
+            c["_fileira"] = fil
+        if local:
+            c["local"] = True
+        return c
+    F = pranchas.FOLGA
+    alta = cel(0.0, 100.0, 60.0, 200.0, (1, 0.0, 400.0))                       # 100..300
+    baixa = cel(60.0 + F, 250.0, 300.0, 50.0, (1, 0.0, 400.0))                 # 250..300, x até 360 + F
+    copia = cel(60.0 + F, 120.0, 80.0, 100.0, local=True)                      # no vão embaixo da baixa, ao lado da alta
+    todas = [alta, baixa, copia]
+    pranchas._justificar_fileiras(todas)
+
+    def sob(a, b):
+        return (min(a["px"] + a["w"], b["px"] + b["w"]) - max(a["px"], b["px"]) > 0.5
+                and min(a["py"] + a["h"], b["py"] + b["h"]) - max(a["py"], b["py"]) > 0.5)
+    assert not any(sob(a, b) for i, a in enumerate(todas) for b in todas[i + 1:]), [(c["px"], c["py"], c["w"], c["h"]) for c in todas]
+
+
 def test_telhas_titulo_por_face_e_legenda():
     """As telhas (análise das pranchas, 29/09): a face que vale por outras diz a contagem por face e o total
     ("34 chapas" nas FACES 1 E 2 lia-se como o total, 68); a multi-dobra e a cumeeira, sem item de peça, entram

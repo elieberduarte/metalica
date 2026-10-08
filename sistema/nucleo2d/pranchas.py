@@ -1669,6 +1669,19 @@ def _justificar_fileiras(cels: Sequence[dict], molduras_p: Sequence[dict] = ()) 
                 if id(o) not in ids_l and o.get("px") is not None and not o.get("empilhada")]
         obst += [(mq["x0"], mq["y0"], mq["x1"], mq["y1"]) for mq in molduras_p
                  if mq.get("x0") is not None and mq["categoria"] not in ("DETALHES", "LEGENDA") and mq["x0"] > x_ini + 1.0]
+        # a fileira espalhada não passa por cima de nada: o x_livre só vê o que está à direita da última caixa, e a
+        # cópia de chapa que o encaixe pôs no vão embaixo de uma caixa baixa, ao lado de uma alta, ficava coberta (o
+        # PL4 sobre o "CB1 + CH3 + CH4" e o quadro CHAPAS do Vicente Residence, 08/10)
+        x_ = x
+        bate = False
+        for c in linha:
+            r_ = (x_, c["py"], x_ + c["w"] + extra, c["py"] + c["h"])
+            if any(r_[0] < o_[2] - 0.5 and o_[0] < r_[2] - 0.5 and r_[1] < o_[3] - 0.5 and o_[1] < r_[3] - 0.5 for o_ in obst):
+                bate = True
+                break
+            x_ += c["w"] + extra + FOLGA
+        if bate:
+            continue
         for c in linha:
             c["px"] = x
             c["w"] = c["w"] + extra
