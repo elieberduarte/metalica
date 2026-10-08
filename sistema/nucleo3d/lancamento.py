@@ -836,7 +836,7 @@ def _gerar_ligacoes(c, doc, par: dict) -> dict:
         q = pad("suporte_terca_cadeirinha")
         B, H, t = float(q["largura"]), float(q["altura"]), float(q["t"])
         bl, bb, bt = float(q["base_l"]), float(q["base_b"]), float(q["base_t"])
-        gv = 100.0 if c.terca.d >= 200.0 else float(q["gab_v"])      # regra da furação da fábrica
+        gv = 100.0 if c.terca.d > 200.0 else float(q["gab_v"])       # regra da fábrica: até 200 mm (inclusive) 50, acima 100
         gh, borda = float(q["gab_h"]), float(q["borda_topo"])
         dpar = A.d_parafuso_mm(q["parafuso"])
         w = A.furo_mm(q["parafuso"])
