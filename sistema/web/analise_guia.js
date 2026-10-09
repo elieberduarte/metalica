@@ -255,7 +255,8 @@ export function guia(D, RAIZ, estado) {
   const lista = (xs) => '<ul>' + xs.map(x => `<li>${x}</li>`).join('') + '</ul>';
   let comb = '';
   if (['esforcos', 'tensoes', 'verificacao', 'deformada', 'reacoes'].includes(estado.modo)) {
-    const c = estado.comb === 'env' && !['tensoes', 'verificacao'].includes(estado.modo) ? null : estado.comb;
+    // a combinação guardada que não existe neste cálculo não aparece descrita (a "ELS 1 ·V0" no BRAMAIS, 09/10)
+    const c = (estado.comb === 'env' && !['tensoes', 'verificacao'].includes(estado.modo)) || !(D.combinacoes || {})[estado.comb] ? null : estado.comb;
     comb = `<div class="g-comb"><b>${c && c !== 'env' ? c : 'Envoltória'}</b> — ${explicarCombinacao(c || 'env', c && D.combinacoes[c])}</div>`;
   }
   if (estado.modo === 'cargas' && estado.caso && D.casos[estado.caso]) {

@@ -1207,7 +1207,11 @@ function aplicar(dados) {
   }
   $('#vazio').hidden = true;
   // o centro e o tamanho do modelo
-  const bb = new THREE.Box3(); for (const p of D.nos) bb.expandByPoint(new THREE.Vector3(...p));
+  // pelos nós das barras analisadas: no modelo de concreto (o BRAMAIS) sobram 4 colunas de aço e os 2.314 nós do resto
+  // levavam o enquadramento para longe — a tela ficava em branco (09/10)
+  const bb = new THREE.Box3();
+  for (const br of D.barras || []) { bb.expandByPoint(new THREE.Vector3(...D.nos[br.a])); bb.expandByPoint(new THREE.Vector3(...D.nos[br.b])); }
+  if (bb.isEmpty()) for (const p of D.nos) bb.expandByPoint(new THREE.Vector3(...p));
   bb.getCenter(centro); raio = Math.max(1000, bb.getSize(new THREE.Vector3()).length() / 2);
   montarControles(); painelRanking(); painelSegunda(); painelReacoes(); painelAncoragem(); painelBases(); painelCarrinho(); painelLigacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
   if (!aplicar._vista) { vista('iso'); aplicar._vista = true; }
