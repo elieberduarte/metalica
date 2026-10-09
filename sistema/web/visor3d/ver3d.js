@@ -192,6 +192,7 @@ async function abrir() {
   const t0 = performance.now();
   visor = new Visor3D($('#tela'), { mouse: true, arestas: true, maxPixelRatio: 2, fundo: escuro() ? '#1a212c' : '#e4eaf2' });
   window.visor = visor;
+  vigiarPlacaDeVideo($('#tela'));
   visor.leveAoGirar = false;                                           // no PC sobra placa: a imagem fica inteira ao girar
   await visor.carregar(buf);
   const rf = await fetch(`${API}/pecas?v=${encodeURIComponent(versao)}`);
@@ -485,6 +486,27 @@ function ligar() {
     else if (e.key === 'f' || e.key === 'F') visor.enquadrar('iso');
     else if (e.key === 'm' || e.key === 'M') (medindo ? (pararMedida(), fecharPainel()) : iniciarMedida());
   });
+}
+
+/** O navegador tira a placa de vídeo do 3D quando falta memória (o modelo grande aberto também no editor ou noutra
+ *  tela): o quadro fica só com o fundo, sem erro nenhum — o 3D ao lado do relatório "não carregava" (09/10). Aqui a
+ *  tela avisa, o registro do servidor guarda, e volta sozinha quando a placa é devolvida. */
+function vigiarPlacaDeVideo(tela) {
+  tela.addEventListener('webglcontextlost', (ev) => {
+    ev.preventDefault();                                     // pede a placa de volta
+    try { if (window.__registrarLento) window.__registrarLento({ tipo: 'erro', mensagem: 'o 3D perdeu a placa de vídeo (webglcontextlost)', onde: 'ver3d' }); } catch (e) { /* sem registro */ }
+    let aviso = $('#placa-perdida');
+    if (!aviso) {
+      aviso = document.createElement('div');
+      aviso.id = 'placa-perdida';
+      aviso.innerHTML = '<div><b>O 3D ficou sem a placa de vídeo.</b><div style="margin:8px 0">Falta memória de vídeo: o modelo '
+        + 'também está aberto no editor ou noutra tela. Feche o 3D que não está usando e recarregue.</div>'
+        + '<button class="botao" type="button">Recarregar o 3D</button></div>';
+      aviso.querySelector('button').onclick = () => location.reload();
+      $('#palco').append(aviso);
+    }
+  });
+  tela.addEventListener('webglcontextrestored', () => location.reload());
 }
 
 abrir().catch(e => {
