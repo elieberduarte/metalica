@@ -214,17 +214,37 @@ def _chapas_por_rotulo(chapas) -> List[dict]:
     return sorted(juntas.values(), key=lambda j: (j["t"], j["material"]))
 
 
-def descricao_parafuso(nome: str) -> Tuple[str, str, Optional[float]]:
+def descricao_parafuso(nome: str, classe: Optional[str] = None) -> Tuple[str, str, Optional[float]]:
     """"M12 x 35" → ("Parafuso M12x35", 'Parafuso sextavado Ø1/2" x 1.1/2" ASTM A307 + porca e arruela', 12)."""
     m = re.match(r"M(\d+(?:[.,]\d+)?)\s*x\s*(\d+)", nome or "", re.I)
     if not m:
         return nome, nome, None
     d = float(m.group(1).replace(",", "."))
     L = int(m.group(2))
-    pol = _POLEGADA.get(int(round(d)), "M%g" % d)
+    pol = _pol_mais_perto(d) or "M%g" % d
     lpol = _COMPRIMENTO_POL.get(L) or _COMPRIMENTO_POL.get(min(_COMPRIMENTO_POL, key=lambda k: abs(k - L)))
-    classe = "A325" if (d >= 16 and L >= 50) else "A307"
+    classe = classe or ("A325" if (d >= 16 and L >= 50) else "A307")     # a do modelo ("BOLT (A325) …") quando há
     return ("Parafuso M%gx%d" % (d, L), "Parafuso sextavado Ø%s x %s ASTM %s + porca e arruela" % (pol, lpol, classe), d)
+
+
+def _pol_mais_perto(d) -> str:
+    """A bitola em polegada mais perto do diâmetro (mm), a até 1,5 mm: 12,7 → 1/2", 19,05 → 3/4" (o round dava 13 e
+    19, fora da tabela — o parafuso Ø1/2" saía "M12.7")."""
+    d = float(d or 0)
+    k = min(_POLEGADA, key=lambda x: abs(x - d))
+    return _POLEGADA[k] if abs(k - d) <= 1.5 else ""
+
+
+def _eh_chumbador(nome: str) -> bool:
+    return bool(re.match(r"\s*(CHUMBADOR|PARABOLT|HARDBOLT)", str(nome or ""), re.I))
+
+
+def descricao_chumbador(d: float, L) -> Tuple[str, str]:
+    """O chumbador químico pelo diâmetro e comprimento (mm): ("Chumbador químico HIT-V Ø5/8\" x 250",
+    "Barra roscada HIT-V ASTM A36 Ø5/8\" x 250 mm + porca e arruela, com químico HIT-RE 500")."""
+    pol = _pol_mais_perto(d) or "Ø%g mm" % float(d)
+    return ("Chumbador químico HIT-V Ø%s x %s" % (pol, L),
+            "Barra roscada HIT-V ASTM A36 Ø%s x %s mm + porca e arruela, com químico de injeção HIT-RE 500" % (pol, L))
 
 
 # ============================================================ levantamento
@@ -738,7 +758,10 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
         m = re.search(r"(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+)", f.nome or "")
         if m and float(m.group(1).replace(",", ".")) > 0:
             d = float(m.group(1).replace(",", "."))
-            chave = "M%g x %s" % (d, m.group(2))
+            # o chumbador químico (barra roscada HIT-V embutida no concreto, 09/10) sai com o nome dele, não como parafuso
+            mc = re.search(r"\((A\d{3}[^)]*)\)", f.nome or "")
+            chave = ("CHUMBADOR %g x %s" % (d, m.group(2))) if _eh_chumbador(f.nome) else (
+                "M%g x %s" % (d, m.group(2)) + (" (%s)" % mc.group(1).strip() if mc else ""))
             eh_parafuso = True
         else:
             chave, d, _arruela = _fixador_solto(ext)
@@ -783,8 +806,11 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             lr["pecas"].add(fam[1])
     saida = []
     for chave, r in contagem.items():
-        if r["parafuso"]:
-            nome, desc, _d = descricao_parafuso(chave.replace(" ", ""))
+        if r["parafuso"] and chave.startswith("CHUMBADOR"):
+            nome, desc = descricao_chumbador(r["d"], chave.rsplit(" ", 1)[-1])
+        elif r["parafuso"]:
+            mc = re.search(r"\((A\d{3}[^)]*)\)", chave)
+            nome, desc, _d = descricao_parafuso(chave.split(" (")[0].replace(" ", ""), mc.group(1) if mc else None)
         else:
             nome = chave
             desc = ("Arruela lisa Ø%s" if chave.startswith("Arruela") else "Porca sextavada Ø%s UNC") % chave.split(" ", 1)[1]
@@ -988,7 +1014,7 @@ def _area_de_pintura(lista: dict) -> dict:
 
 
 def _bitola_pol(d: Optional[float]) -> str:
-    return _POLEGADA.get(int(round(float(d or 0))), "M%g" % float(d or 0))
+    return _pol_mais_perto(d) or "M%g" % float(d or 0)
 
 
 def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> dict:
@@ -1471,18 +1497,12 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
 def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
     n, dim = R["numeros"], R["dimensoes"]
     partes = [_cabecalho(R, "RESUMO DE MATERIAIS")]
-    area_txt = ""
-    if len(dim["trechos"]) > 1:
-        area_txt = " + ".join("%s %s x %s = %s" % (tr["nome"].lower(), _n(tr["projecao"][0] / 1000.0, 2), _n(tr["projecao"][1] / 1000.0, 2),
-                                                  _n(tr["projecao"][0] * tr["projecao"][1] / 1e6, 2)) for tr in dim["trechos"])
-    elif dim["trechos"]:
-        tr = dim["trechos"][0]
-        area_txt = "%s x %s m" % (_n(tr["projecao"][0] / 1000.0, 2), _n(tr["projecao"][1] / 1000.0, 2))
     # os números da compra e da obra numa olhada, nos cartões da proposta (08/10)
     C = R.get("compra") or {}
     q = [("Estrutura metálica", _n(n["peso_aco"], 1), "kg", "perfis %s + chaparia %s kg" % (_n(R["perfis_kg"], 1), _n(R["chaparia_total"]["kg"], 1)))]
     if dim["trechos"]:
-        q.append(("Área de projeção", _n(dim["area_m2"], 2), "m²", "c/ beirais: " + area_txt))
+        # só o total (o usuário, 09/10: a conta de cada ala enchia o cartão; o detalhe fica no resumo da obra)
+        q.append(("Área de projeção", _n(dim["area_m2"], 2), "m²", "com beirais"))
     if C.get("perfis"):
         q.append(("Compra de perfis", _n(sum(p.get("kg_compra") or 0.0 for p in C["perfis"]), 1), "kg",
                   "%d barras comerciais" % sum(p["barras"] for p in C["perfis"])))

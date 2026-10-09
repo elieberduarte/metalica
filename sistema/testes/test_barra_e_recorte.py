@@ -58,3 +58,14 @@ def test_compra_com_e_sem_aproveitamento_lado_a_lado():
     assert "Com aproveitamento" in html and "Sem aproveitamento" in html and 'class="r ap-sem"' in html
     assert "emenda" not in html.split("<tbody>")[1].split("</tbody>")[0]   # só o total de barras (09/10)
     assert html.index("Sem aproveitamento") < html.index("Com aproveitamento") and "Projeto" in html
+
+
+def test_chumbador_quimico_e_parafuso_na_bitola_e_classe_do_modelo():
+    """O chumbador químico (barra roscada HIT-V no concreto, 09/10) sai com o nome dele, e o parafuso Ø1/2" (12,7) e o
+    Ø3/4" (19,05) na polegada certa — o round dava 13 e 19, fora da tabela ("M12.7"); a classe do modelo vale."""
+    from saida import resumos as rz
+    nome, desc = rz.descricao_chumbador(15.875, "250")
+    assert nome == 'Chumbador químico HIT-V Ø5/8" x 250' and "HIT-RE 500" in desc
+    assert rz._eh_chumbador("CHUMBADOR QUÍMICO HIT-V 12.7x190") and not rz._eh_chumbador("BOLT (A325) 12.7x80")
+    assert rz._bitola_pol(12.7) == '1/2"' and rz._bitola_pol(19.05) == '3/4"' and rz._bitola_pol(16) == '5/8"'
+    assert "ASTM A325" in rz.descricao_parafuso("M12.7x80", "A325")[1] and 'Ø1/2"' in rz.descricao_parafuso("M12.7x80")[1]
