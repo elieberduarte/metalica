@@ -65,6 +65,36 @@ let pedido = false;
 function desenharQuadro() { pedido = false; renderer.render(cena, camera); }
 function pedirQuadro() { if (!pedido) { pedido = true; requestAnimationFrame(desenharQuadro); } }
 controles.addEventListener('change', pedirQuadro);
+// A rodinha aproxima do que está sob o cursor, como no editor e no modo ver (09/10): o chão do modelo sob o cursor (só dentro
+// da planta da estrutura) ou, fora dele, o alvo da câmera (o centro da vista) — o zoom do OrbitControls
+// vai para o alvo e, no vazio, a câmera "ia embora" do modelo. Câmera e alvo escalam juntos em volta do foco; não passa dele.
+let caixaModelo = new THREE.Box3();
+tela.addEventListener('wheel', (ev) => {
+  if (!ev.deltaY || caixaModelo.isEmpty()) return;
+  ev.preventDefault();
+  ev.stopImmediatePropagation();
+  const r = tela.getBoundingClientRect();
+  const ndc = new THREE.Vector2((ev.clientX - r.left) / Math.max(r.width, 1) * 2 - 1, -((ev.clientY - r.top) / Math.max(r.height, 1)) * 2 + 1);
+  const ray = new THREE.Raycaster();
+  camera.updateMatrixWorld();
+  ray.setFromCamera(ndc, camera);
+  const folga = raio * 0.25;
+  const chao = new THREE.Plane(new THREE.Vector3(0, 0, 1), -caixaModelo.min.z);
+  let foco = new THREE.Vector3();
+  const noChao = ray.ray.intersectPlane(chao, foco) && foco.x >= caixaModelo.min.x - folga && foco.x <= caixaModelo.max.x + folga
+    && foco.y >= caixaModelo.min.y - folga && foco.y <= caixaModelo.max.y + folga && foco.distanceTo(camera.position) <= raio * 6;
+  if (!noChao) foco = controles.target.clone();
+  const cliques = Math.max(-5, Math.min(5, ev.deltaY / (ev.deltaMode === 1 ? 3 : ev.deltaMode === 2 ? 1 : 100)));
+  const k = Math.pow(0.85, -cliques);
+  const d = Math.max(camera.position.distanceTo(foco), 1e-6);
+  const nova = Math.min(Math.max(d * k, 300), raio * 20);
+  const fator = nova / d;
+  camera.position.sub(foco).multiplyScalar(fator).add(foco);
+  controles.target.sub(foco).multiplyScalar(fator).add(foco);
+  if (camera.near > nova / 20) { camera.near = Math.max(10, nova / 20); camera.updateProjectionMatrix(); }
+  controles.update();
+  pedirQuadro();
+}, { capture: true, passive: false });
 function redimensionar() {
   const r = tela.parentElement.getBoundingClientRect();
   renderer.setSize(r.width, r.height, false);
@@ -1213,6 +1243,7 @@ function aplicar(dados) {
   for (const br of D.barras || []) { bb.expandByPoint(new THREE.Vector3(...D.nos[br.a])); bb.expandByPoint(new THREE.Vector3(...D.nos[br.b])); }
   if (bb.isEmpty()) for (const p of D.nos) bb.expandByPoint(new THREE.Vector3(...p));
   bb.getCenter(centro); raio = Math.max(1000, bb.getSize(new THREE.Vector3()).length() / 2);
+  caixaModelo = bb.clone();
   montarControles(); painelRanking(); painelSegunda(); painelReacoes(); painelAncoragem(); painelBases(); painelCarrinho(); painelLigacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
   if (!aplicar._vista) { vista('iso'); aplicar._vista = true; }
   desenhar();
