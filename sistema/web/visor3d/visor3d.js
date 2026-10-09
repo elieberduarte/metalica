@@ -172,6 +172,7 @@ export class Visor3D {
       this.controles.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
       this.controles.zoomToCursor = true;
       tela.addEventListener('pointerdown', (ev) => this._orbitarNoCursor(ev), { capture: true });
+      tela.addEventListener('wheel', (ev) => this._zoomNaPeca(ev), { capture: true, passive: false });
     }
     this.controles.addEventListener('change', () => this.pedirQuadro());
     this.controles.addEventListener('start', () => this._movendo(true));
@@ -762,6 +763,35 @@ export class Visor3D {
     window.addEventListener('pointermove', mover, true);
     window.addEventListener('pointerup', soltar, true);
     window.addEventListener('pointercancel', soltar, true);
+  }
+
+  /** A rodinha aproxima da peça que está sob o cursor, como no editor (camera.js, _zoomNaRoda): o passo é uma fração
+   *  da distância até ela, e não até o alvo da câmera — com o alvo a 30 m e a viga a 1 m, o passo de 1,5 m do
+   *  OrbitControls atravessava a viga e a câmera ia parar dentro da peça (o BRAMAIS "bugava inteiro" ao dar zoom,
+   *  09/10). Chega a 30 mm da peça e não passa; o plano de corte de perto acompanha. Sem peça sob o cursor (o céu, o
+   *  chão vazio), fica o zoom do OrbitControls. */
+  _zoomNaPeca(ev) {
+    if (!this.fichas || !ev.deltaY) return;
+    const r = this.tela.getBoundingClientRect();
+    const achado = this.pontoEm(ev.clientX - r.left, ev.clientY - r.top);
+    if (!achado) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    const foco = new THREE.Vector3(achado.local[0], achado.local[1], achado.local[2]);
+    const cliques = Math.max(-5, Math.min(5, ev.deltaY / (ev.deltaMode === 1 ? 3 : ev.deltaMode === 2 ? 1 : 100)));
+    const k = Math.pow(0.85, -cliques);                // < 1 aproxima, > 1 afasta
+    const cam = this.camera, alvo = this.controles.target;
+    const d = Math.max(cam.position.distanceTo(foco), 1e-6);
+    const nova = Math.min(Math.max(d * k, 30), this.camera.far / 4);
+    const fator = nova / d;
+    if (Math.abs(fator - 1) < 1e-6) return;
+    cam.position.sub(foco).multiplyScalar(fator).add(foco);
+    alvo.sub(foco).multiplyScalar(fator).add(foco);
+    // o plano de corte de perto menor que a distância até a peça, senão ela é cortada ao chegar perto
+    const perto = Math.max(1, Math.min(cam.near, nova / 20));
+    if (perto !== cam.near) { cam.near = perto; cam.updateProjectionMatrix(); }
+    this.controles.update();
+    this.pedirQuadro();
   }
 
   /** Gira câmera e alvo juntos em volta de `pivo` (em volta do Z e do eixo horizontal da tela), na velocidade do
