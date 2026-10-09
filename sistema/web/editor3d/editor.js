@@ -1593,7 +1593,8 @@ export class Editor {
     const m = /^(posicao|conjunto|peca|ids):(.+)$/.exec(String(spec || ''));
     if (!m) return 0;
     const chave = m[1];
-    const marcas = new Set(m[2].split(',').map(s => s.trim()).filter(Boolean));
+    // marca com vírgula decimal ("CH9,5-A3-200"): a vírgula seguida de algarismo não separa marcas (09/10)
+    const marcas = new Set(m[2].split(['posicao', 'conjunto'].includes(chave) ? /,(?!\d)/ : ',').map(s => s.trim()).filter(Boolean));
     // peca: o bloco da montagem pela planta — a cópia ("TESOURA 16#12") ou todas as cópias pelo nome
     // do projeto ("TESOURA 16"), vindo da tela Treliças lidas
     const daPeca = (e) => {

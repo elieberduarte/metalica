@@ -1059,6 +1059,23 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         geracoes[salvo["nome"]] = geracao
         desenhos.append({"grupo": chave, "nome": salvo["nome"], "titulo": nome,
                          "entidades": desenho.tamanho, "escala": desenho.escala})
+    if substituir and not corpo.get("grupos"):
+        # a família que não sai mais (o "agulhamentos" do Vicente Residence, quando o concreto do TQS deixou de entrar
+        # como aço, 09/10) não fica para trás com o conteúdo velho — as pranchas a montavam, e as vigas de concreto
+        # iam para a fábrica. Só o que o Detalhar gerou; vai para a lixeira, como o desenho substituído
+        feitos = {os.path.basename(g._caminho_desenho(s, d["nome"])) for d in desenhos}
+        pasta_d = os.path.dirname(g._caminho_desenho(s, "x"))
+        for arq in sorted(os.listdir(pasta_d)) if os.path.isdir(pasta_d) else []:
+            base = arq[:-len(".desenho.json")] if arq.endswith(".desenho.json") else None
+            if not base or not base.startswith("detalhamento-") or arq in feitos:
+                continue
+            try:
+                meta = (g.abrir_desenho(s, base) or {}).get("metadados") or {}
+            except ErroDeDados:
+                continue
+            if meta.get("gerado_por") == "detalhamento":
+                g.excluir_desenho(s, base)
+                r.setdefault("avisos", []).append("%s: não sai mais do modelo, foi para a lixeira" % base)
     pasta = os.path.join(g._existente(s), "detalhamento")
     os.makedirs(pasta, exist_ok=True)
     # a lista de materiais sai do mesmo levantamento dos desenhos (romaneio, perfis, chapas…); feita uma vez, a

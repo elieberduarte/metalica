@@ -91,7 +91,10 @@ function selecionarDaDivisao(pedido) {
   if (pedido.destacar) {
     const m = /^(posicao|conjunto|peca|ids|origem2d|pm):(.+)$/.exec(String(pedido.destacar));
     if (m) {
-      const alvo = new Set(m[2].split(',').map(s => s.trim()).filter(Boolean));
+      // marca com vírgula decimal ("CH9,5-A3-200", "TIRANTE-250x100x9,5-A3-200"): a vírgula seguida de algarismo não
+      // separa marcas — cortada ali, a chapa do Vicente Residence não achava peça no 3D (09/10); os ids, como sempre
+      const sep = ['posicao', 'conjunto'].includes(m[1]) ? /,(?!\d)/ : ',';
+      const alvo = new Set(m[2].split(sep).map(s => s.trim()).filter(Boolean));
       const chave = { posicao: 'pos', conjunto: 'cj', ids: 'id', origem2d: 'o2', pm: 'pm' }[m[1]];
       F.forEach((f, i) => {
         if (m[1] === 'peca' ? (f.pc && (alvo.has(f.pc) || alvo.has(f.pl))) : alvo.has(f[chave])) ids.push(i);
