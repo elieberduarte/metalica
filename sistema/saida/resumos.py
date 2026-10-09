@@ -235,6 +235,29 @@ def _pol_mais_perto(d) -> str:
     return _POLEGADA[k] if abs(k - d) <= 1.5 else ""
 
 
+#: O químico do chumbador (09/10): o anel entre o furo no concreto e a barra, no embutimento, com a perda (o que fica no
+#: misturador, o descarte do começo de cada cartucho e o excesso que transborda); furo da Hilti para a barra em polegada.
+EMBUTIMENTO_QUIMICO = 150.0
+FURO_CONCRETO = {12.7: 14.29, 15.875: 19.05, 19.05: 22.23, 22.225: 25.4, 25.4: 28.58}     # 1/2"→9/16", 5/8"→3/4", 3/4"→7/8"…
+PERDA_QUIMICO = 0.30
+CARTUCHO_ML = 500
+DESCARTE_ML = 15.0
+
+
+def volume_quimico_ml(d: float, embutimento: float = EMBUTIMENTO_QUIMICO) -> float:
+    """ml de químico num furo: π/4 (d0² − d²) × embutimento, sem a perda."""
+    d = float(d or 0)
+    k = min(FURO_CONCRETO, key=lambda x: abs(x - d))
+    d0 = FURO_CONCRETO[k] if abs(k - d) <= 1.0 else d + 2.0
+    return math.pi / 4.0 * (d0 * d0 - d * d) * float(embutimento) / 1000.0
+
+
+def cartuchos_quimico(ml: float) -> dict:
+    total = ml * (1.0 + PERDA_QUIMICO)
+    n = int(math.ceil(total / (CARTUCHO_ML - DESCARTE_ML) - 1e-9)) if total > 0 else 0
+    return {"ml_total": round(total, 0), "cartuchos": n, "cartucho_ml": CARTUCHO_ML}
+
+
 def _eh_chumbador(nome: str) -> bool:
     return bool(re.match(r"\s*(CHUMBADOR|PARABOLT|HARDBOLT)", str(nome or ""), re.I))
 
@@ -791,6 +814,14 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             local = (" x ".join(dict.fromkeys(rotulos.get(t, t) for t in tipos_f)), tuple(nomes_f))
         r = contagem.setdefault(chave, {"parafuso": eh_parafuso, "qtd": 0, "locais": collections.OrderedDict(), "d": d})
         r["qtd"] += 1
+        # o chumbador químico do modelo: o embutimento (para o químico) e se a arruela é uma chapa do projeto (a CH2 do
+        # Vicente, 09/10: a arruela solta contava em dobro)
+        cq = (f.atributos or {}).get("chumbador_quimico") or {}
+        if cq:
+            r["embutimento"] = float(cq.get("embutimento") or EMBUTIMENTO_QUIMICO)
+            r["quimico"] = str(cq.get("quimico") or "HIT-RE 500")
+            if cq.get("arruela") is False:
+                r["sem_arruela"] = r.get("sem_arruela", 0) + 1
         lr = r["locais"].setdefault(local[0], {"qtd": 0, "pecas": set(), "ids": []})
         lr["qtd"] += 1
         lr["pecas"].update(local[1])
@@ -815,7 +846,10 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
             nome = chave
             desc = ("Arruela lisa Ø%s" if chave.startswith("Arruela") else "Porca sextavada Ø%s UNC") % chave.split(" ", 1)[1]
         locais = sorted(r["locais"].items(), key=lambda kv: -kv[1]["qtd"])
+        if r.get("sem_arruela") and r["sem_arruela"] >= r["qtd"]:
+            desc = desc.replace(" + porca e arruela", " + porca (a arruela é chapa do projeto)")
         saida.append({"nome": nome, "descricao": desc, "qtd": r["qtd"], "parafuso": r["parafuso"], "d": r["d"],
+                      "sem_arruela": int(r.get("sem_arruela") or 0), "embutimento": r.get("embutimento"), "quimico": r.get("quimico"),
                       "locais": [{"local": k, "qtd": v["qtd"], "pecas": sorted(v["pecas"], key=_ordem_natural), "ids": v.get("ids") or []}
                                  for k, v in locais]})
     saida.sort(key=lambda x: (not x["parafuso"], x["d"] or 0, _ordem_natural(x["nome"])))
@@ -1058,12 +1092,18 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
                        "chapas": int(math.ceil(m2 * (1.0 + perda / 100.0) / area_chapa - 1e-9)) if m2 > 0 else 0})
     # cada parafuso vem com 1 porca e 1 arruela ("+ porca e arruela"); as porcas e arruelas soltas (pontas roscadas,
     # chumbadores) somam na bitola delas
-    pf, porcas, arruelas = [], collections.Counter(), collections.Counter()
+    pf, porcas, arruelas, quimico = [], collections.Counter(), collections.Counter(), collections.OrderedDict()
     for it in parafusos:
         if it["parafuso"]:
             pf.append({"nome": it["nome"], "descricao": it["descricao"], "qtd": it["qtd"]})
             porcas[_bitola_pol(it.get("d"))] += it["qtd"]
-            arruelas[_bitola_pol(it.get("d"))] += it["qtd"]
+            # a arruela que já é chapa do projeto (a CH2 do chumbador da CH1) não se compra solta
+            if it["qtd"] - int(it.get("sem_arruela") or 0):
+                arruelas[_bitola_pol(it.get("d"))] += it["qtd"] - int(it.get("sem_arruela") or 0)
+            if it.get("embutimento"):
+                q_ = quimico.setdefault(it.get("quimico") or "HIT-RE 500", {"furos": 0, "ml": 0.0})
+                q_["furos"] += it["qtd"]
+                q_["ml"] += it["qtd"] * volume_quimico_ml(it["d"], it["embutimento"])
         else:
             alvo = arruelas if it["nome"].startswith("Arruela") else porcas
             alvo[it["nome"].split(" ", 1)[1] if " " in it["nome"] else it["nome"]] += it["qtd"]
@@ -1077,7 +1117,8 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         r["pecas"] += it["qtd"]
     return {"perfis": perfis, "chapas": chapas, "outros_aco": _outros_aco(lista), "perda_chapas": perda, "chapa_comercial": CHAPA_COMERCIAL,
             "parafusos": pf, "porcas": sorted(porcas.items(), key=lambda kv: ordem_b(kv[0])),
-            "arruelas": sorted(arruelas.items(), key=lambda kv: ordem_b(kv[0])), "telhas": list(telhas_p.values())}
+            "arruelas": sorted(arruelas.items(), key=lambda kv: ordem_b(kv[0])), "telhas": list(telhas_p.values()),
+            "quimicos": [dict(v, nome=k, **cartuchos_quimico(v["ml"])) for k, v in quimico.items()]}
 
 
 def _mesmo_nome(perfil: str) -> str:
@@ -1291,11 +1332,15 @@ def _doc(R: dict, titulo: str, corpo: str, paginado: bool = False) -> str:
     """O documento HTML; `paginado` traz o Paged.js, o cabeçalho e o rodapé correntes e o sinal de fim de
     paginação que a impressão em PDF (`saida.printpdf`) espera."""
     css = identidade.variaveis_css(R.get("marca")) + _CSS
+    # o título da página no padrão de entrega ("OBRA - Resumo de materiais (dd.mm.aaaa)", 09/10): é o nome que o
+    # navegador sugere no Imprimir › Salvar como PDF, e o título do PDF
+    from saida.entrega import nome_de_entrega
+    t_pag = nome_de_entrega((R.get("projeto") or {}).get("nome") or "", titulo)
     if paginado:
         from saida import printpdf
-        return printpdf.envelope(_correntes(R, titulo) + corpo, css, titulo)
+        return printpdf.envelope(_correntes(R, titulo) + corpo, css, _esc(t_pag))
     return ("<!DOCTYPE html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>%s</title><style>%s</style></head>"
-            "<body>%s</body></html>" % (_esc(titulo), css, corpo))
+            "<body>%s</body></html>" % (_esc(t_pag), css, corpo))
 
 
 def _correntes(R: dict, titulo: str) -> str:
@@ -1701,6 +1746,9 @@ def _html_compra(R: dict) -> str:
         linhas = [[pf["nome"], pf["descricao"].split(" + ")[0], (pf["qtd"], "r"), ""] for pf in C.get("parafusos") or []]
         linhas += [["Porca %s" % b, "Porca sextavada Ø%s" % b, (q, "r"), ""] for b, q in C.get("porcas") or []]
         linhas += [["Arruela %s" % b, "Arruela lisa Ø%s" % b, (q, "r"), ""] for b, q in C.get("arruelas") or []]
+        linhas += [["Químico %s" % q["nome"], "Químico de injeção %s, cartucho %d ml — %s furos, ~%s ml com %d%% de perda"
+                    % (q["nome"], q["cartucho_ml"], _n(q["furos"], 0), _n(q["ml_total"], 0), round(PERDA_QUIMICO * 100)), (q["cartuchos"], "r"), ""]
+                   for q in C.get("quimicos") or []]
         h.append(_tabela(["Item", "Descrição", ("Qtd", "r"), "Pedido"], linhas, larguras=["20%", "52%", "12%", "16%"]))
     if C.get("telhas"):
         h.append("<h3>Telhas</h3><p class=\"explica\">m² pela largura útil.</p>")
@@ -1744,6 +1792,91 @@ def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=Non
         (" class=\"%s\"" % classe) if classe else "", cols, topo, th, corpo, pe)
 
 
+# ============================================================ planilha (Excel)
+def planilha_de_materiais(R: dict, lista: Optional[dict], caminho: str) -> str:
+    """O resumo de materiais em Excel (o usuário, 09/10): os números dos cartões, a compra de perfis (projeto, sem e com
+    aproveitamento), as chapas, os parafusos e chumbadores (com porcas, arruelas e o químico), a lista de materiais por
+    posição e os conjuntos — os mesmos números do PDF, para filtrar, somar e mandar ao comprador."""
+    from saida import xlsx_simples
+    n, dim, C = R["numeros"], R["dimensoes"], R.get("compra") or {}
+
+    def r1(x, c=1):
+        return round(float(x or 0.0), c)
+    perfis = C.get("perfis") or []
+    kg_com = sum(p.get("kg_compra") or 0.0 for p in perfis)
+    kg_sem = sum(p.get("kg_sem_aproveitamento") or 0.0 for p in perfis)
+    resumo = [["Item", "Valor", "Unidade", "Observação"],
+              ["Estrutura metálica", r1(n["peso_aco"]), "kg", "perfis + chaparia"],
+              ["Perfis (peso teórico)", r1(R.get("perfis_kg")), "kg", ""],
+              ["Chaparia (peso teórico)", r1((R.get("chaparia_total") or {}).get("kg")), "kg", ""]]
+    if dim.get("trechos"):
+        resumo.append(["Área de projeção", r1(dim["area_m2"], 2), "m²", "com beirais"])
+    if perfis:
+        resumo += [["Compra de perfis sem aproveitamento", r1(kg_sem), "kg",
+                    "%d barras" % sum(p.get("barras_sem_aproveitamento") or 0 for p in perfis)],
+                   ["Compra de perfis com aproveitamento", r1(kg_com), "kg", "%d barras" % sum(p["barras"] for p in perfis)]]
+    if C.get("chapas"):
+        cl, ca = C["chapa_comercial"]
+        resumo.append(["Chapas comerciais", sum(c["chapas"] for c in C["chapas"]), "pç",
+                       "%s x %s m, %s%% de perda" % (_n(cl / 1000.0, 2), _n(ca / 1000.0, 2), _n(C["perda_chapas"], 0))])
+    resumo += [["Telhas", r1(n.get("ml_telhas"), 2), "ml", "%s m²" % _n(n.get("m2_telhas") or 0.0, 2)],
+               ["Parafusos e chumbadores", int(n.get("parafusos") or 0), "pç", ""],
+               ["Área de pintura", r1(n.get("m2_pintura")), "m²", ""]]
+    if n.get("kg_m2"):
+        resumo.append(["Consumo de aço", r1(n["kg_m2"]), "kg/m²", "de projeção"])
+    abas = [{"nome": "Resumo", "linhas": resumo, "larguras": [38, 14, 9, 36]}]
+    if perfis:
+        cab = ["Perfil", "Perfil no IFC", "Material", "Peças", "m", "kg/m", "kg peças", "Barra (m)",
+               "Sem aprov. – barras", "Sem aprov. – kg/barra", "Sem aprov. – kg",
+               "Com aprov. – barras", "Com aprov. – kg/barra", "Com aprov. – kg", "Aproveitamento (%)", "Pedido"]
+        linhas = [cab] + [[p.get("catalogo") or p["perfil"], p.get("ifc") or p["perfil"], p.get("material") or "", int(p.get("pecas") or 0),
+                           r1(p["m"], 2), r1(p.get("kg_m"), 2), r1(p["kg"]), int(round(p["barra_m"])),
+                           int(p.get("barras_sem_aproveitamento") or 0), r1(p.get("kg_barra")), r1(p.get("kg_sem_aproveitamento")),
+                           int(p["barras"]), r1(p.get("kg_barra")), r1(p.get("kg_compra")),
+                           int(round(p["aproveitamento"])) if p.get("aproveitamento") is not None else None, ""] for p in perfis]
+        linhas.append(["TOTAL", "", "", sum(int(p.get("pecas") or 0) for p in perfis), r1(sum(p["m"] for p in perfis), 2), None,
+                       r1(sum(p["kg"] for p in perfis)), None, sum(int(p.get("barras_sem_aproveitamento") or 0) for p in perfis), None,
+                       r1(kg_sem), sum(int(p["barras"]) for p in perfis), None, r1(kg_com), None, ""])
+        abas.append({"nome": "Perfis e barras", "linhas": linhas, "total": True,
+                     "larguras": [22, 22, 8, 8, 10, 8, 11, 8, 10, 10, 11, 10, 10, 11, 10, 10]})
+    if C.get("chapas"):
+        linhas = [["Bitola", "Espessura", "Polegada", "No modelo", "Material", "Peças", "m²", "kg", "Chapas", "Pedido"]]
+        linhas += [[c.get("bitola") or "", c.get("mm") or c.get("rotulo") or "", c.get("polegada") or "", c.get("modelo") or "",
+                    c.get("material") or "", int(c["pecas"]), r1(c["m2"], 2), r1(c["kg"]), int(c["chapas"]), ""] for c in C["chapas"]]
+        linhas.append(["TOTAL", "", "", "", "", sum(int(c["pecas"]) for c in C["chapas"]), r1(sum(c["m2"] for c in C["chapas"]), 2),
+                       r1(sum(c["kg"] for c in C["chapas"])), sum(int(c["chapas"]) for c in C["chapas"]), ""])
+        abas.append({"nome": "Chapas", "linhas": linhas, "total": True, "larguras": [8, 11, 9, 16, 12, 8, 9, 10, 8, 10]})
+    fix = [["Item", "Descrição", "Qtd", "Pedido"]]
+    fix += [[pf["nome"], pf["descricao"], int(pf["qtd"]), ""] for pf in C.get("parafusos") or []]
+    fix += [["Porca %s" % b, "Porca sextavada Ø%s" % b, int(q), ""] for b, q in C.get("porcas") or []]
+    fix += [["Arruela %s" % b, "Arruela lisa Ø%s" % b, int(q), ""] for b, q in C.get("arruelas") or []]
+    fix += [["Químico %s" % q["nome"], "Químico de injeção %s, cartucho %d ml (%s furos, ~%s ml com %d%% de perda)"
+             % (q["nome"], q["cartucho_ml"], _n(q["furos"], 0), _n(q["ml_total"], 0), round(PERDA_QUIMICO * 100)), int(q["cartuchos"]), ""]
+            for q in C.get("quimicos") or []]
+    if len(fix) > 1:
+        abas.append({"nome": "Parafusos e chumbadores", "linhas": fix, "larguras": [34, 80, 9, 10]})
+    if lista and lista.get("posicoes"):
+        cab = ["Posição", "Nome", "Categoria", "Classe", "Perfil", "Material", "Qtd", "Comprimento (mm)", "Largura (mm)",
+               "Espessura (mm)", "Peso unit. (kg)", "Peso total (kg)", "Furos", "Conjuntos", "Observações"]
+        pos = lista["posicoes"]
+        linhas = [cab] + [[li.get("marca"), li.get("nome") or "", li.get("categoria") or "", li.get("classe") or "",
+                           li.get("perfil_nome") or li.get("perfil") or "", li.get("material") or "", int(li.get("quantidade") or 0),
+                           li.get("comprimento") or None, li.get("largura") or None, li.get("espessura") or None,
+                           r1(li.get("peso"), 2), r1(li.get("peso_total"), 2), li.get("furos") or "",
+                           ", ".join(li.get("conjuntos") or []), "; ".join(li.get("observacoes") or [])] for li in pos]
+        linhas.append(["TOTAL", "", "", "", "", "", sum(int(li.get("quantidade") or 0) for li in pos), None, None, None, None,
+                       r1(sum(float(li.get("peso_total") or 0.0) for li in pos), 2), "", "", ""])
+        abas.append({"nome": "Lista de materiais", "linhas": linhas, "total": True,
+                     "larguras": [22, 10, 12, 14, 22, 9, 7, 11, 10, 10, 10, 11, 14, 30, 30]})
+    if lista and lista.get("conjuntos"):
+        linhas = [["Conjunto", "Nome", "Categoria", "Quantidade", "Peças por unidade", "Composição", "Peso unit. (kg)", "Peso total (kg)"]]
+        linhas += [[c.get("marca"), c.get("nome") or "", c.get("categoria") or "", int(c.get("instancias") or 0),
+                    int(c.get("pecas_unidade") or 0), c.get("composicao_texto") or "", r1(c.get("peso_unitario"), 2),
+                    r1(c.get("peso_total"), 2)] for c in lista["conjuntos"]]
+        abas.append({"nome": "Conjuntos", "linhas": linhas, "larguras": [30, 10, 12, 10, 10, 60, 12, 12]})
+    return xlsx_simples.escrever(caminho, abas)
+
+
 # ============================================================ gravação
 #: Os números do último resumo gerado, lidos pelo resumo de orçamento.
 ARQ_NUMEROS = "resumo-numeros.json"
@@ -1784,4 +1917,13 @@ def gerar_resumos(pasta: str, R: dict, imprimir_pdf: bool = True) -> dict:
                     os.remove(paginado)
                 except OSError:
                     pass
+        if chave == "materiais":
+            # a planilha do resumo de materiais (09/10), com a lista de materiais da mesma pasta
+            try:
+                import json as _json
+                cam_l = os.path.join(pasta, "lista-de-materiais.json")
+                lista = _json.load(open(cam_l, encoding="utf-8")) if os.path.exists(cam_l) else None
+                saida[chave]["xlsx"] = planilha_de_materiais(R, lista, os.path.join(pasta, titulo + ".xlsx"))
+            except Exception as exc:                   # noqa: BLE001 — a planilha não segura os PDFs
+                saida[chave]["erro_xlsx"] = str(exc)
     return saida

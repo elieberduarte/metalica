@@ -644,6 +644,9 @@ function desenharPrevia() {
   alvo.replaceChildren(
     el('div', { class: 'doc-barra' }, alternar, el('span', { class: 'quando', texto: quando ? `gerado em ${dataBR(quando)}` : '' }), el('span', { class: 'sep' }),
       a.pdf ? el('a', { class: 'botao-m principal', href: a.pdf.url, target: '_blank', rel: 'noopener', texto: 'Abrir o PDF', title: `detalhamento/${a.pdf.nome}` }) : null,
+      // o resumo de materiais em planilha (09/10): baixa com o nome de entrega ("OBRA - Resumo de materiais (dd.mm.aaaa).xlsx")
+      (arq.materiais || {}).xlsx ? el('a', { class: 'botao-m', href: arq.materiais.xlsx.url, download: '', texto: 'Excel',
+        title: 'Baixar o resumo de materiais em planilha: resumo, perfis e barras, chapas, parafusos e chumbadores, lista de materiais e conjuntos' }) : null,
       a.html ? el('button', { type: 'button', class: 'botao-m', texto: 'Imprimir', onclick: () => { try { frame.contentWindow.print(); } catch (e) { window.open(a.html.url, '_blank'); } } }) : null,
       el('button', { type: 'button', class: 'botao-m', texto: 'Abrir pasta', onclick: abrirPasta })),
     frame);

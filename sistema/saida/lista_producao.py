@@ -1023,7 +1023,8 @@ def _css_extra(lista: dict) -> str:
 
 def documento_html(lista: dict) -> str:
     """HTML completo, sem paginador: abre no navegador e imprime pelo próprio Chrome."""
-    titulo = "Lista de materiais — %s" % ((lista.get("projeto") or {}).get("nome") or "")
+    from saida.entrega import nome_de_entrega                  # o nome que o Imprimir sugere (09/10)
+    titulo = nome_de_entrega((lista.get("projeto") or {}).get("nome") or "", "Lista de materiais")
     return ("<!DOCTYPE html>\n<html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>%s</title>"
             "<style>%s%s\nbody.lista { margin: 12mm auto; max-width: 270mm; padding: 0 8mm; }</style></head>"
             "<body class=\"lista\"><div class=\"lista-doc\">%s</div></body></html>"

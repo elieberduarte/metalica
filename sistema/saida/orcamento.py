@@ -626,6 +626,19 @@ def _linhas_fixadores(acessorios: Sequence[dict], precos: Precos) -> List[dict]:
     for nome, q in chumb:
         linhas.append(_linha("chumb:" + nome, "parafusos", "Chumbador %s (previsão)" % re.sub(r"(?i)chumbador\s*", "", nome).strip(),
                              q, "pç", None))
+    # o químico dos chumbadores químicos (09/10): os cartuchos pelo volume dos furos, a mesma conta do resumo de compra
+    from saida.resumos import volume_quimico_ml, cartuchos_quimico, EMBUTIMENTO_QUIMICO, PERDA_QUIMICO
+    ml, furos = 0.0, 0
+    for nome, q in chumb:
+        m = re.search(r"QU[IÍ]MICO.*?(\d+(?:[.,]\d+)?)\s*[xX×]\s*\d+", nome, re.I)
+        if m:
+            furos += q
+            ml += q * volume_quimico_ml(float(m.group(1).replace(",", ".")), EMBUTIMENTO_QUIMICO)
+    if furos:
+        c = cartuchos_quimico(ml)
+        linhas.append(_linha("quimico", "parafusos", "Químico de injeção HIT-RE 500 (cartucho %d ml)" % c["cartucho_ml"], c["cartuchos"],
+                             "pç", None, detalhe="%d furos, ~%d ml com %d%% de perda (embutimento %d mm)"
+                             % (furos, c["ml_total"], round(PERDA_QUIMICO * 100), EMBUTIMENTO_QUIMICO)))
     for nome, q in outros:
         linhas.append(_linha("acess:" + nome, "parafusos", nome, q, "pç", None, detalhe="não reconhecido na tabela"))
     return linhas
@@ -827,6 +840,7 @@ def _preco_txt(li) -> str:
 def html_resumo(R: dict) -> str:
     """O resumo no formato do R00 da equipe: descrição, quantidade, valor (tabela, com o fornecedor),
     valor total, e as duas colunas de fechamento do dono."""
+    from saida.entrega import nome_de_entrega                   # o título da página: o nome que o Imprimir sugere (09/10)
     c = R["cabecalho"]
     t = R["totais"]
     linhas_html = []
@@ -854,7 +868,7 @@ def html_resumo(R: dict) -> str:
     peso = t["aco_kg"]
     notas = [n_.strip(" •-") for n_ in str(R.get("notas") or "").splitlines() if n_.strip()]
     avisos_ = "".join("<li class=\"%s\">%s</li>" % (a["nivel"], _esc(a["texto"])) for a in R.get("avisos") or [])
-    return """<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Resumo de orçamento — %(obra)s</title>
+    return """<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>%(titulo_pagina)s</title>
 <style>
 @page { size: A4; margin: 14mm 12mm; }
 body { font: 9.5pt/1.3 Calibri, 'Segoe UI', Arial, sans-serif; color: #000; margin: 0; }
@@ -890,6 +904,7 @@ Colunas da direita: valores de fechamento. %(rskg)s
 %(avisos)s</div>
 </body></html>""" % {
         "obra": _esc(c.get("obra")), "data": _esc(c.get("data")),
+        "titulo_pagina": _esc(nome_de_entrega(c.get("obra") or "", "Resumo de orçamento")),
         "titulo": _esc(" – ".join(x for x in (c.get("obra"), " ".join(sub)) if x)),
         "opcao": ('<p class="cab">%s</p>' % _esc(c["opcao"])) if c.get("opcao") else "",
         "descricao": "".join('<p class="cab n">%s</p>' % _esc(l_) for l_ in str(c.get("descricao") or "").splitlines() if l_.strip()),

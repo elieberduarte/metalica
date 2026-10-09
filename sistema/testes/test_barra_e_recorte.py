@@ -69,3 +69,21 @@ def test_chumbador_quimico_e_parafuso_na_bitola_e_classe_do_modelo():
     assert rz._eh_chumbador("CHUMBADOR QUÍMICO HIT-V 12.7x190") and not rz._eh_chumbador("BOLT (A325) 12.7x80")
     assert rz._bitola_pol(12.7) == '1/2"' and rz._bitola_pol(19.05) == '3/4"' and rz._bitola_pol(16) == '5/8"'
     assert "ASTM A325" in rz.descricao_parafuso("M12.7x80", "A325")[1] and 'Ø1/2"' in rz.descricao_parafuso("M12.7x80")[1]
+
+
+def test_quimico_em_cartuchos_e_a_arruela_que_e_chapa():
+    """O químico dos chumbadores (09/10): o anel furo × barra no embutimento, +30%, em cartuchos de 500 ml; a arruela que
+    já é chapa do projeto (a CH2 do chumbador da CH1) não se compra solta; o orçamento ganha a linha dos cartuchos."""
+    from saida import resumos as rz
+    assert abs(rz.volume_quimico_ml(12.7, 150) - 5.05) < 0.05 and abs(rz.volume_quimico_ml(15.875, 150) - 13.07) < 0.05
+    assert rz.cartuchos_quimico(1000.0) == {"ml_total": 1300.0, "cartuchos": 3, "cartucho_ml": 500}
+    parafusos = [{"nome": "Chumbador", "descricao": "x", "qtd": 10, "parafuso": True, "d": 12.7, "sem_arruela": 10,
+                  "embutimento": 150.0, "quimico": "HIT-RE 500"},
+                 {"nome": "Parafuso", "descricao": "y", "qtd": 4, "parafuso": True, "d": 12.7}]
+    C = rz._compra({"perfis": [], "posicoes": []}, parafusos, {}, {})
+    assert dict(C["porcas"])['1/2"'] == 14 and dict(C["arruelas"])['1/2"'] == 4
+    (q,) = C["quimicos"]
+    assert q["furos"] == 10 and q["cartuchos"] == 1
+    R = orc.montar({"posicoes": [], "acessorios": [{"nome": "CHUMBADOR QUÍMICO HIT-V 15.875x250", "quantidade": 100}]}, None)
+    li = next(x for x in R["linhas"] if x["id"] == "quimico")
+    assert li["qtd"] == rz.cartuchos_quimico(100 * rz.volume_quimico_ml(15.875))["cartuchos"] == 4

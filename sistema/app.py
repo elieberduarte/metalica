@@ -2109,7 +2109,7 @@ def dados_dos_resumos(s: str) -> dict:
     arquivos = {}
     for chave, nome in (("obra", "resumo-da-obra"), ("materiais", "resumo-de-materiais")):
         a = {}
-        for ext in ("html", "pdf"):
+        for ext in ("html", "pdf", "xlsx"):                  # a planilha do resumo de materiais (09/10)
             cam = os.path.join(pasta, "%s.%s" % (nome, ext))
             if os.path.exists(cam):
                 a[ext] = _descrever_arquivo(cam, pasta)
@@ -2156,7 +2156,7 @@ def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
         g.tocar(s)
         saida = {"numeros": R["numeros"], "avisos": R.get("avisos") or [], "dados": dados}
         for k, v in arquivos.items():
-            saida[k] = {n: _descrever_arquivo(c, pasta) for n, c in v.items() if n in ("html", "pdf")}
+            saida[k] = {n: _descrever_arquivo(c, pasta) for n, c in v.items() if n in ("html", "pdf", "xlsx")}
             if v.get("erro_pdf"):
                 saida[k]["erro_pdf"] = v["erro_pdf"]
         return saida
@@ -4013,7 +4013,17 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(dados)))
         self.send_header("ETag", etag)
         self.send_header("Cache-Control", "no-cache")
-        if tipo == "application/dxf":
+        # o nome de entrega ao salvar (o usuário, 09/10): "OBRA - Arquivo (dd.mm.aaaa).ext" — o PDF abre na tela com
+        # esse nome para o "salvar"; o resto baixa com ele
+        entrega = None
+        if os.path.normcase(raiz_abs) == os.path.normcase(os.path.abspath(PROJETOS)):
+            from saida.entrega import nome_do_arquivo_servido
+            entrega = nome_do_arquivo_servido(caminho, PROJETOS)
+        if entrega:
+            modo = "inline" if caminho.lower().endswith(".pdf") else "attachment"
+            self.send_header("Content-Disposition", "%s; filename=\"%s\"; filename*=UTF-8''%s" % (
+                modo, entrega.encode("ascii", "replace").decode("ascii").replace('"', ""), quote(entrega)))
+        elif tipo == "application/dxf":
             self.send_header("Content-Disposition",
                              f'attachment; filename="{os.path.basename(caminho)}"')
         self.end_headers()
