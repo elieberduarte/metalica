@@ -175,6 +175,21 @@ const MODOS = {
       'Troque a combinação para uma ELS de vento e olhe o topo dos pilares. É a conferência mais simples e mais reveladora de um galpão.',
     ],
   },
+  pecas: {
+    titulo: 'N e M — os esforços de cada peça',
+    oque: 'Cada peça inteira (o pilar de baixo a cima, ainda que as vigas o partam em trechos; a viga de ponta a ponta) com a normal de maior valor e o maior momento ao longo dela, na combinação escolhida ou na envoltória das combinações últimas. N negativo comprime, positivo traciona; o M soma os dois planos. As peças marcadas (laranja) vão para o PDF, com os esforços na base e no topo por caso de carga, sem coeficientes, e a envoltória ELU com os esforços concomitantes.',
+    preocupe: [
+      'Para quem dimensiona a peça ou a ligação em outro programa: use os valores por caso do PDF e faça as combinações dele, ou a envoltória ELU com os concomitantes (N, V e M da mesma combinação).',
+      'Pilar rotulado nas duas pontas (as colunas metálicas apoiando vigas): o momento está no meio da altura, não na base — o PDF mostra o M máx e a altura dele.',
+    ],
+    ignore: [
+      'O rótulo em envoltória junta combinações diferentes: o N e o M dele podem não ser simultâneos. Para a verificação, use os concomitantes do PDF ou a verificação da própria tela.',
+    ],
+    dicas: [
+      'Ctrl+clique numa peça marca ou desmarca; a escolha fica guardada neste computador para o projeto.',
+      'Os nomes são os da planta de cargas: P + o número de controle do Tekla, CM1, CM2… nas colunas metálicas.',
+    ],
+  },
   reacoes: {
     titulo: 'Reações — o que chega nas bases',
     oque: 'As forças que a estrutura entrega à fundação em cada base: Fz (vertical), H (horizontal) e M (momento, só nas engastadas). Verde comprime, vermelho arranca.',
@@ -254,9 +269,9 @@ export function guia(D, RAIZ, estado) {
   const m = MODOS[estado.modo] || MODOS.modelo;
   const lista = (xs) => '<ul>' + xs.map(x => `<li>${x}</li>`).join('') + '</ul>';
   let comb = '';
-  if (['esforcos', 'tensoes', 'verificacao', 'deformada', 'reacoes'].includes(estado.modo)) {
+  if (['esforcos', 'pecas', 'tensoes', 'verificacao', 'deformada', 'reacoes'].includes(estado.modo)) {
     // a combinação guardada que não existe neste cálculo não aparece descrita (a "ELS 1 ·V0" no BRAMAIS, 09/10)
-    const c = (estado.comb === 'env' && !['tensoes', 'verificacao'].includes(estado.modo)) || !(D.combinacoes || {})[estado.comb] ? null : estado.comb;
+    const c = (estado.comb === 'env' && !['tensoes', 'verificacao', 'pecas'].includes(estado.modo)) || !(D.combinacoes || {})[estado.comb] ? null : estado.comb;
     comb = `<div class="g-comb"><b>${c && c !== 'env' ? c : 'Envoltória'}</b> — ${explicarCombinacao(c || 'env', c && D.combinacoes[c])}</div>`;
   }
   if (estado.modo === 'cargas' && estado.caso && D.casos[estado.caso]) {

@@ -1906,6 +1906,53 @@ def analise_estrutural_do_projeto(s: str, corpo: Optional[dict] = None, recalcul
     return saida
 
 
+def planta_de_cargas_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/analise-estrutural/planta-cargas: a planta de cargas da fundação (saida/planta_cargas.py) da
+    última análise gravada — os pilares nos eixos do projeto com as cargas no bloco por ação, em tf (09/10)"""
+    from saida import planta_cargas
+    g = _gerente()
+    pasta = g._existente(s)
+    try:
+        with open(os.path.join(pasta, ARQ_ANALISE), encoding="utf-8") as f:
+            analise = json.load(f)
+    except (OSError, ValueError):
+        raise ErroDeDados("calcule a estrutura primeiro: a planta de cargas sai do resultado da análise.")
+    r = planta_cargas.gerar(pasta, analise, _documento3d_do_projeto(s), g.ler(s))
+    return {"pdf": _descrever_arquivo(r["pdf"], pasta), "html": _descrever_arquivo(r["html"], pasta),
+            "pilares": r["pilares"], "eixos": r["eixos"]}
+
+
+def nomes_das_pecas_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/analise-estrutural/nomes-pecas: {nomes: {id: "CM1" | "P27"}} — os nomes dos pilares da planta
+    de cargas, para os rótulos do modo "N e M" da tela (09/10)"""
+    from saida import pecas_analise
+    pasta = _gerente()._existente(s)
+    try:
+        with open(os.path.join(pasta, ARQ_ANALISE), encoding="utf-8") as f:
+            analise = json.load(f)
+    except (OSError, ValueError):
+        return {"nomes": {}}
+    return {"nomes": pecas_analise.nomes_dos_pilares(analise, _documento3d_do_projeto(s))}
+
+
+def pdf_das_pecas_do_projeto(s: str, corpo: Optional[dict] = None) -> dict:
+    """POST /api/projetos/<s>/analise-estrutural/pecas-pdf {ids: [...]}: os esforços das peças marcadas na tela da análise
+    (saida/pecas_analise.py) — nas pontas por caso e a envoltória ELU, em tf (09/10)"""
+    from saida import pecas_analise
+    g = _gerente()
+    pasta = g._existente(s)
+    ids = [str(i) for i in ((corpo or {}).get("ids") or []) if i]
+    if not ids:
+        raise ErroDeDados("marque as peças na tela (Ctrl+clique) para gerar o PDF.")
+    try:
+        with open(os.path.join(pasta, ARQ_ANALISE), encoding="utf-8") as f:
+            analise = json.load(f)
+    except (OSError, ValueError):
+        raise ErroDeDados("calcule a estrutura primeiro: os esforços saem do resultado da análise.")
+    r = pecas_analise.gerar(pasta, analise, ids, _documento3d_do_projeto(s), g.ler(s))
+    return {"pdf": _descrever_arquivo(r["pdf"], pasta), "html": _descrever_arquivo(r["html"], pasta), "pecas": r["pecas"]}
+
+
 def cobertura_movel_do_projeto(s: str, corpo: Optional[dict] = None) -> dict:
     """POST /api/projetos/<s>/cobertura-movel {situacao: aberta | retraida}: a cobertura retrátil no modelo 3D — as mesmas
     tesouras e a mesma sanfona da análise (nucleo3d/cobertura_movel.py), na situação pedida. A escolha fica no projeto
@@ -4161,6 +4208,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(esforcos_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "analise-estrutural":
                     return self._json(analise_estrutural_do_projeto(partes[0]))
+                if len(partes) == 3 and partes[1] == "analise-estrutural" and partes[2] == "planta-cargas":
+                    return self._json(planta_de_cargas_do_projeto(partes[0]))
+                if len(partes) == 3 and partes[1] == "analise-estrutural" and partes[2] == "nomes-pecas":
+                    return self._json(nomes_das_pecas_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "materiais":
                     q = parse_qs(urlparse(self.path).query)
                     return self._json(lista_de_materiais(partes[0], recalcular=q.get("recalcular", ["0"])[0] in ("1", "true")))
@@ -4319,6 +4370,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(esforcos_do_projeto(partes[0], corpo, recalcular=True))
                 if len(partes) == 2 and partes[1] == "analise-estrutural":
                     return self._json(analise_estrutural_do_projeto(partes[0], corpo, recalcular=True))
+                if len(partes) == 3 and partes[1] == "analise-estrutural" and partes[2] == "pecas-pdf":
+                    return self._json(pdf_das_pecas_do_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "cobertura-movel":
                     return self._json(cobertura_movel_do_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":

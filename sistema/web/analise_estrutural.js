@@ -37,7 +37,7 @@ function el(tag, attrs = {}, ...filhos) {
 // ------------------------------------------------------------------ estado
 let D = null;                  // o resultado da situação à vista
 let RAIZ = null;               // o resultado do servidor (com a cobertura retrátil, a aberta + outras_situacoes)
-let estado = { modo: 'tensoes', caso: null, comb: 'env', esforco: 'Mz', escala: 1, escolhida: null, situacao: 'aberta', guia: true };
+let estado = { modo: 'tensoes', caso: null, comb: 'env', esforco: 'Mz', escala: 1, escolhida: null, situacao: 'aberta', guia: true, unidade: 'tf', rotulos: 'marcadas' };
 try { Object.assign(estado, JSON.parse(localStorage.getItem('ae.estado') || '{}'), { escolhida: null }); } catch (e) { /* */ }
 const guardar = () => { try { localStorage.setItem('ae.estado', JSON.stringify({ ...estado, escolhida: null })); } catch (e) { /* */ } };
 
@@ -343,6 +343,7 @@ function desenhar() {
     else if (modo === 'esforcos' && estado.esforco === 'N') rgb = rampaSinal(esforcosEm(i, fat, 0, cd)[0] / maxN);
     else if (modo === 'modelo') rgb = hexParaRgb(PAPEL_COR[b.papel] || '#888');
     else rgb = cinza;
+    if (modo === 'pecas' && b.ids && marcadas().has(b.ids[0])) rgb = [235, 120, 20];
     if (estado.escolhida === i) rgb = [255, 0, 200];
     const alvo = b.hipotese ? [posH, corH] : [pos, cor];
     alvo[0].push(...a, ...c);
@@ -356,6 +357,7 @@ function desenhar() {
   if (modo === 'esforcos') diagramas(fat, cd);
   if (modo === 'deformada') deformada();
   if (modo === 'reacoes') setasReacoes();
+  if (modo === 'pecas') rotulosDasPecas();
   legenda(maxN);
   pedirQuadro();
 }
@@ -512,6 +514,92 @@ function setasReacoes() {
   }
 }
 
+// ------------------------------------------------------------------ N e M por peça (09/10, o BRAMAIS: "uma planta que
+// mostrasse a carga e o momento de cada um dos pilares e vigas" e o PDF dos pilares marcados — as colunas metálicas do
+// oitão vêm marcadas). A peça é a entidade do 3D (o pilar partido pelos nós das vigas é um só); Ctrl+clique marca
+const TF = 9.80665;
+const CHAVE_MARCADAS = 'ae.marcadas.' + PROJETO;
+let _marcadas = null;
+function marcadas() {
+  if (_marcadas) return _marcadas;
+  let lidas = null;
+  try { lidas = JSON.parse(localStorage.getItem(CHAVE_MARCADAS) || 'null'); } catch (e) { /* */ }
+  // sem escolha guardada: as colunas metálicas (no pré-moldado, as que seguram as vigas da ponta)
+  _marcadas = new Set(Array.isArray(lidas) ? lidas : (D ? D.barras.filter(b => b.elemento === 'coluna_aco' && b.ids).map(b => b.ids[0]) : []));
+  return _marcadas;
+}
+function guardarMarcadas() { try { localStorage.setItem(CHAVE_MARCADAS, JSON.stringify([...marcadas()])); } catch (e) { /* */ } }
+let NOMES = {};               // {id: "CM1" | "P27"}: os nomes da planta de cargas (do servidor)
+async function lerNomes() {
+  try { const r = await fetch(API + '/nomes-pecas', { cache: 'no-store' }); if (r.ok) NOMES = (await r.json()).nomes || {}; } catch (e) { /* */ }
+  if (estado.modo === 'pecas') { montarControles(); desenhar(); }
+}
+function pecasDoModelo() {
+  if (D._pecas) return D._pecas;
+  const m = new Map();
+  D.barras.forEach((b, i) => {
+    if (b.hipotese || !b.ids || !b.ids.length) return;
+    const id = b.ids[0];
+    if (!m.has(id)) m.set(id, { id, barras: [], pilar: b.papel === 'pilar', marca: b.marca || b.perfil, perfil: b.perfil });
+    m.get(id).barras.push(i);
+  });
+  D._pecas = m;
+  return m;
+}
+const nomePeca = (pc) => NOMES[pc.id] || pc.marca || pc.perfil || 'peça';
+// N (o de maior valor absoluto) e o maior M (os dois planos somados) da peça na combinação, ou na envoltória ELU
+function nmDaPeca(pc) {
+  const combs = estado.comb === 'env' ? Object.keys(D.combinacoes).filter(c => D.combinacoes[c].tipo === 'ELU') : [combDoDesenho()];
+  let N = 0, M = 0;
+  for (const c of combs) {
+    const fat = fatoresDe(c);
+    for (const i of pc.barras) {
+      const L = D.barras[i].L;
+      for (let k = 0; k < ESTACOES; k++) {
+        const e = esforcosEm(i, fat, L * k / (ESTACOES - 1), c);
+        if (Math.abs(e[0]) > Math.abs(N)) N = e[0];
+        M = Math.max(M, Math.hypot(e[4], e[5]));
+      }
+    }
+  }
+  return { N, M };
+}
+const emUnidade = (v, momento) => estado.unidade === 'tf' ? `${nf(v / TF, momento ? 2 : 1)} ${momento ? 'tf·m' : 'tf'}` : `${nf(v, 1)} ${momento ? 'kN·m' : 'kN'}`;
+function rotulosDasPecas() {
+  const sel = marcadas();
+  for (const pc of pecasDoModelo().values()) {
+    const marcada = sel.has(pc.id);
+    if (estado.rotulos === 'marcadas' && !marcada) continue;
+    if (estado.rotulos === 'pilares' && !pc.pilar && !marcada) continue;
+    const r = nmDaPeca(pc);
+    if (Math.abs(r.N) < 0.05 && r.M < 0.05) continue;
+    // o pilar: o rótulo no topo; a viga: no meio
+    let p = null;
+    if (pc.pilar) {
+      for (const i of pc.barras) for (const n of [D.barras[i].a, D.barras[i].b]) if (!p || D.nos[n][2] > p[2]) p = D.nos[n];
+      p = [p[0], p[1], p[2] + raio * 0.01];
+    } else {
+      const b0 = D.barras[pc.barras[0]], b1 = D.barras[pc.barras[pc.barras.length - 1]];
+      const ps = [D.nos[b0.a], D.nos[b0.b], D.nos[b1.a], D.nos[b1.b]];
+      p = [0, 1, 2].map(k => ps.reduce((s, q) => s + q[k], 0) / 4);
+    }
+    const s = texto(`${nomePeca(pc)}  N ${emUnidade(r.N, false)} · M ${emUnidade(r.M, true)}`, marcada ? '#b4530a' : (r.N < 0 ? '#1f5fbf' : '#c0392b'));
+    s.position.set(...p); grupo.add(s);
+  }
+}
+async function pdfDasMarcadas(botao) {
+  const ids = [...marcadas()];
+  if (!ids.length) { alert('Marque as peças com Ctrl+clique.'); return; }
+  const antes = botao.textContent; botao.textContent = 'Gerando…'; botao.disabled = true;
+  try {
+    const r = await fetch(API + '/pecas-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+    window.open(j.pdf.url + '?t=' + Date.now(), '_blank');
+  } catch (e) { alert('Não foi possível gerar o PDF: ' + e.message); }
+  finally { botao.textContent = antes; botao.disabled = false; }
+}
+
 function legenda(maxN) {
   const L = $('#legenda');
   const m = estado.modo;
@@ -552,6 +640,17 @@ tela.addEventListener('pointerup', (ev) => {
     const d = Math.hypot(px[0] - a[0] - dx * t, px[1] - a[1] - dy * t);
     if (d < dm) { dm = d; melhor = i; }
   });
+  if ((ev.ctrlKey || ev.metaKey) && melhor !== null) {
+    const id = (D.barras[melhor].ids || [])[0];
+    if (id) {
+      const s = marcadas();
+      if (s.has(id)) s.delete(id); else s.add(id);
+      guardarMarcadas();
+      if (estado.modo !== 'pecas') { estado.modo = 'pecas'; guardar(); }
+      montarControles(); desenhar();
+      return;
+    }
+  }
   estado.escolhida = melhor;
   painelPeca();
   desenhar();
@@ -785,6 +884,27 @@ function montarControles() {
     const s = el('select', {}, ...Object.entries(ESFORCOS).map(([k, [t]]) => el('option', { value: k, texto: t, selected: estado.esforco === k ? 'selected' : undefined })));
     s.onchange = () => { estado.esforco = s.value; guardar(); desenhar(); };
     linha('Esforço', s);
+  }
+  if (m === 'pecas') {
+    linha('Combinação', selComb(true, true));
+    const u = el('select', {}, ...[['tf', 'tf e tf·m'], ['kN', 'kN e kN·m']].map(([v, t]) => el('option', { value: v, texto: t, selected: estado.unidade === v ? 'selected' : undefined })));
+    u.onchange = () => { estado.unidade = u.value; guardar(); desenhar(); };
+    linha('Unidade', u);
+    const q = el('select', {}, ...[['marcadas', 'só as marcadas'], ['pilares', 'os pilares e as marcadas'], ['todas', 'todas as peças']].map(([v, t]) => el('option', { value: v, texto: t, selected: estado.rotulos === v ? 'selected' : undefined })));
+    q.onchange = () => { estado.rotulos = q.value; guardar(); desenhar(); };
+    linha('Rótulos', q);
+    const P = pecasDoModelo();
+    const lista = [...marcadas()].map(id => P.get(id)).filter(Boolean);
+    const nat = (t) => String(t).split(/(\d+)/).map((x, k) => k % 2 ? x.padStart(6, '0') : x).join('');
+    lista.sort((a, b) => (a.pilar === b.pilar ? 0 : a.pilar ? -1 : 1) || nat(nomePeca(a)).localeCompare(nat(nomePeca(b))));
+    const bp = el('button', { type: 'button', texto: `PDF das peças marcadas (${lista.length})`, disabled: lista.length ? undefined : true });
+    bp.onclick = () => pdfDasMarcadas(bp);
+    const bl = el('button', { type: 'button', class: 'sec', texto: 'Desmarcar todas', disabled: lista.length ? undefined : true });
+    bl.onclick = () => { marcadas().clear(); guardarMarcadas(); montarControles(); desenhar(); };
+    C.append(el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin:4px 0' }, bp, bl));
+    C.append(el('div', { class: 'sub', style: 'margin:2px 0 6px' }, lista.length
+      ? el('span', { html: 'Marcadas: ' + lista.map(pc => `<b>${nomePeca(pc)}</b>`).join(', ') + ' — Ctrl+clique numa peça marca ou desmarca.' })
+      : 'Nenhuma peça marcada — Ctrl+clique numa peça para marcar.'));
   }
   if (m === 'tensoes') linha('Combinação', selComb(true));
   if (m === 'verificacao') linha('Combinação', selComb(true, true));
@@ -1386,7 +1506,22 @@ function aplicar(dados) {
   montarControles(); painelRanking(); painelSegunda(); painelReacoes(); painelAncoragem(); painelBases(); painelCarrinho(); painelLigacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
   if (!aplicar._vista) { vista('iso'); aplicar._vista = true; }
   desenhar();
+  lerNomes();
 }
+
+// a planta de cargas da fundação (09/10): gera o PDF da última análise e abre
+$('#btn-planta-cargas').addEventListener('click', async (ev) => {
+  ev.preventDefault();
+  const b = ev.currentTarget, antes = b.textContent;
+  b.textContent = 'Gerando…';
+  try {
+    const r = await fetch(API + '/planta-cargas', { cache: 'no-store' });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+    window.open(j.pdf.url + '?t=' + Date.now(), '_blank');
+  } catch (e) { alert('Não foi possível gerar a planta de cargas: ' + e.message); }
+  finally { b.textContent = antes; }
+});
 
 async function carregar() {
   const r = await fetch(API, { cache: 'no-store' });
