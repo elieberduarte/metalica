@@ -620,6 +620,9 @@ function blocoDaVerificacao(pc, V) {
   if (pc.esf) {
     const s = pc.esf;
     tab.push(`<tr><td>Solicitantes</td><td>N = ${nf(s.N, 1)} kN · M<sub>z</sub> = ${nf(s.Mz, 2)} · M<sub>y</sub> = ${nf(s.My, 2)} kN·m · V = ${nf(Math.hypot(s.Vy, s.Vz), 1)} kN</td></tr>`);
+    // as mesmas em tf (o usuário, 09/10: "apresentar também as solicitantes em tf"); 1 tf = 9,80665 kN
+    const tf = (v) => v / 9.80665;
+    tab.push(`<tr><td>em tf</td><td>N = ${nf(tf(s.N), 2)} tf · M<sub>z</sub> = ${nf(tf(s.Mz), 2)} · M<sub>y</sub> = ${nf(tf(s.My), 2)} tf·m · V = ${nf(tf(Math.hypot(s.Vy, s.Vz)), 2)} tf</td></tr>`);
     const b1 = (v) => v >= 99 ? '∞ (N ≥ Ne)' : nf(v, 3);
     if (pc.B1) tab.push(`<tr><td>P-δ (B1)</td><td>B1 = ${b1(pc.B1[0])} (z) · ${b1(pc.B1[1])} (y); C<sub>m</sub> ${nf(pc.Cm[0], 2)} · ${nf(pc.Cm[1], 2)}; N<sub>e</sub> ${nf(pc.Ne[0], 0)} · ${nf(pc.Ne[1], 0)} kN</td></tr>`);
     const p = pc.partes || {};
