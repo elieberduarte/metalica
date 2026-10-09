@@ -69,6 +69,61 @@ controles.addEventListener('change', pedirQuadro);
 // da planta da estrutura) ou, fora dele, o alvo da câmera (o centro da vista) — o zoom do OrbitControls
 // vai para o alvo e, no vazio, a câmera "ia embora" do modelo. Câmera e alvo escalam juntos em volta do foco; não passa dele.
 let caixaModelo = new THREE.Box3();
+/** O ponto da barra sob o cursor (a até 12 px dela na tela, a mais perto): a âncora do zoom, do pan e do giro (09/10) */
+function pontoNaBarra(cx, cy) {
+  if (!D || !D.barras) return null;
+  const r = tela.getBoundingClientRect();
+  const px = [cx - r.left, cy - r.top];
+  camera.updateMatrixWorld();
+  const proj = (p) => { const v = new THREE.Vector3(...p).project(camera); return [(v.x + 1) / 2 * r.width, (1 - v.y) / 2 * r.height, v.z]; };
+  let melhor = null, dm = 12;
+  D.barras.forEach((b) => {
+    const a = proj(D.nos[b.a]), c = proj(D.nos[b.b]);
+    if (a[2] > 1 || c[2] > 1 || a[2] < -1 || c[2] < -1) return;
+    const dx = c[0] - a[0], dy = c[1] - a[1], L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, ((px[0] - a[0]) * dx + (px[1] - a[1]) * dy) / L2)) : 0;
+    const d = Math.hypot(px[0] - a[0] - dx * t, px[1] - a[1] - dy * t);
+    if (d < dm) { dm = d; melhor = new THREE.Vector3(...D.nos[b.a]).lerp(new THREE.Vector3(...D.nos[b.b]), t); }
+  });
+  return melhor;
+}
+// O giro (botão esquerdo) em volta da barra sob o cursor, como no editor e no modo ver; no vazio, o do OrbitControls
+tela.addEventListener('pointerdown', (ev) => {
+  if (ev.pointerType === 'touch' || ev.button !== 0) return;
+  const pivo = pontoNaBarra(ev.clientX, ev.clientY);
+  if (!pivo) return;
+  const antes = controles.enableRotate;
+  controles.enableRotate = false;
+  let ultimo = [ev.clientX, ev.clientY];
+  const mover = (e) => {
+    const dx = e.clientX - ultimo[0], dy = e.clientY - ultimo[1];
+    ultimo = [e.clientX, e.clientY];
+    if (!dx && !dy) return;
+    const k = (2 * Math.PI / Math.max(tela.clientHeight || 1, 1)) * controles.rotateSpeed;
+    const cima = new THREE.Vector3(0, 0, 1);
+    const dir = controles.target.clone().sub(camera.position).normalize();
+    const direita = new THREE.Vector3().crossVectors(dir, cima);
+    const q = new THREE.Quaternion().setFromAxisAngle(cima, -dx * k);
+    if (direita.lengthSq() > 1e-10) {
+      const junto = q.clone().multiply(new THREE.Quaternion().setFromAxisAngle(direita.normalize(), -dy * k));
+      const polar = Math.acos(Math.max(-1, Math.min(1, dir.clone().applyQuaternion(junto).dot(cima))));
+      if (polar > 0.02 && polar < Math.PI - 0.02) q.copy(junto);
+    }
+    for (const v of [camera.position, controles.target]) v.sub(pivo).applyQuaternion(q).add(pivo);
+    camera.lookAt(controles.target);
+    controles.update();
+    pedirQuadro();
+  };
+  const soltar = () => {
+    window.removeEventListener('pointermove', mover, true);
+    window.removeEventListener('pointerup', soltar, true);
+    window.removeEventListener('pointercancel', soltar, true);
+    controles.enableRotate = antes;
+  };
+  window.addEventListener('pointermove', mover, true);
+  window.addEventListener('pointerup', soltar, true);
+  window.addEventListener('pointercancel', soltar, true);
+}, { capture: true });
 tela.addEventListener('wheel', (ev) => {
   if (!ev.deltaY || caixaModelo.isEmpty()) return;
   ev.preventDefault();
@@ -81,7 +136,9 @@ tela.addEventListener('wheel', (ev) => {
   const folga = raio * 0.25;
   const chao = new THREE.Plane(new THREE.Vector3(0, 0, 1), -caixaModelo.min.z);
   let foco = new THREE.Vector3();
-  const noChao = ray.ray.intersectPlane(chao, foco) && foco.x >= caixaModelo.min.x - folga && foco.x <= caixaModelo.max.x + folga
+  const naBarra = pontoNaBarra(ev.clientX, ev.clientY);
+  if (naBarra) foco.copy(naBarra);
+  const noChao = !!naBarra || ray.ray.intersectPlane(chao, foco) && foco.x >= caixaModelo.min.x - folga && foco.x <= caixaModelo.max.x + folga
     && foco.y >= caixaModelo.min.y - folga && foco.y <= caixaModelo.max.y + folga && foco.distanceTo(camera.position) <= raio * 6;
   if (!noChao) foco = controles.target.clone();
   const cliques = Math.max(-5, Math.min(5, ev.deltaY / (ev.deltaMode === 1 ? 3 : ev.deltaMode === 2 ? 1 : 100)));
@@ -95,6 +152,55 @@ tela.addEventListener('wheel', (ev) => {
   controles.update();
   pedirQuadro();
 }, { capture: true, passive: false });
+// O pan do botão direito "agarra" o ponto sob o cursor (o chão do modelo ou o plano do alvo) e ele acompanha o mouse — o do
+// OrbitControls anda pela distância até o alvo, que o zoom acima traz junto, e o pan quase parava (09/10)
+tela.addEventListener('pointerdown', (ev) => {
+  if (ev.pointerType === 'touch' || ev.button !== 2 || caixaModelo.isEmpty()) return;
+  const r = tela.getBoundingClientRect();
+  const ray = new THREE.Raycaster();
+  const raioEm = (cx, cy) => {
+    const ndc = new THREE.Vector2((cx - r.left) / Math.max(r.width, 1) * 2 - 1, -((cy - r.top) / Math.max(r.height, 1)) * 2 + 1);
+    camera.updateMatrixWorld();
+    ray.setFromCamera(ndc, camera);
+    return ray.ray;
+  };
+  const folga = raio * 0.25;
+  const chao = new THREE.Plane(new THREE.Vector3(0, 0, 1), -caixaModelo.min.z);
+  let ancora = new THREE.Vector3();
+  const r0 = raioEm(ev.clientX, ev.clientY);
+  const naBarra = pontoNaBarra(ev.clientX, ev.clientY);
+  if (naBarra) ancora.copy(naBarra);
+  const noChao = !!naBarra || r0.intersectPlane(chao, ancora) && ancora.x >= caixaModelo.min.x - folga && ancora.x <= caixaModelo.max.x + folga
+    && ancora.y >= caixaModelo.min.y - folga && ancora.y <= caixaModelo.max.y + folga && ancora.distanceTo(camera.position) <= raio * 6;
+  const plano = new THREE.Plane();
+  if (!noChao) {
+    plano.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), controles.target);
+    if (!r0.intersectPlane(plano, ancora)) return;
+  } else {
+    plano.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), ancora);
+  }
+  const antes = controles.enablePan;
+  controles.enablePan = false;
+  const mover = (e) => {
+    const q = raioEm(e.clientX, e.clientY).intersectPlane(plano, new THREE.Vector3());
+    if (!q) return;
+    const d = ancora.clone().sub(q);
+    if (d.lengthSq() < 1e-10) return;
+    camera.position.add(d);
+    controles.target.add(d);
+    controles.update();
+    pedirQuadro();
+  };
+  const soltar = () => {
+    window.removeEventListener('pointermove', mover, true);
+    window.removeEventListener('pointerup', soltar, true);
+    window.removeEventListener('pointercancel', soltar, true);
+    controles.enablePan = antes;
+  };
+  window.addEventListener('pointermove', mover, true);
+  window.addEventListener('pointerup', soltar, true);
+  window.addEventListener('pointercancel', soltar, true);
+}, { capture: true });
 function redimensionar() {
   const r = tela.parentElement.getBoundingClientRect();
   renderer.setSize(r.width, r.height, false);

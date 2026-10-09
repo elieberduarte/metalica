@@ -173,6 +173,7 @@ export class Visor3D {
       this.controles.zoomToCursor = true;
       tela.addEventListener('pointerdown', (ev) => this._orbitarNoCursor(ev), { capture: true });
       tela.addEventListener('wheel', (ev) => this._zoomNaPeca(ev), { capture: true, passive: false });
+      tela.addEventListener('pointerdown', (ev) => this._panNoCursor(ev), { capture: true });
     }
     this.controles.addEventListener('change', () => this.pedirQuadro());
     this.controles.addEventListener('start', () => this._movendo(true));
@@ -748,9 +749,10 @@ export class Visor3D {
   _orbitarNoCursor(ev) {
     if (ev.pointerType === 'touch' || (ev.button !== 0 && ev.button !== 1) || !this.fichas) return;
     const r = this.tela.getBoundingClientRect();
-    const achado = this.pontoEm(ev.clientX - r.left, ev.clientY - r.top);
-    if (!achado) return;
-    const pivo = new THREE.Vector3(achado.local[0], achado.local[1], achado.local[2]);
+    // o ponto conferido (dentro do modelo e no raio do cursor): o da placa pode vir errado e o giro em volta dele levava
+    // o modelo embora (09/10)
+    const pivo = this._focoSeguro(ev.clientX - r.left, ev.clientY - r.top);
+    if (!pivo) return;
     this.controles.enableRotate = false;
     let ultimo = { x: ev.clientX, y: ev.clientY }, mexeu = false;
     const mover = (e) => {
@@ -830,6 +832,50 @@ export class Visor3D {
                         : new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(f.x[0], f.x[1], f.x[2]), new THREE.Vector3(600, 600, 600));
     const p = raio.ray.intersectBox(caixaPeca, new THREE.Vector3());
     return p && caixa.containsPoint(p) ? p : null;
+  }
+
+  /** O pan do botão direito "agarra" o ponto sob o cursor (a peça ou o chão; no vazio, o plano do alvo): ele acompanha
+   *  o mouse exatamente, perto ou longe. O do OrbitControls anda pela distância até o alvo — depois do zoom na peça o
+   *  alvo vem junto e o pan quase parava (09/10). */
+  _panNoCursor(ev) {
+    if (ev.pointerType === 'touch' || ev.button !== 2 || !this.fichas) return;
+    const r = this.tela.getBoundingClientRect();
+    const x0 = ev.clientX - r.left, y0 = ev.clientY - r.top;
+    const ancora = this._focoSeguro(x0, y0) || this._focoNoVazio(x0, y0);
+    if (!ancora) return;
+    const cam = this.camera;
+    const plano = new THREE.Plane().setFromNormalAndCoplanarPoint(cam.getWorldDirection(new THREE.Vector3()), ancora);
+    const raio = new THREE.Raycaster();
+    const noPlano = (cx, cy) => {
+      const ndc = new THREE.Vector2(cx / Math.max(this.tela.clientWidth, 1) * 2 - 1, -(cy / Math.max(this.tela.clientHeight, 1)) * 2 + 1);
+      cam.updateMatrixWorld();
+      raio.setFromCamera(ndc, cam);
+      return raio.ray.intersectPlane(plano, new THREE.Vector3());
+    };
+    const antes = this.controles.enablePan;
+    this.controles.enablePan = false;
+    let mexeu = false;
+    const mover = (e) => {
+      const q = noPlano(e.clientX - r.left, e.clientY - r.top);
+      if (!q) return;
+      const d = ancora.clone().sub(q);
+      if (d.lengthSq() < 1e-10) return;
+      if (!mexeu) { mexeu = true; this._movendo(true); }
+      cam.position.add(d);
+      this.controles.target.add(d);
+      this.controles.update();
+      this.pedirQuadro();
+    };
+    const soltar = () => {
+      window.removeEventListener('pointermove', mover, true);
+      window.removeEventListener('pointerup', soltar, true);
+      window.removeEventListener('pointercancel', soltar, true);
+      this.controles.enablePan = antes;
+      if (mexeu) this._movendo(false);
+    };
+    window.addEventListener('pointermove', mover, true);
+    window.addEventListener('pointerup', soltar, true);
+    window.addEventListener('pointercancel', soltar, true);
   }
 
   /** Sem peça sob o cursor, o foco do zoom como no editor (camera.js, _focoDoCursor): o chão do modelo (a cota mais
