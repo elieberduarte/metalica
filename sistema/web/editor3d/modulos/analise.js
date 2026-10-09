@@ -101,6 +101,17 @@ export class MetodosAnalise {
    */
   async _calcularProjetoImportado({ forcar = false, trocas = null } = {}) {
     if (this._calculando) return false;
+    // o modelo de concreto (o IFC do pré-moldado): a análise global na tela da análise estrutural — o cálculo do IFC daqui
+    // é o das tesouras e terças de aço e pedia o detalhamento (BRAMAIS, 09/10)
+    if (this._ePreMoldado()) {
+      const url = `/analise-estrutural?projeto=${encodeURIComponent(this.projeto)}`;
+      this.dica('Modelo pré-moldado: abrindo a análise global da estrutura…');
+      if (window.parent !== window) {
+        try { window.parent.postMessage({ metalica: 'navegar', url }, location.origin); return true; } catch { /* abre aqui */ }
+      }
+      location.href = url;
+      return true;
+    }
     if (this.analise && !forcar && !trocas) { this._mostrarAnalise(true); return true; }
     let corpo;
     if (trocas) {
@@ -268,6 +279,19 @@ export class MetodosAnalise {
     r.calculo.parametros = r.calculo.parametros || r.parametros || {};
     this.aplicarAnalise(r.calculo, { mostrar: false });
     this.dica(`Projeto aberto. Há um cálculo gravado${r.quando ? ` (${r.quando})` : ''}: "Mostrar análise" o traz de volta; "Recalcular" refaz.`);
+  }
+
+  /** O modelo é a estrutura de concreto (pilares e vigas de concreto em maior número que as barras de aço) — a mesma
+   *  regra de nucleo3d/analise_premoldado.py (e_premoldado). */
+  _ePreMoldado() {
+    let conc = 0, aco = 0;
+    for (const e of this.documento.entidades.values()) {
+      const t = String((e.atributos || {}).tipo_ifc || '');
+      if (e.tipo === 'solido' && /CONCRET|FCK/i.test(String(e.material || '')) && (t === 'IfcColumn' || t === 'IfcBeam')
+          && /^(PILAR|VIGA)/i.test(String(e.nome || ''))) conc++;
+      else if (e.tipo === 'barra' && ['pilar', 'viga', 'terça'].includes(e.papel)) aco++;
+    }
+    return conc >= 10 && conc > aco;
   }
 
   /** Diálogo dos parâmetros do cálculo: vento, cargas, apoios, aços. Devolve null se cancelado. */
