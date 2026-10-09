@@ -996,6 +996,7 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
     resto em 6 m), chapas em chapas comerciais de 1,20 × 3,00 (pela área, com a perda), parafusos, porcas e arruelas
     separados e somados por bitola, telhas por perfil em ml e m²."""
     perfis = []
+    pos_por_marca = {li.get("marca"): li for li in lista.get("posicoes") or []}
     for g in lista.get("perfis") or []:
         b = g.get("barras") or {}
         perfis.append({"perfil": com_bitola(g.get("perfil") or ""), "material": g.get("material") or "", "kg": float(g.get("peso") or 0.0),
@@ -1013,6 +1014,11 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         pf["emendadas"] = len(b.get("emendadas") or []) if g.get("emenda") else 0
         sem = (g.get("barras_sem_emenda") or {}).get("quantidade")
         pf["barras_sem_emenda"] = int(sem) if g.get("emenda") and sem else 0
+        # sem aproveitamento (09/10, para comparar lado a lado): cada posição cortada só das barras dela — a sobra não
+        # serve a outra peça — e a peça maior que a barra em barras inteiras, sem emenda
+        pf["barras_sem_aproveitamento"] = _barras_sem_aproveitamento(
+            [pos_por_marca[mk] for mk in g.get("posicoes") or [] if mk in pos_por_marca], float(b.get("comprimento") or 0.0))
+        pf["kg_sem_aproveitamento"] = pf["kg_barra"] * pf["barras_sem_aproveitamento"]
     try:
         perda = float(str(dados.get("perda_chapas") or "").replace(",", ".").replace("%", "")) if dados.get("perda_chapas") else PERDA_CHAPAS
     except ValueError:
@@ -1046,6 +1052,30 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
     return {"perfis": perfis, "chapas": chapas, "outros_aco": _outros_aco(lista), "perda_chapas": perda, "chapa_comercial": CHAPA_COMERCIAL,
             "parafusos": pf, "porcas": sorted(porcas.items(), key=lambda kv: ordem_b(kv[0])),
             "arruelas": sorted(arruelas.items(), key=lambda kv: ordem_b(kv[0])), "telhas": list(telhas_p.values())}
+
+
+def _mesmo_nome(perfil: str) -> str:
+    """O nome do perfil para comparar o do catálogo com o do IFC: "TQ 50×50×3,0" e "TQ 50x50x3,0" são o mesmo."""
+    return str(perfil or "").upper().replace("×", "X").replace(" ", "").replace(",", ".")
+
+
+def _barras_sem_aproveitamento(posicoes: List[dict], barra: float) -> int:
+    """Barras comerciais sem aproveitamento: cada posição só das barras dela (n peças por barra, com a perda de corte
+    entre elas); a peça maior que a barra leva ceil(L / barra) barras inteiras."""
+    from saida.lista_producao import PERDA_CORTE
+    if barra <= 0:
+        return 0
+    n = 0
+    for li in posicoes:
+        L, q = float(li.get("comprimento") or 0.0), int(li.get("quantidade") or 0)
+        if L <= 0 or q <= 0:
+            continue
+        if L > barra + 1e-6:
+            n += q * int(math.ceil(L / barra - 1e-9))
+        else:
+            por_barra = max(1, int((barra + PERDA_CORTE) // (L + PERDA_CORTE)))
+            n += int(math.ceil(q / por_barra - 1e-9))
+    return n
 
 
 def _outros_aco(lista: dict) -> List[dict]:
@@ -1170,6 +1200,17 @@ table.tes td, table.tes th { padding: 1.1mm 1.1mm; }
 tr.compra-similar td { background: #fff4d6; } tr.compra-similar td b, tr.compra-similar .cinza { color: #7a4f00; }
 tr.compra-fora td { background: #fde4e1; } tr.compra-fora td b, tr.compra-fora .cinza { color: #9b1c1c; }
 tr.compra-escolhido td { background: #e3edff; } tr.compra-escolhido td b, tr.compra-escolhido .cinza { color: #0b3d91; }
+/* a compra de perfis com e sem aproveitamento, lado a lado (09/10): um bloco de cada cor */
+table th.ap-com, table td.ap-com, tr td.ap-com, .legenda-compra .ap-com { background: #e6f2e1; }
+table th.ap-sem, table td.ap-sem, tr td.ap-sem, .legenda-compra .ap-sem { background: #fbe9dc; }
+tr.grupos th { font-size: 7.4pt; text-align: center; letter-spacing: .04em; border-bottom: none; }
+tr.grupos th.ap-com { color: #2f5d1e; } tr.grupos th.ap-sem { color: #8a3d0c; }
+tr.grupos th.ap-proj { color: var(--pri); border-bottom: 1.2pt solid var(--pri); }
+table.compra-perfis { font-size: 7pt; table-layout: fixed; width: 100%; }
+table.compra-perfis th, table.compra-perfis td { padding-left: .8mm; padding-right: .8mm; }
+table.compra-perfis th { font-size: 6.2pt; letter-spacing: 0; padding-left: 1.4mm; padding-right: 1.4mm; }
+table.compra-perfis td:first-child { overflow-wrap: anywhere; }
+table.compra-perfis .cinza { font-size: 6.4pt; }
 .legenda-compra { font-size: 7.2pt; color: var(--mudo); margin: .6mm 0 2.4mm; }
 .legenda-compra span { display: inline-block; width: 3.4mm; height: 2.6mm; vertical-align: -.3mm; margin: 0 1.2mm 0 2.6mm; border-radius: .6mm; }
 .legenda-compra span:first-child { margin-left: 0; }
@@ -1564,28 +1605,46 @@ def _html_compra(R: dict) -> str:
             elif cat and p.get("similar"):
                 cima, baixo = cat, "similar ao IFC: %s" % p["perfil"]
             elif cat:
-                cima, baixo = cat, ("IFC: %s" % p["perfil"]) if cat.replace(" ", "") != p["perfil"].replace(" ", "") else ""
+                cima, baixo = cat, ("IFC: %s" % p["perfil"]) if _mesmo_nome(cat) != _mesmo_nome(p["perfil"]) else ""
             else:
                 cima, baixo = p["perfil"], ("fora do catálogo e sem similar (kg/m pelas medidas)" if p.get("fora_do_catalogo") else "")
             # a tela da lista põe o clique no nome (trocar pelo parecido do catálogo); no PDF é só o texto
             return "<b class=\"trocar-perfil\" data-perfil=\"%s\">%s</b>%s" % (
                 _esc(p.get("ifc") or p["perfil"]), _esc(cima), ("<br><span class=\"cinza\">%s</span>" % _esc(baixo)) if baixo else "")
-        # o kg das peças (o que vai na obra) e o de compra: as barras comerciais inteiras, com a sobra (07/10)
-        h.append(_tabela(["Perfil", "Material", ("Peças", "r"), ("m", "r"), ("kg/m", "r"), ("kg peças", "r"), ("Barra", "r"), ("Barras", "r"),
-                          ("kg/barra", "r"), ("kg compra", "r"), ("Aprov.", "r"), "Pedido"],
+        # o kg das peças (o que vai na obra) e o de compra em dois blocos lado a lado (o usuário, 09/10): COM
+        # aproveitamento (o plano de corte: peças diferentes na mesma barra, as sobras usadas, a emenda na peça maior que
+        # a barra) e SEM (cada posição só das barras dela) — barras × kg/barra = kg em cada um; quase sempre vale o menor
+        # na ordem do usuário (09/10): o projeto, depois SEM aproveitamento e COM; só o total de barras (as emendas
+        # ficam no plano de corte da lista); a letra menor e o nome do IFC só quando difere do catálogo — o quadro passava
+        # da largura da folha no PDF
+        tot_com = sum(p.get("kg_compra") or 0.0 for p in C["perfis"])
+        tot_sem = sum(p.get("kg_sem_aproveitamento") or 0.0 for p in C["perfis"])
+        h.append(_tabela(["Perfil", "Material", ("Peças", "r ap-proj"), ("m", "r ap-proj"), ("kg/m", "r ap-proj"), ("kg peças", "r ap-proj"),
+                          ("Barra", "r"),
+                          ("Barras", "r ap-sem"), ("kg/barra", "r ap-sem"), ("kg", "r ap-sem"),
+                          ("Barras", "r ap-com"), ("kg/barra", "r ap-com"), ("kg", "r ap-com"), ("Aprov.", "r"), "Pedido"],
                          [[nome_perfil(p), p["material"], (p.get("pecas") or "", "r"), (_n(p["m"], 2), "r"),
                            (_n(p.get("kg_m") or 0.0, 2), "r"), (_n(p["kg"], 1), "r"), ("%s m" % _n(p["barra_m"], 0), "r"),
-                           ("%d%s%s" % (p["barras"], (" (%d emenda%s)" % (p["emendas"], "s" if p["emendas"] > 1 else "")) if p["emendas"] else "",
-                                         ("<br><span class=\"cinza\">com emenda: %d peça(s); sem: %d barras</span>" % (p["emendadas"], p["barras_sem_emenda"]))
-                                         if p.get("emendadas") else ""), "r"),
-                           (_n(p.get("kg_barra") or 0.0, 1), "r"), ("<b>%s</b>" % _n(p.get("kg_compra") or 0.0, 1), "r"),
+                           (p.get("barras_sem_aproveitamento") or "", "r ap-sem"), (_n(p.get("kg_barra") or 0.0, 1), "r ap-sem"),
+                           ("<b>%s</b>" % _n(p.get("kg_sem_aproveitamento") or 0.0, 1), "r ap-sem"),
+                           (p["barras"], "r ap-com"), (_n(p.get("kg_barra") or 0.0, 1), "r ap-com"),
+                           ("<b>%s</b>" % _n(p.get("kg_compra") or 0.0, 1), "r ap-com"),
                            ("%s%%" % _n(p["aproveitamento"], 0) if p["aproveitamento"] is not None else "", "r"), ""] for p in C["perfis"]],
                          rodape=[("TOTAL", "b"), "", (sum(p.get("pecas") or 0 for p in C["perfis"]), "r"),
-                                 (_n(sum(p["m"] for p in C["perfis"]), 2), "r"), "", (_n(sum(p["kg"] for p in C["perfis"]), 1), "r"),
-                                 "", (sum(p["barras"] for p in C["perfis"]), "r"), "",
-                                 (_n(sum(p.get("kg_compra") or 0.0 for p in C["perfis"]), 1), "r"), "", ""],
-                         larguras=["21%", "9%", "6%", "8%", "6%", "8%", "6%", "8%", "7%", "9%", "5%", "7%"], bruto=True,
-                         classes_linhas=[_classe_compra(p) for p in C["perfis"]]))
+                                 (_n(sum(p["m"] for p in C["perfis"]), 2), "r"), "", (_n(sum(p["kg"] for p in C["perfis"]), 1), "r"), "",
+                                 (sum(p.get("barras_sem_aproveitamento") or 0 for p in C["perfis"]), "r ap-sem"), ("", "ap-sem"),
+                                 (_n(tot_sem, 1), "r ap-sem"),
+                                 (sum(p["barras"] for p in C["perfis"]), "r ap-com"), ("", "ap-com"), (_n(tot_com, 1), "r ap-com"), "", ""],
+                         larguras=["16%", "6%", "5%", "7%", "5%", "7%", "5%", "5%", "6%", "7%", "5%", "6%", "7%", "6%", "7%"], bruto=True,
+                         classe="compra-perfis", classes_linhas=[_classe_compra(p) for p in C["perfis"]],
+                         grupos=[("", 2, ""), ("Projeto", 4, "ap-proj"), ("", 1, ""), ("Sem aproveitamento", 3, "ap-sem"),
+                                 ("Com aproveitamento", 3, "ap-com"), ("", 2, "")]))
+        if tot_com and tot_sem:
+            h.append("<p class=\"legenda-compra\"><span class=\"ap-sem\">&nbsp;&nbsp;</span> sem aproveitamento: cada posição "
+                     "só das barras dela (a sobra não serve a outra peça) &nbsp; <span class=\"ap-com\">&nbsp;&nbsp;</span> com "
+                     "aproveitamento: as peças diferentes na mesma barra e as sobras usadas (emenda na peça maior que a barra). "
+                     "Diferença: %s kg (%s%%) a menos com aproveitamento.</p>"
+                     % (_n(tot_sem - tot_com, 1), _n(100.0 * (tot_sem - tot_com) / tot_sem, 1)))
         if any(_classe_compra(p) for p in C["perfis"]):
             h.append(_LEGENDA_COMPRA)
     if C.get("outros_aco"):
@@ -1636,7 +1695,10 @@ def _html_compra(R: dict) -> str:
     return "".join(h)
 
 
-def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=None, classes_linhas=None, ids_linhas=None) -> str:
+def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=None, classes_linhas=None, ids_linhas=None,
+            grupos=None) -> str:
+    """`grupos`: uma linha de títulos por cima do cabeçalho, [(texto, colunas que cobre, classe)] (os dois blocos da compra
+    de perfis, com e sem aproveitamento, 09/10)."""
     def cel(c, tag="td"):
         cls = ""
         if isinstance(c, tuple):
@@ -1655,8 +1717,11 @@ def _tabela(colunas, linhas, rodape=None, larguras=None, bruto=False, classe=Non
     pe = ("<tr class=\"total\">%s</tr>" % "".join(cel(c) for c in rodape)) if rodape else ""
     # a tabela curta não se parte entre páginas (o cabeçalho ficava sozinho no pé da página, 08/10)
     classe = " ".join(x for x in (classe, "inteira" if len(linhas) <= 8 else "") if x)
-    return "<table%s>%s<thead><tr>%s</tr></thead><tbody>%s%s</tbody></table>" % (
-        (" class=\"%s\"" % classe) if classe else "", cols, th, corpo, pe)
+    topo = ("<tr class=\"grupos\">%s</tr>" % "".join(
+        "<th%s%s>%s</th>" % ((" colspan=\"%d\"" % n) if n > 1 else "", (" class=\"%s\"" % c) if c else "", _esc(t))
+        for t, n, c in grupos)) if grupos else ""
+    return "<table%s>%s<thead>%s<tr>%s</tr></thead><tbody>%s%s</tbody></table>" % (
+        (" class=\"%s\"" % classe) if classe else "", cols, topo, th, corpo, pe)
 
 
 # ============================================================ gravação

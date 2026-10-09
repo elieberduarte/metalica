@@ -38,3 +38,23 @@ def test_com_recorte_ao_lado_do_teorico():
     assert tubo["qtd"] == 106.3 and tubo["qtd_recorte"] == round(5 * 6.0 * 4.25, 1)   # 127,5: as 5 barras de 6 m
     assert chapa["qtd_recorte"] == round(40.0 * 1.15, 1)
     assert R["totais"]["aco_kg"] == 146.3 and R["totais"]["aco_kg_recorte"] == round(127.5 + 46.0, 1)
+
+
+def test_compra_com_e_sem_aproveitamento_lado_a_lado():
+    """A compra de perfis em dois blocos (o usuário, 09/10): com aproveitamento (o plano de corte) e sem (cada posição só
+    das barras dela; a peça maior que a barra em barras inteiras), barras × kg/barra = kg nos dois."""
+    from saida import resumos as rz
+    pos = [{"marca": "A", "comprimento": 2500, "quantidade": 3},      # 2 por barra de 6 m → 2 barras
+           {"marca": "B", "comprimento": 1000, "quantidade": 2},      # 5 por barra → 1 barra
+           {"marca": "C", "comprimento": 6848, "quantidade": 2}]      # maior que a barra: 2 barras cada → 4
+    assert rz._barras_sem_aproveitamento(pos, 6000.0) == 7
+    lista = {"posicoes": pos, "perfis": [{"perfil": "TQ 250x250x6,3", "posicoes": ["A", "B", "C"], "peso": 1000.0, "kg_m": 47.41,
+                                          "kg_m_catalogo": 47.41, "comprimento_m": 23.2, "pecas": 7,
+                                          "barras": {"comprimento": 6000, "quantidade": 5, "aproveitamento": 77.3, "emendas": 2}}]}
+    C = rz._compra(lista, [], {}, {})
+    p = C["perfis"][0]
+    assert p["barras_sem_aproveitamento"] == 7 and abs(p["kg_sem_aproveitamento"] - 7 * 6 * 47.41) < 0.01
+    html = rz._html_compra({"compra": C})
+    assert "Com aproveitamento" in html and "Sem aproveitamento" in html and 'class="r ap-sem"' in html
+    assert "emenda" not in html.split("<tbody>")[1].split("</tbody>")[0]   # só o total de barras (09/10)
+    assert html.index("Sem aproveitamento") < html.index("Com aproveitamento") and "Projeto" in html
