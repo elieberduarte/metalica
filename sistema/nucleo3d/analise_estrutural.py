@@ -104,6 +104,12 @@ PARAMETROS_PADRAO = {
     # etapa 5 (07/10): as bases pela NBR 8800:2024, 6.7, com as reações concomitantes
     "base_fck_mpa": 25.0,               # o concreto do bloco de fundação
     "base_aco_placa": "ASTM A36",       # a placa de base (os chumbadores da 6.7 são ASTM A36)
+    # a análise global do pré-moldado (09/10, nucleo3d/analise_premoldado.py)
+    "modelo_analise": "auto",           # auto (pelo modelo) | aco | premoldado
+    "piso_revestimento": 1.0,           # kN/m² nas lajes
+    "piso_sobrecarga": 3.0,             # kN/m² nas lajes (NBR 6120, a confirmar com o uso)
+    "base_coluna_aco": "rotulada",      # a base das colunas de aço chumbadas no bloco
+    "aberturas": "duas faces opostas",  # a permeabilidade do prédio fechado (C_pi, NBR 6123 6.2)
 }
 
 ALMA = ("montante", "diagonal")
@@ -488,15 +494,15 @@ def grupos_de_perfis(r: dict, outras: Sequence[dict] = (), limite: int = 20) -> 
         ver = res.get("verificacao") or {}
         pecas, pk = ver.get("pecas") or [], ver.get("peca_da_barra") or []
         for i, b in enumerate(res["barras"]):
-            if b.get("hipotese"):
-                continue
+            if b.get("hipotese") or b.get("concreto"):
+                continue                                  # o concreto do pré-moldado não tem perfil de aço para trocar
             k = chave_do_grupo(b)
             g = grupos.setdefault(k, {"chave": k, "funcao": k.split("|", 1)[0], "perfil": k.split("|", 1)[1], "atual": b["perfil"],
                                       "barras": 0, "duplo": bool(b.get("duplo")), "_esf": [], "_aco": None})
             if res is r:
                 g["barras"] += 1
             N, Mz, My = res["envoltoria"][i].get("esf") or [0.0, 0.0, 0.0]
-            pc = pecas[pk[i]] if i < len(pk) and pk[i] < len(pecas) else {}
+            pc = pecas[pk[i]] if i < len(pk) and 0 <= pk[i] < len(pecas) else {}
             Lx, Ly = float(pc.get("Lx") or b["L"]), float(pc.get("Ly") or b["L"])
             g["_esf"].append((float(N), abs(float(Mz)), abs(float(My)), Lx, Ly, float(pc.get("L") or b["L"])))
             g["_aco"] = g["_aco"] or pc.get("aco")
@@ -1428,8 +1434,13 @@ def _lote(M: dict) -> dict:
     pads: Dict[tuple, List[int]] = collections.defaultdict(list)
     for i, br in enumerate(barras):
         pads[tuple(sorted(set(br["soltos"])))].append(i)
-    return {"n": n, "L": np.array([br["L"] for br in barras], float), "A": sec("A"), "Iy": sec("Iy"), "Iz": sec("Iz"),
-            "J": sec("J"), "R": np.array([br["R"] for br in barras], float).reshape(n, 3, 3), "dofs": dofs,
+    # o módulo de cada barra: o aço por padrão; a peça de concreto (análise global do pré-moldado, 09/10) leva o dela
+    E = np.array([float(br["sec"].get("E") or E_ACO) for br in barras], float)
+    G = np.array([float(br["sec"].get("G") or G_ACO) for br in barras], float)
+    # o concreto já entra com a rigidez reduzida da NBR 6118 (15.7.3): a redução de 0,8 da 2ª ordem da NBR 8800 é do aço
+    conc = np.array([bool(br["sec"].get("concreto")) for br in barras], bool)
+    return {"conc": conc, "n": n, "L": np.array([br["L"] for br in barras], float), "A": sec("A"), "Iy": sec("Iy"), "Iz": sec("Iz"),
+            "J": sec("J"), "E": E, "G": G, "R": np.array([br["R"] for br in barras], float).reshape(n, 3, 3), "dofs": dofs,
             "padroes": [(p, np.array(ix, int)) for p, ix in pads.items()]}
 
 
@@ -1438,7 +1449,10 @@ def _k_local_lote(lt: dict, fator: float = 1.0) -> np.ndarray:
     2ª ordem da NBR 8800:2024, 4.10.7.1.2)"""
     L, n = lt["L"], lt["n"]
     k = np.zeros((n, 12, 12))
-    EA, GJ = fator * E_ACO * lt["A"] / L, fator * G_ACO * lt["J"] / L
+    E_, G_ = lt.get("E", E_ACO), lt.get("G", G_ACO)
+    if fator != 1.0 and "conc" in lt:
+        fator = np.where(lt["conc"], 1.0, fator)
+    EA, GJ = fator * E_ * lt["A"] / L, fator * G_ * lt["J"] / L
 
     def por(i, j, v):
         k[:, i, j] = v
@@ -1446,7 +1460,7 @@ def _k_local_lote(lt: dict, fator: float = 1.0) -> np.ndarray:
     for i, j, v in ((0, 0, EA), (6, 6, EA), (0, 6, -EA), (3, 3, GJ), (9, 9, GJ), (3, 9, -GJ)):
         por(i, j, v)
     for (v1, r1, v2, r2), I, s in (((1, 5, 7, 11), lt["Iz"], 1.0), ((2, 4, 8, 10), lt["Iy"], -1.0)):
-        EI = fator * E_ACO * I
+        EI = fator * E_ * I
         a, b, c, d = 12 * EI / L ** 3, 6 * EI / L ** 2, 4 * EI / L, 2 * EI / L
         por(v1, v1, a); por(v2, v2, a); por(v1, v2, -a)
         por(v1, r1, s * b); por(v1, r2, s * b); por(v2, r1, -s * b); por(v2, r2, -s * b)
@@ -1757,6 +1771,10 @@ def resultados(M: dict, casos: Dict[str, dict], sol: dict, combs: Dict[str, dict
 def calcular(doc, par: Optional[dict] = None) -> dict:
     """a análise; com a cobertura retrátil, as duas situações (aberta e retraída) e a envoltória das reações das duas"""
     P = dict(PARAMETROS_PADRAO, **(par or {}))
+    # o modelo de concreto (o IFC do pré-moldado): a análise global dele
+    from nucleo3d import analise_premoldado as AP
+    if P.get("modelo_analise") == "premoldado" or (P.get("modelo_analise", "auto") == "auto" and AP.e_premoldado(doc)):
+        return AP.calcular(doc, P)
     if not P.get("cobertura_movel"):
         r = _calcular_situacao(doc, P)
         r["reacoes_envoltoria"] = envoltoria_das_reacoes({"": r})
@@ -2023,11 +2041,12 @@ def topos_dos_pilares(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[
     return saida
 
 
-def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
-    """modelo → cargas → combinações → resolver → resultados, no formato que a tela de análise lê (JSON)"""
-    M = montar(doc, par)
-    casos, info, av_c = cargas(M)
-    combs = combinacoes(list(casos))
+def _calcular_situacao(doc, par: Optional[dict] = None, montador=None, carregador=None, combinador=None) -> dict:
+    """modelo → cargas → combinações → resolver → resultados, no formato que a tela de análise lê (JSON). O montador, as
+    cargas e as combinações podem vir de fora (a análise global do pré-moldado, nucleo3d/analise_premoldado.py)"""
+    M = (montador or montar)(doc, par)
+    casos, info, av_c = (carregador or cargas)(M)
+    combs = (combinador or combinacoes)(list(casos))
     sol = resolver(M, casos)
     avisos = list(M["avisos"]) + av_c
     if sol["instavel"]:
@@ -2099,6 +2118,7 @@ def _calcular_situacao(doc, par: Optional[dict] = None) -> dict:
                     "rotulas": [p for p in ("a", "b") if (4 if p == "a" else 10) in br["soltos"]],
                     "A": br["sec"]["A"], "Wz": br["sec"]["Wz"], "Wy": br["sec"]["Wy"], "hipotese": bool(br.get("hipotese")),
                     **({"duplo": True} if br.get("duplo") else {}),
+                    **({"concreto": True} if br["sec"].get("concreto") else {}),
                     **({"pilar": chave_do_pilar(nos, br), "secao": _secao_desenho(br["perfil"], contornos), "giro": br.get("giro", 0.0)}
                        if br["papel"] == "pilar" else {}),
                     **({"perfil_original": br["perfil_original"]} if br.get("perfil_original") else {})}

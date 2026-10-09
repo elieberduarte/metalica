@@ -279,13 +279,16 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
     elu_todas = [c for c, cb in combs.items() if cb["tipo"] == "ELU"]
     instaveis = [c for c in elu_todas if (so2.get(c) or {}).get("instavel")]
     elu = [c for c in elu_todas if c not in instaveis]
-    pecas = pecas_do_modelo(M)
+    # só as peças de aço: o concreto do pré-moldado (análise global, 09/10) não se verifica pela NBR 8800
+    pecas = [pc for pc in pecas_do_modelo(M) if not barras[pc["barras"][0]]["sec"].get("concreto")]
     avisos_k = _k_trelicas_tubulares(M, pecas)
     cache = CACHE
     lista_res: List[dict] = []
     idx_res: Dict[tuple, int] = {}
     # as resistências de cada peça e, por barra, as da peça dela
-    pk = np.zeros(n, int)
+    # a barra fora de toda peça verificada (o concreto do pré-moldado) fica com -1: antes ficava 0 e a normal dela entrava no
+    # B1 da primeira peça (a coluna HP do BRAMAIS recebia os 1.892 kN de um pilar de concreto, 09/10)
+    pk = np.full(n, -1, int)
     cols = ("Nc", "Nt", "Mz", "My", "Vy", "Vz")
     RB = np.zeros((n, 6))
     linear = np.zeros(n, bool)
@@ -331,7 +334,8 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
     Ne_y = math.pi ** 2 * AE.E_ACO * Iy[b0] / np.maximum(Ly, 1e-6) ** 2
     Nc_pc = np.zeros((ne, npc))
     if ne and n:
-        np.maximum.at(Nc_pc, (slice(None), pk), np.clip(-N.min(axis=2), 0.0, None))
+        dentro = pk >= 0
+        np.maximum.at(Nc_pc, (slice(None), pk[dentro]), np.clip(-N.min(axis=2), 0.0, None)[:, dentro])
     Cm_z = np.ones((ne, npc))
     Cm_y = np.ones((ne, npc))
     for j, pc in enumerate(pecas):
@@ -353,8 +357,11 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
     with np.errstate(divide="ignore", invalid="ignore"):
         rn = np.where(N < 0, np.where(Nc_b > 0, -N / Nc_b, np.inf), N / np.where(Nt_b > 0, Nt_b, np.nan))
         rn = np.where(redonda[None, :, None], np.abs(N) / np.where(Nt_b > 0, Nt_b, np.nan), rn)
-        bz = B1z[:, pk][:, :, None]
-        by = B1y[:, pk][:, :, None]
+        pk0 = np.where(pk >= 0, pk, 0)
+        if not npc:                                       # nenhuma peça de aço (o pré-moldado só de concreto)
+            B1z = B1y = np.ones((ne, 1))
+        bz = B1z[:, pk0][:, :, None]
+        by = B1y[:, pk0][:, :, None]
         rmz = np.where(Mz_b > 0, bz * np.abs(E[..., 5]) / Mz_b, 0.0)
         rmy = np.where(My_b > 0, by * np.abs(E[..., 4]) / My_b, 0.0)
         rm = np.nan_to_num(rmz, nan=np.inf) + np.nan_to_num(rmy, nan=np.inf)

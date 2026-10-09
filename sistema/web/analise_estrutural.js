@@ -183,7 +183,9 @@ function limpar() {
 }
 
 function valorDaBarra(i) {
-  // o que pinta a barra no modo atual
+  // o que pinta a barra no modo atual; o concreto do pré-moldado fica neutro nos mapas do aço (tensão sobre fy e a
+  // verificação da NBR 8800) — as colunas de aço e o travamento ficam em destaque no meio dele (09/10)
+  if ((estado.modo === 'tensoes' || estado.modo === 'verificacao') && D.barras[i] && D.barras[i].concreto) return null;
   if (estado.modo === 'tensoes') {
     const fy = D.parametros.fy_mpa || 345;
     if (estado.comb === 'env') return D.envoltoria[i].sigma / fy;
@@ -545,10 +547,10 @@ function blocoDoPilar(b) {
 
 // ------------------------------------------------------------------ painéis
 const PREMISSAS = [
-  ['base', 'Bases dos pilares', 'sel', [['engastada', 'engastadas'], ['articulada', 'articuladas']]],
-  ['viga_pilar', 'Ligação viga–pilar', 'sel', [['rigida', 'rígida'], ['rotulada', 'rotulada']]],
-  ['tesoura_rotulada_no_apoio', 'Tesoura no apoio', 'sel', [['true', 'rotulada'], ['false', 'contínua']]],
-  ['rotula_alma', 'Almas das treliças', 'sel', [['no_plano', 'rotuladas no plano'], ['total', 'rotuladas nas duas direções']]],
+  ['base', 'Bases dos pilares', 'sel', [['engastada', 'engastadas'], ['articulada', 'articuladas']], 'aco'],
+  ['viga_pilar', 'Ligação viga–pilar', 'sel', [['rigida', 'rígida'], ['rotulada', 'rotulada']], 'aco'],
+  ['tesoura_rotulada_no_apoio', 'Tesoura no apoio', 'sel', [['true', 'rotulada'], ['false', 'contínua']], 'aco'],
+  ['rotula_alma', 'Almas das treliças', 'sel', [['no_plano', 'rotuladas no plano'], ['total', 'rotuladas nas duas direções']], 'aco'],
   ['telha', 'Telha + terças (kN/m²)', 'num'],
   ['carga_extra', 'Permanente extra (kN/m²)', 'num'],
   ['sobrecarga', 'Sobrecarga (kN/m²)', 'num'],
@@ -558,13 +560,22 @@ const PREMISSAS = [
   ['s1', 'S1 (topográfico)', 'num'],
   ['s3', 'S3 (estatístico)', 'num'],
   ['travamento_hipotese', 'Terças e contravento de hipótese', 'sel', [['auto', 'só sem terças no modelo'], ['sim', 'sempre'], ['nao', 'não']]],
-  ['cobertura_movel', 'Cobertura retrátil', 'sel', [['false', 'não'], ['true', 'sim (aberta e retraída)']]],
-  ['movel_n', '  nº de tesouras', 'num'],
-  ['movel_comprimento_aberta', '  comprimento aberta (m)', 'num'],
-  ['movel_comprimento_retraida', '  comprimento retraída (m)', 'num'],
-  ['movel_lado_retraida', '  pilha na ponta', 'sel', [['y_menor', 'de baixo na planta (Y menor)'], ['y_maior', 'de cima na planta (Y maior)']]],
-  ['movel_peso_total_kg', '  peso total do fabricante (kg)', 'num'],
-  ['perfil_sanfona', '  braço da sanfona (perfil)', 'txt'],
+  ['perfil_terca_hipotese', '  terça / escora de hipótese (perfil)', 'txt'],
+  ['perfil_contravento_hipotese', '  contravento de hipótese (perfil)', 'txt'],
+  // a análise global do pré-moldado (09/10): só aparecem com o modelo de concreto
+  ['piso_revestimento', 'Piso: revestimento (kN/m²)', 'num', null, 'pm'],
+  ['piso_sobrecarga', 'Piso: sobrecarga (kN/m²)', 'num', null, 'pm'],
+  ['base_coluna_aco', 'Base das colunas de aço', 'sel', [['rotulada', 'rotulada'], ['engastada', 'engastada']], 'pm'],
+  ['aberturas', 'Permeabilidade (C<sub>pi</sub>)', 'sel', [['duas faces opostas', 'duas faces opostas (+0,2 / −0,3)'],
+    ['quatro faces permeáveis', 'quatro faces (−0,3 / 0)'], ['estanque', 'estanque (−0,2 / 0)']], 'pm'],
+  ['modelo_analise', 'Motor da análise', 'sel', [['auto', 'pelo modelo'], ['aco', 'estrutura metálica'], ['premoldado', 'pré-moldado (global)']]],
+  ['cobertura_movel', 'Cobertura retrátil', 'sel', [['false', 'não'], ['true', 'sim (aberta e retraída)']], 'aco'],
+  ['movel_n', '  nº de tesouras', 'num', null, 'aco'],
+  ['movel_comprimento_aberta', '  comprimento aberta (m)', 'num', null, 'aco'],
+  ['movel_comprimento_retraida', '  comprimento retraída (m)', 'num', null, 'aco'],
+  ['movel_lado_retraida', '  pilha na ponta', 'sel', [['y_menor', 'de baixo na planta (Y menor)'], ['y_maior', 'de cima na planta (Y maior)']], 'aco'],
+  ['movel_peso_total_kg', '  peso total do fabricante (kg)', 'num', null, 'aco'],
+  ['perfil_sanfona', '  braço da sanfona (perfil)', 'txt', null, 'aco'],
   ['fy_mpa', 'fy para o mapa (MPa)', 'num'],
   ['segunda_ordem', '2ª ordem nas ELU', 'sel', [['true', 'sim (P-Δ, NBR 8800:2024 4.10.7)'], ['false', 'não (só 1ª ordem)']]],
   ['aco_tubos', 'Aço dos tubos (verificação)', 'sel', [['', 'o de cada peça no modelo'], ['ASTM A572 Gr.50', 'ASTM A572 Gr.50 (fy 345)'],
@@ -573,13 +584,15 @@ const PREMISSAS = [
 ];
 function montarPremissas(par) {
   const box = $('#premissas'); box.replaceChildren();
-  for (const [k, rot, tipo, ops] of PREMISSAS) {
+  const pm = (RAIZ && RAIZ.modelo_analise === 'premoldado') || par.modelo_analise === 'premoldado';
+  for (const [k, rot, tipo, ops, so] of PREMISSAS) {
+    if ((so === 'pm' && !pm) || (so === 'aco' && pm)) continue;
     let inp;
     const v = par[k];
     if (tipo === 'sel') inp = el('select', { 'data-k': k }, ...ops.map(([val, t]) => el('option', { value: val, texto: t, selected: String(v) === val ? 'selected' : undefined })));
     else if (tipo === 'txt') inp = el('input', { 'data-k': k, 'data-txt': '1', type: 'text', value: v || '' });
     else inp = el('input', { 'data-k': k, type: 'text', value: v === null || v === undefined ? '' : String(v).replace('.', ',') });
-    box.append(el('label', { class: 'linha' }, rot, inp));
+    box.append(el('label', { class: 'linha' }, el('span', { html: rot }), inp));
   }
   box.append(el('div', { class: 'sub', style: 'margin-top:6px', texto: 'As premissas ficam gravadas no projeto. Calcular de novo aplica as mudanças.' }));
 }
@@ -870,6 +883,20 @@ function painelVento() {
   const linhas = [];
   const mv = D.movel;
   if (mv) linhas.push(`<b>Cobertura retrátil — ${mv.configuracao === 'aberta' ? 'aberta' : 'retraída'}</b>: ${mv.n} tesouras a cada ${nf(mv.passo_m, 3)} m em ${nf(mv.comprimento_m, 2)} m; ${nf(mv.peso_tesoura_kg, 1)} kg cada (peso do fabricante ÷ ${mv.n}); sanfona com ${mv.sanfona_barras} braços; abas laterais de ${nf(mv.altura_aba_m, 2)} m (NBR 6123, 7.2.5.1: 1,3·q·A a barlavento, 0,8·q·A a sotavento).`);
+  if (RAIZ && RAIZ.modelo_analise === 'premoldado') {
+    // a análise global do pré-moldado (09/10): o prédio fechado, as lajes nas vigas e a cobertura nas vigas pórtico
+    if (c) linhas.push(`Cobertura: ${nf(c.area_m2, 1)} m² em ${c.vigas_portico} vigas pórtico; faixas de influência ${(c.larguras_m || []).map(x => nf(x, 2)).join(' · ')} m.`);
+    if (i.lajes) linhas.push(`Lajes: ${i.lajes.n} peças (${nf(i.lajes.peso_kN, 0)} kN de peso próprio) nas vigas que as apoiam, com o revestimento e a sobrecarga de piso.`);
+    if (v) {
+      linhas.push(`Vk = ${nf(v.Vk, 1)} m/s (S2 = ${nf(v.S2, 3)}, categoria ${v.categoria}, classe ${v.classe}) · q = <b>${nf(v.q_kN_m2, 3)} kN/m²</b>`);
+      linhas.push(`Prédio fechado de duas águas (NBR 6123:2023, Tabelas 6 e 7): b = ${nf(v.b, 1)} m, a = ${nf(v.a, 1)} m, h = ${nf(v.h, 2)} m, θ = ${nf(v.teta, 1)}°; C<sub>pi</sub> ${v.cpi.map(x => nf(x, 1)).join(' e ')}.`);
+      linhas.push('C<sub>e</sub>: ' + Object.entries(v.coeficientes || {}).map(([k, x]) => `${k} ${nf(x, 2)}`).join(' · '));
+      linhas.push('Fachadas pelos pilares e colunas da borda (largura de influência, na altura toda); telhado pelas vigas pórtico, pela zona.');
+    }
+    linhas.push('Casos: ' + Object.entries(D.casos).map(([k, cc]) => `<span class="chip">${k}</span>${cc.descricao}`).join('<br>'));
+    V.innerHTML = linhas.map(l => `<div style="margin:4px 0">${l}</div>`).join('');
+    return;
+  }
   if (c) linhas.push(`Cobertura: ${nf(c.area_m2, 1)} m² em ${c.trelicas} tesouras; larguras de influência ${c.larguras_m.map(x => nf(x, 2)).join(' · ')} m.`);
   if (v) {
     linhas.push(`Vk = ${nf(v.Vk, 1)} m/s (S2 = ${nf(v.S2, 3)}, classe ${v.classe}, z = ${nf(v.z, 1)} m) · q = <b>${nf(v.q_kN_m2, 3)} kN/m²</b>`);
