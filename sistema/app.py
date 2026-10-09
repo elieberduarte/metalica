@@ -2118,13 +2118,14 @@ def dados_dos_resumos(s: str) -> dict:
     return {"dados": dados, "sugestoes": sug, "campos": list(CAMPOS_RESUMO), "arquivos": arquivos}
 
 
-def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
+def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> dict:
     """POST /api/projetos/<s>/resumos {dados}: grava `dados_resumo` no projeto e gera os
     dois documentos do mesmo levantamento da lista de materiais (nomes de produção
-    atualizados e gravados; peso teórico), em detalhamento/."""
+    atualizados e gravados; peso teórico), em detalhamento/. O resumo da obra é o dossiê dela (09/10): os desenhos
+    (implantação ou corte e pavimentos) e, com a `porta` do servidor, as fotos do 3D de cada tipo de estrutura."""
     from nucleo2d.detalhar import detalhar
     from nucleo2d.detalhe.base import _categoria
-    from saida import identidade, lista_producao, resumos
+    from saida import dossie, identidade, lista_producao, resumos
     g = _gerente()
     dados = {k: str((corpo.get("dados") or {}).get(k) or "") for k in CAMPOS_RESUMO}
     if any(dados.values()):
@@ -2150,8 +2151,25 @@ def gerar_resumos_projeto(s: str, corpo: dict) -> dict:
         R = resumos.levantar_resumos(doc, lev, lista, nomes, dados)
         # o logo e as cores da empresa, os mesmos da proposta comercial (08/10)
         R["marca"] = identidade.ler_marca(PROJETOS)
-        _progresso(s, "imprimindo os PDFs…")
         pasta = os.path.join(g._existente(s), "detalhamento")
+        # o dossiê: os eixos do projeto (os do usuário) ou os da planta de localização
+        _progresso(s, "desenhando a obra…")
+        loc = (r.get("desenhos") or {}).get("localizacao")
+        eixos = g.ler(s).get("eixos") or (loc.metadados.get("eixos") if loc is not None else None)
+        try:
+            R["dossie"] = dossie.levantar(doc, lev, lista, nomes, R, eixos)
+        except Exception as exc:                          # noqa: BLE001 — sem o dossiê, o resumo sai com as tabelas
+            R["dossie"] = {}
+            R.setdefault("avisos", []).append("dossiê sem os desenhos: %s" % exc)
+        if porta and R["dossie"]:
+            _progresso(s, "fotografando o modelo 3D…")
+            try:
+                R["dossie"]["fotos"] = dossie.fotografar(porta, s, os.path.join(pasta, "dossie"), R["dossie"],
+                                                         tem_telhas=bool(R["numeros"].get("ml_telhas")),
+                                                         avisar=lambda *a: _progresso(s, " ".join(str(x) for x in a)))
+            except Exception as exc:                      # noqa: BLE001 — sem as fotos, o resumo sai com os desenhos
+                R.setdefault("avisos", []).append("dossiê sem as fotos do 3D: %s" % exc)
+        _progresso(s, "imprimindo os PDFs…")
         arquivos = resumos.gerar_resumos(pasta, R)
         g.tocar(s)
         saida = {"numeros": R["numeros"], "avisos": R.get("avisos") or [], "dados": dados}
@@ -4280,7 +4298,7 @@ class Handler(BaseHTTPRequestHandler):
                 if len(partes) == 3 and partes[1] == "materiais" and partes[2] == "emenda":
                     return self._json(gravar_emenda_perfil(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "resumos":
-                    return self._json(gerar_resumos_projeto(partes[0], corpo))
+                    return self._json(gerar_resumos_projeto(partes[0], corpo, self.server.server_address[1]))
                 if len(partes) in (2, 3) and partes[1] in ("comercial", "orcamento") and not COMERCIAL:
                     return self._erro(SO_NO_DEV, 404)
                 if len(partes) in (2, 3) and partes[1] == "comercial":

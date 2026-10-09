@@ -7,6 +7,7 @@ O servidor do programa precisa estar no ar (é ele quem serve o editor e o model
 ficam em ``<projeto>/proposta/imagens/<angulo>.jpg``; quem chama decide quais ângulos.
 """
 import base64
+import json
 import os
 import subprocess
 import time
@@ -21,7 +22,7 @@ ANGULOS = ("aerea_frente", "aerea_tras", "perspectiva", "lateral", "topo")
 
 def fotografar(porta_servidor: int, slug: str, pasta: str, angulos: Sequence[str] = ANGULOS,
                largura: int = 1600, altura: int = 1000, escala: float = 1.5, timeout: float = 240.0,
-               avisar=None, capa: Optional[str] = "aerea_frente") -> Dict[str, str]:
+               avisar=None, capa: Optional[str] = "aerea_frente", gpu: bool = False) -> Dict[str, str]:
     """Abre o modelo do projeto e grava uma imagem por ângulo. Devolve {ângulo: caminho}. Com `capa`, grava
     também ``capa.jpg``: o mesmo ângulo num quadro quase quadrado, do tamanho da foto da capa da proposta."""
     avisar = avisar or (lambda *a: None)
@@ -31,7 +32,9 @@ def fotografar(porta_servidor: int, slug: str, pasta: str, angulos: Sequence[str
     url = "http://127.0.0.1:%d/editor?projeto=%s&render=1" % (porta_servidor, quote(slug))
     proc = subprocess.Popen(
         [navegador(), "--headless=new", "--hide-scrollbars", "--no-sandbox", "--disable-extensions",
-         "--enable-unsafe-swiftshader", "--use-angle=swiftshader", "--remote-allow-origins=*",
+         # com `gpu`, a placa de vídeo (o modelo grande — as 13 mil peças do Vicente — não abre no swiftshader em 4 min)
+         *(["--enable-gpu", "--ignore-gpu-blocklist", "--use-angle=d3d11"] if gpu else ["--enable-unsafe-swiftshader", "--use-angle=swiftshader"]),
+         "--remote-allow-origins=*",
          "--user-data-dir=%s" % perfil, "--remote-debugging-port=%d" % porta,
          "--window-size=%d,%d" % (largura, altura), "about:blank"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -60,7 +63,8 @@ def fotografar(porta_servidor: int, slug: str, pasta: str, angulos: Sequence[str
                 raise RuntimeError("o modelo 3D não ficou pronto em %d s" % timeout)
             time.sleep(1.0)
         avisar("fotografando o modelo (%d ângulos)…" % len(angulos))
-        r = cdp.cmd("Runtime.evaluate", expression="window.__render(%s)" % list(angulos).__repr__().replace("'", '"'),
+        # o ângulo é um nome ou, no dossiê da obra, {nome, angulo, destaque, enquadrar} (diagnostico.js, __render)
+        r = cdp.cmd("Runtime.evaluate", expression="window.__render(%s)" % json.dumps(list(angulos), ensure_ascii=False),
                     returnByValue=True, awaitPromise=True, timeout=int(timeout * 1000))
         resultado = (r.get("result") or {}).get("value") or []
         if capa:

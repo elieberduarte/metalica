@@ -3,6 +3,7 @@
 // Saíram de editor.js (que tinha quase 5 mil linhas) sem mudar o corpo: esta classe só
 // guarda os métodos, e editor.js os copia para Editor.prototype (aplicarMetodos).
 
+import * as THREE from 'three';
 import { VISTAS } from '../nucleo/camera.js';
 import { PESADOS } from '../nucleo/cena.js';
 import { PAPEIS, escalar } from '../nucleo/documento.js';
@@ -199,11 +200,12 @@ export class MetodosDiagnostico {
         if (g) g.visible = false;
       }
     };
-    // enquadra os 8 cantos do modelo no quadro (o zoom da extensão usa a esfera e deixa o galpão pequeno)
-    const enquadrarJusto = (dir, cima) => {
+    // enquadra os 8 cantos do modelo no quadro (o zoom da extensão usa a esfera e deixa o galpão pequeno);
+    // com `ids`, os cantos dessas peças (a foto de um pavimento do dossiê)
+    const enquadrarJusto = (dir, cima, ids) => {
       const cam = this.camera.perspectiva || this.camera.ativa;
       const V = cam.position.constructor;
-      const caixa = doc.caixa([...doc.entidades.values()].filter((e) => doc.aparece(e)).map((e) => e.id));
+      const caixa = doc.caixa(ids && ids.length ? ids : [...doc.entidades.values()].filter((e) => doc.aparece(e)).map((e) => e.id));
       const esc = cena.raiz.scale.x;
       const cantos = [];
       for (const x of [caixa[0][0], caixa[1][0]]) for (const y of [caixa[0][1], caixa[1][1]]) for (const z of [caixa[0][2], caixa[1][2]]) cantos.push(new V(x * esc, y * esc, z * esc));
@@ -239,23 +241,67 @@ export class MetodosDiagnostico {
       if (this.camera.controles) { this.camera.controles.target.copy(centro); }
       cam.updateMatrixWorld(); cam.updateProjectionMatrix();
     };
+    // o pedido é o nome do ângulo ("aerea_frente", "aerea_frente+telhas") ou, para o dossiê da obra (09/10), um objeto
+    // {nome, angulo, destaque: [ids], enquadrar: 'destaque'}: as peças do destaque na cor delas e o resto do modelo
+    // em fantasma cinza (o mesmo destaque do editor), enquadrando o modelo todo ou só o destaque
+    let destacando = false;
+    // o fantasma das fotos é sempre o cinza claro (no tema escuro ele sai grafite, e o prédio vira um bloco preto)
+    const fantasmaClaro = new THREE.MeshStandardMaterial({ color: new THREE.Color('#dde2ea'), metalness: 0, roughness: 1, side: THREE.DoubleSide });
+    const fantasmaLinhaClaro = new THREE.LineBasicMaterial({ color: new THREE.Color('#c3c9d4') });
+    cena._materialFantasma = () => fantasmaClaro;
+    cena.corFantasmaFoto = '#dde2ea';                                  // o mesmo no modelo grande (nucleo/lote.js)
+    cena._materialFantasmaLinha = () => fantasmaLinhaClaro;
+    // a cor do destaque (a do tipo na legenda do dossiê) e o que fica na cena (o aço do pavimento e o concreto em volta)
+    // `cor`: uma cor para todo o destaque; `cores`: {cor: [ids]} — cada peça na cor do tipo dela (a foto do pavimento)
+    let corDestaque = null;
+    const corDaPeca = (id) => (corDestaque instanceof Map ? corDestaque.get(id) || null : corDestaque);
+    let visiveis = null;
+    const corDe = cena._corDe.bind(cena);
+    cena._corDe = (ent) => (corDestaque && cena.destaque && ent && cena.destaque.has(ent.id) && corDaPeca(ent.id)) || corDe(ent);
+    const apareciaAntes = doc.aparece;
+    doc.aparece = (ent) => (visiveis && ent && !visiveis.has(ent.id) ? false : apareciaAntes(ent));
     window.__render = async (nomes, formato = 'image/jpeg', qualidade = 0.92) => {
       const saida = [];
       for (const pedido of nomes) {
+        const obj = pedido && typeof pedido === 'object' ? pedido : null;
         // "aerea_frente+telhas": o mesmo ângulo com a cobertura
-        const [nome, extra] = String(pedido).split('+');
+        const [nome, extra] = String(obj ? (obj.angulo || 'aerea_frente') : pedido).split('+');
         const querTelhas = extra === 'telhas';
-        if (querTelhas !== comTelhas) { comTelhas = querTelhas; cena.repintarTudo(); await quadros(4); }
+        const ids = obj && Array.isArray(obj.destaque) ? obj.destaque.filter((i) => doc.get(i)) : null;
+        const novosVisiveis = obj && Array.isArray(obj.contexto) && ids ? new Set([...ids, ...obj.contexto]) : null;
+        corDestaque = (obj && obj.cor) || null;
+        if (obj && obj.cores) {
+          corDestaque = new Map();
+          for (const [cor, lista] of Object.entries(obj.cores)) for (const i of lista) corDestaque.set(i, cor);
+        }
+        cena.corDestaqueFoto = corDestaque ? corDaPeca : null;
+        if (querTelhas !== comTelhas || novosVisiveis || visiveis) {
+          comTelhas = querTelhas; visiveis = novosVisiveis; cena.repintarTudo(); await quadros(4);
+        }
+        if (ids && ids.length) {
+          cena.destacar(ids);
+          if (cena._marcarDestaque) cena._marcarDestaque(null);         // sem o anel vermelho do editor na foto
+          destacando = true;
+        } else if (destacando) {
+          cena.destacar(null);
+          destacando = false;
+        }
         esconderReferencia();
         const a = ANGULOS[nome] || ANGULOS.aerea_frente;
         this.camera.concluirAnimacao();
-        enquadrarJusto(a.dir, a.cima);
+        // enquadrar: 'destaque' (as peças do destaque) ou uma lista de ids (o pavimento inteiro)
+        const quadro = obj && Array.isArray(obj.enquadrar) ? obj.enquadrar.filter((i) => doc.get(i))
+          : (obj && obj.enquadrar === 'destaque' ? ids : null);
+        enquadrarJusto(a.dir, a.cima, quadro);
         cena._ajustarSombras && cena._ajustarSombras();
         await quadros(3);
         cena.desenhar(this.camera.ativa);
-        saida.push({ nome: String(pedido).replace('+', '_'), imagem: this.el.canvas.toDataURL(formato, qualidade) });
+        saida.push({ nome: obj ? String(obj.nome || nome) : String(pedido).replace('+', '_'), imagem: this.el.canvas.toDataURL(formato, qualidade) });
       }
-      if (comTelhas) { comTelhas = false; cena.repintarTudo(); }
+      if (destacando) { cena.destacar(null); destacando = false; }
+      corDestaque = null;
+      cena.corDestaqueFoto = null;
+      if (comTelhas || visiveis) { comTelhas = false; visiveis = null; cena.repintarTudo(); }
       const cam = this.camera.perspectiva || this.camera.ativa;
       if (cam.clearViewOffset) cam.clearViewOffset();
       return saida;

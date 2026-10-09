@@ -529,14 +529,16 @@ export class Lote {
     let base = cena._corDe(ent);
     const fantasma = (cena.destaque && !cena.destaque.has(id)) ||
                      (cena.pintandoPorValor && !cena._corDeValor(ent));
-    if (fantasma) base = cena.escuro ? '#2e3642' : '#d7dce6';
+    // as fotos do dossiê (diagnostico.js, ?render=1) pedem o fantasma claro e o destaque na cor do tipo
+    if (fantasma) base = cena.corFantasmaFoto || (cena.escuro ? '#2e3642' : '#d7dce6');
     const estado = this.estado.get(id);
     let corMalha = base;
     let corAresta = misturar(base, cena.escuro ? '#f0f5ff' : '#101822', 0.55);
     if (cena.destaque && cena.destaque.has(id) && estado !== 'sobre') {
       // a peça em destaque na cor cheia: misturada ao azul ela sumia no cinza do resto (30/09)
-      corMalha = COR_DESTAQUE;
-      corAresta = COR_DESTAQUE_ARESTA;
+      const foto = cena.corDestaqueFoto ? cena.corDestaqueFoto(id) : null;
+      corMalha = foto || COR_DESTAQUE;
+      corAresta = foto ? misturar(foto, '#101822', 0.45) : COR_DESTAQUE_ARESTA;
     } else if (estado) {
       const cor = estado === 'selecionado' ? COR_SELECAO : COR_SOBRE;
       corMalha = misturar(base, cor, estado === 'selecionado' ? 0.55 : 0.3);

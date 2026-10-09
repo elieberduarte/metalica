@@ -700,10 +700,19 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     pintura = _area_de_pintura(lista)
     compra = _compra(lista, parafusos, telhas, dados)
     maior, pesada = _maior_e_mais_pesada(lista, tipos_tes)
+    # onde fica cada tesoura, para o tipo dela na implantação do dossiê: a ponta de cima em planta (09/10)
+    tesouras_lugar = []
+    for t in tes_inst:
+        vs = [v for e in t["pecas"] for v in (e.vertices or [])]
+        if vs:
+            topo = max(vs, key=lambda v: _dot(v, perp_g))
+            cc = _centro(vs)
+            tesouras_lugar.append({"tipo": t["tipo"], "eixo": t.get("eixo", ""), "xy": (cc[0] + (topo[0] - cc[0]) * 0.82,
+                                                                                      cc[1] + (topo[1] - cc[1]) * 0.82, 0.0)})
     import time as _time
     return {
         "gerado": _time.strftime("%d/%m/%Y %H:%M"), "pendencias": pendencias, "pintura": pintura, "compra": compra,
-        "maior": maior, "mais_pesada": pesada,
+        "maior": maior, "mais_pesada": pesada, "tesouras_lugar": tesouras_lugar,
         "projeto": identificacao, "dados": dados,
         "numeros": {"tesouras": sum(t["qtd"] for t in tipos_tes), "peso_aco": peso_aco, "ml_telhas": ml_telhas,
                     "peso_telhas": peso_telhas, "peso_funilaria": peso_funilaria,
@@ -1320,6 +1329,40 @@ table.compra-perfis .cinza { font-size: 6.4pt; }
                   font-size: 7.4pt; color: rgba(255,255,255,.7); }
 .total-box .ind b { display: block; color: #fff; font-size: 10pt; font-weight: 600; }
 
+/* ---------------- o dossiê (09/10): a foto da capa, os desenhos, a estrutura por tipo e os pavimentos */
+figure { margin: 0; }
+.capa { margin: 3.5mm 0 0; border-radius: 3mm; overflow: hidden; break-inside: avoid; }
+.capa img { display: block; width: 100%; height: 78mm; object-fit: cover; }
+figure.desenho { margin: 1mm 0 1.5mm; text-align: center; break-inside: avoid; }
+figure.desenho svg { max-width: 100%; height: auto; }
+figure figcaption { font-size: 7pt; color: var(--mudo); margin-top: .8mm; text-align: center; }
+.legenda { display: flex; flex-wrap: wrap; gap: 1mm 4.5mm; font-size: 7.4pt; color: var(--texto); margin: 0 0 2mm; justify-content: center; }
+.legenda i, h3.tipo i, .pecas-pav i { display: inline-block; width: 4mm; height: 2.2mm; border-radius: .5mm; margin-right: 1.4mm; vertical-align: -.2mm; }
+.chip { display: inline-block; width: 3mm; height: 3mm; border-radius: .6mm; margin-right: 1.6mm; vertical-align: -.4mm; }
+.cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(34mm, 1fr)); gap: 2.4mm; margin: 2mm 0 2mm; break-inside: avoid; }
+.cartoes div { background: var(--fundo); border-radius: 2mm; padding: 2mm 3mm; border-left: 2.4px solid var(--dest); }
+.cartoes span { display: block; font: 600 6.4pt 'Segoe UI', Arial; letter-spacing: .12em; text-transform: uppercase; color: var(--mudo); }
+.cartoes b { display: block; font: 300 12pt/1.2 'Segoe UI Light', 'Segoe UI', Arial; color: var(--pri); }
+.cartoes em { display: block; font-style: normal; font-size: 7pt; color: var(--mudo); }
+h3.tipo { margin: 5mm 0 1.6mm; padding-bottom: .9mm; border-bottom: 1.2px solid var(--pri); }
+h3.tipo::before { display: none; }
+h3.tipo i { width: 5mm; height: 3.2mm; }
+h3.tipo small { margin-left: auto; font: 600 7.4pt 'Segoe UI', Arial; color: var(--mudo); letter-spacing: .04em; }
+.bloco-tipo.lado { break-inside: avoid; }
+.lado-a-lado { display: grid; grid-template-columns: 60mm 1fr; gap: 3.5mm; align-items: start; }
+table.tipo { font-size: 7.4pt; }
+table.tipo td.c, table.tipo td.r { white-space: nowrap; }
+.foto-tipo img { display: block; width: 100%; border-radius: 2mm; border: 1px solid var(--linha); }
+.bloco-tipo:not(.lado) .foto-tipo { max-width: 120mm; margin: 0 auto 2mm; }
+table.tipo td { vertical-align: middle; }
+.pav { break-inside: avoid; margin-bottom: 4mm; }
+.pav-corpo { display: grid; grid-template-columns: 92mm 1fr; gap: 4mm; align-items: start; margin-top: 1.5mm; }
+.pav figure.planta-pav svg { max-height: 70mm; width: auto; max-width: 100%; }
+.foto-pav img { display: block; width: 100%; border-radius: 2mm; border: 1px solid var(--linha); }
+.pecas-pav { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 1.2mm; font-size: 7.6pt; }
+.pecas-pav li.t { font: 600 6.6pt 'Segoe UI', Arial; letter-spacing: .12em; text-transform: uppercase; color: var(--mudo); width: 100%; }
+.pecas-pav b { color: var(--pri); margin-right: 1mm; }
+
 /* ---------------- na tela (a prévia da página de materiais): a folha sobre o fundo */
 @media screen {
   html { background: #e8ecef; }
@@ -1387,135 +1430,273 @@ def _ficha(itens) -> str:
         for r, v, u, d in itens))
 
 
+def _foto(R: dict, nome: str) -> str:
+    """A foto do dossiê como data URI (a prévia da tela é por http e não lê file:///; o PDF também a leva dentro)."""
+    cam = ((R.get("dossie") or {}).get("fotos") or {}).get(nome)
+    if not cam or not os.path.exists(cam):
+        return ""
+    import base64
+    with open(cam, "rb") as f:
+        return "data:image/jpeg;base64," + base64.b64encode(f.read()).decode("ascii")
+
+
+def _m(mm: float) -> str:
+    """mm → "6,85 m" (o 5 arredonda para cima: 2.195 → 2,20)."""
+    return _n(math.floor(float(mm) / 10.0 + 0.5) / 100.0, 2) + " m"
+
+
+def _blocos_de_estrutura(R: dict) -> List[dict]:
+    """A estrutura por tipo do dossiê; sem ele (o resumo montado à mão nos testes), as tesouras do resumo."""
+    X = R.get("dossie") or {}
+    if X.get("estrutura"):
+        return X["estrutura"]
+    tes = [t for t in R.get("tesouras") or [] if t.get("qtd")]
+    if not tes:
+        return []
+    return [{"chave": "tesouras", "titulo": "Tesouras", "cor": "#d9480f", "ids": [], "qtd": sum(t["qtd"] for t in tes),
+             "m": sum(t["qtd"] * t["comprimento"] for t in tes) / 1000.0, "kg": sum(t["kg_total"] for t in tes),
+             "linhas": [{"comprimento": t["comprimento"], "qtd": t["qtd"], "kg": t["kg_total"], "marcas": [t["tipo"]],
+                         "perfis": [x for x in (t.get("banzos"), t.get("trelicamento")) if x], "onde": [], "ids": [],
+                         "vao": t["vao"], "altura": t["altura"], "flecha": t["flecha"], "eixos": t.get("eixos", "")} for t in tes]}]
+
+
+def _legenda(itens) -> str:
+    return "<div class=\"legenda\">%s</div>" % "".join("<span><i style=\"background:%s\"></i>%s</span>" % (_esc(c), _esc(t)) for t, c in itens)
+
+
+def _bloco_tipo(R: dict, b: dict, varios: bool) -> str:
+    """Um tipo de estrutura: o título com a cor da planta, a foto do 3D com ele em destaque e a tabela por comprimento
+    (cada linha abre o 3D com as peças dela, na tela)."""
+    X = R.get("dossie") or {}
+    tes = b["chave"] == "tesouras" and any("vao" in li for li in b["linhas"])
+    if tes:
+        colunas = [("Qtd", "c"), "Tipo", "Eixos", ("Vão", "r"), ("Comprimento", "r"), ("Altura*", "r"), "Banzos / treliçamento", ("kg", "r")]
+        linhas = [[(li["qtd"], "c"), (", ".join(li["marcas"]), "b"), li.get("eixos") or "", ("%s m" % _n(li["vao"] / 1000.0, 2), "r"),
+                   (_m(li["comprimento"]), "r"), ("%s m" % _n(li["altura"] / 1000.0, 2), "r"), " / ".join(li["perfis"]),
+                   (_n(li["kg"], 1), "r")] for li in b["linhas"]]
+        larg = ["7%", "8%", "15%", "10%", "12%", "9%", "28%", "11%"]
+        rod = [("%d" % b["qtd"], "c"), ("TOTAL", "b"), "", "", "", "", "", (_n(b["kg"], 1), "r")]
+    else:
+        colunas = [("Qtd", "c"), ("Comprimento", "r"), ("Total", "r"), "Marca", "Perfil"] + (["Onde"] if varios else []) + [("kg", "r")]
+        linhas = []
+        for li in b["linhas"]:
+            marcas = ", ".join(li["marcas"][:6]) + (" …" if len(li["marcas"]) > 6 else "")
+            perfis = ", ".join(li["perfis"][:3]) + (" …" if len(li["perfis"]) > 3 else "")
+            row = [("%d un" % li["qtd"], "c"), ("<b>%s</b>" % _esc(_m(li["comprimento"])), "r"),
+                   ("%s m" % _n(li["qtd"] * li["comprimento"] / 1000.0, 1), "r"), _esc(marcas), "<span class=\"cinza\">%s</span>" % _esc(perfis)]
+            if varios:
+                row.append("<span class=\"cinza\">%s</span>" % _esc(" · ".join("%s %d" % (p, q) for p, q in li.get("onde") or [])))
+            row.append((_n(li.get("kg") or 0.0, 1), "r"))
+            linhas.append(row)
+        larg = (["9%", "13%", "11%", "17%", "20%", "20%", "10%"] if varios else ["9%", "14%", "12%", "22%", "31%", "12%"])
+        rod = [("%d un" % b["qtd"], "c"), "", ("%s m" % _n(b["m"], 1), "r"), ("TOTAL", "b"), ""] + ([""] if varios else []) + [(_n(b["kg"], 1), "r")]
+    tabela = _tabela(colunas, linhas, rodape=rod, larguras=larg, bruto=True, classe="tipo",
+                     ids_linhas=[",".join(li.get("ids") or []) for li in b["linhas"]])
+    foto = _foto(R, "tipo-" + b["chave"])
+    onde = (X.get("fotos_onde") or {}).get("tipo-" + b["chave"])
+    fig = ("<figure class=\"foto-tipo\"><img src=\"%s\" alt=\"\"><figcaption>%s em destaque%s</figcaption></figure>"
+           % (foto, _esc(b["titulo"]), (" · no %s (o mesmo nos outros pavimentos)" % _esc(onde)) if onde else "")) if foto else ""
+    cab = ("<h3 class=\"tipo\"><i style=\"background:%s\"></i>%s<small>%d un · %s m · %s kg</small></h3>"
+           % (_esc(b["cor"]), _esc(b["titulo"]), b["qtd"], _n(b["m"], 1), _n(b["kg"], 1)))
+    nota = ""
+    if tes:
+        meias = [t for t in R.get("tesouras") or [] if t.get("meias", 0) >= 2]
+        nota = "* do nível de apoio ao topo do banzo superior na cumeeira."
+        if meias:
+            dif = [t["tipo"] for t in meias if len(t.get("membros") or {}) > 1]
+            nota = ("Fabricadas em 2 meias-tesouras emendadas na cumeeira%s. " % ((" (%s com as duas meias diferentes)" % " e ".join(dif)) if dif else "")) + nota
+        if (R.get("dados") or {}).get("notas_tesouras"):
+            nota += " " + R["dados"]["notas_tesouras"]
+        nota = "<p class=\"nota\">%s</p>" % _esc(nota)
+    if fig and len(b["linhas"]) <= 7:
+        return "<section class=\"bloco-tipo lado\">%s<div class=\"lado-a-lado\">%s<div>%s%s</div></div></section>" % (cab, fig, tabela, nota)
+    return "<section class=\"bloco-tipo\">%s%s%s%s</section>" % (cab, fig, tabela, nota)
+
+
 def html_resumo_obra(R: dict, paginado: bool = False) -> str:
+    """O resumo da obra como o dossiê dela (09/10): a foto, os números, a obra desenhada (implantação com eixos e cotas,
+    ou o corte com os pavimentos), a estrutura por tipo com a foto de cada um, a ficha de cada pavimento e, no fim, os
+    pesos, as telhas, os parafusos e as pendências."""
     n, dim = R["numeros"], R["dimensoes"]
+    X = R.get("dossie") or {}
+    varios = bool(X.get("varios"))
+    blocos = _blocos_de_estrutura(R)
+    tem_tesouras = any(b["chave"] == "tesouras" for b in blocos)
     partes = [_cabecalho(R, "RESUMO DA OBRA")]
-    # o quadro de números (05/10): o que a gerência pergunta primeiro, numa olhada — nos cartões da proposta (08/10)
-    q = [("Tesouras", "%d" % n["tesouras"], "", ("inclinação %s%% (%s°)" % (_n(100 * math.tan(math.radians(n["inclinacao"])), 0), _n(n["inclinacao"], 1)))
-          if n.get("inclinacao") else ""),
-         ("Estrutura metálica", _n(n["peso_aco"], 1), "kg", ("%s kg/m² de projeção" % _n(n["kg_m2"], 1)) if n.get("kg_m2") else ""),
-         ("Telhas", _n(n.get("m2_telhas") or 0.0, 2), "m²", "%s ml · %s kg" % (_n(n["ml_telhas"], 2), _n(n["peso_telhas"], 1))),
-         ("Total geral", _n(n["total"], 1), "kg", "aço + telhas%s" % (" + rufos" if n.get("peso_funilaria") else "")),
-         ("Parafusos", "%d" % n["parafusos"], "", "e as porcas e arruelas soltas: ver a seção 6"),
-         ("Área de pintura", _n(n.get("m2_pintura") or 0.0, 1), "m²", "perfis pelo perímetro da seção, chapas nas duas faces")]
+    capa = _foto(R, "capa")
+    if capa:
+        partes.append("<figure class=\"capa\"><img src=\"%s\" alt=\"\"></figure>" % capa)
+    # os números numa olhada (nos cartões da proposta)
+    q = []
+    if varios:
+        pavs = X.get("pavimentos") or []
+        andares = sum(p["repete"] for p in pavs)
+        q.append(("Pavimentos", "%d" % len(pavs), "", "%d andares com aço (%s)" % (andares, ", ".join(
+            "%s ×%d" % (p["nome"], p["repete"]) if p["repete"] > 1 else p["nome"] for p in pavs))))
+    elif tem_tesouras:
+        q.append(("Tesouras", "%d" % n["tesouras"], "", ("inclinação %s%% (%s°)" % (_n(100 * math.tan(math.radians(n["inclinacao"])), 0), _n(n["inclinacao"], 1)))
+                  if n.get("inclinacao") else ""))
+    q.append(("Estrutura metálica", _n(n["peso_aco"], 1), "kg", ("%s kg/m² de projeção" % _n(n["kg_m2"], 1)) if (n.get("kg_m2") and not varios) else ""))
+    if n.get("ml_telhas"):
+        q.append(("Telhas", _n(n.get("m2_telhas") or 0.0, 2), "m²", "%s ml · %s kg" % (_n(n["ml_telhas"], 2), _n(n["peso_telhas"], 1))))
+        q.append(("Total geral", _n(n["total"], 1), "kg", "aço + telhas%s" % (" + rufos" if n.get("peso_funilaria") else "")))
+    principais = [b for b in blocos if b["chave"] not in ("suportes", "travamentos")]
+    if principais:
+        q.append(("Peças principais", "%d" % sum(b["qtd"] for b in principais), "un",
+                  " · ".join("%d %s" % (b["qtd"], b["titulo"].lower()) for b in principais[:3])))
+    q.append(("Parafusos", "%d" % n["parafusos"], "", "e as porcas e arruelas soltas: ver Parafusos"))
+    q.append(("Área de pintura", _n(n.get("m2_pintura") or 0.0, 1), "m²", "perfis pelo perímetro da seção, chapas nas duas faces"))
     if R.get("maior") and R["maior"].get("nome"):
         q.append(("Maior peça · transporte", _n(R["maior"]["comprimento"] / 1000.0, 2), "m", "%s · %s" % (R["maior"]["nome"], R["maior"]["perfil"])))
     if R.get("mais_pesada") and R["mais_pesada"].get("nome"):
         q.append(("Mais pesada · içamento", _n(R["mais_pesada"]["kg"], 1), "kg", "%s (%s)" % (R["mais_pesada"]["nome"], R["mais_pesada"]["tipo"])))
     partes.append(_ficha(q))
-    # 1. dimensões
-    linhas = []
-    if dim["n_tesouras"] > 1:
-        linhas.append(["Comprimento total entre eixos (%s a %s)" % (dim["eixos"].split()[0], dim["eixos"].split()[-1]), "%s m" % _n(dim["comprimento_total"] / 1000.0, 2),
-                       "%d eixos de tesoura: %s" % (dim["n_tesouras"], ", ".join(dim["eixos"].split()))])
-    for tr in dim["trechos"]:
-        if tr.get("transicao"):
-            linhas.append(["Transição entre coberturas (eixos %s)" % tr["eixos_transicao"], "%s m" % _n(tr["transicao"] / 1000.0, 2),
-                           "da última tesoura do trecho anterior à primeira deste"])
-        um = len(dim["trechos"]) == 1                     # um trecho só: a projeção está na linha de baixo
-        # o trecho de uma tesoura só não tem comprimento entre eixos ("0,00 m x 21,21 m"): só o vão
-        dim_tr = ("%s m x %s m" % (_n(tr["comprimento"] / 1000.0, 2), _n(tr["vao"] / 1000.0, 2)) if tr["comprimento"] >= 1.0
-                  else "vão %s m" % _n(tr["vao"] / 1000.0, 2))
-        linhas.append(["%s (eixos %s)" % (tr["nome"], tr["eixos"]), dim_tr,
-                       "vão entre apoios %s m" % _n(tr["vao"] / 1000.0, 2)
-                       + ("" if um else "; projeção %s x %s m" % (_n(tr["projecao"][0] / 1000.0, 2), _n(tr["projecao"][1] / 1000.0, 2)))])
-    linhas.append(["Projeção total com beirais e saias", "%s m x %s m" % (_n(dim["projecao"][0] / 1000.0, 2), _n(dim["projecao"][1] / 1000.0, 2)),
-                   "contorno externo em planta; área %s m² (%s kg/m² de aço)" % (_n(dim["area_m2"], 2), _n(n["kg_m2"], 1) if n.get("kg_m2") else "—")])
-    if dim.get("nivel_apoio") is not None:
-        linhas.append(["Nível de apoio das tesouras", "%s%s m" % ("+" if dim["nivel_apoio"] >= 0 else "", _n(dim["nivel_apoio"] / 1000.0, 3)),
-                       "cota do modelo" + (" (face de cima da chapa de apoio)" if dim.get("apoio_por_chapa") else " (ponto mais baixo das tesouras)")])
-    partes.append(_h2(1, "Dimensões da obra") + _tabela(["Trecho", ("Dimensão", "r"), "Observação"], [[a, (b, "r"), c] for a, b, c in linhas], larguras=["34%", "20%", "46%"]))
-    # 2. tesouras
-    tes = R["tesouras"]
-    partes.append(_h2(2, "Tesouras", "%d unidades" % n["tesouras"]))
-    partes.append(_tabela(["Tipo", ("Qtd", "c"), "Eixos", ("Vão entre apoios", "r"), ("Comprimento", "r"), ("Flecha (subida do banzo)", "r"),
-                           ("Altura na cumeeira*", "r"), "Banzos / treliçamento", ("kg/un", "r"), ("kg total", "r")],
-                          [[t["tipo"], (t["qtd"], "c"), t["eixos"], ("%s m" % _n(t["vao"] / 1000.0, 2), "r"), ("%s m" % _n(t["comprimento"] / 1000.0, 2), "r"),
-                            ("%s m" % _n(t["flecha"] / 1000.0, 2), "r"), ("%s m" % _n(t["altura"] / 1000.0, 2), "r"),
-                            "%s / %s" % (t["banzos"], t["trelicamento"]) if t["trelicamento"] else t["banzos"],
-                            (_n(t["kg_un"], 1), "r"), (_n(t["kg_total"], 1), "r")] for t in tes],
-                          rodape=[("TOTAL", ""), (n["tesouras"], "c"), "", "", "", "", "", "", "", (_n(sum(t["kg_total"] for t in tes), 1), "r")],
-                          larguras=["9%", "5%", "9%", "10%", "10%", "11%", "11%", "19%", "8%", "8%"], classe="tes"))
-    notas = R["dados"].get("notas_tesouras") or ""
-    meias = [t for t in tes if t.get("meias", 0) >= 2]
-    if meias:
-        diferentes = [t["tipo"] for t in meias if len(t["membros"]) > 1]
-        notas = ("Fabricadas em 2 meias-tesouras emendadas na cumeeira%s. "
-                 % ((" (%s com as duas meias diferentes)" % " e ".join(diferentes)) if diferentes else "")) + notas
-    partes.append("<p class=\"nota\">* do nível de apoio ao topo do banzo superior na cumeeira.%s</p>" % ((" " + _esc(notas)) if notas else ""))
-    # 3. terças
-    tc = R["tercas"]
-    partes.append(_h2(3, "Terças e longarinas"))
-    if tc["linhas"]:
-        partes.append(_tabela(["Trecho", ("Linhas na cobertura", "r"), ("Linhas nas saias", "r"), ("Total de linhas", "r")],
-                              [[l["trecho"] + " (%s)" % l["eixos"], ("%d (%s por água)" % (l["cobertura"], "/".join(str(v) for v in sorted(l["por_agua"].values(), reverse=True)) or "0"), "r"),
-                                ("%d (%s por lado)" % (l["saias"], "/".join(str(v) for v in sorted(l["por_lado"].values(), reverse=True)) or "0"), "r"), (l["total"], "r")] for l in tc["linhas"]]))
-    c = tc["contagem"]
-    # as terças por tipo, em tabela (no lugar do parágrafo, 05/10); a contagem é a da lista e das pranchas
-    rot_f = {"cob": "cobertura", "lat": "lateral", "oit": "oitão", "marq": "marquise"}
-    if tc.get("itens"):
-        partes.append(_tabela(["Tipo", "Família", "Perfil", ("Comprimento", "r"), ("Qtd", "c"), ("kg", "r")],
-                              [[i["nome"], rot_f.get(i["familia"], i["familia"]), i["perfil"], ("%s m" % _n(i["comprimento"] / 1000.0, 2), "r"),
-                                (i["qtd"], "c"), (_n(i["kg"], 1), "r")] for i in tc["itens"]],
-                              rodape=[("TOTAL", "b"), "%d T.C. · %d T.L. · %d T.O.%s" % (c["cob"]["pecas"], c["lat"]["pecas"], c["oit"]["pecas"],
-                                                                                    (" · %d T.M." % c["marq"]["pecas"]) if c["marq"]["pecas"] else ""),
-                                      "", "", (sum(i["qtd"] for i in tc["itens"]), "c"), (_n(sum(i["kg"] for i in tc["itens"]), 1), "r")],
-                              larguras=["16%", "14%", "26%", "16%", "10%", "18%"]))
-    if tc["furos"]:
-        partes.append("<p class=\"nota\">Furos das terças: %s.</p>" % _esc(tc["furos"]))
-    fam = {f["chave"]: f for f in R["familias"]}
-    trav = []
-    for chave, rot in (("agul_cob", "agulhamentos de cobertura"), ("agul_lat", "agulhamentos laterais/oitão"), ("agul_diag", "agulhamentos diagonais"),
-                       ("contrav", "contraventamentos"), ("dispositivos", "dispositivos"), ("chumbadores", "chumbadores")):
-        if chave in fam:
-            trav.append("%d %s" % (fam[chave]["n"], rot))
-    if trav:
-        partes.append("<p class=\"nota\">Travamentos: %s.</p>" % _esc(", ".join(trav)))
-    # 4. pesos
-    gp = R["grupos_peso"]
-    linhas = [[g["grupo"], (_n(g["kg"], 1), "r"), (_n(g["pct"], 1) + "%", "r")] for g in gp]
+    sec = 0
+    # ---- a obra desenhada
+    svgs = X.get("svg") or {}
+    if varios:
+        sec += 1
+        partes.append(_h2(sec, "A obra em corte", "%d pavimentos" % len(X.get("pavimentos") or [])))
+        if svgs.get("corte"):
+            partes.append("<figure class=\"desenho\">%s</figure>" % svgs["corte"])
+            partes.append("<p class=\"nota\">Corte esquemático: o aço projetado na direção mais comprida do prédio, na cor do "
+                          "pavimento; os pilares de concreto em cinza. À direita, cada pavimento com as cotas e quantas vezes se repete.</p>")
+        linhas = []
+        for p in X.get("pavimentos") or []:
+            resumo_p = " · ".join("%d %s" % (pp["qtd"], pp["titulo"].lower()) for pp in p.get("papeis") or [] if pp["chave"] != "suportes")
+            linhas.append(["<span class=\"chip\" style=\"background:%s\"></span><b>%s</b>" % (_esc(p["cor"]), _esc(p["nome"])),
+                           "%s a %s" % (_nivel(p["z0"]), _nivel(p["z1"])), ("×%d" % p["repete"], "c"), _esc(resumo_p),
+                           (_n(p["kg"] / max(1, p["repete"]), 1), "r"), (_n(p["kg"], 1), "r")])
+        partes.append(_tabela(["Pavimento", "Cotas", ("Repete", "c"), "Peças (total)", ("kg por andar", "r"), ("kg total", "r")], linhas,
+                              larguras=["16%", "17%", "8%", "37%", "11%", "11%"], bruto=True,
+                              ids_linhas=[",".join(p.get("ids") or []) for p in X.get("pavimentos") or []]))
+    else:
+        sec += 1
+        partes.append(_h2(sec, "Implantação", ("eixos %s" % _eixos_rotulo(X.get("eixos"))) if X.get("eixos") else ""))
+        if svgs.get("implantacao"):
+            partes.append("<figure class=\"desenho\">%s</figure>" % svgs["implantacao"])
+            partes.append(_legenda(X.get("legenda") or []))
+        # o que o desenho não mostra, em cartões
+        c = []
+        if dim.get("n_tesouras", 0) > 1 and not X.get("eixos"):
+            c.append(("Comprimento entre tesouras", "%s m" % _n(dim["comprimento_total"] / 1000.0, 2), "%s a %s" % (dim["eixos"].split()[0], dim["eixos"].split()[-1])))
+        vaos = sorted({round(tr["vao"]) for tr in dim.get("trechos") or [] if tr.get("vao")}, reverse=True)
+        if vaos:
+            c.append(("Vão entre apoios", " · ".join("%s m" % _n(v / 1000.0, 2) for v in vaos), "das tesouras"))
+        if dim.get("projecao"):
+            c.append(("Projeção com beirais", "%s × %s m" % (_n(dim["projecao"][0] / 1000.0, 2), _n(dim["projecao"][1] / 1000.0, 2)),
+                      "área %s m²" % _n(dim.get("area_m2") or 0.0, 2)))
+        if dim.get("nivel_apoio") is not None:
+            c.append(("Nível de apoio", "%s%s m" % ("+" if dim["nivel_apoio"] >= 0 else "", _n(dim["nivel_apoio"] / 1000.0, 3)),
+                      "face de cima da chapa de apoio" if dim.get("apoio_por_chapa") else "ponto mais baixo das tesouras"))
+        if n.get("inclinacao"):
+            c.append(("Inclinação", "%s%%" % _n(100 * math.tan(math.radians(n["inclinacao"])), 0), "%s°" % _n(n["inclinacao"], 1)))
+        if c:
+            partes.append("<div class=\"cartoes\">%s</div>" % "".join(
+                "<div><span>%s</span><b>%s</b><em>%s</em></div>" % (_esc(a), _esc(b), _esc(d)) for a, b, d in c))
+        trechos = [tr for tr in dim.get("trechos") or [] if tr.get("nome")]
+        if len(trechos) > 1:
+            linhas = []
+            for tr in trechos:
+                if tr.get("transicao"):
+                    linhas.append(["Transição (%s)" % tr["eixos_transicao"], ("%s m" % _n(tr["transicao"] / 1000.0, 2), "r"), ""])
+                linhas.append(["<b>%s</b> (%s)" % (_esc(tr["nome"]), _esc(tr["eixos"])), ("vão %s m" % _n(tr["vao"] / 1000.0, 2), "r"),
+                               "projeção %s × %s m" % (_n(tr["projecao"][0] / 1000.0, 2), _n(tr["projecao"][1] / 1000.0, 2))])
+            partes.append("<h3>Trechos da cobertura</h3>" + _tabela(["Trecho", ("Medida", "r"), "Observação"], linhas, bruto=True,
+                                                                    larguras=["40%", "20%", "40%"]))
+    # ---- a estrutura por tipo
+    if blocos:
+        sec += 1
+        partes.append(_h2(sec, "Estrutura por tipo", "%d tipos" % len(blocos)))
+        partes.append("<p class=\"explica\">Cada tipo pelo papel na obra, com as peças por comprimento (sem separar perfil nem "
+                      "espessura); a marca é a das pranchas.%s</p>" % (" Na tela, clicar na linha abre o 3D com as peças dela." if not paginado else ""))
+        for b in blocos:
+            partes.append(_bloco_tipo(R, b, varios))
+        tc = R.get("tercas") or {}
+        if X.get("tem_cobertura", tem_tesouras) and tc.get("linhas"):
+            partes.append("<h3>Linhas de terças por trecho</h3>" + _tabela(
+                ["Trecho", ("Linhas na cobertura", "r"), ("Linhas nas saias", "r"), ("Total de linhas", "r")],
+                [[l["trecho"] + " (%s)" % l["eixos"], ("%d (%s por água)" % (l["cobertura"], "/".join(str(v) for v in sorted(l["por_agua"].values(), reverse=True)) or "0"), "r"),
+                  ("%d (%s por lado)" % (l["saias"], "/".join(str(v) for v in sorted(l["por_lado"].values(), reverse=True)) or "0"), "r"), (l["total"], "r")]
+                 for l in tc["linhas"]]))
+            if tc.get("furos"):
+                partes.append("<p class=\"nota\">Furos das terças: %s.</p>" % _esc(tc["furos"]))
+    # ---- a ficha de cada pavimento
+    if varios:
+        sec += 1
+        partes.append(_h2(sec, "Pavimentos", "planta e foto de cada um", parte=False))
+        for k, p in enumerate(X.get("pavimentos") or []):
+            foto = _foto(R, "pav-%d" % k)
+            lista_p = "".join("<li><i style=\"background:%s\"></i><b>%s</b> %s</li>" % (
+                _esc(pp["cor"]), _esc(pp["titulo"]), _esc(" · ".join("%d × %s" % (li["qtd"] // max(1, p["repete"]) if p["repete"] > 1 and li["qtd"] % p["repete"] == 0 else li["qtd"], _m(li["comprimento"]))
+                                                                for li in pp["linhas"][:6])))
+                for pp in p.get("papeis") or [])
+            por = " (por andar)" if p["repete"] > 1 else ""
+            partes.append(
+                "<section class=\"pav\"><h3 class=\"tipo\"><i style=\"background:%s\"></i>%s%s<small>%s a %s · %s kg%s</small></h3>"
+                "<figure class=\"desenho planta-pav\">%s<figcaption>Planta%s</figcaption></figure>"
+                "<div class=\"pav-corpo\">%s<ul class=\"pecas-pav\"><li class=\"t\">Peças%s</li>%s</ul></div></section>"
+                % (_esc(p["cor"]), _esc(p["nome"]), (" ×%d" % p["repete"]) if p["repete"] > 1 else "", _nivel(p["z0"]), _nivel(p["z1"]),
+                   _n(p["kg"], 1), (" (%s por andar)" % _n(p["kg"] / p["repete"], 1)) if p["repete"] > 1 else "",
+                   p.get("svg") or "", " de um andar" if p["repete"] > 1 else "",
+                   ("<figure class=\"foto-pav\"><img src=\"%s\" alt=\"\"><figcaption>O aço do pavimento na cor do tipo; o concreto em cinza</figcaption></figure>" % foto) if foto else "",
+                   por, lista_p))
+    # ---- pesos: pelo tipo de estrutura (o mesmo do dossiê) e o resto do aço
+    sec += 1
+    if blocos and X.get("estrutura"):
+        linhas = [["<span class=\"chip\" style=\"background:%s\"></span>%s" % (_esc(b["cor"]), _esc(b["titulo"])), (_n(b["kg"], 1), "r"),
+                   (_n(100.0 * b["kg"] / n["peso_aco"], 1) + "%" if n["peso_aco"] else "", "r")] for b in blocos]
+        resto = n["peso_aco"] - sum(b["kg"] for b in blocos)
+        if resto > 0.5:
+            linhas.append(["Chapas soltas, chumbadores e o mais", (_n(resto, 1), "r"), (_n(100.0 * resto / n["peso_aco"], 1) + "%", "r")])
+    else:
+        linhas = [[_esc(g["grupo"]), (_n(g["kg"], 1), "r"), (_n(g["pct"], 1) + "%", "r")] for g in R["grupos_peso"]]
     linhas.append([("TOTAL ESTRUTURA METÁLICA", "b"), (_n(n["peso_aco"], 1), "r"), ("100%", "r")])
-    linhas.append(["Telhas (%s ml)" % _n(n["ml_telhas"], 2), (_n(n["peso_telhas"], 1), "r"), ""])
+    if n.get("ml_telhas"):
+        linhas.append(["Telhas (%s ml)" % _n(n["ml_telhas"], 2), (_n(n["peso_telhas"], 1), "r"), ""])
     if n.get("peso_funilaria"):
         linhas.append(["Rufos e calhas", (_n(n["peso_funilaria"], 1), "r"), ""])
-    linhas.append([("TOTAL GERAL (AÇO + TELHAS%s)" % (" + RUFOS" if n.get("peso_funilaria") else ""), "b"), (_n(n["total"], 1), "r"), ""])
-    partes.append(_h2(4, "Pesos", "%s kg de aço" % _n(n["peso_aco"], 1)) + _tabela(["Grupo", ("Peso (kg)", "r"), ("%", "r")], linhas, larguras=["70%", "18%", "12%"]))
+    if n.get("ml_telhas") or n.get("peso_funilaria"):
+        linhas.append([("TOTAL GERAL (AÇO + TELHAS%s)" % (" + RUFOS" if n.get("peso_funilaria") else ""), "b"), (_n(n["total"], 1), "r"), ""])
+    partes.append(_h2(sec, "Pesos", "%s kg de aço" % _n(n["peso_aco"], 1)) + _tabela(["Grupo", ("Peso (kg)", "r"), ("%", "r")], linhas,
+                                                                                    larguras=["70%", "18%", "12%"], bruto=True))
     partes.append("<p class=\"nota\">Pesos teóricos: perfis formados a frio pela NBR 6355 (tira desenvolvida com o desconto das dobras), "
-                  "laminados, tubos e barras pelas tabelas do catálogo, chapas pelo retângulo envolvente. Não inclui solda, pintura, "
-                  "parafusos das telhas, rufos e calhas.</p>")
-    # 5. telhas
-    T = R["telhas"]
-    partes.append(_h2(5, "Telhas", "%s ml" % _n(T["ml_total"], 2)))
-    desc = T["descricao"]
-    rot_trecho = {"cobertura": "cobertura", "fechamento": "fechamentos (oitões e paredes)", "forro": "forro do beiral"}
-    linhas = []
-    for trecho, itens in T["trechos"].items():
-        # num trecho com muitos comprimentos (oitões, forro), só os tipos grandes saem
-        # um a um; os miúdos vão numa linha só, como na relação da fábrica
-        soltos = [it for it in itens if it["ml"] >= 20.0 or it["qtd"] >= 10] if len(itens) > 6 else list(itens)
-        miudos = [it for it in itens if it not in soltos]
-        for it in soltos:
-            texto = "%s - %s%s" % (it.get("descricao") or desc or ("Telha %s" % it["perfil"]), rot_trecho[trecho],
-                                   " - multidobra" if it["codigo"] == "MD" else (" - cumeeira" if it["codigo"] == "CU" else "")) \
-                + (" - cortada na largura" if it["cortada"] else "")
-            linhas.append([it["codigo_n"], texto, (it["qtd"], "c"), (_n(it["comprimento"] / 1000.0, 2), "r"), (_n(it["ml"], 2), "r"),
-                           (_n(it.get("m2") or 0.0, 2), "r"), (_n(it["kg"], 1), "r")])
-        if miudos:
-            codigos = [it["codigo_n"] for it in miudos]
-            texto = "%s - %s (%d comprimentos: %s a %s - ver relação de telhas)" % (
-                miudos[0].get("descricao") or desc or ("Telha %s" % miudos[0]["perfil"]), rot_trecho[trecho], len(miudos), codigos[0], codigos[-1])
-            linhas.append(["%d tipos" % len(miudos), texto, (sum(it["qtd"] for it in miudos), "c"), ("vários", "r"),
-                           (_n(sum(it["ml"] for it in miudos), 2), "r"), (_n(sum(it.get("m2") or 0.0 for it in miudos), 2), "r"),
-                           (_n(sum(it["kg"] for it in miudos), 1), "r")])
-    sub = " + ".join("%s %s ml" % (rot_trecho[k], _n(v, 2)) for k, v in T["ml_por_trecho"].items())
-    partes.append(_tabela(["Tipo", "Descrição", ("Qtd", "c"), ("Comp. (m)", "r"), ("Total (ml)", "r"), ("m²", "r"), ("kg", "r")], linhas,
-                          rodape=[("TOTAL", "b"), sub, "", "", (_n(T["ml_total"], 2), "r"), (_n(T.get("m2_total") or 0.0, 2), "r"),
-                                  (_n(T["kg_total"], 1), "r")],
-                          larguras=["10%", "47%", "6%", "9%", "10%", "9%", "9%"]))
-    partes.append("<p class=\"nota\">m² pela largura útil (%s m).</p>" % _n(T["largura_util"] / 1000.0, 2))
-    # 6. parafusos
+                  "laminados, tubos e barras pelas tabelas do catálogo, chapas pelo retângulo envolvente; o conjunto com as chapas dele. "
+                  "Não inclui solda, pintura, parafusos das telhas, rufos e calhas.</p>")
+    # ---- telhas (só a obra com telha)
+    T = R.get("telhas") or {}
+    if T.get("ml_total"):
+        sec += 1
+        partes.append(_h2(sec, "Telhas", "%s ml" % _n(T["ml_total"], 2)))
+        desc = T.get("descricao")
+        rot_trecho = {"cobertura": "cobertura", "fechamento": "fechamentos (oitões e paredes)", "forro": "forro do beiral"}
+        linhas = []
+        for trecho, itens in T["trechos"].items():
+            soltos = [it for it in itens if it["ml"] >= 20.0 or it["qtd"] >= 10] if len(itens) > 6 else list(itens)
+            miudos = [it for it in itens if it not in soltos]
+            for it in soltos:
+                texto = "%s - %s%s" % (it.get("descricao") or desc or ("Telha %s" % it["perfil"]), rot_trecho[trecho],
+                                       " - multidobra" if it["codigo"] == "MD" else (" - cumeeira" if it["codigo"] == "CU" else "")) \
+                    + (" - cortada na largura" if it["cortada"] else "")
+                linhas.append([it["codigo_n"], texto, (it["qtd"], "c"), (_n(it["comprimento"] / 1000.0, 2), "r"), (_n(it["ml"], 2), "r"),
+                               (_n(it.get("m2") or 0.0, 2), "r"), (_n(it["kg"], 1), "r")])
+            if miudos:
+                codigos = [it["codigo_n"] for it in miudos]
+                texto = "%s - %s (%d comprimentos: %s a %s - ver relação de telhas)" % (
+                    miudos[0].get("descricao") or desc or ("Telha %s" % miudos[0]["perfil"]), rot_trecho[trecho], len(miudos), codigos[0], codigos[-1])
+                linhas.append(["%d tipos" % len(miudos), texto, (sum(it["qtd"] for it in miudos), "c"), ("vários", "r"),
+                               (_n(sum(it["ml"] for it in miudos), 2), "r"), (_n(sum(it.get("m2") or 0.0 for it in miudos), 2), "r"),
+                               (_n(sum(it["kg"] for it in miudos), 1), "r")])
+        sub = " + ".join("%s %s ml" % (rot_trecho[k], _n(v, 2)) for k, v in T["ml_por_trecho"].items())
+        partes.append(_tabela(["Tipo", "Descrição", ("Qtd", "c"), ("Comp. (m)", "r"), ("Total (ml)", "r"), ("m²", "r"), ("kg", "r")], linhas,
+                              rodape=[("TOTAL", "b"), sub, "", "", (_n(T["ml_total"], 2), "r"), (_n(T.get("m2_total") or 0.0, 2), "r"),
+                                      (_n(T["kg_total"], 1), "r")],
+                              larguras=["10%", "47%", "6%", "9%", "10%", "9%", "9%"]))
+        partes.append("<p class=\"nota\">m² pela largura útil (%s m).</p>" % _n(T["largura_util"] / 1000.0, 2))
+    # ---- parafusos
     P = R["parafusos"]
-    partes.append(_h2(6, "Parafusos e fixadores", "%d parafusos" % n["parafusos"]))
+    sec += 1
+    partes.append(_h2(sec, "Parafusos e fixadores", "%d parafusos" % n["parafusos"]))
     linhas = []
     for it in P:
         primeiro = True
@@ -1527,16 +1708,31 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     partes.append(_tabela(["Parafuso / fixador", "Descrição comercial", ("Qtd", "c"), "Local de uso", ("Qtd no local", "r")], linhas,
                           rodape=[("TOTAL DE PARAFUSOS", "b"), "", (n["parafusos"], "c"), "", ""], larguras=["12%", "22%", "6%", "52%", "8%"], bruto=True))
     partes.append("<p class=\"nota\">Quantidades conforme o modelo 3D.</p>")
-    # 7. pendências de conferência (05/10): as ressalvas da lista e o que o levantamento não reconheceu
+    # ---- pendências de conferência
     pend = R.get("pendencias")
-    if pend is None:                                       # resumo sem as pendências montadas: os avisos que contam
+    if pend is None:
         pend = [{"peca": "", "perfil": "", "o_que": a} for a in _avisos_que_contam(R.get("avisos") or [])]
-    partes.append(_h2(7, "Pendências de conferência", ("%d a conferir" % len(pend)) if pend else "nenhuma pendência", "atencao" if pend else "ok"))
+    sec += 1
+    partes.append(_h2(sec, "Pendências de conferência", ("%d a conferir" % len(pend)) if pend else "nenhuma pendência", "atencao" if pend else "ok"))
     if pend:
-        # a tela da lista liga o clique na linha: abre o 3D com as peças em destaque (os ids na linha, 06/10)
         partes.append(_tabela(["Peça", "Perfil", "O que conferir"], [[x["peca"], x["perfil"], x["o_que"]] for x in pend],
                               larguras=["18%", "22%", "60%"], ids_linhas=[",".join(x.get("ids") or []) for x in pend]))
     return _doc(R, "Resumo da obra", "".join(partes), paginado)
+
+
+def _nivel(z: float) -> str:
+    return ("+" if z >= 0 else "") + _n(z / 1000.0, 2)
+
+
+def _eixos_rotulo(eixos: Optional[dict]) -> str:
+    nums = [x["nome"] for x in (eixos or {}).get("numeros") or []]
+    lets = [x["nome"] for x in (eixos or {}).get("letras") or []]
+    partes = []
+    if nums:
+        partes.append("%s a %s" % (nums[0], nums[-1]) if len(nums) > 1 else nums[0])
+    if lets:
+        partes.append("%s a %s" % (lets[0], lets[-1]) if len(lets) > 1 else lets[0])
+    return " × ".join(partes)
 
 
 def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
