@@ -723,6 +723,13 @@ export class Visor3D {
   definirCamera(c) {
     if (!c || !c.posicao || !c.alvo) return;
     const o = this.cabecalho.origem;
+    // a vista guardada absurda (número inválido, alvo fora do modelo, câmera a quilômetros) não se repete a cada F5:
+    // abre enquadrado (09/10)
+    const pos = new THREE.Vector3(c.posicao[0] - o[0], c.posicao[1] - o[1], c.posicao[2] - o[2]);
+    const alv = new THREE.Vector3(c.alvo[0] - o[0], c.alvo[1] - o[1], c.alvo[2] - o[2]);
+    const esf = this._esferaModelo;
+    if (![pos.x, pos.y, pos.z, alv.x, alv.y, alv.z].every(Number.isFinite) || pos.distanceTo(alv) < 1
+        || alv.distanceTo(esf.center) > esf.radius * 3 || pos.distanceTo(esf.center) > esf.radius * 40) return;
     this.camera.position.set(c.posicao[0] - o[0], c.posicao[1] - o[1], c.posicao[2] - o[2]);
     this.controles.target.set(c.alvo[0] - o[0], c.alvo[1] - o[1], c.alvo[2] - o[2]);
     const dist = this.camera.position.distanceTo(this.controles.target);
@@ -773,11 +780,10 @@ export class Visor3D {
   _zoomNaPeca(ev) {
     if (!this.fichas || !ev.deltaY) return;
     const r = this.tela.getBoundingClientRect();
-    const achado = this.pontoEm(ev.clientX - r.left, ev.clientY - r.top);
-    if (!achado) return;
+    const foco = this._focoSeguro(ev.clientX - r.left, ev.clientY - r.top);
+    if (!foco) return;
     ev.preventDefault();
     ev.stopImmediatePropagation();
-    const foco = new THREE.Vector3(achado.local[0], achado.local[1], achado.local[2]);
     const cliques = Math.max(-5, Math.min(5, ev.deltaY / (ev.deltaMode === 1 ? 3 : ev.deltaMode === 2 ? 1 : 100)));
     const k = Math.pow(0.85, -cliques);                // < 1 aproxima, > 1 afasta
     const cam = this.camera, alvo = this.controles.target;
@@ -792,6 +798,39 @@ export class Visor3D {
     if (perto !== cam.near) { cam.near = perto; cam.updateProjectionMatrix(); }
     this.controles.update();
     this.pedirQuadro();
+  }
+
+  /** O ponto da peça sob (x, y) em que a rodinha mira, conferido: o da placa (`pontoEm`) só vale dentro da caixa do
+   *  modelo e sobre o raio do cursor — a placa de vídeo integrada pode devolver lixo na imagem em ponto flutuante, e
+   *  um ponto a quilômetros mandava a câmera para longe num clique (o BRAMAIS "sumia" ao primeiro giro, 09/10). Sem
+   *  ele, a entrada do raio na caixa da peça (conta nossa, sem a placa); sem peça, null. */
+  _focoSeguro(x, y) {
+    const id = this.escolher(x, y);
+    if (id < 0) return null;
+    const ndc = new THREE.Vector2(x / Math.max(this.tela.clientWidth, 1) * 2 - 1, -(y / Math.max(this.tela.clientHeight, 1)) * 2 + 1);
+    const raio = new THREE.Raycaster();
+    this.camera.updateMatrixWorld();
+    raio.setFromCamera(ndc, this.camera);
+    const caixa = this._caixaModelo.clone().expandByScalar(this._esferaModelo.radius * 0.1 + 1000);
+    let achado = null;
+    try { achado = this.pontoEm(x, y); } catch (e) { achado = null; }
+    if (achado) {
+      const p = new THREE.Vector3(achado.local[0], achado.local[1], achado.local[2]);
+      const d = this.camera.position.distanceTo(p);
+      if (Number.isFinite(d) && caixa.containsPoint(p) && raio.ray.distanceToPoint(p) <= Math.max(0.02 * d, 50)) return p;
+      if (!this._avisouPonto && window.__registrarLento) {
+        // uma vez: o ponto da placa fora do lugar, com a placa de vídeo, para o registro do servidor
+        this._avisouPonto = true;
+        let placa = '?';
+        try { const g = this.renderer.getContext(), x = g.getExtension('WEBGL_debug_renderer_info'); placa = x ? g.getParameter(x.UNMASKED_RENDERER_WEBGL) : '?'; } catch (e) { /* sem a extensão */ }
+        try { window.__registrarLento({ tipo: 'erro', mensagem: 'ponto da placa fora do lugar no zoom (' + placa + '): ' + achado.local.map(Math.round).join(', '), onde: 'visor3d' }); } catch (e) { /* sem registro */ }
+      }
+    }
+    const f = this.fichas[id], b = f && f.b;
+    const caixaPeca = b ? new THREE.Box3(new THREE.Vector3(b[0], b[1], b[2]), new THREE.Vector3(b[3], b[4], b[5])).expandByScalar(5)
+                        : new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(f.x[0], f.x[1], f.x[2]), new THREE.Vector3(600, 600, 600));
+    const p = raio.ray.intersectBox(caixaPeca, new THREE.Vector3());
+    return p && caixa.containsPoint(p) ? p : null;
   }
 
   /** Gira câmera e alvo juntos em volta de `pivo` (em volta do Z e do eixo horizontal da tela), na velocidade do
