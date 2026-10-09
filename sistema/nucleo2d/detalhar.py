@@ -48,6 +48,8 @@ from nucleo2d.detalhe.base import (  # noqa: E402,F401
     GRUPOS,
     GRUPOS_BASE,
     TITULOS_ANTIGOS,
+    TITULO_SEM_COBERTURA,
+    obra_tem_cobertura,
     LIMITE_TERCA,
     PREFIXO_NOME,
     Ponto,
@@ -845,6 +847,10 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
     avisar("nomes de produção…")
     nomeacao = nomear(posicoes, camadas, pecas, conjuntos_info, anteriores=nomes, fixadores=_so_parafusos(_fixadores(doc)))
     nomes_pos, nomes_conj = nomeacao["posicoes"], nomeacao["conjuntos"]
+    # sem cobertura, a treliça é viga caixote, não tesoura (o título nas pranchas e na lista; a categoria fica)
+    cobertura = obra_tem_cobertura(posicoes, nomeacao.get("tipos"))
+    nomeacao["cobertura"] = cobertura
+    titulo_trelica = {} if cobertura else {"titulo_categoria": TITULO_SEM_COBERTURA}
     for c in conjuntos_info:
         c["nome"] = nomes_conj.get(c["marca"], "")
     # camada 2D de cada posição: barra de conjunto pelo que ela é na elevação (votos
@@ -972,7 +978,7 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                                     conformadas=conformadas, pesos=pesos), m["pecas"])))
             itens_montadas[rot_m] = {"quantidade": m["n"], "perfil": "tesoura montada (metades %s)" % metades_m, "material": "",
                                      "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
-                                     "categoria": "TESOURAS", "nome": nome_m,
+                                     "categoria": "TESOURAS", "nome": nome_m, **titulo_trelica,
                                      "marcas": [mk for r in m["rotulos"] for mk in r.split(" / ")]}
         for rotulo, inst, n, nota in celulas:
             if rotulo in meias_cobertas:
@@ -1028,7 +1034,8 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             _quadros_por_tipo(d, fns, largura_max_papel=1400.0)
         itens = {c["marca"]: {"quantidade": c["instancias"], "perfil": "conjunto de %d peças" % sum(c["composicao"].values()),
                               "material": "", "comprimento": 0, "espessura": 0, "peso": 0, "classe": "Conjunto",
-                              "categoria": c["categoria"], "marcas": c["marcas"], "nome": c["nome"]}
+                              "categoria": c["categoria"], "marcas": c["marcas"], "nome": c["nome"],
+                              **(titulo_trelica if c["categoria"] == "TESOURAS" else {})}
                  for c in conjuntos_info}
         itens.update(itens_cv)
         itens.update(itens_montadas)
@@ -1352,6 +1359,12 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         avisos.append("%d peça(s) maiores que a barra comercial de %d m, sem emenda no modelo: %s"
                       % (len(longas), round(max(BARRAS_COMERCIAIS) / 1000.0),
                          "; ".join("%s %d mm" % (p.nome or p.marca, round(p.comprimento)) for p in longas)))
+    if not cobertura:
+        # o título dos quadros das treliças nos desenhos de detalhamento ("TESOURAS", "TESOURAS (continuação)")
+        for d_ in desenhos.values():
+            for e_ in list(getattr(d_, "entidades", {}).values()):
+                if isinstance(e_, Texto) and str(e_.texto).startswith("TESOURAS"):
+                    e_.texto = TITULO_SEM_COBERTURA.upper() + str(e_.texto)[len("TESOURAS"):]
     return {"desenhos": desenhos, "posicoes": resumo_pos, "conjuntos": conjuntos_info,
             "multidobras": [{k: v for k, v in t.items() if k not in ("ids", "p1", "p2", "d1", "d2", "I", "T", "sentido")}
                             for t in md["telhas"]],

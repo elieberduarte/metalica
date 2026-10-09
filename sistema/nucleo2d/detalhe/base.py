@@ -1761,6 +1761,22 @@ def _eixo_da_peca(ent: Solido):
     return (tuple(c[i] + e1[i] * min(ts) for i in range(3)), tuple(c[i] + e1[i] * max(ts) for i in range(3)))
 
 
+# ============================================================ cobertura
+#: O nome da treliça que não é cobertura (09/10, o usuário sobre o Vicente: "não são tesouras, lá são as vigas caixotes
+#: [...] tesouras é quando é cobertura, isso vale para as terças"). A categoria interna segue TESOURAS (conjunto com
+#: 8 barras ou mais) e as marcas T1, T2… ficam; muda o que se lê nas pranchas, na lista e nos resumos.
+TITULO_SEM_COBERTURA = "Vigas caixote"
+
+
+def obra_tem_cobertura(posicoes, tipos: Optional[dict] = None) -> bool:
+    """A obra tem cobertura (telha, ou terça de cobertura ou de marquise)? Só então a treliça é tesoura."""
+    tipos = tipos or {}
+    for p in posicoes:
+        if getattr(p, "classe", "") == "telha" or tipos.get(getattr(p, "marca", "")) in ("telha", "terca_cobertura", "terca_marquise"):
+            return True
+    return False
+
+
 # ============================================================ montagem
 #: Quadros das pranchas, na ordem em que aparecem.
 CATEGORIAS = collections.OrderedDict([

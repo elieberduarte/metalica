@@ -290,6 +290,16 @@ def _moldura(d: Desenho, formato: str, info: dict, numero: int, total: int, esca
     return _modelo.desenhar_folha(d, formato, larg, alt, info, numero, total, esc_txt, conteudo)
 
 
+def _titulo_da_trelica(cels: Sequence[dict]) -> Optional[str]:
+    """"Vigas caixote" quando as treliças das células são da obra sem cobertura (o `titulo_categoria` que o detalhar põe
+    no item); None na obra com cobertura, em que a treliça é tesoura."""
+    for c in cels:
+        it = c.get("item") or {}
+        if it.get("categoria") == "TESOURAS" and it.get("titulo_categoria"):
+            return str(it["titulo_categoria"])
+    return None
+
+
 def _conteudo_de(cels: Sequence[dict]) -> List[str]:
     """Linhas do CONTEÚDO: por categoria, os nomes com a quantidade — "- TESOURAS: T1 (05x), T2 (02x)";
     vistas e cortes pelo título do desenho."""
@@ -301,6 +311,8 @@ def _conteudo_de(cels: Sequence[dict]) -> List[str]:
         cat = (c.get("categoria") or it.get("categoria") or "VISTAS").upper()
         cat = {"CHUMBACAO": "PLANTA DE CHUMBAÇÃO", "TELHAS_DET": "TELHAS", "TELHAS_TIPOS": "TELHAS",
                "LOCALIZACAO": "VISTAS"}.get(cat, cat)
+        if cat == "TESOURAS" and it.get("titulo_categoria"):
+            cat = str(it["titulo_categoria"]).upper()
         nome = (it.get("nome") or c.get("montagem") or c.get("marca") or c.get("desenho_titulo") or c["titulo"]).replace("Detalhamento – ", "")
         if it or c.get("montagem"):
             nome = _nome_da_celula(c, nome)
@@ -473,6 +485,10 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         # os contraventos e os agulhamentos num quadro próprio, ao lado dos conjuntos (pedido do usuário, 28/09)
         if c["categoria"] == "CONJUNTOS" and re.match(r"(A\.[CLD]\.|CV\.)", str((c.get("item") or {}).get("nome") or c.get("titulo") or "")):
             c["categoria"] = "CONTRAVENTOS"
+    # a treliça da obra sem cobertura é viga caixote (o detalhar marca o item, 09/10): o título do quadro e do carimbo
+    sem_cobertura = _titulo_da_trelica(itens)
+    if sem_cobertura:
+        titulos_q["TESOURAS"] = sem_cobertura
     # as telhas numa prancha só (pedido do usuário, 28/09): sem as peças uma a uma (TL7…) nem a face repetida
     # (a FACE 3 = FACE 2), as vistas no quadro das telhas na escala que as faz caber, e os detalhes (a
     # multidobra tipo, a cumeeira) na faixa de baixo
@@ -2588,6 +2604,8 @@ def _blocos_da_legenda(cels: Sequence[dict], detalhes: Sequence[dict] = ()) -> L
         nomes += [x["nome"] for x in (it.get("composicao") or [])]
     blocos = [("NESTA PRANCHA", linhas)] if linhas else []
     siglas = siglas_usadas(nomes)
+    if _titulo_da_trelica(cels):
+        siglas = [(s, "Viga caixote" if s == "T" else t) for s, t in siglas]
     if siglas:
         blocos.append(("SIGLAS", siglas))
     return blocos

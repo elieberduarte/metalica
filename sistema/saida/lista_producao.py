@@ -390,8 +390,10 @@ def comparar_dobras(perfis: Sequence[dict]) -> dict:
 def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: Dict[str, int],
            pecas=None, barra: float = 0.0, projeto: Optional[dict] = None,
            nomes_conjuntos: Optional[Dict[str, str]] = None, escolhas: Optional[Dict[str, str]] = None,
-           emendas: Optional[Sequence[str]] = None) -> dict:
+           emendas: Optional[Sequence[str]] = None, cobertura: Optional[bool] = None) -> dict:
     """A lista inteira, pronta para gravar em JSON. `barra` em mm (0 = automático);
+    `cobertura`: a obra tem cobertura (o detalhar diz, pelos nomes); sem ela, a treliça é viga caixote e não tesoura
+    (None: pela lista — telha ou terça na obra);
     `nomes_conjuntos`: marca do conjunto → nome de produção; `escolhas`: tipo do perfil no IFC → item do catálogo
     escolhido para a compra (a troca do resumo de materiais, 06/10), que dá o nome e o kg/m."""
     from nucleo2d.detalhar import CATEGORIAS
@@ -605,9 +607,17 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         for d in grupo:
             if d.get("perfil"):
                 d["perfil_nome"] = com_bitola_e_mm(d["perfil"])
+    if cobertura is None:
+        cobertura = any(p.classe == "telha" or categorias.get(p.marca) in ("TELHAS", "TERÇAS") for p in posicoes)
+    if not cobertura:
+        from nucleo2d.detalhe.base import TITULO_SEM_COBERTURA
+        for c in conjuntos:
+            if c.get("categoria") == "TESOURAS":
+                c["titulo_categoria"] = TITULO_SEM_COBERTURA
     return {
         "gerado": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "projeto": dict(projeto or {}),
+        "cobertura": bool(cobertura),
         "barra": barra or 0,
         "totais": {"posicoes": len(linhas), "pecas": sum(li["quantidade"] for li in linhas),
                    "peso": round(peso_total, 1), "conjuntos": len(conjuntos),
@@ -885,6 +895,13 @@ def _cabecalho_html(lista: dict) -> str:
             % (trs, _esc(identificacao())))
 
 
+def _tipo_do_conjunto(c: dict) -> str:
+    """O tipo na tabela de conjuntos: tesoura/pórtico, viga caixote (a treliça da obra sem cobertura) ou conjunto."""
+    if c.get("categoria") != "TESOURAS":
+        return "Conjunto"
+    return "Viga caixote" if c.get("titulo_categoria") else "Tesoura/pórtico"
+
+
 def corpo_html(lista: dict) -> str:
     """Os quadros da lista (sem <html>): o mesmo HTML vai para a impressão e para o PDF."""
     partes = [_cabecalho_html(lista)]
@@ -949,7 +966,7 @@ def corpo_html(lista: dict) -> str:
         partes.append(_tabela("Quadro 5 — Conjuntos (montagens): instâncias, composição e peso",
                               [("Nome", "l"), ("Conjunto", "l"), ("Tipo", "l"), ("Instâncias", "c"), ("Peças/un.", "c"), ("Composição", "l"),
                                ("Peso un. (kg)", "r"), ("Peso total (kg)", "r")],
-                              [[(c.get("nome") or "—", "l b"), (c["marca"], "l"), ("Tesoura/pórtico" if c["categoria"] == "TESOURAS" else "Conjunto", "l"),
+                              [[(c.get("nome") or "—", "l b"), (c["marca"], "l"), (_tipo_do_conjunto(c), "l"),
                                 (c["instancias"], "c"), (c["pecas_unidade"], "c"), (c["composicao_texto"], "l"),
                                 (_n(c["peso_unitario"], 1), "r"), (_n(c["peso_total"], 1), "r b")] for c in lista["conjuntos"]],
                               larguras=["8%", "8%", "11%", "8%", "8%", "37%", "10%", "10%"]))

@@ -1087,7 +1087,8 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
         categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
-                                      nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s))
+                                      nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s),
+                                      cobertura=(r.get("nomes") or {}).get("cobertura"))
         lista["pre_moldados"] = r.get("fora_do_aco") or []
         lista["estrutura_a_conferir"] = r.get("estrutura_a_conferir") or []
         arquivos = lista_producao.gravar(pasta, lista, r["objetos_posicoes"], r["acessorios"])
@@ -2143,7 +2144,7 @@ def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> d
         categorias = {p.marca: _categoria(p, r["camadas"].get(p.marca, "")) for p in r["objetos_posicoes"]}
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                       projeto=_identificacao_do_projeto(s), nomes_conjuntos=nomes.get("ifc_conjuntos"),
-                                      escolhas=_perfis_compra(s), emendas=_perfis_emenda(s))
+                                      escolhas=_perfis_compra(s), emendas=_perfis_emenda(s), cobertura=nomes.get("cobertura"))
         # o aço fora das peças (gradil, piso de chapa perfurada) entra na compra do resumo de materiais (06/10)
         lista["pre_moldados"] = r.get("fora_do_aco") or []
         lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}
@@ -2282,7 +2283,8 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
         lev = levantar(doc, regra_tercas=corpo.get("regra_tercas", True) is not False, ajustes=_ajustes_furos(s), nomes=nomes)
         lista = lista_producao.montar(lev["posicoes"], lev["categorias"], lev["acessorios"], pecas=lev["pecas"],
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
-                                      nomes_conjuntos=nomes.get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s))
+                                      nomes_conjuntos=nomes.get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s),
+                                      cobertura=nomes.get("cobertura"))
         lista["pre_moldados"] = lev.get("fora_do_aco") or []
         lista["estrutura_a_conferir"] = lev.get("estrutura_a_conferir") or []
         lista_producao.gravar(pasta, lista, lev["posicoes"], lev["acessorios"])

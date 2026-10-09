@@ -47,3 +47,19 @@ def test_planta_com_eixos_e_cotas_e_o_corte_com_os_pavimentos():
     pavs = [{"nome": "Duplex", "faixas": [(0.0, 6000.0)], "repete": 1, "z0": 0.0, "z1": 6000.0, "cor": "#1f6feb"}]
     corte = dossie.corte_svg(geo, pavs, {"p1": "Duplex", "v1": "Duplex"})
     assert "Duplex" in corte and "+6,00" in corte
+
+
+def test_trelica_sem_cobertura_e_viga_caixote():
+    """sem telha nem terça de cobertura a treliça é viga caixote: nas pranchas, na lista e nos resumos (09/10)"""
+    from nucleo2d.detalhe.base import TITULO_SEM_COBERTURA, obra_tem_cobertura
+    from nucleo2d import pranchas
+    from saida import lista_producao
+    p_telha, p_terca, p_viga = (SimpleNamespace(marca=m, classe=c) for m, c in (("P1", "telha"), ("P2", "barra"), ("P3", "barra")))
+    assert obra_tem_cobertura([p_telha]) and obra_tem_cobertura([p_terca], {"P2": "terca_cobertura"})
+    assert not obra_tem_cobertura([p_terca, p_viga], {"P2": "terca_lateral"})
+    cel = {"titulo": "T1", "item": {"categoria": "TESOURAS", "nome": "T1", "titulo_categoria": TITULO_SEM_COBERTURA}}
+    assert pranchas._titulo_da_trelica([cel]) == "Vigas caixote"
+    assert pranchas._conteudo_de([cel])[0].startswith("- VIGAS CAIXOTE:")
+    assert pranchas._titulo_da_trelica([{"item": {"categoria": "TESOURAS", "nome": "T1"}}]) is None
+    assert lista_producao._tipo_do_conjunto({"categoria": "TESOURAS", "titulo_categoria": "Vigas caixote"}) == "Viga caixote"
+    assert lista_producao._tipo_do_conjunto({"categoria": "TESOURAS"}) == "Tesoura/pórtico"

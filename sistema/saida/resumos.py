@@ -633,8 +633,14 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         itens = sorted(((nomes_pos.get(p.marca) or p.marca, p.quantidade) for p in ps), key=lambda kv: _ordem_natural(kv[0]))
         return " · ".join("%s %dx" % kv for kv in itens)
 
+    # sem cobertura, a treliça é viga caixote (o detalhar diz pelos nomes; o resumo montado sem ele, pelas posições)
+    from nucleo2d.detalhe.base import TITULO_SEM_COBERTURA, obra_tem_cobertura
+    cobertura = nomes.get("cobertura") if nomes.get("cobertura") is not None else obra_tem_cobertura(posicoes, tipos)
+    titulo_trelica = "Tesouras" if cobertura else TITULO_SEM_COBERTURA
     familias: List[dict] = []
     for chave, titulo in FAMILIAS.items():
+        if chave == "tesouras":
+            titulo = titulo_trelica
         ps = fam_pos.get(chave) or []
         conjs = [r for r in por_conj_nome.values() if (r["categoria"] == "TESOURAS" and chave == "tesouras")
                  or (r["categoria"] != "TESOURAS" and familia_do_conjunto(r["marcas"][0]) == chave)]
@@ -686,7 +692,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     for titulo, chaves in GRUPOS_PESO:
         kg = sum(peso_fam.get(c, 0.0) for c in chaves)
         if kg > 0:
-            grupos_peso.append({"grupo": titulo, "kg": kg})
+            grupos_peso.append({"grupo": titulo_trelica if chaves == ("tesouras",) else titulo, "kg": kg})
     peso_aco = sum(kg for f, kg in peso_fam.items() if f not in FORA_DO_ACO)
     peso_telhas = telhas["kg_total"]
     ml_telhas = telhas["ml_total"]
@@ -699,7 +705,7 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
     pendencias = _pendencias(lista, parafusos, lev, nomes_pos)
     pintura = _area_de_pintura(lista)
     compra = _compra(lista, parafusos, telhas, dados)
-    maior, pesada = _maior_e_mais_pesada(lista, tipos_tes)
+    maior, pesada = _maior_e_mais_pesada(lista, tipos_tes, "tesoura" if cobertura else "viga caixote")
     # onde fica cada tesoura, para o tipo dela na implantação do dossiê: a ponta de cima em planta (09/10)
     tesouras_lugar = []
     for t in tes_inst:
@@ -714,7 +720,11 @@ def levantar_resumos(doc: Documento, lev: dict, lista: dict, nomes: dict, dados:
         "gerado": _time.strftime("%d/%m/%Y %H:%M"), "pendencias": pendencias, "pintura": pintura, "compra": compra,
         "maior": maior, "mais_pesada": pesada, "tesouras_lugar": tesouras_lugar,
         "projeto": identificacao, "dados": dados,
-        "numeros": {"tesouras": sum(t["qtd"] for t in tipos_tes), "peso_aco": peso_aco, "ml_telhas": ml_telhas,
+        "cobertura": cobertura,
+        # sem cobertura não há tesoura (a proposta e o orçamento contavam as 129 caixas do Vicente como tesouras)
+        "numeros": {"tesouras": sum(t["qtd"] for t in tipos_tes) if cobertura else 0,
+                    "trelicas_sem_cobertura": 0 if cobertura else sum(t["qtd"] for t in tipos_tes),
+                    "peso_aco": peso_aco, "ml_telhas": ml_telhas,
                     "peso_telhas": peso_telhas, "peso_funilaria": peso_funilaria,
                     "total": peso_aco + peso_telhas + peso_funilaria, "parafusos": n_parafusos,
                     "inclinacao": inclinacao, "kg_m2": (peso_aco / area_m2) if area_m2 else None,
@@ -1173,7 +1183,7 @@ def _outros_aco(lista: dict) -> List[dict]:
     return sorted(g.values(), key=lambda r: (r["familia"], r["item"]))
 
 
-def _maior_e_mais_pesada(lista: dict, tipos_tes: List[dict]):
+def _maior_e_mais_pesada(lista: dict, tipos_tes: List[dict], nome_trelica: str = "tesoura"):
     """A maior peça (comprimento, para o transporte) e a mais pesada (para o içamento): entre as peças soltas e os
     conjuntos montados (a tesoura inteira, ou as meias quando é fabricada em duas)."""
     # sem as telhas e a funilaria (rufo, calha: chapa dobrada de aluzinc, não é peça de aço a transportar montada)
@@ -1188,7 +1198,7 @@ def _maior_e_mais_pesada(lista: dict, tipos_tes: List[dict]):
     cands += [((c.get("nome") or c.get("marca")), float(c.get("peso_unitario") or 0.0), "conjunto") for c in lista.get("conjuntos") or []
               if c.get("categoria") != "TESOURAS" and c.get("marca") not in de_tesoura]
     # a tesoura é içada montada (as meias têm os mesmos nomes T1, T2… das tesouras: "T5 (conjunto)" confundia)
-    cands += [("tesoura %s" % tt["tipo"], float(tt.get("kg_un") or 0.0), "montada") for tt in tipos_tes]
+    cands += [("%s %s" % (nome_trelica, tt["tipo"]), float(tt.get("kg_un") or 0.0), "montada") for tt in tipos_tes]
     nome, kg, tipo = max(cands, key=lambda c: c[1], default=("", 0.0, ""))
     return m, {"nome": nome, "kg": kg, "tipo": tipo}
 
@@ -1453,7 +1463,8 @@ def _blocos_de_estrutura(R: dict) -> List[dict]:
     tes = [t for t in R.get("tesouras") or [] if t.get("qtd")]
     if not tes:
         return []
-    return [{"chave": "tesouras", "titulo": "Tesouras", "cor": "#d9480f", "ids": [], "qtd": sum(t["qtd"] for t in tes),
+    return [{"chave": "tesouras", "titulo": "Tesouras" if R.get("cobertura", True) else "Vigas caixote", "cor": "#d9480f", "ids": [],
+             "qtd": sum(t["qtd"] for t in tes),
              "m": sum(t["qtd"] * t["comprimento"] for t in tes) / 1000.0, "kg": sum(t["kg_total"] for t in tes),
              "linhas": [{"comprimento": t["comprimento"], "qtd": t["qtd"], "kg": t["kg_total"], "marcas": [t["tipo"]],
                          "perfis": [x for x in (t.get("banzos"), t.get("trelicamento")) if x], "onde": [], "ids": [],
@@ -1533,7 +1544,7 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
         andares = sum(p["repete"] for p in pavs)
         q.append(("Pavimentos", "%d" % len(pavs), "", "%d andares com aço (%s)" % (andares, ", ".join(
             "%s ×%d" % (p["nome"], p["repete"]) if p["repete"] > 1 else p["nome"] for p in pavs))))
-    elif tem_tesouras:
+    elif tem_tesouras and n.get("tesouras"):
         q.append(("Tesouras", "%d" % n["tesouras"], "", ("inclinação %s%% (%s°)" % (_n(100 * math.tan(math.radians(n["inclinacao"])), 0), _n(n["inclinacao"], 1)))
                   if n.get("inclinacao") else ""))
     q.append(("Estrutura metálica", _n(n["peso_aco"], 1), "kg", ("%s kg/m² de projeção" % _n(n["kg_m2"], 1)) if (n.get("kg_m2") and not varios) else ""))
@@ -2066,7 +2077,7 @@ def planilha_de_materiais(R: dict, lista: Optional[dict], caminho: str) -> str:
                      "larguras": [22, 10, 12, 14, 22, 9, 7, 11, 10, 10, 10, 11, 14, 30, 30]})
     if lista and lista.get("conjuntos"):
         linhas = [["Conjunto", "Nome", "Categoria", "Quantidade", "Peças por unidade", "Composição", "Peso unit. (kg)", "Peso total (kg)"]]
-        linhas += [[c.get("marca"), c.get("nome") or "", c.get("categoria") or "", int(c.get("instancias") or 0),
+        linhas += [[c.get("marca"), c.get("nome") or "", c.get("titulo_categoria") or c.get("categoria") or "", int(c.get("instancias") or 0),
                     int(c.get("pecas_unidade") or 0), c.get("composicao_texto") or "", r1(c.get("peso_unitario"), 2),
                     r1(c.get("peso_total"), 2)] for c in lista["conjuntos"]]
         abas.append({"nome": "Conjuntos", "linhas": linhas, "larguras": [30, 10, 12, 10, 10, 60, 12, 12]})

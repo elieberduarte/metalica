@@ -21,7 +21,7 @@ import math
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from nucleo2d.detalhe.base import _marcas, marcas_de, _eixo_da_peca
+from nucleo2d.detalhe.base import _marcas, marcas_de, _eixo_da_peca, obra_tem_cobertura
 
 #: Os papéis na ordem do dossiê: (chave, título, cor no desenho).
 PAPEIS = collections.OrderedDict([
@@ -184,8 +184,7 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
             marca_para_pos[m] = p
     varios, pavs, pav_de = pavimentos_do_modelo(pecas)
     # obra com cobertura: telha ou terça de cobertura no modelo — só então a treliça é tesoura e a terça é terça
-    tem_cobertura = any(getattr(p, "classe", "") == "telha" or tipos.get(p.marca) in ("telha", "terca_cobertura", "terca_marquise")
-                        for p in posicoes)
+    tem_cobertura = nomes.get("cobertura") if nomes.get("cobertura") is not None else obra_tem_cobertura(posicoes, tipos)
 
     pecas_conj: Dict[str, list] = collections.defaultdict(list)
     pecas_soltas: Dict[str, list] = collections.defaultdict(list)
@@ -352,10 +351,19 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
 
     # ---- desenhos
     papel_da_peca = {}
+    # a marca (a das pranchas) na barra principal de cada unidade, para escrever na planta do pavimento
+    marca_da_peca = {}
+    for u in unidades:
+        if u["papel"] not in ("suportes", "travamentos", "fechamento"):
+            for e in u["principais"]:
+                marca_da_peca[e.id] = u["nome"]
     for u in unidades:
         for e in u["pecas"]:
             papel_da_peca[e.id] = u["papel"]
     geo = _geometria(pecas, papel_da_peca, eixo)
+    for i, m in marca_da_peca.items():
+        if i in geo:
+            geo[i]["marca"] = m
     svgs = {}
     eixos_ok = eixos if (eixos and (eixos.get("numeros") or eixos.get("letras"))) else None
     if varios:
@@ -366,7 +374,7 @@ def levantar(doc, lev: dict, lista: dict, nomes: dict, R: dict, eixos: Optional[
             z0, z1 = p["faixas"][0] if p["faixas"] else (p["z0"], p["z1"])
             ids = {i for i in p["ids"] if _dentro(geo.get(i), z0, z1)}
             p["svg"] = planta_svg({i: geo[i] for i in ids if i in geo}, eixos_pav, R=R, concreto=_concreto(doc, pecas, z0, z1),
-                                  largura=186.0, altura_max=70.0)
+                                  largura=186.0, altura_max=70.0, marcas=True)
             p["ids_andar"] = sorted(ids)
             p["contexto"] = contexto_de_concreto(doc, pecas, z0, z1)
     else:
@@ -569,7 +577,7 @@ def _cota(f: _Folha, a: float, b: float, fixo: float, horizontal: bool, texto: s
 
 
 def planta_svg(geo: Dict[str, dict], eixos: Optional[dict], R: Optional[dict] = None, concreto: Sequence[dict] = (),
-               largura=186.0, altura_max=150.0, rotulos_tesouras=False) -> str:
+               largura=186.0, altura_max=150.0, rotulos_tesouras=False, marcas=False) -> str:
     """A planta (de implantação, ou de um pavimento): as barras pela cor do papel, os pilares como quadrados, os
     pilares de concreto em cinza claro, os eixos com as bolhas e as cotas entre eixos e totais."""
     if not geo:
@@ -672,6 +680,35 @@ def planta_svg(geo: Dict[str, dict], eixos: Optional[dict], R: Optional[dict] = 
             _cota(f, pares[0][0], pares[-1][0], 17.5, False, _n(abs(lets[-1]["pos"] - lets[0]["pos"]) / 1000.0, 2))
     else:
         _cota(f, ya, yb, f.me - 4.0, False, _n((v1 - v0) / 1000.0, 2))
+    # a marca das pranchas em cada peça principal (PL2, VG1, T7…), na cor do tipo; a que cairia em cima de outra fica de
+    # fora (as duas cordas da mesma caixa, a peça repetida no mesmo ponto)
+    if marcas:
+        postos: List[Tuple[float, float, float]] = []
+        for d in sorted(geo.values(), key=lambda d: -ordem.get(d["papel"], 0)):
+            m = d.get("marca")
+            if not m:
+                continue
+            ancora = "start"
+            if d["seg"] and math.dist(uv(d["seg"][0]), uv(d["seg"][1])) * f.k >= 0.6:
+                (x1, y1), (x2, y2) = f.p(*uv(d["seg"][0])), f.p(*uv(d["seg"][1]))
+                x, y = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+                # a linha deitada no papel com o nome embaixo; a em pé, à esquerda dela
+                if abs(x2 - x1) >= abs(y2 - y1):
+                    x, y, ancora = x, y + 2.6, "middle"
+                else:
+                    x, y, ancora = x - 1.3, y + 0.7, "end"
+            else:
+                pts = [uv(v) for v in d["verts"]]
+                x, y = f.p(sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+                x, y = x + 1.4, y - 1.1                    # o pilar com o nome no canto de cima do quadrado
+            larg = 1.1 * len(m)
+            x0 = x - (larg / 2 if ancora == "middle" else (larg if ancora == "end" else 0.0))
+            if any(x0 < qx1 and x0 + larg > qx0 and abs(y - qy) < 2.2 for qx0, qx1, qy in postos):
+                continue
+            postos.append((x0, x0 + larg, y))
+            cor = PAPEIS.get(d["papel"], PAPEIS["outros"])[1]
+            f.add('<text x="%.2f" y="%.2f" font-size="1.9" fill="%s" text-anchor="%s" font-weight="700" stroke="#fff" '
+                  'stroke-width="0.5" paint-order="stroke">%s</text>' % (x, y, cor, ancora, _esc(m)))
     # o tipo de cada tesoura no lugar dela (T1, T2…), na ponta de cima
     if rotulos_tesouras and R:
         for t in R.get("tesouras_lugar") or []:
