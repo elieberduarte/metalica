@@ -169,7 +169,7 @@ function valorDaBarra(i) {
   return null;
 }
 // a combinação dos desenhos: a escolhida, ou na envoltória a primeira ELU
-function combDoDesenho() { return estado.comb === 'env' ? primeiraELU() : estado.comb; }
+function combDoDesenho() { return combExistente(estado.comb === 'env' ? primeiraELU() : estado.comb); }
 
 // o quadro "Como ler" (web/analise_guia.js): acompanha o modo, a combinação e o caso
 function painelGuia() {
@@ -243,6 +243,10 @@ function secoesDosPilares() {
 
 function hexParaRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
 function primeiraELU() { return Object.keys(D.combinacoes).find(c => D.combinacoes[c].tipo === 'ELU'); }
+
+/** A combinação que existe no resultado: a escolhida (guardada de um cálculo anterior, ela pode não existir mais — o
+ *  BRAMAIS só tinha "ELU PP" e a tela quebrava na deformada, 09/10) ou a primeira que houver. */
+function combExistente(c) { return c && D.por_comb[c] ? c : Object.keys(D.por_comb)[0]; }
 
 function apoios() {
   const t = raio * 0.012;
@@ -335,7 +339,8 @@ function diagramas(fat, comb) {
 }
 
 function deformada() {
-  const comb = estado.comb === 'env' ? Object.keys(D.combinacoes).find(c => D.combinacoes[c].tipo === 'ELS') || primeiraELU() : estado.comb;
+  const comb = combExistente(estado.comb === 'env' ? Object.keys(D.combinacoes).find(c => D.combinacoes[c].tipo === 'ELS') || primeiraELU() : estado.comb);
+  if (!comb) return;
   const U = D.por_comb[comb].desl_mm;
   let max = 1e-9; for (const u of U) max = Math.max(max, Math.hypot(...u));
   const esc = raio * 0.05 * estado.escala / max;
@@ -351,7 +356,8 @@ function deformada() {
 }
 
 function setasReacoes() {
-  const comb = estado.comb === 'env' ? primeiraELU() : estado.comb;
+  const comb = combExistente(estado.comb === 'env' ? primeiraELU() : estado.comb);
+  if (!comb) return;
   const R = D.por_comb[comb].reacoes;
   let max = 1e-9; for (const r of Object.values(R)) max = Math.max(max, Math.hypot(r[0], r[1], r[2]));
   const L = raio * 0.1 * estado.escala;
@@ -418,7 +424,7 @@ function painelPeca() {
   const b = D.barras[i], e = D.envoltoria[i];
   const V = D.verificacao, pc = V ? V.pecas[V.peca_da_barra[i]] : null;
   const combEnv = estado.modo === 'verificacao' && pc && pc.comb ? pc.comb : e.comb;
-  const comb = estado.comb === 'env' ? (combEnv || primeiraELU()) : estado.comb;
+  const comb = combExistente(estado.comb === 'env' ? (combEnv || primeiraELU()) : estado.comb);
   const fat = fatoresDe(comb);
   const xs = Array.from({ length: 21 }, (_, k) => b.L * k / 20);
   const val = xs.map(x => esforcosEm(i, fat, x, comb));
