@@ -55,6 +55,9 @@ const camera = new THREE.PerspectiveCamera(40, 1, 50, 2e6);
 camera.up.set(0, 0, 1);
 const controles = new OrbitControls(camera, tela);
 controles.enableDamping = false;
+// os botões como no editor e no modo ver (09/10): esquerdo e meio giram, direito desloca — o meio era o zoom do
+// OrbitControls, e girar segurando a rodinha mergulhava a câmera no modelo
+controles.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN };
 const grupo = new THREE.Group();
 cena.add(grupo);
 let centro = new THREE.Vector3(), raio = 10000;
@@ -89,7 +92,7 @@ function pontoNaBarra(cx, cy) {
 }
 // O giro (botão esquerdo) em volta da barra sob o cursor, como no editor e no modo ver; no vazio, o do OrbitControls
 tela.addEventListener('pointerdown', (ev) => {
-  if (ev.pointerType === 'touch' || ev.button !== 0) return;
+  if (ev.pointerType === 'touch' || (ev.button !== 0 && ev.button !== 1)) return;
   const pivo = pontoNaBarra(ev.clientX, ev.clientY);
   if (!pivo) return;
   const antes = controles.enableRotate;
