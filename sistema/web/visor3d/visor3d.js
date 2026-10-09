@@ -780,8 +780,7 @@ export class Visor3D {
   _zoomNaPeca(ev) {
     if (!this.fichas || !ev.deltaY) return;
     const r = this.tela.getBoundingClientRect();
-    const foco = this._focoSeguro(ev.clientX - r.left, ev.clientY - r.top);
-    if (!foco) return;
+    const foco = this._focoSeguro(ev.clientX - r.left, ev.clientY - r.top) || this._focoNoVazio(ev.clientX - r.left, ev.clientY - r.top);
     ev.preventDefault();
     ev.stopImmediatePropagation();
     const cliques = Math.max(-5, Math.min(5, ev.deltaY / (ev.deltaMode === 1 ? 3 : ev.deltaMode === 2 ? 1 : 100)));
@@ -831,6 +830,26 @@ export class Visor3D {
                         : new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(f.x[0], f.x[1], f.x[2]), new THREE.Vector3(600, 600, 600));
     const p = raio.ray.intersectBox(caixaPeca, new THREE.Vector3());
     return p && caixa.containsPoint(p) ? p : null;
+  }
+
+  /** Sem peça sob o cursor, o foco do zoom como no editor (camera.js, _focoDoCursor): o chão do modelo (a cota mais
+   *  baixa) sob o cursor, se está perto; senão o alvo da câmera. O zoom do OrbitControls no vazio levava a câmera para
+   *  longe (09/10, "se o mouse está no vazio ele vai pra muito longe"). */
+  _focoNoVazio(x, y) {
+    const ndc = new THREE.Vector2(x / Math.max(this.tela.clientWidth, 1) * 2 - 1, -(y / Math.max(this.tela.clientHeight, 1)) * 2 + 1);
+    const raio = new THREE.Raycaster();
+    this.camera.updateMatrixWorld();
+    raio.setFromCamera(ndc, this.camera);
+    const alvo = this.controles.target;
+    const limite = Math.max(this.camera.position.distanceTo(alvo), this._esferaModelo.radius) * 3;
+    const chao = new THREE.Plane(new THREE.Vector3(0, 0, 1), -this._caixaModelo.min.z);
+    const p = new THREE.Vector3();
+    // o chão só dentro da planta do prédio (com folga): perto do horizonte o raio cai no chão a centenas de metros e o
+    // zoom levava a câmera para lá
+    const cx = this._caixaModelo, folga = this._esferaModelo.radius * 0.25;
+    if (raio.ray.intersectPlane(chao, p) && p.distanceTo(this.camera.position) <= limite
+        && p.x >= cx.min.x - folga && p.x <= cx.max.x + folga && p.y >= cx.min.y - folga && p.y <= cx.max.y + folga) return p;
+    return alvo.clone();
   }
 
   /** Gira câmera e alvo juntos em volta de `pivo` (em volta do Z e do eixo horizontal da tela), na velocidade do
