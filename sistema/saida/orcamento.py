@@ -29,6 +29,7 @@ Regras de classificação adotadas (A CONFERIR com o usuário; ficam escritas no
   BYD); as demais peças saem de barras e ficam no preço normal.
 * Peso teórico da lista (o padrão da fábrica), sem perda de corte — o acréscimo, se houver, é do dono.
 """
+import collections
 import csv
 import html
 import json
@@ -504,8 +505,46 @@ def linhas_da_lista(lista: dict, precos: Precos) -> Tuple[List[dict], dict]:
         for id_, desc, un, como in LINHAS_ACESSORIOS_TELHA:
             linhas.append(_linha(id_, "acessorios", desc, None, un, _achar(precos, como), origem="equipe"))
     linhas.extend(_linhas_fixadores(lista.get("acessorios") or [], precos))
+    _com_recorte(lista, linhas, num)
     num["aco_kg"] = round(num["aco_kg"], 1)
     return linhas, num
+
+
+def _com_recorte(lista: dict, linhas: List[dict], num: dict) -> None:
+    """A quantidade "com recorte" ao lado da da lista ("sem recorte", o peso teórico), para conferir a diferença (o
+    usuário, 09/10): o perfil pelas barras comerciais do plano de corte (barras × comprimento × kg/m do catálogo, como
+    o resumo de compra), repartido entre os grupos de preço pelo peso teórico de cada um no perfil; a chapa com a perda
+    de recorte de chapa (a do resumo de compra). O preço continua pelo peso teórico."""
+    from saida.resumos import PERDA_CHAPAS
+    grupo_de = {}
+    peso_de = {}
+    for li in lista.get("posicoes") or []:
+        grupo_de[li.get("marca")] = classificar(li)
+        peso_de[li.get("marca")] = float(li.get("peso_total") or 0.0)
+    recorte: Dict[str, float] = collections.defaultdict(float)
+    for g in lista.get("perfis") or []:
+        b = g.get("barras") or {}
+        if not b.get("quantidade"):
+            continue
+        kg_m = float(g.get("kg_m_catalogo") or 0.0) or float(g.get("kg_m") or 0.0)
+        kg_compra = kg_m * float(b.get("comprimento") or 0.0) / 1000.0 * int(b["quantidade"])
+        por_grupo: Dict[str, float] = collections.defaultdict(float)
+        for mk in g.get("posicoes") or []:
+            por_grupo[grupo_de.get(mk, "outro")] += peso_de.get(mk, 0.0)
+        soma = sum(por_grupo.values())
+        for gr, kg in por_grupo.items():
+            recorte[gr] += kg_compra * (kg / soma if soma else 1.0 / len(por_grupo))
+    for li in linhas:
+        if li["grupo"] != "aco" or li["qtd"] is None:
+            continue
+        if li["id"].startswith("chapa:"):
+            li["qtd_recorte"] = round(li["qtd"] * (1.0 + PERDA_CHAPAS / 100.0), 1)
+            li["recorte_como"] = "chapa com %s%% de perda de recorte" % br(PERDA_CHAPAS, 0)
+        elif li["id"] in recorte:
+            li["qtd_recorte"] = round(recorte[li["id"]], 1)
+            li["recorte_como"] = "barras comerciais do plano de corte"
+    num["aco_kg_recorte"] = round(sum(li.get("qtd_recorte") or 0.0 for li in linhas if li["grupo"] == "aco"
+                                      and li["id"] != "corte_chaparia"), 1)
 
 
 def _preco_telha(precos: Precos, perfil: str) -> Optional[dict]:
@@ -649,7 +688,8 @@ def montar(lista: dict, tabela: Optional[dict], edicoes: Optional[dict] = None, 
     cab.update({k: v for k, v in ((edicoes or {}).get("cabecalho") or {}).items() if v not in (None, "")})
     if area:
         cab["area_m2"] = round(area, 2)
-    totais = {"tabela": tot_tab, "fechamento": tot_fech, "aco_kg": num["aco_kg"], "telhas_ml": round(num["telhas_ml"], 2),
+    totais = {"tabela": tot_tab, "fechamento": tot_fech, "aco_kg": num["aco_kg"], "aco_kg_recorte": num.get("aco_kg_recorte"),
+              "telhas_ml": round(num["telhas_ml"], 2),
               "telhas_kg": round(num["telhas_kg"], 1), "funilaria_kg": round(num["funilaria_kg"], 1),
               "rs_kg_tabela": round(tot_tab / num["aco_kg"], 2) if num["aco_kg"] else None,
               "rs_kg_fechamento": round(tot_fech / num["aco_kg"], 2) if num["aco_kg"] and tot_fech else None,

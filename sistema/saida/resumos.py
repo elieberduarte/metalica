@@ -1553,7 +1553,8 @@ def _html_compra(R: dict) -> str:
     h = [_h2("A", "Compra", "coluna Pedido para o comprador", parte=True)]
     if C.get("perfis"):
         h.append("<h3>Perfis e barras</h3><p class=\"explica\">Um por tipo de perfil, cruzado com o catálogo; barras comerciais pelo plano "
-                 "de corte da lista; W em 12 m, os outros em 6 m, ou 12 m quando a peça passa de 6 m.</p>")
+                 "de corte da lista; W em 12 m; tubos, redondos e laminados em polegada em 6 m (a peça maior sai com emenda); "
+                 "dobrados em 6 m, ou 12 m quando a peça passa de 6 m.</p>")
 
         def nome_perfil(p):
             # o nome do catálogo em cima, o do IFC embaixo (06/10); fora do catálogo, o do IFC e de onde veio o kg/m

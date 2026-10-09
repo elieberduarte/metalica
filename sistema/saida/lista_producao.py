@@ -238,14 +238,31 @@ def texto_dos_cortes(cortes: Sequence[dict]) -> str:
     return " + ".join("%d× %s %s" % (c["qtd"], c["nome"] or "peça", _n(c["comprimento"])) for c in cortes)
 
 
+def _comprado_em_6m(perfil: str) -> bool:
+    """O perfil comprado sempre em barra de 6 m: tubo (TQ, TR, TC, SHS/RHS/CHS), barra redonda ou chata, e o laminado em
+    polegada (L 2" x 1/4", U 4"). O dobrado (U, Ue, Z, cartola, L em mm) sai da dobradeira, até 12 m: fica de fora."""
+    p = str(perfil or "").upper().replace("×", "X").replace(" ", "")
+    if re.match(r"(TQ|TR|TC|TB|TUBO)\d|TUBO", p) or re.search(r"\d(SHS|RHS|CHS)\b|\b(SHS|RHS|CHS)\d", p):
+        return True
+    if re.match(r"(FE?RED|FERRO|BR|RB|Ø|BARRA)", p) or "REDOND" in p or "CHATA" in p:
+        return True
+    return '"' in p or "''" in p
+
+
 def _barra_para(comprimentos: Sequence[float], barra: float, perfil: str = "") -> float:
     """0 = automático, pela regra da fábrica (05/10: "depende do perfil, W 12 m, o restante 6 m"): o laminado W em
-    barra de 12 m; os outros em 6 m — a peça mais comprida que 6 m (a terça de 6,3 m) leva o perfil para 12 m, senão
-    cada uma seria uma emenda."""
+    barra de 12 m; tubo, redondo, chata e laminado em polegada sempre em 6 m (09/10); o dobrado em 6 m — a peça mais
+    comprida que 6 m (a terça de 6,3 m) leva o dobrado para 12 m, o comprimento da dobradeira, senão cada uma seria uma
+    emenda."""
     if barra and barra > 0:
         return float(barra)
     if re.match(r"\s*(W|HP)\s*\d", str(perfil or ""), re.I):
         return BARRAS_COMERCIAIS[1]
+    if _comprado_em_6m(perfil):
+        # o tubo, a barra redonda ou chata e o laminado em polegada vêm em barra de 6 m, e a peça maior sai com emenda
+        # (o usuário, 09/10: "os TQ e TR são barras de 6 m, apenas perfil W são comprados em barras de 12 m" — a viga
+        # de 9,2 m do Vicente levava o TR 250x100 para 12 m)
+        return BARRAS_COMERCIAIS[0]
     maior = max(comprimentos) if comprimentos else 0.0
     return BARRAS_COMERCIAIS[0] if maior <= BARRAS_COMERCIAIS[0] + 1e-6 else BARRAS_COMERCIAIS[1]
 
