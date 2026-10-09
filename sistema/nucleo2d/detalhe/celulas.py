@@ -231,7 +231,10 @@ def desenho_de_tercas_sem_furo(posicoes: Sequence[Posicao], chave: str, desenho:
     seção, e embaixo as cotas empilhadas, todas do tamanho dela, com o nome, o comprimento e a
     quantidade de cada uma — "T.L.21 COMP=4579mm – 01X"."""
     maior = max(posicoes, key=lambda q: q.comprimento)
-    atr = {"conjunto": chave, "detalhe": "conjunto", "perfil": maior.perfil}
+    atr = {"conjunto": chave, "detalhe": "conjunto", "perfil": maior.perfil,
+           # as marcas das terças da célula: "TÍPICO U75X40X2.25" não é peça do modelo, e o clique na célula não achava
+           # nada no 3D (o Depósito Químico, 09/10); o CAD separa por " / "
+           "posicao": " / ".join(dict.fromkeys(m for q in posicoes for m in (getattr(q, "marcas", None) or [q.marca])))}
     p = _Papel(desenho, atr, dx, dy, camada_peca=maior.camada_2d or "")
     esc = desenho.escala
     off, passo = 10.0, 8.0

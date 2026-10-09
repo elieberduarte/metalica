@@ -97,7 +97,10 @@ function selecionarDaDivisao(pedido) {
       const alvo = new Set(m[2].split(sep).map(s => s.trim()).filter(Boolean));
       const chave = { posicao: 'pos', conjunto: 'cj', ids: 'id', origem2d: 'o2', pm: 'pm' }[m[1]];
       F.forEach((f, i) => {
-        if (m[1] === 'peca' ? (f.pc && (alvo.has(f.pc) || alvo.has(f.pl))) : alvo.has(f[chave])) ids.push(i);
+        // a posição da peça sem marca é o nome dela, como no detalhamento (posicao_base): a calha e o rufo do IFC do
+        // Depósito Químico só têm o nome ("CALHA 1"), e a célula deles não achava nada (09/10)
+        const pos_ = m[1] === 'posicao' && !f.pos ? f.n : f[chave];
+        if (m[1] === 'peca' ? (f.pc && (alvo.has(f.pc) || alvo.has(f.pl))) : alvo.has(pos_)) ids.push(i);
       });
     }
   } else if (pedido.nome) {

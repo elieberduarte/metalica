@@ -1605,6 +1605,7 @@ export class Editor {
     // ids: as peças pelo identificador (o pilar da tela de esforços)
     const ids = [...this.documento.entidades.values()]
       .filter(e => chave === 'ids' ? marcas.has(e.id) : chave === 'peca' ? daPeca(e)
+        : chave === 'posicao' && !(e.atributos && e.atributos.marcas && e.atributos.marcas.posicao) ? marcas.has(String(e.nome))   // sem marca, o nome (como o detalhamento)
         : (e.atributos && e.atributos.marcas && marcas.has(String(e.atributos.marcas[chave]))))
       .map(e => e.id);
     if (!ids.length) {

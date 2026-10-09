@@ -36,3 +36,22 @@ def test_familia_que_nao_sai_mais_vai_para_a_lixeira(tmp_path, monkeypatch):
     assert "detalhamento-meu" in nomes
     assert all(d["nome"] in nomes for d in r["desenhos"])      # os de agora ficam
     assert any("agulhamentos" in str(a) for a in r.get("avisos") or [])
+
+
+def test_celula_tipica_das_tercas_leva_as_marcas():
+    """A célula "TÍPICO U…" das terças sem furo leva as marcas das terças: o clique nela acha as peças no 3D (o
+    "TÍPICO U75X40X2.25" do Depósito Químico não achava nada, 09/10)."""
+    from nucleo3d.modelo import Documento, Barra
+    from nucleo2d import detalhar as det
+    doc = Documento(nome="tercas")
+    for i, (pos, L) in enumerate((("T1", 4000.0), ("T2", 5000.0), ("T2", 5000.0))):
+        b = Barra(inicio=(0.0, i * 1500.0, 0.0), fim=(L, i * 1500.0, 0.0), perfil="U75X40X2.25", papel="terca", nome=pos)
+        b.atributos = {"marcas": {"posicao": pos, "perfil": "U75X40X2.25"}, "tipo_ifc": "IfcMember"}
+        doc.add(b)
+    r = det.detalhar(doc, grupos=["barras"], regra_tercas=False, converter=False,
+                     nomes={"tipos": {"T1": "terca", "T2": "terca"}})
+    tipicas = [e for d in r["desenhos"].values() for e in d.entidades.values()
+               if str((e.atributos or {}).get("conjunto", "")).startswith("TÍPICO")]
+    assert tipicas, "sem célula típica"
+    marcas = {m for e in tipicas for m in str(e.atributos.get("posicao", "")).split(" / ") if m}
+    assert {"T1", "T2"} <= marcas, marcas
