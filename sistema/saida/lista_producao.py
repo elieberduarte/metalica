@@ -390,6 +390,7 @@ def comparar_dobras(perfis: Sequence[dict]) -> dict:
 def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: Dict[str, int],
            pecas=None, barra: float = 0.0, projeto: Optional[dict] = None,
            nomes_conjuntos: Optional[Dict[str, str]] = None, escolhas: Optional[Dict[str, str]] = None,
+           nomes_telhas: Optional[Dict[str, str]] = None,
            emendas: Optional[Sequence[str]] = None, cobertura: Optional[bool] = None) -> dict:
     """A lista inteira, pronta para gravar em JSON. `barra` em mm (0 = automático);
     `cobertura`: a obra tem cobertura (o detalhar diz, pelos nomes); sem ela, a treliça é viga caixote e não tesoura
@@ -424,7 +425,8 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
     linhas = [_linha_posicao(p, categorias.get(p.marca, "OUTROS")) for p in lista]
     for i, t in enumerate(md["telhas"], 1):
         # MD/CU: o padrão da fábrica, o mesmo das pranchas (detalhar)
-        linhas.append({"marca": t["conjunto"], "nome": "MD%d" % i, "categoria": "TELHAS", "classe": "Telha multi-dobra",
+        nome_md = (nomes_telhas or {}).get(str(t["conjunto"])) or "MD%d" % i     # o mesmo das pranchas (D9, 11/10)
+        linhas.append({"marca": t["conjunto"], "nome": nome_md, "categoria": "TELHAS", "classe": "Telha multi-dobra",
                        "perfil": t["perfil"], "material": t["material"], "quantidade": t["instancias"],
                        "comprimento": round(t["desenv_ext"]), "largura": 980, "espessura": 0,
                        "area_m2": round(t["desenv_ext"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
@@ -433,7 +435,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            t["reta1"], t["reta2"], t["raio_int"], t["angulo"], t["desenv_int"])]})
         cb = t.get("cobrimento")
         if cb:
-            linhas.append({"marca": t["conjunto"] + "-C", "nome": "MD%d-C" % i, "categoria": "TELHAS",
+            linhas.append({"marca": t["conjunto"] + "-C", "nome": nome_md + "-C", "categoria": "TELHAS",
                            "classe": "Telha (complemento da multi-dobra)", "perfil": t["perfil"], "material": t["material"],
                            "quantidade": t["instancias"], "comprimento": round(cb["resto"]), "largura": 980, "espessura": 0,
                            "area_m2": round(cb["resto"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",
@@ -442,7 +444,8 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
                            "observacoes": ["começa %d mm antes da terça %s (transpasse %.0f mm)" % (150, cb["terca"], cb["transpasse"])]})
 
     for i, t in enumerate(md["cumeeiras"], 1):
-        linhas.append({"marca": t["conjunto"], "nome": "CU%d" % i, "categoria": "TELHAS", "classe": "Cumeeira",
+        linhas.append({"marca": t["conjunto"], "nome": (nomes_telhas or {}).get(str(t["conjunto"])) or "CU%d" % i,
+                       "categoria": "TELHAS", "classe": "Cumeeira",
                        "perfil": t["perfil"], "material": t["material"], "quantidade": t["instancias"],
                        "comprimento": round(t["desenv"]), "largura": 980, "espessura": 0,
                        "area_m2": round(t["desenv"] * 980 / 1e6 * t["instancias"], 3), "furos": "", "parafusos": "",

@@ -120,3 +120,30 @@ def test_d11_polegada_so_na_chapa_de_comercio():
         return B._rotulo_espessura(Posicao(marca="x", tipo_ifc="IfcPlate", classe="chapa", T=t, espessura=t))
     assert rot(6.3) == '#1/4"' and rot(4.75) == '#3/16"' and rot(9.5) == '#3/8"'
     assert rot(5.0) == "#5 mm" and rot(6.0) == "#6 mm" and rot(2.65) == "#2,65 mm"
+
+
+# ------------------------------------------------------------------ rodada 2 (11/10/2026)
+def test_d4_furo_padrao_da_norma_e_oblongo_da_puncao():
+    import fabrica
+    assert fabrica.furo_padrao_mm(12) == 13.5 and fabrica.furo_padrao_mm(16) == 17.5
+    assert fabrica.furo_padrao_mm(24) == 25.5 and fabrica.furo_padrao_mm(25.4) == 27.4       # acima de 24: d + 2
+    # o oblongo da terça é a punção: 25 × 13 para M12, venha o furo do IFC (Ø13) ou da norma (Ø13,5)
+    assert fabrica.oblongo_do_furo(13.0) == (25.0, 13.0) == fabrica.oblongo_do_furo(13.5)
+    from nucleo import acessorios as A
+    assert A.furo_mm("M12") == 13.5 and A.oblongo_mm("M12") == 25.0
+
+
+def test_d5_gabarito_fora_da_peca_avisa():
+    from saida.detalhamento import Furo
+    p = Posicao(marca="T", tipo_ifc="IfcBeam", classe="barra", L=6000.0, H=100.0)
+    assert B.conferir_gabarito(p, [Furo("redondo", 40, 25, 13.5), Furo("redondo", 40, 75, 13.5)]) == []
+    ruins = B.conferir_gabarito(p, [Furo("redondo", 10, 5, 13.5), Furo("redondo", 10, 30, 13.5)])
+    assert any("Tab. 14" in r for r in ruins) and any("2,7 d" in r for r in ruins)
+
+
+def test_d9_nomes_guardados_entre_um_detalhar_e_outro():
+    from nucleo2d.detalhe.nomes import numerar_estavel as N
+    assert N(["a", "b", "c"], None, "T") == {"a": "T1", "b": "T2", "c": "T3"}          # sem anteriores: em sequência
+    # a "b" saiu, a "d" entrou: as que ficaram mantêm o número, a nova vai depois do maior
+    assert N(["c", "a", "d"], {"a": "T1", "b": "T2", "c": "T3"}, "T") == {"c": "T3", "a": "T1", "d": "T4"}
+    assert N(["x", "y"], {"x": "S.T.4", "y": "lixo"}, "S.T.") == {"x": "S.T.4", "y": "S.T.5"}

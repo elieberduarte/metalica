@@ -31,6 +31,7 @@ import string
 from dataclasses import fields
 from typing import Dict, List, Optional, Sequence, Tuple
 
+import fabrica
 from nucleo.base import ErroDeDados
 from nucleo2d.desenho import (Arco, Camada2D, Chamada, Circulo, Cota, Desenho, Hachura, Linha,
                               Polilinha, Texto)
@@ -838,8 +839,7 @@ def _gerar_ligacoes(c, doc, par: dict) -> dict:
         gv = 100.0 if c.terca.d > 200.0 else float(q["gab_v"])       # regra da fábrica: até 200 mm (inclusive) 50, acima 100
         gh, borda = float(q["gab_h"]), float(q["borda_topo"])
         dpar = A.d_parafuso_mm(q["parafuso"])
-        w = A.furo_mm(q["parafuso"])
-        comp = w + 12.0
+        comp, w = fabrica.oblongo_do_parafuso(dpar)      # a punção da máquina das terças (M12 → 25 × 13)
         banzo = c._banzo_superior() if c.dg.eh_trelicado else c.viga
         Lpar = A.comprimento_parafuso(t + 2.25, dpar)
         furos = [{"x": sx * gh / 2.0, "y": H - borda - i * gv, "largura": comp, "altura": w}

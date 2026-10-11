@@ -80,8 +80,9 @@ export function nomeDoParafuso(classe, d, L) {
   return `BOLT (${classe || 'A'}) ${num(d)}x${num(L)}`;
 }
 
-/** Diâmetro do furo do parafuso: d + 1 mm (M12 → 13, M16 → 17, como os do modelo). */
-export function furoDoParafuso(d) { return d + 1; }
+/** Diâmetro do furo-padrão do parafuso, pela NBR 8800 (o mesmo de fabrica.furo_padrao_mm): d + 1,5 mm até 24 mm e
+ *  d + 2 acima (M12 → 13,5, M16 → 17,5, 1" → 27,4). Até 11/10/2026 era d + 1 (auditoria D4). */
+export function furoDoParafuso(d) { return Math.round((d + (d <= 24 + 1e-6 ? 1.5 : 2)) * 100) / 100; }
 
 /**
  * Geometria do parafuso: cabeça sextavada do lado de fora de `ponto` (o apoio dela na

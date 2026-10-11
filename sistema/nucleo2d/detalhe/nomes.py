@@ -534,3 +534,28 @@ def aplicar_nomes(posicoes: Sequence[Posicao], nomes: Optional[dict]):
         p.camada_2d = cam.get(p.marca) or next((cam[m] for m in marcas_de(p) if cam.get(m)), "")
         if not p.camada_2d and nomes:
             p.camada_2d = _camada_da_posicao(p, (nomes.get("tipos") or {}).get(p.marca, ""))
+
+
+def numerar_estavel(chaves, anteriores, prefixo: str) -> dict:
+    """Os nomes PREFIXO+n de uma lista de itens (na ordem de numerar), guardando o que cada item já tinha
+    (`anteriores`: {chave: nome}, do nomes.json) — o novo ganha o número seguinte ao maior que ficou. Sem anteriores é a
+    numeração em sequência de antes. Auditoria D9 (11/10/2026): S.T., a tesoura montada (T) e as telhas (MD, CU)
+    renumeravam a cada Detalhar, e a prancha e a peça na fábrica trocavam de nome."""
+    chaves = [str(k) for k in chaves]
+    validos = re.compile(r"^%s(\d+)$" % re.escape(prefixo))
+    fora, usados = {}, set()
+    for k in chaves:
+        v = str((anteriores or {}).get(k) or "")
+        if validos.match(v) and v not in usados:
+            fora[k] = v
+            usados.add(v)
+    n = max([int(validos.match(v).group(1)) for v in usados] or [0])
+    for k in chaves:
+        if k not in fora:
+            n += 1
+            while prefixo + str(n) in usados:
+                n += 1
+            fora[k] = prefixo + str(n)
+            usados.add(fora[k])
+    return fora
+

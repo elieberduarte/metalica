@@ -608,9 +608,17 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
         if _empilhavel(pai, qx1 - qx0):
             c["categoria"] = pai["categoria"]
             c["_ordem"] = pai.get("_ordem", 0) + 0.5
-            c["sem_escala"] = True                    # a escala está no título ("(1:5)")
+            c["sem_escala"] = True                    # a escala vai no título, a real: ver o "ampliacao" na montagem
             c["h"] -= FAIXA
             continue
+        # de volta à célula do conjunto: a escala real no título do detalhe (a do conjunto dividida pela ampliação) e sem
+        # o "ampliacao", que mudaria o "ESC." do conjunto inteiro (D13, 11/10)
+        for e in c["entidades"]:
+            amp_e = float((e.atributos or {}).get("ampliacao") or 1.0)
+            if amp_e > 1.0:
+                if isinstance(e, Texto) and re.match(r"DETALHE [A-Z]+ – FUROS DE ", e.texto or ""):
+                    e.texto = "%s  (1:%d)" % (e.texto, round(float(c.get("escala") or pai.get("escala") or 1.0) / amp_e))
+                e.atributos = {k_: v_ for k_, v_ in (e.atributos or {}).items() if k_ != "ampliacao"}
         pai["entidades"] = list(pai["entidades"]) + list(c["entidades"])
         pai["caixa"] = _caixa_de(pai["entidades"], pai["escala"]) or pai["caixa"]
         (bx0, by0), (bx1, by1) = pai["caixa"]
@@ -1315,11 +1323,17 @@ def montar_pranchas(fontes: Sequence[dict], formato: str = "A1", carimbo: Option
             # a face de telhas densa (a chapa com menos de LARGURA_CHAPA_DENSA no papel): o nome e a cota só na
             # primeira de cada sequência de chapas iguais (o usuário apagou as repetições à mão, 01/10)
             densa = LARGURA_TELHA_UTIL / float(c["k"]) < LARGURA_CHAPA_DENSA
+            # o detalhe de furos empilhado com a tesoura não tem o "ESC.": a escala real (a da caixa dividida pela
+            # ampliação do desenho) vai no título dele — antes ia gravada no desenho ("(1:5)") e ficava errada quando a
+            # caixa era reduzida (auditoria D13, 11/10/2026)
+            amp_t = max((float((e.atributos or {}).get("ampliacao") or 1.0) for e in c["entidades"]), default=1.0)                 if c.get("sem_escala") else 1.0
             for e in c["entidades"]:
                 if densa and (e.atributos or {}).get("repete_tipica"):
                     continue
                 dx_e, dy_e = desloc.get(id(e), (dx, dy))
                 n_ = _para_papel(e, c["k"], dx_e, dy_e, c["fonte"])
+                if amp_t > 1.0 and isinstance(n_, Texto) and re.match(r"DETALHE [A-Z]+ – FUROS DE ", n_.texto or ""):
+                    n_.texto = "%s  (1:%d)" % (n_.texto, round(c["k"] / amp_t))
                 n_.atributos = dict(n_.atributos or {}, cel=ids_c[id(c)])
                 d.add(n_)
             if c.get("alvo_furos"):

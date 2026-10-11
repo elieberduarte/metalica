@@ -60,7 +60,7 @@ try:
                base: [!!c2.atributos.malha_sem_furos_editor, !!b2.atributos.malha_sem_furos_editor] };
     })())""" % CAIXA))
     ok(r["nome"] == "BOLT (A325) 12x35" and len(r["furos"] or []) == 2, f"parafuso colocado com os furos das 2 peças: {r['nome']} {r['furos']}")
-    ok(r["dv"] == [32, 32] and r["regs"] == [[13], [13]] and r["base"] == [True, True], f"cada chapa ganhou o furo Ø13 na malha (32 vértices) e guardou a malha de antes: {r['dv']} {r['regs']} {r['base']}")
+    ok(r["dv"] == [32, 32] and r["regs"] == [[13.5], [13.5]] and r["base"] == [True, True], f"cada chapa ganhou o furo Ø13,5 (d + 1,5, NBR 8800) na malha (32 vértices) e guardou a malha de antes: {r['dv']} {r['regs']} {r['base']}")
     id_cima, id_baixo, id_paraf = r["ids"]
     # a linha do eixo na prévia: atravessa a peça e marca onde cai na de baixo
     r1 = json.loads(aba.avaliar("""JSON.stringify((() => { const ed = window.editor; ed.ativarFerramenta('furo');
@@ -82,7 +82,7 @@ try:
                               regs: [(c.atributos.furos_editor || []).map(x => x.d), (k.atributos.furos_editor || []).map(x => x.d)] });
     })()""" % (id_paraf, id_paraf, id_cima, id_baixo)))
     ok(r2["nome"] == "BOLT (A307) 16x40", f"parafuso trocado: {r2['nome']} caixa {r2['ext']}")
-    ok(r2["regs"] == [[17], [17]] and all(f and abs(f[0] - 17) <= 1 for f in r2["furos"]), f"furos refeitos com Ø17: {r2['furos']} {r2['regs']}")
+    ok(r2["regs"] == [[17.5], [17.5]] and all(f and abs(f[0] - 17.5) <= 1 for f in r2["furos"]), f"furos refeitos com Ø17,5: {r2['furos']} {r2['regs']}")
     # 3) Ctrl+Z duas vezes: volta a troca e depois o parafuso com os furos
     r3 = json.loads(aba.avaliar("""JSON.stringify((() => { const ed = window.editor, doc = ed.documento;
       ed.desfazer(); const n1 = doc.get('%s').nome;
@@ -158,8 +158,8 @@ try:
       return { n: marc.length, pecas: [...new Set(marc.map(m => m.atributos.furo.peca === banzo.id ? 'banzo' : 'terça'))].sort(),
                d: marc.map(m => m.atributos.furo.d), camada: [...new Set(marc.map(m => m.camada))] };
     })())"""))
-    ok(r8["n"] >= 2 and r8["pecas"] == ["banzo", "terça"] and all(abs(x - 13) < 0.01 for x in r8["d"]) and r8["camada"] == ["Furos"],
-       "parafuso pela terça e pelo banzo (barras): os dois ganham o furo Ø13 (%d paredes: %s)" % (r8["n"], r8["pecas"]))
+    ok(r8["n"] >= 2 and r8["pecas"] == ["banzo", "terça"] and all(abs(x - 13.5) < 0.01 for x in r8["d"]) and r8["camada"] == ["Furos"],
+       "parafuso pela terça e pelo banzo (barras): os dois ganham o furo Ø13,5 (%d paredes: %s)" % (r8["n"], r8["pecas"]))
     aba.avaliar("window.editor.desfazer(); 1"); aba.drenar(0.3)
     sobra = aba.avaliar("[...window.editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.furo && e.camada === 'Furos' && e.atributos.furo.parafuso).length")
     ok(sobra == 0, "Ctrl+Z tira o parafuso e os furos das barras juntos")

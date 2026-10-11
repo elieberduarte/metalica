@@ -30,7 +30,7 @@ export class MetodosTrocaDePecas {
    * mesmo nome no modelo). A peça 3D é refeita no mesmo lugar — o apoio da cabeça, o eixo e
    * a pega vêm do registro do editor ou da própria malha do IFC — com o nome "BOLT (classe)
    * dxL" que a lista de materiais e o detalhamento leem. Os furos abertos pelo editor para
-   * esses parafusos são refeitos com o diâmetro novo (d + 1), a partir da malha guardada
+   * esses parafusos são refeitos com o diâmetro novo (o furo-padrão, d + 1,5), a partir da malha guardada
    * antes deles; os furos que vieram do IFC ficam como estão.
    */
   async dialogoTrocarParafuso(ids) {
@@ -65,7 +65,7 @@ export class MetodosTrocaDePecas {
     if (iguais.length > sel.length) {
       corpo.append(el('label', { class: 'linha-opcao' }, todos, ` todos os ${iguais.length} "${sel[0].nome}" do modelo`));
     }
-    corpo.append(el('p', { class: 'nota', texto: 'A peça muda no mesmo lugar (a cabeça no mesmo apoio, a porca na mesma pega). Os furos abertos pelo editor para estes parafusos passam para o diâmetro novo (d + 1 mm); os furos que vieram do IFC ficam como estão — confira na peça se o diâmetro subiu.' }));
+    corpo.append(el('p', { class: 'nota', texto: 'A peça muda no mesmo lugar (a cabeça no mesmo apoio, a porca na mesma pega). Os furos abertos pelo editor para estes parafusos passam para o diâmetro novo (o furo-padrão da NBR 8800, d + 1,5 mm); os furos que vieram do IFC ficam como estão — confira na peça se o diâmetro subiu.' }));
     if (await this.dialogo({ titulo: 'Trocar parafuso', corpo, ok: 'Trocar' }) !== 'ok') return;
     const d = +selD.value, L = +inL.value, classe = selC.value;
     if (!(d > 0) || !(L > 0)) { this.aviso('Diâmetro e comprimento precisam ser maiores que zero.', 'atencao'); return; }

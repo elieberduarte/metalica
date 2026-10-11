@@ -30,7 +30,55 @@ REGRAS_PADRAO = {
     "aba_min": 20.0, "aba_max": 150.0,
     "enrijecedor_min": 10.0, "enrijecedor_max": 40.0,
     "raio_interno_em_t": 1.0,           # raio interno da dobra, em espessuras
+    # furos (auditoria D4, 11/10/2026 — decisões do usuário): o furo-padrão da NBR 8800:2024 é d + 1,5 mm até 24 mm e
+    # d + 2 mm acima (o mesmo do núcleo de ligações, nucleo/ligacoes.py); antes o detalhamento fazia d + 1 (M12 → Ø13)
+    "folga_furo": 1.5, "folga_furo_grande": 2.0, "limite_folga_d": 24.0,
+    # o oblongo da terça é a punção da máquina: largura = parafuso + 1, comprimento = largura + 12 (M12 → 25 × 13) —
+    # não acompanha o furo redondo da norma
+    "oblongo_terca_folga": 1.0, "oblongo_terca_rasgo": 12.0,
 }
+
+#: as regras em uso neste programa (as padrão até `ativar` ler as da pasta de dados)
+_ATIVAS = dict(REGRAS_PADRAO)
+#: diâmetros de parafuso que existem (mm): métricos e em polegada
+BITOLAS_PARAFUSO = (6.0, 8.0, 10.0, 12.0, 12.7, 14.0, 15.875, 16.0, 19.05, 20.0, 22.0, 22.225, 24.0, 25.4, 27.0, 28.575,
+                    30.0, 31.75, 36.0, 38.1)
+
+
+def ativar(dados: str) -> dict:
+    """lê as regras da fábrica da pasta de dados para as contas que não a recebem (o furo-padrão, o oblongo)"""
+    try:
+        _ATIVAS.update(regras(dados))
+    except OSError:
+        pass
+    return dict(_ATIVAS)
+
+
+def regra(chave: str):
+    return _ATIVAS.get(chave, REGRAS_PADRAO.get(chave))
+
+
+def furo_padrao_mm(d: float) -> float:
+    """o furo-padrão do parafuso de diâmetro d (mm): d + 1,5 até 24 mm, d + 2 acima (configurável)"""
+    d = float(d)
+    folga = float(regra("folga_furo")) if d <= float(regra("limite_folga_d")) + 1e-6 else float(regra("folga_furo_grande"))
+    return round(d + folga, 2)
+
+
+def parafuso_do_furo(d_furo: float) -> float:
+    """o parafuso de um furo redondo — pelo furo-padrão de hoje ou pelo d + 1 de antes (o IFC traz o furo modelado)"""
+    d_furo = float(d_furo)
+    return min(BITOLAS_PARAFUSO, key=lambda b: min(abs(furo_padrao_mm(b) - d_furo), abs(b + 1.0 - d_furo)))
+
+
+def oblongo_do_parafuso(d: float):
+    """(comprimento, largura) do oblongo da terça pela punção: (d + 1 + 12, d + 1) — M12 → (25, 13)"""
+    w = round(float(d) + float(regra("oblongo_terca_folga")), 2)
+    return float(round(w + float(regra("oblongo_terca_rasgo")))), w
+
+
+def oblongo_do_furo(d_furo: float):
+    return oblongo_do_parafuso(parafuso_do_furo(d_furo))
 
 _TRAVA = threading.Lock()
 
@@ -80,6 +128,7 @@ def gravar_regras(dados: str, novas: dict) -> dict:
             r[k] = x
     with _TRAVA:
         _gravar(os.path.join(_pasta(dados), "regras.json"), r)
+    _ATIVAS.update(r)
     return r
 
 

@@ -43,7 +43,7 @@ def _barra_e_parafuso(criado):
 def test_parafuso_do_editor_fura_a_alma():
     pos = _barra_e_parafuso(True)
     furos = [f for f in pos.furos if f.vista == "frente"]
-    assert len(furos) == 1 and abs(furos[0].d - 13.0) < 1e-6
+    assert len(furos) == 1 and abs(furos[0].d - 13.5) < 1e-6          # d + 1,5 (NBR 8800, auditoria D4)
     assert any("pelo parafuso do modelo" in o for o in pos.observacoes)
 
 

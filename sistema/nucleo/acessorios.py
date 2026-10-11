@@ -108,7 +108,15 @@ def d_parafuso_mm(nome: str) -> float:
 
 
 def furo_mm(nome: str) -> float:
-    return round(d_parafuso_mm(nome) + FOLGA_FURO, 1)
+    """o furo-padrão (NBR 8800: d + 1,5 até 24 mm, d + 2 acima — fabrica.furo_padrao_mm, configurável)"""
+    import fabrica
+    return round(fabrica.furo_padrao_mm(d_parafuso_mm(nome)), 1)
+
+
+def oblongo_mm(nome: str) -> float:
+    """o comprimento do oblongo da terça pela punção da máquina (M12 → 25)"""
+    import fabrica
+    return fabrica.oblongo_do_parafuso(d_parafuso_mm(nome))[0]
 
 
 def _num(v, padrao=0.0) -> float:
@@ -404,7 +412,7 @@ def _v_cadeirinha(p, e):
     chapas = [_chapa_lig("chapa do suporte", _num(p["t"]), p["aco"], _num(p["borda_topo"])),
               _chapa_lig("alma da terça", _num(p["t_terca"]), "CIVIL 300", 25.0)]
     _grupo(r, p["parafuso"], p["classe"], linhas, colunas, _num(p["gab_v"]), _num(p["gab_h"]), chapas,
-           V=R, N=H, furo=tipo_furo(p["parafuso"], furo_mm(p["parafuso"]) + 12.0) if p.get("oblongo") else "padrão",
+           V=R, N=H, furo=tipo_furo(p["parafuso"], oblongo_mm(p["parafuso"])) if p.get("oblongo") else "padrão",
            elemento="Parafusos da terça")
     _filete(r, _num(p["perna"]), _num(p["largura"]), math.hypot(R, H), 2, _num(p["t"]), "Solda da chapa na base")
     _filete(r, _num(p["perna"]), _num(p["base_l"]), math.hypot(R, H), 2, _num(p["base_t"]), "Solda da base no banzo")
@@ -621,7 +629,7 @@ def _v_agulhamento(p, e):
         r.add(nao_verificada("compressão da agulha: %s" % exc_))
     chapas = [_chapa_lig("chapinha", _num(p["chapa_t"]), "ASTM A36", 20.0), _chapa_lig("alma da terça", 2.25, "CIVIL 300", 25.0)]
     _grupo(r, p["parafuso"], p["classe"], 1, 2, 50.0, _num(p["gabarito"]), chapas, V=N,
-           furo=tipo_furo(p["parafuso"], furo_mm(p["parafuso"]) + 12.0), elemento="Parafusos de uma ponta")
+           furo=tipo_furo(p["parafuso"], oblongo_mm(p["parafuso"])), elemento="Parafusos de uma ponta")
     return r
 
 

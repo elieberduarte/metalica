@@ -353,13 +353,13 @@ def test_furos_pelos_parafusos():
     lev = det.levantar(doc, regra_tercas=False)
     pos = lev["posicoes"][0]
     furos = sorted((f.x, f.y, f.d) for f in pos.furos)
-    assert furos == [(50.0, 50.0, 13.0), (150.0, 50.0, 11.0)], furos
+    assert furos == [(50.0, 50.0, 13.5), (150.0, 50.0, 11.5)], furos            # furo-padrão da NBR 8800: d + 1,5 (D4, 11/10)
     assert any("parafuso" in o for o in pos.observacoes) and any("porca" in o for o in pos.observacoes)
     # a conversão em chapa paramétrica leva os furos inferidos para o 3D
     from nucleo3d.modelo import Chapa
     assert det.converter_chapas(doc, "P9") == 1
     ch = next(e for e in doc.entidades.values() if isinstance(e, Chapa))
-    assert sorted(round(f_["diametro"]) for f_ in ch.furos) == [11, 13]
+    assert sorted(round(f_["diametro"], 1) for f_ in ch.furos) == [11.5, 13.5]          # d + 1,5 (D4, 11/10)
     # o furo do parafuso 12x35 (índice 0, em 50,50) anda 20 mm em x: o parafuso vai junto
     x_antes = sum(v[0] for v in b.vertices) / len(b.vertices)
     i0 = next(i for i, f_ in enumerate(ch.furos) if abs(f_["x"] - 50) < 1e-6)

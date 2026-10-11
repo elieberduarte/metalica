@@ -5,6 +5,7 @@ import math
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
+import fabrica
 from nucleo3d.modelo import Barra, Chapa, Documento, Solido
 from nucleo3d import geometria as _geo
 from nucleo2d.desenho import Desenho, Linha, Polilinha, Circulo, Arco, Texto, Cota, Chamada
@@ -1035,7 +1036,7 @@ def inferir_furos_de_parafusos(pos: Posicao, ent: Solido, fixadores: Sequence[So
             d_furo, inferido = d_marcado, False
         else:
             d, inferido = _diametro_do_fixador(f, ext)
-            d_furo = d + 1.0
+            d_furo = fabrica.furo_padrao_mm(d)           # NBR 8800: d + 1,5 até 24 mm (D4, 11/10; antes d + 1)
         if any(math.hypot(u - g.x, v - g.y) < max(d_furo, g.d, g.larg) for g in pos.furos):
             continue                                     # o furo já está na malha
         pos.furos.append(Furo("redondo", float(round(u)), float(round(v)), d_furo))
@@ -1139,7 +1140,7 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
             d_furo = d_marcado
         else:
             d, _ = _diametro_do_fixador(f, ext)
-            d_furo = d + 1.0
+            d_furo = fabrica.furo_padrao_mm(d)           # NBR 8800: d + 1,5 até 24 mm (D4, 11/10; antes d + 1)
         if any(g.vista == vista and math.hypot(x - g.x, y - g.y) < max(d_furo, g.d, g.larg) for g in pos.furos):
             continue
         pos.furos.append(Furo("redondo", float(round(x)), float(round(y)), d_furo, vista=vista))
@@ -1678,7 +1679,8 @@ def _reposicionar(grupo: Sequence[Furo], passo_h: float, passo_v: float):
         f.y = cy + (il - (nl - 1) / 2.0) * passo_v
 
 
-#: Rasgo do furo oblongo da terça: comprimento = diâmetro + isto (Ø13 → 25x13).
+#: Rasgo do furo oblongo da terça: comprimento = largura + isto (M12 → 25x13). O oblongo é a punção da máquina
+#: (fabrica.oblongo_do_parafuso): não acompanha o furo redondo da norma (Ø13,5) — decisão do usuário, 11/10
 RASGO_OBLONGO_TERCA = 12.0
 
 
@@ -1687,7 +1689,8 @@ def _oblongar(grupo: Sequence[Furo]) -> int:
     n = 0
     for f in grupo:
         if f.tipo == "redondo" and f.d > 0:
-            f.tipo, f.larg, f.alt = "oblongo", float(round(f.d + RASGO_OBLONGO_TERCA)), float(f.d)
+            comp, larg = fabrica.oblongo_do_furo(f.d)
+            f.tipo, f.larg, f.alt = "oblongo", comp, larg
             n += 1
     return n
 
@@ -1739,6 +1742,37 @@ def fora_do_limite_da_maquina(posicoes: Sequence[Posicao], camadas: Dict[str, st
     return fora
 
 
+def conferir_gabarito(pos: Posicao, grupo: Sequence[Furo]) -> List[str]:
+    """Auditoria D5 (11/10/2026): a furação depois de recentrada pelo padrão da fábrica ainda cabe na peça? A borda pela
+    Tabela 14 da NBR 8800 (o núcleo de ligações; o furo mais perto da borda da alma ou da ponta da barra) e o espaçamento
+    entre furos ≥ 2,7·d (6.3.9). Devolve o que não cabe — o padrão continua valendo, a posição ganha o "conferir"."""
+    from nucleo import ligacoes as LG
+    problemas = []
+    fs = [f for f in grupo if f.d > 0]
+    if not fs:
+        return problemas
+    d = fabrica.parafuso_do_furo(max(f.d for f in fs))
+    nome = "M%d" % round(d) if abs(d - round(d)) < 0.05 else ""
+    try:
+        e_min = LG.distancia_borda_minima(nome)[0] * 10.0 if nome else 1.5 * d
+    except Exception:                                          # noqa: BLE001 — diâmetro fora da tabela: 1,5·d
+        e_min = 1.5 * d
+    for f in fs:
+        meia = max(f.larg, f.d) / 2.0 if f.tipo == "oblongo" else f.d / 2.0
+        if not (0.0 < f.y < pos.H) or not (0.0 < f.x < pos.L):
+            problemas.append("furo fora da peca em (%s; %s)" % (_mm(f.x), _mm(f.y)))
+        elif min(f.y, pos.H - f.y) < e_min - 0.5 or min(f.x, pos.L - f.x) < max(e_min, meia) - 0.5:
+            problemas.append("furo a %s mm da borda em (%s; %s): minimo %s mm (NBR 8800, Tab. 14)" % (
+                _mm(min(f.y, pos.H - f.y, f.x, pos.L - f.x)), _mm(f.x), _mm(f.y), _mm(e_min)))
+    for i, a in enumerate(fs):
+        for b in fs[i + 1:]:
+            dist = math.hypot(a.x - b.x, a.y - b.y)
+            if dist < 2.7 * d - 0.5:
+                problemas.append("furos a %s mm entre centros: minimo 2,7 d = %s mm (NBR 8800, 6.3.9)" % (_mm(dist), _mm(2.7 * d)))
+                break
+    return sorted(set(problemas))
+
+
 def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str], so_maquina: bool = False) -> dict:
     """Aplica a furação padrão de fábrica às terças e ao que compõe a ligação delas.
 
@@ -1774,6 +1808,9 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str], so
                 _guardar_passos(pos, nc, dx, novo_h, nl, dy, novo_v)
                 _reposicionar(g, novo_h, novo_v)
                 alterou.append("%dx%d %s x %s -> %s x %s" % (nc, nl, _mm(dx), _mm(dy), _mm(novo_h), _mm(novo_v)))
+                ruins = conferir_gabarito(pos, [f for f in g if f.vista == "frente"])
+                if ruins:                                  # o padrão vence, mas o conflito fica à vista (D5)
+                    pos.observacoes.append("CONFERIR a furacao padrao: " + "; ".join(ruins))
             else:
                 no_padrao[_eixos_da_assinatura(ass)] += pos.quantidade
         if alterou or oblongados:

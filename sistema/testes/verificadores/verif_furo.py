@@ -46,10 +46,10 @@ try:
     aba.avaliar("window.editor.ativa.onValor('17,5'); 1")
     ok(aba.avaliar("window.editor.ativa.diametro") == 17.5, "diâmetro digitado 17,5: " + str(aba.avaliar("window.editor.ativa.diametro")))
     aba.avaliar("window.editor.ativa.onValor('M12'); 1")
-    ok(aba.avaliar("window.editor.ativa.diametro") == 13, "M12 dá o furo de 13")
+    ok(aba.avaliar("window.editor.ativa.diametro") == 13.5, "M12 dá o furo de 13,5 (d + 1,5, NBR 8800)")
     aba.drenar(0.8)
     txt = aba.avaliar("window.editor.el.props.textContent")
-    ok("Furo a fazer" in txt and "Já usados no modelo" in txt and "Ø13" in txt, "painel do furo: " + txt[:160])
+    ok("Furo a fazer" in txt and "Já usados no modelo" in txt and "Ø13,5" in txt, "painel do furo: " + txt[:160])
     aba.avaliar("window.editor.ativa._definir(14); 1")
     # parede grossa demais para achar a face de trás (100 mm): o marcador nasce na face, com a
     # profundidade da parede e o eixo para dentro

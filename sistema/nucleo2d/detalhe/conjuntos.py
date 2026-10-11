@@ -423,7 +423,8 @@ def _detalhes_de_furos(p, barras: Sequence[dict], nome_de, esc: float, y_topo: f
             # o detalhe é uma célula própria na prancha (vai para os DETALHES, embaixo — pedido do usuário,
             # 28/09); a chamada com a letra, na elevação, fica com a tesoura
             atr_conj = p.atr
-            p.atr = dict(atr_conj, detalhe_furos=letra)
+            # desenhado k vezes maior que a tesoura: a prancha escreve a escala real dele pelo "ampliacao" (D13, 11/10)
+            p.atr = dict(atr_conj, detalhe_furos=letra, ampliacao=k)
             L = b["L"]
             # a ponta de referência: a mais perto dos furos
             do_fim = sum(f["x"] for f in fs) / len(fs) > L / 2
@@ -490,7 +491,7 @@ def _detalhes_de_furos(p, barras: Sequence[dict], nome_de, esc: float, y_topo: f
                     p.cota_v(y0 + ys[i_] * k, y0 + ys[i_ + 1] * k, x_fim, 8.0, texto="%d" % round(ys[i_ + 1] - ys[i_]))
             escondido = any(f["escondido"] for f in fs)
             h = 2.2 * esc
-            p.texto(x_cel, y_topo + 3.0 * esc + 1.2 * h, "DETALHE %s – FUROS DE %s  (1:%d)" % (letra, nome, round(esc / k)), h)
+            p.texto(x_cel, y_topo + 3.0 * esc + 1.2 * h, "DETALHE %s – FUROS DE %s" % (letra, nome), h)
             p.texto(x_cel, y_topo + 3.0 * esc, "da ponta %s%s" % (lado, " · face escondida na elevação" if escondido else ""), 1.8 * esc)
             p.atr = atr_conj
             # chamada na elevação: círculo em volta dos furos e a letra
@@ -4374,13 +4375,18 @@ def desenho_de_localizacao(doc: Documento, pecas: Sequence[Solido], titulo: str 
         # o título vai abaixo de tudo o que já foi desenhado: as linhas de eixo passam 1,5 m
         # além das peças, com a bolinha na ponta, e a bolinha do primeiro eixo caía no título
         y_tit = min(-(10.0 + 8.0) * esc, p.extremos[1] - p.dy - 6.0 * esc)      # extremos: absolutos; texto: da vista
+        # o título e a linha de baixo são o cabeçalho da caixa, como na chumbação; a escala fica só no "ESC." da caixa —
+        # a do desenho de origem não é a da prancha quando ela reduz (auditoria D13, 11/10/2026)
+        atr_t = p.atr
+        p.atr = dict(atr_t, cabecalho=0)
         p.texto(0, y_tit, nome + (" – CORTE NO EIXO %s" % plano[2] if plano and plano[2] else ""), 3.5 * esc)
-        p.texto(0, y_tit - 4.5 * esc, "escala 1:%s · %s" % (
-            int(esc) if float(esc).is_integer() else esc,
-            "marcas de conjunto no lugar de montagem; peça solta com a própria marca" if tipo == "topo"
-            else ("só o que está no plano do corte, sem as peças de trás; " if plano else "")
-            + "tesouras, dispositivos e chumbamentos no lugar de montagem (terças, contraventos e agulhas na planta)"),
-            2.0 * esc)
+        p.atr = dict(atr_t, cabecalho=1)
+        p.texto(0, y_tit - 4.5 * esc,
+                "marcas de conjunto no lugar de montagem; peça solta com a própria marca" if tipo == "topo"
+                else ("só o que está no plano do corte, sem as peças de trás; " if plano else "")
+                + "tesouras, dispositivos e chumbamentos no lugar de montagem (terças, contraventos e agulhas na planta)",
+                2.0 * esc)
+        p.atr = atr_t
         ext_c = p.extremos
         d.metadados.setdefault("celulas", []).append([round(t, 1) for t in ext_c])
         d.vistas.append({"origem": [minimo[0], minimo[1], minimo[2]], "normal": list(w), "acima": list(v),

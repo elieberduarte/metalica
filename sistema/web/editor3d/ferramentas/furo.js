@@ -20,7 +20,7 @@
 // camada Furos, tipo IfcOpeningElement, com `atributos.furo = {d, ponto, eixo,
 // profundidade}`, que o detalhamento também lê como furo e que não conta como parafuso.
 
-import { FerramentaParafuso, tamanhoDoFixador } from './parafuso.js';
+import { FerramentaParafuso, tamanhoDoFixador, furoDoParafuso } from './parafuso.js';
 import * as C from './_comum.js';
 import { LADOS, furarMalha, furoNaChapa, lacoDaForma, ehOblongo, rotuloDaForma, comMalhaBase, faceDoPonto } from './_furar.js';
 
@@ -38,11 +38,11 @@ export function lerOblongo(texto) {
   return a > 0 && b > 0 ? { d: Math.min(a, b), comp: Math.max(a, b) } : null;
 }
 
-/** Lê "14", "17,5", "Ø14" ou "M12" (o furo do parafuso: d + 1) → diâmetro do furo. */
+/** Lê "14", "17,5", "Ø14" ou "M12" (o furo-padrão do parafuso, pela norma: d + 1,5) → diâmetro do furo. */
 export function lerDiametroDoFuro(texto) {
   const t = String(texto || '').toUpperCase().replace(',', '.').replace(/\s+/g, '');
   let m = t.match(/^M(\d+(?:\.\d+)?)$/);
-  if (m) return +m[1] + 1;
+  if (m) return furoDoParafuso(+m[1]);
   m = t.match(/^[ØO]?(\d+(?:\.\d+)?)(?:MM)?$/);
   if (m) return +m[1];
   return null;
@@ -167,7 +167,7 @@ export class FerramentaFuro extends FerramentaParafuso {
       if (e.tipo === 'chapa') { for (const f of (e.furos || [])) soma(f.diametro, 'furo de chapa'); continue; }
       if (e.tipo !== 'solido') continue;
       if (e.atributos && e.atributos.furo) soma(e.atributos.furo.d, 'furo marcado');
-      else if (/^BOLT/.test(e.nome || '')) { const t = tamanhoDoFixador(e); if (t) soma(t.d + 1, 'parafuso + 1 mm'); }
+      else if (/^BOLT/.test(e.nome || '')) { const t = tamanhoDoFixador(e); if (t) soma(furoDoParafuso(t.d), 'parafuso + folga da norma'); }
       for (const fe of ((e.atributos && e.atributos.furos_editor) || [])) soma(fe.d, 'furo feito no editor');
     }
     return [...cont.values()].sort((a, b) => b.n - a.n).slice(0, 12);

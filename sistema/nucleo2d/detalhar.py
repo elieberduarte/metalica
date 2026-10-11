@@ -965,12 +965,16 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
                 y0 = min(y0, e2[1] + ddy)
             return (x0, y0, x1, y1)
         montadas.sort(key=lambda m: _ordem_natural(" + ".join(nomes_conj.get(r, r) for r in m["rotulos"])))
+        from nucleo2d.detalhe.nomes import numerar_estavel
+        # o nome guardado de cada tesoura montada (D9, 11/10): a T2 continua T2 no próximo Detalhar
+        nomes_montadas = numerar_estavel([" + ".join(m["rotulos"]) for m in montadas], (nomes or {}).get("montadas"), "T")
+        nomeacao["montadas"] = nomes_montadas
         for i_m, m in enumerate(montadas, start=1):
             rot_m = " + ".join(m["rotulos"])
             # cada tesoura montada com o nome dela, em sequência — T1 (03x), T2 (02x)…; "T1 + T1" (as metades)
             # confundia os montadores (pedido do usuário, 28/09). As metades ficam no perfil do item.
             metades_m = " + ".join(nomes_conj.get(r, r) for r in m["rotulos"])
-            nome_m = "T%d" % i_m
+            nome_m = nomes_montadas.get(rot_m) or "T%d" % i_m
             fns.append(("tesoura", lambda dd, x, y, rot_m=rot_m, m=m, nome_m=nome_m: com_chapas_da_cumeeira(
                 dd, x, y, lambda dd_, x_, y_, rot_m=rot_m, m=m, nome_m=nome_m:
                 desenho_do_conjunto(doc, rot_m, m["pecas"], m["n"], dd_, x_, y_, rotular, fundidas=fundidas,
@@ -1079,11 +1083,17 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         avisos.append("telhas multi-dobra não analisadas: %s" % exc)
     # os nomes da fábrica: MD (multi-dobra) e CU (cumeeira), como TL (resposta do usuário, 25/09: "TL/MD/CU é o padrão
     # da fábrica, vale para os desenhos também") — as pranchas diziam TMD.1 e CM.1, a lista MD1 e CU1 (05/10)
-    for i, t in enumerate(md["telhas"], 1):
-        t["nome"] = "MD%d" % i
+    # guardados entre um Detalhar e outro pelo conjunto de cada uma (D9, 11/10), e a lista usa os mesmos
+    from nucleo2d.detalhe.nomes import numerar_estavel
     md.setdefault("cumeeiras", [])
-    for i, cm in enumerate(md["cumeeiras"], 1):
-        cm["nome"] = "CU%d" % i
+    ant_telhas = (nomes or {}).get("telhas") or {}
+    nomes_telhas = numerar_estavel([t["conjunto"] for t in md["telhas"]], ant_telhas, "MD")
+    nomes_telhas.update(numerar_estavel([cm["conjunto"] for cm in md["cumeeiras"]], ant_telhas, "CU"))
+    for t in md["telhas"]:
+        t["nome"] = nomes_telhas[str(t["conjunto"])]
+    for cm in md["cumeeiras"]:
+        cm["nome"] = nomes_telhas[str(cm["conjunto"])]
+    nomeacao["telhas"] = nomes_telhas
     # peças montadas (levantadas uma vez): a chapa soldada no chumbador vai para o quadro
     # dos chumbadores, junto das barras dele (a fábrica prepara o chumbador inteiro)
     montagens_cache = None
@@ -1106,16 +1116,23 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
         tipo_de = lambda m: nomeacao["tipos"].get(fundidas.get(m, m))    # noqa: E731
         st_montados = [gm for gm in montagens_cache if gm["tipo"] == "soldadas"
                        and any(tipo_de(m) == "suporte_terca" for m in gm["marcas"])]
-        n_st = 0
+        # a ordem de sempre (mais usados antes); o número de cada um guardado entre um Detalhar e outro (D9, 11/10)
+        from nucleo2d.detalhe.nomes import numerar_estavel
         em_montagem = set()
+        ordem_st = []
         for gm in sorted(st_montados, key=lambda g_: (-g_["instancias"], [_ordem_natural(n_) for n_ in g_["chave"]])):
-            n_st += 1
-            gm["nome_suporte"] = "S.T.%d" % n_st
+            ordem_st.append((" + ".join(sorted({fundidas.get(m, m) for m in gm["marcas"]})), gm))
             em_montagem |= {fundidas.get(m, m) for m in gm["marcas"]}
         for p in sorted((p for p in posicoes if tipo_de(p.marca) == "suporte_terca" and p.classe == "chapa"
                          and p.marca not in em_montagem), key=lambda p: (-p.quantidade, _ordem_natural(p.nome or p.marca))):
-            n_st += 1
-            p.nome_suporte = "S.T.%d" % n_st
+            ordem_st.append((p.marca, p))
+        nomes_st = numerar_estavel([k for k, _ in ordem_st], (nomes or {}).get("suportes"), "S.T.")
+        nomeacao["suportes"] = nomes_st
+        for k, alvo in ordem_st:
+            if isinstance(alvo, dict):
+                alvo["nome_suporte"] = nomes_st[k]
+            else:
+                alvo.nome_suporte = nomes_st[k]
     gabarito = _conjuntos_de_gabarito(posicoes, tipo_de_conj)
     for chave in grupos:
         g = GRUPOS_BASE.get(chave)
