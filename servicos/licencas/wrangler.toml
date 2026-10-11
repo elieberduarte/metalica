@@ -1,0 +1,14 @@
+# O serviço que o programa chama (ativar, renovar, atualização). Segredos: LICENCA_CHAVE_PRIVADA, LICENCA_CHAVE_PUBLICA,
+# GITHUB_TOKEN (fine-grained, só leitura do repositório). Publicar: wrangler deploy -c wrangler.toml
+name = "metalica-licencas"
+main = "src/api.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+REPOSITORIO = "elieberduarte/metalica"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "metalica-licencas"
+database_id = "cb870249-814d-4c2a-a610-490539a21e65"

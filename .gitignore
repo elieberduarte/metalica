@@ -47,3 +47,6 @@ Documentos/
 # precos da empresa (repositorio publico): a tabela fica em Documentos/Metalica/fabrica/precos
 Tabela de pre*os/
 *.xlsx
+
+# o cache local do wrangler (serviço de licenças)
+servicos/licencas/.wrangler/

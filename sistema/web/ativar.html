@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metálica — ativar</title>
+<link rel="stylesheet" href="estilo.css">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<style>
+  /* a tela de ativação da licença (licenca.py, 11/10/2026): a única que abre sem licença */
+  body.ativar { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+  .caixa { width: 100%; max-width: 460px; background: var(--painel); border: 1px solid var(--borda); border-radius: 12px; padding: 26px 26px 20px; box-shadow: 0 6px 30px rgba(0,0,0,.08); }
+  .caixa h1 { display: flex; align-items: center; gap: 10px; font-size: 20px; margin: 0 0 4px; color: var(--texto); }
+  .caixa p { color: var(--texto2); margin: 6px 0 14px; line-height: 1.45; }
+  .caixa label { display: block; font-size: 12.5px; color: var(--texto2); margin-bottom: 4px; }
+  .caixa input { width: 100%; box-sizing: border-box; font: 600 18px/1.3 Consolas, monospace; letter-spacing: .06em; text-transform: uppercase;
+    padding: 10px 12px; border: 1px solid var(--borda); border-radius: 8px; background: var(--painel2); color: var(--texto); }
+  .caixa button { margin-top: 12px; width: 100%; padding: 10px; font-size: 15px; font-weight: 600; border-radius: 8px; border: 1px solid var(--azul2);
+    background: var(--azul2); color: #fff; cursor: pointer; }
+  .caixa button:disabled { opacity: .6; cursor: default; }
+  .msg { margin-top: 12px; padding: 9px 11px; border-radius: 8px; font-size: 13.5px; line-height: 1.4; }
+  .msg.erro { background: rgba(192,57,43,.1); color: #c0392b; } .msg.ok { background: rgba(30,142,78,.12); color: #1e8e4e; }
+  .rodape { margin-top: 14px; font-size: 12px; color: var(--texto3); }
+</style>
+</head>
+<body class="ativar">
+<main class="caixa">
+  <h1><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M4 27V13.5L16 6l12 7.5V27" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M4 13.5h24M16 6v21" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".55"/>
+    </svg>Ativar o Metálica</h1>
+  <p id="motivo">Digite a chave da sua licença. Ela vem no formato MTL-XXXX-XXXX-XXXX e é pedida só na primeira vez neste computador.</p>
+  <form id="form">
+    <label for="chave">Chave da licença</label>
+    <input id="chave" autocomplete="off" spellcheck="false" placeholder="MTL-XXXX-XXXX-XXXX" maxlength="24" required autofocus>
+    <button type="submit" id="botao">Ativar</button>
+  </form>
+  <div id="msg"></div>
+  <div class="rodape">Precisa de internet só para ativar; depois o Metálica funciona até 30 dias sem conexão e se renova sozinho quando há rede. Não tem a chave? Fale com o responsável pelo Metálica na Hermes.</div>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const mostrar = (texto, tipo) => { $('#msg').innerHTML = ''; const d = document.createElement('div'); d.className = 'msg ' + tipo; d.textContent = texto; $('#msg').append(d); };
+fetch('/api/licenca', { cache: 'no-store' }).then(r => r.json()).then(e => {
+  if (e.ok) { location.replace('/'); return; }
+  if (e.chave) $('#chave').value = e.chave;
+  if (e.motivo) $('#motivo').textContent = e.motivo.charAt(0).toUpperCase() + e.motivo.slice(1) + '. Digite a chave da licença para continuar.';
+}).catch(() => {});
+$('#chave').addEventListener('input', (ev) => {
+  // MTL-XXXX-XXXX-XXXX enquanto digita (sem 0/O e 1/I na chave: o que for digitado vira maiúscula)
+  const c = ev.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^MTL/, '').slice(0, 12);
+  ev.target.value = c ? 'MTL-' + c.match(/.{1,4}/g).join('-') : '';
+});
+$('#form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const b = $('#botao'); b.disabled = true; b.textContent = 'Ativando…'; $('#msg').innerHTML = '';
+  try {
+    const r = await fetch('/api/licenca/ativar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chave: $('#chave').value }) });
+    const e = await r.json();
+    if (e.ok) { mostrar('Ativado para ' + (e.pessoa || 'você') + '. Abrindo o Metálica…', 'ok'); setTimeout(() => location.replace('/'), 900); return; }
+    mostrar(e.erro || e.motivo || 'Não foi possível ativar.', 'erro');
+  } catch (err) { mostrar('Não foi possível falar com o programa: ' + err.message, 'erro'); }
+  b.disabled = false; b.textContent = 'Ativar';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# A tela das licenças, atrás do Cloudflare Access (o Worker inteiro). ACCESS_EQUIPE = o nome da equipe do Zero Trust
+# (<equipe>.cloudflareaccess.com) e ACCESS_AUD = o "Application Audience (AUD) tag" do Access deste Worker.
+# Publicar: wrangler deploy -c wrangler-admin.toml
+name = "metalica-licencas-admin"
+main = "src/admin.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+ACCESS_EQUIPE = ""
+ACCESS_AUD = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "metalica-licencas"
+database_id = "cb870249-814d-4c2a-a610-490539a21e65"

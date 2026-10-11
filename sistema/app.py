@@ -103,6 +103,7 @@ WEB = os.path.join(BASE, "web")
 sys.path.insert(0, BASE)
 
 import versao                                  # noqa: E402
+import licenca                                 # noqa: E402
 
 
 def _documentos() -> str:
@@ -2679,6 +2680,26 @@ def verificar_atualizacao() -> dict:
         return dict(_ULTIMA_CONSULTA["dados"])
     import urllib.request
     fora = {"atual": versao.VERSAO, "ultima": None, "nova": False, "url": None, "arquivo": None, "disponivel": None}
+    # pelo serviço de licenças (11/10): ele lê o repositório (privado) e entrega o instalador só a quem tem licença;
+    # sem o serviço (fora do ar, ainda sem licença), a consulta antiga ao GitHub, que vale enquanto o repositório é público
+    if licenca.token():
+        try:
+            req = urllib.request.Request(licenca.SERVICO + "/api/atualizacao",
+                                         headers=dict(licenca.cabecalho(), **{"User-Agent": "Metalica/" + versao.VERSAO}))
+            with urllib.request.urlopen(req, timeout=6) as r:
+                d = json.loads(r.read().decode("utf-8"))
+            if d.get("ultima"):
+                ultima = str(d["ultima"])
+                fora.update({"ultima": ultima, "disponivel": True, "publicada": d.get("publicada") or "",
+                             "nova": _versao_tupla(ultima) > _versao_tupla(versao.VERSAO), "tamanho_mb": d.get("tamanho_mb"),
+                             "url": "https://github.com/%s/releases/tag/v%s" % (REPOSITORIO, ultima), "pelo_servico": True})
+                if d.get("arquivo"):
+                    fora["arquivo"] = licenca.SERVICO + d["arquivo"] + "?licenca=" + licenca.token()
+                if not (fora["nova"] and not fora.get("arquivo")):
+                    _ULTIMA_CONSULTA.update(quando=time.time(), dados=dict(fora))
+                return fora
+        except Exception:                        # noqa: BLE001 — o serviço fora: tenta o GitHub direto
+            pass
     try:
         req = urllib.request.Request("https://api.github.com/repos/%s/releases/latest" % REPOSITORIO,
                                      headers={"User-Agent": "Metalica/" + versao.VERSAO, "Accept": "application/vnd.github+json"})
@@ -4033,6 +4054,40 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, status=200):
         self._json_pronto(json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8"), status)
 
+    # -- a licença (licenca.py, 11/10/2026): no programa instalado, sem licença válida só a tela de ativação abre --
+    _LIVRES_SEM_LICENCA = ("/ativar", "/api/licenca", "/api/vivo", "/api/fechou", "/api/versao", "/favicon.ico", "/estilo.css")
+
+    def _licenca_get(self, rota: str) -> bool:
+        """as rotas GET da licença e a trava; True = o pedido já foi respondido"""
+        if rota == "/ativar":
+            self._arquivo(os.path.join(WEB, "ativar.html"), WEB)
+            return True
+        if rota == "/api/licenca":
+            self._json(licenca.estado())
+            return True
+        return self._barrar_sem_licenca(rota)
+
+    def _licenca_post(self, rota: str) -> bool:
+        if rota == "/api/licenca/ativar":
+            self._json(licenca.ativar((self._corpo() or {}).get("chave", "")))
+            return True
+        if rota == "/api/licenca/renovar":
+            self._json(licenca.renovar())
+            return True
+        return self._barrar_sem_licenca(rota)
+
+    def _barrar_sem_licenca(self, rota: str) -> bool:
+        if rota in self._LIVRES_SEM_LICENCA or licenca.liberado():
+            return False
+        if rota.startswith("/api/") or self.command != "GET":
+            self._json({"erro": licenca.estado()["motivo"] + " — ative o Metálica (tela de ativação).", "licenca": True}, 403)
+        else:
+            self.send_response(302)
+            self.send_header("Location", "/ativar")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        return True
+
     def _json_pronto(self, corpo: bytes, status=200):
         """JSON já em bytes (o modelo lido do disco vai como está, sem reescrever)."""
         self.send_response(status)
@@ -4181,6 +4236,8 @@ class Handler(BaseHTTPRequestHandler):
         if self._de_fora():
             return self._erro("pedido de fora do programa recusado", 403)
         _ULTIMO_PEDIDO[0] = time.time()
+        if self._licenca_get(rota):
+            return
         try:
             if rota == "/":
                 return self._arquivo(os.path.join(WEB, "inicio.html"), WEB)
@@ -4372,6 +4429,8 @@ class Handler(BaseHTTPRequestHandler):
         if rota in ("/api/vivo", "/api/fechou"):
             _sinal_de_vida(self.path, rota == "/api/fechou")
             return self._json({"ok": True})
+        if self._licenca_post(rota):
+            return
         # pedido em curso segura o encerramento automático (fechar a janela no meio do
         # Detalhar deixava o projeto com os desenhos antigos na lixeira e os novos por gravar)
         _em_curso(+1)
@@ -4771,6 +4830,8 @@ def main():
     for s in extras:
         threading.Thread(target=s.serve_forever, daemon=True).start()
     url = _url_para_reabrir(f"http://localhost:{porta}/")     # volta ao desenho de antes da atualização
+    if licenca.exigida():
+        licenca.renovar_sempre()                                # confere a licença ao abrir e a cada 6 h (com rede)
     try:
         limpar_instaladores_antigos()                           # o que as atualizações anteriores deixaram
     except Exception:                                           # noqa: BLE001
