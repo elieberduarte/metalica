@@ -36,7 +36,7 @@
       if (document.title.indexOf('[DEV]') !== 0) document.title = '[DEV] ' + document.title;
     }
     if (codigoMeu === null) codigoMeu = v.codigo;
-    mostrarConferencia(v.conferencia);
+    mostrarConferencia(v.conferencia, v.ritmo);
     var e = elemento();
     if (v.codigo && codigoMeu && v.codigo !== codigoMeu) {
       e.textContent = 'v' + minha + ' dev · código novo — recarregar (F5)';
@@ -63,7 +63,25 @@
     if (s < 60) return 'menos de 1 min';
     return '~' + Math.round(s / 60) + ' min';
   }
-  function mostrarConferencia(c) {
+  function pintarRitmo(modo) {
+    if (!caixaConf) return;
+    Array.prototype.forEach.call(caixaConf.querySelectorAll('[data-modo]'), function (b) {
+      var meu = b.getAttribute('data-modo') === modo;
+      b.style.background = meu ? (modo === 'calmo' ? 'rgba(63,174,106,.85)' : 'rgba(240,160,80,.85)') : 'transparent';
+      b.style.color = meu ? '#10151f' : 'var(--texto,#e4eaf3)';
+      b.style.fontWeight = meu ? '600' : '400';
+    });
+  }
+  function trocarRitmo(modo) {
+    pintarRitmo(modo);
+    fetch('/api/conferencia/ritmo', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ modo: modo }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d && d.modo) pintarRitmo(d.modo); })
+      .catch(function () { perguntar(); });
+  }
+  window.metalicaTrocarRitmo = trocarRitmo;
+  function mostrarConferencia(c, ritmo) {
     try { if (window.top !== window) return; } catch (err) { return; }
     if (!c) { if (caixaConf) { caixaConf.remove(); caixaConf = null; } return; }
     if (!caixaConf) {
@@ -81,8 +99,19 @@
         // (pedido do usuário, 29/09); a rodada da noite vê o cancelamento e desfaz a cópia limpa
         '<button data-cancelar type="button" title="Para a conferência agora: os testes, os verificadores e a bateria são encerrados; nada é publicado. A rodada recomeça do zero quando for pedida de novo." ' +
         'style="position:absolute;right:7px;top:5px;pointer-events:auto;cursor:pointer;font:11px system-ui,Segoe UI,sans-serif;' +
-        'color:#e4eaf3;background:rgba(217,83,79,.85);border:0;border-radius:4px;padding:1px 7px">Cancelar</button>';
+        'color:#e4eaf3;background:rgba(217,83,79,.85);border:0;border-radius:4px;padding:1px 7px">Cancelar</button>' +
+        // o ritmo (pedido do usuário, 11/10): calmo com o computador em uso, cheio com ele parado — vale na hora
+        '<div data-ritmo style="margin-top:6px;display:flex;align-items:center;gap:4px;pointer-events:auto">' +
+        '<span style="color:var(--texto3,#8a94a6)">Ritmo:</span>' +
+        '<button type="button" data-modo="calmo" title="Computador em uso: metade dos processadores, prioridade mínima, um verificador de tela por vez. Demora mais, mas a máquina fica livre para trabalhar.">Calmo</button>' +
+        '<button type="button" data-modo="cheio" title="Computador parado: todos os processadores e 3 verificadores de tela de cada vez. Termina mais rápido, mas pesa na máquina.">Cheio</button>' +
+        '</div>';
       caixaConf.style.position = 'fixed';
+      Array.prototype.forEach.call(caixaConf.querySelectorAll('[data-modo]'), function (b) {
+        b.style.cssText = 'cursor:pointer;font:11px system-ui,Segoe UI,sans-serif;border:1px solid var(--borda,#33405a);' +
+          'border-radius:4px;padding:0 8px;background:transparent;color:var(--texto,#e4eaf3)';
+        b.onclick = function () { trocarRitmo(b.getAttribute('data-modo')); };
+      });
       caixaConf.querySelector('[data-cancelar]').onclick = function () {
         var b = this;
         b.disabled = true;
@@ -96,6 +125,8 @@
     }
     var botao = caixaConf.querySelector('[data-cancelar]');
     botao.hidden = !!c.fim;
+    caixaConf.querySelector('[data-ritmo]').style.display = c.fim ? 'none' : 'flex';
+    pintarRitmo(ritmo);
     if (!c.fim && !botao.disabled) botao.textContent = 'Cancelar';
     var cor = c.fim ? (c.cancelada ? '#8a94a6' : c.ok ? '#3fae6a' : '#d9534f') : (c.parada ? '#8a94a6' : '#f0a050');
     var l1, l2;

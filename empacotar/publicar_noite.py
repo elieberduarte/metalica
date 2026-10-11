@@ -403,6 +403,21 @@ def _prioridade_baixa() -> None:
         pass
 
 
+def _ritmo() -> None:
+    """O ritmo da conferência (calmo/cheio — pedido do usuário, 11/10: "um mais calmo para quando estou trabalhando e
+    um full quando o PC estiver parado, com um botão no painel"): a rodada inteira, o instalador junto, fica no modo
+    que o botão da barrinha do modo desenvolvimento escolheu (sistema/testes/ritmo.py), trocável no meio."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("ritmo", os.path.join(SISTEMA, "testes", "ritmo.py"))
+        ritmo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ritmo)
+        ritmo.vigiar()
+        log("ritmo da conferência — " + ritmo.descricao())
+    except Exception as e:                              # noqa: BLE001 — sem o ritmo, fica a prioridade baixa
+        log("ritmo da conferência indisponível (%s): prioridade baixa" % e)
+
+
 def main(argv) -> int:
     global _log_arq
     if "--agendar" in argv:
@@ -411,6 +426,7 @@ def main(argv) -> int:
     os.makedirs(PASTA_LOG, exist_ok=True)
     os.makedirs(os.path.dirname(TRAVA), exist_ok=True)
     _log_arq = os.path.join(PASTA_LOG, time.strftime("%Y-%m-%d") + ".txt")
+    _ritmo()
     if os.path.exists(TRAVA) and time.time() - os.path.getmtime(TRAVA) < 6 * 3600:
         log("outra rodada da noite está em andamento (%s): nada feito" % TRAVA)
         return 0

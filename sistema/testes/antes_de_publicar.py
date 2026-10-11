@@ -42,17 +42,22 @@ def etapa(titulo, cmd):
 
 
 def _paralelo_pytest() -> list:
-    """`-n N` quando o pytest-xdist está instalado: a suíte inteira em metade dos núcleos
-    (medido: 200 s → 93 s com 6). Sem ele, roda como sempre."""
+    """`-n N` quando o pytest-xdist está instalado: metade dos núcleos no ritmo cheio (medido: 200 s → 93 s
+    com 6), 3 no calmo (testes/ritmo.py). Sem ele, roda como sempre."""
     import importlib.util
+    import ritmo
     if importlib.util.find_spec("xdist") is None:
         return []
-    return ["-n", str(max(1, min(6, (os.cpu_count() or 2) // 2)))]
+    return ["-n", str(ritmo.pytest_n())]
 
 
 def main(argv):
+    import ritmo
     import selecao
     t_inicio = time.time()
+    # o ritmo (calmo/cheio, o botão da barrinha): prioridade e processadores de toda a árvore, trocável no meio
+    ritmo.vigiar()
+    print("ritmo da conferência — " + ritmo.descricao() + " (troca na barrinha do modo desenvolvimento)", flush=True)
     esc = selecao.escolher("--completa" in argv)
     # as etapas que vão rodar, para a barrinha de progresso da faixa do modo desenvolvimento
     com_telas = "--sem-telas" not in argv and bool(esc["verificadores"])

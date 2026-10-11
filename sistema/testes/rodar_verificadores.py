@@ -160,17 +160,28 @@ def _gravar_duracoes(d: dict):
         pass
 
 
-def _quantos_paralelos(argv) -> int:
+def _quantos_paralelos(argv):
+    """(trabalhadores, fixo): pedido na linha de comando, fixo; sem pedir, o ritmo da conferência decide a cada
+    verificador (testes/ritmo.py: 1 no calmo, 3 no cheio — o botão da barrinha troca no meio da rodada)"""
     if "--serie" in argv:
-        return 1
+        return 1, True
     if "--paralelo" in argv:
         i = argv.index("--paralelo")
         if i + 1 < len(argv) and argv[i + 1].isdigit():
-            return max(1, int(argv[i + 1]))
+            return max(1, int(argv[i + 1])), True
     # cada verificador é um servidor + um Chrome desenhando o 3D por software: mais de um
     # núcleo cada. Com 6 de cada vez num i7 de 6 núcleos a máquina saturou (o de detalhar
     # levou 534 s em vez de 100) e a rodada não ganhou nada; 3 é o ponto certo
-    return max(1, min(3, (os.cpu_count() or 2) // 4))
+    import ritmo
+    return max(ritmo.verificadores_n(m) for m in ritmo.MODOS), False
+
+
+def _cabe(k: int, fixo: bool) -> bool:
+    """o trabalhador k pode pegar o próximo verificador no ritmo de agora"""
+    if fixo:
+        return True
+    import ritmo
+    return k < ritmo.verificadores_n()
 
 
 class _Fila:
@@ -212,12 +223,18 @@ def main(argv):
         for c in fora:
             print("fora  ", os.path.relpath(c, RAIZ), "(diagnóstico: pede argumentos)")
         return 0
-    n = _quantos_paralelos(argv)
+    n, fixo = _quantos_paralelos(argv)
     duracoes = _ler_duracoes()
     nome_de = lambda c: os.path.splitext(os.path.basename(c))[0]        # noqa: E731
     # os mais demorados primeiro: o último a começar não segura a rodada inteira
     roda.sort(key=lambda c: -duracoes.get(nome_de(c), 60.0))
-    print(f"{len(roda)} verificadores (fora {len(fora)} de diagnóstico), {n} de cada vez\n", flush=True)
+    if fixo:
+        print(f"{len(roda)} verificadores (fora {len(fora)} de diagnóstico), {n} de cada vez\n", flush=True)
+    else:
+        import ritmo
+        print(f"{len(roda)} verificadores (fora {len(fora)} de diagnóstico), pelo ritmo: "
+              f"{ritmo.verificadores_n('calmo')} de cada vez no calmo, {ritmo.verificadores_n('cheio')} no cheio "
+              f"(agora {ritmo.modo()})\n", flush=True)
     resultados = {}
     tela = threading.Lock()
     fila = _Fila([(c, _porta_fixa(c)) for c in roda])
@@ -234,8 +251,15 @@ def main(argv):
             for f in falhas[:6]:
                 print(f"         {f[:220]}", flush=True)
 
-    def trabalhador():
+    def trabalhador(k):
         while True:
+            if not _cabe(k, fixo):
+                # o ritmo calmo não deixa este trabalhador pegar agora: espera (ou sai, se já não há o que pegar)
+                with fila.cond:
+                    if not fila.pendentes:
+                        return
+                time.sleep(2.0)
+                continue
             item = fila.pegar()
             if item is None:
                 return
@@ -249,7 +273,7 @@ def main(argv):
             duracoes[nome] = round(dt, 1)
             mostrar(nome, ok, dt, falhas, oks)
 
-    fios = [threading.Thread(target=trabalhador, daemon=True) for _ in range(n)]
+    fios = [threading.Thread(target=trabalhador, args=(k,), daemon=True) for k in range(n)]
     for f in fios:
         f.start()
     for f in fios:

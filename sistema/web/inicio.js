@@ -533,6 +533,17 @@ async function iniciar() {
     const v = await api('/api/versao');
     janelaPropria = !!v.janela;
     if (v.licencas_dev && $('#btn-licencas')) $('#btn-licencas').hidden = false;   // a tela das licenças: só no desenvolvimento
+    if (v.dev && v.ritmo && $('#btn-ritmo')) {        // o ritmo da conferência (11/10): calmo com o PC em uso, cheio com ele parado
+      const b = $('#btn-ritmo');
+      const pintar = (m) => { b.dataset.modo = m; b.textContent = 'Conferência: ' + m; };
+      pintar(v.ritmo);
+      b.hidden = false;
+      b.onclick = async () => {
+        const novo = b.dataset.modo === 'calmo' ? 'cheio' : 'calmo';
+        try { pintar((await api('/api/conferencia/ritmo', { method: 'POST', body: JSON.stringify({ modo: novo }) })).modo); }
+        catch (err) { alert('Não consegui trocar o ritmo: ' + err.message); }
+      };
+    }
     maquinaLocal = v.maquina || '';
     if (maquinaLocal) desenhar();    // os cartões "aberto em outra máquina" dependem dela
     $('#pasta-dados').textContent = v.dados || '—';

@@ -2634,6 +2634,30 @@ def _conferencia_dev() -> Optional[dict]:
     return estado_da_conferencia(d, time.time())
 
 
+ARQ_RITMO = os.path.join(BASE, "testes", "_conferencia_ritmo.json")
+RITMOS = ("calmo", "cheio")
+
+
+def ritmo_da_conferencia(novo: Optional[str] = None, arquivo: Optional[str] = None) -> dict:
+    """GET/POST /api/conferencia/ritmo (o botão da barrinha e da tela inicial do modo desenvolvimento — pedido do
+    usuário, 11/10: "um mais calmo para quando estou trabalhando e um full quando o PC estiver parado"): o modo que
+    a conferência segue (testes/ritmo.py lê o mesmo arquivo a cada poucos segundos — a troca vale no meio dela)."""
+    arquivo = arquivo or ARQ_RITMO
+    if novo is not None:
+        if novo not in RITMOS:
+            raise ValueError("ritmo desconhecido: %r (calmo ou cheio)" % (novo,))
+        tmp = arquivo + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"modo": novo, "quando": time.strftime("%Y-%m-%d %H:%M:%S")}, f, ensure_ascii=False)
+        os.replace(tmp, arquivo)
+    try:
+        with open(arquivo, encoding="utf-8") as f:
+            m = json.load(f).get("modo")
+    except (OSError, ValueError, AttributeError):
+        m = None
+    return {"modo": m if m in RITMOS else "calmo"}
+
+
 def _matar_arvore(pid: int) -> str:
     """derruba o processo e tudo o que ele abriu (pytest, verificadores, servidores de teste, Chrome)"""
     import subprocess
@@ -4273,7 +4297,8 @@ class Handler(BaseHTTPRequestHandler):
                                    "dados": PROJETOS, "instalado": versao.CONGELADO,
                                    "janela": JANELA_PROPRIA, "maquina": MAQUINA, "usuario": USUARIO,
                                    "dev": DEV, "codigo": _carimbo_do_codigo() if DEV else None, "licencas_dev": LICENCAS_DEV,
-                                   "conferencia": _conferencia_dev() if DEV else None})
+                                   "conferencia": _conferencia_dev() if DEV else None,
+                                   "ritmo": ritmo_da_conferencia()["modo"] if DEV else None})
             if rota == "/api/atualizacao":
                 return self._json(verificar_atualizacao())
             if rota == "/api/catalogo":
@@ -4504,6 +4529,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(importar_pacote_de_projeto(corpo))
             if rota == "/api/conferencia/cancelar":
                 return self._json(cancelar_conferencia())
+            if DEV and rota == "/api/conferencia/ritmo":
+                return self._json(ritmo_da_conferencia(str((corpo or {}).get("modo") or "")))
             if rota.startswith("/api/fabrica/"):
                 return self._json(_rota_fabrica(rota, corpo if isinstance(corpo, dict) else {}))
             if rota.startswith("/api/projetos/"):
