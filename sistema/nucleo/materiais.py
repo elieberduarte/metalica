@@ -130,13 +130,15 @@ ELETRODOS: Dict[str, Eletrodo] = {e.nome: e for e in [
     Eletrodo("F7A2-EM12K", 48.5, "arco submerso (SAW)"),
 ]}
 
-# perna mínima de filete por espessura da parte mais grossa (NBR 8800, Tabela 10), em cm
-PERNA_MINIMA = [(0.635, 0.30), (1.27, 0.50), (1.905, 0.60), (float("inf"), 0.80)]
+# perna mínima de filete pela espessura da parte MENOS espessa da junta (NBR 8800:2024, 6.2.6.2.1, Tabela 11), em cm —
+# até 11/10/2026 era pela parte mais grossa, com os limites da edição antiga (6,35 / 12,7 / 19,05 mm)
+PERNA_MINIMA = [(0.63, 0.30), (1.25, 0.50), (1.9, 0.60), (float("inf"), 0.80)]
 
 
-def perna_minima(t_maior_cm: float) -> float:
+def perna_minima(t_menor_cm: float) -> float:
+    """a perna mínima do filete (cm) pela parte menos espessa soldada (NBR 8800:2024, Tabela 11)"""
     for lim, perna in PERNA_MINIMA:
-        if t_maior_cm <= lim:
+        if t_menor_cm <= lim + 1e-9:
             return perna
     return 0.80
 

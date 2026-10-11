@@ -1896,11 +1896,11 @@ def _entrada_da_ligacao(g: dict, par: dict) -> dict:
 
 
 def _perna_de_solda(t_a: float, t_b: float) -> float:
-    """Perna do filete entre duas chapas, cm: a mínima da Tabela 10 para a mais grossa,
-    mas nunca maior que a mais fina — na chapa dobrada de 2 mm a perna é a própria chapa
-    (NBR 8800, item 6.2.6.2.2)."""
+    """Perna do filete entre duas chapas, cm: a mínima da Tabela 11 pela parte menos espessa (NBR 8800:2024,
+    6.2.6.2.1 — antes pela mais grossa, a edição antiga), nunca maior que a mais fina — na chapa dobrada de 2 mm a
+    perna é a própria chapa (6.2.6.2.2)."""
     grossa, fina = max(t_a, t_b), min(x for x in (t_a, t_b) if x > 0) if (t_a > 0 or t_b > 0) else 0.3
-    perna = max(mat.perna_minima(grossa), 0.3) if grossa > 0 else 0.3
+    perna = max(mat.perna_minima(fina), 0.3) if grossa > 0 else 0.3
     return max(min(perna, fina), 0.15)
 
 
@@ -1941,7 +1941,7 @@ def _verificar_ligacao(perfil: Perfil, entrada: dict, elemento: str) -> Resultad
                 n_parafusos=int(entrada["n_parafusos"]), passo=float(entrada["passo_cm"]),
                 borda=float(entrada["borda_cm"]), gabarito_barra=max(largura / 2.0, 2.0), **comum)
         else:
-            perna = float(entrada.get("perna_cm") or mat.perna_minima(max(float(entrada["t_gusset_cm"]), t_b)))
+            perna = float(entrada.get("perna_cm") or mat.perna_minima(min(float(entrada["t_gusset_cm"]), t_b)))
             r = ligacoes.gusset_contraventamento(
                 perna_solda=perna, comprimento_solda=float(entrada["comprimento_cm"]), n_cordoes=2, **comum)
             r.dados["perna_cm"] = perna

@@ -1344,9 +1344,9 @@ def chapa_de_topo(viga, M_Sd: float, V_Sd: float = 0.0, N_Sd: float = 0.0,
         r.add(penetracao_total(tf_v, bf_v, av.fy, solicitacao="tração", F_Sd=T,
                                nome="mesa tracionada × chapa de topo"))
     else:
-        perna_mesa = max(mat.perna_minima(max(tf_v, t_chapa)), 0.6)
+        perna_mesa = max(mat.perna_minima(min(tf_v, t_chapa)), 0.6)       # a parte menos espessa (Tabela 11)
         r.add(filete(perna_mesa, 2 * bf_v, eletrodo, min(av.fy, ach.fy),
-                     t_base=max(tf_v, t_chapa), F_Sd=T, n_cordoes=1,
+                     t_base=min(tf_v, t_chapa), F_Sd=T, n_cordoes=1,
                      nome="mesa tracionada (filete dos dois lados)"))
     h_alma = d_v - 2 * tf_v
     r.add(filete(perna_alma, h_alma, eletrodo, min(av.fy, ach.fy),

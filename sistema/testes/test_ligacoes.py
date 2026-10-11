@@ -500,9 +500,9 @@ def test_regra_de_bolso_136_kN_por_mm_de_perna():
 
 def test_limites_geometricos_do_filete():
     """Cap. 9, Tabela 9.4 e item 9.5.2 — perna mínima, máxima e comprimento."""
-    perto(mat.perna_minima(0.50) * 10, 3, 0.001, "t ≤ 6,35 mm")
-    perto(mat.perna_minima(0.95) * 10, 5, 0.001, "6,35 < t ≤ 12,7")
-    perto(mat.perna_minima(1.60) * 10, 6, 0.001, "12,7 < t ≤ 19")
+    perto(mat.perna_minima(0.50) * 10, 3, 0.001, "t ≤ 6,3 mm (Tab. 11, a parte menos espessa)")
+    perto(mat.perna_minima(0.95) * 10, 5, 0.001, "6,3 < t ≤ 12,5")
+    perto(mat.perna_minima(1.60) * 10, 6, 0.001, "12,5 < t ≤ 19")
     perto(mat.perna_minima(2.50) * 10, 8, 0.001, "t > 19")
     perto(mat.perna_maxima(0.79) * 10, 5.9, 0.01, "b ≤ t − 2 mm")
     perto(mat.perna_maxima(0.50) * 10, 5.0, 0.01, "b ≤ t para t < 6,35")

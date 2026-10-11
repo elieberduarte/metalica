@@ -35,8 +35,8 @@ FILETES_MM = [3.0, 4.0, 5.0, 6.0, 8.0, 10.0]
 
 
 def perna_minima(t_mais_fina: float) -> float:
-    """dimensão mínima do filete pela espessura da parte mais fina (Tabela 10 da NBR 8800)"""
-    return 3.0 if t_mais_fina <= 6.35 else 5.0 if t_mais_fina <= 12.5 else 6.0 if t_mais_fina <= 19.0 else 8.0
+    """dimensão mínima do filete pela espessura da parte mais fina (NBR 8800:2024, 6.2.6.2.1, Tabela 11)"""
+    return 3.0 if t_mais_fina <= 6.3 else 5.0 if t_mais_fina <= 12.5 else 6.0 if t_mais_fina <= 19.0 else 8.0
 
 
 def grupo(n: int, gx: float, gy: float) -> List[tuple]:
