@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metálica — licenças</title>
+<link rel="stylesheet" href="estilo.css">
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('galpao.tema'); } catch (e) { t = null; }
+  if (t === 'claro' || t === 'escuro') document.documentElement.setAttribute('data-tema', t);
+})();
+</script>
+<style>
+  /* As licenças dentro do Metálica de desenvolvimento (licencas_dev.py, 11/10/2026): o mesmo banco da tela da Cloudflare */
+  .lic-pagina { max-width: 1100px; margin: 0 auto; padding: 12px 16px 40px; }
+  .lic-cab { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 12px; }
+  .lic-cab h2 { margin: 0; font-size: 20px; } .lic-cab .esp { flex: 1; }
+  .lic-cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .lic-cartao { background: var(--painel); border: 1px solid var(--borda); border-radius: 10px; padding: 10px 12px; }
+  .lic-cartao b { display: block; font-size: 21px; } .lic-cartao span { color: var(--texto2); font-size: 12px; }
+  .lic-sec { background: var(--painel); border: 1px solid var(--borda); border-radius: 10px; padding: 12px; margin-bottom: 14px; }
+  .lic-sec h3 { margin: 0 0 8px; font-size: 15px; }
+  .lic { border-top: 1px solid var(--borda); padding: 10px 0; } .lic:first-child { border-top: 0; }
+  .lic-linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .lic-nome { font-weight: 600; font-size: 15px; }
+  .lic-chave { font-family: Consolas, monospace; background: var(--painel2); border: 1px solid var(--borda); padding: 1px 6px; border-radius: 5px; }
+  .lic-estado { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 10px; background: var(--painel2); }
+  .ok { color: #1e8e4e; } .medio { color: #b26a00; } .ruim { color: #c0392b; } .sub { color: var(--texto2); font-size: 12.5px; }
+  .lic-maqs { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  .lic-maqs td { padding: 4px 6px; border-top: 1px solid var(--borda); vertical-align: top; } .lic-maqs td.n { white-space: nowrap; color: var(--texto2); }
+  form.lic-nova { display: grid; grid-template-columns: 2fr 2fr 1fr 2fr auto; gap: 8px; align-items: end; }
+  form.lic-nova label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--texto2); }
+  form.lic-nova input { font: inherit; padding: 6px 8px; border: 1px solid var(--borda); border-radius: 7px; background: var(--painel2); color: var(--texto); }
+  @media (max-width: 760px) { form.lic-nova { grid-template-columns: 1fr; } .lic-maqs td.n { white-space: normal; } }
+  .lic-eventos { max-height: 340px; overflow: auto; font-size: 12.5px; } .lic-eventos div { padding: 3px 0; border-top: 1px solid var(--borda); }
+  .lic-aviso { background: var(--painel2); border-left: 3px solid var(--azul2); padding: 8px 10px; border-radius: 6px; margin: 8px 0 0; }
+  .lic-erro { border-left-color: #c0392b; }
+</style>
+</head>
+<body>
+<header class="topo">
+  <div class="marca">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M4 27V13.5L16 6l12 7.5V27" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M4 13.5h24M16 6v21" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".55"/>
+    </svg>
+    <h1>Metálica<span>Licenças (desenvolvimento)</span></h1>
+  </div>
+  <div class="acoes">
+    <button type="button" onclick="location.href='/'" title="Volta à lista de projetos">← Projetos</button>
+    <button type="button" id="btn-atualizar" title="Lê de novo o banco das licenças">Atualizar</button>
+    <button type="button" id="btn-tela" title="A mesma tela na Cloudflare (login pelo e-mail), para abrir de qualquer lugar">Abrir na Cloudflare ↗</button>
+  </div>
+</header>
+<main class="lic-pagina">
+  <div class="lic-cartoes" id="cartoes"></div>
+  <section class="lic-sec"><h3>Este computador</h3><div id="este">—</div></section>
+  <section class="lic-sec"><h3>Nova licença</h3>
+    <form class="lic-nova" id="nova">
+      <label>Pessoa<input name="pessoa" required placeholder="nome"></label>
+      <label>E-mail<input name="email" type="email" placeholder="opcional"></label>
+      <label>Computadores<input name="maquinas_max" type="number" min="1" max="10" value="2"></label>
+      <label>Observação<input name="obs" placeholder="setor, função…"></label>
+      <button class="principal" type="submit">Criar chave</button>
+    </form>
+    <div id="nova-res"></div>
+  </section>
+  <section class="lic-sec"><h3>Licenças</h3><div id="lista">Lendo o banco das licenças…</div></section>
+  <section class="lic-sec"><h3>Últimos eventos</h3><div class="lic-eventos" id="eventos"></div></section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const dataBR = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+const dias = (iso) => iso ? (Date.now() - new Date(iso).getTime()) / 86400000 : Infinity;
+let TELA = 'https://metalica-licencas-admin.elieber-lucas.workers.dev';
+function contato(iso) {
+  const d = dias(iso);
+  if (d < 2) return '<span class="ok">em dia</span>';
+  if (d < 30) return '<span class="medio">sem contato há ' + Math.floor(d) + ' dias</span>';
+  return '<span class="ruim">sem contato há ' + Math.floor(d) + ' dias (licença vencida no computador)</span>';
+}
+async function chamar(rota, corpo) {
+  const r = await fetch(rota, corpo ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) } : { cache: 'no-store' });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+  return j;
+}
+async function esteComputador() {
+  try {
+    const e = await chamar('/api/licenca');
+    $('#este').innerHTML = e.ok
+      ? '<span class="ok">licença válida</span> · ' + esc(e.pessoa) + ' · <span class="lic-chave">' + esc(e.chave) + '</span> · vale até ' + dataBR(e.validade) + ' (' + e.dias_restantes + ' dias; renova sozinha com internet)'
+      : '<span class="medio">' + esc(e.motivo) + '</span> <span class="sub">— no desenvolvimento a licença não é exigida; o instalado pede a chave.</span>';
+  } catch (err) { $('#este').textContent = 'não foi possível ler: ' + err.message; }
+}
+async function carregar() {
+  $('#btn-atualizar').disabled = true;
+  try {
+    const d = await chamar('/api/dev/licencas');
+    if (d.tela) TELA = d.tela;
+    const ativas = d.licencas.filter(l => l.ativa), maqs = d.licencas.flatMap(l => l.maquinas.filter(m => !m.liberada));
+    const versoes = {}; for (const m of maqs) versoes[m.versao] = (versoes[m.versao] || 0) + 1;
+    $('#cartoes').innerHTML = [
+      ['licenças ativas', ativas.length], ['bloqueadas', d.licencas.length - ativas.length], ['computadores', maqs.length],
+      ['em dia (48 h)', maqs.filter(m => dias(m.ultima_vez) < 2).length],
+      ['versões em uso', Object.entries(versoes).sort().map(([v, n]) => esc(v) + (n > 1 ? ' ×' + n : '')).join(' · ') || '—'],
+    ].map(([t, v]) => '<div class="lic-cartao"><b>' + v + '</b><span>' + t + '</span></div>').join('');
+    $('#lista').innerHTML = d.licencas.length ? d.licencas.map(l => {
+      const ativos = l.maquinas.filter(m => !m.liberada);
+      const linhas = l.maquinas.map(m => '<tr><td>' + (m.liberada ? '<s>' : '') + '<b>' + esc(m.nome_pc || 'computador') + '</b> · ' + esc(m.usuario) + (m.liberada ? '</s> <span class="sub">(vaga liberada)</span>' : '') +
+        '</td><td class="n">versão ' + esc(m.versao || '—') + '</td><td class="n">último contato ' + dataBR(m.ultima_vez) + '<br>' + (m.liberada ? '' : contato(m.ultima_vez)) +
+        '</td><td class="n">' + (m.liberada ? '' : '<button type="button" data-liberar="' + m.id + '" title="Desliga este computador da licença e libera a vaga">Liberar vaga</button>') + '</td></tr>').join('');
+      return '<div class="lic"><div class="lic-linha"><span class="lic-nome">' + esc(l.pessoa) + '</span><span class="lic-chave">' + esc(l.chave) + '</span>' +
+        '<span class="lic-estado ' + (l.ativa ? 'ok' : 'ruim') + '">' + (l.ativa ? 'ativa' : 'bloqueada') + '</span>' +
+        '<span class="sub">' + ativos.length + ' de ' + l.maquinas_max + ' computador(es)' + (l.email ? ' · ' + esc(l.email) : '') + (l.obs ? ' · ' + esc(l.obs) : '') + '</span>' +
+        '<span style="flex:1"></span><button type="button" data-copiar="' + esc(l.chave) + '">Copiar chave</button>' +
+        (l.ativa ? '<button type="button" class="ruim" data-bloquear="' + esc(l.chave) + '">Bloquear</button>' : '<button type="button" data-desbloquear="' + esc(l.chave) + '">Desbloquear</button>') +
+        '</div>' + (linhas ? '<table class="lic-maqs">' + linhas + '</table>' : '<div class="sub" style="margin-top:4px">ainda não ativada em nenhum computador</div>') + '</div>';
+    }).join('') : '<div class="sub">Nenhuma licença ainda.</div>';
+    $('#eventos').innerHTML = d.eventos.map(e => '<div><span class="sub">' + dataBR(e.quando) + '</span> · <b>' + esc(e.tipo) + '</b> ' +
+      esc(e.chave) + ' ' + esc(e.detalhe) + (e.pais ? ' <span class="sub">(' + esc(e.pais) + ')</span>' : '') + '</div>').join('') || '<div class="sub">—</div>';
+  } catch (e) {
+    $('#lista').innerHTML = '<div class="lic-aviso lic-erro">Não foi possível ler o banco das licenças: ' + esc(e.message) + '</div>';
+  } finally { $('#btn-atualizar').disabled = false; }
+}
+document.addEventListener('click', async (ev) => {
+  const b = ev.target.closest('button'); if (!b || !b.closest('.lic-pagina')) return;
+  try {
+    if (b.dataset.copiar) { await navigator.clipboard.writeText(b.dataset.copiar); b.textContent = 'Copiada'; setTimeout(() => { b.textContent = 'Copiar chave'; }, 1500); return; }
+    if (b.dataset.bloquear && confirm('Bloquear esta licença? O Metálica para nos computadores dela na próxima conferência (até 30 dias sem internet).')) await chamar('/api/dev/licencas/' + b.dataset.bloquear + '/bloquear', {});
+    else if (b.dataset.desbloquear) await chamar('/api/dev/licencas/' + b.dataset.desbloquear + '/desbloquear', {});
+    else if (b.dataset.liberar && confirm('Liberar a vaga deste computador? Ele precisa ativar de novo para voltar a usar.')) await chamar('/api/dev/maquinas/' + b.dataset.liberar + '/liberar', {});
+    else return;
+    await carregar();
+  } catch (e) { alert(e.message); }
+});
+$('#nova').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const f = new FormData(ev.target);
+  try {
+    const r = await chamar('/api/dev/licencas', Object.fromEntries(f));
+    $('#nova-res').innerHTML = '<div class="lic-aviso">Chave criada: <span class="lic-chave">' + esc(r.chave) + '</span> — mande para a pessoa; ela digita na primeira abertura do Metálica.</div>';
+    ev.target.reset(); await carregar();
+  } catch (e) { alert(e.message); }
+});
+$('#btn-atualizar').addEventListener('click', carregar);
+$('#btn-tela').addEventListener('click', () => window.open(TELA, '_blank', 'noopener'));
+esteComputador();
+carregar();
+</script>
+</body>
+</html>

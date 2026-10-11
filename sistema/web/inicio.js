@@ -532,6 +532,7 @@ async function iniciar() {
   try {
     const v = await api('/api/versao');
     janelaPropria = !!v.janela;
+    if (v.licencas_dev && $('#btn-licencas')) $('#btn-licencas').hidden = false;   // a tela das licenças: só no desenvolvimento
     maquinaLocal = v.maquina || '';
     if (maquinaLocal) desenhar();    // os cartões "aberto em outra máquina" dependem dela
     $('#pasta-dados').textContent = v.dados || '—';

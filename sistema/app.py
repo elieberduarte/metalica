@@ -140,6 +140,8 @@ PORTA_DEV = 8766
 #: desenvolvimento, rodando do código (pedido de 05/10): no programa instalado as rotas e a tela não existem, e o
 #: pacote nem leva o código dela (empacotar/construir.py). METALICA_COMERCIAL=0/1 força um ou outro (testes).
 COMERCIAL = os.environ.get("METALICA_COMERCIAL", "0" if versao.CONGELADO else "1") == "1"
+#: a tela das licenças dentro do programa (licencas_dev.py, 11/10): só no desenvolvimento — o instalado não leva o módulo
+LICENCAS_DEV = not versao.CONGELADO
 SO_NO_DEV = "a parte comercial (orçamento, proposta, contrato e obra) fica só na versão de desenvolvimento."
 
 
@@ -4076,6 +4078,14 @@ class Handler(BaseHTTPRequestHandler):
             return True
         return self._barrar_sem_licenca(rota)
 
+    def _licencas_dev(self, fazer):
+        """a tela das licenças do desenvolvimento: o banco D1 pela API da Cloudflare (licencas_dev.py)"""
+        import licencas_dev
+        try:
+            return self._json(fazer(licencas_dev))
+        except licencas_dev.ErroLicencas as e:
+            return self._json({"erro": str(e)}, 502)
+
     def _barrar_sem_licenca(self, rota: str) -> bool:
         if rota in self._LIVRES_SEM_LICENCA or licenca.liberado():
             return False
@@ -4245,6 +4255,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._arquivo(os.path.join(WEB, "index.html"), WEB)
             if rota == "/ajuda":
                 return self._arquivo(os.path.join(WEB, "ajuda.html"), WEB)
+            if LICENCAS_DEV and rota == "/licencas":
+                return self._arquivo(os.path.join(WEB, "licencas.html"), WEB)
+            if LICENCAS_DEV and rota == "/api/dev/licencas":
+                return self._licencas_dev(lambda L: L.painel())
             if rota in ("/api/vivo", "/api/fechou"):
                 _sinal_de_vida(self.path, rota == "/api/fechou")
                 return self._json({"ok": True})
@@ -4253,7 +4267,7 @@ class Handler(BaseHTTPRequestHandler):
                                    "nucleo": versao.impressao_do_nucleo(),
                                    "dados": PROJETOS, "instalado": versao.CONGELADO,
                                    "janela": JANELA_PROPRIA, "maquina": MAQUINA, "usuario": USUARIO,
-                                   "dev": DEV, "codigo": _carimbo_do_codigo() if DEV else None,
+                                   "dev": DEV, "codigo": _carimbo_do_codigo() if DEV else None, "licencas_dev": LICENCAS_DEV,
                                    "conferencia": _conferencia_dev() if DEV else None})
             if rota == "/api/atualizacao":
                 return self._json(verificar_atualizacao())
@@ -4455,6 +4469,15 @@ class Handler(BaseHTTPRequestHandler):
             # o arquivo grande vem como ele é, sem base64 nem JSON (o IFC de 321 MB, 05/10)
             binario = (self.headers.get("Content-Type") or "").startswith("application/octet-stream")
             corpo = self._corpo_binario() if binario else self._corpo()
+            if LICENCAS_DEV and rota.startswith("/api/dev/"):
+                m = re.match(r"^/api/dev/licencas/([A-Z0-9-]+)/(bloquear|desbloquear)$", rota)
+                if rota == "/api/dev/licencas":
+                    return self._licencas_dev(lambda L: L.criar(corpo))
+                if m:
+                    return self._licencas_dev(lambda L: L.bloquear(m.group(1), m.group(2) == "desbloquear"))
+                m = re.match(r"^/api/dev/maquinas/(\d+)/liberar$", rota)
+                if m:
+                    return self._licencas_dev(lambda L: L.liberar(int(m.group(1))))
             if rota == "/api/ligacoes/montar":
                 return self._json(ligacoes_montar(corpo))
             if rota in ("/api/banco-detalhes", "/api/banco-detalhes/excluir"):
