@@ -664,7 +664,10 @@ def mtext_linhas(t: str, altura: float = 1.0) -> List[Tuple[str, float, Optional
             elif c == "S":
                 a, i = argumento(i)
                 partes = re.split(r"[\^/#]", a, maxsplit=1)
-                por("/".join(p.strip() for p in partes if p.strip()))
+                frac = "/".join(p.strip() for p in partes if p.strip())
+                if frac[:1].isdigit() and atual and atual[-1][-1:].isdigit():
+                    por(" ")                        # 2\S1/2; → "2 1/2" — colado, "21/2" (auditoria D7, 11/10)
+                por(frac)
             elif c == "H":
                 a, i = argumento(i)
                 try:

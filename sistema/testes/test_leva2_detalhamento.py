@@ -183,3 +183,10 @@ def test_d3_simbolo_de_solda_na_camada_solda():
     assert ents and all(e.camada == "SOLDA" for e in ents)
     assert sorted(e.texto for e in ents if isinstance(e, Texto)) == ["100", "3"]
     assert sum(1 for e in ents if getattr(e, "fechada", False)) == 2          # os dois triângulos: filete dos dois lados
+
+
+def test_d7_fracao_do_mtext_nao_cola_no_numero():
+    from nucleo2d.dxf_ler import mtext_limpo
+    assert mtext_limpo('PERFIL 2\S1/2;" X 1/4"') == 'PERFIL 2 1/2" X 1/4"'      # antes "21/2"
+    assert mtext_limpo("L 1\S1^2; x 3/16") == "L 1 1/2 x 3/16"
+    assert mtext_limpo('ESP. \S1/4;"') == 'ESP. 1/4"'
