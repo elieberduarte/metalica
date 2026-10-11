@@ -1035,7 +1035,10 @@ export class MetodosImplantacao {
       if (m.papel === 'banzo') {
         const s = (m.s0 + m.s1) / 2, h = hEm(m, s);
         const outros = bz.filter(o => o !== m && Math.min(o.s0, o.s1) - 1 <= s && s <= Math.max(o.s0, o.s1) + 1).map(o => hEm(o, s));
-        papel = outros.some(x => x < h - 1) ? 'banzo_sup' : 'banzo_inf';
+        const abaixo = outros.some(x => x < h - 50), acima = outros.some(x => x > h + 50);
+        // o trecho em linha dupla entre os dois banzos (a barra no meio do painel da tesoura central do CD Bom Dia, 11/10)
+        // é da alma, não um terceiro banzo
+        papel = abaixo && acima ? 'diagonal' : abaixo ? 'banzo_sup' : 'banzo_inf';
       }
       return [m.s0, m.h0, m.s1, m.h1, papel];
     });

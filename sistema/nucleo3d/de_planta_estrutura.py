@@ -314,6 +314,30 @@ def _linhas_duplas(segs: List[Tuple[float, float, float, float]]) -> Dict[int, T
     return pares
 
 
+def _lado_das_ligadas(seg, normal, alma, tol: float) -> int:
+    """De que lado do perfil `seg` (u0, v0, u1, v1) ficam as barras da alma ligadas a ele: +1 do lado da `normal`, −1 do
+    outro, 0 sem ligação. A ligada é a que tem uma ponta na linha do perfil (até `tol`, dentro do comprimento); a outra
+    ponta diz o lado — é o miolo daquela tesoura, mesmo com outra tesoura encostada (o CD Bom Dia, 11/10: três tesouras
+    por eixo, os montantes de ponta lado a lado a 330 mm no apoio da viga de transição)."""
+    du, dv = seg[2] - seg[0], seg[3] - seg[1]
+    L = math.hypot(du, dv)
+    if L < 1:
+        return 0
+    tu, tv = du / L, dv / L
+    votos = 0
+    for a in alma:
+        for (pu, pv), (qu, qv) in (((a[0], a[1]), (a[2], a[3])), ((a[2], a[3]), (a[0], a[1]))):
+            ao_longo = (pu - seg[0]) * tu + (pv - seg[1]) * tv
+            fora = abs((pu - seg[0]) * tv - (pv - seg[1]) * tu)
+            if fora > tol or not (-tol <= ao_longo <= L + tol):
+                continue
+            lado = (qu - pu) * normal[0] + (qv - pv) * normal[1]
+            if abs(lado) > 1.0:
+                votos += 1 if lado > 0 else -1
+            break
+    return (votos > 0) - (votos < 0)
+
+
 def _giro_para(w: Tuple[float, float, float], alvo: Tuple[float, float, float]) -> float:
     """O giro (graus) da barra de direção `w` que leva o eixo local u da seção a `alvo` (geometria.base_local)."""
     from nucleo3d.geometria import base_local
@@ -374,6 +398,12 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         return any(math.dist(p, q) < 2.0 for p in ((s[0], s[1]), (s[2], s[3])) for q in ((outro[0], outro[1]), (outro[2], outro[3])))
 
     sup = [segs[i] for i in pares if papeis[i] == "banzo_sup"]
+    # a alma em linha simples: as barras que dizem de que lado fica o miolo de cada banzo (a regra da boca do U)
+    alma = [segs[i] for i in range(len(segs)) if i not in pares and i not in internas
+            and not (papeis[i].startswith("banzo") or papeis[i] == "extremidade")]
+    # para o montante de ponta também os banzos que saem dele: vão para a tesoura dele (no apoio de B do CD Bom Dia
+    # nenhuma diagonal chega ao montante de ponta da TC1, só os banzos)
+    banzos = [(i, segs[i]) for i in range(len(segs)) if i not in internas and (papeis[i].startswith("banzo") or i in pares)]
     n = 0
     feitas: List[Barra] = []                           # as barras desta tesoura (o encaixe é por tesoura)
     secundarias: List[Tuple[Barra, tuple]] = []        # as de um lado só, por fora do U: cortadas na face do banzo
@@ -404,9 +434,31 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         # a ponta em U conta como banzo: as cantoneiras encaixam nela, e ela não é recortada como alma
         papel_3d = "banzo" if (papel.startswith("banzo") or papel == "extremidade") else ("diagonal" if papel == "secundaria" else papel)
         nome = "%s %s %d" % (marca, nome_papel.get(papel, papel), i + 1)
-        if i in pares:
-            # a boca do U para o miolo: o eixo u da seção (para onde o U abre) na normal para dentro, no plano da tesoura
-            nx, ny = pares[i][2]
+        banzo_simples = i not in pares and (papel.startswith("banzo") or papel == "extremidade")
+        if i in pares or banzo_simples:
+            # a boca do U para o miolo: o eixo u da seção (para onde o U abre) na normal para dentro, no plano da tesoura.
+            # O banzo em linha de centro (o esqueleto do leitor do desenho detalhado, Montagem por eixos — 11/10) também:
+            # o de cima abre para baixo, o de baixo para cima e o trecho em pé para o meio do vão; antes ele ia pela regra
+            # da cantoneira e ficava com a boca para fora do plano (o CD Bom Dia: 24 de 26 trechos do banzo de cima)
+            # o miolo: o lado de onde chegam as barras da alma ligadas a este perfil; sem ligação, o par desenhado diz
+            # (a face de fora é a mais longe do meio do desenho) e, em linha de centro, o de cima abre para baixo, o
+            # de baixo para cima e o em pé para o meio do vão
+            cu0, cv0, cu1, cv1 = u0, v0, u1, v1
+            ls = math.hypot(cu1 - cu0, cv1 - cv0) or 1.0
+            nx, ny = -(cv1 - cv0) / ls, (cu1 - cu0) / ls
+            tol_lig = (pares[i][1] / 2.0 + 60.0) if i in pares else 80.0
+            lado = _lado_das_ligadas((cu0, cv0, cu1, cv1), (nx, ny), alma, tol_lig)
+            if not lado and (papel == "extremidade" or abs(ny) < 0.3):
+                lado = _lado_das_ligadas((cu0, cv0, cu1, cv1), (nx, ny), [b for j, b in banzos if j != i], tol_lig + 80.0)
+            if lado:
+                nx, ny = nx * lado, ny * lado
+            elif i in pares:
+                nx, ny = pares[i][2]
+            elif papel == "extremidade" or abs(ny) < 0.3:
+                if (vao / 2.0 - (s[0] + s[2]) / 2.0) * nx < 0:
+                    nx, ny = -nx, -ny
+            elif (papel == "banzo_inf") != (ny > 0):
+                nx, ny = -nx, -ny
             dentro = (ux * nx * k, uy * nx * k, ny)
             dw = sum(x * y for x, y in zip(dentro, w))
             dentro = tuple(x - dw * y for x, y in zip(dentro, w))
@@ -414,7 +466,8 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                        rotacao=_giro_para(w, dentro), atributos=atr)
             doc.add(bu)
             feitas.append(bu)
-            perfis_u[i] = bu
+            if i in pares:                             # o canto em meia-esquadria é o das faces desenhadas
+                perfis_u[i] = bu
             n += 1
             continue
         # cantoneira: a aba deitada sempre do mesmo lado do plano (giro pela normal do plano, não pelo sentido da linha)

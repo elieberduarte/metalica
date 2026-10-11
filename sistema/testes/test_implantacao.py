@@ -84,3 +84,52 @@ def test_pilar_e_giro_dos_eixos():
 def test_fora_da_montagem_a_planta_e_a_mesma():
     des = Desenho(nome="planta", escala=100.0)
     assert DPE.planta_real(des) is des
+
+
+def test_banzo_em_linha_de_centro_fica_com_a_boca_para_o_miolo():
+    """Regra do usuário (07/10): o U do banzo abre para o miolo da tesoura — também o banzo que chega em linha de
+    centro (o esqueleto do leitor do desenho detalhado, sem as duas faces). O de cima abre para baixo, o de baixo
+    para cima; antes ele ia pela regra da cantoneira, com a boca para fora do plano (CD Bom Dia, 11/10)."""
+    from nucleo3d.geometria import base_local
+    comum = Desenho(nome="planta", escala=100.0)
+    t = _trelica((6000.0, 0.0), (6000.0, 20000.0))
+    comum.add(Linha(a=t.a, b=t.b, camada="ESTRUTURA", atributos={k: v for k, v in t.atributos.items() if k != "quadro"}))
+    doc, _ = DPE.modelo_da_planta(comum, [])
+    vistos = set()
+    for b in doc.entidades.values():
+        papel = (b.atributos or {}).get("papel_trelica")
+        if papel not in ("banzo_sup", "banzo_inf"):
+            continue
+        w = tuple(b.fim[c] - b.inicio[c] for c in range(3))
+        u, _v, _w = base_local(w, b.rotacao)
+        assert (u[2] < -0.9) if papel == "banzo_sup" else (u[2] > 0.9), (papel, b.rotacao, u)
+        assert abs(u[0]) < 1e-6                                   # no plano da tesoura (x = 6000)
+        vistos.add(papel)
+    assert vistos == {"banzo_sup", "banzo_inf"}
+
+
+def test_tesouras_encostadas_cada_montante_de_ponta_abre_para_a_sua():
+    """Duas tesouras no mesmo desenho, encostadas no apoio (o CD Bom Dia: A–B e B–C com os montantes de ponta lado a lado,
+    a 330 mm): o U de cada montante de ponta abre para a tesoura dele — o lado das diagonais ligadas —, e não para o
+    meio do desenho inteiro."""
+    from nucleo3d.geometria import base_local
+    barras = []
+    for x0, x1 in ((0, 10000), (10330, 20330)):
+        barras += [[x0, 0, x1, 0, "banzo_inf"], [x0, 1500, x1, 1500, "banzo_sup"],
+                   [x0, 0, x0, 1500, "extremidade"], [x1, 0, x1, 1500, "extremidade"],
+                   [x0, 0, x0 + 2500, 1500, "diagonal"], [x1, 0, x1 - 2500, 1500, "diagonal"]]
+    comum = Desenho(nome="planta", escala=100.0)
+    comum.add(Linha(a=(0.0, 0.0), b=(20330.0, 0.0), camada="ESTRUTURA", atributos={
+        "elemento": "trelica", "material": "aco", "marca": "T", "nivel_base": 0,
+        "perfis": {"banzo_sup": "U 150×50×3,0", "banzo_inf": "U 150×50×3,0", "diagonal": "L 50,8×4,76"},
+        "desenho": {"barras": barras, "vao": 20330, "altura": 1500}}))
+    doc, _ = DPE.modelo_da_planta(comum, [])
+    abre = {}
+    for b in doc.entidades.values():
+        if (b.atributos or {}).get("papel_trelica") != "extremidade":
+            continue
+        w = tuple(b.fim[c] - b.inicio[c] for c in range(3))
+        u, _v, _w = base_local(w, b.rotacao)
+        abre[round(b.inicio[0])] = round(u[0])
+    # as pontas de fora abrem para dentro; no apoio do meio, a de 10000 abre para trás (−x) e a de 10330 para frente (+x)
+    assert abre == {0: 1, 10000: -1, 10330: 1, 20330: -1}, abre
