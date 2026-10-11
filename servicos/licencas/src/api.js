@@ -129,6 +129,13 @@ export default {
       if (req.method === 'GET' && url.pathname === '/api/atualizacao') return await atualizacao(req, env);
       const m = /^\/api\/baixar\/(\d+)$/.exec(url.pathname);
       if (req.method === 'GET' && m) return await baixar(req, env, m[1]);
+      if (url.pathname === '/api/saude') {
+        // o GitHub aceita o token? (o limite de consultas é 5.000/h autenticado e 60 sem token) — sem mostrar o token
+        const r = await github(env, '');
+        const limite = parseInt(r.headers.get('x-ratelimit-limit') || '0', 10);
+        return json({ ok: r.ok, github: r.status, token: !!env.GITHUB_TOKEN, autenticado: limite > 60,
+                      repositorio_visivel: r.ok, banco: !!(await env.DB.prepare('SELECT 1 AS x').first()) });
+      }
       if (url.pathname === '/') return new Response('Metálica — serviço de licenças', { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
       return json({ erro: 'rota desconhecida' }, 404);
     } catch (e) {
