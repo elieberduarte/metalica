@@ -738,6 +738,34 @@ def _plano_do_laco(pos: Posicao, laco, eixo: int, ij: Tuple[int, int]):
     return (media - b * su - c * sv, b, c)
 
 
+def mesa_de_baixo_do_outro_lado(pos: Posicao, laco) -> bool:
+    """A face +e2 do laço é outra mesa: fica a mais da metade da altura da face −e2 que a vista de cima lê — a outra mesa
+    do U, do W, a outra parede do tubo. Na cantoneira as duas faces são as da MESMA aba (a espessura entre elas): o mesmo
+    furo passante, lido de cada lado (P44 da Sala, 11/10)"""
+    if not pos.local or not laco:
+        return False
+    nivel = sum(pos.local[i][1] for i in laco) / len(laco)
+    de_cima = _lacos_2d(pos, 1, -1.0, (0, 2))
+    if not de_cima:
+        return nivel - min(q[1] for q in pos.local) > pos.H / 2.0
+    nivel_cima = sum(pos.local[i][1] for i in de_cima[0][0]) / len(de_cima[0][0])
+    return abs(nivel - nivel_cima) > pos.H / 2.0
+
+
+def _furos_da_mesa_de_baixo(pos: Posicao) -> List["Furo"]:
+    """Os furos da outra mesa (+e2), vista "baixo" — sumiam: a vista de cima só lê as faces de normal −e2, e as da mesa
+    de baixo que olham para −e2 são a face de dentro, fora do plano (auditoria D1, 11/10/2026)"""
+    lacos = _lacos_2d(pos, 1, +1.0, (0, 2))
+    if not lacos or not mesa_de_baixo_do_outro_lado(pos, lacos[0][0]):
+        return []
+    furos = []
+    for _, pts in lacos[1:]:
+        f = _classificar_laco(pts)
+        f.vista = "baixo"
+        furos.append(f)
+    return furos
+
+
 def _contorno_e_furos(pos: Posicao, eixo: int, sinal: float, ij: Tuple[int, int],
                       vista: str) -> Tuple[List[Tuple[float, float]], List[Furo]]:
     """O maior laço é o contorno; os demais, furos."""
@@ -1214,6 +1242,7 @@ def _analisar(pos: Posicao, eixos=None) -> Posicao:
         # furos na alma (vista de frente) e nas mesas (vista de topo)
         _, furos_alma = _contorno_e_furos(pos, 2, +1.0, (0, 1), "frente")
         _, furos_mesa = _contorno_e_furos(pos, 1, -1.0, (0, 2), "topo")
+        furos_mesa = furos_mesa + _furos_da_mesa_de_baixo(pos)
         pos.furos = furos_alma + furos_mesa
         _cortes_de_ponta(pos, area)
         if area:

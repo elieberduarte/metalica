@@ -362,9 +362,11 @@ def _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc) -> List[di
             i1 = max(range(len(pos.local)), key=lambda i: pos.local[i][0])
             pontas = [(_dot(_sub(e.vertices[i], origem), u) - u0, _dot(_sub(e.vertices[i], origem), v) - v0) for i in (i0, i1)]
             larg_face = {"frente": pos.H, "topo": max(q[2] for q in pos.local) - min(q[2] for q in pos.local)}
+            larg_face["baixo"] = larg_face["topo"]                       # a outra mesa, mesma largura (D1, 11/10)
             # a altura do furo no detalhe é medida da borda da face: na alma o zero já é a
             # borda, na aba (vista de topo) o zero é o meio da peça
             base_face = {"frente": min(0.0, min(q[1] for q in pos.local)), "topo": min(q[2] for q in pos.local)}
+            base_face["baixo"] = base_face["topo"]
             for f in furos:
                 f["y"] = f["y"] - base_face[f["vista"]]
             barras.append({"marca": str(_marcas(e).get("posicao") or e.nome or e.id), "L": pos.L, "furos": furos,
@@ -411,7 +413,7 @@ def _detalhes_de_furos(p, barras: Sequence[dict], nome_de, esc: float, y_topo: f
     ordem = sorted(barras, key=lambda b_: _ordem_natural(nome_de(b_["marca"])))
     for b in [b for b in ordem if not _perfil_laminado(b.get("pos"))]:
         nome = nome_de(b["marca"])
-        for vista in ("frente", "topo"):
+        for vista in ("frente", "topo", "baixo"):
             fs = [f for f in b["furos"] if f["vista"] == vista]
             if not fs or (nome, vista) in vistos:
                 continue

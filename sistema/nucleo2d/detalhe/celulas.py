@@ -9,6 +9,7 @@ from nucleo.base import ErroDeDados
 from nucleo3d.modelo import Documento, Solido, Chapa
 from nucleo3d import geometria as _geo
 from nucleo2d.desenho import Desenho, Polilinha, Circulo, Cota
+from saida.detalhamento import mesa_de_baixo_do_outro_lado
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
                                 _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d)
 from saida.desenhos import Estilo, _mm
@@ -443,6 +444,7 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
     L, H = pos.L, pos.H
     furos_frente = [f for f in pos.furos if f.vista == "frente"]
     furos_topo = [f for f in pos.furos if f.vista == "topo"]
+    furos_baixo = [f for f in pos.furos if f.vista == "baixo"]
 
     if pos.classe == "chapa":
         p.polilinha(pos.contorno, fechada=True, camada="ACO")
@@ -548,6 +550,7 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
             p.cota_h(x_pl, x_pl + comp_d, 0, -off)
             p.cota_v(0, larg_d, x_pl + comp_d, off)
             p.texto(x_pl, larg_d + 3.0 * esc, "DESENVOLVIMENTO (linha média)", 2.0 * esc)
+    fim_da_vista_de_cima = None                        # onde a vista de cima termina (a da mesa de baixo vai embaixo dela)
     # o gancho (barra redonda dobrada) sem a vista de cima: a de frente já mostra a dobra
     if (furos_topo or ((pos.vista_topo or pos.classe == "barra_conformada") and not redonda)) and pos.local:
         w_min = min(q[2] for q in pos.local)
@@ -572,6 +575,23 @@ def desenho_da_posicao(pos: Posicao, desenho: Desenho, dx: float, dy: float,
         # da Sala, 01/10); em cima ele ficava entre as duas vistas e parecia da de frente
         y_pe = min([q[1] - p.dy for q in p.pontos[n_pts:]] + [y_topo + w_min])
         p.texto(0, y_pe - 4.5 * esc, "VISTA DE CIMA – %s" % (pos.nome or pos.marca), 2.0 * esc)
+        fim_da_vista_de_cima = y_pe - 4.5 * esc
+    # a mesa de baixo com furo (auditoria D1, 11/10/2026): mais uma vista, embaixo da de cima, na MESMA orientação dela
+    # (vista por cima, através da peça) — as cotas dos furos ficam no mesmo sentido nas duas
+    if furos_baixo and pos.local and not redonda:
+        w_min = min(q[2] for q in pos.local)
+        w_max = max(q[2] for q in pos.local)
+        if fim_da_vista_de_cima is not None:            # embaixo da vista de cima
+            y_baixo = fim_da_vista_de_cima - 3.0 * esc - ((off2 + 3.0) * esc + w_max)
+        else:                                            # sem a de cima: no lugar dela
+            y_baixo = -((off2 + 3.0) * esc + (w_max - w_min) + (w_min if w_min > 0 else 0))
+        n_pts = len(p.pontos)
+        _vista(p, pos, (0, 2), 1, +1.0, 0, y_baixo, _arestas_dos_furos(pos, 1, +1.0, (0, 2)))
+        _desenhar_furos(p, est, furos_baixo, 0, y_baixo)
+        p.cadeia_h([0.0] + sorted({round(f.x, 1) for f in furos_baixo}) + [L], y_baixo + w_min, -off, exigir_espaco=False)
+        p.cota_v(y_baixo + w_min, y_baixo + w_max, L, off)
+        y_pe = min([q[1] - p.dy for q in p.pontos[n_pts:]] + [y_baixo + w_min])
+        p.texto(0, y_pe - 4.5 * esc, "MESA DE BAIXO (vista por cima) – %s" % (pos.nome or pos.marca), 2.0 * esc)
 
     if pos.tipo_nome == "gancho" and pos.local:
         _rosca_do_gancho(p, pos, esc, off)
@@ -1330,8 +1350,10 @@ def _furos_da_malha(pos: Posicao) -> List[Tuple[Furo, List[int], str]]:
     """Os furos de uma barra analisada com os índices dos vértices do laço de cada um
     (alma = vista de frente, mesa = vista de topo), na ordem de `pos.furos`."""
     fora = []
-    for eixo, sinal, ij, vista in ((2, +1.0, (0, 1), "frente"), (1, -1.0, (0, 2), "topo")):
+    for eixo, sinal, ij, vista in ((2, +1.0, (0, 1), "frente"), (1, -1.0, (0, 2), "topo"), (1, +1.0, (0, 2), "baixo")):
         lacos = _lacos_2d(pos, eixo, sinal, ij)
+        if vista == "baixo" and (not lacos or not mesa_de_baixo_do_outro_lado(pos, lacos[0][0])):
+            continue                                     # o verso da aba da cantoneira, não outra mesa (D1)
         for laco, pts in lacos[1:]:
             xs = [p[0] for p in pts]
             ys = [p[1] for p in pts]
@@ -2314,7 +2336,7 @@ def aplicar_furos_de_barra(doc: Documento, marca: str, furos_desenho: Sequence[d
     if not lista:
         raise ErroDeDados("a posição %s não está no modelo." % marca)
     posicoes, _ = _posicoes_de(lista, _fixadores(doc))
-    topo = [f for p in posicoes[:1] for f in p.furos if f.vista == "topo"]
+    topo = [f for p in posicoes[:1] for f in p.furos if f.vista in ("topo", "baixo")]
     frente = []
     for f in furos_desenho:
         reg = {"tipo": f.get("tipo", "redondo"), "x": round(float(f["x"])), "y": round(float(f["y"])),

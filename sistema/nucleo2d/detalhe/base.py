@@ -856,7 +856,7 @@ def parafusos_da_posicao(pos: Posicao, ent: Solido, fixadores: Sequence[Solido],
     caixa = _caixa(ent)
     folga = 60.0
     frente = [f for f in pos.furos if f.vista == "frente"]
-    topo = [f for f in pos.furos if f.vista == "topo"]
+    topo = [f for f in pos.furos if f.vista in ("topo", "baixo")]
     if not frente and not topo:
         if pos.classe == "chapa":
             pos.observacoes.append("sem furo e sem parafuso: chapa soldada")
@@ -1125,6 +1125,9 @@ def inferir_furos_de_barra(pos: Posicao, ent: Solido, fixadores: Sequence[Solido
         else:
             # a mesa está numa das pontas de v (0 ou H): o parafuso tem de alcançar uma delas
             alvo = min((0.0, pos.H), key=lambda v_: abs(c_l[1] - v_))
+            # a mesa em v = 0 é a vista de cima; a em v = H, a de baixo — antes as duas iam para "topo" e a de baixo
+            # se misturava à de cima no desenho (auditoria D1, 11/10/2026)
+            vista = "baixo" if alvo != 0.0 and _tem_mesa_de_baixo(pos) else "topo"
             t = (alvo - c_l[1]) / a_l[1]
             if abs(t) > meio + 1.0:
                 continue
@@ -1204,7 +1207,9 @@ def inferir_furos_das_chapas(pos: Posicao, ent: Solido, furos_ch: Sequence[tuple
             if min(abs(c_l[2] - w_min), abs(c_l[2] - w_max)) > encosta or not (0.0 < x < pos.L and m_ < y < pos.H - m_):
                 continue
         elif abs(_dot(n, e2)) > 0.95:                   # na mesa
-            vista, x, y = "topo", c_l[0], c_l[2]
+            # a mesa mais perto (D1, 11/10); a cantoneira não tem a de baixo — o "outro lado" é o verso da mesma aba
+            vista = "baixo" if abs(c_l[1]) > abs(c_l[1] - pos.H) and _tem_mesa_de_baixo(pos) else "topo"
+            x, y = c_l[0], c_l[2]
             if min(abs(c_l[1]), abs(c_l[1] - pos.H)) > encosta or not (0.0 < x < pos.L and w_min + m_ < y < w_max - m_):
                 continue
         else:
@@ -1356,6 +1361,58 @@ def _volume_igual(a: Posicao, b: Posicao) -> bool:
     return abs(a.volume - b.volume) <= TOLERANCIA_VOLUME * max(a.volume, b.volume)
 
 
+#: mm — dois contornos de chapa são o mesmo se cada vértice de um tem um do outro a até isto (a malha do IFC varia décimos)
+TOLERANCIA_CONTORNO = 1.5
+
+
+def _contorno_limpo(contorno) -> List[Tuple[float, float]]:
+    """o contorno da chapa sem os vértices no meio de um lado (a mesma chapa sai da malha com eles ou sem eles)"""
+    cont = [(float(q[0]), float(q[1])) for q in (contorno or [])]
+    mudou = True
+    while mudou and len(cont) > 3:
+        mudou = False
+        for i in range(len(cont)):
+            a, b, c = cont[i - 1], cont[i], cont[(i + 1) % len(cont)]
+            if abs((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])) <= 0.5 * max(1.0, math.dist(a, c)):
+                del cont[i]
+                mudou = True
+                break
+    return cont
+
+
+def _contorno_igual(a: Posicao, b: Posicao) -> bool:
+    """Auditoria D2 (11/10/2026): duas chapas de mesmo perfil, espessura, furos e volume a 1 % ainda podem ser peças
+    diferentes — o chanfro de 20 × 20 numa chapa de 300 × 300 é 0,2 % do volume, e a chapa sem volume medido juntava
+    sempre. Compara os contornos (no plano da chapa, a partir do canto), aceitando a chapa girada 180° e, na chapa plana,
+    a virada do avesso (é a mesma chapa cortada, vista do outro lado). Na dobrada, a espelhada é a outra mão — decisão do
+    usuário: as mãos têm marcas diferentes. Sem contorno (barras), fica o volume."""
+    if a.classe not in ("chapa", "chapa_dobrada") or not a.contorno or not b.contorno:
+        return True
+    ca, cb = _contorno_limpo(a.contorno), _contorno_limpo(b.contorno)
+    if len(ca) != len(cb) or len(ca) < 3:
+        return False
+
+    def normal(cont, sx, sy):
+        xs, ys = [q[0] for q in cont], [q[1] for q in cont]
+        x0, y0, W, H = min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
+        return [((W - (x - x0)) if sx else (x - x0), (H - (y - y0)) if sy else (y - y0)) for x, y in cont]
+
+    def casa(pa, pb) -> bool:
+        livres = list(pb)
+        for q in pa:
+            k = next((i for i, r in enumerate(livres)
+                      if abs(r[0] - q[0]) <= TOLERANCIA_CONTORNO and abs(r[1] - q[1]) <= TOLERANCIA_CONTORNO), None)
+            if k is None:
+                return False
+            livres.pop(k)
+        return True
+    variantes = [(False, False), (True, True)]                 # a mesma e a girada 180° no plano
+    if a.classe == "chapa":
+        variantes += [(True, False), (False, True)]            # a chapa plana virada do avesso
+    va = normal(ca, False, False)
+    return any(casa(va, normal(cb, sx, sy)) for sx, sy in variantes)
+
+
 def fundir_posicoes_iguais(posicoes: Sequence[Posicao], camadas: Dict[str, str]) -> List[Posicao]:
     """Marcas diferentes com a mesma peça (o TecnoMETAL numera por conjunto, e décimos de
     milímetro separavam tirantes iguais) viram uma posição só: "P64 / P65 / P66", com
@@ -1382,7 +1439,7 @@ def fundir_posicoes_iguais(posicoes: Sequence[Posicao], camadas: Dict[str, str])
         for mesmo_comp in por_comprimento:
             sub: List[List[Posicao]] = []
             for q in mesmo_comp:
-                alvo = next((g for g in sub if _volume_igual(g[0], q)), None)
+                alvo = next((g for g in sub if _volume_igual(g[0], q) and _contorno_igual(g[0], q)), None)
                 if alvo is None:
                     sub.append([q])
                 else:
@@ -1425,6 +1482,26 @@ def fundir_posicoes_iguais(posicoes: Sequence[Posicao], camadas: Dict[str, str])
     return fora
 
 
+def _tem_mesa_de_baixo(pos: Posicao) -> bool:
+    """a barra tem a outra mesa (U, W, tubo): a maior face +e2 fica do outro lado da peça — guardado na posição"""
+    t = getattr(pos, "_mesa_de_baixo", None)
+    if t is None:
+        from saida.detalhamento import _lacos_2d, mesa_de_baixo_do_outro_lado
+        lacos = _lacos_2d(pos, 1, +1.0, (0, 2)) if pos.local else []
+        t = bool(lacos) and mesa_de_baixo_do_outro_lado(pos, lacos[0][0])
+        pos._mesa_de_baixo = t
+    return t
+
+
+def _papel_declarado(ent) -> str:
+    """o papel que a peça traz do modelo (a barra paramétrica: lançada, do galpão ou do IFC pelo ObjectType/PredefinedType;
+    ou o elemento da planta): "terça", "longarina", "viga"… em minúsculas; "" sem papel"""
+    b = getattr(ent, "parametrica", None)
+    papel = str(getattr(b, "papel", "") or "") if b is not None and hasattr(b, "perfil") else ""
+    at = getattr(ent, "atributos", None) or {}
+    return (papel or str(at.get("papel_trelica") or at.get("elemento") or "")).strip().lower()
+
+
 def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] = None) -> Tuple[List[Posicao], Dict[str, str]]:
     """Agrupa por posição e analisa a geometria de uma peça de cada."""
     por_marca: Dict[str, Posicao] = collections.OrderedDict()
@@ -1440,6 +1517,7 @@ def _posicoes_de(pecas: Sequence[Solido], fixadores: Optional[Sequence[Solido]] 
                           material=_material(ent),
                           vertices=[tuple(v) for v in ent.vertices], faces=[list(f) for f in ent.faces],
                           eixo_ifc=(ent.atributos or {}).get("eixo_ifc"))
+            pos.papel = _papel_declarado(ent)
             por_marca[marca] = pos
             camadas[marca] = ent.camada or ""
             # perfil trocado no 3D: o original do projeto e a data vão para a lista
@@ -1525,7 +1603,13 @@ def _eh_terca(pos: Posicao, camada: str) -> bool:
         return False
     if re.search(r"ter[cç]a", camada or "", re.I):
         return True
-    perfil_u = bool(re.match(r"^\s*(2\s*)?[CUZ]\s*\d", pos.perfil or "", re.I))
+    # o papel declarado no modelo só acrescenta (auditoria D6, 11/10): a terça do Tekla (.PURLIN.) ou a lançada na planta
+    # não é a própria posição-conjunto da convenção do TecnoMETAL e virava agulhamento. Um papel "viga" não tira — o
+    # IFCBEAM sem ObjectType sai "viga" no importador, e a terça do TecnoMETAL é IFCBEAM
+    if str(getattr(pos, "papel", "") or "") in ("terça", "terca", "longarina"):
+        return 50.0 <= pos.H <= 400.0 and pos.L >= 1500.0
+    # o Ue e o Ce (U e C enrijecidos: "Ue 150×60×20×2,00", "UE150") também — antes só U/C/Z seguidos do número
+    perfil_u = bool(re.match(r"^\s*(2\s*)?(U[Ee]?|C[Ee]?|Z)\s*\d", pos.perfil or "", re.I))
     solta = not pos.conjuntos or set(pos.conjuntos) <= set(marcas_de(pos))
     return perfil_u and solta and 50.0 <= pos.H <= 400.0 and pos.L >= 1500.0
 
@@ -1734,14 +1818,13 @@ def regra_furacao_terca(posicoes: Sequence[Posicao], camadas: Dict[str, str], so
 
 # ============================================================ célula da posição
 def _rotulo_espessura(pos: Posicao) -> str:
+    """A espessura da chapa no cabeçalho da célula: a polegada só quando é uma chapa de comércio (a tabela da lista de
+    compra, saida/resumos.py, a até 0,06 mm); fora dela, em mm. Antes a polegada mais perto a até ~1 mm virava o nome
+    (6,0 → #1/4", 5,0 → #3/16"): outra chapa na compra — auditoria D11, 11/10/2026"""
+    from saida.resumos import _polegada_da_chapa
     t = pos.espessura or pos.T
-    pol = t / 25.4
-    for den in (16, 8, 4, 2):
-        n = round(pol * den)
-        if n and abs(n / den - pol) < 0.04:
-            g = math.gcd(n, den)
-            return '#%d/%d"' % (n // g, den // g) if den // g > 1 else '#%d"' % (n // g)
-    return "#%s mm" % _mm(t, 1)
+    pol = _polegada_da_chapa(t)
+    return "#" + pol if pol else "#%s mm" % _mm(t, 2)
 
 
 # ============================================================ conjuntos
