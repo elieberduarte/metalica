@@ -8,6 +8,8 @@
 
 import { el } from '../editor.js';
 import { pecaDe, eixoDoSolido } from '../nucleo/esqueleto.js';
+import { novoId } from '../nucleo/documento.js';
+import { ComandoAdicionar, ComandoAlterar, ComandoRemover, ComandoComposto } from '../nucleo/comandos.js';
 
 const PERTO = 350;           // mm: a ponta encosta na peça a até isso (meia altura dos perfis + folga)
 
@@ -45,8 +47,83 @@ function nomeDaPeca(ent) {
 const m = (mm) => (mm / 1000).toFixed(2).replace('.', ',');
 
 export class MetodosBloco {
-  /** As barras do mesmo bloco (mesma peça de origem); a peça solta vai sozinha. */
+  // ------------------------------------------------------------ grupos (Editar → Agrupar, Ctrl+G)
+  //
+  // O grupo é a entidade "grupo" do modelo (nucleo3d/modelo.py: `filhos` e, em cada filho, `grupo` =
+  // o id do grupo pai); grupo dentro de grupo vale. O clique pega o grupo mais de fora inteiro (Alt+clique,
+  // uma peça só), como o bloco da treliça.
+
+  /** o grupo mais de fora da peça (ou null) */
+  grupoTopoDe(id) {
+    let ent = this.documento.get(id), topo = null;
+    const vistos = new Set();
+    while (ent && ent.grupo && !vistos.has(ent.grupo)) {
+      vistos.add(ent.grupo);
+      const g = this.documento.get(ent.grupo);
+      if (!g || g.tipo !== 'grupo') break;
+      topo = g;
+      ent = g;
+    }
+    return topo;
+  }
+
+  /** as peças (não grupos) de dentro de um grupo, em qualquer nível */
+  folhasDoGrupo(g, saida = [], vistos = new Set()) {
+    if (!g || vistos.has(g.id)) return saida;
+    vistos.add(g.id);
+    for (const f of (g.filhos || [])) {
+      const e = this.documento.get(f);
+      if (!e) continue;
+      if (e.tipo === 'grupo') this.folhasDoGrupo(e, saida, vistos);
+      else saida.push(e.id);
+    }
+    return saida;
+  }
+
+  /** Editar → Agrupar: a seleção (os grupos inteiros que já existem nela) vira um grupo novo */
+  agruparSelecao(nome = '') {
+    const ids = [...this.selecao.ids];
+    if (ids.length < 2) { this.dica('Selecione duas peças ou mais para agrupar.'); return null; }
+    const unidades = [...new Set(ids.map(i => { const t = this.grupoTopoDe(i); return t ? t.id : i; }))];
+    if (unidades.length < 2) { this.dica('A seleção já é um grupo só.'); return null; }
+    const ents = unidades.map(i => this.documento.get(i)).filter(Boolean);
+    const pts = ents.flatMap(e => (e.tipo === 'barra' ? [e.inicio, e.fim] : e.tipo === 'solido' ? (e.vertices || []).slice(0, 8)
+      : e.origem ? [e.origem] : []));
+    const origem = pts.length ? [0, 1, 2].map(k => pts.reduce((s, p) => s + p[k], 0) / pts.length) : [0, 0, 0];
+    const conta = [...this.documento.entidades.values()].filter(e => e.tipo === 'grupo').length + 1;
+    const g = { tipo: 'grupo', id: novoId('g'), nome: nome || `Grupo ${conta}`, camada: ents[0].camada, filhos: unidades.slice(),
+                origem, atributos: {} };
+    const cmd = new ComandoComposto([new ComandoAdicionar([g]), ...unidades.map(i => new ComandoAlterar(i, { grupo: g.id }))],
+                                    `Agrupar ${unidades.length} peças`);
+    this.executar(cmd);
+    this.selecao.definir(this.folhasDoGrupo(this.documento.get(g.id)));
+    this.dica(`${g.nome}: ${unidades.length} peças. O clique pega o grupo inteiro; Alt+clique, uma peça só.`);
+    return g.id;
+  }
+
+  /** Editar → Desagrupar: desfaz o grupo mais de fora de cada peça selecionada (um nível) */
+  desagruparSelecao() {
+    const grupos = [...new Set([...this.selecao.ids].map(i => this.grupoTopoDe(i)).filter(Boolean).map(g => g.id))];
+    if (!grupos.length) { this.dica('A seleção não está num grupo.'); return; }
+    const cmds = [];
+    for (const gid of grupos) {
+      const g = this.documento.get(gid);
+      for (const f of (g.filhos || [])) if (this.documento.get(f)) cmds.push(new ComandoAlterar(f, { grupo: g.grupo || '' }));
+      // o documento apaga os filhos junto com o grupo: a lista esvazia antes
+      cmds.push(new ComandoAlterar(gid, { filhos: [] }));
+      cmds.push(new ComandoRemover([gid]));
+    }
+    this.executar(new ComandoComposto(cmds, grupos.length === 1 ? 'Desagrupar' : `Desagrupar ${grupos.length} grupos`));
+    this.dica('Desagrupado.');
+  }
+
+  /** As barras do mesmo bloco (mesma peça de origem) ou do mesmo grupo; a peça solta vai sozinha. */
   blocoDe(id) {
+    const topo = this.grupoTopoDe(id);
+    if (topo) {
+      const folhas = this.folhasDoGrupo(topo);
+      if (folhas.length) return folhas;
+    }
     const ent = this.documento.get(id);
     const p = pecaDe(ent);
     if (!p) return [id];

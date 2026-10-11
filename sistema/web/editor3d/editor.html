@@ -126,6 +126,8 @@ window.__errosEditor = [];
         <button type="button" data-acao="apagar">Apagar seleção</button>
         <button type="button" data-acao="explodir" title="A peça dobrada ou quebrada em retas (o joelho da tesoura) vira uma peça por trecho reto, com a marca .1, .2… — para apagar um pedaço">Explodir peça em trechos</button>
         <button type="button" data-acao="juntar" title="As peças selecionadas numa só: os trechos de uma peça explodida voltam a ela; barras de mesmo perfil na mesma reta viram uma barra">Juntar peças</button>
+        <button type="button" data-acao="agrupar" title="As peças selecionadas num grupo: o clique passa a pegar o grupo inteiro (Alt+clique, uma peça só); grupo dentro de grupo vale">Agrupar <kbd>Ctrl+G</kbd></button>
+        <button type="button" data-acao="desagrupar" title="Desfaz o grupo de fora das peças selecionadas (um nível)">Desagrupar <kbd>Ctrl+Shift+G</kbd></button>
         <hr>
         <div class="menu-titulo">Histórico</div>
         <div id="historico-undo" class="historico"></div>

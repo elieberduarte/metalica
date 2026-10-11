@@ -32,12 +32,18 @@ export class MetodosDivisao {
     const nomes = new Set(), pecas = new Set();
     // as marcas das peças (posição, conjunto, id): o 2D do projeto do IFC acha o detalhe por elas (29/09)
     const posicoes = new Set(), conjuntos = new Set(), idsSel = [];
+    // a estrutura lançada na planta (origem_2d) e as peças do galpão pré-moldado (marca@eixo): o 2D acha o
+    // elemento ou o pilar nas plantas dele (R5, 30/09)
+    const origem2d = new Set(), pm = new Set();
     for (const id of lista) {
       const e = this.documento.get(id);
       if (!e) continue;
       const mk = (e.atributos && e.atributos.marcas) || {};
       if (mk.posicao) posicoes.add(String(mk.posicao));
       if (mk.conjunto) conjuntos.add(String(mk.conjunto));
+      const at = e.atributos || {};
+      if (at.origem_2d) origem2d.add(String(at.origem_2d));
+      if (at.pre_moldado && at.peca && at.eixo) pm.add(`${at.peca}@${at.eixo}`);
       if (idsSel.length < 200) idsSel.push(id);
       for (const p of pontosDe(e)) {
         if (!p) continue;
@@ -50,7 +56,8 @@ export class MetodosDivisao {
     const caixa = isFinite(x0) ? [[x0, y0], [x1, y1]] : null;
     try {
       window.parent.postMessage({ metalica: 'sel3d', n: lista.length, caixa, nomes: [...nomes], pecas: [...pecas],
-        marcas: { posicoes: [...posicoes].slice(0, 50), conjuntos: [...conjuntos].slice(0, 50), ids: idsSel } }, location.origin);
+        marcas: { posicoes: [...posicoes].slice(0, 50), conjuntos: [...conjuntos].slice(0, 50), ids: idsSel,
+                  origem2d: [...origem2d].slice(0, 200), pm: [...pm].slice(0, 200) } }, location.origin);
     } catch (e) { /* idem */ }
   }
 

@@ -726,6 +726,7 @@ export class Editor {
         v: () => this.colar(),
         a: () => this.selecao.tudo(),
         s: () => this.salvar(),
+        g: () => (ev.shiftKey ? this.desagruparSelecao() : this.agruparSelecao()),
       };
       if (acoes[k]) { ev.preventDefault(); acoes[k](); }
       return;
@@ -1590,7 +1591,7 @@ export class Editor {
   _destacar(spec, silencioso = false) {
     // sessao: a lista longa de ids veio pela memória da aba (as pendências do resumo da obra, 2.415 parafusos, 06/10)
     if (spec === 'sessao') { try { spec = sessionStorage.getItem('metalica.destacar') || ''; } catch (e) { spec = ''; } }
-    const m = /^(posicao|conjunto|peca|ids):(.+)$/.exec(String(spec || ''));
+    const m = /^(posicao|conjunto|peca|ids|origem2d|pm):(.+)$/.exec(String(spec || ''));
     if (!m) return 0;
     const chave = m[1];
     // marca com vírgula decimal ("CH9,5-A3-200"): a vírgula seguida de algarismo não separa marcas (09/10)
@@ -1605,6 +1606,8 @@ export class Editor {
     // ids: as peças pelo identificador (o pilar da tela de esforços)
     const ids = [...this.documento.entidades.values()]
       .filter(e => chave === 'ids' ? marcas.has(e.id) : chave === 'peca' ? daPeca(e)
+        : chave === 'origem2d' ? !!(e.atributos && marcas.has(String(e.atributos.origem_2d)))
+        : chave === 'pm' ? !!(e.atributos && e.atributos.peca && e.atributos.eixo && marcas.has(`${e.atributos.peca}@${e.atributos.eixo}`))
         : chave === 'posicao' && !(e.atributos && e.atributos.marcas && e.atributos.marcas.posicao) ? marcas.has(String(e.nome))   // sem marca, o nome (como o detalhamento)
         : (e.atributos && e.atributos.marcas && marcas.has(String(e.atributos.marcas[chave]))))
       .map(e => e.id);
@@ -1957,6 +1960,8 @@ export class Editor {
       'cantos-redondos': () => this.dialogoCantosRedondos(),
       explodir: () => this.explodirSelecao(),
       juntar: () => this.juntarSelecao(),
+      agrupar: () => this.agruparSelecao(),
+      desagrupar: () => this.desagruparSelecao(),
       'eixos-obra': () => this.dialogoEixos(),
       'lancar-estrutura': () => this.dialogoLancar(),
       'memorial-lancamento': () => this.memorialDoLancamento(),

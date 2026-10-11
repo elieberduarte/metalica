@@ -57,7 +57,7 @@ function manterNaTela(sp, alvo_px, max_mm, aplicar) {
 }
 
 /** Cabeça do nível, como a do Revit: o triângulo, o nome e a cota, em azul. */
-function rotuloDoNivel(nome, z_mm, altura_mm, COR_NIVEL = TEMA_EIXO.claro.nivel) {
+function rotuloDoNivel(nome, z_mm, altura_mm, COR_NIVEL = TEMA_EIXO.claro.nivel, FUNDO = TEMA_EIXO.claro.fundo) {
   const cota = (z_mm >= 0 ? '+' : '−') + (Math.abs(z_mm) / 1000).toFixed(2).replace('.', ',');
   const c = document.createElement('canvas');
   const g0 = c.getContext('2d');
@@ -65,7 +65,11 @@ function rotuloDoNivel(nome, z_mm, altura_mm, COR_NIVEL = TEMA_EIXO.claro.nivel)
   const w = Math.ceil(Math.max(g0.measureText(nome).width, g0.measureText(cota).width) + 110);
   c.width = w; c.height = 128;
   const g = c.getContext('2d');
-  g.fillStyle = COR_NIVEL; g.strokeStyle = COR_NIVEL; g.lineWidth = 4;
+  // a placa atrás do nome e da cota, na cor do fundo do tema, meio transparente: lê em cima da grade e das peças
+  g.globalAlpha = 0.82; g.fillStyle = FUNDO;
+  g.fillRect(76, 6, w - 78, 54); g.fillRect(76, 66, w - 78, 50);
+  g.globalAlpha = 1;
+  g.fillStyle = COR_NIVEL; g.strokeStyle = COR_NIVEL; g.lineWidth = 5;
   g.beginPath(); g.moveTo(16, 60); g.lineTo(64, 60); g.lineTo(40, 100); g.closePath(); g.fill();
   g.beginPath(); g.moveTo(0, 60); g.lineTo(w, 60); g.stroke();
   g.font = 'bold 44px Arial, sans-serif'; g.textBaseline = 'alphabetic';
@@ -143,7 +147,9 @@ export class MetodosLancamento {
     }
     if (niveis.length) {
       // cada nível: o contorno tracejado em volta da obra, na altura dele, e a cabeça (o
-      // triângulo, o nome e a cota) nos dois cantos — o que o Revit mostra
+      // triângulo, o nome e a cota) nos dois cantos — o que o Revit mostra. Os níveis na mesma cota
+      // (o topo dos pilares e o apoio da cobertura, +5,10) viram uma cabeça só, com os nomes juntos; os
+      // muito próximos alternam os cantos, para as cabeças não se sobreporem (pedido do usuário, 30/09)
       let x0, y0, x1, y1;
       if (eixos.length) {
         const xs = eixos.flatMap(e => [e.a[0], e.b[0]]), ys = eixos.flatMap(e => [e.a[1], e.b[1]]);
@@ -161,20 +167,37 @@ export class MetodosLancamento {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
         const linhas = new THREE.LineSegments(geo, new THREE.LineDashedMaterial({
-          color: cores.nivel, dashSize: 1200, gapSize: 800, transparent: true, opacity: 0.2, depthWrite: false }));
+          color: cores.nivel, dashSize: 1200, gapSize: 800, transparent: true, opacity: escuro ? 0.3 : 0.55, depthWrite: false }));
         linhas.computeLineDistances();
         linhas.name = 'niveis';
         grupo.add(linhas);
         const alt = Math.min(Math.max(Math.max(x1 - x0, y1 - y0) * 0.012, 300), 900);
-        for (const n of niveis) {
-          for (const [x, y] of [[x1, y0], [x0, y1]]) {
-            const sp = rotuloDoNivel(n.nome, n.z, alt, cores.nivel);
-            sp.position.set(x, y, n.z);
+        // os níveis na mesma cota juntos; os próximos (menos de 700 mm) nos outros dois cantos
+        const juntos = [];
+        for (const n of [...niveis].sort((a, b) => a.z - b.z)) {
+          const ult = juntos[juntos.length - 1];
+          if (ult && Math.abs(ult.z - n.z) < 1) ult.itens.push(n);
+          else juntos.push({ z: n.z, itens: [n] });
+        }
+        let alterna = false, zAnt = -Infinity;
+        this._spritesNivel = [];
+        for (const j of juntos) {
+          alterna = j.z - zAnt < 700 ? !alterna : false;
+          zAnt = j.z;
+          const cantos = alterna ? [[x0, y0], [x1, y1]] : [[x1, y0], [x0, y1]];
+          const nome = j.itens.map(n => n.nome).join(' · ');
+          for (const [x, y] of cantos) {
+            const sp = rotuloDoNivel(nome, j.z, alt, cores.nivel, cores.fundo);
+            sp.position.set(x, y, j.z);
+            sp.name = 'nivel';
+            sp.userData.niveis = j.itens;
             const proporcao = sp.scale.x / sp.scale.y;
             manterNaTela(sp, 26, alt, a => sp.scale.set(a * proporcao, a, 1));
             grupo.add(sp);
+            this._spritesNivel.push(sp);
           }
         }
+        this._ligarCliqueNoNivel();
       }
     }
     grupo.visible = this._referenciaVisivel !== false;
@@ -182,6 +205,70 @@ export class MetodosLancamento {
     this._referencia = grupo;
     this._temReferencia = true;
     this.cena.pedirQuadro();
+  }
+
+  /** duplo clique na cabeça de um nível: o diálogo dos níveis do projeto, com esse em destaque (pedido do usuário, 30/09) */
+  _ligarCliqueNoNivel() {
+    if (this._cliqueNivelLigado) return;
+    this._cliqueNivelLigado = true;
+    const c = this.el.canvas;
+    c.addEventListener('dblclick', (ev) => {
+      const sps = (this._spritesNivel || []).filter(s => s.parent && s.parent.visible);
+      if (!sps.length || !this.camera || !this.camera.ativa) return;
+      const r = c.getBoundingClientRect();
+      const ndc = new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, this.camera.ativa);
+      const hit = ray.intersectObjects(sps, false)[0];
+      if (!hit) return;
+      ev.stopPropagation();
+      this.dialogoNiveis(hit.object.userData.niveis || []);
+    }, true);
+  }
+
+  /**
+   * Os níveis do projeto, editáveis no 3D: nome e cota (mm), acrescentar e tirar. `destaque`: os níveis da
+   * cabeça clicada. Grava no projeto; no pré-moldado, o 3D se refaz com os níveis novos (os elementos da
+   * planta que usam o nível pelo nome, e o topo dos pilares do galpão).
+   */
+  async dialogoNiveis(destaque = []) {
+    if (!this.projeto) { this.aviso('Os níveis ficam no projeto: abra um projeto.', 'atencao'); return; }
+    let lista = [];
+    try {
+      const r = await (await fetch(`/api/projetos/${encodeURIComponent(this.projeto)}`, { cache: 'no-store' })).json();
+      lista = (((r.projeto || r).niveis) || []).map(n => ({ nome: n.nome, z: n.z, antes: { ...n } }));
+    } catch (e) { lista = []; }
+    const marcado = (n) => destaque.some(d => d.nome === n.antes.nome && Math.abs(d.z - n.antes.z) < 1);
+    const corpo = el('div', {});
+    const tab = el('div', { style: 'display:grid;grid-template-columns:1fr 110px 28px;gap:4px;align-items:center;min-width:420px' });
+    const desenhar = () => {
+      tab.replaceChildren(el('b', { texto: 'Nome' }), el('b', { texto: 'cota (mm)' }), el('span'));
+      lista.forEach((n, i) => {
+        const nome = el('input', { type: 'text', value: n.nome });
+        nome.addEventListener('change', () => { n.nome = nome.value; });
+        const z = el('input', { type: 'text', value: String(Math.round(n.z)) });
+        z.addEventListener('change', () => { const v = parseFloat(z.value.replace(',', '.')); if (isFinite(v)) n.z = v; });
+        if (n.antes && marcado(n)) { nome.style.outline = '2px solid var(--azul)'; z.style.outline = '2px solid var(--azul)'; }
+        tab.append(nome, z, el('button', { type: 'button', texto: '×', title: 'Tirar este nível', onclick: () => { lista.splice(i, 1); desenhar(); } }));
+      });
+    };
+    desenhar();
+    corpo.append(el('div', { class: 'explica', texto: 'Os níveis do projeto (mm; no pré-moldado, ±0,00 é a boca do cálice). Mudar a cota refaz o 3D do pré-moldado: os elementos da planta que usam o nível pelo nome e o topo dos pilares do galpão seguem.' }),
+      tab, el('button', { type: 'button', texto: '+ nível', style: 'margin-top:6px', onclick: () => { lista.push({ nome: 'Nível', z: 0 }); desenhar(); } }));
+    if (await this.dialogo({ titulo: 'Níveis do projeto', corpo, ok: 'Gravar' }) !== 'ok') return;
+    const mudancas = lista.filter(n => n.antes && (n.antes.nome !== n.nome || Math.abs(n.antes.z - n.z) > 0.5))
+      .map(n => ({ de: n.antes, para: { nome: n.nome, z: n.z } }));
+    let r;
+    try {
+      const resp = await fetch('/api/premoldado/niveis', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ projeto: this.projeto, niveis: lista.filter(n => n.nome).map(n => ({ nome: n.nome, z: n.z })), mudancas, aplicar: true }) });
+      r = await resp.json();
+      if (!resp.ok || r.erro) throw new Error(r.erro || (resp.status === 404 ? 'gravar os níveis pelo 3D ainda só existe no modo desenvolvimento' : resp.statusText));
+    } catch (e) { this.aviso(`Não foi possível gravar os níveis: ${e.message}`, 'erro', 0); return; }
+    for (const a of r.avisos || []) this.aviso(a, 'atencao', 12000);
+    if (r.recarregar) { this.aviso('Níveis gravados: o 3D foi refeito com eles.', 'info'); setTimeout(() => location.reload(), 600); return; }
+    this.aviso(`${lista.length} nível(is) gravado(s).`, 'info');
+    this._carregarReferencia();
   }
 
   _descartarReferencia() {
