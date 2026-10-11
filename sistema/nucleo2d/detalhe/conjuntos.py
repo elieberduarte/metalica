@@ -3041,6 +3041,19 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # os detalhes de furação abaixo de tudo o que a elevação já desenhou
         fundo = min([0.0] + [q[1] - dy for q in p.pontos])
         _detalhes_de_furos(p, barras_furadas, nome_de, esc, fundo - 20.0 * esc)
+    # as soldas de fábrica chapa × perfil (auditoria D3, 11/10/2026 — decisão do usuário): a nota geral na legenda e um
+    # símbolo "TÍP." por tipo de encontro (T e sobreposição), não um em cada ligação
+    cordoes_solda = []
+    try:
+        from nucleo2d.detalhe.soldas import soldas_do_conjunto
+        from nucleo2d.detalhe.base import _fixadores as _fix_doc, simbolo_solda
+        cx_s = [_caixa(e) for e in instancia if getattr(e, "vertices", None)]
+        lim_s = [(min(c_[k][0] for c_ in cx_s) - 20.0, max(c_[k][1] for c_ in cx_s) + 20.0) for k in range(3)]
+        fix_s = [f for f in _fix_doc(doc)
+                 if all(_caixa(f)[k][0] <= lim_s[k][1] and _caixa(f)[k][1] >= lim_s[k][0] for k in range(3))]
+        cordoes_solda = soldas_do_conjunto(instancia, fix_s)
+    except Exception:                                    # noqa: BLE001 — sem o levantamento, o conjunto sai sem a solda
+        cordoes_solda = []
     # título e lista de perfis: um perfil por linha, escrito na camada (cor) das peças
     # que o usam — banzo, diagonal, montante, chapa —, como a fábrica lê a elevação
     perfis_cam: Dict[tuple, int] = collections.Counter()
@@ -3125,6 +3138,12 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         if resto:
             itens_p.append("%dx porca/arruela" % resto)
         linhas += [(t, "TEXTO") for t in quebrar("Parafusos: ", itens_p)]
+    if cordoes_solda:
+        pernas_s = sorted({c_["perna"] for c_ in cordoes_solda})
+        m_s = sum(c_["comprimento"] * c_["lados"] for c_ in cordoes_solda) / 1000.0
+        # em duas linhas curtas: numa só ela passava da largura da célula e tirava as cotas do vizinho (M89, 11/10)
+        linhas.append(("Solda de fábrica: filete %s mm, exceto indicado" % " / ".join(_mm(x_, 0) for x_ in pernas_s), "SOLDA"))
+        linhas.append(("  todo o contato chapa × perfil (%s m/un.)" % _mm(m_s, 1), "SOLDA"))
     if peso_un > 0:
         # o conjunto leve com duas casas: 2,9 × 25 não dava os 73,3 do CB1 (análise das pranchas, 29/09)
         linhas.append(("%s kg/un  total %s kg" % (_mm(peso_un, 2 if peso_un < 10.0 else 1), _mm(peso_un * n_instancias, 1)),
@@ -3145,6 +3164,19 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # a ordem da linha no bloco (0 = o título): a prancha leva o bloco para baixo do conjunto
         p.texto(0, y, txt, alt_t * esc, cam_, atributos={"legenda_conjunto": len(linhas) - 1 - i})
         y += (alt_t + 1.2) * esc
+    # o símbolo "TÍP." de cada tipo de solda, desenhado por último, com a linha de referência acima de tudo (cotas e
+    # legenda): no meio das cotas do alto da elevação ele tirava cotas do conjunto (M89 da Água Gelada, 11/10)
+    if cordoes_solda:
+        topo_s = max([q[1] - p.dy for q in p.pontos] + [alt])
+        for j_s, tipo_s in enumerate(("T", "sobreposição")):
+            c_s = next((c_ for c_ in cordoes_solda if c_["tipo"] == tipo_s), None)
+            if c_s is None:
+                continue
+            mx_s = sum(_dot(_sub(c_s[q], origem), u) for q in ("p0", "p1")) / 2.0 - u0
+            my_s = sum(_dot(_sub(c_s[q], origem), v) for q in ("p0", "p1")) / 2.0 - v0
+            lado_s = 1.0 if j_s == 0 else -1.0             # o segundo tipo para o outro lado: os dois costumam estar no mesmo nó
+            simbolo_solda(p, esc, mx_s, my_s, mx_s + lado_s * 12.0 * esc, topo_s + (8.0 + 8.0 * j_s) * esc, c_s["perna"],
+                          ambos_lados=c_s["lados"] == 2, cauda="TÍP.")
     ext = p.extremos
     return (min(ext[0], dx), min(ext[1], dy), max(ext[2], dx + larg), max(ext[3], dy + alt))
 

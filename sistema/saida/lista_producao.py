@@ -390,7 +390,7 @@ def comparar_dobras(perfis: Sequence[dict]) -> dict:
 def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: Dict[str, int],
            pecas=None, barra: float = 0.0, projeto: Optional[dict] = None,
            nomes_conjuntos: Optional[Dict[str, str]] = None, escolhas: Optional[Dict[str, str]] = None,
-           nomes_telhas: Optional[Dict[str, str]] = None,
+           nomes_telhas: Optional[Dict[str, str]] = None, fixadores=None,
            emendas: Optional[Sequence[str]] = None, cobertura: Optional[bool] = None) -> dict:
     """A lista inteira, pronta para gravar em JSON. `barra` em mm (0 = automático);
     `cobertura`: a obra tem cobertura (o detalhar diz, pelos nomes); sem ela, a treliça é viga caixote e não tesoura
@@ -602,7 +602,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         categorias_lista.append(c)
 
     conjuntos = _conjuntos(pecas or [], por_marca, nomes_conjuntos)
-    soldas = _soldas(pecas or [], por_marca)
+    soldas = _soldas(pecas or [], por_marca) + _soldas_dos_conjuntos(pecas or [], fixadores, conjuntos)
     ressalvas = [{"marca": p.marca, "perfil": p.perfil, "observacoes": list(p.observacoes)} for p in lista if p.observacoes]
     from saida.dobras import com_bitola_e_mm
     # o nome do perfil para quem lê, com a bitola e a espessura em mm (pedido do usuário, 05/10: "sempre coloque
@@ -784,6 +784,43 @@ def _soldas(pecas, por_marca: dict) -> list:
                                   "local": c["local"]} for c in cs],
                      "pernas": sorted({c["perna"] for c in cs}),
                      "m_unidade": round(m_un, 3), "m_total": round(m_un * g["instancias"], 2)})
+    return fora
+
+
+def _soldas_dos_conjuntos(pecas, fixadores, conjuntos: list) -> list:
+    """As soldas de fábrica chapa × perfil de cada conjunto (nucleo2d/detalhe/soldas.py): todas as instâncias juntas,
+    a média por unidade pelo número de instâncias do conjunto. Sem os fixadores (a lista feita sem o detalhar) não há
+    como separar a ligação aparafusada: fica de fora."""
+    if not pecas or fixadores is None:
+        return []
+    try:
+        from nucleo2d.detalhe.soldas import soldas_do_conjunto
+        from nucleo2d.detalhe.base import _marcas
+    except Exception:                                    # noqa: BLE001
+        return []
+    por_conj = collections.defaultdict(list)
+    for e in pecas:
+        c = str(_marcas(e).get("conjunto") or "")
+        if c:
+            por_conj[c].append(e)
+    info = {str(c.get("marca")): c for c in conjuntos or []}
+    fora = []
+    for marca, es in sorted(por_conj.items(), key=lambda kv: _ordem_natural(kv[0])):
+        try:
+            cs = soldas_do_conjunto(es, fixadores)
+        except Exception:                                # noqa: BLE001
+            continue
+        if not cs:
+            continue
+        inst = int((info.get(marca) or {}).get("instancias") or 1) or 1
+        m_tot = sum(c["comprimento"] * c["lados"] for c in cs) / 1000.0
+        tipos = collections.Counter(c["tipo"] for c in cs)
+        fora.append({"montagem": (info.get(marca) or {}).get("nome") or marca, "instancias": inst,
+                     "cordoes": [{"pecas": "chapa × perfil (%s)" % ", ".join("%d %s" % (n, t) for t, n in sorted(tipos.items())),
+                                  "perna_mm": max(c["perna"] for c in cs), "comprimento_mm": round(m_tot * 1000.0 / inst, 0),
+                                  "lados": 1, "tipo": "filete", "local": "fábrica"}],
+                     "pernas": sorted({c["perna"] for c in cs}),
+                     "m_unidade": round(m_tot / inst, 3), "m_total": round(m_tot, 2)})
     return fora
 
 

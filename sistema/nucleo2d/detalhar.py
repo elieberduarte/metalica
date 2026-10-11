@@ -1388,5 +1388,6 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             "acessorios": acessorios, "regra_tercas": mudadas, "avisos": avisos,
             "peso_total": round(sum(p.peso_total for p in posicoes), 1),
             "objetos_posicoes": posicoes, "objetos_pecas": pecas, "camadas": camadas,
+            "objetos_fixadores": _fixadores(doc),         # a lista separa a solda da ligação aparafusada (D3, 11/10)
             "convertidas": convertidas, "nomes": nomeacao,
             "fora_do_aco": lev.get("fora_do_aco") or [], "estrutura_a_conferir": lev.get("estrutura_a_conferir") or []}

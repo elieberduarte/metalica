@@ -190,3 +190,34 @@ def test_d7_fracao_do_mtext_nao_cola_no_numero():
     assert mtext_limpo('PERFIL 2\S1/2;" X 1/4"') == 'PERFIL 2 1/2" X 1/4"'      # antes "21/2"
     assert mtext_limpo("L 1\S1^2; x 3/16") == "L 1 1/2 x 3/16"
     assert mtext_limpo('ESP. \S1/4;"') == 'ESP. 1/4"'
+
+
+# ------------------------------------------------------------------ solda chapa × perfil nos conjuntos (11/10/2026)
+def _perfil_e_chapas(com_parafuso=False):
+    """um perfil (caixa 1000 × 100 × 100) com uma chapa em pé em cima (T, 200 × 6 × 80) e uma deitada (150 × 60 × 8)"""
+    barra = _solido("W 150x13", "IfcBeam", *_caixa_solida(1000, 100, 100), "B1", "M1", "W 150x13")
+    t = _solido("PLATE 200x80x6", "IfcPlate", *_caixa_solida(200, 6, 80, dx=400, dy=47, dz=100), "CH1", "M1", "PLATE 200x80x6")
+    lap = _solido("PLATE 150x60x8", "IfcPlate", *_caixa_solida(150, 60, 8, dx=100, dy=20, dz=100), "CH2", "M1", "PLATE 150x60x8")
+    fix = []
+    if com_parafuso:
+        b = Solido(nome="BOLT (A) 12x35", vertices=_caixa_solida(12, 12, 40, dx=169, dy=44, dz=80)[0],
+                   faces=_caixa_solida(12, 12, 40)[1])
+        b.atributos["tipo_ifc"] = "IfcMechanicalFastener"
+        fix.append(b)
+    return [barra, t, lap], fix
+
+
+def test_solda_chapa_perfil_em_t_e_sobreposicao():
+    from nucleo2d.detalhe.soldas import soldas_do_conjunto
+    pecas, fix = _perfil_e_chapas()
+    cs = {c["tipo"]: c for c in soldas_do_conjunto(pecas, fix)}
+    assert set(cs) == {"T", "sobreposição"}
+    assert abs(cs["T"]["comprimento"] - 200.0) < 1.0 and cs["T"]["lados"] == 2
+    assert abs(cs["sobreposição"]["comprimento"] - 2 * (150 + 60)) < 1.0 and cs["sobreposição"]["lados"] == 1
+    assert cs["T"]["perna"] == 3.0                                   # a menos espessa (Tabela 11)
+
+
+def test_ligacao_aparafusada_nao_e_solda():
+    from nucleo2d.detalhe.soldas import soldas_do_conjunto
+    pecas, fix = _perfil_e_chapas(com_parafuso=True)
+    assert {c["tipo"] for c in soldas_do_conjunto(pecas, fix)} == {"T"}      # a chapa deitada tem parafuso: aparafusada

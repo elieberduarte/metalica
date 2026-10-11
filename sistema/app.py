@@ -1095,11 +1095,13 @@ def _detalhar_projeto(s: str, corpo: dict, g, detalhar, GRUPOS, _categoria, list
                                       barra=float(corpo.get("barra") or 0), projeto=_identificacao_do_projeto(s),
                                       nomes_conjuntos=(r.get("nomes") or {}).get("ifc_conjuntos"), escolhas=_perfis_compra(s), emendas=_perfis_emenda(s),
                                       cobertura=(r.get("nomes") or {}).get("cobertura"),
-                                      nomes_telhas=(r.get("nomes") or {}).get("telhas"))
+                                      nomes_telhas=(r.get("nomes") or {}).get("telhas"),
+                                      fixadores=r.get("objetos_fixadores"))
         lista["pre_moldados"] = r.get("fora_do_aco") or []
         lista["estrutura_a_conferir"] = r.get("estrutura_a_conferir") or []
         arquivos = lista_producao.gravar(pasta, lista, r["objetos_posicoes"], r["acessorios"])
-    relatorio = {k: v for k, v in r.items() if k not in ("desenhos", "objetos_posicoes", "objetos_pecas", "camadas")}
+    relatorio = {k: v for k, v in r.items() if k not in ("desenhos", "objetos_posicoes", "objetos_pecas", "objetos_fixadores",
+                                                         "camadas")}
     relatorio["desenhos"] = desenhos
     _gravar_ajuste(os.path.join(pasta, "relatorio.json"), relatorio)
     # o carimbo do que foi usado (modelo, código, furação, eixos): mudou, os desenhos se refazem sozinhos
@@ -2276,7 +2278,7 @@ def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> d
         lista = lista_producao.montar(r["objetos_posicoes"], categorias, r["acessorios"], pecas=r["objetos_pecas"],
                                       projeto=_identificacao_do_projeto(s), nomes_conjuntos=nomes.get("ifc_conjuntos"),
                                       escolhas=_perfis_compra(s), emendas=_perfis_emenda(s), cobertura=nomes.get("cobertura"),
-                                      nomes_telhas=nomes.get("telhas"))
+                                      nomes_telhas=nomes.get("telhas"), fixadores=r.get("objetos_fixadores"))
         # o aço fora das peças (gradil, piso de chapa perfurada) entra na compra do resumo de materiais (06/10)
         lista["pre_moldados"] = r.get("fora_do_aco") or []
         lev = {"posicoes": r["objetos_posicoes"], "pecas": r["objetos_pecas"], "acessorios": r["acessorios"], "avisos": r["avisos"]}

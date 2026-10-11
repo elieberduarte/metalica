@@ -168,7 +168,7 @@ def _fundir_perto(vals: Sequence[float], tol: float = FUNDIR_NA_CADEIA) -> List[
 
 # ============================================================ papel
 def simbolo_solda(p, esc: float, x_alvo: float, y_alvo: float, x_ref: float, y_ref: float, perna: float,
-                  comprimento: float = 0.0, ambos_lados: bool = True, camada: str = "SOLDA") -> None:
+                  comprimento: float = 0.0, ambos_lados: bool = True, camada: str = "SOLDA", cauda: str = "") -> None:
     """Símbolo de solda de filete AWS A2.4 na célula (auditoria D3, 11/10/2026): a seta até o cordão, a linha de
     referência e o triângulo — embaixo da linha é o lado da seta; com `ambos_lados`, um em cima e um embaixo (o filete
     dos dois lados da nervura) —, a perna à esquerda do triângulo e o comprimento à direita (perna-comprimento, como a
@@ -188,6 +188,12 @@ def simbolo_solda(p, esc: float, x_alvo: float, y_alvo: float, x_ref: float, y_r
     p.texto(bx - 0.8 * esc, y_txt, _mm(perna), h, camada, alinhamento="direita")
     if comprimento:
         p.texto(bx + larg + 0.8 * esc, y_txt, _mm(comprimento), h, camada)
+    if cauda:                                        # a cauda da AWS (a nota da solda: "TÍP.") na ponta da linha
+        x_c = x_ref + comp
+        p.linha(x_c, y_ref, x_c + 1.6 * esc * (1 if direita else -1), y_ref + 1.6 * esc, camada)
+        p.linha(x_c, y_ref, x_c + 1.6 * esc * (1 if direita else -1), y_ref - 1.6 * esc, camada)
+        p.texto(x_c + 2.4 * esc * (1 if direita else -1), y_ref - h / 2, cauda, h, camada,
+                alinhamento="esquerda" if direita else "direita")
 
 
 class _Papel:
