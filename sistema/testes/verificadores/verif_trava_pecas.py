@@ -96,7 +96,9 @@ try:
         return { furo, tudo, ref: ref.length, ref_ainda: ref.filter(e => cad.doc.get(e.id)).length }; })()""" % JS_CMD)
     ok(r and r["furo"], "no ambiente de edição o furo da peça se apaga")
     ok(r and r["tudo"] and r["ref"] > 0 and r["ref_ainda"] == r["ref"], f"tudo selecionado e apagado: sai a peça, a REFERENCIA travada fica ({r})")
-    erros = [m for m in aba.console if m[0] in ("error", "excecao")]
+    # o desenho ficou com edição por gravar (os apagamentos acima) e a navegação para o outro dispara o aviso de sair sem
+    # gravar — o comportamento certo do CAD; o Chrome 154 passou a registrar o aviso bloqueado como erro (11/10)
+    erros = [m for m in aba.console if m[0] in ("error", "excecao") and "beforeunload' confirmation panel" not in m[1]]
     ok(not erros, "sem erro no console" + (": %s" % erros[:3] if erros else ""))
 finally:
     for p in (nav, srv):
