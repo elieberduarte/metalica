@@ -182,6 +182,8 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
+**0.8.62.** (versão da noite, 11/10/2026) Detalhamento, leva 2 da auditoria (rodada 2): furo pela norma, gabarito das terças, nomes guardados e escala da prancha.
+
 **0.8.61.** (versão da noite, 11/10/2026) Detalhamento, leva 2 da auditoria (rodada 1): furos da mesa de baixo, marca com contorno, terça Ue e polegada.
 
 **0.8.60.** (versão da noite, 11/10/2026) Licenças: o programa instalado só abre com licença, e o serviço que a emite e entrega as atualizações; Licenças: a tela atrás do Cloudflare Access da equipe old-flower-6203 (o AUD do Worker admin); Licenças: a tela de acesso rápido dentro do Metálica de desenvolvimento; Licenças: /api/saude no serviço — o GitHub aceita o token (limite autenticado), o repositório visível e o banco.
