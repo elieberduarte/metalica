@@ -249,7 +249,7 @@ function desenhar(L) {
             : (g.fonte_kg_m === 'calculado' ? 'fora, sem similar (kg/m pelas medidas)' : '—'),
           dica: 'O item do catálogo que corresponde ao perfil do modelo; o tubo fora dele vai para o similar (mesma forma, lados até 12 % diferentes, área e inércias pelo menos as do projeto, o mais leve)' },
         { titulo: 'Material', chave: 'material' },
-        { titulo: 'Categoria', valor: (g) => rotuloCategoria(g.categoria) },
+        { titulo: 'Categoria', valor: (g) => rotuloCategoria(g.categoria, g) },
         { titulo: 'Posições', valor: (g) => marcas(g.nomes_posicoes || g.posicoes), classe: 'quebra' },
         { titulo: 'Peças', chave: 'pecas', classe: 'c', num: true },
         { titulo: 'Compr. (m)', chave: 'comprimento_m', classe: 'r', num: true, casas: 2 },
@@ -402,7 +402,7 @@ function desenhar(L) {
   c.append(painel('conjuntos', (L.conjuntos || []).length
     ? secao('Conjuntos', 'montagens (tesouras, vigas, pilares): instâncias pela composição e peso de cada uma',
       el('div', { class: 'rolagem' }, tabela([
-        { titulo: 'Nome', chave: 'nome', classe: 'b' }, { titulo: 'Conjunto', chave: 'marca' }, { titulo: 'Tipo', valor: (x) => rotuloCategoria(x.categoria) },
+        { titulo: 'Nome', chave: 'nome', classe: 'b' }, { titulo: 'Conjunto', chave: 'marca' }, { titulo: 'Tipo', valor: (x) => rotuloCategoria(x.categoria, x) },
         { titulo: 'Instâncias', chave: 'instancias', classe: 'c b', num: true },
         { titulo: 'Peças/un.', chave: 'pecas_unidade', classe: 'c', num: true },
         { titulo: 'Composição', chave: 'composicao_texto', classe: 'quebra mono' },
@@ -415,7 +415,7 @@ function desenhar(L) {
   // ---- romaneio
   c.append(painel('romaneio', secao('Romaneio por posição', `${n(t.posicoes)} posições · ${n(t.pecas)} peças`,
     el('div', { class: 'rolagem' }, tabela([
-      { titulo: 'Nome', chave: 'nome', classe: 'b' }, { titulo: 'Posição', chave: 'marca' }, { titulo: 'Categoria', valor: (p_) => rotuloCategoria(p_.categoria) },
+      { titulo: 'Nome', chave: 'nome', classe: 'b' }, { titulo: 'Posição', chave: 'marca' }, { titulo: 'Categoria', valor: (p_) => rotuloCategoria(p_.categoria, p_) },
       { titulo: 'Tipo', chave: 'classe' }, { titulo: 'Perfil / chapa', valor: (p_) => p_.perfil_nome || p_.perfil }, { titulo: 'Material', chave: 'material' },
       { titulo: 'Qtd', chave: 'quantidade', classe: 'c b', num: true },
       { titulo: 'Compr. (mm)', chave: 'comprimento', classe: 'r', num: true },
@@ -473,7 +473,13 @@ function barraDesenhada(pl, comprimento) {
 
 const CATEGORIAS = { TESOURAS: 'Tesoura/pórtico', CONJUNTOS: 'Conjunto', 'TERÇAS': 'Terça', BARRAS: 'Barra', CHAPAS: 'Chapa',
                      TIRANTES: 'Tirante', TELHAS: 'Telha', RUFOS: 'Rufo/calha', VISTAS: 'Vista', OUTROS: 'Outro' };
-const rotuloCategoria = (k) => CATEGORIAS[k] || k || '—';
+// na obra sem cobertura (o Vicente, 09/10) a treliça não é tesoura: o conjunto traz o título da categoria ("Vigas caixote",
+// saida/lista_producao.py) e a lista diz cobertura: false — a coluna mostra o nome no singular
+const rotuloCategoria = (k, x) => {
+  if (x && x.titulo_categoria) return String(x.titulo_categoria).replace(/^(\S+?)s(?=\s|$)/, '$1');
+  if (k === 'TESOURAS' && LISTA && LISTA.cobertura === false) return 'Viga caixote';
+  return CATEGORIAS[k] || k || '—';
+};
 
 function cartao(valor, rotulo, sub = null, destaque = false) {
   return el('div', { class: 'cartao-n' + (destaque ? ' destaque' : '') }, el('b', { texto: valor }), el('span', { texto: rotulo }), sub ? el('small', { texto: sub }) : null);
@@ -641,6 +647,7 @@ function desenharPrevia() {
   const frame = a.html ? el('iframe', { src: `${a.html.url}?t=${encodeURIComponent(quando || '')}`, title: 'Prévia do resumo' }) : vazio('Sem a versão HTML deste resumo.');
   if (a.html && DOC_ATUAL === 'materiais') frame.addEventListener('load', () => ligarTrocas(frame));
   if (a.html && DOC_ATUAL === 'obra') frame.addEventListener('load', () => ligarPendencias(frame));
+  fecharLado3D();                                   // o documento novo começa sem o 3D ao lado
   alvo.replaceChildren(
     el('div', { class: 'doc-barra' }, alternar, el('span', { class: 'quando', texto: quando ? `gerado em ${dataBR(quando)}` : '' }), el('span', { class: 'sep' }),
       a.pdf ? el('a', { class: 'botao-m principal', href: a.pdf.url, target: '_blank', rel: 'noopener', texto: 'Abrir o PDF', title: `detalhamento/${a.pdf.nome}` }) : null,
@@ -649,7 +656,7 @@ function desenharPrevia() {
         title: 'Baixar o resumo de materiais em planilha: resumo, perfis e barras, chapas, parafusos e chumbadores, lista de materiais e conjuntos' }) : null,
       a.html ? el('button', { type: 'button', class: 'botao-m', texto: 'Imprimir', onclick: () => { try { frame.contentWindow.print(); } catch (e) { window.open(a.html.url, '_blank'); } } }) : null,
       el('button', { type: 'button', class: 'botao-m', texto: 'Abrir pasta', onclick: abrirPasta })),
-    frame);
+    el('div', { class: 'doc-lado' }, frame));
 }
 
 /* ------------------------------------------------------------------- troca do perfil de compra (06/10)
@@ -680,13 +687,94 @@ function ligarPendencias(frame) {
   if (!doc || !doc.head) return;
   const st = doc.createElement('style');
   st.textContent = '@media screen{tr[data-ids]{cursor:pointer}tr[data-ids]:hover td{background:#f2f7dc}'
+    + 'tr[data-ids].no-3d td{background:#e3efb8}'
     + 'tr[data-ids] td:last-child::after{content:"  ver no 3D ↗";color:#35434C;font-weight:600;white-space:nowrap}}';
   doc.head.append(st);
   doc.querySelectorAll('tr[data-ids]').forEach((tr) => {
-    tr.title = 'Abrir o modelo 3D com estas peças em destaque';
-    tr.addEventListener('click', () => verNo3D(tr.dataset.ids));
+    tr.title = 'Mostrar estas peças no modelo 3D ao lado do relatório';
+    tr.addEventListener('click', () => {
+      doc.querySelectorAll('tr.no-3d').forEach((t) => t.classList.remove('no-3d'));
+      tr.classList.add('no-3d');
+      abrirLado3D(tr.dataset.ids, tr.dataset.ids.split(',').filter(Boolean).length);
+    });
   });
 }
+
+/* O 3D ao lado do relatório (09/10, pedido do usuário: "abrir a tela do 3D para ficar lado a lado a pendência e o
+ * projeto" — antes o clique trocava a página pelo editor e era preciso voltar ao relatório a cada pendência).
+ * O primeiro clique abre o visor leve num painel à direita; os seguintes só trocam o destaque pela mensagem
+ * selecionar3d (a mesma da área de trabalho dividida), sem recarregar o modelo. "Abrir no editor" leva ao editor
+ * completo com as mesmas peças em destaque. Com o 3D aberto, os Dados do resumo recolhem para dar largura. */
+let LADO3D = null;                                  // {caixa, frame, pronto, ids}
+
+function abrirLado3D(ids, n) {
+  const area = document.querySelector('#doc-previa .doc-lado');
+  if (!area) { verNo3D(ids); return; }
+  if (!LADO3D || !LADO3D.caixa.isConnected) {
+    const frame = el('iframe', { src: `/visor3d/ver3d.html?projeto=${encodeURIComponent(PROJETO)}`, title: 'Modelo 3D' });
+    const info = el('span', { class: 'lado3d-info' });
+    const caixa = el('div', { class: 'lado3d' },
+      el('div', { class: 'lado3d-barra' }, el('b', { texto: 'Modelo 3D' }), info, el('span', { class: 'sep' }),
+        el('button', { type: 'button', class: 'botao-m', texto: 'Abrir no editor', title: 'Abrir o editor 3D completo com estas peças em destaque',
+          onclick: () => verNo3D(LADO3D.ids) }),
+        el('button', { type: 'button', class: 'botao-m', texto: 'Fechar', title: 'Fechar o 3D e voltar o relatório à largura toda', onclick: fecharLado3D })),
+      frame);
+    const divisor = el('div', { class: 'lado3d-divisor', title: 'Arraste para mudar a largura do 3D' });
+    divisor.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      divisor.setPointerCapture(ev.pointerId);
+      area.classList.add('arrastando');             // os quadros não roubam o movimento do mouse
+      const mover = (e) => {
+        const r = area.getBoundingClientRect();
+        const w = Math.min(Math.max(r.right - e.clientX, 280), r.width - 280);
+        caixa.style.flex = `0 0 ${w}px`;
+      };
+      const soltar = () => { area.classList.remove('arrastando'); divisor.removeEventListener('pointermove', mover); };
+      divisor.addEventListener('pointermove', mover);
+      divisor.addEventListener('pointerup', soltar, { once: true });
+      divisor.addEventListener('pointercancel', soltar, { once: true });
+    });
+    LADO3D = { caixa, frame, info, pronto: false, ids: '' };
+    area.append(divisor, caixa);
+    area.classList.add('com-3d');
+    const grade = document.querySelector('.grade-resumos');
+    if (grade) grade.classList.add('com-3d');
+  }
+  LADO3D.ids = ids;
+  LADO3D.info.textContent = `${n} peça(s) em destaque`;
+  if (LADO3D.pronto) enviarLado3D();
+  else LADO3D.info.textContent = `abrindo o modelo… (${n} peça(s) a destacar)`;
+}
+
+function enviarLado3D() {
+  if (!LADO3D || !LADO3D.pronto) return;
+  try { LADO3D.frame.contentWindow.postMessage({ metalica: 'selecionar3d', destacar: 'ids:' + LADO3D.ids }, location.origin); } catch (e) { /* o quadro saiu */ }
+}
+
+function fecharLado3D() {
+  if (LADO3D && LADO3D.caixa.isConnected) {
+    const area = LADO3D.caixa.parentNode;
+    area.querySelectorAll('.lado3d-divisor, .lado3d').forEach((x) => x.remove());
+    area.classList.remove('com-3d');
+  }
+  LADO3D = null;
+  const grade = document.querySelector('.grade-resumos');
+  if (grade) grade.classList.remove('com-3d');
+  const f = document.querySelector('#doc-previa .doc-lado iframe');
+  try { if (f) f.contentDocument.querySelectorAll('tr.no-3d').forEach((t) => t.classList.remove('no-3d')); } catch (e) { /* outra origem */ }
+}
+
+// o visor ao lado avisa quando carregou (pronto3d) e pede o editor (navegar, botão Editar dele)
+window.addEventListener('message', (ev) => {
+  if (ev.origin !== location.origin || !ev.data || !LADO3D || ev.source !== LADO3D.frame.contentWindow) return;
+  if (ev.data.metalica === 'pronto3d') {
+    LADO3D.pronto = true;
+    LADO3D.info.textContent = `${LADO3D.ids.split(',').filter(Boolean).length} peça(s) em destaque`;
+    enviarLado3D();
+  } else if (ev.data.metalica === 'navegar' && ev.data.url) {
+    location.href = ev.data.url;
+  }
+});
 
 function verNo3D(ids) {
   const spec = 'ids:' + ids;

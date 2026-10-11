@@ -140,6 +140,20 @@
   .doc-barra .sep { flex: 1; }
   .doc-barra .quando { font-size: 12px; color: var(--texto3); }
   .doc-previa iframe { flex: 1; width: 100%; min-height: 68vh; border: 1px solid var(--borda); border-radius: var(--raio); background: #fff; }
+  /* o 3D ao lado do relatório (materiais.js, abrirLado3D): o clique numa pendência abre o visor à direita */
+  .doc-lado { flex: 1; display: flex; min-height: 68vh; }
+  .doc-lado > iframe { min-width: 0; }
+  .doc-lado.com-3d > iframe { flex: 1 1 50%; min-height: 78vh; }
+  .lado3d { flex: 1 1 50%; display: flex; flex-direction: column; min-width: 280px; }
+  .lado3d-barra { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; font-size: 13px; }
+  .lado3d-barra .sep { flex: 1; }
+  .lado3d-info { font-size: 12px; color: var(--texto3); }
+  .lado3d iframe { flex: 1; min-height: 74vh; background: var(--painel); }
+  .lado3d-divisor { flex: 0 0 10px; cursor: col-resize; position: relative; }
+  .lado3d-divisor::before { content: ""; position: absolute; top: 40%; bottom: 40%; left: 4px; width: 2px; border-radius: 1px; background: var(--borda-forte); }
+  .doc-lado.arrastando iframe { pointer-events: none; }
+  .grade-resumos.com-3d { grid-template-columns: minmax(0, 1fr); }
+  .grade-resumos.com-3d > .caixa:first-child { display: none; }
   /* trocar o perfil de compra pelo parecido do catálogo (06/10) */
   dialog.troca { border: 1px solid var(--borda-forte); border-radius: var(--raio); background: var(--painel); color: var(--texto); padding: 16px 18px; width: min(900px, 94vw); max-height: 88vh; }
   dialog.troca::backdrop { background: rgba(0, 0, 0, .45); }

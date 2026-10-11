@@ -124,6 +124,8 @@ def test_descricao_da_telha_pelo_perfil_dela():
     assert resumos.descricao_telha("TELHA TP40 0.65MM", "Telha TELHA TP40 0.50MM") == "Telha TP40 0,65 mm"
     assert resumos.descricao_telha("TELHA TP40 0.50MM", "Telha TELHA TP40 0.50MM") == "Telha TP40 0,50 mm"
     assert resumos.descricao_telha("TELHA TP40 0.50MM", "") == "Telha TP40 0,50 mm"
+    # "ESP.0.65" sem o MM (depósito da SOORO, 09/10): a cobertura de 0,65 não entra na compra como a de 0,50 dos dados
+    assert resumos.descricao_telha("TELHA TP40 ESP.0.65", "TELHA TP40 ESP.0.50") == "Telha TP40 0,65 mm"
 
 
 def test_compra_chapas_comerciais_porcas_e_arruelas():

@@ -878,15 +878,16 @@ def _parafusos_com_local(fixadores, pecas, tipos, nomes_pos, tipos_conj, nomes_c
 def descricao_telha(perfil: str, dados_telha: str = "") -> str:
     """A descrição comercial de uma telha pelo perfil dela ("TELHA TP40 0.65MM" → "Telha TP40 0,65 mm"). A dos dados do
     resumo vale quando é a mesma espessura (ela é uma só para a obra: a multi-dobra de 0,65 saía como 0,50, 05/10); o
-    "Telha TELHA" repetido sai."""
+    "Telha TELHA" repetido sai. A espessura também como "ESP.0.65" sem o MM (o depósito da SOORO, 09/10: a cobertura
+    de 0,65 entrava na compra como a de 0,50 dos dados)."""
     base = re.sub(r"(?i)^\s*telha\s+", "", str(perfil or "")).strip()
-    m = re.search(r"(\d+[.,]\d+)\s*MM", base, re.I)
+    m = re.search(r"(\d+[.,]\d+)\s*MM", base, re.I) or re.search(r"\bESP\.?\s*(\d+[.,]\d+)\b", base, re.I)
     esp = m.group(1).replace(".", ",") if m else ""
     d = re.sub(r"(?i)^\s*telha\s+telha\b", "Telha", str(dados_telha or "").strip())
     d = re.sub(r"(\d+)[.,](\d+)\s*MM\b", r"\1,\2 mm", d, flags=re.I)
     if d and (not esp or esp.replace(",", ".") in d.replace(",", ".")):
         return d
-    nome = re.sub(r"\s*\d+[.,]\d+\s*MM", "", base, flags=re.I).strip()
+    nome = re.sub(r"\s*(\d+[.,]\d+\s*MM|\bESP\.?\s*\d+[.,]\d+\b)", "", base, flags=re.I).strip()
     return ("Telha %s %s mm" % (nome, esp)).replace("  ", " ") if esp else ("Telha %s" % base if base else "Telha")
 
 
