@@ -1,6 +1,16 @@
 /* CAD 2D: herda a família visual do editor 3D (editor.css) e ajusta o que é próprio. */
 
 #canvas2d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+
+/* a barra da disciplina, à direita do desenho (estrutura.js): os elementos da Metálica ou do pré-moldado;
+   a da esquerda fica com a edição geral do desenho */
+.barra-disciplina { border-right: 0; border-left: 1px solid var(--borda); }
+.barra-disciplina .seletor-disciplina { display: flex; flex-direction: column; gap: 2px; padding: 0 3px 4px; }
+.barra-disciplina .disciplina { width: 36px; margin: 0 auto; padding: 2px 0; font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+  background: none; color: var(--texto3); border: 1px solid var(--borda); border-radius: var(--raio-p); cursor: pointer; }
+.barra-disciplina .disciplina[aria-pressed="true"] { background: var(--azul); color: var(--painel); border-color: var(--azul); }
+.area .aba-paineis { right: calc(var(--larg-paineis) + var(--larg-ferramentas)); }
+html.sem-paineis .area .aba-paineis { right: var(--larg-ferramentas); }
 .palco { cursor: crosshair; }
 .palco[data-arrastando] { cursor: grabbing; }
 

@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 """A Montagem do projeto recebido (web/cad/montagem.js; etapa 1 da leitura por quadros, plano de 01/10/2026).
 Confere: as abas Original | Montagem | Pranchas aparecem no projeto com a planta do cliente; a aba Montagem cria
-o desenho "montagem" com os 9 quadros padrão sem sobreposição; "+ corte tesoura" acrescenta uma tesoura; o nome
+o desenho "montagem" com os 10 quadros padrão (a Implantação no topo) sem sobreposição; "+ corte tesoura" acrescenta uma tesoura; o nome
 (em maiúsculas) e a escala ficam gravados; a alça do canto ajusta o tamanho e os outros quadros se acomodam,
-levando o que está dentro deles; recarregar a página mantém tudo; a aba Original volta à planta do cliente."""
+levando o que está dentro deles; recarregar a página mantém tudo; a aba Original volta à planta do cliente.
+A nova dinâmica (11/10, web/cad/implantacao.js): os eixos dados no "Eixos…" se desenham na Implantação e vão para o
+projeto; os níveis aparecem na caixa ao lado; o duplo clique num eixo abre a elevação dele (os eixos que cruzam em ordem
+da esquerda para a direita, as linhas dos níveis); o que foi posto na elevação fica no mesmo lugar real quando a escala
+muda; a sombra fica gravada; a tesoura lançada na Implantação chega ao 3D na medida real."""
 import json, os, shutil, subprocess, sys, tempfile, time, base64
 BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, BASE); sys.path.insert(0, os.path.join(BASE, "testes"))
@@ -95,10 +99,10 @@ try:
     qs = quadros(aba)
     tipos = sorted(q["tipo"] for q in qs)
     ok(cad_ok := aba.avaliar("cad.nomeDesenho") == "montagem", "a aba Montagem cria e abre o desenho \"montagem\"")
-    ok(tipos == sorted(["locacao", "tercas", "tesouras_pos", "elev_frontal", "elev_lateral", "elev_fundos", "corte", "tesoura", "ligacoes"]),
-       "os 9 quadros padrão: %s" % tipos)
+    ok(tipos == sorted(["implantacao", "locacao", "tercas", "tesouras_pos", "elev_frontal", "elev_lateral", "elev_fundos", "corte", "tesoura", "ligacoes"]),
+       "os 10 quadros padrão (a Implantação e os da leitura por quadros): %s" % tipos)
     ok(sobrepostos(qs) == 0, "nenhum quadro em cima de outro")
-    ok(aba.avaliar("document.querySelectorAll('.quadro-titulo').length") == 9 and aba.avaliar("!!document.querySelector('.quadro-mais')"),
+    ok(aba.avaliar("document.querySelectorAll('.quadro-titulo').length") == 10 and aba.avaliar("!!document.querySelector('.quadro-mais')"),
        "cada quadro com o título por cima do desenho, e o \"+ corte tesoura\"")
 
     # + corte tesoura, nome e escala
@@ -151,8 +155,8 @@ try:
     qs3 = quadros(aba)
     t3 = next((q for q in qs3 if q["id"] == nova), {})
     l3 = next((q for q in qs3 if q["tipo"] == "locacao"), {})
-    ok(len(qs3) == 10 and t3.get("nome") == "T02" and t3.get("escala") == 20 and abs(l3.get("w", 0) - loc2["w"]) < 0.5,
-       "depois de recarregar: 10 quadros, a T02 1:20 e o tamanho novo da locação")
+    ok(len(qs3) == 11 and t3.get("nome") == "T02" and t3.get("escala") == 20 and abs(l3.get("w", 0) - loc2["w"]) < 0.5,
+       "depois de recarregar: 11 quadros, a T02 1:20 e o tamanho novo da locação")
     ok(aba.avaliar("document.querySelector('#abas-projeto [data-aba=montagem]').classList.contains('on')"), "a aba Montagem marcada")
     open(os.path.join(os.path.dirname(__file__), "_montagem.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
 
@@ -279,6 +283,97 @@ try:
     n_loc = len([e for e in mont3["entidades"] if (e.get("atributos") or {}).get("quadro") == locq3["id"]])
     ok(n_loc == 6 and locq3["envios"][-1]["desenho"] == "planta-de-lançamento-r01",
        "atualizado pela revisão: o quadro da locação tem o que a R01 tem na área (%d objetos) e o envio aponta para ela" % n_loc)
+    # ---- a nova dinâmica (11/10): Implantação com eixos e níveis, elevação por eixo, sombra, 3D pela implantação
+    esperar(aba, "cad.nomeDesenho === 'montagem' && !!window.montagem._quadroImplantacao()", 20)
+    aba.avaliar("(() => { if (window.montagem.painel) window.montagem.painel.hidden = true; document.querySelectorAll('#avisos .aviso').forEach(a => a.remove()); return 1; })()")
+    ok(aba.avaliar("window.montagem._quadroImplantacao().id === cad.doc.metadados.montagem.quadros[0].id")
+       and aba.avaliar("!!document.querySelector('.quadro-titulo[data-tipo=implantacao] .quadro-botao')"),
+       "a Implantação é o primeiro quadro da folha, com o botão \"Eixos…\" no título")
+    aba.avaliar("""(async () => { await fetch('/api/projetos/recebido/niveis', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ niveis: [{ nome: 'Base', z: -1000 }, { nome: 'Piso', z: 0 }, { nome: 'Apoio', z: 5000 }] }) });
+      window.montagem._renovarCaixasNiveis(); await window.montagem.refazerQuadrosDaObra(); window.__niv = 1; })(); 1""")
+    esperar(aba, "window.__niv === 1 && document.querySelectorAll('.quadro-niveis li').length === 3", 20)
+    ok(aba.avaliar("document.querySelectorAll('.quadro-niveis li').length") == 3
+       and "+5,00" in (aba.avaliar("document.querySelector('.quadro-niveis').textContent") or ""),
+       "a caixa dos níveis ao lado da implantação mostra os 3 níveis: %s" % aba.avaliar("document.querySelector('.quadro-niveis').textContent"))
+    # os eixos pelo diálogo: 5 numerados a cada 6 m e 3 com letra a cada 10 m (A em cima)
+    aba.avaliar("document.querySelector('.quadro-titulo[data-tipo=implantacao] .quadro-botao').click(); 1")
+    esperar(aba, "document.querySelector('#dialogo').open && document.querySelectorAll('#dialogo input[type=text]').length >= 4", 10)
+    aba.avaliar("""(() => { const i = [...document.querySelectorAll('#dialogo input[type=text]')];
+      i[0].value = '4x6000'; i[1].value = '1'; i[2].value = '2x10m'; i[3].value = 'A'; document.querySelector('#dialogo-ok').click(); return 1; })()""")
+    esperar(aba, "!!(cad.doc.metadados.montagem.eixos && cad.doc.metadados.montagem.eixos.numeros.length === 5)", 15)
+    aba.drenar(1.0)
+    impl = json.loads(aba.avaliar("JSON.stringify(window.montagem._quadroImplantacao())"))
+    ger = json.loads(aba.avaliar("JSON.stringify([...cad.doc.entidades.values()].filter(e => (e.atributos || {}).gerado === 'implantacao'))"))
+    linhas_e = [e for e in ger if e["tipo"] == "linha"]
+    ok(len(linhas_e) == 8 and len([e for e in ger if e["tipo"] == "circulo"]) == 8,
+       "os eixos se desenham na implantação: %d linhas e as bolinhas (1:%s)" % (len(linhas_e), impl.get("escala")))
+    x1 = next(e for e in linhas_e if e["atributos"]["eixo"] == "1")["a"][0]; x2 = next(e for e in linhas_e if e["atributos"]["eixo"] == "2")["a"][0]
+    ok(abs((x2 - x1) * impl["escala"] - 6000) < 0.5, "o vão entre os eixos 1 e 2 é 6 m na escala do quadro (%.1f mm de papel)" % (x2 - x1))
+    ya = next(e for e in linhas_e if e["atributos"]["eixo"] == "A")["a"][1]; yc = next(e for e in linhas_e if e["atributos"]["eixo"] == "C")["a"][1]
+    ok(ya > yc, "as letras de cima para baixo: A em cima, C embaixo")
+    pj = json.loads(aba.avaliar("(async () => JSON.stringify(await (await fetch('/api/projetos/recebido')).json()))()"))
+    ex = (pj.get("projeto") or pj).get("eixos") or {}
+    ok(len(ex.get("numeros") or []) == 5 and len(ex.get("letras") or []) == 3, "os eixos foram para o projeto (o 3D os desenha)")
+    # duplo clique na bolinha do eixo 2: abre a elevação dele
+    bola = next(e for e in ger if e["tipo"] == "circulo" and e["atributos"]["eixo"] == "2")
+    aba.avaliar("cad.tela.enquadrar([[%s, %s], [%s, %s]]); 1" % (impl["x"], impl["y"] - impl["h"], impl["x"] + impl["w"], impl["y"])); aba.drenar(0.4)
+    pt = json.loads(aba.avaliar("""JSON.stringify((() => { const p = cad.tela.paraTela(%s); const r = cad.el.canvas.getBoundingClientRect(); return [p[0] + r.left, p[1] + r.top]; })())""" % json.dumps(bola["centro"])))
+    sob = aba.avaliar("(() => { const e = document.elementFromPoint(%s, %s); return e ? e.tagName + '#' + e.id + '.' + e.className : '-'; })()" % (pt[0], pt[1]))
+    for n in (1, 2):
+        aba.cmd("Input.dispatchMouseEvent", type="mousePressed", x=pt[0], y=pt[1], button="left", clickCount=n)
+        aba.cmd("Input.dispatchMouseEvent", type="mouseReleased", x=pt[0], y=pt[1], button="left", clickCount=n)
+    esperar(aba, "window.montagem._elevacoes().some(q => q.eixo === '2')", 15)
+    aba.drenar(0.8)
+    el2 = json.loads(aba.avaliar("JSON.stringify(window.montagem._elevacoes().find(q => q.eixo === '2') || null)"))
+    ok(el2 and el2["familia"] == "numero", "o duplo clique no eixo 2 abre a elevação dele" + ("" if el2 else " (sob o ponto: %s)" % sob))
+    gel = json.loads(aba.avaliar("JSON.stringify([...cad.doc.entidades.values()].filter(e => (e.atributos || {}).gerado === 'elevacao' && e.atributos.quadro === '%s'))" % (el2 or {}).get("id")))
+    cruz = sorted([(e["a"][0], e["atributos"]["eixo"]) for e in gel if e["tipo"] == "linha" and e["atributos"].get("eixo")])
+    ok([n for _x, n in cruz] == ["A", "B", "C"], "na elevação, os eixos que cruzam em ordem da esquerda para a direita: %s" % [n for _x, n in cruz])
+    txt_niv = " ".join(e.get("texto", "") for e in gel if e["tipo"] == "texto")
+    ok("Apoio" in txt_niv and "Base" in txt_niv, "as linhas dos níveis com os nomes: %s" % txt_niv[:120])
+    # o que se põe na elevação fica no mesmo lugar real quando a escala muda
+    aba.avaliar("""(() => { const m = window.montagem, q = m._elevacoes().find(q => q.eixo === '2');
+      cad.doc.add({ id: 'col1', tipo: 'linha', camada: 'VISTA', a: m._paraPapel(q, [0, 5000]), b: m._paraPapel(q, [10000, 6000]), atributos: { quadro: q.id } }); return 1; })()""")
+    aba.avaliar("""(() => { const q = window.montagem._elevacoes().find(q => q.eixo === '2');
+      const s = document.querySelector('.quadro-titulo[data-quadro="' + q.id + '"] select.quadro-escala'); s.value = '50'; s.dispatchEvent(new Event('change')); return 1; })()""")
+    esperar(aba, "window.montagem._elevacoes().find(q => q.eixo === '2').escala === 50", 10); aba.drenar(0.6)
+    real = json.loads(aba.avaliar("""JSON.stringify((() => { const m = window.montagem, q = m._elevacoes().find(q => q.eixo === '2'), e = cad.doc.get('col1');
+      return [m._paraReal(q, e.a), m._paraReal(q, e.b)]; })())"""))
+    ok(abs(real[0][0]) < 0.5 and abs(real[0][1] - 5000) < 0.5 and abs(real[1][0] - 10000) < 0.5 and abs(real[1][1] - 6000) < 0.5,
+       "a linha posta na elevação continua no mesmo lugar real depois da escala 1:50: %s" % real)
+    # a sombra: a elevação do eixo 3 mostra a do 2
+    aba.avaliar("window.montagem.abrirElevacao('3', 'numero').then(() => { window.__e3 = 1; }); 1")
+    esperar(aba, "window.__e3 === 1", 15); aba.drenar(0.5)
+    aba.avaliar("""(() => { const q = window.montagem._elevacoes().find(q => q.eixo === '3');
+      const s = document.querySelector('.quadro-titulo[data-quadro="' + q.id + '"] select.quadro-sombra'); s.value = 'anterior'; s.dispatchEvent(new Event('change')); return 1; })()""")
+    ok(aba.avaliar("window.montagem._elevacoes().find(q => q.eixo === '3').sombra") == "anterior", "a sombra do eixo 2 ligada na elevação do 3")
+    ok(sobrepostos(quadros(aba)) == 0, "com a implantação e as elevações, nenhum quadro sobreposto")
+    # a tesoura lançada na implantação (do eixo A ao C, no eixo 2) chega ao 3D na medida real
+    aba.avaliar("""(() => { const m = window.montagem, q = m._quadroImplantacao(), ex = cad.doc.metadados.montagem.eixos;
+      const g = ex.numeros.find(e => e.nome === '2').pos, pa = ex.letras.find(e => e.nome === 'A').pos, pc = ex.letras.find(e => e.nome === 'C').pos;
+      cad.doc.add({ id: 'tr2', tipo: 'linha', camada: 'ESTRUTURA', a: m._paraPapel(q, [g, pa]), b: m._paraPapel(q, [g, pc]),
+        atributos: { elemento: 'trelica', material: 'aco', marca: 'T1', quadro: q.id, nivel_base: 'Apoio', eixo: '2',
+          perfis: { banzo_sup: 'U 150×50×3,0', banzo_inf: 'U 150×50×3,0', diagonal: 'L 50,8×4,76' },
+          desenho: { barras: [[0, 0, 20000, 0, 'banzo_inf'], [0, 0, 10000, 1500, 'banzo_sup'], [10000, 1500, 20000, 0, 'banzo_sup'], [10000, 0, 10000, 1500, 'montante']], vao: 20000, altura: 1500 } } });
+      cad._editado = true; cad.salvar({ avisar: false }); return 1; })()""")
+
+    def _barras():
+        mod = json.loads(aba.avaliar("(async () => JSON.stringify(await (await fetch('/api/projetos/recebido/modelo')).json()))()") or "{}")
+        ents = (mod.get("documento") or {}).get("entidades") or []
+        if isinstance(ents, dict):
+            ents = list(ents.values())
+        return [e for e in ents if (e.get("atributos") or {}).get("planta") == "montagem"]
+    t0 = time.time()
+    while time.time() - t0 < 30 and not _barras():
+        aba.drenar(0.6)
+    bs = _barras()
+    xs3 = sorted({round(c, 1) for b in bs for c in (b.get("inicio", [0])[0], b.get("fim", [0])[0])})
+    zs3 = [c for b in bs for c in (b.get("inicio", [0, 0, 0])[2], b.get("fim", [0, 0, 0])[2])]
+    ok(len(bs) >= 4 and xs3 and abs(xs3[0] - 6000) < 1 and abs(xs3[-1] - 6000) < 1 and min(zs3) >= 4900,
+       "a tesoura da implantação chega ao 3D no eixo 2 (x = 6 m) e no nível Apoio (5 m): %d barras, x %s" % (len(bs), xs3[:3]))
+    aba.avaliar("window.montagem.enquadrar(); 1"); aba.drenar(0.8)
+    open(os.path.join(os.path.dirname(__file__), "_montagem_implantacao.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
     # todo projeto tem a barra (01/10); só aparece o botão que faz alguma coisa (07/10): no do IFC, sem Original e Montagem
     aba.navegar(base + "/cad?projeto=do-ifc&desenho=detalhamento-completo", limite=60)
     esperar(aba, "!!window.montagem && !document.querySelector('#abas-projeto').hidden", 20)

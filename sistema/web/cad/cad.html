@@ -74,6 +74,30 @@
         <a class="menu-link" href="/ligacoes" title="Biblioteca de ligações e acessórios: desenho, peças, verificação e os exemplos das obras">Ligações e acessórios…</a>
       </div>
     </div>
+    <div class="menu" data-menu="estrutura">
+      <button type="button" class="menu-botao">Estrutura</button>
+      <div class="menu-lista">
+        <button type="button" data-acao="estr-pilar" title="Um clique no centro (o cruzamento de eixos dá snap): seção de concreto ou perfil de aço, níveis da base e do topo, R gira 90°">Pilar</button>
+        <button type="button" data-acao="estr-viga" title="Dois cliques, de pilar a pilar: seção de concreto ou perfil de aço, o nível da face de cima">Viga</button>
+        <button type="button" data-acao="estr-fundacao" title="Um clique no centro: sapata ou bloco, lados, altura e o nível do topo">Fundação</button>
+        <button type="button" data-acao="estr-tesoura" title="Pré-moldado: a viga de cobertura em I, do apoio de um pilar ao outro (duas águas ou uma água)">Tesoura de concreto</button>
+        <button type="button" data-acao="estr-painel" title="Pré-moldado: placa de fechamento ao longo da parede (alveolar ou maciça, em pé ou deitada)">Placa de fechamento</button>
+        <button type="button" data-acao="estr-laje" title="Pré-moldado: laje maciça, alveolar ou pré-laje, por dois cantos">Laje</button>
+        <button type="button" data-acao="estr-escada" title="Pré-moldado: escada do pé ao topo, degraus pelos níveis">Escada</button>
+        <button type="button" data-acao="estr-chapa" title="Metálica: chapa por dois cantos, com espessura e nível">Chapa</button>
+        <button type="button" data-acao="estr-furo" title="Metálica: furo dentro da chapa">Furo</button>
+        <button type="button" data-acao="estr-parafuso" title="Metálica: parafuso com diâmetro, comprimento e nível da cabeça">Parafuso</button>
+        <button type="button" data-acao="estr-consolo" title="Clique no meio da face do pilar e depois para o lado de fora: comprimento, largura, altura e o nível do topo">Consolo</button>
+        <hr>
+        <button type="button" data-acao="estr-niveis" title="Os níveis do projeto (piso, boca do cálice, topo dos pilares…): as ferramentas oferecem nos campos de nível e o 3D desenha as linhas">Níveis…</button>
+        <button type="button" data-acao="estr-trelica" title="Selecione a tesoura desenhada em linhas (banzos, diagonais, montantes) e lance-a de um eixo a outro, nos eixos que escolher; o 3D monta as barras">Tesoura de aço pelo desenho…</button>
+        <button type="button" data-acao="estr-rotulos" title="Um rótulo por elemento, com a marca dele: os soltos (de elemento apagado) saem, os que faltam são criados">Arrumar os nomes dos elementos</button>
+        <button type="button" data-acao="estr-renumerar" title="P1, P2… de cima para baixo e, na mesma fila, da esquerda para a direita (cada tipo à parte); o rótulo acompanha">Renumerar os elementos em ordem</button>
+        <button type="button" data-acao="pm-configuracao" hidden title="A tela do galpão pré-moldado: geometria, cargas, vento, materiais, o cálculo, o memorial e as pranchas">Configuração do galpão pré-moldado…</button>
+        <button type="button" data-acao="estr-do-3d" title="O que mudou no 3D volta para esta planta: as peças movidas movem o elemento, o pilar com outra seção troca o contorno, os níveis seguem o 3D e as peças lançadas no 3D (pilar, viga, sapata, consolo) entram como elementos novos. O que sumiu do 3D fica na planta e vira apontamento">Atualizar a planta pelo 3D</button>
+        <button type="button" data-acao="estr-gerar-3d" title="Os elementos lançados nesta planta viram o modelo 3D do projeto (pilares e vigas de concreto extrudados entre os níveis, barras com perfil no aço, fundações e consolos) e o 3D abre para conferir">Gerar 3D da planta…</button>
+      </div>
+    </div>
     <div class="menu" data-menu="vistas">
       <button type="button" class="menu-botao">Vistas do modelo</button>
       <div class="menu-lista">
@@ -158,6 +182,8 @@
     </div>
     <div class="avisos" id="avisos" aria-live="polite"></div>
   </div>
+
+  <nav class="ferramentas barra-disciplina" id="barra-disciplina" aria-label="Elementos da disciplina"></nav>
 
   <aside class="paineis" id="paineis" aria-label="Painéis">
     <section class="painel" data-painel="propriedades">

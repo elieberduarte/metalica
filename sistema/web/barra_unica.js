@@ -28,7 +28,7 @@
   function S(texto, itens, extra) { var o = { texto: texto, sub: itens }; for (var k in extra || {}) o[k] = extra[k]; return o; }
   function F(texto, fn, extra) { var o = { texto: texto, fn: fn }; for (var k in extra || {}) o[k] = extra[k]; return o; }
 
-  // Os menus da área de trabalho (UI1, 30/09/2026; enxutos em 03/10/2026 — Projeto/Navegacao-analise-e-proposta-2026-10-03.pdf):
+  // Os menus da área de trabalho (UI1, 30/09/2026; enxutos em 03/10/2026 — Projeto/ANALISES/Interface/Navegacao-analise-e-proposta-2026-10-03.pdf):
   // Arquivo · Modelo (com o cálculo) · Detalhamento · Ver · ?. Ir para outra tela é pela barra de etapas (etapas.js). Sem 2D/3D à mostra: o item sabe o lado dele e a
   // vista troca sozinha. `antes` é onde o item ficava até a 0.8.53 (? › Onde foi parar…); `dica` sai miúda
   // embaixo; `requer: 'sel'` apaga o item, com o motivo, sem peça selecionada no lado dele.
@@ -110,6 +110,9 @@
         I('Gerar 3D da planta…', '2d', 'estr-gerar-3d', { dica: 'os elementos lançados viram o modelo 3D', antes: 'Estrutura › Gerar 3D da planta…' }),
         I('Atualizar a planta pelo 3D', '2d', 'estr-do-3d', { antes: 'Estrutura › Atualizar a planta pelo 3D' }),
       ], { dica: 'pilares, vigas e fundações no desenho, e o 3D deles' }),
+      // o acesso rápido (pedido do usuário, 07/10): a tesoura de aço pelo desenho selecionado fora do submenu — também no
+      // botão direito do CAD, com as linhas selecionadas
+      I('Gerar tesoura pelo desenho selecionado…', '2d', 'estr-trelica', { dica: 'selecione as linhas da tesoura (banzos, diagonais, montantes) e lance de eixo a eixo — também no botão direito' }),
       HR,
       I('Eixos da obra…', '3d', 'eixos-obra', { antes: 'Estrutura › Eixos da obra…' }),
       HR,

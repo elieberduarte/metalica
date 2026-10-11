@@ -11,6 +11,7 @@ import { Snap } from './nucleo/snap.js';
 import { FERRAMENTAS, GRUPOS, Ferramenta, textoNaUnidade } from './ferramentas.js';
 import { MetodosLancamentoCAD, DESENHO_LANCAMENTO } from './lancamento.js';
 import { MetodosMontarPlantaCAD } from './montar_planta.js';
+import { MetodosEstruturaCAD } from './estrutura.js';
 import { MetodosEdicaoChapaCAD } from './edicao_chapa.js';
 import { MetodosTravaPecasCAD } from './trava_pecas.js';
 
@@ -534,6 +535,12 @@ class CAD {
    */
   _alvoNo3D(ents, soPecas = false) {
     const separar = (v) => String(v).split(/\s*\/\s*/).filter(Boolean);
+    // a estrutura lançada (menu Estrutura) e as plantas do pré-moldado: a peça 3D leva o id do elemento da
+    // planta (origem_2d); sem ele, a peça do galpão pela marca e o eixo ("P-C@1/A") — a ida e volta, R5
+    const daPlanta = [...new Set(ents.flatMap(e => { const a = e.atributos || {}; return a.elemento ? [e.id] : a.origem_2d ? [a.origem_2d] : []; }))];
+    if (daPlanta.length) return 'origem2d:' + daPlanta.slice(0, 200).join(',');
+    const doGalpao = [...new Set(ents.flatMap(e => { const a = e.atributos || {}; return a.pre_moldado && a.peca && a.eixo ? [`${a.peca}@${a.eixo}`] : []; }))];
+    if (doGalpao.length) return 'pm:' + doGalpao.slice(0, 200).join(',');
     const noLugar = ents.filter(e => ['localizacao', 'chumbacao'].includes((e.atributos || {}).detalhe) && (e.atributos || {}).origem);
     if (noLugar.length) return 'ids:' + [...new Set(noLugar.map(e => e.atributos.origem))].slice(0, 200).join(',');
     // a variante de furação ("M83 (b)", só no detalhamento): as peças dela pelo id — pela marca o 3D não acha nada,
@@ -575,9 +582,27 @@ class CAD {
   _localizarPelaMarca(m) {
     const separar = (v) => String(v || '').split(/\s*(?:\/|\+)\s*/).filter(Boolean);
     const pos = new Set(m.posicoes || []), conj = new Set(m.conjuntos || []), ids = new Set(m.ids || []);
-    const achar = (teste) => [...this.doc.entidades.values()].filter(e => teste(e.atributos || {}));
+    const achar = (teste) => [...this.doc.entidades.values()].filter(e => teste(e.atributos || {}, e));
+    // o elemento da planta de lançamento (ou o pilar das plantas do pré-moldado que veio dele), e a peça do galpão
+    // pela marca e o eixo — R5
+    const o2d = new Set(m.origem2d || []), pm = new Set(m.pm || []);
+    let ents = o2d.size ? achar((a, e) => o2d.has(e.id) || (a.origem_2d && o2d.has(a.origem_2d))) : [];
+    if (!ents.length && pm.size) ents = achar(a => a.peca && a.eixo && pm.has(`${a.peca}@${a.eixo}`));
+    if (ents.length) {
+      this.tela.selecao = new Set(ents.filter(e => (e.atributos || {}).elemento || (e.atributos || {}).origem_2d).map(e => e.id));
+      const c0 = this.doc.caixa(new Set(ents.map(e => e.id)));
+      if (c0) {
+        const cx = (c0[0][0] + c0[1][0]) / 2, cy = (c0[0][1] + c0[1][1]) / 2;
+        const w = Math.max(c0[1][0] - c0[0][0], 3000), h = Math.max(c0[1][1] - c0[0][1], 3000);
+        this.tela.regiao = [[cx - w / 2, cy - h / 2], [cx + w / 2, cy + h / 2]];
+        this.tela.enquadrar(this.tela.regiao, 0.35);
+      }
+      this._agendarPaineis('props');
+      this.dica(`${ents.length} traço(s) da peça do 3D neste desenho.`);
+      return;
+    }
     // a peça de uma variante de furação ("M83 (b)"): a célula dela pelo id, não a da marca do modelo ("M83", a outra)
-    let ents = ids.size ? achar(a => a.ids3d && a.detalhe !== 'localizacao' && String(a.ids3d).split(',').some(x => ids.has(x))) : [];
+    ents = ids.size ? achar(a => a.ids3d && a.detalhe !== 'localizacao' && String(a.ids3d).split(',').some(x => ids.has(x))) : [];
     if (!ents.length) ents = achar(a => a.posicao && separar(a.posicao).some(x => pos.has(x)) && a.detalhe !== 'localizacao');
     // o detalhe da própria peça antes dela desenhada dentro dos conjuntos (a chapa em cada tesoura): tudo junto,
     // a caixa pegava o desenho inteiro e nada se via (905 traços no depósito — pedido do usuário, 30/09)
@@ -818,6 +843,8 @@ class CAD {
       }
     }
     this._registrarFerramentasDoLancamento();
+    this._registrarFerramentasDaEstrutura();
+    this._montarBarraDisciplina();          // a barra da direita: os elementos da disciplina (estrutura.js)
   }
 
   ativarFerramenta(id) {
@@ -830,6 +857,7 @@ class CAD {
     this.ferramenta = f;
     this.previa([]);
     for (const b of this.el.barra.querySelectorAll('.ferramenta')) b.setAttribute('aria-pressed', String(b.dataset.ferramenta === id));
+    this._marcarBarraDisciplina(id);
     f.ativar();
   }
 
@@ -1034,6 +1062,27 @@ class CAD {
       calibrar: () => this.ativarFerramenta('calibrar'),
       malha: () => this.dialogoMalha(),
       eixo: () => this.ativarEixoUnico(),
+      'estr-pilar': () => this.ativarFerramenta('estr_pilar'),
+      'estr-viga': () => this.ativarFerramenta('estr_viga'),
+      'estr-fundacao': () => this.ativarFerramenta('estr_fundacao'),
+      'estr-consolo': () => this.ativarFerramenta('estr_consolo'),
+      'estr-tesoura': () => this.ativarFerramenta('estr_tesoura'),
+      'estr-chapa': () => this.ativarFerramenta('estr_chapa'),
+      'estr-furo': () => this.ativarFerramenta('estr_furo'),
+      'estr-parafuso': () => this.ativarFerramenta('estr_parafuso'),
+      'estr-painel': () => this.ativarFerramenta('estr_painel'),
+      'estr-laje': () => this.ativarFerramenta('estr_laje'),
+      'estr-escada': () => this.ativarFerramenta('estr_escada'),
+      'estr-niveis': () => this.dialogoNiveis(),
+      'estr-trelica': () => {
+        if (typeof this.tesouraPeloDesenho === 'function') this.tesouraPeloDesenho();
+        else this.aviso('Gerar a tesoura pelo desenho ainda está só na versão de desenvolvimento (o lançamento na planta).', 'atencao');
+      },
+      'estr-rotulos': () => { if (typeof this.arrumarRotulosComAviso === 'function') this.arrumarRotulosComAviso(); },
+      'estr-renumerar': () => { if (typeof this.renumerarElementos === 'function') this.renumerarElementos(); },
+      'estr-gerar-3d': () => this.gerar3DDaPlanta(),
+      'estr-do-3d': () => this.atualizarPlantaPelo3D(),
+      'pm-configuracao': () => this.configuracaoPreMoldado(),
       'gravar-eixos': () => this.gravarEixos(),
       'lancar-3d': () => this.lancarNo3D(),
       'projeto-2d': () => $('#arquivo-projeto-2d').click(),
@@ -1515,6 +1564,7 @@ class CAD {
     }
     this._carimboDaFolha(g, ents);
     this._tamanhoDoTexto(g, ents);
+    this._propsEstrutura(g, ents);           // o elemento lançado na planta (estrutura.js)
     if (ids.length === 1) {
       const e = ents[0];
       const campo = (rotulo, chave, tipo = 'text', extra = {}) => {
@@ -2537,7 +2587,7 @@ function lerTema() { try { return localStorage.getItem(CHAVE_TEMA); } catch { re
 
 // os métodos da planta de lançamento (menu Lançamento) moram em lancamento.js; os do
 // projeto recebido montado pela planta, em montar_planta.js
-for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD]) {
+for (const M of [MetodosLancamentoCAD, MetodosMontarPlantaCAD, MetodosEstruturaCAD, MetodosEdicaoChapaCAD, MetodosTravaPecasCAD]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(CAD.prototype, k)) throw new Error(`método repetido no CAD: ${k}`);

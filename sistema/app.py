@@ -3307,10 +3307,15 @@ def gravar_eixos_do_desenho(s: str, corpo: dict) -> dict:
     from nucleo3d import eixos as _eixos
     g = _gerente()
     bruto = corpo.get("desenho") if isinstance(corpo.get("desenho"), dict) else g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO)
-    ex = lancamento.eixos_do_desenho(Desenho.de_dict(bruto))
+    # a área da planta marcada na Implantação da Montagem: os eixos em qualquer camada, só lidos (o operador confere e grava)
+    ex = lancamento.eixos_do_desenho(Desenho.de_dict(bruto), qualquer_camada=bool(corpo.get("qualquer_camada")))
     avisos = ex.pop("avisos", [])
     valido = _eixos.de_dict(ex)
+    if not valido:
+        raise ErroDeDados("não achei eixos com nome nessa área")
     valido["origem"] = "desenho"
+    if corpo.get("so_ler"):
+        return {"eixos": valido, "avisos": avisos, "geometria": None}
     g._atualizar(s, eixos=valido)
     geo = None
     try:
@@ -3319,6 +3324,56 @@ def gravar_eixos_do_desenho(s: str, corpo: dict) -> dict:
         avisos.append(str(e))
     return {"eixos": valido, "avisos": avisos + (geo["avisos"] if geo else []),
             "geometria": {k: geo[k] for k in ("vao", "comprimento", "espacamentos", "numeros", "letras")} if geo else None}
+
+
+def gravar_niveis_do_projeto(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/niveis {niveis: [{nome, z}]}: os níveis do projeto (CAD → Níveis…, a caixa de níveis da
+    Implantação), em ordem de cota. Antes só pelo pré-moldado (/api/premoldado/niveis, que só existe no dev)."""
+    lista = []
+    for n in corpo.get("niveis") or []:
+        if not isinstance(n, dict) or not str(n.get("nome") or "").strip():
+            continue
+        try:
+            z = float(str(n.get("z") if n.get("z") is not None else 0).replace(",", "."))
+        except ValueError:
+            raise ErroDeDados("o nível %s tem a cota %r, que não é número" % (n.get("nome"), n.get("z")))
+        lista.append({"nome": str(n["nome"]).strip()[:40], "z": z})
+    lista.sort(key=lambda n: n["z"])
+    _gerente()._atualizar(s, niveis=lista)
+    return {"ok": True, "niveis": lista}
+
+
+def estrutura_da_planta_3d(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/estrutura/3d {desenho, sincronizar}: os elementos lançados na planta (menu Estrutura, ou
+    a Implantação da Montagem) viram o 3D do projeto — com `sincronizar`, troca só as peças daquela planta (a planta e
+    o 3D ligados, a cada gravação do CAD). Antes só pelo pré-moldado, no dev."""
+    from nucleo3d import de_planta_estrutura as DPE
+    nome = corpo.get("desenho") or "planta-de-lançamento"
+    return DPE.gerar_no_projeto(_gerente(), s, nome, sincronia=bool(corpo.get("sincronizar")))
+
+
+def estrutura_do_3d_na_planta(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/estrutura/do3d {desenho}: o que mudou no 3D volta para a planta (R5)."""
+    from nucleo2d.desenho import Desenho
+    from nucleo3d import de_planta_estrutura as DPE
+    from nucleo3d.modelo import Documento
+    g = _gerente()
+    nome = corpo.get("desenho") or "planta-de-lançamento"
+    pj = g.ler(s)
+    des = Desenho.de_dict(g.abrir_desenho(s, nome))
+    if isinstance((des.metadados or {}).get("montagem"), dict):
+        raise ErroDeDados("na Montagem, a planta acompanha o 3D pela Implantação; a volta do 3D para os quadros ainda não existe")
+    m = g.abrir_modelo(s)
+    if not m:
+        raise ErroDeDados("o projeto não tem modelo 3D: use Estrutura → Gerar 3D da planta")
+    doc = Documento.de_dict(m)
+    r = DPE.planta_do_modelo(des, doc, pj.get("niveis") or [])
+    if r["alteracoes"]:
+        g.salvar_desenho(s, nome, des.dict())
+    if r["modelo_mudou"]:
+        g.salvar_modelo(s, doc.dict(), marco=True)
+    return {"ok": True, "alteracoes": r["alteracoes"], "novos": r["novos"], "sem_peca": r["sem_peca"],
+            "desenho": des.dict() if r["alteracoes"] else None}
 
 
 def dados_do_lancamento(s: str) -> dict:
@@ -3570,6 +3625,20 @@ def nova_revisao_da_original(s: str, corpo: dict) -> dict:
         return {"revisao": revs[-1], "resumo": resumo}
     finally:
         _fim_progresso(s)
+
+
+def ler_tesoura_colada(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/montagem/ler-tesoura {entidades, nome}: o desenho da tesoura colado numa elevação da
+    Montagem (web/cad/implantacao.js, "Tesoura…"), já na medida real (u ao longo do eixo, z a cota), lido como o quadro
+    de tesoura da leitura por quadros: o esqueleto (banzos, diagonais e montantes em linha de centro, o banzo em linha
+    dupla, a legenda dos perfis). {ok: False} quando não acha a tesoura — o CAD lê então as linhas como linhas de eixo."""
+    from nucleo3d import leitura_quadros as LQ
+    ents = [e for e in (corpo.get("entidades") or []) if isinstance(e, dict)]
+    q = {"id": "colada", "tipo": "tesoura", "nome": str(corpo.get("nome") or "T1"), "escala": 1, "x": 0.0, "y": 0.0}
+    lt, ap, el = LQ.ler_tesoura(q, ents)
+    if el is None or not lt.get("membros"):
+        return {"ok": False, "apontamentos": ap}
+    return {"ok": True, "leitura": lt, "x_esq": round(float(el.x_esq), 1), "y_base": round(float(el.y_base), 1), "apontamentos": ap}
 
 
 def gerar_3d_pelos_quadros(s: str, corpo: dict) -> dict:
@@ -4585,6 +4654,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gerar_3d_do_desenho(partes[0], partes[2], corpo))
                 if len(partes) == 4 and partes[1] == "desenhos" and partes[3] == "montar-pela-planta":
                     return self._json(montar_pela_planta(partes[0], partes[2], corpo))
+                if len(partes) == 3 and partes[1] == "montagem" and partes[2] == "ler-tesoura":
+                    return self._json(ler_tesoura_colada(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "montagem" and partes[2] == "ler":
                     return self._json(ler_quadros(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "montagem" and partes[2] == "gerar-3d":
@@ -4605,6 +4676,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(malha_de_eixos_projeto(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "eixos":
                     return self._json(gravar_eixos_do_desenho(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "niveis":
+                    return self._json(gravar_niveis_do_projeto(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "estrutura" and partes[2] == "3d":
+                    return self._json(estrutura_da_planta_3d(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "estrutura" and partes[2] == "do3d":
+                    return self._json(estrutura_do_3d_na_planta(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "estrutura":
                     return self._json(lancar_estrutura(partes[0], corpo))
                 if len(partes) == 3 and partes[1] == "lancamento" and partes[2] == "memorial":

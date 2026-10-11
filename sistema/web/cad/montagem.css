@@ -121,3 +121,23 @@ body.arrastando-quadro, body.arrastando-quadro * { cursor: nwse-resize !importan
   justify-content: center; padding: 0 12px; min-width: 96px; font-size: 12px; line-height: 1; white-space: nowrap; }
 .abas-projeto button:not(.on):not(.enviar-quadro) { background: color-mix(in srgb, var(--painel) 85%, transparent); }
 .abas-projeto button:disabled { opacity: .4; cursor: not-allowed; background: color-mix(in srgb, var(--painel) 85%, transparent); }
+
+/* A nova dinâmica (implantacao.js, 11/10): os botões no título da Implantação e da Elevação e a caixa dos níveis. */
+.quadro-botao {
+  font: inherit; font-size: 11px; line-height: 1.4; padding: 0 6px; cursor: pointer; color: var(--texto);
+  background: var(--campo-fundo); border: 1px solid var(--cor, var(--campo-borda)); border-radius: 3px;
+}
+.quadro-botao:hover { background: color-mix(in srgb, var(--cor, #dc2626) 18%, var(--campo-fundo)); }
+.quadro-niveis {
+  position: absolute; pointer-events: auto; padding: 4px 6px; font-size: 11.5px; color: var(--texto);
+  background: color-mix(in srgb, var(--painel) 90%, transparent); border: 1px solid #dc2626; border-radius: var(--raio-p);
+  --cor: #dc2626;
+}
+.quadro-niveis[hidden] { display: none; }
+.quadro-niveis-titulo { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
+.quadro-niveis-titulo b { color: #dc2626; font-weight: 600; }
+.quadro-niveis ol { list-style: none; margin: 0; padding: 0; }
+.quadro-niveis li { display: flex; justify-content: space-between; gap: 8px; padding: 1px 2px; cursor: pointer; border-radius: 2px; }
+.quadro-niveis li:hover { background: color-mix(in srgb, #dc2626 14%, transparent); }
+.quadro-niveis li span:last-child { font-family: var(--mono); color: var(--texto2); }
+.quadro-niveis .explica { color: var(--texto3); white-space: normal; font-size: 11px; }

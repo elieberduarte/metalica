@@ -72,8 +72,11 @@ def _juntar_tracejados(segs: List[dict]) -> List[dict]:
     for (_k, _o), ls in grupos.items():
         an = ls[0]["ang"]
         d = (math.cos(an), math.sin(an))
-        iv = sorted((min(t0, t1), max(t0, t1), l) for l in ls
-                    for t0, t1 in [(l["a"][0] * d[0] + l["a"][1] * d[1], l["b"][0] * d[0] + l["b"][1] * d[1])])
+        # a ordem só pelos trechos: dois traços iguais (a mesma linha duas vezes no DXF, o CD Bom Dia em 11/10) faziam
+        # o sorted comparar os dicionários e quebrar
+        iv = sorted(((min(t0, t1), max(t0, t1), l) for l in ls
+                     for t0, t1 in [(l["a"][0] * d[0] + l["a"][1] * d[1], l["b"][0] * d[0] + l["b"][1] * d[1])]),
+                    key=lambda x: (x[0], x[1]))
         atual = [iv[0][0], iv[0][1], iv[0][2]]
         trechos = []
         for t0, t1, l in iv[1:]:
@@ -412,15 +415,24 @@ _NOME_NUM = re.compile(r"^\d{1,3}'?$")
 _NOME_LETRA = re.compile(r"^[A-Z]{1,2}'?$")
 
 
-def eixos_do_desenho(des: Desenho) -> dict:
+def eixos_do_desenho(des: Desenho, qualquer_camada: bool = False) -> dict:
     """Os eixos pelas linhas da camada EIXO (ou EIXOS) do desenho, no formato de
     `nucleo3d.eixos`. As linhas se dividem em duas famílias de direção; o nome de cada
     eixo é o texto curto (1, 2… ou A, B…) na bolinha junto de uma das pontas. A família
     de números é a dos pórticos; sem nomes, é a família com mais linhas (empate: a de
-    linhas mais curtas, que atravessam o vão)."""
+    linhas mais curtas, que atravessam o vão).
+
+    `qualquer_camada` (a área da planta marcada pelo operador na Implantação da Montagem, 11/10): os eixos em qualquer
+    camada — as linhas compridas (um quarto da área ou mais) que têm o nome na ponta; o CD Bom Dia desenha os eixos na
+    camada "1" e os nomes ("01"…"17", A…D) na "24". O "01" vira "1"."""
     pedacos = []
+    minimo = 0.0
+    if qualquer_camada:
+        pts = [q for e in des.entidades.values() if isinstance(e, Linha) for q in (e.a, e.b)]
+        if pts:
+            minimo = 0.25 * max(max(q[0] for q in pts) - min(q[0] for q in pts), max(q[1] for q in pts) - min(q[1] for q in pts))
     for e in des.entidades.values():
-        if not _camada_de_eixo(e.camada):
+        if not qualquer_camada and not _camada_de_eixo(e.camada):
             continue
         if isinstance(e, Linha):
             a, b = e.a, e.b
@@ -429,7 +441,7 @@ def eixos_do_desenho(des: Desenho) -> dict:
         else:
             continue
         L = math.hypot(b[0] - a[0], b[1] - a[1])
-        if L <= 1e-9:
+        if L <= 1e-9 or L < minimo:
             continue
         pedacos.append({"a": tuple(a), "b": tuple(b), "L": L, "ang": math.atan2(b[1] - a[1], b[0] - a[0]) % math.pi,
                         "nome": str((e.atributos or {}).get("eixo") or "")})
@@ -448,6 +460,9 @@ def eixos_do_desenho(des: Desenho) -> dict:
     if len(na_planta) >= 4:
         linhas = na_planta
     if len(linhas) < 4:
+        if qualquer_camada:
+            raise ErroDeDados("nessa área há %d linha(s) comprida(s) que cruzam outras: são precisas ao menos duas em cada "
+                              "direção — marque a planta inteira dos eixos, com as bolinhas" % len(linhas))
         raise ErroDeDados("a camada EIXO tem %d linha(s) de eixo: são precisas ao menos duas em cada direção "
                           "(use Malha de eixos… ou desenhe as linhas na camada EIXO)." % len(linhas))
     # o nome do eixo: o texto curto da bolinha. O número de três algarismos só dentro de um círculo — as cotas em cm do
@@ -461,6 +476,8 @@ def eixos_do_desenho(des: Desenho) -> dict:
                    or _NOME_LETRA.match(e.texto.strip().upper()))]
     # nomes que não vieram gravados na linha: o texto curto junto de uma ponta
     raio = max(RAIO_BOLINHA * float(des.escala or 100.0) * 2.5, 600.0)
+    if qualquer_camada:
+        raio = max(raio, 0.1 * minimo)                    # na área marcada, a bolinha na escala do desenho dela
     for ln in linhas:
         if ln["nome"]:
             continue
@@ -470,7 +487,12 @@ def eixos_do_desenho(des: Desenho) -> dict:
                 d = math.hypot(t.posicao[0] - q[0], t.posicao[1] - q[1])
                 if d < dm:
                     melhor, dm = t.texto.strip().upper(), d
-        ln["nome"] = melhor
+        ln["nome"] = re.sub(r"^0+(?=\d)", "", melhor) if qualquer_camada else melhor
+    if qualquer_camada:
+        # em qualquer camada, eixo é a linha comprida com o nome na ponta (o contorno do prédio, as cotas não têm)
+        com_nome = [l for l in linhas if l["nome"]]
+        if len(com_nome) >= 4:
+            linhas = com_nome
 
     # duas famílias de direção
     def dif(a1, a2):

@@ -43,7 +43,7 @@ ELEVACOES = ("elev_frontal", "elev_lateral", "elev_fundos", "corte")
 ROTULO = {"locacao": "Locação", "tercas": "Posição das terças", "tesouras_pos": "Posição das tesouras",
           "elev_frontal": "Elevação frontal", "elev_lateral": "Elevação lateral", "elev_fundos": "Fundos",
           "corte": "Corte transversal", "tesoura": "Tesoura", "viga": "Viga treliçada",
-          "ligacoes": "Detalhes de ligação"}
+          "ligacoes": "Detalhes de ligação", "implantacao": "Implantação", "elevacao": "Elevação"}
 
 #: os quadros de peça treliçada com nome (a tesoura e a viga treliçada: viga painel, de transição, pergolado)
 COM_NOME = ("tesoura", "viga")

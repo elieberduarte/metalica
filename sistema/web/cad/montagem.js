@@ -27,9 +27,14 @@
 // Módulo à parte, pendurado no CAD já aberto (window.cad): desenha os quadros pelo gancho
 // `tela.aoDesenhar` e põe os controles (título, escala, nome, alça, "+ corte tesoura") por cima do canvas.
 
+//
+// A nova dinâmica (11/10, implantacao.js): o quadro Implantação no topo da folha, com os eixos da obra e os níveis, e as
+// Elevações de cada eixo (duplo clique no eixo) — a montagem por eixos que um ser humano opera.
+
 import { DESENHO_LANCAMENTO } from './lancamento.js';
 import { transformar, pontosDe, caixaDe, valorCota, novoId as idEntidade } from './nucleo/desenho2d.js';
 import { Ferramenta } from './ferramentas.js';
+import { MetodosImplantacao } from './implantacao.js';
 
 export const DESENHO_MONTAGEM = 'montagem';
 export const DESENHO_COMPLETO = 'detalhamento-completo';
@@ -38,7 +43,11 @@ export const MINIMO = [140, 100];        // o menor quadro (mm de papel)
 
 /** Os tipos de quadro: rótulo, escala inicial, tamanho inicial (mm de papel) e a linha da folha. */
 export const TIPOS = {
-  locacao:       { rotulo: 'Locação', escala: 100, w: 420, h: 297, linha: 0, cor: '#ca8a04', diz: 'pilares, eixos e cotas → chumbadores' },
+  // a nova dinâmica (11/10): a implantação com os eixos e os níveis, e uma elevação por eixo aberto — refeitas pelo
+  // programa (implantacao.js), na escala que cabe, até o operador escolher outra
+  implantacao:   { rotulo: 'Implantação', escala: 200, w: 420, h: 297, linha: -2, cor: '#dc2626', diz: 'os eixos da obra e os níveis: duplo clique num eixo abre a elevação dele' },
+  elevacao:      { rotulo: 'Elevação', escala: 100, w: 420, h: 210, linha: -1, cor: '#dc2626', diz: 'a elevação de um eixo: os eixos que o cruzam e os níveis', varios: true },
+  locacao:      { rotulo: 'Locação', escala: 100, w: 420, h: 297, linha: 0, cor: '#ca8a04', diz: 'pilares, eixos e cotas → chumbadores' },
   tercas:        { rotulo: 'Posição das terças', escala: 100, w: 420, h: 297, linha: 0, cor: '#ca8a04', diz: 'linhas das terças, siglas e a lista' },
   tesouras_pos:  { rotulo: 'Posição das tesouras', escala: 100, w: 420, h: 297, linha: 0, cor: '#ca8a04', diz: 'marcas T01, T02… e quantidades' },
   elev_frontal:  { rotulo: 'Elevação frontal', escala: 50, w: 297, h: 210, linha: 1, cor: '#0e7490', diz: 'vista frontal' },
@@ -54,7 +63,7 @@ export const TIPOS = {
 export const ESCALAS = [1, 2, 5, 10, 20, 25, 50, 75, 100, 125, 200, 250, 500];
 /** Os quadros de peça treliçada com nome (um por tipo de peça). */
 const COM_NOME = new Set(['tesoura', 'viga']);
-const ORDEM = ['locacao', 'tercas', 'tesouras_pos', 'elev_frontal', 'elev_lateral', 'elev_fundos', 'corte', 'tesoura', 'ligacoes'];
+const ORDEM = ['implantacao', 'locacao', 'tercas', 'tesouras_pos', 'elev_frontal', 'elev_lateral', 'elev_fundos', 'corte', 'tesoura', 'ligacoes'];
 
 let _seq = 0;
 const novoId = () => 'q' + Date.now().toString(36) + (_seq++).toString(36);
@@ -130,9 +139,10 @@ export function copiarParaQuadro(mont, quadroId, ents, { escala, kOriginal = 1, 
     q.envios = (q.envios || []).filter(v => v.id !== envioAntigo.id);
     substituir = false;
   }
-  if (substituir) { mont.entidades = mont.entidades.filter(e => (e.atributos || {}).quadro !== q.id); q.envios = []; }
+  // o que o programa desenha no quadro (os eixos e os níveis da elevação) fica
+  if (substituir) { mont.entidades = mont.entidades.filter(e => (e.atributos || {}).quadro !== q.id || (e.atributos || {}).gerado); q.envios = []; }
   // sem substituir, o desenho novo entra à direita do que já está no quadro (a lista ao lado da planta)
-  const jaTem = mont.entidades.filter(e => (e.atributos || {}).quadro === q.id).flatMap(e => pontosDe(e));
+  const jaTem = mont.entidades.filter(e => (e.atributos || {}).quadro === q.id && !(e.atributos || {}).gerado).flatMap(e => pontosDe(e));
   const dxJa = envioAntigo ? Math.max(0, (envioAntigo.ox ?? MARGEM.lado) - MARGEM.lado)
     : jaTem.length ? Math.max(0, caixaDe(jaTem)[1][0] - q.x - MARGEM.lado + 10) : 0;
   // o quadro cresce se o desenho não cabe (na escala do quadro)
@@ -279,6 +289,10 @@ class Montagem {
     };
     window.addEventListener('pointermove', (ev) => this._mover(ev));
     window.addEventListener('pointerup', (ev) => this._soltar(ev));
+    // duplo clique num eixo da implantação (ou num que cruza a elevação) abre a elevação dele; Ctrl+C na Original e
+    // Ctrl+V na elevação: a tesoura do desenho do cliente por dois pontos de referência
+    this._ligarDuploClique();
+    this._ligarCopiarColar();
     // o CAD já abriu o desenho antes de a montagem se pendurar nele (F5 com ?desenho=montagem)
     if (this.ativa) this.enquadrar();
     this.aoTrocar();
@@ -324,6 +338,7 @@ class Montagem {
     this.naOriginal = atual === 'original';
     this.botaoEnviar.hidden = !this.naOriginal || !nomes.has(DESENHO_MONTAGEM);   // só com a Montagem para onde enviar
     this.botaoRevisao.hidden = !this.naOriginal || !nomes.has(DESENHO_MONTAGEM);
+    if (this.botaoCopiar) this.botaoCopiar.hidden = !this.naOriginal || !nomes.has(DESENHO_MONTAGEM);
     const revs = (mm && mm.revisoes) || [];
     const rev = revs.find(r => r.nome === this.original);
     this.abas.querySelector('[data-aba=original]').textContent = rev ? `Original ${rev.rotulo}` : 'Original';
@@ -336,6 +351,13 @@ class Montagem {
     if (this.cad.nomeDesenho === DESENHO_MONTAGEM && !this.m) {
       this.cad.doc.metadados = { ...(this.cad.doc.metadados || {}), montagem: montagemPadrao() };
       this._gravar();
+    }
+    // a implantação que ainda não foi desenhada (a montagem nova): o quadro com o convite aos eixos e a caixa dos níveis
+    if (this.ativa) {
+      this._ouvirElementos();
+      this._renovarCaixasNiveis();
+      const qi = this._quadroImplantacao();
+      if (qi && !qi.mapa) await this.refazerQuadrosDaObra([qi]);
     }
     this.cad.tela.pedirQuadro();
   }
@@ -408,9 +430,10 @@ class Montagem {
     if (!ents.length) { this.cad.aviso('Nada inteiro dentro dessa área. Marque a área envolvendo o desenho todo.', 'atencao'); this.cad.ativarFerramenta('selecionar'); return; }
     const mont = await this._montagemJSON();
     const m = mont.metadados.montagem;
-    const rotulo = (q) => (TIPOS[q.tipo] || TIPOS.tesoura).rotulo + (COM_NOME.has(q.tipo) ? ' ' + (q.nome || '(sem nome)') : '');
+    const rotulo = (q) => (TIPOS[q.tipo] || TIPOS.tesoura).rotulo + (COM_NOME.has(q.tipo) ? ' ' + (q.nome || '(sem nome)') : q.tipo === 'elevacao' ? ' ' + q.eixo : '');
     const selQ = el('select', { id: 'enviar-quadro-destino' },
-      m.quadros.map(q => el('option', { value: q.id }, rotulo(q) + (q.fonte ? '  · já tem desenho' : ''))),
+      // a implantação é desenhada pelo programa (os eixos): não recebe o desenho do cliente
+      m.quadros.filter(q => q.tipo !== 'implantacao').map(q =>el('option', { value: q.id }, rotulo(q) + (q.fonte ? '  · já tem desenho' : ''))),
       el('option', { value: '+tesoura' }, '+ nova tesoura…'),
       el('option', { value: '+viga' }, '+ nova viga treliçada (viga painel, transição, pergolado)…'));
     const nome = el('input', { id: 'enviar-quadro-nome', placeholder: 'T03', size: 8, spellcheck: 'false', hidden: true });
@@ -424,7 +447,7 @@ class Montagem {
     };
     selQ.addEventListener('change', sincronizar);
     // o primeiro quadro ainda vazio é a sugestão
-    const vazio = m.quadros.find(q => !q.fonte);
+    const vazio = m.quadros.find(q => !q.fonte && q.tipo !== 'implantacao');
     if (vazio) selQ.value = vazio.id;
     sincronizar();
     const corpo = el('div', { class: 'enviar-quadro-dialogo' },
@@ -505,6 +528,7 @@ class Montagem {
       ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
     }
     ctx.restore();
+    this._desenharSombras();
     this._controles(ret);
   }
 
@@ -537,8 +561,11 @@ class Montagem {
       const [x, y, w, h] = ret(q);
       let c = this.camada.querySelector(`[data-quadro="${q.id}"]`);
       if (!c) {
-        const escala = el('select', { class: 'quadro-escala', title: 'A escala do desenho dentro deste quadro: o programa lê em milímetros reais por ela',
-          onchange: (ev) => { q.escala = Number(ev.target.value); this._gravar(); } },
+        const daObra = q.tipo === 'implantacao' || q.tipo === 'elevacao';
+        const escala = el('select', { class: 'quadro-escala', title: daObra ? 'A escala em que o programa desenha este quadro (escolhida para caber; escolher outra fixa esta)' : 'A escala do desenho dentro deste quadro: o programa lê em milímetros reais por ela',
+          // a implantação e a elevação são desenhadas pelo programa: a escala nova as redesenha, e o que foi posto nelas
+          // vai junto para o mesmo lugar real
+          onchange: (ev) => { if (daObra) { q.escala = Number(ev.target.value); q.escala_auto = false; this.refazerQuadrosDaObra([q]); return; } q.escala = Number(ev.target.value); this._gravar(); } },
           ESCALAS.map(e => el('option', { value: e }, '1:' + e)));
         const nome = COM_NOME.has(q.tipo)
           ? el('input', { class: 'quadro-nome', placeholder: q.tipo === 'viga' ? 'VP1' : 'T01', value: q.nome || '', spellcheck: 'false', size: 7,
@@ -551,6 +578,7 @@ class Montagem {
           : null;
         c = el('div', { class: 'quadro-titulo', 'data-quadro': q.id, 'data-tipo': q.tipo, style: `--cor:${t.cor}`, title: t.diz },
           el('b', {}, t.rotulo), nome ? ' · ' : null, nome, ' · ', escala, tirar);
+        this._extrasDoTitulo(q, c);
         const alca = el('div', { class: 'quadro-alca', 'data-alca': q.id, title: 'Arraste para ajustar o tamanho do quadro: os outros se acomodam',
           onpointerdown: (ev) => this._pegar(ev, q) });
         this.camada.append(c, alca);
@@ -567,10 +595,11 @@ class Montagem {
       tam.style.left = (x + w - 4) + 'px'; tam.style.top = (y + h - 4) + 'px';
       tam.hidden = w < 120 || h < 50;
       if (q.tipo === 'ligacoes') this._escolhas(q, x, y, w, h);
+      if (q.tipo === 'implantacao') this._caixaNiveis(q, x, y, w, h);
       vivos.add(q.id);
     }
-    for (const n of [...this.camada.querySelectorAll('[data-quadro],[data-alca],[data-tamanho],[data-escolhas]')]) {
-      const id = n.dataset.quadro || n.dataset.alca || n.dataset.tamanho || n.dataset.escolhas;
+    for (const n of [...this.camada.querySelectorAll('[data-quadro],[data-alca],[data-tamanho],[data-escolhas],[data-niveis]')]) {
+      const id = n.dataset.quadro || n.dataset.alca || n.dataset.tamanho || n.dataset.escolhas || n.dataset.niveis;
       if (!vivos.has(id)) n.remove();
     }
     let mais = this.camada.querySelector('.quadro-mais');
@@ -859,6 +888,8 @@ class Montagem {
     const a = this.arrasto;
     this.arrasto = null;
     document.body.classList.remove('arrastando-quadro');
+    // a implantação e a elevação, refeitas pelo programa, guardam o tamanho que o operador deu (o mínimo delas)
+    if (a.q.tipo === 'implantacao' || a.q.tipo === 'elevacao') { a.q.ajuste_w = a.q.w; a.q.ajuste_h = a.q.h; }
     // o que está dentro dos quadros que andaram anda junto (o arrumar já mudou x, y: compara com o início)
     const desl = {};
     for (const s of a.antes) {
@@ -907,6 +938,13 @@ class Montagem {
     clearTimeout(this._timer); this._timer = null;
     await this.cad.salvar({ avisar: false });
   }
+}
+
+// a implantação e as elevações (implantacao.js)
+for (const k of Object.getOwnPropertyNames(MetodosImplantacao.prototype)) {
+  if (k === 'constructor') continue;
+  if (Object.prototype.hasOwnProperty.call(Montagem.prototype, k)) throw new Error(`método repetido na Montagem: ${k}`);
+  Montagem.prototype[k] = MetodosImplantacao.prototype[k];
 }
 
 function iniciar() {
