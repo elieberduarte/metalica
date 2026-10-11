@@ -4057,7 +4057,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json_pronto(json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8"), status)
 
     # -- a licença (licenca.py, 11/10/2026): no programa instalado, sem licença válida só a tela de ativação abre --
-    _LIVRES_SEM_LICENCA = ("/ativar", "/api/licenca", "/api/vivo", "/api/fechou", "/api/versao", "/favicon.ico", "/estilo.css")
+    _LIVRES_SEM_LICENCA = ("/ativar", "/api/licenca", "/api/vivo", "/api/fechou", "/api/versao", "/favicon.ico", "/estilo.css", "/vivo.js")
 
     def _licenca_get(self, rota: str) -> bool:
         """as rotas GET da licença e a trava; True = o pedido já foi respondido"""
