@@ -167,6 +167,29 @@ def _fundir_perto(vals: Sequence[float], tol: float = FUNDIR_NA_CADEIA) -> List[
 
 
 # ============================================================ papel
+def simbolo_solda(p, esc: float, x_alvo: float, y_alvo: float, x_ref: float, y_ref: float, perna: float,
+                  comprimento: float = 0.0, ambos_lados: bool = True, camada: str = "SOLDA") -> None:
+    """Símbolo de solda de filete AWS A2.4 na célula (auditoria D3, 11/10/2026): a seta até o cordão, a linha de
+    referência e o triângulo — embaixo da linha é o lado da seta; com `ambos_lados`, um em cima e um embaixo (o filete
+    dos dois lados da nervura) —, a perna à esquerda do triângulo e o comprimento à direita (perna-comprimento, como a
+    norma escreve). Medidas em mm de papel × `esc`, como o resto da célula (o mesmo desenho de saida/desenhos._solda)."""
+    p.linha(x_alvo, y_alvo, x_ref, y_ref, camada)
+    ang = math.degrees(math.atan2(y_alvo - y_ref, x_alvo - x_ref))
+    p.seta(x_alvo, y_alvo, ang, 2.5 * esc, camada)
+    direita = x_ref >= x_alvo
+    comp = 22.0 * esc * (1 if direita else -1)
+    p.linha(x_ref, y_ref, x_ref + comp, y_ref, camada)                       # a linha de referência
+    bx = x_ref + comp * 0.42
+    larg, tri = abs(comp) * 0.16, 3.2 * esc
+    for lado in ((-1.0, 1.0) if ambos_lados else (-1.0,)):                    # −1: embaixo (o lado da seta)
+        p.solido((bx, y_ref), (bx + larg, y_ref), (bx, y_ref + tri * lado), camada=camada)
+    h = 2.0 * esc
+    y_txt = y_ref - (tri + h + 0.6 * esc if not ambos_lados else -0.6 * esc)
+    p.texto(bx - 0.8 * esc, y_txt, _mm(perna), h, camada, alinhamento="direita")
+    if comprimento:
+        p.texto(bx + larg + 0.8 * esc, y_txt, _mm(comprimento), h, camada)
+
+
 class _Papel:
     """Adapta a API de `saida.dxf.Desenho` (linha, polilinha, círculo, arco, texto, seta)
     às entidades do CAD, para reaproveitar a silhueta e os furos de `saida.detalhamento`.

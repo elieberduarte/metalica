@@ -602,6 +602,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         categorias_lista.append(c)
 
     conjuntos = _conjuntos(pecas or [], por_marca, nomes_conjuntos)
+    soldas = _soldas(pecas or [], por_marca)
     ressalvas = [{"marca": p.marca, "perfil": p.perfil, "observacoes": list(p.observacoes)} for p in lista if p.observacoes]
     from saida.dobras import com_bitola_e_mm
     # o nome do perfil para quem lê, com a bitola e a espessura em mm (pedido do usuário, 05/10: "sempre coloque
@@ -625,10 +626,12 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         "totais": {"posicoes": len(linhas), "pecas": sum(li["quantidade"] for li in linhas),
                    "peso": round(peso_total, 1), "conjuntos": len(conjuntos),
                    "acessorios": sum(acessorios.values()) if acessorios else 0,
+                   "solda_m": round(sum(sd["m_total"] for sd in soldas), 2),
                    "categorias": categorias_lista},
         "posicoes": linhas, "perfis": lista_perfis, "chapas": lista_chapas, "telhas": lista_telhas,
         "dobrados": dobrados,
         "conjuntos": conjuntos,
+        "soldas": soldas,
         "acessorios": [{"nome": k, "quantidade": v} for k, v in sorted((acessorios or {}).items())],
         "ressalvas": ressalvas,
     }
@@ -756,6 +759,34 @@ def _posicoes_texto(g: dict, limite: int = 40) -> str:
     return " ".join(nomes)
 
 
+def _soldas(pecas, por_marca: dict) -> list:
+    """As soldas das peças montadas soldadas (auditoria D3, 11/10/2026): os cordões de filete de cada montagem (o mesmo
+    levantamento do desenho, nucleo2d/detalhe/montagens.cordoes_de_solda), a perna e os metros por unidade e no total —
+    filete dos dois lados conta duas vezes o comprimento."""
+    if not pecas:
+        return []
+    try:
+        from nucleo2d.detalhe.montagens import grupos_montados, cordoes_de_solda
+        nome_de = lambda m: getattr(por_marca.get(m), "nome", "") or m                          # noqa: E731
+        grupos = [g for g in grupos_montados(pecas, (), nome_de) if g["tipo"] == "soldadas"]
+    except Exception:                                    # noqa: BLE001 — sem o levantamento, a lista sai sem as soldas
+        return []
+    por_id = {e.id: e for e in pecas}
+    fora = []
+    for g in grupos:
+        cs = cordoes_de_solda(g, por_id)
+        if not cs:
+            continue
+        m_un = sum(c["comprimento"] * c["lados"] for c in cs) / 1000.0
+        fora.append({"montagem": " + ".join(dict.fromkeys(g["chave"])), "instancias": g["instancias"],
+                     "cordoes": [{"pecas": " × ".join(n for n in c["nomes"] if n), "perna_mm": c["perna"],
+                                  "comprimento_mm": c["comprimento"], "lados": c["lados"], "tipo": c["tipo"],
+                                  "local": c["local"]} for c in cs],
+                     "pernas": sorted({c["perna"] for c in cs}),
+                     "m_unidade": round(m_un, 3), "m_total": round(m_un * g["instancias"], 2)})
+    return fora
+
+
 def _csv(caminho: str, colunas: Sequence[str], linhas: Sequence[Sequence]) -> str:
     with open(caminho, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f, delimiter=";", lineterminator="\r\n")
@@ -832,6 +863,13 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
                                   "Peso unitario (kg)", "Peso total (kg)"],
                                  [[c.get("nome", ""), c["marca"], c["categoria"], c["instancias"], c["pecas_unidade"], c["composicao_texto"],
                                    _num_csv(c["peso_unitario"]), _num_csv(c["peso_total"])] for c in lista["conjuntos"]])
+    if lista.get("soldas"):
+        arquivos["soldas"] = _csv(os.path.join(pasta, "soldas.csv"),
+                                  ["Montagem", "Instancias", "Pecas", "Tipo", "Perna (mm)", "Lados", "Comprimento (mm)",
+                                   "Local", "Cordao por unidade (m)", "Cordao total (m)"],
+                                  [[sd["montagem"], sd["instancias"], c["pecas"], c["tipo"], _num_csv(c["perna_mm"], 1), c["lados"],
+                                    _num_csv(c["comprimento_mm"], 1), c["local"], _num_csv(sd["m_unidade"], 3), _num_csv(sd["m_total"], 2)]
+                                   for sd in lista["soldas"] for c in sd["cordoes"]])
     if lista.get("pre_moldados"):
         arquivos["pre_moldados"] = _csv(os.path.join(pasta, "pre-moldados.csv"),
                                         ["Nome", "Material", "Categoria", "Tipo IFC", "Pecas", "Comprimento (m)", "Volume (m3)",
@@ -973,6 +1011,15 @@ def corpo_html(lista: dict) -> str:
                                 (c["instancias"], "c"), (c["pecas_unidade"], "c"), (c["composicao_texto"], "l"),
                                 (_n(c["peso_unitario"], 1), "r"), (_n(c["peso_total"], 1), "r b")] for c in lista["conjuntos"]],
                               larguras=["8%", "8%", "11%", "8%", "8%", "37%", "10%", "10%"]))
+    if lista.get("soldas"):
+        partes.append(_tabela("Soldas das peças montadas — filete AWS, perna mínima da NBR 8800:2024 (Tabela 11), na fábrica",
+                              [("Montagem", "l"), ("Instâncias", "c"), ("Cordões (peças × perna × comprimento × lados)", "l"),
+                               ("Cordão/un. (m)", "r"), ("Cordão total (m)", "r")],
+                              [[(sd["montagem"], "l b"), (sd["instancias"], "c"),
+                                ("; ".join("%s: %s mm × %s mm × %d" % (c["pecas"], _n(c["perna_mm"], 0), _n(c["comprimento_mm"], 0),
+                                                                        c["lados"]) for c in sd["cordoes"]), "l"),
+                                (_n(sd["m_unidade"], 2), "r"), (_n(sd["m_total"], 1), "r b")] for sd in lista["soldas"]],
+                              larguras=["16%", "9%", "51%", "12%", "12%"]))
     partes.append(_tabela("Quadro 6 — Romaneio por posição",
                           [("Nome", "l"), ("Posição", "l"), ("Tipo", "l"), ("Perfil / chapa", "l"), ("Material", "l"), ("Qtd", "c"), ("Compr. (mm)", "r"),
                            ("Larg. (mm)", "r"), ("Esp. (mm)", "r"), ("Furos", "l"), ("Parafusos", "l"), ("Peso un. (kg)", "r"), ("Peso tot. (kg)", "r"), ("Conjuntos", "l")],

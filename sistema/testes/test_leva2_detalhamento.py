@@ -147,3 +147,39 @@ def test_d9_nomes_guardados_entre_um_detalhar_e_outro():
     # a "b" saiu, a "d" entrou: as que ficaram mantêm o número, a nova vai depois do maior
     assert N(["c", "a", "d"], {"a": "T1", "b": "T2", "c": "T3"}, "T") == {"c": "T3", "a": "T1", "d": "T4"}
     assert N(["x", "y"], {"x": "S.T.4", "y": "lixo"}, "S.T.") == {"x": "S.T.4", "y": "S.T.5"}
+
+
+# ------------------------------------------------------------------ rodada 3: D3 (11/10/2026)
+def _t_soldado():
+    """chapa 200 × 100 × 10 deitada e uma nervura de 100 × 80 × 6 em pé no meio dela: um T, filete dos dois lados"""
+    base = _solido("PLATE 200x100x10", "IfcPlate", *_caixa_solida(200, 100, 10), "P1", "S1", "PLATE 200x100x10")
+    alma = _solido("PLATE 100x80x6", "IfcPlate", *_caixa_solida(100, 6, 80, dx=50, dy=47, dz=10), "P2", "S1", "PLATE 100x80x6")
+    return base, alma
+
+
+def test_d3_cordao_do_t_pela_parte_menos_espessa():
+    from nucleo2d.detalhe.montagens import cordoes_de_solda
+    base, alma = _t_soldado()
+    g = {"tipo": "soldadas", "pecas": [base.id, alma.id], "_nomes": {base.id: "CH1", alma.id: "CH2"}}
+    cs = cordoes_de_solda(g, {base.id: base, alma.id: alma})
+    assert len(cs) == 1
+    c = cs[0]
+    assert abs(c["comprimento"] - 100.0) < 0.6 and c["lados"] == 2
+    assert c["perna"] == 3.0                     # a menos espessa (6 mm) → 3 mm (NBR 8800:2024, Tabela 11)
+    assert c["nomes"] == ("CH1", "CH2")
+
+
+def test_d3_perna_minima_da_tabela_11():
+    from nucleo import materiais as mat
+    assert [mat.perna_minima(t / 10) * 10 for t in (6.3, 8.0, 12.5, 16.0, 19.0, 25.0)] == [3.0, 5.0, 5.0, 6.0, 6.0, 8.0]
+
+
+def test_d3_simbolo_de_solda_na_camada_solda():
+    from nucleo2d.detalhe.base import _Papel, simbolo_solda
+    d = Desenho()
+    p = _Papel(d, {}, 0.0, 0.0)
+    simbolo_solda(p, 10.0, 0.0, 0.0, 50.0, 80.0, 3.0, 100.0)
+    ents = list(d.entidades.values())
+    assert ents and all(e.camada == "SOLDA" for e in ents)
+    assert sorted(e.texto for e in ents if isinstance(e, Texto)) == ["100", "3"]
+    assert sum(1 for e in ents if getattr(e, "fechada", False)) == 2          # os dois triângulos: filete dos dois lados

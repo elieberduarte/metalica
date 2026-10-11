@@ -24,7 +24,7 @@ from nucleo2d import vistas as _vistas
 from nucleo2d.desenho import Desenho
 from saida.detalhamento import _autovetores, _ordem_natural
 from nucleo2d.detalhe.base import (_marcas, _dot, _sub, _norm, _cruz, _caixa, _eh_redonda_perfil, _Papel,
-                                   _registrar_camadas_de_pecas)
+                                   _registrar_camadas_de_pecas, simbolo_solda)
 
 #: Chapa maior que isto (mm) não entra em montagem soldada: é chapa de nó, não peça miúda.
 MAIOR_CHAPA_MONTAGEM = 600.0
@@ -170,6 +170,60 @@ def grupos_montados(pecas: Sequence[Solido], fixadores: Sequence[Solido], nome_d
 def _eixos_da_chapa(e):
     c, pca = _autovetores(e.vertices)
     return c, [_norm(tuple(a)) for a in pca]
+
+
+def _espessura_na(e, n) -> float:
+    ws = [_dot(q, n) for q in e.vertices]
+    return max(ws) - min(ws)
+
+
+def _cordao(base, alma) -> Optional[dict]:
+    """O filete em T: a borda da `alma` encostada na face da `base` (as chapas perpendiculares) — a linha do encontro,
+    o comprimento comum às duas e a perna mínima da NBR 8800:2024 (Tabela 11) pela parte menos espessa."""
+    c_a, (_, _, n_a) = _eixos_da_chapa(base)
+    c_b, (_, _, n_b) = _eixos_da_chapa(alma)
+    if abs(_dot(n_a, n_b)) >= 0.3:
+        return None                                      # paralelas: sobreposição ou topo — não é o T
+    t_a, t_b = _espessura_na(base, n_a), _espessura_na(alma, n_b)
+    perto = [q for q in alma.vertices if abs(abs(_dot(_sub(q, c_a), n_a)) - t_a / 2.0) <= 1.5]
+    if len(perto) < 2:
+        return None
+    d = _norm(_cruz(n_a, n_b))
+    s_b = [_dot(q, d) for q in perto]
+    s_a = [_dot(q, d) for q in base.vertices]
+    lo, hi = max(min(s_b), min(s_a)), min(max(s_b), max(s_a))
+    if hi - lo < 5.0:
+        return None
+    meio = tuple(sum(q[j] for q in perto) / len(perto) for j in range(3))
+    s_m = _dot(meio, d)
+    p0 = tuple(meio[j] + d[j] * (lo - s_m) for j in range(3))
+    p1 = tuple(meio[j] + d[j] * (hi - s_m) for j in range(3))
+    from nucleo import materiais as _mat
+    t_min = min(t_a, t_b)
+    perna = _mat.perna_minima(t_min / 10.0) * 10.0
+    if t_min < perna:
+        perna = t_min                                    # a chapa fina: a perna é a própria chapa (6.2.6.2.2)
+    return {"base": base.id, "alma": alma.id, "p0": p0, "p1": p1, "comprimento": round(hi - lo, 1),
+            "perna": round(perna, 1), "lados": 2, "tipo": "filete", "local": "fábrica", "espessuras": (round(t_a, 2), round(t_b, 2))}
+
+
+def cordoes_de_solda(grupo: dict, pecas_por_id: dict) -> List[dict]:
+    """Os cordões de solda de uma peça montada soldada (auditoria D3, 11/10/2026): cada par de chapas que se tocam em T
+    (a nervura na chapa do suporte de terça) ganha um filete dos dois lados, com o comprimento do encontro e a perna
+    mínima da norma. Sobreposição e topo (chapas paralelas) ficam de fora por ora."""
+    if grupo.get("tipo") != "soldadas":
+        return []
+    chapas = [pecas_por_id[i] for i in grupo.get("pecas") or [] if i in pecas_por_id and _eh_chapa(pecas_por_id[i])]
+    fora = []
+    for i, a in enumerate(chapas):
+        for b in chapas[i + 1:]:
+            if not _tocam(_caixa(a), _caixa(b), FOLGA_CONTATO):
+                continue
+            c = _cordao(a, b) or _cordao(b, a)
+            if c:
+                c["nomes"] = (grupo.get("_nomes", {}).get(c["base"], ""), grupo.get("_nomes", {}).get(c["alma"], ""))
+                fora.append(c)
+    return fora
 
 
 def _furos_na_vista(chapa, origem, u, v, u0, v0, w) -> List[Tuple[float, float]]:
@@ -361,6 +415,14 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
                     x_t = -6.0 * esc
                     p.texto(x_t, y_t - h / 2, nome, h, "TEXTO", alinhamento="direita")
                     p.linha(x_t + 1.0 * esc, y_t, ax, ay, "COTA")
+        if k == 0 and grupo["tipo"] == "soldadas":
+            # a solda (D3, 11/10): o símbolo AWS de cada cordão, com a seta no meio dele e a linha de referência acima
+            # da peça, um degrau por cordão — a legenda sobe junto (as caixas pegam os extremos)
+            for j, cd in enumerate(cordoes_de_solda(grupo, {e.id: e for e in solidos})):
+                mx = sum(_dot(_sub(cd[q], origem), u) for q in ("p0", "p1")) / 2.0 - u0
+                my = sum(_dot(_sub(cd[q], origem), v) for q in ("p0", "p1")) / 2.0 - v0
+                simbolo_solda(p, esc, mx, my, mx + 10.0 * esc, alt + (10.0 + 9.0 * j) * esc, cd["perna"], cd["comprimento"],
+                              ambos_lados=cd["lados"] == 2)
         p.texto(larg / 2, -(24.0 if k < 2 else 4.0) * esc, rot, 2.2 * esc, "TEXTO", alinhamento="centro")
         caixas.append(p.extremos)
         caixas.append((x, dy, x + larg, dy + alt))
