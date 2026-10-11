@@ -78,6 +78,9 @@
   .verif .uso-grande { font-size: 22px; font-weight: 800; min-width: 64px; text-align: center; } .verif .uso-grande.menor { font-size: 15px; }
   table.vt td { white-space: normal; text-align: left; vertical-align: top; } table.vt td:first-child { color: var(--ae-sub); width: 78px; }
   .g-ok { color: #1e8e4e; font-weight: 600; } .g-ruim { color: #c0392b; font-weight: 600; }
+  table.comp td { white-space: normal; } table.comp input { width: 64px; text-align: right; } table.comp td.n { text-align: right; white-space: nowrap; }
+  table.comp .dif { min-width: 48px; text-align: right; font-weight: 600; } .g-medio { color: #b26a00; font-weight: 600; }
+  #comparacao h4 { margin: 10px 0 2px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -122,6 +125,7 @@
     <details><summary>Vento e cargas</summary><div id="vento"></div></details>
     <details><summary>Equilíbrio dos casos</summary><div id="equilibrio"></div></details>
     <details open><summary>Avisos e hipóteses</summary><div id="avisos"></div></details>
+    <details id="det-comparacao"><summary>Memorial e comparação com o engenheiro</summary><div id="comparacao"></div></details>
   </aside>
   <main id="palco">
     <canvas id="tela"></canvas>

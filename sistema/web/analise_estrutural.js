@@ -1028,7 +1028,29 @@ function caixaDasTrocas() {
       const [f, p0] = k.split('|');
       return el('div', {}, `${ROTULO_PAPEL[f] || f}: ${p0} → ${novo} `,
         el('button', { type: 'button', class: 'sec mini', texto: 'desfazer', onclick: () => { const t2 = trocasAtuais(); delete t2[k]; calcular({ trocas_perfil: t2 }); } }));
-    })) : '';
+    }),
+    el('div', { style: 'margin-top:6px' }, el('button', { type: 'button', class: 'prim mini', texto: 'Aplicar no modelo e na planta…',
+      title: 'Grava os perfis novos no modelo 3D, na planta de lançamento e na sanfona; depois calcula de novo', onclick: (ev) => aplicarTrocas(ev.currentTarget) }))) : '';
+}
+
+// as trocas de verdade (etapa 6, 11/10; nucleo3d/trocas_perfil.py): o modelo 3D, a planta de lançamento e a sanfona ganham os
+// perfis novos; a planta é copiada antes (analise/antes-das-trocas-…) e o modelo fica no histórico. Depois calcula de novo
+async function aplicarTrocas(botao) {
+  const lista = Object.entries(trocasAtuais()).map(([k, v]) => `• ${k.replace('|', ' ')} → ${v}`).join('\n');
+  if (!confirm(`Aplicar estas trocas no modelo 3D e na planta de lançamento?\n\n${lista}\n\nA planta é copiada antes (pasta analise do projeto) e o modelo fica no histórico. Depois a estrutura é calculada de novo.`)) return;
+  const antes = botao.textContent; botao.textContent = 'Aplicando…'; botao.disabled = true;
+  try {
+    const r = await fetch(API + '/aplicar-trocas', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: '{}' });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+    const par = j.parametros || {};
+    const extra = { trocas_perfil: par.trocas_perfil || {} };
+    if (par.perfil_sanfona) extra.perfil_sanfona = par.perfil_sanfona;     // o campo da tela ainda tem o antigo
+    for (const k of Object.keys(extra)) { const i = document.querySelector(`#premissas [data-k="${k}"]`); if (i && typeof extra[k] === 'string') i.value = extra[k]; }
+    alert('Aplicado:\n' + j.feitas.join('\n') + (j.copia_da_planta ? `\n\nCópia da planta de antes: ${j.copia_da_planta}` : '') + '\n\nCalculando de novo…');
+    await calcular(extra);
+  } catch (e) { alert('Não foi possível aplicar as trocas: ' + e.message); }
+  finally { botao.textContent = antes; botao.disabled = false; }
 }
 
 // o ranking pela verificação da norma: as peças de maior uso e o pior de cada grupo (a troca de perfil é por grupo)
@@ -1504,10 +1526,116 @@ function aplicar(dados) {
   bb.getCenter(centro); raio = Math.max(1000, bb.getSize(new THREE.Vector3()).length() / 2);
   caixaModelo = bb.clone();
   montarControles(); painelRanking(); painelSegunda(); painelReacoes(); painelAncoragem(); painelBases(); painelCarrinho(); painelLigacoes(); painelVento(); painelEquilibrio(); painelAvisos(); painelPeca();
+  COMP = null; if ($('#det-comparacao').open) painelComparacao(true);     // os nossos números mudam a cada cálculo
   if (!aplicar._vista) { vista('iso'); aplicar._vista = true; }
   desenhar();
   lerNomes();
 }
+
+// o memorial da análise e o quadro de comparação com o engenheiro (etapa 6, 11/10; saida/memorial_analise.py): os nossos
+// números (kN, kN·m) ao lado dos dele, digitados aqui e gravados no projeto (analise/comparacao.json); a diferença é
+// (nosso − dele) ÷ dele. O quadro só carrega quando o painel abre
+let COMP = null, compGravar = null;
+const TF_KN = 9.80665;
+function numeroDigitado(t) {
+  let s = String(t || '').trim().replace(/\s/g, '').replace('−', '-');
+  if (!s) return null;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const v = Number(s);
+  return isFinite(v) ? v : null;
+}
+function naUnidade(v, un) { return (un === 'F' || un === 'M') && COMP.comparacao.unidade === 'tf' && typeof v === 'number' ? v / TF_KN : v; }
+function rotuloUn(un) { const u = COMP.comparacao.unidade; return { F: u, M: u + '·m', '%': '%', mm: 'mm' }[un] || ''; }
+function difHtml(ln, texto) {
+  if (!texto) return '';
+  const nosso = naUnidade(ln.nosso, ln.un);
+  if (ln.un === 'txt') {
+    const igual = String(texto).replace(/\s/g, '').toLowerCase() === String(nosso).replace(/\s/g, '').toLowerCase();
+    return igual ? '<span class="g-ok">igual</span>' : '<span class="g-ruim">diferente</span>';
+  }
+  const dele = numeroDigitado(texto);
+  if (dele === null || Math.abs(dele) < 1e-9 || typeof nosso !== 'number') return '';
+  const d = (nosso - dele) / Math.abs(dele);
+  const cls = Math.abs(d) <= 0.05 ? 'g-ok' : Math.abs(d) <= 0.15 ? 'g-medio' : 'g-ruim';
+  return `<span class="${cls}">${d > 0 ? '+' : ''}${nf(d * 100, 1)}%</span>`;
+}
+function gravarComparacao(mudanca) {
+  const antes = compGravar || { valores: {} };
+  compGravar = { ...antes, ...mudanca, valores: { ...antes.valores, ...(mudanca.valores || {}) } };
+  clearTimeout(gravarComparacao._t);
+  gravarComparacao._t = setTimeout(async () => {
+    const corpo = compGravar; compGravar = null;
+    const est = () => $('#comp-estado');
+    try {
+      const r = await fetch(API + '/comparacao', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(corpo) });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      // a tela é a dona do estado (os campos seguram o mesmo objeto): do servidor, só a hora em que gravou
+      if (COMP) COMP.comparacao.alterado = j.comparacao.alterado;
+      if (est()) est().textContent = `Gravado ${j.comparacao.alterado || ''}.`;
+    } catch (e) { if (est()) est().textContent = 'Não foi possível gravar: ' + e.message; }
+  }, 600);
+}
+async function abrirPdfDaAnalise(botao, rota) {
+  const antes = botao.textContent; botao.textContent = 'Gerando…'; botao.disabled = true;
+  try {
+    const r = await fetch(API + rota, { cache: 'no-store' });
+    const j = await r.json();
+    if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+    window.open(j.pdf.url + '?t=' + Date.now(), '_blank');
+  } catch (e) { alert('Não foi possível gerar o PDF: ' + e.message); }
+  finally { botao.textContent = antes; botao.disabled = false; }
+}
+async function painelComparacao(recarregar = false) {
+  const P = $('#comparacao');
+  if (!RAIZ || RAIZ.vazio) { P.replaceChildren(el('div', { class: 'sub', texto: 'Calcule a estrutura primeiro.' })); return; }
+  if (!COMP || recarregar) {
+    P.replaceChildren(el('div', { class: 'sub', texto: 'Lendo o quadro…' }));
+    try {
+      const r = await fetch(API + '/comparacao', { cache: 'no-store' });
+      const j = await r.json();
+      if (!r.ok || j.erro) throw new Error(j.erro || r.statusText);
+      COMP = j;
+    } catch (e) { COMP = null; P.replaceChildren(el('div', { class: 'erro', texto: 'Não foi possível ler o quadro: ' + e.message })); return; }
+  }
+  const C = COMP.comparacao, vals = C.valores || (C.valores = {});
+  const bMemorial = el('button', { type: 'button', class: 'prim', texto: 'Memorial (PDF)', title: 'Premissas, cargas e vento, combinações, 2ª ordem, verificação das peças com a conta, reações, bases, ligações, apontamentos e este quadro' });
+  bMemorial.onclick = () => abrirPdfDaAnalise(bMemorial, '/memorial');
+  const bQuadro = el('button', { type: 'button', class: 'sec', texto: 'Só o quadro (PDF)', title: 'O quadro de comparação, para levar ao engenheiro (em branco ou já preenchido)' });
+  bQuadro.onclick = () => abrirPdfDaAnalise(bQuadro, '/comparacao-pdf');
+  const un = el('select', {}, el('option', { value: 'kN', texto: 'kN e kN·m' }), el('option', { value: 'tf', texto: 'tf e tf·m' }));
+  un.value = C.unidade || 'kN';
+  un.onchange = () => { C.unidade = un.value; gravarComparacao({ unidade: un.value }); painelComparacao(); };
+  const eng = el('input', { type: 'text', value: C.engenheiro || '', placeholder: 'nome / empresa / programa', style: 'flex:1' });
+  eng.onchange = () => { C.engenheiro = eng.value; gravarComparacao({ engenheiro: eng.value }); };
+  const notas = el('textarea', { rows: 2, placeholder: 'observações (premissas dele que diferem das nossas…)', style: 'width:100%;box-sizing:border-box' });
+  notas.value = C.notas || '';
+  notas.onchange = () => { C.notas = notas.value; gravarComparacao({ notas: notas.value }); };
+  const blocos = [];
+  let total = 0, cheios = 0;
+  for (const s of COMP.secoes) {
+    const t = el('table', { class: 'comp' }, el('tr', {}, el('th', { texto: '' }), el('th', { texto: 'nosso' }), el('th', { texto: 'dele' }), el('th', { texto: 'dif.' })));
+    for (const ln of s.linhas) {
+      total++; if (vals[ln.chave]) cheios++;
+      const nosso = naUnidade(ln.nosso, ln.un);
+      const nossoTxt = ln.un === 'txt' ? String(nosso) : `${nf(nosso, ln.un === 'mm' ? 0 : ln.un === '%' ? 1 : 2)} ${rotuloUn(ln.un)}`;
+      const inp = el('input', { type: 'text', value: vals[ln.chave] || '', style: ln.un === 'txt' ? 'width:96px;text-align:left' : '' });
+      inp.dataset.chave = ln.chave;
+      const dif = el('td', { class: 'dif', html: difHtml(ln, vals[ln.chave]) });
+      inp.oninput = () => { dif.innerHTML = difHtml(ln, inp.value); };
+      inp.onchange = () => { vals[ln.chave] = inp.value; gravarComparacao({ valores: { [ln.chave]: inp.value } }); };
+      t.append(el('tr', { title: ln.comb || '' }, el('td', { html: ln.rotulo }), el('td', { class: 'n', texto: nossoTxt }), el('td', {}, inp), dif));
+    }
+    blocos.push(el('h4', { texto: s.titulo }), el('div', { class: 'sub', texto: s.nota || '' }), t);
+  }
+  P.replaceChildren(
+    el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px' }, bMemorial, bQuadro),
+    el('div', { class: 'sub', texto: `Digite os números do engenheiro ao lado dos nossos (análise de ${COMP.calculado_em || '—'}). A diferença é (nosso − dele) ÷ dele: verde até 5%, laranja até 15%, vermelho acima. ${cheios} de ${total} preenchidos. Grava sozinho e vai para o memorial.` }),
+    el('label', { style: 'display:flex;gap:6px;align-items:center;margin:4px 0' }, el('span', { texto: 'Unidade dele' }), un),
+    el('label', { style: 'display:flex;gap:6px;align-items:center;margin:4px 0' }, el('span', { texto: 'Engenheiro' }), eng),
+    notas, el('div', { class: 'sub', id: 'comp-estado' }), ...blocos);
+}
+$('#det-comparacao').addEventListener('toggle', (ev) => { if (ev.currentTarget.open) painelComparacao(!COMP); });
 
 // a planta de cargas da fundação (09/10): gera o PDF da última análise e abre
 $('#btn-planta-cargas').addEventListener('click', async (ev) => {

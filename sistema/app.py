@@ -54,6 +54,9 @@ Rotas da API:
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
     GET  /api/projetos/<slug>/analise-estrutural   a análise do modelo (o último cálculo); POST {parametros} calcula
          (nucleo3d/analise_estrutural.py; tela /analise-estrutural — o unifilar, as cargas, os esforços e as reações)
+    GET  /api/projetos/<slug>/analise-estrutural/memorial   o memorial da análise em PDF (saida/memorial_analise.py);
+         .../comparacao (GET/POST os números do engenheiro ao lado dos nossos) e .../comparacao-pdf (só o quadro);
+         POST .../aplicar-trocas leva as trocas de perfil da análise ao modelo 3D e à planta (nucleo3d/trocas_perfil.py)
     POST /api/projetos/<slug>/cobertura-movel {situacao}   a cobertura retrátil no 3D (as tesouras e a sanfona da análise),
          aberta ou retraida (nucleo3d/cobertura_movel.py)
     POST /api/projetos/<slug>/projeto-recebido  folhas, carimbo e considerações de cálculo do DXF recebido
@@ -1951,6 +1954,82 @@ def pdf_das_pecas_do_projeto(s: str, corpo: Optional[dict] = None) -> dict:
         raise ErroDeDados("calcule a estrutura primeiro: os esforços saem do resultado da análise.")
     r = pecas_analise.gerar(pasta, analise, ids, _documento3d_do_projeto(s), g.ler(s))
     return {"pdf": _descrever_arquivo(r["pdf"], pasta), "html": _descrever_arquivo(r["html"], pasta), "pecas": r["pecas"]}
+
+
+def _analise_gravada(pasta: str) -> dict:
+    try:
+        with open(os.path.join(pasta, ARQ_ANALISE), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        raise ErroDeDados("calcule a estrutura primeiro: o memorial e a comparação saem do resultado da análise.")
+
+
+def memorial_da_analise_do_projeto(s: str, qual: str = "memorial") -> dict:
+    """GET /api/projetos/<s>/analise-estrutural/memorial (o memorial inteiro, com o quadro de comparação) e
+    .../comparacao-pdf (só o quadro, para levar ao engenheiro) — saida/memorial_analise.py, etapa 6 (11/10)"""
+    from saida import memorial_analise
+    g = _gerente()
+    pasta = g._existente(s)
+    an = _analise_gravada(pasta)
+    doc = _documento3d_do_projeto(s) if qual == "memorial" else None
+    r = memorial_analise.gerar(pasta, an, doc, g.ler(s), qual=qual)
+    return {"pdf": _descrever_arquivo(r["pdf"], pasta), "html": _descrever_arquivo(r["html"], pasta)}
+
+
+def comparacao_da_analise_do_projeto(s: str, corpo: Optional[dict] = None) -> dict:
+    """GET/POST /api/projetos/<s>/analise-estrutural/comparacao: as linhas do quadro (os nossos números, kN e kN·m) e os
+    do engenheiro digitados na tela ({unidade: kN | tf, engenheiro, notas, valores: {chave: texto}}); o POST grava só o
+    que vier e devolve o quadro inteiro (etapa 6, 11/10)"""
+    from saida import memorial_analise
+    from saida.planta_cargas import eixos_do_projeto
+    pasta = _gerente()._existente(s)
+    an = _analise_gravada(pasta)
+    comp = memorial_analise.gravar_comparacao(pasta, corpo) if corpo is not None else memorial_analise.ler_comparacao(pasta)
+    return {"secoes": memorial_analise.linhas_comparacao(an, eixos_do_projeto(pasta)), "comparacao": comp,
+            "calculado_em": an.get("calculado_em")}
+
+
+def aplicar_trocas_da_analise(s: str, corpo: Optional[dict] = None) -> dict:
+    """POST /api/projetos/<s>/analise-estrutural/aplicar-trocas {chaves?: [...]}: as trocas de perfil feitas só na análise
+    viram o perfil do modelo 3D, da planta de lançamento e da sanfona (nucleo3d/trocas_perfil.py, etapa 6 — 11/10). Sem
+    `chaves`, todas. A planta é copiada para analise/antes-das-trocas-<data>/ antes de gravar; o modelo fica no histórico.
+    A troca aplicada sai das premissas; a análise gravada fica velha: calcular de novo"""
+    from nucleo3d import trocas_perfil as TP
+    from nucleo3d import lancamento
+    g = _gerente()
+    pasta = g._existente(s)
+    proj = g.ler(s)
+    par = dict(proj.get("analise_parametros") or {})
+    todas = dict(par.get("trocas_perfil") or {})
+    chaves = (corpo or {}).get("chaves")
+    trocas = {k: v for k, v in todas.items() if not chaves or k in chaves}
+    if not trocas:
+        raise ErroDeDados("não há troca de perfil na análise para aplicar.")
+    planta, alinhamentos, feitas_planta = None, {}, {}
+    try:
+        planta = g.abrir_desenho(s, lancamento.DESENHO_LANCAMENTO)
+    except ErroDeDados:
+        planta = None
+    if planta is not None:
+        feitas_planta, alinhamentos = TP.aplicar_na_planta(planta, trocas)
+    doc = _guardar_travas(_documento3d_do_projeto(s))
+    feitas_modelo = TP.aplicar_no_modelo(doc, trocas, alinhamentos)
+    feitas_par = TP.aplicar_nos_parametros(par, trocas)
+    if sum(feitas_modelo.values()):
+        _regravar_modelo(s, doc, marco=True)
+    copia = ""
+    if planta is not None and sum(feitas_planta.values()):
+        destino = os.path.join(pasta, "analise", "antes-das-trocas-" + time.strftime("%Y%m%d-%H%M%S"))
+        os.makedirs(destino, exist_ok=True)
+        origem = g._caminho_desenho(s, lancamento.DESENHO_LANCAMENTO)
+        shutil.copy2(origem, os.path.join(destino, os.path.basename(origem)))
+        copia = os.path.relpath(destino, pasta)
+        g.salvar_desenho(s, lancamento.DESENHO_LANCAMENTO, planta)
+    linhas, ficam = TP.resumo(feitas_modelo, feitas_planta, feitas_par, trocas)
+    par["trocas_perfil"] = dict({k: v for k, v in todas.items() if k not in trocas}, **ficam)
+    g._atualizar(s, analise_parametros=par)
+    return {"feitas": linhas, "ficam": ficam, "barras": sum(feitas_modelo.values()), "elementos": sum(feitas_planta.values()),
+            "copia_da_planta": copia, "parametros": par}
 
 
 def cobertura_movel_do_projeto(s: str, corpo: Optional[dict] = None) -> dict:
@@ -4212,6 +4291,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(planta_de_cargas_do_projeto(partes[0]))
                 if len(partes) == 3 and partes[1] == "analise-estrutural" and partes[2] == "nomes-pecas":
                     return self._json(nomes_das_pecas_do_projeto(partes[0]))
+                if len(partes) == 3 and partes[1] == "analise-estrutural" and partes[2] == "memorial":
+                    return self._json(memorial_da_analise_do_projeto(partes[0]))
+                if len(partes) == 3 and partes[1] == "analise-estrutural" and partes[2] == "comparacao":
+                    return self._json(comparacao_da_analise_do_projeto(partes[0]))
+                if len(partes) == 3 and partes[1] == "analise-estrutural" and partes[2] == "comparacao-pdf":
+                    return self._json(memorial_da_analise_do_projeto(partes[0], qual="comparacao"))
                 if len(partes) == 2 and partes[1] == "materiais":
                     q = parse_qs(urlparse(self.path).query)
                     return self._json(lista_de_materiais(partes[0], recalcular=q.get("recalcular", ["0"])[0] in ("1", "true")))
@@ -4372,6 +4457,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(analise_estrutural_do_projeto(partes[0], corpo, recalcular=True))
                 if len(partes) == 3 and partes[1] == "analise-estrutural" and partes[2] == "pecas-pdf":
                     return self._json(pdf_das_pecas_do_projeto(partes[0], corpo))
+                if len(partes) == 3 and partes[1] == "analise-estrutural" and partes[2] == "comparacao":
+                    return self._json(comparacao_da_analise_do_projeto(partes[0], corpo or {}))
+                if len(partes) == 3 and partes[1] == "analise-estrutural" and partes[2] == "aplicar-trocas":
+                    return self._json(aplicar_trocas_da_analise(partes[0], corpo or {}))
                 if len(partes) == 2 and partes[1] == "cobertura-movel":
                     return self._json(cobertura_movel_do_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "detalhar-posicao":
