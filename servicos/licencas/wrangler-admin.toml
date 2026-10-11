@@ -7,8 +7,8 @@ compatibility_date = "2026-09-01"
 workers_dev = true
 
 [vars]
-ACCESS_EQUIPE = ""
-ACCESS_AUD = ""
+ACCESS_EQUIPE = "old-flower-6203"
+ACCESS_AUD = "60e06239d9575974d5eee3a735654281cbb73b4e848d0f7b350b3a28b2aa91fb"
 
 [[d1_databases]]
 binding = "DB"
