@@ -702,8 +702,9 @@ export class MetodosImplantacao {
     const ents = ids.map(id => this.cad.doc.get(id)).filter(e => e && this.cad.doc.visivel(e) && !(e.atributos || {}).gerado);
     this._copiaPendente = null;
     if (!ents.length) {
-      // na planta do cliente as camadas vêm travadas: sem seleção, a área
-      if (!this.naOriginal) return false;
+      // na planta do cliente as camadas vêm travadas: sem seleção, a área. Pelo desenho aberto, não pela marca da aba
+      // (ela só vem depois de o servidor responder: com ele ocupado — o 3D de 15 tesouras —, o Copiar não fazia nada)
+      if (!this.cad.projeto || this.cad.nomeDesenho === 'montagem') return false;
       this.cad.ativarFerramenta('copiar-base');
       this.cad.aviso('Copiar: marque a área do desenho (dois cantos ou uma janela em volta da tesoura) e depois os dois pontos de referência — os apoios nos eixos.', 'info', 10000);
       return true;
@@ -868,7 +869,9 @@ export class MetodosImplantacao {
       if (sel.length < 3) return false;
       const reais = sel.map(real);
       try {
-        const r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/montagem/ler-tesoura`, { entidades: [...reais, ...textos], nome: 'T1' });
+        // a legenda só das camadas da tesoura: o texto do pilar ao lado (o "W250x32.7" do PM2, CD Bom Dia) virava o banzo
+        const r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/montagem/ler-tesoura`,
+          { entidades: [...reais, ...textos.filter(x => escolhidas.has(x.camada))], nome: 'T1' });
         if (r && r.ok) { leitura = r; des = this._desenhoDaLeitura(r); }
       } catch { leitura = null; }
       if (!des) des = desenhoDaTesoura(reais);
@@ -880,7 +883,9 @@ export class MetodosImplantacao {
     // baixo do desenho — as mãos-francesas que descem até o pilar não puxam o nível para baixo
     const colagem = idColado && ((this.m.colagens || {})[idColado]);
     const refReal = colagem && colagem.quadro === q.id && (colagem.refs_reais || [])[0];
-    const zApoio = () => (refReal ? refReal[1] : z0);
+    // o ponto de referência longe da tesoura (colada pelo piso, nos eixos) não é o apoio: vale o ponto mais baixo dela
+    const zApoio = () => (refReal && Math.abs(refReal[1] - z0) <= 1500 ? refReal[1] : z0);
+    const pelaRef = () => !!(refReal && Math.abs(refReal[1] - z0) <= 1500);
     const [cat, niveis] = await Promise.all([this.cad.catalogoEstrutura(), this._niveis()]);
     const perto = [...niveis].sort((a, b) => Math.abs(a.z - zApoio()) - Math.abs(b.z - zApoio()))[0];
     const casado = perto && Math.abs(perto.z - zApoio()) <= 300 ? perto : null;
@@ -928,9 +933,9 @@ export class MetodosImplantacao {
       const aps = ((leitura && leitura.apontamentos) || []).filter(a => !/legenda|quantidade/.test(a.msg)).map(a => a.msg);
       info.textContent = modo + `${des.n} barras, ${numero(des.vao / 1000, 3)} m de comprimento e ${numero(des.altura / 1000, 3)} m de altura` +
         (entre.length ? ` (entre os eixos ${entre[0]} e ${entre[entre.length - 1]})` : '') +
-        `. O apoio (${refReal ? 'o ponto de referência da colagem' : 'o ponto mais baixo'}) está em ${cota(za)} m` +
+        `. O apoio (${pelaRef() ? 'o ponto de referência da colagem' : 'o ponto mais baixo'}) está em ${cota(za)} m` +
         (casado ? (Math.abs(casado.z - za) < 1 ? `, no nível ${casado.nome}` : `, ${Math.round(za - casado.z)} mm ${za > casado.z ? 'acima' : 'abaixo'} do nível ${casado.nome}`) : ', sem nível perto (fica na cota do desenho)') +
-        (refReal && z0 < za - 1 ? `; o desenho desce até ${cota(z0)} m (o que vai até o pilar).` : '.') + ' A tesoura fica onde foi colada.' +
+        (pelaRef() && z0 < za - 1 ? `; o desenho desce até ${cota(z0)} m (o que vai até o pilar).` : '.') + ' A tesoura fica onde foi colada.' +
         (aps.length ? ` Apontamentos: ${aps.slice(0, 3).join('; ')}.` : '');
     };
     escreverInfo();
