@@ -182,6 +182,8 @@ posição ganha `saia`, que entra na compra, na célula, na lista e na paginaç�
 cada telha sai **inteira** (retângulo até o ponto mais alto) e o corte do modelo — a empena
 inclinada, a curva do canto — fica tracejado: é feito na obra, medido depois de instalada.
 
+**0.8.63.** (versão da noite, 11/10/2026) Solda: a perna mínima do filete pela NBR 8800:2024 (Tabela 11, a parte menos espessa); Detalhamento, leva 2 da auditoria (rodada 3): solda das peças montadas — símbolo AWS e metros de cordão.
+
 **0.8.62.** (versão da noite, 11/10/2026) Detalhamento, leva 2 da auditoria (rodada 2): furo pela norma, gabarito das terças, nomes guardados e escala da prancha.
 
 **0.8.61.** (versão da noite, 11/10/2026) Detalhamento, leva 2 da auditoria (rodada 1): furos da mesa de baixo, marca com contorno, terça Ue e polegada.
