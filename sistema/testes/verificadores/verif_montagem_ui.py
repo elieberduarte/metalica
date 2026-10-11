@@ -142,7 +142,9 @@ try:
 
     # gravado: recarrega (depois de a gravação automática terminar — senão o "Desenho não gravado" segura a página)
     aba.drenar(1.5)
-    esperar(aba, "!cad._editado && !(window.montagem && window.montagem._timer)", 60)
+    # e a gravação em curso (_salvando): com a máquina cheia da conferência ela passa dos segundos e sair no meio dela
+    # dispara o aviso de edição por gravar, que segura a navegação até o tempo do CDP acabar (11/10)
+    esperar(aba, "!cad._editado && !cad._salvando && !(window.montagem && window.montagem._timer)", 180)
     aba.navegar(base + "/cad?projeto=recebido&desenho=montagem", limite=60)
     esperar(aba, "!!(window.montagem && cad.nomeDesenho === 'montagem' && cad.doc.metadados.montagem)")
     aba.drenar(0.6)
