@@ -10,6 +10,7 @@
 //   · a peça (tesoura, treliça, viga) que corre ao lado do eixo, fora da linha dele (60 a 600 mm; até 60 é a peça com a
 //     face no eixo) — desenhada tracejada, e o mesmo alinhamento (peças e pilares juntos) vira uma linha só;
 //   · o eixo sem nada do 3D no plano dele.
+// "Linhas das peças" (no título da Implantação) faz o mesmo para os alinhamentos do 3D que não caem num eixo.
 // O desenho é do programa (refeito com os eixos, os níveis e a escala, como os eixos e os níveis da elevação): liga e
 // desliga no título da elevação ("3D"); "Todas as elevações" no título da Implantação abre uma por eixo, já com o 3D.
 
@@ -140,7 +141,8 @@ export class MetodosCorteEixos {
     const mod = this._modelo3d, ex = this._eixosDaObra();
     q.conferencia_3d = [];
     if (!mod || !ex) return [];
-    const eixo = this._familia(q.familia).find(e => e.nome === q.eixo);
+    // a elevação de um eixo, ou de uma linha de peças fora dos eixos ("Linhas das peças": a posição está nela)
+    const eixo = q.linha ? { nome: q.eixo, pos: q.pos } : this._familia(q.familia).find(e => e.nome === q.eixo);
     const cruz = this._cruzamDaElevacao(q);
     if (!eixo || !cruz.length) return [];
     this._camadas3d();
@@ -152,7 +154,10 @@ export class MetodosCorteEixos {
     const sent = cruz.length > 1 && cruz[1].u !== cruz[0].u ? Math.sign((cruz[1].pos - cruz[0].pos) / (cruz[1].u - cruz[0].u)) : 1;
     const ao = (r) => ((numero ? Pp(r) : G(r)) - p0) * sent;          // u ao longo da elevação
     // o que está mais perto de outro eixo da mesma família é dele, não "ao lado" deste (os eixos 9 e 10 do Posto, a 0,51 m)
-    const outros = this._familia(q.familia).filter(e => e.nome !== q.eixo).map(e => e.pos - eixo.pos);
+    // na elevação da linha, as outras linhas também (o que é do eixo ou da linha vizinha não é "ao lado" desta); na do eixo,
+    // só os eixos — a peça fora do eixo continua apontada, mesmo com a linha dela
+    const outros = [...this._familia(q.familia), ...(q.linha ? ((this.m && this.m.linhas) || []).filter(l => l.familia === q.familia) : [])]
+      .filter(e => e.nome !== q.eixo).map(e => e.pos - eixo.pos);
     const deOutro = (d) => outros.some(o => Math.abs(d - o) < Math.abs(d));
     const U = Math.max(...cruz.map(c => c.u)), MARGEM_U = 3000;
     const dentroU = (u) => u >= -MARGEM_U && u <= U + MARGEM_U;
@@ -260,10 +265,10 @@ export class MetodosCorteEixos {
       if (pils.length) partes.push(`${pils.length === 1 ? 'o pilar' : pils.length + ' pilares'} de ${lista(pils.map(x => `${q.eixo}/${x.cruz}`))}`);
       const todos = new Set(pecas.map(x => x.nome)).size + pils.length;
       conf.push({ u: g.lst[0].u, z: g.lst[0].z, tipo: pils.length ? 'alinhamento_fora_do_eixo' : 'fora_da_linha',
-        texto: `${partes.join(' e ')} ${todos > 1 ? 'correm' : 'corre'} a ${metros(Math.abs(g.d))} do eixo ${q.eixo}` +
-          (pecas.length && pils.length ? ' — peças e pilares no mesmo alinhamento, fora da linha do eixo' : '') });
+        texto: `${partes.join(' e ')} ${todos > 1 ? 'correm' : 'corre'} a ${metros(Math.abs(g.d))} ${q.linha ? 'da linha' : 'do eixo'} ${q.eixo}` +
+          (pecas.length && pils.length ? ` — peças e pilares no mesmo alinhamento, fora ${q.linha ? 'da linha' : 'da linha do eixo'}` : '') });
     }
-    if (!out.length) conf.push({ u: U / 2, z: 0, texto: `eixo ${q.eixo}: nada do 3D no plano dele`, tipo: 'eixo_vazio' });
+    if (!out.length) conf.push({ u: U / 2, z: 0, texto: `${q.linha ? 'linha' : 'eixo'} ${q.eixo}: nada do 3D no plano dele`, tipo: 'eixo_vazio' });
     // as marcas da conferência: o círculo e o número (a lista no botão "Conferência" da Implantação)
     conf.forEach((c, i) => {
       const p = P(c.u, c.z);
@@ -272,6 +277,114 @@ export class MetodosCorteEixos {
         atributos: at({ conferencia: i }) }));
     });
     q.conferencia_3d = conf.map(c => ({ ...c, papel: P(c.u, c.z) }));
+    return out;
+  }
+
+  // ------------------------------------------------------------------ as linhas das peças fora dos eixos
+  /**
+   * "Linhas das peças": os alinhamentos do 3D que não caem num eixo — cada tesoura, treliça, painel ou transição reta e
+   * paralela a uma família de eixos dá a posição dela (a média do meio dos banzos); as que ficam a até 150 mm umas das
+   * outras são uma linha. A linha a mais de 150 mm de qualquer eixo ganha uma elevação (o nome pelo eixo mais perto:
+   * "K+3,50"), tracejada na Implantação (o duplo clique abre a elevação dela). No Posto: as tesouras entre os eixos e
+   * as das linhas próprias do projeto (B+0,22, C−0,38).
+   */
+  async linhasDasPecas() {
+    if (!this.m) return;
+    if (!this._eixosDaObra()) {
+      const ex = await this._eixosDoProjeto();
+      if (!ex) { this.cad.aviso('A obra ainda não tem eixos: dê os eixos primeiro ("Eixos…" no título da Implantação).', 'atencao', 9000); return; }
+      this.m.eixos = ex;
+      await this.garantirImplantacao();
+    }
+    const mod = await this._carregarModelo3d(true);
+    if (!mod) { this.cad.aviso('O projeto não tem 3D: as linhas das peças saem dele.', 'atencao', 9000); return; }
+    const ex = this._eixosDaObra();
+    const eg = ex.eixo_g || [1, 0], pg = ex.perp_g || [-eg[1], eg[0]];
+    const G = (r) => r[0] * eg[0] + r[1] * eg[1], Pp = (r) => r[0] * pg[0] + r[1] * pg[1];
+    // cada peça: a direção e a posição pelos banzos
+    const pecas = new Map();
+    for (const b of mod.barras) {
+      if (b.papel !== 'banzo' || !b.peca) continue;
+      const dx = b.b[0] - b.a[0], dy = b.b[1] - b.a[1], L = Math.hypot(dx, dy);
+      if (L < 1) continue;
+      const r = pecas.get(b.peca) || pecas.set(b.peca, { nome: b.nome, L: 0, lg: 0, lp: 0, pos: { letra: [], numero: [] } }).get(b.peca);
+      const ag = Math.abs((dx * eg[0] + dy * eg[1]) / L), ap = Math.abs((dx * pg[0] + dy * pg[1]) / L);
+      r.L += L; r.lg += ag * L; r.lp += ap * L;
+      const meio = [(b.a[0] + b.b[0]) / 2, (b.a[1] + b.b[1]) / 2];
+      r.pos.letra.push([Pp(meio), L]); r.pos.numero.push([G(meio), L]);
+    }
+    const porFamilia = { letra: [], numero: [] };
+    let tortas = 0;
+    for (const [, r] of pecas) {
+      // ao longo do g, a peça corre como os eixos com letra; ao longo do p, como os numerados
+      const fam = r.lg >= 0.98 * r.L ? 'letra' : r.lp >= 0.98 * r.L ? 'numero' : null;
+      if (!fam) { tortas++; continue; }
+      const ps = r.pos[fam], pos = ps.reduce((s, [v, l]) => s + v * l, 0) / ps.reduce((s, [, l]) => s + l, 0);
+      if (Math.max(...ps.map(x => x[0])) - Math.min(...ps.map(x => x[0])) > 300) { tortas++; continue; }   // deitada, em curva
+      porFamilia[fam].push({ pos, nome: r.nome });
+    }
+    const linhas = [];
+    for (const fam of ['numero', 'letra']) {
+      const eixos = this._familia(fam);
+      const grupos = [];
+      for (const p of porFamilia[fam].sort((a, b) => a.pos - b.pos)) {
+        const g = grupos[grupos.length - 1];
+        if (g && p.pos - g.pos <= 150) { g.lst.push(p); g.pos = g.lst.reduce((s, x) => s + x.pos, 0) / g.lst.length; } else grupos.push({ pos: p.pos, lst: [p] });
+      }
+      for (const g of grupos) {
+        const perto = eixos.reduce((m, e) => (!m || Math.abs(e.pos - g.pos) < Math.abs(m.pos - g.pos) ? e : m), null);
+        if (perto && Math.abs(perto.pos - g.pos) <= NO_PLANO) continue;           // é o eixo: a elevação dele mostra
+        const d = perto ? g.pos - perto.pos : g.pos;
+        const nome = (perto ? perto.nome : fam === 'letra' ? 'p' : 'g') + (d >= 0 ? '+' : '−') + (Math.abs(d) / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        linhas.push({ nome, familia: fam, pos: Math.round(g.pos * 10) / 10, pecas: [...new Set(g.lst.map(x => x.nome))].sort(natural) });
+      }
+    }
+    this.m.linhas = linhas;
+    // uma elevação por linha (as que já existem ficam; a linha que sumiu sai)
+    const { TIPOS } = await import('./montagem.js');
+    const t = TIPOS.elevacao;
+    const doc = this.cad.doc;
+    const velhas = this._elevacoes().filter(q => q.linha && !linhas.some(l => l.nome === q.eixo && l.familia === q.familia));
+    if (velhas.length) {
+      doc.lote(() => { for (const e of [...doc.entidades.values()]) if (velhas.some(q => q.id === (e.atributos || {}).quadro)) doc.remover(e.id); });
+      this.m.quadros = this.m.quadros.filter(q => !velhas.includes(q));
+    }
+    let n = 0;
+    for (const l of linhas) {
+      let q = this._elevacoes().find(x => x.eixo === l.nome && x.familia === l.familia);
+      if (!q) {
+        q = { id: 'q' + Date.now().toString(36) + 'l' + (n++).toString(36), tipo: 'elevacao', nome: `Linha ${l.nome}`, eixo: l.nome, familia: l.familia,
+          escala: t.escala, w: t.w, h: t.h, x: 0, y: 0, sombra: null };
+        this.m.quadros.push(q);
+      }
+      Object.assign(q, { linha: true, pos: l.pos, pecas: l.pecas, do3d: true });
+    }
+    const elevs = this._elevacoes().sort((a, b) => (a.familia === b.familia ? natural(a.eixo, b.eixo) : a.familia === 'numero' ? -1 : 1));
+    const resto = this.m.quadros.filter(x => x.tipo !== 'elevacao');
+    const i = resto.findIndex(x => x.tipo === 'implantacao');
+    this.m.quadros = [...resto.slice(0, i + 1), ...elevs, ...resto.slice(i + 1)];
+    await this.refazerQuadrosDaObra([...this._elevacoes(), this._quadroImplantacao()].filter(Boolean));
+    const qi = this._quadroImplantacao();
+    if (qi) this.cad.tela.enquadrar([[qi.x, qi.y - qi.h], [qi.x + qi.w, qi.y]]);
+    const conf = this._elevacoes().reduce((s, q) => s + (q.conferencia_3d || []).length, 0);
+    this.cad.aviso(`${linhas.length} linha(s) de peças fora dos eixos, cada uma com a elevação (tracejadas na Implantação; duplo clique abre)` +
+      (tortas ? ` · ${tortas} peça(s) inclinada(s) ou em curva ficaram de fora` : '') + `. Conferência: ${conf} apontamento(s).`, 'info', 12000);
+  }
+
+  /** As linhas das peças na Implantação (tracejadas, com o nome na ponta): chamado pelo desenho dela (implantacao.js). */
+  _linhasNaImplantacao(q, P, { g0, g1, p0, p1, ext }) {
+    const out = [];
+    const linhas = (this.m && this.m.linhas) || [];
+    if (!linhas.length) return out;
+    this._camadas3d();
+    for (const l of linhas) {
+      const at = { quadro: q.id, gerado: 'implantacao', eixo: l.nome, familia: l.familia, linha: true };
+      const a = l.familia === 'numero' ? P(l.pos, p1 + ext * 0.5) : P(g0 - ext * 0.5, l.pos);
+      const b = l.familia === 'numero' ? P(l.pos, p0 - ext * 0.5) : P(g1 + ext * 0.5, l.pos);
+      out.push(criar({ tipo: 'linha', camada: CAMADA_3D_LADO, a, b, atributos: at }));
+      out.push(criar({ tipo: 'texto', camada: CAMADA_3D_LADO, posicao: l.familia === 'numero' ? [b[0], b[1] - 1.2] : [b[0] + 1.2, b[1]], texto: l.nome, altura: 2.2,
+        alinhamento: l.familia === 'numero' ? 'esquerda' : 'esquerda', vertical: l.familia === 'numero' ? 'meio' : 'meio', angulo: l.familia === 'numero' ? -90 : 0, atributos: at }));
+    }
     return out;
   }
 

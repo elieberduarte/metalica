@@ -336,6 +336,8 @@ export class MetodosImplantacao {
       const gOrd = [...new Set(gs)].sort((a, b) => a - b), pOrd = [...new Set(ps)].sort((a, b) => a - b);
       if (gOrd.length > 1) cotas(gOrd.map(g => P(g, p0 - ext)), -6);
       if (pOrd.length > 1) cotas(pOrd.map(p => P(g1 + ext, p)), -6);
+      // as linhas das peças fora dos eixos (corte_eixos.js), tracejadas
+      out.push(...this._linhasNaImplantacao(q, P, { g0, g1, p0, p1, ext }));
       return out;
     };
   }
@@ -596,10 +598,12 @@ export class MetodosImplantacao {
     if (q.tipo === 'implantacao') {
       c.append(' ', el('button', { type: 'button', class: 'quadro-botao', title: 'Os eixos da obra: os vãos, os nomes, ou lidos do desenho do cliente', onclick: () => this.dialogoEixos() }, 'Eixos…'),
         el('button', { type: 'button', class: 'quadro-botao', title: 'Abre a elevação de cada eixo (numerados e com letra), com o corte do 3D do projeto e a conferência', onclick: () => this.todasAsElevacoes() }, 'Todas as elevações'),
+        el('button', { type: 'button', class: 'quadro-botao', title: 'As linhas do 3D fora dos eixos (tesouras entre eixos, linhas próprias do projeto): uma elevação para cada uma', onclick: () => this.linhasDasPecas() }, 'Linhas das peças'),
         el('button', { type: 'button', class: 'quadro-botao', title: 'O que o corte do 3D achou nos eixos: pilar fora do cruzamento, peça fora da linha do eixo, eixo vazio', onclick: () => this.conferenciaDosEixos() }, 'Conferência'));
     } else if (q.tipo === 'elevacao') {
       const b = c.querySelector('b');
-      if (b) b.textContent = `Elevação ${q.eixo}`;
+      if (b) b.textContent = q.linha ? `Linha ${q.eixo}` : `Elevação ${q.eixo}`;
+      if (q.linha && (q.pecas || []).length) c.title = `Linha de peças fora dos eixos: ${q.pecas.join(', ')}`;
       const ant = this._vizinho(q, 'anterior'), prox = this._vizinho(q, 'proximo');
       const s = el('select', { class: 'quadro-sombra', title: 'A sombra: a elevação do eixo de trás ou da frente, apagada por baixo desta, para comparar os níveis e desenhar por cima' },
         el('option', { value: '', texto: 'sem sombra' }),

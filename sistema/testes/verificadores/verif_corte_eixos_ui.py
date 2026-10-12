@@ -41,6 +41,8 @@ for x, peca, planta in ((6000.0, "TESOURA 1#1", "TESOURA 1"), (12300.0, "TESOURA
     barra((x, 0, 7000), (x, 10000, 7000), "banzo", peca, planta)
     for y in (0.0, 5000.0, 10000.0):
         barra((x, y, 6000), (x, y, 7000), "montante", peca, planta, perfil='L 1"×1/8"')
+barra((3000.0, 0, 6000), (3000.0, 10000, 6000), "banzo", "TESOURA 3#3", "TESOURA 3")
+barra((3000.0, 0, 7000), (3000.0, 10000, 7000), "banzo", "TESOURA 3#3", "TESOURA 3")
 for p in ((0.0, 0.0), (6000.0, 0.0), (12300.0, 0.0), (12300.0, 10000.0), (6000.0, 10250.0)):
     barra((p[0], p[1], 0), (p[0], p[1], 6000), "pilar", perfil="Ue 200×70×20×2,65")
 barra((0, 5000, 7100), (13000, 5000, 7100), "terça", sigla="TC1")
@@ -154,14 +156,32 @@ try:
     ok(itens == 2, f"\"Conferência\": a lista com os 2 apontamentos ({itens})")
     aba.avaliar("(() => { const b = document.getElementById('dialogo-cancelar') || document.getElementById('dialogo-ok'); if (b) b.click(); return 1; })()")
 
-    # 7. grava e abre de novo: as elevações e o corte continuam
+    # 7. "Linhas das peças": a TESOURA 2 (0,30 m do eixo 3) e a TESOURA 3 (entre os eixos 1 e 2) ganham linha e elevação;
+    # a do eixo 2 não (é o eixo); a linha tracejada na Implantação; o eixo 3 continua apontando a TESOURA 2
+    aba.avaliar("(async () => { await window.montagem.linhasDasPecas(); return 1; })()")
+    linhas = aba.avaliar("(window.montagem.m.linhas || []).map(l => l.nome + ':' + l.familia + ':' + l.pecas.join(',')).join(' | ')")
+    ok(linhas == "1+3,00:numero:TESOURA 3 | 3+0,30:numero:TESOURA 2", f"as linhas das peças fora dos eixos ({linhas})")
+    el_l = aba.avaliar("window.montagem._elevacoes().filter(q => q.linha).map(q => q.eixo).join(' ')")
+    ok(el_l == "1+3,00 3+0,30", f"uma elevação por linha ({el_l})")
+    no_l = aba.avaliar(CONTAR + "('3+0,30', e => e.tipo === 'linha' && e.camada === 'IMPL 3D')")
+    ok(no_l is not None and no_l >= 5, f"na elevação da linha 3+0,30 a TESOURA 2 é cheia, no plano ({no_l})")
+    conf_l = aba.avaliar("(window.montagem._elevacoes().find(q => q.eixo === '3+0,30').conferencia_3d || []).map(c => c.texto)")
+    ok(not any("TESOURA 2" in t for t in conf_l), f"na linha dela a TESOURA 2 não é apontada ({conf_l})")
+    impl = aba.avaliar("""(() => { const qi = window.montagem._quadroImplantacao(); return [...window.cad.doc.entidades.values()].filter(e => {
+      const a = e.atributos || {}; return a.quadro === qi.id && a.linha && e.tipo === 'linha'; }).length; })()""")
+    ok(impl == 2, f"as 2 linhas tracejadas na Implantação ({impl})")
+    conf3b = aba.avaliar("(window.montagem._elevacoes().find(q => q.eixo === '3').conferencia_3d || []).map(c => c.texto)")
+    ok(any("TESOURA 2" in t for t in conf3b), "o eixo 3 continua apontando a TESOURA 2 fora da linha dele")
+
+    # 8. grava e abre de novo: as elevações e o corte continuam
     aba.avaliar("(async () => { await window.montagem._gravarJa(); await window.cad.salvar({ avisar: false }); return 1; })()")
     # a gravação adiada da Montagem (400 ms) termina antes de sair da página (senão o aviso de "não gravado" do navegador)
     esperar(aba, "!window.montagem._timer && !window.cad._editado", 15)
     abrir(aba)
     de_novo = aba.avaliar("window.montagem._elevacoes().filter(q => q.do3d).length")
     linhas = aba.avaliar(CONTAR + "('2', e => e.camada === 'IMPL 3D')")
-    ok(de_novo == 5 and linhas and linhas >= 5, f"depois de abrir de novo: as 5 elevações com o 3D ({de_novo}, {linhas})")
+    ok(aba.avaliar("(window.montagem.m.linhas || []).length") == 2, "as linhas continuam depois de abrir de novo")
+    ok(de_novo == 7 and linhas and linhas >= 5, f"depois de abrir de novo: as 7 elevações com o 3D ({de_novo}, {linhas})")
 
     erros = [c for c in aba.console if c[0] in ("excecao", "error")]
     ok(not erros, f"sem erro no console ({erros[:3]})")
