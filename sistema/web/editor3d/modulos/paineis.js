@@ -648,7 +648,8 @@ export class MetodosPaineis {
     for (const ent of this.documento.entidades.values()) {
       const a = ent.atributos || {}, m = a.marcas || {}, o = a.origem || {};
       const peca = o.peca ? String(o.peca).split('#')[0] : '';
-      const nomes = [o.planta, peca, o.locacao, o.corte].filter(Boolean).map(norm);
+      // a sigla da terça (TC3, TC46…) também é nome: a busca não achava as terças pelo nome do projeto (12/10)
+      const nomes = [o.planta, peca, o.locacao, o.corte, o.sigla, a.sigla].filter(Boolean).map(norm);
       const texto = norm([ent.nome, m.posicao, m.conjunto, m.nome, m.nome_conjunto, m.perfil, ent.perfil, ent.camada,
         a.tipo_ifc, ent.origem_ifc, ent.papel, ...nomes].filter(Boolean).join(' '));
       itens.push({ ent, m, o, nomes, texto });
@@ -662,13 +663,13 @@ export class MetodosPaineis {
     const ids = [];
     for (const { ent, m, o } of achados) {
       total++; ids.push(ent.id);
-      const chave = pelaPeca.length ? (o.peca || o.planta || o.locacao || o.corte) : (m.posicao || ent.nome || ent.tipo);
+      const chave = pelaPeca.length ? (o.peca || o.planta || o.locacao || o.corte || o.sigla || (ent.atributos || {}).sigla) : (m.posicao || ent.nome || ent.tipo);
       let g = grupos.get(chave);
       if (!g) {
         const detalhe = pelaPeca.length
           ? [o.peca && o.peca.includes('#') ? `peça nº ${o.peca.split('#')[1]}` : '', ent.camada].filter(Boolean).join(' · ')
           : [m.perfil && m.perfil !== chave ? m.perfil : (ent.perfil || ''), m.conjunto ? `conj. ${m.conjunto}` : '', ent.camada].filter(Boolean).join(' · ');
-        const rotulo = pelaPeca.length ? (o.planta || String(chave).split('#')[0]) : chave;
+        const rotulo = pelaPeca.length ? (o.planta || String(chave).split('#')[0]) + (o.sigla && !o.planta ? ` (${ent.perfil || ''})` : '') : chave;
         g = { chave: rotulo, detalhe, ids: [], cor: '#7d8a9e' };
         grupos.set(chave, g);
       }
