@@ -29,6 +29,7 @@ from __future__ import annotations
 import collections
 import copy
 import math
+import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
@@ -418,6 +419,14 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     # para o montante de ponta também os banzos que saem dele: vão para a tesoura dele (no apoio de B do CD Bom Dia
     # nenhuma diagonal chega ao montante de ponta da TC1, só os banzos)
     banzos = [(i, segs[i]) for i in range(len(segs)) if i not in internas and (papeis[i].startswith("banzo") or i in pares)]
+    # o vão entre os dois U do banzo composto: a altura (d) do perfil mais usado na alma desta tesoura
+    try:
+        from nucleo3d.geometria import resolver_perfil
+        alma_p = collections.Counter(perfis_b[j] or perfis.get("diagonal") or "" for j in range(len(segs))
+                                     if not (papeis[j].startswith("banzo") or papeis[j] == "extremidade")).most_common(1)
+        vao_da_alma = float(resolver_perfil(alma_p[0][0]).d or CHAPA_COMPOSTO) if alma_p and alma_p[0][0] else CHAPA_COMPOSTO
+    except Exception:                                  # noqa: BLE001
+        vao_da_alma = CHAPA_COMPOSTO
     n = 0
     feitas: List[Barra] = []                           # as barras desta tesoura (o encaixe é por tesoura)
     secundarias: List[Tuple[Barra, tuple]] = []        # as de um lado só, por fora do U: cortadas na face do banzo
@@ -451,9 +460,11 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         papel_3d = "banzo" if (papel.startswith("banzo") or papel == "extremidade") else ("diagonal" if papel == "secundaria" else papel)
         nome = "%s %s %d" % (marca, nome_papel.get(papel, papel), i + 1)
         if secoes_b[i] in ("caixa", "composto"):
-            # a seção dupla da legenda do projeto: "DUPLO (CAIXA)" = dois U de boca um para o outro; "COMPOSTO" = dois U
-            # de costas, com a chapa de nó entre as almas. Simétricas ao plano da tesoura, cada U deslocado para fora
-            # dele — a confirmar com o detalhe da seção (11/10, CD Bom Dia)
+            # a seção dupla da legenda do projeto (CD Bom Dia, croqui ao lado de "BANZOS", 11/10):
+            # "COMPOSTO" = dois U de costas, a boca de cada um para fora do plano, afastados pela altura do perfil da alma
+            # (a alma entra entre eles: Ue 100 composto com 127 entre as almas, para a alma em Ue 127);
+            # "DUPLO (CAIXA)" = dois U de boca um para o outro, lado a lado no plano da tesoura (o caixão do Posto), a
+            # altura atravessando o plano
             try:
                 from nucleo3d.geometria import resolver_perfil, secao
                 pd_ = resolver_perfil(perfil)
@@ -462,10 +473,17 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             except Exception:                                  # noqa: BLE001
                 xg, bf = 15.0, 50.0
             caixa = secoes_b[i] == "caixa"
-            off = (bf - xg) if caixa else (xg + CHAPA_COMPOSTO / 2.0)
+            ls_ = math.hypot(u1 - u0, v1 - v0) or 1.0
+            n_pl = (ux * (-(v1 - v0) / ls_) * k, uy * (-(v1 - v0) / ls_) * k, (u1 - u0) / ls_)     # a normal no plano
+            dw_ = sum(a_ * b_ for a_, b_ in zip(n_pl, w))
+            n_pl = tuple(a_ - dw_ * b_ for a_, b_ in zip(n_pl, w))
+            nn_ = math.sqrt(sum(a_ * a_ for a_ in n_pl)) or 1.0
+            n_pl = tuple(a_ / nn_ for a_ in n_pl)
+            direcao = n_pl if caixa else fora_do_plano
+            off = (bf - xg) if caixa else (xg + vao_da_alma / 2.0)
             for lado in (1.0, -1.0):
-                dl = tuple(lado * off * c for c in fora_do_plano)
-                abre = tuple((-lado if caixa else lado) * c for c in fora_do_plano)
+                dl = tuple(lado * off * c for c in direcao)
+                abre = tuple((-lado if caixa else lado) * c for c in direcao)
                 bd = Barra(inicio=tuple(A[c] + dl[c] for c in range(3)), fim=tuple(B[c] + dl[c] for c in range(3)), perfil=perfil,
                            papel=papel_3d, aco=aco, camada=camada, nome=nome + (" (a)" if lado > 0 else " (b)"), rotacao=_giro_para(w, abre),
                            atributos=dict(atr, secao_dupla=secoes_b[i], a_confirmar="seção dupla: arranjo dos dois perfis"))
@@ -518,6 +536,16 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             continue
         # cantoneira: a aba deitada sempre do mesmo lado do plano (giro pela normal do plano, não pelo sentido da linha)
         giro = _giro_para(w, fora_do_plano)
+        if re.match(r"(?i)^\s*Ue?\s", perfil) and papel != "secundaria":
+            # a alma em U ou Ue: a altura do perfil atravessa o plano (entra entre os dois U do banzo composto, ou na boca
+            # do banzo — CD Bom Dia, 11/10); a boca no plano, sempre para o mesmo lado (para cima; a em pé, para o fim)
+            ls_ = math.hypot(u1 - u0, v1 - v0) or 1.0
+            nx_, ny_ = -(v1 - v0) / ls_, (u1 - u0) / ls_
+            if ny_ < -0.3 or (abs(ny_) <= 0.3 and nx_ < 0):
+                nx_, ny_ = -nx_, -ny_
+            alvo = (ux * nx_ * k, uy * nx_ * k, ny_)
+            dw_ = sum(a_ * b_ for a_, b_ in zip(alvo, w))
+            giro = _giro_para(w, tuple(a_ - dw_ * b_ for a_, b_ in zip(alvo, w)))
         if papel == "secundaria":
             # a barra secundária ("L22x22#11 - Um lado só", Docas 08/10): uma cantoneira só, numa face da tesoura, por fora
             # das abas do U — a aba deitada encostada na aba do U e a outra para fora; passa por fora das cantoneiras
