@@ -37,7 +37,8 @@ from typing import Dict, List, Optional, Tuple
 VERSAO_3D = 1
 #: Versão das fichas (pecas.json): mudou o que elas levam, os 3D leves guardados são refeitos.
 #: 2 (06/10): o vínculo com o 2D — peça e planta de origem, elemento da planta, marca do pré-moldado e caixa.
-VERSAO_FICHAS = 2
+#: 3 (12/10): a sigla da terça (TC3, TC46…) para a busca do modo ver achar a peça pelo nome do projeto.
+VERSAO_FICHAS = 3
 MAGICA = b"MCEL"
 
 #: Vértices por bloco (índice de 16 bits).
@@ -347,6 +348,8 @@ def _ficha(reg: dict, camadas_idx: Dict[str, int], centro, volume_mm3: float, vs
     if isinstance(origem, dict) and origem.get("peca"):
         f["pc"] = str(origem["peca"])
         f["pl"] = str(origem.get("planta") or str(origem["peca"]).split("#")[0]).replace(" (tesoura de cima)", "")
+    if isinstance(origem, dict) and origem.get("sigla"):
+        f["sg"] = str(origem["sigla"])
     if atrib.get("origem_2d"):
         f["o2"] = str(atrib["origem_2d"])
     if atrib.get("pre_moldado") and atrib.get("peca") and atrib.get("eixo"):

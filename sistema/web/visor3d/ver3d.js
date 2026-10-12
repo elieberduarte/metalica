@@ -419,9 +419,14 @@ async function posicionarRotulo() {
 function procurar(texto) {
   const t = (texto || '').trim().toLowerCase();
   if (t.length < 2 || !visor || !visor.fichas) return [];
+  // a sigla ou a peça digitada inteira (TC3, TESOURA 16) vale só ela — "tc3" não traz TC30…TC39
+  const exatas = [];
+  visor.fichas.forEach((f, i) => { if ((f.sg || '').toLowerCase() === t || (f.pl || '').toLowerCase() === t) exatas.push(i); });
+  if (exatas.length) return exatas;
   const out = [];
   visor.fichas.forEach((f, i) => {
-    if ((f.n + ' ' + f.p + ' ' + (f.pos || '') + ' ' + (f.mc || '') + ' ' + (f.cj || '')).toLowerCase().includes(t)) out.push(i);
+    // também a sigla da terça (TC3) e a peça/planta de origem (TESOURA 16): os nomes do projeto (12/10)
+    if ((f.n + ' ' + f.p + ' ' + (f.pos || '') + ' ' + (f.mc || '') + ' ' + (f.cj || '') + ' ' + (f.sg || '') + ' ' + (f.pl || '')).toLowerCase().includes(t)) out.push(i);
   });
   return out;
 }
@@ -430,7 +435,7 @@ function painelBusca(texto) {
   const r = procurar(texto);
   if (!r.length) { abrirPainel('busca', 'Buscar', '<p class="dica">Nenhuma peça com esse texto.</p>'); return; }
   abrirPainel('busca', `${nf(r.length)} peça(s)`, r.slice(0, 80).map(i => `<div class="linha-lista" data-i="${i}">
-      <span title="${esc(visor.fichas[i].n)}">${esc(visor.fichas[i].n)}</span><em>${esc(visor.fichas[i].p || '')}</em></div>`).join('')
+      <span title="${esc(visor.fichas[i].n)}">${esc(visor.fichas[i].sg || visor.fichas[i].pl || visor.fichas[i].n)}</span><em>${esc(visor.fichas[i].p || '')}</em></div>`).join('')
     + (r.length > 80 ? `<p class="dica">e mais ${nf(r.length - 80)}</p>` : ''));
   $('#painel-corpo').querySelectorAll('[data-i]').forEach(el => el.onclick = () => { visor.selecionar(+el.dataset.i); visor.centrarEm(+el.dataset.i); avisarDivisao(); });
 }
