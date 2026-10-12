@@ -674,3 +674,28 @@ def test_boca_do_banzo_pelo_lado_das_barras_ligadas():
     meio = M(0, 1000, 3000, 1000, "banzo")
     dois = [M(500, 1000, 500, 0, "montante"), M(1500, 1000, 1500, 0, "montante"), M(1000, 1000, 1000, 1600, "montante")]
     assert de_planta._lado_do_miolo(meio, [meio] + dois) == 0
+
+
+def test_nos_da_alma_no_eixo_do_banzo():
+    """NBR 8800:2024, 6.5.2: os eixos das barras do nó se cruzam num ponto comum, no eixo do banzo (12/10). A elevação
+    leva a alma até a linha de fora do banzo (meia aba fora do eixo); a ponta anda pela própria barra até o eixo, e as
+    que caem perto umas das outras viram um nó só, o do montante."""
+    M = de_planta.Membro
+    banzo = M(0, 1000, 3000, 1000, "banzo", altura_linha=40)
+    mont = M(1000, 0, 1000, 1020, "montante")                 # passa 20 mm do eixo (a linha de fora)
+    diag = M(0, 0, 1012, 1020, "diagonal")                    # chega 12 mm ao lado do montante
+    chanfro = M(2900, 980, 3000, 1000, "diagonal")            # quase paralela ao banzo: não conta
+    novos, movidas, unidos = de_planta._nos_no_eixo_do_banzo([banzo, mont, diag, chanfro])
+    m2, d2, c2 = novos[1], novos[2], novos[3]
+    assert (round(m2.s1), round(m2.h1)) == (1000, 1000)
+    assert (round(d2.s1), round(d2.h1)) == (1000, 1000)      # no nó do montante
+    assert (c2.s0, c2.h0, c2.s1, c2.h1) == (2900, 980, 3000, 1000)
+    assert movidas == 2 and unidos == 1
+    assert mont.h1 == 1020                                    # a elevação não muda
+
+
+def test_presilhas_da_cantoneira_dupla_pela_norma():
+    """NBR 8800:2024, 5.3.6.1: a esbeltez de uma cantoneira entre presilhas até 3/4 da maior da barra composta e pelo
+    menos duas ligações. Na L 1"×1/8" (rx 0,75, rmin 0,48 cm): 3 intervalos, 2 presilhas; perfil desconhecido: 2."""
+    assert de_planta._presilhas_pela_norma('L 1"×1/8"') == 2
+    assert de_planta._presilhas_pela_norma("perfil que não existe") == 2

@@ -165,6 +165,8 @@ def _papel_do_solido(s) -> str:
 def _elementos(doc) -> List[_Elem]:
     out = []
     for b in doc.barras:
+        if b.papel == "presilha":          # liga as duas cantoneiras da alma dupla: não apoia nem é apoiada
+            continue
         orig = (b.atributos or {}).get("origem") or {}
         out.append(_Elem(b, [(tuple(b.inicio), tuple(b.fim))], b.papel, orig.get("peca")))
     for s in doc.solidos:

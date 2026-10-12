@@ -95,6 +95,8 @@ def _linhas_do(doc) -> List[dict]:
     out = []
     for ent in doc.entidades.values():
         o = _origem(ent)
+        if ent.tipo == "barra" and ent.papel == "presilha":
+            continue                    # a presilha da cantoneira dupla: liga as duas L, não é barra da estrutura
         if ent.tipo == "barra":
             out.append({"a": tuple(ent.inicio), "b": tuple(ent.fim), "papel": ent.papel or "barra",
                         "peca": o.get("peca"), "grupo": o.get("peca") or o.get("planta") or ent.id,

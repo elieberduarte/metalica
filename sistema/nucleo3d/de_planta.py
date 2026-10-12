@@ -780,7 +780,12 @@ def ler_elevacoes(ents, familias: Sequence[str]) -> Dict[str, Elevacao]:
                 banzo = r
                 notas_ids.add(n.get("id"))
             elif re.search(r"DIAG|MONT", s) and alma is None:
-                alma = r
+                alma = dict(r)
+                # "2L 1"X1/8" 3 PRELILHAS L 1"X1/8"": as presilhas que ligam as duas cantoneiras (NBR 8800, 5.3.6.1)
+                mp = re.search(r"(\d+)\s*PRE[SL]ILHAS?\b\s*(.*)$", s.upper())
+                if mp:
+                    rp = perfil_do_texto(mp.group(2)) if mp.group(2).strip() else None
+                    alma["presilhas"] = {"qtd": int(mp.group(1)), "perfil": (rp or {}).get("perfil") or r.get("perfil")}
                 notas_ids.add(n.get("id"))
         if banzo is None and nome.startswith("PERFIL "):
             # a peça de um perfil só (a viga inclinada "PERFIL 1"): a nota "PERFIL 1 2U100X40X2,65"
@@ -1080,6 +1085,96 @@ def _ligar_emenda(el: Elevacao, s_a: float, s_b: float) -> int:
                      "dos banzos aos %.2f m; o detalhe da emenda é a conferir." % (
                          _bonito(el.nome), s_a / 1000.0, (el.comprimento - s_b) / 1000.0, round(s_b - s_a), meio / 1000.0))
     return ligados
+
+
+def _presilhas_pela_norma(perfil: Optional[str]) -> int:
+    """O mínimo de presilhas da cantoneira dupla pela NBR 8800:2024, 5.3.6.1: a esbeltez de uma cantoneira entre duas
+    ligações (a / r_min) até 3/4 da maior esbeltez da barra composta ((L/r)o ≈ L / rx da cantoneira, o eixo paralelo à
+    aba, que o par não aumenta), e pelo menos duas ligações. Com o comprimento L dos dois lados, o número de intervalos
+    é rx / (0,75·r_min), independente do comprimento."""
+    pa = _perfil(perfil)
+    rx, rmin = (float(getattr(pa, "rx", 0) or 0), float(getattr(pa, "rmin", 0) or 0)) if pa is not None else (0.0, 0.0)
+    if rx <= 0 or rmin <= 0:
+        return 2
+    return max(2, math.ceil(rx / (0.75 * rmin) - 1e-9) - 1)
+
+
+def _nos_no_eixo_do_banzo(membros: List["Membro"], unir: float = 100.0) -> Tuple[List["Membro"], int, int]:
+    """Os nós da alma no eixo do banzo (NBR 8800:2024, 6.5.2: "os eixos que passam pelos centros geométricos das
+    seções transversais de barras axialmente solicitadas que formam um nó devem, de preferência, se interceptar em um
+    ponto comum"; pedido do usuário, 12/10). A elevação do projeto leva a alma até a linha de fora do banzo desenhado:
+    no Posto, as pontas ficavam meia aba fora do eixo do U (20 mm no U 100×40, 50 no U 200×100), do lado das costas, e
+    em 328 nós as barras chegavam a pontos diferentes. Cada ponta de montante ou diagonal que chega num banzo vai para o
+    cruzamento da linha dela com o eixo do banzo (seguindo a própria barra), e as pontas a menos de `unir` mm umas das
+    outras no mesmo banzo viram um nó só — o do montante, quando há, senão o do meio. A barra quase paralela ao banzo
+    (o chanfro da descida dele, a menos de 20°) não conta. Devolve (os membros novos, pontas movidas, nós unidos);
+    os da elevação não mudam."""
+    banzos = [m for m in membros if m.papel == "banzo" and math.hypot(m.s1 - m.s0, m.h1 - m.h0) > 1.0]
+    out = [Membro(m.s0, m.h0, m.s1, m.h1, m.papel, m.altura_linha, m.caixa) for m in membros]
+    if not banzos:
+        return out, 0, 0
+    pontas = []                                   # [membro, ponta (0/1), banzo, ao longo do banzo]
+    for m in out:
+        if m.papel not in ("montante", "diagonal"):
+            continue
+        la = math.hypot(m.s1 - m.s0, m.h1 - m.h0)
+        if la < 1.0:
+            continue
+        for k in (0, 1):
+            ps, ph = (m.s0, m.h0) if k == 0 else (m.s1, m.h1)
+            a_s, a_h = ((m.s1 - m.s0), (m.h1 - m.h0)) if k == 0 else ((m.s0 - m.s1), (m.h0 - m.h1))
+            melhor = None
+            for j, b in enumerate(banzos):
+                lb = math.hypot(b.s1 - b.s0, b.h1 - b.h0)
+                ts, th = (b.s1 - b.s0) / lb, (b.h1 - b.h0) / lb
+                tol = max(60.0, 0.75 * b.altura_linha + 15.0)
+                fora = abs((ps - b.s0) * th - (ph - b.h0) * ts)
+                ao = (ps - b.s0) * ts + (ph - b.h0) * th
+                if fora > tol or not (-tol <= ao <= lb + tol):
+                    continue
+                cruz = a_s * th - a_h * ts
+                if abs(cruz) < math.sin(math.radians(20.0)) * la:
+                    continue
+                u = ((b.s0 - ps) * th - (b.h0 - ph) * ts) / cruz
+                ns, nh = ps + u * a_s, ph + u * a_h
+                if math.hypot(ns - ps, nh - ph) > 2.0 * tol:
+                    continue
+                if melhor is None or fora < melhor[0]:
+                    melhor = (fora, j, ns, nh, (ns - b.s0) * ts + (nh - b.h0) * th)
+            if melhor:
+                _f, j, ns, nh, ao = melhor
+                pontas.append([m, k, j, ao, ns, nh])
+    movidas = unidos = 0
+    por_banzo: Dict[int, list] = collections.defaultdict(list)
+    for p in pontas:
+        por_banzo[p[2]].append(p)
+    for j, ps_ in por_banzo.items():
+        b = banzos[j]
+        lb = math.hypot(b.s1 - b.s0, b.h1 - b.h0)
+        ts, th = (b.s1 - b.s0) / lb, (b.h1 - b.h0) / lb
+        ps_.sort(key=lambda p: p[3])
+        grupos = [[ps_[0]]]
+        for p in ps_[1:]:
+            if p[3] - grupos[-1][-1][3] <= unir:
+                grupos[-1].append(p)
+            else:
+                grupos.append([p])
+        for g in grupos:
+            mont = [p for p in g if p[0].papel == "montante"]
+            if len(g) > 1 and max(p[3] for p in g) - min(p[3] for p in g) > 1.0:
+                unidos += 1
+                alvo = (sum(p[3] for p in mont) / len(mont)) if mont else (sum(p[3] for p in g) / len(g))
+                for p in g:
+                    p[4], p[5] = b.s0 + ts * alvo, b.h0 + th * alvo
+            for m, k, _j, _ao, ns, nh in g:
+                antes = (m.s0, m.h0) if k == 0 else (m.s1, m.h1)
+                if math.hypot(ns - antes[0], nh - antes[1]) > 0.5:
+                    movidas += 1
+                if k == 0:
+                    m.s0, m.h0 = ns, nh
+                else:
+                    m.s1, m.h1 = ns, nh
+    return out, movidas, unidos
 
 
 def _partes_da_elevacao(el: "Elevacao", dividir: bool) -> List[Tuple[str, List["Membro"]]]:
@@ -3022,6 +3117,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     # ---------------------------------------------------------------- treliças e vigas
     contagem = collections.Counter()
     bocas_viradas: List[str] = []          # banzos em U que a regra do miolo virou (antes: a meia altura)
+    nos_no_eixo = {"pontas": 0, "unidos": 0}   # a alma levada ao eixo do banzo (NBR 8800, 6.5.2)
+    presilhas_postas = {"pecas": 0, "pela_nota": 0, "pela_norma": 0}
     # os pilares com a metade da seção: a viga que para antes deles vai até a face
     pilares_meia = []
     for pl in locados:
@@ -3165,6 +3262,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 continue
             conj_base = conj
             for sufixo, membros in _partes_da_elevacao(el, _sem_acento(t.nome).upper() in duas_pecas):
+                membros, n_mov, n_uni = _nos_no_eixo_do_banzo(membros)
+                nos_no_eixo["pontas"] += n_mov
+                nos_no_eixo["unidos"] += n_uni
                 conj = conj_base if not sufixo else "%s%s#%d" % (t.nome, sufixo, k_t)
                 alturas = [h for m in membros for h in (m.h0, m.h1)]
                 meio_h = (min(alturas) + max(alturas)) / 2.0 if alturas else 0.0
@@ -3213,6 +3313,21 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                             d = (nx * af * sinal, ny * af * sinal, 0.0)
                             barra(tuple(q0[i] + d[i] for i in range(3)), tuple(q1[i] + d[i] for i in range(3)), perfil,
                                   papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o})
+                        # as presilhas (NBR 8800:2024, 5.3.6.1): igualmente espaçadas entre os nós, atravessando o par;
+                        # a quantidade da nota do projeto, nunca abaixo do mínimo da norma
+                        nota_p = (el.alma or {}).get("presilhas") or {}
+                        n_norma = _presilhas_pela_norma(perfil)
+                        n_p = max(int(nota_p.get("qtd") or 0), n_norma)
+                        p_pres = nota_p.get("perfil") or perfil
+                        larg = 2.0 * af + (float(pa.bf or 25.0) if pa else 25.0)
+                        for k_p in range(1, n_p + 1):
+                            f = k_p / (n_p + 1.0)
+                            cq = tuple(q0[i] + (q1[i] - q0[i]) * f for i in range(3))
+                            barra((cq[0] - nx * larg / 2, cq[1] - ny * larg / 2, cq[2]), (cq[0] + nx * larg / 2, cq[1] + ny * larg / 2, cq[2]),
+                                  p_pres, "presilha", "Treliças", conj, 0.0,
+                                  {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "presilha_de": perfil})
+                        presilhas_postas["pecas"] += n_p
+                        presilhas_postas["pela_nota" if int(nota_p.get("qtd") or 0) >= n_norma else "pela_norma"] += 1
                     elif m.papel == "apoio_terca" and el.apoio_terca:
                         pu = el.apoio_terca["perfil"]
                         off = _lado_do_apoio(p_banzo, pu)
@@ -3529,6 +3644,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     from nucleo3d import alma_na_face
     from nucleo3d.geometria import comprimentos_da_barra, tem_corte_no_angulo
     na_face = alma_na_face.encaixar([p["ent"] for p in pecas])
+    if nos_no_eixo["pontas"]:
+        avisos.append("Nós no eixo do banzo (NBR 8800:2024, 6.5.2): %d ponta(s) de montante e diagonal levadas da linha "
+                      "desenhada ao eixo do banzo e %d nó(s) com as barras chegando em pontos diferentes unidos num ponto só."
+                      % (nos_no_eixo["pontas"], nos_no_eixo["unidos"]))
     if bocas_viradas:
         cont_bv = collections.Counter(bocas_viradas)
         avisos.append("Boca do U do banzo para o miolo (o lado das barras ligadas): %d trecho(s) virado(s) em relação à "
@@ -4036,7 +4155,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         "vigas": st.get("vigas", 0), "pilares": pilares, "pilares_com_corte": res_pm["n"], "tercas": tercas, "correntes": correntes,
         "esticadores": esticadores, "agulhas": agulhas, "contraventamentos": contravs,
         "barras": len(doc.barras), "calandradas": sum(1 for p in pecas if p["ent"].tipo == "solido"),
-        "alma_na_face": na_face, "bocas_viradas": len(bocas_viradas),
+        "alma_na_face": na_face, "bocas_viradas": len(bocas_viradas), "nos_no_eixo": dict(nos_no_eixo), "presilhas": dict(presilhas_postas),
         "posicoes": len(posicao_de and set(posicao_de.values())), "conjuntos": n_conj, "peso_kg": round(peso, 1),
         "orientacao": ori, "planta_sem_nome": st.get("sem_rotulo", 0), "outras_plantas": outras_feitas,
         "nomes_sem_elevacao": {_bonito(k): v for k, v in (st.get("sem_elevacao") or {}).items()},
