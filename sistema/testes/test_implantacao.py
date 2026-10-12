@@ -158,3 +158,37 @@ def test_montante_em_u_no_meio_da_tesoura_abre_para_o_meio_do_vao():
         u, _v, _w = base_local(w, b.rotacao)
         abre[round(b.inicio[0])] = round(u[0])
     assert abre == {0: 1, 5000: 1, 15000: -1, 20000: -1}, abre
+
+
+def test_perfil_da_barra_e_secao_dupla_da_legenda():
+    """A legenda de cores da folha de perfis do projeto (CD Bom Dia, 11/10): cada barra com o perfil dela; "DUPLO (CAIXA)"
+    = dois U de boca um para o outro, "COMPOSTO" = dois U de costas com a chapa de nó entre eles — simétricos ao plano."""
+    from nucleo3d.geometria import base_local, resolver_perfil, secao
+    barras = [[0, 0, 10000, 0, "banzo_inf", "Ue 100×50×17×2,65", "composto"],
+              [0, 1500, 10000, 1500, "banzo_sup", "Ue 100×50×17×2,25", ""],
+              [0, 0, 0, 1500, "montante", "Ue 127×50×17×2,00", "caixa"],
+              [0, 0, 5000, 1500, "diagonal"]]
+    comum = Desenho(nome="planta", escala=100.0)
+    comum.add(Linha(a=(0.0, 0.0), b=(10000.0, 0.0), camada="ESTRUTURA", atributos={
+        "elemento": "trelica", "material": "aco", "marca": "T", "nivel_base": 0,
+        "perfis": {"banzo_sup": "U 150×50×3,0", "banzo_inf": "U 150×50×3,0", "diagonal": "L 50,8×4,76"},
+        "desenho": {"barras": barras, "vao": 10000, "altura": 1500}}))
+    doc, _ = DPE.modelo_da_planta(comum, [])
+    por = {}
+    for b in doc.entidades.values():
+        por.setdefault((b.atributos or {}).get("papel_trelica"), []).append(b)
+    assert [b.perfil for b in por["banzo_sup"]] == ["Ue 100×50×17×2,25"]
+    assert [b.perfil for b in por["diagonal"]] == ["L 50,8×4,76"]               # sem perfil próprio: o do tipo
+    for papel, perfil, caixa in (("banzo_inf", "Ue 100×50×17×2,65", False), ("montante", "Ue 127×50×17×2,00", True)):
+        dois = por[papel]
+        assert len(dois) == 2 and all(b.perfil == perfil and b.atributos.get("secao_dupla") for b in dois)
+        p = resolver_perfil(perfil)
+        xg = -min(q[0] for q in secao(p))
+        off = (p.bf - xg) if caixa else (xg + DPE.CHAPA_COMPOSTO / 2)
+        ys = sorted(round(b.inicio[1], 3) for b in dois)                      # o plano da tesoura é y = 0
+        assert abs(ys[0] + off) < 0.01 and abs(ys[1] - off) < 0.01, (papel, ys, off)
+        for b in dois:
+            w = tuple(b.fim[c] - b.inicio[c] for c in range(3))
+            u, _v, _w = base_local(w, b.rotacao)
+            lado = 1 if b.inicio[1] > 0 else -1
+            assert round(u[1]) == (-lado if caixa else lado), (papel, b.inicio, u)    # caixa abre para o plano; composto para fora

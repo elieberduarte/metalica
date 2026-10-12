@@ -49,6 +49,8 @@ IFC = {"pilar": "IfcColumn", "viga": "IfcBeam", "fundacao": "IfcFooting", "conso
 
 #: mm: a junta entre painéis e entre placas de laje (só no desenho do 3D)
 JUNTA = 10.0
+#: mm: a chapa de nó entre as almas do perfil "composto" (dois U de costas) — a do detalhe da emenda do CD Bom Dia
+CHAPA_COMPOSTO = 6.35
 
 
 def _nivel(v, niveis: Dict[str, float], padrao: float = 0.0) -> float:
@@ -391,13 +393,16 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     def P(u, v):
         return (e.a[0] + ux * u * k, e.a[1] + uy * u * k, z0 + v)
 
-    segs, papeis = [], []
+    segs, papeis, perfis_b, secoes_b = [], [], [], []
     for b in barras:
         try:
             segs.append(tuple(float(x) for x in b[:4]))
         except (TypeError, ValueError):
             continue
         papeis.append(str(b[4]) if len(b) > 4 else "diagonal")
+        # o perfil da própria barra (a legenda de cores da folha de perfis do projeto, 11/10) e a seção dupla dela
+        perfis_b.append(str(b[5]) if len(b) > 5 and b[5] else "")
+        secoes_b.append(str(b[6]) if len(b) > 6 and b[6] else "")
     if not segs:
         raise ErroDeDados("a tesoura não tem o desenho das barras")
     pares = _linhas_duplas(segs)
@@ -430,6 +435,8 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                 papel = "extremidade" if de_pe else ("banzo_sup" if any(toca(s, o) for o in sup) or not perfis.get("banzo_inf") else "banzo_inf")
             perfil_u = perfis.get(papel) or perfis.get("banzo_sup") or perfis.get("banzo_inf")
         perfil = perfil_u or perfis.get(papel) or perfis.get("diagonal" if papel in ("montante", "secundaria") else papel) or "L 50,8×4,76"
+        if perfis_b[i]:
+            perfil = perfis_b[i]
         u0, v0, u1, v1 = s
         if i in pares:                                 # no meio das duas faces
             _j, dist, (nx, ny) = pares[i]
@@ -443,6 +450,29 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         # a ponta em U conta como banzo: as cantoneiras encaixam nela, e ela não é recortada como alma
         papel_3d = "banzo" if (papel.startswith("banzo") or papel == "extremidade") else ("diagonal" if papel == "secundaria" else papel)
         nome = "%s %s %d" % (marca, nome_papel.get(papel, papel), i + 1)
+        if secoes_b[i] in ("caixa", "composto"):
+            # a seção dupla da legenda do projeto: "DUPLO (CAIXA)" = dois U de boca um para o outro; "COMPOSTO" = dois U
+            # de costas, com a chapa de nó entre as almas. Simétricas ao plano da tesoura, cada U deslocado para fora
+            # dele — a confirmar com o detalhe da seção (11/10, CD Bom Dia)
+            try:
+                from nucleo3d.geometria import resolver_perfil, secao
+                pd_ = resolver_perfil(perfil)
+                xg = -min(q[0] for q in secao(pd_))            # da alma ao centroide (a boca abre para +u)
+                bf = float(pd_.bf or 0.0)
+            except Exception:                                  # noqa: BLE001
+                xg, bf = 15.0, 50.0
+            caixa = secoes_b[i] == "caixa"
+            off = (bf - xg) if caixa else (xg + CHAPA_COMPOSTO / 2.0)
+            for lado in (1.0, -1.0):
+                dl = tuple(lado * off * c for c in fora_do_plano)
+                abre = tuple((-lado if caixa else lado) * c for c in fora_do_plano)
+                bd = Barra(inicio=tuple(A[c] + dl[c] for c in range(3)), fim=tuple(B[c] + dl[c] for c in range(3)), perfil=perfil,
+                           papel=papel_3d, aco=aco, camada=camada, nome=nome + (" (a)" if lado > 0 else " (b)"), rotacao=_giro_para(w, abre),
+                           atributos=dict(atr, secao_dupla=secoes_b[i], a_confirmar="seção dupla: arranjo dos dois perfis"))
+                doc.add(bd)
+                feitas.append(bd)
+                n += 1
+            continue
         banzo_simples = i not in pares and (papel.startswith("banzo") or papel == "extremidade")
         if i in pares or banzo_simples:
             # a boca do U para o miolo: o eixo u da seção (para onde o U abre) na normal para dentro, no plano da tesoura.

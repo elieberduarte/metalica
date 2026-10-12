@@ -855,19 +855,40 @@ export class MetodosImplantacao {
     if (!escolhidas.size) for (const c of porCamada.keys()) escolhidas.add(c);
     const vezes = new Map();
     for (const e of todasSel) { const c = (e.atributos || {}).colado; if (c) vezes.set(c, (vezes.get(c) || 0) + 1); }
-    const idColado = [...vezes.entries()].sort((a, b) => b[1] - a[1]).map(x => x[0])[0];
+    // duas colagens na seleção: a que traz a legenda de cores ("PERFIL … UE100x50x17x2.25mm", a folha de perfis do projeto,
+    // colada por cima e alinhada) dá o perfil de cada barra; a outra (a elevação) dá a geometria — o CD Bom Dia, 11/10:
+    // a folha "PERFIS TC1" tem as cores mas o leitor não acha nela o banzo inferior inclinado; a elevação tem a tesoura toda
+    const legendaDe = new Map();
+    for (const e of doc.entidades.values()) {
+      const a = e.atributos || {};
+      if (e.tipo === 'texto' && a.quadro === q.id && a.colado && vezes.has(a.colado) && /PERFIL[^]*U[E]?\s*\d/i.test(e.texto || '') && a.cor)
+        legendaDe.set(a.colado, (legendaDe.get(a.colado) || 0) + 1);
+    }
+    const ordem = [...vezes.entries()].sort((a, b) => b[1] - a[1]).map(x => x[0]);
+    // as folhas de perfis (uma por meia tesoura, a segunda espelhada) e a geometria: a maior colagem sem legenda
+    const perfisSet = new Set([...legendaDe.entries()].filter(([, n]) => n >= 2).map(([c]) => c));
+    const idPerfis = perfisSet.size ? [...perfisSet][0] : null;
+    const idColado = ordem.length > 1 && perfisSet.size ? (ordem.find(c => !perfisSet.has(c)) || ordem[0]) : ordem[0];
     // o desenho na medida real da elevação (u ao longo do eixo, z a cota). Primeiro o leitor do desenho detalhado (o do
     // quadro de tesoura da leitura por quadros: o banzo em linha dupla, a alma, a legenda dos perfis — o esqueleto em
     // linha de centro); sem tesoura achada, as linhas como linhas de eixo (desenhoDaTesoura)
     const real = (e) => transformar(e, (p) => this._paraReal(q, p), (a) => a, q.escala);
     const textos = [...doc.entidades.values()].filter(e => e.tipo === 'texto' && (e.atributos || {}).quadro === q.id && !(e.atributos || {}).gerado
       && (!idColado || (e.atributos || {}).colado === idColado)).map(real);
-    let sel = [], des = null, u0 = 0, z0 = 0, leitura = null;
+    let sel = [], des = null, u0 = 0, z0 = 0, leitura = null, reaisSel = [], legenda = null;
+    // a legenda de cores da folha de perfis do projeto ("PERFIL DUPLO (CAIXA) UE127x50x17x2.00mm" escrito na cor das barras
+    // daquele perfil, sob "BANZOS" e "MONTANTES E DIAGONAIS"): todos os textos da colagem, de qualquer camada
+    const textosColagem = [...doc.entidades.values()].filter(e => e.tipo === 'texto' && (e.atributos || {}).quadro === q.id && !(e.atributos || {}).gerado
+      && (!(idPerfis || idColado) || (perfisSet.size ? perfisSet.has((e.atributos || {}).colado) : (e.atributos || {}).colado === idColado))).map(real);
+    // os traços coloridos da folha de perfis (todas as camadas dela), quando ela veio à parte
+    const coresDaFolha = perfisSet.size && !perfisSet.has(idColado)
+      ? todasSel.filter(e => perfisSet.has((e.atributos || {}).colado) && (e.atributos || {}).cor).map(real) : null;
     const ler = async () => {
-      sel = todasSel.filter(e => escolhidas.has(e.camada));
-      des = null; leitura = null;
+      sel = todasSel.filter(e => escolhidas.has(e.camada) && (!coresDaFolha || (e.atributos || {}).colado === idColado));
+      des = null; leitura = null; legenda = null;
       if (sel.length < 3) return false;
       const reais = sel.map(real);
+      reaisSel = reais;
       try {
         // a legenda só das camadas da tesoura: o texto do pilar ao lado (o "W250x32.7" do PM2, CD Bom Dia) virava o banzo
         const r = await pedir(`/api/projetos/${encodeURIComponent(this.cad.projeto)}/montagem/ler-tesoura`,
@@ -876,6 +897,7 @@ export class MetodosImplantacao {
       } catch { leitura = null; }
       if (!des) des = desenhoDaTesoura(reais);
       if (des) [u0, z0] = des.origem;
+      if (des) legenda = this._perfisPelaLegenda(des, coresDaFolha || reaisSel, textosColagem);
       return !!(des && des.n >= 3);
     };
     if (!(await ler())) { this.cad.aviso('Não consegui ler a tesoura nessa seleção: são precisas ao menos três barras.', 'atencao'); return; }
@@ -936,32 +958,41 @@ export class MetodosImplantacao {
         `. O apoio (${pelaRef() ? 'o ponto de referência da colagem' : 'o ponto mais baixo'}) está em ${cota(za)} m` +
         (casado ? (Math.abs(casado.z - za) < 1 ? `, no nível ${casado.nome}` : `, ${Math.round(za - casado.z)} mm ${za > casado.z ? 'acima' : 'abaixo'} do nível ${casado.nome}`) : ', sem nível perto (fica na cota do desenho)') +
         (pelaRef() && z0 < za - 1 ? `; o desenho desce até ${cota(z0)} m (o que vai até o pilar).` : '.') + ' A tesoura fica onde foi colada.' +
-        (aps.length ? ` Apontamentos: ${aps.slice(0, 3).join('; ')}.` : '');
+        (aps.length ? ` Apontamentos: ${aps.slice(0, 3).join('; ')}.` : '') +
+        (legenda && legenda.n ? ` Perfis pela legenda de cores do desenho: ${legenda.n} de ${des.n} barras (${legenda.resumo}).` +
+          (legenda.avisos.length ? ` ${legenda.avisos.join(' ')}` : '') : '');
       // as emendas (dois montantes de ponta lado a lado): tesouras encostadas no mesmo desenho
-      const cortes = this._emendas(des);
-      linhaPartes.style.display = cortes.length ? 'grid' : 'none';
+      const achadas = this._emendas(des);
+      separar.querySelector('option[value=emendas]').disabled = !achadas.length;
+      linhaPartes.style.display = 'grid';
+      const cortes = separar.value === 'meio' ? [{ a: des.vao / 2, b: des.vao / 2 }] : separar.value === 'emendas' ? achadas : [];
+      rotPartes.textContent = achadas.length ? `emendas achadas: ${achadas.length} (dois montantes de ponta lado a lado)` : '';
+      marcasPartes.hidden = !cortes.length;
       if (cortes.length) {
         const ps = this._partesDoDesenho(des, cortes);
         const nomesC = cruz.map(c => c.nome);
         const ondeC = cortes.map(ct => { const cu = (ct.a + ct.b) / 2; const c = cruz.find(x => Math.abs(x.u - (u0 + cu)) < 1500); return c ? c.nome : `${numero((u0 + cu) / 1000, 2)} m`; });
-        rotPartes.textContent = `Separar nas emendas (${ondeC.join(', ')}): ${ps.length} tesouras de ${ps.map(x => numero(x.vao / 1000, 2)).join(' · ')} m`;
-        if (!marcasPartes.dataset.mexido) {
+        rotPartes.textContent = `${ps.length} tesouras de ${ps.map(x => numero(x.vao / 1000, 2)).join(' · ')} m (${separar.value === 'meio' ? 'no meio' : 'em ' + ondeC.join(', ')})`;
+        if (!marcasPartes.dataset.mexido || marcasPartes.dataset.partes !== String(ps.length)) {
           const b = (marca.value || 'T1').trim().toUpperCase();
           marcasPartes.value = ps.length === 3 ? `${b}, ${b}C, ${b}` : ps.length === 2 ? `${b}, ${b}` : ps.map((_, i) => `${b}-${i + 1}`).join(', ');
+          marcasPartes.dataset.partes = String(ps.length);
         }
         void nomesC;
       }
     };
     // separar nas emendas: as marcas das partes, em ordem (as pontas iguais podem ter a mesma marca: o mesmo tipo)
-    const separar = el('input', { type: 'checkbox', checked: true });
+    const separar = el('select', {}, el('option', { value: '', texto: 'não separar' }), el('option', { value: 'emendas', texto: 'nas emendas achadas' }),
+      el('option', { value: 'meio', texto: 'no meio (as duas meias tesouras)' }));
+    separar.addEventListener('change', () => escreverInfo());
     const rotPartes = el('span', {});
     const marcasPartes = el('input', { type: 'text', spellcheck: 'false', style: 'flex:1 1 0;min-width:0;width:100%',
       title: 'As marcas das tesouras, na ordem da esquerda para a direita, separadas por vírgula (a mesma marca = o mesmo tipo)' });
     marcasPartes.addEventListener('keydown', ev => ev.stopPropagation());
     marcasPartes.addEventListener('input', () => { marcasPartes.dataset.mexido = '1'; });
     const linhaPartes = el('div', { style: 'display:none;grid-template-columns:140px minmax(0,1fr);gap:6px;align-items:start;margin:4px 0;font-size:12.5px' },
-      el('label', { class: 'linha', style: 'display:flex;gap:4px;align-items:flex-start' }, separar, el('span', {}, 'Separar')),
-      el('div', { style: 'display:flex;flex-direction:column;gap:4px;min-width:0' }, rotPartes, marcasPartes));
+      el('span', { style: 'padding-top:3px' }, 'Separar'),
+      el('div', { style: 'display:flex;flex-direction:column;gap:4px;min-width:0' }, separar, rotPartes, marcasPartes));
     escreverInfo();
     // as camadas: as escolhidas viram barras (contadas); mudar refaz a leitura
     const caixaCamadas = el('div', { style: 'display:flex;flex-wrap:wrap;gap:2px 12px;max-height:92px;overflow:auto;min-width:0' },
@@ -992,10 +1023,10 @@ export class MetodosImplantacao {
     if (this.cad._guardarMedidas) this.cad._guardarMedidas();
     // as partes: o desenho inteiro, ou separado nas emendas (cada parte com a marca dela — decisão do usuário, 11/10:
     // no CD Bom Dia, TC1 de A a B, a central de B a C e TC1 de C a D)
-    const cortes = this._emendas(des);
+    const cortes = separar.value === 'meio' ? [{ a: des.vao / 2, b: des.vao / 2 }] : separar.value === 'emendas' ? this._emendas(des) : [];
     let partes = [{ ...des, u0Rel: 0, v0Rel: 0 }];
     let marcasP = [(marca.value || 'T1').trim().toUpperCase()];
-    if (cortes.length && separar.checked) {
+    if (cortes.length) {
       partes = this._partesDoDesenho(des, cortes);
       const ms = marcasPartes.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
       marcasP = partes.map((_, i) => ms[i] || ms[ms.length - 1] || `T${i + 1}`);
@@ -1047,8 +1078,12 @@ export class MetodosImplantacao {
     // saem as tesouras dos eixos marcados que vieram deste desenho ou têm uma destas marcas (um eixo, uma vez cada
     // tesoura deste desenho) e, com "todas", as outras recebem o desenho da parte delas (a de mesma marca mais perto)
     const fonte = new Set(sel.map(x => x.id));
+    const ao_ = (r) => ((q.familia === 'numero' ? r[1] : r[0]) - p0) * sent;
+    const trecho = (e) => { const a = ao_(this._paraReal(qi, e.a)), b = ao_(this._paraReal(qi, e.b)); return [Math.min(a, b), Math.max(a, b)]; };
+    const novosTrechos = partes.map(pt => [u0 + pt.u0Rel, u0 + pt.u0Rel + pt.vao]);
+    const sobrepoe = (tr) => novosTrechos.some(([a, b]) => Math.min(b, tr[1]) - Math.max(a, tr[0]) > 0.3 * Math.min(b - a, tr[1] - tr[0]));
     const sair = trels.filter(t => eixos.includes(t.atributos.eixo) && t.atributos.familia_eixo === q.familia
-      && (conjunto.has(t.atributos.marca) || ((t.atributos.desenho || {}).fonte || []).some(id => fonte.has(id)))).map(t => t.id);
+      && (conjunto.has(t.atributos.marca) || ((t.atributos.desenho || {}).fonte || []).some(id => fonte.has(id))) && sobrepoe(trecho(t))).map(t => t.id);
     const cmds = [];
     if (sair.length) cmds.push(new ComandoRemover(this.cad._comRotulos ? this.cad._comRotulos(sair) : sair, `Tesouras antigas`));
     cmds.push(new ComandoAdicionar(novas, `Tesoura ${marcasP.join(', ')}`));
@@ -1117,15 +1152,92 @@ export class MetodosImplantacao {
         // o trecho dentro da parte (cortado nas emendas)
         const ua = Math.max(lo, ini), ub = Math.min(hi, fim);
         if (ub - ua < 5) continue;
-        bs.push([ua, em(b, ua), ub, em(b, ub), b[4]]);
+        bs.push([ua, em(b, ua), ub, em(b, ub), ...b.slice(4)]);
       }
       if (!bs.length) continue;
       const u0 = Math.min(...bs.flatMap(b => [b[0], b[2]])), v0 = Math.min(...bs.flatMap(b => [b[1], b[3]]));
       const u1 = Math.max(...bs.flatMap(b => [b[0], b[2]])), v1 = Math.max(...bs.flatMap(b => [b[1], b[3]]));
-      partes.push({ barras: bs.map(b => [r1(b[0] - u0), r1(b[1] - v0), r1(b[2] - u0), r1(b[3] - v0), b[4]]), vao: r1(u1 - u0), altura: r1(v1 - v0),
+      partes.push({ barras: bs.map(b => [r1(b[0] - u0), r1(b[1] - v0), r1(b[2] - u0), r1(b[3] - v0), ...b.slice(4)]), vao: r1(u1 - u0), altura: r1(v1 - v0),
         n: bs.length, u0Rel: u0, v0Rel: v0 });
     }
     return partes;
+  }
+
+  /**
+   * Os perfis pela legenda de cores da folha de perfis do projeto (CD Bom Dia, "PERFIS TC1"): os textos "PERFIL
+   * [SIMPLES|COMPOSTO|DUPLO (CAIXA)] UE100x50x17x2.25mm", escritos na cor das barras daquele perfil, sob "BANZOS" ou
+   * "MONTANTES E DIAGONAIS". Cada barra do desenho lido pega a cor do traço desenhado nela e, pela legenda da função
+   * dela, o perfil e a seção (b[5] e b[6] das barras: simples, composto ou caixa). Mexe em `des.barras`; devolve
+   * {n, resumo, avisos}, ou null sem legenda.
+   */
+  _perfisPelaLegenda(des, reais, textos) {
+    const RX = /PERFIL\s*(SIMPLES|COMPOSTO|DUPLO\s*\(?\s*CAIXA\s*\)?|DUPLO)?\s*(U[E]?)\s*(\d+(?:[.,]\d+)?)\s*[xX×]\s*(\d+(?:[.,]\d+)?)(?:\s*[xX×]\s*(\d+(?:[.,]\d+)?))?\s*[xX×]\s*(\d+(?:[.,]\d+)?)/i;
+    const titulos = textos.filter(e => /^\s*(BANZOS?|MONTANTES?|DIAGONA)/i.test(e.texto || ''));
+    const itens = [];
+    const num = (s) => String(s).replace('.', ',');
+    for (const e of textos) {
+      const m = RX.exec(e.texto || '');
+      const cor = (e.atributos || {}).cor;
+      if (!m || !cor) continue;
+      const tipo = !m[1] ? 'simples' : /COMPOSTO/i.test(m[1]) ? 'composto' : /DUPLO/i.test(m[1]) ? 'caixa' : 'simples';
+      const fam = m[2].toUpperCase() === 'UE' ? 'Ue' : 'U';
+      const perfil = `${fam} ${[m[3], m[4], m[5], m[6]].filter(Boolean).map(num).join('×')}`;
+      // a função pelo título mais perto à esquerda/acima (a coluna da legenda)
+      let fn = null, dm = Infinity;
+      for (const ti of titulos) {
+        const dx = Math.abs(ti.posicao[0] - e.posicao[0]), dy = ti.posicao[1] - e.posicao[1];
+        if (dy < -200 || dy > 3000) continue;
+        const d = dx + dy * 0.3;
+        if (d < dm) { dm = d; fn = /BANZO/i.test(ti.texto) ? 'banzo' : 'alma'; }
+      }
+      const it = { fn: fn || 'qualquer', cor: String(cor).toLowerCase(), tipo, perfil, texto: e.texto.trim() };
+      // a mesma legenda duas vezes (a folha colada para cada meia tesoura) conta uma vez
+      if (!itens.some(x => x.fn === it.fn && x.cor === it.cor && x.tipo === it.tipo && x.perfil === it.perfil)) itens.push(it);
+    }
+    if (!itens.length) return null;
+    // os traços da seleção, com a cor
+    const segs = [];
+    for (const e of reais) {
+      const cor = String((e.atributos || {}).cor || '').toLowerCase();
+      if (!cor) continue;
+      const pts = e.tipo === 'linha' ? [e.a, e.b] : e.tipo === 'polilinha' ? (e.fechada ? [...e.vertices, e.vertices[0]] : e.vertices) : [];
+      for (let i = 0; i + 1 < pts.length; i++) segs.push([pts[i], pts[i + 1], cor]);
+    }
+    const [ou, ov] = des.origem;
+    let n = 0;
+    const conta = new Map(), ambiguas = new Set(), semLegenda = new Set();
+    for (const b of des.barras) {
+      const P0 = [b[0] + ou, b[1] + ov], P1 = [b[2] + ou, b[3] + ov];
+      const L = Math.hypot(P1[0] - P0[0], P1[1] - P0[1]);
+      if (L < 1) continue;
+      const tu = [(P1[0] - P0[0]) / L, (P1[1] - P0[1]) / L];
+      const votos = new Map();
+      for (const [a, c, cor] of segs) {
+        const ls = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        if (ls < 1 || Math.abs(((c[0] - a[0]) * tu[0] + (c[1] - a[1]) * tu[1]) / ls) < 0.998) continue;      // paralelo
+        const m = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2];
+        const lado = Math.abs((m[0] - P0[0]) * tu[1] - (m[1] - P0[1]) * tu[0]);
+        if (lado > 90) continue;                                                        // as faces de até 180 mm
+        const s0 = (a[0] - P0[0]) * tu[0] + (a[1] - P0[1]) * tu[1], s1 = (c[0] - P0[0]) * tu[0] + (c[1] - P0[1]) * tu[1];
+        const cobre = Math.min(L, Math.max(s0, s1)) - Math.max(0, Math.min(s0, s1));
+        if (cobre > 0) votos.set(cor, (votos.get(cor) || 0) + cobre);
+      }
+      const cor = [...votos.entries()].sort((x, y) => y[1] - x[1]).map(x => x[0])[0];
+      if (!cor) continue;
+      const fn = String(b[4]).startsWith('banzo') || b[4] === 'extremidade' ? 'banzo' : 'alma';
+      const cand = itens.filter(it => it.cor === cor && (it.fn === fn || it.fn === 'qualquer'));
+      if (!cand.length) { semLegenda.add(cor); continue; }
+      const it = cand.find(x => x.tipo === 'simples') || cand[0];
+      if (cand.length > 1) ambiguas.add(`${fn === 'banzo' ? 'banzo' : 'alma'} ${cand.map(x => x.texto.replace(/^PERFIL\s*/i, '')).join(' ou ')}`);
+      b[5] = it.perfil; b[6] = it.tipo === 'simples' ? '' : it.tipo;
+      n++;
+      const k = `${it.perfil}${it.tipo !== 'simples' ? ' ' + it.tipo : ''}`;
+      conta.set(k, (conta.get(k) || 0) + 1);
+    }
+    const avisos = [];
+    if (ambiguas.size) avisos.push(`A mesma cor vale para mais de um perfil da legenda (${[...ambiguas].join('; ')}): usei o simples — confira.`);
+    if (semLegenda.size) avisos.push(`${semLegenda.size} cor(es) das barras sem item na legenda: essas ficam com o perfil escolhido abaixo.`);
+    return { n, resumo: [...conta.entries()].map(([k, v]) => `${v}× ${k}`).join(', '), avisos };
   }
 
   /** A leitura detalhada (membros em linha de centro: s ao longo, h acima da base) como o desenho do elemento "trelica":
