@@ -133,3 +133,28 @@ def test_tesouras_encostadas_cada_montante_de_ponta_abre_para_a_sua():
         abre[round(b.inicio[0])] = round(u[0])
     # as pontas de fora abrem para dentro; no apoio do meio, a de 10000 abre para trás (−x) e a de 10330 para frente (+x)
     assert abre == {0: 1, 10000: -1, 10330: 1, 20330: -1}, abre
+
+
+def test_montante_em_u_no_meio_da_tesoura_abre_para_o_meio_do_vao():
+    """O montante desenhado em U (linha dupla) no meio da tesoura — alma ligada dos dois lados, sem 'miolo' — abre para o
+    meio do vão (decisão do usuário, 11/10): os da metade esquerda para a direita, os da direita para a esquerda."""
+    from nucleo3d.geometria import base_local
+    barras = [[0, 0, 20000, 0, "banzo_inf"], [0, 1500, 20000, 1500, "banzo_sup"],
+              [0, 0, 0, 1500, "extremidade"], [20000, 0, 20000, 1500, "extremidade"]]
+    for x in (5000, 15000):
+        barras += [[x - 30, 0, x - 30, 1500, "montante"], [x + 30, 0, x + 30, 1500, "montante"],       # em linha dupla
+                   [x - 2500, 0, x - 30, 1500, "diagonal"], [x + 30, 1500, x + 2500, 0, "diagonal"]]
+    comum = Desenho(nome="planta", escala=100.0)
+    comum.add(Linha(a=(0.0, 0.0), b=(20000.0, 0.0), camada="ESTRUTURA", atributos={
+        "elemento": "trelica", "material": "aco", "marca": "T", "nivel_base": 0,
+        "perfis": {"banzo_sup": "U 150×50×3,0", "banzo_inf": "U 150×50×3,0", "diagonal": "L 50,8×4,76"},
+        "desenho": {"barras": barras, "vao": 20000, "altura": 1500}}))
+    doc, _ = DPE.modelo_da_planta(comum, [])
+    abre = {}
+    for b in doc.entidades.values():
+        if (b.atributos or {}).get("papel_trelica") != "extremidade" or abs(b.inicio[0] - b.fim[0]) > 1:
+            continue
+        w = tuple(b.fim[c] - b.inicio[c] for c in range(3))
+        u, _v, _w = base_local(w, b.rotacao)
+        abre[round(b.inicio[0])] = round(u[0])
+    assert abre == {0: 1, 5000: 1, 15000: -1, 20000: -1}, abre

@@ -315,16 +315,23 @@ def _linhas_duplas(segs: List[Tuple[float, float, float, float]]) -> Dict[int, T
 
 
 def _lado_das_ligadas(seg, normal, alma, tol: float) -> int:
+    """+1, −1 ou 0: o lado com mais barras ligadas (ver _ligadas_dos_lados)"""
+    mais, menos = _ligadas_dos_lados(seg, normal, alma, tol)
+    return (mais > menos) - (mais < menos)
+
+
+def _ligadas_dos_lados(seg, normal, alma, tol: float) -> Tuple[int, int]:
     """De que lado do perfil `seg` (u0, v0, u1, v1) ficam as barras da alma ligadas a ele: +1 do lado da `normal`, −1 do
     outro, 0 sem ligação. A ligada é a que tem uma ponta na linha do perfil (até `tol`, dentro do comprimento); a outra
     ponta diz o lado — é o miolo daquela tesoura, mesmo com outra tesoura encostada (o CD Bom Dia, 11/10: três tesouras
-    por eixo, os montantes de ponta lado a lado a 330 mm no apoio da viga de transição)."""
+    por eixo, os montantes de ponta lado a lado a 330 mm no apoio da viga de transição). Devolve (do lado da normal,
+    do outro)."""
     du, dv = seg[2] - seg[0], seg[3] - seg[1]
     L = math.hypot(du, dv)
     if L < 1:
-        return 0
+        return 0, 0
     tu, tv = du / L, dv / L
-    votos = 0
+    mais = menos = 0
     for a in alma:
         for (pu, pv), (qu, qv) in (((a[0], a[1]), (a[2], a[3])), ((a[2], a[3]), (a[0], a[1]))):
             ao_longo = (pu - seg[0]) * tu + (pv - seg[1]) * tv
@@ -332,10 +339,12 @@ def _lado_das_ligadas(seg, normal, alma, tol: float) -> int:
             if fora > tol or not (-tol <= ao_longo <= L + tol):
                 continue
             lado = (qu - pu) * normal[0] + (qv - pv) * normal[1]
-            if abs(lado) > 1.0:
-                votos += 1 if lado > 0 else -1
+            if lado > 1.0:
+                mais += 1
+            elif lado < -1.0:
+                menos += 1
             break
-    return (votos > 0) - (votos < 0)
+    return mais, menos
 
 
 def _giro_para(w: Tuple[float, float, float], alvo: Tuple[float, float, float]) -> float:
@@ -447,8 +456,15 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             ls = math.hypot(cu1 - cu0, cv1 - cv0) or 1.0
             nx, ny = -(cv1 - cv0) / ls, (cu1 - cu0) / ls
             tol_lig = (pares[i][1] / 2.0 + 60.0) if i in pares else 80.0
-            lado = _lado_das_ligadas((cu0, cv0, cu1, cv1), (nx, ny), alma, tol_lig)
-            if not lado and (papel == "extremidade" or abs(ny) < 0.3):
+            em_pe = papel == "extremidade" or abs(ny) < 0.3
+            mais, menos = _ligadas_dos_lados((cu0, cv0, cu1, cv1), (nx, ny), alma, tol_lig)
+            if em_pe and mais and menos:
+                # o montante em U no meio da tesoura (alma ligada dos dois lados — a TF1 dos oitões, nos pilares): a boca
+                # para o meio do vão desta tesoura (decisão do usuário, 11/10)
+                lado = 1 if (vao / 2.0 - (cu0 + cu1) / 2.0) * nx > 0 else -1
+            else:
+                lado = (mais > menos) - (mais < menos)
+            if not lado and em_pe:
                 lado = _lado_das_ligadas((cu0, cv0, cu1, cv1), (nx, ny), [b for j, b in banzos if j != i], tol_lig + 80.0)
             if lado:
                 nx, ny = nx * lado, ny * lado

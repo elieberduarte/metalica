@@ -937,7 +937,31 @@ export class MetodosImplantacao {
         (casado ? (Math.abs(casado.z - za) < 1 ? `, no nível ${casado.nome}` : `, ${Math.round(za - casado.z)} mm ${za > casado.z ? 'acima' : 'abaixo'} do nível ${casado.nome}`) : ', sem nível perto (fica na cota do desenho)') +
         (pelaRef() && z0 < za - 1 ? `; o desenho desce até ${cota(z0)} m (o que vai até o pilar).` : '.') + ' A tesoura fica onde foi colada.' +
         (aps.length ? ` Apontamentos: ${aps.slice(0, 3).join('; ')}.` : '');
+      // as emendas (dois montantes de ponta lado a lado): tesouras encostadas no mesmo desenho
+      const cortes = this._emendas(des);
+      linhaPartes.style.display = cortes.length ? 'grid' : 'none';
+      if (cortes.length) {
+        const ps = this._partesDoDesenho(des, cortes);
+        const nomesC = cruz.map(c => c.nome);
+        const ondeC = cortes.map(ct => { const cu = (ct.a + ct.b) / 2; const c = cruz.find(x => Math.abs(x.u - (u0 + cu)) < 1500); return c ? c.nome : `${numero((u0 + cu) / 1000, 2)} m`; });
+        rotPartes.textContent = `Separar nas emendas (${ondeC.join(', ')}): ${ps.length} tesouras de ${ps.map(x => numero(x.vao / 1000, 2)).join(' · ')} m`;
+        if (!marcasPartes.dataset.mexido) {
+          const b = (marca.value || 'T1').trim().toUpperCase();
+          marcasPartes.value = ps.length === 3 ? `${b}, ${b}C, ${b}` : ps.length === 2 ? `${b}, ${b}` : ps.map((_, i) => `${b}-${i + 1}`).join(', ');
+        }
+        void nomesC;
+      }
     };
+    // separar nas emendas: as marcas das partes, em ordem (as pontas iguais podem ter a mesma marca: o mesmo tipo)
+    const separar = el('input', { type: 'checkbox', checked: true });
+    const rotPartes = el('span', {});
+    const marcasPartes = el('input', { type: 'text', spellcheck: 'false', style: 'flex:1 1 0;min-width:0;width:100%',
+      title: 'As marcas das tesouras, na ordem da esquerda para a direita, separadas por vírgula (a mesma marca = o mesmo tipo)' });
+    marcasPartes.addEventListener('keydown', ev => ev.stopPropagation());
+    marcasPartes.addEventListener('input', () => { marcasPartes.dataset.mexido = '1'; });
+    const linhaPartes = el('div', { style: 'display:none;grid-template-columns:140px minmax(0,1fr);gap:6px;align-items:start;margin:4px 0;font-size:12.5px' },
+      el('label', { class: 'linha', style: 'display:flex;gap:4px;align-items:flex-start' }, separar, el('span', {}, 'Separar')),
+      el('div', { style: 'display:flex;flex-direction:column;gap:4px;min-width:0' }, rotPartes, marcasPartes));
     escreverInfo();
     // as camadas: as escolhidas viram barras (contadas); mudar refaz a leitura
     const caixaCamadas = el('div', { style: 'display:flex;flex-wrap:wrap;gap:2px 12px;max-height:92px;overflow:auto;min-width:0' },
@@ -951,10 +975,11 @@ export class MetodosImplantacao {
     for (const s of [cantSel, acoSel, nivSel]) s.style.cssText = 'flex:1 1 0;min-width:0;width:100%';
     const corpo = el('div', {}, info,
       el('div', { style: GRADE + ';align-items:start;color:var(--texto2);font-size:12px' }, el('span', { style: 'padding-top:2px' }, 'Camadas da tesoura'), caixaCamadas),
-      linha('Marca', marca), linha('Banzo superior', pSup), linha('Banzo inferior', pInf), linha('Diagonais e montantes', pDia),
+      linha('Marca', marca), linhaPartes, linha('Banzo superior', pSup), linha('Banzo inferior', pInf), linha('Diagonais e montantes', pDia),
       linha('Cantoneiras', cantSel), linha('Aço', acoSel), linha('Nível do apoio', nivSel),
       el('div', { style: GRADE + ';align-items:start;color:var(--texto2);font-size:12px' }, el('span', { style: 'padding-top:2px' }, 'Lançar nos eixos ', todosBtn), caixaEixos));
     marca.addEventListener('keydown', ev => ev.stopPropagation());
+    marca.addEventListener('input', () => { if (!marcasPartes.dataset.mexido) escreverInfo(); });
     const dlg = document.getElementById('dialogo');
     if (dlg) dlg.style.width = 'min(540px, calc(100vw - 32px))';
     const resp = await this.cad.dialogo({ titulo: `Tesoura da Elevação ${q.eixo}`, corpo, ok: 'Lançar' });
@@ -963,64 +988,144 @@ export class MetodosImplantacao {
     if (!des || des.n < 3) { this.cad.aviso('Nada lançado: com as camadas marcadas não sobram barras da tesoura.', 'atencao'); return; }
     const eixos = [...caixaEixos.querySelectorAll('input:checked')].map(i => i.value);
     if (!eixos.length) { this.cad.aviso('Nada lançado: marque ao menos um eixo.', 'atencao'); return; }
-    let nome = (marca.value || 'T1').trim().toUpperCase();
     M.trelica = { banzo_sup: pSup.value, banzo_inf: pInf.value, diagonal: pDia.value, aco: acoSel.value, cantoneira: cantSel.value };
     if (this.cad._guardarMedidas) this.cad._guardarMedidas();
-    // a mesma marca em eixos que não foram marcados: todas mudam juntas, ou a nova vira outro tipo (T1A) — decisão de 11/10
-    const outras = trels.filter(t => t.atributos.marca === nome && !eixos.includes(t.atributos.eixo));
+    // as partes: o desenho inteiro, ou separado nas emendas (cada parte com a marca dela — decisão do usuário, 11/10:
+    // no CD Bom Dia, TC1 de A a B, a central de B a C e TC1 de C a D)
+    const cortes = this._emendas(des);
+    let partes = [{ ...des, u0Rel: 0, v0Rel: 0 }];
+    let marcasP = [(marca.value || 'T1').trim().toUpperCase()];
+    if (cortes.length && separar.checked) {
+      partes = this._partesDoDesenho(des, cortes);
+      const ms = marcasPartes.value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      marcasP = partes.map((_, i) => ms[i] || ms[ms.length - 1] || `T${i + 1}`);
+    }
+    // a mesma marca em eixos que não foram marcados: todas mudam juntas, ou as novas viram outro tipo (T1A) — 11/10
+    const conjunto = new Set(marcasP);
+    const outras = trels.filter(t => conjunto.has(t.atributos.marca) && !eixos.includes(t.atributos.eixo));
     let todasJuntas = false;
     if (outras.length) {
-      let s = 'A'; while (usadas.has(nome + s)) s = String.fromCharCode(s.charCodeAt(0) + 1);
+      let s = 'A'; while ([...conjunto].some(m => usadas.has(m + s))) s = String.fromCharCode(s.charCodeAt(0) + 1);
       const rTodas = el('input', { type: 'radio', name: 'tipo-tesoura', value: 'todas', checked: true }), rSo = el('input', { type: 'radio', name: 'tipo-tesoura', value: 'so' });
-      const c = el('div', {}, el('div', { class: 'explica', texto: `Já há a ${nome} nos eixos ${[...new Set(outras.map(t => t.atributos.eixo))].join(', ')}, que não foram marcados.` }),
-        el('label', { class: 'linha' }, rTodas, ` mudar todas as ${nome} para este desenho`),
-        el('label', { class: 'linha' }, rSo, ` só os eixos marcados — viram o tipo ${nome + s}`));
-      if (await this.cad.dialogo({ titulo: `Tesoura ${nome}`, corpo: c, ok: 'Lançar' }) !== 'ok') return;
-      if (rTodas.checked) todasJuntas = true; else nome = nome + s;
+      const lista = [...conjunto].join(', ');
+      const c = el('div', {}, el('div', { class: 'explica', texto: `Já há ${lista} nos eixos ${[...new Set(outras.map(t => t.atributos.eixo))].join(', ')}, que não foram marcados.` }),
+        el('label', { class: 'linha' }, rTodas, ` mudar todas para este desenho`),
+        el('label', { class: 'linha' }, rSo, ` só os eixos marcados — viram ${[...conjunto].map(m => m + s).join(', ')}`));
+      if (await this.cad.dialogo({ titulo: `Tesoura ${lista}`, corpo: c, ok: 'Lançar' }) !== 'ok') return;
+      if (rTodas.checked) todasJuntas = true; else marcasP = marcasP.map(m => m + s);
     }
-    const nivel = nivSel.value ? nivSel.value : Math.round(z0);
     const nv = niveis.find(n => n.nome === nivSel.value);
-    const acima = nv ? Math.round((z0 - nv.z) * 10) / 10 : 0;
-    const desenho = { barras: des.barras, vao: des.vao, altura: des.altura, raio_banzo_sup: des.raio, fonte: sel.map(x => x.id), elevacao: q.id };
-    const atrib = { elemento: 'trelica', material: 'aco', marca: nome, quadro: qi.id, familia_eixo: q.familia,
-      perfis: { banzo_sup: pSup.value, banzo_inf: pInf.value, diagonal: pDia.value }, cantoneira: cantSel.value, aco: acoSel.value,
-      nivel_base: nivel, acima_do_nivel: acima, desenho };
     // a ponta do desenho em cada eixo (no sistema dos eixos; o papel da implantação pelo mapa dela)
     const p0 = cruz.length ? cruz[0].pos : 0;
     const sent = cruz.length > 1 && cruz[1].u !== cruz[0].u ? Math.sign((cruz[1].pos - cruz[0].pos) / (cruz[1].u - cruz[0].u)) : 1;
     const posDe = (u) => p0 + u * sent;
+    const atribDe = (parte, nomeP) => {
+      const zP = z0 + parte.v0Rel;
+      return { elemento: 'trelica', material: 'aco', marca: nomeP, quadro: qi.id, familia_eixo: q.familia,
+        perfis: { banzo_sup: pSup.value, banzo_inf: pInf.value, diagonal: pDia.value }, cantoneira: cantSel.value, aco: acoSel.value,
+        nivel_base: nivSel.value ? nivSel.value : Math.round(zP), acima_do_nivel: nv ? Math.round((zP - nv.z) * 10) / 10 : 0,
+        desenho: { barras: parte.barras, vao: parte.vao, altura: parte.altura, raio_banzo_sup: parte.raio || null, fonte: sel.map(x => x.id), elevacao: q.id,
+          ...(partes.length > 1 ? { parte: partes.indexOf(parte) + 1, partes: partes.length } : {}) } };
+    };
     const novas = [];
     for (const nomeE of eixos) {
       const E = fam.find(e => e.nome === nomeE);
       if (!E) continue;
-      const ra = q.familia === 'numero' ? [E.pos, posDe(u0)] : [posDe(u0), E.pos];
-      const rb = q.familia === 'numero' ? [E.pos, posDe(u0 + des.vao)] : [posDe(u0 + des.vao), E.pos];
-      const a = this._paraPapel(qi, ra), b = this._paraPapel(qi, rb);
-      const ent = criar({ tipo: 'linha', camada: 'ESTRUTURA', a, b, atributos: { ...JSON.parse(JSON.stringify(atrib)), eixo: E.nome } });
-      const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
-      novas.push(ent, criar({ tipo: 'texto', camada: 'ESTRUTURA', posicao: [m[0] - dy / L * 3 + 1, m[1] + dx / L * 3], texto: nome, altura: 2.5,
-        atributos: { rotulo_de: ent.id, quadro: qi.id } }));
+      partes.forEach((parte, i) => {
+        const ua = u0 + parte.u0Rel, ub = ua + parte.vao;
+        const ra = q.familia === 'numero' ? [E.pos, posDe(ua)] : [posDe(ua), E.pos];
+        const rb = q.familia === 'numero' ? [E.pos, posDe(ub)] : [posDe(ub), E.pos];
+        const a = this._paraPapel(qi, ra), b = this._paraPapel(qi, rb);
+        const ent = criar({ tipo: 'linha', camada: 'ESTRUTURA', a, b, atributos: { ...atribDe(parte, marcasP[i]), eixo: E.nome } });
+        const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
+        novas.push(ent, criar({ tipo: 'texto', camada: 'ESTRUTURA', posicao: [m[0] - dy / L * 3 + 1, m[1] + dx / L * 3], texto: marcasP[i], altura: 2.5,
+          atributos: { rotulo_de: ent.id, quadro: qi.id } }));
+      });
     }
     if (!novas.length) return;
-    // saem as tesouras dos eixos marcados (a mesma marca ou outra: um eixo, uma tesoura deste desenho) e, com "todas",
-    // as outras da marca recebem o desenho novo
-    const sair = trels.filter(t => eixos.includes(t.atributos.eixo) && t.atributos.familia_eixo === q.familia && (t.atributos.marca === nome || (daFonte && t.atributos.marca === daFonte.atributos.marca))).map(t => t.id);
+    // saem as tesouras dos eixos marcados que vieram deste desenho ou têm uma destas marcas (um eixo, uma vez cada
+    // tesoura deste desenho) e, com "todas", as outras recebem o desenho da parte delas (a de mesma marca mais perto)
+    const fonte = new Set(sel.map(x => x.id));
+    const sair = trels.filter(t => eixos.includes(t.atributos.eixo) && t.atributos.familia_eixo === q.familia
+      && (conjunto.has(t.atributos.marca) || ((t.atributos.desenho || {}).fonte || []).some(id => fonte.has(id)))).map(t => t.id);
     const cmds = [];
-    if (sair.length) cmds.push(new ComandoRemover(this.cad._comRotulos ? this.cad._comRotulos(sair) : sair, `Tesouras ${nome} antigas`));
-    cmds.push(new ComandoAdicionar(novas, `Tesoura ${nome}`));
+    if (sair.length) cmds.push(new ComandoRemover(this.cad._comRotulos ? this.cad._comRotulos(sair) : sair, `Tesouras antigas`));
+    cmds.push(new ComandoAdicionar(novas, `Tesoura ${marcasP.join(', ')}`));
     if (todasJuntas) {
       const mud = {};
-      for (const t of outras) mud[t.id] = { atributos: { ...t.atributos, ...JSON.parse(JSON.stringify(atrib)), eixo: t.atributos.eixo, marca: nome } };
-      cmds.push(new ComandoAlterar(mud, `Todas as ${nome}`));
+      for (const t of outras) {
+        const ra = this._paraReal(qi, t.a), rb = this._paraReal(qi, t.b);
+        const ao = (r) => ((q.familia === 'numero' ? r[1] : r[0]) - p0) * sent;
+        const meio = (ao(ra) + ao(rb)) / 2;
+        let melhor = -1, dm = Infinity;
+        partes.forEach((parte, i) => { if (marcasP[i] !== t.atributos.marca) return; const d = Math.abs(u0 + parte.u0Rel + parte.vao / 2 - meio); if (d < dm) { dm = d; melhor = i; } });
+        if (melhor >= 0) mud[t.id] = { atributos: { ...t.atributos, ...atribDe(partes[melhor], marcasP[melhor]), eixo: t.atributos.eixo } };
+      }
+      if (Object.keys(mud).length) cmds.push(new ComandoAlterar(mud, `Todas as ${[...conjunto].join(', ')}`));
     }
     if (!this.cad.doc.camadas.has('ESTRUTURA') && this.cad._garantirCamadaEstrutura) this.cad._garantirCamadaEstrutura();
-    this.cad.executar(cmds.length > 1 ? new ComandoComposto(cmds, `Tesoura ${nome}`) : cmds[0]);
-    this.m.tipos = { ...(this.m.tipos || {}), [nome]: { desenho, perfis: atrib.perfis, cantoneira: atrib.cantoneira, aco: atrib.aco, elevacao: q.id, eixo: q.eixo } };
+    this.cad.executar(cmds.length > 1 ? new ComandoComposto(cmds, `Tesoura ${marcasP.join(', ')}`) : cmds[0]);
+    const tipos = { ...(this.m.tipos || {}) };
+    partes.forEach((parte, i) => { tipos[marcasP[i]] = { desenho: atribDe(parte, marcasP[i]).desenho, perfis: { banzo_sup: pSup.value, banzo_inf: pInf.value, diagonal: pDia.value },
+      cantoneira: cantSel.value, aco: acoSel.value, elevacao: q.id, eixo: q.eixo }; });
+    this.m.tipos = tipos;
     await this.refazerQuadrosDaObra(this._elevacoes());
     await this.cad.salvar({ avisar: false });
-    this.cad.aviso(`Tesoura ${nome} lançada nos eixos ${eixos.join(', ')}${todasJuntas ? ` (e as outras ${nome} mudaram junto)` : ''}: ${des.n} barras cada, apoio em ${cota(z0)} m. ` +
-      'Ela aparece na implantação e no 3D; duplo clique nela abre a elevação do eixo. Ctrl+Z desfaz.', 'info', 14000);
+    const resumo = partes.length > 1 ? `${partes.length} tesouras por eixo (${marcasP.join(', ')})` : `Tesoura ${marcasP[0]}`;
+    this.cad.aviso(`${resumo} lançada(s) nos eixos ${eixos.join(', ')}${todasJuntas ? ' (e as outras de mesma marca mudaram junto)' : ''}: apoio em ${cota(z0)} m. ` +
+      'Aparecem na implantação e no 3D; duplo clique numa delas abre a elevação do eixo. Ctrl+Z desfaz.', 'info', 14000);
+  }
+
+  /** As emendas do desenho de uma tesoura: onde há dois montantes em pé lado a lado (150 a 800 mm, cada um com ao
+   *  menos 0,5 m — o de ponta da TC1 do CD Bom Dia tem 1,5 m numa tesoura de 7 m) — tesouras encostadas no mesmo desenho, como as três do CD Bom Dia nos apoios da viga de
+   *  transição. Devolve as emendas [{a, b}]: o montante de ponta de cada lado (u, do começo do desenho). */
+  _emendas(des) {
+    if (!des || !des.barras) return [];
+    const us = [];
+    for (const b of des.barras) {
+      const du = Math.abs(b[2] - b[0]), dv = Math.abs(b[3] - b[1]);
+      if (du <= 0.05 * dv && dv >= 500) us.push((b[0] + b[2]) / 2);
+    }
+    us.sort((a, b) => a - b);
+    const juntos = [];
+    for (const u of us) if (!juntos.length || u - juntos[juntos.length - 1][juntos[juntos.length - 1].length - 1] > 60) juntos.push([u]); else juntos[juntos.length - 1].push(u);
+    const lin = juntos.map(g => g.reduce((s, x) => s + x, 0) / g.length);
+    const cortes = [];
+    for (let i = 0; i + 1 < lin.length; i++) {
+      const d = lin[i + 1] - lin[i];
+      if (d >= 150 && d <= 800 && lin[i] > 1000 && lin[i + 1] < des.vao - 1000) { cortes.push({ a: lin[i] + 30, b: lin[i + 1] - 30 }); i++; }      // ±30: as duas faces do montante em linha dupla ficam
+    }
+    return cortes;
+  }
+
+  /** O desenho separado nas emendas: o que atravessa a emenda é cortado nos montantes de ponta dos dois lados; o que
+   *  fica entre eles (a seção da viga de transição em que as duas apoiam) sai; cada barra vai para a parte em que
+   *  está. Cada parte com a origem no canto de baixo à esquerda dela ({barras, vao, altura, u0Rel, v0Rel}). */
+  _partesDoDesenho(des, cortes) {
+    const lim = [{ b: -Infinity }, ...cortes, { a: Infinity }];
+    const em = (b, u) => { const t = (u - b[0]) / ((b[2] - b[0]) || 1e-9); return b[1] + (b[3] - b[1]) * t; };
+    const r1 = (v) => Math.round(v * 10) / 10;
+    const partes = [];
+    for (let i = 0; i + 1 < lim.length; i++) {
+      const ini = lim[i].b, fim = lim[i + 1].a;
+      const bs = [];
+      for (const b of des.barras) {
+        const lo = Math.min(b[0], b[2]), hi = Math.max(b[0], b[2]);
+        if (hi < ini - 1 || lo > fim + 1) continue;
+        if (Math.abs(b[2] - b[0]) < 1) { bs.push(b); continue; }              // em pé: dentro (as pontas na emenda ficam)
+        // o trecho dentro da parte (cortado nas emendas)
+        const ua = Math.max(lo, ini), ub = Math.min(hi, fim);
+        if (ub - ua < 5) continue;
+        bs.push([ua, em(b, ua), ub, em(b, ub), b[4]]);
+      }
+      if (!bs.length) continue;
+      const u0 = Math.min(...bs.flatMap(b => [b[0], b[2]])), v0 = Math.min(...bs.flatMap(b => [b[1], b[3]]));
+      const u1 = Math.max(...bs.flatMap(b => [b[0], b[2]])), v1 = Math.max(...bs.flatMap(b => [b[1], b[3]]));
+      partes.push({ barras: bs.map(b => [r1(b[0] - u0), r1(b[1] - v0), r1(b[2] - u0), r1(b[3] - v0), b[4]]), vao: r1(u1 - u0), altura: r1(v1 - v0),
+        n: bs.length, u0Rel: u0, v0Rel: v0 });
+    }
+    return partes;
   }
 
   /** A leitura detalhada (membros em linha de centro: s ao longo, h acima da base) como o desenho do elemento "trelica":
