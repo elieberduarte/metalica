@@ -210,8 +210,14 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                     # calha no encontro das duas águas deixava o pano em 5 %)
                     vale = no_fundo and ts_[i + 1] - ts_[i] <= 1000.0 and (
                         abs(inc_[i]) <= 0.03 or (id(q["b"]), id(r["b"])) in por_cima)
+                    # o par de terças da cumeeira (as duas águas sobem até elas, até 0,5 m uma da outra): a cumeeira cobre o
+                    # meio (a peça de funilaria), não a telha — o par a 0,35 m das cumeeiras de x 27,6 e 41,9 do Posto
+                    cume = (0 < i and i + 1 < len(inc_) and inc_[i - 1] > 0.005 and inc_[i + 1] < -0.005
+                            and ts_[i + 1] - ts_[i] <= 500.0)
                     if vale:
                         abrir(("calha", id(q["b"]), id(r["b"])), {"q": q, "r": r, "calha": True})
+                    elif cume:
+                        abrir(("cumeeira", id(q["b"]), id(r["b"])), {"q": q, "r": r, "cumeeira": True})
                     else:
                         abrir((id(q["b"]), id(r["b"])), {"q": q, "r": r})
             # o beiral até a face da parede: da última terça de cada lado até 100 mm da barreira, na inclinação da água
@@ -290,7 +296,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
         # a borda escalonada (a borda diagonal do Posto, do eixo 13/D ao K): onde uma das duas terças do pano acaba antes
         # e nenhum outro pano continua do lado dela, o triângulo da ponta da mais curta até a ponta da mais longa — a
         # linha da borda passa pelas pontas das terças
-        deste = [p for p in panos if "cantos" not in p and not p.get("calha") and not p.get("beiral")]
+        deste = [p for p in panos if "cantos" not in p and not p.get("calha") and not p.get("cumeeira") and not p.get("beiral")]
         cobre_lado: Dict[tuple, list] = collections.defaultdict(list)
         for p in deste:
             cobre_lado[(id(p["q"]["b"]), +1)].append((p["s0"], p["s1"]))
@@ -312,7 +318,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                     a_, b_ = (s_p, s_l) if ponta == "s1" else (s_l, s_p)
                     if coberto(longa, lado, a_, b_):
                         continue
-                    triangulos.append({"q": curta, "r": longa, "s0": a_, "s1": b_, "borda": True,
+                    triangulos.append({"q": curta, "r": longa, "s0": a_, "s1": b_, "borda": True, "d": d, "n": n,
                                        "cantos": [ponto(curta, s_p), ponto(longa, s_p), ponto(longa, s_l)],
                                        "area": alem * abs(longa["t"] - curta["t"]) / 2.0})
         panos += triangulos
@@ -321,6 +327,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
             if "cantos" in p:
                 continue
             q, r = p["q"], p["r"]
+            p["d"], p["n"] = d, n
             if p.get("beiral"):
                 # da terça para fora, na inclinação da água (lado +1: t crescente)
                 L, m, lado = p["L"], p["m"], p["lado"]
@@ -334,9 +341,164 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
             p["cantos"] = [ponto(q, p["s0"]), ponto(q, p["s1"]), ponto(r, p["s1"]), ponto(r, p["s0"])]
             p["area"] = (p["s1"] - p["s0"]) * math.dist(ponto(q, (p["s0"] + p["s1"]) / 2), ponto(r, (p["s0"] + p["s1"]) / 2))
     calhas = [p for p in panos if p.get("calha")]
-    panos = [p for p in panos if not p.get("calha")]
-    return {"panos": panos, "calhas": calhas, "fora": fora, "aguas": aguas, "vaos_grandes": vaos_grandes, "amostras": dict(amostras), "direcao": direcao,
+    cumeeiras = [p for p in panos if p.get("cumeeira")]
+    panos = [p for p in panos if not p.get("calha") and not p.get("cumeeira")]
+    return {"panos": panos, "calhas": calhas, "cumeeiras": cumeeiras, "fora": fora, "aguas": aguas, "vaos_grandes": vaos_grandes, "amostras": dict(amostras), "direcao": direcao,
             "sem_telha": [dict(v, comp=round(v["comp"])) for v in sem_telha.values()]}
+
+
+# ---------------------------------------------------------------------------------------------- as chapas de telha
+def _z_na_terca(ter, s_):
+    return ter["z0"] if ter["s1"] - ter["s0"] < 1 else ter["z0"] + (ter["z1"] - ter["z0"]) * (s_ - ter["s0"]) / (ter["s1"] - ter["s0"])
+
+
+def _pt(ter, s_, d, n):
+    return (d[0] * s_ + n[0] * ter["t"], d[1] * s_ + n[1] * ter["t"], _z_na_terca(ter, s_))
+
+
+def _perfil_tp(a_, b_, origem, telha):
+    """o perfil trapezoidal atravessado (ao longo das terças) entre a_ e b_: [(s, altura)] — as ondas no passo da telha
+    (TP 40: 4 por 1.020 mm, 40 mm), contadas da origem da água para as chapas vizinhas casarem"""
+    passo = float(telha.get("passo_onda") or 255.0)
+    h = float(telha.get("altura_onda") or 40.0)
+    base, crista = 0.33 * passo, 0.12 * passo           # a base e a crista da onda (85 e 30 mm na TP 40)
+    pts = [(a_, 0.0)]
+    k = math.floor((a_ - origem) / passo)
+    while True:
+        s_on = origem + k * passo + (passo - base) / 2.0     # o começo da onda neste passo
+        for s_, z_ in ((s_on, 0.0), (s_on + (base - crista) / 2, h), (s_on + (base + crista) / 2, h), (s_on + base, 0.0)):
+            if a_ < s_ < b_:
+                pts.append((s_, z_))
+        if s_on > b_:
+            break
+        k += 1
+    pts.append((b_, 0.0))
+    return pts
+
+
+def _partir(secoes, comp_max: float):
+    """a sequência de seções de uma chapa partida onde a água muda (a cumeeira, o vale, a mudança de caída de mais de 4 %)
+    e, na água mais comprida que a telha, em partes iguais numa terça (a emenda)"""
+    def meio(sec):
+        A, B = sec
+        return ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2, (A[2] + B[2]) / 2)
+
+    def incl(i):
+        P, Q = meio(secoes[i]), meio(secoes[i + 1])
+        h = math.hypot(Q[0] - P[0], Q[1] - P[1]) or 1.0
+        return (Q[2] - P[2]) / h
+    cortes = [0]
+    for i in range(1, len(secoes) - 1):
+        a_, b_ = incl(i - 1), incl(i)
+        if (a_ > 0.005 and b_ < -0.005) or (a_ < -0.005 and b_ > 0.005) or abs(a_ - b_) > 0.04:
+            cortes.append(i)
+    cortes.append(len(secoes) - 1)
+    partes = []
+    for i0, i1 in zip(cortes, cortes[1:]):
+        pedaco = secoes[i0:i1 + 1]
+        dist = [0.0]
+        for P, Q in zip(pedaco, pedaco[1:]):
+            dist.append(dist[-1] + math.dist(meio(P), meio(Q)))
+        n_ = max(1, int(math.ceil(dist[-1] / comp_max))) if comp_max > 0 else 1
+        if n_ == 1 or len(pedaco) <= 2:
+            partes.append(pedaco)
+            continue
+        # a emenda na terça mais perto de cada divisão igual
+        idx = [0]
+        for k in range(1, n_):
+            alvo = dist[-1] * k / n_
+            j = min(range(1, len(pedaco) - 1), key=lambda j: abs(dist[j] - alvo))
+            if j > idx[-1]:
+                idx.append(j)
+        idx.append(len(pedaco) - 1)
+        partes += [pedaco[a_:b_ + 1] for a_, b_ in zip(idx, idx[1:])]
+    return [pt_ for pt_ in partes if len(pt_) >= 2]
+
+
+def _chapas(panos, telha):
+    """As chapas de telha no sentido da caída: a cobertura de cada direção cortada em faixas da largura útil da telha
+    (ao longo das terças, contadas do começo da água) e, em cada faixa, os panos seguidos (a terça de cima de um é a de
+    baixo do outro) viram UMA chapa, da primeira à última terça (com o beiral) — as emendas correm na caída, como na
+    obra. Devolve [{secoes: [(A, B)] (as bordas da chapa em cada terça), a, b, origem, d, n}]."""
+    W = float(telha.get("largura_util") or 1020.0)
+    por_dir: Dict[tuple, list] = collections.defaultdict(list)
+    for p in panos:
+        if p.get("borda") or p.get("calha") or p.get("cumeeira") or "d" not in p:
+            continue
+        por_dir[(round(p["d"][0], 6), round(p["d"][1], 6))].append(p)
+    chapas = []
+    for _k, lst in por_dir.items():
+        d, n = lst[0]["d"], lst[0]["n"]
+        origem = min(p["s0"] for p in lst)
+        fim = max(p["s1"] for p in lst)
+        k = 0
+        while origem + k * W < fim - 1:
+            a, b = origem + k * W, origem + (k + 1) * W
+            k += 1
+            pedacos: Dict[tuple, list] = collections.defaultdict(list)   # (a', b') → [pano]
+            for p in lst:
+                a2, b2 = max(a, p["s0"]), min(b, p["s1"])
+                if b2 - a2 >= 30.0:
+                    pedacos[(round(a2), round(b2))].append(p)
+            for (a2, b2), ps in pedacos.items():
+                # as ligações: terça de baixo → pano (pela ordem na caída, t crescente); o beiral é uma ponta
+                comuns = [p for p in ps if not p.get("beiral")]
+                beirais = [p for p in ps if p.get("beiral")]
+                de = {id(p["q"]["b"]): p for p in comuns}
+                chega = {id(p["r"]["b"]) for p in comuns}
+                for ini in [p for p in comuns if id(p["q"]["b"]) not in chega]:
+                    seq_t = [ini["q"]]
+                    p_ = ini
+                    while p_ is not None and len(seq_t) < 200:
+                        seq_t.append(p_["r"])
+                        p_ = de.get(id(p_["r"]["b"]))
+                    secoes = [(_pt(t_, a2, d, n), _pt(t_, b2, d, n)) for t_ in seq_t]
+                    # o beiral nas pontas (até a face da parede)
+                    for bb in beirais:
+                        ext = lambda P, bb=bb: (P[0] + n[0] * bb["L"] * bb["lado"], P[1] + n[1] * bb["L"] * bb["lado"], P[2] + bb["m"] * bb["L"] * bb["lado"])
+                        if bb["q"] is seq_t[-1] and bb["lado"] > 0:
+                            secoes.append((ext(secoes[-1][0]), ext(secoes[-1][1])))
+                        elif bb["q"] is seq_t[0] and bb["lado"] < 0:
+                            secoes.insert(0, (ext(secoes[0][0]), ext(secoes[0][1])))
+                    # uma chapa por água (a cumeeira e o vale separam), até o comprimento da telha (12 m na TP 40)
+                    for parte in _partir(secoes, float(telha.get("comprimento_max") or 12000.0)):
+                        chapas.append({"secoes": parte, "a": a2, "b": b2, "origem": origem, "d": d, "n": n})
+                # o beiral sozinho (a água de uma terça só até a parede)
+                usados = {id(x) for x in comuns}
+                for bb in beirais:
+                    if any(bb["q"] is p["q"] or bb["q"] is p["r"] for p in comuns):
+                        continue
+                    t_ = bb["q"]
+                    P0, P1 = _pt(t_, a2, d, n), _pt(t_, b2, d, n)
+                    ext = lambda P, bb=bb: (P[0] + n[0] * bb["L"] * bb["lado"], P[1] + n[1] * bb["L"] * bb["lado"], P[2] + bb["m"] * bb["L"] * bb["lado"])
+                    sec = [(P0, P1), (ext(P0), ext(P1))]
+                    chapas.append({"secoes": sec if bb["lado"] > 0 else sec[::-1], "a": a2, "b": b2, "origem": origem, "d": d, "n": n})
+    return chapas
+
+
+def _solido_da_chapa(ch, telha, camada, espessura=ESPESSURA_DESENHO):
+    """o sólido da chapa: o perfil trapezoidal (as ondas no sentido da caída) em cada terça, ligado de uma à outra"""
+    d = ch["d"]
+    perfil = _perfil_tp(ch["a"], ch["b"], ch["origem"], telha)
+    np_ = len(perfil)
+    vs, fs = [], []
+    for A, B in ch["secoes"]:
+        L = (ch["b"] - ch["a"]) or 1.0
+        for s_, h in perfil:
+            f = (s_ - ch["a"]) / L
+            vs.append((A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f, A[2] + (B[2] - A[2]) * f + h + espessura))
+        vs.append((A[0], A[1], A[2]))                     # o fundo, nas duas bordas
+        vs.append((B[0], B[1], B[2]))
+    m = np_ + 2
+    for j in range(len(ch["secoes"]) - 1):
+        o, o2 = j * m, (j + 1) * m
+        for i in range(np_ - 1):
+            fs.append([o + i, o2 + i, o2 + i + 1, o + i + 1])          # a face de cima, onda por onda
+        fs.append([o + np_, o + np_ + 1, o2 + np_ + 1, o2 + np_])        # o fundo
+        fs.append([o + np_, o2 + np_, o2, o])                            # as bordas da chapa
+        fs.append([o + np_ - 1, o2 + np_ - 1, o2 + np_ + 1, o + np_ + 1])
+    s = Solido(nome=telha["nome"], camada=camada, vertices=vs, faces=fs)
+    return s
 
 
 def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano: float = 10.0,
@@ -350,7 +512,14 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     tercas = [b for b in doc.barras if b.papel in ("terça", "terca")]
     an = _analise(tercas, doc.barras, vao_max, tol_plano)
     feitos = an["panos"]
-    for p in feitos:
+    chapas = _chapas(feitos, telha)
+    for ch in chapas:
+        so = _solido_da_chapa(ch, telha, camada)
+        so.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "telha": telha["modelo"],
+                        "comprimento": round(sum(math.dist(((a1[0] + b1[0]) / 2, (a1[1] + b1[1]) / 2, a1[2]), ((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, a2[2]))
+                                                 for (a1, b1), (a2, b2) in zip(ch["secoes"], ch["secoes"][1:])))}
+        doc.add(so)
+    for p in [p for p in feitos if p.get("borda")]:
         c = p["cantos"]
         e = ESPESSURA_DESENHO
         k = len(c)
@@ -372,6 +541,29 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         so.atributos = {"tipo_ifc": "IfcPipeSegment", "calha_lancada": True, "entre": [c["q"]["sigla"], c["r"]["sigla"]]}
         doc.add(so)
         ml_calha += c["s1"] - c["s0"]
+    for for_ in [e.id for e in doc.solidos if (e.atributos or {}).get("cumeeira_lancada")]:
+        doc.remover(for_)
+    ml_cume = 0.0
+    for c in an["cumeeiras"]:
+        q_, r_ = c["q"], c["r"]
+        d_, n_ = c["d"], c["n"]
+        dt_ = r_["t"] - q_["t"]
+        cs = []
+        for s_ in (c["s0"], c["s1"]):
+            A = _pt(q_, s_, d_, n_)
+            B = _pt(r_, s_, d_, n_)
+            meio_ = ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2, max(A[2], B[2]) + 60.0)
+            fora_a = (A[0] - n_[0] * 100.0, A[1] - n_[1] * 100.0, A[2] + 40.0)
+            fora_b = (B[0] + n_[0] * 100.0, B[1] + n_[1] * 100.0, B[2] + 40.0)
+            cs.append((fora_a, meio_, fora_b))
+        (a0, m0, b0), (a1, m1, b1) = cs
+        vs = [a0, m0, b0, a1, m1, b1] + [(x, y, z + ESPESSURA_DESENHO) for x, y, z in (a0, m0, b0, a1, m1, b1)]
+        fs = [[0, 3, 4, 1], [1, 4, 5, 2], [6, 7, 10, 9], [7, 8, 11, 10], [0, 1, 7, 6], [1, 2, 8, 7], [3, 9, 10, 4], [4, 10, 11, 5],
+              [0, 6, 9, 3], [2, 5, 11, 8]]
+        so = Solido(nome="Cumeeira", camada="Cumeeiras", vertices=vs, faces=fs)
+        so.atributos = {"tipo_ifc": "IfcCovering", "cumeeira_lancada": True, "entre": [q_["sigla"], r_["sigla"]], "abas_mm": round(dt_ + 200)}
+        doc.add(so)
+        ml_cume += c["s1"] - c["s0"]
     fora, aguas, vaos_grandes = an["fora"], an["aguas"], an["vaos_grandes"]
     area = sum(p.get("area", 0.0) for p in feitos) / 1e6
     lista_aguas = sorted(aguas.values(), key=lambda a: (a["caida_pct"], -a["comprimento"]))
@@ -379,9 +571,10 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         a["largura"] = round(a["largura"])
         a["emenda"] = a["comprimento"] > telha["comprimento_max"]
     return {
-        "telha": telha["nome"], "panos": len(feitos), "area_m2": round(area, 1), "peso_kg": round(area * telha["massa_m2"], 1),
+        "telha": telha["nome"], "panos": len(feitos), "chapas": len(chapas), "area_m2": round(area, 1), "peso_kg": round(area * telha["massa_m2"], 1),
         "beirais": sum(1 for p in feitos if p.get("beiral")), "bordas": sum(1 for p in feitos if p.get("borda")),
         "calhas": len(an["calhas"]), "calha_ml": round(ml_calha / 1000.0, 1),
+        "cumeeiras": len(an["cumeeiras"]), "cumeeira_ml": round(ml_cume / 1000.0, 1),
         "tercas": len(tercas), "aguas": lista_aguas,
         "caida_min": min((a["caida_pct"] for a in lista_aguas), default=None),
         "caida_max": max((a["caida_pct"] for a in lista_aguas), default=None),

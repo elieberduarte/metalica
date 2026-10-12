@@ -27,7 +27,14 @@ def test_agua_reta_de_5_por_cento():
     assert [a["caida_pct"] for a in r["aguas"]] == [5.0]
     # a área: 5 vãos de 1,4 m (inclinados) por 6 m
     assert abs(r["area_m2"] - 5 * 1.4017 * 6.0) < 0.1
-    assert len([s for s in doc.solidos if s.camada == "Telhas"]) == 5
+    # as chapas no sentido da caída: 6 m ao longo das terças / 1.020 mm = 6 chapas, cada uma da primeira à última terça
+    chapas = [s for s in doc.solidos if s.camada == "Telhas"]
+    assert r["chapas"] == 6 and len(chapas) == 6
+    for ch in chapas:
+        xs = [round(v[0], 3) for v in ch.vertices]
+        assert min(xs) == 0.0 and max(xs) == 7000.0                    # desce a água inteira (x 0 → 7.000)
+        assert max(v[1] for v in ch.vertices) - min(v[1] for v in ch.vertices) <= 1020.0 + 1
+    assert abs(sum(max(v[1] for v in c.vertices) - min(v[1] for v in c.vertices) for c in chapas) - 6000.0) < 1
 
 
 def test_terca_erguida_no_meio_da_agua():
@@ -65,7 +72,7 @@ def test_relancar_tira_os_panos_anteriores():
     _agua(doc, 0.0, 4, 7000.0, 0.05)
     T.lancar(doc)
     T.lancar(doc)
-    assert len([s for s in doc.solidos if (s.atributos or {}).get("telha_lancada")]) == 3
+    assert len([s for s in doc.solidos if (s.atributos or {}).get("telha_lancada")]) == 6     # 6 chapas de 1,02 m
 
 
 def _tesoura(doc, y, z, x0=-500.0, x1=14000.0, nome="TESOURA 1"):
@@ -130,3 +137,16 @@ def test_terca_baixa_no_meio_da_agua_fica_como_esta():
     r = T.alinhar_tercas([b for b in doc.barras if b.papel == "terça"], doc.barras)
     assert r["calha"] == [] and baixa.inicio[2] == z0
     assert any(abs(f["desvio"] + 80) <= 10 for f in T.lancar(doc)["fora_do_plano"])
+
+
+def test_ondas_da_chapa_no_sentido_da_caida():
+    """a chapa tem as ondas da TP 40 (40 mm, 4 por 1.020 mm) correndo na caída: em cada terça o mesmo perfil"""
+    doc = Documento()
+    _agua(doc, 0.0, 3, 7000.0, 0.05)
+    T.lancar(doc)
+    ch = [s for s in doc.solidos if s.camada == "Telhas"][0]
+    em_x0 = sorted(v for v in ch.vertices if abs(v[0]) < 0.01)
+    alturas = sorted({round(v[2] - min(z[2] for z in em_x0)) for v in em_x0})
+    assert alturas[-1] - alturas[1] == 40                               # a crista da onda 40 mm acima da chapa
+    cristas = [v for v in em_x0 if round(v[2] - min(z[2] for z in em_x0)) == alturas[-1]]
+    assert len(cristas) == 8                                            # 4 ondas, 2 pontos na crista de cada
