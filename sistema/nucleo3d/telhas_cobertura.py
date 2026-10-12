@@ -836,8 +836,10 @@ def conferir_ao_lado(chapas, limite: float = 20.0) -> List[dict]:
                 for P0, P1, P2 in zip(meio, meio[1:], meio[2:]):
                     h01, h02 = math.hypot(P1[0] - P0[0], P1[1] - P0[1]), math.hypot(P2[0] - P0[0], P2[1] - P0[1]) or 1.0
                     i1, i2 = (P1[2] - P0[2]) / (h01 or 1.0), (P2[2] - P1[2]) / ((h02 - h01) or 1.0)
-                    if (i1 > 0.005 and i2 < -0.005) or (i1 < -0.005 and i2 > 0.005):
-                        continue                              # a cumeeira, o vale
+                    # a cumeeira e o vale: as duas águas com caída de verdade (a terça erguida faz um "cume" com um lado
+                    # quase plano — esse é dobra)
+                    if i1 * i2 < 0.0 and abs(i1) > 0.02 and abs(i2) > 0.02:
+                        continue
                     dz = P1[2] - (P0[2] + (P2[2] - P0[2]) * h01 / h02)
                     if abs(dz) > limite:
                         achados.append({"tipo": "dobra", "mm": round(dz), "ponto": [round(P1[0]), round(P1[1])]})

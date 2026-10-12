@@ -569,6 +569,18 @@ def verificar(doc, tol: float = TOL_ENCOSTO, eixos=None) -> dict:
             len(ps), ", ".join(nomes[:4]) + (" …" if len(nomes) > 4 else "")), meio,
             [els[k].id for pc in ps for k in por_peca[pc]], peca=nomes[0]))
 
+    # ------------------------------------------------------------- o que o olho acharia no 3D (12/10/2026)
+    # as contas da conferência do 3D que as regras acima não fazem: a mesma peça duas vezes, barras de peças diferentes
+    # se atravessando (a terça dentro do painel, a alma de uma treliça na outra) e a telha ao lado (a telha de teste só na
+    # conta: o degrau entre chapas vizinhas e a dobra na caída, de 30 mm para cima). As pontas soltas, as regras de cima
+    # já dizem (peça voando, ponta sem apoio, terça em balanço)
+    from nucleo3d import conferencia_3d
+    regra_3d = {"repetida": "repetida", "choque": "choque", "degrau": "telha_degrau", "dobra": "telha_dobra"}
+    for a in conferencia_3d.conferir(doc, soltas=False)["apontamentos"]:
+        if a["tipo"] not in regra_3d or (a["tipo"] in ("degrau", "dobra") and abs(a["mm"]) < 30):
+            continue
+        achados.append(_achado(regra_3d[a["tipo"]], a["texto"], a["ponto"], a["ids"], **({"mm": a["mm"]} if "mm" in a else {})))
+
     if eixos:
         from nucleo3d.eixos import onde, fora_do_eixo
         # D3 pela malha: o pilar perto de um eixo e fora dele (a locação desloca o pilar e a

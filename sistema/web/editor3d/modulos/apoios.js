@@ -20,6 +20,11 @@ const REGRAS = [
   ['pilar_fora_da_linha', 'Pilar fora da linha da peça que carrega'],
   ['pilar_fora_do_eixo', 'Pilar fora do eixo (locação × eixos — conferir com o projeto)'],
   ['terca_fora_do_no', 'Terça fora do nó da treliça'],
+  // a conferência do 3D (nucleo3d/conferencia_3d.py, 12/10/2026)
+  ['repetida', 'Peça repetida (duas no mesmo lugar)'],
+  ['choque', 'Peças se atravessando'],
+  ['telha_degrau', 'Telha: degrau entre chapas vizinhas'],
+  ['telha_dobra', 'Telha: dobra na caída (terça fora da reta)'],
 ];
 
 export class MetodosApoios {

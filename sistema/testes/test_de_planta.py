@@ -9,6 +9,7 @@ import pytest
 
 from nucleo2d import reconhecer
 from nucleo3d import de_planta
+from nucleo3d.modelo import Barra, Documento
 
 L_TES = 9000.0          # tesoura: 9 m, 1300 de altura numa ponta e 900 na outra
 R_PAINEL = 5000.0       # painel curvo: meia volta de raio 5 m
@@ -766,3 +767,67 @@ def test_alem_da_ponta_da_trelica():
     assert de_planta._alem_da_ponta(t, (4100.0, 75.0)) == pytest.approx(100.0)
     assert de_planta._alem_da_ponta(t, (-30.0, 0.0)) == pytest.approx(30.0)
     assert de_planta._alem_da_ponta(t, (2000.0, 120.0)) == 0.0
+
+
+def _tr(nome, familia, a, b, largura=100.0, comp_el=None, h=(0.0, 1000.0)):
+    M = de_planta.Membro
+    L = math.dist(a, b)
+    el = de_planta.Elevacao(nome=nome, familia=familia, qtd=1, comprimento=comp_el or L)
+    el.membros = [M(0, h[0], el.comprimento, h[0], "banzo"), M(0, h[1], el.comprimento, h[1], "banzo")]
+    return de_planta.Trecho(caminho=de_planta.Caminho("reta", a=a, b=b, largura=largura), nome=nome, familia=familia, elevacao=el)
+
+
+def test_trelica_para_na_face_da_que_passa():
+    """a TESOURA 8 do Posto: a linha da planta ia até a face de lá do PAINEL 12 (8 cm além do eixo); a ponta vai para a
+    face de cá — meia largura do painel + a meia aba do montante (30 mm) —, e o nó do meio fica onde estava"""
+    painel = _tr("PAINEL 12", "PAINEL", (0.0, -3000.0), (0.0, 3000.0), largura=100.0)
+    tes = _tr("TESOURA 8", "TESOURA", (4000.0, 0.0), (-80.0, 0.0), comp_el=3900.0)
+    no_antes = tes.caminho.ponto(de_planta._s_na_planta(tes, 1950.0))
+    r = de_planta.aparar_nas_faces([painel, tes])
+    assert r == [("TESOURA 8", "PAINEL 12", 160)]
+    assert tes.caminho.b[0] == pytest.approx(80.0, abs=5.0)
+    assert painel.caminho.comprimento == pytest.approx(6000.0)
+    assert tes.caminho.ponto(de_planta._s_na_planta(tes, 1950.0))[0] == pytest.approx(no_antes[0], abs=1.0)
+
+
+def test_trelicas_em_fila_ficam_costas_com_costas():
+    """as TESOURAS 1 e 12 no vale do Posto entravam 125 mm uma na outra; os painéis em fila tinham os montantes das
+    pontas no mesmo eixo: param no meio do encontro, 25 mm para cada lado"""
+    a = _tr("TESOURA 1", "TESOURA", (0.0, 0.0), (5060.0, 0.0))
+    b = _tr("TESOURA 12", "TESOURA", (4940.0, 0.0), (9000.0, 0.0))
+    de_planta.aparar_nas_faces([a, b])
+    assert a.caminho.b[0] == pytest.approx(4975.0, abs=1.0) and b.caminho.a[0] == pytest.approx(5025.0, abs=1.0)
+
+
+def test_terca_dentro_do_painel_vai_para_a_face_com_a_linha():
+    """a TC14 do Posto corria 5 m dentro do PAINEL 11 (5 cm do eixo), onde o resto da mesma linha estava na face"""
+    painel = _tr("PAINEL 11", "PAINEL", (12813.0, 30000.0), (12813.0, 51000.0), h=(0.0, 1530.0))
+
+    def terca(x, y0, y1):
+        b = Barra(inicio=(x, y0, 7050.0), fim=(x, y1, 7050.0), perfil="U 100×40×2,65 (FF)", papel="terça")
+        b.atributos = {"origem": {"sigla": "TC14"}}
+        return b
+    dentro, na_face = terca(12763.0, 29866.0, 35076.0), terca(12568.0, 35076.0, 50762.0)
+    feitas = de_planta._encostar_tercas_na_face([dentro, na_face], [painel], 6000.0)
+    assert [f[0] for f in feitas] == ["TC14"]
+    assert dentro.inicio[0] == pytest.approx(12568.0, abs=1.0) and na_face.inicio[0] == pytest.approx(12568.0)
+
+
+def test_barra_repetida_na_mesma_peca_sai():
+    doc = Documento()
+    pecas = []
+    for p0, p1, papel in [((0, 0, 0), (0, 0, 760), "montante"), ((0, 0, 760), (0, 0, 0), "montante"),
+                          ((0, 0, 190), (0, 90, 190), "presilha"), ((27, 0, 190), (27, 90, 190), "presilha"),
+                          ((0, 0, 380), (0, 90, 380), "presilha")]:
+        b = Barra(inicio=p0, fim=p1, perfil="L 1\"×1/8\"", papel=papel)
+        doc.add(b)
+        pecas.append({"ent": b, "papel": papel, "conjunto": "TRELICA 15#1"})
+    tiradas = de_planta._tirar_repetidas(pecas, doc)
+    assert sorted(p["papel"] for p in tiradas) == ["montante", "presilha"] and len(doc.barras) == 3
+
+
+def test_ponta_da_terca_fora_dos_apoios_pela_reta_de_1_5_m():
+    """o par da cumeeira a 20 cm (5,6 cm de diferença) não dá a inclinação da ponta 2,5 m adiante (a TC52 do Posto)"""
+    apoios = [(0.0, 1000.0), (4000.0, 1100.0), (8000.0, 1200.0), (8200.0, 1256.0)]
+    assert de_planta._altura_pelos_apoios(apoios, 10700.0) == pytest.approx(1256.0 + (1256.0 - 1100.0) / 4200.0 * 2500.0, abs=1.0)    # pela base de 4,2 m
+    assert de_planta._altura_pelos_apoios(apoios, 2000.0) == pytest.approx(1050.0)

@@ -1416,6 +1416,7 @@ class Trecho:
     sentido_por: str = "costume do desenho"
     rotulo_id: Optional[str] = None
     ajuste: float = 0.0             # mm que a elevação anda na peça para os nós caírem nas terças
+    aparado: float = 0.0            # mm que as pontas recuaram até a face da treliça em que chegam (aparar_nas_faces)
     # a treliça deitada (a planta a desenha vista de cima): {"n": normal para o outro banzo,
     # "largura": mm entre os banzos, "almas": [(a, b)] como a planta desenha}; o caminho é o
     # primeiro banzo
@@ -2163,6 +2164,58 @@ def _altura_no_ponto(t: Trecho, p: Ponto2, tol: float = 350.0) -> Optional[float
     return h if corte is None or h is None else min(h, corte)
 
 
+def _tirar_repetidas(pecas: List[dict], doc) -> List[dict]:
+    """A mesma barra duas vezes na mesma peça (o conjunto), e a presilha a menos de 40 mm de outra da mesma peça: fica
+    uma (12/10, o 3D: montantes e presilhas das TRELIÇAS 12, 13 e 15 da caixa d'água em dobro — a linha repetida na
+    elevação —, e na ponta das tesouras do vale a presilha da diagonal quase em pé a 3 cm da do montante). Tira do
+    `doc` e de `pecas`; devolve as tiradas."""
+    vistas: Dict[tuple, bool] = {}
+    pres_conj: Dict[str, list] = collections.defaultdict(list)
+    tirar = []
+    for p_ in pecas:
+        e_ = p_["ent"]
+        if e_.tipo != "barra" or not p_.get("conjunto"):
+            continue
+        ch_ = (p_["conjunto"], e_.perfil, e_.papel) + tuple(sorted((tuple(round(c / 10.0) for c in e_.inicio),
+                                                                 tuple(round(c / 10.0) for c in e_.fim))))
+        if ch_ in vistas:
+            tirar.append(p_)
+            continue
+        vistas[ch_] = True
+        if e_.papel == "presilha":
+            cen = tuple((e_.inicio[i] + e_.fim[i]) / 2 for i in range(3))
+            if any(math.dist(cen, c_) < 40.0 for c_ in pres_conj[p_["conjunto"]]):
+                tirar.append(p_)
+                continue
+            pres_conj[p_["conjunto"]].append(cen)
+    for p_ in tirar:
+        doc.remover(p_["ent"].id)
+        pecas.remove(p_)
+    return tirar
+
+
+def _altura_pelos_apoios(apoios: Sequence[Tuple[float, float]], s: float, base_min: float = 1500.0) -> float:
+    """a altura da terça em `s` pelos apoios [(s, h)]: de apoio em apoio; fora deles (a ponta na face da transição),
+    a inclinação de uma base de `base_min` pelo menos — os dois últimos apoios a 20 cm (o par da cumeeira, 5,6 cm de
+    diferença) levavam a ponta da TC52 do Posto 0,7 m acima, 2,5 m adiante (12/10)"""
+    aps = sorted(apoios)
+    if len(aps) == 1:
+        return aps[0][1]
+    k = 1
+    while k < len(aps) - 1 and aps[k][0] < s:
+        k += 1
+    (sa, ha), (sb, hb) = aps[k - 1], aps[k]
+    if s > aps[-1][0]:
+        (sb, hb) = aps[-1]
+        (sa, ha) = next((q for q in reversed(aps[:-1]) if sb - q[0] >= base_min), aps[0])
+    elif s < aps[0][0]:
+        (sa, ha) = aps[0]
+        (sb, hb) = next((q for q in aps[1:] if q[0] - sa >= base_min), aps[-1])
+    if abs(sb - sa) < 1.0:
+        return ha
+    return ha + (hb - ha) * (s - sa) / (sb - sa)
+
+
 def _alem_da_ponta(t: Trecho, p: Ponto2) -> float:
     """quanto o ponto da planta passa da ponta da treliça, ao longo dela (0 se fica entre as pontas)"""
     L = t.caminho.comprimento
@@ -2283,6 +2336,7 @@ def aparar_nas_faces(trechos: List[Trecho], folga: float = 30.0, alcance: float 
         antes = _folga_da_elevacao(t)
         t.caminho = t.caminho.trecho(corte[0], L - corte[1])
         t.ajuste += (antes - e0) - _folga_da_elevacao(t)
+        t.aparado += corte[0] + corte[1]
         for k_p in (0, 1):
             if corte[k_p] >= 15.0:
                 feitos.append((_bonito(t.nome), _bonito(quem[k_p]), round(corte[k_p])))
@@ -3621,8 +3675,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 continue
             # o encaixe do bloco (a elevação como desenhada) no vão da planta: o que sobra
             # ou falta fica nas barras das pontas — anotado, para conferir com o projeto
-            L_v, L_e = c.comprimento, el.comprimento
-            meio = c.ponto(L_v / 2.0)
+            # o vão do desenho (antes de a ponta recuar até a face da outra treliça, que é regra de fábrica): o encaixe
+            # confere a leitura — a elevação contra o que o projetista desenhou na planta
+            L_v, L_e = c.comprimento + t.aparado, el.comprimento
+            meio = c.ponto(c.comprimento / 2.0)
             encaixe.append({"peca": _bonito(t.nome), "conjunto": conj, "vao": round(L_v), "elevacao": round(L_e),
                             "dif": round(L_v - L_e), "ajuste": round(t.ajuste),
                             "centrada": bool(L_e and 0.9 < L_v / L_e < 1.1), "ponto": [round(meio[0]), round(meio[1])]})
@@ -4116,33 +4172,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     # corte reto (aparar) para a revisão dele; o usuário pediu a revisão com as regras novas em 11/10
     from nucleo3d import alma_na_face
     from nucleo3d.geometria import comprimentos_da_barra, tem_corte_no_angulo
-    # a mesma barra duas vezes na mesma peça, e a presilha encostada noutra da mesma peça (12/10, o 3D: montantes e
-    # presilhas das TRELIÇAS 12, 13 e 15 da caixa d'água em dobro — a linha repetida na elevação —, e na ponta das
-    # tesouras do vale a presilha da diagonal quase em pé a 3 cm da do montante): fica uma
-    vistas_b: Dict[tuple, bool] = {}
-    pres_conj: Dict[str, list] = collections.defaultdict(list)
-    tirar = []
-    for p_ in pecas:
-        e_ = p_["ent"]
-        if e_.tipo != "barra" or not p_.get("conjunto"):
-            continue
-        ch_ = (p_["conjunto"], e_.perfil, e_.papel) + tuple(sorted((tuple(round(c / 10.0) for c in e_.inicio),
-                                                                 tuple(round(c / 10.0) for c in e_.fim))))
-        if ch_ in vistas_b:
-            tirar.append(p_)
-            continue
-        vistas_b[ch_] = True
-        if e_.papel == "presilha":
-            cen = tuple((e_.inicio[i] + e_.fim[i]) / 2 for i in range(3))
-            if any(math.dist(cen, c_) < 40.0 for c_ in pres_conj[p_["conjunto"]]):
-                tirar.append(p_)
-                continue
-            pres_conj[p_["conjunto"]].append(cen)
-    for p_ in tirar:
-        doc.remover(p_["ent"].id)
-        pecas.remove(p_)
-        if p_["ent"].papel == "presilha":
-            presilhas_postas["pecas"] -= 1
+    tirar = _tirar_repetidas(pecas, doc)
+    presilhas_postas["pecas"] -= sum(1 for p_ in tirar if p_["ent"].papel == "presilha")
     if tirar:
         avisos.append("Barras repetidas na mesma peça (a linha dobrada na elevação, a presilha encostada noutra): %d tirada(s)."
                       % len(tirar))
@@ -4443,25 +4474,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                 def zem(s):
                     # a altura dos apoios vizinhos (de apoio em apoio; fora deles, seguindo
                     # os dois mais perto): cada ponta da terça senta na treliça dela
-                    aps = sorted(apoios)
-                    if len(aps) == 1:
-                        return nivel + aps[0][1] + dz
-                    k = 1
-                    while k < len(aps) - 1 and aps[k][0] < s:
-                        k += 1
-                    (sa, ha), (sb, hb) = aps[k - 1], aps[k]
-                    # fora dos apoios (a ponta na face da transição), a inclinação de uma base de 1,5 m pelo menos: os dois
-                    # últimos apoios a 20 cm (o par da cumeeira, 5,6 cm de diferença) levavam a ponta da TC52 do Posto
-                    # 0,7 m acima, 2,5 m adiante (12/10)
-                    if s > aps[-1][0]:
-                        (sb, hb) = aps[-1]
-                        (sa, ha) = next((q for q in reversed(aps[:-1]) if sb - q[0] >= 1500.0), aps[0])
-                    elif s < aps[0][0]:
-                        (sa, ha) = aps[0]
-                        (sb, hb) = next((q for q in aps[1:] if q[0] - sa >= 1500.0), aps[-1])
-                    if abs(sb - sa) < 1.0:
-                        return nivel + ha + dz
-                    return nivel + ha + (hb - ha) * (s - sa) / (sb - sa) + dz
+                    return nivel + _altura_pelos_apoios(apoios, s) + dz
                 p0 = (a[0] + ux * s0, a[1] + uy * s0, zem(s0))
                 p1 = (a[0] + ux * s1, a[1] + uy * s1, zem(s1))
                 if barra(p0, p1, perf, "terça", "Terças", None, 0.0, {"sigla": sig[1] if sig else ""}):
@@ -4881,6 +4894,13 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             sem_el[_bonito(nm)].append([round(t_["posicao"][0] + desl[0]), round(t_["posicao"][1] + desl[1])])
     trelicas = montar_lista(ents, elevacoes, contagem, encaixe, eixos_p, float(par.get("escala") or 20.0), _bonito,
                             sem_elevacao=dict(sem_el))
+    # a conferência do 3D (12/10, a rodada do Posto em que os erros só apareceram renderizando o modelo): peças
+    # repetidas, choques entre peças, pontas soltas e a telha ao lado (uma telha de teste só na conta), no modelo pronto
+    if par.get("conferir_3d", True):
+        from nucleo3d import conferencia_3d
+        conf_3d = conferencia_3d.conferir(doc)
+        resumo["conferencia_3d"] = {"contagens": conf_3d["contagens"], "apontamentos": conf_3d["apontamentos"][:400]}
+        avisos += conferencia_3d.avisos(conf_3d, desl)
     return {"doc": doc, "resumo": resumo, "conferencia": conf, "avisos": avisos_pelos_eixos(avisos, eixos_p, desl),
             "usados": usados, "elevacoes_usadas": elevacoes_usadas,
             "eixos": eixos_p, "niveis": niveis_do_desenho(textos, par), "encaixe": encaixe,
