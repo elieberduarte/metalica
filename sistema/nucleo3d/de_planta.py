@@ -3856,7 +3856,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
 
     def topo_em(p: Ponto2) -> Optional[float]:
         # a transição sobe acima do telhado: onde uma tesoura comum também passa, a altura é a dela
-        hs = [(h, t.familia == "TRANSICAO") for t in trelicas_3d for h in [_altura_no_ponto(t, p, 250.0)] if h is not None]
+        # a terça em cima da treliça fica dentro da largura dela: a TRELIÇA 6 do Posto, paralela a 25 cm da TC55 e 0,6 m
+        # acima da TESOURA 32 em que a terça apoia, dava a altura da terça inteira e a tesoura saía como "fora da reta" (12/10)
+        hs = [(h, t.familia == "TRANSICAO") for t in trelicas_3d
+              for h in [_altura_no_ponto(t, p, min(250.0, t.caminho.largura / 2.0 + 100.0))] if h is not None]
         comuns = [h for h, tr in hs if not tr]
         return max(comuns) if comuns else (max(h for h, _ in hs) if hs else None)
     amostras: List[Tuple[float, float, float]] = []
@@ -4030,6 +4033,14 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     # apontamento — não se leva a emenda para além do nome da outra terça
                     bons = [ap[0] for ap in apoios if max(antes, s_a) + 300.0 < ap[0] < min(hi, s_b) - 300.0]
                     s_c = min(bons, key=lambda x: abs(x - meio)) if bons else meio
+                    # o apoio da faixa em que a terça corre em cima de uma treliça (ao longo da TRANSIÇÃO 11) termina uns 25 cm
+                    # depois da tesoura que cruza ali: a emenda vai para o eixo da tesoura — a TC46 começava 24 cm fora da
+                    # TESOURA 28, sem apoio (12/10)
+                    cruz_c = [c_[0] for c_ in cruz_t if c_[2] not in ("PAINEL", "TRANSICAO") and abs(c_[0] - s_c) <= 300.0]
+                    if bons and cruz_c:
+                        # no par de tesouras da cumeeira (a 35 cm uma da outra) as duas emendas vizinhas ficam na mesma — sem o
+                        # pedaço de 35 cm entre elas
+                        s_c = min(cruz_c, key=lambda x: (abs(x - antes) > 1.0, abs(x - s_c)))
                     if s_c - antes > 300.0 and hi - s_c > 300.0:
                         cortes.append(s_c)
                         if not bons:
@@ -4063,8 +4074,14 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     d_k = abs(h_k - (ha + (hb - ha) * (s_k - sa) / (sb - sa))) if abs(sb - sa) > 1.0 else 0.0
                     if d_k > pior:
                         pior, k_p = d_k, s_k
-                if pior <= 60.0 or k_p is None or k_p - s0 < 300.0 or s1 - k_p < 300.0:
+                if pior <= 60.0 or k_p is None:
                     return [(s0, s1)]
+                # o par de tesouras da cumeeira (a 35 cm uma da outra): cada água termina na tesoura dela, sem terça no meio
+                # do par — a emenda está numa e a terça da outra água começa na outra (12/10)
+                if k_p - s0 < 600.0:
+                    return cumeeiras(k_p, s1) if s1 - k_p >= 600.0 else [(s0, s1)]
+                if s1 - k_p < 600.0:
+                    return cumeeiras(s0, k_p) if k_p - s0 >= 600.0 else [(s0, s1)]
                 return cumeeiras(s0, k_p) + cumeeiras(k_p, s1)
             pecas_t = [q for s0, s1 in pecas_f for q in cumeeiras(s0, s1)]
             for s0, s1 in pecas_t:
