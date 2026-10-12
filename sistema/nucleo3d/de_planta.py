@@ -2163,6 +2163,18 @@ def _altura_no_ponto(t: Trecho, p: Ponto2, tol: float = 350.0) -> Optional[float
     return h if corte is None or h is None else min(h, corte)
 
 
+def _alem_da_ponta(t: Trecho, p: Ponto2) -> float:
+    """quanto o ponto da planta passa da ponta da treliça, ao longo dela (0 se fica entre as pontas)"""
+    L = t.caminho.comprimento
+    s, _d = t.caminho.projetar(p)
+    if 1.0 < s < L - 1.0:
+        return 0.0
+    s_p = 0.0 if s <= 1.0 else L
+    q, (tx, ty) = t.caminho.ponto(s_p), t.caminho.tangente(s_p)
+    ao_longo = (p[0] - q[0]) * tx + (p[1] - q[1]) * ty
+    return max(0.0, -ao_longo if s_p == 0.0 else ao_longo)
+
+
 def _folga_da_elevacao(t: Trecho) -> float:
     """a elevação entra na planta sem esticar (os nós ficam no passo dela, onde a terça
     apoia), centrada no vão: a diferença de comprimento fica meio a meio nas pontas"""
@@ -4158,10 +4170,18 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         # a transição sobe acima do telhado: onde uma tesoura comum também passa, a altura é a dela
         # a terça em cima da treliça fica dentro da largura dela: a TRELIÇA 6 do Posto, paralela a 25 cm da TC55 e 0,6 m
         # acima da TESOURA 32 em que a terça apoia, dava a altura da terça inteira e a tesoura saía como "fora da reta" (12/10)
-        hs = [(h, t.familia == "TRANSICAO") for t in trelicas_3d
+        # o ponto além da ponta de uma treliça (mais de 50 mm, a face dela) não é apoio dela: a TRELIÇA 6 do Posto (0,6 m
+        # acima do telhado, na copa do PM8) termina 10 cm antes da TESOURA 32 em que a TC53 apoia — a terça subia 36 cm na
+        # ponta e a telha fazia um degrau de 23 cm (12/10, a telha ao lado)
+        hs = [(h, t.familia == "TRANSICAO") for t in trelicas_3d if _alem_da_ponta(t, p) <= 50.0
               for h in [_altura_no_ponto(t, p, min(250.0, t.caminho.largura / 2.0 + 100.0))] if h is not None]
         comuns = [h for h, tr in hs if not tr]
         return max(comuns) if comuns else (max(h for h, _ in hs) if hs else None)
+
+    def _so_transicao(p: Ponto2) -> bool:
+        """no ponto só a transição dá altura (nenhuma tesoura, treliça ou COMP passa ali)"""
+        return not any(t.familia != "TRANSICAO" and _alem_da_ponta(t, p) <= 50.0
+                       and _altura_no_ponto(t, p, min(250.0, t.caminho.largura / 2.0 + 100.0)) is not None for t in trelicas_3d)
     amostras: List[Tuple[float, float, float]] = []
     for t in trelicas_3d:
         L = t.caminho.comprimento
@@ -4232,11 +4252,23 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             tirados: List[Tuple[float, float]] = []
             npas = max(2, int((s_fim - s_ini) / 50.0))
             corrida: List[Tuple[float, float]] = []
+            tipo_c = None
             for k in range(npas + 2):
                 s = s_ini + (s_fim - s_ini) * k / npas
-                h = topo_em((a[0] + ux * s, a[1] + uy * s)) if k <= npas else None
+                p_k = (a[0] + ux * s, a[1] + uy * s)
+                h = topo_em(p_k) if k <= npas else None
+                # a amostra só da transição não se mistura com a da tesoura no mesmo apoio: na ponta da TC53 do Posto a
+                # TRANSIÇÃO 14 nasce junto da TESOURA 32, 0,57 m mais alta — a média (7,27 m) passava como apoio e a terça
+                # subia 30 cm; separadas, a da transição sai como barreira (fora da reta das vizinhas) (12/10)
+                tipo_k = None if h is None else _so_transicao(p_k)
+                if h is not None and corrida and tipo_k != tipo_c:
+                    h_novo = h
+                    h = None
+                else:
+                    h_novo = None
                 if h is not None:
                     corrida.append((s, h))
+                    tipo_c = tipo_k
                 elif corrida:
                     if corrida[-1][0] - corrida[0][0] <= 1000.0:
                         apoios.append((sum(c_[0] for c_ in corrida) / len(corrida), sum(c_[1] for c_ in corrida) / len(corrida)))
@@ -4246,6 +4278,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         passo_c = max(1, int(round(1000.0 / max(1.0, corrida[1][0] - corrida[0][0]))))
                         apoios += corrida[::passo_c] + ([corrida[-1]] if (len(corrida) - 1) % passo_c else [])
                     corrida = []
+                    if h_novo is not None:                   # o outro tipo começa um apoio novo
+                        corrida, tipo_c = [(s, h_novo)], tipo_k
             # a treliça que a linha cruza é apoio mesmo onde a elevação não dá a altura ali: perto da ponta da tesoura (os
             # primeiros ~0,5 m depois da transição em que ela nasce) o banzo existe no 3D, mas a altura pela elevação não
             # responde — na linha ao lado da TRANSIÇÃO 13 do Posto, 3 das 5 tesouras ficavam fora e as emendas iam para o
@@ -4416,6 +4450,15 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     while k < len(aps) - 1 and aps[k][0] < s:
                         k += 1
                     (sa, ha), (sb, hb) = aps[k - 1], aps[k]
+                    # fora dos apoios (a ponta na face da transição), a inclinação de uma base de 1,5 m pelo menos: os dois
+                    # últimos apoios a 20 cm (o par da cumeeira, 5,6 cm de diferença) levavam a ponta da TC52 do Posto
+                    # 0,7 m acima, 2,5 m adiante (12/10)
+                    if s > aps[-1][0]:
+                        (sb, hb) = aps[-1]
+                        (sa, ha) = next((q for q in reversed(aps[:-1]) if sb - q[0] >= 1500.0), aps[0])
+                    elif s < aps[0][0]:
+                        (sa, ha) = aps[0]
+                        (sb, hb) = next((q for q in aps[1:] if q[0] - sa >= 1500.0), aps[-1])
                     if abs(sb - sa) < 1.0:
                         return nivel + ha + dz
                     return nivel + ha + (hb - ha) * (s - sa) / (sb - sa) + dz

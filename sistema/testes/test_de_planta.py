@@ -757,3 +757,12 @@ def test_sentido_pela_agua_das_paralelas():
         assert abs(de_planta._altura_no_ponto(t, (300.0, t.caminho.a[1])) - 1285.0) < 20.0, t.nome
     assert [t.nome for t in ts if t.sentido_por.startswith("a água das vizinhas")] == ["TESOURA 2", "TESOURA 3"]
     assert len(r["contra_as_marcas"]) == 2
+
+def test_alem_da_ponta_da_trelica():
+    """o ponto 10 cm além da ponta da treliça passa dela (não é apoio dela — a TRELIÇA 6 do Posto e a TC53, 12/10); no
+    meio e de lado, não"""
+    C = de_planta.Caminho
+    t = de_planta.Trecho(caminho=C("reta", a=(0.0, 0.0), b=(4000.0, 0.0), largura=150.0), nome="TRELICA 6", familia="TRELICA")
+    assert de_planta._alem_da_ponta(t, (4100.0, 75.0)) == pytest.approx(100.0)
+    assert de_planta._alem_da_ponta(t, (-30.0, 0.0)) == pytest.approx(30.0)
+    assert de_planta._alem_da_ponta(t, (2000.0, 120.0)) == 0.0
