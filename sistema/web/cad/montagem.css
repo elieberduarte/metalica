@@ -141,3 +141,30 @@ body.arrastando-quadro, body.arrastando-quadro * { cursor: nwse-resize !importan
 .quadro-niveis li:hover { background: color-mix(in srgb, #dc2626 14%, transparent); }
 .quadro-niveis li span:last-child { font-family: var(--mono); color: var(--texto2); }
 .quadro-niveis .explica { color: var(--texto3); white-space: normal; font-size: 11px; }
+
+/* os perfis da tesoura (perfis_tesoura.js) */
+.painel-perfis label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.painel-perfis label input, .painel-perfis label select { font: inherit; padding: 2px 4px; min-width: 12em; }
+.painel-perfis #perfis-vao { min-width: 0; width: 6em; }
+.perfis-botoes { display: flex; flex-wrap: wrap; gap: 4px; }
+.perfis-botoes button, .perfis-botoes select { font: inherit; padding: 2px 8px; cursor: pointer; }
+.perfis-sel { padding: 4px 6px; border-left: 3px solid #22d3ee; border-radius: 3px; background: color-mix(in srgb, #22d3ee 10%, transparent); }
+.perfis-croqui { display: flex; justify-content: center; color: var(--texto); }
+.painel-perfis .painel-leitura-pe { flex-wrap: wrap; }
+.perfis-legenda ol { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.perfis-legenda li { display: grid; grid-template-columns: 18px 1fr auto; gap: 6px; align-items: center; padding: 2px 4px; border-radius: 3px; cursor: pointer; }
+.perfis-legenda li:hover { background: color-mix(in srgb, var(--destaque, #2563eb) 10%, transparent); }
+.painel-perfis .perfis-legenda label.linha { justify-content: flex-start; }
+.perfis-cor { width: 18px; height: 4px; border-radius: 2px; background: var(--cor); }
+.perfis-cor.tracejada { background: repeating-linear-gradient(90deg, var(--cor) 0 5px, transparent 5px 8px); }
+.perfis-n { color: var(--texto3); }
+.perfis-tabela summary { cursor: pointer; font-weight: 600; }
+.perfis-tabela table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 11.5px; }
+.perfis-tabela th, .perfis-tabela td { padding: 2px 4px; border-bottom: 1px solid var(--borda); text-align: left; }
+.perfis-tabela td:nth-child(n+3), .perfis-tabela th:nth-child(n+3) { text-align: right; }
+.perfis-tabela tr.do-tipo td { color: var(--texto3); font-style: italic; }
+.perfis-tabela td:nth-child(n+3) { white-space: nowrap; }
+.perfis-sugestao { display: grid; gap: 4px; padding: 6px; border: 1px dashed var(--borda); border-radius: 4px; }
+.perfis-sugestao button { font: inherit; padding: 2px 8px; cursor: pointer; }
+.perfis-sugerido { padding: 4px 6px; border-left: 3px solid #a855f7; border-radius: 3px; background: color-mix(in srgb, #a855f7 12%, transparent); }
+.painel-perfis label input[type=checkbox] { min-width: 0; }

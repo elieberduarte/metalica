@@ -206,3 +206,44 @@ def test_perfil_da_barra_e_secao_dupla_da_legenda():
     d = next(b for b in por["diagonal"] if b.perfil.startswith("Ue"))
     u, v, _w = base_local(tuple(d.fim[c] - d.inicio[c] for c in range(3)), d.rotacao)
     assert abs(abs(v[1]) - 1) < 1e-6 and abs(u[1]) < 1e-6 and u[2] > 0
+
+
+def test_vao_e_boca_dados_no_painel_perfis_da_tesoura():
+    """O painel "Perfis da tesoura" (11/10) grava na barra o vão entre os dois U do composto (b[7], mm) e a boca virada
+    (b[8]): o composto se afasta pelo vão dado em vez da altura da alma; virar inverte a boca do banzo simples e a da
+    alma."""
+    from nucleo3d.geometria import base_local, resolver_perfil, secao
+    def montar(extra_inf, extra_sup, extra_dia):
+        barras = [[0, 0, 10000, 0, "banzo_inf", "Ue 100×50×17×2,65", "composto", *extra_inf],
+                  [0, 1500, 10000, 1500, "banzo_sup", "Ue 100×50×17×2,25", "", *extra_sup],
+                  [0, 0, 0, 1500, "montante", "Ue 127×50×17×2,00", ""],
+                  [0, 0, 5000, 1500, "diagonal", "Ue 127×50×17×2,00", "", *extra_dia],
+                  [5000, 1500, 10000, 0, "diagonal", "Ue 127×50×17×2,00", ""]]
+        comum = Desenho(nome="planta", escala=100.0)
+        comum.add(Linha(a=(0.0, 0.0), b=(10000.0, 0.0), camada="ESTRUTURA", atributos={
+            "elemento": "trelica", "material": "aco", "marca": "T", "nivel_base": 0,
+            "perfis": {"banzo_sup": "U 150×50×3,0", "banzo_inf": "U 150×50×3,0", "diagonal": "L 50,8×4,76"},
+            "desenho": {"barras": barras, "vao": 10000, "altura": 1500}}))
+        doc, _ = DPE.modelo_da_planta(comum, [])
+        por = {}
+        for b in doc.entidades.values():
+            por.setdefault((b.atributos or {}).get("papel_trelica"), []).append(b)
+        return por
+    eixos = lambda b: base_local(tuple(b.fim[c] - b.inicio[c] for c in range(3)), b.rotacao)
+    a = montar([], [], [])
+    b = montar([200, ""], [None, 1], [None, 1])
+    # o vão dado: as costas a 200 (não a 127 da alma)
+    p = resolver_perfil("Ue 100×50×17×2,65")
+    xg = -min(q[0] for q in secao(p))
+    ys = sorted(round(x.inicio[1], 3) for x in b["banzo_inf"])
+    assert abs(ys[0] + xg + 100) < 0.01 and abs(ys[1] - xg - 100) < 0.01, ys
+    # vazio = a altura da alma, como antes
+    ys = sorted(round(x.inicio[1], 3) for x in a["banzo_inf"])
+    assert abs(ys[1] - xg - 63.5) < 0.01, ys
+    # a boca virada: o banzo de cima e a diagonal com o eixo u (a boca) ao contrário
+    ua, ub = eixos(a["banzo_sup"][0])[0], eixos(b["banzo_sup"][0])[0]
+    assert all(abs(ua[c] + ub[c]) < 1e-6 for c in range(3)), (ua, ub)
+    da = next(x for x in a["diagonal"] if x.inicio[0] < 1 and x.fim[0] > 4000)
+    db = next(x for x in b["diagonal"] if x.inicio[0] < 1 and x.fim[0] > 4000)
+    ua, ub = eixos(da)[0], eixos(db)[0]
+    assert all(abs(ua[c] + ub[c]) < 1e-6 for c in range(3)), (ua, ub)

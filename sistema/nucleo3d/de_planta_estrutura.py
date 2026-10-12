@@ -394,7 +394,7 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     def P(u, v):
         return (e.a[0] + ux * u * k, e.a[1] + uy * u * k, z0 + v)
 
-    segs, papeis, perfis_b, secoes_b = [], [], [], []
+    segs, papeis, perfis_b, secoes_b, vaos_b, virar_b = [], [], [], [], [], []
     for b in barras:
         try:
             segs.append(tuple(float(x) for x in b[:4]))
@@ -404,6 +404,12 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
         # o perfil da própria barra (a legenda de cores da folha de perfis do projeto, 11/10) e a seção dupla dela
         perfis_b.append(str(b[5]) if len(b) > 5 and b[5] else "")
         secoes_b.append(str(b[6]) if len(b) > 6 and b[6] else "")
+        # o painel "Perfis da tesoura" (11/10): o vão entre os dois perfis (mm; vazio = a altura da alma) e "virar" a boca
+        try:
+            vaos_b.append(float(b[7]) if len(b) > 7 and b[7] not in (None, "") else None)
+        except (TypeError, ValueError):
+            vaos_b.append(None)
+        virar_b.append(bool(len(b) > 8 and b[8]))
     if not segs:
         raise ErroDeDados("a tesoura não tem o desenho das barras")
     pares = _linhas_duplas(segs)
@@ -480,10 +486,10 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             nn_ = math.sqrt(sum(a_ * a_ for a_ in n_pl)) or 1.0
             n_pl = tuple(a_ / nn_ for a_ in n_pl)
             direcao = n_pl if caixa else fora_do_plano
-            off = (bf - xg) if caixa else (xg + vao_da_alma / 2.0)
+            off = (bf - xg) if caixa else (xg + (vaos_b[i] if vaos_b[i] is not None else vao_da_alma) / 2.0)
             for lado in (1.0, -1.0):
                 dl = tuple(lado * off * c for c in direcao)
-                abre = tuple((-lado if caixa else lado) * c for c in direcao)
+                abre = tuple((-lado if caixa else lado) * (-1.0 if virar_b[i] else 1.0) * c for c in direcao)
                 bd = Barra(inicio=tuple(A[c] + dl[c] for c in range(3)), fim=tuple(B[c] + dl[c] for c in range(3)), perfil=perfil,
                            papel=papel_3d, aco=aco, camada=camada, nome=nome + (" (a)" if lado > 0 else " (b)"), rotacao=_giro_para(w, abre),
                            atributos=dict(atr, secao_dupla=secoes_b[i], a_confirmar="seção dupla: arranjo dos dois perfis"))
@@ -523,6 +529,8 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                     nx, ny = -nx, -ny
             elif (papel == "banzo_inf") != (ny > 0):
                 nx, ny = -nx, -ny
+            if virar_b[i]:
+                nx, ny = -nx, -ny
             dentro = (ux * nx * k, uy * nx * k, ny)
             dw = sum(x * y for x, y in zip(dentro, w))
             dentro = tuple(x - dw * y for x, y in zip(dentro, w))
@@ -546,6 +554,8 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
             alvo = (ux * nx_ * k, uy * nx_ * k, ny_)
             dw_ = sum(a_ * b_ for a_, b_ in zip(alvo, w))
             giro = _giro_para(w, tuple(a_ - dw_ * b_ for a_, b_ in zip(alvo, w)))
+        if virar_b[i]:
+            giro = (giro + 180.0) % 360.0
         if papel == "secundaria":
             # a barra secundária ("L22x22#11 - Um lado só", Docas 08/10): uma cantoneira só, numa face da tesoura, por fora
             # das abas do U — a aba deitada encostada na aba do U e a outra para fora; passa por fora das cantoneiras

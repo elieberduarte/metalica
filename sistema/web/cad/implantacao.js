@@ -606,6 +606,7 @@ export class MetodosImplantacao {
       c.append(' · ', s,
         el('button', { type: 'button', class: 'quadro-botao', title: 'Cola aqui o que foi copiado do desenho do cliente (Ctrl+V): clique onde vão os pontos de referência', onclick: () => this.colar() }, 'Colar'),
         el('button', { type: 'button', class: 'quadro-botao', title: 'O desenho selecionado nesta elevação vira a tesoura: lançada neste eixo e nos outros que marcar', onclick: () => this.tesouraDaElevacao(q) }, 'Tesoura…'),
+        el('button', { type: 'button', class: 'quadro-botao', title: 'Os perfis de cada barra da tesoura deste eixo: perfil, arranjo (simples, composto, caixa), vão e boca', onclick: () => this.abrirPerfis(q) }, 'Perfis…'),
         el('button', { type: 'button', class: 'quadro-tirar', title: 'Tirar esta elevação', onclick: () => this.tirarElevacao(q) }, '×'));
     }
   }
@@ -641,6 +642,19 @@ export class MetodosImplantacao {
   }
 
   // ------------------------------------------------------------------ a sombra
+  /** O que foi posto (não gerado) no quadro `id` — guardado até o desenho mudar: a sombra pinta a cada quadro e não
+   *  pode varrer o documento inteiro (CD Bom Dia: 5.484 objetos). */
+  _desenhadoNoQuadro(id) {
+    const doc = this.cad.doc;
+    if (this._docSombraOuvido !== doc) { this._docSombraOuvido = doc; this._cacheSombra = new Map(); doc.aoMudar(() => this._cacheSombra.clear()); }
+    let l = this._cacheSombra.get(id);
+    if (!l) {
+      l = [...doc.entidades.values()].filter(e => { const at = e.atributos || {}; return at.quadro === id && !at.gerado; });
+      this._cacheSombra.set(id, l);
+    }
+    return l;
+  }
+
   /** Desenha, apagado, o que foi posto na elevação do eixo vizinho, no lugar real dela dentro desta. */
   _desenharSombras() {
     const tela = this.cad.tela, ctx = tela.ctx;
@@ -655,9 +669,7 @@ export class MetodosImplantacao {
       ctx.beginPath(); ctx.rect(a[0], a[1], b[0] - a[0], b[1] - a[1]); ctx.clip();
       ctx.globalAlpha = 0.35; ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; ctx.setLineDash([]);
       ctx.beginPath();
-      for (const e of this.cad.doc.entidades.values()) {
-        const at = e.atributos || {};
-        if (at.quadro !== nq.id || at.gerado) continue;
+      for (const e of this._desenhadoNoQuadro(nq.id)) {
         let pts = null;
         if (e.tipo === 'linha') pts = [e.a, e.b];
         else if (e.tipo === 'polilinha') pts = e.fechada ? [...e.vertices, e.vertices[0]] : e.vertices;
@@ -1304,7 +1316,7 @@ export class MetodosImplantacao {
       const k = (ub - ua) / d.vao;
       const zb = (typeof a.nivel_base === 'string' ? (tab[a.nivel_base] ?? (parseFloat(a.nivel_base) || 0)) : (+a.nivel_base || 0)) + (+a.acima_do_nivel || 0);
       const at = { quadro: q.id, gerado: 'elevacao', elemento_ref: e.id, marca: a.marca };
-      for (const b of d.barras) out.push(criar({ tipo: 'linha', camada: CAMADA_ELEMENTOS, a: P(ua + b[0] * k, zb + b[1]), b: P(ua + b[2] * k, zb + b[3]), atributos: at }));
+      d.barras.forEach((b, i) => out.push(criar({ tipo: 'linha', camada: CAMADA_ELEMENTOS, a: P(ua + b[0] * k, zb + b[1]), b: P(ua + b[2] * k, zb + b[3]), atributos: { ...at, barra: i } })));
       const topo = Math.max(...d.barras.flatMap(b => [b[1], b[3]]));
       out.push(criar({ tipo: 'texto', camada: CAMADA_ELEMENTOS, posicao: P((ua + ub) / 2, zb + topo), texto: a.marca || '', altura: TXT, alinhamento: 'centro', vertical: 'base', atributos: at }));
     }

@@ -225,6 +225,104 @@ try:
     bs_ = json.loads(aba.avaliar("JSON.stringify([...cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica').map(e => [e.atributos.eixo, e.atributos.marca, e.atributos.perfis.banzo_sup]).sort())"))
     ok([b for b in bs_ if b[1] == "T1"] and all(b[2] == "U 200×75×3,0" for b in bs_ if b[1] == "T1") and all(b[2] != "U 200×75×3,0" for b in bs_ if b[1] == "T1A"),
        "mudar o banzo de uma T1 nas propriedades muda todas as T1 (a T1A fica): %s" % bs_)
+
+    # "Perfis…" (11/10): na Elevação 3, o banzo de baixo vira composto de U 150 com vão 150 e a boca virada em todas as
+    # T1; depois as diagonais só deste eixo viram L 50,8 — e a tesoura do eixo 3 vira outro tipo (T1B: a T1A já existe)
+    ok(aba.avaliar("[...document.querySelectorAll('.quadro-botao')].some(b => b.textContent === 'Perfis…')"), "a elevação tem \"Perfis…\" no título")
+    aba.avaliar("(() => { const m = window.montagem; m.abrirPerfis(m._elevacoes().find(q => q.eixo === '3')); return 1; })()")
+    ok(esperar(aba, "!!document.querySelector('#painel-perfis:not([hidden]) #perfis-arranjo')", 10) and aba.avaliar("cad.ferramenta.constructor.id") == "perfis-sel",
+       "o painel abre com a seleção de barras ligada")
+    aba.avaliar("document.querySelector('#painel-perfis [data-funcao=banzo_inf]').click(); 1"); aba.drenar(0.4)
+    n_inf = aba.avaliar("window.montagem._pf.sel.size")
+    ok(n_inf and "barra(s) selecionada(s)" in (aba.avaliar("document.querySelector('#perfis-sel').textContent") or ""), "\"banzo de baixo\" seleciona %s barra(s)" % n_inf)
+    # o clique numa barra (a do meio da diagonal desenhada) pega só ela; Shift soma
+    um = aba.avaliar("""(() => { const m = window.montagem, l = m._linhasDasBarras().find(l => { const e = cad.doc.get(l.ref); return e.atributos.desenho.barras[l.i][4] === 'diagonal'; });
+      cad.ferramenta.onPonto([(l.a[0] + l.b[0]) / 2, (l.a[1] + l.b[1]) / 2], {}); return m._pf.sel.size; })()""")
+    ok(um == 1, "o clique numa barra seleciona só ela (%s)" % um)
+    aba.avaliar("document.querySelector('#painel-perfis [data-funcao=banzo_inf]').click(); 1"); aba.drenar(0.4)
+    aba.avaliar("""(() => { const P = document.querySelector('#painel-perfis'); P.querySelector('#perfis-perfil').value = 'U 150×50×3,0';
+      const a = P.querySelector('#perfis-arranjo'); a.value = 'composto'; a.dispatchEvent(new Event('change'));
+      const v = P.querySelector('#perfis-vao'); v.value = '150'; v.dispatchEvent(new Event('input')); P.querySelector('#perfis-boca').value = '1'; return 1; })()""")
+    ok(aba.avaliar("!!document.querySelector('#painel-perfis .perfis-croqui svg polyline')") and "150" in (aba.avaliar("document.querySelector('#painel-perfis .perfis-croqui').textContent") or ""),
+       "o croqui do composto aparece com o vão (150)")
+    aba.avaliar("document.querySelector('#perfis-aplicar-todas').click(); 1")
+    esperar(aba, "!cad._salvando && [...cad.doc.entidades.values()].some(e => (e.atributos || {}).elemento === 'trelica' && e.atributos.desenho.barras.some(b => b[5] === 'U 150×50×3,0'))", 15)
+    inf = json.loads(aba.avaliar("""JSON.stringify([...cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica').map(e =>
+      [e.atributos.eixo, e.atributos.marca, e.atributos.desenho.barras.filter(b => b[4] === 'banzo_inf').map(b => [b[5], b[6], b[7], b[8]])]).sort())"""))
+    ok(all(all(b == ["U 150×50×3,0", "composto", 150, 1] for b in t[2]) for t in inf if t[1] == "T1")
+       and all(all(b[0] != "U 150×50×3,0" for b in t[2]) for t in inf if t[1] == "T1A"),
+       "\"Aplicar a todas\": o banzo de baixo de todas as T1 vira composto U 150, vão 150, boca virada; a T1A fica: %s" % [(t[0], t[1], t[2][:1]) for t in inf])
+    aba.avaliar("document.querySelector('#painel-perfis [data-funcao=diagonal]').click(); 1"); aba.drenar(0.4)
+    aba.avaliar("""(() => { const P = document.querySelector('#painel-perfis'); P.querySelector('#perfis-perfil').value = 'L 50,8×4,76'; return 1; })()""")
+    aba.avaliar("document.querySelector('#perfis-aplicar-so').click(); 1")
+    esperar(aba, "[...cad.doc.entidades.values()].some(e => (e.atributos || {}).marca === 'T1B')", 15)
+    marcas = json.loads(aba.avaliar("JSON.stringify([...cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica').map(e => [e.atributos.eixo, e.atributos.marca, e.atributos.desenho.barras.filter(b => b[4] === 'diagonal').every(b => b[5] === 'L 50,8×4,76')]).sort())"))
+    ok(marcas == [["1", "T1", False], ["2", "T1A", False], ["3", "T1B", True], ["4", "T1", False]],
+       "\"Só neste eixo\": as diagonais do eixo 3 mudam e ele vira T1B; os outros ficam: %s" % marcas)
+    ok(aba.avaliar("[...cad.doc.entidades.values()].some(e => (e.atributos || {}).rotulo_de && e.texto === 'T1B')"), "o rótulo da implantação mostra T1B")
+    t0 = time.time()
+    while time.time() - t0 < 40 and not any(b.get("perfil") == "U 150×50×3,0" for b in _barras()):
+        aba.drenar(0.6)
+    bs = _barras()
+    duplas = [b for b in bs if b.get("perfil") == "U 150×50×3,0" and (b.get("atributos") or {}).get("secao_dupla") == "composto"]
+    ok(duplas and len(duplas) % 2 == 0, "o 3D acompanha: %d barras de U 150 em composto" % len(duplas))
+    # etapa 2: a legenda pinta cada perfil com uma cor, clicar nela seleciona as barras dele; a tabela dá kg por tesoura
+    leg = json.loads(aba.avaliar("JSON.stringify([...document.querySelectorAll('#perfis-legenda li')].map(l => [l.dataset.chave, +l.querySelector('.perfis-n').textContent]))") or "[]")
+    ok(any(k.startswith("U 150×50×3,0|composto") for k, _n in leg) and any(k.startswith("L 50,8×4,76|") for k, _n in leg),
+       "a legenda tem o composto U 150 e a L 50,8 aplicados: %s" % leg)
+    k150 = next((k for k, _n in leg if k.startswith("U 150×50×3,0|composto")), "")
+    n150 = next((n for k, n in leg if k == k150), 0)
+    aba.avaliar("document.querySelector('#perfis-legenda li[data-chave=\"%s\"]').click(); 1" % k150); aba.drenar(0.4)
+    ok(aba.avaliar("window.montagem._pf.sel.size") == n150, "clicar no perfil da legenda seleciona as %s barra(s) dele" % n150)
+    resumo = aba.avaliar("[...document.querySelectorAll('.perfis-tabela summary')].map(s => s.textContent).join(' | ')") or ""
+    ok("kg por tesoura" in resumo and "na obra" in resumo, "a tabela da tesoura dá o peso: %s" % resumo)
+    aba.avaliar("(() => { const c = document.querySelector('#perfis-pintar'); c.checked = false; c.dispatchEvent(new Event('change')); return 1; })()"); aba.drenar(0.2)
+    ok(aba.avaliar("window.montagem._pf.pintar === false"), "\"Pintar por perfil\" desliga")
+    aba.avaliar("(() => { const c = document.querySelector('#perfis-pintar'); c.checked = true; c.dispatchEvent(new Event('change')); return 1; })()"); aba.drenar(0.2)
+    foto(aba, "_tesoura_perfis.png")
+    aba.cmd("Input.dispatchKeyEvent", type="keyDown", key="Escape", code="Escape", windowsVirtualKeyCode=27)
+    aba.cmd("Input.dispatchKeyEvent", type="keyUp", key="Escape", code="Escape", windowsVirtualKeyCode=27)
+    aba.drenar(0.3)
+    ok(aba.avaliar("document.querySelector('#painel-perfis').hidden && !window.montagem._pf"), "Esc fecha o painel")
+
+    # etapa 3: a legenda de cores colada na Elevação 3 (como a folha "PERFIS" do projeto) sugere: o banzo de baixo em
+    # vermelho = "PERFIL COMPOSTO UE100…", as diagonais em verde = "PERFIL SIMPLES UE127…"; o painel mostra as diferentes,
+    # preenche os campos ao selecionar e "Aceitar" grava em todas as T1B
+    aba.avaliar("""(async () => {
+      const d = await import('/cad/nucleo/desenho2d.js'), c = await import('/cad/nucleo/comandos.js'), m = window.montagem;
+      const q = m._elevacoes().find(q => q.eixo === '3');
+      m._pf = { q, sel: new Set() };
+      const at = (cor) => ({ quadro: q.id, colado: 'legenda-teste', cor });
+      const P = (u, z) => m._paraPapel(q, [u, z]);
+      const novos = [];
+      for (const l of m._linhasDasBarras()) {
+        const papel = cad.doc.get(l.ref).atributos.desenho.barras[l.i][4];
+        const cor = papel === 'banzo_inf' ? '#ff0000' : papel === 'diagonal' ? '#00ff00' : null;
+        if (cor) novos.push(d.criar({ tipo: 'linha', camada: '0', a: [...l.a], b: [...l.b], atributos: at(cor) }));
+      }
+      const T = (u, z, texto, cor) => d.criar({ tipo: 'texto', camada: '0', posicao: P(u, z), texto, altura: 2.5, atributos: cor ? at(cor) : { quadro: q.id, colado: 'legenda-teste' } });
+      novos.push(T(2000, 9400, 'BANZOS'), T(2000, 9000, 'PERFIL COMPOSTO UE100x50x17x2.25mm', '#ff0000'),
+        T(12000, 9400, 'MONTANTES E DIAGONAIS'), T(12000, 9000, 'PERFIL SIMPLES UE127x50x17x2.00mm', '#00ff00'));
+      m._pf = null;
+      cad.executar(new c.ComandoAdicionar(novos, 'legenda de teste'));
+      await m.abrirPerfis(q); window.__leg = novos.length; })(); 1""")
+    esperar(aba, "!!window.__leg && !!document.querySelector('#perfis-ler-legenda')", 15)
+    aba.avaliar("document.querySelector('#perfis-ler-legenda').click(); 1"); aba.drenar(0.6)
+    dif = json.loads(aba.avaliar("JSON.stringify(window.montagem._diferentesDaSugestao().map(d => [d.b[4], d.sug.perfil, d.sug.arranjo]))") or "[]")
+    ok(dif and all((f == "banzo_inf" and p_ == "Ue 100×50×17×2,25" and a_ == "composto") or (f == "diagonal" and p_ == "Ue 127×50×17×2,00" and a_ == "") for f, p_, a_ in dif)
+       and {f for f, _p, _a in dif} == {"banzo_inf", "diagonal"},
+       "a legenda colada sugere Ue 100 composto no banzo de baixo e Ue 127 nas diagonais: %s" % dif[:4])
+    ok("diferente(s)" in (aba.avaliar("document.querySelector('#perfis-sugestao').textContent") or ""), "o painel diz quantas a legenda muda")
+    aba.avaliar("document.querySelector('#painel-perfis [data-funcao=banzo_inf]').click(); 1"); aba.drenar(0.5)
+    ok(aba.avaliar("document.querySelector('#perfis-perfil').value") == "Ue 100×50×17×2,25" and aba.avaliar("document.querySelector('#perfis-arranjo').value") == "composto"
+       and aba.avaliar("!!document.querySelector('#perfis-sugerido')"), "ao selecionar o banzo de baixo, o painel vem preenchido pela legenda")
+    aba.avaliar("document.querySelector('#perfis-aceitar-legenda').click(); 1")
+    esperar(aba, "window.montagem._pf && window.montagem._pf.sugestao && window.montagem._diferentesDaSugestao().length === 0", 15)
+    t1b = json.loads(aba.avaliar("""JSON.stringify([...cad.doc.entidades.values()].filter(e => (e.atributos || {}).elemento === 'trelica' && e.atributos.marca === 'T1B')
+      .flatMap(e => e.atributos.desenho.barras.filter(b => b[4] === 'banzo_inf' || b[4] === 'diagonal').map(b => [b[4], b[5], b[6] || ''])))"""))
+    ok(t1b and all(b[1:] == (["Ue 100×50×17×2,25", "composto"] if b[0] == "banzo_inf" else ["Ue 127×50×17×2,00", ""]) for b in t1b),
+       "\"Aceitar\" grava a legenda na T1B e não sobra diferença: %s" % t1b[:3])
+    foto(aba, "_tesoura_legenda.png")
     aba.avaliar("window.montagem.enquadrar(); 1"); aba.drenar(0.8)
     foto(aba, "_tesoura_folha.png")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]

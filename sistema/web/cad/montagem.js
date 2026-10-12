@@ -35,6 +35,7 @@ import { DESENHO_LANCAMENTO } from './lancamento.js';
 import { transformar, pontosDe, caixaDe, valorCota, novoId as idEntidade } from './nucleo/desenho2d.js';
 import { Ferramenta } from './ferramentas.js';
 import { MetodosImplantacao } from './implantacao.js';
+import { MetodosPerfisTesoura } from './perfis_tesoura.js';
 
 export const DESENHO_MONTAGEM = 'montagem';
 export const DESENHO_COMPLETO = 'detalhamento-completo';
@@ -529,6 +530,7 @@ class Montagem {
     }
     ctx.restore();
     this._desenharSombras();
+    this._desenharSelecaoPerfis();
     this._controles(ret);
   }
 
@@ -941,10 +943,13 @@ class Montagem {
 }
 
 // a implantação e as elevações (implantacao.js)
-for (const k of Object.getOwnPropertyNames(MetodosImplantacao.prototype)) {
-  if (k === 'constructor') continue;
-  if (Object.prototype.hasOwnProperty.call(Montagem.prototype, k)) throw new Error(`método repetido na Montagem: ${k}`);
-  Montagem.prototype[k] = MetodosImplantacao.prototype[k];
+// e os perfis da tesoura (perfis_tesoura.js)
+for (const M of [MetodosImplantacao, MetodosPerfisTesoura]) {
+  for (const k of Object.getOwnPropertyNames(M.prototype)) {
+    if (k === 'constructor') continue;
+    if (Object.prototype.hasOwnProperty.call(Montagem.prototype, k)) throw new Error(`método repetido na Montagem: ${k}`);
+    Montagem.prototype[k] = M.prototype[k];
+  }
 }
 
 function iniciar() {
