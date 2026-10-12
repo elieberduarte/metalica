@@ -573,7 +573,8 @@ def _fechamentos(doc, panos, telha, camada):
     # TRANSIÇÕES 14–16 e a TRELIÇA 3): a que tem telhado de um lado e nada do outro
     for e in _ap._elementos(doc):
         nome_ = str(e.peca or "").upper()
-        if e.papel == "banzo" and (nome_.startswith("PAINEL") or nome_.startswith("TRANSI") or nome_.startswith("TRELI")):
+        # (e a tesoura da borda — a TESOURA 6 do Posto, em y 53,40, entre a curva do PAINEL 8 e o PAINEL 15)
+        if e.papel == "banzo" and nome_.startswith(("PAINEL", "TRANSI", "TRELI", "TESOURA")):
             paineis[e.peca].append(e)
     W = float(telha.get("largura_util") or 1020.0)
     solidos, ml, area = [], 0.0, 0.0
@@ -582,9 +583,10 @@ def _fechamentos(doc, panos, telha, camada):
         zmin = min(min(a[2], b[2]) for a, b in segs)
         cima = [(a, b) for a, b in segs if min(a[2], b[2]) > zmin + 300.0]
 
-        def tem_acima(a, b):
-            # outro banzo da mesma peça passa por cima deste (a linha do telhado por dentro do PAINEL 15): só o mais alto
-            mx, my, mz = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2
+        def tem_acima(a, b, f=0.5):
+            # outro banzo da mesma peça passa por cima deste ali (a linha do telhado por dentro do PAINEL 15, da TESOURA 6):
+            # só o mais alto — conferido chapa a chapa (o de cima pode cobrir só parte do de baixo)
+            mx, my, mz = a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f
             for c, d_ in cima:
                 if (c, d_) == (a, b):
                     continue
@@ -595,7 +597,7 @@ def _fechamentos(doc, panos, telha, camada):
                 if -0.01 <= t_ <= 1.01 and math.hypot(c[0] + (d_[0] - c[0]) * t_ - mx, c[1] + (d_[1] - c[1]) * t_ - my) < 150.0                         and c[2] + (d_[2] - c[2]) * t_ > mz + 100.0:
                     return True
             return False
-        cima = [sg for sg in cima if not tem_acima(*sg)]
+        cima_todos = list(cima)
         cum = 0.0
         for A, B in cima:
             L = math.hypot(B[0] - A[0], B[1] - A[1])
@@ -633,6 +635,9 @@ def _fechamentos(doc, panos, telha, camada):
                 a_ = 0.0
                 while a_ < L - 1.0:
                     b_ = min(L, a_ + W)
+                    if tem_acima(A, B, (a_ + b_) / 2.0 / L):
+                        a_ = b_
+                        continue
                     ch = {"secoes": [(P(a_, zb), P(b_, zb)), (P(a_, zt(a_)), P(b_, zt(b_)))],
                           "a": cum + a_, "b": cum + b_, "origem": 0.0, "d": u, "n": nh}
                     so = _solido_da_chapa(ch, telha, camada, normal=(face[0], face[1], 0.0))
@@ -640,8 +645,9 @@ def _fechamentos(doc, panos, telha, camada):
                                     "painel": peca.split("#")[0], "face": "fora" if face is fora_ else "dentro"}
                     solidos.append(so)
                     area += (b_ - a_) * ((zt(a_) + zt(b_)) / 2 - zb)
+                    if face is fora_:
+                        ml += b_ - a_                    # o perímetro com fechamento (uma face)
                     a_ = b_
-            ml += L
             cum += L
     return solidos, ml, area
 
@@ -692,7 +698,8 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
                         "comprimento": round(sum(math.dist(((a1[0] + b1[0]) / 2, (a1[1] + b1[1]) / 2, a1[2]), ((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, a2[2]))
                                                  for (a1, b1), (a2, b2) in zip(ch["secoes"], ch["secoes"][1:])))}
         doc.add(so)
-    fech, fech_ml, fech_area = _fechamentos(doc, feitos, telha, camada)
+    # a calha e a cumeeira contam como telhado (o pedaço de tesoura na linha da calha não é borda)
+    fech, fech_ml, fech_area = _fechamentos(doc, feitos + an["calhas"] + an["cumeeiras"], telha, camada)
     for so in fech:
         doc.add(so)
     for p in []:                                         # o triângulo da borda virou chapa recortada (_chapas)
