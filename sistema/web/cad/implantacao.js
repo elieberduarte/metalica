@@ -255,6 +255,8 @@ export class MetodosImplantacao {
     const niveis = await this._niveis();
     const alvos = m.quadros.filter(q => (q.tipo === 'implantacao' || q.tipo === 'elevacao') && (!so || so.includes(q)));
     if (!alvos.length) return;
+    // o corte do 3D nas elevações (corte_eixos.js): o modelo do projeto antes de desenhar
+    if (alvos.some(q => q.tipo === 'elevacao' && q.do3d)) await this._carregarModelo3d();
     const antes = new Map(m.quadros.map(q => [q.id, { x: q.x, y: q.y, escala: q.escala, mapa: q.mapa ? { ...q.mapa } : null }]));
     const desenhos = new Map();
     for (const q of alvos) desenhos.set(q.id, q.tipo === 'implantacao' ? this._planejarImplantacao(q, niveis) : this._planejarElevacao(q, niveis));
@@ -389,6 +391,7 @@ export class MetodosImplantacao {
         out.push(criar({ tipo: 'cota', camada: CAMADA_COTAS, p1: P(us2[i], z0 - ext), p2: P(us2[i + 1], z0 - ext), deslocamento: -6, escala: s, altura: TXT_COTA, atributos: { quadro: q.id, gerado: 'elevacao' } }));
       }
       out.push(...this._elementosNaElevacao(q, niveis, P));
+      if (q.do3d) out.push(...this._corteDo3D(q, P));
       return out;
     };
   }
@@ -591,7 +594,9 @@ export class MetodosImplantacao {
   /** Os controles próprios no título da implantação e da elevação (chamado pelo _controles da Montagem). */
   _extrasDoTitulo(q, c) {
     if (q.tipo === 'implantacao') {
-      c.append(' ', el('button', { type: 'button', class: 'quadro-botao', title: 'Os eixos da obra: os vãos, os nomes, ou lidos do desenho do cliente', onclick: () => this.dialogoEixos() }, 'Eixos…'));
+      c.append(' ', el('button', { type: 'button', class: 'quadro-botao', title: 'Os eixos da obra: os vãos, os nomes, ou lidos do desenho do cliente', onclick: () => this.dialogoEixos() }, 'Eixos…'),
+        el('button', { type: 'button', class: 'quadro-botao', title: 'Abre a elevação de cada eixo (numerados e com letra), com o corte do 3D do projeto e a conferência', onclick: () => this.todasAsElevacoes() }, 'Todas as elevações'),
+        el('button', { type: 'button', class: 'quadro-botao', title: 'O que o corte do 3D achou nos eixos: pilar fora do cruzamento, peça fora da linha do eixo, eixo vazio', onclick: () => this.conferenciaDosEixos() }, 'Conferência'));
     } else if (q.tipo === 'elevacao') {
       const b = c.querySelector('b');
       if (b) b.textContent = `Elevação ${q.eixo}`;
@@ -601,9 +606,13 @@ export class MetodosImplantacao {
         ant ? el('option', { value: 'anterior', texto: `sombra do ${ant.nome}` }) : null,
         prox ? el('option', { value: 'proximo', texto: `sombra do ${prox.nome}` }) : null);
       s.value = q.sombra || '';
+      // o corte do 3D do projeto nesta elevação (corte_eixos.js)
+      const c3 = el('input', { type: 'checkbox', title: 'Mostra o corte do 3D do projeto no plano deste eixo (as barras no plano e as marcas do que atravessa)' });
+      c3.checked = !!q.do3d;
+      c3.addEventListener('change', () => { q.do3d = c3.checked; this.refazerQuadrosDaObra([q]); });
       s.addEventListener('change', () => { q.sombra = s.value || null; this._gravar(); this.cad.tela.pedirQuadro(); });
       s.addEventListener('keydown', ev => ev.stopPropagation());
-      c.append(' · ', s,
+      c.append(' · ', s, ' ', el('label', { class: 'quadro-3d', title: c3.title }, c3, '3D'), ' ',
         el('button', { type: 'button', class: 'quadro-botao', title: 'Cola aqui o que foi copiado do desenho do cliente (Ctrl+V): clique onde vão os pontos de referência', onclick: () => this.colar() }, 'Colar'),
         el('button', { type: 'button', class: 'quadro-botao', title: 'O desenho selecionado nesta elevação vira a tesoura: lançada neste eixo e nos outros que marcar', onclick: () => this.tesouraDaElevacao(q) }, 'Tesoura…'),
         el('button', { type: 'button', class: 'quadro-botao', title: 'Os perfis de cada barra da tesoura deste eixo: perfil, arranjo (simples, composto, caixa), vão e boca', onclick: () => this.abrirPerfis(q) }, 'Perfis…'),

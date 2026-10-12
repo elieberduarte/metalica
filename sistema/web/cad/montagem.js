@@ -36,6 +36,7 @@ import { transformar, pontosDe, caixaDe, valorCota, novoId as idEntidade } from 
 import { Ferramenta } from './ferramentas.js';
 import { MetodosImplantacao } from './implantacao.js';
 import { MetodosPerfisTesoura } from './perfis_tesoura.js';
+import { MetodosCorteEixos } from './corte_eixos.js';
 
 export const DESENHO_MONTAGEM = 'montagem';
 export const DESENHO_COMPLETO = 'detalhamento-completo';
@@ -86,6 +87,9 @@ export function montagemPadrao(original = DESENHO_LANCAMENTO) {
  * `x, y` é o canto de cima à esquerda (y para cima, como no CAD). Devolve {id: [dx, dy]} do que andou, e
  * em `m.vaga` o lugar do "+ corte tesoura" (depois da última tesoura).
  */
+/** mm de papel: a largura em que a linha de quadros quebra (as 28 elevações do Posto numa linha só davam 16 m de folha) */
+const LARGURA_DA_LINHA = 1300;
+
 export function arrumar(m) {
   const linhas = new Map();
   for (const q of m.quadros) {
@@ -98,8 +102,11 @@ export function arrumar(m) {
   const tesTam = TIPOS.tesoura;
   for (const l of [...new Set([...linhas.keys(), tesTam.linha])].sort((a, b) => a - b)) {
     const qs = linhas.get(l) || [];
-    let x = 0, alt = 0;
+    let x = 0, alt = 0, ant = null;
     for (const q of qs) {
+      // quebra a linha quando ela passa da largura, e as elevações dos eixos com letra começam linha nova
+      if (ant && (x + q.w > LARGURA_DA_LINHA || (q.tipo === 'elevacao' && ant.familia !== q.familia))) { topo -= alt + FOLGA; x = 0; alt = 0; }
+      ant = q;
       const dx = x - (q.x || 0), dy = topo - (q.y || 0);
       if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) andou[q.id] = [dx, dy];
       q.x = x; q.y = topo;
@@ -943,8 +950,8 @@ class Montagem {
 }
 
 // a implantação e as elevações (implantacao.js)
-// e os perfis da tesoura (perfis_tesoura.js)
-for (const M of [MetodosImplantacao, MetodosPerfisTesoura]) {
+// e os perfis da tesoura (perfis_tesoura.js) e o corte do 3D nas elevações (corte_eixos.js)
+for (const M of [MetodosImplantacao, MetodosPerfisTesoura, MetodosCorteEixos]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) {
     if (k === 'constructor') continue;
     if (Object.prototype.hasOwnProperty.call(Montagem.prototype, k)) throw new Error(`método repetido na Montagem: ${k}`);
