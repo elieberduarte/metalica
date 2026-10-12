@@ -936,6 +936,13 @@ def alinhar_tercas(tercas, barras, tol: float = 10.0, maximo: float = 300.0, vao
             zf = b.inicio[2] + (b.fim[2] - b.inicio[2]) * t + lo_b
             if zf - za > folga_suporte:
                 x, y = b.inicio[0] + bx * t, b.inicio[1] + by * t
+                # as terças das duas águas (e a emenda) chegam no mesmo apoio do vale: um suporte só ali (12/10, o 3D
+                # mostrou 2 a 4 L 3" no mesmo ponto da linha de x 10,06)
+                ja = [k for k, (p0, _p1, _n) in enumerate(suportes) if math.hypot(x - p0[0], y - p0[1]) < 60.0 and abs(za - p0[2]) < 60.0]
+                if ja:
+                    p0, p1, n0 = suportes[ja[0]]
+                    suportes[ja[0]] = (p0, (p1[0], p1[1], max(p1[2], zf)), n0)
+                    continue
                 suportes.append(((x, y, za), (x, y, zf), nome))
 
     # B. a terça torta, com as vizinhas niveladas
