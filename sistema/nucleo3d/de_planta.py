@@ -1087,6 +1087,16 @@ def _ligar_emenda(el: Elevacao, s_a: float, s_b: float) -> int:
     return ligados
 
 
+def _giro_v_para(w, alvo) -> float:
+    """o giro (graus) da barra de direção `w` que leva o eixo v da seção (geometria.base_local) para `alvo` (a parte dele
+    perpendicular a w)"""
+    from nucleo3d.geometria import base_local
+    u, v, _w = base_local(w, 0.0)
+    a = [float(c) for c in alvo]
+    # v(r) = v·cos r − u·sin r
+    return round(math.degrees(math.atan2(-sum(x * y for x, y in zip(a, u)), sum(x * y for x, y in zip(a, v)))) % 360.0, 3)
+
+
 def _eixo_u_da_barra(q0, q1) -> Tuple[float, float, float]:
     """o eixo u da seção da barra sem giro (geometria.base_local): o de onde as abas apontam"""
     from nucleo3d.geometria import base_local
@@ -3147,7 +3157,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     # ---------------------------------------------------------------- treliças e vigas
     contagem = collections.Counter()
     bocas_viradas: List[str] = []          # banzos em U que a regra do miolo virou (antes: a meia altura)
-    nos_no_eixo = {"pontas": 0, "unidos": 0}   # a alma levada ao eixo do banzo (NBR 8800, 6.5.2)
+    nos_no_eixo = {"pontas": 0, "unidos": 0}   # a alma levada ao eixo do banzo (NBR 8800, 6.5.2)
     presilhas_postas = {"pecas": 0, "pela_nota": 0, "pela_norma": 0}
     # os pilares com a metade da seção: a viga que para antes deles vai até a face
     pilares_meia = []
@@ -3362,11 +3372,14 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         p_pres = nota_p.get("perfil") or perfil
                         # de uma cantoneira à outra: entre as faces de fora (nas abas) ou as pontas das abas (costas)
                         larg = 2.0 * (af + xg_l) if nas_abas else 2.0 * af + (float(pa.bf or 25.0) if pa else 25.0)
+                        # a seção da presilha acompanha a inclinação da barra que ela liga (12/10: "os espaçadores não estão
+                        # seguindo a inclinação das diagonais"): o eixo v dela na direção da barra
+                        rot_p = _giro_v_para((nx, ny, 0.0), tuple(q1[i] - q0[i] for i in range(3)))
                         for k_p in range(1, n_p + 1):
                             f = k_p / (n_p + 1.0)
                             cq = tuple(q0[i] + (q1[i] - q0[i]) * f for i in range(3))
                             barra((cq[0] - nx * larg / 2, cq[1] - ny * larg / 2, cq[2]), (cq[0] + nx * larg / 2, cq[1] + ny * larg / 2, cq[2]),
-                                  p_pres, "presilha", "Treliças", conj, 0.0,
+                                  p_pres, "presilha", "Treliças", conj, rot_p,
                                   {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "presilha_de": perfil})
                         presilhas_postas["pecas"] += n_p
                         presilhas_postas["pela_nota" if int(nota_p.get("qtd") or 0) >= n_norma else "pela_norma"] += 1

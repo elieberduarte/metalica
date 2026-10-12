@@ -287,8 +287,19 @@ export class MetodosBarrasDoBloco {
     const ents = pos.ids.map(i => this.documento.get(i)).filter(Boolean);
     if (!ents.length || !pos.centro) return el('div');
     if (est.ladoSecao && !pos.lados.includes(est.ladoSecao)) est.ladoSecao = 0;
-    // o referencial da vista: o da primeira barra sem giro (x = atravessado ao plano, y = no plano, para cima)
-    const b0 = baseDaBarra(ents[0].inicio, ents[0].fim, 0);
+    // o referencial da vista, olhando ao longo da barra: x atravessado ao plano da treliça (a normal dele) e y no plano,
+    // para cima (no montante em pé, para o lado da ponta 2). O da barra sem giro servia na diagonal e no banzo, mas no
+    // montante (barra vertical) o u dela é o −y do mundo, e a seção saía torta em relação ao plano (12/10)
+    const t0 = baseDaBarra(ents[0].inicio, ents[0].fim, 0).t;
+    const nP = [est.dados.ref.n[0], est.dados.ref.n[1], 0];
+    const nt = nP[0] * t0[0] + nP[1] * t0[1];
+    let bx = [nP[0] - nt * t0[0], nP[1] - nt * t0[1], -nt * t0[2]];
+    const lx = Math.hypot(...bx) || 1;
+    bx = bx.map(v => v / lx);
+    let by = [t0[1] * bx[2] - t0[2] * bx[1], t0[2] * bx[0] - t0[0] * bx[2], t0[0] * bx[1] - t0[1] * bx[0]];
+    const sobe = Math.abs(by[2]) > 0.2 ? by[2] : by[0] * est.dados.ref.u[0] + by[1] * est.dados.ref.u[1];
+    if (sobe < 0) by = by.map(v => -v);
+    const b0 = { u: bx, v: by };
     const c = pos.centro;
     const no2d = (P) => [P[0] * b0.u[0] + P[1] * b0.u[1] + P[2] * b0.u[2], P[0] * b0.v[0] + P[1] * b0.v[1] + P[2] * b0.v[2]];
     const pts2d = [];
