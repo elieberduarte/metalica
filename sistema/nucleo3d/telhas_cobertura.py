@@ -144,6 +144,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
             # a sequência de terças da água, em ordem na caída: pares vizinhos ligados
             cadeia: List[List[dict]] = []
             paredes = []                                 # (q, r, fração do cruzamento): a barreira que sobe entre as duas
+            por_cima = set()                             # os pares que passam por cima de uma transição baixa (a da calha)
             for r in cobre:
                 if cadeia and cadeia[-1]:
                     q = cadeia[-1][-1]
@@ -161,6 +162,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                         zt = z_em(q, sm) + (z_em(r, sm) - z_em(q, sm)) * barr["t"]
                         if barr["topo"] <= zt - 30.0:
                             barr = None
+                            por_cima.add((id(q["b"]), id(r["b"])))
                     if dt <= vao_max and dz <= 0.3 * dt and barr is None:
                         cadeia[-1].append(r)
                         continue
@@ -203,8 +205,11 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                 for i, (q, r) in enumerate(zip(seq, seq[1:])):
                     # o vale estreito entre duas águas (a de antes desce até q, a de depois sobe a partir de r, e o pano
                     # entre as duas quase plano, até 1 m): é a calha, não telha — a calha de x 10,06, 21,37 e 33,96 do Posto
-                    vale = (0 < i and i + 1 < len(inc_) and inc_[i - 1] < -0.005 and inc_[i + 1] > 0.005
-                            and ts_[i + 1] - ts_[i] <= 1000.0 and abs(inc_[i]) <= 0.03)
+                    no_fundo = 0 < i and i + 1 < len(inc_) and inc_[i - 1] < -0.005 and inc_[i + 1] > 0.005
+                    # e o par no fundo do vale que passa por cima da transição dele (a TRANSIÇÃO 3 do Posto: a terça da
+                    # calha no encontro das duas águas deixava o pano em 5 %)
+                    vale = no_fundo and ts_[i + 1] - ts_[i] <= 1000.0 and (
+                        abs(inc_[i]) <= 0.03 or (id(q["b"]), id(r["b"])) in por_cima)
                     if vale:
                         abrir(("calha", id(q["b"]), id(r["b"])), {"q": q, "r": r, "calha": True})
                     else:
@@ -282,6 +287,35 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
             for k in [k for k in abertos if k not in pares_aqui]:
                 panos.append(abertos.pop(k))
         panos += list(abertos.values())
+        # a borda escalonada (a borda diagonal do Posto, do eixo 13/D ao K): onde uma das duas terças do pano acaba antes
+        # e nenhum outro pano continua do lado dela, o triângulo da ponta da mais curta até a ponta da mais longa — a
+        # linha da borda passa pelas pontas das terças
+        deste = [p for p in panos if "cantos" not in p and not p.get("calha") and not p.get("beiral")]
+        cobre_lado: Dict[tuple, list] = collections.defaultdict(list)
+        for p in deste:
+            cobre_lado[(id(p["q"]["b"]), +1)].append((p["s0"], p["s1"]))
+            cobre_lado[(id(p["r"]["b"]), -1)].append((p["s0"], p["s1"]))
+
+        def coberto(ter, lado, a_, b_):
+            return any(x0 < b_ - 1 and x1 > a_ + 1 for x0, x1 in cobre_lado.get((id(ter["b"]), lado), ()))
+        triangulos = []
+        for p in deste:
+            q, r = p["q"], p["r"]
+            for ponta in ("s1", "s0"):
+                s_p = p[ponta]
+                for longa, curta, lado in ((r, q, -1), (q, r, +1)):
+                    s_l = longa[ponta]
+                    alem = (s_l - s_p) if ponta == "s1" else (s_p - s_l)
+                    s_c = curta[ponta]
+                    if not (100.0 < alem <= 3000.0) or abs(s_c - s_p) > 5.0:
+                        continue                         # a curta tem de acabar ali, e a longa seguir até 3 m
+                    a_, b_ = (s_p, s_l) if ponta == "s1" else (s_l, s_p)
+                    if coberto(longa, lado, a_, b_):
+                        continue
+                    triangulos.append({"q": curta, "r": longa, "s0": a_, "s1": b_, "borda": True,
+                                       "cantos": [ponto(curta, s_p), ponto(longa, s_p), ponto(longa, s_l)],
+                                       "area": alem * abs(longa["t"] - curta["t"]) / 2.0})
+        panos += triangulos
         # os cantos dos panos deste grupo (no topo das duas terças)
         for p in panos:
             if "cantos" in p:
@@ -319,8 +353,9 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     for p in feitos:
         c = p["cantos"]
         e = ESPESSURA_DESENHO
+        k = len(c)
         vs = c + [(x, y, z + e) for x, y, z in c]
-        fs = [[3, 2, 1, 0], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
+        fs = [list(range(k - 1, -1, -1)), list(range(k, 2 * k))] + [[i, (i + 1) % k, k + (i + 1) % k, k + i] for i in range(k)]
         s = Solido(nome=telha["nome"], camada=camada, vertices=vs, faces=fs)
         s.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "telha": telha["modelo"],
                        "entre": [p["q"]["sigla"], p["r"]["sigla"]], **({"beiral": True} if p.get("beiral") else {})}
@@ -345,7 +380,8 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         a["emenda"] = a["comprimento"] > telha["comprimento_max"]
     return {
         "telha": telha["nome"], "panos": len(feitos), "area_m2": round(area, 1), "peso_kg": round(area * telha["massa_m2"], 1),
-        "beirais": sum(1 for p in feitos if p.get("beiral")), "calhas": len(an["calhas"]), "calha_ml": round(ml_calha / 1000.0, 1),
+        "beirais": sum(1 for p in feitos if p.get("beiral")), "bordas": sum(1 for p in feitos if p.get("borda")),
+        "calhas": len(an["calhas"]), "calha_ml": round(ml_calha / 1000.0, 1),
         "tercas": len(tercas), "aguas": lista_aguas,
         "caida_min": min((a["caida_pct"] for a in lista_aguas), default=None),
         "caida_max": max((a["caida_pct"] for a in lista_aguas), default=None),
