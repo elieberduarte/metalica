@@ -281,8 +281,22 @@ export class MetodosBarrasDoBloco {
    * na vertical tracejada, o eixo de cada perfil em cruz. O clique num perfil escolhe só ele (uma cantoneira do par);
    * ↺ ↻ giram 90°, ⇄ vira 180° — no escolhido ou nos dois, nas posições escolhidas (e nas cópias, pelo lado do plano).
    */
-  _vistaDaSecao(escolhidas, corDe) {
+  _vistaDaSecao(todasEscolhidas, corDe) {
     const est = this._barrasBloco;
+    // as escolhidas por configuração (a função, o perfil e quantos perfis a posição tem): os 26 montantes em 2L e os 2 U
+    // de ponta da TRANSIÇÃO 16 são seções diferentes — a vista mostra uma de cada vez (a mais numerosa primeiro) e os
+    // botões valem só para ela (12/10: "os montantes no 3D estão em 2 cantoneiras e no editor um perfil U")
+    const grupos = new Map();
+    for (const p of todasEscolhidas) {
+      if (p.solido || !p.ids.length) continue;
+      const k = `${p.funcao}|${p.perfil}|${p.ids.length}`;
+      if (!grupos.has(k)) grupos.set(k, []);
+      grupos.get(k).push(p);
+    }
+    const lista = [...grupos.entries()].sort((a, b) => b[1].length - a[1].length);
+    if (!lista.length) return el('div');
+    if (!est.grupoSecao || !grupos.has(est.grupoSecao)) est.grupoSecao = lista[0][0];
+    const escolhidas = grupos.get(est.grupoSecao);
     const pos = escolhidas[0];
     const ents = pos.ids.map(i => this.documento.get(i)).filter(Boolean);
     if (!ents.length || !pos.centro) return el('div');
@@ -362,8 +376,16 @@ export class MetodosBarrasDoBloco {
       el('button', { type: 'button', texto: '↺ 90°', title: `Gira ${qual} 90° no sentido anti-horário (olhando ao longo da barra)`, onclick: () => girar(90, 'Girar a seção 90° ↺') }),
       el('button', { type: 'button', texto: '↻ 90°', title: `Gira ${qual} 90° no sentido horário`, onclick: () => girar(-90, 'Girar a seção 90° ↻') }),
       el('button', { type: 'button', texto: '⇄ 180°', title: `Vira ${qual} 180° (a boca do U, a aba da cantoneira para o outro lado)`, onclick: () => girar(180, 'Virar a seção 180°') }));
+    const nome = (k, ps) => { const [f, perf, n] = k.split('|'); return `${f}: ${+n > 1 ? `${n} × ` : ''}${perf} — ${ps.length}`; };
+    const seletor = lista.length > 1
+      ? el('div', { class: 'secao-grupos' }, ...lista.map(([k, ps]) => el('button', {
+          type: 'button', class: k === est.grupoSecao ? 'on' : '', texto: nome(k, ps),
+          title: 'Ver e girar esta configuração (os botões valem só para ela)',
+          onclick: () => { est.grupoSecao = k; est.ladoSecao = 0; this._desenharBarrasDoBloco(); } })))
+      : null;
     return el('div', { class: 'barras-secao-caixa' },
-      el('div', { class: 'secao-titulo', texto: `Seção — ${pos.funcao}: ${ents.length > 1 ? `${ents.length} × ` : ''}${pos.perfil}${escolhidas.length > 1 ? ` (a 1ª das ${escolhidas.length} escolhidas; os botões valem para todas)` : ''}` }),
+      el('div', { class: 'secao-titulo', texto: `Seção — ${pos.funcao}: ${ents.length > 1 ? `${ents.length} × ` : ''}${pos.perfil}${escolhidas.length > 1 ? ` (${escolhidas.length} barras iguais; os botões valem para elas)` : ''}` }),
+      ...(seletor ? [seletor] : []),
       vista,
       el('div', { class: 'secao-lado' },
         el('p', { class: 'explica', texto: ents.length > 1 ? 'Clique num perfil para girar só ele; clique de novo para voltar aos dois.' : 'Vista ao longo da barra: o tracejado vertical é o plano da treliça; a cruz, o eixo do perfil.' }),

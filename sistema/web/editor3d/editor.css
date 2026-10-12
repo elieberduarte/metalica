@@ -949,3 +949,6 @@ html.barra-unica header.topo { display: none !important; }
 .painel-barras .secao-botoes { display: flex; gap: 6px; flex-wrap: wrap; }
 .painel-barras .secao-botoes button { font-size: 15px; padding: 4px 10px; }
 .painel-barras .barras-secao .aba-banzo { stroke: #f2994a; stroke-width: 2; stroke-dasharray: 2 2; }
+.painel-barras .secao-grupos { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
+.painel-barras .secao-grupos button { border: 1px solid var(--borda); border-radius: 6px; background: var(--painel); color: var(--texto); padding: 3px 8px; cursor: pointer; font-size: 12px; }
+.painel-barras .secao-grupos button.on { border-color: #ffd400; box-shadow: inset 0 0 0 1px #ffd400; }

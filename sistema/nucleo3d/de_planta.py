@@ -1097,13 +1097,6 @@ def _giro_v_para(w, alvo) -> float:
     return round(math.degrees(math.atan2(-sum(x * y for x, y in zip(a, u)), sum(x * y for x, y in zip(a, v)))) % 360.0, 3)
 
 
-def _eixo_u_da_barra(q0, q1) -> Tuple[float, float, float]:
-    """o eixo u da seção da barra sem giro (geometria.base_local): o de onde as abas apontam"""
-    from nucleo3d.geometria import base_local
-    u, _v, _w = base_local(tuple(q1[i] - q0[i] for i in range(3)), 0.0)
-    return u
-
-
 def _cantoneira_na_aba_do_u(perfil_l: Optional[str], perfil_banzo: Optional[str], caixao: bool) -> Tuple[float, bool, float]:
     """(afastamento do eixo de cada cantoneira ao plano, nas abas do U?, do eixo da cantoneira à face da aba dela).
     Nas abas: a face de dentro da aba do U deitado fica a d/2 − t do plano e a cantoneira encosta nela pela aba
@@ -3353,14 +3346,18 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         tx, ty = c.tangente(smid)
                         nx, ny = -ty, tx
                         af, nas_abas, xg_l = _cantoneira_na_aba_do_u(perfil, p_banzo, caixao_el)
-                        u0 = _eixo_u_da_barra(q0, q1)
+                        # a seção da L: o eixo u (para onde a aba "de baixo" aponta) na normal ao plano, pelo giro calculado
+                        # para a direção — o u da barra sem giro só cai na normal quando a barra não é vertical: nos montantes
+                        # (verticais) da TRANSIÇÃO 16, inclinada em planta, as L saíam tortas (12/10)
+                        giro_n = _giro_abas_para(q0, q1, (-nx, -ny, 0.0))
                         for sinal in (1, -1):
-                            # o giro que põe a aba paralela ao plano do lado de fora (nas abas) ou de dentro (costas). Nas
-                            # abas, o par espelhado: a cantoneira de abas iguais espelhada é ela mesma girada 90° (0° e 90°
-                            # deixam as duas abas de dentro do mesmo lado da barra; 0° e 180° as punham uma em cima e outra
-                            # embaixo)
-                            fora = (u0[0] * nx + u0[1] * ny) * sinal
-                            rot = (0.0 if fora < 0 else 90.0) if nas_abas else (0.0 if fora > 0 else 180.0)
+                            # nas abas: a aba paralela ao plano encosta por fora (u para dentro) e o par sai espelhado — a L de
+                            # abas iguais espelhada é ela mesma girada 90° (as duas abas de dentro do mesmo lado da barra);
+                            # costas com costas: a aba paralela ao plano encosta no meio (u para fora)
+                            if nas_abas:
+                                rot = giro_n if sinal > 0 else (giro_n + 90.0) % 360.0
+                            else:
+                                rot = (giro_n + 180.0) % 360.0 if sinal > 0 else giro_n
                             d = (nx * af * sinal, ny * af * sinal, 0.0)
                             barra(tuple(q0[i] + d[i] for i in range(3)), tuple(q1[i] + d[i] for i in range(3)), perfil,
                                   papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o})
