@@ -247,3 +247,65 @@ def test_vao_e_boca_dados_no_painel_perfis_da_tesoura():
     db = next(x for x in b["diagonal"] if x.inicio[0] < 1 and x.fim[0] > 4000)
     ua, ub = eixos(da)[0], eixos(db)[0]
     assert all(abs(ua[c] + ub[c]) < 1e-6 for c in range(3)), (ua, ub)
+
+
+# a T1 do Docas: banzos e pontas em linha dupla (a face de dentro 50 mm para dentro), diagonais em linha simples
+DOCAS = [
+    [0, 350, 0, 0, "montante"], [50, 329, 50, 50, "montante"],
+    [0, 0, 4750, 0, "banzo_inf"], [4700, 50, 50, 50, "diagonal"],
+    [4750, 1400, 350, 700, "banzo_sup"], [4700, 1341, 374, 653, "diagonal"],
+    [350, 700, 0, 350, "diagonal"], [374, 653, 50, 329, "diagonal"],
+    [4750, 0, 4750, 1400, "montante"], [4700, 50, 4700, 1341, "montante"],
+    [902, 0, 449, 716, "diagonal"], [449, 716, 449, 0, "montante"], [1810, 0, 1356, 860, "diagonal"],
+]
+PERFIS_DOCAS = {"banzo_sup": "U 150×50×3,00 (FF)", "banzo_inf": "U 150×50×3,00 (FF)", "diagonal": 'L 1½"×1/8"'}
+
+
+def _docas(cantoneira="simples", **extra):
+    des = Desenho(nome="planta")
+    des.add(Linha(a=(0.0, 0.0), b=(0.0, 4750.0), camada="ESTRUTURA",
+                  atributos={"elemento": "trelica", "material": "aco", "marca": "T1", "perfis": PERFIS_DOCAS, "cantoneira": cantoneira,
+                             "nivel_base": 5000, "desenho": {"barras": DOCAS, "vao": 4750, "altura": 1400}, **extra}))
+    doc, _ = DPE.modelo_da_planta(des, [])
+    return [b for b in doc.entidades.values() if b.tipo == "barra"]
+
+
+def test_nos_da_alma_no_eixo_do_banzo():
+    """NBR 8800:2024, 6.5.2 (usuário, 12/10): a alma chega ao EIXO do banzo, não à face desenhada. Na T1 do Docas o
+    desenho leva as cantoneiras à linha de fora / de dentro do banzo inferior (v 0 e 50): o nó vai para o eixo (v 25)."""
+    bs = _docas()
+    zs = sorted({round(q[2], 1) for b in bs if b.perfil.startswith("L") for q in (b.inicio, b.fim) if q[2] < 5100.0})
+    assert zs == [5025.0], zs
+
+
+def test_nos_espalhados_viram_um_so_no_do_montante():
+    """em linha de centro (o esqueleto do leitor), as pontas da alma desenhadas até a face do banzo: o montante e a
+    diagonal que chegam a 40 mm um do outro viram um nó só, o do montante, no eixo do banzo"""
+    barras = [[0, 0, 4000, 0, "banzo_inf"], [0, 1000, 4000, 1000, "banzo_sup"],
+              [1000, 25, 1000, 975, "montante"], [1040, 25, 2000, 975, "diagonal"]]
+    des = Desenho(nome="planta")
+    des.add(Linha(a=(0.0, 0.0), b=(0.0, 4000.0), camada="ESTRUTURA",
+                  atributos={"elemento": "trelica", "material": "aco", "marca": "T", "perfis": PERFIS_DOCAS, "nivel_base": 0,
+                             "desenho": {"barras": barras, "vao": 4000, "altura": 1000}}))
+    doc, _ = DPE.modelo_da_planta(des, [])
+    por = {b.atributos["papel_trelica"]: b for b in doc.entidades.values() if b.tipo == "barra" and not b.atributos["papel_trelica"].startswith("banzo")}
+    m, d = por["montante"], por["diagonal"]
+    assert sorted(round(q[2], 1) for q in (m.inicio, m.fim)) == [0.0, 1000.0]
+    baixo = min((d.inicio, d.fim), key=lambda q: q[2])
+    assert abs(baixo[2]) < 0.1 and abs(baixo[1] - 1000.0) < 0.1          # o nó do montante
+
+
+def test_presilhas_da_cantoneira_dupla_pela_norma():
+    """NBR 8800:2024, 5.3.6.1 (usuário, 12/10): as duas cantoneiras ligadas por presilhas igualmente espaçadas entre os
+    nós, atravessando o par; pelo menos o mínimo da norma (de_planta._presilhas_pela_norma) e a nota do projeto acima"""
+    from nucleo3d.de_planta import _presilhas_pela_norma
+    bs = _docas("dupla")
+    pares = [b for b in bs if b.atributos.get("cantoneira_dupla") == "a"]
+    pres = [b for b in bs if b.papel == "presilha"]
+    n_norma = _presilhas_pela_norma(PERFIS_DOCAS["diagonal"])
+    assert n_norma >= 2 and len(pres) == n_norma * len(pares)
+    for b in pres:
+        assert abs(abs(b.direcao[0]) - 1.0) < 1e-6                              # atravessa o plano da tesoura (x)
+        assert abs(b.inicio[0] + b.fim[0]) < 0.1 and abs(b.fim[0]) > 52.0
+    pres = [b for b in _docas("dupla", presilhas={"qtd": n_norma + 2, "perfil": 'L 1"×1/8"'}) if b.papel == "presilha"]
+    assert len(pres) == (n_norma + 2) * len(pares) and {b.perfil for b in pres} == {'L 1"×1/8"'}

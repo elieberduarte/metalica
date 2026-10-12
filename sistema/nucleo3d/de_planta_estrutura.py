@@ -350,6 +350,73 @@ def _ligadas_dos_lados(seg, normal, alma, tol: float) -> Tuple[int, int]:
     return mais, menos
 
 
+def _nos_no_eixo_do_banzo(segs, papeis, eixos: Dict[int, Tuple[float, float, float, float, float]], unir: float = 100.0):
+    """Os nós da alma no eixo do banzo (NBR 8800:2024, 6.5.2: "os eixos que passam pelos centros geométricos das seções
+    transversais de barras axialmente solicitadas que formam um nó devem, de preferência, se interceptar em um ponto
+    comum"; decisão do usuário, 12/10, para os dois geradores de treliça — o do Posto é de_planta._nos_no_eixo_do_banzo).
+    O desenho leva a alma até a face do banzo: no CD Bom Dia as pontas ficavam 22–25 mm fora do eixo e ~85 nós por
+    tesoura com as barras chegando a pontos diferentes. Cada ponta de montante ou diagonal que chega num banzo vai, pela
+    própria linha da barra, ao eixo dele; as pontas a menos de `unir` mm umas das outras no mesmo banzo viram um nó só —
+    o do montante, quando há, senão o do meio. A barra quase paralela ao banzo (menos de 20°) não conta.
+    `eixos`: {i: (u0, v0, u1, v1, meia)} o eixo de cada banzo e a meia largura dele no plano. Devolve (segs, pontas
+    movidas, nós unidos)."""
+    out = [list(x) for x in segs]
+    pontas = []                                        # [j, ponta (0/1), banzo, ao longo do eixo, papel]
+    for j, sg in enumerate(segs):
+        if papeis[j] not in ("montante", "diagonal") or j in eixos:
+            continue
+        la = math.hypot(sg[2] - sg[0], sg[3] - sg[1])
+        if la < 1.0:
+            continue
+        for k in (0, 1):
+            ps, pv = (sg[0], sg[1]) if k == 0 else (sg[2], sg[3])
+            ds, dv = ((sg[2] - sg[0]) / la, (sg[3] - sg[1]) / la) if k == 0 else ((sg[0] - sg[2]) / la, (sg[1] - sg[3]) / la)
+            melhor = None
+            for i, (b0, c0, b1, c1, meia) in eixos.items():
+                lb = math.hypot(b1 - b0, c1 - c0)
+                if lb < 1.0:
+                    continue
+                ts, tv = (b1 - b0) / lb, (c1 - c0) / lb
+                tol = max(60.0, 1.5 * meia + 15.0)
+                fora = abs((ps - b0) * tv - (pv - c0) * ts)
+                ao = (ps - b0) * ts + (pv - c0) * tv
+                if fora > tol or not (-tol <= ao <= lb + tol):
+                    continue
+                cruz = ds * tv - dv * ts
+                if abs(cruz) < math.sin(math.radians(20.0)):
+                    continue
+                t = -((ps - b0) * tv - (pv - c0) * ts) / cruz
+                ns, nv = ps + t * ds, pv + t * dv
+                if math.hypot(ns - ps, nv - pv) > 2.0 * tol:
+                    continue
+                if melhor is None or fora < melhor[0]:
+                    melhor = (fora, i, ns, nv, (ns - b0) * ts + (nv - c0) * tv)
+            if melhor is not None:
+                _f, i, ns, nv, ao = melhor
+                out[j][2 * k], out[j][2 * k + 1] = ns, nv
+                pontas.append([j, k, i, ao, papeis[j]])
+    movidas = sum(1 for j, k, *_r in pontas if math.hypot(out[j][2 * k] - segs[j][2 * k], out[j][2 * k + 1] - segs[j][2 * k + 1]) > 0.5)
+    # as pontas no mesmo banzo a menos de `unir` mm: um nó só (o grupo não passa de `unir` de ponta a ponta)
+    unidos = 0
+    for i, (b0, c0, b1, c1, _m) in eixos.items():
+        lb = math.hypot(b1 - b0, c1 - c0) or 1.0
+        ts, tv = (b1 - b0) / lb, (c1 - c0) / lb
+        nesta = sorted((x for x in pontas if x[2] == i), key=lambda x: x[3])
+        grupo: list = []
+        for x in nesta + [None]:
+            if x is not None and (not grupo or x[3] - grupo[0][3] <= unir):
+                grupo.append(x)
+                continue
+            if len(grupo) > 1 and max(g[3] for g in grupo) - min(g[3] for g in grupo) > 0.5:
+                mont = [g[3] for g in grupo if g[4] == "montante"]
+                alvo = sum(mont) / len(mont) if mont else sum(g[3] for g in grupo) / len(grupo)
+                for g in grupo:
+                    out[g[0]][2 * g[1]], out[g[0]][2 * g[1] + 1] = b0 + alvo * ts, c0 + alvo * tv
+                unidos += 1
+            grupo = [x] if x is not None else []
+    return [tuple(x) for x in out], movidas, unidos
+
+
 def _giro_para(w: Tuple[float, float, float], alvo: Tuple[float, float, float]) -> float:
     """O giro (graus) da barra de direção `w` que leva o eixo local u da seção a `alvo` (geometria.base_local)."""
     from nucleo3d.geometria import base_local
@@ -418,6 +485,26 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
     def toca(s, outro):
         return any(math.dist(p, q) < 2.0 for p in ((s[0], s[1]), (s[2], s[3])) for q in ((outro[0], outro[1]), (outro[2], outro[3])))
 
+    # os nós da alma no eixo do banzo (NBR 8800:2024, 6.5.2 — usuário, 12/10): o eixo é a linha do banzo (no meio das
+    # duas faces, no perfil em linha dupla) e a meia largura dele no plano diz até onde a ponta da alma ainda é dele
+    def _meia_no_plano(i):
+        if i in pares:
+            return pares[i][1] / 2.0
+        try:
+            from nucleo3d.geometria import resolver_perfil
+            pb = resolver_perfil(perfis_b[i] or perfis.get(papeis[i]) or perfis.get("banzo_sup") or perfis.get("banzo_inf"))
+            return float(pb.d or 0.0) / 2.0 if secoes_b[i] == "composto" else float(pb.bf or 0.0) * (1.0 if secoes_b[i] == "caixa" else 0.5)
+        except Exception:                              # noqa: BLE001
+            return 25.0
+    eixos_bz = {}
+    for i, sg in enumerate(segs):
+        if i in internas or not (papeis[i].startswith("banzo") or papeis[i] == "extremidade" or i in pares):
+            continue
+        if i in pares:
+            _j, dist_, (nx_, ny_) = pares[i]
+            sg = (sg[0] + nx_ * dist_ / 2, sg[1] + ny_ * dist_ / 2, sg[2] + nx_ * dist_ / 2, sg[3] + ny_ * dist_ / 2)
+        eixos_bz[i] = (sg[0], sg[1], sg[2], sg[3], _meia_no_plano(i))
+    segs, _movidas, _unidos = _nos_no_eixo_do_banzo(segs, papeis, eixos_bz)
     sup = [segs[i] for i in pares if papeis[i] == "banzo_sup"]
     # a alma em linha simples: as barras que dizem de que lado fica o miolo de cada banzo (a regra da boca do U)
     alma = [segs[i] for i in range(len(segs)) if i not in pares and i not in internas
@@ -596,6 +683,24 @@ def _trelica(doc: Documento, e, a: dict, tab: Dict[str, float], camada: str, bas
                        atributos=dict(atr, cantoneira_dupla="a" if lado < 0 else "b"))
             doc.add(bl)
             feitas.append(bl)
+            n += 1
+        # as presilhas que ligam as duas cantoneiras (NBR 8800:2024, 5.3.6.1 — usuário, 12/10): igualmente espaçadas entre
+        # os nós, atravessando o par; a quantidade da nota do projeto (`presilhas` do tipo: {qtd, perfil}), nunca abaixo
+        # do mínimo da norma (de_planta._presilhas_pela_norma, a mesma conta do Posto)
+        from nucleo3d.de_planta import _presilhas_pela_norma
+        nota_p = a.get("presilhas") or {}
+        n_p = max(int(nota_p.get("qtd") or 0), _presilhas_pela_norma(perfil))
+        try:
+            larg = 2.0 * afast + float(pl.bf or 0.0)
+        except Exception:                              # noqa: BLE001
+            larg = 2.0 * afast + 25.0
+        for k_p in range(1, n_p + 1):
+            f = k_p / (n_p + 1.0)
+            cq = tuple(A[c] + (B[c] - A[c]) * f for c in range(3))
+            doc.add(Barra(inicio=tuple(cq[c] - fora_do_plano[c] * larg / 2.0 for c in range(3)),
+                          fim=tuple(cq[c] + fora_do_plano[c] * larg / 2.0 for c in range(3)), perfil=nota_p.get("perfil") or perfil,
+                          papel="presilha", aco=aco, camada=camada, nome="%s presilha %d.%d" % (marca, i + 1, k_p), rotacao=0.0,
+                          atributos=dict(atr, presilha_de=perfil, papel_trelica="presilha")))
             n += 1
     _cantos_em_meia_esquadria(segs, pares, perfis_u, P, fora_do_plano)
     # o encaixe de fábrica (nucleo3d/alma_na_face, o mesmo do 3D pelos quadros): a cantoneira entra na boca do U e para
