@@ -1655,7 +1655,7 @@ def _curva_de_canto(c: Caminho) -> bool:
 
 
 def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
-                    apoios: Sequence[Ponto2] = (), deitadas=False) -> Tuple[List[Trecho], dict]:
+                    apoios: Sequence[Ponto2] = (), deitadas=False, escala: float = 20.0) -> Tuple[List[Trecho], dict]:
     """as peças nomeadas da planta estrutural, cortadas no comprimento de cada elevação.
     `apoios`: os pilares (x, y) — a treliça que passa por cima de um pode terminar ali.
     `deitadas`: a faixa em que a planta desenha a treliça vista de cima vira treliça deitada —
@@ -1738,6 +1738,19 @@ def pecas_da_planta(ents, caixa, elevacoes: Dict[str, Elevacao], avisar=None,
         melhor = None
         for i, c in enumerate(caminhos):
             s, d = c.projetar(p)
+            if d > 800 and c.tipo == "reta":
+                # o nome escrito na linha da peça, um pouco antes da ponta dela (a TESOURA 1A do Posto: o fim do nome 0,76 m
+                # à esquerda do trecho de 1,3 m em que as TC3/TC4 se apoiam — a peça ficava fora do modelo, 12/10): pelo
+                # centro do texto, até 400 mm da reta e 1,2 m da caixa do texto à ponta, com essa distância pesando na nota
+                (ux_c, uy_c), L_c = _unit(c.a, c.b)
+                pc_t = _centro_do_texto(t, escala)
+                meia_t = len(t["texto"].strip()) * float(t.get("altura") or 2.5) * escala * 0.8 / 2.0
+                ao_longo = (pc_t[0] - c.a[0]) * ux_c + (pc_t[1] - c.a[1]) * uy_c
+                perp = abs((pc_t[0] - c.a[0]) * uy_c - (pc_t[1] - c.a[1]) * ux_c)
+                alem = max(0.0, max(0.0, -ao_longo, ao_longo - L_c) - meia_t)
+                if perp > 400.0 or alem > 1200.0:
+                    continue
+                d = perp + 0.5 * alem
             if d > 800:
                 continue
             tx, ty = c.tangente(s)
@@ -3206,7 +3219,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     from nucleo3d import pilares_corte
     cortes_pm = pilares_corte.ler_cortes_de_pilar(ents, textos)
     avisar("lendo as peças da planta…")
-    trechos, st = pecas_da_planta(ents, caixa_p, elevacoes, apoios=[(p["x"], p["y"]) for p in locados],
+    trechos, st = pecas_da_planta(ents, caixa_p, elevacoes, escala=float(par.get("escala") or 20.0), apoios=[(p["x"], p["y"]) for p in locados],
                                   deitadas=par.get("deitadas") or False)
     avisos += st.get("avisos") or []
     for fx in st.get("deitadas_a_conferir") or []:
@@ -3650,7 +3663,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         f_o = (caixa_o[0] - 2500, caixa_o[1] - 2500, caixa_o[2] + 2500, caixa_o[3] + 2500)
         movidas = [_copiar_mov(e, d_o[0], d_o[1]) for e in ents if _dentro(_pt(e), f_o)]
         cx_m = (caixa_o[0] + d_o[0], caixa_o[1] + d_o[1], caixa_o[2] + d_o[0], caixa_o[3] + d_o[1])
-        tr_o, _st_o = pecas_da_planta(movidas, cx_m, elevacoes, deitadas=par.get("deitadas") or False)
+        tr_o, _st_o = pecas_da_planta(movidas, cx_m, elevacoes, deitadas=par.get("deitadas") or False,
+                                      escala=float(par.get("escala") or 20.0))
         avisos += ["%s: %s" % (t_o["texto"].strip(), a_) for a_ in _st_o.get("avisos") or []]
         orientar(tr_o, [])
         n_antes = len(pecas)

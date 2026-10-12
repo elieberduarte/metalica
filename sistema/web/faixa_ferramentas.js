@@ -233,6 +233,9 @@
     agendado = null;
     var caixa = $('#faixa-ferramentas');
     if (!caixa) return;
+    // só o 3D na tela e ele no modo ver (sem o editor): não há ferramenta nenhuma — a faixa sai inteira, sem deixar a
+    // linha vazia (12/10: "no modo ver não precisa aparecer esse espaço para a barra dos botões"); volta com o Editar
+    if (vista() === '3d' && !docDe('3d')) { esconderBalao(); caixa.replaceChildren(); caixa.style.display = 'none'; return; }
     ligarColunas();
     esconderBalao();
     var disc = gruposDaDisciplina();
