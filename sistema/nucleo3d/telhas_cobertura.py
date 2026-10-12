@@ -547,8 +547,11 @@ def _fechamentos(doc, panos, telha, camada):
     def coberto(pt):
         return any(_dentro_poli(pt, polis[k]) for k in grade.get((int(pt[0] // CEL), int(pt[1] // CEL)), ()))
     paineis: Dict[str, list] = collections.defaultdict(list)
+    # toda treliça do perímetro (o painel da testeira, a transição e a treliça da borda — a borda diagonal do Posto são as
+    # TRANSIÇÕES 14–16 e a TRELIÇA 3): a que tem telhado de um lado e nada do outro
     for e in _ap._elementos(doc):
-        if str(e.peca or "").upper().startswith("PAINEL") and e.papel == "banzo":
+        nome_ = str(e.peca or "").upper()
+        if e.papel == "banzo" and (nome_.startswith("PAINEL") or nome_.startswith("TRANSI") or nome_.startswith("TRELI")):
             paineis[e.peca].append(e)
     W = float(telha.get("largura_util") or 1020.0)
     solidos, ml, area = [], 0.0, 0.0
@@ -564,11 +567,18 @@ def _fechamentos(doc, panos, telha, camada):
             u = ((B[0] - A[0]) / L, (B[1] - A[1]) / L)
             nh = (-u[1], u[0])
             M = ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
-            mais = coberto((M[0] + nh[0] * 400.0, M[1] + nh[1] * 400.0))
-            menos = coberto((M[0] - nh[0] * 400.0, M[1] - nh[1] * 400.0))
+            # o lado do telhado: coberto até 1,5 m da face (o PAINEL 21 do Posto fica a mais de 0,4 m da telha); o de fora:
+            # nada até 0,9 m
+            def lado_coberto(k_):
+                return any(coberto((M[0] + nh[0] * x_ * k_, M[1] + nh[1] * x_ * k_)) for x_ in (400.0, 900.0, 1500.0))
+
+            def lado_livre(k_):
+                return not any(coberto((M[0] + nh[0] * x_ * k_, M[1] + nh[1] * x_ * k_)) for x_ in (200.0, 400.0, 900.0))
+            mais = lado_coberto(+1) and lado_livre(-1)
+            menos = lado_coberto(-1) and lado_livre(+1)
             if mais == menos:
                 cum += L
-                continue                                 # telhado dos dois lados, ou de nenhum: não é fechamento
+                continue                                 # telhado dos dois lados, ou de nenhum: não é perímetro
             fora = (-nh[0], -nh[1]) if mais else nh
             off = 110.0                                  # a face de fora do painel
             zb = zmin - 60.0
