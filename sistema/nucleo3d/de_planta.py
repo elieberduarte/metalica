@@ -3886,6 +3886,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         return sum(a * b for a, b in w) / sum(a for a, _ in w)
 
     tercas = correntes = contravs = esticadores = agulhas = 0
+    no_plano = {"calha": 0, "tortas": 0, "suportes": 0}
     tab_tc: Dict[str, dict] = _tabela_de_siglas(textos, r"TC\s?\d+[A-Z]?")
     if caixa_t:
         reg = reg_t
@@ -4139,6 +4140,22 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             avisos.append("Terças assentadas no topo dos banzos (a seção e o giro de cada um): %d terça(s) acertada(s); em %d "
                           "apoio(s) os banzos não ficam numa reta e sobra folga de 15 a %d mm sob a terça (calço) — confira a altura "
                           "das treliças ali." % (ass["acertadas"], ass["calcos"], ass["maior_calco"]))
+        # as terças no plano da água (12/10: a telha TP 40 de teste mostrou a telha dobrando na última terça antes de cada
+        # calha — sentada na ponta das tesouras ou na transição, ~0,10 m abaixo da água — e terças tortas ao longo do
+        # comprimento, puxadas pela estrutura da caixa d'água). A da calha sobe ao plano com o suporte de terça em cada
+        # apoio; a torta fica nivelada na altura do apoio dela (telhas_cobertura.alinhar_tercas). O resto é conferência
+        from nucleo3d import telhas_cobertura as _tc
+        al = _tc.alinhar_tercas([p_["ent"] for p_ in pecas if p_["papel"] == "terça"],
+                                [p_["ent"] for p_ in pecas if p_["ent"].tipo == "barra"])
+        for p0_, p1_, apoio_ in al["suportes"]:
+            barra(p0_, p1_, _tc.SUPORTE_PADRAO, "apoio_terca", "Terças", None, 0.0, {"planta": "SUPORTE DE TERÇA", "apoio": apoio_})
+        no_plano = {"calha": len(al["calha"]), "tortas": len(al["tortas"]), "suportes": len(al["suportes"])}
+        if al["calha"] or al["tortas"]:
+            avisos.append("Terças no plano da água (a telha reta): %d terça(s) da borda da água (junto da calha, sentadas na "
+                          "ponta das tesouras ou na transição) subiram até o plano, com %d suporte(s) de terça %s; %d terça(s) "
+                          "tortas ao longo do comprimento ficaram niveladas na altura do apoio (%s) — maior acerto %d mm."
+                          % (len(al["calha"]), len(al["suportes"]), _tc.SUPORTE_PADRAO, len(al["tortas"]),
+                             ", ".join(sorted({t["sigla"] for t in al["tortas"] if t["sigla"]})) or "—", al["maior_mm"]))
         # as terças já montadas: a corrente (o agulhamento) liga uma terça à outra, na altura
         # delas — não na da treliça mais alta ali (a transição alta levava a corrente a 1 m
         # acima da terça)
@@ -4443,6 +4460,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     "agulhas": sum(v["qtd"] for v in tab_ag.values()), "pilares": pm_total},
     }
     resumo["deslocamento_mm"] = [desl[0], desl[1]]
+    resumo["tercas_no_plano"] = no_plano
     resumo["escadas"] = escadas_feitas
     doc.metadados["de_planta"] = {"parametros": {k: v for k, v in par.items()}, "resumo": resumo,
                                   "deslocamento": {"x": desl[0], "y": desl[1],

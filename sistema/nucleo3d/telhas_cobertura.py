@@ -48,23 +48,21 @@ def _topo_da_terca(b) -> float:
     return max(u[2] * x + v[2] * y for x, y in secao(p))
 
 
-def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano: float = 10.0,
-           camada: str = "Telhas") -> dict:
-    """Lança os panos de telha em cima das terças de `doc` (tira os panos lançados antes por aqui). Devolve o resumo,
-    as águas e os apontamentos."""
-    telha = dict(TELHA_PADRAO, **(telha or {}))
-    # tira os panos de uma rodada anterior
-    velhos = [e.id for e in doc.solidos if (e.atributos or {}).get("telha_lancada")]
-    for i in velhos:
-        doc.remover(i)
-    tercas = [b for b in doc.barras if b.papel in ("terça", "terca")]
+def _e_barreira(b) -> bool:
+    o = (b.atributos or {}).get("origem") or {}
+    nome = str(o.get("planta") or o.get("peca") or "").upper()
+    return b.papel == "banzo" and (nome.startswith("PAINEL") or nome.startswith("TRANSI"))
+
+
+def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -> dict:
+    """A cobertura pelas terças: os panos (os cantos no topo das terças vizinhas), a terça fora do plano da água, as
+    águas, os vãos grandes e, por terça, as amostras do desvio ao plano ao longo dela ({id: [(s, desvio, borda)]}, com a
+    direção da terça em planta) — o que o lançamento das telhas e o alinhamento das terças usam."""
     # as barreiras: a transição e o painel (a calha, a testeira) — a telha termina na face deles, não passa por cima; o
     # pano entre as terças dos dois lados (a calha de x 21,37 do Posto, a TRANSIÇÃO 3) não é telha
     barreiras = []
-    for b in doc.barras:
-        o = (b.atributos or {}).get("origem") or {}
-        nome = str(o.get("planta") or o.get("peca") or "").upper()
-        if b.papel == "banzo" and (nome.startswith("PAINEL") or nome.startswith("TRANSI")):
+    for b in barras:
+        if _e_barreira(b):
             barreiras.append(((b.inicio[0], b.inicio[1]), (b.fim[0], b.fim[1])))
     CEL = 3000.0
     grade_b: Dict[tuple, list] = collections.defaultdict(list)
@@ -104,6 +102,8 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     fora: Dict[str, dict] = {}
     aguas: Dict[tuple, dict] = {}
     vaos_grandes: Dict[tuple, dict] = {}
+    amostras: Dict[str, list] = collections.defaultdict(list)
+    direcao: Dict[str, tuple] = {}
     for ang, lst in grupos.items():
         d = (math.cos(math.radians(ang)), math.sin(math.radians(ang)))
         n = (-d[1], d[0])
@@ -118,6 +118,7 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
                 sa, sb, za, zb = sb, sa, zb, za
             o = (b.atributos or {}).get("origem") or {}
             reg.append({"b": b, "s0": sa, "s1": sb, "t": t, "z0": za, "z1": zb, "sigla": o.get("sigla") or (b.atributos or {}).get("sigla") or ""})
+            direcao[b.id] = d
 
         def z_em(r, s):
             return r["z0"] if r["s1"] - r["s0"] < 1 else r["z0"] + (r["z1"] - r["z0"]) * (s - r["s0"]) / (r["s1"] - r["s0"])
@@ -181,17 +182,29 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
                 no_plano = {k for a_, b_, _ in trechos for k in range(a_, b_ + 1)}
                 for k in range(len(seq)):
                     if k in no_plano:
+                        amostras[seq[k]["b"].id].append((sm, 0.0, False))
                         continue
                     devs = []
+                    desce_antes = sobe_depois = False
                     for a_, b_, m_ in trechos:
+                        # a reta do trecho só vale para a terça que continua na mesma água (a inclinação até ela no mesmo
+                        # sentido): a da água da esquerda, estendida por cima da calha, apontava a primeira terça da
+                        # água da direita 0,12 m "acima" (x 11,27 do Posto)
                         if 0 < k - b_ <= 2:                        # o trecho acaba antes dela
-                            devs.append(zs[k] - (zs[b_] + m_ * (ts[k] - ts[b_])))
+                            if (zs[k] - zs[b_]) * m_ >= 0 or abs(m_) < 0.005:
+                                devs.append(zs[k] - (zs[b_] + m_ * (ts[k] - ts[b_])))
+                            desce_antes = desce_antes or m_ < -0.005
                         elif 0 < a_ - k <= 2:                      # o trecho começa depois dela
-                            devs.append(zs[k] - (zs[a_] - m_ * (ts[a_] - ts[k])))
+                            if (zs[a_] - zs[k]) * m_ >= 0 or abs(m_) < 0.005:
+                                devs.append(zs[k] - (zs[a_] - m_ * (ts[a_] - ts[k])))
+                            sobe_depois = sobe_depois or m_ > 0.005
+                    # a borda da água: a ponta da sequência (a transição, o painel) ou o vale entre duas águas (a calha)
+                    borda = k in (0, len(seq) - 1) or (desce_antes and sobe_depois)
                     if not devs or min(abs(d_) for d_ in devs) <= tol_plano:
                         continue
                     dev = min(devs, key=abs)
                     r = seq[k]
+                    amostras[r["b"].id].append((sm, dev, borda))
                     f = fora.get(r["b"].id)
                     if not f or abs(dev) > abs(f["desvio"]):
                         fora[r["b"].id] = {"sigla": r["sigla"], "desvio": round(dev), "ponto": [round(c) for c in ponto(r, sm)], "id": r["b"].id}
@@ -212,22 +225,37 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
             for k in [k for k in abertos if k not in pares_aqui]:
                 panos.append(abertos.pop(k))
         panos += list(abertos.values())
-        # os sólidos dos panos
+        # os cantos dos panos deste grupo (no topo das duas terças)
         for p in panos:
-            if p.get("_feito"):
+            if "cantos" in p:
                 continue
-            p["_feito"] = True
             q, r = p["q"], p["r"]
-            c = [ponto(q, p["s0"]), ponto(q, p["s1"]), ponto(r, p["s1"]), ponto(r, p["s0"])]
-            e = ESPESSURA_DESENHO
-            vs = c + [(x, y, z + e) for x, y, z in c]
-            fs = [[3, 2, 1, 0], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
-            s = Solido(nome=telha["nome"], camada=camada, vertices=vs, faces=fs)
-            s.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "telha": telha["modelo"],
-                           "entre": [q["sigla"], r["sigla"]]}
-            doc.add(s)
+            p["cantos"] = [ponto(q, p["s0"]), ponto(q, p["s1"]), ponto(r, p["s1"]), ponto(r, p["s0"])]
             p["area"] = (p["s1"] - p["s0"]) * math.dist(ponto(q, (p["s0"] + p["s1"]) / 2), ponto(r, (p["s0"] + p["s1"]) / 2))
-    feitos = [p for p in panos if p.get("_feito")]
+    return {"panos": panos, "fora": fora, "aguas": aguas, "vaos_grandes": vaos_grandes, "amostras": dict(amostras), "direcao": direcao}
+
+
+def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano: float = 10.0,
+           camada: str = "Telhas") -> dict:
+    """Lança os panos de telha em cima das terças de `doc` (tira os panos lançados antes por aqui). Devolve o resumo,
+    as águas e os apontamentos."""
+    telha = dict(TELHA_PADRAO, **(telha or {}))
+    # tira os panos de uma rodada anterior
+    for i in [e.id for e in doc.solidos if (e.atributos or {}).get("telha_lancada")]:
+        doc.remover(i)
+    tercas = [b for b in doc.barras if b.papel in ("terça", "terca")]
+    an = _analise(tercas, doc.barras, vao_max, tol_plano)
+    feitos = an["panos"]
+    for p in feitos:
+        c = p["cantos"]
+        e = ESPESSURA_DESENHO
+        vs = c + [(x, y, z + e) for x, y, z in c]
+        fs = [[3, 2, 1, 0], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
+        s = Solido(nome=telha["nome"], camada=camada, vertices=vs, faces=fs)
+        s.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "telha": telha["modelo"],
+                       "entre": [p["q"]["sigla"], p["r"]["sigla"]]}
+        doc.add(s)
+    fora, aguas, vaos_grandes = an["fora"], an["aguas"], an["vaos_grandes"]
     area = sum(p.get("area", 0.0) for p in feitos) / 1e6
     lista_aguas = sorted(aguas.values(), key=lambda a: (a["caida_pct"], -a["comprimento"]))
     for a in lista_aguas:
@@ -241,3 +269,213 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         "fora_do_plano": sorted(fora.values(), key=lambda f: -abs(f["desvio"])),
         "vaos_grandes": [dict(v, comp=round(v["comp"]), ponto=[round(c) for c in v["ponto"]]) for v in vaos_grandes.values() if v["comp"] > 300],
     }
+
+
+# ---------------------------------------------------------------------------------------------- as terças no plano
+SUPORTE_PADRAO = 'L 3"×1/4"'      # o suporte de terça (a cantoneira do calço) onde a terça sobe para o plano da água
+
+
+def _ext_z(b) -> Tuple[float, float]:
+    """(fundo, topo) da seção em relação ao eixo da barra, pelo perfil e pelo giro"""
+    d = [b.fim[i] - b.inicio[i] for i in range(3)]
+    L = math.sqrt(sum(x * x for x in d)) or 1.0
+    d = tuple(x / L for x in d)
+    p = _perfil(b.perfil)
+    if p is None:
+        return -50.0, 50.0
+    u, v, _w = base_local(d, b.rotacao or 0.0)
+    zs = [u[2] * x + v[2] * y for x, y in secao(p)]
+    return min(zs), max(zs)
+
+
+def _apoios_da_terca(b, apoios, grade, CEL):
+    """os pontos de apoio da terça b: (t ao longo dela, topo do apoio, nome, é barreira, cruza, peça) — o banzo/viga/U de apoio
+    que ela cruza em planta, e o que corre junto por baixo dela (até 150 mm em planta), nas pontas e a cada 1,5 m"""
+    bx, by = b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1]
+    Lb = math.hypot(bx, by)
+    if Lb < 1:
+        return []
+    ub = (bx / Lb, by / Lb)
+    pontos = []
+    vistos = set()
+    for gx in range(int(min(b.inicio[0], b.fim[0]) // CEL) - 1, int(max(b.inicio[0], b.fim[0]) // CEL) + 2):
+        for gy in range(int(min(b.inicio[1], b.fim[1]) // CEL) - 1, int(max(b.inicio[1], b.fim[1]) // CEL) + 2):
+            for k in grade.get((gx, gy), ()):
+                if k in vistos:
+                    continue
+                vistos.add(k)
+                a = apoios[k]
+                ax, ay = a.fim[0] - a.inicio[0], a.fim[1] - a.inicio[1]
+                La = math.hypot(ax, ay)
+                if La < 1:
+                    continue
+                _lo_a, hi_a = _ext_z(a)
+                o = (a.atributos or {}).get("origem") or {}
+                nome = str(o.get("planta") or o.get("peca") or a.papel)
+                barr = _e_barreira(a)
+                den = bx * ay - by * ax
+                if abs(den) / (Lb * La) > 0.1:
+                    t = ((a.inicio[0] - b.inicio[0]) * ay - (a.inicio[1] - b.inicio[1]) * ax) / den
+                    u = ((a.inicio[0] - b.inicio[0]) * by - (a.inicio[1] - b.inicio[1]) * bx) / den
+                    if -0.01 <= t <= 1.01 and -0.01 <= u <= 1.01:
+                        pontos.append((max(0.0, min(1.0, t)), a.inicio[2] + (a.fim[2] - a.inicio[2]) * u + hi_a, nome, barr, True, o.get("peca")))
+                    continue
+                dist = abs((a.inicio[0] - b.inicio[0]) * ub[1] - (a.inicio[1] - b.inicio[1]) * ub[0])
+                if dist > 150.0:
+                    continue
+                sa = ((a.inicio[0] - b.inicio[0]) * ub[0] + (a.inicio[1] - b.inicio[1]) * ub[1]) / Lb
+                sb = ((a.fim[0] - b.inicio[0]) * ub[0] + (a.fim[1] - b.inicio[1]) * ub[1]) / Lb
+                t0, t1 = max(0.0, min(sa, sb)), min(1.0, max(sa, sb))
+                if (t1 - t0) * Lb < 50:
+                    continue
+                inset = min(100.0 / Lb, (t1 - t0) / 2)
+                m = max(1, int(math.ceil((t1 - t0 - 2 * inset) * Lb / 1500.0)))
+                for i in range(m + 1):
+                    t = t0 + inset + (t1 - t0 - 2 * inset) * i / m
+                    ua = (t - sa) / (sb - sa) if abs(sb - sa) > 1e-9 else 0.0
+                    pontos.append((t, a.inicio[2] + (a.fim[2] - a.inicio[2]) * ua + hi_a, nome, barr, False, o.get("peca")))
+    return pontos
+
+
+def alinhar_tercas(tercas, barras, tol: float = 10.0, maximo: float = 300.0, vao_max: float = 2500.0,
+                   folga_suporte: float = 15.0) -> dict:
+    """As terças fora do lugar, corrigidas onde a correção é clara (12/10/2026, "pode corrigir seguindo bom senso de
+    projeto" — a telha TP 40 de teste mostrou as dobras):
+      A. a terça da BORDA da água (a última antes da calha ou da transição) ABAIXO do plano dela (toda ela, pelo trecho
+         reto de 3+ terças ao lado): SOBE até o plano (até
+         'maximo'), e o suporte de terça (SUPORTE_PADRAO) com a altura da folga vai em cada apoio em que ela estava
+         sentada — a ponta da tesoura que desce junto da calha, o banzo da transição por baixo dela (nas pontas e a cada
+         1,5 m). No Posto, as das calhas de x 10,06 · 21,67 · 34,06 · 49,72, ~0,10 m abaixo.
+      B. a terça TORTA: a altura muda ao longo dela (mais de 30 mm) com as vizinhas da mesma água niveladas — fica
+         nivelada na altura do apoio dela (o banzo que ela cruza; com mais de um, não é este caso) e, se encostar num
+         apoio mais alto, senta nele. No Posto, TC22 e TC27 (subiam 0,22 e 0,42 m a partir da TESOURA 3B), TC52, TC48.
+    O resto (a água que não fecha num plano — as tesouras em alturas diferentes) fica como está, para a conferência.
+    Muda inicio/fim das terças; devolve {calha, tortas, suportes: [(p0, p1, apoio)], maior_mm}."""
+    an = _analise(tercas, barras, vao_max, tol)
+    apoios = [a for a in barras if a.papel in ("banzo", "viga", "apoio_terca") and a.tipo == "barra"]
+    CEL = 3000.0
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    for k, a in enumerate(apoios):
+        for gx in range(int(min(a.inicio[0], a.fim[0]) // CEL), int(max(a.inicio[0], a.fim[0]) // CEL) + 1):
+            for gy in range(int(min(a.inicio[1], a.fim[1]) // CEL), int(max(a.inicio[1], a.fim[1]) // CEL) + 1):
+                grade[(gx, gy)].append(k)
+    calha, tortas, suportes = [], [], []
+    maior = 0.0
+    por_id = {b.id: b for b in tercas}
+    # as pontas de cada peça (tesoura, treliça) em planta: a terça da calha senta na ponta das tesouras, onde o banzo
+    # desce; a do meio da água senta na tesoura que passa
+    pontas_peca: Dict[str, list] = collections.defaultdict(list)
+    for a in apoios:
+        pc = ((a.atributos or {}).get("origem") or {}).get("peca")
+        if pc:
+            pontas_peca[pc] += [(a.inicio[0], a.inicio[1]), (a.fim[0], a.fim[1])]
+    extremos = {}
+    for pc, pts_ in pontas_peca.items():
+        (x0, y0), (x1, y1) = max(((p, q) for p in pts_[:40] for q in pts_[:40]), key=lambda pq: math.dist(*pq))
+        L = math.dist((x0, y0), (x1, y1))
+        if L > 1:
+            u_ = ((x1 - x0) / L, (y1 - y0) / L)
+            ss_ = [(x - x0) * u_[0] + (y - y0) * u_[1] for x, y in pts_]
+            extremos[pc] = ((x0, y0), u_, min(ss_), max(ss_))
+
+    def na_ponta(b, p) -> bool:
+        if not p[4]:
+            return True                                      # o que corre por baixo dela: a transição, a COMP da calha
+        ext = extremos.get(p[5]) if p[4] else None
+        if not ext:
+            return False
+        (x0, y0), u_, smin, smax = ext
+        x = b.inicio[0] + (b.fim[0] - b.inicio[0]) * p[0]
+        y = b.inicio[1] + (b.fim[1] - b.inicio[1]) * p[0]
+        s_ = (x - x0) * u_[0] + (y - y0) * u_[1]
+        return min(abs(s_ - smin), abs(s_ - smax)) <= 400.0
+
+    def sigla(b):
+        o = (b.atributos or {}).get("origem") or {}
+        return o.get("sigla") or (b.atributos or {}).get("sigla") or ""
+
+    # A. a terça da calha
+    for bid, am in an["amostras"].items():
+        b = por_id.get(bid)
+        if b is None:
+            continue
+        devs = [x for _, x, _b in am if x != 0.0]
+        if not devs or max(devs) >= -tol or min(devs) < -maximo:
+            continue                                         # só a que está toda abaixo do plano
+        lo_b, _hi = _ext_z(b)
+        pts = _apoios_da_terca(b, apoios, grade, CEL)
+        # os apoios em que ela está sentada (a barreira só por baixo dela)
+        sobre = [p for p in pts if abs(b.inicio[2] + (b.fim[2] - b.inicio[2]) * p[0] + lo_b - p[1]) <= 20.0]
+        if not sobre:
+            continue
+        # a da borda da água (a calha): na ponta da sequência / no vale, ou sentada só na ponta das tesouras ou numa
+        # transição por baixo; a do meio da água, sentada na tesoura que passa, é apontamento
+        if not (all(borda for _, x, borda in am if x != 0.0) or all(na_ponta(b, p) for p in sobre)):
+            continue
+        # a subida em cada ponta, pela reta do desvio ao longo dela (a TC9 da calha de x 10,06: −0,10 m numa ponta, 0 na outra)
+        d = an["direcao"][b.id]
+        ss = [s_ for s_, _x, _b in am]
+        ds = [x for _s, x, _b in am]
+        if max(ss) - min(ss) < 200:
+            a0, a1 = sum(ds) / len(ds), 0.0
+        else:
+            ms, md = sum(ss) / len(ss), sum(ds) / len(ds)
+            a1 = sum((s_ - ms) * (x - md) for s_, x in zip(ss, ds)) / sum((s_ - ms) ** 2 for s_ in ss)
+            a0 = md - a1 * ms
+        si = b.inicio[0] * d[0] + b.inicio[1] * d[1]
+        sf = b.fim[0] * d[0] + b.fim[1] * d[1]
+        sobe_i = min(maximo, max(0.0, -(a0 + a1 * si)))
+        sobe_f = min(maximo, max(0.0, -(a0 + a1 * sf)))
+        if max(sobe_i, sobe_f) <= tol / 2:
+            continue
+        b.inicio = (b.inicio[0], b.inicio[1], b.inicio[2] + sobe_i)
+        b.fim = (b.fim[0], b.fim[1], b.fim[2] + sobe_f)
+        maior = max(maior, sobe_i, sobe_f)
+        calha.append({"sigla": sigla(b), "mm": round(max(sobe_i, sobe_f)), "sobre": sorted({p[2] for p in sobre}), "ponto": [round(c) for c in b.inicio]})
+        bx, by = b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1]
+        for t, za, nome, _barr, _cr, _pc in sobre:
+            zf = b.inicio[2] + (b.fim[2] - b.inicio[2]) * t + lo_b
+            if zf - za > folga_suporte:
+                x, y = b.inicio[0] + bx * t, b.inicio[1] + by * t
+                suportes.append(((x, y, za), (x, y, zf), nome))
+
+    # B. a terça torta, com as vizinhas niveladas
+    for d in set(an["direcao"].values()):
+        n = (-d[1], d[0])
+        grupo = [b for b in tercas if an["direcao"].get(b.id) == d]
+        for b in grupo:
+            dz = b.fim[2] - b.inicio[2]
+            if abs(dz) <= 30.0 or abs(dz) > 2 * maximo:
+                continue
+            tb = ((b.inicio[0] + b.fim[0]) / 2) * n[0] + ((b.inicio[1] + b.fim[1]) / 2) * n[1]
+            sa = sorted((b.inicio[0] * d[0] + b.inicio[1] * d[1], b.fim[0] * d[0] + b.fim[1] * d[1]))
+            viz = []
+            for c in grupo:
+                if c is b:
+                    continue
+                tc = ((c.inicio[0] + c.fim[0]) / 2) * n[0] + ((c.inicio[1] + c.fim[1]) / 2) * n[1]
+                sc = sorted((c.inicio[0] * d[0] + c.inicio[1] * d[1], c.fim[0] * d[0] + c.fim[1] * d[1]))
+                if 100.0 < abs(tc - tb) <= 2000.0 and min(sa[1], sc[1]) - max(sa[0], sc[0]) > 500.0:
+                    viz.append((tc - tb, abs(c.fim[2] - c.inicio[2])))
+            # vizinhas dos dois lados, todas niveladas
+            if not (any(v[0] < 0 for v in viz) and any(v[0] > 0 for v in viz)) or any(v[1] > 10.0 for v in viz):
+                continue
+            lo_b, _hi = _ext_z(b)
+            pts = [p for p in _apoios_da_terca(b, apoios, grade, CEL) if p[4] and not p[3]]
+            assentados = [p for p in pts if abs(b.inicio[2] + dz * p[0] + lo_b - p[1]) <= 20.0]
+            if len(assentados) != 1:
+                continue                                     # sem apoio claro, ou mais de um (a inclinação é dos apoios)
+            t0 = assentados[0][0]
+            z_ap = b.inicio[2] + dz * t0
+            antes = (b.inicio[2], b.fim[2])
+            b.inicio = (b.inicio[0], b.inicio[1], z_ap)
+            b.fim = (b.fim[0], b.fim[1], z_ap)
+            # encostou num apoio mais alto: senta nele
+            menor = min((z_ap + lo_b - za for _t, za, _n, _b, _c, _p in pts if -300.0 < z_ap + lo_b - za < 400.0), default=0.0)
+            if menor < -5.0:
+                b.inicio = (b.inicio[0], b.inicio[1], b.inicio[2] - menor)
+                b.fim = (b.fim[0], b.fim[1], b.fim[2] - menor)
+            mm = max(abs(b.inicio[2] - antes[0]), abs(b.fim[2] - antes[1]))
+            maior = max(maior, mm)
+            tortas.append({"sigla": sigla(b), "mm": round(mm), "apoio": assentados[0][2], "ponto": [round(c) for c in b.inicio]})
+    return {"calha": calha, "tortas": tortas, "suportes": suportes, "maior_mm": round(maior)}
