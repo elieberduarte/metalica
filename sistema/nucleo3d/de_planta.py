@@ -2179,7 +2179,15 @@ def _s_na_planta(t: Trecho, s_el: float) -> float:
     elif s_el >= Le - 1.0:
         sp = L
     else:
-        sp = s_el + _folga_da_elevacao(t)
+        f = _folga_da_elevacao(t)
+        sp = s_el + f
+        # a elevação passa da ponta (a treliça parada na face da outra, 12/10): o pedaço da ponta dela (até 0,6 m) se
+        # comprime até a ponta — os nós de perto não se amontoam nela (as diagonais em pé, repetidas, da TESOURA 3)
+        S0 = min(600.0, Le / 4.0)
+        if f < 0.0 and s_el < S0 and S0 + f > 50.0:
+            sp = s_el * (S0 + f) / S0
+        elif Le + f > L and s_el > Le - S0 and L - (Le - S0 + f) > 50.0:
+            sp = L - (Le - s_el) * (L - (Le - S0 + f)) / S0
     sp = min(max(sp, 0.0), L)
     return L - sp if t.invertida else sp
 
@@ -2188,6 +2196,85 @@ def _s_na_elevacao(t: Trecho, s: float) -> float:
     L = t.caminho.comprimento
     sp = L - s if t.invertida else s
     return sp - _folga_da_elevacao(t)
+
+
+def aparar_nas_faces(trechos: List[Trecho], folga: float = 30.0, alcance: float = 1500.0,
+                     meia_aba: float = 25.0) -> List[Tuple[str, str, float]]:
+    """A treliça que termina numa outra que passa (o painel reto, a transição, a tesoura) vai até a FACE de cá dela, não
+    até o eixo (12/10, o 3D: a TESOURA 8 entrava 8 cm além do eixo do PAINEL 12 — a linha da planta ia até a face de lá
+    e a elevação, 3,90 m, é a distância até a face de cá; os PAINÉIS curvos 9 e 10 da abertura oval terminavam no eixo
+    dos PAINÉIS 11 e 12, quase tangentes, com as diagonais por dentro deles). A ponta anda para dentro até o eixo dela
+    ficar a meia largura da outra + a meia largura dela no ângulo + `folga` (a meia aba do montante da ponta e a
+    sobra). Duas em fila que se encontram pelas pontas (os painéis da borda, as TESOURAS 1 e 12 no vale de x 10,0, que
+    passavam 12 cm uma dentro da outra) param no meio do encontro, costas com costas (`meia_aba` cada uma) — antes os
+    dois montantes das pontas ficavam no mesmo lugar. O ajuste da elevação compensa e os nós ficam onde estavam (nas
+    terças). Os cortes são medidos todos no desenho e aplicados depois. Devolve [(peça, outra, mm)]."""
+    feitos = []
+    verticais = [t for t in trechos if t.elevacao is not None and t.deitada is None and t.familia not in ("VIGA", "PERFIL")]
+    cortes = {}
+    for t in verticais:
+        L = t.caminho.comprimento
+        if L < 500.0:
+            continue
+        meia_t = t.caminho.largura / 2.0
+        corte = [0.0, 0.0]                            # o que sai de cada ponta (começo, fim)
+        quem = [None, None]
+        for k_p, (s_p, sinal) in enumerate(((0.0, 1.0), (L, -1.0))):
+            P = t.caminho.ponto(s_p)
+            tp = t.caminho.tangente(s_p)
+            for o in verticais:
+                if o is t:
+                    continue
+                meia_o = o.caminho.largura / 2.0
+                so, d = o.caminho.projetar(P)
+                Lo = o.caminho.comprimento
+                if d > meia_o + 150.0:
+                    continue
+                if so < 150.0 or so > Lo - 150.0:
+                    # o encontro de duas pontas em fila: as duas param no meio, costas com costas
+                    s_q = 0.0 if so < 150.0 else Lo
+                    Q = o.caminho.ponto(s_q)
+                    tq = o.caminho.tangente(s_q)
+                    if abs(tp[0] * tq[0] + tp[1] * tq[1]) < 0.95 or math.dist(P, Q) > 400.0:
+                        continue                      # de canto (a quina), não em fila
+                    dentro = ((Q[0] - P[0]) * tp[0] + (Q[1] - P[1]) * tp[1]) * sinal    # + : a outra entra nesta
+                    c_ = dentro / 2.0 + meia_aba
+                    if c_ > corte[k_p]:
+                        corte[k_p], quem[k_p] = c_, o.nome
+                    continue
+                if _altura_no_ponto(o, o.caminho.ponto(so), meia_o + 200.0) is None:
+                    continue
+                to = o.caminho.tangente(so)
+                # anda para dentro: o ponto mais perto do eixo dela e, dali, até sair da faixa
+                passos = [k * 5.0 for k in range(int(min(alcance, L / 3.0) / 5.0))]
+                ds = [o.caminho.projetar(t.caminho.ponto(s_p + sinal * s_))[1] for s_ in passos]
+                k_min = min(range(len(ds)), key=lambda k: ds[k]) if ds else 0
+                if ds and ds[k_min] > meia_o + 40.0:
+                    continue
+                for k in range(k_min, len(passos)):
+                    s_ = passos[k]
+                    tt = t.caminho.tangente(min(max(s_p + sinal * s_, 0.0), L))
+                    cos_ = abs(tt[0] * to[0] + tt[1] * to[1])
+                    if ds[k] >= meia_o + meia_t * cos_ + folga:
+                        if s_ > corte[k_p]:
+                            corte[k_p], quem[k_p] = s_, o.nome
+                        break
+        corte = [c_ if c_ >= 15.0 else 0.0 for c_ in corte]      # já está na face
+        if max(corte) < 15.0 or L - corte[0] - corte[1] < 400.0:
+            continue
+        cortes[id(t)] = (t, corte, quem)
+    for t, corte, quem in cortes.values():
+        L = t.caminho.comprimento
+        # os nós ficam no mesmo lugar: a folga da elevação (a distância da ponta dela ao começo do caminho) perde o que
+        # saiu da ponta do começo da elevação
+        e0 = corte[1] if t.invertida else corte[0]
+        antes = _folga_da_elevacao(t)
+        t.caminho = t.caminho.trecho(corte[0], L - corte[1])
+        t.ajuste += (antes - e0) - _folga_da_elevacao(t)
+        for k_p in (0, 1):
+            if corte[k_p] >= 15.0:
+                feitos.append((_bonito(t.nome), _bonito(quem[k_p]), round(corte[k_p])))
+    return feitos
 
 
 def _votos_das_marcas(t: Trecho, linhas_terca) -> Optional[Tuple[int, int]]:
@@ -2899,6 +2986,65 @@ def _pontas_da_terca(a: Ponto2, b: Ponto2, polis_tr, caixas_tr, tol: float = 300
     return s0, s1, cruz
 
 
+def _encostar_tercas_na_face(tercas, barreiras, nivel: float) -> List[Tuple[str, float, float]]:
+    """A terça que corre ao longo de um painel/transição (`barreiras`, Trechos), paralela e dentro da largura dele, num
+    trecho em que ele sobe acima do meio dela, vai de lado até a face: na linha da terça vizinha da mesma linha que já
+    está fora dele (a parte que o projeto desenhou na face). Sem essa vizinha, fica. Muda inicio/fim; devolve
+    [(sigla, x, y)]."""
+    feitas = []
+    for b in tercas:
+        A, B = b.inicio, b.fim
+        L = math.hypot(B[0] - A[0], B[1] - A[1])
+        if L < 300.0:
+            continue
+        u = ((B[0] - A[0]) / L, (B[1] - A[1]) / L)
+        n = (-u[1], u[0])
+        z_fundo = min(A[2], B[2]) + 50.0                  # o painel bem acima do meio dela (não o banzo em que ela senta)
+        for t in barreiras:
+            meia = t.caminho.largura / 2.0
+            # os pontos do eixo dele ao longo da terça, dentro da largura (paralelo), onde ele sobe acima dela
+            dentro, laterais = 0, []
+            for k in range(0, 21):
+                s_ = L * k / 20.0
+                p = (A[0] + u[0] * s_, A[1] + u[1] * s_)
+                st, d = t.caminho.projetar(p)
+                if d > meia + 40.0 or st <= 1.0 or st >= t.caminho.comprimento - 1.0:
+                    continue
+                q = t.caminho.ponto(st)
+                laterais.append((q[0] - A[0]) * n[0] + (q[1] - A[1]) * n[1])
+                h = _altura_no_ponto(t, p, meia + 40.0)
+                if h is not None and nivel + h > z_fundo:
+                    dentro += 1
+            # paralela de verdade (o eixo a menos da largura em boa parte da terça, não um cruzamento) e o painel alto ali
+            if dentro < 2 or len(laterais) < 5:
+                continue
+            ax = sum(laterais) / len(laterais)            # o eixo dele em relação à linha da terça (+ = do lado de n)
+            # a vizinha da mesma linha já na face: a ponta encostada e paralela, fora da largura
+            alvo = None
+            for o in tercas:
+                if o is b:
+                    continue
+                for P_o, Q_o in ((o.inicio, o.fim), (o.fim, o.inicio)):
+                    if min(math.hypot(P_o[0] - A[0], P_o[1] - A[1]), math.hypot(P_o[0] - B[0], P_o[1] - B[1])) > 400.0:
+                        continue
+                    Lo = math.hypot(Q_o[0] - P_o[0], Q_o[1] - P_o[1]) or 1.0
+                    if abs(((Q_o[0] - P_o[0]) * n[0] + (Q_o[1] - P_o[1]) * n[1]) / Lo) > 0.02:
+                        continue                          # não é paralela
+                    lat_o = (P_o[0] - A[0]) * n[0] + (P_o[1] - A[1]) * n[1]
+                    if meia + 20.0 < abs(lat_o - ax) < meia + 400.0:
+                        alvo = lat_o
+            # sem a vizinha na face, fica onde o projeto desenhou: a linha no eixo de uma transição é a terça que corre em
+            # cima dela (o apoio contínuo — a TC47 na TRANSIÇÃO 13 e a TC56 na 3 do Posto); a ponta de lado faria degrau
+            if alvo is None or abs(alvo) < 5.0:
+                continue
+            b.inicio = (A[0] + n[0] * alvo, A[1] + n[1] * alvo, A[2])
+            b.fim = (B[0] + n[0] * alvo, B[1] + n[1] * alvo, B[2])
+            sig = str(((b.atributos or {}).get("origem") or {}).get("sigla") or "terça")
+            feitas.append((sig, (b.inicio[0] + b.fim[0]) / 2, (b.inicio[1] + b.fim[1]) / 2))
+            break
+    return feitas
+
+
 def _pilares_pela_planta(ents, caixa_p, locados: List[dict], avisos: List[str], raio: float = 1200.0) -> int:
     """O pilar que a planta estrutural desenha (a seção dele — o retângulo com as medidas do perfil,
     onde as treliças se cruzam) perto do lugar da locação, mas fora dele: vale o da planta, que é
@@ -3251,6 +3397,10 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                       "desencontrado das treliças vizinhas; ficou virada, encontrando com elas — confira."
                       % (nome_t, meio_t[0], meio_t[1], dif))
     ori["ajustadas_aos_nos"] = ajustar_aos_nos(trechos, eixos_t)
+    aparadas = aparar_nas_faces(trechos)
+    if aparadas:
+        avisos.append("Treliça até a face da outra (não até o eixo): %d ponta(s) recuada(s) — %s."
+                      % (len(aparadas), "; ".join("%s na %s, %d mm" % a_ for a_ in aparadas)))
 
     doc = doc or Documento(nome=str(par.get("nome") or "Modelo pela planta"))
     for nome_c in ("Treliças", "Vigas", "Pilares", "Terças", "Contraventamento", "Correntes"):
@@ -3622,11 +3772,43 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             L = math.dist(a, b) or 1.0
             ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
             orig = {"planta": _bonito(t.nome), "sentido": t.sentido_por, "peca": conj}
+
+            def ate_a_face(p0, p1):
+                """(s do começo, s do fim) do banzo que chega numa treliça vertical: para na face de cá dela (12/10,
+                o 3D: a ponta da TRELIÇA 1 do Posto é cortada em esquadro e chega na TRELIÇA 3 a 56° — o banzo de fora
+                a atravessava e sobrava 0,8 m do outro lado)"""
+                s0_, s1_ = 0.0, L
+                q0 = (p0[0] - ux * 300.0, p0[1] - uy * 300.0)
+                q1 = (p1[0] + ux * 300.0, p1[1] + uy * 300.0)
+                for o in trechos:
+                    if o.elevacao is None or o.deitada is not None or o.familia in ("VIGA", "PERFIL"):
+                        continue
+                    pl = _polilinha(o.caminho)
+                    for a_, b_ in zip(pl, pl[1:]):
+                        x_ = _cruzamento(q0, q1, a_, b_)
+                        if x_ is None:
+                            continue
+                        s_x = (x_[0] - p0[0]) * ux + (x_[1] - p0[1]) * uy
+                        to_ = _unit(a_, b_)[0]
+                        recuo = (o.caminho.largura / 2.0 + 30.0) / max(0.2, abs(ux * to_[1] - uy * to_[0]))
+                        if s_x > L - 1500.0:
+                            s1_ = min(s1_, s_x - recuo)
+                        elif s_x < 1500.0:
+                            s0_ = max(s0_, s_x + recuo)
+                return s0_, s1_
             # rotação 0: as abas para +n (o banzo de cá olha para o de lá); 180 no outro
+            lim = []
             for f, rot in ((0.0, 0.0), (W, 180.0)):
-                barra((a[0] + nx * f, a[1] + ny * f, nivel_z), (b[0] + nx * f, b[1] + ny * f, nivel_z), p_banzo,
+                p0, p1 = (a[0] + nx * f, a[1] + ny * f), (b[0] + nx * f, b[1] + ny * f)
+                s0_, s1_ = ate_a_face(p0, p1)
+                lim.append((s0_, s1_))
+                barra((p0[0] + ux * s0_, p0[1] + uy * s0_, nivel_z), (p0[0] + ux * s1_, p0[1] + uy * s1_, nivel_z), p_banzo,
                       "banzo", "Treliças", conj, rot, orig)
             for p, q in t.deitada["almas"]:
+                # a alma além da face (onde os dois banzos já pararam) sai
+                s_m = ((p[0] + q[0]) / 2 - a[0]) * ux + ((p[1] + q[1]) / 2 - a[1]) * uy
+                if s_m > max(l_[1] for l_ in lim) + 50.0 or s_m < min(l_[0] for l_ in lim) - 50.0:
+                    continue
                 ao_longo = abs((q[0] - p[0]) * ux + (q[1] - p[1]) * uy)
                 barra((p[0], p[1], nivel_z), (q[0], q[1], nivel_z), p_alma, "montante" if ao_longo < 150.0 else "diagonal",
                       "Treliças", conj, 0.0, orig)
@@ -3834,6 +4016,36 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
     # corte reto (aparar) para a revisão dele; o usuário pediu a revisão com as regras novas em 11/10
     from nucleo3d import alma_na_face
     from nucleo3d.geometria import comprimentos_da_barra, tem_corte_no_angulo
+    # a mesma barra duas vezes na mesma peça, e a presilha encostada noutra da mesma peça (12/10, o 3D: montantes e
+    # presilhas das TRELIÇAS 12, 13 e 15 da caixa d'água em dobro — a linha repetida na elevação —, e na ponta das
+    # tesouras do vale a presilha da diagonal quase em pé a 3 cm da do montante): fica uma
+    vistas_b: Dict[tuple, bool] = {}
+    pres_conj: Dict[str, list] = collections.defaultdict(list)
+    tirar = []
+    for p_ in pecas:
+        e_ = p_["ent"]
+        if e_.tipo != "barra" or not p_.get("conjunto"):
+            continue
+        ch_ = (p_["conjunto"], e_.perfil, e_.papel) + tuple(sorted((tuple(round(c / 10.0) for c in e_.inicio),
+                                                                 tuple(round(c / 10.0) for c in e_.fim))))
+        if ch_ in vistas_b:
+            tirar.append(p_)
+            continue
+        vistas_b[ch_] = True
+        if e_.papel == "presilha":
+            cen = tuple((e_.inicio[i] + e_.fim[i]) / 2 for i in range(3))
+            if any(math.dist(cen, c_) < 40.0 for c_ in pres_conj[p_["conjunto"]]):
+                tirar.append(p_)
+                continue
+            pres_conj[p_["conjunto"]].append(cen)
+    for p_ in tirar:
+        doc.remover(p_["ent"].id)
+        pecas.remove(p_)
+        if p_["ent"].papel == "presilha":
+            presilhas_postas["pecas"] -= 1
+    if tirar:
+        avisos.append("Barras repetidas na mesma peça (a linha dobrada na elevação, a presilha encostada noutra): %d tirada(s)."
+                      % len(tirar))
     na_face = alma_na_face.encaixar([p["ent"] for p in pecas])
     if nos_no_eixo["pontas"]:
         avisos.append("Nós no eixo do banzo (NBR 8800:2024, 6.5.2): %d ponta(s) de montante e diagonal levadas da linha "
@@ -4125,6 +4337,17 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     if i_l < len(eixos_t_ids):
                         usados["tercas"].add(eixos_t_ids[i_l])
                     tercas += 1
+
+        # a terça que corre AO LONGO de um painel ou transição, dentro da largura dele, onde ele sobe acima da terça: vai
+        # para a face, do lado das outras terças (12/10, o 3D: a TC14 corria 5 m dentro do PAINEL 11, a 5 cm do eixo, onde
+        # o resto da mesma linha o projeto já desenhou na face, 24,5 cm ao lado)
+        encostadas = _encostar_tercas_na_face([p_["ent"] for p_ in pecas if p_["papel"] == "terça"],
+                                              [t for t in trechos if t.elevacao is not None and t.familia in ("PAINEL", "TRANSICAO")],
+                                              nivel)
+        if encostadas:
+            avisos.append("Terça ao longo de painel/transição: %d terça(s) desenhada(s) dentro da largura dele, onde ele sobe "
+                          "acima do telhado, foram para a face (%s) — confira no projeto."
+                          % (len(encostadas), ", ".join("%s em (%.0f; %.0f)" % e_ for e_ in encostadas)))
 
         # a terça assentada no topo verdadeiro dos banzos que ela cruza (12/10: "terças entrando no banzo, terça
         # voando") — a altura acima vinha do meio do banzo na elevação com um banzo de 40 mm fixo
