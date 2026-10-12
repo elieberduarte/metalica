@@ -1093,6 +1093,106 @@ def _base_da_barra(q0, q1, rot: float):
     return base_local(tuple(q1[i] - q0[i] for i in range(3)), rot)
 
 
+def _centro_do_texto(t: dict, escala: float = 20.0) -> Tuple[float, float]:
+    """O centro da caixa do texto no desenho: a posição gravada é o ponto de inserção (o canto da base, à esquerda),
+    as letras seguem o ângulo e sobem a altura (mm de papel × a escala do desenho). A largura é estimada (0,8 da altura
+    por letra); o alinhamento centro/direita desloca o começo."""
+    x, y = float(t["posicao"][0]), float(t["posicao"][1])
+    h = float(t.get("altura") or 2.5) * escala
+    w = len(str(t.get("texto") or "").strip()) * h * 0.8
+    a = math.radians(float(t.get("angulo") or 0.0))
+    dx, dy = math.cos(a), math.sin(a)
+    nx, ny = -dy, dx
+    ini = {"centro": -w / 2.0, "direita": -w}.get(str(t.get("alinhamento") or "esquerda"), 0.0)
+    sobe = {"meio": 0.0, "topo": -h / 2.0}.get(str(t.get("vertical") or "base"), h / 2.0)
+    return (x + dx * (ini + w / 2.0) + nx * sobe, y + dy * (ini + w / 2.0) + ny * sobe)
+
+
+def _assentar_tercas(tercas, banzos) -> dict:
+    """Cada terça na reta que assenta no topo dos banzos que ela cruza em planta, sem furar nenhum: o topo de cada um pela
+    seção e pelo giro (o U deitado de boca para baixo tem o topo nas costas, a xg do eixo — 9,9 mm no U 100×40, 28 no U
+    200×100; antes valia um banzo de 40 mm para todos, e a terça ficava 10 mm acima nos U 100×40 e furava os maiores), e a
+    inclinação a que melhor acompanha os apoios, erguida até tocar o mais alto: onde as treliças vizinhas não ficam numa
+    reta, sobra folga (o calço), nunca a terça dentro do banzo. Banzo bem acima da terça (a transição alta que ela
+    encosta) ou bem abaixo (o banzo de baixo) não conta. Muda inicio/fim das terças; devolve as contagens."""
+    from nucleo3d.geometria import base_local, secao
+
+    def ext_z(e):
+        p = _perfil(e.perfil)
+        d = tuple(e.fim[i] - e.inicio[i] for i in range(3))
+        if p is None:
+            return -50.0, 50.0
+        u, v, _w = base_local(d, e.rotacao or 0.0)
+        zs = [u[2] * x + v[2] * y for x, y in secao(p)]
+        return min(zs), max(zs)
+
+    grade = collections.defaultdict(list)
+    for b in banzos:
+        (x0, y0), (x1, y1) = b.inicio[:2], b.fim[:2]
+        for gx in range(int(min(x0, x1) // 3000), int(max(x0, x1) // 3000) + 1):
+            for gy in range(int(min(y0, y1) // 3000), int(max(y0, y1) // 3000) + 1):
+                grade[(gx, gy)].append(b)
+    topo_b: Dict[int, float] = {}
+    out = {"acertadas": 0, "calcos": 0, "maior_calco": 0}
+    for t in tercas:
+        a, c = t.inicio, t.fim
+        L = math.dist(a[:2], c[:2])
+        if L < 1.0:
+            continue
+        abaixo_t, _acima = ext_z(t)
+        vistos = set()
+        req: Dict[tuple, Tuple[float, float]] = {}          # (banzo, posição) → (s, z do fundo da terça para assentar)
+        for gx in range(int(min(a[0], c[0]) // 3000), int(max(a[0], c[0]) // 3000) + 1):
+            for gy in range(int(min(a[1], c[1]) // 3000), int(max(a[1], c[1]) // 3000) + 1):
+                for b in grade.get((gx, gy), []):
+                    if id(b) in vistos:
+                        continue
+                    vistos.add(id(b))
+                    r = (c[0] - a[0], c[1] - a[1])
+                    q = (b.fim[0] - b.inicio[0], b.fim[1] - b.inicio[1])
+                    den = r[0] * q[1] - r[1] * q[0]
+                    if abs(den) < 1e-6 * L * max(1.0, math.hypot(*q)):
+                        continue
+                    tt = ((b.inicio[0] - a[0]) * q[1] - (b.inicio[1] - a[1]) * q[0]) / den
+                    uu = ((b.inicio[0] - a[0]) * r[1] - (b.inicio[1] - a[1]) * r[0]) / den
+                    if not (-0.01 <= tt <= 1.01 and 0.0 <= uu <= 1.0):
+                        continue
+                    if id(b) not in topo_b:
+                        topo_b[id(b)] = ext_z(b)[1]
+                    zb = b.inicio[2] + (b.fim[2] - b.inicio[2]) * uu + topo_b[id(b)]
+                    zt_fundo = a[2] + (c[2] - a[2]) * tt + abaixo_t
+                    if not (-150.0 <= zt_fundo - zb <= 300.0):
+                        continue
+                    k = round(tt * L / 50.0)
+                    # no mesmo ponto (o par do banzo, dois banzos encostados), vale o mais alto
+                    if k not in req or zb > req[k][1]:
+                        req[k] = (tt * L, zb)
+        if not req:
+            continue
+        pts = sorted(req.values())
+        if len(pts) >= 2:
+            sm = sum(p_[0] for p_ in pts) / len(pts)
+            zm = sum(p_[1] for p_ in pts) / len(pts)
+            sxx = sum((p_[0] - sm) ** 2 for p_ in pts)
+            beta = sum((p_[0] - sm) * (p_[1] - zm) for p_ in pts) / sxx if sxx > 1.0 else (c[2] - a[2]) / L
+        else:
+            beta = (c[2] - a[2]) / L
+        alfa = max(p_[1] - beta * p_[0] for p_ in pts)
+        za, zc = alfa - abaixo_t, alfa + beta * L - abaixo_t
+        if abs(za - a[2]) > 400.0 or abs(zc - c[2]) > 400.0:
+            continue                                          # mudança grande demais: fica como estava (a verificação aponta)
+        if abs(za - a[2]) > 0.5 or abs(zc - c[2]) > 0.5:
+            out["acertadas"] += 1
+        t.inicio = (a[0], a[1], round(za, 1))
+        t.fim = (c[0], c[1], round(zc, 1))
+        for s_, z_ in pts:
+            folga = alfa + beta * s_ - z_
+            if folga > 15.0:
+                out["calcos"] += 1
+                out["maior_calco"] = max(out["maior_calco"], int(round(folga)))
+    return out
+
+
 def _giro_v_para(w, alvo) -> float:
     """o giro (graus) da barra de direção `w` que leva o eixo v da seção (geometria.base_local) para `alvo` (a parte dele
     perpendicular a w)"""
@@ -3773,7 +3873,11 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
 
         def mover(p):
             return (p[0] + desl_t[0], p[1] + desl_t[1])
-        rot_tc = [(mover(t["posicao"]), t["texto"].strip().upper().replace(" ", ""), t.get("id")) for t in reg
+        # o nome pelo centro do texto, não pela posição gravada (o canto da base): o TC girado 90° tem as letras para a
+        # esquerda da posição, e o da linha em cima da TRANSIÇÃO 13 do Posto (x 49,72) caía mais perto da linha vizinha
+        # (50,17, a 0,45 m) — que pegava os nomes das duas e saía picada em 9 pedaços, alguns sem apoio (12/10)
+        esc_txt = float(par.get("escala") or 20.0)
+        rot_tc = [(mover(_centro_do_texto(t, esc_txt)), t["texto"].strip().upper().replace(" ", ""), t.get("id")) for t in reg
                   if t["tipo"] == "texto" and re.match(r"^TC\s?\d+[A-Z]?$", t["texto"].strip().upper())]
         pa_bz = 40.0
         # cada nome TC vale para a linha de terça mais perto dele (e só para ela)
@@ -3822,6 +3926,21 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         passo_c = max(1, int(round(1000.0 / max(1.0, corrida[1][0] - corrida[0][0]))))
                         apoios += corrida[::passo_c] + ([corrida[-1]] if (len(corrida) - 1) % passo_c else [])
                     corrida = []
+            # a treliça que a linha cruza é apoio mesmo onde a elevação não dá a altura ali: perto da ponta da tesoura (os
+            # primeiros ~0,5 m depois da transição em que ela nasce) o banzo existe no 3D, mas a altura pela elevação não
+            # responde — na linha ao lado da TRANSIÇÃO 13 do Posto, 3 das 5 tesouras ficavam fora e as emendas iam para o
+            # meio entre os nomes, com pedaços em balanço (12/10). A altura fica pela superfície das vizinhas (a terça é
+            # assentada depois no banzo de verdade); painel e transição continuam fora (barreira, não apoio)
+            for c_ in cruz_t:
+                if c_[2] in ("PAINEL", "TRANSICAO") or not (s_ini - 50.0 <= c_[0] <= s_fim + 50.0):
+                    continue
+                if any(abs(c_[0] - ap[0]) < 300.0 for ap in apoios):
+                    continue
+                pt_c = (a[0] + ux * c_[0], a[1] + uy * c_[0])
+                h_c = superficie(pt_c)
+                if h_c is not None:
+                    apoios.append((c_[0], h_c))
+            apoios.sort()
             if not apoios:
                 continue
             # a treliça alta que a terça cruza (a transição que carrega as tesouras) passa
@@ -3945,6 +4064,14 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         usados["tercas"].add(eixos_t_ids[i_l])
                     tercas += 1
 
+        # a terça assentada no topo verdadeiro dos banzos que ela cruza (12/10: "terças entrando no banzo, terça
+        # voando") — a altura acima vinha do meio do banzo na elevação com um banzo de 40 mm fixo
+        ass = _assentar_tercas([p_["ent"] for p_ in pecas if p_["papel"] == "terça"],
+                               [p_["ent"] for p_ in pecas if p_["papel"] == "banzo" and p_["ent"].tipo == "barra"])
+        if ass["calcos"]:
+            avisos.append("Terças assentadas no topo dos banzos (a seção e o giro de cada um): %d terça(s) acertada(s); em %d "
+                          "apoio(s) os banzos não ficam numa reta e sobra folga de 15 a %d mm sob a terça (calço) — confira a altura "
+                          "das treliças ali." % (ass["acertadas"], ass["calcos"], ass["maior_calco"]))
         # as terças já montadas: a corrente (o agulhamento) liga uma terça à outra, na altura
         # delas — não na da treliça mais alta ali (a transição alta levava a corrente a 1 m
         # acima da terça)
