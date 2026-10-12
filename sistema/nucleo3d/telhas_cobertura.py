@@ -581,6 +581,21 @@ def _fechamentos(doc, panos, telha, camada):
         segs = [sg for e in lst for sg in e.segs]
         zmin = min(min(a[2], b[2]) for a, b in segs)
         cima = [(a, b) for a, b in segs if min(a[2], b[2]) > zmin + 300.0]
+
+        def tem_acima(a, b):
+            # outro banzo da mesma peça passa por cima deste (a linha do telhado por dentro do PAINEL 15): só o mais alto
+            mx, my, mz = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2
+            for c, d_ in cima:
+                if (c, d_) == (a, b):
+                    continue
+                Lc = math.hypot(d_[0] - c[0], d_[1] - c[1])
+                if Lc < 1:
+                    continue
+                t_ = ((mx - c[0]) * (d_[0] - c[0]) + (my - c[1]) * (d_[1] - c[1])) / (Lc * Lc)
+                if -0.01 <= t_ <= 1.01 and math.hypot(c[0] + (d_[0] - c[0]) * t_ - mx, c[1] + (d_[1] - c[1]) * t_ - my) < 150.0                         and c[2] + (d_[2] - c[2]) * t_ > mz + 100.0:
+                    return True
+            return False
+        cima = [sg for sg in cima if not tem_acima(*sg)]
         cum = 0.0
         for A, B in cima:
             L = math.hypot(B[0] - A[0], B[1] - A[1])
@@ -588,17 +603,21 @@ def _fechamentos(doc, panos, telha, camada):
                 continue
             u = ((B[0] - A[0]) / L, (B[1] - A[1]) / L)
             nh = (-u[1], u[0])
-            M = ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
             # o lado do telhado: coberto até 1,5 m da face (o PAINEL 21 do Posto fica a mais de 0,4 m da telha); o de fora:
             # nada até 0,9 m
-            def lado_coberto(k_):
+            def lado_coberto(M, k_):
                 return any(coberto((M[0] + nh[0] * x_ * k_, M[1] + nh[1] * x_ * k_)) for x_ in (400.0, 900.0, 1500.0))
 
-            def lado_livre(k_):
+            def lado_livre(M, k_):
                 # o telhado pode passar do painel em beiral até 0,9 m (o PAINEL 15 do Posto)
                 return not any(coberto((M[0] + nh[0] * x_ * k_, M[1] + nh[1] * x_ * k_)) for x_ in (900.0, 1500.0))
-            mais = lado_coberto(+1) and lado_livre(-1)
-            menos = lado_coberto(-1) and lado_livre(+1)
+            # em três pontos ao longo do trecho, por maioria (o meio do PAINEL 15 cai no vão da cumeeira, sem telha)
+            votos = [0, 0]
+            for f_ in (0.2, 0.5, 0.8):
+                M = (A[0] + (B[0] - A[0]) * f_, A[1] + (B[1] - A[1]) * f_)
+                votos[0] += lado_coberto(M, +1) and lado_livre(M, -1)
+                votos[1] += lado_coberto(M, -1) and lado_livre(M, +1)
+            mais, menos = votos[0] >= 2 and votos[0] > votos[1], votos[1] >= 2 and votos[1] > votos[0]
             if mais == menos:
                 cum += L
                 continue                                 # telhado dos dois lados, ou de nenhum: não é perímetro
