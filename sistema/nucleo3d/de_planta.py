@@ -1087,6 +1087,12 @@ def _ligar_emenda(el: Elevacao, s_a: float, s_b: float) -> int:
     return ligados
 
 
+def _base_da_barra(q0, q1, rot: float):
+    """(u, v, w) da seção da barra de q0 a q1 com o giro `rot` (geometria.base_local)"""
+    from nucleo3d.geometria import base_local
+    return base_local(tuple(q1[i] - q0[i] for i in range(3)), rot)
+
+
 def _giro_v_para(w, alvo) -> float:
     """o giro (graus) da barra de direção `w` que leva o eixo v da seção (geometria.base_local) para `alvo` (a parte dele
     perpendicular a w)"""
@@ -3367,14 +3373,31 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         n_norma = _presilhas_pela_norma(perfil)
                         n_p = max(int(nota_p.get("qtd") or 0), n_norma)
                         p_pres = nota_p.get("perfil") or perfil
-                        # de uma cantoneira à outra: entre as faces de fora (nas abas) ou as pontas das abas (costas)
-                        larg = 2.0 * (af + xg_l) if nas_abas else 2.0 * af + (float(pa.bf or 25.0) if pa else 25.0)
-                        # a seção da presilha acompanha a inclinação da barra que ela liga (12/10: "os espaçadores não estão
-                        # seguindo a inclinação das diagonais"): o eixo v dela na direção da barra
-                        rot_p = _giro_v_para((nx, ny, 0.0), tuple(q1[i] - q0[i] for i in range(3)))
+                        # a presilha: nas abas, uma cantoneira deitada sobre as abas de dentro do par (onde é soldada), de uma
+                        # aba paralela à outra, com a aba ao longo da barra assentada nelas e a outra subindo para dentro do
+                        # par (12/10, croqui do usuário: "Γ" no montante, "^" na diagonal); costas com costas, atravessando o
+                        # par na altura do eixo, com a seção na inclinação da barra
+                        pp = _perfil(p_pres)
+                        t_l = float(pa.tw or 3.0) if pa else 3.0
+                        if nas_abas:
+                            larg = 2.0 * (af + xg_l - t_l)
+                            # o eixo v da L do lado + (giro_n): as abas de dentro do par ficam entre −xg e −xg + t nele
+                            _u_l, v_l, _w_l = _base_da_barra(q0, q1, giro_n)
+                            try:
+                                from nucleo3d.geometria import secao as _secao
+                                xg_p = -min(q[0] for q in _secao(pp)) if pp is not None else 0.0
+                            except Exception:                        # noqa: BLE001
+                                xg_p = 0.3 * (float(pp.bf or 25.0) if pp is not None else 25.0)
+                            desloc = -xg_l + t_l + xg_p
+                            ajuste = tuple(v_l[i] * desloc for i in range(3))
+                            rot_p = _giro_abas_para((0.0, 0.0, 0.0), (nx, ny, 0.0), v_l)
+                        else:
+                            larg = 2.0 * af + (float(pa.bf or 25.0) if pa else 25.0)
+                            ajuste = (0.0, 0.0, 0.0)
+                            rot_p = _giro_v_para((nx, ny, 0.0), tuple(q1[i] - q0[i] for i in range(3)))
                         for k_p in range(1, n_p + 1):
                             f = k_p / (n_p + 1.0)
-                            cq = tuple(q0[i] + (q1[i] - q0[i]) * f for i in range(3))
+                            cq = tuple(q0[i] + (q1[i] - q0[i]) * f + ajuste[i] for i in range(3))
                             barra((cq[0] - nx * larg / 2, cq[1] - ny * larg / 2, cq[2]), (cq[0] + nx * larg / 2, cq[1] + ny * larg / 2, cq[2]),
                                   p_pres, "presilha", "Treliças", conj, rot_p,
                                   {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "presilha_de": perfil})
