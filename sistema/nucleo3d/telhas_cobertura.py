@@ -341,7 +341,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                     a_, b_ = (s_p, s_l) if ponta == "s1" else (s_l, s_p)
                     if coberto(longa, lado, a_, b_):
                         continue
-                    triangulos.append({"q": curta, "r": longa, "s0": a_, "s1": b_, "borda": True, "d": d, "n": n,
+                    triangulos.append({"q": curta, "r": longa, "s0": a_, "s1": b_, "borda": True, "d": d, "n": n, "sp": s_p, "sl": s_l,
                                        "cantos": [ponto(curta, s_p), ponto(longa, s_p), ponto(longa, s_l)],
                                        "area": alem * abs(longa["t"] - curta["t"]) / 2.0})
         panos += triangulos
@@ -513,6 +513,28 @@ def _chapas(panos, telha):
                     ext = lambda P, bb=bb: (P[0] + n[0] * bb["L"] * bb["lado"], P[1] + n[1] * bb["L"] * bb["lado"], P[2] + bb["m"] * bb["L"] * bb["lado"])
                     sec = [(P0, P1), (ext(P0), ext(P1))]
                     chapas.append({"secoes": sec if bb["lado"] > 0 else sec[::-1], "a": a2, "b": b2, "origem": origem, "d": d, "n": n})
+    # a borda escalonada: a chapa recortada na diagonal — da terça longa até a linha da borda (da ponta da curta à da
+    # longa), nas mesmas faixas e ondas da água (são as telhas que vão precisar de recorte)
+    for p in panos:
+        if not p.get("borda") or "sp" not in p:
+            continue
+        d, n = p["d"], p["n"]
+        curta, longa, sp, sl = p["q"], p["r"], p["sp"], p["sl"]
+        orig = min((q["s0"] for q in panos if q.get("d") == d and not q.get("borda")), default=min(sp, sl))
+        E0, E1 = _pt(curta, sp, d, n), _pt(longa, sl, d, n)
+
+        def borda_em(s_):
+            f = (s_ - sp) / ((sl - sp) or 1.0)
+            return (E0[0] + (E1[0] - E0[0]) * f, E0[1] + (E1[1] - E0[1]) * f, E0[2] + (E1[2] - E0[2]) * f)
+        lo, hi = min(sp, sl), max(sp, sl)
+        k0 = math.floor((lo - orig) / W)
+        while orig + k0 * W < hi - 1:
+            a2, b2 = max(lo, orig + k0 * W), min(hi, orig + (k0 + 1) * W)
+            k0 += 1
+            if b2 - a2 < 30.0:
+                continue
+            chapas.append({"secoes": [(_pt(longa, a2, d, n), _pt(longa, b2, d, n)), (borda_em(a2), borda_em(b2))],
+                           "a": a2, "b": b2, "origem": orig, "d": d, "n": n, "recorte": True})
     return chapas
 
 
@@ -573,32 +595,33 @@ def _fechamentos(doc, panos, telha, camada):
                 return any(coberto((M[0] + nh[0] * x_ * k_, M[1] + nh[1] * x_ * k_)) for x_ in (400.0, 900.0, 1500.0))
 
             def lado_livre(k_):
-                return not any(coberto((M[0] + nh[0] * x_ * k_, M[1] + nh[1] * x_ * k_)) for x_ in (200.0, 400.0, 900.0))
+                # o telhado pode passar do painel em beiral até 0,9 m (o PAINEL 15 do Posto)
+                return not any(coberto((M[0] + nh[0] * x_ * k_, M[1] + nh[1] * x_ * k_)) for x_ in (900.0, 1500.0))
             mais = lado_coberto(+1) and lado_livre(-1)
             menos = lado_coberto(-1) and lado_livre(+1)
             if mais == menos:
                 cum += L
                 continue                                 # telhado dos dois lados, ou de nenhum: não é perímetro
-            fora = (-nh[0], -nh[1]) if mais else nh
-            off = 110.0                                  # a face de fora do painel
+            fora_ = (-nh[0], -nh[1]) if mais else nh
             zb = zmin - 60.0
-
-            def P(s_, z_):
-                return (A[0] + u[0] * s_ + fora[0] * off, A[1] + u[1] * s_ + fora[1] * off, z_)
 
             def zt(s_):
                 return A[2] + (B[2] - A[2]) * s_ / L + 60.0
-            a_ = 0.0
-            while a_ < L - 1.0:
-                b_ = min(L, a_ + W)
-                ch = {"secoes": [(P(a_, zb), P(b_, zb)), (P(a_, zt(a_)), P(b_, zt(b_)))],
-                      "a": cum + a_, "b": cum + b_, "origem": 0.0, "d": u, "n": nh}
-                so = _solido_da_chapa(ch, telha, camada, normal=(fora[0], fora[1], 0.0))
-                so.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "fechamento": True, "telha": telha["modelo"],
-                                "painel": peca.split("#")[0]}
-                solidos.append(so)
-                area += (b_ - a_) * ((zt(a_) + zt(b_)) / 2 - zb)
-                a_ = b_
+            # o fechamento é duplo: a telha nas duas faces do painel (110 mm do eixo, as ondas para fora de cada face)
+            for face in (fora_, (-fora_[0], -fora_[1])):
+                def P(s_, z_, face=face):
+                    return (A[0] + u[0] * s_ + face[0] * 110.0, A[1] + u[1] * s_ + face[1] * 110.0, z_)
+                a_ = 0.0
+                while a_ < L - 1.0:
+                    b_ = min(L, a_ + W)
+                    ch = {"secoes": [(P(a_, zb), P(b_, zb)), (P(a_, zt(a_)), P(b_, zt(b_)))],
+                          "a": cum + a_, "b": cum + b_, "origem": 0.0, "d": u, "n": nh}
+                    so = _solido_da_chapa(ch, telha, camada, normal=(face[0], face[1], 0.0))
+                    so.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "fechamento": True, "telha": telha["modelo"],
+                                    "painel": peca.split("#")[0], "face": "fora" if face is fora_ else "dentro"}
+                    solidos.append(so)
+                    area += (b_ - a_) * ((zt(a_) + zt(b_)) / 2 - zb)
+                    a_ = b_
             ml += L
             cum += L
     return solidos, ml, area
@@ -646,13 +669,14 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     for ch in chapas:
         so = _solido_da_chapa(ch, telha, camada)
         so.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "telha": telha["modelo"],
+                        **({"recorte": True} if ch.get("recorte") else {}),
                         "comprimento": round(sum(math.dist(((a1[0] + b1[0]) / 2, (a1[1] + b1[1]) / 2, a1[2]), ((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, a2[2]))
                                                  for (a1, b1), (a2, b2) in zip(ch["secoes"], ch["secoes"][1:])))}
         doc.add(so)
     fech, fech_ml, fech_area = _fechamentos(doc, feitos, telha, camada)
     for so in fech:
         doc.add(so)
-    for p in [p for p in feitos if p.get("borda")]:
+    for p in []:                                         # o triângulo da borda virou chapa recortada (_chapas)
         c = p["cantos"]
         e = ESPESSURA_DESENHO
         k = len(c)
@@ -707,6 +731,7 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     return {
         "telha": telha["nome"], "panos": len(feitos), "chapas": len(chapas), "area_m2": round(area, 1), "peso_kg": round(area * telha["massa_m2"], 1),
         "beirais": sum(1 for p in feitos if p.get("beiral")), "bordas": sum(1 for p in feitos if p.get("borda")),
+        "recortes": sum(1 for c in chapas if c.get("recorte")),
         "calhas": len(an["calhas"]), "calha_ml": round(ml_calha / 1000.0, 1),
         "calhas_vale": sum(1 for c in an["calhas"] if c.get("eixo")), "calhas_parede": sum(1 for c in an["calhas"] if c.get("parede")),
         "fechamentos": len(fech), "fechamento_ml": round(fech_ml / 1000.0, 1), "fechamento_m2": round(fech_area / 1e6, 1),

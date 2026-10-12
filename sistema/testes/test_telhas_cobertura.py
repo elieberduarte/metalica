@@ -164,8 +164,8 @@ def test_calha_no_vale_em_v():
     assert all(4040 <= v[0] <= 4360 for v in calha.vertices)            # 300 mm centrada na terça
 
 
-def test_fechamento_na_face_de_fora_do_painel():
-    """o painel da testeira em x −200 (banzos a 6,00 e 7,60), o telhado à direita dele: a TP 40 em pé do lado de fora"""
+def test_fechamento_duplo_no_painel():
+    """o painel da testeira em x −200 (banzos a 6,00 e 7,60), o telhado à direita dele: a TP 40 em pé nas duas faces"""
     doc = Documento()
     _agua(doc, 0.0, 6, 7000.0, 0.05)
     for z in (6000.0, 7600.0):
@@ -174,9 +174,16 @@ def test_fechamento_na_face_de_fora_do_painel():
         doc.add(b)
     r = T.lancar(doc)
     fech = [s for s in doc.solidos if (s.atributos or {}).get("fechamento")]
-    assert r["fechamentos"] == 6 and len(fech) == 6                    # 6 m de painel / 1.020 mm
-    for f in fech:
+    # o fechamento é duplo: 6 m de painel / 1.020 mm = 6 chapas em cada face
+    assert r["fechamentos"] == 12 and len(fech) == 12
+    fora = [f for f in fech if f.atributos["face"] == "fora"]
+    dentro = [f for f in fech if f.atributos["face"] == "dentro"]
+    assert len(fora) == 6 and len(dentro) == 6
+    for f in fora:
         assert max(v[0] for v in f.vertices) <= -200.0 - 100.0          # do lado de fora (sem telhado)
+    for f in dentro:
+        assert min(v[0] for v in f.vertices) >= -200.0 + 100.0          # do lado do telhado
+    for f in fech:
         assert min(v[2] for v in f.vertices) <= 5950.0 and max(v[2] for v in f.vertices) >= 7650.0
 
 
@@ -189,3 +196,15 @@ def test_telha_segue_sob_o_telhado_de_cima():
     T.lancar(doc)
     baixas = [s for s in doc.solidos if s.camada == "Telhas" and max(v[2] for v in s.vertices) < 9000]
     assert min(min(v[0] for v in s.vertices) for s in baixas) <= -380.0
+
+
+def test_borda_escalonada_vira_chapa_recortada():
+    """a terça de cima acaba 2 m antes da de baixo (a borda diagonal): a ponta é coberta por chapas recortadas na diagonal,
+    com as ondas, em vez de uma placa lisa"""
+    doc = Documento()
+    _terca(doc, 0.0, 7000.0, "TC1", y1=6000.0)
+    _terca(doc, 1400.0, 7070.0, "TC2", y1=4000.0)
+    r = T.lancar(doc)
+    assert r["recortes"] >= 2
+    rec = [s for s in doc.solidos if (s.atributos or {}).get("recorte")]
+    assert rec and all(min(v[1] for v in s.vertices) >= 4000.0 - 1 for s in rec)
