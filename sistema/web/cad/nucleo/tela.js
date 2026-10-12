@@ -16,6 +16,8 @@ import { pontosArco, valorCota, dentroDe, segmentosDe, caixaDe, pontosDe, distan
 
 const TRACOS = { CONTINUOUS: [], HIDDEN: [6, 4], CENTER: [16, 4, 4, 4], DASHED: [8, 6], DOT: [2, 3] };
 const PX_GRADE_ALVO = 60;
+/** Até quantos objetos selecionados são pintados por cima do cache, a cada quadro. */
+const SELECAO_POR_CIMA = 3000;
 
 /** Número de cota: inteiro quando é, senão uma casa; com `casas` (0 a 3), sempre esse número de
  *  casas depois da vírgula (pedido do usuário, 28/09). */
@@ -60,8 +62,9 @@ export class Tela {
   get largura() { return this.canvas.clientWidth; }
   get altura() { return this.canvas.clientHeight; }
 
-  paraTela(p) { return [(p[0] - this.vp.x) * this.vp.z, this.altura - (p[1] - this.vp.y) * this.vp.z]; }
-  paraMundo(px) { return [px[0] / this.vp.z + this.vp.x, (this.altura - px[1]) / this.vp.z + this.vp.y]; }
+  // a altura lida do canvas é uma consulta ao navegador: no meio do desenho (milhares de chamadas) vale a do quadro
+  paraTela(p) { return [(p[0] - this.vp.x) * this.vp.z, (this._alturaDoQuadro || this.altura) - (p[1] - this.vp.y) * this.vp.z]; }
+  paraMundo(px) { return [px[0] / this.vp.z + this.vp.x, ((this._alturaDoQuadro || this.altura) - px[1]) / this.vp.z + this.vp.y]; }
   /** mm do modelo por pixel. */
   get mmPorPixel() { return 1 / this.vp.z; }
 
@@ -170,12 +173,25 @@ export class Tela {
           textoInvertido: (c) => c };
   }
 
+  /** As cores do tema atual, guardadas (cada cota pedia o objeto novo). */
+  _coresDoTema() {
+    if (!this._cores || this._cores.escuro !== this.escuro) this._cores = { escuro: this.escuro, cores: this.cores() };
+    return this._cores.cores;
+  }
+
   /** O que define o conteúdo do cache, fora a janela: documento, tema, grade, tamanho. */
   _assinaturaConteudo() {
     return [this.canvas.width, this.canvas.height, this.escuro, this.grade, this.doc.versao, this.doc.escala].join('|');
   }
 
+  /** A seleção pequena é pintada por cima do cache a cada quadro (clicar num objeto não refaz o desenho inteiro); a
+   *  grande (uma janela sobre o desenho todo) vai dentro do cache, como antes. */
+  _selecaoNoCache() { return this.selecao.size > SELECAO_POR_CIMA; }
+
   _mesmaSelecao(f) {
+    const noCache = this._selecaoNoCache();
+    if (noCache !== !!f.selecao) return false;
+    if (!noCache) return true;
     if (f.selecao.size !== this.selecao.size) return false;
     for (const id of this.selecao) if (!f.selecao.has(id)) return false;
     return true;
@@ -197,48 +213,195 @@ export class Tela {
   _renderizarCache(cores) {
     const t0 = performance.now();
     const dpr = window.devicePixelRatio || 1;
-    const W = this.largura, H = this.altura;
     const f = this._cache || (this._cache = { canvas: document.createElement('canvas') });
     if (f.canvas.width !== this.canvas.width || f.canvas.height !== this.canvas.height) {
       f.canvas.width = this.canvas.width; f.canvas.height = this.canvas.height;
     }
     const ctx = f.canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = this._pintar(ctx, cores, 0, 0, this.largura, this.altura);
+    f.assinatura = this._assinaturaConteudo();
+    f.selecao = this._selecaoNoCache() ? new Set(this.selecao) : null;
+    f.vp = { ...this.vp };
+    f.desenhadas = n.desenhadas;
+    f.pontos = n.pontos;
+    f.duracao = performance.now() - t0;
+  }
+
+  /**
+   * Pinta fundo, grade e entidades no retângulo de tela (x0, y0)–(x1, y1), em pixels CSS: a tela inteira (o cache) ou
+   * só a faixa que apareceu num arrasto. Rápido num desenho de centenas de milhares de objetos (CD Bom Dia, 278 mil,
+   * 11/10: o quadro levava ~1 s e o pan/zoom ficava segundos sem os detalhes):
+   *  - linhas, polilinhas, círculos e arcos vão num caminho só por estilo (cor, espessura, tracejado): um traço por
+   *    estilo em vez de um por objeto;
+   *  - o que cabe em menos de um pixel vira um ponto, um só por pixel e um preenchimento por cor;
+   *  - a cor de cada objeto (a troca das quase pretas no tema escuro) é calculada uma vez por cor, não por objeto;
+   *  - hachuras por baixo, textos e cotas por cima, separados numa passada (sem ordenar a lista).
+   */
+  _pintar(ctx, cores, x0, y0, x1, y1) {
+    const W = this.largura, H = this.altura;
+    this._alturaDoQuadro = H;
+    const parcial = x0 > 0 || y0 > 0 || x1 < W || y1 < H;
+    ctx.save();
+    if (parcial) { ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip(); }
+    ctx.__fonte = null;
     ctx.fillStyle = cores.fundo;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     if (this.grade) this._grade(ctx, cores);
 
     const k = this.doc.escala;                    // mm de papel → mm de modelo
-    // só o que toca a tela, com margem para textos e cotas que se estendem além dos
-    // pontos que os definem; hachuras por baixo, textos e cotas por cima
-    const m0 = this.paraMundo([0, H]), m1 = this.paraMundo([W, 0]), mg = 30 * k;
-    const ordem = this.doc.naRegiao([[m0[0] - mg, m0[1] - mg], [m1[0] + mg, m1[1] + mg]]);
-    const peso = (e) => (e.tipo === 'hachura' ? 0 : (e.tipo === 'texto' || e.tipo === 'cota' || e.tipo === 'chamada') ? 2 : 1);
-    ordem.sort((a, b) => peso(a) - peso(b));
-    // nível de detalhe: o que cabe em menos de um pixel (parafusos e furos com a vista
-    // afastada) vira um ponto, e um desenho de centenas de milhares de objetos fica leve
-    const minimo = 0.8 * this.mmPorPixel;
-    let pontos = 0;
-    for (const e of ordem) {
-      if (!this.doc.visivel(e)) continue;
-      const cam = this.doc.camadas.get(e.camada);
+    // só o que toca o retângulo, com margem para textos e cotas que se estendem além dos pontos que os definem
+    const m0 = this.paraMundo([x0, y1]), m1 = this.paraMundo([x1, y0]), mg = 30 * k;
+    const caixas = [];
+    const ordem = this.doc.naRegiao([[m0[0] - mg, m0[1] - mg], [m1[0] + mg, m1[1] + mg]], caixas);
+    const camadas = this.doc.camadas;
+    const sel = this._selecaoNoCache() ? this.selecao : null;
+    const corDaBruta = new Map();
+    const corDe = (e, cam) => {
       // a cor própria do objeto (o DXF importado com as cores do CAD de origem), senão a da camada
-      const cor = this.selecao.has(e.id) ? cores.selecao : cores.textoInvertido((e.atributos && e.atributos.cor) || (cam && cam.cor) || '#4b5563');
-      const c = this.doc.caixaDa(e);
-      if (c && e.tipo !== 'texto' && !this.selecao.has(e.id) && c[1][0] - c[0][0] < minimo && c[1][1] - c[0][1] < minimo) {
-        const [x, y] = this.paraTela(c[0]);
-        ctx.fillStyle = cor;
-        ctx.fillRect(x, y - 1, 1, 1); pontos++;
-        continue;
+      const bruta = (e.atributos && e.atributos.cor) || (cam && cam.cor) || '#4b5563';
+      let c = corDaBruta.get(bruta);
+      if (c === undefined) { c = cores.textoInvertido(bruta); corDaBruta.set(bruta, c); }
+      return c;
+    };
+    const { x: vx, y: vy, z } = this.vp;
+    // nível de detalhe: o que cabe em menos de um pixel (parafusos e furos com a vista afastada) vira um ponto
+    const minimo = 0.8 * this.mmPorPixel;
+    // um ponto por pixel, com a cor do último objeto que caiu nele (como quando cada um era pintado por cima do outro)
+    const Wi = Math.ceil(W) + 1, Hi = Math.ceil(H) + 1;
+    if (!this._ocupado || this._ocupado.length !== Wi * Hi) this._ocupado = new Uint16Array(Wi * Hi); else this._ocupado.fill(0);
+    const ocupado = this._ocupado, coresDosPontos = [], indiceDaCor = new Map();
+    const tracos = new Map(), hachuras = [], porCima = [], selecionadas = [];
+    let nPontos = 0, nDesenhadas = 0;
+    for (let i = 0; i < ordem.length; i++) {
+      const e = ordem[i], cam = camadas.get(e.camada);
+      if (cam && cam.visivel === false) continue;
+      if (sel && sel.has(e.id)) { selecionadas.push(e); continue; }
+      const tipo = e.tipo;
+      if (tipo !== 'texto') {
+        const c = caixas[i];
+        if (c[1][0] - c[0][0] < minimo && c[1][1] - c[0][1] < minimo) {
+          const ix = Math.floor((c[0][0] - vx) * z), iy = Math.floor(H - (c[0][1] - vy) * z) - 1;
+          if (ix < 0 || iy < 0 || ix >= Wi || iy >= Hi) continue;
+          const cor = corDe(e, cam);
+          let ic = indiceDaCor.get(cor);
+          if (ic === undefined && coresDosPontos.length < 65535) { coresDosPontos.push(cor); indiceDaCor.set(cor, ic = coresDosPontos.length); }
+          if (ic !== undefined) ocupado[iy * Wi + ix] = ic;
+          nPontos++;
+          continue;
+        }
       }
-      this._entidade(ctx, e, cor, cam, k, this.selecao.has(e.id));
+      nDesenhadas++;
+      if (tipo === 'hachura') { hachuras.push(e); continue; }
+      if (tipo === 'texto' || tipo === 'cota' || tipo === 'chamada') { porCima.push(e); continue; }
+      const cor = corDe(e, cam);
+      const esp = (cam && cam.espessura) || 0.25, larg = Math.max(1, Math.min(3, esp / 0.25));
+      const tl = (cam && cam.tipo_linha) || 'CONTINUOUS';
+      const chave = cor + '|' + larg + '|' + tl;
+      let lote = tracos.get(chave);
+      if (!lote) tracos.set(chave, lote = { cor, larg, tracos: TRACOS[tl] || [], p: new Path2D() });
+      lote.ultimo = nDesenhadas;
+      this._caminho(lote.p, e, H);
     }
-    f.assinatura = this._assinaturaConteudo();
-    f.selecao = new Set(this.selecao);
-    f.vp = { ...this.vp };
-    f.desenhadas = ordem.length - pontos;
-    f.pontos = pontos;
-    f.duracao = performance.now() - t0;
+    for (const e of hachuras) { const cam = camadas.get(e.camada); this._entidade(ctx, e, corDe(e, cam), cam, k, false); }
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // o lote cujo último objeto veio depois vai por cima: onde linhas de cores diferentes se sobrepõem (o contorno da
+    // telha em cinza e em cor), fica a de cima como quando cada objeto era pintado na sua vez
+    for (const l of [...tracos.values()].sort((a, b) => a.ultimo - b.ultimo)) {
+      ctx.strokeStyle = l.cor; ctx.lineWidth = l.larg; ctx.setLineDash(l.tracos);
+      ctx.stroke(l.p);
+    }
+    ctx.setLineDash([]);
+    if (nPontos) {
+      const pontos = coresDosPontos.map(() => new Path2D());
+      for (let i = 0; i < ocupado.length; i++) { const ic = ocupado[i]; if (ic) pontos[ic - 1].rect(i % Wi, (i / Wi) | 0, 1, 1); }
+      pontos.forEach((p, i) => { ctx.fillStyle = coresDosPontos[i]; ctx.fill(p); });
+    }
+    // textos longe demais para ler viram traços, juntos num preenchimento por cor (_texto)
+    this._tracosDeTexto = new Map();
+    for (const e of porCima) { const cam = camadas.get(e.camada); this._entidade(ctx, e, corDe(e, cam), cam, k, false); }
+    ctx.globalAlpha = 0.5;
+    for (const [cor, p] of this._tracosDeTexto) { ctx.fillStyle = cor; ctx.fill(p); }
+    ctx.globalAlpha = 1;
+    this._tracosDeTexto = null;
+    for (const e of selecionadas) this._entidade(ctx, e, cores.selecao, camadas.get(e.camada), k, true);
+    ctx.restore();
+    ctx.__fonte = null;
+    this._alturaDoQuadro = null;
+    return { desenhadas: nDesenhadas + selecionadas.length, pontos: nPontos };
+  }
+
+  /** Acrescenta ao caminho `p` o traço de uma linha, polilinha, círculo ou arco, em pixels de tela. */
+  _caminho(p, e, H) {
+    const { x: vx, y: vy, z } = this.vp;
+    switch (e.tipo) {
+      case 'linha': p.moveTo((e.a[0] - vx) * z, H - (e.a[1] - vy) * z); p.lineTo((e.b[0] - vx) * z, H - (e.b[1] - vy) * z); break;
+      case 'polilinha': {
+        const v = e.vertices;
+        if (v.length < 2) break;
+        p.moveTo((v[0][0] - vx) * z, H - (v[0][1] - vy) * z);
+        for (let i = 1; i < v.length; i++) p.lineTo((v[i][0] - vx) * z, H - (v[i][1] - vy) * z);
+        // fechada: de volta ao primeiro vértice (o closePath num caminho com milhares de figuras custava caro)
+        if (e.fechada) p.lineTo((v[0][0] - vx) * z, H - (v[0][1] - vy) * z);
+        break;
+      }
+      case 'circulo': {
+        const cx = (e.centro[0] - vx) * z, cy = H - (e.centro[1] - vy) * z, r = e.raio * z;
+        p.moveTo(cx + r, cy); p.arc(cx, cy, r, 0, Math.PI * 2); break;
+      }
+      case 'arco': {
+        // canvas mede ângulos no sentido horário (y para baixo): inverte
+        const cx = (e.centro[0] - vx) * z, cy = H - (e.centro[1] - vy) * z, r = e.raio * z;
+        const a0 = -e.fim * Math.PI / 180;
+        p.moveTo(cx + r * Math.cos(a0), cy + r * Math.sin(a0));
+        p.arc(cx, cy, r, a0, -e.inicio * Math.PI / 180); break;
+      }
+    }
+  }
+
+  /**
+   * Pan puro (o zoom não mudou): o cache anda um número inteiro de pixels físicos e só a faixa que apareceu na borda é
+   * pintada — o arrasto mostra na hora o que estava fora da tela, em vez do vazio até a mão parar (11/10). A janela é
+   * acertada para o deslocamento inteiro (menos de meio pixel), e o que já estava pintado serve sem reamostrar. Quando
+   * a mão para, o quadro é refeito inteiro: cada faixa decide sozinha qual cor fica por cima onde linhas se sobrepõem.
+   * Falso quando não se aplica (zoom, ou um salto de mais de meia tela).
+   */
+  _deslocarPorFaixas(cores) {
+    const f = this._cache, v = this.vp;
+    if (f.vp.z !== v.z) return false;
+    const dpr = window.devicePixelRatio || 1, W = this.largura, H = this.altura;
+    const Dx = Math.round((f.vp.x - v.x) * v.z * dpr), Dy = Math.round((v.y - f.vp.y) * v.z * dpr);
+    if (Math.abs(Dx) * 2 >= f.canvas.width || Math.abs(Dy) * 2 >= f.canvas.height) return false;
+    v.x = f.vp.x - Dx / (dpr * v.z);
+    v.y = f.vp.y + Dy / (dpr * v.z);
+    if (Dx || Dy) {
+      const g = f.troca || (f.troca = document.createElement('canvas'));
+      if (g.width !== f.canvas.width || g.height !== f.canvas.height) { g.width = f.canvas.width; g.height = f.canvas.height; }
+      const ctx = g.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(f.canvas, Dx, Dy);
+      f.troca = f.canvas; f.canvas = g;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const dx = Dx / dpr, dy = Dy / dpr;
+      if (dx > 0) this._pintar(ctx, cores, 0, 0, dx, H); else if (dx < 0) this._pintar(ctx, cores, W + dx, 0, W, H);
+      if (dy > 0) this._pintar(ctx, cores, 0, 0, W, dy); else if (dy < 0) this._pintar(ctx, cores, 0, H + dy, W, H);
+      this._agendarDefinitivo(true);
+    }
+    f.vp = { ...v };
+    return true;
+  }
+
+  /** O quadro definitivo quando a janela fica parada 110 ms; `refazer`: também com o cache já na janela atual (o
+   *  montado por faixas). */
+  _agendarDefinitivo(refazer = false) {
+    if (refazer) this._refazerAoParar = true;
+    if (this._timerDefinitivo) clearTimeout(this._timerDefinitivo);
+    this._timerDefinitivo = setTimeout(() => {
+      this._timerDefinitivo = null; this._definitivo = true;
+      if (this._refazerAoParar && this._cache) this._cache.vp = { x: NaN, y: NaN, z: NaN };
+      this._refazerAoParar = false;
+      this.pedirQuadro();
+    }, 110);
   }
 
   /** Cache deslocado/escalado para a janela atual: resposta imediata ao pan e ao zoom
@@ -251,8 +414,7 @@ export class Tela {
     ctx.fillStyle = cores.fundo;
     ctx.fillRect(0, 0, W, H);
     ctx.drawImage(f.canvas, dx, dy, W * s, H * s);
-    if (this._timerDefinitivo) clearTimeout(this._timerDefinitivo);
-    this._timerDefinitivo = setTimeout(() => { this._timerDefinitivo = null; this._definitivo = true; this.pedirQuadro(); }, 160);
+    this._agendarDefinitivo();
   }
 
   desenhar() {
@@ -261,8 +423,12 @@ export class Tela {
     if (!this.canvas.width || !this.canvas.height || !this.largura || !this.altura) return;
     const ctx = this.ctx, dpr = window.devicePixelRatio || 1;
     const cores = this.cores();
-    // quadro pesado (> 40 ms) durante pan/zoom: aproxima com o cache e só refaz de
-    // verdade quando a janela fica parada 160 ms
+    ctx.__fonte = null;                              // outros (o snap, a montagem) mudam a fonte deste canvas
+    this._alturaDoQuadro = null;
+    // pan puro: o cache anda e só a faixa nova é pintada
+    if (!this._cacheValido() && this._cacheSoDeslocado()) this._deslocarPorFaixas(cores);
+    // quadro pesado (> 40 ms) durante o zoom: aproxima com o cache e só refaz de
+    // verdade quando a janela fica parada 110 ms
     const aproximar = !this._cacheValido() && this._cacheSoDeslocado() && this._cache.duracao > 40 && !this._definitivo;
     this._definitivo = false;
     if (aproximar) {
@@ -276,6 +442,13 @@ export class Tela {
     }
 
     const k = this.doc.escala;
+    // a seleção pequena por cima do cache (a grande já está nele)
+    if (this.selecao.size && !this._selecaoNoCache()) {
+      for (const id of this.selecao) {
+        const e = this.doc.get(id);
+        if (e && this.doc.visivel(e)) this._entidade(ctx, e, cores.selecao, this.doc.camadas.get(e.camada), k, true);
+      }
+    }
     // realce do que está sob o mouse por cima do cache: passar o mouse não refaz o desenho
     if (this.realce && !this.selecao.has(this.realce)) {
       const e = this.doc.get(this.realce);
@@ -376,21 +549,26 @@ export class Tela {
 
   _texto(ctx, pos, texto, alturaMm, angulo, alinhamento = 'esquerda', vertical = 'base', cor) {
     const px = alturaMm * this.vp.z;
+    const [x, y] = this.paraTela(pos);
     if (px < 2.5) {                      // longe demais para ler: um traço do tamanho do texto
-      const [x, y] = this.paraTela(pos);
-      const w = (texto || '').length * px * 0.6;
-      ctx.globalAlpha = 0.5; ctx.fillRect(alinhamento === 'centro' ? x - w / 2 : alinhamento === 'direita' ? x - w : x, y - px, w, px); ctx.globalAlpha = 1;
+      const w = (texto || '').length * px * 0.6, x0 = alinhamento === 'centro' ? x - w / 2 : alinhamento === 'direita' ? x - w : x;
+      const lote = this._tracosDeTexto;  // pintando o cache: juntos, um preenchimento por cor no fim
+      if (lote) { let p = lote.get(cor); if (!p) lote.set(cor, p = new Path2D()); p.rect(x0, y - px, w, px); return; }
+      ctx.globalAlpha = 0.5; ctx.fillRect(x0, y - px, w, px); ctx.globalAlpha = 1;
       return;
     }
-    const [x, y] = this.paraTela(pos);
-    ctx.save();
-    ctx.translate(x, y); ctx.rotate(-(angulo || 0) * Math.PI / 180);
-    ctx.font = `${px}px "Segoe UI", Roboto, Arial, sans-serif`;
+    // trocar a fonte custa (o navegador interpreta o texto dela): só quando muda
+    const fonte = `${px}px "Segoe UI", Roboto, Arial, sans-serif`;
+    if (ctx.__fonte !== fonte) { ctx.font = fonte; ctx.__fonte = fonte; }
     ctx.textAlign = alinhamento === 'centro' ? 'center' : alinhamento === 'direita' ? 'right' : 'left';
     ctx.textBaseline = vertical === 'meio' ? 'middle' : vertical === 'topo' ? 'top' : 'alphabetic';
-    ctx.fillStyle = cor; ctx.setLineDash([]);
+    ctx.fillStyle = cor;
+    if (!angulo) { ctx.fillText(texto || '', x, y); return; }
+    // girado: a transformação montada direto (sem save/restore), e de volta à da tela
+    const dpr = window.devicePixelRatio || 1, a = -angulo * Math.PI / 180, c = Math.cos(a) * dpr, s = Math.sin(a) * dpr;
+    ctx.setTransform(c, s, -s, c, x * dpr, y * dpr);
     ctx.fillText(texto || '', 0, 0);
-    ctx.restore();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   _seta(ctx, p, ang, tam) {
@@ -477,7 +655,7 @@ export class Tela {
     const t = Tela.textoCota(c, k);
     // o número na cor do texto (branco no tema escuro, preto no claro), como o texto da cota do AutoCAD
     // — na cor da linha (verde) ele sumia no fundo (pedido do usuário, 28/09); selecionada/realce, na cor dela
-    const cs = this.cores();
+    const cs = this._coresDoTema();
     const destacada = cor === cs.selecao || cor === cs.realce || cor === cs.previa;
     const camTexto = this.doc.camadas.get('TEXTO');
     this._texto(ctx, t.pos, t.txt, t.h, t.angG, 'centro', 'base', destacada ? cor : cs.textoInvertido((camTexto && camTexto.cor) || '#111827'));

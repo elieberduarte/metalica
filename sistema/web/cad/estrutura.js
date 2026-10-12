@@ -1201,7 +1201,10 @@ export class MetodosEstruturaCAD {
   _desenharLarguraDasVigas() {
     if (!this.doc.camadas.has(CAMADA_ESTRUTURA)) return;
     const t = this.tela, ctx = t.ctx, cat = this._catalogoEstrutura;
-    for (const e of this.doc.entidades.values()) {
+    // só as da tela (roda a cada quadro, a cada movimento do mouse: varrer o desenho todo pesava na planta grande);
+    // a margem cobre a meia largura da faixa além da linha do eixo
+    const m0 = t.paraMundo([0, t.altura]), m1 = t.paraMundo([t.largura, 0]), mg = 1500;
+    for (const e of this.doc.naRegiao([[m0[0] - mg, m0[1] - mg], [m1[0] + mg, m1[1] + mg]])) {
       const a = e.atributos || {};
       if (e.tipo !== 'linha' || a.elemento !== 'viga' || !this.doc.visivel(e)) continue;
       const w = larguraDaVigaGravada(a, cat), L = dist(e.a, e.b);

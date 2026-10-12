@@ -410,6 +410,7 @@ export class Desenho2D {
     for (const e of this.entidades.values()) {
       const c = this._caixaDoIndice(e);
       if (!c) continue;
+      c.e = e;                                     // a entidade na caixa: a consulta não a procura pelo id
       caixas.set(e.id, c); n++;
       if (c[0][0] < x0) x0 = c[0][0]; if (c[0][1] < y0) y0 = c[0][1];
       if (c[1][0] > x1) x1 = c[1][0]; if (c[1][1] > y1) y1 = c[1][1];
@@ -418,7 +419,7 @@ export class Desenho2D {
     // célula, e uma diagonal comprida (contraventamento) não cai em centenas delas
     const lado = Math.max(x1 - x0, y1 - y0, 1);
     const celula = Math.max(lado / Math.max(8, Math.min(160, Math.ceil(Math.sqrt(n) / 2))), 1);
-    this._grade = { celula, caixas, celulas: new Map() };
+    this._grade = { celula, caixas, celulas: new Map(), consulta: 0, extensao: n ? [[x0, y0], [x1, y1]] : null };
     for (const [id, c] of caixas) this._indexar(id, c);
     return this._grade;
   }
@@ -442,6 +443,13 @@ export class Desenho2D {
 
   _indexar(id, c) {
     const g = this._grade, [i0, j0, i1, j1] = this._chavesDe(c);
+    // a extensão só cresce (o que sai não a encolhe): continua cobrindo todas as caixas
+    const x = g.extensao;
+    if (!x) g.extensao = [[c[0][0], c[0][1]], [c[1][0], c[1][1]]];
+    else {
+      if (c[0][0] < x[0][0]) x[0][0] = c[0][0]; if (c[0][1] < x[0][1]) x[0][1] = c[0][1];
+      if (c[1][0] > x[1][0]) x[1][0] = c[1][0]; if (c[1][1] > x[1][1]) x[1][1] = c[1][1];
+    }
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
       const k = Desenho2D._chave(i, j);
       let cel = g.celulas.get(k);
@@ -468,7 +476,7 @@ export class Desenho2D {
       this._desindexar(id);
       const e = this.entidades.get(id);
       const c = e ? this._caixaDoIndice(e) : null;
-      if (c) { this._grade.caixas.set(id, c); this._indexar(id, c); }
+      if (c) { c.e = e; this._grade.caixas.set(id, c); this._indexar(id, c); }
     }
   }
 
@@ -477,26 +485,38 @@ export class Desenho2D {
     return this._indice().caixas.get(e.id) || null;
   }
 
-  /** Entidades cuja caixa toca a região [[x0,y0],[x1,y1]] (em mm do modelo). */
-  naRegiao(regiao) {
-    const g = this._indice(), [i0, j0, i1, j1] = this._chavesDe(regiao);
-    const total = (i1 - i0 + 1) * (j1 - j0 + 1);
-    const fora = [];
-    const toca = (c) => c[1][0] >= regiao[0][0] && c[0][0] <= regiao[1][0] && c[1][1] >= regiao[0][1] && c[0][1] <= regiao[1][1];
-    if (total > g.celulas.size) {
-      // região maior que a grade ocupada: mais barato olhar as células que existem
-      const vistos = new Set();
-      for (const c of g.celulas.values()) {
-        if (c.i < i0 || c.i > i1 || c.j < j0 || c.j > j1) continue;
-        for (const id of c.ids) if (!vistos.has(id)) { vistos.add(id); if (toca(g.caixas.get(id))) fora.push(this.entidades.get(id)); }
-      }
+  /** Entidades cuja caixa toca a região [[x0,y0],[x1,y1]] (em mm do modelo). Com `caixas` (uma lista), a caixa de
+   *  cada uma vai nela, na mesma ordem. */
+  naRegiao(regiao, caixas = null) {
+    const g = this._indice(), fora = [];
+    // a região cobre o desenho todo (a vista inteira): todas, sem passar pelas células
+    const x = g.extensao;
+    if (x && regiao[0][0] <= x[0][0] && regiao[0][1] <= x[0][1] && regiao[1][0] >= x[1][0] && regiao[1][1] >= x[1][1]) {
+      for (const c of g.caixas.values()) { fora.push(c.e); if (caixas) caixas.push(c); }
       return fora;
     }
-    const vistos = new Set();
+    const [i0, j0, i1, j1] = this._chavesDe(regiao);
+    const total = (i1 - i0 + 1) * (j1 - j0 + 1);
+    const toca = (c) => c[1][0] >= regiao[0][0] && c[0][0] <= regiao[1][0] && c[1][1] >= regiao[0][1] && c[0][1] <= regiao[1][1];
+    // a entidade que ocupa várias células aparece uma vez só: a caixa dela guarda o número da consulta (mais leve que
+    // um conjunto de "já vistos" com centenas de milhares de ids)
+    const q = ++g.consulta;
+    const olhar = (cel) => {
+      for (const id of cel.ids) {
+        const c = g.caixas.get(id);
+        if (c.q === q) continue;
+        c.q = q;
+        if (toca(c)) { fora.push(c.e); if (caixas) caixas.push(c); }
+      }
+    };
+    if (total > g.celulas.size) {
+      // região maior que a grade ocupada: mais barato olhar as células que existem
+      for (const c of g.celulas.values()) if (c.i >= i0 && c.i <= i1 && c.j >= j0 && c.j <= j1) olhar(c);
+      return fora;
+    }
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
       const c = g.celulas.get(Desenho2D._chave(i, j));
-      if (!c) continue;
-      for (const id of c.ids) if (!vistos.has(id)) { vistos.add(id); if (toca(g.caixas.get(id))) fora.push(this.entidades.get(id)); }
+      if (c) olhar(c);
     }
     return fora;
   }

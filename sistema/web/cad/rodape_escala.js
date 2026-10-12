@@ -118,15 +118,23 @@ export function instalarRodapeEscala(cad) {
   }
   palco.append(caixa);
 
-  let opcoes = '';
+  // roda a cada quadro do desenho (cada movimento do mouse): só refaz quando algo que ele mostra mudou — antes lia as
+  // opções do seletor (innerHTML) e media a tela (getBoundingClientRect) em todo quadro (11/10)
+  let opcoes = '', opcoesMudaram = true, ultima = '';
+  new MutationObserver(() => { opcoesMudaram = true; }).observe(original, { childList: true, subtree: true, characterData: true });
   const atualizar = () => {
     // as opções do seletor de cima (a escala do DXF importado entra como opção nova)
-    if (original.innerHTML !== opcoes) { opcoes = original.innerHTML; sel.innerHTML = opcoes; }
+    if (opcoesMudaram) { opcoesMudaram = false; if (original.innerHTML !== opcoes) { opcoes = original.innerHTML; sel.innerHTML = opcoes; } }
     if (sel.value !== original.value) sel.value = original.value;
     if (unidadeAtual() !== da()) definirUnidade(da());            // o desenho aberto manda (cada um grava a sua)
     if (selUn.value !== unidadeAtual()) selUn.value = unidadeAtual();
     const mmpp = cad.tela.mmPorPixel;
     if (!(mmpp > 0)) return;
+    const abas = document.getElementById('abas-projeto');
+    const visiveis = abas && !abas.hidden ? [...abas.querySelectorAll('button')].filter(b => !b.hidden) : [];
+    const chave = [mmpp, original.value, cad.doc.escala, unidadeAtual(), window.innerWidth, visiveis.map(b => b.textContent).join(',')].join('|');
+    if (chave === ultima) return;
+    ultima = chave;
     const L = COMPRIMENTOS.find(c => c / mmpp >= 50) || COMPRIMENTOS[COMPRIMENTOS.length - 1];
     barra.style.width = `${Math.round(Math.min(L / mmpp, 220))}px`;
     texto.textContent = rotulo(L);
@@ -138,14 +146,14 @@ export function instalarRodapeEscala(cad) {
     // os botões do rodapé do desenho (Original, Montagem… Nova revisão do DXF) passam por baixo quando a tela é estreita:
     // o quadrinho sobe uma linha
     // pelos botões que aparecem, não pela faixa inteira (ela ocupa a largura toda e o quadrinho subia sempre)
-    const abas = document.getElementById('abas-projeto');
-    caixa.style.bottom = '10px';
-    if (abas && !abas.hidden) {
+    let baixo = '10px';
+    if (visiveis.length) {
       const c = caixa.getBoundingClientRect();
-      const bs = [...abas.querySelectorAll('button')].filter(b => !b.hidden).map(b => b.getBoundingClientRect()).filter(r => r.width);
+      const bs = visiveis.map(b => b.getBoundingClientRect()).filter(r => r.width);
       const direita = bs.length ? Math.max(...bs.map(r => r.right)) : -Infinity;
-      if (direita > c.left - 8) caixa.style.bottom = `${Math.round(Math.max(...bs.map(r => r.height)) + 18)}px`;
+      if (direita > c.left - 8) baixo = `${Math.round(Math.max(...bs.map(r => r.height)) + 18)}px`;
     }
+    if (caixa.style.bottom !== baixo) caixa.style.bottom = baixo;
   };
   const antes = cad.tela.aoDesenhar;
   cad.tela.aoDesenhar = () => { if (antes) antes(); atualizar(); };
