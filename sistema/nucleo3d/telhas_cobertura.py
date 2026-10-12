@@ -767,7 +767,84 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         "caida_max": max((a["caida_pct"] for a in lista_aguas), default=None),
         "fora_do_plano": sorted(fora.values(), key=lambda f: -abs(f["desvio"])),
         "vaos_grandes": [dict(v, comp=round(v["comp"]), ponto=[round(c) for c in v["ponto"]]) for v in vaos_grandes.values() if v["comp"] > 300],
+        "ao_lado": conferir_ao_lado(chapas),
     }
+
+
+def conferir_ao_lado(chapas, limite: float = 20.0) -> List[dict]:
+    """A telha ao lado (12/10, o usuário: "precisa existir alguma verificação da telha ao lado, para seguir um
+    alinhamento … o que comanda no final é a telha, toda a estrutura é feita para acomodá-las"): cada chapa com a da
+    faixa do lado — a borda comum na mesma altura — e a caída dela reta — a terça do meio na reta das vizinhas. Devolve
+    os pontos que não encaixam ({tipo: degrau|dobra, mm, ponto}), do maior para o menor, um por lugar (2 m)."""
+    def borda(ch, lado):
+        n = ch["n"]
+        return sorted(((Q[0] * n[0] + Q[1] * n[1], Q[2], Q[0], Q[1]) for Q in (s[lado] for s in ch["secoes"])))
+
+    def z_em(bd, t):
+        for (t0, z0, *_r0), (t1, z1, *_r1) in zip(bd, bd[1:]):
+            if t0 - 1.0 <= t <= t1 + 1.0:
+                return z0 + (z1 - z0) * (t - t0) / ((t1 - t0) or 1.0)
+        return None
+    achados = []
+    por_dir: Dict[tuple, list] = collections.defaultdict(list)
+    for ch in chapas:
+        if not ch.get("recorte"):
+            por_dir[(round(ch["d"][0], 4), round(ch["d"][1], 4))].append(ch)
+    for lst in por_dir.values():
+        pela_a: Dict[int, list] = collections.defaultdict(list)
+        for ch in lst:
+            pela_a[round(ch["a"])].append(ch)
+        for ch in lst:
+            bd1 = borda(ch, 1)
+            for viz in pela_a.get(round(ch["b"]), []):
+                bd2 = borda(viz, 0)
+                t_lo, t_hi = max(bd1[0][0], bd2[0][0]), min(bd1[-1][0], bd2[-1][0])
+                if t_hi - t_lo < 200.0:
+                    continue
+                pior = None
+                for i in range(11):
+                    t = t_lo + (t_hi - t_lo) * i / 10.0
+                    z1, z2 = z_em(bd1, t), z_em(bd2, t)
+                    if z1 is None or z2 is None or (pior is not None and abs(z1 - z2) <= abs(pior[0])):
+                        continue
+                    f = (t - bd1[0][0]) / ((bd1[-1][0] - bd1[0][0]) or 1.0)
+                    pior = (z1 - z2, bd1[0][2] + (bd1[-1][2] - bd1[0][2]) * f, bd1[0][3] + (bd1[-1][3] - bd1[0][3]) * f)
+                if pior and abs(pior[0]) > limite:
+                    achados.append({"tipo": "degrau", "mm": round(pior[0]), "ponto": [round(pior[1]), round(pior[2])]})
+        # a caída de cada faixa inteira (as chapas da faixa emendadas: a terça erguida parte a chapa ali): a terça do meio
+        # fora da reta das vizinhas é dobra — menos na cumeeira e no vale (a caída troca de sentido, é de propósito)
+        def chave(P):
+            return (round(P[0] / 5.0), round(P[1] / 5.0))
+        for a_faixa, da_faixa in pela_a.items():
+            comeca = {chave(((c["secoes"][0][0][0] + c["secoes"][0][1][0]) / 2, (c["secoes"][0][0][1] + c["secoes"][0][1][1]) / 2)): c
+                      for c in da_faixa}
+            termina = {chave(((c["secoes"][-1][0][0] + c["secoes"][-1][1][0]) / 2, (c["secoes"][-1][0][1] + c["secoes"][-1][1][1]) / 2))
+                       for c in da_faixa}
+            for ch in da_faixa:
+                m0 = chave(((ch["secoes"][0][0][0] + ch["secoes"][0][1][0]) / 2, (ch["secoes"][0][0][1] + ch["secoes"][0][1][1]) / 2))
+                if m0 in termina:
+                    continue                                  # não é o começo da fila
+                secoes, c_ = list(ch["secoes"]), ch
+                for _k in range(50):
+                    fim = secoes[-1]
+                    prox = comeca.get(chave(((fim[0][0] + fim[1][0]) / 2, (fim[0][1] + fim[1][1]) / 2)))
+                    if prox is None or prox is c_:
+                        break
+                    secoes += prox["secoes"][1:]
+                    c_ = prox
+                meio = [((A[0] + B[0]) / 2, (A[1] + B[1]) / 2, (A[2] + B[2]) / 2) for A, B in secoes]
+                for P0, P1, P2 in zip(meio, meio[1:], meio[2:]):
+                    h01, h02 = math.hypot(P1[0] - P0[0], P1[1] - P0[1]), math.hypot(P2[0] - P0[0], P2[1] - P0[1]) or 1.0
+                    i1, i2 = (P1[2] - P0[2]) / (h01 or 1.0), (P2[2] - P1[2]) / ((h02 - h01) or 1.0)
+                    if (i1 > 0.005 and i2 < -0.005) or (i1 < -0.005 and i2 > 0.005):
+                        continue                              # a cumeeira, o vale
+                    dz = P1[2] - (P0[2] + (P2[2] - P0[2]) * h01 / h02)
+                    if abs(dz) > limite:
+                        achados.append({"tipo": "dobra", "mm": round(dz), "ponto": [round(P1[0]), round(P1[1])]})
+    um_por_lugar: Dict[tuple, dict] = {}
+    for a in sorted(achados, key=lambda a: -abs(a["mm"])):
+        um_por_lugar.setdefault((a["tipo"], round(a["ponto"][0] / 2000.0), round(a["ponto"][1] / 2000.0)), a)
+    return list(um_por_lugar.values())
 
 
 # ---------------------------------------------------------------------------------------------- as terças no plano

@@ -2528,6 +2528,93 @@ def orientar(trechos: List[Trecho], linhas_terca=None,
             contra_marcas.append((_bonito(t.nome), round(c0 / n_v), t.caminho.ponto(t.caminho.comprimento / 2.0)))
         else:
             t.invertida = not t.invertida
+    # de cima para baixo — a telha manda: na mesma água, a tesoura tem o banzo de cima com o mesmo perfil das paralelas
+    # vizinhas (a telha passa reta de uma para a outra). A que, como está, fica desencontrada delas (> 120 mm em média) e,
+    # virada, se encontra (< 40 mm), vira — mesmo contra as marcas ST (12/10: as TESOURAS 8 e 9 do Posto, curtas, com
+    # poucas marcas, ficaram com o alto junto do PAINEL 12, ao contrário da TESOURA 3 a 3,8 m e das TESOURAS 10 e 11:
+    # as terças nelas subiam e desciam e a telha fazia uma água falsa para a parede da abertura oval)
+    def paralelas(t):
+        if t.caminho.tipo != "reta":
+            return []
+        (tx, ty), L = _unit(t.caminho.a, t.caminho.b)
+        out = []
+        for u in ts_alt:
+            if u is t or u.caminho.tipo != "reta" or not na_linha(t, u):
+                continue
+            s_m, d_m = u.caminho.projetar(t.caminho.ponto(L / 2.0))
+            if not (800.0 < d_m < 6000.0):
+                continue
+            pts = []
+            for k in range(1, 8):
+                p = t.caminho.ponto(L * k / 8.0)
+                s_u, d_u = u.caminho.projetar(p)
+                if 50.0 < s_u < u.caminho.comprimento - 50.0 and abs(d_u - d_m) < 300.0:
+                    pts.append((p, u.caminho.ponto(s_u)))
+            if len(pts) >= 4:
+                out.append((d_m, u, pts))
+        return sorted(out, key=lambda x: x[0])[:2]
+
+    def custo_par(t, u, pts) -> Optional[float]:
+        ds = [abs(ht - hu) for p, q in pts
+              for ht, hu in [(_altura_no_ponto(t, p, 50.0), _altura_no_ponto(u, q, 50.0))] if ht is not None and hu is not None]
+        return sum(ds) / len(ds) if len(ds) >= 4 else None
+    # as que viram juntas (duas invertidas lado a lado se confirmam uma à outra): o bloco das paralelas que se encontram
+    # entre si vira inteiro, se virado ele se encontra com as de fora. A cada volta vira o bloco que mais acerta
+    # encontros com as de fora (as TESOURAS 8 e 9 acertam dois — com a 3 e com a 10; a tesoura da ponta, que só tem uma
+    # vizinha, acertaria um), até nenhum melhorar
+    soltas = [t for t in ts_alt if t.familia == "TESOURA" and t.sentido_por not in ("emenda na treliça que passa", "cruzamento na emenda")]
+    viz_p = {id(t): [(u, pts) for _d, u, pts in paralelas(t)] for t in soltas}
+    viradas_p = set()
+
+    def blocos():
+        vistos, out = set(), []
+        for t in soltas:
+            if id(t) in vistos or not viz_p[id(t)]:
+                continue
+            bloco, fila = {id(t): t}, [t]
+            while fila:
+                a_ = fila.pop()
+                for u, pts in viz_p.get(id(a_), []):
+                    if id(u) in bloco or id(u) not in viz_p:
+                        continue
+                    c_ = custo_par(a_, u, pts)
+                    if c_ is not None and c_ < 40.0:
+                        bloco[id(u)] = u
+                        fila.append(u)
+            vistos |= set(bloco)
+            out.append(bloco)
+        return out
+
+    def virar(bloco):
+        for a_ in bloco.values():
+            a_.invertida = not a_.invertida
+    for _volta in range(8):
+        melhor = None
+        for bloco in blocos():
+            # um pedaço grande da cobertura que concorda está certo; o bloco já virado não volta
+            if len(bloco) > 4 or any(i in viradas_p for i in bloco):
+                continue
+            fora = [(a_, u, pts) for a_ in bloco.values() for u, pts in viz_p[id(a_)] if id(u) not in bloco]
+            antes = [c_ for a_, u, pts in fora for c_ in [custo_par(a_, u, pts)] if c_ is not None]
+            virar(bloco)
+            depois = [c_ for a_, u, pts in fora for c_ in [custo_par(a_, u, pts)] if c_ is not None]
+            virar(bloco)
+            if not antes or len(depois) != len(antes):
+                continue
+            # as inclinações ao contrário se cruzam: a diferença vai de zero numa ponta ao dobro da média na outra
+            m0, m1 = sum(antes) / len(antes), sum(depois) / len(depois)
+            if m0 > 50.0 and m1 < 25.0 and m1 < m0 / 3.0:
+                ganho = (sum(antes) - sum(depois), -len(bloco))
+                if melhor is None or ganho > melhor[0]:
+                    melhor = (ganho, bloco, m0)
+        if melhor is None:
+            break
+        _g, bloco, m0 = melhor
+        virar(bloco)
+        for a_ in bloco.values():
+            a_.sentido_por = "a água das vizinhas paralelas" + (" (contra as marcas ST)" if a_.sentido_por == "marcas ST" else "")
+            viradas_p.add(id(a_))
+            contra_marcas.append((_bonito(a_.nome), round(m0), a_.caminho.ponto(a_.caminho.comprimento / 2.0)))
     resto = [custo(t) / max(1, len(vizinhos[id(t)])) for t in ts_alt if vizinhos[id(t)]]
     return {"trelicas": len(ts), "pelas_marcas": pelas_marcas, "pelo_cruzamento": pelo_cruzamento, "pelas_alturas": trocas,
             "contra_as_marcas": contra_marcas,
@@ -3393,8 +3480,9 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
             eixos_t_ids = [next(iter(c.fontes), None) if c.fontes else None for c in ret_t]
     ori = orientar(trechos, eixos_t)
     for nome_t, dif, meio_t in ori.pop("contra_as_marcas", []):
-        avisos.append("%s em (%.0f; %.0f): as marcas ST da elevação davam o sentido com o banzo de cima %d mm "
-                      "desencontrado das treliças vizinhas; ficou virada, encontrando com elas — confira."
+        avisos.append("%s em (%.0f; %.0f): o sentido lido (as marcas ST, o costume do desenho) deixava o banzo de cima "
+                      "%d mm desencontrado das treliças vizinhas (na mesma linha, ou as paralelas da mesma água); ficou "
+                      "virada, encontrando com elas — confira."
                       % (nome_t, meio_t[0], meio_t[1], dif))
     ori["ajustadas_aos_nos"] = ajustar_aos_nos(trechos, eixos_t)
     aparadas = aparar_nas_faces(trechos)

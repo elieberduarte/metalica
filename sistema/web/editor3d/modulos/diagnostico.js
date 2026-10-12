@@ -287,7 +287,8 @@ export class MetodosDiagnostico {
           destacando = false;
         }
         esconderReferencia();
-        const a = ANGULOS[nome] || ANGULOS.aerea_frente;
+        // obj.dir: uma direção de câmera qualquer (a conferência de um trecho visto como o usuário viu, 12/10)
+        const a = obj && Array.isArray(obj.dir) ? { dir: obj.dir } : (ANGULOS[nome] || ANGULOS.aerea_frente);
         this.camera.concluirAnimacao();
         // enquadrar: 'destaque' (as peças do destaque) ou uma lista de ids (o pavimento inteiro)
         const quadro = obj && Array.isArray(obj.enquadrar) ? obj.enquadrar.filter((i) => doc.get(i))

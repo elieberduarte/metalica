@@ -208,3 +208,23 @@ def test_borda_escalonada_vira_chapa_recortada():
     assert r["recortes"] >= 2
     rec = [s for s in doc.solidos if (s.atributos or {}).get("recorte")]
     assert rec and all(min(v[1] for v in s.vertices) >= 4000.0 - 1 for s in rec)
+
+def test_telha_ao_lado_aponta_o_degrau_e_a_dobra():
+    """a telha ao lado (12/10): na água reta nada; com a terça do meio 50 mm acima da reta das vizinhas num pedaço
+    dela, a chapa dobra ali (50 mm) e a do lado, que passa pelo pedaço certo, fica num degrau"""
+    doc = Documento()
+    _agua(doc, 0.0, 5, 7000.0, 0.05)
+    assert T.lancar(doc)["ao_lado"] == []
+    doc = Documento()
+    for i in range(5):
+        x, z = i * 1400.0, 7000.0 + i * 1400.0 * 0.05
+        if i == 2:
+            _terca(doc, x, z + 50.0, "TC1", 0.0, 3060.0)
+            _terca(doc, x, z, "TC1", 3060.0, 6000.0)
+        else:
+            _terca(doc, x, z, "TC1")
+    r = T.lancar(doc)
+    dobras = [a for a in r["ao_lado"] if a["tipo"] == "dobra"]
+    degraus = [a for a in r["ao_lado"] if a["tipo"] == "degrau"]
+    assert dobras and 40 <= abs(dobras[0]["mm"]) <= 60 and abs(dobras[0]["ponto"][0] - 2800) < 5
+    assert degraus and 40 <= abs(degraus[0]["mm"]) <= 60

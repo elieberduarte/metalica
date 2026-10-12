@@ -738,3 +738,22 @@ def test_terca_assentada_no_topo_dos_banzos():
     for y, zb in ((0.0, 7000.0), (3000.0, 7000.0), (6000.0, 7030.0)):
         f = (t.inicio[2] + (t.fim[2] - t.inicio[2]) * (y + 50.0) / 6100.0 + fundo) - (zb + topo)
         assert -0.5 <= f <= 20.0
+
+def test_sentido_pela_agua_das_paralelas():
+    """de cima para baixo (12/10, as TESOURAS 8 e 9 do Posto): cinco tesouras paralelas, a 3 m uma da outra, numa água
+    de 5 %; as duas do meio vieram com o alto do outro lado (o desenho ao contrário) e uma confirma a outra — viram as
+    duas juntas, e as das pontas, com uma vizinha só, ficam"""
+    M = de_planta.Membro
+    C = de_planta.Caminho
+
+    def tes(nome, y, alto_na_esquerda):
+        el = de_planta.Elevacao(nome=nome, familia="TESOURA", qtd=1, comprimento=6000.0)
+        h0, h1 = (1300.0, 1000.0) if alto_na_esquerda else (1000.0, 1300.0)
+        el.membros = [M(0, 0, 6000, 0, "banzo"), M(0, h0, 6000, h1, "banzo")]
+        return de_planta.Trecho(caminho=C("reta", a=(0.0, y), b=(6000.0, y)), nome=nome, familia="TESOURA", elevacao=el)
+    ts = [tes("TESOURA %d" % (k + 1), 3000.0 * k, k not in (1, 2)) for k in range(5)]
+    r = de_planta.orientar(ts)
+    for t in ts:
+        assert abs(de_planta._altura_no_ponto(t, (300.0, t.caminho.a[1])) - 1285.0) < 20.0, t.nome
+    assert [t.nome for t in ts if t.sentido_por.startswith("a água das vizinhas")] == ["TESOURA 2", "TESOURA 3"]
+    assert len(r["contra_as_marcas"]) == 2
