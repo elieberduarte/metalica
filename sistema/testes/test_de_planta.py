@@ -699,3 +699,13 @@ def test_presilhas_da_cantoneira_dupla_pela_norma():
     menos duas ligações. Na L 1"×1/8" (rx 0,75, rmin 0,48 cm): 3 intervalos, 2 presilhas; perfil desconhecido: 2."""
     assert de_planta._presilhas_pela_norma('L 1"×1/8"') == 2
     assert de_planta._presilhas_pela_norma("perfil que não existe") == 2
+
+
+def test_cantoneira_dupla_nas_abas_do_u():
+    """A cantoneira dupla vai uma em cada aba do U do banzo, soldada na face de dentro dela (usuário, 07/10 e 12/10): o eixo
+    fica a d/2 − t − xg do plano. Sem U que receba o par (caixão, U estreito demais), costas com costas a bf/2 + 3."""
+    af, nas_abas, xg = de_planta._cantoneira_na_aba_do_u('L 2"×1/8"', "U 200×100×6,35 (FF)", False)
+    assert nas_abas and abs((af + xg) - (100.0 - 6.35)) < 0.01             # a face de fora encosta na aba do U
+    af, nas_abas, _xg = de_planta._cantoneira_na_aba_do_u('L 2"×1/8"', "U 100×40×2,25 (FF)", False)
+    assert not nas_abas and abs(af - (50.8 / 2 + 3.0)) < 0.01              # as abas de dentro se encontrariam
+    assert not de_planta._cantoneira_na_aba_do_u('L 2"×1/8"', "U 200×100×6,35 (FF)", True)[1]   # caixão

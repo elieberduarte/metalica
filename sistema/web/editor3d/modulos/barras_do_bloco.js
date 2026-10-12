@@ -303,13 +303,35 @@ export class MetodosBarrasDoBloco {
       });
       return { e, lado: pos.lados[i], contorno, eixo: no2d([0, 1, 2].map(k => m[k] - c[k])) };
     });
-    const R = Math.max(30, ...pts2d.map(([x, y]) => Math.max(Math.abs(x), Math.abs(y)))) * 1.25;
+    let R = Math.max(30, ...pts2d.map(([x, y]) => Math.max(Math.abs(x), Math.abs(y)))) * 1.25;
+    if (pos.papel !== 'banzo') {
+      const bz = (est.dados.posicoes.find(q => q.papel === 'banzo' && !q.solido) || {}).perfil;
+      const pbz = bz && this.cena.perfil ? this.cena.perfil(bz) : null;
+      if (pbz && pbz.d) R = Math.max(R, (pbz.d / 2) * 1.12);
+    }
     const W = 230, esc = (W / 2 - 10) / R, X = (x) => W / 2 + x * esc, Y = (y) => W / 2 - y * esc;
     const vista = svg('svg', { viewBox: `0 0 ${W} ${W}`, class: 'barras-secao' });
     vista.append(svg('line', { x1: X(0), y1: 4, x2: X(0), y2: W - 4, class: 'plano' }));
     const tPlano = svg('text', { x: X(0) + 4, y: 12, class: 'rotulo' });
     tPlano.textContent = 'plano da treliça';
     vista.append(tPlano);
+    // na alma: as faces de dentro das abas do U do banzo (paralelas ao plano), onde a cantoneira dupla é soldada
+    if (pos.papel !== 'banzo') {
+      const banzo = (est.dados.posicoes.find(q => q.papel === 'banzo' && !q.solido) || {}).perfil;
+      const pb = banzo && this.cena.perfil ? this.cena.perfil(banzo) : null;
+      if (pb && (pb.tipo === 'U' || pb.tipo === 'Ue') && pb.d) {
+        const dentro = pb.d / 2 - (pb.tw || 0);
+        // a vista mede atravessado ao plano no eixo u da barra; o plano passa pelo centro do par
+        for (const sx of [-1, 1]) {
+          const x = sx * dentro;
+          if (Math.abs(x) * esc > W / 2) continue;
+          vista.append(svg('line', { x1: X(x), y1: 18, x2: X(x), y2: W - 4, class: 'aba-banzo' }));
+        }
+        const tAba = svg('text', { x: 6, y: W - 6, class: 'rotulo' });
+        tAba.textContent = `abas do ${banzo} (face de dentro)`;
+        vista.append(tAba);
+      }
+    }
     for (const k of contornos) {
       const sel = est.ladoSecao && k.lado === est.ladoSecao;
       const poly = svg('polygon', { points: k.contorno.map(([x, y]) => `${X(x).toFixed(1)},${Y(y).toFixed(1)}`).join(' '),

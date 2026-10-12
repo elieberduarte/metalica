@@ -1087,6 +1087,36 @@ def _ligar_emenda(el: Elevacao, s_a: float, s_b: float) -> int:
     return ligados
 
 
+def _eixo_u_da_barra(q0, q1) -> Tuple[float, float, float]:
+    """o eixo u da seção da barra sem giro (geometria.base_local): o de onde as abas apontam"""
+    from nucleo3d.geometria import base_local
+    u, _v, _w = base_local(tuple(q1[i] - q0[i] for i in range(3)), 0.0)
+    return u
+
+
+def _cantoneira_na_aba_do_u(perfil_l: Optional[str], perfil_banzo: Optional[str], caixao: bool) -> Tuple[float, bool, float]:
+    """(afastamento do eixo de cada cantoneira ao plano, nas abas do U?, do eixo da cantoneira à face da aba dela).
+    Nas abas: a face de dentro da aba do U deitado fica a d/2 − t do plano e a cantoneira encosta nela pela aba
+    paralela ao plano (o centro de gravidade fica xg para dentro). Sem U que a receba (banzo em caixão, outro perfil, ou
+    um U estreito demais para o par), costas com costas, a 3 mm do plano."""
+    pl, pb = _perfil(perfil_l), _perfil(perfil_banzo)
+    bf_l = float(pl.bf or 25.0) if pl is not None else 25.0
+    costas = bf_l / 2.0 + 3.0
+    xg = 0.0
+    try:
+        from nucleo3d.geometria import secao
+        xg = -min(q[0] for q in secao(pl)) if pl is not None else 0.0
+    except Exception:                        # noqa: BLE001
+        xg = 0.3 * bf_l
+    if caixao or pb is None or str(getattr(pb, "tipo", "")) not in ("U", "Ue") or not pb.d:
+        return costas, False, xg
+    dentro = float(pb.d) / 2.0 - float(pb.tw or 0.0)
+    af = dentro - xg
+    if dentro - bf_l < 3.0:                  # as abas de dentro das duas cantoneiras se encontrariam no meio
+        return costas, False, xg
+    return af, True, xg
+
+
 def _presilhas_pela_norma(perfil: Optional[str]) -> int:
     """O mínimo de presilhas da cantoneira dupla pela NBR 8800:2024, 5.3.6.1: a esbeltez de uma cantoneira entre duas
     ligações (a / r_min) até 3/4 da maior esbeltez da barra composta ((L/r)o ≈ L / rx da cantoneira, o eixo paralelo à
@@ -3261,6 +3291,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         barra(q0, q1, p_banzo, "viga", "Vigas", conj, 0.0, orig_p)
                 continue
             conj_base = conj
+            caixao_el = any(m.papel == "banzo" and m.caixa > 0.0 for m in el.membros)
             for sufixo, membros in _partes_da_elevacao(el, _sem_acento(t.nome).upper() in duas_pecas):
                 membros, n_mov, n_uni = _nos_no_eixo_do_banzo(membros)
                 nos_no_eixo["pontas"] += n_mov
@@ -3303,13 +3334,23 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         pecas.append({"ent": sol, "perfil": perfil, "papel": "banzo", "L": comp, "conjunto": conj})
                         continue
                     if m.papel in ("montante", "diagonal") and perfil == p_alma and mult_alma > 1:
-                        # cantoneira dupla: costas com costas, uma de cada lado do plano da treliça
+                        # cantoneira dupla: uma em cada aba do U do banzo, soldada na face de dentro dela (regra do
+                        # usuário de 07/10, cobrada no Posto em 12/10: "as cantoneiras precisam ficar coladas nas abas
+                        # laterais, pois serão soldadas ali") — a aba paralela ao plano encosta na do U e a outra
+                        # aponta para o meio; sem U que as receba (banzo em caixão, U estreito), costas com costas
                         pa = _perfil(perfil)
-                        af = (float(pa.bf or 25.0) if pa else 25.0) / 2 + 3.0
                         smid = (s0p + s1p) / 2
                         tx, ty = c.tangente(smid)
                         nx, ny = -ty, tx
-                        for sinal, rot in ((1, 0.0), (-1, 180.0)):
+                        af, nas_abas, xg_l = _cantoneira_na_aba_do_u(perfil, p_banzo, caixao_el)
+                        u0 = _eixo_u_da_barra(q0, q1)
+                        for sinal in (1, -1):
+                            # o giro que põe a aba paralela ao plano do lado de fora (nas abas) ou de dentro (costas). Nas
+                            # abas, o par espelhado: a cantoneira de abas iguais espelhada é ela mesma girada 90° (0° e 90°
+                            # deixam as duas abas de dentro do mesmo lado da barra; 0° e 180° as punham uma em cima e outra
+                            # embaixo)
+                            fora = (u0[0] * nx + u0[1] * ny) * sinal
+                            rot = (0.0 if fora < 0 else 90.0) if nas_abas else (0.0 if fora > 0 else 180.0)
                             d = (nx * af * sinal, ny * af * sinal, 0.0)
                             barra(tuple(q0[i] + d[i] for i in range(3)), tuple(q1[i] + d[i] for i in range(3)), perfil,
                                   papel, "Treliças", conj, rot, {"planta": _bonito(t.nome) + sufixo, "sentido": t.sentido_por, "peca": conj, "encaixe": enc_o})
@@ -3319,7 +3360,8 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                         n_norma = _presilhas_pela_norma(perfil)
                         n_p = max(int(nota_p.get("qtd") or 0), n_norma)
                         p_pres = nota_p.get("perfil") or perfil
-                        larg = 2.0 * af + (float(pa.bf or 25.0) if pa else 25.0)
+                        # de uma cantoneira à outra: entre as faces de fora (nas abas) ou as pontas das abas (costas)
+                        larg = 2.0 * (af + xg_l) if nas_abas else 2.0 * af + (float(pa.bf or 25.0) if pa else 25.0)
                         for k_p in range(1, n_p + 1):
                             f = k_p / (n_p + 1.0)
                             cq = tuple(q0[i] + (q1[i] - q0[i]) * f for i in range(3))

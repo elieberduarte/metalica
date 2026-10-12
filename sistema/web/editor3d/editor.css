@@ -948,3 +948,4 @@ html.barra-unica header.topo { display: none !important; }
 .painel-barras .barras-secao .perfil.apagado { fill-opacity: .25; }
 .painel-barras .secao-botoes { display: flex; gap: 6px; flex-wrap: wrap; }
 .painel-barras .secao-botoes button { font-size: 15px; padding: 4px 10px; }
+.painel-barras .barras-secao .aba-banzo { stroke: #f2994a; stroke-width: 2; stroke-dasharray: 2 2; }
