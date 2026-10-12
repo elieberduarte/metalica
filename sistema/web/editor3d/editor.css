@@ -919,3 +919,20 @@ html.barra-unica header.topo { display: none !important; }
 
 /* Editar chapa (modulos/edicao_chapa.js, 02/10) */
 .acoes-painel.editar-chapa button { background: #b45309; color: #fff; border-color: #b45309; }
+
+/* Barras e perfis do bloco (modulos/barras_do_bloco.js, 12/10) */
+.painel-barras { width: min(680px, calc(100% - 20px)); left: auto; right: 10px; }
+.painel-barras .barras-elevacao { width: 100%; height: auto; background: var(--fundo-campo, rgba(127,127,127,.06)); border-radius: 6px; margin: 6px 0; }
+.painel-barras .barras-elevacao line { stroke-linecap: round; }
+.painel-barras .barras-elevacao .alvo { stroke: transparent; cursor: pointer; }
+.painel-barras .barras-elevacao .solido .alvo { cursor: default; }
+.painel-barras .barras-elevacao .halo { stroke: #ffd400; opacity: .75; }
+.painel-barras .barras-legenda, .painel-barras .barras-funcoes { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.painel-barras .barras-legenda button, .painel-barras .barras-funcoes button, .painel-barras .barras-acoes button {
+  border: 1px solid var(--borda); border-radius: 6px; background: var(--painel); color: var(--texto); padding: 3px 8px; cursor: pointer; font-size: 12px; }
+.painel-barras .barras-legenda .cor { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.painel-barras .barras-acoes { border-top: 1px solid var(--borda); margin-top: 6px; padding-top: 6px; }
+.painel-barras .barras-acoes .linha { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.painel-barras .barras-acoes.apagado .linha:not(:first-child) { opacity: .45; pointer-events: none; }
+.painel-barras .barras-acoes .busca-perfil { flex: 1; min-width: 220px; position: relative; }
+.painel-bloco .bloco-barras { border: 1px solid var(--borda); border-radius: 6px; background: var(--painel); color: var(--texto); padding: 4px 10px; cursor: pointer; font-weight: 600; }

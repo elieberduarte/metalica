@@ -259,6 +259,12 @@ export class MetodosBloco {
       corpo.append(el('p', {}, el('a', { href: '#', class: 'bloco-elevacao', texto: `Ver a elevação ${nomeEl} do projeto (Treliças lidas)`,
         onclick: (ev) => { ev.preventDefault(); this.abrirTrelicasLidas(nomeEl); } })));
     }
+    // as barras e os perfis dele, na elevação (virar a boca, trocar o perfil, em todas do tipo ou só nesta — 12/10)
+    if (typeof this.abrirBarrasDoBloco === 'function' && ids.some(i => (this.documento.get(i) || {}).tipo === 'barra')) {
+      corpo.append(el('p', {}, el('button', { type: 'button', class: 'bloco-barras', texto: 'Barras e perfis…',
+        title: 'A elevação deste bloco: escolha as barras e troque o perfil ou vire a boca, nesta ou em todas do mesmo tipo',
+        onclick: () => this.abrirBarrasDoBloco(peca, ids) })));
+    }
     corpo.append(el('p', { class: 'explica', texto: 'Alt+clique pega uma barra só. Esc limpa a seleção.' }));
     this._painelBloco = el('div', { class: 'painel-apoios painel-bloco' },
       el('div', { class: 'painel-apoios-titulo' },

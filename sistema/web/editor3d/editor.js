@@ -38,6 +38,7 @@ import { MetodosDiagnostico } from './modulos/diagnostico.js';
 import { MetodosLancamento } from './modulos/lancamento.js';
 import { MetodosApoios } from './modulos/apoios.js';
 import { MetodosBloco } from './modulos/bloco.js';
+import { MetodosBarrasDoBloco } from './modulos/barras_do_bloco.js';
 import { MetodosDivisao } from './modulos/divisao.js';
 import { MetodosExplodir } from './modulos/explodir.js';
 import { MetodosEdicaoChapa } from './modulos/edicao_chapa.js';
@@ -2423,7 +2424,7 @@ export class Editor {
 
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
-  MetodosApoios, MetodosBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D);
+  MetodosApoios, MetodosBloco, MetodosBarrasDoBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D);
 
 // ================================================================= apoio
 
