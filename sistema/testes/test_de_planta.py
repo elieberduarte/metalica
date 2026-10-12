@@ -709,3 +709,32 @@ def test_cantoneira_dupla_nas_abas_do_u():
     af, nas_abas, _xg = de_planta._cantoneira_na_aba_do_u('L 2"×1/8"', "U 100×40×2,25 (FF)", False)
     assert not nas_abas and abs(af - (50.8 / 2 + 3.0)) < 0.01              # as abas de dentro se encontrariam
     assert not de_planta._cantoneira_na_aba_do_u('L 2"×1/8"', "U 200×100×6,35 (FF)", True)[1]   # caixão
+
+
+def test_centro_do_texto_girado():
+    """O nome TC girado 90° (letras para a esquerda da posição gravada): o centro fica meia altura (mm de papel × escala)
+    para o lado das letras — pela posição gravada, o nome da linha caía mais perto da linha vizinha (12/10)."""
+    t = {"posicao": [1000.0, 0.0], "texto": "TC43", "altura": 8.96, "angulo": 90, "alinhamento": "esquerda", "vertical": "base"}
+    cx, cy = de_planta._centro_do_texto(t, 20.0)
+    assert abs(cx - (1000.0 - 8.96 * 20 / 2)) < 0.01 and cy > 0
+
+
+def test_terca_assentada_no_topo_dos_banzos():
+    """A terça vai para a reta que assenta no topo verdadeiro dos banzos que ela cruza (a seção e o giro), sem furar o mais
+    alto (12/10: terças voando e entrando no banzo)."""
+    from nucleo3d.modelo import Barra
+    banzo = lambda y, z: Barra(inicio=(0.0, y, z), fim=(4000.0, y, z), perfil="U 100×40×2,25 (FF)", rotacao=270.0, papel="banzo")
+    b1, b2, b3 = banzo(0.0, 7000.0), banzo(3000.0, 7000.0), banzo(6000.0, 7030.0)       # o do fim 30 mm mais alto
+    t = Barra(inicio=(2000.0, -50.0, 7200.0), fim=(2000.0, 6050.0, 7200.0), perfil="U 100×40×2,65 (FF)", rotacao=0.0, papel="terça")
+    r = de_planta._assentar_tercas([t], [b1, b2, b3])
+    assert r["acertadas"] == 1
+    from nucleo3d.geometria import base_local, secao
+    from nucleo3d.de_planta import _perfil
+    topo = max(base_local((4000.0, 0.0, 0.0), 270.0)[0][2] * x + base_local((4000.0, 0.0, 0.0), 270.0)[1][2] * y
+               for x, y in secao(_perfil("U 100×40×2,25 (FF)")))
+    fundo = min(base_local((0.0, 6100.0, 0.0), 0.0)[0][2] * x + base_local((0.0, 6100.0, 0.0), 0.0)[1][2] * y
+                for x, y in secao(_perfil("U 100×40×2,65 (FF)")))
+    # nenhum banzo fura a terça e a folga máxima é a da reta (sem os 10 mm do banzo de 40 fixo)
+    for y, zb in ((0.0, 7000.0), (3000.0, 7000.0), (6000.0, 7030.0)):
+        f = (t.inicio[2] + (t.fim[2] - t.inicio[2]) * (y + 50.0) / 6100.0 + fundo) - (zb + topo)
+        assert -0.5 <= f <= 20.0
