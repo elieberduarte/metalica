@@ -13,6 +13,7 @@
 import { el } from '../editor.js';
 import { pecaDe, eixoDoSolido } from '../nucleo/esqueleto.js';
 import { ComandoAlterar } from '../nucleo/comandos.js';
+import { baseDaBarra, meioDaBarra } from '../nucleo/documento.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const CORES = ['#2f80ed', '#eb5757', '#27ae60', '#f2994a', '#9b51e0', '#00a3a3', '#d4a017', '#e84393', '#6d7f8f', '#8d6e63'];
@@ -97,6 +98,16 @@ export class MetodosBarrasDoBloco {
     }
     const meio = (hmin + hmax) / 2;
     const posicoes = [...porChave.values()];
+    // o lado de cada perfil do par em relação ao plano da treliça (−1, +1; 0 no perfil sozinho): é o que a vista da seção
+    // escolhe e o que acha o perfil correspondente nas cópias
+    const n3 = [ref.n[0], ref.n[1], 0];
+    for (const pos of posicoes) {
+      if (pos.solido || !pos.ids.length) continue;
+      const mids = pos.ids.map(i => meioDaBarra(this.documento.get(i)));
+      const c = [0, 1, 2].map(k => mids.reduce((a, m) => a + m[k], 0) / mids.length);
+      pos.centro = c;
+      pos.lados = mids.map(m => { const d = (m[0] - c[0]) * n3[0] + (m[1] - c[1]) * n3[1]; return Math.abs(d) < 1 ? 0 : Math.sign(d); });
+    }
     for (const pos of posicoes) {
       const hm = (pos.linha[0][1] + pos.linha[1][1]) / 2;
       pos.funcao = pos.papel === 'banzo' ? (hm >= meio ? 'banzo de cima' : 'banzo de baixo') : pos.papel;
@@ -145,7 +156,9 @@ export class MetodosBarrasDoBloco {
       return { erro, pares };
     };
     const direto = casar(false), espelhado = casar(true);
-    return (espelhado.erro < direto.erro ? espelhado : direto).pares;
+    const r = espelhado.erro < direto.erro ? { ...espelhado, espelho: true } : { ...direto, espelho: false };
+    this._ultimoEspelho = r.espelho;
+    return r.pares;
   }
 
   abrirBarrasDoBloco(peca, ids) {
@@ -248,6 +261,7 @@ export class MetodosBarrasDoBloco {
     const corpo = el('div', { class: 'painel-apoios-corpo' },
       el('p', { class: 'explica', texto: `${posicoes.filter(p => !p.solido).length} posições de barra (o par de cantoneiras conta uma)${ref.deitada ? ' — treliça deitada, vista de cima' : ''}. Cor = perfil.` }),
       desenho, legenda, botoesFuncao, acoes);
+    if (escolhidas.length) corpo.append(this._vistaDaSecao(escolhidas, corDe));
     this._painelBarras = el('div', { class: 'painel-apoios painel-barras' },
       el('div', { class: 'painel-apoios-titulo' },
         el('strong', { texto: `Barras e perfis — ${est.peca}` }),
@@ -261,11 +275,75 @@ export class MetodosBarrasDoBloco {
     this._destaqueAtivo = true;
   }
 
+  /**
+   * A seção da posição escolhida (12/10, croqui do usuário: os perfis vistos de frente, com os eixos e as setas de girar):
+   * cada perfil da posição desenhado na seção verdadeira, no giro que tem, olhando ao longo da barra — o plano da treliça
+   * na vertical tracejada, o eixo de cada perfil em cruz. O clique num perfil escolhe só ele (uma cantoneira do par);
+   * ↺ ↻ giram 90°, ⇄ vira 180° — no escolhido ou nos dois, nas posições escolhidas (e nas cópias, pelo lado do plano).
+   */
+  _vistaDaSecao(escolhidas, corDe) {
+    const est = this._barrasBloco;
+    const pos = escolhidas[0];
+    const ents = pos.ids.map(i => this.documento.get(i)).filter(Boolean);
+    if (!ents.length || !pos.centro) return el('div');
+    if (est.ladoSecao && !pos.lados.includes(est.ladoSecao)) est.ladoSecao = 0;
+    // o referencial da vista: o da primeira barra sem giro (x = atravessado ao plano, y = no plano, para cima)
+    const b0 = baseDaBarra(ents[0].inicio, ents[0].fim, 0);
+    const c = pos.centro;
+    const no2d = (P) => [P[0] * b0.u[0] + P[1] * b0.u[1] + P[2] * b0.u[2], P[0] * b0.v[0] + P[1] * b0.v[1] + P[2] * b0.v[2]];
+    const pts2d = [];
+    const contornos = ents.map((e, i) => {
+      const base = baseDaBarra(e.inicio, e.fim, e.rotacao || 0);
+      const forma = this.cena._secaoDoPerfil(e.perfil);
+      const m = meioDaBarra(e);
+      const contorno = forma.getPoints(12).map(q => {
+        const xy = no2d([0, 1, 2].map(k => m[k] + base.u[k] * q.x + base.v[k] * q.y - c[k]));
+        pts2d.push(xy);
+        return xy;
+      });
+      return { e, lado: pos.lados[i], contorno, eixo: no2d([0, 1, 2].map(k => m[k] - c[k])) };
+    });
+    const R = Math.max(30, ...pts2d.map(([x, y]) => Math.max(Math.abs(x), Math.abs(y)))) * 1.25;
+    const W = 230, esc = (W / 2 - 10) / R, X = (x) => W / 2 + x * esc, Y = (y) => W / 2 - y * esc;
+    const vista = svg('svg', { viewBox: `0 0 ${W} ${W}`, class: 'barras-secao' });
+    vista.append(svg('line', { x1: X(0), y1: 4, x2: X(0), y2: W - 4, class: 'plano' }));
+    const tPlano = svg('text', { x: X(0) + 4, y: 12, class: 'rotulo' });
+    tPlano.textContent = 'plano da treliça';
+    vista.append(tPlano);
+    for (const k of contornos) {
+      const sel = est.ladoSecao && k.lado === est.ladoSecao;
+      const poly = svg('polygon', { points: k.contorno.map(([x, y]) => `${X(x).toFixed(1)},${Y(y).toFixed(1)}`).join(' '),
+        fill: corDe(k.e.perfil), class: 'perfil' + (sel ? ' escolhido' : '') + (est.ladoSecao && !sel ? ' apagado' : '') });
+      const t = svg('title');
+      t.textContent = `${k.e.perfil} · giro ${Math.round(k.e.rotacao || 0)}°${k.lado ? (k.lado < 0 ? ' · lado −' : ' · lado +') : ''} · clique para escolher só este`;
+      poly.append(t);
+      poly.addEventListener('click', () => { est.ladoSecao = est.ladoSecao === k.lado ? 0 : k.lado; this._desenharBarrasDoBloco(); });
+      vista.append(poly);
+      const [ex, ey] = k.eixo;
+      vista.append(svg('line', { x1: X(ex) - 9, y1: Y(ey), x2: X(ex) + 9, y2: Y(ey), class: 'eixo' }),
+                   svg('line', { x1: X(ex), y1: Y(ey) - 9, x2: X(ex), y2: Y(ey) + 9, class: 'eixo' }));
+    }
+    const qual = est.ladoSecao ? 'o perfil escolhido' : (ents.length > 1 ? 'os dois perfis' : 'o perfil');
+    const girar = (graus, rot) => this._aplicarNasBarras(escolhidas, (e) => ({ rotacao: (((e.rotacao || 0) + graus) % 360 + 360) % 360 }), rot, est.ladoSecao || 0);
+    const botoes = el('div', { class: 'secao-botoes' },
+      el('button', { type: 'button', texto: '↺ 90°', title: `Gira ${qual} 90° no sentido anti-horário (olhando ao longo da barra)`, onclick: () => girar(90, 'Girar a seção 90° ↺') }),
+      el('button', { type: 'button', texto: '↻ 90°', title: `Gira ${qual} 90° no sentido horário`, onclick: () => girar(-90, 'Girar a seção 90° ↻') }),
+      el('button', { type: 'button', texto: '⇄ 180°', title: `Vira ${qual} 180° (a boca do U, a aba da cantoneira para o outro lado)`, onclick: () => girar(180, 'Virar a seção 180°') }));
+    return el('div', { class: 'barras-secao-caixa' },
+      el('div', { class: 'secao-titulo', texto: `Seção — ${pos.funcao}: ${ents.length > 1 ? `${ents.length} × ` : ''}${pos.perfil}${escolhidas.length > 1 ? ` (a 1ª das ${escolhidas.length} escolhidas; os botões valem para todas)` : ''}` }),
+      vista,
+      el('div', { class: 'secao-lado' },
+        el('p', { class: 'explica', texto: ents.length > 1 ? 'Clique num perfil para girar só ele; clique de novo para voltar aos dois.' : 'Vista ao longo da barra: o tracejado vertical é o plano da treliça; a cruz, o eixo do perfil.' }),
+        botoes));
+  }
+
   /** Aplica `campos(e)` nas barras das posições escolhidas — neste bloco ou nos correspondentes de todos do tipo. */
-  _aplicarNasBarras(escolhidas, campos, rotulo) {
+  _aplicarNasBarras(escolhidas, campos, rotulo, lado = 0) {
     const est = this._barrasBloco;
     if (!est || !escolhidas.length) { this.aviso('Escolha antes as barras (clique no desenho ou numa função).', 'atencao'); return; }
-    const alvos = new Set(escolhidas.flatMap(p => p.ids));
+    // `lado` (a vista da seção): só o perfil daquele lado do plano em cada posição; 0 = todos
+    const doLado = (pos, sinal) => pos.ids.filter((_, i) => !lado || !pos.lados || pos.lados[i] === lado * sinal || pos.lados[i] === 0);
+    const alvos = new Set(escolhidas.flatMap(p => doLado(p, 1)));
     let blocosMudados = 1, semPar = 0;
     if (est.escopo === 'todas') {
       for (const [peca, ids] of this._blocosDoTipo(est.tipo)) {
@@ -273,9 +351,11 @@ export class MetodosBarrasDoBloco {
         const outro = this._posicoesDoBloco(ids);
         if (!outro) continue;
         const pares = this._correspondentes(est.dados, escolhidas, outro);
+        // na cópia espelhada o lado do plano troca (o comprimento corre ao contrário)
+        const sinal = this._ultimoEspelho ? -1 : 1;
         semPar += escolhidas.length - pares.length;
         if (pares.length) blocosMudados++;
-        for (const q of pares) for (const id of q.ids) alvos.add(id);
+        for (const q of pares) for (const id of doLado(q, sinal)) alvos.add(id);
       }
     }
     const mud = {};

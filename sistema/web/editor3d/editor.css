@@ -936,3 +936,15 @@ html.barra-unica header.topo { display: none !important; }
 .painel-barras .barras-acoes.apagado .linha:not(:first-child) { opacity: .45; pointer-events: none; }
 .painel-barras .barras-acoes .busca-perfil { flex: 1; min-width: 220px; position: relative; }
 .painel-bloco .bloco-barras { border: 1px solid var(--borda); border-radius: 6px; background: var(--painel); color: var(--texto); padding: 4px 10px; cursor: pointer; font-weight: 600; }
+
+.painel-barras .barras-secao-caixa { display: grid; grid-template-columns: 230px 1fr; gap: 8px 12px; align-items: start; border-top: 1px solid var(--borda); margin-top: 6px; padding-top: 6px; }
+.painel-barras .barras-secao-caixa .secao-titulo { grid-column: 1 / -1; font-weight: 600; }
+.painel-barras .barras-secao { width: 230px; height: 230px; background: var(--fundo-campo, rgba(127,127,127,.06)); border-radius: 6px; }
+.painel-barras .barras-secao .plano { stroke: #9aa5b1; stroke-dasharray: 6 4; stroke-width: 1; }
+.painel-barras .barras-secao .eixo { stroke: #ff4d4f; stroke-dasharray: 3 2; stroke-width: 1.2; }
+.painel-barras .barras-secao .rotulo { fill: #9aa5b1; font-size: 9px; }
+.painel-barras .barras-secao .perfil { stroke: var(--texto); stroke-width: .8; fill-opacity: .85; cursor: pointer; }
+.painel-barras .barras-secao .perfil.escolhido { stroke: #ffd400; stroke-width: 2; }
+.painel-barras .barras-secao .perfil.apagado { fill-opacity: .25; }
+.painel-barras .secao-botoes { display: flex; gap: 6px; flex-wrap: wrap; }
+.painel-barras .secao-botoes button { font-size: 15px; padding: 4px 10px; }

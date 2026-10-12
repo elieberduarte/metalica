@@ -25,6 +25,23 @@
     return d;
   }
 
+  // a placa de vídeo que desenha esta página (12/10): no notebook com duas placas, o navegador na integrada ou no
+  // desenho por software (SwiftShader) deixa o 3D segundos atrás do mouse — e o registro não dizia qual era
+  var placaCache = null;
+  function placa() {
+    if (placaCache !== null) return placaCache;
+    placaCache = '';
+    try {
+      var c = document.createElement('canvas'), gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+      if (!gl) { placaCache = 'sem WebGL'; return placaCache; }
+      var x = gl.getExtension('WEBGL_debug_renderer_info');
+      placaCache = String(x ? gl.getParameter(x.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)).slice(0, 120);
+      var perder = gl.getExtension('WEBGL_lose_context');
+      if (perder) perder.loseContext();
+    } catch (e) { /* sem como saber */ }
+    return placaCache;
+  }
+
   function enviar(dados) {
     var agora = Date.now();
     if (agora - ultimo < 1000 && dados.tipo === 'tarefa longa') return;   // uma por segundo basta
@@ -44,7 +61,7 @@
         lista.getEntries().forEach(function (e) {
           if (e.duration < 500) return;
           var atrib = (e.attribution || []).map(function (a) { return a.containerType + (a.containerName ? ':' + a.containerName : ''); }).join(',');
-          enviar({ tipo: 'tarefa longa', ms: Math.round(e.duration), atribuicao: atrib });
+          enviar({ tipo: 'tarefa longa', ms: Math.round(e.duration), atribuicao: (atrib ? atrib + '; ' : '') + 'placa: ' + placa() });
         });
       });
       po.observe({ entryTypes: ['longtask'] });
