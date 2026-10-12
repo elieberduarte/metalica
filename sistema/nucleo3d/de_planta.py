@@ -2516,6 +2516,45 @@ def _lado_do_apoio(banzo: Optional[str], perfil: Optional[str]) -> float:
     return meia + xg
 
 
+def _lado_do_miolo(m: "Membro", membros, tol: float = 80.0) -> int:
+    """+1, −1 ou 0: de que lado do banzo `m` (na elevação: s ao longo, h na altura; +1 = o lado da normal (−dh, ds))
+    chegam as barras da alma ligadas a ele — o miolo daquela treliça. A ligada tem uma ponta na linha do banzo (até
+    `tol`, dentro do comprimento) e a outra diz o lado. É a regra do gerador da tesoura pelo desenho
+    (de_planta_estrutura._ligadas_dos_lados, usuário 07/10 e 11/10): a meia altura da treliça erra no trechinho do
+    apoio (o banzo de cima rebaixado na ponta, abaixo do meio: o U virava de boca para fora — TESOURAS 6, 37, 38 do Posto).
+    Só decide com duas barras ou mais do mesmo lado e nenhuma do outro, chegando a mais de 30° do banzo: a barra quase
+    paralela é o chanfro da descida do banzo (TESOURAS 22/24/28), e uma barra só na ponta, ou dos dois lados, é a linha
+    que atravessa o painel (PAINÉIS 1 e 18) — aí fica a regra da meia altura."""
+    ds, dh = m.s1 - m.s0, m.h1 - m.h0
+    L = math.hypot(ds, dh)
+    if L < 1.0:
+        return 0
+    ts, th = ds / L, dh / L
+    mais = menos = 0
+    for a in membros:
+        if a is m or a.papel not in ("montante", "diagonal"):
+            continue
+        la = math.hypot(a.s1 - a.s0, a.h1 - a.h0)
+        if la < 1.0 or abs((a.s1 - a.s0) * ts + (a.h1 - a.h0) * th) / la > math.cos(math.radians(30.0)):
+            continue
+        for (ps, ph), (qs, qh) in (((a.s0, a.h0), (a.s1, a.h1)), ((a.s1, a.h1), (a.s0, a.h0))):
+            ao_longo = (ps - m.s0) * ts + (ph - m.h0) * th
+            fora = abs((ps - m.s0) * th - (ph - m.h0) * ts)
+            if fora > tol or not (-tol <= ao_longo <= L + tol):
+                continue
+            lado = -(qs - ps) * th + (qh - ph) * ts
+            if lado > 1.0:
+                mais += 1
+            elif lado < -1.0:
+                menos += 1
+            break
+    if mais >= 2 and not menos:
+        return 1
+    if menos >= 2 and not mais:
+        return -1
+    return 0
+
+
 def _giro_abas_para(q0, q1, f) -> float:
     """o giro da barra (o de `geometria.base_local`) que põe as abas do U na direção f"""
     from nucleo3d.geometria import base_local
@@ -2982,6 +3021,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
 
     # ---------------------------------------------------------------- treliças e vigas
     contagem = collections.Counter()
+    bocas_viradas: List[str] = []          # banzos em U que a regra do miolo virou (antes: a meia altura)
     # os pilares com a metade da seção: a viga que para antes deles vai até a face
     pilares_meia = []
     for pl in locados:
@@ -3202,6 +3242,19 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                     else:
                         # rotação 90 leva as abas do U para cima (banzo de baixo); 270, para baixo
                         rot = (270.0 if (m.h0 + m.h1) / 2 > meio_h else 90.0) if m.papel == "banzo" else 0.0
+                        if m.papel == "banzo":
+                            # a boca do U para o miolo: o lado de onde chegam as barras da alma ligadas a ele (11/10);
+                            # sem ligação, fica a regra da meia altura
+                            lado = _lado_do_miolo(m, membros)
+                            if lado:
+                                Lm = math.hypot(m.s1 - m.s0, m.h1 - m.h0)
+                                ns, nh = -(m.h1 - m.h0) / Lm * lado, (m.s1 - m.s0) / Lm * lado
+                                sm, hm = (m.s0 + m.s1) / 2.0, (m.h0 + m.h1) / 2.0
+                                (b0, _), (b1, _) = P(sm, hm), P(sm + ns * 100.0, hm + nh * 100.0)
+                                novo = _giro_abas_para(q0, q1, tuple(b1[k] - b0[k] for k in range(3)))
+                                if abs((novo - rot + 180.0) % 360.0 - 180.0) > 90.0:
+                                    bocas_viradas.append(_bonito(t.nome) + sufixo)
+                                rot = novo
                         if m.papel != "banzo" and dupla and perfil == p_banzo:
                             # a barra da alma no perfil do banzo (o montante de ponta em U): a largura
                             # desenhada diz a face que se vê — a aba (alma atravessada ao plano, abas para
@@ -3469,11 +3522,17 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
                                            else "pelos espelhos iguais; o corte não confirmou"))
 
     # ---------------------------------------------------------------- a alma na face do banzo
-    # montantes e diagonais param na face interna do banzo, com folga (o nó continua no eixo). O encaixe de fábrica
-    # (alma_na_face.encaixar: corte no ângulo, bico no montante) fica para a revisão do Posto — usuário, 30/09
+    # o encaixe de fábrica (alma_na_face.encaixar, o mesmo da tesoura pelo desenho e do 3D pelos quadros): montantes e
+    # diagonais cortados no ângulo, deitados na face do banzo que passa na faixa deles, com o bico no montante do mesmo
+    # nó (o nó continua no eixo); o comprimento é o médio da peça cortada (volume ÷ seção). Em 30/09 o Posto voltou ao
+    # corte reto (aparar) para a revisão dele; o usuário pediu a revisão com as regras novas em 11/10
     from nucleo3d import alma_na_face
     from nucleo3d.geometria import comprimentos_da_barra, tem_corte_no_angulo
-    na_face = alma_na_face.aparar([p["ent"] for p in pecas])
+    na_face = alma_na_face.encaixar([p["ent"] for p in pecas])
+    if bocas_viradas:
+        cont_bv = collections.Counter(bocas_viradas)
+        avisos.append("Boca do U do banzo para o miolo (o lado das barras ligadas): %d trecho(s) virado(s) em relação à "
+                      "regra antiga da meia altura — %s." % (len(bocas_viradas), ", ".join("%s (%d)" % kv for kv in sorted(cont_bv.items()))))
     for p in pecas:
         e = p["ent"]
         if e.tipo == "barra" and (e.recorte_inicio or e.recorte_fim or tem_corte_no_angulo(e)):
@@ -3977,7 +4036,7 @@ def montar(desenho, parametros: Optional[dict] = None, avisar=None, doc=None) ->
         "vigas": st.get("vigas", 0), "pilares": pilares, "pilares_com_corte": res_pm["n"], "tercas": tercas, "correntes": correntes,
         "esticadores": esticadores, "agulhas": agulhas, "contraventamentos": contravs,
         "barras": len(doc.barras), "calandradas": sum(1 for p in pecas if p["ent"].tipo == "solido"),
-        "alma_na_face": na_face,
+        "alma_na_face": na_face, "bocas_viradas": len(bocas_viradas),
         "posicoes": len(posicao_de and set(posicao_de.values())), "conjuntos": n_conj, "peso_kg": round(peso, 1),
         "orientacao": ori, "planta_sem_nome": st.get("sem_rotulo", 0), "outras_plantas": outras_feitas,
         "nomes_sem_elevacao": {_bonito(k): v for k, v in (st.get("sem_elevacao") or {}).items()},

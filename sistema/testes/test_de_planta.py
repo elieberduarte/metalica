@@ -655,3 +655,22 @@ def test_nome_de_chamada_vai_para_a_curva_onde_a_chamada_termina():
     ch = de_planta._chamadas([t], ents, [reta, canto], (-1e5, -1e5, 1e5, 1e5))
     assert ch[id(t)][0] == 1                              # a curva, não a reta ao lado do texto
     assert de_planta._curva_de_canto(canto) and not de_planta._curva_de_canto(reta)
+
+
+def test_boca_do_banzo_pelo_lado_das_barras_ligadas():
+    """O U do banzo abre para o miolo pelas barras da alma ligadas a ele (11/10), não pela meia altura da treliça: o
+    trechinho do apoio na ponta (o banzo de cima rebaixado, abaixo do meio — TESOURA 37 do Posto) abre para baixo. A
+    barra quase paralela (o chanfro da descida do banzo) e uma barra só não decidem: fica a meia altura."""
+    M = de_planta.Membro
+    assento = M(0, 725, 448, 725, "banzo")                 # +1 = para cima (normal de s crescente)
+    alma = [M(38, 762, 38, -38, "montante"), M(0, 762, 448, -38, "diagonal"), M(486, 791, 486, -38, "montante")]
+    assert de_planta._lado_do_miolo(assento, [assento] + alma) == -1
+    # o chanfro (23° do banzo) não conta; uma barra só também não
+    ponta = M(7542, 800, 7780, 800, "banzo")
+    chanfro = [M(7542, 780, 7780, 880, "diagonal")]
+    assert de_planta._lado_do_miolo(ponta, [ponta] + chanfro) == 0
+    assert de_planta._lado_do_miolo(assento, [assento, alma[0]]) == 0
+    # barras dos dois lados (a linha que atravessa o painel): não decide
+    meio = M(0, 1000, 3000, 1000, "banzo")
+    dois = [M(500, 1000, 500, 0, "montante"), M(1500, 1000, 1500, 0, "montante"), M(1000, 1000, 1000, 1600, "montante")]
+    assert de_planta._lado_do_miolo(meio, [meio] + dois) == 0
