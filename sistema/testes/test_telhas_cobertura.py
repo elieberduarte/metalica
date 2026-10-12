@@ -150,3 +150,42 @@ def test_ondas_da_chapa_no_sentido_da_caida():
     assert alturas[-1] - alturas[1] == 40                               # a crista da onda 40 mm acima da chapa
     cristas = [v for v in em_x0 if round(v[2] - min(z[2] for z in em_x0)) == alturas[-1]]
     assert len(cristas) == 8                                            # 4 ondas, 2 pontos na crista de cada
+
+
+def test_calha_no_vale_em_v():
+    """duas águas de 5 % descem até a mesma terça (x 4200): a calha ao longo dela"""
+    doc = Documento()
+    for i in range(7):
+        x = i * 1400.0
+        _terca(doc, x, 7000.0 + abs(x - 4200.0) * 0.05, "TC%d" % (i + 1))
+    r = T.lancar(doc)
+    assert r["calhas_vale"] == 1
+    calha = [s for s in doc.solidos if s.camada == "Calhas"][0]
+    assert all(4040 <= v[0] <= 4360 for v in calha.vertices)            # 300 mm centrada na terça
+
+
+def test_fechamento_na_face_de_fora_do_painel():
+    """o painel da testeira em x −200 (banzos a 6,00 e 7,60), o telhado à direita dele: a TP 40 em pé do lado de fora"""
+    doc = Documento()
+    _agua(doc, 0.0, 6, 7000.0, 0.05)
+    for z in (6000.0, 7600.0):
+        b = Barra(inicio=(-200.0, 0.0, z), fim=(-200.0, 6000.0, z), perfil="U 100×40×2,25 (FF)", papel="banzo", camada="Treliças")
+        b.atributos = {"origem": {"planta": "PAINEL 1", "peca": "PAINEL 1#1"}}
+        doc.add(b)
+    r = T.lancar(doc)
+    fech = [s for s in doc.solidos if (s.atributos or {}).get("fechamento")]
+    assert r["fechamentos"] == 6 and len(fech) == 6                    # 6 m de painel / 1.020 mm
+    for f in fech:
+        assert max(v[0] for v in f.vertices) <= -200.0 - 100.0          # do lado de fora (sem telhado)
+        assert min(v[2] for v in f.vertices) <= 5950.0 and max(v[2] for v in f.vertices) >= 7650.0
+
+
+def test_telha_segue_sob_o_telhado_de_cima():
+    """a água de baixo acaba numa terça a 0,44 m de outra 4 m acima: a telha de baixo segue até 50 mm antes dela"""
+    doc = Documento()
+    _agua(doc, 0.0, 4, 7000.0, 0.05)
+    _terca(doc, -440.0, 11000.0, "TC9")
+    _terca(doc, -1600.0, 11000.0, "TC9")
+    T.lancar(doc)
+    baixas = [s for s in doc.solidos if s.camada == "Telhas" and max(v[2] for v in s.vertices) < 9000]
+    assert min(min(v[0] for v in s.vertices) for s in baixas) <= -380.0

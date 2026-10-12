@@ -145,6 +145,7 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
             cadeia: List[List[dict]] = []
             paredes = []                                 # (q, r, fração do cruzamento): a barreira que sobe entre as duas
             por_cima = set()                             # os pares que passam por cima de uma transição baixa (a da calha)
+            degraus = []                                 # (a terça de baixo, lado, até onde): o degrau para o telhado de cima
             for r in cobre:
                 if cadeia and cadeia[-1]:
                     q = cadeia[-1][-1]
@@ -168,6 +169,11 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                         continue
                     if barr is not None and dt <= 2 * vao_max:
                         paredes.append((q, r, barr["t"]))
+                    elif barr is None and dz > 0.3 * dt and dt <= 1600.0:
+                        # o degrau para o telhado de cima (a cobertura da caixa d'água, 4 m acima das TC3/TC4 do Posto): a
+                        # telha de baixo segue até ficar sob a borda do de cima (50 mm antes) — sem a faixa aberta entre os dois
+                        baixa, lado_b = (q, +1) if z_em(q, sm) < z_em(r, sm) else (r, -1)
+                        degraus.append((baixa, lado_b, dt - 50.0))
                     if dt <= 2 * vao_max:
                         k = (id(q["b"]), id(r["b"]))
                         o_b = ((barr["b"].atributos or {}).get("origem") or {}) if barr is not None else {}
@@ -220,6 +226,19 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                         abrir(("cumeeira", id(q["b"]), id(r["b"])), {"q": q, "r": r, "cumeeira": True})
                     else:
                         abrir((id(q["b"]), id(r["b"])), {"q": q, "r": r})
+            # o vale em V numa terça (as duas águas descem até ela — a linha de x 10,06 do Posto): a calha ao longo dela
+            for seq in cadeia:
+                zs_ = [z_em(r, sm) for r in seq]
+                ts_ = [r["t"] for r in seq]
+                inc_ = [(zs_[i + 1] - zs_[i]) / (ts_[i + 1] - ts_[i]) for i in range(len(seq) - 1)]
+                for k_ in range(1, len(seq) - 1):
+                    if inc_[k_ - 1] < -0.005 and inc_[k_] > 0.005 and ts_[k_] - ts_[k_ - 1] > 1000.0 and ts_[k_ + 1] - ts_[k_] > 1000.0:
+                        abrir(("calhaV", id(seq[k_]["b"])), {"q": seq[k_], "r": seq[k_], "calha": True, "eixo": True})
+            for ter, lado, L in degraus:
+                if L > 50.0:
+                    m = fim_de.get(id(ter["b"]), 0.0)
+                    abrir(("beiral", id(ter["b"]), lado, round(L / 10), round(m * 1000)),
+                          {"q": ter, "r": ter, "beiral": True, "lado": lado, "L": L, "m": m})
             # o beiral até a face da parede: da última terça de cada lado até 100 mm da barreira, na inclinação da água
             for q, r, fr in paredes:
                 t_c = q["t"] + (r["t"] - q["t"]) * fr
@@ -230,6 +249,10 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                     m = fim_de.get(id(ter["b"]), 0.0)
                     abrir(("beiral", id(ter["b"]), lado, round(L / 10), round(m * 1000)),
                           {"q": ter, "r": ter, "beiral": True, "lado": lado, "L": L, "m": m})
+                    # a água que desce até a parede: a calha encostada na face dela (a água não escorre na parede)
+                    if m * lado < -0.005:
+                        abrir(("calhaP", id(ter["b"]), lado, round(L / 10)),
+                              {"q": ter, "r": ter, "calha": True, "parede": True, "lado": lado, "L": L, "m": m})
             for seq in cadeia:
                 # a conferência da sequência: os trechos retos da água (3 ou mais terças com a mesma inclinação, até 0,5 %)
                 # são o plano da telha; a terça fora deles é conferida pela reta do trecho vizinho de cada lado (até 2 terças
@@ -328,6 +351,23 @@ def _analise(tercas, barras, vao_max: float = 2500.0, tol_plano: float = 10.0) -
                 continue
             q, r = p["q"], p["r"]
             p["d"], p["n"] = d, n
+            if p.get("eixo"):
+                # a calha do vale em V: 300 mm de largura, centrada na terça
+                def lado_(s_, k_):
+                    a_ = ponto(q, s_)
+                    return (a_[0] + n[0] * 150.0 * k_, a_[1] + n[1] * 150.0 * k_, a_[2])
+                p["cantos"] = [lado_(p["s0"], -1), lado_(p["s1"], -1), lado_(p["s1"], 1), lado_(p["s0"], 1)]
+                continue
+            if p.get("parede"):
+                # a calha da parede: os últimos 300 mm do beiral, encostada na face
+                L, m, lado = p["L"], p["m"], p["lado"]
+
+                def ate(s_, x_):
+                    a_ = ponto(q, s_)
+                    return (a_[0] + n[0] * x_ * lado, a_[1] + n[1] * x_ * lado, a_[2] + m * L * lado)
+                x0 = max(0.0, L - 300.0)
+                p["cantos"] = [ate(p["s0"], x0), ate(p["s1"], x0), ate(p["s1"], L), ate(p["s0"], L)]
+                continue
             if p.get("beiral"):
                 # da terça para fora, na inclinação da água (lado +1: t crescente)
                 L, m, lado = p["L"], p["m"], p["lado"]
@@ -476,9 +516,87 @@ def _chapas(panos, telha):
     return chapas
 
 
-def _solido_da_chapa(ch, telha, camada, espessura=ESPESSURA_DESENHO):
-    """o sólido da chapa: o perfil trapezoidal (as ondas no sentido da caída) em cada terça, ligado de uma à outra"""
-    d = ch["d"]
+def _dentro_poli(pt, poli) -> bool:
+    x, y = pt
+    dentro = False
+    j = len(poli) - 1
+    for i in range(len(poli)):
+        xi, yi = poli[i]
+        xj, yj = poli[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-9) + xi:
+            dentro = not dentro
+        j = i
+    return dentro
+
+
+def _fechamentos(doc, panos, telha, camada):
+    """Os fechamentos laterais (12/10/2026, "lançar as telhas dos fechamentos laterais ... vai ficar mais claro como
+    ficaram as telhas que precisam de recortes"): em cada painel (a testeira), a TP 40 em pé na face de FORA — o lado sem
+    telhado —, do banzo de baixo ao de cima, em chapas da largura útil ao longo do painel (o curvo, trecho a trecho), com
+    as ondas na vertical. Devolve (sólidos, metros, m²)."""
+    from nucleo3d import apoios as _ap
+    polis = [[v[:2] for v in p["cantos"]] for p in panos]
+    CEL = 3000.0
+    grade: Dict[tuple, list] = collections.defaultdict(list)
+    for k, pl in enumerate(polis):
+        xs, ys = [v[0] for v in pl], [v[1] for v in pl]
+        for gx in range(int(min(xs) // CEL), int(max(xs) // CEL) + 1):
+            for gy in range(int(min(ys) // CEL), int(max(ys) // CEL) + 1):
+                grade[(gx, gy)].append(k)
+
+    def coberto(pt):
+        return any(_dentro_poli(pt, polis[k]) for k in grade.get((int(pt[0] // CEL), int(pt[1] // CEL)), ()))
+    paineis: Dict[str, list] = collections.defaultdict(list)
+    for e in _ap._elementos(doc):
+        if str(e.peca or "").upper().startswith("PAINEL") and e.papel == "banzo":
+            paineis[e.peca].append(e)
+    W = float(telha.get("largura_util") or 1020.0)
+    solidos, ml, area = [], 0.0, 0.0
+    for peca, lst in paineis.items():
+        segs = [sg for e in lst for sg in e.segs]
+        zmin = min(min(a[2], b[2]) for a, b in segs)
+        cima = [(a, b) for a, b in segs if min(a[2], b[2]) > zmin + 300.0]
+        cum = 0.0
+        for A, B in cima:
+            L = math.hypot(B[0] - A[0], B[1] - A[1])
+            if L < 30.0:
+                continue
+            u = ((B[0] - A[0]) / L, (B[1] - A[1]) / L)
+            nh = (-u[1], u[0])
+            M = ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
+            mais = coberto((M[0] + nh[0] * 400.0, M[1] + nh[1] * 400.0))
+            menos = coberto((M[0] - nh[0] * 400.0, M[1] - nh[1] * 400.0))
+            if mais == menos:
+                cum += L
+                continue                                 # telhado dos dois lados, ou de nenhum: não é fechamento
+            fora = (-nh[0], -nh[1]) if mais else nh
+            off = 110.0                                  # a face de fora do painel
+            zb = zmin - 60.0
+
+            def P(s_, z_):
+                return (A[0] + u[0] * s_ + fora[0] * off, A[1] + u[1] * s_ + fora[1] * off, z_)
+
+            def zt(s_):
+                return A[2] + (B[2] - A[2]) * s_ / L + 60.0
+            a_ = 0.0
+            while a_ < L - 1.0:
+                b_ = min(L, a_ + W)
+                ch = {"secoes": [(P(a_, zb), P(b_, zb)), (P(a_, zt(a_)), P(b_, zt(b_)))],
+                      "a": cum + a_, "b": cum + b_, "origem": 0.0, "d": u, "n": nh}
+                so = _solido_da_chapa(ch, telha, camada, normal=(fora[0], fora[1], 0.0))
+                so.atributos = {"tipo_ifc": "IfcCovering", "telha_lancada": True, "fechamento": True, "telha": telha["modelo"],
+                                "painel": peca.split("#")[0]}
+                solidos.append(so)
+                area += (b_ - a_) * ((zt(a_) + zt(b_)) / 2 - zb)
+                a_ = b_
+            ml += L
+            cum += L
+    return solidos, ml, area
+
+
+def _solido_da_chapa(ch, telha, camada, espessura=ESPESSURA_DESENHO, normal=(0.0, 0.0, 1.0)):
+    """o sólido da chapa: o perfil trapezoidal (as ondas no sentido da caída) em cada terça, ligado de uma à outra; a
+    onda cresce para `normal` (para cima no telhado, para fora no fechamento)"""
     perfil = _perfil_tp(ch["a"], ch["b"], ch["origem"], telha)
     np_ = len(perfil)
     vs, fs = [], []
@@ -486,7 +604,9 @@ def _solido_da_chapa(ch, telha, camada, espessura=ESPESSURA_DESENHO):
         L = (ch["b"] - ch["a"]) or 1.0
         for s_, h in perfil:
             f = (s_ - ch["a"]) / L
-            vs.append((A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f, A[2] + (B[2] - A[2]) * f + h + espessura))
+            hh = h + espessura
+            vs.append((A[0] + (B[0] - A[0]) * f + normal[0] * hh, A[1] + (B[1] - A[1]) * f + normal[1] * hh,
+                       A[2] + (B[2] - A[2]) * f + normal[2] * hh))
         vs.append((A[0], A[1], A[2]))                     # o fundo, nas duas bordas
         vs.append((B[0], B[1], B[2]))
     m = np_ + 2
@@ -519,6 +639,9 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
                         "comprimento": round(sum(math.dist(((a1[0] + b1[0]) / 2, (a1[1] + b1[1]) / 2, a1[2]), ((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, a2[2]))
                                                  for (a1, b1), (a2, b2) in zip(ch["secoes"], ch["secoes"][1:])))}
         doc.add(so)
+    fech, fech_ml, fech_area = _fechamentos(doc, feitos, telha, camada)
+    for so in fech:
+        doc.add(so)
     for p in [p for p in feitos if p.get("borda")]:
         c = p["cantos"]
         e = ESPESSURA_DESENHO
@@ -533,7 +656,8 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
     ml_calha = 0.0
     for c in an["calhas"]:
         cs = c["cantos"]
-        topo = min(v[2] for v in cs) - 20.0
+        # a calha do vale em V e a da parede ficam no nível da telha (a telha entra nela); a entre duas terças, abaixo
+        topo = (max(v[2] for v in cs) + 50.0) if (c.get("eixo") or c.get("parede")) else (min(v[2] for v in cs) - 20.0)
         de = [(x, y, topo) for x, y, _z in cs]
         vs = [(x, y, topo - 200.0) for x, y, _z in cs] + de
         fs = [[0, 1, 2, 3], [7, 6, 5, 4], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]]
@@ -574,6 +698,8 @@ def lancar(doc, telha: Optional[dict] = None, vao_max: float = 2500.0, tol_plano
         "telha": telha["nome"], "panos": len(feitos), "chapas": len(chapas), "area_m2": round(area, 1), "peso_kg": round(area * telha["massa_m2"], 1),
         "beirais": sum(1 for p in feitos if p.get("beiral")), "bordas": sum(1 for p in feitos if p.get("borda")),
         "calhas": len(an["calhas"]), "calha_ml": round(ml_calha / 1000.0, 1),
+        "calhas_vale": sum(1 for c in an["calhas"] if c.get("eixo")), "calhas_parede": sum(1 for c in an["calhas"] if c.get("parede")),
+        "fechamentos": len(fech), "fechamento_ml": round(fech_ml / 1000.0, 1), "fechamento_m2": round(fech_area / 1e6, 1),
         "cumeeiras": len(an["cumeeiras"]), "cumeeira_ml": round(ml_cume / 1000.0, 1),
         "tercas": len(tercas), "aguas": lista_aguas,
         "caida_min": min((a["caida_pct"] for a in lista_aguas), default=None),
