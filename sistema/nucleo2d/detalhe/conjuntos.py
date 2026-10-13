@@ -325,7 +325,7 @@ TOLERANCIA_CONJUNTO_SEMELHANTE = 20.0
 FRACAO_COMUM_CONJUNTO = 0.75
 
 
-def _furos_dos_parafusos_da_caixa(p, doc, instancia, origem, u, v, w, u0, v0, esc) -> int:
+def _furos_dos_parafusos_da_caixa(p, doc, instancia, origem, u, v, w, u0, v0, esc, barras_furadas=()) -> int:
     """Na viga caixote, o tubo não traz o furo modelado: o que diz qual travessa é furada é o parafuso que a
     atravessa (os 6 M12.7 da T1 do Vicente passam pelas 3 travessas TQ1 de 150, para o suporte da laje). Marca o
     furo (d + 1,5 mm, como nas chapas) no ponto em que o eixo do parafuso cruza a travessa, com a chamada do
@@ -338,7 +338,9 @@ def _furos_dos_parafusos_da_caixa(p, doc, instancia, origem, u, v, w, u0, v0, es
     minimo = [min(cx[i][0] for _e, cx in caixas) - 20.0 for i in range(3)]
     maximo = [max(cx[i][1] for _e, cx in caixas) + 20.0 for i in range(3)]
     marcados = 0
-    vistos: set = set()
+    # o furo que a malha da barra já trouxe (o furo de verdade no tubo, 13/10) já está marcado: não repete
+    vistos: set = {(round(f_["p2"][0]), round(f_["p2"][1])) for b_ in (barras_furadas or []) for f_ in (b_.get("furos") or [])
+                   if f_.get("p2")}
     larg_u = max(_dot(_sub(q, origem), u) for _e, _cx in caixas for q in _e.vertices) - u0
     for f in _so_parafusos(_fixadores(doc)):
         cc = tuple(sum(q[i] for q in f.vertices) / len(f.vertices) for i in range(3))
@@ -2561,7 +2563,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             rotulos.append((nome_de(m["posicao"]), ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), ang))
     barras_furadas = _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc)
     if caixa:
-        _furos_dos_parafusos_da_caixa(p, doc, instancia, origem, u, v, w, u0, v0, esc)
+        _furos_dos_parafusos_da_caixa(p, doc, instancia, origem, u, v, w, u0, v0, esc, barras_furadas)
     banzos = [b for b in barras if (b[3] < 25.0 or b[3] > 155.0) and b[2] > 0.25 * larg]
     diagonais = [b for b in barras if b not in banzos]
     # nós: interseção do eixo de cada diagonal/montante com o eixo de cada banzo, perto da
