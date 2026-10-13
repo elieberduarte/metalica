@@ -37,6 +37,8 @@ GIRO_MAXIMO = 12.0
 ANGULO_MINIMO = 10.0
 #: Opções de quebra oferecidas.
 OPCOES_N = (1, 2, 3, 4)
+#: O passo da ponta é arco só se gira pelo menos esta fração do passo típico do arco (meio passo = toco reto).
+FRACAO_DO_PASSO_NA_PONTA = 0.75
 #: Perfil de barra redonda (ferro redondo, barra roscada, chumbador): dobra, não é canto.
 import re
 _RE_REDONDA = re.compile(r"FE\s*RED|FERRO\s*RED|ROSCAD|REDOND|CHUMB|^\s*[ØO]\s*\d|^\s*BR", re.I)
@@ -181,16 +183,23 @@ def analisar_peca(e: Solido) -> Optional[dict]:
     # comprido que encosta no arco gira meio passo na junção e não é arco
     passos = [math.dist(cs[i], cs[i + 1]) for i in range(len(cs) - 1)]
     curvo = [False] * len(dirs)
+    suave = lambda g: GIRO_MINIMO <= g <= GIRO_MAXIMO              # noqa: E731
+    # o passo do arco (o giro típico entre facetas): o toco reto curto na ponta da peça gira só meio passo na
+    # junção com o arco e não é arco — a F.T.1 da SOORO tinha 39 mm retos antes do arco, o círculo ajustado
+    # passava por esse ponto e a perna da quebra saía 3,6° fora da vertical (13/10)
+    suaves = sorted(g for g in giros if suave(g))
+    giro_tipico = suaves[len(suaves) // 2] if len(suaves) >= 3 else None
     for k in range(len(dirs)):
         g_ini = giros[k - 1] if k >= 1 else None
         g_fim = giros[k] if k < len(giros) else None
-        suave = lambda g: GIRO_MINIMO <= g <= GIRO_MAXIMO          # noqa: E731
         if g_ini is not None and g_fim is not None:
             curvo[k] = suave(g_ini) and suave(g_fim)
         else:
             g = g_fim if g_ini is None else g_ini
             vizinho = passos[k + 1] if g_ini is None else passos[k - 1]
             curvo[k] = g is not None and suave(g) and passos[k] <= 1.5 * vizinho
+            if curvo[k] and giro_tipico is not None and g < FRACAO_DO_PASSO_NA_PONTA * giro_tipico:
+                curvo[k] = False
     trechos = []                                  # (curvo?, passo inicial, passo final inclusivo)
     for k, c in enumerate(curvo):
         if trechos and trechos[-1][0] == c:

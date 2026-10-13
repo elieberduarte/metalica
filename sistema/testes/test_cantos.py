@@ -330,3 +330,22 @@ def test_quebra_e_volta_acompanham_a_malha_sem_furos_do_editor():
     assert d["pecas"] == 1 and d["furos_a_refazer"] == [j.id]
     assert j.atributos["malha_sem_furos_editor"]["vertices"] == [list(v) for v in j.vertices]
     assert len(j.atributos["malha_sem_furos_editor"]["vertices"]) == len(_joelho().vertices)
+
+
+def test_toco_reto_na_ponta_nao_entra_no_arco_e_a_perna_sai_na_direcao_dele():
+    """A F.T.1 da SOORO (13/10): 39 mm retos e verticais antes do arco, na ponta da peça. O passo da ponta gira só
+    meio passo na junção com o arco: é reto, fica fora do ajuste do círculo, e a perna da quebra sai na direção do
+    toco (vertical), não 3,6° torta."""
+    j = _joelho(reto_antes=39.0, reto_depois=400.0)
+    an = cantos.analisar_peca(j)
+    assert an["arco"]["i0"] == 1, an["arco"]["i0"]
+    assert abs(an["arco"]["raio"] - R) < 1.0 and abs(an["arco"]["angulo"] - ANG) < 0.5
+    q = cantos.quebrar_peca(j, 1)
+    assert q and q["n"] == 1
+    cs = [cantos._centro([j.vertices[i] for i in a]) for a in cantos.aneis_da_malha(j)]
+    # ponta, fim do toco e primeiro nó alinhados no eixo x (o toco é ao longo de x no fixture)
+    for p in cs[:3]:
+        assert abs(p[1] - cs[0][1]) < 0.5, cs[:3]
+    assert cs[1][0] > cs[0][0] and cs[2][0] > cs[1][0]
+    # sem o toco (arco até a ponta), a ponta continua sendo arco
+    assert cantos.analisar_peca(_joelho(reto_antes=0.0))["arco"]["i0"] == 0
