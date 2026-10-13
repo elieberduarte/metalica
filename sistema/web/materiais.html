@@ -131,6 +131,14 @@
   .progresso { font-size: 13px; color: var(--texto2); display: flex; gap: 8px; align-items: center; }
   .progresso .giro { width: 14px; height: 14px; border: 2px solid var(--borda-forte); border-top-color: var(--azul2); border-radius: 50%; animation: giro .8s linear infinite; }
   @keyframes giro { to { transform: rotate(360deg); } }
+  /* conferência das pendências (13/10): resposta por linha, situação e o botão */
+  .conf-cel { min-width: 260px; }
+  .conf-resposta { font: inherit; font-size: 13px; width: 100%; min-height: 58px; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); resize: vertical; }
+  .conf-resposta:focus { outline: 2px solid var(--campo-foco); outline-offset: -1px; }
+  .conf-acao { display: grid; gap: 6px; min-width: 130px; }
+  .conf-situacao { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--campo-borda); border-radius: var(--raio-p); background: var(--campo-fundo); color: var(--texto); }
+  .conf-quando { color: var(--texto3); font-size: 11.5px; }
+  .conf-3d { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; }
   .doc-previa { display: flex; flex-direction: column; min-height: 70vh; }
   .doc-barra { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
   .doc-barra .alternar { display: inline-flex; border: 1px solid var(--borda-forte); border-radius: var(--raio-p); overflow: hidden; }

@@ -14,6 +14,7 @@ produção (`PREFIXO_NOME`). O que o IFC não traz vem de `dados` (projeto.json 
 eixos das tesouras e as notas das tesouras.
 """
 import collections
+import hashlib
 import html
 import math
 import os
@@ -1030,7 +1031,16 @@ def _pendencias(lista: dict, parafusos: List[dict], lev: dict, nomes_pos: dict) 
     for a in _avisos_que_contam(lev.get("avisos") or []):
         if not (ja_medidas and "nome do TecnoMETAL" in str(a)):
             saida.append({"peca": "", "perfil": "", "o_que": str(a)})
+    for x in saida:
+        x["chave"] = chave_da_pendencia(x)
     return saida
+
+
+def chave_da_pendencia(x: dict) -> str:
+    """A chave que liga a pendência à resposta do usuário (13/10): peça + o que conferir, sem os números que mudam
+    de uma geração para outra (quantidades, medidas em mm), para a resposta sobreviver a um resumo gerado de novo."""
+    texto = "%s|%s" % (str(x.get("peca") or "").strip().lower(), re.sub(r"\d+", "#", str(x.get("o_que") or "").strip().lower()))
+    return hashlib.sha1(texto.encode("utf-8")).hexdigest()[:10]
 
 
 def _avisos_que_contam(avisos) -> List[str]:
@@ -1303,6 +1313,8 @@ td.r, th.r { text-align: right; }
 td.r { white-space: nowrap; }
 td.c, th.c { text-align: center; }
 tr.total td { font-weight: 700; color: var(--pri); background: var(--fundo); border-top: 1.2px solid var(--pri); border-bottom: 0; }
+tr.resolvida td { color: #6b7780; }
+tr.resolvida td:nth-child(4) b { color: #2c6e37; }
 table.tes { font-size: 7.5pt; }
 table.tes td, table.tes th { padding: 1.1mm 1.1mm; }
 /* a compra diferente do projeto, para a conferência (06/10): similar âmbar, fora do catálogo vermelho, escolhido azul */
@@ -1747,11 +1759,35 @@ def html_resumo_obra(R: dict, paginado: bool = False) -> str:
     if pend is None:
         pend = [{"peca": "", "perfil": "", "o_que": a} for a in _avisos_que_contam(R.get("avisos") or [])]
     sec += 1
-    partes.append(_h2(sec, "Pendências de conferência", ("%d a conferir" % len(pend)) if pend else "nenhuma pendência", "atencao" if pend else "ok"))
+    # as respostas do usuário às pendências (a aba Conferência, 13/10): a resolvida sai da conta de "a conferir"
+    conf = R.get("conferencias") or {}
+    resp = [conf.get(x.get("chave") or "") or {} for x in pend]
+    abertas = sum(1 for r in resp if r.get("situacao") != "resolvida")
+    resumo_pend = ("%d a conferir" % abertas + (" · %d resolvida(s)" % (len(pend) - abertas) if len(pend) - abertas else "")) if pend else "nenhuma pendência"
+    partes.append(_h2(sec, "Pendências de conferência", resumo_pend, "atencao" if abertas else "ok"))
     if pend:
-        partes.append(_tabela(["Peça", "Perfil", "O que conferir"], [[x["peca"], x["perfil"], x["o_que"]] for x in pend],
-                              larguras=["18%", "22%", "60%"], ids_linhas=[",".join(x.get("ids") or []) for x in pend]))
+        if any(r for r in resp):
+            linhas = [[x["peca"], x["perfil"], x["o_que"], _resposta_texto(r)] for x, r in zip(pend, resp)]
+            partes.append(_tabela(["Peça", "Perfil", "O que conferir", "Resposta"], linhas, larguras=["14%", "18%", "40%", "28%"], bruto=True,
+                                  ids_linhas=[",".join(x.get("ids") or []) for x in pend],
+                                  classes_linhas=[("resolvida" if r.get("situacao") == "resolvida" else "") for r in resp]))
+        else:
+            partes.append(_tabela(["Peça", "Perfil", "O que conferir"], [[x["peca"], x["perfil"], x["o_que"]] for x in pend],
+                                  larguras=["18%", "22%", "60%"], ids_linhas=[",".join(x.get("ids") or []) for x in pend]))
     return _doc(R, "Resumo da obra", "".join(partes), paginado)
+
+
+SITUACOES_CONFERENCIA = {"aberta": "em aberto", "respondida": "respondida", "resolvida": "resolvida"}
+
+
+def _resposta_texto(r: dict) -> str:
+    """A célula da resposta: a situação, a data e o texto do usuário."""
+    if not r:
+        return ""
+    sit = SITUACOES_CONFERENCIA.get(r.get("situacao") or "", "")
+    quando = str(r.get("quando") or "")[:16].replace("T", " ")
+    cab = " · ".join(x for x in (sit, quando) if x)
+    return "<b>%s</b>%s" % (_esc(cab), ("<br>" + _esc(r.get("resposta") or "")) if r.get("resposta") else "")
 
 
 def _nivel(z: float) -> str:
@@ -2127,7 +2163,9 @@ def gerar_resumos(pasta: str, R: dict, imprimir_pdf: bool = True) -> dict:
     try:
         import json
         with open(os.path.join(pasta, ARQ_NUMEROS), "w", encoding="utf-8") as f:
-            json.dump({"numeros": R.get("numeros"), "dimensoes": R.get("dimensoes")}, f, ensure_ascii=False, default=str)
+            json.dump({"numeros": R.get("numeros"), "dimensoes": R.get("dimensoes"),
+                       # as pendências de conferência, para a aba Conferência responder (13/10)
+                       "pendencias": R.get("pendencias") or []}, f, ensure_ascii=False, default=str)
     except (OSError, TypeError, ValueError):
         pass
     for chave, titulo, fn in (("obra", "resumo-da-obra", html_resumo_obra), ("materiais", "resumo-de-materiais", html_resumo_materiais)):

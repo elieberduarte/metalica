@@ -78,7 +78,7 @@ try:
     ok(aba.avaliar("document.querySelector('#sub-projeto').textContent") == "Compressores", "cabeçalho com o nome do projeto")
     ok(aba.avaliar("document.querySelectorAll('#arquivos-corpo a').length") >= 7, "aba Arquivos com os links (CSV, HTML, PDF)")
     ok(aba.avaliar("[...document.querySelectorAll('#arquivos-corpo a')].some(a => a.href.endsWith('plano-de-corte.csv'))"), "plano-de-corte.csv na aba Arquivos")
-    ok(aba.avaliar("document.querySelectorAll('#abas button[data-aba]').length") == 10, "dez abas")
+    ok(aba.avaliar("document.querySelectorAll('#abas button[data-aba]').length") == 11, "onze abas (Conferência entrou em 13/10)")
     aba.avaliar("document.querySelector('#abas [data-aba=corte]').click(); 1")
     nb = aba.avaliar("document.querySelectorAll('#aba-corte .barra-corte').length")
     ns = aba.avaliar("document.querySelectorAll('#aba-corte .barra-corte .seg').length")
@@ -128,6 +128,22 @@ try:
     aba.drenar(1.0)
     ok("resumo-de-materiais.html" in (aba.avaliar("document.querySelector('#doc-previa iframe').src") or ""), "alterna para o resumo de materiais")
     ok(aba.avaliar("[...document.querySelectorAll('#arquivos-corpo a')].some(a => a.href.endsWith('resumo-da-obra.pdf'))"), "os resumos aparecem na aba Arquivos")
+    ok(aba.avaliar("!!document.querySelector('#arquivos-corpo h3') && document.querySelector('#arquivos-corpo h3').textContent.startsWith('Documentos da obra')"), "aba Arquivos com a seção Documentos da obra")
+    # 5b) a aba Conferência (13/10): as pendências do resumo com o campo de resposta, e o registro de uma resposta
+    aba.avaliar("document.querySelector('#abas button[data-aba=conferencia]').click(); 1")
+    t0 = time.time()
+    while time.time() - t0 < 15 and not aba.avaliar("!!document.querySelector('#conferencia-corpo section')"): aba.drenar(0.5)
+    ok(aba.avaliar("!!document.querySelector('#conferencia-corpo section')"), "aba Conferência montada")
+    n_resp = aba.avaliar("document.querySelectorAll('#conferencia-corpo .conf-resposta').length")
+    if n_resp:
+        aba.avaliar("const t = document.querySelector('#conferencia-corpo .conf-resposta'); t.value = 'Conferido pelo verificador'; "
+                    "[...document.querySelectorAll('#conferencia-corpo button')].find(b => b.textContent === 'Registrar').click(); 1")
+        t0 = time.time()
+        while time.time() - t0 < 15 and not aba.avaliar("document.querySelectorAll('#conferencia-corpo section')[1].textContent.includes('Conferido pelo verificador')"): aba.drenar(0.5)
+        ok(aba.avaliar("document.querySelectorAll('#conferencia-corpo section')[1].textContent.includes('Conferido pelo verificador')"), "resposta registrada vai para o histórico")
+        ok(os.path.exists(os.path.join(DADOS, "compressores", "conferencias.json")), "conferencias.json gravado no projeto")
+    else:
+        ok(True, "sem pendências neste projeto: campo de resposta não testado")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, "sem erros no console da tela: %s" % erros[:3])
     # 6) navegação: editor 3D → CAD na mesma janela (sem window.open)

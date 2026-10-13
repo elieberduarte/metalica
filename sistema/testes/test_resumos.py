@@ -146,3 +146,29 @@ def test_barra_comercial_pelo_perfil():
     assert _barra_para([3640.0], 0, "W150X13.00") == 12000.0
     assert _barra_para([5000.0], 0, "U100X50X#11") == 6000.0
     assert _barra_para([6290.0], 0, "U150X50X#13") == 6000.0
+
+
+def test_pendencia_com_chave_estavel_e_resposta_no_resumo():
+    """A aba Conferência (13/10): cada pendência leva uma chave que não muda quando o número dela muda (12 de 14 peças →
+    13 de 14), e a resposta do usuário entra no resumo da obra como coluna, com a resolvida fora da conta."""
+    a = resumos.chave_da_pendencia({"peca": "T.C.4", "o_que": "furo(s) pelo parafuso colocado no 3D em 12 de 14 peças desta posição"})
+    b = resumos.chave_da_pendencia({"peca": "T.C.4", "o_que": "furo(s) pelo parafuso colocado no 3D em 13 de 14 peças desta posição"})
+    c = resumos.chave_da_pendencia({"peca": "T.C.5", "o_que": "furo(s) pelo parafuso colocado no 3D em 12 de 14 peças desta posição"})
+    assert a == b and a != c and len(a) == 10
+    R = {"projeto": {"nome": "OBRA"}, "dados": {}, "numeros": {"tesouras": 0, "peso_aco": 0.0, "ml_telhas": 0.0, "peso_telhas": 0.0, "total": 0.0,
+                                                               "parafusos": 0, "inclinacao": 0.0, "kg_m2": None},
+         "dimensoes": {"eixos": "", "comprimento_total": 0.0, "n_tesouras": 0, "nivel_apoio": 0.0, "apoio_por_chapa": False, "trechos": [],
+                       "projecao": (0.0, 0.0), "area_m2": 0.0},
+         "tesouras": [], "tercas": {"contagem": {k: {"pecas": 0, "tipos": 0} for k in ("cob", "lat", "oit", "marq")}, "linhas": [],
+                                    "perfil_principal": "", "furos": ""},
+         "grupos_peso": [], "telhas": {"descricao": "", "itens": [], "trechos": {}, "ml_total": 0.0, "kg_total": 0.0, "ml_por_trecho": {}, "largura_util": 980.0},
+         "parafusos": [], "familias": [], "chaparia": [], "chaparia_total": {"kg": 0.0, "pecas": 0}, "perfis_kg": 0.0, "avisos": [],
+         "pendencias": [{"peca": "CH7", "perfil": "PLATE 125x110x3", "o_que": "dimensões medidas diferem do nome: conferir", "chave": "k1", "ids": ["g1"]},
+                        {"peca": "F.T.1", "perfil": "U68X30", "o_que": "a peça sai 504 mm do plano: conferir", "chave": "k2"}]}
+    sem = resumos.html_resumo_obra(R)
+    assert "2 a conferir" in sem and "Resposta" not in sem.split("Pendências de conferência")[1]
+    R["conferencias"] = {"k1": {"situacao": "resolvida", "resposta": "Medida da chapa confirmada no projeto: 215 x 110.", "quando": "2026-10-13T09:00:00"}}
+    com = resumos.html_resumo_obra(R)
+    bloco = com.split("Pendências de conferência")[1]
+    assert "1 a conferir" in bloco and "1 resolvida(s)" in bloco and "Resposta" in bloco
+    assert "215 x 110" in bloco and "resolvida · 2026-10-13 09:00" in bloco and 'class="resolvida" data-ids="g1"' in bloco

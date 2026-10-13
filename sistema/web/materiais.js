@@ -131,7 +131,7 @@ const dataBR = (iso) => {
 const ABAS = [
   ['geral', 'Visão geral'], ['perfis', 'Perfis'], ['corte', 'Plano de corte'], ['chapas', 'Chapas'], ['telhas', 'Telhas e rufos'],
   ['conjuntos', 'Conjuntos'], ['romaneio', 'Romaneio'], ['acessorios', 'Acessórios'],
-  ['orcamento', 'Orçamento'], ['resumos', 'Resumos da obra'], ['arquivos', 'Arquivos'],
+  ['orcamento', 'Orçamento'], ['resumos', 'Resumos da obra'], ['conferencia', 'Conferência'], ['arquivos', 'Arquivos'],
 ];
 const COM_FILTRO = new Set(['perfis', 'corte', 'chapas', 'telhas', 'conjuntos', 'romaneio', 'acessorios']);
 let ABA = 'geral';
@@ -167,6 +167,7 @@ function irPara(k) {
   const busca = $('#filtro');
   if (busca) busca.hidden = !COM_FILTRO.has(k);
   if (k === 'resumos') abrirResumos();
+  if (k === 'conferencia') abrirConferencia();
   if (k === 'orcamento') abrirOrcamento();
   filtrar();
 }
@@ -206,7 +207,8 @@ function desenhar(L) {
   const c = $('#conteudo');
   c.replaceChildren();
   const painel = (k, ...filhos) => el('div', { class: 'painel-aba', 'data-aba': k, id: 'aba-' + k, hidden: k !== ABA }, ...filhos);
-  const contagem = { corte: (L.perfis || []).reduce((s, g) => s + (g.barras?.quantidade || 0), 0), perfis: (L.perfis || []).length, chapas: (L.chapas || []).length, telhas: (L.telhas || []).length,
+  const contagem = { conferencia: L.conferencia_abertas || 0,
+    corte: (L.perfis || []).reduce((s, g) => s + (g.barras?.quantidade || 0), 0), perfis: (L.perfis || []).length, chapas: (L.chapas || []).length, telhas: (L.telhas || []).length,
                      conjuntos: (L.conjuntos || []).length, romaneio: (L.posicoes || []).length, acessorios: (L.acessorios || []).length };
 
   // ---- visão geral
@@ -455,6 +457,8 @@ function desenhar(L) {
 
   // ---- resumos da obra (montado ao abrir a aba)
   c.append(painel('resumos', el('div', { id: 'resumos-corpo' }, vazio('Carregando os resumos…'))));
+  // ---- conferência das pendências (montado ao abrir a aba, 13/10)
+  c.append(painel('conferencia', el('div', { id: 'conferencia-corpo' }, vazio('Carregando as pendências…'))));
   RESUMOS_MONTADO = false;
 
   // ---- arquivos
@@ -463,6 +467,7 @@ function desenhar(L) {
 
   montarAbas(contagem);
   if (ABA === 'resumos') abrirResumos();
+  if (ABA === 'conferencia') abrirConferencia();
   if (ABA === 'orcamento') abrirOrcamento();
   filtrar();
 }
@@ -543,11 +548,27 @@ function desenharArquivos() {
   // os resumos: os gerados agora na aba Resumos valem; senão, os que a lista encontrou na pasta
   const res = Object.assign({}, arq.resumos || {});
   for (const [k, v] of Object.entries((RESUMOS && RESUMOS.arquivos) || {})) if (v) res[k] = v;
-  if (arq.pdf) linhas.push({ rot: 'Lista de materiais (PDF)', desc: 'Esta lista em PDF, para imprimir', a: arq.pdf });
+  if (arq.pdf) {
+    // o PDF impresso antes da lista de agora (24/09 contra 13/10): avisa para gerar de novo
+    const velho = LISTA && LISTA.gerado && arq.pdf.alterado && arq.pdf.alterado.slice(0, 16).replace('T', ' ') < String(LISTA.gerado).slice(0, 16);
+    linhas.push({ rot: 'Lista de materiais (PDF)', desc: velho ? 'Esta lista em PDF — anterior à lista de agora: gere de novo em "Lista em PDF"' : 'Esta lista em PDF, para imprimir', a: arq.pdf });
+  }
   for (const [k, ext, rot, desc] of DOCUMENTOS) if (res[k] && res[k][ext]) linhas.push({ rot, desc, a: res[k][ext] });
   for (const [k, [rot, desc]] of Object.entries(DESCRICOES)) if (arq[k]) linhas.push({ rot, desc, a: arq[k] });
-  if (!linhas.length) { alvo.replaceChildren(vazio('Nenhum arquivo gerado ainda. "Atualizar pelo modelo 3D" grava a lista e os CSVs; os resumos saem na aba Resumos da obra.')); return; }
-  alvo.replaceChildren(secao('Arquivos do projeto', 'tudo fica na pasta detalhamento/ do projeto',
+  const docs = arq.documentos || [];
+  if (!linhas.length && !docs.length) { alvo.replaceChildren(vazio('Nenhum arquivo gerado ainda. "Atualizar pelo modelo 3D" grava a lista e os CSVs; os resumos saem na aba Resumos da obra.')); return; }
+  // os documentos da obra (13/10): análises, comparativos com a fábrica, o que chega de fora — a pasta documentos/ do projeto
+  const tipoDoc = (nome) => ({ pdf: 'PDF', xlsx: 'Excel', xls: 'Excel', docx: 'Word', doc: 'Word', md: 'Texto', txt: 'Texto', png: 'Imagem', jpg: 'Imagem', jpeg: 'Imagem', dwg: 'DWG', dxf: 'DXF', zip: 'Pacote' })[String(nome).split('.').pop().toLowerCase()] || 'Arquivo';
+  const secaoDocs = secao('Documentos da obra', 'a pasta documentos/ do projeto: análises, comparativos com a fábrica e o que chega de fora',
+    el('div', {}, docs.length ? tabela([
+      { titulo: 'Documento', valor: (d) => el('a', { href: d.url, target: '_blank', rel: 'noopener', texto: d.nome.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ') }), classe: 'b' },
+      { titulo: 'Tipo', valor: (d) => tipoDoc(d.nome), classe: 'c' },
+      { titulo: 'Nome no disco', valor: (d) => d.nome, classe: 'mono' },
+      { titulo: 'Tamanho (kB)', valor: (d) => d.tamanho_kb, classe: 'r', num: true, casas: 1 },
+      { titulo: 'Data', valor: (d) => dataBR(d.alterado) },
+    ], docs, null, (d) => d.nome) : vazio('Nenhum documento ainda. Guarde na pasta documentos/ do projeto os PDFs e planilhas da obra: eles aparecem aqui.'),
+    el('div', { class: 'passos' }, el('button', { type: 'button', class: 'botao-m', onclick: () => abrirPasta('documentos'), texto: 'Abrir a pasta documentos/' }))));
+  alvo.replaceChildren(secaoDocs, secao('Arquivos gerados', 'tudo fica na pasta detalhamento/ do projeto',
     el('div', {}, tabela([
       { titulo: 'Arquivo', valor: (x) => el('a', { href: x.a.url, target: '_blank', rel: 'noopener', texto: x.rot }), classe: 'b' },
       { titulo: 'O que é', chave: 'desc', classe: 'quebra' },
@@ -588,8 +609,9 @@ async function gerarPDF() {
   } finally { b.disabled = false; }
 }
 
-function abrirPasta() {
-  pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/abrir-pasta`, { sub: 'detalhamento' }).catch(e => aviso(e.message, true));
+function abrirPasta(sub = 'detalhamento') {
+  if (typeof sub !== 'string') sub = 'detalhamento';           // chamado direto como onclick: chega o evento
+  pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/abrir-pasta`, { sub }).catch(e => aviso(e.message, true));
 }
 
 function avisoComLinks(texto, links, tipo = 'ok') {
@@ -598,6 +620,78 @@ function avisoComLinks(texto, links, tipo = 'ok') {
   caixa.className = 'aviso-topo ' + tipo;
   caixa.replaceChildren(texto, ' ', ...links.flatMap(([url, rot], i) => [i ? ' · ' : '', el('a', { href: url, target: '_blank', rel: 'noopener', texto: rot })]),
     ' · ', el('a', { href: '#', onclick: (ev) => { ev.preventDefault(); abrirPasta(); }, texto: 'Abrir a pasta' }));
+}
+
+/* ------------------------------------------------------------ conferência das pendências (13/10)
+ * As pendências do resumo da obra (seção "Pendências de conferência") com um campo de resposta cada: o que foi
+ * conferido, a decisão, quem respondeu. Fica em conferencias.json no projeto, com o histórico de cada resposta, e
+ * entra no resumo da obra quando ele é gerado de novo. O que já foi respondido e saiu do resumo fica no histórico. */
+const SITUACOES = [['aberta', 'em aberto'], ['respondida', 'respondida'], ['resolvida', 'resolvida']];
+let CONF = null;
+
+async function abrirConferencia(forcar = false) {
+  if (CONF && !forcar) return;
+  try { CONF = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/conferencias`); }
+  catch (e) { const c = $('#conferencia-corpo'); if (c) c.replaceChildren(vazio(`Não foi possível ler as pendências: ${e.message}`)); return; }
+  desenharConferencia();
+}
+
+function desenharConferencia() {
+  const corpo = $('#conferencia-corpo');
+  if (!corpo || !CONF) return;
+  const C = CONF;
+  const badge = document.querySelector('#abas button[data-aba="conferencia"]');
+  if (badge) { const q = badge.querySelector('.qtd'); if (C.abertas) { if (q) q.textContent = n(C.abertas); else badge.append(el('span', { class: 'qtd', texto: n(C.abertas) })); } else if (q) q.remove(); }
+  const partes = [];
+  if (C.sem_resumo) {
+    partes.push(secao('Pendências de conferência', null, vazio('As pendências vêm do resumo da obra. Gere os resumos na aba "Resumos da obra" e volte aqui.')));
+  } else {
+    const linha = (it) => {
+      const resposta = el('textarea', { class: 'conf-resposta', placeholder: 'O que foi conferido e a decisão…', spellcheck: 'false' });
+      resposta.value = it.resposta || '';
+      const sit = el('select', { class: 'conf-situacao' }, ...SITUACOES.map(([v, t]) => el('option', { value: v, texto: t, selected: v === (it.situacao || 'aberta') })));
+      const quando = el('small', { class: 'conf-quando', texto: it.quando ? `registrado em ${dataBR(it.quando)}` : '' });
+      const botao = el('button', { type: 'button', class: 'botao-m principal', texto: 'Registrar', onclick: async () => {
+        botao.disabled = true;
+        try {
+          const situacao = sit.value === 'aberta' && resposta.value.trim() ? 'respondida' : sit.value;
+          CONF = await pedir(`/api/projetos/${encodeURIComponent(PROJETO)}/conferencias`,
+            { chave: it.chave, resposta: resposta.value.trim(), situacao, peca: it.peca, perfil: it.perfil, o_que: it.o_que });
+          desenharConferencia();
+          aviso('Resposta registrada no projeto (conferencias.json). Para levar ao PDF do resumo da obra, use "Gerar de novo" na aba Resumos da obra.');
+        } catch (e) { aviso(e.message, true); botao.disabled = false; }
+      } });
+      const ids = (it.ids || []).join(',');
+      return { it, resposta, sit, quando, botao, ids };
+    };
+    const linhas = (C.itens || []).map(linha);
+    partes.push(secao('Pendências de conferência', `${n(C.abertas)} em aberto de ${n(C.itens.length)} · resumo da obra de ${dataBR(C.gerado)}`,
+      el('div', { class: 'rolagem' }, tabela([
+        { titulo: 'Peça', valor: (l) => l.it.peca || '—', classe: 'b' },
+        { titulo: 'Perfil', valor: (l) => l.it.perfil || '' },
+        { titulo: 'O que conferir', valor: (l) => el('div', {}, l.it.o_que, l.ids ? el('a', { href: '#', class: 'conf-3d', texto: 'ver no 3D ↗', title: 'Abrir o editor 3D com estas peças em destaque',
+            onclick: (ev) => { ev.preventDefault(); verNo3D(l.ids); } }) : null), classe: 'quebra' },
+        { titulo: 'Resposta', valor: (l) => l.resposta, classe: 'quebra conf-cel' },
+        { titulo: 'Situação', valor: (l) => el('div', { class: 'conf-acao' }, l.sit, l.botao, l.quando) },
+      ], linhas, null, (l) => [l.it.peca, l.it.perfil, l.it.o_que, l.it.resposta].join(' ')))));
+  }
+  // o histórico da obra: cada resposta dada, da mais nova para a mais antiga, inclusive as pendências que já saíram do resumo
+  const eventos = [];
+  for (const it of [...(C.itens || []), ...(C.antigas || [])]) {
+    if (it.quando) eventos.push({ quando: it.quando, peca: it.peca, o_que: it.o_que, situacao: it.situacao, resposta: it.resposta, atual: it.atual });
+    for (const h of it.historico || []) eventos.push({ quando: h.quando, peca: it.peca, o_que: it.o_que, situacao: h.situacao, resposta: h.resposta, atual: it.atual, anterior: true });
+  }
+  eventos.sort((a, b) => String(b.quando).localeCompare(String(a.quando)));
+  const sitTexto = (v) => (SITUACOES.find(([k]) => k === v) || [v, v])[1];
+  partes.push(secao('Histórico da conferência', eventos.length ? `${n(eventos.length)} registro(s)` : 'nenhum registro ainda',
+    eventos.length ? el('div', { class: 'rolagem' }, tabela([
+      { titulo: 'Quando', valor: (e) => dataBR(e.quando), classe: 'mono' },
+      { titulo: 'Peça', valor: (e) => e.peca || '—', classe: 'b' },
+      { titulo: 'Pendência', valor: (e) => e.o_que + (e.atual ? '' : ' (não está mais no resumo)'), classe: 'quebra' },
+      { titulo: 'Situação', valor: (e) => sitTexto(e.situacao) + (e.anterior ? ' (anterior)' : ''), classe: 'c' },
+      { titulo: 'Resposta', valor: (e) => e.resposta || '', classe: 'quebra' },
+    ], eventos, null, (e) => [e.peca, e.o_que, e.resposta].join(' '))) : vazio('As respostas registradas acima ficam aqui, com a data, como o histórico da obra.')));
+  corpo.replaceChildren(...partes);
 }
 
 /* ------------------------------------------------------------ resumos da obra */

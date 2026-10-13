@@ -71,6 +71,8 @@ Rotas da API:
     POST /api/projetos/<slug>/materiais[/pdf]           recalcula do modelo (barra, regra_tercas) / imprime o PDF
     GET  /api/projetos/<slug>/resumos                    dados dos resumos (revisão, telha, eixos…) e sugestões
     POST /api/projetos/<slug>/resumos {dados}            grava os dados e gera o resumo da obra e o de materiais (HTML + PDF)
+    GET  /api/projetos/<slug>/conferencias               as pendências de conferência do resumo da obra com as respostas do usuário
+    POST /api/projetos/<slug>/conferencias {chave, resposta, situacao}  registra a resposta a uma pendência (conferencias.json)
     POST /api/projetos/<slug>/pranchas  pranchas (folhas com carimbo) a partir dos desenhos 2D
     POST /api/projetos/<slug>/importar-dxf  DXF em texto → entidades do CAD
     POST /api/projetos/<slug>/importar-pdf  PDF vetorial (base64) → entidades do CAD, em mm de papel
@@ -2243,6 +2245,111 @@ def dados_dos_resumos(s: str) -> dict:
     return {"dados": dados, "sugestoes": sug, "campos": list(CAMPOS_RESUMO), "arquivos": arquivos}
 
 
+#: A pasta dos documentos da obra dentro do projeto: análises, comparativos com a fábrica, o que chega de fora (13/10).
+PASTA_DOCUMENTOS = "documentos"
+EXTENSOES_DOCUMENTOS = (".pdf", ".xlsx", ".xls", ".docx", ".doc", ".md", ".txt", ".png", ".jpg", ".jpeg", ".dwg", ".dxf", ".zip")
+
+
+def _documentos_da_obra(pasta_projeto: str) -> list:
+    """Os arquivos de <projeto>/documentos/, o mais novo primeiro: a aba Arquivos lista todos, para os documentos
+    principais da obra ficarem num lugar só (o usuário, 13/10)."""
+    pasta = os.path.join(pasta_projeto, PASTA_DOCUMENTOS)
+    if not os.path.isdir(pasta):
+        return []
+    saida = []
+    for nome in os.listdir(pasta):
+        cam = os.path.join(pasta, nome)
+        if nome.startswith((".", "~$")) or not os.path.isfile(cam) or not nome.lower().endswith(EXTENSOES_DOCUMENTOS):
+            continue
+        saida.append(_descrever_arquivo(cam, pasta_projeto))
+    saida.sort(key=lambda d: d.get("alterado") or "", reverse=True)
+    return saida
+
+
+# ============================================================ conferência das pendências (13/10)
+#: As respostas do usuário às pendências de conferência do resumo da obra, no projeto, com o histórico de cada uma.
+ARQ_CONFERENCIAS = "conferencias.json"
+
+
+def _ler_conferencias(s: str) -> dict:
+    caminho = os.path.join(_gerente()._existente(s), ARQ_CONFERENCIAS)
+    if not os.path.exists(caminho):
+        return {"itens": {}}
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) and isinstance(d.get("itens"), dict) else {"itens": {}}
+    except (OSError, ValueError):
+        return {"itens": {}}
+
+
+def _conferencias_por_chave(s: str) -> dict:
+    """{chave: {situacao, resposta, quando}} do que o usuário já respondeu: vai para o resumo da obra."""
+    return {k: {"situacao": v.get("situacao"), "resposta": v.get("resposta"), "quando": v.get("quando")}
+            for k, v in _ler_conferencias(s)["itens"].items() if v.get("resposta") or v.get("situacao") not in (None, "", "aberta")}
+
+
+def conferencias_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/conferencias: as pendências do último resumo da obra (resumo-numeros.json) com a resposta
+    de cada uma, e as já respondidas que não estão mais no resumo (o histórico da obra)."""
+    from saida import resumos
+    pasta = os.path.join(_gerente()._existente(s), "detalhamento")
+    pend, gerado = [], ""
+    try:
+        with open(os.path.join(pasta, resumos.ARQ_NUMEROS), encoding="utf-8") as f:
+            d = json.load(f)
+        pend = list(d.get("pendencias") or [])
+        gerado = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(os.path.getmtime(os.path.join(pasta, resumos.ARQ_NUMEROS))))
+    except (OSError, ValueError):
+        pass
+    for x in pend:
+        x.setdefault("chave", resumos.chave_da_pendencia(x))
+    guardadas = _ler_conferencias(s)["itens"]
+    itens, vistas = [], set()
+    for x in pend:
+        r = guardadas.get(x["chave"]) or {}
+        vistas.add(x["chave"])
+        itens.append({"chave": x["chave"], "peca": x.get("peca") or "", "perfil": x.get("perfil") or "", "o_que": x.get("o_que") or "",
+                      "ids": x.get("ids") or [], "atual": True, "situacao": r.get("situacao") or "aberta",
+                      "resposta": r.get("resposta") or "", "quando": r.get("quando") or "", "historico": r.get("historico") or []})
+    antigas = [dict(v, chave=k, atual=False) for k, v in guardadas.items() if k not in vistas]
+    antigas.sort(key=lambda v: v.get("quando") or "", reverse=True)
+    return {"gerado": gerado, "sem_resumo": not gerado, "itens": itens, "antigas": antigas,
+            "abertas": sum(1 for it in itens if it["situacao"] != "resolvida")}
+
+
+def gravar_conferencia(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/conferencias {chave, resposta, situacao, peca, perfil, o_que}: guarda a resposta do
+    usuário à pendência, com a data, e o histórico das respostas anteriores dela. Os resumos levam a resposta ao
+    serem gerados de novo."""
+    chave = str(corpo.get("chave") or "").strip()
+    if not chave:
+        raise ErroDeDados("falta a chave da pendência.")
+    situacao = str(corpo.get("situacao") or "respondida")
+    if situacao not in ("aberta", "respondida", "resolvida"):
+        raise ErroDeDados("situação desconhecida: %s" % situacao)
+    from projetos import _trava_do_projeto, trocar_arquivo
+    g = _gerente()
+    pasta = g._existente(s)
+    with _trava_do_projeto(pasta):
+        d = _ler_conferencias(s)
+        it = dict(d["itens"].get(chave) or {})
+        agora = time.strftime("%Y-%m-%dT%H:%M:%S")
+        hist = list(it.get("historico") or [])
+        if it.get("quando") and (it.get("resposta") != corpo.get("resposta") or it.get("situacao") != situacao):
+            hist.append({"quando": it["quando"], "resposta": it.get("resposta") or "", "situacao": it.get("situacao") or ""})
+        it.update({"peca": str(corpo.get("peca") or it.get("peca") or ""), "perfil": str(corpo.get("perfil") or it.get("perfil") or ""),
+                   "o_que": str(corpo.get("o_que") or it.get("o_que") or ""), "resposta": str(corpo.get("resposta") or "").strip(),
+                   "situacao": situacao, "quando": agora, "historico": hist[-20:]})
+        d["itens"][chave] = it
+        d["alterado"] = agora
+        with open(os.path.join(pasta, ARQ_CONFERENCIAS + ".parcial"), "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        trocar_arquivo(os.path.join(pasta, ARQ_CONFERENCIAS + ".parcial"), os.path.join(pasta, ARQ_CONFERENCIAS))
+    g.tocar(s)
+    return conferencias_do_projeto(s)
+
+
 def _arquivos_dos_resumos(pasta: str) -> dict:
     """{obra|materiais: {html, pdf, xlsx}} dos resumos gravados em detalhamento/ — para a aba Resumos e a aba Arquivos."""
     arquivos = {}
@@ -2291,6 +2398,8 @@ def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> d
         R = resumos.levantar_resumos(doc, lev, lista, nomes, dados)
         # o logo e as cores da empresa, os mesmos da proposta comercial (08/10)
         R["marca"] = identidade.ler_marca(PROJETOS)
+        # as respostas do usuário às pendências (aba Conferência, 13/10) entram no resumo da obra
+        R["conferencias"] = _conferencias_por_chave(s)
         pasta = os.path.join(g._existente(s), "detalhamento")
         # o dossiê: os eixos do projeto (os do usuário) ou os da planta de localização
         _progresso(s, "desenhando a obra…")
@@ -2439,7 +2548,14 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
             arquivos[chave] = _descrever_arquivo(cam, pasta)
     # os resumos da obra e de materiais na aba Arquivos, sem precisar abrir a aba Resumos antes (13/10)
     arquivos["resumos"] = _arquivos_dos_resumos(pasta)
+    # os documentos da obra (análises, comparativos com a fábrica), na pasta documentos/ do projeto (13/10)
+    arquivos["documentos"] = _documentos_da_obra(g._existente(s))
     lista["arquivos"] = arquivos
+    # a contagem da aba Conferência (13/10)
+    try:
+        lista["conferencia_abertas"] = conferencias_do_projeto(s)["abertas"]
+    except Exception:                                  # noqa: BLE001 — sem o resumo ainda
+        lista["conferencia_abertas"] = 0
     lista["projeto"] = dict(lista.get("projeto") or {}, slug=s, **_identificacao_do_projeto(s))
     # a lista só se refaz pelo botão: a tela avisa quando o modelo 3D foi gravado depois dela
     try:
@@ -4444,6 +4560,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(_vivos().estado(partes[0]))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(dados_dos_resumos(partes[0]))
+                if len(partes) == 2 and partes[1] == "conferencias":
+                    return self._json(conferencias_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] in ("orcamento", "comercial") and not COMERCIAL:
                     return self._erro(SO_NO_DEV, 404)
                 if len(partes) == 2 and partes[1] == "orcamento":
@@ -4628,6 +4746,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(gravar_emenda_perfil(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "resumos":
                     return self._json(gerar_resumos_projeto(partes[0], corpo, self.server.server_address[1]))
+                if len(partes) == 2 and partes[1] == "conferencias":
+                    return self._json(gravar_conferencia(partes[0], corpo if isinstance(corpo, dict) else {}))
                 if len(partes) in (2, 3) and partes[1] in ("comercial", "orcamento") and not COMERCIAL:
                     return self._erro(SO_NO_DEV, 404)
                 if len(partes) in (2, 3) and partes[1] == "comercial":
