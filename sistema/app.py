@@ -2128,6 +2128,38 @@ def cantos_do_projeto(s: str) -> dict:
     return {"pecas": cantos.analisar_modelo(doc), "quebradas": cantos.quebradas_do_modelo(doc)}
 
 
+def multidobras_3d_do_projeto(s: str) -> dict:
+    """GET /api/projetos/<s>/multidobras-3d: as telhas multidobra do modelo (conjunto, instâncias, facetas, raio do
+    modelo, raio comercial) e quantas já estão reescritas no 3D (nucleo3d.multidobras3d)."""
+    from nucleo3d import multidobras3d
+    from nucleo2d.detalhe.telhas import RAIO_INTERNO_COMERCIAL
+    doc = _documento3d_do_projeto(s)
+    return {"telhas": multidobras3d.analisar_modelo(doc), "raio_comercial": RAIO_INTERNO_COMERCIAL}
+
+
+def ajustar_multidobras_3d(s: str, corpo: dict) -> dict:
+    """POST /api/projetos/<s>/multidobras-3d {raio_int?, conjuntos?} reescreve as multidobras no 3D com o raio
+    comercial girando no vértice das retas; {desfazer: true, conjuntos?} devolve os vértices originais. O modelo
+    anterior vai para o histórico."""
+    from nucleo3d import multidobras3d
+    conjuntos = corpo.get("conjuntos") or None
+    try:
+        if corpo.get("desfazer"):
+            _progresso(s, "voltando as telhas ao original…")
+            doc = _documento3d_do_projeto(s)
+            r = multidobras3d.desfazer_modelo(doc, conjuntos)
+        else:
+            _progresso(s, "reescrevendo as multidobras no 3D…")
+            doc = _documento3d_do_projeto(s)
+            r = multidobras3d.ajustar_modelo(doc, corpo.get("raio_int"), conjuntos)
+        if r["pecas"]:
+            _regravar_modelo(s, doc, marco=True)
+            _gerente().tocar(s)
+        return r
+    finally:
+        _fim_progresso(s)
+
+
 #: Modelo lido para as pré-visualizações dos cantos, por projeto: (mtime, Documento). O
 #: diálogo pede uma prévia a cada troca de opção; reler 20 MB a cada vez travava.
 _CACHE_PREVIA_CANTOS: dict = {}
@@ -4572,6 +4604,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(etapas_do_projeto(partes[0]))
                 if len(partes) == 2 and partes[1] == "cantos":
                     return self._json(cantos_do_projeto(partes[0]))
+                if len(partes) == 2 and partes[1] == "multidobras-3d":
+                    return self._json(multidobras_3d_do_projeto(partes[0]))
                 if len(partes) == 3 and partes[1] == "cantos" and partes[2] == "previa":
                     q = parse_qs(urlparse(self.path).query)
                     return self._json(previa_de_canto(partes[0], (q.get("marca") or [""])[0], (q.get("n") or ["0"])[0]))
@@ -4758,6 +4792,8 @@ class Handler(BaseHTTPRequestHandler):
                                                      corpo if isinstance(corpo, dict) else {}))
                 if len(partes) == 2 and partes[1] == "cantos":
                     return self._json(quebrar_cantos_projeto(partes[0], corpo))
+                if len(partes) == 2 and partes[1] == "multidobras-3d":
+                    return self._json(ajustar_multidobras_3d(partes[0], corpo if isinstance(corpo, dict) else {}))
                 if len(partes) == 2 and partes[1] == "eixos":
                     return self._json(gravar_eixos_projeto(partes[0], corpo))
                 if len(partes) == 2 and partes[1] == "projeto-recebido":

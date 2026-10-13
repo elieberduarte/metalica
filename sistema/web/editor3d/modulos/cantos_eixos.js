@@ -89,6 +89,62 @@ export class MetodosCantosEixos {
    * tangentes — o canto quinado da fábrica —, com o desvio de cada opção. A quebra vai
    * para o modelo 3D em todas as instâncias; o modelo anterior fica no histórico.
    */
+  /**
+   * Multidobra da telha no 3D (13/10): a telha do beiral do TecnoMETAL vem com facetas de R800; a
+   * fábrica dobra em R450 interno girando no vértice das duas retas (o que o detalhamento já desenha).
+   * Aqui a malha do modelo é reescrita assim, para conferir no 3D a telha contra banzos e terças;
+   * "Voltar ao original" devolve os vértices guardados. As quantidades não mudam.
+   */
+  async dialogoMultidobras3D() {
+    if (!this.projeto) { this.aviso('Abra um projeto para ajustar as multidobras.', 'atencao'); return; }
+    let dados;
+    try {
+      await this._gravarAntesDeGerar();
+      dados = await this.api.multidobras3dDoProjeto(this.projeto);
+    } catch (e) { this.aviso(`Não deu para analisar as telhas: ${e.message}`, 'erro', 0); return; }
+    const telhas = dados.telhas || [];
+    const mm = (x, c = 0) => Number(x).toLocaleString('pt-BR', { maximumFractionDigits: c });
+    if (!telhas.length) {
+      await this.dialogo({ titulo: 'Multidobra da telha no 3D', corpo: el('p', { texto: 'Nenhuma telha multidobra foi reconhecida no modelo (a fileira reta da água, facetas e reta da parede do TecnoMETAL).' }), ok: null });
+      return;
+    }
+    const corpo = el('div', { class: 'cantos' });
+    corpo.append(el('p', { texto: `Raio interno comercial: R${mm(dados.raio_comercial)} (externo R${mm(dados.raio_comercial + 40)} na TP40), girando no vértice das duas retas — as pontas livres ficam onde estão e as tangências recuam. É o que o detalhamento já desenha; aqui vai para a malha do 3D, para conferir com banzos e terças.` }));
+    const t = el('table', { class: 'tabela-cantos' });
+    t.append(el('thead', {}, el('tr', {}, ...['Conjunto', 'Telha', 'Inst.', 'Facetas', 'Raio no modelo', 'Raio novo', 'Ângulo', 'No 3D', 'Aplicar'].map(x => el('th', { texto: x })))));
+    const tb = el('tbody');
+    const marcar = new Map();
+    for (const x of telhas) {
+      const cx = el('input', { type: 'checkbox', checked: x.ajustadas < x.instancias });
+      marcar.set(x.conjunto, cx);
+      tb.append(el('tr', {},
+        el('td', { texto: x.conjunto }), el('td', { texto: x.perfil || '' }), el('td', { texto: String(x.instancias) }), el('td', { texto: String(x.facetas) }),
+        el('td', { texto: x.raio_modelo ? `R${mm(x.raio_modelo)} (média)` : '' }), el('td', { texto: `R${mm(x.raio_int)} int. / R${mm(x.raio_ext)} ext.` }),
+        el('td', { texto: x.angulo ? `${mm(x.angulo, 1)}°` : '' }),
+        el('td', { texto: x.ajustadas ? (x.ajustadas === x.instancias ? 'ajustadas' : `${x.ajustadas} de ${x.instancias}`) : 'original do IFC' }),
+        el('td', {}, cx)));
+    }
+    t.append(tb);
+    corpo.append(t);
+    const jaAjustadas = telhas.some(x => x.ajustadas);
+    const voltar = el('input', { type: 'checkbox' });
+    if (jaAjustadas) corpo.append(el('label', { class: 'linha' }, voltar, ' Voltar ao original do IFC as marcadas (em vez de aplicar)'));
+    const ok = await this.dialogo({ titulo: 'Multidobra da telha no 3D', corpo, ok: 'Aplicar no modelo' });
+    if (!ok) return;
+    const conjuntos = [...marcar].filter(([, cx]) => cx.checked).map(([c]) => c);
+    if (!conjuntos.length) { this.aviso('Nenhum conjunto marcado.', 'info'); return; }
+    try {
+      const desfazer = jaAjustadas && voltar.checked;
+      this.dica(desfazer ? 'Voltando as telhas ao original…' : 'Reescrevendo as multidobras no 3D…');
+      const r = await this.api.ajustarMultidobras3d(this.projeto, desfazer ? { desfazer: true, conjuntos } : { conjuntos });
+      await this._abrirProjeto();
+      this.dica('');
+      this.aviso(desfazer ? `${r.pecas} peça(s) de telha voltaram ao original do IFC.`
+        : `${r.instancias} multidobra(s) (${r.pecas} peças) reescritas no 3D com R${mm(r.raio_int)} interno; o anterior está no histórico.` +
+          ((r.falhas || []).length ? ` Avisos: ${r.falhas.slice(0, 4).join(' · ')}` : ''), 'info', 14000);
+    } catch (e) { this.dica(''); this.aviso(`Não foi possível ajustar as telhas: ${e.message}`, 'erro', 0); }
+  }
+
   async dialogoCantosRedondos() {
     if (!this.projeto) { this.aviso('Abra um projeto para analisar os cantos.', 'atencao'); return; }
     let dados;

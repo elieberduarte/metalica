@@ -118,6 +118,7 @@
       HR,
       S('Peça selecionada', [
         I('Cantos redondos…', '3d', 'cantos-redondos', { antes: 'Estrutura › Cantos redondos…' }),
+        I('Multidobra da telha no 3D…', '3d', 'multidobras-3d', { dica: 'a telha do beiral reescrita no 3D com o raio comercial (R450), girando no vértice das retas — para conferir com banzos e terças' }),
         I('Dividir a peça em trechos', '3d', 'explodir', { requer: 'sel', dica: 'antes "Explodir peça": o Explodir do 2D é outro', antes: 'Estrutura › Explodir peça em trechos' }),
         I('Unir peças', '3d', 'juntar', { requer: 'sel', dica: 'antes "Juntar peças": o Juntar do 2D é outro', antes: 'Estrutura › Juntar peças' }),
       ]),

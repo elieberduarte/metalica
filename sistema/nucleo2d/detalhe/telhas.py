@@ -264,7 +264,10 @@ def _analisar_instancia(inst, barras: Sequence = ()) -> Optional[dict]:
             "p1": p1, "p2": p2, "d1": d1, "d2": d2, "I": I, "T": T, "sentido": 1 if theta > 0 else -1,
             "cobrimento": cobrimento, "saia": saia, "eixos_perfil": (a, b, w),
             # como o raio sai do modelo: o arco das facetas (linha média) dividido pelo ângulo
-            "facetas": len(meio), "arco_modelo": round(arco, 1), "raio_modelo": round(raio_modelo, 1), "apoios": apoios}
+            "facetas": len(meio), "arco_modelo": round(arco, 1), "raio_modelo": round(raio_modelo, 1), "apoios": apoios,
+            # as peças desta instância na ordem da fileira (reta da água, facetas, reta da parede), para o 3D
+            # reescrever a dobra com o raio comercial (nucleo3d/multidobras3d.py, 13/10)
+            "cadeia_ids": [s["e"].id for s in cadeia], "t1_modelo": reta1["p"][1], "t2_modelo": reta2["p"][0]}
 
 
 def _secao_2d(e, w, a, b):

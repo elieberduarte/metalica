@@ -113,6 +113,18 @@ try:
     ok(r3[0] == 14 and r3[1] == ["P15"] and r3[2] == 0 and r3[3] == 0 and r3[4] == 0 and r3[5] == 0 and r3[6] == 14 and r3[7] == 216, f"voltou ao canto redondo: {r3}")
     r4 = json.loads(longo(aba, """(async () => { const d = await window.editor.api.cantosDoProjeto('compressores'); return JSON.stringify([d.pecas.map(p => p.marca), (d.quebradas || []).length]); })()"""))
     ok("P15" in r4[0] and r4[1] == 0, f"P15 volta à lista de cantos redondos: {r4}")
+    # multidobra da telha no 3D (13/10): a rota analisa, aplica e volta ao original
+    import urllib.request as _ur
+    get = lambda rota: json.load(_ur.urlopen(base + rota, timeout=600))                    # noqa: E731
+    post = lambda rota, corpo: json.load(_ur.urlopen(_ur.Request(base + rota, data=json.dumps(corpo).encode(), headers={"Content-Type": "application/json"}), timeout=600))   # noqa: E731
+    md = get("/api/projetos/compressores/multidobras-3d")
+    ok(len(md["telhas"]) == 1 and md["telhas"][0]["instancias"] == 64 and md["telhas"][0]["ajustadas"] == 0 and md["telhas"][0]["raio_modelo"] > 700, "multidobras reconhecidas: %s" % [(t["conjunto"], t["instancias"], t["raio_modelo"]) for t in md["telhas"]])
+    r = post("/api/projetos/compressores/multidobras-3d", {})
+    md2 = get("/api/projetos/compressores/multidobras-3d")
+    ok(r["instancias"] == 64 and r["pecas"] == 768 and md2["telhas"][0]["ajustadas"] == 64 and abs(md2["telhas"][0]["raio_modelo"] - 470) < 10, "multidobras reescritas com R450: %s, raio no modelo %s" % (r, md2["telhas"][0]["raio_modelo"]))
+    r = post("/api/projetos/compressores/multidobras-3d", {"desfazer": True})
+    md3 = get("/api/projetos/compressores/multidobras-3d")
+    ok(r["pecas"] == 768 and md3["telhas"][0]["ajustadas"] == 0 and md3["telhas"][0]["raio_modelo"] > 700, "voltaram ao original do IFC: %s" % md3["telhas"][0]["raio_modelo"])
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]
     ok(not erros, f"sem erros no console: {erros[:3]}")
 finally:

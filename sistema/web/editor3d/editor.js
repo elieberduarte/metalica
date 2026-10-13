@@ -1959,6 +1959,7 @@ export class Editor {
       'desenho-selecao': () => this.dialogoVistasDaSelecao(),
       'detalhar-pecas': () => this.dialogoDetalharPecas(),
       'cantos-redondos': () => this.dialogoCantosRedondos(),
+      'multidobras-3d': () => this.dialogoMultidobras3D(),
       explodir: () => this.explodirSelecao(),
       juntar: () => this.juntarSelecao(),
       agrupar: () => this.agruparSelecao(),

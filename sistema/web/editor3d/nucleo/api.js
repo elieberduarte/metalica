@@ -160,6 +160,9 @@ export class Api {
   quebrarCantos(s, escolhas) { return postar(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos'), { escolhas }); }
   previaCanto(s, marca, n) { return pedir(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos/previa?marca=' + encodeURIComponent(marca) + '&n=' + (n || 0))); }
   desfazerCantos(s, marcas = null) { return postar(this._r('/api/projetos/' + encodeURIComponent(s) + '/cantos'), { desfazer: true, marcas }); }
+  // multidobra no 3D (13/10): a telha do beiral reescrita com o raio comercial girando no vértice das retas
+  multidobras3dDoProjeto(s) { return pedir(this._r('/api/projetos/' + encodeURIComponent(s) + '/multidobras-3d')); }
+  ajustarMultidobras3d(s, corpo) { return postar(this._r('/api/projetos/' + encodeURIComponent(s) + '/multidobras-3d'), corpo || {}); }
 }
 
 export const api = new Api();
