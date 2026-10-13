@@ -342,6 +342,7 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao], nomes: Optional[Dict[str, s
     # terça) é a mesma peça no lugar — senão as 120 M19 do ÁGUA GELADA, 8 delas com uma P48 (b), viravam 8
     # montagens de 15 barras (e "tesoura"); o peso conta cada variante pela posição dela
     por_conj_var: Dict[str, collections.Counter] = collections.OrderedDict()
+    pecas_conj: Dict[str, list] = collections.OrderedDict()
     for e in pecas:
         m = _marcas(e)
         conj = str(m.get("conjunto") or "")
@@ -349,7 +350,8 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao], nomes: Optional[Dict[str, s
             continue
         por_conj.setdefault(conj, collections.Counter())[posicao_base(e)] += 1
         por_conj_var.setdefault(conj, collections.Counter())[str(m.get("posicao") or e.nome)] += 1
-    from nucleo2d.detalhar import _unidade_pela_maioria
+        pecas_conj.setdefault(conj, []).append(e)
+    from nucleo2d.detalhar import _instancias_pelo_grupo, _unidade_pela_maioria
     saida = []
     for conj, total in por_conj.items():
         n = 0
@@ -358,7 +360,16 @@ def _conjuntos(pecas, por_marca: Dict[str, Posicao], nomes: Optional[Dict[str, s
         n = max(n, 1)
         unidade = {k: q // n for k, q in total.items()}
         difere = []
-        if n == 1:
+        # as instâncias que o modelo já diz (marcas.instancia em cada peça: o IfcElementAssembly, a viga-caixa do
+        # Vicente), como o detalhamento (13/10): o mdc das quantidades dividia a caixa de 4 tubos em 48 meias caixas
+        # de 2 tubos (T1) ou 48 quartos (T3), e o resumo da obra contava 48 onde as pranchas dizem 24 e 12
+        pelo_grupo = _instancias_pelo_grupo(pecas_conj.get(conj) or [])
+        if pelo_grupo:
+            n, unidade = pelo_grupo[1], dict(pelo_grupo[2])
+            difere = ["%s (%d em vez de %d)" % (k, total.get(k, 0), n * unidade.get(k, 0))
+                      for k in sorted(set(total) | set(unidade), key=_ordem_natural)
+                      if total.get(k, 0) != n * unidade.get(k, 0)]
+        elif n == 1:
             # uma peça a mais ou a menos numa das instâncias derruba o mdc para 1 e o
             # conjunto inteiro saía como uma unidade só; a maioria das posições dá a unidade
             # (a mesma regra do detalhamento)

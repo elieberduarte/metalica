@@ -114,6 +114,29 @@ def test_conjunto_com_uma_peca_faltando_conta_pela_maioria():
     assert "P13 (29 em vez de 32)" in c["composicao_texto"]
 
 
+def test_conjunto_com_instancia_marcada_conta_pelo_modelo():
+    # a viga-caixa do Vicente (13/10): 4 tubos + 8 travessas + 16 diagonais por caixa, 2 caixas no modelo, cada peça
+    # com a instância marcada; o mdc das quantidades (4, 8, 16 → 4) inventava 8 quartos de caixa de 7 peças
+    from saida.detalhamento import Posicao
+
+    class _Peca:
+        def __init__(self, marca, inst):
+            self.atributos = {"marcas": {"conjunto": "V1", "posicao": marca, "instancia": inst}}
+            self.nome = marca
+    pecas = []
+    for inst in ("V1#1", "V1#2"):
+        pecas += [_Peca("TQ-4775", inst) for _ in range(4)] + [_Peca("TQ1", inst) for _ in range(8)]             + [_Peca("TQ2", inst) for _ in range(16)]
+    por_marca = {}
+    for m, peso in (("TQ-4775", 20.0), ("TQ1", 0.6), ("TQ2", 0.6)):
+        p = Posicao(marca=m, tipo_ifc="IfcBeam")
+        p.classe, p.peso = "barra", peso
+        por_marca[m] = p
+    c = lp._conjuntos(pecas, por_marca)[0]
+    assert c["instancias"] == 2 and c["composicao"] == {"TQ-4775": 4, "TQ1": 8, "TQ2": 16}
+    assert c["pecas_unidade"] == 28 and c["difere"] == []
+    assert abs(c["peso_unitario"] - (4 * 20.0 + 24 * 0.6)) < 0.01
+
+
 if __name__ == "__main__":
     falhas = 0
     for nome, fn in sorted(globals().items()):
