@@ -4,6 +4,8 @@
 // guarda os métodos, e editor.js os copia para Editor.prototype (aplicarMetodos).
 
 import { $, el, mover } from '../editor.js';
+import { refazerFurosEditor } from '../ferramentas/_furar.js';
+import { ComandoAlterar } from '../nucleo/comandos.js';
 
 export class MetodosCantosEixos {
   /**
@@ -212,20 +214,42 @@ export class MetodosCantosEixos {
     const marcasVoltar = [...voltar].filter(([, cx]) => cx.checked).map(([marca]) => marca);
     if (!Object.keys(escolhas).length && !marcasVoltar.length) { this.aviso('Nenhuma posição marcada para quebrar ou voltar.', 'info'); return; }
     const avisos = [];
+    const refazer = new Set();                       // as peças furadas pelo editor: a malha nova vem sem os furos
     try {
       if (marcasVoltar.length) {
         this.dica('Voltando ao canto redondo…');
         const r = await this.api.desfazerCantos(this.projeto, marcasVoltar);
+        for (const id of r.furos_a_refazer || []) refazer.add(id);
         avisos.push(`${r.pecas} peça(s) de ${(r.posicoes || []).join(', ') || '—'} voltaram ao canto redondo.` +
                     ((r.falhas || []).length ? ` Avisos: ${r.falhas.slice(0, 4).join(' · ')}` : ''));
       }
       if (Object.keys(escolhas).length) {
         this.dica('Quebrando os cantos no modelo…');
         const r = await this.api.quebrarCantos(this.projeto, escolhas);
+        for (const id of r.furos_a_refazer || []) refazer.add(id);
         avisos.push(`${r.pecas} peça(s) de ${(r.posicoes || []).join(', ')} quebradas em retas no modelo 3D (o anterior está no histórico).` +
                     ((r.falhas || []).length ? ` Avisos: ${r.falhas.slice(0, 4).join(' · ')}` : ''));
       }
       await this._abrirProjeto();
+      // os furos do editor refeitos na malha nova (a F.T.1 da SOORO perdia os 6 furos na quebra, 13/10)
+      if (refazer.size) {
+        const mud = {};
+        let semBase = 0;
+        for (const id of refazer) {
+          const p = this.documento.get(id);
+          const regs = p && p.atributos && p.atributos.furos_editor;
+          if (!regs || !regs.length) continue;
+          const rf = refazerFurosEditor(p, regs);
+          if (!rf) { semBase++; continue; }
+          mud[id] = { vertices: rf.vertices, faces: rf.faces, atributos: { ...p.atributos, furos_editor: rf.registros } };
+        }
+        if (Object.keys(mud).length) {
+          this.executar(new ComandoAlterar(mud, 'Refazer furos no canto'));
+          await this.salvar();
+          avisos.push(`Furos refeitos em ${Object.keys(mud).length} peça(s).`);
+        }
+        if (semBase) avisos.push(`${semBase} peça(s) ficaram sem os furos no 3D (furadas por uma versão anterior).`);
+      }
       this.dica('');
       this.aviso(avisos.join(' ') + ' Gere o detalhamento de novo: Detalhamentos → Detalhar peças e conjuntos.', 'info', 16000);
     } catch (e) { this.dica(''); this.aviso(`Não foi possível aplicar nos cantos: ${e.message}`, 'erro', 0); }

@@ -367,7 +367,18 @@ def quebrar_peca(e: Solido, n: int, manter: Sequence[str] = ()) -> Optional[dict
                "angulo": round(arco["angulo"], 2)}
     # a malha de antes fica guardada na peça: "Voltar ao canto redondo" a devolve
     e.atributos = dict(e.atributos or {}, quebras=dict(quebras, original=original))
-    return dict(quebras, pontas=pontas, arco=arco)
+    _acompanhar_malha_sem_furos(e)
+    return dict(quebras, pontas=pontas, arco=arco, furos_a_refazer=bool((e.atributos or {}).get("furos_editor")))
+
+
+def _acompanhar_malha_sem_furos(e: Solido) -> None:
+    """A peça furada pelo editor guarda a malha de antes dos furos (`malha_sem_furos_editor`): com o canto
+    quebrado ou devolvido, essa base passa a ser a malha nova (sem os furos), senão um "refazer furos" (troca de
+    parafuso) traria o canto velho de volta (F.T.1 da SOORO, 13/10). Os furos ficam registrados em `furos_editor`
+    e o editor os refaz na malha nova."""
+    at = e.atributos or {}
+    if at.get("malha_sem_furos_editor") or at.get("furos_editor"):
+        e.atributos = dict(at, malha_sem_furos_editor={"vertices": [list(v) for v in e.vertices], "faces": [list(f) for f in e.faces]})
 
 
 # ============================================================ vizinhas e diagonais
@@ -558,7 +569,7 @@ def desfazer_modelo(doc: Documento, marcas: Optional[Sequence[str]] = None, busc
     (0.8.20) vem de `buscar(id, chave)` — que procura a entidade no histórico do projeto,
     devolvendo o dict dela sem a chave (`quebras`/`estendida_ate_no`) — ou fica como está.
     Devolve {"pecas", "posicoes", "falhas"}."""
-    saida = {"pecas": 0, "posicoes": [], "falhas": []}
+    saida = {"pecas": 0, "posicoes": [], "falhas": [], "furos_a_refazer": []}
     quer = set(str(m) for m in marcas) if marcas else None
 
     def de_dict(reg):
@@ -618,6 +629,9 @@ def desfazer_modelo(doc: Documento, marcas: Optional[Sequence[str]] = None, busc
         e.faces = [list(f) for f in original.get("faces") or []]
         e.arestas_vivas = [tuple(a) for a in original.get("arestas_vivas") or []]
         e.atributos = {k: v for k, v in (e.atributos or {}).items() if k != "quebras"}
+        _acompanhar_malha_sem_furos(e)
+        if (e.atributos or {}).get("furos_editor"):
+            saida.setdefault("furos_a_refazer", []).append(e.id)
         saida["pecas"] += 1
         if marca not in saida["posicoes"]:
             saida["posicoes"].append(marca)
@@ -675,7 +689,7 @@ def quebrar_modelo(doc: Documento, escolhas: Dict[str, int], diagonais: bool = T
     malha do joelho, a barra que encostava na ponta (vem até o nó) e, com `diagonais`, a
     diagonal do canto refeita do nó de baixo até cada nó. Devolve {"pecas", "posicoes",
     "estendidas", "diagonais", "falhas"}."""
-    saida = {"pecas": 0, "posicoes": [], "estendidas": 0, "diagonais": 0, "falhas": []}
+    saida = {"pecas": 0, "posicoes": [], "estendidas": 0, "diagonais": 0, "falhas": [], "furos_a_refazer": []}
     for marca, n in escolhas.items():
         try:
             n = int(n)
@@ -687,9 +701,12 @@ def quebrar_modelo(doc: Documento, escolhas: Dict[str, int], diagonais: bool = T
         for e in list(doc.entidades.values()):
             if not isinstance(e, Solido) or _marca(e) != marca or (e.atributos or {}).get("quebras"):
                 continue
-            if quebrar_instancia(doc, e, n, diagonais, saida) is None:
+            q = quebrar_instancia(doc, e, n, diagonais, saida)
+            if q is None:
                 saida["falhas"].append("%s: uma instância sem canto reconhecível ficou como estava" % marca)
                 continue
+            if q.get("furos_a_refazer"):
+                saida["furos_a_refazer"].append(e.id)
             feitas += 1
         if feitas:
             saida["pecas"] += feitas

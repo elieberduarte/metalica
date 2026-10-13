@@ -306,3 +306,27 @@ def test_previa_mostra_antes_e_depois_sem_mexer_no_modelo():
     so = cantos.previa(doc, "P15", 0)
     assert "depois" not in so and so["antes"]["peca"]
     assert cantos.previa(doc, "P99", 1) is None
+
+
+def test_quebra_e_volta_acompanham_a_malha_sem_furos_do_editor():
+    """A peça furada pelo editor guarda a malha de antes dos furos (malha_sem_furos_editor): quebrada ou devolvida ao
+    arco, essa base passa a ser a malha nova — senão o "refazer furos" (troca de parafuso) trazia o canto velho de
+    volta (F.T.1 da SOORO, 13/10). O resultado diz quais peças têm furos a refazer."""
+    doc = Documento()
+    j = _joelho()
+    j.atributos = dict(j.atributos, furos_editor=[{"parafuso": "p1", "d": 13, "ponto": [100.0, 0.0, 0.0], "eixo": [0, 0, -1]}],
+                       malha_sem_furos_editor={"vertices": [list(v) for v in j.vertices], "faces": [list(f) for f in j.faces]})
+    doc.add(j)
+    sem_furos = _joelho()
+    doc.add(sem_furos)
+    sem_furos.atributos = dict(sem_furos.atributos, marcas=dict(sem_furos.atributos["marcas"], posicao="P16"))
+    r = cantos.quebrar_modelo(doc, {"P15": 1, "P16": 1})
+    assert r["pecas"] == 2 and r["furos_a_refazer"] == [j.id]
+    base = j.atributos["malha_sem_furos_editor"]
+    assert base["vertices"] == [list(v) for v in j.vertices] and base["faces"] == [list(f) for f in j.faces]
+    assert "malha_sem_furos_editor" not in sem_furos.atributos
+    assert j.atributos["furos_editor"][0]["parafuso"] == "p1"              # os registros ficam, o editor refaz
+    d = cantos.desfazer_modelo(doc, ["P15"])
+    assert d["pecas"] == 1 and d["furos_a_refazer"] == [j.id]
+    assert j.atributos["malha_sem_furos_editor"]["vertices"] == [list(v) for v in j.vertices]
+    assert len(j.atributos["malha_sem_furos_editor"]["vertices"]) == len(_joelho().vertices)
