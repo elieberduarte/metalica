@@ -2239,7 +2239,12 @@ def dados_dos_resumos(s: str) -> dict:
             t0 = str(telhas[0]).strip()
             sug["telha"] = t0 if re.match(r"(?i)telha\b", t0) else "Telha %s" % t0
     # os resumos já gerados (a tela mostra o último ao abrir)
-    pasta = os.path.join(_gerente()._existente(s), "detalhamento")
+    arquivos = _arquivos_dos_resumos(os.path.join(_gerente()._existente(s), "detalhamento"))
+    return {"dados": dados, "sugestoes": sug, "campos": list(CAMPOS_RESUMO), "arquivos": arquivos}
+
+
+def _arquivos_dos_resumos(pasta: str) -> dict:
+    """{obra|materiais: {html, pdf, xlsx}} dos resumos gravados em detalhamento/ — para a aba Resumos e a aba Arquivos."""
     arquivos = {}
     for chave, nome in (("obra", "resumo-da-obra"), ("materiais", "resumo-de-materiais")):
         a = {}
@@ -2249,7 +2254,7 @@ def dados_dos_resumos(s: str) -> dict:
                 a[ext] = _descrever_arquivo(cam, pasta)
         if a:
             arquivos[chave] = a
-    return {"dados": dados, "sugestoes": sug, "campos": list(CAMPOS_RESUMO), "arquivos": arquivos}
+    return arquivos
 
 
 def gerar_resumos_projeto(s: str, corpo: dict, porta: Optional[int] = None) -> dict:
@@ -2427,10 +2432,13 @@ def lista_de_materiais(s: str, recalcular: bool = False, corpo: Optional[dict] =
     for chave, nome in (("json", lista_producao.ARQUIVO_JSON), ("html", lista_producao.ARQUIVO_HTML),
                         ("pdf", lista_producao.ARQUIVO_PDF), ("romaneio", "romaneio.csv"),
                         ("perfis", "resumo-perfis.csv"), ("dobras", "peso-dobras.csv"), ("chapas", "resumo-chapas.csv"),
-                        ("conjuntos", "conjuntos.csv"), ("plano_corte", "plano-de-corte.csv")):
+                        ("conjuntos", "conjuntos.csv"), ("plano_corte", "plano-de-corte.csv"), ("soldas", "soldas.csv"),
+                        ("pre_moldados", "pre-moldados.csv"), ("estrutura_a_conferir", "estrutura-a-conferir.csv")):
         cam = os.path.join(pasta, nome)
         if os.path.exists(cam):
             arquivos[chave] = _descrever_arquivo(cam, pasta)
+    # os resumos da obra e de materiais na aba Arquivos, sem precisar abrir a aba Resumos antes (13/10)
+    arquivos["resumos"] = _arquivos_dos_resumos(pasta)
     lista["arquivos"] = arquivos
     lista["projeto"] = dict(lista.get("projeto") or {}, slug=s, **_identificacao_do_projeto(s))
     # a lista só se refaz pelo botão: a tela avisa quando o modelo 3D foi gravado depois dela

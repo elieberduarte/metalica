@@ -52,8 +52,12 @@ try:
     ok("materiais" in r and "json" in r["materiais"], "rota /detalhar devolve os arquivos da lista: %s" % sorted(r["materiais"]))
     # 3) recalcular com barra de 12 m
     L12 = post("/api/projetos/compressores/materiais", {"barra": 12000})
-    b6 = sum(g["barras"]["quantidade"] for g in L["perfis"]); b12 = sum(g["barras"]["quantidade"] for g in L12["perfis"])
-    ok(all(g["barras"]["comprimento"] == 12000 for g in L12["perfis"]) and b12 < b6, "barra de 12 m: %d barras (6 m: %d)" % (b12, b6))
+    # no automático a terça e o dobrado maior que 6 m saem sob medida (13/10): as barras + as peças sob medida de lá
+    # são mais do que as barras de 12 m fixas, e a barra fixa não deixa peça sob medida
+    b6 = sum(g["barras"]["quantidade"] + (g["barras"].get("sob_medida_pecas") or 0) for g in L["perfis"])
+    b12 = sum(g["barras"]["quantidade"] for g in L12["perfis"])
+    ok(all(g["barras"]["comprimento"] == 12000 and not g["barras"].get("sob_medida_pecas") for g in L12["perfis"]) and b12 < b6,
+       "barra de 12 m: %d barras (automático: %d barras e peças sob medida)" % (b12, b6))
     # 4) PDF
     t0 = time.time()
     pdf = post("/api/projetos/compressores/materiais/pdf", {})

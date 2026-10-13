@@ -193,12 +193,14 @@ function desenhar(L) {
   const aco = (t.peso || 0) - telhas - rufos;
   const mlTelhas = (L.telhas || []).reduce((s, g) => s + (g.comprimento_m || 0), 0);
   const barrasCompra = (L.perfis || []).reduce((s, g) => s + (g.barras?.quantidade || 0), 0);
+  // a terça e o dobrado maior que a barra vêm sob medida, fora das barras (13/10)
+  const sobMedidaCompra = (L.perfis || []).reduce((s, g) => s + (g.barras?.sob_medida_pecas || 0), 0);
   $('#cartoes').replaceChildren(
     cartao(n(aco, 1) + ' kg', 'aço (estrutura)', 'perfis, barras e chapas', true),
     cartao(n(telhas, 1) + ' kg', 'telhas', mlTelhas ? `${n(mlTelhas, 1)} m de telha` : (rufos ? `+ ${n(rufos, 1)} kg de rufos` : null)),
     cartao(n(t.pecas), 'peças', `${n(t.posicoes)} posições`),
     cartao(n(t.conjuntos), 'conjuntos', 'tesouras, vigas, dispositivos'),
-    cartao(n(barrasCompra), 'barras de compra', 'pelo encaixe das peças'),
+    cartao(n(barrasCompra), 'barras de compra', sobMedidaCompra ? `+ ${n(sobMedidaCompra)} peças sob medida` : 'pelo encaixe das peças'),
     cartao(n(t.acessorios), 'acessórios', 'parafusos, porcas, arruelas'));
 
   const c = $('#conteudo');
@@ -242,7 +244,7 @@ function desenhar(L) {
   if ((L.perfis || []).length) {
     const totB = barrasCompra;
     controleBarra().hidden = false;
-    pPerfis.append(secao('Perfis', `comprimento, peso e barras de compra por encaixe (do maior para o menor, 3 mm de corte); ${n(totB)} barras no total`,
+    pPerfis.append(secao('Perfis', `comprimento, peso e barras de compra por encaixe (do maior para o menor, 3 mm de corte); ${n(totB)} barras no total` + (sobMedidaCompra ? ` + ${n(sobMedidaCompra)} peças sob medida (terças e dobrados maiores que 6 m)` : ''),
       el('div', {}, controleBarra(), el('div', { class: 'rolagem' }, tabela([
         { titulo: 'Perfil', valor: (g) => g.perfil_nome || g.perfil, classe: 'b' },
         { titulo: 'No catálogo', valor: (g) => g.catalogo ? (g.fonte_kg_m === 'similar' ? 'similar: ' + g.catalogo : g.catalogo)
@@ -257,11 +259,13 @@ function desenhar(L) {
         { titulo: 'Peso (kg)', chave: 'peso', classe: 'r b', num: true, casas: 1 },
         { titulo: 'Barra', valor: (g) => `${n(g.barras.comprimento / 1000)} m`, classe: 'c' },
         { titulo: 'Barras', valor: (g) => g.barras.quantidade, classe: 'c b', num: true },
+        { titulo: 'Sob medida', valor: (g) => g.barras.sob_medida_pecas || '', classe: 'c', num: true,
+          dica: 'Peças compradas no comprimento delas, sem barra: a terça e o dobrado maior que 6 m' },
         { titulo: 'Aprov. (%)', valor: (g) => g.barras.aproveitamento, classe: 'c', num: true, casas: 1 },
         { titulo: 'Sobra (m)', valor: (g) => g.barras.sobra_m, classe: 'r', num: true, casas: 2 },
         { titulo: 'Emendas', valor: (g) => g.barras.emendas, classe: 'c', num: true, dica: 'Peças mais compridas que a barra comercial' },
       ], L.perfis, ['TOTAL', '', '', '', '', n(L.perfis.reduce((s, g) => s + g.pecas, 0)), n(L.perfis.reduce((s, g) => s + g.comprimento_m, 0), 2), '',
-                    n(L.perfis.reduce((s, g) => s + g.peso, 0), 1), '', n(totB), '', '', ''],
+                    n(L.perfis.reduce((s, g) => s + g.peso, 0), 1), '', n(totB), sobMedidaCompra ? n(sobMedidaCompra) : '', '', '', ''],
       (g) => [g.perfil, g.perfil_nome, g.catalogo || '', g.material, g.posicoes.join(' '), (g.nomes_posicoes || []).join(' ')].join(' '))))));
   } else pPerfis.append(vazio('Sem perfis nesta lista.'));
   const dob = L.dobrados || {};
@@ -517,20 +521,31 @@ function filtrar() {
 const DESCRICOES = {
   romaneio: ['romaneio.csv', 'Romaneio por posição (Excel)'], perfis: ['resumo-perfis.csv', 'Perfis com barras de compra (Excel)'],
   dobras: ['peso-dobras.csv', 'Perfis dobrados: peso teórico × com desconto (Excel)'], chapas: ['resumo-chapas.csv', 'Chapas por espessura (Excel)'],
-  conjuntos: ['conjuntos.csv', 'Conjuntos e composição (Excel)'], plano_corte: ['plano-de-corte.csv', 'Plano de corte: o que sai de cada barra (Excel)'], html: ['Lista (HTML)', 'Esta lista, para abrir no navegador'],
-  pdf: ['Lista (PDF)', 'Esta lista em PDF, para imprimir'],
+  conjuntos: ['conjuntos.csv', 'Conjuntos e composição (Excel)'], plano_corte: ['plano-de-corte.csv', 'Plano de corte: o que sai de cada barra (Excel)'],
+  soldas: ['soldas.csv', 'Soldas de fábrica por conjunto (Excel)'], pre_moldados: ['pre-moldados.csv', 'Peças de concreto e aço fora das peças (Excel)'],
+  estrutura_a_conferir: ['estrutura-a-conferir.csv', 'Peças da estrutura a conferir (Excel)'],
+  html: ['Lista (HTML)', 'Esta lista, para abrir no navegador'],
 };
+// os documentos gerados no alto, para acesso rápido (13/10): a lista em PDF e os dois resumos (PDF, Excel e HTML)
+const DOCUMENTOS = [
+  ['materiais', 'pdf', 'Resumo de materiais (PDF)', 'Compra: perfis e barras, chapas, parafusos, telhas'],
+  ['materiais', 'xlsx', 'Resumo de materiais (Excel)', 'Os mesmos números em planilha, para o comprador'],
+  ['obra', 'pdf', 'Resumo da obra (PDF)', 'Dossiê da obra: implantação, tipos de estrutura e pendências'],
+  ['materiais', 'html', 'Resumo de materiais (HTML)', 'O resumo de materiais no navegador'],
+  ['obra', 'html', 'Resumo da obra (HTML)', 'O resumo da obra no navegador'],
+];
 
 function desenharArquivos() {
   const alvo = $('#arquivos-corpo');
   if (!alvo) return;
   const linhas = [];
   const arq = (LISTA && LISTA.arquivos) || {};
+  // os resumos: os gerados agora na aba Resumos valem; senão, os que a lista encontrou na pasta
+  const res = Object.assign({}, arq.resumos || {});
+  for (const [k, v] of Object.entries((RESUMOS && RESUMOS.arquivos) || {})) if (v) res[k] = v;
+  if (arq.pdf) linhas.push({ rot: 'Lista de materiais (PDF)', desc: 'Esta lista em PDF, para imprimir', a: arq.pdf });
+  for (const [k, ext, rot, desc] of DOCUMENTOS) if (res[k] && res[k][ext]) linhas.push({ rot, desc, a: res[k][ext] });
   for (const [k, [rot, desc]] of Object.entries(DESCRICOES)) if (arq[k]) linhas.push({ rot, desc, a: arq[k] });
-  const res = (RESUMOS && RESUMOS.arquivos) || {};
-  for (const [k, rot] of [['obra', 'Resumo da obra'], ['materiais', 'Resumo de materiais']]) {
-    for (const ext of ['pdf', 'html']) if (res[k] && res[k][ext]) linhas.push({ rot: `${rot} (${ext.toUpperCase()})`, desc: ext === 'pdf' ? 'Documento para a fábrica' : 'O mesmo, no navegador', a: res[k][ext] });
-  }
   if (!linhas.length) { alvo.replaceChildren(vazio('Nenhum arquivo gerado ainda. "Atualizar pelo modelo 3D" grava a lista e os CSVs; os resumos saem na aba Resumos da obra.')); return; }
   alvo.replaceChildren(secao('Arquivos do projeto', 'tudo fica na pasta detalhamento/ do projeto',
     el('div', {}, tabela([
