@@ -1089,7 +1089,11 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         pf = perfis[-1]
         kg_m_compra = float(g.get("kg_m_catalogo") or 0.0) or pf["kg_m"]
         pf["kg_barra"] = kg_m_compra * pf["barra_m"]
-        pf["kg_compra"] = pf["kg_barra"] * pf["barras"]
+        # as peças sob medida (13/10): a terça e o dobrado maior que a barra, no comprimento delas, sem sobra
+        pf["sob_medida_pecas"] = int(b.get("sob_medida_pecas") or 0)
+        pf["sob_medida_m"] = float(b.get("sob_medida_m") or 0.0)
+        pf["kg_sob_medida"] = kg_m_compra * pf["sob_medida_m"]
+        pf["kg_compra"] = pf["kg_barra"] * pf["barras"] + pf["kg_sob_medida"]
         # a emenda ligada no plano de corte (07/10): as peças que saem em dois pedaços, e as barras que ela poupa
         pf["emendadas"] = len(b.get("emendadas") or []) if g.get("emenda") else 0
         sem = (g.get("barras_sem_emenda") or {}).get("quantidade")
@@ -1097,8 +1101,9 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
         # sem aproveitamento (09/10, para comparar lado a lado): cada posição cortada só das barras dela — a sobra não
         # serve a outra peça — e a peça maior que a barra em barras inteiras, sem emenda
         pf["barras_sem_aproveitamento"] = _barras_sem_aproveitamento(
-            [pos_por_marca[mk] for mk in g.get("posicoes") or [] if mk in pos_por_marca], float(b.get("comprimento") or 0.0))
-        pf["kg_sem_aproveitamento"] = pf["kg_barra"] * pf["barras_sem_aproveitamento"]
+            [pos_por_marca[mk] for mk in g.get("posicoes") or [] if mk in pos_por_marca], float(b.get("comprimento") or 0.0),
+            g.get("sob_medida") or "")
+        pf["kg_sem_aproveitamento"] = pf["kg_barra"] * pf["barras_sem_aproveitamento"] + pf["kg_sob_medida"]
     try:
         perda = float(str(dados.get("perda_chapas") or "").replace(",", ".").replace("%", "")) if dados.get("perda_chapas") else PERDA_CHAPAS
     except ValueError:
@@ -1141,14 +1146,29 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
             "quimicos": [dict(v, nome=k, **cartuchos_quimico(v["ml"])) for k, v in quimico.items()]}
 
 
+def _barras_e_sob_medida(barras: int, sob: int, nome: str = "barras") -> str:
+    """"40 barras" ou "7 barras + 14 peças sob medida"."""
+    t = "%d %s" % (barras, nome)
+    return t + (" + %d peças sob medida" % sob if sob else "")
+
+
+def _celula_barras(barras: int, p: dict) -> str:
+    """A célula das barras no quadro de compra: o número, e embaixo as peças sob medida, quando há (13/10)."""
+    sob = int(p.get("sob_medida_pecas") or 0)
+    if not sob:
+        return str(barras or "")
+    return "%s<br><span class=\"cinza\">+%d sob medida</span>" % (barras or "—", sob)
+
+
 def _mesmo_nome(perfil: str) -> str:
     """O nome do perfil para comparar o do catálogo com o do IFC: "TQ 50×50×3,0" e "TQ 50x50x3,0" são o mesmo."""
     return str(perfil or "").upper().replace("×", "X").replace(" ", "").replace(",", ".")
 
 
-def _barras_sem_aproveitamento(posicoes: List[dict], barra: float) -> int:
+def _barras_sem_aproveitamento(posicoes: List[dict], barra: float, sob_medida: str = "") -> int:
     """Barras comerciais sem aproveitamento: cada posição só das barras dela (n peças por barra, com a perda de corte
-    entre elas); a peça maior que a barra leva ceil(L / barra) barras inteiras."""
+    entre elas); a peça maior que a barra leva ceil(L / barra) barras inteiras. A peça sob medida (`sob_medida` "todas"
+    ou "maiores" que a barra, 13/10) não leva barra: entra pelos metros dela."""
     from saida.lista_producao import PERDA_CORTE
     if barra <= 0:
         return 0
@@ -1156,6 +1176,8 @@ def _barras_sem_aproveitamento(posicoes: List[dict], barra: float) -> int:
     for li in posicoes:
         L, q = float(li.get("comprimento") or 0.0), int(li.get("quantidade") or 0)
         if L <= 0 or q <= 0:
+            continue
+        if sob_medida == "todas" or (sob_medida and L > barra + 1e-6):
             continue
         if L > barra + 1e-6:
             n += q * int(math.ceil(L / barra - 1e-9))
@@ -1758,7 +1780,8 @@ def html_resumo_materiais(R: dict, paginado: bool = False) -> str:
         q.append(("Área de projeção", _n(dim["area_m2"], 2), "m²", "com beirais"))
     if C.get("perfis"):
         q.append(("Compra de perfis", _n(sum(p.get("kg_compra") or 0.0 for p in C["perfis"]), 1), "kg",
-                  "%d barras comerciais" % sum(p["barras"] for p in C["perfis"])))
+                  _barras_e_sob_medida(sum(p["barras"] for p in C["perfis"]), sum(p.get("sob_medida_pecas") or 0 for p in C["perfis"]),
+                                       "barras comerciais")))
     if C.get("chapas"):
         cl, ca = C["chapa_comercial"]
         q.append(("Chapas comerciais", "%d" % sum(c["chapas"] for c in C["chapas"]), "",
@@ -1858,8 +1881,8 @@ def _classe_compra(p: dict) -> str:
 
 
 def _html_compra(R: dict) -> str:
-    """A. Compra (05/10): perfis em barras comerciais (W em 12 m, o resto em 6 m — a peça maior que 6 m leva o perfil
-    para 12 m), chapas de 1,20 × 3,00 com a perda, parafusos, porcas e arruelas por bitola, telhas e a área de pintura.
+    """A. Compra (05/10): perfis em barras comerciais (W em 12 m, o resto em 6 m; a terça e o dobrado maior que 6 m sob
+    medida, 13/10), chapas de 1,20 × 3,00 com a perda, parafusos, porcas e arruelas por bitola, telhas e a área de pintura.
     Com a coluna "pedido" em branco para o comprador."""
     C = R.get("compra") or {}
     if not C:
@@ -1868,7 +1891,7 @@ def _html_compra(R: dict) -> str:
     if C.get("perfis"):
         h.append("<h3>Perfis e barras</h3><p class=\"explica\">Um por tipo de perfil, cruzado com o catálogo; barras comerciais pelo plano "
                  "de corte da lista; W em 12 m; tubos, redondos e laminados em polegada em 6 m (a peça maior sai com emenda); "
-                 "dobrados em 6 m, ou 12 m quando a peça passa de 6 m.</p>")
+                 "dobrados em 6 m; terças e dobrados maiores que 6 m sob medida (no comprimento da peça, sem sobra).</p>")
 
         def nome_perfil(p):
             # o nome do catálogo em cima, o do IFC embaixo (06/10); fora do catálogo, o do IFC e de onde veio o kg/m
@@ -1892,22 +1915,24 @@ def _html_compra(R: dict) -> str:
         # da largura da folha no PDF
         tot_com = sum(p.get("kg_compra") or 0.0 for p in C["perfis"])
         tot_sem = sum(p.get("kg_sem_aproveitamento") or 0.0 for p in C["perfis"])
+        sob_tot = {"sob_medida_pecas": sum(p.get("sob_medida_pecas") or 0 for p in C["perfis"])}
         h.append(_tabela(["Perfil", "Material", ("Peças", "r ap-proj"), ("m", "r ap-proj"), ("kg/m", "r ap-proj"), ("kg peças", "r ap-proj"),
                           ("Barra", "r"),
                           ("Barras", "r ap-sem"), ("kg/barra", "r ap-sem"), ("kg", "r ap-sem"),
                           ("Barras", "r ap-com"), ("kg/barra", "r ap-com"), ("kg", "r ap-com"), ("Aprov.", "r"), "Pedido"],
                          [[nome_perfil(p), p["material"], (p.get("pecas") or "", "r"), (_n(p["m"], 2), "r"),
                            (_n(p.get("kg_m") or 0.0, 2), "r"), (_n(p["kg"], 1), "r"), ("%s m" % _n(p["barra_m"], 0), "r"),
-                           (p.get("barras_sem_aproveitamento") or "", "r ap-sem"), (_n(p.get("kg_barra") or 0.0, 1), "r ap-sem"),
+                           (_celula_barras(p.get("barras_sem_aproveitamento") or 0, p), "r ap-sem"), (_n(p.get("kg_barra") or 0.0, 1), "r ap-sem"),
                            ("<b>%s</b>" % _n(p.get("kg_sem_aproveitamento") or 0.0, 1), "r ap-sem"),
-                           (p["barras"], "r ap-com"), (_n(p.get("kg_barra") or 0.0, 1), "r ap-com"),
+                           (_celula_barras(p["barras"], p), "r ap-com"), (_n(p.get("kg_barra") or 0.0, 1), "r ap-com"),
                            ("<b>%s</b>" % _n(p.get("kg_compra") or 0.0, 1), "r ap-com"),
                            ("%s%%" % _n(p["aproveitamento"], 0) if p["aproveitamento"] is not None else "", "r"), ""] for p in C["perfis"]],
                          rodape=[("TOTAL", "b"), "", (sum(p.get("pecas") or 0 for p in C["perfis"]), "r"),
                                  (_n(sum(p["m"] for p in C["perfis"]), 2), "r"), "", (_n(sum(p["kg"] for p in C["perfis"]), 1), "r"), "",
-                                 (sum(p.get("barras_sem_aproveitamento") or 0 for p in C["perfis"]), "r ap-sem"), ("", "ap-sem"),
+                                 (_celula_barras(sum(p.get("barras_sem_aproveitamento") or 0 for p in C["perfis"]), sob_tot), "r ap-sem"), ("", "ap-sem"),
                                  (_n(tot_sem, 1), "r ap-sem"),
-                                 (sum(p["barras"] for p in C["perfis"]), "r ap-com"), ("", "ap-com"), (_n(tot_com, 1), "r ap-com"), "", ""],
+                                 (_celula_barras(sum(p["barras"] for p in C["perfis"]), sob_tot), "r ap-com"), ("", "ap-com"),
+                                 (_n(tot_com, 1), "r ap-com"), "", ""],
                          larguras=["16%", "6%", "5%", "7%", "5%", "7%", "5%", "5%", "6%", "7%", "5%", "6%", "7%", "6%", "7%"], bruto=True,
                          classe="compra-perfis", classes_linhas=[_classe_compra(p) for p in C["perfis"]],
                          grupos=[("", 2, ""), ("Projeto", 4, "ap-proj"), ("", 1, ""), ("Sem aproveitamento", 3, "ap-sem"),
@@ -2013,6 +2038,7 @@ def planilha_de_materiais(R: dict, lista: Optional[dict], caminho: str) -> str:
     perfis = C.get("perfis") or []
     kg_com = sum(p.get("kg_compra") or 0.0 for p in perfis)
     kg_sem = sum(p.get("kg_sem_aproveitamento") or 0.0 for p in perfis)
+    sob = sum(p.get("sob_medida_pecas") or 0 for p in perfis)
     resumo = [["Item", "Valor", "Unidade", "Observação"],
               ["Estrutura metálica", r1(n["peso_aco"]), "kg", "perfis + chaparia"],
               ["Perfis (peso teórico)", r1(R.get("perfis_kg")), "kg", ""],
@@ -2021,8 +2047,8 @@ def planilha_de_materiais(R: dict, lista: Optional[dict], caminho: str) -> str:
         resumo.append(["Área de projeção", r1(dim["area_m2"], 2), "m²", "com beirais"])
     if perfis:
         resumo += [["Compra de perfis sem aproveitamento", r1(kg_sem), "kg",
-                    "%d barras" % sum(p.get("barras_sem_aproveitamento") or 0 for p in perfis)],
-                   ["Compra de perfis com aproveitamento", r1(kg_com), "kg", "%d barras" % sum(p["barras"] for p in perfis)]]
+                    _barras_e_sob_medida(sum(p.get("barras_sem_aproveitamento") or 0 for p in perfis), sob)],
+                   ["Compra de perfis com aproveitamento", r1(kg_com), "kg", _barras_e_sob_medida(sum(p["barras"] for p in perfis), sob)]]
     if C.get("chapas"):
         cl, ca = C["chapa_comercial"]
         resumo.append(["Chapas comerciais", sum(c["chapas"] for c in C["chapas"]), "pç",
@@ -2034,19 +2060,21 @@ def planilha_de_materiais(R: dict, lista: Optional[dict], caminho: str) -> str:
         resumo.append(["Consumo de aço", r1(n["kg_m2"]), "kg/m²", "de projeção"])
     abas = [{"nome": "Resumo", "linhas": resumo, "larguras": [38, 14, 9, 36]}]
     if perfis:
-        cab = ["Perfil", "Perfil no IFC", "Material", "Peças", "m", "kg/m", "kg peças", "Barra (m)",
+        cab = ["Perfil", "Perfil no IFC", "Material", "Peças", "m", "kg/m", "kg peças", "Barra (m)", "Sob medida – peças", "Sob medida – m",
                "Sem aprov. – barras", "Sem aprov. – kg/barra", "Sem aprov. – kg",
                "Com aprov. – barras", "Com aprov. – kg/barra", "Com aprov. – kg", "Aproveitamento (%)", "Pedido"]
         linhas = [cab] + [[p.get("catalogo") or p["perfil"], p.get("ifc") or p["perfil"], p.get("material") or "", int(p.get("pecas") or 0),
                            r1(p["m"], 2), r1(p.get("kg_m"), 2), r1(p["kg"]), int(round(p["barra_m"])),
+                           int(p.get("sob_medida_pecas") or 0), r1(p.get("sob_medida_m"), 2),
                            int(p.get("barras_sem_aproveitamento") or 0), r1(p.get("kg_barra")), r1(p.get("kg_sem_aproveitamento")),
                            int(p["barras"]), r1(p.get("kg_barra")), r1(p.get("kg_compra")),
                            int(round(p["aproveitamento"])) if p.get("aproveitamento") is not None else None, ""] for p in perfis]
         linhas.append(["TOTAL", "", "", sum(int(p.get("pecas") or 0) for p in perfis), r1(sum(p["m"] for p in perfis), 2), None,
-                       r1(sum(p["kg"] for p in perfis)), None, sum(int(p.get("barras_sem_aproveitamento") or 0) for p in perfis), None,
+                       r1(sum(p["kg"] for p in perfis)), None, sob, r1(sum(p.get("sob_medida_m") or 0.0 for p in perfis), 2),
+                       sum(int(p.get("barras_sem_aproveitamento") or 0) for p in perfis), None,
                        r1(kg_sem), sum(int(p["barras"]) for p in perfis), None, r1(kg_com), None, ""])
         abas.append({"nome": "Perfis e barras", "linhas": linhas, "total": True,
-                     "larguras": [22, 22, 8, 8, 10, 8, 11, 8, 10, 10, 11, 10, 10, 11, 10, 10]})
+                     "larguras": [22, 22, 8, 8, 10, 8, 11, 8, 10, 10, 10, 10, 11, 10, 10, 11, 10, 10]})
     if C.get("chapas"):
         linhas = [["Bitola", "Espessura", "Polegada", "No modelo", "Material", "Peças", "m²", "kg", "Chapas", "Pedido"]]
         linhas += [[c.get("bitola") or "", c.get("mm") or c.get("rotulo") or "", c.get("polegada") or "", c.get("modelo") or "",

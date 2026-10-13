@@ -647,7 +647,8 @@ def quantitativos(lista: dict) -> dict:
         item = so(p, ("perfil", "material", "categoria", "posicoes", "pecas", "comprimento_m", "peso"))
         b = p.get("barras") or {}
         if b:
-            item["barras"] = so(b, ("comprimento", "quantidade", "emendas", "aproveitamento", "sobra_m", "plano"))
+            item["barras"] = so(b, ("comprimento", "quantidade", "emendas", "aproveitamento", "sobra_m", "plano",
+                                    "sob_medida_pecas", "sob_medida_m"))
         perfis.append(item)
     return {
         "gerado": lista.get("gerado"),

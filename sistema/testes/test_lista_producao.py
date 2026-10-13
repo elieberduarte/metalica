@@ -23,8 +23,8 @@ def test_encaixar_em_barras():
     # com 5 m no lugar de 4 a sobra (997 mm, já descontado o corte) não recebe o resto de 1 m
     assert lp.encaixar([7000, 5000], 6000)["quantidade"] == 3
     assert lp.encaixar([], 6000)["quantidade"] == 0
-    # barra automática: 6 m quando tudo cabe, 12 m se alguma peça passa
-    assert lp._barra_para([5999], 0) == 6000 and lp._barra_para([6001], 0) == 12000
+    # barra automática: 6 m; a peça do dobrado que passa vem sob medida, sem levar o perfil para 12 m (13/10)
+    assert lp._barra_para([5999], 0) == 6000 and lp._barra_para([6001], 0) == 6000
     assert lp._barra_para([6001], 6000) == 6000
 
 
@@ -41,10 +41,11 @@ def test_montar_resumos_e_totais():
     # pelo peso de compra) — antes o cabeçalho deixava as multi-dobra de fora
     assert abs(t["peso"] - sum(li["peso_total"] for li in lista["posicoes"])) < 0.1
     assert t["pecas"] == sum(li["quantidade"] for li in lista["posicoes"])
-    # perfis: o U150 são 2 terças de 5 m → 10 m, 2 barras de 6 m; o U88 são 12 de 1,2 m → 3 barras
+    # perfis: o U150 são 2 terças de 5 m → 10 m, sob medida (13/10); o U88 são 12 de 1,2 m → 3 barras
     perfis = {g["perfil"]: g for g in lista["perfis"]}
     u150, u88 = perfis["U150X50X2.25"], perfis["U88X40X2.25"]
-    assert u150["pecas"] == 2 and abs(u150["comprimento_m"] - 10.0) < 0.01 and u150["barras"]["quantidade"] == 2
+    assert u150["pecas"] == 2 and abs(u150["comprimento_m"] - 10.0) < 0.01 and u150["barras"]["quantidade"] == 0
+    assert u150["barras"]["sob_medida_pecas"] == 2 and u150["sob_medida"] == "todas"
     assert u150["categoria"] == "TERÇAS" and u150["kg_m"] > 0
     assert u88["pecas"] == 12 and u88["barras"]["quantidade"] == 3 and u88["posicoes"] == ["P2 / P3 / P4"]
     # chapas: P1 130×50×3 ×3

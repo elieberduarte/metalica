@@ -233,6 +233,22 @@ def _desfazer_barras_com_emenda(sobras, cortes, barra, perda, minimo):
     return sobras, cortes, emendadas
 
 
+def _barras_texto(b: dict) -> str:
+    """"40" ou "7 + 14 sob medida" (as peças que a fábrica compra no comprimento delas, 13/10)."""
+    n, s = int(b.get("quantidade") or 0), int(b.get("sob_medida_pecas") or 0)
+    if not s:
+        return _n(n)
+    return ("%s + %s sob medida" % (_n(n), _n(s))) if n else "%s sob medida" % _n(s)
+
+
+def _barra_do_plano(g: dict, b: dict, csv: bool = False) -> str:
+    """A barra de uma linha do plano de corte: a comercial, ou "sob medida" com o comprimento da peça."""
+    if b.get("sob_medida"):
+        return ("sob medida %s" % _num_csv(b["comprimento"] / 1000.0, 3)) if csv else "sob medida"
+    L = g["barras"]["comprimento"] / 1000.0
+    return _num_csv(L, 0) if csv else "%s m" % _n(L)
+
+
 def texto_dos_cortes(cortes: Sequence[dict]) -> str:
     """"2× T.C.1 5.990 + 1× B.3 1.200" (mm)."""
     return " + ".join("%d× %s %s" % (c["qtd"], c["nome"] or "peça", _n(c["comprimento"])) for c in cortes)
@@ -251,20 +267,29 @@ def _comprado_em_6m(perfil: str) -> bool:
 
 def _barra_para(comprimentos: Sequence[float], barra: float, perfil: str = "") -> float:
     """0 = automático, pela regra da fábrica (05/10: "depende do perfil, W 12 m, o restante 6 m"): o laminado W em
-    barra de 12 m; tubo, redondo, chata e laminado em polegada sempre em 6 m (09/10); o dobrado em 6 m — a peça mais
-    comprida que 6 m (a terça de 6,3 m) leva o dobrado para 12 m, o comprimento da dobradeira, senão cada uma seria uma
-    emenda."""
+    barra de 12 m; tubo, redondo, chata e laminado em polegada sempre em 6 m (09/10); o dobrado em 6 m, e a peça dele
+    mais comprida que 6 m vem sob medida (`_regra_sob_medida`) — levar o dobrado para 12 m inflava a compra (SOORO,
+    13/10: o U100x50#11 de 7,25 m dava 761 kg em barras de 12 m; a fábrica pediu 670)."""
     if barra and barra > 0:
         return float(barra)
     if re.match(r"\s*(W|HP)\s*\d", str(perfil or ""), re.I):
         return BARRAS_COMERCIAIS[1]
-    if _comprado_em_6m(perfil):
-        # o tubo, a barra redonda ou chata e o laminado em polegada vêm em barra de 6 m, e a peça maior sai com emenda
-        # (o usuário, 09/10: "os TQ e TR são barras de 6 m, apenas perfil W são comprados em barras de 12 m" — a viga
-        # de 9,2 m do Vicente levava o TR 250x100 para 12 m)
-        return BARRAS_COMERCIAIS[0]
-    maior = max(comprimentos) if comprimentos else 0.0
-    return BARRAS_COMERCIAIS[0] if maior <= BARRAS_COMERCIAIS[0] + 1e-6 else BARRAS_COMERCIAIS[1]
+    # o tubo, a barra redonda ou chata e o laminado em polegada vêm em barra de 6 m, e a peça maior sai com emenda
+    # (o usuário, 09/10: "os TQ e TR são barras de 6 m, apenas perfil W são comprados em barras de 12 m" — a viga
+    # de 9,2 m do Vicente levava o TR 250x100 para 12 m); o dobrado também, com a peça longa sob medida
+    return BARRAS_COMERCIAIS[0]
+
+
+def _regra_sob_medida(perfil: str, barra: float, terca: bool = False) -> str:
+    """O que do dobrado a fábrica compra no comprimento da peça, sem barra (o relatório de compras da SOORO, 13/10: as
+    terças vêm da dobradeira na lista de cortes, "12x 6,035m · 24x 4,925m"; os outros dobrados em kg, cortados de barra
+    de 6 m): "todas" as peças da terça, as "maiores" que a barra nos outros dobrados, "" no W, no tubo, no redondo, no
+    laminado em polegada e quando o usuário fixou a barra."""
+    if barra and barra > 0:
+        return ""
+    if re.match(r"\s*(W|HP)\s*\d", str(perfil or ""), re.I) or _comprado_em_6m(perfil):
+        return ""
+    return "todas" if terca else "maiores"
 
 
 # ============================================================ montagem
@@ -480,6 +505,7 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
         # os nomes de produção (A.C.82) no lugar das marcas quando há: a marca do Revit é o nome inteiro da peça
         g["nomes_posicoes"] = sorted(dict.fromkeys(rotulos), key=_ordem_natural)
         b = _barra_para(comps, barra, g["perfil"])
+        g["sob_medida"] = _regra_sob_medida(g["perfil"], barra, g["categoria"] == "TERÇAS")
         _os_dois_encaixes(g, comps, b, rotulos, set(emendas or ()))
         g["kg_m"] = round(g["peso"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0
         g["kg_m_malha"] = round(g["peso_malha"] / g["comprimento_m"], 3) if g["comprimento_m"] else 0.0
@@ -641,15 +667,41 @@ def montar(posicoes: Sequence[Posicao], categorias: Dict[str, str], acessorios: 
 
 def _os_dois_encaixes(g: dict, comps, barra: float, rotulos, emendas: set):
     """O encaixe sem emenda e o com emenda (quando economiza barra), para a comparação na tela (07/10); `barras` é o
-    que vai para a compra: o com emenda só no perfil em que o usuário ligou a emenda."""
-    sem = encaixar(comps, barra, rotulos=rotulos)
-    com = encaixar(comps, barra, rotulos=rotulos, emenda_minima=EMENDA_TRECHO_MINIMO)
+    que vai para a compra: o com emenda só no perfil em que o usuário ligou a emenda. As peças sob medida
+    (`g["sob_medida"]`, 13/10) ficam fora das barras e entram nos dois planos como linhas próprias."""
+    regra = g.get("sob_medida") or ""
+    corte, rot_corte, sob = [], [], collections.Counter()
+    for L, nome in zip(comps, rotulos):
+        if regra == "todas" or (regra and L > barra + 1e-6):
+            sob[(nome, round(float(L), 1))] += 1
+        else:
+            corte.append(L)
+            rot_corte.append(nome)
+    sem = _com_sob_medida(encaixar(corte, barra, rotulos=rot_corte), sob)
+    com = _com_sob_medida(encaixar(corte, barra, rotulos=rot_corte, emenda_minima=EMENDA_TRECHO_MINIMO), sob)
     g["barras_sem_emenda"] = sem
     g.pop("barras_com_emenda", None)
     if com["quantidade"] < sem["quantidade"]:
         g["barras_com_emenda"] = com
     g["emenda"] = g["perfil"] in emendas and "barras_com_emenda" in g
     g["barras"] = g["barras_com_emenda"] if g["emenda"] else sem
+
+
+def _com_sob_medida(r: dict, sob: "collections.Counter") -> dict:
+    """O encaixe `r` com as peças sob medida: `sob_medida_pecas` e `sob_medida_m` para a compra, uma linha no plano por
+    peça diferente ("sob_medida", o comprimento da peça e sem sobra) e o aproveitamento contando com elas."""
+    if not sob:
+        return r
+    m = sum(L * q for (_, L), q in sob.items()) / 1000.0
+    barras_m = r["quantidade"] * r["comprimento"] / 1000.0
+    colocado = r["aproveitamento"] / 100.0 * barras_m
+    r["sob_medida_pecas"] = sum(sob.values())
+    r["sob_medida_m"] = round(m, 2)
+    r["aproveitamento"] = round(100.0 * (colocado + m) / (barras_m + m), 1) if barras_m + m else 0.0
+    linhas = [{"barras": q, "sobra": 0, "sob_medida": True, "comprimento": L, "cortes": [{"nome": nome, "comprimento": L, "qtd": 1}]}
+              for (nome, L), q in sorted(sob.items(), key=lambda kv: (-kv[0][1], _ordem_natural(kv[0][0])))]
+    r["plano"] = list(r.get("plano") or []) + linhas
+    return r
 
 
 def _material_do_tipo(itens) -> Dict[str, str]:
@@ -676,10 +728,13 @@ def refazer_encaixes(lista: dict, emendas: Optional[Sequence[str]]) -> dict:
         comps.extend([float(li["comprimento"])] * q)
         rots.extend([li.get("nome") or li.get("marca") or ""] * q)
     conj = set(emendas or ())
+    fixa = float(lista.get("barra") or 0.0)
     for g in lista.get("perfis") or []:
         comps, rots = pecas.get((g["perfil"], g.get("material")), ([], []))
         if comps:
-            _os_dois_encaixes(g, comps, float((g.get("barras") or {}).get("comprimento") or 6000.0), rots, conj)
+            # a barra e as peças sob medida pela regra de hoje (a lista gravada antes de 13/10 trazia o dobrado em 12 m)
+            g["sob_medida"] = _regra_sob_medida(g["perfil"], fixa, g.get("categoria") == "TERÇAS")
+            _os_dois_encaixes(g, comps, _barra_para(comps, fixa, g["perfil"]), rots, conj)
     return lista
 
 
@@ -867,17 +922,19 @@ def gravar(pasta: str, lista: dict, posicoes: Sequence[Posicao], acessorios: Dic
     arquivos["romaneio"] = gravar_romaneio_da_lista(os.path.join(pasta, "romaneio.csv"), lista)
     arquivos["perfis"] = _csv(os.path.join(pasta, "resumo-perfis.csv"),
                               ["Perfil", "Material", "Categoria", "Posicoes", "Pecas", "Comprimento total (m)", "kg/m",
-                               "Peso (kg)", "Barra comercial (m)", "Barras", "Aproveitamento (%)", "Sobra (m)", "Pecas com emenda", "Catalogo"],
+                               "Peso (kg)", "Barra comercial (m)", "Barras", "Pecas sob medida", "Sob medida (m)", "Aproveitamento (%)", "Sobra (m)",
+                               "Pecas com emenda", "Catalogo"],
                               [[g.get("perfil_nome") or g["perfil"], g["material"], g["categoria"],
                                 " ".join(g.get("nomes_posicoes") or g["posicoes"]), g["pecas"],
                                 _num_csv(g["comprimento_m"]), _num_csv(g["kg_m"], 3), _num_csv(g["peso"], 1),
                                 _num_csv(g["barras"]["comprimento"] / 1000.0, 0), g["barras"]["quantidade"],
+                                g["barras"].get("sob_medida_pecas") or 0, _num_csv(g["barras"].get("sob_medida_m") or 0.0),
                                 _num_csv(g["barras"]["aproveitamento"], 1), _num_csv(g["barras"]["sobra_m"]), g["barras"]["emendas"],
                                 _catalogo_texto(g)]
                                for g in lista["perfis"]])
     arquivos["plano_corte"] = _csv(os.path.join(pasta, "plano-de-corte.csv"),
                                    ["Perfil", "Material", "Barra (m)", "Barras iguais", "Cortes", "Sobra por barra (mm)"],
-                                   [[g.get("perfil_nome") or g["perfil"], g["material"], _num_csv(g["barras"]["comprimento"] / 1000.0, 0), b["barras"],
+                                   [[g.get("perfil_nome") or g["perfil"], g["material"], _barra_do_plano(g, b, csv=True), b["barras"],
                                      texto_dos_cortes(b["cortes"]), _num_csv(b["sobra"], 0)]
                                     for g in lista["perfis"] for b in (g["barras"].get("plano") or [])])
     dob = (lista.get("dobrados") or {}).get("linhas") or []
@@ -997,18 +1054,20 @@ def corpo_html(lista: dict) -> str:
                               [[(g.get("perfil_nome") or g["perfil"], "l b"), (_catalogo_texto(g), "l"), (g["material"], "l"),
                                 (_posicoes_texto(g), "l"), (g["pecas"], "c"),
                                 (_n(g["comprimento_m"], 2), "r"), (_n(g["kg_m"], 2), "r"), (_n(g["peso"], 1), "r b"),
-                                ("%s m" % _n(g["barras"]["comprimento"] / 1000.0), "c"), (g["barras"]["quantidade"], "c b"),
+                                ("%s m" % _n(g["barras"]["comprimento"] / 1000.0), "c"), (_barras_texto(g["barras"]), "c b"),
                                 (_n(g["barras"]["aproveitamento"], 1), "c"), (g["barras"]["emendas"] or "—", "c")] for g in lista["perfis"]],
                               rodape=[("TOTAL", "l b"), ("", "l"), ("", "l"), ("", "l"), (_n(sum(g["pecas"] for g in lista["perfis"])), "c b"),
                                       (_n(sum(g["comprimento_m"] for g in lista["perfis"]), 2), "r b"), ("", "r"),
                                       (_n(sum(g["peso"] for g in lista["perfis"]), 1), "r b"), ("", "c"),
-                                      (_n(sum(g["barras"]["quantidade"] for g in lista["perfis"])), "c b"), ("", "c"), ("", "c")],
+                                      (_barras_texto({"quantidade": sum(g["barras"]["quantidade"] for g in lista["perfis"]),
+                                                      "sob_medida_pecas": sum(g["barras"].get("sob_medida_pecas") or 0 for g in lista["perfis"])}), "c b"),
+                                      ("", "c"), ("", "c")],
                               larguras=["13%", "11%", "8%", "20%", "6%", "8%", "6%", "8%", "5%", "5%", "5%", "5%"]))
     plano = [(g, b) for g in lista["perfis"] for b in (g["barras"].get("plano") or [])]
     if plano:
         partes.append(_tabela("Quadro 2A — Plano de corte por barra (o que sai de cada barra; barras de corte igual juntas; perda de corte %s mm)" % _n(PERDA_CORTE),
                               [("Perfil", "l"), ("Barra", "c"), ("Barras", "c"), ("Cortes (qtd × nome comprimento mm)", "l"), ("Sobra (mm)", "r")],
-                              [[(g.get("perfil_nome") or g["perfil"], "l b"), ("%s m" % _n(g["barras"]["comprimento"] / 1000.0), "c"), (b["barras"], "c b"),
+                              [[(g.get("perfil_nome") or g["perfil"], "l b"), (_barra_do_plano(g, b), "c"), (b["barras"], "c b"),
                                 (texto_dos_cortes(b["cortes"]), "l"), (_n(b["sobra"]), "r")] for g, b in plano],
                               larguras=["16%", "7%", "7%", "58%", "12%"]))
     dob = lista.get("dobrados") or {}

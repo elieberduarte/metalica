@@ -17,7 +17,7 @@ def test_tubo_redondo_e_polegada_em_6m_w_em_12m_dobrado_como_antes():
     assert lp._barra_para([480.0], 0, 'FE RED 1"') == 6000.0
     assert lp._barra_para([1900.0], 0, "L1.1/4''X1/8''") == 6000.0
     assert lp._barra_para([3000.0], 0, "W150X13") == 12000.0
-    assert lp._barra_para([6300.0], 0, "U150X60X20X2.25") == 12000.0      # o dobrado maior que 6 m: a dobradeira
+    assert lp._barra_para([6300.0], 0, "U150X60X20X2.25") == 6000.0       # a peça maior vem sob medida (13/10)
     assert lp._barra_para([5000.0], 0, "U150X60X20X2.25") == 6000.0
     r = lp.encaixar([9219.0], 6000.0)
     assert r["quantidade"] == 2 and r["emendas"] == 1
@@ -87,3 +87,36 @@ def test_quimico_em_cartuchos_e_a_arruela_que_e_chapa():
     R = orc.montar({"posicoes": [], "acessorios": [{"nome": "CHUMBADOR QUÍMICO HIT-V 15.875x250", "quantidade": 100}]}, None)
     li = next(x for x in R["linhas"] if x["id"] == "quimico")
     assert li["qtd"] == rz.cartuchos_quimico(100 * rz.volume_quimico_ml(15.875))["cartuchos"] == 4
+
+
+def test_dobrado_em_6m_terca_e_peca_longa_sob_medida():
+    """O relatório de compras da SOORO (13/10): a terça vem da dobradeira no comprimento de cada peça; o outro dobrado em
+    barra de 6 m, e a peça dele maior que 6 m sob medida. Em 12 m, o U100x50#11 dos banzos de 7,25 m dava 761 kg (14
+    barras) para 670 kg pedidos."""
+    from saida import resumos as rz
+    assert lp._regra_sob_medida("U150X50X2.28", 0, terca=True) == "todas"
+    assert lp._regra_sob_medida("U100X50X3.04", 0) == "maiores"
+    assert lp._regra_sob_medida("W250X32.70", 0) == "" and lp._regra_sob_medida("TQ 50x50x3,0", 0) == ""
+    assert lp._regra_sob_medida("L3''X3/16''", 0) == "" and lp._regra_sob_medida("U100X50X3.04", 12000.0) == ""
+    # banzo: 14 × 7.253 sob medida, o resto em barras de 6 m
+    g = {"perfil": "U100X50X3.04", "sob_medida": "maiores"}
+    comps = [7253.0] * 14 + [2000.0] * 6
+    lp._os_dois_encaixes(g, comps, 6000.0, ["B.21"] * 14 + ["B.6"] * 6, set())
+    b = g["barras"]
+    assert b["comprimento"] == 6000.0 and b["quantidade"] == 3
+    assert b["sob_medida_pecas"] == 14 and abs(b["sob_medida_m"] - 14 * 7.253) < 0.01
+    assert [pl for pl in b["plano"] if pl.get("sob_medida")] == [
+        {"barras": 14, "sobra": 0, "sob_medida": True, "comprimento": 7253.0, "cortes": [{"nome": "B.21", "comprimento": 7253.0, "qtd": 1}]}]
+    # terça: tudo sob medida, nenhuma barra
+    t = {"perfil": "U150X50X2.28", "sob_medida": "todas"}
+    lp._os_dois_encaixes(t, [6290.0, 5105.0, 3990.0], 6000.0, ["T.C.2", "T.C.4", "T.C.3"], set())
+    assert t["barras"]["quantidade"] == 0 and t["barras"]["sob_medida_pecas"] == 3 and t["barras"]["aproveitamento"] == 100.0
+    # a compra: barras × kg/barra + metros sob medida × kg/m, com e sem aproveitamento
+    pos = [{"marca": "B21", "comprimento": 7253, "quantidade": 14}, {"marca": "B6", "comprimento": 2000, "quantidade": 6}]
+    lista = {"posicoes": pos, "perfis": [dict(g, posicoes=["B21", "B6"], peso=600.0, kg_m=4.53, kg_m_catalogo=4.53,
+                                              comprimento_m=113.54, pecas=20)]}
+    p = rz._compra(lista, [], {}, {})["perfis"][0]
+    assert p["barras"] == 3 and p["barras_sem_aproveitamento"] == 3     # 2 por barra (3 mm de corte)
+    assert abs(p["kg_compra"] - 4.53 * (3 * 6 + 14 * 7.253)) < 0.01
+    assert abs(p["kg_sem_aproveitamento"] - 4.53 * (3 * 6 + 14 * 7.253)) < 0.01
+    assert "+14 sob medida" in rz._html_compra({"compra": {"perfis": [p]}})

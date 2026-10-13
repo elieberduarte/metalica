@@ -304,6 +304,8 @@ function desenhar(L) {
     const comDe = (g) => g.barras_com_emenda || null;
     const kgBarra = (g) => (g.kg_m_catalogo || g.kg_m || 0) * (g.barras.comprimento / 1000);
     const economia = (g) => comDe(g) ? (semDe(g).quantidade - comDe(g).quantidade) * kgBarra(g) : 0;
+    // as peças sob medida (13/10): a terça e o dobrado maior que a barra vêm no comprimento delas, fora das barras
+    const sobMedida = (b) => b && b.sob_medida_pecas ? ` + ${n(b.sob_medida_pecas)} sob medida` : '';
     const usarEmenda = async (g, usar) => {
       aviso(`${nomeDe(g)}: ${usar ? 'com emenda' : 'sem emenda'} na compra…`);
       try {
@@ -312,7 +314,9 @@ function desenhar(L) {
         aviso(`${nomeDe(g)}: ${usar ? 'com emenda' : 'sem emenda'} na compra. Para levar aos resumos, use "Gerar de novo" na aba Resumos da obra.`);
       } catch (e) { aviso(e.message, true); }
     };
-    pCorte.append(secao('Perfis', `${n(comPlano.length)} perfis · ${n(comPlano.reduce((s_, g) => s_ + g.barras.quantidade, 0))} barras na compra · `
+    const sobTotal = comPlano.reduce((s_, g) => s_ + (g.barras.sob_medida_pecas || 0), 0);
+    pCorte.append(secao('Perfis', `${n(comPlano.length)} perfis · ${n(comPlano.reduce((s_, g) => s_ + g.barras.quantidade, 0))} barras na compra`
+      + (sobTotal ? ` + ${n(sobTotal)} peças sob medida` : '') + ' · '
       + `emenda: trecho mínimo de 1,0 m, uma por peça`,
       tabela([
         { titulo: 'Perfil', valor: (g) => el('a', { href: '#corte', class: 'b', texto: nomeDe(g), onclick: (ev) => { ev.preventDefault(); abrirPlano(g); } }) },
@@ -320,8 +324,9 @@ function desenhar(L) {
         { titulo: 'Peças', chave: 'pecas', classe: 'c', num: true },
         { titulo: 'Compr. (m)', chave: 'comprimento_m', classe: 'r', num: true, casas: 2 },
         { titulo: 'Barra', valor: (g) => `${n(g.barras.comprimento / 1000)} m`, classe: 'c' },
-        { titulo: 'Sem emenda', valor: (g) => `${n(semDe(g).quantidade)} · ${n(semDe(g).aproveitamento, 1)}%`, classe: 'c', dica: 'barras e aproveitamento sem emendar peça' },
-        { titulo: 'Com emenda', valor: (g) => comDe(g) ? `${n(comDe(g).quantidade)} · ${n(comDe(g).aproveitamento, 1)}%` : '—', classe: 'c',
+        { titulo: 'Sem emenda', valor: (g) => `${n(semDe(g).quantidade)}${sobMedida(semDe(g))} · ${n(semDe(g).aproveitamento, 1)}%`, classe: 'c',
+          dica: 'barras e aproveitamento sem emendar peça (sob medida: a terça e o dobrado maior que a barra, no comprimento da peça)' },
+        { titulo: 'Com emenda', valor: (g) => comDe(g) ? `${n(comDe(g).quantidade)}${sobMedida(comDe(g))} · ${n(comDe(g).aproveitamento, 1)}%` : '—', classe: 'c',
           dica: 'barras e aproveitamento emendando nas sobras ("—": a emenda não poupa barra)' },
         { titulo: 'Peças emendadas', valor: (g) => comDe(g) ? (comDe(g).emendadas || []).length : '', classe: 'c' },
         { titulo: 'Economia (kg)', valor: (g) => economia(g) || '', classe: 'r', num: true, casas: 1 },
@@ -338,10 +343,13 @@ function desenhar(L) {
       el('button', { type: 'button', class: 'botao-m', texto: 'Recolher todos', onclick: () => blocos.forEach(d => { d.open = false; }) })));
     const tabelaPlano = (g, b) => tabela([
       { titulo: 'Barras', chave: 'barras', classe: 'c b', num: true },
-      { titulo: 'Cortes', valor: (pl) => barraDesenhada(pl, b.comprimento), classe: 'quebra corte-celula' },
+      { titulo: 'Cortes', valor: (pl) => pl.sob_medida ? el('div', {}, el('small', { class: 'nota', texto: 'sob medida' }), barraDesenhada(pl, pl.comprimento))
+          : barraDesenhada(pl, b.comprimento), classe: 'quebra corte-celula' },
       { titulo: 'Sobra (mm)', chave: 'sobra', classe: 'r', num: true },
     ], b.plano.map(pl => ({ ...pl, _g: g })), null, (pl) => [g.perfil, nomeDe(g), ...pl.cortes.map(c => c.nome)].join(' '));
-    const resumoDe = (b) => `${n(b.quantidade)} barras de ${n(b.comprimento / 1000)} m · aproveitamento ${n(b.aproveitamento, 1)}% · sobra ${n(b.sobra_m, 2)} m`
+    const resumoDe = (b) => `${n(b.quantidade)} barras de ${n(b.comprimento / 1000)} m`
+      + (b.sob_medida_pecas ? ` + ${n(b.sob_medida_pecas)} peças sob medida (${n(b.sob_medida_m, 2)} m)` : '')
+      + ` · aproveitamento ${n(b.aproveitamento, 1)}% · sobra ${n(b.sobra_m, 2)} m`
       + (b.emendas ? ` · ${b.emendas} peça(s) maior(es) que a barra` : '');
     for (const g of comPlano) {
       const sem = semDe(g), com = comDe(g);

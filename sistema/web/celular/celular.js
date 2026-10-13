@@ -443,9 +443,9 @@ function cartaoQuant(tipo, x) {
     const b = x.barras || {};
     const plano = (b.plano || []).slice(0, 30);
     return `<details class="cartao"><summary><div class="linha"><div class="nome" style="font-size:15px">${esc(x.perfil)}</div><div class="num"><b>${kg(x.peso || 0)}</b></div></div>
-      <div class="fraco">${nf(x.pecas)} peças · ${nf(x.comprimento_m, 1)} m${b.quantidade ? ` · ${nf(b.quantidade)} barras de ${nf((b.comprimento || 0) / 1000)} m` : ''}</div>
+      <div class="fraco">${nf(x.pecas)} peças · ${nf(x.comprimento_m, 1)} m${b.quantidade ? ` · ${nf(b.quantidade)} barras de ${nf((b.comprimento || 0) / 1000)} m` : ''}${b.sob_medida_pecas ? ` · ${nf(b.sob_medida_pecas)} sob medida` : ''}</div>
       ${b.aproveitamento != null ? `<div class="barra"><i style="width:${Math.min(100, b.aproveitamento)}%"></i></div><div class="mais-fraco">aproveitamento ${nf(b.aproveitamento, 1)}%${plano.length ? ' · toque para o plano de corte' : ''}</div>` : ''}</summary>
-      ${plano.length ? `<div class="plano">${plano.map(pl => `<div><b>${nf(pl.barras)}×</b> ${esc((pl.cortes || []).map(c => `${c.qtd || c.quantidade || 1}× ${c.nome || ''} ${nf(c.comprimento)}`).join(' + '))} <span class="mais-fraco">sobra ${nf(pl.sobra)}</span></div>`).join('')}</div>` : ''}</details>`;
+      ${plano.length ? `<div class="plano">${plano.map(pl => `<div><b>${nf(pl.barras)}×</b> ${pl.sob_medida ? 'sob medida · ' : ''}${esc((pl.cortes || []).map(c => `${c.qtd || c.quantidade || 1}× ${c.nome || ''} ${nf(c.comprimento)}`).join(' + '))} <span class="mais-fraco">sobra ${nf(pl.sobra)}</span></div>`).join('')}</div>` : ''}</details>`;
   }
   if (tipo === 'chapas') {
     return `<div class="cartao"><div class="linha"><div class="nome" style="font-size:15px">Chapa # ${nf(x.espessura, 2)} mm</div><div class="num"><b>${kg(x.peso || 0)}</b></div></div>

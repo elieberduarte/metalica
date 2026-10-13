@@ -524,10 +524,11 @@ def _com_recorte(lista: dict, linhas: List[dict], num: dict) -> None:
     recorte: Dict[str, float] = collections.defaultdict(float)
     for g in lista.get("perfis") or []:
         b = g.get("barras") or {}
-        if not b.get("quantidade"):
+        if not (b.get("quantidade") or b.get("sob_medida_m")):
             continue
         kg_m = float(g.get("kg_m_catalogo") or 0.0) or float(g.get("kg_m") or 0.0)
-        kg_compra = kg_m * float(b.get("comprimento") or 0.0) / 1000.0 * int(b["quantidade"])
+        # as barras e as peças sob medida (a terça e o dobrado maior que a barra, 13/10)
+        kg_compra = kg_m * (float(b.get("comprimento") or 0.0) / 1000.0 * int(b.get("quantidade") or 0) + float(b.get("sob_medida_m") or 0.0))
         por_grupo: Dict[str, float] = collections.defaultdict(float)
         for mk in g.get("posicoes") or []:
             por_grupo[grupo_de.get(mk, "outro")] += peso_de.get(mk, 0.0)

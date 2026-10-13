@@ -141,8 +141,8 @@ def test_compra_chapas_comerciais_porcas_e_arruelas():
 
 
 def test_barra_comercial_pelo_perfil():
-    """W em 12 m; os outros em 6 m, ou 12 m quando a peça passa de 6 m (05/10)"""
+    """W em 12 m; os outros em 6 m (05/10), e o dobrado maior que 6 m sob medida (13/10)"""
     from saida.lista_producao import _barra_para
     assert _barra_para([3640.0], 0, "W150X13.00") == 12000.0
     assert _barra_para([5000.0], 0, "U100X50X#11") == 6000.0
-    assert _barra_para([6290.0], 0, "U150X50X#13") == 12000.0
+    assert _barra_para([6290.0], 0, "U150X50X#13") == 6000.0
