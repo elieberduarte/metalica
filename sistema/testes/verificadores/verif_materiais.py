@@ -142,6 +142,14 @@ try:
         while time.time() - t0 < 15 and not aba.avaliar("document.querySelectorAll('#conferencia-corpo section')[1].textContent.includes('Conferido pelo verificador')"): aba.drenar(0.5)
         ok(aba.avaliar("document.querySelectorAll('#conferencia-corpo section')[1].textContent.includes('Conferido pelo verificador')"), "resposta registrada vai para o histórico")
         ok(os.path.exists(os.path.join(DADOS, "compressores", "conferencias.json")), "conferencias.json gravado no projeto")
+        # "ver no 3D" abre o visor ao lado do quadro, não o editor inteiro (13/10)
+        if aba.avaliar("!!document.querySelector('#conferencia-corpo .conf-3d')"):
+            aba.avaliar("document.querySelector('#conferencia-corpo .conf-3d').click(); 1")
+            t0 = time.time()
+            while time.time() - t0 < 20 and not aba.avaliar("!!document.querySelector('#conferencia-corpo .lado3d iframe')"): aba.drenar(0.5)
+            ok(aba.avaliar("!!document.querySelector('#conferencia-corpo .lado3d iframe') && location.pathname === '/materiais'"), "ver no 3D da conferência abre o visor ao lado, na mesma tela")
+            aba.drenar(3.0)
+            foto(aba, "_materiais_conferencia.png")
     else:
         ok(True, "sem pendências neste projeto: campo de resposta não testado")
     erros = [m for m in aba.console if m[0] in ("error", "excecao")]

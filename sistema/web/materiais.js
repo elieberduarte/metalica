@@ -669,8 +669,14 @@ function desenharConferencia() {
       el('div', { class: 'rolagem' }, tabela([
         { titulo: 'Peça', valor: (l) => l.it.peca || '—', classe: 'b' },
         { titulo: 'Perfil', valor: (l) => l.it.perfil || '' },
-        { titulo: 'O que conferir', valor: (l) => el('div', {}, l.it.o_que, l.ids ? el('a', { href: '#', class: 'conf-3d', texto: 'ver no 3D ↗', title: 'Abrir o editor 3D com estas peças em destaque',
-            onclick: (ev) => { ev.preventDefault(); verNo3D(l.ids); } }) : null), classe: 'quebra' },
+        { titulo: 'O que conferir', valor: (l) => el('div', {}, l.it.o_que, l.ids ? el('a', { href: '#', class: 'conf-3d', texto: 'ver no 3D ↗', title: 'Mostrar estas peças no modelo 3D ao lado (13/10)',
+            onclick: (ev) => {
+              ev.preventDefault();
+              const tr = ev.target.closest('tr');
+              document.querySelectorAll('#conferencia-corpo tr.no-3d').forEach((t) => t.classList.remove('no-3d'));
+              if (tr) tr.classList.add('no-3d');
+              abrirLado3D(l.ids, l.ids.split(',').filter(Boolean).length, document.querySelector('#conferencia-corpo .conf-area'));
+            } }) : null), classe: 'quebra' },
         { titulo: 'Resposta', valor: (l) => l.resposta, classe: 'quebra conf-cel' },
         { titulo: 'Situação', valor: (l) => el('div', { class: 'conf-acao' }, l.sit, l.botao, l.quando) },
       ], linhas, null, (l) => [l.it.peca, l.it.perfil, l.it.o_que, l.it.resposta].join(' ')))));
@@ -691,7 +697,8 @@ function desenharConferencia() {
       { titulo: 'Situação', valor: (e) => sitTexto(e.situacao) + (e.anterior ? ' (anterior)' : ''), classe: 'c' },
       { titulo: 'Resposta', valor: (e) => e.resposta || '', classe: 'quebra' },
     ], eventos, null, (e) => [e.peca, e.o_que, e.resposta].join(' '))) : vazio('As respostas registradas acima ficam aqui, com a data, como o histórico da obra.')));
-  corpo.replaceChildren(...partes);
+  // o 3D ao lado do quadro (o mesmo painel do resumo): a área que o abrirLado3D usa
+  corpo.replaceChildren(el('div', { class: 'doc-lado conf-area' }, el('div', { class: 'conf-esquerda' }, ...partes)));
 }
 
 /* ------------------------------------------------------------ resumos da obra */
@@ -824,9 +831,11 @@ function ligarPendencias(frame) {
  * completo com as mesmas peças em destaque. Com o 3D aberto, os Dados do resumo recolhem para dar largura. */
 let LADO3D = null;                                  // {caixa, frame, pronto, ids}
 
-function abrirLado3D(ids, n) {
-  const area = document.querySelector('#doc-previa .doc-lado');
+function abrirLado3D(ids, n, area = null) {
+  area = area || document.querySelector('#doc-previa .doc-lado');
   if (!area) { verNo3D(ids); return; }
+  // o 3D aberto ao lado de outro quadro (o resumo × a conferência, 13/10) fecha antes de abrir aqui
+  if (LADO3D && LADO3D.caixa.isConnected && !area.contains(LADO3D.caixa)) fecharLado3D();
   if (!LADO3D || !LADO3D.caixa.isConnected) {
     const frame = el('iframe', { src: `/visor3d/ver3d.html?projeto=${encodeURIComponent(PROJETO)}`, title: 'Modelo 3D' });
     const info = el('span', { class: 'lado3d-info' });
@@ -879,6 +888,7 @@ function fecharLado3D() {
   if (grade) grade.classList.remove('com-3d');
   const f = document.querySelector('#doc-previa .doc-lado iframe');
   try { if (f) f.contentDocument.querySelectorAll('tr.no-3d').forEach((t) => t.classList.remove('no-3d')); } catch (e) { /* outra origem */ }
+  document.querySelectorAll('#conferencia-corpo tr.no-3d').forEach((t) => t.classList.remove('no-3d'));
 }
 
 // o visor ao lado avisa quando carregou (pronto3d) e pede o editor (navegar, botão Editar dele)
