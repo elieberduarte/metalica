@@ -1013,7 +1013,9 @@ def _detalhar(doc, grupos, regra_tercas, rotular, avisar, converter, ajustes, no
             fns.append((tipos_conj.get(rotulo, ""), lambda dd, x, y, rotulo=rotulo, inst=inst, n=n, nota=nota:
                        desenho_do_conjunto(doc, rotulo, inst, n, dd, x, y, rotular, fundidas=fundidas, nota=nota,
                                            nomes=nomes_pos, nome=nomes_conj.get(rotulo, ""), tipo=tipos_conj.get(rotulo, ""),
-                                           conformadas=conformadas, pesos=pesos)))
+                                           conformadas=conformadas, pesos=pesos,
+                                           # a treliça da obra sem cobertura é viga caixote: prancha de produção (13/10)
+                                           caixa=(tipos_conj.get(rotulo, "") == "tesoura" and not cobertura))))
         itens_cv = {}
         for membros in cv.values():
             membros.sort(key=lambda m: _ordem_natural(nomes_conj.get(m[0], m[0])))   # mesma ordem do rótulo da célula

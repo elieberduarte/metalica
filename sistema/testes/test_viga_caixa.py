@@ -83,3 +83,31 @@ def test_uma_instancia_so_marcada():
     r = D.detalhar(doc, grupos=["tesouras"], regra_tercas=False, converter=False)
     (c,) = [c for c in r["conjuntos"] if c["marca"] == "V1"]
     assert c["instancias"] == 1 and c["composicao"] == {"TQ-L": 4, "TQ2": 28}
+
+
+def test_viga_caixote_e_prancha_de_producao():
+    # a viga caixote (13/10): as travessas com o perfil cheio (4 bordas, não a linha de eixo), nada de fora do
+    # conjunto em volta e a altura cotada entre as faces dos banzos (150), não o comprimento da travessa (146)
+    doc = Documento(nome="uma")
+    _viga(doc, 0.0)
+    # um suporte de fora, em pé na ponta (o U75x40 da laje do Vicente): não entra na prancha da caixa
+    sup = Barra(inicio=(L + 30.0, 0.0, -250.0), fim=(L + 30.0, 0.0, -90.0), perfil="U 75x40x3,0", papel="barra", nome="U1")
+    sup.atributos = {"marcas": {"posicao": "U1", "perfil": "U 75x40x3,0"}, "tipo_ifc": "IfcMember"}
+    doc.add(sup)
+    pecas, _ = base._pecas(doc)
+    inst = [e for e in pecas if base._marcas(e).get("conjunto") == "V1"]
+    for caixa in (False, True):
+        d = Desenho(nome="t", escala=25.0)
+        conjuntos.desenho_do_conjunto(doc, "V1", inst, 1, d, 0.0, 0.0, False, nome="V1", tipo="tesoura", caixa=caixa)
+        medidas = sorted(round(e.medida()) for e in d.entidades.values() if e.tipo == "cota")
+        vizinhos = [e for e in d.entidades.values() if (e.atributos or {}).get("vizinho")]
+        por_travessa = collections.Counter((e.atributos or {}).get("origem") for e in d.entidades.values()
+                                           if e.tipo == "linha" and e.camada == "MONTANTES")
+        if caixa:
+            assert not vizinhos
+            assert 150 in medidas and 146 not in medidas, medidas
+            assert por_travessa and min(por_travessa.values()) >= 4, por_travessa      # o contorno, não só o eixo
+        else:
+            assert 146 in medidas, medidas                                            # a tesoura continua como era
+        for v in (462, 438, 400, 224, 100):                                           # a cadeia dos nós não muda
+            assert v in medidas, (caixa, v, medidas)

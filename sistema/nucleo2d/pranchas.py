@@ -2687,6 +2687,10 @@ def _copia_local(c: dict, n: int) -> dict:
             if txt != e.texto:
                 e = copy.copy(e)
                 e.texto = txt
+        elif getattr(e, "camada", "") == "CHAPAS":
+            # a cópia é só para mostrar (a chapa para o corte é a original, na prancha das chapas): cinza (13/10)
+            e = copy.copy(e)
+            e.camada = "CHAPAS-VISTA"
         ents.append(e)
     cc = dict(c, entidades=ents, local=True, qtd_local=n, original=original)
     if c is not original and original.get("_para_copia") is c:

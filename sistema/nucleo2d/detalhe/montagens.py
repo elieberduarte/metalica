@@ -354,7 +354,8 @@ def desenho_de_montagem(doc: Documento, grupo: dict, desenho: Desenho, dx: float
     camada_de = {}
     for e in solidos:
         if e.id in grupo["pecas"]:
-            camada_de[e.id] = "CHAPAS" if _eh_chapa(e) else "TIRANTES"
+            # a chapa montada é só mostrada (a de corte sai embaixo, em CHAPAS): cinza (13/10)
+            camada_de[e.id] = "CHAPAS-VISTA" if _eh_chapa(e) else "TIRANTES"
     nome_peca = {}
     for e in solidos:
         if e.id in grupo["pecas"]:

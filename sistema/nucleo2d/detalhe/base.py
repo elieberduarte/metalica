@@ -621,7 +621,10 @@ def _separar_variantes(pecas: Sequence[Solido]) -> None:
 #: dois temas do CAD; banzos, diagonais e montantes ganham cores próprias.
 CAMADAS_PECAS = collections.OrderedDict([
     ("TERCAS", ("#3b82f6", 0.35)), ("BANZOS", ("#22a7c2", 0.35)), ("DIAGONAIS", ("#e67e22", 0.35)),
-    ("MONTANTES", ("#a855f7", 0.35)), ("CHAPAS", ("#d4a017", 0.35)), ("TIRANTES", ("#2eaf63", 0.35)),
+    ("MONTANTES", ("#a855f7", 0.35)), ("CHAPAS", ("#d4a017", 0.35)),
+    # a chapa só mostrada (na elevação do conjunto, na montagem, na planta de chumbação e nas cópias de detalhe da
+    # prancha da tesoura): cinza — a dourada é a que vai para o corte, na prancha das chapas (pedido do usuário, 13/10)
+    ("CHAPAS-VISTA", ("#9aa4b2", 0.25)), ("TIRANTES", ("#2eaf63", 0.35)),
     ("PILARES", ("#8b95a5", 0.35)), ("VIGAS", ("#5b7db1", 0.35)), ("TELHAS", ("#9aa4b2", 0.25)),
     ("RUFOS", ("#17b8c9", 0.25)), ("CALHAS", ("#3a7bd5", 0.25)),
 ])

@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo.base import ErroDeDados
 from nucleo3d.modelo import Documento, Solido, Chapa
-from nucleo2d.desenho import Desenho, Linha, Polilinha
+from nucleo2d.desenho import Desenho, Linha, Polilinha, Texto
 from nucleo2d import vistas as _vistas
 from saida.detalhamento import (Posicao, Furo, analisar, CLASSES, _vista, _desenhar_furos, RHO_ACO, _area_2d,
                                 _arestas_dos_furos, _ordem_natural, _autovetores, _lacos_2d)
@@ -323,6 +323,58 @@ def _conjuntos_iguais(a: dict, b: dict) -> bool:
 #: de peças em comum são o mesmo detalhe, com a diferença de composição anotada.
 TOLERANCIA_CONJUNTO_SEMELHANTE = 20.0
 FRACAO_COMUM_CONJUNTO = 0.75
+
+
+def _furos_dos_parafusos_da_caixa(p, doc, instancia, origem, u, v, w, u0, v0, esc) -> int:
+    """Na viga caixote, o tubo não traz o furo modelado: o que diz qual travessa é furada é o parafuso que a
+    atravessa (os 6 M12.7 da T1 do Vicente passam pelas 3 travessas TQ1 de 150, para o suporte da laje). Marca o
+    furo (d + 1,5 mm, como nas chapas) no ponto em que o eixo do parafuso cruza a travessa, com a chamada do
+    diâmetro no primeiro — "diferenciando os que vão furo" (pedido do usuário, 13/10). Devolve quantos marcou."""
+    from nucleo2d.detalhe.base import _fixadores, _so_parafusos, _nome_do_parafuso
+    from saida.detalhamento import _autovetores
+    caixas = [(e, _caixa(e)) for e in instancia if getattr(e, "vertices", None) and not _tipo_ifc(e).startswith("IfcPlate")]
+    if not caixas:
+        return 0
+    minimo = [min(cx[i][0] for _e, cx in caixas) - 20.0 for i in range(3)]
+    maximo = [max(cx[i][1] for _e, cx in caixas) + 20.0 for i in range(3)]
+    marcados = 0
+    vistos: set = set()
+    larg_u = max(_dot(_sub(q, origem), u) for _e, _cx in caixas for q in _e.vertices) - u0
+    for f in _so_parafusos(_fixadores(doc)):
+        cc = tuple(sum(q[i] for q in f.vertices) / len(f.vertices) for i in range(3))
+        if not all(minimo[i] <= cc[i] <= maximo[i] for i in range(3)):
+            continue
+        _, pca = _autovetores(f.vertices)
+        ext = []
+        for ax in pca:
+            ts = [_dot(_sub(q, cc), ax) for q in f.vertices]
+            ext.append(max(ts) - min(ts))
+        eixo_f = pca[ext.index(max(ext))]
+        if abs(_dot(tuple(eixo_f), w)) < 0.7:              # só o parafuso que atravessa o plano da vista (fura a face)
+            continue
+        nome, pela_porca = _nome_do_parafuso(f, ext)
+        if pela_porca or ext[0] <= 1.5 * ext[1]:
+            continue
+        # a travessa que o parafuso atravessa: a peça da caixa em cujo volume está o centro dele
+        if not any(all(cx[k][0] - 2.0 <= cc[k] <= cx[k][1] + 2.0 for k in range(3)) for _e, cx in caixas):
+            continue
+        m_d = re.search(r"M\s*([\d.,]+)", nome)
+        d_f = float(m_d.group(1).replace(",", ".")) if m_d else 12.7
+        d_furo = round(d_f + 1.5, 1)
+        x = _dot(_sub(cc, origem), u) - u0
+        y = _dot(_sub(cc, origem), v) - v0
+        if (round(x), round(y)) in vistos:                   # o parafuso da outra face, no mesmo ponto da vista
+            continue
+        vistos.add((round(x), round(y)))
+        r = d_furo / 2.0
+        p.circulo(x, y, r, "FURO")
+        p.linha(x - 1.6 * r, y, x + 1.6 * r, y, "FURO")
+        p.linha(x, y - 1.6 * r, x, y + 1.6 * r, "FURO")
+        if marcados == 0:
+            lado = -1.0 if x > larg_u / 2.0 else 1.0        # a chamada para dentro da caixa, não para fora da célula
+            p.chamada(x + lado * r, y, x + lado * 10.0 * esc, y + 7.0 * esc, "FURO Ø%s" % ("%g" % d_furo).replace(".", ","), 2.0)
+        marcados += 1
+    return marcados
 
 
 def _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc) -> List[dict]:
@@ -2314,11 +2366,15 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
                         fundidas: Optional[Dict[str, str]] = None, nota=None,
                         nomes: Optional[Dict[str, str]] = None, nome: str = "", tipo: str = "",
                         conformadas: Optional[set] = None,
-                        pesos: Optional[Dict[str, float]] = None) -> Tuple[float, float, float, float]:
+                        pesos: Optional[Dict[str, float]] = None, caixa: bool = False) -> Tuple[float, float, float, float]:
     """Elevação do conjunto com cotas de nós, título e lista de perfis, em (dx, dy).
     `fundidas`: marca do IFC → posição fundida; `nomes`: posição fundida → nome de
     produção (rótulos e composição com o mesmo nome que as células de posição);
-    `nome`: o do conjunto (T1, S.T.2…); `pesos`: posição fundida → kg por peça."""
+    `nome`: o do conjunto (T1, S.T.2…); `pesos`: posição fundida → kg por peça.
+    `caixa`: a viga caixote (a treliça da obra sem cobertura: os tubos do Vicente, 13/10) é uma prancha de
+    produção — as travessas com o perfil cheio (não a linha de eixo), nada de fora do conjunto em volta
+    (os suportes e chumbadores da laje são do gabarito, não do soldador) e a altura cotada entre as faces
+    dos banzos (o vão de 150 que fecha os 250), não o comprimento da travessa (146)."""
     fundidas = fundidas or {}
     nomes = nomes or {}
     pesos = pesos or {}
@@ -2432,10 +2488,16 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         # horizontal que leva o banzo de baixo até o pilar do joelho) e o montante que fecha a
         # meia-tesoura na cumeeira (as pontas dos dois banzos chegam nas pontas dele)
         contorno = set(_alma_com_contorno(instancia, alma, apoios_bz, camada_de))
-        if tipo == "conjunto":
+        contorno_caixa: set = set()
+        if tipo == "conjunto" or caixa:
             # no conjunto (o DP), a diagonal e o montante com o perfil cheio — as duas bordas, como os outros perfis —, não
-            # só a linha de eixo (pedido do usuário, 28/09)
-            contorno |= {k for k in alma if camada_de.get(k) in ("DIAGONAIS", "MONTANTES")}
+            # só a linha de eixo (pedido do usuário, 28/09); na viga caixote também ("representar os tubos", 13/10)
+            novos = {k for k in alma if camada_de.get(k) in ("DIAGONAIS", "MONTANTES")} - contorno
+            if caixa:
+                # as travessas no plano da vista; a de topo, vista de ponta (eixo = um ponto), fica escondida no banzo
+                novos = {k for k in novos if math.dist(*alma[k]) > 40.0}
+                contorno_caixa = novos                # as travessas: só o contorno, sem virar "descida do banzo" nas cotas
+            contorno |= novos
         # o perfil laminado (W, I, H) da alma — o montante W200 da tesoura de alma cheia do depósito
         # químico, 29/09: "esse perfil está sendo representado só por uma linha" — com o perfil cheio
         por_id = {e.id: e for e in instancia}
@@ -2456,7 +2518,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     # o DP sem as terças em corte (pedido do usuário, 28/09); o chumbador também: a cantoneira dele
     # passa por banzo, e o poste em pé sobre ele saía como vizinho, alto e sem cota (o CB1 do
     # depósito, análise das pranchas de 29/09)
-    if segs_bz and tipo not in ("conjunto", "chumbador"):
+    if segs_bz and tipo not in ("conjunto", "chumbador") and not caixa:
         # as terças em corte, onde cruzam o plano da tesoura sobre o banzo de cima (como o corte das
         # tesouras do projetista): a posição e o lado das abas se leem no próprio desenho
         tercas, telhas, extras = _cortes_das_tercas(doc, instancia, origem, u, v, w, u0, v0, segs_bz, dx, dy, com_telha=False)
@@ -2498,6 +2560,8 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
         if rotular and m.get("posicao"):
             rotulos.append((nome_de(m["posicao"]), ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2), ang))
     barras_furadas = _marcar_furos_das_barras(p, instancia, origem, u, v, u0, v0, esc)
+    if caixa:
+        _furos_dos_parafusos_da_caixa(p, doc, instancia, origem, u, v, w, u0, v0, esc)
     banzos = [b for b in barras if (b[3] < 25.0 or b[3] > 155.0) and b[2] > 0.25 * larg]
     diagonais = [b for b in barras if b not in banzos]
     # nós: interseção do eixo de cada diagonal/montante com o eixo de cada banzo, perto da
@@ -2652,7 +2716,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     # montante da cumeeira, onde o banzo acaba (pedidos do usuário, 28/09)
     pecas_em_pe = []
     for k_ in contorno:
-        if camada_de.get(k_) != "MONTANTES":
+        if camada_de.get(k_) != "MONTANTES" or k_ in contorno_caixa:
             continue
         pts_ = [q for e_ in desenho.entidades.values() if isinstance(e_, Linha) and (e_.atributos or {}).get("origem") == k_
                 for q in (e_.a, e_.b)]
@@ -2965,7 +3029,18 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             # a descida do banzo de baixo no joelho (a peça em pé com o contorno): a altura dela, do lado
             # de dentro (pedido do usuário, 28/09) — é a base da flecha
             topo_descida = None
-            for k_ in contorno:
+            if caixa:
+                # a viga caixote: o vão entre as faces dos banzos, uma vez, na primeira travessa — não a altura de cada
+                # travessa (a de 146 mm não "fecha" os 250 da caixa: 50 + 150 + 50; pedido do usuário, 13/10)
+                ys_bz = [q[1] - dy for e_ in desenho.entidades.values() if isinstance(e_, Linha) and e_.camada == "BANZOS"
+                         and (e_.atributos or {}).get("conjunto") == marca for q in (e_.a, e_.b)]
+                baixo = [y_ for y_ in ys_bz if y_ < alt / 2.0]
+                cima = [y_ for y_ in ys_bz if y_ >= alt / 2.0]
+                xs_t = sorted(((e_.a[0] + e_.b[0]) / 2.0 - dx for e_ in desenho.entidades.values() if isinstance(e_, Linha)
+                               and e_.camada == "MONTANTES" and (e_.atributos or {}).get("conjunto") == marca))
+                if baixo and cima and xs_t and min(cima) - max(baixo) > 20.0:
+                    p.cota_v(max(baixo), min(cima), xs_t[0] + 25.0, off * 0.6)
+            for k_ in ([] if caixa else contorno):
                 if camada_de.get(k_) != "MONTANTES":
                     continue
                 pts_ = [q for e_ in desenho.entidades.values() if isinstance(e_, Linha) and (e_.atributos or {}).get("origem") == k_
@@ -3178,7 +3253,24 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             simbolo_solda(p, esc, mx_s, my_s, mx_s + lado_s * 12.0 * esc, topo_s + (8.0 + 8.0 * j_s) * esc, c_s["perna"],
                           ambos_lados=c_s["lados"] == 2, cauda="TÍP.")
     ext = p.extremos
+    # a chapa na elevação do conjunto é só mostrada (a de corte está na prancha das chapas): o contorno dela na camada
+    # cinza CHAPAS-VISTA — o texto da lista de perfis ("Chapas #9,5") continua na cor das chapas (13/10)
+    _chapas_so_vistas(desenho, antes)
     return (min(ext[0], dx), min(ext[1], dy), max(ext[2], dx + larg), max(ext[3], dy + alt))
+
+
+def _chapas_so_vistas(desenho: Desenho, antes: set, entidades=None) -> int:
+    """O traço das chapas desenhadas (linhas, polilinhas, arcos) desde `antes` — ou de `entidades` — passa da camada
+    CHAPAS (a do corte) para CHAPAS-VISTA (cinza): é chapa mostrada no conjunto, não a chapa para cortar. Devolve
+    quantas entidades mudou."""
+    _registrar_camadas_de_pecas(desenho)
+    n = 0
+    ents = entidades if entidades is not None else [desenho.entidades[k] for k in desenho.entidades if k not in antes]
+    for e in ents:
+        if getattr(e, "camada", "") == "CHAPAS" and not isinstance(e, Texto) and not (e.atributos or {}).get("chapa_de_corte"):
+            e.camada = "CHAPAS-VISTA"
+            n += 1
+    return n
 
 
 #: Entre as linhas de cota de baixo da tesoura montada (a cadeia, as metades, a total), mm de papel.
@@ -4194,7 +4286,7 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
             atr["conjunto"] = str(m["conjunto"])
         pp = _Papel(d, atr, 0.0, 0.0)
         eh_chumb = e.id in ids_ch
-        pp.polilinha(casco, fechada=True, camada="TIRANTES" if (eh_chumb and not so_chapas) else "CHAPAS")
+        pp.polilinha(casco, fechada=True, camada="TIRANTES" if (eh_chumb and not so_chapas) else "CHAPAS-VISTA")
         # os furos da chapa de base paramétrica são onde os chumbadores passam: é o que a
         # obra marca no concreto (a chapa do IFC traz o chumbador como peça própria)
         par = getattr(e, "parametrica", None)
