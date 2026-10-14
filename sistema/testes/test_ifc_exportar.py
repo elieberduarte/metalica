@@ -1257,5 +1257,18 @@ class TestComIfcOpenShell(unittest.TestCase):
         self.assertEqual(jornal.statements, [], f"{jornal.statements[:5]}")
 
 
+class TestAnotacaoForaDoIfc(unittest.TestCase):
+    """A cota da ferramenta Cotar do editor 3D é um sólido só de arestas (sem faces): fica fora do IFC — antes parava
+    a exportação inteira com "sólido '441 mm' está vazio" (PRATI CD, 14/10/2026)."""
+
+    def test_cota_sem_faces_nao_quebra_a_exportacao(self):
+        doc = doc_barra_w()
+        doc.add(Solido(nome="441 mm", camada="Referência", vertices=[(0, 0, 0), (441, 0, 0), (441, 50, 0)], faces=[],
+                       atributos={"tipo": "cota", "cota": {"texto": "441 mm"}}))
+        texto = para_texto(doc)
+        self.assertNotIn("441 mm", texto)
+        self.assertIn("IFCBEAM", texto)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

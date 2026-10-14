@@ -1046,6 +1046,10 @@ class _Exportador:
         for ent in self.doc.entidades.values():
             if isinstance(ent, Grupo) or ent.atributos.get("exportar") is False:
                 continue
+            # anotação do 3D (a cota da ferramenta Cotar, linhas soltas): sólido só de arestas, sem faces — não é peça
+            # e não vai para o IFC (antes parava a exportação inteira: "sólido '441 mm' está vazio", PRATI CD, 14/10)
+            if isinstance(ent, Solido) and (ent.atributos.get("tipo") == "cota" or not ent.faces):
+                continue
             desl = self._deslocamento(ent, memo)
             pai_pl = placements.get(ent.grupo, self.pav_placement)
             if isinstance(ent, Barra):

@@ -126,6 +126,7 @@ export class FerramentaCotar extends Ferramenta {
       vertices: g.vertices, faces: [], arestas_vivas: g.arestas,
       atributos: {
         tipo: 'cota',
+        exportar: false,                // anotação: não é peça (fica fora do IFC e das listas)
         cota: { a: C.copiar(this.a), b: C.copiar(this.b), deslocamento: desloc,
                 texto, normal: C.copiar(this.normal), lado: C.copiar(this.lado) },
       },
