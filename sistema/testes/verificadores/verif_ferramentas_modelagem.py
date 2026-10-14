@@ -145,6 +145,50 @@ try:
     ok(d3 == [1333, 1333, 1333], f"F7: /3 divide em três partes iguais: {d3}")
     js("editor.ativarFerramenta('selecionar'); 1")
     erros("F6 e F7")
+
+    # ---- F8: a viga que chega na outra viga com o topo no mesmo nível: as mesas batem — recorte de cima e de baixo
+    r8 = jsj("""const ed = editor, doc = ed.documento;
+      const vp = doc.add({ tipo: 'barra', nome: 'principal', perfil: 'W 250×32,7', inicio: [6000, -2000, 0], fim: [6000, 2000, 0], rotacao: 0, papel: 'viga', camada: 'Estrutura', atributos: {} });
+      const vs = doc.add({ tipo: 'barra', nome: 'secundaria', perfil: 'W 250×32,7', inicio: [4000, 0, 0], fim: [5990, 0, 0], rotacao: 0, papel: 'viga', camada: 'Estrutura', atributos: {} });
+      ed.ativarFerramenta('recortar'); const f = ed.ativa;
+      f._sob = () => ({ e: doc.get(vs.id), ponto: [5900, 0, 0] }); f.onPonto({ tela: [0, 0] });
+      f._sob = () => ({ e: doc.get(vp.id), ponto: [6000, 0, 0] }); f.onPonto({ tela: [0, 0] });
+      const b = doc.get(vs.id);
+      const geo = ed.cena._geometriaBarra(b);
+      return { id: vs.id, recortes: b.recortes, malha: !!(geo && geo.geom && geo.geom.getAttribute('position').count > 0) };""")
+    rc = {r["lado"]: r for r in (r8 or {}).get("recortes") or []}
+    ok(r8 and set(rc) == {"cima", "baixo"} and all(r["ponta"] == "fim" for r in rc.values()),
+       f"F8: recorte automático de cima e de baixo na ponta que encaixa: {r8 and r8['recortes']}")
+    ok(rc and 70 <= rc["cima"]["comprimento"] <= 76 and 18 <= rc["cima"]["altura"] <= 21,
+       f"F8: o recorte vai até a mesa da principal (≈63 + folga 10) e desce a mesa dela (≈9 + 10): {rc.get('cima')}")
+    ok(r8 and r8["malha"], "F8: a barra recortada tem malha no 3D")
+    # chanfro de 10 a 45° em cima, na ponta do início da secundária
+    ch = jsj(f"""const ed = editor, doc = ed.documento; const f = ed.ativa; f.constructor.lado = 'cima';
+      f._sob = () => ({{ e: doc.get('{r8['id']}'), ponto: [4010, 0, 0] }}); f.onPonto({{ tela: [0, 0] }});
+      f.onValor('ch10'); const b = doc.get('{r8['id']}');
+      return {{ n: (b.cortes_inicio || []).length, geo: !!ed.cena._geometriaBarra(b).geom }};""")
+    ok(ch and ch["n"] == 2 and ch["geo"], f"F8: chanfro de ponta (a ponta reta + o plano a 45°): {ch}")
+    # o Python (detalhamento, IFC) recebe o modelo gravado com os recortes
+    js("editor.ativarFerramenta('selecionar'); 1")
+    modelo = js("JSON.stringify(editor.documento.paraJSON())")
+    from nucleo3d.modelo import Documento as Doc
+    from nucleo3d import geometria as geo
+    from ifc.exportar import para_texto
+    d2 = Doc.de_dict(json.loads(modelo))
+    sec = next(e for e in d2.entidades.values() if getattr(e, "nome", "") == "secundaria")
+    vs_, fs_ = geo.malha_barra(sec)
+    vol = 0.0
+    for f_ in fs_:
+        a_ = vs_[f_[0]]
+        for k in range(1, len(f_) - 1):
+            b_, c_ = vs_[f_[k]], vs_[f_[k + 1]]
+            vol += (a_[0] * (b_[1] * c_[2] - b_[2] * c_[1]) - a_[1] * (b_[0] * c_[2] - b_[2] * c_[0]) + a_[2] * (b_[0] * c_[1] - b_[1] * c_[0])) / 6
+    cheio = 4210.0 * 1990.0
+    # cima ≈ (mesa 146 × 9,1 + alma 6,1 × 9,9) × 72 ≈ 100 mil; baixo ≈ 99,6 mil; chanfro ≈ ½ × 10 × 10 × 146 ≈ 7,3 mil
+    ok(sec.recortes and 195000 < cheio - abs(vol) < 225000, f"F8: a malha do Python tira os dois recortes e o chanfro (volume tirado {cheio - abs(vol):.0f} mm³, ≈ 207 mil)")
+    txt = para_texto(d2)
+    ok("IFCBLOCK" in txt and "IFCBOOLEANRESULT(.DIFFERENCE." in txt, "F8: o IFC leva o recorte como bloco tirado (IfcBooleanResult + IfcBlock)")
+    erros("F8")
 finally:
     try: nav.kill()
     except Exception: pass

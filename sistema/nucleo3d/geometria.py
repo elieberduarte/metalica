@@ -974,7 +974,7 @@ def malha_barra(barra: Barra) -> Tuple[List[Ponto], List[List[int]]]:
         u, v, w = base_local(d, barra.rotacao)
         f0, f1 = alturas_de_corte(barra, u, v, w)
         externo, internos = _normalizar_contorno(secao_com_furos(barra.perfil))
-        r = _prisma_cortado(externo, internos, f0, f1)
+        r = _prisma_cortado(externo, internos, f0, f1, *recortes_locais(barra, externo))
         if r is not None:
             local, faces = r
             return [somar(ini, somar(_mult(u, x), somar(_mult(v, y), _mult(w, z))))
@@ -985,6 +985,201 @@ def malha_barra(barra: Barra) -> Tuple[List[Ponto], List[List[int]]]:
     return s.vertices, s.faces
 
 
+# ---- a barra furada (os marcadores de furo da ferramenta Furo/Parafuso viram furo de verdade) -------------
+# O marcador (sólido com `atributos.furo` = {d, comp?, dir?, ponto, eixo, profundidade, peca}) diz onde a
+# peça é furada; na barra ele só pintava o lugar (usuário, 13/10: "ele não furou a terça, só pintou de
+# outra cor o local dos furos"). Aqui a barra reta (sem corte no ângulo, seção aberta) é montada com as
+# faces laterais que o eixo do furo atravessa — dentro da profundidade do marcador — recortadas pelo laço
+# do furo (redondo ou oblongo) e o tubo ligando os laços na espessura da parede. A mesma receita está em
+# web/editor3d/nucleo/cena.js (`extrudarComFuros`), para o editor e o modo ver mostrarem igual.
+
+LADOS_FURO = 16
+
+
+def laco_do_furo(d: float, comp: float = 0.0) -> List[Ponto2]:
+    """O laço do furo no plano (a, b) perpendicular ao eixo: círculo de LADOS_FURO lados, ou o estádio
+    (meia-volta em +a e em −a) quando o comprimento passa da largura — a mesma do editor (_furar.js)."""
+    r = d / 2.0
+    if not comp or comp <= d + 0.5:
+        return [(r * math.cos(2 * math.pi * i / LADOS_FURO), r * math.sin(2 * math.pi * i / LADOS_FURO))
+                for i in range(LADOS_FURO)]
+    a = (comp - d) / 2.0
+    meio = LADOS_FURO // 2
+    pts = [(a + r * math.cos(-math.pi / 2 + math.pi * i / meio), r * math.sin(-math.pi / 2 + math.pi * i / meio))
+           for i in range(meio + 1)]
+    pts += [(-a + r * math.cos(math.pi / 2 + math.pi * i / meio), r * math.sin(math.pi / 2 + math.pi * i / meio))
+            for i in range(meio + 1)]
+    return pts
+
+
+def barra_furavel(barra: Barra) -> bool:
+    """A barra que sabe receber furo de verdade: reta (sem corte no ângulo) e de seção aberta (sem contorno
+    interno: o tubo fica com o marcador)."""
+    if tem_corte_no_angulo(barra):
+        return False
+    try:
+        _ext, internos = _normalizar_contorno(secao_com_furos(barra.perfil))
+    except Exception:
+        return False
+    return not internos
+
+
+def _no_poligono(p, poli) -> bool:
+    x, y = p
+    dentro = False
+    n = len(poli)
+    for i in range(n):
+        (x1, y1), (x2, y2) = poli[i], poli[(i + 1) % n]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            dentro = not dentro
+    return dentro
+
+
+def malha_barra_furada(barra: Barra, furos: Sequence[dict]) -> Tuple[List[Ponto], List[List[int]]]:
+    """A malha da barra com os furos abertos (ver o bloco acima). Sem furo que pegue numa parede, ou a barra
+    que não sabe ser furada: a malha de sempre."""
+    if not furos or not barra_furavel(barra):
+        return malha_barra(barra)
+    ini, fim = _v(barra.inicio), _v(barra.fim)
+    L = math.dist(ini, fim)
+    d_ = normalizar(subtrair(fim, ini))
+    r0 = max(0.0, float(barra.recorte_inicio or 0.0))
+    r1 = max(0.0, float(barra.recorte_fim or 0.0))
+    util = L - r0 - r1
+    if util <= TOL:
+        return malha_barra(barra)
+    u, v, w = base_local(d_, barra.rotacao)
+    o = somar(ini, _mult(d_, r0))
+    externo, _int = _normalizar_contorno(secao_com_furos(barra.perfil))      # anti-horário
+    n_ext = len(externo)
+
+    def local(p):
+        rel = subtrair(_v(p), o)
+        return (produto_escalar(rel, u), produto_escalar(rel, v), produto_escalar(rel, w))
+
+    def local_dir(a):
+        a = _v(a)
+        return (produto_escalar(a, u), produto_escalar(a, v), produto_escalar(a, w))
+
+    lados = []                                             # (P, e unitário, n para fora, comprimento)
+    for i in range(n_ext):
+        P, Q = externo[i], externo[(i + 1) % n_ext]
+        ex, ey = Q[0] - P[0], Q[1] - P[1]
+        le = math.hypot(ex, ey)
+        lados.append((P, (ex / le, ey / le) if le > 1e-9 else (1.0, 0.0), (ey / le, -ex / le) if le > 1e-9 else (0.0, 0.0), le))
+
+    buracos = {i: [] for i in range(n_ext)}               # lado → [laço (s, z)]
+    tubos = []                                             # (laço 3D local de entrada, de saída, ponto do eixo, eixo)
+    for fu in furos:
+        try:
+            p = local(fu["ponto"])
+            dd = local_dir(fu["eixo"])
+            nd = math.sqrt(sum(c * c for c in dd))
+            dd = tuple(c / nd for c in dd)
+            larg = float(fu.get("d") or 0.0)
+            prof = float(fu.get("profundidade") or 10.0)
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            continue
+        if larg <= 0:
+            continue
+        comp = float(fu.get("comp") or 0.0)
+        # a base (a, b) do laço, perpendicular ao eixo; a no rumo do oblongo
+        a_ = None
+        if comp > larg + 0.5 and fu.get("dir"):
+            g = local_dir(fu["dir"])
+            g = tuple(g[i] - dd[i] * sum(g[k] * dd[k] for k in range(3)) for i in range(3))
+            ng = math.sqrt(sum(c * c for c in g))
+            a_ = tuple(c / ng for c in g) if ng > 1e-6 else None
+        if a_ is None:
+            ref = (1.0, 0.0, 0.0) if abs(dd[0]) < 0.9 else (0.0, 1.0, 0.0)
+            g = tuple(ref[i] - dd[i] * sum(ref[k] * dd[k] for k in range(3)) for i in range(3))
+            ng = math.sqrt(sum(c * c for c in g))
+            a_ = tuple(c / ng for c in g)
+        b_ = (dd[1] * a_[2] - dd[2] * a_[1], dd[2] * a_[0] - dd[0] * a_[2], dd[0] * a_[1] - dd[1] * a_[0])
+        laco = [tuple(a_[i] * x + b_[i] * y for i in range(3)) for x, y in laco_do_furo(larg, comp)]
+        acertos = []
+        for i, (P, e, nn, le) in enumerate(lados):
+            den = dd[0] * nn[0] + dd[1] * nn[1]
+            if abs(den) < 0.2:
+                continue
+            t = ((P[0] - p[0]) * nn[0] + (P[1] - p[1]) * nn[1]) / den
+            if t < -0.6 or t > prof + 0.6:
+                continue
+            l2, l3 = [], []
+            for off in laco:
+                q0 = (p[0] + off[0], p[1] + off[1], p[2] + off[2])
+                tau = ((P[0] - q0[0]) * nn[0] + (P[1] - q0[1]) * nn[1]) / den
+                q = (q0[0] + tau * dd[0], q0[1] + tau * dd[1], q0[2] + tau * dd[2])
+                s = (q[0] - P[0]) * e[0] + (q[1] - P[1]) * e[1]
+                l2.append((s, q[2])); l3.append(q)
+            if all(0.3 < s < le - 0.3 and 0.3 < z < util - 0.3 for s, z in l2):
+                acertos.append((t, i, l2, l3))
+        acertos.sort()
+        for (t0, i0, l20, l30), (t1, i1, l21, l31) in zip(acertos, acertos[1:]):
+            tm = (t0 + t1) / 2.0
+            if i0 == i1 or not _no_poligono((p[0] + dd[0] * tm, p[1] + dd[1] * tm), externo):
+                continue
+            if any(_cruza_laco(l20, x) for x in buracos[i0]) or any(_cruza_laco(l21, x) for x in buracos[i1]):
+                continue
+            buracos[i0].append(l20); buracos[i1].append(l21)
+            tubos.append((l30, l31, p, dd))
+    if not tubos:
+        return malha_barra(barra)
+
+    vs_loc: List[Ponto] = []
+    faces: List[List[int]] = []
+
+    def tri(a, b, c, normal):
+        """o triângulo com a normal para o lado pedido"""
+        ab = subtrair(b, a); ac = subtrair(c, a)
+        if produto_escalar(produto_vetorial(ab, ac), normal) < 0:
+            b, c = c, b
+        k = len(vs_loc)
+        vs_loc.extend([a, b, c])
+        faces.append([k, k + 1, k + 2])
+
+    # as tampas
+    for (a, b, c) in triangular(externo):
+        A, B, C = externo[a], externo[b], externo[c]
+        tri((A[0], A[1], 0.0), (B[0], B[1], 0.0), (C[0], C[1], 0.0), (0.0, 0.0, -1.0))
+        tri((A[0], A[1], util), (B[0], B[1], util), (C[0], C[1], util), (0.0, 0.0, 1.0))
+    # as laterais (as furadas, triangulando o retângulo com os laços)
+    for i, (P, e, nn, le) in enumerate(lados):
+        if le < 1e-9:
+            continue
+        normal = (nn[0], nn[1], 0.0)
+        to3 = lambda sz: (P[0] + e[0] * sz[0], P[1] + e[1] * sz[0], sz[1])
+        ret = [(0.0, 0.0), (le, 0.0), (le, util), (0.0, util)]
+        if not buracos[i]:
+            tri(to3(ret[0]), to3(ret[1]), to3(ret[2]), normal)
+            tri(to3(ret[0]), to3(ret[2]), to3(ret[3]), normal)
+            continue
+        plano = list(ret)
+        for x in buracos[i]:
+            plano += orientar(_sem_repetidos(x), False)
+        for (a, b, c) in triangular_com_furos(ret, buracos[i]):
+            tri(to3(plano[a]), to3(plano[b]), to3(plano[c]), normal)
+    # os tubos: a normal para o eixo (o vazio do furo)
+    for l30, l31, p, dd in tubos:
+        m = len(l30)
+        for k in range(m):
+            j = (k + 1) % m
+            A, B, C, D = l30[k], l30[j], l31[j], l31[k]
+            cx = [(A[i] + B[i] + C[i] + D[i]) / 4.0 for i in range(3)]
+            tt = sum((cx[i] - p[i]) * dd[i] for i in range(3))
+            para_eixo = tuple(p[i] + dd[i] * tt - cx[i] for i in range(3))
+            tri(A, B, C, para_eixo)
+            tri(A, C, D, para_eixo)
+    vertices = [somar(o, somar(_mult(u, x), somar(_mult(v, y), _mult(w, z)))) for x, y, z in vs_loc]
+    return vertices, faces
+
+
+def _cruza_laco(l1, l2) -> bool:
+    """dois laços no mesmo lado que se tocam (o segundo furo no mesmo lugar fica de fora)"""
+    a0 = min(p[0] for p in l1); a1 = max(p[0] for p in l1); b0 = min(p[1] for p in l1); b1 = max(p[1] for p in l1)
+    c0 = min(p[0] for p in l2); c1 = max(p[0] for p in l2); d0 = min(p[1] for p in l2); d1 = max(p[1] for p in l2)
+    return a0 < c1 and c0 < a1 and b0 < d1 and d0 < b1
+
 # ---- o corte no ângulo (o encaixe de fábrica) -----------------------------------------
 # Cada ponta é o maior (no início) ou o menor (no fim) de alguns planos; no triedro local da
 # barra (origem no início, z no eixo, x/y da seção) cada plano vira uma altura
@@ -993,7 +1188,39 @@ def malha_barra(barra: Barra) -> Tuple[List[Ponto], List[List[int]]]:
 # repartida onde cada plano manda, e a lateral quebra onde a ponta vira de plano.
 
 def tem_corte_no_angulo(barra) -> bool:
-    return bool(getattr(barra, "cortes_inicio", None) or getattr(barra, "cortes_fim", None))
+    return bool(getattr(barra, "cortes_inicio", None) or getattr(barra, "cortes_fim", None)
+                or getattr(barra, "recortes", None))
+
+
+def recortes_locais(barra, externo):
+    """Os recortes de encaixe (o cope, F8 de 14/10) no triedro local: (os do início, os do fim), cada um
+    (reg, f) — na região reg[0]·x + reg[1]·y + reg[2] > 0 da seção, a ponta vai para a altura f = (0, 0, z). A mesma
+    receita de web/editor3d/nucleo/cena.recortesLocais: a altura a partir da face daquele lado, o comprimento a partir
+    do nó da ponta."""
+    rec = getattr(barra, "recortes", None) or []
+    if not rec or not externo:
+        return [], []
+    xs = [p[0] for p in externo]
+    ys = [p[1] for p in externo]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    L = barra.comprimento
+    ini, fim = [], []
+    for r in rec:
+        try:
+            c, h = float(r.get("comprimento") or 0.0), float(r.get("altura") or 0.0)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if c <= 0 or h <= 0:
+            continue
+        reg = {"cima": (0.0, 1.0, -(y1 - h)), "baixo": (0.0, -1.0, y0 + h),
+               "esquerda": (1.0, 0.0, -(x1 - h)), "direita": (-1.0, 0.0, x0 + h)}.get(r.get("lado"))
+        if reg is None:
+            continue
+        if r.get("ponta") == "inicio":
+            ini.append((reg, (0.0, 0.0, c)))
+        else:
+            fim.append((reg, (0.0, 0.0, L - c)))
+    return ini, fim
 
 
 def _z(f, x: float, y: float) -> float:
@@ -1090,9 +1317,189 @@ def _tampas(externo, internos, f0, f1):
     return ini, fim
 
 
-def _prisma_cortado(externo, internos, f0, f1):
+def _regiao(rs, x, y) -> int:
+    for i, (g, _f) in enumerate(rs):
+        if g[0] * x + g[1] * y + g[2] > 1e-9:
+            return i
+    return -1
+
+
+def _no_poligono_2d(p, poli) -> bool:
+    x, y = p
+    dentro = False
+    n = len(poli)
+    for i in range(n):
+        x1, y1 = poli[i]
+        x2, y2 = poli[(i + 1) % n]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            dentro = not dentro
+    return dentro
+
+
+def _prisma_recortado(externo, internos, f0, f1, r0, r1):
+    """O prisma com recortes de encaixe nas pontas (o cope): onde a seção cai na região de um recorte, a ponta vai
+    para a altura dele; a face do degrau sai onde a linha da região corta a seção. A mesma receita de
+    web/editor3d/nucleo/cena.prismaRecortado. (vértices no triedro local, faces) ou None."""
+    aneis = [externo] + list(internos)
+    verts: List[Ponto] = []
+    idx: Dict[tuple, int] = {}
+
+    def vid(x, y, z):
+        k = (round(x, 4), round(y, 4), round(z, 4))
+        i = idx.get(k)
+        if i is None:
+            i = idx[k] = len(verts)
+            verts.append((x, y, z))
+        return i
+
+    def fs0(i):
+        return list(f0) + ([r0[i][1]] if i >= 0 else [])
+
+    def fs1(i):
+        return list(f1) + ([r1[i][1]] if i >= 0 else [])
+
+    def F0(x, y, i):
+        return max(_z(f, x, y) for f in fs0(i))
+
+    def F1(x, y, i):
+        return min(_z(f, x, y) for f in fs1(i))
+
+    todos = list(f0) + list(f1) + [f for _g, f in r0] + [f for _g, f in r1]
+    faces: List[List[int]] = []
+    for anel in aneis:                                   # as laterais, com o degrau
+        m = len(anel)
+        for i in range(m):
+            P, Q = anel[i], anel[(i + 1) % m]
+            le = math.hypot(Q[0] - P[0], Q[1] - P[1])
+            if le < 1e-9:
+                continue
+            ss = {0.0, 1.0}
+            for k in range(len(todos)):
+                for j in range(k + 1, len(todos)):
+                    g0 = _z(todos[k], *P) - _z(todos[j], *P)
+                    g1 = _z(todos[k], *Q) - _z(todos[j], *Q)
+                    if g0 * g1 < 0:
+                        ss.add(g0 / (g0 - g1))
+            for g, _f in list(r0) + list(r1):
+                g0 = g[0] * P[0] + g[1] * P[1] + g[2]
+                g1 = g[0] * Q[0] + g[1] * Q[1] + g[2]
+                if g0 * g1 < 0:
+                    ss.add(g0 / (g0 - g1))
+            ss = sorted(ss)
+
+            def em(s):
+                return (P[0] + s * (Q[0] - P[0]), P[1] + s * (Q[1] - P[1]))
+            baixo, cima = [], []
+            for k in range(len(ss) - 1):
+                sa, sb = ss[k], ss[k + 1]
+                mx, my = em((sa + sb) / 2)
+                i0, i1 = _regiao(r0, mx, my), _regiao(r1, mx, my)
+                for s in (sa, sb):
+                    x, y = em(s)
+                    z0, z1 = F0(x, y, i0), F1(x, y, i1)
+                    if z1 - z0 < 1.0:
+                        return None
+                    baixo.append((s, z0))
+                    cima.append((s, z1))
+            poli = []
+            for q in baixo + list(reversed(cima)):
+                if not poli or abs(poli[-1][0] - q[0]) > 1e-9 or abs(poli[-1][1] - q[1]) > 1e-7:
+                    poli.append(q)
+            if len(poli) > 2 and abs(poli[0][0] - poli[-1][0]) < 1e-9 and abs(poli[0][1] - poli[-1][1]) < 1e-7:
+                poli.pop()
+            # a lateral em (s·le, z): ear clipping no plano dela (o degrau a deixa côncava)
+            plano2 = [(s * le, z) for s, z in poli]
+            ids = [vid(*em(s), z) for s, z in poli]
+            if area_assinada(plano2) < 0:
+                plano2.reverse()
+                ids.reverse()
+            for a, b, c in triangular(plano2):
+                faces.append([ids[a], ids[b], ids[c]])
+
+    def por_regiao(tri, rs):
+        out = []
+        for i in range(len(rs) + 1):
+            poli = list(tri)
+            for j in range(min(i, len(rs))):                 # fora das regiões anteriores
+                if len(poli) < 3:
+                    break
+                g = rs[j][0]
+                poli = _recortar_convexo(poli, -g[0], -g[1], -g[2])
+            if i < len(rs) and len(poli) >= 3:
+                g = rs[i][0]
+                poli = _recortar_convexo(poli, g[0], g[1], g[2])
+            if len(poli) >= 3 and abs(area_assinada(poli)) > 1e-9:
+                out.append((poli, i if i < len(rs) else -1))
+        return out
+
+    plano = [p for anel in aneis for p in anel]
+    for (a, b, c) in triangular_com_furos(externo, internos):
+        tri = [plano[a], plano[b], plano[c]]
+        if area_assinada(tri) < 0:
+            tri.reverse()
+        for pr, i in por_regiao(tri, r1):                    # tampa do fim: +z
+            for poli, f in _pedacos(pr, fs1(i), False):
+                ids = [vid(x, y, _z(f, x, y)) for x, y in poli]
+                faces += [[ids[0], ids[k], ids[k + 1]] for k in range(1, len(ids) - 1)]
+        for pr, i in por_regiao(tri, r0):                    # tampa do início: −z
+            for poli, f in _pedacos(pr, fs0(i), True):
+                ids = [vid(x, y, _z(f, x, y)) for x, y in poli]
+                faces += [[ids[k + 1], ids[k], ids[0]] for k in range(1, len(ids) - 1)]
+
+    def degraus(rs, eh_fim):                                 # a face do degrau
+        for g, f in rs:
+            ga, gb, gc = g
+            nl = math.hypot(ga, gb)
+            if nl < 1e-12:
+                continue
+            p0 = (-ga * gc / (nl * nl), -gb * gc / (nl * nl))
+            dr = (-gb / nl, ga / nl)
+            ts = []
+            for anel in aneis:
+                for k in range(len(anel)):
+                    A, B = anel[k], anel[(k + 1) % len(anel)]
+                    fa, fb = ga * A[0] + gb * A[1] + gc, ga * B[0] + gb * B[1] + gc
+                    if (fa > 0) == (fb > 0):
+                        continue
+                    s = fa / (fa - fb)
+                    X = (A[0] + s * (B[0] - A[0]), A[1] + s * (B[1] - A[1]))
+                    ts.append((X[0] - p0[0]) * dr[0] + (X[1] - p0[1]) * dr[1])
+            ts.sort()
+            fora = (-ga / nl * 0.01, -gb / nl * 0.01)
+            for k in range(len(ts) - 1):
+                tm = (ts[k] + ts[k + 1]) / 2
+                M = (p0[0] + dr[0] * tm, p0[1] + dr[1] * tm)
+                if not _no_poligono_2d(M, externo) or any(_no_poligono_2d(M, h) for h in internos):
+                    continue
+                A = (p0[0] + dr[0] * ts[k], p0[1] + dr[1] * ts[k])
+                B = (p0[0] + dr[0] * ts[k + 1], p0[1] + dr[1] * ts[k + 1])
+                zr = f[2]
+
+                def de_fora(q):
+                    i_ = _regiao(rs, q[0] + fora[0], q[1] + fora[1])
+                    return F1(q[0], q[1], i_) if eh_fim else F0(q[0], q[1], i_)
+                zA, zB = de_fora(A), de_fora(B)
+                q = [vid(A[0], A[1], zr), vid(B[0], B[1], zr), vid(B[0], B[1], zB), vid(A[0], A[1], zA)]
+                # a face olha para dentro do recorte (+g, o lado da mesa tirada): escolhe a volta dos triângulos pela
+                # normal de (A, B, B↑), como o triN do editor
+                ab = (B[0] - A[0], B[1] - A[1], 0.0)
+                up = (0.0, 0.0, zB - zr)
+                nrm = (ab[1] * up[2] - ab[2] * up[1], ab[2] * up[0] - ab[0] * up[2], ab[0] * up[1] - ab[1] * up[0])
+                if nrm[0] * ga + nrm[1] * gb > 0:
+                    faces.extend([[q[0], q[1], q[2]], [q[0], q[2], q[3]]])
+                else:
+                    faces.extend([[q[0], q[2], q[1]], [q[0], q[3], q[2]]])
+    degraus(r1, True)
+    degraus(r0, False)
+    return verts, faces
+
+
+def _prisma_cortado(externo, internos, f0, f1, r0=(), r1=()):
     """(vértices no triedro local, faces) da barra com as pontas cortadas; None quando o
-    corte come a peça em algum ponto (menos de 1 mm entre as pontas)"""
+    corte come a peça em algum ponto (menos de 1 mm entre as pontas). Com recortes de encaixe
+    (`r0`/`r1`, de `recortes_locais`), o prisma recortado."""
+    if r0 or r1:
+        return _prisma_recortado(externo, internos, f0, f1, list(r0), list(r1))
     aneis = [externo] + list(internos)
     verts: List[Ponto] = []
     idx: Dict[tuple, int] = {}
@@ -1158,6 +1565,23 @@ def comprimentos_da_barra(barra: Barra) -> Tuple[float, float]:
         ini, fim = _tampas(externo, internos, f0, f1)
     except Exception:                                    # noqa: BLE001 — perfil fora do banco
         return reto, reto
+    r0, r1 = recortes_locais(barra, externo)
+    if r0 or r1:
+        # com o recorte de encaixe, o médio é o volume da malha sobre a seção (o peso sai sem a mesa tirada)
+        malha = _prisma_cortado(externo, internos, f0, f1, r0, r1)
+        sec = area_contorno(externo) - sum(area_contorno(h) for h in internos)
+        if malha is None or sec <= TOL:
+            return reto, reto
+        vs, fs = malha
+        vol = 0.0
+        for f in fs:
+            a = vs[f[0]]
+            for k in range(1, len(f) - 1):
+                b, c = vs[f[k]], vs[f[k + 1]]
+                vol += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                        + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+        zs = [p[2] for p in vs]
+        return abs(vol) / sec, max(zs) - min(zs)
     area = sum(area_contorno(p) for p, _f in fim)
     if area <= TOL or _prisma_cortado(externo, internos, f0, f1) is None:
         return reto, reto

@@ -858,7 +858,7 @@ class _Exportador:
             externo, internos = _geo._normalizar_contorno(_geo.secao_com_furos(barra.perfil))
         except Exception:                                   # noqa: BLE001 — perfil fora do banco
             return None
-        if _geo._prisma_cortado(externo, internos, f0, f1) is None:
+        if _geo._prisma_cortado(externo, internos, f0, f1, *_geo.recortes_locais(barra, externo)) is None:
             return None
         z0 = min(_geo._z(f, x_, y_) for f in f0 for x_, y_ in externo)
         z1 = max(_geo._z(f, x_, y_) for f in f1 for x_, y_ in externo)
@@ -874,6 +874,25 @@ class _Exportador:
             # AgreementFlag .T.: a normal aponta para fora do meio-espaço — o que sai é o de fora
             meio = self.arq.add(f"IFCHALFSPACESOLID({plano},.T.)")
             solido = self.arq.add(f"IFCBOOLEANCLIPPINGRESULT(.DIFFERENCE.,{solido},{meio})")
+        # os recortes de encaixe (o cope): a extrusão menos um bloco no canto da ponta (IfcBooleanResult com IfcBlock,
+        # como o Tekla grava o "part cut")
+        r0, r1 = _geo.recortes_locais(barra, externo)
+        if r0 or r1:
+            xs, ys = [p[0] for p in externo], [p[1] for p in externo]
+            X0, X1, Y0, Y1 = min(xs) - 1.0, max(xs) + 1.0, min(ys) - 1.0, max(ys) + 1.0
+            for (g, f), do_fim in [(r, False) for r in r0] + [(r, True) for r in r1]:
+                # o retângulo da região na seção (a linha g = 0 até a borda de fora daquele lado)
+                if g[1] > 0.5:   x_, y_ = (X0, X1), (-g[2], Y1)
+                elif g[1] < -0.5: x_, y_ = (X0, X1), (Y0, g[2])
+                elif g[0] > 0.5: x_, y_ = (-g[2], X1), (Y0, Y1)
+                else:            x_, y_ = (X0, g[2]), (Y0, Y1)
+                z_ = (f[2], z1 + 1.0) if do_fim else (z0 - 1.0, f[2])
+                dx, dy, dz = x_[1] - x_[0], y_[1] - y_[0], z_[1] - z_[0]
+                if min(dx, dy, dz) <= 1e-6:
+                    continue
+                bloco = self.arq.add(f"IFCBLOCK({self.arq.eixo3((x_[0], y_[0], z_[0]), (0.0, 0.0, 1.0))},"
+                                     f"{_real(dx)},{_real(dy)},{_real(dz)})")
+                solido = self.arq.add(f"IFCBOOLEANRESULT(.DIFFERENCE.,{solido},{bloco})")
         return solido, _geo.comprimentos_da_barra(barra)[0]
 
     # ---- chapa ----

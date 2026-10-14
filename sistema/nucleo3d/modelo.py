@@ -160,6 +160,10 @@ class Barra(Entidade):
     # a peça fica do lado de dentro de todos eles — dois planos numa ponta fazem o bico
     cortes_inicio: List[dict] = field(default_factory=list)
     cortes_fim: List[dict] = field(default_factory=list)
+    # recortes de encaixe (o cope, F8 de 14/10): [{"ponta": "inicio"|"fim", "lado": "cima"|"baixo"|"esquerda"|"direita",
+    # "comprimento": mm a partir do nó da ponta, "altura": mm a partir da face daquele lado}] — a mesa tirada onde a viga
+    # chega no pilar ou na outra viga; a malha (geometria.recortes_locais) e o IFC (IfcBlock) os levam
+    recortes: List[dict] = field(default_factory=list)
 
     @property
     def comprimento(self) -> float:

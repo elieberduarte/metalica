@@ -877,11 +877,14 @@ export class Cena {
   _geometriaBarraCortada(b) {
     const base = baseDaBarra(b.inicio, b.fim, b.rotacao);
     const [f0, f1] = alturasDeCorte(b, base);
+    const forma = this._secaoDoPerfil(b.perfil);
+    const [r0, r1] = recortesLocais(b, forma);
     const chave = `barra|${b.perfil}|corte|` + [f0, f1].map(fs => fs.map(f =>
-      `${f[0].toFixed(5)},${f[1].toFixed(5)},${f[2].toFixed(2)}`).join(';')).join('|');
+      `${f[0].toFixed(5)},${f[1].toFixed(5)},${f[2].toFixed(2)}`).join(';')).join('|') +
+      (r0.length || r1.length ? '|rec|' + [r0, r1].map(rs => rs.map(r => `${r.reg.map(x => x.toFixed(3))}:${r.f[2].toFixed(2)}`).join(';')).join('|') : '');
     let geom = this.cacheGeometria.get(chave);
     if (!geom) {
-      geom = prismaCortado(this._secaoDoPerfil(b.perfil), f0, f1);
+      geom = prismaCortado(forma, f0, f1, r0, r1);
       if (!geom) return null;               // o corte comeria a peça (barra mexida depois): ponta reta
       geom.userData.emCache = true;
       this.cacheGeometria.set(chave, geom);
@@ -1460,7 +1463,33 @@ const _pz = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const _alt = (f, x, y) => f[0] * x + f[1] * y + f[2];
 
 export function temCorteNoAngulo(b) {
-  return !!((b.cortes_inicio && b.cortes_inicio.length) || (b.cortes_fim && b.cortes_fim.length));
+  return !!((b.cortes_inicio && b.cortes_inicio.length) || (b.cortes_fim && b.cortes_fim.length) ||
+            (b.recortes && b.recortes.length));
+}
+
+/**
+ * Os recortes de encaixe (o cope: F8 do levantamento de 14/10) no triedro local: [os do início, os do fim], cada um
+ * {reg: [a, b, c], f: [0, 0, z]} — na região a·x + b·y + c ≥ 0 da seção, a ponta vai para a altura z. `recortes` da
+ * barra: [{ponta: 'inicio'|'fim', lado: 'cima'|'baixo'|'esquerda'|'direita', comprimento, altura}] (mm; a altura a
+ * partir da face daquele lado, o comprimento a partir do nó da ponta). A mesma receita de geometria.recortes_locais.
+ */
+export function recortesLocais(b, forma) {
+  const rec = b.recortes || [];
+  if (!rec.length) return [[], []];
+  const pts = forma.extractPoints(16).shape;
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const L = comprimentoDaBarra(b);
+  const ini = [], fim = [];
+  for (const r of rec) {
+    const c = +r.comprimento || 0, h = +r.altura || 0;
+    if (!(c > 0) || !(h > 0)) continue;
+    const reg = { cima: [0, 1, -(y1 - h)], baixo: [0, -1, y0 + h], esquerda: [1, 0, -(x1 - h)], direita: [-1, 0, x0 + h] }[r.lado];
+    if (!reg) continue;
+    if (r.ponta === 'inicio') ini.push({ reg, f: [0, 0, c] });
+    else fim.push({ reg, f: [0, 0, L - c] });
+  }
+  return [ini, fim];
 }
 
 /** As pontas como alturas z(x, y) = a·x + b·y + c no triedro local (origem no início): [início, fim]. */
@@ -1654,7 +1683,8 @@ export function extrudarComFuros(forma, util, furos) {
   return g;
 }
 
-export function prismaCortado(forma, f0, f1) {
+export function prismaCortado(forma, f0, f1, r0 = [], r1 = []) {
+  if (r0.length || r1.length) return prismaRecortado(forma, f0, f1, r0, r1);
   const ext = forma.extractPoints(16);
   const limpar = (pts) => {
     const q = pts.map(p => [p.x, p.y]);
@@ -1705,6 +1735,153 @@ export function prismaCortado(forma, f0, f1) {
       for (let k = 1; k < q.length - 1; k++) tri3(q[k + 1], q[k], q[0]);
     }
   }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+/** A região do recorte em que o ponto cai (o primeiro da lista), ou −1. */
+function _regiao(rs, x, y) {
+  for (let i = 0; i < rs.length; i++) { const g = rs[i].reg; if (g[0] * x + g[1] * y + g[2] > 1e-9) return i; }
+  return -1;
+}
+
+/**
+ * O prisma com recortes de encaixe nas pontas (o cope): onde a seção cai na região de um recorte, a ponta vai para a
+ * altura dele; a face do degrau sai onde a linha da região corta a seção. As laterais são polígonos planos (não mais
+ * convexos: o degrau) triangulados no plano delas. A mesma receita de geometria._prisma_recortado.
+ */
+export function prismaRecortado(forma, f0, f1, r0, r1) {
+  const ext = forma.extractPoints(16);
+  const limpar = (pts) => {
+    const q = pts.map(p => [p.x, p.y]);
+    if (q.length > 1) { const a = q[0], z = q[q.length - 1]; if (Math.abs(a[0] - z[0]) < 1e-9 && Math.abs(a[1] - z[1]) < 1e-9) q.pop(); }
+    return q;
+  };
+  const externo = limpar(ext.shape);
+  if (_area2(externo) < 0) externo.reverse();
+  const internos = ext.holes.map(h => { const q = limpar(h); if (_area2(q) > 0) q.reverse(); return q; });
+  const fs0 = (i) => (i >= 0 ? f0.concat([r0[i].f]) : f0);
+  const fs1 = (i) => (i >= 0 ? f1.concat([r1[i].f]) : f1);
+  const F0 = (x, y, i) => Math.max(...fs0(i).map(f => _alt(f, x, y)));
+  const F1 = (x, y, i) => Math.min(...fs1(i).map(f => _alt(f, x, y)));
+  const pos = [];
+  const tri3 = (a, b, c) => pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+  const triN = (a, b, c, n) => {
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const cr = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+    if (cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2] < 0) tri3(a, c, b); else tri3(a, b, c);
+  };
+  // os parâmetros (0..1) onde a aresta P→Q troca de plano ou de região
+  const cortesDaAresta = (P, Q) => {
+    const ss = new Set([0, 1]);
+    const todos = f0.concat(f1, r0.map(r => r.f), r1.map(r => r.f));
+    for (let k = 0; k < todos.length; k++) for (let j = k + 1; j < todos.length; j++) {
+      const g0 = _alt(todos[k], P[0], P[1]) - _alt(todos[j], P[0], P[1]);
+      const g1 = _alt(todos[k], Q[0], Q[1]) - _alt(todos[j], Q[0], Q[1]);
+      if (g0 * g1 < 0) ss.add(g0 / (g0 - g1));
+    }
+    for (const r of r0.concat(r1)) {
+      const g0 = r.reg[0] * P[0] + r.reg[1] * P[1] + r.reg[2], g1 = r.reg[0] * Q[0] + r.reg[1] * Q[1] + r.reg[2];
+      if (g0 * g1 < 0) ss.add(g0 / (g0 - g1));
+    }
+    return [...ss].sort((a, b) => a - b);
+  };
+  for (const anel of [externo, ...internos]) {           // laterais: o plano da aresta × o eixo, com o degrau
+    for (let i = 0; i < anel.length; i++) {
+      const P = anel[i], Q = anel[(i + 1) % anel.length];
+      const le = Math.hypot(Q[0] - P[0], Q[1] - P[1]);
+      if (le < 1e-9) continue;
+      const ss = cortesDaAresta(P, Q);
+      const em = (s) => [P[0] + s * (Q[0] - P[0]), P[1] + s * (Q[1] - P[1])];
+      const baixo = [], cima = [];
+      for (let k = 0; k + 1 < ss.length; k++) {
+        const sa = ss[k], sb = ss[k + 1];
+        const m = em((sa + sb) / 2);
+        const i0 = _regiao(r0, m[0], m[1]), i1 = _regiao(r1, m[0], m[1]);
+        for (const s of [sa, sb]) {
+          const [x, y] = em(s);
+          const z0 = F0(x, y, i0), z1 = F1(x, y, i1);
+          if (z1 - z0 < 1) return null;
+          baixo.push([s * le, z0]); cima.push([s * le, z1]);
+        }
+      }
+      // o polígono da lateral em (s, z): a ponta de baixo para a frente, a de cima de volta (sem repetidos)
+      const poli = [];
+      const somar = (q) => { const u = poli[poli.length - 1]; if (!u || Math.abs(u[0] - q[0]) > 1e-7 || Math.abs(u[1] - q[1]) > 1e-7) poli.push(q); };
+      baixo.forEach(somar); cima.reverse().forEach(somar);
+      if (poli.length > 2 && Math.abs(poli[0][0] - poli[poli.length - 1][0]) < 1e-7 && Math.abs(poli[0][1] - poli[poli.length - 1][1]) < 1e-7) poli.pop();
+      const e = [(Q[0] - P[0]) / le, (Q[1] - P[1]) / le];
+      const n = [e[1], -e[0], 0];
+      const to3 = ([s, z]) => [P[0] + e[0] * s, P[1] + e[1] * s, z];
+      for (const [a, b, c] of THREE.ShapeUtils.triangulateShape(poli.map(q => new THREE.Vector2(q[0], q[1])), [])) {
+        triN(to3(poli[a]), to3(poli[b]), to3(poli[c]), n);
+      }
+    }
+  }
+  // as tampas: cada triângulo da seção, repartido pelas regiões dos recortes
+  const plano = externo.concat(...internos);
+  const tris = THREE.ShapeUtils.triangulateShape(externo.map(p => new THREE.Vector2(p[0], p[1])),
+                                                 internos.map(h => h.map(p => new THREE.Vector2(p[0], p[1]))));
+  const porRegiao = (tri, rs) => {
+    const out = [];
+    for (let i = 0; i <= rs.length; i++) {
+      let poli = tri;
+      for (let j = 0; j < Math.min(i, rs.length) && poli.length >= 3; j++) {           // fora das anteriores
+        const g = rs[j].reg; poli = _recortarConvexo(poli, -g[0], -g[1], -g[2]);
+      }
+      if (i < rs.length && poli.length >= 3) { const g = rs[i].reg; poli = _recortarConvexo(poli, g[0], g[1], g[2]); }
+      if (poli.length >= 3 && Math.abs(_area2(poli)) > 1e-9) out.push([poli, i < rs.length ? i : -1]);
+    }
+    return out;
+  };
+  for (const [a, b, c] of tris) {
+    const tri = [plano[a], plano[b], plano[c]];
+    if (_area2(tri) < 0) tri.reverse();
+    for (const [pr, i] of porRegiao(tri, r1)) {
+      for (const [poli, f] of _pedacos(pr, fs1(i), false)) {       // tampa do fim: +z
+        const q = poli.map(([x, y]) => [x, y, _alt(f, x, y)]);
+        for (let k = 1; k < q.length - 1; k++) tri3(q[0], q[k], q[k + 1]);
+      }
+    }
+    for (const [pr, i] of porRegiao(tri, r0)) {
+      for (const [poli, f] of _pedacos(pr, fs0(i), true)) {        // tampa do início: −z
+        const q = poli.map(([x, y]) => [x, y, _alt(f, x, y)]);
+        for (let k = 1; k < q.length - 1; k++) tri3(q[k + 1], q[k], q[0]);
+      }
+    }
+  }
+  // as faces do degrau: onde a linha da região corta a seção, da altura do recorte até a ponta de fora dela
+  const degraus = (rs, ehFim) => rs.forEach((r, i) => {
+    const [ga, gb, gc] = r.reg;
+    const nl = Math.hypot(ga, gb); if (nl < 1e-12) return;
+    const p0 = [-ga * gc / (nl * nl), -gb * gc / (nl * nl)], dir = [-gb / nl, ga / nl];
+    const ts = [];
+    for (const anel of [externo, ...internos]) for (let k = 0; k < anel.length; k++) {
+      const A = anel[k], B = anel[(k + 1) % anel.length];
+      const fa = ga * A[0] + gb * A[1] + gc, fb = ga * B[0] + gb * B[1] + gc;
+      if ((fa > 0) === (fb > 0)) continue;
+      const s = fa / (fa - fb), X = [A[0] + s * (B[0] - A[0]), A[1] + s * (B[1] - A[1])];
+      ts.push((X[0] - p0[0]) * dir[0] + (X[1] - p0[1]) * dir[1]);
+    }
+    ts.sort((x, y) => x - y);
+    const fora = [-ga / nl * 0.01, -gb / nl * 0.01];
+    for (let k = 0; k + 1 < ts.length; k++) {
+      const tm = (ts[k] + ts[k + 1]) / 2, M = [p0[0] + dir[0] * tm, p0[1] + dir[1] * tm];
+      if (!_noPoligono(M, externo) || internos.some(h => _noPoligono(M, h))) continue;
+      const A = [p0[0] + dir[0] * ts[k], p0[1] + dir[1] * ts[k]], B = [p0[0] + dir[0] * ts[k + 1], p0[1] + dir[1] * ts[k + 1]];
+      const zr = r.f[2];
+      const iFora = (q) => (ehFim ? _regiao(r1, q[0] + fora[0], q[1] + fora[1]) : _regiao(r0, q[0] + fora[0], q[1] + fora[1]));
+      const zA = ehFim ? F1(A[0], A[1], iFora(A)) : F0(A[0], A[1], iFora(A));
+      const zB = ehFim ? F1(B[0], B[1], iFora(B)) : F0(B[0], B[1], iFora(B));
+      const n = [ga / nl, gb / nl, 0];                         // a face olha para dentro do recorte
+      const q = [[A[0], A[1], zr], [B[0], B[1], zr], [B[0], B[1], zB], [A[0], A[1], zA]];
+      triN(q[0], q[1], q[2], n); triN(q[0], q[2], q[3], n);
+    }
+  });
+  degraus(r1, true);
+  degraus(r0, false);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.computeVertexNormals();

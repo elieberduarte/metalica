@@ -23,7 +23,7 @@
       F('circulo', ['circulo'], ['circulo']), F('arco', ['arco'], ['arco']), F('poligono', null, ['poligono'])] },
     { nome: 'Modificar', recolhe: 3, itens: [F('mover', ['mover'], ['mover']), F('copiar', ['copiar'], ['copiar']), F('girar', ['girar'], ['girar']),
       F('espelhar', ['espelhar']), F('escalar', ['escalar'], ['escalar']), F('offset', ['offset'], ['offset']), F('empurrar', ['esticar'], ['pushpull']), F('apagar', ['apagar'])],
-      mais: [F('aparar', ['aparar']), F('estender', ['estender']), F('concordar', ['concordar']),
+      mais: [F('aparar', ['aparar']), F('estender', ['estender'], ['estender']), F('concordar', ['concordar']),
         F('juntar', ['juntar']), F('explodir', ['explodir']), F('copiar_propriedades', ['copiar_propriedades'])] },
     { nome: 'Anotar', recolhe: 2, itens: [F('texto', ['texto']), F('cota', ['cota'], ['cotar']), F('chamada', ['chamada']), F('hachura', ['hachura']),
       F('corte', ['corte'])], mais: [F('mover_cota', ['mover_cota'])] },
@@ -31,7 +31,7 @@
   ];
   // a disciplina (a barra da direita do 2D, quando existe): o elemento de aço e o do 3D são o mesmo botão
   var DO_3D = { estr_chapa: 'chapa', estr_furo: 'furo', estr_parafuso: 'parafuso' };
-  var ESTRUTURA_3D = ['barra', 'chapa', 'furo', 'parafuso', 'encaixar', 'virar'];
+  var ESTRUTURA_3D = ['barra', 'chapa', 'furo', 'parafuso', 'encaixar', 'virar', 'dividir', 'recortar'];
 
   var ativo = '3d';               // o lado em que a faixa age
   var escolhido = {};             // lado → a chave clicada por último (o pilar e a viga de aço usam a Barra do 3D)
