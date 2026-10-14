@@ -46,6 +46,7 @@ import { MetodosPadrao3D } from './modulos/padrao_3d.js';
 import { MetodosProducao } from './modulos/producao.js';
 import { MetodosLigacoes } from './modulos/ligacoes.js';
 import { MetodosConferencia } from './modulos/conferencia.js';
+import { MetodosDetalhesUsuario } from './modulos/detalhes_usuario.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -1990,6 +1991,8 @@ export class Editor {
       soldar: () => this.soldarSelecao(),
       'converter-chapa': () => this.converterEmChapa(),
       'aplicar-ligacao': () => this.dialogoAplicarLigacao(),
+      'salvar-detalhe': () => this.salvarComoDetalhe(),
+      'aplicar-detalhe': () => this.aplicarDetalhe(),
       'eixos-obra': () => this.dialogoEixos(),
       'lancar-estrutura': () => this.dialogoLancar(),
       'memorial-lancamento': () => this.memorialDoLancamento(),
@@ -2452,7 +2455,7 @@ export class Editor {
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
   MetodosApoios, MetodosBloco, MetodosBarrasDoBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D,
-  MetodosProducao, MetodosLigacoes, MetodosConferencia);
+  MetodosProducao, MetodosLigacoes, MetodosConferencia, MetodosDetalhesUsuario);
 
 // ================================================================= apoio
 

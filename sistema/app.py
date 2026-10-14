@@ -58,6 +58,7 @@ Rotas da API:
     POST /api/modelo/ligacao {documento, tipo, ids, parametros, ligacao}   aplica (ou refaz) a ligação nas barras
     POST /api/modelo/ligacao/remover {documento, ligacao}      apaga a ligação e devolve as barras
     POST /api/modelo/conferencia {documento, ids, quais}       colisão, execução das ligações e produção
+    GET  /api/detalhes-3d · POST /api/detalhes-3d/<salvar|aplicar|excluir>   o detalhe do usuário (modelo de ligação)
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
     GET  /api/projetos/<slug>/analise-estrutural   a análise do modelo (o último cálculo); POST {parametros} calcula
          (nucleo3d/analise_estrutural.py; tela /analise-estrutural — o unifilar, as cargas, os esforços e as reações)
@@ -4196,6 +4197,23 @@ def conferir_modelo(corpo: dict) -> dict:
     return conferencia_producao.conferir(_documento_de(corpo), quais=quais, ids=corpo.get("ids") or None)
 
 
+def detalhes_3d(acao: str, corpo: dict) -> dict:
+    """POST /api/detalhes-3d/<salvar|aplicar|excluir>: o detalhe do usuário (nucleo3d/detalhe_usuario.py) — a ligação
+    montada à mão salva como modelo na pasta de dados (detalhes-3d.json) e aplicada de novo em outras barras.
+    salvar {documento, pecas, refs, nome} · aplicar {documento, id, ids, ponta} · excluir {id}."""
+    from nucleo3d import detalhe_usuario as DU
+    if acao == "salvar":
+        d = DU.salvar(PROJETOS, DU.montar(_documento_de(corpo), list(corpo.get("pecas") or []),
+                                          list(corpo.get("refs") or []), str(corpo.get("nome") or "")))
+        return {"detalhe": {k: d[k] for k in ("id", "nome", "n_refs")}, "detalhes": DU.resumo(PROJETOS)}
+    if acao == "aplicar":
+        return DU.aplicar(_documento_de(corpo), DU.obter(PROJETOS, str(corpo.get("id") or "")),
+                          list(corpo.get("ids") or []), str(corpo.get("ponta") or "auto"))
+    if acao == "excluir":
+        return {"excluido": DU.excluir(PROJETOS, str(corpo.get("id") or "")), "detalhes": DU.resumo(PROJETOS)}
+    raise ErroDeDados("ação desconhecida: %s" % acao)
+
+
 def remover_ligacao(corpo: dict) -> dict:
     """POST /api/modelo/ligacao/remover {documento, ligacao}: as peças da ligação saem e as barras voltam como eram."""
     from nucleo3d import ligacoes3d
@@ -4612,6 +4630,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(ligacoes_catalogo())
             if rota == "/api/banco-detalhes":
                 return self._json(banco_de_detalhes())
+            if rota == "/api/detalhes-3d":
+                from nucleo3d import detalhe_usuario
+                return self._json({"detalhes": detalhe_usuario.resumo(PROJETOS)})
             if rota == "/api/ligacoes/exemplos":
                 return self._json(ligacoes_exemplos(parse_qs(urlparse(self.path).query)))
             if rota == "/api/projetos":
@@ -4816,6 +4837,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(ligacoes_montar(corpo))
             if rota in ("/api/banco-detalhes", "/api/banco-detalhes/excluir"):
                 return self._json(banco_de_detalhes(corpo, "excluir" if rota.endswith("/excluir") else "salvar"))
+            if rota.startswith("/api/detalhes-3d/"):
+                return self._json(detalhes_3d(rota.rsplit("/", 1)[1], corpo))
             if rota == "/api/dimensionar":
                 return self._json(dimensionar(corpo))
             if rota == "/api/tesoura":
