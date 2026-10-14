@@ -71,13 +71,19 @@ export class FerramentaEncaixar extends Ferramenta {
     this.medida('');
   }
 
-  desativar() { this.cancelar(); }
+  desativar() { this._soltarBarra(); }
 
-  cancelar() {
+  _soltarBarra() {
     this.barra = null;
     this.limparPrevia();
     this.selecao.limpar();
-    this.dica(FerramentaEncaixar.dica);
+  }
+
+  // Esc com a barra escolhida volta ao primeiro passo; sem barra, solta a ferramenta (antes ficava presa — revisão 14/10)
+  cancelar() {
+    if (this.barra) { this._soltarBarra(); this.dica(FerramentaEncaixar.dica); return; }
+    this.limparPrevia();
+    C.voltarParaSelecao(this.editor);
   }
 
   /** O que está de verdade sob o cursor (a face do clique, sem o snap puxar para outra peça). */
@@ -107,7 +113,11 @@ export class FerramentaEncaixar extends Ferramenta {
     const alvo = this._sob(p);
     if (!this.barra) {
       const e = alvo && this.documento.get(alvo.id);
-      if (!e || e.tipo !== 'barra') { this.dica('Clique numa barra (perfil) para ajustar a ponta dela'); return; }
+      if (!e || e.tipo !== 'barra') {
+        this.dica(e ? 'Essa peça é uma malha (veio do IFC ou é um sólido): o Encaixar corta só as barras do catálogo. Para ela, use o Empurrar/Puxar na face da ponta'
+                    : 'Clique numa barra (perfil) para ajustar a ponta dela');
+        return;
+      }
       this.barra = e.id;
       this.selecao.definir([e.id]);
       this.dica(`${e.nome || e.perfil}: clique na face em que a ponta deve encostar (Shift soma o plano: o bico) · Del tira os cortes · Esc sai`);

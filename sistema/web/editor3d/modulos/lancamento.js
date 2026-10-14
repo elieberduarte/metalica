@@ -28,7 +28,7 @@ function rotuloDoEixo(nome, raio_mm, cores = TEMA_EIXO.claro) {
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(nome, 64, 68);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: true, depthWrite: false, transparent: true }));
   s.scale.setScalar(2 * raio_mm);
   s.renderOrder = 10;
   return s;
@@ -77,7 +77,7 @@ function rotuloDoNivel(nome, z_mm, altura_mm, COR_NIVEL = TEMA_EIXO.claro.nivel,
   g.font = '40px Arial, sans-serif'; g.fillText(cota, 84, 104);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: true, depthWrite: false, transparent: true }));
   sp.scale.set(altura_mm * w / 128, altura_mm, 1);
   sp.center.set(0.02, 60 / 128);                 // a linha do marcador no ponto do nível
   sp.renderOrder = 10;

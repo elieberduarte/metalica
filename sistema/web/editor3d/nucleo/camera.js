@@ -97,6 +97,8 @@ export class Camera {
         } else {
           this._pivoDaOrbita(ev);
         }
+      } else if ((ev.button === 2 || ev.button === 1) && this.controles.enabled) {
+        this._pivoDoPan(ev);
       }
     };
     elemento.addEventListener('pointerdown', this._antesDoDown, { capture: true });
@@ -183,6 +185,17 @@ export class Camera {
 
   _sincronizarZoom() {
     // Na ortográfica o "zoom" do OrbitControls mexe em camera.zoom; nada a fazer.
+    // Na perspectiva, o plano de corte de perto acompanha a distância ao alvo: fixo em 0,05 (50 mm), ele "comia" as peças
+    // pequenas quando o zoom chegava perto delas — a cantoneira de 1" do agulhamento (PRATI CD, 13/10). De longe volta a 50 mm
+    // (a precisão de profundidade fica a mesma de antes).
+    const p = this.perspectiva;
+    if (p && this.ativa === p) {
+      const near = Math.min(0.05, Math.max(0.0005, this.distancia * 0.01));
+      if (Math.abs(near - p.near) > 1e-6) {
+        p.near = near;
+        p.updateProjectionMatrix();
+      }
+    }
   }
 
   // ---------------------------------------------------------- zoom da roda
@@ -207,13 +220,13 @@ export class Camera {
   _focoDoCursor(ndc) {
     const raio = this._raio || (this._raio = new THREE.Raycaster());
     raio.setFromCamera(ndc, this.ativa);
-    raio.params.Line.threshold = 6 * this.mmPorPixel() * ESCALA;
-    const alvos = (this.cena && this.cena.alvos) || [];
-    const encontros = alvos.length ? raio.intersectObjects(alvos, false) : [];
     const limite = Math.max(this.distancia, 1) * LONGE_DEMAIS;
-    if (encontros.length && encontros[0].distance <= limite) {
+    // a peça sob o cursor ou, num vão, a da vizinhança mais perto (_pecaPertoDoCursor)
+    const perto = this._pecaPertoDoCursor(ndc);
+    raio.setFromCamera(ndc, this.ativa);
+    if (perto && perto.distanceTo(this.ativa.position) <= limite) {
       this.apoioDoZoom = 'peça';
-      return encontros[0].point.clone();
+      return perto;
     }
     const plano = this._planoTrabalho
       || (this._planoTrabalho = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0));
@@ -327,6 +340,35 @@ export class Camera {
   }
 
   /**
+   * Antes de deslocar (botão direito): o alvo vai para a profundidade do ponto sob o cursor,
+   * no eixo da vista. Na perspectiva o OrbitControls mede o arrasto pela distância ao alvo;
+   * com o alvo metros atrás ou à frente do que o usuário clicou, o ponto clicado não seguia o
+   * mouse — "parece que cliquei em outro lugar" (PRATI CD, 13/10). A peça sob o cursor vale a
+   * qualquer distância; no vazio, o plano de trabalho; sem nada, fica como está.
+   */
+  _pivoDoPan(ev) {
+    if (!this.ativa || !this.ativa.isPerspectiveCamera) return;
+    const ndc = this._ndcDoEvento(ev);
+    let p = this._pecaSobCursor(ndc);
+    if (!p) {
+      const raio = this._raio || (this._raio = new THREE.Raycaster());
+      raio.setFromCamera(ndc, this.ativa);
+      const plano = this._planoTrabalho
+        || (this._planoTrabalho = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0));
+      const q = new THREE.Vector3();
+      if (!raio.ray.intersectPlane(plano, q)) return;
+      p = q;
+    }
+    const dir = new THREE.Vector3();
+    this.ativa.getWorldDirection(dir);
+    const prof = p.clone().sub(this.ativa.position).dot(dir);
+    if (prof > 1e-4) {
+      this.controles.target.copy(this.ativa.position).addScaledVector(dir, prof);
+      this.controles.update();
+    }
+  }
+
+  /**
    * Órbita em volta do ponto da peça sob o cursor, como no SketchUp: a câmera e o alvo
    * giram juntos em torno desse ponto (em volta do Z e do eixo horizontal da tela), então
    * ele fica parado na tela e nada pula. Antes, com peça selecionada, o pivô ia para o
@@ -362,12 +404,48 @@ export class Camera {
   /** O ponto da peça sob o cursor (o raio contra as malhas do modelo), sem limite de
    *  distância; null no vazio. */
   _pecaSobCursor(ndc) {
+    return this._pecaPertoDoCursor(ndc);
+  }
+
+  /**
+   * O ponto de apoio sob o cursor considerando a vizinhança: além do raio do cursor, três rodas de 8 raios (40, 100 e 200 px).
+   * A profundidade é a da peça mais perto da câmera entre eles, e o ponto fica no raio do cursor (a tela não pula). Num vão
+   * entre peças — entre as terças da fachada, por exemplo — o raio do cursor passava pelo buraco e o giro, o deslocamento e o
+   * zoom se apoiavam no que estava lá no fundo; agora é como se ali houvesse uma face (usuário, PRATI CD, 13/10/2026).
+   * Devolve null quando nenhum dos raios acerta peça.
+   */
+  _pecaPertoDoCursor(ndc, rodas = [40, 100, 200]) {
     const raio = this._raio || (this._raio = new THREE.Raycaster());
-    raio.setFromCamera(ndc, this.ativa);
     raio.params.Line.threshold = 6 * this.mmPorPixel() * ESCALA;
     const alvos = (this.cena && this.cena.alvos) || [];
-    const encontros = alvos.length ? raio.intersectObjects(alvos, false) : [];
-    return encontros.length ? encontros[0].point.clone() : null;
+    if (!alvos.length) return null;
+    const cam = this.ativa;
+    const dirVista = new THREE.Vector3();
+    cam.getWorldDirection(dirVista);
+    raio.setFromCamera(ndc, cam);
+    const origem = raio.ray.origin.clone(), dirCursor = raio.ray.direction.clone();
+    const centro = raio.intersectObjects(alvos, false);
+    let melhor = centro.length ? centro[0].point.clone().sub(origem).dot(dirVista) : Infinity;
+    if (cam.isPerspectiveCamera) {
+      const w = Math.max(this.elemento.clientWidth || 1, 1), h = Math.max(this.elemento.clientHeight || 1, 1);
+      const amostra = new THREE.Vector2();
+      for (let k = 0; k < 8 * rodas.length; k++) {
+        const ang = (k % 8) * Math.PI / 4 + (Math.floor(k / 8) % 2 ? Math.PI / 8 : 0), pixels = rodas[Math.floor(k / 8)];
+        amostra.set(ndc.x + 2 * pixels * Math.cos(ang) / w, ndc.y + 2 * pixels * Math.sin(ang) / h);
+        raio.setFromCamera(amostra, cam);
+        const e = raio.intersectObjects(alvos, false);
+        if (e.length) melhor = Math.min(melhor, e[0].point.clone().sub(raio.ray.origin).dot(dirVista));
+      }
+    }
+    if (!isFinite(melhor)) return null;
+    // com peça sob o cursor, ela manda — a vizinhança só entra quando o raio do cursor passou por um vão e foi bater bem
+    // mais longe (mais de 1,4× a peça mais perto em volta); um pilar na frente, ao lado, não puxa o apoio de uma parede
+    if (centro.length) {
+      const dCentro = centro[0].point.clone().sub(origem).dot(dirVista);
+      if (dCentro <= melhor * 1.4) return centro[0].point.clone();
+    }
+    const cosseno = Math.max(dirCursor.dot(dirVista), 1e-3);
+    return origem.add(dirCursor.multiplyScalar(melhor / cosseno));
   }
 
   /** Gira câmera e alvo em volta de `pivo` pelo arrasto (dx, dy) em pixels, no mesmo

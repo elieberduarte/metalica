@@ -574,6 +574,7 @@ export class Cena {
     // Modelo grande: sólidos em lote (poucas chamadas de desenho). O pequeno continua
     // com um objeto por peça, que é o caminho que todas as ferramentas conhecem.
     if (!this.semLote && this.documento.tamanho > LIMITE_LOTE) this.lote = new Lote(this);
+    this._furosDe = null;
     this.atualizar([...this.documento.entidades.keys()]);
   }
 
@@ -588,6 +589,7 @@ export class Cena {
 
   _atualizar(ids = []) {
     const paraLote = [];
+    ids = this._comAsBarrasFuradas(ids);
     for (const id of ids) {
       const ent = this.documento.get(id);
       const antigo = this.objetos.get(id);
@@ -595,6 +597,7 @@ export class Cena {
       this.rotulos.delete(id);
       if (!ent) continue;
       if (!this.documento.aparece(ent)) continue;
+      if (this._ehFuroDeBarra(ent)) continue;           // o furo está aberto na barra
       if (this.lote && Lote.aceita(ent)) { paraLote.push(ent); continue; }
       const obj = this._construirEntidade(ent);
       if (obj) { this.objetos.set(id, obj); this.raiz.add(obj); }
@@ -637,7 +640,7 @@ export class Cena {
     // Entidades que estavam escondidas e voltaram ainda não têm objeto.
     const faltando = [];
     for (const [id, ent] of this.documento.entidades) {
-      if (!this.objetos.has(id) && this.documento.aparece(ent)) faltando.push(id);
+      if (!this.objetos.has(id) && this.documento.aparece(ent) && !this._ehFuroDeBarra(ent)) faltando.push(id);
     }
     if (faltando.length) this.atualizar(faltando);
     if (this.aoRepintar) this.aoRepintar();
@@ -711,10 +714,143 @@ export class Cena {
 
   // ---- geometria de cada tipo ----
 
+  // ---- os furos das barras (marcadores da ferramenta Furo/Parafuso que viram furo de verdade) ----
+
+  /** {id da barra: Set(ids dos marcadores)}, montado uma vez e mantido a cada atualização. */
+  _indiceFuros() {
+    if (!this._furosDe) {
+      this._furosDe = new Map();
+      this._pecaDoFuro = new Map();
+      for (const [id, e] of this.documento.entidades) this._indexarFuro(id, e);
+    }
+    return this._furosDe;
+  }
+
+  _indexarFuro(id, e) {
+    const f = e && e.atributos && e.atributos.furo;
+    if (!f || !f.peca || e.tipo !== 'solido') return;
+    this._pecaDoFuro.set(id, f.peca);
+    let l = this._furosDe.get(f.peca);
+    if (!l) this._furosDe.set(f.peca, l = new Set());
+    l.add(id);
+  }
+
+  _desindexarFuro(id) {
+    const peca = this._pecaDoFuro.get(id);
+    if (peca === undefined) return null;
+    this._pecaDoFuro.delete(id);
+    const l = this._furosDe.get(peca);
+    if (l) { l.delete(id); if (!l.size) this._furosDe.delete(peca); }
+    return peca;
+  }
+
+  /** Os ids pedidos mais as barras cujos furos mudaram (furo novo, apagado ou movido refaz a barra). */
+  _comAsBarrasFuradas(ids) {
+    const completo = !this._furosDe;
+    this._indiceFuros();
+    if (completo) return ids;
+    const pedidos = new Set(ids), extra = [];
+    for (const id of ids) {
+      const velha = this._desindexarFuro(id);
+      const ent = this.documento.get(id);
+      if (ent) this._indexarFuro(id, ent);
+      const nova = this._pecaDoFuro.get(id);
+      for (const peca of [velha, nova]) {
+        if (peca && !pedidos.has(peca) && this.documento.get(peca)) { pedidos.add(peca); extra.push(peca); }
+      }
+    }
+    return extra.length ? ids.concat(extra) : ids;
+  }
+
+  /** A barra que sabe receber furo de verdade: reta e de seção aberta. */
+  _barraFuravel(b) {
+    if (!b || b.tipo !== 'barra' || temCorteNoAngulo(b)) return false;
+    if (!this._furavelPorPerfil) this._furavelPorPerfil = new Map();
+    let ok = this._furavelPorPerfil.get(b.perfil);
+    if (ok === undefined) {
+      const forma = this._secaoDoPerfil(b.perfil);
+      ok = !!forma && !(forma.holes && forma.holes.length);
+      this._furavelPorPerfil.set(b.perfil, ok);
+    }
+    return ok;
+  }
+
+  /** O marcador de furo de uma barra furável: não é desenhado (o furo está aberto nela). */
+  _ehFuroDeBarra(ent) {
+    const f = ent && ent.tipo === 'solido' && ent.atributos && ent.atributos.furo;
+    if (!f || !f.peca) return false;
+    return this._barraFuravel(this.documento.get(f.peca));
+  }
+
+  /** Os furos da barra no triedro dela (origem no início já recortado, z no eixo). */
+  _furosLocais(b) {
+    const ids = this._indiceFuros().get(b.id);
+    if (!ids || !ids.size || !this._barraFuravel(b)) return [];
+    const { t, u, v } = baseDaBarra(b.inicio, b.fim, b.rotacao);
+    const r0 = b.recorte_inicio || 0;
+    const o = [b.inicio[0] + t[0] * r0, b.inicio[1] + t[1] * r0, b.inicio[2] + t[2] * r0];
+    const dot = (a, c) => a[0] * c[0] + a[1] * c[1] + a[2] * c[2];
+    const loc = (q) => [dot(q, u), dot(q, v), dot(q, t)];
+    const out = [];
+    for (const id of ids) {
+      const f = (this.documento.get(id) || {}).atributos && this.documento.get(id).atributos.furo;
+      if (!f || !f.ponto || !f.eixo || !(f.d > 0)) continue;
+      const nd = Math.hypot(...f.eixo);
+      if (!(nd > 0)) continue;
+      const dw = f.eixo.map(c => c / nd);
+      let a = null;
+      if (f.comp > f.d + 0.5 && f.dir) {
+        const g = f.dir.map((c, i) => c - dw[i] * dot(f.dir, dw));
+        const ng = Math.hypot(...g);
+        if (ng > 1e-6) a = g.map(c => c / ng);
+      }
+      if (!a) {
+        const ref = Math.abs(dw[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+        const g = ref.map((c, i) => c - dw[i] * dot(ref, dw));
+        const ng = Math.hypot(...g);
+        a = g.map(c => c / ng);
+      }
+      const bb = [dw[1] * a[2] - dw[2] * a[1], dw[2] * a[0] - dw[0] * a[2], dw[0] * a[1] - dw[1] * a[0]];
+      const rel = f.ponto.map((c, i) => c - o[i]);
+      out.push({
+        p: loc(rel), d: loc(dw), prof: f.profundidade || 10,
+        laco: lacoDoFuro(f.d, f.comp || 0).map(([x, y]) => loc([0, 1, 2].map(i => a[i] * x + bb[i] * y))),
+      });
+    }
+    return out;
+  }
+
+  /** A barra reta com os furos abertos; null quando nenhum pega numa parede (fica a lisa). */
+  _geometriaBarraFurada(b, furos) {
+    const L = comprimentoDaBarra(b);
+    const util = Math.max(1, L - (b.recorte_inicio || 0) - (b.recorte_fim || 0));
+    const chave = `barra|${b.perfil}|${util.toFixed(2)}|furos|` + furos.map(f =>
+      [...f.p, ...f.d].map(c => c.toFixed(2)).join(',') + ':' + f.laco.length + ':' + f.prof.toFixed(2) + ':' +
+      f.laco[0].map(c => c.toFixed(2)).join(',')).sort().join(';');
+    let geom = this.cacheGeometria.get(chave);
+    if (!geom) {
+      geom = extrudarComFuros(this._secaoDoPerfil(b.perfil), util, furos);
+      if (!geom) return null;
+      geom.userData.emCache = true;
+      this.cacheGeometria.set(chave, geom);
+      this.origemGeometria.set(chave, 'furada');           // o refino do servidor não troca pela lisa
+    }
+    const { t, u, v } = baseDaBarra(b.inicio, b.fim, b.rotacao);
+    const r0 = b.recorte_inicio || 0;
+    const m = new THREE.Matrix4().makeBasis(vet(u), vet(v), vet(t));
+    m.setPosition(b.inicio[0] + t[0] * r0, b.inicio[1] + t[1] * r0, b.inicio[2] + t[2] * r0);
+    return { geom, matriz: m, chave };
+  }
+
   _geometriaBarra(b) {
     if (temCorteNoAngulo(b)) {
       const cortada = this._geometriaBarraCortada(b);
       if (cortada) return cortada;
+    }
+    const furos = this._furosLocais(b);
+    if (furos.length) {
+      const furada = this._geometriaBarraFurada(b, furos);
+      if (furada) return furada;
     }
     const L = comprimentoDaBarra(b);
     const util = Math.max(1, L - (b.recorte_inicio || 0) - (b.recorte_fim || 0));
@@ -1388,6 +1524,136 @@ function _pedacos(tri, fs, maior) {
 }
 
 /** Malha da barra cortada no triedro local; null quando o corte come a peça (< 1 mm entre as pontas). */
+// ---- a barra furada (a mesma receita de nucleo3d/geometria.malha_barra_furada) ----
+// Os marcadores de furo da ferramenta Furo/Parafuso (sólido com `atributos.furo`) só pintavam o lugar na
+// barra (usuário, 13/10: "ele não furou a terça, só pintou de outra cor o local dos furos"). Na barra reta
+// de seção aberta, as faces laterais que o eixo do furo atravessa — dentro da profundidade do marcador —
+// saem recortadas pelo laço do furo, e um tubo liga os laços na espessura da parede; o marcador deixa de
+// ser desenhado (continua no modelo: é dele que o detalhamento e a lista tiram o furo).
+
+const LADOS_FURO = 16;
+
+/** O laço do furo no plano (a, b) perpendicular ao eixo: o círculo, ou o estádio quando comp > d. */
+export function lacoDoFuro(d, comp) {
+  const r = d / 2, pts = [];
+  if (!comp || comp <= d + 0.5) {
+    for (let i = 0; i < LADOS_FURO; i++) pts.push([r * Math.cos(2 * Math.PI * i / LADOS_FURO), r * Math.sin(2 * Math.PI * i / LADOS_FURO)]);
+    return pts;
+  }
+  const a = (comp - d) / 2, meio = LADOS_FURO / 2;
+  for (let i = 0; i <= meio; i++) { const t = -Math.PI / 2 + Math.PI * i / meio; pts.push([a + r * Math.cos(t), r * Math.sin(t)]); }
+  for (let i = 0; i <= meio; i++) { const t = Math.PI / 2 + Math.PI * i / meio; pts.push([-a + r * Math.cos(t), r * Math.sin(t)]); }
+  return pts;
+}
+
+function _noPoligono(p, poli) {
+  let dentro = false;
+  for (let i = 0, n = poli.length; i < n; i++) {
+    const [x1, y1] = poli[i], [x2, y2] = poli[(i + 1) % n];
+    if ((y1 > p[1]) !== (y2 > p[1]) && p[0] < x1 + (p[1] - y1) * (x2 - x1) / (y2 - y1)) dentro = !dentro;
+  }
+  return dentro;
+}
+
+function _cruzaLaco(l1, l2) {
+  const cx = (l, i) => [Math.min(...l.map(p => p[i])), Math.max(...l.map(p => p[i]))];
+  const [a0, a1] = cx(l1, 0), [b0, b1] = cx(l1, 1), [c0, c1] = cx(l2, 0), [d0, d1] = cx(l2, 1);
+  return a0 < c1 && c0 < a1 && b0 < d1 && d0 < b1;
+}
+
+/**
+ * A barra reta de comprimento `util` (origem no início, z no eixo) com os furos abertos. `furos` no triedro
+ * da barra: [{p: [x, y, z], d: [dx, dy, dz] (unitário), laco: [[x, y, z] em volta do eixo], prof}]. Devolve
+ * null quando nenhum furo pega numa parede (ou a seção é fechada): a cena fica com a barra lisa.
+ */
+export function extrudarComFuros(forma, util, furos) {
+  const ext = forma.extractPoints(16);
+  if (ext.holes && ext.holes.length) return null;
+  let externo = ext.shape.map(p => [p.x, p.y]);
+  externo = externo.filter((p, i, arr) => { const q = arr[(i + arr.length - 1) % arr.length]; return Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-9; });
+  if (externo.length < 3) return null;
+  if (_area2(externo) < 0) externo.reverse();
+  const lados = externo.map((P, i) => {
+    const Q = externo[(i + 1) % externo.length];
+    const ex = Q[0] - P[0], ey = Q[1] - P[1], le = Math.hypot(ex, ey);
+    return { P, e: [ex / le, ey / le], n: [ey / le, -ex / le], le };
+  });
+  const buracos = lados.map(() => []);
+  const tubos = [];
+  for (const fu of furos) {
+    const { p, d, laco, prof } = fu;
+    const acertos = [];
+    lados.forEach(({ P, e, n, le }, i) => {
+      const den = d[0] * n[0] + d[1] * n[1];
+      if (Math.abs(den) < 0.2) return;
+      const t = ((P[0] - p[0]) * n[0] + (P[1] - p[1]) * n[1]) / den;
+      if (t < -0.6 || t > prof + 0.6) return;
+      const l2 = [], l3 = [];
+      for (const off of laco) {
+        const q0 = [p[0] + off[0], p[1] + off[1], p[2] + off[2]];
+        const tau = ((P[0] - q0[0]) * n[0] + (P[1] - q0[1]) * n[1]) / den;
+        const q = [q0[0] + tau * d[0], q0[1] + tau * d[1], q0[2] + tau * d[2]];
+        l2.push([(q[0] - P[0]) * e[0] + (q[1] - P[1]) * e[1], q[2]]);
+        l3.push(q);
+      }
+      if (l2.every(([s, z]) => s > 0.3 && s < le - 0.3 && z > 0.3 && z < util - 0.3)) acertos.push({ t, i, l2, l3 });
+    });
+    acertos.sort((a, b) => a.t - b.t);
+    for (let k = 0; k + 1 < acertos.length; k++) {
+      const h0 = acertos[k], h1 = acertos[k + 1];
+      const tm = (h0.t + h1.t) / 2;
+      if (h0.i === h1.i || !_noPoligono([p[0] + d[0] * tm, p[1] + d[1] * tm], externo)) continue;
+      if (buracos[h0.i].some(x => _cruzaLaco(h0.l2, x)) || buracos[h1.i].some(x => _cruzaLaco(h1.l2, x))) continue;
+      buracos[h0.i].push(h0.l2); buracos[h1.i].push(h1.l2);
+      tubos.push({ a: h0.l3, b: h1.l3, p, d });
+    }
+  }
+  if (!tubos.length) return null;
+  const pos = [];
+  const tri = (a, b, c, nrm) => {
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const cr = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+    if (cr[0] * nrm[0] + cr[1] * nrm[1] + cr[2] * nrm[2] < 0) { const x = b; b = c; c = x; }
+    pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+  };
+  const V2 = (q) => new THREE.Vector2(q[0], q[1]);
+  for (const [a, b, c] of THREE.ShapeUtils.triangulateShape(externo.map(V2), [])) {     // as tampas
+    const A = externo[a], B = externo[b], C = externo[c];
+    tri([A[0], A[1], 0], [B[0], B[1], 0], [C[0], C[1], 0], [0, 0, -1]);
+    tri([A[0], A[1], util], [B[0], B[1], util], [C[0], C[1], util], [0, 0, 1]);
+  }
+  lados.forEach(({ P, e, n, le }, i) => {                                                  // as laterais
+    if (le < 1e-9) return;
+    const nrm = [n[0], n[1], 0];
+    const to3 = ([s, z]) => [P[0] + e[0] * s, P[1] + e[1] * s, z];
+    const ret = [[0, 0], [le, 0], [le, util], [0, util]];
+    if (!buracos[i].length) {
+      tri(to3(ret[0]), to3(ret[1]), to3(ret[2]), nrm);
+      tri(to3(ret[0]), to3(ret[2]), to3(ret[3]), nrm);
+      return;
+    }
+    const plano = ret.concat(...buracos[i]);
+    for (const [a, b, c] of THREE.ShapeUtils.triangulateShape(ret.map(V2), buracos[i].map(h => h.map(V2)))) {
+      tri(to3(plano[a]), to3(plano[b]), to3(plano[c]), nrm);
+    }
+  });
+  for (const { a: la, b: lb, p, d } of tubos) {                                            // os tubos
+    for (let k = 0, m = la.length; k < m; k++) {
+      const j = (k + 1) % m;
+      const A = la[k], B = la[j], C = lb[j], D = lb[k];
+      const c = [0, 1, 2].map(i => (A[i] + B[i] + C[i] + D[i]) / 4);
+      const tt = (c[0] - p[0]) * d[0] + (c[1] - p[1]) * d[1] + (c[2] - p[2]) * d[2];
+      const paraEixo = [0, 1, 2].map(i => p[i] + d[i] * tt - c[i]);
+      tri(A, B, C, paraEixo);
+      tri(A, C, D, paraEixo);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 export function prismaCortado(forma, f0, f1) {
   const ext = forma.extractPoints(16);
   const limpar = (pts) => {

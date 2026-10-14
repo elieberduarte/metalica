@@ -9,7 +9,7 @@
 // pontos notáveis; a inferência de eixo entra depois das arestas e antes das faces.
 // Um eixo travado à mão vence tudo.
 
-import { subtrair, somar, escalar, normalizar, norma,
+import { subtrair, somar, escalar, normalizar, norma, baseDaBarra,
          pontosDe, arestasDe, contornoNoMundo, caixaDePontos } from './documento.js';
 
 /** Cor e glifo de cada tipo, como no SketchUp. */
@@ -48,6 +48,77 @@ export class Inferencia {
     this.travado = null;            // 'x' | 'y' | 'z' | null
     this.travadoPorShift = false;
     this.ultimo = null;             // último ponto resolvido
+    this._contornos = new Map();    // id → {chave, pontos, arestas, raioMM}: o contorno da seção da barra no mundo
+    this._esferas = new Map();      // id → {c, r}: a esfera envolvente da peça, para o descarte pelo raio do cursor
+    if (documento && typeof documento.aoMudar === 'function') {
+      documento.aoMudar(({ ids, acao }) => {
+        if (acao === 'aparencia') return;
+        if (acao === 'tudo' || !ids || !ids.length) { this._esferas.clear(); return; }
+        for (const i of ids) this._esferas.delete(i);
+      });
+    }
+  }
+
+  /** Esfera envolvente da peça (guardada; a peça que muda é esquecida pelo aviso do documento). Na barra, a seção entra
+   *  pelo raio do contorno, ou 400 mm enquanto ele não foi calculado. */
+  _esferaDe(id, ent) {
+    let s = this._esferas.get(id);
+    if (s) return s;
+    const pts = pontosDe(ent);
+    if (!pts.length) return null;
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const q of pts) for (let i = 0; i < 3; i++) { if (q[i] < lo[i]) lo[i] = q[i]; if (q[i] > hi[i]) hi[i] = q[i]; }
+    const c = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+    let r = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2;
+    if (ent.tipo === 'barra') { const cc = this._contornos.get(id); r += cc ? cc.raioMM : 400; }
+    else if (ent.tipo === 'chapa') r += (ent.espessura || 0);
+    s = { c, r };
+    this._esferas.set(id, s);
+    return s;
+  }
+
+  /** O contorno da seção da barra no mundo, nas duas pontas (com o recorte), e as arestas do perfil: as de cada ponta e as que
+   *  correm ao longo dela. A seção é a mesma que a cena desenha (`_secaoDoPerfil`); a ponta com corte no ângulo entra como
+   *  reta. `raioPx`: o tamanho da seção na tela, para a folga do descarte rápido. */
+  _contornoDaBarra(b) {
+    if (!this.cena || typeof this.cena._secaoDoPerfil !== 'function') return null;
+    const chave = [b.perfil, b.rotacao || 0, b.recorte_inicio || 0, b.recorte_fim || 0, ...b.inicio, ...b.fim].join('|');
+    let c = this._contornos.get(b.id);
+    if (!c || c.chave !== chave) {
+      let forma = null;
+      try { forma = this.cena._secaoDoPerfil(b.perfil); } catch { forma = null; }
+      if (!forma || typeof forma.extractPoints !== 'function') return null;
+      const ext = forma.extractPoints(8);
+      const aneis = [ext.shape, ...(ext.holes || [])].filter(a => a && a.length >= 3).map(a => {
+        const r = a.map(p => [p.x, p.y]);
+        const ult = r[r.length - 1];
+        if (Math.hypot(ult[0] - r[0][0], ult[1] - r[0][1]) < 1e-6) r.pop();     // o anel fechado repete o primeiro
+        return r;
+      });
+      if (!aneis.length || aneis.reduce((n, a) => n + a.length, 0) > 80) return null;
+      const { t, u, v } = baseDaBarra(b.inicio, b.fim, b.rotacao);
+      const o0 = somar(b.inicio, escalar(t, b.recorte_inicio || 0));
+      const o1 = somar(b.fim, escalar(t, -(b.recorte_fim || 0)));
+      const no = (o, [x, y]) => somar(o, somar(escalar(u, x), escalar(v, y)));
+      const pontos = [], arestas = [];
+      let raioMM = 0;
+      for (const anel of aneis) {
+        const p0 = anel.map(q => no(o0, q)), p1 = anel.map(q => no(o1, q));
+        for (let i = 0; i < anel.length; i++) {
+          const j = (i + 1) % anel.length;
+          arestas.push([p0[i], p0[j]], [p1[i], p1[j]], [p0[i], p1[i]]);
+          raioMM = Math.max(raioMM, Math.hypot(anel[i][0], anel[i][1]));
+        }
+        pontos.push(...p0, ...p1);
+      }
+      c = { chave, pontos, arestas, raioMM };
+      this._contornos.set(b.id, c);
+    }
+    // o raio da seção em pixels pela escala da câmera (com folga de 2× para a perspectiva: o que está mais perto do que o
+    // alvo da órbita aparece maior) — sem projetar nada, a conta roda para cada barra a cada movimento do mouse
+    const mmpx = typeof this.camera.mmPorPixel === 'function' ? this.camera.mmPorPixel() : 0;
+    const raioPx = mmpx > 1e-9 ? 2 * c.raioMM / mmpx + 2 : 40;
+    return { pontos: c.pontos, arestas: c.arestas, raioPx };
   }
 
   // --------------------------------------------------------- estado externo
@@ -79,7 +150,9 @@ export class Inferencia {
         if (ar && this.ancora) {
           const d = normalizar(subtrair(ar[1], ar[0]));
           if (norma(d) > 0.5) {
-            EIXOS.aresta = d;
+            // a direção fica só no objeto: gravada em EIXOS (a tabela do módulo), a "aresta" entrava no laço dos eixos
+            // inferidos como 'eixo_aresta', que não tem prioridade em TIPOS — e todo movimento do mouse, em todas as
+            // ferramentas, dava erro até recarregar a página (2.300 erros no registro de 13/10; revisão de 14/10)
             this.direcaoTravada = d;
             this.travado = 'aresta'; this.travadoPorShift = true;
             return true;
@@ -109,6 +182,9 @@ export class Inferencia {
     const tela = [x, y];
     const raio = this.selecao.raioEm(x, y);
     const alvo = this.selecao.sob(x, y);
+    // a peça de verdade sob o cursor, para as ferramentas que precisam da face e não do snap (Parafuso, Furo): sem
+    // repetir o raio, que custa ~10 ms num modelo grande
+    this.ultimoAlvo = { x, y, alvo };
     const base = {
       ponto: [0, 0, 0], tela, entidade: null, face: -1, aresta: null,
       tipoSnap: 'plano_base', normal: [0, 0, 1], rotulo: '', cor: TIPOS.plano_base.cor,
@@ -116,7 +192,8 @@ export class Inferencia {
 
     // 1. Eixo travado: o ponto é a projeção do raio sobre a reta do eixo.
     if (this.travado && this.ancora) {
-      const p = pontoNoEixo(this.ancora, EIXOS[this.travado], raio);
+      const dir = this.travado === 'aresta' ? this.direcaoTravada : EIXOS[this.travado];
+      const p = pontoNoEixo(this.ancora, dir, raio);
       const r = { ...base, ponto: p, tipoSnap: this.travado === 'aresta' ? 'paralelo' : 'eixo_' + this.travado };
       return this._concluir(r, tela);
     }
@@ -131,6 +208,9 @@ export class Inferencia {
 
     const cand = [];
     const tol = this.tolerancia;
+    // o canto (extremidade) pega de um pouco mais longe que a aresta: na ponta de uma aba fina (a cantoneira de 1" do
+    // agulhamento, 3 mm = 30 px de perto) a aresta vertical da ponta ganhava do canto que o usuário mirava (13/10/2026)
+    const tolPonto = Math.round(tol * 1.5);
     const perto = (p) => {
       const t = this.camera.paraTela(p);
       if (t[2] > 1) return null;                       // atrás da câmera
@@ -141,9 +221,43 @@ export class Inferencia {
     // 2. Pontos notáveis das entidades próximas do cursor.
     const arestasPerto = [];
     let examinadas = 0;
-    for (const [id, ent] of this.documento.entidades) {
+    // primeiro a peça sob o cursor e as selecionadas: o laço para em 4000 peças, e num modelo grande (o PRATI CD, 7.800) as do
+    // fim da lista — o agulhamento — nunca eram examinadas e o canto delas não pegava (13/10/2026)
+    const doc = this.documento;
+    const primeiras = [];
+    if (alvo && alvo.id) primeiras.push(alvo.id);
+    for (const i of (this.selecao && this.selecao.ids) || []) primeiras.push(i);
+    const ordem = function* () {
+      const vistas = new Set();
+      for (const i of primeiras) {
+        const e = doc.get(i);
+        if (e && !vistas.has(i)) { vistas.add(i); yield [i, e]; }
+      }
+      for (const [i, e] of doc.entidades) if (!vistas.has(i)) yield [i, e];
+    };
+    // descarte pelo raio do cursor: a esfera envolvente de cada peça contra a reta do raio, com a folga da tolerância em
+    // milímetros na profundidade dela. Sem ele, cada movimento do mouse projetava na tela os pontos de todas as peças —
+    // ~110 ms por movimento no PRATI CD (27 mil peças), em todas as ferramentas de desenho (revisão 14/10)
+    const ro = raio.origem, rd = normalizar(raio.direcao);
+    const orto = this.camera.projecao === 'ortografica';
+    const mmpxFixo = orto && typeof this.camera.mmPorPixel === 'function' ? this.camera.mmPorPixel() : 0;
+    let kPersp = 0;
+    if (!orto && typeof this.camera.mmPorPixel === 'function') kPersp = this.camera.mmPorPixel(somar(ro, escalar(rd, 1000))) / 1000;
+    const folgaPx = tolPonto + 4;
+    const longeDoRaio = (id, ent) => {
+      if (!(mmpxFixo > 0 || kPersp > 0)) return false;
+      const s = this._esferaDe(id, ent);
+      if (!s) return false;
+      const v = subtrair(s.c, ro);
+      const t = v[0] * rd[0] + v[1] * rd[1] + v[2] * rd[2];
+      if (t < -s.r) return true;                                   // atrás da câmera
+      const perp = Math.sqrt(Math.max(0, v[0] * v[0] + v[1] * v[1] + v[2] * v[2] - t * t));
+      const mmpx = orto ? mmpxFixo : Math.max(t, 1) * kPersp;
+      return perp - s.r > folgaPx * mmpx;
+    };
+    for (const [id, ent] of ordem()) {
       if (!this.documento.aparece(ent)) continue;
-      if (++examinadas > 4000) break;
+      if (longeDoRaio(id, ent)) continue;
       const pts = pontosDe(ent);
       if (!pts.length) continue;
 
@@ -162,20 +276,30 @@ export class Inferencia {
         if (t[1] > sy1) sy1 = t[1];
       }
       if (!visivel) continue;
-      const folga = tol + 2;
+      // a barra: o eixo sozinho não diz onde está a peça — a folga cresce com o tamanho da seção na tela, e os cantos e
+      // as arestas do perfil (nas duas pontas e ao longo dela) entram no snap: o canto do L, a aba do U (13/10/2026,
+      // "não consigo selecionar a aresta do perfil para movimentar")
+      const contorno = ent.tipo === 'barra' ? this._contornoDaBarra(ent) : null;
+      const folga = tolPonto + 2 + (contorno ? contorno.raioPx : 0);
       if (x < sx0 - folga || x > sx1 + folga || y < sy0 - folga || y > sy1 + folga) continue;
+      // o limite conta só as peças perto do cursor (antes contava todas, e as do fim da lista de um modelo grande nunca
+      // eram examinadas)
+      if (++examinadas > 400) break;
+      if (contorno) {
+        for (const p of contorno.pontos) { pts.push(p); projetados.push(this.camera.paraTela(p)); }
+      }
 
       let algumPerto = false;
       for (let i = 0; i < pts.length; i++) {
         const t = projetados[i];
         if (t[2] > 1) continue;
         const d = Math.hypot(t[0] - x, t[1] - y);
-        if (d <= tol) {
+        if (d <= tolPonto) {
           algumPerto = true;
           cand.push({ tipo: 'extremidade', ponto: pts[i], d, id });
         }
       }
-      const ars = arestasDe(ent);
+      const ars = contorno ? arestasDe(ent).concat(contorno.arestas) : arestasDe(ent);
       for (const [a, b] of ars) {
         const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
         const dm = perto(m);
@@ -235,9 +359,17 @@ export class Inferencia {
     const zPlano = this.ancora ? this.ancora[2] : 0;
     cand.push({ tipo: 'plano_base', ponto: cruzarPlano(raio, zPlano), d: tol + 2 });
 
+    // empate na tela (o mesmo tipo, a menos de 3 px): ganha o ponto da peça sob o cursor e, depois, o mais perto da câmera —
+    // num modelo grande, a ponta de uma peça lá atrás caía no mesmo pixel do canto que o usuário mirava (13/10/2026)
+    const alvoId = alvo ? alvo.id : null;
+    const prof = (c) => (c._z === undefined ? (c._z = this.camera.paraTela(c.ponto)[2]) : c._z);
     cand.sort((a, b) => {
-      const pa = TIPOS[a.tipo].prio, pb = TIPOS[b.tipo].prio;
-      return pa !== pb ? pa - pb : a.d - b.d;
+      const pa = (TIPOS[a.tipo] || TIPOS.plano_base).prio, pb = (TIPOS[b.tipo] || TIPOS.plano_base).prio;
+      if (pa !== pb) return pa - pb;
+      if (Math.abs(a.d - b.d) >= 3) return a.d - b.d;
+      const aa = a.id && a.id === alvoId ? 0 : 1, ab = b.id && b.id === alvoId ? 0 : 1;
+      if (aa !== ab) return aa - ab;
+      return prof(a) - prof(b) || a.d - b.d;
     });
     const melhor = cand[0];
     if (melhor.aresta) this.ultimaAresta = melhor.aresta;     // para o Shift travar paralelo

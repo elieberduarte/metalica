@@ -40,6 +40,8 @@ export class Ferramenta {
   onDuploClique(p, ev) {}
   onTecla(ev) { return false; }  // devolva true se consumiu a tecla
   onValor(texto) { return false; }  // o usuário digitou uma medida e deu Enter
+  // teclaDeValor(tecla): opcional — devolva true para a letra que começa um valor desta ferramenta ("M" de
+  // "M16x40"); ela vai para a caixa de medidas em vez de virar atalho de outra ferramenta
   cancelar() {}                  // Esc: volte ao estado inicial
 
   // --- atalhos para o contexto ---

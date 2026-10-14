@@ -32,7 +32,8 @@ export class FerramentaVirar extends Ferramenta {
 
   desativar() { this.limparPrevia(); }
 
-  cancelar() { this.limparPrevia(); this._dica(); }
+  // o Virar não tem passo no meio: o Esc solta a ferramenta (antes só limpava a prévia e ela ficava presa — revisão 14/10)
+  cancelar() { this.limparPrevia(); this.medida(''); C.voltarParaSelecao(this.editor); }
 
   _dica(extra = '') {
     const p = this.constructor.passo;
@@ -78,7 +79,13 @@ export class FerramentaVirar extends Ferramenta {
 
   onPonto(p, ev = {}) {
     const sob = this._barraSob(p);
-    if (!sob) { this.dica('Clique numa barra (perfil) para virar a seção dela'); return; }
+    if (!sob) {
+      const t = p && p.tela, s = t ? this.editor.selecao.sob(t[0], t[1]) : null;
+      this.dica(s && s.entidade && s.entidade.tipo !== 'barra'
+        ? 'Essa peça é uma malha (veio do IFC ou é um sólido): o Virar gira só as barras do catálogo. Para ela, use o Girar (Q) com o eixo da peça'
+        : 'Clique numa barra (perfil) para virar a seção dela');
+      return;
+    }
     const d = this._angulo(ev);
     const ids = this.alvos && this.alvos.length > 1 && this.alvos.includes(sob.e.id) ? this.alvos : [sob.e.id];
     const cmds = ids.map(id => {

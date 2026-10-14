@@ -265,7 +265,7 @@ export class MetodosBloco {
         title: 'A elevação deste bloco: escolha as barras e troque o perfil ou vire a boca, nesta ou em todas do mesmo tipo',
         onclick: () => this.abrirBarrasDoBloco(peca, ids) })));
     }
-    corpo.append(el('p', { class: 'explica', texto: 'Alt+clique pega uma barra só. Esc limpa a seleção.' }));
+    corpo.append(el('p', { class: 'explica', texto: 'Alt+clique pega uma barra só e deixa o clique em peças soltas (Shift soma, Ctrl alterna) até o Esc, que limpa a seleção e volta ao bloco.' }));
     this._painelBloco = el('div', { class: 'painel-apoios painel-bloco' },
       el('div', { class: 'painel-apoios-titulo' },
         el('strong', { texto: `Bloco ${nome}` }),

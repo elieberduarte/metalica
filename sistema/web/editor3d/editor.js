@@ -734,6 +734,16 @@ export class Editor {
     }
 
     // 2. Medida digitada durante a operação, sem precisar clicar na caixa.
+    // A ferramenta que aceita texto diz quais teclas começam um valor (o "M" de "M16x40" no Parafuso): sem isso o
+    // "M" ativava o Mover e o "x" a Seção, que cortava o modelo — e a dica mandava digitar justamente isso (revisão 14/10)
+    const f = this.ativa;
+    if (this.idAtiva !== 'selecionar' && !ev.altKey && ev.key.length === 1 && f && typeof f.teclaDeValor === 'function'
+        && f.teclaDeValor(ev.key)) {
+      ev.preventDefault();
+      this.el.medida.focus();
+      this.el.medida.value = ev.key;
+      return;
+    }
     const operando = this._textoMedida && this.idAtiva !== 'selecionar';
     if (operando && !ev.altKey && /^[0-9.,;\-]$/.test(ev.key)) {
       ev.preventDefault();

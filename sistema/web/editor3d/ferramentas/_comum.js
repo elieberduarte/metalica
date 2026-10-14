@@ -407,7 +407,18 @@ export function noPlano(editor, p, plano) {
     const q = raioContraPlano(editor, p, plano);
     if (q) return q;
   }
-  return projetarNoPlano(plano, p.ponto);
+  const proj = projetarNoPlano(plano, p.ponto);
+  // snap de feição longe do plano (o canto de uma peça lá atrás, que caiu no mesmo pixel): a projeção reta sai longe
+  // do cursor — a chapa desenhada numa mesa saía torta, com um ponto a meio metro (revisão 14/10). Só vale a projeção
+  // que cai perto de onde o usuário está mirando; senão, o raio contra o plano.
+  if (fora && p.tela && editor && editor.camera && typeof editor.camera.paraTela === 'function') {
+    const s = editor.camera.paraTela(proj);
+    if (!(s[2] <= 1) || Math.hypot(s[0] - p.tela[0], s[1] - p.tela[1]) > 15) {
+      const q = raioContraPlano(editor, p, plano);
+      if (q) return q;
+    }
+  }
+  return proj;
 }
 
 /**

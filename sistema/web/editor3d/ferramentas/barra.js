@@ -9,6 +9,7 @@
 
 import { Ferramenta, paraMilimetros, formatar } from './base.js';
 import * as C from './_comum.js';
+import { baseDaBarra } from '../nucleo/documento.js';
 
 const PAPEIS = ['pilar', 'viga', 'terça', 'contraventamento', 'longarina', 'barra'];
 
@@ -18,6 +19,8 @@ export class FerramentaBarra extends Ferramenta {
   static atalho = 'B';
   static grupo = 'estrutura';
   static dica = 'Clique no início da barra';
+  //: rotação da seção (°) das próximas barras — a boca do U, a aba da cantoneira
+  static rotacao = 0;
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 <path d="M4 4.5h6M7 4.5v15M4 19.5h6"/><path d="M14 8.5h6M17 8.5v7M14 15.5h6"/><path d="M10.5 12h3" stroke-dasharray="2 1.5"/></svg>`;
 
@@ -55,19 +58,68 @@ export class FerramentaBarra extends Ferramenta {
   get acoAtivo() { return (this.editor && this.editor.acoAtivo) || 'ASTM A572 Gr.50'; }
   get papelAtivo() { return (this.editor && this.editor.papelAtivo) || 'viga'; }
 
+  get rotacaoAtiva() { return this.constructor.rotacao || 0; }
+
   dicaComPerfil(texto) {
-    return `${texto} — ${this.perfilAtivo} · ${this.papelAtivo} (↑↓ troca o perfil)`;
+    const rot = this.rotacaoAtiva ? ` · ${this.rotacaoAtiva}°` : '';
+    return `${texto} — ${this.perfilAtivo} · ${this.papelAtivo}${rot} (perfil, papel e rotação no painel; ↑↓ os perfis do modelo)`;
+  }
+
+  /** Perfis que o modelo já usa, do mais comum para o menos. */
+  _usadosNoModelo() {
+    const cont = new Map();
+    for (const e of this.documento.entidades.values()) if (e.tipo === 'barra' && e.perfil) cont.set(e.perfil, (cont.get(e.perfil) || 0) + 1);
+    return [...cont].sort((a, b) => b[1] - a[1]);
   }
 
   trocarPerfil(passo) {
-    const l = this.perfis;
+    // ↑↓ percorre os perfis que o modelo já usa (o catálogo inteiro são ~5.200: andar nele de um em um não serve)
+    const usados = this._usadosNoModelo().map(([n]) => ({ nome: n }));
+    const l = usados.length >= 2 ? usados : this.perfis;
     if (!l.length) return;
     let i = l.findIndex(p => p.nome === this.perfilAtivo);
-    if (i < 0) i = 0;
+    if (i < 0) i = passo > 0 ? -1 : 0;
     i = (i + passo + l.length) % l.length;
     this.perfilAtivo = l[i].nome;
     this.desenhar();
     this.dica(this.dicaComPerfil(this.inicio ? 'Clique no fim da barra' : 'Clique no início da barra'));
+  }
+
+  // ------------------------------------------------------------- painel
+
+  painel(raiz, el) {
+    const ed = this.editor;
+    raiz.append(el('div', { class: 'resumo-selecao' }, el('strong', { texto: 'Barra a lançar' }),
+                   el('span', { texto: `${this.perfilAtivo} · ${this.papelAtivo} · ${this.rotacaoAtiva}°` })));
+    const g = el('div', { class: 'campos' });
+    const aoTrocar = () => { this.desenhar(); this.dica(this.dicaComPerfil(this.inicio ? 'Clique no fim da barra' : 'Clique no início da barra')); };
+    if (typeof ed._buscaPerfil === 'function') {
+      g.append(el('label', { texto: 'Perfil' }), ed._buscaPerfil(this.perfilAtivo, n => { this.perfilAtivo = n; aoTrocar(); }));
+    }
+    const lista = (opcoes, atual, fn, titulo) => {
+      const s = el('select', { title: titulo });
+      for (const o of opcoes) s.append(el('option', { value: String(o), texto: String(o) }));
+      s.value = String(atual);
+      s.addEventListener('change', () => fn(s.value));
+      return s;
+    };
+    const acos = [...new Set([...((ed.catalogo && ed.catalogo.acos) || []), this.acoAtivo])];
+    g.append(el('label', { texto: 'Papel' }), lista(PAPEIS, this.papelAtivo, v => { ed.papelAtivo = v; aoTrocar(); }, 'Papel estrutural (vai para o cálculo e o detalhamento)'),
+             el('label', { texto: 'Aço' }), lista(acos, this.acoAtivo, v => { ed.acoAtivo = v; }, 'Aço da barra'),
+             el('label', { texto: 'Rotação (°)' }),
+             lista([0, 90, 180, 270], [0, 90, 180, 270].includes(this.rotacaoAtiva) ? this.rotacaoAtiva : 0,
+                   v => { this.constructor.rotacao = +v; aoTrocar(); },
+                   'Giro da seção no próprio eixo: a boca do U, a aba da cantoneira (o Virar perfil muda depois)'));
+    raiz.append(g);
+    const usados = this._usadosNoModelo().slice(0, 12);
+    if (usados.length) {
+      const box = el('div', { class: 'acoes' });
+      for (const [n, k] of usados) {
+        box.append(el('button', { type: 'button', texto: `${n} (${k})`, title: 'Lançar com este perfil, como os que já estão no modelo',
+          onclick: () => { this.perfilAtivo = n; aoTrocar(); } }));
+      }
+      raiz.append(el('div', { class: 'grupo-campos' }, el('h4', { texto: 'Já usados no modelo' }), box));
+    }
   }
 
   // ------------------------------------------------------------- eventos
@@ -145,13 +197,11 @@ export class FerramentaBarra extends Ferramenta {
     return C.projetarNoEixo(this.inicio, ponto, this.eixo);
   }
 
-  /** Referencial da seção: eixo local Y horizontal, Z completando o triedro. */
+  /** Referencial da seção: o mesmo triedro da barra criada (`baseDaBarra`, com a rotação) — antes o limiar do vertical
+   *  era outro (0,98 × 0,9) e a prévia de uma barra quase vertical saía girada em relação à peça. */
   referencial(a, b) {
-    const d = C.normalizar(C.sub(b, a));
-    const ref = Math.abs(d[2]) > 0.98 ? [1, 0, 0] : [0, 0, 1];   // como baseDaBarra
-    const ey = C.normalizar(C.cross(ref, d));
-    const ez = C.normalizar(C.cross(d, ey));
-    return { d, ey, ez };
+    const { t, u, v } = baseDaBarra(a, b, this.rotacaoAtiva);
+    return { d: t, ey: u, ez: v };
   }
 
   criar(a, b) {
@@ -160,7 +210,7 @@ export class FerramentaBarra extends Ferramenta {
       nome: '', camada: (this.editor && this.editor.camadaAtiva) || 'Estrutura',
       material: '', visivel: true, bloqueada: false, grupo: '',
       inicio: C.copiar(a), fim: C.copiar(b),
-      perfil: this.perfilAtivo, rotacao: 0,
+      perfil: this.perfilAtivo, rotacao: this.rotacaoAtiva,
       papel: this.papelAtivo, aco: this.acoAtivo,
       recorte_inicio: 0, recorte_fim: 0, atributos: {},
     };

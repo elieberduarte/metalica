@@ -22,10 +22,11 @@
 
 import { FerramentaParafuso, tamanhoDoFixador, furoDoParafuso } from './parafuso.js';
 import * as C from './_comum.js';
-import { LADOS, furarMalha, furoNaChapa, lacoDaForma, ehOblongo, rotuloDaForma, comMalhaBase, faceDoPonto } from './_furar.js';
+import { LADOS, furarMalha, furoNaChapa, lacoDaForma, ehOblongo, rotuloDaForma, comMalhaBase, faceDoPonto, IndiceDeCaixas,
+         paredesNoEixo } from './_furar.js';
 
-//: diâmetros usuais de furo (parafuso + 1 mm, e os oblongos da terça abertos por broca)
-const DIAMETROS = [9, 11, 13, 14, 15, 17.5, 18, 20, 22, 24, 26, 28];
+//: diâmetros usuais de furo: o furo-padrão da NBR 8800 (d + 1,5 até M24) de M8 a M24 e as brocas redondas
+const DIAMETROS = [9.5, 11.5, 13.5, 15.5, 17.5, 21.5, 23.5, 25.5, 14, 18, 22, 26];
 const num = (x) => String(Math.round(x * 10) / 10);
 const mm = (x) => String(Math.round(x));
 
@@ -99,12 +100,16 @@ export class FerramentaFuro extends FerramentaParafuso {
   static direcao = 'peca';
 
   ativar() {
-    this._caixas = new Map();
+    this._indice = new IndiceDeCaixas(this.documento, { folgaBarra: 300 });
     // o tamanho herdado só serve à sonda da peça de baixo (o alcance do eixo)
     this.tamanho = { d: 12, L: 40, classe: '' };
-    this.diametro = this.constructor.diametro || 14;
+    // o padrão é o furo do parafuso M12 pela norma (13,5); antes 14
+    this.diametro = this.constructor.diametro || furoDoParafuso(12);
     this._atualizarDica();
   }
+
+  /** "M12", "Ø14", "13x23" e os números vão para a caixa de medidas. */
+  teclaDeValor(k) { return /^[0-9MmØø]$/.test(k); }
 
   get rotuloAtual() { return rotuloDaForma({ d: this.diametro, comp: this.constructor.comp, dir: [1, 0, 0] }); }
 
@@ -180,9 +185,12 @@ export class FerramentaFuro extends FerramentaParafuso {
     const g = el('div', { class: 'campos' });
     const inD = el('input', { type: 'number', min: '3', step: '0.5', value: String(this.diametro), title: 'Diâmetro do furo, mm' });
     inD.addEventListener('change', () => { const d = +inD.value; if (d > 0) this._definir(d); });
-    const selD = el('select', { title: 'Diâmetros usuais (parafuso + 1 mm)' });
+    const selD = el('select', { title: 'Diâmetros usuais: o furo-padrão da norma (parafuso + 1,5 mm) e as brocas redondas' });
     selD.append(el('option', { value: '', texto: 'usuais…' }));
-    for (const d of DIAMETROS) selD.append(el('option', { value: String(d), texto: `Ø${num(d)}` }));
+    for (const d of DIAMETROS) {
+      const m = [8, 10, 12, 14, 16, 20, 22, 24].find(x => Math.abs(furoDoParafuso(x) - d) < 0.01);
+      selD.append(el('option', { value: String(d), texto: `Ø${num(d).replace('.', ',')}${m ? ` (M${m})` : ''}` }));
+    }
     selD.addEventListener('change', () => { if (selD.value) { this._definir(+selD.value); inD.value = selD.value; } });
     // oblongo: largura = o diâmetro acima; comprimento total do rasgo e a direção dele
     const forma = el('select', { title: 'Redondo, ou oblongo (rasgo): a largura é o diâmetro' });
@@ -216,6 +224,7 @@ export class FerramentaFuro extends FerramentaParafuso {
              el('label', { texto: 'Direção' }), dirS,
              el('label', { texto: 'Eixos e furos' }), el('span', {}, eixos, ' mostrar e prender'));
     raiz.append(g);
+    this._painelPosicao(raiz, el);
     const usados = this._usadosNoModelo();
     if (usados.length) {
       const box = el('div', { class: 'acoes' });
@@ -228,10 +237,20 @@ export class FerramentaFuro extends FerramentaParafuso {
     raiz.append(el('p', { class: 'nota', texto: 'O furo é aberto na própria malha da peça (na chapa desenhada no editor, entra na chapa). Perto de um furo da peça de baixo, o novo prende no mesmo alinhamento. Oblongo: a largura é o diâmetro e o comprimento é o total do rasgo; também dá para digitar "13x23".' }));
   }
 
-  /** Espessura da parede furada: a camada de vértices da peça logo atrás da face. */
+  /** Espessura da parede furada: a camada de vértices da peça logo atrás da face; na barra do catálogo, a parede da
+   *  seção cortada pelo eixo (antes ia 10 mm em qualquer perfil — a barra só tem as duas pontas). */
   _profundidade(ent, ponto, n) {
     if (!ent) return 10;
     if (ent.tipo === 'chapa') return ent.espessura || 10;
+    if (ent.tipo === 'barra') {
+      const d = C.normalizar(C.mul(n, -1));
+      const so = { entidades: new Map([[ent.id, ent]]), get: (id) => (id === ent.id ? ent : null) };
+      const ps = paredesNoEixo(so, C.add(ponto, C.mul(d, -1)), d, 600, { cena: this.editor && this.editor.cena });
+      // o eixo começa 1 mm antes da face (t = 1 é a face clicada); parede de mais de 60 mm é o eixo correndo dentro da
+      // alma (o furo no meio da mesa do I): devolve o comprimento todo, que o clique recusa
+      const pr = ps.find(q => q.t1 > 1.2);
+      return pr ? Math.max(0.5, pr.t1 - Math.max(1, pr.t0)) : 10;
+    }
     const pts = C.pontosDaEntidade(ent);
     let melhor = null;
     for (const q of pts) {
@@ -281,7 +300,7 @@ export class FerramentaFuro extends FerramentaParafuso {
     const tol = Math.max(8, 0.6 * this.diametro);
     let preso = null;
     const marcadores = [];                                             // furos marcados (sem malha) nas peças de baixo
-    for (const m of this.documento.entidades.values()) if (m.atributos && m.atributos.furo && m.atributos.furo.peca) marcadores.push(m);
+    for (const m of this._perto(ponto, ponto, 450).entidades.values()) if (m.atributos && m.atributos.furo && m.atributos.furo.peca) marcadores.push(m);
     for (const e of this._atravessadas(ponto, n, p.entidade)) {
       const furos = furosDaMalha(e);
       for (const m of marcadores) if (m.atributos.furo.peca === e.id) furos.push({ c: m.atributos.furo.ponto, d: m.atributos.furo.d, n: C.mul(m.atributos.furo.eixo, -1) });
@@ -316,11 +335,17 @@ export class FerramentaFuro extends FerramentaParafuso {
     if (!p || !p.entidade) return;
     const n = this.normalDoPonto(p);
     if (!n) return;
-    const { ponto, extra } = this.ajustar(p, n);
+    const { ponto, extra, face } = this.ajustar(p, n);
     const alvo = this.documento.get(p.entidade);
-    const g = this.geometria(ponto, n, this._profundidade(alvo, ponto, n), this._forma(p, n));
-    this.previa(C.grupo(C.gMalha(g.vertices, g.faces, '#1f2430', 0.85),
-                        C.gRotulo(this.rotuloAtual, C.add(ponto, C.mul(n, 30))), ...extra));
+    const forma = this._forma(p, n);
+    const pts = this._pontosDoPadrao(ponto, face);
+    const prof0 = this._profundidade(alvo, ponto, n);
+    const bate = alvo && alvo.tipo === 'barra' && prof0 > 60;
+    const prof = Math.min(prof0, 60);
+    const partes = pts.map(q => { const g = this.geometria(q, n, prof, forma); return C.gMalha(g.vertices, g.faces, bate ? '#b91c1c' : '#1f2430', 0.85); });
+    const rot = `${pts.length > 1 ? pts.length + ' × ' : ''}${this.rotuloAtual} · ` + (bate ? 'EM CIMA DA ALMA: vá para o gabarito' : `parede ${num(prof).replace(".", ",")} mm`);
+    const lado = face ? C.mul(face.e2, -((C.dot(ponto, face.e2) - face.min2) + 45)) : [0, 0, 0];
+    this.previa(C.grupo(...partes, C.gRotulo(rot, C.add(ponto, C.add(C.mul(n, 20), lado))), ...extra));
   }
 
   onPonto(p) {
@@ -328,50 +353,72 @@ export class FerramentaFuro extends FerramentaParafuso {
     if (!p || !p.entidade) { this.dica('Clique numa face de uma peça (barra, chapa, perfil)'); return; }
     const n = this.normalDoPonto(p);
     if (!n) { this.dica('Não deu para saber a face: clique no meio de uma face plana'); return; }
-    const { ponto } = this.ajustar(p, n);
+    const { ponto, face } = this.ajustar(p, n);
+    const pts = this._pontosDoPadrao(ponto, face);
     const d = this.diametro;
     const forma = this._forma(p, n);
     const extraForma = ehOblongo(forma) ? { comp: forma.comp, dir: C.copiar(forma.dir) } : {};
     const alvo = this.documento.get(p.entidade);
+    const vezes = pts.length > 1 ? `${pts.length} furos` : 'Furo';
     if (alvo && alvo.tipo === 'chapa') {
       // chapa paramétrica: o furo entra na própria chapa (é o que o IFC e a lista leem)
       const furos = (alvo.furos || []).map(f => ({ ...f }));
-      furos.push(furoNaChapa(alvo, ponto, forma));
+      for (const q of pts) furos.push(furoNaChapa(alvo, q, forma));
       this.executar(C.cmdAlterar(alvo.id, { furos }, 'Furar chapa'));
-      this.dica(`Furo ${this.rotuloAtual} na chapa · clique no próximo (Esc sai)`);
+      this.dica(`${vezes} ${this.rotuloAtual} na chapa · clique no próximo (Esc sai)`);
       return;
     }
-    const malha = alvo ? furarMalha(alvo, p.face, ponto, n, forma) : null;
-    if (malha) {
-      const registro = { d, ...extraForma, ponto: C.copiar(ponto), eixo: C.mul(C.normalizar(n), -1), profundidade: malha.profundidade };
-      const atributos = comMalhaBase(alvo, { ...(alvo.atributos || {}), furos_editor: [...((alvo.atributos && alvo.atributos.furos_editor) || []), registro] });
-      this.executar(C.cmdAlterar(alvo.id, { vertices: malha.vertices, faces: malha.faces, atributos }, 'Furo'));
-      this.dica(`Furo ${this.rotuloAtual} aberto na peça (parede de ${mm(malha.profundidade)} mm) · clique no próximo, ou troque o diâmetro no painel (Esc sai)`);
-      return;
-    }
-    // o furo não coube na face (perto demais da borda, ou em cima de outro furo): nada é
-    // criado — antes virava um marcador no canto da peça
     if (alvo && alvo.tipo === 'solido' && alvo.faces && alvo.faces.length) {
+      // malha (o perfil do IFC): os furos um depois do outro na mesma malha
+      let atual = alvo, feitos = 0, fora = 0, prof = 0;
+      const registros = [...((alvo.atributos && alvo.atributos.furos_editor) || [])];
+      for (const q of pts) {
+        const malha = furarMalha(atual, q === ponto ? p.face : -1, q, n, forma);
+        if (!malha) { fora++; continue; }
+        registros.push({ d, ...extraForma, ponto: C.copiar(q), eixo: C.mul(C.normalizar(n), -1), profundidade: malha.profundidade });
+        atual = { ...atual, vertices: malha.vertices, faces: malha.faces };
+        prof = malha.profundidade;
+        feitos++;
+      }
+      if (feitos) {
+        const atributos = comMalhaBase(alvo, { ...(alvo.atributos || {}), furos_editor: registros });
+        this.executar(C.cmdAlterar(alvo.id, { vertices: atual.vertices, faces: atual.faces, atributos }, vezes));
+        this.dica(`${feitos > 1 ? feitos + ' furos' : 'Furo'} ${this.rotuloAtual} aberto(s) na peça (parede de ${num(prof).replace(".", ",")} mm)`
+                  + (fora ? ` · ${fora} não coube(ram) na face (borda ou outro furo)` : '') + ' · clique no próximo (Esc sai)');
+        return;
+      }
+      // o furo não coube na face (perto demais da borda, ou em cima de outro furo): nada é criado — antes virava um
+      // marcador no canto da peça. Só a parede de trás não reconhecida (a face existe e o furo cabe) cai no marcador.
       const k = faceDoPonto(alvo, ponto, n, p.face);
       if (k < 0 || !this._dentroDaFace(ponto, this.eixosDaFace(p, n))) {
         this.dica(`O furo ${this.rotuloAtual} não cabe aí: fica a menos de ${mm(this._margemDaBorda())} mm da borda da face ou em cima de outro furo — clique mais para dentro`);
         return;
       }
     }
-    // sem a face de trás (parede não reconhecida, barra paramétrica): o marcador
-    const prof = this._profundidade(alvo, ponto, n);
-    const g = this.geometria(ponto, n, prof, forma);
-    const ent = {
-      tipo: 'solido', id: C.novoId('furo'), nome: this.nomeAtual, camada: 'Furos', material: 'Cor #1f2430',
-      visivel: true, bloqueada: false, grupo: '',
-      vertices: g.vertices, faces: g.faces, arestas_vivas: [],
-      atributos: {
-        tipo_ifc: 'IfcOpeningElement', exportar: false, criado_no_editor: true,
-        furo: { d, ...extraForma, ponto: C.copiar(ponto), eixo: C.mul(C.normalizar(n), -1), profundidade: prof, peca: alvo ? alvo.id : null },
-      },
-    };
-    this.executar(C.cmdAdicionar(ent, 'Furo'));
-    this.dica(`Furo ${this.rotuloAtual} marcado (a parede de trás não foi reconhecida: fica o marcador, que o detalhamento lê como furo) · clique no próximo (Esc sai)`);
+    // a barra do catálogo (a malha dela é feita pela cena, que abre o furo pelo marcador) e a parede de trás não
+    // reconhecida: o marcador na camada Furos, que o detalhamento lê como furo
+    let prof = this._profundidade(alvo, ponto, n);
+    if (alvo && alvo.tipo === 'barra' && prof > 60) {
+      this.dica(`O furo ${this.rotuloAtual} cai em cima da alma de ${alvo.perfil} (o meio da mesa): mova para o gabarito, fora da alma — nada foi furado`);
+      return;
+    }
+    prof = Math.min(prof, 60);
+    const novos = pts.map(q => {
+      const g = this.geometria(q, n, prof, forma);
+      return {
+        tipo: 'solido', id: C.novoId('furo'), nome: this.nomeAtual, camada: 'Furos', material: 'Cor #1f2430',
+        visivel: true, bloqueada: false, grupo: '',
+        vertices: g.vertices, faces: g.faces, arestas_vivas: [],
+        atributos: {
+          tipo_ifc: 'IfcOpeningElement', exportar: false, criado_no_editor: true,
+          furo: { d, ...extraForma, ponto: C.copiar(q), eixo: C.mul(C.normalizar(n), -1), profundidade: prof, peca: alvo ? alvo.id : null },
+        },
+      };
+    });
+    this.executar(C.cmdAdicionar(novos, vezes));
+    this.dica(alvo && alvo.tipo === 'barra'
+      ? `${vezes} ${this.rotuloAtual} aberto(s) na barra (parede de ${num(prof).replace(".", ",")} mm) · clique no próximo (Esc sai)`
+      : `${vezes} ${this.rotuloAtual} marcado(s) (a parede de trás não foi reconhecida: fica o marcador, que o detalhamento lê como furo) · clique no próximo (Esc sai)`);
   }
 }
 

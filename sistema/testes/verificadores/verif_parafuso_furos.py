@@ -42,6 +42,9 @@ try:
     aba.navegar(base + "/editor?projeto=compressores", limite=60)
     t0 = time.time()
     while time.time() - t0 < 90 and not aba.avaliar("window.editor && window.editor.documento && window.editor.documento.entidades.size > 100"): aba.drenar(0.5)
+    # os perfis dobrados (a terça Ue, o banzo U FF) chegam depois do banco básico: antes disso a barra tem a seção provisória
+    t0 = time.time()
+    while time.time() - t0 < 60 and not aba.avaliar("!!(editor.cena.perfil('Ue 100×50×17×2,65') && editor.cena.perfil('U 100×40×2,00 (FF)'))"): aba.drenar(0.5)
     # 1) parafuso sobre duas chapas empilhadas: as duas ganham o furo Ø13
     r = json.loads(aba.avaliar("""JSON.stringify((() => {
       const ed = window.editor, doc = ed.documento; %s
@@ -153,11 +156,16 @@ try:
       ed.ativarFerramenta('parafuso');
       ed.ativa._definir({ d: 12, L: 160, classe: 'A307' });
       ed.ativa.constructor.eixos = false;
-      ed.ativa.onPonto({ entidade: terca.id, ponto: [90000, 1500, 5160], normal: [0, 0, 1], face: 0 });
+      // no meio da aba da terça (fora da alma): na linha da alma o eixo correria por dentro dela e o parafuso não é
+      // lançado (revisão 14/10, "bate na alma")
+      const sec = ed.cena._secaoDoPerfil(terca.perfil).getPoints().map(q => q.x);
+      const meioAba = (Math.min(...sec) + Math.max(...sec)) / 2;
+      ed.ativa.onPonto({ entidade: terca.id, ponto: [90000, 1500 + meioAba, 5160], normal: [0, 0, 1], face: 0 });
       const marc = [...doc.entidades.values()].filter(e => e.atributos && e.atributos.furo && [banzo.id, terca.id].includes(e.atributos.furo.peca));
       return { n: marc.length, pecas: [...new Set(marc.map(m => m.atributos.furo.peca === banzo.id ? 'banzo' : 'terça'))].sort(),
-               d: marc.map(m => m.atributos.furo.d), camada: [...new Set(marc.map(m => m.camada))] };
+               d: marc.map(m => m.atributos.furo.d), camada: [...new Set(marc.map(m => m.camada))], dica: ed.el.dica.textContent };
     })())"""))
+    print("     dica:", r8.get("dica"))
     ok(r8["n"] >= 2 and r8["pecas"] == ["banzo", "terça"] and all(abs(x - 13.5) < 0.01 for x in r8["d"]) and r8["camada"] == ["Furos"],
        "parafuso pela terça e pelo banzo (barras): os dois ganham o furo Ø13,5 (%d paredes: %s)" % (r8["n"], r8["pecas"]))
     aba.avaliar("window.editor.desfazer(); 1"); aba.drenar(0.3)

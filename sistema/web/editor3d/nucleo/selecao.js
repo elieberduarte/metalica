@@ -111,8 +111,11 @@ export class Selecao {
       if (!ev.shiftKey && !ev.ctrlKey && !ev.metaKey) this.limpar();
       return;
     }
-    // o clique pega o bloco (a treliça inteira): `grupoDe` diz quem vai junto; Alt+clique, uma barra só
-    const grupo = (this.grupoDe && !ev.altKey) ? this.grupoDe(id) : [id];
+    // o clique pega o bloco (a treliça inteira): `grupoDe` diz quem vai junto; Alt+clique, uma barra só — e deixa
+    // o clique em "modo peça" até o Esc (ou o clique no vazio), para somar (Shift) e alternar (Ctrl) peças soltas
+    // sem segurar o Alt o tempo todo (pedido do usuário, 13/10: as duas cantoneiras de um montante)
+    if (ev.altKey) this.modoPeca = true;
+    const grupo = (this.grupoDe && !ev.altKey && !this.modoPeca) ? this.grupoDe(id) : [id];
     if (ev.ctrlKey || ev.metaKey) {
       if (grupo.every(i => this.ids.has(i))) this.tirar(grupo); else this.somar(grupo);
     } else if (ev.shiftKey) this.somar(grupo);
@@ -162,6 +165,7 @@ export class Selecao {
   }
 
   limpar() {
+    this.modoPeca = false;                  // o Esc (ou o clique no vazio) volta ao clique por bloco
     if (!this.ids.size) return;
     for (const id of this.ids) this._realcar(id, null);
     this.ids.clear();
