@@ -54,6 +54,9 @@ Rotas da API:
     POST /api/modelo/numerar {documento, compactar}            marcas de posição e conjunto das peças feitas à mão
     POST /api/modelo/contatos {documento}                      onde as peças se encostam (o diálogo Soldar)
     POST /api/modelo/converter-chapa {documento, ids}          sólido desenhado à mão → Chapa paramétrica
+    GET  /api/modelo/ligacoes-3d                               as ligações da biblioteca que se põem no 3D
+    POST /api/modelo/ligacao {documento, tipo, ids, parametros, ligacao}   aplica (ou refaz) a ligação nas barras
+    POST /api/modelo/ligacao/remover {documento, ligacao}      apaga a ligação e devolve as barras
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
     GET  /api/projetos/<slug>/analise-estrutural   a análise do modelo (o último cálculo); POST {parametros} calcula
          (nucleo3d/analise_estrutural.py; tela /analise-estrutural — o unifilar, as cargas, os esforços e as reações)
@@ -4165,6 +4168,22 @@ def converter_em_chapa(corpo: dict) -> dict:
     return producao.converter_em_chapa(_documento_de(corpo), list(corpo.get("ids") or []))
 
 
+def aplicar_ligacao(corpo: dict) -> dict:
+    """POST /api/modelo/ligacao {documento, tipo, ids, parametros, ligacao, esforcos}: a ligação da biblioteca posta
+    nas barras escolhidas (nucleo3d/ligacoes3d.py) — ou a ligação `ligacao` refeita com os parâmetros novos. Devolve
+    as entidades novas, as alterações das barras e o que sai, para o editor aplicar com desfazer."""
+    from nucleo3d import ligacoes3d
+    return ligacoes3d.aplicar(_documento_de(corpo), str(corpo.get("tipo") or ""), list(corpo.get("ids") or []),
+                              corpo.get("parametros") or None, ligacao=corpo.get("ligacao") or None,
+                              esforcos=corpo.get("esforcos") or None)
+
+
+def remover_ligacao(corpo: dict) -> dict:
+    """POST /api/modelo/ligacao/remover {documento, ligacao}: as peças da ligação saem e as barras voltam como eram."""
+    from nucleo3d import ligacoes3d
+    return ligacoes3d.remover(_documento_de(corpo), str(corpo.get("ligacao") or ""))
+
+
 def modelo_analitico(corpo: dict) -> dict:
     """POST /api/modelo/analitico {documento}: o esqueleto de nós e barras (nucleo3d/analitico.py) —
     perfil duplo numa barra só, pontas juntadas no nó, cada peça levada ao eixo em que apoia; o
@@ -4673,6 +4692,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(projeto_completo(partes[0]))
             if rota == "/api/modelo/catalogo":
                 return self._json(catalogo_3d())
+            if rota == "/api/modelo/ligacoes-3d":
+                from nucleo3d import ligacoes3d
+                return self._json({"tipos": ligacoes3d.tipos()})
             if rota == "/api/modelo/lista":
                 return self._json(listar_modelos())
             if rota.startswith("/api/modelo/abrir/"):
@@ -4931,6 +4953,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(contatos_para_solda(corpo))
             if rota == "/api/modelo/converter-chapa":
                 return self._json(converter_em_chapa(corpo))
+            if rota == "/api/modelo/ligacao":
+                return self._json(aplicar_ligacao(corpo))
+            if rota == "/api/modelo/ligacao/remover":
+                return self._json(remover_ligacao(corpo))
             if rota == "/api/lento":
                 # a janela conta o que a segurou (web/lentidao.js): fica no registro para
                 # achar o travamento que ninguém reproduz

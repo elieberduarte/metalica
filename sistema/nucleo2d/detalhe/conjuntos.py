@@ -4279,19 +4279,25 @@ def desenho_de_chumbacao(doc: Documento, pecas: Sequence[Solido], nomes_producao
     caixas_cb = [tuple((min(v[i] for v in e.vertices), max(v[i] for v in e.vertices)) for i in range(3)) for e in chumb]
     perto, atravessadas = [], []
     for e in pecas:
-        if e.id in ids_ch or tipos.get(str(_marcas(e).get("posicao") or "")) not in ("chapa", "castanha", "suporte_terca", None):
+        # a placa soldada no pilar é "parte" do conjunto dele (o conjunto do pilar com a base, 14/10/2026): conta
+        chapa_e = _tipo_ifc(e).startswith("IfcPlate") or type(getattr(e, "parametrica", None)).__name__ == "Chapa"
+        tipo_e = tipos.get(str(_marcas(e).get("posicao") or ""))
+        if e.id in ids_ch or (tipo_e not in ("chapa", "castanha", "suporte_terca", None) and not (tipo_e == "parte" and chapa_e)):
             continue
         zs = [v[2] for v in e.vertices]
         cx = sum(v[0] for v in e.vertices) / len(e.vertices)
         cy = sum(v[1] for v in e.vertices) / len(e.vertices)
         if not any(math.hypot(cx - c[0], cy - c[1]) <= 400.0 and abs(min(zs) - c[2]) <= 500.0 for c in centros):
             continue
-        if not so_chapas and _extensao_menor(e) <= 25.0:
+        # a placa de base passa de 1" (a engastada de 31,75; a do galpão lançado, 2"): até 80 mm se for chapa, como
+        # na regra de cima — com 25 mm a placa de 31,75 da base aplicada no 3D sumia da planta (14/10/2026)
+        lim_e = 80.0 if chapa_e else 25.0
+        if not so_chapas and _extensao_menor(e) <= lim_e:
             # a chapa que o chumbador atravessa, deitada ou em pé (a de parede)
             cx_e = [(min(v[i] for v in e.vertices), max(v[i] for v in e.vertices)) for i in range(3)]
             if any(all(cx_e[i][0] - 2.0 <= b[i][1] and b[i][0] - 2.0 <= cx_e[i][1] for i in range(3)) for b in caixas_cb):
                 atravessadas.append(e)
-        if max(zs) - min(zs) <= 25.0:
+        if max(zs) - min(zs) <= lim_e:
             perto.append(e)
     # a chapa de base é a que o chumbador atravessa; a chapa deitada logo acima (o suporte da agulha
     # no depósito químico, 29/09) não é — a regra da vizinhança fica para o modelo em que nenhuma cruza

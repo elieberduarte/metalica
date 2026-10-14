@@ -242,6 +242,7 @@ export class MetodosPaineis {
 
     // marca, conjunto, solda, fase e acabamento editáveis (modulos/producao.js, 14/10)
     try { this._painelProducao(raiz, ents); } catch (e) { console.error('painel de produção:', e); }
+    try { this._painelLigacao(raiz, ents); } catch (e) { console.error('painel da ligação:', e); }
 
     const acoes = el('div', { class: 'acoes-painel' });
     const botao = (texto, fn, titulo) => acoes.append(el('button', { type: 'button', texto, title: titulo, onclick: fn }));
