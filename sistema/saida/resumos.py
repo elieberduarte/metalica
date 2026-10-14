@@ -1130,7 +1130,9 @@ def _compra(lista: dict, parafusos: List[dict], telhas: dict, dados: dict) -> di
     pf, porcas, arruelas, quimico = [], collections.Counter(), collections.Counter(), collections.OrderedDict()
     for it in parafusos:
         if it["parafuso"]:
-            pf.append({"nome": it["nome"], "descricao": it["descricao"], "qtd": it["qtd"]})
+            # os ids dos parafusos do item: o "ver no 3D ↗" da linha (14/10, "onde vão esses 6 parafusos?")
+            pf.append({"nome": it["nome"], "descricao": it["descricao"], "qtd": it["qtd"],
+                       "ids": [i for lc in it.get("locais") or [] for i in lc.get("ids") or []]})
             porcas[_bitola_pol(it.get("d"))] += it["qtd"]
             # a arruela que já é chapa do projeto (a CH2 do chumbador da CH1) não se compra solta
             if it["qtd"] - int(it.get("sem_arruela") or 0):
@@ -2018,7 +2020,10 @@ def _html_compra(R: dict) -> str:
         linhas += [["Químico %s" % q["nome"], "Químico de injeção %s, cartucho %d ml — %s furos, ~%s ml com %d%% de perda"
                     % (q["nome"], q["cartucho_ml"], _n(q["furos"], 0), _n(q["ml_total"], 0), round(PERDA_QUIMICO * 100)), (q["cartuchos"], "r"), ""]
                    for q in C.get("quimicos") or []]
-        h.append(_tabela(["Item", "Descrição", ("Qtd", "r"), "Pedido"], linhas, larguras=["20%", "52%", "12%", "16%"]))
+        # a linha do parafuso leva os ids dele: na tela, o clique mostra onde estão no 3D (porcas, arruelas e químico não)
+        ids = [",".join(pf.get("ids") or []) for pf in C.get("parafusos") or []]
+        h.append(_tabela(["Item", "Descrição", ("Qtd", "r"), "Pedido"], linhas, larguras=["20%", "52%", "12%", "16%"],
+                         ids_linhas=ids + [""] * (len(linhas) - len(ids))))
     if C.get("telhas"):
         h.append("<h3>Telhas</h3><p class=\"explica\">m² pela largura útil.</p>")
         h.append(_tabela(["Telha", ("Peças", "r"), ("ml", "r"), ("m²", "r"), ("kg", "r"), "Pedido"],

@@ -172,3 +172,16 @@ def test_pendencia_com_chave_estavel_e_resposta_no_resumo():
     bloco = com.split("Pendências de conferência")[1]
     assert "1 a conferir" in bloco and "1 resolvida(s)" in bloco and "Resposta" in bloco
     assert "215 x 110" in bloco and "resolvida · 2026-10-13 09:00" in bloco and 'class="resolvida" data-ids="g1"' in bloco
+
+
+def test_linha_do_parafuso_na_compra_leva_os_ids_para_ver_no_3d():
+    """a linha do parafuso na compra traz os ids dele (data-ids): na tela, o clique mostra onde estão no 3D — "onde vão
+    esses 6 parafusos? pode colocar um link para ver no 3D" (14/10); porcas e arruelas soltas, sem"""
+    lista = {"perfis": [], "chapas": []}
+    pf = [{"nome": "Parafuso M12x35", "descricao": "Parafuso sextavado Ø1/2\" + porca e arruela", "qtd": 3, "parafuso": True, "d": 12,
+           "locais": [{"local": "terça x banzo", "qtd": 2, "ids": ["a1", "a2"]}, {"local": "chapa", "qtd": 1, "ids": ["a3"]}]}]
+    C = resumos._compra(lista, pf, {"itens": []}, {})
+    assert C["parafusos"][0]["ids"] == ["a1", "a2", "a3"]
+    h = resumos._html_compra({"compra": C})
+    assert 'data-ids="a1,a2,a3"' in h
+    assert h.count("data-ids=") == 1                          # a porca e a arruela não levam

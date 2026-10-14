@@ -249,8 +249,13 @@ function desenhar(L) {
     pPerfis.append(secao('Perfis', `comprimento, peso e barras de compra por encaixe (do maior para o menor, 3 mm de corte); ${n(totB)} barras no total` + (sobMedidaCompra ? ` + ${n(sobMedidaCompra)} peças sob medida (terças e dobrados maiores que 6 m)` : ''),
       el('div', {}, controleBarra(), el('div', { class: 'rolagem' }, tabela([
         { titulo: 'Perfil', valor: (g) => g.perfil_nome || g.perfil, classe: 'b' },
-        { titulo: 'No catálogo', valor: (g) => g.catalogo ? (g.fonte_kg_m === 'similar' ? 'similar: ' + g.catalogo : g.catalogo)
-            : (g.fonte_kg_m === 'calculado' ? 'fora, sem similar (kg/m pelas medidas)' : '—'),
+        // o ⇄ abre os parecidos do catálogo e troca o perfil de compra, como no resumo de materiais (14/10)
+        { titulo: 'No catálogo', valor: (g) => el('span', {},
+            g.catalogo ? (g.fonte_kg_m === 'similar' ? 'similar: ' + g.catalogo : g.catalogo)
+              : (g.fonte_kg_m === 'calculado' ? 'fora, sem similar (kg/m pelas medidas)' : '—'),
+            ' ', el('button', { type: 'button', class: 'botao-m trocar-compra', texto: '⇄ trocar',
+              title: 'Ver os parecidos do catálogo e trocar o perfil de compra (a lista e os resumos se refazem)',
+              onclick: () => abrirTroca(g.perfil) })),
           dica: 'O item do catálogo que corresponde ao perfil do modelo; o tubo fora dele vai para o similar (mesma forma, lados até 12 % diferentes, área e inércias pelo menos as do projeto, o mais leve)' },
         { titulo: 'Material', chave: 'material' },
         { titulo: 'Categoria', valor: (g) => rotuloCategoria(g.categoria, g) },
@@ -770,7 +775,8 @@ function desenharPrevia() {
   const quando = (a.pdf || a.html || {}).alterado;
   const frame = a.html ? el('iframe', { src: `${a.html.url}?t=${encodeURIComponent(quando || '')}`, title: 'Prévia do resumo' }) : vazio('Sem a versão HTML deste resumo.');
   if (a.html && DOC_ATUAL === 'materiais') frame.addEventListener('load', () => ligarTrocas(frame));
-  if (a.html && DOC_ATUAL === 'obra') frame.addEventListener('load', () => ligarPendencias(frame));
+  // as linhas com peças do modelo (data-ids): as pendências da obra e, no de materiais, os parafusos da compra (14/10)
+  if (a.html) frame.addEventListener('load', () => ligarPendencias(frame));
   fecharLado3D();                                   // o documento novo começa sem o 3D ao lado
   alvo.replaceChildren(
     el('div', { class: 'doc-barra' }, alternar, el('span', { class: 'quando', texto: quando ? `gerado em ${dataBR(quando)}` : '' }), el('span', { class: 'sep' }),

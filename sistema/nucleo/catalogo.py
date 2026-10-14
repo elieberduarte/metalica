@@ -446,6 +446,8 @@ def nome_do_ifc(nome) -> str:
 
 _NUM = r"(\d+(?:[.,]\d+)?)"
 _X = r"\s*[X×]\s*"
+#: famílias dos perfis dobrados (formado a frio) que a troca na compra compara pela tabela do catálogo
+_DOBRADOS = ("U", "Ue", "Z45", "Ze", "Cr")
 
 
 def _medidas(nome: str):
@@ -490,6 +492,11 @@ def _medidas_do_item(it: Item):
         if it.familia == "L" and d.get("b") and d.get("t"):
             b1, b2 = sorted((float(d["b"]), float(d.get("b2") or d["b"])), reverse=True)
             return "L", (b1, b2, float(d["t"]))
+        # os dobrados (formado a frio): a forma é a família; as medidas, alma × aba (× enrijecedor) × espessura — a troca
+        # na compra não achava parecido para a terça Ue do PRATI CD (14/10)
+        if it.familia in _DOBRADOS and d.get("d") and d.get("bf") and d.get("t"):
+            lados = (float(d["d"]), float(d["bf"])) + ((float(d["enrijecedor"]),) if d.get("enrijecedor") else ())
+            return it.familia, lados + (float(d["t"]),)
     except (KeyError, TypeError, ValueError):
         return None
     return None
@@ -665,7 +672,7 @@ def parecidos(nome, limite: int = 40) -> Optional[dict]:
         lados = (float(d.get("d") or 0.0), float(d.get("bf") or 0.0))
     else:
         lados = tuple(m[:-1])
-    fam = {"I": "I", "redondo": "tubo", "retangular": "tubo", "L": "L"}[forma]
+    fam = {"I": "I", "redondo": "tubo", "retangular": "tubo", "L": "L"}.get(forma, forma)      # o dobrado: a família é a forma
     itens_ = []
     for c in itens(fam):
         mc = _medidas_do_item(c)
@@ -684,7 +691,10 @@ def parecidos(nome, limite: int = 40) -> Optional[dict]:
         itens_.append({"nome": c.nome, "kg_m": round(float(c.massa), 3),
                        "A": round(p[0], 2) if p else None, "Ix": round(p[1], 1) if p else None, "Iy": round(p[2], 1) if p else None,
                        "atende": atende, "fabricante": ", ".join((c.dados.get("fabricantes") or [])[:2]),
-                       "_ordem": (not atende, float(c.massa), sum(abs(x - y) for x, y in zip(lc, lados)))})
+                       # os que atendem, do mais leve; os que não atendem, pelas medidas mais parecidas (a mesma peça em outra
+                       # espessura primeiro: o Ue 200×75×25×2,25 ficava fora das 40, atrás dos de 1,20 mm — PRATI CD, 14/10)
+                       "_ordem": ((0, float(c.massa), sum(abs(x - y) for x, y in zip(lc, lados))) if atende else
+                                  (1, sum(abs(x - y) for x, y in zip(lc, lados)), -float(c.massa)))})
     itens_.sort(key=lambda x: x["_ordem"])
     for x in itens_:
         x.pop("_ordem")
