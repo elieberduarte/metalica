@@ -5,7 +5,7 @@
 // (apagar as peças de antes e pôr as novas, numa entrada só).
 
 import { criar, clonar } from '../nucleo/documento.js';
-import { ComandoAdicionar, ComandoRemover, ComandoComposto } from '../nucleo/comandos.js';
+import { ComandoAdicionar, ComandoRemover, ComandoComposto, ComandoAlterar } from '../nucleo/comandos.js';
 import { trechosDoSolido, juntarMalhas, juntarBarras } from '../nucleo/explodir.js';
 
 /** "P15" → "P15.2" nas marcas da peça (a posição e o nome de produção), guardando as de antes. */
@@ -79,7 +79,27 @@ export class MetodosExplodir {
       c.inicio = j.inicio; c.fim = j.fim;
       c.recorte_inicio = 0; c.recorte_fim = 0;
       c.cortes_inicio = []; c.cortes_fim = [];
+      // as pontas de fora guardam o corte e o recorte da barra que estava nelas (o Dividir separou, o Unir devolve —
+      // revisão 14/10, F7); a emenda some
+      const perto = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1.0;
+      for (const b of ents) {
+        for (const [ponta, alvo] of [['inicio', 'inicio'], ['fim', 'fim']]) {
+          for (const [lado, onde] of [['inicio', b.inicio], ['fim', b.fim]]) {
+            if (!perto(onde, c[alvo])) continue;
+            // a mesma ponta (a barra no mesmo sentido) leva o corte daquele lado
+            const k = lado === 'inicio' ? 'cortes_inicio' : 'cortes_fim', r = lado === 'inicio' ? 'recorte_inicio' : 'recorte_fim';
+            if ((b[k] || []).length) c[ponta === 'inicio' ? 'cortes_inicio' : 'cortes_fim'] = clonar(b[k]);
+            if (b[r]) c[ponta === 'inicio' ? 'recorte_inicio' : 'recorte_fim'] = b[r];
+          }
+        }
+      }
+      if (c.atributos) delete c.atributos.emenda_de;
       nova = criar(c);
+      // os marcadores de furo das barras unidas passam para a barra nova
+      const unidas = new Set(ents.map(e => e.id));
+      this._furosReligados = [...this.documento.entidades.values()]
+        .filter(m => m.atributos && m.atributos.furo && unidas.has(m.atributos.furo.peca))
+        .map(m => ({ id: m.id, atributos: { ...m.atributos, furo: { ...m.atributos.furo, peca: nova.id } } }));
     } else if (ents.every(e => e.tipo === 'solido')) {
       // na ordem dos trechos, quando vieram de um explodir
       const ordem = ents.slice().sort((a, b) => (((a.atributos || {}).trecho_de || {}).ordem || 0) - (((b.atributos || {}).trecho_de || {}).ordem || 0));
@@ -101,7 +121,9 @@ export class MetodosExplodir {
       return;
     }
     this.selecao.limpar();
-    this.executar(new ComandoComposto([new ComandoRemover(ents.map(e => e.id)), new ComandoAdicionar([nova])],
+    const religar = (this._furosReligados || []).map(r => new ComandoAlterar(r.id, { atributos: r.atributos }, 'Furo na barra unida'));
+    this._furosReligados = null;
+    this.executar(new ComandoComposto([new ComandoRemover(ents.map(e => e.id)), new ComandoAdicionar([nova]), ...religar],
       `Juntar ${ents.length} peças`));
     this.selecao.definir([nova.id]);
     this.dica(`${ents.length} peças juntadas em uma.`);

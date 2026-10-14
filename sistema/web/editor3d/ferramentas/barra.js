@@ -20,6 +20,10 @@ export class FerramentaBarra extends Ferramenta {
   static dica = 'Clique no início da barra';
   //: rotação da seção (°) das próximas barras — a boca do U, a aba da cantoneira
   static rotacao = 0;
+  //: ponto de inserção (F6, 14/10): o que fica na linha dos cliques — na altura (eixo, face de cima, meio, face de baixo)
+  //: e na largura (eixo, face esquerda, meio, face direita; esquerda olhando do 1º clique para o 2º), mais os afastamentos
+  //: em mm (para cima e para a esquerda). A terça pela face de baixo sobre o banzo, a viga pelo topo no nível.
+  static insercao = { altura: 'eixo', largura: 'eixo', da: 0, dl: 0 };
   static icone = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 <path d="M4 4.5h6M7 4.5v15M4 19.5h6"/><path d="M14 8.5h6M17 8.5v7M14 15.5h6"/><path d="M10.5 12h3" stroke-dasharray="2 1.5"/></svg>`;
 
@@ -58,6 +62,28 @@ export class FerramentaBarra extends Ferramenta {
   get papelAtivo() { return (this.editor && this.editor.papelAtivo) || 'viga'; }
 
   get rotacaoAtiva() { return this.constructor.rotacao || 0; }
+
+  get insercao() { return { altura: 'eixo', largura: 'eixo', da: 0, dl: 0, ...(this.constructor.insercao || {}) }; }
+
+  /**
+   * O eixo da barra para a linha clicada de `a` a `b`: a seção (na base da barra, com a rotação) é levada para que o
+   * ponto escolhido dela fique na linha, mais os afastamentos. O modelo continua guardando o eixo do perfil — o cálculo, o
+   * IFC e o detalhamento leem a barra como sempre. {a, b, desloc}.
+   */
+  eixoDaInsercao(a, b) {
+    const ins = this.insercao;
+    if (ins.altura === 'eixo' && ins.largura === 'eixo' && !ins.da && !ins.dl) return { a, b, desloc: [0, 0, 0] };
+    if (C.iguais(a, b, 1e-6)) return { a, b, desloc: [0, 0, 0] };
+    const contorno = C.secaoDoPerfil(this.registroDoPerfil, this.editor && this.editor.cena, this.perfilAtivo);
+    const xs = contorno.map(q => q[0]), ys = contorno.map(q => q[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    // u aponta para a esquerda de quem anda do 1º clique para o 2º (u = z × t); v para cima
+    const refL = { eixo: 0, esquerda: x1, meio: (x0 + x1) / 2, direita: x0 }[ins.largura] || 0;
+    const refA = { eixo: 0, cima: y1, meio: (y0 + y1) / 2, baixo: y0 }[ins.altura] || 0;
+    const { u, v } = baseDaBarra(a, b, this.rotacaoAtiva);
+    const desloc = C.add(C.mul(u, -refL + (ins.dl || 0)), C.mul(v, -refA + (ins.da || 0)));
+    return { a: C.add(a, desloc), b: C.add(b, desloc), desloc };
+  }
 
   dicaComPerfil(texto) {
     const rot = this.rotacaoAtiva ? ` · ${this.rotacaoAtiva}°` : '';
@@ -110,6 +136,30 @@ export class FerramentaBarra extends Ferramenta {
                    v => { this.constructor.rotacao = +v; aoTrocar(); },
                    'Giro da seção no próprio eixo: a boca do U, a aba da cantoneira (o Virar perfil muda depois)'));
     raiz.append(g);
+    // o ponto de inserção: o que fica na linha dos cliques
+    const ins = this.constructor.insercao = { ...this.insercao };
+    const opc = (pares, atual, fn, titulo) => {
+      const s = el('select', { title: titulo });
+      for (const [v, t] of pares) s.append(el('option', { value: v, texto: t }));
+      s.value = atual;
+      s.addEventListener('change', () => fn(s.value));
+      return s;
+    };
+    const num_ = (chave, titulo) => {
+      const i = el('input', { type: 'number', step: '1', value: String(ins[chave] || 0), title: titulo, style: 'width:5em' });
+      i.addEventListener('change', () => { ins[chave] = +i.value || 0; aoTrocar(); });
+      return i;
+    };
+    const gi = el('div', { class: 'campos' });
+    gi.append(el('label', { texto: 'Na altura' }),
+              opc([['eixo', 'eixo do perfil'], ['cima', 'face de cima na linha'], ['meio', 'meio da altura na linha'], ['baixo', 'face de baixo na linha']],
+                  ins.altura, v => { ins.altura = v; aoTrocar(); }, 'O que fica na linha dos cliques, na altura da seção (a terça sobre o banzo: face de baixo)'),
+              el('label', { texto: 'Na largura' }),
+              opc([['eixo', 'eixo do perfil'], ['esquerda', 'face esquerda na linha'], ['meio', 'meio da largura na linha'], ['direita', 'face direita na linha']],
+                  ins.largura, v => { ins.largura = v; aoTrocar(); }, 'O que fica na linha dos cliques, na largura (esquerda olhando do 1º clique para o 2º)'),
+              el('label', { texto: 'Afastamentos (mm)' }),
+              el('span', {}, '↑ ', num_('da', 'Afastamento para cima (na altura da seção), mm'), '  ← ', num_('dl', 'Afastamento para a esquerda (na largura), mm')));
+    raiz.append(el('div', { class: 'grupo-campos' }, el('h4', { texto: 'Ponto de inserção' }), gi));
     const usados = this._usadosNoModelo().slice(0, 12);
     if (usados.length) {
       const box = el('div', { class: 'acoes' });
@@ -204,11 +254,12 @@ export class FerramentaBarra extends Ferramenta {
   }
 
   criar(a, b) {
+    const ei = this.eixoDaInsercao(a, b);
     const ent = {
       tipo: 'barra', id: C.novoId('b'),
       nome: '', camada: (this.editor && this.editor.camadaAtiva) || 'Estrutura',
       material: '', visivel: true, bloqueada: false, grupo: '',
-      inicio: C.copiar(a), fim: C.copiar(b),
+      inicio: C.copiar(ei.a), fim: C.copiar(ei.b),
       perfil: this.perfilAtivo, rotacao: this.rotacaoAtiva,
       papel: this.papelAtivo, aco: this.acoAtivo,
       recorte_inicio: 0, recorte_fim: 0, atributos: {},
@@ -248,13 +299,15 @@ export class FerramentaBarra extends Ferramenta {
     if (C.iguais(a, b, 1e-6)) { this.previa(g); return; }
     const ref = this.referencial(a, b);
     const contorno = C.secaoDoPerfil(this.registroDoPerfil, this.editor && this.editor.cena, this.perfilAtivo);
-    const sa = this.secaoEm(a, ref, contorno);
-    const sb = this.secaoEm(b, ref, contorno);
+    const ei = this.eixoDaInsercao(a, b);
+    const sa = this.secaoEm(ei.a, ref, contorno);
+    const sb = this.secaoEm(ei.b, ref, contorno);
     const cor = this.eixo ? C.EIXOS[this.eixo].cor : C.CORES.estrutura;
     g.add(C.gLinha(sa, cor, { fechada: true }));
     g.add(C.gLinha(sb, cor, { fechada: true }));
     for (let i = 0; i < sa.length; i++) g.add(C.gLinha([sa[i], sb[i]], cor));
     g.add(C.gLinha([a, b], C.CORES.desenho, { tracejada: true }));
+    if (C.comp(ei.desloc) > 0.5) g.add(C.gLinha([ei.a, ei.b], C.CORES.guia, { tracejada: true }));   // o eixo do perfil
     const L = C.dist(a, b);
     const reg = this.registroDoPerfil;
     const peso = reg && reg.massa

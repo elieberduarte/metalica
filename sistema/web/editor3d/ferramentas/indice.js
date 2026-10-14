@@ -30,6 +30,8 @@ const ARQUIVOS = [
   ['./parafuso.js', 'estrutura'],
   ['./furo.js', 'estrutura'],
   ['./encaixar.js', 'estrutura'],
+  ['./estender.js', 'estrutura'],
+  ['./dividir.js', 'estrutura'],
   ['./virar.js', 'estrutura'],
 ];
 
