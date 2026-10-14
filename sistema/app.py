@@ -57,6 +57,7 @@ Rotas da API:
     GET  /api/modelo/ligacoes-3d                               as ligações da biblioteca que se põem no 3D
     POST /api/modelo/ligacao {documento, tipo, ids, parametros, ligacao}   aplica (ou refaz) a ligação nas barras
     POST /api/modelo/ligacao/remover {documento, ligacao}      apaga a ligação e devolve as barras
+    POST /api/modelo/conferencia {documento, ids, quais}       colisão, execução das ligações e produção
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
     GET  /api/projetos/<slug>/analise-estrutural   a análise do modelo (o último cálculo); POST {parametros} calcula
          (nucleo3d/analise_estrutural.py; tela /analise-estrutural — o unifilar, as cargas, os esforços e as reações)
@@ -4186,6 +4187,15 @@ def aplicar_ligacao(corpo: dict) -> dict:
                               esforcos=corpo.get("esforcos") or None, analise=analise)
 
 
+def conferir_modelo(corpo: dict) -> dict:
+    """POST /api/modelo/conferencia {documento, ids, quais}: colisão pela forma, execução das ligações (borda, passo,
+    parafuso sem furo, furo sem parafuso, espaço da chave) e produção (sem marca, a conferir, fora da lista, sem peça
+    principal) — nucleo3d/conferencia_producao.py; com `ids`, a colisão e a execução só na região deles."""
+    from nucleo3d import conferencia_producao
+    quais = tuple(corpo.get("quais") or ("colisao", "execucao", "producao"))
+    return conferencia_producao.conferir(_documento_de(corpo), quais=quais, ids=corpo.get("ids") or None)
+
+
 def remover_ligacao(corpo: dict) -> dict:
     """POST /api/modelo/ligacao/remover {documento, ligacao}: as peças da ligação saem e as barras voltam como eram."""
     from nucleo3d import ligacoes3d
@@ -4965,6 +4975,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(aplicar_ligacao(corpo))
             if rota == "/api/modelo/ligacao/remover":
                 return self._json(remover_ligacao(corpo))
+            if rota == "/api/modelo/conferencia":
+                return self._json(conferir_modelo(corpo))
             if rota == "/api/lento":
                 # a janela conta o que a segurou (web/lentidao.js): fica no registro para
                 # achar o travamento que ninguém reproduz

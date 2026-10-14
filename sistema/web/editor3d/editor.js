@@ -45,6 +45,7 @@ import { MetodosEdicaoChapa } from './modulos/edicao_chapa.js';
 import { MetodosPadrao3D } from './modulos/padrao_3d.js';
 import { MetodosProducao } from './modulos/producao.js';
 import { MetodosLigacoes } from './modulos/ligacoes.js';
+import { MetodosConferencia } from './modulos/conferencia.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -1959,6 +1960,7 @@ export class Editor {
       'alternar-tema': () => this.alternarTema(),
       desempenho: () => this.dialogoDesempenho(),
       'verificar-apoios': () => this.verificarApoios(),
+      'conferir-producao': () => this.conferirAntesDeDetalhar(),
       'cobertura-aberta': () => this.coberturaRetratil('aberta'),
       'cobertura-retraida': () => this.coberturaRetratil('retraida'),
       esqueleto: () => this.alternarEsqueleto(),
@@ -2450,7 +2452,7 @@ export class Editor {
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
   MetodosApoios, MetodosBloco, MetodosBarrasDoBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D,
-  MetodosProducao, MetodosLigacoes);
+  MetodosProducao, MetodosLigacoes, MetodosConferencia);
 
 // ================================================================= apoio
 
