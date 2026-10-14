@@ -26,6 +26,8 @@ W = "W 310×38,7"
 doc = Documento()
 doc.add(Barra(nome="pilar", inicio=(0, 0, 0), fim=(0, 0, 4000), perfil=W, rotacao=90, papel="pilar"))
 doc.add(Barra(nome="viga", inicio=(0, 0, 3500), fim=(0, 6000, 3500), perfil=W, papel="viga"))
+doc.add(Barra(nome="banzo", inicio=(10000, -3000, 0), fim=(10000, 3000, 0), perfil="W 250×32,7", papel="banzo"))
+doc.add(Barra(nome="terca", inicio=(7000, 0, 222), fim=(13000, 0, 222), perfil="Ue 150×60×20×2,25", papel="terça"))
 json.dump(doc.dict(), open(os.path.join(PASTA, "modelo.json"), "w", encoding="utf-8"), ensure_ascii=False)
 
 srv = subprocess.Popen([sys.executable, os.path.join(BASE, "app.py"), "--sem-navegador", "--porta", str(PORTA), "--dados", DADOS],
@@ -53,7 +55,7 @@ try:
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=900, deviceScaleFactor=1, mobile=False)
     aba.navegar(f"http://localhost:{PORTA}/editor?projeto=lig", limite=60)
     t0 = time.time()
-    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 2)"):
+    while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 4)"):
         aba.drenar(0.5)
     aba.drenar(1.0)
     aba.console.clear()
@@ -97,13 +99,23 @@ try:
     ok(esperar("editor.el.dialogo.open", 20), "o diálogo abriu de novo")
     ok(js("editor.el.dialogoCorpo.querySelector('select').value") == "chapa_topo_joelho", "viga + pilar sugere a chapa de topo")
     js("editor.el.dialogoOk.click(); 1")
-    ok(esperar("[...editor.documento.entidades.values()].filter(e => e.tipo === 'chapa').length === 2"), "a chapa de topo entrou")
+    ok(esperar("[...editor.documento.entidades.values()].some(e => e.nome === 'Chapa de topo')"), "a chapa de topo entrou")
     topo = next((c for c in chapas() if c["nome"] == "Chapa de topo"), None)
     ok(topo and abs(topo["origem"][1] - 155) < 0.01 and len(topo["furos"]) == 8, "chapa de topo na mesa do pilar com 8 furos")
     viga = ent(ids["viga"])
     ok(viga and viga["cortes_inicio"] and abs(viga["cortes_inicio"][0]["ponto"][1] - 180.4) < 0.01, "a viga cortada na face da chapa")
     ok(jsj("return [...editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.parafuso).length;") == 8, "8 parafusos")
     erros("Chapa de topo")
+
+    # 2b) a cadeirinha da terça no banzo
+    selecionar(ids["terca"], ids["banzo"]); menu("aplicar-ligacao")
+    ok(esperar("editor.el.dialogo.open", 20), "o diálogo abriu para a terça")
+    ok(js("editor.el.dialogoCorpo.querySelector('select').value") == "suporte_terca_cadeirinha", "terça + banzo sugere a cadeirinha")
+    js("editor.el.dialogoOk.click(); 1")
+    ok(esperar("[...editor.documento.entidades.values()].some(e => e.nome === 'Suporte de terça (base)')"), "a cadeirinha entrou")
+    n_par = jsj("return [...editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.parafuso).length;")
+    ok(n_par == 12, f"4 parafusos da cadeirinha além dos 8 da chapa de topo: {n_par}")
+    erros("Cadeirinha")
 
     # 3) painel da ligação: trocar a espessura refaz
     lid = topo["atributos"]["ligacao"]["id"]

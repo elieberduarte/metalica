@@ -26,6 +26,10 @@ TIPOS_3D = {
     "placa_base_engastada": {"pede": "um pilar (ou vários)", "barras": ("pilar",)},
     "chapa_topo_joelho": {"pede": "uma viga e o pilar em que ela chega", "barras": ("viga", "pilar")},
     "tesoura_topo_pilar": {"pede": "um pilar e a viga ou o banzo que apoia no topo dele", "barras": ("pilar", "viga")},
+    "suporte_terca_cadeirinha": {"pede": "as terças e os banzos (ou vigas) em que elas apoiam — uma cadeirinha em "
+                                         "cada cruzamento", "barras": ("terca", "apoio")},
+    "ligacao_flexivel": {"pede": "a viga apoiada e o pilar ou a viga em que ela chega", "barras": ("viga", "apoio")},
+    "emenda_banzo": {"pede": "as duas metades do banzo, na mesma reta", "barras": ("barra", "barra")},
 }
 
 
@@ -277,6 +281,299 @@ def _topo_pilar(pilar, viga, p):
             "conjuntos": [(pilar, [ch5]), (viga, [ch6])], "soldas": soldas, "parametros": params, "avisos": []}
 
 
+# ------------------------------------------------------------------ apoio comum: a malha da barra
+
+def _malha(b):
+    from nucleo3d.geometria import malha_barra
+    v, _f = malha_barra(b)
+    return v
+
+
+def _extremos(b, n):
+    """(mín, máx) da malha da barra ao longo de n"""
+    pr = [_dot(q, n) for q in _malha(b)]
+    return min(pr), max(pr)
+
+
+def _lado_da_alma(b, n):
+    """-1 ou +1: o lado (ao longo de n) em que a seção tem a face mais alta — a alma do U, do Ue, do C — e a
+    coordenada dessa face; para o I (as duas iguais) devolve 0 e o centro"""
+    from nucleo3d.geometria import malha_barra, area_face
+    vs, fs = malha_barra(b)
+    pr = [_dot(q, n) for q in vs]
+    lo, hi = min(pr), max(pr)
+
+    def area(alvo):
+        # a área das faces deitadas no plano do extremo: a alma é uma face cheia; do lado aberto do Ue só as tiras
+        # dos enrijecedores (a altura total das duas seria igual à da alma)
+        return sum(area_face([vs[i] for i in f]) for f in fs if len(f) >= 3 and all(abs(pr[i] - alvo) < 1.0 for i in f))
+    a_lo, a_hi = area(lo), area(hi)
+    if abs(a_lo - a_hi) <= 0.05 * max(a_lo, a_hi, 1.0):
+        return 0, (lo + hi) / 2.0
+    return (-1, lo) if a_lo > a_hi else (1, hi)
+
+
+def _cruzamento(a, b):
+    """os pontos mais próximos entre os eixos de a e de b: (pa, ta, pb, tb), t em fração do comprimento"""
+    d1, d2 = _sub(a.fim, a.inicio), _sub(b.fim, b.inicio)
+    r = _sub(a.inicio, b.inicio)
+    A, B, C = _dot(d1, d1), _dot(d1, d2), _dot(d2, d2)
+    D, E = _dot(d1, r), _dot(d2, r)
+    den = A * C - B * B
+    if abs(den) < 1e-9:
+        raise ErroDeDados("as barras são paralelas: não se cruzam")
+    ta = (B * E - C * D) / den
+    tb = (A * E - B * D) / den
+    return _add(a.inicio, _mul(d1, ta)), ta, _add(b.inicio, _mul(d2, tb)), tb
+
+
+def _eixo_secao_mais_perto(b, direcao):
+    """o eixo da seção (±u, ±v) mais perto de `direcao`: (vetor, 'u'|'v')"""
+    u, v, _ = _triedro(b)
+    cands = [(u, "u"), (_mul(u, -1.0), "u"), (v, "v"), (_mul(v, -1.0), "v")]
+    return max(cands, key=lambda c: _dot(c[0], direcao))
+
+
+# ------------------------------------------------------------------ suporte de terça (cadeirinha)
+
+def _cadeirinha(terca, banzo, p):
+    """A cadeirinha no cruzamento da terça com o banzo: a base deitada soldada no topo do banzo e a chapa em pé
+    soldada nela, encostada por fora na alma da terça, com os oblongos na furação da máquina (50 × 60 até a terça de
+    200 mm, 100 × 60 acima). Peças do conjunto do banzo (a tesoura)."""
+    from nucleo.acessorios import d_parafuso_mm, furo_mm
+    pt_, pb_ = _perfil(terca.perfil), _perfil(banzo.perfil)
+    Pt, ta, Pb, tb = _cruzamento(terca, banzo)
+    if not (-0.02 <= ta <= 1.02 and -0.02 <= tb <= 1.02):
+        raise ErroDeDados("a terça %s não passa sobre o banzo %s" % (terca.nome or terca.id, banzo.nome or banzo.id))
+    sobe = _sub(Pt, Pb)
+    wb = _norm(_sub(banzo.fim, banzo.inicio))
+    sobe = _sub(sobe, _mul(wb, _dot(sobe, wb)))
+    if math.sqrt(_dot(sobe, sobe)) < 1.0:
+        sobe = (0.0, 0.0, 1.0)
+    nb, _ = _eixo_secao_mais_perto(banzo, _norm(sobe))
+    _lo, topo = _extremos(banzo, nb)
+    T0 = _add(Pb, _mul(nb, topo - _dot(Pb, nb)))            # o topo do banzo no cruzamento
+    wt = _norm(_sub(terca.fim, terca.inicio))
+    ex7 = _norm(_sub(wt, _mul(nb, _dot(wt, nb))))           # ao longo da terça, no plano do topo
+    s = _cruz(nb, ex7)                                      # atravessado (ao longo do banzo)
+    lado, f = _lado_da_alma(terca, s)
+    if lado == 0:
+        raise ErroDeDados("a terça %s não tem alma de um lado só (perfil %s): a cadeirinha é para U, Ue ou C"
+                          % (terca.nome or terca.id, terca.perfil))
+    t = float(p.get("t") or 4.75)
+    B = float(p.get("largura") or 150.0)
+    bl, bb, bt = float(p.get("base_l") or 153.0), float(p.get("base_b") or 44.0), float(p.get("base_t") or 3.0)
+    dt = float(pt_.d or 150)
+    gv = float(p.get("gab_v") or (100.0 if dt > 200.0 else 50.0))
+    gh = float(p.get("gab_h") or 60.0)
+    borda = float(p.get("borda_topo") or 30.0)
+    n = int(p.get("n_parafusos") or 4)
+    nome_par = str(p.get("parafuso") or "M12")
+    d, fd = d_parafuso_mm(nome_par), furo_mm(nome_par)
+    classe = str(p.get("classe") or "ASTM A307")
+    oblongo = p.get("oblongo", "horizontal")
+    # a altura do centro da alma da terça acima da base: os furos centrados nela
+    yc = _dot(_sub(Pt, T0), nb) - bt
+    ys = [yc + gv / 2.0, yc - gv / 2.0] if n >= 4 else [yc]
+    H = float(p.get("altura") or 0.0)
+    H = max(H, _acima(max(ys) + borda, 5.0))
+    avisos = []
+    if min(ys) < 15.0:
+        avisos.append("a terça está baixa demais para a cadeirinha (furo a %.0f mm da base)" % min(ys))
+    xs = [B / 2.0 - gh / 2.0, B / 2.0 + gh / 2.0] if n >= 2 else [B / 2.0]
+    centro_s = f + lado * t / 2.0                            # o plano médio da chapa em pé, por fora da alma
+    desl_s = centro_s - _dot(T0, s)
+    base_ch = _add(T0, _mul(s, desl_s))
+    o7 = _add(_add(base_ch, _mul(nb, bt)), _mul(ex7, -B / 2.0))
+    from nucleo3d.modelo import Chapa
+    if oblongo in ("horizontal", "vertical"):
+        comp = fd + 12.0
+        furos = [{"x": round(x, 2), "y": round(y, 2), "largura": comp if oblongo == "horizontal" else fd,
+                  "altura": fd if oblongo == "horizontal" else comp} for y in ys for x in xs]
+    else:
+        furos = [{"x": round(x, 2), "y": round(y, 2), "diametro": fd} for y in ys for x in xs]
+    aco = str(p.get("aco") or "ASTM A36")
+    ch7 = Chapa(nome="Suporte de terça (chapa)", origem=o7, eixo_x=ex7, eixo_y=nb,
+                contorno=[(0.0, 0.0), (B, 0.0), (B, H), (0.0, H)], espessura=t, centrada=True, furos=furos,
+                camada="Chapas", material="Aço", aco=aco, atributos={"tipo_ifc": "IfcPlate"})
+    o8 = _add(_add(base_ch, _mul(ex7, -bl / 2.0)), _mul(s, -bb / 2.0))
+    ch8 = _chapa("Suporte de terça (base)", o8, ex7, s, bl, bb, bt, [], aco=aco)
+    pars = []
+    twt = float(pt_.tw or 2.25)
+    s_meio = f + lado * (t - twt) / 2.0                      # o meio da pega: chapa por fora + alma
+    for y in ys:
+        for x in xs:
+            h = _add(o7, _add(_mul(ex7, x), _mul(nb, y)))
+            c = _add(h, _mul(s, s_meio - _dot(h, s)))
+            pars.append(_parafuso(c, s, d, t + twt, classe))
+    from nucleo2d.detalhe.soldas import _perna
+    tfb = float(pb_.tf or pb_.tw or 3.0)
+    soldas = [(banzo.id, ch8, {"tipo": "filete", "perna": _perna(tfb, bt), "lados": 1, "local": "fabrica", "forma": "sobreposição"})]
+    params = dict(p, largura=B, altura=H, t=t, base_l=bl, base_b=bb, base_t=bt, gab_v=gv, gab_h=gh,
+                  n_parafusos=n, parafuso=nome_par, classe=classe, oblongo=oblongo, t_terca=twt)
+    return {"pecas": [ch7, ch8] + pars, "alterar": {}, "ajustes": {}, "conjuntos": [(banzo, [ch7, ch8])],
+            "soldas": soldas, "soldas_entre": [(ch7, ch8, {"tipo": "filete", "perna": _perna(t, bt), "lados": 2,
+                                                          "local": "fabrica", "forma": "T"})],
+            "parametros": params, "avisos": avisos}
+
+
+# ------------------------------------------------------------------ ligação flexível (duas cantoneiras)
+
+def _face_do_apoio(apoio, no, dirv):
+    """a face do apoio (pilar ou viga) que olha para a ponta da viga: (normal para a viga, ponto da face no eixo
+    do nó, espessura da parede, 'mesa'|'alma')"""
+    pa = _perfil(apoio.perfil)
+    wa = _norm(_sub(apoio.fim, apoio.inicio))
+    horiz = _sub(dirv, _mul(wa, _dot(dirv, wa)))
+    if math.sqrt(_dot(horiz, horiz)) < 0.2:
+        raise ErroDeDados("a viga corre ao longo do apoio: não há face para ligar")
+    nf, eixo = _eixo_secao_mais_perto(apoio, _norm(horiz))
+    q = _add(apoio.inicio, _mul(wa, _dot(_sub(no, apoio.inicio), wa)))
+    if eixo == "v":
+        return nf, _add(q, _mul(nf, float(pa.d or 200) / 2.0)), float(pa.tf or 8), "mesa"
+    return nf, _add(q, _mul(nf, float(pa.tw or 6) / 2.0)), float(pa.tw or 6), "alma"
+
+
+def _cantoneira_no_canto(perfil, a, heel, d1, d2, comp):
+    """a Barra de cantoneira de eixo `a`, comprimento `comp` centrada no `heel`, com as abas para d1 e para d2 (a
+    rotação achada pela malha, como no suporte da Montagem)"""
+    from nucleo3d.modelo import Barra
+    melhor = None
+    for rot in (0.0, 90.0, 180.0, 270.0):
+        b = Barra(inicio=(0.0, 0.0, 0.0), fim=_mul(a, comp), perfil=perfil, rotacao=rot)
+        pts = [(_dot(q, d1), _dot(q, d2)) for q in _malha(b)]
+        x0, y0 = min(p_[0] for p_ in pts), min(p_[1] for p_ in pts)
+        x1, y1 = max(p_[0] for p_ in pts), max(p_[1] for p_ in pts)
+        tol = 1.0
+        canto_cheio = any(abs(p_[0] - x0) < tol and abs(p_[1] - y0) < tol for p_ in pts)
+        canto_vazio = not any(abs(p_[0] - x1) < tol and abs(p_[1] - y1) < tol for p_ in pts)
+        if canto_cheio and canto_vazio:
+            melhor = (rot, x0, y0)
+            break
+    if melhor is None:
+        raise ErroDeDados("não consegui virar a cantoneira %s no canto da ligação" % perfil)
+    rot, x0, y0 = melhor
+    base = _add(_add(heel, _mul(d1, -x0)), _mul(d2, -y0))
+    return Barra(nome="Cantoneira de ligação", inicio=_add(base, _mul(a, -comp / 2.0)), fim=_add(base, _mul(a, comp / 2.0)),
+                 perfil=perfil, rotacao=rot, papel="suporte", camada="Chapas", material="Aço",
+                 atributos={"tipo_ifc": "IfcMember"})
+
+
+def _flexivel(viga, apoio, p):
+    """Duas cantoneiras abraçando a alma da viga, parafusadas na alma dela e na face do apoio (a mesa do pilar ou a
+    alma da viga principal); a viga fica 10 mm antes da face."""
+    from nucleo.acessorios import d_parafuso_mm, furo_mm
+    pv = _perfil(viga.perfil)
+    eixo_a = _norm(_sub(apoio.fim, apoio.inicio))
+    ponta, no, outro = _ponta_perto(viga, apoio.inicio, eixo_a)
+    dirv = _norm(_sub(outro, no))
+    nf, F, parede, face = _face_do_apoio(apoio, no, dirv)
+    if _dot(dirv, nf) < 0.3:
+        raise ErroDeDados("a viga chega muito inclinada na face do apoio")
+    folga = float(p.get("folga") or 10.0)
+    perfil_l = str(p.get("cantoneira") or "L 3'' X 5/16''")
+    pl = _perfil(perfil_l)
+    t_l = float(pl.tf or pl.tw or 7.94)
+    n = int(p.get("n_parafusos") or 3)
+    pas = float(p.get("passo") or 76.0)
+    Hc = (n - 1) * pas + 70.0
+    nome_par = str(p.get("parafuso") or '3/4"')
+    d, fd = d_parafuso_mm(nome_par), furo_mm(nome_par)
+    classe = str(p.get("classe") or "ASTM A325")
+    uv, vv, _ = _triedro(viga)
+    s = _norm(_sub(uv, _mul(nf, _dot(uv, nf))))             # atravessado à alma da viga
+    a = _norm(_cruz(nf, s))                                  # ao longo das cantoneiras (a "altura")
+    # o eixo da viga na face do apoio
+    X = _add(no, _mul(dirv, _dot(_sub(F, no), nf) / _dot(dirv, nf)))
+    twv = float(pv.tw or 6.0)
+    avisos = []
+    if Hc > float(pv.d or 0) - 2 * float(pv.tf or 0):
+        avisos.append("as cantoneiras (%g mm) passam da altura livre da alma da viga" % Hc)
+    if abs(eixo_a[2]) < 0.7:
+        avisos.append("viga apoiada em viga: as mesas da viga apoiada pedem recorte (cope) para não bater na mesa da principal")
+    pecas, pars = [], []
+    gauge = 45.0
+    for lado in (1.0, -1.0):
+        sd = _mul(s, lado)
+        heel = _add(X, _mul(sd, twv / 2.0))
+        pecas.append(_cantoneira_no_canto(perfil_l, a, heel, sd, nf, Hc))
+    alturas = [(i - (n - 1) / 2.0) * pas for i in range(n)]
+    for h in alturas:
+        # na alma da viga: atravessa as duas cantoneiras e a alma
+        c = _add(_add(X, _mul(nf, gauge)), _mul(a, h))
+        pars.append(_parafuso(c, s, d, 2 * t_l + twv, classe))
+        for lado in (1.0, -1.0):
+            c2 = _add(_add(X, _mul(s, lado * (twv / 2.0 + gauge))), _mul(a, h))
+            c2 = _add(c2, _mul(nf, (t_l - parede) / 2.0))
+            pars.append(_parafuso(c2, nf, d, t_l + parede, classe))
+    chave = "cortes_inicio" if ponta == "inicio" else "cortes_fim"
+    rec = "recorte_inicio" if ponta == "inicio" else "recorte_fim"
+    ajustes = {viga.id: {chave: copy.deepcopy(getattr(viga, chave) or []), rec: float(getattr(viga, rec) or 0.0)}}
+    alterar = {viga.id: {chave: [{"normal": _r(nf, 6), "ponto": _r(_sub(_add(F, _mul(nf, folga)), no), 3)}], rec: 0.0}}
+    params = dict(p, viga=viga.perfil, cantoneira=perfil_l, n_parafusos=n, passo=pas, parafuso=nome_par, classe=classe,
+                  folga=folga)
+    return {"pecas": pecas + pars, "alterar": alterar, "ajustes": ajustes, "conjuntos": [], "soldas": [],
+            "parametros": params, "avisos": avisos}
+
+
+# ------------------------------------------------------------------ emenda de banzo (talas)
+
+def _emenda_banzo(a, b, p):
+    """Duas talas, uma de cada lado da alma, na junta de duas barras na mesma reta (a tesoura que sai em duas
+    metades); parafusos dos dois lados da junta."""
+    from nucleo.acessorios import d_parafuso_mm, furo_mm
+    wa = _norm(_sub(a.fim, a.inicio))
+    if abs(abs(_dot(wa, _norm(_sub(b.fim, b.inicio)))) - 1.0) > 1e-3:
+        raise ErroDeDados("a emenda pede duas barras na mesma reta")
+    pontas = sorted(((math.dist(pa, pb), pa, pb) for pa in (a.inicio, a.fim) for pb in (b.inicio, b.fim)), key=lambda t_: t_[0])
+    gap, pa, pb = pontas[0]
+    if gap > 100.0:
+        raise ErroDeDados("as duas barras estão %.0f mm afastadas: a emenda é na junta delas" % gap)
+    J = _mul(_add(pa, pb), 0.5)
+    pf = _perfil(a.perfil)
+    u, v, _ = _triedro(a)
+    lado, f = _lado_da_alma(a, u)
+    tw = float(pf.tw or 3.0)
+    centro_alma = (_dot(J, u)) if lado == 0 else f - lado * tw / 2.0
+    t = float(p.get("t") or 6.35)
+    Lc = float(p.get("comprimento_tala") or 400.0)
+    B = float(p.get("largura_tala") or 120.0)
+    livre = float(pf.d or 150) - 2 * float(pf.tf or 3) - 10.0
+    avisos = []
+    if B > livre:
+        avisos.append("tala de %g mm reduzida para %g (altura livre da alma)" % (B, livre))
+        B = max(40.0, livre)
+    n = int(p.get("n_por_lado") or 3)
+    pas = float(p.get("passo") or 60.0)
+    nome_par = str(p.get("parafuso") or "M16")
+    d, fd = d_parafuso_mm(nome_par), furo_mm(nome_par)
+    classe = str(p.get("classe") or "ASTM A325")
+    xs = [Lc / 2.0 + sx * (40.0 + i * pas) for sx in (-1, 1) for i in range(n)]
+    if max(xs) + 25.0 > Lc:
+        Lc = _acima(max(xs) + 30.0, 10.0)
+        xs = [Lc / 2.0 + sx * (40.0 + i * pas) for sx in (-1, 1) for i in range(n)]
+    furos = [(x, B / 2.0, fd) for x in xs]
+    aco = str(p.get("aco") or "ASTM A36")
+    talas = []
+    Ju = _add(J, _mul(u, centro_alma - _dot(J, u)))
+    for sx in (1.0, -1.0):
+        c = _add(Ju, _mul(u, sx * (tw / 2.0)))
+        ex, ey = wa, v
+        # a tala cresce para fora da alma: normal ex × ey = ±u
+        if _dot(_cruz(ex, ey), _mul(u, sx)) < 0:
+            ey = _mul(v, -1.0)
+        o = _add(_add(c, _mul(ex, -Lc / 2.0)), _mul(ey, -B / 2.0))
+        talas.append(_chapa("Tala de emenda", o, ex, ey, Lc, B, t, furos, aco=aco))
+    pars = []
+    for x in xs:
+        c = _add(_add(Ju, _mul(wa, x - Lc / 2.0)), (0.0, 0.0, 0.0))
+        pars.append(_parafuso(c, u, d, 2 * t + tw, classe))
+    params = dict(p, comprimento_tala=Lc, largura_tala=B, t=t, n_por_lado=n, passo=pas, parafuso=nome_par,
+                  classe=classe, t_banzo=tw)
+    return {"pecas": talas + pars, "alterar": {}, "ajustes": {}, "conjuntos": [], "soldas": [],
+            "parametros": params, "avisos": avisos}
+
+
 # ------------------------------------------------------------------ escolher as barras
 
 def _barras_para(doc, tipo, ids):
@@ -288,6 +585,8 @@ def _barras_para(doc, tipo, ids):
         if not barras:
             raise ErroDeDados("selecione %s" % TIPOS_3D[tipo]["pede"])
         return [[b] for b in barras]
+    if pede == ("terca", "apoio"):
+        return _pares_terca_apoio(barras)
     if len(barras) != 2:
         raise ErroDeDados("selecione %s (duas barras)" % TIPOS_3D[tipo]["pede"])
     a, b = barras
@@ -302,7 +601,41 @@ def _barras_para(doc, tipo, ids):
         if vertical(b) and not vertical(a):
             a, b = b, a
         return [[a, b]]
+    if pede == ("viga", "apoio"):
+        # a apoiada é a que tem a ponta mais perto do eixo da outra
+        def ponta_no_eixo(x, y):
+            w = _norm(_sub(y.fim, y.inicio))
+            def dist(q):
+                r = _sub(q, y.inicio)
+                return math.sqrt(max(0.0, _dot(r, r) - _dot(r, w) ** 2))
+            return min(dist(x.inicio), dist(x.fim))
+        if ponta_no_eixo(b, a) < ponta_no_eixo(a, b):
+            a, b = b, a
+        return [[a, b]]
     return [[a, b]]
+
+
+def _pares_terca_apoio(barras):
+    """cada cruzamento de uma terça (papel terça/longarina, ou a de cima) com um banzo/viga em que ela apoia"""
+    tercas = [b for b in barras if str(b.papel).lower() in ("terça", "terca", "longarina")]
+    apoios = [b for b in barras if b not in tercas]
+    if not tercas and len(barras) == 2:
+        a, b = barras
+        za = (a.inicio[2] + a.fim[2]) / 2.0
+        zb = (b.inicio[2] + b.fim[2]) / 2.0
+        tercas, apoios = ([a], [b]) if za > zb else ([b], [a])
+    pares = []
+    for t in tercas:
+        for ap in apoios:
+            try:
+                Pt, ta, Pb, tb = _cruzamento(t, ap)
+            except ErroDeDados:
+                continue
+            if -0.02 <= ta <= 1.02 and -0.02 <= tb <= 1.02 and math.dist(Pt, Pb) < 1500.0:
+                pares.append([t, ap])
+    if not pares:
+        raise ErroDeDados("nenhuma terça selecionada cruza um banzo ou viga selecionado")
+    return pares
 
 
 def _gerar(tipo, barras, p):
@@ -312,6 +645,12 @@ def _gerar(tipo, barras, p):
         return _chapa_topo(barras[0], barras[1], p)
     if tipo == "tesoura_topo_pilar":
         return _topo_pilar(barras[0], barras[1], p)
+    if tipo == "suporte_terca_cadeirinha":
+        return _cadeirinha(barras[0], barras[1], p)
+    if tipo == "ligacao_flexivel":
+        return _flexivel(barras[0], barras[1], p)
+    if tipo == "emenda_banzo":
+        return _emenda_banzo(barras[0], barras[1], p)
     raise ErroDeDados("a ligação %s ainda não sabe se pôr no 3D" % tipo)
 
 
@@ -406,6 +745,7 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
                     mc["conjunto"] = mb.get("conjunto")
                 ch.atributos = dict(ch.atributos or {}, marcas=mc)
         soldas_pendentes += g["soldas"]
+        soldas_pendentes += [(x.id, y, d) for x, y, d in g.get("soldas_entre", [])]
         verif = None
         try:
             parametros_lib = {k: v for k, v in g["parametros"].items() if k in {x.chave for x in A.REGISTRO[tipo].parametros}}
@@ -443,7 +783,7 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
             a = dict(x.atributos or {})
             a["soldas"] = dict(a.get("soldas") or {}, **{outra: dd})
             x.atributos = a
-            if x is b:
+            if x is b and not any(n_ is b for n_ in novas):      # a peça nova já sai com os atributos
                 alterar.setdefault(b.id, {})["atributos"] = a
     # as barras que voltaram ao de antes e não mudaram de novo (inclusive as soldas tiradas com as peças velhas)
     for bid, campos in restaurar.items():

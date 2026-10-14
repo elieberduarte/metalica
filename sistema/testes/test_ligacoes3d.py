@@ -183,3 +183,88 @@ def test_aceitacao_base_e_chapa_de_topo_feitas_a_mao_saem_no_detalhamento():
     assert any("conforme os símbolos" in t for t in textos)
     chumb = [e.texto for e in r["desenhos"]["chumbacao"].entidades.values() if getattr(e, "texto", None)]
     assert any(t.startswith("4 chumbador(es) e 1 chapa(s) de base") for t in chumb), chumb
+
+
+UE = "Ue 150×60×20×2,25"
+
+
+def test_cadeirinha_em_cada_cruzamento_terca_banzo():
+    banzo = Barra(inicio=(0, -3000, 0), fim=(0, 3000, 0), perfil="W 250×32,7", papel="banzo")     # topo em z = 129
+    t1 = Barra(inicio=(-3000, -1000, 222), fim=(3000, -1000, 222), perfil=UE, papel="terça")       # centro 90 acima da base
+    t2 = Barra(inicio=(-3000, 1000, 222), fim=(3000, 1000, 222), perfil=UE, papel="terça")
+    doc = _doc(banzo, t1, t2)
+    r = ligacoes3d.aplicar(doc, "suporte_terca_cadeirinha", [banzo.id, t1.id, t2.id])
+    _aplicar(doc, r)
+    assert len(r["ligacoes"]) == 2
+    lid = next(l["id"] for l in r["ligacoes"] if t1.id in l["barras"])
+    pecas = _da_ligacao(doc, lid)
+    ch7 = next(e for e in pecas if e.nome == "Suporte de terça (chapa)")
+    ch8 = next(e for e in pecas if e.nome == "Suporte de terça (base)")
+    pars = [e for e in pecas if e.tipo == "solido"]
+    assert abs(ch8.origem[2] - 129.0) < 0.01 and ch8.espessura == 3.0
+    assert ch7.contorno[2] == (150.0, 145.0)                    # furos a 65 e 115 da base: 115 + 30 = 145
+    assert sorted(round(f["y"]) for f in ch7.furos) == [65, 65, 115, 115]
+    assert all("largura" in f and f["largura"] > f["altura"] for f in ch7.furos)   # oblongo deitado
+    assert len(pars) == 4 and all(abs(abs(p.atributos["parafuso"]["eixo"][1]) - 1) < 1e-6 for p in pars)
+    # a chapa em pé fica por fora da alma da terça (a alma é o lado de menor y ou de maior y)
+    from nucleo3d.geometria import malha_barra
+    ys = [v[1] for v in malha_barra(t1)[0]]
+    assert ch7.origem[1] < min(ys) or ch7.origem[1] > max(ys)
+    m = banzo.atributos["marcas"]
+    assert ch7.atributos["marcas"]["conjunto"] == ch8.atributos["marcas"]["conjunto"] == m["conjunto"]
+    assert ch8.atributos["marcas"]["posicao"] in banzo.atributos["soldas"]
+    assert ch8.atributos["marcas"]["posicao"] in ch7.atributos["soldas"]          # a chapa em pé na base
+
+
+def test_cadeirinha_com_terca_de_250_usa_o_gabarito_de_100():
+    banzo = Barra(inicio=(0, -3000, 0), fim=(0, 3000, 0), perfil="W 250×32,7", papel="banzo")
+    terca = Barra(inicio=(-3000, 0, 300), fim=(3000, 0, 300), perfil="Ue 250×85×25×2,65", papel="terça")
+    doc = _doc(banzo, terca)
+    r = ligacoes3d.aplicar(doc, "suporte_terca_cadeirinha", [banzo.id, terca.id])
+    assert r["ligacoes"][0]["parametros"]["gab_v"] == 100.0
+
+
+def test_ligacao_flexivel_viga_no_pilar():
+    from nucleo2d.detalhar import levantar
+    from nucleo3d import producao
+    pilar = Barra(inicio=(0, 0, 0), fim=(0, 0, 4000), perfil=W, rotacao=90, papel="pilar")
+    viga = Barra(inicio=(0, 0, 3000), fim=(0, 5000, 3000), perfil="W 250×32,7", papel="viga")
+    doc = _doc(pilar, viga)
+    r = ligacoes3d.aplicar(doc, "ligacao_flexivel", [pilar.id, viga.id])     # a ordem não importa
+    _aplicar(doc, r)
+    pecas = _da_ligacao(doc, r["ligacoes"][0]["id"])
+    cants = [e for e in pecas if e.tipo == "barra"]
+    pars = [e for e in pecas if e.tipo == "solido"]
+    assert len(cants) == 2 and len(pars) == 9
+    assert abs(viga.cortes_inicio[0]["ponto"][1] - 165.0) < 0.01           # 10 mm antes da mesa do pilar
+    for c in cants:                                                         # cada cantoneira encostada na mesa e na alma
+        from nucleo3d.geometria import malha_barra
+        vs = malha_barra(c)[0]
+        assert abs(min(v[1] for v in vs) - 155.0) < 0.5
+        xs = [v[0] for v in vs]
+        assert min(abs(min(xs)), abs(max(xs))) == pytest.approx(6.1 / 2, abs=0.5)
+    for i, patch in producao.numerar(doc)["mudancas"].items():
+        doc.entidades[i].atributos = dict(doc.entidades[i].atributos or {}, **{k: v for k, v in patch.items() if v is not None})
+    lev = levantar(doc, regra_tercas=False)
+    pp = pilar.atributos["marcas"]["posicao"]
+    pos = next(x for x in lev["posicoes"] if x.marca == pp or pp in (getattr(x, "marcas", None) or []))
+    assert len(pos.furos) == 6                                              # 3 por cantoneira na mesa do pilar
+
+
+def test_emenda_de_banzo_com_talas():
+    a = Barra(inicio=(0, 0, 0), fim=(3000, 0, 0), perfil="W 250×32,7", papel="banzo")
+    b = Barra(inicio=(3000, 0, 0), fim=(6000, 0, 0), perfil="W 250×32,7", papel="banzo")
+    doc = _doc(a, b)
+    r = ligacoes3d.aplicar(doc, "emenda_banzo", [a.id, b.id])
+    _aplicar(doc, r)
+    pecas = _da_ligacao(doc, r["ligacoes"][0]["id"])
+    talas = [e for e in pecas if e.tipo == "chapa"]
+    pars = [e for e in pecas if e.tipo == "solido"]
+    assert len(talas) == 2 and len(pars) == 6
+    ys = sorted(t.origem[1] for t in talas)
+    assert ys[0] == pytest.approx(-3.05, abs=0.01) and ys[1] == pytest.approx(3.05, abs=0.01)
+    assert all(len(t.furos) == 6 for t in talas)
+    with pytest.raises(ErroDeDados):
+        c = Barra(inicio=(0, 500, 0), fim=(3000, 500, 0), perfil="W 250×32,7")
+        doc.add(c)
+        ligacoes3d.aplicar(doc, "emenda_banzo", [a.id, c.id])
