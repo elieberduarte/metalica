@@ -1349,18 +1349,25 @@ def _esforcos_da_tesoura(env, modelo, t, d: DadosGalpao) -> dict:
             continue
         e = {"N_c": 0.0, "N_t": 0.0, "M": 0.0, "V": 0.0, "L": 0.0, "n": len(barras),
              "barra_N": "", "caso_N": "", "barra_M": "", "caso_M": ""}
+        if papel.startswith("banzo"):
+            # banzo contínuo: a ruptura da seção líquida só nas barras de ponta (apoio e
+            # emenda da cumeeira) — regra do usuário, 14/10/2026
+            e["N_t_ponta"] = 0.0
         for b in barras:
             e["L"] = max(e["L"], t.comprimento(b))
             try:
                 eb = env.barra(b.rotulo)
             except Exception:
                 continue
+            ponta = "N_t_ponta" in e and tesouras.barra_de_ponta(t, b)
             for ext in (eb.N_max, eb.N_min):
                 v = _v(ext)
                 if v < 0 and -v > e["N_c"]:
                     e["N_c"], e["barra_N"], e["caso_N"] = -v, b.rotulo, _caso(ext)
                 elif v > e["N_t"]:
                     e["N_t"] = v
+                if ponta and v > e["N_t_ponta"]:
+                    e["N_t_ponta"] = v
             for ext in (eb.M_max, eb.M_min):
                 if abs(_v(ext)) > e["M"]:
                     e["M"], e["barra_M"], e["caso_M"] = abs(_v(ext)), b.rotulo, _caso(ext)
@@ -1482,23 +1489,33 @@ def _analise_tesoura(p: ProjetoGalpao):
             n_pecas = d.pecas_por_barra(papel)
             if papel == "banzo inferior":
                 # o passo do travamento é parte da escolha: fecha-se a malha de
-                # travamento até o banzo passar, antes de engrossar o perfil
-                perf = None
+                # travamento até o banzo passar, antes de engrossar o perfil. Antes o laço
+                # parava no passo mais aberto em que *algum* perfil passava — engrossava o
+                # banzo para não fechar a malha (triangular-Howe de 20 m: Ue 150×75×20×4,75
+                # a 2,86 m em vez do Ue 150×60×20×3,75 a 1,43 m, e o ciclo entre os dois
+                # terminava reprovando). Agora vale o perfil mais leve que passa, com o
+                # passo mais aberto que o deixa passar
+                escolha = None
                 for cand_trava, cand_linhas in opcoes_trava:
-                    perf, _r = tesouras.menor_perfil(
+                    perf_c, r_c = tesouras.menor_perfil(
                         tesouras.FAMILIAS_POR_PAPEL[papel], d.aco_perfis, e["N_c"],
                         e["N_t"], e["M"], e["L"], cand_trava, NOME_DA_BARRA[papel],
-                        altura_max=altura_max(papel, e), n=n_pecas, forcado=forcado)
-                    trava, n_travas = cand_trava, cand_linhas
-                    if _r is not None and _r.ok:
-                        break
-                if perf is not None:
-                    novos[papel] = perf
+                        altura_max=altura_max(papel, e), n=n_pecas, forcado=forcado,
+                        Nt_ponta=e.get("N_t_ponta"))
+                    if perf_c is None or r_c is None:
+                        continue
+                    chave_c = (0, perf_c.massa or 0.0) if r_c.ok else (1, r_c.razao)
+                    if escolha is None or chave_c < escolha[0]:   # empate: o passo mais aberto
+                        escolha = (chave_c, perf_c, cand_trava, cand_linhas)
+                if escolha is not None:
+                    novos[papel] = escolha[1]
+                    trava, n_travas = escolha[2], escolha[3]
                 continue
             perf, _r = tesouras.menor_perfil(
                 tesouras.FAMILIAS_POR_PAPEL[papel], d.aco_perfis, e["N_c"], e["N_t"],
                 e["M"], e["L"], fora_do_plano(papel, e), NOME_DA_BARRA[papel],
-                altura_max=altura_max(papel, e), n=n_pecas, forcado=forcado)
+                altura_max=altura_max(papel, e), n=n_pecas, forcado=forcado,
+                Nt_ponta=e.get("N_t_ponta"))
             if perf is None:
                 raise ErroDeDados(
                     "Nenhum perfil do catálogo atende ao %s da tesoura com altura de até "
@@ -1542,6 +1559,23 @@ def _analise_tesoura(p: ProjetoGalpao):
                       for k in novos}
             modelo, env, combos = _rodar_tesoura(p, t, perfis)
             esf = _esforcos_da_tesoura(env, modelo, t, d)
+            # o passo do travamento ficava o da última escolha, feita sobre outra
+            # análise: refaz-se para o banzo que fica, nos esforços que valem
+            e = esf.get("banzo inferior")
+            if e and "banzo inferior" in perfis:
+                melhor = None
+                for cand_trava, cand_linhas in opcoes_trava:
+                    _p, r_c = tesouras.menor_perfil(
+                        tesouras.FAMILIAS_POR_PAPEL["banzo inferior"], d.aco_perfis, e["N_c"],
+                        e["N_t"], e["M"], e["L"], cand_trava, NOME_DA_BARRA["banzo inferior"],
+                        n=d.pecas_por_barra("banzo inferior"), forcado=perfis["banzo inferior"],
+                        Nt_ponta=e.get("N_t_ponta"))
+                    if r_c.ok:
+                        melhor = (0.0, cand_trava, cand_linhas)
+                        break
+                    if melhor is None or r_c.razao < melhor[0]:
+                        melhor = (r_c.razao, cand_trava, cand_linhas)
+                trava, n_travas = melhor[1], melhor[2]
             break
         historico.append(chave)
         perfis = novos
@@ -1577,12 +1611,13 @@ def _analise_tesoura(p: ProjetoGalpao):
         perf = perfis[papel]
         Ly = fora_do_plano(papel, e)
         n_pecas = d.pecas_por_barra(papel)
-        r = verificar.verificar_membro(perf, d.aco_perfis, e["N_c"], e["N_t"], e["M"],
-                                       e["L"], Ly, n_pecas, NOME_DA_BARRA[papel], p.avisos)
+        r = tesouras.verificar_barra(perf, d.aco_perfis, e["N_c"], e["N_t"], e["M"],
+                                     e["L"], Ly, n_pecas, NOME_DA_BARRA[papel], p.avisos,
+                                     Nt_ponta=e.get("N_t_ponta"))
         alternativas = tesouras.candidatos_verificados(
             tesouras.FAMILIAS_POR_PAPEL[papel], d.aco_perfis, e["N_c"], e["N_t"], e["M"],
             e["L"], Ly, NOME_DA_BARRA[papel], altura_ref=perf.d, altura_max=altura_max(papel, e),
-            n=n_pecas)
+            n=n_pecas, Nt_ponta=e.get("N_t_ponta"))
         if papel == "banzo inferior" and flecha is not None:
             r.add(flecha)
         if not r.ok:

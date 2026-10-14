@@ -339,7 +339,9 @@ export class MetodosAnalise {
     num('correntes', 'Correntes por vão de terça', 'vazio = contadas no modelo (barras curtas que encostam na terça)');
     num('trava_inferior', 'Travamento do banzo inferior (m)', 'espaçamento dos travamentos laterais; vazio = os lidos no modelo (nenhum = banzo inteiro)');
     num('correntes_longarina', 'Correntes por vão de longarina', 'linhas de correntes das longarinas de fechamento; vazio = 1');
-    sel('apoio', 'Apoios da tesoura', [['rotulado', 'rotulados nos dois lados'], ['movel', 'rotulado + móvel']]);
+    // M1 (14/10): o padrão é um pino e um rolete; os dois pinos só por escolha, porque o empuxo deles
+    // alivia o banzo inferior (o resultado mostra o valor). Sem apoio gravado, a lista abre no primeiro.
+    sel('apoio', 'Apoios da tesoura', [['movel', 'pino + rolete (padrão)'], ['rotulado', 'pino nos dois lados (empuxo alivia o banzo inferior)']]);
     grade.append(el('h4', { texto: 'Aços e critérios', style: 'grid-column:1/-1;margin:.4em 0 0' }));
     const acos = (this.catalogo && this.catalogo.acos && this.catalogo.acos.length) ? this.catalogo.acos
       : ['CIVIL 300', 'CIVIL 350', 'CF-26 (NBR 6650)', 'ASTM A36', 'ASTM A572 Gr.50'];

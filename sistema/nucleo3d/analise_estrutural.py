@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import collections
 import math
+import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -76,7 +77,10 @@ PARAMETROS_PADRAO = {
     "categoria": "III",
     "classe": None,                     # None: pela maior dimensão (A ≤ 20 m, B ≤ 50 m, C)
     "s3": 1.0,
-    "modelo_vento": "isolada",          # isolada (7.2, Tabela 25)
+    # o modelo do vento (M4, 14/10): auto | isolada (cobertura isolada, 7.2, Tabelas 24 e 25) | fechado (galpão fechado:
+    # Tabelas 6 e 7 + C_pi). No auto o fechado liga sozinho quando o modelo tem longarinas (ou terças de parede) ou telha de
+    # parede descendo até a metade de baixo do pé-direito (decisão do usuário); o adotado e o motivo ficam em info.vento
+    "modelo_vento": "auto",
     "vento_nas_barras": True,           # o arrasto nos pilares, vigas e X entre pilares (8.1, Tabelas 26 a 28)
     # cobertura retrátil (06/10, Kaefer: produto do fabricante, lona, as tesouras correm sobre as vigas-trilho): a tesoura
     # lançada é o molde; a análise monta as duas situações — aberta (n tesouras ao longo de `comprimento_aberta`) e
@@ -109,7 +113,9 @@ PARAMETROS_PADRAO = {
     "piso_revestimento": 1.0,           # kN/m² nas lajes
     "piso_sobrecarga": 3.0,             # kN/m² nas lajes (NBR 6120, a confirmar com o uso)
     "base_coluna_aco": "rotulada",      # a base das colunas de aço chumbadas no bloco
-    "aberturas": "duas faces opostas",  # a permeabilidade do prédio fechado (C_pi, NBR 6123 6.2)
+    # a permeabilidade do prédio fechado (C_pi, NBR 6123:2023, 6.3.2.1): o pré-moldado e o galpão fechado do aço. O padrão
+    # é a hipótese da norma para o caso corrente — duas faces opostas igualmente permeáveis (+0,2 e −0,3)
+    "aberturas": "duas faces opostas",
 }
 
 ALMA = ("montante", "diagonal")
@@ -266,6 +272,190 @@ def _chumbadas_no_concreto(nos: np.ndarray, barras: List[dict], concreto: Dict[s
 
 _NORMAL_CHUMBADA: Dict[int, Tuple[float, float, float]] = {}
 
+#: Bases na mesma cota: até esta diferença (m) os pés dos pilares são da mesma cota (o agrupamento das bases e o aviso de
+#: cotas diferentes). É tolerância de modelagem (o pé desenhado uns milímetros acima ou abaixo), não critério de norma.
+COTA_BASE_TOL = 0.05
+
+
+def _pes_dos_pilares(nos: np.ndarray, barras: List[dict], no_barras: Dict[int, List[int]]) -> List[int]:
+    """os nós de apoio no pé dos pilares (M3, 14/10/2026). Antes só valia o pé na cota do pé mais baixo de todos (±5 cm): o
+    pilar com o pé 30 cm acima ficava pendurado na estrutura, sem apoio e sem aviso. Agora:
+
+    * o nó de baixo de cada trecho de pilar na cota mais baixa dos pilares é base (como antes — os modelos com todos os
+      pés na mesma cota não mudam);
+    * acima dela, o nó de baixo do pilar é base quando nenhuma outra barra o sustenta: nenhuma chega nele vindo de baixo
+      ou de lado (viga, outro pilar, diagonal que desce). A barra que só sobe dali (o X de contraventamento que nasce no
+      pé) não sustenta. O pilarete apoiado numa viga (o nó tem viga) e o trecho de cima de um pilar partido não viram
+      base."""
+    zp = [min(nos[br["a"]][2], nos[br["b"]][2]) for br in barras if br["papel"] == "pilar"]
+    if not zp:
+        return []
+    z0 = min(zp)
+    pes: List[int] = []
+    for i, br in enumerate(barras):
+        if br["papel"] != "pilar":
+            continue
+        n = br["a"] if nos[br["a"]][2] <= nos[br["b"]][2] else br["b"]
+        if n in pes:
+            continue
+        zn = float(nos[n][2])
+        if abs(zn - z0) <= COTA_BASE_TOL:
+            pes.append(n)
+            continue
+        sustenta = False
+        for j in no_barras.get(n, ()):
+            if j == i:
+                continue
+            o = barras[j]
+            outro = o["b"] if o["a"] == n else o["a"]
+            if float(nos[outro][2]) <= zn + COTA_BASE_TOL:          # chega de baixo ou de lado
+                sustenta = True
+                break
+        if not sustenta:
+            pes.append(n)
+    return pes
+
+
+def _cotas_das_bases(nos: np.ndarray, pes: Sequence[int]) -> List[Tuple[float, int]]:
+    """[(cota m, nº de pés)] dos pés agrupados pela cota (COTA_BASE_TOL), da mais baixa para a mais alta"""
+    grupos: List[List[float]] = []
+    for z in sorted(float(nos[n][2]) for n in pes):
+        if grupos and z - grupos[-1][0] <= COTA_BASE_TOL:
+            grupos[-1].append(z)
+        else:
+            grupos.append([z])
+    return [(round(sum(g) / len(g), 3), len(g)) for g in grupos]
+
+
+
+# ------------------------------------------------------------------ o fechamento lateral (M4, 14/10)
+
+#: Telha pelo nome do perfil, do elemento, da camada ou do material (o mesmo reconhecimento do detalhamento,
+#: saida/detalhamento._eh_telha, mais o fechamento gerado pelo galpão e o isopainel).
+_TELHA_RX = re.compile(r"TELHA|TP\s*\d{2}|TRAPEZ|ONDUL|ISOPAINEL|ISOTELHA|FECHAMENTO", re.I)
+#: A telha é "de parede" quando o plano dela é vertical: a normal (a direção de menor espalhamento dos vértices) quase
+#: horizontal — |n_z| abaixo de sen 17,5° (a telha a menos de 17,5° da vertical). Abaixo disso é água de telhado.
+TELHA_PAREDE_NZ = 0.3
+#: …e quando ela desce até a metade de baixo do pé-direito (da cota das bases ao beiral): a testeira e a dobra do beiral
+#: (a multidobra do Posto CB, 1,7 m de telha vertical a 6 m do chão) são verticais mas não fecham a parede.
+TELHA_PAREDE_ALTURA = 0.5
+
+
+def _e_telha(e) -> bool:
+    at = getattr(e, "atributos", None) or {}
+    if at.get("calha_lancada") or at.get("cumeeira_lancada") or at.get("furo") or at.get("parafuso"):
+        return False
+    if at.get("telha_lancada"):
+        return True
+    m = at.get("marcas") or {}
+    txt = " ".join(str(x) for x in (m.get("perfil"), getattr(e, "nome", ""), at.get("elemento"), getattr(e, "camada", ""),
+                                     getattr(e, "material", "")) if x)
+    return bool(_TELHA_RX.search(txt))
+
+
+def _fechamento_do_modelo(doc, nos: np.ndarray, barras: List[dict], no_barras: Dict[int, List[int]],
+                          pes: Sequence[int]) -> dict:
+    """o que o modelo tem de fechamento lateral, para o modo do vento (M4, decisão do usuário de 14/10: "galpão fechado
+    liga sozinho quando o modelo tem longarinas ou telha de parede"):
+
+    * longarinas: as barras com o papel "longarina" (na peça ou em atributos.papel) e as terças de parede — a terça
+      presa só em pilares, na lateral deles (o pilar continua acima do nó; nenhum banzo, viga ou alma de treliça nos
+      nós dela). A terça no topo do pilar é do telhado;
+    * telhas de parede: as telhas de plano vertical (TELHA_PAREDE_NZ) que descem até a metade de baixo do pé-direito
+      (TELHA_PAREDE_ALTURA); as verticais mais altas (testeira, beiral dobrado) ficam contadas à parte.
+
+    {longarinas, tercas_parede, telhas_parede, telhas_altas, barras_longarina (índices das barras de análise), z_base,
+    z_beiral}"""
+    zp = [float(nos[n][2]) for n in pes]
+    z_base = min(zp) if zp else (min((min(nos[br["a"]][2], nos[br["b"]][2]) for br in barras if br["papel"] == "pilar"),
+                                     default=float(nos[:, 2].min()) if len(nos) else 0.0))
+    sup = [float(nos[br[k]][2]) for br in barras if br.get("papel_trelica") == "banzo_sup" for k in ("a", "b")]
+    topo_pil = [max(nos[br["a"]][2], nos[br["b"]][2]) for br in barras if br["papel"] == "pilar"]
+    z_beiral = min(sup) if sup else (float(np.median(topo_pil)) if topo_pil else z_base)
+    # longarinas
+    ids_long = {e.id for e in getattr(doc, "barras", []) if (getattr(e, "papel", "") == "longarina" or
+                                                               (getattr(e, "atributos", None) or {}).get("papel") == "longarina")}
+    idx_long = [i for i, br in enumerate(barras) if not br.get("hipotese") and
+                (br["papel"] == "longarina" or (br["ids"] and br["ids"][0] in ids_long))]
+    # terças de parede: a peça só presa em pilares
+    trel = {"banzo", "viga", "montante", "diagonal", "apoio_terca"}
+    por_peca: Dict[str, List[int]] = collections.defaultdict(list)
+    for i, br in enumerate(barras):
+        if br["papel"] == "terça" and not br.get("hipotese") and br["ids"]:
+            por_peca[br["ids"][0]].append(i)
+    tercas_parede = 0
+    for pid, bs in por_peca.items():
+        meus = set(bs)
+        nos_t = {barras[i][k] for i in bs for k in ("a", "b")}
+        papeis = {barras[j]["papel"] for n in nos_t for j in no_barras.get(n, ()) if j not in meus}
+        na_lateral = any(barras[j]["papel"] == "pilar" and
+                         max(nos[barras[j]["a"]][2], nos[barras[j]["b"]][2]) > nos[n][2] + COTA_BASE_TOL
+                         for n in nos_t for j in no_barras.get(n, ()) if j not in meus)
+        if na_lateral and not papeis & trel:
+            tercas_parede += 1
+            idx_long += bs
+    # telhas de parede
+    lim = z_base + TELHA_PAREDE_ALTURA * max(z_beiral - z_base, 0.0)
+    parede = altas = 0
+    for e in getattr(doc, "solidos", []):
+        vs = getattr(e, "vertices", None) or []
+        if len(vs) < 4 or not _e_telha(e):
+            continue
+        v = np.asarray(vs, float) / 1000.0
+        c = v - v.mean(axis=0)
+        try:
+            _w, V = np.linalg.eigh(c.T @ c)
+        except np.linalg.LinAlgError:
+            continue
+        if abs(float(V[2, 0])) >= TELHA_PAREDE_NZ:
+            continue                                       # água de telhado
+        if float(v[:, 2].min()) <= lim + 1e-6:
+            parede += 1
+        else:
+            altas += 1
+    n_long = len(ids_long | {barras[i]["ids"][0] for i in idx_long if barras[i]["papel"] == "longarina" and barras[i]["ids"]})
+    return {"longarinas": n_long, "tercas_parede": tercas_parede, "telhas_parede": parede, "telhas_altas": altas,
+            "barras_longarina": sorted(set(idx_long)), "z_base": round(float(z_base), 4), "z_beiral": round(float(z_beiral), 4)}
+
+
+def _furos_das_pecas(doc) -> Dict[str, dict]:
+    """os furos marcados no 3D em cada barra (N1, 14/10 — para o C_t da tração pela ligação): {id da barra: {"L": m,
+    "furos": [{x (m ao longo da barra, do início), d (mm, o parafuso), parafuso (id ou None), ponto (m), eixo, d_furo
+    (mm)}]}}. Os marcadores são os da ferramenta Furo e os que o Parafuso abre (atributos.furo com "peca" = a barra); o
+    diâmetro do parafuso vem do parafuso ligado ao furo, senão do furo-padrão (fabrica.parafuso_do_furo)"""
+    out: Dict[str, dict] = {}
+    ents = getattr(doc, "entidades", {}) or {}
+    for e in ents.values():
+        fu = (getattr(e, "atributos", None) or {}).get("furo")
+        if not isinstance(fu, dict) or not fu.get("peca"):
+            continue
+        b = ents.get(fu["peca"])
+        if b is None or not hasattr(b, "inicio") or not hasattr(b, "fim"):
+            continue
+        try:
+            p0, p1 = np.array(b.inicio, float), np.array(b.fim, float)
+            pt, eixo = np.array(fu["ponto"], float), np.array(fu.get("eixo") or (0.0, 0.0, 1.0), float)
+            d_furo = float(fu.get("d") or 0.0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        L = float(np.linalg.norm(p1 - p0))
+        if L < 1e-6 or d_furo <= 0:
+            continue
+        d = None
+        par = ents.get(fu.get("parafuso")) if fu.get("parafuso") else None
+        reg = (getattr(par, "atributos", None) or {}).get("parafuso") if par is not None else None
+        if isinstance(reg, dict) and reg.get("d"):
+            d = float(reg["d"])
+        if d is None:
+            try:
+                import fabrica
+                d = float(fabrica.parafuso_do_furo(d_furo))
+            except Exception:                                    # noqa: BLE001 — sem a tabela: o furo-padrão d + 1,5
+                d = d_furo - 1.5
+        reg_b = out.setdefault(b.id, {"L": L / 1000.0, "furos": []})
+        reg_b["furos"].append({"x": float((pt - p0) @ (p1 - p0)) / L / 1000.0, "d": d, "parafuso": fu.get("parafuso"),
+                               "ponto": (pt / 1000.0).tolist(), "eixo": _unit(eixo).tolist(), "d_furo": d_furo})
+    return out
 
 def montar(doc, par: Optional[dict] = None) -> dict:
     """o modelo analítico pronto para resolver: nós (m), barras (seção, eixos, rótulas), apoios, origem das peças"""
@@ -370,16 +560,14 @@ def montar(doc, par: Optional[dict] = None) -> dict:
             if soltar:
                 base = 0 if ponta == "a" else 6
                 br["soltos"] += [base + 4, base + 5]          # ry, rz da ponta (a torção fica)
-    # apoios: o pé dos pilares (o nó mais baixo de cada um, na cota mais baixa dos pilares)
-    pes = []
-    zp = [min(nos[br["a"]][2], nos[br["b"]][2]) for br in barras if br["papel"] == "pilar"]
-    z0 = min(zp) if zp else (float(nos[:, 2].min()) if len(nos) else 0.0)
-    for br in barras:
-        if br["papel"] != "pilar":
-            continue
-        n = br["a"] if nos[br["a"]][2] <= nos[br["b"]][2] else br["b"]
-        if abs(nos[n][2] - z0) <= 0.05 and n not in pes:
-            pes.append(n)
+    # apoios: o pé dos pilares — na cota mais baixa e também acima dela, quando nada sustenta o pé (M3, 14/10)
+    pes = _pes_dos_pilares(nos, barras, no_barras)
+    cotas = _cotas_das_bases(nos, pes)
+    if len(cotas) > 1:
+        avisos.append("bases dos pilares em %d cotas diferentes: %s — cada pilar sem outra barra que o sustente no pé (viga, "
+                      "outro pilar, diagonal) é apoiado na cota dele; confira com o projeto das fundações" % (
+                          len(cotas), "; ".join("%s m (%d pilar%s)" % (("%+.2f" % z).replace(".", ","), k, "es" if k > 1 else "")
+                                                for z, k in cotas)))
     chumbadas = _chumbadas_no_concreto(nos, barras, concreto)
     if not pes and not chumbadas:
         # sem pilar: os nós mais baixos
@@ -400,7 +588,8 @@ def montar(doc, par: Optional[dict] = None) -> dict:
         avisos.append("%d nó(s) de tesoura chumbados em %d pilar(es) de concreto (%s): são os apoios dela" % (
             len(chumbadas), len(set(chumbadas.values())), P.get("chumbada_no_pilar") or "engastada"))
     return {"nos": nos, "barras": barras, "apoios": apoios, "avisos": avisos, "par": P, "resumo_esqueleto": an["resumo"],
-            "movel": movel}
+            "movel": movel, "fechamento": _fechamento_do_modelo(doc, nos, barras, no_barras, pes),
+            "furos_por_peca": _furos_das_pecas(doc)}
 
 
 def chave_do_grupo(br: dict, perfil: Optional[str] = None) -> str:
@@ -1119,7 +1308,354 @@ def _vento_nas_barras(M: dict, Vk: float, q: float, sentido) -> Tuple[Dict[int, 
     return dist, sorted(resumo.values(), key=lambda r: (r["papel"], r["perfil"]))
 
 
+MODOS_VENTO = ("auto", "isolada", "fechado")
+
+
+def _modo_do_vento(M: dict) -> Tuple[str, str, str]:
+    """(modo adotado, motivo, modo pedido) — M4, 14/10. O pedido vem das premissas (`modelo_vento`): "isolada" (cobertura
+    isolada, 7.2), "fechado" (galpão fechado: Tabelas 6 e 7 + C_pi) ou "auto" — o fechado liga sozinho quando o modelo tem
+    longarinas (ou terças de parede) ou telha de parede descendo até a metade de baixo do pé-direito (decisão do usuário)"""
+    from nucleo.base import ErroDeDados
+    P = M["par"]
+    pedido = str(P.get("modelo_vento") or "auto").strip().lower()
+    if pedido not in MODOS_VENTO:
+        raise ErroDeDados("modelo do vento \"%s\" desconhecido: use auto, isolada ou fechado" % pedido)
+    tem_pilar = any(br["papel"] == "pilar" for br in M["barras"])
+    if pedido == "isolada":
+        return "isolada", "escolhido nas premissas", pedido
+    if pedido == "fechado":
+        if not tem_pilar:
+            raise ErroDeDados("galpão fechado: o modelo não tem pilares de aço para receber a pressão das paredes — use a "
+                              "cobertura isolada")
+        return "fechado", "escolhido nas premissas", pedido
+    f = M.get("fechamento") or {}
+    if M.get("movel"):
+        return "isolada", "cobertura retrátil (lona, aberta nas laterais)", pedido
+    if not tem_pilar:
+        return "isolada", "o modelo não tem pilares de aço (a parede não teria onde se apoiar)", pedido
+    if f.get("longarinas") or f.get("tercas_parede"):
+        partes = []
+        if f.get("longarinas"):
+            partes.append("%d longarina(s)" % f["longarinas"])
+        if f.get("tercas_parede"):
+            partes.append("%d terça(s) de parede (presas só em pilares)" % f["tercas_parede"])
+        return "fechado", "o modelo tem %s de fechamento lateral" % " e ".join(partes), pedido
+    if f.get("telhas_parede"):
+        return "fechado", ("o modelo tem %d telha(s) de parede (verticais, descendo até a metade de baixo do pé-direito)"
+                           % f["telhas_parede"]), pedido
+    motivo = "o modelo não tem longarinas nem telha de parede"
+    if f.get("telhas_altas"):
+        motivo += ("; as %d telha(s) verticais do modelo ficam acima da metade do pé-direito (testeira, beiral dobrado) e "
+                   "não fecham a parede" % f["telhas_altas"])
+    return "isolada", motivo, pedido
+
+
 def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict]:
+    """os casos de vento pelo modo adotado (M4, 14/10): cobertura isolada (7.2) ou galpão fechado (Tabelas 6 e 7 + C_pi).
+    O modo, o motivo da escolha e o pedido ficam no info (para a tela e o memorial). No "auto", o fechado que não fecha a
+    conta (fora das Tabelas 6 e 7) volta à cobertura isolada, com aviso; pedido nas premissas, o erro sobe"""
+    from nucleo.base import ErroDeDados
+    P = M["par"]
+    if not P.get("vento") or not cob:
+        return {}, {}
+    modo, motivo, pedido = _modo_do_vento(M)
+    casos, info = {}, {}
+    if modo == "fechado":
+        try:
+            casos, info = _vento_fechado(M, cob, avisos)
+        except ErroDeDados as e:
+            if pedido == "fechado":
+                raise
+            avisos.insert(0, "vento: o galpão fechado (%s) não deu para calcular — %s. Usada a cobertura isolada" % (motivo, e))
+            modo, motivo = "isolada", "o galpão fechado não fechou a conta (%s)" % e
+    if modo == "isolada":
+        casos, info = _vento_isolada(M, cob, avisos)
+    if info:
+        info.update(modo=modo, motivo=motivo, modo_pedido=pedido)
+    if modo == "fechado" and casos:
+        avisos.append("vento como galpão fechado (NBR 6123:2023, Tabelas 6 e 7 + C_pi %s): %s — troque em \"Modelo do vento\" "
+                      "nas premissas" % (" e ".join(("%+.1f" % c).replace(".", ",") for c in info.get("cpi") or []), motivo))
+    return casos, info
+
+
+#: Os pilares de uma fila (a mesma coordenada transversal ao vento, como na análise global do pré-moldado): até esta
+#: distância (m) entre eles. Tolerância de modelagem, não critério de norma.
+FILA_TOL = 0.5
+
+
+def _agrupar(valores: Dict, tol: float) -> Dict[float, list]:
+    """{coordenada média: [chaves]} — as chaves agrupadas pela coordenada (diferença até tol da anterior)"""
+    out: List[Tuple[List[float], list]] = []
+    for k, v in sorted(valores.items(), key=lambda kv: kv[1]):
+        if out and v - out[-1][0][-1] <= tol:
+            out[-1][0].append(v)
+            out[-1][1].append(k)
+        else:
+            out.append(([v], [k]))
+    return {sum(vs) / len(vs): ks for vs, ks in out}
+
+
+def _larguras(coords: Sequence[float]) -> Dict[float, float]:
+    """a largura de influência de cada fila: meia distância às vizinhas (as das pontas, só para dentro)"""
+    cs = sorted(coords)
+    return {c: ((c - cs[k - 1]) / 2.0 if k > 0 else 0.0) + ((cs[k + 1] - c) / 2.0 if k + 1 < len(cs) else 0.0)
+            for k, c in enumerate(cs)}
+
+
+def _ligadas_aos_apoios(M: dict) -> set:
+    """as barras ligadas (pelos nós) a algum apoio: a longarina solta no esqueleto não leva carga a lugar nenhum"""
+    barras = M["barras"]
+    por_no: Dict[int, List[int]] = collections.defaultdict(list)
+    for i, br in enumerate(barras):
+        por_no[br["a"]].append(i)
+        por_no[br["b"]].append(i)
+    vistos = {int(ap["no"]) for ap in M["apoios"]}
+    pilha = list(vistos)
+    ok = set()
+    while pilha:
+        no = pilha.pop()
+        for i in por_no.get(no, ()):
+            if i in ok:
+                continue
+            ok.add(i)
+            for k in (barras[i]["a"], barras[i]["b"]):
+                if k not in vistos:
+                    vistos.add(k)
+                    pilha.append(k)
+    return ok
+
+
+def _nome_cpi(v: float) -> str:
+    return ("cpi%+.1f" % v).replace(".", ",").replace("-", "−")
+
+
+def _vento_fechado(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict]:
+    """o vento do galpão fechado (M4, 14/10/2026), NBR 6123:2023: q pela 4.2 (S2 na altura do topo acima das bases); C_e
+    das paredes pela Tabela 6 e do telhado pela Tabela 7 (nucleo.cargas.coeficientes_pressao_galpao, os mesmos da análise
+    global do pré-moldado); C_pi pela 6.3.2.1 (nucleo.cargas.coeficiente_pressao_interna, pela permeabilidade das
+    premissas — por padrão "duas faces opostas igualmente permeáveis": +0,2 e −0,3, os dois em todas as direções). Pressão
+    efetiva p = (C_e − C_pi)·q (6.1), positiva empurrando a face para dentro.
+
+    Quatro direções (±u, perpendicular à geratriz; ±n, ao longo dela) × os casos de C_pi:
+
+    * paredes: as faces são as linhas dos pilares das bordas — em cada fila de pilares na direção do vento o primeiro é a
+      parede de barlavento e o último a de sotavento; em cada fila ao longo do vento, o primeiro e o último na transversal
+      são as paredes laterais (zona 1 até z1 da borda de barlavento, zona 2 depois). A face com longarinas ligadas à
+      estrutura recebe a pressão nas longarinas (a faixa de altura de cada fiada: meio caminho até as vizinhas, da cota
+      das bases ao topo da parede); sem elas, nos pilares da borda pela largura de influência (meia distância aos
+      vizinhos da face), na altura toda do pilar: w = (C_e − C_pi)·q·largura (kN/m);
+    * telhado: pelas terças (a faixa de cada uma) ou pelos trechos do banzo de cima, como o caminho da cobertura isolada —
+      EF/GH na água de barlavento/sotavento com o vento perpendicular à cumeeira; EG, FH e IJ pela distância ao oitão de
+      barlavento (b/2, b e o resto, NOTA 3 da Tabela 7) com o vento ao longo dela.
+
+    Os pilares, vigas e contraventamentos ficam dentro do fechamento: sem o arrasto da 8.1."""
+    from nucleo import cargas as C
+    from nucleo.base import ErroDeDados
+    P, nos, barras = M["par"], M["nos"], M["barras"]
+    f_ = M.get("fechamento") or {}
+    g = _geometria_da_cobertura(M, cob)
+    u2, n2 = np.asarray(g["u"], float), np.asarray(g["n"], float)
+    U3, N3 = np.array([u2[0], u2[1], 0.0]), np.array([n2[0], n2[1], 0.0])
+    # os pilares por pé em planta: as barras de cada um e a posição
+    pil: Dict[str, List[int]] = collections.defaultdict(list)
+    for i, br in enumerate(barras):
+        if br["papel"] == "pilar":
+            pil[chave_do_pilar(nos, br)].append(i)
+    if not pil:
+        raise ErroDeDados("o modelo não tem pilares de aço")
+    xy = {k: np.array([float(v) for v in k.split(",")]) / 1000.0 for k in pil}
+    sp = {k: float(p_ @ u2) for k, p_ in xy.items()}
+    tp = {k: float(p_ @ n2) for k, p_ in xy.items()}
+    s0, s1, t0, t1 = min(sp.values()), max(sp.values()), min(tp.values()), max(tp.values())
+    Ls, Lt = s1 - s0, t1 - t0
+    if Ls < 1e-3 or Lt < 1e-3:
+        raise ErroDeDados("os pilares estão numa linha só (sem planta para as paredes)")
+    z_base = float(f_.get("z_base", 0.0))
+    z_bei, z_top = float(g["zb"]), float(g["zt"])
+    h = z_bei - z_base
+    if h <= 0:
+        raise ErroDeDados("o beiral (%.2f m) não está acima das bases (%.2f m)" % (z_bei, z_base))
+    b_dim, a_dim = min(Ls, Lt), max(Ls, Lt)
+    tg = float(g["tg"])
+    teta = math.degrees(math.atan(tg))
+    z_ref = max(z_top - z_base, 1.0)
+    classe = P.get("classe") or C.classe_por_dimensao(max(a_dim, b_dim, z_ref))
+    S2 = C.fator_s2(P["categoria"], classe, z_ref)
+    Vk = C.velocidade_caracteristica(float(P["v0"]), float(P["s1"]), S2, float(P["s3"]))
+    q = C.pressao_dinamica(Vk)
+    coefs = C.coeficientes_pressao_galpao(b_dim, a_dim, h, teta)
+    ce = {(c.direcao, c.letra): c.Ce for c in coefs.coeficientes if not c.local}
+    aberturas = P.get("aberturas") or "duas faces opostas"
+    cpis = C.coeficiente_pressao_interna(aberturas)
+    # a geratriz (n) é a cumeeira; a Tabela 7 a supõe ao longo da maior dimensão (a)
+    cumeeira_na_maior = Lt >= Ls - 1e-6
+    if not cumeeira_na_maior:
+        avisos.append("vento (galpão fechado): a cumeeira está na menor dimensão em planta (%.1f m × %.1f m) — a Tabela 7 da "
+                      "NBR 6123 supõe a cumeeira ao longo da maior; os coeficientes do telhado foram aplicados como "
+                      "aproximação" % (Lt, Ls))
+    if g["uma_agua"]:
+        avisos.append("vento (galpão fechado): telhado de uma água — usados os C_e da Tabela 7 (duas águas): a água inteira "
+                      "como de barlavento (EF) com o vento do lado baixo e de sotavento (GH) com o do lado alto; a tabela de "
+                      "telhados de uma água da NBR 6123 ainda não está no sistema")
+    n_cob = len(set((cob.get("coberturas") or {}).values()))
+    if n_cob > 1:
+        avisos.append("vento (galpão fechado): as %d coberturas do modelo entraram como um telhado só (Tabela 7)" % n_cob)
+    if a_dim / h > 4.0 or a_dim / b_dim > 4.0:
+        avisos.append("vento (galpão fechado): a/h ou a/b > 4 — a NBR 6123:2023 (6.1.5) pede a força de atrito nas paredes "
+                      "e no telhado, que ainda não entra neste modo: confira")
+    # a face de cada longarina: a paralela a n fica numa face s (s0 ou s1), a paralela a u numa face t (t0 ou t1); só as
+    # ligadas à estrutura (a solta no esqueleto não leva a carga a nada)
+    ligadas = _ligadas_aos_apoios(M)
+    faces_long: Dict[Tuple[int, int], List[int]] = collections.defaultdict(list)
+    soltas = 0
+    for i in f_.get("barras_longarina") or []:
+        br = barras[i]
+        d = br["R"][0][:2]
+        m = (nos[br["a"]] + nos[br["b"]])[:2] / 2.0
+        if abs(float(d @ n2)) >= abs(float(d @ u2)):
+            face = (0, 0 if abs(float(m @ u2) - s0) <= abs(float(m @ u2) - s1) else 1)
+        else:
+            face = (1, 0 if abs(float(m @ n2) - t0) <= abs(float(m @ n2) - t1) else 1)
+        if i in ligadas:
+            faces_long[face].append(i)
+        else:
+            soltas += 1
+    if soltas:
+        avisos.append("vento (galpão fechado): %d trecho(s) de longarina sem ligação com os apoios no esqueleto — a pressão "
+                      "daquelas paredes foi para os pilares da borda" % soltas)
+    # o topo da parede: o beiral nas faces ao longo da cumeeira (as faces s); a altura média do oitão nas outras
+    topo_face = {0: z_bei, 1: (z_bei + z_top) / 2.0}
+    alt_faixa: Dict[Tuple[int, int], Dict[int, float]] = {}
+    for face, bs in faces_long.items():
+        zs = {i: float((nos[barras[i]["a"]][2] + nos[barras[i]["b"]][2]) / 2.0) for i in bs}
+        fiadas = sorted(_agrupar(zs, COTA_BASE_TOL).items())
+        alt_faixa[face] = {}
+        for k, (z, ks) in enumerate(fiadas):
+            lo = (z + fiadas[k - 1][0]) / 2.0 if k > 0 else z_base
+            hi = (z + fiadas[k + 1][0]) / 2.0 if k + 1 < len(fiadas) else max(topo_face[face[0]], z)
+            for i in ks:
+                alt_faixa[face][i] = max(hi - lo, 0.0)
+
+    def somar(dist, i, v):
+        dist[i] = dist.get(i, np.zeros(3)) + v
+
+    # o telhado: as terças e os trechos do banzo de cima
+    trechos = cob["trechos"]
+    ter = cob.get("tercas") or {}
+    tercas = [tc for ts in (ter.get("por_cobertura") or {}).values() for tc in ts]
+    fora = (ter.get("trechos") or set()) & set(trechos)
+    s_c = float(g["s_alto"])                              # a cumeeira (na de uma água, a borda alta)
+
+    def ce_telhado(eixo: int, sg: float, s_m: float, t_m: float) -> float:
+        """C_e da Tabela 7 no ponto (s, t) do telhado; positivo empurra para baixo"""
+        if eixo == 0:                                     # perpendicular à cumeeira: EF na água de barlavento
+            if g["uma_agua"]:
+                do_baixo = (g["s_baixo"] - g["s_alto"]) * sg < 0
+                return ce[(C.TRANSVERSAL, "EF" if do_baixo else "GH")]
+            return ce[(C.TRANSVERSAL, "EF" if (s_m - s_c) * sg < 0 else "GH")]
+        d = (t_m - t0) if sg > 0 else (t1 - t_m)          # ao longo da cumeeira: a distância ao oitão de barlavento
+        return ce[(C.LONGITUDINAL, "EG" if d <= b_dim / 2.0 else "FH" if d <= b_dim else "IJ")]
+
+    casos: Dict[str, dict] = {}
+    up = np.array([0.0, 0.0, 1.0])
+    exemplo = None
+    for rot, eixo, sg in (("→", 0, 1.0), ("←", 0, -1.0), ("↑", 1, 1.0), ("↓", 1, -1.0)):
+        e_al = u2 if eixo == 0 else n2
+        c_al, c_tr = (sp, tp) if eixo == 0 else (tp, sp)
+        lo_al, hi_al = (s0, s1) if eixo == 0 else (t0, t1)
+        dv3 = (U3 if eixo == 0 else N3) * sg              # o sentido do vento
+        tr3 = N3 if eixo == 0 else U3
+        # Tabela 6: transversal = o vento perpendicular à face maior (a face que ele pega tem o comprimento da outra
+        # dimensão em planta)
+        face_len, outro = (Lt, Ls) if eixo == 0 else (Ls, Lt)
+        dirn = C.TRANSVERSAL if face_len >= outro - 1e-6 else C.LONGITUDINAL
+        L_b, L_so, L_l1, L_l2 = ("A", "B", "C1/D1", "C2/D2") if dirn == C.TRANSVERSAL else ("C", "D", "A1/B1", "A2/B2")
+        z1 = min(2.0 * h, b_dim / 2.0) if dirn == C.TRANSVERSAL else min(max(b_dim / 3.0, a_dim / 4.0), 2.0 * h)
+        borda_barl = lo_al if sg > 0 else hi_al
+        face_barl, face_sota = (eixo, 0 if sg > 0 else 1), (eixo, 1 if sg > 0 else 0)
+        filas = _agrupar(c_tr, FILA_TOL)
+        larg = _larguras(list(filas))
+        filas2 = _agrupar(c_al, FILA_TOL)
+        larg2 = _larguras(list(filas2))
+        for cpi in cpis:
+            v = float(cpi.valor)
+            dist: Dict[int, np.ndarray] = {}
+            # paredes de barlavento e de sotavento: o primeiro e o último pilar de cada fila na direção do vento
+            for c_, ks in filas.items():
+                ordem = sorted(ks, key=lambda k: c_al[k] * sg)
+                papeis = [(ordem[0], L_b, 1.0, face_barl)] + ([(ordem[-1], L_so, -1.0, face_sota)] if len(ordem) > 1 else [])
+                for k, letra, sinal, face in papeis:
+                    if face in faces_long:
+                        continue
+                    pnet = (ce[(dirn, letra)] - v) * q                    # + empurra a face para dentro
+                    for i in pil[k]:
+                        somar(dist, i, pnet * larg[c_] * sinal * dv3)     # para dentro: a favor do vento a barlavento
+                    if exemplo is None and letra == L_b and larg[c_] > 0:
+                        exemplo = {"caso": "V%s %s" % (rot, _nome_cpi(v)), "pilar": k, "face": letra, "Ce": ce[(dirn, letra)],
+                                   "Cpi": v, "q_kN_m2": round(q, 4), "largura_m": round(larg[c_], 3),
+                                   "w_kN_m": round(pnet * larg[c_], 4)}
+            # paredes laterais (paralelas ao vento): o primeiro e o último na transversal de cada fila ao longo do vento
+            for c_, ks in filas2.items():
+                ordem = sorted(ks, key=lambda k: c_tr[k])
+                if len(ordem) < 2:
+                    continue
+                letra = L_l1 if abs(c_ - borda_barl) <= z1 else L_l2
+                for k, sinal, face in ((ordem[0], 1.0, (1 - eixo, 0)), (ordem[-1], -1.0, (1 - eixo, 1))):
+                    if face in faces_long:
+                        continue
+                    pnet = (ce[(dirn, letra)] - v) * q
+                    for i in pil[k]:
+                        somar(dist, i, pnet * larg2[c_] * sinal * tr3)
+            # as faces com longarinas: a faixa de altura de cada fiada
+            for face, alts in alt_faixa.items():
+                eixo_f, lado = face
+                normal_in = (U3 if eixo_f == 0 else N3) * (1.0 if lado == 0 else -1.0)
+                for i, hf in alts.items():
+                    if eixo_f == eixo:
+                        letra = L_b if face == face_barl else L_so
+                    else:
+                        m = (nos[barras[i]["a"]] + nos[barras[i]["b"]])[:2] / 2.0
+                        letra = L_l1 if abs(float(m @ e_al) - borda_barl) <= z1 else L_l2
+                    somar(dist, i, (ce[(dirn, letra)] - v) * q * hf * normal_in)
+            # o telhado: p = (C_e − C_pi)·q, positivo empurra para baixo
+            nodal: Dict[int, np.ndarray] = {}
+            for tc in tercas:
+                for i in tc["barras"]:
+                    t_i = float(((nos[barras[i]["a"]] + nos[barras[i]["b"]])[:2] / 2.0) @ n2)
+                    w_t = np.zeros(3)
+                    for s_k, an_k, _ in tc["amostras"]:
+                        w_t += -(ce_telhado(eixo, sg, s_k, t_i) - v) * q * an_k
+                    somar(dist, i, w_t)
+            for i, (Ls_, Lh, w) in trechos.items():
+                if i in fora:
+                    continue
+                a, b = nos[barras[i]["a"]], nos[barras[i]["b"]]
+                m = (a + b) / 2.0
+                cp = ce_telhado(eixo, sg, float(m[:2] @ u2), float(m[:2] @ n2)) - v
+                d = _unit(b - a)
+                nn = _unit(up - (up @ d) * d)
+                nodal[i] = -cp * q * Ls_ * w * nn / 2.0
+            casos["V%s %s" % (rot, _nome_cpi(v))] = {
+                "dist": dist, "nodal": nodal, "nos": {}, "cpi": v, "direcao": dirn, "fechado": True,
+                "sentido": [float(x) for x in dv3[:2]],
+                "descricao": "galpão fechado: vento %s (%s na Tabela 6), C_pi = %s (NBR 6123:2023, Tabelas 6 e 7; 6.3.2.1)"
+                % ("perpendicular à geratriz" if eixo == 0 else "ao longo da geratriz", dirn, ("%+.1f" % v).replace(".", ","))}
+    info = {"tabela": "Tabelas 6 e 7 + C_pi (galpão fechado)", "Vk": round(Vk, 2), "S2": round(S2, 3), "q_kN_m2": round(q, 3),
+            "classe": classe, "z": round(z_ref, 2), "b": round(b_dim, 2), "a": round(a_dim, 2), "h": round(h, 2),
+            "teta": round(teta, 2), "tg": round(tg, 3), "aguas": 1 if g["uma_agua"] else 2, "vao": round(g["vao"], 2),
+            "profundidade": round(g["prof"], 2), "aberturas": aberturas, "cpi": [float(c.valor) for c in cpis],
+            "cpi_descricao": [c.descricao for c in cpis],
+            "cpi_hipotese": ("permeabilidade \"%s\" (premissas; o padrão é o da NBR 6123:2023, 6.3.2.1-a: duas faces opostas "
+                             "igualmente permeáveis, as outras impermeáveis) — cada C_pi em todas as direções" % aberturas),
+            "coeficientes": {"%s %s" % k: round(v_, 3) for k, v_ in sorted(ce.items())},
+            "paredes": {"caminho": ("longarinas em %d face(s); pilares da borda nas outras" % len(faces_long)) if faces_long
+                        else "pilares da borda (largura de influência, altura toda)",
+                        "longarinas_soltas": soltas},
+            "exemplo_parede": exemplo, "observacoes": list(coefs.observacoes)}
+    return casos, info
+
+
+def _vento_isolada(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict]:
     """os casos de vento da cobertura isolada (NBR 6123:2023, 7.2), em cada cobertura independente — as que estão em níveis
     diferentes (o Docas, 08/10) eram uma só: a "flecha" ia do banzo de uma ao da outra (tg θ 1,29 numa marquise de 9°).
     O vento nas barras (pilares, vigas) entra uma vez, com a primeira"""
@@ -1149,27 +1685,21 @@ def _vento(M: dict, cob: dict, avisos: List[str]) -> Tuple[Dict[str, dict], dict
     return casos, info
 
 
-def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -> Tuple[Dict[str, dict], dict]:
-    """o vento de uma cobertura isolada (NBR 6123:2023, 7.2): {caso: {barra: força nodal por ponta (kN, 3)}}"""
-    from nucleo import cargas as C
-    P, nos, barras = M["par"], M["nos"], M["barras"]
-    if not P.get("vento") or not cob:
-        return {}, {}
+def _geometria_da_cobertura(M: dict, cob: dict) -> dict:
+    """a geometria da cobertura pelos trechos do banzo de cima: o triedro em planta (u = o vão, perpendicular à geratriz;
+    n = a geratriz), as coordenadas s (ao longo de u) e t (ao longo de n) dos nós, o vão, a profundidade, as cotas, a
+    inclinação (tg θ) e se é de uma água (com as bordas alta e baixa)"""
+    nos, barras = M["nos"], M["barras"]
     trechos, planos = cob["trechos"], cob["planos"]
     pts = np.array([nos[barras[i][k]] for i in trechos for k in ("a", "b")])
     zt = float(pts[:, 2].max())
-    # dimensões em planta da cobertura e a maior dimensão (classe)
+    # dimensões em planta da cobertura
     u = np.mean([p["u"] for p in planos.values()], axis=0)
     u = _unit(u)
     n = np.array([-u[1], u[0]])
     s = pts[:, :2] @ u
     t = pts[:, :2] @ n
     vao, prof = float(s.max() - s.min()), float(t.max() - t.min())
-    maior = max(vao, prof, zt)
-    classe = P.get("classe") or ("A" if maior <= 20 else "B" if maior <= 50 else "C")
-    S2 = C.fator_s2(P["categoria"], classe, max(zt, 1.0))
-    Vk = C.velocidade_caracteristica(float(P["v0"]), float(P["s1"]), S2, float(P["s3"]))
-    q = C.pressao_dinamica(Vk)
     # a inclinação equivalente: a flecha da cobertura sobre o meio vão (tg θ), pelos nós do banzo superior
     zb = float(pts[:, 2].min())
     flecha = zt - zb
@@ -1197,6 +1727,26 @@ def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -
             if acum >= meio:
                 tg = tg_i
                 break
+    return {"pts": pts, "zt": zt, "u": u, "n": n, "s": s, "t": t, "vao": vao, "prof": prof, "zb": zb, "flecha": flecha,
+            "tg": tg, "h_livre": h_livre, "uma_agua": uma_agua, "s_alto": s_alto, "s_baixo": s_baixo}
+
+
+def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -> Tuple[Dict[str, dict], dict]:
+    """o vento de uma cobertura isolada (NBR 6123:2023, 7.2): {caso: {barra: força nodal por ponta (kN, 3)}}"""
+    from nucleo import cargas as C
+    P, nos, barras = M["par"], M["nos"], M["barras"]
+    if not P.get("vento") or not cob:
+        return {}, {}
+    trechos, planos = cob["trechos"], cob["planos"]
+    g = _geometria_da_cobertura(M, cob)
+    pts, zt, u, n, s, t = g["pts"], g["zt"], g["u"], g["n"], g["s"], g["t"]
+    vao, prof, zb, flecha, tg, h_livre = g["vao"], g["prof"], g["zb"], g["flecha"], g["tg"], g["h_livre"]
+    uma_agua, s_alto, s_baixo = g["uma_agua"], g["s_alto"], g["s_baixo"]
+    maior = max(vao, prof, zt)
+    classe = P.get("classe") or ("A" if maior <= 20 else "B" if maior <= 50 else "C")
+    S2 = C.fator_s2(P["categoria"], classe, max(zt, 1.0))
+    Vk = C.velocidade_caracteristica(float(P["v0"]), float(P["s1"]), S2, float(P["s3"]))
+    q = C.pressao_dinamica(Vk)
     info = {"Vk": round(Vk, 2), "S2": round(S2, 3), "q_kN_m2": round(q, 3), "classe": classe, "z": round(zt, 2),
             "vao": round(vao, 2), "profundidade": round(prof, 2), "flecha": round(flecha, 3), "tg": round(tg, 3),
             "h_livre": round(h_livre, 2), "aguas": 1 if uma_agua else 2,
@@ -1240,7 +1790,8 @@ def _vento_uma(M: dict, cob: dict, avisos: List[str], com_barras: bool = True) -
     if h_livre < 0.5 * vao:
         avisos.append(("vento: a altura livre (%.2f m) é menor que 0,5 × a profundidade da cobertura (%.2f m) — a NBR 6123 "
                        "(7.2.1) pede, nesse caso, calcular como edificação fechada com cpi +0,8/−0,3 na zona de obstrução. "
-                       "Usada a %s (cobertura isolada): conferir com o engenheiro") % (h_livre, 0.5 * vao, info["tabela"]))
+                       "Usada a %s (cobertura isolada): conferir com o engenheiro (o modo \"galpão fechado\" das premissas "
+                       "aplica as Tabelas 6 e 7)") % (h_livre, 0.5 * vao, info["tabela"]))
     smid = float((s.max() + s.min()) / 2)
     # as terças desta cobertura (as que recebem o telhado no lugar dos trechos do banzo)
     ter = cob.get("tercas") or {}
@@ -1377,11 +1928,29 @@ def cargas(M: dict) -> Tuple[Dict[str, dict], dict, List[str]]:
         casos.update(vc)
         if vi:
             info["vento"] = vi
+    for nome, caso in casos.items():
+        if nome.startswith("V"):
+            caso["sentido_vertical"], caso["Fz_kN"] = _sentido_vertical(caso, barras)
     return casos, info, avisos
 
 
-def combinacoes(casos: Sequence[str]) -> Dict[str, dict]:
-    """as combinações da NBR 8800 (Tabelas 1 e 2): ELU normais e ELS (raras e frequentes)"""
+def _sentido_vertical(caso: dict, barras: List[dict]) -> Tuple[str, float]:
+    """("pressao" | "succao" | "horizontal", ΣFz kN) do caso: pelo sinal da soma das forças verticais (as nodais nas duas
+    pontas, as distribuídas no comprimento, as dos nós). M5, 14/10: antes era pelo nome — "V2" sempre sucção —, e o
+    carregamento 2 da Tabela 24 com o vento do lado alto, que empurra para BAIXO, ficava sem a combinação com a sobrecarga"""
+    Fz = sum(2.0 * float(F[2]) for F in caso.get("nodal", {}).values()) +         sum(float(w[2]) * barras[i]["L"] for i, w in caso.get("dist", {}).items()) +         sum(float(F[2]) for F in (caso.get("nos") or {}).values())
+    escala = sum(2.0 * float(np.abs(F).sum()) for F in caso.get("nodal", {}).values()) +         sum(float(np.abs(w).sum()) * barras[i]["L"] for i, w in caso.get("dist", {}).items()) +         sum(float(np.abs(F).sum()) for F in (caso.get("nos") or {}).values())
+    if abs(Fz) <= 1e-6 * max(escala, 1.0):
+        return "horizontal", round(Fz, 4)
+    return ("pressao" if Fz < 0 else "succao"), round(Fz, 4)
+
+
+def combinacoes(casos) -> Dict[str, dict]:
+    """as combinações da NBR 8800 (Tabelas 1 e 2): ELU normais e ELS (raras e frequentes). `casos`: o dict dos casos (de
+    `cargas`) ou só os nomes. O vento que empurra a cobertura para baixo (pressão) ou só de lado entra com os permanentes
+    desfavoráveis e a sobrecarga (o vento principal e a sobrecarga principal) e também com os permanentes favoráveis; o que
+    levanta (sucção) só com os permanentes favoráveis. M5, 14/10: a pressão/sucção vem do sinal efetivo do caso
+    (`sentido_vertical`, gravado por `cargas`); com só os nomes, a regra antiga (o carregamento "V2" é sucção)"""
     from nucleo import cargas as C
     gpp = C.GAMA_G["metálica"][0]
     gcp = C.GAMA_G["moldada no local"][0]              # elementos construtivos industrializados (telha, terças)
@@ -1390,13 +1959,15 @@ def combinacoes(casos: Sequence[str]) -> Dict[str, dict]:
     psc1, pv1 = C.PSI["cobertura"][1], C.PSI["vento"][1]
     tem = set(casos)
     ventos = [c for c in casos if c.startswith("V")]
+    sentido = {c: (casos[c].get("sentido_vertical") if isinstance(casos, dict) and isinstance(casos[c], dict) else None)
+               for c in ventos}
     G = {"PP": gpp, **({"CP": gcp} if "CP" in tem else {})}
     Gf = {"PP": 1.0, **({"CP": 1.0} if "CP" in tem else {})}
     out: Dict[str, dict] = {}
     if "SC" in tem:
         out["ELU1 SC"] = {"tipo": "ELU", "fatores": {**G, "SC": gsc}, "descricao": "permanentes + sobrecarga principal"}
     for v in ventos:
-        pressao = not v.startswith("V2")                 # o carregamento 2 é sucção: permanentes favoráveis
+        pressao = (sentido[v] != "succao") if sentido[v] else not v.startswith("V2")
         if pressao:
             out["ELU %s" % v] = {"tipo": "ELU", "fatores": {**G, v: gv, **({"SC": gsc * psc0} if "SC" in tem else {})},
                                  "descricao": "permanentes + vento %s principal + sobrecarga" % v}
@@ -2046,7 +2617,7 @@ def _calcular_situacao(doc, par: Optional[dict] = None, montador=None, carregado
     cargas e as combinações podem vir de fora (a análise global do pré-moldado, nucleo3d/analise_premoldado.py)"""
     M = (montador or montar)(doc, par)
     casos, info, av_c = (carregador or cargas)(M)
-    combs = (combinador or combinacoes)(list(casos))
+    combs = combinador(list(casos)) if combinador else combinacoes(casos)
     sol = resolver(M, casos)
     avisos = list(M["avisos"]) + av_c
     if sol["instavel"]:
@@ -2124,6 +2695,8 @@ def _calcular_situacao(doc, par: Optional[dict] = None, montador=None, carregado
                     **({"perfil_original": br["perfil_original"]} if br.get("perfil_original") else {})}
                    for br in barras],
         "casos": {nome: {"descricao": casos[nome].get("descricao", nome),
+                         **({"sentido_vertical": casos[nome]["sentido_vertical"], "Fz_kN": casos[nome].get("Fz_kN")}
+                            if casos[nome].get("sentido_vertical") else {}),
                          "nodal": {str(i): np.round(v, 4).tolist() for i, v in casos[nome]["nodal"].items()},
                          "nos": {str(i): np.round(v, 4).tolist() for i, v in (casos[nome].get("nos") or {}).items()},
                          "dist": {str(i): np.round(v, 4).tolist() for i, v in casos[nome]["dist"].items()}}

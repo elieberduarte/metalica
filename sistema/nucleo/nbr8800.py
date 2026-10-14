@@ -424,11 +424,245 @@ def coeficiente_Ct(Ct: float = None, ec: float = None, lc: float = None,
                       "todos_elementos_ligados=True")
 
 
+# --- seções abertas que se ligam por um elemento só (achados N1 e N11, 14/10/2026) ---------
+#
+# Antes, sem Ct/ec/lc explícitos, toda barra saía com Ct = 1,0 ("todos os elementos ligados"):
+# a cantoneira de tesoura soldada por uma aba e o U ligado pela alma tinham a área líquida
+# efetiva igual à bruta (L 50×3 soldada por uma aba: 89,4 kN em vez de 68,7 kN, +30 % contra a
+# segurança). Regras do usuário (14/10/2026):
+#   * "Ct pelos parafusos do 3D quando houver"; sem a ligação no modelo, cantoneira e U
+#     laminados ficam no piso da NBR 8800:2024 (item 5.2.5-c, último parágrafo): Ct = Ac/Ag.
+#     (Na primeira versão da correção era 0,60, o menor Ct da NBR 8800:2008; a de 2024 tirou
+#     os limites 0,60/0,90 e admite Ct ≥ Ac/Ag, que numa L de abas iguais dá ≈ 0,52.)
+#   * cantoneira formada a frio ("L … (FF)") vai pela NBR 14762 (item 9.6.2-c), como o U/Ue
+#     — `verificar.tracao_ruptura_frio`;
+#   * a ruptura da seção líquida só vale na barra com ponta ligada: ligacao["ponta_ligada"]
+#     = False (trecho corrido de banzo contínuo) deixa só o escoamento da seção bruta.
+
+#: tipos de `Perfil` que se ligam por um elemento só (aba da cantoneira, alma do U)
+TIPOS_LIGADOS_POR_UM_ELEMENTO = ("L", "U", "Ue")
+
+_CHAVES_LIGACAO = ("lc", "n_parafusos", "d_parafuso", "soldada", "fonte", "ponta_ligada")
+
+
+def ligada_por_um_elemento(perfil) -> bool:
+    """A seção é aberta e se liga por um elemento só (cantoneira, U, Ue)?"""
+    return _perfil_obj(perfil).tipo in TIPOS_LIGADOS_POR_UM_ELEMENTO
+
+
+def cantoneira_formada_a_frio(perfil) -> bool:
+    """Cantoneira dobrada ("L … (FF)"): a tração dela vai pela NBR 14762, item 9.6.2."""
+    p = _perfil_obj(perfil)
+    return p.tipo == "L" and bool(p.dados.get("formado_a_frio"))
+
+
+def ler_ligacao(ligacao) -> dict:
+    """Confere o dicionário `ligacao` do contrato de `tracao`/`verificar_membro`.
+
+    Chaves (todas opcionais): "lc" (cm, comprimento da ligação na direção da força),
+    "n_parafusos" (parafusos na linha), "d_parafuso" (cm), "soldada" (bool), "fonte" (texto
+    curto para o memorial) e "ponta_ligada" (bool; False = trecho corrido de banzo contínuo,
+    sem ligação de ponta: a ruptura da seção líquida não se aplica). Devolve um dicionário
+    normalizado, sempre com "ponta_ligada"; valor fora da faixa levanta `ErroDeDados`."""
+    if ligacao is None:
+        return {"ponta_ligada": True}
+    if not isinstance(ligacao, dict):
+        raise ErroDeDados("ligacao deve ser um dicionário com lc (cm), n_parafusos, d_parafuso (cm), "
+                          "soldada, fonte e ponta_ligada; recebido %r" % (ligacao,))
+    out = {}
+    lc = ligacao.get("lc")
+    if lc is not None:
+        try:
+            lc = float(lc)
+        except (TypeError, ValueError):
+            raise ErroDeDados("ligacao['lc'] deve ser um número em cm; recebido %r" % (lc,))
+        if lc < 0 or math.isnan(lc):
+            raise ErroDeDados("ligacao['lc'] (comprimento da ligação, cm) não pode ser negativo; "
+                              "recebido %r" % lc)
+        out["lc"] = lc
+    n = ligacao.get("n_parafusos")
+    if n is not None:
+        try:
+            n_int = int(n)
+        except (TypeError, ValueError):
+            raise ErroDeDados("ligacao['n_parafusos'] deve ser inteiro; recebido %r" % (n,))
+        if n_int < 0 or n_int != float(n):
+            raise ErroDeDados("ligacao['n_parafusos'] deve ser inteiro ≥ 0; recebido %r" % (n,))
+        out["n_parafusos"] = n_int
+    d = ligacao.get("d_parafuso")
+    if d is not None:
+        try:
+            d = float(d)
+        except (TypeError, ValueError):
+            raise ErroDeDados("ligacao['d_parafuso'] deve ser o diâmetro em cm; recebido %r" % (d,))
+        if not 0.3 <= d <= 10.0:
+            raise ErroDeDados("ligacao['d_parafuso'] = %r fora da faixa 0,3–10 cm (o diâmetro vai "
+                              "em cm: 5/8\" = 1,5875)" % d)
+        out["d_parafuso"] = d
+    out["soldada"] = bool(ligacao.get("soldada", False))
+    if out["soldada"] and out.get("n_parafusos"):
+        raise ErroDeDados("ligacao com soldada=True e n_parafusos > 0: informe uma ligação só")
+    if out.get("n_parafusos") and "d_parafuso" not in out:
+        raise ErroDeDados("ligacao com n_parafusos > 0 precisa de d_parafuso (cm) para descontar o furo "
+                          "(NBR 8800, item 5.2.4)")
+    out["fonte"] = str(ligacao.get("fonte") or "ligação informada")
+    ponta = ligacao.get("ponta_ligada")
+    out["ponta_ligada"] = True if ponta is None else bool(ponta)
+    return out
+
+
+def _excentricidade_cantoneira(p: Perfil) -> Tuple[float, float, str]:
+    """ec (cm), Ac (cm²) e a descrição, para a cantoneira ligada por uma aba.
+
+    O catálogo não traz o centroide: ele é calculado pela geometria. Cantoneira montada pelo
+    sistema (`perfis_fabrica.perfil_cantoneira`) → linha média com o raio do canto, a mesma
+    conta que deu a área dela; cantoneira de tabela → duas abas retangulares sem o raio de
+    concordância (o raio põe material junto do canto e aproxima G da aba: desprezá-lo aumenta
+    ec, a favor da segurança). Abas desiguais: não se sabe qual aba é a ligada; vale a curta,
+    que dá ao mesmo tempo o maior ec e o menor Ac — o menor Ct pelas duas regras."""
+    t = (p.dados.get("t") or p.tw) / 10.0
+    b1 = (p.dados.get("d") or p.bf) / 10.0      # aba "vertical"
+    b2 = (p.bf or p.dados.get("d")) / 10.0      # aba "horizontal"
+    if min(t, b1, b2) <= 0:
+        raise ErroDeDados(f"cantoneira {p.nome} sem abas/espessura para calcular ec (NBR 8800, item 5.2.5-c)")
+    if p.dados.get("sintetico"):
+        from .perfis_fabrica import _props_cantoneira
+        q = _props_cantoneira(b1, b2, t, t if p.dados.get("formado_a_frio") else 0.0)
+        # xc: de G à face externa da aba b1; yc: de G à face externa da aba b2
+        opcoes = [(q["xc"], b1 * t, "aba de %s mm" % fmt(b1 * 10, 0)),
+                  (q["yc"], b2 * t, "aba de %s mm" % fmt(b2 * 10, 0))]
+        modo = "linha média com o raio do canto" if p.dados.get("formado_a_frio") else "linha média"
+    else:
+        def ec_aba(bA, bB):
+            return (bA * t * t / 2.0 + (bB - t) * t * (t + (bB - t) / 2.0)) / (bA * t + (bB - t) * t)
+        opcoes = [(ec_aba(b1, b2), b1 * t, "aba de %s mm" % fmt(b1 * 10, 0)),
+                  (ec_aba(b2, b1), b2 * t, "aba de %s mm" % fmt(b2 * 10, 0))]
+        modo = "abas retangulares, sem o raio de concordância"
+    # a aba curta: maior ec e menor Ac (com abas iguais, tanto faz)
+    ec, Ac, aba = max(opcoes, key=lambda o: (o[0], -o[1]))
+    return ec, Ac, "G à face externa da %s ligada (%s)" % (aba, modo)
+
+
+def _excentricidade_u(p: Perfil) -> Tuple[float, float, str]:
+    """ec (cm), Ac (cm²) e a descrição, para o U ligado pela alma: x̄ medido da face externa
+    da alma. U de tabela traz uma espessura só: a mesa entra com a espessura média que fecha
+    a área do catálogo, tf = (A − d·tw)/[2(bf − tw)], sem a inclinação das abas."""
+    if p.tipo == "Ue":
+        from .nbr14762 import secao_do_perfil
+        sec = secao_do_perfil(p)
+        return sec.xc, sec.h * sec.t, "x̄ de G à face externa da alma (linha média, NBR 14762)"
+    tw = p.tw / 10.0
+    d = p.d / 10.0
+    bf = p.bf / 10.0
+    if min(tw, d, bf) <= 0 or bf <= tw:
+        raise ErroDeDados(f"perfil U {p.nome} sem d/bf/tw para calcular ec (NBR 8800, item 5.2.5-c)")
+    tf = p.dados.get("tf")
+    if tf:
+        tf = tf / 10.0
+        modo = "mesas com tf = %s mm" % fmt(tf * 10, 1)
+    else:
+        tf_eq = (p.A - d * tw) / (2.0 * (bf - tw)) if p.A else 0.0
+        tf = tf_eq if tf_eq > 0 else tw
+        modo = "mesas com a espessura média que fecha a área do catálogo, tf = %s mm" % fmt(tf * 10, 1)
+    A_alma = d * tw
+    A_mesas = 2.0 * (bf - tw) * tf
+    xbar = (A_alma * tw / 2.0 + A_mesas * (tw + (bf - tw) / 2.0)) / (A_alma + A_mesas)
+    return xbar, A_alma, "x̄ de G à face externa da alma (%s)" % modo
+
+
+def excentricidade_ligacao(perfil) -> Tuple[float, float, str]:
+    """ec (cm), Ac (cm²) e como foram obtidos, para a seção aberta ligada por um elemento só
+    (NBR 8800:2024, item 5.2.5-c e Figura 4): cantoneira pela aba, U pela alma."""
+    p = _perfil_obj(perfil)
+    if p.tipo == "L":
+        return _excentricidade_cantoneira(p)
+    if p.tipo in ("U", "Ue"):
+        return _excentricidade_u(p)
+    raise ErroDeDados(f"{p.nome}: ec só é calculado para cantoneira e U (NBR 8800, item 5.2.5-c)")
+
+
+def ct_sem_ligacao(perfil) -> float:
+    """O Ct que a tração adota quando a ligação da barra não está no modelo:
+
+    * cantoneira e U laminados: Ac/Ag, o piso da NBR 8800:2024 (item 5.2.5-c);
+    * cantoneira formada a frio: 0,40, o menor que a NBR 14762 (item 9.6.2-c) admite para
+      cantoneira, parafusada ou soldada;
+    * U/Ue formados a frio: 0,50, o menor da NBR 14762 (item 9.6.2-c) para U soldado;
+    * demais seções: 1,0 (todos os elementos ligados)."""
+    p = _perfil_obj(perfil)
+    if cantoneira_formada_a_frio(p) or p.tipo == "Ue":
+        from . import verificar
+        return verificar.ct_sem_ligacao_frio(cantoneira=p.tipo == "L")
+    if not ligada_por_um_elemento(p):
+        return 1.0
+    _, Ac, _ = excentricidade_ligacao(p)
+    return min(1.0, Ac / p.A) if p.A > 0 else 0.0
+
+
+def ct_secao_aberta(perfil, ligacao: dict) -> Tuple[float, List[Passo], Optional[Tuple[str, str]]]:
+    """Ct da cantoneira / U laminado ligado por um elemento só — NBR 8800:2024, item 5.2.5-c).
+
+    `ligacao` já conferido por `ler_ligacao`. Devolve (Ct, passos, hipótese) — a hipótese é
+    (texto, fonte) para `Resultado.hipotese`:
+
+    * com ℓc > 0: Ct = 1 − ec/ℓc, com ec pela geometria do perfil; a NBR 8800:2024 não fixa
+      mais os limites 0,60/0,90 da edição de 2008 e diz que, fora tubos e chapas, Ct não
+      precisa ser tomado menor que Ac/Ag;
+    * um parafuso só (ℓc = 0): Ct = Ac/Ag (o mesmo piso, pois 1 − ec/0 não existe);
+    * sem a ligação no modelo: Ct = Ac/Ag adotado (o piso da norma), hipótese escrita.
+    """
+    p = _perfil_obj(perfil)
+    ec, Ac, como = excentricidade_ligacao(p)
+    Ag = p.A
+    piso = min(1.0, Ac / Ag) if Ag > 0 else 0.0
+    passos: List[Passo] = []
+    lc = ligacao.get("lc") or 0.0
+    fonte = ligacao.get("fonte", "")
+    n_par = ligacao.get("n_parafusos") or 0
+    norma_piso = "NBR 8800:2024, item 5.2.5-c) (último parágrafo do item 5.2.5)"
+    if lc > 0:
+        passos.append(Passo("Excentricidade da ligação", formula="e<sub>c</sub>",
+                            conta=como, valor=fmt(ec, 2, "cm"),
+                            norma="NBR 8800:2024, item 5.2.5-c), Figura 4"))
+        Ct_calc = 1.0 - ec / lc
+        tipo = "solda longitudinal" if ligacao.get("soldada") else (
+            "do primeiro ao último parafuso" if n_par else "comprimento da ligação")
+        passos.append(Passo("Coeficiente Ct pela excentricidade da ligação (%s, %s)" % (tipo, fonte),
+                            formula="C<sub>t</sub> = 1 − e<sub>c</sub>/ℓ<sub>c</sub>",
+                            conta=f"1 − {fmt(ec)} / {fmt(lc)}", valor=fmt(Ct_calc, 3),
+                            norma="NBR 8800:2024, item 5.2.5-c)"))
+        Ct = Ct_calc
+        if Ct_calc < piso:
+            Ct = piso
+            passos.append(Passo("Piso de Ct: área dos elementos conectados sobre a área bruta",
+                                formula="C<sub>t</sub> ≥ A<sub>c</sub>/A<sub>g</sub>",
+                                conta=f"{fmt(Ac)} / {fmt(Ag)}", valor=fmt(Ct, 3), norma=norma_piso))
+        hip = ("C<sub>t</sub> = %s pela ligação (%s): ℓ<sub>c</sub> = %s cm, e<sub>c</sub> = %s cm"
+               % (fmt(Ct, 3), fonte, fmt(lc, 1), fmt(ec, 2)), "modelo")
+        return Ct, passos, hip
+    if n_par == 1:
+        passos.append(Passo("Coeficiente Ct com um parafuso só (ℓc = 0, %s)" % fonte,
+                            formula="C<sub>t</sub> = A<sub>c</sub>/A<sub>g</sub>",
+                            conta=f"{fmt(Ac)} / {fmt(Ag)}", valor=fmt(piso, 3), norma=norma_piso))
+        return piso, passos, ("C<sub>t</sub> = A<sub>c</sub>/A<sub>g</sub> = %s: ligação com um parafuso só (%s)"
+                              % (fmt(piso, 3), fonte), "modelo")
+    passos.append(Passo("C<sub>t</sub> = A<sub>c</sub>/A<sub>g</sub> adotado: ligação fora do modelo; "
+                        "piso da NBR 8800:2024, 5.2.5-c",
+                        formula="C<sub>t</sub> = A<sub>c</sub>/A<sub>g</sub>",
+                        conta="%s / %s (A<sub>c</sub>: %s)" % (fmt(Ac), fmt(Ag), "aba ligada" if p.tipo == "L" else "alma"),
+                        valor=fmt(piso, 3), norma=norma_piso))
+    hip = ("C<sub>t</sub> = A<sub>c</sub>/A<sub>g</sub> = %s adotado na tração: ligação de %s fora do modelo; "
+           "piso da NBR 8800:2024, 5.2.5-c (com a ligação desenhada, C<sub>t</sub> = 1 − e<sub>c</sub>/ℓ<sub>c</sub>,"
+           " e<sub>c</sub> = %s cm)" % (fmt(piso, 3), p.nome, fmt(ec, 2)), "rotina")
+    return piso, passos, hip
+
+
 def tracao(perfil, aco, N_Sd: float = 0.0, L: float = 0.0, n_furos: int = 0,
            d_parafuso: float = 0.0, d_furo: float = None, t_furo: float = None,
            ziguezague: Sequence[Tuple[float, float]] = (), Ct: float = None,
            ec: float = None, lc: float = None, rosqueada: bool = False,
-           pretensionada: bool = False, elemento: str = "Barra tracionada") -> Resultado:
+           pretensionada: bool = False, elemento: str = "Barra tracionada",
+           ligacao: Optional[dict] = None) -> Resultado:
     """Barra tracionada — NBR 8800, item 5.2.
 
     Nt,Rd = Ag·fy/γa1 (escoamento da seção bruta) e Nt,Rd = Ae·fu/γa2 com
@@ -436,6 +670,15 @@ def tracao(perfil, aco, N_Sd: float = 0.0, L: float = 0.0, n_furos: int = 0,
     (item 5.2.8), dispensado em barras redondas pré-tensionadas.
 
     Comprimentos em cm, esforços em kN, `ziguezague` = pares (s, g) em cm.
+
+    Ct: `Ct`, `ec`/`lc` explícitos têm prioridade. Sem eles, cantoneira e U laminados
+    (seções abertas ligadas por um elemento só) tiram o Ct de `ligacao` (dicionário com
+    "lc", "n_parafusos", "d_parafuso", "soldada", "fonte", "ponta_ligada" — ver
+    `ler_ligacao`): com ℓc, Ct = 1 − ec/ℓc pela geometria (NBR 8800:2024, item 5.2.5-c);
+    com parafusos, um furo descontado na seção; sem ligação, Ct = Ac/Ag adotado e registrado
+    como hipótese. A cantoneira formada a frio tem a ruptura pela NBR 14762 (item 9.6.2-c).
+    `ligacao["ponta_ligada"] = False` (trecho corrido de banzo contínuo): sem ruptura da
+    seção líquida, só o escoamento. As demais seções seguem com Ct = 1,0.
     """
     p = _perfil_obj(perfil)
     a = _aco(aco)
@@ -444,12 +687,28 @@ def tracao(perfil, aco, N_Sd: float = 0.0, L: float = 0.0, n_furos: int = 0,
         raise ErroDeDados(f"área bruta nula ou ausente no perfil {p.nome}")
     if n_furos and not (d_parafuso or d_furo):
         raise ErroDeDados("com n_furos > 0 informe d_parafuso ou d_furo, em cm")
+    lig = ler_ligacao(ligacao)
+    ponta = lig["ponta_ligada"]
     r = Resultado(elemento, perfil=p.nome, material=a.nome)
+    explicito = Ct is not None or ec is not None or lc is not None
+    # trecho corrido de banzo contínuo, sem furos: não há seção líquida a verificar
+    sem_ruptura = not ponta and not rosqueada and not n_furos and not ziguezague
+    # cantoneira formada a frio: ruptura pela NBR 14762, item 9.6.2-c (decisão de 14/10/2026)
+    cant_frio = (not sem_ruptura and not rosqueada and not explicito and not n_furos and not d_furo
+                 and cantoneira_formada_a_frio(p))
+    # seção aberta laminada ligada por um elemento só, sem Ct/ec/lc explícitos: o Ct sai da
+    # ligação (ou do piso Ac/Ag sem ela) — achado N1, 14/10/2026
+    ct_da_ligacao = (ponta and not rosqueada and not explicito and not cant_frio
+                     and ligada_por_um_elemento(p))
+    if ct_da_ligacao and not n_furos and not d_furo and lig.get("n_parafusos"):
+        # um furo por seção na linha de parafusos (NBR 8800, item 5.2.4)
+        n_furos, d_parafuso = 1, lig["d_parafuso"]
 
     # --- escoamento da seção bruta (eq. 7.2) ---
     N_esc = Ag * a.fy / GAMA_A1
     v1 = Verificacao("Tração — escoamento da seção bruta",
-                     norma="NBR 8800:2008, item 5.2.2 (a)",
+                     norma=("NBR 14762:2010, item 9.6.2-a)" if cantoneira_formada_a_frio(p)
+                            else "NBR 8800:2008, item 5.2.2 (a)"),
                      Sd=N_Sd, Rd=N_esc, unidade="kN")
     v1.passo("Força resistente ao escoamento da seção bruta",
              formula="N<sub>t,Rd</sub> = A<sub>g</sub>·f<sub>y</sub>/γ<sub>a1</sub>",
@@ -459,46 +718,75 @@ def tracao(perfil, aco, N_Sd: float = 0.0, L: float = 0.0, n_furos: int = 0,
 
     # --- ruptura da seção líquida (eq. 7.3) ---
     t = t_furo if t_furo is not None else (p.tw / 10.0)
-    if rosqueada:
-        An, Ct_ef = Ag, 1.0
-        Ae = 0.75 * Ag
-        passos = [Passo("Área efetiva da parte rosqueada",
-                        formula="A<sub>e</sub> = 0,75·A<sub>g</sub>",
-                        conta=f"0,75 × {fmt(Ag)}", valor=fmt(Ae, 2, "cm²"),
-                        norma="NBR 8800, item 5.2.8 (barras redondas rosqueadas)")]
-    else:
-        d_desc = desconto_furo(d_parafuso, d_furo)
-        An, passos = area_liquida(Ag, t, n_furos, d_desc, ziguezague)
-        if n_furos:
-            passos.insert(0, Passo("Desconto por furo",
-                                   formula="d<sub>desc</sub> = d + 3,5 mm",
-                                   conta=f"{fmt(d_parafuso)} + 0,35",
-                                   valor=fmt(d_desc, 2, "cm"),
-                                   norma="NBR 8800, item 5.2.4.2"))
-        todos = (n_furos == 0 and Ct is None and ec is None)
-        Ct_ef, passo_ct = coeficiente_Ct(Ct, ec, lc, todos_elementos_ligados=todos)
-        passos.append(passo_ct)
+    Ct_adotado = False
+    if sem_ruptura:
+        An, Ae, Ct_ef, N_rup = Ag, None, None, None
+        texto = ("trecho corrido de banzo contínuo: sem ligação de ponta, a seção líquida não se aplica")
+        v1.passo("Ruptura da seção líquida não verificada: " + texto,
+                 formula="—", conta="ligação de ponta: não (%s)" % lig.get("fonte", ""),
+                 valor="vale o escoamento da seção bruta",
+                 norma="NBR 8800:2024, item 5.2.3; NBR 14762:2010, item 9.6.2")
+        v1.observacao = texto
+    elif cant_frio:
+        from types import SimpleNamespace
+        from .verificar import tracao_ruptura_frio
+        x, _, _ = excentricidade_ligacao(p)
+        sec = SimpleNamespace(A=Ag, t=(p.dados.get("t") or p.tw) / 10.0, xc=x, nome=p.nome)
+        v2 = tracao_ruptura_frio(sec, a, N_Sd, ligacao, r, cantoneira=True)
+        r.add(v2)
+        An, Ct_ef, N_rup = r.dados["An"], r.dados["Ct"], v2.Rd
         Ae = Ct_ef * An
-        passos.append(Passo("Área líquida efetiva",
-                            formula="A<sub>e</sub> = C<sub>t</sub>·A<sub>n</sub>",
-                            conta=f"{fmt(Ct_ef, 3)} × {fmt(An)}",
-                            valor=fmt(Ae, 2, "cm²"), norma="NBR 8800, item 5.2.3"))
-    N_rup = Ae * a.fu / GAMA_A2
-    v2 = Verificacao("Tração — ruptura da seção líquida",
-                     norma="NBR 8800:2008, item 5.2.2 (b)",
-                     Sd=N_Sd, Rd=N_rup, unidade="kN")
-    for passo in passos:
-        v2.passos.append(passo)
-    v2.passo("Força resistente à ruptura da seção líquida",
-             formula="N<sub>t,Rd</sub> = A<sub>e</sub>·f<sub>u</sub>/γ<sub>a2</sub>",
-             conta=f"{fmt(Ae)} × {fmt(a.fu)} / {fmt(GAMA_A2)}",
-             valor=fmt(N_rup, 1, "kN"), norma="item 5.2.2 (b)")
-    r.add(v2)
+        Ct_adotado = bool(r.dados.get("Ct_adotado_sem_ligacao"))
+    else:
+        if rosqueada:
+            An, Ct_ef = Ag, 1.0
+            Ae = 0.75 * Ag
+            passos = [Passo("Área efetiva da parte rosqueada",
+                            formula="A<sub>e</sub> = 0,75·A<sub>g</sub>",
+                            conta=f"0,75 × {fmt(Ag)}", valor=fmt(Ae, 2, "cm²"),
+                            norma="NBR 8800, item 5.2.8 (barras redondas rosqueadas)")]
+        else:
+            d_desc = desconto_furo(d_parafuso, d_furo)
+            An, passos = area_liquida(Ag, t, n_furos, d_desc, ziguezague)
+            if n_furos:
+                passos.insert(0, Passo("Desconto por furo",
+                                       formula="d<sub>desc</sub> = d + 3,5 mm",
+                                       conta=f"{fmt(d_parafuso)} + 0,35",
+                                       valor=fmt(d_desc, 2, "cm"),
+                                       norma="NBR 8800, item 5.2.4.2"))
+            if ct_da_ligacao:
+                Ct_ef, passos_ct, hip = ct_secao_aberta(p, lig)
+                passos.extend(passos_ct)
+                if hip:
+                    r.hipotese("ct_ligacao", hip[0], hip[1])
+                Ct_adotado = not lig.get("lc") and lig.get("n_parafusos") != 1
+            else:
+                # sem ponta ligada, os furos que houver não são da ligação: Ct = 1,0
+                todos = not explicito and (n_furos == 0 or not ponta)
+                Ct_ef, passo_ct = coeficiente_Ct(Ct, ec, lc, todos_elementos_ligados=todos)
+                passos.append(passo_ct)
+            Ae = Ct_ef * An
+            passos.append(Passo("Área líquida efetiva",
+                                formula="A<sub>e</sub> = C<sub>t</sub>·A<sub>n</sub>",
+                                conta=f"{fmt(Ct_ef, 3)} × {fmt(An)}",
+                                valor=fmt(Ae, 2, "cm²"), norma="NBR 8800, item 5.2.3"))
+        N_rup = Ae * a.fu / GAMA_A2
+        v2 = Verificacao("Tração — ruptura da seção líquida",
+                         norma="NBR 8800:2008, item 5.2.2 (b)",
+                         Sd=N_Sd, Rd=N_rup, unidade="kN")
+        for passo in passos:
+            v2.passos.append(passo)
+        v2.passo("Força resistente à ruptura da seção líquida",
+                 formula="N<sub>t,Rd</sub> = A<sub>e</sub>·f<sub>u</sub>/γ<sub>a2</sub>",
+                 conta=f"{fmt(Ae)} × {fmt(a.fu)} / {fmt(GAMA_A2)}",
+                 valor=fmt(N_rup, 1, "kN"), norma="item 5.2.2 (b)")
+        r.add(v2)
 
     # --- esbeltez (item 5.2.8) ---
     rmin = p.rmin
     v3 = Verificacao("Esbeltez da barra tracionada",
-                     norma="NBR 8800:2008, item 5.2.8", unidade="")
+                     norma=("NBR 14762:2010, item 9.6.3" if cantoneira_formada_a_frio(p)
+                            else "NBR 8800:2008, item 5.2.8"), unidade="")
     if pretensionada:
         v3.dispensada = True
         v3.observacao = ("barra redonda pré-tensionada por esticador: a norma "
@@ -513,10 +801,12 @@ def tracao(perfil, aco, N_Sd: float = 0.0, L: float = 0.0, n_furos: int = 0,
         v3.observacao = "comprimento não informado — esbeltez não verificada"
     r.add(v3)
 
-    N_Rd = min(N_esc, N_rup)
+    N_Rd = N_esc if N_rup is None else min(N_esc, N_rup)
     r.dados.update({"Ag": Ag, "An": An, "Ae": Ae, "Ct": Ct_ef, "N_Rd": N_Rd,
+                    "Ct_adotado_sem_ligacao": bool(Ct_adotado),
+                    "ponta_ligada": bool(ponta),
                     "N_Rd_escoamento": N_esc, "N_Rd_ruptura": N_rup,
-                    "governa": "escoamento" if N_esc < N_rup else "ruptura",
+                    "governa": "escoamento" if (N_rup is None or N_esc < N_rup) else "ruptura",
                     "esbeltez": (L / rmin) if (L > 0 and rmin > 0) else None})
     return r
 
@@ -1417,6 +1707,7 @@ def flexao_composta(perfil, aco, N_Sd: float = 0.0, Mx_Sd: float = 0.0, My_Sd: f
             res_n = tracao(p, a, N_Sd=abs(N_Sd), L=Lx, **(tracao_kwargs or {}))
         for v in res_n.verificacoes:
             r.add(v)
+        r.hipoteses.extend(res_n.hipoteses)
         N_Rd = res_n.dados["N_Rd"]
         r.dados.update({k: val for k, val in res_n.dados.items() if k != "governa"})
     if Mx_Rd is None and Mx_Sd:

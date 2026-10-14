@@ -39,7 +39,8 @@ from .perfis import Perfil
 
 __all__ = ["FORMATOS", "DIAGONAIS", "PAPEIS", "Tesoura", "geometria", "montar",
            "altura_padrao", "paineis_padrao", "menor_perfil", "candidatos",
-           "perfil_proximo", "FAMILIAS_POR_PAPEL", "candidatos_verificados"]
+           "perfil_proximo", "FAMILIAS_POR_PAPEL", "candidatos_verificados",
+           "verificar_barra", "barra_de_ponta"]
 
 #: Formato da tesoura: o que cada um faz com os dois banzos.
 FORMATOS: Dict[str, str] = {
@@ -484,21 +485,69 @@ def _espessura(p: Perfil) -> float:
     return 0.0
 
 
+def barra_de_ponta(t: "Tesoura", b: "Barra", tol: float = 1.0) -> bool:
+    """A barra do banzo tem ligação de ponta? Banzo é contínuo: só se liga no apoio (x = 0
+    e x = vão, onde o banzo chega ao pilar ou ao joelho) e na emenda, que se fabrica na
+    cumeeira (x = vão/2: os banzos saem inteiros por água, ver `galpao._lista_da_tesoura`).
+    Os trechos entre essas pontas passam corridos pelos nós. Diagonais e montantes têm
+    sempre as duas pontas ligadas."""
+    if not b.papel.startswith("banzo"):
+        return True
+    x1, x2 = sorted((t.no(b.i).x, t.no(b.j).x))
+    meio = t.vao / 2.0
+    return x1 <= tol or x2 >= t.vao - tol or (x1 - tol <= meio <= x2 + tol)
+
+
+#: `ligacao` dos trechos corridos dos banzos contínuos (regra do usuário, 14/10/2026: a
+#: ruptura da seção líquida só vale na barra com ponta ligada)
+LIGACAO_TRECHO_CORRIDO = {"ponta_ligada": False, "fonte": "trechos corridos do banzo contínuo"}
+
+
+def verificar_barra(p: Perfil, aco: str, Nc: float, Nt: float, M: float, Lx: float, Ly: float,
+                    n: int, elemento: str, avisos=None, Nt_ponta: Optional[float] = None) -> Resultado:
+    """Verifica uma família de barras da tesoura.
+
+    `Nt_ponta` None (diagonais, montantes): todas as barras têm ponta ligada — a ruptura da
+    seção líquida entra com o maior `Nt` (Ct da ligação ou o adotado sem ela).
+    `Nt_ponta` dado (banzos contínuos): a barra é verificada com os esforços de todas as
+    barras e `ponta_ligada = False` (só o escoamento na tração), e a ruptura da seção
+    líquida é feita à parte com `Nt_ponta`, a maior tração das barras de ponta (apoio e
+    emenda da cumeeira — `barra_de_ponta`)."""
+    if Nt_ponta is None:
+        return verificar.verificar_membro(p, aco, Nc, Nt, M, Lx, Ly, n, elemento, avisos)
+    r = verificar.verificar_membro(p, aco, Nc, Nt, M, Lx, Ly, n, elemento, avisos,
+                                   ligacao=LIGACAO_TRECHO_CORRIDO)
+    if Nt_ponta > 1e-6 and not r.indeterminada:
+        rp = verificar.verificar_membro(p, aco, 0.0, Nt_ponta, 0.0, Lx, Ly, n, elemento, avisos)
+        for v in rp.verificacoes:
+            if v.titulo.startswith("Tração — ruptura") or v.indeterminada:
+                v.observacao = ((v.observacao + "; ") if v.observacao else "") + (
+                    "nas barras de ponta do banzo (apoio e emenda da cumeeira), N<sub>t</sub> = %s kN"
+                    % fmt(Nt_ponta, 1))
+                r.add(v)
+        r.hipoteses.extend(rp.hipoteses)
+        r.dados.update({"Ct": rp.dados.get("Ct"), "N_t_ponta": Nt_ponta,
+                        "Ct_adotado_sem_ligacao": rp.dados.get("Ct_adotado_sem_ligacao", False)})
+    return r
+
+
 def menor_perfil(familias: Sequence[str], aco: str, Nc: float, Nt: float, M: float,
                  Lx: float, Ly: float, elemento: str,
                  altura_min: float = 0.0, altura_max: float = 0.0,
                  esbeltez_max: float = 250.0,
                  espessura_min: float = MIN_ESPESSURA, n: int = 1,
-                 forcado: Optional[Perfil] = None) -> Tuple[Optional[Perfil], Optional[Resultado]]:
+                 forcado: Optional[Perfil] = None,
+                 Nt_ponta: Optional[float] = None) -> Tuple[Optional[Perfil], Optional[Resultado]]:
     """O perfil mais leve que passa. Devolve (perfil, resultado) ou o menos ruim achado.
 
     `esbeltez_max` recusa antes da norma a barra esbelta demais (NBR 8800 limita
     λ = KL/r a 200 na compressão e 300 na tração): não adianta passar por pouco numa
     peça que chega torta à obra. `n` é o número de peças da barra (2 no perfil duplo);
     `forcado` pula a busca e verifica só aquele perfil — é o que o usuário escolheu.
+    `Nt_ponta`: ver `verificar_barra` (banzo contínuo: ruptura só nas barras de ponta).
     """
     if forcado is not None:
-        return forcado, verificar.verificar_membro(forcado, aco, Nc, Nt, M, Lx, Ly, n, elemento, [])
+        return forcado, verificar_barra(forcado, aco, Nc, Nt, M, Lx, Ly, n, elemento, [], Nt_ponta)
     melhor = (None, None)
     comprimido = abs(Nc) > 1e-6
     limite = min(esbeltez_max, 200.0 if comprimido else 300.0)
@@ -508,7 +557,7 @@ def menor_perfil(familias: Sequence[str], aco: str, Nc: float, Nt: float, M: flo
         r_min = min(getattr(p, "rx", 0.0) or 1e9, getattr(p, "ry", 0.0) or 1e9)
         if r_min and max(Lx, Ly) / r_min > limite:
             continue
-        r = verificar.verificar_membro(p, aco, Nc, Nt, M, Lx, Ly, n, elemento, [])
+        r = verificar_barra(p, aco, Nc, Nt, M, Lx, Ly, n, elemento, [], Nt_ponta)
         if r.ok:
             return p, r
         if melhor[1] is None or r.razao < melhor[1].razao:
@@ -519,7 +568,8 @@ def menor_perfil(familias: Sequence[str], aco: str, Nc: float, Nt: float, M: flo
 def candidatos_verificados(familias: Sequence[str], aco: str, Nc: float, Nt: float, M: float,
                            Lx: float, Ly: float, elemento: str, altura_ref: float = 0.0,
                            altura_max: float = 0.0, n: int = 1, limite: int = 12,
-                           espessura_min: float = MIN_ESPESSURA) -> List[dict]:
+                           espessura_min: float = MIN_ESPESSURA,
+                           Nt_ponta: Optional[float] = None) -> List[dict]:
     """Os perfis do catálogo em volta do adotado, cada um verificado nos mesmos esforços:
     o que passa primeiro (do mais leve ao mais pesado), depois o que não passa (do que
     chegou mais perto). É a lista que o projetista usa para trocar o perfil sem sair do
@@ -530,7 +580,7 @@ def candidatos_verificados(familias: Sequence[str], aco: str, Nc: float, Nt: flo
     for p in candidatos(familias, a_min, a_max):
         if espessura_min and 0 < _espessura(p) < espessura_min:
             continue
-        r = verificar.verificar_membro(p, aco, Nc, Nt, M, Lx, Ly, n, elemento, [])
+        r = verificar_barra(p, aco, Nc, Nt, M, Lx, Ly, n, elemento, [], Nt_ponta)
         saida.append({"perfil": p.nome, "razao": round(r.razao, 3), "ok": bool(r.ok),
                       "massa": round((p.massa or 0.0) * n, 2)})
     saida.sort(key=lambda x: (not x["ok"], x["massa"] if x["ok"] else x["razao"]))

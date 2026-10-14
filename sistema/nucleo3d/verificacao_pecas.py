@@ -193,9 +193,80 @@ def aco_da_peca(pc: dict, P: dict, tipo: str) -> str:
     return a if a in mat.ACOS else mat.ACO_PADRAO
 
 
-def resistencias(nome: str, aco_nome: str, Lx: float, Ly: float, L: float, cache: dict) -> dict:
-    """as resistências de cálculo de um perfil com os comprimentos de flambagem (m): kN e kN·m"""
-    chave = (nome, aco_nome, round(Lx, 2), round(Ly, 2))
+#: Os parafusos de uma mesma ligação na ponta da peça: até esta distância (m) do anterior ao longo da barra. É o
+#: espaçamento máximo entre parafusos da NBR 8800:2024, 6.3.10 (24·t e nunca mais de 300 mm): o furo mais longe que isso
+#: já é de outra ligação (a terça, a presilha) e não entra no ℓc.
+ESPACAMENTO_MAX_PARAFUSOS = 0.300
+
+
+def _parafusos(furos: List[dict]) -> List[dict]:
+    """os parafusos (x ao longo da barra, m; d, mm) a partir dos furos: os furos do mesmo parafuso (as duas paredes do U,
+    a aba e a chapa) viram um — pelo parafuso ligado a eles ou, no furo solto, pelo mesmo eixo (a distância entre os
+    pontos, fora da direção do furo, menor que o diâmetro do furo)"""
+    por_id: Dict[str, List[dict]] = collections.defaultdict(list)
+    soltos: List[List[dict]] = []
+    for f in furos:
+        if f.get("parafuso"):
+            por_id[f["parafuso"]].append(f)
+            continue
+        p = np.array(f["ponto"], float)
+        for g in soltos:
+            q = np.array(g[0]["ponto"], float)
+            e = np.array(g[0]["eixo"], float)
+            w = p - q
+            if float(np.linalg.norm(w - (w @ e) * e)) * 1000.0 < max(f["d_furo"], g[0]["d_furo"]):
+                g.append(f)
+                break
+        else:
+            soltos.append([f])
+    return [{"x": float(np.mean([f["x"] for f in g])), "d": max(f["d"] for f in g)} for g in list(por_id.values()) + soltos]
+
+
+def ligacao_da_peca(M: dict, pc: dict) -> Optional[dict]:
+    """a ligação parafusada da peça pelos furos do 3D (N1, 14/10/2026), no contrato de nucleo.nbr8800.tracao: {lc (cm),
+    n_parafusos (na linha, na direção da força), d_parafuso (cm), soldada, fonte}. Em cada ponta, os parafusos a partir do
+    mais perto dela, enquanto o seguinte estiver a até ESPACAMENTO_MAX_PARAFUSOS do anterior; ℓc = do primeiro ao último ao
+    longo da barra. Das duas pontas vale a de menor ℓc (o menor C_t = 1 − e_c/ℓc). Sem furo na peça: None (o núcleo adota
+    o C_t sem ligação, nucleo.nbr8800.ct_sem_ligacao: A_c/A_g na cantoneira e no U laminados, 0,50 no U/Ue e 0,40 na
+    cantoneira formados a frio)"""
+    barras = M["barras"]
+    br0 = barras[pc["barras"][0]]
+    ent = br0["ids"][0] if br0.get("ids") else None
+    reg = (M.get("furos_por_peca") or {}).get(ent) if ent else None
+    if not reg or not reg.get("furos"):
+        return None
+    Lp = float(reg["L"])
+    pfs = _parafusos(reg["furos"])
+    pontas = []
+    for lado in (0, 1):
+        ds = sorted(((p["x"] if lado == 0 else Lp - p["x"]), p["d"]) for p in pfs if (p["x"] <= Lp / 2.0) == (lado == 0))
+        if not ds:
+            continue
+        grupo = [ds[0]]
+        for d_, dm in ds[1:]:
+            if d_ - grupo[-1][0] > ESPACAMENTO_MAX_PARAFUSOS + 1e-9:
+                break
+            grupo.append((d_, dm))
+        dmax = max(dm for _, dm in grupo)
+        linha: List[float] = []                            # as posições na linha (os lado a lado contam uma vez)
+        for d_, _dm in grupo:
+            if not linha or d_ - linha[-1] > dmax / 1000.0:
+                linha.append(d_)
+        pontas.append({"lc": (grupo[-1][0] - grupo[0][0]) * 100.0, "n": len(linha), "d": dmax, "lado": "início" if lado == 0 else "fim"})
+    if not pontas:
+        return None
+    pt = min(pontas, key=lambda q: (q["lc"], q["n"]))
+    return {"lc": round(pt["lc"], 2), "n_parafusos": int(pt["n"]), "d_parafuso": round(pt["d"] / 10.0, 4), "soldada": False,
+            "fonte": "parafusos do 3D: %d na linha, Ø%s mm, ℓc = %s cm (ponta do %s da peça)" % (
+                pt["n"], _n(pt["d"], 1).replace(",0", ""), _n(pt["lc"], 1), pt["lado"])}
+
+
+def resistencias(nome: str, aco_nome: str, Lx: float, Ly: float, L: float, cache: dict,
+                 ligacao: Optional[dict] = None) -> dict:
+    """as resistências de cálculo de um perfil com os comprimentos de flambagem (m): kN e kN·m. `ligacao`: a ligação
+    parafusada da peça (ligacao_da_peca) — o C_t da tração na cantoneira e no U; sem ela, o núcleo adota
+    nbr8800.ct_sem_ligacao(perfil) (A_c/A_g no laminado; 0,50/0,40 no formado a frio)"""
+    chave = (nome, aco_nome, round(Lx, 2), round(Ly, 2), _chave_ligacao(ligacao))
     if chave in cache:
         return cache[chave]
     from nucleo import materiais as mat, nbr8800, nbr14762, perfis_fabrica
@@ -208,6 +279,7 @@ def resistencias(nome: str, aco_nome: str, Lx: float, Ly: float, L: float, cache
         if p is None:
             raise ErroDeDados("perfil fora do catálogo")
         a = mat.aco(aco_nome)
+        kw_lig = {"ligacao": ligacao} if ligacao else {}
         r["fy"] = a.fy * 10.0
         r["tipo"] = p.tipo
         r["lam"] = max(Lx * 100 / p.rx if p.rx else 0.0, Ly * 100 / p.ry if p.ry else 0.0)
@@ -215,7 +287,7 @@ def resistencias(nome: str, aco_nome: str, Lx: float, Ly: float, L: float, cache
         circular = p.tipo == "tubo" and not (p.bf or 0)
         if modo == "redonda":
             r.update(norma="NBR 8800", redonda=True)
-            rt = nbr8800.tracao(p, a, N_Sd=1.0, L=max(Lx, Ly) * 100, rosqueada=bool(p.dados.get("rosqueada")))
+            rt = nbr8800.tracao(p, a, N_Sd=1.0, L=max(Lx, Ly) * 100, rosqueada=bool(p.dados.get("rosqueada")), **kw_lig)
             r["Nt"] = float(rt.dados["N_Rd"])
             r["obs"].append("barra redonda: só tração (a compressão não é resistida)")
         elif modo == "frio":
@@ -235,7 +307,11 @@ def resistencias(nome: str, aco_nome: str, Lx: float, Ly: float, L: float, cache
             d = rc.dados
             r.update(Nc=float(d["N_Rd"]), chi=d.get("chi"), Q=d.get("Q"), lambda0=d.get("lambda_0"), Ne=d.get("Ne"),
                      modo=d.get("modo_critico"))
-            r["Nt"] = float(nbr8800.tracao(p, a, N_Sd=1.0, L=max(Lx, Ly) * 100).dados["N_Rd"])
+            rt = nbr8800.tracao(p, a, N_Sd=1.0, L=max(Lx, Ly) * 100, **kw_lig)
+            r["Nt"] = float(rt.dados["N_Rd"])
+            r["Ct"] = rt.dados.get("Ct")
+            if ligacao and ligacao.get("fonte"):
+                r["ligacao"] = ligacao["fonte"]
             for eixo, k in (("x", "Mz"), ("y", "My")):
                 try:
                     if cant:
@@ -259,12 +335,35 @@ def resistencias(nome: str, aco_nome: str, Lx: float, Ly: float, L: float, cache
                 r["obs"].append("cortante no plano fraco pelas mesas: 0,6·fy·2·bf·tf/1,10")
             if p.tipo == "L":
                 r["obs"].append("cantoneira simples: compressão pela esbeltez equivalente (E.1.4); flexão elástica")
-            r["obs"].append("tração pela seção bruta (sem furos: a ruptura da seção líquida fica para as ligações)")
+            aberta = nbr8800.ligada_por_um_elemento(p)
+            if ligacao and ligacao.get("ponta_ligada") is False:
+                r["obs"].append("tração no trecho corrido da peça (ponta_ligada = não): sem ligação na seção")
+            elif ligacao and aberta:
+                r["obs"].append("tração: ruptura da seção líquida com C_t = %s pela ligação (%s)" % (_n(float(r["Ct"] or 0), 2), ligacao.get("fonte") or "informada"))
+            elif aberta:
+                r["obs"].append("tração: sem parafusos na peça no 3D — C_t = %s adotado (NBR 8800:2024, 5.2.5-c)" % _n(float(r["Ct"] or 0), 2))
+            else:
+                r["obs"].append("tração pela seção bruta (sem furos: a ruptura da seção líquida fica para as ligações)")
     except (ErroDeDados, KeyError, ValueError, ZeroDivisionError) as e:
         r["erro"] = str(e) or e.__class__.__name__
     r = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in r.items()}
     cache[chave] = r
     return r
+
+
+#: A ligação do trecho corrido do banzo contínuo (contrato de nucleo.nbr8800.tracao): sem ligação na seção.
+PONTA_CORRIDA = {"ponta_ligada": False}
+PAPEIS_BANZO = ("banzo", "banzo_sup", "banzo_inf")
+
+
+def banzo_continuo(barras: List[dict], pc: dict) -> bool:
+    """a peça é banzo de treliça partido em vários trechos (a cadeia passa pelos nós das almas)"""
+    br0 = barras[pc["barras"][0]]
+    return len(pc["barras"]) > 1 and (br0.get("papel_trelica") in PAPEIS_BANZO or br0.get("papel") == "banzo")
+
+
+def _chave_ligacao(ligacao: Optional[dict]):
+    return None if not ligacao else tuple(sorted((k, v) for k, v in ligacao.items() if k != "fonte"))
 
 
 # ------------------------------------------------------------------ a verificação
@@ -299,18 +398,37 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
     for j, pc in enumerate(pecas):
         tipo = barras[pc["barras"][0]]["sec"].get("tipo") or ""
         aco = aco_da_peca(pc, P, tipo)
-        res = resistencias(pc["perfil"], aco, pc["Lx"], pc["Ly"], pc["L"], cache)
-        ch = (pc["perfil"], aco, round(pc["Lx"], 2), round(pc["Ly"], 2))
+        lig = ligacao_da_peca(M, pc)
+        res = resistencias(pc["perfil"], aco, pc["Lx"], pc["Ly"], pc["L"], cache, ligacao=lig)
+        ch = (pc["perfil"], aco, round(pc["Lx"], 2), round(pc["Ly"], 2), _chave_ligacao(lig))
+        if lig:
+            pc["ligacao"] = lig["fonte"]
         if ch not in idx_res:
             idx_res[ch] = len(lista_res)
             lista_res.append(res)
         pc.update(aco=aco, res=idx_res[ch])
+        # o banzo contínuo (decisão do usuário, 14/10): a ruptura da seção líquida só vale nas pontas da peça (a emenda, o
+        # apoio) — os trechos extremos da cadeia ficam com a resistência de ponta ligada; os do meio, corridos, com
+        # ponta_ligada = False (sem furo de ligação na seção)
+        meio = None
+        if banzo_continuo(barras, pc):
+            lig_meio = dict(PONTA_CORRIDA)
+            meio = resistencias(pc["perfil"], aco, pc["Lx"], pc["Ly"], pc["L"], cache, ligacao=lig_meio)
+            ch_m = (pc["perfil"], aco, round(pc["Lx"], 2), round(pc["Ly"], 2), _chave_ligacao(lig_meio))
+            if ch_m not in idx_res:
+                idx_res[ch_m] = len(lista_res)
+                lista_res.append(meio)
+            pc["res_meio"] = idx_res[ch_m]
+            pc.setdefault("obs", []).append("banzo contínuo: a ruptura da seção líquida só nos trechos das pontas da peça; "
+                                            "os do meio, corridos, sem ligação na seção")
         fator = 2.0 if pc["duplo"] else 1.0
+        extremos = {pc["barras"][0], pc["barras"][-1]}
         for i in pc["barras"]:
             pk[i] = j
             if res["erro"] is None:
                 valida[i] = True
-                RB[i] = [fator * float(res[c] or 0.0) for c in cols]
+                r_i = meio if (meio is not None and meio["erro"] is None and i not in extremos) else res
+                RB[i] = [fator * float((r_i if c == "Nt" else res)[c] or 0.0) for c in cols]
                 linear[i] = bool(res["linear"])
                 redonda[i] = bool(res["redonda"])
         if pc["duplo"]:
@@ -383,6 +501,9 @@ def verificar(M: dict, sol: dict, combs: Dict[str, dict], so2: Optional[dict] = 
         if pc.get("K"):
             item["K"] = pc["K"]
         item.update(b0=int(bs[0]), nb=len(bs), L=round(pc["L"], 3), Lx=round(pc["Lx"], 3), Ly=round(pc["Ly"], 3))
+        for k in ("res_meio", "ligacao"):                 # o trecho corrido do banzo e a ligação parafusada do 3D (N1)
+            if k in pc:
+                item[k] = pc[k]
         if pc["hipotese"]:
             item["hipotese"] = True
         if res["erro"] is not None:

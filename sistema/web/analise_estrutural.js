@@ -766,6 +766,10 @@ const PREMISSAS = [
   ['carga_extra', 'Permanente extra (kN/m²)', 'num'],
   ['sobrecarga', 'Sobrecarga (kN/m²)', 'num'],
   ['vento', 'Vento', 'sel', [['true', 'sim'], ['false', 'não']]],
+  // M4 (14/10): o galpão fechado (Tabelas 6 e 7 + C_pi) liga sozinho no automático quando o modelo tem longarinas ou telha
+  // de parede; o adotado e o motivo aparecem no quadro do vento
+  ['modelo_vento', 'Modelo do vento', 'sel', [['auto', 'automático (pelo modelo)'], ['isolada', 'cobertura isolada (7.2)'],
+    ['fechado', 'galpão fechado (Tabelas 6 e 7 + Cpi)']], 'aco'],
   ['v0', 'V0 (m/s)', 'num'],
   ['categoria', 'Categoria do terreno', 'sel', [['I', 'I'], ['II', 'II'], ['III', 'III'], ['IV', 'IV'], ['V', 'V']]],
   ['s1', 'S1 (topográfico)', 'num'],
@@ -777,8 +781,9 @@ const PREMISSAS = [
   ['piso_revestimento', 'Piso: revestimento (kN/m²)', 'num', null, 'pm'],
   ['piso_sobrecarga', 'Piso: sobrecarga (kN/m²)', 'num', null, 'pm'],
   ['base_coluna_aco', 'Base das colunas de aço', 'sel', [['rotulada', 'rotulada'], ['engastada', 'engastada']], 'pm'],
+  // a permeabilidade vale para o pré-moldado e para o galpão fechado do aço (NBR 6123:2023, 6.3.2.1)
   ['aberturas', 'Permeabilidade (C<sub>pi</sub>)', 'sel', [['duas faces opostas', 'duas faces opostas (+0,2 / −0,3)'],
-    ['quatro faces permeáveis', 'quatro faces (−0,3 / 0)'], ['estanque', 'estanque (−0,2 / 0)']], 'pm'],
+    ['quatro faces permeáveis', 'quatro faces (−0,3 / 0)'], ['estanque', 'estanque (−0,2 / 0)']]],
   ['modelo_analise', 'Motor da análise', 'sel', [['auto', 'pelo modelo'], ['aco', 'estrutura metálica'], ['premoldado', 'pré-moldado (global)']]],
   ['cobertura_movel', 'Cobertura retrátil', 'sel', [['false', 'não'], ['true', 'sim (aberta e retraída)']], 'aco'],
   ['movel_n', '  nº de tesouras', 'num', null, 'aco'],
@@ -1152,7 +1157,19 @@ function painelVento() {
     return;
   }
   if (c) linhas.push(`Cobertura: ${nf(c.area_m2, 1)} m² em ${c.trelicas} tesouras; larguras de influência ${c.larguras_m.map(x => nf(x, 2)).join(' · ')} m.`);
-  if (v) {
+  if (v && v.modo) {
+    const pedido = { auto: 'automático', isolada: 'cobertura isolada', fechado: 'galpão fechado' }[v.modo_pedido] || v.modo_pedido;
+    linhas.push(`<b>Modelo do vento: ${v.modo === 'fechado' ? 'galpão fechado' : 'cobertura isolada'}</b> (${pedido}) — ${v.motivo}. Troque em “Modelo do vento” nas premissas.`);
+  }
+  if (v && v.modo === 'fechado') {
+    // M4 (14/10): o galpão fechado — paredes pelos pilares da borda (ou pelas longarinas), telhado pelas terças
+    linhas.push(`Vk = ${nf(v.Vk, 1)} m/s (S2 = ${nf(v.S2, 3)}, classe ${v.classe}, z = ${nf(v.z, 1)} m) · q = <b>${nf(v.q_kN_m2, 3)} kN/m²</b>`);
+    linhas.push(`Galpão fechado (NBR 6123:2023, Tabelas 6 e 7): b = ${nf(v.b, 1)} m, a = ${nf(v.a, 1)} m, h = ${nf(v.h, 2)} m, θ = ${nf(v.teta, 1)}°; C<sub>pi</sub> ${(v.cpi || []).map(x => nf(x, 1)).join(' e ')} (6.3.2.1 — ${v.cpi_hipotese}).`);
+    linhas.push('C<sub>e</sub>: ' + Object.entries(v.coeficientes || {}).map(([k, x]) => `${k} ${nf(x, 2)}`).join(' · '));
+    linhas.push(`Paredes: ${v.paredes ? v.paredes.caminho : 'pilares da borda'}; p = (C<sub>e</sub> − C<sub>pi</sub>)·q × largura de influência. Telhado: pelas terças (ou trechos do banzo de cima), pela zona. Sem o arrasto da 8.1 nas barras de dentro do fechamento.`);
+    const ex = v.exemplo_parede;
+    if (ex) linhas.push(`Exemplo (${ex.caso}, pilar ${ex.pilar}, parede ${ex.face}): (${nf(ex.Ce, 2)} − ${nf(ex.Cpi, 1)}) × ${nf(ex.q_kN_m2, 3)} × ${nf(ex.largura_m, 2)} m = <b>${nf(ex.w_kN_m, 3)} kN/m</b>.`);
+  } else if (v) {
     linhas.push(`Vk = ${nf(v.Vk, 1)} m/s (S2 = ${nf(v.S2, 3)}, classe ${v.classe}, z = ${nf(v.z, 1)} m) · q = <b>${nf(v.q_kN_m2, 3)} kN/m²</b>`);
     for (const [k, vc] of (v.coberturas || [v]).entries()) {
       const qual = v.coberturas ? `Cobertura ${k + 1} (z = ${nf(vc.z, 2)} m, q = ${nf(vc.q_kN_m2, 3)} kN/m²) — ` : '';
@@ -1169,7 +1186,9 @@ function painelVento() {
     const arr = (lista, rot) => (lista || []).length ? `Arrasto ${rot} (8.1): ` + lista.map(r => `${r.papel} ${r.perfil}: ${nf(r.w_kN_m, 3)} kN/m (C ${nf(r.C, 2)} · K ${nf(r.K, 2)} · c ${r.c_mm} mm, ${r.regime})`).join('; ') + '.' : '';
     for (const l of [arr(v.barras_transversal, 'com o vento perpendicular à geratriz'), arr(v.barras_longitudinal, 'com o vento ao longo da geratriz')]) if (l) linhas.push(l);
   }
-  linhas.push('Casos: ' + Object.entries(D.casos).map(([k, c]) => `<span class="chip">${k}</span>${c.descricao}`).join('<br>'));
+  // M5 (14/10): o vento que empurra a cobertura para baixo entra com a sobrecarga; o que levanta, com os permanentes favoráveis
+  const sv = { pressao: ' · <i>pressão (para baixo)</i>', succao: ' · <i>sucção (para cima)</i>', horizontal: '' };
+  linhas.push('Casos: ' + Object.entries(D.casos).map(([k, c]) => `<span class="chip">${k}</span>${c.descricao}${sv[c.sentido_vertical] || ''}`).join('<br>'));
   V.innerHTML = linhas.map(l => `<div style="margin:4px 0">${l}</div>`).join('');
 }
 

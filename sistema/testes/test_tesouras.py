@@ -117,6 +117,47 @@ def test_menor_perfil_respeita_esbeltez_e_espessura():
     assert max(200.0, 200.0) / min(perf.rx, perf.ry) <= 200.0
 
 
+def test_banzo_continuo_so_tem_ponta_no_apoio_e_na_cumeeira():
+    """N1 (14/10): o banzo é contínuo; a ligação de ponta dele é no apoio e na emenda da
+    cumeeira (os banzos saem inteiros por água). Os trechos entre essas pontas passam
+    corridos pelos nós; diagonais e montantes têm sempre ponta ligada."""
+    t = tesouras.geometria(2000.0, 0.10, "trapezoidal", "Howe", paineis=4)
+    bs = t.do_papel("banzo superior")
+    pontas = [b.rotulo for b in bs if tesouras.barra_de_ponta(t, b)]
+    # 8 painéis: bs1 e bs8 no apoio, bs4 e bs5 chegam na cumeeira (x = 1 000 cm)
+    assert pontas == ["bs1", "bs4", "bs5", "bs8"], pontas
+    bi = t.do_papel("banzo inferior")
+    assert tesouras.barra_de_ponta(t, bi[0]) and tesouras.barra_de_ponta(t, bi[-1])
+    assert not all(tesouras.barra_de_ponta(t, b) for b in bi)
+    assert all(tesouras.barra_de_ponta(t, b) for b in t.do_papel("diagonal") + t.do_papel("montante"))
+
+
+def test_verificar_barra_ruptura_so_com_a_tracao_das_pontas():
+    """Ue 100×50×17×2,00, A572: tração de 40 kN no trecho corrido e 20 kN nas pontas.
+
+      escoamento com 40 kN: 4,417 × 34,5 / 1,10 = 138,5 kN → 0,289
+      ruptura com 20 kN (Ct = 0,50 sem a ligação no modelo): 0,50 × 4,417 × 45/1,65
+        = 60,23 kN → 0,332 (antes, com os 40 kN do trecho corrido: 0,664)"""
+    from nucleo import perfis_fabrica
+    ue = perfis_fabrica.perfil_de_fabrica("Ue 100x50x17x2")
+    r = tesouras.verificar_barra(ue, "ASTM A572 Gr.50", 0.0, 40.0, 0.0, 150.0, 150.0, 1,
+                                 "Banzo inferior", [], Nt_ponta=20.0)
+    ve = next(v for v in r.verificacoes if v.titulo.startswith("Tração — escoamento"))
+    vr = [v for v in r.verificacoes if v.titulo.startswith("Tração — ruptura")]
+    assert ve.Sd == pytest.approx(40.0) and ve.Rd == pytest.approx(138.5, rel=0.005)
+    assert "seção líquida não se aplica" in ve.observacao
+    assert len(vr) == 1 and vr[0].Sd == pytest.approx(20.0) and vr[0].Rd == pytest.approx(60.23, rel=0.005)
+    assert "barras de ponta" in vr[0].observacao and r.dados["N_t_ponta"] == 20.0
+    assert r.razao == pytest.approx(20.0 / 60.23, rel=0.005)
+    # sem tração nas pontas: só o escoamento
+    r0 = tesouras.verificar_barra(ue, "ASTM A572 Gr.50", 0.0, 40.0, 0.0, 150.0, 150.0, 1,
+                                  "Banzo inferior", [], Nt_ponta=0.0)
+    assert not any(v.titulo.startswith("Tração — ruptura") for v in r0.verificacoes)
+    # diagonal (Nt_ponta None): a ruptura com o Nt inteiro
+    rd = tesouras.verificar_barra(ue, "ASTM A572 Gr.50", 0.0, 40.0, 0.0, 150.0, 150.0, 1, "Diagonal", [])
+    assert next(v for v in rd.verificacoes if v.titulo.startswith("Tração — ruptura")).Sd == pytest.approx(40.0)
+
+
 # --------------------------------------------------------- 3. galpão inteiro
 
 @pytest.mark.parametrize("formato, diagonais, ligacao, rotulada, inclinacao", [
@@ -133,16 +174,13 @@ def test_galpao_trelicado_fecha(formato, diagonais, ligacao, rotulada, inclinaca
     nomes = {e.nome for e in p.elementos}
     assert {"Banzo superior da tesoura", "Banzo inferior da tesoura", "Pilar"} <= nomes
     reprovados = [(e.nome, round(e.razao, 2)) for e in p.elementos if not e.ok]
-    if (formato, diagonais, ligacao, rotulada) == ("trapezoidal", "Howe", "apoiada", False):
-        # com o γ = 1,20 da compressão do formado a frio (0.8.14) o banzo inferior deste
-        # galpão de 20 m não passa com Ue simples em nenhum passo de travamento: o
-        # programa diz e aponta os banzos duplos, com os quais fecha
-        assert [n for n, _ in reprovados] == ["Banzo inferior da tesoura"], reprovados
-        assert any("banzos duplos" in a for a in p.avisos), p.avisos
-        p = galpao.dimensionar(_dados(formato_tesoura=formato, diagonais_tesoura=diagonais,
-                                      ligacao_tesoura=ligacao, base_rotulada=rotulada,
-                                      inclinacao=inclinacao, banzos_duplos=True))
-        reprovados = [(e.nome, round(e.razao, 2)) for e in p.elementos if not e.ok]
+    # N1/N11 (14/10): a tração passou a verificar a ruptura da seção líquida só nas barras
+    # com ponta ligada (diagonais, montantes e as pontas dos banzos: apoio e emenda da
+    # cumeeira) e o passo do travamento do banzo inferior é o mais aberto que deixa passar o
+    # perfil mais leve (antes o laço engrossava o banzo para não fechar a malha). Com isso o
+    # trapezoidal-Howe, que antes só fechava com banzos duplos (banzo inferior
+    # Ue 200×75×25×4,75 a 1,03), fecha com Ue simples (Ue 150×75×20×3,00 a 0,92), e os quatro
+    # casos fecham sem banzos duplos
     assert not reprovados, reprovados
     assert p.base is not None, "a base do pilar ficou sem dimensionamento"
     assert 10.0 < p.resumo_pesos["kg_por_m2"] < 45.0, p.resumo_pesos

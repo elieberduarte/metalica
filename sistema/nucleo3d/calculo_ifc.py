@@ -58,7 +58,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo import analise, cargas, nbr8800, nbr14762, perfis_fabrica, verificar
 from nucleo import materiais as mat
-from nucleo.base import ErroDeDados, Resultado, Verificacao, fmt, nao_verificada
+from nucleo.base import GAMA_A1, ErroDeDados, Hipotese, Passo, Resultado, Verificacao, fmt, nao_verificada
 from nucleo.perfis import Perfil
 from nucleo3d.modelo import Chapa, Documento, Solido
 from nucleo3d.mapa_esforcos import (ENVOLTORIA, ESTACOES, GRANDEZAS, UNIDADES,
@@ -80,7 +80,10 @@ PARAMETROS_PADRAO = {
     "telha": None,                   # kN/m² de cobertura; None = pela espessura do nome
     "correntes": None,               # linhas de correntes por vão de terça; None = contadas no modelo
     "trava_inferior": None,          # m entre travamentos laterais do banzo inferior; None = os lidos no modelo
-    "apoio": "rotulado",             # "rotulado" (os dois) ou "movel" (um lado só na vertical)
+    # M1 (14/10, decisão do usuário): um pino e um rolete. Os dois pinos travam a tesoura na
+    # horizontal e o empuxo deles alivia o banzo inferior (Pratt 6 m: 20,6 kN → 5,4 kN); só por
+    # escolha explícita, e então o resultado mostra o empuxo (`resumo.empuxo_apoios` e aviso)
+    "apoio": "movel",                # "movel" (pino + rolete) ou "rotulado" (pino nos dois lados)
     "apoios": [],                    # pontos de apoio [x, y, z] mm; vazio = nós de extremidade
     "aco_frio": "CIVIL 300",
     "aco_laminado": "ASTM A36",
@@ -361,11 +364,87 @@ def _levantar_pecas(doc: Documento, nomes: dict, par: dict, avisos: List[str]):
     return pecas, telhas, castanhas, chapas_por_conjunto
 
 
+# ------------------------------------------------------------------ orientação da seção
+# M2 (14/10). A barra da tesoura flete no plano da tesoura; em torno de qual eixo da seção
+# depende de como ela está montada. A regra da casa para a tesoura de aço é o U com a boca
+# para o miolo: a alma fica perpendicular ao plano e o momento no plano é em torno do eixo
+# FRACO (U 100×50×3,04: I_y = 14,2 contra I_x = 89,5 cm⁴). O U geminado costa a costa, a
+# alma no plano, flete no eixo forte. O modelo de análise e a verificação usam o eixo lido.
+
+def _secao_assimetrica(p: Optional[Perfil]) -> bool:
+    """A seção tem eixo forte e eixo fraco distintos (U, Ue, I, tubo retangular)? A
+    cantoneira fica de fora: a compressão dela é pela esbeltez equivalente (NBR 8800, E.1.4),
+    que não depende do lado da aba, e a barra redonda e o tubo quadrado não têm lado."""
+    if p is None or p.tipo in ("L", "barra"):
+        return False
+    Ix, Iy = float(p.Ix or 0.0), float(p.Iy or 0.0)
+    return Ix > 0.0 and Iy > 0.0 and abs(Ix - Iy) > 1e-3 * max(Ix, Iy)
+
+
+def _direcao_da_alma(peca: "_Peca", w) -> Optional[Tuple[float, float, float]]:
+    """Direção 3D (unitária) da altura d da seção — a da alma do U/Ue/I —, ou None.
+
+    * Barra paramétrica: o eixo local v de `geometria.base_local` com o `rotacao` da barra,
+      que é como a malha dela é extrudada (a altura d da seção corre em v).
+    * Sólido do IFC: a extensão dos vértices na normal do plano da tesoura (w), comparada
+      com d e b_f do perfil: medindo d, a alma está na normal (U deitado); medindo b_f, a alma
+      está no plano. Decide-se só quando a medida fica mais perto de um que do outro por mais
+      de |d − b_f|/2; senão (seção girada fora do esquadro, d = b_f, sólido estranho) a
+      orientação fica indeterminada. As medidas são as do
+      perfil MODELADO (o sólido é dele), não as do perfil de cálculo trocado no diálogo — o
+      candidato entra montado do mesmo jeito que a peça do modelo.
+    """
+    p = peca.perfil
+    if peca.nome_perfil:
+        p = _perfil_de(peca.nome_perfil, "", {}, {}) or p
+    ent = peca.ent
+    if isinstance(ent, _CorpoDaBarra):
+        from nucleo3d.geometria import base_local
+        b = ent.barra
+        try:
+            return tuple(base_local(_sub(tuple(b.fim), tuple(b.inicio)), float(getattr(b, "rotacao", 0.0) or 0.0))[1])
+        except Exception:
+            return None
+    e = _unit(_sub(peca.b, peca.a))
+    s1 = tuple(w[i] - _dot(w, e) * e[i] for i in range(3))
+    if _norma(s1) < 0.5:
+        return None
+    s1 = _unit(s1)
+    s2 = _unit(_cruz(e, s1))
+    verts = _vertices(ent)
+    d, bf = float(p.d or 0.0), float(p.bf or 0.0)
+    if len(verts) < 4 or d <= 0.0 or bf <= 0.0 or abs(d - bf) < 1e-6:
+        return None
+    # Só a extensão na normal do plano: os cortes das pontas da barra de treliça são planos que
+    # contêm essa normal, então ela não muda; a extensão no plano cresce com o corte em
+    # ângulo (o joelho da Sala dos Compressores, U 100×50 cortado: 233 mm no plano).
+    t1 = [_dot(v, s1) for v in verts]
+    ext1 = max(t1) - min(t1)
+    alma_em_w = abs(ext1 - d)                           # a altura d medida na normal do plano
+    alma_no_plano = abs(ext1 - bf)                      # a largura b_f medida na normal
+    if abs(alma_em_w - alma_no_plano) < abs(d - bf) / 2.0:
+        return None
+    return s1 if alma_em_w < alma_no_plano else s2
+
+
+def _eixo_de_flexao_no_plano(peca: "_Peca", w) -> Optional[str]:
+    """"forte" (a alma no plano da tesoura: momento no plano em torno de x), "fraco" (a alma
+    perpendicular ao plano — U deitado, boca para o miolo: momento em torno de y),
+    "indeterminado" (seção com lado, mas a orientação não foi lida) ou None (seção sem lado)."""
+    if not _secao_assimetrica(peca.perfil):
+        return None
+    v = _direcao_da_alma(peca, w)
+    if v is None:
+        return "indeterminado"
+    # a alma mais perto da normal do plano do que do plano (o ângulo passa de 45°)
+    return "fraco" if abs(_dot(v, w)) >= math.sqrt(0.5) else "forte"
+
+
 # ------------------------------------------------------------------ tesoura
 
 class _Membro:
     """Barra da tesoura no plano (mm): a, b em (x, y) do plano; n peças geminadas."""
-    __slots__ = ("pecas", "tipo", "a", "b", "n", "marca", "perfil", "aco", "posicao")
+    __slots__ = ("pecas", "tipo", "a", "b", "n", "marca", "perfil", "aco", "posicao", "eixo")
 
     def __init__(self, peca: _Peca, tipo: str, a, b):
         self.pecas = [peca]
@@ -376,6 +455,9 @@ class _Membro:
         self.perfil = peca.perfil
         self.aco = peca.aco
         self.posicao = ""          # "superior" / "inferior" / "" para banzos
+        # eixo da seção em torno do qual a barra flete no plano da tesoura: "forte" (alma no
+        # plano), "fraco" (U deitado, boca para o miolo) ou None (seção simétrica / não lida)
+        self.eixo: Optional[str] = None
 
 
 class _Tesoura:
@@ -453,6 +535,8 @@ class _Tesoura:
                 achou.pecas.append(m.pecas[0])
             else:
                 unicos.append(m)
+        for m in unicos:
+            m.eixo = _eixo_de_flexao_no_plano(m.pecas[0], self.w)
         self.membros = unicos
         self._classificar_banzos()
         self._nos_e_barras()
@@ -1086,11 +1170,15 @@ def _combinar(t: _Tesoura, vento: dict) -> Dict[str, str]:
 
 
 def _montar_modelo(t: _Tesoura):
+    """Pórtico plano da tesoura (cm, kN). Apoios (M1, 14/10): por padrão um pino no primeiro
+    apoio e um rolete no último (`apoio` = "movel"); "rotulado" põe pino nos dois e a tesoura
+    ganha o empuxo horizontal deles (ver `_empuxo_dos_apoios`). A inércia no plano é a do
+    eixo em torno do qual a barra flete no plano (M2): I_y para o U deitado."""
     m = analise.Modelo("Tesoura %s" % t.chave)
     for i, n in enumerate(t.nos):
         apoio = None
         if i in t.apoios:
-            if getattr(t, "modo_apoio", "rotulado") == "movel" and i == t.apoios[-1]:
+            if getattr(t, "modo_apoio", "movel") == "movel" and i == t.apoios[-1]:
                 apoio = (False, True, False)
             elif len(t.apoios) > 2 and i != t.apoios[0]:
                 # vários pilares: travar todos na horizontal faria da tesoura um arco que não
@@ -1103,10 +1191,47 @@ def _montar_modelo(t: _Tesoura):
         mb = t.membros[b["membro"]]
         p = mb.perfil
         A = p.A * mb.n
-        I = max(p.Ix, 1e-6) * mb.n
+        I = max(p.Iy if mb.eixo == "fraco" else p.Ix, 1e-6) * mb.n
         m.add_barra(b["ni"], b["nf"], A, I, rotulo="%s:%d" % (t.chave, k),
                     rotula_i=b["rotula"], rotula_f=b["rotula"])
     t.modelo = m
+
+
+def _nos_de_ponta_dos_banzos(t: _Tesoura) -> Dict[int, set]:
+    """{índice do membro: nós} das pontas de cada peça de banzo — onde ela termina (emenda,
+    ponta do banzo, só um trecho chega ao nó) — mais os nós de apoio. O trecho que toca um
+    deles é de ponta ligada; os outros são o trecho corrido da peça contínua."""
+    conta: Dict[int, collections.Counter] = collections.defaultdict(collections.Counter)
+    for b in t.barras:
+        if t.membros[b["membro"]].tipo == "banzo":
+            conta[b["membro"]][b["ni"]] += 1
+            conta[b["membro"]][b["nf"]] += 1
+    apoios = set(t.apoios)
+    return {k: {i for i, n in c.items() if n == 1} | apoios for k, c in conta.items()}
+
+
+def _empuxo_dos_apoios(t: _Tesoura, combos: Sequence[str]) -> Optional[dict]:
+    """Reação horizontal que os dois pinos trocam entre si (o empuxo), na pior combinação.
+
+    Só existe com `apoio` = "rotulado" e dois apoios: com um rolete (ou com mais de dois
+    apoios, onde só um trava na horizontal) a horizontal é só a das cargas externas. Das
+    reações horizontais R₁ e R₂, a parcela que se equilibra entre os apoios — e entra no
+    banzo inferior como força normal, aliviando-o — é min(|R₁|, |R₂|) quando elas têm sinais
+    opostos (a outra parte equilibra o vento)."""
+    if getattr(t, "modo_apoio", "movel") != "rotulado" or len(t.apoios) != 2:
+        return None
+    i, j = t.apoios[0], t.apoios[-1]
+    pior = None
+    for c in combos:
+        r = t.resultados.get(c)
+        if r is None:
+            continue
+        Ri, Rj = r.reacao(i)[0], r.reacao(j)[0]
+        H = min(abs(Ri), abs(Rj)) if Ri * Rj < 0 else 0.0
+        if pior is None or H > pior["H_kN"]:
+            pior = {"tesoura": t.chave, "H_kN": round(H, 2), "caso": c,
+                    "reacoes_kN": [round(Ri, 2), round(Rj, 2)]}
+    return pior
 
 
 # ------------------------------------------------------------------ fora das tesouras
@@ -1251,7 +1376,23 @@ def _verificar_pilar(perfil: Perfil, aco: str, Nc: float, Nt: float, M: float, H
             return verificar.verificar_frio(perfil, aco, Nc, Nt, M, K * H_cm, Ly_cm, 1, elemento)
         a = mat.aco(aco)
         r = Resultado(elemento, perfil=perfil.nome, material=a.nome)
-        if Nc > 1e-6 and M > 1e-6:
+        if perfil.tipo == "L":
+            # N2 (14/10): cantoneira simples pela esbeltez equivalente (NBR 8800, E.1.4), como
+            # `verificar.verificar_laminado` faz — r_x/r_y geométricos sem a flexo-torção davam o
+            # dobro (L 2"×1/4" A36 com 150 cm: 83,9 kN contra 40,7 kN). O método usa um
+            # comprimento só: o maior entre K·H e o destravado fora do plano (a favor da segurança).
+            L_ef = max(K * H_cm, Ly_cm)
+            if Nc > 1e-6:
+                rc = nbr8800.compressao(perfil, a, Lx=L_ef, Ly=L_ef, N_Sd=Nc, cantoneira_simplificada=True,
+                                        elemento=elemento)
+                r.verificacoes.extend(rc.verificacoes)
+            if M > 1e-6:
+                W = perfil.Wx or 1e-9
+                v = Verificacao("Flexão da cantoneira (elástica, W·f<sub>y</sub>/γ)", norma="conferência elástica",
+                                Sd=M, Rd=W * a.fy / GAMA_A1, unidade="kN·cm")
+                v.observacao = "a NBR 8800 não cobre a flexão de cantoneira simples; conferência elástica"
+                r.add(v)
+        elif Nc > 1e-6 and M > 1e-6:
             rc = nbr8800.flexao_composta(perfil, a, N_Sd=Nc, Mx_Sd=M, Lx=H_cm, Ly=Ly_cm, Kx=K, Ky=1.0,
                                          Lb=Ly_cm, Cb=1.0, elemento=elemento)
             r.verificacoes.extend(rc.verificacoes)
@@ -1595,6 +1736,361 @@ _verificar_frio = verificar.verificar_frio
 _verificar_laminado = verificar.verificar_laminado
 _verificar_membro = verificar.verificar_membro
 _serializar_resultado = verificar.serializar_resultado
+
+
+def _verificar_eixo_fraco(perfil: Perfil, aco: str, Nc: float, Nt: float, M: float, L_plano: float,
+                          L_fora: float, n: int, elemento: str, avisos: List[str],
+                          ligacao: Optional[dict] = None) -> Resultado:
+    """Barra que flete no plano da tesoura em torno do eixo FRACO (U deitado, boca para o miolo).
+
+    `verificar.verificar_membro` só conhece a flexão em torno de x; aqui os papéis trocam:
+
+    * flambagem no plano da tesoura (L_plano, o painel) é em torno de y (r_y); fora do plano
+      (L_fora, entre travamentos) em torno de x (r_x); a torção, com o comprimento de fora do
+      plano, que é o destravado;
+    * formado a frio: compressão pelo MRD (NBR 14762, 9.8.2) com K_xL_x = L_fora, K_yL_y =
+      L_plano, K_tL_t = L_fora; flexão em y por `nbr14762.flexao_em_y_mrd` (sem FLT, 9.8.2.2);
+      interação linear N/N_Rd + M/M_Rd ≤ 1 (a mesma de `verificar.verificar_frio`);
+    * laminado: NBR 8800 — `flexao_composta` com M_y (5.5.1.2), ou `compressao` / `flexao`
+      no eixo y quando só um esforço existe;
+    * tração: pelo mesmo caminho do eixo forte (`verificar.verificar_membro` só com N_t, com a
+      `ligacao` para o C_t), porque a área líquida não depende do eixo de flexão.
+
+    Esforços totais da posição (divididos aqui por n, como em `verificar`)."""
+    try:
+        a = mat.aco(aco)
+        r = Resultado(elemento, perfil=perfil.nome, material=a.nome)
+        Nc1, Nt1, M1 = abs(Nc) / n, abs(Nt) / n, abs(M) / n
+        frio = perfis_fabrica.tipo_de_verificacao(perfil) == "frio"
+        if frio:
+            sec = perfis_fabrica.secao_frio(perfil)
+            vc = vm = None
+            if Nc1 > 1e-6:
+                lam_x = L_fora / perfil.rx if perfil.rx else 0.0
+                lam_y = L_plano / perfil.ry if perfil.ry else 0.0
+                ve = Verificacao("Esbeltez da barra comprimida", norma="NBR 14762:2010, item 9.7.4",
+                                 Sd=max(lam_x, lam_y), Rd=nbr14762.ESBELTEZ_MAX_COMPRESSAO, unidade="")
+                ve.passo("KL/r ≤ 200 — seção deitada: fora do plano em torno de x, no plano em torno de y",
+                         "L<sub>fora</sub>/r<sub>x</sub>; L<sub>plano</sub>/r<sub>y</sub>",
+                         "%s/%s; %s/%s" % (fmt(L_fora, 0), fmt(perfil.rx), fmt(L_plano, 0), fmt(perfil.ry)),
+                         "%s; %s" % (fmt(lam_x, 1), fmt(lam_y, 1)), "item 9.7.4")
+                r.add(ve)
+                vc = nbr14762.compressao_mrd(sec, a, N_Sd=Nc1, KxLx=L_fora, KyLy=L_plano, KtLt=L_fora)
+                vc.passo("Comprimentos de flambagem (seção deitada no plano da tesoura)",
+                         "K<sub>x</sub>L<sub>x</sub> = L<sub>fora</sub>; K<sub>y</sub>L<sub>y</sub> = L<sub>plano</sub>; "
+                         "K<sub>t</sub>L<sub>t</sub> = L<sub>fora</sub>",
+                         "%s; %s; %s cm" % (fmt(L_fora, 0), fmt(L_plano, 0), fmt(L_fora, 0)), "", "item 9.7.2")
+                r.add(vc)
+            if M1 > 1e-6:
+                vm = nbr14762.flexao_em_y_mrd(sec, a, M_Sd=M1)
+                r.add(vm)
+            if vm is not None and (vc is not None or Nt1 > 1e-6):
+                NRd = vc.Rd if vc is not None else sec.A * a.fy / nbr14762.GAMA
+                NSd = Nc1 if vc is not None else Nt1
+                vi = Verificacao("Interação N–M (flexão em y)", norma="NBR 14762:2010, item 9.8.2.4",
+                                 Sd=NSd / NRd + M1 / vm.Rd if NRd and vm.Rd else float("inf"), Rd=1.0, unidade="—")
+                vi.passo("N<sub>Sd</sub>/N<sub>Rd</sub> + M<sub>y,Sd</sub>/M<sub>y,Rd</sub> ≤ 1", "",
+                         "%s/%s + %s/%s" % (fmt(NSd, 1), fmt(NRd, 1), fmt(M1, 0), fmt(vm.Rd, 0)), fmt(vi.Sd, 3))
+                r.add(vi)
+            norma = "NBR 14762"
+        else:
+            if Nc1 > 1e-6 and M1 > 1e-6:
+                rc = nbr8800.flexao_composta(perfil, a, N_Sd=Nc1, Mx_Sd=0.0, My_Sd=M1, Lx=L_fora, Ly=L_plano,
+                                             Lt=L_fora, Lb=L_fora, elemento=elemento)
+                r.verificacoes.extend(rc.verificacoes)
+                r.dados.update(rc.dados)
+            elif Nc1 > 1e-6:
+                rc = nbr8800.compressao(perfil, a, Lx=L_fora, Ly=L_plano, Lt=L_fora, N_Sd=Nc1, elemento=elemento)
+                r.verificacoes.extend(rc.verificacoes)
+                r.dados.update(rc.dados)
+            elif M1 > 1e-6:
+                rf = nbr8800.flexao(perfil, a, M_Sd=M1, Lb=L_fora, eixo="y", elemento=elemento)
+                r.verificacoes.extend(rf.verificacoes)
+            norma = "NBR 8800"
+        if Nt1 > 1e-6:
+            rt = _verificar_membro(perfil, aco, 0.0, Nt, 0.0, L_plano, L_fora, n, elemento, avisos, ligacao=ligacao)
+            r.verificacoes.extend(rt.verificacoes)
+        if not r.verificacoes:
+            r.add(Verificacao("Sem esforço", Sd=0.0, Rd=1.0, unidade="—"))
+        r.dados.update({"N_c": Nc, "N_t": Nt, "M": M, "Lx": L_fora, "Ly": L_plano, "n": n, "norma": norma})
+        return r
+    except ErroDeDados as exc:
+        r = Resultado(elemento, perfil=perfil.nome, material=aco)
+        r.add(nao_verificada(exc))
+        r.dados["erro"] = str(exc)
+        return r
+
+
+def _anotar_eixo(r: Resultado, perfil: Perfil, eixo: Optional[str], L_plano: float, L_fora: float) -> None:
+    """Escreve no memorial em torno de qual eixo a barra flete no plano da tesoura, e por quê."""
+    if eixo not in ("forte", "fraco"):
+        return
+    fraco = eixo == "fraco"
+    r.dados["eixo_no_plano"] = "y" if fraco else "x"
+    if fraco:
+        texto = ("Seção deitada no plano da tesoura (U com a boca para o miolo: a alma fica perpendicular ao "
+                 "plano, lido na orientação da peça no modelo 3D). O momento no plano da tesoura é em torno do "
+                 "eixo de menor inércia y: no modelo de análise I<sub>y</sub> = %s cm⁴ (e não I<sub>x</sub> = %s cm⁴), "
+                 "flexão verificada em torno de y (W<sub>y</sub> = %s cm³); flambagem no plano (L = %s cm) com "
+                 "r<sub>y</sub> e fora do plano (L = %s cm) com r<sub>x</sub>."
+                 % (fmt(perfil.Iy, 1), fmt(perfil.Ix, 1), fmt(perfil.Wy, 2), fmt(L_plano, 0), fmt(L_fora, 0)))
+    else:
+        texto = ("Alma no plano da tesoura (lido na orientação da peça no modelo 3D): o momento no plano é em "
+                 "torno do eixo de maior inércia x (I<sub>x</sub> = %s cm⁴ no modelo de análise, W<sub>x</sub> = %s "
+                 "cm³); flambagem no plano (L = %s cm) com r<sub>x</sub> e fora do plano (L = %s cm) com r<sub>y</sub>."
+                 % (fmt(perfil.Ix, 1), fmt(perfil.Wx, 2), fmt(L_plano, 0), fmt(L_fora, 0)))
+    r.hipoteses.insert(0, Hipotese("eixo_flexao", texto, "modelo"))
+    passo = Passo("Eixo de flexão no plano da tesoura",
+                  "alma ⟂ plano → eixo y; alma no plano → eixo x",
+                  "alma %s" % ("perpendicular ao plano (seção deitada)" if fraco else "no plano"),
+                  "eixo %s (%s)" % ("y" if fraco else "x", eixo), "orientação lida no modelo 3D")
+    for v in r.verificacoes:
+        if "flex" in v.titulo.lower() or "intera" in v.titulo.lower():
+            v.passos.insert(0, passo)
+            break
+
+
+def _verificar_barra_da_tesoura(perfil: Perfil, aco: str, Nc: float, Nt: float, M: float, L_plano: float,
+                                L_fora: float, n: int, elemento: str, avisos: List[str],
+                                eixo: Optional[str] = None, ligacao: Optional[dict] = None,
+                                Nt_ponta: Optional[float] = None) -> Resultado:
+    """Barra de tesoura (banzo, diagonal, montante) no eixo em que ela flete no plano (M2).
+
+    `eixo` "forte"/None → `verificar.verificar_membro` (flexão em x, L_x = no plano);
+    "fraco" → `_verificar_eixo_fraco`; "indeterminado" (seção com lado cuja orientação o
+    modelo não deixou ler) → verificada nos dois e vale a pior, a favor da segurança.
+    `ligacao` (C_t pelos parafusos do 3D, N1) segue para a tração.
+
+    `Nt_ponta` (banzo contínuo): a maior tração nos trechos que tocam a ponta da peça (emenda,
+    ponta do banzo) ou um apoio. A ruptura da seção líquida só vale na barra com ponta ligada
+    (decisão do usuário, 14/10): quando a maior tração do banzo está num trecho corrido, a
+    posição é verificada com `ponta_ligada = False` (só o escoamento da seção bruta) e a
+    ruptura entra à parte, com a tração da ponta."""
+    if Nt_ponta is not None and Nt > Nt_ponta + 1e-9:
+        corrido = dict(ligacao or {}, ponta_ligada=False,
+                       fonte="trecho corrido do banzo contínuo: a força passa pela seção sem ligação")
+        for k in ("lc", "n_parafusos", "d_parafuso", "soldada"):
+            corrido.pop(k, None)
+        r = _verificar_barra_da_tesoura(perfil, aco, Nc, Nt, M, L_plano, L_fora, n, elemento, avisos,
+                                        eixo, corrido)
+        if Nt_ponta > 1e-6:
+            rp = _verificar_barra_da_tesoura(perfil, aco, 0.0, Nt_ponta, 0.0, L_plano, L_fora, n, elemento,
+                                             avisos, eixo, ligacao)
+            for v in rp.verificacoes:
+                if "ruptura" in v.titulo.lower() or v.indeterminada:
+                    v.titulo += " — trecho da ponta do banzo"
+                    r.add(v)
+            r.hipoteses.extend(h for h in rp.hipoteses if h.chave == "ct_ligacao")
+        r.dados["Nt_ponta"] = Nt_ponta
+        return r
+    if eixo == "indeterminado":
+        rf = _verificar_barra_da_tesoura(perfil, aco, Nc, Nt, M, L_plano, L_fora, n, elemento, avisos,
+                                         "forte", ligacao)
+        rw = _verificar_barra_da_tesoura(perfil, aco, Nc, Nt, M, L_plano, L_fora, n, elemento, avisos,
+                                         "fraco", ligacao)
+        if rw.indeterminada != rf.indeterminada:
+            # um dos eixos não se verifica (perfil sem W_y no catálogo): não há "pior" conhecido
+            r, outro = (rw, rf) if rw.indeterminada else (rf, rw)
+        else:
+            r, outro = (rw, rf) if rw.razao >= rf.razao else (rf, rw)
+        r.hipoteses = [h for h in r.hipoteses if h.chave != "eixo_flexao"]
+        r.hipoteses.insert(0, Hipotese(
+            "eixo_flexao",
+            "A orientação da seção no modelo não foi lida (o sólido não mostra de que lado está a alma): a "
+            "barra foi verificada fletindo no plano em torno de x e em torno de y, e vale a pior — eixo %s "
+            "(aproveitamento %s contra %s). Confira no modelo se o U está deitado (boca para o miolo) ou em pé."
+            % (r.dados.get("eixo_no_plano", "?"), fmt(r.razao, 3), fmt(outro.razao, 3)), "rotina"))
+        r.dados["eixo_indeterminado"] = True
+        return r
+    if eixo == "fraco":
+        r = _verificar_eixo_fraco(perfil, aco, Nc, Nt, M, L_plano, L_fora, n, elemento, avisos, ligacao=ligacao)
+    else:
+        r = _verificar_membro(perfil, aco, Nc, Nt, M, L_plano, L_fora, n, elemento, avisos, ligacao=ligacao)
+    _anotar_eixo(r, perfil, eixo, L_plano, L_fora)
+    return r
+
+
+# ------------------------------------------------------------------ C_t pelos parafusos do 3D (N1)
+# Regra do usuário (14/10): "C_t pelos parafusos do 3D quando houver; senão o piso". O
+# coeficiente de redução da área líquida (NBR 8800, 5.2.5) depende do comprimento da
+# ligação l_c — a distância entre o primeiro e o último parafuso ao longo da barra. Aqui os
+# parafusos do modelo (sólidos IfcMechanicalFastener, o parafuso posto no editor e os
+# marcadores de furo que apontam para a peça) são achados em cada barra da tesoura e
+# medidos; sem parafuso nenhum, a barra segue com `ligacao=None` e o núcleo adota o piso
+# `nbr8800.ct_sem_ligacao(perfil)`: L/U laminados A_c/A_g; U/Ue (FF) 0,50; L (FF) 0,40.
+
+#: Folga (mm) entre o furo e a peça para o parafuso contar nela: a modelagem do IFC deixa o
+#: parafuso encostado na face, não dentro dela.
+TOL_FIXADOR = 5.0
+#: Parafusos a menos disto (mm), na mesma barra, são o mesmo (o sólido e o marcador de furo).
+TOL_MESMO_PARAFUSO = 3.0
+#: Folga do furo-padrão da NBR 8800 (Tabela 12): furo = d + 1,5 mm — volta do furo ao parafuso.
+FOLGA_FURO_PADRAO = 1.5
+
+
+def _eh_parafuso_do_modelo(f) -> bool:
+    at = getattr(f, "atributos", None) or {}
+    if at.get("parafuso"):
+        return True
+    return str(at.get("tipo_ifc") or "") in ("IfcMechanicalFastener", "IfcFastener") or \
+        str(getattr(f, "nome", "") or "").upper().startswith("BOLT")
+
+
+def _quadro_transversal(peca: _Peca):
+    """(a, e, L, s1, s2, faixa1, faixa2) da peça em mm: eixo, duas direções transversais e a
+    faixa que a seção ocupa nelas. Barra paramétrica pela seção do perfil girada como no 3D;
+    sólido pelos próprios vértices."""
+    a, b = tuple(peca.a), tuple(peca.b)
+    e = _unit(_sub(b, a))
+    L = _norma(_sub(b, a))
+    ent = peca.ent
+    if isinstance(ent, _CorpoDaBarra):
+        from nucleo3d import geometria
+        s1, s2, _w = geometria.base_local(_sub(b, a), float(getattr(ent.barra, "rotacao", 0.0) or 0.0))
+        try:
+            cont = geometria.secao(ent.barra.perfil)
+        except Exception:
+            return None
+        f1 = (min(x for x, _ in cont), max(x for x, _ in cont))
+        f2 = (min(y for _, y in cont), max(y for _, y in cont))
+        return a, e, L, tuple(s1), tuple(s2), f1, f2
+    aux = (0.0, 0.0, 1.0) if abs(e[2]) < 0.9 else (1.0, 0.0, 0.0)
+    s1 = _unit(_cruz(aux, e))
+    s2 = _unit(_cruz(e, s1))
+    verts = _vertices(ent)
+    if not verts:
+        return None
+    t1 = [_dot(_sub(v, a), s1) for v in verts]
+    t2 = [_dot(_sub(v, a), s2) for v in verts]
+    return a, e, L, s1, s2, (min(t1), max(t1)), (min(t2), max(t2))
+
+
+def _segmento_corta_retangulo(p0, d, meio, f1, f2) -> bool:
+    """O segmento p0 ± d·meio (2D) passa pelo retângulo f1 × f2 (com a folga TOL_FIXADOR)?
+    Recorte de Liang–Barsky."""
+    t0, t1 = -meio, meio
+    for k, (lo, hi) in enumerate((f1, f2)):
+        lo, hi = lo - TOL_FIXADOR, hi + TOL_FIXADOR
+        if abs(d[k]) < 1e-12:
+            if p0[k] < lo or p0[k] > hi:
+                return False
+            continue
+        ta, tb = (lo - p0[k]) / d[k], (hi - p0[k]) / d[k]
+        if ta > tb:
+            ta, tb = tb, ta
+        t0, t1 = max(t0, ta), min(t1, tb)
+        if t0 > t1:
+            return False
+    return True
+
+
+def _ligacoes_pelos_parafusos(doc: Documento, tes: List[_Tesoura]) -> Dict[str, dict]:
+    """{marca: ligacao} das diagonais e montantes das tesouras com parafusos no modelo.
+
+    Em cada peça: os parafusos cujo eixo é transversal à barra (mais de 60° do eixo dela),
+    que caem dentro do comprimento da peça e cujo corpo atravessa a faixa da seção; o marcador
+    de furo vale direto para a peça que ele aponta (`atributos.furo.peca`). Agrupados pela
+    ponta (a metade da barra em que estão), l_c = distância entre o primeiro e o último ao
+    longo da barra. Numa barra de treliça a força normal é a mesma nas duas pontas, então vale
+    a ponta de MENOR l_c (menor C_t, a favor da segurança). Peças da mesma marca são a mesma
+    peça de fábrica: vale a pior das que têm parafuso.
+
+    Os banzos ficam de fora: são contínuos pelos nós e os parafusos ao longo deles (terças,
+    chapas de nó) não são a ligação da ponta; seguem sem parafusos medidos (o trecho de ponta
+    com o piso `nbr8800.ct_sem_ligacao`, o trecho corrido com `ponta_ligada = False`)."""
+    try:
+        from nucleo2d.detalhe.base import _diametro_do_fixador, _eh_furo, _eixos_dos_fixadores, _fixadores
+    except Exception:
+        return {}
+    fix = [f for f in _fixadores(doc) if _eh_furo(f) or _eh_parafuso_do_modelo(f)]
+    if not fix:
+        return {}
+    eixos = _eixos_dos_fixadores(fix)
+    por_id = {f.id: f for f in fix}
+    # diâmetro (mm) e chave de identidade de cada fixador
+    info = {}
+    for f in fix:
+        inf = eixos.get(f.id)
+        if inf is None:
+            continue
+        cc, eixo, meio, ext, porca = inf
+        at = f.atributos or {}
+        if _eh_furo(f):
+            fu = at.get("furo") or {}
+            pid = fu.get("parafuso")
+            pf = por_id.get(pid) if pid else None
+            d_pf = (pf.atributos or {}).get("parafuso", {}).get("d") if pf is not None else None
+            d = float(d_pf) if d_pf else max(float(fu.get("d") or 0.0) - FOLGA_FURO_PADRAO, 0.0)
+            info[f.id] = (cc, eixo, meio, d, str(pid or f.id), str(fu.get("peca") or ""))
+        else:
+            if porca:
+                continue                       # porca, arruela: o parafuso já conta
+            d_ed = (at.get("parafuso") or {}).get("d")
+            d = float(d_ed) if d_ed else _diametro_do_fixador(f, ext)[0]
+            info[f.id] = (cc, eixo, meio, d, f.id, "")
+    saida: Dict[str, dict] = {}
+    for t in tes:
+        for mb in t.membros:
+            if mb.tipo == "banzo":
+                continue
+            for peca in mb.pecas:
+                q = _quadro_transversal(peca)
+                if q is None:
+                    continue
+                a, e, L, s1, s2, f1, f2 = q
+                lat_dir = None
+                acertos: List[Tuple[float, float, float, str]] = []      # (t, lateral, d, chave)
+                for fid, (cc, eixo, meio, d, chave, alvo) in info.items():
+                    if alvo and alvo != peca.id:
+                        continue
+                    if abs(_dot(eixo, e)) > 0.5:            # parafuso ao longo da barra
+                        continue
+                    rel = _sub(cc, a)
+                    tc = _dot(rel, e)
+                    if tc < -TOL_FIXADOR or tc > L + TOL_FIXADOR:
+                        continue
+                    if not alvo and not _segmento_corta_retangulo(
+                            (_dot(rel, s1), _dot(rel, s2)), (_dot(eixo, s1), _dot(eixo, s2)), meio, f1, f2):
+                        continue
+                    lat_dir = _unit(_cruz(e, eixo))
+                    acertos.append((tc, _dot(rel, lat_dir), d, chave))
+                # o mesmo parafuso pelo sólido e pelo marcador de furo: conta uma vez
+                unicos: List[Tuple[float, float, float, str]] = []
+                for h in sorted(acertos):
+                    if any(h[3] == u[3] or (abs(h[0] - u[0]) <= TOL_MESMO_PARAFUSO and
+                                            abs(h[1] - u[1]) <= TOL_MESMO_PARAFUSO) for u in unicos):
+                        continue
+                    unicos.append(h)
+                if not unicos:
+                    continue
+                pontas = [[h for h in unicos if h[0] < L / 2.0], [h for h in unicos if h[0] >= L / 2.0]]
+                cands = []
+                for hs in pontas:
+                    if not hs:
+                        continue
+                    d_max = max(h[2] for h in hs)
+                    # linhas de parafusos: a mesma posição transversal. Furos de linhas
+                    # diferentes ficam a 3·d ou mais (NBR 8800, 6.3.9); meio diâmetro separa.
+                    linhas: List[List[tuple]] = []
+                    for h in sorted(hs, key=lambda h: h[1]):
+                        if linhas and abs(h[1] - linhas[-1][-1][1]) <= max(d_max / 2.0, TOL_MESMO_PARAFUSO):
+                            linhas[-1].append(h)
+                        else:
+                            linhas.append([h])
+                    linha = max(linhas, key=len)
+                    lc = max(h[0] for h in linha) - min(h[0] for h in linha)
+                    cands.append((lc, len(linha), d_max))
+                lc, n_pf, d = min(cands)
+                if d < 3.0:
+                    continue                    # sem diâmetro legível: não dá para descontar o furo
+                lig = {"lc": round(lc / 10.0, 2), "n_parafusos": n_pf, "d_parafuso": round(d / 10.0, 3),
+                       "soldada": False,
+                       "fonte": "parafusos do modelo 3D: %d M%s na linha da ponta de %s, l_c = %s mm do primeiro "
+                                "ao último (peça %s)" % (n_pf, fmt(d, 0), peca.marca, fmt(lc, 0), peca.id)}
+                atual = saida.get(mb.marca)
+                if atual is None or (lig["lc"], lig["n_parafusos"]) < (atual["lc"], atual["n_parafusos"]):
+                    saida[mb.marca] = lig
+    return saida
 
 
 # ------------------------------------------------------------------ ligações
@@ -2079,6 +2575,21 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
     if not tes:
         raise ErroDeDados("nenhuma tesoura pôde ser analisada: " + "; ".join(avisos[-3:]))
 
+    # M1: pino nos dois apoios só por escolha explícita — e então o empuxo aparece
+    empuxos = [e for e in (_empuxo_dos_apoios(t, [c for c in t.combos if c.startswith("C")]) for t in tes) if e]
+    empuxo = max(empuxos, key=lambda e: e["H_kN"]) if empuxos else None
+    if empuxo and empuxo["H_kN"] > 0.0:
+        avisos.append("apoios da tesoura rotulados nos dois lados (escolhido no diálogo): os dois pinos trocam um "
+                      "empuxo horizontal de até %s kN (%s, combinação %s; reações %s e %s kN) que entra no banzo "
+                      "inferior e o alivia nesse valor. Com um pino e um rolete (o padrão) esse alívio não existe — "
+                      "use os dois pinos só se o apoio e os pilares resistem ao empuxo."
+                      % (fmt(empuxo["H_kN"], 2), empuxo["tesoura"], empuxo["caso"],
+                         fmt(empuxo["reacoes_kN"][0], 2), fmt(empuxo["reacoes_kN"][1], 2)))
+    # N1: C_t pelos parafusos do 3D (diagonais e montantes); sem parafuso, o piso do núcleo
+    # (`nbr8800.ct_sem_ligacao`)
+    ligacoes_ct = _ligacoes_pelos_parafusos(doc, tes)
+    orientacao_nao_lida = set()
+
     avisar("verificando as peças…")
     # Comprimento total de cada posição no modelo: é o que transforma "kg/m a menos"
     # em "kg a menos na estrutura" quando se troca o perfil.
@@ -2090,6 +2601,7 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
     for t in tes:
         # comprimentos de travamento lateral por banzo
         gaps = {"superior": _gaps(t, "superior", t.tercas), "inferior": _gaps(t, "inferior", t.travas)}
+        pontas = _nos_de_ponta_dos_banzos(t)
         for k, b in enumerate(t.barras):
             mb = t.membros[b["membro"]]
             eb = t.env.barras[k]
@@ -2097,13 +2609,19 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
             reg = por_marca.setdefault(mb.marca, {"perfil": mb.perfil, "aco": mb.aco, "n": mb.n, "tipo": mb.tipo,
                                                   "Nc": 0.0, "Nt": 0.0, "M": 0.0, "Lx": 0.0, "Ly": 0.0,
                                                   "caso": "", "tesouras": set(), "posicao": mb.posicao,
-                                                  "V": 0.0, "sem_trava": False})
+                                                  "V": 0.0, "sem_trava": False, "eixo": mb.eixo,
+                                                  "Nt_ponta": 0.0})
             reg["tesouras"].add(t.conjunto)
+            if reg["eixo"] != mb.eixo:
+                # instâncias da mesma marca montadas de jeitos diferentes: verifica nos dois eixos
+                reg["eixo"] = mb.eixo if reg["eixo"] is None else (reg["eixo"] if mb.eixo is None else "indeterminado")
             Nmin, Nmax = eb.N_min.valor, eb.N_max.valor
             if -Nmin > reg["Nc"]:
                 reg["Nc"] = -Nmin
                 reg["caso"] = eb.N_min.caso
             reg["Nt"] = max(reg["Nt"], Nmax)
+            if mb.tipo != "banzo" or b["ni"] in pontas.get(b["membro"], ()) or b["nf"] in pontas.get(b["membro"], ()):
+                reg["Nt_ponta"] = max(reg["Nt_ponta"], Nmax)
             Mabs = max(abs(eb.M_max.valor), abs(eb.M_min.valor))
             reg["M"] = max(reg["M"], Mabs)
             reg["V"] = max(reg["V"], abs(eb.V_max.valor), abs(eb.V_min.valor))
@@ -2127,10 +2645,28 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
             marca, (" " + nome) if nome else "", reg["tipo"],
             (" " + reg["posicao"]) if reg["tipo"] == "banzo" and reg["posicao"] else "",
             "/".join(sorted(nomes_conj.get(c, c) for c in reg["tesouras"])), reg["perfil"].nome)
-        r = _verificar_membro(reg["perfil"], reg["aco"], reg["Nc"], reg["Nt"], reg["M"], reg["Lx"], reg["Ly"],
-                              reg["n"], tit, avisos)
+        lig_ct = ligacoes_ct.get(marca) if reg["tipo"] != "banzo" else None
+        Nt_ponta = reg["Nt_ponta"] if reg["tipo"] == "banzo" else None
+        r = _verificar_barra_da_tesoura(reg["perfil"], reg["aco"], reg["Nc"], reg["Nt"], reg["M"], reg["Lx"],
+                                        reg["Ly"], reg["n"], tit, avisos, eixo=reg["eixo"], ligacao=lig_ct,
+                                        Nt_ponta=Nt_ponta)
+        if reg["eixo"] == "indeterminado":
+            orientacao_nao_lida.add(marca)
         if reg.get("sem_trava"):
             r.dados["observacao"] = "banzo inferior sem travamento lateral no modelo: L_y = comprimento inteiro"
+        if empuxo and empuxo["H_kN"] > 0.0 and reg["tipo"] == "banzo" and reg["posicao"] == "inferior":
+            txt = ("apoios rotulados nos dois lados (escolha do diálogo): o empuxo dos pinos, até %s kN (%s), "
+                   "alivia este banzo nesse valor; com pino e rolete ele não existe"
+                   % (fmt(empuxo["H_kN"], 2), empuxo["caso"]))
+            r.dados["observacao"] = "; ".join(x for x in (r.dados.get("observacao"), txt) if x)
+            r.dados["empuxo_kN"] = empuxo["H_kN"]
+            r.hipoteses.insert(0, Hipotese(
+                "apoio_empuxo",
+                "Apoios da tesoura: pino nos dois lados, escolhido no diálogo. Os pinos trocam um empuxo horizontal "
+                "de até %s kN (%s, reações %s e %s kN), que entra neste banzo e reduz o esforço dele nesse valor. "
+                "Com um pino e um rolete (o padrão) o banzo não teria esse alívio."
+                % (fmt(empuxo["H_kN"], 2), empuxo["caso"], fmt(empuxo["reacoes_kN"][0], 2),
+                   fmt(empuxo["reacoes_kN"][1], 2)), "parametro"))
         crit = r.critica
         elementos[marca] = {
             "nome": nome, "titulo": tit, "tipo": reg["tipo"], "posicao": reg["posicao"],
@@ -2143,16 +2679,27 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
             "conjuntos": sorted(reg["tesouras"]),
             "dimensionamento": {"M": round(reg["M"] / 100.0, 2), "V": round(reg["V"], 2),
                                 "N": round(max(reg["Nc"], reg["Nt"]), 2), "caso": reg["caso"],
-                                "Lx_cm": round(reg["Lx"], 1), "Ly_cm": round(reg["Ly"], 1)},
-            # o que basta para verificar outro perfil nesta posição, sem refazer a análise
+                                "Lx_cm": round(reg["Lx"], 1), "Ly_cm": round(reg["Ly"], 1),
+                                "eixo_flexao": r.dados.get("eixo_no_plano") or ""},
+            "eixo_flexao": r.dados.get("eixo_no_plano") or "",
+            "empuxo_kN": r.dados.get("empuxo_kN"),
+            # o que basta para verificar outro perfil nesta posição, sem refazer a análise;
+            # Lx/Ly são no plano / fora do plano, e `eixo` diz em torno de qual eixo da seção a
+            # barra flete no plano (o candidato entra montado do mesmo jeito)
             "entrada": {"tipo": "barra", "Nc": round(reg["Nc"], 3), "Nt": round(reg["Nt"], 3),
                         "M_kNcm": round(reg["M"], 3), "Lx_cm": round(reg["Lx"], 2),
-                        "Ly_cm": round(reg["Ly"], 2), "n": reg["n"], "aco": reg["aco"]},
+                        "Ly_cm": round(reg["Ly"], 2), "n": reg["n"], "aco": reg["aco"],
+                        "eixo": reg["eixo"], "ligacao_ct": lig_ct,
+                        "Nt_ponta": round(Nt_ponta, 3) if Nt_ponta is not None else None},
             "comprimento_total_m": round(comprimento_total.get(marca, 0.0), 2),
             "peso_kg": round(reg["perfil"].massa * comprimento_total.get(marca, 0.0), 1),
             "diagrama": None, "valores": {},
         }
         verificacoes.append(dict(_serializar_resultado(r), marca=marca, nome=nome, tipo=reg["tipo"]))
+    if orientacao_nao_lida:
+        avisos.append("orientação da seção não lida no modelo em %s: verificadas fletindo no plano em torno de x e "
+                      "de y, valendo a pior — confira se o U está deitado (boca para o miolo) ou em pé"
+                      % ", ".join(sorted(orientacao_nao_lida)))
 
     # ligações: a chapa de nó de cada nó, com a barra que chega nela
     avisar("verificando as ligações…")
@@ -2349,6 +2896,8 @@ def calcular(doc: Documento, nomes: dict, parametros: Optional[dict] = None, avi
         "nao_verificadas": nao_verificadas,
         "ligacoes": len(ligacoes_saida),
         "ligacoes_reprovadas": [x["chave"] for x in ligacoes_saida if not x["ok"]],
+        "apoio": par["apoio"],
+        "empuxo_apoios": empuxo,
         "pior_ligacao": round(max((x["aproveitamento"] for x in ligacoes_saida), default=0.0), 3),
     }
     return {
@@ -2509,9 +3058,13 @@ def _verificar_candidato(perfil, entrada: dict, el: dict):
             r = _verificar_tirante(perfil, entrada["aco"], float(entrada.get("Nc") or 0.0), float(entrada["Nt"]),
                                    float(entrada["L_cm"]), el.get("titulo", ""))
         else:
-            r = _verificar_membro(perfil, entrada["aco"], float(entrada["Nc"]), float(entrada["Nt"]),
-                                  float(entrada["M_kNcm"]), float(entrada["Lx_cm"]), float(entrada["Ly_cm"]),
-                                  int(entrada.get("n") or 1), el.get("titulo", ""), [])
+            r = _verificar_barra_da_tesoura(perfil, entrada["aco"], float(entrada["Nc"]), float(entrada["Nt"]),
+                                            float(entrada["M_kNcm"]), float(entrada["Lx_cm"]),
+                                            float(entrada["Ly_cm"]), int(entrada.get("n") or 1),
+                                            el.get("titulo", ""), [], eixo=entrada.get("eixo"),
+                                            ligacao=entrada.get("ligacao_ct"),
+                                            Nt_ponta=(float(entrada["Nt_ponta"]) if entrada.get("Nt_ponta") is not None
+                                                      else None))
     except Exception:
         return None
     crit = r.critica
