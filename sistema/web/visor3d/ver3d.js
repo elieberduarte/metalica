@@ -416,6 +416,16 @@ async function posicionarRotulo() {
 
 // ------------------------------------------------------------------ busca
 
+// a bitola em polegada dos parafusos e chumbadores, que têm o diâmetro em mm no nome ("HIT-V 15.875x250"): a busca por
+// 5/8" não achava os chumbadores (Vicente, 14/10)
+const POLEGADAS = [[6.35, '1/4"'], [7.94, '5/16"'], [9.525, '3/8"'], [12.7, '1/2"'], [15.875, '5/8"'], [19.05, '3/4"'],
+  [22.225, '7/8"'], [25.4, '1"'], [28.575, '1.1/8" 1 1/8"'], [31.75, '1.1/4" 1 1/4"'], [38.1, '1.1/2" 1 1/2"'], [50.8, '2"']];
+function polegadas(s) {
+  const nums = String(s || '').match(/\d+(?:[.,]\d+)?/g) || [];
+  return POLEGADAS.filter(([mm]) => nums.some(n => Math.abs(parseFloat(n.replace(',', '.')) - mm) < 0.02))
+    .map(([, pol]) => pol + ' ø' + pol).join(' ');
+}
+
 function procurar(texto) {
   const t = (texto || '').trim().toLowerCase();
   if (t.length < 2 || !visor || !visor.fichas) return [];
@@ -426,7 +436,8 @@ function procurar(texto) {
   const out = [];
   visor.fichas.forEach((f, i) => {
     // também a sigla da terça (TC3) e a peça/planta de origem (TESOURA 16): os nomes do projeto (12/10)
-    if ((f.n + ' ' + f.p + ' ' + (f.pos || '') + ' ' + (f.mc || '') + ' ' + (f.cj || '') + ' ' + (f.sg || '') + ' ' + (f.pl || '')).toLowerCase().includes(t)) out.push(i);
+    if ((f.n + ' ' + f.p + ' ' + (f.pos || '') + ' ' + (f.mc || '') + ' ' + (f.cj || '') + ' ' + (f.sg || '') + ' ' + (f.pl || '')
+      + ' ' + polegadas(f.n)).toLowerCase().includes(t)) out.push(i);
   });
   return out;
 }

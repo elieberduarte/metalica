@@ -9,6 +9,10 @@ import { Comando } from '../nucleo/comandos.js';
 import { chapaEditavel } from './edicao_chapa.js';
 import { $, ComandoAparencia, contarPor, corDeGrupo, corHex, dimensoesPrincipais, el, metros, normalizarBusca, numero, ponto3, uniao, volumeDe } from '../editor.js';
 
+/** Diâmetro (mm) → bitola em polegada, para a busca achar parafuso e chumbador por 5/8", 3/4"… */
+const POLEGADAS = [[6.35, '1/4"'], [7.94, '5/16"'], [9.525, '3/8"'], [12.7, '1/2"'], [15.875, '5/8"'], [19.05, '3/4"'],
+  [22.225, '7/8"'], [25.4, '1"'], [28.575, '1.1/8" 1 1/8"'], [31.75, '1.1/4" 1 1/4"'], [38.1, '1.1/2" 1 1/2"'], [50.8, '2"']];
+
 /**
  * Perfil da peça para agrupar e mostrar. No IFC do Revit o nome é "Família:Tipo:Id" e o
  * número é de cada peça, não do perfil: o perfil é o tipo, que o Revit repete em
@@ -650,8 +654,11 @@ export class MetodosPaineis {
       const peca = o.peca ? String(o.peca).split('#')[0] : '';
       // a sigla da terça (TC3, TC46…) também é nome: a busca não achava as terças pelo nome do projeto (12/10)
       const nomes = [o.planta, peca, o.locacao, o.corte, o.sigla, a.sigla].filter(Boolean).map(norm);
+      // parafuso e chumbador têm o diâmetro em mm (HIT-V 15.875x250): a bitola em polegada entra no texto (5/8", 14/10)
+      const d = a.parafuso && +a.parafuso.d;
+      const pol = d ? POLEGADAS.filter(([mm]) => Math.abs(d - mm) < 0.02).map(([, p]) => p + ' ø' + p).join(' ') : '';
       const texto = norm([ent.nome, m.posicao, m.conjunto, m.nome, m.nome_conjunto, m.perfil, ent.perfil, ent.camada,
-        a.tipo_ifc, ent.origem_ifc, ent.papel, ...nomes].filter(Boolean).join(' '));
+        a.tipo_ifc, ent.origem_ifc, ent.papel, pol, ...nomes].filter(Boolean).join(' '));
       itens.push({ ent, m, o, nomes, texto });
     }
     // o nome da peça é o termo, ou está inteiro dentro dele ("viga de transição 8")
