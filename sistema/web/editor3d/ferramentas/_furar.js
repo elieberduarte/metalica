@@ -582,15 +582,20 @@ export function pacoteDoEixo(documento, ponto, eixo, alcance, opcoes = {}) {
 //: levado ao métrico
 const ACRESCIMO = { 8: 13, 10: 15, 12: 17.5, 14: 20, 16: 22, 18: 24.5, 20: 26.5, 22: 28.5, 24: 31, 27: 34, 30: 37.5 };
 
+//: comprimentos fáceis de achar no comércio (mm): de 5 em 5 até 50, de 10 em 10 até 160, depois 180 e 200 — os de 55,
+//: 65, 75… existem, mas são de encomenda (usuário, 14/10: "normalmente são usados os comercialmente fáceis de encontrar")
+export const COMPRIMENTOS_COMERCIAIS = [20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 180, 200];
+
 /**
- * Comprimento comercial do parafuso para a pega: pega + acréscimo (arruela + porca + ponta para fora), arredondado
- * para cima de 5 em 5 mm (de 10 em 10 acima de 100). M12 com pega de 16 → 33,5 → 35.
+ * Comprimento comercial do parafuso para a pega: pega + acréscimo (arruela + porca + ponta para fora), o primeiro dos
+ * comprimentos fáceis de achar que cabe (acima de 200, de 10 em 10). M12 com pega de 16 → 33,5 → 35; com 30 → 47,5 → 50;
+ * com 35 → 52,5 → 60.
  */
 export function comprimentoPelaPega(d, pega) {
   const ac = ACRESCIMO[Math.round(d)] || 1.3 * d + 2;
   const bruto = pega + ac;
-  const m = bruto > 100 ? 10 : 5;
-  return Math.max(20, Math.ceil(bruto / m - 1e-6) * m);
+  const c = COMPRIMENTOS_COMERCIAIS.find(x => x >= bruto - 1e-6);
+  return c || Math.ceil(bruto / 10 - 1e-6) * 10;
 }
 
 // a base da barra (a mesma de documento.baseDaBarra), sem importar o núcleo aqui

@@ -17,7 +17,7 @@
 import { Ferramenta } from './base.js';
 import * as C from './_comum.js';
 import { furosDoParafuso, cruzamentosDoEixo, lacoDaForma, refazerFurosEditor, IndiceDeCaixas, pacoteDoEixo,
-         comprimentoPelaPega } from './_furar.js';
+         comprimentoPelaPega, paredesNoEixo } from './_furar.js';
 import { baseDaBarra } from '../nucleo/documento.js';
 
 /** Interseções da reta (x + s·dx, y + s·dy) com um polígono fechado: os valores de s. */
@@ -319,13 +319,59 @@ export class FerramentaParafuso extends Ferramenta {
     // ao longo: do clique para longe da ponta mais perto (o 1º fica onde se clicou — a 50 mm da ponta, p.ex.)
     const sentido = (a - f.min1) <= (f.max1 - a) ? 1 : -1;
     const out = [];
+    const b = C.dot(ponto, f.e2);
     for (let j = 0; j < nc; j++) {
       for (let i = 0; i < nl; i++) {
-        const s1 = sentido * j * (pd.p || 0), s2 = (i - (nl - 1) / 2) * (pd.g || 0);
+        // 2 na largura de uma mesa de I: um em cada linha de gabarito (o g do perfil, não o do painel)
+        const s1 = sentido * j * (pd.p || 0);
+        const s2 = f.gab && nl === 2 ? f.gab.linhas[i] - b : (i - (nl - 1) / 2) * (pd.g || 0);
         out.push(C.add(ponto, C.add(C.mul(f.e1, s1), C.mul(f.e2, s2))));
       }
     }
     return out;
+  }
+
+  /**
+   * O gabarito da mesa de um perfil I/H (a da face clicada ou a da peça de baixo): varre a largura de `lo` a `hi` (na
+   * direção `dir`, a partir de `origem`) e acha onde o eixo do furo correria dentro da alma (parede de mais de 60 mm);
+   * com a alma no meio e mesa livre dos dois lados, as linhas de gabarito ficam no meio de cada meia-mesa, simétricas à
+   * alma e arredondadas de 5 em 5 mm (o g de 75, 80…). {linhas: [b1, b2], g, wc} nas coordenadas de `dir`, ou null — o
+   * U, a cantoneira e a chapa não têm alma no meio (pedido do usuário, 14/10: o parafuso no centro da mesa batia na alma).
+   */
+  _gabaritoDe(ent, origem, n, dir, lo, hi) {
+    if (!ent || hi - lo < 40) return null;
+    const chave = [ent.id, ...n.map(v => Math.round(v * 50)), ...dir.map(v => Math.round(v * 50)), Math.round(lo / 5), Math.round(hi / 5),
+                   ent.tipo === 'barra' ? '' : Math.round(C.dot(origem, C.normalizar(C.cross(n, dir))) / 500)].join('|');
+    this._gabaritos = this._gabaritos || new Map();
+    if (this._gabaritos.has(chave)) return this._gabaritos.get(chave);
+    const so = { entidades: new Map([[ent.id, ent]]), get: (id) => (id === ent.id ? ent : null) };
+    const cena = this.editor && this.editor.cena;
+    const s0 = C.dot(origem, dir), passo = 2;
+    const amostras = [];
+    for (let b = lo + 1; b <= hi - 1; b += passo) {
+      const q = C.add(C.add(origem, C.mul(dir, b - s0)), C.mul(n, 1));
+      const ps = paredesNoEixo(so, q, C.mul(n, -1), 600, { cena });
+      amostras.push({ b, peca: ps.length > 0, alma: ps.some(w => w.t1 - w.t0 > 60) });
+    }
+    let r = null;
+    const i0 = amostras.findIndex(x => x.alma);
+    if (i0 > 0) {
+      let i1 = i0;
+      while (i1 + 1 < amostras.length && amostras[i1 + 1].alma) i1++;
+      let e0 = i0, e1 = i1;                                    // a mesa livre de cada lado da alma
+      while (e0 - 1 >= 0 && amostras[e0 - 1].peca && !amostras[e0 - 1].alma) e0--;
+      while (e1 + 1 < amostras.length && amostras[e1 + 1].peca && !amostras[e1 + 1].alma) e1++;
+      const esq = [amostras[e0].b, amostras[i0].b - passo], dir_ = [amostras[i1].b + passo, amostras[e1].b];
+      if (esq[1] - esq[0] >= 15 && dir_[1] - dir_[0] >= 15) {
+        const wc = (amostras[i0].b + amostras[i1].b) / 2;
+        const meio = ((esq[0] + esq[1]) / 2 + (dir_[0] + dir_[1]) / 2) / 2;
+        const half = Math.round((((dir_[0] + dir_[1]) / 2 - (esq[0] + esq[1]) / 2) / 2) / 2.5) * 2.5;
+        const c = Math.abs(meio - wc) < 3 ? wc : meio;
+        r = { linhas: [c - half, c + half], g: 2 * half, wc: c };
+      }
+    }
+    this._gabaritos.set(chave, r);
+    return r;
   }
 
   /** "M12x30 A325" de um tamanho. */
@@ -660,22 +706,41 @@ export class FerramentaParafuso extends Ferramenta {
     const tol2 = Math.min(25, Math.max(3, 0.12 * larg));
     const tol1 = Math.min(40, Math.max(5, 0.03 * (f.max1 - f.min1)));
     let presoC2 = false, presoC1 = false;
-    if (Math.abs(b - c2) <= tol2) { b = c2; presoC2 = true; }
+    // a mesa do I/H: o centro da face fica em cima da alma — prende nas linhas de gabarito, não no centro
+    const ent = this.documento.get(p.entidade);
+    const gab = ent && ent.tipo !== 'chapa' ? this._gabaritoDe(ent, p.ponto, n, e2, f.min2, f.max2) : null;
+    f.gab = gab;
+    let linhaGab = null;
+    if (gab) {
+      const alvo = gab.linhas.reduce((m, l) => (Math.abs(b - l) < Math.abs(b - m) ? l : m));
+      if (Math.abs(b - alvo) <= Math.max(tol2, 0.25 * gab.g)) { b = alvo; presoC2 = true; linhaGab = alvo; }
+    } else if (Math.abs(b - c2) <= tol2) { b = c2; presoC2 = true; }
     if (Math.abs(a - c1) <= tol1) { a = c1; presoC1 = true; }
     // fora das linhas de centro, o ponto anda de `passo` em `passo` mm a partir da ponta mais perto e da borda da face:
     // com as cotas ao vivo, dá para pôr o furo a 50 da ponta e a 30 da borda sem digitar (revisão 14/10)
     const passo = this.constructor.passo || 0;
     if (passo > 0) {
       if (!presoC1) { const ref = (a - f.min1) <= (f.max1 - a) ? f.min1 : f.max1; a = ref + Math.round((a - ref) / passo) * passo; }
-      if (!presoC2 && larg > 1) b = f.min2 + Math.round((b - f.min2) / passo) * passo;
+      if (!presoC2 && larg > 1) {
+        const ref = gab ? gab.wc : f.min2;                     // com a alma no meio, o passo conta do eixo dela
+        b = ref + Math.round((b - ref) / passo) * passo;
+      }
     }
     let ponto = C.add(p.ponto, C.add(C.mul(e1, a - C.dot(p.ponto, e1)), C.mul(e2, b - C.dot(p.ponto, e2))));
     // a peça de baixo (o banzo sob a terça): o eixo dela também prende o parafuso; com os
     // dois eixos presos, o parafuso vai para o cruzamento deles
     const baixo = [];
     for (const e of this._atravessadas(ponto, n, p.entidade)) {
-      const ax = this._eixoDaPeca(e, ponto, n);
+      let ax = this._eixoDaPeca(e, ponto, n);
       if (!ax) continue;
+      if (e.tipo !== 'chapa') {
+        const gb = this._gabaritoDe(e, ponto, n, ax.f, ax.q - 260, ax.q + 260);
+        if (gb) {
+          const s = C.dot(ponto, ax.f);
+          const alvo = gb.linhas.reduce((m, l) => (Math.abs(s - l) < Math.abs(s - m) ? l : m));
+          ax = { ...ax, q: alvo, gab: gb };
+        }
+      }
       const larg_b = ax.max - ax.min;
       const tol = Math.min(25, Math.max(3, 0.12 * larg_b));
       const dist_ = C.dot(ponto, ax.f) - ax.q;
@@ -700,7 +765,9 @@ export class FerramentaParafuso extends Ferramenta {
       // o eixo do parafuso/furo, atravessando a peça (onde ele cai na de baixo)
       ...this._linhaDoEixo(ponto, n, p.entidade),
       // linha de centro ao longo da peça e a atravessada no centro da face
-      C.gLinha([em(f.min1 - folga, c2), em(f.max1 + folga, c2)], presoC2 ? '#0a8f3c' : '#2a63c8', { tracejada: true }),
+      ...(gab ? gab.linhas.map(l => C.gLinha([em(f.min1 - folga, l), em(f.max1 + folga, l)], linhaGab === l ? '#0a8f3c' : '#2a63c8', { tracejada: true }))
+              : [C.gLinha([em(f.min1 - folga, c2), em(f.max1 + folga, c2)], presoC2 ? '#0a8f3c' : '#2a63c8', { tracejada: true })]),
+      ...(gab ? [C.gRotulo(`gab. ${mm(gab.g)}`, C.add(em(f.min1 - folga, gab.linhas[1]), C.mul(n, 15)), '#2a63c8')] : []),
       C.gLinha([em(c1, f.min2 - folga), em(c1, f.max2 + folga)], presoC1 ? '#0a8f3c' : '#2a63c8', { tracejada: true }),
       // a atravessada que passa pelo parafuso
       C.gLinha([em(a, f.min2), em(a, f.max2)], '#8a94a6'),
@@ -727,7 +794,8 @@ export class FerramentaParafuso extends Ferramenta {
                           preso ? '#0a8f3c' : '#b8860b', { tracejada: true }));
       const q = C.dot(ponto, ax.f);
       const nomeB = (e.atributos && e.atributos.marcas && (e.atributos.marcas.nome || e.atributos.marcas.posicao)) || e.nome || 'peça de baixo';
-      const t2 = `${nomeB}: ${preso ? 'no eixo' : mm(Math.abs(s)) + ' mm do eixo'} · bordas ${mm(q - ax.min)} | ${mm(ax.max - q)} mm`;
+      const oQue = ax.gab ? `gabarito ${mm(ax.gab.g)}` : 'eixo';
+      const t2 = `${nomeB}: ${preso ? 'no ' + oQue : mm(Math.abs(s)) + ' mm do ' + oQue}` + (ax.gab ? '' : ` · bordas ${mm(q - ax.min)} | ${mm(ax.max - q)} mm`);
       extra.push(C.gRotulo(t2, C.add(ponto, C.add(C.mul(n, 60), C.mul(ax.f, 0.5 * (ax.max - ax.min) + 60))), '#7a5a00'));
     }
     return { ponto, extra, face: f };

@@ -161,6 +161,21 @@ try:
     mover(pm[0], pm[1]); clicar(pm[0], pm[1])
     ok(js("editor.documento.entidades.size") == n1 and "alma" in (js("editor.el.dica.textContent") or ""),
        f"em cima da alma não lança e avisa: {js('editor.documento.entidades.size') - n1} · {(js('editor.el.dica.textContent') or '')[:90]}")
+    # o gabarito da mesa do I: perto da linha (a 30 do eixo), o parafuso prende nela — g 75 na W 250 (mesa 146, alma 6,1)
+    pg = na_face(ids["viga"], [2400, 30, 129], [0, 0, 1])
+    mover(pg[0], pg[1]); clicar(pg[0], pg[1])
+    pf = jsj("const e = [...editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.parafuso).pop(); return e ? e.atributos.parafuso : null;")
+    ok(pf and abs(abs(pf["ponto"][1]) - 37.5) < 0.6 and pf["L"] == 30,
+       f"prende na linha de gabarito (y ±37,5) e o comprimento é comercial (pega 9,1 → 30): {pf and (round(pf['ponto'][1], 1), pf['L'])}")
+    # "2 na largura" numa mesa de I: um em cada linha de gabarito, qualquer que seja o gabarito do painel
+    js("editor.ativa.constructor.padrao = { linhas: 2, g: 60, colunas: 1, p: 60 }; 1")
+    n1 = jsj("return [...editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.parafuso).length;")
+    pg = na_face(ids["viga"], [2150, 35, 129], [0, 0, 1])
+    mover(pg[0], pg[1]); clicar(pg[0], pg[1])
+    ys = jsj("return [...editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.parafuso).slice(-2).map(e => Math.round(e.atributos.parafuso.ponto[1] * 10) / 10);")
+    n2 = jsj("return [...editor.documento.entidades.values()].filter(e => e.atributos && e.atributos.parafuso).length;")
+    ok(n2 - n1 == 2 and sorted(ys) == [-37.5, 37.5], f"2 na largura: um em cada linha de gabarito: {n2 - n1} {ys}")
+    js("editor.ativa.constructor.padrao = { linhas: 1, g: 60, colunas: 1, p: 60 }; 1")
     js("editor.ativa.constructor.padrao = { linhas: 1, g: 60, colunas: 1, p: 60 }; 1")
     aba.cmd("Page.captureScreenshot", format="png")
     open(os.path.join(SCR, "_ferr_parafuso.png"), "wb").write(base64.b64decode(aba.cmd("Page.captureScreenshot", format="png")["data"]))
