@@ -196,6 +196,17 @@ export class FerramentaPushPull extends Ferramenta {
   }
 
   iniciar(p, ev) {
+    const ok = this._iniciar(p, ev);
+    // a peça travada ou em camada bloqueada não muda (revisão 14/10, D4)
+    if (ok && this.alvo && !C.editavel(this.editor, this.documento.get(this.alvo.id))) {
+      this.reiniciar();
+      this.dica(C.DICA_BLOQUEADA);
+      return false;
+    }
+    return ok;
+  }
+
+  _iniciar(p, ev) {
     const entAlvo = p && p.entidade && this.documento && this.documento.get(p.entidade);
     if (entAlvo && entAlvo.tipo === 'chapa') return this.iniciarChapa(p, entAlvo);
     const barra = this.barraApontada(p);
@@ -231,14 +242,16 @@ export class FerramentaPushPull extends Ferramenta {
   aplicar(d) {
     if (!this.alvo || !isFinite(d) || Math.abs(d) < 1e-6) { this.reiniciar(); return; }
     if (this.alvo.barra) {
-      this.executar(C.cmdAlterar(this.alvo.id, this.resultadoBarra(d), d > 0 ? 'Esticar barra' : 'Encurtar barra'));
+      const eb = this.documento.get(this.alvo.id);
+      this.executar(C.cmdAlterar(this.alvo.id, C.marcarParaConferir(eb, this.resultadoBarra(d)), d > 0 ? 'Esticar barra' : 'Encurtar barra'));
       this.constructor.ultimaDistancia = d;
       this.reiniciar();
       this.dica(`Última distância: ${formatar(Math.abs(d))} (duplo clique repete)`);
       return;
     }
     if (this.alvo.chapa) {
-      this.executar(C.cmdAlterar(this.alvo.id, this.resultadoChapa(d),
+      const ec = this.documento.get(this.alvo.id);
+      this.executar(C.cmdAlterar(this.alvo.id, C.marcarParaConferir(ec, this.resultadoChapa(d)),
         this.alvo.chapa === 'lado' ? 'Esticar chapa' : 'Espessura da chapa'));
       this.constructor.ultimaDistancia = d;
       this.reiniciar();
@@ -247,7 +260,7 @@ export class FerramentaPushPull extends Ferramenta {
     }
     const geo = this.resultado(d);
     this.executar(C.cmdAlterar(this.alvo.id,
-      { vertices: geo.vertices, faces: geo.faces },
+      C.marcarParaConferir(this.documento.get(this.alvo.id), { vertices: geo.vertices, faces: geo.faces }),
       this.novaFace || !this.alvo.fechado ? 'Puxar face' : 'Mover face'));
     this.constructor.ultimaDistancia = d;
     this.reiniciar();

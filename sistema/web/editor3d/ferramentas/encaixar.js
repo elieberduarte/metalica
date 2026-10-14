@@ -118,6 +118,7 @@ export class FerramentaEncaixar extends Ferramenta {
                     : 'Clique numa barra (perfil) para ajustar a ponta dela');
         return;
       }
+      if (!C.editavel(this.editor, e)) { this.dica(C.DICA_BLOQUEADA); return; }
       this.barra = e.id;
       this.selecao.definir([e.id]);
       this.dica(`${e.nome || e.perfil}: clique na face em que a ponta deve encostar (Shift soma o plano: o bico) · Del tira os cortes · Esc sai`);
@@ -136,7 +137,7 @@ export class FerramentaEncaixar extends Ferramenta {
       this.dica('Esse corte comeria a peça inteira: escolha outra face');
       return;
     }
-    this.executar(C.cmdAlterar(b.id, r.campos, somar ? 'Encaixar ponta (bico)' : 'Encaixar ponta'));
+    this.executar(C.cmdAlterar(b.id, C.marcarParaConferir(b, r.campos), somar ? 'Encaixar ponta (bico)' : 'Encaixar ponta'));
     this.limparPrevia();
     const quantos = r.campos[r.ponta === 'inicio' ? 'cortes_inicio' : 'cortes_fim'].length;
     if (somar) {

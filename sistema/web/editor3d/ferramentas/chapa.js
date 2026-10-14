@@ -132,7 +132,10 @@ export class FerramentaChapa extends Ferramenta {
   _trocarEspessura(e) {
     this.espessura = e;
     if (this.chapaId && this.documento.get(this.chapaId)) {
-      this.executar(C.cmdAlterar(this.chapaId, { espessura: e }, 'Espessura da chapa'));
+      const ch = this.documento.get(this.chapaId);
+      const campos = { espessura: e };
+      if (/^CH /.test(ch.nome || '')) campos.nome = this._nomeDaChapa(ch.contorno || [], e);
+      this.executar(C.cmdAlterar(this.chapaId, campos, 'Espessura da chapa'));
       this.dica(`Chapa de ${num(e)} mm — clique para furar com ${this.parafuso.nome}, "40;60" fura pelo canto; Enter ou Esc encerram`);
     }
     this.desenhar();
@@ -345,12 +348,21 @@ export class FerramentaChapa extends Ferramenta {
     return C.areaAssinada(pts) >= 0 ? pts : pts.reverse();
   }
 
+  /** O nome de produção da chapa feita à mão, pelas medidas ("CH 200×100×8"): sem marca, o detalhamento mostrava o
+   *  código interno (e3f…) — revisão 14/10, D7. A marca de posição vem do Numerar. */
+  _nomeDaChapa(c2, e) {
+    const w = Math.max(...c2.map(q => q[0])) - Math.min(...c2.map(q => q[0]));
+    const h = Math.max(...c2.map(q => q[1])) - Math.min(...c2.map(q => q[1]));
+    const [a, b] = [w, h].sort((x, y) => y - x);
+    return `CH ${num(a)}×${num(b)}×${num(e)}` + (c2.length !== 4 ? ' (recortada)' : '');
+  }
+
   criar() {
     const e = this.espessura;
     const F = this.constructor;
     const ent = {
       tipo: 'chapa', id: C.novoId('ch'),
-      nome: '', camada: (this.editor && this.editor.camadaAtiva) || 'Chapas',
+      nome: this._nomeDaChapa(this.contorno2d(), e), camada: (this.editor && this.editor.camadaAtiva) || 'Chapas',
       material: '', visivel: true, bloqueada: false, grupo: '',
       origem: C.copiar(this.plano.origem),
       eixo_x: C.copiar(this.plano.ex), eixo_y: C.copiar(this.plano.ey),

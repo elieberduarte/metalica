@@ -216,7 +216,12 @@ export function areaDaChapa(ch) {
     s += p[i][0] * q[1] - q[0] * p[i][1];
   }
   let a = Math.abs(s) / 2;
-  for (const f of (ch.furos || [])) a -= Math.PI * Math.pow((f.diametro || 0) / 2, 2);
+  for (const f of (ch.furos || [])) {
+    if (f.diametro) { a -= Math.PI * Math.pow(f.diametro / 2, 2); continue; }
+    // o oblongo (largura × altura): o retângulo do meio e as duas meias-voltas (D8: não era descontado)
+    const L = Math.max(f.largura || 0, f.altura || 0), d = Math.min(f.largura || 0, f.altura || 0);
+    if (d > 0) a -= (L - d) * d + Math.PI * d * d / 4;
+  }
   return a;
 }
 

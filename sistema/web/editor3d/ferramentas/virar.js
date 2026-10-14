@@ -87,7 +87,11 @@ export class FerramentaVirar extends Ferramenta {
       return;
     }
     const d = this._angulo(ev);
-    const ids = this.alvos && this.alvos.length > 1 && this.alvos.includes(sob.e.id) ? this.alvos : [sob.e.id];
+    const todos = this.alvos && this.alvos.length > 1 && this.alvos.includes(sob.e.id) ? this.alvos : [sob.e.id];
+    // a peça travada ou em camada bloqueada não vira (revisão 14/10, D4)
+    const ids = todos.filter(id => C.editavel(this.editor, this.documento.get(id)));
+    if (!ids.length) { this.dica(C.DICA_BLOQUEADA); return; }
+    C.avisarBloqueadas(this.editor, todos.length - ids.length);
     const cmds = ids.map(id => {
       const e = this.documento.get(id);
       return C.cmdAlterar(id, { rotacao: norm360((e.rotacao || 0) + d) }, 'Virar perfil');

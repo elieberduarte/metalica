@@ -23,7 +23,7 @@ export const TIPOS = {
   eixo_y:       { rotulo: 'No eixo Y',   cor: '#2e8b57', glifo: 'eixo',     prio: 6 },
   eixo_z:       { rotulo: 'No eixo Z',   cor: '#2a63c8', glifo: 'eixo',     prio: 6 },
   paralelo:     { rotulo: 'Paralelo',    cor: '#b07cc6', glifo: 'eixo',     prio: 6 },
-  perpendicular:{ rotulo: 'Perpendicular', cor: '#b07cc6', glifo: 'eixo',   prio: 6 },
+  perpendicular:{ rotulo: 'Perpendicular', cor: '#b07cc6', glifo: 'eixo',   prio: 4.5 },   // vence o "sobre aresta" no pé
   sobre_face:   { rotulo: 'Sobre face',  cor: '#2a63c8', glifo: 'losango',  prio: 7 },
   plano_base:   { rotulo: 'No plano',    cor: '#8a94a6', glifo: 'ponto',    prio: 8 },
 };
@@ -331,6 +331,23 @@ export class Inferencia {
         if (!p) continue;
         const d = perto(p);
         if (d !== null) cand.push({ tipo: 'interseccao', ponto: p, d });
+      }
+    }
+
+    // 3b. Perpendicular: o pé da perpendicular da âncora numa aresta perto do cursor (a linha que sai da ponta da barra e
+    // chega em esquadro no banzo). Estava declarada em TIPOS, mas nunca era gerada (revisão 14/10, D8).
+    if (this.ancora) {
+      for (let i = 0; i < arestasPerto.length && i < 8; i++) {
+        const [a, b] = arestasPerto[i];
+        const ab = subtrair(b, a), L2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+        if (L2 < 1e-6) continue;
+        const ap = subtrair(this.ancora, a);
+        const s = (ap[0] * ab[0] + ap[1] * ab[1] + ap[2] * ab[2]) / L2;
+        if (s < -1e-6 || s > 1 + 1e-6) continue;
+        const pe = somar(a, escalar(ab, s));
+        if (norma(subtrair(pe, this.ancora)) < 1) continue;
+        const d = perto(pe);
+        if (d !== null) cand.push({ tipo: 'perpendicular', ponto: pe, d, aresta: [a, b] });
       }
     }
 

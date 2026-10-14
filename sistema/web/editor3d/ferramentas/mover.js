@@ -117,20 +117,19 @@ export class FerramentaMover extends Ferramenta {
     const fp = (k) => (q) => C.add(q, C.mul(delta, k));
     const fv = (v) => v;
     const cmds = [];
+    // os marcadores de furo vão junto com a peça deles; a peça bloqueada não anda (só é copiada)
+    const { pecas, bloqueadas } = C.pecasParaTransformar(this.documento, this.entidades(), copias > 0);
+    this.bloqueadas = bloqueadas;
     if (copias <= 0) {
-      for (const ent of this.entidades()) {
+      for (const ent of pecas) {
         cmds.push(C.cmdAlterar(ent.id, C.camposTransformados(ent, fp(1), fv), rotulo));
       }
       return { cmds, novos: [] };
     }
     const novos = [];
     for (let k = 1; k <= copias; k++) {
-      const lote = this.entidades().map(ent => {
-        const c = C.clonarEntidade(ent);
-        Object.assign(c, C.camposTransformados(ent, fp(k), fv));
-        novos.push(c.id);
-        return c;
-      });
+      const lote = C.copiasTransformadas(pecas, fp(k), fv);
+      novos.push(...lote.map(c => c.id));
       if (lote.length) cmds.push(C.cmdAdicionar(lote, rotulo));
     }
     return { cmds, novos };
@@ -148,7 +147,8 @@ export class FerramentaMover extends Ferramenta {
       return;
     }
     const { cmds } = this.comandosPara(delta, 0, 'Mover');
-    this.executar(C.cmdComposto(cmds, 'Mover'));
+    if (cmds.length) this.executar(C.cmdComposto(cmds, 'Mover'));
+    C.avisarBloqueadas(this.editor, this.bloqueadas);
     this.ultimoArray = null;
     this.reiniciar();
     this.dica(FerramentaMover.dica);

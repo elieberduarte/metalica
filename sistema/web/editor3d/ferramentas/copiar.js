@@ -113,8 +113,8 @@ export class FerramentaCopiar extends Ferramenta {
   // ------------------------------------------------------------- interno
 
   copiarSelecao(ids) {
-    const entidades = ids.map(id => this.documento && this.documento.get(id))
-                         .filter(Boolean)
+    // os marcadores de furo das peças copiadas vão junto (revisão 14/10, D3)
+    const entidades = C.comMarcadoresDeFuro(this.documento, ids.map(id => this.documento && this.documento.get(id)).filter(Boolean))
                          .map(e => JSON.parse(JSON.stringify(e)));
     if (!entidades.length) return;
     const caixa = C.caixaDe(this.documento, ids);
@@ -142,11 +142,8 @@ export class FerramentaCopiar extends Ferramenta {
   colar(delta) {
     if (!this.conteudo) return;
     const fp = (q) => C.add(q, delta);
-    const lote = this.conteudo.entidades.map(orig => {
-      const c = C.clonarEntidade(orig);
-      Object.assign(c, C.camposTransformados(orig, fp, (v) => v));
-      return c;
-    });
+    // cada colagem: cópias novas, com os marcadores de furo religados às cópias das peças deles
+    const lote = C.copiasTransformadas(this.conteudo.entidades, fp, (v) => v);
     if (!lote.length) return;
     this.executar(C.cmdAdicionar(lote, 'Colar'));
     this.coladas += 1;

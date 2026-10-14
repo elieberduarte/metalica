@@ -11,6 +11,7 @@
 // carregar por causa de um arquivo ausente, e o desfazer continua funcionando.
 
 import * as THREE from '../../lib/three.module.js';
+import { formatar as formatarMedida } from './base.js';
 
 export { THREE };
 
@@ -155,14 +156,102 @@ export function clonarEntidade(ent, prefixo = 'e') {
   return c;
 }
 
+/** A base da seção da barra {t, u, v} (a mesma de nucleo/documento.baseDaBarra, sem importar o núcleo aqui). */
+function baseDaSecao(inicio, fim, rotacao = 0) {
+  const t = normalizar(sub(fim, inicio));
+  const ref = Math.abs(t[2]) >= 0.9 ? [1, 0, 0] : [0, 0, 1];
+  let u = normalizar(cross(ref, t));
+  let v = normalizar(cross(t, u));
+  const r = (rotacao || 0) * Math.PI / 180;
+  if (r) {
+    const c = Math.cos(r), s = Math.sin(r);
+    const u2 = add(mul(u, c), mul(v, s)), v2 = add(mul(v, c), mul(u, -s));
+    u = u2; v = v2;
+  }
+  return { t, u, v };
+}
+
+/**
+ * Os atributos que guardam pontos e direções no mundo, transformados junto com a peça (revisão 14/10, D3): o apoio e o
+ * eixo do parafuso, o ponto e o eixo do marcador de furo, os furos feitos no editor e a malha de antes deles, e a cota.
+ * Sem isso, Mover/Girar/Escalar levavam a malha e deixavam o registro para trás — "Trocar parafuso" e "Furar pelos
+ * parafusos" usavam a posição antiga. Devolve null quando não há nada a transformar.
+ */
+export function atributosTransformados(at, fp, fv) {
+  if (!at || typeof at !== 'object') return null;
+  const dir = (v) => (Array.isArray(v) && v.length === 3 ? normalizar(fv(v)) : v);
+  const pt = (q) => (Array.isArray(q) && q.length === 3 ? fp(q) : q);
+  let mudou = false;
+  const r = { ...at };
+  if (at.parafuso && (at.parafuso.ponto || at.parafuso.eixo)) {
+    r.parafuso = { ...at.parafuso, ponto: pt(at.parafuso.ponto), eixo: dir(at.parafuso.eixo) };
+    mudou = true;
+  }
+  if (at.furo && (at.furo.ponto || at.furo.eixo)) {
+    r.furo = { ...at.furo, ponto: pt(at.furo.ponto), eixo: dir(at.furo.eixo), ...(at.furo.dir ? { dir: dir(at.furo.dir) } : {}) };
+    mudou = true;
+  }
+  if (Array.isArray(at.furos_editor) && at.furos_editor.length) {
+    r.furos_editor = at.furos_editor.map(f => ({ ...f, ponto: pt(f.ponto), eixo: dir(f.eixo), ...(f.dir ? { dir: dir(f.dir) } : {}) }));
+    mudou = true;
+  }
+  if (at.malha_sem_furos_editor && Array.isArray(at.malha_sem_furos_editor.vertices)) {
+    r.malha_sem_furos_editor = { ...at.malha_sem_furos_editor, vertices: at.malha_sem_furos_editor.vertices.map(fp) };
+    mudou = true;
+  }
+  if (at.cota && (at.cota.a || at.cota.b)) {
+    const ca = pt(at.cota.a), cb = pt(at.cota.b);
+    // o deslocamento da linha de cota é uma medida ao longo de `lado`: na escala, acompanha a escala dele
+    const lado = at.cota.lado ? fv(at.cota.lado) : null;
+    const k = lado ? comp(lado) : 1;
+    r.cota = { ...at.cota, a: ca, b: cb, normal: dir(at.cota.normal), lado: lado ? normalizar(lado) : at.cota.lado,
+               ...(typeof at.cota.deslocamento === 'number' ? { deslocamento: at.cota.deslocamento * (k || 1) } : {}) };
+    // a medida mudou (Escalar): o texto se refaz pelas pontas novas (D8: a cota ficava com o valor de antes)
+    if (Array.isArray(at.cota.a) && Array.isArray(at.cota.b) && Math.abs(dist(ca, cb) - dist(at.cota.a, at.cota.b)) > 0.05) {
+      r.cota.texto = formatarMedida(dist(ca, cb));
+    }
+    mudou = true;
+  }
+  return mudou ? r : null;
+}
+
 /**
  * Aplica uma transformação a uma entidade e devolve só os campos alterados.
  * `fp` transforma pontos (com translação); `fv` transforma direções.
  */
 export function camposTransformados(ent, fp, fv) {
   switch (ent.tipo) {
-    case 'barra':
-      return { inicio: fp(ent.inicio), fim: fp(ent.fim) };
+    case 'barra': {
+      const r = { inicio: fp(ent.inicio), fim: fp(ent.fim) };
+      // os cortes no ângulo das pontas (o Encaixar): o ponto é relativo ao nó e tudo está nos eixos do mundo — giram e
+      // escalam com a peça (D1: a diagonal girada saía com a meia-esquadria no ângulo de antes)
+      for (const k of ['cortes_inicio', 'cortes_fim']) {
+        if (Array.isArray(ent[k]) && ent[k].length) {
+          r[k] = ent[k].map(c => ({ ...c, normal: normalizar(fv(c.normal)), ponto: fv(c.ponto) }));
+        }
+      }
+      // o giro da seção: a base da barra sai do vertical do mundo, então girar a peça fora do plano horizontal (ou em
+      // volta do próprio eixo) muda o que o mesmo `rotacao` quer dizer — o ângulo novo leva a largura (u) para onde a
+      // transformação a levou
+      const L0 = dist(ent.inicio, ent.fim), L1 = dist(r.inicio, r.fim);
+      if (L0 > 1e-6 && L1 > 1e-6) {
+        const b0 = baseDaSecao(ent.inicio, ent.fim, ent.rotacao || 0);
+        const u1 = fv(b0.u);
+        const n1 = baseDaSecao(r.inicio, r.fim, 0);
+        const uu = sub(u1, mul(n1.t, dot(u1, n1.t)));
+        if (comp(uu) > 1e-9) {
+          let graus = Math.atan2(dot(uu, n1.v), dot(uu, n1.u)) * 180 / Math.PI;
+          graus = ((graus % 360) + 360) % 360;
+          graus = Math.round(graus * 1e6) / 1e6;
+          if (graus >= 360) graus -= 360;
+          const antes = ((((ent.rotacao || 0) % 360) + 360) % 360);
+          if (Math.abs(graus - antes) > 1e-6 && Math.abs(Math.abs(graus - antes) - 360) > 1e-6) r.rotacao = graus;
+        }
+      }
+      const at = atributosTransformados(ent.atributos, fp, fv);
+      if (at) r.atributos = at;
+      return r;
+    }
     case 'chapa': {
       const x = fv(ent.eixo_x || [1, 0, 0]);
       const y = fv(ent.eixo_y || [0, 1, 0]);
@@ -175,12 +264,95 @@ export function camposTransformados(ent, fp, fv) {
       return { origem: fp(ent.origem || [0, 0, 0]), eixo_x: normalizar(x),
                eixo_y: normalizar(y), contorno, furos };
     }
-    case 'solido':
-      return { vertices: (ent.vertices || []).map(fp) };
+    case 'solido': {
+      const r = { vertices: (ent.vertices || []).map(fp) };
+      const at = atributosTransformados(ent.atributos, fp, fv);
+      if (at) r.atributos = at;
+      // a cota leva o texto no nome (é o que a cena escreve)
+      if (at && at.cota && ent.atributos && ent.atributos.cota && at.cota.texto !== ent.atributos.cota.texto) r.nome = at.cota.texto;
+      return r;
+    }
     case 'grupo':
       return { origem: fp(ent.origem || [0, 0, 0]) };
     default:
       return {};
+  }
+}
+
+/**
+ * As peças a transformar junto com a seleção: os marcadores de furo (camada Furos, `atributos.furo.peca`) das peças
+ * selecionadas — o furo da barra é uma peça à parte e ficava para trás quando ela andava (revisão 14/10, D3).
+ */
+export function comMarcadoresDeFuro(documento, ents) {
+  if (!documento || !documento.entidades || !ents.length) return ents;
+  const ids = new Set(ents.map(e => e.id));
+  const extra = [];
+  for (const m of documento.entidades.values()) {
+    const f = m.atributos && m.atributos.furo;
+    if (f && f.peca && ids.has(f.peca) && !ids.has(m.id)) extra.push(m);
+  }
+  return extra.length ? ents.concat(extra) : ents;
+}
+
+/** Nas cópias: o marcador de furo copiado passa a ser da cópia da peça dele (`mapa`: id original → id da cópia). */
+export function religarMarcadores(lote, mapa) {
+  for (const c of lote) {
+    const f = c.atributos && c.atributos.furo;
+    if (f && f.peca && mapa.has(f.peca)) c.atributos = { ...c.atributos, furo: { ...f, peca: mapa.get(f.peca) } };
+  }
+  return lote;
+}
+
+/**
+ * As peças que uma ferramenta de edição vai transformar: a seleção com os marcadores de furo dela e, quando altera (não
+ * copia), só as editáveis — a peça travada ou em camada bloqueada fica onde está (revisão 14/10, D4: só o Apagar e o
+ * painel respeitavam o bloqueio). {pecas, bloqueadas}.
+ */
+export function pecasParaTransformar(documento, ents, copia = false) {
+  const todas = comMarcadoresDeFuro(documento, ents);
+  if (copia) return { pecas: todas, bloqueadas: 0 };
+  const ok = (e) => !documento || typeof documento.editavel !== 'function' || documento.editavel(e);
+  const pecas = todas.filter(ok);
+  return { pecas, bloqueadas: todas.length - pecas.length };
+}
+
+/** Uma cópia transformada de cada peça, com os marcadores de furo religados às cópias das peças deles. */
+export function copiasTransformadas(pecas, fp, fv) {
+  const mapa = new Map();
+  const lote = pecas.map(ent => {
+    const c = clonarEntidade(ent);
+    Object.assign(c, camposTransformados(ent, fp, fv));
+    mapa.set(ent.id, c.id);
+    return c;
+  });
+  return religarMarcadores(lote, mapa);
+}
+
+/**
+ * A peça com marca de produção que a ferramenta mudou (esticou, escalou, cortou a ponta): a marca fica, e a peça ganha
+ * `marca_a_conferir` — o Numerar e a conferência de produção separam (regra combinada em 14/10, D2: a cópia esticada
+ * saía com a marca da original e a fábrica cortava as duas iguais). Devolve os `campos` com o atributo.
+ */
+export function marcarParaConferir(ent, campos) {
+  const m = ent && ent.atributos && ent.atributos.marcas;
+  if (m && (m.posicao || m.conjunto) && !(ent.atributos && ent.atributos.furo)) {
+    campos.atributos = { ...(campos.atributos || ent.atributos), marca_a_conferir: true };
+  }
+  return campos;
+}
+
+/** A peça pode ser mudada? (travada ou em camada bloqueada, não — D4) */
+export function editavel(editor, ent) {
+  const doc = editor && editor.documento;
+  return !!ent && (!doc || typeof doc.editavel !== 'function' || doc.editavel(ent));
+}
+
+export const DICA_BLOQUEADA = 'Essa peça está travada ou numa camada bloqueada: destrave no painel de camadas para mudá-la';
+
+/** O aviso das peças que a ferramenta não mexeu por estarem bloqueadas. */
+export function avisarBloqueadas(editor, n) {
+  if (n > 0 && editor && typeof editor.aviso === 'function') {
+    editor.aviso(`${n} objeto(s) travado(s) ou em camada bloqueada não foram alterados.`, 'atencao');
   }
 }
 
@@ -296,12 +468,14 @@ export const EIXOS = {
 
 /**
  * Lê as setas do teclado como travamento de eixo. Segue a convenção da inferência
- * do núcleo (← X, → Y, ↑ Z, ↓ solta), para que a ferramenta e o glifo de snap
+ * do núcleo (→ X, ← Y, ↑ Z, ↓ solta), para que a ferramenta e o glifo de snap
  * nunca discordem sobre qual eixo está travado.
  */
 export function lerEixoTecla(ev) {
-  if (ev.key === 'ArrowLeft') return 'x';
-  if (ev.key === 'ArrowRight') return 'y';
+  // a convenção do núcleo (inferencia.onTecla) e do SketchUp: → X (vermelho), ← Y (verde), ↑ Z (azul), ↓ solta — antes
+  // aqui era ← X e → Y, e a ferramenta e o glifo do snap discordavam do eixo travado (revisão 14/10, D5)
+  if (ev.key === 'ArrowRight') return 'x';
+  if (ev.key === 'ArrowLeft') return 'y';
   if (ev.key === 'ArrowUp') return 'z';
   if (ev.key === 'ArrowDown') return null;   // solta o travamento
   return undefined;                          // não é tecla de eixo

@@ -139,21 +139,20 @@ export class FerramentaGirar extends Ferramenta {
 
   comandosPara(graus, copias, rotulo) {
     const cmds = [], novos = [];
+    // os marcadores de furo vão junto com a peça deles; a peça bloqueada não gira (só é copiada)
+    const { pecas, bloqueadas } = C.pecasParaTransformar(this.documento, this.entidades(), copias > 0);
+    this.bloqueadas = bloqueadas;
     if (copias <= 0) {
       const { fp, fv } = this.girador(graus);
-      for (const ent of this.entidades()) {
+      for (const ent of pecas) {
         cmds.push(C.cmdAlterar(ent.id, C.camposTransformados(ent, fp, fv), rotulo));
       }
       return { cmds, novos };
     }
     for (let k = 1; k <= copias; k++) {
       const { fp, fv } = this.girador(graus * k);
-      const lote = this.entidades().map(ent => {
-        const c = C.clonarEntidade(ent);
-        Object.assign(c, C.camposTransformados(ent, fp, fv));
-        novos.push(c.id);
-        return c;
-      });
+      const lote = C.copiasTransformadas(pecas, fp, fv);
+      novos.push(...lote.map(c => c.id));
       if (lote.length) cmds.push(C.cmdAdicionar(lote, rotulo));
     }
     return { cmds, novos };
@@ -172,7 +171,8 @@ export class FerramentaGirar extends Ferramenta {
       return;
     }
     const { cmds } = this.comandosPara(graus, 0, 'Girar');
-    this.executar(C.cmdComposto(cmds, 'Girar'));
+    if (cmds.length) this.executar(C.cmdComposto(cmds, 'Girar'));
+    C.avisarBloqueadas(this.editor, this.bloqueadas);
     this.ultimoArray = null;
     this.reiniciar();
     this.dica(FerramentaGirar.dica);

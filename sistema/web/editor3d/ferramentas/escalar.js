@@ -176,11 +176,15 @@ export class FerramentaEscalar extends Ferramenta {
     if (fat.every(f => Math.abs(f - 1) < 1e-9)) { this.reiniciar(); return; }
     const { fp, fv } = this.transformador(fat);
     const cmds = [];
-    for (const id of this.ids) {
-      const ent = this.documento.get(id);
-      if (ent) cmds.push(C.cmdAlterar(id, C.camposTransformados(ent, fp, fv), 'Escalar'));
+    // os marcadores de furo vão junto; a peça bloqueada fica; a peça com marca de produção mudou de tamanho: a marca
+    // fica a conferir (o Numerar separa — regra combinada em 14/10, D2)
+    const ents = this.ids.map(id => this.documento.get(id)).filter(Boolean);
+    const { pecas, bloqueadas } = C.pecasParaTransformar(this.documento, ents, false);
+    for (const ent of pecas) {
+      cmds.push(C.cmdAlterar(ent.id, C.marcarParaConferir(ent, C.camposTransformados(ent, fp, fv)), 'Escalar'));
     }
-    this.executar(C.cmdComposto(cmds, 'Escalar'));
+    if (cmds.length) this.executar(C.cmdComposto(cmds, 'Escalar'));
+    C.avisarBloqueadas(this.editor, bloqueadas);
     this.caixa = C.caixaDe(this.documento, this.ids);
     this.reiniciar();
     this.dica(FerramentaEscalar.dica);

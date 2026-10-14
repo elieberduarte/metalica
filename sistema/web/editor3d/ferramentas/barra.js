@@ -9,9 +9,8 @@
 
 import { Ferramenta, paraMilimetros, formatar } from './base.js';
 import * as C from './_comum.js';
-import { baseDaBarra } from '../nucleo/documento.js';
-
-const PAPEIS = ['pilar', 'viga', 'terça', 'contraventamento', 'longarina', 'barra'];
+// os papéis do núcleo (os que o detalhamento usa: banzo, montante, diagonal, corrente…), não uma cópia daqui
+import { baseDaBarra, PAPEIS } from '../nucleo/documento.js';
 
 export class FerramentaBarra extends Ferramenta {
   static id = 'barra';
@@ -148,9 +147,9 @@ export class FerramentaBarra extends Ferramenta {
 
   onValor(texto) {
     const t = String(texto).trim().toLowerCase();
-    const mp = t.match(/^(pilar|viga|ter[çc]a|contraventamento|longarina|barra)$/);
-    if (mp) {
-      if (this.editor) this.editor.papelAtivo = mp[1] === 'terca' ? 'terça' : mp[1];
+    const papel = t === 'terca' ? 'terça' : t;
+    if (PAPEIS.includes(papel)) {
+      if (this.editor) this.editor.papelAtivo = papel;
       this.dica(this.dicaComPerfil(this.inicio ? 'Clique no fim da barra' : 'Clique no início da barra'));
       return true;
     }

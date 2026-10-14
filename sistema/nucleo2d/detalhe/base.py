@@ -513,9 +513,26 @@ def _pecas(doc: Documento, puladas: Optional[list] = None, fora_do_aco: Optional
             # chapa perfurada da Passarela Mirante não estavam em lista nenhuma, 06/10)
             from nucleo2d.detalhe.fora_do_aco import item_fora_das_pecas
             fora_do_aco.append((ent,) + tuple(item_fora_das_pecas(ent)))
+        elif not t and puladas is not None and _solido_feito_a_mao(ent):
+            # o sólido desenhado no editor (retângulo + empurrar) não tem tipo de peça: fica fora da lista, mas avisado —
+            # antes sumia calado (revisão 14/10, D6: "o usuário modela um calço e ele não sai na lista")
+            puladas.append((str(_marcas(ent).get("posicao") or ent.nome or ent.id),
+                            "sólido desenhado à mão, sem tipo de peça: fica fora da lista — converta em chapa ou dê o tipo dele"))
     _separar_barras_sem_marca(pecas)
     _separar_variantes(pecas)
     return pecas, dict(acessorios)
+
+
+def _solido_feito_a_mao(ent: Solido) -> bool:
+    """Sólido fechado do editor, com volume (não a cota, que é só aresta, nem a face plana de um retângulo de
+    referência)."""
+    at = ent.atributos or {}
+    if at.get("tipo") in ("cota", "construcao") or at.get("exportar") is False or not ent.faces or len(ent.vertices or []) < 4:
+        return False
+    try:
+        return abs(float(ent.volume)) > 1000.0          # mais de 1 cm³
+    except Exception:                                   # noqa: BLE001 — malha aberta: sem volume, não é peça
+        return False
 
 
 def _separar_barras_sem_marca(pecas: Sequence[Solido]) -> None:
