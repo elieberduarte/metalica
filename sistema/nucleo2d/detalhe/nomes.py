@@ -167,6 +167,19 @@ def _nome_numero(nome: str, prefixo: str):
     return (int(m.group(1)), m.group(2) or "") if m else None
 
 
+def _nomes_do_projeto(pecas: Sequence[Solido]) -> Dict[str, str]:
+    """{marca da posição: nome} das peças com `marcas.nome_projeto` — o nome que o projeto
+    recebido dá à peça (A7, CH1, TQ2…), para conferir a prancha contra ele (Vicente, 14/10). Esse
+    nome vence a numeração da fábrica."""
+    fixos: Dict[str, str] = {}
+    for e in pecas:
+        m = _marcas(e)
+        n = str(m.get("nome_projeto") or "").strip()
+        if n:
+            fixos.setdefault(str(m.get("posicao") or e.nome or e.id), n)
+    return fixos
+
+
 def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence[Solido],
            conjuntos_info: Sequence[dict], anteriores: Optional[dict] = None,
            fixadores: Sequence[Solido] = ()) -> dict:
@@ -191,6 +204,12 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
     anteriores = anteriores or {}
     ant_pos = anteriores.get("posicoes") or {}
     ant_conj = anteriores.get("conjuntos") or {}
+    fixos_marca = _nomes_do_projeto(pecas)
+    fixos: Dict[str, str] = {}
+    for p in posicoes:
+        n = next((fixos_marca[m] for m in [p.marca] + marcas_de(p) if m in fixos_marca), "")
+        if n:
+            fixos[p.marca] = n
     ass_terca = _assinaturas_de_terca(posicoes, camadas)
     caixa_pil = _caixa_dos_pilares(pecas)
     centros: Dict[str, List[Tuple[float, float]]] = collections.defaultdict(list)
@@ -446,15 +465,16 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
                 if tipo[p.marca] == principais[tipo_conj[c]]:
                     nomes_pos[p.marca] = nomes_conj[c]      # o tirante é o C.V.n; a agulha é o A.G.n
             continue
-        for i, p in enumerate(sorted(lista, key=lambda q: _ordem_natural(q.marca)), 1):
-            nomes_pos[p.marca] = "%s.%d" % (nomes_conj[c], i)
+        numeradas = [p for p in sorted(lista, key=lambda q: _ordem_natural(q.marca)) if p.marca not in fixos]
+        for p in sorted(lista, key=lambda q: _ordem_natural(q.marca)):
+            nomes_pos[p.marca] = fixos.get(p.marca) or "%s.%d" % (nomes_conj[c], numeradas.index(p) + 1)
             if not (tipo_conj.get(c) == "chumbador" and tipo[p.marca] == "chumbador"):
                 tipo[p.marca] = "parte"                     # a barra do conjunto chumbador segue chumbador
 
     # ---- as demais por tipo; terças em famílias (perfil + comprimento) com variantes
     por_tipo = collections.defaultdict(list)
     for p in posicoes:
-        if p.marca not in nomes_pos:
+        if p.marca not in nomes_pos and p.marca not in fixos:
             por_tipo[tipo[p.marca]].append(p)
     pendentes_pos: list = []
     for t, lista in por_tipo.items():
@@ -505,6 +525,18 @@ def nomear(posicoes: Sequence[Posicao], camadas: Dict[str, str], pecas: Sequence
             k += 1
         usados.add(k)
         atribuir(l, k)
+    # os nomes do projeto recebido; o numerado que cair num deles (CH1 do projeto × CH1 da fábrica) anda
+    nomes_pos.update(fixos)
+    tomados = set(nomes_pos.values()) | set(nomes_conj.values())
+    for marca, n in list(nomes_pos.items()):
+        m_ = re.match(r"^(.*?)(\d+)$", n)
+        if marca in fixos or n not in fixos.values() or not m_:
+            continue
+        k = int(m_.group(2))
+        while "%s%d" % (m_.group(1), k) in tomados:
+            k += 1
+        nomes_pos[marca] = "%s%d" % (m_.group(1), k)
+        tomados.add(nomes_pos[marca])
     for p in posicoes:
         p.nome = nomes_pos.get(p.marca, "")
         p.tipo_nome = tipo.get(p.marca, "")

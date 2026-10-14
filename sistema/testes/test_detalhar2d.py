@@ -878,6 +878,27 @@ def test_nomes_sinteticos_e_estaveis():
     assert "T.C.7" not in outros
 
 
+def test_nome_do_projeto_vence_a_numeracao():
+    """A peça com marcas.nome_projeto (o nome do projeto recebido: A7, CH1…) sai com ele — também a
+    parte de conjunto, e as outras partes do conjunto são numeradas sem ela; o numerado que cairia no
+    mesmo nome anda (Vicente, 14/10)."""
+    doc = _modelo()
+    r = det.detalhar(doc, grupos=["chapas"], regra_tercas=False, converter=False)
+    antes = r["nomes"]["posicoes"]
+    for e in doc.entidades.values():
+        m = det._marcas(e)
+        if m.get("posicao") == "P1":
+            m["nome_projeto"] = "A7"
+        elif m.get("posicao") == "M5":
+            m["nome_projeto"] = "DP.1.2"
+    r2 = det.detalhar(doc, grupos=["chapas"], regra_tercas=False, converter=False, nomes=r["nomes"])
+    nomes = r2["nomes"]["posicoes"]
+    assert nomes["P1"] == "A7" and nomes["M5"] == "DP.1.2"
+    outros = [n for m, n in nomes.items() if m not in ("P1", "M5")]
+    assert "A7" not in outros and "DP.1.2" not in outros and len(set(outros)) == len(outros)
+    assert set(antes) == set(nomes)
+
+
 
 def test_desenho_completo():
     """"Detalhamento – completo": faixas de todos os grupos num desenho só, na escala 25,
