@@ -104,7 +104,7 @@ export class MetodosLigacoes {
     try {
       this.dica(`${rotulo}…`);
       const resp = await fetch(rota, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({ documento: this.documento.paraJSON(), ...pedido }) });
+        body: JSON.stringify({ documento: this.documento.paraJSON(), projeto: this.projeto || null, ...pedido }) });
       r = await resp.json();
       if (!resp.ok || r.erro) throw new Error(r.erro || resp.statusText);
     } catch (e) { this.aviso(`Não foi possível ${rotulo.toLowerCase()}: ${e.message}`, 'erro', 0); return null; }
@@ -138,7 +138,7 @@ export class MetodosLigacoes {
       const v = l.verificacao;
       const nome = (this._tiposLig || []).find(t => t.id === l.tipo)?.nome || l.tipo;
       let txt = nome;
-      if (v && typeof v.razao === 'number') txt += `: aproveitamento ${numero(v.razao, 2)} — ${v.ok ? 'passa' : 'NÃO PASSA'} (esforços ${'padrão da biblioteca'})`;
+      if (v && typeof v.razao === 'number') txt += `: aproveitamento ${numero(v.razao, 2)} — ${v.ok ? 'passa' : 'NÃO PASSA'} (esforços: ${l.origem_esforcos || 'padrão da biblioteca'})`;
       else if (v && v.erro) txt += `: sem verificação (${v.erro})`;
       if ((l.avisos || []).length) txt += ` · ${l.avisos.join('; ')}`;
       return txt;

@@ -4173,9 +4173,17 @@ def aplicar_ligacao(corpo: dict) -> dict:
     nas barras escolhidas (nucleo3d/ligacoes3d.py) — ou a ligação `ligacao` refeita com os parâmetros novos. Devolve
     as entidades novas, as alterações das barras e o que sai, para o editor aplicar com desfazer."""
     from nucleo3d import ligacoes3d
+    # com {projeto}: os esforços da última análise gravada dele (sem ela, os padrões da biblioteca)
+    analise = None
+    if corpo.get("projeto"):
+        try:
+            with open(os.path.join(_gerente()._existente(str(corpo["projeto"])), ARQ_ANALISE), encoding="utf-8") as f:
+                analise = json.load(f)
+        except (OSError, ValueError, ErroDeDados):
+            analise = None
     return ligacoes3d.aplicar(_documento_de(corpo), str(corpo.get("tipo") or ""), list(corpo.get("ids") or []),
                               corpo.get("parametros") or None, ligacao=corpo.get("ligacao") or None,
-                              esforcos=corpo.get("esforcos") or None)
+                              esforcos=corpo.get("esforcos") or None, analise=analise)
 
 
 def remover_ligacao(corpo: dict) -> dict:

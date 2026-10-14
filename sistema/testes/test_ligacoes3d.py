@@ -268,3 +268,32 @@ def test_emenda_de_banzo_com_talas():
         c = Barra(inicio=(0, 500, 0), fim=(3000, 500, 0), perfil="W 250×32,7")
         doc.add(c)
         ligacoes3d.aplicar(doc, "emenda_banzo", [a.id, c.id])
+
+
+def _analise_falsa(pilar, viga):
+    """o resultado gravado da análise (analise_estrutural.json) no formato real, só com o que a ligação lê"""
+    return {"instavel": False, "nos": [[0, 0, 0], [0, 0, 3500], [0, 0, 4000], [0, 6000, 3500]],
+            "barras": [{"a": 0, "b": 1, "papel": "pilar", "ids": [pilar.id]}, {"a": 1, "b": 2, "papel": "pilar", "ids": [pilar.id]},
+                       {"a": 1, "b": 3, "papel": "viga", "ids": [viga.id]}],
+            "combinacoes": {"C1": {"tipo": "ELU"}, "C2": {"tipo": "ELU"}, "S1": {"tipo": "ELS"}},
+            "por_comb": {"C1": {"reacoes": {"0": [3.0, 4.0, 120.0, 1.0, 2.0, 0.0]}},
+                         "C2": {"reacoes": {"0": [1.0, 0.0, -18.0, 0.0, 0.0, 0.0]}},
+                         "S1": {"reacoes": {"0": [0.0, 0.0, 999.0, 0.0, 0.0, 0.0]}}},
+            "ligacoes": [{"viga": 2, "no": 1, "max": {"Mz": [85.0, {}], "V": [52.5, {}], "Nt": [3.0, {}], "Nc": [11.0, {}]}}],
+            "topos_pilares": []}
+
+
+def test_verificacao_com_os_esforcos_da_analise_do_projeto():
+    pilar, viga, doc = _viga_e_pilar()
+    an = _analise_falsa(pilar, viga)
+    e = ligacoes3d.esforcos_da_analise(an, "placa_base_rotulada", [pilar])
+    assert e == {"N_Sd": 120.0, "H_Sd": 5.0, "N_min": -18.0}             # só as últimas (a S1 de serviço fica fora)
+    e = ligacoes3d.esforcos_da_analise(an, "chapa_topo_joelho", [viga, pilar])
+    assert e == {"M_Sd": 85.0, "V_Sd": 52.5, "N_Sd": 11.0}
+    assert ligacoes3d.esforcos_da_analise(an, "ligacao_flexivel", [viga, pilar]) == {"V_Sd": 52.5}
+    assert ligacoes3d.esforcos_da_analise(None, "chapa_topo_joelho", [viga, pilar]) is None
+    r = ligacoes3d.aplicar(doc, "chapa_topo_joelho", [viga.id, pilar.id], analise=an)
+    lg = r["ligacoes"][0]
+    assert lg["origem_esforcos"] == "análise do projeto" and lg["esforcos"]["M_Sd"] == 85.0
+    r = ligacoes3d.aplicar(doc, "chapa_topo_joelho", [viga.id, pilar.id])
+    assert r["ligacoes"][0]["origem_esforcos"] == "padrão da biblioteca"

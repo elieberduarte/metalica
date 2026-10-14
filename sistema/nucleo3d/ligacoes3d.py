@@ -13,6 +13,7 @@ ligação quando uma barra dela muda, edita os parâmetros e apaga a ligação i
 `aplicar` não altera o documento recebido: devolve as entidades novas (com marca, conjunto e solda definidos), as
 alterações das barras e as entidades da versão anterior da ligação a remover, para o editor aplicar com desfazer.
 """
+import collections
 import copy
 import dataclasses
 import math
@@ -654,6 +655,62 @@ def _gerar(tipo, barras, p):
     raise ErroDeDados("a ligação %s ainda não sabe se pôr no 3D" % tipo)
 
 
+def esforcos_da_analise(analise: Optional[dict], tipo: str, barras) -> Optional[dict]:
+    """Os esforços de cálculo da ligação tirados da análise gravada do projeto (nucleo3d/analise_estrutural.py,
+    <projeto>/analise_estrutural.json), nas combinações últimas com a 2ª ordem: a reação no pé do pilar (placa de base),
+    a ponta da viga no pilar (chapa de topo, ligação flexível), o topo do pilar sob a viga. None quando a análise não tem
+    a ligação (o tipo não é desses, a barra não está no unifilar): a verificação fica com os padrões da biblioteca."""
+    if not analise or analise.get("instavel"):
+        return None
+    ab = analise.get("barras") or []
+    nos = analise.get("nos") or []
+    elu = [c for c, cb in (analise.get("combinacoes") or {}).items() if cb.get("tipo") == "ELU"]
+    de = collections.defaultdict(list)
+    for i, br in enumerate(ab):
+        for eid in br.get("ids") or []:
+            de[str(eid).split("#")[0]].append(i)
+
+    def nos_da(b):
+        return {n for i in de.get(b.id, []) for n in (ab[i]["a"], ab[i]["b"])}
+    if tipo in ("placa_base_rotulada", "placa_base_engastada"):
+        ns = [n for n in nos_da(barras[0]) if n < len(nos)]
+        if not ns:
+            return None
+        pe = min(ns, key=lambda n: nos[n][2])
+        rs = [(analise.get("por_comb") or {}).get(c, {}).get("reacoes", {}).get(str(pe)) for c in elu]
+        rs = [r for r in rs if r]
+        if not rs:
+            return None
+        e = {"N_Sd": round(max(r[2] for r in rs), 2), "H_Sd": round(max(math.hypot(r[0], r[1]) for r in rs), 2)}
+        if tipo == "placa_base_engastada":
+            e["M_Sd"] = round(max(math.hypot(r[3], r[4]) for r in rs), 2)
+        else:
+            e["N_min"] = round(min(r[2] for r in rs), 2)
+        return e
+    if tipo in ("chapa_topo_joelho", "ligacao_flexivel"):
+        viga, apoio = barras[0], barras[1]
+        ind_v, nos_a = set(de.get(viga.id, [])), nos_da(apoio)
+        for lg in analise.get("ligacoes") or []:
+            if lg.get("viga") in ind_v and lg.get("no") in nos_a:
+                mx = lg.get("max") or {}
+                v = lambda k: float((mx.get(k) or [0.0])[0])          # noqa: E731
+                if tipo == "ligacao_flexivel":
+                    return {"V_Sd": round(v("V"), 2)}
+                return {"M_Sd": round(v("Mz"), 2), "V_Sd": round(v("V"), 2), "N_Sd": round(max(v("Nt"), v("Nc")), 2)}
+        return None
+    if tipo == "tesoura_topo_pilar":
+        nos_p = nos_da(barras[0])
+        for tp in analise.get("topos_pilares") or []:
+            if tp.get("no") in nos_p:
+                cs = tp.get("combinacoes") or []
+                if not cs:
+                    return None
+                return {"R_Sd": round(max(c["N"] for c in cs), 2), "H_Sd": round(max(c["V"] for c in cs), 2),
+                        "T_Sd": round(max(0.0, max(-c["N"] for c in cs)), 2)}
+        return None
+    return None
+
+
 def tipos(doc=None, ids=()) -> List[dict]:
     """Os tipos que se põem no 3D, com os parâmetros da biblioteca (os padrões dela)."""
     from nucleo import acessorios as A
@@ -677,7 +734,7 @@ def _id_ligacao():
 
 
 def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = None, ligacao: Optional[str] = None,
-            esforcos: Optional[dict] = None) -> dict:
+            esforcos: Optional[dict] = None, analise: Optional[dict] = None) -> dict:
     """A ligação `tipo` nas barras `ids` (uma ligação por pilar, nas bases), ou `ligacao` (o id de uma aplicada) refeita
     com os parâmetros novos. Devolve {"novas": [entidades], "alterar": {id: {campo: valor}}, "remover": [ids],
     "ligacoes": [{id, tipo, verificacao, avisos}]}."""
@@ -749,11 +806,15 @@ def aplicar(doc, tipo: str, ids: Sequence[str], parametros: Optional[dict] = Non
         verif = None
         try:
             parametros_lib = {k: v for k, v in g["parametros"].items() if k in {x.chave for x in A.REGISTRO[tipo].parametros}}
-            r = A.montar(tipo, parametros_lib, esforcos or {})
+            da_analise = esforcos_da_analise(analise, tipo, barras) if not esforcos else None
+            origem = "informados" if esforcos else ("análise do projeto" if da_analise else "padrão da biblioteca")
+            r = A.montar(tipo, parametros_lib, esforcos or da_analise or {})
             verif = r.get("verificacao")
+            usados = r.get("esforcos")
         except Exception as exc:                          # noqa: BLE001 — a verificação não impede a ligação
-            verif = {"erro": str(exc)}
+            verif, usados, origem = {"erro": str(exc)}, None, "—"
         resultados.append({"id": lid, "tipo": tipo, "barras": [b.id for b in barras], "verificacao": verif,
+                           "esforcos": usados, "origem_esforcos": origem,
                            "avisos": g["avisos"], "parametros": g["parametros"]})
     # marcas: o numerar no documento de trabalho (as peças novas, as barras que entraram em conjunto)
     r = producao.numerar(trabalho)
