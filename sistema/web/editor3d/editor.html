@@ -130,6 +130,17 @@ window.__errosEditor = [];
         <button type="button" data-acao="agrupar" title="As peças selecionadas num grupo: o clique passa a pegar o grupo inteiro (Alt+clique, uma peça só); grupo dentro de grupo vale">Agrupar <kbd>Ctrl+G</kbd></button>
         <button type="button" data-acao="desagrupar" title="Desfaz o grupo de fora das peças selecionadas (um nível)">Desagrupar <kbd>Ctrl+Shift+G</kbd></button>
         <hr>
+        <div class="menu-titulo">Produção</div>
+        <button type="button" data-acao="numerar" title="Dá marca de posição (P) e de conjunto (M) às peças sem marca, juntando as iguais pelo critério do detalhamento; a peça que mudou depois de copiada ganha marca própria">Numerar peças</button>
+        <button type="button" data-acao="criar-conjunto" title="As peças selecionadas numa montagem de fábrica (a viga com as chapas, o pilar com a base), com a peça principal; cópias iguais ficam com a mesma marca M">Criar conjunto…</button>
+        <button type="button" data-acao="acrescentar-ao-conjunto" title="As peças soltas da seleção entram no conjunto das outras">Acrescentar ao conjunto</button>
+        <button type="button" data-acao="tirar-do-conjunto" title="As peças selecionadas saem do conjunto">Tirar do conjunto</button>
+        <button type="button" data-acao="desfazer-conjunto" title="A cópia inteira do conjunto da peça selecionada volta a ser peças soltas">Desfazer conjunto</button>
+        <button type="button" data-acao="soldar" title="Onde as peças selecionadas se encostam: filete ou penetração, perna, lados, intermitente, fábrica ou obra">Soldar…</button>
+        <button type="button" data-acao="converter-chapa" title="O sólido desenhado à mão (retângulo empurrado) vira chapa de verdade: espessura, aço, furos e marca">Converter em chapa</button>
+        <button type="button" data-acao="renumerar" title="Refaz todas as marcas a partir de P1 e M1 (bloqueado com a numeração travada)">Renumerar tudo…</button>
+        <button type="button" data-acao="travar-numeracao" title="Projeto emitido: as marcas não se renumeram mais (Numerar continua dando marca às peças novas)">Numeração travada (liga/desliga)</button>
+        <hr>
         <div class="menu-titulo">Histórico</div>
         <div id="historico-undo" class="historico"></div>
       </div>

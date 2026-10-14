@@ -15,6 +15,7 @@ Decisão do usuário (11/10): no desenho do conjunto vai uma nota geral e um sí
 """
 import collections
 import math
+import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from nucleo2d.detalhe.base import _caixa, _cruz, _dot, _marcas, _norm, _sub
@@ -181,25 +182,119 @@ def cordoes_chapa_perfil(chapa, barra) -> List[dict]:
     return list(unicos.values())
 
 
+def _posicao(e) -> str:
+    p = str(_marcas(e).get("posicao") or "")
+    return re.sub(r"\s+\([a-z]\)$", "", p)               # a variante de furação "P3 (b)" é a mesma posição
+
+
+def definicao(a, b) -> Optional[dict]:
+    """A solda definida à mão no editor 3D entre as duas peças (nucleo3d/producao.py): gravada em cada peça pela posição
+    da outra (`atributos.soldas = {"P12": {tipo, perna, lados, local, intermitente…}}`), então vale para todas as
+    instâncias do conjunto. None quando o usuário não definiu: o cordão é deduzido."""
+    for x, y in ((a, b), (b, a)):
+        defs = (getattr(x, "atributos", None) or {}).get("soldas") or {}
+        if not isinstance(defs, dict) or not defs:
+            continue
+        py = str(_marcas(y).get("posicao") or "")
+        d = defs.get(py) or defs.get(_posicao(y))
+        if isinstance(d, dict):
+            return d
+    return None
+
+
+def _aplicar_definicao(d: dict, cordoes: List[dict]) -> List[dict]:
+    """os cordões medidos com o que o usuário definiu (tipo, perna, lados, intermitente); sem medida, os da definição"""
+    if not cordoes and d.get("p0") and d.get("p1") and d.get("comprimento"):
+        cordoes = [{"tipo": str(d.get("forma") or "T"), "lados": int(d.get("lados") or 1),
+                    "comprimento": float(d["comprimento"]), "perna": float(d.get("perna") or 0),
+                    "p0": tuple(d["p0"]), "p1": tuple(d["p1"])}]
+    fora = []
+    for c in cordoes:
+        c = dict(c, definida=True, solda=str(d.get("tipo") or "filete"))
+        if d.get("perna"):
+            c["perna"] = float(d["perna"])
+        if d.get("lados"):
+            c["lados"] = 2 if int(d["lados"]) >= 2 else 1
+        inter = d.get("intermitente")
+        if inter and float(inter.get("passo") or 0) > 0:
+            c["intermitente"] = (float(inter["l"]), float(inter["passo"]))
+            c["comprimento_total"] = c["comprimento"]
+            c["comprimento"] = round(c["comprimento"] * float(inter["l"]) / float(inter["passo"]), 1)
+        fora.append(c)
+    return fora
+
+
 def soldas_do_conjunto(instancia: Sequence, fixadores: Sequence = ()) -> List[dict]:
-    """os cordões de fábrica chapa × perfil de uma instância do conjunto (sem parafuso que passe pelos dois)"""
+    """os cordões de fábrica de uma instância do conjunto: chapa × perfil sem parafuso que passe pelos dois (deduzido) e
+    as soldas definidas à mão no 3D (qualquer par de peças; "sem solda" tira a deduzida; a de obra não é de fábrica)"""
     from nucleo2d.detalhe.montagens import _eh_chapa
     chapas = [e for e in instancia if getattr(e, "vertices", None) and _eh_chapa(e)]
     barras = [e for e in instancia if getattr(e, "vertices", None) and not _eh_chapa(e)]
     cx_fix = [_caixa(f) for f in fixadores or ()]
     fora = []
+    feitos = set()
     for ch in chapas:
         cxc = _caixa(ch)
         for b in barras:
             cxb = _caixa(b)
             if not _tocam(cxc, cxb, 1.0):
                 continue
-            if any(_tocam(cf, cxc, 0.5) and _tocam(cf, cxb, 0.5) for cf in cx_fix):
+            d = definicao(ch, b)
+            feitos.add(frozenset((ch.id, b.id)))
+            if d is not None and d.get("local") in ("nenhuma", "obra"):
+                continue
+            if d is None and any(_tocam(cf, cxc, 0.5) and _tocam(cf, cxb, 0.5) for cf in cx_fix):
                 continue                                  # aparafusada
-            for c in cordoes_chapa_perfil(ch, b):
+            cs = cordoes_chapa_perfil(ch, b)
+            if d is not None:
+                cs = _aplicar_definicao(d, cs)
+            for c in cs:
                 c.update(chapa=ch.id, perfil=b.id)
                 fora.append(c)
+    # as definidas entre peças que a dedução não olha: perfil × perfil, chapa × chapa
+    com_def = [e for e in instancia if getattr(e, "vertices", None) and (getattr(e, "atributos", None) or {}).get("soldas")]
+    if com_def:
+        todas = [e for e in instancia if getattr(e, "vertices", None)]
+        cx = {id(e): _caixa(e) for e in todas}
+        for a in com_def:
+            for b in todas:
+                if b is a or frozenset((a.id, b.id)) in feitos:
+                    continue
+                d = definicao(a, b)
+                if d is None or d.get("local") != "fabrica" or not _tocam(cx[id(a)], cx[id(b)], 1.0):
+                    continue
+                feitos.add(frozenset((a.id, b.id)))
+                from nucleo3d.producao import cordoes_entre
+                for c in _aplicar_definicao(d, cordoes_entre(a, b)):
+                    c.update(chapa=a.id, perfil=b.id)
+                    fora.append(c)
     return fora
+
+
+def soldas_de_obra(pecas: Sequence) -> List[dict]:
+    """As soldas definidas à mão como de obra (entre peças que chegam separadas): uma linha por par de posições, com a
+    quantidade de encontros no modelo."""
+    por_par: Dict[tuple, dict] = {}
+    com_def = [e for e in pecas if getattr(e, "vertices", None) and (getattr(e, "atributos", None) or {}).get("soldas")]
+    if not com_def:
+        return []
+    todas = [e for e in pecas if getattr(e, "vertices", None)]
+    cx = {id(e): _caixa(e) for e in todas}
+    vistos = set()
+    for a in com_def:
+        for b in todas:
+            if b is a or frozenset((a.id, b.id)) in vistos or not _tocam(cx[id(a)], cx[id(b)], 1.0):
+                continue
+            d = definicao(a, b)
+            if d is None or d.get("local") != "obra":
+                continue
+            vistos.add(frozenset((a.id, b.id)))
+            chave = tuple(sorted((_posicao(a), _posicao(b))))
+            linha = por_par.setdefault(chave, {"pecas": " × ".join(chave), "tipo": str(d.get("tipo") or "filete"),
+                                                "perna": float(d.get("perna") or 0), "lados": int(d.get("lados") or 1),
+                                                "comprimento": float(d.get("comprimento") or 0), "quantidade": 0})
+            linha["quantidade"] += 1
+    return sorted(por_par.values(), key=lambda l: l["pecas"])
 
 
 def resumo(cordoes: Sequence[dict]) -> dict:

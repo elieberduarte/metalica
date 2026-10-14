@@ -51,6 +51,9 @@ Rotas da API:
     POST /api/modelo/perfis {nomes}                           seção e massa de perfis fora do banco básico (editor)
     POST /api/modelo/apoios {documento}                        regras de apoio: peça voando, terça em balanço…
     POST /api/modelo/analitico {documento}                     esqueleto de nós e barras e as pontas soltas
+    POST /api/modelo/numerar {documento, compactar}            marcas de posição e conjunto das peças feitas à mão
+    POST /api/modelo/contatos {documento}                      onde as peças se encostam (o diálogo Soldar)
+    POST /api/modelo/converter-chapa {documento, ids}          sólido desenhado à mão → Chapa paramétrica
     GET  /api/projetos/<slug>/esforcos     esforços da estrutura inteira (o último cálculo); POST calcula (tela /esforcos)
     GET  /api/projetos/<slug>/analise-estrutural   a análise do modelo (o último cálculo); POST {parametros} calcula
          (nucleo3d/analise_estrutural.py; tela /analise-estrutural — o unifilar, as cargas, os esforços e as reações)
@@ -4135,6 +4138,33 @@ def verificar_apoios(corpo: dict) -> dict:
     return apoios.verificar(_documento_de(corpo), eixos=eixos or None)
 
 
+def numerar_modelo(corpo: dict) -> dict:
+    """POST /api/modelo/numerar {documento, compactar}: as marcas de posição e de conjunto das peças feitas à mão no
+    editor 3D (nucleo3d/producao.py) — peça igual pelo critério do detalhamento, marcas existentes mantidas. Devolve as
+    mudanças dos atributos para o editor aplicar com desfazer; não grava nada."""
+    from nucleo3d import producao
+    try:
+        return producao.numerar(_documento_de(corpo), compactar=bool(corpo.get("compactar")),
+                                conferir_todas=bool(corpo.get("conferir_todas")))
+    except ValueError as exc:
+        raise ErroDeDados(str(exc))
+
+
+def contatos_para_solda(corpo: dict) -> dict:
+    """POST /api/modelo/contatos {documento}: onde as peças mandadas se encostam (T, sobreposição, contorno do
+    encontro), com a perna mínima da NBR 8800 — o que o diálogo Soldar do editor 3D oferece."""
+    from nucleo3d import producao
+    doc = _documento_de(corpo)
+    return {"pares": producao.contatos(doc, list(doc.entidades))}
+
+
+def converter_em_chapa(corpo: dict) -> dict:
+    """POST /api/modelo/converter-chapa {documento, ids}: os sólidos desenhados à mão viram Chapa paramétrica (contorno,
+    espessura e furos medidos da malha); o editor troca as entidades com desfazer."""
+    from nucleo3d import producao
+    return producao.converter_em_chapa(_documento_de(corpo), list(corpo.get("ids") or []))
+
+
 def modelo_analitico(corpo: dict) -> dict:
     """POST /api/modelo/analitico {documento}: o esqueleto de nós e barras (nucleo3d/analitico.py) —
     perfil duplo numa barra só, pontas juntadas no nó, cada peça levada ao eixo em que apoia; o
@@ -4895,6 +4925,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(verificar_apoios(corpo))
             if rota == "/api/modelo/analitico":
                 return self._json(modelo_analitico(corpo))
+            if rota == "/api/modelo/numerar":
+                return self._json(numerar_modelo(corpo))
+            if rota == "/api/modelo/contatos":
+                return self._json(contatos_para_solda(corpo))
+            if rota == "/api/modelo/converter-chapa":
+                return self._json(converter_em_chapa(corpo))
             if rota == "/api/lento":
                 # a janela conta o que a segurou (web/lentidao.js): fica no registro para
                 # achar o travamento que ninguém reproduz

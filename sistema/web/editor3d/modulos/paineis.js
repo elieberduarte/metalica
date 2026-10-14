@@ -240,6 +240,9 @@ export class MetodosPaineis {
       if (pos.size) gs.append(el('label', { texto: 'Posições' }), el('span', { class: 'valor', texto: [...pos].slice(0, 12).join(', ') + (pos.size > 12 ? ' …' : '') }));
     }
 
+    // marca, conjunto, solda, fase e acabamento editáveis (modulos/producao.js, 14/10)
+    try { this._painelProducao(raiz, ents); } catch (e) { console.error('painel de produção:', e); }
+
     const acoes = el('div', { class: 'acoes-painel' });
     const botao = (texto, fn, titulo) => acoes.append(el('button', { type: 'button', texto, title: titulo, onclick: fn }));
     botao('Zoom', () => this.camera.zoomSelecao(ids), 'Enquadrar a seleção');

@@ -65,6 +65,12 @@ export class Api {
   /** Regras de apoio do modelo: peça voando, ponta de treliça sem apoio, terça em balanço… */
   apoios(documentoJSON, eixos) { return postar(this._r('/api/modelo/apoios'), { documento: documentoJSON, eixos: eixos || [] }); }
   analitico(documentoJSON) { return postar(this._r('/api/modelo/analitico'), { documento: documentoJSON }); }
+  /** Marcas de posição e de conjunto (nucleo3d/producao.py): devolve as mudanças dos atributos, não grava. */
+  numerar(documentoJSON, opcoes = {}) { return postar(this._r('/api/modelo/numerar'), { documento: documentoJSON, ...opcoes }); }
+  /** Onde as peças do documento se encostam, com a perna mínima — o diálogo Soldar. */
+  contatos(documentoJSON) { return postar(this._r('/api/modelo/contatos'), { documento: documentoJSON }); }
+  /** Sólidos desenhados à mão → Chapa paramétrica (contorno, espessura e furos medidos da malha). */
+  converterChapa(documentoJSON, ids) { return postar(this._r('/api/modelo/converter-chapa'), { documento: documentoJSON, ids }); }
 
   /** Malhas de um documento. `ids` limita o pedido ao que mudou. */
   malhas(documentoJSON, ids = null) {

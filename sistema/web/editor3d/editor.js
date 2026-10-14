@@ -43,6 +43,7 @@ import { MetodosDivisao } from './modulos/divisao.js';
 import { MetodosExplodir } from './modulos/explodir.js';
 import { MetodosEdicaoChapa } from './modulos/edicao_chapa.js';
 import { MetodosPadrao3D } from './modulos/padrao_3d.js';
+import { MetodosProducao } from './modulos/producao.js';
 
 /** Copia os métodos das classes dos módulos para a classe (getters e setters também). */
 function aplicarMetodos(alvo, ...fontes) {
@@ -1974,6 +1975,16 @@ export class Editor {
       juntar: () => this.juntarSelecao(),
       agrupar: () => this.agruparSelecao(),
       desagrupar: () => this.desagruparSelecao(),
+      // a informação de produção à mão (modulos/producao.js, 14/10)
+      numerar: () => this.numerarPecas(),
+      renumerar: () => this.renumerarTudo(),
+      'travar-numeracao': () => this.alternarTravaDaNumeracao(),
+      'criar-conjunto': () => this.criarConjunto(),
+      'acrescentar-ao-conjunto': () => this.acrescentarAoConjunto(),
+      'tirar-do-conjunto': () => this.tirarDoConjunto(),
+      'desfazer-conjunto': () => this.tirarDoConjunto(true),
+      soldar: () => this.soldarSelecao(),
+      'converter-chapa': () => this.converterEmChapa(),
       'eixos-obra': () => this.dialogoEixos(),
       'lancar-estrutura': () => this.dialogoLancar(),
       'memorial-lancamento': () => this.memorialDoLancamento(),
@@ -2435,7 +2446,8 @@ export class Editor {
 
 // os métodos que moram nos módulos (web/editor3d/modulos/)
 aplicarMetodos(Editor, MetodosCantosEixos, MetodosPaineis, MetodosTrocaDePecas, MetodosAnalise, MetodosDiagnostico, MetodosLancamento,
-  MetodosApoios, MetodosBloco, MetodosBarrasDoBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D);
+  MetodosApoios, MetodosBloco, MetodosBarrasDoBloco, MetodosDivisao, MetodosExplodir, MetodosEdicaoChapa, MetodosPadrao3D,
+  MetodosProducao);
 
 // ================================================================= apoio
 

@@ -195,6 +195,23 @@ def _eixos_do_conjunto(pecas: Sequence[Solido]):
     mais vertical dos outros dois eixos, u = v × w."""
     verts = [v for e in pecas for v in e.vertices]
     c, pca = _autovetores(verts)
+    # a peça principal escolhida no 3D (Editar → Criar conjunto, 14/10/2026) manda no eixo da elevação, até 30° da PCA:
+    # a viga com as chapas de topo, o pilar com a base
+    principal = next((getattr(e, "parametrica", None) for e in pecas if _marcas(e).get("principal")
+                      and hasattr(getattr(e, "parametrica", None), "inicio")), None)
+    if principal is not None:
+        d_ = _sub(tuple(principal.fim), tuple(principal.inicio))
+        L_ = math.sqrt(_dot(d_, d_))
+        if L_ > 1.0:
+            d_ = tuple(k / L_ for k in d_)
+            if _dot(d_, pca[0]) < 0:
+                d_ = (-d_[0], -d_[1], -d_[2])
+            if _dot(d_, pca[0]) > 0.866:
+                p1 = _norm(tuple(pca[1][i] - _dot(pca[1], d_) * d_[i] for i in range(3)))
+                p2 = _norm(_cruz(d_, p1))
+                if _dot(p2, pca[2]) < 0:
+                    p2 = (-p2[0], -p2[1], -p2[2])
+                pca = [d_, p1, p2]
     # Convenção do gerador de vistas (Vista.eixos): observador em -w, direita = w × v.
     # Aqui u é escolhido primeiro e w = v × u fecha o triedro nessa convenção.
     ext = []
@@ -3216,11 +3233,16 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             itens_p.append("%dx porca/arruela" % resto)
         linhas += [(t, "TEXTO") for t in quebrar("Parafusos: ", itens_p)]
     if cordoes_solda:
-        pernas_s = sorted({c_["perna"] for c_ in cordoes_solda})
         m_s = sum(c_["comprimento"] * c_["lados"] for c_ in cordoes_solda) / 1000.0
-        # em duas linhas curtas: numa só ela passava da largura da célula e tirava as cotas do vizinho (M89, 11/10)
-        linhas.append(("Solda de fábrica: filete %s mm, exceto indicado" % " / ".join(_mm(x_, 0) for x_ in pernas_s), "SOLDA"))
-        linhas.append(("  todo o contato chapa × perfil (%s m/un.)" % _mm(m_s, 1), "SOLDA"))
+        deduzidas_s = [c_ for c_ in cordoes_solda if not c_.get("definida")]
+        if deduzidas_s:
+            pernas_s = sorted({c_["perna"] for c_ in deduzidas_s})
+            # em duas linhas curtas: numa só ela passava da largura da célula e tirava as cotas do vizinho (M89, 11/10)
+            linhas.append(("Solda de fábrica: filete %s mm, exceto indicado" % " / ".join(_mm(x_, 0) for x_ in pernas_s), "SOLDA"))
+            linhas.append(("  todo o contato chapa × perfil (%s m/un.)" % _mm(m_s, 1), "SOLDA"))
+        else:
+            # só as soldas definidas no 3D: cada uma tem o símbolo dela
+            linhas.append(("Solda de fábrica: conforme os símbolos (%s m/un.)" % _mm(m_s, 1), "SOLDA"))
     if peso_un > 0:
         # o conjunto leve com duas casas: 2,9 × 25 não dava os 73,3 do CB1 (análise das pranchas, 29/09)
         linhas.append(("%s kg/un  total %s kg" % (_mm(peso_un, 2 if peso_un < 10.0 else 1), _mm(peso_un * n_instancias, 1)),
@@ -3246,7 +3268,7 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
     if cordoes_solda:
         topo_s = max([q[1] - p.dy for q in p.pontos] + [alt])
         for j_s, tipo_s in enumerate(("T", "sobreposição")):
-            c_s = next((c_ for c_ in cordoes_solda if c_["tipo"] == tipo_s), None)
+            c_s = next((c_ for c_ in cordoes_solda if c_["tipo"] == tipo_s and not c_.get("definida")), None)
             if c_s is None:
                 continue
             mx_s = sum(_dot(_sub(c_s[q], origem), u) for q in ("p0", "p1")) / 2.0 - u0
@@ -3254,6 +3276,26 @@ def desenho_do_conjunto(doc: Documento, marca: str, instancia: Sequence[Solido],
             lado_s = 1.0 if j_s == 0 else -1.0             # o segundo tipo para o outro lado: os dois costumam estar no mesmo nó
             simbolo_solda(p, esc, mx_s, my_s, mx_s + lado_s * 12.0 * esc, topo_s + (8.0 + 8.0 * j_s) * esc, c_s["perna"],
                           ambos_lados=c_s["lados"] == 2, cauda="TÍP.")
+        # as soldas definidas à mão no 3D (14/10/2026): um símbolo por par de peças, sem o "TÍP.", com o tipo
+        # (filete ou penetração), a perna e o trecho-passo do intermitente
+        pos_de = {e.id: str(_marcas(e).get("posicao") or "") for e in instancia}
+        vistas_s = set()
+        k_s = 0
+        for c_s in cordoes_solda:
+            if not c_s.get("definida"):
+                continue
+            chave_s = (frozenset((pos_de.get(c_s.get("chapa"), ""), pos_de.get(c_s.get("perfil"), ""))),
+                       c_s["perna"], c_s.get("solda"), c_s["lados"], c_s.get("intermitente"))
+            if chave_s in vistas_s:
+                continue
+            vistas_s.add(chave_s)
+            mx_s = sum(_dot(_sub(c_s[q], origem), u) for q in ("p0", "p1")) / 2.0 - u0
+            my_s = sum(_dot(_sub(c_s[q], origem), v) for q in ("p0", "p1")) / 2.0 - v0
+            lado_s = 1.0 if k_s % 2 == 0 else -1.0
+            simbolo_solda(p, esc, mx_s, my_s, mx_s + lado_s * 12.0 * esc, topo_s + (24.0 + 8.0 * k_s) * esc, c_s["perna"],
+                          ambos_lados=c_s["lados"] == 2, forma=str(c_s.get("solda") or "filete"),
+                          intermitente=c_s.get("intermitente"))
+            k_s += 1
     ext = p.extremos
     # a chapa na elevação do conjunto é só mostrada (a de corte está na prancha das chapas): o contorno dela na camada
     # cinza CHAPAS-VISTA — o texto da lista de perfis ("Chapas #9,5") continua na cor das chapas (13/10)
@@ -3464,7 +3506,11 @@ def _tirante_principal(instancia: Sequence[Solido]):
 
 
 def _barra_mais_longa(instancia: Sequence[Solido]):
-    """A peça mais comprida do conjunto (a barra do contraventamento que não é redonda)."""
+    """A peça mais comprida do conjunto (a barra do contraventamento que não é redonda); a principal escolhida no 3D
+    vence."""
+    escolhida = next((e for e in instancia if _marcas(e).get("principal")), None)
+    if escolhida is not None:
+        return escolhida
     melhor, comp = None, 0.0
     for e in instancia:
         cx = _caixa(e)
