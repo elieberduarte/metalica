@@ -4170,7 +4170,12 @@ def malhas_do_documento(corpo: dict) -> dict:
 
 def exportar_ifc(corpo: dict) -> dict:
     from ifc import exportar as exp
-    doc = _documento_de(corpo)
+    # sem o documento e com o projeto: o modelo gravado dele — é o "IFC do modelo" do modo Ver, que antes carregava o
+    # editor inteiro e esperava 60 s por ele (no PRATI CD, 27 mil peças, não dava tempo e nada acontecia; 14/10)
+    if "documento" not in corpo and corpo.get("projeto"):
+        doc = _documento3d_do_projeto(str(corpo["projeto"]))
+    else:
+        doc = _documento_de(corpo)
     nome = _slug(corpo.get("nome") or doc.nome or "modelo")
     do_projeto, base = _pasta_do_projeto(corpo, nome)
     pasta = os.path.join(base, "ifc")

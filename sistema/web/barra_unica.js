@@ -455,6 +455,9 @@
       return;
     }
     if (it.noAtivo) { executar({ lado: ladoDasSetas(), acao: it.noAtivo }); return; }
+    // o IFC do modelo no modo "ver": o servidor exporta o modelo gravado, sem carregar o editor — antes o comando abria
+    // o editor e esperava 60 s por ele; no PRATI CD (27 mil peças) não dava tempo e nada acontecia (14/10)
+    if (it.lado === '3d' && it.acao === 'exportar-ifc' && !docPronto('3d')) { exportarIfcGravado(); return; }
     if (!visivel(it.lado) && window.mostrarVista) window.mostrarVista(it.lado);
     // o 3D no modo "ver" (web/visor3d) não edita: o comando carrega o editor no quadro, com a mesma vista, e roda nele
     if (it.lado === '3d' && !docPronto('3d')) {
@@ -535,6 +538,44 @@
       document.body.appendChild(a); a.click(); a.remove();
       avisar('Pacote do projeto a caminho da pasta de downloads (.metalica.zip). Em outro computador: tela inicial › Importar pacote….');
     }, 2500);
+  }
+
+  /** Arquivo › Exportar › IFC do modelo, com o 3D no modo "ver": o modelo gravado do projeto vira IFC no servidor
+   *  (POST /api/modelo/ifc/exportar com o projeto e sem o documento) e o aviso traz o link para baixar. */
+  function exportarIfcGravado() {
+    var proj = new URLSearchParams(location.search).get('projeto') || '';
+    var caixa = document.getElementById('aviso-ifc-gravado');
+    if (!caixa) {
+      caixa = document.createElement('div');
+      caixa.id = 'aviso-ifc-gravado';
+      caixa.setAttribute('role', 'status');
+      caixa.style.cssText = 'position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:9999;max-width:640px;'
+        + 'padding:10px 36px 10px 14px;border-radius:6px;font:14px system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.25);'
+        + 'background:#eef4ff;color:#0b2a5b;border:1px solid #9db7e8';
+      document.body.appendChild(caixa);
+    }
+    var mostrar = function (html, erro) {
+      caixa.style.background = erro ? '#fdecec' : '#eef4ff';
+      caixa.style.color = erro ? '#7a1010' : '#0b2a5b';
+      caixa.style.borderColor = erro ? '#e5a3a3' : '#9db7e8';
+      caixa.innerHTML = html + '<button type="button" aria-label="Fechar" style="position:absolute;top:6px;right:8px;border:0;'
+        + 'background:none;font-size:18px;cursor:pointer;color:inherit">×</button>';
+      caixa.lastChild.onclick = function () { caixa.remove(); };
+    };
+    if (!proj) { mostrar('Abra um projeto para exportar o IFC do modelo.', true); return; }
+    mostrar('Exportando o IFC do modelo gravado… (num modelo grande como o do PRATI, cerca de um minuto)');
+    fetch('/api/modelo/ifc/exportar', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ projeto: proj }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (r) {
+        if (!r.ok || r.j.erro) { mostrar('Não foi possível exportar o IFC: ' + (r.j.erro || r.j.mensagem || 'erro no servidor'), true); return; }
+        var a = r.j.arquivo || {};
+        var esc = function (s) { return String(s || '').replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+        mostrar('IFC exportado (' + (r.j.entidades || 0).toLocaleString('pt-BR') + ' objetos, do modelo gravado): '
+          + '<a href="' + esc(a.url) + '" download="' + esc(a.nome) + '">' + esc(a.nome || 'baixar') + '</a>'
+          + (a.tamanho_kb ? ' · ' + (a.tamanho_kb / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' MB' : ''));
+      })
+      .catch(function (e) { mostrar('Não foi possível exportar o IFC: ' + e.message, true); });
   }
 
   /** o botão do tema mostra o que o clique faz: a lua no claro, o sol no escuro */
