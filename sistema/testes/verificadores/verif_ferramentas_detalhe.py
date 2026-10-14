@@ -63,7 +63,8 @@ try:
     aba = Aba(alvos[0]["webSocketDebuggerUrl"])
     for dm in ("Page", "Runtime", "Log"): aba.cmd(f"{dm}.enable")
     aba.cmd("Emulation.setDeviceMetricsOverride", width=1400, height=900, deviceScaleFactor=1, mobile=False)
-    aba.navegar(f"http://localhost:{PORTA}/editor?projeto=ferr", limite=60)
+    base = f"http://localhost:{PORTA}"
+    aba.navegar(base + "/editor?projeto=ferr", limite=60)
     t0 = time.time()
     while time.time() - t0 < 60 and not aba.avaliar("!!(window.editor && editor.documento && editor.documento.entidades.size >= 3 && editor.ferramentas"
                                                     " && editor.ferramentas.get('parafuso') && editor.cena.perfil(%s))" % json.dumps(W)):
